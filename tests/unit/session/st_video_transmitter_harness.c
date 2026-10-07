@@ -13,9 +13,18 @@
 #define UT_TRS_MAX_TSC_SCRIPT 64
 #define UT_TRS_MAX_SEND_HISTORY 8
 
+/* pads accepted on a port ahead of its first real packet */
+struct ut_trs_train {
+  long double drained_tsc; /* when the shaper finishes the pads */
+  uint64_t real_tsc;       /* when the first real packet was queued */
+  uint32_t pads;
+  bool closed;
+};
+
 struct ut_trs_ctx {
   struct mtl_main_impl impl;
   struct st_tx_video_session_impl session;
+  int queue_tag[MTL_SESSION_PORT_MAX]; /* s->queue[] identity for the burst mock */
   struct rte_mbuf* pad_mbuf;
   struct rte_mbuf* inflight_mbuf;
   struct rte_mbuf* inflight2_mbuf;
@@ -25,6 +34,9 @@ struct ut_trs_ctx {
   int tsc_script_len;
   int tsc_script_pos;
   uint64_t last_tsc;
+  uint64_t tsc_skew; /* added to the script, the stalls so far */
+  uint32_t stall_call;
+  uint64_t stall_ns;
 
   uint32_t pad_send_count;
   uint32_t real_send_count;
@@ -33,7 +45,9 @@ struct ut_trs_ctx {
   uint64_t last_real_send_tsc;
   uint32_t send_history[UT_TRS_MAX_SEND_HISTORY];
   uint32_t send_history_count;
+  struct ut_trs_train train[MTL_SESSION_PORT_MAX];
   bool burst_force_fail;
+  uint16_t burst_accept_limit;
 };
 
 #include "session/st_video_transmitter_harness.h"
@@ -44,12 +58,12 @@ static uint64_t ut_trs_tsc_time_fn(struct mtl_main_impl* impl) {
   int pos = ctx->tsc_script_pos++;
   if (!len) return ++ctx->last_tsc;
   if (pos < len) {
-    ctx->last_tsc = ctx->tsc_script[pos];
+    ctx->last_tsc = ctx->tsc_script[pos] + ctx->tsc_skew;
   } else {
     /* Keep exhausted scripts monotonic. */
     uint64_t step = (len >= 2) ? ctx->tsc_script[len - 1] - ctx->tsc_script[len - 2] : 0;
     if (!step) step = 1;
-    ctx->last_tsc = ctx->tsc_script[len - 1] + step * (pos - len + 1);
+    ctx->last_tsc = ctx->tsc_script[len - 1] + step * (pos - len + 1) + ctx->tsc_skew;
   }
   return ctx->last_tsc;
 }
@@ -63,27 +77,47 @@ static uint64_t ut_trs_ptp_time_fn(struct mtl_main_impl* impl, enum mtl_port por
 /* mt_txq_burst() has no private context argument. */
 static struct ut_trs_ctx* ut_trs_active_ctx;
 
+static struct rte_mempool* ut_trs_priv_pool(void);
+
 static uint16_t ut_trs_txq_burst_mock(struct mt_txq_entry* entry,
                                       struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
-  (void)entry;
-  if (!ut_trs_active_ctx) return nb_pkts;
-  ut_trs_active_ctx->burst_call_count++;
-  if (ut_trs_active_ctx->burst_force_fail) return 0;
-  if (tx_pkts[0] == ut_trs_active_ctx->pad_mbuf) {
-    ut_trs_active_ctx->pad_send_count += nb_pkts;
-    ut_trs_active_ctx->last_pad_send_tsc = ut_trs_active_ctx->last_tsc;
-    for (uint16_t i = 0; i < nb_pkts; i++) {
-      if (rte_mbuf_refcnt_read(tx_pkts[i]) > 1) rte_pktmbuf_free(tx_pkts[i]);
-    }
-  } else {
-    for (uint16_t i = 0; i < nb_pkts; i++) {
-      if (ut_trs_active_ctx->send_history_count < UT_TRS_MAX_SEND_HISTORY) {
-        uint32_t pos = ut_trs_active_ctx->send_history_count++;
-        ut_trs_active_ctx->send_history[pos] = st_tx_mbuf_get_idx(tx_pkts[i]);
+  struct ut_trs_ctx* ctx = ut_trs_active_ctx;
+  if (!ctx) return nb_pkts;
+  ctx->burst_call_count++;
+  if (ctx->stall_ns && ctx->burst_call_count == ctx->stall_call) {
+    /* the doorbell rings stall_ns after the last tsc read */
+    ctx->tsc_skew += ctx->stall_ns;
+    ctx->last_tsc += ctx->stall_ns;
+  }
+  if (ctx->burst_force_fail) return 0;
+
+  int port = (entry == (struct mt_txq_entry*)&ctx->queue_tag[MTL_SESSION_PORT_R])
+                 ? MTL_SESSION_PORT_R
+                 : MTL_SESSION_PORT_P;
+  struct ut_trs_train* train = &ctx->train[port];
+  if (ctx->burst_accept_limit && nb_pkts > ctx->burst_accept_limit)
+    nb_pkts = ctx->burst_accept_limit;
+  for (uint16_t i = 0; i < nb_pkts; i++) {
+    struct rte_mbuf* m = tx_pkts[i];
+    if (m->pool != ut_trs_priv_pool()) { /* pads come from ut_pool() */
+      ctx->pad_send_count++;
+      ctx->last_pad_send_tsc = ctx->last_tsc;
+      if (!train->closed) {
+        /* an idle shaper refills its bucket: at most rl_credit ahead of arrival */
+        long double start = ctx->last_tsc - ctx->session.pacing.rl_credit[port];
+        if (!train->pads || train->drained_tsc < start) train->drained_tsc = start;
+        train->drained_tsc += ctx->session.pacing.rl_drain[port];
+        train->pads++;
       }
+      if (rte_mbuf_refcnt_read(m) > 1) rte_pktmbuf_free(m);
+    } else {
+      if (ctx->send_history_count < UT_TRS_MAX_SEND_HISTORY)
+        ctx->send_history[ctx->send_history_count++] = st_tx_mbuf_get_idx(m);
+      ctx->real_send_count++;
+      ctx->last_real_send_tsc = ctx->last_tsc;
+      if (!train->closed) train->real_tsc = ctx->last_tsc;
+      train->closed = true;
     }
-    ut_trs_active_ctx->real_send_count += nb_pkts;
-    ut_trs_active_ctx->last_real_send_tsc = ut_trs_active_ctx->last_tsc;
   }
   return nb_pkts;
 }
@@ -132,9 +166,14 @@ ut_trs_ctx* ut_trs_create(void) {
   s->bulk = 1;
   s->tx_hang_detect_time_thresh = NS_PER_S;
 
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++)
+    s->queue[i] = (struct mt_txq_entry*)&ctx->queue_tag[i];
+
   ctx->pad_mbuf = rte_pktmbuf_alloc(ut_pool());
   if (!ctx->pad_mbuf) goto fail;
   s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL] = ctx->pad_mbuf;
+  s->pad[MTL_SESSION_PORT_R][ST20_PKT_TYPE_NORMAL] = rte_pktmbuf_alloc(ut_pool());
+  if (!s->pad[MTL_SESSION_PORT_R][ST20_PKT_TYPE_NORMAL]) goto fail;
 
   priv_pool = ut_trs_priv_pool();
   if (!priv_pool) goto fail;
@@ -158,6 +197,8 @@ fail:
   if (ctx->redundant_inflight_mbuf) rte_pktmbuf_free(ctx->redundant_inflight_mbuf);
   if (ctx->inflight2_mbuf) rte_pktmbuf_free(ctx->inflight2_mbuf);
   if (ctx->inflight_mbuf) rte_pktmbuf_free(ctx->inflight_mbuf);
+  if (s->pad[MTL_SESSION_PORT_R][ST20_PKT_TYPE_NORMAL])
+    rte_pktmbuf_free(s->pad[MTL_SESSION_PORT_R][ST20_PKT_TYPE_NORMAL]);
   if (ctx->pad_mbuf) rte_pktmbuf_free(ctx->pad_mbuf);
   free(ctx);
   return NULL;
@@ -173,6 +214,7 @@ void ut_trs_destroy(ut_trs_ctx* ctx) {
   if (owns_inflight) ctx->inflight_mbuf = NULL;
   if (owns_inflight2) ctx->inflight2_mbuf = NULL;
   if (owns_redundant) ctx->redundant_inflight_mbuf = NULL;
+  rte_pktmbuf_free(ctx->session.pad[MTL_SESSION_PORT_R][ST20_PKT_TYPE_NORMAL]);
   if (ctx->pad_mbuf) rte_pktmbuf_free(ctx->pad_mbuf);
   if (ctx->inflight_mbuf) rte_pktmbuf_free(ctx->inflight_mbuf);
   if (ctx->inflight2_mbuf) rte_pktmbuf_free(ctx->inflight2_mbuf);
@@ -194,17 +236,56 @@ void ut_trs_set_target_tsc(ut_trs_ctx* ctx, uint64_t target_tsc) {
   ctx->session.trs_target_tsc[MTL_SESSION_PORT_P] = target_tsc;
 }
 
+void ut_trs_set_target_tsc_port(ut_trs_ctx* ctx, int port, uint64_t target_tsc) {
+  ctx->session.trs_target_tsc[port] = target_tsc;
+}
+
+void ut_trs_set_drain(ut_trs_ctx* ctx, int port, long double drain_ns) {
+  ctx->session.pacing.rl_drain[port] = drain_ns;
+}
+
+void ut_trs_set_credit(ut_trs_ctx* ctx, int port, long double credit_ns) {
+  ctx->session.pacing.rl_credit[port] = credit_ns;
+}
+
 void ut_trs_set_mock_tsc_script(ut_trs_ctx* ctx, const uint64_t* values, int count) {
   if (count > UT_TRS_MAX_TSC_SCRIPT) count = UT_TRS_MAX_TSC_SCRIPT;
   memcpy(ctx->tsc_script, values, count * sizeof(*values));
   ctx->tsc_script_len = count;
   ctx->tsc_script_pos = 0;
+  ctx->tsc_skew = 0;
 }
 
 void ut_trs_warm_up(ut_trs_ctx* ctx) {
   ut_trs_active_ctx = ctx;
   video_trs_rl_warm_up(&ctx->impl, &ctx->session, MTL_SESSION_PORT_P);
   ut_trs_active_ctx = NULL;
+}
+
+void ut_trs_pre_arm(ut_trs_ctx* ctx) {
+  ut_trs_pre_arm_port(ctx, MTL_SESSION_PORT_P);
+}
+
+void ut_trs_pre_arm_port(ut_trs_ctx* ctx, int port) {
+  ut_trs_active_ctx = ctx;
+  video_trs_rl_pre_arm(&ctx->impl, &ctx->session, port);
+  ut_trs_active_ctx = NULL;
+}
+
+long double ut_trs_modeled_launch_tsc(const ut_trs_ctx* ctx, int port) {
+  const struct ut_trs_train* train = &ctx->train[port];
+  /* no earlier than packet 0 is queued, at best after the last tsc read */
+  uint64_t queued = train->closed ? train->real_tsc : ctx->last_tsc;
+
+  return RTE_MAX(train->drained_tsc, (long double)queued);
+}
+
+uint32_t ut_trs_train_pads(const ut_trs_ctx* ctx, int port) {
+  return ctx->train[port].pads;
+}
+
+void ut_trs_clear_train(ut_trs_ctx* ctx) {
+  memset(ctx->train, 0, sizeof(ctx->train));
 }
 
 uint32_t ut_trs_pad_send_count(const ut_trs_ctx* ctx) {
@@ -229,6 +310,15 @@ uint64_t ut_trs_stat_recalculate_warmup(const ut_trs_ctx* ctx) {
 
 void ut_trs_set_burst_force_fail(ut_trs_ctx* ctx, bool fail) {
   ctx->burst_force_fail = fail;
+}
+
+void ut_trs_set_burst_accept_limit(ut_trs_ctx* ctx, uint16_t limit) {
+  ctx->burst_accept_limit = limit;
+}
+
+void ut_trs_set_burst_stall(ut_trs_ctx* ctx, uint32_t call, uint64_t stall_ns) {
+  ctx->stall_call = call;
+  ctx->stall_ns = stall_ns;
 }
 
 uint32_t ut_trs_burst_call_count(const ut_trs_ctx* ctx) {

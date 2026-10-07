@@ -30,6 +30,7 @@
 
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
+#include "datapath/mt_queue.h"
 #include "mt_main.h"
 #include "st2110/st_tx_video_session.h"
 
@@ -60,6 +61,8 @@ struct ut_txv_ctx {
    * so ut_txv_run_st22_next_frame_step() can point s->st22_info at it and
    * reclaim it for free when the ctx itself is destroyed. */
   struct st22_tx_video_info st22_info;
+  struct mt_txq_entry txq[MTL_PORT_MAX];
+  uint64_t txq_bps[MTL_PORT_MAX]; /* flow.bytes_per_sec asked of each physical port */
 };
 
 #include "session/st20_tx_harness.h"
@@ -121,11 +124,53 @@ static int ut_txv_st22_get_next_frame(void* priv, uint16_t* next_frame_idx,
   return 0;
 }
 
+/* tv_init_hw() without a NIC: queues and pads come from the mocks below. */
+static struct mt_txq_entry* ut_txv_txq_get(struct mtl_main_impl* impl, enum mtl_port port,
+                                           struct mt_txq_flow* flow) {
+  struct ut_txv_ctx* ctx = (struct ut_txv_ctx*)impl;
+  ctx->txq_bps[port] = flow->bytes_per_sec;
+  return &ctx->txq[port];
+}
+
+static int ut_txv_txq_put(struct mt_txq_entry* entry) {
+  (void)entry;
+  return 0;
+}
+
+static int ut_txv_txq_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad) {
+  (void)entry;
+  (void)pad;
+  return 0;
+}
+
+static struct rte_mbuf* ut_txv_build_pad(struct mtl_main_impl* impl,
+                                         struct rte_mempool* mempool, enum mtl_port port,
+                                         uint16_t ether_type, uint16_t len) {
+  struct rte_mbuf* pad = rte_pktmbuf_alloc(ut_pool());
+  (void)impl;
+  (void)mempool;
+  (void)port;
+  (void)ether_type;
+  if (pad) {
+    pad->data_len = len;
+    pad->pkt_len = len;
+  }
+  return pad;
+}
+
 /* Seam: from here on, calls to mt_get_tsc() written inside st_tx_video_session.c
  * resolve to our mock instead. The real mt_get_tsc() compiled above (via the
  * explicit mt_main.h include) is unaffected. */
 #define mt_get_tsc ut_txv_tsc_time_fn
+#define mt_txq_get ut_txv_txq_get
+#define mt_txq_put ut_txv_txq_put
+#define mt_txq_flush ut_txv_txq_flush
+#define mt_build_pad ut_txv_build_pad
 #include "st2110/st_tx_video_session.c"
+#undef mt_build_pad
+#undef mt_txq_flush
+#undef mt_txq_put
+#undef mt_txq_get
 #define mt_txq_burst ut_txv_txq_burst
 static struct ut_txv_ctx* ut_txv_active_burst_ctx;
 static uint16_t ut_txv_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
@@ -591,6 +636,62 @@ int ut_txv_init_pacing(ut_txv_ctx* ctx, uint32_t height, bool interlaced,
   return tv_init_pacing(&ctx->impl, s);
 }
 
+int ut_txv_init_rl_pacing(ut_txv_ctx* ctx, int num_port, uint16_t user_pad_interval,
+                          bool static_pad, const float* trained_pad_interval, bool wide) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  if (st_get_fps_timing(ST_FPS_P59_94, &s->fps_tm) < 0) return -EINVAL;
+  s->ops.fmt = ST20_FMT_YUV_422_10BIT;
+  s->ops.width = 1920;
+  s->ops.height = 1080;
+  s->ops.fps = ST_FPS_P59_94;
+  s->ops.packing = ST20_PACKING_GPM;
+  s->ops.interlaced = false;
+  s->ops.num_port = num_port;
+  s->ops.pad_interval = user_pad_interval;
+  if (static_pad) s->ops.flags |= ST20_TX_FLAG_ENABLE_STATIC_PAD_P;
+  s->ops.pacing = wide ? ST21_PACING_WIDE : ST21_PACING_NARROW;
+  s->st20_total_pkts = 4320;
+  s->st20_pkt_size = 1262;
+  s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size = s->st20_pkt_size;
+  s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].number = s->st20_total_pkts;
+  s->st21_vrx_narrow = 8;
+  s->st21_vrx_wide = 720;
+  for (int i = 0; i < num_port; i++) {
+    struct mt_interface* inf = &ctx->impl.inf[i];
+    if (inf->drv_info.drv_type != MT_DRV_ICE) inf->drv_info.drv_type = MT_DRV_IAVF;
+    inf->nb_tx_desc = 512;
+    s->port_maps[i] = (enum mtl_port)i;
+    s->pacing_way[i] = ST21_TX_PACING_WAY_RL;
+    /* a pre-train result keeps tv_train_pacing() off the NIC */
+    if (trained_pad_interval)
+      mt_pacing_train_pad_result_add(&ctx->impl, (enum mtl_port)i, tv_rl_bps(s),
+                                     trained_pad_interval[i]);
+  }
+  return tv_init_pacing(&ctx->impl, s);
+}
+
+void ut_txv_set_ice_pf(ut_txv_ctx* ctx, int port, uint32_t rl_burst_size) {
+  ctx->impl.inf[port].drv_info.drv_type = MT_DRV_ICE;
+  ctx->impl.user_para.port_params[port].rl_burst_size = rl_burst_size;
+}
+
+long double ut_txv_pacing_trs(const ut_txv_ctx* ctx) {
+  return ctx->session.pacing.trs;
+}
+
+uint32_t ut_txv_pacing_warm_pkts(const ut_txv_ctx* ctx) {
+  return ctx->session.pacing.warm_pkts;
+}
+
+long double ut_txv_rl_drain(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.pacing.rl_drain[port];
+}
+
+long double ut_txv_rl_credit(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.pacing.rl_credit[port];
+}
+
 uint64_t ut_txv_round_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate) {
   return st_tai_round_to_media_clk_ns(tai_ns, sampling_rate);
 }
@@ -779,4 +880,33 @@ void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames) {
 
 uint64_t ut_txv_stat_snapshot_port_frames(const ut_txv_ctx* ctx) {
   return ctx->session.stat_snapshot.common.port[MTL_SESSION_PORT_P].frames;
+}
+
+int ut_txv_init_hw_queue_bps(ut_txv_ctx* ctx, int r_port, uint64_t p_trained_bps,
+                             uint64_t r_trained_bps, uint64_t* p_bps, uint64_t* r_bps) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  int ret;
+
+  if (st_get_fps_timing(ST_FPS_P59_94, &s->fps_tm) < 0) return -EINVAL;
+  s->ops.num_port = 2;
+  s->st20_total_pkts = 4320;
+  s->st20_pkt_size = 1262;
+  s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size = s->st20_pkt_size;
+  s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].number = s->st20_total_pkts;
+  s->ring_count = 4;
+  s->socket_id = rte_socket_id();
+  s->port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
+  s->port_maps[MTL_SESSION_PORT_R] = (enum mtl_port)r_port;
+  s->pacing_way[MTL_SESSION_PORT_P] = ST21_TX_PACING_WAY_RL;
+  s->pacing_way[MTL_SESSION_PORT_R] = ST21_TX_PACING_WAY_RL;
+  mt_pacing_train_bps_result_add(&ctx->impl, MTL_PORT_P, tv_rl_bps(s), p_trained_bps);
+  mt_pacing_train_bps_result_add(&ctx->impl, (enum mtl_port)r_port, tv_rl_bps(s),
+                                 r_trained_bps);
+
+  ret = tv_init_hw(&ctx->impl, &ctx->mgr, s);
+  if (ret < 0) return ret;
+  *p_bps = ctx->txq_bps[MTL_PORT_P];
+  *r_bps = ctx->txq_bps[r_port];
+  tv_uinit_hw(s);
+  return 0;
 }
