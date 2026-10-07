@@ -3,8 +3,9 @@ name: Code scan
 # Static analysis, one job per scan. Each job runs when the files it reads
 # change; a manual run picks the scans and their options. A scan that reads
 # what the Build workflow built takes its gate from pr-gate.yml, which waits
-# for Build. code-scan-result is the one check name that branch protection
-# needs.
+# for Build. A scan that needs no build takes its gate from the changes job, so
+# a change to its paths alone does not run Build. code-scan-result is the one
+# check name that branch protection needs.
 
 on:
   workflow_dispatch:
@@ -17,6 +18,14 @@ on:
         description: The ref clang-tidy compares with, from its merge base. The commit needs the Build workflow's caches, which every push to main makes
         type: string
         default: origin/main
+      cargo_audit:
+        description: cargo-audit on the Rust lock files
+        type: boolean
+        default: true
+  push:
+    branches:
+      - main
+      - 'maint-**'
   pull_request:
     branches:
       - main
@@ -32,6 +41,26 @@ permissions:
   actions: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-22.04
+    permissions:
+      pull-requests: read
+    outputs:
+      cargo_audit: ${{ (github.event_name == 'workflow_dispatch' && inputs.cargo_audit) || steps.filter.outputs.cargo_audit == 'true' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        with:
+          filters: .github/path_filters.yml
+
   # clang-tidy checks the lines that a pull request changes, or on demand the
   # lines changed since a chosen base
   pr-gate:
@@ -170,9 +199,56 @@ jobs:
           sarif_file: ${{ runner.temp }}/clang-tidy.sarif
           category: clang-tidy
 
+  cargo-audit:
+    needs: changes
+    if: ${{ needs.changes.outputs.cargo_audit == 'true' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    env:
+      # Pinned release of https://github.com/rustsec/rustsec. It publishes no
+      # checksum, so this is the sha256 of the download.
+      CARGO_AUDIT_VERSION: 0.22.2
+      CARGO_AUDIT_SHA256: 7fb9497f8594b389e5fce5ef9b92db08432996895b2e0c5a0167a69ed445c428
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install cargo-audit
+        run: |
+          name="cargo-audit-x86_64-unknown-linux-musl-v${CARGO_AUDIT_VERSION}"
+          curl -fsSLo cargo-audit.tgz "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv${CARGO_AUDIT_VERSION}/${name}.tgz"
+          echo "${CARGO_AUDIT_SHA256}  cargo-audit.tgz" | sha256sum -c -
+          tar -xzf cargo-audit.tgz "${name}/cargo-audit"
+          sudo install "${name}/cargo-audit" /usr/local/bin/
+
+      # cargo-audit must report the advisory of a lock file that has one, or a
+      # green run below proves nothing. smallvec 1.6.0 has RUSTSEC-2021-0003.
+      - name: Negative control
+        run: |
+          printf 'version = 3\n\n[[package]]\nname = "smallvec"\nversion = "1.6.0"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\n' >"${RUNNER_TEMP}/vulnerable.lock"
+          if out=$(cargo-audit audit -f "${RUNNER_TEMP}/vulnerable.lock" 2>&1); then
+            echo "::error::cargo-audit passed a lock file with a known advisory"
+            exit 1
+          fi
+          if ! grep -q 'RUSTSEC-2021-0003' <<<"$out"; then
+            echo "::error::cargo-audit failed without reporting RUSTSEC-2021-0003"
+            exit 1
+          fi
+
+      # rust/ commits no Cargo.lock, so audit the versions a build resolves today.
+      - name: cargo-audit
+        run: |
+          cargo-audit audit -f tests/tools/perf_debug_mcp/native/Cargo.lock
+          (cd rust && cargo generate-lockfile)
+          cargo-audit audit -f rust/Cargo.lock
+
   code-scan-result:
     name: code-scan-result
-    needs: [pr-gate, clang-tidy]
+    needs: [changes, pr-gate, clang-tidy, cargo-audit]
     if: always()
     runs-on: ubuntu-latest
     steps:

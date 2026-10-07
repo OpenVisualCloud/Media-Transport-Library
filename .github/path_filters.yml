@@ -298,3 +298,13 @@ bandit:
   - .github/workflows/bandit.yml
   - .github/path_filters.yml
   - Taskfile.yml
+
+# code-scan.yml, cargo-audit. It audits the Rust lock files, and the
+# manifests of rust/, which commits none.
+cargo_audit:
+  - .github/path_filters.yml
+  - .github/workflows/code-scan.yml
+  - rust/Cargo.toml
+  - rust/imtl-sys/Cargo.toml
+  - tests/tools/perf_debug_mcp/native/Cargo.toml
+  - tests/tools/perf_debug_mcp/native/Cargo.lock
