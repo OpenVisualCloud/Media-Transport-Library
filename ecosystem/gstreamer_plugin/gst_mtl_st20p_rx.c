@@ -182,17 +182,17 @@ static void gst_mtl_st20p_rx_class_init(Gst_Mtl_St20p_RxClass* klass) {
       gobject_class, PROP_ST20P_RX_FRAMEBUFF_NUM,
       g_param_spec_uint("rx-framebuff-num", "Number of framebuffers",
                         "Number of framebuffers to be used for transmission.", 0,
-                        G_MAXUINT, GST_MTL_DEFAULT_FRAMEBUFF_CNT,
+                        G_MAXUINT16, GST_MTL_DEFAULT_FRAMEBUFF_CNT,
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST20P_RX_WIDTH,
-      g_param_spec_uint("rx-width", "Video width", "Width of the video.", 0, G_MAXUINT,
-                        1920, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      g_param_spec_uint("rx-width", "Video width", "Width of the video.", 0, 16384, 1920,
+                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST20P_RX_HEIGHT,
-      g_param_spec_uint("rx-height", "Video height", "Height of the video.", 0, G_MAXUINT,
+      g_param_spec_uint("rx-height", "Video height", "Height of the video.", 0, 8704,
                         1080, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
@@ -249,7 +249,7 @@ static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
   }
 
   if (src->framebuffer_num) {
-    ops_rx.framebuff_cnt = src->framebuffer_num;
+    ops_rx.framebuff_cnt = (uint16_t)src->framebuffer_num;
   } else {
     ops_rx.framebuff_cnt = GST_MTL_DEFAULT_FRAMEBUFF_CNT;
   }
@@ -287,7 +287,7 @@ static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
   gst_mtl_common_copy_general_to_session_args(&(src->generalArgs), &(src->portArgs));
 
   ops_rx.port.num_port =
-      gst_mtl_common_parse_rx_port_arguments(&ops_rx.port, &src->portArgs);
+      (uint8_t)gst_mtl_common_parse_rx_port_arguments(&ops_rx.port, &src->portArgs);
   if (!ops_rx.port.num_port) {
     GST_ERROR("Failed to parse port arguments");
     return FALSE;
@@ -299,7 +299,7 @@ static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
     return FALSE;
   }
 
-  src->frame_size = st20p_rx_frame_size(src->rx_handle);
+  src->frame_size = (guint)st20p_rx_frame_size(src->rx_handle);
   if (src->frame_size <= 0) {
     GST_ERROR("Failed to get frame size");
     return FALSE;
@@ -421,8 +421,8 @@ static gboolean gst_mtl_st20p_rx_negotiate(GstBaseSrc* basesrc) {
    */
   info->interlace_mode = src->interlaced;
 
-  info->width = src->width;
-  info->height = src->height;
+  info->width = (gint)src->width;
+  info->height = (gint)src->height;
   info->fps_n = src->fps_n;
   info->fps_d = src->fps_d;
 
@@ -604,7 +604,7 @@ static int gst_mtl_st20p_rx_query_ext_frame(void* priv, struct st_ext_frame* ext
   planes = st_frame_fmt_planes(video_meta->n_planes);
   for (guint8 i = 0; i < planes; i++) {
     ext_frame->addr[i] = ext_data->dest_info.data + video_meta->offset[i];
-    ext_frame->linesize[i] = video_meta->stride[i];
+    ext_frame->linesize[i] = (size_t)video_meta->stride[i];
     ext_frame->iova[i] = 0;
   }
   ext_frame->size = s->frame_size;

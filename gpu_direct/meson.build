@@ -42,7 +42,7 @@ mtl_gpu_direct_c_args = []
 if get_option('buildtype') != 'debug'
     mtl_gpu_direct_c_args += ['-Werror']
 endif
-mtl_gpu_direct_c_args += ['-Wall']
+mtl_gpu_direct_c_args += ['-Wall', '-Wconversion']
 
 mtl_gpu_direct_header_file = files('gpu.h')
 install_headers(mtl_gpu_direct_header_file, subdir: meson.project_name())

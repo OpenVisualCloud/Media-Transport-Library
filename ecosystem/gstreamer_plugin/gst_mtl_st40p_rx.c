@@ -175,7 +175,7 @@ static gboolean gst_mtl_st40p_rx_serialize_meta_blocks(Gst_Mtl_St40p_Rx* src,
   /* Each ANC packet contributes an 8-byte header plus its UDW payload. */
   size_t header_bytes = (size_t)frame_info->meta_num * 8;
   size_t estimate = header_bytes + frame_info->udw_buffer_fill;
-  GByteArray* serialized = g_byte_array_sized_new(estimate);
+  GByteArray* serialized = g_byte_array_sized_new((guint)estimate);
 
   for (uint32_t idx = 0; idx < frame_info->meta_num; idx++) {
     const struct st40_meta* meta = &frame_info->meta[idx];
@@ -317,7 +317,7 @@ static void gst_mtl_st40p_rx_class_init(Gst_Mtl_St40p_RxClass* klass) {
   g_object_class_install_property(
       gobject_class, PROP_ST40P_RX_FRAMEBUFF_CNT,
       g_param_spec_uint("rx-framebuff-cnt", "RX Frame Buffer Count",
-                        "Number of frame buffers for RX pipeline", 0, G_MAXUINT,
+                        "Number of frame buffers for RX pipeline", 0, G_MAXUINT16,
                         GST_MTL_DEFAULT_FRAMEBUFF_CNT,
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
@@ -494,7 +494,8 @@ static gboolean gst_mtl_st40p_rx_start(GstBaseSrc* basesrc) {
 
   ops_rx.name = "st40p_rx";
   ops_rx.framebuff_cnt =
-      src->rx_framebuff_cnt ? src->rx_framebuff_cnt : GST_MTL_DEFAULT_FRAMEBUFF_CNT;
+      (uint16_t)(src->rx_framebuff_cnt ? src->rx_framebuff_cnt
+                                       : GST_MTL_DEFAULT_FRAMEBUFF_CNT);
   ops_rx.max_udw_buff_size = src->max_udw_size;
   ops_rx.flags = 0; /* Use non-blocking mode - blocking causes preroll timeout */
 
@@ -531,7 +532,7 @@ static gboolean gst_mtl_st40p_rx_start(GstBaseSrc* basesrc) {
     GST_ERROR("RX START: Invalid payload_type: %d", src->portArgs.payload_type);
     return FALSE;
   } else {
-    ops_rx.port.payload_type = src->portArgs.payload_type;
+    ops_rx.port.payload_type = (uint8_t)src->portArgs.payload_type;
   }
 
   GST_DEBUG_OBJECT(src, "RX START: payload_type=%d", ops_rx.port.payload_type);
@@ -539,7 +540,7 @@ static gboolean gst_mtl_st40p_rx_start(GstBaseSrc* basesrc) {
   gst_mtl_common_copy_general_to_session_args(&(src->generalArgs), &(src->portArgs));
 
   ops_rx.port.num_port =
-      gst_mtl_common_parse_rx_port_arguments(&ops_rx.port, &src->portArgs);
+      (uint8_t)gst_mtl_common_parse_rx_port_arguments(&ops_rx.port, &src->portArgs);
   if (!ops_rx.port.num_port) {
     GST_ERROR("Failed to parse port arguments");
     return FALSE;

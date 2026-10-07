@@ -209,7 +209,7 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
       gobject_class, PROP_ST40P_TX_FRAMEBUFF_CNT,
       g_param_spec_uint("tx-framebuff-cnt", "Number of framebuffers",
                         "Number of framebuffers to be used for transmission.", 0,
-                        G_MAXUINT, 3, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+                        G_MAXUINT16, 3, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST40P_TX_FRAMERATE,
@@ -278,7 +278,7 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
       g_param_spec_uint("max-combined-udw-size", "Max combined UDW size",
                         "Maximum combined size of all user data words to send in "
                         "single st40p frame",
-                        0, G_MAXUINT, DEFAULT_MAX_UDW_SIZE,
+                        0, G_MAXUINT16, DEFAULT_MAX_UDW_SIZE,
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   gst_mtl_st40p_tx_test_install_properties(gobject_class);
@@ -455,7 +455,7 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
   ops_tx.name = "st40sink";
   ops_tx.priv = sink;
   if (sink->framebuff_cnt) {
-    ops_tx.framebuff_cnt = sink->framebuff_cnt;
+    ops_tx.framebuff_cnt = (uint16_t)sink->framebuff_cnt;
   } else {
     ops_tx.framebuff_cnt = 3;
   }
@@ -463,7 +463,7 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
   gst_mtl_common_copy_general_to_session_args(&(sink->generalArgs), &(sink->portArgs));
 
   ops_tx.port.num_port =
-      gst_mtl_common_parse_tx_port_arguments(&ops_tx.port, &sink->portArgs);
+      (uint8_t)gst_mtl_common_parse_tx_port_arguments(&ops_tx.port, &sink->portArgs);
   if (!ops_tx.port.num_port) {
     GST_ERROR("Failed to parse port arguments");
     return FALSE;
@@ -580,9 +580,9 @@ static void gst_mtl_st40p_tx_fill_meta(struct st40_frame_info* frame_info, void*
   frame_info->meta[0].hori_offset = 0;
   frame_info->meta[0].s = 0;
   frame_info->meta[0].stream_num = 0;
-  frame_info->meta[0].did = did;
-  frame_info->meta[0].sdid = sdid;
-  frame_info->meta[0].udw_size = data_size;
+  frame_info->meta[0].did = (uint16_t)did;
+  frame_info->meta[0].sdid = (uint16_t)sdid;
+  frame_info->meta[0].udw_size = (uint16_t)data_size;
   frame_info->meta[0].udw_offset = 0;
   frame_info->udw_buffer_fill = data_size;
   frame_info->meta_num = 1;
@@ -612,7 +612,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_meta(
   frame_info->meta[anc_idx].did = payload_header.second_hdr_chunk.did & 0xff;
   frame_info->meta[anc_idx].sdid = payload_header.second_hdr_chunk.sdid & 0xff;
   frame_info->meta[anc_idx].udw_size = payload_header.second_hdr_chunk.data_count & 0xff;
-  frame_info->meta[anc_idx].udw_offset = udw_offset;
+  frame_info->meta[anc_idx].udw_offset = (uint16_t)udw_offset;
   frame_info->meta_num = anc_idx + 1;
 
   return GST_FLOW_OK;
@@ -624,7 +624,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
   struct st40_frame_info* frame_info = NULL;
   struct st40_rfc8331_payload_hdr payload_header;
   uint8_t* payload_cursor;
-  guint data_count, buffer_size = map_info.size, udw_byte_size;
+  guint data_count, buffer_size = (guint)map_info.size, udw_byte_size;
   guint16 udw;
 
   if (buffer_size < (guint)bytes_left_to_process) {
@@ -649,7 +649,8 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
       return GST_FLOW_ERROR;
     }
 
-    payload_cursor = (uint8_t*)map_info.data + (buffer_size - bytes_left_to_process);
+    payload_cursor =
+        (uint8_t*)map_info.data + (buffer_size - (guint)bytes_left_to_process);
 
     rfc8331_meta.headers[i] = (struct st40_rfc8331_payload_hdr*)payload_cursor;
     payload_header = *rfc8331_meta.headers[i];
@@ -666,7 +667,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
      * This will be accommodated a little bit later in the parsing logic with
      * RFC_8331_PAYLOAD_HEADER_LOST_BITS define.
      */
-    bytes_left_to_process -= sizeof(struct st40_rfc8331_payload_hdr);
+    bytes_left_to_process -= (gint)sizeof(struct st40_rfc8331_payload_hdr);
     data_count = payload_header.second_hdr_chunk.data_count & 0xff;
 
     /* data count * 10 bits + 10 bit checksum - 2 lost bit from the
@@ -709,10 +710,10 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
         GST_ERROR("Ancillary data parity bits check failed");
         return GST_FLOW_ERROR;
       }
-      frame_info->udw_buff_addr[frame_info->udw_buffer_fill++] = (udw & 0xff);
+      frame_info->udw_buff_addr[frame_info->udw_buffer_fill++] = (uint8_t)(udw & 0xff);
     }
 
-    bytes_left_to_process -= udw_byte_size;
+    bytes_left_to_process -= (gint)udw_byte_size;
     /* Get checksum and promptly ignore it */
     udw = st40_get_udw((data_count + 3), payload_cursor);
 
@@ -747,7 +748,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_memory_block(Gst_Mtl_St40p_Tx* 
                                                               GstBuffer* buf) {
   struct gst_st40_rfc8331_meta rfc8331_meta;
   struct st40_rfc8331_payload_hdr_common meta;
-  guint bytes_left_to_process = map_info.size;
+  guint bytes_left_to_process = (guint)map_info.size;
   guint ret;
 
   if (bytes_left_to_process < sizeof(struct st40_rfc8331_payload_hdr_common)) {
@@ -758,7 +759,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_memory_block(Gst_Mtl_St40p_Tx* 
   /* convert to network byte order */
   rfc8331_meta.header_common = (struct st40_rfc8331_payload_hdr_common*)map_info.data;
   meta.swapped_handle = ntohl(rfc8331_meta.header_common->swapped_handle);
-  bytes_left_to_process -= sizeof(struct st40_rfc8331_payload_hdr_common);
+  bytes_left_to_process -= (guint)sizeof(struct st40_rfc8331_payload_hdr_common);
 
   /* ignore an ANC data packet with an F field value of 0b01 */
   if (meta.first_hdr_chunk.f == 1) {
@@ -769,7 +770,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_memory_block(Gst_Mtl_St40p_Tx* 
     return GST_FLOW_ERROR;
   }
 
-  ret = gst_mtl_st40p_tx_parse_8331_anc_words(sink, map_info, bytes_left_to_process,
+  ret = gst_mtl_st40p_tx_parse_8331_anc_words(sink, map_info, (gint)bytes_left_to_process,
                                               rfc8331_meta,
                                               meta.first_hdr_chunk.anc_count, buf);
 
@@ -842,7 +843,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_simple_block(Gst_Mtl_St40p_Tx* 
     meta->did = header[5];
     meta->sdid = header[6];
     meta->udw_size = data_count;
-    meta->udw_offset = frame_info->udw_buffer_fill;
+    meta->udw_offset = (uint16_t)frame_info->udw_buffer_fill;
 
     memcpy(frame_info->udw_buff_addr + frame_info->udw_buffer_fill,
            map_info.data + cursor, data_count);
@@ -893,9 +894,9 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_memory_block(Gst_Mtl_St40p_Tx* sink,
   }
   struct st40_frame_info* frame_info = NULL;
   uint8_t* cur_addr_buf;
-  gint bytes_left_to_process, bytes_left_to_process_cur;
+  guint bytes_left_to_process, bytes_left_to_process_cur;
 
-  bytes_left_to_process = map_info.size;
+  bytes_left_to_process = (guint)map_info.size;
 
   while (bytes_left_to_process > 0) {
     frame_info = st40p_tx_get_frame(sink->tx_handle);
@@ -941,7 +942,7 @@ static GstFlowReturn gst_mtl_st40p_tx_chain(GstPad* pad, GstObject* parent,
                                             GstBuffer* buf) {
   MTL_MAY_UNUSED(pad);
   Gst_Mtl_St40p_Tx* sink = GST_MTL_ST40P_TX(parent);
-  gint buffer_n = gst_buffer_n_memory(buf);
+  guint buffer_n = gst_buffer_n_memory(buf);
   GstMemory* gst_buffer_memory;
   GstMapInfo map_info;
   GstFlowReturn ret = GST_FLOW_OK;
@@ -951,11 +952,17 @@ static GstFlowReturn gst_mtl_st40p_tx_chain(GstPad* pad, GstObject* parent,
     return GST_FLOW_ERROR;
   }
 
-  for (int i = 0; i < buffer_n; i++) {
+  for (guint i = 0; i < buffer_n; i++) {
     gst_buffer_memory = gst_buffer_peek_memory(buf, i);
 
     if (!gst_memory_map(gst_buffer_memory, &map_info, GST_MAP_READ)) {
       GST_ERROR("Failed to map memory");
+      return GST_FLOW_ERROR;
+    }
+
+    if (map_info.size > G_MAXINT) {
+      GST_ERROR("Buffer size %zu exceeds the supported maximum", map_info.size);
+      gst_memory_unmap(gst_buffer_memory, &map_info);
       return GST_FLOW_ERROR;
     }
 

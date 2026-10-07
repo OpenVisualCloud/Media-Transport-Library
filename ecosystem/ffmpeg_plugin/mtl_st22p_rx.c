@@ -100,12 +100,12 @@ static int mtl_st22p_read_header(AVFormatContext* ctx) {
     err(ctx, "%s, invalid width: %d\n", __func__, s->width);
     return AVERROR(EINVAL);
   }
-  ops_rx.width = s->width;
+  ops_rx.width = (uint32_t)s->width;
   if (s->height <= 0) {
     err(ctx, "%s, invalid height: %d\n", __func__, s->height);
     return AVERROR(EINVAL);
   }
-  ops_rx.height = s->height;
+  ops_rx.height = (uint32_t)s->height;
   ops_rx.fps = framerate_to_st_fps(s->framerate);
   if (ops_rx.fps == ST_FPS_MAX) {
     err(ctx, "%s, frame rate %0.2f is not supported\n", __func__, av_q2d(s->framerate));
@@ -149,8 +149,9 @@ static int mtl_st22p_read_header(AVFormatContext* ctx) {
   st->codecpar->format = pix_fmt;
   st->codecpar->width = s->width;
   st->codecpar->height = s->height;
-  avpriv_set_pts_info(st, 64, s->framerate.den, s->framerate.num);
-  ctx->packet_size = img_buf_size;
+  avpriv_set_pts_info(st, 64, (unsigned int)s->framerate.den,
+                      (unsigned int)s->framerate.num);
+  ctx->packet_size = (unsigned int)img_buf_size;
   st->codecpar->bit_rate =
       av_rescale_q(ctx->packet_size, (AVRational){8, 1}, st->time_base);
 
@@ -165,8 +166,8 @@ static int mtl_st22p_read_header(AVFormatContext* ctx) {
   ops_rx.name = "st22p_rx_ffmpeg";
   ops_rx.priv = s;  // Handle of priv_data registered to lib
   ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
-  ops_rx.framebuff_cnt = s->fb_cnt;
-  ops_rx.codec_thread_cnt = s->codec_thread_cnt;
+  ops_rx.framebuff_cnt = (uint16_t)s->fb_cnt;
+  ops_rx.codec_thread_cnt = (uint32_t)s->codec_thread_cnt;
 
   s->rx_handle = st22p_rx_create(s->dev_handle, &ops_rx);
   if (!s->rx_handle) {
@@ -176,9 +177,9 @@ static int mtl_st22p_read_header(AVFormatContext* ctx) {
   }
 
   if (s->timeout_sec)
-    st22p_rx_set_block_timeout(s->rx_handle, s->timeout_sec * (uint64_t)NS_PER_S);
+    st22p_rx_set_block_timeout(s->rx_handle, (uint64_t)s->timeout_sec * NS_PER_S);
 
-  img_buf_size = st22p_rx_frame_size(s->rx_handle);
+  img_buf_size = (int)st22p_rx_frame_size(s->rx_handle);
   if ((unsigned int)img_buf_size != ctx->packet_size) {
     err(ctx, "%s, frame size mismatch %d:%u\n", __func__, img_buf_size, ctx->packet_size);
     mtl_st22p_read_close(ctx);
@@ -245,12 +246,12 @@ static int mtl_st22_read_header(AVFormatContext* ctx) {
     err(ctx, "%s, invalid width: %d\n", __func__, s->width);
     return AVERROR(EINVAL);
   }
-  ops_rx.width = s->width;
+  ops_rx.width = (uint32_t)s->width;
   if (s->height <= 0) {
     err(ctx, "%s, invalid height: %d\n", __func__, s->height);
     return AVERROR(EINVAL);
   }
-  ops_rx.height = s->height;
+  ops_rx.height = (uint32_t)s->height;
   ops_rx.fps = framerate_to_st_fps(s->framerate);
   if (ops_rx.fps == ST_FPS_MAX) {
     err(ctx, "%s, frame rate %0.2f is not supported\n", __func__, av_q2d(s->framerate));
@@ -268,7 +269,7 @@ static int mtl_st22_read_header(AVFormatContext* ctx) {
   ops_rx.name = "st22p_rx_ffmpeg";
   ops_rx.priv = s;  // Handle of priv_data registered to lib
   ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
-  ops_rx.framebuff_cnt = s->fb_cnt;
+  ops_rx.framebuff_cnt = (uint16_t)s->fb_cnt;
 
   s->rx_handle = st22p_rx_create(s->dev_handle, &ops_rx);
   if (!s->rx_handle) {
@@ -278,9 +279,9 @@ static int mtl_st22_read_header(AVFormatContext* ctx) {
   }
 
   if (s->timeout_sec)
-    st22p_rx_set_block_timeout(s->rx_handle, s->timeout_sec * (uint64_t)NS_PER_S);
+    st22p_rx_set_block_timeout(s->rx_handle, (uint64_t)s->timeout_sec * NS_PER_S);
 
-  img_buf_size = st22p_rx_frame_size(s->rx_handle);
+  img_buf_size = (int)st22p_rx_frame_size(s->rx_handle);
   dbg(ctx, "%s, img_buf_size: %d\n", __func__, img_buf_size);
 
   st = avformat_new_stream(ctx, NULL);
@@ -294,8 +295,9 @@ static int mtl_st22_read_header(AVFormatContext* ctx) {
   st->codecpar->codec_id = codec_id;
   st->codecpar->width = s->width;
   st->codecpar->height = s->height;
-  avpriv_set_pts_info(st, 64, s->framerate.den, s->framerate.num);
-  ctx->packet_size = img_buf_size;
+  avpriv_set_pts_info(st, 64, (unsigned int)s->framerate.den,
+                      (unsigned int)s->framerate.num);
+  ctx->packet_size = (unsigned int)img_buf_size;
   st->codecpar->bit_rate =
       av_rescale_q(ctx->packet_size, (AVRational){8, 1}, st->time_base);
 
@@ -343,7 +345,7 @@ static int mtl_st22p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
     return AVERROR(EIO);
   }
 
-  ret = av_new_packet(pkt, ctx->packet_size);
+  ret = av_new_packet(pkt, (int)ctx->packet_size);
   if (ret != 0) {
     err(ctx, "%s(%d), av_new_packet failed with %d\n", __func__, s->idx, ret);
     st22p_rx_put_frame(s->rx_handle, frame);
@@ -377,7 +379,7 @@ static int mtl_st22_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
     return AVERROR(EIO);
   }
 
-  ret = av_new_packet(pkt, frame->data_size);
+  ret = av_new_packet(pkt, (int)frame->data_size);
   if (ret != 0) {
     err(ctx, "%s(%d), av_new_packet failed with %d\n", __func__, s->idx, ret);
     st22p_rx_put_frame(s->rx_handle, frame);

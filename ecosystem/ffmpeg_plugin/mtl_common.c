@@ -41,7 +41,7 @@ static uint64_t mtl_get_tai_time(void* priv) {
 
   (void)priv;
   if (clock_gettime(CLOCK_TAI, &ts) < 0) return 0;
-  return (uint64_t)ts.tv_sec * NS_PER_S + ts.tv_nsec;
+  return (uint64_t)ts.tv_sec * NS_PER_S + (uint64_t)ts.tv_nsec;
 }
 
 static int mtl_parse_pacing_way(AVFormatContext* ctx, const char* value,
@@ -104,8 +104,8 @@ static int mtl_dev_build_params(AVFormatContext* ctx, const struct StDevArgs* ar
         return AVERROR(EINVAL);
       }
     }
-    p->tx_queues_cnt[port] = args->tx_queues_cnt[i];
-    p->rx_queues_cnt[port] = args->rx_queues_cnt[i];
+    p->tx_queues_cnt[port] = (uint16_t)args->tx_queues_cnt[i];
+    p->rx_queues_cnt[port] = (uint16_t)args->rx_queues_cnt[i];
     p->num_ports++;
   }
 
@@ -273,8 +273,8 @@ int mtl_parse_rx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
       err(ctx, "%s, invalid payload_type: %d\n", __func__, args->payload_type);
       return AVERROR(EINVAL);
     }
-    port->udp_port[i] = args->udp_port;
-    port->payload_type = args->payload_type;
+    port->udp_port[i] = (uint16_t)args->udp_port;
+    port->payload_type = (uint8_t)args->payload_type;
     port->num_port++;
   }
 
@@ -306,8 +306,8 @@ int mtl_parse_tx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
       err(ctx, "%s, invalid payload_type: %d\n", __func__, args->payload_type);
       return AVERROR(EINVAL);
     }
-    port->udp_port[i] = args->udp_port;
-    port->payload_type = args->payload_type;
+    port->udp_port[i] = (uint16_t)args->udp_port;
+    port->payload_type = (uint8_t)args->payload_type;
     port->num_port++;
   }
 

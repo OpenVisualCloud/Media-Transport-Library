@@ -5,6 +5,7 @@
 #include "st22_avcodec_plugin.h"
 
 #include <errno.h>
+#include <limits.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -64,8 +65,8 @@ static int avcodec_encode_frame(struct st22_avcodec_encoder_session* s,
     dbg("%s, receive packet %" PRId64 " size %d on frame %d\n", __func__, p->pts, p->size,
         f_idx);
     /* copy codestream */
-    mtl_memcpy(frame->dst->addr[0] + data_size, p->data, p->size);
-    data_size = p->size;
+    mtl_memcpy(frame->dst->addr[0] + data_size, p->data, (size_t)p->size);
+    data_size = (size_t)p->size;
     av_packet_unref(p);
   }
 
@@ -164,15 +165,20 @@ static int avcodec_encoder_init_session(struct st22_avcodec_encoder_session* ses
   /* init config */
   double fps = st_frame_rate(req->fps);
   /* bit per second */
-  int64_t bit_rate = (req->codestream_size * 8) * fps;
+  int64_t bit_rate = (int64_t)((double)(req->codestream_size * 8) * fps);
   bit_rate = bit_rate * 7 / 10;
   // bit_rate /= 10; /* temp for fps */
   c->bit_rate = bit_rate;
   c->rc_max_rate = bit_rate;
-  c->rc_buffer_size = bit_rate * 3;
-  c->width = req->width;
-  c->height = req->height;
-  c->time_base = (AVRational){1, fps};
+  if (bit_rate * 3 > INT_MAX) {
+    err("%s(%d), bit rate %" PRId64 " too high\n", __func__, idx, bit_rate);
+    avcodec_encoder_uinit_session(session);
+    return -EIO;
+  }
+  c->rc_buffer_size = (int)(bit_rate * 3);
+  c->width = (int)req->width;
+  c->height = (int)req->height;
+  c->time_base = (AVRational){1, (int)fps};
   if (req->input_fmt == ST_FRAME_FMT_YUV422PLANAR8) {
     c->pix_fmt = AV_PIX_FMT_YUV422P;
   } else if (req->input_fmt == ST_FRAME_FMT_YUV420PLANAR8) {
@@ -290,7 +296,11 @@ static int avcodec_decode_frame(struct st22_avcodec_decoder_session* s,
 
   av_packet_unref(p);
   p->data = frame->src->addr[0];
-  p->size = src_size;
+  if (src_size > INT_MAX) {
+    err("%s(%d), invalid codestream size %zu\n", __func__, idx, src_size);
+    return -EIO;
+  }
+  p->size = (int)src_size;
   ret = avcodec_send_packet(ctx, p);
   if (ret < 0) {
     err("%s(%d), send pkt(%d) fail %s\n", __func__, idx, f_idx, av_err2str(ret));
@@ -401,7 +411,7 @@ static int avcodec_decoder_init_session(struct st22_avcodec_decoder_session* ses
     return -EIO;
   }
 
-  AVCodecParserContext* parser = av_parser_init(codec->id);
+  AVCodecParserContext* parser = av_parser_init((int)codec->id);
   if (!parser) {
     err("%s(%d), parser create fail\n", __func__, idx);
     avcodec_decoder_uinit_session(session);
@@ -417,8 +427,8 @@ static int avcodec_decoder_init_session(struct st22_avcodec_decoder_session* ses
   }
   session->codec_ctx = c;
   /* init config */
-  c->width = req->width;
-  c->height = req->height;
+  c->width = (int)req->width;
+  c->height = (int)req->height;
   c->time_base = (AVRational){1, 60};
   c->framerate = (AVRational){60, 1};
   if (req->output_fmt == ST_FRAME_FMT_YUV422PLANAR8) {

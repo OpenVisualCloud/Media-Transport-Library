@@ -42,6 +42,7 @@ add_project_link_arguments('-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack', l
 # args
 linux_mtl_c_args = []
 linux_mtl_c_args += ['-UHAVE_OBSCONFIG_H']
+linux_mtl_c_args += ['-Wconversion']
 linux_mtl_c_args += cc.get_supported_arguments(['-Wno-stringop-truncation'])
 
 # enable warning as error for non debug build

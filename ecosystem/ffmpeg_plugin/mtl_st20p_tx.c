@@ -77,8 +77,8 @@ static int mtl_st20p_write_header(AVFormatContext* ctx) {
 
   ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
 
-  ops_tx.width = s->width = ctx->streams[0]->codecpar->width;
-  ops_tx.height = s->height = ctx->streams[0]->codecpar->height;
+  ops_tx.width = (uint32_t)(s->width = ctx->streams[0]->codecpar->width);
+  ops_tx.height = (uint32_t)(s->height = ctx->streams[0]->codecpar->height);
   s->framerate = ctx->streams[0]->avg_frame_rate;
   ops_tx.fps = framerate_to_st_fps(s->framerate);
   if (ops_tx.fps == ST_FPS_MAX) {
@@ -146,7 +146,7 @@ static int mtl_st20p_write_header(AVFormatContext* ctx) {
   ops_tx.priv = s;  // Handle of priv_data registered to lib
   ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
   dbg(ctx, "%s, fb_cnt: %d\n", __func__, s->fb_cnt);
-  ops_tx.framebuff_cnt = s->fb_cnt;
+  ops_tx.framebuff_cnt = (uint16_t)s->fb_cnt;
 
   // get mtl dev
   s->dev_handle = mtl_dev_get(ctx, &s->devArgs, &s->idx);
@@ -169,7 +169,7 @@ static int mtl_st20p_write_header(AVFormatContext* ctx) {
     return AVERROR(EIO);
   }
 
-  s->frame_size = st20p_tx_frame_size(s->tx_handle);
+  s->frame_size = (int)st20p_tx_frame_size(s->tx_handle);
   info(ctx, "%s(%d), tx_handle %p\n", __func__, s->idx, s->tx_handle);
   return 0;
 }
@@ -193,7 +193,7 @@ static int mtl_st20p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
   dbg(ctx, "%s(%d), st20p_tx_get_frame: %p\n", __func__, s->idx, frame);
 
   /* todo: zero copy with external frame mode */
-  mtl_memcpy(frame->addr[0], pkt->data, s->frame_size);
+  mtl_memcpy(frame->addr[0], pkt->data, (size_t)s->frame_size);
 
   st20p_tx_put_frame(s->tx_handle, frame);
   s->frame_counter++;
