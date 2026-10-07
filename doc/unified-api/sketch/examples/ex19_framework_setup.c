@@ -1,6 +1,6 @@
 /* ex19 — a framework element's setup, before media flows: options as properties, one
-   shared instance, caps as formats, and the latency before the session exists. Needs: MS2
-   (MS2a: the shared instance; options, formats and the query MS1). */
+   shared instance, caps as formats, and the latency before the session exists. Needs:
+   MS2. */
 #include <mtl/experimental/mtl_format.h>
 #include <mtl/experimental/mtl_options.h>
 
@@ -20,18 +20,19 @@ int install_properties(void) {
 }
 
 /* set_property("rx.skew_budget_ns", "5ms"), "tx.index_offset" = "-2" (a lip-sync trim),
-   "port.dhcp/1" = "on": kept for the next create (a string points into value); on a
-   running session an R key changes now, others are -MTL_EBUSY (OPTION_STATE). */
-int set_property(mtl_session_h s, const char* name, const char* value,
-                 struct mtl_option* opts, uint32_t* n) {
+   "port.dhcp/1" = "on": parsed now and kept for the next create (a string value points
+   into `value`); instance and port keys go to mtl_instance_params.options. Returns the
+   key's object kind. */
+int remember_for_create(const char* name, const char* value, struct mtl_option* opts,
+                        uint32_t* n) {
   int kind = mtl_option_parse(name, value, &opts[*n]); /* -MTL_EINVAL names the key */
-  if (kind < 0) return kind;
-  if (kind == MTL_OBJ_SESSION && !MTL_IS_NULL(s)) {
-    int ret = mtl_set_option(MTL_OBJ_OF_SESSION(s), &opts[*n]);
-    if (ret < 0 && ret != -MTL_EBUSY) return ret;
-  }
-  (*n)++; /* instance and port keys go to mtl_instance_params.options */
-  return 0;
+  if (kind >= 0) (*n)++;
+  return kind;
+}
+/* A session key on a running session: keys marked R change at once, the others are
+   -MTL_EBUSY (OPTION_STATE) until the next create. */
+int apply_now(mtl_session_h s, const struct mtl_option* o) {
+  return mtl_set_option(MTL_OBJ_OF_SESSION(s), o);
 }
 /* get_property: the effective value, the derived default included. */
 int get_property(mtl_session_h s, const char* name, int64_t* value) {
@@ -41,16 +42,18 @@ int get_property(mtl_session_h s, const char* name, int64_t* value) {
 }
 
 /* start: every element of the process joins one instance (the first open creates it). */
+#define MAX_PORTS 4
 int join_instance(const char* ports, mtl_instance_h* mt) {
-  struct mtl_port_spec spec[4];
+  struct mtl_port_spec spec[MAX_PORTS];
   struct mtl_instance_params p;
   uint32_t n = 0;
-  if (mtl_library_version_num() < MTL_API_VERSION) return -MTL_ENOTSUP; /* older libmtl */
-  int ret = mtl_port_parse(ports, spec, 4, &n);
+  /* built against these headers, run on an older libmtl: refuse */
+  if (mtl_library_version_num() < MTL_API_VERSION) return -MTL_ENOTSUP;
+  int ret = mtl_port_parse(ports, spec, MAX_PORTS, &n);
   if (ret < 0) return ret;
   MTL_INIT(&p);
   p.ports = spec;
-  p.port_count = n < 4 ? n : 4;
+  p.port_count = n < MAX_PORTS ? n : MAX_PORTS; /* n counts every port, also those cut */
   p.flags = MTL_INSTANCE_SHARED;
   ret = mtl_instance_open(&p, mt); /* -MTL_EEXIST: the process opened it otherwise */
   return ret < 0 ? ex_fail("instance", ret) : 0;

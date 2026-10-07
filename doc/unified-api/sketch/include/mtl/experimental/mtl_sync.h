@@ -104,16 +104,21 @@ MTL_API_AS(2) int64_t mtl_media_tai(int64_t near_tai_ns, uint32_t ticks, uint32_
    it. */
 struct mtl_tx_next {
   uint32_t queued;   /* units queued ahead */
-  uint32_t next_rtp; /* the RTP timestamp of next_media_index, floor(M x rate) exact (not
-                        mtl_media_ticks of next_media_tai_ns, which is floored to ns) */
+  uint32_t next_rtp; /* the RTP timestamp the unit at next_media_index gets on the wire,
+                        floor((M + tx.rtp_trim_ns) x rate) exact (not mtl_media_ticks of
+                        next_media_tai_ns, which is floored to ns) */
   int64_t next_media_index;       /* the smallest feasible index at or after the end of
                                      the last submitted unit (audio: its first sample +
                                      its samples); with nothing submitted since a start, the
-                                     start's first index (T0's), also while ARMED */
+                                     smallest feasible index at or after T0's (in ARMED,
+                                     T0's) */
   int64_t next_media_tai_ns;      /* its media time */
   int64_t submit_deadline_tai_ns; /* submit before this */
 };
-/* DP. (MS3) */
+/* RUNNING and ARMED as above. CREATED and STOPPED: the same, feasible for a start now (no
+   preroll), so units queued before a start continue from the last one; nothing is
+   reserved. DRAINING, FLUSHING, CLOSING: -MTL_ESHUTDOWN; ERROR: the session's error code.
+   DP. (MS3) */
 MTL_API_DP(3) int mtl_tx_get_next(mtl_session_h s, struct mtl_tx_next* n, size_t size);
 /* Rows units: the latest submit time of `row` for media index k; row 0 is the
    unit's deadline. DP. (MS2) */

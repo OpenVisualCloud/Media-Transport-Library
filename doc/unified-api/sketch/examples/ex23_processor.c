@@ -1,69 +1,69 @@
 /* ex23 — a processor that keeps the input's timing: video, audio and ANC in, processed,
-   out, each with the input's media time and a fixed delay. Needs: MS6 (audio in TAI mode;
-   process_video alone MS4, pass_anc MS4a2). */
+   out, each with the input's media time and a fixed delay. Needs: MS6. */
 #include <mtl/experimental/mtl_format.h>
+#include <mtl/experimental/mtl_observe.h>
 #include <mtl/experimental/mtl_util.h>
 
 #include "ex_common.h"
 
 void count(const char* what, int64_t n);
 
-/* The output of one input: TAI mode, and min_tx_delay_ns = the pipeline budget: the
-   input's delivery after its media time (rx's latency_min_ns, for a sender that launches
-   at its media time), the input's own launch delay (input_launch_ns: whole frames, 0 for
-   playback, one for a camera or another processor; its SDP's TSDELAY less its TROFFSET,
-   or ex09's measure), the processing, and the pick-up lead. For a compliant input every
-   output RTP equals the input's. tsmode: SAMP when the input's SDP says SAMP, else PRES;
-   an input off the grid is re-stamped, or keeps its phase with MTL_SUBMIT_RTP_TS and
-   out.rtp = in.rtp (MS3). */
+/* The output of one input: TAI mode, min_tx_delay_ns = the pipeline budget (examples.md
+   derives it), the pick-up lead read from MTL. input_launch_ns: the input's own launch
+   delay, whole frames. tsmode: SAMP when the input's SDP says SAMP, else PRES. */
 int open_output(mtl_instance_h mt, mtl_session_h rx, int64_t input_launch_ns,
                 int64_t process_ns, struct mtl_session_config* sc, mtl_session_h* tx) {
   struct mtl_session_info info;
+  int64_t lead = 0;
   int ret = mtl_session_get_info(rx, &info, sizeof(info));
   if (ret < 0) return ret;
   sc->media_mode = MTL_MEDIA_TAI;
   if (!sc->tsmode) sc->tsmode = MTL_TSMODE_PRES;
   sc->flags |= MTL_SESSION_RESULTS;
-  sc->min_tx_delay_ns = info.latency_min_ns + input_launch_ns + process_ns + MTL_US(500);
-  ret = mtl_session_open(mt, sc, tx);
-  return ret < 0 ? ex_fail("output", ret) : 0;
+  ret = mtl_session_create(mt, sc, tx);
+  if (ret < 0) return ex_fail("output", ret);
+  ret = mtl_stat_get(MTL_OBJ_OF_SESSION(*tx), "info.pickup_lead_ns", &lead);
+  sc->min_tx_delay_ns = info.latency_min_ns /* the input arrives this late */
+                        + input_launch_ns   /* its sender's launch delay */
+                        + process_ns        /* our work */
+                        + lead;             /* MTL takes the unit this early */
+  if (ret >= 0) ret = mtl_session_update(*tx, sc, MTL_UPDATE_MEDIA, NULL, NULL);
+  if (ret >= 0) ret = mtl_session_start(tx, 1, NULL, NULL);
+  if (ret < 0) {
+    ex_fail("output", ret);
+    mtl_session_close(*tx, 0); /* not left CREATED */
+    *tx = MTL_NULL(mtl_session_h);
+  }
+  return ret < 0 ? ret : 0;
 }
 
-/* Each frame's outcome: ON_TIME (margin_ns), or DROPPED with TOO_LATE, SNAP_COLLISION,
-   WAITING_NEIGHBOUR, LINK_DOWN or RECOVERY. */
-static int reap(mtl_session_h s) {
-  struct mtl_tx_result r[8];
-  int n;
-  while ((n = mtl_tx_reap(s, r, 8, 0)) > 0)
-    for (int i = 0; i < n; i++)
-      count(r[i].status == MTL_TX_ON_TIME ? "margin ns" : mtl_reason_name(r[i].reason),
-            r[i].status == MTL_TX_ON_TIME ? r[i].margin_ns : 1);
-  return n == -MTL_EAGAIN ? 0 : n;
-}
-
-/* Every path ends here: the input goes back and the output's results are read (unread
-   results would block its acquire). A unit with no output slot in time is lost. */
-static int done(mtl_session_h rx, mtl_lease_h in, mtl_session_h tx, int ret) {
-  int r = mtl_rx_release(rx, in);
-  if (ret == -MTL_EAGAIN) count("output full: unit lost", 1);
-  if (ret >= 0 || ret == -MTL_EAGAIN) ret = reap(tx);
-  return ret < 0 ? ret : r;
+/* Each frame's outcome: ON_TIME with its margin, or DROPPED with TOO_LATE,
+   SNAP_COLLISION, WAITING_NEIGHBOUR, LINK_DOWN or RECOVERY (ex06's results). */
+static void on_result(void* priv, const struct mtl_tx_result* r) {
+  (void)priv;
+  if (r->status != MTL_TX_ON_TIME)
+    count(mtl_reason_name(r->reason), 1);
+  else if (r->flags & MTL_TXR_MARGIN_VALID)
+    count("margin ns", r->margin_ns);
 }
 
 /* Video: here a UHD-to-HD down-converter (mtl_convert, half scale, in this thread: its
-   time is in the budget); a GPU or AI stage takes its place. rx: 2160p, tx: 1080p. */
+   time is in the budget); a GPU or AI stage takes its place. rx: 2160p, tx: 1080p. A
+   unit with no output slot in time is lost; one over budget is DROPPED (TOO_LATE), never
+   slid. */
 int process_video(mtl_session_h rx, mtl_session_h tx) {
   struct mtl_unit in, out;
   struct mtl_convert_desc d;
   MTL_INIT(&in);
   MTL_INIT(&out);
   MTL_INIT(&d);
-  int ret = mtl_rx_dequeue(rx, &in, MTL_MS(50));
+  int ret = mtl_rx_dequeue(rx, &in, MTL_FOREVER);
   if (ret < 0) return ret;
-  if (in.flags & MTL_UNITF_TAI_VALID)
-    ret = mtl_tx_acquire(tx, &out, MTL_MS(10));
-  else
-    ret = -MTL_EINVAL; /* a mediaclk:sender input has no TAI relation */
+  if (!(in.flags & MTL_UNITF_TAI_VALID)) { /* a mediaclk:sender input: no TAI relation */
+    mtl_rx_release(rx, in.lease);
+    return -MTL_EINVAL;
+  }
+  ret = mtl_tx_acquire(tx, &out, MTL_MS(10));
   if (ret == 0) {
     d.width = 3840; /* the source's */
     d.height = 2160;
@@ -82,34 +82,38 @@ int process_video(mtl_session_h rx, mtl_session_h tx) {
     else
       mtl_tx_release(tx, out.lease);
   }
-  return done(rx, in.lease, tx, ret); /* over budget: DROPPED, TOO_LATE, never slid */
+  mtl_rx_release(rx, in.lease);
+  if (ret == -MTL_EAGAIN) count("output full: unit lost", 1);
+  if (ret < 0 && ret != -MTL_EAGAIN) return ret;
+  return mtl_tx_reap_each(tx, on_result, NULL); /* unread, results hold slots */
 }
 
-/* Audio: the copy path with the received unit as the template (its media time); a partial
-   write continues at the next sample, as in ex22. */
-int pass_audio(mtl_session_h rx, mtl_session_h tx) {
-  struct mtl_unit in, how;
-  struct mtl_tx_next nx;
+/* Audio: the copy path with the received unit as the template (its media time). A TAI
+   template writes one unit per call, so the rest continues at the input's media time plus
+   the samples written: exact, never the next feasible sample. rate: the sample rate. */
+int pass_audio(mtl_session_h rx, mtl_session_h tx, uint32_t rate) {
+  struct mtl_unit in, tmpl;
   MTL_INIT(&in);
-  int ret = mtl_rx_dequeue(rx, &in, MTL_MS(20));
+  int ret = mtl_rx_dequeue(rx, &in, MTL_FOREVER);
   if (ret < 0) return ret;
-  how = in;
-  for (uint32_t off = 0; ret >= 0 && off < in.used && g_running;) {
-    int n = mtl_tx_write(tx, (const uint8_t*)in.plane[0].addr + off, in.used - off, &how,
-                         MTL_MS(10));
-    if (n == -MTL_EAGAIN) { /* the pool is full: read results, wait */
-      ret = reap(tx);
+  if (!(in.flags & MTL_UNITF_TAI_VALID)) { /* a mediaclk:sender input: no TAI relation */
+    mtl_rx_release(rx, in.lease);
+    return -MTL_EINVAL;
+  }
+  const uint8_t* pcm = (const uint8_t*)in.plane[0].addr;
+  tmpl = in;
+  for (uint32_t off = 0; ret >= 0 && off < in.used;) {
+    int n = mtl_tx_write(tx, pcm + off, in.used - off, &tmpl, MTL_MS(10));
+    if (n < 0) {
+      ret = n == -MTL_EAGAIN ? mtl_tx_reap_each(tx, on_result, NULL) : n; /* pool full */
       continue;
     }
-    if (n < 0) {
-      ret = n;
-      break;
-    }
     off += (uint32_t)n;
-    if (off < in.used && (ret = mtl_tx_get_next(tx, &nx, sizeof(nx))) >= 0)
-      how.media_tai_ns = nx.next_media_tai_ns;
+    int64_t samples = off / in.plane[0].row_bytes;
+    tmpl.media_tai_ns = in.media_tai_ns + samples * MTL_SEC(1) / rate;
   }
-  return done(rx, in.lease, tx, ret);
+  mtl_rx_release(rx, in.lease);
+  return ret < 0 ? ret : mtl_tx_reap_each(tx, on_result, NULL);
 }
 
 /* ANC: every received entry is a valid TX entry (RX marks the first entry of each RTP
@@ -122,7 +126,7 @@ int pass_anc(mtl_session_h rx, mtl_session_h tx) {
   struct mtl_unit in, out;
   MTL_INIT(&in);
   MTL_INIT(&out);
-  int ret = mtl_rx_dequeue(rx, &in, MTL_MS(20));
+  int ret = mtl_rx_dequeue(rx, &in, MTL_FOREVER);
   if (ret < 0) return ret;
   ret = mtl_tx_acquire(tx, &out, MTL_MS(10));
   if (ret == 0) {
@@ -137,5 +141,8 @@ int pass_anc(mtl_session_h rx, mtl_session_h tx) {
     else
       mtl_tx_release(tx, out.lease);
   }
-  return done(rx, in.lease, tx, ret);
+  mtl_rx_release(rx, in.lease);
+  if (ret == -MTL_EAGAIN) count("output full: unit lost", 1);
+  if (ret < 0 && ret != -MTL_EAGAIN) return ret;
+  return mtl_tx_reap_each(tx, on_result, NULL);
 }

@@ -1,14 +1,17 @@
 /* ex21 — a live framework sink (GStreamer without basesink sync, ffmpeg -re, an OBS
    output): each buffer's presentation time becomes its TAI media time, and the sinks of a
    programme share one latency and one phase, so they stay on the same frame times.
-   Needs: MS3 (TAI mode and the copy MS1; discard MS2; audio sinks in TAI mode MS6). */
+   Needs: MS2. */
 #include <mtl/experimental/mtl_sync.h>
+#include <mtl/experimental/mtl_util.h>
 
 #include "ex_common.h"
 
+#define MARGIN MTL_MS(1) /* for the producer's jitter */
+
 /* A buffer: planes in the framework's memory, its presentation time on CLOCK_MONOTONIC
-   (GStreamer's system clock: base_time + running time; FFmpeg's start_time_realtime + pts
-   is on MTL_CLOCK_REALTIME) and its id. */
+   (GStreamer's system clock: base_time + running time) and its id. A framework on another
+   clock passes that one to mtl_time_convert. */
 struct fw_buffer {
   uint64_t id;
   int64_t pts_monotonic_ns;
@@ -16,13 +19,13 @@ struct fw_buffer {
   uint32_t stride[MTL_MAX_PLANES];
 };
 /* The framework's QoS for one buffer: ON_TIME, or DROPPED with SNAP_COLLISION (two
-   buffers for one frame time) or TOO_LATE (the latency did not cover the producer). */
+   buffers for one frame time) or TOO_LATE (the latency did not cover the producer);
+   margin_ns INT64_MIN when not valid. */
 void fw_report(uint64_t id, uint32_t status, uint32_t reason, int64_t margin_ns);
 
-/* One per pipeline or process. latency_ns: the pipeline's latency (GStreamer's LATENCY
-   event), at least the largest minimum its sinks reported. phase_ns: -1 until the first
-   buffer of any sink. Each sink adds both itself (one sink alone could declare the
-   latency as sc.media_time_offset_ns, which MTL adds the same way, before snapping). */
+/* One per pipeline or process; every sink adds both to its media times. latency_ns: the
+   pipeline latency (GStreamer's LATENCY event), at least the largest minimum its sinks
+   reported. phase_ns: set by the first sink to render; -1 before. */
 struct programme {
   struct mtl_rational fps; /* the video's raster.fps */
   int64_t latency_ns;
@@ -35,8 +38,7 @@ struct live_sink {
 };
 
 /* set_caps: base has the flows, raster and formats of the caps. *min_ns: this sink's
-   minimum latency for the latency query: MTL's lead, the copy inside submit, a margin,
-   and one frame for the phase, which adds less than one. */
+   minimum latency, for the latency query. */
 int sink_open(struct live_sink* k, const struct mtl_session_config* base,
               int64_t* min_ns) {
   struct mtl_session_config sc = *base;
@@ -45,19 +47,19 @@ int sink_open(struct live_sink* k, const struct mtl_session_config* base,
   sc.flags |= MTL_SESSION_RESULTS; /* a result per buffer, by cookie */
   int ret = mtl_session_open(k->mt, &sc, &k->s);
   if (ret >= 0) ret = mtl_session_get_info(k->s, &info, sizeof(info));
-  if (ret >= 0)
-    *min_ns = info.latency_min_ns + info.convert_ns + MTL_MS(1) +
-              MTL_SEC(1) * base->video.raster.fps.den / base->video.raster.fps.num;
-  return ret < 0 ? ex_fail("sink", ret) : 0;
+  if (ret < 0) return ex_fail("sink", ret);
+  *min_ns = info.latency_min_ns                     /* MTL's lead */
+            + info.convert_ns                       /* the copy inside submit */
+            + MARGIN                                /* the producer's jitter */
+            + mtl_frame_ns(base->video.raster.fps); /* the phase: less than a frame */
+  return 0;
 }
 
-static int sink_reap(struct live_sink* k) { /* ex06's reap, reported by cookie */
-  struct mtl_tx_result r[8];
-  int n;
-  while ((n = mtl_tx_reap(k->s, r, 8, 0)) > 0)
-    for (int i = 0; i < n; i++)
-      fw_report(r[i].cookie, r[i].status, r[i].reason, r[i].margin_ns);
-  return n == -MTL_EAGAIN ? 0 : n;
+/* Each buffer's report, by cookie (ex06's results). */
+static void on_result(void* priv, const struct mtl_tx_result* r) {
+  (void)priv;
+  int64_t margin = (r->flags & MTL_TXR_MARGIN_VALID) ? r->margin_ns : INT64_MIN;
+  fw_report(r->cookie, r->status, r->reason, margin);
 }
 
 /* render: 0 = handed over (its report follows); -MTL_ECANCELED after unlock. */
@@ -67,14 +69,12 @@ int sink_render(struct live_sink* k, const struct fw_buffer* buf) {
   int64_t tai = 0;
   int ret;
   MTL_INIT(&u);
-  do { /* a full pool waits; unread results would block acquire, so reap in between */
-    ret = sink_reap(k);
-    if (ret >= 0) ret = mtl_tx_acquire(k->s, &u, MTL_MS(20));
-  } while (ret == -MTL_EAGAIN && g_running);
+  ret = mtl_tx_reap_each(k->s, on_result, NULL); /* then it never waits on results */
+  if (ret >= 0) ret = mtl_tx_acquire(k->s, &u, MTL_FOREVER); /* a full pool waits */
   if (ret < 0) return ret;
   ret = mtl_time_convert(k->mt, buf->pts_monotonic_ns, MTL_CLOCK_MONOTONIC, MTL_CLOCK_TAI,
                          &tai);
-  /* the first sink to render sets the phase (atomically, in a plugin) */
+  /* the first sink to render sets the phase (a plugin holds the programme's lock) */
   if (ret >= 0 && p->phase_ns < 0)
     ret = mtl_grid_offset(tai + p->latency_ns, p->fps, &p->phase_ns);
   if (ret < 0) {
@@ -96,7 +96,7 @@ int sink_render(struct live_sink* k, const struct fw_buffer* buf) {
 int sink_eos(struct live_sink* k, int seek) {
   int ret = seek ? mtl_session_discard(k->s, 0, 0)
                  : mtl_session_stop(&k->s, 1, MTL_STOP_DRAIN, MTL_SEC(2));
-  int r = sink_reap(k);
+  int r = mtl_tx_reap_each(k->s, on_result, NULL);
   return ret < 0 ? ret : r;
 }
 

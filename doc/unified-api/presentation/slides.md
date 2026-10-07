@@ -189,30 +189,36 @@ moves to one notifier thread per instance (D-165).
 
 - **A call with a timeout** sleeps on the session's event word: `mtl_tx_acquire(s, &u, MTL_MS(100))`,
   `mtl_session_wait` (MS1)
-- **An event loop** arms its sessions and the instance on one queue, one descriptor for all (MS2a):
+- **An event loop** arms its sessions and the instance on one queue, and your threads post to it
+  (MS2a):
 
 ```mermaid
 sequenceDiagram
-    participant A as Your event loop
+    participant S as your source thread
+    participant A as your loop
     participant M as MTL
-    A->>M: mtl_queue_arm(q, s, RESULTS, s)
-    A->>M: mtl_queue_wait(q, r, size, 16, 0)
-    M-->>A: -MTL_EAGAIN: the descriptor is armed
-    A->>A: epoll_wait
-    M-->>A: a completion: one write()
-    A->>M: mtl_queue_wait: report {s, fired}
-    A->>M: serve s, then arm it again
+    A->>M: mtl_queue_arm(q, s, RESULTS, i)
+    A->>M: mtl_queue_wait(q, r, size, 16, MTL_FOREVER)
+    Note over A,M: it sleeps on the queue's descriptor
+    S->>S: queue a frame for s
+    S->>M: mtl_queue_post(q, 1)
+    M-->>A: a report of posts {MTL_OBJ_NONE, user 1}
+    A->>M: take the frame: acquire, submit, then arm s again
+    M->>M: a completion: s is reported, one write
+    M-->>A: a report {s, i, RESULTS}
+    A->>M: reap, then mtl_queue_arm(q, s, what you want next, i)
 ```
 
-- **a report disarms**: arm what you want next; sleep only after `-MTL_EAGAIN`
+- **a report disarms**: arm what you want next; **publish, then post**
 - sessions that change before you come back cost one `write()` together
+- a framework's own loop takes the descriptor and sleeps on it only after `-MTL_EAGAIN`
 
 <!--
 D-159, D-160. One-shot reports need no draining: an arm that finds a target ready reports at once.
 A sender limited by its source arms ACQUIRE only while a frame waits. A start, a stop or a recovery
 reports once with MTL_READY_STATE, and arming works in every state but CLOSING and RETIRED, so an
-IS-05 activation never silences a session (D-169). A dense consumer polls a queue without a
-descriptor on its own timer (D-170). ex03 is the pattern; contract.md §7 has the rules.
+IS-05 activation never silences a session (D-169). Posts coalesce and need no arm (D-206). A
+dense consumer polls a `MTL_QUEUE_POLLED` queue on its own timer (D-170). ex03 is the pattern; contract.md §7 has the rules.
 -->
 
 ---

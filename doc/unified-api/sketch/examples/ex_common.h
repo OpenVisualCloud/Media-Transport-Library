@@ -9,7 +9,10 @@
 #include <stdio.h>
 #include <string.h>
 
-extern volatile int g_running; /* cleared by the application's shutdown path */
+/* The application's SIGINT and SIGTERM handler calls mtl_instance_interrupt(mt, 1) (ex16
+   shows one): every wait then returns -MTL_ECANCELED, so a loop waits with MTL_FOREVER
+   and ends on that code. */
+void ex_install_interrupt(mtl_instance_h mt);
 
 /* Prints a failure and returns ret. The reason and the field at fault are printed only
    when the last error is this failure: a helper that detects a failure itself

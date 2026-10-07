@@ -1,9 +1,8 @@
 /* ex16 — a service in a Kubernetes pod: SIGTERM ends every wait, the instance shuts down
-   network first within the grace period and leaves a report, the probes read one
-   lock-free call, and the node's PTP daemon tells MTL about the clock. Needs: MS3. */
+   network first within the grace period and leaves a report, and the probes read one
+   lock-free call. Needs: MS3. */
 #define _POSIX_C_SOURCE 200809L
 #include <mtl/experimental/mtl_observe.h>
-#include <mtl/experimental/mtl_sync.h>
 #include <signal.h>
 #include <string.h>
 #include <time.h>
@@ -34,7 +33,8 @@ int block_signals(sigset_t* set) {
   sigaddset(set, SIGINT);
   return sigprocmask(SIG_BLOCK, set, NULL);
 }
-/* After open, on the main thread; workers created before keep the signals blocked. */
+/* After open, on the main thread; workers created before keep the signals blocked. In a
+   pod without CPUs to pin, open the instance with MTL_INSTANCE_TASKLET_THREAD. */
 int install_handlers(mtl_instance_h mt, const sigset_t* set) {
   struct sigaction sa;
   g_mt = mt;
@@ -50,8 +50,8 @@ int worker(mtl_session_h s) {
   struct mtl_unit u;
   int ret;
   MTL_INIT(&u);
-  while ((ret = mtl_tx_acquire(s, &u, MTL_SEC(1))) == 0 || ret == -MTL_EAGAIN)
-    if (ret == 0 && (ret = mtl_tx_submit(s, &u)) < 0) break;
+  while ((ret = mtl_tx_acquire(s, &u, MTL_FOREVER)) == 0) /* results off */
+    if ((ret = mtl_tx_submit(s, &u)) < 0) break;
   return ret == -MTL_ECANCELED ? 0 : ex_fail("worker", ret);
 }
 
@@ -67,15 +67,19 @@ int probe_status(mtl_instance_h mt, enum probe p) {
   return (flags & bad) ? 503 : 200;
 }
 
+#define EXIT_RESERVE MTL_SEC(2) /* our own exit, after MTL's shutdown */
+
+static int64_t ts_ns(const struct timespec* t) {
+  return (int64_t)t->tv_sec * MTL_SEC(1) + t->tv_nsec;
+}
+
 /* The main thread, after joining the workers. grace_ns: terminationGracePeriodSeconds
    minus any preStop time; the budget counts from the signal, not from now. */
 int shutdown_all(mtl_instance_h mt, int64_t grace_ns) {
   struct mtl_shutdown_report r;
   struct timespec now;
   clock_gettime(CLOCK_MONOTONIC, &now);
-  int64_t spent =
-      (int64_t)(now.tv_sec - g_term.tv_sec) * MTL_SEC(1) + (now.tv_nsec - g_term.tv_nsec);
-  int64_t budget = grace_ns - MTL_SEC(2) - spent; /* 2 s for our own exit */
+  int64_t budget = grace_ns - EXIT_RESERVE - (ts_ns(&now) - ts_ns(&g_term));
   if (budget < MTL_MS(100)) budget = MTL_MS(100);
   memset(&r, 0, sizeof(r));
   /* this application owns main(): shut down for every component of the process */
@@ -86,21 +90,4 @@ int shutdown_all(mtl_instance_h mt, int64_t grace_ns) {
     fclose(f);
   }
   return ret < 0 ? ret : 0; /* 1: devices stopped; held memory goes at exit */
-}
-
-/* The node's ptp4l and phc2sys discipline the clock MTL reads (time_source AUTO:
-   CLOCK_TAI), but MTL cannot see the grandmaster: pass what pmc reports, and locked = 0
-   when the node lost it, so readiness and the time.* stats follow. The result: the time
-   flags (MTL_TIMEF_ESTIMATED: not locked to PTP). In a pod without CPUs to pin, the
-   instance also sets MTL_INSTANCE_TASKLET_THREAD. */
-int set_time_reference(mtl_instance_h mt, const uint8_t gmid[8], uint8_t clock_class,
-                       int locked) {
-  struct mtl_time_reference ref;
-  int64_t tai;
-  MTL_INIT(&ref);
-  memcpy(ref.gmid, gmid, sizeof(ref.gmid));
-  ref.clock_class = clock_class; /* 220, 228: ARB, MTL_TIMEF_ARB_TIMESCALE */
-  ref.locked = locked ? 1u : 0u;
-  int ret = mtl_time_set_reference(mt, 0, &ref); /* port 0: every port */
-  return ret < 0 ? ret : mtl_time_now(mt, &tai, NULL, NULL);
 }

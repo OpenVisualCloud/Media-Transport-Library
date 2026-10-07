@@ -10,12 +10,13 @@
  * Every function here is static inline and built only on public calls of mtl.h, mtl_mem.h
  * and mtl_sync.h; an application could write it itself, and the library exports none of
  * them. They exist so that common code is written once: the copy path for byte-stream
- * essences, one-call sends from named slots, plane copies, meta records, ANC units, the
- * ST 2110-40 user-data-word arithmetic and the RX reserve of a framework source. A parser of
+ * essences, one-call sends from named slots, reading every ready result, plane copies, a
+ * frame's duration, L24 sample conversion, meta records, ANC units, the ST 2110-40
+ * user-data-word arithmetic and the RX reserve of a framework source. A parser of
  * bytes from the network is never here (the RFC 8331 codec is exported, mtl_packet.h). A
  * failure a helper detects itself (a bound, a malformed record) returns its code without
- * setting mtl_last_error(); a failure of a call it makes keeps that call's. A helper works from the milestone of the latest function it calls:
- * mtl_tx_write from MS3 (mtl_tx_get_next), mtl_tx_send_slot from MS2
+ * setting mtl_last_error(); a failure of a call it makes keeps that call's. A helper works
+ * from the milestone of the latest function it calls: mtl_tx_send_slot from MS2
  * (mtl_tx_acquire_slot), the others from MS1; before that, a call to it fails to compile,
  * naming the function it calls (mtl.h, MTL_LEVEL).
  */
@@ -51,24 +52,32 @@ static inline void mtl_unit_from_template(struct mtl_unit* u, const struct mtl_u
 }
 
 /* Copy path (audio, cvideo codestreams, fastmeta: one-plane units; ANC units have two
-   planes and use mtl_anc_put, else -MTL_EINVAL): acquire, copy `bytes`
-   into plane 0 (splitting at the unit's capacity, rows x row_bytes), and submit, the first
-   unit with the template fields of `how` (NULL = AUTO), each later one at the media time
-   mtl_tx_get_next() gives, so audio advances by the samples sent. Returns the bytes
-   accepted, or the first call's error when none was. A partial write returns the bytes
-   accepted; to continue, call again with the rest and `how` = the next index
-   (next_media_index and next_media_tai_ns of mtl_tx_get_next). WT. */
+   planes and use mtl_anc_put, else -MTL_EINVAL): acquire, copy into plane 0 (split at each
+   unit's capacity, rows x row_bytes) and submit, until every byte is submitted; each acquire
+   waits up to timeout_ns. The media fields:
+   - how NULL (AUTO): the units carry none, and MTL places each after the last;
+   - how with media_tai_ns 0 (INDEX): every unit takes the template fields of `how`, and
+     unit k media_index = how->media_index + the rows (audio: sample frames) of the units
+     before it, so the stream stays contiguous and never slides to a later index;
+   - how with media_tai_ns set (TAI): one unit, the first; the caller continues the rest at
+     how->media_tai_ns + the duration of the bytes accepted (it knows the rate).
+   An AUTO session passes NULL (a media field is -MTL_EINVAL there), so its writes carry no
+   cookie, hold or meta: for those it acquires and submits itself. Returns the bytes
+   accepted: all of them, those of the first unit in TAI, or fewer when a later acquire or
+   submit failed (call again with the rest, its media field advanced past them); the first
+   call's error when none was accepted. WT. */
 static inline int mtl_tx_write(mtl_session_h s, const void* data, size_t bytes,
                                const struct mtl_unit* MTL_NULLABLE how, int64_t timeout_ns) {
   const uint8_t* src = (const uint8_t*)data;
   size_t done = 0;
+  int64_t index = how ? how->media_index : 0; /* INDEX: the next unit's */
   int ret;
   struct mtl_unit u;
   MTL_INIT(&u);
   do {
     ret = mtl_tx_acquire(s, &u, timeout_ns);
     if (ret < 0) break;
-    if (u.plane_count != 1) {
+    if (u.plane_count != 1 || u.plane[0].row_bytes == 0) {
       mtl_tx_release(s, u.lease);
       ret = -MTL_EINVAL;
       break;
@@ -76,24 +85,32 @@ static inline int mtl_tx_write(mtl_session_h s, const void* data, size_t bytes,
     size_t cap = (size_t)u.plane[0].row_bytes * u.plane[0].rows;
     size_t n = bytes - done < cap ? bytes - done : cap;
     if (n) memcpy((void*)u.plane[0].addr, src + done, n);
-    if (how) mtl_unit_from_template(&u, how);
-    if (done) { /* a continuation: the next media time, no discontinuity */
-      struct mtl_tx_next c;
-      ret = mtl_tx_get_next(s, &c, sizeof(c));
-      if (ret < 0) {
-        mtl_tx_release(s, u.lease);
-        break;
-      }
-      u.media_index = c.next_media_index;
-      u.media_tai_ns = c.next_media_tai_ns;
-      u.flags &= ~(uint64_t)MTL_SUBMIT_DISCONTINUITY;
+    if (how) {
+      mtl_unit_from_template(&u, how);
+      u.media_index = index;
+      if (done) u.flags &= ~(uint64_t)MTL_SUBMIT_DISCONTINUITY; /* a continuation */
     }
     u.used = (uint32_t)n;
     ret = mtl_tx_submit(s, &u);
     if (ret < 0) break;
     done += n;
-  } while (done < bytes);
+    index += (int64_t)(n / u.plane[0].row_bytes);
+  } while (done < bytes && !(how && how->media_tai_ns));
   return done ? (int)done : ret;
+}
+
+/* Reads every TX result ready now, without waiting, and calls fn(priv, r) for each, in
+   submission order. 0, or the first error of mtl_tx_reap (its -MTL_EAGAIN, nothing left,
+   is 0). Unread results hold slots (status.blocked_on MTL_BLOCKED_RESULTS), so a loop with
+   results calls it between acquires. WT with timeout 0: it never sleeps. */
+static inline int mtl_tx_reap_each(mtl_session_h s,
+                                   void (*fn)(void* priv, const struct mtl_tx_result* r),
+                                   void* priv) {
+  struct mtl_tx_result r[8];
+  int n;
+  while ((n = mtl_tx_reap(s, r, 8, 0)) > 0)
+    for (int i = 0; i < n; i++) fn(priv, &r[i]);
+  return n == -MTL_EAGAIN ? 0 : n;
 }
 
 /* Acquire slot `slot` and submit it with the template fields of `how` and its `used` (the
@@ -153,6 +170,30 @@ static inline int mtl_unit_copy_plane_out(const struct mtl_unit* u, uint32_t pla
     memcpy((uint8_t*)dst + r * dst_stride, (const uint8_t*)p->addr + (size_t)r * p->stride,
            p->row_bytes);
   return 0;
+}
+
+/* ---- Frame times and audio samples ---------------------------------------------------- */
+
+/* One frame at fps (raster.fps) in ns, rounded down: 16683333 at 59.94; a field is half of
+   it. 0 for an fps term of 0; fps within the struct mtl_rational limits (mtl.h). AS. */
+static inline int64_t mtl_frame_ns(struct mtl_rational fps) {
+  return fps.num && fps.den ? (int64_t)(fps.den * 1000000000u / fps.num) : 0;
+}
+
+/* n samples of L24 (MTL_PCM24: 3 bytes each, big endian, as on the wire) to host int32,
+   the 24 bits in the top three bytes (ALSA S32, FFmpeg s32). DPC. */
+static inline void mtl_pcm24_to_s32(int32_t* dst, const uint8_t* src, size_t n) {
+  for (size_t i = 0; i < n; i++, src += 3)
+    dst[i] = (int32_t)((uint32_t)src[0] << 24 | (uint32_t)src[1] << 16 | (uint32_t)src[2] << 8);
+}
+/* n host int32 samples to L24, from their top three bytes. DPC. */
+static inline void mtl_s32_to_pcm24(uint8_t* dst, const int32_t* src, size_t n) {
+  for (size_t i = 0; i < n; i++, dst += 3) {
+    uint32_t v = (uint32_t)src[i];
+    dst[0] = (uint8_t)(v >> 24);
+    dst[1] = (uint8_t)(v >> 16);
+    dst[2] = (uint8_t)(v >> 8);
+  }
 }
 
 /* ---- RX sources that lend library slots (migration.md §12.8, D-150) ------------------- */

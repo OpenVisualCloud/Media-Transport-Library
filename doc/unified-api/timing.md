@@ -343,7 +343,11 @@ lead it is the next index (§5.2).
 | `MTL_MEDIA_SENDER` | `unit.media_tai_ns` = the source's own sampling instant, never snapped | async sources (IPMX `mediaclk:sender`): **Phase 7**, under `MTL_LATER` (§13) |
 
 - In AUTO both media fields are zero, else `-MTL_EINVAL`; INDEX reads only `media_index` and TAI only `media_tai_ns`, so a received unit, which carries both, is a valid template for either ([contract.md](contract.md) §5.1).
-  Zero means "library default" for every mode field. Launch selection per unit: `MTL_SUBMIT_NOT_BEFORE` or `MTL_SUBMIT_EXACT` with `unit.launch_tai_ns` (§5.4); they exclude each other, and EXACT needs a session created with `MTL_SESSION_EXACT_LAUNCH`.
+  In the config, zero is the library default of every mode field (`media_mode`, `tsmode`); a unit's
+  media fields have none: `media_index` 0 is a real index (T0 under `MTL_WHEN_ORIGIN`), and an AUTO
+  session's units carry both fields 0. Launch selection per unit: `MTL_SUBMIT_NOT_BEFORE` or
+  `MTL_SUBMIT_EXACT` with `unit.launch_tai_ns` (§5.4); they exclude each other, and EXACT needs a
+  session created with `MTL_SESSION_EXACT_LAUNCH`.
 
 ### 4.2 Derived RTP: exact, and its exceptions
 
@@ -768,7 +772,12 @@ Today MTL sends nothing when the app has no ANC frame (`st_tx_ancillary_session.
 
 `mtl_tx_get_next(s, &next, size)` (DP, MS3) fills `struct mtl_tx_next` (32 B): `queued`, `next_rtp`, `next_media_index`, `next_media_tai_ns`, `submit_deadline_tai_ns`. One formula for AUTO, joiners and INDEX producers, the admission test itself: `next_media_index` = the smallest k at or after the end of the last submitted unit (for audio,
 its first sample plus its samples) with `M(k) − min_submit_lead_ns ≥ now`. For AUTO it is the index the unit would get; for a joiner the first index it can still make.
-With nothing submitted since a start it is the start's first index (T0's), also while ARMED. `next_rtp` is that index's RTP timestamp, `floor(M × R)` exact; `mtl_media_ticks` of `next_media_tai_ns`, which is floored to ns, is one tick low on one frame in three at 59.94p, so a producer that writes its own RTP (packet units) takes `next_rtp`.
+With nothing submitted since a start it is the smallest feasible index at or after T0's (in ARMED,
+T0's). In CREATED and STOPPED it answers for a start now, so units queued before a start continue
+from the last one ([contract.md](contract.md) §4.2). `next_rtp` is the RTP timestamp that index gets
+on the wire, `floor((M + tx.rtp_trim_ns) × R)` exact; `mtl_media_ticks` of `next_media_tai_ns`,
+which is floored to ns, is one tick low on one frame in three at 59.94p, so a producer that writes
+its own RTP (packet units) takes `next_rtp`.
 It is OpenXR's `predictedDisplayTime` and CoreAudio's `inOutputTime`: the producer learns its slot
 before it renders, which removes the fixed phase lock a downstream engine measured (≈ 27 ms). The per-slot tick `MTL_EVENT_EPOCH_TICK` is opt-in (`session.epoch_tick`); it replaces `ST_EVENT_VSYNC`.
 
@@ -911,9 +920,13 @@ feasible epoch index with its `tx.index_offset` and L_v.
   - **Overlap** (`s < e − absorb`): samples `[s, e)` were already sent or queued; they are removed (`samples_dropped`) and the rest continues at e. Nothing is re-phased.
 - **Only `MTL_SUBMIT_DISCONTINUITY` re-phases** (and an RTP override off the output grid). The carry is zero-padded (`samples_inserted`). If the new index d is not a multiple of S, packet p covers `[d + p·S, d + (p+1)·S)`. RTP stays `floor(M × Fs)` of each packet's first sample. While RUNNING, forward only.
 - **Sample-accurate start.** A session started at S sends its first packet at s0, the smallest multiple of S whose `M(s0) ≥ S`; earlier samples are `FLUSHED/BEFORE_START`.
-- **Copy path.** `mtl_tx_write(s, data, bytes, &how, timeout)` (`mtl_util.h`) takes an arbitrary byte run for audio and fastmeta, with the `media_index` of `how`; it acquires, splits and submits internally. The sample count follows from the bytes (`unit.used` is bytes for audio). ANC is built with `mtl_anc_put` ([contract.md](contract.md) §5.7).
-  It returns the bytes accepted; after a partial write the caller continues with the rest at
-  `next_media_index` of `mtl_tx_get_next`, the first sample past the last submitted unit
+- **Copy path.** `mtl_tx_write(s, data, bytes, &how, timeout)` (`mtl_util.h`) takes an arbitrary
+  byte run for audio and fastmeta, with the `media_index` of `how`; it acquires, splits and submits
+  internally until every byte is submitted, each unit at `how.media_index` plus the samples before it,
+  so a write never slides to a later index. The sample count follows from the bytes (`unit.used` is
+  bytes for audio). ANC is built with `mtl_anc_put` ([contract.md](contract.md) §5.7).
+  AUTO passes no template and is contiguous by construction; a TAI template writes one unit per
+  call, and the caller continues at its `media_tai_ns` plus the samples' duration
   ([contract.md §5.1](contract.md#51-the-unit)).
 - **1001 cadence** (helper, later): samples in frame k = `floor((k+1)·x) − floor(k·x)`; on the epoch grid 59.94 gives 800, 801, 801, 801, 801 repeating, 29.97 gives 1601, 1602, 1601, 1602, 1602. The often-quoted 1602/1601/… is the ST 272/299 embedding cadence on the ST 318 sequence. 2110 audio has no per-frame unit. The alternative is a pinned ST 299 five-frame phase instead of
   the epoch formula. Dolby E carried over ST 2110-31 needs frame-aligned audio, which is why the helper is wanted.

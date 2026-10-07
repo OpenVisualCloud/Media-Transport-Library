@@ -5,7 +5,7 @@ the deterministic pause-hook tests (WH, WC and QW) and the models in [models/](m
 design record: C1w, C2, C1q1, C1q2 and MS2 copy from it, and
 [implementation-plan.md](../implementation-plan.md) §8.2 ("The wait evidence") says which job runs
 what. The protocol and its step labels (E1–E4, M1, K1–K2, F1–F8, T1–T9, D1–D2, Q1–Q3, RW1–RW2,
-N0', N1–N9, V1–V2, X1–X4, Y1, P1–P3, U1–U2, A1–A11, J1–J10, C1–C5, Y2, DV1–DV3) are those of
+N0', N1–N9, V1–V2, X1–X4, Y1, P1–P3, PS1–PS4, U1–U2, A1–A11, J1–J10, C1–C5, Y2, DV1–DV3) are those of
 [core.md](../core.md) §6.1–§6.3 and §6.6; a step label is local to its procedure and is not a
 test.
 
@@ -21,7 +21,7 @@ step. Weak-memory orderings are argued in core.md §6.1, not modelled.
 
 | File | What it checks | Run |
 |---|---|---|
-| [final_model.py](models/final_model.py) | both paths of core.md §6: the object path (cases o1–o7) and the queue path (q1–q11, r1–r4); 19 mutants named by the step they break; LOST, LEAK, OVER, SPIN, XQ, RPT (below) | `python3 final_model.py [CASE ...]`; `--trace CASE MUTANT` prints a counterexample; exit 1 unless every case gives its expected result and every mutant is killed (5.5 s) |
+| [final_model.py](models/final_model.py) | the object path of core.md §6 (cases o1–o7), the queue path (q1–q11, r1–r4) and posts (p1–p5); 23 mutants named by the step they break; LOST, LEAK, OVER, SPIN, XQ, RPT, PAC (below) | `python3 final_model.py [CASE ...]`; `--trace CASE MUTANT` prints a counterexample; exit 1 unless every case gives its result and every mutant dies (6 s) |
 | [wait_flush.py](models/wait_flush.py) | the count-bounded flush (F1–F8) of one library loop over three objects, sleepers arming while marks are carried, the loop's sleep check; the variant that ignores the flush's return; from M0 a queue entry among the marked entries and `wake_k` 1 and 4 | `python3 wait_flush.py`; the design cases must print LOST=0, the "return ignored" variant LOST > 0 |
 | [stress.c](models/stress.c) | random-yield stress on the real kernel (futex, eventfd, epoll LT or EPOLLONESHOT). Until M0 it still drives the superseded per-object handle (D-159); M0 rewrites it onto the event word and a queue consumer, with the mutants `-DBITS`, `-DLOAD_AFTER_ATTEMPT`, `-DNO_EXIT_RESIGNAL` | `cc -O2 -pthread stress.c -o stress; ./stress ROUNDS [1]`; a smoke test, not evidence |
 | [provide_model.py](models/provide_model.py) | the `mtl_rx_provide` hand-back of D-152 (contract.md §9.11): every interleaving of providers, hand-backs and a taking unit; the ledger rule | `python3 provide_model.py`; MS2b copies it into `tests/unit/core/` |
@@ -29,15 +29,17 @@ step. Weak-memory orderings are argued in core.md §6.1, not modelled.
 `final_model.py`'s object path covers the event word with counts, calls with a timeout,
 interrupts and their clearing (`MTL_INTR_OFF`, then a new call: o7), close and row waits; its
 queue path the push and claim, the reset and arm, the write-back rule, queue interrupts, their
-clearing (q11) and close, detach, a stale claimer and queue entry reuse. Its checks:
+clearing (q11) and close, detach, a stale claimer and queue entry reuse, and the posts of
+`mtl_queue_post` (a poster thread `QP` that publishes an item, then posts). Its checks:
 LOST (a sleeper whose condition holds), LEAK (a count that does not match its sleepers), OVER (an
 attachment in two places), SPIN (a cycle in the state graph), XQ (a push onto a reused queue), RPT
-(a report popped after its detach returned).
+(a report popped after its detach returned), PAC (a post accepted by a closed or reused queue).
+LOST also fires when a sleeper's queue holds a pending post or an item no report served.
 
 Not modelled, and argued in core.md §6.1 instead: weak memory, the instance walk, state-change
 reports (an EVENT with every lane), J5's return 1 (lock serialisation), the delivery count of the
 detach (DV1–DV3), descriptors kept for the process's life, the flush bound (`wait_flush.py`), and
-the retire and reuse of an object's entry (X1–X4, Y1) under a stale K1 or interrupt (argued in
+the post's CAS made even when its bits are already pending (a weak-memory rule, core.md §6.1), the retire and reuse of an object's entry (X1–X4, Y1) under a stale K1 or interrupt (argued in
 core.md §6.1 "Lifetime" and by the generation in `intr`; tests WH12 and WC3). `final_model.py`'s
 `NOT_MODELLED` list names the labels it does not model (N1, N0', N2, N3, T1, T5, C3–C5, X3, Y1,
 Y2, J1–J6, DV1–DV3) with the reason for each.
@@ -90,6 +92,7 @@ model job's one entry point. C1w copies the model files into `tests/unit/core/wa
 | `INTR_AFTER_STATE` | after N3 |
 | `RETIRE_AFTER_STATE` | after X1 |
 | `PUSH_BEFORE_CAS` | in P2, before the CAS (MS2a) |
+| `POST_BEFORE_CAS` | in PS2, before the CAS (MS2a) |
 | `QW_AFTER_RESET` | after A7's `read()` (MS2a) |
 | `QW_AFTER_ARM` | after A8 (MS2a) |
 | `QW_AFTER_POP` | after A5, before A10 (MS2a) |
@@ -122,12 +125,12 @@ library.
 | WH11 `WaitHook.close_vs_sleep` | W parked at `WT_BEFORE_SLEEP`; close, or stop FLUSH under acquire; resume | `-MTL_ESHUTDOWN` | a state change without a wake | C1w (close); C2 (`FORCE_ERROR` → `-MTL_EIO`) |
 | WH12 `WaitHook.stale_wake_reused` | a K1 parked at `WAKE_BEFORE_SYSCALL` after F6 on S; S retires and S' reuses the entry; resume | S' sleepers return at most once spuriously; retire never waits for the wake | a wake that reads freed or reused state; Y1 order | C1w |
 | WH14b (a `WaitHook` case) | a thread cancelled while blocked in `acquire(∞)`; then `mtl_interrupt` | it stays blocked until the interrupt, returns `-MTL_ECANCELED`, dies at its next cancellation point; the in-flight count reads 0 | a cancellation point in a WT call; a leaked in-flight count | C1w |
-| WH15 `WaitHook.fork_child_interrupt` | `fork()`; the child calls `mtl_instance_interrupt`, `mtl_session_interrupt` and, from MS2a, `mtl_queue_wait` | `-MTL_EBADF`, no crash, `errno` kept | a missing N0' | C1w, C1q2 |
+| WH15 `WaitHook.fork_child_interrupt` | `fork()`; the child calls `mtl_instance_interrupt`, `mtl_session_interrupt` and, from MS2a, `mtl_queue_wait` and `mtl_queue_post` | `-MTL_EBADF`, no crash, `errno` kept | a missing N0' | C1w, C1q2 |
 | WH16 `WaitFlush.count_bound` (UnitTest) | 512 marked entries with a counting syscall shim; entries 0–63 re-marked every iteration; run with `wake_k` 1 and 4; from MS2a queues among them | ≤ `wake_k` entries with a syscall per iteration; every entry woken within 512 iterations; the loop never sleeps while marked | a lost return value; no cursor | C1w |
 | WH17 `WaitHook.test_clock_flush` | a WT sleeper on `null:1`; the test thread calls `MTL_FAULT_CLOCK_ADVANCE` | the sleeper returns after ADVANCE returns; two runs give the same wake order (G-92) | ADVANCE calling WAKE_NOW directly instead of FLUSH | C2 |
 | WH19 `WaitHook.accounting` | 10^5 timeouts, interrupts and closes; 10^5 timed-out calls, then 10^5 completions; 10^6 units with no sleeper and no armed queue | every lane count 0; 0 futex and 0 eventfd syscalls (counters) | a leaked count (`no_dec`); a wake with nobody counted | C2 |
 | WH20 `WaitHook.timeouts` | a 1 ms wait; `MTL_FAULT_TIME_STEP` during a wait | the return is ≥ 1 ms and < the 1 s ceiling; the step changes nothing | a deadline on TAI | C2 |
-| WH21 `WaitHook.as_paths` (non-ASan job) | the interrupt from a handler delivered to a WT sleeper, to a thread inside chunk growth, to a thread inside a DP call, to a thread in RETIRE's wait and, from MS2a, a queue interrupt | completes; `errno` unchanged; a `malloc` hook that aborts is never hit | TLS or allocation on the AS path | C1w, C1q2 |
+| WH21 `WaitHook.as_paths` (non-ASan job) | the interrupt from a handler delivered to a WT sleeper, to a thread inside chunk growth, inside a DP call or in RETIRE's wait; from MS2a a queue interrupt, and a post to a thread parked at `QW_AFTER_POP` in the queue lock | completes; `errno` unchanged; a `malloc` hook that aborts is never hit | TLS or allocation on the AS path | C1w, C1q2 |
 | WC1 `WaitHook.no_clear_by_producer` | the model's o1 trace with W2 parked at `WT_BEFORE_SLEEP` | W2 returns both units | a producer-cleared bit (`bits`) | C1w |
 | WC2 `WaitHook.waiter_removes_its_count` | 10^4 sleepers time out; publish | 0 futex wakes, counts 0 | `no_dec` | C1w |
 | WC3 `WaitHook.interrupt_generation` | an interrupt parked at `INTR_AFTER_STATE` across retire and reuse | `-MTL_EBADF`; S' untouched | N5 without the generation | C1w |
@@ -159,9 +162,12 @@ library.
 | QW17 `QueueHook.detach_waits_delivery` | a consumer parked at `QW_AFTER_POP` with a report of o; another thread detaches o (variant: closes o); then 4 consumers loop on the queue while a fifth detaches and re-arms 10^4 times | the detach and the close return only after the parked consumer returned; every detach returns within 1 ms (no starvation) | no DV1–DV3; one phase only | C1q2 |
 | QW18 `QueueHook.stale_caller_ebadf` | a `mtl_queue_wait` and a `mtl_queue_arm` parked at `Q_AFTER_ENTER` across the queue's close and a create on the entry | both return `-MTL_EBADF`; the new queue's list and descriptor are untouched | A3 and J2 testing CLOSED only | C1q1 |
 | QW19 `QueueHook.descriptors_kept` | an AS `mtl_instance_interrupt` parked at `WAKE_BEFORE_SYSCALL` in U2's write while the last `mtl_instance_close` runs; then the test opens a socket | the write lands on the kept eventfd (the socket reads nothing); `/proc/self/fd` still lists the queues' eventfds, at most the peak of live queues | closing queue descriptors at the last instance close | C1q2 |
+| QW20 `QueueHook.post_wakes` | a loop asleep in `mtl_queue_wait(∞)`, another in epoll on the descriptor; posts from a thread and from a signal handler; then 10^4 posts while the loop is awake | each sleeper wakes; one report whose `user` is the OR; 0 `write()`s while awake | `post_no_claim` | C1q1 |
+| QW21 `QueueHook.post_vs_arm` | a consumer parked at `QW_AFTER_RESET`; a post; resume | a report of posts, not `-MTL_EAGAIN` | `arm_ignores_post` | C1q1 |
+| QW22 `QueueHook.post_vs_close` | a post parked at `POST_BEFORE_CAS` across close and a create on the entry; and parked at `WAKE_BEFORE_SYSCALL` in PS3 | `-MTL_EBADF`, the new queue reports nothing; at most one empty return | `post_no_check` | C1q1 |
 
-**Public forms** (C1q2): ex03 on `null:1` with two event-loop threads on one queue and a one-off
-poller; `mtl_instance_interrupt` from a real SIGTERM handler while workers block in acquire (ex16's
+**Public forms** (C1q2): ex03 on `null:1` with two event-loop threads on one queue, a one-off
+poller and a test source that posts from two threads and a signal handler; `mtl_instance_interrupt` from a real SIGTERM handler while workers block in acquire (ex16's
 shape, A2a).
 
 **Nightly smoke** (MS2a): [models/stress.c](models/stress.c) (LT and ONESHOT, 2 000 rounds each).
@@ -176,21 +182,21 @@ Each test lands with the task that makes it runnable:
 | C2 | WH11 (ERROR), WH17, WH19, WH20, and the `NullBinding` runs |
 | A2a | ex16's SIGTERM form |
 | MS2 | WC4 |
-| C1q1 (MS2a) | QW1–QW5, QW7, QW10–QW12, QW14, QW18 |
+| C1q1 (MS2a) | QW1–QW5, QW7, QW10–QW12, QW14, QW18, QW20–QW22 |
 | C1q2 (MS2a) | WH14, QW6, QW8, QW9, QW13, QW15–QW17, QW19; WH15's and WH21's queue parts; ex03's public form |
 
 Retired with the per-object descriptor that queues replaced ([D-159](../decisions.md)): WH1,
 WH4–WH9, WH13, WH13b and WH18.
-Totals: 16 tests in MS1, 2 in MS2, 20 in MS2a.
+Totals: 16 tests in MS1, 2 in MS2, 23 in MS2a.
 
 ## 7. What the schedules replay
 
-- **Model cases.** o1–o7, q1–q11 and r1–r4 are case names in `final_model.py`; each is a
+- **Model cases.** o1–o7, q1–q11, r1–r4 and p1–p5 are case names in `final_model.py`; each is a
   configuration whose interleavings the model explores, and `--trace CASE MUTANT` prints the
   counterexample a test replays.
 - **Mutants.** `bits`, `no_arm`, `load_after_attempt`, `producer_skip`, `intr_no_bump`, `no_dec`,
   `want_store`, `no_resignal`, `no_exit_resignal`, `reset_after_arm`, `no_reset`, `arm_store`,
-  `arm_no_validate`, `claim_by_load`, `intr_no_claim`, `no_intr_recheck`, `no_qgen`, `no_dead` and
-  `close_no_wait`; the model prints the cases that kill each one.
+  `arm_no_validate`, `claim_by_load`, `intr_no_claim`, `no_intr_recheck`, `no_qgen`, `no_dead`,
+  `close_no_wait`, `post_no_claim`, `arm_ignores_post`, `post_no_check` and `post_before_publish`; the model prints the cases that kill each one.
 - **Argued and tested, not modelled**: the delivery count (QW17), the generation check of A3 and J2
   (QW18; the model checks it), the descriptors kept for the process's life (QW19).

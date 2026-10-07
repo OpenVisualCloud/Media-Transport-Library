@@ -1,5 +1,4 @@
-/* ex02 — a video receiver on two ST 2022-7 legs: dequeue, read, release. Needs: MS1
-   (media_index is valid from MS3). */
+/* ex02 — a video receiver on two ST 2022-7 legs: dequeue, read, release. Needs: MS1. */
 #include "ex_common.h"
 
 void show(const void* addr, uint32_t stride, int complete, int64_t media_index);
@@ -23,20 +22,20 @@ int rx_video(mtl_instance_h mt) {
   sc.video.format = MTL_YUV422_10;
   int ret = mtl_session_open(mt, &sc, &s);
 
-  while (ret >= 0 && g_running) {
+  while (ret >= 0) {
     ret = mtl_rx_dequeue(s, &u, MTL_MS(100));
-    if (ret == -MTL_EAGAIN) { /* no signal: status.flags lacks MTL_STATUS_RX_SIGNAL */
+    if (ret == -MTL_EAGAIN) { /* no frame for 100 ms: no signal (status.flags) */
       ret = 0;
       continue;
     }
-    if (ret < 0) break;
-    show(
-        u.plane[0].addr, u.plane[0].stride, u.status == MTL_RX_COMPLETE,
-        (u.flags & MTL_UNITF_INDEX_VALID) ? u.media_index : -1); /* lost packets read 0 */
+    if (ret < 0) break;                         /* -MTL_ECANCELED: the interrupt */
+    int complete = u.status == MTL_RX_COMPLETE; /* else lost packets read as zero */
+    int64_t index = (u.flags & MTL_UNITF_INDEX_VALID) ? u.media_index : -1;
+    show(u.plane[0].addr, u.plane[0].stride, complete, index);
     ret = mtl_rx_release(s, u.lease);
   }
 
-  if (ret < 0) ex_fail("rx", ret);
-  mtl_session_close(s, 0); /* MTL_RETIRING is not a failure: it ends on its own */
-  return ret;
+  if (ret != -MTL_ECANCELED) ex_fail("rx", ret);
+  mtl_session_close(s, 0); /* 1 while a frame is still out: it finishes by itself */
+  return ret == -MTL_ECANCELED ? 0 : ret;
 }

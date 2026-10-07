@@ -69,8 +69,11 @@ It then checks that:
 - `examples.md` shows every example verbatim, and `concepts.md` its copies of ex01 and ex02;
 - the examples call every exported function outside `MTL_LATER` and `mtl_debug.h`: each is
   compiled at its `Needs` level, and the undefined symbols of the objects (`nm -u`) are matched
-  against `--tags`, so a call through an inline wrapper counts (G-114's method);
-- each example's first line starts with its own number: `/* exNN —`, and the C++ file `// <name> —`;
+  against `--tags`, so a call through an inline wrapper counts (G-114's method); an example
+  that does not compile, or a host without `nm`, fails the lint;
+- `examples/` holds `ex_common.h`, the C++ file and `exNN_<name>.c` files only, numbered from
+  01 once each with no gap, and each example's first line starts with its own number:
+  `/* exNN —`, and the C++ file `// <name> —`;
 - the reasons of `mtl_reasons.h` ascend and equal the marked table of contract.md §8.3 (until
   task H1b replaces this lint with `gen_api_doc.py --check`, which also compares every marked
   table with its `.def`, and from H1b every enum constant and integer macro outside

@@ -1,8 +1,5 @@
-/* ex01 — the smallest video sender: one config, a library pool, no results to read.
-   Defaults it relies on: media mode AUTO (the next frame time of the SMPTE epoch),
-   results off. Needs: MS1 (null: and kernel: ports; a VF from MS2a, or in MS1 through
-   the legacy bridge, ex24).
- */
+/* ex01 — the smallest video sender: describe the stream, open it, then acquire, draw and
+   submit one frame at a time. Needs: MS1. */
 #include "ex_common.h"
 
 void render(void* addr, uint32_t stride, int64_t frame);
@@ -24,22 +21,23 @@ int main(void) {
   sc.video.format = MTL_YUV422_10;
 
   int ret = mtl_instance_open(NULL, &mt); /* ports from MTL_PORTS, e.g. "null:1" */
-  if (ret >= 0) ret = mtl_session_open(mt, &sc, &s); /* create and start */
+  if (ret < 0) {
+    ex_fail("instance", ret);
+    return 1;
+  }
+  ex_install_interrupt(mt);
+  ret = mtl_session_open(mt, &sc, &s); /* create and start */
 
-  for (int64_t k = 0; ret >= 0 && g_running;) {
-    ret = mtl_tx_acquire(s, &u, MTL_MS(100));
-    if (ret == -MTL_EAGAIN) { /* back-pressure: status.blocked_on says on what */
-      ret = 0;
-      continue;
-    }
+  for (int64_t k = 0; ret >= 0; k++) {
+    ret = mtl_tx_acquire(s, &u, MTL_FOREVER); /* waits while every frame is queued */
     if (ret == 0) {
-      render(u.plane[0].addr, u.plane[0].stride, k++);
+      render(u.plane[0].addr, u.plane[0].stride, k);
       ret = mtl_tx_submit(s, &u); /* sent at the next frame time */
     }
   }
 
-  if (ret < 0) ex_fail("mtl", ret);
-  mtl_session_close(s, MTL_SEC(1));   /* sends what is queued, then retires */
-  mtl_instance_close(mt, MTL_SEC(1)); /* leaves groups, stops the devices */
-  return ret < 0;
+  if (ret != -MTL_ECANCELED) ex_fail("mtl", ret); /* -MTL_ECANCELED: the interrupt */
+  mtl_session_close(s, MTL_SEC(1));               /* sends what is queued, then retires */
+  mtl_instance_close(mt, MTL_SEC(1));             /* leaves groups, stops the devices */
+  return ret != -MTL_ECANCELED;
 }

@@ -82,11 +82,12 @@ with the unified one.
   AS (async-signal-safe). Debug builds enforce them (from MS3, D-05).
 - **Blocking.** `*_FLAG_BLOCK_GET` and `*_set_block_timeout()` become the `timeout_ns` argument (0 =
   do not wait, `MTL_FOREVER`); `*_wake_block()` becomes `mtl_session_interrupt(s, 1)`, sticky until
-  `(s, 0)`. Event loops use `mtl_queue_create` and `mtl_queue_arm` (MS2a): one queue and its
-  descriptor (an eventfd, a `HANDLE` on Windows) for any number of sessions. A report names a
-  session once and disarms it: serve it with timeout-0 calls, arm it again with what you want next,
-  and sleep on the descriptor only after `mtl_queue_wait(q, …, 0)` returned `-MTL_EAGAIN`
-  ([contract.md §7.2](contract.md#72-queues-ms2)).
+  `(s, 0)`. Event loops use `mtl_queue_create` and `mtl_queue_arm` (MS2a): one queue for any
+  number of sessions. A report names a session once and disarms it: serve it with timeout-0 calls
+  and arm it again with what you want next. A loop sleeps in `mtl_queue_wait`, and the
+  application's threads wake it with `mtl_queue_post`; a framework's loop takes the descriptor (an
+  eventfd, a `HANDLE` on Windows) and sleeps on it only after `mtl_queue_wait(q, …, 0)` returned
+  `-MTL_EAGAIN` ([contract.md §7.2](contract.md#72-queues-ms2)).
 - **Several threads.** `mtl_rx_release()` and `mtl_tx_acquire()` work from any thread. Set
   `MTL_SESSION_MT_SUBMIT` when several threads submit (§12.3).
 - **Latency parity** with today's tasklet callbacks (MXL bridge, fwd samples, slice users) comes
@@ -105,7 +106,7 @@ with the unified one.
   counted and raised as events). A pool of application memory always does: a slot is reused only
   after its result is reaped (`mtl_mem.h` rule MEM3). This replaces `notify_frame_done`,
   `notify_frame_late`, `EXT_FRAME_MANUAL_RELEASE` and `st20p_tx_notify_ext_frame_free()`.
-- **Back-pressure.** The results ring holds `pool_count`; when unread results fill it, acquire
+- **Back-pressure.** The results ring holds `pool_count` + 1; when unread results fill it, acquire
   returns `-MTL_EAGAIN` with `status.blocked_on = MTL_BLOCKED_RESULTS`.
 - **RX.** `unit.status` is `MTL_RX_COMPLETE` or `MTL_RX_INCOMPLETE`; `unit.flags` carries
   `MTL_UNITF_*`; `unit.missed_before` counts units the pool could not take. Detail:
@@ -1629,11 +1630,12 @@ thread.
 Every session has its own results and events. A thread that serves one session waits on it
 (`mtl_session_wait()`, or the WT calls with a timeout). A thread that serves many uses one queue
 (`mtl_queue_create()`, MS2a): it arms each session on it (`mtl_queue_arm()`), and the instance
-with `MTL_WAIT_EVENTS` for port, time, health and manager events (MS3), and puts the queue's
-descriptor in its epoll set. `mtl_queue_wait(q, …, 0)` returns one report per changed object; the
-thread serves that object with timeout-0 calls (reap, dequeue, `mtl_session_read_events()`;
-`mtl_instance_read_events()` for the instance), arms it again with what it wants next, and sleeps
-only after `mtl_queue_wait` returned `-MTL_EAGAIN` ([contract.md §7.2](contract.md#72-queues-ms2)).
+with `MTL_WAIT_EVENTS` for port, time, health and manager events (MS3), and sleeps in
+`mtl_queue_wait`; the application's other threads wake it with `mtl_queue_post`. The wait returns
+one report per changed object; the thread serves that object with timeout-0 calls (reap, dequeue,
+`mtl_session_read_events()`; `mtl_instance_read_events()` for the instance) and arms it again with
+what it wants next. A framework's loop takes the queue's descriptor instead and sleeps on it only
+after `mtl_queue_wait(q, …, 0)` returned `-MTL_EAGAIN` ([contract.md §7.2](contract.md#72-queues-ms2)).
 
 ### 12.4 Exporting a pool (GstBufferPool over MTL TX slots)
 
@@ -1946,7 +1948,7 @@ flowchart LR
 | `fi_send`, `FI_INJECT`; `get_next_chunk` → `commit_chunk` | `mtl_tx_acquire()` → fill → `mtl_tx_submit()` (media time, optional launch time); `mtl_tx_write()` copies; commit sends the lease you committed |
 | `FI_TRANSMIT_COMPLETE`; HW completion time | the TX result: slot reusable, with `sent_tai_ns`; `mtl_tx_result_full.observed_first_tai_ns[]` |
 | `-FI_EAGAIN`; `RMX_NO_FREE_CHUNK`, `RMX_BUSY` | `-MTL_EAGAIN` (nothing now, or by the timeout) + `status.blocked_on` (`MTL_BLOCKED_APP_LEASES` names the leak) |
-| `fi_cq_read`, `fi_cq_readerr`; CQ overrun fatal | `mtl_tx_reap()` (`mtl_reap()` with the record size per call), status inline; the ring holds `pool_count`, acquire reports `MTL_BLOCKED_RESULTS` |
+| `fi_cq_read`, `fi_cq_readerr`; CQ overrun fatal | `mtl_tx_reap()` (`mtl_reap()` with the record size per call), status inline; the ring holds `pool_count` + 1, acquire reports `MTL_BLOCKED_RESULTS` |
 | `FI_WAIT_FD` + `fi_trywait`; event channel fd | a queue's descriptor (`mtl_queue_create()`, `mtl_queue_arm()`, MS2a); `fi_trywait` ↔ `mtl_queue_wait(q, …, 0)` returned `-MTL_EAGAIN` |
 | `fid_eq`; `fid_cntr` | `mtl_session_read_events()`, `mtl_instance_read_events()` (coalescing, every event has a getter); the stats registry |
 | `rmx_stats_*` read from another process | none in v1: the registry is read in-process (`mtl_stat_read()`); an out-of-process reader is later, possibly through MtlManager shared memory |

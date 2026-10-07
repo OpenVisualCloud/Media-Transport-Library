@@ -1,6 +1,5 @@
 /* ex07 — a receiver that knows what it got: each unit, the status and the unit's detail
-   say what the stream did, and what the program does about it. Needs: MS3 (media_index;
-   the detail and RX_LATEST MS2). */
+   say what the stream did, and what the program does about it. Needs: MS3. */
 #include <mtl/experimental/mtl_observe.h>
 
 #include "ex_common.h"
@@ -8,11 +7,9 @@
 void use_frame(const struct mtl_unit* u);
 void note(const char* what, int64_t media_index, int64_t n); /* the application's log */
 
-/* base: a video RX config on two legs (leg i on instance port i; mtl_flow_on_port() names
-   another). A monitor sets MTL_SESSION_RX_LATEST and a small pool: a full pool gives up
-   its oldest unread frame; a recorder keeps the default: the newest is dropped and
-   counted. The receivers of one programme share one rx.link_offset_ns and start in one
-   array (MS6; timing.md §11.4). */
+/* base: a video RX config on two legs. A monitor wants the newest frame (RX_LATEST, a
+   small pool: a full pool gives up its oldest unread frame); a recorder wants every frame
+   (the default, a deeper pool: a full pool drops the newest, and counts it). */
 int open_rx(mtl_instance_h mt, const struct mtl_session_config* base, int monitor,
             mtl_session_h* s) {
   struct mtl_session_config sc = *base;
@@ -35,8 +32,9 @@ static void check_unit(mtl_session_h s, const struct mtl_unit* u) {
   struct mtl_rx_detail d;
   int64_t k = (u->flags & MTL_UNITF_INDEX_VALID) ? u->media_index : -1;
   if (mtl_rx_get_detail(s, u->lease, &d, sizeof(d)) < 0) return;
-  if (u->missed_before) note("pool full: frames dropped", k, u->missed_before);
-  if (d.units_missing_before) note("frames missing before", k, d.units_missing_before);
+  if (u->missed_before) note("we were slow: our full pool dropped", k, u->missed_before);
+  if (d.units_missing_before)
+    note("never arrived from the network", k, d.units_missing_before);
   /* RELOCKED: the sender restarted, and k may go back */
   if (u->flags & MTL_UNITF_DISCONTINUITY)
     note(u->flags & MTL_UNITF_RELOCKED ? "sender restarted" : "sender jumped", k, 0);
@@ -53,21 +51,21 @@ int receive(mtl_session_h s) {
   struct mtl_unit u;
   int ret = 0;
   MTL_INIT(&u);
-  while (ret >= 0 && g_running) {
+  while (ret >= 0) {
     ret = mtl_rx_dequeue(s, &u, MTL_MS(100));
-    if (ret == -MTL_EAGAIN) {
+    if (ret == -MTL_EAGAIN) { /* nothing for 100 ms */
       no_unit(s);
       ret = 0;
-    } else if (ret == -MTL_EIO) { /* ERROR: status.error_reason; the same handle */
-      mtl_session_stop(&s, 1, MTL_STOP_FLUSH, 0);
-      ret = mtl_session_start(&s, 1, NULL, NULL); /* -MTL_ENODEV: the port is gone */
+    } else if (ret == -MTL_EIO) { /* ERROR, status.error_reason: restart the handle */
+      ret = mtl_session_stop(&s, 1, MTL_STOP_FLUSH, 0);
+      if (ret >= 0) ret = mtl_session_start(&s, 1, NULL, NULL); /* -MTL_ENODEV: no port */
     } else if (ret == 0) {
       check_unit(s, &u);
       use_frame(&u);
       ret = mtl_rx_release(s, u.lease);
     }
   }
-  if (ret < 0) ex_fail("rx", ret);
+  if (ret != -MTL_ECANCELED) ex_fail("rx", ret);
   mtl_session_close(s, 0);
-  return ret;
+  return ret == -MTL_ECANCELED ? 0 : ret;
 }

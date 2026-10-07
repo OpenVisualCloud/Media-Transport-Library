@@ -124,7 +124,7 @@ the rule text lives in [contract.md](contract.md), [timing.md](timing.md), [core
 | R-TIME-12 | SHOULD | RX reports `media_index` on the epoch; video, audio and ANC align without application arithmetic (`mtl_rx_align`) |
 | R-TIME-13 | SHOULD | processes align without IPC: every session on the SMPTE epoch, and `mtl_epoch_index_at` |
 | R-CMP-1 | MUST | every accepted submission has exactly one terminal outcome (a result, or a counter with results off); a failed first submit has none and returns the slot to the pool, except `-MTL_EBADF` and `-MTL_ESTALE`, which change no state (D-88) |
-| R-CMP-2 | MUST | results are never lost: the results ring holds `pool_count` entries and acquire reserves one, so producing a result never waits ([core.md §4](core.md#4-lease-table-and-result-materialisation)) |
+| R-CMP-2 | MUST | results are never lost: the results ring holds `pool_count` + 1 entries and acquire reserves one, so producing a result never waits ([core.md §4](core.md#4-lease-table-and-result-materialisation)) |
 | R-CMP-3 | MUST | TX statuses ON_TIME, DROPPED (with reason), FLUSHED, FAILED, and LATE for a bounded late send (Phase 7, `MTL_LATER`); `enum mtl_tx_status` starts at 1, so 0 is never terminal |
 | R-CMP-4 | MUST | "reusable" means nothing (converter, packet, DMA, NIC) can still reach the storage |
 | R-CMP-5 | MUST | events in a bounded ring per session and per instance, apart from results, coalesced, overflow counted, a getter per state event |

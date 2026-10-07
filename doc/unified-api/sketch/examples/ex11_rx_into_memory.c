@@ -37,61 +37,55 @@ int mxl_bridge(mtl_instance_h mt) {
   if (ret >= 0) ret = mtl_session_attach(s, &a);
   if (ret >= 0) ret = mtl_session_start(&s, 1, NULL, NULL);
 
-  while (ret >= 0 && g_running) {
-    ret = mtl_rx_dequeue(s, &u, MTL_MS(100));
-    if (ret == 0) {
-      if (u.flags & MTL_UNITF_INDEX_VALID) /* u.slot == media_index mod GRAINS */
-        mxl_commit_grain(u.slot, u.media_index, u.status == MTL_RX_COMPLETE);
-      ret = mtl_rx_release(s, u.lease);
-    } else if (ret == -MTL_EAGAIN) {
-      ret = 0;
-    }
+  while (ret >= 0 && (ret = mtl_rx_dequeue(s, &u, MTL_FOREVER)) == 0) {
+    if (u.flags & MTL_UNITF_INDEX_VALID) /* u.slot == media_index mod GRAINS */
+      mxl_commit_grain(u.slot, u.media_index, u.status == MTL_RX_COMPLETE);
+    ret = mtl_rx_release(s, u.lease);
   }
 
-  if (ret < 0) ex_fail("mxl", ret);
-  /* MTL_RETIRING: poll until 0, then MXL may reuse the ring */
-  while (mtl_session_close(s, MTL_SEC(1)) == MTL_RETIRING) {
-  }
-  return ret;
+  if (ret != -MTL_ECANCELED) ex_fail("mxl", ret);
+  mtl_session_close(s, MTL_FOREVER); /* once it returns, MXL may reuse the ring */
+  return ret == -MTL_ECANCELED ? 0 : ret;
 }
 
 #define FRAMES 64 /* the recorder's arena, about 1 s at 59.94 */
+#define AHEAD 4   /* destinations MTL holds: the session's pool_count */
 
-/* A recorder: s is created with MTL_SESSION_POOL_ATTACHED, pool_count 4 and no slot; each
-   unit lands at the cursor the recorder handed over, named by its cookie (never 0). */
+/* A recorder: s is created with MTL_SESSION_POOL_ATTACHED, pool_count AHEAD and no slot.
+   Each unit lands in a destination the recorder handed over, and its address says which.
+   Lost packets are never zero-filled here: the unit is MTL_RX_INCOMPLETE. */
 int record(mtl_instance_h mt, mtl_session_h s, uint64_t frame_bytes) {
   struct mtl_mem_desc d;
-  struct mtl_attach one;
+  struct mtl_attach dest;
   struct mtl_unit u;
-  MTL_ADDR(void) va;
-  uint64_t cursor = 0;
+  void* va = NULL;
+  uint64_t next = 0; /* the offset of the next destination */
   MTL_INIT(&d);
-  MTL_INIT(&one);
+  MTL_INIT(&dest);
   MTL_INIT(&u);
   d.length = FRAMES * frame_bytes;
   d.flags = MTL_MEM_WRITE | MTL_MEM_MAP_ALL; /* a destination must be mapped already */
-  int ret = mtl_mem_alloc(mt, &d, &one.region, &va);
-  one.count = 1;
-  for (int ready = 0; ret >= 0 && g_running;) {
-    for (; ret >= 0 && ready < 4; ready++, cursor = (cursor + frame_bytes) % d.length) {
-      one.offset = cursor;
-      one.cookie = cursor + 1;
-      ret = mtl_rx_provide(s, &one); /* -MTL_ENOSPC: pool_count held */
-    }
-    if (ret >= 0 && mtl_session_get_state(s) == MTL_STATE_CREATED)
-      ret = mtl_session_start(&s, 1, NULL, NULL);
-    if (ret >= 0) ret = mtl_rx_dequeue(s, &u, MTL_MS(100));
-    if (ret == 0) { /* never zero-filled: lost packets show as MTL_RX_INCOMPLETE */
-      ready--;
-      ret = disk_write(u.cookie - 1, u.media_index, u.status == MTL_RX_COMPLETE);
-      int r = mtl_rx_release(s, u.lease);
-      if (ret >= 0) ret = r;
-    } else if (ret == -MTL_EAGAIN) {
-      ret = 0;
-    }
+  int ret = mtl_mem_alloc(mt, &d, &dest.region, &va);
+  dest.count = 1;
+  for (int i = 0; ret >= 0 && i < AHEAD; i++) {
+    dest.offset = next;
+    ret = mtl_rx_provide(s, &dest);
+    next = (next + frame_bytes) % d.length;
   }
-  while (mtl_session_close(s, MTL_SEC(1)) == MTL_RETIRING) { /* hands every one back */
+  if (ret >= 0) ret = mtl_session_start(&s, 1, NULL, NULL);
+
+  while (ret >= 0 && (ret = mtl_rx_dequeue(s, &u, MTL_FOREVER)) == 0) {
+    uint64_t off = (uint64_t)((uint8_t*)u.plane[0].addr - (uint8_t*)va);
+    ret = disk_write(off, u.media_index, u.status == MTL_RX_COMPLETE);
+    int r = mtl_rx_release(s, u.lease);
+    if (ret >= 0) ret = r;
+    dest.offset = next; /* one came back: hand over the next */
+    if (ret >= 0) ret = mtl_rx_provide(s, &dest);
+    next = (next + frame_bytes) % d.length;
   }
-  if (mtl_mem_close(one.region) == MTL_RETIRING) ex_fail("arena", -MTL_EBUSY);
-  return ret;
+
+  if (ret != -MTL_ECANCELED) ex_fail("record", ret);
+  mtl_session_close(s, MTL_FOREVER); /* hands every destination back */
+  if (mtl_mem_close(dest.region) == MTL_RETIRING) ex_fail("arena", -MTL_EBUSY);
+  return ret == -MTL_ECANCELED ? 0 : ret;
 }

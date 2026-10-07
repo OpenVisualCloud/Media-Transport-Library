@@ -374,7 +374,7 @@ struct mtl_log_record {
                         record (exact for an instance's rings; process-wide lines lost are
                         counted for every sink whose level takes them) */
   struct mtl_object origin; /* the session, port, scheduler or instance the line is about;
-                               kind 0 = the process (EAL, DPDK, lines before any open). An
+                               MTL_OBJ_NONE = the process (EAL, DPDK, lines before any open). An
                                instance, port or scheduler names its instance by the
                                instance's identity (stat instance.identity), the same for
                                every reference of a shared instance */

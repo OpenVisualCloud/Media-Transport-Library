@@ -130,10 +130,10 @@ A function is exported from its milestone, and a value of an exported call not b
 | Milestone | What you can build | Examples |
 |---|---|---|
 | MS1 | ST 2110-20 frames, TX and RX: library pools, one or two legs (ST 2022-7), conversion to an application format, results, media modes AUTO and TAI; the null backend, PCI ports through the legacy bridge ([examples.md §26](examples.md#26-from-the-legacy-api)) | ex01, ex02, ex20, ex24 |
-| MS2a | rows units (slice mode), RX zero fill and `MTL_SESSION_RX_LATEST`, PCI ports opened directly, the log sink, queues for event loops (ex03) | ex03, ex19 |
+| MS2a | rows units (slice mode), RX zero fill and `MTL_SESSION_RX_LATEST`, PCI ports opened directly, the log sink, queues for event loops (ex03) | ex03, ex19, ex21 |
 | MS2b | zero copy for video: imported and attached memory, holds, split forwarding, MXL rings | ex10, ex11, ex12 |
-| MS3 | timing: media mode INDEX, a start at an instant, `mtl_tx_get_next`, the declared latency of TAI mode (`media_time_offset_ns`); `mtl_session_update` on a stopped session; events, health, a shutdown with a report | ex04, ex05, ex06, ex07, ex08, ex16, ex21 |
-| MS4 | every essence: audio and fast metadata (MS4a1) and ANC (MS4a2), in media mode AUTO for audio and fast metadata until MS6; compressed video, codec plugins and `mtl_convert` (MS4b) | ex13, ex14, ex15, ex17 |
+| MS3 | timing: media mode INDEX, a start at an instant, `mtl_tx_get_next`, the declared latency of TAI mode (`media_time_offset_ns`); `mtl_session_update` on a stopped session; events, health, a shutdown with a report | ex04, ex05, ex06, ex07, ex08, ex16, ex17 |
+| MS4 | every essence: audio and fast metadata (MS4a1) and ANC (MS4a2), in media mode AUTO for audio and fast metadata until MS6; compressed video, codec plugins and `mtl_convert` (MS4b) | ex13, ex14, ex15 |
 | MS5 | packet units (RTP passthrough, ST 2022-6) and `mtl_session_update` while running | ex09, ex18 |
 | MS6 | sync: start arrays, ANC that follows its video, audio and fast metadata in media modes TAI and INDEX (sample-accurate audio); the framework and language ports | ex22, ex23 |
 | MS7 | the frozen ABI `MTL_1.0`; the legacy headers deprecated | — |
@@ -264,16 +264,14 @@ the only calls a signal handler may make).
 ## 3. The first sender
 
 [ex01](sketch/examples/ex01_tx_video.c), copied verbatim. It shares `ex_fail()` and
-`g_running` from [ex_common.h](sketch/examples/ex_common.h): `ex_fail()` prints
+`ex_install_interrupt()` from [ex_common.h](sketch/examples/ex_common.h): `ex_fail()` prints
 `mtl_error_name(ret)` and, when the last error is this failure, the reason and the field from
-`mtl_last_error()`.
+`mtl_last_error()`; the application's SIGINT and SIGTERM handler calls
+`mtl_instance_interrupt(mt, 1)`, which ends every wait with `-MTL_ECANCELED`.
 
 ```c
-/* ex01 — the smallest video sender: one config, a library pool, no results to read.
-   Defaults it relies on: media mode AUTO (the next frame time of the SMPTE epoch),
-   results off. Needs: MS1 (null: and kernel: ports; a VF from MS2a, or in MS1 through
-   the legacy bridge, ex24).
- */
+/* ex01 — the smallest video sender: describe the stream, open it, then acquire, draw and
+   submit one frame at a time. Needs: MS1. */
 #include "ex_common.h"
 
 void render(void* addr, uint32_t stride, int64_t frame);
@@ -295,24 +293,25 @@ int main(void) {
   sc.video.format = MTL_YUV422_10;
 
   int ret = mtl_instance_open(NULL, &mt); /* ports from MTL_PORTS, e.g. "null:1" */
-  if (ret >= 0) ret = mtl_session_open(mt, &sc, &s); /* create and start */
+  if (ret < 0) {
+    ex_fail("instance", ret);
+    return 1;
+  }
+  ex_install_interrupt(mt);
+  ret = mtl_session_open(mt, &sc, &s); /* create and start */
 
-  for (int64_t k = 0; ret >= 0 && g_running;) {
-    ret = mtl_tx_acquire(s, &u, MTL_MS(100));
-    if (ret == -MTL_EAGAIN) { /* back-pressure: status.blocked_on says on what */
-      ret = 0;
-      continue;
-    }
+  for (int64_t k = 0; ret >= 0; k++) {
+    ret = mtl_tx_acquire(s, &u, MTL_FOREVER); /* waits while every frame is queued */
     if (ret == 0) {
-      render(u.plane[0].addr, u.plane[0].stride, k++);
+      render(u.plane[0].addr, u.plane[0].stride, k);
       ret = mtl_tx_submit(s, &u); /* sent at the next frame time */
     }
   }
 
-  if (ret < 0) ex_fail("mtl", ret);
-  mtl_session_close(s, MTL_SEC(1));   /* sends what is queued, then retires */
-  mtl_instance_close(mt, MTL_SEC(1)); /* leaves groups, stops the devices */
-  return ret < 0;
+  if (ret != -MTL_ECANCELED) ex_fail("mtl", ret); /* -MTL_ECANCELED: the interrupt */
+  mtl_session_close(s, MTL_SEC(1));               /* sends what is queued, then retires */
+  mtl_instance_close(mt, MTL_SEC(1));             /* leaves groups, stops the devices */
+  return ret != -MTL_ECANCELED;
 }
 ```
 
@@ -341,8 +340,11 @@ What to notice:
   `mtl_session_start` start at a chosen time or several sessions together.
 - **Defaults do the rest**: MTL owns the buffers, each frame goes out at the next frame time, and no
   results are produced, so the loop never stalls on unread results.
-- **Back-pressure is a return code.** `-MTL_EAGAIN` from acquire means no slot is free yet
-  (legacy `st20p_tx_get_frame` returning `NULL`); `status.blocked_on` says why.
+- **Back-pressure waits.** With `MTL_FOREVER` acquire returns once a slot is free (legacy
+  `st20p_tx_get_frame` blocking); with a timeout, `-MTL_EAGAIN` means none was free in time, and
+  `status.blocked_on` says why. The interrupt ends the wait with `-MTL_ECANCELED`, which is how the
+  loop ends, so no loop polls a flag. ex01 has results off; with results on, a thread reaps before
+  each acquire that may block (§6.1).
 - **Close is bounded.** `mtl_session_close` drains what is queued, destroys and waits for
   retirement in one call; `mtl_instance_close` shuts down network first within its deadline
   (legacy `mtl_uninit`).
@@ -375,8 +377,7 @@ sequenceDiagram
 [ex02](sketch/examples/ex02_rx_video.c), copied verbatim. It takes an open instance.
 
 ```c
-/* ex02 — a video receiver on two ST 2022-7 legs: dequeue, read, release. Needs: MS1
-   (media_index is valid from MS3). */
+/* ex02 — a video receiver on two ST 2022-7 legs: dequeue, read, release. Needs: MS1. */
 #include "ex_common.h"
 
 void show(const void* addr, uint32_t stride, int complete, int64_t media_index);
@@ -400,22 +401,22 @@ int rx_video(mtl_instance_h mt) {
   sc.video.format = MTL_YUV422_10;
   int ret = mtl_session_open(mt, &sc, &s);
 
-  while (ret >= 0 && g_running) {
+  while (ret >= 0) {
     ret = mtl_rx_dequeue(s, &u, MTL_MS(100));
-    if (ret == -MTL_EAGAIN) { /* no signal: status.flags lacks MTL_STATUS_RX_SIGNAL */
+    if (ret == -MTL_EAGAIN) { /* no frame for 100 ms: no signal (status.flags) */
       ret = 0;
       continue;
     }
-    if (ret < 0) break;
-    show(
-        u.plane[0].addr, u.plane[0].stride, u.status == MTL_RX_COMPLETE,
-        (u.flags & MTL_UNITF_INDEX_VALID) ? u.media_index : -1); /* lost packets read 0 */
+    if (ret < 0) break;                         /* -MTL_ECANCELED: the interrupt */
+    int complete = u.status == MTL_RX_COMPLETE; /* else lost packets read as zero */
+    int64_t index = (u.flags & MTL_UNITF_INDEX_VALID) ? u.media_index : -1;
+    show(u.plane[0].addr, u.plane[0].stride, complete, index);
     ret = mtl_rx_release(s, u.lease);
   }
 
-  if (ret < 0) ex_fail("rx", ret);
-  mtl_session_close(s, 0); /* MTL_RETIRING is not a failure: it ends on its own */
-  return ret;
+  if (ret != -MTL_ECANCELED) ex_fail("rx", ret);
+  mtl_session_close(s, 0); /* 1 while a frame is still out: it finishes by itself */
+  return ret == -MTL_ECANCELED ? 0 : ret;
 }
 ```
 
@@ -611,8 +612,10 @@ The core record, `struct mtl_tx_result` (96 bytes), also carries `cookie`, `seq`
 - **Off by default with MTL's buffers** (turn them on with `MTL_SESSION_RESULTS`), so a minimal
   loop cannot stall on unread results. **Always on with your own memory**: a result is how you
   learn the memory is free again.
-- **Unread results take room**: when the ring of `pool_count` results is full, acquire waits with
-  `status.blocked_on == MTL_BLOCKED_RESULTS` (other reasons: `BUFFERS`, `APP_LEASES`).
+- **Unread results take room**: when the ring of `pool_count` + 1 results is full, acquire waits
+  with `status.blocked_on == MTL_BLOCKED_RESULTS` (other reasons: `BUFFERS`, `APP_LEASES`). So
+  reap every ready result before an acquire that may block: that acquire then never waits on
+  results, even with `MTL_FOREVER` ([contract.md §5.5](contract.md#55-back-pressure)).
 - **RX has no results**: the unit itself carries `status`, `media_index`, `rtp` and flags;
   `mtl_rx_get_detail` (`mtl_observe.h`, with the ST 2110-21 `timing[]`) adds per-unit detail.
 
@@ -630,12 +633,13 @@ target or on different ones. An application that never sleeps never causes a wak
 - `mtl_session_wait(s, mask, timeout)` waits for `MTL_WAIT_ACQUIRE`, `_DEQUEUE`, `_RESULTS` or
   `_EVENTS` without consuming anything.
 - **An event loop waits on a queue** (MS2a, [ex03](sketch/examples/ex03_event_loop.c)).
-  `mtl_queue_create(mt, 0, &q, &fd)` gives a queue and one descriptor for any number of sessions
-  and the instance (an eventfd on Linux, a `HANDLE` on Windows). `mtl_queue_arm(q, s, targets,
-  user)` arms what you want to hear about; the first change reports `s` once, with `user`, and the
-  report disarms it, so serve `s` with timeout-0 calls and arm it again with what you want next.
-  `mtl_queue_wait(q, r, size, max, 0)` returns the reports, or `-MTL_EAGAIN` with the descriptor
-  armed: sleep in `epoll` only after that. Detach (`mtl_queue_arm(q, s, 0, 0)`) or close `s`
+  `mtl_queue_create(mt, 0, &q, NULL)` gives a queue for any number of sessions and the instance.
+  `mtl_queue_arm(q, s, targets, user)` arms what you want to hear about; the first change reports
+  `s` once, with `user`, and the report disarms it, so serve `s` with timeout-0 calls and arm it
+  again with what you want next. `mtl_queue_wait(q, r, size, max, MTL_FOREVER)` sleeps until a
+  report; your own threads wake it with `mtl_queue_post(q, bits)` after they publish work. A
+  framework's own loop takes the descriptor (`&fd`: an eventfd on Linux, a `HANDLE` on Windows)
+  and sleeps on it only after `mtl_queue_wait(..., 0)` returned `-MTL_EAGAIN`. Detach (`mtl_queue_arm(q, s, 0, 0)`) or close `s`
   before you free what `user` points to.
 - `mtl_session_interrupt(s, 1)` makes every data wait on `s` return `-MTL_ECANCELED` until
   `mtl_session_interrupt(s, 0)` (GStreamer `unlock` and `unlock_stop`; legacy
@@ -658,7 +662,7 @@ stateDiagram-v2
     Disarmed --> [*]: detach or close
 ```
 
-Pictures: an event loop ([examples.md §5](examples.md#5-many-sessions-in-the-applications-epoll-loop)),
+Pictures: an event loop ([examples.md §5](examples.md#5-many-sessions-on-one-thread)),
 a queue ([contract.md §7.2](contract.md#72-queues-ms2)) and interrupts
 ([contract.md §7.3](contract.md#73-interrupts)).
 
@@ -975,7 +979,7 @@ full jobs are in [examples.md §1](examples.md#1-the-headers).
 | `mtl_options.h` | set a tuning knob (`MTL_OPT_*`), or list every knob by name | MS1 |
 | `mtl_reasons.h` | branch on a reason code | values only, no functions |
 | `mtl_format.h` | use an application pixel format other than the wire format; convert colour or audio formats outside a session | MS1 (application formats), MS4 (`mtl_convert`) |
-| `mtl_util.h` | the copy path (`mtl_tx_write`, from a byte buffer), one-call slot sends, stride-aware plane copies, meta records, ANC helpers, the RX reserve of a framework source | MS3 (`mtl_tx_write`; audio and ANC sessions MS4), MS2 (named slots) |
+| `mtl_util.h` | the copy path (`mtl_tx_write`, from a byte buffer), one-call slot sends, every ready result (`mtl_tx_reap_each`), stride-aware plane copies, a frame's duration, L24 samples, meta records, ANC helpers, the RX reserve of a framework source | MS1 (audio and ANC sessions MS4), MS2 (named slots) |
 | `mtl_plugin.h` | write a codec plugin | MS4 |
 | `mtl_legacy.h` | share an instance with legacy code (`mtl_handle`) | MS1 |
 | `mtl_debug.h` | test clock and fault injection (debug builds) | MS1 |
@@ -1091,18 +1095,19 @@ listed in [migration.md](migration.md) §8.4 (D-83, D-87).
 runs the first code without a NIC. The first milestone is ST 2110-20 frames TX and RX
 ([implementation-plan.md](implementation-plan.md) §5).
 
-**Why does my epoll loop never wake?** A queue reports an armed session once, and the report
-disarms it (§6.2). A loop that serves a reported session and goes back to `epoll` without arming it
+**Why does my loop never wake?** A queue reports an armed session once, and the report
+disarms it (§6.2). A loop that serves a reported session and goes back to sleep without arming it
 again hears nothing more from that session. Arm it again after serving it, with every target the
 loop wants next (`MTL_WAIT_RESULTS`, and `MTL_WAIT_ACQUIRE` while a frame waits, in
-[ex03](sketch/examples/ex03_event_loop.c); `MTL_WAIT_DEQUEUE` for a receiver), and sleep in
-`epoll` only after `mtl_queue_wait` returned `-MTL_EAGAIN`, which arms the queue's descriptor.
+[ex03](sketch/examples/ex03_event_loop.c); `MTL_WAIT_DEQUEUE` for a receiver). A thread of yours
+that hands the loop work publishes it, then posts (`mtl_queue_post`). A framework's loop sleeps on
+the descriptor only after `mtl_queue_wait` returned `-MTL_EAGAIN`, which arms it.
 
 **How do I serve many receivers from one thread?** The [ex03](sketch/examples/ex03_event_loop.c)
-pattern: one queue (`mtl_queue_create`), every session armed on it with `MTL_WAIT_DEQUEUE`, and its
-descriptor in your `epoll` set beside the descriptor of every other source of work (a socket, a
-control pipe) (MS2a, ex03); for each report, dequeue with timeout 0 until `-MTL_EAGAIN`, hand each
-frame on, arm the session again, and sleep only after `mtl_queue_wait` returned `-MTL_EAGAIN`. Set
+pattern: one queue (`mtl_queue_create`), every session armed on it with `MTL_WAIT_DEQUEUE`; your
+other sources of work post to it, or, in a framework's loop, its descriptor sits beside theirs
+(MS2a, ex03); for each report, dequeue with timeout 0 until `-MTL_EAGAIN`, hand each
+frame on, arm the session again, and wait on the queue again. Set
 `MTL_SESSION_RX_LATEST` (MS2a), so a session the thread reaches late reclaims its oldest unread
 frame instead of dropping new ones, and keep `pool_count` at 2 or 3, which bounds both the memory
 and the age of a frame.

@@ -520,15 +520,15 @@ pattern and a file source. The legacy `sample_util.*` is deleted with the last l
 | `rx_into_memory` | ex11 | MS2b | `ext_frame/rx_st20_pipeline_dyn_ext_frame_sample.c`, `gpu_direct/rx_st20_pipeline_gpu_direct.c` | `--mxl` or `--record` (`mtl_rx_provide`), `--device` (MS6) |
 | `split_forwarder` | ex12 | MS2b | `fwd/rx_st20_tx_st20_split_fwd.c`, `fwd/rx_st20p_tx_st20p_split_fwd.c`, `fwd/rx_st20p_tx_st20p_merge_fwd.c`, `legacy/rx_st20_tx_st20_fwd.c` | `--merge` (four HD into one 4K, by copy) |
 | `audio` | ex13 | MS4a1 | `tx_st30_pipeline_sample.c`, `rx_st30_pipeline_sample.c` | `--tx` or `--rx` |
-| `fastmeta` | — | MS4a1 | — | `--tx` or `--rx` (ex13's `fastmeta_config`) |
+| `fastmeta` | — | MS4a1 | — | `--tx` or `--rx` (the copy path of ex13, which names the fast metadata fields) |
 | `anc` | ex14 | MS4a2 | `tx_st40_pipeline_sample.c`, `rx_st40_pipeline_sample.c` | `--tx` or `--rx` |
 | `cvideo` | ex15 | MS4b | `tx_st22_pipeline_sample.c`, `rx_st22_pipeline_sample.c`, `legacy/tx_st22_video_sample.c`, `legacy/rx_st22_video_sample.c` | `--plugin <so>` |
 | `pod_service` | ex16 | MS2a (health and the shutdown report MS3) | — | |
-| `telemetry` | ex17 | MS2a (A2b; events MS3, `mtl_session_capture` MS4b) | — | `--capture <path>` |
+| `telemetry` | ex17 | MS2a (A2b; events MS3, `mtl_session_capture` MS4b, from the C++ bench) | — | `--capture <path>` |
 | `nmos_node` | ex18 | MS3 (stop, update, start), MS5 | — | |
 | `framework_setup` | ex19 | MS2a | — | |
 | `rx_to_framework` | ex20 | MS2a | — | |
-| `live_sink` | ex21 | MS3 | — | |
+| `live_sink` | ex21 | MS2 | — | |
 | `av_playout` | ex22 | MS6 | — | |
 | `processor` | ex23 | MS2b (video by copy), MS4b (`mtl_convert`, to ST 2110-22), MS6 | `fwd/rx_st20p_tx_st20p_fwd.c`, `fwd/rx_st20p_tx_st20p_downsample_fwd.c`, `fwd/rx_st20p_tx_st20p_downsample_merge_fwd.c`, `fwd/rx_st20p_tx_st22p_fwd.c` | `--to-cvideo` (ex15's plugin), a converter plugin |
 | `from_legacy` | ex24 | MS1 | — | `--clock tai\|legacy` |
@@ -1209,7 +1209,7 @@ are in [engine.md](engine.md) §6.
   pairs run on VFs.
 - **Waking:** spikes S1a and S1b on the deferred wake against ST1–ST9, with the decision rules
   SR1–SR3 and SR6 (D-142); D-170's dense patterns, the slack gate, then the notifier thread
-  (D-165), only by those rules; queues for event loops (D-159–D-162, D-169, D-170; tasks C1q1 and
+  (D-165), only by those rules; queues for event loops (D-159–D-162, D-169, D-170, D-206; tasks C1q1 and
   C1q2 below), with ex03 and the `event_loop` sample on them; weak memory: herd7 (`aarch64.cat`)
   on the store-buffering shape of the queue interrupts, or GenMC on the pause-hook schedules, else
   `WaitHook.*`, `QueueHook.*` and `design/models/stress.c` on an Arm runner; the `stress.c` smoke
@@ -1219,8 +1219,8 @@ are in [engine.md](engine.md) §6.
   `-lsynchronization`, `#ifndef WINDOWSENV` around the signal mask, the documented limits), built
   in the Windows job; the Windows build and its shim land together, else a queue with a
   descriptor is `-MTL_ENOTSUP` (`NOT_IMPLEMENTED`) there; a queue's Windows descriptor (a
-  manual-reset event) is task C1q2's. G-74's compile-only Windows job excludes ex03, which
-  includes `<sys/epoll.h>`.
+  manual-reset event) is task C1q2's. G-74's compile-only Windows job compiles ex03, which
+  calls no OS function.
 - **Commands:** the `tick` hook in each video tasklet handler with `ctl`/`ack` (D-103): TX in
   `tvs_tasklet_handler` (the builder; the transmitter calls nothing), RX in
   `rvs_pkt_rx_tasklet_handler`; `CMD_TIMEOUT`; `mtl_session_discard`; the "last packet handed" hook
@@ -1272,14 +1272,14 @@ are in [engine.md](engine.md) §6.
 | C-FPS | the internal rate entry for video TX and RX (engine.md §2.15) | B1, B2 | 200 + 200 | yes | UB `Fps.any_rate_engine`; G-99 legacy wire identical |
 | C-GRANT | the sender grants (D-143) with their reports, OI-76 and OI-77 included | B1, A2b (stats) | 220 + 260 | yes | U `Grant.table`; UB `Grant.w_bound_vrx_model`, `Grant.n_model_interlaced` (G-125) |
 | C-BRIDGE | the wrapper's time thread and snapshot, `time_kind`, `master_results`, `classify()`, option mapping and legacy-derived defaults | A1 | 330 + 280 | yes (legacy gate: `tests/unit/ptp/`, the `ptp` group) | U G-126, G-127; I `Bridge.time_on_vf` |
-| C1q1 | the queue path of core.md §6.6, part 1: the queue table entry, `mtl_queue_create` (both kinds), `qword`, PUSH, U1–U2, QWAIT A1–A11 with the generation check of A3, `owed` and K2 in the flush, the loop registration of M1, E4, QCLOSE, Y2 | C1w, A2a | 380 + 520 | yes (legacy gate: flush line) | `QueueHook` QW1–QW5, QW7, QW10–QW12, QW14, QW18; the model job |
+| C1q1 | the queue path of core.md §6.6, part 1: the queue table entry, `mtl_queue_create` (both kinds), `qword`, PUSH, U1–U2, QWAIT A1–A11 with the generation check of A3, `owed` and K2 in the flush, the loop registration of M1, E4, QCLOSE, Y2; POST (PS1–PS4, D-206) | C1w, A2a | 420 + 610 | yes (legacy gate: flush line) | `QueueHook` QW1–QW5, QW7, QW10–QW12, QW14, QW18, QW20–QW22; the model job |
 | C1q2 | the queue path, part 2: `mtl_queue_arm`, STATE reports, the delivery count, the kept descriptors, the Windows descriptor, ex03 (below) | C1q1 | 330 + 420 | — | `QueueHook` QW6, QW8, QW9, QW13, QW15–QW17, QW19, WH14; the queue parts of WH15 and WH21; ex03 on `null:1`; G-52 (queues) |
 
 C1q2 in detail: `mtl_queue_arm` (J1–J10 with J2's generation check, the slots, `want`, the return
 1); STATE reports and A5's state check; the delivery count (DV1–DV3); X3 and Y1's slots; V2's and
 N6's queue branches; the descriptors kept for the process's life; the Windows descriptor
-(`SetEvent`, `ResetEvent`, `WaitForSingleObject`); ex03's public form, with a test source's
-eventfd, two threads on one queue and a one-off poller. The generation checks, the delivery count and the kept descriptors add
+(`SetEvent`, `ResetEvent`, `WaitForSingleObject`); ex03's public form, with a test source that
+posts from two threads and a signal handler, two threads on one queue and a one-off poller. The generation checks, the delivery count and the kept descriptors add
 about 60 + 120 lines to C1q1 and C1q2 together.
 
 **MS2b: video memory, then the st20p re-base.**
@@ -1362,7 +1362,7 @@ A/V sync on the epoch timeline; fastmeta at any rate, through the rate entry of 
 essence members of `mtl_session_config`; RxTxApp kinds `st30p` and `"fastmetadata"` with
 `"type": "frame"` in `UnifiedRxTxApp`; their suites copied into `UnifiedKahawaiTest` (D-109);
 their acceptance directories on both applications; ex13 runs (ex14 at the exit of MS4a2, ex15
-and ex17 at that of MS4b). The dense-audio reference load is
+at that of MS4b). The dense-audio reference load is
 measured in the three shapes of D-170 (OI-80); D-164 and D-166 are built only if a budget of §8.4
 fails.
 
@@ -1750,7 +1750,7 @@ exit needs it.
 | G-49 | every call returns the documented code in every state; a closing handle accepts only close (which polls), `mtl_session_get_status`, the release of a lease taken before the close and interrupt (a no-op), and a retired one reads `MTL_STATE_RETIRED` | U | MS1 | the call table of `st_core_states.def` on `null:1`, the closed-by-instance column included; ERROR by `MTL_FAULT_FORCE_ERROR` |
 | G-50 | every function has one call class, enforced in debug builds | B, U | MS3 | header lint; the debug asserts under the U suite; a signal raised inside every CP call under `malloc` and `pthread_mutex_lock` interposers |
 | G-51 | one node per milestone part, `MTL_UNIFIED_EXPERIMENTAL_<rev>_MSn` and `_MSn.k`, the bridge in `_BRIDGE`; a sealed node never changes; a node the library lacks fails at load, never at a call; from MS3 a soname, `MTL_LEGACY`, `local: *` (below) | B | MS1, MS3, MS7 | `unified_exports`, `check_frozen_lists.sh`, `unified_seal_probe` and their mutations (§5.2 H1b; below) |
-| G-52 | no lost wake-up and no busy loop, with any number of threads on one object and on one queue (below; R2) | U | MS1 (calls with a timeout), MS2a (queues) | the model job (`wait_model`, below) and the pause-hook tests WH2, WH3, WH10–WH12, WC1–WC3, WC5 (`WaitHook.*`, UnifiedUnitTest, TestBinding and NullBinding), from MS2a QW1–QW19 (`QueueHook.*`); no random test counts as evidence |
+| G-52 | no lost wake-up and no busy loop, with any number of threads on one object and on one queue (below; R2) | U | MS1 (calls with a timeout), MS2a (queues) | the model job (`wait_model`, below) and the pause-hook tests WH2, WH3, WH10–WH12, WC1–WC3, WC5 (`WaitHook.*`, UnifiedUnitTest, TestBinding and NullBinding), from MS2a QW1–QW22 (`QueueHook.*`); no random test counts as evidence |
 | G-53 | submitting before the cursor's deadline is ON_TIME at the cursor's index | U, UB | MS3 | submit just before `submit_deadline_tai_ns` of `mtl_tx_get_next`: `ON_TIME` at that index |
 | G-56 | RX leases released out of order or from other threads return to the pool | U | MS1 | release RX leases out of order and from other threads |
 | G-57 | each status, reason and code is produced by its documented trigger | U, UB | MS3 | the trigger list built from `reasons.def` (every row with `ms` ≤ `MTL_LEVEL`) on `null:1`, through `mtl_debug_inject` where no natural trigger exists |
@@ -1885,7 +1885,7 @@ MS2a; ex10–ex12 from MS2b; ex04–ex08, ex16 and ex21 from MS3).
   case runs under 60 s, the job under 4 min on four cores, with a 10 min timeout; each case must
   give its expected result, each mutant must be killed, and the label sets must be equal.
 - The pause-hook tests are WH2, WH3, WH10–WH12, WH14, WH14b, WH15–WH17, WH19–WH21, WC1–WC5 and
-  QW1–QW19 ([design/wait-tests.md](design/wait-tests.md)), with the hook points, the schedules and
+  QW1–QW22 ([design/wait-tests.md](design/wait-tests.md)), with the hook points, the schedules and
   the step each one pins (Gate 2: each fails with that step reverted).
 - Random-yield stress ([design/models/stress.c](design/models/stress.c)) is a nightly smoke test,
   not evidence.

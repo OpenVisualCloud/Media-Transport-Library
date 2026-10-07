@@ -37,36 +37,40 @@ static int open_tx(mtl_instance_h mt, uint32_t essence, uint16_t port, mtl_sessi
   return mtl_session_create(mt, &sc, s);
 }
 
-/* Acquires a unit, waiting while the pool is full: the file is read ahead of the wire. */
-static int acquire(mtl_session_h s, struct mtl_unit* u) {
-  int ret;
-  do {
-    ret = mtl_tx_acquire(s, u, MTL_MS(20));
-  } while (ret == -MTL_EAGAIN && g_running);
-  return ret;
+/* Every frame gets an ANC unit, empty when it has no captions: it keeps the stream
+   alive. The pool is the read-ahead: acquire waits while it is full. */
+static int send_captions(mtl_session_h s, int64_t pts) {
+  struct mtl_unit u;
+  MTL_INIT(&u);
+  int ret = mtl_tx_acquire(s, &u, MTL_FOREVER);
+  if (ret < 0) return ret;
+  ret = captions_for(pts, &u);
+  if (ret < 0) {
+    mtl_tx_release(s, u.lease);
+    return ret;
+  }
+  u.media_index = pts;
+  return mtl_tx_submit(s, &u);
 }
 
-/* The copy path: the sample count follows from the bytes. A full pool (-MTL_EAGAIN) is
-   waited out; a partial write continues at the next index (mtl_tx_get_next). */
-static int write_audio(mtl_session_h s, int64_t first, const void* data, size_t size) {
-  const uint8_t* p = (const uint8_t*)data;
-  struct mtl_unit how;
-  MTL_INIT(&how);
-  how.media_index = first;
-  while (size > 0 && g_running) {
-    int n = mtl_tx_write(s, p, size, &how, MTL_MS(20));
-    if (n == -MTL_EAGAIN) continue;
-    if (n < 0) return n;
-    p += n;
-    size -= (size_t)n;
-    if (size > 0) {
-      struct mtl_tx_next c;
-      int ret = mtl_tx_get_next(s, &c, sizeof(c));
-      if (ret < 0) return ret;
-      how.media_index = c.next_media_index;
-    }
-  }
-  return 0;
+static int send_video(mtl_session_h s, int64_t pts, const void* data, size_t size) {
+  struct mtl_unit u;
+  MTL_INIT(&u);
+  int ret = mtl_tx_acquire(s, &u, MTL_FOREVER);
+  if (ret < 0) return ret;
+  decode_into(&u, data, size);
+  u.media_index = pts;
+  return mtl_tx_submit(s, &u);
+}
+
+/* The copy path: the sample count follows from the bytes, and every unit continues at
+   the sample after the last, so the audio stays exact. */
+static int send_audio(mtl_session_h s, int64_t first, const void* data, size_t size) {
+  struct mtl_unit tmpl;
+  MTL_INIT(&tmpl);
+  tmpl.media_index = first;
+  int n = mtl_tx_write(s, data, size, &tmpl, MTL_FOREVER);
+  return n < 0 ? n : 0; /* fewer bytes only after an error, which the next call returns */
 }
 
 int av_anc_playout(mtl_instance_h mt) {
@@ -76,8 +80,6 @@ int av_anc_playout(mtl_instance_h mt) {
      submitted before it; media index 0 of all three is T0 */
   const struct mtl_when origin = {
       .kind = MTL_NOW, .flags = MTL_WHEN_ORIGIN, .preroll_ns = MTL_MS(100)};
-  struct mtl_unit u;
-  MTL_INIT(&u);
 
   int ret = open_tx(mt, MTL_VIDEO, 20000, &s[VIDEO]);
   if (ret >= 0) ret = open_tx(mt, MTL_AUDIO, 30000, &s[AUDIO]);
@@ -88,31 +90,17 @@ int av_anc_playout(mtl_instance_h mt) {
   int64_t pts;
   const void* data;
   size_t size;
-  while (ret >= 0 && g_running && demux_next(&st, &pts, &data, &size) == 0) {
+  while (ret >= 0 && demux_next(&st, &pts, &data, &size) == 0) {
     if (st == AUDIO) {
-      ret = write_audio(s[AUDIO], pts, data, size);
-      continue;
+      ret = send_audio(s[AUDIO], pts, data, size);
+    } else {
+      ret = send_captions(s[CAPTIONS], pts); /* ANC frame k before video frame k */
+      if (ret >= 0) ret = send_video(s[VIDEO], pts, data, size);
     }
-    ret = acquire(s[CAPTIONS], &u); /* without captions: the empty ANC packet */
-    if (ret < 0) break;
-    ret = captions_for(pts, &u);
-    if (ret < 0) {
-      mtl_tx_release(s[CAPTIONS], u.lease);
-      break;
-    }
-    u.media_index = pts;
-    ret = mtl_tx_submit(s[CAPTIONS], &u);
-    if (ret < 0) break;
-
-    ret = acquire(s[VIDEO], &u);
-    if (ret < 0) break;
-    decode_into(&u, data, size);
-    u.media_index = pts;
-    ret = mtl_tx_submit(s[VIDEO], &u);
   }
 
-  if (ret < 0 && ret != -MTL_EAGAIN) ex_fail("playout", ret); /* -MTL_EAGAIN: stopped */
+  if (ret < 0 && ret != -MTL_ECANCELED) ex_fail("playout", ret);
   mtl_session_stop(s, 3, MTL_STOP_DRAIN, MTL_SEC(2)); /* all three finish together */
   for (int i = 0; i < 3; i++) mtl_session_close(s[i], 0);
-  return ret;
+  return ret == -MTL_ECANCELED ? 0 : ret;
 }

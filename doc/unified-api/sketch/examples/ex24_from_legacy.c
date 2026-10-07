@@ -1,7 +1,7 @@
 /* ex24 — from the legacy API: a legacy program's st20p_tx_ops become a unified config,
-   and its instance from mtl_init() is wrapped, so ex01's loop runs on it (MS1's way onto
-   a VF). The wrapper runs on the legacy clock, here CLOCK_TAI. Run: ex24 0000:af:01.0
-   192.168.1.10. Needs: MS1 and the legacy headers (mtl_api.h, st_pipeline_api.h). */
+   and its instance from mtl_init() is wrapped, so ex01's loop runs on it. The wrapper
+   runs on the legacy clock, here CLOCK_TAI. Run: ex24 0000:af:01.0 192.168.1.10.
+   Needs: MS1 and the legacy headers (mtl_api.h, st_pipeline_api.h). */
 #define _POSIX_C_SOURCE 200809L
 #include <arpa/inet.h>
 #include <mtl/experimental/mtl_legacy.h>
@@ -14,8 +14,8 @@
 void render(void* addr, uint32_t stride, int64_t frame);
 void legacy_ops(struct st20p_tx_ops* ops); /* the ops it passes to st20p_tx_create */
 
-/* Called on MTL's tasklets (a vDSO read, no lock); without it the legacy default is UTC
-   read as TAI, 37 s off PTP time, and mtl_time_now() is -MTL_ENOTSUP until MS2a. */
+/* Called on MTL's tasklets (a vDSO read, no lock). The legacy default reads UTC as TAI,
+   37 s off PTP time: give it CLOCK_TAI. */
 static uint64_t tai_now(void* priv) {
   struct timespec ts;
   (void)priv;
@@ -71,31 +71,33 @@ int main(int argc, char** argv) {
   p.ptp_get_time_fn = tai_now; /* without it: UTC read as TAI (MTL_TIMEF_UTC) */
   legacy_ops(&ops);
 
-  /* mtl_start() before the first unified start; the wrap returns after TSC calibration */
   int ret = config_from_legacy(&ops, &sc);
-  if (ret >= 0) {
-    ret = -MTL_EIO;
-    legacy = mtl_init(&p);
-    if (legacy && mtl_start(legacy) == 0) ret = mtl_instance_from_legacy(legacy, &mt);
+  if (ret < 0) {
+    ex_fail("ops", ret);
+    return 1;
   }
+  legacy = mtl_init(&p);
+  if (!legacy ||
+      mtl_start(legacy) != 0) { /* mtl_start() before the first unified start */
+    if (legacy) mtl_uninit(legacy);
+    return 1;
+  }
+  ret = mtl_instance_from_legacy(legacy, &mt); /* returns after the TSC calibration */
+  if (ret >= 0) ex_install_interrupt(mt);
   if (ret >= 0) ret = mtl_session_open(mt, &sc, &s);
 
-  for (int64_t k = 0; ret >= 0 && g_running;) { /* ex01's loop */
-    ret = mtl_tx_acquire(s, &u, MTL_MS(100));
-    if (ret == -MTL_EAGAIN) {
-      ret = 0;
-      continue;
-    }
+  for (int64_t k = 0; ret >= 0; k++) { /* ex01's loop */
+    ret = mtl_tx_acquire(s, &u, MTL_FOREVER);
     if (ret == 0) {
-      render(u.plane[0].addr, u.plane[0].stride, k++);
+      render(u.plane[0].addr, u.plane[0].stride, k);
       ret = mtl_tx_submit(s, &u);
     }
   }
 
-  if (ret < 0) ex_fail("mtl", ret);
+  if (ret != -MTL_ECANCELED) ex_fail("mtl", ret);
   /* the wrapper first (it never stops the legacy devices): mtl_uninit() before, -EBUSY */
   mtl_session_close(s, MTL_SEC(1));
   mtl_instance_close(mt, MTL_SEC(1));
-  if (legacy) mtl_uninit(legacy);
-  return ret < 0;
+  mtl_uninit(legacy);
+  return ret != -MTL_ECANCELED;
 }

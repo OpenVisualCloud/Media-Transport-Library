@@ -23,10 +23,17 @@ re-checks the interrupt (A9).  A signal its reset took is written back on every 
 already ready.  A detach marks a node in flight DEAD, and the pop drops it.  A queue interrupt
 may be cleared again (OFF), after which its consumer calls again (q11).
 
+Posts (mtl_queue_post, cases p1-p5).  A poster publishes an item of its own source (SRC), then
+posts with one CAS on the queue word: the post field set, ARMED claimed (then one write), the
+generation and CLOSED checked in the same CAS (S2).  A consumer takes the post field with the list
+(A4) and reports it first (A5); serving that report consumes every published item.  The arm (A8)
+compares the post field too.  Close clears it (C3).
+
 Checks: LOST (a terminal state with a sleeper whose condition holds), LEAK (a WT count that does
 not match the threads counted), OVER (an attachment in two places), SPIN (a cycle in the state
 graph: a run that never ends), XQ (a push lands on a queue reused since the object was armed),
-RPT (a report popped after its detach returned).
+RPT (a report popped after its detach returned), PAC (a post accepted by a closed or reused
+queue).
 Usage: python3 final_model.py [CASE ...] | --trace CASE [MUTANT ...]; exit 1 unless every case
 gives its expected result and every mutant is reported by its cases.
 
@@ -273,12 +280,13 @@ def o_init(kinds, par):
 
 
 # ----------------------------------------------------------------- queue path -------------
-# g = (r, seq, H, ast, aqg, lst, local, armed, closed, intr, qgen, fd, lock, cons, viol, det)
+# g = (r, seq, H, ast, aqg, lst, local, armed, closed, intr, qgen, fd, lock, cons, viol, det,
+#      pst, src): pst the post field of the queue word, src the posters' published items
 # ast: the attachment state per object, 0 FREE, 1 IDLE, 2 ARMED (armed or in flight), 3 DEAD
 # aqg: the qgen stored in alink when the object was armed
 (GR, GSEQ, GH, AST, AQG, LST, LOC, ARM, CLO, QINT, QGEN, FD, LOCK, CONS, VIOL,
- DET) = range(16)
-XQ_BIT, RPT_BIT = 1, 2
+ DET, PST, SRC) = range(18)
+XQ_BIT, RPT_BIT, PAC_BIT = 1, 2, 4
 
 
 def qset(g, **kw):
@@ -341,6 +349,27 @@ def q_succ(s, t, kinds, par, mut, total):
         elif pc == "wr":  # K2: the owed write (the loop's flush for P, at once for A)
             put(qset(g, FD=min(g[FD] + 1, 3)), nxt)
         return out
+    if k == "QP":  # mtl_queue_post on an application thread (or a signal handler)
+        pc, i = loc
+        if pc == "done":
+            return out
+        late = "post_before_publish" in mut  # the mutant posts first, then publishes
+        nxt = ("pc" if late else "pub", i + 1) if i + 1 < p["n"] else ("done", 0)
+        after = ("publ", i) if late else nxt
+        if pc in ("pub", "publ"):  # the application publishes an item of its source
+            put(qset(g, SRC=g[SRC] + 1), ("pc", i) if pc == "pub" else nxt)
+        elif pc == "pc":  # S2: CAS(qword) with the qgen and CLOSED checks
+            if (g[CLO] or g[QGEN] != 0) and "post_no_check" not in mut:
+                put(g, after)  # -MTL_EBADF: nothing posted
+            else:
+                v = g[VIOL] | (PAC_BIT if g[CLO] or g[QGEN] != 0 else 0)
+                if g[ARM] and "post_no_claim" not in mut:  # the post field set, ARMED claimed
+                    put(qset(g, PST=1, ARM=0, VIOL=v), ("pw", i))
+                else:
+                    put(qset(g, PST=1, VIOL=v), after)
+        elif pc == "pw":  # S3: K2, the write, directly (never M1)
+            put(qset(g, FD=min(g[FD] + 1, 3)), after)
+        return out
     if k == "QI":  # mtl_queue_interrupt: N5 stores intr, U2 claims ARMED, K2 writes
         pc = loc[0]
         if pc == "i1":
@@ -378,7 +407,7 @@ def q_succ(s, t, kinds, par, mut, total):
                     if gh[o]:  # the walk's fetch_and won: the slot is freed
                         gh[o] = 0
                         ast[o] = 0
-                put(qset(g, LST=(), LOC=(), AST=tuple(ast), GH=tuple(gh)),
+                put(qset(g, LST=(), LOC=(), AST=tuple(ast), GH=tuple(gh), PST=0),
                     ("c3",) if p.get("reuse") else ("done",))
         elif pc == "c3":  # a new queue on the entry: create resets head, qgen + 1, the fd kept
             put(qset(g, CLO=0, QGEN=g[QGEN] + 1, FD=0, ARM=0, QINT=0), ("done",))
@@ -439,6 +468,8 @@ def q_succ(s, t, kinds, par, mut, total):
             else:
                 v = g[VIOL] | (RPT_BIT if g[DET] else 0)  # the detacher (D) detaches object 0
                 put(qset(g2, AST=tset(g[AST], o2, 1), LOCK=-1, VIOL=v), L("sv", o2, 0))
+        elif g[PST]:  # A4: take the list and the post field; A5: the post report first
+            put(qset(g, LOC=g[LOC] + g[LST], LST=(), PST=0, LOCK=-1), L("svp", None, 0))
         elif g[LST]:  # A4: take the whole list
             put(qset(g, LOC=g[LOC] + g[LST], LST=()), L("w1"))
         else:  # A6: nothing: unlock before the syscall
@@ -456,7 +487,8 @@ def q_succ(s, t, kinds, par, mut, total):
             put(g, L("w1"))  # w1 leaves with the code and writes back got
         elif "no_arm" in mut and pc == "arm":  # the mutant sleeps without arming
             put(g, L("chk"))
-        elif (not g[LST] and not g[LOC]) or "arm_store" in mut:
+        elif (not g[LST] and not g[LOC] and (not g[PST] or "arm_ignores_post" in mut)) \
+                or "arm_store" in mut:
             g2 = qset(g, ARM=1)
             put(g2, L("rd2" if pc == "armx" else "chk"))
         else:  # work came: write back the signal the reset took
@@ -476,6 +508,8 @@ def q_succ(s, t, kinds, par, mut, total):
             put(g, L("w0", None, 0))
         if p.get("eto") and not eto:
             put(g, L("w0", None, 0, eto2=1))
+    elif pc == "svp":  # the application serves a report of posts: every published item
+        put(qset(g, CONS=g[CONS] + g[SRC], SRC=0), L("w0" if k in loops else "done"))
     elif pc == "sv":  # the application serves one unit of the reported object
         g2 = g
         if g[GR][o] > 0:
@@ -511,6 +545,8 @@ def q_check(s, kinds, par, mut, nobj, terminal):
         bad.append("XQ")
     if g[VIOL] & RPT_BIT:
         bad.append("RPT")
+    if g[VIOL] & PAC_BIT:
+        bad.append("PAC")
     for o in range(nobj):  # each attachment in exactly one place
         n = g[LST].count(o) + g[LOC].count(o) + g[GH][o]
         for j, loc in enumerate(ths):
@@ -524,17 +560,18 @@ def q_check(s, kinds, par, mut, nobj, terminal):
         for j, loc in enumerate(ths):
             if kinds[j] in ("E", "T") and loc[0] == "ep" and not g[FD]:
                 owed = any(r and g[AST][o] == 2 for o, r in enumerate(g[GR]))
-                if g[LST] or g[LOC] or owed or g[CLO] or g[QINT] or g[QGEN]:
+                if g[LST] or g[LOC] or owed or g[CLO] or g[QINT] or g[QGEN] or g[PST] or g[SRC]:
                     bad.append("LOST")
     return bad
 
 
-def q_init(kinds, par, nobj):
+def q_init(kinds, par, nobj, mut=()):
     g = ((0,) * nobj, (0,) * nobj, (1,) * nobj, (2,) * nobj, (0,) * nobj, (), (), 0, 0, 0, 0, 0,
-         -1, 0, 0, 0)
+         -1, 0, 0, 0, 0, 0)
     ths = []
     for k in kinds:
-        ths.append({"P": ("pub", 0), "A": ("pub", 0), "QI": ("i1",), "QC": ("c1",), "D": ("d1",),
+        ths.append({"P": ("pub", 0), "A": ("pub", 0), "QP": ("pc", 0) if "post_before_publish" in mut
+                    else ("pub", 0), "QI": ("i1",), "QC": ("c1",), "D": ("d1",),
                     "E": ("w0", None, 0, 0), "T": ("w0", None, 0, 0), "O": ("w0", None, 0, 0)}[k])
     return (g, tuple(ths))
 
@@ -551,7 +588,8 @@ def explore(case, mut, limit=4_000_000, trace=False):
     else:
         nobj = case[2]
         total = sum(len(p["units"]) for k, p in zip(kinds, par) if k in ("P", "A"))
-        s0 = q_init(kinds, par, nobj)
+        total += sum(p["n"] for k, p in zip(kinds, par) if k == "QP")
+        s0 = q_init(kinds, par, nobj, mut)
         succ = lambda s, t: q_succ(s, t, kinds, par, mut, total)
         check = lambda s, term: q_check(s, kinds, par, mut, nobj, term)
     # depth-first, with the colours of a cycle check: a cycle is a run that never ends (SPIN)
@@ -604,6 +642,7 @@ A = lambda *u: ("A", dict(units=list(u)))
 E = lambda **kw: ("E", dict(kw))
 T = lambda **kw: ("T", dict(kw))
 O = ("O", {})
+QP = lambda n=1: ("QP", dict(n=n))
 CASES = {  # name: (case, expected bad set)
     "o1_two_waiters_timeout": (("obj", [P(1, 1), W(0, 1, tmo=1), W(0, 2)]), set()),
     "o2_lanes_spurious":      (("obj", [P(1, 2), W(0, 1, spur=1), W(1, 1)]), set()),
@@ -627,6 +666,11 @@ CASES = {  # name: (case, expected bad set)
     "r2_close_after_steal":   (("q", [P(0), T(forever=1), E(eto=1), O, ("QC", {})], 1), set()),
     "r3_stale_claim_reuse":   (("q", [A(0), T(forever=1), ("QC", {"reuse": 1})], 1), set()),
     "r4_close_reuse_sleeper": (("q", [P(0), T(forever=1), ("QC", {"reuse": 1})], 1), set()),
+    "p1_post_and_object":     (("q", [P(0), QP(1), E()], 1), set()),
+    "p2_posts_coalesce":      (("q", [QP(2), QP(1), E(eto=1)], 1), set()),
+    "p3_post_steal":          (("q", [QP(2), E(), E(eto=1), O], 1), set()),
+    "p4_post_interrupt_off":  (("q", [QP(1), E(forever=1, again=1), ("QI", dict(off=1))], 1), set()),
+    "p5_post_close_reuse":    (("q", [QP(1), T(forever=1), ("QC", {"reuse": 1})], 1), set()),
 }
 MUTANTS = {  # name: (mutation, cases that must report it, the kind expected)
     "bits (the counters design: a second RMW clears the bit)": ("bits", ["o1_two_waiters_timeout"], "LOST"),
@@ -648,6 +692,10 @@ MUTANTS = {  # name: (mutation, cases that must report it, the kind expected)
     "no_qgen (P2 ignores the queue generation)":           ("no_qgen", ["r3_stale_claim_reuse"], "XQ"),
     "no_dead (detach frees a node in flight)":             ("no_dead", ["q10_detach_race"], "RPT"),
     "close_no_wait (C2 does not wait for q's calls)":      ("close_no_wait", ["r4_close_reuse_sleeper"], "LOST"),
+    "post_no_claim (a post that never claims ARMED)":      ("post_no_claim", ["p1_post_and_object", "p2_posts_coalesce"], "LOST"),
+    "arm_ignores_post (A8 arms over a pending post)":      ("arm_ignores_post", ["p2_posts_coalesce"], "LOST"),
+    "post_no_check (S2 ignores CLOSED and the qgen)":      ("post_no_check", ["p5_post_close_reuse"], "PAC"),
+    "post_before_publish (the rule: publish, then post)":  ("post_before_publish", ["p1_post_and_object"], "LOST"),
 }
 
 

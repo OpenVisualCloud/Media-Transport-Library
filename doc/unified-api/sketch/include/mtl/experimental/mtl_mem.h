@@ -120,11 +120,12 @@ struct mtl_attach {
   uint64_t reserved[1];
 };
 /* CREATED or STOPPED; may be called again to append slots. Validates span, stride,
-   alignment, access and the region budget, with the reason of the failure. With
-   pool_count set, start is -MTL_EINVAL (POOL_TOO_SMALL) until that many slots are
-   attached; with pool_count 0 the attached slots are the pool; a provide session
-   (mtl_rx_provide) needs no slot, nor does a TX session that acquires by layout only
-   (mtl_tx_acquire_layout), whose pool_count bounds the units in flight. a NULL detaches
+   alignment, access and the region budget, with the reason of the failure. A start
+   decides from the slots attached then, and never waits: with pool_count set, 0 <
+   attached < pool_count is -MTL_EINVAL (POOL_TOO_SMALL); with pool_count 0 the attached
+   slots are the pool. A TX session with no slot attached at start is a layout session
+   (mtl_tx_acquire_layout only; pool_count bounds the units in flight); an RX session with
+   no slot is a provide session (mtl_rx_provide). a NULL detaches
    every slot: CREATED or STOPPED, with no lease, hold or session attached over this pool;
    on a provide session it hands back every destination (ready units are dropped) and ends
    provide mode. a->cookie must be 0. CP. (MS2) */

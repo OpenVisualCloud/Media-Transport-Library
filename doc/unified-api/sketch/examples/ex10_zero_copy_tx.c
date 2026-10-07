@@ -2,23 +2,22 @@
    session's slots, or a buffer per frame bound to a slot at acquire. A buffer goes back
    to the framework only when its result says the NIC is done with it. Needs: MS2b. */
 #include <mtl/experimental/mtl_mem.h>
+#include <mtl/experimental/mtl_util.h>
 
 #include "ex_common.h"
 
 #define N 4
 extern void* arena; /* the framework's pool: N surfaces, page aligned */
 extern uint64_t arena_len;
-/* 0 = a frame is ready within timeout_ns; the thread sleeps meanwhile */
+/* 0 = a frame is ready within timeout_ns (the thread sleeps meanwhile); 1 = none yet;
+   -MTL_ECANCELED: the framework stopped */
 int next_framework_frame(uint32_t* surface, uint64_t* id, int64_t timeout_ns);
 void framework_frame_done(uint64_t id);
 
-/* Gives the surfaces whose frames have left back to the framework; 0 or an error. */
-static int reap(mtl_session_h s) {
-  struct mtl_tx_result r[8];
-  int n;
-  while ((n = mtl_tx_reap(s, r, 8, 0)) > 0)
-    for (int i = 0; i < n; i++) framework_frame_done(r[i].cookie);
-  return n == -MTL_EAGAIN ? 0 : n;
+/* A result: the NIC is done with the surface, which goes back to the framework. */
+static void on_result(void* priv, const struct mtl_tx_result* r) {
+  (void)priv;
+  framework_frame_done(r->cookie);
 }
 
 /* base: a video TX config. Surface i is slot i, in its natural layout. */
@@ -29,7 +28,8 @@ int zero_copy_tx(mtl_instance_h mt, const struct mtl_session_config* base) {
   struct mtl_unit u;
   MTL_INIT(&a);
   MTL_INIT(&u);
-  sc.flags = MTL_SESSION_POOL_ATTACHED | MTL_SESSION_REQUIRE_DIRECT; /* never a copy */
+  sc.flags |=
+      MTL_SESSION_POOL_ATTACHED | MTL_SESSION_REQUIRE_DIRECT; /* fail, never copy */
   sc.pool_count = N;
   a.va = arena; /* imported for this session */
   a.length = arena_len;
@@ -38,11 +38,12 @@ int zero_copy_tx(mtl_instance_h mt, const struct mtl_session_config* base) {
   if (ret >= 0) ret = mtl_session_attach(s, &a); /* fails here, with a reason */
   if (ret >= 0) ret = mtl_session_start(&s, 1, NULL, NULL);
 
-  while (ret >= 0 && g_running) {
+  while (ret >= 0) {
     uint32_t i;
     uint64_t id;
-    ret = reap(s);
-    if (ret < 0 || next_framework_frame(&i, &id, MTL_MS(20)) != 0) continue;
+    if ((ret = mtl_tx_reap_each(s, on_result, NULL)) < 0) break;
+    if ((ret = next_framework_frame(&i, &id, MTL_MS(20))) != 0)
+      continue;                                      /* 1: none yet */
     ret = mtl_tx_acquire_slot(s, i, &u, MTL_MS(20)); /* exactly surface i */
     if (ret == 0) {
       u.cookie = id;
@@ -53,18 +54,17 @@ int zero_copy_tx(mtl_instance_h mt, const struct mtl_session_config* base) {
     }
   }
 
-  if (ret < 0) ex_fail("zero copy", ret);
+  if (ret != -MTL_ECANCELED) ex_fail("zero copy", ret);
   mtl_session_stop(&s, 1, MTL_STOP_DRAIN, MTL_SEC(1)); /* a result for every unit */
-  reap(s);
-  /* MTL_RETIRING: the NIC may still read a surface; 0: the arena may be freed */
-  while (mtl_session_close(s, MTL_SEC(1)) == MTL_RETIRING) {
-  }
-  return ret;
+  mtl_tx_reap_each(s, on_result, NULL);
+  mtl_session_close(s, MTL_FOREVER); /* returns once the NIC no longer reads the arena */
+  return ret == -MTL_ECANCELED ? 0 : ret;
 }
 
 /* A buffer per frame (a GStreamer upstream pool, an FFmpeg frame): the arena imported
-   once, mapped into every port now (copy-only memory: mi.direct 0). The session:
-   MTL_SESSION_POOL_ATTACHED, pool_count = the buffers in flight, no slot attached. */
+   once and mapped into every port now; it fails on copy-only memory (mi.direct 0: the
+   NIC cannot read it). The session: MTL_SESSION_POOL_ATTACHED and no slot attached, a
+   layout session whose pool_count bounds the buffers in flight. */
 int import_arena(mtl_instance_h mt, void* va, uint64_t len, mtl_region_h* r) {
   struct mtl_mem_desc d;
   struct mtl_mem_info mi;
@@ -78,16 +78,17 @@ int import_arena(mtl_instance_h mt, void* va, uint64_t len, mtl_region_h* r) {
   return ret;
 }
 
-/* The buffer at offset, sent as it is; its result (reap) names it by id. */
+/* The buffer at offset, sent as it is; its result (on_result) names it by id. */
 int send_buffer(mtl_session_h s, mtl_region_h r, uint64_t offset, uint64_t id) {
-  struct mtl_attach one;
+  struct mtl_attach buf;
   struct mtl_unit u;
-  MTL_INIT(&one);
+  MTL_INIT(&buf);
   MTL_INIT(&u);
-  one.count = 1;
-  one.region = r;
-  one.offset = offset;
-  one.cookie = id; /* u.cookie starts as id */
-  int ret = mtl_tx_acquire_layout(s, &one, &u, MTL_MS(20));
+  buf.count = 1;
+  buf.region = r;
+  buf.offset = offset;
+  buf.cookie = id;                                /* u.cookie starts as id */
+  int ret = mtl_tx_reap_each(s, on_result, NULL); /* then it never waits on results */
+  if (ret >= 0) ret = mtl_tx_acquire_layout(s, &buf, &u, MTL_FOREVER);
   return ret < 0 ? ret : mtl_tx_submit(s, &u);
 }

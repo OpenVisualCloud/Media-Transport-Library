@@ -694,7 +694,7 @@ submission. The columns are writer (W), reader (R), ordering (ord), reset and te
 | entry header | `state` (nine states) | CP; a tasklet's ERROR entry (CAS); X1 by the last release | all | seq_cst | Y1 (CREATED, last) | G-49 |
 | entry header | `closed_by_instance` (D-186) | the instance's close (CP) | every call's entry check (`-MTL_ESHUTDOWN`) | release / acquire | Y1 | `UnifiedRx.ReleaseAfterInstanceClose` |
 | entry in-flight line | `inflight` | every data call | close, retire (X2), a queue's close (C2) | seq_cst add, release sub | never | WH11, WH14b |
-| entry in-flight line, line A, line C | the wait words | §6.1's table | §6.1's table | §6.1's table (orderings) | §6.1's table (resets) | WC1–WC5, QW1–QW19 ([design/wait-tests.md](design/wait-tests.md) §5) |
+| entry in-flight line, line A, line C | the wait words | §6.1's table | §6.1's table | §6.1's table (orderings) | §6.1's table (resets) | WC1–WC5, QW1–QW22 ([design/wait-tests.md](design/wait-tests.md) §5) |
 | process | the orphan-list head (D-186) | the last release of a session whose instance is gone (CAS, DP) | the control-plane entry `st_api_cp_enter` (drains it) | acq_rel | never | `CoreClose.orphan_freed_at_next_cp` |
 | session table | `hw` | create | the walk | seq_cst | never | WH10 |
 | loop (`st_core_loop`, the scheduler's node) | `L0`, `L1`, `L2`, `cursor` | the loop's own thread | same | relaxed | never | WH16 |
@@ -807,7 +807,8 @@ PMD reference publish; `sh_info` is written only at frame setup.
 ### 4.4 Results, the reaper and order
 
 - **The descriptor ring** (D-119). Each session has one ring of 64-byte entries, a power of two ≥
-  `pool_count`, indexed by `seq mod size`. Submit writes the whole entry in one line: `{seq:48 |
+  `pool_count` + 1 (D-207: one entry more than the pool, so a thread that reaps before each acquire
+  never blocks on its results), indexed by `seq mod size`. Submit writes the whole entry in one line: `{seq:48 |
   slot:16}`, the slot's generation, media time, launch, flags, `used`, cookie and the rest of the
   per-use fields; then it moves the slot word APP → QUEUED. The binding picks up only the entry
   whose `seq` is its pick cursor and whose slot word is QUEUED with the entry's generation, so
@@ -820,7 +821,7 @@ PMD reference publish; `sh_info` is written only at frame setup.
   QUEUED|g; a refused unit goes XFORM|g → FREE|g with the error and no descriptor. So a wire area
   never mixes two units, and a write to the planes after submit never reaches the wire.
 - **The reservation** (D-120). Acquire CAS-increments a counter `resv` while `resv − reap_seq <
-  size`, so every leased slot already owns the entry its result will use and producing a result
+  pool_count + 1`, so every leased slot already owns the entry its result will use and producing a result
   never waits; releasing an APP lease decrements it. When unread results fill the ring, acquire
   fails and `status.blocked_on` is `MTL_BLOCKED_RESULTS`.
 - **When results exist.** A session over application memory always produces results; a library
@@ -1088,7 +1089,7 @@ An interrupt of RX `MTL_WAIT_DEQUEUE` selects lanes 0 and 1. A state change has 
 | in-flight line | `intr` | u64 `{gen:32 \| targets:32}` | N5 (CAS, the handle's generation checked), Y1 (`{new gen, 0}`) | T3, Q2 (relaxed: ordered by `ec`), A9 for the instance's queues (seq_cst) | seq_cst CAS | Y1 |
 | entry line C (MS2a; application threads) | `astate[4]`, `user[4]` | u8 `{state:2 (FREE, IDLE, ARMED, DEAD) \| want:4}`; u64 | under the queue's lock: J4a–J6, A5, X3, C3, C4. Without it, only P2's stale path (FREE; the node is the claimer's) | the same | relaxed atomics | Y1 (FREE; a DEAD slot stays busy until its pop) |
 | slot line (MS2) | `progress` | u64 `{rows:31 \| ended:1 \| want:32}` | RW1 (the binding: `fetch_add`, `fetch_or`, `fetch_and`), RW2 (the reader: CAS) | RW1, RW2, TX `query_frame_lines_ready` (rows only) | RMW only | per use |
-| queue entry line A (MS2a; never freed) | `qword` | u64 `{head:20 \| qgen:16 \| ARMED:1 \| CLOSED:1}`; head = node (index(o) << 2 \| i) + 1, 0 = empty | P2 (CAS), A4 (CAS head → 0), A8 (CAS ARMED), U1 (`fetch_or` CLOSED), U2 (CAS ARMED → 0), C3, Y2 | everything on the queue path | acq_rel; A8 and U2's load seq_cst | Y2 |
+| queue entry line A (MS2a; never freed) | `qword` | u64 `{head:20 \| qgen:16 \| ARMED:1 \| CLOSED:1 \| post:24}`; head = node (index(o) << 2 \| i) + 1, 0 = empty; post = bits not yet taken | P2 (CAS), PS2 (CAS), A4 (CAS head and post → 0), A8 (CAS ARMED), U1 (`fetch_or` CLOSED), U2 (CAS ARMED → 0), C3, Y2 | everything on the queue path | acq_rel; A8 and U2's load seq_cst | Y2 |
 | queue line A | `intr` | u64 `{gen:32 \| ON:1}` | N5 | A3, A9 (seq_cst) | seq_cst CAS | Y2 |
 | queue line A | `owed` | u32 writes owed by library loops | P3 on a loop (`fetch_add`) | F6 (`xchg`) | release / acquire | Y2 |
 | queue line B (application threads) | `local`, `lock`, `fd` | u32 head of the consumer chain; a TTAS spinlock, never held across a syscall; i32, open while the process runs (a forked child closes it) | A4, A5 (under the lock); create of a fresh entry (`fd`) | the same | plain under the lock | Y2 (`local`); `fd` kept |
@@ -1215,7 +1216,7 @@ The call's own sources:
 - a release of an APP TX lease runs EVENT(o, ACQUIRE);
 - a failed in-caller conversion, or submit's own flush (D-121), runs EVENT(o, RESULTS | ACQUIRE).
 
-In MS1, E4, K2, the queue branches of N6, V2 and CLOSE, and X3 are not built: `HA` is always 0. RW1–RW2
+In MS1, E4, K2, POST, the queue branches of N6, V2 and CLOSE, and X3 are not built: `HA` is always 0. RW1–RW2
 land in MS2.
 
 **Why it is correct** (the model checks every interleaving of its cases, D-158; weak memory is
@@ -1348,6 +1349,33 @@ it never busy-loops.
   `-MTL_EBADF` and never drains or arms a reused queue.
 - J5's lost branch stores the new `user` under the same lock and returns 1, so the report already
   on its way carries the new `user`.
+
+**Posts (D-206).**
+
+- `post` is a field of `qword`, so a post is one more RMW in the chain that A8's CAS compares. A
+  post before A8 makes A8 fail, and the consumer takes it at A4. A post after A8 sees `ARMED` and
+  claims it (PS2), then owes the one write (PS3), as a push does. The argument of "the queue
+  word" therefore covers posts, with no new ordering pair. Mutants `post_no_claim` and
+  `arm_ignores_post` are LOST in p1 and p2.
+- PS2 checks CLOSED and `qgen` in the CAS that posts, so a post never lands on a closed or
+  reused queue (mutant `post_no_check`, PAC in p5). A poster preempted between its CAS and its
+  write writes a kept eventfd: at most one spurious wake of the next queue on the entry, as a
+  stale claimer.
+- **Release.** PS2's CAS (acq_rel) and A4's (acquire) are in `qword`'s release sequence, so what
+  the poster wrote before the post is visible to the thread that gets its report. PS2 makes the
+  CAS even when its bits are already pending: a load that found them would not order the
+  poster's earlier stores (store buffering), and the consumer could serve the source before the
+  frame the post announces is visible. The model is sequentially consistent and cannot show it;
+  the herd7 item of MS2a covers it.
+- The application's rule is "publish, then post"; the mutant `post_before_publish` is LOST in
+  p1.
+- Coalescing makes the field one place: no node, no capacity, nothing to overflow.
+- **AS.** PS1–PS4 take no lock and no in-flight count, allocate nothing and touch no
+  thread-local state: `getpid`, loads, one CAS loop and at most one `write()`, with `errno` kept.
+  A handler that interrupts a thread inside the queue lock never waits for it. The CAS loop is
+  lock-free: it fails only when another write of `qword` succeeded.
+- A3 returns an interrupt before A4 runs, so posts stay pending while the queue is interrupted
+  and are reported after `MTL_INTR_OFF` (p4). C3 drops them at close.
 
 **State changes.**
 
@@ -1502,7 +1530,7 @@ F8  Lp.cursor = 0; return 0
   decides the slack gate or the notifier (D-165).
 - W2 fits while Σ(armed objects and queues × their wake rate) × the cost per wake ≤ 2 % of a core
   per scheduler, about 13 k wakes/s, where a queue counts once per consumer cycle. Dense audio
-  (hundreds of sessions per scheduler) polls a queue without a descriptor or the sessions on its
+  (hundreds of sessions per scheduler) polls a `MTL_QUEUE_POLLED` queue or the sessions on its
   own timer (D-170); `MTL_UNIT_ROWS` at a small `rx.rows_step` reads `progress` (W0).
 - A thread per session with a timeout does not scale to dense audio. Genlocked sessions are
   woken `wake_k` per iteration, so at `wake_k` = 1 the 512th of 512 sessions wakes ≈ 6–14 ms
@@ -1519,7 +1547,7 @@ F8  Lp.cursor = 0; return 0
 
 | Option | Cost on the tasklet side | Added latency | Use |
 |---|---|---|---|
-| W0 application busy-polls with timeout 0, or polls a queue without a descriptor on its own timer | E2 per completion; with a queue, E4 and P2 per armed unit | 0, or the timer | lowest latency; 125 µs and 1 ms audio, dense loads, `MTL_UNIT_ROWS` (line mode) |
+| W0 application busy-polls with timeout 0, or polls a `MTL_QUEUE_POLLED` queue on its own timer | E2 per completion; with a queue, E4 and P2 per armed unit | 0, or the timer | lowest latency; 125 µs and 1 ms audio, dense loads, `MTL_UNIT_ROWS` (line mode) |
 | W1 application spins then sleeps with back-off | E2 per completion | up to the back-off | fallback |
 | W2-deferred (the design) | E2 per completion; a mark when armed; per iteration up to `wake_k` wakes (D-142) | ≤ the marked entries' iterations plus the wake-up | every session, every mode, from MS1 (queues from MS2a) |
 | the notifier thread (contingency, D-165) | as W2 without the flush's syscalls | a hop of 2–20 µs, about 130 µs at C6 | built only by D-142's rules (MS2a), in place of the earlier W3 (D-165) |
@@ -1669,7 +1697,9 @@ D-159–D-162). It is an entry of its own never-freed table on the node of the i
 (D-182): one word `qword`, an intrusive list through the objects' attachment slots (`alink` on line A, `astate` and `user` on
 line C of §6.1's table), and an eventfd that lives as long as the process (a forked child closes it). The
 first change of an armed target claims the attachment bit `HA` in the object's event word and
-pushes the object once; a report disarms it. Tasks C1q1 and C1q2 build it. A session on another
+pushes the object once; a report disarms it. An application's post (`mtl_queue_post`, D-206) ORs
+its bits into the `post` field of `qword` by the same CAS, with the same checks; the consumer
+takes the field with the list and reports it first. Tasks C1q1 and C1q2 build it. A session on another
 node's scheduler pays a remote `qword` transfer per push (≈ 200–400 ns [inferred]); a consumer
 per node with its own queue avoids it, and S1a measures it on two sockets.
 
@@ -1681,12 +1711,21 @@ carried 32 objects per iteration.
 `read()` per missed probe, wait groups with an O(members + hw) sweep for dense audio, and an
 in-flight count on every wake. Its sweep also spun a source-limited sender (ex03), because a free
 slot kept ACQUIRE ready. A queue is one descriptor for any number of objects, its consumer visits
-only the ready ones, and a burst costs one write; it reports only the objects armed on it (no
-user posts, contract.md §7.2). `mtl_queue_wait` is its own export, not a kind of `mtl_reap`: its timeout 0 arms the
+only the ready ones, and a burst costs one write; it reports the objects armed on it and the
+application's posts (D-206), so a loop on a queue needs no descriptor of its own. `mtl_queue_wait` is its own export, not a kind of `mtl_reap`: its timeout 0 arms the
 descriptor and its `-MTL_ECANCELED` applies at any timeout. MS1 has no descriptor because no MS1
 consumer sleeps on one (`UnifiedRxTxApp` and `UnifiedKahawaiTest` use a thread per session) and S1
 measures the wake costs first (MS2a); a stop-gap MS1 loop, a WT thread writing an application
 pipe, was rejected as the wrong pattern to teach.
+
+**Why posts are a field of `qword` (D-206).** A post is then one more RMW in the chain that the
+consumer's arm (A8) compares, so the push's argument covers it with no new ordering pair, and the
+CAS that posts also checks CLOSED and the generation. The field coalesces, so it needs no node, no
+arm and no capacity. A 64-bit mask in a word of its own would need its own generation and a
+store-buffering pair with A8, the interrupt's shape; a count tells the loop nothing it can act on;
+one entry per post (io_uring's `IORING_OP_MSG_RING`, IOCP's `PostQueuedCompletionStatus`) needs
+a capacity or an allocation. The field has the bits the word has left; kqueue's `EVFILT_USER`
+coalesces the same number of flag bits by OR.
 
 ```text
 PUSH(o, i, F, st): by the winner of HA(i) (E4), or by an arm that found o ready (J8)
@@ -1703,24 +1742,37 @@ U1  close: v = fetch_or(qword(q), CLOSED, seq_cst)
 U2  U2(q, v): while (v & ARMED) { if (CAS(qword(q), v, v & ~ARMED, acq_rel)) { K2(q); break };
         v = load(qword(q), seq_cst) }
 
+POST(q, b): mtl_queue_post, AS; never on a library loop
+PS1 b == 0 or b & ~MTL_QUEUE_POST_MASK: -MTL_EINVAL (pure, without mtl_last_error); N0';
+    saved = errno; x = entry(q) (chunk acquire; none: r = -MTL_EBADF, goto PS4)
+PS2 v = load(qword(x), relaxed); loop:
+        if ((v & CLOSED) || qgen(v) != low16(gen(handle))) { r = -MTL_EBADF; goto PS4 }
+        n = v | post(b); if (v & ARMED) n &= ~ARMED
+        if (CAS(qword(x), v, n, acq_rel)) break      // also when n == v: the CAS is the release
+PS3 r = 0; if (v & ARMED) K2(x)                        // the claim's one write, directly (never M1)
+PS4 errno = saved; return r
+
 QWAIT(q, out, r_size, max, timeout): mtl_queue_wait
-A1  N0'; a queue without a descriptor and timeout != 0: -MTL_EINVAL; deadline; enter q (a
-    closed handle: -MTL_EBADF); got = 0
+A1  N0'; a MTL_QUEUE_POLLED queue and timeout != 0: -MTL_EINVAL; deadline; enter q (a
+    closed handle: -MTL_EBADF); got = 0; pb = 0
 A2  lock(q)        // a TTAS spinlock of application threads, held for memory operations only
 A3  v = load(qword(q), acquire); if (qgen(v) != low16(gen(handle))) { r = -MTL_EBADF; goto A10 }
     if (v & CLOSED) { r = -MTL_ESHUTDOWN; goto A10 }   // a reused entry is never drained
     if (bits(intr(q)) | bits(intr(I))) { r = -MTL_ECANCELED; goto A10 }
-A4  if (local(q) == 0 && head(qword(q)) != 0): CAS qword: head -> 0, flags kept (acq_rel);
-    local(q) = the list taken, reversed (oldest first)
-A5  n = 0; while (n < max && local(q) != 0): (o, i) = pop local(q);
+A4  if (local(q) == 0 && (head(qword(q)) != 0 || post(qword(q)) != 0)): CAS qword: head -> 0,
+    post -> 0, flags kept (acq_rel); local(q) = the list taken, reversed (oldest first);
+    pb = the post bits taken
+A5  n = 0; if (pb) { p = dph(q); fetch_add(dlv[p](q), 1, relaxed);       // the report of posts,
+        out[n++] = {MTL_OBJ_NONE, pb, 0}; pb = 0 }                // first
+    while (n < max && local(q) != 0): (o, i) = pop local(q);
         if (astate[i] == DEAD) { astate[i] = FREE; continue }
         if (load(state(o), seq_cst) is CLOSING or RETIRED) { astate[i] = IDLE; continue }
         if (n == 0) { p = dph(q); fetch_add(dlv[p](q), 1, relaxed) }   // the delivery count
         out[n++] = {o, user[i], alink[i].fired & (want(astate[i]) | STATE)}; astate[i] = IDLE
-A6  if (n) { r = n; goto A10 }; no descriptor: { r = -MTL_EAGAIN; goto A10 }
+A6  if (n) { r = n; goto A10 }; MTL_QUEUE_POLLED: { r = -MTL_EAGAIN; goto A10 }
 A7  unlock(q); if (read(fd(q)) returned a count) got = 1; lock(q)    // the reset, unlocked
-A8  CAS qword: {head 0} -> {head 0, ARMED} (seq_cst), only while local(q) == 0; CLOSED: goto
-    A3; head != 0 or local(q) != 0: goto A4 (got is kept)
+A8  CAS qword: {head 0, post 0} -> {head 0, post 0, ARMED} (seq_cst), only while local(q) == 0;
+    CLOSED: goto A3; head != 0, post != 0 or local(q) != 0: goto A4 (got is kept)
 A9  if (bits(intr(q)) | bits(intr(I)), seq_cst loads) goto A3     // the interrupt pair
     r = -MTL_EAGAIN; got = 0                            // this call armed: it keeps the signal
 A10 unlock(q); if (got) write(fd(q), 1)                 // the write-back rule
@@ -1752,7 +1804,8 @@ J10 unlock(q); the owed write, if any (K2); leave q, o; return r
 QCLOSE(q): mtl_close on a queue, CP; returns 0
 C1  U1, then U2 (a sleeper inside mtl_queue_wait or epoll gets a write)
 C2  wait until q's in-flight counter is 0 (its waits woke on C1's write; it yields)
-C3  lock(q); CAS head -> 0; every node of the list and of local(q): its astate -> FREE; unlock
+C3  lock(q); CAS head -> 0 and post -> 0 (the pending posts are dropped); every node of the list
+    and of local(q): its astate -> FREE; unlock
 C4  for each entry e < hw, each slot i of e with qidx q and qgen(q): lock(q); IDLE -> FREE;
     ARMED: the fetch_and of HA(i) won -> FREE (lost: its claimer's P2 sees CLOSED and frees
     it); unlock (the lock is taken per slot)
@@ -1760,7 +1813,8 @@ C5  tombstone; fd stays open for the next queue on the entry (C2 has waited out 
     deliveries included)
 Y2  mtl_queue_create on a reused queue entry: the generation + 1; owed = 0; local = 0;
     intr = {generation, 0}; read(fd) (the reset; nothing on a fresh entry, which creates the
-    eventfd); qword = {head 0, qgen = the generation's low 16 bits} (release); the state, last.
+    eventfd); qword = {head 0, post 0, qgen = the generation's low 16 bits} (release); the state,
+    last.
     No queue descriptor is closed while the process runs, not at the last mtl_instance_close
     either: the kernel closes them at exit, a later instance reuses them, and a forked child
     closes them (R8). So an AS write that U2 or V2 owes after any close lands on a live
@@ -1799,14 +1853,15 @@ The syscalls of the whole subsystem, by context:
 | a loop's flush, after its handlers | at most `wake_k` marked entries whose wake makes a syscall per iteration (D-142): per object one futex wake, per queue one `write()` |
 | a probe (timeout 0) | none, except as a producer (release, reap, failed conversion): one futex wake or one `write()` |
 | a call with a timeout | one `futex_wait` per sleep; beyond a full count on a target, one per ms |
-| `mtl_queue_wait` | none on a queue without a descriptor; else one `read()` when it finds nothing, one `write()` when its read took a signal and it does not arm, `ppoll` with a timeout |
+| `mtl_queue_wait` | none on a `MTL_QUEUE_POLLED` queue; else one `read()` when it finds nothing, one `write()` when its read took a signal and it does not arm, `ppoll` with a timeout |
 | `mtl_queue_arm` | none, or one `write()`, after its unlock, when it reports at once to an armed queue |
+| `mtl_queue_post` | `getpid`, and one `write()` when its CAS claims `ARMED` |
 | an AS interrupt | per object with a sleeper one futex wake, per armed queue one `write()`, plus `getpid` |
 | the control plane | state changes wake directly; a queue's close writes once; no queue descriptor is closed while the process runs (D-161) |
 
 The correctness of the queue path is argued in §6.1's list (the queue, the write-back rule,
-interrupts of a queue, detach and `user`, state changes, no busy loop, no overflow, close); the
-model's cases q1–q11 and r1–r4 check it, and QW1–QW19 pin it (design/wait-tests.md).
+interrupts of a queue, detach and `user`, posts, state changes, no busy loop, no overflow, close);
+the model's cases q1–q11, r1–r4 and p1–p5 check it, and QW1–QW22 pin it (design/wait-tests.md).
 
 ## 7. Close and retire
 

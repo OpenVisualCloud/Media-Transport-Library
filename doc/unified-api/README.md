@@ -131,7 +131,7 @@ of every task and the standing instructions are in [ms1-status.md](ms1-status.md
 | C-FPS, C-GRANT, C-BRIDGE, C1q1, C1q2 (MS2a), N1–N8, N6a, N6b (MS4a2) | later tasks named by the designs | [implementation-plan.md](implementation-plan.md) §6 |
 | RB0–RB2, F2-1 | the st20p re-base tasks (MS2b); the F+2 harness task | [implementation-plan.md](implementation-plan.md) §6.1, §6.6 |
 | R1–R8 | the rules every call follows | `mtl.h`, [contract.md](contract.md) §1 |
-| D-01…D-205 | design decisions and their reason | [decisions.md](decisions.md) §2 |
+| D-01…D-207 | design decisions and their reason | [decisions.md](decisions.md) §2 |
 | OI-n | open implementation issues, each with its rule and milestone | [decisions.md](decisions.md) §5 |
 | G-01…G-142, G-PKT-n | guarantees, each with its test | [implementation-plan.md](implementation-plan.md) §8, [requirements.md](requirements.md) §4 |
 | R-xxx-n, R-PKT-n, K-REQ-n, N-REQ-n, I-REQ-n | requirements | [requirements.md](requirements.md) |
@@ -140,7 +140,7 @@ of every task and the standing instructions are in [ms1-status.md](ms1-status.md
 | SF-n, SP-n, DD-n, H-K-n | defects and drift in today's code; pod hazards | [engine.md](engine.md) §7 |
 | H1–H10, W0–W2 and the notifier contingency | pinned-core hazards, wake-up mechanisms | [engine.md](engine.md) §1, [core.md](core.md) §6 |
 | S0, S1, S4–S8 | measurements (spikes) | [engine.md](engine.md) §6.1, [implementation-plan.md](implementation-plan.md) §3.3 |
-| WH2–WH21, WC1–WC5, QW1–QW19, ST1–ST9, SR1–SR3, SR6 | the pause-hook tests of the wait protocol, the S1 thresholds and decision rules | [implementation-plan.md](implementation-plan.md) §8.2, [engine.md](engine.md) §6.1 |
+| WH2–WH21, WC1–WC5, QW1–QW22, ST1–ST9, SR1–SR3, SR6 | the pause-hook tests of the wait protocol, the S1 thresholds and decision rules | [implementation-plan.md](implementation-plan.md) §8.2, [engine.md](engine.md) §6.1 |
 | U-001…U-420, H-01…H-19, CUT-n | legacy capabilities, pre-hide gaps, the cut list | [coverage.md](coverage.md) |
 | LB-n | the legacy-behaviour ledger | [migration.md](migration.md) §6.5 |
 | NM-*, IX-* | the NMOS and IPMX features MTL provides | [nmos-ipmx.md](nmos-ipmx.md) §3 |

@@ -398,6 +398,8 @@ typedef struct mtl_timeline_h {
 /* A reference to any object, for the object verbs below, events, stats, options and fault
    injection. */
 enum mtl_object_kind {
+  MTL_OBJ_NONE = 0, /* no object: a queue's report of posts (mtl_queue_post); a log line
+                       of the process */
   MTL_OBJ_INSTANCE = 1,
   MTL_OBJ_PORT = 2, /* index = port, id = the instance */
   MTL_OBJ_SESSION = 3,
@@ -1179,13 +1181,14 @@ enum mtl_pkt_pacing {
 };
 enum mtl_pkt_unit_time {
   MTL_PKT_TIME_SUBMIT = 0,   /* from the first chunk's submission, by media mode */
-  MTL_PKT_TIME_FROM_RTP = 1, /* from the RTP timestamp of the unit's first packet; SMPTE2022-6:
-                                the unit-grid instant nearest it, which is the frame's
+  MTL_PKT_TIME_FROM_RTP = 1, /* from the RTP timestamp of the unit's first packet, taken as
+                                given: outside SMPTE2022-6 never snapped. SMPTE2022-6: the
+                                unit-grid instant nearest it, which is the frame's
                                 Synchronizing Timestamp of an epoch-aligned source (that
-                                packet's RTP lies 0.6-8.6 us earlier, ST 2022-8 §5.3). The
-                                session's media_mode is 0; the media time is taken as given,
-                                never snapped, and a late unit is DROPPED (TOO_LATE): the
-                                option tx.late_policy MTL_LATE_DEFER is -MTL_EINVAL */
+                                packet's RTP lies 0.6-8.6 us earlier, ST 2022-8 §5.3).
+                                media_mode must be 0 (AUTO), else -MTL_EINVAL. A late unit is
+                                DROPPED (TOO_LATE): the option tx.late_policy MTL_LATE_DEFER
+                                is -MTL_EINVAL */
 };
 struct mtl_packet_config {
   uint32_t packets_per_chunk; /* slots per lease; 0 = by essence */
@@ -1255,8 +1258,12 @@ struct mtl_session_config {
   int64_t min_tx_delay_ns;             /* TX: the earliest send after the media time. 0 =
                                           playback (content exists before its media time);
                                           a capture producer (camera, encoder, RX -> TX)
-                                          sets one frame period + the pick-up lead
-                                          (timing.md), a launch delay of 1 */
+                                          sets one frame period + the pick-up lead, a
+                                          launch delay of 1 (timing.md). MTL reports the
+                                          lead as the stat info.pickup_lead_ns of a created
+                                          session: set the delay with MTL_UPDATE_MEDIA
+                                          before the start (before MS3, close the session
+                                          and create it again with the delay) */
   int64_t media_time_offset_ns;        /* TX, TAI mode: the producer's latency, which moves
                                           the index; RTP stays the index's, so no ST 2110-10
                                           §7.6.3 bound applies. Other modes: 0, else
@@ -1341,7 +1348,7 @@ struct mtl_session_info {
   char name[MTL_NAME_MAX];
   int64_t created_tai_ns;
   uint32_t pool_count;
-  uint32_t max_count; /* pool_count limit */
+  uint32_t max_count; /* pool_count limit; packet units: chunks */
   uint32_t pacing_class; /* enum mtl_pacing, granted */
   uint32_t leg_count;
   uint32_t pkts_per_unit;
@@ -1752,11 +1759,14 @@ struct mtl_anc_packet {
 /* ---- Data path ------------------------------------------------------------------------ */
 
 /* TX: a writable slot. 0, or -MTL_EAGAIN (none free by the timeout: status.blocked_on says
-   why), -MTL_ECANCELED (with a timeout), -MTL_ESHUTDOWN, -MTL_EIO, ... WT (Waiting,
-   below). (MS1) */
+   why), -MTL_ECANCELED (with a timeout), -MTL_ESHUTDOWN, -MTL_EIO, ... Unread results hold
+   ring entries (MTL_BLOCKED_RESULTS): after a reap of every ready result, one acquire never
+   blocks on them, even with MTL_FOREVER; a burst of several acquires between reaps can, so
+   such a loop uses a finite timeout and reaps on -MTL_EAGAIN (contract.md §5.5). WT
+   (Waiting, below). (MS1) */
 MTL_API_WT(1) int mtl_tx_acquire(mtl_session_h s, struct mtl_unit* u, int64_t timeout_ns);
 /* Hands the unit to MTL; exactly one result follows (if results are on). The results
-   ring holds pool_count entries and acquire reserves one, so producing a result never
+   ring holds pool_count + 1 entries and acquire reserves one, so producing a result never
    waits. A failed first submit returns the slot to the pool without a result, except
    -MTL_EBADF and -MTL_ESTALE, which change no state. Rows units: submit the same lease
    again with a larger `used` to publish more rows; once a submit was accepted, a later
@@ -1873,22 +1883,28 @@ typedef struct mtl_queue_h {
 /* mtl_ready.fired: o's state changed since the arm (start, stop, the end of DRAIN or FLUSH,
    ERROR, a recovery); mtl_session_get_status says to what. o stays attached. */
 #define MTL_READY_STATE 0x80000000u
-/* One report. */
+/* One report: of an armed object, or of posts (o.kind MTL_OBJ_NONE). */
 struct mtl_ready {
-  struct mtl_object o; /* the session or the instance */
-  uint64_t user;       /* from the last mtl_queue_arm of o on this queue */
+  struct mtl_object o; /* the session or the instance; MTL_OBJ_NONE for posts */
+  uint64_t user;       /* from the last mtl_queue_arm of o on this queue; for posts the
+                          OR of the bits posted since the last report of posts */
   uint32_t fired;      /* the armed MTL_WAIT_* targets whose change reported o, and
-                          MTL_READY_STATE; 0 is possible: try every armed target */
+                          MTL_READY_STATE; 0 is possible: try every armed target; 0 for
+                          posts */
   uint32_t reserved;   /* 0 */
 };
-/* Creates a queue of mt. native not NULL: the queue's descriptor, written to *native (a
-   Linux eventfd, poll POLLIN; from MS2a a Windows manual-reset event HANDLE); the
-   application never reads or writes it, and removes it from its event loop before
-   mtl_queue_close(q). MTL keeps the descriptor open while the process runs (a forked
-   child closes it) and gives it to a later queue, so their number is bounded by the peak
-   number of live queues. native NULL: a queue without a descriptor, for a consumer that
-   polls it on its own timer: mtl_queue_wait on it takes timeout 0, and it never costs a
-   wake-up. flags: 0. -MTL_ENOSPC without a descriptor (DESCRIPTOR_LIMIT). CP. (MS2) */
+/* mtl_queue_create() flags */
+#define MTL_QUEUE_POLLED 0x1u /* no descriptor: for a consumer that polls the queue on its
+                                 own timer; mtl_queue_wait takes timeout 0, and the queue
+                                 never costs a wake-up */
+/* Creates a queue of mt with a descriptor, on which mtl_queue_wait with a timeout sleeps.
+   native not NULL: the descriptor is also written to *native (a Linux eventfd, poll
+   POLLIN; from MS2a a Windows manual-reset event HANDLE), for a framework that runs its
+   own loop; the application never reads or writes it, and removes it from that loop
+   before mtl_queue_close(q). MTL keeps the descriptor open while the process runs (a
+   forked child closes it) and gives it to a later queue, so their number is bounded by
+   the peak number of live queues. flags: 0 or MTL_QUEUE_POLLED (with native NULL).
+   -MTL_ENOSPC when no descriptor is left (DESCRIPTOR_LIMIT). CP. (MS2) */
 MTL_API_CP(2) int mtl_queue_create(mtl_instance_h mt, uint32_t flags, mtl_queue_h* out,
                                    intptr_t* MTL_NULLABLE native);
 /* Arms targets (MTL_WAIT_*) of o, a session or the instance of q, on q: the first change of
@@ -1907,20 +1923,33 @@ MTL_API_DP(2) int mtl_queue_arm(mtl_queue_h q, struct mtl_object o, uint64_t tar
                                 uint64_t user);
 /* Up to max reports, each r_size bytes apart, oldest first, each object once. A count >= 1;
    -MTL_EAGAIN: nothing by the timeout, and q's descriptor is armed (timeout 0 costs one
-   read() of it): sleep on the descriptor only after -MTL_EAGAIN. On a queue without a
-   descriptor: timeout 0 only (else -MTL_EINVAL), and nothing is armed. -MTL_ECANCELED
-   while q or its instance is interrupted, with any timeout; -MTL_ESHUTDOWN for a wait in
-   progress when q closes. Any number of threads may call it; each report goes to one of
-   them. WT; with timeout 0 one read() and at most one write() of the descriptor. (MS2) */
+   read() of it): sleep on the descriptor only after -MTL_EAGAIN. On a MTL_QUEUE_POLLED
+   queue: timeout 0 only (else -MTL_EINVAL), and nothing is armed. -MTL_ECANCELED
+   while q or its instance is interrupted, with any timeout (posts are kept);
+   -MTL_ESHUTDOWN for a wait in progress when q closes. Any number of threads may call
+   it; each report goes to one of them, the report of posts first. WT; with timeout 0 one
+   read() and at most one write() of the descriptor. (MS2) */
 MTL_API_WT(2) int mtl_queue_wait(mtl_queue_h q, struct mtl_ready* r, size_t r_size,
                                  uint32_t max, int64_t timeout_ns);
+/* The bits mtl_queue_post() takes. */
+#define MTL_QUEUE_POST_MASK 0x00FFFFFFu
+/* Posts bits to q from any thread, also from a signal handler: it wakes a thread asleep on
+   q, and a later mtl_queue_wait returns one report {o kind MTL_OBJ_NONE, user = the OR
+   of every bit posted since the last such report, fired 0}. Posts coalesce: they need no arm, take no
+   memory and never fill the queue. What the thread wrote before the post is visible to
+   the thread that gets the report: publish your work, then post. Posts are not ordered
+   with the reports of objects. bits 0 or outside MTL_QUEUE_POST_MASK: -MTL_EINVAL,
+   checked first; a null, closed or stale q, or a fork()ed child: -MTL_EBADF, and
+   nothing is posted. One CAS of the queue word, and one write() when it wakes a sleeper.
+   AS: getpid, atomics and write() only, errno kept, never mtl_last_error(). (MS2) */
+MTL_API_AS(2) int mtl_queue_post(mtl_queue_h q, uint32_t bits);
 /* Detaches every object and ends the waits in progress on q with -MTL_ESHUTDOWN; later
    calls on q are -MTL_EBADF. 0 for a null handle. CP. */
 static inline int mtl_queue_close(mtl_queue_h q) {
   return mtl_close(MTL_OBJ_OF_QUEUE(q), 0);
 }
-/* on = 1: every mtl_queue_wait on q returns -MTL_ECANCELED until on = 0. AS with on = 1, CP
-   with on = 0. */
+/* on = 1: every mtl_queue_wait on q returns -MTL_ECANCELED until on = 0; posts are kept. AS
+   with on = 1, CP with on = 0. */
 static inline int mtl_queue_interrupt(mtl_queue_h q, int on) {
   return mtl_interrupt(MTL_OBJ_OF_QUEUE(q), on ? MTL_INTR_ON : MTL_INTR_OFF, 0);
 }

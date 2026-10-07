@@ -6,8 +6,9 @@
 # level its "Needs: MSn" names. Lints: size checks, the include layering, the packet-mode
 # naming rule, the milestone of every exported function (comment tag = call-class
 # argument), the availability probes, the examples copied verbatim into examples.md, the
-# examples' calls of every exported function (G-114, nm -u), each example's own number on
-# its first line, the reasons table, one home per load-bearing number (numbers.txt) and a
+# examples' calls of every exported function (G-114, nm -u), the example file names and
+# numbers (once each, no gap) and each example's own number on its first line, the reasons
+# table, one home per load-bearing number (numbers.txt) and a
 # migration.md §6.5 row for every legacy mode of the core.
 # Prints the exported functions per header, per call class and per milestone, and the
 # number of frozen names: the one place the documents take these counts from.
@@ -236,19 +237,36 @@ fi
 # Lint 9: the examples call every exported function outside MTL_LATER and mtl_debug.h (the
 # G-114 method on the examples): each example is compiled at its Needs level and the
 # undefined symbols of its object (nm -u) are matched against --tags. A call through an
-# inline wrapper counts, since a used wrapper is emitted and references the function.
-if command -v nm >/dev/null 2>&1; then
+# inline wrapper counts, since a used wrapper is emitted and references the function. An
+# example that does not compile, a missing nm and an empty object list fail the lint.
+if ! command -v nm >/dev/null 2>&1; then
+	echo "FAIL: nm not found: lint 9 (G-114) cannot run"
+	fail=1
+else
 	objdir="$(mktemp -d)"
+	nobj=0
 	for f in "$here"/examples/*.c "$here"/examples/*.cpp; do
 		[ -e "$f" ] || continue
 		extra=()
 		uses_legacy "$f" && extra=("${lflags[@]}")
+		o="$objdir/$(basename "$f").o"
 		case "$f" in
-		*.cpp) g++ -std=c++17 -c -o "$objdir/$(basename "$f").o" -I "$inc" -DMTL_TARGET_LEVEL="$(needs "$f")" "$f" 2>/dev/null ;;
-		*) gcc -std=c99 -c -o "$objdir/$(basename "$f").o" -I "$inc" "${extra[@]}" -DMTL_TARGET_LEVEL="$(needs "$f")" "$f" 2>/dev/null ;;
+		*.cpp) cmd=(g++ -std=c++17 -c -o "$o" -I "$inc" -DMTL_TARGET_LEVEL="$(needs "$f")" "$f") ;;
+		*) cmd=(gcc -std=c99 -c -o "$o" -I "$inc" "${extra[@]}" -DMTL_TARGET_LEVEL="$(needs "$f")" "$f") ;;
 		esac
+		if ! out="$("${cmd[@]}" 2>&1)"; then
+			echo "FAIL: lint 9 could not compile $(basename "$f")"
+			echo "$out" | head -20
+			fail=1
+			continue
+		fi
+		nobj=$((nobj + 1))
 	done
-	called="$(for o in "$objdir"/*.o; do nm -u "$o" | awk '{print $NF}'; done | sort -u)"
+	if [ "$nobj" -eq 0 ]; then
+		echo "FAIL: lint 9 compiled no example"
+		fail=1
+	fi
+	called="$(for o in "$objdir"/*.o; do [ -e "$o" ] && nm -u "$o" | awk '{print $NF}'; done | sort -u)"
 	rm -rf "$objdir"
 	while IFS=$'\t' read -r ok tag name file arg; do
 		case "$tag" in "Phase 7" | later) continue ;; esac
@@ -260,19 +278,44 @@ if command -v nm >/dev/null 2>&1; then
 	done <<<"$tags"
 fi
 
-# Lint 10: each example says its own number first ("/* exNN — ", the C++ file "// <name> —").
-for f in "$here"/examples/ex[0-9][0-9]_*.c "$here"/examples/*.cpp; do
-	[ -e "$f" ] || continue
+# Lint 10: the examples directory holds ex_common.h, examples_cpp.cpp and exNN_<name>.c
+# files only, numbered 01 to N once each with no gap; each example says its own number
+# first ("/* exNN — ", the C++ file "// <name> — ").
+nums=()
+for f in "$here"/examples/*; do
 	b="$(basename "$f")"
 	case "$b" in
+	ex_common.h) continue ;;
 	*.cpp) want="// $b — " ;;
-	*) want="/* ${b%%_*} — " ;;
+	ex[0-9][0-9]_[a-z0-9_]*.c)
+		want="/* ${b%%_*} — "
+		nums+=("${b:2:2}")
+		;;
+	*)
+		echo "FAIL: examples/$b is not ex_common.h, a .cpp file or exNN_<name>.c"
+		fail=1
+		continue
+		;;
 	esac
 	first="$(head -n 1 "$f")"
 	if [ "${first#"$want"}" = "$first" ]; then
 		echo "FAIL: $b does not start with '$want'"
 		fail=1
 	fi
+done
+dups="$(printf '%s\n' "${nums[@]}" | sort | uniq -d)"
+if [ -n "$dups" ]; then
+	echo "FAIL: example numbers used twice: $(printf '%s\n' "$dups" | tr '\n' ' ')"
+	fail=1
+fi
+i=1
+for n in $(printf '%s\n' "${nums[@]}" | sort -u); do
+	if [ "$((10#$n))" -ne "$i" ]; then
+		echo "FAIL: example numbers have a gap: ex$(printf '%02d' "$i") is missing"
+		fail=1
+		break
+	fi
+	i=$((i + 1))
 done
 
 # Lint 6 (until H1b's tables commit replaces it with gen_api_doc.py --check): the reasons of
