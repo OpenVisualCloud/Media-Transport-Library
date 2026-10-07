@@ -104,6 +104,7 @@ unit_sources = [
   'session/st20/st20_first_pkt_idx_test.cpp',
   'session/st20/st20_user_meta_test.cpp',
   'session/st20/dma_test.cpp',
+  'session/st20/frame_memcpy_test.cpp',
   'session/st20_tx_harness.c',
   'session/st20_tx/epoch_test.cpp',
   'session/st20_tx/interlaced_field_epoch_test.cpp',
