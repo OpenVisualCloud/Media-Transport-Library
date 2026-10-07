@@ -687,6 +687,44 @@ int ut20_feed_pkt_via_wrapper(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
   return rc;
 }
 
+void* ut20_frame_memcpy(ut20_test_ctx* ctx, bool pkt_lcore, void* dst, const void* src,
+                        size_t n) {
+  bool has_pkt_lcore = ctx->session.has_pkt_lcore;
+  ctx->session.has_pkt_lcore = pkt_lcore;
+  void* ret = rv_frame_memcpy(&ctx->session, dst, src, n);
+  ctx->session.has_pkt_lcore = has_pkt_lcore;
+  return ret;
+}
+
+int ut20_feed_frame_burst_via_wrapper(ut20_test_ctx* ctx, const int* pkt_idx, int nb,
+                                      uint32_t ts, enum mtl_session_port port) {
+  if (nb <= 0) return -1;
+
+  /* exactly nb entries, so a look-ahead which walks off the end of the burst is
+   * a heap overflow ASan can see, not a read of an in-bounds spare slot */
+  struct rte_mbuf** mbufs = calloc((size_t)nb, sizeof(*mbufs));
+  if (!mbufs) return -1;
+
+  for (int i = 0; i < nb; i++) {
+    uint16_t ln, lo, ll;
+    uint32_t seq = ts * (uint32_t)ctx->session.ops.height + (uint32_t)pkt_idx[i];
+
+    pkt_idx_to_line(pkt_idx[i], &ln, &lo, &ll);
+    mbufs[i] = make_video_mbuf_full(seq, ts, ln, lo, ll, ctx->session.ops.payload_type,
+                                    ctx->session.ops.ssrc);
+    if (!mbufs[i]) {
+      for (int j = 0; j < i; j++) rte_pktmbuf_free(mbufs[j]);
+      free(mbufs);
+      return -1;
+    }
+  }
+
+  int rc = rv_handle_mbuf(&ctx->session.priv[port], mbufs, (uint16_t)nb);
+  for (int i = 0; i < nb; i++) rte_pktmbuf_free(mbufs[i]);
+  free(mbufs);
+  return rc;
+}
+
 int ut20_feed_frame_pkt_via_wrapper(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
                                     enum mtl_session_port port) {
   uint32_t seq = ts * (uint32_t)ctx->session.ops.height + (uint32_t)pkt_idx;
