@@ -14,7 +14,7 @@ consumer. The same maps are what the legacy `st*p_*` pipelines implement when th
 wrappers on the core (st20p in MS2, st22p, st30p and st40p in MS4; §6.3): a legacy `ops` struct
 is translated field by field as §4 says. Read [concepts.md](concepts.md) for the model and
 [contract.md](contract.md) for the normative behaviour;
-[examples.md §20](examples.md#20-an-st20p-program-side-by-side) shows an st20p program side by side
+[examples.md §28](examples.md#28-an-st20p-program-side-by-side) shows an st20p program side by side
 with the unified one.
 
 ## 1. What changes for an application
@@ -838,7 +838,7 @@ flowchart LR
   but `mtl_session_start` is `-MTL_EBUSY` (`WRONG_STATE`) until it has; RxTxApp and KahawaiTest
   start the legacy instance first, or set `MTL_FLAG_DEV_AUTO_START_STOP` (OI-2).
 - It is CP and ships in MS1 (KahawaiTest's unified cases run on its global legacy instance through
-  it; ex16 is the MS1 way onto a VF, [examples.md §3.1](examples.md#31-ms1-on-a-nic-the-legacy-bridge)).
+  it; ex24 is the MS1 way onto a VF, [examples.md §26](examples.md#26-from-the-legacy-api)).
   It is legacy tier, not part of `MTL_1.0`: its own version node (§7.2), the header in
   `mtl/legacy/` from F, and both leave the public set with `mtl_init` (§8.3, D-190).
 
@@ -1574,8 +1574,9 @@ and a declared latency that covers `info.min_submit_lead_ns`. What a framework a
   silence, `samples_padded`; an overlap trimmed, `samples_dropped`); only `MTL_SUBMIT_DISCONTINUITY`
   re-phases ([timing.md](timing.md) §8).
 
-[examples.md §18](examples.md#18-a-live-sink-presentation-time-to-media-time) (ex15) is this
-recipe as a compiling sink, with the declared latency instead of basesink's render delay.
+[examples.md §23](examples.md#23-a-live-sink-presentation-time-to-media-time) (ex21) is this
+recipe as a compiling sink, with the programme's one latency and phase added to each media time
+instead of basesink's render delay.
 
 **The basesink render rebase** (GStreamer sinks). Today's sinks install their own chain
 function (`gst_mtl_st20p_tx.c:263`, `gst_mtl_st30p_tx.c:245`, `gst_mtl_st40p_tx.c:327`), so

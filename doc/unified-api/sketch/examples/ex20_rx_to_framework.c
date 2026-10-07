@@ -1,4 +1,4 @@
-/* ex05 — RX frames lent to a framework (GstBuffer, AVBufferRef) with no copy: dequeue on
+/* ex20 — RX frames lent to a framework (GstBuffer, AVBufferRef) with no copy: dequeue on
    the streaming thread, wrap the library slot, release on whatever thread drops the
    buffer. The wrapper keeps the handles by value, never a pointer into the element: a
    sink, a queue or an appsink application may hold the buffer after the element is gone.
@@ -59,8 +59,7 @@ int rx_create(mtl_session_h s, uint64_t unit_bytes, uint32_t pool_count,
     if (ret == -MTL_EAGAIN) continue;
     if (ret == -MTL_ECANCELED || ret == -MTL_ESHUTDOWN) return EX_FLUSHING;
     if (ret < 0) return ex_fail("dequeue", ret); /* -MTL_EIO: status.error_reason */
-    if (framework_wrapped_out() + reserve >=
-        pool_count) { /* into a framework pool buffer */
+    if (framework_wrapped_out() + reserve >= pool_count) { /* copy into its own buffer */
       ret = copy_to_framework_buffer(u.plane[0].addr, unit_bytes);
       mtl_rx_release(s, u.lease);
       return ret < 0 ? -MTL_ENOMEM : 0;

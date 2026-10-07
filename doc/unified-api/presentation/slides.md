@@ -336,7 +336,7 @@ flowchart LR
 A pod ends on a timer: 30 s grace by default, then SIGKILL. Every step is bounded, and no step
 starts that the rest of the budget cannot finish. Quiesced means no device can reach any memory,
 so exit is safe. A grandmaster outage must not restart every pod on the network, which is why
-liveness ignores time lock. ex11 is the pod example; health and the shutdown report are MS3.
+liveness ignores time lock. ex16 is the pod example; health and the shutdown report are MS3.
 deployment.md has the rules.
 -->
 
@@ -367,7 +367,7 @@ or nmos-cpp. Port first (D-98): MS1-MS7 port today's functionality, so an NMOS N
 MS3 with stop, update and start, and on MS5 without the stop; the extras land in Phase 7. A Phase 7 name leaves MTL_LATER in
 the milestone that builds it (D-134). IPMX is session.profile = IPMX, which changes zero defaults
 and labels only. Without PTP, MTL_TIME_SOURCE_FREERUN never steps; async sources use
-MTL_MEDIA_SENDER. ex13 is one update per PATCH; nmos-ipmx.md has the rest.
+MTL_MEDIA_SENDER. ex18 is one update per PATCH; nmos-ipmx.md has the rest.
 -->
 
 ---
@@ -410,14 +410,14 @@ milestone · MS1–MS7 port today's functionality; Phase 7 comes after
 | 1 | P0 tooling, S0 baseline, T1 legacy parity tests, H1b headers to `include/mtl/experimental/`, the API shell in libmtl and the run options, E1 engine fixes, C0 the core's header; M0 the wait models' tooling (docs) |
 | 2 | C1a handles, states, close; C1w the wait protocol; C1b slot table, descriptor ring, results; A1 instance; the gtest and RxTxApp copies |
 | 3 | C2 null binding, test clock and rate rules, B1 video TX binding, B2 video RX binding, A2a session, data and wait calls, A2c info, status and latency fields |
-| 4 | I1 `St20p` cases in `UnifiedKahawaiTest`, R1 `UnifiedRxTxApp`, P1 acceptance smoke set, baseline CI entries and the samples `tx_video`, `rx_video`, `legacy_bridge`; stretch A2b, B3, X written if the gates allow, committed in MS2a |
+| 4 | I1 `St20p` cases in `UnifiedKahawaiTest`, R1 `UnifiedRxTxApp`, P1 acceptance smoke set, baseline CI entries and the samples `tx_video`, `rx_video`, `from_legacy`; stretch A2b, B3, X written if the gates allow, committed in MS2a |
 
 - one signed-off commit per task, or a short series, each under the commit cap (D-107) with its
   tests; four review units a week; the maintainer reviews and pushes
 - exit: SHA-256 equal across the two APIs in both directions, one and two legs; `St20p*` green in
   `UnifiedKahawaiTest` next to `KahawaiTest`; the acceptance smoke set passes on `rxtxapp` and
-  `rxtxapp_unified`; the legacy gate unchanged; ex01, ex02 and ex05 run on `null:1`; with
-  them the samples `tx_video`, `rx_video` and `legacy_bridge` call every function of the MS1 node,
+  `rxtxapp_unified`; the legacy gate unchanged; ex01, ex02 and ex20 run on `null:1`; with
+  them the samples `tx_video`, `rx_video` and `from_legacy` call every function of the MS1 node,
   the rest listed in ms1-status
 
 <!-- Critical path: P0 → H1b → C1a → C1w → A1 → C2 → B1/B2 → A2a → A2c → R1 and I1 → P1, with C0 → C1a, M0 → C1w → C1b → C2 and P0 → S0 → E1 → B1/B2 beside it. Four review units a week (C0, M0 and the two copies not counted). Gates on days 5, 10, 15 and 17 cut stretch work first. implementation-plan.md §5. -->

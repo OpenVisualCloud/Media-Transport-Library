@@ -1,7 +1,7 @@
 /* ex01 — the smallest video sender: one config, a library pool, no results to read.
    Defaults it relies on: media mode AUTO (the next frame time of the SMPTE epoch),
    results off. Needs: MS1 (null: and kernel: ports; a VF from MS2a, or in MS1 through
-   the legacy bridge, ex16).
+   the legacy bridge, ex24).
  */
 #include "ex_common.h"
 

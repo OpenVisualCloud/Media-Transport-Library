@@ -146,7 +146,7 @@ of every task and the standing instructions are in [ms1-status.md](ms1-status.md
 | NM-*, IX-* | the NMOS and IPMX features MTL provides | [nmos-ipmx.md](nmos-ipmx.md) §3 |
 | NX-n | proposals that make the NMOS integration easier | [nmos-ipmx.md](nmos-ipmx.md) §6 |
 | G-Nn, GI-n, C-Nn, C-In | NMOS and IPMX gap dispositions and conflicts | [nmos-ipmx.md](nmos-ipmx.md) §21 |
-| ex01…ex17 | the examples | [examples.md](examples.md) |
+| ex01…ex24 | the examples | [examples.md](examples.md) |
 
 Some letters are reused: R1 and R2 are contract rules and also engine items (R1 also a task), H1 is
 a pinned-core hazard while H1b is a task, E1 is a task and an engine change, S0 a task and a spike,

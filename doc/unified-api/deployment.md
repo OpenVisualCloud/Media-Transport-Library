@@ -292,7 +292,7 @@ sequenceDiagram
   packet, the cut unit is `MTL_TX_FLUSHED` (reason `ABORTED`) with `MTL_TXR_PKT_SHORT`, then the device steps run at
   once. A second SIGTERM maps to it. After close it does nothing.
 - **The budget counts from SIGTERM.** The handler records the time (`clock_gettime` is AS-safe); the
-  main thread passes `grace − preStop time − margin − time already spent` (ex11 keeps 2 s for its own
+  main thread passes `grace − preStop time − margin − time already spent` (ex16 keeps 2 s for its own
   exit and never passes less than 100 ms). The downward API does not expose
   `terminationGracePeriodSeconds`, so the pod repeats it in an environment variable. Set
   `terminationGracePeriodSeconds ≥ preStop + drain + reset budget + 2 s`. Without
@@ -331,7 +331,7 @@ step (`reason` names the first that did not finish; `ports_unquiesced` is a bit 
 
 - **No handlers.** The library installs no signal handler and no `atexit`, and never calls `exit`;
   nor do the framework plugins (GStreamer, FFmpeg) or codec plugins: the host application owns
-  signals and turns SIGTERM into work on an ordinary thread (a self-pipe, `signalfd`, or a flag; ex11
+  signals and turns SIGTERM into work on an ordinary thread (a self-pipe, `signalfd`, or a flag; ex16
   uses the handler plus `mtl_instance_interrupt`). Nothing relies on SIGTERM arriving: the design holds
   for SIGKILL. DPDK's own are the
   exceptions: it swaps the SIGBUS handler while it grows its heap (`eal_memalloc.c:100-121`
@@ -343,10 +343,10 @@ step (`reason` names the first that did not finish; `ports_unquiesced` is a bit 
   after close. Their state lives in the never-freed handle slot, and they touch only never-freed
   words, so no AS call and no wake takes the slot's in-flight counter. A queue's descriptor is never
   closed while the process runs (§1.2), so a late signal never writes into a recycled descriptor
-  (in ex11 that descriptor number could have been `/dev/termination-log`). An AS
+  (in ex16 that descriptor number could have been `/dev/termination-log`). An AS
   call keeps `errno` and never writes `mtl_last_error()`; in a `fork()`ed child it returns
   `-MTL_EBADF`.
-- **The recipe ([examples.md](examples.md), ex11).** Block SIGTERM and SIGINT before open and before any
+- **The recipe ([examples.md](examples.md), ex16).** Block SIGTERM and SIGINT before open and before any
   thread exists; install the handlers after open, then unblock, so a signal during open stays pending
   (as PID 1 an unhandled SIGTERM is discarded; or run `tini`; a wrapper script must `exec` the binary).
 Handle the pod's configured stop signal if it is not SIGTERM. Workers leave on the sticky
@@ -595,7 +595,7 @@ The library never kills anything. In thread mode on shared CPUs a 100 ms preempt
 why the liveness limit is 1 s.
 
 The application serves the probes itself (HTTP or gRPC); an exec probe would fork a process on
-exclusive CPUs every period. ex11 ([examples.md §13](examples.md#13-a-service-in-a-kubernetes-pod-signals-probes-bounded-shutdown))
+exclusive CPUs every period. ex16 ([examples.md §18](examples.md#18-a-service-in-a-kubernetes-pod-signals-probes-bounded-shutdown))
 has the handler, and answers as the table says:
 
 | Probe | 503 when |
@@ -802,7 +802,7 @@ What the audit found, with the engine fix that removes it ([engine.md](engine.md
 | 13 | unbounded stop waits: `sch_stop`, `rte_eal_wait_lcore`, `mt_handle_drain`, `flock`, manager `recv` | `mt_sch.c:316-321`, `:517`; `mt_handle_guard.h:130`; `mt_instance.c:24` | EK1 |
 | 14 | tasklet unregister times out at 1 s with `-EIO`, callers free anyway: use-after-free **[inferred]** | `mt_sch.c:885-901`; `st2110/st_tx_video_session.c:3902-3914` | EK2 |
 | 15 | st20p TX free waits up to about 1 s per held frame; 16 sessions × 3 frames ≈ 48 s **[inferred]** | `st2110/pipeline/st20_pipeline_tx.c:722-753` | EK1 |
-| 16 | no SIGTERM path: the library has none, RxTxApp and the samples catch only SIGINT | `tests/tools/RxTxApp/src/rxtx_app.c:350-359`; `app/sample/sample_util.c:478-509` | ex11 recipe |
+| 16 | no SIGTERM path: the library has none, RxTxApp and the samples catch only SIGINT | `tests/tools/RxTxApp/src/rxtx_app.c:350-359`; `app/sample/sample_util.c:478-509` | ex16 recipe |
 | 17 | `mt_mcast_uinit` frees the group list without leaves; no gratuitous ARP at start | `mt_mcast.c:527-559`, leaves only at `:735-743` | EK9 |
 | 18 | VF rate-limit state in the PF stays until a VF reset | `patches/ice_drv/2.6.7/0001-*.patch` | EK16 |
 | 19 | AF_XDP `tx_maxrate` left on the queue; UDP filter refcounts per interface, not per client | `dev/mt_af_xdp.c:867-892`; `manager/mtl_instance.hpp:272-287` | EK5 |

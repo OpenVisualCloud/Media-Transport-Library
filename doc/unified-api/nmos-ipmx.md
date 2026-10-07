@@ -1039,11 +1039,11 @@ compliant; the SDP follows RFC 9134 (§12).
 
 IS-05 PATCHes one resource (one session), every leg, all or nothing: one PATCH is one
 `mtl_session_update(s, sc, parts, when, &planned_tai_ns)` (CP), typically with `MTL_UPDATE_FLOWS |
-MTL_UPDATE_LEGS`, and `MTL_UPDATE_REAPPLY` from Phase 7 (C-N1). [ex13](sketch/examples/ex13_nmos_switch.c)
+MTL_UPDATE_LEGS`, and `MTL_UPDATE_REAPPLY` from Phase 7 (C-N1). [ex18](sketch/examples/ex18_nmos_node.c)
 keeps the Node's own copy of the session's configuration, copies only what IS-05 changed, updates,
 and reads `status.update_seq` to match the later event; the picture of one PATCH as one update, with
 its planned and applied instants, is in
-[examples.md §15](examples.md#15-nmos-is-05-switch-destinations-at-one-instant). The `mtl.h`
+[examples.md §20](examples.md#20-an-nmos-node-is-04-interfaces-is-05-activation). The `mtl.h`
 comment is normative:
 
 - **All or nothing.** Resources are reserved before commit. The update reads only the members its

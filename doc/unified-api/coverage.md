@@ -264,7 +264,7 @@ because the pipeline ops and frame structs embed these types (§4).
 | U-186 | two-phase release: `ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE`, `st20p_tx_notify_ext_frame_free` | app memory always produces results: the result frees the slot, `mtl_tx_acquire_slot` takes it again | MS2 | Co; SMP 2, GST 1, KT 1, UT 3 |
 | U-187 | interlaced TX (`interlaced`, `second_field`) | `raster.scan = MTL_INTERLACED`: the unit is a field, parity from the media index | MS1 | Co; many |
 | U-188 | line padding: `linesize`, `transport_linesize` | `v.linesize[]` (library pools), `mtl_plane.stride`, `mtl_attach` strides | MS2 | Co; SMP 7, GST 2, OBS 1, MXL 1, KT 4 |
-| U-189 | split-forward TX tiles from an RX buffer (`app/sample/fwd/rx_st20_tx_st20_split_fwd.c:127-131`) | `mtl_session_get_pool_region` + `mtl_session_attach` + `u.hold`, `mtl_tx_send_slot` (ex09) | MS2 | R; SMP |
+| U-189 | split-forward TX tiles from an RX buffer (`app/sample/fwd/rx_st20_tx_st20_split_fwd.c:127-131`) | `mtl_session_get_pool_region` + `mtl_session_attach` + `u.hold`, `mtl_tx_send_slot` (ex12) | MS2 | R; SMP |
 | U-190 | per-frame user metadata: `st20_tx_frame_meta.user_meta`, `st_frame.user_meta` | meta record `MTL_META_USER` (≤ 1332 B, `tag`, `tag_version`) | MS1 | Co; SMP 7, RXTX 4, KT 1 |
 | U-191 | slice TX: `ST20_TYPE_SLICE_LEVEL`, `query_frame_lines_ready`, `st20_tx_slice_meta` | `MTL_UNIT_ROWS`: resubmit the lease with a larger `u.used`; `mtl_tx_row_deadline`, `MTL_OPT_ROWS_LATE` | MS2 | R; SMP 1, RXTX 1, KT 2, ext:bobi; S!. CHANGED: push, not a pull callback |
 | U-192 | packing BPM / GPM / GPM_SL: `packing`, `transport_packing` | `v.packing` (`enum mtl_packing`, same values) | MS1 | Co; SMP 2, RXTX 2, MXL 2, PY 2; t |

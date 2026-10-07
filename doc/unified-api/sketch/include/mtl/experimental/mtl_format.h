@@ -169,8 +169,10 @@ struct mtl_convert_image {
 #define MTL_CONVERT_CHECK 0x10u      /* only whether MTL converts the pair (a session too):
                                         0 or -MTL_ENOTSUP; the planes are not read */
 #define MTL_AUDIO_SILENT 0xffffu     /* channel_map: a silent channel */
-/* Video: width x height pixels. Audio (AM824 <-> AES3, or a channel remap within one
-   format): width = samples per channel, height = 1. */
+/* Video: width x height pixels of src; with HALF_SCALE dst is half of each, with
+   FIELD_SPLIT each dst field has height / 2 rows (FIELD_MERGE: src fields, height of the
+   frame). Audio (AM824 <-> AES3, or a channel remap within one format): width = samples per
+   channel, height = 1. */
 struct mtl_convert_desc {
   uint32_t struct_size;
   uint32_t width;

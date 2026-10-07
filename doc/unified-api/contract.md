@@ -166,7 +166,7 @@ Tuning knobs are options (`mtl_options.h`): absent means the documented default,
 
 - The library installs no signal handler and registers no `atexit`. The exceptions are DPDK's own SIGBUS handlers: held while DPDK grows its heap (MTL allocates pools at create, so only then), and installed by the option `instance.hotplug`.
 - A signal handler may call the AS functions only, at any time.
-- Framework plugins (GStreamer, FFmpeg) and codec plugins install no handlers either: the host application owns signals. The library never calls `exit`. The application turns SIGTERM into work on an ordinary thread (self-pipe, `signalfd`, or a flag; ex11 uses the handler plus `mtl_instance_interrupt`). Nothing may rely on SIGTERM arriving: the design is correct for SIGKILL.
+- Framework plugins (GStreamer, FFmpeg) and codec plugins install no handlers either: the host application owns signals. The library never calls `exit`. The application turns SIGTERM into work on an ordinary thread (self-pipe, `signalfd`, or a flag; ex16 uses the handler plus `mtl_instance_interrupt`). Nothing may rely on SIGTERM arriving: the design is correct for SIGKILL.
 - Every descriptor MTL or DPDK opens for it is close-on-exec.
 - An instance belongs to the process that opened it. In a `fork()`ed child MTL at once closes the descriptors it tracks (VFIO, MtlManager, CPU locks, and the queue descriptors, which are otherwise kept while the process runs, §7.2).
   Every call then returns `-MTL_EBADF` (reason `FORKED`) except close, which drops local state only. Library memory is `MADV_DONTFORK`. Imported regions are the application's.
@@ -258,7 +258,7 @@ Port spec defaults: `ip_family` 0 = IPv4 (bytes 0..3, the rest zero); `prefix_le
   (`NOT_IMPLEMENTED`, field `ports`) until MS2a, checked before any device is touched, with `detail`
   `"<name>: opened from MS2a; until then mtl_init + mtl_instance_from_legacy (mtl_legacy.h)"` (at
   most 128 bytes with a 15-byte interface name). The bridge is the MS1 way onto a NIC
-  ([examples.md §3.1](examples.md#31-ms1-on-a-nic-the-legacy-bridge)).
+  ([examples.md §26](examples.md#26-from-the-legacy-api)).
 - A port with `port.dhcp` stays in `MTL_PHASE_LINKS` until it has a lease, and `MTL_EVENT_PORT_ADDRESS` reports it (today open waits up to 49 × 100 ms and then fails, `mt_dhcp.c:549-564`).
   Timesync start and TSC calibration (about 1 s each) stay inside open.
 - Open assumes the previous run died uncleanly: it flushes the VF's flow rules and rate-limit configuration and logs what it reconciled (`instance.reconciled{kind}`).
@@ -393,7 +393,7 @@ ws := spaces and tabs
 - `struct mtl_shutdown_report` (filled whatever the call returns) counts each step: `sessions_closed`, `sessions_retiring`, `units_flushed`, `results_discarded`, `groups_left`, `leases_out`, `regions_referenced`, `ports_unquiesced` (bit per port), `threads_unjoined`, `bytes_kept`, and `references_left` > 0 when only this reference was dropped. `summary` is one line for a termination message.
 - **Abort.** `mtl_instance_abort(mt)` (AS; legacy `mtl_abort`; a second SIGTERM) interrupts every wait and stops every TX session at its next packet: the cut unit is `MTL_TX_FLUSHED`, reason `ABORTED`, with `MTL_TXR_PKT_SHORT`; queued units are `FLUSHED`/`ABORTED`. During close it skips to the hard stop; after close it does nothing. Close still has to follow.
 - **Interrupt.** `mtl_instance_interrupt(mt, 1)` (AS) makes every data wait of every session return `-MTL_ECANCELED` until `mtl_instance_interrupt(mt, 0)` (CP). Stop and close still work (§7.3).
-- **The budget counts from SIGTERM.** The signal handler records the time and calls `mtl_instance_interrupt(mt, 1)`; the main thread passes `grace − preStop − margin − time spent`. ex11 is the recipe ([examples.md](examples.md)).
+- **The budget counts from SIGTERM.** The signal handler records the time and calls `mtl_instance_interrupt(mt, 1)`; the main thread passes `grace − preStop − margin − time spent`. ex16 is the recipe ([examples.md](examples.md)).
 - **Signals in the recipe.** Block SIGTERM and SIGINT before open and before any thread is created; install the handlers after open; then unblock. A signal arriving during open stays pending.
 - **The AS path is safe after close.** The interrupt flags live in the instance's never-freed handle slot, and MTL never closes a queue's descriptor while the process runs (§7.2), so a late signal never writes into a recycled descriptor.
 
@@ -540,7 +540,7 @@ legacy instance's devices or legacy sessions; `mtl_uninit()` does that. Details:
 | `tsmode` | TX: what the session claims for the SDP's `TSMODE` (`info.tsmode`); 0 = no claim, an SDP without `TSMODE`, which receivers read as NEW (ST 2110-10 §8.7); see §12.6's notes for which claim a producer makes. RX: 0, else `-MTL_EINVAL` |
 | `max_udp_payload` | bytes of RTP per packet. TX: 0 = `instance.max_udp_payload`, else 1452; signalled as `MAXUDP` = this + 8 only above 1452. RX: the sender's `MAXUDP` − 8; 0 = no `MAXUDP` in its SDP, so 1452 (§13.2) |
 | `payload_type` | TX: 0 = the essence default (video and cvideo 112, audio 111, ANC 113, fastmeta 115), the same on every leg; else a dynamic type 96–127 (ST 2110-10 §6.2, ST 2110-41 §5.2; `MTL_RTP`: 1–127), otherwise `-MTL_EINVAL`; RX: 0 = no check |
-| `min_tx_delay_ns` | TX: the earliest send after the media time. 0 = playback (content exists before its media time); a capture producer (camera, encoder, RX → TX) sets one frame period plus the pick-up lead, a launch delay of 1 ([timing.md](timing.md) §5.2) |
+| `min_tx_delay_ns` | TX: the earliest send after the media time. 0 = playback (content exists before its media time); a capture producer (camera, encoder, RX → TX) sets one frame period plus the pick-up lead, a launch delay of 1 ([timing.md](timing.md) §5.2); a processor its pipeline budget. Changed in CREATED or STOPPED by `MTL_UPDATE_MEDIA` (§4.7) |
 | `media_time_offset_ns` | TX, TAI mode: the producer's declared latency, which moves the index; 0 = none. RTP stays the index's `floor(N × period × rate)`, so the ST 2110-10 §7.6.3 ±TFRAME bound does not apply. AUTO and INDEX: 0, else `-MTL_EINVAL`; the legacy RTP trim is `tx.rtp_trim_ns` ([timing.md](timing.md) §4.5) |
 | `options`, `option_count` | session keys, deep-copied (§12) |
 
@@ -996,7 +996,7 @@ stateDiagram-v2
 - ANC and fastmeta sessions with an all-zero video raster take the raster and the launch delay of the first video session of the array.
 - Milestones: n = 1 with `when` NULL or `MTL_NOW` in MS1; `MTL_AT_TAI` and `MTL_AT_INDEX` (ARMED) in MS3; start arrays (n > 1) and `MTL_WHEN_ORIGIN` in MS6. Until then each is `-MTL_ENOTSUP` (`NOT_IMPLEMENTED`, R1).
 - Start re-checks what can have changed since create (pool complete, layouts, device resources after an ERROR) and either reaches ARMED/RUNNING or fails with nothing changed.
-- A session cannot start until its pool is complete and validated: with `MTL_SESSION_POOL_ATTACHED` and `pool_count` set, `-MTL_EINVAL`, `POOL_TOO_SMALL`, until that many slots are attached (G-35).
+- A session cannot start until its pool is complete and validated: with `MTL_SESSION_POOL_ATTACHED` and `pool_count` set, `-MTL_EINVAL`, `POOL_TOO_SMALL`, until that many slots are attached (G-35); a provide session and a TX session that acquires by layout only need none (§9.3).
 - If a preroll unit lies beyond the horizon measured from the resolved start instant, start fails atomically with `-MTL_ERANGE`, `BEYOND_HORIZON`, and no session starts (G-94). Preroll units whose media time precedes the start instant become `MTL_TX_FLUSHED`, reason `BEFORE_START`.
 - **RX:** `when` is the earliest media time delivered. The first start installs the flow rule and sends the join on a worker, not awaited: `MTL_EVENT_FLOW_STATE` reports `MTL_FLOW_JOINED` or `MTL_FLOW_JOIN_FAILED`. Rule and membership are kept across stop until close or an update.
 - RX in ARMED: every unit with media time before the instant is discarded and counted (`rx.units_before_start`), never delivered (G-76).
@@ -1058,7 +1058,7 @@ ready units not yet dequeued (`rx.units_flushed`, §4.5). With `MTL_DISCARD_REBA
 |---|---|---|
 | `MTL_UPDATE_FLOWS` | `sc->flows` (IS-05) | any started state but DRAINING/FLUSHING; applied during the call in CREATED and STOPPED |
 | `MTL_UPDATE_LEGS` | `sc->legs_disabled` | as FLOWS |
-| `MTL_UPDATE_MEDIA` | the essence member, `tsmode` and `max_udp_payload` | CREATED or STOPPED; colorimetry, tcs and range also while running |
+| `MTL_UPDATE_MEDIA` | the essence member, `tsmode`, `max_udp_payload` and `min_tx_delay_ns` | CREATED or STOPPED; colorimetry, tcs and range also while running |
 | `MTL_UPDATE_POOL` | `pool_count` | CREATED or STOPPED |
 
 From MS3 every part works in CREATED and STOPPED; in ARMED and RUNNING the call is `-MTL_ENOTSUP`
@@ -1298,7 +1298,7 @@ One `struct mtl_unit` is what acquire and dequeue lend and what submit reads.
 - Lateness is never a submit error: it is decided at pick-up and reported in the result.
 - The meta area is validated and copied at submit, so later writes never reach the wire. Plane bytes are read at send time (ANC: at submit).
 - **MTL never writes a TX buffer.** After submit its bytes are unchanged and it stays mapped until it is acquired again (G-100).
-- `mtl_tx_get_next()` (`mtl_sync.h`) says where the next unit lands; submitting before `submit_deadline_tai_ns` yields `ON_TIME` in that slot (G-53). `mtl_tx_row_deadline()` gives a row's latest submit time.
+- `mtl_tx_get_next()` (`mtl_sync.h`) says where the next unit lands, with its RTP timestamp `next_rtp`, exact; submitting before `submit_deadline_tai_ns` yields `ON_TIME` in that slot (G-53). `mtl_tx_row_deadline()` gives a row's latest submit time.
 
 ### 5.3 RX
 
@@ -1311,6 +1311,7 @@ One `struct mtl_unit` is what acquire and dequeue lend and what submit reads.
 - `mtl_rx_release(s, lease)` (DP) from any thread, in any order (G-56).
 - The unit's memory is valid while the lease is held, across stop; after release MTL may write the slot again.
 - `MTL_UNITF_PARTIAL` (rows units): more rows follow. `mtl_rx_wait_rows(s, lease, min_rows, &rows, timeout)` (`mtl_sync.h`) waits until at least `min_rows` are complete or the unit ends, and a sleeping call is woken once then, whatever `rx.rows_step` is (D-163); `rx.rows_step` sets how often the binding advances the rows.
+  A unit that ends short (lost rows, its due time, a stop) returns 0 with `rows` below `min_rows`, and its final status is `mtl_rx_get_detail`'s on the held lease.
 - A unit whose due time (first-packet arrival + unit period + `rx.flush_offset_ns`) passes is force-completed within one scheduler iteration and delivered or discarded per `rx.incomplete`, with no further packet needed (G-82).
 - **The tail.** In a video or cvideo library pool, the `MTL_RX_TAIL_BYTES` (64) bytes after a
   dequeued unit are zero when dequeue returns. For video the unit ends at `plane[0].addr` + Σ
@@ -1321,7 +1322,7 @@ One `struct mtl_unit` is what acquire and dequeue lend and what submit reads.
 - **Wrapping.** A dequeued unit may be wrapped in a framework buffer and released from its free
   callback on any thread, in any order: after stop, after the session's close, and after the
   instance's close (R4, §4.9). The callback keeps the session and lease by value, never a pointer
-  into the element (ex05). A consumer that lets downstream hold units keeps at least 2 slots free
+  into the element (ex20). A consumer that lets downstream hold units keeps at least 2 slots free
   by copying instead of wrapping when needed ([migration.md](migration.md) §12.8).
 
 ### 5.4 Lease rules
@@ -2129,7 +2130,7 @@ device memory in MS6. On any session but a `MTL_SESSION_REQUIRE_DIRECT` one,
 - With a null `region`, `[va, va + length)` is imported for this session and released when it retires.
 - `flags` take `MTL_ATTACH_META_IN_SLOT` (RX meta written into the slot at `meta_offset`, for MXL grain headers) and the `MTL_MEM_*` access and mapping bits.
 - Attach validates span, stride, alignment, access and the region budget, each with its reason: `SPAN`, `STRIDE_MISMATCH`, `UNALIGNED`, `ACCESS_MISMATCH` (RX needs write access, TX read access; G-101), `REGION_BUDGET`, `LAYOUT_MISMATCH`.
-- Calling attach again appends slots. With `pool_count` set, start is `-MTL_EINVAL` (`POOL_TOO_SMALL`) until that many slots are attached; with `pool_count` 0 the attached slots are the pool.
+- Calling attach again appends slots. With `pool_count` set, start is `-MTL_EINVAL` (`POOL_TOO_SMALL`) until that many slots are attached; with `pool_count` 0 the attached slots are the pool. A provide session (§9.11) and a TX session that acquires by layout only (`mtl_tx_acquire_layout`) need no slot: there `pool_count` bounds the units in flight.
 - If a layout satisfies every advertised requirement and capacity remains, attach and start never reject it later for an undisclosed reason.
 - `mtl_session_attach(s, NULL)` (CP) detaches every slot: CREATED or STOPPED, with no lease, hold or session attached over this pool.
 - ANC: at most `pool_count` slots (`POOL_COUNT_MAX`), natural strides (`STRIDE_MISMATCH`); an ANC
@@ -2198,7 +2199,7 @@ pools put each plane at the first 64-byte boundary after the previous one and pi
 ### 9.6 Holds and forwarding
 
 The picture below follows one RX slot forwarded to four TX sessions, as in
-[ex09](sketch/examples/ex09_split_forwarder.c): each TX unit holds the RX slot, the application's
+[ex12](sketch/examples/ex12_split_forwarder.c): each TX unit holds the RX slot, the application's
 release does not free it, and the last TX outcome does.
 
 ```mermaid
@@ -2358,7 +2359,7 @@ GPU pinned host memory imports as host memory today.
 
 - The layout must lie in a region already imported and mapped into every device of the session (`MTL_MEM_MAP_ALL` or an earlier attach), else `-MTL_EINVAL`: mapping is CP work and never runs in a data call.
 - Validation is the attach check (span, stride ≥ `row_bytes`, one stride per pool, access) in O(planes); the slot keeps the layout inline, so the call allocates nothing (WT; DP with timeout 0).
-- The session always produces results (MEM3); the result's cookie tells the producer it may reuse its memory. `pool_count` slots bound what is in flight, and `min_count_direct` still applies to direct sends.
+- The session needs no attached slot: its start does not wait for `pool_count` slots. It always produces results (MEM3); the result's cookie tells the producer it may reuse its memory. `pool_count` slots bound what is in flight, and `min_count_direct` still applies to direct sends.
 
 **`mtl_rx_provide` rules (MS2b; D-152).**
 
@@ -2978,13 +2979,13 @@ sequence the library writes nothing inside the payload.
 | `unit_time` | The unit's media time |
 |---|---|
 | `MTL_PKT_TIME_SUBMIT` | from the first chunk's submission, by media mode, with the late policy and horizon of frames; later chunks of the unit carry no media fields |
-| `MTL_PKT_TIME_FROM_RTP` | from the RTP timestamp of the unit's first packet (the inverse of the RTP rule, unambiguous within half a wrap); the launch index is the first at or after M + `min_tx_delay_ns`. `SMPTE2022-6`: the unit-grid instant nearest it (§13.6) |
+| `MTL_PKT_TIME_FROM_RTP` | from the RTP timestamp of the unit's first packet (the inverse of the RTP rule, unambiguous within half a wrap), taken as given and never snapped; the session's `media_mode` is 0, and a late unit is `DROPPED` (`TOO_LATE`); the launch index is the first at or after M + `min_tx_delay_ns`. `SMPTE2022-6`: the unit-grid instant nearest it (§13.6) |
 
 - A chunk submitted after its due time leaves at once, bounded by the essence's burst limit, and is counted (`pkt.late_pkts`).
 - If a unit's first chunk is admitted late, DROP latches the unit: its remaining chunks complete `DROPPED`/`TOO_LATE` until `MTL_SUBMIT_UNIT_END`.
 - Whole-unit underrun defaults to SKIP for every essence in packet mode. `MTL_UNDERRUN_EMPTY_ANC` and `MTL_UNDERRUN_KEEPALIVE` need a library-built packet inside the application's stream, so they are accepted only with `MTL_PKT_SET_TIMESTAMP | MTL_PKT_SET_SEQ | MTL_PKT_SET_SSRC_PT`.
 - Pacing classes: `MTL_PKT_PACE_UNIT` runs on `MTL_PACING_HW_RATE`, `MTL_PACING_HW_LAUNCH` or `MTL_PACING_SW`; `MTL_PKT_PACE_LAUNCH` on `MTL_PACING_HW_LAUNCH` or `MTL_PACING_SW` (with `MTL_SUBMIT_EXACT` reported non-compliant); a chunk without a launch time follows the previous one at the session rate (Rivermax's "0 = follow"); `MTL_PKT_PACE_ASAP` on any.
-- A late chunk in the middle of an admitted unit leaves at once within the burst limit; its result keeps the unit's status and reports `max_packet_lateness_ns` in the full record, and the next unit still starts at its own launch index. DROP and DEFER apply per unit as for frames.
+- A late chunk in the middle of an admitted unit leaves at once within the burst limit; its result keeps the unit's status and reports `max_packet_lateness_ns` in the full record, and the next unit still starts at its own launch index. DROP and DEFER apply per unit as for frames; with `MTL_PKT_TIME_FROM_RTP` the RTP fixes the index, so the option `tx.late_policy` `MTL_LATE_DEFER` is `-MTL_EINVAL`.
 - `MTL_PKT_TIME_FROM_RTP` needs a timestamp the library can read (contiguous slots, or the SPLIT header plane). Half a wrap is 2^31 ticks: about 6.6 h at 90 kHz, 12.4 h at 48 kHz, 80 s at 27 MHz. It applies the processor recipe (M + `min_tx_delay_ns`) per unit, so a forwarder keeps the input's timestamps and a fixed RTP-to-launch offset.
 - Today's `USER_PACING` and `EXACT_USER_PACING`, ignored on RTP sessions ([engine.md](engine.md) §7.4 #2), map to INDEX or TAI media mode with UNIT pacing, or to LAUNCH pacing.
 
@@ -3055,10 +3056,14 @@ non-compliant on an essence that has no wire timing model.
 - Holds work as for frames: zero-copy RTP-level forwarding with TX chunk slots over an RX chunk pool and `unit.hold` = the RX lease. With `MTL_PKT_RX_LEND` the TX side chains the lent NIC buffers behind new Ethernet, IP and UDP header buffers (zero copies end-to-end); held lent packets count against the RX `rx_ring_packets`.
 - **Recipe, analyse and forward verbatim.** RX: a video packet session on two legs with
   `MTL_PKT_RX_UNIT_ALIGNED`. TX: `MTL_RTP`, `set_fields` 0, `unit_time` = `MTL_PKT_TIME_FROM_RTP`,
-  `MTL_PKT_PACE_UNIT`, `min_tx_delay_ns` 2 ms, `rtp.clock_rate` 90000, the
-  input's unit rate. Per RX chunk: note `MTL_PKTE_GAP_BEFORE` (`seq`, `gap`) and `arrival_tai_ns`
-  per leg, copy each packet into a TX slot with its `len`, set `MTL_SUBMIT_UNIT_END` when the last
-  packet has `MTL_PKTE_MARKER`, submit, release the RX chunk. A TX miss drops the chunk, and the TX
+  `MTL_PKT_PACE_UNIT`, `rtp.clock_rate` 90000, the input's unit rate, and `min_tx_delay_ns` the
+  input's delay plus the pick-up lead and a margin: its last packet minus its media time, measured
+  over a few units before the TX session is created, or its SDP's TSDELAY plus one frame. The
+  input's RTP is its sender's media time, not its launch, so a capture or processor input (a
+  launch delay of one frame) arrives a frame later than a playback one; a later increase is a
+  stop, `MTL_UPDATE_MEDIA` and a start. Per RX chunk: note `MTL_PKTE_GAP_BEFORE` (`seq`,
+  `gap`) and `arrival_tai_ns` per leg, copy each packet into a TX slot with its `len`, set
+  `MTL_SUBMIT_UNIT_END` when the last packet has `MTL_PKTE_MARKER`, submit, release the RX chunk. A TX miss drops the chunk, and the TX
   stats show it.
 
 ## 14. Legs and ST 2022-7
@@ -3151,7 +3156,7 @@ stateDiagram-v2
 
 `mtl_convert(&d)` (DPC, `mtl_format.h`, MS4) runs the converters of the sessions outside a session (file tools, test pattern generators): one call for every pair; the pair, the CPU features and an optional DMA engine are chosen inside.
 
-- `struct mtl_convert_desc` (`struct_size` first, R3): `width` × `height` pixels (audio: `width` = samples per channel, `height` 1), `src` and `dst`, `flags`, `mt`, `channel_map`.
+- `struct mtl_convert_desc` (`struct_size` first, R3): `width` × `height` pixels of `src` (with `MTL_CONVERT_HALF_SCALE` `dst` is half of each; with `MTL_CONVERT_FIELD_SPLIT` each `dst` field has `height` / 2 rows; with `MTL_CONVERT_FIELD_MERGE` `src` is the fields and `height` the frame's; audio: `width` = samples per channel, `height` 1), `src` and `dst`, `flags`, `mt`, `channel_map`.
 - `struct mtl_convert_image`: `format` in the number space of `kind` (`MTL_FORMAT_TRANSPORT`, `MTL_FORMAT_APP` or `MTL_FORMAT_AUDIO`), `plane_count`, `channels` (audio: interleaved channels; video 0), `plane[]` (audio: one plane).
 - `mt` null: CPU only, no instance needed. An instance: the call may use its DMA engines.
 - Flags: `MTL_CONVERT_NO_SIMD` (the scalar reference path, for tests), `MTL_CONVERT_FIELD_SPLIT` (a

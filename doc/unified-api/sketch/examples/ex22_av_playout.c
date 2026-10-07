@@ -1,4 +1,4 @@
-/* ex07 — video, audio and captions from one file, in sync by construction: three sessions
+/* ex22 — video, audio and captions from one file, in sync by construction: three sessions
    started together with MTL_WHEN_ORIGIN, so the file's frame 0 and sample 0 are at the
    start's T0; each unit says which frame or sample it is, so every RTP timestamp is exact
    and ANC frame k carries video frame k's timestamp. Needs: MS6. */
@@ -93,8 +93,7 @@ int av_anc_playout(mtl_instance_h mt) {
       ret = write_audio(s[AUDIO], pts, data, size);
       continue;
     }
-    ret =
-        acquire(s[CAPTIONS], &u); /* a unit without captions sends the empty ANC packet */
+    ret = acquire(s[CAPTIONS], &u); /* without captions: the empty ANC packet */
     if (ret < 0) break;
     ret = captions_for(pts, &u);
     if (ret < 0) {

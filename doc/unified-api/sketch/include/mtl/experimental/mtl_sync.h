@@ -93,7 +93,9 @@ MTL_SIZE_CHECK(mtl_timeline_info, 56);
    "at or after" index for it, or its media_index. No instance needed. AS. (MS3) */
 MTL_API_AS(3) int mtl_epoch_index_at(int64_t tai_ns, struct mtl_rational unit_rate,
                                      int64_t* k);
-/* TAI to RTP ticks at a media clock rate, exact (RTP = floor(M * rate)). AS. (MS2) */
+/* TAI to RTP ticks at a media clock rate, exact (RTP = floor(M * rate)) for the instant
+   given; a unit's media_tai_ns is floored to ns, so for a TX unit's RTP use
+   mtl_tx_next.next_rtp. AS. (MS2) */
 MTL_API_AS(2) uint32_t mtl_media_ticks(int64_t tai_ns, uint32_t clock_rate);
 /* RTP ticks to the TAI instant nearest near_tai_ns that has them (unwraps). AS. (MS2) */
 MTL_API_AS(2) int64_t mtl_media_tai(int64_t near_tai_ns, uint32_t ticks, uint32_t clock_rate);
@@ -101,11 +103,13 @@ MTL_API_AS(2) int64_t mtl_media_tai(int64_t near_tai_ns, uint32_t ticks, uint32_
 /* Where the next TX unit lands and by when to submit it. Output; the size argument versions
    it. */
 struct mtl_tx_next {
-  uint32_t queued; /* units queued ahead */
-  uint32_t reserved;
+  uint32_t queued;   /* units queued ahead */
+  uint32_t next_rtp; /* the RTP timestamp of next_media_index, floor(M x rate) exact (not
+                        mtl_media_ticks of next_media_tai_ns, which is floored to ns) */
   int64_t next_media_index;       /* the smallest feasible index at or after the end of
                                      the last submitted unit (audio: its first sample +
-                                     its samples) */
+                                     its samples); with nothing submitted since a start, the
+                                     start's first index (T0's), also while ARMED */
   int64_t next_media_tai_ns;      /* its media time */
   int64_t submit_deadline_tai_ns; /* submit before this */
 };
@@ -118,8 +122,10 @@ MTL_API_DP(2) int mtl_tx_row_deadline(mtl_session_h s, int64_t k, uint32_t row,
 /* Rows units, RX: a unit dequeued with MTL_UNITF_PARTIAL grows while it is held; wait until
    at least min_rows rows are complete (or the unit ends). *rows gets the rows ready; a
    sleeping call is woken when min_rows rows are complete or the unit ends, whatever
-   rx.rows_step is. -MTL_EAGAIN by the timeout. WT: it sleeps on the session like the other
-   waits (mtl.h) and is interrupted with MTL_WAIT_DEQUEUE. (MS2) */
+   rx.rows_step is. A unit that ended short (lost rows, its due time, a stop) returns 0 with
+   *rows < min_rows; its final status is then mtl_rx_get_detail's on the held lease.
+   -MTL_EAGAIN by the timeout. WT: it sleeps on the session like the other waits (mtl.h) and
+   is interrupted with MTL_WAIT_DEQUEUE. (MS2) */
 MTL_API_WT(2) int mtl_rx_wait_rows(mtl_session_h s, mtl_lease_h lease, uint32_t min_rows,
                                    uint32_t* rows, int64_t timeout_ns);
 

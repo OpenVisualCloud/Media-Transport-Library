@@ -1,9 +1,9 @@
-/* ex11 — a service in a Kubernetes pod. SIGTERM interrupts every data wait (async-signal
-   safe); the main thread then shuts the instance down within what is left of the grace
-   period, network first, and leaves a one-line report for `kubectl describe`. A second
-   signal cuts the shutdown short. Probes read one lock-free call. Needs: MS3. */
+/* ex16 — a service in a Kubernetes pod: SIGTERM ends every wait, the instance shuts down
+   network first within the grace period and leaves a report, the probes read one
+   lock-free call, and the node's PTP daemon tells MTL about the clock. Needs: MS3. */
 #define _POSIX_C_SOURCE 200809L
 #include <mtl/experimental/mtl_observe.h>
+#include <mtl/experimental/mtl_sync.h>
 #include <signal.h>
 #include <string.h>
 #include <time.h>
@@ -45,18 +45,14 @@ int install_handlers(mtl_instance_h mt, const sigset_t* set) {
   return sigprocmask(SIG_UNBLOCK, set, NULL);
 }
 
-/* A worker leaves its loop on -MTL_ECANCELED: sticky, so it cannot miss the signal. */
+/* A worker leaves on -MTL_ECANCELED: sticky, so it cannot miss the signal. */
 int worker(mtl_session_h s) {
   struct mtl_unit u;
+  int ret;
   MTL_INIT(&u);
-  for (;;) {
-    int ret = mtl_tx_acquire(s, &u, MTL_SEC(1));
-    if (ret == -MTL_ECANCELED) return 0;
-    if (ret == -MTL_EAGAIN) continue;
-    if (ret < 0) return ex_fail("acquire", ret);
-    ret = mtl_tx_submit(s, &u);
-    if (ret < 0) return ex_fail("submit", ret);
-  }
+  while ((ret = mtl_tx_acquire(s, &u, MTL_SEC(1))) == 0 || ret == -MTL_EAGAIN)
+    if (ret == 0 && (ret = mtl_tx_submit(s, &u)) < 0) break;
+  return ret == -MTL_ECANCELED ? 0 : ex_fail("worker", ret);
 }
 
 /* The HTTP probe handlers. Before open returns, answer 503 for all three. Startup and
@@ -67,9 +63,8 @@ int probe_status(mtl_instance_h mt, enum probe p) {
   int flags = mtl_instance_get_health(mt, NULL, 0);
   if (flags == -MTL_ESHUTDOWN) return p == PROBE_READINESS ? 503 : 200;
   if (flags < 0) return 503;
-  return (flags & (p == PROBE_READINESS ? MTL_HEALTH_READINESS : MTL_HEALTH_LIVENESS))
-             ? 503
-             : 200;
+  int bad = p == PROBE_READINESS ? MTL_HEALTH_READINESS : MTL_HEALTH_LIVENESS;
+  return (flags & bad) ? 503 : 200;
 }
 
 /* The main thread, after joining the workers. grace_ns: terminationGracePeriodSeconds
@@ -91,4 +86,21 @@ int shutdown_all(mtl_instance_h mt, int64_t grace_ns) {
     fclose(f);
   }
   return ret < 0 ? ret : 0; /* 1: devices stopped; held memory goes at exit */
+}
+
+/* The node's ptp4l and phc2sys discipline the clock MTL reads (time_source AUTO:
+   CLOCK_TAI), but MTL cannot see the grandmaster: pass what pmc reports, and locked = 0
+   when the node lost it, so readiness and the time.* stats follow. The result: the time
+   flags (MTL_TIMEF_ESTIMATED: not locked to PTP). In a pod without CPUs to pin, the
+   instance also sets MTL_INSTANCE_TASKLET_THREAD. */
+int set_time_reference(mtl_instance_h mt, const uint8_t gmid[8], uint8_t clock_class,
+                       int locked) {
+  struct mtl_time_reference ref;
+  int64_t tai;
+  MTL_INIT(&ref);
+  memcpy(ref.gmid, gmid, sizeof(ref.gmid));
+  ref.clock_class = clock_class; /* 220, 228: ARB, MTL_TIMEF_ARB_TIMESCALE */
+  ref.locked = locked ? 1u : 0u;
+  int ret = mtl_time_set_reference(mt, 0, &ref); /* port 0: every port */
+  return ret < 0 ? ret : mtl_time_now(mt, &tai, NULL, NULL);
 }

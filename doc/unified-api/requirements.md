@@ -543,7 +543,7 @@ Each entry: level; part; when; test.
   library installs no signal handlers and documents the SIGTERM recipe (the handler calls the AS
   `mtl_instance_interrupt`, the main thread the bounded close), the PID 1 rule (handle SIGTERM, or
   run `tini`) and DPDK's temporary SIGBUS handler at open. Met by R8, `mtl_instance_abort` (a
-  second SIGTERM), `instance.hotplug` (SIGBUS handler by option only), ex11 (§4.4).
+  second SIGTERM), `instance.hotplug` (SIGBUS handler by option only), ex16 (§4.4).
 - **K-REQ-4 crash-only correctness** (MUST; engine; MS3; G-111, G-112). SIGKILL at any instant
   leaves nothing that blocks a restart or needs cleanup; leftovers (SysV shm, files in `/tmp` or
   hugetlbfs, manager state) are avoided or reclaimed on disconnect; each residual is listed with
@@ -642,7 +642,7 @@ conformance itself is tested on the Node with the AMWA nmos-testing suite.
 | N-REQ-15 | LLDP on DPDK-owned ports (IS-04 `attached_network_device`) | MAY | none | not adopted: `chassis_id = null` is allowed | later |
 | N-REQ-16 | answer ARP on media ports (IS-04 `node.json`) | MUST | engine | built-in ARP | v1 |
 | N-REQ-17 | map a leg to its interface (IS-04 `interface_bindings`) | MUST | API | `info.leg[i].port`, `mtl_port_get_spec()` | v1 |
-| N-REQ-18 | change destinations, sources, ports and PT of every leg at one TAI instant or now, all or nothing (IS-05 activation) | MUST | API, engine | `mtl_session_update(…, MTL_UPDATE_FLOWS, &when, &planned)`, ex13 (G-75) | MS5 |
+| N-REQ-18 | change destinations, sources, ports and PT of every leg at one TAI instant or now, all or nothing (IS-05 activation) | MUST | API, engine | `mtl_session_update(…, MTL_UPDATE_FLOWS, &when, &planned)`, ex18 (G-75) | MS5 |
 | N-REQ-19 | report when a scheduled activation will apply and when an immediate one did (IS-05 `activation_time`) | MUST | API | `planned_tai_ns`; `status.update_state`, `update_applied_tai_ns`, `update_seq`; `MTL_EVENT_UPDATE` | MS5 |
 | N-REQ-20 | answer an immediate activation only after it applied (IS-05 RAML 200) | MUST | API | wait for `MTL_EVENT_UPDATE` APPLIED; the switch is at the index boundary by the clock, so an idle or muted sender applies | MS5 |
 | N-REQ-21 | re-apply identical parameters on re-activation (IS-05 Re-Activating) | MUST | API | `MTL_UPDATE_REAPPLY`: RX re-reports and re-arms without a leave, TX re-resolves and rebuilds headers | 7 |

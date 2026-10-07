@@ -161,7 +161,7 @@ library.
 | QW19 `QueueHook.descriptors_kept` | an AS `mtl_instance_interrupt` parked at `WAKE_BEFORE_SYSCALL` in U2's write while the last `mtl_instance_close` runs; then the test opens a socket | the write lands on the kept eventfd (the socket reads nothing); `/proc/self/fd` still lists the queues' eventfds, at most the peak of live queues | closing queue descriptors at the last instance close | C1q2 |
 
 **Public forms** (C1q2): ex03 on `null:1` with two event-loop threads on one queue and a one-off
-poller; `mtl_instance_interrupt` from a real SIGTERM handler while workers block in acquire (ex11's
+poller; `mtl_instance_interrupt` from a real SIGTERM handler while workers block in acquire (ex16's
 shape, A2a).
 
 **Nightly smoke** (MS2a): [models/stress.c](models/stress.c) (LT and ONESHOT, 2 000 rounds each).
@@ -174,7 +174,7 @@ Each test lands with the task that makes it runnable:
 |---|---|
 | C1w | WH2, WH3, WH10, WH11 (close and stop), WH12, WH14b, WH15, WH16, WH21, WC1–WC3, WC5, on `TestBinding` |
 | C2 | WH11 (ERROR), WH17, WH19, WH20, and the `NullBinding` runs |
-| A2a | ex11's SIGTERM form |
+| A2a | ex16's SIGTERM form |
 | MS2 | WC4 |
 | C1q1 (MS2a) | QW1–QW5, QW7, QW10–QW12, QW14, QW18 |
 | C1q2 (MS2a) | WH14, QW6, QW8, QW9, QW13, QW15–QW17, QW19; WH15's and WH21's queue parts; ex03's public form |

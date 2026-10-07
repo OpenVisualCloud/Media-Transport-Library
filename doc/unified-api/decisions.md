@@ -298,7 +298,7 @@ or a named document. A resolved issue leaves the table; its ID is not reused.
 | OI-23 | In pods the node agent that hands over `port.xsk_map` sets and resets the AF_XDP `tx_maxrate` (a rate request in the MtlManager protocol), else software pacing; today the library writes sysfs (`dev/mt_af_xdp.c:867-874`) | MS3 |
 | OI-63 | D-158–D-162, D-167–D-169 in code: the event word, calls with a timeout, interrupts and the walk, close and retire (core.md §6.1–§6.3); queues in MS2a (core.md §6.6); pinned by the model job and the hook tests (implementation-plan.md §8.2) | MS1 (C0, C1a, C1w, C1b, C2, A2a), MS2a (C1q1, C1q2) |
 | OI-66 | D-142: the count-bounded flush from MS1 (C1w); S1 and its rules SR1–SR3 and SR6 in MS2a; the dense shapes OI-80 | MS1, MS2a, MS4a1 |
-| OI-67 | Video and cvideo RX library slots per D-151 (MS1; cvideo MS4b); wrapping per D-150 (ex05, MS1); `mtl_rx_provide` per contract.md §9.11 (MS2b) | MS1, MS2b |
+| OI-67 | Video and cvideo RX library slots per D-151 (MS1; cvideo MS4b); wrapping per D-150 (ex20, MS1); `mtl_rx_provide` per contract.md §9.11 (MS2b) | MS1, MS2b |
 | OI-74 | contract.md §3.5: the latency fields, `convert_ns` (calibration MS1, measurement MS2a), `MTL_INFO_LATENCY_INFEASIBLE` (D-156) | MS1, MS2a |
 | OI-80 | The dense shapes (D-170): a timer-paced W0 sweep, a timer-paced queue without a descriptor, and sleeping queues, measured at the dense-audio reference load (D-184) aligned and staggered; D-164 and D-166 are built only if their budget rows of implementation-plan.md §8.4 fail; the notifier (D-165) only by D-142's rules; the estimates to beat: core.md §6.2 | MS4a1 |
 

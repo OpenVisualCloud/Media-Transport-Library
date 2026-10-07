@@ -1,4 +1,4 @@
-/* ex09 — zero-copy 1 -> 4 forwarder: each 2160p frame received feeds four 1080p senders,
+/* ex12 — zero-copy 1 -> 4 forwarder: each 2160p frame received feeds four 1080p senders,
    one per quadrant. Every TX pool lies over the RX pool (any stride >= row_bytes is
    direct), and each TX unit holds the RX unit it reads until its own result. Needs:
    MS2b. */
@@ -9,8 +9,8 @@
 #define QUADS 4
 
 /* rx: a created 2160p RX session (library pool). tx[q]: created 1080p TX sessions with
-   MTL_SESSION_POOL_ATTACHED, media_mode TAI and min_tx_delay_ns = one frame period plus
-   the pick-up lead (a frame exists only once it is received). */
+   MTL_SESSION_POOL_ATTACHED, media_mode TAI and min_tx_delay_ns = the budget of ex23's
+   open_output (a frame exists only once it is received, after the input's own delay). */
 static int attach_quadrants(mtl_session_h rx, const mtl_session_h* tx) {
   struct mtl_session_info ri;
   struct mtl_unit slot0;

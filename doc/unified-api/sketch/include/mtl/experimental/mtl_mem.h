@@ -123,10 +123,11 @@ struct mtl_attach {
    alignment, access and the region budget, with the reason of the failure. With
    pool_count set, start is -MTL_EINVAL (POOL_TOO_SMALL) until that many slots are
    attached; with pool_count 0 the attached slots are the pool; a provide session
-   (mtl_rx_provide) needs no slot. a NULL detaches every slot: CREATED or STOPPED, with no
-   lease, hold or session attached over this pool; on a provide session it hands back
-   every destination (ready units are dropped) and ends provide mode. a->cookie must be 0.
-   CP. (MS2) */
+   (mtl_rx_provide) needs no slot, nor does a TX session that acquires by layout only
+   (mtl_tx_acquire_layout), whose pool_count bounds the units in flight. a NULL detaches
+   every slot: CREATED or STOPPED, with no lease, hold or session attached over this pool;
+   on a provide session it hands back every destination (ready units are dropped) and ends
+   provide mode. a->cookie must be 0. CP. (MS2) */
 MTL_API_CP(2) int mtl_session_attach(mtl_session_h s, const struct mtl_attach* MTL_NULLABLE a);
 /* The static part of slot `slot` (planes, meta); lease null. DP. (MS1) */
 MTL_API_DP(1) int mtl_session_get_slot(mtl_session_h s, uint32_t slot, struct mtl_unit* u);
@@ -173,7 +174,8 @@ MTL_API_WT(2) int mtl_tx_acquire_slot(mtl_session_h s, uint32_t slot, struct mtl
 
 /* A slot bound to a new layout per acquire: a framework buffer per frame (GStreamer TX,
    moving-cursor producers); u->cookie starts as one->cookie (a template applied later
-   overwrites it: set how.cookie = one->cookie). WT (waiting: mtl.h). (MS2) */
+   overwrites it: set how.cookie = one->cookie). The session needs no attached slot:
+   pool_count bounds the units in flight. WT (waiting: mtl.h). (MS2) */
 MTL_API_WT(2) int mtl_tx_acquire_layout(mtl_session_h s, const struct mtl_attach* one,
                                         struct mtl_unit* u, int64_t timeout_ns);
 /* RX destination for one unit (the legacy query_ext_frame), for producers that choose it

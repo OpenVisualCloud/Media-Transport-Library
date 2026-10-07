@@ -1,13 +1,9 @@
-/* ex03 — senders in the application's own epoll loop, reading a result per frame. One
-   queue tells the loop which of its sessions changed, through one descriptor for all of
-   them, and the source's eventfd says a frame is ready: every source of work is in one
-   epoll set. s[i]: started TX sessions created with MTL_SESSION_RESULTS in sc.flags. A
-   report disarms its session: the loop serves it with timeout-0 calls, then arms it again
-   with what it wants next, its results always and a free slot only while a source frame
-   waits for one, so a sender limited by its source never spins on free slots. The loop
-   sleeps in epoll only after mtl_queue_wait() returned -MTL_EAGAIN, and leaves on a code:
-   -MTL_ECANCELED after mtl_queue_interrupt(), -MTL_ESHUTDOWN when the queue closes.
-   Needs: MS2 (MS2a: queues). */
+/* ex03 — senders in the application's own epoll loop, reading a result per frame: one
+   queue's descriptor stands for all the sessions, beside the source's eventfd. A report
+   disarms its session: the loop serves it with timeout-0 calls, then arms its results
+   and, only while a source frame waits, a free slot, so it never spins on free slots. It
+   sleeps only after mtl_queue_wait() returned -MTL_EAGAIN. s[i]: started TX sessions
+   with MTL_SESSION_RESULTS. Needs: MS2 (MS2a: queues). */
 #include <errno.h>
 #include <sys/epoll.h>
 #include <unistd.h>

@@ -342,7 +342,8 @@ lead it is the next index (§5.2).
 | `MTL_MEDIA_TAI` | `unit.media_tai_ns` = the instant the unit represents, snapped (§4.3) | capture, framework sinks, processors |
 | `MTL_MEDIA_SENDER` | `unit.media_tai_ns` = the source's own sampling instant, never snapped | async sources (IPMX `mediaclk:sender`): **Phase 7**, under `MTL_LATER` (§13) |
 
-- A non-zero value in a field the mode does not use (`media_index` in an AUTO session) is `-MTL_EINVAL`. Zero means "library default" for every mode field. Launch selection per unit: `MTL_SUBMIT_NOT_BEFORE` or `MTL_SUBMIT_EXACT` with `unit.launch_tai_ns` (§5.4); they exclude each other, and EXACT needs a session created with `MTL_SESSION_EXACT_LAUNCH`.
+- In AUTO both media fields are zero, else `-MTL_EINVAL`; INDEX reads only `media_index` and TAI only `media_tai_ns`, so a received unit, which carries both, is a valid template for either ([contract.md](contract.md) §5.1).
+  Zero means "library default" for every mode field. Launch selection per unit: `MTL_SUBMIT_NOT_BEFORE` or `MTL_SUBMIT_EXACT` with `unit.launch_tai_ns` (§5.4); they exclude each other, and EXACT needs a session created with `MTL_SESSION_EXACT_LAUNCH`.
 
 ### 4.2 Derived RTP: exact, and its exceptions
 
@@ -557,8 +558,9 @@ With launch delay 0 the launch is at `M + TROFFSET`, which passes before a captu
 The late policy follows the **media mode**, not the producer (§6.2). A session with a non-zero
 `min_tx_delay_ns` posts `MTL_EVENT_TIMING_INFEASIBLE` on its first late unit and sets
 `MTL_STATUS_TIMING_WARNING` (`timing_reason` = `TIMING_SHORTFALL`, `shortfall_ns`,
-`suggested_min_tx_delay_ns`). The producer also declares its `sc.tsmode` (§5.6): the number does not
-tell a camera from an SDI encapsulator or a processor.
+`suggested_min_tx_delay_ns`), which the producer takes on the same handle with a stop, `mtl_session_update`
+with `MTL_UPDATE_MEDIA` and a start ([contract.md](contract.md) §4.7). The producer also declares its
+`sc.tsmode` (§5.6): the number does not tell a camera from an SDI encapsulator or a processor.
 
 **The launch rule.** The launch index is the first N whose first-packet wire time `TVD(N) − VRX0·TRS` is ≥ `M + min_tx_delay`. The launch delay `L = N − E⁻¹(M)` is reported (`info.launch_delay`), not configured, and TSDELAY (`info.tsdelay_ns`) follows from it.
 
@@ -764,8 +766,10 @@ Today MTL sends nothing when the app has no ANC frame (`st_tx_ancillary_session.
 
 ### 6.5 The next TX unit
 
-`mtl_tx_get_next(s, &next, size)` (DP, MS3) fills `struct mtl_tx_next` (32 B): `queued`, `next_media_index`, `next_media_tai_ns`, `submit_deadline_tai_ns`. One formula for AUTO, joiners and INDEX producers, the admission test itself: `next_media_index` = the smallest k at or after the end of the last submitted unit (for audio,
-its first sample plus its samples) with `M(k) − min_submit_lead_ns ≥ now`. For AUTO it is the index the unit would get; for a joiner the first index it can still make. It is OpenXR's `predictedDisplayTime` and CoreAudio's `inOutputTime`: the producer learns its slot
+`mtl_tx_get_next(s, &next, size)` (DP, MS3) fills `struct mtl_tx_next` (32 B): `queued`, `next_rtp`, `next_media_index`, `next_media_tai_ns`, `submit_deadline_tai_ns`. One formula for AUTO, joiners and INDEX producers, the admission test itself: `next_media_index` = the smallest k at or after the end of the last submitted unit (for audio,
+its first sample plus its samples) with `M(k) − min_submit_lead_ns ≥ now`. For AUTO it is the index the unit would get; for a joiner the first index it can still make.
+With nothing submitted since a start it is the start's first index (T0's), also while ARMED. `next_rtp` is that index's RTP timestamp, `floor(M × R)` exact; `mtl_media_ticks` of `next_media_tai_ns`, which is floored to ns, is one tick low on one frame in three at 59.94p, so a producer that writes its own RTP (packet units) takes `next_rtp`.
+It is OpenXR's `predictedDisplayTime` and CoreAudio's `inOutputTime`: the producer learns its slot
 before it renders, which removes the fixed phase lock a downstream engine measured (≈ 27 ms). The per-slot tick `MTL_EVENT_EPOCH_TICK` is opt-in (`session.epoch_tick`); it replaces `ST_EVENT_VSYNC`.
 
 ### 6.6 Result timing fields
@@ -799,7 +803,7 @@ implements it in MS2 (D-101).
 - **Interlaced rows are kept**: the legacy engine slices each field (`height / 2` lines), and rows count field lines.
 - **TR offset.** `sc.video.troffset_us` (0 = TRODEFAULT, else whole µs) is a new engine item: today the TR offset comes from a fixed table. It comes with the cap VRX0 ≤ floor(TROFFSET / TRS) for every sender type, so a short TR offset never puts the first packet before the epoch (T7).
 - Rows reach gateway latency (L = 0 for a producer that delivers rows as they are captured) with MS3's INDEX and TAI modes and `mtl_tx_get_next`.
-- RX: a unit dequeued with `MTL_UNITF_PARTIAL` grows while held; `mtl_rx_wait_rows(s, lease, min_rows, &rows, timeout)` is woken once, when `min_rows` rows are complete or the unit ends, whatever `rx.rows_step` is (D-163).
+- RX: a unit dequeued with `MTL_UNITF_PARTIAL` grows while held; `mtl_rx_wait_rows(s, lease, min_rows, &rows, timeout)` is woken once, when `min_rows` rows are complete or the unit ends, whatever `rx.rows_step` is (D-163). A unit that ends short (lost rows, its due time, a stop) returns 0 with `rows` below `min_rows`; its final status is `mtl_rx_get_detail`'s on the held lease.
 
 ### 6.8 The launch decision
 
@@ -1126,7 +1130,7 @@ flowchart LR
 
 ### 10.2 File playout
 
-A file holds 59.94p video (`time_base = 1001/60000`), 48 kHz audio (`1/48000`) and caption ANC, all from pts 0. [Example 7](sketch/examples/ex07_av_anc_playout.c) is the program:
+A file holds 59.94p video (`time_base = 1001/60000`), 48 kHz audio (`1/48000`) and caption ANC, all from pts 0. [ex22](sketch/examples/ex22_av_playout.c) is the program:
 
 - three TX sessions with `sc.media_mode = MTL_MEDIA_INDEX` and `min_tx_delay_ns` 0 (playback); the ANC session's raster is all zero, so it takes the video's;
 - `mtl_session_start(s, 3, &(struct mtl_when){.kind = MTL_NOW, .flags = MTL_WHEN_ORIGIN}, NULL)`: all three or none, and the file's frame 0 and sample 0 are at the start's T0;
@@ -1159,8 +1163,12 @@ One FFmpeg process per essence shares nothing but the epoch and an agreed start 
 
 - **Rounding.** `mtl_epoch_index_at(t, rate, &k)` rounds **down**, exactly: k is the unit that contains t, `M(k) ≤ t < M(k + 1)`. The **first unit at or after t** is k when `M(k) = t`, else k + 1. A join or a start that used k for an off-grid t would pick a unit already in the past.
 - `mtl_epoch_index_at` needs no instance, so a process with only audio computes the same instant as one with only video.
-- **Recipe.** Pass a grid-aligned `t_start = ceil(t/G)·G` (G = 1001/6000 s for the 1001 family with
-  48 kHz). Then `M(k0) = t_start` for every essence, k0 is both the containing and the first unit,
+- **Recipe.** Pass a `t_start` on the common grid that is also a whole number of ns. G = 1001/6000 s
+  for the 1001 family with 48 kHz is not (166 833 333⅓ ns), so an `int64_t` instant on it lies
+  before the grid instant and `mtl_epoch_index_at` returns the unit before; 6G = 1.001 s (and 3G =
+  500.5 ms) is, so take a whole number of 1.001 s for the 1001 family with 48 or 96 kHz, and whole
+  seconds for integer rates ([ex04](sketch/examples/ex04_timed_start.c), `start_at`). Then
+  `M(k0) = t_start` for every essence, k0 is both the containing and the first unit,
   `M(k0_video) = M(k0_audio)` exactly, every process resolves its T0 to `t_start` (t_start is on
   each process's own grid), and every RTP matches the single-process start (G-105). With an off-grid
   `t_start`, each process rounds up to its own members' grid; video then starts up to one frame
@@ -1180,7 +1188,7 @@ land on even indices (§4.3). Sources whose frame times are not on one grid (fre
 keep an error of at most TFRAME/2. Separate processes use INDEX and a grid-aligned `t_start`
 (§10.4). Each element adds TFRAME to the latency it reports. Plugin recipes: GStreamer, B =
 TAI(base_time + latency), the rate registered by the video sink at caps in `gst_mtl_common.c`, δ
-stored per pipeline by the first sink to render; FFmpeg, B = the TAI of the first output's first
+stored per pipeline with its latency by the first sink to render ([ex21](sketch/examples/ex21_live_sink.c)); FFmpeg, B = the TAI of the first output's first
 pts, kept in the plugin's process state with the video muxer's rate (`sync_fps` on an audio muxer
 whose header comes first). `tx.phase_of` is not offered.
 
@@ -1189,18 +1197,22 @@ whose header comes first). `tx.phase_of` is not offered.
 - **GStreamer sink.** `ct = base_time + running_time(PTS) + latency` is the buffer's presentation clock time. Map `ct` to TAI: a `GstPtpClock` is already PTP; the default `GstSystemClock` is MONOTONIC, use `mtl_time_convert(MONOTONIC → TAI)`; any other clock, fit a map from `mtl_time_now(mt, &tai, &mono, NULL)` samples around `gst_clock_get_time`. Submit `media_tai_ns = TAI(ct) + δ`. Set
   basesink `render-delay = D = latency_min_ns + convert_ns + margin` (1 ms is a safe margin). With
   `sync=TRUE`, basesink hands each buffer over D early and adds D to its latency. Without basesink
-  sync, use `media_tai_ns = TAI(base_time + running_time)` and `media_time_offset_ns = D`, with D ≥
-  upstream latency + `latency_min_ns` + `convert_ns` + margin, reported as latency. Seeks are harmless:
+  sync, use `media_tai_ns = TAI(base_time + running_time) + L + δ`, with L the pipeline latency of
+  the LATENCY event: one value for every sink of the programme, at least the largest minimum a
+  sink reported (`latency_min_ns` + `convert_ns` + margin + TFRAME). `media_time_offset_ns` stays
+  0: sinks that each declared their own would drift apart by the difference. A single sink may
+  declare L as `media_time_offset_ns` instead, which MTL adds the same way, before snapping. Seeks are harmless:
   the clock-time mapping stays monotonic, so TAI never repeats. The variant without basesink sync is
-  [ex15](sketch/examples/ex15_live_sink.c).
-- **FFmpeg muxer, live (`-re`).** `media_tai_ns = TAI(start_time_realtime) + rescale(pts) + δ`, `media_time_offset_ns` = max(`-muxdelay`, `latency_min_ns` + `convert_ns` + margin). With `CLOCK_TAI` and no ptp4l the source is SYSTEM_TAI, ESTIMATED, and the status carries reason `TIME_ESTIMATED`.
+  [ex21](sketch/examples/ex21_live_sink.c).
+- **FFmpeg muxer, live (`-re`).** `media_tai_ns = TAI(start_time_realtime) + rescale(pts) + δ`, `media_time_offset_ns` = max(`-muxdelay`, `latency_min_ns` + `convert_ns` + margin), one value for every output of the programme. With `CLOCK_TAI` and no ptp4l the source is SYSTEM_TAI, ESTIMATED, and the status carries reason `TIME_ESTIMATED`.
 - **OBS output.** The same, with `mtl_time_convert(MONOTONIC → TAI)` of the OBS timestamp (today's `tfmt = MEDIA_CLK` with a monotonic value is a bug).
 - NEAREST adapts a free-running camera or a 30.000 fps source on a 29.97 session by occasional `SNAP_COLLISION` drops or gaps and never locks out; `alsasrc` jitter is absorbed (§8).
 
-**Time-preserving processor (RX → TX)**, [example 10](sketch/examples/ex10_processor.c):
+**Time-preserving processor (RX → TX)**, [ex23](sketch/examples/ex23_processor.c):
 
 - `media_mode = MTL_MEDIA_TAI`, `unit.media_tai_ns` = the received unit's `media_tai_ns` (only when `MTL_UNITF_TAI_VALID`; a `mediaclk:sender` input has none);
-- `min_tx_delay_ns` = the pipeline budget (an RX → TX unit exists only after its media time, §5.2: RX completion at ≈ M + 16.7 ms for 1080p59.94, plus processing, plus margin); snap NEAREST.
+- `min_tx_delay_ns` = the pipeline budget (an RX → TX unit exists only after its media time, §5.2): the input's delivery, the RX session's `latency_min_ns` (RX completion at ≈ M + 16.7 ms for 1080p59.94 from a sender that launches at its media time), plus the input's own launch delay, plus processing, the pick-up lead and a margin; snap NEAREST.
+- The input's RTP time M is its sender's media time, not its launch: a camera, a capture sender or another processor has a launch delay of one frame, so its frame arrives from about M + 17.3 ms to M + 34 ms. The input's launch delay in whole frames comes from its SDP's TSDELAY less its TROFFSET, or from the measured first-packet latency (`arrival_first_tai_ns` − `media_tai_ns`, `mtl_rx_detail`).
 - L is fixed, because the slot comes from M, not from arrival jitter; a unit over budget is `DROPPED/TOO_LATE`, and L never toggles. The derived RTP equals the input RTP whenever the input was on the grid (the RX media time is exact to less than one tick, and NEAREST snaps back to the same `N·TFRAME`). An off-grid input is re-stamped to the grid; to keep its phase use
   `MTL_SUBMIT_RTP_TS` with INDEX or TAI (MS3).
 - TSMODE (§5.6), set by the application, which reads the input's SDP (the library cannot see it): SAMP when the input's SDP says SAMP, else PRES, both with the inclusive TSDELAY of `info.tsdelay_ns` (ST 2110-10 §8.7, shall); a processor whose input is off the grid re-stamps it, so it declares NEW.

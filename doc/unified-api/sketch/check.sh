@@ -6,8 +6,9 @@
 # level its "Needs: MSn" names. Lints: size checks, the include layering, the packet-mode
 # naming rule, the milestone of every exported function (comment tag = call-class
 # argument), the availability probes, the examples copied verbatim into examples.md, the
-# reasons table, one home per load-bearing number (numbers.txt) and a migration.md §6.5 row
-# for every legacy mode of the core.
+# examples' calls of every exported function (G-114, nm -u), each example's own number on
+# its first line, the reasons table, one home per load-bearing number (numbers.txt) and a
+# migration.md §6.5 row for every legacy mode of the core.
 # Prints the exported functions per header, per call class and per milestone, and the
 # number of frozen names: the one place the documents take these counts from.
 # check.sh --tags prints "name<TAB>milestone<TAB>header" per exported function and exits
@@ -48,8 +49,8 @@ fi
 # An example compiles to object code at the milestone its "Needs: MSn" names, so a call to a
 # function of a later milestone fails there (the error attribute acts at code generation).
 eflags=(-std=c99 -Wall -Wextra -Wpadded -Werror -c -o /dev/null -I "$inc")
-# The legacy headers, for an example that includes <mtl_api.h> (ex16, the bridge) and for the
-# mixed-header check below: the repository's include/ and the build tree's
+# The legacy headers, for an example that includes <mtl_api.h> (ex24, from the legacy API)
+# and for the mixed-header check below: the repository's include/ and the build tree's
 # mtl_build_config.h, or without a build tree a stub with the values that header defines.
 legacy="$here/../../../include"
 cfg="$here/../../../build"
@@ -231,6 +232,48 @@ if [ -f "$doc2" ] && command -v python3 >/dev/null 2>&1; then
 		fi
 	done
 fi
+
+# Lint 9: the examples call every exported function outside MTL_LATER and mtl_debug.h (the
+# G-114 method on the examples): each example is compiled at its Needs level and the
+# undefined symbols of its object (nm -u) are matched against --tags. A call through an
+# inline wrapper counts, since a used wrapper is emitted and references the function.
+if command -v nm >/dev/null 2>&1; then
+	objdir="$(mktemp -d)"
+	for f in "$here"/examples/*.c "$here"/examples/*.cpp; do
+		[ -e "$f" ] || continue
+		extra=()
+		uses_legacy "$f" && extra=("${lflags[@]}")
+		case "$f" in
+		*.cpp) g++ -std=c++17 -c -o "$objdir/$(basename "$f").o" -I "$inc" -DMTL_TARGET_LEVEL="$(needs "$f")" "$f" 2>/dev/null ;;
+		*) gcc -std=c99 -c -o "$objdir/$(basename "$f").o" -I "$inc" "${extra[@]}" -DMTL_TARGET_LEVEL="$(needs "$f")" "$f" 2>/dev/null ;;
+		esac
+	done
+	called="$(for o in "$objdir"/*.o; do nm -u "$o" | awk '{print $NF}'; done | sort -u)"
+	rm -rf "$objdir"
+	while IFS=$'\t' read -r ok tag name file arg; do
+		case "$tag" in "Phase 7" | later) continue ;; esac
+		[ "$file" = ./mtl_debug.h ] && continue
+		if ! printf '%s\n' "$called" | grep -qx "$name"; then
+			echo "FAIL: $name ($file) is called by no example (G-114)"
+			fail=1
+		fi
+	done <<<"$tags"
+fi
+
+# Lint 10: each example says its own number first ("/* exNN — ", the C++ file "// <name> —").
+for f in "$here"/examples/ex[0-9][0-9]_*.c "$here"/examples/*.cpp; do
+	[ -e "$f" ] || continue
+	b="$(basename "$f")"
+	case "$b" in
+	*.cpp) want="// $b — " ;;
+	*) want="/* ${b%%_*} — " ;;
+	esac
+	first="$(head -n 1 "$f")"
+	if [ "${first#"$want"}" = "$first" ]; then
+		echo "FAIL: $b does not start with '$want'"
+		fail=1
+	fi
+done
 
 # Lint 6 (until H1b's tables commit replaces it with gen_api_doc.py --check): the reasons of
 # mtl_reasons.h, in ascending order, are exactly the rows of contract.md §8.3's marked table.

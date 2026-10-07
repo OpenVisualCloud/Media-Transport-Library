@@ -129,13 +129,13 @@ A function is exported from its milestone, and a value of an exported call not b
 
 | Milestone | What you can build | Examples |
 |---|---|---|
-| MS1 | ST 2110-20 frames, TX and RX: library pools, one or two legs (ST 2022-7), conversion to an application format, results, media modes AUTO and TAI; the null backend, PCI ports through the legacy bridge ([examples.md §3.1](examples.md#31-ms1-on-a-nic-the-legacy-bridge)) | ex01, ex02, ex05, ex16 |
-| MS2a | rows units (slice mode), RX zero fill and `MTL_SESSION_RX_LATEST`, PCI ports opened directly, the log sink, queues for event loops (ex03) | ex03 |
-| MS2b | zero copy for video: imported and attached memory, holds, split forwarding, MXL rings | ex04, ex06, ex09 |
-| MS3 | timing: media mode INDEX, a start at an instant, `mtl_tx_get_next`, the declared latency of TAI mode (`media_time_offset_ns`); `mtl_session_update` on a stopped session; events, health, a shutdown with a report | ex08, ex11, ex15 |
-| MS4 | every essence: audio and fast metadata (MS4a1) and ANC (MS4a2), in media mode AUTO for audio and fast metadata until MS6; compressed video, codec plugins and `mtl_convert` (MS4b) | ex14, ex17 |
-| MS5 | packet units (RTP passthrough, ST 2022-6) and `mtl_session_update` while running | ex12, ex13 |
-| MS6 | sync: start arrays, ANC that follows its video, audio and fast metadata in media modes TAI and INDEX (sample-accurate audio); the framework and language ports | ex07, ex10 |
+| MS1 | ST 2110-20 frames, TX and RX: library pools, one or two legs (ST 2022-7), conversion to an application format, results, media modes AUTO and TAI; the null backend, PCI ports through the legacy bridge ([examples.md §26](examples.md#26-from-the-legacy-api)) | ex01, ex02, ex20, ex24 |
+| MS2a | rows units (slice mode), RX zero fill and `MTL_SESSION_RX_LATEST`, PCI ports opened directly, the log sink, queues for event loops (ex03) | ex03, ex19 |
+| MS2b | zero copy for video: imported and attached memory, holds, split forwarding, MXL rings | ex10, ex11, ex12 |
+| MS3 | timing: media mode INDEX, a start at an instant, `mtl_tx_get_next`, the declared latency of TAI mode (`media_time_offset_ns`); `mtl_session_update` on a stopped session; events, health, a shutdown with a report | ex04, ex05, ex06, ex07, ex08, ex16, ex21 |
+| MS4 | every essence: audio and fast metadata (MS4a1) and ANC (MS4a2), in media mode AUTO for audio and fast metadata until MS6; compressed video, codec plugins and `mtl_convert` (MS4b) | ex13, ex14, ex15, ex17 |
+| MS5 | packet units (RTP passthrough, ST 2022-6) and `mtl_session_update` while running | ex09, ex18 |
+| MS6 | sync: start arrays, ANC that follows its video, audio and fast metadata in media modes TAI and INDEX (sample-accurate audio); the framework and language ports | ex22, ex23 |
 | MS7 | the frozen ABI `MTL_1.0`; the legacy headers deprecated | — |
 
 The table below reads the same plan per product: the earliest milestone that carries everything
@@ -145,19 +145,21 @@ the product needs, and what it waits for. On a NIC every row needs MS2a, which o
 
 | Product | Earliest | What it waits for | Examples |
 |---|---|---|---|
-| your product's tests in CI, without a NIC (`null:` ports) | MS1 | — | ex01, ex02 |
-| ST 2110-20 sender or receiver, one or two legs (ST 2022-7) | MS2a | PCI ports opened directly (MS1: through the bridge, [examples.md §3.1](examples.md#31-ms1-on-a-nic-the-legacy-bridge)) | ex01, ex02 |
-| framework video source (FFmpeg demuxer, GStreamer source) with zero copy | MS2a | lost packets read as zero, `MTL_SESSION_RX_LATEST` (the lending itself: MS1) | ex05 |
-| framework video sink with a copy (GStreamer `sync=TRUE`, `ffmpeg -re`, OBS) | MS3 | `media_time_offset_ns` (TAI mode and `MTL_SUBMIT_SRC_PLANES`: MS1) | ex15 |
-| framework sink or forwarder with zero copy; MXL rings | MS2b | attached pools, per-acquire layouts, holds | ex04, ex06, ex09 |
+| your product's tests in CI, without a NIC (`null:` ports) | MS1 | — | ex01, ex02, examples_cpp.cpp |
+| ST 2110-20 sender or receiver, one or two legs (ST 2022-7) | MS2a | PCI ports opened directly (MS1: through the bridge, [examples.md §26](examples.md#26-from-the-legacy-api)) | ex01, ex02, ex06, ex07 |
+| framework video source (FFmpeg demuxer, GStreamer source) with zero copy | MS2a | lost packets read as zero, `MTL_SESSION_RX_LATEST` (the lending itself: MS1) | ex20 |
+| framework video sink with a copy (GStreamer, `ffmpeg -re`, OBS) | MS3 | a declared latency in TAI mode, one phase per programme (TAI mode and `MTL_SUBMIT_SRC_PLANES`: MS1) | ex21 |
+| framework sink or forwarder with zero copy; MXL rings | MS2b | attached pools, per-acquire layouts, holds | ex10, ex11, ex12 |
+| playout with a deep pre-roll, started at an instant, in one or several processes | MS3 | media mode INDEX, a start at an instant, `mtl_epoch_index_at` | ex04 |
+| sending at an exact instant | MS3 | the launch apart from the media time (exact launch: MS2a) | ex05 |
 | SDI-to-IP gateway that sends rows | MS3 | media mode INDEX, `mtl_tx_get_next` (rows: MS2a) | ex08 |
-| Kubernetes service with probes and a bounded shutdown | MS3 | health, the shutdown report | ex11 |
-| audio sender or receiver (ST 2110-30, AES67) on its own | MS4a1 | the audio binding, media mode AUTO | ex17 |
+| Kubernetes service with probes and a bounded shutdown | MS3 | health, the shutdown report | ex16, ex17 |
+| audio sender or receiver (ST 2110-30, AES67) on its own | MS4a1 | the audio binding, media mode AUTO | ex13 |
 | ANC (captions, SCTE-104, timecode) timed to its video | MS4a2 | the ANC binding | ex14 |
-| compressed video (JPEG XS) with codec plugins | MS4b | cvideo, plugin ABI v2 | — |
-| NMOS IS-05 Node that switches without re-creating | MS3 (stop, update, start); MS5 without the stop | `mtl_session_update` | ex13 |
-| RTP passthrough, ST 2022-6 | MS5 | packet units | ex12 |
-| audio timed to video; V+A+ANC playout or processing with exact RTP | MS6 | audio TAI and INDEX, start arrays | ex07, ex10 |
+| compressed video (JPEG XS) with codec plugins | MS4b | cvideo, plugin ABI v2 | ex15 |
+| NMOS IS-05 Node that switches without re-creating | MS3 (stop, update, start); MS5 without the stop | `mtl_session_update` | ex18 |
+| RTP passthrough, ST 2022-6 | MS5 | packet units | ex09 |
+| audio timed to video; V+A+ANC playout or processing with exact RTP | MS6 | audio TAI and INDEX, start arrays | ex22, ex23 |
 | a binary that keeps running on later releases without a rebuild | MS7 | `MTL_1.0` | — |
 | IPMX sender or receiver | Phase 7 | SDP, sender time, PEP (sender reports: MS5) | — |
 
@@ -197,8 +199,8 @@ and `MTL_RTP` (generic RTP such as ST 2022-6, packet units only). A unit is one 
 | Kind | Moves | Typical use |
 |---|---|---|
 | `MTL_UNIT_FRAME` (default) | a frame or a field | almost every program |
-| `MTL_UNIT_ROWS` | rows of a video frame, published progressively | an SDI-to-IP gateway ([ex08](sketch/examples/ex08_progressive_rows.c)) |
-| `MTL_UNIT_PACKETS` | a chunk of RTP packets the application builds or parses (legacy `ST20_TYPE_RTP_LEVEL`) | forwarders, custom payloads ([ex12](sketch/examples/ex12_rtp_packets.c), `mtl_packet.h`) |
+| `MTL_UNIT_ROWS` | rows of a video frame, published progressively | an SDI-to-IP gateway ([ex08](sketch/examples/ex08_rows.c)) |
+| `MTL_UNIT_PACKETS` | a chunk of RTP packets the application builds or parses (legacy `ST20_TYPE_RTP_LEVEL`) | forwarders, custom payloads ([ex09](sketch/examples/ex09_rtp_packets.c), `mtl_packet.h`) |
 
 The objects and who owns what: [contract.md](contract.md#object-verbs); the
 shape next to libfabric and Rivermax: [migration.md §13](migration.md#13-if-you-know-libfabric-or-rivermax).
@@ -270,7 +272,7 @@ the only calls a signal handler may make).
 /* ex01 — the smallest video sender: one config, a library pool, no results to read.
    Defaults it relies on: media mode AUTO (the next frame time of the SMPTE epoch),
    results off. Needs: MS1 (null: and kernel: ports; a VF from MS2a, or in MS1 through
-   the legacy bridge, ex16).
+   the legacy bridge, ex24).
  */
 #include "ex_common.h"
 
@@ -333,7 +335,7 @@ What to notice:
 - **Ports from the environment.** `mtl_instance_open(NULL, &mt)` reads `MTL_PORTS`, for example
   `MTL_PORTS=null:1`: the **null backend**, which needs no NIC, no root and no hugepages. A VF
   (`MTL_PORTS=0000:af:01.0=192.168.1.10/24`) opens directly from MS2a; in MS1 it opens through
-  the legacy bridge ([examples.md §3.1](examples.md#31-ms1-on-a-nic-the-legacy-bridge)). Explicit
+  the legacy bridge ([examples.md §26](examples.md#26-from-the-legacy-api)). Explicit
   ports go in `struct mtl_instance_params` (legacy `struct mtl_init_params`).
 - **`mtl_session_open` creates and starts** (legacy `st20p_tx_create`); `mtl_session_create` plus
   `mtl_session_start` start at a chosen time or several sessions together.
@@ -511,18 +513,18 @@ sequenceDiagram
 - **A unit that never completes is delivered at its deadline**, marked incomplete, so a stop never
   hangs on a missing packet.
 - **Release** (`mtl_rx_release`) may come from any thread in any order, so a frame can be lent to
-  a framework buffer and released when downstream drops it ([ex05](sketch/examples/ex05_rx_to_framework.c)).
+  a framework buffer and released when downstream drops it ([ex20](sketch/examples/ex20_rx_to_framework.c)).
 - **A full pool** drops new units by default and counts them in the next unit's
   `u.missed_before`. `MTL_SESSION_RX_LATEST` reclaims the oldest unread unit instead;
   `MTL_SESSION_RX_BY_INDEX` puts frame k in slot k mod `pool_count`, for MXL rings
-  ([ex06](sketch/examples/ex06_mxl_ring.c)).
+  ([ex11](sketch/examples/ex11_rx_into_memory.c)).
 
 Through the layers: [core.md §3](core.md#3-a-unit-through-the-core); who owns a
 slot when, in both directions: [contract.md §5.4](contract.md#54-lease-rules).
 
 ### 5.3 A session's life
 
-The picture is the path an application sees; [ex04](sketch/examples/ex04_zero_copy_tx.c) walks it
+The picture is the path an application sees; [ex10](sketch/examples/ex10_zero_copy_tx.c) walks it
 (create, attach, start, stop, close). The full machine with every transition is in
 [contract.md §4.1](contract.md#41-states).
 
@@ -581,7 +583,7 @@ RTP packets the application builds or parses (legacy `ST20_TYPE_RTP_LEVEL`).
   (`mtl_pkt_rx_table(&u)`), copied in the caller by default; duplicates of the two legs are
   removed by RTP timestamp and sequence number.
 
-ST 2022-6 uses the generic RTP essence `MTL_RTP`. Example: [ex12](sketch/examples/ex12_rtp_packets.c);
+ST 2022-6 uses the generic RTP essence `MTL_RTP`. Example: [ex09](sketch/examples/ex09_rtp_packets.c);
 the full rules: [contract.md §13](contract.md#13-packet-units).
 
 ## 6. Results and errors you program against
@@ -656,7 +658,7 @@ stateDiagram-v2
     Disarmed --> [*]: detach or close
 ```
 
-Pictures: an event loop ([examples.md §5](examples.md#5-senders-in-the-applications-epoll-loop)),
+Pictures: an event loop ([examples.md §5](examples.md#5-many-sessions-in-the-applications-epoll-loop)),
 a queue ([contract.md §7.2](contract.md#72-queues-ms2)) and interrupts
 ([contract.md §7.3](contract.md#73-interrupts)).
 
@@ -762,7 +764,7 @@ flowchart LR
 Within its frame time the first packet leaves at the ST 2110-21 offset: with `min_tx_delay_ns` 0
 (playback) at TVD − VRX0·TRS, TVD = N × TFRAME + TROFFSET. A late unit is dropped (INDEX, TAI) or
 moved to the next feasible index (AUTO) by `tx.late_policy`, but never moves the units after it
-(§7.4). [ex07](sketch/examples/ex07_av_anc_playout.c) and [ex10](sketch/examples/ex10_processor.c)
+(§7.4). [ex22](sketch/examples/ex22_av_playout.c) and [ex23](sketch/examples/ex23_processor.c)
 use the split; the formulas are in [timing.md §4](timing.md#4-media-time-on-tx) and
 [§5](timing.md#5-launch-time); one video frame on the ST 2110-21 schedule:
 [timing.md §5.1](timing.md#51-the-st-2110-21-model).
@@ -792,14 +794,14 @@ that says when content exists:
 |---|---|---|---|
 | playback (the default): files, graphics, generators | before its media time | 0 | 0: the frame time of M |
 | capture: cameras, encoders, RX-to-TX processors | only after its sampling instant | one frame period plus the pick-up lead | 1 |
-| gateway: SDI to IP, with rows units ([ex08](sketch/examples/ex08_progressive_rows.c)) | in the same frame period, line by line | 0, with `sc.video.troffset_us` if needed | 0 |
+| gateway: SDI to IP, with rows units ([ex08](sketch/examples/ex08_rows.c)) | in the same frame period, line by line | 0, with `sc.video.troffset_us` if needed | 0 |
 
 The pick-up lead is how long before its frame time MTL takes a unit: about 0.5 ms with rate-limit pacing
 and about 20 µs with TSC pacing, plus a conversion stage when there is one. The launch delay is
 reported (`info.launch_delay`), never configured. In TAI mode `sc.media_time_offset_ns` declares the
 producer's latency and moves the frame time; the legacy RTP trim with the launch kept is the option
 `tx.rtp_trim_ns`. A processor that submits each output with its input's media time keeps the
-input's RTP and a constant delay ([ex10](sketch/examples/ex10_processor.c)). The rule and its
+input's RTP and a constant delay ([ex23](sketch/examples/ex23_processor.c)). The rule and its
 numbers: [timing.md §5.2](timing.md#52-min_tx_delay_ns-and-the-launch-rule).
 
 ### 7.4 Late units and empty frame times
@@ -826,7 +828,7 @@ process the same k for the same instant); it rounds down, so k is the unit that 
 first unit at or after t is k, or k + 1 when t is past the start of unit k. For playout from a
 file, start the sessions together (MS6) with `MTL_WHEN_ORIGIN`: media index 0 of every session started
 there is the start's T0, so the file's frame and sample counts are media indices as they are. This
-excerpt is from [ex07](sketch/examples/ex07_av_anc_playout.c):
+excerpt is from [ex22](sketch/examples/ex22_av_playout.c):
 
 ```c
 /* T0: the first feasible instant plus a preroll, so the first units of all three are
@@ -848,7 +850,7 @@ is. The RTP of ANC frame k equals that of video frame k, and audio sample n has 
 the first video of its start. On RX, units report `media_index` too, and `mtl_rx_align` gives the
 audio sample that belongs to a video frame. Created timelines with their own anchors are reserved
 for later (`MTL_LATER`). As a picture:
-[examples.md §9](examples.md#9-video-audio-and-captions-from-one-file),
+[examples.md §24](examples.md#24-video-audio-and-captions-from-one-file),
 [timing.md §10.1](timing.md#101-mechanism).
 
 ### 7.6 The clock
@@ -877,7 +879,7 @@ need it, so it comes in MS2 ([deployment.md](deployment.md)). Where each time co
 A wrapper of a legacy instance (`mtl_instance_from_legacy`, MS1's way onto a VF) does not use
 this table: it runs on the legacy clock. By default that clock is UTC read as TAI (flagged
 `MTL_TIMEF_UTC`, about 37 s off PTP time). Give the legacy instance a `ptp_get_time_fn` on
-`CLOCK_TAI` ([examples.md §3.1](examples.md#31-ms1-on-a-nic-the-legacy-bridge),
+`CLOCK_TAI` ([examples.md §26](examples.md#26-from-the-legacy-api),
 [contract.md §2.8](contract.md#28-legacy-bridge)).
 
 Details: grids, snapping, ANC windows, RX timing, time sources and steps are in
@@ -890,7 +892,7 @@ essence), and `mtl_session_query` reports the layout and the buffer requirements
 
 **Your buffers** (`mtl_mem.h`), for framework pools, MXL rings or pinned host memory. The
 picture of a framework's pool sent without a copy, surface i as slot i, is at the head of
-[examples.md §6](examples.md#6-zero-copy-from-a-frameworks-pool).
+[examples.md §12](examples.md#12-send-from-your-memory-without-a-copy).
 
 - **A region** is memory MTL may DMA: page aligned, refcounted, and mapped into every port and DMA
   engine a session using it needs (`mtl_mem_import`, `mtl_mem_alloc`; legacy `mtl_dma_map`, which
@@ -900,13 +902,13 @@ picture of a framework's pool sent without a copy, surface i as slot i, is at th
   with a reason, if the arena is too small. Slot i is surface i.
 - **`mtl_tx_acquire_slot(s, i, &u, timeout)`** sends exactly that surface (legacy
   `st20p_tx_put_ext_frame`). Results are always on: a slot is never reused before you read the
-  result that frees it ([ex04](sketch/examples/ex04_zero_copy_tx.c)).
+  result that frees it ([ex10](sketch/examples/ex10_zero_copy_tx.c)).
 - **Zero copy is a policy, not an accident**: `MTL_SESSION_REQUIRE_DIRECT` fails at create rather
   than copy; otherwise `MTL_INFO_DIRECT` and `MTL_TXR_COPIED` report the path used. Any stride of at
   least the row size stays direct, so sub-rectangles and woven interlaced frames need no copy.
 - **Forwarding**: one RX slot can feed several TX sessions. A TX session attaches over the
   receiver's pool (`mtl_session_get_pool_region`) and each TX unit sets `u.hold` to the RX lease,
-  which keeps the RX slot until it has been sent ([ex09](sketch/examples/ex09_split_forwarder.c)).
+  which keeps the RX slot until it has been sent ([ex12](sketch/examples/ex12_split_forwarder.c)).
 - **Caller memory without a pool of your own**: `MTL_SUBMIT_SRC_PLANES` makes submit copy or
   convert `u.plane[]` from your memory into the slot during the call (`MTL_TXR_COPIED`; not on a
   `MTL_SESSION_REQUIRE_DIRECT` session), and the slot stays the admission and back-pressure token.
@@ -928,7 +930,7 @@ framebuffers).
   (retired), 1 (quiesced: no device can reach any memory, exit is safe) or `-MTL_EIO` (a port
   could not be stopped: exit now). `mtl_instance_shutdown` adds flags and a report.
 - **Signals belong to the process**: a handler may call `mtl_instance_interrupt(mt, 1)`, and
-  `mtl_instance_abort` (legacy `mtl_abort`) for a second signal ([ex11](sketch/examples/ex11_signal.c)).
+  `mtl_instance_abort` (legacy `mtl_abort`) for a second signal ([ex16](sketch/examples/ex16_pod_service.c)).
 - **Probes** read the lock-free `mtl_instance_get_health`; liveness never depends on links or PTP.
 - **NMOS IS-05**: one PATCH is one `mtl_session_update` of flows and legs at a frame boundary
   (MS5). TX sender reports driven by options come in MS5 and FREERUN in MS6; the rest of NMOS,
@@ -937,7 +939,7 @@ framebuffers).
 Pictures: the shutdown order and the instance phases with their probes
 ([deployment.md §4.2](deployment.md#42-shutdown),
 [deployment.md §4.10](deployment.md#410-health-and-probes)), one IS-05 activation
-([examples.md §15](examples.md#15-nmos-is-05-switch-destinations-at-one-instant)). Details:
+([examples.md §20](examples.md#20-an-nmos-node-is-04-interfaces-is-05-activation)). Details:
 [deployment.md](deployment.md).
 
 ## 10. Where each header fits
@@ -1114,7 +1116,7 @@ start: `mtl_time_now(mt, &tai, NULL, NULL)` returns the time flags, and `MTL_TIM
 means the times are not locked to PTP. On a port without a node daemon,
 `MTL_TIME_SOURCE_PTP_BUILTIN` runs MTL's own client instead. A wrapper of a legacy instance
 (MS1 on a VF) runs on the legacy clock instead
-([examples.md §3.1](examples.md#31-ms1-on-a-nic-the-legacy-bridge)). The host steps:
+([examples.md §26](examples.md#26-from-the-legacy-api)). The host steps:
 [PTP setup](../chunks/_ptp_setup.md).
 
 **What runs where on a real host?** Root, or the capabilities [run.md](../run.md) lists; hugepages
@@ -1128,7 +1130,7 @@ as they go on the wire: interleaved by channel (sample 0 of every channel, then 
 sample in network byte order (big-endian): L16 two bytes, L24 three; AM824 the 4-byte subframes.
 MTL copies the bytes into the packets and never swaps them, as today's ST 2110-30 sessions do. A
 program with little-endian PCM, as most sound APIs give, swaps the bytes itself.
-[ex17](sketch/examples/ex17_audio_rx.c) reads it into host `int32` samples.
+[ex13](sketch/examples/ex13_audio.c) reads it into host `int32` samples.
 
 ## 14. Where to go next
 

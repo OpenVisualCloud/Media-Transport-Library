@@ -1182,7 +1182,10 @@ enum mtl_pkt_unit_time {
   MTL_PKT_TIME_FROM_RTP = 1, /* from the RTP timestamp of the unit's first packet; SMPTE2022-6:
                                 the unit-grid instant nearest it, which is the frame's
                                 Synchronizing Timestamp of an epoch-aligned source (that
-                                packet's RTP lies 0.6-8.6 us earlier, ST 2022-8 §5.3) */
+                                packet's RTP lies 0.6-8.6 us earlier, ST 2022-8 §5.3). The
+                                session's media_mode is 0; the media time is taken as given,
+                                never snapped, and a late unit is DROPPED (TOO_LATE): the
+                                option tx.late_policy MTL_LATE_DEFER is -MTL_EINVAL */
 };
 struct mtl_packet_config {
   uint32_t packets_per_chunk; /* slots per lease; 0 = by essence */
@@ -1445,8 +1448,9 @@ MTL_API_CP(1) int mtl_session_stop(const mtl_session_h* s, uint32_t n, uint32_t 
                                  every backend until then */
 #define MTL_UPDATE_LEGS 0x2u  /* sc->legs_disabled; disabling every existing leg (mute) is
                                  Phase 7, -MTL_ENOTSUP until then */
-#define MTL_UPDATE_MEDIA 0x4u /* the essence member, tsmode and max_udp_payload; CREATED or
-                                 STOPPED (colorimetry, tcs and range also while running) */
+#define MTL_UPDATE_MEDIA 0x4u /* the essence member, tsmode, max_udp_payload and
+                                 min_tx_delay_ns; CREATED or STOPPED (colorimetry, tcs and
+                                 range also while running) */
 #define MTL_UPDATE_POOL 0x8u  /* pool_count; CREATED or STOPPED */
 #if defined(MTL_LATER)
 /* Modifiers (Phase 7) */

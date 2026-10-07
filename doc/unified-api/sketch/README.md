@@ -14,7 +14,7 @@ the headers move to `include/mtl/experimental/`, and `check.sh` runs in CI.
 |---|---|
 | `include/mtl/experimental/mtl.h` | the main header: everything a sender or receiver with MTL's buffers needs |
 | `include/mtl/experimental/mtl_*.h` | the optional headers and their jobs ([examples.md §1](../examples.md)) |
-| `examples/ex01_*.c` … `examples/ex17_*.c`, `examples/examples_cpp.cpp`, `examples/ex_common.h` | the examples |
+| `examples/ex01_*.c` … `examples/ex24_*.c`, `examples/examples_cpp.cpp`, `examples/ex_common.h` | the examples |
 | `examples.md.in` | the prose of [examples.md](../examples.md), with `@@EXAMPLE <file>@@` and `@@HEADER_TABLE@@` markers |
 | `gen_api_doc.py` | writes [examples.md](../examples.md) from the template (every example copied verbatim, the header table from the headers), and from task H1b every marked table and enum block from its `.def` ([README §1, §4](../README.md)); `--check` only compares |
 | `numbers.txt` | the load-bearing numbers and their homes, for the number lint ([README §1](../README.md)) |
@@ -47,8 +47,8 @@ python3 doc/unified-api/sketch/gen_api_doc.py   # after changing an example, a h
   binding generator sees it;
 - all headers together in one file, in both orders, and as C++;
 - the legacy headers and the new ones together, so a gradual port can mix them (with the
-  build tree's `mtl_build_config.h`, or a stub of it); ex16, which includes `mtl_api.h`, is
-  compiled against the legacy headers too;
+  build tree's `mtl_build_config.h`, or a stub of it); ex24, which includes `mtl_api.h` and
+  `st_pipeline_api.h`, is compiled against the legacy headers too;
 - every example, with `gcc -std=c99 -Wall -Wextra -Wpadded -Werror` (headers also with
   `-pedantic`) and `g++ -std=c++17 -Wall -Wextra -Werror`, and again with clang and clang++
   when installed; an example compiles to object code with `MTL_TARGET_LEVEL` set to the
@@ -67,6 +67,10 @@ It then checks that:
   outside `MTL_LATER`, `(Phase 7)` or `(later)` inside it, and the call-class argument is the
   same milestone (`LATER` inside `MTL_LATER`);
 - `examples.md` shows every example verbatim, and `concepts.md` its copies of ex01 and ex02;
+- the examples call every exported function outside `MTL_LATER` and `mtl_debug.h`: each is
+  compiled at its `Needs` level, and the undefined symbols of the objects (`nm -u`) are matched
+  against `--tags`, so a call through an inline wrapper counts (G-114's method);
+- each example's first line starts with its own number: `/* exNN —`, and the C++ file `// <name> —`;
 - the reasons of `mtl_reasons.h` ascend and equal the marked table of contract.md §8.3 (until
   task H1b replaces this lint with `gen_api_doc.py --check`, which also compares every marked
   table with its `.def`, and from H1b every enum constant and integer macro outside
