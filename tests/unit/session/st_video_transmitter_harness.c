@@ -34,6 +34,9 @@ struct ut_trs_ctx {
   int tsc_script_len;
   int tsc_script_pos;
   uint64_t last_tsc;
+  uint64_t tsc_skew; /* added to the script, the stalls so far */
+  uint32_t stall_call;
+  uint64_t stall_ns;
 
   uint32_t pad_send_count;
   uint32_t real_send_count;
@@ -55,12 +58,12 @@ static uint64_t ut_trs_tsc_time_fn(struct mtl_main_impl* impl) {
   int pos = ctx->tsc_script_pos++;
   if (!len) return ++ctx->last_tsc;
   if (pos < len) {
-    ctx->last_tsc = ctx->tsc_script[pos];
+    ctx->last_tsc = ctx->tsc_script[pos] + ctx->tsc_skew;
   } else {
     /* Keep exhausted scripts monotonic. */
     uint64_t step = (len >= 2) ? ctx->tsc_script[len - 1] - ctx->tsc_script[len - 2] : 0;
     if (!step) step = 1;
-    ctx->last_tsc = ctx->tsc_script[len - 1] + step * (pos - len + 1);
+    ctx->last_tsc = ctx->tsc_script[len - 1] + step * (pos - len + 1) + ctx->tsc_skew;
   }
   return ctx->last_tsc;
 }
@@ -81,6 +84,11 @@ static uint16_t ut_trs_txq_burst_mock(struct mt_txq_entry* entry,
   struct ut_trs_ctx* ctx = ut_trs_active_ctx;
   if (!ctx) return nb_pkts;
   ctx->burst_call_count++;
+  if (ctx->stall_ns && ctx->burst_call_count == ctx->stall_call) {
+    /* the doorbell rings stall_ns after the last tsc read */
+    ctx->tsc_skew += ctx->stall_ns;
+    ctx->last_tsc += ctx->stall_ns;
+  }
   if (ctx->burst_force_fail) return 0;
 
   int port = (entry == (struct mt_txq_entry*)&ctx->queue_tag[MTL_SESSION_PORT_R])
@@ -245,6 +253,7 @@ void ut_trs_set_mock_tsc_script(ut_trs_ctx* ctx, const uint64_t* values, int cou
   memcpy(ctx->tsc_script, values, count * sizeof(*values));
   ctx->tsc_script_len = count;
   ctx->tsc_script_pos = 0;
+  ctx->tsc_skew = 0;
 }
 
 void ut_trs_warm_up(ut_trs_ctx* ctx) {
@@ -305,6 +314,11 @@ void ut_trs_set_burst_force_fail(ut_trs_ctx* ctx, bool fail) {
 
 void ut_trs_set_burst_accept_limit(ut_trs_ctx* ctx, uint16_t limit) {
   ctx->burst_accept_limit = limit;
+}
+
+void ut_trs_set_burst_stall(ut_trs_ctx* ctx, uint32_t call, uint64_t stall_ns) {
+  ctx->stall_call = call;
+  ctx->stall_ns = stall_ns;
 }
 
 uint32_t ut_trs_burst_call_count(const ut_trs_ctx* ctx) {

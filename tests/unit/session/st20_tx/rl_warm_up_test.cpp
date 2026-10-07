@@ -317,6 +317,28 @@ TEST_F(St20TxRlWarmUpTest, LaunchLandsOnTargetForEveryWarmUpPhase) {
   }
 }
 
+/* A stall between the tsc read of the pre-arm and its first pad burst, an interrupt or a
+ * preemption, moves the doorbell later. The pads then drain later than the plan, and
+ * packet 0, queued behind them, must still leave in [target, target + one pad). */
+TEST_F(St20TxRlWarmUpTest, LaunchStaysOnTargetWhenTheFirstPadBurstStalls) {
+  constexpr uint64_t kTargetTsc = 10000000;
+  const uint64_t now[] = {kTargetTsc - (uint64_t)(kWarmPkts * kTrs)};
+  UseRealisticShaper(kPortP);
+
+  for (uint64_t stall : {1000, 10000, 50000, 150000}) {
+    ut_trs_clear_train(ctx_);
+    ut_trs_set_target_tsc(ctx_, kTargetTsc);
+    ut_trs_set_mock_tsc_script(ctx_, now, 1);
+    ut_trs_set_burst_stall(ctx_, ut_trs_burst_call_count(ctx_) + 1, stall);
+
+    ut_trs_pre_arm(ctx_);
+
+    long double late = ut_trs_modeled_launch_tsc(ctx_, kPortP) - kTargetTsc;
+    EXPECT_GE(late, 0) << "stall " << stall;
+    EXPECT_LT(late, kDrain) << "stall " << stall;
+  }
+}
+
 TEST_F(St20TxRlWarmUpTest, PlanUsesTrainedDrainPeriod) {
   constexpr uint64_t kTargetTsc = 1000000;
   constexpr uint32_t kWindowPkts = 124;

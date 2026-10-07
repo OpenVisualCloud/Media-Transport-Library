@@ -53,6 +53,9 @@ uint64_t ut_trs_stat_recalculate_warmup(const ut_trs_ctx* ctx);
 void ut_trs_set_burst_force_fail(ut_trs_ctx* ctx, bool fail);
 /* the burst mock accepts at most limit pkts per call, 0 = all */
 void ut_trs_set_burst_accept_limit(ut_trs_ctx* ctx, uint16_t limit);
+/* burst call number call (from 1) reaches the NIC stall_ns after the last tsc read, as
+ * after an interrupt or a preemption; the mock clock stays stall_ns ahead from then */
+void ut_trs_set_burst_stall(ut_trs_ctx* ctx, uint32_t call, uint64_t stall_ns);
 uint32_t ut_trs_burst_call_count(const ut_trs_ctx* ctx);
 uint32_t ut_trs_real_send_count(const ut_trs_ctx* ctx);
 uint32_t ut_trs_sent_pkt_idx(const ut_trs_ctx* ctx, uint32_t pos);
