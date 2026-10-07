@@ -3,8 +3,8 @@
  *
  * C harness for ST22p (compressed video) RX pipeline-layer concurrency unit
  * tests. Mirrors st30p_harness in spirit: drives rx_st22p_frame_ready()
- * directly in the derive path and stubs the transport-side libmtl symbol that
- * put_frame references.
+ * directly in the derive path and stubs st22_rx_put_framebuff, which forwards
+ * to a real session handle once ut22p_set_transport() is given one.
  */
 
 #include <errno.h>
@@ -28,11 +28,16 @@
 
 static uint64_t ut22p_stub_calls;
 
+/* st20_api.h was parsed under the rename above, so declare the real symbol. */
+int st22_rx_put_framebuff(st22_rx_handle handle, void* framebuff);
+
+#define UT22P_FAKE_TRANSPORT ((st22_rx_handle)(uintptr_t)0x1)
+
+/* No-op for the fake transport; a real handle from ut22p_set_transport() gets the put. */
 int ut22p_stub_put_framebuff(st22_rx_handle handle, void* frame) {
-  (void)handle;
-  (void)frame;
   __atomic_fetch_add(&ut22p_stub_calls, 1, __ATOMIC_RELAXED);
-  return 0;
+  if (handle == UT22P_FAKE_TRANSPORT) return 0;
+  return st22_rx_put_framebuff(handle, frame);
 }
 
 uint64_t ut22p_stub_call_count(void) {
@@ -83,9 +88,10 @@ ut22p_ctx* ut22p_ctx_create(int framebuff_cnt) {
   p->framebuff_cnt = framebuff_cnt;
   p->framebuffs = ctx->framebuffs;
   p->ready = true;
+  rte_spinlock_init(&p->pending_put_lock);
   p->derive = true; /* output_fmt == transport_fmt: frame_ready -> DECODED */
   p->ext_frame = false;
-  p->transport = (st22_rx_handle)(uintptr_t)0x1;
+  p->transport = UT22P_FAKE_TRANSPORT;
   p->block_get = false;
 
   return ctx;
@@ -149,6 +155,28 @@ int ut22p_inject_frame(ut22p_ctx* ctx, enum st_frame_status status, uint32_t tim
 
   static uint8_t dummy_frame_storage;
   return rx_st22p_frame_ready(&ctx->pipeline, &dummy_frame_storage, &meta);
+}
+
+int ut22p_frame_ready(ut22p_ctx* ctx, void* frame, struct st22_rx_frame_meta* meta) {
+  return rx_st22p_frame_ready(&ctx->pipeline, frame, meta);
+}
+
+void ut22p_set_ready(ut22p_ctx* ctx, bool ready) {
+  ctx->pipeline.ready = ready;
+}
+
+void ut22p_set_transport(ut22p_ctx* ctx, st22_rx_handle transport) {
+  rx_st22p_set_transport(&ctx->pipeline, transport);
+}
+
+void ut22p_enable_ext_frame(ut22p_ctx* ctx,
+                            int (*query)(void* priv, struct st_ext_frame* ext_frame,
+                                         struct st22_rx_frame_meta* meta),
+                            void* priv) {
+  struct st22p_rx_ctx* p = &ctx->pipeline;
+  p->ext_frame = true;
+  p->ops.query_ext_frame = query;
+  p->ops.priv = priv;
 }
 
 struct st_frame* ut22p_get_frame(ut22p_ctx* ctx) {

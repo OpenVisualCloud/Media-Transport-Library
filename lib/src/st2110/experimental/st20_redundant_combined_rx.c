@@ -51,6 +51,44 @@ static int rx_st20rc_frame_push(struct st20rc_rx_ctx* ctx, void* frame,
   return -EIO;
 }
 
+/* The session runs before st20_rx_create_with_mask() returns, so frames may be parked
+ * already. */
+static void rx_st20rc_set_handle(struct st20rc_rx_transport* transport,
+                                 st20_rx_handle handle) {
+  void* frames[ST20_FB_MAX_COUNT];
+  uint16_t cnt;
+
+  rte_spinlock_lock(&transport->pending_put_lock);
+  transport->handle = handle;
+  cnt = transport->pending_put_cnt;
+  memcpy(frames, transport->pending_put_frames, sizeof(frames[0]) * cnt);
+  transport->pending_put_cnt = 0;
+  rte_spinlock_unlock(&transport->pending_put_lock);
+
+  for (uint16_t i = 0; i < cnt; i++) st20_rx_put_framebuff(handle, frames[i]);
+}
+
+/* The session puts back a refused complete frame, but an incomplete one stays ours. */
+static int rx_st20rc_refuse_frame(struct st20rc_rx_transport* transport, void* frame,
+                                  struct st20_rx_frame_meta* meta, int ret) {
+  st20_rx_handle handle;
+
+  if (st_is_frame_complete(meta->status)) return ret;
+
+  rte_spinlock_lock(&transport->pending_put_lock);
+  handle = transport->handle;
+  if (!handle) {
+    if (transport->pending_put_cnt < ST20_FB_MAX_COUNT)
+      transport->pending_put_frames[transport->pending_put_cnt++] = frame;
+    else /* impossible: the session holds at most ST20_FB_MAX_COUNT frames */
+      err_once("%s, no slot to park frame %p\n", __func__, frame);
+  }
+  rte_spinlock_unlock(&transport->pending_put_lock);
+
+  if (handle) st20_rx_put_framebuff(handle, frame);
+  return ret;
+}
+
 static int rx_st20rc_frame_ready(void* priv, void* frame,
                                  struct st20_rx_frame_meta* meta) {
   struct st20rc_rx_transport* transport = priv;
@@ -59,7 +97,7 @@ static int rx_st20rc_frame_ready(void* priv, void* frame,
   enum mtl_session_port port = transport->port;
   int ret = -EIO;
 
-  if (!ctx->ready) return -EBUSY; /* not ready */
+  if (!ctx->ready) return rx_st20rc_refuse_frame(transport, frame, meta, -EBUSY);
 
   dbg("%s(%d), get frame %p at port %d\n", __func__, idx, frame, port);
 
@@ -143,6 +181,7 @@ static int rx_st20rc_create_transport(struct st20rc_rx_ctx* ctx,
 
   transport->port = port;
   transport->parent = ctx;
+  rte_spinlock_init(&transport->pending_put_lock);
 
   memset(&ops_rx, 0, sizeof(ops_rx));
   ops_rx.name = ops->name;
@@ -190,12 +229,13 @@ static int rx_st20rc_create_transport(struct st20rc_rx_ctx* ctx,
     sch_mask &= ~(MTL_BIT64(sch_idx));
   }
   dbg("%s(%d,%d), sch_mask %" PRIx64 "\n", __func__, idx, port, sch_mask);
-  transport->handle = st20_rx_create_with_mask(impl, &ops_rx, sch_mask);
-  if (!transport->handle) {
+  st20_rx_handle handle = st20_rx_create_with_mask(impl, &ops_rx, sch_mask);
+  if (!handle) {
     err("%s(%d), transport create fail on port %d\n", __func__, idx, port);
     rx_st20rc_free_transport(transport);
     return -EIO;
   }
+  rx_st20rc_set_handle(transport, handle);
 
   ctx->transport[port] = transport;
   info("%s(%d,%d), succ on sch %d\n", __func__, idx, port,

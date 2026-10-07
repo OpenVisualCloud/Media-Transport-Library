@@ -24,7 +24,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "st_api.h"
+#include "st20_api.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -216,6 +216,29 @@ uint64_t ut20_stat_slot_get_frame_fail(const ut20_test_ctx* ctx);
  * application that stops calling st20_rx_put_framebuff. The
  * hold→release transition drains the withheld refcnts. */
 void ut20_set_hold_frames(ut20_test_ctx* ctx, bool hold);
+
+/* Replace the harness notify_frame_ready (ST20, or ST22 once ut20_ctx_enable_st22()
+ * ran) with `cb`, called with `priv`. The harness no longer puts frames; `cb` must. */
+void ut20_ctx_set_notify(ut20_test_ctx* ctx,
+                         int (*cb)(void* priv, void* frame,
+                                   struct st20_rx_frame_meta* meta),
+                         void* priv);
+void ut20_ctx_set_st22_notify(ut20_test_ctx* ctx,
+                              int (*cb)(void* priv, void* frame,
+                                        struct st22_rx_frame_meta* meta),
+                              void* priv);
+
+/* Set st20_rx_ops.flags, e.g. ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME. */
+void ut20_ctx_set_flags(ut20_test_ctx* ctx, uint32_t flags);
+
+/* Handles st20_rx_put_framebuff() / st22_rx_put_framebuff() accept for this session. */
+st20_rx_handle ut20_handle(ut20_test_ctx* ctx);
+st22_rx_handle ut20_st22_handle(ut20_test_ctx* ctx);
+
+/* Transport frames the session owns, and the refcnt of frame `idx`: 0 means the
+ * session may reuse it, 1 that it is held by a slot or an app, < 0 a double put. */
+int ut20_frame_count(void);
+int ut20_frame_refcnt(const ut20_test_ctx* ctx, int idx);
 
 /* Bump stat_pkts_no_slot by `n` without touching stat_pkts_pool_empty —
  * simulates a non-back-pressure no_slot bump path (e.g. past-tmstamp

@@ -13,8 +13,9 @@
  *     frame's status is ST_FRAME_STATUS_CORRUPTED.
  *
  * Drives rx_st20p_frame_ready() directly with synthetic meta — no transport
- * session is stitched in. Pipeline counters are about producer/consumer
- * accounting; transport realism is not required to exercise them.
+ * session is stitched in unless ut20p_set_transport() is given one. Pipeline
+ * counters are about producer/consumer accounting; transport realism is not
+ * required to exercise them.
  */
 
 #ifndef _ST20P_PIPELINE_HARNESS_H_
@@ -43,6 +44,25 @@ void ut20p_ctx_destroy(ut20p_ctx* ctx);
  *  Returns 0 on accept, -EBUSY when no free framebuf (drives the
  *  stat_frames_dropped path). */
 int ut20p_inject_frame(ut20p_ctx* ctx, enum st_frame_status status, uint32_t timestamp);
+
+/** Calls rx_st20p_frame_ready() as the transport session does. */
+int ut20p_frame_ready(ut20p_ctx* ctx, void* frame, struct st20_rx_frame_meta* meta);
+
+void ut20p_set_ready(ut20p_ctx* ctx, bool ready);
+
+/** Store `transport`, a real session handle, as st20p_rx_create() does; that also
+ *  puts the frames refused while it was NULL, i.e. before st20_rx_create() returned. */
+void ut20p_set_transport(ut20p_ctx* ctx, st20_rx_handle transport);
+
+/** Set st20p_rx_ops.flags, e.g. ST20P_RX_FLAG_PKT_CONVERT. */
+void ut20p_set_flags(ut20p_ctx* ctx, uint32_t flags);
+
+/** Switch to non-derive ST20P_RX_FLAG_EXT_FRAME mode with `query` as the app's
+ *  query_ext_frame, called with `priv`. */
+void ut20p_enable_ext_frame(ut20p_ctx* ctx,
+                            int (*query)(void* priv, struct st_ext_frame* ext_frame,
+                                         struct st20_rx_frame_meta* meta),
+                            void* priv);
 
 /** Wraps st20p_rx_get_frame(). */
 struct st_frame* ut20p_get_frame(ut20p_ctx* ctx);

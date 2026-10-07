@@ -625,6 +625,8 @@ mt_bitmap_test_and_set(bitmap, pkt_idx) → atomic, skip if already set
 3. No pending mbuf borrows
 
 Complete → `rv_slot_full_frame()` → `ST_FRAME_STATUS_COMPLETE`. Incomplete/evicted → `ST_FRAME_STATUS_CORRUPTED`, recycled rather than delivered unless the app set `ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME` (`rv_frame_notify()`).
+A complete frame refused by `notify_frame_ready` (< 0) is put back by the session; a delivered incomplete frame belongs to the app whatever the callback returns, so a refusing callback (st20p/st22p/st20rc included) puts it itself.
+The session runs from `rv_mgr_attach()` on, so the callback may fire before `st20_rx_create()`/`st22_rx_create()` returns the handle.
 
 ### Inflight Pattern (Cooperative Non-Blocking Retry)
 - **Builder inflight**: ring full → save packets to `s->inflight[port][]` → return → retry next iteration

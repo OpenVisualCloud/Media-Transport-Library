@@ -69,6 +69,22 @@ int ut22p_framebuff_cnt(const ut22p_ctx* ctx);
  * -EBUSY when no FREE framebuffer is available. */
 int ut22p_inject_frame(ut22p_ctx* ctx, enum st_frame_status status, uint32_t timestamp);
 
+/* Calls rx_st22p_frame_ready() as the transport session does. */
+int ut22p_frame_ready(ut22p_ctx* ctx, void* frame, struct st22_rx_frame_meta* meta);
+
+void ut22p_set_ready(ut22p_ctx* ctx, bool ready);
+
+/* Store `transport`, a real session handle, as st22p_rx_create() does; that also
+ * puts the frames refused while it was NULL, i.e. before st22_rx_create() returned. */
+void ut22p_set_transport(ut22p_ctx* ctx, st22_rx_handle transport);
+
+/* Turn on ST22P_RX_FLAG_EXT_FRAME with `query` as the app's query_ext_frame,
+ * called with `priv`. */
+void ut22p_enable_ext_frame(ut22p_ctx* ctx,
+                            int (*query)(void* priv, struct st_ext_frame* ext_frame,
+                                         struct st22_rx_frame_meta* meta),
+                            void* priv);
+
 /* consumer (app) side */
 struct st_frame* ut22p_get_frame(ut22p_ctx* ctx);
 int ut22p_put_frame(ut22p_ctx* ctx, struct st_frame* frame);

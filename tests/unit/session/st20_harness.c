@@ -100,6 +100,8 @@ struct ut20_test_ctx {
   char last_tp_failed_cause[64];
   struct ut20_fake_dma dma;            /* only used after ut20_ctx_enable_dma() */
   struct st22_rx_video_info st22_info; /* only used after ut20_ctx_enable_st22() */
+  struct st_rx_video_session_handle_impl handle;
+  struct st22_rx_video_session_handle_impl st22_handle;
   uint64_t st22_frames_ready;
   size_t st22_last_frame_size;
 };
@@ -294,6 +296,13 @@ ut20_test_ctx* ut20_ctx_create_geom(int num_port, int pkts_per_frame) {
     s->priv[i].impl = &ctx->impl;
     s->priv[i].s_port = (enum mtl_session_port)i;
   }
+
+  ctx->handle.parent = &ctx->impl;
+  ctx->handle.type = MT_HANDLE_RX_VIDEO;
+  ctx->handle.impl = s;
+  ctx->st22_handle.parent = &ctx->impl;
+  ctx->st22_handle.type = MT_ST22_HANDLE_RX_VIDEO;
+  ctx->st22_handle.impl = s;
 
   rv_session_reset(s, true);
   return ctx;
@@ -807,6 +816,42 @@ void ut20_set_hold_frames(ut20_test_ctx* ctx, bool hold) {
       rte_atomic32_set(&ctx->frames[i].refcnt, 0);
     }
   }
+}
+
+void ut20_ctx_set_notify(ut20_test_ctx* ctx,
+                         int (*cb)(void* priv, void* frame,
+                                   struct st20_rx_frame_meta* meta),
+                         void* priv) {
+  ctx->session.ops.notify_frame_ready = cb;
+  ctx->session.ops.priv = priv;
+}
+
+void ut20_ctx_set_st22_notify(ut20_test_ctx* ctx,
+                              int (*cb)(void* priv, void* frame,
+                                        struct st22_rx_frame_meta* meta),
+                              void* priv) {
+  ctx->st22_info.notify_frame_ready = cb;
+  ctx->session.ops.priv = priv;
+}
+
+void ut20_ctx_set_flags(ut20_test_ctx* ctx, uint32_t flags) {
+  ctx->session.ops.flags = flags;
+}
+
+st20_rx_handle ut20_handle(ut20_test_ctx* ctx) {
+  return &ctx->handle;
+}
+
+st22_rx_handle ut20_st22_handle(ut20_test_ctx* ctx) {
+  return &ctx->st22_handle;
+}
+
+int ut20_frame_count(void) {
+  return UT20_FRAME_COUNT;
+}
+
+int ut20_frame_refcnt(const ut20_test_ctx* ctx, int idx) {
+  return rte_atomic32_read(&ctx->frames[idx].refcnt);
 }
 
 void ut20_bump_pkts_no_slot_past_ts(ut20_test_ctx* ctx, uint64_t n) {

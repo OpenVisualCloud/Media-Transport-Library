@@ -15,6 +15,10 @@ struct st20rc_rx_ctx;
 
 struct st20rc_rx_transport {
   st20_rx_handle handle;
+  /* incomplete frames refused before handle was set */
+  rte_spinlock_t pending_put_lock;
+  void* pending_put_frames[ST20_FB_MAX_COUNT];
+  uint16_t pending_put_cnt;
   enum mtl_session_port port; /* port this handle attached */
   struct st20rc_rx_ctx* parent;
 };
