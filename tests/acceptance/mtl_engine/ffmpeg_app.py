@@ -712,6 +712,36 @@ def check_output_video_yuv(
     return True
 
 
+def check_rx_frame_counts(
+    rx_output: str, sessions: int, fps: int, test_time: int
+) -> bool:
+    """Check each mtl_st20p RX input received the frames the run should carry.
+
+    The demuxer logs ``mtl_st20p_read_close(<idx>), frame_counter <n>`` as each
+    input closes, so an input that never closed cleanly counts as empty.
+    """
+    counts = {
+        int(idx): int(frames)
+        for idx, frames in re.findall(
+            r"mtl_st20p_read_close\((\d+)\), frame_counter (\d+)", rx_output
+        )
+    }
+    min_frames = min_expected_frames(fps, test_time)
+    short = {
+        i: counts.get(i, 0) for i in range(sessions) if counts.get(i, 0) < min_frames
+    }
+    if short:
+        logger.error(
+            f"RX sessions {short} received too few frames, at least {min_frames} "
+            f"expected from {fps} fps over {test_time}s -- a session with no count "
+            f"never closed cleanly"
+        )
+        return False
+
+    logger.info(f"RX frame counts {counts}, at least {min_frames} each")
+    return True
+
+
 def check_output_video_h264(
     output_file: str, video_size: str, host, build: str, input_file: str
 ):

@@ -336,9 +336,17 @@ class FFmpeg(Application):
                 f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
                 f"-video_size {video_size} -init_retry 20 "
                 f"-f mtl_st20p -i 2 "
-                f"-map 0:0 {rx_f_flag} {{out0}} -y "
-                f"-map 1:0 {rx_f_flag} {{out1}} -y"
             )
+            if output_format == "yuv":
+                # Recording both raw sessions fills the root disk and stalls FFmpeg's
+                # close() while it holds its VF; validate_results() checks the frame
+                # count each session logs instead.
+                rx_cmd += "-map 0:0 -f null /dev/null -map 1:0 -f null /dev/null"
+            else:
+                rx_cmd += (
+                    f"-map 0:0 {rx_f_flag} {{out0}} -y "
+                    f"-map 1:0 {rx_f_flag} {{out1}} -y"
+                )
 
         if tx_is_ffmpeg:
             # Lock the rate on the rawvideo *demuxer* (-framerate) rather than a
@@ -588,13 +596,14 @@ class FFmpeg(Application):
             if out_path_param and not multiple:
                 self._output_files = [out_path_param]
                 host.connection.path(out_path_param).touch()
+            elif multiple and output_format == "yuv":
+                self._output_files = []
             else:
                 self._output_files = ffmpeg_app.create_empty_output_files(
                     output_format, n, host, build
                 )
-            self.command = self.command.replace("{out0}", self._output_files[0])
-            if multiple:
-                self.command = self.command.replace("{out1}", self._output_files[1])
+            for i, out_path in enumerate(self._output_files):
+                self.command = self.command.replace(f"{{out{i}}}", out_path)
 
             # When TX is RxTxApp, the per-test config file must be generated
             # now (helper needs host + build).
@@ -770,7 +779,15 @@ class FFmpeg(Application):
             if mode == _MODE_YUV_H264:
                 output_format = self._ff_params.get("output_format", "yuv")
                 video_url = self.params["video_url"]
-                if output_format == "yuv":
+                if output_format == "yuv" and self._ff_params.get("multiple_sessions"):
+                    _, _, fps = self._rx_frame_spec
+                    passed = ffmpeg_app.check_rx_frame_counts(
+                        self._rx_output or "",
+                        2,
+                        fps,
+                        self.params.get("test_time") or 30,
+                    )
+                elif output_format == "yuv":
                     video_size, pix_fmt, fps = self._rx_frame_spec
                     passed = ffmpeg_app.check_output_video_yuv(
                         self._output_files[0],
