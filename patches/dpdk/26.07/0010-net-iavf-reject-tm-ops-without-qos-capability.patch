@@ -1,0 +1,107 @@
+From nobody Mon Sep 17 00:00:00 2001
+From: Dawid Wesierski <dawid.wesierski@intel.com>
+Date: Fri, 25 Sep 2026 10:00:00 +0200
+Subject: [PATCH] net/iavf: reject TM ops without QoS capability
+
+The VF allocates qos_cap and initializes the TM lists only when the PF
+grants VIRTCHNL_VF_OFFLOAD_QOS. The in-tree ice PF does not grant it.
+Node add, shaper profile add, capabilities get, and node capabilities
+get then dereference a NULL qos_cap or insert into an uninitialized
+list, and the application gets a segmentation fault.
+
+Return -ENOTSUP from these operations when qos_cap is NULL. Define
+MTL_DPDK_HAS_IAVF_TM_QOS_CHECK in rte_tm.h, so that MTL calls the iavf
+TM ops only on a DPDK that has this fix.
+
+Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
+---
+ drivers/net/intel/iavf/iavf_tm.c | 31 +++++++++++++++++++++++++++++--
+ lib/ethdev/rte_tm.h              |  3 +++
+ 2 files changed, 32 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/intel/iavf/iavf_tm.c b/drivers/net/intel/iavf/iavf_tm.c
+--- a/drivers/net/intel/iavf/iavf_tm.c
++++ b/drivers/net/intel/iavf/iavf_tm.c
+@@ -279,12 +279,20 @@ iavf_tm_node_add(struct rte_eth_dev *dev, uint32_t node_id,
+ 	struct iavf_tm_shaper_profile *shaper_profile = NULL;
+ 	struct iavf_tm_node *tm_node;
+ 	struct iavf_tm_node *parent_node;
+-	uint16_t tc_nb = vf->qos_cap->num_elem;
++	uint16_t tc_nb;
+ 	int ret;
+ 
+ 	if (!params || !error)
+ 		return -EINVAL;
+ 
++	if (!vf->qos_cap) {
++		error->type = RTE_TM_ERROR_TYPE_CAPABILITIES;
++		error->message = "VF has no QoS capability";
++		return -ENOTSUP;
++	}
++
++	tc_nb = vf->qos_cap->num_elem;
++
+ 	/* if already committed */
+ 	if (vf->tm_conf.committed) {
+ 		error->type = RTE_TM_ERROR_TYPE_UNSPECIFIED;
+@@ -524,6 +532,12 @@ iavf_shaper_profile_add(struct rte_eth_dev *dev,
+ 	if (!profile || !error)
+ 		return -EINVAL;
+ 
++	if (!vf->qos_cap) {
++		error->type = RTE_TM_ERROR_TYPE_CAPABILITIES;
++		error->message = "VF has no QoS capability";
++		return -ENOTSUP;
++	}
++
+ 	ret = iavf_shaper_profile_param_check(profile, error);
+ 	if (ret)
+ 		return ret;
+@@ -588,11 +602,18 @@ iavf_tm_capabilities_get(struct rte_eth_dev *dev,
+ 			 struct rte_tm_error *error)
+ {
+ 	struct iavf_info *vf = IAVF_DEV_PRIVATE_TO_VF(dev->data->dev_private);
+-	uint16_t tc_nb = vf->qos_cap->num_elem;
++	uint16_t tc_nb;
+ 
+ 	if (!cap || !error)
+ 		return -EINVAL;
+ 
++	if (!vf->qos_cap) {
++		error->type = RTE_TM_ERROR_TYPE_CAPABILITIES;
++		error->message = "VF has no QoS capability";
++		return -ENOTSUP;
++	}
++
++	tc_nb = vf->qos_cap->num_elem;
+ 	if (tc_nb > vf->vf_res->num_queue_pairs)
+ 		return -EINVAL;
+ 
+@@ -748,6 +769,12 @@ iavf_node_capabilities_get(struct rte_eth_dev *dev,
+ 	if (!cap || !error)
+ 		return -EINVAL;
+ 
++	if (!vf->qos_cap) {
++		error->type = RTE_TM_ERROR_TYPE_CAPABILITIES;
++		error->message = "VF has no QoS capability";
++		return -ENOTSUP;
++	}
++
+ 	if (node_id == RTE_TM_NODE_ID_NULL) {
+ 		error->type = RTE_TM_ERROR_TYPE_NODE_ID;
+ 		error->message = "invalid node id";
+diff --git a/lib/ethdev/rte_tm.h b/lib/ethdev/rte_tm.h
+--- a/lib/ethdev/rte_tm.h
++++ b/lib/ethdev/rte_tm.h
+@@ -2157,6 +2157,9 @@ rte_tm_mark_ip_dscp(uint16_t port_id,
+ 	int mark_red,
+ 	struct rte_tm_error *error);
+ 
++/* enable the define for MTL: the iavf TM ops are safe on a VF without QoS */
++#define MTL_DPDK_HAS_IAVF_TM_QOS_CHECK
++
+ #ifdef __cplusplus
+ }
+ #endif
+-- 
+2.43.0
