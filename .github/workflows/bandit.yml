@@ -19,9 +19,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
-env:
-  BANDIT_VERSION: 1.9.4
-
 jobs:
   changes:
     runs-on: ubuntu-22.04
@@ -76,7 +73,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install Bandit
-        run: python -m pip install "bandit[sarif]==${BANDIT_VERSION}"
+        run: python -m pip install -r .github/code-scan/requirements.txt
 
       - name: Install Task
         uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
