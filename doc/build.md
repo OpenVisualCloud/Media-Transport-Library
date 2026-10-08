@@ -314,5 +314,34 @@ For older kernel version on Red Hat, the issue is that Red Hat uses vault repos.
 
 [The exemplary location for the kernel-devel package for Rocky Linux 9.3](https://dl.rockylinux.org/vault/rocky/9.3/BaseOS/x86_64/os/Packages/k/)
 
+### 4.5. Compiler hardening
+
+The Linux build compiles the shipped MTL components with the hardening options below. The `meson.build` of each MTL component sets them.
+
+| Option | Protection |
+| --- | --- |
+| `-fstack-protector-strong` | Stack buffer overflow canary |
+| `-fstack-clash-protection` | Stack clash |
+| `-fcf-protection=full` | Intel CET shadow stack (SHSTK) and indirect branch tracking (IBT) |
+| `-D_FORTIFY_SOURCE=3` | Buffer overflow checks in libc calls. Level 3 needs gcc 12 or clang 9 and glibc 2.34; with an older toolchain the build uses 2. Not added when the compiler already sets a level (Ubuntu 24.04 gcc sets 3) or without optimization (`-O0`, buildtype `plain`) |
+| `-Wformat -Wformat-security -Werror=format-security` | Format string attacks |
+| `-Wl,-z,relro -Wl,-z,now` | Full RELRO, a read-only GOT |
+| `-Wl,-z,noexecstack` | Non-executable stack |
+| `b_pie=true`, FFmpeg `-pie` | Position independent executables for ASLR |
+
+Not applied, and why:
+
+| Option or component | Reason |
+| --- | --- |
+| `-Wextra`, `-Wconversion` | The code has about 300 `-Wextra` and 3000 `-Wconversion` warnings to fix first |
+| `-Wl,-z,nodlopen` | libmtl, its plugins and the FFmpeg libraries are loaded with `dlopen()`, which the option forbids |
+| Clang `-fsanitize=cfi` | It needs LTO and hidden visibility, and is meant for final binaries, not libraries such as libmtl |
+| Spectre thunks (gcc `-mindirect-branch=thunk -mfunction-return=thunk`, clang `-mretpoline`) | The gcc ones conflict with `-fcf-protection=full`; all of them slow down the polling data path, and the kernel's Spectre mitigations cover user space |
+| `-D_FORTIFY_SOURCE=3` with gcc 11 (Ubuntu 22.04, RHEL 9) | gcc 11 supports level 2 only |
+| CET in `libopenh264` | openh264's assembly has no CET marks, in the latest release (2.6.0) and on master |
+| CET in FFmpeg 6.1 and 4.4 | Their assembly has no CET marks; only FFmpeg 7.0 gets patch 0002 |
+| SVT-JPEG-XS | Its CMake build gives `libSvtJpegxs.so` an executable stack, partial RELRO and no CET. The fix belongs in SVT-JPEG-XS, whose assembly needs the CET marks anyway |
+| Windows (MSVC, ICX) options | MTL releases no Windows binary |
+
 ## Next Steps
 Proceed to [Running MTL](./run.md) for further instructions.
