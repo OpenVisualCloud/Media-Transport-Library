@@ -131,6 +131,7 @@ static int get_process_name_by_pid(pid_t pid, char* process_name, size_t max_len
 }
 
 static int lm_event_handler(void* pri, void* data, size_t data_sz) {
+  (void)data_sz;
   struct lcore_monitor_ctx* ctx = pri;
   const struct lcore_tid_event* e = data;
   int ret;

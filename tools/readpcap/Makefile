@@ -2,5 +2,5 @@
 # Copyright 2022 Intel Corporation
 
 all:
-	gcc readpcap.c -o readpcap -lpcap
-	gcc readpcap_31.c -o readpcap_31 -lpcap
+	gcc -Wall -Wextra readpcap.c -o readpcap -lpcap
+	gcc -Wall -Wextra readpcap_31.c -o readpcap_31 -lpcap
