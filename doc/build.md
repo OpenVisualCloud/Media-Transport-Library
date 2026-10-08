@@ -163,6 +163,8 @@ git am $mtl_source_code/patches/dpdk/${DPDK_VER}/*.patch
 
 ### 2.3. Build and install DPDK library
 
+`script/build_dpdk.sh` builds DPDK with the options of [4.5. Compiler hardening](#45-compiler-hardening); pass them to a manual build as that section shows.
+
 ```bash
 meson setup build
 ninja -C build
@@ -316,7 +318,7 @@ For older kernel version on Red Hat, the issue is that Red Hat uses vault repos.
 
 ### 4.5. Compiler hardening
 
-The Linux build compiles the shipped MTL components with the hardening options below. The `meson.build` of each MTL component sets them.
+The Linux build compiles the shipped MTL components, DPDK, openh264, FFmpeg, libbpf and libxdp with the hardening options below. The `meson.build` of each MTL component sets them, `script/build_dpdk.sh` passes them to DPDK, `ecosystem/ffmpeg_plugin/build.sh` to openh264 and FFmpeg, and `script/build_ebpf_xdp.sh` to libbpf and libxdp. SVT-JPEG-XS keeps its own build flags.
 
 | Option | Protection |
 | --- | --- |
@@ -330,6 +332,14 @@ The Linux build compiles the shipped MTL components with the hardening options b
 | `-Wl,-z,relro -Wl,-z,now` | Full RELRO, a read-only GOT |
 | `-Wl,-z,noexecstack` | Non-executable stack |
 | `b_pie=true`, FFmpeg `-pie` | Position independent executables for ASLR |
+
+For a manual DPDK build, pass them to `meson setup`, and add `-D_FORTIFY_SOURCE=3` to `c_args` if `echo | cc -O2 -dM -E - | grep _FORTIFY_SOURCE` prints nothing (`=2` with gcc older than 12):
+
+```bash
+meson setup build -Db_pie=true \
+  -Dc_args="-fstack-protector-strong -fstack-clash-protection -fcf-protection=full -Wformat -Wformat-security -Werror=format-security" \
+  -Dc_link_args="-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack"
+```
 
 Not applied, and why:
 

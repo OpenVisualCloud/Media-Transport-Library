@@ -201,12 +201,17 @@ build_and_install() {
 	libdir=$(install_libdir "${prefix}")
 	log_info "Installing into ${libdir}"
 
+	# Compiler hardening, see doc/build.md. Both Makefiles drop their own -O2
+	# when CFLAGS is set, and _FORTIFY_SOURCE needs it; libbpf appends EXTRA_*.
+	local cflags ldflags
+	cflags=$(hardening_cflags)
+	ldflags=$(hardening_ldflags)
 	pushd "${repo_dir}" >/dev/null || exit 1
 	./configure
-	make
+	CFLAGS="-O2 -g ${CFLAGS:-} ${cflags}" LDFLAGS="${LDFLAGS:-} ${ldflags}" make
 	as_root make install PREFIX="${prefix}" LIBDIR="${libdir}"
 	pushd lib/libbpf/src >/dev/null || exit 1
-	make
+	make EXTRA_CFLAGS="-O2 ${cflags}" EXTRA_LDFLAGS="${ldflags}"
 	as_root make install PREFIX="${prefix}" LIBDIR="${libdir}"
 	popd >/dev/null
 	popd >/dev/null
