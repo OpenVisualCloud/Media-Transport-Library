@@ -31,9 +31,9 @@ void ut_trs_set_mock_tsc_script(ut_trs_ctx* ctx, const uint64_t* values, int cou
 
 /* the trs-counted warm-up of a port without a plan (rl_drain 0) */
 void ut_trs_warm_up(ut_trs_ctx* ctx);
-/* the pad plan of a port with rl_drain / rl_credit set */
-void ut_trs_pre_arm(ut_trs_ctx* ctx);
-void ut_trs_pre_arm_port(ut_trs_ctx* ctx, int port);
+/* the pad plan of a port with rl_drain / rl_credit set; false: hold packet 0 */
+bool ut_trs_pre_arm(ut_trs_ctx* ctx);
+bool ut_trs_pre_arm_port(ut_trs_ctx* ctx, int port);
 
 /* When the shaper starts the first real packet of the port: the later of when it was
  * queued (without one yet, the last tsc read) and the drain end of the pads accepted
@@ -53,6 +53,11 @@ uint64_t ut_trs_stat_recalculate_warmup(const ut_trs_ctx* ctx);
 void ut_trs_set_burst_force_fail(ut_trs_ctx* ctx, bool fail);
 /* the burst mock accepts at most limit pkts per call, 0 = all */
 void ut_trs_set_burst_accept_limit(ut_trs_ctx* ctx, uint16_t limit);
+/* burst call number call (from 1) stalls stall_ns, as on an interrupt or a preemption:
+ * before its doorbell, so the NIC gets the pkts late, or after it, so only the return is
+ * late; the mock clock stays stall_ns ahead from then */
+void ut_trs_set_burst_stall(ut_trs_ctx* ctx, uint32_t call, uint64_t stall_ns,
+                            bool after_doorbell);
 uint32_t ut_trs_burst_call_count(const ut_trs_ctx* ctx);
 uint32_t ut_trs_real_send_count(const ut_trs_ctx* ctx);
 uint32_t ut_trs_sent_pkt_idx(const ut_trs_ctx* ctx, uint32_t pos);

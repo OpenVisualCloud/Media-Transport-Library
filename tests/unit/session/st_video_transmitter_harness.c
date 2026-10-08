@@ -34,6 +34,10 @@ struct ut_trs_ctx {
   int tsc_script_len;
   int tsc_script_pos;
   uint64_t last_tsc;
+  uint64_t tsc_skew; /* added to the script, the stalls so far */
+  uint32_t stall_call;
+  uint64_t stall_ns;
+  bool stall_after_doorbell;
 
   uint32_t pad_send_count;
   uint32_t real_send_count;
@@ -55,12 +59,12 @@ static uint64_t ut_trs_tsc_time_fn(struct mtl_main_impl* impl) {
   int pos = ctx->tsc_script_pos++;
   if (!len) return ++ctx->last_tsc;
   if (pos < len) {
-    ctx->last_tsc = ctx->tsc_script[pos];
+    ctx->last_tsc = ctx->tsc_script[pos] + ctx->tsc_skew;
   } else {
     /* Keep exhausted scripts monotonic. */
     uint64_t step = (len >= 2) ? ctx->tsc_script[len - 1] - ctx->tsc_script[len - 2] : 0;
     if (!step) step = 1;
-    ctx->last_tsc = ctx->tsc_script[len - 1] + step * (pos - len + 1);
+    ctx->last_tsc = ctx->tsc_script[len - 1] + step * (pos - len + 1) + ctx->tsc_skew;
   }
   return ctx->last_tsc;
 }
@@ -76,11 +80,19 @@ static struct ut_trs_ctx* ut_trs_active_ctx;
 
 static struct rte_mempool* ut_trs_priv_pool(void);
 
+static void ut_trs_burst_stall(struct ut_trs_ctx* ctx, bool after_doorbell) {
+  if (!ctx->stall_ns || ctx->burst_call_count != ctx->stall_call) return;
+  if (ctx->stall_after_doorbell != after_doorbell) return;
+  ctx->tsc_skew += ctx->stall_ns;
+  ctx->last_tsc += ctx->stall_ns;
+}
+
 static uint16_t ut_trs_txq_burst_mock(struct mt_txq_entry* entry,
                                       struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   struct ut_trs_ctx* ctx = ut_trs_active_ctx;
   if (!ctx) return nb_pkts;
   ctx->burst_call_count++;
+  ut_trs_burst_stall(ctx, false);
   if (ctx->burst_force_fail) return 0;
 
   int port = (entry == (struct mt_txq_entry*)&ctx->queue_tag[MTL_SESSION_PORT_R])
@@ -111,6 +123,7 @@ static uint16_t ut_trs_txq_burst_mock(struct mt_txq_entry* entry,
       train->closed = true;
     }
   }
+  ut_trs_burst_stall(ctx, true);
   return nb_pkts;
 }
 
@@ -245,6 +258,7 @@ void ut_trs_set_mock_tsc_script(ut_trs_ctx* ctx, const uint64_t* values, int cou
   memcpy(ctx->tsc_script, values, count * sizeof(*values));
   ctx->tsc_script_len = count;
   ctx->tsc_script_pos = 0;
+  ctx->tsc_skew = 0;
 }
 
 void ut_trs_warm_up(ut_trs_ctx* ctx) {
@@ -253,14 +267,15 @@ void ut_trs_warm_up(ut_trs_ctx* ctx) {
   ut_trs_active_ctx = NULL;
 }
 
-void ut_trs_pre_arm(ut_trs_ctx* ctx) {
-  ut_trs_pre_arm_port(ctx, MTL_SESSION_PORT_P);
+bool ut_trs_pre_arm(ut_trs_ctx* ctx) {
+  return ut_trs_pre_arm_port(ctx, MTL_SESSION_PORT_P);
 }
 
-void ut_trs_pre_arm_port(ut_trs_ctx* ctx, int port) {
+bool ut_trs_pre_arm_port(ut_trs_ctx* ctx, int port) {
   ut_trs_active_ctx = ctx;
-  video_trs_rl_pre_arm(&ctx->impl, &ctx->session, port);
+  bool armed = video_trs_rl_pre_arm(&ctx->impl, &ctx->session, port);
   ut_trs_active_ctx = NULL;
+  return armed;
 }
 
 long double ut_trs_modeled_launch_tsc(const ut_trs_ctx* ctx, int port) {
@@ -305,6 +320,13 @@ void ut_trs_set_burst_force_fail(ut_trs_ctx* ctx, bool fail) {
 
 void ut_trs_set_burst_accept_limit(ut_trs_ctx* ctx, uint16_t limit) {
   ctx->burst_accept_limit = limit;
+}
+
+void ut_trs_set_burst_stall(ut_trs_ctx* ctx, uint32_t call, uint64_t stall_ns,
+                            bool after_doorbell) {
+  ctx->stall_call = call;
+  ctx->stall_ns = stall_ns;
+  ctx->stall_after_doorbell = after_doorbell;
 }
 
 uint32_t ut_trs_burst_call_count(const ut_trs_ctx* ctx) {

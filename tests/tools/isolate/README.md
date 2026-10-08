@@ -94,5 +94,5 @@ the stale `mtl-isolate-*` cgroups of dead wrappers.
 - RL video queues packet 0 behind warm-up pads the NIC shaper drains up to its
   target, so a late tasklet delays it only when it misses the warm-up window
   (`warm_pkts` packets, ~120 µs at 2160p59), or when there is no pad plan
-  (unmeasured pad interval, unknown burst bucket) and `WAIT_TARGET` holds it
-  until its target.
+  (unmeasured pad interval, unknown burst bucket) or a stall inside a pad burst
+  (over 2 µs) and `WAIT_TARGET` holds it until its target.

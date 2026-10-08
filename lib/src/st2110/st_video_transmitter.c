@@ -15,6 +15,9 @@
 
 /* max NORMAL pad copies per warm-up or pad retry burst */
 #define ST_TX_VIDEO_PAD_BURST (32)
+/* a pad burst returning later than this past its plan stalled: a healthy one returns
+ * well within it, a timer tick costs 2-10 us */
+#define ST_TX_VIDEO_RL_STALL_NS (2 * NS_PER_US)
 
 static int video_trs_tasklet_start(void* priv) {
   struct st_video_transmitter_impl* trs = priv;
@@ -146,7 +149,7 @@ static void video_trs_rl_warm_up(struct mtl_main_impl* impl,
 }
 
 /* Queues whole NORMAL pads the shaper finishes in [target, target + rl_drain); false:
- * hold packet 0 until target. */
+ * hold packet 0 until target, as when a stall left the drain end unknown. */
 static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
                                  enum mtl_session_port s_port) {
@@ -161,6 +164,7 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
   long double drained;
   unsigned int tx;
   int sent = 0;
+  bool hold = false;
 
   if (!target_tsc) {
     err("%s(%d), target_tsc is zero\n", __func__, s->idx);
@@ -196,15 +200,25 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
     rte_mbuf_refcnt_update(pad, n);
     tx = video_trs_burst_pad(impl, s, s_port, pads, n);
     s->trs_pad_inflight_num[s_port] += n - tx;
+    /* a stall in the burst: its doorbell, any time up to the return, may have found the
+     * shaper idle. Plan from the return, which never overfills, and hold packet 0, which
+     * behind the pads would leave late (stall before the doorbell) or early (after). */
+    long double latest = s->last_burst_succ_time_tsc[s_port] - credit;
+    if (tx && drained + ST_TX_VIDEO_RL_STALL_NS < latest) {
+      s->port_user_stats.stat_trans_recalculate_warmup++;
+      dbg("%s(%d), burst stalled after %d pkts\n", __func__, s->idx, sent);
+      drained = latest;
+      hold = true;
+    }
     drained += n * drain;
     sent += (int)n;
   }
 
   /* round a partial pad up so packet 0 is never early, at most one pad late */
-  if (target_tsc <= drained) return true;
+  if (target_tsc <= drained) return !hold;
   rte_mbuf_refcnt_update(pad, 1);
   if (!video_trs_burst_pad(impl, s, s_port, pads, 1)) s->trs_pad_inflight_num[s_port]++;
-  return true;
+  return !hold;
 }
 
 static int video_burst_packet(struct mtl_main_impl* impl,

@@ -699,7 +699,9 @@ It is the scheduled time, not a measured wire time; no separate latency compensa
 With the rate limiter, if the library knows the port's shaper, it has the NIC start the first packet at that time: shortly before it, the library queues padding the NIC shaper finishes draining at the scheduled time, then queues the first packet behind it.
 It knows the shaper when it measured (trained) the port's pad interval and knows its burst bucket: 2 KB for a VF on the patched kernel ice driver MTL requires for rate limiting, or the `rl_burst_size` set for a DPDK-driven ice PF.
 The first packet then is not sent before the scheduled time, provided the padding is queued before it, so the load of the TX scheduler does not move it.
-The model puts the first packet in [scheduled time, scheduled time + one packet interval), also after a tasklet stall that ends before it: the library queues whole padding packets and rounds a partial one up, so the first packet is never early.
+The model puts the first packet in [scheduled time, scheduled time + one packet interval): the library queues whole padding packets and rounds a partial one up, so the first packet is never early.
+A tasklet stall between two padding bursts that ends before the scheduled time only shrinks the rest of the padding.
+A stall inside a burst (an interrupt or a preemption) can delay its doorbell by an unknown time. If the padding already queued does not cover it and the burst returns more than 2 µs late, the library plans the rest from the latest time the doorbell can have rung and holds the first packet until the scheduled time, as without a known shaper. A shorter stall can delay the first packet by up to its length.
 After a stall past it the first packet leaves when the tasklet returns. The NIC and the clocks add the rest.
 Measured on E830 and E810 VF TX at 1080p25 to 1080p120 and 2160p60, with and without redundancy, the minimum first-packet latency was 1.0 µs or more.
 Without a known shaper, for example with a user-set pad interval, the library pads one packet per interval and holds the first packet until the scheduled time, so a busy scheduler can send it late.

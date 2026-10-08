@@ -44,7 +44,30 @@ class St20TxRlWarmUpTest : public ::testing::Test {
     ut_trs_set_credit(ctx_, port, kCredit);
   }
 
+  /* a realistic frame from the warm-up open, pad burst call (from 1) stalling; a held
+   * packet 0 goes when the tasklet is back at the target */
+  static constexpr uint64_t kStallTargetTsc = 10000000;
+  void RunFrameWithStall(uint32_t call, uint64_t stall_ns, bool after_doorbell) {
+    const uint64_t warm_up[] = {kStallTargetTsc - (uint64_t)(kWarmPkts * kTrs)};
+    const uint64_t at_target[] = {kStallTargetTsc};
+
+    ut_trs_destroy(ctx_);
+    ctx_ = ut_trs_create();
+    ASSERT_NE(nullptr, ctx_);
+    UseRealisticShaper(kPortP);
+    ut_trs_set_mock_tsc_script(ctx_, warm_up, 1);
+    ut_trs_enqueue_first_pkt(ctx_, kStallTargetTsc);
+    ut_trs_set_burst_stall(ctx_, call, stall_ns, after_doorbell);
+
+    ut_trs_call_rl_tasklet(ctx_);
+    ut_trs_call_rl_tasklet(ctx_);
+    queued_by_pre_arm_ = ut_trs_real_send_count(ctx_);
+    ut_trs_set_mock_tsc_script(ctx_, at_target, 1);
+    ut_trs_call_rl_tasklet(ctx_);
+  }
+
   ut_trs_ctx* ctx_ = nullptr;
+  uint32_t queued_by_pre_arm_ = 0;
 };
 
 TEST_F(St20TxRlWarmUpTest, FastIterationsReachTargetWithoutShrinking) {
@@ -309,11 +332,46 @@ TEST_F(St20TxRlWarmUpTest, LaunchLandsOnTargetForEveryWarmUpPhase) {
     ut_trs_set_target_tsc(ctx_, kTargetTsc);
     ut_trs_set_mock_tsc_script(ctx_, now, 1);
 
-    ut_trs_pre_arm(ctx_);
+    ASSERT_TRUE(ut_trs_pre_arm(ctx_)) << "gap " << gap;
 
     long double late = ut_trs_modeled_launch_tsc(ctx_, kPortP) - kTargetTsc;
     ASSERT_GE(late, 0) << "gap " << gap;
     ASSERT_LT(late, kDrain) << "gap " << gap;
+  }
+}
+
+/* An interrupt or a preemption inside a pad burst, a timer tick or longer. Before the
+ * doorbell, the pads reach the shaper late; after it, only the tasklet is late. The tsc
+ * reads around the burst cannot tell which, and packet 0 must leave in
+ * [target, target + one pad) either way. */
+TEST_F(St20TxRlWarmUpTest, Packet0LeavesOnTargetAfterAStallInAPadBurst) {
+  for (uint32_t call : {1, 2}) {
+    for (uint64_t stall : {10000, 50000, 150000}) {
+      for (bool after_doorbell : {false, true}) {
+        ASSERT_NO_FATAL_FAILURE(RunFrameWithStall(call, stall, after_doorbell));
+
+        long double late = ut_trs_modeled_launch_tsc(ctx_, kPortP) - kStallTargetTsc;
+        EXPECT_GE(late, 0) << "call " << call << " stall " << stall << " after "
+                           << after_doorbell;
+        EXPECT_LT(late, kDrain)
+            << "call " << call << " stall " << stall << " after " << after_doorbell;
+      }
+    }
+  }
+}
+
+/* Behind the first burst the shaper is busy ~112 us: a shorter stall in the next one
+ * changes nothing, and packet 0 still goes behind the pads, not held for the tasklet. */
+TEST_F(St20TxRlWarmUpTest, StallTheQueuedPadsCoverKeepsThePreArm) {
+  for (uint64_t stall : {10000, 50000}) {
+    for (bool after_doorbell : {false, true}) {
+      ASSERT_NO_FATAL_FAILURE(RunFrameWithStall(2, stall, after_doorbell));
+
+      EXPECT_EQ(1u, queued_by_pre_arm_)
+          << "stall " << stall << " after " << after_doorbell;
+      EXPECT_EQ(0u, ut_trs_stat_recalculate_warmup(ctx_))
+          << "stall " << stall << " after " << after_doorbell;
+    }
   }
 }
 
@@ -393,20 +451,21 @@ TEST_F(St20TxRlWarmUpTest, UhdBurstGapsKeepThePlan) {
   constexpr long double kUhdTrs = 16683333.333L * 1080 / 1125 / 17280;
   constexpr long double kUhdDrain = kUhdTrs * 164 / 165;
   constexpr uint64_t kTargetTsc = 10000000;
-  const uint64_t gaps[] = {200, 250, 150, 300};
+  const uint64_t gaps[] = {200, 250, 1000, 300};
   uint64_t script[64];
 
   ut_trs_set_trs(ctx_, kUhdTrs);
   ut_trs_set_warm_pkts_cap(ctx_, kWarmPkts);
   ut_trs_set_drain(ctx_, kPortP, kUhdDrain);
   ut_trs_set_credit(ctx_, kPortP, kUhdDrain * 2048 / kPadSize);
-  /* every tsc read 150-300 ns after the previous one, a busy but healthy tasklet */
+  /* a busy but healthy tasklet: each burst returns 0.2-1 us after its tsc read, longer
+   * than a pad, and the next read follows 250-300 ns later */
   script[0] = kTargetTsc - 118325; /* a plan of 130.125 pads */
   for (int i = 1; i < 64; i++) script[i] = script[i - 1] + gaps[i % 4];
   ut_trs_set_target_tsc(ctx_, kTargetTsc);
   ut_trs_set_mock_tsc_script(ctx_, script, 64);
 
-  ut_trs_pre_arm(ctx_);
+  EXPECT_TRUE(ut_trs_pre_arm(ctx_));
 
   EXPECT_EQ(0u, ut_trs_stat_recalculate_warmup(ctx_));
   long double late = ut_trs_modeled_launch_tsc(ctx_, kPortP) - kTargetTsc;
@@ -414,31 +473,28 @@ TEST_F(St20TxRlWarmUpTest, UhdBurstGapsKeepThePlan) {
   EXPECT_LT(late, kUhdDrain);
 }
 
-TEST_F(St20TxRlWarmUpTest, SlowBatchTriggersRecalcButStillReachesTarget) {
+TEST_F(St20TxRlWarmUpTest, SlowBatchHoldsPacket0ForTheTarget) {
   SetTrs(1000.0L);
   ut_trs_set_target_tsc(ctx_, 64000);
-  /* the first 32-pad batch returns after the NIC drained it and went idle, 15.7 pads
-   * before the target */
+  /* the first 32-pad batch returns 48.3 us late: its pads may drain until 80.3 us */
   const uint64_t script[] = {0, 0, 48300, 48300, 48400, 48500};
   ut_trs_set_mock_tsc_script(ctx_, script, 6);
 
-  ut_trs_pre_arm(ctx_);
+  EXPECT_FALSE(ut_trs_pre_arm(ctx_));
 
   EXPECT_EQ(1u, ut_trs_stat_recalculate_warmup(ctx_));
-  /* 32 + 15 pads, then one more for the last 0.7 pad */
-  EXPECT_EQ(48u, ut_trs_pad_send_count(ctx_));
-  EXPECT_EQ(3u, ut_trs_burst_call_count(ctx_));
-  EXPECT_GE(ut_trs_modeled_launch_tsc(ctx_, kPortP), 64000.0L);
+  EXPECT_EQ(32u, ut_trs_pad_send_count(ctx_));
+  EXPECT_EQ(1u, ut_trs_burst_call_count(ctx_));
 }
 
 TEST_F(St20TxRlWarmUpTest, JitteredBatchesStillRecalculate) {
   SetTrs(5000.0L);
   ut_trs_set_target_tsc(ctx_, 248740);
-  /* the tasklet stalls 170 us after the first batch */
+  /* the tasklet stalls 170 us after the first batch returned */
   const uint64_t script[] = {0, 0, 1829, 170000, 171829, 183663};
   ut_trs_set_mock_tsc_script(ctx_, script, 6);
 
-  ut_trs_pre_arm(ctx_);
+  EXPECT_TRUE(ut_trs_pre_arm(ctx_));
 
   EXPECT_GT(ut_trs_stat_recalculate_warmup(ctx_), 0u);
   long double late = ut_trs_modeled_launch_tsc(ctx_, kPortP) - 248740;

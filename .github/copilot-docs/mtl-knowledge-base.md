@@ -401,8 +401,15 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
 - The model puts the launch in [target, target + `rl_drain`) and is never early. Measured on hardware, the launch can be up to ~2.7 µs ahead of the model, which the ~3.8 µs NIC TX latency covers, so first-packet latency stayed ≥ 0. Shaper wire overhead or a bucket that needs a whole packet of tokens (credit B − S) only makes it later.
 - Target is MTL's PTP time turned into TSC once per frame in `tv_sync_pacing()`, so on the wire the launch also carries that clock's error. It is independent of how many sessions share the scheduler only while every warm-up starts before its target and has a plan.
 - The user-meta packet (`st20_frame_tx_start()`, sys queue) leaves when packet 0 is queued, up to `warm_pkts`·`trs` ahead of it, but after the previous frame's last packet; RX matches it by RTP timestamp and the timing parser skips it.
-- NORMAL pads follow in bursts of up to `ST_TX_VIDEO_PAD_BURST` (32) copies of one mbuf (lib sets no `MBUF_FAST_FREE`, which would forbid the shared refcount). Each burst is sized from a fresh TSC and the drain end of a token bucket `rl_credit` deep over what is queued, so a stall only shrinks the rest and keeps the one-pad bound.
-- A stall is a delay between two bursts long enough that the queue drained and the bucket refilled (the drain end fell behind TSC − `rl_credit`); resetting the drain end then counts `stat_trans_recalculate_warmup`.
+- NORMAL pads follow in bursts of up to `ST_TX_VIDEO_PAD_BURST` (32) copies of one mbuf (lib sets no `MBUF_FAST_FREE`, which would forbid the shared refcount). Each burst is sized from a fresh TSC and the drain end of a token bucket `rl_credit` deep over what is queued.
+- Two kinds of stall, both count `stat_trans_recalculate_warmup`:
+  - Between bursts: every queued pad reached the NIC before it. If the queue drained and the bucket refilled (the drain end fell behind TSC − `rl_credit`), the drain end resets to TSC − `rl_credit`, the rest shrinks, and the one-pad bound holds.
+  - Inside a burst: its doorbell rang at some time up to the return, `last_burst_succ_time_tsc` (read by `video_trs_burst_succ()`, no extra TSC read).
+  - If the return is more than `ST_TX_VIDEO_RL_STALL_NS` (2 µs) past the burst's planned drain start, the doorbell may have found the shaper idle: the drain end restarts from the return (never overfills), and `video_trs_rl_pre_arm()` returns false, so WAIT_TARGET holds packet 0.
+  - The doorbell time is unknown, so releasing packet 0 behind the pads would make it late (stall before the doorbell) or early (after it).
+  - The 2 µs is absolute because a burst's CPU cost does not scale with the format, while a pad does (~0.97 µs at 2160p59.94, ~8.7 µs at 720p60).
+  - It is expected to be above a healthy 32-pad burst (not measured on hardware yet: a healthy run should keep `stat_trans_recalculate_warmup` at ~0) and at or below most timer ticks (2–10 µs). A shorter stall before the doorbell is not detected and delays packet 0 by up to its length.
+  - Behind the first burst the shaper is busy ~32 pads, so only a longer stall in a later burst holds. The round-up pad's burst is not checked: when it goes, the queued pads keep the shaper busy until less than one pad before target.
 - Refused NORMAL pads count as queued and retry, batched the same way, via `trs_pad_inflight_num` ahead of packet 0, which can only delay it. Ports without a plan keep one pad per burst and per retry.
 - Without a plan, `video_trs_rl_warm_up()` queues `ceil((target − now) / trs)` single-pad bursts and `ST_TX_VIDEO_RL_STATE_WAIT_TARGET` holds packet 0 until the TSC reaches target, so a late tasklet launches it late. A planned port whose target is more than `warm_pkts`·`trs` away holds too, without pads. Target already past: no pads, packet 0 goes at once.
 - `tv_init_pacing()` sets `warm_pkts` to 80% of `pkts_in_tr_offset`, capped at 128, or 8 at height ≤ 576; 0 without RL, for wide pacing and for ST22.
@@ -424,6 +431,7 @@ Progressive, height ≥ 1080; T = frame time. Interlaced, 720p and SD use their 
 |---|---|---|
 | Reaching WAIT_WARMUP's pre-arm | Anywhere in the window: packet 0 still lands in [target, target + `rl_drain`). At or past target: no pads, packet 0 late by the lateness. | ~0: WAIT_TARGET holds packet 0, so its launch is the tasklet's poll time. |
 | Between pad bursts | A stall that ends before target only shrinks the remaining pads (`stat_trans_recalculate_warmup`). | — |
+| Inside a pad burst | Covered by the pads already queued: no change. Otherwise, up to 2 µs: packet 0 late by up to the stall. Longer: WAIT_TARGET holds packet 0, so it leaves at the later of the tasklet's poll and the drain end of the pads already in the NIC (`stat_trans_recalculate_warmup`). | — |
 | Frame body | The transmitter keeps the NIC ring full, so a stall up to `nb_tx_desc`·`trs` drains on time. Longer gives a wire gap, VRX underflow at RX, then a burst. | Same |
 
 | Format | `trs` | `tr_offset` | `warm_pkts` | Window | 512-ring body | Ring-capped window: 512 / 2048 |
