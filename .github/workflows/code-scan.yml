@@ -1,9 +1,9 @@
 name: Code scan
 
 # clang-tidy on the C and C++ lines that a change touches, and cargo-audit on
-# the Rust lock files. clang-tidy reads the compile commands of a build, so it
-# waits for the Build workflow through pr-gate.yml. code-scan-result is the one
-# check name that branch protection needs.
+# the Rust lock files. clang-tidy configures MTL against the Build workflow's
+# DPDK cache, and waits for Build only when the change has a DPDK of its own.
+# code-scan-result is the one check name that branch protection needs.
 
 on:
   workflow_dispatch:
@@ -31,6 +31,7 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
+      clang_tidy: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && steps.filter.outputs.clang_tidy == 'true') }}
       cargo_audit: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.cargo_audit == 'true' }}
     steps:
       - name: Harden Runner
@@ -46,25 +47,17 @@ jobs:
         with:
           filters: .github/path_filters.yml
 
-  pr-gate:
-    if: ${{ github.event_name != 'push' }}
-    uses: ./.github/workflows/pr-gate.yml
+  clang-tidy:
+    needs: changes
+    if: ${{ needs.changes.outputs.clang_tidy == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+    runs-on: ubuntu-22.04
+    # The scan, plus the wait for Build on a DPDK cache miss.
+    timeout-minutes: 105
     permissions:
       contents: read
       pull-requests: read
       checks: read
       actions: read
-    with:
-      filter: clang_tidy
-
-  clang-tidy:
-    needs: pr-gate
-    if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
-    runs-on: ubuntu-22.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      pull-requests: read
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -89,18 +82,28 @@ jobs:
           HASH_PLUGINS: ${{ steps.sums.outputs.plugins }}
         run: task ci:cache-keys
 
+      # Main's DPDK cache, unless the change has a DPDK of its own: then the
+      # Build workflow of this change saves it.
       - name: 'stash: Restore DPDK cache'
+        id: dpdk
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.dpdk_key }}
           path: .local_install/dpdk
-          fail-on-cache-miss: true
 
-      - name: 'stash: Restore MTL cache'
+      - name: Wait for Build workflow
+        if: ${{ steps.dpdk.outputs.cache-hit != 'true' && github.event_name == 'pull_request' }}
+        uses: ./.github/actions/wait-for-workflow
+        with:
+          check_name: build
+          queue_timeout: '4200'
+
+      - name: 'stash: Restore DPDK cache after Build'
+        if: ${{ steps.dpdk.outputs.cache-hit != 'true' }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          key: ${{ steps.keys.outputs.mtl_key }}
-          path: .local_install/mtl
+          key: ${{ steps.keys.outputs.dpdk_key }}
+          path: .local_install/dpdk
           fail-on-cache-miss: true
 
       - name: Write compile_commands.json
@@ -171,7 +174,7 @@ jobs:
 
   code-scan-result:
     name: code-scan-result
-    needs: [changes, pr-gate, clang-tidy, cargo-audit]
+    needs: [changes, clang-tidy, cargo-audit]
     if: always()
     runs-on: ubuntu-latest
     steps:
