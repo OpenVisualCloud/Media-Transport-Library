@@ -57,7 +57,8 @@ app_ld_args = []
 if not is_windows
   add_project_arguments(cc.get_supported_arguments(['-fstack-protector-strong',
     '-fstack-clash-protection', '-fcf-protection=full']),
-    '-Wformat', '-Wformat-security', '-Werror=format-security', language : 'c')
+    '-Wformat', '-Wformat-security', '-Werror=format-security',
+    '-Wimplicit-fallthrough', language : 'c')
   # keep the level a compiler (Ubuntu 24.04 gcc: 3) or CFLAGS already set, asking the
   # compiler itself: meson >= 1.11 runs its checks with -U_FORTIFY_SOURCE
   fortify = run_command(cc.cmd_array(), get_option('c_args'), '-O2', '-dM', '-E', '-x', 'c', '/dev/null',
