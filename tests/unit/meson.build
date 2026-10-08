@@ -123,6 +123,7 @@ unit_sources = [
   'session/st20_tx/rtcp_pool_test.cpp',
   'session/st_video_transmitter_harness.c',
   'session/st20_tx/rl_warm_up_test.cpp',
+  'session/st20_tx/tx_queue_stall_test.cpp',
   'session/st20_tx/transmitter_bugs_test.cpp',
   'session/st20_tx/rtp_timestamp_rounding_test.cpp',
   'session/st20_tx/rtp_gate_snap_test.cpp',

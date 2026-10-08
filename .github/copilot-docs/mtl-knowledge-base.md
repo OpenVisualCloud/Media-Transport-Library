@@ -302,7 +302,26 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
   - `--match-allocations`: Forces 1:1 allocation→hugepage mapping. Without it, DPDK may merge adjacent allocations and freeing one pool won't reclaim hugepages because they're merged with a live allocation
   - `--in-memory`: Disables shared memory files in `/var/run/dpdk/`. Avoids filesystem ops, permission issues, stale lockfiles after crash
 - x86 cache line: 64 bytes (`RTE_CACHE_LINE_SIZE`)
-- Default descriptors: `MT_DEV_RX_DESC = 4096/2 = 2048`, `MT_DEV_TX_DESC = 4096/8 = 512` (in `mt_dev.h`)
+- Default descriptors: `MT_DEV_RX_DESC = 4096/2 = 2048`, `MT_DEV_TX_DESC = 4096/2 = 2048` (in `mt_dev.h`)
+  - A zero-copy (chained) video pkt takes 2 TX descriptors, so the default TX queue holds 1024 pkts, ~3.8 ms at 1080p59.94: one lost scheduler slice (EEVDF ~3 ms). 512 held 0.95 ms, which a shared CPU overran (`St20TxQueueStallTest`).
+  - `nb_tx_desc` also sizes, so 512 → 2048 grows each:
+    - Pools: every TX session pool (video, audio, anc, fmd: `nb_tx_desc` + ring), the per-port sys
+      TX pool (`nb_tx_desc` + 1024), the shared-queue pool, an AF_XDP queue's pool (its UMEM, which
+      holds the queue pair's TX pkts too: `nb_rx_desc` + `nb_tx_desc` + 1024, and per queue pair in
+      the `MTL_FLAG_RX_MONO_POOL` pool, which native AF_XDP refuses; `dev_rx_pool_elements()`), and
+      with `MTL_FLAG_TX_MONO_POOL` `nb_tx_q` × `nb_tx_desc` × 2 more mbufs per port (~65k at 16
+      queues, ~150 MB of hugepages).
+    - RTCP: the retransmit ring is at least `nb_tx_desc` (`tv_rtcp_buffer_size()`), and the TX video pools count it.
+    - Zero copy: `tv_pkts_capable_chain()` keeps it while `st20_total_pkts` × (frames − 1) ≥ the
+      pkts held: `nb_tx_desc` / 2 in the queue at 2 descriptors each, or with
+      `ST20_TX_FLAG_ENABLE_RTCP` the larger retransmit ring, whose refs only newer pkts release (a
+      ring spanning every spare buffer deadlocks), plus the unsent ones in the builder ring
+      (`ring_count`, 512). Short of that, `tv_tasklet_frame()` refuses the buffer the app just
+      handed over ("refcnt not zero"). At 2048 with 2 buffers every format under 1536 pkts copies
+      (576p BPM 823, 480p 686), with 3 those under 768 (SD fields); with RTCP and 2 buffers 720p
+      (BPM 1829) and 1080i fields (GPM_SL 2160) copy too. Logged at info.
+    - Time: the RL training pad trains fill the ring, and the training waits for it to drain (video ~7.5 ms at 1080p59.94, audio ~170 ms at 0.33 ms ptime), and the stop-time flush sends 2 × `nb_tx_desc` pads at each queue's rate (~0.2 s per audio RL queue at 0.33 ms ptime).
+    - Recovery: `st20_tx_queue_fatal_error()` flushes the healthy redundant leg inside the tasklet, ~15 ms at 1080p59.94, so the scheduler's other sessions miss that much once, after a TX hang that is already fatal.
 - RX mempool element count: `nb_rx_desc + 1024` (headroom), rounded to `2^q - 1 = 4095`
 - Mempool element size cache-aligned: e.g., 1494 → 1536 (rounded to `MT_MBUF_CACHE_SIZE = 128`)
 
@@ -433,7 +452,7 @@ Progressive, height ≥ 1080; T = frame time. Interlaced, 720p and SD use their 
   - Uncapped, the window is 34.4/1125·T. It opens ~10/1125·T (~150 µs at 60p) after the previous frame's last packet left the NIC.
   - That margin is what lets `video_trs_rl_pre_arm()` treat the queue as empty and the bucket as full: its drain starts at TSC − `rl_credit`.
   - Pads queued behind an unfinished frame would make packet 0 late, so the window cannot grow past that idle gap. The 80% is margin, not a tuning knob.
-- **Ring bound on a plan.** `tv_init_pacing()` keeps a plan only if (`warm_pkts`·`trs` + `rl_credit`)/`rl_drain` + 1 ≤ `nb_tx_desc`/2. With the default `MT_DEV_TX_DESC` 512, the window plus `rl_credit` must fit in 255 pad drains (256 less the round-up pad), which leaves ~251 for the window.
+- **Ring bound on a plan.** `tv_init_pacing()` keeps a plan only if (`warm_pkts`·`trs` + `rl_credit`)/`rl_drain` + 1 ≤ `nb_tx_desc`/2. With the default `MT_DEV_TX_DESC` 2048, the window plus `rl_credit` must fit in 1023 pad drains (1024 less the round-up pad), so the `warm_pkts` cap of 128 binds first.
 - **Where the 128 cap binds.** Only UHD and above: 2160p is 524 → 128, a 4× shorter window. At 1080p it is 130 → 128, which makes no difference.
 
 **Tolerance at each point** (scheduler lateness, or a tasklet stall):
@@ -443,16 +462,16 @@ Progressive, height ≥ 1080; T = frame time. Interlaced, 720p and SD use their 
 | Reaching WAIT_WARMUP's pre-arm | Anywhere in the window: packet 0 still lands in [target, target + `rl_drain`). At or past target: no pads, packet 0 late by the lateness. | ~0: WAIT_TARGET holds packet 0, so its launch is the tasklet's poll time. |
 | Between pad bursts | A stall that ends before target only shrinks the remaining pads (`stat_trans_recalculate_warmup`). | — |
 | Inside a pad burst | Covered by the pads already queued: no change. Otherwise, up to 2 µs: packet 0 late by up to the stall. Longer: WAIT_TARGET holds packet 0, so it leaves at the later of the tasklet's poll and the drain end of the pads already in the NIC (`stat_trans_recalculate_warmup`). | — |
-| Frame body | The transmitter keeps the NIC ring full, so a stall up to `nb_tx_desc`·`trs` drains on time. Longer gives a wire gap, VRX underflow at RX, then a burst. | Same |
+| Frame body | The transmitter keeps the NIC ring full, so a stall up to `nb_tx_desc`/2·`trs` (2 descriptors per chained pkt; `nb_tx_desc`·`trs` in copy mode) drains on time. Longer gives a wire gap, VRX underflow at RX, then a burst. | Same |
 
-| Format | `trs` | `tr_offset` | `warm_pkts` | Window | 512-ring body | Ring-capped window: 512 / 2048 |
+| Format | `trs` | `tr_offset` | `warm_pkts` | Window | Default ring body (1024 pkts) | Ring-capped window: 512 / 2048 |
 |---|---|---|---|---|---|---|
-| 1080p29.97 | 7.78 µs | 1.27 ms | 128 | 1.0 ms | 4.0 ms | same (cap not binding) |
-| 1080p59.94 | 3.89 µs | 0.64 ms | 128 | 0.50 ms | 2.0 ms | same |
-| 1080p119.88 | 1.95 µs | 0.32 ms | 128 | 0.25 ms | 1.0 ms | same |
-| 2160p29.97 | 1.95 µs | 1.27 ms | 128 | 0.25 ms | 1.0 ms | 251 → 0.49 ms / 524 → 1.0 ms |
-| 2160p59.94 | 0.97 µs | 0.64 ms | 128 | 0.12 ms | 0.50 ms | 251 → 0.24 ms / 524 → 0.51 ms |
-| 2160p119.88 | 0.49 µs | 0.32 ms | 128 | 62 µs | 0.25 ms | 251 → 0.12 ms / 524 → 0.26 ms |
+| 1080p29.97 | 7.78 µs | 1.27 ms | 128 | 1.0 ms | 8.0 ms | same (cap not binding) |
+| 1080p59.94 | 3.89 µs | 0.64 ms | 128 | 0.50 ms | 4.0 ms | same |
+| 1080p119.88 | 1.95 µs | 0.32 ms | 128 | 0.25 ms | 2.0 ms | same |
+| 2160p29.97 | 1.95 µs | 1.27 ms | 128 | 0.25 ms | 2.0 ms | 251 → 0.49 ms / 524 → 1.0 ms |
+| 2160p59.94 | 0.97 µs | 0.64 ms | 128 | 0.12 ms | 1.0 ms | 251 → 0.24 ms / 524 → 0.51 ms |
+| 2160p119.88 | 0.49 µs | 0.32 ms | 128 | 62 µs | 0.50 ms | 251 → 0.12 ms / 524 → 0.26 ms |
 
 - **Longer pad trains.** Measured 2160p59.94, E830 VF TX, isolated, rx_timing parser, `rl_drain` 965 ns:
 
@@ -768,7 +787,7 @@ Same lifecycle pattern as video, simplified:
 - ST30 RX, like ST20: a short frame counts `stat_frames_incomplete` and is recycled, or zeroed-then-delivered under `ST30_RX_FLAG_RECEIVE_INCOMPLETE_FRAME`
 - ST30 TX RL (`ST30_TX_PACING_WAY_AUTO` picks it below 0.5 ms ptime) uses two queues per port, alternating each 10 ms.
   - `tx_audio_session_profiling_rl_bps()` trains the first one by filling its whole ring (`nb_tx_desc` pkts and pads, 4 per `trs`).
-  - It then sleeps until that ring drains (~43 ms at 512 descriptors and 0.33 ms ptime): the session paces each chunk as if its queue were idle. Untrained rates only, so the first session per rate pays.
+  - It then sleeps until that ring drains (~170 ms at the default 2048 descriptors and 0.33 ms ptime): the session paces each chunk as if its queue were idle. Untrained rates only, so the first session per rate pays.
 
 ### Manager Pattern
 Sessions organized into managers (`st_tx_video_sessions_mgr`), one per session type per scheduler:
