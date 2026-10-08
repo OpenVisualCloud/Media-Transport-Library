@@ -703,6 +703,34 @@ The model puts the first packet in [scheduled time, scheduled time + one packet 
 A tasklet stall between two padding bursts that ends before the scheduled time only shrinks the rest of the padding.
 A stall inside a burst (an interrupt or a preemption) can delay its doorbell by an unknown time. If the padding already queued does not cover it and the burst returns more than 2 µs late, the library plans the rest from the latest time the doorbell can have rung and holds the first packet until the scheduled time, as without a known shaper. A shorter stall can delay the first packet by up to its length.
 After a stall past it the first packet leaves when the tasklet returns. The NIC and the clocks add the rest.
+
+```mermaid
+sequenceDiagram
+    participant T as TX tasklet
+    participant N as NIC queue and shaper
+    participant W as Wire
+    Note over T: up to 128 packet intervals before the scheduled time
+    loop bursts of up to 32 padding packets
+        T->>N: padding
+        N->>W: padding, at the session rate
+    end
+    alt every burst returns in time
+        T->>N: first packet, behind the padding
+        N->>W: first packet, as the padding ends: at the scheduled time
+    else a burst returns more than 2 µs late (interrupt, preemption)
+        Note over T: holds the first packet, counts stat_trans_recalculate_warmup
+        T->>N: first packet, once the TSC reaches the scheduled time
+        N->>W: first packet
+    end
+```
+
+A stall inside a padding burst comes from the CPU of the TX scheduler:
+
+| Sign | Cause | Remedy |
+|---|---|---|
+| `stat_trans_recalculate_warmup` grows, at integer frame rates often on the same frame of a cycle | The kernel timer tick (1 ms, 2-10 µs long) runs inside a burst. It meets a frame grid of whole ms at fixed phases, if at all: every frame at 50p, one frame in 3 at 60p. At 59.94p the phase drifts, so the tick rarely meets the frame start. | Stop the tick on the scheduler cores: `nohz_full` or `isolcpus=…,nohz`, see the [CPU Isolation Guide](isolation.md) |
+| Single frames late by tens to hundreds of µs; with ST 2022-7 on one leg only, as each leg pads on its own | The scheduler thread is preempted past the scheduled time, for example by a `kworker` | Isolate the scheduler cores |
+
 Measured on E830 and E810 VF TX at 1080p25 to 1080p120 and 2160p60, with and without redundancy, the minimum first-packet latency was 1.0 µs or more.
 Without a known shaper, for example with a user-set pad interval, the library pads one packet per interval and holds the first packet until the scheduled time, so a busy scheduler can send it late.
 With ST20 user metadata, the metadata packet goes out when the first packet is queued, so up to the warm-up time (at most 128 packet intervals) before it.

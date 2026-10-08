@@ -410,6 +410,12 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
   - The 2 µs is absolute because a burst's CPU cost does not scale with the format, while a pad does (~0.97 µs at 2160p59.94, ~8.7 µs at 720p60).
   - It is expected to be above a healthy 32-pad burst (not measured on hardware yet: a healthy run should keep `stat_trans_recalculate_warmup` at ~0) and at or below most timer ticks (2–10 µs). A shorter stall before the doorbell is not detected and delays packet 0 by up to its length.
   - Behind the first burst the shaper is busy ~32 pads, so only a longer stall in a later burst holds. The round-up pad's burst is not checked: when it goes, the queued pads keep the shaper busy until less than one pad before target.
+  - Tests: `St20TxRlWarmUpTest.Packet0LeavesOnTargetAfterAStallInAPadBurst` and `StallTheQueuedPadsCoverKeepsThePreArm`; `ut_trs_set_burst_stall()` stalls a burst before or after its doorbell.
+  - Hardware, before the hold: E830 VF, 2× 720p60 st20p, wire timestamps from an E810 capture port whose PHC follows `CLOCK_REALTIME`, bpftrace for context switches and ≥ 1 µs interrupts on the scheduler CPU.
+    - The 1 ms tick inside the pre-arm call moved packet 0 by 7.4 µs median (2.0 → 9.4 µs, max 4.0 → 15.4 µs).
+    - 720p60's grid repeats in 3 frames (50 ticks): on that boot one phase met the tick in 1687 of 2395 calls, the others never. 1080p59.94 drifts (1–2 of 7177).
+    - Not isolated, `kworker` preemptions gave 33 single-leg shifts of 52–272 µs in 240 s, and once the next frame's pre-arm took the still-busy shaper as idle (104 µs late, no stall of its own).
+    - One 139 µs stall had no context switch, traced interrupt or SMI: unexplained.
 - Refused NORMAL pads count as queued and retry, batched the same way, via `trs_pad_inflight_num` ahead of packet 0, which can only delay it. Ports without a plan keep one pad per burst and per retry.
 - Without a plan, `video_trs_rl_warm_up()` queues `ceil((target − now) / trs)` single-pad bursts and `ST_TX_VIDEO_RL_STATE_WAIT_TARGET` holds packet 0 until the TSC reaches target, so a late tasklet launches it late. A planned port whose target is more than `warm_pkts`·`trs` away holds too, without pads. Target already past: no pads, packet 0 goes at once.
 - `tv_init_pacing()` sets `warm_pkts` to 80% of `pkts_in_tr_offset`, capped at 128, or 8 at height ≤ 576; 0 without RL, for wide pacing and for ST22.
