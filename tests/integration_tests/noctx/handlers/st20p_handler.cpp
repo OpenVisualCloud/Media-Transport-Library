@@ -30,7 +30,7 @@ St20pHandler::~St20pHandler() = default;
 void St20pHandler::fillSt20Ops(uint transmissionPort, uint framebufferQueueSize,
                                enum st20_fmt fmt, uint width, uint height,
                                uint payloadType, enum st_fps fps, bool interlaced,
-                               enum st20_packing packing) {
+                               enum st20_packing /*packing*/) {
   memset(&sessionsOpsTx, 0, sizeof(sessionsOpsTx));
   sessionsOpsTx.name = "st20p_noctx_test_tx";
   sessionsOpsTx.priv = ctx;

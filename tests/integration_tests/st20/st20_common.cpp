@@ -83,7 +83,7 @@ int tx_rtp_done(void* args) {
 }
 
 int tx_next_video_frame(void* priv, uint16_t* next_frame_idx,
-                        struct st20_tx_frame_meta* meta) {
+                        struct st20_tx_frame_meta* /*meta*/) {
   auto ctx = (tests_context*)priv;
 
   if (!ctx->ready.load(std::memory_order_acquire)) return -EIO;
@@ -134,7 +134,7 @@ int tx_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
 }
 
 int tx_next_ext_video_frame(void* priv, uint16_t* next_frame_idx,
-                            struct st20_tx_frame_meta* meta) {
+                            struct st20_tx_frame_meta* /*meta*/) {
   auto ctx = (tests_context*)priv;
 
   if (!ctx->ready.load(std::memory_order_acquire)) return -EIO;
@@ -193,7 +193,7 @@ int tx_next_ext_video_field(void* priv, uint16_t* next_frame_idx,
 }
 
 int tx_notify_ext_frame_done(void* priv, uint16_t frame_idx,
-                             struct st20_tx_frame_meta* meta) {
+                             struct st20_tx_frame_meta* /*meta*/) {
   auto ctx = (tests_context*)priv;
 
   if (!ctx->handle) return -EIO; /* not ready */
@@ -210,7 +210,7 @@ int tx_notify_ext_frame_done(void* priv, uint16_t frame_idx,
   return -EIO;
 }
 
-int tx_notify_timestamp_frame_done(void* priv, uint16_t frame_idx,
+int tx_notify_timestamp_frame_done(void* priv, uint16_t /*frame_idx*/,
                                    struct st20_tx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
 
@@ -246,7 +246,7 @@ enum st_fps tmstamp_delta_to_fps(int delta) {
   return ST_FPS_MAX;
 }
 
-int tx_notify_frame_done_check_tmstamp(void* priv, uint16_t frame_idx,
+int tx_notify_frame_done_check_tmstamp(void* priv, uint16_t /*frame_idx*/,
                                        struct st20_tx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
 
@@ -969,7 +969,8 @@ void dump_slice_meta(struct st20_rx_slice_meta* meta) {
 }
 #endif
 
-int st20_digest_rx_slice_ready(void* priv, void* frame, struct st20_rx_slice_meta* meta) {
+int st20_digest_rx_slice_ready(void* priv, void* /*frame*/,
+                               struct st20_rx_slice_meta* meta) {
   auto ctx = (tests_context*)priv;
 
   if (!ctx->handle) return -EIO;

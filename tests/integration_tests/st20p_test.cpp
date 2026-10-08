@@ -183,7 +183,7 @@ int st_test_convert_plugin_register(struct st_tests_context* ctx) {
   return 0;
 }
 
-static void plugin_register_test(const char* so_name, bool expect_succ) {
+static void plugin_register_test(const char* so_name, bool /*expect_succ*/) {
   auto ctx = st_test_ctx();
   auto st = ctx->handle;
 
@@ -667,7 +667,7 @@ static void test_internal_st20p_rx_frame_thread(void* args) {
 }
 
 static int test_st20p_rx_query_ext_frame(void* priv, st_ext_frame* ext_frame,
-                                         struct st20_rx_frame_meta* meta) {
+                                         struct st20_rx_frame_meta* /*meta*/) {
   tests_context* s = (tests_context*)priv;
   int i = s->ext_idx;
 

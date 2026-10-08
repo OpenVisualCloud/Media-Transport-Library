@@ -67,8 +67,8 @@ static int st22_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
   return 0;
 }
 
-static int st22_frame_done(void* priv, uint16_t frame_idx,
-                           struct st22_tx_frame_meta* meta) {
+static int st22_frame_done(void* /*priv*/, uint16_t /*frame_idx*/,
+                           struct st22_tx_frame_meta* /*meta*/) {
   return 0;
 }
 
