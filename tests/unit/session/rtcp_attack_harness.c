@@ -328,7 +328,7 @@ unsigned int ut_rtk_tx_pool_size(uint16_t nb_tx_desc, uint16_t buffer_size) {
 
   if (!impl) return 0;
   impl->inf[MTL_PORT_P].nb_tx_desc = nb_tx_desc;
-  impl->inf[MTL_PORT_P].tx_deep = nb_tx_desc == 2048;
+  impl->inf[MTL_PORT_P].tx_deep = nb_tx_desc == MT_DEV_TX_DESC_DEEP;
   memset(&udp_hdr, 0, sizeof(udp_hdr));
   memset(&ops, 0, sizeof(ops));
   ops.name = "ut_rtk_pool";
@@ -350,7 +350,7 @@ unsigned int ut_rtk_tx_pool_n(uint16_t nb_tx_desc, uint16_t buffer_size) {
 
   if (!impl) return 0;
   impl->inf[MTL_PORT_P].nb_tx_desc = nb_tx_desc;
-  impl->inf[MTL_PORT_P].tx_deep = nb_tx_desc == 2048;
+  impl->inf[MTL_PORT_P].tx_deep = nb_tx_desc == MT_DEV_TX_DESC_DEEP;
   n = rtcp_tx_pool_n(impl, MTL_PORT_P, buffer_size);
   free(impl);
   return n;

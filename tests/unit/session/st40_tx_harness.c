@@ -722,7 +722,7 @@ int ut_txa_pipe_setup(ut_txa_ctx* ctx, const struct ut_txa_pipe_case* c) {
   for (int i = 0; i < c->num_port; i++) {
     struct mt_interface* inf = &ctx->impl.inf[i];
     inf->nb_tx_desc = c->nb_tx_desc[i];
-    inf->tx_deep = c->nb_tx_desc[i] == 2048;
+    inf->tx_deep = c->nb_tx_desc[i] == MT_DEV_TX_DESC_DEEP;
     inf->ptp_get_time_fn = ut_txa_ptp_time_fn;
     s->port_maps[i] = (enum mtl_port)i;
     ctx->pipe_ring[i] = ut_txr_create((enum ut_txr_mode)c->ring_mode, c->nb_tx_desc[i],

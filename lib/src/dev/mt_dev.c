@@ -972,8 +972,9 @@ static int dev_config_port(struct mt_interface* inf) {
   struct mtl_main_impl* impl = inf->parent;
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
-  uint16_t nb_rx_desc = MT_DEV_RX_DESC, nb_tx_desc = MT_DEV_TX_DESC;
   inf->tx_deep = dev_tx_deep(inf);
+  uint16_t nb_rx_desc = MT_DEV_RX_DESC;
+  uint16_t nb_tx_desc = inf->tx_deep ? MT_DEV_TX_DESC_DEEP : MT_DEV_TX_DESC;
   int ret;
   struct mtl_init_params* p = mt_get_user_params(impl);
   uint16_t nb_rx_q = inf->nb_rx_q, nb_tx_q = inf->nb_tx_q;

@@ -860,7 +860,7 @@ unsigned int ut_dev_tx_sys_pool_elements(ut_dev_ctx* ctx, uint16_t nb_tx_q,
 
   inf->nb_tx_q = nb_tx_q;
   inf->nb_tx_desc = nb_tx_desc;
-  inf->tx_deep = nb_tx_desc == 2048;
+  inf->tx_deep = nb_tx_desc == MT_DEV_TX_DESC_DEEP;
   if (mono)
     ctx->impl.user_para.flags |= MTL_FLAG_TX_MONO_POOL;
   else

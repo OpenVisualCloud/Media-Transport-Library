@@ -73,7 +73,7 @@ int ut_rtk_set_queue(ut_rtk_ctx* ctx, int ring_mode, uint16_t nb_tx_desc, bool h
 /* Take n mbufs out of the copy pool, as other lcores' caches keep them. */
 int ut_rtk_hold_copies(ut_rtk_ctx* ctx, unsigned int n);
 
-/* mt_rtcp_tx_create() on a port of nb_tx_desc, deep at 2048: the mbufs of
+/* mt_rtcp_tx_create() on a port of nb_tx_desc, deep at MT_DEV_TX_DESC_DEEP: the mbufs of
  * its copy pool, 0 if it failed. */
 unsigned int ut_rtk_tx_pool_size(uint16_t nb_tx_desc, uint16_t buffer_size);
 /* the mbufs it asks that pool for, before the 2^q - 1 rounding */
