@@ -270,9 +270,11 @@ docker_compose:
   - docker/docker-compose.yml
   - docker/docker-compose.xdp.yml
 
-# bandit.yml: every tracked Python file, the test set and the workflow.
+# bandit.yml: every tracked Python file, the test set, the workflow and the
+# tasks it runs.
 bandit:
   - '**/*.py'
   - .github/code-scan/bandit.config
   - .github/workflows/bandit.yml
   - .github/path_filters.yml
+  - Taskfile.yml

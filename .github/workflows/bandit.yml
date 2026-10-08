@@ -21,7 +21,6 @@ concurrency:
 
 env:
   BANDIT_VERSION: 1.9.4
-  BANDIT_CONFIG: .github/code-scan/bandit.config
 
 jobs:
   changes:
@@ -79,35 +78,15 @@ jobs:
       - name: Install Bandit
         run: python -m pip install "bandit[sarif]==${BANDIT_VERSION}"
 
-      # Bandit's default --exclude lists ".git" and matches it as a substring,
-      # so it drops everything under .github/, even files named on the command
-      # line. -x '' replaces that list; the input is already exactly the
-      # tracked files. The reports come before the scan so that they exist
-      # when it fails; --exit-zero leaves failing to "Run Bandit".
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
+      # The reports come before the scan, so that they exist when it fails.
       - name: Write Bandit reports
-        run: |
-          for format in json html sarif; do
-            git ls-files -z -- '*.py' |
-              xargs -0 bandit -q -c "$BANDIT_CONFIG" -x '' --exit-zero \
-                -f "$format" -o "bandit.$format"
-          done
+        run: task ci:bandit-reports
 
       - name: Summarize Bandit results
-        run: |
-          jq -r '
-            "### Bandit", "",
-            "| Files scanned | Lines of code | Findings | Reviewed `# nosec <ID>` | Blanket `# nosec` lines | Files skipped |",
-            "|---:|---:|---:|---:|---:|---:|",
-            "| \([.metrics | keys[] | select(. != "_totals")] - [.errors[].filename] | length) | \(.metrics._totals.loc) | \(.results | length) | \(.metrics._totals.skipped_tests) | \(.metrics._totals.nosec) | \(.errors | length) |",
-            if .results == [] then empty else
-              "", "| Test | Severity | Confidence | Location | Issue |", "|---|---|---|---|---|",
-              (.results[] | "| [\(.test_id)](\(.more_info)) | \(.issue_severity) | \(.issue_confidence) | `\(.filename | ltrimstr("./")):\(.line_number)` | \(.issue_text) |")
-            end,
-            if .errors == [] then empty else
-              "", "Skipped files:", (.errors[] | "- `\(.filename | ltrimstr("./"))`: \(.reason)")
-            end,
-            "", "HTML, JSON and SARIF reports: the `bandit-report` artifact of this run."
-          ' bandit.json >> "$GITHUB_STEP_SUMMARY"
+        run: task ci:bandit-summary
 
       # Both uploads only report: a failed upload must not decide the check or
       # stop the scan below from running.
@@ -134,18 +113,12 @@ jobs:
           category: bandit
 
       # The console report, and the step that fails on any finding. Run the
-      # same command locally.
+      # same task locally.
       - name: Run Bandit
-        run: |
-          git ls-files -z -- '*.py' |
-            xargs -0 bandit -c "$BANDIT_CONFIG" -x ''
+        run: task ci:bandit
 
-      # A file Bandit cannot parse or scan is skipped, and the run still exits
-      # 0. Its JSON report lists such files under "errors"; require it empty.
       - name: Check that Bandit scanned every file
-        run: |
-          jq -r '.errors[] | "skipped \(.filename): \(.reason)"' bandit.json
-          jq -e '.errors == []' bandit.json > /dev/null
+        run: task ci:bandit-skipped
 
   # The check for branch protection to require: it reports on every run, and
   # fails only when the scan failed or was cancelled, not when it was skipped
