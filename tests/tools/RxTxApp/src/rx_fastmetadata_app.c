@@ -51,7 +51,7 @@ static int app_rx_fmd_compare_with_ref(struct st_app_rx_fmd_session* session, vo
   uint32_t last_zeros = 0; /* 4 bytes with 0 */
   uint32_t st41_ref_remaining_length = session->st41_ref_end - session->st41_ref_cursor;
 
-  if (frame_size <= st41_ref_remaining_length) {
+  if ((uint32_t)frame_size <= st41_ref_remaining_length) {
     ret = memcmp(frame, session->st41_ref_cursor, frame_size);
     if (ret) {
       session->errors_count++;

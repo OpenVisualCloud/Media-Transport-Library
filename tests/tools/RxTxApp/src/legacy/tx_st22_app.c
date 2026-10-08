@@ -170,7 +170,7 @@ static int app_tx_st22_open_source(struct st22_app_tx_session* s) {
     close(fd);
     return -EIO;
   }
-  if (i.st_size < s->bytes_per_frame) {
+  if ((size_t)i.st_size < s->bytes_per_frame) {
     err("%s, %s file size small then a frame %" PRIu64 "\n", __func__, s->st22_source_url,
         s->bytes_per_frame);
     close(fd);

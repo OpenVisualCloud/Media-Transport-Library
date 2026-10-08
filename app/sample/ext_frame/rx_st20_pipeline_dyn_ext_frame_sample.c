@@ -183,10 +183,10 @@ int main(int argc, char** argv) {
   bool equal = st_frame_fmt_equal_transport(ctx.output_fmt, ctx.fmt);
 
   // create and register rx session
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     app[i] = malloc(sizeof(struct rx_st20p_sample_ctx));
     if (!app[i]) {
-      err("%s(%d), app context malloc fail\n", __func__, i);
+      err("%s(%u), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
       goto error;
     }
@@ -230,7 +230,7 @@ int main(int argc, char** argv) {
       /* alloc enough memory to hold framebuffers and map to iova */
       mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(ctx.st, fb_size);
       if (!dma_mem) {
-        err("%s(%d), dma mem alloc/map fail\n", __func__, i);
+        err("%s(%u), dma mem alloc/map fail\n", __func__, i);
         ret = -EIO;
         goto error;
       }
@@ -251,7 +251,7 @@ int main(int argc, char** argv) {
 
     st20p_rx_handle rx_handle = st20p_rx_create(ctx.st, &ops_rx);
     if (!rx_handle) {
-      err("%s(%d), st20p_rx_create fail\n", __func__, i);
+      err("%s(%u), st20p_rx_create fail\n", __func__, i);
       ret = -EIO;
       goto error;
     }
@@ -265,7 +265,7 @@ int main(int argc, char** argv) {
 
     ret = pthread_create(&app[i]->frame_thread, NULL, rx_st20p_frame_thread, app[i]);
     if (ret < 0) {
-      err("%s(%d), thread create fail %d\n", __func__, ret, i);
+      err("%s(%d), thread create fail %u\n", __func__, ret, i);
       ret = -EIO;
       goto error;
     }
@@ -276,27 +276,27 @@ int main(int argc, char** argv) {
   }
 
   // stop app thread
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     app[i]->stop = true;
     st_pthread_mutex_lock(&app[i]->wake_mutex);
     st_pthread_cond_signal(&app[i]->wake_cond);
     st_pthread_mutex_unlock(&app[i]->wake_mutex);
     pthread_join(app[i]->frame_thread, NULL);
-    info("%s(%d), received frames %d\n", __func__, i, app[i]->fb_recv);
+    info("%s(%u), received frames %d\n", __func__, i, app[i]->fb_recv);
 
     rx_st20p_close_source(app[i]);
   }
 
   // check result
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     if (app[i]->fb_recv <= 0) {
-      err("%s(%d), error, no received frames %d\n", __func__, i, app[i]->fb_recv);
+      err("%s(%u), error, no received frames %d\n", __func__, i, app[i]->fb_recv);
       ret = -EIO;
     }
   }
 
 error:
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     if (app[i]) {
       if (app[i]->handle) st20p_rx_free(app[i]->handle);
       if (ctx.st && app[i]->dma_mem) mtl_dma_mem_free(ctx.st, app[i]->dma_mem);

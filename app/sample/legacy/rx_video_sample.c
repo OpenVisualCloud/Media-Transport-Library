@@ -143,10 +143,10 @@ int main(int argc, char** argv) {
   st20_rx_handle rx_handle[session_num];
   struct rv_sample_context* app[session_num];
   // create and register rx session
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     app[i] = (struct rv_sample_context*)malloc(sizeof(struct rv_sample_context));
     if (!app[i]) {
-      err("%s(%d), app context malloc fail\n", __func__, i);
+      err("%s(%u), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
       goto error;
     }
@@ -158,7 +158,7 @@ int main(int argc, char** argv) {
     app[i]->framebuffs =
         (struct st_rx_frame*)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
     if (!app[i]->framebuffs) {
-      err("%s(%d), framebuffs ctx malloc fail\n", __func__, i);
+      err("%s(%u), framebuffs ctx malloc fail\n", __func__, i);
       ret = -ENOMEM;
       goto error;
     }
@@ -194,7 +194,7 @@ int main(int argc, char** argv) {
       app[i]->ext_frames = (struct st20_ext_frame*)malloc(sizeof(*app[i]->ext_frames) *
                                                           app[i]->framebuff_cnt);
       if (!app[i]->ext_frames) {
-        err("%s(%d), ext_frames malloc fail\n", __func__, i);
+        err("%s(%u), ext_frames malloc fail\n", __func__, i);
         ret = -ENOMEM;
         goto error;
       }
@@ -203,7 +203,7 @@ int main(int argc, char** argv) {
       /* alloc enough memory to hold framebuffers and map to iova */
       mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(ctx.st, fb_size);
       if (!dma_mem) {
-        err("%s(%d), dma mem alloc/map fail\n", __func__, i);
+        err("%s(%u), dma mem alloc/map fail\n", __func__, i);
         ret = -ENOMEM;
         goto error;
       }
@@ -219,7 +219,7 @@ int main(int argc, char** argv) {
 
     rx_handle[i] = st20_rx_create(ctx.st, &ops_rx);
     if (!rx_handle[i]) {
-      err("%s(%d), st20_rx_create fail\n", __func__, i);
+      err("%s(%u), st20_rx_create fail\n", __func__, i);
       ret = -EIO;
       goto error;
     }
@@ -228,7 +228,7 @@ int main(int argc, char** argv) {
 
     ret = pthread_create(&app[i]->app_thread, NULL, rx_video_frame_thread, app[i]);
     if (ret < 0) {
-      err("%s(%d), app_thread create fail %d\n", __func__, ret, i);
+      err("%s(%d), app_thread create fail %u\n", __func__, ret, i);
       ret = -EIO;
       goto error;
     }
@@ -239,26 +239,26 @@ int main(int argc, char** argv) {
   }
 
   // stop app thread
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     app[i]->stop = true;
     st_pthread_mutex_lock(&app[i]->wake_mutex);
     st_pthread_cond_signal(&app[i]->wake_cond);
     st_pthread_mutex_unlock(&app[i]->wake_mutex);
     pthread_join(app[i]->app_thread, NULL);
-    info("%s(%d), received frames %d\n", __func__, i, app[i]->fb_rec);
+    info("%s(%u), received frames %d\n", __func__, i, app[i]->fb_rec);
   }
 
   // check result
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     if (app[i]->fb_rec <= 0) {
-      err("%s(%d), error, no received frames %d\n", __func__, i, app[i]->fb_rec);
+      err("%s(%u), error, no received frames %d\n", __func__, i, app[i]->fb_rec);
       ret = -EIO;
     }
   }
 
 error:
   // release session
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     if (!app[i]) continue;
     if (app[i]->handle) st20_rx_free(app[i]->handle);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);

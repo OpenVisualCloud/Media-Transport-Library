@@ -75,9 +75,9 @@ static int app_tx_fmd_rtp_done(void* priv) {
 static void app_tx_fmd_build_frame(struct st_app_tx_fmd_session* s,
                                    struct st41_frame* dst) {
   uint16_t data_item_length_bytes =
-      s->st41_source_end - s->st41_frame_cursor > ST_PKT_ST41_PAYLOAD_MAX_BYTES
+      (size_t)(s->st41_source_end - s->st41_frame_cursor) > ST_PKT_ST41_PAYLOAD_MAX_BYTES
           ? ST_PKT_ST41_PAYLOAD_MAX_BYTES
-          : s->st41_source_end - s->st41_frame_cursor;
+          : (size_t)(s->st41_source_end - s->st41_frame_cursor);
   dst->data_item_length_bytes = data_item_length_bytes;
   dst->data = s->st41_frame_cursor;
   s->st41_frame_cursor += data_item_length_bytes;
