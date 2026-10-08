@@ -184,10 +184,8 @@ clang_tidy: &clang_tidy
   - .github/path_filters.yml
   - .github/workflows/code-scan.yml
   - .github/workflows/pr-gate.yml
-  - .github/scripts/ci/changed-lines.py
-  - .github/scripts/ci/clang-tidy-changed.py
-  - .github/scripts/ci/clang-tidy-configure.sh
-  - .github/scripts/ci/clang-tidy-sarif.py
+  - .github/scripts/ci/clang-tidy-setup.sh
+  - Taskfile.yml
   - .github/scripts/setup_environment.sh
 
 # build.yml: the artifacts, and each filter that waits for them. A test-only
@@ -308,3 +306,4 @@ cargo_audit:
   - rust/imtl-sys/Cargo.toml
   - tests/tools/perf_debug_mcp/native/Cargo.toml
   - tests/tools/perf_debug_mcp/native/Cargo.lock
+  - Taskfile.yml
