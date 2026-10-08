@@ -602,6 +602,35 @@ TEST_F(St20TxRlWarmUpTest, GapBeyondWindowFallsBackToHold) {
   EXPECT_GE(ut_trs_last_real_send_tsc(ctx_), kTargetTsc);
 }
 
+/* a target the plan reaches just after it passed: no pads, the burst credit would only
+ * delay packet 0, which WAIT_TARGET sends at once */
+TEST_F(St20TxRlWarmUpTest, TargetJustPassedSendsNoPads) {
+  constexpr uint64_t kTargetTsc = 10000000;
+  const uint64_t now[] = {kTargetTsc + 1000};
+  UseRealisticShaper(kPortP);
+  ut_trs_set_target_tsc(ctx_, kTargetTsc);
+  ut_trs_set_mock_tsc_script(ctx_, now, 1);
+
+  EXPECT_FALSE(ut_trs_pre_arm(ctx_));
+
+  EXPECT_EQ(0u, ut_trs_pad_send_count(ctx_));
+  EXPECT_EQ(0u, ut_trs_stat_troffset_mismatch(ctx_));
+}
+
+/* two pkt times or more past, as video_trs_rl_warm_up() counts it: a mismatch */
+TEST_F(St20TxRlWarmUpTest, TargetTwoPktTimesPastIsAMismatch) {
+  constexpr uint64_t kTargetTsc = 10000000;
+  const uint64_t now[] = {kTargetTsc + (uint64_t)(2 * kTrs)};
+  UseRealisticShaper(kPortP);
+  ut_trs_set_target_tsc(ctx_, kTargetTsc);
+  ut_trs_set_mock_tsc_script(ctx_, now, 1);
+
+  EXPECT_FALSE(ut_trs_pre_arm(ctx_));
+
+  EXPECT_EQ(0u, ut_trs_pad_send_count(ctx_));
+  EXPECT_EQ(1u, ut_trs_stat_troffset_mismatch(ctx_));
+}
+
 TEST_F(St20TxRlWarmUpTest, RedundantLegsLaunchTogetherThoughServedApart) {
   constexpr uint64_t kTargetTsc = 10000000;
   constexpr long double kDrainR = kTrs * 170 / 171;
