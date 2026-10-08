@@ -13,6 +13,7 @@ version: '3'
 vars:
   EBPF_SCRIPT: '{{.TASKFILE_DIR}}/script/build_ebpf_xdp.sh'
   CI_SCRIPTS: '{{.TASKFILE_DIR}}/.github/scripts/ci'
+  BANDIT_CONFIG: '{{.TASKFILE_DIR}}/.github/code-scan/bandit.config'
 
 tasks:
   default:
@@ -160,3 +161,54 @@ tasks:
     desc: Configure cached dependency paths and plugin registry on a test host
     cmds:
       - bash {{.CI_SCRIPTS}}/configure-host.sh {{.CLI_ARGS}}
+
+  # Bandit's default --exclude lists ".git" and matches it as a substring, so
+  # it drops everything under .github/, even files named on the command line.
+  # Each Bandit task passes -x '' to replace that list, with exactly the
+  # tracked files as its input.
+  ci:bandit:
+    desc: Scan every tracked Python file with Bandit and the required test set; fails on any finding
+    cmds:
+      - git ls-files -z -- '*.py' | xargs -0 bandit -c {{.BANDIT_CONFIG}} -x ''
+
+  ci:bandit-reports:
+    desc: Write the Bandit scan as bandit.json, bandit.html and bandit.sarif; never fails on findings
+    summary: |
+      CI writes the reports before ci:bandit, so that they exist when the scan
+      fails. --exit-zero leaves failing to ci:bandit.
+    cmds:
+      - |
+        for format in json html sarif; do
+          git ls-files -z -- '*.py' |
+            xargs -0 bandit -q -c {{.BANDIT_CONFIG}} -x '' --exit-zero \
+              -f "$format" -o "bandit.$format"
+        done
+
+  ci:bandit-summary:
+    desc: Summarize bandit.json as Markdown, to GITHUB_STEP_SUMMARY in CI and to stdout elsewhere
+    cmds:
+      - |
+        jq -r '
+            "### Bandit", "",
+            "| Files scanned | Lines of code | Findings | Reviewed `# nosec <ID>` | Blanket `# nosec` lines | Files skipped |",
+            "|---:|---:|---:|---:|---:|---:|",
+            "| \([.metrics | keys[] | select(. != "_totals")] - [.errors[].filename] | length) | \(.metrics._totals.loc) | \(.results | length) | \(.metrics._totals.skipped_tests) | \(.metrics._totals.nosec) | \(.errors | length) |",
+            if .results == [] then empty else
+              "", "| Test | Severity | Confidence | Location | Issue |", "|---|---|---|---|---|",
+              (.results[] | "| [\(.test_id)](\(.more_info)) | \(.issue_severity) | \(.issue_confidence) | `\(.filename | ltrimstr("./")):\(.line_number)` | \(.issue_text) |")
+            end,
+            if .errors == [] then empty else
+              "", "Skipped files:", (.errors[] | "- `\(.filename | ltrimstr("./"))`: \(.reason)")
+            end,
+            "", "HTML, JSON and SARIF reports: the `bandit-report` artifact of this run."
+        ' bandit.json >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+
+  ci:bandit-skipped:
+    desc: Fail if bandit.json lists a file that Bandit skipped
+    summary: |
+      A file Bandit cannot parse or scan is skipped, and the run still exits 0.
+      Its JSON report lists such files under "errors"; this requires it empty.
+    cmds:
+      - |
+        jq -r '.errors[] | "skipped \(.filename): \(.reason)"' bandit.json
+        jq -e '.errors == []' bandit.json > /dev/null
