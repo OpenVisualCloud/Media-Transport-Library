@@ -275,6 +275,7 @@ docker_compose:
 bandit:
   - '**/*.py'
   - .github/code-scan/bandit.config
+  - .github/code-scan/requirements.txt
   - .github/workflows/bandit.yml
   - .github/path_filters.yml
   - Taskfile.yml

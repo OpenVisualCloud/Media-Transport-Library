@@ -21,6 +21,14 @@ updates:
     commit-message:
       prefix: "Ci: "
 
+  # The Bandit release of the Bandit workflow
+  - package-ecosystem: pip
+    directory: /.github/code-scan
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "Ci: "
+
   - package-ecosystem: cargo
     directory: /rust
     schedule:
