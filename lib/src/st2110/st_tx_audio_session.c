@@ -1297,6 +1297,11 @@ static inline uint64_t tx_audio_session_profiling_rl_bps(
         actual_per_sec);
     return 0;
   }
+  /* the queue still holds a ring of training traffic: let it drain, or the session's
+   * first chunks on this queue leave behind it */
+  mt_sleep_us((unsigned int)((double)pad_pkts / (1 + rl->pads_per_st30_pkt) /
+                                 actual_per_sec * US_PER_S +
+                             1));
   info("%s(%d), pkts per second, expect %f actual %f with time %fs\n", __func__, idx,
        expect_per_sec, actual_per_sec,
        ((double)mt_get_tsc(impl) - train_start_tsc) / NS_PER_S);

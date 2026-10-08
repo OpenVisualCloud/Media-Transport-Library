@@ -761,6 +761,9 @@ Same lifecycle pattern as video, simplified:
   Spec conflict: Annex A says segment words = DIL - 2, but §5.4 makes DIL count the words after
   the DIT/K/DIL word; the Annex A integration test follows §5.4 (DIL - 1 segment words).
 - ST30 RX, like ST20: a short frame counts `stat_frames_incomplete` and is recycled, or zeroed-then-delivered under `ST30_RX_FLAG_RECEIVE_INCOMPLETE_FRAME`
+- ST30 TX RL (`ST30_TX_PACING_WAY_AUTO` picks it below 0.5 ms ptime) uses two queues per port, alternating each 10 ms.
+  - `tx_audio_session_profiling_rl_bps()` trains the first one by filling its whole ring (`nb_tx_desc` pkts and pads, 4 per `trs`).
+  - It then sleeps until that ring drains (~43 ms at 512 descriptors and 0.33 ms ptime): the session paces each chunk as if its queue were idle. Untrained rates only, so the first session per rate pays.
 
 ### Manager Pattern
 Sessions organized into managers (`st_tx_video_sessions_mgr`), one per session type per scheduler:

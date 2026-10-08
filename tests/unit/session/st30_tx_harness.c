@@ -22,6 +22,7 @@
 
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
+#include "datapath/mt_queue.h"
 #include "mt_main.h"
 #include "st2110/st_tx_audio_session.h"
 
@@ -42,6 +43,13 @@ struct ut_txa30_ctx {
   struct st30_tx_frame_meta notify_frame_done_meta;
   uint32_t wire_rtp_timestamps[64];
   int wire_rtp_count;
+
+  /* RL queue model: FIFO of nb_tx_desc descriptors the shaper drains one per
+   * rl_desc_ns, a full queue holds the busy burst */
+  int rl_queue_tag;
+  long double rl_desc_ns;
+  long double rl_drain_end_ns;
+  uint64_t slept_ns;
 };
 
 #include "session/st30_tx_harness.h"
@@ -78,12 +86,47 @@ static int ut_txa30_notify_frame_done(void* priv, uint16_t frame_idx,
   return 0;
 }
 
-/* Seam: from here on, calls to mt_get_tsc() written inside st_tx_audio_session.c
- * resolve to our mock instead. st30_tx_get_session_stats()/st30_tx_reset_session_stats()
- * are renamed away too: pipeline/st30p_tx_harness.c already defines its own stub
- * under those exact public names, and this file's #include of the full production
- * .c would otherwise redefine them a second time in the same UnitTest binary. */
+static struct ut_txa30_ctx* ut_txa30_active_ctx;
+
+static long double ut_txa30_rl_queued_desc(struct ut_txa30_ctx* ctx) {
+  long double left = ctx->rl_drain_end_ns - ctx->mock_tsc_ns;
+  return left > 0 ? left / ctx->rl_desc_ns : 0;
+}
+
+static uint16_t ut_txa30_txq_burst_busy(struct mt_txq_entry* entry,
+                                        struct rte_mbuf** tx_pkts, uint16_t nb_pkts,
+                                        int timeout_ms) {
+  struct ut_txa30_ctx* ctx = ut_txa30_active_ctx;
+  uint16_t nb_desc = mt_if_nb_tx_desc(&ctx->impl, MTL_PORT_P);
+  MTL_MAY_UNUSED(entry);
+  MTL_MAY_UNUSED(timeout_ms);
+
+  for (uint16_t i = 0; i < nb_pkts; i++) {
+    /* the busy burst spins until the shaper frees a descriptor */
+    if (ut_txa30_rl_queued_desc(ctx) > nb_desc - 1)
+      ctx->mock_tsc_ns =
+          (uint64_t)(ctx->rl_drain_end_ns - (nb_desc - 1) * ctx->rl_desc_ns);
+    long double start = RTE_MAX(ctx->rl_drain_end_ns, (long double)ctx->mock_tsc_ns);
+    ctx->rl_drain_end_ns = start + ctx->rl_desc_ns;
+    if (rte_mbuf_refcnt_read(tx_pkts[i]) > 1) rte_mbuf_refcnt_update(tx_pkts[i], -1);
+  }
+  return nb_pkts;
+}
+
+static void ut_txa30_sleep_us(unsigned int us) {
+  ut_txa30_active_ctx->mock_tsc_ns += (uint64_t)us * NS_PER_US;
+  ut_txa30_active_ctx->slept_ns += (uint64_t)us * NS_PER_US;
+}
+
+/* Seam: from here on, calls to mt_get_tsc(), mt_txq_burst_busy() and mt_sleep_us()
+ * written inside st_tx_audio_session.c resolve to our mocks instead.
+ * st30_tx_get_session_stats()/st30_tx_reset_session_stats() are renamed away too:
+ * pipeline/st30p_tx_harness.c already defines its own stub under those exact public
+ * names, and this file's #include of the full production .c would otherwise redefine them
+ * a second time in the same UnitTest binary. */
 #define mt_get_tsc ut_txa30_tsc_time_fn
+#define mt_txq_burst_busy ut_txa30_txq_burst_busy
+#define mt_sleep_us ut_txa30_sleep_us
 #define st30_tx_get_session_stats ut_txa30_unused_get_session_stats
 #define st30_tx_reset_session_stats ut_txa30_unused_reset_session_stats
 #include "st2110/st_tx_audio_session.c"
@@ -263,4 +306,47 @@ int ut_txa30_wire_rtp_timestamp_count(const ut_txa30_ctx* ctx) {
 
 uint32_t ut_txa30_wire_rtp_timestamp(const ut_txa30_ctx* ctx, int i) {
   return ctx->wire_rtp_timestamps[i];
+}
+
+/* ── RL profiling ─────────────────────────────────────────────────────── */
+
+int ut_txa30_setup_rl(ut_txa30_ctx* ctx, long double trs_ns, uint16_t nb_tx_desc) {
+  struct st_tx_audio_session_impl* s = &ctx->session;
+  struct st_tx_audio_session_rl_port* rl_port = &s->rl.port_info[MTL_SESSION_PORT_P];
+
+  ctx->impl.inf[MTL_PORT_P].nb_tx_desc = nb_tx_desc;
+  s->pacing.trs = trs_ns;
+  s->rl.pads_per_st30_pkt = 3;
+  rl_port->queue[0] = (struct mt_txq_entry*)&ctx->rl_queue_tag;
+  rl_port->pad = rte_pktmbuf_alloc(ut_pool());
+  rl_port->pkt = rte_pktmbuf_alloc(ut_pool());
+  if (!rl_port->pad || !rl_port->pkt) return -ENOMEM;
+  ctx->rl_desc_ns = trs_ns / (1 + s->rl.pads_per_st30_pkt);
+  return 0;
+}
+
+void ut_txa30_teardown_rl(ut_txa30_ctx* ctx) {
+  struct st_tx_audio_session_rl_port* rl_port =
+      &ctx->session.rl.port_info[MTL_SESSION_PORT_P];
+  if (rl_port->pad) rte_pktmbuf_free(rl_port->pad);
+  if (rl_port->pkt) rte_pktmbuf_free(rl_port->pkt);
+  rl_port->pad = NULL;
+  rl_port->pkt = NULL;
+}
+
+uint64_t ut_txa30_profile_rl(ut_txa30_ctx* ctx, uint64_t initial_bytes_per_sec) {
+  ut_txa30_active_ctx = ctx;
+  uint64_t trained = tx_audio_session_profiling_rl_bps(
+      &ctx->impl, &ctx->session, MTL_SESSION_PORT_P, initial_bytes_per_sec, 0);
+  ut_txa30_active_ctx = NULL;
+  return trained;
+}
+
+uint64_t ut_txa30_rl_queued_ns(const ut_txa30_ctx* ctx) {
+  long double left = ctx->rl_drain_end_ns - ctx->mock_tsc_ns;
+  return left > 0 ? (uint64_t)left : 0;
+}
+
+uint64_t ut_txa30_slept_ns(const ut_txa30_ctx* ctx) {
+  return ctx->slept_ns;
 }
