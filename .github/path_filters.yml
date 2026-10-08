@@ -269,3 +269,10 @@ docker_compose:
   - .github/workflows/docker_build.yml
   - docker/docker-compose.yml
   - docker/docker-compose.xdp.yml
+
+# bandit.yml: every tracked Python file, the test set and the workflow.
+bandit:
+  - '**/*.py'
+  - .github/linters/bandit.config
+  - .github/workflows/bandit.yml
+  - .github/path_filters.yml

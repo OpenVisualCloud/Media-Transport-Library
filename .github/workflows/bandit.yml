@@ -24,6 +24,26 @@ env:
   BANDIT_CONFIG: .github/linters/bandit.config
 
 jobs:
+  changes:
+    runs-on: ubuntu-22.04
+    permissions:
+      pull-requests: read
+    outputs:
+      bandit: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.bandit == 'true' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        with:
+          filters: .github/path_filters.yml
+
   # Security scan of every tracked Python file with the Bandit test set in
   # BANDIT_CONFIG. Why this is not a pre-commit hook: doc/coding_standard.md
   # section 4.
@@ -36,6 +56,8 @@ jobs:
   # the next '#' as a test ID or name, so the reason can silence other tests.
   bandit:
     name: Bandit
+    needs: changes
+    if: ${{ needs.changes.outputs.bandit == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read # for actions/checkout to fetch code
@@ -124,3 +146,19 @@ jobs:
         run: |
           jq -r '.errors[] | "skipped \(.filename): \(.reason)"' bandit.json
           jq -e '.errors == []' bandit.json > /dev/null
+
+  # The check for branch protection to require: it reports on every run, and
+  # fails only when the scan failed or was cancelled, not when it was skipped
+  # because no Python changed.
+  bandit-result:
+    name: bandit-result
+    needs: [changes, bandit]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bandit ok
+        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+        run: exit 0
+      - name: Bandit failed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
