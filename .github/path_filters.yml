@@ -273,6 +273,6 @@ docker_compose:
 # bandit.yml: every tracked Python file, the test set and the workflow.
 bandit:
   - '**/*.py'
-  - .github/linters/bandit.config
+  - .github/code-scan/bandit.config
   - .github/workflows/bandit.yml
   - .github/path_filters.yml
