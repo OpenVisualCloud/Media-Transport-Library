@@ -2377,10 +2377,12 @@ int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint
  *   size
  */
 static inline size_t st_frame_plane_size(struct st_frame* frame, uint8_t plane) {
+  size_t sz;
+
   /* no line size for codestream */
   if (st_frame_fmt_is_codestream(frame->fmt)) return frame->data_size;
 
-  size_t sz = frame->linesize[plane] * frame->height;
+  sz = frame->linesize[plane] * frame->height;
   if (frame->interlaced) sz /= 2;
   return sz;
 }
@@ -2470,8 +2472,10 @@ enum st22_codec st_name_to_codec(const char* name);
  *   Always returns false if the frame timestamp format is not TAI.
  */
 static inline bool st_frame_is_late(mtl_handle mt, struct st_frame* frame) {
+  uint64_t ptp_now;
+
   if (frame->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
-  uint64_t ptp_now = mtl_ptp_read_time_raw(mt);
+  ptp_now = mtl_ptp_read_time_raw(mt);
   return (int64_t)(frame->timestamp - ptp_now) < 0;
 }
 

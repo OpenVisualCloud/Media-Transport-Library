@@ -119,6 +119,13 @@ build_ffmpeg() {
 		fi
 	done
 
+	# MTL's own files get the warning flags of the MTL meson projects; the
+	# rest of FFmpeg keeps its own
+	cat >>libavdevice/Makefile <<'EOF'
+
+$(SUBDIR)mtl_%.o: CFLAGS += -Wextra -Werror -Wimplicit-fallthrough
+EOF
+
 	# Use bash array to pass extra configuration flags to avoid shellcheck SC2086 word-splitting warnings.
 	extra_config_flags=("--extra-cflags=${hardening_cflags}" "--extra-ldflags=${hardening_ldflags}" "--extra-ldexeflags=-pie")
 

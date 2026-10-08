@@ -329,6 +329,7 @@ The Linux build compiles the shipped MTL components, DPDK, openh264, FFmpeg, lib
 | `-D_GLIBCXX_ASSERTIONS` | Bounds and precondition checks in the C++ standard library (MtlManager, KahawaiTest) |
 | `-Wformat -Wformat-security -Werror=format-security` | Format string attacks |
 | `-Wimplicit-fallthrough` | Unmarked `switch` fall-through (MTL meson projects) |
+| `-Wextra` | The extra warning set, fatal in release builds like `-Wall` (MTL meson projects and the FFmpeg plugin's MTL files) |
 | `-Wl,-z,relro -Wl,-z,now` | Full RELRO, a read-only GOT |
 | `-Wl,-z,noexecstack` | Non-executable stack |
 | `b_pie=true`, FFmpeg `-pie` | Position independent executables for ASLR |
@@ -349,7 +350,7 @@ Not applied, and why:
 
 | Option or component | Reason |
 | --- | --- |
-| `-Wextra`, `-Wconversion` | The code has about 300 `-Wextra` and 3000 `-Wconversion` warnings to fix first |
+| `-Wconversion` | The code has about 3000 `-Wconversion` warnings to fix first |
 | `-Wl,-z,nodlopen` | libmtl, its plugins and the FFmpeg libraries are loaded with `dlopen()`, which the option forbids |
 | Clang `-fsanitize=cfi` | It needs LTO and hidden visibility, and is meant for final binaries, not libraries such as libmtl |
 | Spectre thunks (gcc `-mindirect-branch=thunk -mfunction-return=thunk`, clang `-mretpoline`) | The gcc ones conflict with `-fcf-protection=full`; all of them slow down the polling data path, and the kernel's Spectre mitigations cover user space |

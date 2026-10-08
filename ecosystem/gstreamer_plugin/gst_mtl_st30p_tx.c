@@ -561,7 +561,7 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
       cur_addr_frame = frame->addr + sink->frame_size - sink->cur_frame_available_size;
       cur_addr_buf = map_info.data + gst_buffer_get_size(buf) - bytes_to_write;
 
-      if (sink->cur_frame_available_size > bytes_to_write) {
+      if (sink->cur_frame_available_size > (guint)bytes_to_write) {
         memcpy(cur_addr_frame, cur_addr_buf, bytes_to_write);
         sink->cur_frame_available_size -= bytes_to_write;
         bytes_to_write = 0;

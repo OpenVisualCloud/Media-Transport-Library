@@ -169,7 +169,7 @@ static int mtl_st30p_read_header(AVFormatContext* ctx) {
     st30p_rx_set_block_timeout(s->rx_handle, s->timeout_sec * (uint64_t)NS_PER_S);
 
   frame_buf_size = st30p_rx_frame_size(s->rx_handle);
-  if (frame_buf_size != ctx->packet_size) {
+  if ((unsigned int)frame_buf_size != ctx->packet_size) {
     err(ctx, "%s, frame size mismatch %d:%u\n", __func__, frame_buf_size,
         ctx->packet_size);
     mtl_st30p_read_close(ctx);
@@ -249,7 +249,8 @@ static const AVOption mtl_st30p_rx_options[] = {
      {.i64 = 3},
      3,
      8,
-     DEC},
+     DEC,
+     NULL},
     {"timeout_s",
      "Frame get timeout in seconds",
      OFFSET(timeout_sec),
@@ -257,7 +258,8 @@ static const AVOption mtl_st30p_rx_options[] = {
      {.i64 = 0},
      0,
      60 * 10,
-     DEC},
+     DEC,
+     NULL},
     {"init_retry",
      "Number of retries to the initial read packet",
      OFFSET(session_init_retry),
@@ -265,7 +267,8 @@ static const AVOption mtl_st30p_rx_options[] = {
      {.i64 = 5},
      0,
      60,
-     DEC},
+     DEC,
+     NULL},
     {"sample_rate",
      "audio sample rate",
      OFFSET(sample_rate),
@@ -273,7 +276,8 @@ static const AVOption mtl_st30p_rx_options[] = {
      {.i64 = 48000},
      1,
      INT_MAX,
-     DEC},
+     DEC,
+     NULL},
     {"channels",
      "number of audio channels",
      OFFSET(channels),
@@ -281,7 +285,8 @@ static const AVOption mtl_st30p_rx_options[] = {
      {.i64 = 2},
      1,
      INT_MAX,
-     DEC},
+     DEC,
+     NULL},
     {"pcm_fmt",
      "audio pcm format",
      OFFSET(fmt_str),

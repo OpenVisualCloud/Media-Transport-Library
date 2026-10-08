@@ -215,7 +215,8 @@ static const AVOption mtl_st20p_tx_options[] = {
      {.i64 = 3},
      3,
      8,
-     ENC},
+     ENC,
+     NULL},
     {NULL},
 };
 

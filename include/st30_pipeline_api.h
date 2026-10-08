@@ -372,8 +372,10 @@ size_t st30p_rx_frame_size(st30p_rx_handle handle);
  *   Always returns false if the frame timestamp format is not TAI.
  */
 static inline bool st30_frame_is_late(mtl_handle mt, struct st30_frame* frame) {
+  uint64_t ptp_now;
+
   if (frame->tfmt != ST10_TIMESTAMP_FMT_TAI) return false;
-  uint64_t ptp_now = mtl_ptp_read_time(mt);
+  ptp_now = mtl_ptp_read_time(mt);
   return (int64_t)(frame->timestamp - ptp_now) < 0;
 }
 

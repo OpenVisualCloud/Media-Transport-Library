@@ -235,7 +235,7 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
     st20p_rx_set_block_timeout(s->rx_handle, s->timeout_sec * (uint64_t)NS_PER_S);
 
   img_buf_size = st20p_rx_frame_size(s->rx_handle);
-  if (img_buf_size != ctx->packet_size) {
+  if ((unsigned int)img_buf_size != ctx->packet_size) {
     err(ctx, "%s, frame size mismatch %d:%u\n", __func__, img_buf_size, ctx->packet_size);
     mtl_st20p_read_close(ctx);
     return AVERROR(EIO);
@@ -315,7 +315,8 @@ static const AVOption mtl_st20p_rx_options[] = {
      {.str = "1920x1080"},
      0,
      0,
-     DEC},
+     DEC,
+     NULL},
     {"pix_fmt",
      "Pixel format for framebuffer",
      OFFSET(pixel_format),
@@ -323,7 +324,8 @@ static const AVOption mtl_st20p_rx_options[] = {
      {.i64 = AV_PIX_FMT_YUV422P10LE},
      -1,
      INT32_MAX,
-     DEC},
+     DEC,
+     NULL},
     /* avoid "Option pixel_format not found." error */
     {"pixel_format",
      "Pixel format for framebuffer",
@@ -332,7 +334,8 @@ static const AVOption mtl_st20p_rx_options[] = {
      {.i64 = AV_PIX_FMT_YUV422P10LE},
      -1,
      INT32_MAX,
-     DEC},
+     DEC,
+     NULL},
     {"fps",
      "Video frame rate",
      OFFSET(framerate),
@@ -340,7 +343,8 @@ static const AVOption mtl_st20p_rx_options[] = {
      {.dbl = 59.94},
      0,
      1000,
-     DEC},
+     DEC,
+     NULL},
     {"timeout_s",
      "Frame get timeout in seconds",
      OFFSET(timeout_sec),
@@ -348,7 +352,8 @@ static const AVOption mtl_st20p_rx_options[] = {
      {.i64 = 0},
      0,
      60 * 10,
-     DEC},
+     DEC,
+     NULL},
     {"init_retry",
      "Number of retries to the initial read packet",
      OFFSET(session_init_retry),
@@ -356,7 +361,8 @@ static const AVOption mtl_st20p_rx_options[] = {
      {.i64 = 5},
      0,
      60,
-     DEC},
+     DEC,
+     NULL},
     {"fb_cnt",
      "Frame buffer count",
      OFFSET(fb_cnt),
@@ -364,7 +370,8 @@ static const AVOption mtl_st20p_rx_options[] = {
      {.i64 = 3},
      3,
      8,
-     DEC},
+     DEC,
+     NULL},
 #ifdef MTL_GPU_DIRECT_ENABLED
     {"gpu_direct",
      "Store frames in framebuffer directly on GPU",
@@ -373,7 +380,8 @@ static const AVOption mtl_st20p_rx_options[] = {
      {.i64 = 0},
      0,
      1,
-     DEC},
+     DEC,
+     NULL},
     {"gpu_driver",
      "Index of the GPU driver",
      OFFSET(gpu_driver_index),
@@ -381,7 +389,8 @@ static const AVOption mtl_st20p_rx_options[] = {
      {.i64 = 0},
      0,
      60,
-     DEC},
+     DEC,
+     NULL},
     {"gpu_device",
      "Index of the GPU device",
      OFFSET(gpu_device_index),
@@ -389,7 +398,8 @@ static const AVOption mtl_st20p_rx_options[] = {
      {.i64 = 0},
      0,
      60,
-     DEC},
+     DEC,
+     NULL},
 #endif /* MTL_GPU_DIRECT_ENABLED */
     {NULL},
 };
