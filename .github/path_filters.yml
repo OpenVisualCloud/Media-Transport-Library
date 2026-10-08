@@ -230,14 +230,16 @@ base_build:
   - 'tools/sch_smi_emulate/**'
 
 # docker_build.yml, ubuntu-docker-build. The build context is the repository
-# root less .dockerignore, which drops .github/, so the hash_<name> filters do
-# not apply: they hold .github/scripts/setup_environment.sh. Each image builds
-# DPDK, runs build.sh and the unit suite, and copies script/ into the image.
+# root less .dockerignore, which drops .github/ except check-hardening.sh, run
+# by every image build, so the hash_<name> filters do not apply: they hold
+# .github/scripts/setup_environment.sh. Each image builds DPDK, runs build.sh
+# and the unit suite, and copies script/ into the image.
 docker_build:
   - .github/path_filters.yml
   - .github/workflows/docker_build.yml
   - 'docker/*.dockerfile'
   - .dockerignore
+  - .github/scripts/ci/check-hardening.sh
   - 'script/**'
   - 'patches/dpdk/**'
   - versions.env
