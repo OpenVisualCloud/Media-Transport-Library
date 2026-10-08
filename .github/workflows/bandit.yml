@@ -21,7 +21,7 @@ concurrency:
 
 env:
   BANDIT_VERSION: 1.9.4
-  BANDIT_CONFIG: .github/linters/bandit.config
+  BANDIT_CONFIG: .github/code-scan/bandit.config
 
 jobs:
   changes:
