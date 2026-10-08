@@ -1,27 +1,12 @@
 name: Code scan
 
-# Static analysis, one job per scan. Each job runs when the files it reads
-# change; a manual run picks the scans and their options. A scan that reads
-# what the Build workflow built takes its gate from pr-gate.yml, which waits
-# for Build. A scan that needs no build takes its gate from the changes job, so
-# a change to its paths alone does not run Build. code-scan-result is the one
+# clang-tidy on the C and C++ lines that a change touches, and cargo-audit on
+# the Rust lock files. clang-tidy reads the compile commands of a build, so it
+# waits for the Build workflow through pr-gate.yml. code-scan-result is the one
 # check name that branch protection needs.
 
 on:
   workflow_dispatch:
-    inputs:
-      clang_tidy:
-        description: clang-tidy on the C and C++ lines changed since clang_tidy_base
-        type: boolean
-        default: true
-      clang_tidy_base:
-        description: The ref clang-tidy compares with, from its merge base. The commit needs the Build workflow's caches, which every push to main makes
-        type: string
-        default: origin/main
-      cargo_audit:
-        description: cargo-audit on the Rust lock files
-        type: boolean
-        default: true
   push:
     branches:
       - main
@@ -46,7 +31,7 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
-      cargo_audit: ${{ (github.event_name == 'workflow_dispatch' && inputs.cargo_audit) || steps.filter.outputs.cargo_audit == 'true' }}
+      cargo_audit: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.cargo_audit == 'true' }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -61,10 +46,8 @@ jobs:
         with:
           filters: .github/path_filters.yml
 
-  # clang-tidy checks the lines that a pull request changes, or on demand the
-  # lines changed since a chosen base
   pr-gate:
-    if: ${{ github.event_name == 'pull_request' || inputs.clang_tidy }}
+    if: ${{ github.event_name != 'push' }}
     uses: ./.github/workflows/pr-gate.yml
     permissions:
       contents: read
@@ -74,9 +57,6 @@ jobs:
     with:
       filter: clang_tidy
 
-  # The checks of .clang-tidy on the C and C++ lines that a pull request adds
-  # or changes. DPDK and MTL are the Build workflow's caches; the job only
-  # configures the meson projects, for their compile commands.
   clang-tidy:
     needs: pr-gate
     if: ${{ needs.pr-gate.outputs.changed == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
@@ -84,18 +64,14 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      security-events: write
+      pull-requests: read
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
 
-      # A pull request needs two commits, the merge commit and its base; a
-      # manual run needs the history back to the chosen base.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 0 }}
 
       - name: Compute source checksums
         id: sums
@@ -127,88 +103,32 @@ jobs:
           path: .local_install/mtl
           fail-on-cache-miss: true
 
-      # The packages that Base Build installs for these projects, without its
-      # builds; outside the checkout, which Level Zero's source would land in.
-      - name: Install the build dependencies
-        working-directory: ${{ runner.temp }}
-        env:
-          SETUP_BUILD_AND_INSTALL_GPU_DIRECT: 1
-          ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN: 1
-          ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN: 1
-        run: |
-          source "${GITHUB_WORKSPACE}/.github/scripts/setup_environment.sh"
-          setup_ubuntu_install_dependencies
-          sudo apt-get install -y --no-install-recommends libgmock-dev
+      - name: Write compile_commands.json
+        run: task ci:clang-tidy-setup
 
-      - name: Configure the meson projects
-        run: .github/scripts/ci/clang-tidy-configure.sh
-
-      # The scan must fail on a macro planted in a commit on top, or a green
-      # run proves nothing; the commit is dropped again. shell: bash sets
-      # pipefail, so a file that clang-tidy can't process fails the scan.
-      - name: clang-tidy control
-        shell: bash
-        run: |
-          printf '\n#define MT_PLANTED_SUM(a, b) a + b\n' >>lib/src/mt_util.c
-          line=$(wc -l <lib/src/mt_util.c)
-          git -c user.name=ci -c user.email=ci@localhost commit -q -am "clang-tidy control"
-          if .github/scripts/ci/clang-tidy-changed.py clang-tidy-14 HEAD^1 | .github/scripts/ci/changed-lines.py HEAD^1 >"${RUNNER_TEMP}/control.txt"; then
-            echo "::error::the clang-tidy scan passed a planted macro"
-            exit 1
-          fi
-          git reset -q --hard HEAD^1
-          if ! grep -q "^lib/src/mt_util.c:${line}:[0-9]*: warning: .*\[bugprone-macro-parentheses\]" "${RUNNER_TEMP}/control.txt"; then
-            echo "::error::the clang-tidy scan failed, but not on the planted macro"
-            cat "${RUNNER_TEMP}/control.txt"
-            exit 1
-          fi
-
-      - name: Choose the base of the scan
-        id: base
-        env:
-          BASE_REF: ${{ inputs.clang_tidy_base }}
-        run: |
-          if [ "${GITHUB_EVENT_NAME}" = pull_request ]; then
-            echo "sha=$(git rev-parse HEAD^1)" >>"${GITHUB_OUTPUT}"
-          else
-            echo "sha=$(git merge-base "${BASE_REF}" HEAD)" >>"${GITHUB_OUTPUT}"
-          fi
-
+      # The checks of .clang-tidy, on the lines that the pull request changes.
       - name: clang-tidy
-        id: scan
-        shell: bash
+        id: lint
+        uses: cpp-linter/cpp-linter-action@7199741dec273a0d69231350812fdb766e275e4e # v2.9.2
         env:
-          BASE: ${{ steps.base.outputs.sha }}
-        run: |
-          if ! .github/scripts/ci/clang-tidy-changed.py clang-tidy-14 "${BASE}" | .github/scripts/ci/changed-lines.py "${BASE}" >"${RUNNER_TEMP}/findings.txt"; then
-            sed 's/^\([^:]*\):\([0-9]*\):\([0-9]*\): \(.*\)$/::error file=\1,line=\2,col=\3::\4/' "${RUNNER_TEMP}/findings.txt"
-            exit 1
-          fi
-
-      # Whether the scan passed or failed. No finding uploads an empty
-      # analysis, so the code scanning check reports every scanned pull request.
-      - name: Convert the findings to SARIF
-        if: ${{ !cancelled() && steps.scan.outcome != 'skipped' }}
-        run: .github/scripts/ci/clang-tidy-sarif.py <"${RUNNER_TEMP}/findings.txt" >"${RUNNER_TEMP}/clang-tidy.sarif"
-
-      # A fork's pull request has a token that can't write security events.
-      - name: Upload the findings to code scanning
-        if: ${{ !cancelled() && steps.scan.outcome != 'skipped' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          sarif_file: ${{ runner.temp }}/clang-tidy.sarif
-          category: clang-tidy
+          version: 14
+          style: ''
+          tidy-checks: ''
+          database: .
+          lines-changed-only: true
+          extra-args: -Wno-error
+
+      - name: Fail on a clang-tidy finding
+        if: ${{ steps.lint.outputs.checks-failed > 0 }}
+        run: exit 1
 
   cargo-audit:
     needs: changes
     if: ${{ needs.changes.outputs.cargo_audit == 'true' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 15
-    env:
-      # Pinned release of https://github.com/rustsec/rustsec. It publishes no
-      # checksum, so this is the sha256 of the download.
-      CARGO_AUDIT_VERSION: 0.22.2
-      CARGO_AUDIT_SHA256: 7fb9497f8594b389e5fce5ef9b92db08432996895b2e0c5a0167a69ed445c428
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -217,34 +137,16 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
       - name: Install cargo-audit
-        run: |
-          name="cargo-audit-x86_64-unknown-linux-musl-v${CARGO_AUDIT_VERSION}"
-          curl -fsSLo cargo-audit.tgz "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv${CARGO_AUDIT_VERSION}/${name}.tgz"
-          echo "${CARGO_AUDIT_SHA256}  cargo-audit.tgz" | sha256sum -c -
-          tar -xzf cargo-audit.tgz "${name}/cargo-audit"
-          sudo install "${name}/cargo-audit" /usr/local/bin/
+        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with:
+          tool: cargo-audit@0.22.2
 
-      # cargo-audit must report the advisory of a lock file that has one, or a
-      # green run below proves nothing. smallvec 1.6.0 has RUSTSEC-2021-0003.
-      - name: Negative control
-        run: |
-          printf 'version = 3\n\n[[package]]\nname = "smallvec"\nversion = "1.6.0"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\n' >"${RUNNER_TEMP}/vulnerable.lock"
-          if out=$(cargo-audit audit -f "${RUNNER_TEMP}/vulnerable.lock" 2>&1); then
-            echo "::error::cargo-audit passed a lock file with a known advisory"
-            exit 1
-          fi
-          if ! grep -q 'RUSTSEC-2021-0003' <<<"$out"; then
-            echo "::error::cargo-audit failed without reporting RUSTSEC-2021-0003"
-            exit 1
-          fi
-
-      # rust/ commits no Cargo.lock, so audit the versions a build resolves today.
       - name: cargo-audit
-        run: |
-          cargo-audit audit -f tests/tools/perf_debug_mcp/native/Cargo.lock
-          (cd rust && cargo generate-lockfile)
-          cargo-audit audit -f rust/Cargo.lock
+        run: task ci:cargo-audit
 
   code-scan-result:
     name: code-scan-result

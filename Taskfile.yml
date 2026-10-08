@@ -136,6 +136,17 @@ tasks:
     cmds:
       - bash {{.CI_SCRIPTS}}/fuzz.sh {{.CLI_ARGS}}
 
+  ci:clang-tidy-setup:
+    desc: Write compile_commands.json, from the cached DPDK and MTL, for the clang-tidy scan
+    cmds:
+      - bash {{.CI_SCRIPTS}}/clang-tidy-setup.sh
+
+  ci:cargo-audit:
+    desc: Audit the Rust lock files; rust/ commits none, so audit what a build resolves today
+    cmds:
+      - cargo audit -f tests/tools/perf_debug_mcp/native/Cargo.lock
+      - cd rust && cargo generate-lockfile && cargo audit
+
   ci:gtest-nightly:
     desc: Run the nightly bare-metal gtest harness
     cmds:
