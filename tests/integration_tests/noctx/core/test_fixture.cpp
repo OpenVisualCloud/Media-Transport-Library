@@ -272,25 +272,28 @@ NoCtxTest::St40pHandlerBundle NoCtxTest::registerSt40pResources(
   return bundle;
 }
 
-void NoCtxTest::initDefaultContext() {
+void NoCtxTest::initDefaultContext(PtpTimeFn ptpTimeFn) {
   if (!ctx) {
     throw std::runtime_error("initDefaultContext expects initialized ctx");
   }
 
-  ctx->para.ptp_get_time_fn = NoCtxTest::FakePtpClockNow;
+  ctx->para.ptp_get_time_fn = ptpTimeFn;
   ctx->para.log_level = MTL_LOG_LEVEL_INFO;
   ctx->para.flags &= ~MTL_FLAG_DEV_AUTO_START_STOP;
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr);
 }
 
-void NoCtxTest::initStrictPacingContext() {
-  const std::string unsupported =
-      strictPacingTopologyError(ctx->para.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R]);
-  if (!unsupported.empty()) {
-    if (strictPacingRequired()) FAIL() << unsupported;
-    GTEST_SKIP() << unsupported;
-  }
+void NoCtxTest::requireStrictTopology(const std::string& unsupported) {
+  if (unsupported.empty()) return;
+  if (strictPacingRequired()) FAIL() << unsupported;
+  GTEST_SKIP() << unsupported;
+}
+
+void NoCtxTest::initStrictPacingContext(PtpTimeFn ptpTimeFn) {
+  requireStrictTopology(
+      strictPacingTopologyError(ctx->para.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R]));
+  if (IsSkipped() || HasFatalFailure()) return;
 
   /* NIC RX timestamps are the pacing oracle. The TX tasklet launches each frame in
    * software (audio, and RL video's WAIT_TARGET gate), so keep the CNI and RX video
@@ -298,7 +301,7 @@ void NoCtxTest::initStrictPacingContext() {
   ctx->para.flags &= ~MTL_FLAG_CNI_TASKLET;
   ctx->para.flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
   ctx->para.flags |= MTL_FLAG_ENABLE_HW_TIMESTAMP;
-  initDefaultContext();
+  initDefaultContext(ptpTimeFn);
 }
 
 bool NoCtxTest::waitForSession(Session& session, std::chrono::milliseconds timeout) {
