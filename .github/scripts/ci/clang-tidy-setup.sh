@@ -7,9 +7,10 @@
 # Build workflow's caches in .local_install.
 set -euo pipefail
 
+# The flags add the GStreamer and OBS headers the meson setups below need. Only
+# the install function runs: the script itself would also build both plugins.
 export ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN=1 ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN=1
 bash -c '. .github/scripts/setup_environment.sh && setup_ubuntu_install_dependencies'
-sudo apt-get install -y libgmock-dev
 
 # The .pc files name the prefix of the build host, and static libraries that
 # this host does not have.
