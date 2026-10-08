@@ -1366,7 +1366,7 @@ void ut_txv_init_tx_chain(ut_txv_ctx* ctx, const struct ut_txv_reclaim_case* c,
                           uint16_t nb_tx_desc, bool* zero_copy, bool* tx_reclaim) {
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     ctx->impl.inf[i].nb_tx_desc = nb_tx_desc;
-    ctx->impl.inf[i].tx_deep = nb_tx_desc == 2048;
+    ctx->impl.inf[i].tx_deep = nb_tx_desc == MT_DEV_TX_DESC_DEEP;
   }
   ut_txv_reclaim_session(ctx, c);
   tv_init_tx_chain(&ctx->impl, &ctx->session);
@@ -1753,7 +1753,7 @@ bool ut_txv_pkts_capable_chain(ut_txv_ctx* ctx, uint16_t nb_tx_desc, int total_p
   struct st_tx_video_session_impl* s = &ctx->session;
 
   ctx->impl.inf[MTL_PORT_P].nb_tx_desc = nb_tx_desc;
-  ctx->impl.inf[MTL_PORT_P].tx_deep = nb_tx_desc == 2048;
+  ctx->impl.inf[MTL_PORT_P].tx_deep = nb_tx_desc == MT_DEV_TX_DESC_DEEP;
   s->ops.type = ST20_TYPE_FRAME_LEVEL;
   s->ops.num_port = 1;
   s->port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
@@ -1784,7 +1784,7 @@ int ut_txv_rtcp_mempool_sizes(ut_txv_ctx* ctx, uint16_t nb_tx_desc,
   struct st_tx_video_session_impl* s = &ctx->session;
 
   ctx->impl.inf[MTL_PORT_P].nb_tx_desc = nb_tx_desc;
-  ctx->impl.inf[MTL_PORT_P].tx_deep = nb_tx_desc == 2048;
+  ctx->impl.inf[MTL_PORT_P].tx_deep = nb_tx_desc == MT_DEV_TX_DESC_DEEP;
   s->ops.type = ST20_TYPE_FRAME_LEVEL;
   s->ops.num_port = 1;
   s->ops.flags |= ST20_TX_FLAG_ENABLE_RTCP;
@@ -1987,7 +1987,7 @@ int ut_txv_pipe_setup(ut_txv_ctx* ctx, const struct ut_txv_pipe_case* c) {
   for (int i = 0; i < c->num_port; i++) {
     struct mt_interface* inf = &ctx->impl.inf[i];
     inf->nb_tx_desc = c->nb_tx_desc[i];
-    inf->tx_deep = !c->user_nb_tx_desc && c->nb_tx_desc[i] == 2048;
+    inf->tx_deep = !c->user_nb_tx_desc && c->nb_tx_desc[i] == MT_DEV_TX_DESC_DEEP;
     inf->ptp_get_time_fn = ut_txv_ptp_time_fn;
     s->port_maps[i] = (enum mtl_port)i;
     s->pacing_way[i] = ST21_TX_PACING_WAY_TSC;

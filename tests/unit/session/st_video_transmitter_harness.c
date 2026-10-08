@@ -7,10 +7,12 @@
 
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
+#include "dev/mt_dev.h"
 #include "mt_main.h"
 #include "st2110/st_tx_video_session.h"
 
 #define UT_TRS_MAX_TSC_SCRIPT 64
+#define UT_TRS_NIC_FIFO 8192
 #define UT_TRS_MAX_SEND_HISTORY 8
 #define UT_TRS_PAD_SIZE 1262 /* the NORMAL pad of 1080p59 GPM */
 
@@ -56,6 +58,21 @@ struct ut_trs_ctx {
   uint16_t burst_accept_limit;
   uint32_t refcnt_since_tsc;
   uint32_t max_refcnt_before_burst;
+
+  /* stream mode: a NIC TX queue of nic_desc descriptors, each pkt takes nb_segs of
+   * them until the shaper finishes it, one pkt per trs */
+  uint16_t nic_desc;
+  uint32_t nic_used;
+  long double nic_done[UT_TRS_NIC_FIFO]; /* when each queued pkt leaves the wire */
+  uint16_t nic_segs[UT_TRS_NIC_FIFO];
+  uint32_t nic_head, nic_tail;
+  long double nic_last_done;
+  long double nic_first_done;
+  uint64_t nic_pkts;
+  long double nic_max_late;
+  uint16_t stream_segs;
+  uint32_t stream_idx;
+  struct rte_mempool* stream_pool;
 };
 
 #include "session/st_video_transmitter_harness.h"
@@ -95,6 +112,38 @@ static void ut_trs_burst_stall(struct ut_trs_ctx* ctx, bool after_doorbell) {
   ctx->last_tsc += ctx->stall_ns;
 }
 
+static uint16_t ut_trs_nic_burst(struct ut_trs_ctx* ctx, struct rte_mbuf** tx_pkts,
+                                 uint16_t nb_pkts) {
+  long double now = ctx->last_tsc;
+  long double trs = ctx->session.pacing.trs;
+  uint16_t tx;
+
+  while (ctx->nic_head != ctx->nic_tail &&
+         ctx->nic_done[ctx->nic_head % UT_TRS_NIC_FIFO] <= now) {
+    ctx->nic_used -= ctx->nic_segs[ctx->nic_head % UT_TRS_NIC_FIFO];
+    ctx->nic_head++;
+  }
+  for (tx = 0; tx < nb_pkts; tx++) {
+    struct rte_mbuf* m = tx_pkts[tx];
+    /* stream pkts are single mbufs standing for chained ones */
+    uint16_t segs = m->pool == ctx->stream_pool ? ctx->stream_segs : m->nb_segs;
+    if (ctx->nic_used + segs > ctx->nic_desc) break;
+    long double done = RTE_MAX(ctx->nic_last_done, now) + trs;
+    if (!ctx->nic_pkts) ctx->nic_first_done = done;
+    /* the slot of the nic_pkts-th pkt of a stream that never pauses */
+    long double late = done - (ctx->nic_first_done + ctx->nic_pkts * trs);
+    ctx->nic_max_late = RTE_MAX(ctx->nic_max_late, late);
+    ctx->nic_last_done = done;
+    ctx->nic_pkts++;
+    ctx->nic_done[ctx->nic_tail % UT_TRS_NIC_FIFO] = done;
+    ctx->nic_segs[ctx->nic_tail % UT_TRS_NIC_FIFO] = segs;
+    ctx->nic_tail++;
+    ctx->nic_used += segs;
+    rte_pktmbuf_free(m);
+  }
+  return tx;
+}
+
 static uint16_t ut_trs_txq_burst_mock(struct mt_txq_entry* entry,
                                       struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   struct ut_trs_ctx* ctx = ut_trs_active_ctx;
@@ -102,6 +151,7 @@ static uint16_t ut_trs_txq_burst_mock(struct mt_txq_entry* entry,
   ctx->burst_call_count++;
   ctx->max_refcnt_before_burst =
       RTE_MAX(ctx->max_refcnt_before_burst, ctx->refcnt_since_tsc);
+  if (ctx->nic_desc) return ut_trs_nic_burst(ctx, tx_pkts, nb_pkts);
   ut_trs_burst_stall(ctx, false);
   if (ctx->burst_force_fail) return 0;
 
@@ -268,9 +318,11 @@ fail:
 void ut_trs_destroy(ut_trs_ctx* ctx) {
   if (!ctx) return;
   if (ut_trs_active_ctx == ctx) ut_trs_active_ctx = NULL;
-  bool owns_inflight = ctx->session.trs_inflight_num[MTL_SESSION_PORT_P] > 0;
-  bool owns_inflight2 = ctx->session.trs_inflight_num2[MTL_SESSION_PORT_P] > 0;
-  bool owns_redundant = ctx->session.trs_inflight_num[MTL_SESSION_PORT_R] > 0;
+  /* stream mode leaves its own pkts in inflight, never the ctx mbufs */
+  bool stream = ctx->stream_pool;
+  bool owns_inflight = !stream && ctx->session.trs_inflight_num[MTL_SESSION_PORT_P] > 0;
+  bool owns_inflight2 = !stream && ctx->session.trs_inflight_num2[MTL_SESSION_PORT_P] > 0;
+  bool owns_redundant = !stream && ctx->session.trs_inflight_num[MTL_SESSION_PORT_R] > 0;
   st_tx_video_transmitter_state_cleanup(&ctx->session);
   if (owns_inflight) ctx->inflight_mbuf = NULL;
   if (owns_inflight2) ctx->inflight2_mbuf = NULL;
@@ -281,8 +333,12 @@ void ut_trs_destroy(ut_trs_ctx* ctx) {
   if (ctx->inflight_mbuf) rte_pktmbuf_free(ctx->inflight_mbuf);
   if (ctx->inflight2_mbuf) rte_pktmbuf_free(ctx->inflight2_mbuf);
   if (ctx->redundant_inflight_mbuf) rte_pktmbuf_free(ctx->redundant_inflight_mbuf);
-  if (ctx->session.ring[MTL_SESSION_PORT_P])
+  if (ctx->session.ring[MTL_SESSION_PORT_P]) {
+    /* only stream mode leaves pkts of its own in the ring */
+    if (ctx->stream_pool) mt_ring_dequeue_clean(ctx->session.ring[MTL_SESSION_PORT_P]);
     rte_ring_free(ctx->session.ring[MTL_SESSION_PORT_P]);
+  }
+  if (ctx->stream_pool) rte_mempool_free(ctx->stream_pool);
   free(ctx);
 }
 
@@ -656,4 +712,66 @@ void ut_trs_enqueue_frame_boundary(ut_trs_ctx* ctx, uint64_t target_tsc) {
   st_tx_mbuf_set_idx(ctx->inflight2_mbuf, 0);
   st_tx_mbuf_set_tsc(ctx->inflight2_mbuf, target_tsc);
   rte_ring_sp_enqueue_bulk(s->ring[MTL_SESSION_PORT_P], pkts, 2, NULL);
+}
+
+uint16_t ut_trs_deep_nb_tx_desc(void) {
+  return MT_DEV_TX_DESC_DEEP;
+}
+
+int ut_trs_setup_stream(ut_trs_ctx* ctx, long double trs_ns, uint16_t nic_desc,
+                        uint16_t segs_per_pkt) {
+  static unsigned int pool_idx;
+  struct st_tx_video_session_impl* s = &ctx->session;
+  char name[RTE_MEMPOOL_NAMESIZE];
+
+  (void)snprintf(name, sizeof(name), "ut_trs_stream_%u", pool_idx);
+  ctx->stream_pool =
+      rte_pktmbuf_pool_create(name, 2048, 0, sizeof(struct mt_muf_priv_data),
+                              RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
+  (void)snprintf(name, sizeof(name), "ut_trs_stream_ring_%u", pool_idx++);
+  struct rte_ring* ring = ut_ring_create(name, 1024);
+  if (!ctx->stream_pool || !ring) return -ENOMEM;
+  rte_ring_free(s->ring[MTL_SESSION_PORT_P]);
+  s->ring[MTL_SESSION_PORT_P] = ring;
+
+  s->bulk = ST_SESSION_MAX_BULK;
+  s->pacing.trs = trs_ns;
+  /* no in-frame pads, < 1 % of the wire */
+  s->pacing.pad_interval = 1e9f;
+  ctx->nic_desc = nic_desc;
+  ctx->stream_segs = segs_per_pkt;
+  ctx->stream_idx = 1;
+  ctx->tsc_script_len = 0;
+  return 0;
+}
+
+void ut_trs_stream(ut_trs_ctx* ctx, uint64_t duration_ns, uint64_t call_ns) {
+  struct rte_ring* ring = ctx->session.ring[MTL_SESSION_PORT_P];
+  uint64_t end = ctx->last_tsc + duration_ns;
+
+  ut_trs_active_ctx = ctx;
+  while (ctx->last_tsc < end) {
+    /* the builder keeps the ring full of mid-frame pkts */
+    while (rte_ring_free_count(ring)) {
+      struct rte_mbuf* m = rte_pktmbuf_alloc(ctx->stream_pool);
+      if (!m) break;
+      st_tx_mbuf_set_idx(m, ctx->stream_idx++);
+      rte_ring_sp_enqueue(ring, m);
+    }
+    ctx->last_tsc += call_ns;
+    video_trs_rl_tasklet(&ctx->impl, &ctx->session, MTL_SESSION_PORT_P);
+  }
+  ut_trs_active_ctx = NULL;
+}
+
+void ut_trs_stall_stream(ut_trs_ctx* ctx, uint64_t stall_ns) {
+  ctx->last_tsc += stall_ns;
+}
+
+long double ut_trs_stream_max_late_ns(const ut_trs_ctx* ctx) {
+  return ctx->nic_max_late;
+}
+
+uint32_t ut_trs_stream_nic_desc_used(const ut_trs_ctx* ctx) {
+  return ctx->nic_used;
 }

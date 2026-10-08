@@ -27,7 +27,7 @@
 namespace {
 
 constexpr unsigned int kCacheSlack = 192; /* 1.5 x MT_MBUF_CACHE_SIZE */
-constexpr uint16_t kDeep = 2048;          /* the harnesses' deep ring */
+constexpr uint16_t kDeep = 2048;          /* MT_DEV_TX_DESC_DEEP */
 constexpr uint64_t kStepNs = 1000;
 constexpr uint64_t kLazyNs = 40000000; /* 2 frames, every ring slot keeps a mbuf */
 constexpr uint64_t kHungNs = 40000000;

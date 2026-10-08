@@ -363,11 +363,11 @@ uint64_t ut_txv_stat_snapshot_port_frames(const ut_txv_ctx* ctx);
 
 /* tv_pkts_capable_chain() of a one-port frame-level session, with RTCP or not: whether
  * zero copy keeps a frame buffer free with nb_tx_desc descriptors per TX queue, deep at
- * 2048 */
+ * MT_DEV_TX_DESC_DEEP */
 bool ut_txv_pkts_capable_chain(ut_txv_ctx* ctx, uint16_t nb_tx_desc, int total_pkts,
                                uint16_t frames_cnt, bool rtcp);
 
-/* tv_mempool_init() of a one-port frame-level RTCP session, deep at 2048:
+/* tv_mempool_init() of a one-port frame-level RTCP session, deep at MT_DEV_TX_DESC_DEEP:
  * the mbufs of its header and payload pools, which then are freed again */
 int ut_txv_rtcp_mempool_sizes(ut_txv_ctx* ctx, uint16_t nb_tx_desc,
                               uint16_t rtcp_buffer_size, unsigned int* hdr_size,
@@ -435,7 +435,7 @@ struct ut_txv_pipe_case {
   unsigned int copy_pool;
   /* mbufs taken out of each exact pool first, as other lcores' caches keep them */
   unsigned int hold;
-  /* the app set nb_tx_desc: no port is deep; else 2048 is */
+  /* the app set nb_tx_desc: no port is deep; else MT_DEV_TX_DESC_DEEP is */
   bool user_nb_tx_desc;
 };
 int ut_txv_pipe_setup(ut_txv_ctx* ctx, const struct ut_txv_pipe_case* c);

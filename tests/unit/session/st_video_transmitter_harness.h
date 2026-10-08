@@ -116,6 +116,21 @@ void ut_trs_enqueue_ring_pkt(ut_trs_ctx* ctx);
 void ut_trs_enqueue_first_pkt(ut_trs_ctx* ctx, uint64_t target_tsc);
 void ut_trs_enqueue_frame_boundary(ut_trs_ctx* ctx, uint64_t target_tsc);
 
+/* MT_DEV_TX_DESC_DEEP, the TX ring of a deep port */
+uint16_t ut_trs_deep_nb_tx_desc(void);
+/* Stream mode: the RL tasklet runs mid-frame against a NIC TX queue of nic_desc
+ * descriptors, each pkt taking segs_per_pkt of them (2 for a zero-copy chained pkt)
+ * until the shaper finishes it, one pkt per trs. */
+int ut_trs_setup_stream(ut_trs_ctx* ctx, long double trs_ns, uint16_t nic_desc,
+                        uint16_t segs_per_pkt);
+/* calls the tasklet every call_ns for duration_ns, the ring kept full */
+void ut_trs_stream(ut_trs_ctx* ctx, uint64_t duration_ns, uint64_t call_ns);
+/* the scheduler thread loses its CPU: the clock moves, the tasklet does not run */
+void ut_trs_stall_stream(ut_trs_ctx* ctx, uint64_t stall_ns);
+/* how far the latest pkt left behind its slot in a stream that never pauses */
+long double ut_trs_stream_max_late_ns(const ut_trs_ctx* ctx);
+uint32_t ut_trs_stream_nic_desc_used(const ut_trs_ctx* ctx);
+
 #ifdef __cplusplus
 }
 #endif

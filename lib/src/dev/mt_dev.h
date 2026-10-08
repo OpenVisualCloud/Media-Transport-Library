@@ -10,6 +10,9 @@
 /* default desc nb for tx and rx */
 #define MT_DEV_RX_DESC (4096 / 2)
 #define MT_DEV_TX_DESC (4096 / 8)
+/* tx of a shaped port that frees sent mbufs each burst: 1024 chained video pkts, ~3.8 ms
+ * at 1080p59.94, ride out a lost scheduler slice */
+#define MT_DEV_TX_DESC_DEEP (4096 / 2)
 
 /* Port link-up detection loop parameters.
  *
