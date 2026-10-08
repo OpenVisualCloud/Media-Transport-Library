@@ -2,7 +2,7 @@
 
 `isolate.sh [--] <command...>` runs one command at nice −20 inside a cgroup v2
 cpuset partition that exists only while the command runs. The NoCtx runner
-(`tests/integration_tests/noctx/run.sh`) uses it for its strict timing cases,
+(`tests/integration_tests/noctx/run.sh`) uses it for the cases in `NOCTX_ISOLATE_CASES`,
 and the acceptance rx_timing tests for RxTxApp (`cpu_isolation="require"`).
 Background on static and dynamic CPU isolation: [doc/isolation.md](../../../doc/isolation.md).
 
