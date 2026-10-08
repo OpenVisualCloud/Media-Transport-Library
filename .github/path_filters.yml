@@ -173,8 +173,8 @@ smoke_tests: &smoke_tests
   - 'tests/acceptance/**'
 
 # code-scan.yml, clang-tidy: the C and C++ files whose changed lines it checks,
-# the checks, and the files its steps run. Its DPDK and MTL come from the Build
-# workflow's caches; a cache it can't restore fails the job.
+# the checks, and the files its steps run. Its DPDK comes from the Build
+# workflow's cache, and on a miss it waits for Build, so build_workflow holds it.
 clang_tidy: &clang_tidy
   - '**/*.c'
   - '**/*.cpp'
@@ -183,7 +183,6 @@ clang_tidy: &clang_tidy
   - .clang-tidy
   - .github/path_filters.yml
   - .github/workflows/code-scan.yml
-  - .github/workflows/pr-gate.yml
   - .github/scripts/ci/clang-tidy-setup.sh
   - Taskfile.yml
   - .github/scripts/setup_environment.sh
