@@ -692,10 +692,11 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
   rte_eal_alarm_cancel(ptp_monitor_handler, ptp);
   if (ptp->delta_result_cnt) {
-    expect_delta = abs(ptp->expect_result_avg) * (RTE_MIN(ptp->delta_result_err + 2, 5));
+    expect_delta =
+        abs(ptp->expect_result_avg) * (RTE_MIN(ptp->delta_result_err + 2, (uint64_t)5));
     if (!expect_delta) {
       expect_delta = ptp->delta_result_sum / ptp->delta_result_cnt * 2;
-      expect_delta = RTE_MAX(expect_delta, 100 * 1000); /* min 100us */
+      expect_delta = RTE_MAX(expect_delta, (uint64_t)(100 * 1000)); /* min 100us */
     }
     if (abs_delta > expect_delta) {
 #if MT_PTP_PRINT_ERR_RESULT
@@ -956,7 +957,8 @@ static int ptp_parse_sync(struct mt_ptp_impl* ptp, struct mt_ptp_sync_msg* msg, 
 
   uint64_t monitor_period_us = ptp->expect_result_period_ns / 1000 / 2;
   if (monitor_period_us) {
-    monitor_period_us = RTE_MAX(monitor_period_us, 100 * 1000 * 1000); /* min 100ms */
+    monitor_period_us =
+        RTE_MAX(monitor_period_us, (uint64_t)(100 * 1000 * 1000)); /* min 100ms */
     if (ptp->t2) { /* already has a pending t2 */
       ptp_expect_result_clear(ptp);
       ptp_t_result_clear(ptp);

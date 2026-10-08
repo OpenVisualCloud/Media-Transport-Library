@@ -30,6 +30,7 @@ typedef struct AVOption {
   double min;
   double max;
   int flags;
+  const char* unit;
 } AVOption;
 
 #define AV_LOG_DEBUG 48

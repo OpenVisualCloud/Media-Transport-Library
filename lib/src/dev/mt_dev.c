@@ -107,7 +107,7 @@ static const struct mt_dev_driver_info dev_drvs[] = {
     }};
 
 static int parse_driver_info(const char* driver, struct mt_dev_driver_info* drv_info) {
-  for (int i = 0; i < MTL_ARRAY_SIZE(dev_drvs); i++) {
+  for (size_t i = 0; i < MTL_ARRAY_SIZE(dev_drvs); i++) {
     if (!strcmp(dev_drvs[i].name, driver)) {
       *drv_info = dev_drvs[i];
       return 0;
@@ -585,7 +585,7 @@ static int dev_rl_init_nonleaf_nodes(struct mt_interface* inf) {
   else
     nonleaf_nodes_num = ST_TM_NONLEAF_NODES_NUM_PF;
 
-  for (int i = 0; i < nonleaf_nodes_num; i++) {
+  for (uint32_t i = 0; i < nonleaf_nodes_num; i++) {
     node_id = ST_ROOT_NODE_ID + i;
     ret = rte_tm_node_add(port_id, node_id, parent_id, 0, 1, i, &np, &error);
     if (ret < 0) {
@@ -2647,7 +2647,7 @@ int mt_reset_admin_port_stats(struct mtl_main_impl* impl) {
 
 int mt_read_admin_port_stats(struct mtl_main_impl* impl, enum mtl_port port,
                              struct mtl_port_status* stats) {
-  if (port >= mt_num_ports(impl)) {
+  if (port >= (enum mtl_port)mt_num_ports(impl)) {
     err("%s, invalid port %d\n", __func__, port);
     return -EIO;
   }
@@ -2664,7 +2664,7 @@ int mtl_get_port_stats(mtl_handle mt, enum mtl_port port, struct mtl_port_status
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;
   }
-  if (port >= mt_num_ports(impl)) {
+  if (port >= (enum mtl_port)mt_num_ports(impl)) {
     err("%s, invalid port %d\n", __func__, port);
     return -EIO;
   }
@@ -2685,7 +2685,7 @@ int mtl_reset_port_stats(mtl_handle mt, enum mtl_port port) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;
   }
-  if (port >= mt_num_ports(impl)) {
+  if (port >= (enum mtl_port)mt_num_ports(impl)) {
     err("%s, invalid port %d\n", __func__, port);
     return -EIO;
   }

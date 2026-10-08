@@ -282,7 +282,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
   }
 
   int valid_bulk = bulk;
-  for (int i = 0; i < bulk; i++) {
+  for (unsigned int i = 0; i < bulk; i++) {
     pkt_idx = st_tx_mbuf_get_idx(pkts[i]);
     if ((pkt_idx == 0) || (pkt_idx == ST_TX_DUMMY_PKT_IDX)) {
       valid_bulk = i;
@@ -343,7 +343,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     }
   }
 
-  int pos = (valid_bulk == bulk) ? 0 : valid_bulk;
+  int pos = ((unsigned int)valid_bulk == bulk) ? 0 : valid_bulk;
 
   video_burst_packet(impl, s, s_port, &pkts[pos], bulk - pos, false);
 
@@ -424,7 +424,7 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
   /* check valid bulk */
   int valid_bulk = bulk;
   uint32_t pkt_idx = 0;
-  for (int i = 0; i < bulk; i++) {
+  for (unsigned int i = 0; i < bulk; i++) {
     pkt_idx = st_tx_mbuf_get_idx(pkts[i]);
     if (pkt_idx == ST_TX_DUMMY_PKT_IDX) {
       valid_bulk = i;
@@ -451,7 +451,8 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
         s->trs_inflight_num[s_port] = valid_bulk;
         s->trs_inflight_idx[s_port] = 0;
         s->trs_inflight_cnt[s_port]++;
-        for (i = 0; i < valid_bulk; i++) s->trs_inflight[s_port][i] = pkts[i];
+        for (i = 0; i < (unsigned int)valid_bulk; i++)
+          s->trs_inflight[s_port][i] = pkts[i];
         s->stat_trs_ret_code[s_port] = -STI_TSCTRS_TARGET_TSC_NOT_REACH;
         return delta < mt_sch_schedule_ns(impl) ? MTL_TASKLET_HAS_PENDING
                                                 : MTL_TASKLET_ALL_DONE;
@@ -530,7 +531,7 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
   }
 
   if (valid_bulk > 0) {
-    for (i = 0; i < valid_bulk; i++) {
+    for (i = 0; i < (uint64_t)valid_bulk; i++) {
       target_ptp = st_tx_mbuf_get_ptp(pkts[i]);
       /* Put tx timestamp into transmit descriptor */
       pkts[i]->ol_flags |= inf->tx_launch_time_flag;
@@ -611,7 +612,7 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
   /* check valid bulk */
   int valid_bulk = bulk;
   uint32_t pkt_idx = 0;
-  for (int i = 0; i < bulk; i++) {
+  for (unsigned int i = 0; i < bulk; i++) {
     pkt_idx = st_tx_mbuf_get_idx(pkts[i]);
     if (pkt_idx == ST_TX_DUMMY_PKT_IDX) {
       valid_bulk = i;
@@ -637,7 +638,7 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
       s->trs_inflight_num[s_port] = valid_bulk;
       s->trs_inflight_idx[s_port] = 0;
       s->trs_inflight_cnt[s_port]++;
-      for (i = 0; i < valid_bulk; i++) s->trs_inflight[s_port][i] = pkts[i];
+      for (i = 0; i < (unsigned int)valid_bulk; i++) s->trs_inflight[s_port][i] = pkts[i];
       s->stat_trs_ret_code[s_port] = -STI_TSCTRS_TARGET_TSC_NOT_REACH;
       return delta < mt_sch_schedule_ns(impl) ? MTL_TASKLET_HAS_PENDING
                                               : MTL_TASKLET_ALL_DONE;

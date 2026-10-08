@@ -50,8 +50,7 @@ WORKDIR "${MTL_REPO}"
 # The final stage copies /install, /usr/local/bin, the libraries, build/ and
 # RxTxApp, so check all of them. pip's ninja and meson's configure probes are
 # build tools, so they aren't shipped.
-RUN export CFLAGS="-Wno-error=format-truncation" && \
-    ./build.sh unit && \
+RUN ./build.sh unit && \
     ./build.sh && \
     ninja -C build install && \
     DESTDIR=/install ninja -C build install && \

@@ -58,7 +58,7 @@ int OnFrameDoneReleaseOnly(void* priv, struct st_frame* frame) {
   return 0;
 }
 
-int OnFrameDoneCountOnly(void* priv, struct st_frame* frame) {
+int OnFrameDoneCountOnly(void* priv, struct st_frame* /* frame */) {
   auto* cb = static_cast<CallbackCtx*>(priv);
   cb->call_count++;
   return 0;

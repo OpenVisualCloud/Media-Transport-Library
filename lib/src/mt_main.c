@@ -770,7 +770,7 @@ void* mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port) {
     return NULL;
   }
 
-  if (port >= num_ports) {
+  if (port >= (enum mtl_port)num_ports) {
     err("%s, invalid port %d\n", __func__, port);
     return NULL;
   }
@@ -787,7 +787,7 @@ void* mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port) {
     return NULL;
   }
 
-  if (port >= num_ports) {
+  if (port >= (enum mtl_port)num_ports) {
     err("%s, invalid port %d\n", __func__, port);
     return NULL;
   }
@@ -1271,7 +1271,7 @@ int mtl_port_ip_info(mtl_handle mt, enum mtl_port port, uint8_t ip[MTL_IP_ADDR_L
     return -EINVAL;
   }
 
-  if (port >= mt_num_ports(impl)) {
+  if (port >= (enum mtl_port)mt_num_ports(impl)) {
     err("%s, invalid port %d\n", __func__, port);
     return -EINVAL;
   }
@@ -1316,7 +1316,7 @@ bool mtl_pmd_is_dpdk_based(mtl_handle mt, enum mtl_port port) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EINVAL;
   }
-  if (port >= mt_num_ports(impl)) {
+  if (port >= (enum mtl_port)mt_num_ports(impl)) {
     err("%s, invalid port %d\n", __func__, port);
     return -EINVAL;
   }
@@ -1381,7 +1381,7 @@ int mtl_get_numa_id(mtl_handle mt, enum mtl_port port) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;
   }
-  if (port >= mt_num_ports(impl)) {
+  if (port >= (enum mtl_port)mt_num_ports(impl)) {
     err("%s, invalid port %d\n", __func__, port);
     return -EIO;
   }

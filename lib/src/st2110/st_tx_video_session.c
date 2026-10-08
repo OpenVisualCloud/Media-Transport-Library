@@ -419,7 +419,8 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
         uint32_t offset = s->st20_pkt_len * i;
         uint16_t line1_number = offset / s->st20_bytes_in_line;
         /* last pkt should be treated as normal pkt also */
-        if ((offset + s->st20_pkt_len) < (line1_number + 1) * s->st20_bytes_in_line) {
+        if ((offset + s->st20_pkt_len) <
+            (uint32_t)((line1_number + 1) * s->st20_bytes_in_line)) {
           type = ST20_PKT_TYPE_NORMAL;
         } else {
           type = ST20_PKT_TYPE_EXTRA;
@@ -575,7 +576,7 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     /* 80 percent tr offset time as warmup pkts for rl */
     warm_pkts = pkts_in_tr_offset;
     warm_pkts = warm_pkts * 8 / 10;
-    warm_pkts = RTE_MIN(warm_pkts, 128); /* limit to 128 pkts */
+    warm_pkts = RTE_MIN(warm_pkts, (uint32_t)128); /* limit to 128 pkts */
   }
   pacing->warm_pkts = warm_pkts;
 
@@ -980,7 +981,7 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
   rtp->base.marker = 0;
   rtp->base.payload_type =
       ops->payload_type ? ops->payload_type : ST_RVRTP_PAYLOAD_TYPE_RAW_VIDEO;
-  uint32_t ssrc = ops->ssrc ? ops->ssrc : s->idx + 0x123450;
+  uint32_t ssrc = ops->ssrc ? ops->ssrc : (uint32_t)s->idx + 0x123450;
   rtp->base.ssrc = htonl(ssrc);
   rtp->row_length = htons(s->st20_pkt_len);
   rtp->row_number = 0;
@@ -1141,7 +1142,8 @@ static int tv_build_st20(struct st_tx_video_session_impl* s, struct rte_mbuf* pk
     line1_number = offset / s->st20_bytes_in_line;
     line1_offset =
         (offset % s->st20_bytes_in_line) * s->st20_pg.coverage / s->st20_pg.size;
-    if ((offset + s->st20_pkt_len > (line1_number + 1) * s->st20_bytes_in_line) &&
+    if ((offset + s->st20_pkt_len >
+         (uint32_t)((line1_number + 1) * s->st20_bytes_in_line)) &&
         (offset + s->st20_pkt_len < s->st20_frame_size))
       e_rtp =
           rte_pktmbuf_mtod_offset(pkt, struct st20_rfc4175_extra_rtp_hdr*, sizeof(*hdr));
@@ -1176,7 +1178,7 @@ static int tv_build_st20(struct st_tx_video_session_impl* s, struct rte_mbuf* pk
   /* update mbuf */
   mt_mbuf_init_ipv4(pkt);
 
-  if (!single_line && s->st20_linesize > s->st20_bytes_in_line)
+  if (!single_line && s->st20_linesize > (size_t)s->st20_bytes_in_line)
     /* update offset with line padding for copying */
     offset = offset % s->st20_bytes_in_line + line1_number * s->st20_linesize;
   /* copy payload */
@@ -1185,7 +1187,7 @@ static int tv_build_st20(struct st_tx_video_session_impl* s, struct rte_mbuf* pk
     payload = &e_rtp[1];
   else
     payload = (void*)((uint8_t*)rtp + sizeof(*rtp));
-  if (e_rtp && s->st20_linesize > s->st20_bytes_in_line) {
+  if (e_rtp && s->st20_linesize > (size_t)s->st20_bytes_in_line) {
     /* cross lines with padding case */
     mt_memcpy(payload, frame_info->addr + offset, line1_length);
     mt_memcpy(payload + line1_length,
@@ -1246,7 +1248,8 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
     line1_number = offset / s->st20_bytes_in_line;
     line1_offset =
         (offset % s->st20_bytes_in_line) * s->st20_pg.coverage / s->st20_pg.size;
-    if ((offset + s->st20_pkt_len > (line1_number + 1) * s->st20_bytes_in_line) &&
+    if ((offset + s->st20_pkt_len >
+         (uint32_t)((line1_number + 1) * s->st20_bytes_in_line)) &&
         (offset + s->st20_pkt_len < s->st20_frame_size))
       e_rtp =
           rte_pktmbuf_mtod_offset(pkt, struct st20_rfc4175_extra_rtp_hdr*, sizeof(*hdr));
@@ -1284,11 +1287,11 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
   if (e_rtp) pkt->data_len += sizeof(*e_rtp);
   pkt->pkt_len = pkt->data_len;
 
-  if (!single_line && s->st20_linesize > s->st20_bytes_in_line)
+  if (!single_line && s->st20_linesize > (size_t)s->st20_bytes_in_line)
     /* update offset with line padding for copying */
     offset = offset % s->st20_bytes_in_line + line1_number * s->st20_linesize;
 
-  if (e_rtp && s->st20_linesize > s->st20_bytes_in_line) {
+  if (e_rtp && s->st20_linesize > (size_t)s->st20_bytes_in_line) {
     /* cross lines with padding case */
     /* re-allocate from copy chain mempool */
     rte_pktmbuf_free(pkt_chain);
@@ -1865,7 +1868,7 @@ static int tv_usdt_dump_frame(struct mtl_main_impl* impl,
 
   /* write frame to dump file */
   ssize_t n = write(fd, frame->addr, s->st20_frame_size);
-  if (n != s->st20_frame_size) {
+  if (n < 0 || (size_t)n != s->st20_frame_size) {
     warn("%s(%d), write fail %" PRIu64 "\n", __func__, idx, n);
   } else {
     MT_USDT_ST20_TX_FRAME_DUMP(mgr->idx, s->idx, usdt_dump_path, frame->addr, n);
@@ -2257,7 +2260,7 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
   struct rte_mbuf* pkts_r[bulk];
   struct rte_mbuf* pkts_rtp[bulk];
   int pkts_remaining = s->st20_total_pkts - s->st20_pkt_idx;
-  bool eof = (pkts_remaining > 0) && (pkts_remaining < bulk) ? true : false;
+  bool eof = (pkts_remaining > 0) && ((unsigned int)pkts_remaining < bulk) ? true : false;
   unsigned int pkts_bulk = eof ? 1 : bulk; /* bulk one only at end of frame */
 
   if (eof)
@@ -2387,7 +2390,7 @@ static int tv_st22_usdt_dump_codestream(struct mtl_main_impl* impl,
 
   /* write frame to dump file */
   ssize_t n = write(fd, frame->addr, size);
-  if (n != size) {
+  if (n < 0 || (size_t)n != size) {
     warn("%s(%d), write fail %" PRIu64 "\n", __func__, idx, n);
   } else {
     MT_USDT_ST22_TX_FRAME_DUMP(mgr->idx, s->idx, usdt_dump_path, frame->addr, n);
@@ -2997,7 +3000,7 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
       s->mbuf_mempool_chain = mbuf_pool;
 
       /* has copy (not attach extbuf) and chain mbuf, create a special mempool */
-      if (s->st20_linesize > s->st20_bytes_in_line &&
+      if (s->st20_linesize > (size_t)s->st20_bytes_in_line &&
           s->ops.packing != ST20_PACKING_GPM_SL) {
         chain_room_size = s->st20_pkt_len;
         n /= s->st20_total_pkts / s->st20_pkt_info[ST20_PKT_TYPE_EXTRA].number;
@@ -3237,7 +3240,7 @@ static int tv_init_pkt(struct mtl_main_impl* impl, struct st_tx_video_session_im
     s->st20_total_pkts = ceil((double)s->st20_frame_size / s->st20_pkt_len);
     int bytes_per_pkt = s->st20_pkt_len;
     int temp = s->st20_bytes_in_line;
-    while (temp % bytes_per_pkt != 0 && temp <= s->st20_frame_size) {
+    while (temp % bytes_per_pkt != 0 && (size_t)temp <= s->st20_frame_size) {
       temp += s->st20_bytes_in_line;
     }
     int none_extra_lines = ceil((double)s->st20_frame_size / temp);
@@ -3271,7 +3274,7 @@ static int tv_init_pkt(struct mtl_main_impl* impl, struct st_tx_video_session_im
     s->st20_pkt_size = s->st20_pkt_len + sizeof(struct st_rfc4175_video_hdr);
     int bytes_per_pkt = s->st20_pkt_len;
     int temp = s->st20_bytes_in_line;
-    while (temp % bytes_per_pkt != 0 && temp <= s->st20_frame_size) {
+    while (temp % bytes_per_pkt != 0 && (size_t)temp <= s->st20_frame_size) {
       temp += s->st20_bytes_in_line;
     }
     int none_extra_lines = ceil((double)s->st20_frame_size / temp);
@@ -3425,7 +3428,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   s->multi_src_port = mt_user_multi_src_port(impl);
   s->ring_count = ST_TX_VIDEO_SESSIONS_RING_SIZE;
   /* make sure the ring is smaller than total pkts */
-  while (s->ring_count > s->st20_total_pkts) {
+  while (s->ring_count > (unsigned int)s->st20_total_pkts) {
     s->ring_count /= 2;
   }
 

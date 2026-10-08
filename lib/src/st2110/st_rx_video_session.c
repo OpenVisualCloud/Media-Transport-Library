@@ -190,15 +190,15 @@ static void rv_detector_calculate_packing(struct st_rx_video_detector* detector)
     meta->packing = ST20_PACKING_GPM;
 }
 
-static bool inline rv_is_hdr_split(struct st_rx_video_session_impl* s) {
+static inline bool rv_is_hdr_split(struct st_rx_video_session_impl* s) {
   return s->is_hdr_split;
 }
 
-static bool inline rv_is_dynamic_ext_frame(struct st_rx_video_session_impl* s) {
+static inline bool rv_is_dynamic_ext_frame(struct st_rx_video_session_impl* s) {
   return s->ops.query_ext_frame != NULL;
 }
 
-static bool inline rv_framebuffer_in_gpu_direct_vram(struct st_rx_video_session_impl* s) {
+static inline bool rv_framebuffer_in_gpu_direct_vram(struct st_rx_video_session_impl* s) {
   return s->ops.gpu_direct_framebuffer_in_vram_device_address;
 }
 
@@ -771,7 +771,7 @@ static int rv_usdt_dump_frame(struct mtl_main_impl* impl,
 
   /* write frame to dump file */
   ssize_t n = write(fd, frame->addr, s->st20_frame_size);
-  if (n != s->st20_frame_size) {
+  if (n < 0 || (size_t)n != s->st20_frame_size) {
     warn("%s(%d), write fail %" PRIu64 "\n", __func__, idx, n);
   } else {
     MT_USDT_ST20_RX_FRAME_DUMP(mgr->idx, s->idx, usdt_dump_path, frame->addr, n);
@@ -804,7 +804,7 @@ static int rv_st22_usdt_dump_frame(struct mtl_main_impl* impl,
 
   /* write frame to dump file */
   ssize_t n = write(fd, frame->addr, size);
-  if (n != size) {
+  if (n < 0 || (size_t)n != size) {
     warn("%s(%d), write fail %" PRIu64 "\n", __func__, idx, n);
   } else {
     MT_USDT_ST22_RX_FRAME_DUMP(mgr->idx, s->idx, usdt_dump_path, frame->addr, n);
@@ -1535,7 +1535,7 @@ static int rv_dma_dequeue(struct st_rx_video_session_impl* s) {
   struct st_rx_video_slot_impl* dma_slot = s->dma_slot;
   if (mt_dma_empty(dma_dev) && dma_slot) {
     dbg("%s(%d), nb_dq %u\n", __func__, s->idx, nb_dq);
-    int32_t frame_recv_size = rv_slot_get_frame_size(dma_slot);
+    size_t frame_recv_size = rv_slot_get_frame_size(dma_slot);
     if (frame_recv_size >= s->st20_frame_size) {
       dbg("%s(%d): full frame\n", __func__, s->idx);
       rv_slot_full_frame(s, dma_slot);
@@ -1752,7 +1752,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       pkt_idx = seq_id_u32 - slot->seq_id_base_u32;
     else
       pkt_idx = seq_id_u32 + (0xFFFFFFFF - slot->seq_id_base_u32) + 1;
-    if ((pkt_idx < 0) || (pkt_idx >= (s->st20_frame_bitmap_size * 8))) {
+    if ((pkt_idx < 0) || ((size_t)pkt_idx >= (s->st20_frame_bitmap_size * 8))) {
       dbg("%s(%d,%d), drop as invalid pkt_idx %d base %u\n", __func__, s->idx, s_port,
           pkt_idx, slot->seq_id_base_u32);
       s->port_user_stats.stat_pkts_idx_oo_bitmap++;
@@ -1788,7 +1788,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       } else {
         pkt_idx = offset / payload_length;
       }
-      if ((pkt_idx < 0) || (pkt_idx >= (s->st20_frame_bitmap_size * 8))) {
+      if ((pkt_idx < 0) || ((size_t)pkt_idx >= (s->st20_frame_bitmap_size * 8))) {
         dbg("%s(%d,%d), drop as invalid first pkt_idx %d\n", __func__, s->idx, s_port,
             pkt_idx);
         s->port_user_stats.stat_pkts_idx_oo_bitmap++;
@@ -1957,7 +1957,7 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
         pkt_idx = seq_id_u32 + (0xFFFFFFFF - slot->seq_id_base_u32) + 1;
     }
 
-    if ((pkt_idx < 0) || (pkt_idx >= (s->st20_frame_bitmap_size * 8))) {
+    if ((pkt_idx < 0) || ((size_t)pkt_idx >= (s->st20_frame_bitmap_size * 8))) {
       dbg("%s(%d,%d), drop as invalid pkt_idx %d base %u\n", __func__, s->idx, s_port,
           pkt_idx, slot->seq_id_base);
       s->port_user_stats.stat_pkts_idx_oo_bitmap++;
@@ -2179,7 +2179,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
       pkt_idx = seq_id - slot->seq_id_base;
     else
       pkt_idx = seq_id + (0xFFFF - slot->seq_id_base) + 1;
-    if ((pkt_idx < 0) || (pkt_idx >= (s->st20_frame_bitmap_size * 8))) {
+    if ((pkt_idx < 0) || ((size_t)pkt_idx >= (s->st20_frame_bitmap_size * 8))) {
       dbg("%s(%d,%d), drop as invalid pkt_idx %d base %u\n", __func__, s->idx, s_port,
           pkt_idx, slot->seq_id_base);
       s->port_user_stats.stat_pkts_idx_oo_bitmap++;
@@ -2213,7 +2213,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
       }
     }
     pkt_idx = pkt_counter;
-    if ((pkt_idx < 0) || (pkt_idx >= (s->st20_frame_bitmap_size * 8))) {
+    if ((pkt_idx < 0) || ((size_t)pkt_idx >= (s->st20_frame_bitmap_size * 8))) {
       dbg("%s(%d,%d), drop as invalid first pkt_idx %d\n", __func__, s->idx, s_port,
           pkt_idx);
       s->port_user_stats.stat_pkts_idx_oo_bitmap++;
@@ -2367,7 +2367,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
       pkt_idx = seq_id_u32 - slot->seq_id_base_u32;
     else
       pkt_idx = seq_id_u32 + (0xFFFFFFFF - slot->seq_id_base_u32) + 1;
-    if ((pkt_idx < 0) || (pkt_idx >= (s->st20_frame_bitmap_size * 8))) {
+    if ((pkt_idx < 0) || ((size_t)pkt_idx >= (s->st20_frame_bitmap_size * 8))) {
       dbg("%s(%d,%d), drop as invalid pkt_idx %d base %u\n", __func__, s->idx, s_port,
           pkt_idx, slot->seq_id_base_u32);
       s->port_user_stats.stat_pkts_idx_oo_bitmap++;
