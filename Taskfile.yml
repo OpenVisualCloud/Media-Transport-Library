@@ -144,8 +144,13 @@ tasks:
   ci:cargo-audit:
     desc: Audit the Rust lock files; rust/ commits none, so audit what a build resolves today
     cmds:
+      - mkdir -p cargo-audit
+      - cd rust && cargo generate-lockfile
+      # The JSON reports are the job's artifact; the table runs are the gate, and the log.
+      - cargo audit -f tests/tools/perf_debug_mcp/native/Cargo.lock --json > cargo-audit/perf_debug_mcp.json || true
+      - cargo audit -f rust/Cargo.lock --json > cargo-audit/rust.json || true
       - cargo audit -f tests/tools/perf_debug_mcp/native/Cargo.lock
-      - cd rust && cargo generate-lockfile && cargo audit
+      - cargo audit -f rust/Cargo.lock
 
   ci:gtest-nightly:
     desc: Run the nightly bare-metal gtest harness

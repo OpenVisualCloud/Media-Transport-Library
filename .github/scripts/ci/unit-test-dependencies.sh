@@ -10,6 +10,3 @@ root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 
 # No sudo: the script sudos where it needs root, keeping the cache tree runner-owned.
 bash "${root_dir}/.github/scripts/setup_environment.sh"
-# tests/unit/meson.build asks for dependency('gmock'); setup_environment.sh
-# installs libgtest-dev only, and gmock.pc is in a separate Ubuntu package.
-sudo apt-get install -y --no-install-recommends libgmock-dev

@@ -107,9 +107,11 @@ jobs:
         run: task ci:clang-tidy-setup
 
       # The checks of .clang-tidy, on the lines that the pull request changes.
+      # The findings go to the log as annotations, to the job summary, and to
+      # the clang-tidy-report artifact.
       - name: clang-tidy
         id: lint
-        uses: cpp-linter/cpp-linter-action@7199741dec273a0d69231350812fdb766e275e4e # v2.9.2
+        uses: cpp-linter/cpp-linter-action@8120e05c7fbd25fa09fa93424ec49f55f7b304ab # v2.23.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -119,6 +121,18 @@ jobs:
           database: .
           lines-changed-only: true
           extra-args: -Wno-error
+          step-summary: true
+          summary-output-file: clang-tidy-summary.md
+
+      # compile_commands.json holds the flags each file was checked with.
+      - name: Upload the clang-tidy report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: clang-tidy-report
+          path: |
+            clang-tidy-summary.md
+            compile_commands.json
 
       - name: Fail on a clang-tidy finding
         if: ${{ steps.lint.outputs.checks-failed > 0 }}
@@ -147,6 +161,13 @@ jobs:
 
       - name: cargo-audit
         run: task ci:cargo-audit
+
+      - name: Upload the cargo-audit reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cargo-audit
+          path: cargo-audit/
 
   code-scan-result:
     name: code-scan-result
