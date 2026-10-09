@@ -1,9 +1,10 @@
 name: Code scan
 
-# clang-tidy on the C and C++ lines that a change touches, and cargo-audit on
-# the Rust lock files. clang-tidy configures MTL against the Build workflow's
-# DPDK cache, and waits for Build only when the change has a DPDK of its own.
-# code-scan-result is the one check name that branch protection needs.
+# clang-tidy on the C and C++ lines that a change touches, cargo-audit on the
+# Rust lock files, and Bandit on every tracked Python file. clang-tidy
+# configures MTL against the Build workflow's DPDK cache, and waits for Build
+# only when the change has a DPDK of its own. code-scan-result is the one
+# check name that branch protection needs.
 
 on:
   workflow_dispatch:
@@ -33,6 +34,7 @@ jobs:
     outputs:
       clang_tidy: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && steps.filter.outputs.clang_tidy == 'true') }}
       cargo_audit: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.cargo_audit == 'true' }}
+      bandit: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.bandit == 'true' }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -172,9 +174,78 @@ jobs:
           name: cargo-audit
           path: cargo-audit/
 
+  # Bandit on every tracked Python file, with the required test set in
+  # .github/code-scan/bandit.config. Any finding fails the job: fix the code,
+  # or review it and mark the line `# nosec <ID> # <what the review found>`.
+  bandit:
+    needs: changes
+    if: ${{ needs.changes.outputs.bandit == 'true' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read # for actions/checkout to fetch code
+      security-events: write # for github/codeql-action/upload-sarif
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Install Bandit
+        run: python -m pip install -r .github/code-scan/requirements.txt
+
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
+      # The reports come before the scan, so that they exist when it fails.
+      - name: Write Bandit reports
+        run: task ci:bandit-reports
+
+      - name: Summarize Bandit results
+        run: task ci:bandit-summary
+
+      # Both uploads only report: a failed upload must not decide the check or
+      # stop the scan below from running.
+      - name: Upload Bandit reports
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        continue-on-error: true
+        with:
+          name: bandit-report
+          path: |
+            bandit.html
+            bandit.json
+            bandit.sarif
+
+      # A pull request from a fork gets a read-only token, so it cannot upload.
+      # Dependabot's token is raised by the job permissions above.
+      - name: Upload Bandit results to code scanning
+        if: >-
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        continue-on-error: true
+        with:
+          sarif_file: bandit.sarif
+          category: bandit
+
+      # The console report, and the step that fails on any finding. Run the
+      # same task locally.
+      - name: Run Bandit
+        run: task ci:bandit
+
+      - name: Check that Bandit scanned every file
+        run: task ci:bandit-skipped
+
   code-scan-result:
     name: code-scan-result
-    needs: [changes, clang-tidy, cargo-audit]
+    needs: [changes, clang-tidy, cargo-audit, bandit]
     if: always()
     runs-on: ubuntu-latest
     steps:
