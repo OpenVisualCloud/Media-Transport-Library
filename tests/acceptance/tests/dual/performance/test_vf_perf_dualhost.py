@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import traceback
 
@@ -39,7 +40,26 @@ logger = logging.getLogger(__name__)
 
 WARMUP_SECONDS = 60  # Warmup for the informational throughput/device rates
 MAX_DROP_PCT = 0.10  # Trimmed mean: drop worst 10% of FPS samples per session
-MAX_FIXED_RETRIES = 1  # Retry fixed-mode runs once on failure (transient HW events)
+
+# An RX failure the network explains alone (see _run_iteration) says nothing
+# about the SUT: on a shared switch, other runners' traffic fills the SUT's port
+# (doc/ci_runner_setup.md).  It is re-run, and a case whose every attempt the
+# network decided fails as such instead of reporting a count.
+NETWORK_LOSS_ATTEMPTS = 3
+NETWORK_LOSS_WAIT = 60  # Seconds between attempts
+NETWORK_LOSS_MARKER = "lost between the hosts"
+
+# What MTL logs when the SUT itself dropped: the NIC (DEV status, printed in
+# any stat period with a non-zero error counter), the frame buffer pool, and the
+# pipeline.  Not its OFO-window drops: with DMA, runs that pass log them too.
+SUT_DROP_MARKERS = (
+    "Status: rx_hw_dropped_packets",
+    "framebuff pool empty",
+    "busy drop frame",
+)
+# MTL's count of the packets its incomplete frames missed, when not zero
+# ("missed" up to v26.01).
+MISSED_PKTS = re.compile(r"(?:unrecovered|missed): [1-9]")
 
 # Exit codes that mean the app died rather than finished.
 CRASH_EXIT_CODES = (134, 137, 139, 244, 251)  # SIGABRT, SIGKILL, SIGSEGV, DPDK, DPDK
@@ -188,6 +208,43 @@ def _has_hugepage_source_fallback(tx_lines) -> bool:
     report is the one signal that covers every cause.
     """
     return any(HUGEPAGE_FALLBACK_MARKER in line for line in tx_lines)
+
+
+def _wire_balance(tx_host, tx_vfs, rx_host, rx_vfs) -> list[int] | None:
+    """Return, per leg, the packets the TX port sent minus those the RX port got.
+
+    Both are the MAC's own unicast counters on the PF behind each VF, and a
+    clean path delivers every packet, so the change across an iteration is
+    what the network lost on that leg.  None if a counter cannot be read (a NIC
+    without ice's .nic statistics, or the host not answering).
+    """
+    counts = []
+    for host, vfs, counter in (
+        (tx_host, tx_vfs, "tx_unicast.nic"),
+        (rx_host, rx_vfs, "rx_unicast.nic"),
+    ):
+        try:
+            result = host.connection.execute_command(
+                "; ".join(
+                    f"ethtool -S $(ls /sys/bus/pci/devices/{vf}/physfn/net) | "
+                    f"awk '$1 == \"{counter}:\" {{print $2}}'"
+                    for vf in vfs
+                ),
+                shell=True,
+                timeout=20,
+                expected_return_codes=None,
+            )
+            values = (result.stdout or "").split()
+        except Exception as e:
+            logger.warning(f"{host.name}: cannot read {counter}: {e}")
+            return None
+        if len(values) != len(vfs) or not all(v.isdigit() for v in values):
+            logger.warning(f"{host.name}: no {counter} for {vfs}: {values}")
+            return None
+        counts.append([int(v) for v in values])
+
+    sent, received = counts
+    return [s - r for s, r in zip(sent, received)]
 
 
 def _apply_side_kwargs(
@@ -516,6 +573,11 @@ def _run_iteration(
         f"_{companion_dir}_companion.log"
     )
 
+    # A TX verdict is taken at the sender, so only RX depends on delivery.
+    tx_vfs = [tx_vf] + ([tx_vf_r] if redundant else [])
+    rx_vfs = [rx_vf] + ([rx_vf_r] if redundant else [])
+    balance = None if is_tx else _wire_balance(tx_host, tx_vfs, rx_host, rx_vfs)
+
     companion_process = companion_host.connection.start_process(
         f"mkdir -p $(dirname {companion_log}) && "
         f"{companion_app.command} > {companion_log} 2>&1",
@@ -632,6 +694,14 @@ def _run_iteration(
         if result.return_code != 0:
             logger.warning(f"Measured app exited with code {result.return_code}")
 
+        losses = None
+        if balance is not None:
+            # Stopped first: reads taken while packets are in flight disagree.
+            companion_app.stop_process()
+            after = _wire_balance(tx_host, tx_vfs, rx_host, rx_vfs)
+            if after is not None:
+                losses = [a - b for a, b in zip(after, balance)]
+
         time.sleep(5)
         companion_lines = read_remote_log(companion_host, companion_log)
         # The companion's log lives on the other host, which no artifact
@@ -691,6 +761,7 @@ def _run_iteration(
         )
 
         detail = f"{count}/{num_sessions} sessions at {fps} fps"
+        vetoed = False
         if _has_hugepage_source_fallback(tx_lines):
             # Part of this iteration's TX read its source through mmap() instead
             # of hugepages, so the number would average two memory paths.  Veto
@@ -698,7 +769,7 @@ def _run_iteration(
             # a probe above the ceiling can exhaust it while the counts the sweep
             # will settle on stay clean.
             detail += ", hugepage source fallback"
-            success = False
+            success, vetoed = False, True
         if result.return_code != 0:
             # Keep the code in the detail so _is_crash still schedules a VF FLR
             # before the next iteration.
@@ -708,7 +779,24 @@ def _run_iteration(
                 # closes at the crash and can still read as full rate.  A run
                 # that died is not a capacity result at any session count, and
                 # passing it here would feed the sweep false headroom.
-                success = False
+                success, vetoed = False, True
+        # A failure the network explains alone: every leg lost packets and the
+        # SUT's frames missed some (2022-7 recovers what only one leg lost), the
+        # companion still sent at full rate (a full link is the sweep's ceiling,
+        # not a fault), the SUT logged no drop at its NIC or frame buffers, and
+        # nothing above vetoed the run.
+        if (
+            losses
+            and not success
+            and not vetoed
+            and all(lost > 0 for lost in losses)
+            and any(MISSED_PKTS.search(line) for line in stdout_lines)
+            and monitor_tx_fps(
+                companion_lines, fps, num_sessions, max_drop_pct=MAX_DROP_PCT
+            )[0]
+            and not any(m in line for line in stdout_lines for m in SUT_DROP_MARKERS)
+        ):
+            detail += f", {sum(losses)} pkts {NETWORK_LOSS_MARKER}"
         app_config = measured_app.config if hasattr(measured_app, "config") else None
         cores_used = cores_info.get("cores_used", 0) if cores_info else 0
         return success, count, detail, app_config, cores_used
@@ -978,28 +1066,39 @@ def _run_session_sweep(
         """Return the detail string from the most recent iteration."""
         return iteration_results[-1]["detail"] if iteration_results else ""
 
-    if fixed_mode:
-        # ── Fixed session run with retry ──
-        # Transient NIC/system events (link flaps, PF admin resets) can
-        # cause ~20 s outages that tank per-session averages.  Retrying
-        # once is the most reliable way to distinguish real capacity
-        # failures from one-off hardware glitches.
-        passed = False
-        for attempt in range(1 + MAX_FIXED_RETRIES):
-            passed = _run_one(num_sessions, phase="FIXED", quota_override=sch_quota)
-            if passed:
-                break
-            if attempt < MAX_FIXED_RETRIES:
+    def _run_with_network_retry(
+        n: int,
+        phase: str,
+        quota_override: int | None = None,
+    ) -> bool | None:
+        """Run *n* sessions, re-running a failure the network alone explains.
+
+        Returns whether they passed, or None if the network decided every attempt.
+        """
+        for attempt in range(1, NETWORK_LOSS_ATTEMPTS + 1):
+            if _run_one(n, phase, quota_override):
+                return True
+            if NETWORK_LOSS_MARKER not in _last_detail():
+                return False
+            if attempt < NETWORK_LOSS_ATTEMPTS:
                 logger.warning(
-                    f"  Attempt {attempt + 1} failed — possible transient event. "
-                    f"Retrying after VF reset ({MAX_FIXED_RETRIES - attempt} "
-                    f"retries left)…"
+                    f"  {n} sessions lost packets between the hosts, not at the "
+                    f"SUT's NIC or frame buffers; attempt {attempt + 1}/"
+                    f"{NETWORK_LOSS_ATTEMPTS} in {NETWORK_LOSS_WAIT}s"
                 )
-                kill_stale_processes(tx_host, rx_host)
-                time.sleep(2)
-                reset_vfio_bindings(tx_host, tx_host.name, presweep_tx_vfs)
-                reset_vfio_bindings(rx_host, rx_host.name, presweep_rx_vfs)
-                time.sleep(10)
+                time.sleep(NETWORK_LOSS_WAIT)
+
+        return None
+
+    network_failure = (
+        f"every one of {NETWORK_LOSS_ATTEMPTS} attempts lost packets between "
+        f"the hosts, not at the SUT's NIC or frame buffers"
+    )
+
+    if fixed_mode:
+        passed = _run_with_network_retry(
+            num_sessions, phase="FIXED", quota_override=sch_quota
+        )
 
         logger.info(
             f"\n{'═' * 70}\n"
@@ -1021,6 +1120,7 @@ def _run_session_sweep(
                 f"{mode_tag}{direction.upper()} "
                 f"{'SC' if single_core else 'MC'}{dma_label} "
                 f"@ {fps}fps / {resolution}"
+                + (f": {network_failure}" if passed is None else "")
             )
 
         if original_online_cpus:
@@ -1040,10 +1140,18 @@ def _run_session_sweep(
         if phase1_quota is None and not single_core:
             phase1_quota = SCH_SESSION_QUOTA_PHASE1_MC
 
+        undecided = None  # The count whose every attempt the network decided
         lo, hi = 1, max_sess
         while lo <= hi:
             mid = (lo + hi) // 2
-            if _run_one(mid, phase="BSEARCH", quota_override=phase1_quota):
+            passed = _run_with_network_retry(
+                mid, phase="BSEARCH", quota_override=phase1_quota
+            )
+            if passed is None:
+                undecided = mid
+                logger.error(f"  ⚠ {mid} sessions: {network_failure} — aborting sweep")
+                break
+            if passed:
                 lo = mid + 1
             else:
                 if _is_infra_failure(_last_detail()):
@@ -1054,22 +1162,25 @@ def _run_session_sweep(
         # ── Phase 2 (MC only): verification re-run at default quota ──
         phase2_cores: int | None = None
         default_quota: int | None = None
-        if max_passing > 0 and not single_core:
+        if max_passing > 0 and not single_core and undecided is None:
             default_quota = _select_mc_quota(is_tx, use_dma, redundant)
             logger.info(
                 f"\n  ── Phase 2: re-verify {max_passing} sessions "
                 f"at quota={default_quota} ──"
             )
-            if _run_one(
-                max_passing,
-                phase="VERIFY",
-                quota_override=default_quota,
-            ):
+            verified = _run_with_network_retry(
+                max_passing, phase="VERIFY", quota_override=default_quota
+            )
+            if verified:
                 verify_it = iteration_results[-1]
                 phase2_cores = verify_it.get("cores_used", 0)
                 logger.info(
                     f"  ✓ Verification passed at quota={default_quota} "
                     f"({phase2_cores} cores)"
+                )
+            elif verified is None:
+                logger.warning(
+                    f"  ⚠ Verification at quota={default_quota}: {network_failure}"
                 )
             else:
                 logger.info(
@@ -1106,6 +1217,16 @@ def _run_session_sweep(
         )
         _log_iteration_table(iteration_results, last_config, show_quota=True)
         logger.info(f"{'═' * 70}\n")
+
+        if undecided is not None:
+            if original_online_cpus:
+                restore_cpu_cores(measured_host, original_online_cpus)
+            pytest.fail(
+                f"Sweep FAILED at {undecided} sessions for "
+                f"{mode_tag}{direction.upper()} "
+                f"{'SC' if single_core else 'MC'}{dma_label} "
+                f"@ {fps}fps / {resolution}: {network_failure}"
+            )
 
         if max_passing == 0:
             if original_online_cpus:
