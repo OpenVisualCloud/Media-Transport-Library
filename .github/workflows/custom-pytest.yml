@@ -114,7 +114,7 @@ jobs:
         run: task ci:pytest-setup -- tag
 
       - name: 'cleanup: Kill stale processes before test'
-        run: task cleanup
+        uses: ./.github/actions/cleanup
 
       - name: Run tests
         run: task ci:pytest-run -- custom
@@ -132,4 +132,4 @@ jobs:
 
       - name: 'cleanup: Kill test processes'
         if: always()
-        run: task cleanup
+        uses: ./.github/actions/cleanup

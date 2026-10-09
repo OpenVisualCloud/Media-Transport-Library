@@ -76,7 +76,7 @@ reach it, and it ignores SIGPIPE in case its stderr pipe is already gone. If
 both die, the next wrapper or `isolate.sh --sweep` (root) does; it exits 1 if
 a partition is left, 3 if the lock is held. `.github/scripts/gtest.sh` sweeps
 before and after the NoCtx run, the acceptance suite at session start, and
-the `.github/actions/cleanup` action around the CI test jobs. `/run` is
+`.github/scripts/ci/cleanup.sh` around the CI test jobs. `/run` is
 tmpfs, so a reboot also resets the settings. Wrappers and sweeps serialize on
 `flock /run/mtl-isolate.lock` (a wrapper waits 10 s, then gives up), and remove
 the stale `mtl-isolate-*` cgroups of dead wrappers.

@@ -1,0 +1,8 @@
+name: Cleanup Processes
+description: Kill any running DPDK or MTL related processes
+runs:
+  using: composite
+  steps:
+    - name: Cleanup processes
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/../../scripts/ci/cleanup.sh"

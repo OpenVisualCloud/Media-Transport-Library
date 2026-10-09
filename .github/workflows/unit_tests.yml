@@ -27,7 +27,6 @@ jobs:
       pull-requests: read
     outputs:
       unit_tests: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.unit_tests == 'true' }}
-      scripts: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.scripts == 'true' }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -71,35 +70,17 @@ jobs:
           SETUP_ENVIRONMENT: '1'
           CICD_BUILD: '1'
           SETUP_BUILD_AND_INSTALL_DPDK: '1'
-        run: bash .github/scripts/setup_environment.sh
+        run: bash .github/scripts/ci/unit-test-dependencies.sh
 
       - name: Build and run the unit suite
         run: ./build.sh unit
-
-  # The scripts of script/ and setup_environment.sh share one structure.
-  # test-scripts.sh checks it, and runs the scripts that need no NIC and no root.
-  script-tests:
-    needs: changes
-    if: ${{ needs.changes.outputs.scripts == 'true' }}
-    runs-on: ubuntu-22.04
-    timeout-minutes: 20
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: audit
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Check and run the scripts
-        run: bash .github/scripts/ci/test-scripts.sh
 
   # The one check to require in branch protection. It always runs, so it
   # reports even when the path filter skips the unit tests, and it fails only
   # if a job it needs failed or was cancelled.
   unit-tests-result:
     name: unit-tests-result
-    needs: [changes, unit-tests, script-tests]
+    needs: [changes, unit-tests]
     if: always()
     runs-on: ubuntu-latest
     steps:

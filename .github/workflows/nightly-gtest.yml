@@ -51,7 +51,7 @@ jobs:
         uses: ./.github/actions/validate-host
 
       - name: 'cleanup: Kill stale processes before test'
-        run: task cleanup
+        uses: ./.github/actions/cleanup
 
       # env -u BASH_XTRACEFD for the same reason as gtest-bare-metal.yml: the
       # descriptor the variable names does not exist in the privileged shell.
@@ -67,7 +67,7 @@ jobs:
         run: task ci:gtest-nightly
       - name: 'cleanup: Kill test processes'
         if: always()
-        run: task cleanup
+        uses: ./.github/actions/cleanup
       - name: 'collect: System status report'
         if: always()
         env:

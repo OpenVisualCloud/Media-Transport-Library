@@ -74,12 +74,22 @@ jobs:
       # The `dpdk` build host installs nothing at build time either, so a host
       # that holds no GStreamer development package stops the plugin build on a
       # missing gstreamer-1.0.pc, while the next host builds it. This step
-      # installs the apt lists of script/install_dependencies.sh, the same
-      # lists setup_environment.sh installs, and builds nothing.
+      # installs the apt lists that setup_environment.sh already holds, and
+      # builds nothing: sourcing the script runs no step, because the script
+      # guards its body with [[ "${BASH_SOURCE[0]}" == "${0}" ]], and each flag
+      # below selects an apt list only. There is still one package list.
       - name: 'provision: Host build packages'
         if: ${{ inputs.host_packages }}
         shell: bash
-        run: bash script/install_dependencies.sh ice gstreamer ffmpeg jpegxs
+        run: |
+          set -euo pipefail
+          export SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=1
+          export ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN=1
+          export ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN=1
+          export PLUGIN_BUILD_AND_INSTALL_JPEGXS=1
+          # shellcheck disable=SC1091
+          source .github/scripts/setup_environment.sh
+          setup_ubuntu_install_dependencies
 
       # The check the build job makes when it builds the plugin. meson stops on
       # a missing gstreamer-1.0.pc, so this is the same question, asked in one
@@ -87,7 +97,13 @@ jobs:
       - name: 'verify: Host build packages'
         if: ${{ inputs.host_packages }}
         shell: bash
-        run: task ci:verify-gstreamer
+        run: |
+          set -euo pipefail
+          if ! pkg-config --exists gstreamer-1.0; then
+            echo "::error::This host still holds no gstreamer-1.0.pc after the install." >&2
+            exit 1
+          fi
+          echo "gstreamer-1.0 $(pkg-config --modversion gstreamer-1.0)"
 
       - name: 'provision: Acceptance virtualenv'
         if: ${{ inputs.acceptance_venv }}

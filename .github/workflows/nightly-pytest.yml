@@ -79,7 +79,7 @@ jobs:
           build_outputs: ${{ toJSON(needs.build.outputs) }}
 
       - name: 'cleanup: Kill stale processes before test'
-        run: task cleanup
+        uses: ./.github/actions/cleanup
 
       - name: 'preparation: Ensure the acceptance virtualenv'
         id: pytest-verify
@@ -125,7 +125,7 @@ jobs:
 
       - name: 'cleanup: Kill test processes'
         if: always()
-        run: task cleanup
+        uses: ./.github/actions/cleanup
 
       - name: "upload system info"
         if: always()

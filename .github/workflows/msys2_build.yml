@@ -63,7 +63,7 @@ jobs:
         uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
 
       - name: Install npcap-sdk
-        run: task ci:msys-install-npcap
+        run: task ci:msys2 -- npcap
 
       - name: Checkout mman-win32 code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -73,15 +73,18 @@ jobs:
           path: mman-win32
 
       - name: Build and install mman-win32
-        run: task ci:msys-install-mman
+        run: task ci:msys2 -- mman
 
       - name: Convert patches for DPDK
-        run: task ci:msys-prepare-dpdk-patches DPDK_VERSION=${{ matrix.dpdk }}
+        env:
+          DPDK_VERSION: ${{ matrix.dpdk }}
+        run: task ci:msys2 -- convert-patches
 
       - name: Hash DPDK patches
         id: hash-patches
-        working-directory: patches/dpdk/${{ matrix.dpdk }}
-        run: echo "hash=$(sha1sum ./*.patch windows/*.patch | sha1sum | cut -d' ' -f1)" >>"$GITHUB_OUTPUT"
+        env:
+          DPDK_VERSION: ${{ matrix.dpdk }}
+        run: task ci:msys2 -- hash-patches
 
       - name: Cache DPDK
         id: cache-dpdk
@@ -102,28 +105,23 @@ jobs:
       - name: Apply patches for DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
         shell: bash
-        run: task ci:msys-apply-dpdk-patches DPDK_VERSION=${{ matrix.dpdk }}
+        env:
+          DPDK_VERSION: ${{ matrix.dpdk }}
+        run: task ci:msys2 -- apply-patches
 
       - name: Build and install DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
-        working-directory: dpdk
-        run: |
-          meson setup build -Dplatform=generic
-          meson install -C build
+        run: task ci:msys2 -- build-dpdk
 
       - name: Install cached DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit == 'true' }}
-        run: meson install -C dpdk/build --no-rebuild
+        run: task ci:msys2 -- install-dpdk
 
       - name: Build
-        run: ./build.sh
+        run: task ci:msys2 -- build
 
       - name: Build with debug
-        run: |
-          rm -rf build
-          ./build.sh debugonly
+        run: task ci:msys2 -- build-debug
 
       - name: Build with TAP
-        run: |
-          meson setup tap_build -Denable_tap=true
-          meson install -C tap_build
+        run: task ci:msys2 -- build-tap

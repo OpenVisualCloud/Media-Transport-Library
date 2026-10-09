@@ -3,6 +3,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2025 Intel Corporation
 
+# Builds and installs xdp-tools + libbpf at the versions pinned in versions.env.
+#
+#   build_ebpf_xdp.sh                  check the host, then build and install
+#   build_ebpf_xdp.sh --check          check the host only, install nothing
+#   build_ebpf_xdp.sh --check build    check only what building MTL needs
+#
 # The check names the package to install for everything it finds missing,
 # because these dependencies are invisible until something far away breaks:
 # libdpdk.pc requires libelf, so a host without libelf-dev fails inside a
@@ -10,41 +16,17 @@
 # why the build scope exists: a host that builds MTL but never xdp-tools should
 # be held to the former's dependencies, not the latter's.
 
-set -euo pipefail
+set -e
 
-script_name="$(basename "${BASH_SOURCE[0]}")"
-script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+script_name=$(basename "${BASH_SOURCE[0]}")
+script_path=$(readlink -qe "${BASH_SOURCE[0]}")
+script_folder=${script_path/$script_name/}
+# common.sh loads versions.env and defines log_*, as_root and command_exists.
 # shellcheck disable=SC1091
 . "${script_folder}/common.sh"
 
-show_help() {
-	cat <<EOF
-Usage: ${script_name} [OPTIONS]
-
-Build and install xdp-tools ${XDP_TOOLS_VER} and libbpf ${EBPF_VER}, the versions
-in versions.env, into /usr/local. Without an option, the script checks the host
-first, then builds and installs. The check names the package for each missing
-item.
-
-REQUIRED PACKAGES (Debian/Ubuntu):
-	gcc make pkg-config python3-pyelftools libelf-dev zlib1g-dev
-	libcap-ng-dev libpcap-dev m4 clang llvm wget unzip
-
-OPTIONS:
-	--check [all|build]	Check the host only, install nothing.
-				all (default): everything xdp-tools and MTL need.
-				build: only what the MTL build needs.
-	-h, --help		Show this help message
-
-ENVIRONMENT:
-	CFLAGS			Compiler flags for the xdp-tools and libbpf build
-
-EXAMPLES:
-	${script_name}			# Check the host, then build and install
-	${script_name} --check		# Check the host only
-	${script_name} --check build	# Check only what the MTL build needs
-EOF
-}
+archive_name="archive.zip"
+repo_dir="${script_folder}/xdp-tools"
 
 have_header() { echo "#include <$1>" | cc -E - >/dev/null 2>&1; }
 
@@ -64,8 +46,13 @@ check() {
 	local scope=${1:-all} missing=() item config
 	config="/boot/config-$(uname -r)"
 
-	# have_header() runs the compiler, so without it every header looks missing.
-	command_exists cc || missing+=("cc: apt install gcc")
+	case "${scope}" in
+	all | build) ;;
+	*)
+		log_error "unknown check scope '${scope}', want 'all' or 'build'"
+		exit 2
+		;;
+	esac
 
 	# The build scope: what consuming DPDK requires of the host, whatever else
 	# that host is for.
@@ -88,7 +75,7 @@ check() {
 		# and is fetched as an archive by the install path below.
 		have_header cap-ng.h || missing+=("cap-ng.h: apt install libcap-ng-dev")
 		have_header pcap/pcap.h || missing+=("pcap/pcap.h: apt install libpcap-dev")
-		for item in m4:m4 clang:clang llvm-strip:llvm wget:wget unzip:unzip pkg-config:pkg-config; do
+		for item in m4:m4 clang:clang llvm-strip:llvm wget:wget unzip:unzip; do
 			command_exists "${item%%:*}" || missing+=("${item%%:*}: apt install ${item#*:}")
 		done
 
@@ -106,10 +93,8 @@ check() {
 	[ "${scope}" = build ] && what="MTL build"
 
 	if [ "${#missing[@]}" -ne 0 ]; then
-		log_error "${what} prerequisites missing on $(uname -n):"
-		for item in "${missing[@]}"; do
-			log_error "  ${item}"
-		done
+		log_error "${what} prerequisites missing on $(hostname):"
+		printf '  %s\n' "${missing[@]}" >&2
 		exit 1
 	fi
 	log_success "${what} prerequisites present"
@@ -194,9 +179,6 @@ publish_pkgconfig() {
 }
 
 build_and_install() {
-	local archive_name="archive.zip"
-	local repo_dir="${script_folder}/xdp-tools"
-
 	pushd "${script_folder}" >/dev/null || exit 1
 
 	if [ -d "${repo_dir}" ]; then
@@ -259,44 +241,14 @@ build_and_install() {
 	log_success "xdp-tools ${XDP_TOOLS_VER} and libbpf ${EBPF_VER} installed"
 }
 
-main() {
-	local scope
-
-	case "${1:-}" in
-	-h | --help)
-		show_help
-		exit 0
-		;;
-	--check)
-		scope="${2:-all}"
-		case "${scope}" in
-		all | build) ;;
-		*)
-			log_error "Unknown check scope '${scope}', want 'all' or 'build'"
-			show_help
-			exit 1
-			;;
-		esac
-		[ "$#" -le 2 ] || {
-			log_error "Unexpected argument: $3"
-			show_help
-			exit 1
-		}
-		check "${scope}"
-		;;
-	"")
-		check
-		build_and_install
-		;;
-	*)
-		log_error "Unknown option: $1"
-		show_help
-		exit 1
-		;;
-	esac
-}
-
-(return 0 2>/dev/null) && sourced=1 || sourced=0
-if [ "${sourced}" -eq 0 ]; then
-	main "$@"
-fi
+case "${1:-}" in
+--check) check "${2:-all}" ;;
+"")
+	check
+	build_and_install
+	;;
+*)
+	log_error "usage: ${script_name} [--check [all|build]]"
+	exit 2
+	;;
+esac
