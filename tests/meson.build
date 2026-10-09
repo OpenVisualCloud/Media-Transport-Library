@@ -63,8 +63,8 @@ if get_option('buildtype') != 'debug'
   test_cpp_args += ['-Werror']
 endif
 
-test_c_args += ['-Wall']
-test_cpp_args += ['-Wall']
+test_c_args += ['-Wall', '-Wconversion']
+test_cpp_args += ['-Wall', '-Wconversion']
 
 # enable error on  Variable Length Arrays
 test_cpp_args += ['-Wvla']

@@ -95,7 +95,8 @@ TEST_F(NoCtxTest, st30p_redundant_latency) {
       [this, testedLatencyMs](St30pHandler* handler) {
         handler->sessionsOpsTx.flags |= kTxFlags;
         // handler->sessionsOpsTx.ptime = ST31_PTIME_80US;
-        handler->sessionsOpsTx.rtp_timestamp_delta_us = -1 * (testedLatencyMs * 1000);
+        handler->sessionsOpsTx.rtp_timestamp_delta_us =
+            -(int32_t)(testedLatencyMs * 1000);
         handler->setSessionPorts(kRedundantTxPort, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
                                  SESSION_SKIP_PORT);
         memcpy(handler->sessionsOpsTx.port.dip_addr[MTL_SESSION_PORT_P],
@@ -131,14 +132,14 @@ TEST_F(NoCtxTest, st30p_redundant_latency) {
   uint64_t framesSend = primaryStrategy->idx_tx;
   uint64_t framesRecieved = rxStrategy->idx_rx;
 
-  ASSERT_NEAR(packetsSend, packetsRecievedPort0, packetsSend / 10)
+  ASSERT_NEAR((double)packetsSend, (double)packetsRecievedPort0, (double)packetsSend / 10)
       << "Comparison against primary stream (port 0)";
-  ASSERT_NEAR(packetsSend, packetsRecievedPort1, packetsSend / 10)
+  ASSERT_NEAR((double)packetsSend, (double)packetsRecievedPort1, (double)packetsSend / 10)
       << "Comparison against primary stream (port 1)";
   ASSERT_LE(stats.common.stat_lost_packets,
             (packetsRecievedPort0 + packetsRecievedPort1) / 1000)
       << "Lost packets";
-  ASSERT_NEAR(framesSend, framesRecieved, framesSend / 100)
+  ASSERT_NEAR((double)framesSend, (double)framesRecieved, (double)framesSend / 100)
       << "Comparison against primary stream; packets refused for lack of an RX buffer: "
       << stats.stat_slot_get_frame_fail;
 }
@@ -206,7 +207,8 @@ TEST_F(NoCtxTest, st30p_redundant_latency2) {
       [this, testedLatencyMs](St30pHandler* handler) {
         handler->sessionsOpsTx.flags |= kTxFlags;
         // handler->sessionsOpsTx.ptime = ST31_PTIME_80US;
-        handler->sessionsOpsTx.rtp_timestamp_delta_us = -1 * (testedLatencyMs * 1000);
+        handler->sessionsOpsTx.rtp_timestamp_delta_us =
+            -(int32_t)(testedLatencyMs * 1000);
         handler->setSessionPorts(kRedundantTxPort, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
                                  SESSION_SKIP_PORT);
         memcpy(handler->sessionsOpsTx.port.dip_addr[MTL_SESSION_PORT_P],
@@ -248,15 +250,16 @@ TEST_F(NoCtxTest, st30p_redundant_latency2) {
   /* In this test the primary TX stops after 10s while the redundant TX runs for 20s.
    * Port 0 (primary) only receives ~half the packets, port 1 (redundant) receives all.
    * Compare the redundant port against TX, and verify accepted packets match. */
-  ASSERT_NEAR(packetsSend, packetsRecievedPort1, packetsSend / 10)
+  ASSERT_NEAR((double)packetsSend, (double)packetsRecievedPort1, (double)packetsSend / 10)
       << "Comparison against redundant stream (port 1)";
   ASSERT_GT(packetsRecievedPort0, 0u) << "Primary port must have received packets";
-  ASSERT_NEAR(packetsSend, stats.common.stat_pkts_received, packetsSend / 100)
+  ASSERT_NEAR((double)packetsSend, (double)stats.common.stat_pkts_received,
+              (double)packetsSend / 100)
       << "Accepted packets should match TX";
   ASSERT_LE(stats.common.stat_lost_packets,
             (packetsRecievedPort0 + packetsRecievedPort1) / 1000)
       << "Lost packets";
-  ASSERT_NEAR(framesSend, framesRecieved, framesSend / 100)
+  ASSERT_NEAR((double)framesSend, (double)framesRecieved, (double)framesSend / 100)
       << "Comparison against primary stream; packets refused for lack of an RX buffer: "
       << stats.stat_slot_get_frame_fail;
 }

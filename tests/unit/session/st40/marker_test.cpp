@@ -30,7 +30,7 @@ TEST_F(St40RxMarkerTest, MarkerPreservedAfterTimestampAdvance) {
   uint32_t ts_frame_n1 = 2000;
 
   /* P delivers frame N body: seq 0-4, no marker */
-  for (int i = 0; i < 5; i++) feed(i, ts_frame_n, false, MTL_SESSION_PORT_P);
+  for (uint16_t i = 0; i < 5; i++) feed(i, ts_frame_n, false, MTL_SESSION_PORT_P);
 
   /* P starts frame N+1 before R delivers frame N's marker */
   feed(7, ts_frame_n1, false, MTL_SESSION_PORT_P);
@@ -72,7 +72,7 @@ TEST_F(St40RxMarkerTest, MarkerPreservedMidFrameSwitchover) {
 
   uint32_t ts = 2000;
   /* P sends body: seq 7-11, no marker */
-  for (int i = 7; i <= 11; i++) feed(i, ts, false, MTL_SESSION_PORT_P);
+  for (uint16_t i = 7; i <= 11; i++) feed(i, ts, false, MTL_SESSION_PORT_P);
   /* R sends tail: seq 12-13, marker on seq 13 */
   feed(12, ts, false, MTL_SESSION_PORT_R);
   feed(13, ts, true, MTL_SESSION_PORT_R);
@@ -95,7 +95,7 @@ TEST_F(St40RxMarkerTest, MarkerPreservedCrossPortReorder) {
 
   uint32_t ts = 3000;
   /* R sends seq 7-10 (no marker), then seq 11 (marker) */
-  for (int i = 7; i <= 10; i++) feed(i, ts, false, MTL_SESSION_PORT_R);
+  for (uint16_t i = 7; i <= 10; i++) feed(i, ts, false, MTL_SESSION_PORT_R);
   feed(11, ts, true, MTL_SESSION_PORT_R);
   /* P's late arrivals: seq 5-6, same timestamp, no marker */
   feed(5, ts, false, MTL_SESSION_PORT_P);
@@ -130,7 +130,7 @@ TEST_F(St40RxMarkerTest, MarkerOnFirstPacket) {
   uint32_t ts = 4000;
   /* First packet carries the marker */
   feed(0, ts, true, MTL_SESSION_PORT_P);
-  for (int i = 1; i < 6; i++) feed(i, ts, false, MTL_SESSION_PORT_P);
+  for (uint16_t i = 1; i < 6; i++) feed(i, ts, false, MTL_SESSION_PORT_P);
 
   int count = 0;
   bool has_marker = false;
@@ -150,7 +150,7 @@ TEST_F(St40RxMarkerTest, MarkerOnBitmapLateArrival) {
 
   uint32_t ts = 5000;
   /* R sends seq 7-10, no marker */
-  for (int i = 7; i <= 10; i++) feed(i, ts, false, MTL_SESSION_PORT_R);
+  for (uint16_t i = 7; i <= 10; i++) feed(i, ts, false, MTL_SESSION_PORT_R);
   /* P's late arrivals: seq 5 (no marker), seq 6 (MARKER) */
   feed(5, ts, false, MTL_SESSION_PORT_P);
   feed(6, ts, true, MTL_SESSION_PORT_P);
@@ -169,10 +169,10 @@ TEST_F(St40RxMarkerTest, MarkerDuplicateFromBothPorts) {
   ut40_drain_paused _drain_guard;
   uint32_t ts = 1000;
   /* P sends 4 packets, marker on seq 3 */
-  for (int i = 0; i < 3; i++) feed(i, ts, false, MTL_SESSION_PORT_P);
+  for (uint16_t i = 0; i < 3; i++) feed(i, ts, false, MTL_SESSION_PORT_P);
   feed(3, ts, true, MTL_SESSION_PORT_P);
   /* R sends same 4 packets (duplicates), marker on seq 3 too — all filtered */
-  for (int i = 0; i < 3; i++) feed(i, ts, false, MTL_SESSION_PORT_R);
+  for (uint16_t i = 0; i < 3; i++) feed(i, ts, false, MTL_SESSION_PORT_R);
   feed(3, ts, true, MTL_SESSION_PORT_R);
 
   int count = 0;
@@ -197,8 +197,8 @@ TEST_F(St40RxMarkerTest, MarkerSurvivesThresholdBypass) {
 
   /* Send 20 old-ts packets on BOTH ports (below threshold, all rejected) */
   for (int i = 0; i < 20; i++) {
-    feed(50 + i, ts_old, false, MTL_SESSION_PORT_P);
-    feed(50 + i, ts_old, false, MTL_SESSION_PORT_R);
+    feed((uint16_t)(50 + i), ts_old, false, MTL_SESSION_PORT_P);
+    feed((uint16_t)(50 + i), ts_old, false, MTL_SESSION_PORT_R);
   }
 
   /* 21st pair: R goes first so its marker-bearing packet triggers the bypass.

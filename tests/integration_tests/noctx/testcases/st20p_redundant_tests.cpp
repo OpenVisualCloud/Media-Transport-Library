@@ -102,7 +102,8 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
       [this, testedLatencyMs](St20pHandler* handler) {
         handler->sessionsOpsTx.flags |= kTxFlags;
         handler->sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_P] = kUdpPortR;
-        handler->sessionsOpsTx.rtp_timestamp_delta_us = -1 * (testedLatencyMs * 1000);
+        handler->sessionsOpsTx.rtp_timestamp_delta_us =
+            -(int32_t)(testedLatencyMs * 1000);
         handler->setSessionPorts(kRedundantTxPort, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
                                  SESSION_SKIP_PORT);
         memcpy(handler->sessionsOpsTx.port.dip_addr[MTL_SESSION_PORT_P],
@@ -128,7 +129,7 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
   mtl_start(ctx->handle);
 
   ASSERT_TRUE(waitForSession(latencyBundle.handler->session));
-  sleepUntilFailure(testDurationS);
+  sleepUntilFailure((int)testDurationS);
 
   /* Grab stats before stopping — captures steady-state counters before
    * session teardown introduces incomplete-frame artifacts. */
@@ -142,7 +143,7 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
   uint64_t framesSend = primaryStrategy->idx_tx;
   uint64_t framesRecieved = rxStrategy->idx_rx;
 
-  ASSERT_NEAR(framesSend, framesRecieved, framesSend / 100)
+  ASSERT_NEAR((double)framesSend, (double)framesRecieved, (double)framesSend / 100)
       << "Comparison against primary stream";
 
   /* The test is skipped above unless MTL_SIMULATE_PACKET_DROPS is compiled in,
@@ -161,11 +162,11 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
 
   /* Each port should lose ~50% of the merged stream's packets */
   if (pkts_p + lost_p > 0) {
-    double pct_p = 100.0 * lost_p / (pkts_p + lost_p);
+    double pct_p = 100.0 * (double)lost_p / (double)(pkts_p + lost_p);
     EXPECT_NEAR(pct_p, 50.0, 5.0) << "P loss percentage should be ~50%";
   }
   if (pkts_r + lost_r > 0) {
-    double pct_r = 100.0 * lost_r / (pkts_r + lost_r);
+    double pct_r = 100.0 * (double)lost_r / (double)(pkts_r + lost_r);
     EXPECT_NEAR(pct_r, 50.0, 5.0) << "R loss percentage should be ~50%";
   }
 

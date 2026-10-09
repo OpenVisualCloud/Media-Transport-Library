@@ -10,10 +10,10 @@ static void st20_linesize_rx_ctx_cleanup(tests_context* ctx) {
 }
 
 static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps fps[],
-                                      int width[], int height[], int linesize[],
+                                      uint32_t width[], uint32_t height[], int linesize[],
                                       bool interlaced[], enum st20_fmt fmt[],
                                       bool check_fps, enum st_test_level level,
-                                      int sessions = 1, bool ext = false) {
+                                      size_t sessions = 1, bool ext = false) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -60,7 +60,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
   guard.add_thread_group(sha_check);
   guard.set_rx_ctx_cleanup(st20_linesize_rx_ctx_cleanup);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     expect_framerate[i] = st_frame_rate(fps[i]);
 
     test_ctx_tx[i] = init_test_ctx(ctx, i, TEST_SHA_HIST_NUM, true);
@@ -73,7 +73,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
-    ops_tx.linesize = linesize[i];
+    ops_tx.linesize = (uint32_t)linesize[i];
     ops_tx.interlaced = interlaced[i];
     ops_tx.fps = fps[i];
     ops_tx.fmt = fmt[i];
@@ -99,7 +99,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
     if (interlaced[i]) frame_size = frame_size >> 1;
     test_ctx_tx[i]->frame_size = frame_size;
     test_ctx_tx[i]->height = ops_tx.height;
-    test_ctx_tx[i]->stride = ops_tx.width / st20_pg.coverage * st20_pg.size;
+    test_ctx_tx[i]->stride = (int)(ops_tx.width / st20_pg.coverage * st20_pg.size);
 
     size_t fb_size = frame_size;
     if (linesize[i] > test_ctx_tx[i]->stride) {
@@ -119,7 +119,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
       ASSERT_TRUE(dma_mem != NULL);
       test_ctx_tx[i]->dma_mem = dma_mem;
 
-      for (int j = 0; j < test_ctx_tx[i]->fb_cnt; j++) {
+      for (uint16_t j = 0; j < test_ctx_tx[i]->fb_cnt; j++) {
         test_ctx_tx[i]->ext_frames[j].buf_addr =
             (uint8_t*)mtl_dma_mem_addr(dma_mem) + j * fb_size;
         test_ctx_tx[i]->ext_frames[j].buf_iova = mtl_dma_mem_iova(dma_mem) + j * fb_size;
@@ -128,10 +128,10 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
     }
 
     uint8_t* fb;
-    int total_lines = height[i];
+    int total_lines = (int)height[i];
     size_t bytes_per_line = (size_t)ops_tx.width / st20_pg.coverage * st20_pg.size;
     if (interlaced[i]) total_lines /= 2;
-    for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
+    for (uint16_t frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
       if (ext) {
         fb = (uint8_t*)test_ctx_tx[i]->ext_frames[frame].buf_addr;
       } else {
@@ -141,7 +141,8 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
       ASSERT_TRUE(fb != NULL);
 
       for (int line = 0; line < total_lines; line++) {
-        st_test_rand_data(fb + test_ctx_tx[i]->stride * line, bytes_per_line, frame);
+        st_test_rand_data(fb + test_ctx_tx[i]->stride * line, bytes_per_line,
+                          (uint8_t)frame);
       }
       unsigned char* result = test_ctx_tx[i]->shas[frame];
       SHA256((unsigned char*)fb, fb_size, result);
@@ -151,7 +152,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
     test_ctx_tx[i]->handle = tx_handle[i]; /* all ready now */
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     test_ctx_rx[i] = init_test_ctx(ctx, i, 3, true);
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
     test_ctx_rx[i]->stop = false;
@@ -167,7 +168,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
       ASSERT_TRUE(dma_mem != NULL);
       test_ctx_rx[i]->dma_mem = dma_mem;
 
-      for (int j = 0; j < test_ctx_rx[i]->fb_cnt; j++) {
+      for (uint16_t j = 0; j < test_ctx_rx[i]->fb_cnt; j++) {
         test_ctx_rx[i]->ext_frames[j].buf_addr =
             (uint8_t*)mtl_dma_mem_addr(dma_mem) + j * test_ctx_rx[i]->fb_size;
         test_ctx_rx[i]->ext_frames[j].buf_iova =
@@ -181,7 +182,7 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
     ops_rx.width = width[i];
     ops_rx.height = height[i];
-    ops_rx.linesize = linesize[i];
+    ops_rx.linesize = (uint32_t)linesize[i];
     ops_rx.fps = fps[i];
     ops_rx.fmt = fmt[i];
     ops_rx.payload_type = ST20_TEST_PAYLOAD_TYPE;
@@ -224,10 +225,10 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
   ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   guard.set_started(ret >= 0);
-  sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
+  sleep((unsigned int)(ST20_TRAIN_TIME_S * sessions)); /* time for train_pacing */
   sleep(10 * 1);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
@@ -235,14 +236,14 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
 
   /* freeze counters before assertions */
   guard.stop();
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
 
     EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
     EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
-    info("%s, session %d fb_rec %d framerate %f fb_send %d\n", __func__, i,
+    info("%s, session %zu fb_rec %d framerate %f fb_send %d\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate[i], test_ctx_tx[i]->fb_send);
     if (check_fps) {
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
@@ -254,8 +255,8 @@ TEST(St20_rx, linesize_digest_s3) {
   enum st20_packing packing[3] = {ST20_PACKING_GPM_SL, ST20_PACKING_GPM_SL,
                                   ST20_PACKING_GPM_SL};
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P50};
-  int width[3] = {1280, 1920, 1920};
-  int height[3] = {720, 1080, 1080};
+  uint32_t width[3] = {1280, 1920, 1920};
+  uint32_t height[3] = {720, 1080, 1080};
   int linesize[3] = {4096, 5120, 8192};
   bool interlaced[3] = {false, true, false};
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
@@ -267,8 +268,8 @@ TEST(St20_rx, linesize_digest_s3) {
 TEST(St20_rx, linesize_digest_crosslines_s3) {
   enum st20_packing packing[3] = {ST20_PACKING_BPM, ST20_PACKING_GPM, ST20_PACKING_BPM};
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P50};
-  int width[3] = {1280, 1920, 1920};
-  int height[3] = {720, 1080, 1080};
+  uint32_t width[3] = {1280, 1920, 1920};
+  uint32_t height[3] = {720, 1080, 1080};
   int linesize[3] = {4096, 5120, 8192};
   bool interlaced[3] = {true, false, false};
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
@@ -281,8 +282,8 @@ TEST(St20_rx, linesize_digest_ext_s3) {
   enum st20_packing packing[3] = {ST20_PACKING_GPM_SL, ST20_PACKING_GPM_SL,
                                   ST20_PACKING_GPM_SL};
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P50};
-  int width[3] = {1280, 1920, 1920};
-  int height[3] = {720, 1080, 1080};
+  uint32_t width[3] = {1280, 1920, 1920};
+  uint32_t height[3] = {720, 1080, 1080};
   int linesize[3] = {4096, 5120, 8192};
   bool interlaced[3] = {true, false, false};
   enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,

@@ -218,8 +218,8 @@ TEST_F(St40RxStatsTest, UnrecoveredDoesNotUnderflow) {
   /* R now delivers seq 1,2,3,4 — same frame, same ts. Each lands inside
    * anc_window_cur and decrements unrecovered. Then re-deliver them again
    * (now bitmap bits already set, so no further decrement should happen). */
-  for (int i = 1; i <= 4; i++) feed(i, ts, false, MTL_SESSION_PORT_R);
-  for (int i = 1; i <= 4; i++) feed(i, ts, false, MTL_SESSION_PORT_R);
+  for (uint16_t i = 1; i <= 4; i++) feed(i, ts, false, MTL_SESSION_PORT_R);
+  for (uint16_t i = 1; i <= 4; i++) feed(i, ts, false, MTL_SESSION_PORT_R);
 
   /* unrecovered may be 0 (gap healed) or >0 (some late arrivals classified
    * as redundant), but it must NEVER wrap to a huge number. */

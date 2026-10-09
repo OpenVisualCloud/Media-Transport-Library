@@ -55,7 +55,7 @@ TEST_F(St40RxHeaderValidationTest, ReturnValueRedundant) {
 /* Wrong PT packets are dropped and counted in wrong_pt stat. */
 TEST_F(St40RxHeaderValidationTest, WrongPayloadTypeDropped) {
   ut40_ctx_set_pt(ctx_, 96);
-  for (int i = 0; i < 5; i++)
+  for (uint16_t i = 0; i < 5; i++)
     ut40_feed_pkt_pt(ctx_, i, 1000 + i, 0, MTL_SESSION_PORT_P, 97);
 
   EXPECT_EQ(wrong_pt(), 5u);
@@ -65,7 +65,7 @@ TEST_F(St40RxHeaderValidationTest, WrongPayloadTypeDropped) {
 /* Correct PT packets are accepted with zero wrong_pt. */
 TEST_F(St40RxHeaderValidationTest, CorrectPayloadTypeAccepted) {
   ut40_ctx_set_pt(ctx_, 96);
-  for (int i = 0; i < 4; i++)
+  for (uint16_t i = 0; i < 4; i++)
     ut40_feed_pkt_pt(ctx_, i, 1000 + i, 0, MTL_SESSION_PORT_P, 96);
 
   EXPECT_EQ(wrong_pt(), 0u);
@@ -75,7 +75,7 @@ TEST_F(St40RxHeaderValidationTest, CorrectPayloadTypeAccepted) {
 /* Wrong SSRC packets are dropped and counted in wrong_ssrc stat. */
 TEST_F(St40RxHeaderValidationTest, WrongSSRCDropped) {
   ut40_ctx_set_ssrc(ctx_, 0xDEAD);
-  for (int i = 0; i < 3; i++)
+  for (uint16_t i = 0; i < 3; i++)
     ut40_feed_pkt_ssrc(ctx_, i, 1000 + i, 0, MTL_SESSION_PORT_P, 0xBEEF);
 
   EXPECT_EQ(wrong_ssrc(), 3u);

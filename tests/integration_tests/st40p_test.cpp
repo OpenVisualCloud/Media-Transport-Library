@@ -207,7 +207,7 @@ TEST(St40p, redundant_stats) {
 
   struct st40p_tx_ops ops_tx;
   struct st40p_rx_ops ops_rx;
-  int udp_port = ABORT_TEST_UDP_PORT + 100;
+  uint16_t udp_port = ABORT_TEST_UDP_PORT + 100;
 
   /* TX context */
   auto test_ctx_tx = new tests_context();

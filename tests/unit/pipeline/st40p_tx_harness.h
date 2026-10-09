@@ -33,7 +33,7 @@ typedef struct ut40p_tx_ctx ut40p_tx_ctx;
 
 int ut40p_tx_init(void);
 
-ut40p_tx_ctx* ut40p_tx_ctx_create(int framebuff_cnt);
+ut40p_tx_ctx* ut40p_tx_ctx_create(uint16_t framebuff_cnt);
 void ut40p_tx_ctx_destroy(ut40p_tx_ctx* ctx);
 
 /**

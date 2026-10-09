@@ -4,9 +4,10 @@
 
 #include "st20_common.h"
 
-static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width[],
-                             int height[], enum st20_fmt fmt, enum st_test_level level,
-                             int sessions = 1, bool ext_buf = false) {
+static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], uint32_t width[],
+                             uint32_t height[], enum st20_fmt fmt,
+                             enum st_test_level level, size_t sessions = 1,
+                             bool ext_buf = false) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -52,7 +53,7 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
                         &rtp_thread_tx, &rtp_thread_rx);
   guard.set_ext_buf(ext_buf);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     expect_framerate[i] = st_frame_rate(fps[i]);
 
     test_ctx_tx[i] = init_test_ctx(ctx, i, 3);
@@ -81,7 +82,7 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
     }
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     test_ctx_rx[i] = init_test_ctx(ctx, i, 3);
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
     test_ctx_rx[i]->stop = false;
@@ -107,10 +108,10 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
           (uint8_t*)MTL_ALIGN((uint64_t)test_ctx_rx[i]->ext_fb_malloc, pg_sz);
       test_ctx_rx[i]->ext_fb_iova = mtl_dma_map(m_handle, test_ctx_rx[i]->ext_fb,
                                                 test_ctx_rx[i]->ext_fb_iova_map_sz);
-      info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_rx[i]->ext_fb);
+      info("%s, session %zu ext_fb %p\n", __func__, i, test_ctx_rx[i]->ext_fb);
       ASSERT_TRUE(test_ctx_rx[i]->ext_fb_iova != MTL_BAD_IOVA);
 
-      for (int j = 0; j < test_ctx_rx[i]->fb_cnt; j++) {
+      for (uint16_t j = 0; j < test_ctx_rx[i]->fb_cnt; j++) {
         test_ctx_rx[i]->ext_frames[j].buf_addr = test_ctx_rx[i]->ext_fb + j * frame_size;
         test_ctx_rx[i]->ext_frames[j].buf_iova =
             test_ctx_rx[i]->ext_fb_iova + j * frame_size;
@@ -145,10 +146,10 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
   ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   guard.set_started(ret >= 0);
-  sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
+  sleep((unsigned int)(ST20_TRAIN_TIME_S * sessions)); /* time for train_pacing */
   sleep(10);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
@@ -157,17 +158,18 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
   /* freeze counters before assertions */
   guard.stop();
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-    info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
+    info("%s, session %zu fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
          framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
   }
 }
 
-static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width[],
-                             int height[], enum st20_fmt fmt, enum st_test_level level,
-                             int sessions = 1, bool ext_buf = false) {
+static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], uint32_t width[],
+                             uint32_t height[], enum st20_fmt fmt,
+                             enum st_test_level level, size_t sessions = 1,
+                             bool ext_buf = false) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -201,7 +203,7 @@ static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width
                         nullptr);
   guard.set_ext_buf(ext_buf);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     expect_framerate[i] = st_frame_rate(fps[i]);
     test_ctx[i] = init_test_ctx(ctx, i, 3);
     ASSERT_TRUE(test_ctx[i] != NULL);
@@ -241,10 +243,10 @@ static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width
           (uint8_t*)MTL_ALIGN((uint64_t)test_ctx[i]->ext_fb_malloc, pg_sz);
       test_ctx[i]->ext_fb_iova =
           mtl_dma_map(m_handle, test_ctx[i]->ext_fb, test_ctx[i]->ext_fb_iova_map_sz);
-      info("%s, session %d ext_fb %p\n", __func__, i, test_ctx[i]->ext_fb);
+      info("%s, session %zu ext_fb %p\n", __func__, i, test_ctx[i]->ext_fb);
       ASSERT_TRUE(test_ctx[i]->ext_fb_iova != MTL_BAD_IOVA);
 
-      for (int j = 0; j < test_ctx[i]->fb_cnt; j++) {
+      for (uint16_t j = 0; j < test_ctx[i]->fb_cnt; j++) {
         test_ctx[i]->ext_frames[j].buf_addr = test_ctx[i]->ext_fb + j * frame_size;
         test_ctx[i]->ext_frames[j].buf_iova = test_ctx[i]->ext_fb_iova + j * frame_size;
         test_ctx[i]->ext_frames[j].buf_len = frame_size;
@@ -261,12 +263,12 @@ static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width
   ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   guard.set_started(ret >= 0);
-  sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
+  sleep((unsigned int)(ST20_TRAIN_TIME_S * sessions)); /* time for train_pacing */
   if (ctx->para.num_ports > 1)
-    sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
+    sleep((unsigned int)(ST20_TRAIN_TIME_S * sessions)); /* time for train_pacing */
   sleep(5);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx[i]->fb_send / time_sec;
@@ -274,10 +276,10 @@ static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width
 
   /* freeze counters before assertions */
   guard.stop();
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx[i]->fb_send, 0);
     EXPECT_LE(test_ctx[i]->tx_tmstamp_delta_fail_cnt, 1);
-    info("%s, session %d fb_send %d framerate %f\n", __func__, i, test_ctx[i]->fb_send,
+    info("%s, session %zu fb_send %d framerate %f\n", __func__, i, test_ctx[i]->fb_send,
          framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
   }
@@ -286,65 +288,65 @@ static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width
 TEST(St20_tx, rtp_1080p_fps59_94_s1) {
   enum st20_type type[1] = {ST20_TYPE_RTP_LEVEL};
   enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   st20_tx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL);
 }
 TEST(St20_tx, frame_1080p_fps29_97_s1) {
   enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[1] = {ST_FPS_P29_97};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   st20_tx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL);
 }
 TEST(St20_tx, frame_1080p_fps50_s1) {
   enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[1] = {ST_FPS_P50};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   st20_tx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL);
 }
 TEST(St20_tx, frame_1080p_fps30_s1) {
   enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[1] = {ST_FPS_P30};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   st20_tx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL);
 }
 TEST(St20_tx, frame_1080p_fps60_s1) {
   enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[1] = {ST_FPS_P60};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   st20_tx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL);
 }
 TEST(St20_tx, rtp_720p_fps50_s1) {
   enum st20_type type[1] = {ST20_TYPE_RTP_LEVEL};
   enum st_fps fps[1] = {ST_FPS_P50};
-  int width[1] = {1280};
-  int height[1] = {720};
+  uint32_t width[1] = {1280};
+  uint32_t height[1] = {720};
   st20_tx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL);
 }
 TEST(St20_tx, frame_1080p_yuv422_8bit_s1) {
   enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[1] = {ST_FPS_P50};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   st20_tx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_8BIT, ST_TEST_LEVEL_ALL);
 }
 TEST(St20_tx, frame_1080p_yuv420_10bit_s1) {
   enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[1] = {ST_FPS_P50};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   st20_tx_fps_test(type, fps, width, height, ST20_FMT_YUV_420_10BIT, ST_TEST_LEVEL_ALL);
 }
 TEST(St20_tx, mix_1080p_fps59_94_s3) {
   enum st20_type type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_RTP_LEVEL,
                             ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P59_94, ST_FPS_P59_94};
-  int width[3] = {1920, 1920, 1920};
-  int height[3] = {1080, 1080, 1080};
+  uint32_t width[3] = {1920, 1920, 1920};
+  uint32_t height[3] = {1080, 1080, 1080};
   st20_tx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL,
                    3);
 }
@@ -352,24 +354,24 @@ TEST(St20_tx, mix_720p_fps29_97_s3) {
   enum st20_type type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_RTP_LEVEL,
                             ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[3] = {ST_FPS_P29_97, ST_FPS_P29_97, ST_FPS_P29_97};
-  int width[3] = {1280, 1280, 1280};
-  int height[3] = {720, 720, 720};
+  uint32_t width[3] = {1280, 1280, 1280};
+  uint32_t height[3] = {720, 720, 720};
   st20_tx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL,
                    3);
 }
 TEST(St20_tx, mix_1080p_fps50_fps29_97) {
   enum st20_type type[2] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_RTP_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P29_97};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   st20_tx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL,
                    2);
 }
 TEST(St20_tx, mix_1080p_fps50_fps59_94) {
   enum st20_type type[2] = {ST20_TYPE_RTP_LEVEL, ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   st20_tx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL,
                    2);
 }
@@ -377,8 +379,8 @@ TEST(St20_tx, ext_frame_1080p_fps_mix_s3) {
   enum st20_type type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL,
                             ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[3] = {ST_FPS_P29_97, ST_FPS_P59_94, ST_FPS_P50};
-  int width[3] = {1920, 1920, 1920};
-  int height[3] = {1080, 1080, 1080};
+  uint32_t width[3] = {1920, 1920, 1920};
+  uint32_t height[3] = {1080, 1080, 1080};
   st20_tx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL, 3,
                    true);
 }
@@ -386,63 +388,63 @@ TEST(St20_tx, ext_frame_1080p_fps_mix_s3) {
 TEST(St20_rx, frame_1080p_fps50_s1) {
   enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[1] = {ST_FPS_P50};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_420_10BIT, ST_TEST_LEVEL_ALL);
 }
 TEST(St20_rx, mix_1080p_fps50_s3) {
   enum st20_type type[3] = {ST20_TYPE_RTP_LEVEL, ST20_TYPE_FRAME_LEVEL,
                             ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[3] = {ST_FPS_P50, ST_FPS_P50, ST_FPS_P50};
-  int width[3] = {1920, 1920, 1920};
-  int height[3] = {1080, 1080, 1080};
+  uint32_t width[3] = {1920, 1920, 1920};
+  uint32_t height[3] = {1080, 1080, 1080};
   st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL,
                    3);
 }
 TEST(St20_rx, rtp_1080p_fps59_94_s1) {
   enum st20_type type[1] = {ST20_TYPE_RTP_LEVEL};
   enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_420_10BIT, ST_TEST_LEVEL_ALL);
 }
 TEST(St20_rx, rtp_1080p_fps29_97_s1) {
   enum st20_type type[1] = {ST20_TYPE_RTP_LEVEL};
   enum st_fps fps[1] = {ST_FPS_P29_97};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL);
 }
 TEST(St20_rx, frame_1080p_fps29_97_s3) {
   enum st20_type type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL,
                             ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[3] = {ST_FPS_P29_97, ST_FPS_P29_97, ST_FPS_P29_97};
-  int width[3] = {1920, 1920, 1920};
-  int height[3] = {1080, 1080, 1080};
+  uint32_t width[3] = {1920, 1920, 1920};
+  uint32_t height[3] = {1080, 1080, 1080};
   st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL,
                    3);
 }
 TEST(St20_rx, mix_1080p_fps29_97_fp50) {
   enum st20_type type[2] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_RTP_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P29_97, ST_FPS_P50};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL,
                    2);
 }
 TEST(St20_rx, mix_1080p_fps59_94_fp50) {
   enum st20_type type[2] = {ST20_TYPE_RTP_LEVEL, ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL,
                    2);
 }
 TEST(St20_rx, mix_1080p_fps29_97_720p_fp50) {
   enum st20_type type[2] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_RTP_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P29_97, ST_FPS_P50};
-  int width[2] = {1920, 1280};
-  int height[2] = {1080, 720};
+  uint32_t width[2] = {1920, 1280};
+  uint32_t height[2] = {1080, 720};
   st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL,
                    2);
 }
@@ -450,8 +452,8 @@ TEST(St20_rx, ext_frame_1080p_fps_mix_s3) {
   enum st20_type type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL,
                             ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[3] = {ST_FPS_P29_97, ST_FPS_P59_94, ST_FPS_P50};
-  int width[3] = {1280, 1920, 1920};
-  int height[3] = {720, 1080, 1080};
+  uint32_t width[3] = {1280, 1920, 1920};
+  uint32_t height[3] = {720, 1080, 1080};
   st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL, 3,
                    true);
 }
@@ -460,8 +462,8 @@ TEST(St20_tx, mix_s3) {
   enum st20_type type[3] = {ST20_TYPE_RTP_LEVEL, ST20_TYPE_FRAME_LEVEL,
                             ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[3] = {ST_FPS_P50, ST_FPS_P59_94, ST_FPS_P29_97};
-  int width[3] = {1920, 1280, 1920};
-  int height[3] = {1080, 720, 1080};
+  uint32_t width[3] = {1920, 1280, 1920};
+  uint32_t height[3] = {1080, 720, 1080};
   st20_tx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT,
                    ST_TEST_LEVEL_MANDATORY, 3);
 }
@@ -469,8 +471,8 @@ TEST(St20_tx, ext_frame_mix_s3) {
   enum st20_type type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL,
                             ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P29_97};
-  int width[3] = {1280, 1920, 3840};
-  int height[3] = {720, 1080, 2160};
+  uint32_t width[3] = {1280, 1920, 3840};
+  uint32_t height[3] = {720, 1080, 2160};
   st20_tx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT,
                    ST_TEST_LEVEL_MANDATORY, 3, true);
 }
@@ -478,32 +480,32 @@ TEST(St20_rx, frame_s3) {
   enum st20_type type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL,
                             ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P29_97};
-  int width[3] = {1280, 1920, 1920};
-  int height[3] = {720, 1080, 1080};
+  uint32_t width[3] = {1280, 1920, 1920};
+  uint32_t height[3] = {720, 1080, 1080};
   st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL,
                    3);
 }
 TEST(St20_rx, mix_s2) {
   enum st20_type type[2] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_RTP_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
-  int width[2] = {1280, 1920};
-  int height[2] = {720, 1080};
+  uint32_t width[2] = {1280, 1920};
+  uint32_t height[2] = {720, 1080};
   st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT,
                    ST_TEST_LEVEL_MANDATORY, 2);
 }
 TEST(St20_rx, frame_mix_4k_s2) {
   enum st20_type type[2] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
-  int width[2] = {1280, 3840};
-  int height[2] = {720, 2160};
+  uint32_t width[2] = {1280, 3840};
+  uint32_t height[2] = {720, 2160};
   st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, ST_TEST_LEVEL_ALL,
                    2);
 }
 TEST(St20_rx, ext_frame_mix_s2) {
   enum st20_type type[3] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50};
-  int width[3] = {1280, 1920};
-  int height[3] = {720, 1080};
+  uint32_t width[3] = {1280, 1920};
+  uint32_t height[3] = {720, 1080};
   st20_rx_fps_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT,
                    ST_TEST_LEVEL_MANDATORY, 2, true);
 }

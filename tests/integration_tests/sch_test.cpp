@@ -31,7 +31,7 @@ TEST(Sch, create_single) {
 }
 
 static void sch_create_max_test(mtl_handle mt, int max) {
-  std::vector<mtl_sch_handle> schs(max);
+  std::vector<mtl_sch_handle> schs((size_t)max);
   int cnt = 0;
   int ret;
   struct mtl_sch_ops sch_ops;
@@ -49,7 +49,7 @@ static void sch_create_max_test(mtl_handle mt, int max) {
       break;
     }
 
-    schs[cnt] = sch;
+    schs[(size_t)cnt] = sch;
     cnt++;
   }
 
@@ -58,7 +58,7 @@ static void sch_create_max_test(mtl_handle mt, int max) {
   mtl_sleep_us(1000 * 2);
 
   for (int i = 0; i < cnt; i++) {
-    mtl_sch_handle sch = schs[i];
+    mtl_sch_handle sch = schs[(size_t)i];
     ret = mtl_sch_stop(sch);
     EXPECT_GE(ret, 0);
     ret = mtl_sch_free(sch);
@@ -115,13 +115,13 @@ static int test_tasklet_handler(void* priv) {
 static void sch_tasklet_digest_test(mtl_handle mt, struct sch_digest_test_para* para) {
   const int sch_cnt = para->sch_cnt;
   int tasklet_cnt = para->tasklets;
-  std::vector<mtl_sch_handle> schs(sch_cnt);
+  std::vector<mtl_sch_handle> schs((size_t)sch_cnt);
   int ret;
 
   struct mtl_sch_ops sch_ops;
   memset(&sch_ops, 0x0, sizeof(sch_ops));
   sch_ops.name = "sch_test";
-  sch_ops.nb_tasklets = tasklet_cnt;
+  sch_ops.nb_tasklets = (uint32_t)tasklet_cnt;
 
   struct mtl_tasklet_ops ops;
   memset(&ops, 0x0, sizeof(ops));
@@ -131,7 +131,7 @@ static void sch_tasklet_digest_test(mtl_handle mt, struct sch_digest_test_para* 
   ops.handler = test_tasklet_handler;
 
   std::vector<tasklet_test_ctx*> tasklet_ctxs;
-  tasklet_ctxs.resize((size_t)sch_cnt * tasklet_cnt);
+  tasklet_ctxs.resize((size_t)sch_cnt * (size_t)tasklet_cnt);
 
   /* create the sch */
   for (int i = 0; i < sch_cnt; i++) {
@@ -146,7 +146,7 @@ static void sch_tasklet_digest_test(mtl_handle mt, struct sch_digest_test_para* 
         ops.priv = ctx;
         ctx->handle = mtl_sch_register_tasklet(sch, &ops);
         ASSERT_TRUE(ctx->handle != NULL);
-        tasklet_ctxs[i * tasklet_cnt + j] = ctx;
+        tasklet_ctxs[(size_t)(i * tasklet_cnt + j)] = ctx;
       }
     }
 
@@ -163,17 +163,17 @@ static void sch_tasklet_digest_test(mtl_handle mt, struct sch_digest_test_para* 
         ops.priv = ctx;
         ctx->handle = mtl_sch_register_tasklet(sch, &ops);
         ASSERT_TRUE(ctx->handle != NULL);
-        tasklet_ctxs[i * tasklet_cnt + j] = ctx;
+        tasklet_ctxs[(size_t)(i * tasklet_cnt + j)] = ctx;
       }
     }
 
-    schs[i] = sch;
+    schs[(size_t)i] = sch;
   }
 
   mtl_sleep_us(1000 * 1000);
   /* check if all tasklet started */
   for (int i = 0; i < sch_cnt * tasklet_cnt; i++) {
-    tasklet_test_ctx* ctx = tasklet_ctxs[i];
+    tasklet_test_ctx* ctx = tasklet_ctxs[(size_t)i];
     EXPECT_TRUE(ctx->start);
     EXPECT_GT(ctx->job, 0);
     if (para->runtime) {
@@ -183,30 +183,30 @@ static void sch_tasklet_digest_test(mtl_handle mt, struct sch_digest_test_para* 
   }
 
   for (int i = 0; i < sch_cnt; i++) {
-    mtl_sch_handle sch = schs[i];
+    mtl_sch_handle sch = schs[(size_t)i];
     ret = mtl_sch_stop(sch);
     EXPECT_GE(ret, 0);
   }
 
   if (!para->runtime && !para->test_auto_unregister) {
     for (int i = 0; i < sch_cnt * tasklet_cnt; i++) {
-      tasklet_test_ctx* ctx = tasklet_ctxs[i];
+      tasklet_test_ctx* ctx = tasklet_ctxs[(size_t)i];
       ret = mtl_sch_unregister_tasklet(ctx->handle);
       EXPECT_GE(ret, 0);
     }
   }
 
   for (int i = 0; i < sch_cnt; i++) {
-    mtl_sch_handle sch = schs[i];
+    mtl_sch_handle sch = schs[(size_t)i];
     ret = mtl_sch_free(sch);
     EXPECT_GE(ret, 0);
   }
 
   /* check if all tasklet stopped */
   for (int i = 0; i < sch_cnt * tasklet_cnt; i++) {
-    tasklet_test_ctx* ctx = tasklet_ctxs[i];
+    tasklet_test_ctx* ctx = tasklet_ctxs[(size_t)i];
     EXPECT_FALSE(ctx->start);
-    delete tasklet_ctxs[i];
+    delete tasklet_ctxs[(size_t)i];
   }
 }
 

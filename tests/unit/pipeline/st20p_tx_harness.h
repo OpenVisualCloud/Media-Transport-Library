@@ -32,7 +32,7 @@ typedef struct ut20p_tx_ctx ut20p_tx_ctx;
 
 int ut20p_tx_init(void);
 
-ut20p_tx_ctx* ut20p_tx_ctx_create(int framebuff_cnt);
+ut20p_tx_ctx* ut20p_tx_ctx_create(uint16_t framebuff_cnt);
 void ut20p_tx_ctx_destroy(ut20p_tx_ctx* ctx);
 
 /**

@@ -6,17 +6,17 @@
 
 #include <cmath>
 
-uint16_t udp_port_for_idx(int idx, bool hdr_split, int base) {
-  return (hdr_split ? 6970 : base) + idx * 2;
+uint16_t udp_port_for_idx(size_t idx, bool hdr_split, int base) {
+  return (uint16_t)((hdr_split ? 6970 : base) + (int)idx * 2);
 }
 
-std::vector<St20SessionConfig> build_sessions(int sessions, enum st20_type type[],
+std::vector<St20SessionConfig> build_sessions(size_t sessions, enum st20_type type[],
                                               enum st20_packing packing[],
-                                              enum st_fps fps[], int width[],
-                                              int height[], bool interlaced[],
+                                              enum st_fps fps[], uint32_t width[],
+                                              uint32_t height[], bool interlaced[],
                                               enum st20_fmt fmt[]) {
   std::vector<St20SessionConfig> cfgs(sessions);
-  for (int i = 0; i < sessions; ++i) {
+  for (size_t i = 0; i < sessions; ++i) {
     cfgs[i].type = type ? type[i] : ST20_TYPE_FRAME_LEVEL;
     cfgs[i].packing = packing ? packing[i] : ST20_PACKING_BPM;
     cfgs[i].fps = fps ? fps[i] : ST_FPS_P59_94;
@@ -28,11 +28,11 @@ std::vector<St20SessionConfig> build_sessions(int sessions, enum st20_type type[
   return cfgs;
 }
 
-tests_context* init_test_ctx(struct st_tests_context* global_ctx, int idx,
+tests_context* init_test_ctx(struct st_tests_context* global_ctx, size_t idx,
                              uint16_t fb_cnt, bool check_sha) {
   auto* tctx = new tests_context();
   EXPECT_TRUE(tctx != NULL);
-  tctx->idx = idx;
+  tctx->idx = (int)idx;
   tctx->ctx = global_ctx;
   tctx->fb_cnt = fb_cnt;
   tctx->fb_idx = 0;
@@ -119,10 +119,11 @@ int tx_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
 
   if (ctx->user_pacing) {
     meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-    meta->timestamp = ctx->ptp_time_first_frame + ctx->frame_time * ctx->fb_send * 2;
+    meta->timestamp = (uint64_t)((double)ctx->ptp_time_first_frame +
+                                 ctx->frame_time * ctx->fb_send * 2);
   } else if (ctx->user_timestamp) {
     meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-    meta->timestamp = ctx->fb_send;
+    meta->timestamp = (uint64_t)ctx->fb_send;
   }
   dbg("%s, next_frame_idx %u timestamp %" PRIu64 "\n", __func__, *next_frame_idx,
       meta->timestamp);
@@ -220,7 +221,7 @@ int tx_notify_timestamp_frame_done(void* priv, uint16_t /*frame_idx*/,
     dbg("%s, timestamp %u %u\n", __func__, (uint32_t)meta->timestamp, ctx->pre_timestamp);
   }
 
-  ctx->pre_timestamp = meta->timestamp;
+  ctx->pre_timestamp = (uint32_t)meta->timestamp;
   return 0;
 }
 
@@ -254,14 +255,14 @@ int tx_notify_frame_done_check_tmstamp(void* priv, uint16_t /*frame_idx*/,
 
   if (meta->tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
     if (ctx->rtp_tmstamp == 0)
-      ctx->rtp_tmstamp = meta->timestamp;
+      ctx->rtp_tmstamp = (uint32_t)meta->timestamp;
     else {
-      int delta = meta->timestamp - ctx->rtp_tmstamp;
+      int delta = (int)(meta->timestamp - ctx->rtp_tmstamp);
       if (tmstamp_delta_to_fps(delta) != meta->fps) {
         dbg("fail delta: %d\n", delta);
         ctx->tx_tmstamp_delta_fail_cnt++;
       }
-      ctx->rtp_tmstamp = meta->timestamp;
+      ctx->rtp_tmstamp = (uint32_t)meta->timestamp;
     }
   }
 
@@ -293,12 +294,12 @@ int tx_frame_lines_ready(void* priv, uint16_t frame_idx,
 
   uint8_t* fb = (uint8_t*)st20_tx_get_framebuffer((st20_tx_handle)ctx->handle, frame_idx);
   int offset = ctx->lines_ready[frame_idx] * ctx->stride;
-  uint16_t lines = ctx->lines_per_slice;
+  uint16_t lines = (uint16_t)ctx->lines_per_slice;
   if (ctx->lines_ready[frame_idx] + lines > ctx->height)
-    lines = ctx->height - ctx->lines_ready[frame_idx];
+    lines = (uint16_t)(ctx->height - ctx->lines_ready[frame_idx]);
   if (lines)
     mtl_memcpy(fb + offset, ctx->frame_buf[frame_idx] + offset,
-               (size_t)lines * ctx->stride);
+               (size_t)lines * (size_t)ctx->stride);
 
   ctx->lines_ready[frame_idx] += lines;
   meta->lines_ready = ctx->lines_ready[frame_idx];
@@ -348,21 +349,24 @@ int tx_video_build_rtp_packet(tests_context* s, struct st20_rfc4175_rtp_hdr* rtp
                               uint16_t* pkt_len) {
   struct st20_rfc4175_extra_rtp_hdr* e_rtp = NULL;
   int offset;
-  int frame_size = s->frame_size;
+  int frame_size = (int)s->frame_size;
   uint16_t row_number, row_offset;
   uint8_t* payload = (uint8_t*)rtp + sizeof(*rtp);
   int pkt_idx = s->pkt_idx;
   if (s->out_of_order_pkt) pkt_idx = s->ooo_mapping[s->pkt_idx];
 
   if (s->single_line) {
-    row_number = pkt_idx / s->pkts_in_line;
-    int pixels_in_pkt = s->pkt_data_len / s->st20_pg.size * s->st20_pg.coverage;
-    row_offset = pixels_in_pkt * (pkt_idx % s->pkts_in_line);
-    offset = (row_number * s->width + row_offset) / s->st20_pg.coverage * s->st20_pg.size;
+    row_number = (uint16_t)(pkt_idx / s->pkts_in_line);
+    int pixels_in_pkt =
+        (int)((uint32_t)s->pkt_data_len / s->st20_pg.size * s->st20_pg.coverage);
+    row_offset = (uint16_t)(pixels_in_pkt * (pkt_idx % s->pkts_in_line));
+    offset = (int)((row_number * s->width + row_offset) / s->st20_pg.coverage *
+                   s->st20_pg.size);
   } else {
     offset = s->pkt_data_len * pkt_idx;
-    row_number = offset / s->bytes_in_line;
-    row_offset = (offset % s->bytes_in_line) * s->st20_pg.coverage / s->st20_pg.size;
+    row_number = (uint16_t)(offset / s->bytes_in_line);
+    row_offset = (uint16_t)((uint32_t)(offset % s->bytes_in_line) * s->st20_pg.coverage /
+                            s->st20_pg.size);
     if ((offset + s->pkt_data_len > (row_number + 1) * s->bytes_in_line) &&
         (offset + s->pkt_data_len < frame_size)) {
       e_rtp = (struct st20_rfc4175_extra_rtp_hdr*)payload;
@@ -381,20 +385,20 @@ int tx_video_build_rtp_packet(tests_context* s, struct st20_rfc4175_rtp_hdr* rtp
   rtp->row_offset = htons(row_offset);
   rtp->base.tmstamp = htonl(s->rtp_tmstamp);
   if (s->out_of_order_pkt)
-    rtp->base.seq_number = htons(s->frame_base_seq_id + pkt_idx);
+    rtp->base.seq_number = htons((uint16_t)(s->frame_base_seq_id + pkt_idx));
   else
-    rtp->base.seq_number = htons(s->seq_id);
+    rtp->base.seq_number = htons((uint16_t)s->seq_id);
   rtp->seq_number_ext = htons((uint16_t)(s->seq_id >> 16));
   s->seq_id++;
   int temp = s->single_line
-                 ? ((s->width - row_offset) / s->st20_pg.coverage * s->st20_pg.size)
+                 ? (int)((s->width - row_offset) / s->st20_pg.coverage * s->st20_pg.size)
                  : (frame_size - offset);
-  uint16_t data_len = s->pkt_data_len > temp ? temp : s->pkt_data_len;
+  uint16_t data_len = (uint16_t)(s->pkt_data_len > temp ? temp : s->pkt_data_len);
   rtp->row_length = htons(data_len);
   *pkt_len = data_len + sizeof(*rtp);
   if (e_rtp) {
-    uint16_t row_length_0 = (row_number + 1) * s->bytes_in_line - offset;
-    uint16_t row_length_1 = s->pkt_data_len - row_length_0;
+    uint16_t row_length_0 = (uint16_t)((row_number + 1) * s->bytes_in_line - offset);
+    uint16_t row_length_1 = (uint16_t)(s->pkt_data_len - row_length_0);
     rtp->row_length = htons(row_length_0);
     e_rtp->row_length = htons(row_length_1);
     e_rtp->row_offset = htons(0);
@@ -543,11 +547,12 @@ int st20_rx_frame_ready(void* priv, void* frame, struct st20_rx_frame_meta* meta
   if (st_is_frame_complete(meta->status)) {
     ctx->fb_rec++;
     if (!ctx->start_time) {
-      ctx->rtp_delta = meta->timestamp - ctx->rtp_tmstamp;
+      ctx->rtp_delta = (int)(meta->timestamp - ctx->rtp_tmstamp);
       ctx->start_time = st_test_get_monotonic_time();
     }
   }
-  if (meta->tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) ctx->rtp_tmstamp = meta->timestamp;
+  if (meta->tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)
+    ctx->rtp_tmstamp = (uint32_t)meta->timestamp;
   st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
   return 0;
 }
@@ -564,13 +569,13 @@ void st20_tx_ops_init(tests_context* st20, struct st20_tx_ops* ops) {
          MTL_IP_ADDR_LEN);
   snprintf(ops->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_P]);
-  ops->udp_port[MTL_SESSION_PORT_P] = 10000 + st20->idx * 2;
+  ops->udp_port[MTL_SESSION_PORT_P] = (uint16_t)(10000 + st20->idx * 2);
   if (ops->num_port == 2) {
     memcpy(ops->dip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     snprintf(ops->port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
-    ops->udp_port[MTL_SESSION_PORT_R] = 10000 + st20->idx * 2;
+    ops->udp_port[MTL_SESSION_PORT_R] = (uint16_t)(10000 + st20->idx * 2);
   }
   ops->pacing = ST21_PACING_NARROW;
   ops->type = ST20_TYPE_FRAME_LEVEL;
@@ -598,13 +603,13 @@ void st20_rx_ops_init(tests_context* st20, struct st20_rx_ops* ops) {
          MTL_IP_ADDR_LEN);
   snprintf(ops->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_P]);
-  ops->udp_port[MTL_SESSION_PORT_P] = udp_port_for_idx(st20->idx);
+  ops->udp_port[MTL_SESSION_PORT_P] = udp_port_for_idx((size_t)st20->idx);
   if (ops->num_port == 2) {
     memcpy(ops->ip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     snprintf(ops->port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
-    ops->udp_port[MTL_SESSION_PORT_R] = udp_port_for_idx(st20->idx);
+    ops->udp_port[MTL_SESSION_PORT_R] = udp_port_for_idx((size_t)st20->idx);
   }
   ops->pacing = ST21_PACING_NARROW;
   ops->type = ST20_TYPE_FRAME_LEVEL;
@@ -705,25 +710,26 @@ void rtp_tx_specific_init(struct st20_tx_ops* ops, tests_context* test_ctx) {
   if (ops->packing == ST20_PACKING_GPM_SL) {
     /* calculate pkts in line for rtp */
     size_t bytes_in_pkt = MTL_PKT_MAX_RTP_BYTES - sizeof(struct st20_rfc4175_rtp_hdr);
-    int pkts_in_line = (bytes_in_line / bytes_in_pkt) + 1;
-    test_ctx->total_pkts_in_frame = ops->height * pkts_in_line;
-    int pixels_in_pkts = (ops->width + pkts_in_line - 1) / pkts_in_line;
-    test_ctx->pkt_data_len = (pixels_in_pkts + test_ctx->st20_pg.coverage - 1) /
-                             test_ctx->st20_pg.coverage * test_ctx->st20_pg.size;
-    test_ctx->pkts_in_line = pkts_in_line;
+    uint32_t pkts_in_line = (uint32_t)(bytes_in_line / bytes_in_pkt) + 1;
+    test_ctx->total_pkts_in_frame = (int)(ops->height * pkts_in_line);
+    uint32_t pixels_in_pkts = (ops->width + pkts_in_line - 1) / pkts_in_line;
+    test_ctx->pkt_data_len = (int)((pixels_in_pkts + test_ctx->st20_pg.coverage - 1) /
+                                   test_ctx->st20_pg.coverage * test_ctx->st20_pg.size);
+    test_ctx->pkts_in_line = (int)pkts_in_line;
   } else if (ops->packing == ST20_PACKING_BPM) {
     test_ctx->pkt_data_len = 1260;
-    int pixels_in_pkts =
-        test_ctx->pkt_data_len * test_ctx->st20_pg.coverage / test_ctx->st20_pg.size;
+    int pixels_in_pkts = (int)((uint32_t)test_ctx->pkt_data_len *
+                               test_ctx->st20_pg.coverage / test_ctx->st20_pg.size);
     test_ctx->total_pkts_in_frame =
-        ceil((double)ops->width * ops->height / pixels_in_pkts);
+        (int)ceil((double)ops->width * ops->height / pixels_in_pkts);
   } else if (ops->packing == ST20_PACKING_GPM) {
     int max_data_len = MTL_PKT_MAX_RTP_BYTES - sizeof(struct st20_rfc4175_rtp_hdr) -
                        sizeof(struct st20_rfc4175_extra_rtp_hdr);
-    int pg_per_pkt = max_data_len / test_ctx->st20_pg.size;
-    test_ctx->total_pkts_in_frame = (ceil)((double)ops->width * ops->height /
-                                           (test_ctx->st20_pg.coverage * pg_per_pkt));
-    test_ctx->pkt_data_len = pg_per_pkt * test_ctx->st20_pg.size;
+    uint32_t pg_per_pkt = (uint32_t)max_data_len / test_ctx->st20_pg.size;
+    test_ctx->total_pkts_in_frame =
+        (int)(ceil)((double)ops->width * ops->height /
+                    (test_ctx->st20_pg.coverage * pg_per_pkt));
+    test_ctx->pkt_data_len = (int)(pg_per_pkt * test_ctx->st20_pg.size);
   } else {
     err("%s, invalid packing mode: %d\n", __func__, ops->packing);
     return;
@@ -732,14 +738,15 @@ void rtp_tx_specific_init(struct st20_tx_ops* ops, tests_context* test_ctx) {
   test_ctx->pkt_idx = 0;
   test_ctx->seq_id = 1;
   test_ctx->frame_base_seq_id = test_ctx->seq_id;
-  test_ctx->bytes_in_line = bytes_in_line;
+  test_ctx->bytes_in_line = (int)bytes_in_line;
   test_ctx->width = ops->width;
   test_ctx->single_line = (ops->packing == ST20_PACKING_GPM_SL);
   test_ctx->frame_size =
       ops->width * ops->height * test_ctx->st20_pg.size / test_ctx->st20_pg.coverage;
 
-  ops->rtp_frame_total_pkts = test_ctx->total_pkts_in_frame;
-  ops->rtp_pkt_size = test_ctx->pkt_data_len + sizeof(struct st20_rfc4175_rtp_hdr);
+  ops->rtp_frame_total_pkts = (uint32_t)test_ctx->total_pkts_in_frame;
+  ops->rtp_pkt_size =
+      (uint16_t)((size_t)test_ctx->pkt_data_len + sizeof(struct st20_rfc4175_rtp_hdr));
   if (ops->packing != ST20_PACKING_GPM_SL) /* no extra for GPM_SL */
     ops->rtp_pkt_size += sizeof(struct st20_rfc4175_extra_rtp_hdr);
   ops->notify_rtp_done = tx_rtp_done;
@@ -926,12 +933,12 @@ int st20_digest_rx_frame_ready(void* priv, void* frame, struct st20_rx_frame_met
     st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
     return 0;
   }
-  if (meta->fpt > (ctx->frame_time / 10)) {
+  if ((double)meta->fpt > (ctx->frame_time / 10)) {
     ctx->meta_timing_fail_cnt++;
     dbg("%s(%d), fpt %" PRId64 ", frame time %fms\n", __func__, ctx->idx, meta->fpt,
         ctx->frame_time / NS_PER_MS);
   }
-  double rx_time = (double)meta->timestamp_last_pkt - meta->timestamp_first_pkt;
+  double rx_time = (double)meta->timestamp_last_pkt - (double)meta->timestamp_first_pkt;
   if (rx_time > ctx->frame_time) {
     ctx->meta_timing_fail_cnt++;
     dbg("%s(%d), rx_time %fms\n", __func__, ctx->idx, rx_time / NS_PER_MS);

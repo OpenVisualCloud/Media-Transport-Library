@@ -186,8 +186,8 @@ int ut_txa30_run_frame_tasklet(ut_txa30_ctx* ctx, enum st10_timestamp_fmt tfmt,
   snprintf(pool_name, sizeof(pool_name), "ut_txa30_pool_%u", test_idx++);
   s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] =
       rte_pktmbuf_pool_create(pool_name, 32, 0, sizeof(struct mt_muf_priv_data),
-                              RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
-  s->trans_ring[MTL_SESSION_PORT_P] = mt_u64_fifo_init(32, rte_socket_id());
+                              RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
+  s->trans_ring[MTL_SESSION_PORT_P] = mt_u64_fifo_init(32, (int)rte_socket_id());
   if (!s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] || !s->trans_ring[MTL_SESSION_PORT_P])
     goto out;
   s->trans_ring_thresh = 32;

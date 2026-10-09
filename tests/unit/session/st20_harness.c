@@ -133,7 +133,7 @@ uint16_t ut20_dma_completed(struct mtl_dma_lender_dev* dev, uint16_t nb_cpls,
   struct ut20_fake_dma* dma = (struct ut20_fake_dma*)dev;
   dma->polls++;
   if (dma->stalled) return 0;
-  uint16_t n = RTE_MIN(nb_cpls, dma->nb_submitted);
+  uint16_t n = (uint16_t)RTE_MIN(nb_cpls, dma->nb_submitted);
   dma->nb_submitted -= n;
   return n;
 }
@@ -147,7 +147,7 @@ int ut20_dma_borrow_mbuf(struct mtl_dma_lender_dev* dev, struct rte_mbuf* mbuf) 
 
 int ut20_dma_drop_mbuf(struct mtl_dma_lender_dev* dev, uint16_t nb_mbuf) {
   struct ut20_fake_dma* dma = (struct ut20_fake_dma*)dev;
-  nb_mbuf = RTE_MIN(nb_mbuf, dev->nb_borrowed);
+  nb_mbuf = (uint16_t)RTE_MIN(nb_mbuf, dev->nb_borrowed);
   for (uint16_t i = 0; i < nb_mbuf; i++) rte_pktmbuf_free(dma->borrowed[i]);
   dev->nb_borrowed -= nb_mbuf;
   memmove(dma->borrowed, &dma->borrowed[nb_mbuf],
@@ -240,11 +240,11 @@ ut20_test_ctx* ut20_ctx_create_geom(int num_port, int pkts_per_frame) {
   s->impl = &ctx->impl;
   s->parent = &ctx->mgr;
   s->idx = 0;
-  s->socket_id = rte_socket_id();
+  s->socket_id = (int)rte_socket_id();
   s->attached = true;
 
   s->ops.type = ST20_TYPE_FRAME_LEVEL;
-  s->ops.num_port = num_port;
+  s->ops.num_port = (uint8_t)num_port;
   s->ops.width = UT20_WIDTH;
   s->ops.height = (uint32_t)height;
   s->ops.fps = ST_FPS_P30;
@@ -342,7 +342,7 @@ static struct rte_mbuf* make_video_mbuf_full(uint32_t seq, uint32_t ts, uint16_t
   struct st20_rfc4175_rtp_hdr* rtp = (struct st20_rfc4175_rtp_hdr*)(buf + hdr_offset);
 
   rtp->base.version = 2;
-  rtp->base.payload_type = pt;
+  rtp->base.payload_type = pt & 0x7fU;
   rtp->base.ssrc = htonl(ssrc);
   rtp->base.marker = 0;
   rtp->base.seq_number = htons((uint16_t)(seq & 0xFFFF));
@@ -352,8 +352,8 @@ static struct rte_mbuf* make_video_mbuf_full(uint32_t seq, uint32_t ts, uint16_t
   rtp->row_offset = htons(line_offset);
   rtp->row_length = htons(line_length);
 
-  m->data_len = total;
-  m->pkt_len = total;
+  m->data_len = (uint16_t)total;
+  m->pkt_len = (uint32_t)total;
   m->next = NULL;
   return m;
 }
@@ -397,8 +397,8 @@ static struct rte_mbuf* make_video_continuation_mbuf(uint32_t seq, uint32_t ts,
   extra_rtp->row_offset = 0;
   extra_rtp->row_number = htons(line_num + 1);
 
-  m->data_len = total;
-  m->pkt_len = total;
+  m->data_len = (uint16_t)total;
+  m->pkt_len = (uint32_t)total;
   m->next = NULL;
   return m;
 }
@@ -726,7 +726,7 @@ int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx, bool interlaced) {
   s->ops.interlaced = interlaced;
   /* rv_tp_init() derives trs and every pass threshold from this; production fills
    * it from the packet detector, which the direct-feed harness never runs. */
-  s->detector.pkt_per_frame = s->ops.height;
+  s->detector.pkt_per_frame = (int)s->ops.height;
   s->enable_timing_parser = true;
   s->enable_timing_parser_meta = true;
   ctx->last_tp_compliant = ST_RX_TP_COMPLIANT_MAX;

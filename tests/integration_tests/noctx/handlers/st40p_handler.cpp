@@ -28,8 +28,8 @@ St40pHandler::St40pHandler(st_tests_context* ctx, st40p_tx_ops ops_tx,
 
 St40pHandler::~St40pHandler() = default;
 
-void St40pHandler::fillSt40pOps(uint transmissionPort, uint framebufferQueueSize,
-                                uint payloadType, enum st_fps fps, uint32_t maxUdwSize,
+void St40pHandler::fillSt40pOps(uint16_t transmissionPort, uint16_t framebufferQueueSize,
+                                uint8_t payloadType, enum st_fps fps, uint32_t maxUdwSize,
                                 uint32_t rtpRingSize) {
   memset(&sessionsOpsTx, 0, sizeof(sessionsOpsTx));
   sessionsOpsTx.name = "st40p_noctx_test_tx";
@@ -42,7 +42,7 @@ void St40pHandler::fillSt40pOps(uint transmissionPort, uint framebufferQueueSize
   snprintf(sessionsOpsTx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_P]);
   sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_P] = transmissionPort;
-  sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_R] = transmissionPort + 1;
+  sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_R] = (uint16_t)(transmissionPort + 1);
   sessionsOpsTx.port.payload_type = payloadType;
   sessionsOpsTx.fps = fps;
   sessionsOpsTx.interlaced = false;
@@ -61,7 +61,7 @@ void St40pHandler::fillSt40pOps(uint transmissionPort, uint framebufferQueueSize
   snprintf(sessionsOpsRx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_R]);
   sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_P] = transmissionPort;
-  sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_R] = transmissionPort + 1;
+  sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_R] = (uint16_t)(transmissionPort + 1);
   sessionsOpsRx.port.payload_type = payloadType;
   sessionsOpsRx.interlaced = false;
   sessionsOpsRx.framebuff_cnt = framebufferQueueSize;

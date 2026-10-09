@@ -20,8 +20,8 @@ class St40pHandler : public PipelineHandlerBase<st40p_tx_ops, st40p_rx_ops,
                         st40p_rx_ops ops_rx = {});
   ~St40pHandler() override;
 
-  void fillSt40pOps(uint transmissionPort = 31000, uint framebufferQueueSize = 4,
-                    uint payloadType = 113, enum st_fps fps = ST_FPS_P60,
+  void fillSt40pOps(uint16_t transmissionPort = 31000, uint16_t framebufferQueueSize = 4,
+                    uint8_t payloadType = 113, enum st_fps fps = ST_FPS_P60,
                     uint32_t maxUdwSize = 256, uint32_t rtpRingSize = 2048);
 
   void startSessionTx() override;

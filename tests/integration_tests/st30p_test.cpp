@@ -44,16 +44,16 @@ static void st30p_tx_ops_init(tests_context* st30, struct st30p_tx_ops* ops_tx) 
          MTL_IP_ADDR_LEN);
   snprintf(ops_tx->port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_P]);
-  ops_tx->port.udp_port[MTL_SESSION_PORT_P] = ST30P_TEST_UDP_PORT + st30->idx;
+  ops_tx->port.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ST30P_TEST_UDP_PORT + st30->idx);
   ops_tx->port.payload_type = ST30P_TEST_PAYLOAD_TYPE;
   ops_tx->fmt = ST30_FMT_PCM24;
   ops_tx->channel = 2;
   ops_tx->sampling = ST30_SAMPLING_48K;
   ops_tx->ptime = ST30_PTIME_1MS;
   /* count frame size for 10ms  */
-  ops_tx->framebuff_size =
-      st30_calculate_framebuff_size(ops_tx->fmt, ops_tx->ptime, ops_tx->sampling,
-                                    ops_tx->channel, 10 * NS_PER_MS, NULL);
+  ops_tx->framebuff_size = (uint32_t)st30_calculate_framebuff_size(
+      ops_tx->fmt, ops_tx->ptime, ops_tx->sampling, ops_tx->channel, 10 * NS_PER_MS,
+      NULL);
 
   ops_tx->framebuff_cnt = st30->fb_cnt;
   ops_tx->notify_frame_available = test_st30p_tx_frame_available;
@@ -72,16 +72,16 @@ static void st30p_rx_ops_init(tests_context* st30, struct st30p_rx_ops* ops_rx) 
          MTL_IP_ADDR_LEN);
   snprintf(ops_rx->port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_R]);
-  ops_rx->port.udp_port[MTL_SESSION_PORT_P] = ST30P_TEST_UDP_PORT + st30->idx;
+  ops_rx->port.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ST30P_TEST_UDP_PORT + st30->idx);
   ops_rx->port.payload_type = ST30P_TEST_PAYLOAD_TYPE;
   ops_rx->fmt = ST30_FMT_PCM24;
   ops_rx->channel = 2;
   ops_rx->sampling = ST30_SAMPLING_48K;
   ops_rx->ptime = ST30_PTIME_1MS;
   /* count frame size */
-  ops_rx->framebuff_size =
-      st30_calculate_framebuff_size(ops_rx->fmt, ops_rx->ptime, ops_rx->sampling,
-                                    ops_rx->channel, 10 * NS_PER_MS, NULL);
+  ops_rx->framebuff_size = (uint32_t)st30_calculate_framebuff_size(
+      ops_rx->fmt, ops_rx->ptime, ops_rx->sampling, ops_rx->channel, 10 * NS_PER_MS,
+      NULL);
   ops_rx->framebuff_cnt = st30->fb_cnt;
   ops_rx->notify_frame_available = test_st30p_rx_frame_available;
 
@@ -166,7 +166,7 @@ static void test_st30p_tx_frame_thread(void* args) {
     if (frame->sampling != s->audio_sampling) s->incomplete_frame_cnt++;
     if (s->user_timestamp) {
       frame->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-      frame->timestamp = s->fb_send;
+      frame->timestamp = (uint64_t)s->fb_send;
       dbg("%s(%d), timestamp %d\n", __func__, s->idx, s->fb_send);
     }
 
@@ -247,10 +247,10 @@ static void test_st30p_rx_frame_thread(void* args) {
 }
 
 struct st30p_rx_digest_test_para {
-  int sessions;
+  size_t sessions;
   bool check_fps;
   enum st_test_level level;
-  int fb_cnt;
+  uint16_t fb_cnt;
   uint32_t ssrc;
   bool block_get;
   bool dedicated_tx_queue;
@@ -278,7 +278,7 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
   int ret;
   struct st30p_tx_ops ops_tx;
   struct st30p_rx_ops ops_rx;
-  int sessions = para->sessions;
+  size_t sessions = para->sessions;
 
   if (ctx->para.num_ports < 2) {
     info("%s, dual port should be enabled, one for tx and one for rx\n", __func__);
@@ -310,11 +310,11 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
   tx_thread.resize(sessions);
   rx_thread.resize(sessions);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     test_ctx_tx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
 
-    test_ctx_tx[i]->idx = i;
+    test_ctx_tx[i]->idx = (int)i;
     test_ctx_tx[i]->ctx = ctx;
     test_ctx_tx[i]->fb_cnt = para->fb_cnt;
     test_ctx_tx[i]->fb_idx = 0;
@@ -336,7 +336,7 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
              MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_P]);
-    ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST30P_TEST_UDP_PORT + i * 2;
+    ops_tx.port.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ST30P_TEST_UDP_PORT + i * 2);
     ops_tx.port.payload_type = para->zero_payload_type ? 0 : ST30P_TEST_PAYLOAD_TYPE;
     ops_tx.port.ssrc = para->ssrc;
     ops_tx.fmt = fmt[i];
@@ -344,7 +344,7 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
     ops_tx.sampling = sampling[i];
     ops_tx.ptime = ptime[i];
     double fps;
-    ops_tx.framebuff_size = st30_calculate_framebuff_size(
+    ops_tx.framebuff_size = (uint32_t)st30_calculate_framebuff_size(
         ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel, 10 * NS_PER_MS, &fps);
     expect_framerate_tx[i] = fps;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
@@ -368,10 +368,10 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
     /* sha calculate */
     size_t frame_size = test_ctx_tx[i]->frame_size;
     uint8_t* fb;
-    for (int frame = 0; frame < test_ctx_tx[i]->fb_cnt; frame++) {
+    for (uint16_t frame = 0; frame < test_ctx_tx[i]->fb_cnt; frame++) {
       fb = (uint8_t*)st30p_tx_get_fb_addr(tx_handle[i], frame);
       ASSERT_TRUE(fb != NULL);
-      st_test_rand_data(fb, frame_size, frame);
+      st_test_rand_data(fb, frame_size, (uint8_t)frame);
 
       unsigned char* result = test_ctx_tx[i]->shas[frame];
       SHA256((unsigned char*)fb, frame_size, result);
@@ -383,11 +383,11 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
     tx_thread[i] = std::thread(test_st30p_tx_frame_thread, test_ctx_tx[i]);
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     test_ctx_rx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
 
-    test_ctx_rx[i]->idx = i;
+    test_ctx_rx[i]->idx = (int)i;
     test_ctx_rx[i]->ctx = ctx;
     test_ctx_rx[i]->fb_cnt = para->fb_cnt;
     test_ctx_rx[i]->fb_idx = 0;
@@ -415,7 +415,7 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
              MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
-    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ST30P_TEST_UDP_PORT + i * 2;
+    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ST30P_TEST_UDP_PORT + i * 2);
     ops_rx.port.payload_type = para->zero_payload_type ? 0 : ST30P_TEST_PAYLOAD_TYPE;
     ops_rx.port.ssrc = para->ssrc;
     ops_rx.fmt = fmt[i];
@@ -423,7 +423,7 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
     ops_rx.sampling = sampling[i];
     ops_rx.ptime = ptime[i];
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
-    ops_rx.framebuff_size = test_ctx_rx[i]->frame_size;
+    ops_rx.framebuff_size = (uint32_t)test_ctx_rx[i]->frame_size;
     if (para->block_get)
       ops_rx.flags |= ST30P_RX_FLAG_BLOCK_GET;
     else
@@ -446,7 +446,7 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
   EXPECT_GE(ret, 0);
   sleep(10);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_tx[i]->start_time) / NS_PER_S;
     framerate_tx[i] = test_ctx_tx[i]->fb_send / time_sec;
@@ -457,7 +457,7 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
     tx_thread[i].join();
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate_rx[i] = test_ctx_rx[i]->fb_rec / time_sec;
@@ -468,23 +468,23 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
     rx_thread[i].join();
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     ret = st30p_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
-    info("%s, session %d fb_send %d framerate %f:%f\n", __func__, i,
+    info("%s, session %zu fb_send %d framerate %f:%f\n", __func__, i,
          test_ctx_tx[i]->fb_send, framerate_tx[i], expect_framerate_tx[i]);
     EXPECT_GT(test_ctx_tx[i]->fb_send, 0);
     test_ctx_rx[i]->fb_send = test_ctx_tx[i]->fb_send;
     delete test_ctx_tx[i];
   }
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     ret = st30p_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
-    info("%s, session %d fb_rec %d framerate %f:%f\n", __func__, i,
+    info("%s, session %zu fb_rec %d framerate %f:%f\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate_rx[i], expect_framerate_rx[i]);
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 4);
-    size_t pkt_len = st30_get_packet_size(
+    size_t pkt_len = (size_t)st30_get_packet_size(
         test_ctx_rx[i]->audio_fmt, test_ctx_rx[i]->audio_ptime,
         test_ctx_rx[i]->audio_sampling, test_ctx_rx[i]->audio_channel);
     if (pkt_len == test_ctx_rx[i]->frame_size) {
@@ -557,7 +557,7 @@ TEST(St30p, tx_put_frame_abort) {
   ops_tx.channel = 2;
   ops_tx.sampling = ST30_SAMPLING_48K;
   ops_tx.ptime = ST30_PTIME_1MS;
-  ops_tx.framebuff_size = st30_calculate_framebuff_size(
+  ops_tx.framebuff_size = (uint32_t)st30_calculate_framebuff_size(
       ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel, 10 * NS_PER_MS, NULL);
   ops_tx.framebuff_cnt = test_ctx->fb_cnt;
   ops_tx.flags |= ST30P_TX_FLAG_BLOCK_GET;
@@ -614,7 +614,7 @@ TEST(St30p, rx_put_frame_abort) {
   ops_tx.channel = 2;
   ops_tx.sampling = ST30_SAMPLING_48K;
   ops_tx.ptime = ST30_PTIME_1MS;
-  ops_tx.framebuff_size = st30_calculate_framebuff_size(
+  ops_tx.framebuff_size = (uint32_t)st30_calculate_framebuff_size(
       ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel, 10 * NS_PER_MS, NULL);
   ops_tx.framebuff_cnt = test_ctx_tx->fb_cnt;
   ops_tx.flags |= ST30P_TX_FLAG_BLOCK_GET;
@@ -657,7 +657,7 @@ TEST(St30p, rx_put_frame_abort) {
   ops_rx.channel = 2;
   ops_rx.sampling = ST30_SAMPLING_48K;
   ops_rx.ptime = ST30_PTIME_1MS;
-  ops_rx.framebuff_size = st30_calculate_framebuff_size(
+  ops_rx.framebuff_size = (uint32_t)st30_calculate_framebuff_size(
       ops_rx.fmt, ops_rx.ptime, ops_rx.sampling, ops_rx.channel, 10 * NS_PER_MS, NULL);
   ops_rx.framebuff_cnt = test_ctx_rx->fb_cnt;
   ops_rx.flags |= ST30P_RX_FLAG_BLOCK_GET;
@@ -732,7 +732,7 @@ TEST(St30p, redundant_stats) {
 
   struct st30p_tx_ops ops_tx;
   struct st30p_rx_ops ops_rx;
-  int udp_port = ST30P_TEST_UDP_PORT + 100;
+  uint16_t udp_port = ST30P_TEST_UDP_PORT + 100;
 
   /* TX context */
   auto test_ctx_tx = new tests_context();
@@ -762,7 +762,7 @@ TEST(St30p, redundant_stats) {
   ops_tx.channel = 2;
   ops_tx.sampling = ST30_SAMPLING_48K;
   ops_tx.ptime = ST30_PTIME_1MS;
-  ops_tx.framebuff_size = st30_calculate_framebuff_size(
+  ops_tx.framebuff_size = (uint32_t)st30_calculate_framebuff_size(
       ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel, 10 * NS_PER_MS, NULL);
   ops_tx.framebuff_cnt = test_ctx_tx->fb_cnt;
   ops_tx.flags |= ST30P_TX_FLAG_BLOCK_GET;
@@ -804,7 +804,7 @@ TEST(St30p, redundant_stats) {
   ops_rx.channel = 2;
   ops_rx.sampling = ST30_SAMPLING_48K;
   ops_rx.ptime = ST30_PTIME_1MS;
-  ops_rx.framebuff_size = st30_calculate_framebuff_size(
+  ops_rx.framebuff_size = (uint32_t)st30_calculate_framebuff_size(
       ops_rx.fmt, ops_rx.ptime, ops_rx.sampling, ops_rx.channel, 10 * NS_PER_MS, NULL);
   ops_rx.framebuff_cnt = test_ctx_rx->fb_cnt;
   ops_rx.flags |= ST30P_RX_FLAG_BLOCK_GET;
@@ -910,7 +910,7 @@ TEST(St30p, rx_simulate_pkt_loss) {
   int ret;
   struct st30p_tx_ops ops_tx;
   struct st30p_rx_ops ops_rx;
-  int udp_port = ST30P_TEST_UDP_PORT + 200;
+  uint16_t udp_port = ST30P_TEST_UDP_PORT + 200;
 
   auto test_ctx_tx = new tests_context();
   ASSERT_TRUE(test_ctx_tx != NULL);
@@ -932,7 +932,7 @@ TEST(St30p, rx_simulate_pkt_loss) {
   ops_tx.channel = 2;
   ops_tx.sampling = ST30_SAMPLING_48K;
   ops_tx.ptime = ST30_PTIME_1MS;
-  ops_tx.framebuff_size = st30_calculate_framebuff_size(
+  ops_tx.framebuff_size = (uint32_t)st30_calculate_framebuff_size(
       ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel, 10 * NS_PER_MS, NULL);
   ops_tx.framebuff_cnt = test_ctx_tx->fb_cnt;
   ops_tx.flags |= ST30P_TX_FLAG_BLOCK_GET;
@@ -969,7 +969,7 @@ TEST(St30p, rx_simulate_pkt_loss) {
   ops_rx.channel = 2;
   ops_rx.sampling = ST30_SAMPLING_48K;
   ops_rx.ptime = ST30_PTIME_1MS;
-  ops_rx.framebuff_size = st30_calculate_framebuff_size(
+  ops_rx.framebuff_size = (uint32_t)st30_calculate_framebuff_size(
       ops_rx.fmt, ops_rx.ptime, ops_rx.sampling, ops_rx.channel, 10 * NS_PER_MS, NULL);
   ops_rx.framebuff_cnt = test_ctx_rx->fb_cnt;
   ops_rx.flags |= ST30P_RX_FLAG_BLOCK_GET | ST30P_RX_FLAG_SIMULATE_PKT_LOSS |
@@ -1050,7 +1050,7 @@ static void st30p_tx_epoch_drop_test(bool user_pacing) {
   ops_tx.channel = 2;
   ops_tx.sampling = ST30_SAMPLING_48K;
   ops_tx.ptime = ST30_PTIME_1MS;
-  ops_tx.framebuff_size = st30_calculate_framebuff_size(
+  ops_tx.framebuff_size = (uint32_t)st30_calculate_framebuff_size(
       ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel, 10 * NS_PER_MS, NULL);
   ops_tx.framebuff_cnt = test_ctx->fb_cnt;
   ops_tx.flags |= ST30P_TX_FLAG_BLOCK_GET;

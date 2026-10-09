@@ -129,11 +129,11 @@ static void test_dma_copy_sanity(struct st_tests_context* ctx) {
   dma = mtl_udma_create(st, 128, MTL_PORT_P);
   ASSERT_TRUE(dma != NULL);
 
-  for (int len = 1; len < 1024; len += 7) {
+  for (uint32_t len = 1; len < 1024; len += 7) {
     _test_dma_copy(st, dma, 0, len);
   }
 
-  for (int off = 1; off < 1024; off += 7) {
+  for (uint32_t off = 1; off < 1024; off += 7) {
     _test_dma_copy(st, dma, off, 1024);
   }
 
@@ -146,9 +146,9 @@ static void test_dma_copy_fill_async(struct st_tests_context* ctx, bool fill) {
   mtl_udma_handle dma;
   int ret;
   uint16_t nb_desc = 1024;
-  int nb_elements = nb_desc * 8, element_size = 1260;
-  int fb_size = element_size * nb_elements;
-  int fb_dst_iova_off = 0, fb_src_iova_off = 0;
+  uint32_t nb_elements = (uint32_t)nb_desc * 8, element_size = 1260;
+  size_t fb_size = (size_t)element_size * nb_elements;
+  size_t fb_dst_iova_off = 0, fb_src_iova_off = 0;
   uint8_t pattern = 0xa5;
 
   dma = mtl_udma_create(st, nb_desc, MTL_PORT_P);
@@ -288,11 +288,11 @@ static void test_dma_fill_sanity(struct st_tests_context* ctx) {
   dma = mtl_udma_create(st, 128, MTL_PORT_P);
   ASSERT_TRUE(dma != NULL);
 
-  for (int len = 1; len < 1024; len += 7) {
+  for (uint32_t len = 1; len < 1024; len += 7) {
     _test_dma_fill(st, dma, 0, len, uint8_t(rand()));
   }
 
-  for (int off = 1; off < 1024; off += 7) {
+  for (uint32_t off = 1; off < 1024; off += 7) {
     _test_dma_fill(st, dma, off, 1024, uint8_t(rand()));
   }
 
@@ -382,7 +382,8 @@ TEST(Dma, map_fail) {
   free(p);
 }
 
-static void test_dma_map_continues(struct st_tests_context* ctx, size_t size, int count) {
+static void test_dma_map_continues(struct st_tests_context* ctx, size_t size,
+                                   size_t count) {
   auto st = ctx->handle;
   size_t pg_sz = mtl_page_size(st);
   /* 2 more pages to hold the head and tail */
@@ -393,11 +394,11 @@ static void test_dma_map_continues(struct st_tests_context* ctx, size_t size, in
   mtl_iova_t* iovas = new mtl_iova_t[count];
   int ret;
 
-  for (int i = 0; i < count; i++) {
+  for (size_t i = 0; i < count; i++) {
     iovas[i] = mtl_dma_map(st, align + i * size, size);
     EXPECT_TRUE(iovas[i] != MTL_BAD_IOVA);
   }
-  for (int i = 0; i < count; i++) {
+  for (size_t i = 0; i < count; i++) {
     ret = mtl_dma_unmap(st, align + i * size, iovas[i], size);
     EXPECT_TRUE(ret >= 0);
   }
@@ -484,7 +485,7 @@ static void test_dma_map_copy(mtl_handle st, mtl_udma_handle dma, size_t copy_si
   ASSERT_TRUE(src_iova != MTL_BAD_IOVA);
   ASSERT_TRUE(dst_iova != MTL_BAD_IOVA);
 
-  int ret = mtl_udma_copy(dma, dst_iova, src_iova, copy_size);
+  int ret = mtl_udma_copy(dma, dst_iova, src_iova, (uint32_t)copy_size);
   EXPECT_GE(ret, 0);
   ret = mtl_udma_submit(dma);
   uint16_t nb_dq = 0;

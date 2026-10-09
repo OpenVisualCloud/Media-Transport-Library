@@ -174,7 +174,7 @@ int ut_txa_prepare_frame_tasklet(ut_txa_ctx* ctx, enum st10_timestamp_fmt tfmt,
   snprintf(ring_name, sizeof(ring_name), "ut_txa_ring_%u", test_idx++);
   s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] =
       rte_pktmbuf_pool_create(pool_name, 32, 0, sizeof(struct mt_muf_priv_data),
-                              RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+                              RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
   ctx->mgr.ring[MTL_PORT_P] = ut_ring_create(ring_name, 32);
   if (!s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] || !ctx->mgr.ring[MTL_PORT_P]) {
     ut_txa_cleanup_frame_tasklet(ctx);
@@ -250,7 +250,8 @@ int ut_txa_run_frame_tasklet(ut_txa_ctx* ctx, enum st10_timestamp_fmt tfmt,
   ctx->frame_status = ctx->session.st40_frame_stat;
   ctx->frame_refcnt = rte_atomic32_read(&ctx->frame.refcnt);
   ret = ut_txa_pop_packet_tsc(ctx, packet_tsc);
-  ctx->packet_len = ctx->session.port_user_stats.common.port[MTL_SESSION_PORT_P].bytes;
+  ctx->packet_len =
+      (uint32_t)ctx->session.port_user_stats.common.port[MTL_SESSION_PORT_P].bytes;
   ut_txa_cleanup_frame_tasklet(ctx);
   return ret;
 }

@@ -18,8 +18,9 @@ struct MtlStopGuard {
 };
 
 static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
-                                     int width[], int height[], enum st20_fmt fmt,
-                                     int sessions, int repeat, enum st_test_level level) {
+                                     uint32_t width[], uint32_t height[],
+                                     enum st20_fmt fmt, size_t sessions, int repeat,
+                                     enum st_test_level level) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -65,7 +66,7 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
     St20DeinitGuard guard(m_handle, test_ctx_tx, test_ctx_rx, tx_handle, rx_handle,
                           &rtp_thread_tx, &rtp_thread_rx);
 
-    for (int i = 0; i < sessions; i++) {
+    for (size_t i = 0; i < sessions; i++) {
       expect_framerate[i] = st_frame_rate(fps[i]);
 
       test_ctx_tx[i] = init_test_ctx(ctx, i, 3);
@@ -93,7 +94,7 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
       }
     }
 
-    for (int i = 0; i < sessions; i++) {
+    for (size_t i = 0; i < sessions; i++) {
       test_ctx_rx[i] = init_test_ctx(ctx, i, 3);
       ASSERT_TRUE(test_ctx_rx[i] != NULL);
       test_ctx_rx[i]->stop = false;
@@ -121,7 +122,7 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
 
     sleep(10);
 
-    for (int i = 0; i < sessions; i++) {
+    for (size_t i = 0; i < sessions; i++) {
       uint64_t cur_time_ns = st_test_get_monotonic_time();
       double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
       framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
@@ -129,10 +130,10 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
 
     guard.stop();
 
-    for (int i = 0; i < sessions; i++) {
+    for (size_t i = 0; i < sessions; i++) {
       EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-      info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
-           framerate[i]);
+      info("%s, session %zu fb_rec %d framerate %f\n", __func__, i,
+           test_ctx_rx[i]->fb_rec, framerate[i]);
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
     }
 
@@ -143,8 +144,8 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
 TEST(St20_rx, after_start_frame_720p_fps50_s1_r1) {
   enum st20_type type[1] = {ST20_TYPE_RTP_LEVEL};
   enum st_fps fps[1] = {ST_FPS_P50};
-  int width[1] = {1280};
-  int height[1] = {720};
+  uint32_t width[1] = {1280};
+  uint32_t height[1] = {720};
   st20_rx_after_start_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, 1, 1,
                            ST_TEST_LEVEL_MANDATORY);
 }
@@ -152,8 +153,8 @@ TEST(St20_rx, after_start_frame_720p_fps50_s1_r1) {
 TEST(St20_rx, after_start_frame_720p_fps29_97_s1_r2) {
   enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
   enum st_fps fps[1] = {ST_FPS_P29_97};
-  int width[1] = {1280};
-  int height[1] = {720};
+  uint32_t width[1] = {1280};
+  uint32_t height[1] = {720};
   st20_rx_after_start_test(type, fps, width, height, ST20_FMT_YUV_422_10BIT, 1, 2,
                            ST_TEST_LEVEL_ALL);
 }

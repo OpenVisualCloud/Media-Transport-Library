@@ -95,7 +95,7 @@ int ut20p_init(void) {
 
 /* ── context create / destroy ─────────────────────────────────────────── */
 
-ut20p_ctx* ut20p_ctx_create(int framebuff_cnt) {
+ut20p_ctx* ut20p_ctx_create(uint16_t framebuff_cnt) {
   ut20p_ctx* ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
 
@@ -107,7 +107,7 @@ ut20p_ctx* ut20p_ctx_create(int framebuff_cnt) {
     free(ctx);
     return NULL;
   }
-  for (int i = 0; i < framebuff_cnt; i++) {
+  for (uint16_t i = 0; i < framebuff_cnt; i++) {
     ctx->framebuffs[i].stat = ST20P_RX_FRAME_FREE;
     ctx->framebuffs[i].idx = i;
     /* mirrors production init: put_frame() reads frame->priv to recover
@@ -125,7 +125,7 @@ ut20p_ctx* ut20p_ctx_create(int framebuff_cnt) {
   struct st20p_rx_ctx* p = &ctx->pipeline;
   p->impl = &ctx->impl;
   p->idx = 0;
-  p->socket_id = rte_socket_id();
+  p->socket_id = (int)rte_socket_id();
   p->type = MT_ST20_HANDLE_PIPELINE_RX;
   p->framebuff_cnt = framebuff_cnt;
   p->framebuffs = ctx->framebuffs;
@@ -223,7 +223,7 @@ uint64_t ut20p_stat_frames_corrupted(const ut20p_ctx* ctx) {
 }
 
 uint32_t ut20p_stat_busy(const ut20p_ctx* ctx) {
-  return rte_atomic32_read(&ctx->pipeline.stat_busy);
+  return (uint32_t)rte_atomic32_read(&ctx->pipeline.stat_busy);
 }
 
 /* ── public-API wrappers ─────────────────────────────────────────────── */

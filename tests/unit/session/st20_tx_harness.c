@@ -236,7 +236,7 @@ void ut_txv_set_second_field(ut_txv_ctx* ctx, bool second_field) {
 }
 
 void ut_txv_set_sampling_clock_rate(ut_txv_ctx* ctx, uint32_t sampling_rate) {
-  ctx->session.fps_tm.sampling_clock_rate = sampling_rate;
+  ctx->session.fps_tm.sampling_clock_rate = (int)sampling_rate;
 }
 
 void ut_txv_set_ptp_time_cursor(ut_txv_ctx* ctx, uint64_t tai_ns) {
@@ -311,7 +311,7 @@ static int ut_txv_tx_path_init(struct ut_txv_ctx* ctx) {
   snprintf(ring_name, sizeof(ring_name), "ut_txv_ring_%u", path_idx++);
   s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] =
       rte_pktmbuf_pool_create(pool_name, 32, 0, sizeof(struct mt_muf_priv_data),
-                              RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+                              RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
   s->ring[MTL_SESSION_PORT_P] = ut_ring_create(ring_name, 32);
   if (!s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] || !s->ring[MTL_SESSION_PORT_P]) return -1;
   return 0;
@@ -409,8 +409,8 @@ int ut_txv_run_rtp_tasklet(ut_txv_ctx* ctx, bool second_field, bool tx_no_chain,
   size_t app_pkt_len = hdr_offset + sizeof(struct st20_rfc4175_rtp_hdr);
   uint8_t* app_data = rte_pktmbuf_mtod(app_pkt, uint8_t*);
   memset(app_data, 0, app_pkt_len);
-  app_pkt->data_len = app_pkt_len;
-  app_pkt->pkt_len = app_pkt_len;
+  app_pkt->data_len = (uint16_t)app_pkt_len;
+  app_pkt->pkt_len = (uint32_t)app_pkt_len;
   struct st20_rfc4175_rtp_hdr* rfc4175 =
       (struct st20_rfc4175_rtp_hdr*)(app_data + hdr_offset);
   rfc4175->row_number = htons(second_field ? ST20_SECOND_FIELD : 0);
@@ -515,7 +515,7 @@ int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
   snprintf(ring_name, sizeof(ring_name), "ut_txv_trs_ring_%u", test_idx++);
   s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] =
       rte_pktmbuf_pool_create(pool_name, 32, 0, sizeof(struct mt_muf_priv_data),
-                              RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+                              RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
   s->ring[MTL_SESSION_PORT_P] = ut_ring_create(ring_name, 32);
   if (!s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] || !s->ring[MTL_SESSION_PORT_P]) goto out;
   packet = rte_pktmbuf_alloc(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
@@ -602,7 +602,7 @@ int ut_txv_install_hdr_mempool(ut_txv_ctx* ctx) {
            pool_idx++);
   ctx->session.mbuf_mempool_hdr[MTL_SESSION_PORT_P] =
       rte_pktmbuf_pool_create(ctx->hdr_pool_name, 32, 0, sizeof(struct mt_muf_priv_data),
-                              RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+                              RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
   return ctx->session.mbuf_mempool_hdr[MTL_SESSION_PORT_P] ? 0 : -ENOMEM;
 }
 

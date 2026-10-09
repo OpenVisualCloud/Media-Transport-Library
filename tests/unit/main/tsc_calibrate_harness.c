@@ -56,7 +56,8 @@ static uint64_t ut_monotonic_time(void) {
 }
 
 static uint64_t ut_tsc_cycles(void) {
-  uint64_t cycles = (unsigned __int128)ut_clock.now_ns * ut_clock.tsc_hz / NS_PER_S;
+  uint64_t cycles =
+      (uint64_t)((unsigned __int128)ut_clock.now_ns * ut_clock.tsc_hz / NS_PER_S);
   ut_clock_read_done();
   return cycles;
 }

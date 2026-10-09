@@ -14,7 +14,8 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   size_t copy = size < ST40_HELPER_BUF_SIZE ? size : ST40_HELPER_BUF_SIZE;
   memcpy(scratch, data, copy);
 
-  uint16_t seed = (copy >= 2) ? ((uint16_t)scratch[0] << 8 | scratch[1]) : scratch[0];
+  uint16_t seed =
+      (copy >= 2) ? (uint16_t)((uint16_t)scratch[0] << 8 | scratch[1]) : scratch[0];
   uint16_t udw_val = seed & 0x3FF; /* 10-bit */
   uint32_t max_fields = (uint32_t)((copy * 8) / 10);
   if (!max_fields) max_fields = 1;

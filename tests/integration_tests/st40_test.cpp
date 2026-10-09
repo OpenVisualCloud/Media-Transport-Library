@@ -44,7 +44,7 @@ static int tx_anc_build_rtp_packet(tests_context* s, struct st40_rfc8331_rtp_hdr
   rtp->base.csrc_count = 0;
   rtp->first_hdr_chunk.f = 0b00;
   rtp->base.tmstamp = s->rtp_tmstamp;
-  rtp->base.ssrc = htonl(0x88888888 + s->idx);
+  rtp->base.ssrc = htonl(0x88888888 + (uint32_t)s->idx);
   /* update rtp seq*/
   rtp->base.seq_number = htons((uint16_t)s->seq_id);
   rtp->seq_number_ext = htons((uint16_t)(s->seq_id >> 16));
@@ -53,18 +53,19 @@ static int tx_anc_build_rtp_packet(tests_context* s, struct st40_rfc8331_rtp_hdr
   if (s->check_sha) {
     struct st40_rfc8331_payload_hdr* payload_hdr =
         (struct st40_rfc8331_payload_hdr*)(&rtp[1]);
-    int udw_size = s->frame_size;
+    uint32_t udw_size = (uint32_t)s->frame_size;
     payload_hdr->first_hdr_chunk.c = 0;
     payload_hdr->first_hdr_chunk.line_number = 10;
     payload_hdr->first_hdr_chunk.horizontal_offset = 0;
     payload_hdr->first_hdr_chunk.s = 0;
     payload_hdr->first_hdr_chunk.stream_num = 0;
-    payload_hdr->second_hdr_chunk.did = st40_add_parity_bits(0x43);
-    payload_hdr->second_hdr_chunk.sdid = st40_add_parity_bits(0x02);
-    payload_hdr->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size);
+    payload_hdr->second_hdr_chunk.did = st40_add_parity_bits(0x43) & 0x3ffU;
+    payload_hdr->second_hdr_chunk.sdid = st40_add_parity_bits(0x02) & 0x3ffU;
+    payload_hdr->second_hdr_chunk.data_count =
+        st40_add_parity_bits((uint16_t)udw_size) & 0x3ffU;
     st40_rfc8331_payload_hdr_bswap(payload_hdr);
     rtp->first_hdr_chunk.anc_count = 1;
-    for (int i = 0; i < udw_size; i++) {
+    for (uint32_t i = 0; i < udw_size; i++) {
       st40_set_udw(i + 3,
                    st40_add_parity_bits(s->frame_buf[s->seq_id % TEST_SHA_HIST_NUM][i]),
                    (uint8_t*)&payload_hdr->second_hdr_chunk);
@@ -72,9 +73,9 @@ static int tx_anc_build_rtp_packet(tests_context* s, struct st40_rfc8331_rtp_hdr
     uint16_t check_sum =
         st40_calc_checksum(3 + udw_size, (uint8_t*)&payload_hdr->second_hdr_chunk);
     st40_set_udw(udw_size + 3, check_sum, (uint8_t*)&payload_hdr->second_hdr_chunk);
-    uint32_t payload_len = st40_rfc8331_payload_bytes(udw_size);
-    rtp->length = htons(payload_len);
-    *pkt_len = payload_len + sizeof(struct st40_rfc8331_rtp_hdr);
+    uint32_t payload_len = st40_rfc8331_payload_bytes((uint16_t)udw_size);
+    rtp->length = htons((uint16_t)payload_len);
+    *pkt_len = (uint16_t)(payload_len + sizeof(struct st40_rfc8331_rtp_hdr));
   } else {
     *pkt_len = sizeof(struct st40_rfc8331_rtp_hdr);
   }
@@ -136,7 +137,7 @@ static void rx_handle_rtp(tests_context* s, struct st40_rfc8331_rtp_hdr* hdr) {
       s->rx_meta_fail_cnt++;
       return;
     }
-    int udw_size = payload_hdr->second_hdr_chunk.data_count & 0xff;
+    uint32_t udw_size = payload_hdr->second_hdr_chunk.data_count & 0xff;
 
     // verify checksum
     uint16_t checksum = 0;
@@ -151,13 +152,13 @@ static void rx_handle_rtp(tests_context* s, struct st40_rfc8331_rtp_hdr* hdr) {
     uint16_t data;
     uint8_t* udw = (uint8_t*)st_test_zmalloc(udw_size);
     ASSERT_TRUE(udw != NULL);
-    for (int i = 0; i < udw_size; i++) {
+    for (uint32_t i = 0; i < udw_size; i++) {
       data = st40_get_udw(i + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
       if (!st40_check_parity_bits(data)) {
         err("anc RTP checkParityBits for udw error\n");
         s->rx_meta_fail_cnt++;
       }
-      udw[i] = data & 0xff;
+      udw[i] = (uint8_t)(data & 0xff);
     }
     {
       std::unique_lock<std::mutex> lck(s->mtx);
@@ -165,9 +166,9 @@ static void rx_handle_rtp(tests_context* s, struct st40_rfc8331_rtp_hdr* hdr) {
       s->cv.notify_all();
     }
 
-    payload_hdr =
-        (struct st40_rfc8331_payload_hdr*)((uint8_t*)payload_hdr +
-                                           st40_rfc8331_payload_bytes(udw_size));
+    payload_hdr = (struct st40_rfc8331_payload_hdr*)((uint8_t*)payload_hdr +
+                                                     st40_rfc8331_payload_bytes(
+                                                         (uint16_t)udw_size));
   }
 }
 
@@ -206,13 +207,13 @@ static void st40_rx_ops_init(tests_context* st40, struct st40_rx_ops* ops) {
          MTL_IP_ADDR_LEN);
   snprintf(ops->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_P]);
-  ops->udp_port[MTL_SESSION_PORT_P] = 30000 + st40->idx * 2;
+  ops->udp_port[MTL_SESSION_PORT_P] = (uint16_t)(30000 + st40->idx * 2);
   if (ops->num_port == 2) {
     memcpy(ops->ip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     snprintf(ops->port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
-    ops->udp_port[MTL_SESSION_PORT_R] = 30000 + st40->idx * 2;
+    ops->udp_port[MTL_SESSION_PORT_R] = (uint16_t)(30000 + st40->idx * 2);
   }
   ops->type = ST40_TYPE_RTP_LEVEL;
   ops->notify_rtp_ready = rx_rtp_ready;
@@ -232,13 +233,13 @@ static void st40_tx_ops_init(tests_context* st40, struct st40_tx_ops* ops) {
          MTL_IP_ADDR_LEN);
   snprintf(ops->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_P]);
-  ops->udp_port[MTL_SESSION_PORT_P] = 30000 + st40->idx * 2;
+  ops->udp_port[MTL_SESSION_PORT_P] = (uint16_t)(30000 + st40->idx * 2);
   if (ops->num_port == 2) {
     memcpy(ops->dip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     snprintf(ops->port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
-    ops->udp_port[MTL_SESSION_PORT_R] = 30000 + st40->idx * 2;
+    ops->udp_port[MTL_SESSION_PORT_R] = (uint16_t)(30000 + st40->idx * 2);
   }
   ops->type = ST40_TYPE_FRAME_LEVEL;
   ops->fps = ST_FPS_P59_94;
@@ -333,10 +334,10 @@ static void st40_tx_frame_init(tests_context* st40, st40_tx_handle handle,
   size_t frame_size = 240;
   if (st40->st40_empty_frame) frame_size = 0;
 
-  st40->pkt_data_len = frame_size;
+  st40->pkt_data_len = (int)frame_size;
   st40->frame_size = frame_size;
 
-  for (int frame = 0; frame < st40->fb_cnt; frame++) {
+  for (uint16_t frame = 0; frame < st40->fb_cnt; frame++) {
     st40->frame_buf[frame] = (uint8_t*)st_test_zmalloc(frame_size);
     ASSERT_TRUE(st40->frame_buf[frame] != NULL);
 
@@ -344,7 +345,7 @@ static void st40_tx_frame_init(tests_context* st40, st40_tx_handle handle,
       struct st40_frame* dst = (struct st40_frame*)st40_tx_get_framebuffer(handle, frame);
       ASSERT_TRUE(dst != NULL);
 
-      dst->data_size = dst->meta[0].udw_size = frame_size;
+      dst->data_size = dst->meta[0].udw_size = (uint16_t)frame_size;
       dst->meta[0].udw_offset = 0;
       dst->meta[0].c = 0;
       dst->meta[0].line_number = 10;
@@ -363,7 +364,7 @@ static void st40_tx_frame_init(tests_context* st40, st40_tx_handle handle,
 }
 
 static void st40_tx_frame_uinit(tests_context* st40) {
-  for (int frame = 0; frame < st40->fb_cnt; frame++) {
+  for (uint16_t frame = 0; frame < st40->fb_cnt; frame++) {
     if (st40->frame_buf[frame]) {
       st_test_free(st40->frame_buf[frame]);
       st40->frame_buf[frame] = NULL;
@@ -372,7 +373,7 @@ static void st40_tx_frame_uinit(tests_context* st40) {
 }
 
 static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[],
-                             enum st_test_level level, int sessions = 1) {
+                             enum st_test_level level, size_t sessions = 1) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -393,12 +394,12 @@ static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[],
   framerate.resize(sessions);
   rtp_thread.resize(sessions);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     expect_framerate[i] = st_frame_rate(fps[i]);
     test_ctx[i] = new tests_context();
     ASSERT_TRUE(test_ctx[i] != NULL);
 
-    test_ctx[i]->idx = i;
+    test_ctx[i]->idx = (int)i;
     test_ctx[i]->ctx = ctx;
     test_ctx[i]->fb_cnt = 3;
     test_ctx[i]->fb_idx = 0;
@@ -423,7 +424,7 @@ static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[],
   EXPECT_GE(ret, 0);
   sleep(5);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx[i]->fb_send / time_sec;
@@ -440,9 +441,9 @@ static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[],
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx[i]->fb_send, 0);
-    info("%s, session %d fb_send %d framerate %f\n", __func__, i, test_ctx[i]->fb_send,
+    info("%s, session %zu fb_send %d framerate %f\n", __func__, i, test_ctx[i]->fb_send,
          framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
     ret = st40_tx_free(handle[i]);
@@ -453,7 +454,7 @@ static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[],
 }
 
 static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
-                             enum st_test_level level, int sessions = 1,
+                             enum st_test_level level, size_t sessions = 1,
                              bool check_sha = false, bool user_timestamp = false,
                              bool empty_frame = false, bool interlaced = false,
                              bool dedicate_tx_queue = false) {
@@ -492,13 +493,13 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
   rtp_thread_tx.resize(sessions);
   sha_check.resize(sessions);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     test_ctx_tx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
     expect_framerate[i] = st_frame_rate(fps[i]);
     if (user_timestamp) expect_framerate[i] /= 2;
 
-    test_ctx_tx[i]->idx = i;
+    test_ctx_tx[i]->idx = (int)i;
     test_ctx_tx[i]->ctx = ctx;
     test_ctx_tx[i]->fb_cnt = TEST_SHA_HIST_NUM;
     test_ctx_tx[i]->fb_idx = 0;
@@ -515,12 +516,12 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
              MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_P]);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 30000 + i * 2;
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(30000 + i * 2);
     ops_tx.type = type[i];
     ops_tx.fps = fps[i];
     ops_tx.payload_type = ST40_TEST_PAYLOAD_TYPE;
     ops_tx.interlaced = interlaced;
-    ops_tx.ssrc = i ? i + 0x88888888 : 0;
+    ops_tx.ssrc = i ? (uint32_t)i + 0x88888888 : 0;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     if (user_timestamp) {
       ops_tx.get_next_frame = tx_anc_next_frame_timestamp;
@@ -539,9 +540,9 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     st40_tx_frame_init(test_ctx_tx[i], tx_handle[i], type[i]);
     if (check_sha) {
       uint8_t* fb;
-      for (int frame = 0; frame < test_ctx_tx[i]->fb_cnt; frame++) {
+      for (uint16_t frame = 0; frame < test_ctx_tx[i]->fb_cnt; frame++) {
         fb = test_ctx_tx[i]->frame_buf[frame];
-        st_test_rand_data(fb, test_ctx_tx[i]->frame_size, frame);
+        st_test_rand_data(fb, test_ctx_tx[i]->frame_size, (uint8_t)frame);
         unsigned char* result = test_ctx_tx[i]->shas[frame];
         SHA256((unsigned char*)fb, test_ctx_tx[i]->frame_size, result);
         test_sha_dump("st40_rx", result);
@@ -556,11 +557,11 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     }
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     test_ctx_rx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
 
-    test_ctx_rx[i]->idx = i;
+    test_ctx_rx[i]->idx = (int)i;
     test_ctx_rx[i]->ctx = ctx;
     test_ctx_rx[i]->fb_cnt = 3;
     test_ctx_rx[i]->fb_idx = 0;
@@ -576,20 +577,20 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
              MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 30000 + i * 2;
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(30000 + i * 2);
     ops_rx.type = ST40_TYPE_RTP_LEVEL;
     ops_rx.notify_rtp_ready = rx_rtp_ready;
     ops_rx.rtp_ring_size = 1024;
     ops_rx.payload_type = ST40_TEST_PAYLOAD_TYPE;
     ops_rx.interlaced = interlaced;
-    ops_rx.ssrc = i ? i + 0x88888888 : 0;
+    ops_rx.ssrc = i ? (uint32_t)i + 0x88888888 : 0;
     rx_handle[i] = st40_rx_create(m_handle, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
 
     test_ctx_rx[i]->check_sha = check_sha;
     if (check_sha) {
       test_ctx_rx[i]->pkt_data_len = test_ctx_tx[i]->pkt_data_len;
-      test_ctx_rx[i]->frame_size = test_ctx_rx[i]->pkt_data_len;
+      test_ctx_rx[i]->frame_size = (size_t)test_ctx_rx[i]->pkt_data_len;
       memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
              TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
       sha_check[i] = std::thread(sha_frame_check, test_ctx_rx[i]);
@@ -606,7 +607,7 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
   EXPECT_GE(ret, 0);
   sleep(10);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
@@ -635,9 +636,9 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
 
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-    info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
+    info("%s, session %zu fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
          framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
     EXPECT_LE(test_ctx_rx[i]->sha_fail_cnt, 2);
@@ -743,7 +744,7 @@ TEST(St40_rx, frame_interlaced_empty) {
   st40_rx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 1, false, false, true, true);
 }
 
-static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
+static void st40_rx_update_src_test(enum st40_type type, size_t tx_sessions,
                                     enum st_test_level level) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
@@ -764,7 +765,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
   ASSERT_TRUE(tx_sessions >= 1);
   bool tx_update_dst = (tx_sessions == 1);
 
-  int rx_sessions = 1;
+  size_t rx_sessions = 1;
 
   std::vector<tests_context*> test_ctx_tx;
   std::vector<tests_context*> test_ctx_rx;
@@ -782,14 +783,14 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
   framerate.resize(rx_sessions);
   rtp_thread_tx.resize(tx_sessions);
 
-  for (int i = 0; i < rx_sessions; i++)
+  for (size_t i = 0; i < rx_sessions; i++)
     expect_framerate[i] = st_frame_rate(ST_FPS_P59_94);
 
-  for (int i = 0; i < tx_sessions; i++) {
+  for (size_t i = 0; i < tx_sessions; i++) {
     test_ctx_tx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
 
-    test_ctx_tx[i]->idx = i;
+    test_ctx_tx[i]->idx = (int)i;
     test_ctx_tx[i]->ctx = ctx;
     test_ctx_tx[i]->fb_cnt = 3;
     test_ctx_tx[i]->fb_idx = 0;
@@ -811,7 +812,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
              MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_P]);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 30000 + i * 2;
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(30000 + i * 2);
     ops_tx.type = type;
     ops_tx.fps = ST_FPS_P59_94;
     ops_tx.payload_type = ST40_TEST_PAYLOAD_TYPE;
@@ -833,11 +834,11 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
     }
   }
 
-  for (int i = 0; i < rx_sessions; i++) {
+  for (size_t i = 0; i < rx_sessions; i++) {
     test_ctx_rx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
 
-    test_ctx_rx[i]->idx = i;
+    test_ctx_rx[i]->idx = (int)i;
     test_ctx_rx[i]->ctx = ctx;
     test_ctx_rx[i]->fb_cnt = 3;
     test_ctx_rx[i]->fb_idx = 0;
@@ -853,7 +854,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
              MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 30000 + i * 2;
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(30000 + i * 2);
     ops_rx.type = ST40_TYPE_RTP_LEVEL;
     ops_rx.notify_rtp_ready = rx_rtp_ready;
     ops_rx.rtp_ring_size = 1024;
@@ -886,7 +887,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
   } else {
     test_ctx_tx[1]->seq_id = 0; /* reset seq id */
   }
-  for (int i = 0; i < rx_sessions; i++) {
+  for (size_t i = 0; i < rx_sessions; i++) {
     ret = st40_rx_update_source(rx_handle[i], &src);
     EXPECT_GE(ret, 0);
     test_ctx_rx[i]->start_time = 0;
@@ -894,13 +895,13 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
   }
   sleep(10);
   /* check rx fps */
-  for (int i = 0; i < rx_sessions; i++) {
+  for (size_t i = 0; i < rx_sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-    info("%s, session %d fb_rec %d framerate %f for mcast 1\n", __func__, i,
+    info("%s, session %zu fb_rec %d framerate %f for mcast 1\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
   }
@@ -911,7 +912,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
     src.udp_port[MTL_SESSION_PORT_P] = 30000 + 4;
     memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    for (int i = 0; i < rx_sessions; i++) {
+    for (size_t i = 0; i < rx_sessions; i++) {
       ret = st40_rx_update_source(rx_handle[i], &src);
       EXPECT_GE(ret, 0);
       test_ctx_tx[2]->seq_id = rand(); /* random seq id */
@@ -920,13 +921,13 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
     }
     sleep(10);
     /* check rx fps */
-    for (int i = 0; i < rx_sessions; i++) {
+    for (size_t i = 0; i < rx_sessions; i++) {
       uint64_t cur_time_ns = st_test_get_monotonic_time();
       double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
       framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
       EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-      info("%s, session %d fb_rec %d framerate %f for mcast 2\n", __func__, i,
+      info("%s, session %zu fb_rec %d framerate %f for mcast 2\n", __func__, i,
            test_ctx_rx[i]->fb_rec, framerate[i]);
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
     }
@@ -947,7 +948,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
     ret = st40_tx_update_destination(tx_handle[0], &dst);
     EXPECT_GE(ret, 0);
   }
-  for (int i = 0; i < rx_sessions; i++) {
+  for (size_t i = 0; i < rx_sessions; i++) {
     ret = st40_rx_update_source(rx_handle[i], &src);
     EXPECT_GE(ret, 0);
     test_ctx_rx[i]->start_time = 0;
@@ -955,19 +956,19 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
   }
   sleep(10);
   /* check rx fps */
-  for (int i = 0; i < rx_sessions; i++) {
+  for (size_t i = 0; i < rx_sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-    info("%s, session %d fb_rec %d framerate %f for unicast 0\n", __func__, i,
+    info("%s, session %zu fb_rec %d framerate %f for unicast 0\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
   }
 
   /* stop rtp thread */
-  for (int i = 0; i < tx_sessions; i++) {
+  for (size_t i = 0; i < tx_sessions; i++) {
     if (type == ST40_TYPE_RTP_LEVEL) {
       test_ctx_tx[i]->stop = true;
       {
@@ -982,12 +983,12 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
   EXPECT_GE(ret, 0);
 
   /* free all tx and rx */
-  for (int i = 0; i < rx_sessions; i++) {
+  for (size_t i = 0; i < rx_sessions; i++) {
     ret = st40_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
     delete test_ctx_rx[i];
   }
-  for (int i = 0; i < tx_sessions; i++) {
+  for (size_t i = 0; i < tx_sessions; i++) {
     ret = st40_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
     st40_tx_frame_uinit(test_ctx_tx[i]);
@@ -1002,8 +1003,8 @@ TEST(St40_tx, update_dest_rtp) {
   st40_rx_update_src_test(ST40_TYPE_RTP_LEVEL, 1, ST_TEST_LEVEL_ALL);
 }
 
-static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int sessions,
-                                  int repeat) {
+static void st40_after_start_test(enum st40_type type[], enum st_fps fps[],
+                                  size_t sessions, int repeat) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -1038,12 +1039,12 @@ static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int 
   EXPECT_GE(ret, 0);
 
   for (int r = 0; r < repeat; r++) {
-    for (int i = 0; i < sessions; i++) {
+    for (size_t i = 0; i < sessions; i++) {
       test_ctx_tx[i] = new tests_context();
       ASSERT_TRUE(test_ctx_tx[i] != NULL);
       expect_framerate[i] = st_frame_rate(fps[i]);
 
-      test_ctx_tx[i]->idx = i;
+      test_ctx_tx[i]->idx = (int)i;
       test_ctx_tx[i]->ctx = ctx;
       test_ctx_tx[i]->fb_cnt = 3;
       test_ctx_tx[i]->fb_idx = 0;
@@ -1059,7 +1060,7 @@ static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int 
                MTL_IP_ADDR_LEN);
       snprintf(ops_tx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
                ctx->para.port[MTL_PORT_P]);
-      ops_tx.udp_port[MTL_SESSION_PORT_P] = 30000 + i * 2;
+      ops_tx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(30000 + i * 2);
       ops_tx.type = type[i];
       ops_tx.fps = fps[i];
       ops_tx.payload_type = ST40_TEST_PAYLOAD_TYPE;
@@ -1081,11 +1082,11 @@ static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int 
       }
     }
 
-    for (int i = 0; i < sessions; i++) {
+    for (size_t i = 0; i < sessions; i++) {
       test_ctx_rx[i] = new tests_context();
       ASSERT_TRUE(test_ctx_rx[i] != NULL);
 
-      test_ctx_rx[i]->idx = i;
+      test_ctx_rx[i]->idx = (int)i;
       test_ctx_rx[i]->ctx = ctx;
       test_ctx_rx[i]->fb_cnt = 3;
       test_ctx_rx[i]->fb_idx = 0;
@@ -1101,7 +1102,7 @@ static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int 
                MTL_IP_ADDR_LEN);
       snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
                ctx->para.port[MTL_PORT_R]);
-      ops_rx.udp_port[MTL_SESSION_PORT_P] = 30000 + i * 2;
+      ops_rx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(30000 + i * 2);
       ops_rx.type = ST40_TYPE_RTP_LEVEL;
       ops_rx.notify_rtp_ready = rx_rtp_ready;
       ops_rx.rtp_ring_size = 1024;
@@ -1114,7 +1115,7 @@ static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int 
 
     sleep(10);
 
-    for (int i = 0; i < sessions; i++) {
+    for (size_t i = 0; i < sessions; i++) {
       uint64_t cur_time_ns = st_test_get_monotonic_time();
       double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
       framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
@@ -1129,10 +1130,10 @@ static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int 
     }
 
     /* check fps */
-    for (int i = 0; i < sessions; i++) {
+    for (size_t i = 0; i < sessions; i++) {
       EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-      info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
-           framerate[i]);
+      info("%s, session %zu fb_rec %d framerate %f\n", __func__, i,
+           test_ctx_rx[i]->fb_rec, framerate[i]);
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
       ret = st40_tx_free(tx_handle[i]);
       EXPECT_GE(ret, 0);

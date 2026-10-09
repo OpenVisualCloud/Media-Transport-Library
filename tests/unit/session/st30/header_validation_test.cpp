@@ -44,7 +44,8 @@ TEST_F(St30RxHeaderValidationTest, ReturnValueWrongLen) {
 /* Wrong PT packets are dropped and counted in wrong_pt stat. */
 TEST_F(St30RxHeaderValidationTest, WrongPayloadTypeDropped) {
   ut30_ctx_set_pt(ctx_, 96);
-  for (int i = 0; i < 5; i++) ut30_feed_pkt_pt(ctx_, i, 1000 + i, MTL_SESSION_PORT_P, 97);
+  for (uint16_t i = 0; i < 5; i++)
+    ut30_feed_pkt_pt(ctx_, i, 1000 + i, MTL_SESSION_PORT_P, 97);
 
   EXPECT_EQ(wrong_pt(), 5u);
   EXPECT_EQ(received(), 0u);
@@ -53,7 +54,7 @@ TEST_F(St30RxHeaderValidationTest, WrongPayloadTypeDropped) {
 /* Wrong SSRC packets are dropped and counted in wrong_ssrc stat. */
 TEST_F(St30RxHeaderValidationTest, WrongSSRCDropped) {
   ut30_ctx_set_ssrc(ctx_, 0xDEAD);
-  for (int i = 0; i < 3; i++)
+  for (uint16_t i = 0; i < 3; i++)
     ut30_feed_pkt_ssrc(ctx_, i, 1000 + i, MTL_SESSION_PORT_P, 0xBEEF);
 
   EXPECT_EQ(wrong_ssrc(), 3u);

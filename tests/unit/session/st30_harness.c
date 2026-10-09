@@ -131,13 +131,13 @@ ut30_test_ctx* ut30_ctx_create(int num_port) {
 
   struct st_rx_audio_session_impl* s = &ctx->session;
   s->idx = 0;
-  s->socket_id = rte_socket_id();
+  s->socket_id = (int)rte_socket_id();
   s->mgr = &ctx->mgr;
   s->attached = true;
   s->usdt_dump_fd = -1;
 
   s->ops.type = ST30_TYPE_FRAME_LEVEL;
-  s->ops.num_port = num_port;
+  s->ops.num_port = (uint8_t)num_port;
   s->ops.channel = UT30_CHANNELS;
   s->ops.sampling = ST30_SAMPLING_48K;
   s->ops.fmt = ST30_FMT_PCM16;
@@ -160,9 +160,11 @@ ut30_test_ctx* ut30_ctx_create(int num_port) {
   s->ops.framebuff_size = (uint32_t)s->st30_frame_size;
   s->st30_pkt_size = UT30_PKT_PAYLOAD + sizeof(struct st_rfc3550_audio_hdr);
   s->rtp_ticks_per_frame =
-      (uint32_t)(s->st30_frame_size / (st30_get_sample_size(s->ops.fmt) * UT30_CHANNELS));
+      (uint32_t)(s->st30_frame_size /
+                 (size_t)(st30_get_sample_size(s->ops.fmt) * UT30_CHANNELS));
   s->samples_per_pkt =
-      (uint32_t)(s->pkt_len / (st30_get_sample_size(s->ops.fmt) * UT30_CHANNELS));
+      (uint32_t)(s->pkt_len /
+                 (uint32_t)(st30_get_sample_size(s->ops.fmt) * UT30_CHANNELS));
   size_t bitmap_size = ((size_t)s->st30_total_pkts + 7) / 8;
   ctx->bitmap_alloc_bytes = bitmap_size + UT30_BITMAP_GUARD;
   ctx->bitmap_storage = calloc(1, ctx->bitmap_alloc_bytes);
@@ -216,11 +218,11 @@ static struct rte_mbuf* make_audio_mbuf_full(uint16_t seq, uint32_t ts, uint8_t 
   rtp->seq_number = htons(seq);
   rtp->tmstamp = htonl(ts);
   rtp->ssrc = htonl(ssrc);
-  rtp->payload_type = pt;
+  rtp->payload_type = pt & 0x7fU;
   rtp->marker = 0;
 
-  m->data_len = total;
-  m->pkt_len = total;
+  m->data_len = (uint16_t)total;
+  m->pkt_len = (uint32_t)total;
   return m;
 }
 
@@ -239,7 +241,7 @@ void ut30_feed_burst(ut30_test_ctx* ctx, uint16_t seq_start, int count, uint32_t
                      enum mtl_session_port port) {
   uint32_t spp = ctx->session.samples_per_pkt;
   for (int i = 0; i < count; i++) {
-    ut30_feed_pkt(ctx, seq_start + i, ts + (uint32_t)i * spp, port);
+    ut30_feed_pkt(ctx, (uint16_t)(seq_start + i), ts + (uint32_t)i * spp, port);
   }
 }
 

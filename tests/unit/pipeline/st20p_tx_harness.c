@@ -33,7 +33,7 @@ int ut20p_tx_init(void) {
   return ut_eal_init();
 }
 
-ut20p_tx_ctx* ut20p_tx_ctx_create(int framebuff_cnt) {
+ut20p_tx_ctx* ut20p_tx_ctx_create(uint16_t framebuff_cnt) {
   ut20p_tx_ctx* ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
 
@@ -45,7 +45,7 @@ ut20p_tx_ctx* ut20p_tx_ctx_create(int framebuff_cnt) {
     free(ctx);
     return NULL;
   }
-  for (int i = 0; i < framebuff_cnt; i++) {
+  for (uint16_t i = 0; i < framebuff_cnt; i++) {
     ctx->framebuffs[i].stat = ST20P_TX_FRAME_FREE;
     ctx->framebuffs[i].idx = i;
     /* derive path: tx_st20p_user_frame() returns &dst, so put_frame() recovers
@@ -61,7 +61,7 @@ ut20p_tx_ctx* ut20p_tx_ctx_create(int framebuff_cnt) {
   struct st20p_tx_ctx* p = &ctx->pipeline;
   p->impl = &ctx->impl;
   p->idx = 0;
-  p->socket_id = rte_socket_id();
+  p->socket_id = (int)rte_socket_id();
   p->type = MT_ST20_HANDLE_PIPELINE_TX;
   p->framebuff_cnt = framebuff_cnt;
   p->framebuffs = ctx->framebuffs;

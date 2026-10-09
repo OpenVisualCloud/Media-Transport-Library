@@ -20,7 +20,7 @@ std::atomic<int64_t> g_epoch_recovery_future_offset_ns{0};
 uint64_t EpochRecoveryMonotonicNowNs() {
   struct timespec spec;
   clock_gettime(CLOCK_MONOTONIC, &spec);
-  return (uint64_t)spec.tv_sec * NS_PER_S + spec.tv_nsec;
+  return (uint64_t)spec.tv_sec * NS_PER_S + (uint64_t)spec.tv_nsec;
 }
 
 /* Simulates a PHC seeded from the host system clock (ahead of the true PTP
@@ -35,7 +35,7 @@ uint64_t EpochRecoveryPtpClockNow(void* priv) {
     g_epoch_recovery_start_ns.store(start, std::memory_order_release);
   }
   int64_t offset = g_epoch_recovery_future_offset_ns.load(std::memory_order_acquire);
-  return (EpochRecoveryMonotonicNowNs() - start) + offset;
+  return (EpochRecoveryMonotonicNowNs() - start) + (uint64_t)offset;
 }
 
 /* Shared repro body: calc_frame_count_since_epoch() (the epoch/onward-gap
@@ -249,7 +249,7 @@ TEST_F(NoCtxTest, st20p_tx_packets_are_spread_over_frame_pf_tsn_pacing) {
   for (double ratio : span_ratios) {
     if (ratio >= 0.5 && ratio <= 1.5) in_range++;
   }
-  EXPECT_GE(in_range, (int)(span_ratios.size() * 0.8))
+  EXPECT_GE(in_range, (int)((double)span_ratios.size() * 0.8))
       << "fewer than 80% of sampled frames show a packet-train span within "
          "[0.5, 1.5] of the TSN-paced expectation (trs_ns="
       << trs_ns << ")";

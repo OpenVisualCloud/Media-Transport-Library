@@ -49,7 +49,7 @@ static uint64_t ut_trs_tsc_time_fn(struct mtl_main_impl* impl) {
     /* Keep exhausted scripts monotonic. */
     uint64_t step = (len >= 2) ? ctx->tsc_script[len - 1] - ctx->tsc_script[len - 2] : 0;
     if (!step) step = 1;
-    ctx->last_tsc = ctx->tsc_script[len - 1] + step * (pos - len + 1);
+    ctx->last_tsc = ctx->tsc_script[len - 1] + step * (uint64_t)(pos - len + 1);
   }
   return ctx->last_tsc;
 }
@@ -114,7 +114,7 @@ static struct rte_mempool* ut_trs_priv_pool(void) {
   if (!pool) {
     pool = rte_pktmbuf_pool_create("ut_trs_priv_pool", 64, 0,
                                    sizeof(struct mt_muf_priv_data),
-                                   RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+                                   RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
   }
   return pool;
 }
@@ -196,7 +196,7 @@ void ut_trs_set_target_tsc(ut_trs_ctx* ctx, uint64_t target_tsc) {
 
 void ut_trs_set_mock_tsc_script(ut_trs_ctx* ctx, const uint64_t* values, int count) {
   if (count > UT_TRS_MAX_TSC_SCRIPT) count = UT_TRS_MAX_TSC_SCRIPT;
-  memcpy(ctx->tsc_script, values, count * sizeof(*values));
+  memcpy(ctx->tsc_script, values, (size_t)count * sizeof(*values));
   ctx->tsc_script_len = count;
   ctx->tsc_script_pos = 0;
 }

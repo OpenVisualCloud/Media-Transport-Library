@@ -38,7 +38,7 @@ TEST_F(St30RxRedundancyTest, TimestampOnlyFilter) {
 
   uint32_t s = spp();
   for (int i = 0; i < 4; i++) {
-    int rc = feed(4 + i, 1000 + (uint32_t)i * s, MTL_SESSION_PORT_R);
+    int rc = feed((uint16_t)(4 + i), 1000 + (uint32_t)i * s, MTL_SESSION_PORT_R);
     EXPECT_EQ(rc, 0) << "seq " << (4 + i) << " deduped on a filled slot";
   }
 
@@ -118,8 +118,8 @@ TEST_F(St30RxRedundancyTest, ThresholdBypass) {
 
   /* send 21 old-timestamp packets on BOTH ports, alternating */
   for (int i = 0; i < 21; i++) {
-    feed(50 + i, 1000 + i, MTL_SESSION_PORT_P);
-    feed(50 + i, 1000 + i, MTL_SESSION_PORT_R);
+    feed((uint16_t)(50 + i), 1000 + i, MTL_SESSION_PORT_P);
+    feed((uint16_t)(50 + i), 1000 + i, MTL_SESSION_PORT_R);
   }
 
   /* After both ports exceed threshold (20), the 21st pair should be accepted.
@@ -163,8 +163,8 @@ TEST_F(St30RxRedundancyTest, InterleavedPortsIncreasingTs) {
 TEST_F(St30RxRedundancyTest, PerPortFramesPrimaryOnly) {
   uint32_t t = (uint32_t)ppf() * spp();
   feed_burst(0, ppf(), 1000, MTL_SESSION_PORT_P);
-  feed_burst(ppf(), ppf(), 1000 + t, MTL_SESSION_PORT_P);
-  feed_burst(2 * ppf(), ppf(), 1000 + 2 * t, MTL_SESSION_PORT_P);
+  feed_burst((uint16_t)ppf(), ppf(), 1000 + t, MTL_SESSION_PORT_P);
+  feed_burst((uint16_t)(2 * ppf()), ppf(), 1000 + 2 * t, MTL_SESSION_PORT_P);
 
   EXPECT_EQ(frames_done(), 3);
   EXPECT_EQ(port_frames(MTL_SESSION_PORT_P), 3u);
@@ -175,7 +175,7 @@ TEST_F(St30RxRedundancyTest, PerPortFramesPrimaryOnly) {
 TEST_F(St30RxRedundancyTest, PerPortFramesSecondaryOnly) {
   uint32_t t = (uint32_t)ppf() * spp();
   feed_burst(0, ppf(), 1000, MTL_SESSION_PORT_R);
-  feed_burst(ppf(), ppf(), 1000 + t, MTL_SESSION_PORT_R);
+  feed_burst((uint16_t)ppf(), ppf(), 1000 + t, MTL_SESSION_PORT_R);
 
   EXPECT_EQ(frames_done(), 2);
   EXPECT_EQ(port_frames(MTL_SESSION_PORT_P), 0u);
@@ -205,10 +205,10 @@ TEST_F(St30RxRedundancyTest, PerPortFramesAlternatingWinner) {
   /* frame 1: P starts and finishes */
   feed_burst(0, ppf(), 1000, MTL_SESSION_PORT_P);
   /* frame 2: R sends the first pkt (new ts) — wins the credit */
-  feed(ppf(), 1000 + t, MTL_SESSION_PORT_R);
+  feed((uint16_t)ppf(), 1000 + t, MTL_SESSION_PORT_R);
   /* finish frame 2 from R */
   for (int i = 1; i < ppf(); i++) {
-    feed(ppf() + i, 1000 + t + (uint32_t)i * s, MTL_SESSION_PORT_R);
+    feed((uint16_t)(ppf() + i), 1000 + t + (uint32_t)i * s, MTL_SESSION_PORT_R);
   }
 
   EXPECT_EQ(frames_done(), 2);
@@ -225,10 +225,10 @@ TEST_F(St30RxRedundancyTest, PerPortFramesAlternatingWinner) {
  * accepted exactly once, no phantom unrecovered. */
 TEST_F(St30RxRedundancyTest, PortGoesSilentMidStreamPeerContinues) {
   uint32_t s = spp();
-  for (int i = 0; i < 4; i++) feed(i, 1000 + (uint32_t)i * s, MTL_SESSION_PORT_P);
-  for (int i = 0; i < 4; i++) feed(i, 1000 + (uint32_t)i * s, MTL_SESSION_PORT_R);
+  for (uint16_t i = 0; i < 4; i++) feed(i, 1000 + (uint32_t)i * s, MTL_SESSION_PORT_P);
+  for (uint16_t i = 0; i < 4; i++) feed(i, 1000 + (uint32_t)i * s, MTL_SESSION_PORT_R);
   /* P dies. R takes over with strictly newer timestamps. */
-  for (int i = 4; i < 8; i++) feed(i, 1000 + (uint32_t)i * s, MTL_SESSION_PORT_R);
+  for (uint16_t i = 4; i < 8; i++) feed(i, 1000 + (uint32_t)i * s, MTL_SESSION_PORT_R);
 
   EXPECT_EQ(received(), 8u);
   EXPECT_EQ(redundant(), 4u) << "R's first 4 pkts duplicated P's";
@@ -245,7 +245,7 @@ TEST_F(St30RxRedundancyTest, SustainedAlternatingBurstSwitchover) {
   uint16_t seq = 0;
   for (int g = 0; g < 8; g++) {
     enum mtl_session_port p = (g % 2 == 0) ? MTL_SESSION_PORT_P : MTL_SESSION_PORT_R;
-    for (int i = 0; i < 4; i++) feed(seq + i, ts + (uint32_t)i * s, p);
+    for (int i = 0; i < 4; i++) feed((uint16_t)(seq + i), ts + (uint32_t)i * s, p);
     seq += 4;
     ts += 4u * s;
   }

@@ -37,7 +37,7 @@ add_project_link_arguments('-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack', l
 
 sources = ['mtl_manager.cpp']
 
-cpp_args = ['-std=c++17', '-Wall']
+cpp_args = ['-std=c++17', '-Wall', '-Wconversion']
 link_cpp_args = ['-lstdc++fs']
 
 if get_option('buildtype') != 'debug'

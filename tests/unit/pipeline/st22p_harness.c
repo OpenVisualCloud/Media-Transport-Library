@@ -54,7 +54,7 @@ int ut22p_init(void) {
   return ut_eal_init();
 }
 
-ut22p_ctx* ut22p_ctx_create(int framebuff_cnt) {
+ut22p_ctx* ut22p_ctx_create(uint16_t framebuff_cnt) {
   ut22p_ctx* ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
 
@@ -66,7 +66,7 @@ ut22p_ctx* ut22p_ctx_create(int framebuff_cnt) {
     free(ctx);
     return NULL;
   }
-  for (int i = 0; i < framebuff_cnt; i++) {
+  for (uint16_t i = 0; i < framebuff_cnt; i++) {
     ctx->framebuffs[i].stat = ST22P_RX_FRAME_FREE;
     ctx->framebuffs[i].idx = i;
     /* derive frame_ready() copies dst = src, so the user frame (&dst) inherits
@@ -78,7 +78,7 @@ ut22p_ctx* ut22p_ctx_create(int framebuff_cnt) {
   struct st22p_rx_ctx* p = &ctx->pipeline;
   p->impl = &ctx->impl;
   p->idx = 0;
-  p->socket_id = rte_socket_id();
+  p->socket_id = (int)rte_socket_id();
   p->type = MT_ST22_HANDLE_PIPELINE_RX;
   p->framebuff_cnt = framebuff_cnt;
   p->framebuffs = ctx->framebuffs;

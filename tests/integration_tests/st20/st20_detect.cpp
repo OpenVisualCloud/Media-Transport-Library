@@ -13,10 +13,10 @@ static int st20_rx_detected(void* priv, const struct st20_detect_meta* meta,
   struct st20_rx_slice_meta* s_meta = (struct st20_rx_slice_meta*)ctx->priv;
 
   ctx->lines_per_slice = meta->height / 32;
-  if (s_meta) reply->slice_lines = ctx->lines_per_slice;
+  if (s_meta) reply->slice_lines = (uint32_t)ctx->lines_per_slice;
   if (ctx->uframe_size != 0) {
     /* uframe fmt: yuv422 10bit planar */
-    ctx->uframe_size = (size_t)meta->width * meta->height * 2 * sizeof(uint16_t);
+    ctx->uframe_size = (size_t)meta->width * (size_t)meta->height * 2 * sizeof(uint16_t);
     reply->uframe_size = ctx->uframe_size;
     if (s_meta) s_meta->uframe_total_size = ctx->uframe_size;
   }
@@ -26,9 +26,9 @@ static int st20_rx_detected(void* priv, const struct st20_detect_meta* meta,
 
 static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type[],
                                 enum st20_packing packing[], enum st_fps fps[],
-                                int width[], int height[], bool interlaced[],
+                                uint32_t width[], uint32_t height[], bool interlaced[],
                                 bool user_frame, enum st20_fmt fmt, bool check_fps,
-                                enum st_test_level level, int sessions = 1) {
+                                enum st_test_level level, size_t sessions = 1) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -69,7 +69,7 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
                         &rtp_thread_tx, &rtp_thread_rx);
   guard.set_rx_ctx_cleanup(st20_rx_drain_bufq_put_framebuff);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     expect_framerate[i] = st_frame_rate(fps[i]);
 
     test_ctx_tx[i] = init_test_ctx(ctx, i, TEST_SHA_HIST_NUM, true);
@@ -99,7 +99,7 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
     if (interlaced[i]) frame_size = frame_size >> 1;
     test_ctx_tx[i]->frame_size = frame_size;
     test_ctx_tx[i]->height = ops_tx.height;
-    test_ctx_tx[i]->stride = ops_tx.width / st20_pg.coverage * st20_pg.size;
+    test_ctx_tx[i]->stride = (int)(ops_tx.width / st20_pg.coverage * st20_pg.size);
     uint8_t* fb;
     if (user_frame) {
       /* uframe fmt: yuv422 10bit planar */
@@ -107,7 +107,7 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
       if (interlaced[i]) uframe_size = uframe_size >> 1;
       test_ctx_tx[i]->uframe_size = uframe_size;
       test_ctx_tx[i]->slice = false;
-      for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
+      for (uint16_t frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
         test_ctx_tx[i]->frame_buf[frame] = (uint8_t*)st_test_zmalloc(uframe_size);
         fb = test_ctx_tx[i]->frame_buf[frame];
         ASSERT_TRUE(fb != NULL);
@@ -130,10 +130,10 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
     } else {
       test_ctx_tx[i]->lines_per_slice = ops_tx.height / 30;
       test_ctx_tx[i]->slice = (tx_type[i] == ST20_TYPE_SLICE_LEVEL);
-      for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
+      for (uint16_t frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
         fb = (uint8_t*)st20_tx_get_framebuffer(tx_handle[i], frame);
         ASSERT_TRUE(fb != NULL);
-        st_test_rand_data(fb, frame_size, frame);
+        st_test_rand_data(fb, frame_size, (uint8_t)frame);
         unsigned char* result = test_ctx_tx[i]->shas[frame];
         SHA256((unsigned char*)fb, frame_size, result);
         test_sha_dump("st20_rx", result);
@@ -143,7 +143,7 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
     test_ctx_tx[i]->handle = tx_handle[i];
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     test_ctx_rx[i] = init_test_ctx(ctx, i, 3, true);
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
     test_ctx_rx[i]->stop = false;
@@ -157,7 +157,7 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
     ops_rx.payload_type = ST20_TEST_PAYLOAD_TYPE;
     ops_rx.interlaced = interlaced[i];
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
-    ops_rx.slice_lines = height[i] / slices_per_frame;
+    ops_rx.slice_lines = height[i] / (uint32_t)slices_per_frame;
     ops_rx.notify_frame_ready =
         interlaced[i] ? st20_digest_rx_field_ready : st20_digest_rx_frame_ready;
     ops_rx.notify_slice_ready = st20_digest_rx_slice_ready;
@@ -211,10 +211,10 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
   ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   guard.set_started(ret >= 0);
-  sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
+  sleep((unsigned int)(ST20_TRAIN_TIME_S * sessions)); /* time for train_pacing */
   sleep(10 * 1);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
@@ -222,7 +222,7 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
 
   /* freeze counters before assertions */
   guard.stop();
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
     if ((rx_type[i] == ST20_TYPE_SLICE_LEVEL) && (height[i] >= (1080 * 4)))
@@ -234,7 +234,7 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
       EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     else
       EXPECT_LE(test_ctx_rx[i]->sha_fail_cnt, 2);
-    info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
+    info("%s, session %zu fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
          framerate[i]);
     if (rx_type[i] == ST20_TYPE_SLICE_LEVEL) {
       int expect_slice_cnt = test_ctx_rx[i]->fb_rec * slices_per_frame;
@@ -252,8 +252,8 @@ TEST(St20_rx, detect_1080p_fps59_94_s1) {
   enum st20_type rx_type[1] = {ST20_TYPE_FRAME_LEVEL};
   enum st20_packing packing[1] = {ST20_PACKING_BPM};
   enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   bool interlaced[1] = {false};
   st20_rx_detect_test(tx_type, rx_type, packing, fps, width, height, interlaced, false,
                       ST20_FMT_YUV_422_10BIT, true, ST_TEST_LEVEL_ALL, 1);
@@ -264,8 +264,8 @@ TEST(St20_rx, detect_uframe_mix_s2) {
   enum st20_type rx_type[2] = {ST20_TYPE_FRAME_LEVEL, ST20_TYPE_SLICE_LEVEL};
   enum st20_packing packing[2] = {ST20_PACKING_BPM, ST20_PACKING_BPM};
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P29_97};
-  int width[2] = {1280, 1280};
-  int height[2] = {720, 720};
+  uint32_t width[2] = {1280, 1280};
+  uint32_t height[2] = {720, 720};
   bool interlaced[2] = {false, false};
   st20_rx_detect_test(tx_type, rx_type, packing, fps, width, height, interlaced, true,
                       ST20_FMT_YUV_422_10BIT, false, ST_TEST_LEVEL_MANDATORY, 2);
@@ -279,8 +279,8 @@ TEST(St20_rx, detect_mix_frame_s3) {
   enum st20_packing packing[3] = {ST20_PACKING_BPM, ST20_PACKING_GPM,
                                   ST20_PACKING_GPM_SL};
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P29_97};
-  int width[3] = {1280, 1920, 3840};
-  int height[3] = {720, 1080, 2160};
+  uint32_t width[3] = {1280, 1920, 3840};
+  uint32_t height[3] = {720, 1080, 2160};
   bool interlaced[3] = {false, false, true};
   st20_rx_detect_test(tx_type, rx_type, packing, fps, width, height, interlaced, false,
                       ST20_FMT_YUV_422_10BIT, true, ST_TEST_LEVEL_MANDATORY, 3);
@@ -294,8 +294,8 @@ TEST(St20_rx, detect_mix_slice_s3) {
   enum st20_packing packing[3] = {ST20_PACKING_BPM, ST20_PACKING_GPM,
                                   ST20_PACKING_GPM_SL};
   enum st_fps fps[3] = {ST_FPS_P59_94, ST_FPS_P50, ST_FPS_P29_97};
-  int width[3] = {1280, 1920, 3840};
-  int height[3] = {720, 1080, 2160};
+  uint32_t width[3] = {1280, 1920, 3840};
+  uint32_t height[3] = {720, 1080, 2160};
   bool interlaced[3] = {false, false, true};
   st20_rx_detect_test(tx_type, rx_type, packing, fps, width, height, interlaced, false,
                       ST20_FMT_YUV_422_10BIT, true, ST_TEST_LEVEL_MANDATORY, 3);

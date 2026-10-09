@@ -25,9 +25,10 @@ St30pHandler::St30pHandler(st_tests_context* ctx, st30p_tx_ops ops_tx,
 
 St30pHandler::~St30pHandler() = default;
 
-void St30pHandler::fillSt30pOps(uint transmissionPort, uint framebufferQueueSize,
-                                uint payloadType, st30_fmt format, st30_sampling sampling,
-                                uint8_t channelCount, st30_ptime ptime) {
+void St30pHandler::fillSt30pOps(uint16_t transmissionPort, uint16_t framebufferQueueSize,
+                                uint8_t payloadType, st30_fmt format,
+                                st30_sampling sampling, uint8_t channelCount,
+                                st30_ptime ptime) {
   memset(&sessionsOpsTx, 0, sizeof(sessionsOpsTx));
   sessionsOpsTx.name = "st30_noctx_test_tx";
   sessionsOpsTx.priv = ctx;
@@ -41,7 +42,7 @@ void St30pHandler::fillSt30pOps(uint transmissionPort, uint framebufferQueueSize
            ctx->para.port[MTL_PORT_P]);
 
   sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_P] = transmissionPort;
-  sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_R] = transmissionPort + 1;
+  sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_R] = (uint16_t)(transmissionPort + 1);
   sessionsOpsTx.port.payload_type = payloadType;
   sessionsOpsTx.fmt = format;
   sessionsOpsTx.channel = channelCount;
@@ -64,7 +65,7 @@ void St30pHandler::fillSt30pOps(uint transmissionPort, uint framebufferQueueSize
            ctx->para.port[MTL_PORT_R]);
 
   sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_P] = transmissionPort;
-  sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_R] = transmissionPort + 1;
+  sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_R] = (uint16_t)(transmissionPort + 1);
   sessionsOpsRx.port.payload_type = payloadType;
   sessionsOpsRx.fmt = format;
   sessionsOpsRx.channel = channelCount;
@@ -82,8 +83,8 @@ void St30pHandler::normalizeSessionOps() {
                                          msPerFramebuffer * NS_PER_MS, nullptr);
   };
 
-  uint32_t txFrameBuff = recomputeFramebuff(sessionsOpsTx);
-  uint32_t rxFrameBuff = recomputeFramebuff(sessionsOpsRx);
+  uint32_t txFrameBuff = (uint32_t)recomputeFramebuff(sessionsOpsTx);
+  uint32_t rxFrameBuff = (uint32_t)recomputeFramebuff(sessionsOpsRx);
   if (!txFrameBuff || !rxFrameBuff) {
     throw std::runtime_error("Failed to compute st30 frame buffer size");
   }
@@ -102,9 +103,9 @@ void St30pHandler::normalizeSessionOps() {
     throw std::runtime_error("Invalid st30 packet time");
   }
 
-  uint64_t totalPackets = sessionsOpsRx.framebuff_size / pktSize;
+  uint64_t totalPackets = sessionsOpsRx.framebuff_size / (uint32_t)pktSize;
   if (!totalPackets) totalPackets = 1;
-  uint64_t framesPerSec = (double)NS_PER_S / pktTime / totalPackets;
+  uint64_t framesPerSec = (uint64_t)((double)NS_PER_S / pktTime / (double)totalPackets);
   if (!framesPerSec) framesPerSec = 1;
   nsFramebuffTime = NS_PER_S / framesPerSec;
 }

@@ -79,11 +79,12 @@ static int st22_rx_frame_ready(void* priv, void* frame, struct st22_rx_frame_met
 
   ctx->fb_rec++;
   if (!ctx->start_time) {
-    ctx->rtp_delta = meta->timestamp - ctx->rtp_tmstamp;
+    ctx->rtp_delta = (int)(meta->timestamp - ctx->rtp_tmstamp);
     ctx->start_time = st_test_get_monotonic_time();
   }
 
-  if (meta->tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) ctx->rtp_tmstamp = meta->timestamp;
+  if (meta->tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)
+    ctx->rtp_tmstamp = (uint32_t)meta->timestamp;
   st22_rx_put_framebuff((st22_rx_handle)ctx->handle, frame);
   return 0;
 }
@@ -100,13 +101,13 @@ static void st22_tx_ops_init(tests_context* st22, struct st22_tx_ops* ops) {
          MTL_IP_ADDR_LEN);
   snprintf(ops->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_P]);
-  ops->udp_port[MTL_SESSION_PORT_P] = 10000 + st22->idx;
+  ops->udp_port[MTL_SESSION_PORT_P] = (uint16_t)(10000 + st22->idx);
   if (ops->num_port > 1) {
     memcpy(ops->dip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     snprintf(ops->port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
-    ops->udp_port[MTL_SESSION_PORT_R] = 10000 + st22->idx;
+    ops->udp_port[MTL_SESSION_PORT_R] = (uint16_t)(10000 + st22->idx);
   }
   ops->pacing = ST21_PACING_NARROW;
   ops->width = 1920;
@@ -135,13 +136,13 @@ static void st22_rx_ops_init(tests_context* st22, struct st22_rx_ops* ops) {
          MTL_IP_ADDR_LEN);
   snprintf(ops->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_P]);
-  ops->udp_port[MTL_SESSION_PORT_P] = 10000 + st22->idx;
+  ops->udp_port[MTL_SESSION_PORT_P] = (uint16_t)(10000 + st22->idx);
   if (ops->num_port == 2) {
     memcpy(ops->ip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     snprintf(ops->port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
-    ops->udp_port[MTL_PORT_R] = 10000 + st22->idx;
+    ops->udp_port[MTL_PORT_R] = (uint16_t)(10000 + st22->idx);
   }
   ops->pacing = ST21_PACING_NARROW;
   ops->width = 1920;
@@ -252,10 +253,10 @@ static int st22_tx_build_rtp_packet(tests_context* s, struct st22_rfc9134_rtp_hd
   rtp->base.marker = 0;
   rtp->base.payload_type = ST22_TEST_PAYLOAD_TYPE;
   rtp->base.tmstamp = htonl(s->rtp_tmstamp);
-  rtp->base.seq_number = htons(s->seq_id);
+  rtp->base.seq_number = htons((uint16_t)s->seq_id);
   s->seq_id++;
 
-  uint16_t data_len = s->pkt_data_len;
+  uint16_t data_len = (uint16_t)s->pkt_data_len;
   *pkt_len = data_len + sizeof(*rtp);
   /* todo: build the payload data */
   if (s->check_sha) {
@@ -308,7 +309,7 @@ static void st22_tx_feed_packet(void* args) {
 }
 
 static void st22_rx_handle_rtp(tests_context* s, struct st22_rfc9134_rtp_hdr* hdr,
-                               bool newframe, int mbuf_len) {
+                               bool newframe, uint16_t mbuf_len) {
   uint8_t* frame;
   uint8_t* payload;
 
@@ -328,7 +329,8 @@ static void st22_rx_handle_rtp(tests_context* s, struct st22_rfc9134_rtp_hdr* hd
   if (index < 0) {
     index = index + 0x10000;
   }
-  mtl_memcpy(frame + index * (mbuf_len - sizeof(*hdr)), payload, mbuf_len - sizeof(*hdr));
+  mtl_memcpy(frame + (size_t)index * (mbuf_len - sizeof(*hdr)), payload,
+             mbuf_len - sizeof(*hdr));
   return;
 }
 
@@ -371,9 +373,9 @@ static void st22_rx_get_packet(void* args) {
   }
 }
 
-static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width[],
-                             int height[], int pkt_data_len[], int total_pkts[],
-                             enum st_test_level level, int sessions = 1) {
+static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], uint32_t width[],
+                             uint32_t height[], int pkt_data_len[], int total_pkts[],
+                             enum st_test_level level, size_t sessions = 1) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -408,12 +410,12 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
   rtp_thread_tx.resize(sessions);
   rtp_thread_rx.resize(sessions);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     expect_framerate[i] = st_frame_rate(fps[i]);
     test_ctx_tx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
 
-    test_ctx_tx[i]->idx = i;
+    test_ctx_tx[i]->idx = (int)i;
     test_ctx_tx[i]->ctx = ctx;
     test_ctx_tx[i]->fb_cnt = 3;
     test_ctx_tx[i]->fb_idx = 0;
@@ -430,7 +432,7 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
              MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_P]);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 15000 + i * 2;
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(15000 + i * 2);
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
@@ -442,17 +444,17 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
 
     test_ctx_tx[i]->pkt_data_len = pkt_data_len[i];
     test_ctx_tx[i]->total_pkts_in_frame = total_pkts[i]; /* compress ratio 1/8, 4320/8 */
-    test_ctx_tx[i]->frame_size =
-        (size_t)test_ctx_tx[i]->pkt_data_len * test_ctx_tx[i]->total_pkts_in_frame;
+    test_ctx_tx[i]->frame_size = (size_t)test_ctx_tx[i]->pkt_data_len *
+                                 (size_t)test_ctx_tx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_tx.framebuff_max_size =
-        test_ctx_tx[i]->frame_size + test_ctx_tx[i]->pkt_data_len * 100;
+        test_ctx_tx[i]->frame_size + (size_t)test_ctx_tx[i]->pkt_data_len * 100;
     ops_tx.notify_rtp_done = st22_tx_rtp_done;
     ops_tx.rtp_ring_size = 1024;
-    ops_tx.rtp_pkt_size =
-        test_ctx_tx[i]->pkt_data_len + sizeof(struct st22_rfc9134_rtp_hdr);
-    ops_tx.rtp_frame_total_pkts = test_ctx_tx[i]->total_pkts_in_frame;
+    ops_tx.rtp_pkt_size = (uint16_t)((size_t)test_ctx_tx[i]->pkt_data_len +
+                                     sizeof(struct st22_rfc9134_rtp_hdr));
+    ops_tx.rtp_frame_total_pkts = (uint32_t)test_ctx_tx[i]->total_pkts_in_frame;
     ops_tx.notify_frame_done = st22_frame_done;
     ops_tx.get_next_frame = st22_next_video_frame;
 
@@ -467,11 +469,11 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
     test_ctx_tx[i]->handle = tx_handle[i];
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     test_ctx_rx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
 
-    test_ctx_rx[i]->idx = i;
+    test_ctx_rx[i]->idx = (int)i;
     test_ctx_rx[i]->ctx = ctx;
     test_ctx_rx[i]->fb_cnt = 3;
     test_ctx_rx[i]->fb_idx = 0;
@@ -488,7 +490,7 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
              MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 15000 + i * 2;
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(15000 + i * 2);
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.width = width[i];
     ops_rx.height = height[i];
@@ -502,12 +504,12 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
 
     test_ctx_rx[i]->pkt_data_len = pkt_data_len[i];
     test_ctx_rx[i]->total_pkts_in_frame = total_pkts[i]; /* compress ratio 1/8, 4320/8 */
-    test_ctx_rx[i]->frame_size =
-        (size_t)test_ctx_rx[i]->pkt_data_len * test_ctx_rx[i]->total_pkts_in_frame;
+    test_ctx_rx[i]->frame_size = (size_t)test_ctx_rx[i]->pkt_data_len *
+                                 (size_t)test_ctx_rx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_rx.framebuff_max_size =
-        test_ctx_tx[i]->frame_size + test_ctx_tx[i]->pkt_data_len * 100;
+        test_ctx_tx[i]->frame_size + (size_t)test_ctx_tx[i]->pkt_data_len * 100;
     ops_rx.notify_frame_ready = st22_rx_frame_ready;
 
     rx_handle[i] = st22_rx_create(m_handle, &ops_rx);
@@ -526,7 +528,7 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
   EXPECT_GE(ret, 0);
   sleep(10);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
@@ -549,9 +551,9 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
 
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-    info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
+    info("%s, session %zu fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
          framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
     ret = st22_tx_free(tx_handle[i]);
@@ -566,8 +568,8 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
 TEST(St22_rx, fps_1080p_s2) {
   enum st22_type type[2] = {ST22_TYPE_FRAME_LEVEL, ST22_TYPE_RTP_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   int pkt_data_len[2] = {1280, 1280};
   int total_pkts[2] = {546, 540};
   st22_rx_fps_test(type, fps, width, height, pkt_data_len, total_pkts,
@@ -577,15 +579,15 @@ TEST(St22_rx, fps_1080p_s2) {
 TEST(St22_rx, fps_mix_s2) {
   enum st22_type type[2] = {ST22_TYPE_RTP_LEVEL, ST22_TYPE_FRAME_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
-  int width[2] = {1920, 1280};
-  int height[2] = {1080, 720};
+  uint32_t width[2] = {1920, 1280};
+  uint32_t height[2] = {1080, 720};
   int pkt_data_len[2] = {1280, 1300};
   int total_pkts[2] = {540, 150};
   st22_rx_fps_test(type, fps, width, height, pkt_data_len, total_pkts, ST_TEST_LEVEL_ALL,
                    2);
 }
 
-static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
+static void st22_rx_update_src_test(size_t tx_sessions, enum st_test_level level) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -602,7 +604,7 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
   /* return if level lower than global */
   if (level < ctx->level) return;
 
-  int rx_sessions = 1;
+  size_t rx_sessions = 1;
 
   std::vector<tests_context*> test_ctx_tx;
   std::vector<tests_context*> test_ctx_rx;
@@ -618,14 +620,14 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
   expect_framerate.resize(rx_sessions);
   framerate.resize(rx_sessions);
 
-  for (int i = 0; i < rx_sessions; i++)
+  for (size_t i = 0; i < rx_sessions; i++)
     expect_framerate[i] = st_frame_rate(ST_FPS_P59_94);
 
-  for (int i = 0; i < tx_sessions; i++) {
+  for (size_t i = 0; i < tx_sessions; i++) {
     test_ctx_tx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
 
-    test_ctx_tx[i]->idx = i;
+    test_ctx_tx[i]->idx = (int)i;
     test_ctx_tx[i]->ctx = ctx;
     test_ctx_tx[i]->fb_cnt = 3;
     test_ctx_tx[i]->fb_idx = 0;
@@ -647,7 +649,7 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
              MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_P]);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 15000 + i * 2;
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(15000 + i * 2);
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.width = 1920;
     ops_tx.height = 1080;
@@ -659,18 +661,18 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
 
     test_ctx_tx[i]->pkt_data_len = 1280;
     test_ctx_tx[i]->total_pkts_in_frame = 520; /* compress ratio 1/8, 4320/8 */
-    test_ctx_tx[i]->frame_size =
-        (size_t)test_ctx_tx[i]->pkt_data_len * test_ctx_tx[i]->total_pkts_in_frame;
+    test_ctx_tx[i]->frame_size = (size_t)test_ctx_tx[i]->pkt_data_len *
+                                 (size_t)test_ctx_tx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_tx.framebuff_max_size =
-        test_ctx_tx[i]->frame_size + test_ctx_tx[i]->pkt_data_len * 100;
+        test_ctx_tx[i]->frame_size + (size_t)test_ctx_tx[i]->pkt_data_len * 100;
 
     ops_tx.notify_rtp_done = st22_tx_rtp_done;
     ops_tx.rtp_ring_size = 1024;
-    ops_tx.rtp_pkt_size =
-        test_ctx_tx[i]->pkt_data_len + sizeof(struct st22_rfc9134_rtp_hdr);
-    ops_tx.rtp_frame_total_pkts = test_ctx_tx[i]->total_pkts_in_frame;
+    ops_tx.rtp_pkt_size = (uint16_t)((size_t)test_ctx_tx[i]->pkt_data_len +
+                                     sizeof(struct st22_rfc9134_rtp_hdr));
+    ops_tx.rtp_frame_total_pkts = (uint32_t)test_ctx_tx[i]->total_pkts_in_frame;
     ops_tx.notify_frame_done = st22_frame_done;
     ops_tx.get_next_frame = st22_next_video_frame;
 
@@ -679,11 +681,11 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
     ASSERT_TRUE(tx_handle[i] != NULL);
   }
 
-  for (int i = 0; i < rx_sessions; i++) {
+  for (size_t i = 0; i < rx_sessions; i++) {
     test_ctx_rx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
 
-    test_ctx_rx[i]->idx = i;
+    test_ctx_rx[i]->idx = (int)i;
     test_ctx_rx[i]->ctx = ctx;
     test_ctx_rx[i]->fb_cnt = 3;
     test_ctx_rx[i]->fb_idx = 0;
@@ -699,7 +701,7 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
              MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 15000 + i * 2;
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(15000 + i * 2);
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.width = 1920;
     ops_rx.height = 1080;
@@ -713,12 +715,12 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
 
     test_ctx_rx[i]->pkt_data_len = 1280;
     test_ctx_rx[i]->total_pkts_in_frame = 520; /* compress ratio 1/8, 4320/8 */
-    test_ctx_rx[i]->frame_size =
-        (size_t)test_ctx_rx[i]->pkt_data_len * test_ctx_rx[i]->total_pkts_in_frame;
+    test_ctx_rx[i]->frame_size = (size_t)test_ctx_rx[i]->pkt_data_len *
+                                 (size_t)test_ctx_rx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_rx.framebuff_max_size =
-        test_ctx_tx[i]->frame_size + test_ctx_tx[i]->pkt_data_len * 100;
+        test_ctx_tx[i]->frame_size + (size_t)test_ctx_tx[i]->pkt_data_len * 100;
     ops_rx.notify_frame_ready = st22_rx_frame_ready;
 
     rx_handle[i] = st22_rx_create(m_handle, &ops_rx);
@@ -736,7 +738,7 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
   src.udp_port[MTL_SESSION_PORT_P] = 10000 + 1;
   memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  for (int i = 0; i < rx_sessions; i++) {
+  for (size_t i = 0; i < rx_sessions; i++) {
     ret = st22_rx_update_source(rx_handle[i], &src);
     EXPECT_GE(ret, 0);
     test_ctx_rx[i]->start_time = 0;
@@ -744,13 +746,13 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
   }
   sleep(10);
   /* check rx fps */
-  for (int i = 0; i < rx_sessions; i++) {
+  for (size_t i = 0; i < rx_sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-    info("%s, session %d fb_rec %d framerate %f for mcast 1\n", __func__, i,
+    info("%s, session %zu fb_rec %d framerate %f for mcast 1\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
   }
@@ -761,7 +763,7 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
     src.udp_port[MTL_SESSION_PORT_P] = 10000 + 2;
     memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    for (int i = 0; i < rx_sessions; i++) {
+    for (size_t i = 0; i < rx_sessions; i++) {
       ret = st22_rx_update_source(rx_handle[i], &src);
       EXPECT_GE(ret, 0);
       test_ctx_rx[i]->start_time = 0;
@@ -769,13 +771,13 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
     }
     sleep(10);
     /* check rx fps */
-    for (int i = 0; i < rx_sessions; i++) {
+    for (size_t i = 0; i < rx_sessions; i++) {
       uint64_t cur_time_ns = st_test_get_monotonic_time();
       double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
       framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
       EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-      info("%s, session %d fb_rec %d framerate %f for mcast 2\n", __func__, i,
+      info("%s, session %zu fb_rec %d framerate %f for mcast 2\n", __func__, i,
            test_ctx_rx[i]->fb_rec, framerate[i]);
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
     }
@@ -786,7 +788,7 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
   src.udp_port[MTL_SESSION_PORT_P] = 10000 + 0;
   memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  for (int i = 0; i < rx_sessions; i++) {
+  for (size_t i = 0; i < rx_sessions; i++) {
     ret = st22_rx_update_source(rx_handle[i], &src);
     EXPECT_GE(ret, 0);
     test_ctx_rx[i]->start_time = 0;
@@ -794,13 +796,13 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
   }
   sleep(10);
   /* check rx fps */
-  for (int i = 0; i < rx_sessions; i++) {
+  for (size_t i = 0; i < rx_sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
 
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-    info("%s, session %d fb_rec %d framerate %f for unicast 0\n", __func__, i,
+    info("%s, session %zu fb_rec %d framerate %f for unicast 0\n", __func__, i,
          test_ctx_rx[i]->fb_rec, framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
   }
@@ -809,12 +811,12 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
   EXPECT_GE(ret, 0);
 
   /* free all tx and rx */
-  for (int i = 0; i < rx_sessions; i++) {
+  for (size_t i = 0; i < rx_sessions; i++) {
     ret = st22_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
     delete test_ctx_rx[i];
   }
-  for (int i = 0; i < tx_sessions; i++) {
+  for (size_t i = 0; i < tx_sessions; i++) {
     ret = st22_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
     delete test_ctx_tx[i];
@@ -825,9 +827,9 @@ TEST(St22_rx, update_source) {
   st22_rx_update_src_test(2, ST_TEST_LEVEL_ALL);
 }
 
-static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[],
-                                     int pkt_data_len[], int total_pkts[], int sessions,
-                                     int repeat) {
+static void st22_rx_after_start_test(enum st_fps fps[], uint32_t width[],
+                                     uint32_t height[], int pkt_data_len[],
+                                     int total_pkts[], size_t sessions, int repeat) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -861,12 +863,12 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
 
   for (int r = 0; r < repeat; r++) {
     /* create tx */
-    for (int i = 0; i < sessions; i++) {
+    for (size_t i = 0; i < sessions; i++) {
       expect_framerate[i] = st_frame_rate(fps[i]);
       test_ctx_tx[i] = new tests_context();
       ASSERT_TRUE(test_ctx_tx[i] != NULL);
 
-      test_ctx_tx[i]->idx = i;
+      test_ctx_tx[i]->idx = (int)i;
       test_ctx_tx[i]->ctx = ctx;
       test_ctx_tx[i]->fb_cnt = 3;
       test_ctx_tx[i]->fb_idx = 0;
@@ -883,7 +885,7 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
                MTL_IP_ADDR_LEN);
       snprintf(ops_tx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
                ctx->para.port[MTL_PORT_P]);
-      ops_tx.udp_port[MTL_SESSION_PORT_P] = 15000 + i * 2;
+      ops_tx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(15000 + i * 2);
       ops_tx.pacing = ST21_PACING_NARROW;
       ops_tx.width = width[i];
       ops_tx.height = height[i];
@@ -895,18 +897,18 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
 
       test_ctx_tx[i]->pkt_data_len = pkt_data_len[i];
       test_ctx_tx[i]->total_pkts_in_frame = total_pkts[i];
-      test_ctx_tx[i]->frame_size =
-          (size_t)test_ctx_tx[i]->pkt_data_len * test_ctx_tx[i]->total_pkts_in_frame;
+      test_ctx_tx[i]->frame_size = (size_t)test_ctx_tx[i]->pkt_data_len *
+                                   (size_t)test_ctx_tx[i]->total_pkts_in_frame;
 
       /* set max to 100 extra */
       ops_tx.framebuff_max_size =
-          test_ctx_tx[i]->frame_size + test_ctx_tx[i]->pkt_data_len * 100;
+          test_ctx_tx[i]->frame_size + (size_t)test_ctx_tx[i]->pkt_data_len * 100;
 
       ops_tx.notify_rtp_done = st22_tx_rtp_done;
       ops_tx.rtp_ring_size = 1024;
-      ops_tx.rtp_pkt_size =
-          test_ctx_tx[i]->pkt_data_len + sizeof(struct st22_rfc9134_rtp_hdr);
-      ops_tx.rtp_frame_total_pkts = test_ctx_tx[i]->total_pkts_in_frame;
+      ops_tx.rtp_pkt_size = (uint16_t)((size_t)test_ctx_tx[i]->pkt_data_len +
+                                       sizeof(struct st22_rfc9134_rtp_hdr));
+      ops_tx.rtp_frame_total_pkts = (uint32_t)test_ctx_tx[i]->total_pkts_in_frame;
       ops_tx.notify_frame_done = st22_frame_done;
       ops_tx.get_next_frame = st22_next_video_frame;
 
@@ -915,11 +917,11 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
       ASSERT_TRUE(tx_handle[i] != NULL);
     }
     /* create rx */
-    for (int i = 0; i < sessions; i++) {
+    for (size_t i = 0; i < sessions; i++) {
       test_ctx_rx[i] = new tests_context();
       ASSERT_TRUE(test_ctx_rx[i] != NULL);
 
-      test_ctx_rx[i]->idx = i;
+      test_ctx_rx[i]->idx = (int)i;
       test_ctx_rx[i]->ctx = ctx;
       test_ctx_rx[i]->fb_cnt = 3;
       test_ctx_rx[i]->fb_idx = 0;
@@ -936,7 +938,7 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
                MTL_IP_ADDR_LEN);
       snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
                ctx->para.port[MTL_PORT_R]);
-      ops_rx.udp_port[MTL_SESSION_PORT_P] = 15000 + i * 2;
+      ops_rx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(15000 + i * 2);
       ops_rx.pacing = ST21_PACING_NARROW;
       ops_rx.width = width[i];
       ops_rx.height = height[i];
@@ -952,12 +954,12 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
       test_ctx_rx[i]->pkt_data_len = pkt_data_len[i];
       test_ctx_rx[i]->total_pkts_in_frame =
           total_pkts[i]; /* compress ratio 1/8, 4320/8 */
-      test_ctx_rx[i]->frame_size =
-          (size_t)test_ctx_rx[i]->pkt_data_len * test_ctx_rx[i]->total_pkts_in_frame;
+      test_ctx_rx[i]->frame_size = (size_t)test_ctx_rx[i]->pkt_data_len *
+                                   (size_t)test_ctx_rx[i]->total_pkts_in_frame;
 
       /* set max to 100 extra */
       ops_rx.framebuff_max_size =
-          test_ctx_tx[i]->frame_size + test_ctx_tx[i]->pkt_data_len * 100;
+          test_ctx_tx[i]->frame_size + (size_t)test_ctx_tx[i]->pkt_data_len * 100;
       ops_rx.notify_frame_ready = st22_rx_frame_ready;
 
       rx_handle[i] = st22_rx_create(m_handle, &ops_rx);
@@ -968,22 +970,22 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
     sleep(10);
 
     /* check fps, stop rx */
-    for (int i = 0; i < sessions; i++) {
+    for (size_t i = 0; i < sessions; i++) {
       uint64_t cur_time_ns = st_test_get_monotonic_time();
       double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
       framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
     }
-    for (int i = 0; i < sessions; i++) {
+    for (size_t i = 0; i < sessions; i++) {
       EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-      info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
-           framerate[i]);
+      info("%s, session %zu fb_rec %d framerate %f\n", __func__, i,
+           test_ctx_rx[i]->fb_rec, framerate[i]);
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
       EXPECT_LT(test_ctx_rx[i]->sha_fail_cnt,
                 2);  // the first frame may be incomplete
       ret = st22_rx_free(rx_handle[i]);
       EXPECT_GE(ret, 0);
     }
-    for (int i = 0; i < sessions; i++) {
+    for (size_t i = 0; i < sessions; i++) {
       ret = st22_tx_free(tx_handle[i]);
       EXPECT_GE(ret, 0);
       delete test_ctx_tx[i];
@@ -998,15 +1000,15 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
 
 TEST(St22_rx, after_start_s2) {
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
-  int width[2] = {1920, 1280};
-  int height[2] = {1080, 720};
+  uint32_t width[2] = {1920, 1280};
+  uint32_t height[2] = {1080, 720};
   int pkt_data_len[2] = {1280, 1300};
   int total_pkts[2] = {540, 150};
   st22_rx_after_start_test(fps, width, height, pkt_data_len, total_pkts, 2, 2);
 }
 
-static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
-                              int pkt_data_len[], int total_pkts[], int sessions = 1) {
+static void st22_rx_dump_test(enum st_fps fps[], uint32_t width[], uint32_t height[],
+                              int pkt_data_len[], int total_pkts[], size_t sessions = 1) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -1039,12 +1041,12 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
   expect_framerate.resize(sessions);
   framerate.resize(sessions);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     expect_framerate[i] = st_frame_rate(fps[i]);
     test_ctx_tx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
 
-    test_ctx_tx[i]->idx = i;
+    test_ctx_tx[i]->idx = (int)i;
     test_ctx_tx[i]->ctx = ctx;
     test_ctx_tx[i]->fb_cnt = 3;
     test_ctx_tx[i]->fb_idx = 0;
@@ -1061,7 +1063,7 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
              MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_P]);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 15000 + i * 2;
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(15000 + i * 2);
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
@@ -1073,18 +1075,18 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
 
     test_ctx_tx[i]->pkt_data_len = pkt_data_len[i];
     test_ctx_tx[i]->total_pkts_in_frame = total_pkts[i]; /* compress ratio 1/8, 4320/8 */
-    test_ctx_tx[i]->frame_size =
-        (size_t)test_ctx_tx[i]->pkt_data_len * test_ctx_tx[i]->total_pkts_in_frame;
+    test_ctx_tx[i]->frame_size = (size_t)test_ctx_tx[i]->pkt_data_len *
+                                 (size_t)test_ctx_tx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_tx.framebuff_max_size =
-        test_ctx_tx[i]->frame_size + test_ctx_tx[i]->pkt_data_len * 100;
+        test_ctx_tx[i]->frame_size + (size_t)test_ctx_tx[i]->pkt_data_len * 100;
 
     ops_tx.notify_rtp_done = st22_tx_rtp_done;
     ops_tx.rtp_ring_size = 1024;
-    ops_tx.rtp_pkt_size =
-        test_ctx_tx[i]->pkt_data_len + sizeof(struct st22_rfc9134_rtp_hdr);
-    ops_tx.rtp_frame_total_pkts = test_ctx_tx[i]->total_pkts_in_frame;
+    ops_tx.rtp_pkt_size = (uint16_t)((size_t)test_ctx_tx[i]->pkt_data_len +
+                                     sizeof(struct st22_rfc9134_rtp_hdr));
+    ops_tx.rtp_frame_total_pkts = (uint32_t)test_ctx_tx[i]->total_pkts_in_frame;
     ops_tx.notify_frame_done = st22_frame_done;
     ops_tx.get_next_frame = st22_next_video_frame;
 
@@ -1093,11 +1095,11 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
     ASSERT_TRUE(tx_handle[i] != NULL);
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     test_ctx_rx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
 
-    test_ctx_rx[i]->idx = i;
+    test_ctx_rx[i]->idx = (int)i;
     test_ctx_rx[i]->ctx = ctx;
     test_ctx_rx[i]->fb_cnt = 3;
     test_ctx_rx[i]->fb_idx = 0;
@@ -1114,7 +1116,7 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
              MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 15000 + i * 2;
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(15000 + i * 2);
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.width = width[i];
     ops_rx.height = height[i];
@@ -1126,12 +1128,12 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
 
     test_ctx_rx[i]->pkt_data_len = pkt_data_len[i];
     test_ctx_rx[i]->total_pkts_in_frame = total_pkts[i]; /* compress ratio 1/8, 4320/8 */
-    test_ctx_rx[i]->frame_size =
-        (size_t)test_ctx_rx[i]->pkt_data_len * test_ctx_rx[i]->total_pkts_in_frame;
+    test_ctx_rx[i]->frame_size = (size_t)test_ctx_rx[i]->pkt_data_len *
+                                 (size_t)test_ctx_rx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_rx.framebuff_max_size =
-        test_ctx_tx[i]->frame_size + test_ctx_tx[i]->pkt_data_len * 100;
+        test_ctx_tx[i]->frame_size + (size_t)test_ctx_tx[i]->pkt_data_len * 100;
     ops_rx.notify_frame_ready = st22_rx_frame_ready;
 
     ops_rx.notify_rtp_ready = st22_rx_rtp_ready;
@@ -1147,7 +1149,7 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
 
   sleep(5);
   uint32_t max_dump_packets = 100;
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     struct st_pcap_dump_meta meta;
     ret = st22_rx_pcapng_dump(rx_handle[i], max_dump_packets, true, &meta);
     EXPECT_GE(ret, 0);
@@ -1156,7 +1158,7 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
     if (ret >= 0) remove(meta.file_name[MTL_SESSION_PORT_P]);
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
@@ -1164,7 +1166,7 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
 
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     ret = st22_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
     ret = st22_rx_free(rx_handle[i]);
@@ -1176,8 +1178,8 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
 
 TEST(St22_rx, pcap_dump) {
   enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1280};
-  int height[1] = {720};
+  uint32_t width[1] = {1280};
+  uint32_t height[1] = {720};
   int pkt_data_len[1] = {1280};
   int total_pkts[1] = {540};
   st22_rx_dump_test(fps, width, height, pkt_data_len, total_pkts, 1);
@@ -1239,9 +1241,9 @@ static void st22_digest_rx_frame_check(void* args) {
 }
 
 /* only frame level */
-static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
+static void st22_rx_digest_test(enum st_fps fps[], uint32_t width[], uint32_t height[],
                                 int pkt_data_len[], int total_pkts[],
-                                enum st_test_level level, int sessions = 1,
+                                enum st_test_level level, size_t sessions = 1,
                                 bool enable_rtcp = false) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
@@ -1276,12 +1278,12 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
   framerate.resize(sessions);
   sha_check.resize(sessions);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     expect_framerate[i] = st_frame_rate(fps[i]);
     test_ctx_tx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
 
-    test_ctx_tx[i]->idx = i;
+    test_ctx_tx[i]->idx = (int)i;
     test_ctx_tx[i]->ctx = ctx;
     test_ctx_tx[i]->fb_cnt = ST22_TEST_SHA_HIST_NUM;
     test_ctx_tx[i]->fb_idx = 0;
@@ -1298,7 +1300,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
              MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_P]);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 15000 + i * 2;
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(15000 + i * 2);
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
@@ -1310,17 +1312,17 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
     test_ctx_tx[i]->pkt_data_len = pkt_data_len[i];
     test_ctx_tx[i]->total_pkts_in_frame = total_pkts[i]; /* compress ratio 1/8, 4320/8 */
-    test_ctx_tx[i]->frame_size =
-        (size_t)test_ctx_tx[i]->pkt_data_len * test_ctx_tx[i]->total_pkts_in_frame;
+    test_ctx_tx[i]->frame_size = (size_t)test_ctx_tx[i]->pkt_data_len *
+                                 (size_t)test_ctx_tx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_tx.framebuff_max_size =
-        test_ctx_tx[i]->frame_size + test_ctx_tx[i]->pkt_data_len * 100;
+        test_ctx_tx[i]->frame_size + (size_t)test_ctx_tx[i]->pkt_data_len * 100;
     ops_tx.notify_rtp_done = st22_tx_rtp_done;
     ops_tx.rtp_ring_size = 1024;
-    ops_tx.rtp_pkt_size =
-        test_ctx_tx[i]->pkt_data_len + sizeof(struct st22_rfc9134_rtp_hdr);
-    ops_tx.rtp_frame_total_pkts = test_ctx_tx[i]->total_pkts_in_frame;
+    ops_tx.rtp_pkt_size = (uint16_t)((size_t)test_ctx_tx[i]->pkt_data_len +
+                                     sizeof(struct st22_rfc9134_rtp_hdr));
+    ops_tx.rtp_frame_total_pkts = (uint32_t)test_ctx_tx[i]->total_pkts_in_frame;
     ops_tx.notify_frame_done = st22_frame_done;
     ops_tx.get_next_frame = st22_next_video_frame;
     if (enable_rtcp) {
@@ -1334,10 +1336,10 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
     /* sha calculate */
     size_t frame_size = test_ctx_tx[i]->frame_size;
     uint8_t* fb;
-    for (int frame = 0; frame < ST22_TEST_SHA_HIST_NUM; frame++) {
+    for (uint16_t frame = 0; frame < ST22_TEST_SHA_HIST_NUM; frame++) {
       fb = (uint8_t*)st22_tx_get_fb_addr(tx_handle[i], frame);
       ASSERT_TRUE(fb != NULL);
-      st_test_rand_data(fb, frame_size, frame);
+      st_test_rand_data(fb, frame_size, (uint8_t)frame);
       unsigned char* result = test_ctx_tx[i]->shas[frame];
       SHA256((unsigned char*)fb, frame_size, result);
       test_sha_dump("st20_rx", result);
@@ -1346,11 +1348,11 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_tx[i]->handle = tx_handle[i];
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     test_ctx_rx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
 
-    test_ctx_rx[i]->idx = i;
+    test_ctx_rx[i]->idx = (int)i;
     test_ctx_rx[i]->ctx = ctx;
     test_ctx_rx[i]->fb_cnt = ST22_TEST_SHA_HIST_NUM;
     test_ctx_rx[i]->fb_idx = 0;
@@ -1367,7 +1369,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
              MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 15000 + i * 2;
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(15000 + i * 2);
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.width = width[i];
     ops_rx.height = height[i];
@@ -1380,7 +1382,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ops_rx.rtcp.nack_interval_us = 100;
       ops_rx.rtcp.seq_skip_window = 0;
       ops_rx.rtcp.burst_loss_max = 4;
-      ops_rx.rtcp.sim_loss_rate = 0.0001;
+      ops_rx.rtcp.sim_loss_rate = 0.0001f;
     }
 
     ops_rx.notify_rtp_ready = st22_rx_rtp_ready;
@@ -1388,12 +1390,12 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
     test_ctx_rx[i]->pkt_data_len = pkt_data_len[i];
     test_ctx_rx[i]->total_pkts_in_frame = total_pkts[i]; /* compress ratio 1/8, 4320/8 */
-    test_ctx_rx[i]->frame_size =
-        (size_t)test_ctx_rx[i]->pkt_data_len * test_ctx_rx[i]->total_pkts_in_frame;
+    test_ctx_rx[i]->frame_size = (size_t)test_ctx_rx[i]->pkt_data_len *
+                                 (size_t)test_ctx_rx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_rx.framebuff_max_size =
-        test_ctx_tx[i]->frame_size + test_ctx_tx[i]->pkt_data_len * 100;
+        test_ctx_tx[i]->frame_size + (size_t)test_ctx_tx[i]->pkt_data_len * 100;
     ops_rx.notify_frame_ready = st22_digest_rx_frame_ready;
 
     rx_handle[i] = st22_rx_create(m_handle, &ops_rx);
@@ -1417,7 +1419,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
   EXPECT_GE(ret, 0);
   sleep(10);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
@@ -1428,10 +1430,10 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
-    info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
+    info("%s, session %zu fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
          framerate[i]);
     EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
     EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
@@ -1447,8 +1449,8 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
 TEST(St22_rx, digest_s2) {
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   int pkt_data_len[2] = {1280, 1280};
   int total_pkts[2] = {551, 1520};
   st22_rx_digest_test(fps, width, height, pkt_data_len, total_pkts,
@@ -1457,17 +1459,17 @@ TEST(St22_rx, digest_s2) {
 
 TEST(St22_rx, digest_rtcp_s2) {
   enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
+  uint32_t width[2] = {1920, 1920};
+  uint32_t height[2] = {1080, 1080};
   int pkt_data_len[2] = {1280, 1280};
   int total_pkts[2] = {551, 1520};
   st22_rx_digest_test(fps, width, height, pkt_data_len, total_pkts, ST_TEST_LEVEL_ALL, 2,
                       true);
 }
 
-static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len[],
-                                     int total_pkts[], enum st_test_level level,
-                                     int sessions = 1) {
+static void st22_tx_user_pacing_test(uint32_t width[], uint32_t height[],
+                                     int pkt_data_len[], int total_pkts[],
+                                     enum st_test_level level, size_t sessions = 1) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -1503,12 +1505,12 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
 
   enum st_fps fps = ST_FPS_P59_94;
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     expect_framerate[i] = st_frame_rate(fps) / 2;
     test_ctx_tx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
 
-    test_ctx_tx[i]->idx = i;
+    test_ctx_tx[i]->idx = (int)i;
     test_ctx_tx[i]->ctx = ctx;
     test_ctx_tx[i]->fb_cnt = 3;
     test_ctx_tx[i]->fb_idx = 0;
@@ -1525,7 +1527,7 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
              MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_P]);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = 15000 + i * 2;
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(15000 + i * 2);
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
@@ -1538,12 +1540,12 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
 
     test_ctx_tx[i]->pkt_data_len = pkt_data_len[i];
     test_ctx_tx[i]->total_pkts_in_frame = total_pkts[i]; /* compress ratio 1/8, 4320/8 */
-    test_ctx_tx[i]->frame_size =
-        (size_t)test_ctx_tx[i]->pkt_data_len * test_ctx_tx[i]->total_pkts_in_frame;
+    test_ctx_tx[i]->frame_size = (size_t)test_ctx_tx[i]->pkt_data_len *
+                                 (size_t)test_ctx_tx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_tx.framebuff_max_size =
-        test_ctx_tx[i]->frame_size + test_ctx_tx[i]->pkt_data_len * 100;
+        test_ctx_tx[i]->frame_size + (size_t)test_ctx_tx[i]->pkt_data_len * 100;
     ops_tx.notify_frame_done = st22_frame_done;
     ops_tx.get_next_frame = st22_next_video_frame_timestamp;
 
@@ -1553,11 +1555,11 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
     test_ctx_tx[i]->handle = tx_handle[i];
   }
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     test_ctx_rx[i] = new tests_context();
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
 
-    test_ctx_rx[i]->idx = i;
+    test_ctx_rx[i]->idx = (int)i;
     test_ctx_rx[i]->ctx = ctx;
     test_ctx_rx[i]->fb_cnt = 3;
     test_ctx_rx[i]->fb_idx = 0;
@@ -1574,7 +1576,7 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
              MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
-    ops_rx.udp_port[MTL_SESSION_PORT_P] = 15000 + i * 2;
+    ops_rx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(15000 + i * 2);
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.width = width[i];
     ops_rx.height = height[i];
@@ -1585,12 +1587,12 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
 
     test_ctx_rx[i]->pkt_data_len = pkt_data_len[i];
     test_ctx_rx[i]->total_pkts_in_frame = total_pkts[i]; /* compress ratio 1/8, 4320/8 */
-    test_ctx_rx[i]->frame_size =
-        (size_t)test_ctx_rx[i]->pkt_data_len * test_ctx_rx[i]->total_pkts_in_frame;
+    test_ctx_rx[i]->frame_size = (size_t)test_ctx_rx[i]->pkt_data_len *
+                                 (size_t)test_ctx_rx[i]->total_pkts_in_frame;
 
     /* set max to 100 extra */
     ops_rx.framebuff_max_size =
-        test_ctx_tx[i]->frame_size + test_ctx_tx[i]->pkt_data_len * 100;
+        test_ctx_tx[i]->frame_size + (size_t)test_ctx_tx[i]->pkt_data_len * 100;
     ops_rx.notify_frame_ready = st22_rx_frame_ready;
 
     rx_handle[i] = st22_rx_create(m_handle, &ops_rx);
@@ -1604,7 +1606,7 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
   EXPECT_GE(ret, 0);
   sleep(10);
 
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
     double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
     rx_framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
@@ -1614,12 +1616,12 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
 
   ret = mtl_stop(m_handle);
   EXPECT_GE(ret, 0);
-  for (int i = 0; i < sessions; i++) {
+  for (size_t i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
-    info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
+    info("%s, session %zu fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
          rx_framerate[i]);
-    info("%s, session %d fb_send %d framerate %f\n", __func__, i, test_ctx_tx[i]->fb_send,
-         tx_framerate[i]);
+    info("%s, session %zu fb_send %d framerate %f\n", __func__, i,
+         test_ctx_tx[i]->fb_send, tx_framerate[i]);
     EXPECT_NEAR(rx_framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
     EXPECT_NEAR(tx_framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
     ret = st22_tx_free(tx_handle[i]);
@@ -1632,8 +1634,8 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
 }
 
 TEST(St22_tx, tx_user_pacing) {
-  int width[1] = {1920};
-  int height[1] = {1080};
+  uint32_t width[1] = {1920};
+  uint32_t height[1] = {1080};
   int pkt_data_len[1] = {1260};
   int total_pkts[1] = {602};
   st22_tx_user_pacing_test(width, height, pkt_data_len, total_pkts, ST_TEST_LEVEL_ALL, 1);

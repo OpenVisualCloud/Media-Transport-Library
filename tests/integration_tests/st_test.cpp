@@ -73,7 +73,7 @@ static void init_expect_fail_test(void) {
   EXPECT_TRUE(handle == NULL);
 
   /* test with negative big num_ports */
-  para.num_ports = -1;
+  para.num_ports = (uint8_t)-1;
   handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 }

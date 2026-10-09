@@ -25,7 +25,7 @@ TEST_F(St40RxPrevWindowTest, PrevTimestampPacketsAccepted) {
   uint32_t ts_n1 = 2000;
 
   /* P delivers frame N body: seq 0-2, ts=1000 */
-  for (int i = 0; i < 3; i++) feed(i, ts_n, false, MTL_SESSION_PORT_P);
+  for (uint16_t i = 0; i < 3; i++) feed(i, ts_n, false, MTL_SESSION_PORT_P);
   /* P advances to frame N+1: seq 3, ts=2000 → tmstamp now 2000 */
   feed(3, ts_n1, false, MTL_SESSION_PORT_P);
   /* R delivers late packets for frame N: seq 4-5, ts=1000 */
@@ -75,12 +75,12 @@ TEST_F(St40RxPrevWindowTest, PrevTimestampDuplicatesFiltered) {
   uint32_t ts_n1 = 2000;
 
   /* P delivers full frame N: seq 0-3, marker on 3 */
-  for (int i = 0; i < 3; i++) feed(i, ts_n, false, MTL_SESSION_PORT_P);
+  for (uint16_t i = 0; i < 3; i++) feed(i, ts_n, false, MTL_SESSION_PORT_P);
   feed(3, ts_n, true, MTL_SESSION_PORT_P);
   /* P starts frame N+1 → tmstamp advances to 2000 */
   feed(4, ts_n1, false, MTL_SESSION_PORT_P);
   /* R sends duplicates for frame N (same seq, same ts) */
-  for (int i = 0; i < 3; i++) feed(i, ts_n, false, MTL_SESSION_PORT_R);
+  for (uint16_t i = 0; i < 3; i++) feed(i, ts_n, false, MTL_SESSION_PORT_R);
   feed(3, ts_n, true, MTL_SESSION_PORT_R);
 
   int count = 0;

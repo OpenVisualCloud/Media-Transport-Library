@@ -52,13 +52,13 @@ void St40pUserPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_size
 
 uint64_t St40pUserPacingOracle::plannedTimestampNs(uint64_t frame_idx) const {
   double base = plannedTimestampBaseNs(frame_idx);
-  double offset = frameTimeNs * offsetMultiplierForFrame(frame_idx);
+  double offset = static_cast<double>(frameTimeNs * offsetMultiplierForFrame(frame_idx));
   double adjusted = base + offset;
   return adjusted <= 0.0 ? 0 : static_cast<uint64_t>(adjusted);
 }
 
 double St40pUserPacingOracle::plannedTimestampBaseNs(uint64_t frame_idx) const {
-  double base = startingTime + frame_idx * frameTimeNs;
+  double base = static_cast<double>(startingTime + frame_idx * frameTimeNs);
   return base < 0.0 ? 0.0 : base;
 }
 
@@ -74,8 +74,9 @@ double St40pUserPacingOracle::offsetMultiplierForFrame(uint64_t frame_idx) const
 uint64_t St40pUserPacingOracle::expectedTransmitTimeNs(uint64_t frame_idx) const {
   const double target_ns = static_cast<double>(plannedTimestampNs(frame_idx));
   /* snap to the nearest epoch boundary as transport does when exact pacing is off */
-  const double snapped_epoch = std::floor((target_ns + frameTimeNs / 2.0) / frameTimeNs);
-  const double expected = snapped_epoch * frameTimeNs;
+  const double snapped_epoch =
+      static_cast<double>(std::floor((target_ns + frameTimeNs / 2.0) / frameTimeNs));
+  const double expected = static_cast<double>(snapped_epoch * frameTimeNs);
   return expected <= 0.0 ? 0 : static_cast<uint64_t>(expected);
 }
 
@@ -108,8 +109,9 @@ void St40pUserPacingOracle::verifyTimestampStep(uint64_t frame_idx,
 
   double current_target = plannedTimestampBaseNs(frame_idx);
   double previous_target = plannedTimestampBaseNs(frame_idx ? frame_idx - 1 : 0);
-  const uint64_t expected_step = st10_tai_to_media_clk(current_target, VIDEO_CLOCK_HZ) -
-                                 st10_tai_to_media_clk(previous_target, VIDEO_CLOCK_HZ);
+  const uint64_t expected_step =
+      st10_tai_to_media_clk(static_cast<uint64_t>(current_target), VIDEO_CLOCK_HZ) -
+      st10_tai_to_media_clk(static_cast<uint64_t>(previous_target), VIDEO_CLOCK_HZ);
 
   const uint64_t diff = current_timestamp - lastTimestamp;
   EXPECT_EQ(diff, expected_step) << " idx_rx: " << frame_idx << " diff: " << diff;

@@ -34,7 +34,7 @@ int ut_eal_init(void) {
 
   if (!g_pool) {
     g_pool = rte_pktmbuf_pool_create("ut_pool", UT_POOL_SIZE, 0, 0,
-                                     RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+                                     RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
     if (!g_pool) return -1;
   }
 
@@ -50,7 +50,7 @@ struct rte_mempool* ut_pool(void) {
 /* ── ring factory ─────────────────────────────────────────────────────── */
 
 struct rte_ring* ut_ring_create(const char* name, unsigned int size) {
-  return rte_ring_create(name, size, rte_socket_id(), RING_F_SP_ENQ | RING_F_SC_DEQ);
+  return rte_ring_create(name, size, (int)rte_socket_id(), RING_F_SP_ENQ | RING_F_SC_DEQ);
 }
 
 /* ── drain helper ─────────────────────────────────────────────────────── */
@@ -80,6 +80,6 @@ uint64_t ut_hw_rx_timestamp_flag(void) {
 
 void ut_mbuf_set_hw_timestamp(struct rte_mbuf* mbuf, int dynfield_offset,
                               uint64_t raw_ns) {
-  *RTE_MBUF_DYNFIELD(mbuf, dynfield_offset, rte_mbuf_timestamp_t*) = raw_ns;
+  *RTE_MBUF_DYNFIELD(mbuf, (uintptr_t)dynfield_offset, rte_mbuf_timestamp_t*) = raw_ns;
   mbuf->ol_flags |= ut_hw_rx_timestamp_flag();
 }

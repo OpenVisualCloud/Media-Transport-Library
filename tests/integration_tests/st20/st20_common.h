@@ -28,19 +28,19 @@ struct St20SessionConfig {
   enum st20_type type;
   enum st20_packing packing;
   enum st_fps fps;
-  int width;
-  int height;
+  uint32_t width;
+  uint32_t height;
   bool interlaced;
   enum st20_fmt fmt;
 };
 
-uint16_t udp_port_for_idx(int idx, bool hdr_split = false, int base = 10000);
-std::vector<St20SessionConfig> build_sessions(int sessions, enum st20_type type[],
+uint16_t udp_port_for_idx(size_t idx, bool hdr_split = false, int base = 10000);
+std::vector<St20SessionConfig> build_sessions(size_t sessions, enum st20_type type[],
                                               enum st20_packing packing[],
-                                              enum st_fps fps[], int width[],
-                                              int height[], bool interlaced[],
+                                              enum st_fps fps[], uint32_t width[],
+                                              uint32_t height[], bool interlaced[],
                                               enum st20_fmt fmt[]);
-tests_context* init_test_ctx(struct st_tests_context* global_ctx, int idx,
+tests_context* init_test_ctx(struct st_tests_context* global_ctx, size_t idx,
                              uint16_t fb_cnt, bool check_sha = false);
 void tx_feed_packet(void* args);
 int tx_next_video_frame(void* priv, uint16_t* next_frame_idx,

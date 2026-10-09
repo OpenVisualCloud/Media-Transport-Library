@@ -115,7 +115,7 @@ class St40RxFrameAssemblyTest : public ::testing::Test {
 TEST_F(St40RxFrameAssemblyTest, SinglePortFrameDeliveredOnMarker) {
   constexpr uint32_t ts = 1000;
 
-  for (int i = 0; i < 4; i++) ut40_feed_pkt_anc0(ctx_, i, ts, 0, MTL_SESSION_PORT_P);
+  for (uint16_t i = 0; i < 4; i++) ut40_feed_pkt_anc0(ctx_, i, ts, 0, MTL_SESSION_PORT_P);
   EXPECT_EQ(ut40_captured_count(), 0) << "no marker yet → no frame delivered";
 
   ut40_feed_pkt_anc0(ctx_, 4, ts, 1, MTL_SESSION_PORT_P);
@@ -141,7 +141,7 @@ TEST_F(St40RxFrameAssemblyTest, SinglePacketFrameWithMarker) {
 
 /* Two consecutive frames: app releases each one, the slot pool recycles. */
 TEST_F(St40RxFrameAssemblyTest, ConsecutiveFramesRecycleSlots) {
-  for (int i = 0; i < 3; i++)
+  for (uint16_t i = 0; i < 3; i++)
     ut40_feed_pkt_anc0(ctx_, i, 1000, i == 2, MTL_SESSION_PORT_P);
   ASSERT_EQ(ut40_captured_count(), 1);
   EXPECT_EQ(ut40_stat_anc_frames_ready(ctx_), 1u);
@@ -150,7 +150,7 @@ TEST_F(St40RxFrameAssemblyTest, ConsecutiveFramesRecycleSlots) {
   ut40_release_frame(ctx_, a0);
 
   for (int i = 0; i < 3; i++)
-    ut40_feed_pkt_anc0(ctx_, 3 + i, 2000, i == 2, MTL_SESSION_PORT_P);
+    ut40_feed_pkt_anc0(ctx_, (uint16_t)(3 + i), 2000, i == 2, MTL_SESSION_PORT_P);
   ASSERT_EQ(ut40_captured_count(), 2);
   EXPECT_EQ(ut40_stat_anc_frames_ready(ctx_), 2u);
   EXPECT_EQ(ut40_stat_anc_frames_dropped(ctx_), 0u)
@@ -185,7 +185,7 @@ TEST_F(St40RxFrameAssemblyTest, SlotPoolExhaustionDropsFrame) {
  * (state → FREE) so the pool stays usable for the next frame. */
 TEST_F(St40RxFrameAssemblyTest, NotifyFailureReclaimsSlot) {
   ut40_set_notify_frame_fail_after(0); /* fail the very first call */
-  for (int i = 0; i < 3; i++)
+  for (uint16_t i = 0; i < 3; i++)
     ut40_feed_pkt_anc0(ctx_, i, 1000, i == 2, MTL_SESSION_PORT_P);
   EXPECT_EQ(ut40_captured_count(), 0);
   /* The failed delivery still counts toward stat_anc_frames_ready (assembly
@@ -213,7 +213,8 @@ TEST_F(St40RxFrameAssemblyTest, NotifyFailureReclaimsSlot) {
  * its marker. */
 TEST_F(St40RxFrameAssemblyTest, PendingFrameResolvedByLateMarker) {
   /* P frame ts=1000 missing marker (would be at seq 5) */
-  for (int i = 0; i < 5; i++) ut40_feed_pkt_anc0(ctx_, i, 1000, 0, MTL_SESSION_PORT_P);
+  for (uint16_t i = 0; i < 5; i++)
+    ut40_feed_pkt_anc0(ctx_, i, 1000, 0, MTL_SESSION_PORT_P);
   EXPECT_EQ(ut40_captured_count(), 0);
 
   /* P starts next frame ts=2000 with seq 6 → triggers PENDING transition. */
@@ -236,7 +237,8 @@ TEST_F(St40RxFrameAssemblyTest, PendingFrameResolvedByLateMarker) {
  * packet count from both ports. */
 TEST_F(St40RxFrameAssemblyTest, PendingLatePacketsAccumulate) {
   /* P: 3 pkts for ts=1000, no marker */
-  for (int i = 0; i < 3; i++) ut40_feed_pkt_anc0(ctx_, i, 1000, 0, MTL_SESSION_PORT_P);
+  for (uint16_t i = 0; i < 3; i++)
+    ut40_feed_pkt_anc0(ctx_, i, 1000, 0, MTL_SESSION_PORT_P);
   /* P advances to ts=2000 → ts=1000 rolls to PENDING */
   ut40_feed_pkt_anc0(ctx_, 6, 2000, 0, MTL_SESSION_PORT_P);
   EXPECT_EQ(ut40_captured_count(), 0);
@@ -263,7 +265,8 @@ TEST_F(St40RxFrameAssemblyTest, PendingLatePacketsAccumulate) {
  * marker or a further timestamp change force-delivers it. */
 TEST_F(St40RxFrameAssemblyTest, MultiPortMarkerOnInflightLeavesPendingAlone) {
   /* P: body for ts=1000, no marker */
-  for (int i = 0; i < 3; i++) ut40_feed_pkt_anc0(ctx_, i, 1000, 0, MTL_SESSION_PORT_P);
+  for (uint16_t i = 0; i < 3; i++)
+    ut40_feed_pkt_anc0(ctx_, i, 1000, 0, MTL_SESSION_PORT_P);
   /* P advances → ts=1000 enters PENDING */
   ut40_feed_pkt_anc0(ctx_, 3, 2000, 0, MTL_SESSION_PORT_P);
   /* P completes ts=2000 with marker */
@@ -293,7 +296,8 @@ TEST_F(St40RxFrameAssemblyTest, SinglePortTimestampChangeForcesDelivery) {
   ut40_setup_frame_pool(ctx_, kSlots, kSlotSize);
   ut40_captured_reset();
 
-  for (int i = 0; i < 3; i++) ut40_feed_pkt_anc0(ctx_, i, 1000, 0, MTL_SESSION_PORT_P);
+  for (uint16_t i = 0; i < 3; i++)
+    ut40_feed_pkt_anc0(ctx_, i, 1000, 0, MTL_SESSION_PORT_P);
   EXPECT_EQ(ut40_captured_count(), 0);
 
   /* ts change → single-port path delivers immediately, even without marker. */
@@ -586,7 +590,7 @@ TEST_F(St40RxFrameAssemblyTest, PoolExhaustionDoesNotForceDeliverPendingCreatedT
 /* Cross-port redundancy: identical packets on R after P must be filtered
  * and never reach the assembler. The frame is delivered exactly once. */
 TEST_F(St40RxFrameAssemblyTest, RedundantCopyDoesNotDuplicateFrame) {
-  for (int i = 0; i < 4; i++)
+  for (uint16_t i = 0; i < 4; i++)
     ut40_feed_pkt_anc0(ctx_, i, 1000, i == 3, MTL_SESSION_PORT_P);
   ASSERT_EQ(ut40_captured_count(), 1);
   EXPECT_EQ(ut40_stat_anc_frames_ready(ctx_), 1u);
@@ -594,7 +598,7 @@ TEST_F(St40RxFrameAssemblyTest, RedundantCopyDoesNotDuplicateFrame) {
   /* R replays the same frame — must be 100% absorbed by redundancy filter. */
   uint64_t ready_before = ut40_stat_anc_frames_ready(ctx_);
   uint64_t dispatched_before = ut40_stat_assemble_dispatched(ctx_);
-  for (int i = 0; i < 4; i++)
+  for (uint16_t i = 0; i < 4; i++)
     ut40_feed_pkt_anc0(ctx_, i, 1000, i == 3, MTL_SESSION_PORT_R);
 
   EXPECT_EQ(ut40_captured_count(), 1)
