@@ -3,7 +3,13 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2025 Intel Corporation
 
-set -xe
+set -euo pipefail
+
+script_name="$(basename "${BASH_SOURCE[0]}")"
+script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+root_folder="$(cd -- "${script_folder}/../.." && pwd)"
+# shellcheck disable=SC1091
+. "${root_folder}/script/common.sh"
 
 # SET DEFAULT ARGUMENTS
 
@@ -50,6 +56,7 @@ fi
 # After MTL build
 : "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN:=0}"
 : "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN:=0}"
+: "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN:=0}"
 : "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN:=0}"
 
 : "${PLUGIN_BUILD_AND_INSTALL_SAMPLE:=0}"
@@ -70,221 +77,124 @@ fi
 # If any dependency installation fails, the script exits immediately.
 : "${CICD_BUILD:=0}"
 
-script_name=$(basename "${BASH_SOURCE[0]}")
-script_path=$(readlink -qe "${BASH_SOURCE[0]}")
-setup_script_folder=${script_path/$script_name/}
-root_folder="${setup_script_folder}/../.."
-nproc=$(nproc 2>/dev/null || echo 50)
-# shellcheck disable=SC1091
-. "${root_folder}/script/common.sh"
+# The flags, for the help text and for the summary at the end.
+setup_flags=(
+	"SETUP_ENVIRONMENT:Environment bootstrap"
+	"SETUP_BUILD_AND_INSTALL_DPDK:DPDK build/install"
+	"SETUP_BUILD_AND_INSTALL_DRIVERS:Driver build/install"
+	"SETUP_BUILD_AND_INSTALL_DRIVERS_ICE:ICE driver flow"
+	"SETUP_BUILD_AND_INSTALL_DRIVERS_IGC:IGC driver flow"
+	"SETUP_BUILD_AND_INSTALL_EBPF_XDP:eBPF/XDP toolchain"
+	"SETUP_BUILD_AND_INSTALL_GPU_DIRECT:GPU Direct support"
+	"MTL_BUILD_AND_INSTALL_DEBUG:MTL debug build"
+	"MTL_BUILD_AND_INSTALL:MTL release build"
+	"MTL_BUILD_AND_INSTALL_FUZZ:MTL fuzzing build"
+	"MTL_BUILD_AND_INSTALL_UNIT_TESTS:MTL unit tests build and run"
+	"MTL_BUILD_AND_INSTALL_DOCKER:MTL Docker image"
+	"MTL_BUILD_AND_INSTALL_DOCKER_MANAGER:MTL manager Docker image"
+	"ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN:FFmpeg plugin"
+	"ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN:GStreamer plugin"
+	"ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN:RIST plugin"
+	"ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN:OBS plugin"
+	"PLUGIN_BUILD_AND_INSTALL_SAMPLE:Sample plugin"
+	"PLUGIN_BUILD_AND_INSTALL_AVCODEC:AVCodec plugin"
+	"PLUGIN_BUILD_AND_INSTALL_JPEGXS:JPEG-XS plugin"
+	"HOOK_PYTHON:Python hook"
+	"HOOK_RUST:Rust hook"
+	"TOOLS_BUILD_AND_INSTALL_MTL_MONITORS:MTL monitors"
+	"TOOLS_BUILD_AND_INSTALL_MTL_READPCAP:MTL readpcap"
+	"TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR:MTL CPU emulator"
+	"TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET:set_tai_offset tool"
+	"TOOLS_RUN_SET_TAI_OFFSET:set_tai_offset run"
+	"CICD_BUILD:Non interactive mode"
+)
 
-versions_file="${root_folder}/versions.env"
-if [ -f "${versions_file}" ]; then
-	# shellcheck disable=SC1090
-	. "${versions_file}"
-fi
+show_help() {
+	local entry
+	cat <<EOF
+Usage: ${script_name} [-h]
 
-# Before MTL build install
-function setup_ubuntu_install_dependencies() {
-	echo "1.1. Install the build dependency from OS software store"
-	# Allow pip to modify system packages when run outside a venv (Debian/Ubuntu
-	# set environments as externally managed).
-	export PIP_BREAK_SYSTEM_PACKAGES=1
+Set up a host for MTL: install the packages, then build and install the
+components that the environment variables below select. Each variable is 0
+(off, the default) or 1 (on). A shell can also source the script: then it only
+sets the defaults.
 
-	# Mtl library dependencies
-	sudo apt update
-	sudo apt install -y \
-		git \
-		gcc \
-		meson \
-		python3 \
-		python3-pip \
-		pkg-config \
-		libnuma-dev \
-		libjson-c-dev \
-		libpcap-dev \
-		libgtest-dev \
-		libgmock-dev \
-		libssl-dev \
-		systemtap-sdt-dev \
-		llvm \
-		clang \
-		libsdl2-dev \
-		libsdl2-ttf-dev \
-		cmake \
-		linuxptp \
-		ethtool \
-		netsniff-ng \
-		unzip
+REQUIRED PACKAGES (Debian/Ubuntu):
+	sudo, when the script does not run as root. SETUP_ENVIRONMENT=1 runs
+	script/install_dependencies.sh once, with each selected component.
 
-	python3 -m pip install --upgrade pip
-	python3 -m pip install pyelftools ninja
+OPTIONS:
+	-h, --help	Show this help message
 
-	# Ice driver dependencies
-	if [ "${setup_build_ice}" == "1" ]; then
-		echo "Installing Ice driver dependencies"
+ENVIRONMENT:
+	MTL_INSTALL_PREFIX				Install each component into a sibling directory
+							of this path instead of the system
+EOF
+	for entry in "${setup_flags[@]}"; do
+		printf '\t%-45s\t%s\n' "${entry%%:*}" "${entry#*:}"
+	done
+	cat <<EOF
 
-		if ! sudo apt install -y "linux-headers-$(uname -r)"; then
-			log_error "Error: Failed to install linux-headers-$(uname -r)."
-			exit 1
-		fi
-	fi
-
-	if [ "${SETUP_BUILD_AND_INSTALL_EBPF_XDP}" == "1" ]; then
-		echo "Installing eBPF/XDP dependencies"
-		sudo apt install -y \
-			make \
-			m4 \
-			zlib1g-dev \
-			libelf-dev \
-			libcap-ng-dev \
-			libcap2-bin \
-			gcc-multilib # clang llvm
-	fi
-
-	if [ "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT}" == "1" ]; then
-		echo "Installing GPU Direct dependencies"
-		ONE_API_TGZ="oneapi.tgz"
-
-		sudo apt install -y file
-
-		wget "${ONE_API_REPO}" -O "${ONE_API_TGZ}"
-		if [ -f "${ONE_API_TGZ}" ]; then
-			tar -xzf "${ONE_API_TGZ}"
-			rm "${ONE_API_TGZ}"
-			echo "OneAPI installed to /opt"
-		else
-			log_error "Error: Failed to download OneAPI repository."
-			exit 1
-		fi
-
-		pushd "level-zero-${ONE_API_GPU_VER}" >/dev/null || exit 1
-
-		if mkdir build; then
-			rm -rf build
-			mkdir build
-		fi
-		pushd build >/dev/null || exit 1
-		cmake .. -D CMAKE_BUILD_TYPE=Release
-		cmake --build . --target package -j"${nproc}"
-		sudo cmake --build . --target install -j"${nproc}"
-		popd >/dev/null
-		popd >/dev/null
-		rm -rf "${setup_script_folder}/level-zero-${ONE_API_GPU_VER}"
-	fi
-
-	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN}" == "1" ]; then
-		echo "Installing FFMPEG dependencies"
-		sudo apt install -y \
-			nasm \
-			unzip \
-			patch
-	fi
-
-	if [ "${PLUGIN_BUILD_AND_INSTALL_JPEGXS}" == "1" ]; then
-		echo "Installing JPEG-XS dependencies"
-		sudo apt install -y \
-			cmake \
-			yasm \
-			nasm \
-			build-essential
-	fi
-
-	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
-		echo "Installing GStreamer dependencies"
-		sudo apt install -y \
-			libunwind-dev \
-			gstreamer1.0-plugins-base \
-			libgstreamer-plugins-base1.0-dev \
-			gstreamer1.0-plugins-good \
-			gstreamer1.0-tools \
-			gstreamer1.0-libav \
-			libgstreamer1.0-dev
-	fi
-
-	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN}" == "1" ]; then
-		echo "Installing OBS dependencies"
-		sudo apt install -y \
-			libobs-dev
-	fi
-
-	if [ "${HOOK_PYTHON}" == "1" ]; then
-		echo "Installing Python hook dependencies"
-		sudo apt install -y \
-			swig \
-			automake \
-			yacc
-
-		python3 -m pip install setuptools
-	fi
-
-	if [ "${HOOK_RUST}" == "1" ]; then
-		echo "Installing Rust hook dependencies"
-		sudo apt install -y \
-			cargo \
-			rustc
-	fi
-
-	if [ "${TOOLS_BUILD_AND_INSTALL_MTL_READPCAP}" == "1" ]; then
-		echo "Installing MTL readpcap dependencies"
-		sudo apt install -y \
-			libpcap-dev
-	fi
-
-	echo "All dependencies installed."
+EXAMPLES:
+	SETUP_ENVIRONMENT=1 SETUP_BUILD_AND_INSTALL_DPDK=1 MTL_BUILD_AND_INSTALL=1 ${script_name}
+	MTL_INSTALL_PREFIX="\$PWD/.local_install/mtl" SETUP_BUILD_AND_INSTALL_DPDK=1 ${script_name}
+EOF
 }
 
-# Allow sourcing of the script.
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+main() {
+	local STEP=1 mtl_build_options local_base enable_gpu enable_jpegxs jpegxs_bundle tai_bin
+	local entry var printed=0
+	local -a mtl_build_env jpegxs_build_options
+
+	case "${1:-}" in
+	"") ;;
+	-h | --help)
+		show_help
+		exit 0
+		;;
+	*)
+		log_error "Unexpected argument: $1. The environment variables select the work."
+		show_help
+		exit 1
+		;;
+	esac
+
+	# The trace shows each step in a CI log. A shell that sources the script
+	# does not get it.
+	set -x
 
 	if [ "$SETUP_ENVIRONMENT" == "1" ]; then
-		echo "$STEP Environment setup."
+		log_info "$STEP Environment setup."
 
-		case "$ID" in
-		ubuntu)
-			echo "Detected OS: Ubuntu"
-			setup_ubuntu_install_dependencies
-			;;
-		centos)
-			echo "Detected OS: CentOS"
-			echo "For now unsuported OS, please use Ubuntu"
-			exit 2
-			;;
-		rhel)
-			echo "Detected OS: RHEL"
-			echo "For now unsuported OS, please use Ubuntu"
-			exit 2
-			;;
-		rockos | rocky)
-			echo "Detected OS: Rocky Linux"
-			echo "For now unsuported OS, please use Ubuntu"
-			exit 2
-			;;
-		*)
-			echo "OS not recognized: $ID"
-			echo "For now unsuported OS, please use Ubuntu"
-			exit 2
-			;;
-		esac
+		local -a dependencies=()
+		if [ "${setup_build_ice}" == "1" ]; then dependencies+=(ice); fi
+		for entry in SETUP_BUILD_AND_INSTALL_EBPF_XDP:ebpf_xdp SETUP_BUILD_AND_INSTALL_GPU_DIRECT:gpu_direct \
+			ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN:ffmpeg PLUGIN_BUILD_AND_INSTALL_JPEGXS:jpegxs \
+			ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN:gstreamer ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN:obs \
+			HOOK_PYTHON:python HOOK_RUST:rust TOOLS_BUILD_AND_INSTALL_MTL_READPCAP:readpcap; do
+			var=${entry%%:*}
+			if [ "${!var}" == "1" ]; then dependencies+=("${entry#*:}"); fi
+		done
+		bash "${root_folder}/script/install_dependencies.sh" "${dependencies[@]}"
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT}" == "1" ]; then
-		echo "$STEP Install the build dependency for GPU Direct"
+		log_info "$STEP Install the build dependency for GPU Direct"
 		# shellcheck disable=SC1091
 		pushd "${root_folder}/gpu_direct" >/dev/null || exit 1
 
-		if [[ ":$LIBRARY_PATH:" != *":/usr/local/lib:"* ]]; then
-			export LIBRARY_PATH="/usr/local/lib:$LIBRARY_PATH"
+		if [[ ":${LIBRARY_PATH:-}:" != *":/usr/local/lib:"* ]]; then
+			export LIBRARY_PATH="/usr/local/lib:${LIBRARY_PATH:-}"
 		fi
 
 		meson setup build
-		sudo meson install -C build
+		as_root meson install -C build
 
 		if pkg-config --libs mtl_gpu_direct >/dev/null 2>&1; then
-			echo "mtl_gpu_direct is available via pkg-config."
+			log_info "mtl_gpu_direct is available via pkg-config."
 		else
-			echo "mtl_gpu_direct is NOT available via pkg-config."
+			log_warning "mtl_gpu_direct is NOT available via pkg-config."
 		fi
 
 		popd >/dev/null
@@ -293,13 +203,13 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	fi
 
 	if [ "${SETUP_BUILD_AND_INSTALL_EBPF_XDP}" == "1" ]; then
-		echo "$STEP Install the build dependency from OS software store"
+		log_info "$STEP Install the build dependency from OS software store"
 		bash "${root_folder}/script/build_ebpf_xdp.sh"
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${SETUP_BUILD_AND_INSTALL_DPDK}" == "1" ]; then
-		echo "$STEP DPDK build and install"
+		log_info "$STEP DPDK build and install"
 		# DPDK installs to a sibling directory for independent caching
 		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
@@ -311,7 +221,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	fi
 
 	if [ "${SETUP_BUILD_AND_INSTALL_DRIVERS}" == "1" ]; then
-		echo "$STEP Driver build and install"
+		log_info "$STEP Driver build and install"
 		# shellcheck disable=SC2086
 		bash "${root_folder}/script/build_drivers.sh" ${setup_build_drivers_options}
 		STEP=$((STEP + 1))
@@ -330,7 +240,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		# given. Only this build switches compiler: DPDK is installed by now and
 		# is linked rather than recompiled.
 		if ! command -v clang >/dev/null; then
-			echo "MTL_BUILD_AND_INSTALL_FUZZ needs clang: apt install clang" >&2
+			log_error "MTL_BUILD_AND_INSTALL_FUZZ needs clang: apt install clang"
 			exit 1
 		fi
 		mtl_build_env=(env CC=clang CXX=clang++)
@@ -340,7 +250,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	fi
 
 	if [ "${MTL_BUILD_AND_INSTALL}" == "1" ] || [ "${MTL_BUILD_AND_INSTALL_DEBUG}" == "1" ]; then
-		echo "$STEP MTL build and install: ${mtl_build_options}"
+		log_info "$STEP MTL build and install: ${mtl_build_options}"
 		pushd "${root_folder}" >/dev/null || exit 1
 		# shellcheck disable=SC2086
 		"${mtl_build_env[@]}" ./build.sh ${mtl_build_options}
@@ -349,11 +259,11 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	fi
 
 	if [ "${MTL_BUILD_AND_INSTALL_DOCKER}" == "1" ]; then
-		echo "$STEP MTL docker build and install"
+		log_info "$STEP MTL docker build and install"
 		pushd "${root_folder}/docker" >/dev/null || exit 1
 
-		if [ -n "${http_proxy}" ] && [ -n "${https_proxy}" ]; then
-			docker build -t mtl:latest -f ubuntu.dockerfile --build-arg HTTP_PROXY="${http_proxy}" --build-arg HTTPS_PROXY="${https_proxy}" ../
+		if [ -n "${http_proxy:-}" ] && [ -n "${https_proxy:-}" ]; then
+			docker build -t mtl:latest -f ubuntu.dockerfile --build-arg HTTP_PROXY="${http_proxy:-}" --build-arg HTTPS_PROXY="${https_proxy:-}" ../
 		else
 			docker build -t mtl:latest -f ubuntu.dockerfile ../
 		fi
@@ -364,12 +274,12 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	fi
 
 	if [ "${MTL_BUILD_AND_INSTALL_DOCKER_MANAGER}" == "1" ]; then
-		echo "$STEP MTL docker manager build and install"
+		log_info "$STEP MTL docker manager build and install"
 
 		pushd "${root_folder}/manager" >/dev/null || exit 1
 
-		if [ -n "${http_proxy}" ] && [ -n "${https_proxy}" ]; then
-			docker build --build-arg VERSION="$(cat ../VERSION)" -t mtl-manager:latest --build-arg HTTP_PROXY="${http_proxy}" --build-arg HTTPS_PROXY="${https_proxy}" .
+		if [ -n "${http_proxy:-}" ] && [ -n "${https_proxy:-}" ]; then
+			docker build --build-arg VERSION="$(cat ../VERSION)" -t mtl-manager:latest --build-arg HTTP_PROXY="${http_proxy:-}" --build-arg HTTPS_PROXY="${https_proxy:-}" .
 		else
 			docker build --build-arg VERSION="$(cat ../VERSION)" -t mtl-manager:latest .
 		fi
@@ -380,20 +290,22 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	fi
 
 	if [ "${PLUGIN_BUILD_AND_INSTALL_JPEGXS}" == "1" ]; then
-		echo "$STEP Plugin JPEG-XS bundle build"
-		export SVT_JPEG_XS_REPO="${setup_script_folder}/SVT-JPEG-XS"
-		bash "${root_folder}/.github/scripts/ci/build-jpegxs.sh"
+		log_info "$STEP Plugin JPEG-XS bundle build"
+		export SVT_JPEG_XS_REPO="${root_folder}/script/SVT-JPEG-XS"
+		jpegxs_build_options=()
+		[ "${CICD_BUILD}" != "1" ] || jpegxs_build_options+=(--ci)
+		bash "${root_folder}/script/build_jpegxs.sh" "${jpegxs_build_options[@]}"
 		STEP=$((STEP + 1))
 	fi
 
 	# After MTL build
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN}" == "1" ]; then
-		echo "$STEP Ecosystem FFMPEG plugin build and install"
+		log_info "$STEP Ecosystem FFMPEG plugin build and install"
 		if [ "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT}" == "1" ]; then
-			echo "Building FFMPEG plugin with GPU Direct support"
+			log_info "Building FFMPEG plugin with GPU Direct support"
 			enable_gpu="-g"
 		else
-			echo "Building FFMPEG plugin without GPU Direct support"
+			log_info "Building FFMPEG plugin without GPU Direct support"
 			enable_gpu=""
 		fi
 
@@ -420,7 +332,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	fi
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
-		echo "$STEP Ecosystem GStreamer plugin build and install"
+		log_info "$STEP Ecosystem GStreamer plugin build and install"
 
 		# GStreamer plugins go to a sibling directory
 		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
@@ -448,7 +360,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	fi
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN}" == "1" ]; then
-		echo "$STEP Ecosystem RIST plugin build and install"
+		log_info "$STEP Ecosystem RIST plugin build and install"
 		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
 			MTL_INSTALL_PREFIX="${local_base}/librist" bash "${root_folder}/ecosystem/librist/build_librist_mtl.sh"
@@ -458,29 +370,29 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		STEP=$((STEP + 1))
 	fi
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN}" == "1" ]; then
-		echo "$STEP Ecosystem OBS plugin build and install"
+		log_info "$STEP Ecosystem OBS plugin build and install"
 		pushd "${root_folder}/ecosystem/obs_mtl" >/dev/null || exit 1
 		pushd linux-mtl >/dev/null || exit 1
 		meson setup build
 		meson compile -C build
-		sudo meson install -C build
+		as_root meson install -C build
 		popd >/dev/null
 		popd >/dev/null
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${PLUGIN_BUILD_AND_INSTALL_SAMPLE}" == "1" ]; then
-		echo "$STEP Plugin sample build and install"
+		log_info "$STEP Plugin sample build and install"
 		pushd "${root_folder}/plugins" >/dev/null || exit 1
 		meson setup build
 		meson compile -C build
-		sudo meson install -C build
+		as_root meson install -C build
 		popd >/dev/null
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${PLUGIN_BUILD_AND_INSTALL_AVCODEC}" == "1" ]; then
-		echo "$STEP Plugin AVCODEC build and install"
+		log_info "$STEP Plugin AVCODEC build and install"
 		# st22 avcodec plugin installs to a sibling directory for independent caching.
 		# It links libavcodec/libavutil, provided by the .local_install/ffmpeg build.
 		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
@@ -496,32 +408,32 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	fi
 
 	if [ "${HOOK_PYTHON}" == "1" ]; then
-		echo "$STEP Hook Python"
+		log_info "$STEP Hook Python"
 		pushd "${root_folder}" >/dev/null || exit 1
 		if [ -d swig ]; then
-			echo "SWIG directory already exists, skipping clone."
+			log_info "SWIG directory already exists, skipping clone."
 		else
-			echo "Cloning SWIG repository..."
+			log_info "Cloning SWIG repository..."
 			git clone https://github.com/swig/swig.git
 		fi
 		pushd swig >/dev/null || exit 1
 		git checkout v4.1.1
 		./autogen.sh
 		./configure
-		make -j"${nproc}"
-		sudo make install
+		make -j"${NPROC}"
+		as_root make install
 		popd >/dev/null
 		pushd "${root_folder}/python/swig" >/dev/null || exit 1
 		swig -python -I/usr/local/include -o pymtl_wrap.c pymtl.i
 		python3 setup.py build_ext --inplace
-		sudo python3 setup.py install
+		as_root python3 setup.py install
 		popd >/dev/null
 		popd >/dev/null
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${HOOK_RUST}" == "1" ]; then
-		echo "$STEP Hook Rust"
+		log_info "$STEP Hook Rust"
 		pushd "${root_folder}/rust" >/dev/null || exit 1
 		cargo update home --precise "${RUST_HOOK_CARGO_VER}"
 		cargo build --release
@@ -530,110 +442,70 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	fi
 
 	if [ "${TOOLS_BUILD_AND_INSTALL_MTL_MONITORS}" == "1" ]; then
-		echo "$STEP Tools MTL monitors build"
+		log_info "$STEP Tools MTL monitors build"
 		pushd "${root_folder}/tools/ebpf" >/dev/null || exit 1
-		make lcore_monitor -j"${nproc}"
-		make udp_monitor -j"${nproc}"
+		make lcore_monitor -j"${NPROC}"
+		make udp_monitor -j"${NPROC}"
 		popd >/dev/null
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${TOOLS_BUILD_AND_INSTALL_MTL_READPCAP}" == "1" ]; then
-		echo "$STEP Tools MTL readpcap build"
+		log_info "$STEP Tools MTL readpcap build"
 		pushd "${root_folder}/tools/readpcap" >/dev/null || exit 1
-		make -j"${nproc}"
+		make -j"${NPROC}"
 		popd >/dev/null
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR}" == "1" ]; then
-		echo "$STEP Tools MTL CPU emulator build"
+		log_info "$STEP Tools MTL CPU emulator build"
 		pushd "${root_folder}/tools/sch_smi_emulate" >/dev/null || exit 1
-		make -j"${nproc}"
+		make -j"${NPROC}"
 		popd >/dev/null
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET}" == "1" ]; then
-		echo "$STEP Tools set_tai_offset build"
+		log_info "$STEP Tools set_tai_offset build"
 		pushd "${root_folder}/tools/set_tai_offset" >/dev/null || exit 1
 		meson setup build || true
-		ninja -C build -j"${nproc}"
+		ninja -C build -j"${NPROC}"
 		popd >/dev/null
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${TOOLS_RUN_SET_TAI_OFFSET}" == "1" ]; then
-		echo "$STEP Tools set_tai_offset run"
+		log_info "$STEP Tools set_tai_offset run"
 		tai_bin="${root_folder}/tools/set_tai_offset/build/set_tai_offset"
 		if [ ! -x "${tai_bin}" ]; then
-			echo "set_tai_offset not built, building first..."
+			log_info "set_tai_offset not built, building first..."
 			pushd "${root_folder}/tools/set_tai_offset" >/dev/null || exit 1
 			meson setup build || true
-			ninja -C build -j"${nproc}"
+			ninja -C build -j"${NPROC}"
 			popd >/dev/null
 		fi
-		sudo "${tai_bin}" -v -0
+		as_root "${tai_bin}" -v -0
 		STEP=$((STEP + 1))
 	fi
 
-	echo "Selected setup options:"
-	show_flag() {
-		local name="$1"
-		local value="$2"
-		local desc="$3"
-		local status="disabled"
-		if [ "$value" = "1" ]; then
-			status="enabled"
-		elif [ "$value" != "0" ]; then
-			status="custom (${value})"
-		fi
-		printf "  %-45s -> %s (export %s=%s)\n" "$desc" "$status" "$name" "$value"
-	}
-
-	echo "Enabled setup options:"
-	printed=0
-	for entry in \
-		"SETUP_ENVIRONMENT:Environment bootstrap" \
-		"SETUP_BUILD_AND_INSTALL_DPDK:DPDK build/install" \
-		"SETUP_BUILD_AND_INSTALL_DRIVERS:Driver build/install" \
-		"SETUP_BUILD_AND_INSTALL_DRIVERS_ICE:ICE driver flow" \
-		"SETUP_BUILD_AND_INSTALL_DRIVERS_IGC:IGC driver flow" \
-		"SETUP_BUILD_AND_INSTALL_EBPF_XDP:eBPF/XDP toolchain" \
-		"SETUP_BUILD_AND_INSTALL_GPU_DIRECT:GPU Direct support" \
-		"MTL_BUILD_AND_INSTALL_DEBUG:MTL debug build" \
-		"MTL_BUILD_AND_INSTALL:MTL release build" \
-		"MTL_BUILD_AND_INSTALL_FUZZ:MTL fuzzing build" \
-		"MTL_BUILD_AND_INSTALL_UNIT_TESTS:MTL unit tests build and run" \
-		"MTL_BUILD_AND_INSTALL_DOCKER:MTL Docker image" \
-		"MTL_BUILD_AND_INSTALL_DOCKER_MANAGER:MTL manager Docker image" \
-		"ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN:FFmpeg plugin" \
-		"ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN:GStreamer plugin" \
-		"ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN:OBS plugin" \
-		"PLUGIN_BUILD_AND_INSTALL_SAMPLE:Sample plugin" \
-		"PLUGIN_BUILD_AND_INSTALL_AVCODEC:AVCodec plugin" \
-		"PLUGIN_BUILD_AND_INSTALL_JPEGXS:JPEG-XS plugin" \
-		"HOOK_PYTHON:Python hook" \
-		"HOOK_RUST:Rust hook" \
-		"TOOLS_BUILD_AND_INSTALL_MTL_MONITORS:MTL monitors" \
-		"TOOLS_BUILD_AND_INSTALL_MTL_READPCAP:MTL readpcap" \
-		"TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR:MTL CPU emulator" \
-		"TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET:set_tai_offset tool" \
-		"TOOLS_RUN_SET_TAI_OFFSET:set_tai_offset run" \
-		"CICD_BUILD:Non interactive mode"; do
-
+	log_info "Enabled setup options:"
+	for entry in "${setup_flags[@]}"; do
 		var=${entry%%:*}
-		desc=${entry#*:}
-		val=${!var:-0}
-		[ "$val" = "0" ] && continue
+		[ "${!var:-0}" = "0" ] && continue
 		printed=1
-		if [ "$val" = "1" ]; then
-			echo "  $desc"
+		if [ "${!var}" = "1" ]; then
+			log_info "  ${entry#*:}"
 		else
-			echo "  $desc (export $var=$val)"
+			log_info "  ${entry#*:} (export ${var}=${!var})"
 		fi
 	done
-	[ "$printed" = "0" ] && echo "  (none)"
+	[ "$printed" = "1" ] || log_info "  (none)"
 
-	echo "Setup installation was successful"
-fi # End of execution block for script
+	log_success "Setup installation was successful"
+}
+
+(return 0 2>/dev/null) && sourced=1 || sourced=0
+if [ "${sourced}" -eq 0 ]; then
+	main "$@"
+fi
