@@ -23,6 +23,10 @@ on:
         description: Scheduler session quota override
         required: false
         type: string
+      sut_app_args:
+        description: 'Extra RxTxApp arguments for the measured app, e.g. --nb_rx_desc 1024 --rx_pool_data_size 1300'
+        required: false
+        type: string
       test_time:
         description: Test duration in seconds
         required: false
@@ -98,6 +102,7 @@ jobs:
           PYTEST_FILTER: ${{ inputs.test_filter || '1080p and 59fps' }}
           NUM_SESSIONS: ${{ inputs.num_sessions }}
           SCH_QUOTA: ${{ inputs.sch_quota }}
+          SUT_APP_ARGS: ${{ inputs.sut_app_args }}
         run: task ci:pytest-run -- performance
       - name: Generate performance report
         if: always()

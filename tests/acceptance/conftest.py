@@ -854,6 +854,12 @@ def sch_quota(request) -> int | None:
     return request.config.getoption("--sch_quota", default=None)
 
 
+@pytest.fixture(scope="session")
+def sut_app_args(request) -> str | None:
+    """Return the --sut_app_args value (extra measured-app arguments) or None."""
+    return request.config.getoption("--sut_app_args", default=None)
+
+
 @pytest.fixture(autouse=True)
 def delay_between_tests(test_config: dict, hosts):
     """Inter-test pause that scales with actual VFIO release time.
@@ -1104,6 +1110,12 @@ def pytest_addoption(parser):
         help="Override the scheduler session quota (sessions per scheduler). "
         "Lower quota = more cores; higher quota = fewer cores. "
         "Use 60 for minimal cores. Example: --sch_quota 60",
+    )
+    parser.addoption(
+        "--sut_app_args",
+        default=None,
+        help="Extra RxTxApp arguments for the measured app of a performance "
+        "sweep. Example: --sut_app_args='--nb_rx_desc 1024 --rx_pool_data_size 1300'",
     )
 
 

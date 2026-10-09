@@ -214,6 +214,7 @@ whether a compliance verdict is meaningful), and `allow_wide_compliance`
 | `--dmesg clear\|keep` | Whether to clear the kernel ring before each test |
 | `--media`, `--build`, `--nic`, `--dma` | Override the config values |
 | `--num_sessions N`, `--sch_quota N` | Performance sweeps only |
+| `--sut_app_args='ARGS'` | Performance sweeps only: extra RxTxApp arguments for the measured app |
 
 ### Output
 
