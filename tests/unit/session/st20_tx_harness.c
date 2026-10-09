@@ -160,9 +160,13 @@ static uint16_t ut_txv_txq_burst_busy(struct mt_txq_entry* entry,
                                       struct rte_mbuf** tx_pkts, uint16_t nb_pkts,
                                       int timeout_ms) {
   struct ut_txv_ctx* ctx = ut_txv_train_ctx;
-  uint16_t nb_desc = mt_if_nb_tx_desc(&ctx->impl, MTL_PORT_P);
   (void)entry;
   (void)timeout_ms;
+  if (!ctx) { /* a NIC that takes everything */
+    rte_pktmbuf_free_bulk(tx_pkts, nb_pkts);
+    return nb_pkts;
+  }
+  uint16_t nb_desc = mt_if_nb_tx_desc(&ctx->impl, MTL_PORT_P);
 
   for (uint16_t i = 0; i < nb_pkts; i++) {
     /* the busy burst spins until the shaper frees a descriptor */
@@ -715,6 +719,69 @@ out:
     s->st20_frames = NULL;
   }
   return ret;
+}
+
+uint64_t ut_txv_run_rtp_pkt0_after_frame_session(ut_txv_ctx* ctx) {
+  static unsigned int test_idx;
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct rte_mbuf* packet = NULL;
+  char pool_name[RTE_MEMPOOL_NAMESIZE];
+  char ring_name[RTE_RING_NAMESIZE];
+  static uint8_t user_meta[8];
+  const uint64_t now = NS_PER_MS / 2;
+
+  (void)snprintf(pool_name, sizeof(pool_name), "ut_txv_stale_pool_%u", test_idx);
+  (void)snprintf(ring_name, sizeof(ring_name), "ut_txv_stale_ring_%u", test_idx++);
+  s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] =
+      rte_pktmbuf_pool_create(pool_name, 32, 0, sizeof(struct mt_muf_priv_data),
+                              RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
+  s->ring[MTL_SESSION_PORT_P] = ut_ring_create(ring_name, 32);
+  if (s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] && s->ring[MTL_SESSION_PORT_P])
+    packet = rte_pktmbuf_alloc(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
+  if (packet) {
+    /* the mbuf a frame-level session last built, as from the MTL_FLAG_TX_MONO_POOL pool:
+     * its priv still points at that session's frame, which had user meta */
+    ctx->ext_frame.user_meta = user_meta;
+    ctx->ext_frame.user_meta_data_size = sizeof(user_meta);
+    st_tx_mbuf_set_priv(packet, &ctx->ext_frame);
+    /* tv_tasklet_rtp() builds it: index and time, no priv */
+    packet->pkt_len = 64;
+    st_tx_mbuf_set_idx(packet, 0);
+    st_tx_mbuf_set_tsc(packet, now);
+    st_tx_mbuf_set_ptp(packet, now);
+    rte_ring_sp_enqueue(s->ring[MTL_SESSION_PORT_P], packet);
+
+    ctx->impl.inf[MTL_PORT_P].drv_info.flags |= MT_DRV_F_NO_SYS_TX_QUEUE;
+    s->ops.type = ST20_TYPE_RTP_LEVEL;
+    s->bulk = 1;
+    s->ops.num_port = 1;
+    s->port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
+    s->queue[MTL_SESSION_PORT_P] = (struct mt_txq_entry*)ctx;
+    s->pacing_way[MTL_SESSION_PORT_P] = ST21_TX_PACING_WAY_TSC;
+    s->pacing.trs = NS_PER_US;
+    s->last_burst_succ_time_tsc[MTL_SESSION_PORT_P] = now;
+    s->tx_hang_detect_time_thresh = UINT64_MAX;
+    ctx->mock_tsc_ns = now;
+    ctx->mock_ptp_ns = now;
+    ctx->burst_packets_count = 0;
+    ut_txv_active_burst_ctx = ctx;
+    st_video_resolve_pacing_tasklet(s, MTL_SESSION_PORT_P);
+    s->pacing_tasklet_func[MTL_SESSION_PORT_P](&ctx->impl, s, MTL_SESSION_PORT_P);
+    ut_txv_active_burst_ctx = NULL;
+  }
+
+  for (unsigned int i = 0; i < ctx->burst_packets_count; i++)
+    rte_pktmbuf_free(ctx->burst_packets[i]);
+  ctx->burst_packets_count = 0;
+  if (s->ring[MTL_SESSION_PORT_P]) {
+    ut_ring_drain(s->ring[MTL_SESSION_PORT_P]);
+    rte_ring_free(s->ring[MTL_SESSION_PORT_P]);
+  }
+  rte_mempool_free(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
+  s->ring[MTL_SESSION_PORT_P] = NULL;
+  s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] = NULL;
+  s->queue[MTL_SESSION_PORT_P] = NULL;
+  return s->port_user_stats.stat_user_meta_pkt_cnt;
 }
 
 int ut_txv_peer_get_next_frame_calls(const ut_txv_ctx* ctx) {

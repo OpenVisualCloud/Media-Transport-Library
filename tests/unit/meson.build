@@ -121,6 +121,7 @@ unit_sources = [
   'session/st20_tx/zero_copy_test.cpp',
   'session/st20_tx/rl_training_test.cpp',
   'session/st20_tx/rtcp_pool_test.cpp',
+  'session/st20_tx/stale_frame_priv_test.cpp',
   'session/st_video_transmitter_harness.c',
   'session/st20_tx/rl_warm_up_test.cpp',
   'session/st20_tx/tx_queue_stall_test.cpp',

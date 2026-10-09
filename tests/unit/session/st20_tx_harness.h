@@ -136,6 +136,9 @@ enum ut_txv_slot {
  * them UT_TXV_SLOT_SELF. Returns the handler's result, < 0 on setup failure. */
 int ut_txv_run_tasklet_slots(ut_txv_ctx* ctx, enum ut_txv_work work,
                              const enum ut_txv_slot* slots, int nb_slots);
+/* An RTP-level session sends packet 0 in an mbuf whose priv a frame-level session left
+ * pointing at its frame with user meta. Returns the user-meta pkts the session sent. */
+uint64_t ut_txv_run_rtp_pkt0_after_frame_session(ut_txv_ctx* ctx);
 /* get_next_frame calls the peers of the last ut_txv_run_tasklet_slots() received. */
 int ut_txv_peer_get_next_frame_calls(const ut_txv_ctx* ctx);
 int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
