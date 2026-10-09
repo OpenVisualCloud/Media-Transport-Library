@@ -413,6 +413,7 @@ def _run_iteration(
     dma_label: str,
     test_time: int,
     sch_session_quota: int | None = None,
+    sut_app_args: str | None = None,
 ) -> tuple[bool, int, str, dict | None, int]:
     """Run one iteration: start companion, run measured app, validate FPS.
 
@@ -420,6 +421,7 @@ def _run_iteration(
         sch_session_quota: If set, overrides the default SUT scheduler
             session quota for this iteration (used by core-minimization
             phase to test different quotas).
+        sut_app_args: Extra RxTxApp arguments for the measured app.
 
     Returns:
         (passed, successful_count, detail_string, config_dict, cores_used).
@@ -654,6 +656,8 @@ def _run_iteration(
 
         measured_app.create_command(**measured_kwargs)
         measured_app.prepare_execution(build=build_measured, host=measured_host)
+        if sut_app_args:
+            measured_app.command += f" {sut_app_args}"
 
         # ── Run measured app with CPU monitoring ──
         cpu_monitor = CpuCoreMonitor(measured_host, interval=2)
@@ -818,6 +822,7 @@ def _run_session_sweep(
     test_config: dict = None,
     num_sessions: int | None = None,
     sch_quota: int | None = None,
+    sut_app_args: str | None = None,
 ) -> None:
     """Auto-sweep session count using binary search to find max passing.
 
@@ -898,6 +903,7 @@ def _run_session_sweep(
         dma_device=dma_device,
         dma_label=dma_label,
         test_time=test_time,
+        sut_app_args=sut_app_args,
     )
 
     # ── Sweep state ──
@@ -1300,6 +1306,7 @@ def test_tx(
     prepare_ramdisk,
     num_sessions,
     sch_quota,
+    sut_app_args,
 ) -> None:
     """TX performance: auto-sweep sessions from start upward until failure."""
     _run_session_sweep(
@@ -1315,6 +1322,7 @@ def test_tx(
         test_config=test_config,
         num_sessions=num_sessions,
         sch_quota=sch_quota,
+        sut_app_args=sut_app_args,
     )
 
 
@@ -1332,6 +1340,7 @@ def test_rx(
     prepare_ramdisk,
     num_sessions,
     sch_quota,
+    sut_app_args,
 ) -> None:
     """RX performance: auto-sweep sessions from start upward until failure."""
     _run_session_sweep(
@@ -1347,6 +1356,7 @@ def test_rx(
         test_config=test_config,
         num_sessions=num_sessions,
         sch_quota=sch_quota,
+        sut_app_args=sut_app_args,
     )
 
 
@@ -1364,6 +1374,7 @@ def test_tx_redundant(
     prepare_ramdisk,
     num_sessions,
     sch_quota,
+    sut_app_args,
 ) -> None:
     """TX Redundant (ST2022-7): auto-sweep sessions until failure."""
     _run_session_sweep(
@@ -1379,6 +1390,7 @@ def test_tx_redundant(
         test_config=test_config,
         num_sessions=num_sessions,
         sch_quota=sch_quota,
+        sut_app_args=sut_app_args,
     )
 
 
@@ -1396,6 +1408,7 @@ def test_rx_redundant(
     prepare_ramdisk,
     num_sessions,
     sch_quota,
+    sut_app_args,
 ) -> None:
     """RX Redundant (ST2022-7): auto-sweep sessions until failure."""
     _run_session_sweep(
@@ -1411,4 +1424,5 @@ def test_rx_redundant(
         test_config=test_config,
         num_sessions=num_sessions,
         sch_quota=sch_quota,
+        sut_app_args=sut_app_args,
     )
