@@ -3,7 +3,8 @@
 
 import pytest
 from common.nicctl import InterfaceSetup
-from mtl_engine.media_files import yuv_files_interlace
+from mtl_engine.media_files import yuv_files_interlace_422p10le
+from tests.xfail import add_issue
 
 
 @pytest.mark.nightly
@@ -25,9 +26,9 @@ from mtl_engine.media_files import yuv_files_interlace
 )
 @pytest.mark.parametrize(
     "media_file",
-    list(yuv_files_interlace.values()),
+    list(yuv_files_interlace_422p10le.values()),
     indirect=["media_file"],
-    ids=list(yuv_files_interlace.keys()),
+    ids=list(yuv_files_interlace_422p10le.keys()),
 )
 def test_st22p_interlace(
     application,
@@ -38,8 +39,14 @@ def test_st22p_interlace(
     test_time,
     test_config,
     media_file,
+    request,
 ):
     """Test st22p interlaced video transmission."""
+    add_issue(
+        "XFAIL: SVT-JPEG-XS imtl plugin sets the frame height for interlaced ST22P "
+        "and rejects the first field",
+        request,
+    )
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
