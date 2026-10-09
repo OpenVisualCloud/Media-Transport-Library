@@ -35,6 +35,10 @@ void ut_dev_fail_timesync_read(ut_dev_ctx* ctx, int call, int error);
 void ut_dev_fail_port_start(ut_dev_ctx* ctx, int error);
 void ut_dev_use_non_igc_driver(ut_dev_ctx* ctx);
 void ut_dev_set_ptp_enabled(ut_dev_ctx* ctx, bool enabled);
+void ut_dev_set_tx_pacing_way(ut_dev_ctx* ctx, enum st21_tx_pacing_way way);
+void ut_dev_enable_launch_time(ut_dev_ctx* ctx, enum mtl_port port);
+void ut_dev_set_tx_queues_cnt(ut_dev_ctx* ctx, enum mtl_port port, uint16_t cnt);
+void ut_dev_set_tx_sessions_cnt_max(ut_dev_ctx* ctx, uint16_t cnt);
 void ut_dev_set_port(ut_dev_ctx* ctx, enum mtl_port port, const char* bdf,
                      uint32_t rl_burst_size);
 /** Width of the devarg buffer dev_eal_init() passes, so tests cannot pick a wider one. */
@@ -51,6 +55,7 @@ int ut_dev_free_ports(ut_dev_ctx* ctx);
  * timestamp offload on or off and rx_desc_lim.nb_max. Returns the RX ring size chosen. */
 int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,
                                   uint16_t nb_rx_desc, uint16_t nb_max);
+int ut_dev_init_pacing(ut_dev_ctx* ctx, enum mtl_port port);
 
 /* EAL argv builder. rte_eal_init() is stubbed out and fails, which keeps dev_eal_init()'s
  * one-shot guard unlatched, so these may be called repeatedly in one process. */
@@ -81,6 +86,7 @@ bool ut_dev_port_started(const ut_dev_ctx* ctx);
 bool ut_dev_timesync_feature(const ut_dev_ctx* ctx);
 /** peak.rate, in bytes/s, of the last shaper profile added. */
 uint64_t ut_dev_last_shaper_rate(const ut_dev_ctx* ctx);
+enum st21_tx_pacing_way ut_dev_tx_pacing_way(const ut_dev_ctx* ctx, enum mtl_port port);
 
 /* Port stats. The writer thread holds the port's stats_lock while it adds
  * UT_DEV_STATS_WRITER_STEP to user_stats_port rx_packets, sleeps 50 ms, then adds it to

@@ -306,8 +306,9 @@ the same trap by setting `session.trust_env = False`.
 
 ### TAI and capture clock requirements
 
-The sender's media clock is `CLOCK_TAI` (`app_platform.h`, and the FFmpeg
-plugin's `ptp_get_time_fn`), so the capture PHC has to sit on the same clock.
+The sender's media clock is `CLOCK_TAI` (`app_platform.h`, and the FFmpeg and
+GStreamer plugins' `ptp_get_time_fn`), so the capture PHC has to sit on the
+same clock.
 The suite therefore reads the host's live TAI-UTC offset at capture time and
 passes it to `phc2sys -O`, instead of imposing an offset of its own. What
 matters is that sender and capture agree, not what the offset is: a host that

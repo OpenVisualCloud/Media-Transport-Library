@@ -1539,6 +1539,13 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
       }
     }
   } else if (ST21_TX_PACING_WAY_TSN == inf->tx_pacing_way) {
+    struct mtl_init_params* p = mt_get_user_params(inf->parent);
+
+    if (!p->tx_queues_cnt[port] && !p->tx_sessions_cnt_max) {
+      info("%s(%d), use tsc as no tx queue requested\n", __func__, port);
+      inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
+      return 0;
+    }
     if (!(inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP)) {
       err("%s(%d), this port not support tsn launch time\n", __func__, port);
       return -EINVAL;

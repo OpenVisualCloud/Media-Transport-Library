@@ -336,9 +336,17 @@ class FFmpeg(Application):
                 f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
                 f"-video_size {video_size} -init_retry 20 "
                 f"-f mtl_st20p -i 2 "
-                f"-map 0:0 {rx_f_flag} {{out0}} -y "
-                f"-map 1:0 {rx_f_flag} {{out1}} -y"
             )
+            if output_format == "yuv":
+                # Recording both raw sessions fills the root disk and stalls FFmpeg's
+                # close() while it holds its VF; validate_results() checks the frame
+                # count each session logs instead.
+                rx_cmd += "-map 0:0 -f null /dev/null -map 1:0 -f null /dev/null"
+            else:
+                rx_cmd += (
+                    f"-map 0:0 {rx_f_flag} {{out0}} -y "
+                    f"-map 1:0 {rx_f_flag} {{out1}} -y"
+                )
 
         if tx_is_ffmpeg:
             # Lock the rate on the rawvideo *demuxer* (-framerate) rather than a
@@ -468,7 +476,7 @@ class FFmpeg(Application):
             f"-f mtl_st22p -"
         ]
 
-        # RX: mtl_st22p demuxer (receive + decode) → raw video output
+        # RX: mtl_st22p demuxer (receive + decode) → the newest decoded frame only
         rx_cmd = (
             f"{FFMPEG_EXE} -p_port {nic_port_list[0]} "
             f"-p_sip {ip_pools.rx[0]} "
@@ -478,7 +486,7 @@ class FFmpeg(Application):
             f"-st22_codec {st22_codec} "
             f"-init_retry 20 "
             f"-f mtl_st22p -i k "
-            f"-f rawvideo {{out0}} -y"
+            f"-f image2 -update 1 -c:v rawvideo {{out0}} -y"
         )
         return rx_cmd, None
 
@@ -588,13 +596,14 @@ class FFmpeg(Application):
             if out_path_param and not multiple:
                 self._output_files = [out_path_param]
                 host.connection.path(out_path_param).touch()
+            elif multiple and output_format == "yuv":
+                self._output_files = []
             else:
                 self._output_files = ffmpeg_app.create_empty_output_files(
                     output_format, n, host, build
                 )
-            self.command = self.command.replace("{out0}", self._output_files[0])
-            if multiple:
-                self.command = self.command.replace("{out1}", self._output_files[1])
+            for i, out_path in enumerate(self._output_files):
+                self.command = self.command.replace(f"{{out{i}}}", out_path)
 
             # When TX is RxTxApp, the per-test config file must be generated
             # now (helper needs host + build).
@@ -647,7 +656,12 @@ class FFmpeg(Application):
                 host.connection.path(out_path_param).touch()
             else:
                 ext = "yuv" if mode == _MODE_ST22P else "raw"
-                out_path = ffmpeg_app.create_empty_output_files(ext, 1, host, build)
+                # tmpfs: ext4 flushes the st22p frame on every rewrite, and a slow
+                # root disk then stalls FFmpeg in close() while it holds its VF.
+                out_dir = "/dev/shm" if mode == _MODE_ST22P else ""
+                out_path = ffmpeg_app.create_empty_output_files(
+                    ext, 1, host, build, directory=out_dir
+                )
                 self._output_files = out_path
             self.command = self.command.replace("{out0}", self._output_files[0])
             if mode == _MODE_ST22P:
@@ -765,7 +779,15 @@ class FFmpeg(Application):
             if mode == _MODE_YUV_H264:
                 output_format = self._ff_params.get("output_format", "yuv")
                 video_url = self.params["video_url"]
-                if output_format == "yuv":
+                if output_format == "yuv" and self._ff_params.get("multiple_sessions"):
+                    _, _, fps = self._rx_frame_spec
+                    passed = ffmpeg_app.check_rx_frame_counts(
+                        self._rx_output or "",
+                        2,
+                        fps,
+                        self.params.get("test_time") or 30,
+                    )
+                elif output_format == "yuv":
                     video_size, pix_fmt, fps = self._rx_frame_spec
                     passed = ffmpeg_app.check_output_video_yuv(
                         self._output_files[0],
@@ -808,9 +830,7 @@ class FFmpeg(Application):
                     logger.error(f"{mode}: output file is empty: {out_file}")
                 # An integrity session, when the test asked for one, has already
                 # read this file: _finalize_run() evaluates it before
-                # validate_results() runs. Nothing downstream needs it, and a
-                # recording of a full test's traffic is far too large to leave
-                # in the workspace -- 1080p yuv422p10le is about 250 MB/s.
+                # validate_results() runs, and nothing downstream needs it.
                 self._cleanup_output_files(host)
             else:
                 self._fail_validation(f"Unknown mode {mode}", fail_on_error)

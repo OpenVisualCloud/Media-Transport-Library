@@ -205,6 +205,9 @@ unit_tests:
   - *hash_dpdk
   - *libmtl
   - *unit_sources
+  # tests/unit/gstreamer only; not in unit_sources, as the docker images skip it.
+  - ecosystem/gstreamer_plugin/gst_mtl_common.c
+  - ecosystem/gstreamer_plugin/gst_mtl_common.h
 
 # fuzz_tests.yml. It builds DPDK, then fuzz.sh builds the root meson project
 # with the fuzz targets; fuzz.sh calls meson, not build.sh. Each harness

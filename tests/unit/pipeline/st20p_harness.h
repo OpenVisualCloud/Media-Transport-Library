@@ -38,6 +38,24 @@ int ut20p_init(void);
 ut20p_ctx* ut20p_ctx_create(int framebuff_cnt);
 void ut20p_ctx_destroy(ut20p_ctx* ctx);
 
+/**
+ * Turn on ST20P_RX_FLAG_BLOCK_GET behaviour: init the block cond/mutex as
+ * st20p_rx_create() does and set the blocking get_frame timeout.
+ */
+void ut20p_ctx_enable_blocking(ut20p_ctx* ctx, uint64_t timeout_ns);
+
+/** Wraps st20p_rx_wake_block(). */
+void ut20p_wake_block(ut20p_ctx* ctx);
+
+/** Wraps rx_st20p_notify_frame_available(): signals a blocked get, readies no frame. */
+void ut20p_notify_frame_available(ut20p_ctx* ctx);
+
+/**
+ * Switch to the internal-converter path (derive = false, no-op converter):
+ * frame_ready leaves the frame READY and get_frame claims READY->IN_USER.
+ */
+void ut20p_ctx_set_internal_converter(ut20p_ctx* ctx);
+
 /** Inject one synthetic frame into the pipeline as if the transport just
  *  completed it.  status is ST_FRAME_STATUS_COMPLETE or _CORRUPTED.
  *  Returns 0 on accept, -EBUSY when no free framebuf (drives the
@@ -57,6 +75,9 @@ int ut20p_put_frame(ut20p_ctx* ctx, struct st_frame* frame);
  * finds them and tries to claim them.
  */
 void ut20p_set_frame_ready(ut20p_ctx* ctx, int idx);
+
+/** Set framebuffer idx directly to CONVERTED, with no notify. */
+void ut20p_set_frame_converted(ut20p_ctx* ctx, int idx);
 
 /** Wraps rx_st20p_convert_get_frame() — the external converter claim. */
 struct st20_convert_frame_meta* ut20p_convert_get_frame(ut20p_ctx* ctx);

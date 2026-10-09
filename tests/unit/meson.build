@@ -50,6 +50,7 @@ unit_sources = [
   'dev/mt_dev_devargs_test.cpp',
   'dev/mt_dev_eal_argv_test.cpp',
   'dev/mt_dev_rl_teardown_test.cpp',
+  'dev/mt_dev_pacing_test.cpp',
   'dev/iavf_intr_unregister_test.cpp',
   'dev/mt_dev_port_stats_test.cpp',
   'dev/mt_flow_harness.c',
@@ -135,6 +136,7 @@ unit_sources = [
   'pipeline/st20p_harness.c',
   'pipeline/st20p_test.cpp',
   'pipeline/st20p_rx_concurrency_test.cpp',
+  'pipeline/st20p_rx_blocking_test.cpp',
   'pipeline/st20p_tx_harness.c',
   'pipeline/st20p_tx_concurrency_test.cpp',
   'pipeline/st20p_tx_blocking_test.cpp',
@@ -184,6 +186,17 @@ unit_sources = [
   'dma/mt_map_test.cpp',
   'main.cpp',
 ]
+
+# The plugin header that gstreamer/ compiles includes gst/video and gst/audio as well.
+gst_dep = dependency('gstreamer-1.0', required : false)
+gst_video_dep = dependency('gstreamer-video-1.0', required : false)
+gst_audio_dep = dependency('gstreamer-audio-1.0', required : false)
+if gst_dep.found() and gst_video_dep.found() and gst_audio_dep.found()
+  unit_sources += ['gstreamer/gst_mtl_common_harness.c', 'gstreamer/gst_mtl_common_test.cpp']
+  unit_extra_deps += [gst_dep, gst_video_dep, gst_audio_dep]
+else
+  message('GStreamer development files not found: skipping tests/unit/gstreamer')
+endif
 
 executable('UnitTest', unit_sources,
   c_args : unit_c_args,

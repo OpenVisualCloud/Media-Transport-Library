@@ -40,8 +40,10 @@ static void rx_st20p_notify_frame_available(struct st20p_rx_ctx* ctx) {
   }
 
   if (ctx->block_get) {
-    /* notify block */
-    rx_st20p_block_wake(ctx);
+    /* signal only, the waiter claims the frame itself */
+    mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+    mt_pthread_cond_signal(&ctx->block_wake_cond);
+    mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
   }
 }
 
@@ -857,19 +859,29 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
     framebuff = rx_st20p_claim_available(ctx, ctx->framebuff_consumer_idx,
                                          ST20P_RX_FRAME_READY, ST20P_RX_FRAME_IN_USER);
     if (!framebuff && ctx->block_get) { /* wait here */
+      struct timespec deadline;
+      clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &deadline);
+      timespec_add_ns(&deadline, ctx->block_timeout_ns);
       mt_pthread_mutex_lock(&ctx->block_wake_mutex);
       while (!ctx->block_wake_pending &&
              !atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
-        int _ret = mt_pthread_cond_timedwait_ns(
-            &ctx->block_wake_cond, &ctx->block_wake_mutex, ctx->block_timeout_ns);
+        framebuff =
+            rx_st20p_claim_available(ctx, ctx->framebuff_consumer_idx,
+                                     ST20P_RX_FRAME_READY, ST20P_RX_FRAME_IN_USER);
+        if (framebuff) break;
+        int _ret = mt_pthread_cond_timedwait(&ctx->block_wake_cond,
+                                             &ctx->block_wake_mutex, &deadline);
         if (_ret) break;
       }
       ctx->block_wake_pending = false;
       mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-      if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
-      /* get again */
-      framebuff = rx_st20p_claim_available(ctx, ctx->framebuff_consumer_idx,
-                                           ST20P_RX_FRAME_READY, ST20P_RX_FRAME_IN_USER);
+      if (!framebuff) {
+        if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
+        /* get again */
+        framebuff =
+            rx_st20p_claim_available(ctx, ctx->framebuff_consumer_idx,
+                                     ST20P_RX_FRAME_READY, ST20P_RX_FRAME_IN_USER);
+      }
     }
     /* not any ready frame */
     if (!framebuff) {
@@ -881,20 +893,29 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
         rx_st20p_claim_available(ctx, ctx->framebuff_consumer_idx,
                                  ST20P_RX_FRAME_CONVERTED, ST20P_RX_FRAME_IN_USER);
     if (!framebuff && ctx->block_get) { /* wait here */
+      struct timespec deadline;
+      clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &deadline);
+      timespec_add_ns(&deadline, ctx->block_timeout_ns);
       mt_pthread_mutex_lock(&ctx->block_wake_mutex);
       while (!ctx->block_wake_pending &&
              !atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
-        int _ret = mt_pthread_cond_timedwait_ns(
-            &ctx->block_wake_cond, &ctx->block_wake_mutex, ctx->block_timeout_ns);
+        framebuff =
+            rx_st20p_claim_available(ctx, ctx->framebuff_consumer_idx,
+                                     ST20P_RX_FRAME_CONVERTED, ST20P_RX_FRAME_IN_USER);
+        if (framebuff) break;
+        int _ret = mt_pthread_cond_timedwait(&ctx->block_wake_cond,
+                                             &ctx->block_wake_mutex, &deadline);
         if (_ret) break;
       }
       ctx->block_wake_pending = false;
       mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-      if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
-      /* get again */
-      framebuff =
-          rx_st20p_claim_available(ctx, ctx->framebuff_consumer_idx,
-                                   ST20P_RX_FRAME_CONVERTED, ST20P_RX_FRAME_IN_USER);
+      if (!framebuff) {
+        if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
+        /* get again */
+        framebuff =
+            rx_st20p_claim_available(ctx, ctx->framebuff_consumer_idx,
+                                     ST20P_RX_FRAME_CONVERTED, ST20P_RX_FRAME_IN_USER);
+      }
     }
     /* not any converted frame */
     if (!framebuff) {
