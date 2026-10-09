@@ -277,6 +277,12 @@ uint64_t ut_txv_stat_snapshot_port_frames(const ut_txv_ctx* ctx);
 bool ut_txv_pkts_capable_chain(ut_txv_ctx* ctx, uint16_t nb_tx_desc, int total_pkts,
                                uint16_t frames_cnt);
 
+/* tv_mempool_init() of a one-port frame-level RTCP session: the mbufs of its header
+ * and payload pools, which then are freed again */
+int ut_txv_rtcp_mempool_sizes(ut_txv_ctx* ctx, uint16_t nb_tx_desc,
+                              uint16_t rtcp_buffer_size, unsigned int* hdr_size,
+                              unsigned int* chain_size);
+
 #ifdef __cplusplus
 }
 #endif

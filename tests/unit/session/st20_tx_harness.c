@@ -1175,3 +1175,25 @@ bool ut_txv_pkts_capable_chain(ut_txv_ctx* ctx, uint16_t nb_tx_desc, int total_p
   s->ring_count = ST_TX_VIDEO_SESSIONS_RING_SIZE;
   return tv_pkts_capable_chain(&ctx->impl, s);
 }
+
+int ut_txv_rtcp_mempool_sizes(ut_txv_ctx* ctx, uint16_t nb_tx_desc,
+                              uint16_t rtcp_buffer_size, unsigned int* hdr_size,
+                              unsigned int* chain_size) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  int ret;
+
+  ctx->impl.inf[MTL_PORT_P].nb_tx_desc = nb_tx_desc;
+  s->ops.type = ST20_TYPE_FRAME_LEVEL;
+  s->ops.num_port = 1;
+  s->ops.flags |= ST20_TX_FLAG_ENABLE_RTCP;
+  s->ops.rtcp.buffer_size = rtcp_buffer_size;
+  s->port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
+  s->ring_count = ST_TX_VIDEO_SESSIONS_RING_SIZE;
+  s->st20_pkt_size = 1262;
+  s->socket_id = (int)rte_socket_id();
+  ret = tv_mempool_init(&ctx->impl, &ctx->mgr, s);
+  if (ret < 0) return ret;
+  *hdr_size = s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]->size;
+  *chain_size = s->mbuf_mempool_chain->size;
+  return tv_mempool_free(s);
+}

@@ -119,6 +119,7 @@ unit_sources = [
   'session/st20_tx/interlaced_field_epoch_test.cpp',
   'session/st20_tx/pacing_test.cpp',
   'session/st20_tx/zero_copy_test.cpp',
+  'session/st20_tx/rtcp_pool_test.cpp',
   'session/st_video_transmitter_harness.c',
   'session/st20_tx/rl_warm_up_test.cpp',
   'session/st20_tx/transmitter_bugs_test.cpp',
