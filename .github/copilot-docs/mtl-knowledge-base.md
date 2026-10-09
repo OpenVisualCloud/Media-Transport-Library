@@ -394,7 +394,12 @@ pacing->vrx -= (s->bulk - 1); /* compensate for bulk */
 ### Warm-Up Padding
 At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pads (`mt_build_pad()`, no RTP header). What follows depends on whether `tv_init_pacing()` planned the port: `rl_drain` ≠ 0, which stays 0 otherwise.
 - A plan needs both inputs:
-  - `rl_drain` = `trs`·pi/(pi+1), the shaper time of one NORMAL pad at that port's own measured `pad_interval` pi (trained or pre-trained, `tv_set_measured_pad_interval()`). A user `ops.pad_interval` or the static table gives none; `pacing->pad_interval` keeps only the last port's pi.
+  - `rl_drain` = `trs`·pi/(pi+1), the shaper time of one NORMAL pad at that port's own measured
+    `pad_interval` pi (trained or pre-trained, `tv_set_measured_pad_interval()`). `tv_train_pacing()`
+    keeps the whole ring full of pads for 72 frames, then sleeps until it drains (`nb_tx_desc` pads,
+    ~7.5 ms at 2048 and 1080p59.94): the pre-arm and the WAIT_TARGET hold both assume an idle queue.
+    Untrained rates only. A user `ops.pad_interval` or the static table gives none;
+    `pacing->pad_interval` keeps only the last port's pi.
   - `rl_credit` = `rl_drain`·B/S, the pads the full burst bucket B sends at line rate. `tv_rl_burst_size()`: iavf VF 2048 (the patched kernel ice, already required for RL); DPDK ice PF only an explicit `rl_burst_size`, as `ice_cfg_rl_burst_size()` programs it (DPDK's own default is 15 KB); any other driver, native AF_XDP included, unknown.
 - With a plan, `video_trs_rl_pre_arm()` queues pads the shaper finishes draining at the target and packet 0 follows them to the NIC in the same pass, so the shaper, not the tasklet, sets its launch.
 - The pads cover `(target − now) + rl_credit` in whole NORMAL pads, rounded up by one pad. Measured on E810 and E830 VF TX: each NORMAL pad drains exactly `rl_drain`, but the shaper does not resolve shorter packets (S/2, S/4, S/8 pads cost ~0.2–0.7 µs each, not a share of `rl_drain`), so sub-pad trims would launch packet 0 early.
