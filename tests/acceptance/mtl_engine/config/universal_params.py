@@ -73,6 +73,7 @@ UNIVERSAL_PARAMS = {
     "test_mode": "multicast",  # Test mode (unicast, multicast, kernel)
     "test_time": 30,  # Test duration in seconds
     "enable_rtcp": False,  # Enable RTCP
+    "nack_ssrc_check": False,  # TX: drop an RTCP NACK with a wrong ssrc (RFC4585)
     "measure_latency": False,  # Enable latency measurement
     "display": False,  # Enable display output
     "enable_ptp": False,  # Enable PTP synchronization
