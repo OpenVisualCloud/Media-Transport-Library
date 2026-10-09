@@ -12,6 +12,21 @@ from tests.xfail import add_issue
 _AUDIO_FORMATS = ["PCM8", "PCM16", "PCM24"]
 _AUDIO_CHANNELS = ["M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP"]
 _SMOKE_CASE = ("PCM16", "M")
+# The low-bandwidth leg (i225) runs one row per audio format and one per
+# application, with no format and no application twice.
+_LOW_BANDWIDTH_ROWS = {("PCM8", "rxtxapp"), ("PCM16", "gstreamer"), ("PCM24", "ffmpeg")}
+
+
+def _format_marks(fmt, app):
+    """Markers of one (format, application) row of test_st30p_format."""
+    marks = []
+    # One GStreamer row smoke-tests the mtl_st30p elements; each row costs a
+    # smoke leg 74-110 s.
+    if app != "gstreamer" or fmt == "PCM16":
+        marks.append(pytest.mark.smoke)
+    if (fmt, app) in _LOW_BANDWIDTH_ROWS:
+        marks.append(pytest.mark.low_bandwidth)
+    return marks
 
 
 @pytest.mark.nightly
@@ -170,13 +185,7 @@ def test_st30p_channel(
         pytest.param(
             app,
             audio_files[fmt],
-            # One GStreamer row smoke-tests the mtl_st30p elements; each row
-            # costs a smoke leg 74-110 s.
-            marks=(
-                [pytest.mark.smoke, pytest.mark.low_bandwidth]
-                if app != "gstreamer" or fmt == "PCM16"
-                else []
-            ),
+            marks=_format_marks(fmt, app),
             id=f"{fmt}-|application = {app}|",
         )
         for fmt in _AUDIO_FORMATS
