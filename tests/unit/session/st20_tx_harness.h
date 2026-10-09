@@ -168,6 +168,13 @@ void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
  * ut_txv_pacing_tr_offset() below. */
 int ut_txv_init_pacing(ut_txv_ctx* ctx, uint32_t height, bool interlaced,
                        enum st_fps fps);
+/* tv_train_pacing() of a one-port 1080p59.94 RL session without a pre-train result,
+ * against an RL queue of nb_tx_desc descriptors draining one pad per pad_ns. */
+int ut_txv_train_rl_pacing(ut_txv_ctx* ctx, uint16_t nb_tx_desc, long double pad_ns);
+float ut_txv_pad_interval(const ut_txv_ctx* ctx);
+/* Training traffic still in that queue, as shaper time. */
+uint64_t ut_txv_train_queued_ns(const ut_txv_ctx* ctx);
+uint64_t ut_txv_slept_ns(const ut_txv_ctx* ctx);
 /* Drives st_tai_round_to_media_clk_ns() -- the same media-clock snap
  * tv_sync_pacing() applies to the scheduled instant, so tests can express an
  * expectation as the raw ST 2110-21 sum instead of a pre-rounded constant. */

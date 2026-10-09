@@ -78,6 +78,17 @@ uint32_t ut_txa30_notify_frame_done_rtp_timestamp(const ut_txa30_ctx* ctx);
 int ut_txa30_wire_rtp_timestamp_count(const ut_txa30_ctx* ctx);
 uint32_t ut_txa30_wire_rtp_timestamp(const ut_txa30_ctx* ctx, int i);
 
+/* RL profiling against a modeled queue of nb_tx_desc descriptors that drains one
+ * descriptor per trs / (1 + pads_per_st30_pkt), the trained rate; the mock clock
+ * moves only while a full queue holds a busy burst, or in mt_sleep_us() */
+int ut_txa30_setup_rl(ut_txa30_ctx* ctx, long double trs_ns, uint16_t nb_tx_desc);
+void ut_txa30_teardown_rl(ut_txa30_ctx* ctx);
+/* tx_audio_session_profiling_rl_bps() of the first RL queue; 0 on failure */
+uint64_t ut_txa30_profile_rl(ut_txa30_ctx* ctx, uint64_t initial_bytes_per_sec);
+/* how long the modeled queue still drains what is queued, from the mock clock */
+uint64_t ut_txa30_rl_queued_ns(const ut_txa30_ctx* ctx);
+uint64_t ut_txa30_slept_ns(const ut_txa30_ctx* ctx);
+
 #ifdef __cplusplus
 }
 #endif
