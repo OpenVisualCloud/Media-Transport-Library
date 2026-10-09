@@ -9,15 +9,15 @@ from mtl_engine.media_files import anc_files
 
 
 @pytest.mark.dual
-@pytest.mark.parametrize("type_mode", ["rtp", "frame"])
+@pytest.mark.parametrize("test_mode", ["unicast", "multicast"])
 @pytest.mark.parametrize("anc_keys", anc_files.keys())
-def test_type_mode_dual(
+def test_mode_dual(
     hosts,
-    build,
+    mtl_path,
     media,
     nic_port_list,
     test_time,
-    type_mode,
+    test_mode,
     anc_keys,
 ):
     ancillary_file = anc_files[anc_keys]
@@ -34,16 +34,14 @@ def test_type_mode_dual(
         config=config,
         tx_nic_port_list=tx_host.vfs,
         rx_nic_port_list=rx_host.vfs,
-        test_mode="unicast",
-        type_=type_mode,
-        ancillary_format="closed_caption",
-        ancillary_fps=ancillary_file["fps"],
-        ancillary_url=os.path.join(media, ancillary_file["filename"]),
+        test_mode=test_mode,
+        fps=ancillary_file["fps"],
+        st40p_url=os.path.join(media, ancillary_file["filename"]),
     )
 
     rxtxapp.execute_dual_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         tx_host=tx_host,
         rx_host=rx_host,
