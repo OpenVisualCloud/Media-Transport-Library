@@ -54,10 +54,9 @@ def gen_test_config(
         "test_time": test_time,
         "ramdisk": {
             # A case stages one source here and records beside it, so 16 GiB is
-            # short: the largest source is 13.9 GiB, and an FFmpeg or GStreamer
-            # recording has no equivalent of the rx_max_file_size cap in
-            # mtl_engine/config/universal_params.py -- 1080p yuv422p10le is
-            # 8.3 MB a frame, so 100 s of it is 23 GiB. 32 GiB is what the
+            # short: the largest source is 13.9 GiB, and an st20p recording runs
+            # up to the 8 GiB rx_max_file_size cap in
+            # mtl_engine/config/universal_params.py. 32 GiB is what the
             # framework's other configs already document.
             "media": {"mountpoint": "/mnt/ramdisk/media", "size_gib": 32},
             "tmpfs_size_gib": 8,
