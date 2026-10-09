@@ -33,9 +33,15 @@ performance)
 	# shellcheck source-path=SCRIPTDIR source=../lib/mtl_acceptance_venv.sh disable=SC1091
 	. "${root_dir}/.github/scripts/lib/mtl_acceptance_venv.sh"
 	if [[ -d ${acceptance_dir}/logs/performance ]]; then
+		report_args=(--branch "${MTL_BRANCH:-}")
+		if [[ -n ${GITHUB_RUN_ID:-} ]]; then
+			report_args+=(--run-id "$GITHUB_RUN_ID"
+				--run-url "${GITHUB_SERVER_URL:?}/${GITHUB_REPOSITORY:?}/actions/runs/${GITHUB_RUN_ID}")
+		fi
 		# shellcheck disable=SC2154 # venv_python comes from mtl_acceptance_venv.sh, sourced above
 		"${venv_python}" "${acceptance_dir}/common/generate_report.py" \
-			"${acceptance_dir}/logs/performance" -o "${acceptance_dir}/performance_report.html" ||
+			"${acceptance_dir}/logs/performance" -o "${acceptance_dir}/performance_report.html" \
+			"${report_args[@]}" ||
 			echo "::warning::Performance report generation failed"
 		# The log directories are named with an ISO timestamp, and
 		# upload-artifact rejects any path holding a colon, so the logs can
