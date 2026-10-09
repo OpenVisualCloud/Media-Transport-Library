@@ -16,6 +16,7 @@ they use `sudo` for the steps that need root.
 | DPDK with the MTL patches | `./script/build_dpdk.sh` | [2. DPDK build and install](#2-dpdk-build-and-install) |
 | ICE driver for E810/E830 (`--driver ice`), or IGC for I226-V (`--driver igc`) | `./script/build_drivers.sh` | [E800 Series Driver Guide](e800_series_drivers.md) |
 | eBPF/XDP: libxdp and libbpf (optional) | `./script/build_ebpf_xdp.sh` | [XDP Guide](xdp.md#building-guide) |
+| SVT-JPEG-XS and the MTL ST 2110-22 bridge plugin (optional) | `./script/build_jpegxs.sh` | Download and build both projects manually |
 | MTL, the sample apps, the tests, the manager | `./build.sh` | [3. Build Media Transport Library and app](#3-build-media-transport-library-and-app) |
 
 For example, on Ubuntu with an E810 card:
@@ -30,8 +31,8 @@ sudo ldconfig
 ./build.sh
 ```
 
-The scripts do not refresh the linker cache, so run `sudo ldconfig` after they install DPDK into
-`/usr/local`. Without it, the DPDK drivers fail to load at runtime.
+The DPDK builder does not refresh the linker cache, so run `sudo ldconfig` after it installs DPDK
+into `/usr/local`. Without it, the DPDK drivers fail to load at runtime.
 
 `install_dependencies.sh` always installs the packages of the MTL build. Name a component to also
 install its packages: `ice` for the ICE driver build, `ebpf_xdp` for `build_ebpf_xdp.sh`, `ffmpeg`,
@@ -39,6 +40,32 @@ install its packages: `ice` for the ICE driver build, `ebpf_xdp` for `build_ebpf
 
 `build_dpdk.sh` and `build_drivers.sh` skip a component that is already installed in the right
 version. Give `-f` to `build_dpdk.sh`, or `--force` to `build_drivers.sh`, to build it again.
+
+### Build JPEG XS support
+
+After DPDK and MTL are installed, use `build_jpegxs.sh` instead of downloading and configuring
+SVT-JPEG-XS and its MTL bridge plugin separately:
+
+```bash
+./script/install_dependencies.sh jpegxs # Ubuntu only
+./script/build_jpegxs.sh
+```
+
+The script reads the pinned revision from `versions.env`, downloads it with `curl` or `wget`,
+builds the shared runtime and bridge plugin, and installs them in `/usr/local`. It then finds the
+installed bridge library and updates `kahawai.json`: one `st22_svt_jpegxs` entry is enabled and its
+path points to the installed file. Use `--config FILE` when the runtime reads another registry.
+
+The package installer supports Ubuntu. The builder itself does not depend on a package manager and
+can run on another Linux distribution after its compiler, CMake, Meson, Ninja, pkg-config, Python,
+and MTL/DPDK development files are installed. Run `./script/build_jpegxs.sh --help` for all options.
+Common overrides are:
+
+```bash
+./script/build_jpegxs.sh --prefix "$HOME/.local"
+./script/build_jpegxs.sh --source-dir /src/SVT-JPEG-XS --jobs 16
+./script/build_jpegxs.sh --force
+```
 
 The sections below are the manual way. Use them on an operating system that the scripts do not
 support, or when you want to change a step.

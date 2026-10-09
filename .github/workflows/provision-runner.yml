@@ -87,13 +87,7 @@ jobs:
       - name: 'verify: Host build packages'
         if: ${{ inputs.host_packages }}
         shell: bash
-        run: |
-          set -euo pipefail
-          if ! pkg-config --exists gstreamer-1.0; then
-            echo "::error::This host still holds no gstreamer-1.0.pc after the install." >&2
-            exit 1
-          fi
-          echo "gstreamer-1.0 $(pkg-config --modversion gstreamer-1.0)"
+        run: task ci:verify-gstreamer
 
       - name: 'provision: Acceptance virtualenv'
         if: ${{ inputs.acceptance_venv }}

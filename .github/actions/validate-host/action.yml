@@ -37,7 +37,13 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: ./.github/actions/cleanup
+    # Every step below is a Task; a fleet runner does not have it on PATH.
+    - name: Install Task
+      uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
+    - name: Cleanup processes
+      shell: bash
+      run: task cleanup
 
     - name: Compute local source checksums
       id: local-checksums
