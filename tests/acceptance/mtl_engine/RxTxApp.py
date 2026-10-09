@@ -1312,6 +1312,8 @@ def check_rx_output(
         pattern = re.compile(r"app_rx_st22p_result")
     elif session_type == "st30p":
         pattern = re.compile(r"app_rx_st30p_result")
+    elif session_type == "st40p":
+        pattern = re.compile(r"app_rx_st40p_result")
     elif session_type == "video":
         pattern = re.compile(r"app_rx_video_result")
     elif session_type == "audio":
@@ -1815,11 +1817,15 @@ def add_st40p_dual_sessions(
     tx_nic_port_list: list,
     rx_nic_port_list: list,
     test_mode: str,
-    type_: str,
-    ancillary_format: str,
-    ancillary_fps: str,
-    ancillary_url: str,
+    fps: str,
+    st40p_url: str,
+    payload_type: int = 113,
+    interlaced: bool = False,
+    enable_rtcp: bool = False,
 ) -> dict:
+    """Add a TX st40p session on one host and the matching RX st40p session on
+    the other. The pipeline API has no type or ancillary_format: the pipeline
+    cuts the file into frames at the given fps."""
     tx_config = config["tx_config"]
     rx_config = config["rx_config"]
 
@@ -1831,19 +1837,20 @@ def add_st40p_dual_sessions(
         test_mode=test_mode,
     )
 
-    tx_session = copy.deepcopy(rxtxapp_config.config_tx_ancillary_session)
-    tx_config["tx_sessions"][0]["ancillary"].append(tx_session)
-    tx_config["tx_sessions"][0]["ancillary"][0]["type"] = type_
-    tx_config["tx_sessions"][0]["ancillary"][0]["ancillary_format"] = ancillary_format
-    tx_config["tx_sessions"][0]["ancillary"][0]["ancillary_fps"] = ancillary_fps
-    tx_config["tx_sessions"][0]["ancillary"][0]["ancillary_url"] = ancillary_url
+    tx_session = copy.deepcopy(rxtxapp_config.config_tx_st40p_session)
+    tx_session["fps"] = fps
+    tx_session["st40p_url"] = st40p_url
+    tx_session["payload_type"] = payload_type
+    tx_session["interlaced"] = interlaced
+    tx_session["enable_rtcp"] = enable_rtcp
+    tx_config["tx_sessions"][0]["st40p"].append(tx_session)
 
-    rx_session = copy.deepcopy(rxtxapp_config.config_rx_ancillary_session)
-    rx_config["rx_sessions"][0]["ancillary"].append(rx_session)
-    rx_config["rx_sessions"][0]["ancillary"][0]["type"] = type_
-    rx_config["rx_sessions"][0]["ancillary"][0]["ancillary_format"] = ancillary_format
-    rx_config["rx_sessions"][0]["ancillary"][0]["ancillary_fps"] = ancillary_fps
-    rx_config["rx_sessions"][0]["ancillary"][0]["ancillary_url"] = ancillary_url
+    rx_session = copy.deepcopy(rxtxapp_config.config_rx_st40p_session)
+    rx_session["fps"] = fps
+    rx_session["payload_type"] = payload_type
+    rx_session["interlaced"] = interlaced
+    rx_session["enable_rtcp"] = enable_rtcp
+    rx_config["rx_sessions"][0]["st40p"].append(rx_session)
 
     return {"tx_config": tx_config, "rx_config": rx_config}
 
@@ -1981,6 +1988,14 @@ def execute_dual_test(
             config=rx_config,
             output=rx_output,
             session_type="st30p",
+            fail_on_error=fail_on_error,
+        )
+
+    if len(rx_config["rx_sessions"][0]["st40p"]) > 0:
+        passed = passed and check_rx_output(
+            config=rx_config,
+            output=rx_output,
+            session_type="st40p",
             fail_on_error=fail_on_error,
         )
 

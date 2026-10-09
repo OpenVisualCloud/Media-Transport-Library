@@ -58,6 +58,7 @@ config_empty_rx = {
             "st30p": [],
             "audio": [],
             "ancillary": [],
+            "st40p": [],
         },
     ],
 }
@@ -83,6 +84,7 @@ config_empty_rx_rgb24_multiple = {
             "st30p": [],
             "audio": [],
             "ancillary": [],
+            "st40p": [],
         },
         {
             "ip": [""],
@@ -93,6 +95,7 @@ config_empty_rx_rgb24_multiple = {
             "st30p": [],
             "audio": [],
             "ancillary": [],
+            "st40p": [],
         },
     ],
 }
@@ -114,6 +117,7 @@ config_empty_tx = {
             "st30p": [],
             "audio": [],
             "ancillary": [],
+            "st40p": [],
         },
     ],
 }
