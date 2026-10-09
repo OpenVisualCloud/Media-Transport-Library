@@ -77,7 +77,7 @@ WORKDIR /home/imtl/
 RUN apt-get clean -y && rm -rf /var/lib/apt/lists/* && \
     apt-get update -y && \
     apt-get install -y --no-install-recommends ca-certificates sudo curl unzip && \
-    apt-get install -y --no-install-recommends libnuma1 libjson-c5 libpcap0.8t64 libsdl2-2.0-0 libsdl2-ttf-2.0-0 libssl3t64 zlib1g libelf1t64 libcap-ng0 libatomic1 pciutils && \
+    apt-get install -y --no-install-recommends libnuma1 libjson-c5 libpcap0.8t64 libsdl2-2.0-0 libsdl2-ttf-2.0-0 libssl3t64 zlib1g libelf1t64 libcap-ng0 libatomic1 pciutils ibverbs-providers && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
@@ -86,7 +86,7 @@ RUN apt-get clean -y && rm -rf /var/lib/apt/lists/* && \
     useradd -m -G vfio,root,sudo -u 20001 imtl
 
 # Copy libraries and binaries
-COPY --from=builder /usr/local/lib/x86_64-linux-gnu/* /usr/local/lib/x86_64-linux-gnu/
+COPY --parents --from=builder /usr/local/lib/x86_64-linux-gnu/./* /usr/local/lib/x86_64-linux-gnu/
 COPY --from=builder /usr/local/bin/* /usr/local/bin/
 COPY --chown=imtl --from=builder /install /
 COPY --chown=imtl --from=builder "${MTL_REPO}/build" "/home/imtl"
@@ -98,5 +98,9 @@ RUN ldconfig
 SHELL ["/bin/bash", "-c"]
 
 USER imtl
+# Execute the builder's unit binary against final-stage libraries without copying it into the image.
+RUN --mount=type=bind,from=builder,source=${MTL_REPO}/build_unit/tests/unit/UnitTest,target=/tmp/UnitTest,ro \
+    /tmp/UnitTest
+
 HEALTHCHECK --interval=30s --timeout=5s CMD true || exit 1
 CMD ["/bin/bash"]
