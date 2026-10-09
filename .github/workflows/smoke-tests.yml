@@ -49,12 +49,13 @@ jobs:
       #
       # The i225 is a 2.5 GbE card: an uncompressed 1080p59 ST 2110-20 session
       # does not fit its link, so it carries the low_bandwidth subset (ST
-      # 2110-22, low-rate ST 2110-20, ST 2110-30, ST 2110-40). It has no third
-      # port to sniff with either, hence no capture and no compliance verdict.
-      # 100s of traffic per case keeps the leg above the 20-minute floor the
-      # fleet expects of a smoke job -- 14 of the 19 cases run (the other five
-      # skip on capabilities the plugins do not have). It stays non-blocking
-      # while the platform is being brought up.
+      # 2110-22, low-rate ST 2110-20, ST 2110-30, ST 2110-40, ST 2110-41). It
+      # has no third port to sniff with either, hence no capture and no
+      # compliance verdict. The subset is one row per type and per
+      # application, not every type with every application: 12 of its 17 cases
+      # run (the other five skip on capabilities the plugins do not have), at
+      # 60 s of traffic each, which is about 15 minutes for the leg. It stays
+      # non-blocking while the platform is being brought up.
       matrix:
         include:
           - nic: e810
@@ -82,7 +83,7 @@ jobs:
             suite: smoke-low-bandwidth
             job_timeout: 45
             run_timeout: 35
-            test_time: '100'
+            test_time: '60'
             no_capture: '1'
             optional: true
     runs-on: ${{ matrix.nic }}
