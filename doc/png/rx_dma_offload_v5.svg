@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1390" height="888" viewBox="0 0 1390 888" role="img" aria-labelledby="t d">
+<title id="t">RTP decapsulation with DMA engine acceleration</title>
+<desc id="d">Received packets sit in host memory, each one a header and a payload. The DMA engine copies each payload, without the header, into the raw video frame, also in host memory.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect width="1390" height="888" fill="#ffffff"/>
+<text x="40.0" y="58.0" font-size="32" font-weight="700" fill="#1F271B" text-anchor="start">RTP decapsulation with DMA engine acceleration</text>
+<text x="745.0" y="120.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">Host memory</text>
+<text x="1225.0" y="120.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">Host memory</text>
+<rect x="570" y="150" width="350" height="636" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="3" stroke-dasharray="12 8"/>
+<rect x="1100" y="150" width="250" height="636" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="3" stroke-dasharray="12 8"/>
+<text x="1225.0" y="186.0" font-size="24" font-weight="700" fill="#1F271B" text-anchor="middle">Raw video</text>
+<rect x="590" y="220" width="110" height="64" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="645.0" y="256.4" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Header</text>
+<rect x="710" y="220" width="180" height="64" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="800.0" y="256.4" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Payload</text>
+<rect x="1120" y="220" width="210" height="64" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="1225.0" y="256.4" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Payload</text>
+<path d="M940.0 241.0 L1052.0 241.0 L1052.0 225.0 L1080.0 252.0 L1052.0 279.0 L1052.0 263.0 L940.0 263.0 Z" fill="#1F271B" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<text x="1010.0" y="214.0" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Hardware copy</text>
+<rect x="590" y="344" width="110" height="64" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="645.0" y="380.4" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Header</text>
+<rect x="710" y="344" width="180" height="64" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="800.0" y="380.4" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Payload</text>
+<rect x="1120" y="344" width="210" height="64" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="1225.0" y="380.4" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Payload</text>
+<path d="M940.0 365.0 L1052.0 365.0 L1052.0 349.0 L1080.0 376.0 L1052.0 403.0 L1052.0 387.0 L940.0 387.0 Z" fill="#1F271B" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<text x="1010.0" y="338.0" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Hardware copy</text>
+<rect x="590" y="468" width="110" height="64" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="645.0" y="504.4" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Header</text>
+<rect x="710" y="468" width="180" height="64" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="800.0" y="504.4" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Payload</text>
+<rect x="1120" y="468" width="210" height="64" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="1225.0" y="504.4" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Payload</text>
+<path d="M940.0 489.0 L1052.0 489.0 L1052.0 473.0 L1080.0 500.0 L1052.0 527.0 L1052.0 511.0 L940.0 511.0 Z" fill="#1F271B" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<text x="1010.0" y="462.0" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Hardware copy</text>
+<rect x="590" y="692" width="110" height="64" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="645.0" y="728.4" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Header</text>
+<rect x="710" y="692" width="180" height="64" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="800.0" y="728.4" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Payload</text>
+<rect x="1120" y="692" width="210" height="64" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="1225.0" y="728.4" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Payload</text>
+<path d="M940.0 713.0 L1052.0 713.0 L1052.0 697.0 L1080.0 724.0 L1052.0 751.0 L1052.0 735.0 L940.0 735.0 Z" fill="#1F271B" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<text x="1010.0" y="686.0" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Hardware copy</text>
+<circle cx="800.0" cy="578.0" r="9" fill="#1F271B"/>
+<circle cx="800.0" cy="612.0" r="9" fill="#1F271B"/>
+<circle cx="800.0" cy="646.0" r="9" fill="#1F271B"/>
+<circle cx="1225.0" cy="578.0" r="9" fill="#1F271B"/>
+<circle cx="1225.0" cy="612.0" r="9" fill="#1F271B"/>
+<circle cx="1225.0" cy="646.0" r="9" fill="#1F271B"/>
+<circle cx="52" cy="145" r="7" fill="#1F271B"/>
+<text x="72.0" y="154.0" font-size="28" fill="#1F271B" text-anchor="start">Use the asynchronous tasklet</text>
+<text x="72.0" y="192.0" font-size="28" fill="#1F271B" text-anchor="start">design for hardware offload</text>
+<text x="72.0" y="230.0" font-size="28" fill="#1F271B" text-anchor="start">(async submit and complete).</text>
+<circle cx="52" cy="273" r="7" fill="#1F271B"/>
+<text x="72.0" y="282.0" font-size="28" fill="#1F271B" text-anchor="start">The Intel DMA engine</text>
+<text x="72.0" y="320.0" font-size="28" fill="#1F271B" text-anchor="start">accelerates the memory copy.</text>
+<rect x="40" y="368" width="500" height="500" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="290.0" y="416.0" font-size="26" font-weight="700" fill="#1F271B" text-anchor="middle">Speedup: CPU vs DSA</text>
+<text x="290.0" y="446.0" font-size="20" fill="#1F271B" text-anchor="middle">1080p streams that keep 60 fps</text>
+<text x="118.0" y="775.0" font-size="20" fill="#1F271B" text-anchor="end">0</text>
+<line x1="130" y1="716.0" x2="520" y2="716.0" stroke="#CBB9A8" stroke-width="2"/>
+<text x="118.0" y="723.0" font-size="20" fill="#1F271B" text-anchor="end">0.5</text>
+<line x1="130" y1="664.0" x2="520" y2="664.0" stroke="#CBB9A8" stroke-width="2"/>
+<text x="118.0" y="671.0" font-size="20" fill="#1F271B" text-anchor="end">1</text>
+<line x1="130" y1="612.0" x2="520" y2="612.0" stroke="#CBB9A8" stroke-width="2"/>
+<text x="118.0" y="619.0" font-size="20" fill="#1F271B" text-anchor="end">1.5</text>
+<line x1="130" y1="560.0" x2="520" y2="560.0" stroke="#CBB9A8" stroke-width="2"/>
+<text x="118.0" y="567.0" font-size="20" fill="#1F271B" text-anchor="end">2</text>
+<line x1="130" y1="508.0" x2="520" y2="508.0" stroke="#CBB9A8" stroke-width="2"/>
+<text x="118.0" y="515.0" font-size="20" fill="#1F271B" text-anchor="end">2.5</text>
+<text x="62" y="638.0" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle" transform="rotate(-90 62 638.0)">Speedup</text>
+<path d="M185.0 768 V670.0 Q185.0 664.0 191.0 664.0 H289.0 Q295.0 664.0 295.0 670.0 V768 Z" fill="#145C9E"><title>CPU: 1</title></path>
+<text x="240.0" y="652.0" font-size="24" font-weight="700" fill="#1F271B" text-anchor="middle">1</text>
+<text x="240.0" y="798.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">CPU</text>
+<path d="M405.0 768 V540.0 Q405.0 534.0 411.0 534.0 H509.0 Q515.0 534.0 515.0 540.0 V768 Z" fill="#145C9E"><title>DSA: 2.25</title></path>
+<text x="460.0" y="522.0" font-size="24" font-weight="700" fill="#1F271B" text-anchor="middle">2.25</text>
+<text x="460.0" y="798.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">DSA</text>
+<line x1="130" y1="768" x2="520" y2="768" stroke="#1F271B" stroke-width="3"/>
+<path d="M260.0 624.0 L377.1 562.4" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M393.0 554.0 L380.4 573.0 L370.2 553.6 Z" fill="#1F271B"/>
+<rect x="136" y="528.8" width="136" height="62" fill="#ffffff"/>
+<text x="140.0" y="550.8" font-size="22" font-weight="700" fill="#145C9E" text-anchor="start">2.25x more</text>
+<text x="140.0" y="580.8" font-size="22" font-weight="700" fill="#145C9E" text-anchor="start">streams</text>
+<text x="290.0" y="838.0" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">ISO core (2 cores)</text>
+</g>
+</svg>
