@@ -1126,6 +1126,15 @@ static int tv_uinit_rtcp(struct st_tx_video_session_impl* s) {
   return 0;
 }
 
+/* the retransmit ring mt_rtcp_tx_create() keeps: never smaller than the TX queue */
+static uint16_t tv_rtcp_buffer_size(struct mtl_main_impl* impl,
+                                    struct st_tx_video_session_impl* s,
+                                    enum mtl_port port) {
+  uint16_t size =
+      s->ops.rtcp.buffer_size ? s->ops.rtcp.buffer_size : ST_TX_VIDEO_RTCP_RING_SIZE;
+  return RTE_MAX(size, mt_if_nb_tx_desc(impl, port));
+}
+
 static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr* mgr,
                         struct st_tx_video_session_impl* s) {
   int idx = s->idx;
@@ -1148,6 +1157,9 @@ static int tv_init_rtcp(struct mtl_main_impl* impl, struct st_tx_video_sessions_
     rtcp_ops.udp_hdr = &hdr;
     if (!ops->rtcp.buffer_size) ops->rtcp.buffer_size = ST_TX_VIDEO_RTCP_RING_SIZE;
     rtcp_ops.buffer_size = ops->rtcp.buffer_size;
+    /* the ring mt_rtcp_tx_create() keeps, which it would raise with a warning */
+    if (mt_if_tx_deep(impl, port))
+      rtcp_ops.buffer_size = tv_rtcp_buffer_size(impl, s, port);
     if (s->st22_info)
       rtcp_ops.payload_format = MT_RTP_PAYLOAD_FORMAT_RFC9134;
     else
@@ -3024,6 +3036,24 @@ static bool tv_has_chain_buf(struct st_tx_video_session_impl* s) {
   return true;
 }
 
+/* the queue's sent pkts, 2 descriptors each, or the larger RTCP ring, and the builder
+ * ring's unsent ones: at least two swap buffers past them */
+static bool tv_deep_port_capable_chain(struct mtl_main_impl* impl,
+                                       struct st_tx_video_session_impl* s,
+                                       enum mtl_port s_port) {
+  int max_buffer_nb = mt_if_nb_tx_desc(impl, s_port) / 2;
+
+  if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP)
+    max_buffer_nb = RTE_MAX(max_buffer_nb, tv_rtcp_buffer_size(impl, s, s_port));
+  max_buffer_nb += (int)s->ring_count;
+  if ((s->st20_total_pkts * (s->st20_frames_cnt - 1)) < max_buffer_nb) {
+    info("%s(%d), copy mode, %d pkts held on s_port %d, st20_total_pkts %d\n", __func__,
+         s->idx, max_buffer_nb, s_port, s->st20_total_pkts);
+    return false;
+  }
+  return true;
+}
+
 static bool tv_pkts_capable_chain(struct mtl_main_impl* impl,
                                   struct st_tx_video_session_impl* s) {
   struct st20_tx_ops* ops = &s->ops;
@@ -3034,6 +3064,10 @@ static bool tv_pkts_capable_chain(struct mtl_main_impl* impl,
 
   for (int port = 0; port < num_ports; port++) {
     enum mtl_port s_port = mt_port_logic2phy(s->port_maps, port);
+    if (mt_if_tx_deep(impl, s_port)) {
+      if (!tv_deep_port_capable_chain(impl, s, s_port)) return false;
+      continue;
+    }
     uint16_t max_buffer_nb = mt_if_nb_tx_desc(impl, s_port);
     // max_buffer_nb += s->ring_count;
     /* at least two swap buffer */

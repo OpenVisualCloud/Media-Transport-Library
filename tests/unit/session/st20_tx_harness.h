@@ -314,6 +314,12 @@ const char* ut_txv_stat_first_log_line(void);
 void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames);
 uint64_t ut_txv_stat_snapshot_port_frames(const ut_txv_ctx* ctx);
 
+/* tv_pkts_capable_chain() of a one-port frame-level session, with RTCP or not: whether
+ * zero copy keeps a frame buffer free with nb_tx_desc descriptors per TX queue, deep at
+ * 2048 */
+bool ut_txv_pkts_capable_chain(ut_txv_ctx* ctx, uint16_t nb_tx_desc, int total_pkts,
+                               uint16_t frames_cnt, bool rtcp);
+
 /* st20_tx_queue_fatal_error() of a session on num_port legs, leg i on physical port i,
  * each on a queue entry of its own; mt_txq_get() swaps it for the leg's other one. The
  * session pools are the port's tx mono pool, so recovery replaces them without DPDK. Its
@@ -340,6 +346,29 @@ int ut_txv_recovery_flushes(const ut_txv_ctx* ctx, int leg);
 /* mt_txq_flush() calls on the leg, which may fall back to the per-pad loop */
 int ut_txv_recovery_fallback_flushes(const ut_txv_ctx* ctx, int leg);
 int ut_txv_recovery_done_cleanups(const ut_txv_ctx* ctx, int leg);
+
+/* ── builder and transmitter over a modeled NIC ring ──────────────────── */
+/* A frame-level BPM 4:2:2 10-bit 59.94p zero-copy session on one port whose TX queue is
+ * a common/ut_tx_ring.h ring of nb_tx_desc (rs 32, the PMD's free_thresh), draining a
+ * descriptor a ns. The production builder (tvs_tasklet_handler()) and TSC transmitter
+ * run on the mock clock; the app hands the frames over in turn. */
+struct ut_txv_pipe_case {
+  uint32_t width;
+  uint32_t height;
+  uint16_t frames_cnt;
+  uint16_t nb_tx_desc;
+  int ring_mode; /* enum ut_txr_mode */
+  uint16_t free_thresh;
+};
+int ut_txv_pipe_setup(ut_txv_ctx* ctx, const struct ut_txv_pipe_case* c);
+/* stops once the builder met a frame still referenced */
+void ut_txv_pipe_run(ut_txv_ctx* ctx, uint64_t duration_ns, uint64_t step_ns);
+/* -EBUSY if a pool still had mbufs out once the rings and inflights were freed */
+int ut_txv_pipe_teardown(ut_txv_ctx* ctx);
+/* the run step the app handed over a frame still referenced, 0 for none */
+uint64_t ut_txv_pipe_first_frame_busy(const ut_txv_ctx* ctx);
+uint64_t ut_txv_pipe_frames_asked(const ut_txv_ctx* ctx);
+int ut_txv_pipe_total_pkts(const ut_txv_ctx* ctx);
 
 #ifdef __cplusplus
 }
