@@ -16,7 +16,6 @@ from mtl_engine.media_files import anc_files
 
 pytestmark = [
     pytest.mark.nightly,
-    pytest.mark.low_bandwidth,
     pytest.mark.parametrize(
         "media_file",
         [anc_files["text_p59"]],
@@ -52,7 +51,7 @@ def _run(
     **params,
 ):
     media_file_info, media_file_path = media_file
-    params.setdefault("test_mode", "unicast")
+    params.setdefault("test_mode", "multicast")
     params.setdefault("type_mode", "frame")
     params.setdefault("payload_type", 115)
     params.setdefault("fastmetadata_data_item_type", DIT)
@@ -74,11 +73,22 @@ def _run(
     )
 
 
+def _skip_unicast_on_one_kernel_port(test_config, test_mode):
+    """A unicast session needs a peer; one kernel-socket port has none.
+
+    On a single-port card (i225) both ends of a test share one kernel
+    interface, and the unicast destination is an address no host owns.
+    """
+    if test_mode == "unicast" and test_config.get("interface_type") == "KERNEL":
+        pytest.skip("unicast needs a peer, a single kernel-socket port has none")
+
+
 @pytest.mark.smoke
 @pytest.mark.parametrize(
     "application",
     [
-        "rxtxapp",
+        # The one fast metadata case of the low-bandwidth leg at frame level.
+        pytest.param("rxtxapp", marks=pytest.mark.low_bandwidth),
         pytest.param(
             "ffmpeg",
             marks=pytest.mark.skip(
@@ -103,7 +113,7 @@ def test_fast_metadata_basic(
     test_config,
     media_file,
 ):
-    """A unicast frame-level session delivers every data item intact."""
+    """A multicast frame-level session delivers every data item intact."""
     interfaces = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
@@ -119,7 +129,12 @@ def test_fast_metadata_basic(
 
 @pytest.mark.parametrize(
     "test_mode, type_mode",
-    [("multicast", "frame"), ("unicast", "rtp"), ("multicast", "rtp")],
+    [
+        ("unicast", "frame"),
+        ("unicast", "rtp"),
+        # The one fast metadata case of the low-bandwidth leg at RTP level.
+        pytest.param("multicast", "rtp", marks=pytest.mark.low_bandwidth),
+    ],
 )
 def test_fast_metadata_type_mode(
     app_factory,
@@ -133,6 +148,7 @@ def test_fast_metadata_type_mode(
     type_mode,
 ):
     """Frame- and RTP-level sessions deliver every data item intact."""
+    _skip_unicast_on_one_kernel_port(test_config, test_mode)
     interfaces = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
