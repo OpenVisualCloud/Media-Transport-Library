@@ -49,13 +49,13 @@ jobs:
       #
       # The i225 is a 2.5 GbE card: an uncompressed 1080p59 ST 2110-20 session
       # does not fit its link, so it carries the low_bandwidth subset (ST
-      # 2110-22, low-rate ST 2110-20, ST 2110-30, ST 2110-40, ST 2110-41). It
-      # has no third port to sniff with either, hence no capture and no
-      # compliance verdict. The subset is one row per type and per
-      # application, not every type with every application: 12 of its 17 cases
-      # run (the other five skip on capabilities the plugins do not have), at
-      # 60 s of traffic each, which is about 15 minutes for the leg. It stays
-      # non-blocking while the platform is being brought up.
+      # 2110-22, low-rate ST 2110-20, ST 2110-30, ST 2110-40). It has no third
+      # port to sniff with either, hence no capture and no compliance verdict.
+      # The subset is one row per type and per application, not every type
+      # with every application: 10 of its 15 cases run (the other five skip on
+      # capabilities the plugins do not have), at 60 s of traffic each, which
+      # is about 13 minutes for the leg. It stays non-blocking while the
+      # platform is being brought up.
       matrix:
         include:
           - nic: e810

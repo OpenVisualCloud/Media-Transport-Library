@@ -63,12 +63,6 @@ Tests for single-flow scenarios, where a single source transmits to a single des
   - Format compatibility
   - Audio quality verification
 
-- **st40/**: Tests for ST2110-40 ancillary sessions
-  - ST2110-41 fast metadata opt-in: DIT, K-bit, fps, payload type, frame/RTP level
-  - Byte-exact data item delivery, including ST 2022-7 redundancy
-  - ST 2110-41:2024 conformance: marker bit, data item length, UDP size, 500 ms
-    packet interval; reserved DITs and static payload types are rejected
-
 - **udp/**: Tests for UDP functionality
   - UDP packet transmission and reception
   - MTU handling

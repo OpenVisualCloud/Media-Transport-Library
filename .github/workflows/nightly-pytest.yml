@@ -34,7 +34,6 @@ jobs:
           - e835
         dir:
           - cross_app
-          - st40
           - st40p
           - gstreamer
           - kernel_socket
