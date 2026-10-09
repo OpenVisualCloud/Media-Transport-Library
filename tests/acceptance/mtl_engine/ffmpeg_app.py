@@ -660,6 +660,7 @@ def check_output_video_yuv(
     pix_fmt: str,
     fps: int,
     test_time: int,
+    max_file_size: int = 0,
 ):
     """Check an RX raw-video recording holds the frames the run should carry.
 
@@ -697,6 +698,8 @@ def check_output_video_yuv(
         return output_file_size > 0
     frames = output_file_size // frame_size
     min_frames = min_expected_frames(fps, test_time)
+    if max_file_size:
+        min_frames = min(min_frames, max(1, max_file_size // frame_size))
 
     if frames < min_frames:
         # Not log_fail(): every caller records it, and one may be fail_on_error=False.
