@@ -750,3 +750,31 @@ bool ut_dev_dpdk_iavf_commit_checks_qos_first(void) {
 uint64_t ut_dev_default_rl_bps(void) {
   return ST_DEFAULT_RL_BPS;
 }
+
+int ut_dev_rx_mono_pool_elements(ut_dev_ctx* ctx, const char* driver_name,
+                                 uint16_t nb_rx_q, uint16_t nb_rx_desc,
+                                 uint16_t nb_tx_desc) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  parse_driver_info(driver_name, &inf->drv_info);
+  inf->nb_rx_desc = nb_rx_desc;
+  inf->nb_tx_desc = nb_tx_desc;
+  return (int)dev_rx_pool_elements(inf, nb_rx_q);
+}
+
+int ut_dev_rx_queue_pool_elements(ut_dev_ctx* ctx, const char* driver_name,
+                                  uint16_t nb_rx_desc, uint16_t nb_tx_desc) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+  struct mt_rx_queue* fixture = inf->rx_queues;
+  int elements;
+
+  if (ut_eal_init() < 0) return -EIO; /* the pools need the DPDK heap */
+  parse_driver_info(driver_name, &inf->drv_info);
+  inf->nb_rx_desc = nb_rx_desc;
+  inf->nb_tx_desc = nb_tx_desc;
+  if (dev_if_init_rx_queues(&ctx->impl, inf) < 0) return -EIO;
+  elements = (int)inf->rx_queues[0].mbuf_elements;
+  dev_if_uinit_rx_queues(inf);
+  inf->rx_queues = fixture;
+  return elements;
+}

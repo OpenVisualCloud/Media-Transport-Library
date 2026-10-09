@@ -1455,6 +1455,17 @@ static int dev_if_uinit_rx_queues(struct mt_interface* inf) {
   return 0;
 }
 
+/* mbufs of an rx pool serving nb_q queues; an AF_XDP UMEM is this pool, and it also
+ * holds the TX pkts of each queue pair */
+static unsigned int dev_rx_pool_elements(struct mt_interface* inf, uint16_t nb_q) {
+  unsigned int elements = 1024 + nb_q * inf->nb_rx_desc;
+
+  if (inf->drv_info.drv_type == MT_DRV_NATIVE_AF_XDP ||
+      inf->drv_info.drv_type == MT_DRV_DPDK_AF_XDP)
+    elements += nb_q * inf->nb_tx_desc;
+  return elements;
+}
+
 static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface* inf) {
   if (!inf->nb_rx_q) return 0;
 
@@ -1472,7 +1483,7 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
       rx_queues[q].port_id = inf->port_id;
 
       /* Create mempool to hold the rx queue mbufs. */
-      unsigned int mbuf_elements = inf->nb_rx_desc + 1024;
+      unsigned int mbuf_elements = dev_rx_pool_elements(inf, 1);
       char pool_name[ST_MAX_NAME_LEN];
       snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%dQ%d_MBUF", MT_RX_MEMPOOL_PREFIX,
                inf->port, q);
@@ -2598,9 +2609,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     struct rte_mempool* mbuf_pool;
     /* Create mempool in memory to hold the system rx mbufs if mono */
     if (mt_user_rx_mono_pool(impl)) {
-      mbuf_elements = 1024;
-      /* append as rx queues */
-      mbuf_elements += inf->nb_rx_q * inf->nb_rx_desc;
+      mbuf_elements = dev_rx_pool_elements(inf, inf->nb_rx_q);
       snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%d_SYS", MT_RX_MEMPOOL_PREFIX, i);
       mbuf_pool = mt_mempool_create_common(impl, i, pool_name, mbuf_elements);
       if (!mbuf_pool) {

@@ -132,6 +132,14 @@ bool ut_dev_dpdk_iavf_commit_checks_qos_first(void);
 /** ST_DEFAULT_RL_BPS, the rate RL pacing puts every iavf queue on before sessions. */
 uint64_t ut_dev_default_rl_bps(void);
 
+/** dev_if_init_rx_queues() for one queue of driver_name: the mbufs its pool holds. */
+int ut_dev_rx_queue_pool_elements(ut_dev_ctx* ctx, const char* driver_name,
+                                  uint16_t nb_rx_desc, uint16_t nb_tx_desc);
+/** The mbufs the MTL_FLAG_RX_MONO_POOL pool of nb_rx_q queues of driver_name holds. */
+int ut_dev_rx_mono_pool_elements(ut_dev_ctx* ctx, const char* driver_name,
+                                 uint16_t nb_rx_q, uint16_t nb_rx_desc,
+                                 uint16_t nb_tx_desc);
+
 #ifdef __cplusplus
 }
 #endif
