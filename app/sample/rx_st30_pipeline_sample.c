@@ -24,7 +24,7 @@ struct rx_st30p_sample_ctx {
 
 static int rx_st30p_close_source(struct rx_st30p_sample_ctx* s) {
   if (s->dst_begin) {
-    munmap(s->dst_begin, s->dst_end - s->dst_begin);
+    munmap(s->dst_begin, (size_t)(s->dst_end - s->dst_begin));
     s->dst_begin = NULL;
   }
   if (s->dst_fd >= 0) {
@@ -46,7 +46,7 @@ static int rx_st30p_open_source(struct rx_st30p_sample_ctx* s, const char* file)
     return -EIO;
   }
 
-  f_size = fb_cnt * s->frame_size;
+  f_size = (off_t)((size_t)fb_cnt * s->frame_size);
   ret = ftruncate(fd, f_size);
   if (ret < 0) {
     err("%s(%d), ftruncate %s fail\n", __func__, idx, file);
@@ -54,7 +54,7 @@ static int rx_st30p_open_source(struct rx_st30p_sample_ctx* s, const char* file)
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  uint8_t* m = mmap(NULL, (size_t)f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s(%d), mmap %s fail\n", __func__, idx, file);
     close(fd);
@@ -131,7 +131,7 @@ int main(int argc, char** argv) {
       goto error;
     }
     memset(app[i], 0, sizeof(struct rx_st30p_sample_ctx));
-    app[i]->idx = i;
+    app[i]->idx = (int)i;
     app[i]->stop = false;
     app[i]->dst_fd = -1;
     app[i]->fb_cnt = ctx.framebuff_cnt;
@@ -145,18 +145,19 @@ int main(int argc, char** argv) {
            MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
-    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.audio_udp_port + i * 2;
+    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ctx.audio_udp_port + i * 2);
     if (ops_rx.port.num_port > 1) {
       memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_R], ctx.rx_ip_addr[MTL_PORT_R],
              MTL_IP_ADDR_LEN);
       snprintf(ops_rx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
                ctx.param.port[MTL_PORT_R]);
-      ops_rx.port.udp_port[MTL_SESSION_PORT_R] = ctx.audio_udp_port + i * 2;
+      ops_rx.port.udp_port[MTL_SESSION_PORT_R] = (uint16_t)(ctx.audio_udp_port + i * 2);
     }
     if (ctx.multi_inc_addr) {
       /* use a new ip addr instead of a new udp port for multi sessions */
       ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port;
-      ops_rx.port.ip_addr[MTL_SESSION_PORT_P][3] += i;
+      ops_rx.port.ip_addr[MTL_SESSION_PORT_P][3] =
+          (uint8_t)(ops_rx.port.ip_addr[MTL_SESSION_PORT_P][3] + i);
     }
     ops_rx.port.payload_type = ctx.audio_payload_type;
     ops_rx.framebuff_cnt = ctx.framebuff_cnt;
@@ -169,7 +170,12 @@ int main(int argc, char** argv) {
     /* set frame size to 10ms time */
     int framebuff_size = st30_calculate_framebuff_size(
         ops_rx.fmt, ops_rx.ptime, ops_rx.sampling, ops_rx.channel, 10 * NS_PER_MS, NULL);
-    ops_rx.framebuff_size = framebuff_size;
+    if (framebuff_size < 0) {
+      err("%s(%u), framebuff size fail %d\n", __func__, i, framebuff_size);
+      ret = framebuff_size;
+      goto error;
+    }
+    ops_rx.framebuff_size = (uint32_t)framebuff_size;
 
     st30p_rx_handle rx_handle = st30p_rx_create(ctx.st, &ops_rx);
     if (!rx_handle) {

@@ -39,7 +39,7 @@ static int tx_st22_next_frame(void* priv, uint16_t* next_frame_idx,
     /* point to next */
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
-    s->framebuff_consumer_idx = consumer_idx;
+    s->framebuff_consumer_idx = (uint16_t)consumer_idx;
   } else {
     /* not ready */
     ret = -EIO;
@@ -122,7 +122,7 @@ static void* st22_encode_thread(void* arg) {
 }
 
 int main(int argc, char** argv) {
-  int bpp = 3;
+  uint32_t bpp = 3;
   struct st_sample_context ctx;
   int ret;
 
@@ -152,7 +152,7 @@ int main(int argc, char** argv) {
       goto error;
     }
     memset(app[i], 0, sizeof(struct tx_st22_sample_ctx));
-    app[i]->idx = i;
+    app[i]->idx = (int)i;
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
 
@@ -177,7 +177,7 @@ int main(int argc, char** argv) {
            MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ctx.udp_port + i * 2);
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.width = ctx.width;
     ops_tx.height = ctx.height;

@@ -95,7 +95,7 @@ static int app_rx_st30p_init(struct st_app_context* ctx,
   snprintf(name, 32, "app_rx_st30p_%d", idx);
   ops.name = name;
   ops.priv = s;
-  ops.port.num_port = st30p ? st30p->base.num_inf : ctx->para.num_ports;
+  ops.port.num_port = (uint8_t)(st30p ? st30p->base.num_inf : ctx->para.num_ports);
   memcpy(ops.port.ip_addr[MTL_SESSION_PORT_P],
          st30p ? st_json_ip(ctx, &st30p->base, MTL_SESSION_PORT_P)
                : ctx->rx_ip_addr[MTL_PORT_P],
@@ -107,7 +107,8 @@ static int app_rx_st30p_init(struct st_app_context* ctx,
   snprintf(
       ops.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
       st30p ? st30p->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
-  ops.port.udp_port[MTL_SESSION_PORT_P] = st30p ? st30p->base.udp_port : (10000 + s->idx);
+  ops.port.udp_port[MTL_SESSION_PORT_P] =
+      (uint16_t)(st30p ? st30p->base.udp_port : (10000 + s->idx));
   if (ops.port.num_port > 1) {
     memcpy(ops.port.ip_addr[MTL_SESSION_PORT_R],
            st30p ? st_json_ip(ctx, &st30p->base, MTL_SESSION_PORT_R)
@@ -121,7 +122,7 @@ static int app_rx_st30p_init(struct st_app_context* ctx,
         ops.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
         st30p ? st30p->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
     ops.port.udp_port[MTL_SESSION_PORT_R] =
-        st30p ? st30p->base.udp_port : (10000 + s->idx);
+        (uint16_t)(st30p ? st30p->base.udp_port : (10000 + s->idx));
   }
   if (st30p && st30p->info.audio_url[0] != '\0') {
     memcpy(s->st30p_destination_url, st30p->info.audio_url, ST_APP_URL_MAX_LEN);
@@ -137,13 +138,17 @@ static int app_rx_st30p_init(struct st_app_context* ctx,
   ops.port.payload_type = st30p ? st30p->base.payload_type : ST_APP_PAYLOAD_TYPE_AUDIO;
 
   ops.fmt = st30p ? st30p->info.audio_format : ST30_FMT_PCM24;
-  ops.channel = st30p ? st30p->info.audio_channel : 2;
+  ops.channel = (uint16_t)(st30p ? st30p->info.audio_channel : 2);
   ops.sampling = st30p ? st30p->info.audio_sampling : ST30_SAMPLING_48K;
   ops.ptime = st30p ? st30p->info.audio_ptime : ST30_PTIME_1MS;
   /* set frame size to 10ms time */
   int framebuff_size = st30_calculate_framebuff_size(
       ops.fmt, ops.ptime, ops.sampling, ops.channel, 10 * NS_PER_MS, &s->expect_fps);
-  ops.framebuff_size = framebuff_size;
+  if (framebuff_size < 0) {
+    err("%s(%d), framebuff size fail %d\n", __func__, idx, framebuff_size);
+    return -EIO;
+  }
+  ops.framebuff_size = (uint32_t)framebuff_size;
 
   ops.flags |= ST30P_RX_FLAG_BLOCK_GET;
   ops.framebuff_cnt = 3;
@@ -253,7 +258,7 @@ int st_app_rx_st30p_sessions_init(struct st_app_context* ctx) {
 
   dbg("%s(%d), rx_st30p_session_cnt %d\n", __func__, i, ctx->rx_st30p_session_cnt);
   ctx->rx_st30p_sessions = (struct st_app_rx_st30p_session*)st_app_zmalloc(
-      sizeof(struct st_app_rx_st30p_session) * ctx->rx_st30p_session_cnt);
+      sizeof(struct st_app_rx_st30p_session) * (size_t)ctx->rx_st30p_session_cnt);
   if (!ctx->rx_st30p_sessions) return -ENOMEM;
   for (i = 0; i < ctx->rx_st30p_session_cnt; i++) {
     s = &ctx->rx_st30p_sessions[i];

@@ -182,7 +182,7 @@ int st_app_uinit_display(struct st_display* d) {
   return 0;
 }
 
-int st_app_init_display(struct st_display* d, char* name, int width, int height,
+int st_app_init_display(struct st_display* d, char* name, uint32_t width, uint32_t height,
                         char* font) {
   int ret;
   MTL_MAY_UNUSED(font);
@@ -191,8 +191,8 @@ int st_app_init_display(struct st_display* d, char* name, int width, int height,
   snprintf(d->name, 32, "%s", name);
   d->window_w = SCREEN_WIDTH;
   d->window_h = SCREEN_HEIGHT;
-  d->pixel_w = width;
-  d->pixel_h = height;
+  d->pixel_w = (int)width;
+  d->pixel_h = (int)height;
   d->fmt = SDL_PIXELFORMAT_UYVY;
 #ifdef APP_HAS_SDL2_TTF
   d->font = TTF_OpenFont(font, 40);
@@ -200,7 +200,7 @@ int st_app_init_display(struct st_display* d, char* name, int width, int height,
     warn("%s, open font fail, won't show info: %s\n", __func__, TTF_GetError());
 #endif
   if (d->fmt == SDL_PIXELFORMAT_UYVY) {
-    d->front_frame_size = width * height * 2;
+    d->front_frame_size = (size_t)width * height * 2;
   } else {
     err("%s, unsupported pixel format %d\n", __func__, d->fmt);
     return -EIO;

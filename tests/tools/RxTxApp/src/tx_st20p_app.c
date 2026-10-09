@@ -71,7 +71,7 @@ static void* app_tx_st20p_frame_thread(void* arg) {
   uint8_t shas[SHA256_DIGEST_LENGTH];
   double frame_time;
 
-  frame_time = s->expect_fps ? (NS_PER_S / s->expect_fps) : 0;
+  frame_time = (s->expect_fps != 0) ? (NS_PER_S / s->expect_fps) : 0;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st20p_app_thread_stop) {
@@ -124,21 +124,21 @@ static int app_tx_st20p_open_source(struct st_app_tx_st20p_session* s) {
     close(fd);
     return -EIO;
   }
-  if (i.st_size < s->st20p_frame_size) {
-    err("%s, %s file size small then a frame %d\n", __func__, s->st20p_source_url,
+  if ((size_t)i.st_size < s->st20p_frame_size) {
+    err("%s, %s file size small then a frame %zu\n", __func__, s->st20p_source_url,
         s->st20p_frame_size);
     close(fd);
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  uint8_t* m = mmap(NULL, (size_t)i.st_size, PROT_READ, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s, mmap fail '%s'\n", __func__, s->st20p_source_url);
     close(fd);
     return -EIO;
   }
 
-  s->st20p_source_begin = mtl_hp_malloc(s->st, i.st_size, MTL_PORT_P);
+  s->st20p_source_begin = mtl_hp_malloc(s->st, (size_t)i.st_size, MTL_PORT_P);
   if (!s->st20p_source_begin) {
     warn("%s, source malloc on hugepage fail\n", __func__);
     s->st20p_source_begin = m;
@@ -147,7 +147,7 @@ static int app_tx_st20p_open_source(struct st_app_tx_st20p_session* s) {
     s->st20p_source_fd = fd;
   } else {
     s->st20p_frame_cursor = s->st20p_source_begin;
-    mtl_memcpy(s->st20p_source_begin, m, i.st_size);
+    mtl_memcpy(s->st20p_source_begin, m, (size_t)i.st_size);
     s->st20p_source_end = s->st20p_source_begin + i.st_size;
     close(fd);
   }
@@ -189,7 +189,7 @@ static int app_tx_st20p_close_source(struct st_app_tx_st20p_session* s) {
     s->st20p_source_begin = NULL;
   }
   if (s->st20p_source_fd >= 0) {
-    munmap(s->st20p_source_begin, s->st20p_source_end - s->st20p_source_begin);
+    munmap(s->st20p_source_begin, (size_t)(s->st20p_source_end - s->st20p_source_begin));
     close(s->st20p_source_fd);
     s->st20p_source_fd = -1;
   }
@@ -262,7 +262,7 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   snprintf(name, 32, "app_tx_st20p_%d", idx);
   ops.name = name;
   ops.priv = s;
-  ops.port.num_port = st20p ? st20p->base.num_inf : ctx->para.num_ports;
+  ops.port.num_port = (uint8_t)(st20p ? st20p->base.num_inf : ctx->para.num_ports);
   memcpy(ops.port.dip_addr[MTL_SESSION_PORT_P],
          st20p ? st_json_ip(ctx, &st20p->base, MTL_SESSION_PORT_P)
                : ctx->tx_dip_addr[MTL_PORT_P],
@@ -270,7 +270,8 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   snprintf(
       ops.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
       st20p ? st20p->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
-  ops.port.udp_port[MTL_SESSION_PORT_P] = st20p ? st20p->base.udp_port : (10000 + s->idx);
+  ops.port.udp_port[MTL_SESSION_PORT_P] =
+      (uint16_t)(st20p ? st20p->base.udp_port : (10000 + s->idx));
   if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
     memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P],
            MTL_MAC_ADDR_LEN);
@@ -285,7 +286,7 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
         ops.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
         st20p ? st20p->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
     ops.port.udp_port[MTL_SESSION_PORT_R] =
-        st20p ? st20p->base.udp_port : (10000 + s->idx);
+        (uint16_t)(st20p ? st20p->base.udp_port : (10000 + s->idx));
     if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
       memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R],
              MTL_MAC_ADDR_LEN);
@@ -395,7 +396,7 @@ int st_app_tx_st20p_sessions_init(struct st_app_context* ctx) {
   int ret, i;
   struct st_app_tx_st20p_session* s;
   ctx->tx_st20p_sessions = (struct st_app_tx_st20p_session*)st_app_zmalloc(
-      sizeof(struct st_app_tx_st20p_session) * ctx->tx_st20p_session_cnt);
+      sizeof(struct st_app_tx_st20p_session) * (size_t)ctx->tx_st20p_session_cnt);
   if (!ctx->tx_st20p_sessions) return -ENOMEM;
   for (i = 0; i < ctx->tx_st20p_session_cnt; i++) {
     s = &ctx->tx_st20p_sessions[i];

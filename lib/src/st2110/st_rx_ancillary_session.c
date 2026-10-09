@@ -163,7 +163,7 @@ static void rx_anc_slot_record_seq(struct st_rx_anc_frame_slot* slot, uint16_t s
         slot->seq_bitmap <<= shift;
         slot->seq_bitmap |= 1ULL; /* new offset 0 = the late seq */
         slot->seq_base = seq_id;
-        slot->seq_max_offset += shift;
+        slot->seq_max_offset = (uint16_t)(slot->seq_max_offset + shift);
       }
       /* else: too far back to track; bitmap unchanged. */
     } else {
@@ -198,7 +198,7 @@ static void rx_anc_slot_parse_pkt(struct st_rx_ancillary_session_impl* s,
                                   struct st40_rfc8331_rtp_hdr* hdr, uint16_t len) {
   uint32_t anc_count = hdr->first_hdr_chunk.anc_count;
   uint8_t* payload = (uint8_t*)(hdr + 1);
-  uint32_t payload_room = (len > sizeof(*hdr)) ? (len - sizeof(*hdr)) : 0;
+  uint32_t payload_room = (len > sizeof(*hdr)) ? (uint32_t)(len - sizeof(*hdr)) : 0;
   uint32_t payload_offset = 0;
 
   for (uint32_t anc_idx = 0; anc_idx < anc_count; anc_idx++) {
@@ -232,7 +232,7 @@ static void rx_anc_slot_parse_pkt(struct st_rx_ancillary_session_impl* s,
       break;
     }
 
-    meta_entry->udw_offset = udw_offset;
+    meta_entry->udw_offset = (uint16_t)udw_offset;
     slot->udw_buffer_fill += meta_entry->udw_size;
     slot->meta_num++;
     payload_offset += consumed;
@@ -288,7 +288,7 @@ static void rx_anc_slot_deliver(struct mtl_main_impl* impl,
                 ? ops->notify_frame_ready(ops->priv, slot->udw_buf, meta)
                 : -EIO;
   if (tsc_start) {
-    uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+    uint32_t delta_us = (uint32_t)((mt_get_tsc(impl) - tsc_start) / NS_PER_US);
     s->stat_max_notify_us = RTE_MAX(s->stat_max_notify_us, delta_us);
   }
   if (ret < 0) {
@@ -393,7 +393,7 @@ static int rx_ancillary_session_assemble_pkt(struct mtl_main_impl* impl,
   bool pkt_interlaced = (f_bits & 0x2) ? true : false;
   bool pkt_second_field = pkt_interlaced && (f_bits & 0x1);
   bool marker = hdr->base.marker ? true : false;
-  uint16_t len = mbuf->data_len - hdr_offset;
+  uint16_t len = (uint16_t)(mbuf->data_len - hdr_offset);
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   uint64_t recv_ts = mt_mbuf_time_stamp(impl, mbuf, port);
 
@@ -434,7 +434,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)rtp;
   rfc8331->swapped_first_hdr_chunk = ntohl(rfc8331->swapped_first_hdr_chunk);
   MTL_MAY_UNUSED(s_port);
-  uint32_t pkt_len = mbuf->data_len - sizeof(struct st40_rfc8331_rtp_hdr);
+  uint32_t pkt_len = (uint32_t)(mbuf->data_len - sizeof(struct st40_rfc8331_rtp_hdr));
   MTL_MAY_UNUSED(pkt_len);
   uint32_t tmstamp = ntohl(rtp->tmstamp);
   bool threshold_bypass = false;
@@ -493,7 +493,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
    * producer sends different field bits per port — a SMPTE 2110-40 violation.
    * Rate-limit the warn to one per second. MTL only ever has P/R (max 2). */
   if (s->ops.num_port > 1) {
-    int other = s_port ^ 1;
+    int other = (int)s_port ^ 1;
     if (s->last_f_bits[other] != 0xff && s->last_f_tmstamp[other] == tmstamp &&
         s->last_f_bits[other] != f_bits) {
       s->stat_internal_field_bit_mismatch++;
@@ -515,7 +515,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
 
   /* not a big deal as long as stream is continous */
   if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1) &&
-      mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
+      mt_seq16_greater(seq_id, (uint16_t)s->latest_seq_id[s_port])) {
     uint16_t gap = (uint16_t)(seq_id - s->latest_seq_id[s_port] - 1);
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
@@ -525,11 +525,11 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     /* exact same seq seen again on the same port — a real same-port duplicate
      * (distinct from a duplicate arriving on the redundant port) */
     s->port_user_stats.common.port[s_port].duplicates_same_port++;
-  } else if (!mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
+  } else if (!mt_seq16_greater(seq_id, (uint16_t)s->latest_seq_id[s_port])) {
     /* backward arrival on the same port — genuine intra-port reorder */
     s->port_user_stats.common.port[s_port].reordered_packets++;
   }
-  if (mt_seq16_greater(seq_id, s->latest_seq_id[s_port]))
+  if (mt_seq16_greater(seq_id, (uint16_t)s->latest_seq_id[s_port]))
     s->latest_seq_id[s_port] = seq_id;
 
   s->port_user_stats.common.port[s_port].packets++;
@@ -537,13 +537,13 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
 
   /* in ancillary we assume packet is redundant when the seq_id is old (it's possible to
   get multiple packets with the same timestamp) */
-  if ((mt_seq32_greater(s->tmstamp, tmstamp)) ||
-      !mt_seq16_greater(seq_id, s->session_seq_id)) {
+  if ((mt_seq32_greater((uint32_t)s->tmstamp, tmstamp)) ||
+      !mt_seq16_greater(seq_id, (uint16_t)s->session_seq_id)) {
     /* Check per-frame bitmap: if this is a same-frame late arrival carrying unique data,
      * accept it instead of filtering.  This handles cross-port reordering where port R
      * delivers seq N+2..N+5 before port P delivers seq N..N+1. */
     if (s->anc_window_cur.valid && tmstamp == s->anc_window_cur.tmstamp &&
-        !mt_seq32_greater(s->tmstamp, tmstamp)) {
+        !mt_seq32_greater((uint32_t)s->tmstamp, tmstamp)) {
       uint16_t offset = (uint16_t)(seq_id - s->anc_window_cur.base_seq);
       if (offset < ST_RX_ANC_BITMAP_BITS &&
           !(s->anc_window_cur.bitmap & ((uint64_t)1 << offset))) {
@@ -574,7 +574,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
       }
     }
 
-    if (!mt_seq16_greater(seq_id, s->session_seq_id)) {
+    if (!mt_seq16_greater(seq_id, (uint16_t)s->session_seq_id)) {
       ST40_FUZZ_LOG("%s(%d,%d), redundant seq %u last %d\n", __func__, s->idx, s_port,
                     seq_id, s->session_seq_id);
       dbg("%s(%d,%d), redundant seq now %u session last %d\n", __func__, s->idx, s_port,
@@ -616,7 +616,7 @@ accept_pkt:
    * "detected interlaced stream (F=0x?)" log lines on every seq gap, which on a
    * redundant stream looked like the two ports disagreed on interlacing. */
   if (seq_id != (uint16_t)(s->session_seq_id + 1) &&
-      mt_seq16_greater(seq_id, s->session_seq_id)) {
+      mt_seq16_greater(seq_id, (uint16_t)s->session_seq_id)) {
     dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
         seq_id, s->session_seq_id);
     s->port_user_stats.common.stat_pkts_unrecovered +=
@@ -624,7 +624,7 @@ accept_pkt:
   }
 
   /* update seq id — only advance, never lower for late arrivals */
-  if (mt_seq16_greater(seq_id, s->session_seq_id)) s->session_seq_id = seq_id;
+  if (mt_seq16_greater(seq_id, (uint16_t)s->session_seq_id)) s->session_seq_id = seq_id;
 
   /* Update per-frame bitmap: track which seq offsets have been delivered.
    * base_seq = old_session_seq + 1 = first expected seq of this frame.
@@ -673,7 +673,7 @@ accept_pkt:
    * Exception: threshold bypass is a recovery mechanism that may legitimately
    * move the timestamp backward when the session is stuck. */
   if (tmstamp != s->tmstamp &&
-      (mt_seq32_greater(tmstamp, s->tmstamp) || threshold_bypass)) {
+      (mt_seq32_greater(tmstamp, (uint32_t)s->tmstamp) || threshold_bypass)) {
     s->prev_tmstamp = s->tmstamp;
 
     rte_atomic32_inc(&s->stat_frames_received);
@@ -690,7 +690,7 @@ accept_pkt:
     ops->notify_rtp_ready(ops->priv);
   }
   if (time_measure) {
-    uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+    uint32_t delta_us = (uint32_t)((mt_get_tsc(impl) - tsc_start) / NS_PER_US);
     s->stat_max_notify_us = RTE_MAX(s->stat_max_notify_us, delta_us);
   }
 
@@ -817,11 +817,11 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
   enum mtl_port port;
 
   for (int i = 0; i < num_port; i++) {
-    port = mt_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, (enum mtl_session_port)i);
 
     s->priv[i].session = s;
     s->priv[i].impl = impl;
-    s->priv[i].s_port = i;
+    s->priv[i].s_port = (enum mtl_session_port)i;
 
     memset(&flow, 0, sizeof(flow));
     mt_memcpy(flow.dip_addr, s->ops.ip_addr[i], MTL_IP_ADDR_LEN);
@@ -846,7 +846,7 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
     }
 
     info("%s(%d), port(l:%d,p:%d), queue %d udp %d\n", __func__, idx, i, port,
-         rx_ancillary_queue_id(s, i), flow.dst_port);
+         rx_ancillary_queue_id(s, (enum mtl_session_port)i), flow.dst_port);
   }
 
   return 0;
@@ -859,7 +859,7 @@ static int rx_ancillary_session_uinit_mcast(struct mtl_main_impl* impl,
 
   for (int i = 0; i < ops->num_port; i++) {
     if (!s->mcast_joined[i]) continue;
-    port = mt_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, (enum mtl_session_port)i);
     mt_mcast_leave(impl, mt_ip_to_u32(ops->ip_addr[i]),
                    mt_ip_to_u32(ops->mcast_sip_addr[i]), port);
   }
@@ -875,7 +875,7 @@ static int rx_ancillary_session_init_mcast(struct mtl_main_impl* impl,
 
   for (int i = 0; i < ops->num_port; i++) {
     if (!mt_is_multicast_ip(ops->ip_addr[i])) continue;
-    port = mt_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, (enum mtl_session_port)i);
     if (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY) {
       info("%s(%d), skip mcast join for port %d\n", __func__, s->idx, i);
       return 0;
@@ -1004,7 +1004,8 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
   s->interlace_detected = !s->interlace_auto;
   s->interlace_interlaced = ops->interlaced;
   for (int i = 0; i < num_port; i++) {
-    s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
+    s->st40_dst_port[i] =
+        (ops->udp_port[i]) ? (ops->udp_port[i]) : (uint16_t)(30000 + idx * 2);
   }
 
   rx_ancillary_session_reset(s, true);
@@ -1104,16 +1105,16 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
   if (lost_pkts) {
     uint64_t total_pkts = port_pkts[MTL_SESSION_PORT_P] + port_pkts[MTL_SESSION_PORT_R];
     if (s->ops.num_port > 1) {
-      double pct_p =
-          port_pkts[MTL_SESSION_PORT_P]
-              ? 100.0 * port_lost[MTL_SESSION_PORT_P] /
-                    (port_pkts[MTL_SESSION_PORT_P] + port_lost[MTL_SESSION_PORT_P])
-              : 0.0;
-      double pct_r =
-          port_pkts[MTL_SESSION_PORT_R]
-              ? 100.0 * port_lost[MTL_SESSION_PORT_R] /
-                    (port_pkts[MTL_SESSION_PORT_R] + port_lost[MTL_SESSION_PORT_R])
-              : 0.0;
+      double pct_p = port_pkts[MTL_SESSION_PORT_P]
+                         ? 100.0 * (double)port_lost[MTL_SESSION_PORT_P] /
+                               (double)(port_pkts[MTL_SESSION_PORT_P] +
+                                        port_lost[MTL_SESSION_PORT_P])
+                         : 0.0;
+      double pct_r = port_pkts[MTL_SESSION_PORT_R]
+                         ? 100.0 * (double)port_lost[MTL_SESSION_PORT_R] /
+                               (double)(port_pkts[MTL_SESSION_PORT_R] +
+                                        port_lost[MTL_SESSION_PORT_R])
+                         : 0.0;
       double save_rate =
           (lost_pkts + pkts_unrecovered)
               ? 100.0 * (double)lost_pkts / (double)(lost_pkts + pkts_unrecovered)
@@ -1225,7 +1226,8 @@ static int rx_ancillary_session_update_src(struct mtl_main_impl* impl,
     memcpy(ops->ip_addr[i], src->ip_addr[i], MTL_IP_ADDR_LEN);
     memcpy(ops->mcast_sip_addr[i], src->mcast_sip_addr[i], MTL_IP_ADDR_LEN);
     ops->udp_port[i] = src->udp_port[i];
-    s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
+    s->st40_dst_port[i] =
+        (ops->udp_port[i]) ? (ops->udp_port[i]) : (uint16_t)(30000 + idx * 2);
   }
   /* reset seq id */
 
@@ -1467,7 +1469,7 @@ static int rx_ancillary_ops_prune_down_ports(struct mtl_main_impl* impl,
   if (num_ports < ops->num_port) {
     info("%s, reduced num_port %d -> %d after pruning down ports\n", __func__,
          ops->num_port, num_ports);
-    ops->num_port = num_ports;
+    ops->num_port = (uint8_t)num_ports;
   }
 
   return 0;
@@ -1729,7 +1731,7 @@ void* st40_rx_get_mbuf(st40_rx_handle handle, void** usrptr, uint16_t* len) {
   if (ret == 0) {
     int header_len = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) +
                      sizeof(struct rte_udp_hdr);
-    *len = pkt->data_len - header_len;
+    *len = (uint16_t)(pkt->data_len - header_len);
     *usrptr = rte_pktmbuf_mtod_offset(pkt, void*, header_len);
     ret_pkt = (void*)pkt;
   }
@@ -1793,9 +1795,9 @@ int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta) {
   s = s_impl->impl;
 
   memset(meta, 0x0, sizeof(*meta));
-  meta->num_port = RTE_MIN(s->ops.num_port, MTL_SESSION_PORT_MAX);
+  meta->num_port = (uint8_t)RTE_MIN(s->ops.num_port, MTL_SESSION_PORT_MAX);
   for (uint8_t i = 0; i < meta->num_port; i++) {
-    meta->queue_id[i] = rx_ancillary_queue_id(s, i);
+    meta->queue_id[i] = (uint8_t)rx_ancillary_queue_id(s, i);
   }
 
   MT_HANDLE_RELEASE(s_impl);

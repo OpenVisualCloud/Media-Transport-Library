@@ -349,8 +349,8 @@ static int rx_st20p_notify_detected(void* priv, const struct st20_detect_meta* m
 
   info("%s(%d), init dst buffer now, w %d h %d\n", __func__, idx, meta->width,
        meta->height);
-  ctx->dst_size =
-      st_frame_size(ctx->ops.output_fmt, meta->width, meta->height, meta->interlaced);
+  ctx->dst_size = st_frame_size(ctx->ops.output_fmt, (uint32_t)meta->width,
+                                (uint32_t)meta->height, meta->interlaced);
   if (ctx->derive || ctx->ops.ext_frames || ctx->ops.flags & ST20P_RX_FLAG_EXT_FRAME) {
     no_dst_malloc = true;
   }
@@ -358,11 +358,11 @@ static int rx_st20p_notify_detected(void* priv, const struct st20_detect_meta* m
   /* init frame width, height now */
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
     frames[i].dst.interlaced = meta->interlaced;
-    frames[i].dst.width = meta->width;
-    frames[i].dst.height = meta->height;
+    frames[i].dst.width = (uint32_t)meta->width;
+    frames[i].dst.height = (uint32_t)meta->height;
     frames[i].src.interlaced = meta->interlaced;
-    frames[i].src.width = meta->width;
-    frames[i].src.height = meta->height;
+    frames[i].src.width = (uint32_t)meta->width;
+    frames[i].src.height = (uint32_t)meta->height;
 
     frames[i].src.buffer_size =
         st_frame_size(frames[i].src.fmt, frames[i].src.width, frames[i].src.height,
@@ -497,7 +497,7 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
   memset(&ops_rx, 0, sizeof(ops_rx));
   ops_rx.name = ops->name;
   ops_rx.priv = ctx;
-  ops_rx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
+  ops_rx.num_port = (uint8_t)RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   for (int i = 0; i < ops_rx.num_port; i++) {
     memcpy(ops_rx.ip_addr[i], ops->port.ip_addr[i], MTL_IP_ADDR_LEN);
     memcpy(ops_rx.mcast_sip_addr[i], ops->port.mcast_sip_addr[i], MTL_IP_ADDR_LEN);
@@ -557,7 +557,7 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
   ops_rx.fps = ops->fps;
   ops_rx.fmt = ops->transport_fmt;
   ops_rx.interlaced = ops->interlaced;
-  ops_rx.linesize = ops->transport_linesize;
+  ops_rx.linesize = (uint32_t)ops->transport_linesize;
   ops_rx.payload_type = ops->port.payload_type;
   ops_rx.ssrc = ops->port.ssrc;
   ops_rx.type = ST20_TYPE_FRAME_LEVEL;
@@ -921,7 +921,7 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
   MT_USDT_ST20P_RX_FRAME_GET(idx, framebuff->idx, frame->addr[0]);
   /* check if dump USDT enabled */
   if (MT_USDT_ST20P_RX_FRAME_DUMP_ENABLED()) {
-    int period = st_frame_rate(ctx->ops.fps) * 5; /* dump every 5s now */
+    int period = (int)(st_frame_rate(ctx->ops.fps) * 5); /* dump every 5s now */
     if ((ctx->usdt_frame_cnt % period) == (period / 2)) {
       rx_st20p_usdt_dump_frame(ctx, frame);
     }

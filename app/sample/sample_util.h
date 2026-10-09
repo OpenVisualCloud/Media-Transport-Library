@@ -141,8 +141,8 @@ struct st_sample_context {
   bool has_user_meta; /* if provide user meta data with the st2110-20 frame */
 
   /* perf */
-  int perf_frames;
-  int perf_fb_cnt;
+  uint32_t perf_frames;
+  uint32_t perf_fb_cnt;
 
 #ifdef MTL_GPU_DIRECT_ENABLED
   /* gpu direct */
@@ -166,16 +166,18 @@ int fwd_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv);
 
 int dma_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv);
 
-void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be* data, int w, int h);
+void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be* data, uint32_t w,
+                                  uint32_t h);
 
-void fill_rfc4175_422_12_pg2_data(struct st20_rfc4175_422_12_pg2_be* data, int w, int h);
+void fill_rfc4175_422_12_pg2_data(struct st20_rfc4175_422_12_pg2_be* data, uint32_t w,
+                                  uint32_t h);
 
 /* Monotonic time (in nanoseconds) since some unspecified starting point. */
 static inline uint64_t sample_get_monotonic_time() {
   struct timespec ts;
 
   clock_gettime(ST_CLOCK_MONOTONIC_ID, &ts);
-  return ((uint64_t)ts.tv_sec * NS_PER_S) + ts.tv_nsec;
+  return ((uint64_t)ts.tv_sec * NS_PER_S) + (uint64_t)ts.tv_nsec;
 }
 
 int sample_tx_queue_cnt_set(struct st_sample_context* ctx, uint16_t cnt);

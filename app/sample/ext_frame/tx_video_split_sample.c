@@ -6,16 +6,16 @@
 
 struct tv_split_sample_ctx {
   int idx;
-  int fb_cnt;
+  uint16_t fb_cnt;
   int fb_send;
-  int nfi; /* next_frame_idx */
+  uint16_t nfi; /* next_frame_idx */
   st20_tx_handle handle;
   struct st20_tx_ops ops;
 
   size_t frame_size; /* 1080p */
   size_t fb_size;    /* whole 4k */
-  int fb_idx;        /* current frame buffer index */
-  int fb_total;      /* total frame buffers read from yuv file */
+  size_t fb_idx;     /* current frame buffer index */
+  size_t fb_total;   /* total frame buffers read from yuv file */
   size_t fb_offset;
 
   mtl_dma_mem_handle dma_mem;
@@ -61,7 +61,7 @@ int tx_video_frame_done(void* priv, uint16_t frame_idx, struct st20_tx_frame_met
 }
 
 int main(int argc, char** argv) {
-  int session_num = 4;
+  uint16_t session_num = 4;
   mtl_dma_mem_handle dma_mem = NULL;
   uint8_t* m = NULL;
   size_t map_size = 0;
@@ -116,7 +116,7 @@ int main(int argc, char** argv) {
     st20_get_pgroup(ST20_FMT_YUV_422_10BIT, &st20_pg);
 
     ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ctx.udp_port + i * 2);
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = ST20_PACKING_GPM_SL;
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
@@ -163,7 +163,7 @@ int main(int argc, char** argv) {
         ret = -EIO;
         goto error;
       }
-      map_size = st.st_size;
+      map_size = (size_t)st.st_size;
       m = mmap(NULL, map_size, PROT_READ, MAP_SHARED, fd, 0);
       if (MAP_FAILED == m) {
         err("%s, mmap %s fail\n", __func__, ctx.tx_url);

@@ -378,7 +378,7 @@ static int rx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_rx
   memset(&ops_rx, 0, sizeof(ops_rx));
   ops_rx.name = ops->name;
   ops_rx.priv = ctx;
-  ops_rx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
+  ops_rx.num_port = (uint8_t)RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   for (int i = 0; i < ops_rx.num_port; i++) {
     memcpy(ops_rx.ip_addr[i], ops->port.ip_addr[i], MTL_IP_ADDR_LEN);
     memcpy(ops_rx.mcast_sip_addr[i], ops->port.mcast_sip_addr[i], MTL_IP_ADDR_LEN);
@@ -636,7 +636,7 @@ struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle) {
   MT_USDT_ST22P_RX_FRAME_GET(idx, framebuff->idx, frame->addr[0], frame->data_size);
   /* check if dump USDT enabled */
   if (!ctx->derive && MT_USDT_ST22P_RX_FRAME_DUMP_ENABLED()) {
-    int period = st_frame_rate(ctx->ops.fps) * 5; /* dump every 5s now */
+    int period = (int)(st_frame_rate(ctx->ops.fps) * 5); /* dump every 5s now */
     if ((ctx->usdt_frame_cnt % period) == (period / 2)) {
       rx_st22p_usdt_dump_frame(ctx, frame);
     }

@@ -116,7 +116,7 @@ int main(int argc, char** argv) {
       goto error;
     }
     memset(app[i], 0, sizeof(*app[i]));
-    app[i]->idx = i;
+    app[i]->idx = (int)i;
     app[i]->dump_fp = NULL;
 
     struct st40p_rx_ops ops_rx;
@@ -129,20 +129,23 @@ int main(int argc, char** argv) {
            MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
-    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
+    ops_rx.port.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ctx.udp_port + i * 2);
 
     if (ops_rx.port.num_port > 1) {
       memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_R], ctx.rx_ip_addr[MTL_PORT_R],
              MTL_IP_ADDR_LEN);
       snprintf(ops_rx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
                ctx.param.port[MTL_PORT_R]);
-      ops_rx.port.udp_port[MTL_SESSION_PORT_R] = ctx.udp_port + i * 2;
+      ops_rx.port.udp_port[MTL_SESSION_PORT_R] = (uint16_t)(ctx.udp_port + i * 2);
     }
 
     if (ctx.multi_inc_addr) {
       ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port;
-      ops_rx.port.ip_addr[MTL_SESSION_PORT_P][3] += i;
-      if (ops_rx.port.num_port > 1) ops_rx.port.ip_addr[MTL_SESSION_PORT_R][3] += i;
+      ops_rx.port.ip_addr[MTL_SESSION_PORT_P][3] =
+          (uint8_t)(ops_rx.port.ip_addr[MTL_SESSION_PORT_P][3] + i);
+      if (ops_rx.port.num_port > 1)
+        ops_rx.port.ip_addr[MTL_SESSION_PORT_R][3] =
+            (uint8_t)(ops_rx.port.ip_addr[MTL_SESSION_PORT_R][3] + i);
     }
 
     ops_rx.port.payload_type = ctx.payload_type;

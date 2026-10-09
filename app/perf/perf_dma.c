@@ -6,11 +6,12 @@
 
 static inline void rand_data(uint8_t* p, size_t sz, uint8_t base) {
   for (size_t i = 0; i < sz; i++) {
-    p[i] = rand() + base;
+    p[i] = (uint8_t)(rand() + base);
   }
 }
 
-static int dma_copy_perf(mtl_handle st, int w, int h, int frames, int pkt_size) {
+static int dma_copy_perf(mtl_handle st, uint32_t w, uint32_t h, uint32_t frames,
+                         uint32_t pkt_size) {
   mtl_udma_handle dma;
   int ret;
   uint16_t nb_desc = 1024;
@@ -51,7 +52,7 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames, int pkt_size) 
   float duration_cpu, duration_simd, duration_dma;
 
   start = clock();
-  for (int idx = 0; idx < frames; idx++) {
+  for (uint32_t idx = 0; idx < frames; idx++) {
     size_t copied_size = 0;
     while (copied_size < fb_size) {
       memcpy(fb_src + pkt_size, fb_dst + pkt_size, pkt_size);
@@ -60,11 +61,11 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames, int pkt_size) 
   }
   end = clock();
   duration_cpu = (float)(end - start) / CLOCKS_PER_SEC;
-  info("cpu, time: %f secs with %d frames(%dx%d,%fm), pkt_size %d\n", duration_cpu,
+  info("cpu, time: %f secs with %u frames(%ux%u,%fm), pkt_size %u\n", duration_cpu,
        frames, w, h, fb_size_m, pkt_size);
 
   start = clock();
-  for (int idx = 0; idx < frames; idx++) {
+  for (uint32_t idx = 0; idx < frames; idx++) {
     size_t copied_size = 0;
     while (copied_size < fb_size) {
       mtl_memcpy(fb_src + pkt_size, fb_dst + pkt_size, pkt_size);
@@ -73,12 +74,12 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames, int pkt_size) 
   }
   end = clock();
   duration_simd = (float)(end - start) / CLOCKS_PER_SEC;
-  info("simd, time: %f secs with %d frames(%dx%d,%fm), pkt_size %d\n", duration_simd,
+  info("simd, time: %f secs with %u frames(%ux%u,%fm), pkt_size %u\n", duration_simd,
        frames, w, h, fb_size_m, pkt_size);
   info("simd, %fx performance to cpu\n", duration_cpu / duration_simd);
 
   start = clock();
-  for (int idx = 0; idx < frames; idx++) {
+  for (uint32_t idx = 0; idx < frames; idx++) {
     while (fb_dst_iova_off < fb_size) {
       /* try to copy */
       while (fb_src_iova_off < fb_size) {
@@ -97,7 +98,7 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames, int pkt_size) 
   }
   end = clock();
   duration_dma = (float)(end - start) / CLOCKS_PER_SEC;
-  info("dma, time: %f secs with %d frames(%dx%d,%fm), pkt_size %d\n", duration_dma,
+  info("dma, time: %f secs with %u frames(%ux%u,%fm), pkt_size %u\n", duration_dma,
        frames, w, h, fb_size_m, pkt_size);
   info("dma, %fx performance to cpu\n", duration_cpu / duration_dma);
   info("\n");
@@ -123,7 +124,7 @@ int main(int argc, char** argv) {
     return -EIO;
   }
 
-  int frames = ctx.perf_frames;
+  uint32_t frames = ctx.perf_frames;
 
   dma_copy_perf(ctx.st, 1920, 1080, frames, 128);
   dma_copy_perf(ctx.st, 1920 * 2, 1080 * 2, frames, 128);

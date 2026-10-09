@@ -440,8 +440,8 @@ static int tx_st22p_encode_dump(void* priv) {
   int offset = 0;
   for (uint16_t i = 0; i < ST22P_TX_FRAME_STATUS_MAX; i++) {
     if (status_counts[i] > 0) {
-      offset += snprintf(status_str + offset, sizeof(status_str) - offset, "%s:%u ",
-                         st22p_tx_frame_stat_name_short[i], status_counts[i]);
+      offset += snprintf(status_str + offset, sizeof(status_str) - (size_t)offset,
+                         "%s:%u ", st22p_tx_frame_stat_name_short[i], status_counts[i]);
     }
   }
   dbg("TX_st22p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
@@ -471,7 +471,7 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
   memset(&ops_tx, 0, sizeof(ops_tx));
   ops_tx.name = ops->name;
   ops_tx.priv = ctx;
-  ops_tx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
+  ops_tx.num_port = (uint8_t)RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   for (int i = 0; i < ops_tx.num_port; i++) {
     memcpy(ops_tx.dip_addr[i], ops->port.dip_addr[i], MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port[i], MTL_PORT_MAX_LEN, "%s", ops->port.port[i]);
@@ -851,7 +851,7 @@ int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame) {
                              frame->data_size);
   /* check if dump USDT enabled */
   if (!ctx->derive && MT_USDT_ST22P_TX_FRAME_DUMP_ENABLED()) {
-    int period = st_frame_rate(ctx->ops.fps) * 5; /* dump every 5s now */
+    int period = (int)(st_frame_rate(ctx->ops.fps) * 5); /* dump every 5s now */
     if ((ctx->usdt_frame_cnt % period) == (period / 2)) {
       tx_st22p_usdt_dump_frame(ctx, frame);
     }

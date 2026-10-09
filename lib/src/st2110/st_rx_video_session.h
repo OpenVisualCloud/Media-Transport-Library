@@ -86,7 +86,7 @@ static inline bool rx_video_session_is_cpu_busy(struct st_rx_video_session_impl*
 }
 
 static inline float rx_video_session_get_cpu_busy(struct st_rx_video_session_impl* s) {
-  return s->cpu_busy_score;
+  return (float)s->cpu_busy_score;
 }
 
 static inline bool rx_video_session_can_migrate(struct st_rx_video_session_impl* s) {

@@ -7,7 +7,7 @@
 #include "../mt_log.h"
 
 static inline float rv_tp_calculate_avg(uint32_t cnt, int64_t sum) {
-  return cnt ? ((float)sum / cnt) : -1.0f;
+  return cnt ? ((float)sum / (float)cnt) : -1.0f;
 }
 
 void rv_tp_on_packet(struct st_rx_video_session_impl* s, enum mtl_session_port s_port,
@@ -18,39 +18,40 @@ void rv_tp_on_packet(struct st_rx_video_session_impl* s, enum mtl_session_port s
   double tvd, trs = tp->trs;
 
   if (!slot->cur_epochs) { /* the first packet */
-    uint64_t epochs = (double)pkt_time / s->frame_time;
-    uint64_t epoch_tmstamp = (double)epochs * s->frame_time;
+    uint64_t epochs = (uint64_t)((double)pkt_time / s->frame_time);
+    uint64_t epoch_tmstamp = (uint64_t)((double)epochs * s->frame_time);
 
     slot->cur_epochs = epochs;
     slot->rtp_tmstamp = rtp_tmstamp;
     double first_pkt_time = (double)pkt_time - (trs * pkt_idx);
-    slot->first_pkt_time = first_pkt_time;
-    slot->meta.fpt = first_pkt_time - epoch_tmstamp;
+    slot->first_pkt_time = (uint64_t)first_pkt_time;
+    slot->meta.fpt = (int32_t)(first_pkt_time - (double)epoch_tmstamp);
 
-    uint64_t tmstamp64 = epochs * s->frame_time_sampling;
-    uint32_t tmstamp32 = tmstamp64;
+    uint64_t tmstamp64 = (uint64_t)((double)epochs * s->frame_time_sampling);
+    uint32_t tmstamp32 = (uint32_t)tmstamp64;
     double diff_rtp_ts = (double)rtp_tmstamp - tmstamp32;
     double diff_rtp_ts_ns = diff_rtp_ts * s->frame_time / s->frame_time_sampling;
-    slot->meta.latency = slot->meta.fpt - diff_rtp_ts_ns;
-    slot->meta.rtp_offset = diff_rtp_ts;
+    slot->meta.latency = (int32_t)(slot->meta.fpt - diff_rtp_ts_ns);
+    slot->meta.rtp_offset = (int32_t)diff_rtp_ts;
     if (tp->pre_rtp_tmstamp[s_port]) {
-      slot->meta.rtp_ts_delta = rtp_tmstamp - tp->pre_rtp_tmstamp[s_port];
+      slot->meta.rtp_ts_delta = (int32_t)(rtp_tmstamp - tp->pre_rtp_tmstamp[s_port]);
     }
     tp->pre_rtp_tmstamp[s_port] = rtp_tmstamp;
   }
 
-  epoch_tmstamp = (uint64_t)(slot->cur_epochs * s->frame_time);
-  tvd = epoch_tmstamp + tp->pass.tr_offset;
+  epoch_tmstamp = (uint64_t)((double)slot->cur_epochs * s->frame_time);
+  tvd = (double)(epoch_tmstamp + (uint64_t)tp->pass.tr_offset);
   double expect_time = tvd + trs * (pkt_idx + 1);
 
   /* Calculate vrx */
-  int32_t vrx_cur = (expect_time - pkt_time) / trs;
+  int32_t vrx_cur = (int32_t)((expect_time - (double)pkt_time) / trs);
   slot->vrx_sum += vrx_cur;
   slot->meta.vrx_min = RTE_MIN(vrx_cur, slot->meta.vrx_min);
   slot->meta.vrx_max = RTE_MAX(vrx_cur, slot->meta.vrx_max);
 
   /* Calculate C-inst */
-  int exp_cin_pkts = ((pkt_time - slot->first_pkt_time) / trs) * ST_TP_CINST_DRAIN_FACTOR;
+  int exp_cin_pkts =
+      (int)(((double)(pkt_time - slot->first_pkt_time) / trs) * ST_TP_CINST_DRAIN_FACTOR);
   int cinst = RTE_MAX(0, pkt_idx - exp_cin_pkts);
   slot->cinst_sum += cinst;
   slot->meta.cinst_min = RTE_MIN(cinst, slot->meta.cinst_min);
@@ -58,11 +59,11 @@ void rv_tp_on_packet(struct st_rx_video_session_impl* s, enum mtl_session_port s
 
   /* calculate Inter-packet time */
   if (slot->prev_pkt_time) {
-    double ipt = (double)pkt_time - slot->prev_pkt_time;
+    double ipt = (double)pkt_time - (double)slot->prev_pkt_time;
 
-    slot->ipt_sum += ipt;
-    slot->meta.ipt_min = RTE_MIN(ipt, slot->meta.ipt_min);
-    slot->meta.ipt_max = RTE_MAX(ipt, slot->meta.ipt_max);
+    slot->ipt_sum = (int64_t)((double)slot->ipt_sum + ipt);
+    slot->meta.ipt_min = (int32_t)RTE_MIN(ipt, slot->meta.ipt_min);
+    slot->meta.ipt_max = (int32_t)RTE_MAX(ipt, slot->meta.ipt_max);
   }
   slot->prev_pkt_time = pkt_time;
 
@@ -186,19 +187,19 @@ void rv_tp_slot_parse_result(struct st_rx_video_session_impl* s,
 
   stat->stat_fpt_min = RTE_MIN(stat->stat_fpt_min, slot->meta.fpt);
   stat->stat_fpt_max = RTE_MAX(stat->stat_fpt_max, slot->meta.fpt);
-  stat->stat_fpt_sum += slot->meta.fpt;
+  stat->stat_fpt_sum += (float)slot->meta.fpt;
   stat->stat_latency_min = RTE_MIN(stat->stat_latency_min, slot->meta.latency);
   stat->stat_latency_max = RTE_MAX(stat->stat_latency_max, slot->meta.latency);
-  stat->stat_latency_sum += slot->meta.latency;
+  stat->stat_latency_sum += (float)slot->meta.latency;
   stat->stat_rtp_offset_min = RTE_MIN(stat->stat_rtp_offset_min, slot->meta.rtp_offset);
   stat->stat_rtp_offset_max = RTE_MAX(stat->stat_rtp_offset_max, slot->meta.rtp_offset);
-  stat->stat_rtp_offset_sum += slot->meta.rtp_offset;
+  stat->stat_rtp_offset_sum += (float)slot->meta.rtp_offset;
   if (slot->meta.rtp_ts_delta) {
     stat->stat_rtp_ts_delta_min =
         RTE_MIN(stat->stat_rtp_ts_delta_min, slot->meta.rtp_ts_delta);
     stat->stat_rtp_ts_delta_max =
         RTE_MAX(stat->stat_rtp_ts_delta_max, slot->meta.rtp_ts_delta);
-    stat->stat_rtp_ts_delta_sum += slot->meta.rtp_ts_delta;
+    stat->stat_rtp_ts_delta_sum += (float)slot->meta.rtp_ts_delta;
   }
   stat->stat_frame_cnt++;
 }
@@ -244,18 +245,20 @@ void rv_tp_stat(struct st_rx_video_session_impl* s) {
          stat_slot->meta.vrx_min, stat_slot->meta.vrx_max);
     info("%s(%d), Inter-packet time(ns) AVG %.2f MIN %d MAX %d!\n", __func__, idx,
          ipt_avg, stat_slot->meta.ipt_min, stat_slot->meta.ipt_max);
-    float fpt_avg = rv_tp_calculate_avg(stat->stat_frame_cnt, stat->stat_fpt_sum);
+    float fpt_avg =
+        rv_tp_calculate_avg(stat->stat_frame_cnt, (int64_t)stat->stat_fpt_sum);
     info("%s(%d), FPT AVG %.2f MIN %d MAX %d DIFF %d!\n", __func__, idx, fpt_avg,
          stat->stat_fpt_min, stat->stat_fpt_max, stat->stat_fpt_max - stat->stat_fpt_min);
-    float latency_avg = rv_tp_calculate_avg(stat->stat_frame_cnt, stat->stat_latency_sum);
+    float latency_avg =
+        rv_tp_calculate_avg(stat->stat_frame_cnt, (int64_t)stat->stat_latency_sum);
     info("%s(%d), LATENCY AVG %.2f MIN %d MAX %d!\n", __func__, idx, latency_avg,
          stat->stat_latency_min, stat->stat_latency_max);
     float rtp_offset_avg =
-        rv_tp_calculate_avg(stat->stat_frame_cnt, stat->stat_rtp_offset_sum);
+        rv_tp_calculate_avg(stat->stat_frame_cnt, (int64_t)stat->stat_rtp_offset_sum);
     info("%s(%d), RTP OFFSET AVG %.2f MIN %d MAX %d!\n", __func__, idx, rtp_offset_avg,
          stat->stat_rtp_offset_min, stat->stat_rtp_offset_max);
     float rtp_ts_delta_avg =
-        rv_tp_calculate_avg(stat->stat_frame_cnt, stat->stat_rtp_ts_delta_sum);
+        rv_tp_calculate_avg(stat->stat_frame_cnt, (int64_t)stat->stat_rtp_ts_delta_sum);
     info("%s(%d), RTP TS DELTA AVG %.2f MIN %d MAX %d!\n", __func__, idx,
          rtp_ts_delta_avg, stat->stat_rtp_ts_delta_min, stat->stat_rtp_ts_delta_max);
   }
@@ -320,31 +323,33 @@ int rv_tp_init(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
   }
   tp->trs = frame_time * reactive / st20_total_pkts;
   if (!ops->interlaced) {
-    tp->pass.tr_offset =
-        ops->height >= 1080 ? frame_time * (43.0 / 1125.0) : frame_time * (28.0 / 750.0);
+    tp->pass.tr_offset = (int32_t)(ops->height >= 1080 ? frame_time * (43.0 / 1125.0)
+                                                       : frame_time * (28.0 / 750.0));
   } else {
     if (ops->height == 480) {
-      tp->pass.tr_offset = frame_time * (20.0 / 525.0) * 2;
+      tp->pass.tr_offset = (int32_t)(frame_time * (20.0 / 525.0) * 2);
     } else if (ops->height == 576) {
-      tp->pass.tr_offset = frame_time * (26.0 / 625.0) * 2;
+      tp->pass.tr_offset = (int32_t)(frame_time * (26.0 / 625.0) * 2);
     } else {
-      tp->pass.tr_offset = frame_time * (22.0 / 1125.0) * 2;
+      tp->pass.tr_offset = (int32_t)(frame_time * (22.0 / 1125.0) * 2);
     }
   }
 
   tp->pass.cinst_max_narrow =
-      RTE_MAX(4, (double)st20_total_pkts / (43200 * reactive * frame_time_s));
-  tp->pass.cinst_max_wide = RTE_MAX(16, (double)st20_total_pkts / (21600 * frame_time_s));
+      (int32_t)RTE_MAX(4, (double)st20_total_pkts / (43200 * reactive * frame_time_s));
+  tp->pass.cinst_max_wide =
+      (int32_t)RTE_MAX(16, (double)st20_total_pkts / (21600 * frame_time_s));
   tp->pass.cinst_min = 0;
-  tp->pass.vrx_max_narrow = RTE_MAX(8, st20_total_pkts / (27000 * frame_time_s));
-  tp->pass.vrx_max_wide = RTE_MAX(720, st20_total_pkts / (300 * frame_time_s));
+  tp->pass.vrx_max_narrow = (int32_t)RTE_MAX(8, st20_total_pkts / (27000 * frame_time_s));
+  tp->pass.vrx_max_wide = (int32_t)RTE_MAX(720, st20_total_pkts / (300 * frame_time_s));
   tp->pass.vrx_min = 0;
   tp->pass.latency_max = 1000 * 1000; /* 1000 us */
   tp->pass.latency_min = 0;
   tp->pass.rtp_offset_max =
-      ceil((double)tp->pass.tr_offset * fps_tm.sampling_clock_rate / NS_PER_S) + 1;
+      (int32_t)(ceil((double)tp->pass.tr_offset * fps_tm.sampling_clock_rate / NS_PER_S) +
+                1);
   tp->pass.rtp_offset_min = -1;
-  int32_t sampling = s->frame_time_sampling;
+  int32_t sampling = (int32_t)s->frame_time_sampling;
   tp->pass.rtp_ts_delta_max = sampling + 1;
   tp->pass.rtp_ts_delta_min = sampling;
 
@@ -453,11 +458,11 @@ void ra_tp_on_packet(struct st_rx_audio_session_impl* s, enum mtl_session_port s
   struct st_rx_audio_tp* tp = s->tp;
   struct st_ra_tp_slot* slot = &tp->slot[s_port];
 
-  uint64_t epoch = (double)pkt_time / tp->pkt_time;
-  uint64_t epoch_ns = (double)epoch * tp->pkt_time;
-  double fpt_delta = (double)pkt_time - epoch_ns;
-  uint64_t epoch_ts64 = epoch * tp->pkt_time_sampling;
-  uint32_t epoch_ts = epoch_ts64;
+  uint64_t epoch = (uint64_t)((double)pkt_time / tp->pkt_time);
+  uint64_t epoch_ns = (uint64_t)((double)epoch * tp->pkt_time);
+  double fpt_delta = (double)pkt_time - (double)epoch_ns;
+  uint64_t epoch_ts64 = (uint64_t)((double)epoch * tp->pkt_time_sampling);
+  uint32_t epoch_ts = (uint32_t)epoch_ts64;
   double diff_rtp_ts = (double)rtp_tmstamp - epoch_ts;
   double diff_rtp_ts_ns = diff_rtp_ts * tp->pkt_time / tp->pkt_time_sampling;
   double latency = fpt_delta - diff_rtp_ts_ns;
@@ -466,18 +471,18 @@ void ra_tp_on_packet(struct st_rx_audio_session_impl* s, enum mtl_session_port s
   slot->meta.pkts_cnt++;
 
   /* calculate Delta Packet vs RTP */
-  slot->meta.dpvr_min = RTE_MIN(dpvr, slot->meta.dpvr_min);
-  slot->meta.dpvr_max = RTE_MAX(dpvr, slot->meta.dpvr_max);
-  slot->dpvr_sum += dpvr;
+  slot->meta.dpvr_min = (int32_t)RTE_MIN(dpvr, slot->meta.dpvr_min);
+  slot->meta.dpvr_max = (int32_t)RTE_MAX(dpvr, slot->meta.dpvr_max);
+  slot->dpvr_sum = (int64_t)((double)slot->dpvr_sum + dpvr);
 
-  if (!slot->dpvr_first) slot->dpvr_first = dpvr;
+  if (!slot->dpvr_first) slot->dpvr_first = (int32_t)dpvr;
 
   if (tp->prev_pkt_time[s_port]) {
-    double ipt = (double)pkt_time - tp->prev_pkt_time[s_port];
+    double ipt = (double)pkt_time - (double)tp->prev_pkt_time[s_port];
 
-    slot->ipt_sum += ipt;
-    slot->meta.ipt_min = RTE_MIN(ipt, slot->meta.ipt_min);
-    slot->meta.ipt_max = RTE_MAX(ipt, slot->meta.ipt_max);
+    slot->ipt_sum = (int64_t)((double)slot->ipt_sum + ipt);
+    slot->meta.ipt_min = (int32_t)RTE_MIN(ipt, slot->meta.ipt_min);
+    slot->meta.ipt_max = (int32_t)RTE_MAX(ipt, slot->meta.ipt_max);
   }
   tp->prev_pkt_time[s_port] = pkt_time;
 }
@@ -500,10 +505,11 @@ int ra_tp_init(struct mtl_main_impl* impl, struct st_rx_audio_session_impl* s) {
   int sample_num = st30_get_sample_num(ops->ptime, ops->sampling);
   tp->pkt_time_sampling = (double)(sample_num * 1000) * 1 / 1000;
 
-  tp->dpvr_max_pass_narrow = (1 + 1 + 1) * tp->pkt_time / NS_PER_US; /* in us */
-  tp->dpvr_max_pass_wide = (1 + 1 + 17) * tp->pkt_time / NS_PER_US;  /* in us */
-  tp->tsdf_max_pass_narrow = 1 * tp->pkt_time / NS_PER_US;           /* in us */
-  tp->tsdf_max_pass_wide = 17 * tp->pkt_time / NS_PER_US;            /* in us */
+  tp->dpvr_max_pass_narrow =
+      (int32_t)((1 + 1 + 1) * tp->pkt_time / NS_PER_US);                       /* in us */
+  tp->dpvr_max_pass_wide = (int32_t)((1 + 1 + 17) * tp->pkt_time / NS_PER_US); /* in us */
+  tp->tsdf_max_pass_narrow = (int32_t)(1 * tp->pkt_time / NS_PER_US);          /* in us */
+  tp->tsdf_max_pass_wide = (int32_t)(17 * tp->pkt_time / NS_PER_US);           /* in us */
 
   ra_tp_stat_init(tp);
 

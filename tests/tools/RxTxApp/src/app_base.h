@@ -88,7 +88,7 @@ struct st_display {
   int pixel_w;
   int pixel_h;
   void* front_frame;
-  int front_frame_size;
+  size_t front_frame_size;
   uint32_t last_time;
   uint32_t frame_cnt;
   double fps;
@@ -142,8 +142,8 @@ struct st_app_tx_video_session {
   struct st20_pgroup st20_pg;
   uint16_t lines_per_slice;
 
-  int width;
-  int height;
+  uint32_t width;
+  uint32_t height;
   bool interlaced;
   bool second_field;
   bool single_line;
@@ -154,14 +154,14 @@ struct st_app_tx_video_session {
 
   /* rtp mode info */
   bool st20_rtp_input;
-  int st20_pkts_in_line;  /* GPM only, number of packets per each line, 4 for 1080p */
-  int st20_bytes_in_line; /* bytes per line, 4800 for 1080p yuv422 10bit */
+  uint32_t st20_pkts_in_line; /* GPM only, number of packets per each line, 4 for 1080p */
+  uint32_t st20_bytes_in_line; /* bytes per line, 4800 for 1080p yuv422 10bit */
   uint32_t
       st20_pkt_data_len; /* data len(byte) for each pkt, 1200 for 1080p yuv422 10bit */
   struct st20_rfc4175_rtp_hdr st20_rtp_base;
-  int st20_total_pkts;  /* total pkts in one frame, ex: 4320 for 1080p */
-  int st20_pkt_idx;     /* pkt index in current frame */
-  uint32_t st20_seq_id; /* seq id in current frame */
+  uint32_t st20_total_pkts; /* total pkts in one frame, ex: 4320 for 1080p */
+  uint32_t st20_pkt_idx;    /* pkt index in current frame */
+  uint32_t st20_seq_id;     /* seq id in current frame */
   uint32_t st20_rtp_tmstamp;
   uint8_t payload_type;
 
@@ -307,8 +307,8 @@ struct st_app_rx_video_session {
   uint32_t st20_last_tmstamp;
   struct st20_pgroup st20_pg;
   struct user_pgroup user_pg;
-  int width;
-  int height;
+  uint32_t width;
+  uint32_t height;
   bool interlaced;
 
   /* stat */
@@ -473,9 +473,9 @@ struct st_app_tx_st22p_session {
   st22p_tx_handle handle;
   mtl_handle st;
   int framebuff_cnt;
-  int st22p_frame_size;
-  int width;
-  int height;
+  size_t st22p_frame_size;
+  uint32_t width;
+  uint32_t height;
 
   char st22p_source_url[ST_APP_URL_MAX_LEN];
   uint8_t* st22p_source_begin;
@@ -546,10 +546,10 @@ struct st_app_rx_st22p_session {
   mtl_handle st;
   st22p_rx_handle handle;
   int framebuff_cnt;
-  int st22p_frame_size;
+  size_t st22p_frame_size;
   bool slice;
-  int width;
-  int height;
+  uint32_t width;
+  uint32_t height;
 
   /* stat */
   int stat_frame_received;
@@ -575,9 +575,9 @@ struct st_app_tx_st20p_session {
   st20p_tx_handle handle;
   mtl_handle st;
   int framebuff_cnt;
-  int st20p_frame_size;
-  int width;
-  int height;
+  size_t st20p_frame_size;
+  uint32_t width;
+  uint32_t height;
   uint8_t num_port;
   uint64_t last_stat_time_ns;
   bool sha_check;
@@ -607,9 +607,9 @@ struct st_app_rx_st20p_session {
   st20p_rx_handle handle;
   mtl_handle st;
   int framebuff_cnt;
-  int st20p_frame_size;
-  int width;
-  int height;
+  size_t st20p_frame_size;
+  uint32_t width;
+  uint32_t height;
   uint8_t num_port;
   uint64_t last_stat_time_ns;
   bool sha_check;
@@ -650,7 +650,7 @@ struct st_app_tx_st30p_session {
   st30p_tx_handle handle;
   mtl_handle st;
   int framebuff_cnt;
-  int st30p_frame_size;
+  size_t st30p_frame_size;
   uint8_t num_port;
   uint64_t last_stat_time_ns;
   /* for now used only with user pacing to keep track of the frame timestamps */
@@ -677,7 +677,7 @@ struct st_app_rx_st30p_session {
   st30p_rx_handle handle;
   mtl_handle st;
   int framebuff_cnt;
-  int st30p_frame_size;
+  size_t st30p_frame_size;
 
   uint8_t num_port;
   uint64_t last_stat_time_ns;
@@ -857,12 +857,12 @@ static inline void st_app_free(void* p) {
 }
 
 static inline uint64_t st_timespec_to_ns(const struct timespec* ts) {
-  return ((uint64_t)ts->tv_sec * NS_PER_S) + ts->tv_nsec;
+  return ((uint64_t)ts->tv_sec * NS_PER_S) + (uint64_t)ts->tv_nsec;
 }
 
 static inline void st_ns_to_timespec(uint64_t ns, struct timespec* ts) {
-  ts->tv_sec = ns / NS_PER_S;
-  ts->tv_nsec = ns % NS_PER_S;
+  ts->tv_sec = (time_t)(ns / NS_PER_S);
+  ts->tv_nsec = (long)(ns % NS_PER_S);
 }
 
 /* Monotonic time (in nanoseconds) since some unspecified starting point. */

@@ -30,7 +30,8 @@ static int st_ancillary_trs_tasklet_stop(void* priv) {
 
   for (port = 0; port < mt_num_ports(impl); port++) {
     /* flush all the pkts in the tx ring desc */
-    if (mgr->queue[port]) mt_txq_flush(mgr->queue[port], mt_get_pad(impl, port));
+    if (mgr->queue[port])
+      mt_txq_flush(mgr->queue[port], mt_get_pad(impl, (enum mtl_port)port));
     if (mgr->ring[port]) {
       mt_ring_dequeue_clean(mgr->ring[port]);
       info("%s(%d), port %d, remaining entries %d\n", __func__, idx, port,
@@ -102,7 +103,7 @@ static int st_ancillary_trs_tasklet_handler(void* priv) {
   int pending = MTL_TASKLET_ALL_DONE;
 
   for (port = 0; port < mt_num_ports(impl); port++) {
-    pending += st_ancillary_trs_session_tasklet(trs, mgr, port);
+    pending += st_ancillary_trs_session_tasklet(trs, mgr, (enum mtl_port)port);
   }
 
   return pending;

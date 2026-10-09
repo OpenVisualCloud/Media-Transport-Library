@@ -10,7 +10,8 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr)
       (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
 
   int anc_count = hdr->first_hdr_chunk.anc_count;
-  int idx, payload_len;
+  int idx;
+  uint32_t payload_len;
   dbg("%s(%d), anc_count %d\n", __func__, s->idx, anc_count);
 
   for (idx = 0; idx < anc_count; idx++) {
@@ -23,14 +24,14 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr)
       s->stat_pkt_invalid++;
       return;
     }
-    int udw_size = payload_hdr->second_hdr_chunk.data_count & 0xff;
+    uint16_t udw_size = payload_hdr->second_hdr_chunk.data_count & 0xff;
 
     // verify checksum
     uint16_t checksum = 0;
-    checksum = st40_get_udw(udw_size + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
+    checksum = st40_get_udw(udw_size + 3u, (uint8_t*)&payload_hdr->second_hdr_chunk);
     payload_hdr->swapped_second_hdr_chunk = htonl(payload_hdr->swapped_second_hdr_chunk);
     if (checksum !=
-        st40_calc_checksum(3 + udw_size, (uint8_t*)&payload_hdr->second_hdr_chunk)) {
+        st40_calc_checksum(3u + udw_size, (uint8_t*)&payload_hdr->second_hdr_chunk)) {
       if (!s->stat_pkt_invalid)
         err("%s(%d), anc frame checksum error\n", __func__, s->idx);
       s->stat_pkt_invalid++;
@@ -124,7 +125,7 @@ static int app_rx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
   snprintf(name, 32, "app_rx_anc%d", idx);
   ops.name = name;
   ops.priv = s;
-  ops.num_port = anc ? anc->base.num_inf : ctx->para.num_ports;
+  ops.num_port = (uint8_t)(anc ? anc->base.num_inf : ctx->para.num_ports);
   memcpy(
       ops.ip_addr[MTL_SESSION_PORT_P],
       anc ? st_json_ip(ctx, &anc->base, MTL_SESSION_PORT_P) : ctx->rx_ip_addr[MTL_PORT_P],
@@ -134,7 +135,8 @@ static int app_rx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
          MTL_IP_ADDR_LEN);
   snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            anc ? anc->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
-  ops.udp_port[MTL_SESSION_PORT_P] = anc ? anc->base.udp_port : (10200 + s->idx);
+  ops.udp_port[MTL_SESSION_PORT_P] =
+      (uint16_t)(anc ? anc->base.udp_port : (10200 + s->idx));
   if (ops.num_port > 1) {
     memcpy(ops.ip_addr[MTL_SESSION_PORT_R],
            anc ? st_json_ip(ctx, &anc->base, MTL_SESSION_PORT_R)
@@ -145,7 +147,8 @@ static int app_rx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
            MTL_IP_ADDR_LEN);
     snprintf(ops.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
              anc ? anc->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
-    ops.udp_port[MTL_SESSION_PORT_R] = anc ? anc->base.udp_port : (10200 + s->idx);
+    ops.udp_port[MTL_SESSION_PORT_R] =
+        (uint16_t)(anc ? anc->base.udp_port : (10200 + s->idx));
   }
   ops.type = ST40_TYPE_RTP_LEVEL;
   ops.rtp_ring_size = 1024;
@@ -212,7 +215,7 @@ int st_app_rx_anc_sessions_init(struct st_app_context* ctx) {
   int ret, i;
   struct st_app_rx_anc_session* s;
   ctx->rx_anc_sessions = (struct st_app_rx_anc_session*)st_app_zmalloc(
-      sizeof(struct st_app_rx_anc_session) * ctx->rx_anc_session_cnt);
+      sizeof(struct st_app_rx_anc_session) * (size_t)ctx->rx_anc_session_cnt);
   if (!ctx->rx_anc_sessions) return -ENOMEM;
   for (i = 0; i < ctx->rx_anc_session_cnt; i++) {
     s = &ctx->rx_anc_sessions[i];

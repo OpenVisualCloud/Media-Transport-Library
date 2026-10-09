@@ -113,7 +113,7 @@ static bool tx_st30p_if_frame_late(struct st30p_tx_ctx* ctx,
 
   uint64_t frame_tai = frame->timestamp;
   uint64_t cur_tai = mt_get_ptp_time(ctx->impl, MTL_PORT_P);
-  uint64_t frame_period_ns = (uint64_t)NS_PER_S / ctx->frames_per_sec;
+  uint64_t frame_period_ns = (uint64_t)NS_PER_S / (uint64_t)ctx->frames_per_sec;
 
   if (cur_tai < frame_tai + frame_period_ns)
     return false; /* within acceptable TX window */
@@ -254,7 +254,7 @@ static int tx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_tx
   memset(&ops_tx, 0, sizeof(ops_tx));
   ops_tx.name = ops->name;
   ops_tx.priv = ctx;
-  ops_tx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
+  ops_tx.num_port = (uint8_t)RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   ops_tx.payload_type = ops->port.payload_type;
   ops_tx.ssrc = ops->port.ssrc;
   for (int i = 0; i < ops_tx.num_port; i++) {
@@ -382,8 +382,8 @@ static int tx_st30p_stat(void* priv) {
   int offset = 0;
   for (uint16_t i = 0; i < ST30P_TX_FRAME_STATUS_MAX; i++) {
     if (status_counts[i] > 0) {
-      offset += snprintf(status_str + offset, sizeof(status_str) - offset, "%s:%u ",
-                         st30p_tx_frame_stat_name_short[i], status_counts[i]);
+      offset += snprintf(status_str + offset, sizeof(status_str) - (size_t)offset,
+                         "%s:%u ", st30p_tx_frame_stat_name_short[i], status_counts[i]);
     }
   }
   dbg("TX_st30p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
@@ -821,8 +821,8 @@ int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_user_stats
   int offset = 0;
   for (uint16_t i = 0; i < ST30P_TX_FRAME_STATUS_MAX; i++) {
     if (status_counts[i] > 0) {
-      offset += snprintf(status_str + offset, sizeof(status_str) - offset, "%s:%u ",
-                         st30p_tx_frame_stat_name_short[i], status_counts[i]);
+      offset += snprintf(status_str + offset, sizeof(status_str) - (size_t)offset,
+                         "%s:%u ", st30p_tx_frame_stat_name_short[i], status_counts[i]);
     }
   }
   dbg("TX_st30p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);

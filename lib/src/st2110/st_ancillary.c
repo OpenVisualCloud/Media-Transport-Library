@@ -85,12 +85,12 @@ static inline uint16_t get_parity_bits(uint16_t val) {
 }
 
 static uint16_t st_ntohs(const uint8_t* data) {
-  return ((data[0] << 8) | (data[1]));
+  return (uint16_t)((data[0] << 8) | (data[1]));
 }
 
-static uint16_t get_10bit_udw(int idx, const uint8_t* data) {
-  int byte_offset, bit_offset;
-  int total_bits_offset = idx * 10; /*10 bit per field */
+static uint16_t get_10bit_udw(uint32_t idx, const uint8_t* data) {
+  uint32_t byte_offset, bit_offset;
+  uint32_t total_bits_offset = idx * 10; /*10 bit per field */
   byte_offset = total_bits_offset / 8;
   bit_offset = total_bits_offset % 8;
   data += byte_offset;
@@ -127,9 +127,9 @@ static uint16_t get_10bit_udw(int idx, const uint8_t* data) {
   return udw;
 }
 
-static void set_10bit_udw(int idx, uint16_t udw, uint8_t* data) {
-  int byte_offset, bit_offset;
-  int total_bits_offset = idx * 10; /*10 bit per field */
+static void set_10bit_udw(uint32_t idx, uint16_t udw, uint8_t* data) {
+  uint32_t byte_offset, bit_offset;
+  uint32_t total_bits_offset = idx * 10; /*10 bit per field */
   byte_offset = total_bits_offset / 8;
   bit_offset = total_bits_offset % 8;
   data += byte_offset;
@@ -139,28 +139,28 @@ static void set_10bit_udw(int idx, uint16_t udw, uint8_t* data) {
     case 0: {
       anc_udw_10_6e_t val10;
       val10.val = val;
-      val10.udw = udw;
+      val10.udw = udw & 0x3FFU;
       val = val10.val;
       break;
     }
     case 2: {
       anc_udw_2e_10_4e_t val10;
       val10.val = val;
-      val10.udw = udw;
+      val10.udw = udw & 0x3FFU;
       val = val10.val;
       break;
     }
     case 4: {
       anc_udw_4e_10_2e_t val10;
       val10.val = val;
-      val10.udw = udw;
+      val10.udw = udw & 0x3FFU;
       val = val10.val;
       break;
     }
     case 6: {
       anc_udw_6e_10_t val10;
       val10.val = val;
-      val10.udw = udw;
+      val10.udw = udw & 0x3FFU;
       val = val10.val;
       break;
     }
@@ -218,14 +218,14 @@ int st40_rfc8331_encode_packet(uint8_t* buf, uint32_t room, const struct st40_me
   memset(buf, 0, need);
 
   struct st40_rfc8331_payload_hdr* ph = (struct st40_rfc8331_payload_hdr*)buf;
-  ph->first_hdr_chunk.c = meta->c;
-  ph->first_hdr_chunk.line_number = meta->line_number;
-  ph->first_hdr_chunk.horizontal_offset = meta->hori_offset;
-  ph->first_hdr_chunk.s = meta->s;
-  ph->first_hdr_chunk.stream_num = meta->stream_num;
-  ph->second_hdr_chunk.did = st40_add_parity_bits(meta->did);
-  ph->second_hdr_chunk.sdid = st40_add_parity_bits(meta->sdid);
-  ph->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size);
+  ph->first_hdr_chunk.c = meta->c & 0x1U;
+  ph->first_hdr_chunk.line_number = meta->line_number & 0x7FFU;
+  ph->first_hdr_chunk.horizontal_offset = meta->hori_offset & 0xFFFU;
+  ph->first_hdr_chunk.s = meta->s & 0x1U;
+  ph->first_hdr_chunk.stream_num = meta->stream_num & 0x7FU;
+  ph->second_hdr_chunk.did = st40_add_parity_bits(meta->did) & 0x3FFU;
+  ph->second_hdr_chunk.sdid = st40_add_parity_bits(meta->sdid) & 0x3FFU;
+  ph->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size) & 0x3FFU;
 
   st40_rfc8331_payload_hdr_bswap(ph);
 

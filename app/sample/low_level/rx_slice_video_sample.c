@@ -120,7 +120,7 @@ static void* rx_video_frame_thread(void* arg) {
     framebuff->frame = NULL;
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
-    s->framebuff_consumer_idx = consumer_idx;
+    s->framebuff_consumer_idx = (uint16_t)consumer_idx;
     st_pthread_mutex_unlock(&s->wake_mutex);
   }
   info("%s(%d), stop\n", __func__, idx);
@@ -158,7 +158,7 @@ int main(int argc, char** argv) {
       goto error;
     }
     memset(app[i], 0, sizeof(struct rv_slice_sample_ctx));
-    app[i]->idx = i;
+    app[i]->idx = (int)i;
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
     app[i]->framebuff_cnt = ctx.framebuff_cnt;
@@ -184,7 +184,7 @@ int main(int argc, char** argv) {
     snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
     ops_rx.udp_port[MTL_SESSION_PORT_P] =
-        ctx.udp_port + i * 2;  // user config the udp port.
+        (uint16_t)(ctx.udp_port + i * 2);  // user config the udp port.
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_SLICE_LEVEL;
     ops_rx.width = ctx.width;

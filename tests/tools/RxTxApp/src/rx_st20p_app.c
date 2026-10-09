@@ -103,7 +103,7 @@ static void* app_rx_st20p_frame_thread(void* arg) {
 
       if (frame->tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
         uint32_t latency_media_clk =
-            st10_tai_to_media_clk(ptp_ns, sampling_rate) - frame->timestamp;
+            (uint32_t)(st10_tai_to_media_clk(ptp_ns, sampling_rate) - frame->timestamp);
         latency_ns = st10_media_clk_to_ns(latency_media_clk, sampling_rate);
       } else {
         latency_ns = ptp_ns - frame->timestamp;
@@ -225,7 +225,7 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   snprintf(name, 32, "app_rx_st20p_%d", idx);
   ops.name = name;
   ops.priv = s;
-  ops.port.num_port = st20p ? st20p->base.num_inf : ctx->para.num_ports;
+  ops.port.num_port = (uint8_t)(st20p ? st20p->base.num_inf : ctx->para.num_ports);
   memcpy(ops.port.ip_addr[MTL_SESSION_PORT_P],
          st20p ? st_json_ip(ctx, &st20p->base, MTL_SESSION_PORT_P)
                : ctx->rx_ip_addr[MTL_PORT_P],
@@ -237,7 +237,8 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   snprintf(
       ops.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
       st20p ? st20p->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
-  ops.port.udp_port[MTL_SESSION_PORT_P] = st20p ? st20p->base.udp_port : (10000 + s->idx);
+  ops.port.udp_port[MTL_SESSION_PORT_P] =
+      (uint16_t)(st20p ? st20p->base.udp_port : (10000 + s->idx));
   if (ops.port.num_port > 1) {
     memcpy(ops.port.ip_addr[MTL_SESSION_PORT_R],
            st20p ? st_json_ip(ctx, &st20p->base, MTL_SESSION_PORT_R)
@@ -251,7 +252,7 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
         ops.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
         st20p ? st20p->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
     ops.port.udp_port[MTL_SESSION_PORT_R] =
-        st20p ? st20p->base.udp_port : (10000 + s->idx);
+        (uint16_t)(st20p ? st20p->base.udp_port : (10000 + s->idx));
   }
 
   if (st20p && st20p->info.st20p_url[0] != '\0') {
@@ -276,7 +277,7 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   ops.device = st20p ? st20p->info.device : ST_PLUGIN_DEVICE_AUTO;
   ops.flags |= ST20P_RX_FLAG_BLOCK_GET;
   ops.rx_burst_size = ctx->rx_burst_size;
-  ops.framebuff_cnt = s->framebuff_cnt;
+  ops.framebuff_cnt = (uint16_t)s->framebuff_cnt;
   /* always try to enable DMA offload */
   ops.flags |= ST20P_RX_FLAG_DMA_OFFLOAD;
   if (st20p && st20p->enable_rtcp) ops.flags |= ST20P_RX_FLAG_ENABLE_RTCP;
@@ -431,7 +432,7 @@ int st_app_rx_st20p_sessions_init(struct st_app_context* ctx) {
 
   dbg("%s(%d), rx_st20p_session_cnt %d\n", __func__, i, ctx->rx_st20p_session_cnt);
   ctx->rx_st20p_sessions = (struct st_app_rx_st20p_session*)st_app_zmalloc(
-      sizeof(struct st_app_rx_st20p_session) * ctx->rx_st20p_session_cnt);
+      sizeof(struct st_app_rx_st20p_session) * (size_t)ctx->rx_st20p_session_cnt);
   if (!ctx->rx_st20p_sessions) return -ENOMEM;
   for (i = 0; i < ctx->rx_st20p_session_cnt; i++) {
     s = &ctx->rx_st20p_sessions[i];

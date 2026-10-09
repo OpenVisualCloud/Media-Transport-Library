@@ -6,7 +6,8 @@
 
 static void app_rx_fmd_close_source(struct st_app_rx_fmd_session* session) {
   if (session->st41_ref_fd >= 0) {
-    munmap(session->st41_ref_begin, session->st41_ref_end - session->st41_ref_begin);
+    munmap(session->st41_ref_begin,
+           (size_t)(session->st41_ref_end - session->st41_ref_begin));
     close(session->st41_ref_fd);
     session->st41_ref_fd = -1;
   }
@@ -29,7 +30,7 @@ static int app_rx_fmd_open_ref(struct st_app_rx_fmd_session* session) {
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  uint8_t* m = mmap(NULL, (size_t)i.st_size, PROT_READ, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s(%d), mmap '%s' fail.\n", __func__, idx, session->st41_ref_url);
     close(fd);
@@ -49,10 +50,11 @@ static int app_rx_fmd_compare_with_ref(struct st_app_rx_fmd_session* session, vo
                                        int frame_size) {
   int ret = -1;
   uint32_t last_zeros = 0; /* 4 bytes with 0 */
-  uint32_t st41_ref_remaining_length = session->st41_ref_end - session->st41_ref_cursor;
+  uint32_t st41_ref_remaining_length =
+      (uint32_t)(session->st41_ref_end - session->st41_ref_cursor);
 
   if ((uint32_t)frame_size <= st41_ref_remaining_length) {
-    ret = memcmp(frame, session->st41_ref_cursor, frame_size);
+    ret = memcmp(frame, session->st41_ref_cursor, (size_t)frame_size);
     if (ret) {
       session->errors_count++;
       err("%s() FAIL: reference file comparison with frame.\n", __func__);
@@ -60,11 +62,11 @@ static int app_rx_fmd_compare_with_ref(struct st_app_rx_fmd_session* session, vo
       dbg("%s() PASS: reference file comparison with frame.\n", __func__);
     }
   } else {
-    if (frame_size - st41_ref_remaining_length > 3) {
+    if ((uint32_t)frame_size - st41_ref_remaining_length > 3) {
       ret = -1;
       session->errors_count++;
-      err("%s() FAIL: frame_size > ref_remaining_length by %d.\n", __func__,
-          frame_size - st41_ref_remaining_length);
+      err("%s() FAIL: frame_size > ref_remaining_length by %u.\n", __func__,
+          (uint32_t)frame_size - st41_ref_remaining_length);
     } else {
       ret = memcmp(frame, session->st41_ref_cursor, st41_ref_remaining_length);
       if (ret) {
@@ -75,7 +77,7 @@ static int app_rx_fmd_compare_with_ref(struct st_app_rx_fmd_session* session, vo
 
         /* Verify last 0-3 bytes of frame (filled with zero's) */
         ret = memcmp(&(((uint8_t*)frame)[st41_ref_remaining_length]), (void*)&last_zeros,
-                     frame_size - st41_ref_remaining_length);
+                     (uint32_t)frame_size - st41_ref_remaining_length);
         if (ret) {
           session->errors_count++;
           err("%s() FAIL: frame comparison with ending zeros.\n", __func__);
@@ -226,7 +228,7 @@ static int app_rx_fmd_init(struct st_app_context* ctx,
   snprintf(name, 32, "app_rx_fmd%d", idx);
   ops.name = name;
   ops.priv = s;
-  ops.num_port = fmd ? fmd->base.num_inf : ctx->para.num_ports;
+  ops.num_port = (uint8_t)(fmd ? fmd->base.num_inf : ctx->para.num_ports);
   memcpy(
       ops.ip_addr[MTL_SESSION_PORT_P],
       fmd ? st_json_ip(ctx, &fmd->base, MTL_SESSION_PORT_P) : ctx->rx_ip_addr[MTL_PORT_P],
@@ -236,7 +238,8 @@ static int app_rx_fmd_init(struct st_app_context* ctx,
          MTL_IP_ADDR_LEN);
   snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            fmd ? fmd->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
-  ops.udp_port[MTL_SESSION_PORT_P] = fmd ? fmd->base.udp_port : (10200 + s->idx);
+  ops.udp_port[MTL_SESSION_PORT_P] =
+      (uint16_t)(fmd ? fmd->base.udp_port : (10200 + s->idx));
   if (ops.num_port > 1) {
     memcpy(ops.ip_addr[MTL_SESSION_PORT_R],
            fmd ? st_json_ip(ctx, &fmd->base, MTL_SESSION_PORT_R)
@@ -247,7 +250,8 @@ static int app_rx_fmd_init(struct st_app_context* ctx,
            MTL_IP_ADDR_LEN);
     snprintf(ops.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
              fmd ? fmd->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
-    ops.udp_port[MTL_SESSION_PORT_R] = fmd ? fmd->base.udp_port : (10200 + s->idx);
+    ops.udp_port[MTL_SESSION_PORT_R] =
+        (uint16_t)(fmd ? fmd->base.udp_port : (10200 + s->idx));
   }
   ops.rtp_ring_size = 1024;
   ops.payload_type = fmd ? fmd->base.payload_type : ST_APP_PAYLOAD_TYPE_FASTMETADATA;
@@ -323,7 +327,7 @@ int st_app_rx_fmd_sessions_init(struct st_app_context* ctx) {
   int ret, i;
   struct st_app_rx_fmd_session* s;
   ctx->rx_fmd_sessions = (struct st_app_rx_fmd_session*)st_app_zmalloc(
-      sizeof(struct st_app_rx_fmd_session) * ctx->rx_fmd_session_cnt);
+      sizeof(struct st_app_rx_fmd_session) * (size_t)ctx->rx_fmd_session_cnt);
   if (!ctx->rx_fmd_sessions) return -ENOMEM;
   for (i = 0; i < ctx->rx_fmd_session_cnt; i++) {
     s = &ctx->rx_fmd_sessions[i];

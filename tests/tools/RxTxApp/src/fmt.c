@@ -20,7 +20,8 @@ int user_get_pgroup(enum user_pg_fmt fmt, struct user_pgroup* pg) {
   return -1;
 }
 
-void convert_uyvy10b_to_uyvy8b(uint8_t* yuv_8b, uint8_t const* yuv_10b, int pg_count) {
+void convert_uyvy10b_to_uyvy8b(uint8_t* yuv_8b, uint8_t const* yuv_10b,
+                               uint32_t pg_count) {
   struct st20_rfc4175_422_8_pg2_le* pg_8 = (struct st20_rfc4175_422_8_pg2_le*)yuv_8b;
   struct st20_rfc4175_422_10_pg2_be* pg_10 = (struct st20_rfc4175_422_10_pg2_be*)yuv_10b;
 

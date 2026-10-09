@@ -138,7 +138,7 @@ static int rx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_rx
   memset(&ops_rx, 0, sizeof(ops_rx));
   ops_rx.name = ops->name;
   ops_rx.priv = ctx;
-  ops_rx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
+  ops_rx.num_port = (uint8_t)RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   ops_rx.payload_type = ops->port.payload_type;
   ops_rx.ssrc = ops->port.ssrc;
   for (int i = 0; i < ops_rx.num_port; i++) {

@@ -37,7 +37,7 @@ static int tx_st20p_close_source(struct tx_st20p_sample_ctx* s) {
 static int tx_st20p_open_source(struct tx_st20p_sample_ctx* s, char* file) {
   int fd = -EIO;
   struct stat i;
-  int frame_cnt = 2;
+  size_t frame_cnt = 2;
   uint8_t* m = NULL;
   size_t fbs_size = s->frame_size * frame_cnt;
 
@@ -58,28 +58,28 @@ static int tx_st20p_open_source(struct tx_st20p_sample_ctx* s, char* file) {
     close(fd);
     return -EIO;
   }
-  if (i.st_size % s->frame_size) {
+  if ((size_t)i.st_size % s->frame_size) {
     err("%s, %s file size should be multiple of frame size %" PRIu64 "\n", __func__, file,
         s->frame_size);
     close(fd);
     return -EIO;
   }
-  m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  m = mmap(NULL, (size_t)i.st_size, PROT_READ, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s, mmap %s fail\n", __func__, file);
     close(fd);
     return -EIO;
   }
-  frame_cnt = i.st_size / s->frame_size;
-  fbs_size = i.st_size;
-  info("%s, tx_url %s frame_cnt %d\n", __func__, file, frame_cnt);
+  frame_cnt = (size_t)i.st_size / s->frame_size;
+  fbs_size = (size_t)i.st_size;
+  info("%s, tx_url %s frame_cnt %zu\n", __func__, file, frame_cnt);
 
 init_fb:
 
   s->source_begin = mtl_hp_zmalloc(s->st, fbs_size, MTL_PORT_P);
   if (!s->source_begin) {
     err("%s, source malloc on hugepage fail\n", __func__);
-    if (m) munmap(m, i.st_size);
+    if (m) munmap(m, (size_t)i.st_size);
     if (fd >= 0) close(fd);
     return -EIO;
   }
@@ -87,7 +87,7 @@ init_fb:
   if (m) mtl_memcpy(s->source_begin, m, fbs_size);
   s->source_end = s->source_begin + fbs_size;
 
-  if (m) munmap(m, i.st_size);
+  if (m) munmap(m, (size_t)i.st_size);
   if (fd >= 0) close(fd);
 
   return 0;
@@ -172,7 +172,7 @@ int main(int argc, char** argv) {
     }
     memset(app[i], 0, sizeof(struct tx_st20p_sample_ctx));
     app[i]->st = ctx.st;
-    app[i]->idx = i;
+    app[i]->idx = (int)i;
     app[i]->stop = false;
     if (ctx.has_user_meta) {
       snprintf(app[i]->meta.dummy, sizeof(app[i]->meta.dummy), "st20p_tx_%u", i);
@@ -188,18 +188,19 @@ int main(int argc, char** argv) {
            MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
-    ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
+    ops_tx.port.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ctx.udp_port + i * 2);
     if (ops_tx.port.num_port > 1) {
       memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R], ctx.tx_dip_addr[MTL_PORT_R],
              MTL_IP_ADDR_LEN);
       snprintf(ops_tx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
                ctx.param.port[MTL_PORT_R]);
-      ops_tx.port.udp_port[MTL_SESSION_PORT_R] = ctx.udp_port + i * 2;
+      ops_tx.port.udp_port[MTL_SESSION_PORT_R] = (uint16_t)(ctx.udp_port + i * 2);
     }
     if (ctx.multi_inc_addr) {
       /* use a new ip addr instead of a new udp port for multi sessions */
       ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port;
-      ops_tx.port.dip_addr[MTL_SESSION_PORT_P][3] += i;
+      ops_tx.port.dip_addr[MTL_SESSION_PORT_P][3] =
+          (uint8_t)(ops_tx.port.dip_addr[MTL_SESSION_PORT_P][3] + i);
     }
     ops_tx.port.payload_type = ctx.payload_type;
     ops_tx.width = ctx.width;

@@ -80,7 +80,7 @@ static void* app_rx_st20r_frame_thread(void* arg) {
     framebuff->frame = NULL;
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
-    s->framebuff_consumer_idx = consumer_idx;
+    s->framebuff_consumer_idx = (uint16_t)consumer_idx;
     st_pthread_mutex_unlock(&s->st20_wake_mutex);
   }
   info("%s(%d), stop\n", __func__, idx);
@@ -90,7 +90,7 @@ static void* app_rx_st20r_frame_thread(void* arg) {
 
 static int app_rx_st20r_close_source(struct st_app_rx_video_session* s) {
   if (s->st20_dst_fd >= 0) {
-    munmap(s->st20_dst_begin, s->st20_dst_end - s->st20_dst_begin);
+    munmap(s->st20_dst_begin, (size_t)(s->st20_dst_end - s->st20_dst_begin));
     close(s->st20_dst_fd);
     s->st20_dst_fd = -1;
   }
@@ -119,7 +119,7 @@ static int app_rx_st20r_open_source(struct st_app_rx_video_session* s) {
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  uint8_t* m = mmap(NULL, (size_t)f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s(%d), mmap %s fail\n", __func__, idx, s->st20_dst_url);
     close(fd);
@@ -176,7 +176,7 @@ static int app_rx_st20r_frame_ready(void* priv, void* frame,
 
     if (meta->tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
       uint32_t latency_media_clk =
-          st10_tai_to_media_clk(ptp_ns, sampling_rate) - meta->timestamp;
+          (uint32_t)(st10_tai_to_media_clk(ptp_ns, sampling_rate) - meta->timestamp);
       latency_ns = st10_media_clk_to_ns(latency_media_clk, sampling_rate);
     } else {
       latency_ns = ptp_ns - meta->timestamp;
@@ -254,7 +254,7 @@ static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t
   snprintf(name, 32, "app_rx_st20r_%d", idx);
   ops.name = name;
   ops.priv = s;
-  ops.num_port = video ? video->base.num_inf : ctx->para.num_ports;
+  ops.num_port = (uint8_t)(video ? video->base.num_inf : ctx->para.num_ports);
   memcpy(ops.ip_addr[MTL_SESSION_PORT_P],
          video ? st_json_ip(ctx, &video->base, MTL_SESSION_PORT_P)
                : ctx->rx_ip_addr[MTL_PORT_P],
@@ -265,7 +265,8 @@ static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t
       MTL_IP_ADDR_LEN);
   snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            video ? video->base.inf[MTL_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
-  ops.udp_port[MTL_SESSION_PORT_P] = video ? video->base.udp_port : (10000 + s->idx);
+  ops.udp_port[MTL_SESSION_PORT_P] =
+      (uint16_t)(video ? video->base.udp_port : (10000 + s->idx));
   if (ops.num_port > 1) {
     memcpy(ops.ip_addr[MTL_SESSION_PORT_R],
            video ? st_json_ip(ctx, &video->base, MTL_SESSION_PORT_R)
@@ -278,7 +279,8 @@ static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t
     snprintf(
         ops.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
         video ? video->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
-    ops.udp_port[MTL_SESSION_PORT_R] = video ? video->base.udp_port : (10000 + s->idx);
+    ops.udp_port[MTL_SESSION_PORT_R] =
+        (uint16_t)(video ? video->base.udp_port : (10000 + s->idx));
   }
   ops.pacing = ST21_PACING_NARROW;
   ops.flags = ST20RC_RX_FLAG_DMA_OFFLOAD;
@@ -289,7 +291,7 @@ static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t
   ops.fmt = video ? video->info.pg_format : ST20_FMT_YUV_422_10BIT;
   ops.payload_type = video ? video->base.payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
   ops.notify_frame_ready = app_rx_st20r_frame_ready;
-  ops.framebuff_cnt = s->framebuff_cnt;
+  ops.framebuff_cnt = (uint16_t)s->framebuff_cnt;
   if (ctx->enable_hdr_split) ops.flags |= ST20RC_RX_FLAG_HDR_SPLIT;
 
   st_pthread_mutex_init(&s->st20_wake_mutex, NULL);
@@ -318,8 +320,8 @@ static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t
 
   s->framebuff_producer_idx = 0;
   s->framebuff_consumer_idx = 0;
-  s->framebuffs =
-      (struct st_rx_frame*)st_app_zmalloc(sizeof(*s->framebuffs) * s->framebuff_cnt);
+  s->framebuffs = (struct st_rx_frame*)st_app_zmalloc(sizeof(*s->framebuffs) *
+                                                      (size_t)s->framebuff_cnt);
   if (!s->framebuffs) return -ENOMEM;
   for (int j = 0; j < s->framebuff_cnt; j++) {
     s->framebuffs[j].frame = NULL;
@@ -346,7 +348,7 @@ static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t
   }
   s->st20r_handle = st20r_handle;
 
-  s->st20_frame_size = st20rc_rx_get_framebuffer_size(st20r_handle);
+  s->st20_frame_size = (int)st20rc_rx_get_framebuffer_size(st20r_handle);
 
   ret = app_rx_st20r_open_source(s);
   if (ret < 0) {
@@ -414,7 +416,7 @@ int st_app_rx_st20r_sessions_init(struct st_app_context* ctx) {
   if (fb_cnt <= 0) fb_cnt = 3;
 
   ctx->rx_st20r_sessions = (struct st_app_rx_video_session*)st_app_zmalloc(
-      sizeof(*ctx->rx_st20r_sessions) * ctx->rx_st20r_session_cnt);
+      sizeof(*ctx->rx_st20r_sessions) * (size_t)ctx->rx_st20r_session_cnt);
   if (!ctx->rx_st20r_sessions) return -ENOMEM;
   for (i = 0; i < ctx->rx_st20r_session_cnt; i++) {
     s = &ctx->rx_st20r_sessions[i];

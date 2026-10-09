@@ -17,7 +17,7 @@ static int instance_send_and_receive_message(int sock, mtl_message_t* msg,
   ssize_t ret = send(sock, msg, sizeof(*msg), 0);
   if (ret < 0) {
     err("%s, send message fail\n", __func__);
-    return ret;
+    return (int)ret;
   }
 
   memset(msg, 0, sizeof(*msg));
@@ -28,7 +28,7 @@ static int instance_send_and_receive_message(int sock, mtl_message_t* msg,
     return -EIO;
   }
 
-  return ntohl(msg->body.response_msg.response);
+  return (int)ntohl((uint32_t)msg->body.response_msg.response);
 }
 
 int mt_instance_put_lcore(struct mtl_main_impl* impl, uint16_t lcore_id) {
@@ -66,7 +66,7 @@ int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifi
   mtl_msg.body.if_msg.ifindex = htonl(ifindex);
   mtl_msg.header.body_len = htonl(sizeof(mtl_if_message_t));
 
-  ret = send(sock, &mtl_msg, sizeof(mtl_msg), 0);
+  ret = (int)send(sock, &mtl_msg, sizeof(mtl_msg), 0);
   if (ret < 0) {
     err("%s(%u), send message fail\n", __func__, ifindex);
     return ret;
@@ -88,7 +88,7 @@ int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifi
   msg.msg_control = (caddr_t)cms;
   msg.msg_controllen = sizeof(cms);
 
-  len = recvmsg(sock, &msg, 0);
+  len = (int)recvmsg(sock, &msg, 0);
   if (len < 0) {
     err("%s(%u), recv message fail\n", __func__, ifindex);
     return len;
@@ -211,7 +211,7 @@ int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p) {
   msg.header.body_len = sizeof(mtl_register_message_t);
 
   mtl_register_message_t* reg_msg = &msg.body.register_msg;
-  reg_msg->pid = htonl(u_info->pid);
+  reg_msg->pid = (pid_t)htonl((uint32_t)u_info->pid);
   reg_msg->uid = htonl(getuid());
   strncpy(reg_msg->hostname, u_info->hostname, sizeof(reg_msg->hostname) - 1);
   reg_msg->hostname[sizeof(reg_msg->hostname) - 1] = '\0';

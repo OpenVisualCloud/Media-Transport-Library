@@ -97,11 +97,11 @@ static int dhcp_send_discover(struct mtl_main_impl* impl, enum mtl_port port) {
   hdr_offset += sizeof(*dhcp) + RTE_PTR_DIFF(options, dhcp->options);
 
   mt_mbuf_init_ipv4(pkt);
-  pkt->pkt_len = pkt->data_len = hdr_offset;
+  pkt->pkt_len = pkt->data_len = (uint16_t)hdr_offset;
 
   /* update length */
-  ip->total_length = htons(pkt->pkt_len - sizeof(*eth));
-  udp->dgram_len = htons(pkt->pkt_len - sizeof(*eth) - sizeof(*ip));
+  ip->total_length = htons((uint16_t)(pkt->pkt_len - sizeof(*eth)));
+  udp->dgram_len = htons((uint16_t)(pkt->pkt_len - sizeof(*eth) - sizeof(*ip)));
 
   /* send dhcp discover packet */
   uint16_t send = mt_sys_queue_tx_burst(impl, port, &pkt, 1);
@@ -204,11 +204,11 @@ static int dhcp_send_request(struct mtl_main_impl* impl, enum mtl_port port) {
   hdr_offset += sizeof(*dhcp) + RTE_PTR_DIFF(options, dhcp->options);
 
   mt_mbuf_init_ipv4(pkt);
-  pkt->pkt_len = pkt->data_len = hdr_offset;
+  pkt->pkt_len = pkt->data_len = (uint16_t)hdr_offset;
 
   /* update length */
-  ip->total_length = htons(pkt->pkt_len - sizeof(*eth));
-  udp->dgram_len = htons(pkt->pkt_len - sizeof(*eth) - sizeof(*ip));
+  ip->total_length = htons((uint16_t)(pkt->pkt_len - sizeof(*eth)));
+  udp->dgram_len = htons((uint16_t)(pkt->pkt_len - sizeof(*eth) - sizeof(*ip)));
 
   /* send dhcp request packet */
   uint16_t send = mt_sys_queue_tx_burst(impl, port, &pkt, 1);
@@ -316,21 +316,21 @@ static int dhcp_recv_ack(struct mtl_main_impl* impl, struct mt_dhcp_hdr* ack,
   }
   mt_pthread_mutex_unlock(&dhcp_impl->mutex);
 
-  ret = rte_eal_alarm_set(t1 * US_PER_S, dhcp_renew_handler, dhcp_impl);
+  ret = rte_eal_alarm_set((uint64_t)(t1 * US_PER_S), dhcp_renew_handler, dhcp_impl);
   if (ret < 0) {
     err("%s(%d), start renew timer fail %d, t1 %lf\n", __func__, dhcp_impl->port, ret,
         t1);
     return ret;
   }
 
-  ret = rte_eal_alarm_set(t2 * US_PER_S, dhcp_rebind_handler, dhcp_impl);
+  ret = rte_eal_alarm_set((uint64_t)(t2 * US_PER_S), dhcp_rebind_handler, dhcp_impl);
   if (ret < 0) {
     err("%s(%d), start rebind timer fail %d, t2 %lf\n", __func__, dhcp_impl->port, ret,
         t2);
     return ret;
   }
 
-  ret = rte_eal_alarm_set(t * US_PER_S, dhcp_lease_handler, dhcp_impl);
+  ret = rte_eal_alarm_set((uint64_t)(t * US_PER_S), dhcp_lease_handler, dhcp_impl);
   if (ret < 0) {
     err("%s(%d), start lease timer fail %d, t %lf\n", __func__, dhcp_impl->port, ret, t);
     return ret;
@@ -393,7 +393,7 @@ static int dhcp_send_release(struct mtl_main_impl* impl, enum mtl_port port) {
   dhcp->op = DHCP_OP_BOOTREQUEST;
   dhcp->htype = DHCP_HTYPE_ETHERNET;
   dhcp->hlen = DHCP_HLEN_ETHERNET;
-  dhcp->xid = rand();
+  dhcp->xid = (uint32_t)rand();
   dhcp->magic_cookie = htonl(DHCP_MAGIC_COOKIE);
   dhcp->ciaddr = htonl(*(uint32_t*)dhcp_impl->ip);
   mt_memcpy(dhcp->chaddr, eth->src_addr.addr_bytes, sizeof(eth->src_addr.addr_bytes));
@@ -417,11 +417,11 @@ static int dhcp_send_release(struct mtl_main_impl* impl, enum mtl_port port) {
   hdr_offset += sizeof(*dhcp) + RTE_PTR_DIFF(options, dhcp->options);
 
   mt_mbuf_init_ipv4(pkt);
-  pkt->pkt_len = pkt->data_len = hdr_offset;
+  pkt->pkt_len = pkt->data_len = (uint16_t)hdr_offset;
 
   /* update length */
-  ip->total_length = htons(pkt->pkt_len - sizeof(*eth));
-  udp->dgram_len = htons(pkt->pkt_len - sizeof(*eth) - sizeof(*ip));
+  ip->total_length = htons((uint16_t)(pkt->pkt_len - sizeof(*eth)));
+  udp->dgram_len = htons((uint16_t)(pkt->pkt_len - sizeof(*eth) - sizeof(*ip)));
 
   /* send dhcp release packet */
   uint16_t send = mt_sys_queue_tx_burst(impl, port, &pkt, 1);
@@ -522,7 +522,7 @@ int mt_dhcp_init(struct mtl_main_impl* impl) {
   int socket = mt_socket_id(impl, MTL_PORT_P);
   int num_dhcp = 0;
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     if (mt_if(impl, i)->net_proto != MTL_PROTO_DHCP) continue;
     struct mt_dhcp_impl* dhcp = mt_rte_zmalloc_socket(sizeof(*dhcp), socket);
     if (!dhcp) {
@@ -535,7 +535,7 @@ int mt_dhcp_init(struct mtl_main_impl* impl) {
     dhcp->port = i;
     dhcp->parent = impl;
     dhcp->status = MT_DHCP_STATUS_INIT;
-    dhcp->xid = rand();
+    dhcp->xid = (uint32_t)rand();
 
     /* assign dhcp instance */
     impl->dhcp[i] = dhcp;
@@ -571,7 +571,7 @@ int mt_dhcp_init(struct mtl_main_impl* impl) {
 int mt_dhcp_uinit(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     struct mt_dhcp_impl* dhcp = mt_get_dhcp(impl, i);
     if (!dhcp) continue;
 

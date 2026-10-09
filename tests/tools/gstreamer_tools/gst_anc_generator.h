@@ -15,8 +15,8 @@ struct _GstAncGenerator {
 
   /* Number of frames to generate (0 = infinite) */
   guint num_frames;
-  guint framerate_num;
-  guint framerate_den;
+  gint framerate_num;
+  gint framerate_den;
 
   guint frames_generated;
   GstClockTime running_time;

@@ -416,10 +416,16 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   struct st20_tx_ops ops_tx;
   st20_tx_handle transport;
 
+  if (ops->transport_linesize > UINT32_MAX) {
+    err("%s(%d), invalid transport_linesize %" PRIu64 "\n", __func__, idx,
+        ops->transport_linesize);
+    return -EINVAL;
+  }
+
   memset(&ops_tx, 0, sizeof(ops_tx));
   ops_tx.name = ops->name;
   ops_tx.priv = ctx;
-  ops_tx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
+  ops_tx.num_port = (uint8_t)RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   for (int i = 0; i < ops_tx.num_port; i++) {
     memcpy(ops_tx.dip_addr[i], ops->port.dip_addr[i], MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port[i], MTL_PORT_MAX_LEN, "%s", ops->port.port[i]);
@@ -448,7 +454,7 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   ops_tx.packing = ops->transport_packing;
   ops_tx.fmt = ops->transport_fmt;
   ops_tx.interlaced = ops->interlaced;
-  ops_tx.linesize = ops->transport_linesize;
+  ops_tx.linesize = (uint32_t)ops->transport_linesize;
   ops_tx.payload_type = ops->port.payload_type;
   ops_tx.ssrc = ops->port.ssrc;
   ops_tx.type = ST20_TYPE_FRAME_LEVEL;
@@ -671,8 +677,8 @@ static int tx_st20p_stat(void* priv) {
   int offset = 0;
   for (uint16_t i = 0; i < ST20P_TX_FRAME_STATUS_MAX; i++) {
     if (status_counts[i] > 0) {
-      offset += snprintf(status_str + offset, sizeof(status_str) - offset, "%s:%u ",
-                         st20p_tx_frame_stat_name_short[i], status_counts[i]);
+      offset += snprintf(status_str + offset, sizeof(status_str) - (size_t)offset,
+                         "%s:%u ", st20p_tx_frame_stat_name_short[i], status_counts[i]);
     }
   }
   dbg("TX_st20p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
@@ -884,7 +890,7 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
   MT_USDT_ST20P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr[0], usdt_stat);
   /* check if dump USDT enabled */
   if (MT_USDT_ST20P_TX_FRAME_DUMP_ENABLED()) {
-    int period = st_frame_rate(ctx->ops.fps) * 5; /* dump every 5s now */
+    int period = (int)(st_frame_rate(ctx->ops.fps) * 5); /* dump every 5s now */
     if ((ctx->usdt_frame_cnt % period) == (period / 2)) {
       tx_st20p_usdt_dump_frame(ctx, frame);
     }
@@ -1011,7 +1017,7 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
   MT_USDT_ST20P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr[0], usdt_stat);
   /* check if dump USDT enabled */
   if (MT_USDT_ST20P_TX_FRAME_DUMP_ENABLED()) {
-    int period = st_frame_rate(ctx->ops.fps) * 5; /* dump every 5s now */
+    int period = (int)(st_frame_rate(ctx->ops.fps) * 5); /* dump every 5s now */
     if ((ctx->usdt_frame_cnt % period) == (period / 2)) {
       tx_st20p_usdt_dump_frame(ctx, frame);
     }

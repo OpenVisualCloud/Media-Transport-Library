@@ -120,7 +120,7 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
   struct frame_info* fi = TAILQ_FIRST(&app->q);
   if (fi) {
     ret = 0;
-    *next_frame_idx = consumer_idx;
+    *next_frame_idx = (uint16_t)consumer_idx;
     meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
     meta->timestamp = fi->tmstamp;
 
@@ -128,7 +128,7 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
     ext_frame.buf_addr = fi->frame_addr + s->fb_offset;
     ext_frame.buf_iova = mtl_hp_virt2iova(app->st, fi->frame_addr) + s->fb_offset;
     ext_frame.buf_len = app->fb_size / 2;
-    st20_tx_set_ext_frame(s->tx_handle, consumer_idx, &ext_frame);
+    st20_tx_set_ext_frame(s->tx_handle, (uint16_t)consumer_idx, &ext_frame);
 
     atomic_fetch_add(&fi->refcnt, 1);
     if (atomic_load(&fi->refcnt) == 4) {
@@ -189,7 +189,7 @@ static int split_fwd_sample_free_app(struct split_fwd_sample_ctx* app) {
 }
 
 int main(int argc, char** argv) {
-  int session_num = 4;
+  uint16_t session_num = 4;
   struct st_sample_context ctx;
   int ret = -EIO;
 
@@ -256,7 +256,7 @@ int main(int argc, char** argv) {
            MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ctx.udp_port + i * 2);
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = ST20_PACKING_BPM;
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;

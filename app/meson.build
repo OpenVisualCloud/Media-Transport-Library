@@ -80,7 +80,7 @@ endif
 if get_option('buildtype') != 'debug'
   app_c_args += ['-Werror']
 endif
-app_c_args += ['-Wall']
+app_c_args += ['-Wall', '-Wconversion']
 app_c_args += ['-Wunused-parameter']
 app_c_args += ['-I' + join_paths(meson.current_source_dir(), '..', 'include')]
 app_c_args += ['-I' + join_paths(meson.current_build_dir(), '..')]

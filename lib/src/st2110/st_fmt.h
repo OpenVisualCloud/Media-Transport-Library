@@ -59,10 +59,10 @@ static inline void st20_unpack_pg2be_422le10(struct st20_rfc4175_422_10_pg2_be* 
                                              uint16_t* cr00, uint16_t* y01) {
   uint16_t cb, y0, cr, y1;
 
-  cb = (pg->Cb00 << 2) + pg->Cb00_;
-  y0 = (pg->Y00 << 4) + pg->Y00_;
-  cr = (pg->Cr00 << 6) + pg->Cr00_;
-  y1 = (pg->Y01 << 8) + pg->Y01_;
+  cb = (uint16_t)((pg->Cb00 << 2) + pg->Cb00_);
+  y0 = (uint16_t)((pg->Y00 << 4) + pg->Y00_);
+  cr = (uint16_t)((pg->Cr00 << 6) + pg->Cr00_);
+  y1 = (uint16_t)((pg->Y01 << 8) + pg->Y01_);
 
   *cb00 = cb;
   *y00 = y0;
@@ -75,10 +75,10 @@ static inline void st20_unpack_pg2be_422le12(struct st20_rfc4175_422_12_pg2_be* 
                                              uint16_t* cr00, uint16_t* y01) {
   uint16_t cb, y0, cr, y1;
 
-  cb = (pg->Cb00 << 4) + pg->Cb00_;
-  y0 = (pg->Y00 << 8) + pg->Y00_;
-  cr = (pg->Cr00 << 4) + pg->Cr00_;
-  y1 = (pg->Y01 << 8) + pg->Y01_;
+  cb = (uint16_t)((pg->Cb00 << 4) + pg->Cb00_);
+  y0 = (uint16_t)((pg->Y00 << 8) + pg->Y00_);
+  cr = (uint16_t)((pg->Cr00 << 4) + pg->Cr00_);
+  y1 = (uint16_t)((pg->Y01 << 8) + pg->Y01_);
 
   *cb00 = cb;
   *y00 = y0;
@@ -91,10 +91,10 @@ static inline void st20_unpack_pg2be_422le16(struct st20_rfc4175_422_10_pg2_be* 
                                              uint16_t* cr00, uint16_t* y01) {
   uint16_t cb, y0, cr, y1;
 
-  cb = (pg->Cb00 << 8) + (pg->Cb00_ << 6);
-  y0 = (pg->Y00 << 10) + (pg->Y00_ << 6);
-  cr = (pg->Cr00 << 12) + (pg->Cr00_ << 6);
-  y1 = (pg->Y01 << 14) + (pg->Y01_ << 6);
+  cb = (uint16_t)((pg->Cb00 << 8) + (pg->Cb00_ << 6));
+  y0 = (uint16_t)((pg->Y00 << 10) + (pg->Y00_ << 6));
+  cr = (uint16_t)((pg->Cr00 << 12) + (pg->Cr00_ << 6));
+  y1 = (uint16_t)((pg->Y01 << 14) + (pg->Y01_ << 6));
 
   *cb00 = cb;
   *y00 = y0;

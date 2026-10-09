@@ -55,8 +55,8 @@ static enum st_frame_fmt fmt_cvt2frame(enum cvt_frame_fmt fmt) {
 static int convert(struct conv_app_context* ctx) {
   enum cvt_frame_fmt fmt_in = ctx->fmt_in;
   enum cvt_frame_fmt fmt_out = ctx->fmt_out;
-  uint32_t w = ctx->w;
-  uint32_t h = ctx->h;
+  uint32_t w = (uint32_t)ctx->w;
+  uint32_t h = (uint32_t)ctx->h;
   size_t frame_size_in = st_frame_size(fmt_cvt2frame(fmt_in), w, h, false);
   size_t frame_size_out = st_frame_size(fmt_cvt2frame(fmt_out), w, h, false);
   FILE *fp_in = NULL, *fp_out = NULL;
@@ -92,20 +92,20 @@ static int convert(struct conv_app_context* ctx) {
   // get the frame num
   fseek(fp_in, 0, SEEK_END);
   long size = ftell(fp_in);
-  int frame_num = size / frame_size_in;
-  if (frame_num < 0) {
+  if (size < 0) {
     err("%s, err size %ld\n", __func__, size);
     ret = -EIO;
     goto out;
   }
+  int frame_num = (int)((size_t)size / frame_size_in);
   info("%s, file size:%ld, %d frames(%ux%u), in %s(%d) out %s(%d)\n", __func__, size,
        frame_num, w, h, ctx->file_in, fmt_in, ctx->file_out, fmt_out);
 
   fseek(fp_in, 0, SEEK_SET);
   for (int i = 0; i < frame_num; i++) {
-    int ret = fread(buf_in, 1, frame_size_in, fp_in);
-    if (ret < 0 || (size_t)ret < frame_size_in) {
-      err("%s, fread fail %d\n", __func__, ret);
+    size_t n = fread(buf_in, 1, frame_size_in, fp_in);
+    if (n < frame_size_in) {
+      err("%s, fread fail %zu\n", __func__, n);
       ret = -EIO;
       goto out;
     }
@@ -343,8 +343,8 @@ out:
 
 static int frame2field(struct conv_app_context* ctx) {
   enum cvt_frame_fmt fmt = ctx->fmt_in;
-  uint32_t w = ctx->w;
-  uint32_t h = ctx->h;
+  uint32_t w = (uint32_t)ctx->w;
+  uint32_t h = (uint32_t)ctx->h;
   size_t frame_size = st_frame_size(fmt_cvt2frame(fmt), w, h, false);
   size_t line_size = frame_size / h;
   FILE *fp_in = NULL, *fp_out = NULL;
@@ -375,20 +375,20 @@ static int frame2field(struct conv_app_context* ctx) {
   // get the frame num
   fseek(fp_in, 0, SEEK_END);
   long size = ftell(fp_in);
-  int frame_num = size / frame_size;
-  if (frame_num < 0) {
+  if (size < 0) {
     err("%s, err size %ld\n", __func__, size);
     ret = -EIO;
     goto out;
   }
+  int frame_num = (int)((size_t)size / frame_size);
   info("%s, file size:%ld, %d frames(%ux%u), in %s(%d) out %s\n", __func__, size,
        frame_num, w, h, ctx->file_in, fmt, ctx->file_out);
 
   fseek(fp_in, 0, SEEK_SET);
   for (int i = 0; i < frame_num; i++) {
-    int ret = fread(buf_in, 1, frame_size, fp_in);
-    if (ret < 0 || (size_t)ret < frame_size) {
-      err("%s, fread fail %d\n", __func__, ret);
+    size_t n = fread(buf_in, 1, frame_size, fp_in);
+    if (n < frame_size) {
+      err("%s, fread fail %zu\n", __func__, n);
       ret = -EIO;
       goto out;
     }

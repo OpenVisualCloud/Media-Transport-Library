@@ -6,7 +6,7 @@
 
 static int app_rx_st22_close_source(struct st22_app_rx_session* s) {
   if (s->st22_dst_fd >= 0) {
-    munmap(s->st22_dst_begin, s->st22_dst_end - s->st22_dst_begin);
+    munmap(s->st22_dst_begin, (size_t)(s->st22_dst_end - s->st22_dst_begin));
     close(s->st22_dst_fd);
     s->st22_dst_fd = -1;
   }
@@ -27,7 +27,7 @@ static int app_rx_st22_open_source(struct st22_app_rx_session* s) {
     return -EIO;
   }
 
-  f_size = s->st22_dst_fb_cnt * s->bytes_per_frame;
+  f_size = (off_t)((size_t)s->st22_dst_fb_cnt * s->bytes_per_frame);
   ret = ftruncate(fd, f_size);
   if (ret < 0) {
     err("%s(%d), ftruncate %s fail\n", __func__, idx, s->st22_dst_url);
@@ -35,7 +35,7 @@ static int app_rx_st22_open_source(struct st22_app_rx_session* s) {
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  uint8_t* m = mmap(NULL, (size_t)f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s(%d), mmap %s fail\n", __func__, idx, s->st22_dst_url);
     close(fd);
@@ -129,7 +129,7 @@ static void* app_rx_st22_decode_thread(void* arg) {
     framebuff->frame = NULL;
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
-    s->framebuff_consumer_idx = consumer_idx;
+    s->framebuff_consumer_idx = (uint16_t)consumer_idx;
     st_pthread_mutex_unlock(&s->wake_mutex);
   }
   info("%s(%d), stop\n", __func__, idx);
@@ -179,7 +179,7 @@ static int app_rx_st22_init(struct st_app_context* ctx, struct st22_app_rx_sessi
   s->width = 1920;
   s->height = 1080;
   s->bpp = bpp;
-  s->bytes_per_frame = s->width * s->height * bpp / 8;
+  s->bytes_per_frame = (size_t)(s->width * s->height * bpp / 8);
 
   uint32_t soc = 0, b = 0, d = 0, f = 0;
   sscanf(ctx->para.port[MTL_PORT_P], "%x:%x:%x.%x", &soc, &b, &d, &f);
@@ -196,18 +196,18 @@ static int app_rx_st22_init(struct st_app_context* ctx, struct st22_app_rx_sessi
          MTL_IP_ADDR_LEN);
   snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_P]);
-  ops.udp_port[MTL_SESSION_PORT_P] = 15000 + s->idx;
+  ops.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(15000 + s->idx);
   if (ops.num_port > 1) {
     memcpy(ops.ip_addr[MTL_SESSION_PORT_R], ctx->rx_ip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
     memcpy(ops.mcast_sip_addr[MTL_SESSION_PORT_R], ctx->rx_mcast_sip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     snprintf(ops.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
-    ops.udp_port[MTL_SESSION_PORT_R] = 15000 + s->idx;
+    ops.udp_port[MTL_SESSION_PORT_R] = (uint16_t)(15000 + s->idx);
   }
   ops.pacing = ST21_PACING_NARROW;
-  ops.width = s->width;
-  ops.height = s->height;
+  ops.width = (uint32_t)s->width;
+  ops.height = (uint32_t)s->height;
   ops.fps = ST_FPS_P59_94;
   ops.payload_type = ST_APP_PAYLOAD_TYPE_ST22;
   ops.type = ST22_TYPE_FRAME_LEVEL;
@@ -263,7 +263,7 @@ int st22_app_rx_sessions_init(struct st_app_context* ctx) {
   int ret, i;
   struct st22_app_rx_session* s;
   ctx->rx_st22_sessions = (struct st22_app_rx_session*)st_app_zmalloc(
-      sizeof(struct st22_app_rx_session) * ctx->rx_st22_session_cnt);
+      sizeof(struct st22_app_rx_session) * (size_t)ctx->rx_st22_session_cnt);
   if (!ctx->rx_st22_sessions) return -ENOMEM;
   for (i = 0; i < ctx->rx_st22_session_cnt; i++) {
     s = &ctx->rx_st22_sessions[i];

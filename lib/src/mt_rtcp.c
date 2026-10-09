@@ -53,7 +53,7 @@ int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs
     err("%s(%s), failed to enqueue %u mbuf to ring\n", __func__, tx->name, bulk);
     return -EIO;
   }
-  mt_mbuf_refcnt_inc_bulk(mbufs, bulk);
+  mt_mbuf_refcnt_inc_bulk(mbufs, (uint16_t)bulk);
 
   /* save the last rtp seq num */
   rtp = rte_pktmbuf_mtod_offset(mbufs[bulk - 1], struct st_rfc3550_rtp_hdr*,
@@ -112,7 +112,7 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
   }
 
   for (uint16_t done = 0; done < bulk;) {
-    uint16_t nb = RTE_MIN(bulk - done, MT_RTCP_RETRANSMIT_BULK);
+    uint16_t nb = (uint16_t)RTE_MIN(bulk - done, MT_RTCP_RETRANSMIT_BULK);
     uint16_t nb_rt = nb;
     if (mt_u64_fifo_read_any_bulk(tx->mbuf_ring, (uint64_t*)mbufs, nb, diff + done) < 0) {
       dbg("%s(%s), failed to read retransmit mbufs from ring\n", __func__, tx->name);
@@ -125,7 +125,7 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
       struct rte_mbuf* copied = rte_pktmbuf_copy(mbufs[i], tx->mbuf_pool, 0, UINT32_MAX);
       if (!copied) {
         dbg("%s(%s), failed to copy mbuf\n", __func__, tx->name);
-        tx->stat_rtp_retransmit_fail_nobuf += bulk - done - i;
+        tx->stat_rtp_retransmit_fail_nobuf += (uint32_t)(bulk - done - i);
         nb_rt = i;
         break;
       }
@@ -144,7 +144,7 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
       rte_pktmbuf_free_bulk(&copy_mbufs[sent], nb_rt - sent);
       tx->stat_rtp_retransmit_fail_burst += nb_rt - sent;
       /* the queue is full, do not try the rest of the range */
-      if (nb_rt == nb) tx->stat_rtp_retransmit_fail_burst += bulk - done - nb;
+      if (nb_rt == nb) tx->stat_rtp_retransmit_fail_burst += (uint32_t)(bulk - done - nb);
       break;
     }
     if (nb_rt < nb) break; /* no mbuf for the copy */
@@ -230,11 +230,11 @@ int mt_rtcp_tx_parse_rtcp_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp
       rtcp_tx_drop_invalid(tx, MT_RTCP_DROP_LEN, rtcp, len);
       return -EIO;
     }
-    uint16_t num_fcis =
-        (rtcp_bytes - sizeof(struct mt_rtcp_hdr)) / sizeof(struct mt_rtcp_fci);
+    uint16_t num_fcis = (uint16_t)((rtcp_bytes - sizeof(struct mt_rtcp_hdr)) /
+                                   sizeof(struct mt_rtcp_fci));
     if (num_fcis > MT_RTCP_MAX_FCIS) num_fcis = MT_RTCP_MAX_FCIS;
     /* one nack retransmits at most the ring once, repeated fcis get nothing */
-    uint32_t budget = mt_u64_fifo_count(tx->mbuf_ring);
+    uint32_t budget = (uint32_t)mt_u64_fifo_count(tx->mbuf_ring);
     struct mt_rtcp_fci* fci = rtcp->fci;
     for (uint16_t i = 0; i < num_fcis; i++, fci++) {
       uint16_t start = ntohs(fci->start);
@@ -395,12 +395,14 @@ int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx* rx) {
   rtcp->ssrc = htonl(rx->ssrc);
   mt_memcpy(rtcp->name, "IMTL", 4);
 
-  pkt->data_len += sizeof(struct mt_rtcp_hdr) + num_fci * sizeof(struct mt_rtcp_fci);
+  pkt->data_len +=
+      (uint16_t)(sizeof(struct mt_rtcp_hdr) + num_fci * sizeof(struct mt_rtcp_fci));
   pkt->pkt_len = pkt->data_len;
 
   /* update length */
-  ipv4->total_length = htons(pkt->pkt_len - sizeof(struct rte_ether_hdr));
-  udp->dgram_len = htons(pkt->pkt_len - sizeof(struct rte_ether_hdr) - sizeof(*ipv4));
+  ipv4->total_length = htons((uint16_t)(pkt->pkt_len - sizeof(struct rte_ether_hdr)));
+  udp->dgram_len =
+      htons((uint16_t)(pkt->pkt_len - sizeof(struct rte_ether_hdr) - sizeof(*ipv4)));
 
   uint16_t send = mt_sys_queue_tx_burst(impl, port, &pkt, 1);
   if (send != 1) {

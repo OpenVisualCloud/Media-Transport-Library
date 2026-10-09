@@ -165,9 +165,23 @@ static int sample_args_parse_tx_mac(struct st_sample_context* ctx, char* mac_str
   return 0;
 }
 
+/* parse a non-negative integer argument, reject values above max */
+static int sample_parse_uint(const char* name, const char* str, uint32_t max,
+                             uint32_t* val) {
+  int v = atoi(str);
+
+  if (v < 0 || (uint32_t)v > max) {
+    err("%s, invalid %s %s, max %u\n", __func__, name, str, max);
+    return -EINVAL;
+  }
+  *val = (uint32_t)v;
+  return 0;
+}
+
 static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) {
   int cmd = -1, optIdx = 0;
   struct mtl_init_params* p = &ctx->param;
+  uint32_t v;
 
   while (1) {
     cmd = getopt_long_only(argc, argv, "hv", sample_args_options, &optIdx);
@@ -194,12 +208,16 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         inet_pton(AF_INET, optarg, mtl_r_sip_addr(p));
         break;
       case SAMPLE_ARG_UDP_PORT:
-        ctx->udp_port = atoi(optarg);
-        ctx->audio_udp_port = atoi(optarg);
+        if (!sample_parse_uint("udp_port", optarg, UINT16_MAX, &v)) {
+          ctx->udp_port = (uint16_t)v;
+          ctx->audio_udp_port = (uint16_t)v;
+        }
         break;
       case SAMPLE_ARG_PAYLOAD_TYPE:
-        ctx->payload_type = atoi(optarg);
-        ctx->audio_payload_type = atoi(optarg);
+        if (!sample_parse_uint("payload_type", optarg, 0x7F, &v)) {
+          ctx->payload_type = (uint8_t)v;
+          ctx->audio_payload_type = (uint8_t)v;
+        }
         break;
       case SAMPLE_ARG_FPS: {
         enum st_fps fps = st_name_to_fps(optarg);
@@ -308,17 +326,21 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
           err("%s, unknow pacing way %s\n", __func__, optarg);
         break;
       case SAMPLE_ARG_NB_TX_DESC:
-        p->nb_tx_desc = atoi(optarg);
+        if (!sample_parse_uint("nb_tx_desc", optarg, UINT16_MAX, &v))
+          p->nb_tx_desc = (uint16_t)v;
         break;
       case SAMPLE_ARG_NB_RX_DESC:
-        p->nb_rx_desc = atoi(optarg);
+        if (!sample_parse_uint("nb_rx_desc", optarg, UINT16_MAX, &v))
+          p->nb_rx_desc = (uint16_t)v;
         break;
       case SAMPLE_ARG_RX_BURST_SZ:
-        ctx->rx_burst_size = atoi(optarg);
+        if (!sample_parse_uint("rx_burst_size", optarg, UINT16_MAX, &v))
+          ctx->rx_burst_size = (uint16_t)v;
         break;
       case SAMPLE_ARG_QUEUES_CNT:
+        if (sample_parse_uint("queues_cnt", optarg, UINT16_MAX, &v)) break;
         for (int i = 0; i < MTL_PORT_MAX; i++) {
-          p->rx_queues_cnt[i] = atoi(optarg);
+          p->rx_queues_cnt[i] = (uint16_t)v;
           p->tx_queues_cnt[i] = p->rx_queues_cnt[i];
         }
         break;
@@ -349,7 +371,8 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
           err("%s, unknow audio_fmt %s\n", __func__, optarg);
         break;
       case SAMPLE_ARG_AUDIO_CHANNEL:
-        ctx->audio_channel = atoi(optarg);
+        if (!sample_parse_uint("audio_channel", optarg, UINT16_MAX, &v))
+          ctx->audio_channel = (uint16_t)v;
         break;
       case SAMPLE_ARG_AUDIO_SAMPLING:
         if (!strcmp(optarg, "48k"))
@@ -377,13 +400,13 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         snprintf(ctx->logo_url, sizeof(ctx->rx_url), "%s", optarg);
         break;
       case SAMPLE_ARG_WIDTH:
-        ctx->width = atoi(optarg);
+        sample_parse_uint("width", optarg, UINT32_MAX, &ctx->width);
         break;
       case SAMPLE_ARG_HEIGHT:
-        ctx->height = atoi(optarg);
+        sample_parse_uint("height", optarg, UINT32_MAX, &ctx->height);
         break;
       case SAMPLE_ARG_SESSIONS_CNT:
-        ctx->sessions = atoi(optarg);
+        sample_parse_uint("sessions", optarg, UINT16_MAX, &ctx->sessions);
         break;
       case SAMPLE_ARG_EXT_FRAME:
         ctx->ext_frame = true;
@@ -454,10 +477,10 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         ctx->profiling_gddr = true;
         break;
       case SAMPLE_ARG_PERF_FRAMES:
-        ctx->perf_frames = atoi(optarg);
+        sample_parse_uint("perf_frames", optarg, UINT32_MAX, &ctx->perf_frames);
         break;
       case SAMPLE_ARG_PERF_FB_CNT:
-        ctx->perf_fb_cnt = atoi(optarg);
+        sample_parse_uint("perf_fb_cnt", optarg, UINT32_MAX, &ctx->perf_fb_cnt);
         break;
       case SAMPLE_ARG_MULTI_INC_ADDR:
         ctx->multi_inc_addr = true;
@@ -577,8 +600,16 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   /* always enable 1 port */
   if (!p->num_ports) p->num_ports = 1;
 
-  if (tx && !p->tx_queues_cnt[0]) sample_tx_queue_cnt_set(ctx, ctx->sessions);
-  if (rx && !p->rx_queues_cnt[0]) sample_rx_queue_cnt_set(ctx, ctx->sessions);
+  /* sessions use udp_port + 2 * idx, keep the last one in the 16 bit port range */
+  if (ctx->udp_port + 2 * ctx->sessions > UINT16_MAX ||
+      ctx->audio_udp_port + 2 * ctx->sessions > UINT16_MAX) {
+    err("%s, udp_port %u/%u with %u sessions exceeds 65535\n", __func__, ctx->udp_port,
+        ctx->audio_udp_port, ctx->sessions);
+    return -EINVAL;
+  }
+
+  if (tx && !p->tx_queues_cnt[0]) sample_tx_queue_cnt_set(ctx, (uint16_t)ctx->sessions);
+  if (rx && !p->rx_queues_cnt[0]) sample_rx_queue_cnt_set(ctx, (uint16_t)ctx->sessions);
   sample_set_afxdp(ctx);
 
   return 0;
@@ -624,8 +655,9 @@ int sample_rx_queue_cnt_set(struct st_sample_context* ctx, uint16_t cnt) {
   return 0;
 }
 
-void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be* data, int w, int h) {
-  int pg_size = w * h / 2;
+void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be* data, uint32_t w,
+                                  uint32_t h) {
+  uint32_t pg_size = w * h / 2;
   uint16_t cb, y0, cr, y1; /* 10 bit */
 
   y0 = 0x111;
@@ -634,15 +666,15 @@ void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be* data, int w
   cr = 0x333;
   y1 = y0 + 1;
 
-  for (int pg = 0; pg < pg_size; pg++) {
-    data->Cb00 = cb >> 2;
-    data->Cb00_ = cb;
-    data->Y00 = y0 >> 4;
-    data->Y00_ = y0;
-    data->Cr00 = cr >> 6;
-    data->Cr00_ = cr;
-    data->Y01 = y1 >> 8;
-    data->Y01_ = y1;
+  for (uint32_t pg = 0; pg < pg_size; pg++) {
+    data->Cb00 = (uint8_t)(cb >> 2);
+    data->Cb00_ = (uint8_t)(cb & 0x3);
+    data->Y00 = (uint8_t)((y0 >> 4) & 0x3F);
+    data->Y00_ = (uint8_t)(y0 & 0xF);
+    data->Cr00 = (uint8_t)((cr >> 6) & 0xF);
+    data->Cr00_ = (uint8_t)(cr & 0x3F);
+    data->Y01 = (uint8_t)((y1 >> 8) & 0x3);
+    data->Y01_ = (uint8_t)y1;
     data++;
 
     cb++;
@@ -652,8 +684,9 @@ void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be* data, int w
   }
 }
 
-void fill_rfc4175_422_12_pg2_data(struct st20_rfc4175_422_12_pg2_be* data, int w, int h) {
-  int pg_size = w * h / 2;
+void fill_rfc4175_422_12_pg2_data(struct st20_rfc4175_422_12_pg2_be* data, uint32_t w,
+                                  uint32_t h) {
+  uint32_t pg_size = w * h / 2;
   uint16_t cb, y0, cr, y1; /* 12 bit */
 
   y0 = 0x111;
@@ -662,15 +695,15 @@ void fill_rfc4175_422_12_pg2_data(struct st20_rfc4175_422_12_pg2_be* data, int w
   cr = 0x333;
   y1 = y0 + 1;
 
-  for (int pg = 0; pg < pg_size; pg++) {
-    data->Cb00 = cb >> 4;
-    data->Cb00_ = cb;
-    data->Y00 = y0 >> 8;
-    data->Y00_ = y0;
-    data->Cr00 = cr >> 4;
-    data->Cr00_ = cr;
-    data->Y01 = y1 >> 8;
-    data->Y01_ = y1;
+  for (uint32_t pg = 0; pg < pg_size; pg++) {
+    data->Cb00 = (uint8_t)(cb >> 4);
+    data->Cb00_ = (uint8_t)(cb & 0xF);
+    data->Y00 = (uint8_t)((y0 >> 8) & 0xF);
+    data->Y00_ = (uint8_t)y0;
+    data->Cr00 = (uint8_t)(cr >> 4);
+    data->Cr00_ = (uint8_t)(cr & 0xF);
+    data->Y01 = (uint8_t)((y1 >> 8) & 0xF);
+    data->Y01_ = (uint8_t)y1;
     data++;
 
     cb++;

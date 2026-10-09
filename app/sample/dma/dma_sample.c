@@ -8,7 +8,7 @@
 
 static inline void rand_data(uint8_t* p, size_t sz, uint8_t base) {
   for (size_t i = 0; i < sz; i++) {
-    p[i] = rand() + base;
+    p[i] = (uint8_t)(rand() + base);
   }
 }
 
@@ -16,7 +16,7 @@ static int dma_copy_sample(mtl_handle st) {
   mtl_udma_handle dma;
   int ret;
   uint16_t nb_desc = 1024;
-  int nb_elements = nb_desc * 8, element_size = 1260;
+  uint32_t nb_elements = (uint32_t)nb_desc * 8, element_size = 1260;
   size_t fb_size = element_size * nb_elements;
   size_t fb_dst_iova_off = 0, fb_src_iova_off = 0;
 
@@ -92,7 +92,7 @@ static int dma_map_copy_sample(mtl_handle st) {
   mtl_udma_handle dma = NULL;
   int ret = -EIO;
   uint16_t nb_desc = 1024;
-  int nb_elements = nb_desc * 8, element_size = 1260;
+  uint32_t nb_elements = (uint32_t)nb_desc * 8, element_size = 1260;
   size_t fb_size = element_size * nb_elements;
   size_t pg_sz = mtl_page_size(st);
   /* 2 more pages to hold the head and tail */

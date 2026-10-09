@@ -279,7 +279,7 @@ static int tx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_tx
 
   ops_tx.name = ops->name;
   ops_tx.priv = ctx;
-  ops_tx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
+  ops_tx.num_port = (uint8_t)RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   ops_tx.payload_type = ops->port.payload_type;
   ops_tx.ssrc = ops->port.ssrc;
 
@@ -425,8 +425,8 @@ static int tx_st40p_stat(void* priv) {
   int offset = 0;
   for (uint16_t i = 0; i < ST40P_TX_FRAME_STATUS_MAX; i++) {
     if (status_counts[i] > 0) {
-      offset += snprintf(status_str + offset, sizeof(status_str) - offset, "%s:%u ",
-                         st40p_tx_frame_stat_name_short[i], status_counts[i]);
+      offset += snprintf(status_str + offset, sizeof(status_str) - (size_t)offset,
+                         "%s:%u ", st40p_tx_frame_stat_name_short[i], status_counts[i]);
     }
   }
   dbg("TX_st40p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);

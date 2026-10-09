@@ -111,7 +111,7 @@ static int rx_st40p_frame_ready(void* priv, void* addr, struct st40_rx_frame_met
 
   frame_info = &framebuff->frame_info;
   frame_info->udw_buff_addr = (uint8_t*)addr;
-  frame_info->udw_buffer_fill = meta->udw_buffer_fill;
+  frame_info->udw_buffer_fill = (uint32_t)meta->udw_buffer_fill;
   frame_info->meta_num = meta->meta_num;
   if (meta->meta_num && meta->meta) {
     uint32_t copy = meta->meta_num > ST40_MAX_META ? ST40_MAX_META : meta->meta_num;
@@ -154,7 +154,7 @@ static int rx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_rx
   memset(&ops_rx, 0, sizeof(ops_rx));
   ops_rx.name = ops->name;
   ops_rx.priv = ctx;
-  uint8_t num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
+  uint8_t num_port = (uint8_t)RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   ops_rx.num_port = num_port;
   ops_rx.payload_type = ops->port.payload_type;
   ops_rx.ssrc = ops->port.ssrc;
@@ -387,7 +387,7 @@ int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_inf
   int idx = ctx->idx;
   struct st40p_rx_frame* framebuff = frame_info->priv;
   uint16_t consumer_idx = framebuff->idx;
-  uint16_t meta_num_before_reset = frame_info->meta_num;
+  uint32_t meta_num_before_reset = frame_info->meta_num;
   int ret;
 
   MT_HANDLE_GUARD(ctx, MT_ST40_HANDLE_PIPELINE_RX, -EIO);

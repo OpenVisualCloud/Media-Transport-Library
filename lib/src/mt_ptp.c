@@ -68,14 +68,14 @@ static inline void ptp_timesync_unlock(struct mt_ptp_impl* ptp) { /* todo */
 }
 
 static inline uint64_t ptp_correct_ts(struct mt_ptp_impl* ptp, uint64_t ts) {
-  int64_t ts_local_advanced = ts - ptp->last_sync_ts;
-  int64_t ts_ptp_advanced = ptp->coefficient * ts_local_advanced;
-  return ptp->last_sync_ts + ts_ptp_advanced;
+  int64_t ts_local_advanced = (int64_t)(ts - ptp->last_sync_ts);
+  int64_t ts_ptp_advanced = (int64_t)(ptp->coefficient * (double)ts_local_advanced);
+  return ptp->last_sync_ts + (uint64_t)ts_ptp_advanced;
 }
 
 static inline uint64_t ptp_no_timesync_time(struct mt_ptp_impl* ptp) {
   uint64_t tsc = mt_get_tsc(ptp->impl);
-  return tsc + ptp->no_timesync_delta;
+  return tsc + (uint64_t)ptp->no_timesync_delta;
 }
 
 static inline void ptp_no_timesync_adjust(struct mt_ptp_impl* ptp, int64_t delta) {
@@ -212,10 +212,10 @@ static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double ppb) {
 
   if (ptp->phc2sys.realtime_nominal_tick) {
     adjfreq.modes |= ADJ_TICK;
-    adjfreq.tick =
-        round(ppb / 1e3 / ptp->phc2sys.realtime_hz) + ptp->phc2sys.realtime_nominal_tick;
-    ppb -= 1e3 * ptp->phc2sys.realtime_hz *
-           (adjfreq.tick - ptp->phc2sys.realtime_nominal_tick);
+    adjfreq.tick = (long)(round(ppb / 1e3 / (double)ptp->phc2sys.realtime_hz) +
+                          (double)ptp->phc2sys.realtime_nominal_tick);
+    ppb -= 1e3 * (double)ptp->phc2sys.realtime_hz *
+           (double)(adjfreq.tick - ptp->phc2sys.realtime_nominal_tick);
   }
 
   adjfreq.modes |= ADJ_FREQUENCY;
@@ -264,14 +264,14 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
       delay = t2_sys - t1_sys;
       if (shortest_delay > delay) {
         t_sys = (t1_sys + t2_sys) / 2;
-        offset = t_sys - t_phc;
+        offset = (int64_t)(t_sys - t_phc);
         shortest_delay = delay;
       }
     }
   }
   ptp_timesync_unlock(ptp);
   if (!ret && t_phc > 0) {
-    ppb = pi_sample(&ptp->phc2sys.servo, offset, t_sys, &state);
+    ppb = pi_sample(&ptp->phc2sys.servo, (double)offset, (double)t_sys, &state);
     dbg("%s(%d), state %d\n", __func__, ptp->port, state);
 
     switch (state) {
@@ -443,9 +443,9 @@ static void ptp_coefficient_result_reset(struct mt_ptp_impl* ptp) {
 }
 
 static void ptp_update_coefficient(struct mt_ptp_impl* ptp, int64_t error) {
-  ptp->integral += (error + ptp->prev_error) / 2;
+  ptp->integral += (double)((error + ptp->prev_error) / 2);
   ptp->prev_error = error;
-  double offset = ptp->kp * error + ptp->ki * ptp->integral;
+  double offset = ptp->kp * (double)error + ptp->ki * ptp->integral;
   if (ptp->t2_mode == MT_PTP_L4) offset /= 4; /* where sync interval is 0.25s for l4 */
   ptp->coefficient += RTE_MIN(RTE_MAX(offset, -1e-7), 1e-7);
   dbg("%s(%d), error %" PRId64 ", offset %.15lf\n", __func__, ptp->port, error, offset);
@@ -454,8 +454,9 @@ static void ptp_update_coefficient(struct mt_ptp_impl* ptp, int64_t error) {
 static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
   if (delta > 1000 * 1000) return;
   uint64_t ts_s = ptp_get_raw_time(ptp);
-  uint64_t ts_m = ts_s + delta;
-  double coefficient = (double)(ts_m - ptp->last_sync_ts) / (ts_s - ptp->last_sync_ts);
+  uint64_t ts_m = ts_s + (uint64_t)delta;
+  double coefficient =
+      (double)(ts_m - ptp->last_sync_ts) / (double)(ts_s - ptp->last_sync_ts);
   ptp->coefficient_result_sum += coefficient;
   ptp->coefficient_result_min = RTE_MIN(coefficient, ptp->coefficient_result_min);
   ptp->coefficient_result_max = RTE_MAX(coefficient, ptp->coefficient_result_max);
@@ -526,9 +527,9 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta, bool error_
       ptp_get_raw_time(ptp));
 
   if (5 == ptp->delta_result_cnt) /* clear the first 5 results */
-    ptp->delta_result_sum = labs(delta) * ptp->delta_result_cnt;
+    ptp->delta_result_sum = (uint64_t)labs(delta) * ptp->delta_result_cnt;
   else
-    ptp->delta_result_sum += labs(delta);
+    ptp->delta_result_sum += (uint64_t)labs(delta);
 
   ptp->delta_result_cnt++;
   /* update status */
@@ -585,7 +586,7 @@ static int ptp_sync_expect_result(struct mt_ptp_impl* ptp) {
       /* fine tune coefficient */
       ptp_update_coefficient(ptp, ptp->expect_correct_result_avg);
       ptp->last_sync_ts =
-          ptp_get_raw_time(ptp) + ptp->expect_result_avg; /* approximation */
+          ptp_get_raw_time(ptp) + (uint64_t)ptp->expect_result_avg; /* approximation */
     } else {
       /* re-calculate coefficient */
       ptp_calculate_coefficient(ptp, ptp->expect_result_avg);
@@ -625,8 +626,8 @@ static void ptp_sync_timeout_handler(void* param) {
 
 static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   struct mtl_main_impl* impl = ptp->impl;
-  int64_t t2_t1_delta = ((int64_t)ptp->t2 - ptp->t1);
-  int64_t t4_t3_delta = ((int64_t)ptp->t4 - ptp->t3);
+  int64_t t2_t1_delta = (int64_t)(ptp->t2 - ptp->t1);
+  int64_t t4_t3_delta = (int64_t)(ptp->t4 - ptp->t3);
 
   dbg("%s(%d), t1 %" PRIu64 " t2 %" PRIu64 " t3 %" PRIu64 " t4 %" PRIu64 "\n", __func__,
       ptp->port, ptp->t1, ptp->t2, ptp->t3, ptp->t4);
@@ -644,7 +645,7 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
               __func__, ptp->port, t2_t1_delta);
         }
         t2_t1_delta = ptp->expect_t2_t1_delta_avg;
-        ptp->t2 = ptp->t1 + t2_t1_delta; /* update t2 */
+        ptp->t2 = ptp->t1 + (uint64_t)t2_t1_delta; /* update t2 */
         ptp->stat_t2_t1_delta_calibrate++;
 
         if (ptp->t2_t1_delta_continuous_err > 20) {
@@ -665,7 +666,7 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
               __func__, ptp->port, t4_t3_delta);
         }
         t4_t3_delta = ptp->expect_t4_t3_delta_avg;
-        ptp->t3 = ptp->t4 - t4_t3_delta; /* update t3 */
+        ptp->t3 = ptp->t4 - (uint64_t)t4_t3_delta; /* update t3 */
         ptp->stat_t4_t3_delta_calibrate++;
 
         if (ptp->t4_t3_delta_continuous_err > 20) {
@@ -686,14 +687,14 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   delta /= 2;
 
   path_delay /= 2;
-  abs_delta = labs(delta);
+  abs_delta = (uint64_t)labs(delta);
 
   /* cancel the monitor */
   rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
   rte_eal_alarm_cancel(ptp_monitor_handler, ptp);
   if (ptp->delta_result_cnt) {
-    expect_delta =
-        abs(ptp->expect_result_avg) * (RTE_MIN(ptp->delta_result_err + 2, (uint64_t)5));
+    expect_delta = (uint64_t)abs(ptp->expect_result_avg) *
+                   (RTE_MIN(ptp->delta_result_err + 2, (uint64_t)5));
     if (!expect_delta) {
       expect_delta = ptp->delta_result_sum / ptp->delta_result_cnt * 2;
       expect_delta = RTE_MAX(expect_delta, (uint64_t)(100 * 1000)); /* min 100us */
@@ -723,8 +724,8 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   ptp->delta_result_err = 0;
 
   /* measure frequency corrected delta */
-  int64_t correct_delta = ((int64_t)ptp->t4 - ptp_correct_ts(ptp, ptp->t3)) -
-                          ((int64_t)ptp_correct_ts(ptp, ptp->t2) - ptp->t1);
+  int64_t correct_delta = (int64_t)((ptp->t4 - ptp_correct_ts(ptp, ptp->t3)) -
+                                    (ptp_correct_ts(ptp, ptp->t2) - ptp->t1));
   correct_delta /= 2;
   dbg("%s(%d), correct_delta %" PRId64 "\n", __func__, ptp->port, correct_delta);
   /* update correct delta and path delay result */
@@ -740,7 +741,7 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   if (ptp->use_pi && labs(correct_delta) < 1000) {
     /* fine tune coefficient */
     ptp_update_coefficient(ptp, correct_delta);
-    ptp->last_sync_ts = ptp_get_raw_time(ptp) + delta; /* approximation */
+    ptp->last_sync_ts = ptp_get_raw_time(ptp) + (uint64_t)delta; /* approximation */
   } else {
     /* re-calculate coefficient */
     ptp_calculate_coefficient(ptp, delta);
@@ -765,11 +766,11 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
       ptp->expect_result_cnt++;
       if (!ptp->expect_result_start_ns)
         ptp->expect_result_start_ns = mt_get_monotonic_time();
-      ptp->expect_result_sum += delta;
-      ptp->expect_correct_result_sum += correct_delta;
-      ptp->expect_t2_t1_delta_sum += t2_t1_delta;
-      ptp->expect_t4_t3_delta_sum += t4_t3_delta;
-      ptp->expect_result_sum += delta;
+      ptp->expect_result_sum += (int32_t)delta;
+      ptp->expect_correct_result_sum += (int32_t)correct_delta;
+      ptp->expect_t2_t1_delta_sum += (int32_t)t2_t1_delta;
+      ptp->expect_t4_t3_delta_sum += (int32_t)t4_t3_delta;
+      ptp->expect_result_sum += (int32_t)delta;
       if (ptp->expect_result_cnt >= 10) {
         ptp->expect_result_avg = ptp->expect_result_sum / ptp->expect_result_cnt;
         ptp->expect_correct_result_avg =
@@ -780,7 +781,7 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
             ptp->expect_t4_t3_delta_sum / ptp->expect_result_cnt;
         ptp->expect_result_period_ns =
             (mt_get_monotonic_time() - ptp->expect_result_start_ns) /
-            (ptp->expect_result_cnt - 1);
+            (uint64_t)(ptp->expect_result_cnt - 1);
         dbg("%s(%d), expect result avg %d(correct: %d), t2_t1_delta %d, t4_t3_delta %d, "
             "period %fs\n",
             __func__, ptp->port, ptp->expect_result_avg, ptp->expect_correct_result_avg,
@@ -900,8 +901,8 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
 
   mt_macaddr_get(ptp->impl, port, mt_eth_s_addr(hdr));
   ptp_set_master_addr(ptp, mt_eth_d_addr(hdr));
-  m->pkt_len = hdr_offset + sizeof(struct mt_ptp_sync_msg);
-  m->data_len = m->pkt_len;
+  m->pkt_len = (uint32_t)(hdr_offset + sizeof(struct mt_ptp_sync_msg));
+  m->data_len = (uint16_t)m->pkt_len;
 
   // mt_mbuf_dump(port, 0, "PTP_DELAY_REQ", m);
   uint16_t tx = mt_sys_queue_tx_burst(ptp->impl, port, &m, 1);
@@ -1015,7 +1016,7 @@ static int ptp_parse_follow_up(struct mt_ptp_impl* ptp,
     return -EINVAL;
   }
   ptp->t1 = ptp_net_tmstamp_to_ns(&msg->precise_origin_timestamp) +
-            (be64toh(msg->hdr.correction_field) >> 16);
+            (be64toh((uint64_t)msg->hdr.correction_field) >> 16);
   ptp->t1_domain_number = msg->hdr.domain_number;
   dbg("%s(%d), t1 %" PRIu64 ", ptp %" PRIu64 "\n", __func__, ptp->port, ptp->t1,
       ptp_get_raw_time(ptp));
@@ -1037,7 +1038,7 @@ static int ptp_parse_announce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_ms
 
   if (!ptp->master_initialized) {
     ptp->master_initialized = true;
-    ptp->master_utc_offset = ntohs(msg->current_utc_offset);
+    ptp->master_utc_offset = (int16_t)ntohs((uint16_t)msg->current_utc_offset);
     mt_memcpy(&ptp->master_port_id, &msg->hdr.source_port_identity,
               sizeof(ptp->master_port_id));
     mt_memcpy(&ptp->master_addr.addr_bytes[0], &ptp->master_port_id.clock_identity.id[0],
@@ -1091,7 +1092,7 @@ static int ptp_parse_delay_resp(struct mt_ptp_impl* ptp,
     return -EIO;
   }
   ptp->t4 = ptp_net_tmstamp_to_ns(&msg->receive_timestamp) -
-            (be64toh(msg->hdr.correction_field) >> 16);
+            (be64toh((uint64_t)msg->hdr.correction_field) >> 16);
   dbg("%s(%d), t4 %" PRIu64 ", seq %d, ptp %" PRIu64 "\n", __func__, ptp->port, ptp->t4,
       ptp->t3_sequence_id, ptp_get_raw_time(ptp));
   MT_USDT_PTP_MSG(ptp->port, 4, ptp->t4);
@@ -1126,15 +1127,15 @@ static void ptp_sync_from_user(struct mtl_main_impl* impl, struct mt_ptp_impl* p
   enum mtl_port port = ptp->port;
   uint64_t target_ns = mt_get_ptp_time(impl, port);
   uint64_t raw_ns = ptp_get_raw_time(ptp);
-  int64_t delta = (int64_t)target_ns - raw_ns;
-  uint64_t abs_delta = labs(delta);
-  uint64_t expect_abs_delta = abs(ptp->expect_result_avg) * 2;
+  int64_t delta = (int64_t)(target_ns - raw_ns);
+  uint64_t abs_delta = (uint64_t)labs(delta);
+  uint64_t expect_abs_delta = (uint64_t)abs(ptp->expect_result_avg) * 2;
 
   if (expect_abs_delta) {
     if (abs_delta > expect_abs_delta) delta = ptp->expect_result_avg;
   } else {
     if (abs_delta < 10000) {
-      ptp->expect_result_sum += delta;
+      ptp->expect_result_sum += (int32_t)delta;
       ptp->expect_result_cnt++;
       if (ptp->expect_result_cnt > 1000) {
         ptp->expect_result_avg = ptp->expect_result_sum / ptp->expect_result_cnt;
@@ -1300,7 +1301,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   ptp->port_id = port_id;
   ptp->mbuf_pool = mt_sys_tx_mempool(impl, port);
   ptp->master_initialized = false;
-  ptp->t3_sequence_id = 0x1000 * port;
+  ptp->t3_sequence_id = (uint16_t)(0x1000 * port);
   ptp->coefficient = 1.0;
   ptp->kp = impl->user_para.kp < 1e-15 ? MT_PTP_DEFAULT_KP : impl->user_para.kp;
   ptp->ki = impl->user_para.ki < 1e-15 ? MT_PTP_DEFAULT_KI : impl->user_para.ki;
@@ -1565,7 +1566,7 @@ int mt_ptp_init(struct mtl_main_impl* impl) {
   int ret;
   int num_port = mt_num_ports(impl);
 
-  for (int i = 0; i < num_port; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_port; i++) {
     /* only probe on the MTL_PORT_P */
     if ((i != MTL_PORT_P) && !mt_if_has_offload_timestamp(impl, i)) continue;
 
@@ -1597,7 +1598,7 @@ int mt_ptp_uinit(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   struct mt_ptp_impl* ptp;
 
-  for (int i = 0; i < num_ports; i++) {
+  for (enum mtl_port i = 0; i < (enum mtl_port)num_ports; i++) {
     ptp = mt_get_ptp(impl, i);
     if (!ptp) continue;
 
@@ -1630,7 +1631,7 @@ static uint64_t mbuf_hw_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* 
                                    enum mtl_port port) {
   struct mt_ptp_impl* ptp = mt_get_ptp(impl, port);
   uint64_t time_stamp =
-      *RTE_MBUF_DYNFIELD(mbuf, impl->dynfield_offset, rte_mbuf_timestamp_t*);
+      *RTE_MBUF_DYNFIELD(mbuf, (size_t)impl->dynfield_offset, rte_mbuf_timestamp_t*);
   return ptp_correct_ts(ptp, time_stamp);
 }
 
@@ -1656,7 +1657,7 @@ int mt_ptp_wait_stable(struct mtl_main_impl* impl, enum mtl_port port, int timeo
     }
 
     if (timeout_ms >= 0) {
-      int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
+      int ms = (int)((mt_get_tsc(impl) - start_ts) / NS_PER_MS);
       if (ms > timeout_ms) {
         err("%s(%d), fail as timeout to %d ms\n", __func__, port, timeout_ms);
         return -ETIMEDOUT;

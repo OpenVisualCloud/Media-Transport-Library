@@ -8,7 +8,7 @@ struct tv_rtp_sample_ctx {
   int idx;
   st20_tx_handle handle;
   bool stop;
-  int packet_size;
+  uint16_t packet_size;
   uint32_t total_packet_in_frame;
   uint8_t payload_type;
   uint32_t rtp_tmstamp;
@@ -35,19 +35,19 @@ static int app_tx_build_rtp_packet(struct tv_rtp_sample_ctx* s,
 
   /* update hdr */
   rtp->base.tmstamp = htonl(s->rtp_tmstamp);
-  rtp->base.seq_number = htons(s->seq_id);
+  rtp->base.seq_number = htons((uint16_t)s->seq_id);
   rtp->seq_number_ext = htons((uint16_t)(s->seq_id >> 16));
   rtp->base.csrc_count = 0;
   rtp->base.extension = 0;
   rtp->base.padding = 0;
   rtp->base.version = 2;
   rtp->base.marker = 0;
-  rtp->base.payload_type = s->payload_type;
+  rtp->base.payload_type = (uint8_t)(s->payload_type & 0x7F);
 
   // 4320 for ex. it is for 1080p, each line, we have 4 packet, each 1200 bytes.
   uint16_t row_number, row_offset;
-  row_number = s->pkt_idx / 4;         /* 0 to 1079 for 1080p */
-  row_offset = 480 * (s->pkt_idx % 4); /* [0, 480, 960, 1440] for 1080p */
+  row_number = (uint16_t)(s->pkt_idx / 4); /* 0 to 1079 for 1080p */
+  row_offset = 480 * (s->pkt_idx % 4);     /* [0, 480, 960, 1440] for 1080p */
   rtp->row_number = htons(row_number);
   rtp->row_offset = htons(row_offset);
   rtp->row_length = htons(1200); /* 1200 for 1080p */
@@ -129,7 +129,7 @@ int main(int argc, char** argv) {
     memset(app[i], 0, sizeof(struct tv_rtp_sample_ctx));
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
-    app[i]->idx = i;
+    app[i]->idx = (int)i;
 
     struct st20_tx_ops ops_tx;
     memset(&ops_tx, 0, sizeof(ops_tx));
@@ -140,7 +140,7 @@ int main(int argc, char** argv) {
            MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = (uint16_t)(ctx.udp_port + i * 2);
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.type = ST20_TYPE_RTP_LEVEL;
     ops_tx.width = ctx.width;

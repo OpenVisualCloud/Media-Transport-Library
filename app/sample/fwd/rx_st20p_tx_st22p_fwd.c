@@ -156,7 +156,7 @@ static int rx_st20p_tx_st22p_free_app(struct rx_st20p_tx_st22p_sample_ctx* app) 
 }
 
 int main(int argc, char** argv) {
-  int bpp = 3;
+  uint32_t bpp = 3;
   struct st_sample_context ctx;
   int ret;
 

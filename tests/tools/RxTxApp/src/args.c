@@ -399,14 +399,16 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
     p->num_ports++;
   }
   if (ctx->json_ctx->sch_quota) {
-    p->data_quota_mbs_per_sch =
-        ctx->json_ctx->sch_quota * st20_1080p59_yuv422_10bit_bandwidth_mps();
+    p->data_quota_mbs_per_sch = (uint32_t)((uint64_t)ctx->json_ctx->sch_quota *
+                                           st20_1080p59_yuv422_10bit_bandwidth_mps());
   }
   if (ctx->json_ctx->tx_audio_sessions_max_per_sch) {
-    p->tx_audio_sessions_max_per_sch = ctx->json_ctx->tx_audio_sessions_max_per_sch;
+    p->tx_audio_sessions_max_per_sch =
+        (uint32_t)ctx->json_ctx->tx_audio_sessions_max_per_sch;
   }
   if (ctx->json_ctx->rx_audio_sessions_max_per_sch) {
-    p->rx_audio_sessions_max_per_sch = ctx->json_ctx->rx_audio_sessions_max_per_sch;
+    p->rx_audio_sessions_max_per_sch =
+        (uint32_t)ctx->json_ctx->rx_audio_sessions_max_per_sch;
   }
   if (ctx->json_ctx->shared_tx_queues) p->flags |= MTL_FLAG_SHARED_TX_QUEUE;
   if (ctx->json_ctx->shared_rx_queues) p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
@@ -441,6 +443,19 @@ static void log_user_printer(enum mtl_log_level level, const char* format, ...) 
   va_end(args);
 }
 
+/* parse a non-negative integer argument, reject values above max */
+static int app_args_parse_uint(const char* name, const char* str, uint32_t max,
+                               uint32_t* val) {
+  int v = atoi(str);
+
+  if (v < 0 || (uint32_t)v > max) {
+    err("%s, invalid %s %s, max %u\n", __func__, name, str, max);
+    return -EINVAL;
+  }
+  *val = (uint32_t)v;
+  return 0;
+}
+
 static int app_args_parse_port(struct st_app_context* ctx, struct mtl_init_params* p,
                                char* str, enum mtl_port port) {
   st_json_context_t* json_ctx = ctx->json_ctx;
@@ -464,6 +479,7 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
                       char** argv) {
   int cmd = -1, optIdx = 0;
   int nb;
+  uint32_t v;
 
   while (1) {
     cmd = getopt_long_only(argc, argv, "hv", st_app_args_options, &optIdx);
@@ -562,7 +578,8 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         ctx->rx_video_file_frames = atoi(optarg);
         break;
       case ST_ARG_RX_VIDEO_FB_CNT:
-        ctx->rx_video_fb_cnt = atoi(optarg);
+        if (!app_args_parse_uint("rx_video_fb_cnt", optarg, UINT16_MAX, &v))
+          ctx->rx_video_fb_cnt = (int)v;
         break;
       case ST_ARG_RX_VIDEO_RTP_RING_SIZE:
         ctx->rx_video_rtp_ring_size = atoi(optarg);
@@ -616,10 +633,12 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
           err("%s, unknow pacing way %s\n", __func__, optarg);
         break;
       case ST_ARG_START_VRX:
-        ctx->tx_start_vrx = atoi(optarg);
+        if (!app_args_parse_uint("start_vrx", optarg, UINT16_MAX, &v))
+          ctx->tx_start_vrx = (uint16_t)v;
         break;
       case ST_ARG_PAD_INTERVAL:
-        ctx->tx_pad_interval = atoi(optarg);
+        if (!app_args_parse_uint("pad_interval", optarg, UINT16_MAX, &v))
+          ctx->tx_pad_interval = (uint16_t)v;
         break;
       case ST_ARG_PAD_STATIC:
         ctx->tx_static_pad = true;
@@ -643,8 +662,8 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         ctx->rx_display = true;
         break;
       case ST_ARG_DISABLE_MIGRATE:
-        p->flags &= ~MTL_FLAG_TX_VIDEO_MIGRATE;
-        p->flags &= ~MTL_FLAG_RX_VIDEO_MIGRATE;
+        p->flags &= ~(uint64_t)MTL_FLAG_TX_VIDEO_MIGRATE;
+        p->flags &= ~(uint64_t)MTL_FLAG_RX_VIDEO_MIGRATE;
         break;
       case ST_ARG_BIND_NUMA:
         p->flags |= MTL_FLAG_BIND_NUMA;
@@ -704,7 +723,8 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         p->flags |= MTL_FLAG_ENABLE_HW_TIMESTAMP;
         break;
       case ST_ARG_RX_BURST_SZ:
-        ctx->rx_burst_size = atoi(optarg);
+        if (!app_args_parse_uint("rx_burst_size", optarg, UINT16_MAX, &v))
+          ctx->rx_burst_size = (uint16_t)v;
         break;
       case ST_ARG_RX_MONO_POOL:
         p->flags |= MTL_FLAG_RX_MONO_POOL;
@@ -717,13 +737,14 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         p->flags |= MTL_FLAG_TX_MONO_POOL;
         break;
       case ST_ARG_RX_POOL_DATA_SIZE:
-        p->rx_pool_data_size = atoi(optarg);
+        if (!app_args_parse_uint("rx_pool_data_size", optarg, UINT16_MAX, &v))
+          p->rx_pool_data_size = (uint16_t)v;
         break;
       case ST_ARG_RX_SEPARATE_VIDEO_LCORE:
         p->flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
         break;
       case ST_ARG_RX_MIX_VIDEO_LCORE:
-        p->flags &= ~MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
+        p->flags &= ~(uint64_t)MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
         break;
       case ST_ARG_DEDICATE_SYS_LCORE:
         p->flags |= MTL_FLAG_DEDICATED_SYS_LCORE;
@@ -735,12 +756,14 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         app_args_parse_lcores(p, optarg);
         break;
       case ST_ARG_SCH_DATA_QUOTA:
-        p->data_quota_mbs_per_sch = atoi(optarg);
+        app_args_parse_uint("sch_data_quota", optarg, UINT32_MAX,
+                            &p->data_quota_mbs_per_sch);
         break;
       case ST_ARG_SCH_SESSION_QUOTA: /* unit: 1080p tx */
         nb = atoi(optarg);
         if (nb > 0 && nb < 100) {
-          p->data_quota_mbs_per_sch = nb * st20_1080p59_yuv422_10bit_bandwidth_mps();
+          p->data_quota_mbs_per_sch =
+              (uint32_t)((uint64_t)nb * st20_1080p59_yuv422_10bit_bandwidth_mps());
         }
         break;
       case ST_ARG_P_TX_DST_MAC:
@@ -789,16 +812,18 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         mtl_set_log_printer(log_user_printer);
         break;
       case ST_ARG_NB_TX_DESC:
-        p->nb_tx_desc = atoi(optarg);
+        if (!app_args_parse_uint("nb_tx_desc", optarg, UINT16_MAX, &v))
+          p->nb_tx_desc = (uint16_t)v;
         break;
       case ST_ARG_NB_RX_DESC:
-        p->nb_rx_desc = atoi(optarg);
+        if (!app_args_parse_uint("nb_rx_desc", optarg, UINT16_MAX, &v))
+          p->nb_rx_desc = (uint16_t)v;
         break;
       case ST_ARG_DMA_DEV:
         app_args_dma_dev(p, optarg);
         break;
       case ST_ARG_PCAPNG_DUMP:
-        ctx->pcapng_max_pkts = atoi(optarg);
+        app_args_parse_uint("pcapng_dump", optarg, UINT32_MAX, &ctx->pcapng_max_pkts);
         break;
       case ST_ARG_RUNTIME_SESSION:
         ctx->runtime_session = true;
@@ -825,7 +850,8 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         p->flags |= MTL_FLAG_TASKLET_SLEEP;
         break;
       case ST_ARG_TASKLET_SLEEP_US:
-        ctx->var_para.sch_force_sleep_us = atoi(optarg);
+        if (!app_args_parse_uint("tasklet_sleep_us", optarg, UINT32_MAX, &v))
+          ctx->var_para.sch_force_sleep_us = v;
         break;
       case ST_ARG_TASKLET_THREAD:
         p->flags |= MTL_FLAG_TASKLET_THREAD;
@@ -935,11 +961,13 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         ctx->video_sha_check = true;
         break;
       case ST_ARG_ARP_TIMEOUT_S:
-        p->arp_timeout_s = atoi(optarg);
+        if (!app_args_parse_uint("arp_timeout_s", optarg, UINT16_MAX, &v))
+          p->arp_timeout_s = (uint16_t)v;
         break;
       case ST_ARG_RSS_SCH_NB:
+        if (app_args_parse_uint("rss_sch_nb", optarg, UINT16_MAX, &v)) break;
         for (enum mtl_port port = MTL_PORT_P; port < MTL_PORT_MAX; port++) {
-          p->rss_sch_nb[port] = atoi(optarg);
+          p->rss_sch_nb[port] = (uint16_t)v;
         }
         break;
       case ST_ARG_ALLOW_ACROSS_NUMA_CORE:

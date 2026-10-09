@@ -95,7 +95,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   uint16_t seq_id = ntohs(rtp->seq_number);
   uint8_t payload_type = rtp->payload_type;
   MTL_MAY_UNUSED(s_port);
-  uint32_t pkt_len = mbuf->data_len - sizeof(struct st41_rtp_hdr);
+  uint32_t pkt_len = (uint32_t)(mbuf->data_len - sizeof(struct st41_rtp_hdr));
   MTL_MAY_UNUSED(pkt_len);
   uint32_t tmstamp = ntohl(rtp->tmstamp);
 
@@ -121,7 +121,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
 
   /* not a big deal as long as stream is continous */
   if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1) &&
-      mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
+      mt_seq16_greater(seq_id, (uint16_t)s->latest_seq_id[s_port])) {
     uint16_t gap = (uint16_t)(seq_id - s->latest_seq_id[s_port] - 1);
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
@@ -131,11 +131,11 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
     /* exact same seq seen again on the same port — same-port duplicate
      * (distinct from a duplicate arriving on the redundant port) */
     s->port_user_stats.common.port[s_port].duplicates_same_port++;
-  } else if (!mt_seq16_greater(seq_id, s->latest_seq_id[s_port])) {
+  } else if (!mt_seq16_greater(seq_id, (uint16_t)s->latest_seq_id[s_port])) {
     /* backward arrival on the same port — genuine intra-port reorder */
     s->port_user_stats.common.port[s_port].reordered_packets++;
   }
-  if (mt_seq16_greater(seq_id, s->latest_seq_id[s_port]))
+  if (mt_seq16_greater(seq_id, (uint16_t)s->latest_seq_id[s_port]))
     s->latest_seq_id[s_port] = seq_id;
 
   /* count per-port stats before redundancy filtering for consistent reporting */
@@ -144,9 +144,9 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
 
   /* in ancillary we assume packet is redundant when the seq_id is old (it's possible to
   get multiple packets with the same timestamp)) */
-  if ((mt_seq32_greater(s->tmstamp, tmstamp)) ||
-      !mt_seq16_greater(seq_id, s->session_seq_id)) {
-    if (!mt_seq16_greater(seq_id, s->session_seq_id)) {
+  if ((mt_seq32_greater((uint32_t)s->tmstamp, tmstamp)) ||
+      !mt_seq16_greater(seq_id, (uint16_t)s->session_seq_id)) {
+    if (!mt_seq16_greater(seq_id, (uint16_t)s->session_seq_id)) {
       dbg("%s(%d,%d), redundant seq now %u session last %d\n", __func__, s->idx, s_port,
           seq_id, s->session_seq_id);
     } else {
@@ -204,7 +204,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   if (time_measure) tsc_start = mt_get_tsc(impl);
   ops->notify_rtp_ready(ops->priv);
   if (time_measure) {
-    uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+    uint32_t delta_us = (uint32_t)((mt_get_tsc(impl) - tsc_start) / NS_PER_US);
     s->stat_max_notify_rtp_us = RTE_MAX(s->stat_max_notify_rtp_us, delta_us);
   }
 
@@ -298,11 +298,11 @@ static int rx_fastmetadata_session_init_hw(struct mtl_main_impl* impl,
   enum mtl_port port;
 
   for (int i = 0; i < num_port; i++) {
-    port = mt_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, (enum mtl_session_port)i);
 
     s->priv[i].session = s;
     s->priv[i].impl = impl;
-    s->priv[i].s_port = i;
+    s->priv[i].s_port = (enum mtl_session_port)i;
 
     memset(&flow, 0, sizeof(flow));
     mt_memcpy(flow.dip_addr, s->ops.ip_addr[i], MTL_IP_ADDR_LEN);
@@ -327,7 +327,7 @@ static int rx_fastmetadata_session_init_hw(struct mtl_main_impl* impl,
     }
 
     info("%s(%d), port(l:%d,p:%d), queue %d udp %d\n", __func__, idx, i, port,
-         rx_fastmetadata_queue_id(s, i), flow.dst_port);
+         rx_fastmetadata_queue_id(s, (enum mtl_session_port)i), flow.dst_port);
   }
 
   return 0;
@@ -340,7 +340,7 @@ static int rx_fastmetadata_session_uinit_mcast(
 
   for (int i = 0; i < ops->num_port; i++) {
     if (!s->mcast_joined[i]) continue;
-    port = mt_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, (enum mtl_session_port)i);
     mt_mcast_leave(impl, mt_ip_to_u32(ops->ip_addr[i]),
                    mt_ip_to_u32(ops->mcast_sip_addr[i]), port);
   }
@@ -356,7 +356,7 @@ static int rx_fastmetadata_session_init_mcast(struct mtl_main_impl* impl,
 
   for (int i = 0; i < ops->num_port; i++) {
     if (!mt_is_multicast_ip(ops->ip_addr[i])) continue;
-    port = mt_port_logic2phy(s->port_maps, i);
+    port = mt_port_logic2phy(s->port_maps, (enum mtl_session_port)i);
     if (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY) {
       info("%s(%d), skip mcast join for port %d\n", __func__, s->idx, i);
       return 0;
@@ -432,7 +432,8 @@ static int rx_fastmetadata_session_attach(struct mtl_main_impl* impl,
   }
   s->ops = *ops;
   for (int i = 0; i < num_port; i++) {
-    s->st41_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
+    s->st41_dst_port[i] =
+        (ops->udp_port[i]) ? (ops->udp_port[i]) : (uint16_t)(30000 + idx * 2);
   }
 
   s->session_seq_id = -1;
@@ -536,16 +537,16 @@ static void rx_fastmetadata_session_stat(struct st_rx_fastmetadata_session_impl*
 
   if (lost_pkts) {
     if (s->ops.num_port > 1) {
-      double pct_p =
-          port_pkts[MTL_SESSION_PORT_P]
-              ? 100.0 * port_lost[MTL_SESSION_PORT_P] /
-                    (port_pkts[MTL_SESSION_PORT_P] + port_lost[MTL_SESSION_PORT_P])
-              : 0.0;
-      double pct_r =
-          port_pkts[MTL_SESSION_PORT_R]
-              ? 100.0 * port_lost[MTL_SESSION_PORT_R] /
-                    (port_pkts[MTL_SESSION_PORT_R] + port_lost[MTL_SESSION_PORT_R])
-              : 0.0;
+      double pct_p = port_pkts[MTL_SESSION_PORT_P]
+                         ? 100.0 * (double)port_lost[MTL_SESSION_PORT_P] /
+                               (double)(port_pkts[MTL_SESSION_PORT_P] +
+                                        port_lost[MTL_SESSION_PORT_P])
+                         : 0.0;
+      double pct_r = port_pkts[MTL_SESSION_PORT_R]
+                         ? 100.0 * (double)port_lost[MTL_SESSION_PORT_R] /
+                               (double)(port_pkts[MTL_SESSION_PORT_R] +
+                                        port_lost[MTL_SESSION_PORT_R])
+                         : 0.0;
       double save_rate =
           (lost_pkts + pkts_unrecovered)
               ? 100.0 * (double)lost_pkts / (double)(lost_pkts + pkts_unrecovered)
@@ -626,7 +627,8 @@ static int rx_fastmetadata_session_update_src(struct mtl_main_impl* impl,
     memcpy(ops->ip_addr[i], src->ip_addr[i], MTL_IP_ADDR_LEN);
     memcpy(ops->mcast_sip_addr[i], src->mcast_sip_addr[i], MTL_IP_ADDR_LEN);
     ops->udp_port[i] = src->udp_port[i];
-    s->st41_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
+    s->st41_dst_port[i] =
+        (ops->udp_port[i]) ? (ops->udp_port[i]) : (uint16_t)(30000 + idx * 2);
   }
   /* reset seq id */
 
@@ -855,7 +857,7 @@ static int rx_fastmetadata_ops_prune_down_ports(struct mtl_main_impl* impl,
   if (num_ports < ops->num_port) {
     info("%s, reduced num_port %d -> %d after pruning down ports\n", __func__,
          ops->num_port, num_ports);
-    ops->num_port = num_ports;
+    ops->num_port = (uint8_t)num_ports;
   }
 
   return 0;
@@ -1102,7 +1104,7 @@ void* st41_rx_get_mbuf(st41_rx_handle handle, void** usrptr, uint16_t* len) {
   if (ret == 0) {
     int header_len = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) +
                      sizeof(struct rte_udp_hdr);
-    *len = pkt->data_len - header_len;
+    *len = (uint16_t)(pkt->data_len - header_len);
     *usrptr = rte_pktmbuf_mtod_offset(pkt, void*, header_len);
     ret_pkt = (void*)pkt;
   }
@@ -1136,9 +1138,9 @@ int st41_rx_get_queue_meta(st41_rx_handle handle, struct st_queue_meta* meta) {
   s = s_impl->impl;
 
   memset(meta, 0x0, sizeof(*meta));
-  meta->num_port = RTE_MIN(s->ops.num_port, MTL_SESSION_PORT_MAX);
+  meta->num_port = (uint8_t)RTE_MIN(s->ops.num_port, MTL_SESSION_PORT_MAX);
   for (uint8_t i = 0; i < meta->num_port; i++) {
-    meta->queue_id[i] = rx_fastmetadata_queue_id(s, i);
+    meta->queue_id[i] = (uint8_t)rx_fastmetadata_queue_id(s, i);
   }
 
   MT_HANDLE_RELEASE(s_impl);

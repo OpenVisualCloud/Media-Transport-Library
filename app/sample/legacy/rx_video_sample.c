@@ -114,7 +114,7 @@ static void* rx_video_frame_thread(void* arg) {
     framebuff->frame = NULL;
     consumer_idx++;
     if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
-    s->framebuff_consumer_idx = consumer_idx;
+    s->framebuff_consumer_idx = (uint16_t)consumer_idx;
     st_pthread_mutex_unlock(&s->wake_mutex);
   }
   info("%s(%d), stop\n", __func__, idx);
@@ -151,7 +151,7 @@ int main(int argc, char** argv) {
       goto error;
     }
     memset(app[i], 0, sizeof(struct rv_sample_context));
-    app[i]->idx = i;
+    app[i]->idx = (int)i;
     app[i]->framebuff_cnt = ctx.framebuff_cnt;
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
@@ -177,7 +177,7 @@ int main(int argc, char** argv) {
     snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
     ops_rx.udp_port[MTL_SESSION_PORT_P] =
-        ctx.udp_port + i * 2;  // user config the udp port.
+        (uint16_t)(ctx.udp_port + i * 2);  // user config the udp port.
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
     ops_rx.width = ctx.width;
@@ -209,7 +209,7 @@ int main(int argc, char** argv) {
       }
       app[i]->dma_mem = dma_mem;
 
-      for (int j = 0; j < app[i]->framebuff_cnt; ++j) {
+      for (uint16_t j = 0; j < app[i]->framebuff_cnt; ++j) {
         app[i]->ext_frames[j].buf_addr = mtl_dma_mem_addr(dma_mem) + j * framebuff_size;
         app[i]->ext_frames[j].buf_iova = mtl_dma_mem_iova(dma_mem) + j * framebuff_size;
         app[i]->ext_frames[j].buf_len = framebuff_size;

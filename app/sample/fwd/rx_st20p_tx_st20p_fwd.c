@@ -52,7 +52,7 @@ struct st_frame* rx_st20p_dequeue_frame(struct rx_st20p_tx_st20p_sample_ctx* s) 
   s->framebuffs[consumer_idx] = NULL;
   consumer_idx++;
   if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
-  s->framebuff_consumer_idx = consumer_idx;
+  s->framebuff_consumer_idx = (uint16_t)consumer_idx;
 
   return frame;
 }

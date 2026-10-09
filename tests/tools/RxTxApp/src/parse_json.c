@@ -508,20 +508,20 @@ static int st_json_parse_interfaces(json_object* interface_obj,
   obj = st_json_object_object_get(interface_obj, "tx_queues_cnt");
   if (obj) {
     int cnt = json_object_get_int(obj);
-    if (cnt < 0) {
+    if (cnt < 0 || cnt > UINT16_MAX) {
       err("%s, invalid tx_queues_cnt number: %d\n", __func__, cnt);
       return -ST_JSON_NOT_VALID;
     }
-    interface->tx_queues_cnt = cnt;
+    interface->tx_queues_cnt = (uint16_t)cnt;
   }
   obj = st_json_object_object_get(interface_obj, "rx_queues_cnt");
   if (obj) {
     int cnt = json_object_get_int(obj);
-    if (cnt < 0) {
+    if (cnt < 0 || cnt > UINT16_MAX) {
       err("%s, invalid rx_queues_cnt number: %d\n", __func__, cnt);
       return -ST_JSON_NOT_VALID;
     }
-    interface->rx_queues_cnt = cnt;
+    interface->rx_queues_cnt = (uint16_t)cnt;
   }
   obj = st_json_object_object_get(interface_obj, "allow_down_init");
   if (obj) {
@@ -533,11 +533,11 @@ static int st_json_parse_interfaces(json_object* interface_obj,
 
 static int parse_base_udp_port(json_object* obj, st_json_session_base_t* base, int idx) {
   int start_port = json_object_get_int(st_json_object_object_get(obj, "start_port"));
-  if (start_port <= 0 || start_port > 65535) {
-    err("%s, invalid start port %d\n", __func__, start_port);
+  if (start_port <= 0 || start_port + idx * 2 > 65535) {
+    err("%s, invalid start port %d for session %d\n", __func__, start_port, idx);
     return -ST_JSON_NOT_VALID;
   }
-  base->udp_port = start_port + idx * 2;
+  base->udp_port = (uint16_t)(start_port + idx * 2);
 
   return ST_JSON_SUCCESS;
 }
@@ -545,11 +545,12 @@ static int parse_base_udp_port(json_object* obj, st_json_session_base_t* base, i
 static int parse_base_payload_type(json_object* obj, st_json_session_base_t* base) {
   json_object* payload_type_object = st_json_object_object_get(obj, "payload_type");
   if (payload_type_object) {
-    base->payload_type = json_object_get_int(payload_type_object);
-    if (!st_json_is_valid_payload_type(base->payload_type)) {
-      err("%s, invalid payload type %d\n", __func__, base->payload_type);
+    int payload_type = json_object_get_int(payload_type_object);
+    if (!st_json_is_valid_payload_type(payload_type)) {
+      err("%s, invalid payload type %d\n", __func__, payload_type);
       return -ST_JSON_NOT_VALID;
     }
+    base->payload_type = (uint8_t)payload_type;
   } else {
     return -ST_JSON_NULL;
   }
@@ -701,7 +702,7 @@ static int parse_replica_url(char* url, int idx) {
   size_t len = strlen(url);
   if (!len) return ST_JSON_SUCCESS; /* not recording */
   int n = snprintf(url + len, ST_APP_URL_MAX_LEN - len, "_%d", idx);
-  if (n < 0 || len + n >= ST_APP_URL_MAX_LEN) {
+  if (n < 0 || len + (size_t)n >= ST_APP_URL_MAX_LEN) {
     err("%s, no room for replica %d suffix in %s\n", __func__, idx, url);
     return -ST_JSON_NOT_VALID;
   }
@@ -1391,7 +1392,7 @@ static int st_json_parse_tx_fmd(int idx, json_object* fmd_obj,
   json_object* fmd_dit_obj =
       st_json_object_object_get(fmd_obj, "fastmetadata_data_item_type");
   if (fmd_dit_obj) {
-    uint32_t fmd_dit = json_object_get_int(fmd_dit_obj);
+    uint32_t fmd_dit = (uint32_t)json_object_get_int(fmd_dit_obj);
     if (fmd_dit > 0x3fffff) {
       err("%s, invalid fastmetadata_data_item_type 0x%x\n", __func__, fmd_dit);
       return -ST_JSON_NOT_VALID;
@@ -1408,12 +1409,12 @@ static int st_json_parse_tx_fmd(int idx, json_object* fmd_obj,
   if (fmd_k_bit_obj) {
     /* assign to uint and check if the value more then 1
      * (the value should be in range of [0,1]) */
-    uint8_t fmd_k_bit = json_object_get_int(fmd_k_bit_obj);
-    if (fmd_k_bit > 1) {
+    int fmd_k_bit = json_object_get_int(fmd_k_bit_obj);
+    if (fmd_k_bit < 0 || fmd_k_bit > 1) {
       err("%s, invalid fastmetadata_k_bit 0x%x\n", __func__, fmd_k_bit);
       return -ST_JSON_NOT_VALID;
     }
-    fmd->info.fmd_k_bit = fmd_k_bit;
+    fmd->info.fmd_k_bit = (uint8_t)fmd_k_bit;
     info("%s, fastmetadata_k_bit = 0x%x\n", __func__, fmd_k_bit);
   } else {
     err("%s, No fastmetadata_k_bit !\n", __func__);
@@ -1509,7 +1510,7 @@ static int st_json_parse_rx_fmd(int idx, json_object* fmd_obj,
   json_object* fmd_dit_obj =
       st_json_object_object_get(fmd_obj, "fastmetadata_data_item_type");
   if (fmd_dit_obj) {
-    uint32_t fmd_dit = json_object_get_int(fmd_dit_obj);
+    uint32_t fmd_dit = (uint32_t)json_object_get_int(fmd_dit_obj);
     if (fmd_dit > 0x3fffff) {
       err("%s, invalid fastmetadata_data_item_type 0x%x.\n", __func__, fmd_dit);
       return -ST_JSON_NOT_VALID;
@@ -1524,12 +1525,12 @@ static int st_json_parse_rx_fmd(int idx, json_object* fmd_obj,
   /* parse fmd data item K-bit */
   json_object* fmd_k_bit_obj = st_json_object_object_get(fmd_obj, "fastmetadata_k_bit");
   if (fmd_k_bit_obj) {
-    uint8_t fmd_k_bit = json_object_get_int(fmd_k_bit_obj);
-    if (fmd_k_bit > 1) {
+    int fmd_k_bit = json_object_get_int(fmd_k_bit_obj);
+    if (fmd_k_bit < 0 || fmd_k_bit > 1) {
       err("%s, invalid fastmetadata_k_bit 0x%x.\n", __func__, fmd_k_bit);
       return -ST_JSON_NOT_VALID;
     }
-    fmd->info.fmd_k_bit = fmd_k_bit;
+    fmd->info.fmd_k_bit = (uint8_t)fmd_k_bit;
     info("%s, expected fastmetadata_k_bit = 0x%x.\n", __func__, fmd_k_bit);
   } else {
     info("%s, No expected fastmetadata_k_bit set.\n", __func__);
@@ -1551,7 +1552,7 @@ static int parse_st22p_width(json_object* st22p_obj, st_json_st22p_session_t* st
     err("%s, invalid width %d\n", __func__, width);
     return -ST_JSON_NOT_VALID;
   }
-  st22p->info.width = width;
+  st22p->info.width = (uint32_t)width;
   return ST_JSON_SUCCESS;
 }
 
@@ -1561,7 +1562,7 @@ static int parse_st22p_height(json_object* st22p_obj, st_json_st22p_session_t* s
     err("%s, invalid height %d\n", __func__, height);
     return -ST_JSON_NOT_VALID;
   }
-  st22p->info.height = height;
+  st22p->info.height = (uint32_t)height;
   return ST_JSON_SUCCESS;
 }
 
@@ -1803,8 +1804,13 @@ static int st_json_parse_tx_st22p(int idx, json_object* st22p_obj,
   if (ret < 0) return ret;
 
   /* parse codec_thread_count option */
-  st22p->info.codec_thread_count =
+  int codec_thread_count =
       json_object_get_int(st_json_object_object_get(st22p_obj, "codec_thread_count"));
+  if (codec_thread_count < 0) {
+    err("%s, invalid codec_thread_count %d\n", __func__, codec_thread_count);
+    return -ST_JSON_NOT_VALID;
+  }
+  st22p->info.codec_thread_count = (uint32_t)codec_thread_count;
 
   /* parse display option */
   st22p->display =
@@ -1881,8 +1887,13 @@ static int st_json_parse_rx_st22p(int idx, json_object* st22p_obj,
       json_object_get_boolean(st_json_object_object_get(st22p_obj, "measure_latency"));
 
   /* parse codec_thread_count option */
-  st22p->info.codec_thread_count =
+  int codec_thread_count =
       json_object_get_int(st_json_object_object_get(st22p_obj, "codec_thread_count"));
+  if (codec_thread_count < 0) {
+    err("%s, invalid codec_thread_count %d\n", __func__, codec_thread_count);
+    return -ST_JSON_NOT_VALID;
+  }
+  st22p->info.codec_thread_count = (uint32_t)codec_thread_count;
 
   /* parse enable rtcp */
   st22p->enable_rtcp =
@@ -1897,7 +1908,7 @@ static int parse_st20p_width(json_object* st20p_obj, st_json_st20p_session_t* st
     err("%s, invalid width %d\n", __func__, width);
     return -ST_JSON_NOT_VALID;
   }
-  st20p->info.width = width;
+  st20p->info.width = (uint32_t)width;
   return ST_JSON_SUCCESS;
 }
 
@@ -1907,7 +1918,7 @@ static int parse_st20p_height(json_object* st20p_obj, st_json_st20p_session_t* s
     err("%s, invalid height %d\n", __func__, height);
     return -ST_JSON_NOT_VALID;
   }
-  st20p->info.height = height;
+  st20p->info.height = (uint32_t)height;
   return ST_JSON_SUCCESS;
 }
 
@@ -2301,8 +2312,13 @@ static int parse_session_ip(const char* str_ip, struct st_json_session_base* bas
   dbg("%s, %s start\n", __func__, str_ip);
   /* if it's local interface case for test */
   if (strncmp(str_ip, local_ip_prefix, strlen(local_ip_prefix)) == 0) {
+    int local = atoi(str_ip + strlen(local_ip_prefix));
+    if (local < 0 || local >= MTL_PORT_MAX) {
+      err("%s, %s is not a valid local port\n", __func__, str_ip);
+      return -EIO;
+    }
     base->type[port] = ST_JSON_IP_LOCAL_IF;
-    base->local[port] = atoi(str_ip + strlen(local_ip_prefix));
+    base->local[port] = (enum mtl_port)local;
     dbg("%s, local if port %d\n", __func__, base->local[port]);
   } else {
     ret = inet_pton(AF_INET, str_ip, base->ip[port]);
@@ -2497,9 +2513,9 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
     ret = -ST_JSON_PARSE_FAIL;
     goto error;
   }
-  int num_interfaces = json_object_array_length(interfaces_array);
+  size_t num_interfaces = json_object_array_length(interfaces_array);
   if (num_interfaces > MTL_PORT_MAX) {
-    err("%s, invalid num_interfaces %d\n", __func__, num_interfaces);
+    err("%s, invalid num_interfaces %zu\n", __func__, num_interfaces);
     ret = -ST_JSON_NOT_VALID;
     goto error;
   }
@@ -2510,12 +2526,12 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
     ret = -ST_JSON_NULL;
     goto error;
   }
-  for (int i = 0; i < num_interfaces; ++i) {
+  for (size_t i = 0; i < num_interfaces; ++i) {
     ret = st_json_parse_interfaces(json_object_array_get_idx(interfaces_array, i),
                                    &ctx->interfaces[i]);
     if (ret) goto error;
   }
-  ctx->num_interfaces = num_interfaces;
+  ctx->num_interfaces = (int)num_interfaces;
   ctx->has_display = false;
 
   /* parse tx sessions  */
@@ -2617,7 +2633,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       }
 
       if (dip_array != NULL && json_object_get_type(dip_array) == json_type_array) {
-        int len = json_object_array_length(dip_array);
+        int len = (int)json_object_array_length(dip_array);
         if (len < 1 || len > MTL_PORT_MAX) {
           err("%s, wrong dip number\n", __func__);
           ret = -ST_JSON_NOT_VALID;
@@ -2639,21 +2655,21 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       json_object* interface_array = st_json_object_object_get(tx_group, "interface");
       if (interface_array != NULL &&
           json_object_get_type(interface_array) == json_type_array) {
-        int len = json_object_array_length(interface_array);
+        int len = (int)json_object_array_length(interface_array);
         if (len != num_inf) {
           err("%s, %d dip arrays but %d interface arrays\n", __func__, num_inf, len);
           ret = -ST_JSON_NOT_VALID;
           goto error;
         }
         inf_p = json_object_get_int(json_object_array_get_idx(interface_array, 0));
-        if (inf_p < 0 || inf_p > num_interfaces) {
+        if (inf_p < 0 || (size_t)inf_p > num_interfaces) {
           err("%s, wrong interface index\n", __func__);
           ret = -ST_JSON_NOT_VALID;
           goto error;
         }
         if (len == 2) {
           inf_r = json_object_get_int(json_object_array_get_idx(interface_array, 1));
-          if (inf_r < 0 || inf_r > num_interfaces) {
+          if (inf_r < 0 || (size_t)inf_r > num_interfaces) {
             err("%s, wrong interface index\n", __func__);
             ret = -ST_JSON_NOT_VALID;
             goto error;
@@ -3044,7 +3060,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       json_object* mcast_src_ip_array = /* mcast_src_ip field is optional */
           st_json_object_object_get(rx_group, "mcast_src_ip");
       if (ip_array != NULL && json_object_get_type(ip_array) == json_type_array) {
-        int len = json_object_array_length(ip_array);
+        int len = (int)json_object_array_length(ip_array);
         if (len < 1 || len > MTL_SESSION_PORT_MAX) {
           err("%s, wrong dip number\n", __func__);
           ret = -ST_JSON_NOT_VALID;
@@ -3062,7 +3078,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       }
       if (mcast_src_ip_array != NULL &&
           json_object_get_type(mcast_src_ip_array) == json_type_array) {
-        int len = json_object_array_length(mcast_src_ip_array);
+        int len = (int)json_object_array_length(mcast_src_ip_array);
         if (len < 1 || len > MTL_SESSION_PORT_MAX) {
           err("%s, wrong mcast_src_ip number\n", __func__);
           ret = -ST_JSON_NOT_VALID;
@@ -3079,21 +3095,21 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       json_object* interface_array = st_json_object_object_get(rx_group, "interface");
       if (interface_array != NULL &&
           json_object_get_type(interface_array) == json_type_array) {
-        int len = json_object_array_length(interface_array);
+        int len = (int)json_object_array_length(interface_array);
         if (len != num_inf) {
           err("%s, %d dip arrays but %d interface arrays\n", __func__, num_inf, len);
           ret = -ST_JSON_NOT_VALID;
           goto error;
         }
         inf_p = json_object_get_int(json_object_array_get_idx(interface_array, 0));
-        if (inf_p < 0 || inf_p > num_interfaces) {
+        if (inf_p < 0 || (size_t)inf_p > num_interfaces) {
           err("%s, wrong interface index\n", __func__);
           ret = -ST_JSON_NOT_VALID;
           goto error;
         }
         if (len == 2) {
           inf_r = json_object_get_int(json_object_array_get_idx(interface_array, 1));
-          if (inf_r < 0 || inf_r > num_interfaces) {
+          if (inf_r < 0 || (size_t)inf_r > num_interfaces) {
             err("%s, wrong interface index\n", __func__);
             ret = -ST_JSON_NOT_VALID;
             goto error;
