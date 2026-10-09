@@ -59,11 +59,11 @@ jobs:
       - name: Checkout IMTL code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
       - name: Install npcap-sdk
-        run: |
-          wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
-          unzip -d npcap-sdk npcap-sdk-1.12.zip
-          cp npcap-sdk/Lib/x64/* "$MSYSTEM_PREFIX/lib/"
+        run: task ci:msys-install-npcap
 
       - name: Checkout mman-win32 code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -73,20 +73,10 @@ jobs:
           path: mman-win32
 
       - name: Build and install mman-win32
-        working-directory: mman-win32
-        run: |
-          ./configure --prefix="$MSYSTEM_PREFIX"
-          make -j"$(nproc)"
-          make install
+        run: task ci:msys-install-mman
 
       - name: Convert patches for DPDK
-        working-directory: patches/dpdk/${{ matrix.dpdk }}
-        run: |
-          for patch in *.patch windows/*.patch; do
-            if [[ $(head -1 "$patch") =~ ^\.\./.*\.patch$ ]]; then
-              cp "$(dirname "$patch")/$(cat "$patch")" "$patch"
-            fi
-          done
+        run: task ci:msys-prepare-dpdk-patches DPDK_VERSION=${{ matrix.dpdk }}
 
       - name: Hash DPDK patches
         id: hash-patches
@@ -112,12 +102,7 @@ jobs:
       - name: Apply patches for DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
         shell: bash
-        working-directory: dpdk
-        run: |
-          git config user.name github-actions
-          git config user.email github-actions@github.com
-          git am ../patches/dpdk/${{ matrix.dpdk }}/*.patch
-          git am ../patches/dpdk/${{ matrix.dpdk }}/windows/*.patch
+        run: task ci:msys-apply-dpdk-patches DPDK_VERSION=${{ matrix.dpdk }}
 
       - name: Build and install DPDK
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}

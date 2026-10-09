@@ -144,7 +144,7 @@ EOF
 main() {
 	local STEP=1 mtl_build_options local_base enable_gpu enable_jpegxs jpegxs_bundle tai_bin
 	local entry var printed=0
-	local -a mtl_build_env
+	local -a mtl_build_env jpegxs_build_options
 
 	case "${1:-}" in
 	"") ;;
@@ -291,8 +291,10 @@ main() {
 
 	if [ "${PLUGIN_BUILD_AND_INSTALL_JPEGXS}" == "1" ]; then
 		log_info "$STEP Plugin JPEG-XS bundle build"
-		export SVT_JPEG_XS_REPO="${script_folder}/SVT-JPEG-XS"
-		bash "${root_folder}/.github/scripts/ci/build-jpegxs.sh"
+		export SVT_JPEG_XS_REPO="${root_folder}/script/SVT-JPEG-XS"
+		jpegxs_build_options=()
+		[ "${CICD_BUILD}" != "1" ] || jpegxs_build_options+=(--ci)
+		bash "${root_folder}/script/build_jpegxs.sh" "${jpegxs_build_options[@]}"
 		STEP=$((STEP + 1))
 	fi
 

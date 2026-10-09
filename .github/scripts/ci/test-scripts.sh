@@ -91,6 +91,44 @@ rm -rf tests/tools/RxTxApp/build_hash_test
 cmp -s "${out}/root" "${out}/build" || fail script/hash_sources.sh "an untracked build output changes the hashes"
 rm -rf "${out:?}"
 
+test_jpegxs_helpers() {
+	local work config source_dir
+	work=$(mktemp -d)
+	config="${work}/kahawai.json"
+	source_dir="${work}/source"
+	cp kahawai.json "${config}"
+	chmod 0644 "${config}"
+	bash -c '. script/build_jpegxs.sh; register_plugin "$1" "$2" >/dev/null' \
+		_ "${config}" /opt/jpegxs/lib/libst_plugin_st22_svt_jpeg_xs.so ||
+		fail script/build_jpegxs.sh "cannot update the plugin registry"
+	python3 - "${config}" <<'PY' || fail script/build_jpegxs.sh "plugin registry update is incorrect"
+import json
+import sys
+
+plugins = [item for item in json.load(open(sys.argv[1]))["plugins"] if item["name"] == "st22_svt_jpegxs"]
+assert sum(item["enabled"] for item in plugins) == 1
+assert next(item for item in plugins if item["enabled"])["path"] == "/opt/jpegxs/lib/libst_plugin_st22_svt_jpeg_xs.so"
+PY
+	[ "$(stat -c '%a' "${config}")" = 644 ] || fail script/build_jpegxs.sh "plugin registry mode changed"
+
+	mkdir "${source_dir}"
+	touch "${source_dir}/sentinel"
+	if bash script/build_jpegxs.sh --source-dir "${source_dir}" >"${work}/source.log" 2>&1; then
+		fail script/build_jpegxs.sh "accepted a source directory without CMakeLists.txt"
+	fi
+	grep -q 'Source directory does not contain CMakeLists.txt' "${work}/source.log" ||
+		fail script/build_jpegxs.sh "did not validate the explicit source directory"
+	[ -f "${source_dir}/sentinel" ] || fail script/build_jpegxs.sh "deleted the explicit source directory"
+	if bash script/build_jpegxs.sh --ci --version test-revision >"${work}/version.log" 2>&1; then
+		fail script/build_jpegxs.sh "accepted --version with --ci"
+	fi
+	grep -q -- '--version cannot be used with --ci' "${work}/version.log" ||
+		fail script/build_jpegxs.sh "did not explain the CI version constraint"
+	rm -rf "${work:?}"
+}
+
+test_jpegxs_helpers
+
 bash script/check_dpdk_patches.sh || fail script/check_dpdk_patches.sh "the DPDK patches do not apply clean"
 bash script/build_ebpf_xdp.sh --check build || echo "build_ebpf_xdp.sh --check build: the host does not have each package"
 

@@ -72,7 +72,7 @@ jobs:
           nic: ${{ matrix.nic }}
 
       - name: 'cleanup: Kill stale processes before test'
-        uses: ./.github/actions/cleanup
+        run: task cleanup
 
       # sudo -E carries the whole environment across, BASH_XTRACEFD included, and
       # that variable names a file descriptor of the shell that set it. In the
@@ -91,7 +91,7 @@ jobs:
 
       - name: 'cleanup: Kill test processes'
         if: always()
-        uses: ./.github/actions/cleanup
+        run: task cleanup
 
   # The one check to require in branch protection. A skipped matrix job
   # publishes no per-leg check name, so a required "run-gtest-tests (e810)"

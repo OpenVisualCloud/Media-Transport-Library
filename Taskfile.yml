@@ -21,6 +21,14 @@ tasks:
       - task --list
     silent: true
 
+  cleanup:
+    desc: Kill stale test processes and release isolated CPUs
+    cmds:
+      - sudo killall -SIGKILL gtest.sh KahawaiTest ffmpeg gst-launch-1.0 RxTxApp || true
+      - sudo killall -SIGINT pytest MtlManager phc2sys ptp4l netsniff-ng || true
+      - sleep 2
+      - sudo {{.TASKFILE_DIR}}/tests/tools/isolate/isolate.sh --sweep
+
   ebpf:check:
     desc: Check this host's eBPF/XDP prerequisites; name the package for each missing one
     cmds:
@@ -92,7 +100,7 @@ tasks:
   ci:build-jpegxs:
     desc: Build the relocatable JPEG XS runtime and bridge bundle
     cmds:
-      - bash {{.CI_SCRIPTS}}/build-jpegxs.sh
+      - MTL_INSTALL_PREFIX={{.TASKFILE_DIR}}/.local_install/mtl JPEGXS_ROOT={{.TASKFILE_DIR}}/.local_install/jpegxs bash {{.TASKFILE_DIR}}/script/build_jpegxs.sh --ci
 
   ci:validate-jpegxs:
     desc: Validate the relocatable JPEG XS bundle
@@ -195,6 +203,107 @@ tasks:
     desc: Run the nightly bare-metal gtest harness
     cmds:
       - sudo -E {{.TASKFILE_DIR}}/.github/scripts/gtest.sh
+
+  ci:rust-no-std:
+    desc: Build the Rust no_std example with the repository's pinned Cargo dependency
+    dir: '{{.TASKFILE_DIR}}/rust/imtl-sys'
+    cmds:
+      - |
+        . ../../versions.env
+        sudo -E cargo update home --precise "${RUST_HOOK_CARGO_VER:?}"
+        sudo -E cargo build --example no_std
+
+  ci:require-file-linters:
+    desc: Fail unless both file-linter jobs succeeded
+    cmds:
+      - |
+        if [[ "${CHECKPATCH_RESULT:?}" != success || "${RESIDUAL_RESULT:?}" != success ]]; then
+          echo "checkpatch=$CHECKPATCH_RESULT residual-linters=$RESIDUAL_RESULT"
+          exit 1
+        fi
+
+  ci:lint-commit-messages:
+    desc: Run the pinned commit-message hook for every commit added by a pull request
+    cmds:
+      - |
+        commits=$(git rev-list "${BASE_SHA:?}..${HEAD_SHA:?}")
+        rc=0
+        for sha in $commits; do
+          echo "=== $(git log -1 --format='%h %s' "$sha") ==="
+          git log -1 --format=%B "$sha" >"$RUNNER_TEMP/commit-msg"
+          pre-commit run --hook-stage commit-msg \
+            --commit-msg-filename "$RUNNER_TEMP/commit-msg" gitlint || rc=1
+        done
+        exit "$rc"
+
+  ci:msys-install-npcap:
+    desc: Download the npcap SDK and install its x64 libraries into MSYS2
+    cmds:
+      - |
+        wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
+        unzip -d npcap-sdk npcap-sdk-1.12.zip
+        cp npcap-sdk/Lib/x64/* "$MSYSTEM_PREFIX/lib/"
+
+  ci:msys-install-mman:
+    desc: Build and install mman-win32 into MSYS2
+    dir: '{{.TASKFILE_DIR}}/mman-win32'
+    cmds:
+      - |
+        bash ./configure --prefix="$MSYSTEM_PREFIX"
+        make -j"$(nproc)"
+        make install
+
+  ci:msys-prepare-dpdk-patches:
+    desc: Replace DPDK patch indirection files with their Windows patch contents
+    dir: '{{.TASKFILE_DIR}}/patches/dpdk/{{.DPDK_VERSION}}'
+    requires:
+      vars: [DPDK_VERSION]
+    cmds:
+      - |
+        for patch in *.patch windows/*.patch; do
+          if [[ $(head -1 "$patch") =~ ^\.\./.*\.patch$ ]]; then
+            cp "$(dirname "$patch")/$(cat "$patch")" "$patch"
+          fi
+        done
+
+  ci:msys-apply-dpdk-patches:
+    desc: Apply the MTL and Windows patch series to the checked-out DPDK tree
+    dir: '{{.TASKFILE_DIR}}/dpdk'
+    requires:
+      vars: [DPDK_VERSION]
+    cmds:
+      - |
+        git config user.name github-actions
+        git config user.email github-actions@github.com
+        git am ../patches/dpdk/{{.DPDK_VERSION}}/*.patch
+        git am ../patches/dpdk/{{.DPDK_VERSION}}/windows/*.patch
+
+  ci:flatten-pytest-if-present:
+    desc: Flatten downloaded baseline pytest reports when their directory exists
+    cmds:
+      - |
+        if [[ -d ${REPORT_DIR:?} ]]; then
+          {{.TASK_EXE}} ci:report -- flatten-pytest
+        fi
+
+  ci:flatten-gtest-if-present:
+    desc: Flatten downloaded baseline gtest reports when their directory exists
+    cmds:
+      - |
+        if [[ -d ${REPORT_DIR:?} ]]; then
+          {{.TASK_EXE}} ci:report -- flatten-gtest
+        fi
+
+  ci:verify-gstreamer:
+    desc: Verify host provisioning installed the GStreamer development package
+    cmds:
+      - |
+        set -euo pipefail
+        if ! pkg-config --exists gstreamer-1.0; then
+          echo "::error::This host still holds no gstreamer-1.0.pc after the install." >&2
+          exit 1
+        fi
+        echo "gstreamer-1.0 $(pkg-config --modversion gstreamer-1.0)"
 
   ci:run-metadata:
     desc: Write workflow run RUN_ID's date, number, branch and URL to GITHUB_OUTPUT

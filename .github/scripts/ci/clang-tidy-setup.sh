@@ -8,10 +8,8 @@
 # mtl-uninstalled.pc that meson setup writes, so MTL is never built.
 set -euo pipefail
 
-# The flags add the GStreamer and OBS headers the meson setups below need. Only
-# the install function runs: the script itself would also build both plugins.
-export ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN=1 ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN=1
-bash -c '. .github/scripts/setup_environment.sh && setup_ubuntu_install_dependencies'
+# The components add the GStreamer and OBS headers the meson setups below need.
+bash script/install_dependencies.sh gstreamer obs
 
 # The .pc files name the prefix of the build host, and static libraries that
 # this host does not have.
