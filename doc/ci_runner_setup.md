@@ -196,6 +196,25 @@ timed-out lookup is not remembered, so every session of the run pays the wait
 again. A single-port card is handled: it yields one entry and the redundant cases
 keep skipping, honestly, instead of failing against a port the host does not have.
 
+#### The perf pair needs a link of its own
+
+A receive case near the session ceiling fills the SUT's 100G port. A switch that
+floods multicast across its VLAN puts every other runner's ST 2110 tests on that
+port as well, and once the two together exceed it the switch drops packets on the
+way to the SUT: the iteration reads `0/N` while the SUT dropped nothing, and the
+night's maximum drops by up to half. The sweep compares the MAC counters of the two
+ports and re-runs an RX iteration that failed only because packets were lost
+between them, failing the case after three such attempts, so a shared link costs
+time and failed runs rather than wrong numbers. Only a link of its own gives a
+result every night: put the four perf ports in a VLAN of their own, or cable the
+two hosts back to back. To check, run
+this twice on the SUT, for the netdev of its perf port, while other runners are
+busy; it must advance by no more than the few packets a second of PTP and STP:
+
+```bash
+ethtool -S <perf-port-netdev> | grep rx_multicast.nic
+```
+
 ### The i225 leg of the smoke suite
 
 2.5 Gbps of link means only the `low_bandwidth` subset fits: ST 2110-22, ST
