@@ -106,6 +106,8 @@ jobs:
         run: task ci:pytest-run -- performance
       - name: Generate performance report
         if: always()
+        env:
+          MTL_BRANCH: ${{ inputs.branch || github.ref_name }}
         run: task ci:report -- performance
       - name: Upload report
         if: always()

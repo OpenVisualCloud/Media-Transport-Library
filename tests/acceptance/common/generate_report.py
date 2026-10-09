@@ -4,7 +4,8 @@
 """Generate an HTML performance report from pytest log directories.
 
 Usage:
-    python generate_report.py <log_root> [-o report.html]
+    python generate_report.py <log_root> [-o report.html] [--branch B]
+        [--run-id ID [--run-url URL]]
 
 Scans timestamped subdirectories under <log_root> for pytest.log and per-test
 .log files, extracts sweep results, platform config, throughput and CPU cores,
@@ -674,7 +675,7 @@ def _kv_table(title: str, rows: list[tuple[str, str]]) -> str:
     return "\n".join(lines)
 
 
-def _generate_html(tests, per_host, hosts) -> str:
+def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     p = [_CSS.replace("{{TS}}", now)]
 
@@ -708,6 +709,7 @@ def _generate_html(tests, per_host, hosts) -> str:
                 ("Number of Nodes/Systems", node_label),
                 ("Tested By", f"Tested by {tested_by} as of {test_date}"),
                 ("Report Generated", now),
+                *run_rows,
             ],
         )
     )
@@ -1185,6 +1187,9 @@ def main():
     ap.add_argument(
         "-o", "--output", default="performance_report.html", help="Output HTML file"
     )
+    ap.add_argument("--branch", help="MTL branch the tests ran on")
+    ap.add_argument("--run-id", help="CI run ID")
+    ap.add_argument("--run-url", help="CI run URL, links the run ID")
     args = ap.parse_args()
 
     if not os.path.isdir(args.log_root):
@@ -1196,7 +1201,16 @@ def main():
         print("No sweep results found.", file=sys.stderr)
         sys.exit(1)
 
-    html = _generate_html(tests, per_host, hosts)
+    run_rows = []
+    if args.branch:
+        run_rows.append(("MTL Branch", _esc(args.branch)))
+    if args.run_id:
+        run_id = _esc(args.run_id)
+        if args.run_url:
+            run_id = f'<a href="{_esc(args.run_url)}">{run_id}</a>'
+        run_rows.append(("CI Run ID", run_id))
+
+    html = _generate_html(tests, per_host, hosts, run_rows)
     with open(args.output, "w") as f:
         f.write(html)
 
