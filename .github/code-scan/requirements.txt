@@ -1,4 +1,4 @@
-# The Bandit release that bandit.yml installs. Dependabot proposes each new
+# The Bandit release that code-scan.yml installs. Dependabot proposes each new
 # release in its own pull request, which runs it over every tracked Python
 # file before it is merged.
 bandit[sarif]==1.9.4
