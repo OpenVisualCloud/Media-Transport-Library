@@ -272,10 +272,10 @@ const char* ut_txv_stat_first_log_line(void);
 void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames);
 uint64_t ut_txv_stat_snapshot_port_frames(const ut_txv_ctx* ctx);
 
-/* tv_pkts_capable_chain() of a one-port frame-level session: whether zero copy keeps
- * a frame buffer free with nb_tx_desc descriptors per TX queue */
+/* tv_pkts_capable_chain() of a one-port frame-level session, with RTCP or not: whether
+ * zero copy keeps a frame buffer free with nb_tx_desc descriptors per TX queue */
 bool ut_txv_pkts_capable_chain(ut_txv_ctx* ctx, uint16_t nb_tx_desc, int total_pkts,
-                               uint16_t frames_cnt);
+                               uint16_t frames_cnt, bool rtcp);
 
 /* tv_mempool_init() of a one-port frame-level RTCP session: the mbufs of its header
  * and payload pools, which then are freed again */

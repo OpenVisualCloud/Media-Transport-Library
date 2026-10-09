@@ -1163,7 +1163,7 @@ uint64_t ut_txv_stat_snapshot_port_frames(const ut_txv_ctx* ctx) {
 }
 
 bool ut_txv_pkts_capable_chain(ut_txv_ctx* ctx, uint16_t nb_tx_desc, int total_pkts,
-                               uint16_t frames_cnt) {
+                               uint16_t frames_cnt, bool rtcp) {
   struct st_tx_video_session_impl* s = &ctx->session;
 
   ctx->impl.inf[MTL_PORT_P].nb_tx_desc = nb_tx_desc;
@@ -1173,6 +1173,10 @@ bool ut_txv_pkts_capable_chain(ut_txv_ctx* ctx, uint16_t nb_tx_desc, int total_p
   s->st20_total_pkts = total_pkts;
   s->st20_frames_cnt = frames_cnt;
   s->ring_count = ST_TX_VIDEO_SESSIONS_RING_SIZE;
+  if (rtcp)
+    s->ops.flags |= ST20_TX_FLAG_ENABLE_RTCP;
+  else
+    s->ops.flags &= ~ST20_TX_FLAG_ENABLE_RTCP;
   return tv_pkts_capable_chain(&ctx->impl, s);
 }
 

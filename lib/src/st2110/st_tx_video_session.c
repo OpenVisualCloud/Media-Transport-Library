@@ -2965,8 +2965,12 @@ static bool tv_pkts_capable_chain(struct mtl_main_impl* impl,
   for (int port = 0; port < num_ports; port++) {
     enum mtl_port s_port = mt_port_logic2phy(s->port_maps, port);
     /* sent pkts the tx queue holds, a chained pkt takes 2 descriptors, header and
-     * payload, and the unsent ones in the builder ring */
-    int max_buffer_nb = mt_if_nb_tx_desc(impl, s_port) / 2 + s->ring_count;
+     * payload; the rtcp ring keeps its pkts until newer ones replace them */
+    int max_buffer_nb = mt_if_nb_tx_desc(impl, s_port) / 2;
+    if (ops->flags & ST20_TX_FLAG_ENABLE_RTCP)
+      max_buffer_nb = RTE_MAX(max_buffer_nb, tv_rtcp_buffer_size(impl, s, s_port));
+    /* and the unsent ones in the builder ring */
+    max_buffer_nb += (int)s->ring_count;
     /* at least two swap buffer */
     if ((s->st20_total_pkts * (s->st20_frames_cnt - 1)) < max_buffer_nb) {
       info("%s(%d), copy mode, %d pkts held on s_port %d, st20_total_pkts %d\n", __func__,
