@@ -1161,3 +1161,17 @@ void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames) {
 uint64_t ut_txv_stat_snapshot_port_frames(const ut_txv_ctx* ctx) {
   return ctx->session.stat_snapshot.common.port[MTL_SESSION_PORT_P].frames;
 }
+
+bool ut_txv_pkts_capable_chain(ut_txv_ctx* ctx, uint16_t nb_tx_desc, int total_pkts,
+                               uint16_t frames_cnt) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  ctx->impl.inf[MTL_PORT_P].nb_tx_desc = nb_tx_desc;
+  s->ops.type = ST20_TYPE_FRAME_LEVEL;
+  s->ops.num_port = 1;
+  s->port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
+  s->st20_total_pkts = total_pkts;
+  s->st20_frames_cnt = frames_cnt;
+  s->ring_count = ST_TX_VIDEO_SESSIONS_RING_SIZE;
+  return tv_pkts_capable_chain(&ctx->impl, s);
+}
