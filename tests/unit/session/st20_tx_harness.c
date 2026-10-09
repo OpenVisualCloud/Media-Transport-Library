@@ -9,7 +9,9 @@
  * object's definition preempts the shared library's. USDT is disabled to avoid
  * probe-semaphore link references.
  *
- * mt_get_tsc(), mt_txq_get() and mt_txq_burst() are mocked with preprocessor
+ * mt_get_tsc(), mt_txq_get(), mt_txq_burst() and, for tv_train_pacing(),
+ * mt_txq_burst_busy(), mt_sleep_us(), mt_ptp_wait_stable() and
+ * mt_wait_tsc_stable() are mocked with preprocessor
  * seams instead of any production source change: mt_main.h and
  * datapath/mt_queue.h are included first, under their real names, so their
  * include guards turn the copies the production files include into no-ops and
@@ -71,6 +73,10 @@ struct ut_txv_ctx {
   int txq_get_calls;
   enum mtl_port txq_get_port;
   uint64_t txq_get_bytes_per_sec;
+  /* tv_train_pacing(): an RL queue of nb_tx_desc pads, one drained per train_pad_ns */
+  long double train_pad_ns;
+  long double train_drain_end_ns;
+  uint64_t slept_ns;
 };
 
 #include "session/st20_tx_harness.h"
@@ -143,10 +149,63 @@ static struct mt_txq_entry* ut_txv_txq_get(struct mtl_main_impl* impl, enum mtl_
   return NULL;
 }
 
-/* Seams: mt_get_tsc() and mt_txq_get() calls in st_tx_video_session.c hit the mocks. */
+static struct ut_txv_ctx* ut_txv_train_ctx;
+
+static void ut_txv_advance(struct ut_txv_ctx* ctx, uint64_t ns) {
+  ctx->mock_tsc_ns += ns;
+  ctx->mock_ptp_ns += ns;
+}
+
+static uint16_t ut_txv_txq_burst_busy(struct mt_txq_entry* entry,
+                                      struct rte_mbuf** tx_pkts, uint16_t nb_pkts,
+                                      int timeout_ms) {
+  struct ut_txv_ctx* ctx = ut_txv_train_ctx;
+  uint16_t nb_desc = mt_if_nb_tx_desc(&ctx->impl, MTL_PORT_P);
+  (void)entry;
+  (void)timeout_ms;
+
+  for (uint16_t i = 0; i < nb_pkts; i++) {
+    /* the busy burst spins until the shaper frees a descriptor */
+    long double full = ctx->train_drain_end_ns - (nb_desc - 1) * ctx->train_pad_ns;
+    if (full > ctx->mock_tsc_ns)
+      ut_txv_advance(ctx, (uint64_t)ceill(full - ctx->mock_tsc_ns));
+    long double start = RTE_MAX(ctx->train_drain_end_ns, (long double)ctx->mock_tsc_ns);
+    ctx->train_drain_end_ns = start + ctx->train_pad_ns;
+    if (rte_mbuf_refcnt_read(tx_pkts[i]) > 1) rte_mbuf_refcnt_update(tx_pkts[i], -1);
+  }
+  return nb_pkts;
+}
+
+static void ut_txv_sleep_us(unsigned int us) {
+  ut_txv_advance(ut_txv_train_ctx, (uint64_t)us * NS_PER_US);
+  ut_txv_train_ctx->slept_ns += (uint64_t)us * NS_PER_US;
+}
+
+static int ut_txv_ptp_wait_stable(struct mtl_main_impl* impl, enum mtl_port port,
+                                  int timeout_ms) {
+  (void)impl;
+  (void)port;
+  (void)timeout_ms;
+  return 0;
+}
+
+static int ut_txv_wait_tsc_stable(struct mtl_main_impl* impl) {
+  (void)impl;
+  return 0;
+}
+
+/* Seams: these calls in st_tx_video_session.c hit the mocks. */
 #define mt_get_tsc ut_txv_tsc_time_fn
 #define mt_txq_get ut_txv_txq_get
+#define mt_txq_burst_busy ut_txv_txq_burst_busy
+#define mt_sleep_us ut_txv_sleep_us
+#define mt_ptp_wait_stable ut_txv_ptp_wait_stable
+#define mt_wait_tsc_stable ut_txv_wait_tsc_stable
 #include "st2110/st_tx_video_session.c"
+#undef mt_wait_tsc_stable
+#undef mt_ptp_wait_stable
+#undef mt_sleep_us
+#undef mt_txq_burst_busy
 #undef mt_txq_get
 #define mt_txq_burst ut_txv_txq_burst
 static struct ut_txv_ctx* ut_txv_active_burst_ctx;
@@ -799,6 +858,52 @@ int ut_txv_init_pacing(ut_txv_ctx* ctx, uint32_t height, bool interlaced,
   /* only used as a divisor for pacing->trs / pad_interval */
   s->st20_total_pkts = 1;
   return tv_init_pacing(&ctx->impl, s);
+}
+
+int ut_txv_train_rl_pacing(ut_txv_ctx* ctx, uint16_t nb_tx_desc, long double pad_ns) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+  int ret;
+
+  if (st_get_fps_timing(ST_FPS_P59_94, &s->fps_tm) < 0) return -EINVAL;
+  s->ops.fmt = ST20_FMT_YUV_422_10BIT;
+  s->ops.width = 1920;
+  s->ops.height = 1080;
+  s->ops.fps = ST_FPS_P59_94;
+  s->ops.packing = ST20_PACKING_GPM_SL; /* NORMAL pads only */
+  s->ops.num_port = 1;
+  s->st20_total_pkts = 4320;
+  s->st20_pkt_size = 1262;
+  inf->drv_info.drv_type = MT_DRV_IAVF;
+  inf->nb_tx_desc = nb_tx_desc;
+  s->port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
+  s->pacing_way[MTL_SESSION_PORT_P] = ST21_TX_PACING_WAY_RL;
+  s->queue[MTL_SESSION_PORT_P] = (struct mt_txq_entry*)&ctx->train_drain_end_ns; /* tag */
+  s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL] = rte_pktmbuf_alloc(ut_pool());
+  if (!s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL]) return -ENOMEM;
+  ctx->train_pad_ns = pad_ns;
+  ctx->train_drain_end_ns = ctx->mock_tsc_ns;
+
+  ut_txv_train_ctx = ctx;
+  ret = tv_train_pacing(&ctx->impl, s, MTL_SESSION_PORT_P);
+  ut_txv_train_ctx = NULL;
+  rte_pktmbuf_free(s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL]);
+  s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL] = NULL;
+  s->queue[MTL_SESSION_PORT_P] = NULL;
+  return ret;
+}
+
+float ut_txv_pad_interval(const ut_txv_ctx* ctx) {
+  return ctx->session.pacing.pad_interval;
+}
+
+uint64_t ut_txv_train_queued_ns(const ut_txv_ctx* ctx) {
+  long double left = ctx->train_drain_end_ns - ctx->mock_tsc_ns;
+  return left > 0 ? (uint64_t)left : 0;
+}
+
+uint64_t ut_txv_slept_ns(const ut_txv_ctx* ctx) {
+  return ctx->slept_ns;
 }
 
 uint64_t ut_txv_round_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate) {

@@ -456,6 +456,8 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   }
   double frame_avg_time_sec = (double)frame_times_ns_sum / entry_in_sum / NS_PER_S;
   double pkts_per_sec = s->st20_total_pkts / frame_avg_time_sec;
+  /* the ring is still full of pads, the session paces as if its queue were idle */
+  mt_sleep_us((unsigned int)((double)pad_pkts / pkts_per_sec * US_PER_S + 1));
 
   /* parse the pad interval */
   double pkts_per_frame = pkts_per_sec * s->fps_tm.den / s->fps_tm.mul;
