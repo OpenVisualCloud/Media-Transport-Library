@@ -52,6 +52,10 @@ void ut22p_tx_ctx_enable_blocking(ut22p_tx_ctx* ctx, uint64_t timeout_ns);
  */
 void ut22p_tx_ctx_enable_encode_blocking(ut22p_tx_ctx* ctx, uint64_t timeout_ns);
 
+/** Switch to the encoder path with a no-op encoder device: put_frame leaves
+ *  the frame READY for ut22p_tx_encode_get_frame(). */
+void ut22p_tx_ctx_set_encoder(ut22p_tx_ctx* ctx);
+
 /** Wake a blocking get_frame sleeper (wraps st22p_tx_wake_block). */
 void ut22p_tx_wake_block(ut22p_tx_ctx* ctx);
 

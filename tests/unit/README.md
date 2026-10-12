@@ -42,7 +42,8 @@ If a test fails it's a real defect, unless a case with a wall-clock budget ran
 over it under load — an overrun that reproduces on an idle box is a defect. Only the
 eight `*Concurrency*` suites, `St20PipelineTxBlocking`, `WaitSites/St20PipelineRxBlocking`, the three
 `*WakePostedBeforeWaitIsNotLost` cases of `St22PipelineRxBlocking` /
-`St22PipelineTxEncodeBlocking`, `PipelineTxWakeBlock`, and
+`St22PipelineTxEncodeBlocking`, the five `*FrameReadyWakesABlockedGet` cases of `St22PipelineRxBlocking` /
+`St22PipelineTxEncodeBlocking` / `St30PipelineRxBlocking` / `St40PipelineRxBlocking`, `PipelineTxWakeBlock`, and
 `FfmpegMtlCommonTest.ConcurrentGetsCreateOneSharedHandle` carry a budget;
 the exception reaches no other case. There are no flaky network-timing tests in this binary.
 
