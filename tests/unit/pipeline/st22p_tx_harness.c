@@ -31,6 +31,7 @@ struct ut22p_tx_ctx {
   uint64_t mock_ptp_ns;
   bool encode_blocking;
   bool blocking;
+  struct st22_encode_dev_impl encode_dev;
 };
 
 #include "pipeline/st22p_tx_harness.h"
@@ -118,6 +119,15 @@ void ut22p_tx_ctx_enable_encode_blocking(ut22p_tx_ctx* ctx, uint64_t timeout_ns)
   p->encode_block_timeout_ns = timeout_ns;
   p->encode_block_get = true;
   ctx->encode_blocking = true;
+}
+
+void ut22p_tx_ctx_set_encoder(ut22p_tx_ctx* ctx) {
+  struct st22_encode_session_impl* session = &ctx->encode_dev.sessions[0];
+  session->parent = &ctx->encode_dev;
+  ctx->pipeline.encode_impl = session;
+  ctx->pipeline.derive = false;
+  for (int i = 0; i < ctx->framebuff_cnt; i++)
+    ctx->framebuffs[i].src.priv = &ctx->framebuffs[i];
 }
 
 void ut22p_tx_wake_block(ut22p_tx_ctx* ctx) {

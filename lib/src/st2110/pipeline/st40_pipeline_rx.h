@@ -48,6 +48,7 @@ struct st40p_rx_ctx {
   pthread_cond_t block_wake_cond;
   pthread_mutex_t block_wake_mutex;
   uint64_t block_timeout_ns;
+  /* set by st40p_rx_wake_block() and destroy to end a blocked get */
   bool block_wake_pending;
 
   /* usdt dump */

@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <thread>
 
 #include "pipeline/st40p_harness.h"
 
@@ -14,7 +15,9 @@ namespace {
 
 constexpr int kFrameCnt = 3;
 constexpr uint32_t kTimestamp = 1000;
-constexpr uint64_t kShortTimeoutNs = 300ULL * 1000 * 1000; /* 300 ms */
+constexpr uint64_t kShortTimeoutNs = 300ULL * 1000 * 1000;     /* 300 ms */
+constexpr uint64_t kLongTimeoutNs = 2ULL * 1000 * 1000 * 1000; /* 2 s */
+constexpr auto kWakeDelay = std::chrono::milliseconds(80);
 
 uint64_t ns_since(std::chrono::steady_clock::time_point t0) {
   return std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -41,17 +44,16 @@ class St40PipelineRxBlocking : public ::testing::Test {
   }
 };
 
-/* The stale frame wake that this PR fixes for st20p, still present in st40p.
+/* The stale frame wake, fixed here as for st20p.
  *
- * Every frame-ready notify calls rx_st40p_block_wake(), which sets
- * block_wake_pending even when no get waits. A get that claims its frame at
- * once never reaches the wait and never clears the flag. The next get that
- * finds no frame sees the flag, skips the wait and returns NULL at once
- * instead of blocking for block_timeout_ns. That happens as soon as the app
- * falls a frame behind and catches up. RxTxApp (rx_st40p_app.c) and the st40p
- * RX sample both use ST40P_RX_FLAG_BLOCK_GET. The st20p fix applies unchanged:
- * the notify only signals, and the waiter claims on every wake up to one
- * deadline.
+ * Every frame-ready notify called rx_st40p_block_wake(), which set
+ * block_wake_pending even when no get waited. A get that claimed its frame at
+ * once never reached the wait and never cleared the flag. The next get that
+ * found no frame saw the flag, skipped the wait and returned NULL at once
+ * instead of blocking for block_timeout_ns. That happened as soon as the app
+ * fell a frame behind and caught up. RxTxApp (rx_st40p_app.c) and the st40p
+ * RX sample both use ST40P_RX_FLAG_BLOCK_GET. As for st20p, the notify now
+ * only signals, and the waiter claims on every wake up to one deadline.
  */
 TEST_F(St40PipelineRxBlocking, StaleFrameWakeDoesNotSkipTheWait) {
   ut40p_ctx_enable_blocking(ctx_, kShortTimeoutNs);
@@ -69,4 +71,26 @@ TEST_F(St40PipelineRxBlocking, StaleFrameWakeDoesNotSkipTheWait) {
   EXPECT_EQ(frame, nullptr);
   EXPECT_GT(elapsed_ns, kShortTimeoutNs / 2)
       << "the empty get returned without waiting for block_timeout_ns";
+}
+
+TEST_F(St40PipelineRxBlocking, FrameReadyWakesABlockedGet) {
+  ut40p_ctx_enable_blocking(ctx_, kLongTimeoutNs);
+
+  int inject_ret = -1;
+  std::thread producer([&]() {
+    std::this_thread::sleep_for(kWakeDelay);
+    inject_ret =
+        ut40p_inject_frame(ctx_, &udw_, ST_FRAME_STATUS_COMPLETE, false, kTimestamp);
+  });
+
+  const auto t0 = std::chrono::steady_clock::now();
+  struct st40_frame_info* frame = ut40p_get_frame(ctx_);
+  const uint64_t elapsed_ns = ns_since(t0);
+  producer.join();
+
+  EXPECT_EQ(inject_ret, 0);
+  ASSERT_NE(frame, nullptr) << "the frame that arrived during the wait was not returned";
+  EXPECT_LT(elapsed_ns, kLongTimeoutNs / 2)
+      << "the frame-ready notify did not wake the get";
+  EXPECT_EQ(ut40p_put_frame(ctx_, frame), 0);
 }

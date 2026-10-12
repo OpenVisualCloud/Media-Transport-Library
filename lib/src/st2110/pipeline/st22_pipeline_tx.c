@@ -69,8 +69,10 @@ static void tx_st22p_encode_notify_frame_ready(struct st22p_tx_ctx* ctx) {
   if (dev->notify_frame_available) dev->notify_frame_available(session);
 
   if (ctx->encode_block_get) {
-    /* notify block */
-    tx_st22p_encode_block_wake(ctx);
+    /* signal only, the waiter claims the frame itself */
+    mt_pthread_mutex_lock(&ctx->encode_block_wake_mutex);
+    mt_pthread_cond_signal(&ctx->encode_block_wake_cond);
+    mt_pthread_mutex_unlock(&ctx->encode_block_wake_mutex);
   }
 }
 
@@ -357,11 +359,27 @@ static struct st22_encode_frame_meta* tx_st22p_encode_get_frame(void* priv) {
   framebuff =
       tx_st22p_claim_available(ctx, ST22P_TX_FRAME_READY, ST22P_TX_FRAME_IN_ENCODING);
   if (!framebuff && ctx->encode_block_get) { /* wait here for block mode */
-    tx_st22p_encode_get_block_wait(ctx);
-    if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
-    /* get again */
-    framebuff =
-        tx_st22p_claim_available(ctx, ST22P_TX_FRAME_READY, ST22P_TX_FRAME_IN_ENCODING);
+    struct timespec deadline;
+    clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &deadline);
+    timespec_add_ns(&deadline, ctx->encode_block_timeout_ns);
+    mt_pthread_mutex_lock(&ctx->encode_block_wake_mutex);
+    while (!ctx->encode_block_wake_pending &&
+           !atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
+      framebuff =
+          tx_st22p_claim_available(ctx, ST22P_TX_FRAME_READY, ST22P_TX_FRAME_IN_ENCODING);
+      if (framebuff) break;
+      int _ret = mt_pthread_cond_timedwait(&ctx->encode_block_wake_cond,
+                                           &ctx->encode_block_wake_mutex, &deadline);
+      if (_ret) break;
+    }
+    ctx->encode_block_wake_pending = false;
+    mt_pthread_mutex_unlock(&ctx->encode_block_wake_mutex);
+    if (!framebuff) {
+      if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
+      /* get again */
+      framebuff =
+          tx_st22p_claim_available(ctx, ST22P_TX_FRAME_READY, ST22P_TX_FRAME_IN_ENCODING);
+    }
   }
   /* not any free frame */
   if (!framebuff) {
