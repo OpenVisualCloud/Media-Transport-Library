@@ -54,13 +54,16 @@ void ut22p_wake_block(ut22p_ctx* ctx);
  */
 void ut22p_ctx_enable_decode_blocking(ut22p_ctx* ctx, uint64_t timeout_ns);
 
+/** Switch to the decoder path with a no-op decoder device: frame_ready leaves
+ *  the frame READY for ut22p_decode_get_frame(). */
+void ut22p_ctx_set_decoder(ut22p_ctx* ctx);
+
 /** Wake a blocking decode_get_frame sleeper, via the callback the decoder
  * device is registered with (wraps rx_st22p_decode_wake_block). */
 void ut22p_decode_wake_block(ut22p_ctx* ctx);
 
 /* decoder-plugin side: claim READY->IN_DECODING. Returns 0 when a frame was
- * handed back, -EBUSY when none was. Only -EBUSY is reachable here: the ctx is
- * built in derive mode, where frame_ready never leaves a frame in READY. */
+ * handed back, -EBUSY when none was. */
 int ut22p_decode_get_frame(ut22p_ctx* ctx);
 
 int ut22p_framebuff_cnt(const ut22p_ctx* ctx);

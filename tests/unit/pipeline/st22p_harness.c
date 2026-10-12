@@ -46,6 +46,7 @@ struct ut22p_ctx {
   int framebuff_cnt;
   bool blocking;
   bool decode_blocking;
+  struct st22_decode_dev_impl decode_dev;
 };
 
 #include "pipeline/st22p_harness.h"
@@ -125,6 +126,13 @@ void ut22p_ctx_enable_decode_blocking(ut22p_ctx* ctx, uint64_t timeout_ns) {
   p->decode_block_timeout_ns = timeout_ns;
   p->decode_block_get = true;
   ctx->decode_blocking = true;
+}
+
+void ut22p_ctx_set_decoder(ut22p_ctx* ctx) {
+  struct st22_decode_session_impl* session = &ctx->decode_dev.sessions[0];
+  session->parent = &ctx->decode_dev;
+  ctx->pipeline.decode_impl = session;
+  ctx->pipeline.derive = false;
 }
 
 void ut22p_decode_wake_block(ut22p_ctx* ctx) {

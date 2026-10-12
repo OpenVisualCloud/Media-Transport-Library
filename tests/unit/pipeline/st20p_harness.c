@@ -167,6 +167,12 @@ void ut20p_notify_frame_available(ut20p_ctx* ctx) {
   rx_st20p_notify_frame_available(&ctx->pipeline);
 }
 
+void ut20p_begin_destroy(ut20p_ctx* ctx) {
+  struct st20p_rx_ctx* p = &ctx->pipeline;
+  mt_handle_begin_destroy(&p->lc_destroying, &p->type, MT_ST20_HANDLE_PIPELINE_RX);
+  rx_st20p_block_wake(p);
+}
+
 static int ut20p_stub_convert(struct st_frame* src, struct st_frame* dst) {
   MTL_MAY_UNUSED(src);
   MTL_MAY_UNUSED(dst);
