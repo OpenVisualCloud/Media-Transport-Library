@@ -413,8 +413,11 @@ pacing->vrx -= (s->bulk - 1); /* compensate for bulk */
 ### Warm-Up Padding
 At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pads (`mt_build_pad()`, no RTP header). What follows depends on whether `tv_init_pacing()` planned the port: `rl_drain` ≠ 0, which stays 0 otherwise.
 - A plan needs both inputs:
-  - `rl_drain` = `trs`·pi/(pi+1), the shaper time of one NORMAL pad at that port's own measured
-    `pad_interval` pi (trained or pre-trained, `tv_set_measured_pad_interval()`). `tv_train_pacing()`
+  - `rl_drain` = `trs`·pi/(pi+1), the shaper time of the mean training pad at that port's own
+    measured `pad_interval` pi (trained or pre-trained, `tv_set_measured_pad_interval()`), scaled
+    to a NORMAL pad by bytes: training sends a frame's NORMAL and EXTRA pads (`tv_train_pad_type()`,
+    EXTRA 6 bytes longer), the pre-arm NORMAL ones. Unscaled, 1080p25 BPM (share 0.99881) launched
+    packet 0 13 ns a pad early on E830, 1.7 µs over a 130-pad warm-up. `tv_train_pacing()`
     keeps the whole ring full of pads for 72 frames, then sleeps until it drains (`nb_tx_desc` pads,
     ~7.5 ms at 2048 and 1080p59.94): the pre-arm and the WAIT_TARGET hold both assume an idle queue.
     Untrained rates only. A user `ops.pad_interval` or the static table gives none;

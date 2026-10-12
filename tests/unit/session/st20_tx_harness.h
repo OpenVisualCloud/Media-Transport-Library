@@ -172,8 +172,10 @@ void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
 int ut_txv_init_pacing(ut_txv_ctx* ctx, uint32_t height, bool interlaced,
                        enum st_fps fps);
 /* tv_train_pacing() of a one-port 1080p59.94 RL session without a pre-train result,
- * against an RL queue of nb_tx_desc descriptors draining one pad per pad_ns. */
-int ut_txv_train_rl_pacing(ut_txv_ctx* ctx, uint16_t nb_tx_desc, long double pad_ns);
+ * GPM_SL or BPM, against an RL queue of nb_tx_desc descriptors draining a NORMAL pad in
+ * pad_ns and any other by its bytes. */
+int ut_txv_train_rl_pacing(ut_txv_ctx* ctx, uint16_t nb_tx_desc, long double pad_ns,
+                           bool bpm);
 float ut_txv_pad_interval(const ut_txv_ctx* ctx);
 /* Training traffic still in that queue, as shaper time. */
 uint64_t ut_txv_train_queued_ns(const ut_txv_ctx* ctx);

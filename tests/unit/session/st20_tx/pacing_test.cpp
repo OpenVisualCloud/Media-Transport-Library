@@ -909,8 +909,12 @@ class St20TxRlPlanTest : public ::testing::Test {
   void TearDown() override {
     ut_txv_destroy(ctx_);
   }
+  /* the NORMAL pad's: training drains a frame of 3240 NORMAL and 1080 EXTRA pads, 6
+   * bytes longer, and 32 NORMAL ones, so its mean pad is longer */
   long double Drain(long double pad_interval) {
-    return ut_txv_pacing_trs(ctx_) * pad_interval / (pad_interval + 1);
+    constexpr long double kShare =
+        kNormalPadSize * 4352 / (kNormalPadSize * 4352 + 1080 * 6);
+    return ut_txv_pacing_trs(ctx_) * pad_interval / (pad_interval + 1) * kShare;
   }
   void ExpectHold(int port) {
     EXPECT_EQ((double)ut_txv_rl_drain(ctx_, port), 0.0);
@@ -966,7 +970,7 @@ TEST_F(St20TxRlPlanTest, PfCreditIsTheBucketTheIcePmdPrograms) {
     ASSERT_NE(ctx, nullptr);
     ut_txv_set_ice_pf(ctx, kPortP, c[0]);
     EXPECT_EQ(ut_txv_init_rl_pacing(ctx, 1, 0, false, kTrained, false), 0);
-    long double drain = ut_txv_pacing_trs(ctx) * 164 / 165;
+    long double drain = ut_txv_rl_drain(ctx, kPortP);
     EXPECT_NEAR((double)ut_txv_rl_credit(ctx, kPortP),
                 (double)(drain * c[1] / kNormalPadSize), kTolNs);
     ut_txv_destroy(ctx);
