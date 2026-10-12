@@ -180,6 +180,12 @@ float ut_txv_pad_interval(const ut_txv_ctx* ctx);
 /* Training traffic still in that queue, as shaper time. */
 uint64_t ut_txv_train_queued_ns(const ut_txv_ctx* ctx);
 uint64_t ut_txv_slept_ns(const ut_txv_ctx* ctx);
+/* ut_txv_init_rl_pacing() without the trim pads tv_init_hw() builds for RL ports */
+void ut_txv_set_no_trim_pads(ut_txv_ctx* ctx);
+/* tv_init_trim_pads() of port P with that pacing way and NORMAL pkt size: the lengths
+ * of the pads it builds, 0 for none */
+int ut_txv_init_trim_pads(ut_txv_ctx* ctx, enum st21_tx_pacing_way way,
+                          uint32_t normal_size, uint32_t lens[2]);
 /* Drives the real tv_init_pacing() for a 1080p59 GPM RL session on num_port ports
  * (port i on physical port i, an iavf VF unless ut_txv_set_ice_pf() made it an ice PF).
  * tv_train_pacing() resolves pad_interval without the NIC: from user_pad_interval when

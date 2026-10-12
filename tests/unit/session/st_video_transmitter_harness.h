@@ -41,6 +41,12 @@ bool ut_trs_pre_arm_port(ut_trs_ctx* ctx, int port);
  * bucket rl_credit deep. It reads the same rl_drain / rl_credit the plan uses, so it
  * checks the plan arithmetic, not those values. */
 long double ut_trs_modeled_launch_tsc(const ut_trs_ctx* ctx, int port);
+/* ST_TX_VIDEO_RL_LAUNCH_MARGIN_NS: where the plan puts packet 0 past its target */
+long double ut_trs_launch_margin_ns(void);
+/* the shaper time of ST_TX_VIDEO_RL_TRIM_FINE bytes of a NORMAL pad, the trim's step */
+long double ut_trs_fine_trim_ns(const ut_trs_ctx* ctx, int port);
+/* refcnt of the port P pad ST_TX_VIDEO_RL_TRIM_COARSE (j 0) or _FINE (j 1) bytes short */
+uint16_t ut_trs_trim_pad_refcnt(const ut_trs_ctx* ctx, int j);
 uint32_t ut_trs_train_pads(const ut_trs_ctx* ctx, int port);
 void ut_trs_clear_train(ut_trs_ctx* ctx);
 

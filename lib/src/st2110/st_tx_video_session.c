@@ -663,13 +663,14 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
     uint32_t burst_size = tv_rl_burst_size(impl, port);
     bool plan = pacing->warm_pkts && s->pacing_way[i] == ST21_TX_PACING_WAY_RL &&
-                pacing->rl_drain[i] && burst_size;
+                pacing->rl_drain[i] && burst_size && s->trim_pad[i][0];
 
     if (plan) {
       pacing->rl_credit[i] =
           pacing->rl_drain[i] * burst_size / s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
       /* a full-window plan must fit half the ring, clear of the PMD's lazy cleanup */
-      long double window = pacing->warm_pkts * pacing->trs + pacing->rl_credit[i];
+      long double window = pacing->warm_pkts * pacing->trs + pacing->rl_credit[i] +
+                           ST_TX_VIDEO_RL_LAUNCH_MARGIN_NS;
       plan = window / pacing->rl_drain[i] + 1 <= mt_if_nb_tx_desc(impl, port) / 2;
     }
     if (plan) {
@@ -2825,8 +2826,33 @@ static int tv_uinit_hw(struct st_tx_video_session_impl* s) {
         s->pad[i][j] = NULL;
       }
     }
+    for (int j = 0; j < 2; j++) {
+      if (s->trim_pad[i][j]) {
+        rte_pktmbuf_free(s->trim_pad[i][j]);
+        s->trim_pad[i][j] = NULL;
+      }
+    }
   }
 
+  return 0;
+}
+
+/* the pre-arm's cut pads, the NORMAL pad less ST_TX_VIDEO_RL_TRIM_COARSE and _FINE bytes,
+ * only on an RL port whose NORMAL pkt is still a frame 64 bytes short */
+static int tv_init_trim_pads(struct mtl_main_impl* impl,
+                             struct st_tx_video_session_impl* s, int i,
+                             enum mtl_port port, struct rte_mempool* pool) {
+  const uint16_t trims[2] = {ST_TX_VIDEO_RL_TRIM_COARSE, ST_TX_VIDEO_RL_TRIM_FINE};
+  uint32_t normal = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+
+  if (s->pacing_way[i] != ST21_TX_PACING_WAY_RL ||
+      normal < ST_TX_VIDEO_RL_TRIM_COARSE + RTE_ETHER_MIN_LEN)
+    return 0;
+  for (int j = 0; j < 2; j++) {
+    s->trim_pad[i][j] =
+        mt_build_pad(impl, pool, port, RTE_ETHER_TYPE_IPV4, normal - trims[j]);
+    if (!s->trim_pad[i][j]) return -ENOMEM;
+  }
   return 0;
 }
 
@@ -2906,6 +2932,10 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
         return -ENOMEM;
       }
       s->pad[i][j] = pad;
+    }
+    if (tv_init_trim_pads(impl, s, i, port, pad_mempool) < 0) {
+      tv_uinit_hw(s);
+      return -ENOMEM;
     }
   }
 

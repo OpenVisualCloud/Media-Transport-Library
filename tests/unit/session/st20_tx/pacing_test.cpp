@@ -986,6 +986,52 @@ TEST_F(St20TxRlPlanTest, PfBucketBeyondHalfTheTxRingHolds) {
   ExpectHold(kPortP);
 }
 
+/* the 2 us launch margin counts too: (128 trs + credit + margin) / drain + 1 pads must
+ * fit half the 512-descriptor ring, 256 */
+TEST_F(St20TxRlPlanTest, PlanFitsHalfTheTxRingWithTheLaunchMargin) {
+  /* 155 KB, 125.77 pads of credit: 255.70 pads without the margin, 256.24 with it */
+  ut_txv_set_ice_pf(ctx_, kPortP, 158720);
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
+  ExpectHold(kPortP);
+
+  /* 154 KB: 255.43 pads with it */
+  ut_txv_ctx* fits = ut_txv_create();
+  ASSERT_NE(fits, nullptr);
+  ut_txv_set_ice_pf(fits, kPortP, 157696);
+  EXPECT_EQ(ut_txv_init_rl_pacing(fits, 1, 0, false, kTrained, false), 0);
+  EXPECT_GT((double)ut_txv_rl_drain(fits, kPortP), 0.0);
+  ut_txv_destroy(fits);
+}
+
+/* tv_init_hw() builds no trim pads where a 64-byte cut would leave no frame */
+TEST_F(St20TxRlPlanTest, PortWithoutTrimPadsHolds) {
+  ut_txv_set_no_trim_pads(ctx_);
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
+
+  ExpectHold(kPortP);
+}
+
+/* only an RL port uses them, and only where the NORMAL pkt less a 64-byte cut is still
+ * a frame of 64 bytes: an RTP-level session may set an rtp_pkt_size of 1 */
+TEST_F(St20TxRlPlanTest, TrimPadsOnlyForRlPortsWithAFrameAfterTheCut) {
+  const struct {
+    enum st21_tx_pacing_way way;
+    uint32_t normal, coarse, fine;
+  } cases[] = {
+      {ST21_TX_PACING_WAY_RL, 1262, 1198, 1254}, {ST21_TX_PACING_WAY_RL, 128, 64, 120},
+      {ST21_TX_PACING_WAY_RL, 127, 0, 0},        {ST21_TX_PACING_WAY_RL, 1 + 42, 0, 0},
+      {ST21_TX_PACING_WAY_TSC, 1262, 0, 0},
+  };
+
+  for (const auto& c : cases) {
+    SCOPED_TRACE(c.normal);
+    uint32_t lens[2];
+    ASSERT_EQ(ut_txv_init_trim_pads(ctx_, c.way, c.normal, lens), 0);
+    EXPECT_EQ(lens[0], c.coarse);
+    EXPECT_EQ(lens[1], c.fine);
+  }
+}
+
 TEST_F(St20TxRlPlanTest, WidePacingHolds) {
   ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, true), 0);
 

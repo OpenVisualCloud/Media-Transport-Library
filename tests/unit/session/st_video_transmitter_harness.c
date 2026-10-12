@@ -14,6 +14,7 @@
 #define UT_TRS_MAX_TSC_SCRIPT 64
 #define UT_TRS_NIC_FIFO 8192
 #define UT_TRS_MAX_SEND_HISTORY 8
+#define UT_TRS_PAD_SIZE 1262 /* the NORMAL pad of 1080p59 GPM */
 
 /* pads accepted on a port ahead of its first real packet */
 struct ut_trs_train {
@@ -160,7 +161,9 @@ static uint16_t ut_trs_txq_burst_mock(struct mt_txq_entry* entry,
         /* an idle shaper refills its bucket: at most rl_credit ahead of arrival */
         long double start = ctx->last_tsc - ctx->session.pacing.rl_credit[port];
         if (!train->pads || train->drained_tsc < start) train->drained_tsc = start;
-        train->drained_tsc += ctx->session.pacing.rl_drain[port];
+        /* a pad drains by its bytes */
+        train->drained_tsc += ctx->session.pacing.rl_drain[port] * m->pkt_len /
+                              ctx->session.st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
         train->pads++;
       }
       if (rte_mbuf_refcnt_read(m) > 1) rte_pktmbuf_free(m);
@@ -208,6 +211,24 @@ static struct rte_mempool* ut_trs_priv_pool(void) {
   return pool;
 }
 
+static struct rte_mbuf* ut_trs_pad(uint16_t len) {
+  struct rte_mbuf* pad = rte_pktmbuf_alloc(ut_pool());
+  if (pad && !rte_pktmbuf_append(pad, len)) {
+    rte_pktmbuf_free(pad);
+    return NULL;
+  }
+  return pad;
+}
+
+static void ut_trs_free_trim_pads(struct st_tx_video_session_impl* s) {
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    for (int j = 0; j < 2; j++) {
+      rte_pktmbuf_free(s->trim_pad[i][j]);
+      s->trim_pad[i][j] = NULL;
+    }
+  }
+}
+
 ut_trs_ctx* ut_trs_create(void) {
   struct rte_mempool* priv_pool;
   ut_trs_ctx* ctx = calloc(1, sizeof(*ctx));
@@ -224,11 +245,17 @@ ut_trs_ctx* ut_trs_create(void) {
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++)
     s->queue[i] = (struct mt_txq_entry*)&ctx->queue_tag[i];
 
-  ctx->pad_mbuf = rte_pktmbuf_alloc(ut_pool());
+  s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size = UT_TRS_PAD_SIZE;
+  ctx->pad_mbuf = ut_trs_pad(UT_TRS_PAD_SIZE);
   if (!ctx->pad_mbuf) goto fail;
   s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL] = ctx->pad_mbuf;
-  s->pad[MTL_SESSION_PORT_R][ST20_PKT_TYPE_NORMAL] = rte_pktmbuf_alloc(ut_pool());
+  s->pad[MTL_SESSION_PORT_R][ST20_PKT_TYPE_NORMAL] = ut_trs_pad(UT_TRS_PAD_SIZE);
   if (!s->pad[MTL_SESSION_PORT_R][ST20_PKT_TYPE_NORMAL]) goto fail;
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    s->trim_pad[i][0] = ut_trs_pad(UT_TRS_PAD_SIZE - ST_TX_VIDEO_RL_TRIM_COARSE);
+    s->trim_pad[i][1] = ut_trs_pad(UT_TRS_PAD_SIZE - ST_TX_VIDEO_RL_TRIM_FINE);
+    if (!s->trim_pad[i][0] || !s->trim_pad[i][1]) goto fail;
+  }
 
   priv_pool = ut_trs_priv_pool();
   if (!priv_pool) goto fail;
@@ -252,6 +279,7 @@ fail:
   if (ctx->redundant_inflight_mbuf) rte_pktmbuf_free(ctx->redundant_inflight_mbuf);
   if (ctx->inflight2_mbuf) rte_pktmbuf_free(ctx->inflight2_mbuf);
   if (ctx->inflight_mbuf) rte_pktmbuf_free(ctx->inflight_mbuf);
+  ut_trs_free_trim_pads(s);
   if (s->pad[MTL_SESSION_PORT_R][ST20_PKT_TYPE_NORMAL])
     rte_pktmbuf_free(s->pad[MTL_SESSION_PORT_R][ST20_PKT_TYPE_NORMAL]);
   if (ctx->pad_mbuf) rte_pktmbuf_free(ctx->pad_mbuf);
@@ -272,6 +300,7 @@ void ut_trs_destroy(ut_trs_ctx* ctx) {
   if (owns_inflight2) ctx->inflight2_mbuf = NULL;
   if (owns_redundant) ctx->redundant_inflight_mbuf = NULL;
   rte_pktmbuf_free(ctx->session.pad[MTL_SESSION_PORT_R][ST20_PKT_TYPE_NORMAL]);
+  ut_trs_free_trim_pads(&ctx->session);
   if (ctx->pad_mbuf) rte_pktmbuf_free(ctx->pad_mbuf);
   if (ctx->inflight_mbuf) rte_pktmbuf_free(ctx->inflight_mbuf);
   if (ctx->inflight2_mbuf) rte_pktmbuf_free(ctx->inflight2_mbuf);
@@ -340,6 +369,18 @@ long double ut_trs_modeled_launch_tsc(const ut_trs_ctx* ctx, int port) {
   uint64_t queued = train->closed ? train->real_tsc : ctx->last_tsc;
 
   return RTE_MAX(train->drained_tsc, (long double)queued);
+}
+
+long double ut_trs_launch_margin_ns(void) {
+  return ST_TX_VIDEO_RL_LAUNCH_MARGIN_NS;
+}
+
+long double ut_trs_fine_trim_ns(const ut_trs_ctx* ctx, int port) {
+  return ctx->session.pacing.rl_drain[port] * ST_TX_VIDEO_RL_TRIM_FINE / UT_TRS_PAD_SIZE;
+}
+
+uint16_t ut_trs_trim_pad_refcnt(const ut_trs_ctx* ctx, int j) {
+  return rte_mbuf_refcnt_read(ctx->session.trim_pad[MTL_SESSION_PORT_P][j]);
 }
 
 uint32_t ut_trs_train_pads(const ut_trs_ctx* ctx, int port) {

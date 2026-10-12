@@ -33,6 +33,13 @@
 #define ST_SCH_MAX_RX_VIDEO_SESSIONS (60) /* max video rx sessions per sch lcore */
 #define ST_SESSION_MAX_BULK (4)
 #define ST_TX_VIDEO_SESSIONS_RING_SIZE (512)
+/* RL pre-arm: packet 0 aims this far past its target, as the shaper releases a queued
+ * pkt within -1.7..+2.4 us of the plan, so it is never early */
+#define ST_TX_VIDEO_RL_LAUNCH_MARGIN_NS (2 * (uint64_t)NS_PER_US)
+/* the last pre-arm pads are cut by up to TRIM_COARSE bytes each, in TRIM_FINE steps, as
+ * the shaper drains a pad that short by its bytes */
+#define ST_TX_VIDEO_RL_TRIM_COARSE (64)
+#define ST_TX_VIDEO_RL_TRIM_FINE (8)
 
 /* number of tmstamp it will tracked for out of order pkts */
 #define ST_VIDEO_RX_REC_NUM_OFO (2)
@@ -359,6 +366,8 @@ struct st_tx_video_session_impl {
 
   struct st20_packet_group_info st20_pkt_info[ST20_PKT_TYPE_MAX];
   struct rte_mbuf* pad[MTL_SESSION_PORT_MAX][ST20_PKT_TYPE_MAX];
+  /* the NORMAL pad less ST_TX_VIDEO_RL_TRIM_COARSE and ST_TX_VIDEO_RL_TRIM_FINE bytes */
+  struct rte_mbuf* trim_pad[MTL_SESSION_PORT_MAX][2];
 
   /* the cpu resource to handle tx, 0: full, 100: cpu is very busy */
   double cpu_busy_score;

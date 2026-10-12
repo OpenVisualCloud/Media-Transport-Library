@@ -4,6 +4,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cmath>
+
 #include "session/st_video_transmitter_harness.h"
 
 namespace {
@@ -17,6 +20,8 @@ constexpr uint32_t kWarmPkts = 128;
 constexpr uint16_t kPadSize = 1262;
 constexpr long double kDrain = kTrs * 164 / 165;
 constexpr long double kCredit = kDrain * 2048 / kPadSize;
+/* the pads a cut of up to a pad takes: 64 B coarse cuts, then 8 B fine ones */
+constexpr int kTrimPads = kPadSize / 64 + 64 / 8;
 
 class St20TxRlWarmUpTest : public ::testing::Test {
  protected:
@@ -64,6 +69,12 @@ class St20TxRlWarmUpTest : public ::testing::Test {
     queued_by_pre_arm_ = ut_trs_real_send_count(ctx_);
     ut_trs_set_mock_tsc_script(ctx_, at_target, 1);
     ut_trs_call_rl_tasklet(ctx_);
+  }
+
+  /* packet 0 on the plan: the margin past its target, within one fine trim */
+  void ExpectOnPlan(long double late, int port, const std::string& what) {
+    EXPECT_GE(late, ut_trs_launch_margin_ns()) << what;
+    EXPECT_LT(late, ut_trs_launch_margin_ns() + ut_trs_fine_trim_ns(ctx_, port)) << what;
   }
 
   ut_trs_ctx* ctx_ = nullptr;
@@ -314,29 +325,42 @@ TEST_F(St20TxRlWarmUpTest, PreArmHandsRealPacketOverBehindThePads) {
   ut_trs_call_rl_tasklet(ctx_);
   ut_trs_call_rl_tasklet(ctx_);
 
+  /* 10 us to the target and the 2 us margin: 12 whole pads */
   EXPECT_EQ(1u, ut_trs_real_send_count(ctx_));
-  EXPECT_EQ(10u, ut_trs_train_pads(ctx_, kPortP));
-  EXPECT_EQ((long double)kTargetTsc, ut_trs_modeled_launch_tsc(ctx_, kPortP));
+  EXPECT_EQ(12u, ut_trs_train_pads(ctx_, kPortP));
+  EXPECT_EQ(kTargetTsc + ut_trs_launch_margin_ns(),
+            ut_trs_modeled_launch_tsc(ctx_, kPortP));
   EXPECT_EQ(0u, ut_trs_target_tsc(ctx_));
   EXPECT_EQ(0, ut_trs_rl_state(ctx_));
 }
 
-TEST_F(St20TxRlWarmUpTest, LaunchLandsOnTargetForEveryWarmUpPhase) {
+TEST_F(St20TxRlWarmUpTest, LaunchLandsOnThePlanForEveryWarmUpPhase) {
   constexpr uint64_t kTargetTsc = 10000000;
   UseRealisticShaper(kPortP);
 
   /* 97 ns does not divide the pad drain, so the sweep visits every phase of a pad */
   for (uint64_t gap = 97; gap <= kWarmPkts * kTrs; gap += 97) {
     const uint64_t now[] = {kTargetTsc - gap};
+    const std::string what = "gap " + std::to_string(gap);
     ut_trs_clear_train(ctx_);
     ut_trs_set_target_tsc(ctx_, kTargetTsc);
     ut_trs_set_mock_tsc_script(ctx_, now, 1);
 
-    ASSERT_TRUE(ut_trs_pre_arm(ctx_)) << "gap " << gap;
+    ASSERT_TRUE(ut_trs_pre_arm(ctx_)) << what;
 
     long double late = ut_trs_modeled_launch_tsc(ctx_, kPortP) - kTargetTsc;
-    ASSERT_GE(late, 0) << "gap " << gap;
-    ASSERT_LT(late, kDrain) << "gap " << gap;
+    long double left = gap + ut_trs_launch_margin_ns() + kCredit;
+    if (left > (kTrimPads - 1) * kDrain) {
+      ExpectOnPlan(late, kPortP, what);
+    } else { /* fewer pads than a full cut takes: short of it by what they cannot cut */
+      long double pads = ceill(left / kDrain);
+      long double surplus = (pads * kDrain - left) * kPadSize / kDrain;
+      EXPECT_GE(late, ut_trs_launch_margin_ns()) << what;
+      EXPECT_LT(late, ut_trs_launch_margin_ns() +
+                          (std::max(surplus - 64 * pads, 0.0L) + 64) * kDrain / kPadSize)
+          << what;
+    }
+    if (HasFailure()) return;
   }
 }
 
@@ -350,10 +374,12 @@ TEST_F(St20TxRlWarmUpTest, Packet0LeavesOnTargetAfterAStallInAPadBurst) {
       for (bool after_doorbell : {false, true}) {
         ASSERT_NO_FATAL_FAILURE(RunFrameWithStall(call, stall, after_doorbell));
 
+        /* on the plan, or held: then the tasklet sends it at the target, at the latest
+         * when the pads drain on the plan */
         long double late = ut_trs_modeled_launch_tsc(ctx_, kPortP) - kStallTargetTsc;
         EXPECT_GE(late, 0) << "call " << call << " stall " << stall << " after "
                            << after_doorbell;
-        EXPECT_LT(late, kDrain)
+        EXPECT_LT(late, ut_trs_launch_margin_ns() + ut_trs_fine_trim_ns(ctx_, kPortP))
             << "call " << call << " stall " << stall << " after " << after_doorbell;
       }
     }
@@ -388,8 +414,8 @@ TEST_F(St20TxRlWarmUpTest, PlanUsesTrainedDrainPeriod) {
 
   ut_trs_pre_arm(ctx_);
 
-  /* 124 trs drain in 124.76 pads at pad_interval 164 */
-  EXPECT_EQ(125u, ut_trs_pad_send_count(ctx_));
+  /* 124 trs and the 2 us margin drain in 125.30 pads at pad_interval 164 */
+  EXPECT_EQ(126u, ut_trs_pad_send_count(ctx_));
 }
 
 TEST_F(St20TxRlWarmUpTest, PlanAddsBurstCredit) {
@@ -404,10 +430,13 @@ TEST_F(St20TxRlWarmUpTest, PlanAddsBurstCredit) {
 
   ut_trs_pre_arm(ctx_);
 
-  EXPECT_EQ(12u, ut_trs_pad_send_count(ctx_));
+  /* 10 us to the target, 2 us of credit and the 2 us margin */
+  EXPECT_EQ(14u, ut_trs_pad_send_count(ctx_));
 }
 
-TEST_F(St20TxRlWarmUpTest, FractionOfAPadRoundsUpToAWholePad) {
+/* 11.625 pads to the plan: 12 pads, 0.375 of a pad cut from them, 472 of its 1262 bytes,
+ * 7 coarse cuts and 3 fine ones */
+TEST_F(St20TxRlWarmUpTest, FractionOfAPadIsCutFromTheLastPads) {
   constexpr uint64_t kTargetTsc = 20000;
   const uint64_t now[] = {kTargetTsc - 9625, kTargetTsc - 9625, kTargetTsc - 9625};
 
@@ -418,11 +447,16 @@ TEST_F(St20TxRlWarmUpTest, FractionOfAPadRoundsUpToAWholePad) {
 
   ut_trs_pre_arm(ctx_);
 
-  ASSERT_EQ(10u, ut_trs_pad_send_count(ctx_));
-  EXPECT_EQ(kTargetTsc + 375.0L, ut_trs_modeled_launch_tsc(ctx_, kPortP));
+  ASSERT_EQ(12u, ut_trs_pad_send_count(ctx_));
+  EXPECT_NEAR(
+      (double)(kTargetTsc + ut_trs_launch_margin_ns() + 375 - 472 * 1000.0L / kPadSize),
+      (double)ut_trs_modeled_launch_tsc(ctx_, kPortP), 1e-6);
+  EXPECT_EQ(1u, ut_trs_trim_pad_refcnt(ctx_, 0));
+  EXPECT_EQ(1u, ut_trs_trim_pad_refcnt(ctx_, 1));
 }
 
-TEST_F(St20TxRlWarmUpTest, RefusedRoundUpPadRetriesWithoutLeaking) {
+/* refused pads retry as NORMAL ones, cut or not, later and never early */
+TEST_F(St20TxRlWarmUpTest, RefusedCutPadsRetryWithoutLeaking) {
   constexpr uint64_t kTargetTsc = 20000;
   const uint64_t now[] = {kTargetTsc - 9625};
 
@@ -435,15 +469,17 @@ TEST_F(St20TxRlWarmUpTest, RefusedRoundUpPadRetriesWithoutLeaking) {
 
   ut_trs_pre_arm(ctx_);
 
-  ASSERT_EQ(10u, ut_trs_pad_inflight_num(ctx_));
-  ASSERT_EQ(11u, ut_trs_pad_refcnt(ctx_));
+  ASSERT_EQ(12u, ut_trs_pad_inflight_num(ctx_));
+  ASSERT_EQ(13u, ut_trs_pad_refcnt(ctx_));
+  ASSERT_EQ(1u, ut_trs_trim_pad_refcnt(ctx_, 0));
+  ASSERT_EQ(1u, ut_trs_trim_pad_refcnt(ctx_, 1));
 
   ut_trs_set_burst_force_fail(ctx_, false);
   ut_trs_call_rl_tasklet(ctx_);
 
   EXPECT_EQ(0u, ut_trs_pad_inflight_num(ctx_));
   EXPECT_EQ(1u, ut_trs_pad_refcnt(ctx_));
-  EXPECT_EQ(10u, ut_trs_pad_send_count(ctx_));
+  EXPECT_EQ(12u, ut_trs_pad_send_count(ctx_));
 }
 
 TEST_F(St20TxRlWarmUpTest, UhdBurstGapsKeepThePlan) {
@@ -468,9 +504,7 @@ TEST_F(St20TxRlWarmUpTest, UhdBurstGapsKeepThePlan) {
   EXPECT_TRUE(ut_trs_pre_arm(ctx_));
 
   EXPECT_EQ(0u, ut_trs_stat_recalculate_warmup(ctx_));
-  long double late = ut_trs_modeled_launch_tsc(ctx_, kPortP) - kTargetTsc;
-  EXPECT_GE(late, 0);
-  EXPECT_LT(late, kUhdDrain);
+  ExpectOnPlan(ut_trs_modeled_launch_tsc(ctx_, kPortP) - kTargetTsc, kPortP, "");
 }
 
 TEST_F(St20TxRlWarmUpTest, SlowBatchHoldsPacket0ForTheTarget) {
@@ -497,9 +531,11 @@ TEST_F(St20TxRlWarmUpTest, JitteredBatchesStillRecalculate) {
   EXPECT_TRUE(ut_trs_pre_arm(ctx_));
 
   EXPECT_GT(ut_trs_stat_recalculate_warmup(ctx_), 0u);
+  /* 17 pads are left after the stall for a cut of 1075 bytes: 16 coarse cuts and one fine
+   * one, within a coarse cut of the plan */
   long double late = ut_trs_modeled_launch_tsc(ctx_, kPortP) - 248740;
-  EXPECT_GE(late, 0);
-  EXPECT_LT(late, 5000);
+  EXPECT_GE(late, ut_trs_launch_margin_ns());
+  EXPECT_LT(late, ut_trs_launch_margin_ns() + 64 * 5000.0L / kPadSize);
 }
 
 TEST_F(St20TxRlWarmUpTest, StallPastTheTargetEndsThePadTrain) {
@@ -511,7 +547,8 @@ TEST_F(St20TxRlWarmUpTest, StallPastTheTargetEndsThePadTrain) {
 
   ut_trs_pre_arm(ctx_);
 
-  EXPECT_EQ(32u, ut_trs_pad_send_count(ctx_));
+  /* 51 pads to the plan, the first burst all but the 27 of the cut */
+  EXPECT_EQ(24u, ut_trs_pad_send_count(ctx_));
 }
 
 TEST_F(St20TxRlWarmUpTest, BatchedPadTrainBurstCount) {
@@ -525,12 +562,10 @@ TEST_F(St20TxRlWarmUpTest, BatchedPadTrainBurstCount) {
 
   ut_trs_pre_arm(ctx_);
 
-  EXPECT_EQ(100u, ut_trs_pad_send_count(ctx_));
-  /* 32 + 32 + 32 + 3 pads, then one more for the fraction */
-  EXPECT_EQ(5u, ut_trs_burst_call_count(ctx_));
-  long double late = ut_trs_modeled_launch_tsc(ctx_, kPortP) - kTargetTsc;
-  EXPECT_GE(late, 0);
-  EXPECT_LT(late, 1000);
+  /* 101.625 pads to the plan: 32 + 32 + 11, then the 27 the cut is spread over */
+  EXPECT_EQ(102u, ut_trs_pad_send_count(ctx_));
+  EXPECT_EQ(4u, ut_trs_burst_call_count(ctx_));
+  ExpectOnPlan(ut_trs_modeled_launch_tsc(ctx_, kPortP) - kTargetTsc, kPortP, "");
 }
 
 TEST_F(St20TxRlWarmUpTest, PartiallyAcceptedBatchesRetryInBatches) {
@@ -545,21 +580,21 @@ TEST_F(St20TxRlWarmUpTest, PartiallyAcceptedBatchesRetryInBatches) {
 
   ut_trs_pre_arm(ctx_);
 
-  /* 12 + 12 + 12 of the 32 + 32 + 32 + 3 pads refused */
-  ASSERT_EQ(36u, ut_trs_pad_inflight_num(ctx_));
-  ASSERT_EQ(37u, ut_trs_pad_refcnt(ctx_));
+  /* 12 + 12 + 0 + 7 of the 32 + 32 + 11 + 27 pads refused, the cut ones first */
+  ASSERT_EQ(31u, ut_trs_pad_inflight_num(ctx_));
+  ASSERT_EQ(32u, ut_trs_pad_refcnt(ctx_));
   uint32_t bursts = ut_trs_burst_call_count(ctx_);
 
   ut_trs_set_burst_accept_limit(ctx_, 0);
   ut_trs_call_rl_tasklet(ctx_);
 
-  EXPECT_EQ(bursts + 2, ut_trs_burst_call_count(ctx_));
+  EXPECT_EQ(bursts + 1, ut_trs_burst_call_count(ctx_));
   EXPECT_EQ(0u, ut_trs_pad_inflight_num(ctx_));
   EXPECT_EQ(1u, ut_trs_pad_refcnt(ctx_));
-  EXPECT_EQ(100u, ut_trs_pad_send_count(ctx_));
+  EXPECT_EQ(102u, ut_trs_pad_send_count(ctx_));
 }
 
-TEST_F(St20TxRlWarmUpTest, PreArmRealisticJitterLandsWithinAPad) {
+TEST_F(St20TxRlWarmUpTest, PreArmRealisticJitterLandsOnThePlan) {
   SetTrs(5000.0L);
   ut_trs_set_target_tsc(ctx_, 248740);
   const uint64_t script[] = {
@@ -570,9 +605,7 @@ TEST_F(St20TxRlWarmUpTest, PreArmRealisticJitterLandsWithinAPad) {
 
   ut_trs_pre_arm(ctx_);
 
-  long double late = ut_trs_modeled_launch_tsc(ctx_, kPortP) - 248740;
-  EXPECT_GE(late, 0);
-  EXPECT_LT(late, 5000);
+  ExpectOnPlan(ut_trs_modeled_launch_tsc(ctx_, kPortP) - 248740, kPortP, "");
 }
 
 TEST_F(St20TxRlWarmUpTest, GapBeyondWindowFallsBackToHold) {
@@ -648,12 +681,8 @@ TEST_F(St20TxRlWarmUpTest, RedundantLegsLaunchTogetherThoughServedApart) {
   ut_trs_set_mock_tsc_script(ctx_, r_now, 1);
   ut_trs_pre_arm_port(ctx_, kPortR);
 
-  long double p_late = ut_trs_modeled_launch_tsc(ctx_, kPortP) - kTargetTsc;
-  long double r_late = ut_trs_modeled_launch_tsc(ctx_, kPortR) - kTargetTsc;
-  EXPECT_GE(p_late, 0);
-  EXPECT_GE(r_late, 0);
-  EXPECT_LT(p_late, kDrain);
-  EXPECT_LT(r_late, kDrainR);
+  ExpectOnPlan(ut_trs_modeled_launch_tsc(ctx_, kPortP) - kTargetTsc, kPortP, "P");
+  ExpectOnPlan(ut_trs_modeled_launch_tsc(ctx_, kPortR) - kTargetTsc, kPortR, "R");
 }
 
 TEST_F(St20TxRlWarmUpTest, PreArmStateResetsForNextFrame) {
@@ -678,10 +707,12 @@ TEST_F(St20TxRlWarmUpTest, PreArmStateResetsForNextFrame) {
   ut_trs_call_rl_tasklet(ctx_);
   ut_trs_call_rl_tasklet(ctx_);
 
-  EXPECT_EQ(2u, ut_trs_pad_send_count(ctx_));
+  /* 1 us to each target and the 2 us margin: 3 pads a frame */
+  EXPECT_EQ(6u, ut_trs_pad_send_count(ctx_));
   EXPECT_EQ(4u, ut_trs_burst_call_count(ctx_));
   EXPECT_EQ(2u, ut_trs_real_send_count(ctx_));
-  EXPECT_EQ((long double)kSecondTargetTsc, ut_trs_modeled_launch_tsc(ctx_, kPortP));
+  EXPECT_EQ(kSecondTargetTsc + ut_trs_launch_margin_ns(),
+            ut_trs_modeled_launch_tsc(ctx_, kPortP));
   EXPECT_EQ(0u, ut_trs_target_tsc(ctx_));
   EXPECT_EQ(0, ut_trs_rl_state(ctx_));
 }
@@ -707,8 +738,9 @@ TEST_F(St20TxRlWarmUpTest, FailedPadsRetryAheadOfRealPacket) {
   ut_trs_set_mock_tsc_script(ctx_, warmup_script, 8);
   ut_trs_call_rl_tasklet(ctx_);
 
-  ASSERT_EQ(2u, ut_trs_pad_inflight_num(ctx_));
-  ASSERT_EQ(3u, ut_trs_pad_refcnt(ctx_));
+  /* 2 us to the target and the 2 us margin: 4 pads */
+  ASSERT_EQ(4u, ut_trs_pad_inflight_num(ctx_));
+  ASSERT_EQ(5u, ut_trs_pad_refcnt(ctx_));
   ASSERT_EQ(1u, ut_trs_inflight_num(ctx_));
   ASSERT_EQ(0u, ut_trs_real_send_count(ctx_));
 
@@ -718,10 +750,11 @@ TEST_F(St20TxRlWarmUpTest, FailedPadsRetryAheadOfRealPacket) {
 
   EXPECT_EQ(0u, ut_trs_pad_inflight_num(ctx_));
   EXPECT_EQ(1u, ut_trs_pad_refcnt(ctx_));
-  EXPECT_EQ(2u, ut_trs_pad_send_count(ctx_));
+  EXPECT_EQ(4u, ut_trs_pad_send_count(ctx_));
   EXPECT_EQ(1u, ut_trs_real_send_count(ctx_));
-  EXPECT_EQ(2u, ut_trs_train_pads(ctx_, kPortP));
-  EXPECT_GE(ut_trs_modeled_launch_tsc(ctx_, kPortP), (long double)kTargetTsc);
+  EXPECT_EQ(4u, ut_trs_train_pads(ctx_, kPortP));
+  EXPECT_GE(ut_trs_modeled_launch_tsc(ctx_, kPortP),
+            kTargetTsc + ut_trs_launch_margin_ns());
 }
 
 }  // namespace
