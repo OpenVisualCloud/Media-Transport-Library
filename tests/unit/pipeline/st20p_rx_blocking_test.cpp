@@ -224,21 +224,20 @@ TEST_P(St20PipelineRxBlocking, DestroyEndsEveryBlockedGet) {
 
 /* A wake_block() posted while no get waits must not end a later, unrelated wait.
  *
- * st20p_rx_wake_block() sets block_wake_pending, and only the slow path of
- * get_frame (no frame found, about to wait) reads and clears it. A get that
+ * st20p_rx_wake_block() sets block_wake_pending, and when only the slow path of
+ * get_frame (no frame found, about to wait) reads and clears it, a get that
  * finds a frame at once never looks at the flag, so a wake posted while the
  * app was busy outlives any number of successful gets. The next get that finds
- * no frame then returns NULL without waiting, possibly frames after the wake,
- * which is the stale token this PR removes from frame-ready notifies, now from
- * wake_block(). An app that treats NULL from a blocking get as "stopped" or as
- * an error (the FFmpeg demuxers return EIO) stops early.
+ * no frame then returns NULL without waiting, possibly frames after the wake:
+ * the stale token frame-ready notifies used to leave, now from wake_block(). An
+ * app that treats NULL from a blocking get as "stopped" or as an error (the
+ * FFmpeg demuxers return EIO) stops early.
  *
  * This pins the contract "a wake_block is used up by the next get, whatever it
- * returns". The PR's WakePostedBeforeWaitIsNotLost and
- * OneWakeSatisfiesOnlyOneWait hold under it too: in both, the get after the
- * wake finds no frame and waits. Clearing block_wake_pending when the fast
- * path succeeds is enough. Whether to adopt this contract is a design choice:
- * the TX pipelines instead ignore a wake_block() that no get is waiting for
+ * returns". WakePostedBeforeWaitIsNotLost and OneWakeSatisfiesOnlyOneWait
+ * hold under it too: in both, the get after the wake finds no frame and waits.
+ * Clearing block_wake_pending when the fast path succeeds is enough. The TX
+ * pipelines instead ignore a wake_block() that no get is waiting for
  * (wake_block_cnt).
  */
 TEST_P(St20PipelineRxBlocking, WakeBlockIsSpentByAFastPathGet) {
