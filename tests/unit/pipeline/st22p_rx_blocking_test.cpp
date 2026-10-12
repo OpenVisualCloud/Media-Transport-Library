@@ -137,3 +137,73 @@ TEST(St22PipelineRxBlocking, DecodeOneWakeSatisfiesOnlyOneWait) {
 
   ut22p_ctx_destroy(ctx);
 }
+
+/* The stale frame wake that this PR fixes for st20p, still present in st22p.
+ *
+ * Every frame-ready notify calls rx_st22p_block_wake(), which sets
+ * block_wake_pending even when no get waits. A get that claims its frame at
+ * once never reaches the wait and never clears the flag. The next get that
+ * finds no frame sees the flag, skips the wait and returns NULL at once
+ * instead of blocking for block_timeout_ns. That happens as soon as the app
+ * falls a frame behind and catches up. The FFmpeg st22p demuxer
+ * (mtl_st22p_rx.c) sets ST22P_RX_FLAG_BLOCK_GET and turns that NULL into EIO,
+ * the failure the PR fixes for st20p. The st20p fix applies unchanged: the
+ * notify only signals, and the waiter claims on every wake up to one deadline.
+ */
+TEST(St22PipelineRxBlocking, StaleFrameWakeDoesNotSkipTheWait) {
+  ASSERT_EQ(ut22p_init(), 0) << "EAL init failed";
+
+  ut22p_ctx* ctx = ut22p_ctx_create(2);
+  ASSERT_NE(ctx, nullptr);
+  ut22p_ctx_enable_blocking(ctx, kSpendTokenTimeoutNs);
+
+  ASSERT_EQ(ut22p_inject_frame(ctx, ST_FRAME_STATUS_COMPLETE, 1000), 0);
+  struct st_frame* frame = ut22p_get_frame(ctx);
+  ASSERT_NE(frame, nullptr);
+  ASSERT_EQ(ut22p_put_frame(ctx, frame), 0);
+
+  const auto t0 = std::chrono::steady_clock::now();
+  frame = ut22p_get_frame(ctx);
+  const uint64_t elapsed_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                  std::chrono::steady_clock::now() - t0)
+                                  .count();
+
+  EXPECT_EQ(frame, nullptr);
+  EXPECT_GT(elapsed_ns, kSpendTokenTimeoutNs / 2)
+      << "the empty get returned without waiting for block_timeout_ns";
+
+  ut22p_ctx_destroy(ctx);
+}
+
+/* The same stale wake on the decoder-plugin side of st22p RX.
+ *
+ * Every frame handed to the decoder calls rx_st22p_decode_block_wake(), which
+ * sets decode_block_wake_pending even when the decoder is not waiting. A
+ * decoder get that claims its frame at once never clears it, so the decoder's
+ * next empty get returns -EBUSY at once instead of blocking for the decode
+ * timeout. Plugins that retry only lose time; one that treats -EBUSY from a
+ * blocking get as end of stream stops decoding.
+ */
+TEST(St22PipelineRxBlocking, DecodeStaleFrameWakeDoesNotSkipTheWait) {
+  ASSERT_EQ(ut22p_init(), 0) << "EAL init failed";
+
+  ut22p_ctx* ctx = ut22p_ctx_create(2);
+  ASSERT_NE(ctx, nullptr);
+  ut22p_ctx_set_decoder(ctx);
+  ut22p_ctx_enable_decode_blocking(ctx, kSpendTokenTimeoutNs);
+
+  ASSERT_EQ(ut22p_inject_frame(ctx, ST_FRAME_STATUS_COMPLETE, 1000), 0);
+  ASSERT_EQ(ut22p_decode_get_frame(ctx), 0);
+
+  const auto t0 = std::chrono::steady_clock::now();
+  int ret = ut22p_decode_get_frame(ctx);
+  const uint64_t elapsed_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                  std::chrono::steady_clock::now() - t0)
+                                  .count();
+
+  EXPECT_EQ(ret, -EBUSY);
+  EXPECT_GT(elapsed_ns, kSpendTokenTimeoutNs / 2)
+      << "the empty decode_get_frame returned without waiting for the timeout";
+
+  ut22p_ctx_destroy(ctx);
+}
