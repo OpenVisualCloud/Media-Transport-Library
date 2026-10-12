@@ -35,6 +35,12 @@ int ut30p_init(void);
 ut30p_ctx* ut30p_ctx_create(int framebuff_cnt);
 void ut30p_ctx_destroy(ut30p_ctx* ctx);
 
+/**
+ * Turn on ST30P_RX_FLAG_BLOCK_GET behaviour: init the block cond/mutex as
+ * st30p_rx_create() does and set the blocking get_frame timeout.
+ */
+void ut30p_ctx_enable_blocking(ut30p_ctx* ctx, uint64_t timeout_ns);
+
 /** Inject one synthetic audio frame as if the transport just completed it.
  *  status is ST_FRAME_STATUS_COMPLETE or _CORRUPTED.
  *  Returns 0 on accept, -EBUSY when no free framebuf (drives the

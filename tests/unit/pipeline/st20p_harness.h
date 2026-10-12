@@ -50,6 +50,9 @@ void ut20p_wake_block(ut20p_ctx* ctx);
 /** Wraps rx_st20p_notify_frame_available(): signals a blocked get, readies no frame. */
 void ut20p_notify_frame_available(ut20p_ctx* ctx);
 
+/** The first two steps of st20p_rx_free(): begin_destroy, then wake_on_destroy. */
+void ut20p_begin_destroy(ut20p_ctx* ctx);
+
 /**
  * Switch to the internal-converter path (derive = false, no-op converter):
  * frame_ready leaves the frame READY and get_frame claims READY->IN_USER.

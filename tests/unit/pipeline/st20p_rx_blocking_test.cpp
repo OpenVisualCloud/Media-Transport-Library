@@ -182,6 +182,83 @@ TEST_P(St20PipelineRxBlocking, DestroyEndsTheWaitWithoutAFrame) {
   EXPECT_LT(elapsed_ns, kLongTimeoutNs / 2) << "destroy did not end the wait";
 }
 
+/* Destroy must end every blocked get, not just one.
+ *
+ * st20p_rx_free() sets lc_destroying, calls wake_on_destroy() once, then
+ * mt_handle_drain() waits until every in-flight get_frame has returned.
+ * wake_on_destroy is rx_st20p_block_wake(): one pthread_cond_signal, which
+ * wakes one waiter. With two threads blocked in get_frame, the woken one sees
+ * the flag and returns; the other sleeps on and only re-checks lc_destroying
+ * when its own block_timeout_ns runs out. free() stalls for that whole time:
+ * 1 s by default, longer after st20p_rx_set_block_timeout().
+ *
+ * Here getter 0 returns in about kWakeDelay and getter 1 only at kLongTimeoutNs.
+ * A pthread_cond_broadcast on destroy ends both waits; every waiter re-checks
+ * lc_destroying, so waking them all is safe. The st22p, st30p and st40p RX and
+ * all TX pipelines wire wake_on_destroy the same way.
+ */
+TEST_P(St20PipelineRxBlocking, DestroyEndsEveryBlockedGet) {
+  ut20p_ctx_enable_blocking(ctx_, kLongTimeoutNs);
+
+  struct st_frame* frames[2] = {};
+  uint64_t elapsed_ns[2] = {};
+  auto getter = [&](int i) {
+    const auto t0 = std::chrono::steady_clock::now();
+    frames[i] = ut20p_get_frame(ctx_);
+    elapsed_ns[i] = ns_since(t0);
+  };
+  std::thread g0(getter, 0);
+  std::thread g1(getter, 1);
+
+  std::this_thread::sleep_for(kWakeDelay);
+  ut20p_begin_destroy(ctx_);
+  g0.join();
+  g1.join();
+
+  for (int i = 0; i < 2; i++) {
+    EXPECT_EQ(frames[i], nullptr) << "getter " << i;
+    EXPECT_LT(elapsed_ns[i], kLongTimeoutNs / 2)
+        << "destroy did not end the wait of getter " << i;
+  }
+}
+
+/* A wake_block() posted while no get waits must not end a later, unrelated wait.
+ *
+ * st20p_rx_wake_block() sets block_wake_pending, and only the slow path of
+ * get_frame (no frame found, about to wait) reads and clears it. A get that
+ * finds a frame at once never looks at the flag, so a wake posted while the
+ * app was busy outlives any number of successful gets. The next get that finds
+ * no frame then returns NULL without waiting, possibly frames after the wake,
+ * which is the stale token this PR removes from frame-ready notifies, now from
+ * wake_block(). An app that treats NULL from a blocking get as "stopped" or as
+ * an error (the FFmpeg demuxers return EIO) stops early.
+ *
+ * This pins the contract "a wake_block is used up by the next get, whatever it
+ * returns". The PR's WakePostedBeforeWaitIsNotLost and
+ * OneWakeSatisfiesOnlyOneWait hold under it too: in both, the get after the
+ * wake finds no frame and waits. Clearing block_wake_pending when the fast
+ * path succeeds is enough. Whether to adopt this contract is a design choice:
+ * the TX pipelines instead ignore a wake_block() that no get is waiting for
+ * (wake_block_cnt).
+ */
+TEST_P(St20PipelineRxBlocking, WakeBlockIsSpentByAFastPathGet) {
+  ut20p_ctx_enable_blocking(ctx_, kShortTimeoutNs);
+
+  ut20p_wake_block(ctx_);
+  ASSERT_EQ(ut20p_inject_frame(ctx_, ST_FRAME_STATUS_COMPLETE, kTimestamp), 0);
+  struct st_frame* frame = ut20p_get_frame(ctx_);
+  ASSERT_NE(frame, nullptr);
+  ASSERT_EQ(ut20p_put_frame(ctx_, frame), 0);
+
+  const auto t0 = std::chrono::steady_clock::now();
+  frame = ut20p_get_frame(ctx_);
+  const uint64_t elapsed_ns = ns_since(t0);
+
+  EXPECT_EQ(frame, nullptr);
+  EXPECT_GT(elapsed_ns, kShortTimeoutNs / 2)
+      << "a wake_block spent by a fast-path get ended a later wait";
+}
+
 /* A timed-out pthread_cond_timedwait() may consume a concurrent signal (POSIX). */
 TEST_P(St20PipelineRxBlocking, UnsignalledFrameIsClaimedAtTimeout) {
   ut20p_ctx_enable_blocking(ctx_, kShortTimeoutNs);
