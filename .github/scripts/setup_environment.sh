@@ -412,7 +412,12 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		# FFmpeg installs to a sibling directory for independent caching
 		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
-			MTL_INSTALL_PREFIX="${local_base}/ffmpeg" bash "${root_folder}/ecosystem/ffmpeg_plugin/build.sh" ${enable_gpu} ${enable_jpegxs}
+			# script/common.sh puts the system pkg-config directories first, so an
+			# SVT-JPEG-XS installed on the host would win over the bundle: FFmpeg
+			# would build against the host's headers and library. Put the bundle
+			# first for this build.
+			PKG_CONFIG_PATH="${jpegxs_bundle}/lib/pkgconfig:${jpegxs_bundle}/lib64/pkgconfig:${PKG_CONFIG_PATH:-}" \
+				MTL_INSTALL_PREFIX="${local_base}/ffmpeg" bash "${root_folder}/ecosystem/ffmpeg_plugin/build.sh" ${enable_gpu} ${enable_jpegxs}
 		else
 			bash "${root_folder}/ecosystem/ffmpeg_plugin/build.sh" ${enable_gpu} ${enable_jpegxs}
 		fi
