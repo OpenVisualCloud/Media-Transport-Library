@@ -143,6 +143,10 @@ static inline int mt_pthread_cond_signal(pthread_cond_t* cond) {
   return pthread_cond_signal(cond);
 }
 
+static inline int mt_pthread_cond_broadcast(pthread_cond_t* cond) {
+  return pthread_cond_broadcast(cond);
+}
+
 static inline bool mt_socket_match(int cpu_socket, int dev_socket) {
 #ifdef WINDOWSENV
   MTL_MAY_UNUSED(cpu_socket);

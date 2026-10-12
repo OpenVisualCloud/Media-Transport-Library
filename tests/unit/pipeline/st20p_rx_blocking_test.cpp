@@ -186,16 +186,16 @@ TEST_P(St20PipelineRxBlocking, DestroyEndsTheWaitWithoutAFrame) {
  *
  * st20p_rx_free() sets lc_destroying, calls wake_on_destroy() once, then
  * mt_handle_drain() waits until every in-flight get_frame has returned.
- * wake_on_destroy is rx_st20p_block_wake(): one pthread_cond_signal, which
- * wakes one waiter. With two threads blocked in get_frame, the woken one sees
+ * wake_on_destroy is rx_st20p_block_wake(). A pthread_cond_signal there would
+ * wake one waiter. With two threads blocked in get_frame, the woken one sees
  * the flag and returns; the other sleeps on and only re-checks lc_destroying
  * when its own block_timeout_ns runs out. free() stalls for that whole time:
  * 1 s by default, longer after st20p_rx_set_block_timeout().
  *
- * Here getter 0 returns in about kWakeDelay and getter 1 only at kLongTimeoutNs.
+ * With a signal, getter 0 returns in about kWakeDelay and getter 1 at kLongTimeoutNs.
  * A pthread_cond_broadcast on destroy ends both waits; every waiter re-checks
  * lc_destroying, so waking them all is safe. The st22p, st30p and st40p RX and
- * all TX pipelines wire wake_on_destroy the same way.
+ * all TX pipelines still signal once on destroy.
  */
 TEST_P(St20PipelineRxBlocking, DestroyEndsEveryBlockedGet) {
   ut20p_ctx_enable_blocking(ctx_, kLongTimeoutNs);
