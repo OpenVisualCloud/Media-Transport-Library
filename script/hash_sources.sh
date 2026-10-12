@@ -61,10 +61,15 @@ read_env() {
 	grep -v '^\s*#' "$env_file" | grep -v '^\s*$'
 }
 
-# Hash all regular files under the given paths, sorted for determinism.
+# Hash the regular files under the given paths that git does not ignore, sorted
+# for determinism. An in-tree build directory such as tests/tools/RxTxApp/build
+# would otherwise change the hash of the sources once they are built.
 hash_paths() {
 	local files
-	files="$(find "$@" -type f 2>/dev/null | LC_ALL=C sort || true)"
+	files="$(git ls-files --cached --others --exclude-standard -- "$@" |
+		while IFS= read -r file; do
+			if [ -f "$file" ] && [ ! -L "$file" ]; then printf '%s\n' "$file"; fi
+		done | LC_ALL=C sort)"
 	if [ -z "$files" ]; then
 		printf '%s' "" | sha256sum | cut -d' ' -f1
 	else

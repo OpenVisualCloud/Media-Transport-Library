@@ -62,9 +62,9 @@ def to_regex(pattern):
 def env_patterns(env_file, faults):
     """Return the patterns that one hash_sources_<name>.env file gives.
 
-    script/hash_sources.sh reads each line as one path and gives it to find
-    unquoted, so a line with a space, a glob character or a comment after the
-    path does not give the path that it shows.
+    script/hash_sources.sh reads each line as one path and gives it to
+    git ls-files unquoted, so a line with a space, a glob character or a
+    comment after the path does not give the path that it shows.
     """
     patterns = set()
     for number, line in enumerate(read(env_file).split("\n"), 1):
