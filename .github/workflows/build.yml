@@ -194,7 +194,7 @@ jobs:
           egress-policy: audit
 
       - name: Checkout MTL
-        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@c382b88f7723f3187e52925364014732ba34d4c2
         with:
           ref: ${{ needs.checksums.outputs.commit }}
           fetch-depth: ${{ inputs.branch && '0' || '1' }}
