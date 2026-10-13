@@ -48,21 +48,16 @@ static inline void tv_simulate_packet_loss(struct st_tx_video_session_impl* s,
 }
 #endif /* MTL_SIMULATE_PACKET_DROPS */
 
-static inline uint64_t tai_from_frame_count(struct st_tx_video_pacing* pacing,
+static inline uint64_t tai_from_frame_count(struct st_tx_video_session_impl* s,
                                             uint64_t frame_count) {
-  /* Doubles lose integer precision beyond 2^53 (~9e15), so a plain cast to uint64_t
-   * may truncate to a smaller value. Using nextafter(val, INFINITY) ensures we round
-   * up to the next representable double before casting, avoiding jumping between tai in
-   * neighboring frames. This caused problems when tai was again changed to frame count */
-  long double tai = nextafterl((long double)frame_count * pacing->frame_time, INFINITY);
-  if (tai >= UINT64_MAX) return UINT64_MAX;
-  return tai;
+  return st_epoch_to_tai(frame_count, s->fps_tm.mul, s->fps_tm.den);
 }
 
 /* transmission start time of the frame */
-static inline uint64_t transmission_start_time(struct st_tx_video_pacing* pacing,
+static inline uint64_t transmission_start_time(struct st_tx_video_session_impl* s,
                                                uint64_t frame_count) {
-  long double start_time = (long double)tai_from_frame_count(pacing, frame_count) +
+  struct st_tx_video_pacing* pacing = &s->pacing;
+  long double start_time = (long double)tai_from_frame_count(s, frame_count) +
                            pacing->tr_offset - (pacing->vrx * pacing->trs);
   if (start_time <= 0) return 0;
   if (start_time >= UINT64_MAX) return UINT64_MAX;
@@ -742,7 +737,7 @@ static int tv_reset_pacing_epoch(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s) {
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   struct st_tx_video_pacing* pacing = &s->pacing;
-  pacing->cur_epochs = ptp_time / pacing->frame_time;
+  pacing->cur_epochs = st_tai_to_epoch(ptp_time, s->fps_tm.mul, s->fps_tm.den);
   return 0;
 }
 
@@ -765,12 +760,12 @@ static void validate_user_timestamp(struct st_tx_video_session_impl* s,
 static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_impl* s,
                                                     uint64_t cur_tai,
                                                     uint64_t required_tai) {
-  uint64_t frame_count_tai = cur_tai / s->pacing.frame_time;
+  uint64_t frame_count_tai = st_tai_to_epoch(cur_tai, s->fps_tm.mul, s->fps_tm.den);
   uint64_t next_free_frame_slot;
   uint64_t frame_count;
 
   if (required_tai) {
-    frame_count = (required_tai + s->pacing.frame_time / 2) / s->pacing.frame_time;
+    frame_count = st_tai_to_nearest_epoch(required_tai, s->fps_tm.mul, s->fps_tm.den);
     if (s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) {
       validate_user_timestamp(s, required_tai, cur_tai, NS_PER_S);
     } else {
@@ -843,7 +838,7 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   if (exact_user_pacing) {
     start_time_tai = required_tai;
   } else {
-    start_time_tai = transmission_start_time(pacing, pacing->cur_epochs);
+    start_time_tai = transmission_start_time(s, pacing->cur_epochs);
   }
   /* Only the RTP timestamp derived from ptp_time_cursor with no extra offset is
    * guaranteed to equal start_time_tai's tick; an exact user start time,
@@ -916,7 +911,7 @@ static uint64_t tv_update_rtp_time_stamp(struct st_tx_video_session_impl* s,
      * scheduled TX cursor. rtp_timestamp_delta_us shifts only this value,
      * never the real TX schedule. */
     if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
-      tai_for_rtp_ts = tai_from_frame_count(pacing, pacing->cur_epochs);
+      tai_for_rtp_ts = tai_from_frame_count(s, pacing->cur_epochs);
     } else {
       tai_for_rtp_ts = pacing->ptp_time_cursor;
     }
@@ -944,7 +939,7 @@ static int tv_init_next_meta(struct st_tx_video_session_impl* s,
   /* point to next epoch */
   meta->epoch = pacing->cur_epochs + 1;
   meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-  meta->timestamp = tai_from_frame_count(pacing, meta->epoch);
+  meta->timestamp = tai_from_frame_count(s, meta->epoch);
   return 0;
 }
 
@@ -964,7 +959,7 @@ static int tv_init_st22_next_meta(struct st_tx_video_session_impl* s,
   /* point to next epoch */
   meta->epoch = pacing->cur_epochs + 1;
   meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-  meta->timestamp = tai_from_frame_count(pacing, meta->epoch);
+  meta->timestamp = tai_from_frame_count(s, meta->epoch);
   return 0;
 }
 
@@ -1541,7 +1536,7 @@ static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_i
     } else {
       uint64_t tai_for_rtp_ts;
       if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
-        tai_for_rtp_ts = tai_from_frame_count(&s->pacing, s->pacing.cur_epochs);
+        tai_for_rtp_ts = tai_from_frame_count(s, s->pacing.cur_epochs);
       } else {
         tai_for_rtp_ts = s->pacing.ptp_time_cursor;
       }
@@ -1615,7 +1610,7 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
     } else {
       uint64_t tai_for_rtp_ts;
       if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
-        tai_for_rtp_ts = tai_from_frame_count(&s->pacing, s->pacing.cur_epochs);
+        tai_for_rtp_ts = tai_from_frame_count(s, s->pacing.cur_epochs);
       } else {
         tai_for_rtp_ts = s->pacing.ptp_time_cursor;
       }

@@ -54,6 +54,13 @@ uint64_t st_tai_round_to_media_clk_ns(uint64_t tai_ns, uint32_t sampling_rate);
 uint64_t st_muldiv_u64_round_closest(uint64_t value, uint64_t multiplier,
                                      uint64_t divisor);
 
+/* epoch k of a den/mul s period starts at floor(k * 1e9 * den / mul) ns TAI */
+uint64_t st_epoch_to_tai(uint64_t epoch, uint32_t mul, uint32_t den);
+/* the epoch tai_ns is in, the inverse of st_epoch_to_tai() */
+uint64_t st_tai_to_epoch(uint64_t tai_ns, uint32_t mul, uint32_t den);
+/* the epoch whose exact start is nearest tai_ns, ties to the later one */
+uint64_t st_tai_to_nearest_epoch(uint64_t tai_ns, uint32_t mul, uint32_t den);
+
 static inline void st20_unpack_pg2be_422le10(struct st20_rfc4175_422_10_pg2_be* pg,
                                              uint16_t* cb00, uint16_t* y00,
                                              uint16_t* cr00, uint16_t* y01) {

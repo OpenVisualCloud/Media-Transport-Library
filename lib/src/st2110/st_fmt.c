@@ -953,6 +953,23 @@ uint64_t st_muldiv_u64_round_closest(uint64_t value, uint64_t multiplier,
   return (uint64_t)quotient;
 }
 
+uint64_t st_epoch_to_tai(uint64_t epoch, uint32_t mul, uint32_t den) {
+  __uint128_t tai = (__uint128_t)epoch * NS_PER_S * den / mul;
+
+  return tai >= UINT64_MAX ? UINT64_MAX : (uint64_t)tai;
+}
+
+uint64_t st_tai_to_epoch(uint64_t tai_ns, uint32_t mul, uint32_t den) {
+  return (uint64_t)((((__uint128_t)tai_ns + 1) * mul - 1) /
+                    ((__uint128_t)NS_PER_S * den));
+}
+
+uint64_t st_tai_to_nearest_epoch(uint64_t tai_ns, uint32_t mul, uint32_t den) {
+  __uint128_t period_num = (__uint128_t)NS_PER_S * den;
+
+  return (uint64_t)(((__uint128_t)2 * tai_ns * mul + period_num) / (2 * period_num));
+}
+
 uint64_t st_tai_round_to_media_clk_ns(uint64_t tai_ns, uint32_t sampling_rate) {
   if (!sampling_rate) {
     /* degrade to a no-op snap: returning 0 would put the caller's transmission
