@@ -226,6 +226,10 @@ void ut40_notify_rtp_calls_reset(void);
  * ut40_release_frame() (or ut40_teardown_frame_pool) to recycle slots. */
 void ut40_setup_frame_pool(ut_test_ctx* ctx, uint16_t framebuff_cnt,
                            uint32_t framebuff_size);
+/* Same, but frames go to `notify(priv, ...)`, e.g. a pipeline, not to the capture. */
+void ut40_setup_frame_pool_cb(
+    ut_test_ctx* ctx, uint16_t framebuff_cnt, uint32_t framebuff_size,
+    int (*notify)(void* priv, void* addr, struct st40_rx_frame_meta* meta), void* priv);
 void ut40_teardown_frame_pool(ut_test_ctx* ctx);
 
 int ut40_captured_count(void);

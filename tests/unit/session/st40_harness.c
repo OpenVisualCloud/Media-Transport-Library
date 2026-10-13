@@ -537,6 +537,14 @@ void ut40_setup_frame_pool(ut_test_ctx* ctx, uint16_t framebuff_cnt,
   rx_ancillary_session_init_frames(&ctx->session);
 }
 
+void ut40_setup_frame_pool_cb(
+    ut_test_ctx* ctx, uint16_t framebuff_cnt, uint32_t framebuff_size,
+    int (*notify)(void* priv, void* addr, struct st40_rx_frame_meta* meta), void* priv) {
+  ut40_setup_frame_pool(ctx, framebuff_cnt, framebuff_size);
+  ctx->session.ops.notify_frame_ready = notify;
+  ctx->session.ops.priv = priv;
+}
+
 void ut40_teardown_frame_pool(ut_test_ctx* ctx) {
   rx_ancillary_session_uinit_frames(&ctx->session);
   g_captured_count = 0;

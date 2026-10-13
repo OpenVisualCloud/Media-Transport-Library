@@ -30,6 +30,8 @@
 static int g_put_framebuff_calls;
 static void* g_put_framebuff_last_addr;
 static struct st40_rx_ops g_created_ops;
+static void (*g_put_framebuff_hook)(void* priv, void* addr);
+static void* g_put_framebuff_hook_priv;
 
 st40_rx_handle ut40p_rx_create(mtl_handle mt, struct st40_rx_ops* ops) {
   (void)mt;
@@ -41,6 +43,7 @@ int ut40p_rx_put_framebuff(st40_rx_handle handle, void* frame) {
   (void)handle;
   g_put_framebuff_calls++;
   g_put_framebuff_last_addr = frame;
+  if (g_put_framebuff_hook) g_put_framebuff_hook(g_put_framebuff_hook_priv, frame);
   return 0;
 }
 
@@ -55,6 +58,13 @@ void* ut40p_put_framebuff_last_addr(void) {
 void ut40p_put_framebuff_reset_spy(void) {
   g_put_framebuff_calls = 0;
   g_put_framebuff_last_addr = NULL;
+  g_put_framebuff_hook = NULL;
+  g_put_framebuff_hook_priv = NULL;
+}
+
+void ut40p_set_put_framebuff_hook(void (*hook)(void* priv, void* addr), void* priv) {
+  g_put_framebuff_hook = hook;
+  g_put_framebuff_hook_priv = priv;
 }
 
 int ut40p_rx_get_session_stats(st40_rx_handle handle, struct st40_rx_user_stats* stats) {
@@ -117,6 +127,10 @@ ut40p_ctx* ut40p_ctx_create(int framebuff_cnt) {
 
 void ut40p_ctx_destroy(ut40p_ctx* ctx) {
   if (!ctx) return;
+  if (ctx->pipeline.block_get) {
+    mt_pthread_mutex_destroy(&ctx->pipeline.block_wake_mutex);
+    mt_pthread_cond_destroy(&ctx->pipeline.block_wake_cond);
+  }
   free(ctx->framebuffs);
   free(ctx);
 }
@@ -137,6 +151,22 @@ int ut40p_inject_frame(ut40p_ctx* ctx, void* udw_addr, enum st_frame_status stat
 
 int ut40p_inject_meta(ut40p_ctx* ctx, void* udw_addr, struct st40_rx_frame_meta* meta) {
   return rx_st40p_frame_ready(&ctx->pipeline, udw_addr, meta);
+}
+
+ut40p_frame_ready_fn ut40p_frame_ready_cb(void) {
+  return rx_st40p_frame_ready;
+}
+
+void* ut40p_frame_ready_priv(ut40p_ctx* ctx) {
+  return &ctx->pipeline;
+}
+
+void ut40p_ctx_enable_block_get(ut40p_ctx* ctx, uint64_t timeout_ns) {
+  struct st40p_rx_ctx* p = &ctx->pipeline;
+  mt_pthread_mutex_init(&p->block_wake_mutex, NULL);
+  mt_pthread_cond_wait_init(&p->block_wake_cond);
+  p->block_timeout_ns = timeout_ns;
+  p->block_get = true;
 }
 
 int ut40p_rx_create_transport(ut40p_ctx* ctx, uint32_t flags, struct st40_rx_ops* out) {

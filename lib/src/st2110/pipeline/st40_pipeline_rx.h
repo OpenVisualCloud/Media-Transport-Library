@@ -40,6 +40,7 @@ struct st40p_rx_ctx {
   uint16_t framebuff_cnt;
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
+  uint64_t framebuff_ready_seq; /* the next ready_seq, producer only */
   struct st40p_rx_frame* framebuffs;
   bool ready;
 
@@ -73,6 +74,7 @@ struct st40p_rx_frame {
   struct st40_frame_info frame_info;
   struct st40_meta meta[ST40_MAX_META];
   uint16_t idx;
+  _Atomic uint64_t ready_seq; /* order in which the producer made it READY */
 };
 
 #if defined(__cplusplus)
