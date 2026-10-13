@@ -495,7 +495,13 @@ Actual sequence in `rv_attach()`:
 
 Tasklet is per-manager (not per-session), registered in `st_rx_video_sessions_sch_init`.
 
-Alternative path: `rv_detector_init()` instead of `rv_init_sw()` when auto-detect mode enabled.
+Alternative path (frame-type, non-ST22): `rv_detector_init()` instead of `rv_init_sw()` when auto-detect or the timing parser is enabled; `rv_init_sw()` runs on detection.
+With or without the parser, a sampling round (4 frames) whose fps or packet count disagrees re-inits
+the detector and resamples (the timing parser needs `pkt_per_frame`); only the first such round per
+session warns. With `ST20_RX_FLAG_AUTO_DETECT` detection fails (`ST20_DETECT_STAT_FAIL`) after
+`ST_RX_VIDEO_DETECT_MAX_RETRIES` (8) rounds; the timing parser alone has a configured format, never
+fails and resamples until a round agrees, receiving nothing meanwhile (before, a loss in every sampled
+triple still detected, with `pkt_per_frame` 0 and a parser failing every frame).
 
 ### RX Packet Handlers (set by `rv_init_pkt_handler`)
 - `rv_handle_rtp_pkt` — standard frame mode
