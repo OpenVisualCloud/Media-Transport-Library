@@ -949,11 +949,31 @@ static int dev_config_rss_reta(struct mt_interface* inf) {
   return 0;
 }
 
+/* before DPDK 26.07 iavf and ice cleanup frees no mbufs, they wait for reuse */
+#ifndef MT_DEV_TX_CLEANUP_FREES
+#define MT_DEV_TX_CLEANUP_FREES (RTE_VERSION >= RTE_VERSION_NUM(26, 7, 0, 0))
+#endif
+
+/* a shaped iavf/ice port whose PMD frees each burst, on the default ring; set before
+ * pacing, so AUTO on tsc stays deep */
+static bool dev_tx_deep(struct mt_interface* inf) {
+  enum st21_tx_pacing_way pacing = inf->tx_pacing_way;
+  enum mt_driver_type drv = inf->drv_info.drv_type;
+  bool shaped =
+      pacing == ST21_TX_PACING_WAY_RL || pacing == ST21_TX_PACING_WAY_TSN ||
+      (pacing == ST21_TX_PACING_WAY_AUTO && inf->drv_info.rl_type == MT_RL_TYPE_TM);
+
+  return shaped && MT_DEV_TX_CLEANUP_FREES && (drv == MT_DRV_IAVF || drv == MT_DRV_ICE) &&
+         !mt_user_shared_txq(inf->parent, inf->port) &&
+         !mt_get_user_params(inf->parent)->nb_tx_desc;
+}
+
 static int dev_config_port(struct mt_interface* inf) {
   struct mtl_main_impl* impl = inf->parent;
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
   uint16_t nb_rx_desc = MT_DEV_RX_DESC, nb_tx_desc = MT_DEV_TX_DESC;
+  inf->tx_deep = dev_tx_deep(inf);
   int ret;
   struct mtl_init_params* p = mt_get_user_params(impl);
   uint16_t nb_rx_q = inf->nb_rx_q, nb_tx_q = inf->nb_tx_q;
@@ -1115,7 +1135,7 @@ static uint16_t dev_tx_pkt_check(uint16_t port, uint16_t queue, struct rte_mbuf*
   MTL_MAY_UNUSED(nb_pkts);
 
 #if MT_DEV_SIMULATE_MALICIOUS_PKT /* for recovery test */
-  if (port == 0 && queue > 0) {
+  if (port == 0 && queue > 0 && nb_pkts) {
     if (!inf->simulate_malicious_pkt_tsc)
       inf->simulate_malicious_pkt_tsc = mt_get_tsc(inf->parent);
 
@@ -1265,8 +1285,14 @@ static int dev_start_port(struct mt_interface* inf) {
     }
   }
 
+  /* iavf/ice scalar xmit (MULTI_SEGS) frees a done rs batch per burst, empty ones too,
+   * while fewer than tx_free_thresh are free: here while 2 batches are in use */
+  uint16_t tx_rs_thresh = inf->dev_info.default_txconf.tx_rs_thresh;
+  bool tx_reclaim = inf->tx_deep && tx_rs_thresh && nb_tx_desc >= 3 * tx_rs_thresh;
+  inf->tx_reclaim_rs_thresh = tx_reclaim ? tx_rs_thresh : 0;
   for (uint16_t q = 0; q < nb_tx_q; q++) {
     tx_port_conf = inf->dev_info.default_txconf;
+    if (tx_reclaim) tx_port_conf.tx_free_thresh = nb_tx_desc - 2 * tx_rs_thresh;
 #if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
     if (inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP) {
       tx_port_conf.offloads |= RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP;
@@ -1326,7 +1352,8 @@ static int dev_start_port(struct mt_interface* inf) {
   }
   rte_eth_stats_reset(port_id); /* reset stats */
 
-  info("%s(%d), rx_defer %d\n", __func__, port, rx_deferred_start);
+  info("%s(%d), rx_defer %d tx_reclaim_rs_thresh %u\n", __func__, port, rx_deferred_start,
+       inf->tx_reclaim_rs_thresh);
   return 0;
 }
 

@@ -39,6 +39,20 @@ void ut_dev_fail_timesync_enable(ut_dev_ctx* ctx, int call, int error);
 void ut_dev_fail_timesync_read(ut_dev_ctx* ctx, int call, int error);
 /** Injects the rte_eth_dev_start() return; 0 keeps the mocked start successful. */
 void ut_dev_fail_port_start(ut_dev_ctx* ctx, int error);
+/* nb_tx_q queues of nb_tx_desc, and the tx_rs_thresh the PMD reports; -EINVAL past 4 */
+int ut_dev_set_tx_ring(ut_dev_ctx* ctx, uint16_t nb_tx_q, uint16_t nb_tx_desc,
+                       uint16_t tx_rs_thresh);
+/* tx_free_thresh dev_start_port() set up the queue with, 0 for the PMD default */
+uint16_t ut_dev_tx_free_thresh(const ut_dev_ctx* ctx, uint16_t queue);
+uint16_t ut_dev_tx_reclaim_rs_thresh(ut_dev_ctx* ctx);
+/** Marks port P deep as dev_config_port() would, from its driver, pacing way and user
+ * params, without configuring it. Returns the flag. */
+bool ut_dev_init_tx_deep(ut_dev_ctx* ctx);
+bool ut_dev_tx_deep(const ut_dev_ctx* ctx);
+/** mtl_init_params.nb_tx_desc, 0 for none */
+void ut_dev_set_user_nb_tx_desc(ut_dev_ctx* ctx, uint16_t nb_tx_desc);
+/** Takes the drv info a real port with this ethdev driver name gets. */
+void ut_dev_set_driver(ut_dev_ctx* ctx, const char* driver_name);
 void ut_dev_use_non_igc_driver(ut_dev_ctx* ctx);
 void ut_dev_set_ptp_enabled(ut_dev_ctx* ctx, bool enabled);
 void ut_dev_set_port(ut_dev_ctx* ctx, enum mtl_port port, const char* bdf,
@@ -53,6 +67,12 @@ void ut_dev_set_started_iavf_tx(ut_dev_ctx* ctx, bool rl_root_active,
                                 enum st21_tx_pacing_way pacing_way);
 void ut_dev_set_port_stopped(ut_dev_ctx* ctx);
 int ut_dev_free_ports(ut_dev_ctx* ctx);
+/** The pacing way mtl_init_params asked of port P, as mt_dev_if_init() copies it. */
+void ut_dev_set_tx_pacing(ut_dev_ctx* ctx, enum st21_tx_pacing_way pacing);
+/** dev_config_port() of port P with a user nb_tx_desc, 0 for none: the TX ring size it
+ * chose, or its error. */
+int ut_dev_config_port_nb_tx_desc(ut_dev_ctx* ctx, uint16_t nb_tx_desc);
+uint16_t ut_dev_nb_tx_desc(const ut_dev_ctx* ctx);
 /* Runs dev_config_port() on an iavf (else ice) port with a user nb_rx_desc, the RX
  * timestamp offload on or off and rx_desc_lim.nb_max. Returns the RX ring size chosen. */
 int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,
@@ -129,6 +149,10 @@ void ut_dev_stats_writer_start_on_unlock(ut_dev_ctx* ctx);
 int ut_dev_get_port_stats(ut_dev_ctx* ctx, struct mtl_port_status* stats);
 int ut_dev_reset_port_stats(ut_dev_ctx* ctx);
 void ut_dev_user_port_stats(const ut_dev_ctx* ctx, struct mtl_port_status* stats);
+
+/** MT_DEV_TX_CLEANUP_FREES: whether the iavf/ice cleanup frees mbufs, as DPDK 26.07
+ * does. Each ctx starts with the build's own. */
+void ut_dev_set_tx_cleanup_frees(ut_dev_ctx* ctx, bool frees);
 
 #ifdef __cplusplus
 }

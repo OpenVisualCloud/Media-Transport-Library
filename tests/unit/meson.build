@@ -47,6 +47,8 @@ unit_sources = [
   'dev/mt_dev_harness.c',
   'dev/mt_dev_igc_test.cpp',
   'dev/mt_dev_rx_desc_test.cpp',
+  'dev/mt_dev_tx_desc_test.cpp',
+  'dev/mt_dev_tx_reclaim_test.cpp',
   'dev/mt_dev_devargs_test.cpp',
   'dev/mt_dev_eal_argv_test.cpp',
   'dev/mt_dev_rl_teardown_test.cpp',
