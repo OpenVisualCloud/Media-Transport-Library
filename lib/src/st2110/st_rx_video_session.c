@@ -448,6 +448,12 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
         rv_free_frames(s);
         return -EIO;
       }
+      if (s->ops.ext_frames[i].buf_len < size) {
+        err("%s(%d), external framebuffer %d size %" PRIu64 " < %" PRIu64 "\n", __func__,
+            idx, i, s->ops.ext_frames[i].buf_len, size);
+        rv_free_frames(s);
+        return -EIO;
+      }
       st20_frame->addr = frame;
       st20_frame->iova = frame_iova;
       st20_frame->flags = ST_FT_FLAG_EXT;
@@ -1158,6 +1164,8 @@ static void rv_slice_add(struct st_rx_video_session_impl* s,
   }
 }
 
+static bool rv_dma_flush(struct st_rx_video_session_impl* s, uint32_t tmstamp);
+
 static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
     struct st_rx_video_session_impl* s, struct rte_mbuf* mbuf,
     enum mtl_session_port s_port, uint32_t tmstamp, void* hdr_split_pd, bool* exist_ts) {
@@ -1199,7 +1207,7 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
 
   dbg("%s(%d): new tmstamp %u\n", __func__, s->idx, tmstamp);
 
-  if (s->dma_dev && !mt_dma_empty(s->dma_dev)) {
+  if (s->dma_dev && !mt_dma_empty(s->dma_dev) && !rv_dma_flush(s, tmstamp)) {
     /* still in progress of previous frame, drop current pkt */
     rte_atomic32_inc(&s->dma_previous_busy_cnt);
     dbg("%s(%d): still has dma inflight %u\n", __func__, s->idx,
@@ -1280,6 +1288,14 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
       s->port_user_stats.stat_slot_query_ext_fail++;
       err("%s(%d): ext frame size too small, required %" PRIu64 " but get %" PRIu64 "\n",
           __func__, s->idx, fb_size, ext_frame.buf_len);
+      rte_atomic32_dec(&frame_info->refcnt);
+      return NULL;
+    }
+    if (!ext_frame.buf_addr ||
+        (s->dma_dev && (ext_frame.buf_iova == 0 || ext_frame.buf_iova == MTL_BAD_IOVA))) {
+      s->port_user_stats.stat_slot_query_ext_fail++;
+      err("%s(%d): ext frame addr %p iova 0x%" PRIx64 " not usable\n", __func__, s->idx,
+          ext_frame.buf_addr, ext_frame.buf_iova);
       rte_atomic32_dec(&frame_info->refcnt);
       return NULL;
     }
@@ -1515,6 +1531,7 @@ static int rv_dma_dequeue(struct st_rx_video_session_impl* s) {
   }
 
   /* all dma action finished */
+  if (mt_dma_empty(dma_dev)) s->dma_flush_failed = false;
   struct st_rx_video_slot_impl* dma_slot = s->dma_slot;
   if (mt_dma_empty(dma_dev) && dma_slot) {
     dbg("%s(%d), nb_dq %u\n", __func__, s->idx, nb_dq);
@@ -1527,6 +1544,31 @@ static int rv_dma_dequeue(struct st_rx_video_session_impl* s) {
   }
 
   return 0;
+}
+
+/* Submit and reap the previous frame's copies so the new frame can take its slot, bounded
+ * and tried once per newer frame. The tasklet owns the reaping when a pkt lcore exists.
+ */
+static bool rv_dma_flush(struct st_rx_video_session_impl* s, uint32_t tmstamp) {
+  if (s->has_pkt_lcore) return false;
+  if (s->dma_flush_failed && !mt_seq32_greater(tmstamp, s->dma_flush_fail_tmstamp))
+    return false;
+
+  if (s->dma_copy) {
+    mt_dma_submit(s->dma_dev);
+    s->dma_copy = false;
+  }
+
+  uint64_t start = mt_get_tsc(s->impl);
+  do {
+    rv_dma_dequeue(s);
+    if (mt_dma_empty(s->dma_dev)) return true;
+  } while ((mt_get_tsc(s->impl) - start) < ST_RX_VIDEO_DMA_FLUSH_TIMEOUT_NS);
+
+  s->stat_dma_flush_timeouts++;
+  s->dma_flush_failed = true;
+  s->dma_flush_fail_tmstamp = tmstamp;
+  return false;
 }
 
 static inline uint32_t rfc4175_rtp_seq_id(struct st20_rfc4175_rtp_hdr* rtp) {
@@ -2570,7 +2612,8 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
 
   /* try to request dma dev */
   if (st20_is_frame_type(type) && (ops->flags & ST20_RX_FLAG_DMA_OFFLOAD) &&
-      !s->st20_uframe_size && !rv_is_hdr_split(s)) {
+      !s->st20_uframe_size && !rv_is_hdr_split(s) &&
+      !rv_framebuffer_in_gpu_direct_vram(s)) {
     rv_init_dma(impl, s);
   }
 
@@ -3267,6 +3310,8 @@ static void rv_session_reset(struct st_rx_video_session_impl* s,
   s->slot_idx = -1;
   s->dma_slot = NULL;
   s->dma_copy = false;
+  s->dma_flush_failed = false;
+  s->dma_flush_fail_tmstamp = 0;
   s->st22_expect_frame_size = 0;
   s->st22_expect_size_per_frame = 0;
   s->usdt_frame_cnt = 0;
@@ -3277,6 +3322,8 @@ static void rv_session_reset(struct st_rx_video_session_impl* s,
   s->stat_consecutive_busy_intervals = 0;
   s->stat_pkts_pool_empty = 0;
   s->stat_pkts_pool_empty_snap = 0;
+  s->stat_dma_flush_timeouts = 0;
+  s->stat_dma_flush_timeouts_snap = 0;
 
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
   memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
@@ -3759,8 +3806,12 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
   }
   if (s->dma_dev) {
     d = us->stat_pkts_dma - snap->stat_pkts_dma;
-    notice("RX_VIDEO_SESSION(%d,%d): pkts %" PRIu64 " by dma copy, dma busy %f\n", m_idx,
-           idx, d, s->dma_busy_score);
+    uint64_t d_flush_timeouts =
+        s->stat_dma_flush_timeouts - s->stat_dma_flush_timeouts_snap;
+    notice("RX_VIDEO_SESSION(%d,%d): pkts %" PRIu64
+           " by dma copy, dma busy %f, flush timeouts %" PRIu64 "\n",
+           m_idx, idx, d, s->dma_busy_score, d_flush_timeouts);
+    s->stat_dma_flush_timeouts_snap = s->stat_dma_flush_timeouts;
   }
   d = us->stat_pkts_slice_fail - snap->stat_pkts_slice_fail;
   if (d) {

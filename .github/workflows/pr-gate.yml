@@ -39,12 +39,12 @@ jobs:
       changed: ${{ steps.filter.outputs[inputs.filter] == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
       - name: Clean workspace and checkout
-        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@c382b88f7723f3187e52925364014732ba34d4c2
 
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         if: ${{ github.event_name != 'workflow_dispatch' }}
@@ -66,11 +66,11 @@ jobs:
     steps:
       - name: Harden Runner
         if: ${{ needs.check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Wait for Build workflow
         if: ${{ inputs.wait_for_build && needs.check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}

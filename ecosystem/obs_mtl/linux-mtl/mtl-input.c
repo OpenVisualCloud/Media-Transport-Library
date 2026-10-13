@@ -122,7 +122,6 @@ static void* mtl_thread(void* vptr) {
       pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
-    pthread_mutex_unlock(&s->wake_mutex);
 
     for (uint_fast32_t i = 0; i < MAX_AV_PLANES; ++i)
       out.data[i] = frame->addr[0] + plane_offsets[i];
@@ -367,7 +366,7 @@ static void mtl_input_init(struct mtl_rx_session* s) {
   pthread_mutex_init(&s->wake_mutex, NULL);
   pthread_cond_init(&s->wake_cond, NULL);
   int ret = pthread_create(&s->thread, NULL, mtl_thread, s);
-  if (ret < 0) {
+  if (ret) {
     blog(LOG_ERROR, "%s(%d), app_thread create fail\n", __func__, ret);
     goto error;
   }

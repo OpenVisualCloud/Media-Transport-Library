@@ -95,7 +95,7 @@ TEST(St30PipelineTxBlocking, StaleWakeFromEarlierFastPathDoesNotShortCircuitBloc
    * real streaming -- some other frame slot finishing transmission and being
    * freed. Nobody is blocked right now, so this just signals a condition
    * variable nobody is waiting on yet -- a true no-op under ground truth. */
-  ut30p_tx_wake_block(ctx);
+  ut30p_tx_frame_free_wake(ctx);
 
   /* Step 3: claim slot 1. Still FREE, so this is another fast-path claim. */
   struct st30_frame* held1 = ut30p_tx_get_frame(ctx);

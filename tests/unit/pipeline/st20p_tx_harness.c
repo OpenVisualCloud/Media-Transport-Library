@@ -10,12 +10,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define st20_tx_create ut20p_tx_capture_create
 #undef MTL_HAS_USDT
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 #include "st2110/pipeline/st20_pipeline_tx.c"
 #pragma GCC diagnostic pop
+#undef st20_tx_create
 
 #include "common/ut_common.h"
 
@@ -99,6 +101,10 @@ void ut20p_tx_ctx_enable_blocking(ut20p_tx_ctx* ctx, uint64_t timeout_ns) {
 
 void ut20p_tx_wake_block(ut20p_tx_ctx* ctx) {
   st20p_tx_wake_block(&ctx->pipeline);
+}
+
+void ut20p_tx_frame_free_wake(ut20p_tx_ctx* ctx) {
+  tx_st20p_notify_frame_available(&ctx->pipeline);
 }
 
 void ut20p_tx_force_destroying(ut20p_tx_ctx* ctx) {
@@ -219,4 +225,31 @@ int ut20p_tx_frame_stat(const ut20p_tx_ctx* ctx, int i) {
 
 uint64_t ut20p_tx_stat_frames_sent(const ut20p_tx_ctx* ctx) {
   return ctx->pipeline.stat_frames_sent;
+}
+
+static struct st20_tx_ops ut20p_tx_transport_ops;
+
+st20_tx_handle ut20p_tx_capture_create(mtl_handle mt, struct st20_tx_ops* ops) {
+  (void)mt;
+  ut20p_tx_transport_ops = *ops;
+  return NULL;
+}
+
+void ut20p_tx_set_notify_frame_late(ut20p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, uint64_t epoch_skipped),
+                                    void* priv) {
+  ctx->pipeline.ops.notify_frame_late = cb;
+  ctx->pipeline.ops.priv = priv;
+}
+
+int ut20p_tx_transport_report_late(ut20p_tx_ctx* ctx, uint64_t epoch_skipped) {
+  memset(&ut20p_tx_transport_ops, 0, sizeof(ut20p_tx_transport_ops));
+  tx_st20p_create_transport(&ctx->impl, &ctx->pipeline, &ctx->pipeline.ops);
+  if (!ut20p_tx_transport_ops.notify_frame_late) return -ENOENT;
+  return ut20p_tx_transport_ops.notify_frame_late(ut20p_tx_transport_ops.priv,
+                                                  epoch_skipped);
+}
+
+st20p_tx_handle ut20p_tx_handle(ut20p_tx_ctx* ctx) {
+  return &ctx->pipeline;
 }

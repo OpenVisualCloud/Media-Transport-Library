@@ -90,19 +90,19 @@ static inline uint64_t tv_rl_bps(struct st_tx_video_session_impl* s) {
                     s->fps_tm.den / reactive);
 }
 
-static void tv_notify_frame_done(struct st_tx_video_session_impl* s, uint16_t frame_idx) {
+static void tv_notify_meta_done(struct st_tx_video_session_impl* s, uint16_t frame_idx,
+                                struct st20_tx_frame_meta* tv_meta,
+                                struct st22_tx_frame_meta* tx_st22_meta) {
   uint64_t tsc_start = 0;
   struct mtl_main_impl* impl = s->impl;
   bool time_measure = mt_sessions_time_measure(impl);
   if (time_measure) tsc_start = mt_get_tsc(impl);
   if (s->st22_info) {
-    struct st22_tx_frame_meta* tx_st22_meta = &s->st20_frames[frame_idx].tx_st22_meta;
     if (s->st22_info->notify_frame_done)
       s->st22_info->notify_frame_done(s->ops.priv, frame_idx, tx_st22_meta);
     MT_USDT_ST22_TX_FRAME_DONE(s->mgr->idx, s->idx, frame_idx,
                                tx_st22_meta->rtp_timestamp);
   } else {
-    struct st20_tx_frame_meta* tv_meta = &s->st20_frames[frame_idx].tv_meta;
     if (s->ops.notify_frame_done)
       s->ops.notify_frame_done(s->ops.priv, frame_idx, tv_meta);
     MT_USDT_ST20_TX_FRAME_DONE(s->mgr->idx, s->idx, frame_idx, tv_meta->rtp_timestamp);
@@ -111,6 +111,11 @@ static void tv_notify_frame_done(struct st_tx_video_session_impl* s, uint16_t fr
     uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
     s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
   }
+}
+
+static void tv_notify_frame_done(struct st_tx_video_session_impl* s, uint16_t frame_idx) {
+  struct st_frame_trans* frame = &s->st20_frames[frame_idx];
+  tv_notify_meta_done(s, frame_idx, &frame->tv_meta, &frame->tx_st22_meta);
 }
 
 static void tv_frame_free_cb(void* addr, void* opaque) {
@@ -131,13 +136,25 @@ static void tv_frame_free_cb(void* addr, void* opaque) {
     return;
   }
 
-  tv_notify_frame_done(s, frame_idx);
-  rte_atomic32_dec(&frame_info->refcnt);
-  /* clear ext frame info */
+  /* a builder may rewrite the frame's meta once it is released */
+  if (s->st22_info)
+    frame_info->done_st22_meta = frame_info->tx_st22_meta;
+  else
+    frame_info->done_tv_meta = frame_info->tv_meta;
+  /* clear while still owned: a re-arm can only come after the release below */
   if (frame_info->flags & ST_FT_FLAG_EXT) {
+    frame_info->done_addr = frame_info->addr;
     frame_info->addr = NULL;
     frame_info->iova = 0;
   }
+  /* x86 rte_atomic32_dec() is no compiler barrier: keep the clear before it */
+  rte_atomic_thread_fence(rte_memory_order_release);
+  rte_atomic32_dec(&frame_info->refcnt);
+  /* the app or st20p may re-arm and re-queue the frame from the callback */
+  tv_notify_meta_done(s, frame_idx, &frame_info->done_tv_meta,
+                      &frame_info->done_st22_meta);
+  /* limit: the frame completing again inside this callback reuses the done_ fields */
+  if (frame_info->flags & ST_FT_FLAG_EXT) frame_info->done_addr = NULL;
 
   dbg("%s(%d), succ frame_idx %d\n", __func__, s_idx, frame_idx);
 }
@@ -2691,11 +2708,11 @@ static int tvs_tasklet_handler(void* priv) {
 
     s->stat_build_ret_code = 0;
     if (s->st22_info)
-      pending = tv_tasklet_st22(impl, s);
+      pending += tv_tasklet_st22(impl, s);
     else if (st20_is_frame_type(s->ops.type))
-      pending = tv_tasklet_frame(impl, s);
+      pending += tv_tasklet_frame(impl, s);
     else
-      pending = tv_tasklet_rtp(impl, s);
+      pending += tv_tasklet_rtp(impl, s);
 
     if (time_measure) {
       uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
@@ -2755,7 +2772,8 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     struct mt_txq_flow flow;
     memset(&flow, 0, sizeof(flow));
     flow.bytes_per_sec = tv_rl_bps(s);
-    mt_pacing_train_bps_result_search(impl, i, flow.bytes_per_sec, &flow.bytes_per_sec);
+    mt_pacing_train_bps_result_search(impl, port, flow.bytes_per_sec,
+                                      &flow.bytes_per_sec);
     mt_memcpy(&flow.dip_addr, &s->ops.dip_addr[i], MTL_IP_ADDR_LEN);
     flow.dst_port = s->ops.udp_port[i];
     if (ST21_TX_PACING_WAY_TSN == s->pacing_way[i])
@@ -3826,8 +3844,9 @@ static int tv_update_dst(struct mtl_main_impl* impl, struct st_tx_video_session_
     memcpy(ops->dip_addr[i], dst->dip_addr[i], MTL_IP_ADDR_LEN);
     ops->udp_port[i] = dst->udp_port[i];
     s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx * 2);
-    s->st20_dst_port[i] =
-        (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st20_dst_port[i];
+    if (!mt_user_random_src_port(impl))
+      s->st20_src_port[i] =
+          (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st20_dst_port[i];
 
     /* update hdr */
     ret = tv_init_hdr(impl, s, i);
@@ -4588,12 +4607,15 @@ void* st20_tx_get_framebuffer(st20_tx_handle handle, uint16_t idx) {
         s->st20_frames_cnt);
     goto out;
   }
-  if (!s->st20_frames || !s->st20_frames[idx].addr) {
+  if (!s->st20_frames) {
     err("%s, st20_frames not allocated\n", __func__);
     goto out;
   }
 
   ret_addr = s->st20_frames[idx].addr;
+  /* an ext frame inside its notify_frame_done */
+  if (!ret_addr) ret_addr = s->st20_frames[idx].done_addr;
+  if (!ret_addr) err("%s, st20_frames not allocated\n", __func__);
 out:
   MT_HANDLE_RELEASE(s_impl);
   return ret_addr;
@@ -4984,6 +5006,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
   st20_ops.rtp_pkt_size = ops->rtp_pkt_size;
   st20_ops.notify_rtp_done = ops->notify_rtp_done;
   st20_ops.notify_event = ops->notify_event;
+  st20_ops.notify_frame_late = ops->notify_frame_late;
   mt_pthread_mutex_lock(&sch->tx_video_mgr_mutex);
   if (ST22_TYPE_RTP_LEVEL == ops->type) {
     s = tv_mgr_attach(sch, &st20_ops, MT_ST22_HANDLE_TX_VIDEO, NULL);

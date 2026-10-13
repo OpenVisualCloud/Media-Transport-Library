@@ -11,7 +11,8 @@ The build treats each Sphinx warning as an error. A pull request that adds a war
 
 ## 1. Prerequisites (Debian and Ubuntu)
 
-Install the system packages:
+The pinned packages need Python 3.12 or later, for example Ubuntu 24.04 or
+Debian 13. Install the system packages:
 
 ```bash
 sudo apt-get update

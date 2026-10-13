@@ -63,11 +63,6 @@ Tests for single-flow scenarios, where a single source transmits to a single des
   - Format compatibility
   - Audio quality verification
 
-- **st41/**: Tests for ST2110-40 ancillary data transport
-  - Ancillary data transmission and reception
-  - Format compatibility
-  - Data integrity verification
-
 - **udp/**: Tests for UDP functionality
   - UDP packet transmission and reception
   - MTU handling

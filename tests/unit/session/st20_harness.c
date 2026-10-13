@@ -19,7 +19,31 @@
 
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
+/* Fake DMA engine: the dmadev-backed mt_dma_* are shadowed so the RX DMA path runs
+ * without a device, and the harness' 40-byte payloads are DMA-sized. */
+#define mt_dma_copy ut20_dma_copy
+#define mt_dma_submit ut20_dma_submit
+#define mt_dma_completed ut20_dma_completed
+#define mt_dma_borrow_mbuf ut20_dma_borrow_mbuf
+#define mt_dma_drop_mbuf ut20_dma_drop_mbuf
+#define mt_dma_full ut20_dma_full
+/* rv_init_dma()'s requests are counted and refused; tests attach the fake directly. */
+struct mtl_main_impl;
+struct mt_dma_request_req;
+static struct mtl_dma_lender_dev* ut20_dma_request_dev(struct mtl_main_impl* impl,
+                                                       struct mt_dma_request_req* req);
+#define mt_dma_request_dev ut20_dma_request_dev
+#include "st2110/st_rx_video_session.h"
+#undef ST_RX_VIDEO_DMA_MIN_SIZE
+#define ST_RX_VIDEO_DMA_MIN_SIZE 0
 #include "st2110/st_rx_video_session.c"
+#undef mt_dma_copy
+#undef mt_dma_submit
+#undef mt_dma_completed
+#undef mt_dma_borrow_mbuf
+#undef mt_dma_drop_mbuf
+#undef mt_dma_full
+#undef mt_dma_request_dev
 /* Also compiled in, not just linked from libmtl: -DMTL_HAS_ASAN is scoped to the
  * lib target, so libmtl's mt_rte_zmalloc_socket() is the backtrace-tracking one
  * whose list head only mtl_init() ever initialises. Compiling rv_tp_init() here
@@ -44,6 +68,20 @@
 #define UT20_MAX_FRAME_SIZE (UT20_LINESIZE * UT20_MAX_HEIGHT)
 #define UT20_MAX_BITMAP_SIZE ((UT20_MAX_HEIGHT + 7) / 8)
 
+/* Mbufs the fake DMA engine can hold borrowed at once. */
+#define UT20_DMA_MAX_BORROWED 64
+
+/* Copies complete only once submitted, and not at all while stalled. */
+struct ut20_fake_dma {
+  struct mtl_dma_lender_dev lender; /* first: the fakes get &lender */
+  struct rte_mbuf* borrowed[UT20_DMA_MAX_BORROWED];
+  uint16_t nb_queued;    /* copied, not submitted */
+  uint16_t nb_submitted; /* submitted, not completed */
+  bool stalled;
+  uint64_t copies;
+  uint64_t polls; /* completion polls */
+};
+
 /* Per-frame user-meta buffer, attached by ut20_ctx_enable_user_meta(). */
 #define UT20_USER_META_SIZE 1024
 
@@ -67,12 +105,80 @@ struct ut20_test_ctx {
   enum st_rx_tp_compliant last_tp_compliant;
   uint32_t last_tp_pkts_cnt;
   char last_tp_failed_cause[64];
+  struct ut20_fake_dma dma;            /* only used after ut20_ctx_enable_dma() */
   struct st22_rx_video_info st22_info; /* only used after ut20_ctx_enable_st22() */
   uint64_t st22_frames_ready;
   size_t st22_last_frame_size;
+  struct st20_ext_frame query_ext_frame;
+  uint8_t ext_frame_storage[UT20_MAX_FRAME_SIZE];
+  struct st20_ext_frame ext_frames[UT20_FRAME_COUNT];
+  struct mtl_dma_lender_dev idle_dma_dev;
 };
 
 #include "session/st20_harness.h"
+
+/* ── fake DMA engine ──────────────────────────────────────────────────── */
+
+int ut20_dma_copy(struct mtl_dma_lender_dev* dev, rte_iova_t dst, rte_iova_t src,
+                  uint32_t length) {
+  (void)dst;
+  (void)src;
+  (void)length;
+  struct ut20_fake_dma* dma = (struct ut20_fake_dma*)dev;
+  dma->nb_queued++;
+  dma->copies++;
+  return 0;
+}
+
+int ut20_dma_submit(struct mtl_dma_lender_dev* dev) {
+  struct ut20_fake_dma* dma = (struct ut20_fake_dma*)dev;
+  dma->nb_submitted += dma->nb_queued;
+  dma->nb_queued = 0;
+  return 0;
+}
+
+uint16_t ut20_dma_completed(struct mtl_dma_lender_dev* dev, uint16_t nb_cpls,
+                            uint16_t* last_idx, bool* has_error) {
+  (void)last_idx;
+  (void)has_error;
+  struct ut20_fake_dma* dma = (struct ut20_fake_dma*)dev;
+  dma->polls++;
+  if (dma->stalled) return 0;
+  uint16_t n = RTE_MIN(nb_cpls, dma->nb_submitted);
+  dma->nb_submitted -= n;
+  return n;
+}
+
+int ut20_dma_borrow_mbuf(struct mtl_dma_lender_dev* dev, struct rte_mbuf* mbuf) {
+  if (dev->nb_borrowed >= UT20_DMA_MAX_BORROWED) return -ENOSPC;
+  ((struct ut20_fake_dma*)dev)->borrowed[dev->nb_borrowed++] = mbuf;
+  rte_mbuf_refcnt_update(mbuf, 1);
+  return 0;
+}
+
+int ut20_dma_drop_mbuf(struct mtl_dma_lender_dev* dev, uint16_t nb_mbuf) {
+  struct ut20_fake_dma* dma = (struct ut20_fake_dma*)dev;
+  nb_mbuf = RTE_MIN(nb_mbuf, dev->nb_borrowed);
+  for (uint16_t i = 0; i < nb_mbuf; i++) rte_pktmbuf_free(dma->borrowed[i]);
+  dev->nb_borrowed -= nb_mbuf;
+  memmove(dma->borrowed, &dma->borrowed[nb_mbuf],
+          dev->nb_borrowed * sizeof(dma->borrowed[0]));
+  return 0;
+}
+
+bool ut20_dma_full(struct mtl_dma_lender_dev* dev) {
+  return dev->nb_borrowed >= UT20_DMA_MAX_BORROWED;
+}
+
+static int ut20_dma_requests;
+
+static struct mtl_dma_lender_dev* ut20_dma_request_dev(struct mtl_main_impl* impl,
+                                                       struct mt_dma_request_req* req) {
+  (void)impl;
+  (void)req;
+  ut20_dma_requests++;
+  return NULL;
+}
 
 /* ── PTP time stub ────────────────────────────────────────────────────── */
 
@@ -218,6 +324,7 @@ void ut20_ctx_destroy(ut20_test_ctx* ctx) {
   if (!ctx) return;
   /* ASan is preloaded in this suite, so the tp allocation must be released. */
   rv_tp_uinit(&ctx->session);
+  ut20_dma_drop_mbuf(&ctx->dma.lender, ctx->dma.lender.nb_borrowed);
   /* Drain any held refcnts so destroy-while-holding is safe. */
   for (int i = 0; i < UT20_FRAME_COUNT; i++) {
     rte_atomic32_set(&ctx->frames[i].refcnt, 0);
@@ -455,6 +562,68 @@ int ut20_feed_rtp_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq, uint32_t ts
   return rc;
 }
 
+/* ── external frames ──────────────────────────────────────────────────── */
+
+static int ut20_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame,
+                                struct st20_rx_frame_meta* meta) {
+  ut20_test_ctx* ctx = priv;
+  (void)meta;
+  *ext_frame = ctx->query_ext_frame;
+  return 0;
+}
+
+void ut20_ctx_enable_query_ext_frame(ut20_test_ctx* ctx, bool has_addr, uint64_t iova) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  ctx->query_ext_frame.buf_addr = has_addr ? ctx->ext_frame_storage : NULL;
+  ctx->query_ext_frame.buf_iova = iova;
+  ctx->query_ext_frame.buf_len = s->st20_fb_size;
+  s->ops.query_ext_frame = ut20_query_ext_frame;
+  s->ops.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
+}
+
+void ut20_ctx_attach_idle_dma(ut20_test_ctx* ctx) {
+  ctx->session.dma_dev = &ctx->idle_dma_dev;
+}
+
+int ut20_alloc_ext_frames(ut20_test_ctx* ctx, size_t buf_len) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  for (int i = 0; i < UT20_FRAME_COUNT; i++) {
+    ctx->ext_frames[i].buf_addr = ctx->frame_storage[i];
+    ctx->ext_frames[i].buf_iova = 0x1000 * (uint64_t)(i + 1);
+    ctx->ext_frames[i].buf_len = buf_len;
+  }
+  s->ops.ext_frames = ctx->ext_frames;
+  ctx->impl.pkt_udp_suggest_max_size = MTL_PKT_MAX_RTP_BYTES;
+  int ret = rv_alloc_frames(&ctx->impl, s);
+  if (ret == 0) rv_free_frames(s);
+  s->ops.ext_frames = NULL;
+  s->st20_frames = ctx->frames;
+  return ret;
+}
+
+int ut20_init_sw_dma_requests(ut20_test_ctx* ctx, bool gpu_frames) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  for (int i = 0; i < UT20_FRAME_COUNT; i++) {
+    ctx->ext_frames[i].buf_addr = ctx->frame_storage[i];
+    ctx->ext_frames[i].buf_iova = 0x1000 * (uint64_t)(i + 1);
+    ctx->ext_frames[i].buf_len = s->st20_fb_size;
+  }
+  s->ops.ext_frames = ctx->ext_frames;
+  s->ops.flags |= ST20_RX_FLAG_DMA_OFFLOAD;
+  s->ops.gpu_direct_framebuffer_in_vram_device_address = gpu_frames;
+  ctx->impl.pkt_udp_suggest_max_size = MTL_PKT_MAX_RTP_BYTES;
+
+  ut20_dma_requests = 0;
+  int ret = rv_init_sw(&ctx->impl, &ctx->mgr, s, NULL);
+  if (ret == 0) rv_uinit_sw(&ctx->impl, s);
+
+  s->ops.ext_frames = NULL;
+  s->st20_frames = ctx->frames;
+  for (int i = 0; i < ST_VIDEO_RX_REC_NUM_OFO; i++)
+    s->slots[i].frame_bitmap = ctx->bitmaps[i];
+  return ret < 0 ? ret : ut20_dma_requests;
+}
+
 /* ── ST 2110-22 (codestream) mode ─────────────────────────────────────── */
 
 static int ut20_st22_notify_frame_ready(void* priv, void* frame,
@@ -658,6 +827,33 @@ void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port
   ctx->impl.inf[phy].feature |= MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP;
 }
 
+void ut20_ctx_enable_timing_parser_stat(ut20_test_ctx* ctx) {
+  ctx->session.enable_timing_parser_stat = true;
+}
+
+void ut20_tp_stat_add_frame(ut20_test_ctx* ctx, enum mtl_session_port port,
+                            int32_t vrx_min, int32_t vrx_max, int32_t ipt_min,
+                            int32_t ipt_max) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  struct st_rv_tp_slot slot;
+
+  rv_tp_slot_init(&slot);
+  slot.meta.vrx_min = vrx_min;
+  slot.meta.vrx_max = vrx_max;
+  slot.meta.ipt_min = ipt_min;
+  slot.meta.ipt_max = ipt_max;
+  slot.meta.pkts_cnt = 1;
+  rv_tp_slot_parse_result(s, port, &slot, false);
+}
+
+int32_t ut20_tp_stat_vrx_max(const ut20_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.tp->stat[port].slot.meta.vrx_max;
+}
+
+int32_t ut20_tp_stat_ipt_max(const ut20_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.tp->stat[port].slot.meta.ipt_max;
+}
+
 void ut20_ctx_set_ptp_no_timesync_delta(ut20_test_ctx* ctx, int64_t delta) {
   ctx->ptp_storage.no_timesync_delta = delta;
 }
@@ -713,6 +909,10 @@ uint64_t ut20_stat_slot_get_frame_fail(const ut20_test_ctx* ctx) {
   return ctx->session.port_user_stats.stat_slot_get_frame_fail;
 }
 
+uint64_t ut20_stat_slot_query_ext_fail(const ut20_test_ctx* ctx) {
+  return ctx->session.port_user_stats.stat_slot_query_ext_fail;
+}
+
 void ut20_set_hold_frames(ut20_test_ctx* ctx, bool hold) {
   bool was_holding = ctx->hold_frames;
   ctx->hold_frames = hold;
@@ -743,6 +943,36 @@ uint64_t ut20_stat_frames_incomplete(const ut20_test_ctx* ctx) {
   return ctx->session.port_user_stats.stat_frames_incomplete;
 }
 
+void ut20_ctx_enable_dma(ut20_test_ctx* ctx) {
+  ctx->session.dma_dev = &ctx->dma.lender;
+  ctx->session.rx_burst_size = 128; /* rv_attach default, the completion poll budget */
+}
+
+void ut20_dma_set_stalled(ut20_test_ctx* ctx, bool stalled) {
+  ctx->dma.stalled = stalled;
+}
+
+void ut20_rx_tasklet_pass(ut20_test_ctx* ctx) {
+  if (ctx->session.dma_copy) ut20_dma_submit(&ctx->dma.lender);
+  rv_pkt_rx_tasklet(&ctx->session);
+}
+
+uint64_t ut20_dma_copies(const ut20_test_ctx* ctx) {
+  return ctx->dma.copies;
+}
+
+uint64_t ut20_dma_polls(const ut20_test_ctx* ctx) {
+  return ctx->dma.polls;
+}
+
+int ut20_dma_busy_drops(const ut20_test_ctx* ctx) {
+  return rte_atomic32_read(&ctx->session.dma_previous_busy_cnt);
+}
+
+uint64_t ut20_dma_flush_timeouts(const ut20_test_ctx* ctx) {
+  return ctx->session.stat_dma_flush_timeouts;
+}
+
 int ut20_frames_received(const ut20_test_ctx* ctx) {
   return rte_atomic32_read(&ctx->session.stat_frames_received);
 }
@@ -753,6 +983,10 @@ int ut20_total_frame_pkts(void) {
 
 int ut20_pkts_per_frame(const ut20_test_ctx* ctx) {
   return (int)ctx->session.ops.height;
+}
+
+size_t ut20_frame_size(const ut20_test_ctx* ctx) {
+  return ctx->session.st20_fb_size;
 }
 
 bool ut20_bitmap_guard_intact(const ut20_test_ctx* ctx) {

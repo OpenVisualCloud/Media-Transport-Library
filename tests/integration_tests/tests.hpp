@@ -168,6 +168,8 @@ int st_test_convert_plugin_unregister(struct st_tests_context* ctx);
 
 void sha_frame_check(void* args);
 
+struct fmd_annex_a;
+
 class tests_context {
  public:
   struct st_tests_context* ctx = NULL;
@@ -262,6 +264,12 @@ class tests_context {
   bool block_get = false;
   bool rx_timing_parser = false;
   bool st40_empty_frame = false;
+  bool st40_fmd = false;
+  /* ST 2110-41 Annex A plan, owned by the test */
+  struct fmd_annex_a* st40_annex_a = nullptr;
+  uint64_t last_rx_time = 0; /* monotonic ns, 0 before the first packet */
+  uint64_t max_rx_gap = 0;   /* ns */
+  uint64_t rx_seq_lost = 0;
 };
 
 #define TEST_USER_META_MAGIC ST_PLUGIN_MAGIC('U', 'S', 'M', 'T')

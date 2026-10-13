@@ -98,7 +98,7 @@ Ensure the libbpf and libxdp dependencies are found:
 ```text
 # output from 'meson setup build'
 Run-time dependency libxdp found: YES 1.6.0
-Run-time dependency libbpf found: YES 1.5.0
+Run-time dependency libbpf found: YES 1.7.0
 ```
 
 The install script picks its library directory by planting a probe `.pc` file and

@@ -391,10 +391,9 @@ _PHC_SYNC_TIMEOUT_SEC = 30  # Max wait for phc2sys to converge before capturing
 def _reap_ptp_daemons(host, *, patterns=("phc2sys", "ptp4l")) -> None:
     """Forcefully kill any ptp4l/phc2sys daemons.
 
-    Required because ``host.connection.start_process('sudo <tool> ...')`` wraps
-    the daemon in ``bash -c 'sudo ...'``; ``process.kill(SIGTERM)`` only signals
-    the bash wrapper, sudo does NOT propagate signals to its child, and the
-    actual daemon (root) reparents to PID 1 and persists. Leaked daemons hold
+    Required because the pid of ``host.connection.start_process('sudo <tool> ...')``
+    is the root ``sudo``: when the SSH user is not root, ``process.kill()`` fails
+    with EPERM and raises, and the daemon persists. Leaked daemons hold
     stale ``struct ptp_clock *`` across SR-IOV VF cycling and have been seen to
     trigger ``ice``-driver use-after-free in ``ptp_clock_index()``, hanging the
     host. Always cleanup via ``pkill`` on the argv, not via the process handle.
@@ -465,7 +464,7 @@ def _start_capture_phc_sync(host, iface: str):
     makes ST 2110-21 VRX fail even with flawless on-wire pacing.
 
     Returns the process handle or raises if synchronization fails. Always reap
-    via :func:`_reap_ptp_daemons`, never via the handle (sudo+bash wrapper).
+    via :func:`_reap_ptp_daemons`, never via the handle (its pid is the root sudo).
     """
     # Clear any straggler before starting a fresh one.
     _reap_ptp_daemons(host, patterns=("phc2sys",))
@@ -1356,7 +1355,6 @@ def log_case(request, caplog: pytest.LogCaptureFixture):
 
     def fail_test(stage):
         logger.log(level=TEST_FAIL, msg=f"{stage} failed for {case_id}")
-        os.chmod(logfile, 0o4755)
         return "Fail"
 
     if report["setup"].failed:
@@ -1371,7 +1369,6 @@ def log_case(request, caplog: pytest.LogCaptureFixture):
             result = fail_test("Compliance")
         else:
             logger.log(level=TEST_PASS, msg=f"Test passed for {case_id}")
-            os.chmod(logfile, 0o755)
             result = "Pass"
     else:
         logger.log(level=TEST_INFO, msg=f"Test skipped for {case_id}")

@@ -38,7 +38,8 @@ with `--gtest_list_tests`, run each `KahawaiTest --auto_start_stop
 `NOCTX_ISOLATE_CASES` (comma-separated, default: the six strict tests listed
 under [Requirements](#requirements-and-skipfail-policy)) in `tests/tools/isolate/isolate.sh`; the others, and every `run_pf.sh` case, run directly.
 `EXIT_ON_FAILURE=0` continues past a failure and exits 1 at the end if any
-case failed; `BUILD_PATH` overrides the binary, which defaults to
+case failed; `TEST_P_SIP` is passed as `--p_sip`, and the multicast groups follow
+it (`gtest.sh` sets a per-host subnet); `BUILD_PATH` overrides the binary, which defaults to
 `.local_install/mtl/bin/KahawaiTest` if `.local_install` exists, else
 `build/tests/KahawaiTest`. One case by hand:
 
@@ -137,14 +138,15 @@ values with `st20p_tx_get_pacing_params()` rather than hardcoding them. At
   RTP is always compared by integer equality.
 - **PHC → `CLOCK_MONOTONIC_RAW`.** `receive_timestamp` is the NIC timestamp
   of the packet that opened the RX slot, in the PHC domain. `RxPhcClock`
-  reads the PHC once per frame and converts
-  `rx_mono_raw = receive_timestamp − (phc_now − mono_raw_now)`. E830 gives
-  `mono_raw_now` exactly (`PTP_SYS_OFFSET_PRECISE`). E810 has no
-  cross-timestamp, so it is read with `PTP_SYS_OFFSET_EXTENDED` and
-  `mono_raw_now` is known to ±u ≤ 1 µs; every check below must hold at both
-  ends of ±u, and a PHC that cannot be read to ±1 µs fails. `phc_now` lags
-  `receive_timestamp` by about a frame, so a PHC rate more than 5 ppm off
-  `CLOCK_MONOTONIC_RAW` fails; each run prints it (`NoCtx RX PHC: rate …`).
+  reads the PHC once when the oracle is built, before the stream, and once per
+  frame, and maps `receive_timestamp` to `CLOCK_MONOTONIC_RAW` along the line
+  through the two reads, so the PHC rate cancels. It assumes that rate is
+  steady between the reads; a PHC stepped or steered mid-run is not covered.
+  E830 reads `CLOCK_MONOTONIC_RAW` exactly (`PTP_SYS_OFFSET_PRECISE`). E810 has
+  no cross-timestamp, so it is read with `PTP_SYS_OFFSET_EXTENDED` to ±u ≤ 1 µs
+  per read, and the mapped time is known to the reads' weighted ±u; every check
+  below must hold at both ends of ±u, and a PHC that cannot be read to ±1 µs
+  fails. Each run prints the PHC rate (`NoCtx RX PHC: rate …`).
 - **Strict ST20p: launch −1/+10 µs, elapsed from frame 0 ±10 µs.** Packet 0
   of every frame `n` is checked twice. Launch: its RX time, mapped on to the
   fake PTP clock, against its planned launch,
@@ -178,6 +180,7 @@ rtp_timestamp`; the user-paced tests request `t_user(n) = start + n·T`, with
 | `st30p_redundant_latency`, `st30p_redundant_latency2` | ST 2022-7 audio merge with R 10 ms behind, and with P stopping after 10 s | `_latency`: packets on each port == TX ± 10 %. `_latency2`: packets on port 1 (R) == TX ± 10 %, port 0 > 0, accepted packets == TX ± 1 %. Both: loss ≤ 0.1 %, RX buffers == TX ± 1 % (100 RX buffers) | Counts |
 | `st40p_user_pacing`, `st40p_user_pacing_59fps`, `st40p_user_pacing_offset_jitter` | ST40 user pacing snaps to the nearest epoch, at 60p and 59.94p (1501/1502 steps) | TX `round(t_user/T)·T`; `RTP == tick90k(TX)`; step from the planned grid | Software RX time in [0, +1 ms] |
 | `st40p_exact_user_pacing` | Exact ST40 pacing sends at the request | TX `t_user`; `RTP == tick(t_user)`; no step check | Software RX time in [0, +1 ms] |
+| `st20_tx_tasklet_sleep_idle_peer` | With `MTL_FLAG_TASKLET_SLEEP`, an idle TX video session after a busy one on the same scheduler does not let it sleep while the busy one has packets to build | Scheduler iterations, counted by the idle session's `get_next_frame`, per user-paced frame 100 ms ahead: in the first 10 ms (TX ring prefill) and from 20 to 60 ms (nothing to do) | ≥ 64; ≤ 200 |
 | Other NoCtx tests | ST20 2022-7 even/odd loss recovery, epoch recovery after a PTP step, TSN packet spread and epoch recovery (`_pf_`), ST20p TX multithread stability (default 1800 s), ST40 interlace/split/auto-detect, 32–128 and asymmetric queue init | Stats, counts, frame content | See each file |
 
 ## Failure signatures

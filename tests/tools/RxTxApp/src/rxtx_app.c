@@ -19,13 +19,11 @@
 #include "log.h"
 #include "player.h"
 #include "rx_ancillary_app.h"
-#include "rx_fastmetadata_app.h"
 #include "rx_st20p_app.h"
 #include "rx_st22p_app.h"
 #include "rx_st30p_app.h"
 #include "rx_st40p_app.h"
 #include "tx_ancillary_app.h"
-#include "tx_fastmetadata_app.h"
 #include "tx_st20p_app.h"
 #include "tx_st22p_app.h"
 #include "tx_st30p_app.h"
@@ -186,8 +184,6 @@ static void st_app_ctx_init(struct st_app_context* ctx) {
   ctx->tx_audio_session_cnt = 0;
   snprintf(ctx->tx_anc_url, sizeof(ctx->tx_anc_url), "%s", "test.txt");
   ctx->tx_anc_session_cnt = 0;
-  snprintf(ctx->tx_fmd_url, sizeof(ctx->tx_fmd_url), "%s", "test.txt");
-  ctx->tx_fmd_session_cnt = 0;
   snprintf(ctx->tx_st22_url, sizeof(ctx->tx_st22_url), "%s", "test.raw");
   ctx->tx_st22_session_cnt = 0;
   snprintf(ctx->tx_st22p_url, sizeof(ctx->tx_st22p_url), "%s", "test_rfc4175.yuv");
@@ -201,7 +197,6 @@ static void st_app_ctx_init(struct st_app_context* ctx) {
   ctx->rx_video_session_cnt = 0;
   ctx->rx_audio_session_cnt = 0;
   ctx->rx_anc_session_cnt = 0;
-  ctx->rx_fmd_session_cnt = 0;
   ctx->rx_st22_session_cnt = 0;
   ctx->rx_st22p_session_cnt = 0;
   ctx->rx_st20p_session_cnt = 0;
@@ -276,7 +271,6 @@ static void st_app_ctx_free(struct st_app_context* ctx) {
   st_app_tx_video_sessions_uinit(ctx);
   st_app_tx_audio_sessions_uinit(ctx);
   st_app_tx_anc_sessions_uinit(ctx);
-  st_app_tx_fmd_sessions_uinit(ctx);
   st_app_tx_st22p_sessions_uinit(ctx);
   st_app_tx_st40p_sessions_uinit(ctx);
   st_app_tx_st20p_sessions_uinit(ctx);
@@ -286,7 +280,6 @@ static void st_app_ctx_free(struct st_app_context* ctx) {
   st_app_rx_video_sessions_uinit(ctx);
   st_app_rx_audio_sessions_uinit(ctx);
   st_app_rx_anc_sessions_uinit(ctx);
-  st_app_rx_fmd_sessions_uinit(ctx);
   st_app_rx_st22p_sessions_uinit(ctx);
   st_app_rx_st20p_sessions_uinit(ctx);
   st_app_rx_st30p_sessions_uinit(ctx);
@@ -330,7 +323,6 @@ static int st_app_result(struct st_app_context* ctx) {
   result += st_app_rx_video_sessions_result(ctx);
   result += st_app_rx_audio_sessions_result(ctx);
   result += st_app_rx_anc_sessions_result(ctx);
-  result += st_app_rx_fmd_sessions_result(ctx);
   result += st_app_rx_st22p_sessions_result(ctx);
   result += st_app_rx_st20p_sessions_result(ctx);
   result += st_app_rx_st30p_sessions_result(ctx);
@@ -388,15 +380,13 @@ int main(int argc, char** argv) {
       ctx->tx_audio_session_cnt > ST_APP_MAX_TX_AUDIO_SESSIONS ||
       ctx->tx_anc_session_cnt > ST_APP_MAX_TX_ANC_SESSIONS ||
       ctx->tx_st40p_session_cnt > ST_APP_MAX_TX_ANC_SESSIONS ||
-      ctx->tx_fmd_session_cnt > ST_APP_MAX_TX_FMD_SESSIONS ||
       ctx->rx_video_session_cnt > ST_APP_MAX_RX_VIDEO_SESSIONS ||
       ctx->rx_st22_session_cnt > ST_APP_MAX_RX_VIDEO_SESSIONS ||
       ctx->rx_st22p_session_cnt > ST_APP_MAX_RX_VIDEO_SESSIONS ||
       ctx->rx_st20p_session_cnt > ST_APP_MAX_RX_VIDEO_SESSIONS ||
       ctx->rx_audio_session_cnt > ST_APP_MAX_RX_AUDIO_SESSIONS ||
       ctx->rx_anc_session_cnt > ST_APP_MAX_RX_ANC_SESSIONS ||
-      ctx->rx_st40p_session_cnt > ST_APP_MAX_RX_ANC_SESSIONS ||
-      ctx->rx_fmd_session_cnt > ST_APP_MAX_RX_FMD_SESSIONS) {
+      ctx->rx_st40p_session_cnt > ST_APP_MAX_RX_ANC_SESSIONS) {
     err("%s, session cnt invalid, pass the restriction\n", __func__);
     return -EINVAL;
   }
@@ -414,12 +404,10 @@ int main(int argc, char** argv) {
         ctx->para.tx_queues_cnt[i] =
             st_tx_sessions_queue_cnt(ctx->json_ctx->interfaces[i].tx_video_sessions_cnt,
                                      ctx->json_ctx->interfaces[i].tx_audio_sessions_cnt,
-                                     ctx->json_ctx->interfaces[i].tx_anc_sessions_cnt,
-                                     ctx->json_ctx->interfaces[i].tx_fmd_sessions_cnt);
+                                     ctx->json_ctx->interfaces[i].tx_anc_sessions_cnt);
       } else {
-        ctx->para.tx_queues_cnt[i] =
-            st_tx_sessions_queue_cnt(tx_st20_sessions, ctx->tx_audio_session_cnt,
-                                     ctx->tx_anc_session_cnt, ctx->tx_fmd_session_cnt);
+        ctx->para.tx_queues_cnt[i] = st_tx_sessions_queue_cnt(
+            tx_st20_sessions, ctx->tx_audio_session_cnt, ctx->tx_anc_session_cnt);
       }
       if (ctx->para.tx_queues_cnt[i] && (ctx->para.pmd[i] == MTL_PMD_DPDK_USER)) {
         ctx->para.tx_queues_cnt[i] += 4; /* add extra 4 queues for recovery */
@@ -431,12 +419,10 @@ int main(int argc, char** argv) {
         ctx->para.rx_queues_cnt[i] =
             st_rx_sessions_queue_cnt(ctx->json_ctx->interfaces[i].rx_video_sessions_cnt,
                                      ctx->json_ctx->interfaces[i].rx_audio_sessions_cnt,
-                                     ctx->json_ctx->interfaces[i].rx_anc_sessions_cnt,
-                                     ctx->json_ctx->interfaces[i].rx_fmd_sessions_cnt);
+                                     ctx->json_ctx->interfaces[i].rx_anc_sessions_cnt);
       } else {
-        ctx->para.rx_queues_cnt[i] =
-            st_rx_sessions_queue_cnt(rx_st20_sessions, ctx->rx_audio_session_cnt,
-                                     ctx->rx_anc_session_cnt, ctx->rx_fmd_session_cnt);
+        ctx->para.rx_queues_cnt[i] = st_rx_sessions_queue_cnt(
+            rx_st20_sessions, ctx->rx_audio_session_cnt, ctx->rx_anc_session_cnt);
       }
     }
   }
@@ -510,13 +496,6 @@ int main(int argc, char** argv) {
     return -EIO;
   }
 
-  ret = st_app_tx_fmd_sessions_init(ctx);
-  if (ret < 0) {
-    err("%s, st_app_tx_fmd_sessions_init fail %d\n", __func__, ret);
-    st_app_ctx_free(ctx);
-    return -EIO;
-  }
-
   ret = st_app_tx_st22p_sessions_init(ctx);
   if (ret < 0) {
     err("%s, st_app_tx_st22p_sessions_init fail %d\n", __func__, ret);
@@ -569,13 +548,6 @@ int main(int argc, char** argv) {
   ret = st_app_rx_anc_sessions_init(ctx);
   if (ret < 0) {
     err("%s, st_app_rx_anc_sessions_init fail %d\n", __func__, ret);
-    st_app_ctx_free(ctx);
-    return -EIO;
-  }
-
-  ret = st_app_rx_fmd_sessions_init(ctx);
-  if (ret < 0) {
-    err("%s, st_app_rx_fmd_sessions_init fail %d\n", __func__, ret);
     st_app_ctx_free(ctx);
     return -EIO;
   }

@@ -46,13 +46,13 @@ void ut20p_tx_ctx_destroy(ut20p_tx_ctx* ctx);
 void ut20p_tx_ctx_enable_blocking(ut20p_tx_ctx* ctx, uint64_t timeout_ns);
 
 /**
- * Fire the same wake used internally whenever a frame slot becomes free
- * (wraps st20p_tx_wake_block(), i.e. tx_st20p_block_wake()). Fires
- * unconditionally, whether or not anyone is currently blocked in get_frame().
- * Use this to simulate an unrelated wake independently of actually freeing a
- * slot.
+ * App wake (wraps st20p_tx_wake_block()). Ends a get_frame() blocked at the
+ * time of the call; a wake with no thread blocked is a no-op.
  */
 void ut20p_tx_wake_block(ut20p_tx_ctx* ctx);
+
+/** The wake a frame done sends (wraps tx_st20p_notify_frame_available()). */
+void ut20p_tx_frame_free_wake(ut20p_tx_ctx* ctx);
 
 /**
  * Force ctx->lc_destroying, bypassing the CAS handshake real st20p_tx_free()
@@ -130,6 +130,21 @@ int ut20p_tx_all_free(const ut20p_tx_ctx* ctx);
 int ut20p_tx_frame_stat(const ut20p_tx_ctx* ctx, int i);
 
 uint64_t ut20p_tx_stat_frames_sent(const ut20p_tx_ctx* ctx);
+
+/** Register ops.notify_frame_late (and ops.priv). */
+void ut20p_tx_set_notify_frame_late(ut20p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, uint64_t epoch_skipped),
+                                    void* priv);
+
+/**
+ * Run create_transport against a stub transport create, then fire the late
+ * callback it registered the way the transport session does. Returns the
+ * callback's return, or -ENOENT when no late callback was registered.
+ */
+int ut20p_tx_transport_report_late(ut20p_tx_ctx* ctx, uint64_t epoch_skipped);
+
+/** The pipeline handle, for calling the public st*p API directly. */
+st20p_tx_handle ut20p_tx_handle(ut20p_tx_ctx* ctx);
 
 #ifdef __cplusplus
 }

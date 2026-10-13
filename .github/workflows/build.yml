@@ -89,11 +89,11 @@ jobs:
       run: ${{ (github.event_name != 'pull_request' && github.event_name != 'push') || steps.filter.outputs.build_workflow == 'true' }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
@@ -115,11 +115,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Wait for Linter
         uses: ./.github/actions/wait-for-workflow
         with:
@@ -147,7 +147,7 @@ jobs:
       commit: ${{ steps.checkout.outputs.commit }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
@@ -156,7 +156,7 @@ jobs:
       # hashes below include .github/ files, so all of them must hash and
       # build the same source commit with the same overlay, or the test jobs'
       # fail-on-cache-miss restore finds nothing.
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         id: checkout
         with:
           ref: ${{ inputs.branch }}
@@ -189,12 +189,12 @@ jobs:
       ice_cache_key: ${{ steps.keys.outputs.ice_key }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
       - name: Checkout MTL
-        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@c382b88f7723f3187e52925364014732ba34d4c2
         with:
           ref: ${{ needs.checksums.outputs.commit }}
           fetch-depth: ${{ inputs.branch && '0' || '1' }}
@@ -237,49 +237,49 @@ jobs:
 
       - name: 'stash: Restore DPDK cache'
         id: dpdk-cache
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.dpdk_key }}
           path: .local_install/dpdk
 
       - name: 'stash: Restore MTL cache'
         id: mtl-cache
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.mtl_key }}
           path: .local_install/mtl
 
       - name: 'stash: Restore JPEG XS cache'
         id: jpegxs-cache
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.jpegxs_key }}
           path: .local_install/jpegxs
 
       - name: 'stash: Restore FFmpeg cache'
         id: ffmpeg-cache
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.ffmpeg_key }}
           path: .local_install/ffmpeg
 
       - name: 'stash: Restore GStreamer cache'
         id: gstreamer-cache
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.gstreamer_key }}
           path: .local_install/gstreamer
 
       - name: 'stash: Restore plugins cache'
         id: plugins-cache
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.plugins_key }}
           path: .local_install/plugins
 
       - name: 'stash: Restore ICE cache'
         id: ice-cache
-        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.ice_key }}
           path: .local_install/ice

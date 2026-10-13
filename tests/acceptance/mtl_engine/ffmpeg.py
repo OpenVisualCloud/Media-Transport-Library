@@ -84,6 +84,16 @@ class FFmpeg(Application):
     def get_executable_name(self) -> str:
         return APP_NAME_MAP["ffmpeg"]
 
+    def rx_recording_cap(self) -> int:
+        """``rx_max_file_size`` becomes ``-fs`` on the single raw st20p recording."""
+        if (
+            self._ff_params.get("mode") != _MODE_YUV_H264
+            or self._ff_params.get("output_format", "yuv") != "yuv"
+            or self._ff_params.get("multiple_sessions")
+        ):
+            return 0
+        return int(self.params.get("rx_max_file_size") or 0)
+
     def require_encoder(self, host, encoder: str, use_mtl_plugin: bool = False) -> None:
         """Raise EnvironmentError if *encoder* is not available on *host*.
 
@@ -307,6 +317,8 @@ class FFmpeg(Application):
         # retries the RX tears down before TX finishes tv_train_pacing (~8s)
         # and the test fails with EIO + 0-byte output for every pix_fmt.
         if not multiple:
+            cap = self.rx_recording_cap()
+            fs_flag = f"-fs {cap} " if cap else ""
             rx_cmd = (
                 f"{FFMPEG_EXE} -p_port {nic_port_list[1]} "
                 f"-p_sip {ip_pools.rx[0]} "
@@ -314,7 +326,7 @@ class FFmpeg(Application):
                 f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
                 f"-video_size {video_size} -init_retry 20 "
                 f"-f mtl_st20p -i k "
-                f"{rx_f_flag} {{out0}} -y"
+                f"{rx_f_flag} {fs_flag}{{out0}} -y"
             )
         else:
             # Every input repeats the full device args, -p_sip included:
@@ -776,6 +788,7 @@ class FFmpeg(Application):
                         pix_fmt,
                         fps,
                         self.params.get("test_time") or 30,
+                        self.rx_recording_cap(),
                     )
                 else:
                     video_format = self.params["video_format"]

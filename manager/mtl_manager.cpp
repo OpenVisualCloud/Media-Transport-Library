@@ -4,9 +4,11 @@
 
 #include <sys/epoll.h>
 #include <sys/signalfd.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <csignal>
 #include <filesystem>
 #include <memory>
@@ -35,6 +37,7 @@ static const char* mtlm_version(void) {
 int main() {
   int ret = 0;
   bool is_running = true;
+  bool bound = false;
   int epfd = -1, sockfd = -1;
   std::vector<std::unique_ptr<mtl_instance>> clients;
 
@@ -43,20 +46,33 @@ int main() {
 
   fs::path directory_path(MTL_MANAGER_SOCK_PATH);
   directory_path.remove_filename();
-  if (!fs::exists(directory_path)) {
-    try {
-      fs::create_directory(directory_path);
-    } catch (const std::exception& e) {
-      logger::log(log_level::ERROR,
-                  "Failed to create dir:" + std::string(MTL_MANAGER_SOCK_PATH) +
-                      ", please run the application with the appropriate privileges");
-      return -EIO;
-    }
+  std::error_code ec;
+  /* mkdir() never widens the mode it is given, so others never get write */
+  if (mkdir(directory_path.c_str(), 0755) == 0) {
+    /* the umask may have narrowed it, but clients need search */
+    fs::permissions(directory_path,
+                    fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec |
+                        fs::perms::others_read | fs::perms::others_exec,
+                    ec);
+  } else if (errno == EEXIST) {
+    /* others' write would let any user replace the socket; the group is the admin's */
+    fs::perms mode = fs::status(directory_path, ec).permissions();
+    if (!ec && (mode & fs::perms::others_write) != fs::perms::none)
+      fs::permissions(directory_path, mode & ~fs::perms::others_write, ec);
+  } else {
+    logger::log(log_level::ERROR,
+                "Failed to create dir:" + std::string(MTL_MANAGER_SOCK_PATH) +
+                    ", please run the application with the appropriate privileges");
+    return -EIO;
   }
+  if (ec)
+    logger::log(log_level::WARNING, "Failed to set the mode of " +
+                                        directory_path.string() + ": " + ec.message());
 
   sigset_t signal_mask;
   sigemptyset(&signal_mask);
   sigaddset(&signal_mask, SIGINT);
+  sigaddset(&signal_mask, SIGTERM);
 
   ret = sigprocmask(SIG_BLOCK, &signal_mask, NULL);
   if (ret == -1) {
@@ -91,9 +107,19 @@ int main() {
                 "appropriate privileges.");
     goto out;
   }
+  bound = true;
 
   /* Allow all users to connect (which might be insecure) */
-  fs::permissions(MTL_MANAGER_SOCK_PATH, fs::perms::all, fs::perm_options::replace);
+  fs::permissions(MTL_MANAGER_SOCK_PATH,
+                  fs::perms::owner_read | fs::perms::owner_write | fs::perms::group_read |
+                      fs::perms::group_write | fs::perms::others_read |
+                      fs::perms::others_write,
+                  fs::perm_options::replace, ec);
+  if (ec) {
+    logger::log(log_level::ERROR, "Failed to set the socket mode: " + ec.message());
+    ret = -EIO;
+    goto out;
+  }
 
   ret = listen(sockfd, MAX_CLIENTS);
   if (ret < 0) {
@@ -171,11 +197,15 @@ int main() {
         ssize_t len = read(signal_fd, &siginfo, sizeof(siginfo));
         if (len != sizeof(siginfo)) {
           logger::log(log_level::ERROR, "Failed to read signal.");
-          return 1;
+          ret = 1;
+          goto out;
         }
 
-        if (siginfo.ssi_signo == SIGINT) {
-          logger::log(log_level::INFO, "Received SIGINT. Shutting down.");
+        if (siginfo.ssi_signo == SIGINT || siginfo.ssi_signo == SIGTERM) {
+          logger::log(log_level::INFO,
+                      std::string("Received ") +
+                          (siginfo.ssi_signo == SIGINT ? "SIGINT" : "SIGTERM") +
+                          ". Shutting down.");
           is_running = false;
         }
       } else { /* handle client message */
@@ -208,6 +238,7 @@ int main() {
   logger::log(log_level::INFO, "MTL Manager exited.");
 
 out:
+  if (bound) unlink(MTL_MANAGER_SOCK_PATH);
   if (signal_fd >= 0) close(signal_fd);
   if (epfd >= 0) close(epfd);
   if (sockfd >= 0) close(sockfd);

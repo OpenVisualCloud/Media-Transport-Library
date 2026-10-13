@@ -46,11 +46,11 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
@@ -65,14 +65,19 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Build Release
         run: sudo -E .github/scripts/setup_environment.sh
+
+      # DPDK, MTL, openh264, and FFmpeg go to /usr/local. The install scripts
+      # do not run ldconfig, so the workflow does.
+      - name: Update the runtime linker cache
+        run: sudo ldconfig
 
       - name: Build the Rust no_std example
         run: bash .github/scripts/ci/build-rust-example.sh
@@ -90,11 +95,11 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # No separate prerequisite step: build_ebpf_xdp.sh checks the host before
       # it builds, and asserts the pinned xdp-tools and libbpf versions after
@@ -105,6 +110,11 @@ jobs:
           SETUP_BUILD_AND_INSTALL_EBPF_XDP: 1
           TOOLS_BUILD_AND_INSTALL_MTL_MONITORS: 1
 
+      # build_ebpf_xdp.sh names the libxdp directory in /etc/ld.so.conf.d, and
+      # does not run ldconfig, so the workflow does.
+      - name: Update the runtime linker cache
+        run: sudo ldconfig
+
   ubuntu-debug:
     needs: changes
     if: ${{ needs.changes.outputs.base_build == 'true' }}
@@ -112,11 +122,11 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Debug and fuzz build
         run: sudo -E .github/scripts/setup_environment.sh

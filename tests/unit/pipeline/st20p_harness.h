@@ -94,6 +94,12 @@ int ut20p_get_session_stats(ut20p_ctx* ctx, struct st20_rx_user_stats* stats);
 /** Wraps st20p_rx_reset_session_stats(). */
 int ut20p_reset_session_stats(ut20p_ctx* ctx);
 
+/** The pipeline handle, for calling the public st*p API directly. */
+st20p_rx_handle ut20p_handle(ut20p_ctx* ctx);
+
+/** Force ctx->lc_destroying, as a *_free() in progress sets it. */
+void ut20p_force_destroying(ut20p_ctx* ctx);
+
 #ifdef __cplusplus
 }
 #endif

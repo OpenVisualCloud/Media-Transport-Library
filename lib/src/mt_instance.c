@@ -14,7 +14,7 @@
 
 static int instance_send_and_receive_message(int sock, mtl_message_t* msg,
                                              mtl_message_type_t response_type) {
-  ssize_t ret = send(sock, msg, sizeof(*msg), 0);
+  ssize_t ret = send(sock, msg, sizeof(*msg), MSG_NOSIGNAL);
   if (ret < 0) {
     err("%s, send message fail\n", __func__);
     return ret;
@@ -66,7 +66,7 @@ int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifi
   mtl_msg.body.if_msg.ifindex = htonl(ifindex);
   mtl_msg.header.body_len = htonl(sizeof(mtl_if_message_t));
 
-  ret = send(sock, &mtl_msg, sizeof(mtl_msg), 0);
+  ret = send(sock, &mtl_msg, sizeof(mtl_msg), MSG_NOSIGNAL);
   if (ret < 0) {
     err("%s(%u), send message fail\n", __func__, ifindex);
     return ret;

@@ -431,10 +431,12 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
       rte_pktmbuf_mtod_offset(mbuf, struct st_rfc3550_rtp_hdr*, hdr_offset);
   uint16_t seq_id = ntohs(rtp->seq_number);
   uint8_t payload_type = rtp->payload_type;
+  bool fmd = ops->flags & ST40_RX_FLAG_FAST_METADATA;
   struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)rtp;
-  rfc8331->swapped_first_hdr_chunk = ntohl(rfc8331->swapped_first_hdr_chunk);
+  if (!fmd) rfc8331->swapped_first_hdr_chunk = ntohl(rfc8331->swapped_first_hdr_chunk);
   MTL_MAY_UNUSED(s_port);
-  uint32_t pkt_len = mbuf->data_len - sizeof(struct st40_rfc8331_rtp_hdr);
+  uint32_t pkt_len = mbuf->data_len - (fmd ? sizeof(struct st40_fmd_rtp_hdr)
+                                           : sizeof(struct st40_rfc8331_rtp_hdr));
   MTL_MAY_UNUSED(pkt_len);
   uint32_t tmstamp = ntohl(rtp->tmstamp);
   bool threshold_bypass = false;
@@ -459,55 +461,57 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     }
   }
 
-  uint8_t f_bits = rfc8331->first_hdr_chunk.f; /* 2-bit field, no mask needed */
+  if (!fmd) {
+    uint8_t f_bits = rfc8331->first_hdr_chunk.f; /* 2-bit field, no mask needed */
 
-  /* Drop if F is 0b01 (invalid: bit 0 set, bit 1 clear) */
-  if (f_bits == 0x1) {
-    ST40_FUZZ_LOG("%s(%d,%d), drop invalid field bits 0x%x\n", __func__, s->idx, s_port,
-                  rfc8331->first_hdr_chunk.f);
-    s->port_user_stats.stat_pkts_wrong_interlace_dropped++;
-    return -EINVAL;
-  }
-  /* Auto-detect interlace if enabled */
-  bool pkt_interlaced = f_bits & 0x2;
-  if (s->interlace_auto) {
-    if (!s->interlace_detected || s->interlace_interlaced != pkt_interlaced) {
-      s->interlace_detected = true;
-      s->interlace_interlaced = pkt_interlaced;
-      s->ops.interlaced = pkt_interlaced;
-      info("%s(%d,%d), detected %s stream (F=0x%x)\n", __func__, s->idx, s_port,
-           pkt_interlaced ? "interlaced" : "progressive", f_bits);
+    /* Drop if F is 0b01 (invalid: bit 0 set, bit 1 clear) */
+    if (f_bits == 0x1) {
+      ST40_FUZZ_LOG("%s(%d,%d), drop invalid field bits 0x%x\n", __func__, s->idx, s_port,
+                    rfc8331->first_hdr_chunk.f);
+      s->port_user_stats.stat_pkts_wrong_interlace_dropped++;
+      return -EINVAL;
     }
-  }
-
-  /* Count field polarity when interlaced frames are accepted */
-  if (pkt_interlaced) {
-    if (f_bits & 0x1) {
-      s->port_user_stats.stat_interlace_second_field++;
-    } else {
-      s->port_user_stats.stat_interlace_first_field++;
-    }
-  }
-
-  /* Cross-port F-bit divergence: a mismatch on the same timestamp means the
-   * producer sends different field bits per port — a SMPTE 2110-40 violation.
-   * Rate-limit the warn to one per second. MTL only ever has P/R (max 2). */
-  if (s->ops.num_port > 1) {
-    int other = s_port ^ 1;
-    if (s->last_f_bits[other] != 0xff && s->last_f_tmstamp[other] == tmstamp &&
-        s->last_f_bits[other] != f_bits) {
-      s->stat_internal_field_bit_mismatch++;
-      uint64_t now_ns = mt_get_monotonic_time();
-      if (now_ns - s->f_mismatch_warn_last_ns > NS_PER_S) {
-        err("RX_ANC_SESSION(%d): redundant ports disagree on F bits at ts %u "
-            "(port%d=F=0x%x port%d=F=0x%x) — SMPTE 2110-40 producer violation\n",
-            s->idx, tmstamp, other, s->last_f_bits[other], s_port, f_bits);
-        s->f_mismatch_warn_last_ns = now_ns;
+    /* Auto-detect interlace if enabled */
+    bool pkt_interlaced = f_bits & 0x2;
+    if (s->interlace_auto) {
+      if (!s->interlace_detected || s->interlace_interlaced != pkt_interlaced) {
+        s->interlace_detected = true;
+        s->interlace_interlaced = pkt_interlaced;
+        s->ops.interlaced = pkt_interlaced;
+        info("%s(%d,%d), detected %s stream (F=0x%x)\n", __func__, s->idx, s_port,
+             pkt_interlaced ? "interlaced" : "progressive", f_bits);
       }
     }
+
+    /* Count field polarity when interlaced frames are accepted */
+    if (pkt_interlaced) {
+      if (f_bits & 0x1) {
+        s->port_user_stats.stat_interlace_second_field++;
+      } else {
+        s->port_user_stats.stat_interlace_first_field++;
+      }
+    }
+
+    /* Cross-port F-bit divergence: a mismatch on the same timestamp means the
+     * producer sends different field bits per port — a SMPTE 2110-40 violation.
+     * Rate-limit the warn to one per second. MTL only ever has P/R (max 2). */
+    if (s->ops.num_port > 1) {
+      enum mtl_session_port other = s_port ^ 1;
+      if (s->last_f_bits[other] != 0xff && s->last_f_tmstamp[other] == tmstamp &&
+          s->last_f_bits[other] != f_bits) {
+        s->stat_internal_field_bit_mismatch++;
+        uint64_t now_ns = mt_get_monotonic_time();
+        if (now_ns - s->f_mismatch_warn_last_ns > NS_PER_S) {
+          err("RX_ANC_SESSION(%d): redundant ports disagree on F bits at ts %u "
+              "(port%d=F=0x%x port%d=F=0x%x) — SMPTE 2110-40 producer violation\n",
+              s->idx, tmstamp, other, s->last_f_bits[other], s_port, f_bits);
+          s->f_mismatch_warn_last_ns = now_ns;
+        }
+      }
+    }
+    s->last_f_bits[s_port] = f_bits;
+    s->last_f_tmstamp[s_port] = tmstamp;
   }
-  s->last_f_bits[s_port] = f_bits;
-  s->last_f_tmstamp[s_port] = tmstamp;
 
   if (unlikely(s->latest_seq_id[s_port] == -1)) s->latest_seq_id[s_port] = seq_id - 1;
   if (unlikely(s->session_seq_id == -1)) s->session_seq_id = seq_id - 1;
@@ -1000,7 +1004,8 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
     snprintf(s->ops_name, sizeof(s->ops_name), "RX_ANC_M%dS%d", mgr->idx, idx);
   }
   s->ops = *ops;
-  s->interlace_auto = !(ops->flags & ST40_RX_FLAG_DISABLE_AUTO_DETECT);
+  s->interlace_auto =
+      !(ops->flags & (ST40_RX_FLAG_DISABLE_AUTO_DETECT | ST40_RX_FLAG_FAST_METADATA));
   s->interlace_detected = !s->interlace_auto;
   s->interlace_interlaced = ops->interlaced;
   for (int i = 0; i < num_port; i++) {
@@ -1499,6 +1504,10 @@ static int rx_ancillary_ops_check(struct st40_rx_ops* ops) {
   }
 
   if (ops->type == ST40_TYPE_FRAME_LEVEL) {
+    if (ops->flags & ST40_RX_FLAG_FAST_METADATA) {
+      err("%s, FRAME_LEVEL: FAST_METADATA supports RTP_LEVEL only\n", __func__);
+      return -EINVAL;
+    }
     if (!ops->notify_frame_ready) {
       err("%s, FRAME_LEVEL: pls set notify_frame_ready\n", __func__);
       return -EINVAL;
@@ -1727,10 +1736,12 @@ void* st40_rx_get_mbuf(st40_rx_handle handle, void** usrptr, uint16_t* len) {
 
   ret = rte_ring_sc_dequeue(packet_ring, (void**)&pkt);
   if (ret == 0) {
-    int header_len = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) +
-                     sizeof(struct rte_udp_hdr);
-    *len = pkt->data_len - header_len;
-    *usrptr = rte_pktmbuf_mtod_offset(pkt, void*, header_len);
+    struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
+    int room = pkt->data_len - (int)sizeof(*hdr);
+    /* the UDP length leaves out Ethernet padding; room caps a bogus one */
+    int udp_payload = ntohs(hdr->udp.dgram_len) - (int)sizeof(hdr->udp);
+    *len = RTE_MAX(0, RTE_MIN(udp_payload, room));
+    *usrptr = &hdr[1];
     ret_pkt = (void*)pkt;
   }
 

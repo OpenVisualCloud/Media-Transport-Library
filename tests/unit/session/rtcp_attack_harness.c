@@ -49,6 +49,7 @@ struct ut_rtk_ctx {
   uint32_t sent;
   uint16_t* sent_seq;
   uint16_t* sent_row_length;
+  enum mtl_log_level old_log_level;
 };
 
 static ut_rtk_ctx* ut_rtk_active;
@@ -118,6 +119,8 @@ ut_rtk_ctx* ut_rtk_create(int ring_size, int rfc4175, unsigned int pool_n) {
   tx->payload_format =
       rfc4175 ? MT_RTP_PAYLOAD_FORMAT_RFC4175 : MT_RTP_PAYLOAD_FORMAT_RAW;
   snprintf(tx->name, sizeof(tx->name), "ut_rtk");
+  /* restored in ut_rtk_destroy() so later log-capturing suites still see warnings */
+  ctx->old_log_level = mt_get_log_global_level();
   mt_set_log_global_level(MTL_LOG_LEVEL_CRIT);
   return ctx;
 }
@@ -131,6 +134,7 @@ void ut_rtk_destroy(ut_rtk_ctx* ctx) {
   free(ctx->fifo.data);
   free(ctx->sent_seq);
   free(ctx->sent_row_length);
+  mt_set_log_global_level(ctx->old_log_level);
   free(ctx);
 }
 

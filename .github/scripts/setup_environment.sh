@@ -104,6 +104,7 @@ function setup_ubuntu_install_dependencies() {
 		libjson-c-dev \
 		libpcap-dev \
 		libgtest-dev \
+		libgmock-dev \
 		libssl-dev \
 		systemtap-sdt-dev \
 		llvm \
@@ -230,7 +231,6 @@ function setup_ubuntu_install_dependencies() {
 			libpcap-dev
 	fi
 
-	sudo ldconfig
 	echo "All dependencies installed."
 }
 

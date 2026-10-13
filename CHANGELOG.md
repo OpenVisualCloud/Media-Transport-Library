@@ -1,8 +1,8 @@
 # Changelog
 
-## Changelog for 26.09
+* st40: carry SMPTE ST 2110-41 Fast Metadata as an opt-in ST40 mode (`ST40_TX_FLAG_FAST_METADATA`/`ST40_RX_FLAG_FAST_METADATA`); add ABI fields `fmd_dit`/`fmd_k_bit` to `st40_tx_ops`; remove RxTxApp `"fastmetadata"` groups and `--*fmd*` options; share one 180-session scheduler limit between ANC and Fast Metadata (previously 180 each)
 
-<!-- Draft from the commits since v26.01. Complete it before the release tag. -->
+## Changelog for 26.09
 
 * DPDK: add support for DPDK 26.03 and 26.07
 * ice: add support for driver version 2.5.4, 2.6.6, and 2.6.7; iavf: add support for 4.13.35

@@ -6,7 +6,6 @@
 #define _ST_LIB_PKT_HEAD_H_
 
 #include "st40_api.h"
-#include "st41_api.h"
 
 #define MTL_LITTLE_ENDIAN /* x86 use little endian */
 
@@ -65,11 +64,11 @@ struct st_rfc8331_anc_hdr {
 } __attribute__((__packed__)) __rte_aligned(2);
 
 /* total size: 58 */
-struct st41_fmd_hdr {
-  struct rte_ether_hdr eth; /* size: 14 */
-  struct rte_ipv4_hdr ipv4; /* size: 20 */
-  struct rte_udp_hdr udp;   /* size: 8 */
-  struct st41_rtp_hdr rtp;  /* size: 16 */
+struct st_fmd_hdr {
+  struct rte_ether_hdr eth;    /* size: 14 */
+  struct rte_ipv4_hdr ipv4;    /* size: 20 */
+  struct rte_udp_hdr udp;      /* size: 8 */
+  struct st40_fmd_rtp_hdr rtp; /* size: 16 */
 } __attribute__((__packed__)) __rte_aligned(2);
 
 #define ST_PKT_VIDEO_HDR_LEN \
@@ -83,8 +82,6 @@ struct st41_fmd_hdr {
 
 #define ST_PKT_ANC_HDR_LEN \
   (sizeof(struct st_rfc8331_anc_hdr) - sizeof(struct rte_ether_hdr))
-
-#define ST_PKT_FMD_HDR_LEN (sizeof(struct st41_fmd_hdr) - sizeof(struct rte_ether_hdr))
 
 /* standard UDP is 1460 bytes */
 #define ST_PKT_MAX_ETHER_BYTES \

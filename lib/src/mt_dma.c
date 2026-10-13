@@ -18,8 +18,13 @@ int mt_map_add(struct mtl_main_impl* impl, struct mt_map_item* item) {
   struct mt_map_item* i_item;
   void* i_start;
   void* i_end;
-  mtl_iova_t iova_base = 0x10000; /* assume user IOVA start from 1M */
+  mtl_iova_t iova_base = 0x10000; /* assume user IOVA start from 64K */
   mtl_iova_t iova_end;
+
+  if (item->size > UINTPTR_MAX - (uintptr_t)start) {
+    err("%s, %p size %zu wraps the address space\n", __func__, start, item->size);
+    return -EINVAL;
+  }
 
   mt_pthread_mutex_lock(&mgr->mutex);
 
@@ -29,13 +34,8 @@ int mt_map_add(struct mtl_main_impl* impl, struct mt_map_item* item) {
     if (!i_item) continue;
     i_start = i_item->vaddr;
     i_end = i_start + i_item->size;
-    if ((start >= i_start) && (start < i_end)) {
-      err("%s, invalid start %p i_start %p i_end %p\n", __func__, start, i_start, i_end);
-      mt_pthread_mutex_unlock(&mgr->mutex);
-      return -EINVAL;
-    }
-    if ((end > i_start) && (end <= i_end)) {
-      err("%s, invalid end %p i_start %p i_end %p\n", __func__, end, i_start, i_end);
+    if ((start < i_end) && (end > i_start)) {
+      err("%s, %p-%p overlaps %p-%p\n", __func__, start, end, i_start, i_end);
       mt_pthread_mutex_unlock(&mgr->mutex);
       return -EINVAL;
     }
@@ -155,20 +155,17 @@ static int dma_copy_test(struct mtl_main_impl* impl, struct mtl_dma_lender_dev* 
       goto exit;
     }
 
-    uint16_t nb_dq = 0;
-    int sleep_interval_ms = 10;
-    int max_retry = 100; /* timeout 1s */
-    int retry = 0;
-    while (nb_dq < 1) {
-      nb_dq = mt_dma_completed(dev, 32, NULL, NULL);
+    uint64_t deadline_ns = mt_get_monotonic_time() + NS_PER_S;
+    while (true) {
+      uint16_t nb_dq = mt_dma_completed(dev, 32, NULL, NULL);
       dbg("%s(%d), nb_dq %d\n", __func__, idx, nb_dq);
-      retry++;
-      if (retry > max_retry) {
+      if (nb_dq) break;
+      if (mt_get_monotonic_time() > deadline_ns) {
         ret = -ETIMEDOUT;
         err("%s(%d), poll timeout\n", __func__, idx);
         goto exit;
       }
-      mt_sleep_ms(sleep_interval_ms);
+      mt_sleep_us(10);
     }
     if (!memcmp(src + off, dst + off, len - off)) {
       ret = 0;

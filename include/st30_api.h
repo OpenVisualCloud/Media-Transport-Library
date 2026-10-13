@@ -75,6 +75,7 @@ typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
 /**
  * Flag bit in flags of struct st30_tx_ops.
  * If enable the rtcp.
+ * Currently ignored, RTCP is implemented only for st20/st22 video sessions.
  */
 #define ST30_TX_FLAG_ENABLE_RTCP (MTL_BIT32(6))
 /**
@@ -94,6 +95,7 @@ typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
 /**
  * Flag bit in flags of struct st30_rx_ops.
  * If enable the rtcp.
+ * Currently ignored, RTCP is implemented only for st20/st22 video sessions.
  */
 #define ST30_RX_FLAG_ENABLE_RTCP (MTL_BIT32(1))
 /** Force the numa of the created session, both CPU and memory */
@@ -156,7 +158,7 @@ enum st30_ptime {
   ST30_PTIME_250US,   /**< packet time of 250us */
   ST30_PTIME_333US,   /**< packet time of 333us */
   ST30_PTIME_4MS,     /**< packet time of 4ms */
-  ST31_PTIME_80US,    /**< packet time of 80us */
+  ST31_PTIME_80US,    /**< packet time of 83.33us: 4 samples at 48kHz, 8 at 96kHz */
   ST31_PTIME_1_09MS,  /**< packet time of 1.09ms, only for 44.1kHz sample */
   ST31_PTIME_0_14MS,  /**< packet time of 0.14ms, only for 44.1kHz sample */
   ST31_PTIME_0_09MS,  /**< packet time of 0.09ms, only for 44.1kHz sample */
@@ -462,7 +464,7 @@ struct st30_tx_ops {
   int (*notify_rtp_done)(void* priv);
   /** Optional for ST30_TX_PACING_WAY_RL, the required accuracy for warmup check point */
   uint32_t rl_accuracy_ns;
-  /** Optional for ST30_TX_PACING_WAY_RL, the offset time(us) for warmup check point */
+  /** Optional for ST30_TX_PACING_WAY_RL, the offset time(ns) for warmup check point */
   int32_t rl_offset_ns;
   /**  Use this socket if ST30_TX_FLAG_FORCE_NUMA is on, default use the NIC numa */
   int socket_id;
@@ -605,11 +607,10 @@ struct st30_rx_user_stats {
 /**
  * Retrieve the general statistics(I/O) for one tx st2110-30(audio) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock.
+ * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
+ * this session's callbacks: they may run with that spinlock held, so it deadlocks.
  * @param handle
  *   The handle to the tx st2110-30(audio) session.
- * @param port
- *   The port index.
  * @param stats
  *   A pointer to stats structure.
  * @return
@@ -621,11 +622,10 @@ int st30_tx_get_session_stats(st30_tx_handle handle, struct st30_tx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one tx st2110-30(audio) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock.
+ * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
+ * this session's callbacks: they may run with that spinlock held, so it deadlocks.
  * @param handle
  *   The handle to the tx st2110-30(audio) session.
- * @param port
- *   The port index.
  * @return
  *   - >=0 succ.
  *   - <0: Error code.
@@ -635,11 +635,10 @@ int st30_tx_reset_session_stats(st30_tx_handle handle);
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-30(audio) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock.
+ * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
+ * this session's callbacks: they may run with that spinlock held, so it deadlocks.
  * @param handle
  *   The handle to the rx st2110-30(audio) session.
- * @param port
- *   The port index.
  * @param stats
  *   A pointer to stats structure.
  * @return
@@ -651,11 +650,10 @@ int st30_rx_get_session_stats(st30_rx_handle handle, struct st30_rx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one rx st2110-30(audio) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock.
+ * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
+ * this session's callbacks: they may run with that spinlock held, so it deadlocks.
  * @param handle
  *   The handle to the rx st2110-30(audio) session.
- * @param port
- *   The port index.
  * @return
  *   - >=0 succ.
  *   - <0: Error code.

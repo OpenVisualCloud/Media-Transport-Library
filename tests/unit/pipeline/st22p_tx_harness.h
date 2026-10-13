@@ -52,6 +52,9 @@ void ut22p_tx_ctx_enable_blocking(ut22p_tx_ctx* ctx, uint64_t timeout_ns);
  */
 void ut22p_tx_ctx_enable_encode_blocking(ut22p_tx_ctx* ctx, uint64_t timeout_ns);
 
+/** Wake a blocking get_frame sleeper (wraps st22p_tx_wake_block). */
+void ut22p_tx_wake_block(ut22p_tx_ctx* ctx);
+
 /** Wake a blocking encode_get_frame sleeper, via the callback the encoder
  * device is registered with (wraps tx_st22p_encode_wake_block). */
 void ut22p_tx_encode_wake_block(ut22p_tx_ctx* ctx);
@@ -101,6 +104,20 @@ int ut22p_tx_all_free(const ut22p_tx_ctx* ctx);
 
 /* Raw stat value of framebuffer i (for diagnostics). */
 int ut22p_tx_frame_stat(const ut22p_tx_ctx* ctx, int i);
+
+/**
+ * Run create_transport against a stub transport create, then fire the late
+ * callback it registered the way the transport session does. Returns the
+ * callback's return, or -ENOENT when no late callback was registered.
+ */
+int ut22p_tx_transport_report_late(ut22p_tx_ctx* ctx, uint64_t epoch_skipped);
+
+/**
+ * Call st22p_tx_create() on a bare instance with one port, named in
+ * ops->port.port[0] by this call. For create paths that fail before any
+ * transport or encoder is needed.
+ */
+st22p_tx_handle ut22p_tx_create(struct st22p_tx_ops* ops);
 
 #ifdef __cplusplus
 }

@@ -9,7 +9,7 @@
  *   - consumer (transport):  next_frame (READY->IN_TRANSMITTING) /
  *                            frame_done (->FREE)
  *
- * The harness bypasses create_transport: there is no real DPDK session, the
+ * The ring helpers bypass create_transport: there is no real DPDK session, the
  * framebuffers are plain heap memory and the ctx is hand-initialised into the
  * "ready" state. This isolates the claim/lifecycle state machine so the test
  * can hammer it with many threads and assert single-ownership + conservation +
@@ -47,13 +47,13 @@ void ut30p_tx_ctx_destroy(ut30p_tx_ctx* ctx);
 void ut30p_tx_ctx_enable_blocking(ut30p_tx_ctx* ctx, uint64_t timeout_ns);
 
 /**
- * Fire the same wake used internally whenever a frame slot becomes free
- * (wraps st30p_tx_wake_block(), i.e. tx_st30p_block_wake()). Fires
- * unconditionally, whether or not anyone is currently blocked in get_frame().
- * Use this to simulate an unrelated wake independently of actually freeing a
- * slot.
+ * App wake (wraps st30p_tx_wake_block()). Ends a get_frame() blocked at the
+ * time of the call; a wake with no thread blocked is a no-op.
  */
 void ut30p_tx_wake_block(ut30p_tx_ctx* ctx);
+
+/** The wake a frame done sends (wraps tx_st30p_notify_frame_available()). */
+void ut30p_tx_frame_free_wake(ut30p_tx_ctx* ctx);
 
 /**
  * Force ctx->lc_destroying, bypassing the CAS handshake real st30p_tx_free()
@@ -92,6 +92,33 @@ int ut30p_tx_all_free(const ut30p_tx_ctx* ctx);
 int ut30p_tx_frame_stat(const ut30p_tx_ctx* ctx, int i);
 
 uint64_t ut30p_tx_stat_frames_sent(const ut30p_tx_ctx* ctx);
+
+/**
+ * Run st30p_tx_create() on a one-port instance whose NIC is on nic_socket, with
+ * ops.flags = flags and ops.socket_id = socket_id. Returns the socket the pipeline
+ * ctx was placed on, or INT_MIN if the create failed before its transport step.
+ */
+int ut30p_tx_create_ctx_socket(int nic_socket, uint32_t flags, int socket_id);
+
+/** Register ops.notify_frame_late (and ops.priv). */
+void ut30p_tx_set_notify_frame_late(ut30p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, uint64_t epoch_skipped),
+                                    void* priv);
+
+/**
+ * Run create_transport against a stub transport create, then fire the late
+ * callback it registered the way the transport session does. Returns the
+ * callback's return, or -ENOENT when no late callback was registered.
+ */
+int ut30p_tx_transport_report_late(ut30p_tx_ctx* ctx, uint64_t epoch_skipped);
+
+/** The pipeline handle, for calling the public st*p API directly. */
+st30p_tx_handle ut30p_tx_handle(ut30p_tx_ctx* ctx);
+
+/** Register ops.notify_frame_done (and ops.priv). */
+void ut30p_tx_set_notify_frame_done(ut30p_tx_ctx* ctx,
+                                    int (*cb)(void* priv, struct st30_frame* frame),
+                                    void* priv);
 
 #ifdef __cplusplus
 }

@@ -11,8 +11,8 @@ on:
   workflow_dispatch:
     inputs:
       branch:
-        description: 'branch to run scans on'
-        default: 'main'
+        description: 'branch to run scans on (empty: the branch the workflow runs from)'
+        default: ''
         type: string
 
 
@@ -21,7 +21,9 @@ env:
   MTL_BUILD_DISABLE_PCAPNG: true
   PREFIX_DIR: /usr/local
   DEBIAN_FRONTEND: noninteractive
-  TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
+  # Mirrors of the same database. Trivy tries the next one when a source is rate limited
+  # or answers with a server error.
+  TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db,mirror.gcr.io/aquasec/trivy-db,ghcr.io/aquasecurity/trivy-db
   TRIVY_JAVA_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-java-db
 permissions:
   contents: read
@@ -35,24 +37,24 @@ jobs:
         security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: maint-25.02 # tmp branch
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
 
       - name: Checkout code
         if: github.event_name != 'schedule'
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.branch }}
 
@@ -67,8 +69,14 @@ jobs:
           vuln-type: os,library
           output: Trivy-dockerfile.sarif
 
+      - name: Upload Trivy scan results as artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: trivy-dockerfile-sarif
+          path: Trivy-dockerfile.sarif
+
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: Trivy-dockerfile.sarif
 
@@ -79,24 +87,24 @@ jobs:
         security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: maint-25.02 # tmp branch
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
 
       - name: Checkout code
         if: github.event_name != 'schedule'
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.branch }}
 
@@ -110,34 +118,120 @@ jobs:
           vuln-type: os,library
           output: Trivy-manager-dockerfile.sarif
 
+      - name: Upload Trivy scan results as artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: trivy-manager-dockerfile-sarif
+          path: Trivy-manager-dockerfile.sarif
+
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: Trivy-manager-dockerfile.sarif
+
+  trivy-sbom:
+    name: spdx sbom and vulnerability scan
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: maint-25.02 # tmp branch
+      - name: Checkout code
+        if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+
+      - name: Checkout code
+        if: github.event_name != 'schedule'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.branch }}
+
+      - name: Run Trivy to generate SPDX JSON SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          cache: false
+          format: spdx-json
+          output: Trivy-sbom.spdx.json
+        env:
+          # Trivy only reads files named exactly requirements.txt by default
+          TRIVY_FILE_PATTERNS: 'pip:(^|/)requirements-[^/]*\.txt$'
+
+      # trivy fs writes downloadLocation "git+." for a checkout, which is not valid SPDX
+      - name: Set SBOM download locations
+        run: |
+          location="git+${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}@$(git rev-parse HEAD)"
+          jq --arg location "$location" '
+            (.packages[] | select(.downloadLocation == "git+.") | .downloadLocation) = "NOASSERTION"
+            | (.packages[] | select(.primaryPackagePurpose == "SOURCE") | .downloadLocation) = $location
+          ' Trivy-sbom.spdx.json > Trivy-sbom.spdx.json.tmp
+          mv Trivy-sbom.spdx.json.tmp Trivy-sbom.spdx.json
+
+      - name: Upload SBOM as artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: trivy-sbom-spdx
+          path: Trivy-sbom.spdx.json
+
+      - name: Run Trivy vulnerability scanner on the SBOM with json output
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: sbom
+          scan-ref: Trivy-sbom.spdx.json
+          cache: false
+          format: json
+          exit-code: 0
+          output: Trivy-sbom-vulnerabilities.json
+
+      - name: Upload vulnerability report as artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: trivy-sbom-vulnerabilities
+          path: Trivy-sbom-vulnerabilities.json
+
+      - name: Fail on CRITICAL or HIGH vulnerabilities in the SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: sbom
+          scan-ref: Trivy-sbom.spdx.json
+          cache: false
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 1
 
   trivy-stdout:
     name: table output scan
     runs-on: ubuntu-22.04
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: audit
 
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: maint-25.02 # tmp branch
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
 
       - name: Checkout code
         if: github.event_name != 'schedule'
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.branch }}
 

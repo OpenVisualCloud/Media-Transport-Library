@@ -14,7 +14,7 @@ SMPTE ST 2110 media transport over IP. DPDK-based with HW pacing (Intel E810). S
 - ST2110-22 (compressed video / JPEG-XS)
 - ST2110-30 (audio)
 - ST2110-40 (ancillary data)
-- ST2110-41 (fast metadata)
+- ST2110-41 (fast metadata), as an opt-in mode of the ST2110-40 sessions
 
 ### Two-World Pattern (Data Plane / Control Plane Split)
 - **Data plane**: DPDK hugepage memory, spinlocks, lock-free rings, zero-copy, polling tasklets. Hot path — never blocks.
@@ -37,15 +37,14 @@ Pipeline wraps session: `st20p_tx_create()` calls `st20_tx_create()` internally.
 | Prefix | Component |
 |--------|-----------|
 | `mt_` | Core library (non-media) |
-| `st_` / `st20_` / `st22_` / `st30_` / `st40_` / `st41_` | Media session APIs |
-| `st20p_` / `st22p_` / `st30p_` | Pipeline APIs |
+| `st_` / `st20_` / `st22_` / `st30_` / `st40_` | Media session APIs |
+| `st20p_` / `st22p_` / `st30p_` / `st40p_` | Pipeline APIs |
 | `tv_` | TX video session internals |
 | `rv_` | RX video session internals |
 | `tx_audio_session_` | TX audio internals |
 | `rx_audio_session_` | RX audio internals |
 | `tx_ancillary_session_` | TX ancillary internals |
 | `rx_ancillary_session_` | RX ancillary internals |
-| `tx_fastmetadata_` / `rx_fastmetadata_` | ST2110-41 internals |
 
 ### Video Complexity vs Audio/Ancillary/Fast-Metadata
 
@@ -113,7 +112,7 @@ NIC receives multicast packet (flow rule steers to session's RX queue)
 - Error paths must free in reverse allocation order
 - Every `rte_malloc` must have a matching `rte_free` on the same NUMA socket
 - `dbg()` / `info()` / `warn()` / `err()` for logging — never `printf`
-- No C++ in library core (C99 only); tests use C++ for gtest
+- No C++ in library core (C99 plus C11 `<stdatomic.h>` atomics); tests use C++ for gtest
 - All public API in `include/` — internal headers stay in `lib/src/`
 
 ---
@@ -123,6 +122,7 @@ NIC receives multicast packet (flow rule steers to session's RX queue)
 ### Cooperative Tasklet Model
 - Tasklets are function pointers called repeatedly by a scheduler thread in a tight loop
 - Tasklets **must never block** — one blocked tasklet starves all others
+- Deliberate exception: `rv_dma_flush()` busy-polls at most `ST_RX_VIDEO_DMA_FLUSH_TIMEOUT_NS` per newer frame per DMA session, only while the previous frame's copies are pending, since the new frame cannot take a slot before they finish. Do not copy this pattern without such a bound
 - Signal "I have work" (positive return) or "I'm idle" (return 0)
 - Scheduler-to-tasklet: 1:many
 
@@ -250,7 +250,7 @@ Default mempool ops: `"stack"` (LIFO) — better cache reuse than FIFO ring ops.
   - In **IOVA VA mode** (default with `--in-memory`): chain pool `data_room = 0` — chain mbufs are pure pointer containers
   - In **IOVA PA mode** (legacy): chain pool `data_room = s->st20_pkt_len` (~1200-1260B, session-calculated) — cross-page payloads copied into mbuf
 - Cross-page fallback: if payload spans hugepage boundary, memcpy into chain mbuf's data room instead of extbuf
-- `rte_mbuf_ext_shared_info` callback (`tv_frame_free_cb`) decrements frame refcnt
+- `rte_mbuf_ext_shared_info` callback (`tv_frame_free_cb`) copies the frame's meta for the callback, clears an ext frame's addr/iova (`st20_tx_get_framebuffer()` still returns the buffer during the callback), decrements frame refcnt, then calls `notify_frame_done` — so the app (or st20p) may re-arm and re-queue the frame from inside the callback
 - **Cost without zero-copy**: memcpy at 312 MB/s per 1080p60 stream, 1.2 GB/s at 4K60. A 16-stream appliance would need ~19 GB/s just for copying — most of a NUMA node's memory bandwidth
 - NIC scatter-gather DMA: segment 1 = header mbuf (~62B), segment 2 = chain extbuf (~1260B). Requires `RTE_ETH_TX_OFFLOAD_MULTI_SEGS`
 
@@ -359,6 +359,7 @@ Intel E810 Traffic Manager enforces per-flow rate limits:
 - NIC hardware spaces packets — CPU just enqueues
 - Sub-microsecond accuracy, zero CPU overhead for timing
 - Max shapers: `MT_MAX_RL_ITEMS = 128` per port
+- IAVF queue rates persist in the PF across processes, so `mt_dev_free()` puts every queue back to line rate; a killed RL process, a `mtl_init()` that fails in `mt_dev_create()` or a link speed iavf reports as 0 (e.g. 200G) still leave them (a port that never built the RL root never programs TM, as stock ice VFs crash in `iavf_tm_node_add`)
 
 ### Software TSC Pacing — Fallback
 When no hardware RL available:
@@ -403,7 +404,7 @@ In RL mode, at target − `warm_pkts`·`trs`, `video_trs_rl_warm_up()` queues `c
 
 ### Epoch Timing
 Frame transmission aligned to PTP epoch boundaries. For 59.94fps: frame period ≈ 16.683ms.
-- Late frame → advance to next epoch → `stat_frame_late` increments
+- Late frame (next free epoch already past) → snap to the current epoch, `stat_epoch_drop` += skipped epochs, `notify_frame_late` fires (`calc_frame_count_since_epoch()`)
 - Fix is in the application, not MTL
 - Interlaced TX: `frame_time` is one FIELD period, so the ST 2110-21 frame grid is every
   SECOND epoch slot (even = first field). Corrected at the `tv_sync_pacing()` call site;
@@ -451,7 +452,7 @@ RX diagnostic stats:
 
 1. **NIC bottleneck?** Check `stat_tx_burst` vs `stat_tx_bytes`
 2. **Scheduler overloaded?** 100% CPU, never sleeping → too many sessions
-3. **Pacing broken?** RX: VRX stats. TX: `stat_epoch_mismatch`, `stat_frame_late`
+3. **Pacing broken?** RX: VRX stats. TX: `stat_epoch_drop`, `stat_epoch_onward`; audio/anc/fmd also `stat_epoch_mismatch`
 4. **NUMA problem?** Socket mismatch → 2× DMA latency
 5. **Ring underflow?** Transmitter sends fewer packets than expected → increase ring or reduce builder load
 6. **RX losing packets?** NIC `imissed` counter → increase `nb_rx_desc`, mempool, or drain faster (continuous burst: if `rte_eth_rx_burst` returns ≥ `rx_burst_size/2`, loop immediately via `MTL_TASKLET_HAS_PENDING`)
@@ -579,7 +580,13 @@ Note: `ST21_TX_STAT_WAIT_PKTS` exists in enum but is dead code (never assigned/c
 ```text
 1. SCAN: Check active slots — if tmstamp matches, return it
 2. STALE: If T < active slot's tmstamp → drop packet (old frame)
-3. DMA GUARD: If slot has pending DMA (dma_nb > 0) → don't evict
+3. DMA GUARD: If the session has copies pending (!mt_dma_empty(), lender nb_borrowed > 0)
+   → rv_dma_flush(): copies go to the engine once per tasklet pass, so a burst holding
+   frame N's tail and N+1's head gets here with N's copies unsubmitted. Submit them and
+   poll completions for up to ST_RX_VIDEO_DMA_FLUSH_TIMEOUT_NS, which completes N if N is
+   full. Still pending (tried once per newer frame; never with a pkt lcore) → drop the
+   packet (dma_previous_busy_cnt). Worst case per engine: each of up to
+   MT_DMA_MAX_SESSIONS sessions sharing it spends one bounded flush per new frame
 4. EVICT (round-robin): Pick next free/oldest slot. If occupied → notify partial frame (CORRUPTED status)
 5. CLAIM: Acquire frame buffer, set tmstamp, clear bitmap, reset recv_size
 6. RETURN: Caller writes payload into slot's frame
@@ -665,7 +672,20 @@ Same lifecycle pattern as video, simplified:
 - No assembly complexity (1-8 packets per frame)
 - Low scheduler quota
 - Shared queue friendly
-- ST2110-41: payload type 115, header 58 bytes, API in `st41_api.h`
+- ST2110-41 fast metadata is not a separate session type: an ST40 session opts in with
+  `ST40_TX_FLAG_FAST_METADATA` / `ST40_RX_FLAG_FAST_METADATA` (`st40_api.h`). The mode swaps
+  only the RTP payload format: `struct st40_fmd_rtp_hdr` (22-bit DIT, K-bit, 9-bit word length,
+  no extended seq), header 58 bytes, default payload type 115, marker always 0, one zero-padded
+  data item per frame from `st40_frame.data`/`data_size`. `data_size` 0 sends a zero-item
+  packet (bare 12-byte RTP header), since a Data Item Length of 0 is illegal. TX create rejects
+  the reserved DITs 0x300000-0x3FEFFF and payload types 1-95. Pacing, redundancy and stats are
+  the ST40 ones; RTP_LEVEL packets sharing a timestamp go out back to back, so more than 4 per
+  timestamp breaks the ST 2110-41 §7 network compatibility model.
+  RX in this mode is RTP_LEVEL only and must leave the payload untouched — the RFC 8331 F-bit
+  parse and in-place byte swap would corrupt it. `st40_rx_get_mbuf()` takes `len` from the UDP
+  header, because the 54-byte zero-item frame is padded to 60 on the wire.
+  Spec conflict: Annex A says segment words = DIL - 2, but §5.4 makes DIL count the words after
+  the DIT/K/DIL word; the Annex A integration test follows §5.4 (DIL - 1 segment words).
 - ST30 RX, like ST20: a short frame counts `stat_frames_incomplete` and is recycled, or zeroed-then-delivered under `ST30_RX_FLAG_RECEIVE_INCOMPLETE_FRAME`
 
 ### Manager Pattern
@@ -791,7 +811,7 @@ Only with `MTL_FLAG_ENABLE_HW_TIMESTAMP` on iavf VFs.
 Hierarchy: port → shapers (max 128, `MT_MAX_RL_ITEMS`). Each shaper = one session's rate limit.
 
 ### Multi-Process
-MTL supports `--proc-type=secondary` for read-only stats access. Full multi-process TX/RX not supported.
+Not supported: `dev_eal_init()` always passes `--in-memory`, so no DPDK runtime files exist for a `--proc-type=secondary` process to attach to. Independent MTL processes (one EAL each, e.g. on separate VFs) coordinate lcore use through MtlManager instead.
 
 ### Backend Support
 
@@ -871,16 +891,26 @@ between processes, `run_pf.sh` and the MCP tools 10 s. What each case proves:
 | ST2110-30 audio RX | `st30/st30_rx_frame_fuzz.c` | Audio parsing |
 | ST2110-40 ancillary RX | `st40/st40_rx_rtp_fuzz.c` | Ancillary parsing |
 | ST40 helpers | `st40/st40_ancillary_helpers_fuzz.c` | UDW, checksum, parity |
+| RTCP TX | `rtcp/mt_rtcp_tx_parse_fuzz.c` | RTCP NACK parsing |
 
 Architecture: minimal DPDK EAL (no hugepages, no PCI) → full session context reset per input → call internal handler.
 
 **Limitations**: single-packet fuzzing only (no multi-packet sequence bugs), no TX/control/PTP coverage.
 
+**Stub context must track the session**: a harness hand-builds `g_impl`/`g_session`, so a new mandatory field breaks it silently. Set `ops.type` explicitly (0 is FRAME_LEVEL for ST40, which reads PTP time the stub lacks) and supply any per-session buffer the create path allocates (ST30 `frame_bitmap`).
+
+Build with clang (gcc lacks `-fsanitize=fuzzer-no-link`); `-Denable_asan=true` fails under clang (needs gcc `libasan`), use `b_sanitize`:
+
 ```bash
-meson setup build_fuzz -Denable_fuzzing=true -Denable_asan=true
+CC=clang CXX=clang++ meson setup build_fuzz -Denable_fuzzing=true \
+  -Db_sanitize=address -Db_lundef=false -Dc_args=-Wno-error=unused-but-set-variable
 ninja -C build_fuzz
 ./build_fuzz/tests/fuzz/st20_rx_frame_fuzz corpus/st20
 ```
+
+The guide is `tests/doc/fuzz/index.rst`.
+The `fuzz-tests` job of `fuzz_tests.yml` runs `.github/scripts/ci/fuzz.sh` (`task ci:fuzz -- build|run`) on `ubuntu-22.04` (clang 14) and uploads `fuzz-report`: 60 s per target on a pull request that matches the `fuzz_tests` path filter, 600 s per target on the nightly schedule of `main` and on a manual run.
+The harnesses link `libmtl`, so the filter holds all of `lib/**` and `include/**`. `fuzz-tests-result` always runs and is the check to require.
 
 ### Acceptance Tests (`tests/acceptance/`)
 E2E framework launching real MTL apps over SSH. Tests do NOT call MTL C API.
@@ -903,7 +933,7 @@ For one-shot host preparation (build, hugepages, SSH, NFS, plugin builds, config
 For invoking pytest itself and triaging failures, use `.github/instructions/mtl-acceptance-tests.instructions.md` — it auto-attaches when working under `tests/acceptance/`.
 
 ### RxTxApp (`tests/tools/RxTxApp/`)
-Universal JSON-driven test vehicle. Max sessions: 180 video, 1024 audio, 180 ancillary, 180 fast-metadata (each direction).
+Universal JSON-driven test vehicle. Max sessions: 180 video, 1024 audio, 180 ancillary (fast metadata included) (each direction).
 
 JSON config directories: `loop_json/`, `audio_json/`, `native_af_xdp_json/`, `kernel_socket_json/`, `rss_json/`, `redundant_json/`
 

@@ -148,7 +148,7 @@ MT: rv_init_dma(0), succ, dma 0 lender id 0
 Below logs display the DMA usage information.
 
 ```text
-ST: RX_VIDEO_SESSION(1,0): pkts 2589325 by dma copy, dma busy 0.000000
+ST: RX_VIDEO_SESSION(1,0): pkts 2589325 by dma copy, dma busy 0.000000, flush timeouts 0
 ST: DMA(0), s 2589313 c 2589313 e 0 avg q 1
 ```
 

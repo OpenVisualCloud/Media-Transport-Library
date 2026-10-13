@@ -8,11 +8,11 @@ Depicted below are 2 use-case scenario:
 
 1. Synchronous playback scenario where output of a PC/Laptop is streamed via a sending device to the receiver.
 
-![MTL Appliance Use Case Image](png/mtl-appliance-use-case.png)
+![MTL Appliance Use Case Image](png/mtl-appliance-use-case.svg)
 
 2. Asynchronous playback - where the sending device is streaming a digital media generated (e.g framebuffer) / stored locally on the device to the receiver.
 
-![Desktop Streaming MTL Image](png/desktop-streaming-mtl.png)
+![Desktop Streaming MTL Image](png/desktop-streaming-mtl.svg)
 
 ## 2. Required Hardware
 

@@ -59,6 +59,15 @@ uint32_t ut30p_stat_busy(const ut30p_ctx* ctx);
 int ut30p_get_session_stats(ut30p_ctx* ctx, struct st30_rx_user_stats* stats);
 int ut30p_reset_session_stats(ut30p_ctx* ctx);
 
+/** The pipeline handle, for calling the public st*p API directly. */
+st30p_rx_handle ut30p_handle(ut30p_ctx* ctx);
+
+/** Force ctx->lc_destroying, as a *_free() in progress sets it. */
+void ut30p_force_destroying(ut30p_ctx* ctx);
+
+/** Wraps st30p_rx_get_queue_meta(), which no public header declares. */
+int ut30p_get_queue_meta(ut30p_ctx* ctx, struct st_queue_meta* meta);
+
 #ifdef __cplusplus
 }
 #endif

@@ -34,8 +34,7 @@ applyTo: "tests/integration_tests/**,.github/scripts/gtest.sh"
 | `St20_rx*` | ST2110-20 raw RX | ~2 min |
 | `St22*` | ST2110-22 compressed video | ~1 min |
 | `St30*` | ST2110-30 audio | ~1 min |
-| `St40*` | ST2110-40 ancillary | ~30s |
-| `St41*` | ST2110-41 fast metadata | ~30s |
+| `St40*` | ST2110-40 ancillary, incl. the ST2110-41 fast metadata opt-in | ~30s |
 | `Misc*` | Miscellaneous / utility | ~30s |
 | `Sch*` | Scheduler tests | ~1 min |
 | `Dma*` | DMA engine tests (need --dma_dev) | ~1 min |

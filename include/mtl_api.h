@@ -295,7 +295,7 @@ enum mtl_net_proto {
 enum mtl_transport_type {
   /** st2110 protocol transport */
   MTL_TRANSPORT_ST2110 = 0,
-  /** udp transport */
+  /** udp transport, unused since the user-space UDP stack was removed */
   MTL_TRANSPORT_UDP,
   /** max value of this enum */
   MTL_TRANSPORT_TYPE_MAX,
@@ -343,9 +343,9 @@ enum mtl_init_flag {
   /** Separated lcore for RX video(st2110-20/st2110-22) sessions. */
   MTL_FLAG_RX_SEPARATE_VIDEO_LCORE = (MTL_BIT64(2)),
   /**
-   * Enable migrate mode for rx video session if current LCORE is too busy to handle the
-   * rx video tasklet, the busy session may be migrated to a new LCORE.
-   * If not enable, rx video will always use static mapping based on quota.
+   * Enable migrate mode for tx video session if current LCORE is too busy to handle the
+   * tx video tasklet, the busy session may be migrated to a new LCORE.
+   * If not enable, tx video will always use static mapping based on quota.
    */
   MTL_FLAG_TX_VIDEO_MIGRATE = (MTL_BIT64(3)),
   /**
@@ -377,6 +377,7 @@ enum mtl_init_flag {
   MTL_FLAG_PTP_PI = (MTL_BIT64(9)),
   /**
    * Enable background lcore mode for MTL_TRANSPORT_UDP.
+   * Unused since the user-space UDP stack was removed.
    */
   MTL_FLAG_UDP_LCORE = (MTL_BIT64(10)),
   /**
