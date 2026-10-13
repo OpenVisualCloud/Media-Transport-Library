@@ -317,3 +317,125 @@ TEST(St20PipelineTxBlocking, DestroyEndsEveryBlockedGet) {
 
   ut20p_tx_ctx_destroy(ctx);
 }
+
+/* a put_frame_abort() frees a slot, so it must wake a get_frame()
+ * blocked on another app thread, as frame_done does. */
+TEST(St20PipelineTxBlocking, ReviewAbortWakesABlockedGet) {
+  ASSERT_EQ(ut20p_tx_init(), 0) << "EAL init failed";
+
+  constexpr int kFrameCnt = 1;
+  constexpr uint64_t kBlockTimeoutNs = 2ULL * 1000 * 1000 * 1000; /* 2 s */
+
+  ut20p_tx_ctx* ctx = ut20p_tx_ctx_create(kFrameCnt);
+  ASSERT_NE(ctx, nullptr);
+  ut20p_tx_ctx_enable_blocking(ctx, kBlockTimeoutNs);
+
+  struct st_frame* held = ut20p_tx_get_frame(ctx);
+  ASSERT_NE(held, nullptr);
+
+  struct st_frame* got = nullptr;
+  uint64_t elapsed_ns = 0;
+  std::thread getter([&]() {
+    const auto t0 = std::chrono::steady_clock::now();
+    got = ut20p_tx_get_frame(ctx); /* no FREE slot -> wait path */
+    elapsed_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                     std::chrono::steady_clock::now() - t0)
+                     .count();
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(80));
+  ASSERT_EQ(ut20p_tx_put_frame_abort(ctx, held), 0);
+  getter.join();
+
+  EXPECT_NE(got, nullptr) << "the aborted slot was never claimed";
+  EXPECT_LT(elapsed_ns, kBlockTimeoutNs / 2)
+      << "the blocked get only saw the aborted slot at its timeout: no wake";
+
+  if (got) ut20p_tx_put_frame_abort(ctx, got);
+  ut20p_tx_ctx_destroy(ctx);
+}
+
+/* destroy with eight blocked getters, while a frame_done signal
+ * and a wake_block() race the destroy broadcast. Every getter must end
+ * promptly with NULL and with its claim released. */
+TEST(St20PipelineTxBlocking, ReviewDestroyEndsEightBlockedGetsUnderWakeRace) {
+  ASSERT_EQ(ut20p_tx_init(), 0) << "EAL init failed";
+
+  constexpr int kFrameCnt = 1;
+  constexpr int kGetters = 8;
+  constexpr uint64_t kBlockTimeoutNs = 2ULL * 1000 * 1000 * 1000; /* 2 s */
+
+  ut20p_tx_ctx* ctx = ut20p_tx_ctx_create(kFrameCnt);
+  ASSERT_NE(ctx, nullptr);
+  ut20p_tx_ctx_enable_blocking(ctx, kBlockTimeoutNs);
+
+  struct st_frame* held = ut20p_tx_get_frame(ctx);
+  ASSERT_NE(held, nullptr);
+
+  struct st_frame* frames[kGetters] = {};
+  uint64_t elapsed_ns[kGetters] = {};
+  std::thread getters[kGetters];
+  for (int i = 0; i < kGetters; i++) {
+    getters[i] = std::thread([&, i]() {
+      const auto t0 = std::chrono::steady_clock::now();
+      frames[i] = ut20p_tx_get_frame(ctx);
+      elapsed_ns[i] = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                          std::chrono::steady_clock::now() - t0)
+                          .count();
+    });
+  }
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  std::thread waker([&]() { ut20p_tx_wake_block(ctx); });
+  std::thread signaller([&]() { ut20p_tx_frame_free_wake(ctx); });
+  ut20p_tx_begin_destroy(ctx);
+  waker.join();
+  signaller.join();
+  for (auto& t : getters) t.join();
+
+  for (int i = 0; i < kGetters; i++) {
+    EXPECT_EQ(frames[i], nullptr) << "getter " << i;
+    EXPECT_LT(elapsed_ns[i], kBlockTimeoutNs / 2) << "getter " << i << " waited out";
+  }
+  ut20p_tx_ctx_destroy(ctx);
+}
+
+/* a put_frame() that rejects a too-large user_meta puts the slot
+ * back to FREE, so it must also wake a get_frame() blocked on another thread. */
+TEST(St20PipelineTxBlocking, ReviewRejectedPutWakesABlockedGet) {
+  ASSERT_EQ(ut20p_tx_init(), 0) << "EAL init failed";
+
+  constexpr int kFrameCnt = 1;
+  constexpr uint64_t kBlockTimeoutNs = 2ULL * 1000 * 1000 * 1000; /* 2 s */
+
+  ut20p_tx_ctx* ctx = ut20p_tx_ctx_create(kFrameCnt);
+  ASSERT_NE(ctx, nullptr);
+  ut20p_tx_ctx_enable_blocking(ctx, kBlockTimeoutNs);
+
+  struct st_frame* held = ut20p_tx_get_frame(ctx);
+  ASSERT_NE(held, nullptr);
+
+  struct st_frame* got = nullptr;
+  uint64_t elapsed_ns = 0;
+  std::thread getter([&]() {
+    const auto t0 = std::chrono::steady_clock::now();
+    got = ut20p_tx_get_frame(ctx);
+    elapsed_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                     std::chrono::steady_clock::now() - t0)
+                     .count();
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(80));
+  /* the harness slots have user_meta_buffer_size 0, so any meta is too large */
+  static char meta[16];
+  held->user_meta = meta;
+  held->user_meta_size = sizeof(meta);
+  ASSERT_LT(ut20p_tx_put_frame(ctx, held), 0);
+  getter.join();
+
+  EXPECT_NE(got, nullptr) << "the slot freed by the rejected put was never claimed";
+  EXPECT_LT(elapsed_ns, kBlockTimeoutNs / 2)
+      << "the blocked get only saw the freed slot at its timeout: no wake";
+
+  if (got) ut20p_tx_put_frame_abort(ctx, got);
+  ut20p_tx_ctx_destroy(ctx);
+}

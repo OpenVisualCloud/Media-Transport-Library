@@ -59,6 +59,10 @@ void ut20p_begin_destroy(ut20p_ctx* ctx);
  */
 void ut20p_ctx_set_internal_converter(ut20p_ctx* ctx);
 
+/** Review hook: call hook(arg) inside the internal converter's convert_func,
+ *  i.e. after get_frame claimed the frame and before it returns. NULL clears. */
+void ut20p_set_convert_hook(void (*hook)(void* arg), void* arg);
+
 /** Inject one synthetic frame into the pipeline as if the transport just
  *  completed it.  status is ST_FRAME_STATUS_COMPLETE or _CORRUPTED.
  *  Returns 0 on accept, -EBUSY when no free framebuf (drives the

@@ -65,6 +65,11 @@ void ut40p_tx_force_destroying(ut40p_tx_ctx* ctx);
 /** The first two steps of st40p_tx_free(): begin_destroy, then wake_on_destroy. */
 void ut40p_tx_begin_destroy(ut40p_tx_ctx* ctx);
 
+/* Forced-interleaving helpers of the wake_block() review cases. */
+void ut40p_tx_review_lock_wake_mutex(ut40p_tx_ctx* ctx);
+void ut40p_tx_review_wake_block_locked(ut40p_tx_ctx* ctx);
+void ut40p_tx_review_unlock_wake_mutex(ut40p_tx_ctx* ctx);
+
 int ut40p_tx_framebuff_cnt(const ut40p_tx_ctx* ctx);
 
 /* producer (app) side */

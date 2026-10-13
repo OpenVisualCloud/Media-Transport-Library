@@ -123,6 +123,10 @@ void ut30p_tx_set_notify_frame_done(ut30p_tx_ctx* ctx,
                                     int (*cb)(void* priv, struct st30_frame* frame),
                                     void* priv);
 
+/* review hooks */
+void ut30p_tx_lock_block_mutex(ut30p_tx_ctx* ctx);
+void ut30p_tx_unlock_block_mutex(ut30p_tx_ctx* ctx);
+
 #ifdef __cplusplus
 }
 #endif

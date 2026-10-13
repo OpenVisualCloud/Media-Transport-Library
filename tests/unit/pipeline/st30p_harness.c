@@ -207,3 +207,20 @@ void ut30p_force_destroying(ut30p_ctx* ctx) {
 int ut30p_get_queue_meta(ut30p_ctx* ctx, struct st_queue_meta* meta) {
   return st30p_rx_get_queue_meta(&ctx->pipeline, meta);
 }
+
+/* review hooks: force a lock-order interleaving around block_wake_mutex */
+void ut30p_lock_block_mutex(ut30p_ctx* ctx) {
+  mt_pthread_mutex_lock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut30p_unlock_block_mutex(ut30p_ctx* ctx) {
+  mt_pthread_mutex_unlock(&ctx->pipeline.block_wake_mutex);
+}
+
+/* The body of rx_st30p_block_wake() (what st30p_rx_wake_block() runs), for a
+ * caller that already holds block_wake_mutex: it models a waiter that the
+ * broadcast woke but that the scheduler has not run yet. */
+void ut30p_post_wake_token_locked(ut30p_ctx* ctx) {
+  ctx->pipeline.block_wake_pending = true;
+  mt_pthread_cond_broadcast(&ctx->pipeline.block_wake_cond);
+}

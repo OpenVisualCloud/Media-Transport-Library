@@ -293,3 +293,40 @@ TEST(St40PipelineTxBlocking, DestroyEndsEveryBlockedGet) {
 
   ut40p_tx_ctx_destroy(ctx);
 }
+
+/* a put_frame_abort() frees a slot, so it must wake a get_frame()
+ * blocked on another app thread, as frame_done does. */
+TEST(St40PipelineTxBlocking, ReviewAbortWakesABlockedGet) {
+  ASSERT_EQ(ut40p_tx_init(), 0) << "EAL init failed";
+
+  constexpr int kFrameCnt = 1;
+  constexpr uint64_t kBlockTimeoutNs = 2ULL * 1000 * 1000 * 1000; /* 2 s */
+
+  ut40p_tx_ctx* ctx = ut40p_tx_ctx_create(kFrameCnt);
+  ASSERT_NE(ctx, nullptr);
+  ut40p_tx_ctx_enable_blocking(ctx, kBlockTimeoutNs);
+
+  struct st40_frame_info* held = ut40p_tx_get_frame(ctx);
+  ASSERT_NE(held, nullptr);
+
+  struct st40_frame_info* got = nullptr;
+  uint64_t elapsed_ns = 0;
+  std::thread getter([&]() {
+    const auto t0 = std::chrono::steady_clock::now();
+    got = ut40p_tx_get_frame(ctx); /* no FREE slot -> wait path */
+    elapsed_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                     std::chrono::steady_clock::now() - t0)
+                     .count();
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(80));
+  ASSERT_EQ(ut40p_tx_put_frame_abort(ctx, held), 0);
+  getter.join();
+
+  EXPECT_NE(got, nullptr) << "the aborted slot was never claimed";
+  EXPECT_LT(elapsed_ns, kBlockTimeoutNs / 2)
+      << "the blocked get only saw the aborted slot at its timeout: no wake";
+
+  if (got) ut40p_tx_put_frame_abort(ctx, got);
+  ut40p_tx_ctx_destroy(ctx);
+}

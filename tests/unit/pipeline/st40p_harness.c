@@ -136,6 +136,37 @@ void ut40p_begin_destroy(ut40p_ctx* ctx) {
   rx_st40p_block_wake(p);
 }
 
+/* Forced-interleaving helpers of the wake_block() review cases. */
+void ut40p_review_set_ready_no_notify(ut40p_ctx* ctx, int i, void* udw_addr) {
+  struct st40p_rx_frame* fb = &ctx->framebuffs[i];
+  fb->frame_info.udw_buff_addr = (uint8_t*)udw_addr;
+  atomic_store_explicit(&fb->stat, ST40P_RX_FRAME_READY, memory_order_release);
+}
+
+/* The body of rx_st40p_block_wake() (what st40p_rx_wake_block() runs), but
+ * block_wake_mutex stays locked so a woken waiter cannot run yet. */
+void ut40p_review_wake_block_hold_mutex(ut40p_ctx* ctx) {
+  struct st40p_rx_ctx* p = &ctx->pipeline;
+  mt_pthread_mutex_lock(&p->block_wake_mutex);
+  p->block_wake_pending = true;
+  mt_pthread_cond_broadcast(&p->block_wake_cond);
+}
+
+/* A second wake_block() body while the mutex is still held by the caller. */
+void ut40p_review_wake_block_again_locked(ut40p_ctx* ctx) {
+  struct st40p_rx_ctx* p = &ctx->pipeline;
+  p->block_wake_pending = true;
+  mt_pthread_cond_broadcast(&p->block_wake_cond);
+}
+
+void ut40p_review_lock_wake_mutex(ut40p_ctx* ctx) {
+  mt_pthread_mutex_lock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut40p_review_unlock_wake_mutex(ut40p_ctx* ctx) {
+  mt_pthread_mutex_unlock(&ctx->pipeline.block_wake_mutex);
+}
+
 int ut40p_inject_frame(ut40p_ctx* ctx, void* udw_addr, enum st_frame_status status,
                        bool seq_discont, uint32_t timestamp) {
   struct st40_rx_frame_meta meta;

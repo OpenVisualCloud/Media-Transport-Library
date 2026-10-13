@@ -106,6 +106,12 @@ void ut22p_force_destroying(ut22p_ctx* ctx);
  */
 st22p_rx_handle ut22p_rx_create(struct st22p_rx_ops* ops);
 
+/* review helpers: a ctx the real st22p_rx_free() can free, and a stubbed
+ * st22_rx_free() that delivers one frame before it "detaches" the transport. */
+st22p_rx_handle ut22p_review_create_decoder_ctx(int framebuff_cnt);
+void ut22p_review_deliver_frame_in_rx_free(st22p_rx_handle handle);
+int ut22p_review_rx_free_calls_get(void);
+
 #ifdef __cplusplus
 }
 #endif

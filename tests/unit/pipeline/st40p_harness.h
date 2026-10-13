@@ -45,6 +45,13 @@ void ut40p_wake_block(ut40p_ctx* ctx);
 /** The first two steps of st40p_rx_free(): begin_destroy, then wake_on_destroy. */
 void ut40p_begin_destroy(ut40p_ctx* ctx);
 
+/* Forced-interleaving helpers of the wake_block() review cases. */
+void ut40p_review_set_ready_no_notify(ut40p_ctx* ctx, int i, void* udw_addr);
+void ut40p_review_wake_block_hold_mutex(ut40p_ctx* ctx);
+void ut40p_review_wake_block_again_locked(ut40p_ctx* ctx);
+void ut40p_review_lock_wake_mutex(ut40p_ctx* ctx);
+void ut40p_review_unlock_wake_mutex(ut40p_ctx* ctx);
+
 /** Inject one synthetic ANC frame as if the transport just completed it.
  *  udw_addr is any non-NULL sentinel pointer identifying the transport slot.
  *  Returns 0 on accept, -EBUSY when no free framebuf (drives the

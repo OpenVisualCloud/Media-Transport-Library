@@ -116,6 +116,21 @@ void ut40p_tx_begin_destroy(ut40p_tx_ctx* ctx) {
   tx_st40p_block_wake(p);
 }
 
+/* Forced-interleaving helpers of the wake_block() review cases. */
+void ut40p_tx_review_lock_wake_mutex(ut40p_tx_ctx* ctx) {
+  mt_pthread_mutex_lock(&ctx->pipeline.block_wake_mutex);
+}
+
+/* The body of st40p_tx_wake_block(), with block_wake_mutex held by the caller. */
+void ut40p_tx_review_wake_block_locked(ut40p_tx_ctx* ctx) {
+  ctx->pipeline.wake_block_cnt++;
+  mt_pthread_cond_signal(&ctx->pipeline.block_wake_cond);
+}
+
+void ut40p_tx_review_unlock_wake_mutex(ut40p_tx_ctx* ctx) {
+  mt_pthread_mutex_unlock(&ctx->pipeline.block_wake_mutex);
+}
+
 int ut40p_tx_framebuff_cnt(const ut40p_tx_ctx* ctx) {
   return ctx->framebuff_cnt;
 }

@@ -80,6 +80,11 @@ void ut30p_force_destroying(ut30p_ctx* ctx);
 /** Wraps st30p_rx_get_queue_meta(), which no public header declares. */
 int ut30p_get_queue_meta(ut30p_ctx* ctx, struct st_queue_meta* meta);
 
+/* review hooks */
+void ut30p_lock_block_mutex(ut30p_ctx* ctx);
+void ut30p_unlock_block_mutex(ut30p_ctx* ctx);
+void ut30p_post_wake_token_locked(ut30p_ctx* ctx);
+
 #ifdef __cplusplus
 }
 #endif

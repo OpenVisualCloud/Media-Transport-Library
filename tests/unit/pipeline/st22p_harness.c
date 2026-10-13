@@ -17,12 +17,17 @@
  * distinctly named local stub at compile time so the two objects cannot both define it
  * as a global symbol. */
 #define st22_rx_put_framebuff ut22p_stub_put_framebuff
+/* review: route the two teardown calls of st22p_rx_free() through stubs */
+#define st22_rx_free ut22p_stub_rx_free
+#define st22_put_decoder ut22p_stub_put_decoder
 #undef MTL_HAS_USDT
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #include "st2110/pipeline/st22_pipeline_rx.c"
 #pragma GCC diagnostic pop
 #undef st22_rx_put_framebuff
+#undef st22_rx_free
+#undef st22_put_decoder
 
 #include "common/ut_common.h"
 
@@ -204,4 +209,86 @@ st22p_rx_handle ut22p_rx_create(struct st22p_rx_ops* ops) {
   impl->inf[MTL_PORT_P].socket_id = rte_socket_id();
   snprintf(ops->port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut22p_port");
   return st22p_rx_create(impl, ops);
+}
+
+/* ---- review: drive the real st22p_rx_free() ---- */
+
+static struct st22p_rx_ctx* ut22p_review_free_ctx;
+static int ut22p_review_rx_free_calls;
+static int ut22p_review_put_decoder_calls;
+
+/* The transport stays attached until st22_rx_free() detaches it, so a frame
+ * can complete in the window just before the detach. Deliver one here. */
+int ut22p_stub_rx_free(st22_rx_handle handle) {
+  (void)handle;
+  ut22p_review_rx_free_calls++;
+  if (ut22p_review_free_ctx) {
+    struct st22_rx_frame_meta meta;
+    memset(&meta, 0, sizeof(meta));
+    meta.frame_total_size = 1;
+    meta.status = ST_FRAME_STATUS_COMPLETE;
+    static uint8_t dummy;
+    rx_st22p_frame_ready(ut22p_review_free_ctx, &dummy, &meta);
+  }
+  return 0;
+}
+
+/* The plugin free_session(): nothing to stop in the harness. */
+int ut22p_stub_put_decoder(struct mtl_main_impl* impl,
+                           struct st22_decode_session_impl* decoder) {
+  (void)impl;
+  (void)decoder;
+  ut22p_review_put_decoder_calls++;
+  return 0;
+}
+
+static struct st22_decode_dev_impl ut22p_review_dev;
+
+/* A ctx in rte memory, as st22p_rx_create() makes it, in decoder mode with
+ * both block gets on, so the real st22p_rx_free() can free it. */
+st22p_rx_handle ut22p_review_create_decoder_ctx(int framebuff_cnt) {
+  struct st22p_rx_ctx* p = mt_rte_zmalloc_socket(sizeof(*p), rte_socket_id());
+  if (!p) return NULL;
+  p->framebuffs =
+      mt_rte_zmalloc_socket(sizeof(*p->framebuffs) * framebuff_cnt, rte_socket_id());
+  if (!p->framebuffs) {
+    mt_rte_free(p);
+    return NULL;
+  }
+  for (int i = 0; i < framebuff_cnt; i++) {
+    p->framebuffs[i].stat = ST22P_RX_FRAME_FREE;
+    p->framebuffs[i].idx = i;
+    p->framebuffs[i].src.priv = &p->framebuffs[i];
+    p->framebuffs[i].dst.priv = &p->framebuffs[i];
+  }
+  static struct mtl_main_impl impl;
+  impl.type = MT_HANDLE_MAIN;
+  p->impl = &impl;
+  p->type = MT_ST22_HANDLE_PIPELINE_RX;
+  p->framebuff_cnt = framebuff_cnt;
+  p->derive = false;
+  p->ready = true;
+  p->transport = (st22_rx_handle)(uintptr_t)0x1;
+  p->wake_on_destroy = (void (*)(void*))rx_st22p_block_wake_all;
+  struct st22_decode_session_impl* session = &ut22p_review_dev.sessions[0];
+  session->parent = &ut22p_review_dev;
+  p->decode_impl = session;
+  mt_pthread_mutex_init(&p->block_wake_mutex, NULL);
+  mt_pthread_cond_wait_init(&p->block_wake_cond);
+  p->block_timeout_ns = NS_PER_S;
+  p->block_get = true;
+  mt_pthread_mutex_init(&p->decode_block_wake_mutex, NULL);
+  mt_pthread_cond_wait_init(&p->decode_block_wake_cond);
+  p->decode_block_timeout_ns = NS_PER_S;
+  p->decode_block_get = true;
+  return p;
+}
+
+/* Make the stubbed st22_rx_free() deliver one frame to this ctx. */
+void ut22p_review_deliver_frame_in_rx_free(st22p_rx_handle handle) {
+  ut22p_review_free_ctx = handle;
+}
+
+int ut22p_review_rx_free_calls_get(void) {
+  return ut22p_review_rx_free_calls;
 }

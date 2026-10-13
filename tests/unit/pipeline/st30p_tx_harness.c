@@ -244,3 +244,12 @@ void ut30p_tx_set_notify_frame_done(ut30p_tx_ctx* ctx,
   ctx->pipeline.ops.notify_frame_done = cb;
   ctx->pipeline.ops.priv = priv;
 }
+
+/* review hooks: force a lock-order interleaving around block_wake_mutex */
+void ut30p_tx_lock_block_mutex(ut30p_tx_ctx* ctx) {
+  mt_pthread_mutex_lock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut30p_tx_unlock_block_mutex(ut30p_tx_ctx* ctx) {
+  mt_pthread_mutex_unlock(&ctx->pipeline.block_wake_mutex);
+}
