@@ -1244,11 +1244,11 @@ uint32_t ut_txv_pacing_warm_pkts(const ut_txv_ctx* ctx) {
 }
 
 long double ut_txv_rl_drain(const ut_txv_ctx* ctx, int port) {
-  return ctx->session.pacing.rl_drain[port];
+  return ctx->session.rl_plan[port].pad_ns;
 }
 
 long double ut_txv_rl_credit(const ut_txv_ctx* ctx, int port) {
-  return ctx->session.pacing.rl_credit[port];
+  return ctx->session.rl_plan[port].bucket_ns;
 }
 
 uint64_t ut_txv_round_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate) {

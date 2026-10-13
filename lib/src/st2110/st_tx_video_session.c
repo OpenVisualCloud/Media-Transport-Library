@@ -375,8 +375,8 @@ static void tv_set_measured_pad_interval(struct st_tx_video_session_impl* s,
   /* the shaper drains a pad by its bytes: training measured the mean of a frame's pads,
    * the pre-arm queues NORMAL ones */
   for (int i = 0; i < total; i++) bytes += s->st20_pkt_info[tv_train_pad_type(s, i)].size;
-  s->pacing.rl_drain[s_port] = s->pacing.trs * pad_interval / (pad_interval + 1) *
-                               normal * (total + remain) / bytes;
+  s->rl_plan[s_port].pad_ns = s->pacing.trs * pad_interval / (pad_interval + 1) * normal *
+                              (total + remain) / bytes;
 }
 
 /* ice_round_to_num() of the DPDK ice base code: nearest multiple of r */
@@ -398,6 +398,46 @@ static uint32_t tv_rl_burst_size(struct mtl_main_impl* impl, enum mtl_port port)
       return RTE_MIN(tv_ice_round(size, 1024), 2047 * 1024);
     default:
       return 0;
+  }
+}
+
+/* Plans the RL pre-arm of each port from the pad_ns training measured. Runs after
+ * tv_init_hw() built the trim pads, once warm_pkts and the pacing ways are final. A port
+ * without a plan holds packet 0 until its target. */
+static void tv_rl_plan_init(struct mtl_main_impl* impl,
+                            struct st_tx_video_session_impl* s) {
+  struct st_tx_video_pacing* pacing = &s->pacing;
+  int idx = s->idx;
+
+  for (int i = 0; i < s->ops.num_port; i++) {
+    struct st_tx_video_rl_plan* plan = &s->rl_plan[i];
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
+    uint32_t burst_size = tv_rl_burst_size(impl, port);
+    bool armed = pacing->warm_pkts && s->pacing_way[i] == ST21_TX_PACING_WAY_RL &&
+                 plan->pad_ns && burst_size &&
+                 s->trim_pad[i][ST_TX_VIDEO_RL_TRIM_PAD_COARSE];
+
+    if (armed) {
+      plan->bucket_ns =
+          plan->pad_ns * burst_size / s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+      /* a full-window plan must fit half the ring, clear of the PMD's lazy cleanup */
+      long double window = pacing->warm_pkts * pacing->trs + plan->bucket_ns +
+                           ST_TX_VIDEO_RL_LAUNCH_MARGIN_NS;
+      armed = window / plan->pad_ns + 1 <= mt_if_nb_tx_desc(impl, port) / 2;
+    }
+    if (!armed) {
+      plan->pad_ns = 0;
+      plan->bucket_ns = 0;
+      plan->armed = false;
+      if (s->pacing_way[i] == ST21_TX_PACING_WAY_RL)
+        info("%s[%02d], port %d no rl plan, holds packet 0\n", __func__, idx, i);
+      continue;
+    }
+    plan->pad_size = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+    plan->trim_pads = st_tx_video_rl_trim_pads(plan->pad_size);
+    plan->armed = true;
+    info("%s[%02d], port %d rl plan, pad_ns %Lf bucket_ns %Lf burst size %u\n", __func__,
+         idx, i, plan->pad_ns, plan->bucket_ns, burst_size);
   }
 }
 
@@ -654,32 +694,7 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     pacing->warm_pkts = 0; /* no need warmup for wide */
     info("%s[%02d], wide pacing\n", __func__, idx);
   }
-  /* no plan means the transmitter holds packet 0 until its target */
-  for (int i = 0; i < num_port; i++) {
-    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
-    uint32_t burst_size = tv_rl_burst_size(impl, port);
-    bool plan = pacing->warm_pkts && s->pacing_way[i] == ST21_TX_PACING_WAY_RL &&
-                pacing->rl_drain[i] && burst_size &&
-                s->trim_pad[i][ST_TX_VIDEO_RL_TRIM_PAD_COARSE];
-
-    if (plan) {
-      pacing->rl_credit[i] =
-          pacing->rl_drain[i] * burst_size / s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
-      /* a full-window plan must fit half the ring, clear of the PMD's lazy cleanup */
-      long double window = pacing->warm_pkts * pacing->trs + pacing->rl_credit[i] +
-                           ST_TX_VIDEO_RL_LAUNCH_MARGIN_NS;
-      plan = window / pacing->rl_drain[i] + 1 <= mt_if_nb_tx_desc(impl, port) / 2;
-    }
-    if (plan) {
-      info("%s[%02d], port %d rl plan, rl_drain %Lf rl_credit %Lf burst size %u\n",
-           __func__, idx, i, pacing->rl_drain[i], pacing->rl_credit[i], burst_size);
-    } else {
-      pacing->rl_drain[i] = 0;
-      pacing->rl_credit[i] = 0;
-      if (s->pacing_way[i] == ST21_TX_PACING_WAY_RL)
-        info("%s[%02d], port %d no rl plan, holds packet 0\n", __func__, idx, i);
-    }
-  }
+  tv_rl_plan_init(impl, s);
   info("%s[%02d], trs %Lf trOffset %Lf vrx %u warm_pkts %u frame time %Lfms fps %f\n",
        __func__, idx, pacing->trs, pacing->tr_offset, pacing->vrx, pacing->warm_pkts,
        pacing->frame_time / NS_PER_MS, st_frame_rate(s->ops.fps));

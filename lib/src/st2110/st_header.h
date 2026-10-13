@@ -167,9 +167,6 @@ struct st_tx_video_pacing {
   long double frame_idle_time;
   long double reactive;
   float pad_interval; /* padding pkt interval(pkts level) for RL pacing */
-  /* per port RL warm-up plan in ns, 0 without one */
-  long double rl_drain[MTL_SESSION_PORT_MAX];  /* shaper time of one NORMAL pad */
-  long double rl_credit[MTL_SESSION_PORT_MAX]; /* shaper time of one full-bucket burst */
 
   uint64_t cur_epochs; /* epoch of current frame */
   /* timestamp for rtp header */
@@ -392,6 +389,9 @@ struct st_tx_video_session_impl {
   uint32_t stat_max_notify_frame_us;
   double stat_cpu_busy_score;
   struct mt_stat_u64 stat_time;
+
+  /* cold, read once a frame, so it sits last, off the hot cache lines */
+  struct st_tx_video_rl_plan rl_plan[MTL_SESSION_PORT_MAX];
 };
 
 struct st_tx_video_sessions_mgr {

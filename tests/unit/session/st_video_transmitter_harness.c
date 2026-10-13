@@ -158,11 +158,11 @@ static uint16_t ut_trs_txq_burst_mock(struct mt_txq_entry* entry,
       ctx->pad_send_count++;
       ctx->last_pad_send_tsc = ctx->last_tsc;
       if (!train->closed) {
-        /* an idle shaper refills its bucket: at most rl_credit ahead of arrival */
-        long double start = ctx->last_tsc - ctx->session.pacing.rl_credit[port];
+        /* an idle shaper refills its bucket: at most bucket_ns ahead of arrival */
+        long double start = ctx->last_tsc - ctx->session.rl_plan[port].bucket_ns;
         if (!train->pads || train->drained_tsc < start) train->drained_tsc = start;
         /* a pad drains by its bytes */
-        train->drained_tsc += ctx->session.pacing.rl_drain[port] * m->pkt_len /
+        train->drained_tsc += ctx->session.rl_plan[port].pad_ns * m->pkt_len /
                               ctx->session.st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
         train->pads++;
       }
@@ -337,11 +337,16 @@ void ut_trs_set_target_tsc_port(ut_trs_ctx* ctx, int port, uint64_t target_tsc) 
 }
 
 void ut_trs_set_drain(ut_trs_ctx* ctx, int port, long double drain_ns) {
-  ctx->session.pacing.rl_drain[port] = drain_ns;
+  struct st_tx_video_rl_plan* plan = &ctx->session.rl_plan[port];
+
+  plan->pad_ns = drain_ns;
+  plan->pad_size = ctx->session.st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+  plan->trim_pads = st_tx_video_rl_trim_pads(plan->pad_size);
+  plan->armed = drain_ns != 0;
 }
 
 void ut_trs_set_credit(ut_trs_ctx* ctx, int port, long double credit_ns) {
-  ctx->session.pacing.rl_credit[port] = credit_ns;
+  ctx->session.rl_plan[port].bucket_ns = credit_ns;
 }
 
 void ut_trs_set_mock_tsc_script(ut_trs_ctx* ctx, const uint64_t* values, int count) {
@@ -382,7 +387,7 @@ long double ut_trs_launch_margin_ns(void) {
 }
 
 long double ut_trs_fine_trim_ns(const ut_trs_ctx* ctx, int port) {
-  return ctx->session.pacing.rl_drain[port] * ST_TX_VIDEO_RL_TRIM_FINE / UT_TRS_PAD_SIZE;
+  return ctx->session.rl_plan[port].pad_ns * ST_TX_VIDEO_RL_TRIM_FINE / UT_TRS_PAD_SIZE;
 }
 
 uint16_t ut_trs_trim_pad_refcnt(const ut_trs_ctx* ctx, int j) {

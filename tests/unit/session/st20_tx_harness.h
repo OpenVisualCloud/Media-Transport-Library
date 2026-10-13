@@ -241,7 +241,7 @@ int ut_txv_init_rl_pacing(ut_txv_ctx* ctx, int num_port, uint16_t user_pad_inter
 void ut_txv_set_ice_pf(ut_txv_ctx* ctx, int port, uint32_t rl_burst_size);
 long double ut_txv_pacing_trs(const ut_txv_ctx* ctx);
 uint32_t ut_txv_pacing_warm_pkts(const ut_txv_ctx* ctx);
-/* pacing->rl_drain / rl_credit of a session port, in ns */
+/* the rl_plan[] pad_ns / bucket_ns of a session port, in ns */
 long double ut_txv_rl_drain(const ut_txv_ctx* ctx, int port);
 long double ut_txv_rl_credit(const ut_txv_ctx* ctx, int port);
 /* Drives st_tai_round_to_media_clk_ns() -- the same media-clock snap

@@ -33,6 +33,15 @@ enum st_tx_video_rl_trim {
   ST_TX_VIDEO_RL_TRIM_PAD_MAX,
 };
 
+/* the RL pre-arm plan of a port, set by tv_rl_plan_init() */
+struct st_tx_video_rl_plan {
+  long double pad_ns;    /* shaper time of one NORMAL pad, 0 without a plan */
+  long double bucket_ns; /* shaper time of one full-bucket burst */
+  int64_t trim_pads;     /* st_tx_video_rl_trim_pads() of pad_size */
+  uint16_t pad_size;     /* bytes of the NORMAL pad */
+  bool armed;            /* false: packet 0 is held until its target */
+};
+
 /* a pre-arm burst of n NORMAL pads, the first coarse of them TRIM_COARSE bytes short and
  * the next fine ones TRIM_FINE bytes short */
 struct st_tx_video_rl_burst {

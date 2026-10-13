@@ -23,22 +23,22 @@ void ut_trs_set_trs(ut_trs_ctx* ctx, long double trs_ns);
 void ut_trs_set_warm_pkts_cap(ut_trs_ctx* ctx, uint32_t warm_pkts_cap);
 void ut_trs_set_target_tsc(ut_trs_ctx* ctx, uint64_t target_tsc);
 void ut_trs_set_target_tsc_port(ut_trs_ctx* ctx, int port, uint64_t target_tsc);
-/* pacing->rl_drain / rl_credit of a session port, in ns */
+/* the rl_plan[] pad_ns / bucket_ns of a session port, in ns; a drain arms the plan */
 void ut_trs_set_drain(ut_trs_ctx* ctx, int port, long double drain_ns);
 void ut_trs_set_credit(ut_trs_ctx* ctx, int port, long double credit_ns);
 
 void ut_trs_set_mock_tsc_script(ut_trs_ctx* ctx, const uint64_t* values, int count);
 
-/* the trs-counted warm-up of a port without a plan (rl_drain 0) */
+/* the trs-counted warm-up of a port without a plan */
 void ut_trs_warm_up(ut_trs_ctx* ctx);
-/* the pad plan of a port with rl_drain / rl_credit set; false: hold packet 0 */
+/* the pad plan of a port with a drain and credit set; false: hold packet 0 */
 bool ut_trs_pre_arm(ut_trs_ctx* ctx);
 bool ut_trs_pre_arm_port(ut_trs_ctx* ctx, int port);
 
 /* When the shaper starts the first real packet of the port: the later of when it was
  * queued (without one yet, the last tsc read) and the drain end of the pads accepted
- * ahead of it, drained = max(drained, tsc - rl_credit) + rl_drain per pad, a token
- * bucket rl_credit deep. It reads the same rl_drain / rl_credit the plan uses, so it
+ * ahead of it, drained = max(drained, tsc - bucket_ns) + pad_ns per pad, a token
+ * bucket bucket_ns deep. It reads the same pad_ns / bucket_ns the plan uses, so it
  * checks the plan arithmetic, not those values. */
 long double ut_trs_modeled_launch_tsc(const ut_trs_ctx* ctx, int port);
 /* ST_TX_VIDEO_RL_LAUNCH_MARGIN_NS: where the plan puts packet 0 past its target */

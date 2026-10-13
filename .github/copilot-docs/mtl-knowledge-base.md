@@ -438,9 +438,9 @@ pacing->vrx -= (s->bulk - 1); /* compensate for bulk */
 | `ST20_TX_FLAG_DISABLE_BULK` | App can override to bulk=1 |
 
 ### Warm-Up Padding
-At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pads (`mt_build_pad()`, no RTP header). What follows depends on whether `tv_init_pacing()` planned the port: `rl_drain` ≠ 0, which stays 0 otherwise.
+At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pads (`mt_build_pad()`, no RTP header). What follows depends on whether `tv_rl_plan_init()` planned the port: `s->rl_plan[port].armed` (`struct st_tx_video_rl_plan`, which also keeps `pad_size` and `trim_pads`; `pad_ns` and `bucket_ns` are 0 without a plan).
 - A plan needs both inputs below, and the trim pads `tv_init_trim_pads()` builds only on an RL port whose NORMAL pkt is at least 128 B, so a 64 B cut leaves a frame:
-  - `rl_drain` = `trs`·pi/(pi+1), the shaper time of the mean training pad at that port's own
+  - `pad_ns` = `trs`·pi/(pi+1), the shaper time of the mean training pad at that port's own
     measured `pad_interval` pi (trained or pre-trained, `tv_set_measured_pad_interval()`), scaled
     to a NORMAL pad by bytes: training sends a frame's NORMAL and EXTRA pads (`tv_train_pad_type()`,
     EXTRA 6 bytes longer), the pre-arm NORMAL ones. Unscaled, 1080p25 BPM (share 0.99881) launched
@@ -449,14 +449,14 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
     ~7.5 ms at 2048 and 1080p59.94): the pre-arm and the WAIT_TARGET hold both assume an idle queue.
     Untrained rates only. A user `ops.pad_interval` or the static table gives none;
     `pacing->pad_interval` keeps only the last port's pi.
-  - `rl_credit` = `rl_drain`·B/S, the pads the full burst bucket B sends at line rate. `tv_rl_burst_size()`: iavf VF 2048 (the patched kernel ice, already required for RL); DPDK ice PF only an explicit `rl_burst_size`, as `ice_cfg_rl_burst_size()` programs it (DPDK's own default is 15 KB); any other driver, native AF_XDP included, unknown.
+  - `bucket_ns` = `pad_ns`·B/S, the pads the full burst bucket B sends at line rate. `tv_rl_burst_size()`: iavf VF 2048 (the patched kernel ice, already required for RL); DPDK ice PF only an explicit `rl_burst_size`, as `ice_cfg_rl_burst_size()` programs it (DPDK's own default is 15 KB); any other driver, native AF_XDP included, unknown.
 - With a plan, `video_trs_rl_pre_arm()` queues pads the shaper finishes draining at the target and packet 0 follows them to the NIC in the same pass, so the shaper, not the tasklet, sets its launch.
-- The pads cover `(target + ST_TX_VIDEO_RL_LAUNCH_MARGIN_NS − now) + rl_credit`: `ceil()` NORMAL
+- The pads cover `(target + ST_TX_VIDEO_RL_LAUNCH_MARGIN_NS − now) + bucket_ns`: `ceil()` NORMAL
   pads, the last burst holding the ≤ S/64 + 8 pads that take the surplus as cuts of 64 or 8 bytes
   (cut rounded down). `st_tx_video_rl_next_burst()` in `st_tx_video_rl.h` plans each burst, pure
   code that `St20TxRlModelTest` pins, and `video_trs_rl_trim()` points its cut pads at the two
   `trim_pad` mbufs of the port, whose 64 B or 8 B cut leaves them near full. The shaper drains such
-  near-full pads by their bytes (the EXTRA pads, 6 B longer, showed it, see `rl_drain`); much shorter
+  near-full pads by their bytes (the EXTRA pads, 6 B longer, showed it, see `pad_ns`); much shorter
   ones it does not (S/2, S/4, S/8 pads cost ~0.2–0.7 µs each), so no pad is cut by more than 64 B.
 - The model puts the launch `ST_TX_VIDEO_RL_LAUNCH_MARGIN_NS` (2 µs) past the target, within one 8 B
   cut (~56 ns at 1080p25), or within a 64 B cut beyond what fewer pads than the cut needs can take
@@ -471,9 +471,9 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
   the margin: −1.17..+11.8 µs).
 - Target is MTL's PTP time turned into TSC once per frame in `tv_sync_pacing()`, so on the wire the launch also carries that clock's error. It is independent of how many sessions share the scheduler only while every warm-up starts before its target and has a plan.
 - The user-meta packet (`st20_frame_tx_start()`, sys queue) leaves when packet 0 is queued, up to `warm_pkts`·`trs` ahead of it, but after the previous frame's last packet; RX matches it by RTP timestamp and the timing parser skips it.
-- NORMAL pads follow in bursts of up to `ST_TX_VIDEO_PAD_BURST` (32) copies of one mbuf (lib sets no `MBUF_FAST_FREE`, which would forbid the shared refcount). Each burst is sized from a fresh TSC and the drain end of a token bucket `rl_credit` deep over what is queued.
+- NORMAL pads follow in bursts of up to `ST_TX_VIDEO_PAD_BURST` (32) copies of one mbuf (lib sets no `MBUF_FAST_FREE`, which would forbid the shared refcount). Each burst is sized from a fresh TSC and the drain end of a token bucket `bucket_ns` deep over what is queued.
 - Two kinds of stall, both count `stat_trans_recalculate_warmup`:
-  - Between bursts: every queued pad reached the NIC before it. If the queue drained and the bucket refilled (the drain end fell behind TSC − `rl_credit`), the drain end resets to TSC − `rl_credit`, the rest shrinks, and the cuts still land packet 0 on the plan.
+  - Between bursts: every queued pad reached the NIC before it. If the queue drained and the bucket refilled (the drain end fell behind TSC − `bucket_ns`), the drain end resets to TSC − `bucket_ns`, the rest shrinks, and the cuts still land packet 0 on the plan.
   - Inside a burst: its doorbell rang at some time up to the return, `last_burst_succ_time_tsc` (read by `video_trs_burst_succ()`, no extra TSC read).
   - If the return is more than `ST_TX_VIDEO_RL_STALL_NS` (2 µs) past the burst's planned drain start, the doorbell may have found the shaper idle: the drain end restarts from the return (never overfills), and `video_trs_rl_pre_arm()` returns false, so WAIT_TARGET holds packet 0.
   - The doorbell time is unknown, so releasing packet 0 behind the pads would make it late (stall before the doorbell) or early (after it).
@@ -496,9 +496,9 @@ Progressive, height ≥ 1080; T = frame time. Interlaced, 720p and SD use their 
 - **Frame budget.** Packets span `reactive`·T = 1080/1125·T at `trs` each. From the previous frame's last packet to the next target is `frame_idle_time` + `tr_offset` = (2 + 43)/1125·T, 0.67 ms at 59.94.
 - **Warm-up window** [target − `warm_pkts`·`trs`, target], with `warm_pkts` = min(0.8·`tr_offset`/`trs`, 128).
   - Uncapped, the window is 34.4/1125·T. It opens ~10/1125·T (~150 µs at 60p) after the previous frame's last packet left the NIC.
-  - That margin is what lets `video_trs_rl_pre_arm()` treat the queue as empty and the bucket as full: its drain starts at TSC − `rl_credit`.
+  - That margin is what lets `video_trs_rl_pre_arm()` treat the queue as empty and the bucket as full: its drain starts at TSC − `bucket_ns`.
   - Pads queued behind an unfinished frame would make packet 0 late, so the window cannot grow past that idle gap. The 80% is margin, not a tuning knob.
-- **Ring bound on a plan.** `tv_init_pacing()` keeps a plan only if (`warm_pkts`·`trs` + `rl_credit` + `ST_TX_VIDEO_RL_LAUNCH_MARGIN_NS`)/`rl_drain` + 1 ≤ `nb_tx_desc`/2. With the default `MT_DEV_TX_DESC` 2048, that must fit in 1023 pad drains (1024 less the `ceil()` pad), so the `warm_pkts` cap of 128 binds first.
+- **Ring bound on a plan.** `tv_rl_plan_init()` keeps a plan only if (`warm_pkts`·`trs` + `bucket_ns` + `ST_TX_VIDEO_RL_LAUNCH_MARGIN_NS`)/`pad_ns` + 1 ≤ `nb_tx_desc`/2. With the default `MT_DEV_TX_DESC` 2048, that must fit in 1023 pad drains (1024 less the `ceil()` pad), so the `warm_pkts` cap of 128 binds first.
 - **Where the 128 cap binds.** Only UHD and above: 2160p is 524 → 128, a 4× shorter window. At 1080p it is 130 → 128, which makes no difference.
 
 **Tolerance at each point** (scheduler lateness, or a tasklet stall):
@@ -519,7 +519,7 @@ Progressive, height ≥ 1080; T = frame time. Interlaced, 720p and SD use their 
 | 2160p59.94 | 0.97 µs | 0.64 ms | 128 | 0.12 ms | 1.0 ms | 251 → 0.24 ms / 524 → 0.51 ms |
 | 2160p119.88 | 0.49 µs | 0.32 ms | 128 | 62 µs | 0.50 ms | 251 → 0.12 ms / 524 → 0.26 ms |
 
-- **Longer pad trains.** Measured 2160p59.94, E830 VF TX, isolated, rx_timing parser, `rl_drain` 965 ns:
+- **Longer pad trains.** Measured 2160p59.94, E830 VF TX, isolated, rx_timing parser, `pad_ns` 965 ns:
 
   | `warm_pkts` | `nb_tx_desc` | Latency avg | Latency min |
   |---|---|---|---|

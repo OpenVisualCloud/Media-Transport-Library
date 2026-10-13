@@ -159,12 +159,13 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
                                  enum mtl_session_port s_port) {
   struct st_tx_video_pacing* pacing = &s->pacing;
+  const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
   uint64_t target_tsc = s->trs_target_tsc[s_port];
   long double launch = target_tsc + ST_TX_VIDEO_RL_LAUNCH_MARGIN_NS;
-  long double drain = pacing->rl_drain[s_port];
-  long double credit = pacing->rl_credit[s_port];
-  uint16_t pad_size = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
-  int64_t trim_pads = st_tx_video_rl_trim_pads(pad_size);
+  long double drain = plan->pad_ns;
+  long double credit = plan->bucket_ns;
+  uint16_t pad_size = plan->pad_size;
+  int64_t trim_pads = plan->trim_pads;
   struct rte_mbuf* pad = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
   struct rte_mbuf* pads[ST_TX_VIDEO_PAD_BURST];
   struct st_tx_video_rl_burst b;
@@ -303,8 +304,7 @@ static inline void video_trs_rl_set_idle(struct st_tx_video_session_impl* s,
 static enum st_tx_video_rl_state video_trs_rl_frame_start(
     struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
     enum mtl_session_port s_port) {
-  /* rl_drain stays 0 unless tv_init_pacing() planned this port */
-  if (!s->pacing.rl_drain[s_port]) {
+  if (!s->rl_plan[s_port].armed) {
     video_trs_rl_warm_up(impl, s, s_port);
     return ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
   }
@@ -351,7 +351,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
   /* check if any padding inflight pkts in transmitter */
   if (s->trs_pad_inflight_num[s_port] > 0) {
     struct rte_mbuf* pads[ST_TX_VIDEO_PAD_BURST];
-    n = s->pacing.rl_drain[s_port]
+    n = s->rl_plan[s_port].armed
             ? RTE_MIN(s->trs_pad_inflight_num[s_port], ST_TX_VIDEO_PAD_BURST)
             : 1;
     dbg("%s(%d), inflight padding pkts %d\n", __func__, idx,
