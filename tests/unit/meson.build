@@ -129,6 +129,7 @@ unit_sources = [
   'session/st20_tx/pacing_test.cpp',
   'session/st20_tx/zero_copy_test.cpp',
   'session/st20_tx/zero_copy_lazy_test.cpp',
+  'session/st20_tx/zero_copy_reclaim_test.cpp',
   'session/st20_tx/queue_recovery_test.cpp',
   'session/st20_tx/rl_training_test.cpp',
   'session/st_video_transmitter_harness.c',

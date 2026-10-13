@@ -1995,6 +1995,67 @@ static int tv_usdt_dump_frame(struct mtl_main_impl* impl,
   return 0;
 }
 
+/* a frame time from build to send, one more for the next to push this one out */
+static uint64_t tv_reclaim_hang_ns(struct st_tx_video_session_impl* s) {
+  return RTE_MAX(s->tx_hang_detect_time_thresh, (uint64_t)(2 * s->pacing.frame_time));
+}
+
+/* Reclaims the sent pkts of every port, unless the last reclaim is less than
+ * ST_TX_VIDEO_RECLAIM_NS ago. Returns false when it did not. */
+static bool tv_reclaim_poll(struct st_tx_video_session_impl* s, uint64_t now) {
+  struct st_tx_video_reclaim* reclaim = &s->reclaim;
+
+  if (now - reclaim->last_tsc < ST_TX_VIDEO_RECLAIM_NS) return false;
+  /* a gap past half of hang is the scheduler stalling, not the queue: restart the wait */
+  if (now - reclaim->last_tsc > tv_reclaim_hang_ns(s) / 2) reclaim->wait_tsc = now;
+  reclaim->last_tsc = now;
+  for (int p = 0; p < s->ops.num_port; p++) mt_txq_reclaim(s->queue[p]);
+  return true;
+}
+
+/* the warm-up start of the frame built last: the frames before it leave behind it. The
+ * transmitters send a target past 1 s at once. */
+static uint64_t tv_next_frame_open_tsc(struct st_tx_video_session_impl* s, uint64_t now) {
+  uint64_t target = s->pacing.tsc_time_frame_start;
+  uint64_t warm_ns = (uint64_t)(s->pacing.warm_pkts * s->pacing.trs);
+
+  if (now < target && target - now > NS_PER_S) return 0;
+  return target > warm_ns ? target - warm_ns : 0;
+}
+
+/* idle legs of a wait past the hang threshold: their transmitter has no burst to fail */
+static void tv_frames_out_hang(struct st_tx_video_session_impl* s, uint64_t now) {
+  uint64_t hang = tv_reclaim_hang_ns(s);
+  uint64_t start = RTE_MAX(s->reclaim.wait_tsc, tv_next_frame_open_tsc(s, now));
+
+  if (now < start || now - start <= hang) return;
+  for (int p = 0; p < s->ops.num_port; p++) {
+    if (now - s->last_burst_succ_time_tsc[p] <= hang) continue;
+    err("%s(%d,%d), frames out for %" PRIu64 " ms\n", __func__, s->idx, p,
+        (now - start) / (uint64_t)NS_PER_MS);
+    /* the builder may write these transmitter fields: both run on one scheduler thread */
+    s->tx_queue_recovery_pending[p] = true;
+    s->last_burst_succ_time_tsc[p] = now;
+  }
+}
+
+/* true while a frame but the last one built is referenced: the app gets free ones only */
+static bool tv_frames_out(struct mtl_main_impl* impl,
+                          struct st_tx_video_session_impl* s) {
+  if (!s->reclaim.enabled) return false;
+  for (uint16_t i = 0; i < s->st20_frames_cnt; i++) {
+    if (i == s->st20_frame_idx || !rte_atomic32_read(&s->st20_frames[i].refcnt)) continue;
+    uint64_t now = mt_get_tsc(impl);
+    if (!s->reclaim.wait_tsc) s->reclaim.wait_tsc = now;
+    if (!tv_reclaim_poll(s, now)) return true;
+    if (!rte_atomic32_read(&s->st20_frames[i].refcnt)) continue;
+    tv_frames_out_hang(s, now);
+    return true;
+  }
+  s->reclaim.wait_tsc = 0;
+  return false;
+}
+
 static int tv_tasklet_frame(struct mtl_main_impl* impl,
                             struct st_tx_video_session_impl* s) {
   unsigned int bulk = s->bulk;
@@ -2050,6 +2111,10 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       struct st20_tx_frame_meta meta;
       uint64_t tsc_start = 0;
 
+      if (tv_frames_out(impl, s)) {
+        s->stat_build_ret_code = -STI_FRAME_RECLAIM_WAIT;
+        return MTL_TASKLET_ALL_DONE;
+      }
       tv_init_next_meta(s, &meta);
       /* Query next frame buffer idx */
       bool time_measure = mt_sessions_time_measure(impl);
@@ -3036,6 +3101,21 @@ static bool tv_has_chain_buf(struct st_tx_video_session_impl* s) {
   return true;
 }
 
+/* dedicated queues, no RTCP ring, and frames of rs pkts or more, whose 2 * rs descriptors
+ * free the batch the frame before ended in */
+static bool tv_tx_reclaims(struct mtl_main_impl* impl,
+                           struct st_tx_video_session_impl* s) {
+  if (!st20_is_frame_type(s->ops.type) || (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP))
+    return false;
+  for (int i = 0; i < s->ops.num_port; i++) {
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
+    uint16_t rs_thresh = mt_if_tx_reclaim_rs_thresh(impl, port);
+    if (!rs_thresh || s->st20_total_pkts < rs_thresh || mt_user_shared_txq(impl, port))
+      return false;
+  }
+  return true;
+}
+
 /* the queue's sent pkts, 2 descriptors each, or the larger RTCP ring, and the builder
  * ring's unsent ones: at least two swap buffers past them */
 static bool tv_deep_port_capable_chain(struct mtl_main_impl* impl,
@@ -3080,6 +3160,16 @@ static bool tv_pkts_capable_chain(struct mtl_main_impl* impl,
 
   /* all ports capable chain */
   return true;
+}
+
+/* zero copy unless disabled or any port can't chain; a reclaiming session gets a frame
+ * once the earlier ones are back, so any 2 buffers do */
+static void tv_init_tx_chain(struct mtl_main_impl* impl,
+                             struct st_tx_video_session_impl* s) {
+  s->reclaim.enabled = tv_tx_reclaims(impl, s);
+  s->tx_no_chain = mt_user_tx_no_chain(impl) || !tv_has_chain_buf(s) ||
+                   !(s->reclaim.enabled || tv_pkts_capable_chain(impl, s));
+  if (s->tx_no_chain) s->reclaim.enabled = false;
 }
 
 static int tv_mempool_init(struct mtl_main_impl* impl,
@@ -3603,9 +3693,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     /* no chain support for st22 since the pkts for each frame may be very small */
     s->tx_no_chain = true;
   } else {
-    /* manually disable chain or any port can't support chain */
-    s->tx_no_chain = mt_user_tx_no_chain(impl) || !tv_has_chain_buf(s) ||
-                     !tv_pkts_capable_chain(impl, s);
+    tv_init_tx_chain(impl, s);
   }
   if (s->tx_no_chain) {
     info("%s(%d), no chain mbuf support\n", __func__, idx);
