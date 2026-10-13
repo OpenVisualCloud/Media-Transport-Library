@@ -139,6 +139,35 @@ int ut_txv_run_tasklet_slots(ut_txv_ctx* ctx, enum ut_txv_work work,
                              const enum ut_txv_slot* slots, int nb_slots);
 /* get_next_frame calls the peers of the last ut_txv_run_tasklet_slots() received. */
 int ut_txv_peer_get_next_frame_calls(const ut_txv_ctx* ctx);
+
+/* A frame-level session of UT_TXV_ZC_FRAMES one-pkt frames, run by tvs_tasklet_handler()
+ * against an app that hands over a chosen frame, or is busy, with reclaim.enabled or not.
+ * Pkts keep a frame referenced (refs); mt_txq_reclaim() frees those ut_txv_zc_nic_sent()
+ * marks sent. Frames are built by copy: the build path is not under test. Every leg last
+ * burst at setup, and the hang threshold is off until ut_txv_zc_set_hang_ns(). */
+int ut_txv_zc_setup(ut_txv_ctx* ctx, bool tx_reclaim, int num_port);
+void ut_txv_zc_teardown(ut_txv_ctx* ctx);
+void ut_txv_zc_set_nic_refs(ut_txv_ctx* ctx, int frame, int refs);
+void ut_txv_zc_nic_sent(ut_txv_ctx* ctx, int frame);
+void ut_txv_zc_set_app(ut_txv_ctx* ctx, int frame, bool busy);
+/* the frame the session built last, whose pkts are still on their way */
+void ut_txv_zc_set_last_built(ut_txv_ctx* ctx, int frame);
+void ut_txv_zc_run(ut_txv_ctx* ctx);
+/* tv_frames_out() alone, the step before the app is asked, for any num_port */
+bool ut_txv_zc_frames_out(ut_txv_ctx* ctx);
+int ut_txv_zc_reclaim_calls(const ut_txv_ctx* ctx);
+/* mt_txq_reclaim() calls on the queue of session port leg */
+int ut_txv_zc_leg_reclaims(const ut_txv_ctx* ctx, int leg);
+void ut_txv_zc_set_hang_ns(ut_txv_ctx* ctx, uint64_t hang_ns);
+/* the transmitter of leg sent a burst at the mock time */
+void ut_txv_zc_leg_burst_now(ut_txv_ctx* ctx, int leg);
+/* recovery of leg pending, cleared as the transmitter would on handling it */
+bool ut_txv_zc_take_recovery(ut_txv_ctx* ctx, int leg);
+/* packet 0 target of the frame built last, pacing.tsc_time_frame_start */
+void ut_txv_zc_set_next_frame_due(ut_txv_ctx* ctx, uint64_t tsc_ns);
+unsigned int ut_txv_zc_built_pkts(const ut_txv_ctx* ctx);
+/* ST_TX_VIDEO_RECLAIM_NS: the least time between two reclaims of a session */
+uint64_t ut_txv_reclaim_interval_ns(void);
 int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
                                     uint64_t delta_ns, int* bursts_before_target,
                                     int* bursts_at_target);
@@ -193,6 +222,22 @@ uint64_t ut_txv_train_queued_ns(const ut_txv_ctx* ctx);
 uint64_t ut_txv_slept_ns(const ut_txv_ctx* ctx);
 /* the bytes/s on the RL queue of session port port, as the last training left it */
 uint64_t ut_txv_rl_queue_bps(const ut_txv_ctx* ctx, int port);
+/* A session for tv_tx_reclaims() and tv_init_tx_chain(), on ports that reclaim or not,
+ * on shared TX queues or dedicated ones */
+struct ut_txv_reclaim_case {
+  uint16_t port_rs_thresh[2]; /* mt_if_tx_reclaim_rs_thresh(), 0 for no reclaim */
+  int num_port;
+  bool shared_txq;
+  bool rtcp;
+  bool rtp_level;
+  int total_pkts;
+  int frames_cnt;
+  bool no_chain; /* the ports cannot chain mbufs */
+};
+bool ut_txv_tx_reclaims(ut_txv_ctx* ctx, const struct ut_txv_reclaim_case* c);
+/* tv_init_tx_chain() of that session at nb_tx_desc: zero copy, and reclaimed or not */
+void ut_txv_init_tx_chain(ut_txv_ctx* ctx, const struct ut_txv_reclaim_case* c,
+                          uint16_t nb_tx_desc, bool* zero_copy, bool* tx_reclaim);
 /* ut_txv_init_rl_pacing() without the trim pads tv_init_hw() builds for RL ports */
 void ut_txv_set_no_trim_pads(ut_txv_ctx* ctx);
 /* tv_init_trim_pads() of port P with that pacing way and NORMAL pkt size: the lengths
@@ -250,6 +295,8 @@ bool ut_txv_hdr_mempool_alive(const ut_txv_ctx* ctx);
 
 /* ── ext-frame completion (tv_frame_free_cb) ──────────────────────────── */
 enum { UT_TXV_FRAME_SIZE = 4 };
+/* the frames of the ut_txv_zc_*() zero-copy session */
+enum { UT_TXV_ZC_FRAMES = 2 };
 /* One ST_FT_FLAG_EXT frame holding buf, fully built and still in flight in the
  * transmitter. Buffers are UT_TXV_FRAME_SIZE bytes. Returns 0 on success. */
 int ut_txv_ext_frame_setup(ut_txv_ctx* ctx, void* buf);
