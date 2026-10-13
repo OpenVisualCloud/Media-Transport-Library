@@ -143,7 +143,7 @@ uint64_t ut_txv_run_rtp_pkt0_after_frame_session(ut_txv_ctx* ctx);
 int ut_txv_peer_get_next_frame_calls(const ut_txv_ctx* ctx);
 
 /* A frame-level session of UT_TXV_ZC_FRAMES one-pkt frames, run by tvs_tasklet_handler()
- * against an app that hands over a chosen frame, or is busy, with s->tx_reclaim or not.
+ * against an app that hands over a chosen frame, or is busy, with reclaim.enabled or not.
  * Pkts keep a frame referenced (refs); mt_txq_reclaim() frees those ut_txv_zc_nic_sent()
  * marks sent. Frames are built by copy: the build path is not under test. Every leg last
  * burst at setup, and the hang threshold is off until ut_txv_zc_set_hang_ns(). */

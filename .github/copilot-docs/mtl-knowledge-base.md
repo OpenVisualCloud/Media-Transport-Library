@@ -321,11 +321,11 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
       - 26.07+ (`MT_DEV_TX_CLEANUP_FREES`): `dev_start_port()` sets `tx_free_thresh` to
         `nb_tx_desc` − 2 × `tx_rs_thresh`, so a burst, a burst of none too (`mt_txq_reclaim()`),
         frees a batch while 2 are in use, and records `mt_if_tx_reclaim_rs_thresh()`.
-      - Session (`tv_tx_reclaims()` → `s->tx_reclaim`): frames of ≥ rs pkts on every port (2 × rs
-        − 1 descriptors after a frame's last pkt free its batch, 2 a pkt), dedicated queues, no
-        RTCP. `tv_frames_out()` asks the app for a frame only once every frame but the last one
-        built is back, reclaiming every `ST_TX_VIDEO_RECLAIM_NS` while it waits
-        (`STI_FRAME_RECLAIM_WAIT`): any 2 buffers keep zero copy. Before 26.07 it could wait for good.
+      - Session (`tv_tx_reclaims()` → `s->reclaim.enabled`): frames of ≥ rs pkts on every
+        port (2 × rs − 1 descriptors after a frame's last pkt free its batch, 2 a pkt),
+        dedicated queues, no RTCP. `tv_frames_out()` asks the app for a frame only once every
+        frame but the last one built is back, reclaiming every `ST_TX_VIDEO_RECLAIM_NS` while
+        it waits (`tv_reclaim_poll()`, `STI_FRAME_RECLAIM_WAIT`): any 2 buffers keep zero copy. Before 26.07 it could wait for good.
       - Hang: a hung queue holds the frames too, and with nothing to send the transmitter sees no
         burst fail. A wait past `tx_hang_detect_time_thresh` (at least 2 frame times) flags the
         recovery of every leg idle as long (`tv_frames_out_hang()`); a reclaim gap past half of

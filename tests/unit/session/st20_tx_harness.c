@@ -819,7 +819,7 @@ int ut_txv_zc_setup(ut_txv_ctx* ctx, bool tx_reclaim, int num_port) {
 
   if (ut_txv_tx_path_init(ctx) < 0) return -ENOMEM;
   ut_txv_frame_setup(ctx, &ctx->zc_frames[0], ctx->zc_data[0], 1);
-  s->tx_reclaim = tx_reclaim;
+  s->reclaim.enabled = tx_reclaim;
   /* the R leg reclaims too; frames are built on the P leg alone */
   s->ops.num_port = num_port;
   for (int p = 0; p < num_port; p++) {
@@ -1204,7 +1204,7 @@ void ut_txv_init_tx_chain(ut_txv_ctx* ctx, const struct ut_txv_reclaim_case* c,
   ut_txv_reclaim_session(ctx, c);
   tv_init_tx_chain(&ctx->impl, &ctx->session);
   *zero_copy = !ctx->session.tx_no_chain;
-  *tx_reclaim = ctx->session.tx_reclaim;
+  *tx_reclaim = ctx->session.reclaim.enabled;
 }
 
 void ut_txv_set_no_trim_pads(ut_txv_ctx* ctx) {

@@ -1965,14 +1965,34 @@ static int tv_usdt_dump_frame(struct mtl_main_impl* impl,
   return 0;
 }
 
+/* a frame time from build to send, one more for the next to push this one out */
+static uint64_t tv_reclaim_hang_ns(struct st_tx_video_session_impl* s) {
+  return RTE_MAX(s->tx_hang_detect_time_thresh, (uint64_t)(2 * s->pacing.frame_time));
+}
+
+/* Reclaims the sent pkts of every port, unless the last reclaim is less than
+ * ST_TX_VIDEO_RECLAIM_NS ago. Returns false when it did not. */
+static bool tv_reclaim_poll(struct st_tx_video_session_impl* s, uint64_t now) {
+  struct st_tx_video_reclaim* reclaim = &s->reclaim;
+
+  if (now - reclaim->last_tsc < ST_TX_VIDEO_RECLAIM_NS) return false;
+  /* a gap past half of hang is the scheduler stalling, not the queue: restart the wait */
+  if (now - reclaim->last_tsc > tv_reclaim_hang_ns(s) / 2) reclaim->wait_tsc = now;
+  reclaim->last_tsc = now;
+  for (int p = 0; p < s->ops.num_port; p++) mt_txq_reclaim(s->queue[p]);
+  return true;
+}
+
 /* idle legs of a wait past the hang threshold: their transmitter has no burst to fail */
-static void tv_frames_out_hang(struct st_tx_video_session_impl* s, uint64_t now,
-                               uint64_t hang) {
-  if (now - s->reclaim_wait_tsc <= hang) return;
+static void tv_frames_out_hang(struct st_tx_video_session_impl* s, uint64_t now) {
+  uint64_t hang = tv_reclaim_hang_ns(s);
+
+  if (now - s->reclaim.wait_tsc <= hang) return;
   for (int p = 0; p < s->ops.num_port; p++) {
     if (now - s->last_burst_succ_time_tsc[p] <= hang) continue;
     err("%s(%d,%d), frames out for %" PRIu64 " ms\n", __func__, s->idx, p,
-        (now - s->reclaim_wait_tsc) / (uint64_t)NS_PER_MS);
+        (now - s->reclaim.wait_tsc) / (uint64_t)NS_PER_MS);
+    /* the builder may write these transmitter fields: both run on one scheduler thread */
     s->tx_queue_recovery_pending[p] = true;
     s->last_burst_succ_time_tsc[p] = now;
   }
@@ -1981,24 +2001,17 @@ static void tv_frames_out_hang(struct st_tx_video_session_impl* s, uint64_t now,
 /* true while a frame but the last one built is referenced: the app gets free ones only */
 static bool tv_frames_out(struct mtl_main_impl* impl,
                           struct st_tx_video_session_impl* s) {
-  if (!s->tx_reclaim) return false;
+  if (!s->reclaim.enabled) return false;
   for (uint16_t i = 0; i < s->st20_frames_cnt; i++) {
     if (i == s->st20_frame_idx || !rte_atomic32_read(&s->st20_frames[i].refcnt)) continue;
     uint64_t now = mt_get_tsc(impl);
-    if (!s->reclaim_wait_tsc) s->reclaim_wait_tsc = now;
-    if (now - s->last_reclaim_tsc < ST_TX_VIDEO_RECLAIM_NS) return true;
-    /* a frame time from build to send, one more for the next to push this one out */
-    uint64_t hang =
-        RTE_MAX(s->tx_hang_detect_time_thresh, (uint64_t)(2 * s->pacing.frame_time));
-    /* the scheduler stalled, not the queue: half of hang leaves the transmitter time */
-    if (now - s->last_reclaim_tsc > hang / 2) s->reclaim_wait_tsc = now;
-    s->last_reclaim_tsc = now;
-    for (int p = 0; p < s->ops.num_port; p++) mt_txq_reclaim(s->queue[p]);
+    if (!s->reclaim.wait_tsc) s->reclaim.wait_tsc = now;
+    if (!tv_reclaim_poll(s, now)) return true;
     if (!rte_atomic32_read(&s->st20_frames[i].refcnt)) continue;
-    tv_frames_out_hang(s, now, hang);
+    tv_frames_out_hang(s, now);
     return true;
   }
-  s->reclaim_wait_tsc = 0;
+  s->reclaim.wait_tsc = 0;
   return false;
 }
 
@@ -3095,10 +3108,10 @@ static bool tv_pkts_capable_chain(struct mtl_main_impl* impl,
  * once the earlier ones are back, so any 2 buffers do */
 static void tv_init_tx_chain(struct mtl_main_impl* impl,
                              struct st_tx_video_session_impl* s) {
-  s->tx_reclaim = tv_tx_reclaims(impl, s);
+  s->reclaim.enabled = tv_tx_reclaims(impl, s);
   s->tx_no_chain = mt_user_tx_no_chain(impl) || !tv_has_chain_buf(s) ||
-                   !(s->tx_reclaim || tv_pkts_capable_chain(impl, s));
-  if (s->tx_no_chain) s->tx_reclaim = false;
+                   !(s->reclaim.enabled || tv_pkts_capable_chain(impl, s));
+  if (s->tx_no_chain) s->reclaim.enabled = false;
 }
 
 static int tv_mempool_init(struct mtl_main_impl* impl,
