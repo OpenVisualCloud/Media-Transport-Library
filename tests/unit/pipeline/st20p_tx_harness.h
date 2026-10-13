@@ -61,6 +61,9 @@ void ut20p_tx_frame_free_wake(ut20p_tx_ctx* ctx);
  */
 void ut20p_tx_force_destroying(ut20p_tx_ctx* ctx);
 
+/** The first two steps of st20p_tx_free(): begin_destroy, then wake_on_destroy. */
+void ut20p_tx_begin_destroy(ut20p_tx_ctx* ctx);
+
 int ut20p_tx_framebuff_cnt(const ut20p_tx_ctx* ctx);
 
 /* producer (app) side */

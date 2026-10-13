@@ -132,6 +132,12 @@ void ut30p_tx_force_destroying(ut30p_tx_ctx* ctx) {
   atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
 }
 
+void ut30p_tx_begin_destroy(ut30p_tx_ctx* ctx) {
+  struct st30p_tx_ctx* p = &ctx->pipeline;
+  mt_handle_begin_destroy(&p->lc_destroying, &p->type, MT_ST30_HANDLE_PIPELINE_TX);
+  tx_st30p_block_wake(p);
+}
+
 int ut30p_tx_framebuff_cnt(const ut30p_tx_ctx* ctx) {
   return ctx->framebuff_cnt;
 }
@@ -161,7 +167,8 @@ int ut30p_tx_frame_done(ut30p_tx_ctx* ctx, uint16_t idx) {
 }
 
 void ut30p_tx_set_frame_ready(ut30p_tx_ctx* ctx, int idx) {
-  __atomic_store_n(&ctx->framebuffs[idx].stat, ST30P_TX_FRAME_READY, __ATOMIC_RELEASE);
+  atomic_store_explicit(&ctx->framebuffs[idx].stat, ST30P_TX_FRAME_READY,
+                        memory_order_release);
 }
 
 int ut30p_tx_frame_idx(const struct st30_frame* frame) {

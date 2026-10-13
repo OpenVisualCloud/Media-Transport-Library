@@ -194,8 +194,7 @@ TEST_P(St20PipelineRxBlocking, DestroyEndsTheWaitWithoutAFrame) {
  *
  * With a signal, getter 0 returns in about kWakeDelay and getter 1 at kLongTimeoutNs.
  * A pthread_cond_broadcast on destroy ends both waits; every waiter re-checks
- * lc_destroying, so waking them all is safe. The st22p, st30p and st40p RX and
- * all TX pipelines still signal once on destroy.
+ * lc_destroying, so waking them all is safe.
  */
 TEST_P(St20PipelineRxBlocking, DestroyEndsEveryBlockedGet) {
   ut20p_ctx_enable_blocking(ctx_, kLongTimeoutNs);

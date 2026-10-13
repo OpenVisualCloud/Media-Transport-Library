@@ -110,6 +110,12 @@ void ut40p_tx_force_destroying(ut40p_tx_ctx* ctx) {
   atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
 }
 
+void ut40p_tx_begin_destroy(ut40p_tx_ctx* ctx) {
+  struct st40p_tx_ctx* p = &ctx->pipeline;
+  mt_handle_begin_destroy(&p->lc_destroying, &p->type, MT_ST40_HANDLE_PIPELINE_TX);
+  tx_st40p_block_wake(p);
+}
+
 int ut40p_tx_framebuff_cnt(const ut40p_tx_ctx* ctx) {
   return ctx->framebuff_cnt;
 }
@@ -139,7 +145,8 @@ int ut40p_tx_frame_done(ut40p_tx_ctx* ctx, uint16_t idx) {
 }
 
 void ut40p_tx_set_frame_ready(ut40p_tx_ctx* ctx, int idx) {
-  __atomic_store_n(&ctx->framebuffs[idx].stat, ST40P_TX_FRAME_READY, __ATOMIC_RELEASE);
+  atomic_store_explicit(&ctx->framebuffs[idx].stat, ST40P_TX_FRAME_READY,
+                        memory_order_release);
 }
 
 int ut40p_tx_frame_idx(const struct st40_frame_info* frame) {

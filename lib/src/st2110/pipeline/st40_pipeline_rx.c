@@ -30,7 +30,7 @@ static void rx_st40p_block_wake(struct st40p_rx_ctx* ctx) {
   /* notify block */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
   ctx->block_wake_pending = true;
-  mt_pthread_cond_signal(&ctx->block_wake_cond);
+  mt_pthread_cond_broadcast(&ctx->block_wake_cond);
   mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
 }
 

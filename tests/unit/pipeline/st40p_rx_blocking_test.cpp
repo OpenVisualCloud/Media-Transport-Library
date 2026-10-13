@@ -94,3 +94,28 @@ TEST_F(St40PipelineRxBlocking, FrameReadyWakesABlockedGet) {
       << "the frame-ready notify did not wake the get";
   EXPECT_EQ(ut40p_put_frame(ctx_, frame), 0);
 }
+
+TEST_F(St40PipelineRxBlocking, DestroyEndsEveryBlockedGet) {
+  ut40p_ctx_enable_blocking(ctx_, kLongTimeoutNs);
+
+  struct st40_frame_info* frames[2] = {};
+  uint64_t elapsed_ns[2] = {};
+  auto getter = [&](int i) {
+    const auto t0 = std::chrono::steady_clock::now();
+    frames[i] = ut40p_get_frame(ctx_);
+    elapsed_ns[i] = ns_since(t0);
+  };
+  std::thread g0(getter, 0);
+  std::thread g1(getter, 1);
+
+  std::this_thread::sleep_for(kWakeDelay);
+  ut40p_begin_destroy(ctx_);
+  g0.join();
+  g1.join();
+
+  for (int i = 0; i < 2; i++) {
+    EXPECT_EQ(frames[i], nullptr) << "getter " << i;
+    EXPECT_LT(elapsed_ns[i], kLongTimeoutNs / 2)
+        << "destroy did not end the wait of getter " << i;
+  }
+}

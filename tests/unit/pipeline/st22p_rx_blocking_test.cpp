@@ -299,3 +299,71 @@ TEST(St22PipelineRxBlocking, DecodeFirstFrameEndsANotReadyWait) {
 
   ut22p_ctx_destroy(ctx);
 }
+
+TEST(St22PipelineRxBlocking, DestroyEndsEveryBlockedGet) {
+  ASSERT_EQ(ut22p_init(), 0) << "EAL init failed";
+
+  ut22p_ctx* ctx = ut22p_ctx_create(2);
+  ASSERT_NE(ctx, nullptr);
+  ut22p_ctx_enable_blocking(ctx, kLostWakeTimeoutNs);
+  ut22p_ctx_enable_decode_blocking(ctx, kLostWakeTimeoutNs);
+
+  struct st_frame* frames[2] = {};
+  uint64_t elapsed_ns[2] = {};
+  auto getter = [&](int i) {
+    const auto t0 = std::chrono::steady_clock::now();
+    frames[i] = ut22p_get_frame(ctx);
+    elapsed_ns[i] = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - t0)
+                        .count();
+  };
+  std::thread g0(getter, 0);
+  std::thread g1(getter, 1);
+
+  std::this_thread::sleep_for(kWakeDelay);
+  ut22p_begin_destroy(ctx);
+  g0.join();
+  g1.join();
+
+  for (int i = 0; i < 2; i++) {
+    EXPECT_EQ(frames[i], nullptr) << "getter " << i;
+    EXPECT_LT(elapsed_ns[i], kLostWakeTimeoutNs / 2)
+        << "destroy did not end the wait of getter " << i;
+  }
+
+  ut22p_ctx_destroy(ctx);
+}
+
+TEST(St22PipelineRxBlocking, DecodeDestroyEndsEveryBlockedGet) {
+  ASSERT_EQ(ut22p_init(), 0) << "EAL init failed";
+
+  ut22p_ctx* ctx = ut22p_ctx_create(2);
+  ASSERT_NE(ctx, nullptr);
+  ut22p_ctx_enable_blocking(ctx, kLostWakeTimeoutNs);
+  ut22p_ctx_enable_decode_blocking(ctx, kLostWakeTimeoutNs);
+
+  int rets[2] = {0, 0};
+  uint64_t elapsed_ns[2] = {};
+  auto getter = [&](int i) {
+    const auto t0 = std::chrono::steady_clock::now();
+    rets[i] = ut22p_decode_get_frame(ctx);
+    elapsed_ns[i] = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - t0)
+                        .count();
+  };
+  std::thread g0(getter, 0);
+  std::thread g1(getter, 1);
+
+  std::this_thread::sleep_for(kWakeDelay);
+  ut22p_begin_destroy(ctx);
+  g0.join();
+  g1.join();
+
+  for (int i = 0; i < 2; i++) {
+    EXPECT_EQ(rets[i], -EBUSY) << "getter " << i;
+    EXPECT_LT(elapsed_ns[i], kLostWakeTimeoutNs / 2)
+        << "destroy did not end the wait of getter " << i;
+  }
+
+  ut22p_ctx_destroy(ctx);
+}

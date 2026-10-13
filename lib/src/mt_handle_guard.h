@@ -41,7 +41,7 @@
  *     teardown and finally mt_rte_free()s the wrapper. Safe because drain
  *     guarantees no thread holds a bare pointer to the wrapper — sleepers
  *     in the blocking get_frame/put_frame paths keep their ref held across
- *     pthread_cond_timedwait, and the wake_on_destroy hook (cond_signal
+ *     pthread_cond_timedwait, and the wake_on_destroy hook (cond_broadcast
  *     under block_wake_mutex) wakes them within microseconds so drain
  *     returns promptly.
  *
