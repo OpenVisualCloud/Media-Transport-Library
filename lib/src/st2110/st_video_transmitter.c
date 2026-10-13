@@ -142,24 +142,19 @@ static void video_trs_rl_warm_up(struct mtl_main_impl* impl,
   }
 }
 
-/* Cuts up to cut bytes from the n NORMAL pads in pads[], in whole fine trims, so the
- * launch is never early. Returns the bytes cut. */
-static uint32_t video_trs_rl_trim(struct st_tx_video_session_impl* s,
-                                  enum mtl_session_port s_port, struct rte_mbuf** pads,
-                                  unsigned int n, uint32_t cut) {
-  unsigned int coarse = RTE_MIN(cut / ST_TX_VIDEO_RL_TRIM_COARSE, n);
-  unsigned int fine = RTE_MIN(
-      (cut - coarse * ST_TX_VIDEO_RL_TRIM_COARSE) / ST_TX_VIDEO_RL_TRIM_FINE, n - coarse);
-
-  for (unsigned int i = 0; i < coarse + fine; i++)
-    pads[i] = s->trim_pad[s_port][i < coarse ? ST_TX_VIDEO_RL_TRIM_PAD_COARSE
-                                             : ST_TX_VIDEO_RL_TRIM_PAD_FINE];
-  return coarse * ST_TX_VIDEO_RL_TRIM_COARSE + fine * ST_TX_VIDEO_RL_TRIM_FINE;
+/* the burst's first coarse pads become the coarse trim pad, the next fine ones the fine
+ */
+static void video_trs_rl_trim(struct st_tx_video_session_impl* s,
+                              enum mtl_session_port s_port, struct rte_mbuf** pads,
+                              const struct st_tx_video_rl_burst* b) {
+  for (unsigned int i = 0; i < b->coarse + b->fine; i++)
+    pads[i] = s->trim_pad[s_port][i < b->coarse ? ST_TX_VIDEO_RL_TRIM_PAD_COARSE
+                                                : ST_TX_VIDEO_RL_TRIM_PAD_FINE];
 }
 
-/* Queues NORMAL pads the shaper finishes ST_TX_VIDEO_RL_LAUNCH_MARGIN_NS past the target,
- * the last ones cut to land within a fine trim of it; false: hold packet 0 until target,
- * as when a stall left the drain end unknown. */
+/* Queues NORMAL pads that the shaper finishes ST_TX_VIDEO_RL_LAUNCH_MARGIN_NS past the
+ * target, within a fine trim, so packet 0 queued behind them launches there. Returns
+ * false when packet 0 must be held until its target instead, as after a stall. */
 static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
                                  enum mtl_session_port s_port) {
@@ -169,13 +164,10 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
   long double drain = pacing->rl_drain[s_port];
   long double credit = pacing->rl_credit[s_port];
   uint16_t pad_size = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
-  /* the pads a cut of up to a pad takes: coarse ones, then up to the fine ones */
-  int64_t trim_pads = RTE_MIN(pad_size / ST_TX_VIDEO_RL_TRIM_COARSE +
-                                  ST_TX_VIDEO_RL_TRIM_COARSE / ST_TX_VIDEO_RL_TRIM_FINE,
-                              ST_TX_VIDEO_PAD_BURST);
+  int64_t trim_pads = st_tx_video_rl_trim_pads(pad_size);
   struct rte_mbuf* pad = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
   struct rte_mbuf* pads[ST_TX_VIDEO_PAD_BURST];
-  unsigned int n;
+  struct st_tx_video_rl_burst b;
   int64_t gap;
   long double drained;
   unsigned int tx;
@@ -196,11 +188,11 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
   }
   if (gap <= 0) return false;
 
-  /* when the shaper, a token bucket credit deep, finishes what is queued */
+  /* when the shaper finishes what is queued: an idle one's full bucket sends credit ns */
   drained = target_tsc - gap - credit;
 
-  /* each burst sized from a fresh tsc; refused ones retry ahead of packet 0, so
-   * counting them as queued now only makes the launch later */
+  /* Each burst is sized from a fresh tsc. Pads the NIC refuses are retried ahead of
+   * packet 0, so counting them as queued now can only make the launch later. */
   while (true) {
     long double start = mt_get_tsc(impl) - credit;
     if (drained < start) {
@@ -211,27 +203,23 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
       drained = start;
     }
     if (launch <= drained) break;
-    int64_t needed = (int64_t)ceill((launch - drained) / drain);
-    bool last = needed <= trim_pads;
-    uint32_t cut = 0;
-    n = last ? needed : RTE_MIN(needed - trim_pads, ST_TX_VIDEO_PAD_BURST);
-    for (unsigned int i = 0; i < n; i++) pads[i] = pad;
-    if (last)
-      cut = video_trs_rl_trim(
-          s, s_port, pads, n,
-          (uint32_t)((n * drain - (launch - drained)) * pad_size / drain));
-    for (unsigned int i = 0; i < n; i++) rte_mbuf_refcnt_update(pads[i], 1);
-    tx = video_trs_burst_pad(impl, s, s_port, pads, n);
-    /* refused pads retry as NORMAL ones, later, never early */
-    for (unsigned int i = tx; i < n; i++) {
+
+    b = st_tx_video_rl_next_burst(drain, pad_size, trim_pads, launch, drained);
+    for (unsigned int i = 0; i < b.n; i++) pads[i] = pad;
+    video_trs_rl_trim(s, s_port, pads, &b);
+    for (unsigned int i = 0; i < b.n; i++) rte_mbuf_refcnt_update(pads[i], 1);
+    tx = video_trs_burst_pad(impl, s, s_port, pads, b.n);
+    /* a refused trim pad is retried as a NORMAL one: later, never early */
+    for (unsigned int i = tx; i < b.n; i++) {
       if (pads[i] == pad) continue;
       rte_mbuf_refcnt_update(pads[i], -1);
       rte_mbuf_refcnt_update(pad, 1);
     }
-    s->trs_pad_inflight_num[s_port] += n - tx;
-    /* a stall in the burst: its doorbell, any time up to the return, may have found the
-     * shaper idle. Plan from the return, which never overfills, and hold packet 0, which
-     * behind the pads would leave late (stall before the doorbell) or early (after). */
+    s->trs_pad_inflight_num[s_port] += b.n - tx;
+
+    /* A burst returning ST_TX_VIDEO_RL_STALL_NS past the plan stalled: its doorbell may
+     * have found the shaper idle. Plan on from the return, which never overfills, and
+     * hold packet 0, which behind these pads could leave late or early. */
     long double latest = s->last_burst_succ_time_tsc[s_port] - credit;
     if (tx && drained + ST_TX_VIDEO_RL_STALL_NS < latest) {
       s->port_user_stats.stat_trans_recalculate_warmup++;
@@ -239,9 +227,9 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
       drained = latest;
       hold = true;
     }
-    drained += n * drain - cut * drain / pad_size;
-    sent += (int)n;
-    if (last) break;
+    drained += st_tx_video_rl_burst_ns(&b, drain, pad_size);
+    sent += (int)b.n;
+    if (b.last) break;
   }
 
   return !hold;

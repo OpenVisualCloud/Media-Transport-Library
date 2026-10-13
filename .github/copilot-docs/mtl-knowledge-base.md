@@ -453,7 +453,9 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
 - With a plan, `video_trs_rl_pre_arm()` queues pads the shaper finishes draining at the target and packet 0 follows them to the NIC in the same pass, so the shaper, not the tasklet, sets its launch.
 - The pads cover `(target + ST_TX_VIDEO_RL_LAUNCH_MARGIN_NS − now) + rl_credit`: `ceil()` NORMAL
   pads, the last burst holding the ≤ S/64 + 8 pads that take the surplus as cuts of 64 or 8 bytes
-  (`video_trs_rl_trim()`, two `trim_pad` mbufs a port, cut rounded down). The shaper drains such
+  (cut rounded down). `st_tx_video_rl_next_burst()` in `st_tx_video_rl.h` plans each burst, pure
+  code that `St20TxRlModelTest` pins, and `video_trs_rl_trim()` points its cut pads at the two
+  `trim_pad` mbufs of the port, whose 64 B or 8 B cut leaves them near full. The shaper drains such
   near-full pads by their bytes (the EXTRA pads, 6 B longer, showed it, see `rl_drain`); much shorter
   ones it does not (S/2, S/4, S/8 pads cost ~0.2–0.7 µs each), so no pad is cut by more than 64 B.
 - The model puts the launch `ST_TX_VIDEO_RL_LAUNCH_MARGIN_NS` (2 µs) past the target, within one 8 B
