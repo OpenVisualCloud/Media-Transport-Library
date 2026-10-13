@@ -291,6 +291,28 @@ static bool video_trs_rl_target_reached(struct mtl_main_impl* impl,
   return false;
 }
 
+static inline void video_trs_rl_set_idle(struct st_tx_video_session_impl* s,
+                                         enum mtl_session_port s_port) {
+  s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_IDLE;
+  s->trs_target_tsc[s_port] = 0;
+}
+
+/* The state a port goes to once the warm-up window of packet 0 opens. Without a plan it
+ * sends the warm-up pads and waits for the target. With one it pre-arms the shaper,
+ * which then releases packet 0, unless the pre-arm fails and it waits for the target. */
+static enum st_tx_video_rl_state video_trs_rl_frame_start(
+    struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
+    enum mtl_session_port s_port) {
+  /* rl_drain stays 0 unless tv_init_pacing() planned this port */
+  if (!s->pacing.rl_drain[s_port]) {
+    video_trs_rl_warm_up(impl, s, s_port);
+    return ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
+  }
+  if (!video_trs_rl_pre_arm(impl, s, s_port)) return ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
+  s->trs_target_tsc[s_port] = 0;
+  return ST_TX_VIDEO_RL_STATE_IDLE;
+}
+
 static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
                                  enum mtl_session_port s_port, int* ret_status) {
@@ -323,17 +345,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     int tasklet_ret;
     if (!video_trs_rl_target_reached(impl, s, warmup_tsc, ret_status, &tasklet_ret))
       return tasklet_ret;
-    /* rl_drain stays 0 unless tv_init_pacing() planned this port */
-    if (!s->pacing.rl_drain[s_port]) {
-      video_trs_rl_warm_up(impl, s, s_port);
-      s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
-    } else if (video_trs_rl_pre_arm(impl, s, s_port)) {
-      /* the NIC shaper releases packet 0 once the pads drain */
-      s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_IDLE;
-      s->trs_target_tsc[s_port] = 0;
-    } else {
-      s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
-    }
+    s->rl_state[s_port] = video_trs_rl_frame_start(impl, s, s_port);
   }
 
   /* check if any padding inflight pkts in transmitter */
@@ -360,8 +372,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     int tasklet_ret;
     if (!video_trs_rl_target_reached(impl, s, target_tsc, ret_status, &tasklet_ret))
       return tasklet_ret;
-    s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_IDLE;
-    s->trs_target_tsc[s_port] = 0;
+    video_trs_rl_set_idle(s, s_port);
   }
 
   /* check if any inflight pkts in transmitter */
@@ -443,10 +454,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
       }
     } else {
       s->trs_target_tsc[s_port] = target_tsc;
-      s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_WAIT_WARMUP;
       video_trs_rl_warm_up(impl, s, s_port);
-      s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_IDLE;
-      s->trs_target_tsc[s_port] = 0;
+      video_trs_rl_set_idle(s, s_port);
     }
   }
 
