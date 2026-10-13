@@ -85,14 +85,16 @@ class FFmpeg(Application):
         return APP_NAME_MAP["ffmpeg"]
 
     def rx_recording_cap(self) -> int:
-        """``rx_max_file_size`` becomes ``-fs`` on the single raw st20p recording."""
-        if (
-            self._ff_params.get("mode") != _MODE_YUV_H264
-            or self._ff_params.get("output_format", "yuv") != "yuv"
-            or self._ff_params.get("multiple_sessions")
+        """``rx_max_file_size`` becomes ``-fs`` on the single raw st20p recording
+        and on the decoded st22p recording."""
+        mode = self._ff_params.get("mode")
+        if mode == _MODE_ST22P or (
+            mode == _MODE_YUV_H264
+            and self._ff_params.get("output_format", "yuv") == "yuv"
+            and not self._ff_params.get("multiple_sessions")
         ):
-            return 0
-        return int(self.params.get("rx_max_file_size") or 0)
+            return int(self.params.get("rx_max_file_size") or 0)
+        return 0
 
     def require_encoder(self, host, encoder: str, use_mtl_plugin: bool = False) -> None:
         """Raise EnvironmentError if *encoder* is not available on *host*.
@@ -467,6 +469,11 @@ class FFmpeg(Application):
         codec_map = {"JPEG-XS": "jpegxs", "H264_CBR": "h264", "H265": "h265"}
         st22_codec = codec_map.get(codec_name, st22_codec)
 
+        # Geometry and rate of the decoded recording, for validate_results().
+        self._rx_frame_spec = (video_size, pix_fmt, self.extract_framerate(framerate))
+        cap = self.rx_recording_cap()
+        fs_flag = f"-fs {cap} " if cap else ""
+
         # TX: raw video → mtl_st22p muxer (encode + transmit)
         self._tx_commands = [
             f"{FFMPEG_EXE} -stream_loop -1 "
@@ -490,7 +497,7 @@ class FFmpeg(Application):
             f"-st22_codec {st22_codec} "
             f"-init_retry 20 "
             f"-f mtl_st22p -i k "
-            f"-f rawvideo {{out0}} -y"
+            f"-f rawvideo {fs_flag}{{out0}} -y"
         )
         return rx_cmd, None
 
@@ -804,7 +811,23 @@ class FFmpeg(Application):
                 passed = ffmpeg_app.check_output_rgb24(self._rx_output or "", 1)
             elif mode == _MODE_RGB24_MULTI:
                 passed = ffmpeg_app.check_output_rgb24(self._rx_output or "", 2)
-            elif mode in (_MODE_ST22P, _MODE_ST30P):
+            elif mode == _MODE_ST22P:
+                # st22p codecs are lossy, so the decoded frames cannot be
+                # byte-checked; count them instead.
+                video_size, pix_fmt, fps = self._rx_frame_spec
+                passed = ffmpeg_app.check_output_video_yuv(
+                    self._output_files[0],
+                    host,
+                    build,
+                    self.params.get("input_file"),
+                    video_size,
+                    pix_fmt,
+                    fps,
+                    self.params.get("test_time") or 30,
+                    self.rx_recording_cap(),
+                )
+                self._cleanup_output_files(host)
+            elif mode == _MODE_ST30P:
                 # Basic validation: output file exists and is non-empty.
                 out_file = self._output_files[0] if self._output_files else None
                 if not out_file:
@@ -821,9 +844,7 @@ class FFmpeg(Application):
                     logger.error(f"{mode}: output file is empty: {out_file}")
                 # An integrity session, when the test asked for one, has already
                 # read this file: _finalize_run() evaluates it before
-                # validate_results() runs. Nothing downstream needs it, and a
-                # recording of a full test's traffic is far too large to leave
-                # in the workspace -- 1080p yuv422p10le is about 250 MB/s.
+                # validate_results() runs, and nothing downstream needs it.
                 self._cleanup_output_files(host)
             else:
                 self._fail_validation(f"Unknown mode {mode}", fail_on_error)

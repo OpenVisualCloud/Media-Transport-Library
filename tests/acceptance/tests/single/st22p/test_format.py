@@ -32,6 +32,7 @@ def test_st22p_format(
     setup_interfaces: InterfaceSetup,
     test_time,
     test_config,
+    output_files,
     media_file,
 ):
     """Test st22p with different media formats/resolutions."""
@@ -56,6 +57,7 @@ def test_st22p_format(
         quality="speed",
         pixel_format=media_file_info["file_format"],
         input_file=media_file_path,
+        output_file=output_files.register(f"{media_file_path}.out"),
         codec_threads=2,
         test_time=test_time,
     )
