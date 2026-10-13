@@ -13,6 +13,7 @@
 #include "st_fmt.h"
 #include "st_pipeline_api.h"
 #include "st_pkt.h"
+#include "st_tx_video_rl.h"
 
 #define ST_MAX_NAME_LEN (32)
 
@@ -356,6 +357,7 @@ struct st_tx_video_session_impl {
 
   struct st20_packet_group_info st20_pkt_info[ST20_PKT_TYPE_MAX];
   struct rte_mbuf* pad[MTL_SESSION_PORT_MAX][ST20_PKT_TYPE_MAX];
+  struct rte_mbuf* trim_pad[MTL_SESSION_PORT_MAX][ST_TX_VIDEO_RL_TRIM_PAD_MAX];
 
   /* the cpu resource to handle tx, 0: full, 100: cpu is very busy */
   double cpu_busy_score;
@@ -383,6 +385,9 @@ struct st_tx_video_session_impl {
   uint32_t stat_max_notify_frame_us;
   double stat_cpu_busy_score;
   struct mt_stat_u64 stat_time;
+
+  /* cold, read once a frame, so it sits last, off the hot cache lines */
+  struct st_tx_video_rl_plan rl_plan[MTL_SESSION_PORT_MAX];
 };
 
 struct st_tx_video_sessions_mgr {

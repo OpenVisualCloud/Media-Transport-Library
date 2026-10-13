@@ -274,13 +274,17 @@ int mt_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* m
 }
 
 int mt_pacing_train_pad_result_add(struct mtl_main_impl* impl, enum mtl_port port,
-                                   uint64_t input_bps, float pad_interval) {
+                                   uint64_t input_bps, uint64_t queue_bps,
+                                   const struct mt_pacing_pad_mix* mix,
+                                   float pad_interval) {
   struct mt_pacing_train_result* ptr = &mt_if(impl, port)->pt_results[0];
 
   for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
     if (ptr[i].input_bps) continue;
     ptr[i].input_bps = input_bps;
     ptr[i].pacing_pad_interval = pad_interval;
+    ptr[i].pad_mix = *mix;
+    ptr[i].queue_bps = queue_bps;
     return 0;
   }
 
@@ -289,11 +293,16 @@ int mt_pacing_train_pad_result_add(struct mtl_main_impl* impl, enum mtl_port por
 }
 
 int mt_pacing_train_pad_result_search(struct mtl_main_impl* impl, enum mtl_port port,
-                                      uint64_t rl_bps, float* pad_interval) {
+                                      uint64_t rl_bps, uint64_t queue_bps,
+                                      const struct mt_pacing_pad_mix* mix,
+                                      float* pad_interval) {
   struct mt_pacing_train_result* ptr = &mt_if(impl, port)->pt_results[0];
 
   for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
-    if (rl_bps == ptr[i].input_bps && ptr[i].pacing_pad_interval) {
+    const struct mt_pacing_pad_mix* trained = &ptr[i].pad_mix;
+    if (rl_bps == ptr[i].input_bps && ptr[i].pacing_pad_interval &&
+        queue_bps == ptr[i].queue_bps && trained->bytes == mix->bytes &&
+        trained->normal == mix->normal && trained->pkts == mix->pkts) {
       *pad_interval = ptr[i].pacing_pad_interval;
       return 0;
     }

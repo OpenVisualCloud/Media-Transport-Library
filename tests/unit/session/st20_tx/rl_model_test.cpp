@@ -5,7 +5,8 @@
  * arithmetic video_trs_rl_pre_arm() did inline before it moved there, a guard that the
  * move changed nothing: over a grid of shaper drains, pad sizes, trim pad counts and
  * launch gaps every burst and drain end must be identical. A change to the plan on
- * purpose updates the frozen copy with it.
+ * purpose updates the frozen copy with it. Also pins st_tx_video_rl_tokens() against a
+ * copy of ice's RL profile encode.
  *
  * Run: ./build_unit/tests/unit/UnitTest --gtest_filter='St20TxRlModelTest.*'
  */
@@ -176,6 +177,51 @@ TEST(St20TxRlModelTest, APlanEndsWithinAFineTrimPastLaunch) {
                 << (double)base << " pads " << pads << " fraction " << (double)fraction;
           }
         }
+      }
+    }
+  }
+}
+
+/* ice_sched_bw_to_rl_profile(): the tokens of a timeslot of 32 << encode psm_clk cycles,
+ * and the encode it takes, for a rate in kbps */
+static int64_t IceTokens(int64_t psm_hz, int64_t kbps, int encode) {
+  int64_t bytes_per_sec = kbps * 1000 / 8;
+  int64_t ts_rate = psm_hz / ((int64_t)1 << encode) / 32;
+  if (ts_rate <= 0) return 0;
+  return (bytes_per_sec * 10000 / ts_rate + 5000) / 10000;
+}
+
+static int IceEncode(int64_t psm_hz, int64_t kbps) {
+  for (int i = 0; i < 64; i++)
+    if (IceTokens(psm_hz, kbps, i) > 128) return i;
+  return -1;
+}
+
+/* The shaper releases a packet on its timeslot grid. Whatever the NIC clock, a timeslot
+ * passes the tokens ice programs at the rate the shaper drains, so the tokens bound the
+ * timeslot of every rate ice takes, on every psm_clk it reads. A rate is no faster than
+ * the bytes/s MTL programs, which iavf or the PMD truncates to kbps. */
+TEST(St20TxRlModelTest, TokensCoverEveryIceTimeslot) {
+  const int64_t kPsmHz[] = {367647059, 390625000, 416666667, 446428571};
+  constexpr int64_t kMinKbps = 500, kMaxKbps = 100000000; /* ICE_SCHED_MIN/MAX_BW */
+
+  for (int64_t psm : kPsmHz) {
+    /* a faster rate takes a shorter timeslot; an encode has most tokens at its top */
+    for (int encode = IceEncode(psm, kMaxKbps); encode <= IceEncode(psm, kMinKbps);
+         encode++) {
+      int64_t lo = kMinKbps, hi = kMaxKbps;
+      while (lo < hi) {
+        int64_t mid = lo + (hi - lo + 1) / 2;
+        if (IceEncode(psm, mid) >= encode)
+          lo = mid;
+        else
+          hi = mid - 1;
+      }
+      for (int64_t kbps : {lo, kMaxKbps}) {
+        if (IceEncode(psm, kbps) != encode) continue;
+        EXPECT_LE((double)IceTokens(psm, kbps, encode),
+                  (double)st_tx_video_rl_tokens((uint64_t)kbps * 1000 / 8))
+            << "psm " << psm << " encode " << encode << " kbps " << kbps;
       }
     }
   }
