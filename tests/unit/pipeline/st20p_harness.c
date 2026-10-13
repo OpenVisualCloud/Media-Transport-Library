@@ -173,9 +173,31 @@ void ut20p_begin_destroy(ut20p_ctx* ctx) {
   rx_st20p_block_wake(p);
 }
 
+static void (*ut20p_convert_hook)(void* arg);
+static void* ut20p_convert_hook_arg;
+
+void ut20p_set_convert_hook(void (*hook)(void* arg), void* arg) {
+  ut20p_convert_hook_arg = arg;
+  ut20p_convert_hook = hook;
+}
+
+void ut20p_lock_block_mutex(ut20p_ctx* ctx) {
+  mt_pthread_mutex_lock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut20p_unlock_block_mutex(ut20p_ctx* ctx) {
+  mt_pthread_mutex_unlock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut20p_post_wake_locked(ut20p_ctx* ctx) {
+  ctx->pipeline.block_wake_pending = true;
+  mt_pthread_cond_broadcast(&ctx->pipeline.block_wake_cond);
+}
+
 static int ut20p_stub_convert(struct st_frame* src, struct st_frame* dst) {
   MTL_MAY_UNUSED(src);
   MTL_MAY_UNUSED(dst);
+  if (ut20p_convert_hook) ut20p_convert_hook(ut20p_convert_hook_arg);
   return 0;
 }
 

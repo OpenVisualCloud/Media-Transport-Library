@@ -26,6 +26,7 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <thread>
@@ -364,6 +365,73 @@ TEST(St22PipelineRxBlocking, DecodeDestroyEndsEveryBlockedGet) {
     EXPECT_LT(elapsed_ns[i], kLostWakeTimeoutNs / 2)
         << "destroy did not end the wait of getter " << i;
   }
+
+  ut22p_ctx_destroy(ctx);
+}
+
+/* With two consumers, a fast-path get on thread A clears the wake_block()
+ * token meant for the get blocked on thread B; B then sleeps its full
+ * block timeout. Without the fault the fast path does not touch the token.
+ *
+ * To force that order, the test holds block_wake_mutex while it posts the wake
+ * and while A runs its fast-path get, so B can read the flag only after A. */
+TEST(St22PipelineRxBlocking, WakeBlockEndsTheBlockedGetDespiteAFastPathGet) {
+  ASSERT_EQ(ut22p_init(), 0) << "EAL init failed";
+
+  ut22p_ctx* ctx = ut22p_ctx_create(2);
+  ASSERT_NE(ctx, nullptr);
+  ut22p_ctx_enable_blocking(ctx, kLostWakeTimeoutNs);
+
+  struct st_frame* b_frame = nullptr;
+  uint64_t b_elapsed_ns = 0;
+  std::thread b([&]() {
+    const auto t0 = std::chrono::steady_clock::now();
+    b_frame = ut22p_get_frame(ctx);
+    b_elapsed_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                       std::chrono::steady_clock::now() - t0)
+                       .count();
+  });
+  std::this_thread::sleep_for(kWakeDelay); /* B is in the timed wait */
+
+  /* A frame lands with no notify, then the app wakes the blocked get, then
+   * consumer A runs. */
+  ut22p_set_frame_decoded(ctx, 0);
+  ut22p_lock_block_mutex(ctx);
+  ut22p_post_wake_locked(ctx); /* meant for B, which needs the mutex */
+  struct st_frame* a_frame = nullptr;
+  std::atomic<bool> a_done{false};
+  std::thread a([&]() {
+    a_frame = ut22p_get_frame(ctx); /* fast path: no block_wake_mutex */
+    a_done.store(true);
+  });
+  /* B's budget kLostWakeTimeoutNs / 2 = 1 s > kWakeDelay 80 ms + this 300 ms bound */
+  const auto a_t0 = std::chrono::steady_clock::now();
+  while (!a_done.load() &&
+         std::chrono::steady_clock::now() - a_t0 < std::chrono::milliseconds(300))
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  const bool a_done_locked = a_done.load();
+  ut22p_unlock_block_mutex(ctx);
+  a.join();
+  b.join();
+
+  if (b_frame) { /* B took the frame itself */
+    EXPECT_EQ(ut22p_put_frame(ctx, b_frame), 0);
+    ut22p_ctx_destroy(ctx);
+    GTEST_SKIP() << "B took the frame itself; the order the test needs did not form";
+  }
+  /* A skip on every unloaded run means the fast path now takes block_wake_mutex. */
+  if (!a_done_locked) { /* A was not scheduled within the bound */
+    if (a_frame) {
+      EXPECT_EQ(ut22p_put_frame(ctx, a_frame), 0);
+    }
+    ut22p_ctx_destroy(ctx);
+    GTEST_SKIP() << "the fast-path get of A did not finish within its bound; the race "
+                    "did not form";
+  }
+  ASSERT_NE(a_frame, nullptr);
+  EXPECT_EQ(ut22p_put_frame(ctx, a_frame), 0);
+  EXPECT_LT(b_elapsed_ns, kLostWakeTimeoutNs / 2)
+      << "wake_block() did not end the blocked get: a fast-path get took the token";
 
   ut22p_ctx_destroy(ctx);
 }

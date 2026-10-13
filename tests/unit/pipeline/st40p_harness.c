@@ -132,6 +132,25 @@ void ut40p_begin_destroy(ut40p_ctx* ctx) {
   rx_st40p_block_wake(p);
 }
 
+void ut40p_set_ready_no_notify(ut40p_ctx* ctx, int i, void* udw_addr) {
+  struct st40p_rx_frame* fb = &ctx->framebuffs[i];
+  fb->frame_info.udw_buff_addr = (uint8_t*)udw_addr;
+  atomic_store_explicit(&fb->stat, ST40P_RX_FRAME_READY, memory_order_release);
+}
+
+void ut40p_lock_block_mutex(ut40p_ctx* ctx) {
+  mt_pthread_mutex_lock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut40p_post_wake_locked(ut40p_ctx* ctx) {
+  ctx->pipeline.block_wake_pending = true;
+  mt_pthread_cond_broadcast(&ctx->pipeline.block_wake_cond);
+}
+
+void ut40p_unlock_block_mutex(ut40p_ctx* ctx) {
+  mt_pthread_mutex_unlock(&ctx->pipeline.block_wake_mutex);
+}
+
 int ut40p_inject_frame(ut40p_ctx* ctx, void* udw_addr, enum st_frame_status status,
                        bool seq_discont, uint32_t timestamp) {
   struct st40_rx_frame_meta meta;

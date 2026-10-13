@@ -59,6 +59,17 @@ void ut20p_begin_destroy(ut20p_ctx* ctx);
  */
 void ut20p_ctx_set_internal_converter(ut20p_ctx* ctx);
 
+/** Call hook(arg) inside the internal converter's convert_func, i.e. after
+ *  get_frame claimed the frame and before it returns. NULL clears. */
+void ut20p_set_convert_hook(void (*hook)(void* arg), void* arg);
+
+/** Hold block_wake_mutex from the test so a woken waiter cannot read the token
+ *  until unlock; post_wake_locked runs the st20p_rx_wake_block() body (token +
+ *  broadcast) while the caller holds it. */
+void ut20p_lock_block_mutex(ut20p_ctx* ctx);
+void ut20p_post_wake_locked(ut20p_ctx* ctx);
+void ut20p_unlock_block_mutex(ut20p_ctx* ctx);
+
 /** Inject one synthetic frame into the pipeline as if the transport just
  *  completed it.  status is ST_FRAME_STATUS_COMPLETE or _CORRUPTED.
  *  Returns 0 on accept, -EBUSY when no free framebuf (drives the

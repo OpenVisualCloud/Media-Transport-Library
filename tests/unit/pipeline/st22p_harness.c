@@ -119,6 +119,24 @@ void ut22p_wake_block(ut22p_ctx* ctx) {
   st22p_rx_wake_block(&ctx->pipeline);
 }
 
+void ut22p_lock_block_mutex(ut22p_ctx* ctx) {
+  mt_pthread_mutex_lock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut22p_post_wake_locked(ut22p_ctx* ctx) {
+  ctx->pipeline.block_wake_pending = true;
+  mt_pthread_cond_broadcast(&ctx->pipeline.block_wake_cond);
+}
+
+void ut22p_unlock_block_mutex(ut22p_ctx* ctx) {
+  mt_pthread_mutex_unlock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut22p_set_frame_decoded(ut22p_ctx* ctx, int idx) {
+  atomic_store_explicit(&ctx->framebuffs[idx].stat, ST22P_RX_FRAME_DECODED,
+                        memory_order_release);
+}
+
 void ut22p_ctx_enable_decode_blocking(ut22p_ctx* ctx, uint64_t timeout_ns) {
   struct st22p_rx_ctx* p = &ctx->pipeline;
   mt_pthread_mutex_init(&p->decode_block_wake_mutex, NULL);
