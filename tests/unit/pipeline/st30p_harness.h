@@ -41,6 +41,9 @@ void ut30p_ctx_destroy(ut30p_ctx* ctx);
  */
 void ut30p_ctx_enable_blocking(ut30p_ctx* ctx, uint64_t timeout_ns);
 
+/** Wraps st30p_rx_wake_block(). */
+void ut30p_wake_block(ut30p_ctx* ctx);
+
 /** The first two steps of st30p_rx_free(): begin_destroy, then wake_on_destroy. */
 void ut30p_begin_destroy(ut30p_ctx* ctx);
 
