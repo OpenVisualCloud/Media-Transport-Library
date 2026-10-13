@@ -27,7 +27,12 @@ uint64_t ElapsedNs(std::chrono::steady_clock::time_point t0) {
  * frames back to back. Each frame done sets the bool block_wake_pending and
  * signals one waiter. The first waiter to get the mutex clears the flag and
  * claims one frame; the second waiter then sees no flag and sleeps again, so
- * a FREE frame waits for block_timeout_ns. */
+ * a FREE frame waits for block_timeout_ns.
+ *
+ * The fault needs both notifies to land before a woken waiter takes the mutex
+ * again. To force that order, the two frame_done calls run with the block
+ * notify off, and then the test posts the two notify bodies while it holds
+ * block_wake_mutex. */
 TEST(St22PipelineTxWakeReview, TwoFrameDonesWakeTwoBlockedGets) {
   ASSERT_EQ(ut22p_tx_init(), 0) << "EAL init failed";
 
@@ -56,9 +61,16 @@ TEST(St22PipelineTxWakeReview, TwoFrameDonesWakeTwoBlockedGets) {
   std::thread g1(getter, 1);
   std::this_thread::sleep_for(std::chrono::milliseconds(80));
 
-  /* two frame dones, back to back */
+  /* two frame dones: the frames go FREE, then both notifies run before either
+   * woken getter can take the mutex */
+  ut22p_tx_set_block_get(ctx, false);
   ASSERT_EQ(ut22p_tx_frame_done(ctx, idx[0]), 0);
   ASSERT_EQ(ut22p_tx_frame_done(ctx, idx[1]), 0);
+  ut22p_tx_set_block_get(ctx, true);
+  ut22p_tx_lock_block_mutex(ctx);
+  ut22p_tx_post_frame_wake_locked(ctx);
+  ut22p_tx_post_frame_wake_locked(ctx);
+  ut22p_tx_unlock_block_mutex(ctx);
   g0.join();
   g1.join();
 

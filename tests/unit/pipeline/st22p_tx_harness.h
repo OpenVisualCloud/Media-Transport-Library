@@ -62,6 +62,15 @@ void ut22p_tx_set_ready(ut22p_tx_ctx* ctx, bool ready);
 /** Wake a blocking get_frame sleeper (wraps st22p_tx_wake_block). */
 void ut22p_tx_wake_block(ut22p_tx_ctx* ctx);
 
+/** Review hooks. set_block_get() turns off the block notify of frame_done, so
+ *  a test can free frames first and post the notify body later, under a
+ *  block_wake_mutex that the test holds. post_frame_wake_locked() is the
+ *  notify body of tx_st22p_notify_frame_available(): pending = true; signal. */
+void ut22p_tx_set_block_get(ut22p_tx_ctx* ctx, bool block_get);
+void ut22p_tx_lock_block_mutex(ut22p_tx_ctx* ctx);
+void ut22p_tx_unlock_block_mutex(ut22p_tx_ctx* ctx);
+void ut22p_tx_post_frame_wake_locked(ut22p_tx_ctx* ctx);
+
 /** Wake a blocking encode_get_frame sleeper, via the callback the encoder
  * device is registered with (wraps tx_st22p_encode_wake_block). */
 void ut22p_tx_encode_wake_block(ut22p_tx_ctx* ctx);

@@ -138,6 +138,23 @@ void ut22p_tx_wake_block(ut22p_tx_ctx* ctx) {
   st22p_tx_wake_block(&ctx->pipeline);
 }
 
+void ut22p_tx_set_block_get(ut22p_tx_ctx* ctx, bool block_get) {
+  ctx->pipeline.block_get = block_get;
+}
+
+void ut22p_tx_lock_block_mutex(ut22p_tx_ctx* ctx) {
+  mt_pthread_mutex_lock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut22p_tx_unlock_block_mutex(ut22p_tx_ctx* ctx) {
+  mt_pthread_mutex_unlock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut22p_tx_post_frame_wake_locked(ut22p_tx_ctx* ctx) {
+  ctx->pipeline.block_wake_pending = true;
+  mt_pthread_cond_signal(&ctx->pipeline.block_wake_cond);
+}
+
 void ut22p_tx_encode_wake_block(ut22p_tx_ctx* ctx) {
   tx_st22p_encode_wake_block(&ctx->pipeline);
 }

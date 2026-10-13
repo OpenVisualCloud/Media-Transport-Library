@@ -55,7 +55,10 @@ class St20PipelineRxWakeReview : public ::testing::TestWithParam<bool> {
  * to end that wait. A second consumer thread A then takes a frame on the fast
  * path. The fast-path "spend the token" store clears block_wake_pending outside
  * block_wake_mutex before B re-acquires the mutex, so B sees no wake and sleeps
- * on until block_timeout_ns. On upstream/main B returns at once. */
+ * on until block_timeout_ns. On upstream/main B returns at once.
+ *
+ * To force that order, the test holds block_wake_mutex while it posts the wake
+ * and while A runs its fast-path get, so B can read the flag only after A. */
 TEST_P(St20PipelineRxWakeReview, FastPathGetDoesNotStealTheWakeOfABlockedGet) {
   ut20p_ctx_enable_blocking(ctx_, kLongTimeoutNs);
 
@@ -72,10 +75,23 @@ TEST_P(St20PipelineRxWakeReview, FastPathGetDoesNotStealTheWakeOfABlockedGet) {
   /* A frame lands with no notify (as in UnsignalledFrameIsClaimedAtTimeout),
    * then the app wakes the blocked get, then consumer A runs. */
   make_frame_available_without_notify(0);
-  ut20p_wake_block(ctx_);
-  struct st_frame* a_frame = ut20p_get_frame(ctx_); /* fast path */
-
+  ut20p_lock_block_mutex(ctx_);
+  ut20p_post_wake_locked(ctx_); /* B is woken, but needs the mutex */
+  struct st_frame* a_frame = nullptr;
+  std::atomic<bool> a_done{false};
+  std::thread a([&]() {
+    a_frame = ut20p_get_frame(ctx_); /* fast path: no block_wake_mutex */
+    a_done.store(true);
+  });
+  const auto a_t0 = std::chrono::steady_clock::now();
+  while (!a_done.load() &&
+         std::chrono::steady_clock::now() - a_t0 < std::chrono::seconds(1))
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  ut20p_unlock_block_mutex(ctx_);
+  a.join();
   b.join();
+
+  ASSERT_TRUE(a_done.load()) << "the fast-path get of A waited for block_wake_mutex";
 
   if (a_frame) {
     EXPECT_EQ(ut20p_put_frame(ctx_, a_frame), 0);
