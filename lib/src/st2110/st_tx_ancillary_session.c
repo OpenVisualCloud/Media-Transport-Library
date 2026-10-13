@@ -116,7 +116,8 @@ static void tx_ancillary_session_abort_frame(struct mtl_main_impl* impl,
   s->st40_frame_stat = ST40_TX_STAT_WAIT_FRAME;
   s->st40_pkt_idx = 0;
   s->st40_anc_idx = 0;
-  s->calculate_time_cursor = false;
+  /* as at the end of a sent frame: the next frame syncs its own pacing */
+  s->calculate_time_cursor = true;
   TX_ANC_TEST_RESET_STATE(s);
   s->check_frame_done_time = false;
   s->pacing.tsc_time_cursor = 0;

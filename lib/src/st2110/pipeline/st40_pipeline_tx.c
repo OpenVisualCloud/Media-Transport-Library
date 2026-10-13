@@ -196,7 +196,7 @@ static int tx_st40p_next_frame(void* priv, uint16_t* next_frame_idx,
   }
   *next_frame_idx = framebuff->idx;
 
-  if (ctx->ops.flags & (ST40P_TX_FLAG_USER_PACING)) {
+  if (ctx->ops.flags & (ST40P_TX_FLAG_USER_PACING | ST40P_TX_FLAG_USER_TIMESTAMP)) {
     meta->tfmt = framebuff->frame_info.tfmt;
     meta->timestamp = framebuff->frame_info.timestamp;
   }

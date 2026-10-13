@@ -124,6 +124,9 @@ uint64_t ut_txa_stat_interlace_second(const ut_txa_ctx* ctx);
 /* tx_ancillary_ops_check() on otherwise valid single-port frame-level ops. */
 int ut_txa_ops_check(uint32_t flags, uint32_t fmd_dit, uint8_t fmd_k_bit,
                      uint8_t payload_type);
+/* get_next_frame hands out `tfmt`/`timestamp` from its next call on. */
+void ut_txa_set_app_timestamp(ut_txa_ctx* ctx, enum st10_timestamp_fmt tfmt,
+                              uint64_t timestamp);
 struct st40_tx_ops;
 struct st40_frame;
 /* Take frames from `src`'s get_next_frame/notify_frame_done/priv, `frame` as frame 0. */

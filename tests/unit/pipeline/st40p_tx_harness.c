@@ -133,6 +133,11 @@ int ut40p_tx_next_frame(ut40p_tx_ctx* ctx, uint16_t* idx) {
   return tx_st40p_next_frame(&ctx->pipeline, idx, &meta);
 }
 
+int ut40p_tx_next_frame_meta(ut40p_tx_ctx* ctx, uint16_t* idx,
+                             struct st40_tx_frame_meta* meta) {
+  return tx_st40p_next_frame(&ctx->pipeline, idx, meta);
+}
+
 int ut40p_tx_frame_done(ut40p_tx_ctx* ctx, uint16_t idx) {
   struct st40_tx_frame_meta meta;
   memset(&meta, 0, sizeof(meta));

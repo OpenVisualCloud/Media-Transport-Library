@@ -404,6 +404,29 @@ TEST_F(St40PipelineFmdTxTest, PutFrameRejectsItemPastMaxDataItem) {
   EXPECT_LT(ut40p_tx_put_frame(ctx_, f), 0);
 }
 
+/* USER_TIMESTAMP alone: the frame timestamp is the one the transport puts in RTP. */
+TEST_F(St40PipelineFmdTxTest, UserTimestampReachesTransport) {
+  ut40p_tx_ctx_set_flags(ctx_,
+                         ST40P_TX_FLAG_FAST_METADATA | ST40P_TX_FLAG_USER_TIMESTAMP);
+  struct st40_frame_info* f = ut40p_tx_get_frame(ctx_);
+  ASSERT_NE(f, nullptr);
+  f->udw_buffer_size = 64;
+  f->udw_buffer_fill = 8;
+  f->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+  f->timestamp = 0x12345678;
+  ASSERT_EQ(ut40p_tx_put_frame(ctx_, f), 0);
+
+  struct st40_tx_frame_meta meta;
+  memset(&meta, 0, sizeof(meta));
+  meta.tfmt = ST10_TIMESTAMP_FMT_TAI; /* the transport's epoch default */
+  meta.timestamp = 999;
+  uint16_t idx = 0;
+  ASSERT_EQ(ut40p_tx_next_frame_meta(ctx_, &idx, &meta), 0);
+
+  EXPECT_EQ(meta.tfmt, ST10_TIMESTAMP_FMT_MEDIA_CLK);
+  EXPECT_EQ(meta.timestamp, 0x12345678u);
+}
+
 /* The pipeline frame runs through the real ST40 TX frame tasklet. */
 class St40PipelineFmdTxSessionTest : public ::testing::Test {
  protected:

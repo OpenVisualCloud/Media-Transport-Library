@@ -74,6 +74,9 @@ int ut40p_tx_put_frame_abort(ut40p_tx_ctx* ctx, struct st40_frame_info* frame);
  * no READY frame is pending. */
 int ut40p_tx_next_frame(ut40p_tx_ctx* ctx, uint16_t* idx);
 int ut40p_tx_frame_done(ut40p_tx_ctx* ctx, uint16_t idx);
+/* next_frame with `meta` as the transport fills it before the call. */
+int ut40p_tx_next_frame_meta(ut40p_tx_ctx* ctx, uint16_t* idx,
+                             struct st40_tx_frame_meta* meta);
 
 /**
  * Set framebuffer i directly to READY state so concurrent-transport tests
