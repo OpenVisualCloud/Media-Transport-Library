@@ -5,7 +5,7 @@
 
 : "${EXIT_ON_FAILURE:=1}"
 # Comma-separated NoCtxTest cases to run under isolate.sh; the others run directly.
-: "${NOCTX_ISOLATE_CASES:=st20p_default_timestamps,st20p_user_pacing,st20p_user_pacing_offset_jitter,st20p_exact_user_pacing,st20p_user_pacing_interlaced,st30p_user_pacing}"
+: "${NOCTX_ISOLATE_CASES:=st20p_default_timestamps,st20p_default_timestamps_1080p59_94,st20p_default_timestamps_1080p60,st20p_default_timestamps_480p59_94,st20p_default_timestamps_576p50,st20p_default_timestamps_720p25,st20p_default_timestamps_720p50,st20p_default_timestamps_720p59_94,st20p_default_timestamps_2160p59_94,st20p_user_pacing,st20p_user_pacing_offset_jitter,st20p_exact_user_pacing,st20p_user_pacing_interlaced,st30p_user_pacing}"
 
 script_name=$(basename "${BASH_SOURCE[0]}")
 script_path=$(readlink -qe "${BASH_SOURCE[0]}")

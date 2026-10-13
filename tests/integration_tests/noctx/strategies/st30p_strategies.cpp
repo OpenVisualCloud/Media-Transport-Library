@@ -149,7 +149,11 @@ void St30pUserPacingOracle::verifyReceiveTiming(uint64_t frame_idx,
     expected_delta_ns = kSt30pFirstBufferRxToleranceNs;
   }
 
-  EXPECT_LE(std::abs(delta_ns) + ptp.u_ns, expected_delta_ns)
+  EXPECT_GE(delta_ns - ptp.u_ns, 0)
+      << " idx_rx: " << frame_idx << " delta(ns): " << delta_ns << "+-" << ptp.u_ns
+      << " receive timestamp(ns): " << receive_time_ns
+      << " expected timestamp(ns): " << expected_timestamp_ns;
+  EXPECT_LE(delta_ns + ptp.u_ns, expected_delta_ns)
       << " idx_rx: " << frame_idx << " delta(ns): " << delta_ns << "+-" << ptp.u_ns
       << " receive timestamp(ns): " << receive_time_ns
       << " expected timestamp(ns): " << expected_timestamp_ns;

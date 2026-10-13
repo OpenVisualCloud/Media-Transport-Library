@@ -14,8 +14,6 @@
 class St20pHandler : public PipelineHandlerBase<st20p_tx_ops, st20p_rx_ops,
                                                 st20p_tx_handle, st20p_rx_handle> {
  public:
-  uint64_t nsFrameTime;
-
   explicit St20pHandler(st_tests_context* ctx, st20p_tx_ops ops_tx = {},
                         st20p_rx_ops ops_rx = {});
   ~St20pHandler() override;
@@ -25,8 +23,6 @@ class St20pHandler : public PipelineHandlerBase<st20p_tx_ops, st20p_rx_ops,
                    uint height = 1080, uint payloadType = 112,
                    enum st_fps fps = ST_FPS_P25, bool interlaced = false,
                    enum st20_packing packing = ST20_PACKING_BPM);
-
-  void normalizeSessionOps();
 
   void startSessionTx() override;
   void startSessionRx() override;

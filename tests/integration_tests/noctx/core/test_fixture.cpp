@@ -142,8 +142,6 @@ NoCtxTest::St20pHandlerBundle NoCtxTest::createSt20pHandlerBundle(
     configure(handler);
   }
 
-  handler->normalizeSessionOps();
-
   if (createRx) {
     handler->createSessionRx();
   }

@@ -3,7 +3,7 @@
  */
 
 /* ST30p default pacing (frame 0 on the packet grid, exact RTP step) and strict user
- * pacing (exact RTP, NIC RX time within +-40 us of the request).
+ * pacing (exact RTP, NIC RX time 0..+40 us past the request).
  * See README.md, "Test catalogue".
  */
 
@@ -16,7 +16,7 @@
 #include "handlers/st30p_handler.hpp"
 #include "strategies/st30p_strategies.hpp"
 
-static_assert(kSt30pRxToleranceNs == 40 * NS_PER_US, "comments quote +-40 us");
+static_assert(kSt30pRxToleranceNs == int64_t{40} * NS_PER_US, "comments quote +40 us");
 static_assert(kSt30pFirstBufferRxToleranceNs == 80 * NS_PER_US, "comments quote 80 us");
 static_assert(kSt30pUserPacingStartBuffers == 60, "comments quote 600 ms");
 
@@ -34,7 +34,7 @@ std::string exclusivePartitionError() {
   if (partition == "isolated") return "";
 
   const char* isolation = getenv("MTL_CPU_ISOLATION");
-  return "st30p_user_pacing (software TSC paced audio, +-40 us) needs an exclusive CPU "
+  return "st30p_user_pacing (software TSC paced audio, 0..+40 us) needs an exclusive CPU "
          "partition: cgroup " +
          path + ", partition '" + partition +
          "', MTL_CPU_ISOLATION=" + (isolation ? isolation : "unset") +
@@ -84,7 +84,7 @@ TEST_F(NoCtxTest, st30p_default_timestamps) {
  *            initializeTiming(), sleep 1 s, StartFakePtpClock(), mtl_start(), then
  *            the session threads.
  * Expect:    on every buffer, St30pUserPacingOracle
- *            1. |NIC RX time - t_user(n)| <= 40 us, 80 us for buffer 0
+ *            1. 0 <= NIC RX time - t_user(n) <= 40 us, 80 us for buffer 0
  *               verifyReceiveTiming(), kSt30pRxToleranceNs,
  *               kSt30pFirstBufferRxToleranceNs
  *            2. RTP == tick48k(t_user(n))          verifyMediaClock()
