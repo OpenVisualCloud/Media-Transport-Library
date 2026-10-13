@@ -56,6 +56,9 @@ void ut22p_tx_ctx_enable_encode_blocking(ut22p_tx_ctx* ctx, uint64_t timeout_ns)
  *  the frame READY for ut22p_tx_encode_get_frame(). */
 void ut22p_tx_ctx_set_encoder(ut22p_tx_ctx* ctx);
 
+/** Set ctx->ready, as st22p_tx_create() does once the session is built. */
+void ut22p_tx_set_ready(ut22p_tx_ctx* ctx, bool ready);
+
 /** Wake a blocking get_frame sleeper (wraps st22p_tx_wake_block). */
 void ut22p_tx_wake_block(ut22p_tx_ctx* ctx);
 

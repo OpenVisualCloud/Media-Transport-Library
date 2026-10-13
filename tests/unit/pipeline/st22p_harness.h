@@ -58,6 +58,9 @@ void ut22p_ctx_enable_decode_blocking(ut22p_ctx* ctx, uint64_t timeout_ns);
  *  the frame READY for ut22p_decode_get_frame(). */
 void ut22p_ctx_set_decoder(ut22p_ctx* ctx);
 
+/** Set ctx->ready, as st22p_rx_create() does once the session is built. */
+void ut22p_set_ready(ut22p_ctx* ctx, bool ready);
+
 /** Wake a blocking decode_get_frame sleeper, via the callback the decoder
  * device is registered with (wraps rx_st22p_decode_wake_block). */
 void ut22p_decode_wake_block(ut22p_ctx* ctx);

@@ -268,3 +268,34 @@ TEST(St22PipelineRxBlocking, DecodeFrameReadyWakesABlockedGet) {
 
   ut22p_ctx_destroy(ctx);
 }
+
+/* A decoder can call get before create sets ready; the first frame ends that wait. */
+TEST(St22PipelineRxBlocking, DecodeFirstFrameEndsANotReadyWait) {
+  ASSERT_EQ(ut22p_init(), 0) << "EAL init failed";
+
+  ut22p_ctx* ctx = ut22p_ctx_create(2);
+  ASSERT_NE(ctx, nullptr);
+  ut22p_ctx_set_decoder(ctx);
+  ut22p_ctx_enable_decode_blocking(ctx, kLostWakeTimeoutNs);
+  ut22p_set_ready(ctx, false);
+
+  int inject_ret = -1;
+  std::thread producer([&]() {
+    std::this_thread::sleep_for(kWakeDelay);
+    ut22p_set_ready(ctx, true);
+    inject_ret = ut22p_inject_frame(ctx, ST_FRAME_STATUS_COMPLETE, 1000);
+  });
+
+  const auto t0 = std::chrono::steady_clock::now();
+  ut22p_decode_get_frame(ctx);
+  const uint64_t elapsed_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                  std::chrono::steady_clock::now() - t0)
+                                  .count();
+  producer.join();
+
+  EXPECT_EQ(inject_ret, 0);
+  EXPECT_LT(elapsed_ns, kLostWakeTimeoutNs / 2)
+      << "the first frame did not end the decode_get_frame that waited for ready";
+
+  ut22p_ctx_destroy(ctx);
+}

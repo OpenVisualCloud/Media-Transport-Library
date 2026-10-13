@@ -152,3 +152,35 @@ TEST(St22PipelineTxEncodeBlocking, FrameReadyWakesABlockedGet) {
 
   ut22p_tx_ctx_destroy(ctx);
 }
+
+/* An encoder can call get before create sets ready; the first frame ends that wait. */
+TEST(St22PipelineTxEncodeBlocking, FirstFrameEndsANotReadyWait) {
+  ASSERT_EQ(ut22p_tx_init(), 0) << "EAL init failed";
+
+  ut22p_tx_ctx* ctx = ut22p_tx_ctx_create(2);
+  ASSERT_NE(ctx, nullptr);
+  ut22p_tx_ctx_set_encoder(ctx);
+  ut22p_tx_ctx_enable_encode_blocking(ctx, kLostWakeTimeoutNs);
+  ut22p_tx_set_ready(ctx, false);
+
+  int put_ret = -1;
+  std::thread producer([&]() {
+    std::this_thread::sleep_for(kWakeDelay);
+    ut22p_tx_set_ready(ctx, true);
+    struct st_frame* frame = ut22p_tx_get_frame(ctx);
+    if (frame) put_ret = ut22p_tx_put_frame(ctx, frame);
+  });
+
+  const auto t0 = std::chrono::steady_clock::now();
+  ut22p_tx_encode_get_frame(ctx);
+  const uint64_t elapsed_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                  std::chrono::steady_clock::now() - t0)
+                                  .count();
+  producer.join();
+
+  EXPECT_EQ(put_ret, 0);
+  EXPECT_LT(elapsed_ns, kLostWakeTimeoutNs / 2)
+      << "the first put_frame did not end the encode_get_frame that waited for ready";
+
+  ut22p_tx_ctx_destroy(ctx);
+}
