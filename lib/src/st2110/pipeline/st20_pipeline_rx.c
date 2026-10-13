@@ -923,11 +923,6 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
     }
   }
 
-  /* the next get spends a wake_block() token, even on the fast path */
-  if (ctx->block_get &&
-      atomic_load_explicit(&ctx->block_wake_pending, memory_order_relaxed))
-    atomic_store_explicit(&ctx->block_wake_pending, false, memory_order_relaxed);
-
   /* point to next (best-effort hint; the CAS above is the real guard) */
   ctx->framebuff_consumer_idx = rx_st20p_next_idx(ctx, framebuff->idx);
 

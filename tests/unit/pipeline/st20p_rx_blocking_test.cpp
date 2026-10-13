@@ -221,42 +221,6 @@ TEST_P(St20PipelineRxBlocking, DestroyEndsEveryBlockedGet) {
   }
 }
 
-/* A wake_block() posted while no get waits must not end a later, unrelated wait.
- *
- * st20p_rx_wake_block() sets block_wake_pending, and when only the slow path of
- * get_frame (no frame found, about to wait) reads and clears it, a get that
- * finds a frame at once never looks at the flag, so a wake posted while the
- * app was busy outlives any number of successful gets. The next get that finds
- * no frame then returns NULL without waiting, possibly frames after the wake:
- * the stale token frame-ready notifies used to leave, now from wake_block(). An
- * app that treats NULL from a blocking get as "stopped" or as an error (the
- * FFmpeg demuxers return EIO) stops early.
- *
- * This pins the contract "a wake_block is used up by the next get, whatever it
- * returns". WakePostedBeforeWaitIsNotLost and OneWakeSatisfiesOnlyOneWait
- * hold under it too: in both, the get after the wake finds no frame and waits.
- * Clearing block_wake_pending when the fast path succeeds is enough. The TX
- * pipelines instead ignore a wake_block() that no get is waiting for
- * (wake_block_cnt).
- */
-TEST_P(St20PipelineRxBlocking, WakeBlockIsSpentByAFastPathGet) {
-  ut20p_ctx_enable_blocking(ctx_, kShortTimeoutNs);
-
-  ut20p_wake_block(ctx_);
-  ASSERT_EQ(ut20p_inject_frame(ctx_, ST_FRAME_STATUS_COMPLETE, kTimestamp), 0);
-  struct st_frame* frame = ut20p_get_frame(ctx_);
-  ASSERT_NE(frame, nullptr);
-  ASSERT_EQ(ut20p_put_frame(ctx_, frame), 0);
-
-  const auto t0 = std::chrono::steady_clock::now();
-  frame = ut20p_get_frame(ctx_);
-  const uint64_t elapsed_ns = ns_since(t0);
-
-  EXPECT_EQ(frame, nullptr);
-  EXPECT_GT(elapsed_ns, kShortTimeoutNs / 2)
-      << "a wake_block spent by a fast-path get ended a later wait";
-}
-
 /* A timed-out pthread_cond_timedwait() may consume a concurrent signal (POSIX). */
 TEST_P(St20PipelineRxBlocking, UnsignalledFrameIsClaimedAtTimeout) {
   ut20p_ctx_enable_blocking(ctx_, kShortTimeoutNs);

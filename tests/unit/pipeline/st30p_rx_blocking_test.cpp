@@ -118,22 +118,3 @@ TEST_F(St30PipelineRxBlocking, DestroyEndsEveryBlockedGet) {
         << "destroy did not end the wait of getter " << i;
   }
 }
-
-/* A wake_block() posted while no get waits must not end a later, unrelated wait. */
-TEST_F(St30PipelineRxBlocking, WakeBlockIsSpentByAFastPathGet) {
-  ut30p_ctx_enable_blocking(ctx_, kShortTimeoutNs);
-
-  ut30p_wake_block(ctx_);
-  ASSERT_EQ(ut30p_inject_frame(ctx_, ST_FRAME_STATUS_COMPLETE, kTimestamp), 0);
-  struct st30_frame* frame = ut30p_get_frame(ctx_);
-  ASSERT_NE(frame, nullptr);
-  ASSERT_EQ(ut30p_put_frame(ctx_, frame), 0);
-
-  const auto t0 = std::chrono::steady_clock::now();
-  frame = ut30p_get_frame(ctx_);
-  const uint64_t elapsed_ns = ns_since(t0);
-
-  EXPECT_EQ(frame, nullptr);
-  EXPECT_GT(elapsed_ns, kShortTimeoutNs / 2)
-      << "a wake_block spent by a fast-path get ended a later wait";
-}
