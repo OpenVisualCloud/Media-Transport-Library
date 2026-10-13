@@ -20,6 +20,9 @@
 
 #include <gtest/gtest.h>
 
+#include <ostream>
+#include <string>
+
 #include "session/st30_tx_harness.h"
 
 namespace {
@@ -244,3 +247,80 @@ TEST_F(St30TxPacingTest, FrameTaskletDefaultPacingAppliesDeltaToBothFields) {
       ut_txa30_notify_frame_done_rtp_timestamp(ctx_),
       st10_tai_to_media_clk(ut_txa30_notify_frame_done_timestamp(ctx_), kSamplingRate));
 }
+
+namespace {
+struct AudioRate {
+  enum st30_ptime ptime;
+  enum st30_sampling sampling;
+  uint64_t rate, samples; /* the packet period is samples / rate s */
+};
+
+void PrintTo(const AudioRate& r, std::ostream* os) {
+  *os << r.samples << " samples at " << r.rate << " Hz";
+}
+}  // namespace
+
+/* Packet times that are no whole ns, at today's TAI (~2e13 packets of 80 us): the epoch
+ * TAI is exact, and it and the ns before it map back to their epochs. */
+class St30TxExactEpochTest : public ::testing::TestWithParam<AudioRate> {
+ protected:
+  void SetUp() override {
+    ASSERT_EQ(ut_txa30_init(), 0);
+    ctx_ = ut_txa30_create();
+    ASSERT_NE(ctx_, nullptr);
+    ASSERT_EQ(ut_txa30_set_ptime(ctx_, GetParam().ptime, GetParam().sampling), 0);
+  }
+  void TearDown() override {
+    ut_txa30_destroy(ctx_);
+  }
+  /* cur_epochs 0 is far behind, so the epoch is the one PTP now is in */
+  uint64_t EpochAt(uint64_t now) {
+    ut_txa30_set_cur_epochs(ctx_, 0);
+    ut_txa30_set_mock_ptp_time(ctx_, now);
+    EXPECT_EQ(ut_txa30_sync_pacing(ctx_, 0), 0);
+    return ut_txa30_cur_epochs(ctx_);
+  }
+  ut_txa30_ctx* ctx_ = nullptr;
+};
+
+TEST_P(St30TxExactEpochTest, EpochTaiRoundTrips) {
+  const AudioRate& r = GetParam();
+  const uint64_t first = 1790000000ull * r.rate / r.samples;
+  for (uint64_t k = first; k < first + 3000; k++) {
+    const uint64_t tai =
+        (uint64_t)((unsigned __int128)k * 1000 * kNsPerMs * r.samples / r.rate);
+
+    ASSERT_EQ(EpochAt(tai), k) << "at the epoch's TAI";
+    ASSERT_EQ(ut_txa30_ptp_time_cursor(ctx_), tai) << "epoch " << k;
+    ASSERT_EQ(EpochAt(tai - 1), k - 1) << "1 ns before epoch " << k;
+  }
+}
+
+/* a USER_PACING request on either ns around a sample instant goes out stamped with that
+ * sample */
+TEST_P(St30TxExactEpochTest, UserPacingStampsTheRequestedSample) {
+  const AudioRate& r = GetParam();
+  ut_txa30_set_user_pacing(ctx_, true);
+  for (uint64_t sample = 1790000000ull * r.rate; sample < 1790000000ull * r.rate + 3000;
+       sample++) {
+    const unsigned __int128 num = (unsigned __int128)sample * 1000 * kNsPerMs;
+    for (uint64_t tai :
+         {(uint64_t)(num / r.rate), (uint64_t)((num + r.rate - 1) / r.rate)}) {
+      ut_txa30_set_cur_epochs(ctx_, 0);
+      ut_txa30_set_mock_ptp_time(ctx_, tai - 1000 * kNsPerMs / 2);
+      ASSERT_EQ(ut_txa30_run_frame_tasklet(ctx_, ST10_TIMESTAMP_FMT_TAI, tai, 1), 0);
+      ASSERT_EQ(ut_txa30_wire_rtp_timestamp(ctx_, 0), (uint32_t)sample) << "TAI " << tai;
+    }
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    FractionalPacketTimes, St30TxExactEpochTest,
+    ::testing::Values(AudioRate{ST31_PTIME_80US, ST30_SAMPLING_48K, 48000, 4},
+                      AudioRate{ST30_PTIME_333US, ST30_SAMPLING_48K, 48000, 16},
+                      AudioRate{ST31_PTIME_1_09MS, ST31_SAMPLING_44K, 44100, 48},
+                      AudioRate{ST31_PTIME_0_14MS, ST31_SAMPLING_44K, 44100, 6},
+                      AudioRate{ST31_PTIME_0_09MS, ST31_SAMPLING_44K, 44100, 4}),
+    [](const ::testing::TestParamInfo<AudioRate>& info) {
+      return std::to_string(info.param.samples) + "At" + std::to_string(info.param.rate);
+    });

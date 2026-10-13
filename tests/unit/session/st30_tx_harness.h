@@ -36,6 +36,10 @@ ut_txa30_ctx* ut_txa30_create(void);
 void ut_txa30_destroy(ut_txa30_ctx* ctx);
 
 /* ── pacing setup ──────────────────────────────────────────────────────── */
+/* ptime, sampling and their samples per packet, then tx_audio_session_init_pacing() */
+int ut_txa30_set_ptime(ut_txa30_ctx* ctx, enum st30_ptime ptime,
+                       enum st30_sampling sampling);
+void ut_txa30_set_cur_epochs(ut_txa30_ctx* ctx, uint64_t cur_epochs);
 /* Toggle ST30_TX_FLAG_USER_PACING on the session's ops.flags. */
 void ut_txa30_set_user_pacing(ut_txa30_ctx* ctx, bool enable);
 /* Toggle ST30_TX_FLAG_USER_TIMESTAMP on the session's ops.flags: the RTP
@@ -63,11 +67,16 @@ void ut_txa30_set_mock_tsc_time(ut_txa30_ctx* ctx, uint64_t tsc_ns);
 int ut_txa30_run_frame_tasklet(ut_txa30_ctx* ctx, enum st10_timestamp_fmt tfmt,
                                uint64_t timestamp, int total_pkts);
 
+/* tx_audio_session_sync_pacing() without the TSC delay to the epoch */
+int ut_txa30_sync_pacing(ut_txa30_ctx* ctx, uint64_t required_tai);
+
 /* One frame-tasklet build of a chained two-port session whose R header alloc fails,
  * reporting the mbufs its pool still has in use. Returns 0 on success. */
 int ut_txa30_build_chain_r_dry(ut_txa30_ctx* ctx, unsigned int* pool_in_use);
 
 /* ── accessors ─────────────────────────────────────────────────────────── */
+uint64_t ut_txa30_cur_epochs(const ut_txa30_ctx* ctx);
+uint64_t ut_txa30_ptp_time_cursor(const ut_txa30_ctx* ctx);
 uint64_t ut_txa30_stat_error_user_timestamp(const ut_txa30_ctx* ctx);
 int ut_txa30_notify_frame_done_calls(const ut_txa30_ctx* ctx);
 uint64_t ut_txa30_notify_frame_done_timestamp(const ut_txa30_ctx* ctx);
