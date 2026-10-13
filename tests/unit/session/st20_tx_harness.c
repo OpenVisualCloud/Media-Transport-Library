@@ -275,7 +275,7 @@ ut_txv_ctx* ut_txv_create(void) {
   s->mgr = &ctx->mgr;
   s->idx = 0;
   s->active = true;
-  s->pacing.frame_time = 1000000.0L; /* 1ms, round number for simple math */
+  ut_txv_set_frame_time(ctx, NS_PER_MS); /* round number for simple math */
   s->pacing.max_onward_epochs = 3;
   s->fps_tm.sampling_clock_rate = ST10_VIDEO_SAMPLING_RATE_90K;
   s->ops.get_next_frame = ut_txv_get_next_frame;
@@ -306,8 +306,10 @@ void ut_txv_destroy(ut_txv_ctx* ctx) {
 
 /* ── pacing setup ─────────────────────────────────────────────────────── */
 
-void ut_txv_set_frame_time(ut_txv_ctx* ctx, long double frame_time_ns) {
+void ut_txv_set_frame_time(ut_txv_ctx* ctx, uint32_t frame_time_ns) {
   ctx->session.pacing.frame_time = frame_time_ns;
+  ctx->session.fps_tm.mul = NS_PER_S;
+  ctx->session.fps_tm.den = (int)frame_time_ns;
 }
 
 void ut_txv_set_max_onward_epochs(ut_txv_ctx* ctx, uint32_t max_onward_epochs) {
@@ -676,6 +678,8 @@ static struct st_tx_video_session_impl* ut_txv_peer_create(struct ut_txv_ctx* ct
   peer->ops.num_port = 1;
   peer->ops.get_next_frame = ut_txv_peer_get_next_frame;
   peer->ops.priv = ctx;
+  peer->fps_tm = ctx->session.fps_tm;
+  peer->pacing.frame_time = ctx->session.pacing.frame_time;
   return peer;
 }
 
@@ -862,9 +866,9 @@ int ut_txv_update_dst(ut_txv_ctx* ctx, uint16_t udp_src_port, uint16_t created_s
   return 0;
 }
 
-void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
-                                  uint64_t timestamp) {
-  tv_update_rtp_time_stamp(&ctx->session, tfmt, timestamp);
+uint64_t ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
+                                      uint64_t timestamp) {
+  return tv_update_rtp_time_stamp(&ctx->session, tfmt, timestamp);
 }
 
 int ut_txv_init_pacing(ut_txv_ctx* ctx, uint32_t height, bool interlaced,

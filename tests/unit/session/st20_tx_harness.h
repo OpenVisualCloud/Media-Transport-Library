@@ -41,7 +41,8 @@ ut_txv_ctx* ut_txv_create(void);
 void ut_txv_destroy(ut_txv_ctx* ctx);
 
 /* ── pacing setup ──────────────────────────────────────────────────────── */
-void ut_txv_set_frame_time(ut_txv_ctx* ctx, long double frame_time_ns);
+/* pacing->frame_time and the epoch period of fps_tm, both frame_time_ns */
+void ut_txv_set_frame_time(ut_txv_ctx* ctx, uint32_t frame_time_ns);
 void ut_txv_set_max_onward_epochs(ut_txv_ctx* ctx, uint32_t max_onward_epochs);
 void ut_txv_set_cur_epochs(ut_txv_ctx* ctx, uint64_t cur_epochs);
 void ut_txv_set_tr_offset(ut_txv_ctx* ctx, long double tr_offset_ns);
@@ -159,9 +160,10 @@ int ut_txv_update_dst(ut_txv_ctx* ctx, uint16_t udp_src_port, uint16_t created_s
                       uint16_t new_udp_port, uint16_t* hdr_src_port,
                       uint16_t* hdr_dst_port);
 /* Drives tv_update_rtp_time_stamp() directly with the pacing state set up
- * above (ptp_time_cursor, sampling_clock_rate). */
-void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
-                                  uint64_t timestamp);
+ * above (ptp_time_cursor, sampling_clock_rate). Returns the TAI the RTP timestamp
+ * was derived from. */
+uint64_t ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
+                                      uint64_t timestamp);
 /* Drives the real tv_init_pacing() -- the only place pacing->tr_offset is derived
  * for a live session. Forces TSC pacing so no NIC queue or rate-limiter training
  * is needed. Returns tv_init_pacing()'s status; read the result with
