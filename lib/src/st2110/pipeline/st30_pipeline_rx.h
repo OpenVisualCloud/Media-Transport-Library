@@ -52,8 +52,9 @@ struct st30p_rx_ctx {
   pthread_cond_t block_wake_cond;
   pthread_mutex_t block_wake_mutex;
   uint64_t block_timeout_ns;
-  /* set by st30p_rx_wake_block() and destroy to end a blocked get */
-  bool block_wake_pending;
+  /* set by st30p_rx_wake_block() and destroy to end a blocked get;
+   * _Atomic: get_frame clears it outside block_wake_mutex */
+  _Atomic bool block_wake_pending;
 
   /* get frame stat */
   uint32_t stat_get_frame_try;

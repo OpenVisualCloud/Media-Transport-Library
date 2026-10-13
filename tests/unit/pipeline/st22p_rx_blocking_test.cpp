@@ -367,3 +367,30 @@ TEST(St22PipelineRxBlocking, DecodeDestroyEndsEveryBlockedGet) {
 
   ut22p_ctx_destroy(ctx);
 }
+
+/* A wake_block() posted while no get waits must not end a later, unrelated wait. */
+TEST(St22PipelineRxBlocking, WakeBlockIsSpentByAFastPathGet) {
+  ASSERT_EQ(ut22p_init(), 0) << "EAL init failed";
+
+  ut22p_ctx* ctx = ut22p_ctx_create(2);
+  ASSERT_NE(ctx, nullptr);
+  ut22p_ctx_enable_blocking(ctx, kSpendTokenTimeoutNs);
+
+  ut22p_wake_block(ctx);
+  ASSERT_EQ(ut22p_inject_frame(ctx, ST_FRAME_STATUS_COMPLETE, 1000), 0);
+  struct st_frame* frame = ut22p_get_frame(ctx);
+  ASSERT_NE(frame, nullptr);
+  ASSERT_EQ(ut22p_put_frame(ctx, frame), 0);
+
+  const auto t0 = std::chrono::steady_clock::now();
+  frame = ut22p_get_frame(ctx);
+  const uint64_t elapsed_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                  std::chrono::steady_clock::now() - t0)
+                                  .count();
+
+  EXPECT_EQ(frame, nullptr);
+  EXPECT_GT(elapsed_ns, kSpendTokenTimeoutNs / 2)
+      << "a wake_block spent by a fast-path get ended a later wait";
+
+  ut22p_ctx_destroy(ctx);
+}
