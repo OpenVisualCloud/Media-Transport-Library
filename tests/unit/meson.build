@@ -186,6 +186,33 @@ unit_sources = [
   'main.cpp',
 ]
 
+# RxTxApp has no NIC-free test of its own. rxtxapp/fmd_harness.c compiles the fast
+# metadata sources in place, and this archive holds the rest of the app for the
+# link, with main renamed. RxTxApp needs json-c and pcap, so the tier is built only
+# when both are found.
+rxtxapp_json_c_dep = dependency('json-c', required : false)
+rxtxapp_pcap_dep = dependency('pcap', required : false)
+if rxtxapp_json_c_dep.found() and rxtxapp_pcap_dep.found()
+  rxtxapp_src = '../tools/RxTxApp/src/'
+  rxtxapp_ut_lib = static_library('rxtxapp_ut',
+    files(rxtxapp_src + 'rxtx_app.c', rxtxapp_src + 'args.c', rxtxapp_src + 'fmt.c',
+      rxtxapp_src + 'tx_st20p_app.c', rxtxapp_src + 'rx_st20p_app.c',
+      rxtxapp_src + 'tx_st22p_app.c', rxtxapp_src + 'rx_st22p_app.c',
+      rxtxapp_src + 'tx_ancillary_app.c',
+      rxtxapp_src + 'tx_st30p_app.c', rxtxapp_src + 'rx_st30p_app.c',
+      rxtxapp_src + 'legacy/tx_audio_app.c', rxtxapp_src + 'legacy/rx_audio_app.c',
+      rxtxapp_src + 'legacy/tx_video_app.c', rxtxapp_src + 'legacy/rx_video_app.c',
+      rxtxapp_src + 'legacy/tx_st22_app.c', rxtxapp_src + 'legacy/rx_st22_app.c',
+      rxtxapp_src + 'experimental/rx_st20r_app.c'),
+    c_args : unit_c_args + ['-Dmain=st_app_unit_main'],
+    include_directories : unit_include_dirs,
+    dependencies : [mtl_internal_dep, rxtxapp_json_c_dep, rxtxapp_pcap_dep],
+    install : false)
+  unit_extra_deps += [declare_dependency(link_with : rxtxapp_ut_lib), rxtxapp_json_c_dep,
+                      rxtxapp_pcap_dep]
+  unit_sources += ['rxtxapp/fmd_harness.c', 'rxtxapp/fmd_test.cpp']
+endif
+
 executable('UnitTest', unit_sources,
   c_args : unit_c_args,
   cpp_args : unit_cpp_args,

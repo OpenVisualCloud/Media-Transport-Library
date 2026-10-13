@@ -17,3 +17,6 @@
 foreach mtl_view_header : mtl_header_files
   configure_file(input : mtl_view_header, output : '@PLAINNAME@', copy : true)
 endforeach
+
+# RxTxApp, which the rxtxapp harness compiles, also asks for <mtl/experimental/...>.
+subdir('experimental')

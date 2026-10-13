@@ -1082,8 +1082,14 @@ static int parse_anc_fmd_field(json_object* anc_obj, const char* name, int max,
 /* shared by the ancillary and st40p sessions, TX needs both data item fields */
 static int parse_anc_fast_metadata(json_object* anc_obj, bool tx, bool* fast_metadata,
                                    int* fmd_dit, int* fmd_k_bit) {
-  *fast_metadata =
-      json_object_get_boolean(st_json_object_object_get(anc_obj, "fast_metadata"));
+  json_object* obj = st_json_object_object_get(anc_obj, "fast_metadata");
+  /* json_object_get_boolean is true for any non-empty string, "false" too */
+  if (obj && json_object_get_type(obj) != json_type_boolean) {
+    err("%s, fast_metadata %s is not a json boolean, use true or false\n", __func__,
+        json_object_to_json_string(obj));
+    return -ST_JSON_NOT_VALID;
+  }
+  *fast_metadata = json_object_get_boolean(obj);
   if (!*fast_metadata) return ST_JSON_SUCCESS;
   int ret =
       parse_anc_fmd_field(anc_obj, "fastmetadata_data_item_type", 0x3fffff, fmd_dit);

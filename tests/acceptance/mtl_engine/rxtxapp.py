@@ -253,6 +253,31 @@ def check_tx_fps_performance(
     return False
 
 
+# The fields that app_rx_st40p_result (rx_st40p_app.c) adds to the RX result
+# of a fast metadata session. An RxTxApp without st40p fast metadata ignores
+# the fast_metadata keys, runs RFC 8331 and does not write them.
+_FMD_RX_RESULT_RE = re.compile(
+    r"seq_discont (\d+), marker_missing \d+, seq_lost (\d+), "
+    r"\d+ invalid, max gap [\d.]+ ms"
+)
+
+
+def _fast_metadata_rx_fault(line: str) -> str:
+    """Return why an OK fast metadata RX result fails, or "" if it passes."""
+    match = _FMD_RX_RESULT_RE.search(line)
+    if not match:
+        return "no fast metadata fields, RxTxApp did not check the data items"
+    seq_discont, seq_lost = (int(count) for count in match.groups())
+    if seq_discont or seq_lost:
+        # RX stays OK after a lost data item while the rate is within 5%, but
+        # every data item must arrive intact and in order.
+        return (
+            "data items lost or out of order "
+            f"(seq_discont {seq_discont}, seq_lost {seq_lost})"
+        )
+    return ""
+
+
 def check_rx_output(
     config: dict,
     output: list,
@@ -297,13 +322,21 @@ def check_rx_output(
     # framerate-tolerance gate passes (ST_APP_EXPECT_NEAR within 5%). The token
     # appears between the parenthesized session index and `fps F`.
     success_token = "OK"
+    rx_session = config["rx_sessions"][0][session_type][0]
+    fast_metadata = session_type == "st40p" and rx_session.get("fast_metadata")
+    fault = ""
 
     for line in output:
         if pattern.search(line) and success_token in line:
+            line_fault = _fast_metadata_rx_fault(line) if fast_metadata else ""
+            if line_fault:
+                fault = line_fault
+                logger.info(f"RX {session_type} result is not OK, {fault}: {line}")
+                continue
             ok_cnt += 1
             logger.info(f"Found RX {session_type} OK result: {line}")
 
-    replicas = config["rx_sessions"][0][session_type][0]["replicas"]
+    replicas = rx_session["replicas"]
 
     logger.info(f"RX {session_type} check: {ok_cnt}/{replicas} OK results found")
 
@@ -311,10 +344,11 @@ def check_rx_output(
         logger.info(f"RX {session_type} check PASSED: all {replicas} sessions OK")
         return True
 
+    msg = f"rx {session_type} session failed" + (f", {fault}" if fault else "")
     if fail_on_error:
-        log_fail(f"rx {session_type} session failed")
+        log_fail(msg)
     else:
-        logger.info(f"rx {session_type} session failed")
+        logger.info(msg)
 
     return False
 

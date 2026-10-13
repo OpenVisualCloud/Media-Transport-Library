@@ -16,6 +16,12 @@
 static bool app_rx_st40p_fmd_check(struct st_app_rx_st40p_session* s,
                                    struct st40_frame_info* frame_info) {
   const char* fail = NULL;
+  /* each item takes its reference chunk, also when its header is bad, so the next
+   * item compares with its own chunk */
+  bool ref_ok =
+      !s->st40p_fmd_ref.data ||
+      st_app_fmd_ref_check(&s->st40p_fmd_ref, !frame_info->seq_discont,
+                           frame_info->udw_buff_addr, frame_info->udw_buffer_fill) >= 0;
 
   if (frame_info->rtp_marker)
     fail = "marker bit";
@@ -23,10 +29,7 @@ static bool app_rx_st40p_fmd_check(struct st_app_rx_st40p_session* s,
     fail = "data item type";
   else if (s->st40p_fmd_k_bit >= 0 && frame_info->fmd_k_bit != s->st40p_fmd_k_bit)
     fail = "K-bit";
-  else if (s->st40p_fmd_ref.data &&
-           st_app_fmd_ref_check(&s->st40p_fmd_ref, !frame_info->seq_discont,
-                                frame_info->udw_buff_addr,
-                                frame_info->udw_buffer_fill) < 0)
+  else if (!ref_ok)
     fail = "reference file compare";
   if (fail) {
     if (!s->stat_frame_invalid)
@@ -235,7 +238,9 @@ static int app_rx_st40p_result(struct st_app_rx_st40p_session* s) {
   if (s->st40p_fmd) {
     s->st40p_fmd_max_gap_ns =
         ST_MAX(s->st40p_fmd_max_gap_ns, cur_time_ns - s->st40p_fmd_last_rx_time);
-    ok = ok && !s->stat_frame_invalid && s->st40p_fmd_max_gap_ns <= ST_APP_FMD_MAX_GAP_NS;
+    /* every item must arrive, in order: a loss or a reorder fails the session */
+    ok = ok && !s->stat_frame_invalid && !s->stat_frame_seq_discont &&
+         !s->stat_seq_lost_total && s->st40p_fmd_max_gap_ns <= ST_APP_FMD_MAX_GAP_NS;
     (void)snprintf(fmd, sizeof(fmd), ", %d invalid, max gap %.3f ms",
                    s->stat_frame_invalid, (double)s->st40p_fmd_max_gap_ns / NS_PER_MS);
   }

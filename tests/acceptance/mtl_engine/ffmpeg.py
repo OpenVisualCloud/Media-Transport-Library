@@ -225,6 +225,10 @@ class FFmpeg(Application):
         populated lazily in :meth:`prepare_execution` because file creation
         needs the live ``host`` connection.
         """
+        if self.params.get("fast_metadata"):
+            # The FFmpeg plugin has no fast metadata option, and st40p falls
+            # back to the video mode below.
+            raise ValueError("FFmpeg adapter does not support fast_metadata")
         # Resolve mode: explicit ``mode`` kwarg takes precedence; otherwise
         # infer from ``session_type`` (allows unified tests to pass
         # session_type="st22p" without also specifying mode="st22p").

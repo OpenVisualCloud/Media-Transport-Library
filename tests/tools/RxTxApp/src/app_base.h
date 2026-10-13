@@ -359,13 +359,14 @@ struct st_app_rx_anc_session {
   int st40_fmd_dit;   /* -1: not checked */
   int st40_fmd_k_bit; /* -1: not checked */
   struct st_app_fmd_ref st40_fmd_ref;
-  uint16_t st40_fmd_last_seq;
+  int st40_fmd_last_seq; /* -1 until the first packet */
   uint64_t st40_fmd_last_rx_time;
   uint64_t st40_fmd_max_gap_ns;
 
   /* stat */
   int stat_frame_total_received;
-  int stat_pkt_invalid; /* RTP packets that failed validation */
+  int stat_pkt_invalid;     /* RTP packets that failed validation */
+  int stat_pkt_seq_discont; /* RTP packets whose seq does not follow the last one */
   uint64_t stat_frame_first_rx_time;
 };
 

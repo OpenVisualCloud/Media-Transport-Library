@@ -244,6 +244,7 @@ Items in each element of the "ancillary" array
 ​ **payload_type (int):** `0~127` 7 bits payload type define in RFC3550
 
 ​ **fast_metadata (bool):** receive SMPTE ST 2110-41 fast metadata instead of RFC 8331 ANC, (optional). A packet counts as invalid unless its marker bit is 0, its RTP version is 2, its data item length is not 0 and it is at most 1452 bytes. A 12-byte zero-item packet is valid but is no frame; the session fails if valid packets, zero-item ones included, stop for more than 500 ms.
+It also fails on a lost or reordered packet: one whose RTP sequence number does not follow the previous one.
 
 ​ **fastmetadata_data_item_type (int):** `0~4194303`  (0x - 0x3fffff) 22 bits data item type - reference value (for testing the flow) - Optional setting, used with `fast_metadata`
 
@@ -254,6 +255,7 @@ Items in each element of the "ancillary" array
 #### st40p (array of ancillary pipeline sessions) for RX
 
 ​ **fast_metadata (bool):** receive SMPTE ST 2110-41 fast metadata through the st40p pipeline, (optional). Each frame is one data item. It is invalid unless its marker bit is 0 and it matches the optional `fastmetadata_data_item_type`, `fastmetadata_k_bit` and `st40p_url` reference file; the session fails if valid items stop for more than 500 ms.
+It also fails on a lost or reordered item, which the lib reports with `seq_discont` or `seq_lost`.
 
 ### Others
 

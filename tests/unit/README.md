@@ -161,10 +161,27 @@ under `session/`, with per-feature files inside:
 - `session/st30/` — ST 2110-30 (audio)
 - `session/st40/` — ST 2110-40 (ancillary)
 - `pipeline/`     — pipeline layer (frame assembly above the session filter)
+- `rxtxapp/`      — the fast metadata mode of the RxTxApp test tool, see below
 
 The shared per-media gtest fixture lives in `<media>/<media>_rx_test_base.h`;
 each per-feature file derives a thin subclass so `--gtest_filter` selects only
 that feature's tests.
+
+### RxTxApp
+
+The `RxTxAppFmd*` suites test RxTxApp, not the lib: the json keys, the TX
+chunking and the RX verdict of an ST 2110-41 fast metadata session. The pytest
+acceptance suite uses this verdict, so a fault in it can hide a fault in the
+lib. `rxtxapp/fmd_harness.c` compiles `parse_json.c`, `tx_st40p_app.c`,
+`rx_st40p_app.c` and `rx_ancillary_app.c` in place, and a `#define` replaces
+each lib call of these files with a fake. A static archive holds the other
+RxTxApp sources, with `main` renamed, for the link. The app threads run on the
+test thread. Meson builds this tier only when it finds `json-c` and `pcap`,
+the two libraries of RxTxApp.
+
+```bash
+./build_unit/tests/unit/UnitTest --gtest_filter='RxTxAppFmd*'
+```
 
 For the always-current list of suites and tests:
 
