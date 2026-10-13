@@ -312,16 +312,43 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
       with `MTL_FLAG_TX_MONO_POOL` `nb_tx_q` × `nb_tx_desc` × 2 more mbufs per port (~65k at 16
       queues, ~150 MB of hugepages).
     - RTCP: the retransmit ring is at least `nb_tx_desc` (`tv_rtcp_buffer_size()`), and the TX video pools count it.
-    - Zero copy: `tv_pkts_capable_chain()` keeps it while `st20_total_pkts` × (frames − 1) ≥ the
-      pkts held: `nb_tx_desc` / 2 in the queue at 2 descriptors each, or with
-      `ST20_TX_FLAG_ENABLE_RTCP` the larger retransmit ring, whose refs only newer pkts release (a
-      ring spanning every spare buffer deadlocks), plus the unsent ones in the builder ring
-      (`ring_count`, 512). Short of that, `tv_tasklet_frame()` refuses the buffer the app just
-      handed over ("refcnt not zero"). At 2048 with 2 buffers every format under 1536 pkts copies
-      (576p BPM 823, 480p 686), with 3 those under 768 (SD fields); with RTCP and 2 buffers 720p
-      (BPM 1829) and 1080i fields (GPM_SL 2160) copy too. Logged at info.
+    - Zero copy: a frame is free once the PMD frees the last mbuf pointing into it
+      (`tv_frame_free_cb()` → `notify_frame_done`).
+      - PMD: the iavf and ice scalar xmit (`ci_xmit_pkts()`, which MULTI_SEGS forces) cleans the
+        oldest done rs batch (`tx_rs_thresh`, 32) a burst while fewer than `tx_free_thresh` (32)
+        descriptors are free: a TX ring later, 1024 pkts after the frame left at 2048. Only since
+        DPDK 26.07 does the cleanup free the mbufs; before, they wait for their sw_ring entry's reuse.
+      - 26.07+ (`MT_DEV_TX_CLEANUP_FREES`): `dev_start_port()` sets `tx_free_thresh` to
+        `nb_tx_desc` − 2 × `tx_rs_thresh`, so a burst, a burst of none too (`mt_txq_reclaim()`),
+        frees a batch while 2 are in use, and records `mt_if_tx_reclaim_rs_thresh()`.
+      - Session (`tv_tx_reclaims()` → `s->tx_reclaim`): frames of ≥ rs pkts on every port (2 × rs
+        − 1 descriptors after a frame's last pkt free its batch, 2 a pkt), dedicated queues, no
+        RTCP. `tv_frames_out()` asks the app for a frame only once every frame but the last one
+        built is back, reclaiming every `ST_TX_VIDEO_RECLAIM_NS` while it waits
+        (`STI_FRAME_RECLAIM_WAIT`): any 2 buffers keep zero copy. Before 26.07 it could wait for good.
+      - Hang: a hung queue holds the frames too, and with nothing to send the transmitter sees no
+        burst fail. A wait past `tx_hang_detect_time_thresh` (at least 2 frame times) flags the
+        recovery of every leg idle as long (`tv_frames_out_hang()`); a reclaim gap past half of
+        it restarts the wait, as the scheduler stalled, not the queue. No per-leg signal tells a
+        hung R leg from a healthy P, so both recover, and P's recovery first flushes the hung R:
+        2 × `nb_tx_desc` pads, ~2 ms of `mt_dpdk_tx_burst_busy()` timeout and a warn each, ~8 s
+        of the scheduler once.
+    - `rte_eth_tx_done_cleanup()`: in DPDK 26.07 iavf and ice free the `nb_tx_free` entries from
+      `tx_tail` again, mbufs `ci_tx_xmit_cleanup()` freed and left in the sw_ring. It runs only on
+      TX hang recovery (`mt_txq_done_cleanup()`, `mt_tsq_done_cleanup()`): video
+      `st20_tx_queue_fatal_error()` one transmitter pass after a burst returned 0 with no success
+      for ≥ 1 s, audio `st_audio_queue_fatal_error()` right after it. A burst returns 0 only once a
+      failed cleanup leaves `nb_tx_free` below the first pkt's descriptors (≤ 2), so ≤ 1; until the
+      call each other burst on the queue (a reclaim, another scheduler's on a shared queue) adds
+      one batch at most, and only if the NIC resumed: the double free stays within a few batches,
+      as at the default threshold (≤ 63), not `nb_tx_desc`.
+    - Other sessions: `tv_pkts_capable_chain()` keeps zero copy while `st20_total_pkts` ×
+      (frames − 1) ≥ `nb_tx_desc` / 2 (the queue at 2 descriptors a pkt), or the larger RTCP
+      retransmit ring (≥ `nb_tx_desc` pkts, it holds queued pkts too, and only newer pkts release
+      it), plus the 512 of the builder ring; short of it `tv_tasklet_frame()` refuses a frame still
+      referenced ("refcnt not zero"). At 2048 with RTCP and 2 buffers 720p and 1080i copy.
     - Time: the RL training pad trains fill the ring, and the training waits for it to drain (video ~7.5 ms at 1080p59.94, audio ~170 ms at 0.33 ms ptime), and the stop-time flush sends 2 × `nb_tx_desc` pads at each queue's rate (~0.2 s per audio RL queue at 0.33 ms ptime).
-    - Recovery: `st20_tx_queue_fatal_error()` flushes the healthy redundant leg inside the tasklet, ~15 ms at 1080p59.94, so the scheduler's other sessions miss that much once, after a TX hang that is already fatal.
+    - Recovery: `st20_tx_queue_fatal_error()` flushes the other redundant leg inside the tasklet, ~15 ms at 1080p59.94 if it is healthy, so the scheduler's other sessions miss that much once, after a TX hang that is already fatal (a hung one: see Zero copy, Hang).
 - RX mempool element count: `nb_rx_desc + 1024` (headroom), rounded to `2^q - 1 = 4095`
 - Mempool element size cache-aligned: e.g., 1494 → 1536 (rounded to `MT_MBUF_CACHE_SIZE = 128`)
 
@@ -893,10 +920,9 @@ Well-known group `224.0.0.1` always joined for IGMP query reception (unless kern
 
 Pad destination MAC: `01:80:C2:00:00:01` (IEEE slow-protocol, switches won't forward).
 
-Why pads instead of `tx_done_cleanup`: E810 ice driver does NOT implement `rte_eth_tx_done_cleanup` (returns `-ENOTSUP`).
-Even on NICs that support it, the API only frees already-completed descriptors — if the NIC hasn't finished DMA-reading an mbuf, cleanup won't touch it.
+Why pads instead of `tx_done_cleanup`: the API only frees already-completed descriptors — if the NIC hasn't finished DMA-reading an mbuf, cleanup won't touch it.
 Pads actively force the ring to cycle, guaranteeing completion regardless of NIC state.
-(Note: MTL does call `rte_eth_tx_done_cleanup` in shared TX queue path as best-effort, but pad flush is the authoritative cleanup.)
+(Note: MTL calls `rte_eth_tx_done_cleanup` only on TX hang recovery, best-effort; pad flush is the authoritative cleanup.)
 
 ### RX Burst Pattern
 Default burst: 128 (runtime assignment: `s->rx_burst_size = 128`). RX packets fit in a single mbuf because `data_room = 1664` > max packet size (1494 bytes) — no multi-segment reassembly needed.

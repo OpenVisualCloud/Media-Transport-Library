@@ -61,4 +61,72 @@ TEST_F(St20TxZeroCopyTest, RtcpRingSpanningEverySpareBufferCopies) {
   EXPECT_TRUE(ut_txv_pkts_capable_chain(ctx_, 512, 823, 2, false));
 }
 
+/* the builder reclaims the session's own queues: not shared ones, other schedulers burst
+ * on them, and not with RTCP, whose ring keeps the frames */
+TEST_F(St20TxZeroCopyTest, TxReclaimNeedsReclaimingDedicatedQueuesAndNoRtcp) {
+  const ut_txv_reclaim_case reclaims = {{32, 32}, 1, false, false, false, 823, 2};
+  ut_txv_reclaim_case c = reclaims;
+  EXPECT_TRUE(ut_txv_tx_reclaims(ctx_, &c));
+  c.num_port = 2;
+  EXPECT_TRUE(ut_txv_tx_reclaims(ctx_, &c));
+
+  struct {
+    const char* what;
+    void (*change)(ut_txv_reclaim_case*);
+  } const cases[] = {
+      {"port", [](ut_txv_reclaim_case* c) { c->port_rs_thresh[0] = 0; }},
+      {"r leg",
+       [](ut_txv_reclaim_case* c) {
+         c->num_port = 2;
+         c->port_rs_thresh[1] = 0;
+       }},
+      {"shared", [](ut_txv_reclaim_case* c) { c->shared_txq = true; }},
+      {"rtcp", [](ut_txv_reclaim_case* c) { c->rtcp = true; }},
+      {"rtp level", [](ut_txv_reclaim_case* c) { c->rtp_level = true; }},
+  };
+  for (const auto& k : cases) {
+    c = reclaims;
+    k.change(&c);
+    EXPECT_FALSE(ut_txv_tx_reclaims(ctx_, &c)) << k.what;
+  }
+}
+
+/* the next frame's 2 descriptors a pkt free the batch the frame before ended in */
+TEST_F(St20TxZeroCopyTest, TxReclaimNeedsFramesOfTheRsThreshOfEveryPort) {
+  for (uint16_t rs : {32, 64}) {
+    SCOPED_TRACE(rs);
+    ut_txv_reclaim_case c = {{rs, rs}, 2, false, false, false, rs, 2};
+    EXPECT_TRUE(ut_txv_tx_reclaims(ctx_, &c));
+    c.total_pkts = rs - 1;
+    EXPECT_FALSE(ut_txv_tx_reclaims(ctx_, &c));
+  }
+  ut_txv_reclaim_case r_leg = {{32, 64}, 2, false, false, false, 63, 2};
+  EXPECT_FALSE(ut_txv_tx_reclaims(ctx_, &r_leg));
+}
+
+/* tv_attach() decides it before the bound, which it lifts */
+TEST_F(St20TxZeroCopyTest, AttachKeepsSdZeroCopyWhereItReclaims) {
+  ut_txv_reclaim_case c = {{32, 32}, 1, false, false, false, 823, 2};
+  bool zero_copy, reclaim;
+  ut_txv_init_tx_chain(ctx_, &c, kNbTxDesc, &zero_copy, &reclaim);
+  EXPECT_TRUE(zero_copy);
+  EXPECT_TRUE(reclaim);
+  c.total_pkts = 432; /* 576i fields */
+  ut_txv_init_tx_chain(ctx_, &c, kNbTxDesc, &zero_copy, &reclaim);
+  EXPECT_TRUE(zero_copy);
+  EXPECT_TRUE(reclaim);
+  c.total_pkts = 823;
+
+  c.port_rs_thresh[0] = 0;
+  ut_txv_init_tx_chain(ctx_, &c, kNbTxDesc, &zero_copy, &reclaim);
+  EXPECT_FALSE(zero_copy);
+  EXPECT_FALSE(reclaim);
+
+  /* a copy session sends from its own mbufs: nothing to wait for */
+  c = {{32, 32}, 1, false, false, false, 823, 2, true};
+  ut_txv_init_tx_chain(ctx_, &c, kNbTxDesc, &zero_copy, &reclaim);
+  EXPECT_FALSE(zero_copy);
+  EXPECT_FALSE(reclaim);
+}
+
 }  // namespace

@@ -120,6 +120,7 @@ unit_sources = [
   'session/st20_tx/interlaced_field_epoch_test.cpp',
   'session/st20_tx/pacing_test.cpp',
   'session/st20_tx/zero_copy_test.cpp',
+  'session/st20_tx/zero_copy_reclaim_test.cpp',
   'session/st20_tx/rl_training_test.cpp',
   'session/st20_tx/rtcp_pool_test.cpp',
   'session/st20_tx/stale_frame_priv_test.cpp',

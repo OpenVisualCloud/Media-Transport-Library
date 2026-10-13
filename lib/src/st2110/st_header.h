@@ -348,6 +348,10 @@ struct st_tx_video_session_impl {
 
   uint16_t st20_frame_idx; /* current frame index */
   enum st21_tx_frame_status st20_frame_stat;
+  /* zero copy: the app is asked for a frame once the earlier ones are reclaimed */
+  bool tx_reclaim;
+  uint64_t last_reclaim_tsc;
+  uint64_t reclaim_wait_tsc; /* 0 while no frame is waited for */
   uint16_t st20_frame_lines_ready;
 
   struct st20_pgroup st20_pg;

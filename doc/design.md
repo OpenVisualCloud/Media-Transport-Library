@@ -214,6 +214,11 @@ In one typical setup, capable of sending approximately 50 Gbps (equivalent to 16
 
 During the packet construction process, only the RTP header is regenerated to represent the packet position within a frame. The video data is carried in the second segment of an mbuf, which directly points to the original frame.
 
+A zero-copy frame stays in use until the NIC has sent the last packet that points into it.
+On iavf and ice with DPDK 26.07 or later, every TX burst frees the packets the NIC has sent, and a session asks the application for a new frame only once its earlier frames are back, so two frame buffers keep zero copy.
+Elsewhere (other PMDs, older DPDK, shared TX queues, RTCP retransmission, or fewer than 32 packets a frame) a packet is freed only about one TX queue later, and a session whose other frame buffers do not cover the queue copies its frames instead.
+More frame buffers (`framebuff_cnt`) keep it zero copy.
+
 Note that if the currently used NIC does not support the multi-buffer feature, the MTL will need to copy the video frame into the descriptor, resulting in a loss of performance.
 
 ![TX Zero Copy](png/tx_zero_copy.svg)
@@ -229,7 +234,7 @@ The default NIC queue depth is 2048 descriptors (`nb_tx_desc`), and MTL always k
 A zero-copy video packet takes 2 descriptors (header and payload), so the default queue holds 1024 packets: ~3.8 ms at 1080p59.94, more than the time slice a busy CPU gives another runnable task (~3 ms). Longer stalls leave a gap on the wire and the receiver's VRX underflows.
 For a 4K 60fps session one packet time is ~1 µs, so the default covers ~1 ms. If you observe packet timing jitter, raise `nb_tx_desc`, up to the driver maximum (8160 for iavf).
 A deeper queue does not move the packets on the wire, but each frame is queued, and taken from the application, that much earlier.
-It also takes more hugepage memory for the TX mbuf pools, and a format with few packets per frame and few frame buffers falls back from zero copy to copy mode.
+It also takes more hugepage memory for the TX mbuf pools, and where packets are freed only a queue later (see [4.3.1](#431-zero-copy-packet-build)) a format with few packets per frame and few frame buffers falls back from zero copy to copy mode.
 
 The start of each frame has its own, shorter tolerance. With the rate limiter, the library starts sending padding packets a short time before a frame's scheduled first-packet time, so that the NIC shaper releases the first packet on time (see [8.2](#82-rtp-timestamps-of-paced-video)).
 That time is 80% of the ST 2110-21 TR_OFFSET, but at most 128 packet times. If the scheduler reaches the frame later than that, the first packet leaves late by how far past its scheduled time the scheduler reaches it.
