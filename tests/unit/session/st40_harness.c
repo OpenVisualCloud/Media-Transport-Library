@@ -18,7 +18,11 @@
  */
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
+#define mt_rxq_get ut40_rxq_get
+#define mt_rxq_put ut40_rxq_put
 #include "st2110/st_rx_ancillary_session.c"
+#undef mt_rxq_get
+#undef mt_rxq_put
 
 _Static_assert(
     __builtin_types_compatible_p(typeof(((struct st_rx_anc_frame_slot*)0)->state),
@@ -43,6 +47,23 @@ struct ut_test_ctx {
 static struct rte_ring* g_ring;
 static bool g_skip_drain;      /* when true, notify_rtp_ready does not drain the ring */
 static int g_notify_rtp_calls; /* count to verify dispatch suppression */
+
+/* ── rx queue stubs, so a source update needs no NIC ─────────────────── */
+
+static struct mt_rxq_entry g_rxq;
+
+struct mt_rxq_entry* ut40_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
+                                  struct mt_rxq_flow* flow) {
+  (void)impl;
+  (void)port;
+  (void)flow;
+  return &g_rxq;
+}
+
+int ut40_rxq_put(struct mt_rxq_entry* entry) {
+  (void)entry;
+  return 0;
+}
 
 /* ── PTP time stub ────────────────────────────────────────────────────── */
 
@@ -269,11 +290,13 @@ int ut40_feed_rtp_bytes(ut_test_ctx* ctx, const uint8_t* rtp, uint16_t len,
   return ut40_feed_rtp_bytes_padded(ctx, rtp, len, 0, port);
 }
 
-int ut40_feed_rtp_bytes_padded(ut_test_ctx* ctx, const uint8_t* rtp, uint16_t len,
-                               uint16_t eth_pad, enum mtl_session_port port) {
+static int ut40_feed_rtp_bytes_full(ut_test_ctx* ctx, const uint8_t* rtp, uint16_t len,
+                                    uint16_t eth_pad, uint16_t udp_payload_len,
+                                    enum mtl_session_port port) {
   struct rte_mbuf* m = rte_pktmbuf_alloc(ut_pool());
+  uint16_t room = RTE_MAX(len + eth_pad, udp_payload_len);
   if (!m) return -ENOMEM;
-  if (rte_pktmbuf_tailroom(m) < sizeof(struct mt_udp_hdr) + len + eth_pad) {
+  if (rte_pktmbuf_tailroom(m) < sizeof(struct mt_udp_hdr) + room) {
     rte_pktmbuf_free(m);
     return -ENOSPC;
   }
@@ -281,15 +304,30 @@ int ut40_feed_rtp_bytes_padded(ut_test_ctx* ctx, const uint8_t* rtp, uint16_t le
   struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(m, struct mt_udp_hdr*);
   uint8_t* payload = (uint8_t*)&hdr[1];
   memset(hdr, 0, sizeof(*hdr));
-  hdr->udp.dgram_len = htons(sizeof(hdr->udp) + len);
+  hdr->udp.dgram_len = htons(sizeof(hdr->udp) + udp_payload_len);
   memcpy(payload, rtp, len);
   memset(payload + len, 0, eth_pad);
+  /* past data_len every word reads as a 1-word FMD item, so an over-read shows */
+  for (uint16_t off = len + eth_pad; off + 4 <= room; off += 4) {
+    uint32_t word = htonl(0x00000401);
+    memcpy(payload + off, &word, sizeof(word));
+  }
   m->data_len = sizeof(*hdr) + len + eth_pad;
   m->pkt_len = m->data_len;
 
   int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, port);
   rte_pktmbuf_free(m);
   return rc;
+}
+
+int ut40_feed_rtp_bytes_padded(ut_test_ctx* ctx, const uint8_t* rtp, uint16_t len,
+                               uint16_t eth_pad, enum mtl_session_port port) {
+  return ut40_feed_rtp_bytes_full(ctx, rtp, len, eth_pad, len, port);
+}
+
+int ut40_feed_rtp_bytes_udp_len(ut_test_ctx* ctx, const uint8_t* rtp, uint16_t len,
+                                uint16_t udp_payload_len, enum mtl_session_port port) {
+  return ut40_feed_rtp_bytes_full(ctx, rtp, len, 0, udp_payload_len, port);
 }
 
 int ut40_ring_dequeue_rtp(ut_test_ctx* ctx, uint8_t* out, uint16_t cap) {
@@ -442,6 +480,8 @@ struct ut40_captured_frame {
   uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
   uint32_t pkts_total;
   int status;
+  uint32_t fmd_dit;
+  uint8_t fmd_k_bit;
   /* deep copy of meta[] so caller can release the slot before inspecting */
   struct st40_meta meta[UT40_CAPTURE_META_PER_FRAME];
   /* deep copy of udw payload bytes (capped) */
@@ -478,6 +518,8 @@ static int ut_notify_frame_ready(void* priv, void* addr,
   c->seq_discont = meta->seq_discont;
   c->pkts_total = meta->pkts_total;
   c->status = meta->status;
+  c->fmd_dit = meta->fmd_dit;
+  c->fmd_k_bit = meta->fmd_k_bit;
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     c->port_seq_lost[i] = meta->port_seq_lost[i];
     c->port_seq_discont[i] = meta->port_seq_discont[i];
@@ -580,6 +622,12 @@ uint32_t ut40_captured_pkts_total(int i) {
 }
 int ut40_captured_status(int i) {
   return (i >= 0 && i < g_captured_count) ? g_captured[i].status : -1;
+}
+uint32_t ut40_captured_fmd_dit(int i) {
+  return (i >= 0 && i < g_captured_count) ? g_captured[i].fmd_dit : 0;
+}
+uint8_t ut40_captured_fmd_k_bit(int i) {
+  return (i >= 0 && i < g_captured_count) ? g_captured[i].fmd_k_bit : 0;
 }
 
 void ut40_set_notify_frame_fail_after(int n) {
@@ -754,6 +802,19 @@ int ut40_feed_multi_anc_pkt(ut_test_ctx* ctx, uint16_t seq, uint32_t ts, int mar
   int rc = rx_ancillary_session_handle_pkt(&ctx->impl, &ctx->session, m, port);
   rte_pktmbuf_free(m);
   return rc;
+}
+
+int ut40_update_source(ut_test_ctx* ctx) {
+  struct st_rx_source_info src;
+
+  memset(&src, 0, sizeof(src));
+  for (int i = 0; i < ctx->session.ops.num_port; i++) {
+    uint8_t ip[MTL_IP_ADDR_LEN] = {192, 168, 77, (uint8_t)(10 + i)};
+    memcpy(src.ip_addr[i], ip, MTL_IP_ADDR_LEN);
+    src.udp_port[i] = 20000 + i;
+  }
+  ctx->mgr.sessions[ctx->session.idx] = &ctx->session;
+  return rx_ancillary_sessions_mgr_update_src(&ctx->mgr, &ctx->session, &src);
 }
 
 void ut40_session_reset(ut_test_ctx* ctx) {

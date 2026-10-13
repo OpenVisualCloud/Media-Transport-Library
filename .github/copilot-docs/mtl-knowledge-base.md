@@ -681,9 +681,25 @@ Same lifecycle pattern as video, simplified:
   the reserved DITs 0x300000-0x3FEFFF and payload types 1-95. Pacing, redundancy and stats are
   the ST40 ones; RTP_LEVEL packets sharing a timestamp go out back to back, so more than 4 per
   timestamp breaks the ST 2110-41 §7 network compatibility model.
-  RX in this mode is RTP_LEVEL only and must leave the payload untouched — the RFC 8331 F-bit
-  parse and in-place byte swap would corrupt it. `st40_rx_get_mbuf()` takes `len` from the UDP
-  header, because the 54-byte zero-item frame is padded to 60 on the wire.
+  RX in this mode must leave the payload untouched — the RFC 8331 F-bit parse and in-place byte
+  swap would corrupt it. RTP_LEVEL hands over the raw packet; `st40_rx_get_mbuf()` takes `len`
+  from the UDP header, because the 54-byte zero-item frame is padded to 60 on the wire.
+  FRAME_LEVEL (`rx_anc_fmd_assemble_pkt()`) bypasses the RFC 8331 inflight/pending slot state
+  machine, since 2110-41 has no marker: each Data Item Package is delivered at once as its own
+  frame (contents incl. zero padding, `fmd_dit`/`fmd_k_bit` in `st40_rx_frame_meta`), after
+  skipping CSRCs, an RFC 8285 extension and RTP padding. DIL 0 or an overrun stops the packet
+  (`stat_anc_pkt_parse_err`); an item over `framebuff_size` or with no free slot is dropped
+  and counted in `stat_anc_frames_dropped`; a zero-item packet delivers nothing. Loss lives in
+  the stream, not the item, so `status` stays COMPLETE: the session keeps the previous
+  packet's seq in arrival order (`fmd_prev_seq`, -1 after reset or a source update) and a
+  pending gap; a seq that is not prev + 1, or any local drop (parse error, no slot, oversize,
+  `notify_frame_ready` < 0), sets `seq_discont` on the next delivered item, with `seq_lost` =
+  forward seq gap. An accepted delivery clears it. A reorder 0,2,1,3 flags 2, 1 and 3, and
+  counts 1 lost twice. st40p counts `stat_frames_corrupted` on CORRUPTED status, so FMD never
+  bumps it. st40p exposes the fast metadata opt-in as
+  `ST40P_TX_FLAG_FAST_METADATA` (+ `st40p_tx_ops.fmd_dit`/`fmd_k_bit`, one item per frame from
+  `udw_buff_addr`/`udw_buffer_fill`, `meta_num` ignored) and `ST40P_RX_FLAG_FAST_METADATA`
+  (header in `st40_frame_info.fmd_dit`/`fmd_k_bit`).
   Spec conflict: Annex A says segment words = DIL - 2, but §5.4 makes DIL count the words after
   the DIT/K/DIL word; the Annex A integration test follows §5.4 (DIL - 1 segment words).
 - ST30 RX, like ST20: a short frame counts `stat_frames_incomplete` and is recycled, or zeroed-then-delivered under `ST30_RX_FLAG_RECEIVE_INCOMPLETE_FRAME`

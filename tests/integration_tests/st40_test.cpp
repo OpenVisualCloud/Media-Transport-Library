@@ -732,7 +732,7 @@ TEST(St40_rx, fmd_create_free_single) {
 TEST(St40_rx, fmd_create_free_multi) {
   st40_fmd_rx_create_free_test(4);
 }
-TEST(St40_rx, fmd_create_expect_fail_frame_level) {
+TEST(St40_rx, fmd_create_free_frame_level) {
   auto ctx = st_test_ctx();
   tests_context st40;
   struct st40_rx_ops ops;
@@ -743,10 +743,6 @@ TEST(St40_rx, fmd_create_expect_fail_frame_level) {
   ops.notify_frame_ready = rx_frame_ready_unused;
   ops.framebuff_cnt = 2;
   ops.framebuff_size = 2048;
-  EXPECT_TRUE(st40_rx_create(ctx->handle, &ops) == nullptr);
-
-  /* the same FRAME_LEVEL ops without the opt-in are valid */
-  ops.flags &= ~ST40_RX_FLAG_FAST_METADATA;
   st40_rx_handle handle = st40_rx_create(ctx->handle, &ops);
   ASSERT_TRUE(handle != nullptr);
   EXPECT_GE(st40_rx_free(handle), 0);

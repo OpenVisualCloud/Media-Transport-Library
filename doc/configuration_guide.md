@@ -174,6 +174,10 @@ Items in each element of the "ancillary" array
 
 ​ **fastmetadata_k_bit (int):** `0~1` 1 bit K-bit value, used with `fast_metadata`
 
+#### st40p (array of ancillary pipeline sessions)
+
+​ **fast_metadata (bool):** send SMPTE ST 2110-41 fast metadata through the st40p pipeline, (optional). Each frame carries one data item cut from `st40p_url`. `fastmetadata_data_item_type`, `fastmetadata_k_bit` and `payload_type` follow the ancillary rules above.
+
 ### RX Sessions (array of rx session groups)
 
 Common settings for following sessions in the group:
@@ -246,6 +250,10 @@ Items in each element of the "ancillary" array
 ​ **fastmetadata_k_bit (int):** `0~1` 1 bit K-bit value - reference value (for testing the flow) - Optional setting, used with `fast_metadata`
 
 ​ **ancillary_url (string):** fast metadata reference file (for testing the flow) - Optional setting, used with `fast_metadata`
+
+#### st40p (array of ancillary pipeline sessions) for RX
+
+​ **fast_metadata (bool):** receive SMPTE ST 2110-41 fast metadata through the st40p pipeline, (optional). Each frame is one data item. It is invalid unless its marker bit is 0 and it matches the optional `fastmetadata_data_item_type`, `fastmetadata_k_bit` and `st40p_url` reference file; the session fails if valid items stop for more than 500 ms.
 
 ### Others
 

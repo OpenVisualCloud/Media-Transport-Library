@@ -113,6 +113,9 @@ int ut40_feed_rtp_bytes(ut_test_ctx* ctx, const uint8_t* rtp, uint16_t len,
 /* Same, with `eth_pad` zero bytes of Ethernet padding past the UDP datagram. */
 int ut40_feed_rtp_bytes_padded(ut_test_ctx* ctx, const uint8_t* rtp, uint16_t len,
                                uint16_t eth_pad, enum mtl_session_port port);
+/* Same, with a UDP length that claims `udp_payload_len` RTP bytes instead of `len`. */
+int ut40_feed_rtp_bytes_udp_len(ut_test_ctx* ctx, const uint8_t* rtp, uint16_t len,
+                                uint16_t udp_payload_len, enum mtl_session_port port);
 
 /* Dequeue one packet through st40_rx_get_mbuf() and copy the `len` bytes it reports
  * into `out`. Returns that length, or < 0 if the ring is empty or `cap` is too small. */
@@ -184,6 +187,10 @@ void ut40_set_skip_drain(bool skip);
  * sub-scenario inside a test. */
 void ut40_session_reset(ut_test_ctx* ctx);
 
+/* Switch the session to a new unicast source through the locked update path the
+ * public st40_rx_update_source() takes. RX queues are stubbed. */
+int ut40_update_source(ut_test_ctx* ctx);
+
 /* Drive the mt_stat-thread stat callback synchronously for assertions on
  * the rate-limited stat lines. */
 void ut40_invoke_rx_ancillary_session_stat(ut_test_ctx* ctx);
@@ -244,6 +251,9 @@ bool ut40_captured_port_seq_discont(int i, enum mtl_session_port p);
 uint32_t ut40_captured_port_pkts_recv(int i, enum mtl_session_port p);
 uint32_t ut40_captured_pkts_total(int i);
 int ut40_captured_status(int i);
+/* Data Item Type / K-bit of a frame delivered with ST40_RX_FLAG_FAST_METADATA. */
+uint32_t ut40_captured_fmd_dit(int i);
+uint8_t ut40_captured_fmd_k_bit(int i);
 
 void ut40_set_notify_frame_fail_after(int n);
 void ut40_release_frame(ut_test_ctx* ctx, void* addr);

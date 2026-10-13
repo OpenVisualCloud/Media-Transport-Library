@@ -152,6 +152,7 @@ unit_sources = [
   'pipeline/st40p_tx_blocking_test.cpp',
   'pipeline/st40p_tx_fbs_test.cpp',
   'pipeline/st40p_concurrency_test.cpp',
+  'pipeline/st40p_fmd_test.cpp',
   'pipeline/st22p_harness.c',
   'pipeline/st22p_tx_harness.c',
   'pipeline/st22p_tx_drop_when_late_test.cpp',

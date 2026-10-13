@@ -151,9 +151,24 @@ struct st40_tx_test_config {
 /**
  * Flag bit in flags of struct st40_rx_ops.
  * The session receives SMPTE ST 2110-41 fast metadata (struct st40_fmd_rtp_hdr)
- * instead of RFC 8331 ANC. ST40_TYPE_RTP_LEVEL only. The RTP packet is delivered
- * untouched, in network byte order: no F-bit parsing, interlace detection or
- * F-bit based drop.
+ * instead of RFC 8331 ANC, with no F-bit parsing, interlace detection or F-bit
+ * based drop.
+ * For ST40_TYPE_RTP_LEVEL, the RTP packet is delivered untouched, in network order.
+ * For ST40_TYPE_FRAME_LEVEL, each Data Item Package is delivered as its own frame:
+ * the frame holds the Data Item Contents, zero padding included, udw_buffer_fill is
+ * the Data Item Length * 4, meta_num is 0 and fmd_dit/fmd_k_bit of
+ * struct st40_rx_frame_meta hold the item header. A zero-item packet delivers no
+ * frame, and an item larger than framebuff_size is dropped. Each item of a packet
+ * takes a free frame at once, so framebuff_cnt must cover the items per packet.
+ * status is always ST_FRAME_STATUS_COMPLETE: the item is intact, and seq_discont and
+ * seq_lost describe the stream before it. seq_discont is set on the first item
+ * delivered after a break: a packet whose RTP seq does not follow the previous
+ * packet's in arrival order (a gap or a late packet), or an item the lib dropped
+ * (malformed packet, no free frame, larger than framebuff_size, or refused by
+ * notify_frame_ready). seq_lost sums the forward RTP seq gaps between consecutive
+ * packets since the previous delivered item. The first packet after create or a
+ * source update reports false/0, and so do later items of the same packet unless
+ * an item between them was dropped.
  */
 #define ST40_RX_FLAG_FAST_METADATA (MTL_BIT32(3))
 
@@ -549,6 +564,11 @@ struct st40_rx_frame_meta {
 
   /** Frame status (complete / corrupted) */
   enum st_frame_status status;
+
+  /** Only with ST40_RX_FLAG_FAST_METADATA. Data Item Type of the delivered item */
+  uint32_t fmd_dit;
+  /** Only with ST40_RX_FLAG_FAST_METADATA. Data Item K-bit of the delivered item */
+  uint8_t fmd_k_bit;
 };
 
 /**
