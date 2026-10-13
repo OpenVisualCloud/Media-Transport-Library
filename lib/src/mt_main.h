@@ -603,10 +603,20 @@ struct mt_sch_mgr {
   enum mt_lcore_type local_lcores_type[RTE_MAX_LCORE];
 };
 
+/* the pads a frame of video RL training sends: their bytes, NORMAL size and count */
+struct mt_pacing_pad_mix {
+  uint64_t bytes;
+  uint32_t normal;
+  uint32_t pkts;
+};
+
 struct mt_pacing_train_result {
   uint64_t input_bps;        /* input, byte per sec */
   uint64_t profiled_bps;     /* profiled result */
   float pacing_pad_interval; /* result */
+  /* what pacing_pad_interval was trained with, on a queue programmed at queue_bps */
+  struct mt_pacing_pad_mix pad_mix;
+  uint64_t queue_bps;
 };
 
 struct mt_rl_shaper {

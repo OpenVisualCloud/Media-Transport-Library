@@ -73,8 +73,20 @@ struct ut_txv_ctx {
   int txq_get_calls;
   enum mtl_port txq_get_port;
   uint64_t txq_get_bytes_per_sec;
-  /* tv_train_pacing(): an RL queue of nb_tx_desc pads, one drained per train_pad_ns */
+  /* tv_train_pacing(): an RL queue of nb_tx_desc pads, which the shaper drains in
+   * train_pad_ns per NORMAL pad of train_normal_len bytes, by their bytes */
   long double train_pad_ns;
+  uint16_t train_normal_len;
+  bool no_trim_pads; /* ut_txv_init_rl_pacing() leaves s->trim_pad empty */
+  uint32_t rl_width; /* ut_txv_set_rl_format(), 0 for 1920x1080 */
+  uint32_t rl_height;
+  bool rl_interlaced;
+  enum st_fps rl_fps;
+  struct mt_txq_entry rl_queue[MTL_SESSION_PORT_MAX];
+  struct mt_tx_queue rl_txq[MTL_SESSION_PORT_MAX];
+  bool rl_bps_set[MTL_SESSION_PORT_MAX];
+  uint64_t rl_bps[MTL_SESSION_PORT_MAX];
+  int trim_pad_tag;
   long double train_drain_end_ns;
   uint64_t slept_ns;
 };
@@ -170,10 +182,20 @@ static uint16_t ut_txv_txq_burst_busy(struct mt_txq_entry* entry,
     if (full > ctx->mock_tsc_ns)
       ut_txv_advance(ctx, (uint64_t)ceill(full - ctx->mock_tsc_ns));
     long double start = RTE_MAX(ctx->train_drain_end_ns, (long double)ctx->mock_tsc_ns);
-    ctx->train_drain_end_ns = start + ctx->train_pad_ns;
+    ctx->train_drain_end_ns =
+        start + ctx->train_pad_ns * tx_pkts[i]->pkt_len / ctx->train_normal_len;
     if (rte_mbuf_refcnt_read(tx_pkts[i]) > 1) rte_mbuf_refcnt_update(tx_pkts[i], -1);
   }
   return nb_pkts;
+}
+
+/* reprograms the training queue: its shaper drains a pad that much faster */
+static int ut_txv_txq_set_tx_bps(struct mt_txq_entry* entry, uint64_t bytes_per_sec) {
+  struct ut_txv_ctx* ctx = ut_txv_train_ctx;
+  if (!ctx || !entry->txq || !bytes_per_sec) return -ENOTSUP;
+  ctx->train_pad_ns = ctx->train_pad_ns * entry->txq->bps / bytes_per_sec;
+  entry->txq->bps = bytes_per_sec;
+  return 0;
 }
 
 static void ut_txv_sleep_us(unsigned int us) {
@@ -201,7 +223,9 @@ static int ut_txv_wait_tsc_stable(struct mtl_main_impl* impl) {
 #define mt_sleep_us ut_txv_sleep_us
 #define mt_ptp_wait_stable ut_txv_ptp_wait_stable
 #define mt_wait_tsc_stable ut_txv_wait_tsc_stable
+#define mt_txq_set_tx_bps ut_txv_txq_set_tx_bps
 #include "st2110/st_tx_video_session.c"
+#undef mt_txq_set_tx_bps
 #undef mt_wait_tsc_stable
 #undef mt_ptp_wait_stable
 #undef mt_sleep_us
@@ -860,41 +884,177 @@ int ut_txv_init_pacing(ut_txv_ctx* ctx, uint32_t height, bool interlaced,
   return tv_init_pacing(&ctx->impl, s);
 }
 
-int ut_txv_train_rl_pacing(ut_txv_ctx* ctx, uint16_t nb_tx_desc, long double pad_ns) {
+/* the bytes/s tv_init_hw() asks mt_txq_get() for on port, as the session alone uses it */
+static uint64_t ut_txv_init_hw_bps(struct ut_txv_ctx* ctx, enum mtl_port port) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  int num_port = s->ops.num_port;
+  enum mtl_port port_p = s->port_maps[MTL_SESSION_PORT_P];
+
+  s->ops.num_port = 1;
+  s->port_maps[MTL_SESSION_PORT_P] = port;
+  ctx->txq_get_calls = 0;
+  tv_init_hw(&ctx->impl, &ctx->mgr, s);
+  s->ops.num_port = num_port;
+  s->port_maps[MTL_SESSION_PORT_P] = port_p;
+  return ctx->txq_get_calls == 1 ? ctx->txq_get_bytes_per_sec : 0;
+}
+
+int ut_txv_init_rl_pacing(ut_txv_ctx* ctx, int num_port, uint16_t user_pad_interval,
+                          bool static_pad, const float* trained_pad_interval, bool wide) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  uint32_t width = ctx->rl_width ? ctx->rl_width : 1920;
+  uint32_t height = ctx->rl_height ? ctx->rl_height : 1080;
+  uint32_t lines = ctx->rl_interlaced ? height / 2 : height;
+  uint32_t extra = 0;
+
+  if (st_get_fps_timing(ctx->rl_fps, &s->fps_tm) < 0) return -EINVAL;
+  s->ops.fmt = ST20_FMT_YUV_422_10BIT;
+  s->ops.width = width;
+  s->ops.height = height;
+  s->ops.fps = ctx->rl_fps;
+  s->ops.packing = ST20_PACKING_GPM;
+  s->ops.interlaced = ctx->rl_interlaced;
+  s->ops.num_port = num_port;
+  s->ops.pad_interval = user_pad_interval;
+  if (static_pad) s->ops.flags |= ST20_TX_FLAG_ENABLE_STATIC_PAD_P;
+  s->ops.pacing = wide ? ST21_PACING_WIDE : ST21_PACING_NARROW;
+  /* tv_init_pkt()'s GPM: 480 pixels a 1200-byte pkt, a field's lines when interlaced */
+  s->st20_total_pkts = (int)((width * lines + 479) / 480);
+  s->st20_pkt_len = 1200;
+  s->st20_pkt_size = 1262;
+  s->st20_bytes_in_line = (int)(width * 5 / 2);
+  /* the EXTRA pads training sends; tv_init_pkt() leaves out pkts ending on a line end
+   * (480, not 720, at 1280x720), which only its pools count */
+  for (int i = 0; i < s->st20_total_pkts; i++)
+    if (tv_train_pad_type(s, i) == ST20_PKT_TYPE_EXTRA) extra++;
+  s->st20_pkt_info[ST20_PKT_TYPE_EXTRA].size =
+      s->st20_pkt_size + sizeof(struct st20_rfc4175_extra_rtp_hdr);
+  s->st20_pkt_info[ST20_PKT_TYPE_EXTRA].number = extra;
+  s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size = s->st20_pkt_size;
+  s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].number = s->st20_total_pkts - extra;
+  s->st21_vrx_narrow = 8;
+  s->st21_vrx_wide = 720;
+  /* before the tags below, which the failed tv_init_hw() would free */
+  for (int i = 0; i < num_port; i++)
+    ctx->rl_txq[i].bps =
+        ctx->rl_bps_set[i] ? ctx->rl_bps[i] : ut_txv_init_hw_bps(ctx, (enum mtl_port)i);
+  for (int i = 0; i < num_port; i++) {
+    struct mt_interface* inf = &ctx->impl.inf[i];
+    /* tags tv_init_pacing() only checks are there, as tv_init_hw() builds them */
+    for (int j = 0; j < ST_TX_VIDEO_RL_TRIM_PAD_MAX && !ctx->no_trim_pads; j++)
+      s->trim_pad[i][j] = (struct rte_mbuf*)&ctx->trim_pad_tag;
+    if (inf->drv_info.drv_type != MT_DRV_ICE) inf->drv_info.drv_type = MT_DRV_IAVF;
+    inf->nb_tx_desc = 512;
+    s->port_maps[i] = (enum mtl_port)i;
+    s->pacing_way[i] = ST21_TX_PACING_WAY_RL;
+    /* a pre-train result keeps tv_train_pacing() off the NIC */
+    if (trained_pad_interval) {
+      struct mt_pacing_pad_mix mix;
+      tv_train_mix(s, &mix);
+      mt_pacing_train_pad_result_add(&ctx->impl, (enum mtl_port)i, tv_rl_bps(s),
+                                     ctx->rl_txq[i].bps, &mix, trained_pad_interval[i]);
+    }
+    ctx->rl_queue[i].txq = &ctx->rl_txq[i];
+    s->queue[i] = &ctx->rl_queue[i];
+  }
+  return tv_init_pacing(&ctx->impl, s);
+}
+
+static struct rte_mbuf* ut_txv_train_pad(uint16_t len) {
+  struct rte_mbuf* pad = rte_pktmbuf_alloc(ut_pool());
+  if (pad && !rte_pktmbuf_append(pad, len)) {
+    rte_pktmbuf_free(pad);
+    return NULL;
+  }
+  return pad;
+}
+
+int ut_txv_train_rl_pacing(ut_txv_ctx* ctx, uint16_t nb_tx_desc, long double pad_ns,
+                           bool bpm) {
   struct st_tx_video_session_impl* s = &ctx->session;
   struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
-  int ret;
+  struct st20_packet_group_info* normal = &s->st20_pkt_info[ST20_PKT_TYPE_NORMAL];
+  struct st20_packet_group_info* extra = &s->st20_pkt_info[ST20_PKT_TYPE_EXTRA];
+  int ret = -ENOMEM;
 
   if (st_get_fps_timing(ST_FPS_P59_94, &s->fps_tm) < 0) return -EINVAL;
   s->ops.fmt = ST20_FMT_YUV_422_10BIT;
   s->ops.width = 1920;
   s->ops.height = 1080;
   s->ops.fps = ST_FPS_P59_94;
-  s->ops.packing = ST20_PACKING_GPM_SL; /* NORMAL pads only */
   s->ops.num_port = 1;
-  s->st20_total_pkts = 4320;
-  s->st20_pkt_size = 1262;
+  s->st20_bytes_in_line = 4800;
+  if (bpm) { /* 1028 of the 4115 pkts cross a line end: EXTRA, 6 bytes longer */
+    s->ops.packing = ST20_PACKING_BPM;
+    s->st20_total_pkts = 4115;
+    s->st20_pkt_len = ST_VIDEO_BPM_SIZE;
+    extra->number = 1028;
+  } else { /* NORMAL pads only */
+    s->ops.packing = ST20_PACKING_GPM_SL;
+    s->st20_total_pkts = 4320;
+    s->st20_pkt_len = 1200;
+    extra->number = 0;
+  }
+  s->st20_pkt_size = s->st20_pkt_len + sizeof(struct st_rfc4175_video_hdr);
+  normal->size = s->st20_pkt_size;
+  normal->number = s->st20_total_pkts - extra->number;
+  extra->size = normal->size + sizeof(struct st20_rfc4175_extra_rtp_hdr);
+  s->pacing.trs = (long double)s->fps_tm.den * NS_PER_S / s->fps_tm.mul * 1080 / 1125 /
+                  s->st20_total_pkts;
   inf->drv_info.drv_type = MT_DRV_IAVF;
   inf->nb_tx_desc = nb_tx_desc;
   s->port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
   s->pacing_way[MTL_SESSION_PORT_P] = ST21_TX_PACING_WAY_RL;
-  s->queue[MTL_SESSION_PORT_P] = (struct mt_txq_entry*)&ctx->train_drain_end_ns; /* tag */
-  s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL] = rte_pktmbuf_alloc(ut_pool());
-  if (!s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL]) return -ENOMEM;
+  ctx->rl_txq[MTL_SESSION_PORT_P].bps = ut_txv_init_hw_bps(ctx, MTL_PORT_P);
+  ctx->rl_queue[MTL_SESSION_PORT_P].txq = &ctx->rl_txq[MTL_SESSION_PORT_P];
+  s->queue[MTL_SESSION_PORT_P] = &ctx->rl_queue[MTL_SESSION_PORT_P];
+  s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL] = ut_txv_train_pad(normal->size);
+  s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_EXTRA] = ut_txv_train_pad(extra->size);
   ctx->train_pad_ns = pad_ns;
+  ctx->train_normal_len = normal->size;
   ctx->train_drain_end_ns = ctx->mock_tsc_ns;
 
-  ut_txv_train_ctx = ctx;
-  ret = tv_train_pacing(&ctx->impl, s, MTL_SESSION_PORT_P);
-  ut_txv_train_ctx = NULL;
-  rte_pktmbuf_free(s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL]);
-  s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL] = NULL;
+  if (s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL] &&
+      s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_EXTRA]) {
+    ut_txv_train_ctx = ctx;
+    ret = tv_train_pacing(&ctx->impl, s, MTL_SESSION_PORT_P);
+    ut_txv_train_ctx = NULL;
+  }
+  for (int t = ST20_PKT_TYPE_NORMAL; t <= ST20_PKT_TYPE_EXTRA; t++) {
+    rte_pktmbuf_free(s->pad[MTL_SESSION_PORT_P][t]);
+    s->pad[MTL_SESSION_PORT_P][t] = NULL;
+  }
   s->queue[MTL_SESSION_PORT_P] = NULL;
   return ret;
 }
 
 float ut_txv_pad_interval(const ut_txv_ctx* ctx) {
   return ctx->session.pacing.pad_interval;
+}
+
+void ut_txv_set_rtp_level(ut_txv_ctx* ctx, bool enable) {
+  ctx->session.ops.type = enable ? ST20_TYPE_RTP_LEVEL : ST20_TYPE_FRAME_LEVEL;
+}
+
+int ut_txv_pad_result_add(ut_txv_ctx* ctx, uint64_t bps, uint64_t queue_bps,
+                          uint64_t bytes, uint32_t normal, uint32_t pkts,
+                          float pad_interval) {
+  struct mt_pacing_pad_mix mix = {.bytes = bytes, .normal = normal, .pkts = pkts};
+  return mt_pacing_train_pad_result_add(&ctx->impl, MTL_PORT_P, bps, queue_bps, &mix,
+                                        pad_interval);
+}
+
+int ut_txv_pad_result_search(ut_txv_ctx* ctx, uint64_t bps, uint64_t queue_bps,
+                             uint64_t bytes, uint32_t normal, uint32_t pkts,
+                             float* pad_interval) {
+  struct mt_pacing_pad_mix mix = {.bytes = bytes, .normal = normal, .pkts = pkts};
+  return mt_pacing_train_pad_result_search(&ctx->impl, MTL_PORT_P, bps, queue_bps, &mix,
+                                           pad_interval);
+}
+
+int ut_txv_add_trained_bps(ut_txv_ctx* ctx, uint64_t bps) {
+  return mt_pacing_train_bps_result_add(&ctx->impl, MTL_PORT_P, tv_rl_bps(&ctx->session),
+                                        bps);
 }
 
 uint64_t ut_txv_train_queued_ns(const ut_txv_ctx* ctx) {
@@ -904,6 +1064,79 @@ uint64_t ut_txv_train_queued_ns(const ut_txv_ctx* ctx) {
 
 uint64_t ut_txv_slept_ns(const ut_txv_ctx* ctx) {
   return ctx->slept_ns;
+}
+
+uint64_t ut_txv_rl_queue_bps(const ut_txv_ctx* ctx, int port) {
+  return ctx->rl_txq[port].bps;
+}
+
+void ut_txv_set_no_trim_pads(ut_txv_ctx* ctx) {
+  ctx->no_trim_pads = true;
+}
+
+int ut_txv_init_trim_pads(ut_txv_ctx* ctx, enum st21_tx_pacing_way way,
+                          uint32_t normal_size, uint32_t lens[2]) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  int ret;
+
+  /* mt_build_pad() takes the kernel mac of a non-DPDK port, no ethdev needed */
+  ctx->impl.inf[MTL_PORT_P].drv_info.flags |= MT_DRV_F_NOT_DPDK_PMD;
+  s->pacing_way[MTL_SESSION_PORT_P] = way;
+  s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size = normal_size;
+  ret = tv_init_trim_pads(&ctx->impl, s, MTL_SESSION_PORT_P, MTL_PORT_P, ut_pool());
+  for (int j = 0; j < ST_TX_VIDEO_RL_TRIM_PAD_MAX; j++) {
+    struct rte_mbuf* pad = s->trim_pad[MTL_SESSION_PORT_P][j];
+    lens[j] = pad ? pad->pkt_len : 0;
+    rte_pktmbuf_free(pad);
+    s->trim_pad[MTL_SESSION_PORT_P][j] = NULL;
+  }
+  return ret;
+}
+
+void ut_txv_set_rl_format(ut_txv_ctx* ctx, uint32_t width, uint32_t height,
+                          bool interlaced, enum st_fps fps) {
+  ctx->rl_width = width;
+  ctx->rl_height = height;
+  ctx->rl_interlaced = interlaced;
+  ctx->rl_fps = fps;
+}
+
+void ut_txv_set_rl_queue_bps(ut_txv_ctx* ctx, int port, uint64_t bps) {
+  ctx->rl_bps_set[port] = true;
+  ctx->rl_bps[port] = bps;
+}
+
+void ut_txv_set_ice_pf(ut_txv_ctx* ctx, int port, uint32_t rl_burst_size) {
+  ctx->impl.inf[port].drv_info.drv_type = MT_DRV_ICE;
+  ctx->impl.user_para.port_params[port].rl_burst_size = rl_burst_size;
+}
+
+long double ut_txv_pacing_trs(const ut_txv_ctx* ctx) {
+  return ctx->session.pacing.trs;
+}
+
+uint32_t ut_txv_pacing_warm_pkts(const ut_txv_ctx* ctx) {
+  return ctx->session.pacing.warm_pkts;
+}
+
+long double ut_txv_rl_drain(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.rl_plan[port].pad_ns;
+}
+
+long double ut_txv_rl_credit(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.rl_plan[port].bucket_ns;
+}
+
+bool ut_txv_rl_armed(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.rl_plan[port].armed;
+}
+
+uint16_t ut_txv_rl_pad_size(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.rl_plan[port].pad_size;
+}
+
+int64_t ut_txv_rl_trim_pads(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.rl_plan[port].trim_pads;
 }
 
 uint64_t ut_txv_round_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate) {

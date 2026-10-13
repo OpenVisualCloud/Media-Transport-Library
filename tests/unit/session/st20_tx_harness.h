@@ -169,12 +169,60 @@ void ut_txv_update_rtp_time_stamp(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
 int ut_txv_init_pacing(ut_txv_ctx* ctx, uint32_t height, bool interlaced,
                        enum st_fps fps);
 /* tv_train_pacing() of a one-port 1080p59.94 RL session without a pre-train result,
- * against an RL queue of nb_tx_desc descriptors draining one pad per pad_ns. */
-int ut_txv_train_rl_pacing(ut_txv_ctx* ctx, uint16_t nb_tx_desc, long double pad_ns);
+ * GPM_SL or BPM, against an RL queue of nb_tx_desc descriptors draining a NORMAL pad in
+ * pad_ns and any other by its bytes. */
+int ut_txv_train_rl_pacing(ut_txv_ctx* ctx, uint16_t nb_tx_desc, long double pad_ns,
+                           bool bpm);
 float ut_txv_pad_interval(const ut_txv_ctx* ctx);
+/* ops.type of the next ut_txv_train_rl_pacing(): RTP level trains on NORMAL pads only */
+void ut_txv_set_rtp_level(ut_txv_ctx* ctx, bool enable);
+/* mt_pacing_train_pad_result_add() and _search() of port P with that pad mix, on a queue
+ * programmed at queue_bps */
+int ut_txv_pad_result_add(ut_txv_ctx* ctx, uint64_t bps, uint64_t queue_bps,
+                          uint64_t bytes, uint32_t normal, uint32_t pkts,
+                          float pad_interval);
+int ut_txv_pad_result_search(ut_txv_ctx* ctx, uint64_t bps, uint64_t queue_bps,
+                             uint64_t bytes, uint32_t normal, uint32_t pkts,
+                             float* pad_interval);
+/* a bps retrain result for the rate of the session ut_txv_train_rl_pacing() set up */
+int ut_txv_add_trained_bps(ut_txv_ctx* ctx, uint64_t bps);
 /* Training traffic still in that queue, as shaper time. */
 uint64_t ut_txv_train_queued_ns(const ut_txv_ctx* ctx);
 uint64_t ut_txv_slept_ns(const ut_txv_ctx* ctx);
+/* the bytes/s on the RL queue of session port port, as the last training left it */
+uint64_t ut_txv_rl_queue_bps(const ut_txv_ctx* ctx, int port);
+/* ut_txv_init_rl_pacing() without the trim pads tv_init_hw() builds for RL ports */
+void ut_txv_set_no_trim_pads(ut_txv_ctx* ctx);
+/* tv_init_trim_pads() of port P with that pacing way and NORMAL pkt size: the lengths
+ * of the pads it builds, 0 for none */
+int ut_txv_init_trim_pads(ut_txv_ctx* ctx, enum st21_tx_pacing_way way,
+                          uint32_t normal_size, uint32_t lens[2]);
+/* Drives the real tv_init_pacing() for a GPM RL session of ut_txv_set_rl_format() on
+ * num_port ports, each with its RL queue (port i on physical port i, an iavf VF unless
+ * ut_txv_set_ice_pf() made it an ice PF). tv_train_pacing() resolves pad_interval without
+ * the NIC: from user_pad_interval when non-zero, else the static table when static_pad,
+ * else the pre-train result trained_pad_interval[port]. */
+int ut_txv_init_rl_pacing(ut_txv_ctx* ctx, int num_port, uint16_t user_pad_interval,
+                          bool static_pad, const float* trained_pad_interval, bool wide);
+/* The YUV 4:2:2 10-bit GPM format of the next ut_txv_init_rl_pacing(), 1080p59.94 unless
+ * set; fps is the field rate when interlaced. */
+void ut_txv_set_rl_format(ut_txv_ctx* ctx, uint32_t width, uint32_t height,
+                          bool interlaced, enum st_fps fps);
+/* The bytes/s on the RL queue of session port port at ut_txv_init_rl_pacing(), as a
+ * retrain left it; unset, what tv_init_hw() asks mt_txq_get() for. */
+void ut_txv_set_rl_queue_bps(ut_txv_ctx* ctx, int port, uint64_t bps);
+/* Physical port is a DPDK-driven ice PF with this mtl_port_init_params.rl_burst_size
+ * (0 = the PMD default). Call before ut_txv_init_rl_pacing(). */
+void ut_txv_set_ice_pf(ut_txv_ctx* ctx, int port, uint32_t rl_burst_size);
+long double ut_txv_pacing_trs(const ut_txv_ctx* ctx);
+uint32_t ut_txv_pacing_warm_pkts(const ut_txv_ctx* ctx);
+/* the rl_plan[] pad_ns / bucket_ns of a session port, in ns */
+long double ut_txv_rl_drain(const ut_txv_ctx* ctx, int port);
+long double ut_txv_rl_credit(const ut_txv_ctx* ctx, int port);
+/* the rest of the rl_plan[] the transmitter's pre-arm reads */
+bool ut_txv_rl_armed(const ut_txv_ctx* ctx, int port);
+uint16_t ut_txv_rl_pad_size(const ut_txv_ctx* ctx, int port);
+int64_t ut_txv_rl_trim_pads(const ut_txv_ctx* ctx, int port);
 /* Drives st_tai_round_to_media_clk_ns() -- the same media-clock snap
  * tv_sync_pacing() applies to the scheduled instant, so tests can express an
  * expectation as the raw ST 2110-21 sum instead of a pre-rounded constant. */

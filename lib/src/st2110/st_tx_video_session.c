@@ -362,6 +362,112 @@ static enum st20_packet_type tv_train_pad_type(struct st_tx_video_session_impl* 
   return ST20_PKT_TYPE_EXTRA;
 }
 
+/* the pads of a frame tv_train_pacing() sends, the remain NORMAL ones included */
+static void tv_train_mix(struct st_tx_video_session_impl* s,
+                         struct mt_pacing_pad_mix* mix) {
+  int total = s->st20_total_pkts;
+  int remain = 32 - (total % 32);
+
+  mix->normal = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+  mix->pkts = total + remain;
+  mix->bytes = (uint64_t)remain * mix->normal;
+  for (int i = 0; i < total; i++)
+    mix->bytes += s->st20_pkt_info[tv_train_pad_type(s, i)].size;
+}
+
+/* measured only: the shaper sends pad_interval + 1 pkts in pad_interval trs */
+static void tv_set_measured_pad_interval(struct st_tx_video_session_impl* s,
+                                         enum mtl_session_port s_port,
+                                         float pad_interval) {
+  struct mt_pacing_pad_mix mix;
+
+  tv_train_mix(s, &mix);
+  s->pacing.pad_interval = pad_interval;
+  /* the shaper drains a pad by its bytes: training measured the mean of a frame's pads,
+   * the pre-arm queues NORMAL ones */
+  s->rl_plan[s_port].pad_ns = s->pacing.trs * pad_interval / (pad_interval + 1) *
+                              mix.normal * mix.pkts / mix.bytes;
+}
+
+/* the bytes/s programmed on a queue with its own txq, 0 without */
+static uint64_t tv_queue_bps(struct mt_txq_entry* queue) {
+  return queue && queue->txq ? queue->txq->bps : 0;
+}
+
+/* burst bucket of the port's RL shaper in bytes, 0 when unknown */
+static uint32_t tv_rl_burst_size(struct mtl_main_impl* impl, enum mtl_port port) {
+  uint32_t size = mt_get_user_params(impl)->port_params[port].rl_burst_size;
+
+  switch (mt_if(impl, port)->drv_info.drv_type) {
+    case MT_DRV_IAVF:
+      return ST_TX_VIDEO_RL_VF_BURST_SIZE;
+    case MT_DRV_ICE: {
+      /* what ice_cfg_rl_burst_size() programs, its ice_round_to_num() rounding to the
+       * nearest multiple; without the devarg the PMD keeps 15 KB */
+      if (!size) return 0;
+      uint32_t rounded = RTE_ALIGN_MUL_NEAR(size, 64);
+      if (rounded <= 2047 * 64) return rounded;
+      return RTE_MIN(RTE_ALIGN_MUL_NEAR(size, 1024), 2047 * 1024);
+    }
+    default:
+      return 0;
+  }
+}
+
+/* Plans the RL pre-arm of each port from the pad_ns training measured and the rate on its
+ * queue. Runs after tv_init_hw() built the trim pads, once warm_pkts and the pacing ways
+ * are final. A port without a plan holds packet 0 until its target. */
+static void tv_rl_plan_init(struct mtl_main_impl* impl,
+                            struct st_tx_video_session_impl* s) {
+  struct st_tx_video_pacing* pacing = &s->pacing;
+  uint16_t pad_size = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+  int idx = s->idx;
+
+  for (int i = 0; i < s->ops.num_port; i++) {
+    struct st_tx_video_rl_plan* plan = &s->rl_plan[i];
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
+    uint32_t burst_size = tv_rl_burst_size(impl, port);
+    uint64_t bps = tv_queue_bps(s->queue[i]);
+    bool armed = pacing->warm_pkts && s->pacing_way[i] == ST21_TX_PACING_WAY_RL &&
+                 plan->pad_ns && burst_size && bps &&
+                 s->trim_pad[i][ST_TX_VIDEO_RL_TRIM_PAD_COARSE];
+
+    if (armed) {
+      /* the timeslot grid releases packet 0 up to a timeslot early: aim one late */
+      long double aim = st_tx_video_rl_tokens(bps) * plan->pad_ns / pad_size;
+      /* the bucket fills at the programmed rate, not the trained one */
+      long double refill = (long double)burst_size * NS_PER_S / bps;
+      plan->bucket_ns = refill + aim;
+      long double window = pacing->warm_pkts * pacing->trs + plan->bucket_ns;
+      /* from the previous frame's last pkt to the warm-up open */
+      long double idle =
+          pacing->frame_time * (1 - pacing->reactive) - pacing->warm_pkts * pacing->trs;
+      /* the window fits half the ring, clear of the PMD's lazy cleanup */
+      armed = window / plan->pad_ns + 1 <= mt_if_nb_tx_desc(impl, port) / 2 &&
+              /* it holds the trim_pads; video_trs_rl_pre_arm() checks a late entry */
+              window > (st_tx_video_rl_trim_pads(pad_size) - 1) * plan->pad_ns &&
+              /* the bucket refills before the window opens */
+              refill <= idle &&
+              /* aim, the bound of the unknown timeslot, is short enough */
+              aim <= ST_TX_VIDEO_RL_TIMESLOT_MAX_NS;
+    }
+    if (!armed) {
+      plan->pad_ns = 0;
+      plan->bucket_ns = 0;
+      plan->armed = false;
+      if (s->pacing_way[i] == ST21_TX_PACING_WAY_RL)
+        info("%s[%02d], port %d no rl plan, holds packet 0\n", __func__, idx, i);
+      continue;
+    }
+    plan->pad_size = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+    plan->trim_pads = st_tx_video_rl_trim_pads(plan->pad_size);
+    plan->armed = true;
+    info("%s[%02d], port %d rl plan, pad_ns %Lf bucket_ns %Lf burst size %u bps %" PRIu64
+         "\n",
+         __func__, idx, i, plan->pad_ns, plan->bucket_ns, burst_size, bps);
+  }
+}
+
 static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
                            enum mtl_session_port s_port) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
@@ -379,6 +485,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   uint64_t train_start_time, train_end_time;
   double measured_bps;
   uint64_t bps_to_set;
+  struct mt_pacing_pad_mix mix;
 
   uint16_t resolved = s->ops.pad_interval;
   if (resolved) {
@@ -395,9 +502,11 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
     }
   }
 
-  ret = mt_pacing_train_pad_result_search(impl, port, rl_bps, &pad_interval);
+  tv_train_mix(s, &mix);
+  ret = mt_pacing_train_pad_result_search(impl, port, rl_bps, tv_queue_bps(queue), &mix,
+                                          &pad_interval);
   if (ret >= 0) {
-    s->pacing.pad_interval = pad_interval;
+    tv_set_measured_pad_interval(s, s_port, pad_interval);
     info("%s(%d), use pre-train pad_interval %f\n", __func__, idx, pad_interval);
     return 0;
   }
@@ -434,7 +543,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
       mt_txq_burst_busy(queue, &pad, 1, 10);
     }
     uint64_t end = mt_get_ptp_time(impl, MTL_PORT_P);
-    double time = ((double)end - start) * total / (total + remain);
+    double time = (double)(end - start) * total / (total + remain);
     frame_times_ns[loop] = time;
   }
 
@@ -473,8 +582,9 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
    * rate. If the difference is too significant, it indicates an issue. A minimum padding
    * value of 32 is chosen as a reasonable threshold. */
   if (measured_bps > rl_bps && pad_interval > 32) {
-    s->pacing.pad_interval = pad_interval;
-    mt_pacing_train_pad_result_add(impl, port, rl_bps, pad_interval);
+    tv_set_measured_pad_interval(s, s_port, pad_interval);
+    mt_pacing_train_pad_result_add(impl, port, rl_bps, tv_queue_bps(queue), &mix,
+                                   pad_interval);
     train_end_time = mt_get_tsc(impl);
     info("%s(%d,%d), trained pad_interval %f pkts_per_frame %f with time %fs\n", __func__,
          idx, s_port, pad_interval, pkts_per_frame,
@@ -615,6 +725,7 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     pacing->warm_pkts = 0; /* no need warmup for wide */
     info("%s[%02d], wide pacing\n", __func__, idx);
   }
+  tv_rl_plan_init(impl, s);
   info("%s[%02d], trs %Lf trOffset %Lf vrx %u warm_pkts %u frame time %Lfms fps %f\n",
        __func__, idx, pacing->trs, pacing->tr_offset, pacing->vrx, pacing->warm_pkts,
        pacing->frame_time / NS_PER_MS, st_frame_rate(s->ops.fps));
@@ -2750,8 +2861,34 @@ static int tv_uinit_hw(struct st_tx_video_session_impl* s) {
         s->pad[i][j] = NULL;
       }
     }
+    for (int j = 0; j < ST_TX_VIDEO_RL_TRIM_PAD_MAX; j++) {
+      if (s->trim_pad[i][j]) {
+        rte_pktmbuf_free(s->trim_pad[i][j]);
+        s->trim_pad[i][j] = NULL;
+      }
+    }
   }
 
+  return 0;
+}
+
+/* the pre-arm's cut pads, the NORMAL pad less ST_TX_VIDEO_RL_TRIM_COARSE and _FINE bytes,
+ * only on an RL port whose NORMAL pkt is still a frame 64 bytes short */
+static int tv_init_trim_pads(struct mtl_main_impl* impl,
+                             struct st_tx_video_session_impl* s, int i,
+                             enum mtl_port port, struct rte_mempool* pool) {
+  const uint16_t trims[ST_TX_VIDEO_RL_TRIM_PAD_MAX] = {ST_TX_VIDEO_RL_TRIM_COARSE,
+                                                       ST_TX_VIDEO_RL_TRIM_FINE};
+  uint32_t normal = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+
+  if (s->pacing_way[i] != ST21_TX_PACING_WAY_RL ||
+      normal < ST_TX_VIDEO_RL_TRIM_COARSE + RTE_ETHER_MIN_LEN)
+    return 0;
+  for (int j = 0; j < ST_TX_VIDEO_RL_TRIM_PAD_MAX; j++) {
+    s->trim_pad[i][j] =
+        mt_build_pad(impl, pool, port, RTE_ETHER_TYPE_IPV4, normal - trims[j]);
+    if (!s->trim_pad[i][j]) return -ENOMEM;
+  }
   return 0;
 }
 
@@ -2831,6 +2968,10 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
         return -ENOMEM;
       }
       s->pad[i][j] = pad;
+    }
+    if (tv_init_trim_pads(impl, s, i, port, pad_mempool) < 0) {
+      tv_uinit_hw(s);
+      return -ENOMEM;
     }
   }
 
