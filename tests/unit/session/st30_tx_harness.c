@@ -161,6 +161,7 @@ ut_txa30_ctx* ut_txa30_create(void) {
       -1; /* 0 is a live fd (stdin); never let the dump-close path touch it */
   s->pacing.trs = NS_PER_MS;           /* 1ms ptime, round number for simple math */
   s->pacing.pkt_time_sampling = 48.0L; /* 48 samples/packet @ 48kHz/1ms */
+  s->sample_num = 48;
   s->pacing.max_onward_epochs = 3;
   s->pacing.max_late_epochs = 100;
   s->ops.sampling = ST30_SAMPLING_48K;
@@ -180,6 +181,22 @@ void ut_txa30_destroy(ut_txa30_ctx* ctx) {
 }
 
 /* ── pacing setup ─────────────────────────────────────────────────────── */
+
+int ut_txa30_set_ptime(ut_txa30_ctx* ctx, enum st30_ptime ptime,
+                       enum st30_sampling sampling) {
+  struct st_tx_audio_session_impl* s = &ctx->session;
+  int samples = st30_get_sample_num(ptime, sampling);
+
+  if (samples < 0) return samples;
+  s->ops.ptime = ptime;
+  s->ops.sampling = sampling;
+  s->sample_num = samples;
+  return tx_audio_session_init_pacing(s);
+}
+
+void ut_txa30_set_cur_epochs(ut_txa30_ctx* ctx, uint64_t cur_epochs) {
+  ctx->session.pacing.cur_epochs = cur_epochs;
+}
 
 void ut_txa30_set_user_pacing(ut_txa30_ctx* ctx, bool enable) {
   if (enable)
@@ -389,4 +406,16 @@ uint64_t ut_txa30_rl_queued_ns(const ut_txa30_ctx* ctx) {
 
 uint64_t ut_txa30_slept_ns(const ut_txa30_ctx* ctx) {
   return ctx->slept_ns;
+}
+
+int ut_txa30_sync_pacing(ut_txa30_ctx* ctx, uint64_t required_tai) {
+  return tx_audio_session_sync_pacing(&ctx->impl, &ctx->session, false, required_tai);
+}
+
+uint64_t ut_txa30_cur_epochs(const ut_txa30_ctx* ctx) {
+  return ctx->session.pacing.cur_epochs;
+}
+
+uint64_t ut_txa30_ptp_time_cursor(const ut_txa30_ctx* ctx) {
+  return (uint64_t)ctx->session.pacing.ptp_time_cursor;
 }
