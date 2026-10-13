@@ -33,6 +33,12 @@ void ut_dev_fail_timesync_enable(ut_dev_ctx* ctx, int call, int error);
 void ut_dev_fail_timesync_read(ut_dev_ctx* ctx, int call, int error);
 /** Injects the rte_eth_dev_start() return; 0 keeps the mocked start successful. */
 void ut_dev_fail_port_start(ut_dev_ctx* ctx, int error);
+/* nb_tx_q queues of nb_tx_desc, and the tx_rs_thresh the PMD reports; -EINVAL past 8 */
+int ut_dev_set_tx_ring(ut_dev_ctx* ctx, uint16_t nb_tx_q, uint16_t nb_tx_desc,
+                       uint16_t tx_rs_thresh);
+/* tx_free_thresh dev_start_port() set up the queue with, 0 for the PMD default */
+uint16_t ut_dev_tx_free_thresh(const ut_dev_ctx* ctx, uint16_t queue);
+uint16_t ut_dev_tx_reclaim_rs_thresh(ut_dev_ctx* ctx);
 void ut_dev_use_non_igc_driver(ut_dev_ctx* ctx);
 void ut_dev_set_ptp_enabled(ut_dev_ctx* ctx, bool enabled);
 void ut_dev_set_port(ut_dev_ctx* ctx, enum mtl_port port, const char* bdf,

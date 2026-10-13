@@ -700,6 +700,8 @@ struct mt_interface {
   struct rte_mempool* rx_mbuf_pool;
   uint16_t nb_tx_desc;
   uint16_t nb_rx_desc;
+  /* the rs batch a burst frees once 2 are in use, 0 if none (dev_start_port()) */
+  uint16_t tx_reclaim_rs_thresh;
 
   struct rte_mbuf* pad;
   /*
@@ -1698,6 +1700,11 @@ static inline struct rte_mempool* mt_if_hdr_split_pool(struct mt_interface* inf,
 
 static inline uint16_t mt_if_nb_tx_desc(struct mtl_main_impl* impl, enum mtl_port port) {
   return mt_if(impl, port)->nb_tx_desc;
+}
+
+static inline uint16_t mt_if_tx_reclaim_rs_thresh(struct mtl_main_impl* impl,
+                                                  enum mtl_port port) {
+  return mt_if(impl, port)->tx_reclaim_rs_thresh;
 }
 
 static inline bool mt_if_port_is_down(struct mtl_main_impl* impl, enum mtl_port port) {

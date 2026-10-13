@@ -42,6 +42,7 @@ struct ut_dev_ctx {
   int fail_timesync_read_call;
   int fail_timesync_read_error;
   int fail_port_start_error;
+  uint16_t tx_free_thresh[UT_DEV_TX_QUEUES_MAX];
   bool tm_vf_without_qos;
   int tm_vf_without_qos_answer; /* its hierarchy commit error */
   int tm_queue_node_adds;
@@ -166,10 +167,10 @@ static int ut_rte_eth_tx_queue_setup(uint16_t port_id, uint16_t tx_queue_id,
                                      uint16_t nb_tx_desc, unsigned int socket_id,
                                      const struct rte_eth_txconf* tx_conf) {
   (void)port_id;
-  (void)tx_queue_id;
   (void)nb_tx_desc;
   (void)socket_id;
-  (void)tx_conf;
+  if (tx_queue_id < UT_DEV_TX_QUEUES_MAX)
+    ut_active_ctx->tx_free_thresh[tx_queue_id] = tx_conf->tx_free_thresh;
   ut_dev_record(UT_DEV_EVENT_TX_QUEUE_SETUP);
   return 0;
 }
@@ -439,6 +440,25 @@ void ut_dev_fail_timesync_read(ut_dev_ctx* ctx, int call, int error) {
 
 void ut_dev_fail_port_start(ut_dev_ctx* ctx, int error) {
   ctx->fail_port_start_error = error;
+}
+
+int ut_dev_set_tx_ring(ut_dev_ctx* ctx, uint16_t nb_tx_q, uint16_t nb_tx_desc,
+                       uint16_t tx_rs_thresh) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  if (nb_tx_q > UT_DEV_TX_QUEUES_MAX) return -EINVAL;
+  inf->nb_tx_q = nb_tx_q;
+  inf->nb_tx_desc = nb_tx_desc;
+  inf->dev_info.default_txconf.tx_rs_thresh = tx_rs_thresh;
+  return 0;
+}
+
+uint16_t ut_dev_tx_free_thresh(const ut_dev_ctx* ctx, uint16_t queue) {
+  return queue < UT_DEV_TX_QUEUES_MAX ? ctx->tx_free_thresh[queue] : 0;
+}
+
+uint16_t ut_dev_tx_reclaim_rs_thresh(ut_dev_ctx* ctx) {
+  return mt_if_tx_reclaim_rs_thresh(&ctx->impl, MTL_PORT_P);
 }
 
 void ut_dev_use_non_igc_driver(ut_dev_ctx* ctx) {

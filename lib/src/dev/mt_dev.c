@@ -1207,7 +1207,7 @@ static uint16_t dev_tx_pkt_check(uint16_t port, uint16_t queue, struct rte_mbuf*
   MTL_MAY_UNUSED(nb_pkts);
 
 #if MT_DEV_SIMULATE_MALICIOUS_PKT /* for recovery test */
-  if (port == 0 && queue > 0) {
+  if (port == 0 && queue > 0 && nb_pkts) {
     if (!inf->simulate_malicious_pkt_tsc)
       inf->simulate_malicious_pkt_tsc = mt_get_tsc(inf->parent);
 
@@ -1274,6 +1274,9 @@ static int dev_start_eth_port(struct mt_interface* inf) {
 
   return 0;
 }
+
+/* before DPDK 26.07 iavf and ice cleanup frees no mbufs, they wait for reuse */
+#define MT_DEV_TX_CLEANUP_FREES (RTE_VERSION >= RTE_VERSION_NUM(26, 7, 0, 0))
 
 static int dev_start_port(struct mt_interface* inf) {
   int ret;
@@ -1357,8 +1360,17 @@ static int dev_start_port(struct mt_interface* inf) {
     }
   }
 
+  /* iavf/ice scalar xmit (MULTI_SEGS) frees a done rs batch per burst, empty ones too,
+   * while fewer than tx_free_thresh are free: here while 2 batches are in use */
+  uint16_t tx_rs_thresh = inf->dev_info.default_txconf.tx_rs_thresh;
+  bool tx_reclaim =
+      MT_DEV_TX_CLEANUP_FREES &&
+      (inf->drv_info.drv_type == MT_DRV_IAVF || inf->drv_info.drv_type == MT_DRV_ICE) &&
+      tx_rs_thresh && nb_tx_desc >= 3 * tx_rs_thresh;
+  inf->tx_reclaim_rs_thresh = tx_reclaim ? tx_rs_thresh : 0;
   for (uint16_t q = 0; q < nb_tx_q; q++) {
     tx_port_conf = inf->dev_info.default_txconf;
+    if (tx_reclaim) tx_port_conf.tx_free_thresh = nb_tx_desc - 2 * tx_rs_thresh;
 #if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
     if (inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP) {
       tx_port_conf.offloads |= RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP;
@@ -1418,7 +1430,8 @@ static int dev_start_port(struct mt_interface* inf) {
   }
   rte_eth_stats_reset(port_id); /* reset stats */
 
-  info("%s(%d), rx_defer %d\n", __func__, port, rx_deferred_start);
+  info("%s(%d), rx_defer %d tx_reclaim_rs_thresh %u\n", __func__, port, rx_deferred_start,
+       inf->tx_reclaim_rs_thresh);
   return 0;
 }
 

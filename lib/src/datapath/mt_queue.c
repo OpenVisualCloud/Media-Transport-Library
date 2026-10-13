@@ -228,6 +228,12 @@ int mt_txq_done_cleanup(struct mt_txq_entry* entry) {
   return 0;
 }
 
+int mt_txq_reclaim(struct mt_txq_entry* entry) {
+  if (!entry->txq) return -ENOTSUP;
+  mt_dpdk_tx_burst(entry->txq, NULL, 0); /* a burst of none */
+  return 0;
+}
+
 int mt_txq_set_tx_bps(struct mt_txq_entry* entry, uint64_t bytes_per_sec) {
   if (!entry->txq) {
     err("%s(%u), not txq\n", __func__, entry->queue_id);
