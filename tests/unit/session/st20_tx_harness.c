@@ -1077,7 +1077,7 @@ int ut_txv_init_rl_pacing(ut_txv_ctx* ctx, int num_port, uint16_t user_pad_inter
   for (int i = 0; i < num_port; i++) {
     struct mt_interface* inf = &ctx->impl.inf[i];
     /* tags tv_init_pacing() only checks are there, as tv_init_hw() builds them */
-    for (int j = 0; j < 2 && !ctx->no_trim_pads; j++)
+    for (int j = 0; j < ST_TX_VIDEO_RL_TRIM_PAD_MAX && !ctx->no_trim_pads; j++)
       s->trim_pad[i][j] = (struct rte_mbuf*)&ctx->trim_pad_tag;
     if (inf->drv_info.drv_type != MT_DRV_ICE) inf->drv_info.drv_type = MT_DRV_IAVF;
     inf->nb_tx_desc = 512;
@@ -1221,7 +1221,7 @@ int ut_txv_init_trim_pads(ut_txv_ctx* ctx, enum st21_tx_pacing_way way,
   s->pacing_way[MTL_SESSION_PORT_P] = way;
   s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size = normal_size;
   ret = tv_init_trim_pads(&ctx->impl, s, MTL_SESSION_PORT_P, MTL_PORT_P, ut_pool());
-  for (int j = 0; j < 2; j++) {
+  for (int j = 0; j < ST_TX_VIDEO_RL_TRIM_PAD_MAX; j++) {
     struct rte_mbuf* pad = s->trim_pad[MTL_SESSION_PORT_P][j];
     lens[j] = pad ? pad->pkt_len : 0;
     rte_pktmbuf_free(pad);

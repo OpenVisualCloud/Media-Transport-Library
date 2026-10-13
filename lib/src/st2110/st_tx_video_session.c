@@ -384,10 +384,6 @@ static uint32_t tv_ice_round(uint32_t n, uint32_t r) {
   return (n % r < r / 2) ? n / r * r : (n + r - 1) / r * r;
 }
 
-/* bytes, ICE_SCHED_DFLT_BURST_SIZE of the MTL-patched kernel ice (patches/ice_drv) that
- * RL requires; the stock 15 KB bucket would launch packet 0 ~10 pkts early */
-#define ST_TX_VIDEO_RL_VF_BURST_SIZE (2048)
-
 /* burst bucket of the port's RL shaper in bytes, 0 when unknown */
 static uint32_t tv_rl_burst_size(struct mtl_main_impl* impl, enum mtl_port port) {
   uint32_t size = mt_get_user_params(impl)->port_params[port].rl_burst_size;
@@ -663,7 +659,8 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
     uint32_t burst_size = tv_rl_burst_size(impl, port);
     bool plan = pacing->warm_pkts && s->pacing_way[i] == ST21_TX_PACING_WAY_RL &&
-                pacing->rl_drain[i] && burst_size && s->trim_pad[i][0];
+                pacing->rl_drain[i] && burst_size &&
+                s->trim_pad[i][ST_TX_VIDEO_RL_TRIM_PAD_COARSE];
 
     if (plan) {
       pacing->rl_credit[i] =
@@ -1953,9 +1950,6 @@ static int tv_usdt_dump_frame(struct mtl_main_impl* impl,
   return 0;
 }
 
-/* the least time between two reclaims of a waiting session's sent pkts */
-#define ST_TX_VIDEO_RECLAIM_NS (20 * (uint64_t)NS_PER_US)
-
 /* idle legs of a wait past the hang threshold: their transmitter has no burst to fail */
 static void tv_frames_out_hang(struct st_tx_video_session_impl* s, uint64_t now,
                                uint64_t hang) {
@@ -2870,7 +2864,7 @@ static int tv_uinit_hw(struct st_tx_video_session_impl* s) {
         s->pad[i][j] = NULL;
       }
     }
-    for (int j = 0; j < 2; j++) {
+    for (int j = 0; j < ST_TX_VIDEO_RL_TRIM_PAD_MAX; j++) {
       if (s->trim_pad[i][j]) {
         rte_pktmbuf_free(s->trim_pad[i][j]);
         s->trim_pad[i][j] = NULL;
@@ -2886,13 +2880,14 @@ static int tv_uinit_hw(struct st_tx_video_session_impl* s) {
 static int tv_init_trim_pads(struct mtl_main_impl* impl,
                              struct st_tx_video_session_impl* s, int i,
                              enum mtl_port port, struct rte_mempool* pool) {
-  const uint16_t trims[2] = {ST_TX_VIDEO_RL_TRIM_COARSE, ST_TX_VIDEO_RL_TRIM_FINE};
+  const uint16_t trims[ST_TX_VIDEO_RL_TRIM_PAD_MAX] = {ST_TX_VIDEO_RL_TRIM_COARSE,
+                                                       ST_TX_VIDEO_RL_TRIM_FINE};
   uint32_t normal = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
 
   if (s->pacing_way[i] != ST21_TX_PACING_WAY_RL ||
       normal < ST_TX_VIDEO_RL_TRIM_COARSE + RTE_ETHER_MIN_LEN)
     return 0;
-  for (int j = 0; j < 2; j++) {
+  for (int j = 0; j < ST_TX_VIDEO_RL_TRIM_PAD_MAX; j++) {
     s->trim_pad[i][j] =
         mt_build_pad(impl, pool, port, RTE_ETHER_TYPE_IPV4, normal - trims[j]);
     if (!s->trim_pad[i][j]) return -ENOMEM;

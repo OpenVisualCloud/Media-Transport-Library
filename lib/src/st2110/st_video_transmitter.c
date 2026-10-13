@@ -13,12 +13,6 @@
 #include "st_err.h"
 #include "st_tx_video_session.h"
 
-/* max NORMAL pad copies per warm-up or pad retry burst */
-#define ST_TX_VIDEO_PAD_BURST (32)
-/* a pad burst returning later than this past its plan stalled: a healthy one returns
- * well within it, a timer tick costs 2-10 us */
-#define ST_TX_VIDEO_RL_STALL_NS (2 * NS_PER_US)
-
 static int video_trs_tasklet_start(void* priv) {
   struct st_video_transmitter_impl* trs = priv;
   int idx = trs->idx;
@@ -158,7 +152,8 @@ static uint32_t video_trs_rl_trim(struct st_tx_video_session_impl* s,
       (cut - coarse * ST_TX_VIDEO_RL_TRIM_COARSE) / ST_TX_VIDEO_RL_TRIM_FINE, n - coarse);
 
   for (unsigned int i = 0; i < coarse + fine; i++)
-    pads[i] = s->trim_pad[s_port][i < coarse ? 0 : 1];
+    pads[i] = s->trim_pad[s_port][i < coarse ? ST_TX_VIDEO_RL_TRIM_PAD_COARSE
+                                             : ST_TX_VIDEO_RL_TRIM_PAD_FINE];
   return coarse * ST_TX_VIDEO_RL_TRIM_COARSE + fine * ST_TX_VIDEO_RL_TRIM_FINE;
 }
 

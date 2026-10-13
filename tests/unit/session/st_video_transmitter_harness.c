@@ -222,7 +222,7 @@ static struct rte_mbuf* ut_trs_pad(uint16_t len) {
 
 static void ut_trs_free_trim_pads(struct st_tx_video_session_impl* s) {
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
-    for (int j = 0; j < 2; j++) {
+    for (int j = 0; j < ST_TX_VIDEO_RL_TRIM_PAD_MAX; j++) {
       rte_pktmbuf_free(s->trim_pad[i][j]);
       s->trim_pad[i][j] = NULL;
     }
@@ -252,9 +252,15 @@ ut_trs_ctx* ut_trs_create(void) {
   s->pad[MTL_SESSION_PORT_R][ST20_PKT_TYPE_NORMAL] = ut_trs_pad(UT_TRS_PAD_SIZE);
   if (!s->pad[MTL_SESSION_PORT_R][ST20_PKT_TYPE_NORMAL]) goto fail;
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
-    s->trim_pad[i][0] = ut_trs_pad(UT_TRS_PAD_SIZE - ST_TX_VIDEO_RL_TRIM_COARSE);
-    s->trim_pad[i][1] = ut_trs_pad(UT_TRS_PAD_SIZE - ST_TX_VIDEO_RL_TRIM_FINE);
-    if (!s->trim_pad[i][0] || !s->trim_pad[i][1]) goto fail;
+    struct rte_mbuf** trim_pad = s->trim_pad[i];
+
+    trim_pad[ST_TX_VIDEO_RL_TRIM_PAD_COARSE] =
+        ut_trs_pad(UT_TRS_PAD_SIZE - ST_TX_VIDEO_RL_TRIM_COARSE);
+    trim_pad[ST_TX_VIDEO_RL_TRIM_PAD_FINE] =
+        ut_trs_pad(UT_TRS_PAD_SIZE - ST_TX_VIDEO_RL_TRIM_FINE);
+    if (!trim_pad[ST_TX_VIDEO_RL_TRIM_PAD_COARSE] ||
+        !trim_pad[ST_TX_VIDEO_RL_TRIM_PAD_FINE])
+      goto fail;
   }
 
   priv_pool = ut_trs_priv_pool();

@@ -11,6 +11,8 @@
 
 #define ST_TX_VIDEO_RTCP_BURST_SIZE (32)
 #define ST_TX_VIDEO_RTCP_RING_SIZE (1024)
+/* the least time between two reclaims of a waiting session's sent pkts */
+#define ST_TX_VIDEO_RECLAIM_NS (20 * (uint64_t)NS_PER_US)
 
 int st_tx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mtl_sch_impl* sch);
 
