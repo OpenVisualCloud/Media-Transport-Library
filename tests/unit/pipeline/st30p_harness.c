@@ -129,6 +129,12 @@ void ut30p_ctx_enable_blocking(ut30p_ctx* ctx, uint64_t timeout_ns) {
   ctx->blocking = true;
 }
 
+void ut30p_begin_destroy(ut30p_ctx* ctx) {
+  struct st30p_rx_ctx* p = &ctx->pipeline;
+  mt_handle_begin_destroy(&p->lc_destroying, &p->type, MT_ST30_HANDLE_PIPELINE_RX);
+  rx_st30p_block_wake(p);
+}
+
 int ut30p_inject_frame(ut30p_ctx* ctx, enum st_frame_status status, uint32_t timestamp) {
   struct st30_rx_frame_meta meta;
   memset(&meta, 0, sizeof(meta));

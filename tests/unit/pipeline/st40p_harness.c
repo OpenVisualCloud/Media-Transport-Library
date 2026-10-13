@@ -126,6 +126,12 @@ void ut40p_ctx_enable_blocking(ut40p_ctx* ctx, uint64_t timeout_ns) {
   ctx->blocking = true;
 }
 
+void ut40p_begin_destroy(ut40p_ctx* ctx) {
+  struct st40p_rx_ctx* p = &ctx->pipeline;
+  mt_handle_begin_destroy(&p->lc_destroying, &p->type, MT_ST40_HANDLE_PIPELINE_RX);
+  rx_st40p_block_wake(p);
+}
+
 int ut40p_inject_frame(ut40p_ctx* ctx, void* udw_addr, enum st_frame_status status,
                        bool seq_discont, uint32_t timestamp) {
   struct st40_rx_frame_meta meta;

@@ -22,7 +22,7 @@ static const char* tx_st30p_stat_name(enum st30p_tx_frame_status stat) {
 static void tx_st30p_block_wake(struct st30p_tx_ctx* ctx) {
   /* notify block */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-  mt_pthread_cond_signal(&ctx->block_wake_cond);
+  mt_pthread_cond_broadcast(&ctx->block_wake_cond);
   mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
 }
 
@@ -32,8 +32,10 @@ static void tx_st30p_notify_frame_available(struct st30p_tx_ctx* ctx) {
   }
 
   if (ctx->block_get) {
-    /* notify block */
-    tx_st30p_block_wake(ctx);
+    /* signal only, the waiter claims the frame itself */
+    mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+    mt_pthread_cond_signal(&ctx->block_wake_cond);
+    mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
   }
 }
 

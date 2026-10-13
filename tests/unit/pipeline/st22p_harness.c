@@ -143,6 +143,12 @@ void ut22p_decode_wake_block(ut22p_ctx* ctx) {
   rx_st22p_decode_wake_block(&ctx->pipeline);
 }
 
+void ut22p_begin_destroy(ut22p_ctx* ctx) {
+  struct st22p_rx_ctx* p = &ctx->pipeline;
+  mt_handle_begin_destroy(&p->lc_destroying, &p->type, MT_ST22_HANDLE_PIPELINE_RX);
+  rx_st22p_block_wake_all(p);
+}
+
 int ut22p_decode_get_frame(ut22p_ctx* ctx) {
   return rx_st22p_decode_get_frame(&ctx->pipeline) ? 0 : -EBUSY;
 }

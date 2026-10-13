@@ -66,6 +66,10 @@ void ut22p_tx_wake_block(ut22p_tx_ctx* ctx);
  * device is registered with (wraps tx_st22p_encode_wake_block). */
 void ut22p_tx_encode_wake_block(ut22p_tx_ctx* ctx);
 
+/** The first two steps of st22p_tx_free(): begin_destroy, then wake_on_destroy.
+ *  That wakes both block conds, so enable both blockings first. */
+void ut22p_tx_begin_destroy(ut22p_tx_ctx* ctx);
+
 /* encoder-plugin side: claim READY->IN_ENCODING. Returns 0 when a frame was
  * handed back, -EBUSY when none was. */
 int ut22p_tx_encode_get_frame(ut22p_tx_ctx* ctx);

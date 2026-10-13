@@ -41,6 +41,9 @@ void ut30p_ctx_destroy(ut30p_ctx* ctx);
  */
 void ut30p_ctx_enable_blocking(ut30p_ctx* ctx, uint64_t timeout_ns);
 
+/** The first two steps of st30p_rx_free(): begin_destroy, then wake_on_destroy. */
+void ut30p_begin_destroy(ut30p_ctx* ctx);
+
 /** Inject one synthetic audio frame as if the transport just completed it.
  *  status is ST_FRAME_STATUS_COMPLETE or _CORRUPTED.
  *  Returns 0 on accept, -EBUSY when no free framebuf (drives the

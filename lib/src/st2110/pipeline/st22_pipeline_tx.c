@@ -28,7 +28,7 @@ static void tx_st22p_block_wake(struct st22p_tx_ctx* ctx) {
   /* notify block */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
   ctx->block_wake_pending = true;
-  mt_pthread_cond_signal(&ctx->block_wake_cond);
+  mt_pthread_cond_broadcast(&ctx->block_wake_cond);
   mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
 }
 
@@ -39,7 +39,10 @@ static void tx_st22p_notify_frame_available(struct st22p_tx_ctx* ctx) {
 
   if (ctx->block_get) {
     /* notify block */
-    tx_st22p_block_wake(ctx);
+    mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+    ctx->block_wake_pending = true;
+    mt_pthread_cond_signal(&ctx->block_wake_cond);
+    mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
   }
 }
 
@@ -47,7 +50,7 @@ static void tx_st22p_encode_block_wake(struct st22p_tx_ctx* ctx) {
   /* notify block */
   mt_pthread_mutex_lock(&ctx->encode_block_wake_mutex);
   ctx->encode_block_wake_pending = true;
-  mt_pthread_cond_signal(&ctx->encode_block_wake_cond);
+  mt_pthread_cond_broadcast(&ctx->encode_block_wake_cond);
   mt_pthread_mutex_unlock(&ctx->encode_block_wake_mutex);
 }
 

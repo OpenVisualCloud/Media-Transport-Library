@@ -111,6 +111,12 @@ void ut20p_tx_force_destroying(ut20p_tx_ctx* ctx) {
   atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
 }
 
+void ut20p_tx_begin_destroy(ut20p_tx_ctx* ctx) {
+  struct st20p_tx_ctx* p = &ctx->pipeline;
+  mt_handle_begin_destroy(&p->lc_destroying, &p->type, MT_ST20_HANDLE_PIPELINE_TX);
+  tx_st20p_block_wake(p);
+}
+
 int ut20p_tx_framebuff_cnt(const ut20p_tx_ctx* ctx) {
   return ctx->framebuff_cnt;
 }
@@ -190,7 +196,8 @@ void ut20p_tx_set_notify_frame_done(ut20p_tx_ctx* ctx,
 }
 
 void ut20p_tx_set_frame_ready(ut20p_tx_ctx* ctx, int idx) {
-  __atomic_store_n(&ctx->framebuffs[idx].stat, ST20P_TX_FRAME_READY, __ATOMIC_RELEASE);
+  atomic_store_explicit(&ctx->framebuffs[idx].stat, ST20P_TX_FRAME_READY,
+                        memory_order_release);
 }
 
 struct st20_convert_frame_meta* ut20p_tx_convert_get_frame(ut20p_tx_ctx* ctx) {
