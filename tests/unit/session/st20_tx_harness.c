@@ -1251,6 +1251,18 @@ long double ut_txv_rl_credit(const ut_txv_ctx* ctx, int port) {
   return ctx->session.rl_plan[port].bucket_ns;
 }
 
+bool ut_txv_rl_armed(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.rl_plan[port].armed;
+}
+
+uint16_t ut_txv_rl_pad_size(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.rl_plan[port].pad_size;
+}
+
+int64_t ut_txv_rl_trim_pads(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.rl_plan[port].trim_pads;
+}
+
 uint64_t ut_txv_round_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate) {
   return st_tai_round_to_media_clk_ns(tai_ns, sampling_rate);
 }

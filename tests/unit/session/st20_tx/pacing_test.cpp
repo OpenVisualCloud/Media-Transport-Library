@@ -917,6 +917,7 @@ class St20TxRlPlanTest : public ::testing::Test {
     return ut_txv_pacing_trs(ctx_) * pad_interval / (pad_interval + 1) * kShare;
   }
   void ExpectHold(int port) {
+    EXPECT_FALSE(ut_txv_rl_armed(ctx_, port));
     EXPECT_EQ((double)ut_txv_rl_drain(ctx_, port), 0.0);
     EXPECT_EQ((double)ut_txv_rl_credit(ctx_, port), 0.0);
   }
@@ -928,6 +929,19 @@ TEST_F(St20TxRlPlanTest, DrainFollowsEachPortsTrainedPadInterval) {
 
   EXPECT_NEAR((double)ut_txv_rl_drain(ctx_, kPortP), (double)Drain(164), kTolNs);
   EXPECT_NEAR((double)ut_txv_rl_drain(ctx_, kPortR), (double)Drain(170), kTolNs);
+}
+
+/* what the pre-arm reads besides the drain: the NORMAL pad and the pads its last
+ * burst keeps for the cut, 1262 / 64 coarse + 64 / 8 fine ones */
+TEST_F(St20TxRlPlanTest, PlannedPortIsArmedWithItsNormalPad) {
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 2, 0, false, kTrained, false), 0);
+
+  for (int port : {kPortP, kPortR}) {
+    SCOPED_TRACE(port);
+    EXPECT_TRUE(ut_txv_rl_armed(ctx_, port));
+    EXPECT_EQ(ut_txv_rl_pad_size(ctx_, port), (uint16_t)kNormalPadSize);
+    EXPECT_EQ(ut_txv_rl_trim_pads(ctx_, port), 1262 / 64 + 64 / 8);
+  }
 }
 
 TEST_F(St20TxRlPlanTest, UserPadIntervalHolds) {

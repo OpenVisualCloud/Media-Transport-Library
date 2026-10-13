@@ -244,6 +244,10 @@ uint32_t ut_txv_pacing_warm_pkts(const ut_txv_ctx* ctx);
 /* the rl_plan[] pad_ns / bucket_ns of a session port, in ns */
 long double ut_txv_rl_drain(const ut_txv_ctx* ctx, int port);
 long double ut_txv_rl_credit(const ut_txv_ctx* ctx, int port);
+/* the rest of the rl_plan[] the transmitter's pre-arm reads */
+bool ut_txv_rl_armed(const ut_txv_ctx* ctx, int port);
+uint16_t ut_txv_rl_pad_size(const ut_txv_ctx* ctx, int port);
+int64_t ut_txv_rl_trim_pads(const ut_txv_ctx* ctx, int port);
 /* Drives st_tai_round_to_media_clk_ns() -- the same media-clock snap
  * tv_sync_pacing() applies to the scheduled instant, so tests can express an
  * expectation as the raw ST 2110-21 sum instead of a pre-rounded constant. */
