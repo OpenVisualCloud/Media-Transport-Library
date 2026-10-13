@@ -64,6 +64,8 @@ int mt_txq_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad);
 int mt_txq_put(struct mt_txq_entry* entry);
 int mt_txq_fatal_error(struct mt_txq_entry* entry);
 int mt_txq_done_cleanup(struct mt_txq_entry* entry);
+/* a burst of none, freeing a done rs batch on mt_if_tx_reclaim_rs_thresh() ports */
+int mt_txq_reclaim(struct mt_txq_entry* entry);
 int mt_txq_set_tx_bps(struct mt_txq_entry* entry, uint64_t bytes_per_sec);
 
 uint16_t mt_sys_queue_tx_burst(struct mtl_main_impl* impl, enum mtl_port port,

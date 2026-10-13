@@ -39,6 +39,7 @@ struct ut_dev_ctx {
   int fail_timesync_read_call;
   int fail_timesync_read_error;
   int fail_port_start_error;
+  uint16_t tx_free_thresh[UT_DEV_TX_QUEUES];
   uint64_t last_shaper_rate;
   struct mtl_port_status sw_stats;
   pthread_t stats_writer;
@@ -59,6 +60,7 @@ struct ut_dev_ctx {
 };
 
 static struct ut_dev_ctx* ut_active_ctx;
+static bool ut_dev_tx_cleanup_frees;
 
 static int ut_rte_eth_rx_queue_setup(uint16_t port_id, uint16_t rx_queue_id,
                                      uint16_t nb_rx_desc, unsigned int socket_id,
@@ -118,6 +120,7 @@ static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
 #define rte_tm_hierarchy_commit ut_rte_tm_hierarchy_commit
 #define mt_sch_mrg_uinit ut_mt_sch_mrg_uinit
 #define rte_spinlock_unlock ut_rte_spinlock_unlock
+#define MT_DEV_TX_CLEANUP_FREES (ut_dev_tx_cleanup_frees)
 /* The pacing tests cover the iavf queue rate clear, which needs DPDK 26.07.91_mtl_. */
 #define MT_DEV_HAS_IAVF_TM_QOS_CHECK
 #include "dev/mt_dev.c"
@@ -165,10 +168,10 @@ static int ut_rte_eth_tx_queue_setup(uint16_t port_id, uint16_t tx_queue_id,
                                      uint16_t nb_tx_desc, unsigned int socket_id,
                                      const struct rte_eth_txconf* tx_conf) {
   (void)port_id;
-  (void)tx_queue_id;
   (void)nb_tx_desc;
   (void)socket_id;
-  (void)tx_conf;
+  if (tx_queue_id < UT_DEV_TX_QUEUES)
+    ut_active_ctx->tx_free_thresh[tx_queue_id] = tx_conf->tx_free_thresh;
   ut_dev_record(UT_DEV_EVENT_TX_QUEUE_SETUP);
   return 0;
 }
@@ -387,6 +390,7 @@ ut_dev_ctx* ut_dev_create_ctx(void) {
   inf->tx_queues = &ctx->tx_queues[0];
   for (int q = 0; q < UT_DEV_TX_QUEUES; q++) ctx->tx_queues[q].rl_shapers_mapping = -1;
   inf->rx_mbuf_pool = (struct rte_mempool*)(uintptr_t)1;
+  ut_dev_tx_cleanup_frees = RTE_VERSION >= RTE_VERSION_NUM(26, 7, 0, 0);
   ut_active_ctx = ctx;
   return ctx;
 }
@@ -410,6 +414,44 @@ void ut_dev_fail_timesync_read(ut_dev_ctx* ctx, int call, int error) {
 
 void ut_dev_fail_port_start(ut_dev_ctx* ctx, int error) {
   ctx->fail_port_start_error = error;
+}
+
+int ut_dev_set_tx_ring(ut_dev_ctx* ctx, uint16_t nb_tx_q, uint16_t nb_tx_desc,
+                       uint16_t tx_rs_thresh) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  if (nb_tx_q > UT_DEV_TX_QUEUES) return -EINVAL;
+  inf->nb_tx_q = nb_tx_q;
+  inf->nb_tx_desc = nb_tx_desc;
+  inf->dev_info.default_txconf.tx_rs_thresh = tx_rs_thresh;
+  return 0;
+}
+
+uint16_t ut_dev_tx_free_thresh(const ut_dev_ctx* ctx, uint16_t queue) {
+  return queue < UT_DEV_TX_QUEUES ? ctx->tx_free_thresh[queue] : 0;
+}
+
+uint16_t ut_dev_tx_reclaim_rs_thresh(ut_dev_ctx* ctx) {
+  return mt_if_tx_reclaim_rs_thresh(&ctx->impl, MTL_PORT_P);
+}
+
+bool ut_dev_init_tx_deep(ut_dev_ctx* ctx) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  inf->tx_deep = dev_tx_deep(inf);
+  return inf->tx_deep;
+}
+
+bool ut_dev_tx_deep(const ut_dev_ctx* ctx) {
+  return ctx->impl.inf[MTL_PORT_P].tx_deep;
+}
+
+void ut_dev_set_user_nb_tx_desc(ut_dev_ctx* ctx, uint16_t nb_tx_desc) {
+  ctx->impl.user_para.nb_tx_desc = nb_tx_desc;
+}
+
+void ut_dev_set_driver(ut_dev_ctx* ctx, const char* driver_name) {
+  parse_driver_info(driver_name, &ctx->impl.inf[MTL_PORT_P].drv_info);
 }
 
 void ut_dev_use_non_igc_driver(ut_dev_ctx* ctx) {
@@ -456,6 +498,24 @@ int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,
   ut_active_ctx = ctx;
   ret = dev_config_port(inf);
   return ret < 0 ? ret : inf->nb_rx_desc;
+}
+
+void ut_dev_set_tx_pacing(ut_dev_ctx* ctx, enum st21_tx_pacing_way pacing) {
+  ctx->impl.inf[MTL_PORT_P].tx_pacing_way = pacing;
+}
+
+int ut_dev_config_port_nb_tx_desc(ut_dev_ctx* ctx, uint16_t nb_tx_desc) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+  int ret;
+
+  ctx->impl.user_para.nb_tx_desc = nb_tx_desc;
+  ut_active_ctx = ctx;
+  ret = dev_config_port(inf);
+  return ret < 0 ? ret : inf->nb_tx_desc;
+}
+
+uint16_t ut_dev_nb_tx_desc(const ut_dev_ctx* ctx) {
+  return ctx->impl.inf[MTL_PORT_P].nb_tx_desc;
 }
 
 int ut_dev_create_ports(ut_dev_ctx* ctx) {
@@ -704,4 +764,9 @@ int ut_dev_tx_queue_rl_mapping(const ut_dev_ctx* ctx, int queue) {
 
 uint64_t ut_dev_tx_queue_bps(const ut_dev_ctx* ctx, int queue) {
   return ctx->tx_queues[queue].bps;
+}
+
+void ut_dev_set_tx_cleanup_frees(ut_dev_ctx* ctx, bool frees) {
+  (void)ctx;
+  ut_dev_tx_cleanup_frees = frees;
 }
