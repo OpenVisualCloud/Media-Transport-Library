@@ -47,6 +47,16 @@ void ut22p_ctx_enable_blocking(ut22p_ctx* ctx, uint64_t timeout_ns);
 /** Wake a blocking get_frame sleeper (wraps st22p_rx_wake_block). */
 void ut22p_wake_block(ut22p_ctx* ctx);
 
+/** Hold block_wake_mutex from the test so a woken waiter cannot read the token
+ *  until unlock; post_wake_locked runs the st22p_rx_wake_block() body (token +
+ *  broadcast) while the caller holds it. */
+void ut22p_lock_block_mutex(ut22p_ctx* ctx);
+void ut22p_post_wake_locked(ut22p_ctx* ctx);
+void ut22p_unlock_block_mutex(ut22p_ctx* ctx);
+
+/** Set framebuffer idx directly to DECODED, with no notify. */
+void ut22p_set_frame_decoded(ut22p_ctx* ctx, int idx);
+
 /**
  * Turn on ST22_DECODER_RESP_FLAG_BLOCK_GET behaviour for the decoder-plugin
  * side: init the decode block cond/mutex and set its wait timeout. Call before

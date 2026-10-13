@@ -77,6 +77,16 @@ void ut30p_force_destroying(ut30p_ctx* ctx);
 /** Wraps st30p_rx_get_queue_meta(), which no public header declares. */
 int ut30p_get_queue_meta(ut30p_ctx* ctx, struct st_queue_meta* meta);
 
+/** Hold block_wake_mutex from the test so a woken waiter cannot read the token
+ *  until unlock; post_wake_locked runs the st30p_rx_wake_block() body (token +
+ *  broadcast) while the caller holds it. */
+void ut30p_lock_block_mutex(ut30p_ctx* ctx);
+void ut30p_post_wake_locked(ut30p_ctx* ctx);
+void ut30p_unlock_block_mutex(ut30p_ctx* ctx);
+
+/** Set framebuffer idx directly to READY, with no notify. */
+void ut30p_set_ready_no_notify(ut30p_ctx* ctx, int idx);
+
 #ifdef __cplusplus
 }
 #endif

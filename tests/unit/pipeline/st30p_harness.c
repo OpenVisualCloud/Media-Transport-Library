@@ -203,3 +203,21 @@ void ut30p_force_destroying(ut30p_ctx* ctx) {
 int ut30p_get_queue_meta(ut30p_ctx* ctx, struct st_queue_meta* meta) {
   return st30p_rx_get_queue_meta(&ctx->pipeline, meta);
 }
+
+void ut30p_lock_block_mutex(ut30p_ctx* ctx) {
+  mt_pthread_mutex_lock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut30p_post_wake_locked(ut30p_ctx* ctx) {
+  ctx->pipeline.block_wake_pending = true;
+  mt_pthread_cond_broadcast(&ctx->pipeline.block_wake_cond);
+}
+
+void ut30p_unlock_block_mutex(ut30p_ctx* ctx) {
+  mt_pthread_mutex_unlock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut30p_set_ready_no_notify(ut30p_ctx* ctx, int idx) {
+  atomic_store_explicit(&ctx->framebuffs[idx].stat, ST30P_RX_FRAME_READY,
+                        memory_order_release);
+}

@@ -118,3 +118,65 @@ TEST_F(St30PipelineRxBlocking, DestroyEndsEveryBlockedGet) {
         << "destroy did not end the wait of getter " << i;
   }
 }
+
+/* Two RX consumers. B blocks in get_frame. The app calls wake_block() to end
+ * B's wait. Before B runs again, consumer C gets a frame on the fast path in
+ * its own thread. A fast path that clears block_wake_pending spends the token
+ * that was posted for B, and B sleeps on to its full block timeout. Without
+ * the fault B returns promptly.
+ *
+ * The test holds block_wake_mutex from its own thread and sees C's claim
+ * before it unlocks, so the hand-off order after the unlock is irrelevant. */
+TEST_F(St30PipelineRxBlocking, WakeBlockForABlockedGetIsNotSpentByAnotherFastPathGet) {
+  ut30p_ctx_enable_blocking(ctx_, kLongTimeoutNs);
+
+  struct st30_frame* b_frame = nullptr;
+  uint64_t b_elapsed_ns = 0;
+  std::thread consumer_b([&]() {
+    const auto t0 = std::chrono::steady_clock::now();
+    b_frame = ut30p_get_frame(ctx_); /* blocks: no frame */
+    b_elapsed_ns = ns_since(t0);
+  });
+  std::this_thread::sleep_for(kWakeDelay); /* B now sleeps in timedwait */
+
+  /* A frame lands with no notify, then wake_block(): token + broadcast. B is
+   * woken but must wait for the mutex. */
+  ut30p_set_ready_no_notify(ctx_, 0);
+  ut30p_lock_block_mutex(ctx_);
+  ut30p_post_wake_locked(ctx_);
+
+  /* Consumer C takes the frame on the fast path. */
+  struct st30_frame* c_frame = nullptr;
+  std::thread consumer_c([&]() { c_frame = ut30p_get_frame(ctx_); });
+  /* B's budget kLongTimeoutNs / 2 = 1 s > kWakeDelay 80 ms + this 300 ms spin bound */
+  bool c_claimed = false;
+  const auto spin0 = std::chrono::steady_clock::now();
+  while (ns_since(spin0) < 300ULL * 1000 * 1000) {
+    if (ut30p_frame_stat(ctx_, 0) == 2 /* ST30P_RX_FRAME_IN_USER */) {
+      c_claimed = true;
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  ut30p_unlock_block_mutex(ctx_);
+  consumer_c.join();
+  consumer_b.join();
+
+  if (b_frame) { /* B took the frame itself */
+    EXPECT_EQ(ut30p_put_frame(ctx_, b_frame), 0);
+    GTEST_SKIP() << "B took the frame itself; the order the test needs did not form";
+  }
+  /* A skip on every unloaded run means the fast path now takes block_wake_mutex. */
+  if (!c_claimed) { /* C was not scheduled within the bound */
+    if (c_frame) {
+      EXPECT_EQ(ut30p_put_frame(ctx_, c_frame), 0);
+    }
+    GTEST_SKIP() << "the fast-path get of C did not finish within its bound; the race "
+                    "did not form";
+  }
+  ASSERT_NE(c_frame, nullptr);
+  EXPECT_EQ(ut30p_put_frame(ctx_, c_frame), 0);
+  EXPECT_LT(b_elapsed_ns, kLongTimeoutNs / 2)
+      << "wake_block() did not end the blocked get: another consumer's "
+         "fast-path get spent its token";
+}

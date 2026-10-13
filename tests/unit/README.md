@@ -46,7 +46,10 @@ eight `*Concurrency*` suites, `St20PipelineTxBlocking`, `WaitSites/St20PipelineR
 `St22PipelineTxEncodeBlocking` / `St30PipelineRxBlocking` / `St40PipelineRxBlocking`, the two
 `*FirstFrameEndsANotReadyWait` cases of `St22PipelineRxBlocking` / `St22PipelineTxEncodeBlocking`, the eight
 `*DestroyEndsEveryBlockedGet` cases of `St22PipelineRxBlocking` / `St30PipelineRxBlocking` / `St40PipelineRxBlocking` /
-`St22PipelineTxBlocking` / `St22PipelineTxEncodeBlocking` / `St30PipelineTxBlocking` / `St40PipelineTxBlocking`, `PipelineTxWakeBlock`, and
+`St22PipelineTxBlocking` / `St22PipelineTxEncodeBlocking` / `St30PipelineTxBlocking` / `St40PipelineTxBlocking`, `PipelineTxWakeBlock`,
+`St20PipelineRxBlockingConvert`, `St22PipelineRxBlocking.WakeBlockEndsTheBlockedGetDespiteAFastPathGet`,
+`St30PipelineRxBlocking.WakeBlockForABlockedGetIsNotSpentByAnotherFastPathGet`,
+`St40PipelineRxBlocking.FastPathGetDoesNotStealTheWakeOfABlockedGet`, and
 `FfmpegMtlCommonTest.ConcurrentGetsCreateOneSharedHandle` carry a budget;
 the exception reaches no other case. There are no flaky network-timing tests in this binary.
 
