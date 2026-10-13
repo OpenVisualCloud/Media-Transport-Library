@@ -129,6 +129,10 @@ void ut30p_ctx_enable_blocking(ut30p_ctx* ctx, uint64_t timeout_ns) {
   ctx->blocking = true;
 }
 
+void ut30p_wake_block(ut30p_ctx* ctx) {
+  st30p_rx_wake_block(&ctx->pipeline);
+}
+
 void ut30p_begin_destroy(ut30p_ctx* ctx) {
   struct st30p_rx_ctx* p = &ctx->pipeline;
   mt_handle_begin_destroy(&p->lc_destroying, &p->type, MT_ST30_HANDLE_PIPELINE_RX);
