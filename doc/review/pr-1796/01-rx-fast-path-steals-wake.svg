@@ -1,0 +1,58 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='948' height='854' viewBox='0 0 948 854'>
+<defs><marker id='arrow' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='8' markerHeight='8' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' fill='#3e4784'/></marker></defs>
+<rect width='948' height='854' fill='white'/>
+<text x='24' y='42' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='17' fill='#101828' font-weight='bold' text-anchor='start'>RX: a fast-path get spends the wake_block() of a blocked get</text>
+<rect x='814' y='24' width='110' height='26' rx='13' fill='#fef3f2' stroke='#b42318'/>
+<text x='869.0' y='42' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='13' fill='#b42318' font-weight='bold' text-anchor='middle'>REGRESSION</text>
+<text x='24' y='68' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#475467' font-weight='normal' text-anchor='start'>st20_pipeline_rx.c:926  st22_pipeline_rx.c:662  st30_pipeline_rx.c:354  st40_pipeline_rx.c:375  (b4d01b98,</text>
+<text x='24' y='84' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#475467' font-weight='normal' text-anchor='start'>7f3afbd8)</text>
+<rect x='32' y='108' width='284' height='30' rx='6' fill='#eef4ff' stroke='#3e4784'/>
+<text x='174' y='128' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='13' fill='#26306b' font-weight='bold' text-anchor='middle'>Getter B (blocked)</text>
+<rect x='332' y='108' width='284' height='30' rx='6' fill='#eef4ff' stroke='#3e4784'/>
+<text x='474' y='128' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='13' fill='#26306b' font-weight='bold' text-anchor='middle'>Control thread</text>
+<rect x='632' y='108' width='284' height='30' rx='6' fill='#eef4ff' stroke='#3e4784'/>
+<text x='774' y='128' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='13' fill='#26306b' font-weight='bold' text-anchor='middle'>Getter A (fast path)</text>
+<line x1='174' y1='138' x2='174' y2='588' stroke='#d0d5dd' stroke-width='2' stroke-dasharray='6 4'/>
+<line x1='474' y1='138' x2='474' y2='588' stroke='#d0d5dd' stroke-width='2' stroke-dasharray='6 4'/>
+<line x1='774' y1='138' x2='774' y2='588' stroke='#d0d5dd' stroke-width='2' stroke-dasharray='6 4'/>
+<rect x='32' y='152' width='284' height='76' rx='4' fill='white' stroke='#667085'/>
+<text x='40' y='170' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>1. get_frame(): no frame -&gt; lock</text>
+<text x='40' y='186' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>block_wake_mutex -&gt;</text>
+<text x='40' y='202' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>cond_timedwait(deadline = now +</text>
+<text x='40' y='218' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>timeout)</text>
+<rect x='24' y='238' width='900' height='28' rx='4' fill='#f2f4f7' stroke='#98a2b3' stroke-dasharray='4 3'/>
+<text x='474.0' y='256' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#344054' font-weight='normal' text-anchor='middle'>RX tasklet: frame N becomes READY (its notify has not run yet)</text>
+<rect x='332' y='276' width='284' height='60' rx='4' fill='white' stroke='#667085'/>
+<text x='340' y='294' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>3. st*p_rx_wake_block(): lock;</text>
+<text x='340' y='310' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>block_wake_pending = true;</text>
+<text x='340' y='326' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>cond_broadcast; unlock</text>
+<line x1='332' y1='306.0' x2='316' y2='306.0' stroke='#3e4784' stroke-width='2' marker-end='url(#arrow)'/>
+<rect x='32' y='346' width='284' height='60' rx='4' fill='white' stroke='#667085'/>
+<text x='40' y='364' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>4. woken -&gt; must take</text>
+<text x='40' y='380' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>block_wake_mutex again before it</text>
+<text x='40' y='396' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>reads block_wake_pending</text>
+<rect x='632' y='416' width='284' height='92' rx='4' fill='white' stroke='#667085'/>
+<text x='640' y='434' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>5. get_frame() fast path: CAS</text>
+<text x='640' y='450' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>claims frame N, then sees pending</text>
+<text x='640' y='466' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>and clears it:</text>
+<text x='640' y='482' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>atomic_store(block_wake_pending,</text>
+<text x='640' y='498' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>false) WITHOUT the mutex</text>
+<rect x='32' y='518' width='284' height='60' rx='4' fill='white' stroke='#667085'/>
+<text x='40' y='536' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>6. gets the mutex: pending ==</text>
+<text x='40' y='552' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>false, no frame, not destroying -&gt;</text>
+<text x='40' y='568' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>cond_timedwait again</text>
+<rect x='24' y='588' width='900' height='46' rx='6' fill='#fef3f2' stroke='#b42318'/>
+<text x='34' y='607' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#b42318' font-weight='normal' text-anchor='start'>Result: PR: getter B sleeps the full block_timeout_ns (2000 ms in the test). wake_block() did not end the</text>
+<text x='34' y='623' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#b42318' font-weight='normal' text-anchor='start'>get that was blocked when it was called.</text>
+<rect x='24' y='642' width='900' height='46' rx='6' fill='#ecfdf3' stroke='#067647'/>
+<text x='34' y='661' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#067647' font-weight='normal' text-anchor='start'>Upstream / fix: upstream/main: the fast path never touches block_wake_pending, so B sees pending == true and</text>
+<text x='34' y='677' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#067647' font-weight='normal' text-anchor='start'>returns NULL at once.</text>
+<rect x='24' y='696' width='900' height='46' rx='6' fill='#f9fafb' stroke='#344054'/>
+<text x='34' y='715' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#344054' font-weight='normal' text-anchor='start'>How the test forces it: The _Forced and St30pReview cases hold block_wake_mutex from the test thread after</text>
+<text x='34' y='731' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#344054' font-weight='normal' text-anchor='start'>wake_block(), so getter A always runs between the broadcast and B&#x27;s re-check.</text>
+<text x='24' y='766' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#26306b' font-weight='normal' text-anchor='start'>Failing test(s):</text>
+<text x='24' y='782' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#26306b' font-weight='normal' text-anchor='start'>  WaitSites/St20PipelineRxWakeReview.FastPathGetDoesNotStealTheWakeOfABlockedGet/*</text>
+<text x='24' y='798' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#26306b' font-weight='normal' text-anchor='start'>  St22PipelineRxReview.WakeBlockEndsTheBlockedGetDespiteAFastPathGet</text>
+<text x='24' y='814' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#26306b' font-weight='normal' text-anchor='start'>  St30pReview.RxWakeBlockForABlockedGetIsNotSpentByAnotherFastPathGet</text>
+<text x='24' y='830' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#26306b' font-weight='normal' text-anchor='start'>  St40RxWakeReview.FastPathGetDoesNotStealTheWakeOfABlockedGet_{Forced,Race}</text>
+</svg>

@@ -1,0 +1,34 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='948' height='528' viewBox='0 0 948 528'>
+<defs><marker id='arrow' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='8' markerHeight='8' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' fill='#3e4784'/></marker></defs>
+<rect width='948' height='528' fill='white'/>
+<text x='24' y='42' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='17' fill='#101828' font-weight='bold' text-anchor='start'>st22p RX: a frame during st22p_rx_free() dereferences a NULL decoder</text>
+<rect x='796' y='24' width='128' height='26' rx='13' fill='#fffaeb' stroke='#b54708'/>
+<text x='860.0' y='42' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='13' fill='#b54708' font-weight='bold' text-anchor='middle'>PRE-EXISTING</text>
+<text x='24' y='68' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#475467' font-weight='normal' text-anchor='start'>st22_pipeline_rx.c:898-906 (free order)  :51-54 (notify)</text>
+<rect x='32' y='92' width='434' height='30' rx='6' fill='#eef4ff' stroke='#3e4784'/>
+<text x='249' y='112' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='13' fill='#26306b' font-weight='bold' text-anchor='middle'>App: st22p_rx_free()</text>
+<rect x='482' y='92' width='434' height='30' rx='6' fill='#eef4ff' stroke='#3e4784'/>
+<text x='699' y='112' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='13' fill='#26306b' font-weight='bold' text-anchor='middle'>Transport (still attached)</text>
+<line x1='249' y1='122' x2='249' y2='358' stroke='#d0d5dd' stroke-width='2' stroke-dasharray='6 4'/>
+<line x1='699' y1='122' x2='699' y2='358' stroke='#d0d5dd' stroke-width='2' stroke-dasharray='6 4'/>
+<rect x='32' y='136' width='434' height='28' rx='4' fill='white' stroke='#667085'/>
+<text x='40' y='154' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>1. st22_put_decoder(); ctx-&gt;decode_impl = NULL</text>
+<rect x='482' y='174' width='434' height='44' rx='4' fill='white' stroke='#667085'/>
+<text x='490' y='192' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>2. a frame arrives -&gt; rx_st22p_frame_ready():</text>
+<text x='490' y='208' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>ctx-&gt;ready is still true</text>
+<rect x='482' y='228' width='434' height='44' rx='4' fill='white' stroke='#667085'/>
+<text x='490' y='246' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>3. rx_st22p_decode_notify_frame_ready():</text>
+<text x='490' y='262' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>decoder-&gt;parent with decoder == NULL</text>
+<rect x='24' y='282' width='900' height='28' rx='4' fill='#f2f4f7' stroke='#98a2b3' stroke-dasharray='4 3'/>
+<text x='474.0' y='300' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#344054' font-weight='normal' text-anchor='middle'>SIGSEGV</text>
+<rect x='32' y='320' width='434' height='28' rx='4' fill='white' stroke='#667085'/>
+<text x='40' y='338' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>5. st22_rx_free(transport)  &lt;- detaches too late</text>
+<rect x='24' y='358' width='900' height='30' rx='6' fill='#fef3f2' stroke='#b42318'/>
+<text x='34' y='377' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#b42318' font-weight='normal' text-anchor='start'>Result: The process dies with signal 11 (on the PR and on upstream/main).</text>
+<rect x='24' y='396' width='900' height='30' rx='6' fill='#ecfdf3' stroke='#067647'/>
+<text x='34' y='415' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#067647' font-weight='normal' text-anchor='start'>Upstream / fix: Fix: call st22_rx_free(transport) before st22_put_decoder().</text>
+<rect x='24' y='434' width='900' height='30' rx='6' fill='#f9fafb' stroke='#344054'/>
+<text x='34' y='453' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#344054' font-weight='normal' text-anchor='start'>How the test forces it: The harness stubs st22_rx_free(); the stub delivers one frame before it detaches.</text>
+<text x='24' y='488' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#26306b' font-weight='normal' text-anchor='start'>Failing test(s):</text>
+<text x='24' y='504' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#26306b' font-weight='normal' text-anchor='start'>  St22PipelineRxReview.FrameDuringFreeDoesNotCrash (death test)</text>
+</svg>

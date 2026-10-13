@@ -1,0 +1,34 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='948' height='500' viewBox='0 0 948 500'>
+<defs><marker id='arrow' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='8' markerHeight='8' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' fill='#3e4784'/></marker></defs>
+<rect width='948' height='500' fill='white'/>
+<text x='24' y='42' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='17' fill='#101828' font-weight='bold' text-anchor='start'>st22p encoder / decoder: a wake_block() token survives a fast-path get</text>
+<rect x='796' y='24' width='128' height='26' rx='13' fill='#fffaeb' stroke='#b54708'/>
+<text x='860.0' y='42' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='13' fill='#b54708' font-weight='bold' text-anchor='middle'>PRE-EXISTING</text>
+<text x='24' y='68' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#475467' font-weight='normal' text-anchor='start'>st22_pipeline_tx.c:362-364 (encode get)   st22_pipeline_rx.c:270-302 (decode get)</text>
+<rect x='32' y='92' width='434' height='30' rx='6' fill='#eef4ff' stroke='#3e4784'/>
+<text x='249' y='112' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='13' fill='#26306b' font-weight='bold' text-anchor='middle'>Plugin control</text>
+<rect x='482' y='92' width='434' height='30' rx='6' fill='#eef4ff' stroke='#3e4784'/>
+<text x='699' y='112' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='13' fill='#26306b' font-weight='bold' text-anchor='middle'>Encoder / decoder thread</text>
+<line x1='249' y1='122' x2='249' y2='298' stroke='#d0d5dd' stroke-width='2' stroke-dasharray='6 4'/>
+<line x1='699' y1='122' x2='699' y2='298' stroke='#d0d5dd' stroke-width='2' stroke-dasharray='6 4'/>
+<rect x='32' y='136' width='434' height='44' rx='4' fill='white' stroke='#667085'/>
+<text x='40' y='154' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>1. st22_encoder_wake_block() while no codec get waits:</text>
+<text x='40' y='170' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>*_block_wake_pending = true</text>
+<line x1='466' y1='158.0' x2='482' y2='158.0' stroke='#3e4784' stroke-width='2' marker-end='url(#arrow)'/>
+<rect x='482' y='190' width='434' height='44' rx='4' fill='white' stroke='#667085'/>
+<text x='490' y='208' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>2. codec get_frame(): a frame is READY -&gt; fast path</text>
+<text x='490' y='224' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>returns it; token stays set</text>
+<rect x='482' y='244' width='434' height='44' rx='4' fill='white' stroke='#667085'/>
+<text x='490' y='262' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>3. next codec get_frame(): no frame; sees the old</text>
+<text x='490' y='278' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>token -&gt; returns at once</text>
+<rect x='24' y='298' width='900' height='46' rx='6' fill='#fef3f2' stroke='#b42318'/>
+<text x='34' y='317' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#b42318' font-weight='normal' text-anchor='start'>Result: The next empty codec get returns NULL / -EBUSY in &lt; 1 us instead of waiting. 7f3afbd8 fixed this for</text>
+<text x='34' y='333' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#b42318' font-weight='normal' text-anchor='start'>the app-side gets only.</text>
+<rect x='24' y='352' width='900' height='30' rx='6' fill='#ecfdf3' stroke='#067647'/>
+<text x='34' y='371' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#067647' font-weight='normal' text-anchor='start'>Upstream / fix: Fix: spend the token on the fast path too, as 7f3afbd8 does for the app gets.</text>
+<rect x='24' y='390' width='900' height='30' rx='6' fill='#f9fafb' stroke='#344054'/>
+<text x='34' y='409' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#344054' font-weight='normal' text-anchor='start'>How the test forces it: Deterministic: wake_block(), one get with a READY frame, then one get with none.</text>
+<text x='24' y='444' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#26306b' font-weight='normal' text-anchor='start'>Failing test(s):</text>
+<text x='24' y='460' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#26306b' font-weight='normal' text-anchor='start'>  St22PipelineTxWakeReview.EncoderWakeIsSpentByAFastPathGet</text>
+<text x='24' y='476' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#26306b' font-weight='normal' text-anchor='start'>  St22PipelineRxReview.DecodeWakeBlockIsSpentByAFastPathGet</text>
+</svg>

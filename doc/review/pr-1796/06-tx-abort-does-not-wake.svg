@@ -1,0 +1,35 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='948' height='538' viewBox='0 0 948 538'>
+<defs><marker id='arrow' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='8' markerHeight='8' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' fill='#3e4784'/></marker></defs>
+<rect width='948' height='538' fill='white'/>
+<text x='24' y='42' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='17' fill='#101828' font-weight='bold' text-anchor='start'>st20p / st30p / st40p TX: put_frame_abort() frees a slot but wakes no get</text>
+<rect x='796' y='24' width='128' height='26' rx='13' fill='#fffaeb' stroke='#b54708'/>
+<text x='860.0' y='42' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='13' fill='#b54708' font-weight='bold' text-anchor='middle'>PRE-EXISTING</text>
+<text x='24' y='68' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#475467' font-weight='normal' text-anchor='start'>st20_pipeline_tx.c:928 (+ :863 rejected put)  st30_pipeline_tx.c:609  st40_pipeline_tx.c:609</text>
+<rect x='32' y='92' width='434' height='30' rx='6' fill='#eef4ff' stroke='#3e4784'/>
+<text x='249' y='112' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='13' fill='#26306b' font-weight='bold' text-anchor='middle'>App main thread</text>
+<rect x='482' y='92' width='434' height='30' rx='6' fill='#eef4ff' stroke='#3e4784'/>
+<text x='699' y='112' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='13' fill='#26306b' font-weight='bold' text-anchor='middle'>App getter thread</text>
+<line x1='249' y1='122' x2='249' y2='320' stroke='#d0d5dd' stroke-width='2' stroke-dasharray='6 4'/>
+<line x1='699' y1='122' x2='699' y2='320' stroke='#d0d5dd' stroke-width='2' stroke-dasharray='6 4'/>
+<rect x='32' y='136' width='434' height='28' rx='4' fill='white' stroke='#667085'/>
+<text x='40' y='154' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>1. get_frame(): holds the only slot (IN_USER)</text>
+<rect x='482' y='174' width='434' height='28' rx='4' fill='white' stroke='#667085'/>
+<text x='490' y='192' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>2. get_frame(): no FREE slot -&gt; cond_timedwait(2 s)</text>
+<rect x='32' y='212' width='434' height='44' rx='4' fill='white' stroke='#667085'/>
+<text x='40' y='230' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>3. put_frame_abort() (or put_frame() with a too-large</text>
+<text x='40' y='246' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>user_meta): slot = FREE; no notify_frame_available()</text>
+<rect x='482' y='266' width='434' height='44' rx='4' fill='white' stroke='#667085'/>
+<text x='490' y='284' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>4. nobody signals; at ETIMEDOUT the loop breaks</text>
+<text x='490' y='300' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#101828' font-weight='normal' text-anchor='start'>without a last claim</text>
+<rect x='24' y='320' width='900' height='30' rx='6' fill='#fef3f2' stroke='#b42318'/>
+<text x='34' y='339' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#b42318' font-weight='normal' text-anchor='start'>Result: The getter returns NULL after 2 s, while a FREE slot waited the whole time.</text>
+<rect x='24' y='358' width='900' height='30' rx='6' fill='#ecfdf3' stroke='#067647'/>
+<text x='34' y='377' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#067647' font-weight='normal' text-anchor='start'>Upstream / fix: Fix: call tx_st*p_notify_frame_available(ctx) after each of the four FREE stores.</text>
+<rect x='24' y='396' width='900' height='30' rx='6' fill='#f9fafb' stroke='#344054'/>
+<text x='34' y='415' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#344054' font-weight='normal' text-anchor='start'>How the test forces it: One slot; the abort runs 80 ms after the getter blocks. Deterministic.</text>
+<text x='24' y='450' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#26306b' font-weight='normal' text-anchor='start'>Failing test(s):</text>
+<text x='24' y='466' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#26306b' font-weight='normal' text-anchor='start'>  St20PipelineTxBlocking.ReviewAbortWakesABlockedGet</text>
+<text x='24' y='482' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#26306b' font-weight='normal' text-anchor='start'>  St20PipelineTxBlocking.ReviewRejectedPutWakesABlockedGet</text>
+<text x='24' y='498' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#26306b' font-weight='normal' text-anchor='start'>  St30PipelineTxBlocking.ReviewAbortWakesABlockedGet</text>
+<text x='24' y='514' font-family='DejaVu Sans Mono, Menlo, Consolas, monospace' font-size='12' fill='#26306b' font-weight='normal' text-anchor='start'>  St40PipelineTxBlocking.ReviewAbortWakesABlockedGet</text>
+</svg>
