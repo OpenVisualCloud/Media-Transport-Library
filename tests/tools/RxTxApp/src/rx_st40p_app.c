@@ -11,6 +11,38 @@
 #define ST40P_APP_RX_MAX_UDW_SIZE 2048
 #define ST40P_APP_RX_RTP_RING_SIZE 2048
 
+/* each frame is one data item, the lib already rejected malformed packets and flags a
+ * lost, dropped or reordered item with seq_discont on the next one */
+static bool app_rx_st40p_fmd_check(struct st_app_rx_st40p_session* s,
+                                   struct st40_frame_info* frame_info) {
+  const char* fail = NULL;
+
+  if (frame_info->rtp_marker)
+    fail = "marker bit";
+  else if (s->st40p_fmd_dit >= 0 && frame_info->fmd_dit != (uint32_t)s->st40p_fmd_dit)
+    fail = "data item type";
+  else if (s->st40p_fmd_k_bit >= 0 && frame_info->fmd_k_bit != s->st40p_fmd_k_bit)
+    fail = "K-bit";
+  else if (s->st40p_fmd_ref.data &&
+           st_app_fmd_ref_check(&s->st40p_fmd_ref, !frame_info->seq_discont,
+                                frame_info->udw_buff_addr,
+                                frame_info->udw_buffer_fill) < 0)
+    fail = "reference file compare";
+  if (fail) {
+    if (!s->stat_frame_invalid)
+      err("%s(%d), fast metadata %s error\n", __func__, s->idx, fail);
+    s->stat_frame_invalid++;
+    return false;
+  }
+
+  uint64_t now = st_app_get_monotonic_time();
+  if (s->st40p_fmd_last_rx_time)
+    s->st40p_fmd_max_gap_ns =
+        ST_MAX(s->st40p_fmd_max_gap_ns, now - s->st40p_fmd_last_rx_time);
+  s->st40p_fmd_last_rx_time = now;
+  return true;
+}
+
 static void* app_rx_st40p_frame_thread(void* arg) {
   struct st_app_rx_st40p_session* s = arg;
   st40p_rx_handle handle = s->handle;
@@ -28,11 +60,17 @@ static void* app_rx_st40p_frame_thread(void* arg) {
       continue;
     }
 
+    if (s->st40p_fmd && !app_rx_st40p_fmd_check(s, frame_info)) {
+      st40p_rx_put_frame(handle, frame_info);
+      continue;
+    }
+
     s->stat_frame_total_received++;
     if (!s->stat_frame_first_rx_time)
       s->stat_frame_first_rx_time = st_app_get_monotonic_time();
     if (frame_info->seq_discont) s->stat_frame_seq_discont++;
-    if (!frame_info->rtp_marker) s->stat_frame_marker_missing++;
+    /* ST 2110-41 has no marker */
+    if (!s->st40p_fmd && !frame_info->rtp_marker) s->stat_frame_marker_missing++;
     s->stat_seq_lost_total += frame_info->seq_lost;
 
     dbg("%s(%d), frame %d, status %d, marker %d, seq_lost %u\n", __func__, idx,
@@ -74,6 +112,7 @@ static int app_rx_st40p_uinit(struct st_app_rx_st40p_session* s) {
   }
   st_pthread_mutex_destroy(&s->st40p_wake_mutex);
   st_pthread_cond_destroy(&s->st40p_wake_cond);
+  st_app_fmd_ref_close(&s->st40p_fmd_ref);
 
   return 0;
 }
@@ -139,6 +178,21 @@ static int app_rx_st40p_init(struct st_app_context* ctx, st_json_st40p_session_t
 
   st_pthread_mutex_init(&s->st40p_wake_mutex, NULL);
   st_pthread_cond_init(&s->st40p_wake_cond, NULL);
+  s->st40p_fmd = st40p && st40p->info.fast_metadata;
+  if (s->st40p_fmd) {
+    ops.flags |= ST40P_RX_FLAG_FAST_METADATA;
+    s->st40p_fmd_dit = st40p->info.fmd_dit;
+    s->st40p_fmd_k_bit = st40p->info.fmd_k_bit;
+    if (!st40p->info.st40p_url[0])
+      info(
+          "%s(%d), no st40p_url, the payload is not verified, only DIT, K-bit and "
+          "rate\n",
+          __func__, idx);
+    else if (st_app_fmd_ref_open(&s->st40p_fmd_ref, st40p->info.st40p_url) < 0) {
+      app_rx_st40p_uinit(s);
+      return -EIO;
+    }
+  }
 
   handle = st40p_rx_create(ctx->st, &ops);
   if (!handle) {
@@ -169,16 +223,28 @@ static int app_rx_st40p_result(struct st_app_rx_st40p_session* s) {
   double time_sec = (double)(cur_time_ns - s->stat_frame_first_rx_time) / NS_PER_S;
   double framerate = time_sec > 0 ? s->stat_frame_total_received / time_sec : 0;
 
-  if (!s->stat_frame_total_received) return -EINVAL;
+  if (!s->stat_frame_total_received) {
+    if (s->stat_frame_invalid)
+      err("%s(%d), no valid frame, %d rejected as invalid\n", __func__, idx,
+          s->stat_frame_invalid);
+    return -EINVAL;
+  }
 
+  bool ok = ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05);
+  char fmd[64] = "";
+  if (s->st40p_fmd) {
+    s->st40p_fmd_max_gap_ns =
+        ST_MAX(s->st40p_fmd_max_gap_ns, cur_time_ns - s->st40p_fmd_last_rx_time);
+    ok = ok && !s->stat_frame_invalid && s->st40p_fmd_max_gap_ns <= ST_APP_FMD_MAX_GAP_NS;
+    (void)snprintf(fmd, sizeof(fmd), ", %d invalid, max gap %.3f ms",
+                   s->stat_frame_invalid, (double)s->st40p_fmd_max_gap_ns / NS_PER_MS);
+  }
   notce(
       "%s(%d), %s, fps %f, %d frames received, seq_discont %d, marker_missing %d, "
-      "seq_lost %u\n",
-      __func__, idx,
-      ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05) ? "OK"
-                                                                         : "FAILED",
-      framerate, s->stat_frame_total_received, s->stat_frame_seq_discont,
-      s->stat_frame_marker_missing, s->stat_seq_lost_total);
+      "seq_lost %u%s\n",
+      __func__, idx, ok ? "OK" : "FAILED", framerate, s->stat_frame_total_received,
+      s->stat_frame_seq_discont, s->stat_frame_marker_missing, s->stat_seq_lost_total,
+      fmd);
 
   /* When the pipeline observed seq gaps, the user has no easy way to tell whether
    * the wire layer also lost the packets (true loss) or healed them via redundancy /
@@ -215,7 +281,7 @@ static int app_rx_st40p_result(struct st_app_rx_st40p_session* s) {
             wire.stat_pkts_wrong_interlace_dropped, wire.stat_pkts_enqueue_fail, cause);
     }
   }
-  return 0;
+  return (s->st40p_fmd && !ok) ? -EIO : 0;
 }
 
 int st_app_rx_st40p_sessions_init(struct st_app_context* ctx) {

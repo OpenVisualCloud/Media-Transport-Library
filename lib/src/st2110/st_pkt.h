@@ -87,4 +87,7 @@ struct st_fmd_hdr {
 #define ST_PKT_MAX_ETHER_BYTES \
   (1460 + sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr))
 
+/* the largest fast metadata data item one packet carries, 1436 bytes */
+#define ST_PKT_FMD_MAX_ITEM_BYTES (ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_fmd_hdr))
+
 #endif

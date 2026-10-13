@@ -36,7 +36,8 @@ static void app_tx_st40p_fill_payload(struct st_app_tx_st40p_session* s,
                                       struct st40_frame_info* frame_info) {
   uint32_t chunk = frame_info->udw_buffer_size;
   if (s->udw_payload_limit && chunk > s->udw_payload_limit) chunk = s->udw_payload_limit;
-  if (chunk > ST40P_APP_MAX_UDW_SIZE) chunk = ST40P_APP_MAX_UDW_SIZE;
+  /* fast metadata sends ST_APP_FMD_CHUNK_BYTES data items, RX resyncs on them */
+  if (!s->st40p_fmd && chunk > ST40P_APP_MAX_UDW_SIZE) chunk = ST40P_APP_MAX_UDW_SIZE;
 
   if (s->st40p_source_begin) {
     size_t remaining = s->st40p_source_end - s->st40p_frame_cursor;
@@ -55,7 +56,10 @@ static void app_tx_st40p_fill_payload(struct st_app_tx_st40p_session* s,
     }
   }
 
-  app_tx_st40p_fill_meta(s, frame_info, chunk);
+  if (s->st40p_fmd)
+    frame_info->udw_buffer_fill = chunk;
+  else
+    app_tx_st40p_fill_meta(s, frame_info, chunk);
 }
 
 static int app_tx_st40p_open_source(struct st_app_tx_st40p_session* s) {
@@ -270,6 +274,13 @@ static int app_tx_st40p_init(struct st_app_context* ctx, st_json_st40p_session_t
   ops.framebuff_cnt = s->framebuff_cnt;
   ops.max_udw_buff_size = ST40P_APP_MAX_UDW_SIZE;
   ops.flags |= ST40P_TX_FLAG_BLOCK_GET;
+  s->st40p_fmd = st40p && st40p->info.fast_metadata;
+  if (s->st40p_fmd) {
+    ops.flags |= ST40P_TX_FLAG_FAST_METADATA;
+    ops.fmd_dit = st40p->info.fmd_dit;
+    ops.fmd_k_bit = st40p->info.fmd_k_bit;
+    ops.max_udw_buff_size = ST_APP_FMD_CHUNK_BYTES;
+  }
 
   s->expect_fps = st_frame_rate(ops.fps);
   s->frame_time = s->expect_fps ? (NS_PER_S / s->expect_fps) : 0;

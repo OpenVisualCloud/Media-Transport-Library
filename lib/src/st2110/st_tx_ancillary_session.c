@@ -1801,9 +1801,9 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   s->tx_mono_pool = mt_user_tx_mono_pool(impl);
   /* manually disable chain or any port can't support chain */
   s->tx_no_chain = mt_user_tx_no_chain(impl) || !tx_ancillary_session_has_chain_buf(s);
-  s->max_pkt_len = ST_PKT_MAX_ETHER_BYTES - (tx_ancillary_session_is_fmd(s)
-                                                 ? sizeof(struct st_fmd_hdr)
-                                                 : sizeof(struct st_rfc8331_anc_hdr));
+  s->max_pkt_len = tx_ancillary_session_is_fmd(s)
+                       ? ST_PKT_FMD_MAX_ITEM_BYTES
+                       : ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_rfc8331_anc_hdr);
 
   s->st40_frames_cnt = ops->framebuff_cnt;
 

@@ -2,7 +2,9 @@
  * Copyright(c) 2025 Intel Corporation
  */
 
+#include <algorithm>
 #include <thread>
+#include <vector>
 
 #include "log.h"
 #include "tests.hpp"
@@ -459,4 +461,292 @@ TEST(St40p, tx_no_epoch_drop) {
 
 TEST(St40p, tx_user_pacing_no_epoch_drop) {
   st40p_tx_epoch_drop_test(true);
+}
+
+#define FMD_TEST_UDP_PORT (40200)
+#define FMD_TEST_PAYLOAD_TYPE (115)
+#define FMD_TEST_DIT (0x2a5a5a)
+#define FMD_TEST_PADDED(size) (((size) + 3) & ~3u)
+/* 5 s at 59.94 fps is ~300 items, enough for a 10% rate check */
+#define FMD_TEST_DURATION_S (5)
+
+struct st40p_fmd_case {
+  uint32_t dit;
+  uint8_t k_bit;
+  uint32_t item_size; /* at least 4: the first 4 bytes carry the item seq */
+  bool redundant;
+};
+
+struct st40p_fmd_rx_check {
+  st40p_fmd_case c;
+  std::vector<uint8_t> want;
+  int frames = 0;
+  int bad_frames = 0;   /* header, fill, contents or zero padding wrong */
+  int out_of_order = 0; /* seq not after the previous one: a duplicate or reorder */
+  uint64_t seq_lost = 0;
+  bool have_seq = false;
+  uint32_t last_seq = 0;
+  int discont_frames = 0;
+  /* seq_discont set, or not, against whether the item follows the one before it */
+  int discont_mismatch = 0;
+  int marker_frames = 0;
+  bool have_prev = false;
+  uint32_t prev_seq = 0;
+  uint64_t first_ns = 0;
+  uint64_t last_ns = 0;
+};
+
+static void st40p_fmd_fill_item(uint8_t* item, uint32_t size, uint32_t seq) {
+  for (uint32_t i = 0; i < size; i++)
+    item[i] = i < 4 ? (uint8_t)(seq >> (24 - 8 * i)) : (uint8_t)(seq + i);
+}
+
+static void st40p_fmd_rx_check_frame(st40p_fmd_rx_check* chk,
+                                     const struct st40_frame_info* f) {
+  uint32_t padded = FMD_TEST_PADDED(chk->c.item_size);
+  bool ok = f->fmd_dit == chk->c.dit && f->fmd_k_bit == chk->c.k_bit &&
+            f->meta_num == 0 && f->udw_buffer_fill == padded && f->udw_buff_addr;
+  uint32_t seq = 0;
+
+  if (ok) {
+    const uint8_t* b = f->udw_buff_addr;
+    seq = ((uint32_t)b[0] << 24) | ((uint32_t)b[1] << 16) | ((uint32_t)b[2] << 8) | b[3];
+    std::fill(chk->want.begin(), chk->want.end(), 0);
+    st40p_fmd_fill_item(chk->want.data(), chk->c.item_size, seq);
+    ok = memcmp(b, chk->want.data(), padded) == 0;
+  }
+
+  uint64_t now = st_test_get_monotonic_time();
+  if (!chk->frames) chk->first_ns = now;
+  chk->last_ns = now;
+  chk->frames++;
+  if (f->rtp_marker) chk->marker_frames++;
+  if (f->seq_discont) chk->discont_frames++;
+  if (!ok) {
+    chk->bad_frames++;
+    chk->have_prev = false;
+    return;
+  }
+  bool broken = chk->have_prev && seq != chk->prev_seq + 1;
+  if (f->seq_discont != broken) chk->discont_mismatch++;
+  chk->have_prev = true;
+  chk->prev_seq = seq;
+  if (chk->have_seq) {
+    int32_t delta = (int32_t)(seq - chk->last_seq);
+    if (delta <= 0) {
+      chk->out_of_order++;
+      return;
+    }
+    chk->seq_lost += delta - 1;
+  }
+  chk->have_seq = true;
+  chk->last_seq = seq;
+}
+
+static void st40p_fmd_tx_ops_init(struct st40p_tx_ops* ops, tests_context* test_ctx,
+                                  uint32_t dit, uint8_t k_bit, uint32_t item_size) {
+  auto ctx = test_ctx->ctx;
+
+  memset(ops, 0, sizeof(*ops));
+  ops->name = "st40p_fmd_tx";
+  ops->priv = test_ctx;
+  ops->port.num_port = 1;
+  if (ctx->mcast_only)
+    memcpy(ops->port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+  else
+    memcpy(ops->port.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+  (void)snprintf(ops->port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+                 ctx->para.port[MTL_PORT_P]);
+  ops->port.udp_port[MTL_SESSION_PORT_P] = FMD_TEST_UDP_PORT;
+  ops->port.payload_type = FMD_TEST_PAYLOAD_TYPE;
+  ops->fps = ST_FPS_P59_94;
+  ops->framebuff_cnt = test_ctx->fb_cnt;
+  ops->max_udw_buff_size = item_size;
+  ops->flags = ST40P_TX_FLAG_FAST_METADATA | ST40P_TX_FLAG_BLOCK_GET;
+  ops->fmd_dit = dit;
+  ops->fmd_k_bit = k_bit;
+}
+
+/* st40p FMD TX -> st40p FMD RX; every frame is one data item, checked byte by byte */
+static void st40p_fmd_loopback_test(const st40p_fmd_case& c) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto st = ctx->handle;
+  int ret;
+  struct st40p_tx_ops ops_tx;
+  struct st40p_rx_ops ops_rx;
+
+  ASSERT_GE(c.item_size, 4u);
+  if (ctx->para.num_ports < (c.redundant ? 4 : 2)) {
+    info("%s, need %d ports, skipping\n", __func__, c.redundant ? 4 : 2);
+    return;
+  }
+
+  auto test_ctx_tx = new tests_context();
+  ASSERT_TRUE(test_ctx_tx != nullptr);
+  test_ctx_tx->ctx = ctx;
+  test_ctx_tx->fb_cnt = 3;
+  st40p_fmd_tx_ops_init(&ops_tx, test_ctx_tx, c.dit, c.k_bit, c.item_size);
+  if (c.redundant) {
+    ops_tx.port.num_port = 2;
+    memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    (void)snprintf(ops_tx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+                   ctx->para.port[MTL_PORT_R]);
+    ops_tx.port.udp_port[MTL_SESSION_PORT_R] = FMD_TEST_UDP_PORT;
+  }
+  auto tx_handle = st40p_tx_create(st, &ops_tx);
+  ASSERT_TRUE(tx_handle != nullptr);
+
+  auto test_ctx_rx = new tests_context();
+  ASSERT_TRUE(test_ctx_rx != nullptr);
+  test_ctx_rx->ctx = ctx;
+  test_ctx_rx->fb_cnt = 3;
+  st40p_fmd_rx_check chk;
+  chk.c = c;
+  chk.want.resize(FMD_TEST_PADDED(c.item_size));
+  test_ctx_rx->priv = &chk;
+
+  memset(&ops_rx, 0, sizeof(ops_rx));
+  ops_rx.name = "st40p_fmd_rx";
+  ops_rx.priv = test_ctx_rx;
+  ops_rx.port.num_port = c.redundant ? 2 : 1;
+  if (c.redundant) {
+    memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    (void)snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+                   ctx->para.port[MTL_PORT_2]);
+    (void)snprintf(ops_rx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+                   ctx->para.port[MTL_PORT_3]);
+    ops_rx.port.udp_port[MTL_SESSION_PORT_R] = FMD_TEST_UDP_PORT;
+  } else {
+    if (ctx->mcast_only)
+      memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+             MTL_IP_ADDR_LEN);
+    else
+      memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+             MTL_IP_ADDR_LEN);
+    (void)snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+                   ctx->para.port[MTL_PORT_R]);
+  }
+  ops_rx.port.udp_port[MTL_SESSION_PORT_P] = FMD_TEST_UDP_PORT;
+  ops_rx.port.payload_type = FMD_TEST_PAYLOAD_TYPE;
+  ops_rx.framebuff_cnt = test_ctx_rx->fb_cnt;
+  /* exactly one padded item: an item that fills framebuff_size must still arrive */
+  ops_rx.max_udw_buff_size = FMD_TEST_PADDED(c.item_size);
+  ops_rx.rtp_ring_size = 1024;
+  ops_rx.flags = ST40P_RX_FLAG_FAST_METADATA | ST40P_RX_FLAG_BLOCK_GET;
+  auto rx_handle = st40p_rx_create(st, &ops_rx);
+  ASSERT_TRUE(rx_handle != nullptr);
+
+  test_ctx_tx->handle = tx_handle;
+  auto tx_thread = std::thread(
+      [](tests_context* s, uint32_t item_size) {
+        auto handle = (st40p_tx_handle)s->handle;
+        uint32_t seq = 0;
+        while (!s->stop) {
+          auto fi = st40p_tx_get_frame(handle);
+          if (!fi) continue;
+          st40p_fmd_fill_item(fi->udw_buff_addr, item_size, seq++);
+          fi->udw_buffer_fill = item_size;
+          st40p_tx_put_frame(handle, fi);
+          s->fb_send++;
+        }
+      },
+      test_ctx_tx, c.item_size);
+
+  test_ctx_rx->handle = rx_handle;
+  auto rx_thread = std::thread(
+      [](tests_context* s) {
+        auto handle = (st40p_rx_handle)s->handle;
+        auto chk = (st40p_fmd_rx_check*)s->priv;
+        while (!s->stop) {
+          auto fi = st40p_rx_get_frame(handle);
+          if (!fi) continue;
+          st40p_fmd_rx_check_frame(chk, fi);
+          st40p_rx_put_frame(handle, fi);
+        }
+      },
+      test_ctx_rx);
+
+  ret = mtl_start(st);
+  EXPECT_GE(ret, 0);
+  sleep(FMD_TEST_DURATION_S);
+
+  test_ctx_tx->stop = true;
+  st40p_tx_wake_block(tx_handle);
+  tx_thread.join();
+  test_ctx_rx->stop = true;
+  st40p_rx_wake_block(rx_handle);
+  rx_thread.join();
+
+  double expect_rate = st_frame_rate(ST_FPS_P59_94);
+  double rate = 0;
+  if (chk.frames > 1 && chk.last_ns > chk.first_ns)
+    rate = (double)(chk.frames - 1) * NS_PER_S / (double)(chk.last_ns - chk.first_ns);
+  info(
+      "%s, dit 0x%x k %u size %u redundant %d: sent %d, received %d, discont %d, rate "
+      "%f\n",
+      __func__, c.dit, c.k_bit, c.item_size, c.redundant, test_ctx_tx->fb_send,
+      chk.frames, chk.discont_frames, rate);
+  EXPECT_GT(chk.frames, 0);
+  EXPECT_NEAR(rate, expect_rate, expect_rate * 0.1);
+  EXPECT_EQ(chk.bad_frames, 0);
+  EXPECT_EQ(chk.out_of_order, 0);
+  EXPECT_LE(chk.seq_lost, 2u);
+  EXPECT_EQ(chk.discont_mismatch, 0);
+  EXPECT_LE(chk.discont_frames, 2);
+  EXPECT_EQ(chk.marker_frames, 0);
+
+  ret = st40p_rx_free(rx_handle);
+  EXPECT_GE(ret, 0);
+  ret = st40p_tx_free(tx_handle);
+  EXPECT_GE(ret, 0);
+  delete test_ctx_rx;
+  delete test_ctx_tx;
+}
+
+static bool st40p_fmd_tx_create_ok(uint32_t extra_flags, uint32_t dit) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  tests_context test_ctx;
+  struct st40p_tx_ops ops;
+
+  test_ctx.ctx = ctx;
+  test_ctx.fb_cnt = 3;
+  st40p_fmd_tx_ops_init(&ops, &test_ctx, dit, 0, 64);
+  ops.flags |= extra_flags;
+  auto handle = st40p_tx_create(ctx->handle, &ops);
+  if (!handle) return false;
+  EXPECT_GE(st40p_tx_free(handle), 0);
+  return true;
+}
+
+TEST(St40p, fmd_loopback) {
+  st40p_fmd_loopback_test({FMD_TEST_DIT, 1, 61, false});
+}
+
+/* 0x3fffff is the top experimental DIT (§8.6); 1436 bytes fill the packet */
+TEST(St40p, fmd_loopback_max_dit_max_item) {
+  st40p_fmd_loopback_test({0x3fffff, 0, 1436, false});
+}
+
+TEST(St40p, fmd_redundant_loopback) {
+  st40p_fmd_loopback_test({0x000000, 1, 13, true});
+}
+
+TEST(St40p, fmd_create_expect_fail_split_anc) {
+  EXPECT_TRUE(st40p_fmd_tx_create_ok(0, FMD_TEST_DIT));
+  EXPECT_FALSE(st40p_fmd_tx_create_ok(ST40P_TX_FLAG_SPLIT_ANC_BY_PKT, FMD_TEST_DIT));
+}
+
+TEST(St40p, fmd_create_expect_fail_reserved_dit) {
+  EXPECT_TRUE(st40p_fmd_tx_create_ok(0, 0x2fffff));
+  EXPECT_FALSE(st40p_fmd_tx_create_ok(0, 0x300000));
+  EXPECT_FALSE(st40p_fmd_tx_create_ok(0, 0x3fefff));
+  EXPECT_TRUE(st40p_fmd_tx_create_ok(0, 0x3ff000));
 }

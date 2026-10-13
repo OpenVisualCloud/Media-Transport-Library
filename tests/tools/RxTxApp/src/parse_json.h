@@ -272,6 +272,9 @@ typedef struct st_json_st20p_session {
 typedef struct st_json_st40p_info {
   enum st_fps fps;
   bool interlaced;
+  bool fast_metadata;
+  int fmd_dit;   /* -1 when absent */
+  int fmd_k_bit; /* -1 when absent */
 
   char st40p_url[ST_APP_URL_MAX_LEN];
 } st_json_st40p_info_t;

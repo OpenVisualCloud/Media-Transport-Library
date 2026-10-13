@@ -128,6 +128,8 @@ static int rx_st40p_frame_ready(void* priv, void* addr, struct st40_rx_frame_met
   frame_info->rtp_marker = meta->rtp_marker;
   frame_info->interlaced = meta->interlaced;
   frame_info->second_field = meta->second_field;
+  frame_info->fmd_dit = meta->fmd_dit;
+  frame_info->fmd_k_bit = meta->fmd_k_bit;
   frame_info->tfmt = meta->tfmt;
   frame_info->rtp_timestamp = meta->rtp_timestamp;
   frame_info->timestamp = meta->timestamp;
@@ -138,7 +140,7 @@ static int rx_st40p_frame_ready(void* priv, void* addr, struct st40_rx_frame_met
   atomic_store_explicit(&framebuff->stat, ST40P_RX_FRAME_READY, memory_order_release);
   ctx->framebuff_producer_idx = rx_st40p_next_idx(ctx, framebuff->idx);
   atomic_fetch_add_explicit(&ctx->stat_frames_received, 1, memory_order_relaxed);
-  if (frame_info->seq_discont)
+  if (frame_info->status == ST_FRAME_STATUS_CORRUPTED)
     atomic_fetch_add_explicit(&ctx->stat_frames_corrupted, 1, memory_order_relaxed);
 
   rx_st40p_notify_frame_available(ctx);
@@ -182,6 +184,8 @@ static int rx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_rx
   if (ops->flags & ST40P_RX_FLAG_ENABLE_RTCP) ops_rx.flags |= ST40_RX_FLAG_ENABLE_RTCP;
   if (ops->flags & ST40P_RX_FLAG_DISABLE_AUTO_DETECT)
     ops_rx.flags |= ST40_RX_FLAG_DISABLE_AUTO_DETECT;
+  if (ops->flags & ST40P_RX_FLAG_FAST_METADATA)
+    ops_rx.flags |= ST40_RX_FLAG_FAST_METADATA;
 
   ctx->transport = st40_rx_create(impl, &ops_rx);
   if (!ctx->transport) {

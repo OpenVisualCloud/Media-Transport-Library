@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2026 Intel Corporation
  *
- * C header for ST40p (ancillary) TX pipeline-layer concurrency unit tests.
+ * C header for ST40p (ancillary) TX pipeline-layer unit tests.
  *
  * Exposes the two role-halves of the lock-free TX framebuffer ring so a
  * gtest can drive them from independent threads:
@@ -9,11 +9,10 @@
  *   - consumer (transport):  next_frame (READY->IN_TRANSMITTING) /
  *                            frame_done (->FREE)
  *
- * The harness bypasses create_transport: there is no real DPDK session, the
- * framebuffers are plain heap memory and the ctx is hand-initialised into the
- * "ready" state. This isolates the claim/lifecycle state machine so the test
- * can hammer it with many threads and assert single-ownership + conservation +
- * deadlock-freedom.
+ * There is no real DPDK session: the framebuffers are plain heap memory and the
+ * ctx is hand-initialised into the "ready" state. This isolates the claim/lifecycle state
+ * machine so the test can hammer it with many threads and assert single-ownership +
+ * conservation + deadlock-freedom.
  */
 
 #ifndef _ST40P_TX_PIPELINE_HARNESS_H_
@@ -104,6 +103,16 @@ void ut40p_tx_set_notify_frame_late(ut40p_tx_ctx* ctx,
  * callback's return, or -ENOENT when no late callback was registered.
  */
 int ut40p_tx_transport_report_late(ut40p_tx_ctx* ctx, uint64_t epoch_skipped);
+
+/** Run create_transport with `ops` against the stub and copy the st40_tx_ops it got. */
+void ut40p_tx_transport_ops_of(ut40p_tx_ctx* ctx, const struct st40p_tx_ops* ops,
+                               struct st40_tx_ops* out);
+
+/* Set the st40p ops flags the put/next/done paths see. */
+void ut40p_tx_ctx_set_flags(ut40p_tx_ctx* ctx, uint32_t flags);
+
+/* The transport frame put_frame fills for framebuffer idx. */
+const struct st40_frame* ut40p_tx_anc_frame(const ut40p_tx_ctx* ctx, int idx);
 
 /** The pipeline handle, for calling the public st*p API directly. */
 st40p_tx_handle ut40p_tx_handle(ut40p_tx_ctx* ctx);

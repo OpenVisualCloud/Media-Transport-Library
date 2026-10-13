@@ -40,6 +40,13 @@ void ut40p_ctx_destroy(ut40p_ctx* ctx);
 int ut40p_inject_frame(ut40p_ctx* ctx, void* udw_addr, enum st_frame_status status,
                        bool seq_discont, uint32_t timestamp);
 
+/** Inject one frame with a caller-built transport meta. */
+int ut40p_inject_meta(ut40p_ctx* ctx, void* udw_addr, struct st40_rx_frame_meta* meta);
+
+/** Run rx_st40p_create_transport() with st40p `flags` against a stub st40_rx_create()
+ *  and copy the st40_rx_ops it was handed into *out. */
+int ut40p_rx_create_transport(ut40p_ctx* ctx, uint32_t flags, struct st40_rx_ops* out);
+
 struct st40_frame_info* ut40p_get_frame(ut40p_ctx* ctx);
 int ut40p_put_frame(ut40p_ctx* ctx, struct st40_frame_info* frame);
 int ut40p_put_frame_abort(ut40p_ctx* ctx, struct st40_frame_info* frame);

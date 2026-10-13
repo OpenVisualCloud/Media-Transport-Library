@@ -239,9 +239,9 @@ static void rx_anc_slot_parse_pkt(struct st_rx_ancillary_session_impl* s,
   }
 }
 
-static void rx_anc_slot_deliver(struct mtl_main_impl* impl,
-                                struct st_rx_ancillary_session_impl* s,
-                                struct st_rx_anc_frame_slot* slot) {
+static int rx_anc_slot_deliver(struct mtl_main_impl* impl,
+                               struct st_rx_ancillary_session_impl* s,
+                               struct st_rx_anc_frame_slot* slot) {
   struct st40_rx_ops* ops = &s->ops;
   struct st40_rx_frame_meta* meta = &slot->cur_meta;
 
@@ -255,6 +255,8 @@ static void rx_anc_slot_deliver(struct mtl_main_impl* impl,
   meta->interlaced = slot->interlaced;
   meta->second_field = slot->second_field;
   meta->rtp_marker = slot->rtp_marker;
+  meta->fmd_dit = slot->fmd_dit;
+  meta->fmd_k_bit = slot->fmd_k_bit;
   meta->timestamp_first_pkt = slot->receive_timestamp;
   /* derive seq_lost / seq_discont from this slot's own per-frame bitmap.
    * expected = max_offset + 1 (slots with at least one packet).
@@ -276,6 +278,11 @@ static void rx_anc_slot_deliver(struct mtl_main_impl* impl,
   }
   meta->pkts_total = slot->pkts_total;
   meta->status = meta->seq_discont ? ST_FRAME_STATUS_CORRUPTED : ST_FRAME_STATUS_COMPLETE;
+  if (ops->flags & ST40_RX_FLAG_FAST_METADATA) {
+    /* the item is intact, the gap is in the stream before it */
+    meta->seq_lost = s->fmd_seq_lost;
+    meta->seq_discont = s->fmd_seq_discont;
+  }
 
   s->stat_anc_frames_ready++;
   /* stat_frames_received is bumped once per unique wire timestamp in
@@ -293,10 +300,15 @@ static void rx_anc_slot_deliver(struct mtl_main_impl* impl,
   }
   if (ret < 0) {
     /* App rejected — reclaim slot ourselves so the pool isn't starved. */
-    err("%s(%d), notify_frame_ready ret %d, reclaim slot %u\n", __func__, s->idx, ret,
-        slot->idx);
+    if (ops->flags & ST40_RX_FLAG_FAST_METADATA) /* per item, back-pressure is routine */
+      dbg("%s(%d), notify_frame_ready ret %d, reclaim slot %u\n", __func__, s->idx, ret,
+          slot->idx);
+    else
+      err("%s(%d), notify_frame_ready ret %d, reclaim slot %u\n", __func__, s->idx, ret,
+          slot->idx);
     atomic_store_explicit(&slot->state, ST_RX_ANC_SLOT_FREE, memory_order_seq_cst);
   }
+  return ret;
 }
 
 /* Force-deliver a parked PENDING slot that will not receive its late marker
@@ -377,12 +389,121 @@ static struct st_rx_anc_frame_slot* rx_anc_select_slot(
   return slot;
 }
 
+/* The UDP length leaves out Ethernet padding; data_len caps a bogus one */
+static int rx_ancillary_rtp_len(struct rte_mbuf* mbuf) {
+  struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(mbuf, struct mt_udp_hdr*);
+  int room = mbuf->data_len - (int)sizeof(*hdr);
+  int udp_payload = ntohs(hdr->udp.dgram_len) - (int)sizeof(hdr->udp);
+  return RTE_MAX(0, RTE_MIN(udp_payload, room));
+}
+
+/* Point *payload past the CSRCs and extension; returns its length less RTP padding */
+static int rx_anc_fmd_payload(struct rte_mbuf* mbuf, const uint8_t** payload) {
+  const uint8_t* pkt = rte_pktmbuf_mtod_offset(mbuf, uint8_t*, sizeof(struct mt_udp_hdr));
+  const struct st_rfc3550_rtp_hdr* rtp = (const struct st_rfc3550_rtp_hdr*)pkt;
+  int len = rx_ancillary_rtp_len(mbuf);
+  int off = (int)(sizeof(*rtp) + (size_t)rtp->csrc_count * 4);
+  uint32_t word;
+
+  if (rtp->extension) {
+    if (off + (int)sizeof(word) > len) return -EINVAL;
+    memcpy(&word, pkt + off, sizeof(word));
+    off += (int)(sizeof(word) + (size_t)(ntohl(word) & 0xffff) * 4);
+  }
+  if (off > len) return -EINVAL;
+  if (rtp->padding) {
+    int pad = len > off ? pkt[len - 1] : 0;
+    if (!pad || pad > len - off) return -EINVAL;
+    len -= pad;
+  }
+
+  *payload = pkt + off;
+  return len - off;
+}
+
+/* No marker and no item spans packets in ST 2110-41: deliver each item as a frame now */
+static int rx_anc_fmd_assemble_pkt(struct mtl_main_impl* impl,
+                                   struct st_rx_ancillary_session_impl* s,
+                                   struct rte_mbuf* mbuf, uint16_t seq_id,
+                                   uint32_t tmstamp, enum mtl_session_port s_port) {
+  struct st_rfc3550_rtp_hdr* rtp = rte_pktmbuf_mtod_offset(
+      mbuf, struct st_rfc3550_rtp_hdr*, sizeof(struct mt_udp_hdr));
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  uint64_t recv_ts = mt_mbuf_time_stamp(impl, mbuf, port);
+  const uint8_t* payload = NULL;
+  int room = rx_anc_fmd_payload(mbuf, &payload);
+  int off = 0;
+  uint32_t word;
+
+  /* arrival order: a late packet breaks the sequence as much as a lost one */
+  if (s->fmd_prev_seq >= 0 && seq_id != (uint16_t)(s->fmd_prev_seq + 1)) {
+    s->fmd_seq_discont = true;
+    if (mt_seq16_greater(seq_id, s->fmd_prev_seq))
+      s->fmd_seq_lost += (uint16_t)(seq_id - s->fmd_prev_seq - 1);
+  }
+  s->fmd_prev_seq = seq_id;
+
+  if (room < 0) {
+    dbg("%s(%d), rtp header overruns the packet, seq %u\n", __func__, s->idx, seq_id);
+    goto parse_err;
+  }
+
+  while (off < room) {
+    if (room - off < (int)sizeof(word)) goto malformed_item;
+    memcpy(&word, payload + off, sizeof(word));
+    word = ntohl(word);
+    off += sizeof(word);
+    uint32_t size = (word & 0x1ff) * 4;
+    if (!size || size > (uint32_t)(room - off)) goto malformed_item;
+
+    struct st_rx_anc_frame_slot* slot =
+        size <= s->ops.framebuff_size ? rx_anc_get_free_slot(s) : NULL;
+    if (!slot) {
+      dbg("%s(%d), drop %u bytes item of seq %u, no slot or over framebuff_size\n",
+          __func__, s->idx, size, seq_id);
+      s->stat_anc_frames_dropped++;
+      s->fmd_seq_discont = true;
+      off += (int)size;
+      continue;
+    }
+    rx_anc_slot_init_frame(slot, tmstamp, false, false, recv_ts);
+    slot->pkts_total = 1;
+    if (s_port < MTL_SESSION_PORT_MAX) slot->pkts_recv[s_port] = 1;
+    mt_memcpy(slot->udw_buf, payload + off, size);
+    slot->udw_buffer_fill = size;
+    slot->fmd_dit = word >> 10;
+    slot->fmd_k_bit = (word >> 9) & 0x1;
+    slot->rtp_marker = rtp->marker;
+    atomic_store_explicit(&slot->state, ST_RX_ANC_SLOT_READY, memory_order_seq_cst);
+    if (rx_anc_slot_deliver(impl, s, slot) < 0) {
+      s->fmd_seq_discont = true; /* the app never saw this item */
+    } else {
+      s->fmd_seq_lost = 0;
+      s->fmd_seq_discont = false;
+    }
+    off += (int)size;
+  }
+  return 0;
+
+malformed_item:
+  /* a Data Item Length of 0 (§5.4), or an item past the payload end */
+  dbg("%s(%d), malformed data item in %d bytes payload, seq %u\n", __func__, s->idx, room,
+      seq_id);
+parse_err:
+  s->stat_anc_pkt_parse_err++;
+  s->fmd_seq_discont = true;
+  return -EINVAL;
+}
+
 static int rx_ancillary_session_assemble_pkt(struct mtl_main_impl* impl,
                                              struct st_rx_ancillary_session_impl* s,
                                              struct rte_mbuf* mbuf, uint16_t seq_id,
                                              uint32_t tmstamp,
                                              enum mtl_session_port s_port) {
   s->stat_assemble_dispatched++;
+
+  if (s->ops.flags & ST40_RX_FLAG_FAST_METADATA)
+    return rx_anc_fmd_assemble_pkt(impl, s, mbuf, seq_id, tmstamp, s_port);
 
   /* Re-derive header pointer (handle_pkt has already ntohl'd first chunk). */
   size_t hdr_offset = sizeof(struct st_rfc3550_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
@@ -717,6 +838,9 @@ static void rx_ancillary_session_reset(struct st_rx_ancillary_session_impl* s,
   s->stat_max_notify_us = 0;
   s->stat_consecutive_busy_intervals = 0;
   s->stat_assemble_dispatched = 0;
+  s->fmd_prev_seq = -1;
+  s->fmd_seq_lost = 0;
+  s->fmd_seq_discont = false;
   rte_atomic32_set(&s->stat_frames_received, 0);
   mt_stat_u64_init(&s->stat_time);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
@@ -1238,6 +1362,9 @@ static int rx_ancillary_session_update_src(struct mtl_main_impl* impl,
   s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
   s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
   s->tmstamp = -1;
+  s->fmd_prev_seq = -1;
+  s->fmd_seq_lost = 0;
+  s->fmd_seq_discont = false;
   if (s->interlace_auto) {
     s->interlace_detected = false;
     s->interlace_interlaced = s->ops.interlaced;
@@ -1504,10 +1631,6 @@ static int rx_ancillary_ops_check(struct st40_rx_ops* ops) {
   }
 
   if (ops->type == ST40_TYPE_FRAME_LEVEL) {
-    if (ops->flags & ST40_RX_FLAG_FAST_METADATA) {
-      err("%s, FRAME_LEVEL: FAST_METADATA supports RTP_LEVEL only\n", __func__);
-      return -EINVAL;
-    }
     if (!ops->notify_frame_ready) {
       err("%s, FRAME_LEVEL: pls set notify_frame_ready\n", __func__);
       return -EINVAL;
@@ -1736,12 +1859,8 @@ void* st40_rx_get_mbuf(st40_rx_handle handle, void** usrptr, uint16_t* len) {
 
   ret = rte_ring_sc_dequeue(packet_ring, (void**)&pkt);
   if (ret == 0) {
-    struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
-    int room = pkt->data_len - (int)sizeof(*hdr);
-    /* the UDP length leaves out Ethernet padding; room caps a bogus one */
-    int udp_payload = ntohs(hdr->udp.dgram_len) - (int)sizeof(hdr->udp);
-    *len = RTE_MAX(0, RTE_MIN(udp_payload, room));
-    *usrptr = &hdr[1];
+    *len = rx_ancillary_rtp_len(pkt);
+    *usrptr = rte_pktmbuf_mtod_offset(pkt, void*, sizeof(struct mt_udp_hdr));
     ret_pkt = (void*)pkt;
   }
 

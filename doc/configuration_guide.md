@@ -170,9 +170,13 @@ Items in each element of the "ancillary" array
 
 ​ **fast_metadata (bool):** send SMPTE ST 2110-41 fast metadata instead of RFC 8331 ANC, (optional). Each frame carries one data item cut from `ancillary_url`; `ancillary_format` is ignored. `payload_type` must be `96~127`; omit it for the 115 default.
 
-​ **fastmetadata_data_item_type (int):** `0~4194303`  (0x - 0x3fffff) 22 bits data item type, used with `fast_metadata`. The reserved `0x300000~0x3fefff` makes the TX session fail to create.
+​ **fastmetadata_data_item_type (int):** `0~4194303`  (0x - 0x3fffff) 22 bits data item type, needed with `fast_metadata`. The reserved `0x300000~0x3fefff` makes the TX session fail to create.
 
-​ **fastmetadata_k_bit (int):** `0~1` 1 bit K-bit value, used with `fast_metadata`
+​ **fastmetadata_k_bit (int):** `0~1` 1 bit K-bit value, needed with `fast_metadata`
+
+#### st40p (array of ancillary pipeline sessions)
+
+​ **fast_metadata (bool):** send SMPTE ST 2110-41 fast metadata through the st40p pipeline, (optional). Each frame carries one data item cut from `st40p_url`. `fastmetadata_data_item_type`, `fastmetadata_k_bit` and `payload_type` follow the ancillary rules above; a TX session needs both `fastmetadata_data_item_type` and `fastmetadata_k_bit`.
 
 ### RX Sessions (array of rx session groups)
 
@@ -246,6 +250,10 @@ Items in each element of the "ancillary" array
 ​ **fastmetadata_k_bit (int):** `0~1` 1 bit K-bit value - reference value (for testing the flow) - Optional setting, used with `fast_metadata`
 
 ​ **ancillary_url (string):** fast metadata reference file (for testing the flow) - Optional setting, used with `fast_metadata`
+
+#### st40p (array of ancillary pipeline sessions) for RX
+
+​ **fast_metadata (bool):** receive SMPTE ST 2110-41 fast metadata through the st40p pipeline, (optional). Each frame is one data item. It is invalid unless its marker bit is 0 and it matches the optional `fastmetadata_data_item_type`, `fastmetadata_k_bit` and `st40p_url` reference file; the session fails if valid items stop for more than 500 ms.
 
 ### Others
 

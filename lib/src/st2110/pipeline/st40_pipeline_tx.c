@@ -322,6 +322,10 @@ static int tx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_tx
     ops_tx.flags |= ST40_TX_FLAG_EXACT_USER_PACING;
   if (ops->flags & ST40P_TX_FLAG_SPLIT_ANC_BY_PKT)
     ops_tx.flags |= ST40_TX_FLAG_SPLIT_ANC_BY_PKT;
+  if (ops->flags & ST40P_TX_FLAG_FAST_METADATA)
+    ops_tx.flags |= ST40_TX_FLAG_FAST_METADATA;
+  ops_tx.fmd_dit = ops->fmd_dit;
+  ops_tx.fmd_k_bit = ops->fmd_k_bit;
   if (ops->notify_frame_late) ops_tx.notify_frame_late = tx_st40p_notify_frame_late;
   if (ops->flags & ST40P_TX_FLAG_ENABLE_RTCP) ops_tx.flags |= ST40_TX_FLAG_ENABLE_RTCP;
 
@@ -566,12 +570,25 @@ int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info* frame_inf
     goto out;
   }
 
-  framebuff->anc_frame->meta_num = frame_info->meta_num;
+  framebuff->anc_frame->meta_num =
+      (ctx->ops.flags & ST40P_TX_FLAG_FAST_METADATA) ? 0 : frame_info->meta_num;
   framebuff->anc_frame->data_size = frame_info->udw_buffer_fill;
 
   if (framebuff->anc_frame->meta_num > ST40_MAX_META) {
     err("%s(%d), frame %u meta_num %u invalid\n", __func__, idx, producer_idx,
         frame_info->meta_num);
+    ret = -EIO;
+    goto out;
+  }
+
+  /* fast metadata TX copies data_size bytes from the buffer as one data item */
+  if ((ctx->ops.flags & ST40P_TX_FLAG_FAST_METADATA) &&
+      (frame_info->udw_buffer_fill > frame_info->udw_buffer_size ||
+       frame_info->udw_buffer_fill > ST_PKT_FMD_MAX_ITEM_BYTES)) {
+    err("%s(%d), frame %u udw_buffer_fill %u over udw_buffer_size %" PRIu64
+        " or the %u bytes of one data item\n",
+        __func__, idx, producer_idx, frame_info->udw_buffer_fill,
+        (uint64_t)frame_info->udw_buffer_size, (unsigned)ST_PKT_FMD_MAX_ITEM_BYTES);
     ret = -EIO;
     goto out;
   }

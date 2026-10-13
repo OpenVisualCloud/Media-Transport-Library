@@ -124,6 +124,11 @@ uint64_t ut_txa_stat_interlace_second(const ut_txa_ctx* ctx);
 /* tx_ancillary_ops_check() on otherwise valid single-port frame-level ops. */
 int ut_txa_ops_check(uint32_t flags, uint32_t fmd_dit, uint8_t fmd_k_bit,
                      uint8_t payload_type);
+struct st40_tx_ops;
+struct st40_frame;
+/* Take frames from `src`'s get_next_frame/notify_frame_done/priv, `frame` as frame 0. */
+void ut_txa_set_frame_source(ut_txa_ctx* ctx, const struct st40_tx_ops* src,
+                             struct st40_frame* frame);
 
 #ifdef __cplusplus
 }

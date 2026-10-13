@@ -732,6 +732,11 @@ class RxTxApp(Application):
         # We rebuild the legacy shell for all session types but only populate the active one.
 
         session_type = self.params.get("session_type", UNIVERSAL_PARAMS["session_type"])
+        if self.params.get("fast_metadata") and session_type != "st40p":
+            # Only st40p carries it here; anything else would silently run RFC 8331.
+            raise ValueError(
+                f"fast_metadata needs session_type st40p, not {session_type}"
+            )
         direction = self.params.get("direction")  # None means loopback
         test_mode = self.params.get("test_mode", UNIVERSAL_PARAMS["test_mode"])
 
@@ -1032,17 +1037,6 @@ class RxTxApp(Application):
                     session["ancillary_format"] = p("ancillary_format")
                     session["ancillary_url"] = p("ancillary_url")
                     session["ancillary_fps"] = p("ancillary_fps")
-                if p("fast_metadata"):
-                    # ST2110-41 opt-in. RX checks DIT/K-bit and compares every
-                    # data item against ancillary_url, the file TX sends.
-                    session.update(
-                        fast_metadata=True,
-                        fastmetadata_data_item_type=p(
-                            "fastmetadata_data_item_type", cast=int
-                        ),
-                        fastmetadata_k_bit=p("fastmetadata_k_bit", cast=int),
-                        ancillary_url=p("ancillary_url"),
-                    )
                 return session
 
             if session_type == "st30p":
@@ -1059,6 +1053,7 @@ class RxTxApp(Application):
             if session_type == "st40p":
                 # st40p (ancillary pipeline) — port/pt default to 40000/113;
                 # mirrors add_st40p_sessions() in legacy RxTxApp.py.
+                fast_metadata = p("fast_metadata")
                 session = {
                     **_hdr(port_default=40000, pt_default=113),
                     # RX needs the fps too: it is the expected rate the C-side
@@ -1067,8 +1062,18 @@ class RxTxApp(Application):
                     "interlaced": p("interlaced"),
                     "enable_rtcp": p("enable_rtcp"),
                 }
-                if is_tx:
+                if is_tx or fast_metadata:
+                    # ST2110-41 opt-in: RX compares every data item against
+                    # st40p_url, the file TX sends.
                     session["st40p_url"] = self.params.get("st40p_url", p("input_file"))
+                if fast_metadata:
+                    session.update(
+                        fast_metadata=True,
+                        fastmetadata_data_item_type=p(
+                            "fastmetadata_data_item_type", cast=int
+                        ),
+                        fastmetadata_k_bit=p("fastmetadata_k_bit", cast=int),
+                    )
                 return session
 
             logger.warning(

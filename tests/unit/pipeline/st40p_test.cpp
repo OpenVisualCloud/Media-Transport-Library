@@ -77,8 +77,8 @@ TEST_F(St40PipelineRxTest, FramesReceivedOnFrameReadyNotGetFrame) {
   EXPECT_EQ(put_frame(f), 0);
 }
 
-/* seq_discont on the delivered meta bumps stat_frames_corrupted at
- * frame_ready time; the frame is still delivered (best-effort). */
+/* A CORRUPTED delivery bumps stat_frames_corrupted at frame_ready time; the
+ * frame is still delivered (best-effort). */
 TEST_F(St40PipelineRxTest, SeqDiscontFrameBumpsCorruptedStat) {
   static uint8_t slot0;
 
@@ -90,6 +90,25 @@ TEST_F(St40PipelineRxTest, SeqDiscontFrameBumpsCorruptedStat) {
   ASSERT_NE(f, nullptr);
   EXPECT_EQ(f->status, ST_FRAME_STATUS_CORRUPTED);
   EXPECT_EQ(put_frame(f), 0);
+}
+
+/* The count follows status, not seq_discont: a fast metadata item after a stream
+ * gap is COMPLETE with seq_discont set. */
+TEST_F(St40PipelineRxTest, CorruptedStatFollowsStatusNotSeqDiscont) {
+  static uint8_t slot0, slot1;
+
+  ASSERT_EQ(ut40p_inject_frame(ctx_, &slot0, ST_FRAME_STATUS_CORRUPTED, false, 1000), 0);
+  EXPECT_EQ(frames_corrupted(), 1u) << "CORRUPTED counts without seq_discont";
+  uint64_t corrupted = frames_corrupted();
+  ASSERT_EQ(ut40p_inject_frame(ctx_, &slot1, ST_FRAME_STATUS_COMPLETE, true, 2000), 0);
+  EXPECT_EQ(frames_corrupted(), corrupted) << "COMPLETE with seq_discont does not count";
+
+  EXPECT_EQ(frames_received(), 2u);
+  for (int i = 0; i < 2; i++) {
+    struct st40_frame_info* f = get_frame();
+    ASSERT_NE(f, nullptr) << "frame " << i;
+    EXPECT_EQ(put_frame(f), 0);
+  }
 }
 
 /* When all framebufs are full, every further frame_ready bumps
