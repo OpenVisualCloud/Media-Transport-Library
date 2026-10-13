@@ -14,8 +14,10 @@
 #include <thread>
 #include <vector>
 
+#include "core/constants.hpp"
 #include "core/strategy.hpp"
 #include "mtl_api.h"
+#include "st_api.h"
 #include "test_util.h"
 
 class St20pHandler;
@@ -24,10 +26,13 @@ struct st_frame;
 /* Strict ST20p pacing tolerances on packet 0 of every frame. */
 /* Elapsed time is measured against frame zero, so drift is not forgiven per frame. */
 constexpr int64_t kNoCtxPacingElapsedErrorMaxNs = 10 * NS_PER_US;
-/* Packet 0 cannot arrive before its launch; this is only PHC read error, u included. */
-constexpr int64_t kNoCtxPacingEarlyMaxNs = 1 * NS_PER_US;
+/* How early packet 0 may arrive: never, with the PHC read error u counted against it. */
+constexpr int64_t kNoCtxPacingEarlyMaxNs = 0;
 /* Wire and NIC latency of packet 0 plus launch jitter, like the elapsed bound. */
 constexpr int64_t kNoCtxPacingLateMaxNs = 10 * NS_PER_US;
+/* Half a 90 kHz tick, rounded up: how far the tick nearest t_user can be from it. */
+constexpr int64_t kNoCtxRtpHalfTickNs =
+    (NS_PER_S + 2 * VIDEO_CLOCK_HZ - 1) / (2 * VIDEO_CLOCK_HZ);
 /* A PHC read without a NIC cross-timestamp (E810) must place it to +-this. */
 constexpr uint64_t kPhcReadMaxUncertaintyNs = 1 * NS_PER_US;
 /* A user-paced plan starts this far past PTP now, rounded up to a frame. */
@@ -56,6 +61,20 @@ bool strictPacingRequired();
 
 /* Empty if both ports' RX timestamps come from one PHC, otherwise why not. */
 std::string sharedPhcError(const char* port_a, const char* port_b);
+
+/* An ST20 frame (field) rate of mul/den per second, den 1001 for the x/1.001 rates. */
+struct St20pFrameRate {
+  uint64_t mul = 25;
+  uint64_t den = 1;
+};
+St20pFrameRate st20pFrameRate(enum st_fps fps);
+/* The library's epoch TAI, the last ns at or before k * 1e9 * den / mul. */
+uint64_t st20pEpochTaiNs(const St20pFrameRate& rate, uint64_t epoch);
+/* The epoch USER_PACING snaps t_ns to: the nearest, ties to the later one. */
+uint64_t st20pNearestEpoch(const St20pFrameRate& rate, uint64_t t_ns);
+/* Default and USER_PACING packet 0's target: the tick of epoch + TR_offset - VRX*trs. */
+uint64_t st20pRoundedLaunchNs(const St20pFrameRate& rate, uint64_t epoch,
+                              double tr_offset_ns, double trs_ns, uint32_t vrx_pkts);
 
 /* A time known to +-u_ns. */
 struct RxTime {
@@ -143,28 +162,33 @@ struct PacingErrorSeries {
   void add(int64_t error_ns);
 };
 
-/* Prints min/avg/max of both packet-0 error series once per run, to calibrate bounds. */
+/* Prints min/avg/max of the packet-0 error series once per run, to calibrate bounds. */
 struct PacingErrorLog {
   PacingErrorSeries abs_error_ns;
+  PacingErrorSeries rtp_error_ns;
   PacingErrorSeries elapsed_error_ns;
   ~PacingErrorLog();
 };
 
-/* Default pacing oracle. Checks on every RX frame n:
+/* Default pacing oracle. Frame n goes out on epoch k0 + n, k0 the epoch frame 0's RTP
+ * timestamp is on; its expected launch is st20pRoundedLaunchNs() of that epoch, with
+ * the live st20p_tx_get_pacing_params(). Checks on every RX frame n:
  * 1. COMPLETE with the BPM packet count on P            expectCompletePrimaryFrame()
  * 2. timestamp is the media-clock RTP header value      expectRtpTimestamp()
- * 3. frame 0 RTP on the k*T + TR_offset - VRX*trs grid  expectRtpOnEpoch()
- * 4. RTP step == tick90k(T)                             rxTestFrameModifier()
- * With a NIC RX timestamp (RxPhcClock), at both ends of its +-u, packet 0 of frame n
- * against frame 0 + n*T:
- * 5. launch within -kNoCtxPacingEarlyMaxNs..+kNoCtxPacingLateMaxNs  expectPacingLaunch()
+ * 3. RTP == tick90k(expected launch), so the RTP step   expectRtpOnLaunch()
+ *    follows the epochs (1501/1502 at 59.94)
+ * With a NIC RX timestamp (RxPhcClock), at both ends of its +-u, packet 0 of frame n:
+ * 4. launch within kNoCtxPacingEarlyMaxNs..kNoCtxPacingLateMaxNs   expectPacingLaunch()
+ * 5. the same against the instant its RTP timestamp names      expectNearRtpTimestamp()
  * 6. elapsed from frame 0 within +-kNoCtxPacingElapsedErrorMaxNs    expectPacingElapsed()
  */
 class St20pDefaultPacingOracle : public FrameTestStrategy {
  protected:
-  uint64_t lastTimestamp = 0;
+  St20pFrameRate rate;
+  uint64_t firstEpoch = 0;
+  double trOffsetNs = 0, trsNs = 0;
+  uint32_t vrxPkts = 0;
   PacingAnchor anchor;
-  uint64_t firstLaunchNs = 0;
   RxPhcClock rxPhc;
   PacingErrorLog pacingLog;
 
@@ -173,17 +197,20 @@ class St20pDefaultPacingOracle : public FrameTestStrategy {
   void rxTestFrameModifier(void* frame, size_t frame_size) override;
 };
 
-/* USER_PACING oracle. TX requests t_user(n) = start + (n + offset[n % size]) * T, start
- * = PTP now at construction + kSt20pUserPacingLeadNs, rounded up to T. The expected TX
- * is (the epoch nearest t_user(n)) + TR_offset - VRX*trs (expectedTransmitTimeNs()), so
- * the test must call getPacingParameters() before frame 0. Checks on every RX frame n:
+/* USER_PACING oracle. TX requests t_user(n) = start + epoch n + offset[n % size] * T,
+ * start = the epoch at or after PTP now at construction + kSt20pUserPacingLeadNs. The
+ * expected launch is st20pRoundedLaunchNs() of the epoch nearest t_user(n)
+ * (expectedTransmitTimeNs()), so the test must call getPacingParameters() before
+ * frame 0. Checks on every RX frame n:
  * 1. COMPLETE with the BPM packet count on P            expectCompletePrimaryFrame()
- * 2. launch within -kNoCtxPacingEarlyMaxNs..+kNoCtxPacingLateMaxNs  verifyReceiveTiming()
- * 3. elapsed from frame 0 within +-kNoCtxPacingElapsedErrorMaxNs    verifyReceiveTiming()
- * 4. timestamp is the media-clock RTP header value      expectRtpTimestamp()
- * 5. RTP == tick90k(expected TX)                        verifyMediaClock()
- * 6. RTP step == tick90k(T)                             verifyTimestampStep()
- * 2 and 3 need a NIC RX timestamp (RxPhcClock) and hold at both ends of its +-u.
+ * 2. launch within kNoCtxPacingEarlyMaxNs..kNoCtxPacingLateMaxNs   verifyReceiveTiming()
+ * 3. the same against the instant its RTP timestamp names, widened by
+ *    rtpSlackNs() either way                            verifyReceiveTiming()
+ * 4. elapsed from frame 0 within +-kNoCtxPacingElapsedErrorMaxNs    verifyReceiveTiming()
+ * 5. timestamp is the media-clock RTP header value      expectRtpTimestamp()
+ * 6. RTP == tick90k(expected launch), so the RTP step   verifyMediaClock()
+ *    follows the epochs
+ * 2-4 need a NIC RX timestamp (RxPhcClock) and hold at both ends of its +-u.
  */
 class St20pUserPacingOracle : public FrameTestStrategy {
  public:
@@ -204,15 +231,14 @@ class St20pUserPacingOracle : public FrameTestStrategy {
   uint64_t plannedTimestampBaseNs(uint64_t frame_idx) const;
   double offsetMultiplierForFrame(uint64_t frame_idx) const;
   virtual uint64_t expectedTransmitTimeNs(uint64_t frame_idx) const;
+  virtual int64_t rtpSlackNs() const;
   void verifyReceiveTiming(uint64_t frame_idx, const st_frame* frame,
                            uint64_t expected_transmit_time_ns);
   void verifyMediaClock(uint64_t frame_idx, uint64_t timestamp_media_clk,
                         uint64_t expected_media_clk) const;
-  virtual void verifyTimestampStep(uint64_t frame_idx, uint64_t current_timestamp);
 
-  double frameTimeNs = 0.0;
+  St20pFrameRate rate;
   uint64_t startingTime = 0;
-  uint64_t lastTimestamp = 0;
   PacingAnchor anchor;
   std::vector<double> timestampOffsetMultipliers;
   RxPhcClock rxPhc;
@@ -230,8 +256,9 @@ class St20pRedundantStreamPlan : public St20pUserPacingOracle {
   unsigned int latencyInMs;
 };
 
-/* EXACT_USER_PACING oracle: St20pUserPacingOracle with the expected TX = t_user(n)
- * itself, so check 5 is RTP == tick90k(t_user(n)); check 6 is not made. */
+/* EXACT_USER_PACING oracle: St20pUserPacingOracle with the expected launch = t_user(n)
+ * itself, so check 6 is RTP == tick90k(t_user(n)), and check 3 allows
+ * kNoCtxRtpHalfTickNs either way, as that tick is the nearest one to t_user(n). */
 class St20pExactUserPacingOracle : public St20pUserPacingOracle {
  public:
   explicit St20pExactUserPacingOracle(St20pHandler* parentHandler = nullptr,
@@ -239,10 +266,10 @@ class St20pExactUserPacingOracle : public St20pUserPacingOracle {
 
  protected:
   uint64_t expectedTransmitTimeNs(uint64_t frame_idx) const override;
-  void verifyTimestampStep(uint64_t frame_idx, uint64_t current_timestamp) override;
+  int64_t rtpSlackNs() const override;
 };
 
-/* Interlaced St20pUserPacingOracle, T = field period. The expected TX moves one field
+/* Interlaced St20pUserPacingOracle, T = field period. The expected launch moves one field
  * later when its slot is off the ST 2110-21 frame grid (expectedTransmitTimeNs()).
  * Before checks 1-6 of every RX field n:
  * 0. interlaced, and second_field == (n odd)             rxTestFrameModifier()

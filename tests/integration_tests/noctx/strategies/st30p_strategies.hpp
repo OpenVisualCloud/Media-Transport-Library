@@ -15,7 +15,7 @@
 class St30pHandler;
 struct st30_frame;
 
-/* ST30p user pacing: |NIC RX time - t_user| per buffer, looser for buffer 0. */
+/* ST30p user pacing: the most NIC RX time - t_user per buffer, looser for buffer 0. */
 constexpr int64_t kSt30pRxToleranceNs = 40 * NS_PER_US;
 constexpr int64_t kSt30pFirstBufferRxToleranceNs = 80 * NS_PER_US;
 /* The user-paced plan starts this many buffers after PTP zero. */
@@ -38,7 +38,7 @@ class St30pDefaultPacingOracle : public FrameTestStrategy {
 /* USER_PACING oracle; replaces the default checks. TX requests t_user(n) =
  * (kSt30pUserPacingStartBuffers + n) * B from PTP zero, B = nsFramebuffTime, once the
  * test calls initializeTiming(). Checks on every RX buffer n:
- * 1. |NIC RX time - t_user(n)| + u <= kSt30pRxToleranceNs
+ * 1. 0 <= NIC RX time - t_user(n) -+ u <= kSt30pRxToleranceNs
  *    (kSt30pFirstBufferRxToleranceNs for buffer 0)   verifyReceiveTiming()
  * 2. RTP == tick(t_user(n)) at the sample rate      verifyMediaClock()
  * 3. RTP step == tick(B)                            verifyTimestampStep()

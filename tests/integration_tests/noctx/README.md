@@ -61,7 +61,7 @@ redundant tests map sessions to ports by index.
 
 | Tests | Requirement | If missing |
 |---|---|---|
-| Strict: `st20p_default_timestamps`, `st20p_user_pacing`, `st20p_user_pacing_offset_jitter`, `st20p_exact_user_pacing`, `st20p_user_pacing_interlaced`, `st30p_user_pacing`, and the next row | TX, RX on **different physical ports**; RX-port **PHC** read to ±1 µs; NIC RX timestamp on frame 0 | SKIP (topology), FAIL with `NOCTX_REQUIRE_STRICT=1`. SW RX time after frame 0: FAIL |
+| Strict: `st20p_default_timestamps*`, `st20p_user_pacing`, `st20p_user_pacing_offset_jitter`, `st20p_exact_user_pacing`, `st20p_user_pacing_interlaced`, `st30p_user_pacing`, and the next row | TX, RX on **different physical ports**; RX-port **PHC** read to ±1 µs; NIC RX timestamp on frame 0 | SKIP (topology), FAIL with `NOCTX_REQUIRE_STRICT=1`. SW RX time after frame 0: FAIL |
 | `st20p_redundant_1080p59_s8_equal_vrx_margin` | 4 ports; strict topology on `TEST_PORT_1` -> `_2` (leg P) and `_3` -> `_4` (leg R); RX ports on one PHC; NIC RX timestamps ([oracle](#equal-vrx-margin-oracle)); ≥ 50 Gb/s links (e.g. 100 GbE E810/E830): the TX PF link carries 16 streams, ~42.5 Gb/s, so a 25 GbE pair fails | < 4 ports: FAIL. Topology: as the strict row. A software RX time: FAIL |
 | `st30p_user_pacing` | An exclusive CPU partition: its own cgroup's `cpuset.cpus.partition` reads `isolated`. Checked after the strict topology, which may SKIP or FAIL the case first | FAIL, never SKIP |
 | `st20p_redundant_latency_drops_even_odd`, `st30p_redundant_latency*` | 4 ports | The case errors (`std::runtime_error`) |
@@ -115,8 +115,17 @@ values with `st20p_tx_get_pacing_params()` rather than hardcoding them. At
 `VRX` = 4.
 
 - **Epoch grid.** The fake PTP clock is `CLOCK_MONOTONIC_RAW − start`, so TAI
-  starts near 0 and epoch `k` is `k·T`. ST20 packet 0 of epoch `k` is at
-  `k·T + TR_offset − VRX·trs`, later packets `+i·trs`.
+  starts near 0. `T` is `den/mul` s exactly (`den` 1001 for the x/1.001 rates,
+  `st20pFrameRate()`), and epoch `k` starts at `⌊k·1e9·den/mul⌋` ns, as the
+  library computes it (`st20pEpochTaiNs()`).
+- **Launch target.** ST20 packet 0 of epoch `k` is aimed at
+  `k·T + TR_offset − VRX·trs` snapped to the nearest 90 kHz tick
+  (`st20pRoundedLaunchNs()`, as `tv_sync_pacing()` does), later packets
+  `+i·trs`. The snap moves the launch by a format-dependent −5.56..+5.56 µs:
+  −2.67 µs at 1080p25, −1.34 µs at 1080p50, +4.63 µs at 1080p60, and frame by
+  frame at 59.94. The RTP timestamp is that tick, so packet 0 is aimed at the
+  instant its RTP timestamp names. Exact user pacing aims at `t_user` itself
+  and stamps the tick nearest it.
 - **RL warm-up.** With the hardware rate limiter, the transmitter queues pad
   packets (KB §5 Warm-Up Padding) that the shaper finishes at the target, so
   packet 0 queued behind them launches there, within one 8-byte cut after it.
@@ -132,11 +141,12 @@ values with `st20p_tx_get_pacing_params()` rather than hardcoding them. At
   itself; an invalid request (zero, `MEDIA_CLK`, past, >1 s ahead, or for ST20
   closer than the warm-up) falls back to default pacing and counts
   `stat_error_user_timestamp`.
-- **RTP clocks.** RTP is `st10_tai_to_media_clk()` of the packet-0 TX instant
-  (the request itself in exact mode): 90 kHz for ST20/ST40, the sample rate
-  (48 kHz) for ST30. Steps: 3600 per 1080p25 frame, 1800 per 1080i50 field,
-  1500 at 60p, alternating 1501/1502 at 59.94p, 480 per 10 ms audio buffer.
-  RTP is always compared by integer equality.
+- **RTP clocks.** RTP is `st10_tai_to_media_clk()` of the packet-0 launch
+  target (the request itself in exact mode): 90 kHz for ST20/ST40, the sample
+  rate (48 kHz) for ST30. Steps: 3600 per 1080p25 frame, 1800 per 1080i50
+  field, 1500 at 60p, alternating 1501/1502 at 59.94p, 480 per 10 ms audio
+  buffer. RTP is always compared by integer equality; ST20p compares every
+  frame's RTP with the tick of its expected launch, which pins the steps.
 - **PHC → `CLOCK_MONOTONIC_RAW`.** `receive_timestamp` is the NIC timestamp
   of the packet that opened the RX slot, in the PHC domain. `RxPhcClock`
   reads the PHC once when the oracle is built, before the stream, and once per
@@ -148,14 +158,23 @@ values with `st20p_tx_get_pacing_params()` rather than hardcoding them. At
   per read, and the mapped time is known to the reads' weighted ±u; every check
   below must hold at both ends of ±u, and a PHC that cannot be read to ±1 µs
   fails. Each run prints the PHC rate (`NoCtx RX PHC: rate …`).
-- **Strict ST20p: launch −1/+10 µs, elapsed from frame 0 ±10 µs.** Packet 0
-  of every frame `n` is checked twice. Launch: its RX time, mapped on to the
-  fake PTP clock, against its planned launch,
-  `−1 µs ≤ rx(n) − expected_tx(n) ≤ +10 µs`; it cannot arrive early, so 1 µs
-  is PHC read error, and 10 µs covers path latency and launch jitter. Elapsed:
+- **Strict ST20p: launch 0/+10 µs, RTP instant 0/+10 µs, elapsed from frame 0
+  ±10 µs.** Packet 0 of every frame `n` is checked three times, each at both
+  ends of ±u. Launch: its RX time, mapped on to the fake PTP clock, against
+  the launch target, `0 ≤ rx(n) − expected_tx(n) ≤ +10 µs`; it cannot arrive
+  early, and 10 µs covers path latency and launch jitter. RTP: the same bounds
+  against the instant its RTP timestamp names, which is the launch target in
+  the snapped modes; in exact mode, where the RTP is the tick nearest
+  `t_user`, widened by half a tick (`kNoCtxRtpHalfTickNs`, 5.56 µs) either way.
+  Elapsed:
   `|(rx(n) − rx(0)) − (expected_tx(n) − expected_tx(0))| ≤ 10 µs` for `n ≥ 1`,
   where the clock origin, path delay, PHY latency and timestamp-point offset
-  cancel but drift does not. 10 µs is just above one `trs` at 1080p25.
+  cancel but drift does not, and the snap's frame-to-frame alternation at the
+  x/1.001 rates is in `expected_tx`. 10 µs is just above one `trs` at 1080p25.
+  Each run prints the three error series (`NoCtx pacing: …`).
+- **Measured.** E830 VF, RL pre-arm: against the snapped target packet 0
+  arrives +1.4..+6.1 µs late at 1080p25/50/60/59.94, 720p59.94 and
+  2160p59.94, never early; the elapsed error is about −2.6..+1.4 µs.
 - **PHC-following PTP clock.** The library's RX timing parser places the
   epochs of `vrx_min` on the raw NIC timestamps, so a test that uses it as the
   oracle needs MTL's PTP time on the RX PHC. `PhcFollowingClock` makes it
@@ -184,9 +203,10 @@ values with `st20p_tx_get_pacing_params()` rather than hardcoding them. At
   `vrx_min` over fewer packets can only be higher. A separate check bounds
   that tail; lateness confined to the last 4 or fewer packets of a leg is not
   timed.
-- **ST30p user pacing: absolute ±40 µs.** The RX time is mapped on to the fake
-  PTP clock and compared directly with `t_user`: `|rx − t_user| ≤ 40 µs`
-  (80 µs for buffer 0). Path delay and conversion error count against it.
+- **ST30p user pacing: 0/+40 µs.** The RX time is mapped on to the fake
+  PTP clock and compared directly with `t_user`: `0 ≤ rx − t_user ≤ 40 µs`
+  (80 µs for buffer 0), at both ends of ±u. TSC pacing never sends a packet
+  before its time; path delay and conversion error count against the 40 µs.
 
 ## Test catalogue
 
@@ -199,12 +219,15 @@ rtp_timestamp`; the user-paced tests request `t_user(n) = start + n·T`, with
 
 | Test | Proves | Oracle | Tolerance |
 |---|---|---|---|
-| `st20p_default_timestamps` | Default epoch pacing: one frame per epoch, no skipped slot, no drift | TX at `n·T` from frame 0; frame 0 RTP on the `k·T + TR_offset − VRX·trs` tick; RTP step exactly 3600 | −1/+10 µs launch, ±10 µs elapsed |
-| `st20p_user_pacing` | An on-epoch request snaps to that epoch's packet-0 slot | TX `round(t_user/T)·T + TR_offset − VRX·trs`; `RTP == tick(TX)`; TX count == RX count | −1/+10 µs launch, ±10 µs elapsed |
-| `st20p_user_pacing_offset_jitter` | Requests anywhere within ±T/2 snap to the epoch | As above, with `t_user` offsets `{0, .3, .1, −.49, .37, −.14, 0, .44}·T` | −1/+10 µs launch, ±10 µs elapsed |
-| `st20p_exact_user_pacing` | Exact pacing launches packet 0 at the request, unsnapped | TX `t_user` (offsets −100 µs to +320 µs); `RTP == tick(t_user)`; no step check | −1/+10 µs launch, ±10 µs elapsed |
-| `st20p_user_pacing_interlaced` | The user-pacing contract per field, 1080i50 | As `st20p_user_pacing` with `T` = 20 ms, step 1800, but a field whose nearest slot is off the ST 2110-21 frame grid (first field even, second odd) goes one slot later; `second_field` alternates from a first field | −1/+10 µs launch, ±10 µs elapsed |
-| `st30p_user_pacing` | User-paced audio is stamped and sent at the request | `t_user(n) = 600 ms + n·10 ms` from PTP zero; `RTP == tick48k(t_user)`, step 480; TX count == RX count | ±40 µs absolute (80 µs buffer 0) |
+| `st20p_default_timestamps` | Default epoch pacing: one frame per epoch, no skipped slot, no drift | Frame `n` on epoch `k0 + n`; TX and RTP at the tick of `k·T + TR_offset − VRX·trs` | 0/+10 µs launch and RTP instant, ±10 µs elapsed |
+| `st20p_default_timestamps_1080p59_94`, `_1080p60` | The same at rates whose 90 kHz snap differs from 1080p25's: 59.94 alternates frame by frame, 60 moves the launch later | As above, RTP steps 1501/1502 and 1500 | As above |
+| `st20p_default_timestamps_480p59_94`, `_576p50`, `_720p25`, `_720p50` | The same at low RL rates: an 8-pad SD warm-up, and shaper credit timeslots of 2-4 us | As above | As above |
+| `st20p_default_timestamps_720p59_94`, `_2160p59_94` | The same where a pre-arm plan is kept: 720p59.94 the 720p rate past the timeslot gate (~1.7 µs), 2160p59.94 the fastest rate here (~0.2 µs) | As above | As above |
+| `st20p_user_pacing` | An on-epoch request snaps to that epoch's packet-0 slot | TX at the tick of `round(t_user/T)·T + TR_offset − VRX·trs`; `RTP == tick(TX)`; TX count == RX count | 0/+10 µs launch and RTP instant, ±10 µs elapsed |
+| `st20p_user_pacing_offset_jitter` | Requests anywhere within ±T/2 snap to the epoch | As above, with `t_user` offsets `{0, .3, .1, −.49, .37, −.14, 0, .44}·T` | 0/+10 µs launch and RTP instant, ±10 µs elapsed |
+| `st20p_exact_user_pacing` | Exact pacing launches packet 0 at the request, unsnapped | TX `t_user` (offsets −100 µs to +320 µs); `RTP == tick(t_user)` | 0/+10 µs launch, −5.56/+15.56 µs RTP instant, ±10 µs elapsed |
+| `st20p_user_pacing_interlaced` | The user-pacing contract per field, 1080i50 | As `st20p_user_pacing` with `T` = 20 ms, step 1800, but a field whose nearest slot is off the ST 2110-21 frame grid (first field even, second odd) goes one slot later; `second_field` alternates from a first field | 0/+10 µs launch and RTP instant, ±10 µs elapsed |
+| `st30p_user_pacing` | User-paced audio is stamped and sent at the request | `t_user(n) = 600 ms + n·10 ms` from PTP zero; `RTP == tick48k(t_user)`, step 480; TX count == RX count | 0/+40 µs (+80 µs buffer 0) |
 | `st20p_redundant_1080p59_s8_equal_vrx_margin` | RL pacing does not depend on the TX scheduler a session lands on; not first-packet latency, which the rx_timing acceptance suite and the unit model cover | Equal VRX margins, see [below](#equal-vrx-margin-oracle) | 1 packet |
 | `st30p_default_timestamps` | Default audio starts on the packet-time grid | Frame 0 RTP, as TAI, is a multiple of 1 ms and less than one buffer before its (software) RX time; step 480 | Exact |
 | `st30p_redundant_latency`, `st30p_redundant_latency2` | ST 2022-7 audio merge with R 10 ms behind, and with P stopping after 10 s | `_latency`: packets on each port == TX ± 10 %. `_latency2`: packets on port 1 (R) == TX ± 10 %, port 0 > 0, accepted packets == TX ± 1 %. Both: loss ≤ 0.1 %, RX buffers == TX ± 1 % (100 RX buffers) | Counts |
