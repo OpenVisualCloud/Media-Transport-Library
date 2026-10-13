@@ -347,6 +347,21 @@ static int uint64_t_cmp(const void* a, const void* b) {
   return 0;
 }
 
+/* the pad tv_train_pacing() sends for pkt i of a frame */
+static enum st20_packet_type tv_train_pad_type(struct st_tx_video_session_impl* s,
+                                               int i) {
+  if ((s->ops.type == ST20_TYPE_RTP_LEVEL) || (s->s_type == MT_ST22_HANDLE_TX_VIDEO) ||
+      (s->ops.packing == ST20_PACKING_GPM_SL))
+    return ST20_PKT_TYPE_NORMAL;
+  /* frame type */
+  uint32_t offset = s->st20_pkt_len * i;
+  uint16_t line1_number = offset / s->st20_bytes_in_line;
+  /* last pkt should be treated as normal pkt also */
+  if ((offset + s->st20_pkt_len) < (line1_number + 1) * s->st20_bytes_in_line)
+    return ST20_PKT_TYPE_NORMAL;
+  return ST20_PKT_TYPE_EXTRA;
+}
+
 static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
                            enum mtl_session_port s_port) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
@@ -409,24 +424,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   for (int loop = 0; loop < loop_frame; loop++) {
     uint64_t start = mt_get_ptp_time(impl, MTL_PORT_P);
     for (int i = 0; i < total; i++) {
-      enum st20_packet_type type;
-
-      if ((s->ops.type == ST20_TYPE_RTP_LEVEL) ||
-          (s->s_type == MT_ST22_HANDLE_TX_VIDEO) ||
-          (s->ops.packing == ST20_PACKING_GPM_SL)) {
-        type = ST20_PKT_TYPE_NORMAL;
-      } else { /* frame type */
-        uint32_t offset = s->st20_pkt_len * i;
-        uint16_t line1_number = offset / s->st20_bytes_in_line;
-        /* last pkt should be treated as normal pkt also */
-        if ((offset + s->st20_pkt_len) < (line1_number + 1) * s->st20_bytes_in_line) {
-          type = ST20_PKT_TYPE_NORMAL;
-        } else {
-          type = ST20_PKT_TYPE_EXTRA;
-        }
-      }
-
-      pad = s->pad[s_port][type];
+      pad = s->pad[s_port][tv_train_pad_type(s, i)];
       rte_mbuf_refcnt_update(pad, 1);
       mt_txq_burst_busy(queue, &pad, 1, 10);
     }
