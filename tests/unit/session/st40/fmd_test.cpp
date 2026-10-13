@@ -294,6 +294,34 @@ class St40RxFmdFrameTest : public St40RxFmdTest {
   uint64_t frames_dropped() {
     return ut40_stat_anc_frames_dropped(ctx_);
   }
+
+  struct item_seq {
+    uint32_t dit;
+    bool discont;
+    uint32_t lost;
+  };
+  std::vector<item_seq> items_;
+
+  /* Feed `pkt`, keep the seq stats of each item it delivers, and give the slot back
+   * as an app does, so a long stream fits in the pool and the capture table. */
+  int feed_released(const std::vector<uint8_t>& pkt,
+                    enum mtl_session_port port = MTL_SESSION_PORT_P) {
+    int ret = feed_pkt(pkt, 0, port);
+    for (int i = 0; i < ut40_captured_count(); i++) {
+      items_.push_back({ut40_captured_fmd_dit(i), ut40_captured_seq_discont(i),
+                        ut40_captured_seq_lost(i)});
+      ut40_release_frame(ctx_, ut40_captured_addr(i));
+    }
+    ut40_captured_reset();
+    return ret;
+  }
+
+  /* One-item packet whose DIT is its seq, to tell the delivered items apart. */
+  static std::vector<uint8_t> seq_item_packet(uint16_t seq, uint32_t ts) {
+    auto pkt = zero_item_packet(seq, ts);
+    append_item(pkt, seq, 0, 1);
+    return pkt;
+  }
 };
 
 /* §5.4: one item is one frame holding its contents, zero padding included. */
@@ -787,4 +815,226 @@ TEST_F(St40RxFmdFrameTest, SourceUpdateDropsPendingGap) {
   ASSERT_EQ(ut40_captured_count(), 2);
   EXPECT_FALSE(ut40_captured_seq_discont(1));
   EXPECT_EQ(ut40_captured_seq_lost(1), 0u);
+}
+
+/* RFC 3550 §5.1: an RTP packet holds at least the 12-byte fixed header. */
+TEST_F(St40RxFmdTest, DatagramShorterThanRtpHeaderIsDropped) {
+  ut40_drain_paused guard;
+  auto pkt = zero_item_packet(0, kTs);
+
+  /* 8 RTP bytes, the Ethernet frame padded to 60 bytes */
+  EXPECT_LT(ut40_feed_rtp_bytes_padded(ctx_, pkt.data(), 8, 10, MTL_SESSION_PORT_P), 0);
+
+  EXPECT_EQ(received(), 0u);
+}
+
+/* §5.3: the item's document defines its timestamp; the next seq is a new packet. */
+TEST_F(St40RxFmdTest, NextSeqWithOlderTimestampIsDelivered) {
+  auto item = rfc8331_lookalike_item(0x0);
+
+  EXPECT_EQ(feed_fmd(0, kTs + 100, item, MTL_SESSION_PORT_P), 0);
+  EXPECT_EQ(feed_fmd(1, kTs, item, MTL_SESSION_PORT_P), 0);
+
+  EXPECT_EQ(received(), 2u);
+  EXPECT_EQ(redundant(), 0u);
+}
+
+/* ST 2022-7: R fills the packet P lost, also when R is one packet behind P. */
+TEST_F(St40RxFmdFrameTest, RedundantPortFillsGapAfterNextPrimaryPacket) {
+  feed_pkt(one_item_packet(0, kTs), 0, MTL_SESSION_PORT_P);
+  feed_pkt(one_item_packet(2, kTs + 2), 0, MTL_SESSION_PORT_P);
+  feed_pkt(one_item_packet(0, kTs), 0, MTL_SESSION_PORT_R);
+  feed_pkt(one_item_packet(1, kTs + 1), 0, MTL_SESSION_PORT_R);
+
+  EXPECT_EQ(ut40_captured_count(), 3);
+}
+
+/* No packet is lost, so the item after one with an older timestamp is no break. */
+TEST_F(St40RxFmdFrameTest, NextSeqWithOlderTimestampIsNoLoss) {
+  feed_pkt(one_item_packet(0, kTs + 100));
+  feed_pkt(one_item_packet(1, kTs));
+  feed_pkt(one_item_packet(2, kTs + 200));
+
+  int last = ut40_captured_count() - 1;
+  EXPECT_EQ(ut40_captured_count(), 3);
+  EXPECT_FALSE(ut40_captured_seq_discont(last));
+  EXPECT_EQ(ut40_captured_seq_lost(last), 0u);
+}
+
+/* RFC 3550 §5.1: a restarted sender takes a new random seq, here below the last one.
+ * Whether the lib delivers or drops the items of the new run, the first item the app
+ * gets after the restart must report the break. The R leg of the session is down. */
+TEST_F(St40RxFmdFrameTest, SeqRestartBelowLastSeqFlagsNextDeliveredItem) {
+  ASSERT_EQ(feed_released(seq_item_packet(1000, kTs)), 0);
+  ASSERT_EQ(feed_released(seq_item_packet(1001, kTs + 1)), 0);
+  for (uint16_t seq = 900; seq <= 1002; seq++)
+    feed_released(seq_item_packet(seq, kTs + 100 + seq));
+
+  ASSERT_GE(items_.size(), 3u);
+  EXPECT_TRUE(items_[2].discont)
+      << "first item after the restart is seq " << items_[2].dit << ", " << items_.size()
+      << " items delivered of 105";
+}
+
+/* The same restart on a single-port session: no packet of the new run is lost. */
+TEST_F(St40RxFmdFrameTest, SeqRestartBelowLastSeqSinglePortReportsNoLoss) {
+  ut40_teardown_frame_pool(ctx_);
+  ut40_ctx_destroy(ctx_);
+  ctx_ = ut40_ctx_create(1);
+  ASSERT_NE(ctx_, nullptr);
+  ut40_ctx_set_fmd(ctx_);
+  ut40_setup_frame_pool(ctx_, kSlots, kSlotSize);
+
+  ASSERT_EQ(feed_released(seq_item_packet(1000, kTs)), 0);
+  ASSERT_EQ(feed_released(seq_item_packet(1001, kTs + 1)), 0);
+  for (uint16_t seq = 900; seq < 960; seq++)
+    feed_released(seq_item_packet(seq, kTs + 100 + seq));
+
+  uint32_t lost = 0;
+  for (const auto& item : items_) lost += item.lost;
+  EXPECT_EQ(lost, 0u) << items_.size() << " items delivered of 62";
+}
+
+/* In arrival order packet 1 is late; it comes outside the timestamp window that lets a
+ * late packet in, so the lib drops it. Either way the next item reports a break. */
+TEST_F(St40RxFmdFrameTest, LatePacketOutsideWindowFlagsNextItem) {
+  ASSERT_EQ(feed_pkt(one_item_packet(0, kTs)), 0);
+  ASSERT_EQ(feed_pkt(one_item_packet(2, kTs + 2)), 0);
+  ASSERT_EQ(feed_pkt(one_item_packet(3, kTs + 3)), 0);
+  feed_pkt(one_item_packet(1, kTs + 1));
+  ASSERT_EQ(feed_pkt(one_item_packet(4, kTs + 4)), 0);
+
+  int last = ut40_captured_count() - 1;
+  ASSERT_GE(last, 0);
+  EXPECT_EQ(ut40_captured_fmd_dit(last), kDit);
+  EXPECT_TRUE(ut40_captured_seq_discont(last));
+}
+
+/* seq_lost is a uint32_t sum; past UINT32_MAX lost packets it must not wrap to a few. */
+TEST_F(St40RxFmdFrameTest, SeqLostDoesNotWrapPastUint32Max) {
+  const uint32_t jumps = 131081; /* 131081 * 32766 > UINT32_MAX */
+  uint16_t seq = 0;
+  ASSERT_EQ(feed_pkt(one_item_packet(seq, kTs)), 0);
+  ut40_set_notify_frame_fail_after(0);
+  for (uint32_t i = 1; i <= jumps; i++) {
+    seq = static_cast<uint16_t>(seq + 32767); /* the largest forward gap, 32766 */
+    feed_pkt(one_item_packet(seq, kTs + i));
+  }
+  ut40_set_notify_frame_fail_after(-1);
+  ut40_captured_reset();
+  ASSERT_EQ(feed_pkt(one_item_packet(static_cast<uint16_t>(seq + 1), kTs + jumps + 1)),
+            0);
+
+  ASSERT_EQ(ut40_captured_count(), 1);
+  EXPECT_TRUE(ut40_captured_seq_discont(0));
+  EXPECT_EQ(ut40_captured_seq_lost(0), UINT32_MAX);
+}
+
+/* ST 2022-7: the R copy of each packet is not a break in the stream. */
+TEST_F(St40RxFmdFrameTest, RedundantCopyIsNotADiscontinuity) {
+  auto p0 = one_item_packet(0, kTs);
+  auto p1 = one_item_packet(1, kTs + 1);
+
+  ASSERT_EQ(feed_pkt(p0, 0, MTL_SESSION_PORT_P), 0);
+  feed_pkt(p0, 0, MTL_SESSION_PORT_R);
+  ASSERT_EQ(feed_pkt(p1, 0, MTL_SESSION_PORT_P), 0);
+  feed_pkt(p1, 0, MTL_SESSION_PORT_R);
+
+  ASSERT_EQ(ut40_captured_count(), 2);
+  EXPECT_FALSE(ut40_captured_seq_discont(1));
+  EXPECT_EQ(ut40_captured_seq_lost(1), 0u);
+}
+
+/* The gap before a dropped item is still reported on the next delivered item. */
+TEST_F(St40RxFmdFrameTest, SeqGapIsReportedPastADroppedItem) {
+  ASSERT_EQ(feed_pkt(one_item_packet(0, kTs)), 0);
+  auto pkt = zero_item_packet(3, kTs + 1);
+  append_item(pkt, 0x000001, 0, kSlotSize / 4 + 1);
+  append_item(pkt, 0x000002, 0, 1);
+  ASSERT_EQ(feed_pkt(pkt), 0);
+
+  ASSERT_EQ(ut40_captured_count(), 2);
+  EXPECT_EQ(ut40_captured_fmd_dit(1), 0x000002u);
+  EXPECT_TRUE(ut40_captured_seq_discont(1));
+  EXPECT_EQ(ut40_captured_seq_lost(1), 2u);
+}
+
+TEST_F(St40RxFmdFrameTest, NoFreeFrameFlagsNextItem) {
+  auto pkt = zero_item_packet(0, kTs);
+  for (uint32_t i = 0; i < kSlots + 1; i++) append_item(pkt, i, 0, 1);
+  ASSERT_EQ(feed_released(pkt), 0);
+  ASSERT_EQ(feed_released(one_item_packet(1, kTs + 1)), 0);
+
+  ASSERT_EQ(items_.size(), kSlots + 1u);
+  EXPECT_TRUE(items_[kSlots].discont);
+  EXPECT_EQ(items_[kSlots].lost, 0u);
+}
+
+/* ST 2022-7: the legs take turns to lead; each item reaches the app once, in order. */
+TEST_F(St40RxFmdFrameTest, AlternatingLegsDeliverEachItemOnceInOrder) {
+  ASSERT_EQ(feed_pkt(one_item_packet(0, kTs), 0, MTL_SESSION_PORT_P), 0);
+  feed_pkt(one_item_packet(0, kTs), 0, MTL_SESSION_PORT_R);
+  ASSERT_EQ(feed_pkt(one_item_packet(1, kTs + 1), 0, MTL_SESSION_PORT_R), 0);
+  feed_pkt(one_item_packet(1, kTs + 1), 0, MTL_SESSION_PORT_P);
+  ASSERT_EQ(feed_pkt(one_item_packet(2, kTs + 2), 0, MTL_SESSION_PORT_P), 0);
+  feed_pkt(one_item_packet(2, kTs + 2), 0, MTL_SESSION_PORT_R);
+
+  ASSERT_EQ(ut40_captured_count(), 3);
+  for (int i = 0; i < 3; i++) {
+    EXPECT_EQ(ut40_captured_rtp_ts(i), kTs + i) << "item " << i;
+    EXPECT_FALSE(ut40_captured_seq_discont(i)) << "item " << i;
+  }
+}
+
+/* ST 2022-7: R lags by a timestamp; its copy fills the one hole P left, nothing twice. */
+TEST_F(St40RxFmdFrameTest, LaggingLegFillsHoleInPreviousTimestampOnce) {
+  ASSERT_EQ(feed_pkt(one_item_packet(10, kTs), 0, MTL_SESSION_PORT_P), 0);
+  ASSERT_EQ(feed_pkt(one_item_packet(12, kTs), 0, MTL_SESSION_PORT_P), 0);
+  ASSERT_EQ(feed_pkt(one_item_packet(13, kTs + 1), 0, MTL_SESSION_PORT_P), 0);
+  for (uint16_t seq = 10; seq < 13; seq++)
+    feed_pkt(one_item_packet(seq, kTs), 0, MTL_SESSION_PORT_R);
+  feed_pkt(one_item_packet(13, kTs + 1), 0, MTL_SESSION_PORT_R);
+
+  ASSERT_EQ(ut40_captured_count(), 4);
+  EXPECT_EQ(ut40_captured_rtp_ts(3), kTs);
+}
+
+/* A held frame stays the app's across a source update and comes back on put. */
+TEST_F(St40RxFmdFrameTest, FrameHeldAcrossSourceUpdateIsReusedAfterPut) {
+  for (uint16_t seq = 0; seq < kSlots; seq++)
+    ASSERT_EQ(feed_pkt(one_item_packet(seq, kTs + seq)), 0);
+  ASSERT_EQ(ut40_update_source(ctx_), 0);
+  ASSERT_EQ(feed_pkt(one_item_packet(100, kTs + 100)), 0);
+  ASSERT_EQ(ut40_captured_count(), static_cast<int>(kSlots));
+  void* held = ut40_captured_addr(1);
+  ut40_release_frame(ctx_, held);
+  ASSERT_EQ(feed_pkt(one_item_packet(101, kTs + 101)), 0);
+
+  ASSERT_EQ(ut40_captured_count(), static_cast<int>(kSlots) + 1);
+  EXPECT_EQ(ut40_captured_addr(kSlots), held);
+  EXPECT_EQ(ut40_captured_rtp_ts(kSlots), kTs + 101);
+  EXPECT_TRUE(ut40_captured_seq_discont(kSlots));
+}
+
+/* A packet per frame has its own timestamp; the doc flags the late one too. */
+TEST_F(St40RxFmdFrameTest, ReorderAcrossTimestampsFlagsLatePacket) {
+  ASSERT_EQ(feed_pkt(one_item_packet(0, kTs)), 0);
+  ASSERT_EQ(feed_pkt(one_item_packet(2, kTs + 2)), 0);
+  EXPECT_EQ(feed_pkt(one_item_packet(1, kTs + 1)), 0);
+  ASSERT_EQ(feed_pkt(one_item_packet(3, kTs + 3)), 0);
+
+  ASSERT_EQ(ut40_captured_count(), 4);
+  EXPECT_TRUE(ut40_captured_seq_discont(2));
+  EXPECT_TRUE(ut40_captured_seq_discont(3));
+}
+
+/* seq_lost sums the forward gaps since the previous delivered item. */
+TEST_F(St40RxFmdFrameTest, SeqLostSumsGapsAcrossZeroItemPackets) {
+  ASSERT_EQ(feed_pkt(one_item_packet(0, kTs)), 0);
+  ASSERT_EQ(feed_pkt(zero_item_packet(2, kTs + 1)), 0);
+  ASSERT_EQ(feed_pkt(one_item_packet(5, kTs + 2)), 0);
+
+  ASSERT_EQ(ut40_captured_count(), 2);
+  EXPECT_TRUE(ut40_captured_seq_discont(1));
+  EXPECT_EQ(ut40_captured_seq_lost(1), 3u);
 }

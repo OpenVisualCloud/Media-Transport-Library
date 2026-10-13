@@ -438,8 +438,11 @@ static int rx_anc_fmd_assemble_pkt(struct mtl_main_impl* impl,
   /* arrival order: a late packet breaks the sequence as much as a lost one */
   if (s->fmd_prev_seq >= 0 && seq_id != (uint16_t)(s->fmd_prev_seq + 1)) {
     s->fmd_seq_discont = true;
-    if (mt_seq16_greater(seq_id, s->fmd_prev_seq))
-      s->fmd_seq_lost += (uint16_t)(seq_id - s->fmd_prev_seq - 1);
+    if (mt_seq16_greater(seq_id, s->fmd_prev_seq)) {
+      uint32_t gap = (uint16_t)(seq_id - s->fmd_prev_seq - 1);
+      s->fmd_seq_lost =
+          gap > UINT32_MAX - s->fmd_seq_lost ? UINT32_MAX : s->fmd_seq_lost + gap;
+    }
   }
   s->fmd_prev_seq = seq_id;
 
@@ -542,6 +545,51 @@ static int rx_ancillary_session_assemble_pkt(struct mtl_main_impl* impl,
   return 0;
 }
 
+/* Fast metadata: each packet is a unit of its own, and §5.3 leaves its RTP timestamp to
+ * the data item, so the ST 2022-7 filter keys on the RTP seq alone. A late packet that
+ * no port delivered yet is accepted. */
+static int rx_anc_fmd_filter_pkt(struct st_rx_ancillary_session_impl* s, uint16_t seq_id,
+                                 enum mtl_session_port s_port) {
+  struct st_rx_user_stats* stats = &s->port_user_stats.common;
+  uint16_t last = (uint16_t)s->session_seq_id;
+
+  if (mt_seq16_greater(seq_id, last)) {
+    uint16_t ahead = (uint16_t)(seq_id - last);
+    if (ahead > 1) stats->stat_pkts_unrecovered += ahead - 1;
+    s->fmd_seq_window =
+        ahead < ST_RX_ANC_BITMAP_BITS ? (s->fmd_seq_window << ahead) | 1 : 1;
+    s->session_seq_id = seq_id;
+    s->fmd_old_pkt_run = 0;
+    return 0;
+  }
+
+  uint16_t back = (uint16_t)(last - seq_id);
+  if (back < ST_RX_ANC_BITMAP_BITS) {
+    if (s->fmd_seq_window & ((uint64_t)1 << back)) {
+      dbg("%s(%d,%d), redundant seq %u session last %u\n", __func__, s->idx, s_port,
+          seq_id, last);
+      stats->stat_pkts_redundant++;
+      return -EAGAIN;
+    }
+    s->fmd_seq_window |= (uint64_t)1 << back;
+    if (stats->stat_pkts_unrecovered > 0) stats->stat_pkts_unrecovered--;
+    s->fmd_old_pkt_run = 0;
+    return 0;
+  }
+
+  /* older than the window: a stale copy, or a sender that restarted with a lower seq */
+  if (++s->fmd_old_pkt_run < ST_SESSION_REDUNDANT_ERROR_THRESHOLD) {
+    stats->stat_pkts_redundant++;
+    return -EAGAIN;
+  }
+  warn("%s(%d,%d), %d packets in a row older than seq %u, the seq restarts at %u\n",
+       __func__, s->idx, s_port, s->fmd_old_pkt_run, last, seq_id);
+  s->session_seq_id = seq_id;
+  s->fmd_seq_window = 1;
+  s->fmd_old_pkt_run = 0;
+  return 0;
+}
+
 static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
                                            struct st_rx_ancillary_session_impl* s,
                                            struct rte_mbuf* mbuf,
@@ -550,9 +598,19 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   size_t hdr_offset = sizeof(struct st_rfc3550_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
   struct st_rfc3550_rtp_hdr* rtp =
       rte_pktmbuf_mtod_offset(mbuf, struct st_rfc3550_rtp_hdr*, hdr_offset);
+  bool fmd = ops->flags & ST40_RX_FLAG_FAST_METADATA;
+  /* a zero-item FMD packet is the RTP header alone, which the FMD parser finds by the
+   * UDP length; RFC 8331 always has its own header and is read by data_len */
+  int rtp_len = fmd ? rx_ancillary_rtp_len(mbuf) : (int)mbuf->data_len - (int)hdr_offset;
+  int min_len = fmd ? (int)sizeof(struct st_rfc3550_rtp_hdr)
+                    : (int)sizeof(struct st40_rfc8331_rtp_hdr);
+  if (rtp_len < min_len) {
+    dbg("%s(%d,%d), drop %d bytes packet, less than its %d bytes rtp header\n", __func__,
+        s->idx, s_port, rtp_len, min_len);
+    return -EINVAL;
+  }
   uint16_t seq_id = ntohs(rtp->seq_number);
   uint8_t payload_type = rtp->payload_type;
-  bool fmd = ops->flags & ST40_RX_FLAG_FAST_METADATA;
   struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)rtp;
   if (!fmd) rfc8331->swapped_first_hdr_chunk = ntohl(rfc8331->swapped_first_hdr_chunk);
   MTL_MAY_UNUSED(s_port);
@@ -659,6 +717,11 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
 
   s->port_user_stats.common.port[s_port].packets++;
   s->port_user_stats.common.port[s_port].bytes += mbuf->pkt_len;
+
+  if (fmd) {
+    if (rx_anc_fmd_filter_pkt(s, seq_id, s_port) < 0) return -EAGAIN;
+    goto dispatch_pkt;
+  }
 
   /* in ancillary we assume packet is redundant when the seq_id is old (it's possible to
   get multiple packets with the same timestamp) */
@@ -775,6 +838,7 @@ accept_pkt:
     }
   }
 
+dispatch_pkt:
   /* enqueue to packet ring (RTP_LEVEL) or hand off to assembler (FRAME_LEVEL) */
   if (s->ops.type == ST40_TYPE_FRAME_LEVEL) {
     /* dispatch only — assembler stub does not take an mbuf refcnt; the
@@ -841,6 +905,8 @@ static void rx_ancillary_session_reset(struct st_rx_ancillary_session_impl* s,
   s->fmd_prev_seq = -1;
   s->fmd_seq_lost = 0;
   s->fmd_seq_discont = false;
+  s->fmd_seq_window = 0;
+  s->fmd_old_pkt_run = 0;
   rte_atomic32_set(&s->stat_frames_received, 0);
   mt_stat_u64_init(&s->stat_time);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
@@ -1365,6 +1431,8 @@ static int rx_ancillary_session_update_src(struct mtl_main_impl* impl,
   s->fmd_prev_seq = -1;
   s->fmd_seq_lost = 0;
   s->fmd_seq_discont = false;
+  s->fmd_seq_window = 0;
+  s->fmd_old_pkt_run = 0;
   if (s->interlace_auto) {
     s->interlace_detected = false;
     s->interlace_interlaced = s->ops.interlaced;

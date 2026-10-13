@@ -694,8 +694,14 @@ Same lifecycle pattern as video, simplified:
   packet's seq in arrival order (`fmd_prev_seq`, -1 after reset or a source update) and a
   pending gap; a seq that is not prev + 1, or any local drop (parse error, no slot, oversize,
   `notify_frame_ready` < 0), sets `seq_discont` on the next delivered item, with `seq_lost` =
-  forward seq gap. An accepted delivery clears it. A reorder 0,2,1,3 flags 2, 1 and 3, and
-  counts 1 lost twice. st40p counts `stat_frames_corrupted` on CORRUPTED status, so FMD never
+  forward seq gap, saturated at UINT32_MAX. An accepted delivery clears it. A reorder 0,2,1,3
+  flags 2, 1 and 3, and counts 1 lost twice. The FMD ST 2022-7 filter
+  (`rx_anc_fmd_filter_pkt`) keys on the seq alone, never the RTP timestamp, which §5.3 leaves
+  to the data item: a 64-bit window (`fmd_seq_window`) below `session_seq_id` drops a seq it
+  already accepted and lets in a late one no port delivered; a seq more than 63 behind is
+  stale, and 20 of those in a row (`fmd_old_pkt_run`) restart the tracking at the 20th, the
+  RFC 3550 sender restart. The RFC 8331 path keeps its timestamp windows and per-port
+  threshold. st40p counts `stat_frames_corrupted` on CORRUPTED status, so FMD never
   bumps it. st40p exposes the fast metadata opt-in as
   `ST40P_TX_FLAG_FAST_METADATA` (+ `st40p_tx_ops.fmd_dit`/`fmd_k_bit`, one item per frame from
   `udw_buff_addr`/`udw_buffer_fill`, `meta_num` ignored) and `ST40P_RX_FLAG_FAST_METADATA`

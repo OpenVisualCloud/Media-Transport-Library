@@ -166,9 +166,13 @@ struct st40_tx_test_config {
  * packet's in arrival order (a gap or a late packet), or an item the lib dropped
  * (malformed packet, no free frame, larger than framebuff_size, or refused by
  * notify_frame_ready). seq_lost sums the forward RTP seq gaps between consecutive
- * packets since the previous delivered item. The first packet after create or a
- * source update reports false/0, and so do later items of the same packet unless
- * an item between them was dropped.
+ * packets since the previous delivered item, at most UINT32_MAX. The first packet
+ * after create or a source update reports false/0, and so do later items of the same
+ * packet unless an item between them was dropped.
+ * The ST 2022-7 filter keys on the RTP seq alone, not on the RTP timestamp: it drops
+ * a packet whose seq it already accepted, and one more than 63 behind the newest
+ * seq. After 20 such old packets in a row, the seq tracking restarts at the seq of
+ * the 20th, as for a sender that restarted with a lower seq.
  */
 #define ST40_RX_FLAG_FAST_METADATA (MTL_BIT32(3))
 

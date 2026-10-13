@@ -1192,6 +1192,10 @@ struct st_rx_ancillary_session_impl {
   int fmd_prev_seq;
   uint32_t fmd_seq_lost;
   bool fmd_seq_discont;
+  /* FMD redundancy filter: bit n set when seq session_seq_id - n was accepted, and the
+   * packets in a row that came older than that window */
+  uint64_t fmd_seq_window;
+  int fmd_old_pkt_run;
 
   uint16_t st40_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
   bool mcast_joined[MTL_SESSION_PORT_MAX];
