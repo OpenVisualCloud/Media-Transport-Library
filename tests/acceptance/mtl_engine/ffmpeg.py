@@ -18,6 +18,7 @@ Lifecycle (single host only — these tests never split TX/RX across hosts):
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 
 from mtl_engine import ffmpeg_app, ip_pools, media_files
@@ -29,7 +30,7 @@ from mtl_engine.application_base import (
 )
 from mtl_engine.config.mappings import APP_NAME_MAP, ffmpeg_pix_fmt
 from mtl_engine.const import FFMPEG_EXE, RXTXAPP_EXE
-from mtl_engine.integrity_session import NO_INTEGRITY
+from mtl_engine.integrity_session import NO_INTEGRITY, IntegrityIntent
 from mtl_engine.pcap_compliance import NO_COMPLIANCE
 
 logger = logging.getLogger(__name__)
@@ -85,16 +86,33 @@ class FFmpeg(Application):
         return APP_NAME_MAP["ffmpeg"]
 
     def rx_recording_cap(self) -> int:
-        """``rx_max_file_size`` becomes ``-fs`` on the single raw st20p recording
-        and on the decoded st22p recording."""
+        """``rx_max_file_size`` becomes ``-fs`` on every raw st20p recording and
+        on the decoded st22p recording."""
         mode = self._ff_params.get("mode")
         if mode == _MODE_ST22P or (
             mode == _MODE_YUV_H264
             and self._ff_params.get("output_format", "yuv") == "yuv"
-            and not self._ff_params.get("multiple_sessions")
         ):
             return int(self.params.get("rx_max_file_size") or 0)
         return 0
+
+    def rx_output_files(self) -> list[str]:
+        """Every file the RX records to with ``output_file``: session ``k`` of a
+        multi-session run records to ``<output_file>_<k>``, as RxTxApp names
+        replicas, so that no name is a prefix of another."""
+        url = self.params.get("output_file")
+        if not url:
+            return []
+        if self._ff_params.get("multiple_sessions"):
+            return [f"{url}_{k}" for k in range(2)]
+        return [url]
+
+    def integrity_intents(self, test_repo_path: str, host) -> list[IntegrityIntent]:
+        """One intent per recording; both multi-session streams carry the same
+        source."""
+        intent = self.integrity_intent(test_repo_path, host)
+        paths = self.rx_output_files()
+        return [dataclasses.replace(intent, out_url=p) for p in paths] or [intent]
 
     def require_encoder(self, host, encoder: str, use_mtl_plugin: bool = False) -> None:
         """Raise EnvironmentError if *encoder* is not available on *host*.
@@ -318,9 +336,9 @@ class FFmpeg(Application):
         # falls back to its default value of 5. With only 5 non-blocking
         # retries the RX tears down before TX finishes tv_train_pacing (~8s)
         # and the test fails with EIO + 0-byte output for every pix_fmt.
+        cap = self.rx_recording_cap()
+        fs_flag = f"-fs {cap} " if cap else ""
         if not multiple:
-            cap = self.rx_recording_cap()
-            fs_flag = f"-fs {cap} " if cap else ""
             rx_cmd = (
                 f"{FFMPEG_EXE} -p_port {nic_port_list[1]} "
                 f"-p_sip {ip_pools.rx[0]} "
@@ -350,8 +368,8 @@ class FFmpeg(Application):
                 f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
                 f"-video_size {video_size} -init_retry 20 "
                 f"-f mtl_st20p -i 2 "
-                f"-map 0:0 {rx_f_flag} {{out0}} -y "
-                f"-map 1:0 {rx_f_flag} {{out1}} -y"
+                f"-map 0:0 {rx_f_flag} {fs_flag}{{out0}} -y "
+                f"-map 1:0 {rx_f_flag} {fs_flag}{{out1}} -y"
             )
 
         if tx_is_ffmpeg:
@@ -603,10 +621,10 @@ class FFmpeg(Application):
             # cannot keep up the RX FFmpeg stalls, back-pressures MTL's frame
             # pool and starves the co-resident TX producer, which shows up as
             # ST 2110-21 pacing failures that have nothing to do with MTL.
-            out_path_param = self.params.get("output_file")
-            if out_path_param and not multiple:
-                self._output_files = [out_path_param]
-                host.connection.path(out_path_param).touch()
+            if self.params.get("output_file"):
+                self._output_files = self.rx_output_files()
+                for out_path in self._output_files:
+                    host.connection.path(out_path).touch()
             else:
                 self._output_files = ffmpeg_app.create_empty_output_files(
                     output_format, n, host, build
@@ -786,16 +804,22 @@ class FFmpeg(Application):
                 video_url = self.params["video_url"]
                 if output_format == "yuv":
                     video_size, pix_fmt, fps = self._rx_frame_spec
-                    passed = ffmpeg_app.check_output_video_yuv(
-                        self._output_files[0],
-                        host,
-                        build,
-                        video_url,
-                        video_size,
-                        pix_fmt,
-                        fps,
-                        self.params.get("test_time") or 30,
-                        self.rx_recording_cap(),
+                    # Every session's recording, each checked and logged.
+                    passed = all(
+                        [
+                            ffmpeg_app.check_output_video_yuv(
+                                out_file,
+                                host,
+                                build,
+                                video_url,
+                                video_size,
+                                pix_fmt,
+                                fps,
+                                self.params.get("test_time") or 30,
+                                self.rx_recording_cap(),
+                            )
+                            for out_file in self._output_files
+                        ]
                     )
                 else:
                     video_format = self.params["video_format"]

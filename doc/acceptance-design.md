@@ -229,7 +229,9 @@ and evaluates every one, so one failing recording cannot hide another;
 st22p is lossy and the other types have no checker. Replica `k` of a
 replicated receiver records to `<url>_<k>`, which gets an intent of its
 own. A test that records with `replicas > 1` divides `rx_max_file_size`
-by `replicas` so that the recordings fit the ramdisk together.
+by `replicas` so that the recordings fit the ramdisk together. FFmpeg
+multi-session runs do the same: session `k` records to `<url>_<k>`,
+each session gets its own intent, and the test splits the cap.
 
 The two dual-host integrity tests
 (`tests/dual/st20p/integrity/`, `tests/dual/st30p/integrity/`) still call
