@@ -95,7 +95,7 @@ ut_txa_ctx* ut_txa_create(void) {
   ctx->mgr.max_idx = 1;
   rte_spinlock_init(&ctx->mgr.mutex[0]);
   ctx->session.mgr = &ctx->mgr;
-  ctx->session.pacing.frame_time = NS_PER_MS;
+  ut_txa_set_frame_time(ctx, NS_PER_MS);
   ctx->session.pacing.max_onward_epochs = 3;
   ctx->session.fps_tm.sampling_clock_rate = ST10_VIDEO_SAMPLING_RATE_90K;
   ctx->session.max_pkt_len = ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_rfc8331_anc_hdr);
@@ -117,8 +117,15 @@ void ut_txa_set_cur_epochs(ut_txa_ctx* ctx, uint64_t cur_epochs) {
   ctx->session.pacing.cur_epochs = cur_epochs;
 }
 
-void ut_txa_set_frame_time(ut_txa_ctx* ctx, long double frame_time_ns) {
+void ut_txa_set_frame_time(ut_txa_ctx* ctx, uint32_t frame_time_ns) {
   ctx->session.pacing.frame_time = frame_time_ns;
+  ctx->session.fps_tm.mul = NS_PER_S;
+  ctx->session.fps_tm.den = (int)frame_time_ns;
+}
+
+int ut_txa_set_fps(ut_txa_ctx* ctx, enum st_fps fps) {
+  if (st_get_fps_timing(fps, &ctx->session.fps_tm) < 0) return -EINVAL;
+  return tx_ancillary_session_init_pacing(&ctx->session);
 }
 
 void ut_txa_set_user_pacing(ut_txa_ctx* ctx, bool enable) {

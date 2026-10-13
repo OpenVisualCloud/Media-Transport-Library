@@ -474,7 +474,7 @@ class St40TxFmdTaskletTest : public St40TxFmdTest {
 
   /* `frames` frames of `per_ts` zero-item app packets each through the RTP tasklet. */
   void run_rtp_frames(int frames, int per_ts) {
-    ut_txa_set_frame_time(ctx_, kFrameNs);
+    ASSERT_EQ(ut_txa_set_fps(ctx_, ST_FPS_P59_94), 0);
     ut_txa_set_cur_epochs(ctx_, kFirstEpoch - 1);
     set_time(static_cast<uint64_t>(kFirstEpoch * kFrameNs) - 1000ull * 1000);
     ASSERT_EQ(ut_txa_prepare_rtp_tasklet(ctx_), 0);
@@ -504,7 +504,7 @@ class St40TxFmdTaskletTest : public St40TxFmdTest {
 
   /* `frames` frames through the frame tasklet, PTP and TSC advancing together. */
   void run_frames(int frames) {
-    ut_txa_set_frame_time(ctx_, kFrameNs);
+    ASSERT_EQ(ut_txa_set_fps(ctx_, ST_FPS_P59_94), 0);
     ut_txa_set_cur_epochs(ctx_, kFirstEpoch - 1);
     set_time(static_cast<uint64_t>(kFirstEpoch * kFrameNs) - 1000ull * 1000);
     ASSERT_EQ(ut_txa_prepare_frame_tasklet(ctx_, ST10_TIMESTAMP_FMT_TAI, 0, 1), 0);

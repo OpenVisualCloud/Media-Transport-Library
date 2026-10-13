@@ -290,15 +290,13 @@ static int tx_ancillary_session_reset_pacing_epoch(
     struct mtl_main_impl* impl, struct st_tx_ancillary_session_impl* s) {
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   struct st_tx_ancillary_session_pacing* pacing = &s->pacing;
-  pacing->cur_epochs = ptp_time / pacing->frame_time;
+  pacing->cur_epochs = st_tai_to_epoch(ptp_time, s->fps_tm.mul, s->fps_tm.den);
   return 0;
 }
 
-static inline uint64_t tx_ancillary_pacing_time(
-    struct st_tx_ancillary_session_pacing* pacing, uint64_t epochs) {
-  long double tai = nextafterl((long double)epochs * pacing->frame_time, INFINITY);
-  if (tai >= UINT64_MAX) return UINT64_MAX;
-  return tai;
+static inline uint64_t tx_ancillary_pacing_time(struct st_tx_ancillary_session_impl* s,
+                                                uint64_t epochs) {
+  return st_epoch_to_tai(epochs, s->fps_tm.mul, s->fps_tm.den);
 }
 
 static inline __attribute__((unused)) uint32_t tx_ancillary_pacing_time_stamp(
@@ -362,12 +360,12 @@ static void tx_ancillary_validate_user_timestamp(struct st_tx_ancillary_session_
 static inline uint64_t tx_ancillary_calc_epoch(struct st_tx_ancillary_session_impl* s,
                                                uint64_t cur_tai, uint64_t required_tai) {
   struct st_tx_ancillary_session_pacing* pacing = &s->pacing;
-  uint64_t current_epoch = cur_tai / pacing->frame_time;
+  uint64_t current_epoch = st_tai_to_epoch(cur_tai, s->fps_tm.mul, s->fps_tm.den);
   uint64_t next_free_epoch;
   uint64_t epoch;
 
   if (required_tai) {
-    epoch = (required_tai + pacing->frame_time / 2) / pacing->frame_time;
+    epoch = st_tai_to_nearest_epoch(required_tai, s->fps_tm.mul, s->fps_tm.den);
     if (s->ops.flags & ST40_TX_FLAG_EXACT_USER_PACING) {
       tx_ancillary_validate_user_timestamp(s, required_tai, cur_tai, NS_PER_S);
     } else {
@@ -430,7 +428,7 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
   if (exact_user_pacing) {
     start_time_tai = required_tai;
   } else {
-    start_time_tai = tx_ancillary_pacing_time(pacing, pacing->cur_epochs);
+    start_time_tai = tx_ancillary_pacing_time(s, pacing->cur_epochs);
   }
   /* Only the RTP timestamp derived from ptp_time_cursor is guaranteed to equal
    * start_time_tai's tick; an exact user start time and USER_TIMESTAMP both
@@ -492,7 +490,7 @@ static int tx_ancillary_session_init_next_meta(struct st_tx_ancillary_session_im
   /* point to next epoch */
   meta->epoch = pacing->cur_epochs + 1;
   meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-  meta->timestamp = tx_ancillary_pacing_time(pacing, meta->epoch);
+  meta->timestamp = tx_ancillary_pacing_time(s, meta->epoch);
   return 0;
 }
 

@@ -22,7 +22,10 @@ int ut_txa_init(void);
 ut_txa_ctx* ut_txa_create(void);
 void ut_txa_destroy(ut_txa_ctx* ctx);
 void ut_txa_set_cur_epochs(ut_txa_ctx* ctx, uint64_t cur_epochs);
-void ut_txa_set_frame_time(ut_txa_ctx* ctx, long double frame_time_ns);
+/* pacing->frame_time and the epoch period of fps_tm, both frame_time_ns */
+void ut_txa_set_frame_time(ut_txa_ctx* ctx, uint32_t frame_time_ns);
+/* fps_tm and the pacing of fps, as session attach sets them */
+int ut_txa_set_fps(ut_txa_ctx* ctx, enum st_fps fps);
 void ut_txa_set_user_pacing(ut_txa_ctx* ctx, bool enable);
 void ut_txa_set_exact_user_pacing(ut_txa_ctx* ctx, bool enable);
 void ut_txa_set_user_timestamp(ut_txa_ctx* ctx, bool enable);
