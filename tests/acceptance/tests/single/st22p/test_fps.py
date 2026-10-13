@@ -52,6 +52,7 @@ def test_st22p_fps(
     fps,
     codec,
     test_config,
+    output_files,
     media_file,
 ):
     """Test st22p at different frame rates."""
@@ -86,6 +87,7 @@ def test_st22p_fps(
         quality="speed",
         pixel_format=media_file_info["file_format"],
         input_file=media_file_path,
+        output_file=output_files.register(f"{media_file_path}.out"),
         codec_threads=16,
         test_time=test_time,
     )
