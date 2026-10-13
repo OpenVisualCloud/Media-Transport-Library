@@ -135,6 +135,10 @@ void ut22p_ctx_set_decoder(ut22p_ctx* ctx) {
   ctx->pipeline.derive = false;
 }
 
+void ut22p_set_ready(ut22p_ctx* ctx, bool ready) {
+  ctx->pipeline.ready = ready;
+}
+
 void ut22p_decode_wake_block(ut22p_ctx* ctx) {
   rx_st22p_decode_wake_block(&ctx->pipeline);
 }

@@ -219,7 +219,7 @@ static int rx_st22p_notify_event(void* priv, enum st_event event, void* args) {
 static int rx_st22p_decode_get_block_wait(struct st22p_rx_ctx* ctx) {
   /* wait on the block cond */
   mt_pthread_mutex_lock(&ctx->decode_block_wake_mutex);
-  while (!ctx->decode_block_wake_pending &&
+  while (!ctx->decode_block_wake_pending && !ctx->ready &&
          !atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
     int _ret = mt_pthread_cond_timedwait_ns(&ctx->decode_block_wake_cond,
                                             &ctx->decode_block_wake_mutex,

@@ -130,6 +130,10 @@ void ut22p_tx_ctx_set_encoder(ut22p_tx_ctx* ctx) {
     ctx->framebuffs[i].src.priv = &ctx->framebuffs[i];
 }
 
+void ut22p_tx_set_ready(ut22p_tx_ctx* ctx, bool ready) {
+  ctx->pipeline.ready = ready;
+}
+
 void ut22p_tx_wake_block(ut22p_tx_ctx* ctx) {
   st22p_tx_wake_block(&ctx->pipeline);
 }

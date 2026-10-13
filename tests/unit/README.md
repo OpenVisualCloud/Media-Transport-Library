@@ -43,7 +43,8 @@ over it under load — an overrun that reproduces on an idle box is a defect. On
 eight `*Concurrency*` suites, `St20PipelineTxBlocking`, `WaitSites/St20PipelineRxBlocking`, the three
 `*WakePostedBeforeWaitIsNotLost` cases of `St22PipelineRxBlocking` /
 `St22PipelineTxEncodeBlocking`, the five `*FrameReadyWakesABlockedGet` cases of `St22PipelineRxBlocking` /
-`St22PipelineTxEncodeBlocking` / `St30PipelineRxBlocking` / `St40PipelineRxBlocking`, `PipelineTxWakeBlock`, and
+`St22PipelineTxEncodeBlocking` / `St30PipelineRxBlocking` / `St40PipelineRxBlocking`, the two
+`*FirstFrameEndsANotReadyWait` cases of `St22PipelineRxBlocking` / `St22PipelineTxEncodeBlocking`, `PipelineTxWakeBlock`, and
 `FfmpegMtlCommonTest.ConcurrentGetsCreateOneSharedHandle` carry a budget;
 the exception reaches no other case. There are no flaky network-timing tests in this binary.
 
