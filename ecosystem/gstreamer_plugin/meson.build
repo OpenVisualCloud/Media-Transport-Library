@@ -28,6 +28,15 @@ gstreamer_video_dep = dependency('gstreamer-video-1.0', required : true)
 gstreamer_audio_dep = dependency('gstreamer-audio-1.0', required : true)
 mtl_dep             = dependency('mtl', required : true)
 
+# The plugins load with no LD_LIBRARY_PATH set: each one records where its
+# shared helper library (beside it), MTL and DPDK are. meson drops an rpath
+# that merely repeats a dependency's link directory, so this is install_rpath.
+dpdk_dep = dependency('libdpdk', required : false)
+plugin_rpath = '$ORIGIN:' + mtl_dep.get_variable(pkgconfig : 'libdir')
+if dpdk_dep.found()
+  plugin_rpath += ':' + dpdk_dep.get_variable(pkgconfig : 'libdir')
+endif
+
 if run_command('test', '-d', '/usr/local/include/gstreamer-1.0', check: false).returncode() == 0
     gstreamer_inc_dir  = '/usr/local/include/gstreamer-1.0'
 else
@@ -55,6 +64,7 @@ gst_mtl_common = library('gstmtl_common',
   dependencies : [gst_dep, gstbase_dep, mtl_dep],
   install : true,
   install_dir : plugins_install_dir,
+  install_rpath : plugin_rpath,
   include_directories: inc_dirs,
   c_args: plugin_c_args
 )
@@ -76,6 +86,7 @@ gst_mtl_st20p_tx = library('gstmtl_st20p_tx',
   dependencies : [gst_dep, gstbase_dep, gstreamer_video_dep, mtl_dep, gst_mtl_common_dep],
   install : true,
   install_dir : plugins_install_dir,
+  install_rpath : plugin_rpath,
   include_directories: inc_dirs,
   c_args: plugin_c_args
 )
@@ -90,6 +101,7 @@ gst_mtl_st20p_rx = library('gstmtl_st20p_rx',
   dependencies : [gst_dep, gstbase_dep, gstreamer_video_dep, mtl_dep, gst_mtl_common_dep],
   install : true,
   install_dir : plugins_install_dir,
+  install_rpath : plugin_rpath,
   include_directories: inc_dirs,
   c_args: plugin_c_args
 )
@@ -104,6 +116,7 @@ gst_mtl_st30p_rx = library('gstmtl_st30p_rx',
   dependencies : [gst_dep, gstbase_dep, gstreamer_audio_dep, mtl_dep, gst_mtl_common_dep],
   install : true,
   install_dir : plugins_install_dir,
+  install_rpath : plugin_rpath,
   include_directories: inc_dirs,
   c_args: plugin_c_args
 )
@@ -118,6 +131,7 @@ gstmtl_st30p_tx = library('gstmtl_st30p_tx',
     dependencies : [gst_dep, gstbase_dep, gstreamer_audio_dep, mtl_dep, gst_mtl_common_dep],
     install : true,
     install_dir : plugins_install_dir,
+  install_rpath : plugin_rpath,
     include_directories: inc_dirs,
     c_args: plugin_c_args
 )
@@ -132,6 +146,7 @@ gst_mtl_st40p_tx = library('gstmtl_st40p_tx',
   dependencies : [gst_dep, gstbase_dep, mtl_dep, gst_mtl_common_dep],
   install : true,
   install_dir : plugins_install_dir,
+  install_rpath : plugin_rpath,
   include_directories: inc_dirs,
   c_args: plugin_c_args
 )
@@ -146,6 +161,7 @@ gst_mtl_st40p_rx = library('gstmtl_st40p_rx',
   dependencies : [gst_dep, gstbase_dep, mtl_dep, gst_mtl_common_dep],
   install : true,
   install_dir : plugins_install_dir,
+  install_rpath : plugin_rpath,
   include_directories: inc_dirs,
   c_args: plugin_c_args
 )

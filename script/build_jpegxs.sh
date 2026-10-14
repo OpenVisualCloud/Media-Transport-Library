@@ -45,20 +45,6 @@ EXAMPLES:
 EOF
 }
 
-download_source() {
-	local archive=$1 url=$2
-
-	if command_exists curl; then
-		curl --fail --location --retry 3 --connect-timeout 15 --max-time 180 \
-			"${url}" --output "${archive}"
-	elif command_exists wget; then
-		wget --tries=3 --timeout=180 "${url}" -O "${archive}"
-	else
-		log_error "Required package is missing: curl or wget"
-		return 1
-	fi
-}
-
 compiler_sha256() {
 	{
 		"${CC:-cc}" -dumpmachine
@@ -258,7 +244,7 @@ main() {
 		mkdir -p "${source_dir}"
 		archive="${source_dir}.tar.gz"
 		url="https://github.com/OpenVisualCloud/SVT-JPEG-XS/archive/${SVT_JPEG_XS_VER}.tar.gz"
-		download_source "${archive}" "${url}"
+		download_file "${url}" "${archive}"
 		tar -xzf "${archive}" -C "${source_dir}" --strip-components=1
 		rm -f "${archive}"
 		echo "${SVT_JPEG_XS_VER}" >"${source_dir}/.mtl-revision"
@@ -328,7 +314,7 @@ PY
 		rm -rf "${prefix}"
 		mv "${stage}" "${prefix}"
 		trap - EXIT
-	elif mkdir -p "${prefix}" 2>/dev/null && [ -w "${prefix}" ]; then
+	elif prefix_writable "${prefix}"; then
 		cp -a "${stage}/." "${prefix}/"
 	else
 		as_root mkdir -p "${prefix}"

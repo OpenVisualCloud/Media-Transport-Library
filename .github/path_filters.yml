@@ -64,7 +64,7 @@ hash_jpegxs: &hash_jpegxs
   - .github/scripts/setup_environment.sh
   - script/build_jpegxs.sh
   - script/install_dependencies.sh
-  - ecosystem/ffmpeg_plugin/build.sh
+  - script/build_ffmpeg_plugin.sh
   - script/hash_sources.sh
   - script/hash_sources_jpegxs.env
   - versions.env
@@ -83,6 +83,8 @@ hash_ice: &hash_ice
 hash_ffmpeg: &hash_ffmpeg
   - .github/scripts/setup_environment.sh
   - script/install_dependencies.sh
+  - script/build_ffmpeg_plugin.sh
+  - script/common.sh
   - script/hash_sources_ffmpeg.env
   - 'ecosystem/ffmpeg_plugin/**'
   - versions.env
@@ -90,6 +92,8 @@ hash_ffmpeg: &hash_ffmpeg
 hash_gstreamer: &hash_gstreamer
   - .github/scripts/setup_environment.sh
   - script/install_dependencies.sh
+  - script/build_gstreamer_plugin.sh
+  - script/common.sh
   - script/hash_sources_gstreamer.env
   - 'ecosystem/gstreamer_plugin/**'
   - 'tests/tools/gstreamer_tools/**'
@@ -309,6 +313,8 @@ scripts:
   - script/build_dpdk.sh
   - script/build_drivers.sh
   - script/build_ebpf_xdp.sh
+  - script/build_ffmpeg_plugin.sh
+  - script/build_gstreamer_plugin.sh
   - script/build_jpegxs.sh
   - script/build_obs_plugin.sh
   - script/build_python.sh

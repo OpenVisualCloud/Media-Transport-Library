@@ -53,7 +53,7 @@ build_ice() {
 	local patch_root="${REPO_DIR}/patches/ice_drv"
 	local patch_dir="${patch_root}/${ICE_VER}"
 	local github_archive=0
-	local patch_file
+	local patch_file module
 	local tools=(make:make "${CC:-cc}:gcc" patch:patch tar:tar gzip:gzip)
 
 	if [[ ! -d "${patch_dir}" ]]; then
@@ -91,10 +91,10 @@ build_ice() {
 		fi
 	else
 		rm -f "${archive_name}"
-		wget "https://downloadmirror.intel.com/${ICE_DMID}/${archive_name}" -O "${archive_name}" || true
+		wget --connect-timeout=15 --tries=3 "https://downloadmirror.intel.com/${ICE_DMID}/${archive_name}" -O "${archive_name}" || true
 		if [[ ! -f "${archive_name}" ]] || ! gzip -t "${archive_name}" >/dev/null 2>&1; then
 			rm -f "${archive_name}"
-			wget "https://github.com/intel/ethernet-linux-ice/archive/refs/tags/v${ICE_VER}.tar.gz" -O "${archive_name}" || true
+			wget --connect-timeout=15 --tries=3 "https://github.com/intel/ethernet-linux-ice/archive/refs/tags/v${ICE_VER}.tar.gz" -O "${archive_name}" || true
 			if [[ -f "${archive_name}" ]] && gzip -t "${archive_name}" >/dev/null 2>&1; then
 				github_archive=1
 			else
@@ -127,8 +127,12 @@ build_ice() {
 	make -C src -j"${NPROC}" CC="${CC:-cc}"
 	if [[ "${BUILD_ONLY}" == "false" ]]; then
 		as_root make -C src install
-		as_root rmmod irdma || true
-		as_root rmmod ice
+		# A host without an E800 NIC, such as a VM, has no ice to unload.
+		for module in irdma ice; do
+			if grep -q "^${module} " /proc/modules; then
+				as_root rmmod "${module}"
+			fi
+		done
 		as_root modprobe ice
 	fi
 	popd >/dev/null

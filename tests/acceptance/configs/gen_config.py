@@ -3,6 +3,7 @@
 # Copyright(c) 2026 Intel Corporation
 
 import argparse
+import os
 import subprocess  # nosec B404 # runs lspci via an argv list, no shell
 
 import yaml
@@ -250,7 +251,10 @@ def main() -> None:
     # Optional EBU args
     parser.add_argument("--ebu_ip", type=str, default=None)
     parser.add_argument("--ebu_user", type=str, default=None)
-    parser.add_argument("--ebu_password", type=str, default=None)
+    # The environment keeps the password off the command line, where ps shows it.
+    parser.add_argument(
+        "--ebu_password", type=str, default=os.environ.get("EBU_PASSWORD")
+    )
     # Optional test settings
     parser.add_argument("--test_time", type=int, default=60)
     parser.add_argument("--media_path", type=str, default="/mnt/media")

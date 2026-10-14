@@ -23,12 +23,24 @@ sudo apt install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreame
 
 ### 1.2. Automated Build
 
-To build the GStreamer plugins using the provided script, run the following commands:
+`script/build_gstreamer_plugin.sh` builds the plugins and installs them into the
+GStreamer plugin directory of `/usr/local`. Run it from the top of the source
+tree, as your own user, after MTL is installed:
 
 ```bash
-cd Media-Transport-Library/ecosystem/gstreamer_plugin
-./build.sh
+./script/install_dependencies.sh gstreamer   # the build packages, Ubuntu only
+./script/build_gstreamer_plugin.sh           # add debug for the test-only properties
+./script/build_gstreamer_plugin.sh -h        # all options
 ```
+
+With `MTL_INSTALL_PREFIX` set, as `build.sh` and `build_dpdk.sh` take it, the
+plugins go into `<prefix parent>/gstreamer/gstreamer-1.0`
+(`.local_install/gstreamer/gstreamer-1.0` beside `.local_install/mtl`); point
+`GST_PLUGIN_PATH` at that directory, as at `/usr/local`'s plugin directory:
+GStreamer searches only its own. An installed plugin records the paths of
+the MTL and DPDK libraries it was built against, so it loads without
+`LD_LIBRARY_PATH` and cannot pick up another copy; the script checks that with
+`ldd` and `gst-inspect-1.0` before it finishes.
 
 ### 1.3. Manual Build Instructions
 

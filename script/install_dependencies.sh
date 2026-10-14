@@ -23,6 +23,7 @@ COMPONENT is one of:
 	gpu_direct	Level Zero ${ONE_API_GPU_VER}, built from source
 	ffmpeg		FFmpeg plugin build packages
 	jpegxs		JPEG XS plugin build packages
+	avcodec		ST 2110-22 avcodec plugin build packages
 	gstreamer	GStreamer plugin build packages
 	obs		OBS Studio plugin build packages
 	python		Python binding build packages, for build_python.sh
@@ -69,7 +70,7 @@ main() {
 
 	for component in "$@"; do
 		case "${component}" in
-		ice | ebpf_xdp | gpu_direct | ffmpeg | jpegxs | gstreamer | obs | python | rust | readpcap) ;;
+		ice | ebpf_xdp | gpu_direct | ffmpeg | jpegxs | avcodec | gstreamer | obs | python | rust | readpcap) ;;
 		-h | --help)
 			show_help
 			exit 0
@@ -87,7 +88,7 @@ main() {
 	fi
 
 	as_root apt-get update
-	install_packages git gcc meson ninja-build python3 python3-pip python3-pyelftools pkg-config \
+	install_packages git gcc meson ninja-build python3 python3-pip python3-pyelftools python3-venv pkg-config \
 		libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libgmock-dev libssl-dev systemtap-sdt-dev \
 		llvm clang libsdl2-dev libsdl2-ttf-dev cmake linuxptp ethtool make patch unzip wget
 	# netsniff-ng recommends ntpsec, and apt then removes systemd-timesyncd.
@@ -101,6 +102,7 @@ main() {
 		gpu_direct) install_gpu_direct ;;
 		ffmpeg) install_packages nasm unzip patch ;;
 		jpegxs) install_packages cmake yasm nasm build-essential ;;
+		avcodec) install_packages libavcodec-dev libavutil-dev ;;
 		gstreamer)
 			install_packages libunwind-dev gstreamer1.0-plugins-base libgstreamer-plugins-base1.0-dev \
 				gstreamer1.0-plugins-good gstreamer1.0-tools gstreamer1.0-libav libgstreamer1.0-dev

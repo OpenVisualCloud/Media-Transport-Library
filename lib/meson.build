@@ -99,6 +99,9 @@ endif
 # enable warning as error for non debug build
 if get_option('buildtype') != 'debug'
   mtl_c_args += ['-Werror']
+  # DPDK exports -march=native, and clang 18 on a Xeon 6 warns about the
+  # AVX10.1 features that implies.
+  mtl_c_args += cc.get_supported_arguments('-Wno-error=invalid-feature-combination')
 else
   # test-only TX mutation helpers (seq-gap, bad-parity, etc.) are compiled
   # into the library only for debug builds so the hot path stays clean.

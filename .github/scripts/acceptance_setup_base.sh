@@ -20,7 +20,8 @@
 # build into .local_install -> hugepages -> CPU governor.
 #
 # == Inputs (env vars) ==============================================
-#   NR_HUGEPAGES=2048         number of 2MB hugepages (4GB default)
+#   NR_HUGEPAGES=2048         number of 2MB hugepages (4GB default); a higher
+#                             current value stays
 #   BUILD_MODE=release        release|debug|debugonly
 #   INCLUDE_FFMPEG_PLUGIN=0   1 to also build the FFmpeg plugin
 #   INCLUDE_GSTREAMER_PLUGIN=0  1 to also build the GStreamer plugin
@@ -76,7 +77,19 @@ if [[ "$SKIP_APT" == "1" ]]; then
 	log "Step 1/5: apt dependencies — skipped (SKIP_APT=1)"
 else
 	log "Step 1/5: apt dependencies"
-	mh_install_dependencies
+	components=()
+	[[ "$INCLUDE_FFMPEG_PLUGIN" == "1" ]] && components+=(ffmpeg)
+	[[ "$INCLUDE_GSTREAMER_PLUGIN" == "1" ]] && components+=(gstreamer)
+	mh_install_dependencies || {
+		err "Step 1/5: apt dependencies failed (exit $?)"
+		exit 1
+	}
+	if [[ ${#components[@]} -gt 0 ]]; then
+		bash "$repo_root/script/install_dependencies.sh" "${components[@]}" || {
+			err "Step 1/5: apt dependencies of ${components[*]} failed (exit $?)"
+			exit 1
+		}
+	fi
 fi
 
 # -------------------- Step 2: ICE driver --------------------
@@ -111,7 +124,10 @@ MTL_INSTALL_PREFIX="$LOCAL_PREFIX" \
 	MTL_BUILD_AND_INSTALL_DEBUG="$mtl_build_debug_flag" \
 	ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN="$INCLUDE_FFMPEG_PLUGIN" \
 	ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN="$INCLUDE_GSTREAMER_PLUGIN" \
-	bash .github/scripts/setup_environment.sh
+	bash .github/scripts/setup_environment.sh || {
+	err "Step 3/5: setup_environment.sh failed (exit $?)"
+	exit 1
+}
 
 if vd_local_install_ready "$LOCAL_PREFIX"; then
 	ok "Step 3/5: MtlManager + RxTxApp present under $LOCAL_PREFIX/bin"
@@ -122,7 +138,13 @@ fi
 
 # -------------------- Step 4: hugepages --------------------
 log "Step 4/5: hugepages"
-mh_hugepages_set "$NR_HUGEPAGES"
+# Only grow: a host can need more than this default for other work.
+hp_cur=$(cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages 2>/dev/null || echo 0)
+if ((hp_cur >= NR_HUGEPAGES)); then
+	log "Step 4/5: keep the current ${hp_cur} hugepages (requested ${NR_HUGEPAGES}). This step does not decrease them."
+else
+	mh_hugepages_set "$NR_HUGEPAGES"
+fi
 vd_report_hugepages
 
 # -------------------- Step 5: CPU governor --------------------
