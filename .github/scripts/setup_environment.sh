@@ -144,7 +144,7 @@ main() {
 	local STEP=1 mtl_build_options local_base jpegxs_bundle tai_bin
 	local -a ffmpeg_build_options
 	local entry var printed=0
-	local -a mtl_build_env jpegxs_build_options
+	local -a mtl_build_env
 
 	case "${1:-}" in
 	"") ;;
@@ -221,13 +221,8 @@ main() {
 
 	if [ "${SETUP_BUILD_AND_INSTALL_DPDK}" == "1" ]; then
 		log_info "$STEP DPDK build and install"
-		# DPDK installs to a sibling directory for independent caching
-		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
-			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
-			MTL_INSTALL_PREFIX="${local_base}/dpdk" bash "${root_folder}/script/build_dpdk.sh" -f
-		else
-			bash "${root_folder}/script/build_dpdk.sh" -f
-		fi
+		# With MTL_INSTALL_PREFIX, the script installs into the dpdk sibling.
+		bash "${root_folder}/script/build_dpdk.sh" -f
 		STEP=$((STEP + 1))
 	fi
 
@@ -301,11 +296,9 @@ main() {
 	fi
 
 	if [ "${PLUGIN_BUILD_AND_INSTALL_JPEGXS}" == "1" ]; then
-		log_info "$STEP Plugin JPEG-XS bundle build"
+		log_info "$STEP Plugin JPEG-XS build and install"
 		export SVT_JPEG_XS_REPO="${root_folder}/script/SVT-JPEG-XS"
-		jpegxs_build_options=()
-		[ "${CICD_BUILD}" != "1" ] || jpegxs_build_options+=(--ci)
-		bash "${root_folder}/script/build_jpegxs.sh" "${jpegxs_build_options[@]}"
+		bash "${root_folder}/script/build_jpegxs.sh"
 		STEP=$((STEP + 1))
 	fi
 
@@ -363,8 +356,6 @@ main() {
 		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
 			MTL_PLUGIN_PREFIX="${local_base}/plugins" \
-				PKG_CONFIG_PATH="${local_base}/ffmpeg/lib/pkgconfig:${local_base}/ffmpeg/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH:-}" \
-				LD_LIBRARY_PATH="${local_base}/ffmpeg/lib:${local_base}/ffmpeg/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}" \
 				bash "${root_folder}/script/build_st22_avcodec_plugin.sh"
 		else
 			bash "${root_folder}/script/build_st22_avcodec_plugin.sh"

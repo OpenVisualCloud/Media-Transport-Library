@@ -26,7 +26,7 @@ To keep the FFmpeg of the system or of the user, install into another
 directory with -p, for example -p /opt/mtl-ffmpeg.
 
 REQUIRED PACKAGES (Debian/Ubuntu):
-	gcc make nasm patch pkg-config unzip wget, or ./install_dependencies.sh ffmpeg
+	gcc make nasm patch patchelf pkg-config unzip wget, or ./install_dependencies.sh ffmpeg
 	MTL and DPDK development files must already be installed.
 
 OPTIONS:
@@ -73,6 +73,7 @@ build_openh264() {
 	make -C "${source_dir}" -j "${jobs}" PREFIX="${prefix}"
 	if prefix_writable "${prefix}"; then
 		make -C "${source_dir}" install PREFIX="${prefix}"
+		relocate_pkgconfig "${prefix}" openh264
 	else
 		as_root make -C "${source_dir}" install PREFIX="${prefix}"
 	fi
@@ -103,7 +104,11 @@ add_svt_jpeg_xs() {
 main() {
 	local prefix="" jobs="${NPROC}" force=0 gpu_direct=0 jpegxs=0 option
 	local local_base="" ffmpeg_dir archive patch_file plugin_dir="${REPO_DIR}/ecosystem/ffmpeg_plugin"
-	local mtl_pc dpdk_pc jpeg_pc pc_dirs=() libdirs=() ldflags dir
+	local mtl_pc dpdk_pc jpeg_pc pc_dirs=() libdirs=() file
+	# The libraries FFmpeg installs, without the lib prefix.
+	local ffmpeg_libs=(avcodec avdevice avfilter avformat avutil postproc swresample swscale)
+	local -a ffmpeg_files
+	local -a install_cmd
 	local -a configure_flags
 
 	[ "${FFMPEG_ENABLE_SVT_JPEG_XS:-0}" != "1" ] || jpegxs=1
@@ -169,7 +174,7 @@ main() {
 	fi
 
 	require_commands "${CC:-cc}:gcc" make:make nasm:nasm patch:patch pkg-config:pkg-config \
-		unzip:unzip tar:tar realpath:coreutils || exit 1
+		unzip:unzip tar:tar realpath:coreutils patchelf:patchelf readelf:binutils || exit 1
 	# A local install keeps MTL and DPDK beside the prefix; the system install
 	# takes them from the pkg-config path.
 	if [ -n "${local_base}" ]; then
@@ -230,31 +235,50 @@ main() {
 		add_svt_jpeg_xs "${ffmpeg_dir}"
 		configure_flags+=(--enable-libsvtjpegxs)
 	fi
-	# The install must run without LD_LIBRARY_PATH: every library it links is
-	# recorded by path. DT_RPATH, not RUNPATH, so that the lookup also covers
-	# what libmtl itself needs (DPDK) and so that a stale LD_LIBRARY_PATH cannot
-	# point it at another copy.
+	# The install runs without ldconfig or LD_LIBRARY_PATH and can be moved as
+	# one tree: the programs (bin) and the libraries (lib) record every library
+	# directory relative to themselves. DT_RPATH, not RUNPATH, so that the lookup
+	# also covers what libmtl itself needs (DPDK) and so that LD_LIBRARY_PATH
+	# cannot point it at another copy. FFmpeg's make expands LDFLAGS once for
+	# a program and twice for a library, so no spelling of $ORIGIN survives both:
+	# the rpath is written after the install, with patchelf.
 	libdirs=("${prefix}/lib" "$(pkg_libdir mtl)" "$(pkg_libdir libdpdk)")
 	[ "${jpegxs}" -eq 0 ] || libdirs+=("$(pkg_libdir SvtJpegxs)")
-	ldflags="-L${prefix}/lib -Wl,--disable-new-dtags"
-	for dir in "${libdirs[@]}"; do
-		ldflags+=" -Wl,-rpath,${dir}"
-	done
-	configure_flags+=("--extra-ldflags=${ldflags}")
+	configure_flags+=("--extra-ldflags=-L${prefix}/lib -Wl,--disable-new-dtags")
 
 	log_info "Build FFmpeg ${FFMPEG_VERSION} into ${prefix}"
 	(cd "${ffmpeg_dir}" && ./configure "${configure_flags[@]}")
 	make -C "${ffmpeg_dir}" -j "${jobs}"
 	if prefix_writable "${prefix}"; then
-		make -C "${ffmpeg_dir}" install
+		install_cmd=()
 	else
-		as_root make -C "${ffmpeg_dir}" install
+		install_cmd=(as_root)
+	fi
+	"${install_cmd[@]}" make -C "${ffmpeg_dir}" install
+	# Only the files of FFmpeg itself: the prefix, /usr/local by default, can
+	# hold those of other packages.
+	ffmpeg_files=("${prefix}"/bin/ff{mpeg,probe,play})
+	# The build tree holds lib<name>.so.<major> of this version only: the prefix
+	# can also hold the libraries of another FFmpeg version.
+	for file in "${ffmpeg_dir}"/lib*/lib*.so.*; do
+		ffmpeg_files+=("$(readlink -f "${prefix}/lib/${file##*/}")")
+	done
+	for file in "${ffmpeg_files[@]}"; do
+		# ffplay needs SDL, postproc --enable-gpl, and libavutil.so.59 links to
+		# the library itself.
+		[[ -f "${file}" && ! -L "${file}" ]] || continue
+		"${install_cmd[@]}" patchelf --force-rpath --set-rpath "$(origin_rpath "${file%/*}" "${libdirs[@]}")" "${file}"
+	done
+	if [ "${#install_cmd[@]}" -eq 0 ]; then
+		relocate_pkgconfig "${prefix}" "${ffmpeg_libs[@]/#/lib}"
+	else
 		case "${prefix}" in
 		/usr | /usr/*) command_exists ldconfig && as_root ldconfig ;;
 		esac
 	fi
 
-	require_resolved_libraries "${prefix}/bin/ffmpeg" "${libdirs[@]}" || exit 1
+	# openh264 can be the system one, which the rpath does not name.
+	require_resolved_libraries "${prefix}/bin/ffmpeg" "${libdirs[@]}" "$(pkg_libdir openh264)" || exit 1
 	"${prefix}/bin/ffmpeg" -hide_banner -devices 2>/dev/null | grep -q mtl || {
 		log_error "${prefix}/bin/ffmpeg has no mtl device"
 		exit 1

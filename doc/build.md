@@ -42,6 +42,22 @@ Some setups need more components. Add each component to `install_dependencies.sh
 Install the AF_XDP components before you run `./build.sh`: MTL finds libxdp and libbpf when it is configured, and without them builds no AF_XDP backend.
 Build MTL with `./build.sh` before you build a plugin or the Python binding.
 
+### Install into a local prefix
+
+`MTL_INSTALL_PREFIX` makes each script install into a tree of its own instead of
+the system, as the CI does with `.local_install/`:
+
+```bash
+export MTL_INSTALL_PREFIX=$PWD/.local_install/mtl
+./script/build_dpdk.sh         # into .local_install/dpdk
+./build.sh                     # into .local_install/mtl
+./script/build_jpegxs.sh       # into .local_install/jpegxs, beside them
+```
+
+Such a tree needs no root, no `ldconfig` and no `LD_LIBRARY_PATH`: every program
+and library records where its siblings are relative to itself, and every `.pc`
+file points at its own location, so the whole tree can be moved and still runs.
+
 ### Set up the host with one command
 
 `.github/scripts/setup_environment.sh` runs the scripts above in the correct order. Environment variables select the steps. Each variable is `0` (the default) or `1`. The command below installs the packages, the patched E810/E830 driver, DPDK, and MTL:

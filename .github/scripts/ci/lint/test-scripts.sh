@@ -119,11 +119,6 @@ PY
 	grep -q 'Source directory does not contain CMakeLists.txt' "${work}/source.log" ||
 		fail script/build_jpegxs.sh "did not validate the explicit source directory"
 	[ -f "${source_dir}/sentinel" ] || fail script/build_jpegxs.sh "deleted the explicit source directory"
-	if bash script/build_jpegxs.sh --ci --version test-revision >"${work}/version.log" 2>&1; then
-		fail script/build_jpegxs.sh "accepted --version with --ci"
-	fi
-	grep -q -- '--version cannot be used with --ci' "${work}/version.log" ||
-		fail script/build_jpegxs.sh "did not explain the CI version constraint"
 	rm -rf "${work:?}"
 }
 

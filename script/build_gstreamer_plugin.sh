@@ -113,7 +113,7 @@ main() {
 		prefix="${local_base}/gstreamer"
 	fi
 
-	require_commands "${CC:-cc}:gcc" meson:meson ninja:ninja-build pkg-config:pkg-config python3:python3 || exit 1
+	require_commands "${CC:-cc}:gcc" meson:meson ninja:ninja-build pkg-config:pkg-config realpath:coreutils || exit 1
 	if [ -n "${local_base}" ]; then
 		mtl_pc=$(find "${local_base}/mtl" -name mtl.pc -type f -print -quit 2>/dev/null || true)
 		dpdk_pc=$(find "${local_base}/dpdk" -name libdpdk.pc -type f -print -quit 2>/dev/null || true)
@@ -132,6 +132,7 @@ main() {
 	# system install goes into the GStreamer plugin directory of the libdir.
 	if [ -n "${prefix}" ]; then
 		prefix_args=(--prefix "${prefix}" --libdir .)
+		plugin_dir="${prefix}/gstreamer-1.0"
 		if prefix_writable "${prefix}"; then
 			system_install=0
 		else
@@ -139,23 +140,20 @@ main() {
 		fi
 	else
 		prefix_args=(--prefix /usr/local)
+		plugin_dir="/usr/local/$(multiarch_libdir)/gstreamer-1.0"
 		system_install=1
 	fi
-	# The plugins must load without LD_LIBRARY_PATH. Their meson.build records
-	# where the shared helper library, MTL and DPDK are (install_rpath); this
-	# makes that DT_RPATH, not RUNPATH, so that the lookup also covers what libmtl
-	# itself needs (DPDK) and so that a stale LD_LIBRARY_PATH cannot point it at
-	# another copy.
+	# The plugins load without ldconfig or LD_LIBRARY_PATH: each records where
+	# the shared helper library beside it, MTL and DPDK are, relative to itself
+	# (install_rpath in meson.build, from the rpath option). DT_RPATH, not
+	# RUNPATH, so that the lookup also covers what libmtl itself needs (DPDK) and
+	# so that LD_LIBRARY_PATH cannot point it at another copy.
 	libdirs=("$(pkg-config --variable=libdir mtl)" "$(pkg-config --variable=libdir libdpdk)")
 	link_args="-Wl,--disable-new-dtags"
+	prefix_args+=("-Drpath=$(origin_rpath "${plugin_dir}" "${libdirs[@]}")")
 
-	log_info "Build the GStreamer plugins: buildtype=${buildtype}"
+	log_info "Build the GStreamer plugins: buildtype=${buildtype}, into ${plugin_dir}"
 	build_plugins "${REPO_DIR}/ecosystem/gstreamer_plugin" "${script_folder}/build/gstreamer_plugin"
-	# Where meson put them: <prefix>/<libdir>/gstreamer-1.0.
-	plugin_dir="$(meson introspect --buildoptions "${script_folder}/build/gstreamer_plugin" |
-		python3 -c 'import json, sys
-options = {o["name"]: o["value"] for o in json.load(sys.stdin)}
-print(options["prefix"].rstrip("/") + "/" + options["libdir"].strip("./") + "/gstreamer-1.0" if options["libdir"].strip("./") else options["prefix"].rstrip("/") + "/gstreamer-1.0")')"
 	if [ "${test_tools}" -eq 1 ]; then
 		log_info "Build the GStreamer test plugins of tests/tools/gstreamer_tools"
 		build_plugins "${REPO_DIR}/tests/tools/gstreamer_tools" "${script_folder}/build/gstreamer_tools"

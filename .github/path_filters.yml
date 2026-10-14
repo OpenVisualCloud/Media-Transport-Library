@@ -64,12 +64,11 @@ hash_mtl: &hash_mtl
   - tests/meson_options.txt
 
 hash_jpegxs: &hash_jpegxs
-  - .github/scripts/ci/cache/validate-jpegxs.sh
   - .github/scripts/setup_environment.sh
   - script/build_jpegxs.sh
   - script/install_dependencies.sh
   - script/build_ffmpeg_plugin.sh
-  - script/hash_sources.sh
+  - script/common.sh
   - script/hash_sources_jpegxs.env
   - versions.env
 

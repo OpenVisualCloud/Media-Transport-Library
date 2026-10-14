@@ -27,7 +27,20 @@ dpdk) find "$root" -name libdpdk.pc -print -quit | grep -q . ;;
 mtl) find "$root" -name mtl.pc -print -quit | grep -q . ;;
 ffmpeg) find "$root" -name libavcodec.pc -print -quit | grep -q . ;;
 gstreamer | plugins) find "$root" -name '*.so' -print -quit | grep -q . ;;
-jpegxs | ice) bash "${ci_dir}/validate-${component}.sh" ;;
+jpegxs)
+	pc=$(find "$root" -name SvtJpegxs.pc -type f -print -quit)
+	[ -n "$pc" ] || {
+		echo "jpegxs cache lacks SvtJpegxs.pc" >&2
+		exit 1
+	}
+	# shellcheck disable=SC2016
+	grep -Fq '${pcfiledir}' "$pc" || {
+		echo "jpegxs cache: SvtJpegxs.pc is not relocatable" >&2
+		exit 1
+	}
+	find "$root" -name libst_plugin_st22_svt_jpeg_xs.so -type f -print -quit | grep -q .
+	;;
+ice) bash "${ci_dir}/validate-ice.sh" ;;
 *)
 	echo "unknown cache component: ${component}" >&2
 	exit 2

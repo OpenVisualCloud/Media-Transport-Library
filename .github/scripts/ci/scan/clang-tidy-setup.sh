@@ -11,10 +11,9 @@ set -euo pipefail
 # The components add the GStreamer and OBS headers the meson setups below need.
 bash script/install_dependencies.sh gstreamer obs
 
-# The .pc files name the prefix of the build host, and static libraries that
-# this host does not have.
+# The .pc files name static libraries that this host does not have.
 dpdk=$PWD/.local_install/dpdk/lib/x86_64-linux-gnu/pkgconfig
-sed -i -e "s|^prefix=.*|prefix=\${pcfiledir}/../../..|" -e '/^Requires.private:/d' "$dpdk"/*.pc
+sed -i '/^Requires.private:/d' "$dpdk"/*.pc
 export PKG_CONFIG_PATH=$PWD/build/meson-uninstalled:$dpdk CC=clang CXX=clang++
 
 meson setup build -Denable_unit_tests=true -Denable_fuzzing=true

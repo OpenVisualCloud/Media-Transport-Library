@@ -22,9 +22,9 @@ declare -A test_cases
 
 # Detect whether to use .local_install (CI) or local build/system paths
 if [ -d "${mtl_folder}/.local_install" ]; then
-	# CI mode: use .local_install prefix tree
+	# CI mode: use .local_install prefix tree. Its binaries find their
+	# libraries relative to themselves; no LD_LIBRARY_PATH.
 	export PATH="${mtl_folder}/.local_install/dpdk/bin:${mtl_folder}/.local_install/mtl/bin:${PATH}"
-	export LD_LIBRARY_PATH="${mtl_folder}/.local_install/mtl/lib/x86_64-linux-gnu:${mtl_folder}/.local_install/dpdk/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 	: "${KAHAWAI_TEST_BINARY:="${mtl_folder}/.local_install/mtl/bin/KahawaiTest"}"
 else
@@ -32,10 +32,8 @@ else
 	: "${KAHAWAI_TEST_BINARY:="${mtl_folder}/build/tests/KahawaiTest"}"
 fi
 
-# sudo strips LD_LIBRARY_PATH even with -E; pass it explicitly via env. A tree
-# with no .local_install never set it, and a caller running under `set -u` is
-# entitled to source this script without tripping over that.
-SUDO_PREFIX="sudo -E env LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-} PATH=${PATH}"
+# sudo resets PATH even with -E; pass it explicitly via env.
+SUDO_PREFIX="sudo -E env PATH=${PATH}"
 
 : "${MAX_RETRIES:=2}"
 : "${RETRY_DELAY:=20}"

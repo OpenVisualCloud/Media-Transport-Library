@@ -158,6 +158,10 @@ runs:
       shell: bash
       run: sudo -E env -u BASH_XTRACEFD "$TASK_BIN" ci:activate-ice
 
+    - name: Refuse stray system copies of the install's libraries
+      shell: bash
+      run: task ci:configure-host -- stray-libraries
+
     - name: Configure dependency environment
       shell: bash
       run: task ci:configure-host -- environment

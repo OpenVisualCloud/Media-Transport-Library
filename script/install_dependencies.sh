@@ -100,7 +100,7 @@ main() {
 		ice) install_packages "linux-headers-$(uname -r)" ;;
 		ebpf_xdp) install_packages make m4 zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib ;;
 		gpu_direct) install_gpu_direct ;;
-		ffmpeg) install_packages nasm unzip patch ;;
+		ffmpeg) install_packages nasm unzip patch patchelf ;;
 		jpegxs) install_packages cmake yasm nasm build-essential ;;
 		avcodec) install_packages libavcodec-dev libavutil-dev ;;
 		gstreamer)
