@@ -6,16 +6,22 @@
 #define _MT_LIB_PCAP_HEAD_H_
 
 #include <rte_pcapng.h>
+#include <rte_version.h>
 
 #include "mt_log.h"
 #include "mt_main.h"
 
-/* MTL patch "pcapng: add user timestamp support" supplies MTL_DPDK_HAS_PCAPNG_TS and
- * rte_pcapng_copy_ts(). Upstream accepted a different shape: a uint64_t timestamp
- * parameter on rte_pcapng_copy() plus rte_pcapng_tsc_to_ns(). */
+/* Patch sets 23.11 to 26.03 give MTL_DPDK_HAS_PCAPNG_TS and rte_pcapng_copy_ts(); the
+ * 26.07.92 set and DPDK 26.11 add a timestamp argument to rte_pcapng_copy(). */
 #ifdef MTL_DPDK_HAS_PCAPNG_TS
-
 #define MT_HAS_PCAPNG_TS
+#define mt_pcapng_copy rte_pcapng_copy_ts
+#elif RTE_VERSION >= RTE_VERSION_NUM(26, 7, 92, 0)
+#define MT_HAS_PCAPNG_TS
+#define mt_pcapng_copy rte_pcapng_copy
+#endif
+
+#ifdef MT_HAS_PCAPNG_TS
 
 struct mt_pcap {
   enum mtl_port port;
