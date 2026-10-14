@@ -138,15 +138,17 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+
       - name: Require successful file linters
         env:
           CHECKPATCH_RESULT: ${{ needs.checkpatch.result }}
           RESIDUAL_RESULT: ${{ needs.residual-linters.result }}
-        run: |
-          if [[ "$CHECKPATCH_RESULT" != success || "$RESIDUAL_RESULT" != success ]]; then
-            echo "checkpatch=$CHECKPATCH_RESULT residual-linters=$RESIDUAL_RESULT"
-            exit 1
-          fi
+        run: task ci:require-file-linters
 
   # Commit-message style -- the one check that is neither a file linter nor part
   # of the super-linter allow-list, because gitlint reads a commit message and no
@@ -178,6 +180,9 @@ jobs:
           # Need the base commit and every commit in the PR to walk the range.
           fetch-depth: 0
 
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -196,4 +201,4 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: bash .github/scripts/ci/lint-commit-messages.sh
+        run: task ci:lint-commit-messages

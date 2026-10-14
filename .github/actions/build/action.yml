@@ -20,9 +20,11 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: ./.github/actions/cleanup
     - name: Install Task
       uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+    - name: Cleanup processes
+      shell: bash
+      run: task cleanup
     - name: Setup environment and build
       shell: bash
       env:

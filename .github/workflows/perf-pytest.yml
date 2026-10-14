@@ -120,4 +120,4 @@ jobs:
             ./tests/acceptance/perf-logs.tar.gz
       - name: Clean up
         if: always()
-        uses: ./.github/actions/cleanup
+        run: task cleanup
