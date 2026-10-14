@@ -63,3 +63,27 @@ ALL Reads        :      223526.3
 1:1 Reads-Writes :      193479.6
 Stream-triad like:      182056.7
 ```
+
+## 4. RX video packet prefetch
+
+`rv_handle_mbuf()` takes a burst of mbufs from the queue and dispatches them to the packet handler one at a time. Every handler starts by reading the RTP header at the front of the mbuf, and that line is cold: the NIC wrote it by DMA, so the core takes a miss on the first access of each packet and the burst serializes on those misses.
+
+The dispatch loop prefetches the next packet of the burst while the current one is still being handled, so its header line is on the way in by the time the handler reaches it. A second prefetch covers the line behind the header, where the payload starts.
+
+The payload prefetch is issued only for a session whose handler copies the payload on the CPU out of this mbuf. A header split session copies out of `mbuf->next` instead, and a DMA session hands every payload large enough to matter to the device; it still copies the small, cross page and `mt_dma_full()` ones on the CPU, but those are not worth a per packet test.
+
+### 4.1. Build option
+
+`enable_rx_video_pkt_prefetch` controls it, `true` by default.
+
+```bash
+# turn it off in the existing library build directory
+meson configure build -Denable_rx_video_pkt_prefetch=false
+ninja -C build
+
+# or configure a separate one to compare the two side by side
+meson setup build_no_prefetch -Denable_rx_video_pkt_prefetch=false
+ninja -C build_no_prefetch
+```
+
+With the option off the dispatch loop issues no prefetch and every handler takes its own first access miss. A prefetch pays off only while the core has work to overlap with the fetch, so build both ways and compare on the target platform instead of assuming the default suits it.

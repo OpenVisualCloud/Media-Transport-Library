@@ -35,6 +35,11 @@ else
   set_variable('mtl_has_xdp_backend', false)
 endif
 
+# rx video burst dispatch prefetch, see rv_handle_mbuf
+if get_option('enable_rx_video_pkt_prefetch') == true
+  add_global_arguments('-DMTL_HAS_RX_VIDEO_PKT_PREFETCH', language : 'c')
+endif
+
 # usdt check
 mtl_has_usdt = false
 
