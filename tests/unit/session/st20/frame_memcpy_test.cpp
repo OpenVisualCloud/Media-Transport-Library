@@ -36,8 +36,9 @@ class St20RxFrameMemcpyTest : public St20RxBaseTest {
 
   void SetUp() override {
     St20RxBaseTest::SetUp();
-    /* 64 byte aligned, so dst_off alone sets the destination's line offset */
-    buf_size_ = kGuard + 64 + kMaxLen + kGuard;
+    /* 64 byte aligned, so dst_off alone sets the destination's line offset;
+     * aligned_alloc() wants the size a multiple of the alignment too */
+    buf_size_ = (kGuard + 64 + kMaxLen + kGuard + 63) & ~static_cast<size_t>(63);
     dst_buf_ = static_cast<uint8_t*>(aligned_alloc(64, buf_size_));
     src_buf_ = static_cast<uint8_t*>(aligned_alloc(64, buf_size_));
     ASSERT_NE(dst_buf_, nullptr);
