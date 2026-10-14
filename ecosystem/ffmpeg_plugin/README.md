@@ -23,7 +23,7 @@ goes into the `ffmpeg` sibling of that prefix (`.local_install/ffmpeg` beside
 `.local_install/mtl`). The installed `ffmpeg` then records the paths of the MTL,
 DPDK and SVT-JPEG-XS libraries it was built against, so it runs without
 `LD_LIBRARY_PATH` and cannot pick up another copy; the script checks that with
-`ldd` before it finishes. Move the install tree and you rebuild it.
+`ldd` before it finishes. The paths are relative, so the tree can be moved.
 
 The manual way of building is described below
 

@@ -85,10 +85,7 @@ generate)
 			echo "  generate ${filename} (${width}x${height} ${file_format} x180)"
 			ffmpeg=${root_dir}/.local_install/ffmpeg/bin/ffmpeg
 			[[ -x ${ffmpeg} ]] || ffmpeg=$(command -v ffmpeg)
-			ld_path=$(GITHUB_ENV=/dev/stdout GITHUB_PATH=/dev/null \
-				bash "${root_dir}/.github/scripts/ci/host/configure-host.sh" environment |
-				sed -n 's/^LD_LIBRARY_PATH=//p')
-			as_root env "LD_LIBRARY_PATH=${ld_path}" "${ffmpeg}" -hide_banner -loglevel error -y \
+			as_root "${ffmpeg}" -hide_banner -loglevel error -y \
 				-f lavfi -i "testsrc=s=${width}x${height}:r=${fps}" \
 				-frames:v 180 -pix_fmt yuv422p10le -f rawvideo "${path}"
 			;;

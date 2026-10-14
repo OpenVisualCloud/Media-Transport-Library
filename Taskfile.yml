@@ -98,14 +98,9 @@ tasks:
       - bash {{.CI_SCRIPTS}}/cache/validate-cache.sh {{.COMPONENT}}
 
   ci:build-jpegxs:
-    desc: Build the relocatable JPEG XS runtime and bridge bundle
+    desc: Build SVT-JPEG-XS and its ST 2110-22 plugin into .local_install/jpegxs
     cmds:
-      - MTL_INSTALL_PREFIX={{.TASKFILE_DIR}}/.local_install/mtl JPEGXS_ROOT={{.TASKFILE_DIR}}/.local_install/jpegxs bash {{.TASKFILE_DIR}}/script/build_jpegxs.sh --ci
-
-  ci:validate-jpegxs:
-    desc: Validate the relocatable JPEG XS bundle
-    cmds:
-      - bash {{.CI_SCRIPTS}}/cache/validate-jpegxs.sh
+      - MTL_INSTALL_PREFIX={{.TASKFILE_DIR}}/.local_install/mtl bash {{.TASKFILE_DIR}}/script/build_jpegxs.sh
 
   ci:validate-ice:
     desc: Validate the cached ICE module against the running kernel

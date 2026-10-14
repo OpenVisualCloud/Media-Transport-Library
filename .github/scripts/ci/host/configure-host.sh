@@ -68,13 +68,29 @@ environment)
 	gst_registry="${RUNNER_TEMP:-/tmp}/gstreamer-registry.bin"
 	rm -f "$gst_registry"
 	{
-		echo "LD_LIBRARY_PATH=${local_install}/jpegxs/lib:${local_install}/jpegxs/lib64:${local_install}/dpdk/lib/x86_64-linux-gnu:${local_install}/mtl/lib/x86_64-linux-gnu:${local_install}/ffmpeg/lib:${local_install}/gstreamer/gstreamer-1.0${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 		echo "GST_PLUGIN_PATH=${local_install}/gstreamer/gstreamer-1.0${GST_PLUGIN_PATH:+:$GST_PLUGIN_PATH}"
 		echo "GST_REGISTRY=${gst_registry}"
 		echo "PKG_CONFIG_PATH=$(dirname "$jpeg_pc"):${local_install}/dpdk/lib/x86_64-linux-gnu/pkgconfig:${local_install}/mtl/lib/x86_64-linux-gnu/pkgconfig"
 	} >>"$GITHUB_ENV"
 	printf '%s\n' "${local_install}/mtl/bin" "${local_install}/ffmpeg/bin" \
 		"${local_install}/dpdk/bin" >>"$GITHUB_PATH"
+	;;
+stray-libraries)
+	# The install carries libmtl, DPDK, SVT-JPEG-XS and the plugins and finds
+	# them relative to itself. A copy of one of them in a system directory is
+	# what a tool that is not ours, or a stale linker cache, would find first.
+	# Refuse to run beside one; the install needs no ldconfig.
+	stray=$(find /lib /usr/lib /usr/lib64 /usr/local/lib /usr/local/lib64 -maxdepth 3 \
+		\( -name 'libmtl.so*' -o -name 'librte_eal.so*' -o -name 'libSvtJpegxs.so*' \
+		-o -name 'libgstmtl_*.so' -o -name 'libst_plugin_st22_*.so' \) 2>/dev/null || true)
+	if [ -n "$stray" ]; then
+		{
+			echo "stray copies of the install's libraries on this host; remove them:"
+			while IFS= read -r line; do echo "  ${line}"; done <<<"$stray"
+		} >&2
+		exit 1
+	fi
+	echo "stray libraries: none"
 	;;
 shadow-credentials)
 	# shellcheck disable=SC1090

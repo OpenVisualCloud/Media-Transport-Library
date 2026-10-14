@@ -214,6 +214,62 @@ function prefix_writable() {
 	mkdir -p "$1" 2>/dev/null && [ -w "$1" ]
 }
 
+# Prints lib/<multiarch> (lib/x86_64-linux-gnu on Debian and Ubuntu), the
+# library directory meson and DPDK use below a prefix, or lib where the
+# compiler has no multiarch.
+function multiarch_libdir() {
+	local multiarch
+	multiarch=$("${CC:-cc}" -print-multiarch 2>/dev/null || true)
+	echo "lib${multiarch:+/${multiarch}}"
+}
+
+# Usage: relocate_pkgconfig <prefix>
+# Rewrites every .pc file below <prefix> to describe its own location: the
+# prefix becomes ${pcfiledir}/..., and a libdir, includedir or exec_prefix
+# that FFmpeg and others write as an absolute path becomes ${prefix}/...,
+# so that the tree can be moved and pkg-config still finds what it describes.
+function relocate_pkgconfig() {
+	local prefix=$1 pc relative absolute
+
+	for pc in "${prefix}"/lib/pkgconfig/*.pc "${prefix}"/lib/*/pkgconfig/*.pc "${prefix}"/lib64/pkgconfig/*.pc; do
+		[ -f "${pc}" ] || continue
+		relative=$(realpath -m --relative-to="$(dirname "${pc}")" "${prefix}")
+		sed -i "s#^prefix=.*#prefix=\${pcfiledir}/${relative}#" "${pc}"
+		for absolute in "${prefix}" "$(realpath -m "${prefix}")"; do
+			sed -i "s#^\(exec_prefix\|libdir\|includedir\)=${absolute}#\1=\${prefix}#" "${pc}"
+		done
+	done
+}
+
+# Usage: origin_rpath <dir of the binary> <library dir>...
+# Prints the library directories relative to the binary ($ORIGIN), colon
+# separated, for an rpath.
+function origin_rpath() {
+	local from=$1 dir rpath=""
+	shift
+
+	for dir in "$@"; do
+		rpath+="${rpath:+:}\$ORIGIN/$(realpath -m --relative-to="${from}" "${dir}")"
+	done
+	echo "${rpath}"
+}
+
+# Usage: origin_rpath_args <dir of the binary> <library dir>...
+# Prints linker flags that record each library directory relative to the
+# binary ($ORIGIN), so that an install runs from wherever it is, without
+# ldconfig or LD_LIBRARY_PATH, and can be moved as one tree. DT_RPATH rather
+# than RUNPATH: the lookup then also covers what the libraries themselves
+# load, and LD_LIBRARY_PATH cannot point it at another copy.
+function origin_rpath_args() {
+	local from=$1 dir args="-Wl,--disable-new-dtags"
+	shift
+
+	for dir in "$@"; do
+		args+=",-rpath,\$ORIGIN/$(realpath -m --relative-to="${from}" "${dir}")"
+	done
+	echo "${args}"
+}
+
 # Usage: download_file <url> <file>
 # Fetches with curl, or wget when there is no curl, retrying a few times.
 function download_file() {
@@ -231,9 +287,10 @@ function download_file() {
 }
 
 # Usage: require_resolved_libraries <file> <libdir>...
-# Checks with ldd that <file> resolves every shared library, and that libmtl,
-# the DPDK libraries and SVT-JPEG-XS resolve under one of the given <libdir>s:
-# the install the file was linked against, not a stale copy elsewhere.
+# Checks with ldd that <file> resolves every shared library, and that the
+# libraries this repository builds or bundles -- libmtl, DPDK, SVT-JPEG-XS,
+# FFmpeg, openh264, the GStreamer plugins -- resolve under one of the given
+# <libdir>s: the install the file was linked against, not a copy elsewhere.
 function require_resolved_libraries() {
 	local file=$1 line lib path dir ok failed=0
 	shift
@@ -249,7 +306,10 @@ function require_resolved_libraries() {
 			continue
 			;;
 		esac
-		case "${lib}" in libmtl.so* | librte_*.so* | libSvtJpegxs.so*) ;; *) continue ;; esac
+		case "${lib}" in
+		libmtl.so* | librte_*.so* | libSvtJpegxs.so* | libav*.so* | libsw*.so* | libpostproc.so* | libopenh264.so* | libgstmtl_*.so*) ;;
+		*) continue ;;
+		esac
 		path=${line#*=> }
 		path=${path%% (*}
 		ok=0

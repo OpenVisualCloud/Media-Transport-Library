@@ -103,7 +103,7 @@ locally and in CI, for example:
 ```sh
 task ci:validate-ice
 task ci:build-jpegxs
-task ci:validate-jpegxs
+task ci:validate-cache COMPONENT=jpegxs
 ```
 
 This keeps logs grouped by operation, makes failures reproducible without a
