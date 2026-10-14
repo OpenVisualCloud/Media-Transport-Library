@@ -1,5 +1,5 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: "Kasiewicz, Marek" <marek.kasiewicz@intel.com>
+From 3ffbc0542459816ae368f1f3f05c3a9c79d52679 Mon Sep 17 00:00:00 2001
+From: Marek Kasiewicz <marek.kasiewicz@intel.com>
 Date: Fri, 25 Sep 2026 08:09:01 +0000
 Subject: [PATCH] net/iavf: fix interrupt callback race on close
 
@@ -37,19 +37,20 @@ A close from any other interrupt thread callback, such as an alarm,
 returns at once, because the iavf source is not active then.
 
 Fixes: 22b123a36d07 ("net/avf: initialize PMD")
-Fixes: e35a5737a746 ("net/iavf: unregister intr handler before FD close")
+Fixes: e35a5737a746 ("net/iavf: unregister interrupt handler before FD close")
 Cc: stable@dpdk.org
 
 Signed-off-by: Marek Kasiewicz <marek.kasiewicz@intel.com>
+Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
 ---
  drivers/net/intel/iavf/iavf_ethdev.c | 8 ++++----
  1 file changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/drivers/net/intel/iavf/iavf_ethdev.c b/drivers/net/intel/iavf/iavf_ethdev.c
-index f7c34df8a7..8b8e371435 100644
+index d601ec3b6a..2266ba55da 100644
 --- a/drivers/net/intel/iavf/iavf_ethdev.c
 +++ b/drivers/net/intel/iavf/iavf_ethdev.c
-@@ -3143,8 +3143,8 @@ flow_init_err:
+@@ -3143,8 +3143,8 @@ iavf_dev_init(struct rte_eth_dev *eth_dev)
  		rte_intr_disable(pci_dev->intr_handle);
  
  		/* unregister callback func from eal lib */
@@ -72,5 +73,5 @@ index f7c34df8a7..8b8e371435 100644
  	iavf_phc_sync_alarm_stop(dev);
  	rte_eal_alarm_cancel(iavf_dev_alarm_handler, dev);
 -- 
-2.34.1
+2.43.0
 

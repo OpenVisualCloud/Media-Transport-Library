@@ -1,0 +1,116 @@
+From 9db3d632fd7a10c97e777710a26d688a57fe58eb Mon Sep 17 00:00:00 2001
+From: Dawid Wesierski <dawid.wesierski@intel.com>
+Date: Fri, 25 Sep 2026 10:00:00 +0200
+Subject: [PATCH] net/iavf: fix crash in TM ops without QoS capability
+
+The VF allocates qos_cap and initializes the TM lists only when the PF
+grants VIRTCHNL_VF_OFFLOAD_QOS. The in-tree ice PF does not grant it.
+On such a VF, node add, shaper profile add, capabilities get, and node
+capabilities get dereference a NULL qos_cap, or insert into a list that
+has no initialization. The application gets a segmentation fault from a
+call such as rte_tm_capabilities_get().
+
+Return -ENOTSUP from these operations when qos_cap is NULL. The other
+TM operations only search the lists, or check VIRTCHNL_VF_OFFLOAD_QOS
+already, so they do not need the check.
+
+Fixes: 44d0a720a538 ("net/iavf: query QoS capabilities and set queue TC mapping")
+Cc: stable@dpdk.org
+
+Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
+---
+ drivers/net/intel/iavf/iavf_tm.c | 37 ++++++++++++++++++++++++++++++--
+ 1 file changed, 35 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/intel/iavf/iavf_tm.c b/drivers/net/intel/iavf/iavf_tm.c
+index 944b6a2c1d..d932c56563 100644
+--- a/drivers/net/intel/iavf/iavf_tm.c
++++ b/drivers/net/intel/iavf/iavf_tm.c
+@@ -102,6 +102,18 @@ iavf_tm_conf_uninit(struct rte_eth_dev *dev)
+ 	vf->qtc_map = NULL;
+ }
+ 
++/* qos_cap and the TM lists exist only if the PF grants VIRTCHNL_VF_OFFLOAD_QOS. */
++static int
++iavf_tm_qos_check(struct iavf_info *vf, struct rte_tm_error *error)
++{
++	if (vf->qos_cap != NULL)
++		return 0;
++
++	error->type = RTE_TM_ERROR_TYPE_CAPABILITIES;
++	error->message = "VF has no QoS capability";
++	return -ENOTSUP;
++}
++
+ static inline struct iavf_tm_node *
+ iavf_tm_node_search(struct rte_eth_dev *dev,
+ 		    uint32_t node_id, enum iavf_tm_node_type *node_type)
+@@ -279,12 +291,18 @@ iavf_tm_node_add(struct rte_eth_dev *dev, uint32_t node_id,
+ 	struct iavf_tm_shaper_profile *shaper_profile = NULL;
+ 	struct iavf_tm_node *tm_node;
+ 	struct iavf_tm_node *parent_node;
+-	uint16_t tc_nb = vf->qos_cap->num_elem;
++	uint16_t tc_nb;
+ 	int ret;
+ 
+ 	if (!params || !error)
+ 		return -EINVAL;
+ 
++	ret = iavf_tm_qos_check(vf, error);
++	if (ret)
++		return ret;
++
++	tc_nb = vf->qos_cap->num_elem;
++
+ 	/* if already committed */
+ 	if (vf->tm_conf.committed) {
+ 		error->type = RTE_TM_ERROR_TYPE_UNSPECIFIED;
+@@ -524,6 +542,10 @@ iavf_shaper_profile_add(struct rte_eth_dev *dev,
+ 	if (!profile || !error)
+ 		return -EINVAL;
+ 
++	ret = iavf_tm_qos_check(vf, error);
++	if (ret)
++		return ret;
++
+ 	ret = iavf_shaper_profile_param_check(profile, error);
+ 	if (ret)
+ 		return ret;
+@@ -588,11 +610,17 @@ iavf_tm_capabilities_get(struct rte_eth_dev *dev,
+ 			 struct rte_tm_error *error)
+ {
+ 	struct iavf_info *vf = IAVF_DEV_PRIVATE_TO_VF(dev->data->dev_private);
+-	uint16_t tc_nb = vf->qos_cap->num_elem;
++	uint16_t tc_nb;
++	int ret;
+ 
+ 	if (!cap || !error)
+ 		return -EINVAL;
+ 
++	ret = iavf_tm_qos_check(vf, error);
++	if (ret)
++		return ret;
++
++	tc_nb = vf->qos_cap->num_elem;
+ 	if (tc_nb > vf->vf_res->num_queue_pairs)
+ 		return -EINVAL;
+ 
+@@ -744,10 +772,15 @@ iavf_node_capabilities_get(struct rte_eth_dev *dev,
+ 	enum iavf_tm_node_type node_type;
+ 	struct virtchnl_qos_cap_elem tc_cap;
+ 	struct iavf_tm_node *tm_node;
++	int ret;
+ 
+ 	if (!cap || !error)
+ 		return -EINVAL;
+ 
++	ret = iavf_tm_qos_check(vf, error);
++	if (ret)
++		return ret;
++
+ 	if (node_id == RTE_TM_NODE_ID_NULL) {
+ 		error->type = RTE_TM_ERROR_TYPE_NODE_ID;
+ 		error->message = "invalid node id";
+-- 
+2.43.0
+

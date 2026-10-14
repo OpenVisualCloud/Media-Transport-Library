@@ -1566,7 +1566,7 @@ static int dev_if_select_pacing(struct mt_interface* inf) {
   return 0;
 }
 
-/* MTL DPDK patch "net/iavf: reject TM ops without QoS capability", from 26.07.91 */
+/* MTL DPDK patch "net/iavf: fix crash in TM ops without QoS capability", from 26.07.91 */
 #if RTE_VERSION >= RTE_VERSION_NUM(26, 7, 91, 0)
 #define MT_DEV_HAS_IAVF_TM_QOS_CHECK
 #endif
