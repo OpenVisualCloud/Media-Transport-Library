@@ -207,6 +207,64 @@ function require_pkg_config() {
 	return 1
 }
 
+# Usage: prefix_writable <dir>
+# Creates <dir> when it does not exist, and succeeds when the current user may
+# write to it: an install goes there as this user, otherwise through as_root.
+function prefix_writable() {
+	mkdir -p "$1" 2>/dev/null && [ -w "$1" ]
+}
+
+# Usage: download_file <url> <file>
+# Fetches with curl, or wget when there is no curl, retrying a few times.
+function download_file() {
+	local url=$1 file=$2
+
+	if command_exists curl; then
+		curl --fail --location --retry 3 --connect-timeout 15 --max-time 600 \
+			"${url}" --output "${file}"
+	elif command_exists wget; then
+		wget --tries=3 --timeout=600 "${url}" -O "${file}"
+	else
+		log_error "Required package is missing: curl or wget"
+		return 1
+	fi
+}
+
+# Usage: require_resolved_libraries <file> <libdir>...
+# Checks with ldd that <file> resolves every shared library, and that libmtl,
+# the DPDK libraries and SVT-JPEG-XS resolve under one of the given <libdir>s:
+# the install the file was linked against, not a stale copy elsewhere.
+function require_resolved_libraries() {
+	local file=$1 line lib path dir ok failed=0
+	shift
+
+	command_exists ldd || return 0
+	while IFS= read -r line; do
+		lib=${line%% =>*}
+		lib=${lib## }
+		case "${line}" in
+		*"not found"*)
+			log_error "${file}: ${lib} not found"
+			failed=1
+			continue
+			;;
+		esac
+		case "${lib}" in libmtl.so* | librte_*.so* | libSvtJpegxs.so*) ;; *) continue ;; esac
+		path=${line#*=> }
+		path=${path%% (*}
+		ok=0
+		for dir in "$@"; do
+			[[ ${path} == "${dir}"/* ]] && ok=1
+		done
+		if [ "${ok}" -eq 0 ]; then
+			log_error "${file}: ${lib} resolves to ${path}, not under: $*"
+			failed=1
+		fi
+	done < <(ldd "${file}" 2>/dev/null)
+	[ "${failed}" -eq 0 ] || return 1
+	log_info "${file##*/}: shared libraries resolve inside the install"
+}
+
 # Usage: require_root [<what>]
 # Returns 1 with an error when the shell does not run as root.
 function require_root() {

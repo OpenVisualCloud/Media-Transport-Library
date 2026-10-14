@@ -51,7 +51,7 @@ build_ice() {
 	local patch_root="${REPO_DIR}/patches/ice_drv"
 	local patch_dir="${patch_root}/${ICE_VER}"
 	local github_archive=0
-	local patch_file
+	local patch_file module
 	local tools=(make:make "${CC:-cc}:gcc" patch:patch tar:tar gzip:gzip)
 
 	if [[ ! -d "${patch_dir}" ]]; then
@@ -125,8 +125,12 @@ build_ice() {
 	make -C src -j"${NPROC}" CC="${CC:-cc}"
 	if [[ "${BUILD_ONLY}" == "false" ]]; then
 		as_root make -C src install
-		as_root rmmod irdma || true
-		as_root rmmod ice
+		# A host without an E800 NIC, such as a VM, has no ice to unload.
+		for module in irdma ice; do
+			if grep -q "^${module} " /proc/modules; then
+				as_root rmmod "${module}"
+			fi
+		done
 		as_root modprobe ice
 	fi
 	popd >/dev/null

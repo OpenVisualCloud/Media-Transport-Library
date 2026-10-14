@@ -15,6 +15,7 @@ Run the scripts as your own user, from the top of the source tree. They use `sud
 Each script prints its options with `-h`.
 
 ```bash
+sudo apt-get install -y git         # a fresh Ubuntu may not have it yet
 git clone https://github.com/OpenVisualCloud/Media-Transport-Library.git
 cd Media-Transport-Library
 ./script/install_dependencies.sh    # the build packages of section 1.1.1, Ubuntu only
@@ -32,7 +33,9 @@ Some setups need more components. Add each component to `install_dependencies.sh
 | Intel E810/E830 driver with the MTL patches | `./script/install_dependencies.sh ice` | `./script/build_drivers.sh --driver ice`, see the [E800 Series Driver Guide](e800_series_drivers.md) |
 | AF_XDP data path (xdp-tools and libbpf) | `./script/install_dependencies.sh ebpf_xdp` | `./script/build_ebpf_xdp.sh`, see the [XDP guide](xdp.md) |
 | SVT JPEG XS ST 2110-22 plugin | `./script/install_dependencies.sh jpegxs` | `./script/build_jpegxs.sh`, see the [Plugin Guide](plugin.md) |
-| ST 2110-22 avcodec plugin | `sudo apt-get install libavcodec-dev libavutil-dev` | `./script/build_st22_avcodec_plugin.sh`, see the [avcodec plugin guide](../plugins/st22_avcodec/README.md) |
+| ST 2110-22 avcodec plugin | `./script/install_dependencies.sh avcodec` | `./script/build_st22_avcodec_plugin.sh`, see the [avcodec plugin guide](../plugins/st22_avcodec/README.md) |
+| FFmpeg with the MTL devices | `./script/install_dependencies.sh ffmpeg` | `./script/build_ffmpeg_plugin.sh`, see the [FFmpeg plugin guide](../ecosystem/ffmpeg_plugin/README.md) |
+| GStreamer plugins | `./script/install_dependencies.sh gstreamer` | `./script/build_gstreamer_plugin.sh`, see the [GStreamer plugin guide](../ecosystem/gstreamer_plugin/README.md) |
 | Python binding | `./script/install_dependencies.sh python` | `./script/build_python.sh`, see the [Python guide](../python/README.md) |
 | OBS Studio plugin | `./script/install_dependencies.sh obs` | `./script/build_obs_plugin.sh`, see the [OBS plugin guide](../ecosystem/obs_mtl/README.md) |
 
