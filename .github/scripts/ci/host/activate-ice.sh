@@ -4,12 +4,12 @@
 
 set -euo pipefail
 
-root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 kernel_release=$(uname -r)
 ko="${root_dir}/.local_install/ice/${kernel_release}/$(uname -m)/ice.ko"
 pfs=/sys/bus/pci/drivers/ice
 
-bash "${root_dir}/.github/scripts/ci/validate-ice.sh"
+bash "${root_dir}/.github/scripts/ci/cache/validate-ice.sh"
 hash ethtool
 
 install -D -m 0644 "$ko" "/lib/modules/${kernel_release}/updates/drivers/net/ethernet/intel/ice/ice.ko"

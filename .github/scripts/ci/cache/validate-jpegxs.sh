@@ -12,7 +12,7 @@ has() {
 	[ -n "$(find . -name "$1" -type "$2" -print -quit)" ] || die "bundle lacks $1 (type $2)"
 }
 
-root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 # shellcheck disable=SC1091
 . "${root_dir}/versions.env"
 cd "${JPEGXS_ROOT:-${root_dir}/.local_install/jpegxs}"
@@ -31,7 +31,7 @@ PKG_CONFIG_PATH=$(dirname "$pc_file") pkg-config --exists SvtJpegxs || die "pkg-
 source_hash=${JPEGXS_EXPECTED_SOURCE_HASH:-$(bash "${root_dir}/script/hash_sources.sh" -o /dev/stdout | sed -n 's/^jpegxs=//p')}
 # An empty hash would match an empty source_hash line and prove nothing.
 [ -n "$source_hash" ] || die "source hash of this checkout is empty"
-compiler_sha256=${JPEGXS_EXPECTED_COMPILER_SHA256:-$(bash "${root_dir}/.github/scripts/ci/compiler-identity.sh" producer)}
+compiler_sha256=${JPEGXS_EXPECTED_COMPILER_SHA256:-$(bash "${root_dir}/.github/scripts/ci/cache/compiler-identity.sh" producer)}
 for line in schema=1 "architecture=$(uname -m)" "svt_jpeg_xs_revision=${SVT_JPEG_XS_VER}" \
 	"source_hash=${source_hash}" "compiler_sha256=${compiler_sha256}"; do
 	grep -qxF "$line" bundle.env || die "bundle.env lacks ${line}"

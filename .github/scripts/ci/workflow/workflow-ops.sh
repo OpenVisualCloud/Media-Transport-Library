@@ -3,7 +3,7 @@
 # Copyright 2026 Intel Corporation
 
 set -euo pipefail
-cd "$(dirname "$0")/../../.."
+cd "$(dirname "$0")/../../../.."
 
 case "${1:-}" in
 overlay-tests)

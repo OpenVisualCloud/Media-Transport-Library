@@ -112,11 +112,11 @@ script/xdp-tools
 #Generated documentation
 doc/_build
 
-# The output of .github/scripts/ci/fuzz.sh
+# The output of .github/scripts/ci/fuzz/fuzz.sh
 fuzz-report/
 fuzz-corpus/
 
-# The output of .github/scripts/ci/clang-analyzer.sh
+# The output of .github/scripts/ci/scan/clang-analyzer.sh
 csa_compile_commands.json
 csa-reports/
 csa.sarif

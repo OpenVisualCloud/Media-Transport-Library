@@ -89,7 +89,6 @@ main() {
 
 	check_build_packages || exit 1
 
-	# .github/actions/build/action.yml uploads the plugin from this directory.
 	plugin_build_dir="${script_folder}/build/st22_avcodec_plugin"
 	log_info "Build the st22 avcodec plugin: buildtype=${buildtype}"
 	# When MTL_PLUGIN_PREFIX is set, install into that prefix (no root, used for the

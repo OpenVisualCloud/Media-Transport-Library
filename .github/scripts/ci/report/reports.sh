@@ -3,7 +3,7 @@
 # Copyright 2026 Intel Corporation
 
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
+cd "$(dirname "${BASH_SOURCE[0]}")/../../../.."
 
 flatten_reports() {
 	local directory=$1 pattern=$2 source_name=$3 extension=$4
@@ -25,7 +25,7 @@ status)
 	done
 	;;
 performance)
-	# shellcheck source=../lib/mtl_acceptance_venv.sh disable=SC1091
+	# shellcheck source=../../lib/mtl_acceptance_venv.sh disable=SC1091
 	. .github/scripts/lib/mtl_acceptance_venv.sh
 	cd tests/acceptance
 	if [[ ! -d logs/performance ]]; then

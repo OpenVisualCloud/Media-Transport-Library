@@ -92,7 +92,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check and run the scripts
-        run: bash .github/scripts/ci/test-scripts.sh
+        run: bash .github/scripts/ci/lint/test-scripts.sh
 
   # The one check to require in branch protection. It always runs, so it
   # reports even when the path filter skips the unit tests, and it fails only

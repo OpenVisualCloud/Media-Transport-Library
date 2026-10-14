@@ -4,8 +4,8 @@
 
 set -euo pipefail
 
-root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
-# shellcheck source-path=SCRIPTDIR source=../lib/mtl_acceptance_venv.sh disable=SC1091
+root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
+# shellcheck source-path=SCRIPTDIR source=../../lib/mtl_acceptance_venv.sh disable=SC1091
 . "${root_dir}/.github/scripts/lib/mtl_acceptance_venv.sh"
 cd "${root_dir}/tests/acceptance"
 report=$PWD/report.html

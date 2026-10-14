@@ -144,7 +144,7 @@ list_vf() {
 }
 
 # Data on stdout: a table, read by .github/scripts/gtest.sh and
-# .github/scripts/ci/bind-test-ports.sh. Do not change the columns.
+# .github/scripts/ci/host/bind-test-ports.sh. Do not change the columns.
 list() {
 	local filter="${1:-}" id_counter=0 pci_bdf driver numa_node iommu_group interface_name
 	trap '' PIPE

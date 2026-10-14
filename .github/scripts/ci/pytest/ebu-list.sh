@@ -39,17 +39,9 @@ compose() {
 }
 
 case "${1:-}" in
-status)
-	echo "stack dir: ${compose_dir}, EBU_IP: ${ebu_ip:-<unset>}, EBU_USER: ${ebu_user:-<unset>}, runner env: ${runner_env}"
-	compose ps || true
-	[[ -z ${ebu_ip} ]] || echo "auth: $([[ -n $(token) ]] && echo ok || echo "no token") from http://${ebu_ip}/auth/login"
-	;;
 up)
 	compose up --detach
 	echo "EBU LIST starting; check it in a few seconds with: task ci:ebu-list -- verify"
-	;;
-down)
-	compose down
 	;;
 verify)
 	failed=0
@@ -86,7 +78,7 @@ verify)
 	exit "${failed}"
 	;;
 *)
-	echo "Usage: $0 {status|up|down|verify}" >&2
+	echo "Usage: $0 {up|verify}" >&2
 	exit 2
 	;;
 esac

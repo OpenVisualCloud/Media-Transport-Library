@@ -4,8 +4,10 @@
 
 set -euo pipefail
 
-root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 local_install="${root_dir}/.local_install"
+# The shadow host of the perf pair, reached as SHADOW_HOST_USER@SHADOW_HOST_IP.
+shadow_ssh_options=(-o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=30)
 
 case "$1" in
 make-executable)
@@ -80,12 +82,24 @@ shadow-credentials)
 	printf 'ip=%s\nuser=%s\n' "${SHADOW_IP:-${IP:?}}" "${SHADOW_USER:-${USER:?}}" >>"$GITHUB_OUTPUT"
 	;;
 shadow-sync)
-	ssh_options=(-o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=30)
+	# The tree the SUT validated, and the scripts that validate and activate its
+	# ICE bundle, at the same path: the shadow runs exactly what the SUT runs.
+	# script/common.sh reads versions.env, so script/ needs it beside it.
 	remote="${SHADOW_HOST_USER}@${SHADOW_HOST_IP}"
 	# shellcheck disable=SC2029
-	ssh "${ssh_options[@]}" "$remote" "mkdir -p '${root_dir}'"
-	rsync -az --delete -e "ssh ${ssh_options[*]}" "${root_dir}/.local_install" \
-		"${root_dir}/script" "${root_dir}/tests" "${remote}:${root_dir}/"
+	ssh "${shadow_ssh_options[@]}" "$remote" "mkdir -p '${root_dir}'"
+	rsync -azR --delete -e "ssh ${shadow_ssh_options[*]}" "${root_dir}/./.local_install" \
+		"${root_dir}/./script" "${root_dir}/./tests" "${root_dir}/./.github/scripts/ci/cache" \
+		"${root_dir}/./.github/scripts/ci/host" "${root_dir}/./versions.env" "${remote}:${root_dir}/"
+	;;
+shadow-activate-ice)
+	# The activation of the SUT, on the shadow, from the synced copy: it loads
+	# the same Kahawai ice module, and fails when the bundle has no module for
+	# the shadow's kernel rather than leaving the in-tree ice in place.
+	remote="${SHADOW_HOST_USER}@${SHADOW_HOST_IP}"
+	# shellcheck disable=SC2029
+	ssh "${shadow_ssh_options[@]}" "$remote" \
+		"sudo -n bash '${root_dir}/.github/scripts/ci/host/activate-ice.sh'"
 	;;
 *)
 	echo "unknown configure-host mode: $1" >&2
