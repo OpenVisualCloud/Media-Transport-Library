@@ -40,3 +40,14 @@ The default JSON config file path is kahawai.json. If you want to parse from a d
 ```bash
 export KAHAWAI_CFG_PATH=your_json_config_file_path
 ```
+
+## 5. SVT JPEG XS plugin
+
+`./script/build_jpegxs.sh` builds and installs SVT-JPEG-XS and its ST 2110-22 plugin. It uses the version in `versions.env`, installs into `/usr/local`, and enables the plugin in the `kahawai.json` of the source tree. Build and install MTL before you run it.
+
+```bash
+./script/install_dependencies.sh jpegxs   # the build packages, Ubuntu only
+./script/build_jpegxs.sh
+```
+
+Run `./script/build_jpegxs.sh -h` for the options, for example `--prefix` to install into another directory, or `--config` to update another plugin config file.
