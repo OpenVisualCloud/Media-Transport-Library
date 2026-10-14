@@ -89,9 +89,9 @@ void ut_dev_set_shared_txq(ut_dev_ctx* ctx);
 void ut_dev_fail_tm_capabilities(ut_dev_ctx* ctx, int error);
 /** Injects the rte_tm_node_add() return; 0 keeps the fake checking parent and id. */
 void ut_dev_fail_tm_node_add(ut_dev_ctx* ctx, int error);
-/** Marks the TM root as built, as an rl attempt earlier in this process leaves it. */
-void ut_dev_set_rl_root_active(ut_dev_ctx* ctx);
-/** Injects the rte_tm_hierarchy_commit() return; 0 keeps the commit successful. */
+/** Fails the call-th TX queue node add (1-based) with error. */
+void ut_dev_fail_tm_queue_node_add(ut_dev_ctx* ctx, int call, int error);
+/** Fails the next rte_tm_hierarchy_commit() with error, clearing as iavf does. */
 void ut_dev_fail_tm_commit(ut_dev_ctx* ctx, int error);
 int ut_dev_init_pacing(ut_dev_ctx* ctx);
 enum st21_tx_pacing_way ut_dev_pacing_way(const ut_dev_ctx* ctx);

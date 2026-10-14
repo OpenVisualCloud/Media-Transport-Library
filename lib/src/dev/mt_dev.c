@@ -1571,6 +1571,24 @@ static int dev_if_select_pacing(struct mt_interface* inf) {
 #define MT_DEV_HAS_IAVF_TM_QOS_CHECK
 #endif
 
+#ifdef MT_DEV_HAS_IAVF_TM_QOS_CHECK
+/* deletes the nodes a failed rl init left; iavf may have cleared them already */
+static void dev_rl_drop_hierarchy(struct mt_interface* inf) {
+  uint16_t port_id = inf->port_id;
+  struct rte_tm_error error;
+
+  for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
+    rte_tm_node_delete(port_id, q, &error);
+    inf->tx_queues[q].rl_node = false;
+    inf->tx_queues[q].rl_shapers_mapping = -1;
+    inf->tx_queues[q].bps = 0;
+  }
+  for (int i = ST_TM_NONLEAF_NODES_NUM_VF - 1; i >= 0; i--)
+    rte_tm_node_delete(port_id, ST_ROOT_NODE_ID + i, &error);
+  inf->tx_rl_root_active = false;
+}
+#endif
+
 /* the PF replays old VF queue rates on queue enable; a no-shaper commit clears them */
 static void dev_if_clear_iavf_queue_rate(struct mt_interface* inf) {
 #ifdef MT_DEV_HAS_IAVF_TM_QOS_CHECK
@@ -1582,11 +1600,7 @@ static void dev_if_clear_iavf_queue_rate(struct mt_interface* inf) {
   if (inf->drv_info.drv_type != MT_DRV_IAVF ||
       inf->tx_pacing_way == ST21_TX_PACING_WAY_RL)
     return;
-  if (inf->tx_rl_root_active) {
-    warn("%s(%d), tm in use after rl fallback, queue rates not cleared\n", __func__,
-         port);
-    return;
-  }
+  if (inf->tx_rl_root_active) dev_rl_drop_hierarchy(inf); /* auto rl init failed */
 
   memset(&error, 0, sizeof(error));
   /* probe only: -ENOTSUP means the PF gave no QoS offload */
