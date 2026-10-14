@@ -87,3 +87,29 @@ ninja -C build_no_prefetch
 ```
 
 With the option off the dispatch loop issues no prefetch and every handler takes its own first access miss. A prefetch pays off only while the core has work to overlap with the fetch, so build both ways and compare on the target platform instead of assuming the default suits it.
+
+## 5. RX video frame copy with non-temporal stores
+
+An RX video frame is write-only until the application consumes it, so an ordinary store spends a read-for-ownership on every destination cache line: it reads a line the copy is about to overwrite in full, and evicts the RX mbufs that the following packets still have to be read from.
+
+`rv_frame_memcpy()` streams whole destination cache lines with non-temporal stores instead, and leaves the misaligned head, the sub-line tail and short payloads on `mt_memcpy()`, because a partially filled write-combining buffer flushes as a read-modify-write that costs more than the read-for-ownership it replaces.
+
+Two cases never reach the streaming path, so the option does not move them. A session with a pkt lcore keeps ordinary stores, because two threads write its frame and a fence orders only the stores of the core that runs it. With DSA offload active, every payload above `ST_RX_VIDEO_DMA_MIN_SIZE` is copied by the device.
+
+What keeps the copy relevant under DSA is `mt_dma_full()` backpressure, line-crossing packets, and st22, which has no DMA branch at all.
+
+### 5.1. Build option
+
+`enable_rx_video_nt_store` controls it, `true` by default. The streaming path is compiled only when the target has SSE2, so on a non-x86 build the option is already a no-op.
+
+```bash
+# turn it off in the existing library build directory
+meson configure build -Denable_rx_video_nt_store=false
+ninja -C build
+
+# or configure a separate one to compare the two side by side
+meson setup build_no_nt -Denable_rx_video_nt_store=false
+ninja -C build_no_nt
+```
+
+With the option off every RX video frame copy goes through `mt_memcpy()` and the three store fences that publish a frame to the application are compiled out with it. Build both ways and compare `incomplete frames` at a fixed session count to tell a copy-bound RX regression apart from a pacing or scheduling one.
