@@ -29,12 +29,12 @@ gstreamer_audio_dep = dependency('gstreamer-audio-1.0', required : true)
 mtl_dep             = dependency('mtl', required : true)
 
 # The plugins load with no LD_LIBRARY_PATH set: each one records where its
-# shared helper library (beside it), MTL and DPDK are. meson drops an rpath
-# that merely repeats a dependency's link directory, so this is install_rpath.
-dpdk_dep = dependency('libdpdk', required : false)
-plugin_rpath = '$ORIGIN:' + mtl_dep.get_variable(pkgconfig : 'libdir')
-if dpdk_dep.found()
-  plugin_rpath += ':' + dpdk_dep.get_variable(pkgconfig : 'libdir')
+# shared helper library (beside it) and, through the rpath option, MTL and
+# DPDK are, relative to itself. install_rpath: meson drops a plain rpath that
+# repeats a dependency's link directory.
+plugin_rpath = '$ORIGIN'
+if get_option('rpath') != ''
+  plugin_rpath += ':' + get_option('rpath')
 endif
 
 if run_command('test', '-d', '/usr/local/include/gstreamer-1.0', check: false).returncode() == 0

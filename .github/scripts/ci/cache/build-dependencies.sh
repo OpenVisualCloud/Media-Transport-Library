@@ -20,6 +20,5 @@ export TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET=1
 # Running it steps the host clock.
 export TOOLS_RUN_SET_TAI_OFFSET=0
 export PKG_CONFIG_PATH="${local_install}/jpegxs/lib/pkgconfig:${local_install}/jpegxs/lib64/pkgconfig:${local_install}/dpdk/lib/x86_64-linux-gnu/pkgconfig:${local_install}/mtl/lib/x86_64-linux-gnu/pkgconfig"
-export LD_LIBRARY_PATH="${local_install}/jpegxs/lib:${local_install}/jpegxs/lib64:${local_install}/dpdk/lib/x86_64-linux-gnu:${local_install}/mtl/lib/x86_64-linux-gnu"
 
 bash "${root_dir}/.github/scripts/setup_environment.sh"

@@ -29,11 +29,11 @@ OPTIONS:
 	-v, --version VERSION	Build VERSION (default: ${SVT_JPEG_XS_VER})
 	-j, --jobs JOBS		Parallel build jobs (default: ${NPROC})
 	    --config FILE	Update this plugin registry (default: kahawai.json)
-	    --ci		Build and validate a relocatable CI bundle
 	-h, --help		Show this help message
 
 ENVIRONMENT:
-	MTL_INSTALL_PREFIX	Use its parent and install into the jpegxs sibling
+	MTL_INSTALL_PREFIX	Take MTL and DPDK from its parent, and install into the
+				jpegxs sibling unless --prefix says otherwise
 	JPEGXS_ROOT		Install prefix; overridden by --prefix
 	KAHAWAI_CFG_PATH	Plugin registry; overridden by --config
 	CC, CXX		Compiler selection
@@ -43,44 +43,6 @@ EXAMPLES:
 	${script_name} --prefix "\$HOME/.local" --jobs 8
 	${script_name} --source-dir /src/SVT-JPEG-XS --version main
 EOF
-}
-
-compiler_sha256() {
-	{
-		"${CC:-cc}" -dumpmachine
-		"${CC:-cc}" -dumpfullversion -dumpversion
-	} | python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
-}
-
-write_bundle_metadata() {
-	local stage=$1 compiler_hash=$2 source_hash=$3
-
-	cat >"${stage}/bundle.env" <<EOF
-schema=1
-svt_jpeg_xs_revision=${SVT_JPEG_XS_VER}
-architecture=$(uname -m)
-compiler_sha256=${compiler_hash}
-source_hash=${source_hash}
-EOF
-	python3 - "${stage}" <<'PY'
-import hashlib
-import os
-import pathlib
-import sys
-
-root = pathlib.Path(sys.argv[1])
-files = []
-links = []
-for path in root.rglob("*"):
-    relative = "./" + path.relative_to(root).as_posix()
-    if path.is_symlink():
-        links.append(f"{relative}={os.readlink(path)}")
-    elif path.is_file() and path.name not in {"manifest.sha256", "symlinks.manifest"}:
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        files.append(f"{digest}  {relative}")
-(root / "symlinks.manifest").write_text("\n".join(sorted(links)) + ("\n" if links else ""))
-(root / "manifest.sha256").write_text("\n".join(sorted(files)) + "\n")
-PY
 }
 
 register_plugin() {
@@ -123,10 +85,9 @@ PY
 
 main() {
 	local prefix="${JPEGXS_ROOT:-}" source_dir="" config="${KAHAWAI_CFG_PATH:-${REPO_DIR}/kahawai.json}"
-	local jobs="${NPROC}" force=0 ci=0 source_dir_explicit=0 fetch_source=0
-	local option archive url stage cleanup jpeg_pc plugin plugin_relative
-	local local_base="" mtl_pc="" dpdk_pc="" compiler_hash expected_compiler_hash source_hash
-	local pinned_version="${SVT_JPEG_XS_VER}"
+	local jobs="${NPROC}" force=0 source_dir_explicit=0 fetch_source=0
+	local option archive url stage cleanup jpeg_pc plugin plugin_relative plugin_libdir
+	local local_base="" mtl_pc="" dpdk_pc=""
 
 	while [ "$#" -gt 0 ]; do
 		option=$1
@@ -173,7 +134,6 @@ main() {
 			config=$2
 			shift
 			;;
-		--ci) ci=1 ;;
 		-h | --help)
 			show_help
 			exit 0
@@ -187,26 +147,21 @@ main() {
 		shift
 	done
 
+	# MTL_INSTALL_PREFIX says where MTL and DPDK are; --prefix says where JPEG XS
+	# goes. Without --prefix it goes beside them.
+	[ -z "${MTL_INSTALL_PREFIX:-}" ] || local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
 	if [ -z "${prefix}" ]; then
-		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
-			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
-			prefix="${local_base}/jpegxs"
-		else
-			prefix=/usr/local
-		fi
+		prefix="${local_base:+${local_base}/jpegxs}"
+		prefix="${prefix:-/usr/local}"
 	fi
 	[ -n "${source_dir}" ] || source_dir="${script_folder}/SVT-JPEG-XS"
-	if [ "${ci}" -eq 1 ] && [ "${SVT_JPEG_XS_VER}" != "${pinned_version}" ]; then
-		log_error "--version cannot be used with --ci; CI bundles use the revision in versions.env"
-		exit 1
-	fi
 	if [ "${source_dir_explicit}" -eq 1 ] && [ -e "${source_dir}" ] && [ ! -f "${source_dir}/CMakeLists.txt" ]; then
 		log_error "Source directory does not contain CMakeLists.txt: ${source_dir}"
 		exit 1
 	fi
 
 	require_commands "${CC:-cc}:gcc" cmake:cmake meson:meson ninja:ninja-build \
-		pkg-config:pkg-config python3:python3 tar:tar find:find sed:sed || exit 1
+		pkg-config:pkg-config python3:python3 tar:tar find:find sed:sed realpath:coreutils || exit 1
 	[ -f "${config}" ] || {
 		log_error "Plugin registry does not exist: ${config}"
 		exit 1
@@ -216,22 +171,6 @@ main() {
 		exit 1
 		;;
 	esac
-	if [ "${ci}" -eq 1 ]; then
-		compiler_hash=$(compiler_sha256)
-		expected_compiler_hash=$(bash "${REPO_DIR}/.github/scripts/ci/cache/compiler-identity.sh" producer)
-		if [ "${compiler_hash}" != "${expected_compiler_hash}" ]; then
-			log_error "JPEG XS producer compiler does not match the CI toolchain contract"
-			exit 1
-		fi
-	fi
-
-	if [ "${ci}" -eq 1 ] && [ "${force}" -eq 0 ] &&
-		JPEGXS_ROOT="${prefix}" bash "${REPO_DIR}/.github/scripts/ci/cache/validate-jpegxs.sh" >/dev/null 2>&1; then
-		plugin=$(find "${prefix}" -name libst_plugin_st22_svt_jpeg_xs.so -type f -print -quit)
-		register_plugin "${config}" "${plugin}"
-		log_success "JPEG XS bundle is already valid: ${prefix}"
-		exit 0
-	fi
 
 	if [ "${source_dir_explicit}" -eq 1 ]; then
 		[ -f "${source_dir}/CMakeLists.txt" ] || fetch_source=1
@@ -266,8 +205,7 @@ main() {
 		log_error "SVT-JPEG-XS did not install SvtJpegxs.pc"
 		exit 1
 	}
-	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
-		[ -n "${local_base}" ] || local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+	if [ -n "${local_base}" ]; then
 		mtl_pc=$(find "${local_base}/mtl" -name mtl.pc -type f -print -quit)
 		dpdk_pc=$(find "${local_base}/dpdk" -name libdpdk.pc -type f -print -quit)
 		if [ -z "${mtl_pc}" ] || [ -z "${dpdk_pc}" ]; then
@@ -280,22 +218,17 @@ main() {
 		require_pkg_config mtl:mtl libdpdk:dpdk || exit 1
 	fi
 
+	# The plugin lands in <prefix>/lib/<multiarch>; libSvtJpegxs in <prefix>/lib.
+	# Both, MTL and DPDK are recorded relative to the plugin, for the install's
+	# final place.
+	plugin_libdir="${prefix}/$(multiarch_libdir)"
 	meson setup "${source_dir}/imtl-plugin/build-mtl" "${source_dir}/imtl-plugin" \
-		--buildtype release --prefix "${stage}"
+		--buildtype release --prefix "${stage}" \
+		"-Dc_link_args=$(origin_rpath_args "${plugin_libdir}" "${prefix}/lib" \
+			"$(pkg-config --variable=libdir mtl)" "$(pkg-config --variable=libdir libdpdk)")"
 	meson compile -C "${source_dir}/imtl-plugin/build-mtl" -j "${jobs}"
 	meson install -C "${source_dir}/imtl-plugin/build-mtl"
-	python3 - "${jpeg_pc}" "${stage}" <<'PY'
-import os
-import pathlib
-import sys
-
-pc_file = pathlib.Path(sys.argv[1])
-stage = pathlib.Path(sys.argv[2])
-relative = os.path.relpath(stage, pc_file.parent)
-lines = pc_file.read_text().splitlines()
-lines = [f"prefix=${{pcfiledir}}/{relative}" if line.startswith("prefix=") else line for line in lines]
-pc_file.write_text("\n".join(lines) + "\n")
-PY
+	relocate_pkgconfig "${stage}"
 
 	plugin=$(find "${stage}" -name libst_plugin_st22_svt_jpeg_xs.so -type f -print -quit)
 	[ -n "${plugin}" ] || {
@@ -303,18 +236,8 @@ PY
 		exit 1
 	}
 	plugin_relative=${plugin#"${stage}/"}
-	if [ "${ci}" -eq 1 ]; then
-		source_hash=$(bash "${REPO_DIR}/script/hash_sources.sh" -o /dev/stdout | sed -n 's/^jpegxs=//p')
-		write_bundle_metadata "${stage}" "${compiler_hash}" "${source_hash}"
-	fi
 
-	if [ "${ci}" -eq 1 ]; then
-		JPEGXS_ROOT="${stage}" bash "${REPO_DIR}/.github/scripts/ci/cache/validate-jpegxs.sh"
-		mkdir -p "$(dirname "${prefix}")"
-		rm -rf "${prefix}"
-		mv "${stage}" "${prefix}"
-		trap - EXIT
-	elif prefix_writable "${prefix}"; then
+	if prefix_writable "${prefix}"; then
 		cp -a "${stage}/." "${prefix}/"
 	else
 		as_root mkdir -p "${prefix}"
@@ -324,6 +247,8 @@ PY
 	/usr | /usr/* | /opt | /opt/*) command_exists ldconfig && as_root ldconfig ;;
 	esac
 
+	require_resolved_libraries "${prefix}/${plugin_relative}" "${prefix}/lib" \
+		"$(pkg-config --variable=libdir mtl)" "$(pkg-config --variable=libdir libdpdk)" || exit 1
 	register_plugin "${config}" "${prefix}/${plugin_relative}"
 	log_success "JPEG XS ${SVT_JPEG_XS_VER} installed in ${prefix}"
 }

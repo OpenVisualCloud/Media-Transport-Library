@@ -97,11 +97,6 @@ tasks:
     cmds:
       - bash {{.CI_SCRIPTS}}/cache/validate-cache.sh {{.COMPONENT}}
 
-  ci:validate-jpegxs:
-    desc: Validate the relocatable JPEG XS bundle
-    cmds:
-      - bash {{.CI_SCRIPTS}}/cache/validate-jpegxs.sh
-
   ci:activate-ice:
     desc: Reload the ICE driver from the cached module
     cmds:

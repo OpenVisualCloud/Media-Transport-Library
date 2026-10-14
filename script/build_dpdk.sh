@@ -26,7 +26,8 @@ OPTIONS:
 	-h		Show this help message
 
 ENVIRONMENT:
-	MTL_INSTALL_PREFIX	Install into this tree instead of the system
+	MTL_INSTALL_PREFIX	The MTL prefix: install into the dpdk sibling of its parent
+				(.local_install/dpdk beside .local_install/mtl) instead of the system
 
 EXAMPLES:
 	${script_name}			# Build the default DPDK version
@@ -84,7 +85,7 @@ check_build_packages() {
 }
 
 main() {
-	local opt dpdk_folder archive_name patch_file python_path="$PATH"
+	local opt dpdk_folder archive_name patch_file python_path="$PATH" dpdk_prefix
 
 	FORCE=0
 	while getopts "fhv:" opt; do
@@ -148,11 +149,22 @@ main() {
 
 	log_info "Build and install DPDK now"
 	[ -n "${DPDK_PYTHON}" ] && python_path="$(dirname "$DPDK_PYTHON"):$PATH"
-	PATH="$python_path" meson setup build ${MTL_INSTALL_PREFIX:+"--prefix=$MTL_INSTALL_PREFIX"}
-	ninja -C build
 	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+		# A prefix install is self-contained and can be moved: each library
+		# records its own directory, and the drivers theirs, relative to itself
+		# ($ORIGIN, as DT_RPATH), and each .pc file names its own location. The
+		# linker follows those rpaths too, so a consumer of libmtl resolves
+		# DPDK's dependencies without LD_LIBRARY_PATH.
+		dpdk_prefix="$(dirname "${MTL_INSTALL_PREFIX}")/dpdk"
+		# shellcheck disable=SC2016 # $ORIGIN is for the loader
+		PATH="$python_path" meson setup build --prefix "${dpdk_prefix}" \
+			'-Dc_link_args=-Wl,--disable-new-dtags,-rpath,$ORIGIN,-rpath,$ORIGIN/..'
+		ninja -C build
 		ninja -C build install
+		relocate_pkgconfig "${dpdk_prefix}"
 	else
+		PATH="$python_path" meson setup build
+		ninja -C build
 		as_root ninja -C build install
 	fi
 
