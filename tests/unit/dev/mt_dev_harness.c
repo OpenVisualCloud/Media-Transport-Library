@@ -18,6 +18,8 @@
 #define UT_DEV_EAL_ARGV_MAX (256)
 #define UT_DEV_TX_QUEUES (4)
 #define UT_DEV_TM_NODES_MAX (16)
+/* dev_rl_shaper_add() takes profile ids 1..MT_MAX_RL_ITEMS */
+#define UT_DEV_TM_PROFILES_MAX (MT_MAX_RL_ITEMS + 1)
 
 struct ut_dev_ctx {
   struct mtl_main_impl impl;
@@ -45,10 +47,14 @@ struct ut_dev_ctx {
   bool stats_writer_on_unlock;
   struct ut_dev_tm_node tm_nodes[UT_DEV_TM_NODES_MAX];
   int tm_node_count;
+  bool tm_profiles[UT_DEV_TM_PROFILES_MAX];
   int tm_call_count;
   int tm_commit_count;
   int fail_tm_capabilities_error;
   int fail_tm_node_add_error;
+  int tm_queue_node_adds;
+  int fail_tm_queue_node_add_call;
+  int fail_tm_queue_node_add_error;
   int fail_tm_commit_error;
 };
 
@@ -282,6 +288,9 @@ static int ut_rte_tm_node_add(uint16_t port_id, uint32_t node_id, uint32_t paren
   (void)error;
   ctx->tm_call_count++;
   if (ctx->fail_tm_node_add_error) return ctx->fail_tm_node_add_error;
+  if (node_id < UT_DEV_TX_QUEUES &&
+      ++ctx->tm_queue_node_adds == ctx->fail_tm_queue_node_add_call)
+    return ctx->fail_tm_queue_node_add_error;
   if (ctx->tm_node_count >= UT_DEV_TM_NODES_MAX) return -ENOSPC;
   /* As in the real PMD: a duplicate id, a second root, or an unknown parent fails. */
   bool is_root = parent_node_id == RTE_TM_NODE_ID_NULL;
@@ -320,23 +329,36 @@ static int ut_rte_tm_node_delete(uint16_t port_id, uint32_t node_id,
 static int ut_rte_tm_shaper_profile_add(uint16_t port_id, uint32_t shaper_profile_id,
                                         const struct rte_tm_shaper_params* profile,
                                         struct rte_tm_error* error) {
+  ut_dev_ctx* ctx = ut_active_ctx;
+
   (void)port_id;
-  (void)shaper_profile_id;
   (void)error;
-  ut_active_ctx->tm_call_count++;
-  ut_active_ctx->last_shaper_rate = profile->peak.rate;
+  ctx->tm_call_count++;
+  /* As in the real PMD: an id in use fails, even after the nodes using it are deleted. */
+  if (shaper_profile_id >= UT_DEV_TM_PROFILES_MAX || ctx->tm_profiles[shaper_profile_id])
+    return -EINVAL;
+  ctx->tm_profiles[shaper_profile_id] = true;
+  ctx->last_shaper_rate = profile->peak.rate;
   return 0;
 }
 
 static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
                                       struct rte_tm_error* error) {
+  ut_dev_ctx* ctx = ut_active_ctx;
+  int ret = ctx->fail_tm_commit_error;
+
   (void)port_id;
-  (void)clear_on_fail;
   (void)error;
   ut_dev_record(UT_DEV_EVENT_TX_RL_COMMIT);
-  ut_active_ctx->tm_call_count++;
-  ut_active_ctx->tm_commit_count++;
-  return ut_active_ctx->fail_tm_commit_error;
+  ctx->tm_call_count++;
+  ctx->tm_commit_count++;
+  ctx->fail_tm_commit_error = 0;
+  /* as iavf: a failed commit with clear_on_fail drops every node and profile */
+  if (ret && clear_on_fail) {
+    ctx->tm_node_count = 0;
+    memset(ctx->tm_profiles, 0, sizeof(ctx->tm_profiles));
+  }
+  return ret;
 }
 
 static int ut_mt_sch_mrg_uinit(struct mtl_main_impl* impl) {
@@ -634,8 +656,9 @@ void ut_dev_fail_tm_node_add(ut_dev_ctx* ctx, int error) {
   ctx->fail_tm_node_add_error = error;
 }
 
-void ut_dev_set_rl_root_active(ut_dev_ctx* ctx) {
-  ctx->impl.inf[MTL_PORT_P].tx_rl_root_active = true;
+void ut_dev_fail_tm_queue_node_add(ut_dev_ctx* ctx, int call, int error) {
+  ctx->fail_tm_queue_node_add_call = call;
+  ctx->fail_tm_queue_node_add_error = error;
 }
 
 void ut_dev_fail_tm_commit(ut_dev_ctx* ctx, int error) {

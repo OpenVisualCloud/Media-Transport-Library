@@ -103,11 +103,33 @@ TEST_F(MtDevPacingTest, IavfTmNodeAddFailureKeepsTsc) {
   EXPECT_EQ(ut_dev_pacing_way(ctx_), ST21_TX_PACING_WAY_TSC);
 }
 
-TEST_F(MtDevPacingTest, IavfTmRootActiveTscMakesNoTmCall) {
-  ut_dev_set_pacing_port(ctx_, true, ST21_TX_PACING_WAY_TSC);
-  ut_dev_set_rl_root_active(ctx_);
+TEST_F(MtDevPacingTest, IavfTmAutoRlQueueNodeFailureClearsEveryQueueRate) {
+  ut_dev_set_pacing_port(ctx_, true, ST21_TX_PACING_WAY_AUTO);
+  ut_dev_fail_tm_queue_node_add(ctx_, 3, -EIO);
   ASSERT_EQ(ut_dev_init_pacing(ctx_), 0);
-  EXPECT_EQ(ut_dev_tm_call_count(ctx_), 0);
+  EXPECT_EQ(ut_dev_pacing_way(ctx_), ST21_TX_PACING_WAY_TSC);
+  ExpectQueuesClearedOnce();
+}
+
+TEST_F(MtDevPacingTest, IavfTmAutoRlCommitFailureClearsEveryQueueRate) {
+  ut_dev_set_pacing_port(ctx_, true, ST21_TX_PACING_WAY_AUTO);
+  ut_dev_fail_tm_commit(ctx_, -EIO);
+  ASSERT_EQ(ut_dev_init_pacing(ctx_), 0);
+  EXPECT_EQ(ut_dev_pacing_way(ctx_), ST21_TX_PACING_WAY_TSC);
+  EXPECT_EQ(CountQueueNodes(false), ut_dev_nb_tx_queues());
+  EXPECT_EQ(CountQueueNodes(true), 0);
+  EXPECT_EQ(ut_dev_tm_commit_count(ctx_), 2);
+}
+
+/* the failed rl init's profiles stay in use: the reset must not reuse their ids */
+TEST_F(MtDevPacingTest, IavfTmAutoRlFallbackResetsLineRateAtTeardown) {
+  ut_dev_set_pacing_port(ctx_, true, ST21_TX_PACING_WAY_AUTO);
+  ut_dev_fail_tm_queue_node_add(ctx_, 3, -EIO);
+  ASSERT_EQ(ut_dev_init_pacing(ctx_), 0);
+  ut_dev_set_started_iavf_tx(ctx_, false, ST21_TX_PACING_WAY_TSC);
+  ASSERT_EQ(ut_dev_free_ports(ctx_), 0);
+  EXPECT_EQ(CountQueueNodes(true), ut_dev_nb_tx_queues());
+  EXPECT_EQ(ut_dev_last_shaper_rate(ctx_), 25000ull * 1000 * 1000 / 8);
 }
 
 TEST_F(MtDevPacingTest, IavfWithoutTmCapabilityMakesNoNodeAdd) {
