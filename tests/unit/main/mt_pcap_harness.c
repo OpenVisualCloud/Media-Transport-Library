@@ -50,7 +50,7 @@ ut_pcap_ctx* ut_pcap_create(uint64_t ptp_ns) {
   ctx->impl.inf[MTL_PORT_P].parent = &ctx->impl;
   ctx->impl.inf[MTL_PORT_P].port = MTL_PORT_P;
   ctx->impl.inf[MTL_PORT_P].port_id = port_id;
-  ctx->impl.inf[MTL_PORT_P].socket_id = rte_socket_id();
+  ctx->impl.inf[MTL_PORT_P].socket_id = (int)rte_socket_id();
   ctx->impl.inf[MTL_PORT_P].ptp_get_time_fn = ut_pcap_ptp_time;
   ctx->ptp_ns = ptp_ns;
   ctx->read_fd = -1;
@@ -69,7 +69,7 @@ int ut_pcap_open(ut_pcap_ctx* ctx) {
   if (!file) return -1;
   int fd = dup(fileno(file));
   ctx->read_fd = dup(fileno(file));
-  fclose(file);
+  (void)fclose(file);
   if (fd < 0 || ctx->read_fd < 0) {
     if (fd >= 0) close(fd);
     return -1;
@@ -109,7 +109,7 @@ int ut_pcap_close_and_read_ts(ut_pcap_ctx* ctx, uint64_t* ts) {
   /* pcapng block: type, total length, then for an EPB interface id, ts high, ts low */
   while (pread(ctx->read_fd, hdr, sizeof(hdr), off) == sizeof(hdr) && hdr[1] >= 12) {
     if (hdr[0] == UT_PCAPNG_BLOCK_EPB) {
-      if (pread(ctx->read_fd, epb, sizeof(epb), off + sizeof(hdr)) != sizeof(epb))
+      if (pread(ctx->read_fd, epb, sizeof(epb), off + (off_t)sizeof(hdr)) != sizeof(epb))
         return -1;
       *ts = ((uint64_t)epb[1] << 32) | epb[2];
       return 0;
