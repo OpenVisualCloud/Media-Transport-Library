@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 release=$(uname -r)
 ko="${ICE_BUNDLE_ROOT:-${root_dir}/.local_install/ice}/${release}/$(uname -m)/ice.ko"
 

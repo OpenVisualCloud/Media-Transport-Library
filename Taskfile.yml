@@ -55,7 +55,7 @@ tasks:
       - |
         set -euo pipefail
         v=stash-v3
-        jpegxs_cc=$(bash {{.CI_SCRIPTS}}/compiler-identity.sh producer)
+        jpegxs_cc=$(bash {{.CI_SCRIPTS}}/cache/compiler-identity.sh producer)
         {
           echo "dpdk_key=${v}-dpdk-${HASH_DPDK:?}"
           echo "mtl_key=${v}-mtl-${HASH_MTL:?}"
@@ -76,7 +76,7 @@ tasks:
         for c in dpdk mtl jpegxs ffmpeg gstreamer plugins ice; do
           hit=CACHE_HIT_${c^^} miss=1 state=MISS
           if [ "${!hit:-}" = true ]; then
-            bash {{.CI_SCRIPTS}}/validate-cache.sh "$c" || {
+            bash {{.CI_SCRIPTS}}/cache/validate-cache.sh "$c" || {
               echo "::error::$c cache is invalid at its immutable exact key" >&2
               echo "::error::Bump stash-v in the ci:cache-keys task of Taskfile.yml to rebuild under a new key" >&2
               exit 1
@@ -95,27 +95,17 @@ tasks:
     requires:
       vars: [COMPONENT]
     cmds:
-      - bash {{.CI_SCRIPTS}}/validate-cache.sh {{.COMPONENT}}
-
-  ci:build-jpegxs:
-    desc: Build the relocatable JPEG XS runtime and bridge bundle
-    cmds:
-      - MTL_INSTALL_PREFIX={{.TASKFILE_DIR}}/.local_install/mtl JPEGXS_ROOT={{.TASKFILE_DIR}}/.local_install/jpegxs bash {{.TASKFILE_DIR}}/script/build_jpegxs.sh --ci
+      - bash {{.CI_SCRIPTS}}/cache/validate-cache.sh {{.COMPONENT}}
 
   ci:validate-jpegxs:
     desc: Validate the relocatable JPEG XS bundle
     cmds:
-      - bash {{.CI_SCRIPTS}}/validate-jpegxs.sh
-
-  ci:validate-ice:
-    desc: Validate the cached ICE module against the running kernel
-    cmds:
-      - bash {{.CI_SCRIPTS}}/validate-ice.sh
+      - bash {{.CI_SCRIPTS}}/cache/validate-jpegxs.sh
 
   ci:activate-ice:
     desc: Reload the ICE driver from the cached module
     cmds:
-      - bash {{.CI_SCRIPTS}}/activate-ice.sh
+      - bash {{.CI_SCRIPTS}}/host/activate-ice.sh
 
   ci:ice-required:
     desc: Report whether this job's NIC needs the Kahawai ICE driver
@@ -129,12 +119,12 @@ tasks:
   ci:bind-test-ports:
     desc: Bind one PF's trusted VFs and two DMA channels to vfio-pci for the gtest suite
     cmds:
-      - bash {{.CI_SCRIPTS}}/bind-test-ports.sh
+      - bash {{.CI_SCRIPTS}}/host/bind-test-ports.sh
 
   ci:build-dependencies:
     desc: Build dependency cache misses selected by CI_BUILD_ variables
     cmds:
-      - bash {{.CI_SCRIPTS}}/build-dependencies.sh
+      - bash {{.CI_SCRIPTS}}/cache/build-dependencies.sh
 
   ci:validate-dependencies:
     desc: Validate every dependency -- host prerequisites and all install trees
@@ -148,22 +138,22 @@ tasks:
   ci:pytest-setup:
     desc: Prepare acceptance-test dependencies, session, NIC, or configuration
     cmds:
-      - bash {{.CI_SCRIPTS}}/pytest-setup.sh {{.CLI_ARGS}}
+      - bash {{.CI_SCRIPTS}}/pytest/pytest-setup.sh {{.CLI_ARGS}}
 
   ci:pytest-run:
     desc: Run one acceptance-test workflow variant
     cmds:
-      - bash {{.CI_SCRIPTS}}/pytest-run.sh {{.CLI_ARGS}}
+      - bash {{.CI_SCRIPTS}}/pytest/pytest-run.sh {{.CLI_ARGS}}
 
   ci:media-assets:
     desc: List, verify or generate the test media a suite reads (MEDIA_ASSET_SET)
     cmds:
-      - bash {{.CI_SCRIPTS}}/media-assets.sh {{.CLI_ARGS}}
+      - bash {{.CI_SCRIPTS}}/pytest/media-assets.sh {{.CLI_ARGS}}
 
   ci:ebu-list:
-    desc: Check, start or stop the EBU LIST ST 2110 compliance analyser
+    desc: Start or check the EBU LIST ST 2110 compliance analyser
     summary: |
-      Runs .github/scripts/ci/ebu-list.sh {status|up|down|verify}.
+      Runs .github/scripts/ci/pytest/ebu-list.sh {up|verify}.
 
       `verify` is the CI-facing check: it proves the analyser answers, speaks the
       API the acceptance framework's client speaks, and accepts the configured
@@ -171,22 +161,22 @@ tasks:
       installs nothing -- it fails with the command that provisions. `up`/`down`
       drive the docker compose stack and are meant to be run by hand.
     cmds:
-      - bash {{.CI_SCRIPTS}}/ebu-list.sh {{.CLI_ARGS}}
+      - bash {{.CI_SCRIPTS}}/pytest/ebu-list.sh {{.CLI_ARGS}}
 
   ci:report:
     desc: Collect or transform CI test reports
     cmds:
-      - bash {{.CI_SCRIPTS}}/reports.sh {{.CLI_ARGS}}
+      - bash {{.CI_SCRIPTS}}/report/reports.sh {{.CLI_ARGS}}
 
   ci:fuzz:
     desc: Build the fuzz targets with clang and ASan, or run each one for FUZZ_TIME seconds
     cmds:
-      - bash {{.CI_SCRIPTS}}/fuzz.sh {{.CLI_ARGS}}
+      - bash {{.CI_SCRIPTS}}/fuzz/fuzz.sh {{.CLI_ARGS}}
 
   ci:clang-tidy-setup:
     desc: Write compile_commands.json, from the cached DPDK, for the clang-tidy scan
     cmds:
-      - bash {{.CI_SCRIPTS}}/clang-tidy-setup.sh
+      - bash {{.CI_SCRIPTS}}/scan/clang-tidy-setup.sh
 
   ci:cargo-audit:
     desc: Audit the Rust lock files; rust/ commits none, so audit what a build resolves today
@@ -317,27 +307,12 @@ tasks:
   ci:workflow:
     desc: Run one workflow orchestration helper
     cmds:
-      - bash {{.CI_SCRIPTS}}/workflow-ops.sh {{.CLI_ARGS}}
-
-  ci:build-action:
-    desc: Build MTL locally and optionally on a remote host
-    set: [pipefail]
-    cmds:
-      - bash .github/scripts/setup_environment.sh
-      - |
-        if [[ -n ${REMOTE_HOST:-} ]]; then
-          env_file=${REMOTE_ENV_FILE:-~/.mtl_build_env}
-          [[ $env_file != "~"* ]] || env_file=$HOME${env_file#\~}
-          {
-            [[ -f $env_file ]] && cat "$env_file" || echo "::warning::No env file at $env_file; using defaults" >&2
-            cat .github/scripts/remote_build.sh
-          } | ssh -o StrictHostKeyChecking=no "$REMOTE_HOST" bash -s -- "${REMOTE_MTL_PATH:-}" "${REMOTE_BRANCH#refs/heads/}"
-        fi
+      - bash {{.CI_SCRIPTS}}/workflow/workflow-ops.sh {{.CLI_ARGS}}
 
   ci:configure-host:
     desc: Configure cached dependency paths and plugin registry on a test host
     cmds:
-      - bash {{.CI_SCRIPTS}}/configure-host.sh {{.CLI_ARGS}}
+      - bash {{.CI_SCRIPTS}}/host/configure-host.sh {{.CLI_ARGS}}
 
   # Bandit's default --exclude lists ".git" and matches it as a substring, so
   # it drops everything under .github/, even files named on the command line.

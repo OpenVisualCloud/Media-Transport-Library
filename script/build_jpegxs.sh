@@ -218,7 +218,7 @@ main() {
 	esac
 	if [ "${ci}" -eq 1 ]; then
 		compiler_hash=$(compiler_sha256)
-		expected_compiler_hash=$(bash "${REPO_DIR}/.github/scripts/ci/compiler-identity.sh" producer)
+		expected_compiler_hash=$(bash "${REPO_DIR}/.github/scripts/ci/cache/compiler-identity.sh" producer)
 		if [ "${compiler_hash}" != "${expected_compiler_hash}" ]; then
 			log_error "JPEG XS producer compiler does not match the CI toolchain contract"
 			exit 1
@@ -226,7 +226,7 @@ main() {
 	fi
 
 	if [ "${ci}" -eq 1 ] && [ "${force}" -eq 0 ] &&
-		JPEGXS_ROOT="${prefix}" bash "${REPO_DIR}/.github/scripts/ci/validate-jpegxs.sh" >/dev/null 2>&1; then
+		JPEGXS_ROOT="${prefix}" bash "${REPO_DIR}/.github/scripts/ci/cache/validate-jpegxs.sh" >/dev/null 2>&1; then
 		plugin=$(find "${prefix}" -name libst_plugin_st22_svt_jpeg_xs.so -type f -print -quit)
 		register_plugin "${config}" "${plugin}"
 		log_success "JPEG XS bundle is already valid: ${prefix}"
@@ -309,7 +309,7 @@ PY
 	fi
 
 	if [ "${ci}" -eq 1 ]; then
-		JPEGXS_ROOT="${stage}" bash "${REPO_DIR}/.github/scripts/ci/validate-jpegxs.sh"
+		JPEGXS_ROOT="${stage}" bash "${REPO_DIR}/.github/scripts/ci/cache/validate-jpegxs.sh"
 		mkdir -p "$(dirname "${prefix}")"
 		rm -rf "${prefix}"
 		mv "${stage}" "${prefix}"

@@ -112,7 +112,7 @@ script/xdp-tools
 #Generated documentation
 doc/_build
 
-# The output of .github/scripts/ci/fuzz.sh
+# The output of .github/scripts/ci/fuzz/fuzz.sh
 fuzz-report/
 fuzz-corpus/
 

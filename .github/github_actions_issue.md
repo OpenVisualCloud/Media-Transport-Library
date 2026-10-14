@@ -101,8 +101,8 @@ human-runnable script when shell logic is required. The same command must work
 locally and in CI, for example:
 
 ```sh
-task ci:validate-ice
-task ci:build-jpegxs
+task ci:validate-cache COMPONENT=ice
+sudo task ci:activate-ice
 task ci:validate-jpegxs
 ```
 

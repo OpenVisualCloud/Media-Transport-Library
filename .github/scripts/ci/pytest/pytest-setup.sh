@@ -5,9 +5,9 @@
 
 set -euo pipefail
 
-root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 acceptance_dir="${root_dir}/tests/acceptance"
-# shellcheck source-path=SCRIPTDIR source=../lib/mtl_acceptance_venv.sh disable=SC1091
+# shellcheck source-path=SCRIPTDIR source=../../lib/mtl_acceptance_venv.sh disable=SC1091
 . "${root_dir}/.github/scripts/lib/mtl_acceptance_venv.sh"
 stamp="${acceptance_venv}/.mtl-requirements-sha256"
 runner_env=${MTL_CI_RUNNER_ENV:-/etc/mtl-ci/runner.env}

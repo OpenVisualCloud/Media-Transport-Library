@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 GLOB = {"**/": "(?:.*/)?", "**": ".*", "*": "[^/]*", "?": "[^/]"}
 
 
@@ -43,6 +43,10 @@ for name, patterns in filters.items():
     for pattern in patterns:
         if pattern.startswith("script/") and re.search(r"[*?]", pattern):
             faults.append(f"{name}: '{pattern}' is a glob in script/, name each file")
+        if re.fullmatch(r"\.github/scripts/ci/\*\*/?", pattern):
+            faults.append(
+                f"{name}: '{pattern}' is the whole ci tree, name a folder of it"
+            )
         if re.search(r"[{}\[\]()!]|[^/]\*\*|\*\*[^/]", pattern):
             faults.append(f"{name}: '{pattern}' uses unsupported glob syntax")
             continue

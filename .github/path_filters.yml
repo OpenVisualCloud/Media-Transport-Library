@@ -6,7 +6,7 @@
 # dorny ignores a '!' pattern with the default predicate, so do not exclude
 # paths: list the paths to include.
 #
-# .github/scripts/ci/check-path-filters.py (a checkpatch hook) enforces the
+# .github/scripts/ci/lint/check-path-filters.py (a checkpatch hook) enforces the
 # rules below. Run it after each change to this file.
 #
 #   - hash_<name> holds the paths of script/hash_sources_<name>.env, one to one
@@ -20,6 +20,10 @@
 #     'script/**' runs the job for a change to a script that it never calls.
 #   - scripts holds each script/*.sh and .github/scripts/setup_environment.sh,
 #     because test-scripts.sh checks each of them.
+#   - .github/scripts/ci/ is one folder per job family (cache, host, pytest,
+#     report, scan, fuzz, lint, workflow). A filter names a folder, as
+#     '.github/scripts/ci/host/**', never the whole tree: a change to the fuzz
+#     script must not run the bare-metal jobs.
 
 # ---------------------------------------------------------------- Artifacts
 # script/hash_sources.sh chains the hashes: dpdk -> mtl -> jpegxs -> ffmpeg,
@@ -28,7 +32,7 @@
 hash_dpdk: &hash_dpdk
   - .github/scripts/setup_environment.sh
   - script/install_dependencies.sh
-  - .github/scripts/ci/build-dependencies.sh
+  - .github/scripts/ci/cache/build-dependencies.sh
   - script/hash_sources_dpdk.env
   - 'patches/dpdk/**'
   - versions.env
@@ -60,7 +64,7 @@ hash_mtl: &hash_mtl
   - tests/meson_options.txt
 
 hash_jpegxs: &hash_jpegxs
-  - .github/scripts/ci/validate-jpegxs.sh
+  - .github/scripts/ci/cache/validate-jpegxs.sh
   - .github/scripts/setup_environment.sh
   - script/build_jpegxs.sh
   - script/install_dependencies.sh
@@ -70,8 +74,8 @@ hash_jpegxs: &hash_jpegxs
   - versions.env
 
 hash_ice: &hash_ice
-  - .github/scripts/ci/build-dependencies.sh
-  - .github/scripts/ci/validate-ice.sh
+  - .github/scripts/ci/cache/build-dependencies.sh
+  - .github/scripts/ci/cache/validate-ice.sh
   - .github/scripts/setup_environment.sh
   - script/install_dependencies.sh
   - 'patches/ice_drv/**'
@@ -134,7 +138,9 @@ unit_sources: &unit_sources
   - ecosystem/ffmpeg_plugin/mtl_common.h
 
 # What a bare-metal test job runs besides the artifacts: the gate, the host
-# setup actions, the ci:* tasks and the scripts that they call. checkout-clean
+# setup actions, the ci:* tasks and the scripts that they call: the cache
+# validation, the host setup and the workflow glue, not the pytest, fuzz, scan
+# or lint scripts. checkout-clean
 # is not here: the workflows use it at a pinned commit, not from this tree.
 # .github/path_filters.yml is not here: check-path-filters.py checks it, and a
 # run on the NIC hosts does not. Each file of script/ is named: gtest.sh,
@@ -148,7 +154,9 @@ bare_metal_ci: &bare_metal_ci
   - '.github/actions/validate-host/**'
   - '.github/actions/source-checksums/**'
   - '.github/actions/wait-for-workflow/**'
-  - '.github/scripts/ci/**'
+  - '.github/scripts/ci/cache/**'
+  - '.github/scripts/ci/host/**'
+  - '.github/scripts/ci/workflow/**'
   - Taskfile.yml
   - script/common.sh
   - script/nicctl.sh
@@ -191,6 +199,7 @@ smoke_tests: &smoke_tests
   - *hash_sources
   - *bare_metal_ci
   - .github/workflows/smoke-tests.yml
+  - '.github/scripts/ci/pytest/**'
   - .github/scripts/lib/mtl_acceptance_venv.sh
   - 'tests/acceptance/**'
 
@@ -205,7 +214,7 @@ clang_tidy: &clang_tidy
   - .clang-tidy
   - .github/path_filters.yml
   - .github/workflows/code-scan.yml
-  - .github/scripts/ci/clang-tidy-setup.sh
+  - .github/scripts/ci/scan/clang-tidy-setup.sh
   - Taskfile.yml
   - .github/scripts/setup_environment.sh
 
@@ -234,7 +243,7 @@ unit_tests:
 fuzz_tests:
   - .github/path_filters.yml
   - .github/workflows/fuzz_tests.yml
-  - .github/scripts/ci/fuzz.sh
+  - .github/scripts/ci/fuzz/fuzz.sh
   - Taskfile.yml
   - *hash_dpdk
   - meson.build
@@ -301,7 +310,7 @@ docker_build:
 scripts:
   - .github/path_filters.yml
   - .github/workflows/unit_tests.yml
-  - .github/scripts/ci/test-scripts.sh
+  - .github/scripts/ci/lint/test-scripts.sh
   - .github/scripts/setup_environment.sh
   - versions.env
   - 'patches/dpdk/**'
@@ -326,6 +335,20 @@ scripts:
   - script/lcore_stat_dump.sh
   - script/nicctl.sh
   - script/status_report.sh
+
+# github_pages_update.yml, buildDocumentation. Sphinx renders doc/ and the
+# Markdown and reStructuredText files that index.rst pulls in from the whole
+# tree, conf.py reads VERSION, and the job installs its packages with
+# task ci:workflow -- docs-dependencies.
+docs:
+  - .github/path_filters.yml
+  - .github/workflows/github_pages_update.yml
+  - .github/scripts/ci/workflow/workflow-ops.sh
+  - Taskfile.yml
+  - '**/*.md'
+  - '**/*.rst'
+  - 'doc/**'
+  - VERSION
 
 # docker_build.yml, manager-docker-build. The build context is manager/.
 manager_build:
