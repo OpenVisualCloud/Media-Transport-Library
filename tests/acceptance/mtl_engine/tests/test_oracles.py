@@ -211,7 +211,7 @@ def test_netsniff_restores_promisc_after_a_second_start():
 
 
 def test_text_file_has_the_size_asked_for(tmp_path):
-    import subprocess
+    import subprocess  # nosec B404 # runs the printf commands of create_text_file on a temp file
 
     from mtl_engine.media_creator import create_text_file
 
