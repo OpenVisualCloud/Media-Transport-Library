@@ -21,6 +21,12 @@ export PKG_CONFIG_PATH=$PWD/build/meson-uninstalled:$dpdk CC=clang CXX=clang++
 
 meson setup build -Denable_unit_tests=true -Denable_fuzzing=true
 meson compile -C build usdt_provider_header
+# The projects include <mtl/...>, the path of an installed MTL, and MTL is not
+# installed here. mtl-uninstalled.pc gives each project -I for build, so
+# build/mtl gives the headers in include that path. Without it, clang-tidy
+# stops at the first <mtl/...>. The error is in a header, not in the checked
+# source file, so cpp-linter does not report it, and the file passes unchecked.
+ln -sfn ../include build/mtl
 for project in app tests plugins ld_preload manager tests/tools/RxTxApp ecosystem/gstreamer_plugin \
 	tests/tools/gstreamer_tools ecosystem/obs_mtl/linux-mtl tools/set_tai_offset; do
 	meson setup "build/$(basename "$project")" "$project"
