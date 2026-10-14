@@ -25,4 +25,17 @@ for project in app tests plugins ld_preload manager tests/tools/RxTxApp ecosyste
 	tests/tools/gstreamer_tools ecosystem/obs_mtl/linux-mtl tools/set_tai_offset; do
 	meson setup "build/$(basename "$project")" "$project"
 done
-jq -s add build/compile_commands.json build/*/compile_commands.json >compile_commands.json
+
+# Keep one entry per source file. clang-tidy 14 runs all the entries of a file
+# in one process, and its file cache keeps the relative header paths of the
+# first run. When a second entry has a different directory, clang-tidy then
+# cannot open a header. The unit tests build the RxTxApp sources again in
+# build, so keep the last entry: the one of build/RxTxApp.
+jq -s '
+	def source:
+		(if .file | startswith("/") then .file else .directory + "/" + .file end)
+		| reduce (split("/")[] | select(. != "" and . != ".")) as $part ([];
+			if $part == ".." then .[:-1] else . + [$part] end)
+		| "/" + join("/");
+	add | group_by(source) | map(last)
+' build/compile_commands.json build/*/compile_commands.json >compile_commands.json
