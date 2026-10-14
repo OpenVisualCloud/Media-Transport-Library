@@ -7,7 +7,7 @@ set -euo pipefail
 ci_dir=$(dirname "${BASH_SOURCE[0]}")
 component=$1
 # LOCAL_INSTALL_ROOT: validate a tree somewhere else, as the local CI runner does.
-root=${LOCAL_INSTALL_ROOT:-$(realpath "${ci_dir}/../../..")/.local_install}/${component}
+root=${LOCAL_INSTALL_ROOT:-$(realpath "${ci_dir}/../../../..")/.local_install}/${component}
 
 [ -d "$root" ] || {
 	echo "${component} cache is missing: ${root}" >&2

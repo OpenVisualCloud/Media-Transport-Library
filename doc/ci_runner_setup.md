@@ -82,6 +82,14 @@ The shadow/SUT host pair used by `perf-pytest.yml` and the optional shadow sync
 in `custom-pytest.yml` reads `/etc/mtl-ci/shadow-host`, a file defining `IP` and
 `USER`.
 
+The validate-host action syncs the SUT's `.local_install`, `script/`, `tests/`
+and its cache and host scripts to the shadow, at the same path, and then runs
+the SUT's ICE activation there: the shadow loads the same Kahawai ice module.
+The shadow therefore runs the SUT's kernel release, and `SHADOW_USER` has
+passwordless sudo; with another kernel the bundle has no module for it, and
+the step fails. The VFs need no kernel module: DPDK's iavf driver is part of the
+synced `.local_install`.
+
 Only credentials for genuinely external services remain repository secrets:
 `COVERITY_EMAIL`, `COVERITY_TOKEN`, and the built-in `GITHUB_TOKEN`.
 

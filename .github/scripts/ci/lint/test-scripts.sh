@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
+cd "$(dirname "${BASH_SOURCE[0]}")/../../../.."
 root_dir=$PWD
 
 failures=0

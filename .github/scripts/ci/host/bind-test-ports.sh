@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 nicctl="${root_dir}/script/nicctl.sh"
 [ ! -d "${root_dir}/.local_install/dpdk/bin" ] || export PATH="${root_dir}/.local_install/dpdk/bin:${PATH}"
 

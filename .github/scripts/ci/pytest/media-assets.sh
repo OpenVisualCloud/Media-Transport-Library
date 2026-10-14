@@ -4,8 +4,8 @@
 
 set -euo pipefail
 
-root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
-# shellcheck source-path=SCRIPTDIR source=../lib/mtl_acceptance_venv.sh disable=SC1091
+root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
+# shellcheck source-path=SCRIPTDIR source=../../lib/mtl_acceptance_venv.sh disable=SC1091
 . "${root_dir}/.github/scripts/lib/mtl_acceptance_venv.sh"
 media_dir=${2:-/mnt/media}
 
@@ -86,7 +86,7 @@ generate)
 			ffmpeg=${root_dir}/.local_install/ffmpeg/bin/ffmpeg
 			[[ -x ${ffmpeg} ]] || ffmpeg=$(command -v ffmpeg)
 			ld_path=$(GITHUB_ENV=/dev/stdout GITHUB_PATH=/dev/null \
-				bash "${root_dir}/.github/scripts/ci/configure-host.sh" environment |
+				bash "${root_dir}/.github/scripts/ci/host/configure-host.sh" environment |
 				sed -n 's/^LD_LIBRARY_PATH=//p')
 			as_root env "LD_LIBRARY_PATH=${ld_path}" "${ffmpeg}" -hide_banner -loglevel error -y \
 				-f lavfi -i "testsrc=s=${width}x${height}:r=${fps}" \

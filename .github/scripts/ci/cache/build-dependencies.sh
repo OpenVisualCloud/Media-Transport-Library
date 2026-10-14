@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 local_install="${root_dir}/.local_install"
 
 export MTL_INSTALL_PREFIX="${local_install}/mtl"

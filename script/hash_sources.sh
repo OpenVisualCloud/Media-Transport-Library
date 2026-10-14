@@ -73,7 +73,7 @@ hash_string() {
 
 # Prints the hash of the paths in script/hash_sources_$1.env. The .env file
 # gives each line to find as one unquoted word
-# (.github/scripts/ci/check-path-filters.py checks the lines).
+# (.github/scripts/ci/lint/check-path-filters.py checks the lines).
 component_paths_hash() {
 	# shellcheck disable=SC2046
 	hash_paths $(read_env "${script_folder}/hash_sources_$1.env")
