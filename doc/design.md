@@ -400,6 +400,11 @@ st40p_rx_put_frame
   `st40_rx_put_framebuff(transport, addr)` under the hood. Apps that still want raw
   RTP can fall back to `ST40_TYPE_RTP_LEVEL` and pull mbufs via
   `st40_rx_get_mbuf`/`st40_rx_put_mbuf`.
+- **SMPTE ST 2110-41 fast metadata** rides the same pipeline behind
+  `ST40P_TX_FLAG_FAST_METADATA` / `ST40P_RX_FLAG_FAST_METADATA`. A frame is one data
+  item: TX sends the `udw_buff_addr` bytes with the `fmd_dit`/`fmd_k_bit` of the ops,
+  and RX delivers each data item of a packet as its own frame, its DIT and K-bit in
+  `st40_frame_info.fmd_dit`/`fmd_k_bit`.
 
 Split-mode ancillary (packet-split) is supported via `tx_split_anc_by_pkt` on TX and
 `rx_rtp_ring_size` plus `frame_info_path` on RX. Enable `tx_split_anc_by_pkt=true`

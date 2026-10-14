@@ -55,44 +55,22 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr)
     s->stat_frame_first_rx_time = st_app_get_monotonic_time();
 }
 
-static bool app_rx_anc_fmd_ref_match(struct st_app_rx_anc_session* s, size_t off,
-                                     uint8_t* item, uint16_t padded_size) {
-  size_t size = ST_MIN(ST_APP_FMD_CHUNK_BYTES, s->st40_fmd_ref_size - off);
-  if (((size + 3) & ~3) != padded_size) return false;
-  if (memcmp(s->st40_fmd_ref + off, item, size)) return false;
-  for (size_t i = size; i < padded_size; i++)
-    if (item[i]) return false;
-  return true;
+/* false on the first packet, and on a packet after a loss or a reorder */
+static bool app_rx_anc_fmd_in_seq(struct st_app_rx_anc_session* s, uint16_t seq) {
+  bool first = s->st40_fmd_last_seq < 0;
+  bool in_seq = !first && seq == (uint16_t)(s->st40_fmd_last_seq + 1);
+
+  if (!first && !in_seq) s->stat_pkt_seq_discont++;
+  s->st40_fmd_last_seq = seq;
+  return in_seq;
 }
 
-static int64_t app_rx_anc_fmd_ref_after(struct st_app_rx_anc_session* s, size_t off) {
-  off += ST_APP_FMD_CHUNK_BYTES;
-  return off < s->st40_fmd_ref_size ? (int64_t)off : 0;
-}
-
-/* TX cuts the file at chunk boundaries: resync on one only when unsynced or after an rtp
- * seq gap, and only on an item that matches no other chunk */
 static int app_rx_anc_fmd_ref_check(struct st_app_rx_anc_session* s, uint16_t seq,
                                     uint8_t* item, uint16_t padded_size) {
-  int64_t off = s->st40_fmd_ref_next;
-  bool in_seq = off >= 0 && seq == (uint16_t)(s->st40_fmd_last_seq + 1);
+  bool in_seq = app_rx_anc_fmd_in_seq(s, seq);
 
-  s->st40_fmd_last_seq = seq;
-  if (in_seq) {
-    s->st40_fmd_ref_next = app_rx_anc_fmd_ref_after(s, off);
-    return app_rx_anc_fmd_ref_match(s, off, item, padded_size) ? 0 : -EIO;
-  }
-
-  int64_t found = -1;
-  s->st40_fmd_ref_next = -1;
-  for (size_t i = 0; i < s->st40_fmd_ref_size; i += ST_APP_FMD_CHUNK_BYTES) {
-    if (!app_rx_anc_fmd_ref_match(s, i, item, padded_size)) continue;
-    if (found >= 0) return 0;
-    found = (int64_t)i;
-  }
-  if (found < 0) return -EIO;
-  s->st40_fmd_ref_next = app_rx_anc_fmd_ref_after(s, found);
-  return 0;
+  if (!s->st40_fmd_ref.data) return 0;
+  return st_app_fmd_ref_check(&s->st40_fmd_ref, in_seq, item, padded_size);
 }
 
 static void app_rx_anc_handle_fmd(struct st_app_rx_anc_session* s, void* usrptr,
@@ -130,8 +108,8 @@ static void app_rx_anc_handle_fmd(struct st_app_rx_anc_session* s, void* usrptr,
     else if (s->st40_fmd_k_bit >= 0 &&
              hdr.fmd_hdr_chunk.data_item_k_bit != s->st40_fmd_k_bit)
       fail = "K-bit";
-    else if (s->st40_fmd_ref && app_rx_anc_fmd_ref_check(s, ntohs(hdr.base.seq_number),
-                                                         item, padded_size) < 0)
+    else if (app_rx_anc_fmd_ref_check(s, ntohs(hdr.base.seq_number), item, padded_size) <
+             0)
       fail = "reference file compare";
   }
   if (fail) {
@@ -148,9 +126,7 @@ static void app_rx_anc_handle_fmd(struct st_app_rx_anc_session* s, void* usrptr,
   s->st40_fmd_last_rx_time = now;
   if (len == sizeof(hdr.base)) {
     /* a zero-item packet keeps the stream alive but is no frame */
-    uint16_t seq = ntohs(hdr.base.seq_number);
-    if (seq != (uint16_t)(s->st40_fmd_last_seq + 1)) s->st40_fmd_ref_next = -1;
-    s->st40_fmd_last_seq = seq;
+    if (!app_rx_anc_fmd_in_seq(s, ntohs(hdr.base.seq_number))) s->st40_fmd_ref.next = -1;
     return;
   }
   s->stat_frame_total_received++;
@@ -210,30 +186,6 @@ static void app_rx_anc_stop(struct st_app_rx_anc_session* s) {
   }
 }
 
-static int app_rx_anc_fmd_open_ref(struct st_app_rx_anc_session* s, const char* url) {
-  struct stat i;
-  int fd = st_open(url, O_RDONLY);
-  if (fd < 0) {
-    err("%s(%d), open '%s' fail\n", __func__, s->idx, url);
-    return -EIO;
-  }
-  if (fstat(fd, &i) < 0) {
-    err("%s(%d), fstat '%s' fail\n", __func__, s->idx, url);
-    close(fd);
-    return -EIO;
-  }
-  uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
-  close(fd);
-  if (MAP_FAILED == m) {
-    err("%s(%d), mmap '%s' fail\n", __func__, s->idx, url);
-    return -EIO;
-  }
-  s->st40_fmd_ref = m;
-  s->st40_fmd_ref_size = i.st_size;
-  s->st40_fmd_ref_next = -1;
-  return 0;
-}
-
 static int app_rx_anc_uinit(struct st_app_rx_anc_session* s) {
   int ret, idx = s->idx;
   app_rx_anc_stop(s);
@@ -244,10 +196,7 @@ static int app_rx_anc_uinit(struct st_app_rx_anc_session* s) {
   }
   st_pthread_mutex_destroy(&s->st40_wake_mutex);
   st_pthread_cond_destroy(&s->st40_wake_cond);
-  if (s->st40_fmd_ref) {
-    munmap(s->st40_fmd_ref, s->st40_fmd_ref_size);
-    s->st40_fmd_ref = NULL;
-  }
+  st_app_fmd_ref_close(&s->st40_fmd_ref);
 
   return 0;
 }
@@ -299,12 +248,13 @@ static int app_rx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
     ops.flags |= ST40_RX_FLAG_FAST_METADATA;
     s->st40_fmd_dit = anc->info.fmd_dit;
     s->st40_fmd_k_bit = anc->info.fmd_k_bit;
+    s->st40_fmd_last_seq = -1;
     if (!anc->info.anc_url[0])
       info(
           "%s(%d), no ancillary_url, the payload is not verified, only DIT, K-bit and "
           "rate\n",
           __func__, idx);
-    else if (app_rx_anc_fmd_open_ref(s, anc->info.anc_url) < 0)
+    else if (st_app_fmd_ref_open(&s->st40_fmd_ref, anc->info.anc_url) < 0)
       return -EIO;
   }
 
@@ -355,19 +305,20 @@ static int app_rx_anc_result(struct st_app_rx_anc_session* s) {
     return -EINVAL;
   }
 
-  char gap[32] = "";
+  char fmd[64] = "";
   if (s->st40_fmd) {
     if (s->st40_fmd_last_rx_time)
       s->st40_fmd_max_gap_ns =
           ST_MAX(s->st40_fmd_max_gap_ns, cur_time_ns - s->st40_fmd_last_rx_time);
-    (void)snprintf(gap, sizeof(gap), ", max gap %.3f ms",
-                   (double)s->st40_fmd_max_gap_ns / NS_PER_MS);
+    (void)snprintf(fmd, sizeof(fmd), ", seq_discont %d, max gap %.3f ms",
+                   s->stat_pkt_seq_discont, (double)s->st40_fmd_max_gap_ns / NS_PER_MS);
   }
+  /* a lost or reordered fast metadata packet fails the session */
   bool ok = app_rx_anc_fps_check(framerate) && !s->stat_pkt_invalid &&
-            s->st40_fmd_max_gap_ns <= ST_APP_FMD_MAX_GAP_NS;
+            !s->stat_pkt_seq_discont && s->st40_fmd_max_gap_ns <= ST_APP_FMD_MAX_GAP_NS;
   notce("%s(%d), %s, fps %f, %d frame received, %d invalid pkt%s\n", __func__, idx,
         ok ? "OK" : "FAILED", framerate, s->stat_frame_total_received,
-        s->stat_pkt_invalid, gap);
+        s->stat_pkt_invalid, fmd);
   return ok ? 0 : -EIO;
 }
 

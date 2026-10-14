@@ -43,8 +43,8 @@ UNIVERSAL_PARAMS = {
     "ancillary_url": "",  # Ancillary data URL
     "ancillary_fps": "p59",  # Ancillary data frame rate
     "tr_offset": "default",  # TR offset for legacy video sessions
-    # ST2110-41 fast metadata, an opt-in of the ancillary session
-    "fast_metadata": False,  # Ancillary session carries ST2110-41 fast metadata
+    # ST2110-41 fast metadata, an opt-in of the st40p session
+    "fast_metadata": False,  # st40p session carries ST2110-41 fast metadata
     "fastmetadata_data_item_type": 1234567,  # 22-bit Data Item Type
     "fastmetadata_k_bit": 0,  # Data Item K-bit
     "type_mode": "frame",  # Session type mode: "rtp" or "frame"

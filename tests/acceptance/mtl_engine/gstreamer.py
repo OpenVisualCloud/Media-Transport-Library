@@ -98,6 +98,10 @@ class GStreamer(Application):
         }
         if session_type not in builders:
             raise ValueError(f"GStreamer adapter does not support {session_type}")
+        if self.params.get("fast_metadata"):
+            # The st40p plugin has no fast metadata option, so the pipeline
+            # would send RFC 8331.
+            raise ValueError("GStreamer adapter does not support fast_metadata")
         nic_port_list = self.params["nic_port_list"]
         if not nic_port_list or len(nic_port_list) < 2:
             raise ValueError("nic_port_list needs a TX and an RX port")

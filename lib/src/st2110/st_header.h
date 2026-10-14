@@ -1147,6 +1147,8 @@ struct st_rx_anc_frame_slot {
   bool interlaced;
   bool second_field;
   bool rtp_marker;
+  uint32_t fmd_dit;
+  uint8_t fmd_k_bit;
   /* per-frame seq tracking (session bitmap + per-port deltas) */
   uint64_t seq_bitmap;     /* 1 bit per accepted seq offset (max 64 pkts) */
   uint16_t seq_base;       /* offset 0 corresponds to this seq_id */
@@ -1184,8 +1186,16 @@ struct st_rx_ancillary_session_impl {
   struct st_rx_anc_frame_slot* anc_pending_slot;
   uint64_t stat_assemble_dispatched; /* count of pkts routed to FRAME_LEVEL */
   uint64_t stat_anc_frames_ready;    /* frames handed to notify_frame_ready */
-  uint64_t stat_anc_frames_dropped;  /* frame slot pool exhausted */
-  uint64_t stat_anc_pkt_parse_err;   /* malformed UDW / parity / checksum */
+  uint64_t stat_anc_frames_dropped;  /* no free slot, FMD item > framebuff_size */
+  uint64_t stat_anc_pkt_parse_err;   /* malformed UDW / parity / checksum / FMD item */
+  /* FMD: seq of the last packet, and the gap not yet reported on a delivered item */
+  int fmd_prev_seq;
+  uint32_t fmd_seq_lost;
+  bool fmd_seq_discont;
+  /* FMD redundancy filter: bit n set when seq session_seq_id - n was accepted, and the
+   * packets in a row that came older than that window */
+  uint64_t fmd_seq_window;
+  int fmd_old_pkt_run;
 
   uint16_t st40_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
   bool mcast_joined[MTL_SESSION_PORT_MAX];

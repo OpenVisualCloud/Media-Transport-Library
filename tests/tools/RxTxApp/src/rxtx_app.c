@@ -702,3 +702,72 @@ void st_sha_dump(const char* tag, const unsigned char* sha) {
   }
   info("\n");
 }
+
+static bool app_fmd_ref_match(struct st_app_fmd_ref* ref, size_t off, uint8_t* item,
+                              uint16_t padded_size) {
+  size_t size = ST_MIN(ST_APP_FMD_CHUNK_BYTES, ref->size - off);
+  if (((size + 3) & ~3) != padded_size) return false;
+  if (memcmp(ref->data + off, item, size)) return false;
+  for (size_t i = size; i < padded_size; i++)
+    if (item[i]) return false;
+  return true;
+}
+
+static int64_t app_fmd_ref_after(struct st_app_fmd_ref* ref, size_t off) {
+  off += ST_APP_FMD_CHUNK_BYTES;
+  return off < ref->size ? (int64_t)off : 0;
+}
+
+/* TX cuts the file at chunk boundaries: resync on one only when unsynced or after a
+ * loss (!in_seq), and only on an item that matches no other chunk */
+int st_app_fmd_ref_check(struct st_app_fmd_ref* ref, bool in_seq, uint8_t* item,
+                         uint16_t padded_size) {
+  int64_t off = ref->next;
+
+  if (off >= 0 && in_seq) {
+    ref->next = app_fmd_ref_after(ref, off);
+    return app_fmd_ref_match(ref, off, item, padded_size) ? 0 : -EIO;
+  }
+
+  int64_t found = -1;
+  ref->next = -1;
+  for (size_t i = 0; i < ref->size; i += ST_APP_FMD_CHUNK_BYTES) {
+    if (!app_fmd_ref_match(ref, i, item, padded_size)) continue;
+    if (found >= 0) return 0;
+    found = (int64_t)i;
+  }
+  if (found < 0) return -EIO;
+  ref->next = app_fmd_ref_after(ref, found);
+  return 0;
+}
+
+int st_app_fmd_ref_open(struct st_app_fmd_ref* ref, const char* url) {
+  struct stat i;
+  int fd = st_open(url, O_RDONLY);
+  if (fd < 0) {
+    err("%s, open '%s' fail\n", __func__, url);
+    return -EIO;
+  }
+  if (fstat(fd, &i) < 0) {
+    err("%s, fstat '%s' fail\n", __func__, url);
+    close(fd);
+    return -EIO;
+  }
+  uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  close(fd);
+  if (MAP_FAILED == m) {
+    err("%s, mmap '%s' fail\n", __func__, url);
+    return -EIO;
+  }
+  ref->data = m;
+  ref->size = i.st_size;
+  ref->next = -1;
+  return 0;
+}
+
+void st_app_fmd_ref_close(struct st_app_fmd_ref* ref) {
+  if (ref->data) {
+    munmap(ref->data, ref->size);
+    ref->data = NULL;
+  }
+}

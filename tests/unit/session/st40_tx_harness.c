@@ -580,3 +580,18 @@ int ut_txa_ops_check(uint32_t flags, uint32_t fmd_dit, uint8_t fmd_k_bit,
   ops.payload_type = payload_type;
   return tx_ancillary_ops_check(&ops);
 }
+
+void ut_txa_set_app_timestamp(ut_txa_ctx* ctx, enum st10_timestamp_fmt tfmt,
+                              uint64_t timestamp) {
+  ctx->app_tfmt = tfmt;
+  ctx->app_timestamp = timestamp;
+}
+
+void ut_txa_set_frame_source(ut_txa_ctx* ctx, const struct st40_tx_ops* src,
+                             struct st40_frame* frame) {
+  ctx->session.ops.get_next_frame = src->get_next_frame;
+  ctx->session.ops.notify_frame_done = src->notify_frame_done;
+  ctx->session.ops.notify_frame_late = src->notify_frame_late;
+  ctx->session.ops.priv = src->priv;
+  ctx->frame.addr = frame;
+}

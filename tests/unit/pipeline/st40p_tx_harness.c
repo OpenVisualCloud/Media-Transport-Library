@@ -1,10 +1,11 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2026 Intel Corporation
  *
- * C harness for ST40p (ancillary) TX pipeline-layer concurrency unit tests.
+ * C harness for ST40p (ancillary) TX pipeline-layer unit tests.
  * Includes the production translation unit so the file-local transport
  * callbacks (tx_st40p_next_frame / tx_st40p_frame_done) are reachable, and
- * hand-initialises the ctx so create_transport is bypassed.
+ * hand-initialises the ctx without a transport. st40_tx_create() is a stub that
+ * keeps the ops it gets, so create_transport can run alone.
  */
 
 #include <stdlib.h>
@@ -132,6 +133,11 @@ int ut40p_tx_next_frame(ut40p_tx_ctx* ctx, uint16_t* idx) {
   return tx_st40p_next_frame(&ctx->pipeline, idx, &meta);
 }
 
+int ut40p_tx_next_frame_meta(ut40p_tx_ctx* ctx, uint16_t* idx,
+                             struct st40_tx_frame_meta* meta) {
+  return tx_st40p_next_frame(&ctx->pipeline, idx, meta);
+}
+
 int ut40p_tx_frame_done(ut40p_tx_ctx* ctx, uint16_t idx) {
   struct st40_tx_frame_meta meta;
   memset(&meta, 0, sizeof(meta));
@@ -139,7 +145,8 @@ int ut40p_tx_frame_done(ut40p_tx_ctx* ctx, uint16_t idx) {
 }
 
 void ut40p_tx_set_frame_ready(ut40p_tx_ctx* ctx, int idx) {
-  __atomic_store_n(&ctx->framebuffs[idx].stat, ST40P_TX_FRAME_READY, __ATOMIC_RELEASE);
+  atomic_store_explicit(&ctx->framebuffs[idx].stat, ST40P_TX_FRAME_READY,
+                        memory_order_release);
 }
 
 int ut40p_tx_frame_idx(const struct st40_frame_info* frame) {
@@ -185,6 +192,24 @@ int ut40p_tx_transport_report_late(ut40p_tx_ctx* ctx, uint64_t epoch_skipped) {
   if (!ut40p_tx_transport_ops.notify_frame_late) return -ENOENT;
   return ut40p_tx_transport_ops.notify_frame_late(ut40p_tx_transport_ops.priv,
                                                   epoch_skipped);
+}
+
+void ut40p_tx_transport_ops_of(ut40p_tx_ctx* ctx, const struct st40p_tx_ops* ops,
+                               struct st40_tx_ops* out) {
+  struct st40p_tx_ops copy = *ops;
+  memset(&ut40p_tx_transport_ops, 0, sizeof(ut40p_tx_transport_ops));
+  st40_tx_handle transport = ctx->pipeline.transport;
+  tx_st40p_create_transport(&ctx->impl, &ctx->pipeline, &copy);
+  ctx->pipeline.transport = transport;
+  *out = ut40p_tx_transport_ops;
+}
+
+void ut40p_tx_ctx_set_flags(ut40p_tx_ctx* ctx, uint32_t flags) {
+  ctx->pipeline.ops.flags = flags;
+}
+
+const struct st40_frame* ut40p_tx_anc_frame(const ut40p_tx_ctx* ctx, int idx) {
+  return &ctx->anc_frames[idx];
 }
 
 st40p_tx_handle ut40p_tx_handle(ut40p_tx_ctx* ctx) {

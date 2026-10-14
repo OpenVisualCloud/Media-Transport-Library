@@ -6,6 +6,10 @@
  * Sends each input as one packet to rx_ancillary_session_handle_pkt(), the RX path of
  * an ST 2110-40 session of the type ST40_TYPE_RTP_LEVEL.
  *
+ * Bit 0 of input byte 0 (the Ethernet destination MAC, which the handler never reads)
+ * selects ST40_TYPE_FRAME_LEVEL with ST40_RX_FLAG_FAST_METADATA and a small frame pool
+ * instead. A multicast destination MAC (01:00:5e:...) sets that bit.
+ *
  * The input is a full packet that starts with the Ethernet header. The harness ignores
  * an input shorter than struct st_rfc8331_anc_hdr (62 bytes) and uses only the first
  * 2048 bytes. The notify callback empties the RTP ring after each packet, so the
@@ -91,6 +95,20 @@ static int st40_fuzz_notify_rtp_ready(void* priv) {
   return 0;
 }
 
+static uint64_t st40_fuzz_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(port);
+  return 0;
+}
+
+static int st40_fuzz_notify_frame_ready(void* priv, void* frame,
+                                        struct st40_rx_frame_meta* meta) {
+  MTL_MAY_UNUSED(priv);
+  MTL_MAY_UNUSED(frame);
+  MTL_MAY_UNUSED(meta);
+  return 0;
+}
+
 static void st40_fuzz_init_impl(void) {
   st40_fuzz_enable_logging();
   if (g_pool && g_ring) return;
@@ -122,7 +140,12 @@ static void st40_fuzz_init_impl(void) {
   if (!g_ring) abort();
 }
 
-static void st40_fuzz_reset_context(void) {
+/* One frame pool for all FMD inputs: rx_ancillary_session_init_frames() logs a line
+ * each time, which was one line per input */
+static struct st_rx_anc_frame_slot* g_fmd_slots;
+static uint16_t g_fmd_slots_cnt;
+
+static void st40_fuzz_reset_context(bool fmd_frame) {
   if (!g_pool || !g_ring) return;
 
   st40_fuzz_drain_ring(&g_session);
@@ -135,6 +158,7 @@ static void st40_fuzz_reset_context(void) {
 
   g_impl.type = MT_HANDLE_MAIN;
   g_impl.tsc_hz = rte_get_tsc_hz();
+  g_impl.inf[MTL_PORT_P].ptp_get_time_fn = st40_fuzz_ptp_time;
 
   g_mgr.parent = &g_impl;
   g_mgr.idx = 0;
@@ -153,6 +177,24 @@ static void st40_fuzz_reset_context(void) {
   g_session.ops.priv = &g_session;
   g_session.ops.name = "st40_rx_fuzz";
   g_session.redundant_error_cnt[MTL_SESSION_PORT_P] = 0;
+  if (fmd_frame) {
+    g_session.ops.type = ST40_TYPE_FRAME_LEVEL;
+    g_session.ops.flags = ST40_RX_FLAG_FAST_METADATA;
+    g_session.ops.framebuff_cnt = 2;
+    g_session.ops.framebuff_size = 256;
+    g_session.ops.notify_frame_ready = st40_fuzz_notify_frame_ready;
+    if (!g_fmd_slots) {
+      if (rx_ancillary_session_init_frames(&g_session) < 0) abort();
+      g_fmd_slots = g_session.frame_slots;
+      g_fmd_slots_cnt = g_session.frame_slots_cnt;
+    }
+    g_session.frame_slots = g_fmd_slots;
+    g_session.frame_slots_cnt = g_fmd_slots_cnt;
+    /* the notify callback keeps every frame; each input starts with all slots free */
+    for (uint16_t i = 0; i < g_fmd_slots_cnt; i++)
+      atomic_store_explicit(&g_fmd_slots[i].state, ST_RX_ANC_SLOT_FREE,
+                            memory_order_relaxed);
+  }
 
   rx_ancillary_session_reset(&g_session, false);
 }
@@ -163,7 +205,8 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   if (pkt_size > ST40_FUZZ_MAX_PKT_SIZE) pkt_size = ST40_FUZZ_MAX_PKT_SIZE;
 
   st40_fuzz_init_impl();
-  st40_fuzz_reset_context();
+  /* the handler never reads the Ethernet header, so its first byte picks the mode */
+  st40_fuzz_reset_context(data[0] & 0x1);
 
   struct rte_mbuf* mbuf = rte_pktmbuf_alloc(g_pool);
   if (!mbuf) return 0;

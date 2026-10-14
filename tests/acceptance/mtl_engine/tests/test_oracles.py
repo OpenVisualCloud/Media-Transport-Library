@@ -208,3 +208,21 @@ def test_netsniff_restores_promisc_after_a_second_start():
     recorder._enable_promisc(recorder.host.connection)
     recorder._restore_promisc()
     assert recorder.host.connection.cmds[-1] == "sudo ip link set dev eth0 promisc off"
+
+
+def test_text_file_has_the_size_asked_for(tmp_path):
+    import subprocess  # nosec B404 # runs the printf commands of create_text_file on a temp file
+
+    from mtl_engine.media_creator import create_text_file
+
+    class Conn:
+        def start_process(self, cmd, **_):
+            rc = subprocess.run(cmd, shell=True, check=True).returncode
+            return type("Proc", (), {"wait": lambda *_, **__: None, "return_code": rc})
+
+    path = tmp_path / "fast_metadata.txt"
+    host = type("Host", (), {"connection": Conn()})
+    create_text_file(size_kb=64, output_path=str(path), host=host)
+    # st40p/test_fast_metadata.py fmd_payload adds 3 bytes to these 64 KiB, so
+    # that its last data item is not a whole number of 32-bit words.
+    assert path.stat().st_size == 64 * 1024

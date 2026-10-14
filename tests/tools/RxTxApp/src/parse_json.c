@@ -1066,6 +1066,48 @@ static int st_json_parse_st30p(int idx, json_object* st30p_obj,
   return ST_JSON_SUCCESS;
 }
 
+static int parse_anc_fmd_field(json_object* anc_obj, const char* name, int max,
+                               int* value) {
+  json_object* obj = st_json_object_object_get(anc_obj, name);
+  *value = -1;
+  if (!obj) return ST_JSON_SUCCESS;
+  *value = json_object_get_int(obj);
+  if (json_object_get_type(obj) != json_type_int || *value < 0 || *value > max) {
+    err("%s, invalid %s %s\n", __func__, name, json_object_get_string(obj));
+    return -ST_JSON_NOT_VALID;
+  }
+  return ST_JSON_SUCCESS;
+}
+
+/* shared by the ancillary and st40p sessions, TX needs both data item fields */
+static int parse_anc_fast_metadata(json_object* anc_obj, bool tx, bool* fast_metadata,
+                                   int* fmd_dit, int* fmd_k_bit) {
+  json_object* obj = st_json_object_object_get(anc_obj, "fast_metadata");
+  /* json_object_get_boolean is true for any non-empty string, "false" too */
+  if (obj && json_object_get_type(obj) != json_type_boolean) {
+    err("%s, fast_metadata %s is not a json boolean, use true or false\n", __func__,
+        json_object_to_json_string(obj));
+    return -ST_JSON_NOT_VALID;
+  }
+  *fast_metadata = json_object_get_boolean(obj);
+  if (!*fast_metadata) return ST_JSON_SUCCESS;
+  int ret =
+      parse_anc_fmd_field(anc_obj, "fastmetadata_data_item_type", 0x3fffff, fmd_dit);
+  if (ret < 0) return ret;
+  ret = parse_anc_fmd_field(anc_obj, "fastmetadata_k_bit", 1, fmd_k_bit);
+  if (ret < 0) return ret;
+  if (tx && (*fmd_dit < 0 || *fmd_k_bit < 0)) {
+    err("%s, fast_metadata needs fastmetadata_data_item_type and fastmetadata_k_bit\n",
+        __func__);
+    return -ST_JSON_NULL;
+  }
+  return ST_JSON_SUCCESS;
+}
+
+static uint8_t anc_default_payload_type(bool fast_metadata) {
+  return fast_metadata ? ST_APP_PAYLOAD_TYPE_FASTMETADATA : ST_APP_PAYLOAD_TYPE_ANCILLARY;
+}
+
 static int parse_st40p_fps(json_object* st40p_obj, st_json_st40p_session_t* st40p) {
   const char* fps = json_object_get_string(st_json_object_object_get(st40p_obj, "fps"));
   REQUIRED_ITEM(fps);
@@ -1109,10 +1151,15 @@ static int st_json_parse_tx_st40p(int idx, json_object* st40p_obj,
   ret = parse_base_udp_port(st40p_obj, &st40p->base, idx);
   if (ret < 0) return ret;
 
+  ret = parse_anc_fast_metadata(st40p_obj, true, &st40p->info.fast_metadata,
+                                &st40p->info.fmd_dit, &st40p->info.fmd_k_bit);
+  if (ret < 0) return ret;
+
   ret = parse_base_payload_type(st40p_obj, &st40p->base);
   if (ret < 0) {
-    err("%s, use default pt %u\n", __func__, ST_APP_PAYLOAD_TYPE_ANCILLARY);
-    st40p->base.payload_type = ST_APP_PAYLOAD_TYPE_ANCILLARY;
+    uint8_t pt = anc_default_payload_type(st40p->info.fast_metadata);
+    err("%s, use default pt %u\n", __func__, pt);
+    st40p->base.payload_type = pt;
   }
 
   ret = parse_st40p_fps(st40p_obj, st40p);
@@ -1149,10 +1196,15 @@ static int st_json_parse_rx_st40p(int idx, json_object* st40p_obj,
   ret = parse_base_udp_port(st40p_obj, &st40p->base, idx);
   if (ret < 0) return ret;
 
+  ret = parse_anc_fast_metadata(st40p_obj, false, &st40p->info.fast_metadata,
+                                &st40p->info.fmd_dit, &st40p->info.fmd_k_bit);
+  if (ret < 0) return ret;
+
   ret = parse_base_payload_type(st40p_obj, &st40p->base);
   if (ret < 0) {
-    err("%s, use default pt %u\n", __func__, ST_APP_PAYLOAD_TYPE_ANCILLARY);
-    st40p->base.payload_type = ST_APP_PAYLOAD_TYPE_ANCILLARY;
+    uint8_t pt = anc_default_payload_type(st40p->info.fast_metadata);
+    err("%s, use default pt %u\n", __func__, pt);
+    st40p->base.payload_type = pt;
   }
 
   /* The RX pipeline does not need a frame rate to receive, but the app uses it as the
@@ -1171,6 +1223,12 @@ static int st_json_parse_rx_st40p(int idx, json_object* st40p_obj,
 
   st40p->enable_rtcp =
       json_object_get_boolean(st_json_object_object_get(st40p_obj, "enable_rtcp"));
+
+  /* the optional fast metadata reference file */
+  if (st40p->info.fast_metadata && st_json_object_object_get(st40p_obj, "st40p_url")) {
+    ret = parse_url(st40p_obj, "st40p_url", st40p->info.st40p_url);
+    if (ret < 0) return ret;
+  }
 
   return ST_JSON_SUCCESS;
 }
@@ -1227,35 +1285,6 @@ static int st_json_parse_rx_audio(int idx, json_object* audio_obj,
   return ST_JSON_SUCCESS;
 }
 
-static int parse_anc_fmd_field(json_object* anc_obj, const char* name, int max,
-                               int* value) {
-  json_object* obj = st_json_object_object_get(anc_obj, name);
-  *value = -1;
-  if (!obj) return ST_JSON_SUCCESS;
-  *value = json_object_get_int(obj);
-  if (json_object_get_type(obj) != json_type_int || *value < 0 || *value > max) {
-    err("%s, invalid %s %s\n", __func__, name, json_object_get_string(obj));
-    return -ST_JSON_NOT_VALID;
-  }
-  return ST_JSON_SUCCESS;
-}
-
-static int parse_anc_fast_metadata(json_object* anc_obj,
-                                   st_json_ancillary_session_t* anc) {
-  anc->info.fast_metadata =
-      json_object_get_boolean(st_json_object_object_get(anc_obj, "fast_metadata"));
-  if (!anc->info.fast_metadata) return ST_JSON_SUCCESS;
-  int ret = parse_anc_fmd_field(anc_obj, "fastmetadata_data_item_type", 0x3fffff,
-                                &anc->info.fmd_dit);
-  if (ret < 0) return ret;
-  return parse_anc_fmd_field(anc_obj, "fastmetadata_k_bit", 1, &anc->info.fmd_k_bit);
-}
-
-static uint8_t anc_default_payload_type(st_json_ancillary_session_t* anc) {
-  return anc->info.fast_metadata ? ST_APP_PAYLOAD_TYPE_FASTMETADATA
-                                 : ST_APP_PAYLOAD_TYPE_ANCILLARY;
-}
-
 static int st_json_parse_tx_anc(int idx, json_object* anc_obj,
                                 st_json_ancillary_session_t* anc) {
   if (anc_obj == NULL || anc == NULL) {
@@ -1268,19 +1297,16 @@ static int st_json_parse_tx_anc(int idx, json_object* anc_obj,
   ret = parse_base_udp_port(anc_obj, &anc->base, idx);
   if (ret < 0) return ret;
 
-  ret = parse_anc_fast_metadata(anc_obj, anc);
+  ret = parse_anc_fast_metadata(anc_obj, true, &anc->info.fast_metadata,
+                                &anc->info.fmd_dit, &anc->info.fmd_k_bit);
   if (ret < 0) return ret;
-  if (anc->info.fast_metadata && (anc->info.fmd_dit < 0 || anc->info.fmd_k_bit < 0)) {
-    err("%s, fast_metadata needs fastmetadata_data_item_type and fastmetadata_k_bit\n",
-        __func__);
-    return -ST_JSON_NULL;
-  }
 
   /* parse payload type */
   ret = parse_base_payload_type(anc_obj, &anc->base);
   if (ret < 0) {
-    err("%s, use default pt %u\n", __func__, anc_default_payload_type(anc));
-    anc->base.payload_type = anc_default_payload_type(anc);
+    uint8_t pt = anc_default_payload_type(anc->info.fast_metadata);
+    err("%s, use default pt %u\n", __func__, pt);
+    anc->base.payload_type = pt;
   }
 
   /* parse anc type */
@@ -1375,14 +1401,16 @@ static int st_json_parse_rx_anc(int idx, json_object* anc_obj,
   ret = parse_base_udp_port(anc_obj, &anc->base, idx);
   if (ret < 0) return ret;
 
-  ret = parse_anc_fast_metadata(anc_obj, anc);
+  ret = parse_anc_fast_metadata(anc_obj, false, &anc->info.fast_metadata,
+                                &anc->info.fmd_dit, &anc->info.fmd_k_bit);
   if (ret < 0) return ret;
 
   /* parse payload type */
   ret = parse_base_payload_type(anc_obj, &anc->base);
   if (ret < 0) {
-    err("%s, use default pt %u\n", __func__, anc_default_payload_type(anc));
-    anc->base.payload_type = anc_default_payload_type(anc);
+    uint8_t pt = anc_default_payload_type(anc->info.fast_metadata);
+    err("%s, use default pt %u\n", __func__, pt);
+    anc->base.payload_type = pt;
   }
 
   /* parse anc interlaced */

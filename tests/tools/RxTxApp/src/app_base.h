@@ -115,6 +115,13 @@ struct st_app_frameinfo {
   uint16_t lines_ready;
 };
 
+/* the file a fast metadata TX sends, RX compares every data item against it */
+struct st_app_fmd_ref {
+  uint8_t* data;
+  size_t size;
+  int64_t next; /* offset of the chunk expected next, -1 until synced */
+};
+
 struct st_app_tx_video_session {
   int idx;
   mtl_handle st;
@@ -351,16 +358,15 @@ struct st_app_rx_anc_session {
   bool st40_fmd;
   int st40_fmd_dit;   /* -1: not checked */
   int st40_fmd_k_bit; /* -1: not checked */
-  uint8_t* st40_fmd_ref;
-  size_t st40_fmd_ref_size;
-  int64_t st40_fmd_ref_next; /* offset of the chunk expected next, -1 until synced */
-  uint16_t st40_fmd_last_seq;
+  struct st_app_fmd_ref st40_fmd_ref;
+  int st40_fmd_last_seq; /* -1 until the first packet */
   uint64_t st40_fmd_last_rx_time;
   uint64_t st40_fmd_max_gap_ns;
 
   /* stat */
   int stat_frame_total_received;
-  int stat_pkt_invalid; /* RTP packets that failed validation */
+  int stat_pkt_invalid;     /* RTP packets that failed validation */
+  int stat_pkt_seq_discont; /* RTP packets whose seq does not follow the last one */
   uint64_t stat_frame_first_rx_time;
 };
 
@@ -468,6 +474,7 @@ struct st_app_tx_st40p_session {
   struct st_user_time* user_time;
 
   size_t udw_payload_limit;
+  bool st40p_fmd;
 
   pthread_t st40p_app_thread;
   bool st40p_app_thread_stop;
@@ -488,8 +495,16 @@ struct st_app_rx_st40p_session {
   pthread_mutex_t st40p_wake_mutex;
   bool st40p_app_thread_stop;
 
+  bool st40p_fmd;
+  int st40p_fmd_dit;   /* -1: not checked */
+  int st40p_fmd_k_bit; /* -1: not checked */
+  struct st_app_fmd_ref st40p_fmd_ref;
+  uint64_t st40p_fmd_last_rx_time;
+  uint64_t st40p_fmd_max_gap_ns;
+
   /* stat */
   int stat_frame_total_received;
+  int stat_frame_invalid; /* fast metadata data items that failed validation */
   uint64_t stat_frame_first_rx_time;
   int stat_frame_seq_discont;
   int stat_frame_marker_missing;
@@ -832,5 +847,12 @@ void st_sha_dump(const char* tag, const unsigned char* sha);
 
 uint64_t st_app_user_time(void* ctx, struct st_user_time* user_time, uint64_t frame_num,
                           double frame_time, bool restart_base_time);
+
+int st_app_fmd_ref_open(struct st_app_fmd_ref* ref, const char* url);
+
+void st_app_fmd_ref_close(struct st_app_fmd_ref* ref);
+
+int st_app_fmd_ref_check(struct st_app_fmd_ref* ref, bool in_seq, uint8_t* item,
+                         uint16_t padded_size);
 
 #endif

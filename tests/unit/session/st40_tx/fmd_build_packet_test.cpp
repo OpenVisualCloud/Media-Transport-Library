@@ -457,6 +457,45 @@ TEST_F(St40TxFmdTest, OversizedDataItemAbortsFrame) {
   EXPECT_EQ(ut_txa_queued_packets(ctx_), 0u);
 }
 
+/* The item after an aborted oversized one still waits for its USER_PACING time. */
+TEST_F(St40TxFmdTest, FrameAfterOversizedItemKeepsUserPacing) {
+  std::vector<uint8_t> big(kMaxDataItem + 1, 0x5a);
+  auto data = pattern(13);
+  ut_txa_set_user_pacing(ctx_, true);
+  prepare_fmd_frame(big.data(), static_cast<uint32_t>(big.size()));
+  ut_txa_set_frame_count(ctx_, 2);
+  step_frame();
+  ASSERT_EQ(ut_txa_notify_frame_done_calls(ctx_), 1);
+
+  /* PTP time is 10 ms, the next item asks for 15 ms */
+  ut_txa_set_app_timestamp(ctx_, ST10_TIMESTAMP_FMT_TAI, 15ull * 1000 * 1000);
+  ut_txa_set_frame_payload(ctx_, data.data(), 13);
+  ut_txa_step_frame_tasklet(ctx_);
+
+  EXPECT_EQ(ut_txa_queued_packets(ctx_), 0u) << "sent 5 ms before its user time";
+}
+
+/* notify_frame_done of the item after an aborted one reports the RTP timestamp sent. */
+TEST_F(St40TxFmdTest, FrameAfterOversizedItemReportsRtpTimestampSent) {
+  std::vector<uint8_t> big(kMaxDataItem + 1, 0x5a);
+  auto data = pattern(13);
+  prepare_fmd_frame(big.data(), static_cast<uint32_t>(big.size()));
+  ut_txa_set_frame_count(ctx_, 2);
+  step_frame();
+  ASSERT_EQ(ut_txa_notify_frame_done_calls(ctx_), 1);
+
+  ut_txa_set_frame_payload(ctx_, data.data(), 13);
+  step_frame();
+  ASSERT_EQ(ut_txa_notify_frame_done_calls(ctx_), 2);
+  std::vector<uint8_t> pkt(2048);
+  uint64_t tsc = 0;
+  ASSERT_GT(ut_txa_pop_packet(ctx_, &tsc, pkt.data(), static_cast<uint32_t>(pkt.size())),
+            static_cast<int>(ut_txa_udp_hdr_len()));
+
+  EXPECT_EQ(ut_txa_notify_frame_done_rtp_timestamp(ctx_),
+            be32_at(pkt.data() + ut_txa_udp_hdr_len() + 4));
+}
+
 class St40TxFmdTaskletTest : public St40TxFmdTest {
  protected:
   static constexpr long double kFrameNs = 1e9L * 1001 / 60000; /* 59.94 fps */

@@ -116,7 +116,8 @@ static void tx_ancillary_session_abort_frame(struct mtl_main_impl* impl,
   s->st40_frame_stat = ST40_TX_STAT_WAIT_FRAME;
   s->st40_pkt_idx = 0;
   s->st40_anc_idx = 0;
-  s->calculate_time_cursor = false;
+  /* as at the end of a sent frame: the next frame syncs its own pacing */
+  s->calculate_time_cursor = true;
   TX_ANC_TEST_RESET_STATE(s);
   s->check_frame_done_time = false;
   s->pacing.tsc_time_cursor = 0;
@@ -1801,9 +1802,9 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   s->tx_mono_pool = mt_user_tx_mono_pool(impl);
   /* manually disable chain or any port can't support chain */
   s->tx_no_chain = mt_user_tx_no_chain(impl) || !tx_ancillary_session_has_chain_buf(s);
-  s->max_pkt_len = ST_PKT_MAX_ETHER_BYTES - (tx_ancillary_session_is_fmd(s)
-                                                 ? sizeof(struct st_fmd_hdr)
-                                                 : sizeof(struct st_rfc8331_anc_hdr));
+  s->max_pkt_len = tx_ancillary_session_is_fmd(s)
+                       ? ST_PKT_FMD_MAX_ITEM_BYTES
+                       : ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_rfc8331_anc_hdr);
 
   s->st40_frames_cnt = ops->framebuff_cnt;
 

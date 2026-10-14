@@ -68,25 +68,34 @@ static struct st40p_rx_frame* rx_st40p_next_available(
   return NULL;
 }
 
-/* Scan from idx_start for a framebuff in state `desired` and atomically claim
- * it by transitioning it to `claimed`. A concurrent thread can win the race on
- * the scanned candidate between the scan and the claim; on a lost race this
- * keeps scanning instead of giving up, so the caller only sees NULL once every
- * slot has genuinely been checked and found unavailable. */
-static struct st40p_rx_frame* rx_st40p_claim_available(
-    struct st40p_rx_ctx* ctx, uint16_t idx_start, enum st40p_rx_frame_status desired,
-    enum st40p_rx_frame_status claimed) {
-  struct st40p_rx_frame* framebuff;
+/* Claim READY->IN_USER on the READY frame the producer filled first. A frame the app
+ * puts back out of order is filled again ahead of an older READY one in the ring, so
+ * the ring position does not give the delivery order. On a lost CAS race this looks
+ * again, so the caller only sees NULL once no READY frame is left. */
+static struct st40p_rx_frame* rx_st40p_claim_oldest_ready(struct st40p_rx_ctx* ctx) {
+  while (1) {
+    struct st40p_rx_frame* oldest = NULL;
+    uint64_t oldest_seq = 0;
 
-  while ((framebuff = rx_st40p_next_available(ctx, idx_start, desired))) {
-    uint32_t expected = desired;
-    if (atomic_compare_exchange_strong_explicit(&framebuff->stat, &expected, claimed,
-                                                memory_order_acq_rel,
-                                                memory_order_relaxed))
-      return framebuff;
+    for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
+      struct st40p_rx_frame* framebuff = &ctx->framebuffs[i];
+      if (ST40P_RX_FRAME_READY !=
+          atomic_load_explicit(&framebuff->stat, memory_order_acquire))
+        continue;
+      uint64_t seq = atomic_load_explicit(&framebuff->ready_seq, memory_order_relaxed);
+      if (!oldest || seq < oldest_seq) {
+        oldest = framebuff;
+        oldest_seq = seq;
+      }
+    }
+    if (!oldest) return NULL;
+
+    uint32_t expected = ST40P_RX_FRAME_READY;
+    if (atomic_compare_exchange_strong_explicit(
+            &oldest->stat, &expected, ST40P_RX_FRAME_IN_USER, memory_order_acq_rel,
+            memory_order_relaxed))
+      return oldest;
   }
-
-  return NULL;
 }
 
 /* FRAME_LEVEL transport delivery callback.  Transport hands us a fully
@@ -128,6 +137,8 @@ static int rx_st40p_frame_ready(void* priv, void* addr, struct st40_rx_frame_met
   frame_info->rtp_marker = meta->rtp_marker;
   frame_info->interlaced = meta->interlaced;
   frame_info->second_field = meta->second_field;
+  frame_info->fmd_dit = meta->fmd_dit;
+  frame_info->fmd_k_bit = meta->fmd_k_bit;
   frame_info->tfmt = meta->tfmt;
   frame_info->rtp_timestamp = meta->rtp_timestamp;
   frame_info->timestamp = meta->timestamp;
@@ -135,10 +146,12 @@ static int rx_st40p_frame_ready(void* priv, void* addr, struct st40_rx_frame_met
   frame_info->epoch = 0;
   frame_info->status = meta->status;
 
+  atomic_store_explicit(&framebuff->ready_seq, ctx->framebuff_ready_seq++,
+                        memory_order_relaxed);
   atomic_store_explicit(&framebuff->stat, ST40P_RX_FRAME_READY, memory_order_release);
   ctx->framebuff_producer_idx = rx_st40p_next_idx(ctx, framebuff->idx);
   atomic_fetch_add_explicit(&ctx->stat_frames_received, 1, memory_order_relaxed);
-  if (frame_info->seq_discont)
+  if (frame_info->status == ST_FRAME_STATUS_CORRUPTED)
     atomic_fetch_add_explicit(&ctx->stat_frames_corrupted, 1, memory_order_relaxed);
 
   rx_st40p_notify_frame_available(ctx);
@@ -173,7 +186,10 @@ static int rx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_rx
   /* Assembly + seq stats live in st_rx_ancillary_session; pipeline only
    * routes the assembled frame. */
   ops_rx.type = ST40_TYPE_FRAME_LEVEL;
-  ops_rx.framebuff_cnt = ctx->framebuff_cnt;
+  /* the frames the app holds point into transport slots; two more slots, for the
+   * frame in assembly and one pending a late marker, let the transport hand every
+   * frame to rx_st40p_frame_ready(), which counts the ones it cannot take */
+  ops_rx.framebuff_cnt = (uint16_t)RTE_MIN(ctx->framebuff_cnt + 2, UINT16_MAX);
   ops_rx.framebuff_size = ops->max_udw_buff_size;
   ops_rx.notify_frame_ready = rx_st40p_frame_ready;
 
@@ -182,6 +198,8 @@ static int rx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_rx
   if (ops->flags & ST40P_RX_FLAG_ENABLE_RTCP) ops_rx.flags |= ST40_RX_FLAG_ENABLE_RTCP;
   if (ops->flags & ST40P_RX_FLAG_DISABLE_AUTO_DETECT)
     ops_rx.flags |= ST40_RX_FLAG_DISABLE_AUTO_DETECT;
+  if (ops->flags & ST40P_RX_FLAG_FAST_METADATA)
+    ops_rx.flags |= ST40_RX_FLAG_FAST_METADATA;
 
   ctx->transport = st40_rx_create(impl, &ops_rx);
   if (!ctx->transport) {
@@ -336,15 +354,14 @@ struct st40_frame_info* st40p_rx_get_frame(st40p_rx_handle handle) {
 
   ctx->stat_get_frame_try++;
 
-  /* Claim READY->IN_USER. rx_st40p_claim_available() retries across the ring
-   * on a lost CAS race, so it only returns NULL once every slot has actually
-   * been checked -- unlike a scan-then-single-CAS-attempt, which could give up
-   * even while other READY frames remain (spurious failure under contention). */
-  framebuff = rx_st40p_claim_available(ctx, ctx->framebuff_consumer_idx,
-                                       ST40P_RX_FRAME_READY, ST40P_RX_FRAME_IN_USER);
+  framebuff = rx_st40p_claim_oldest_ready(ctx);
   if (!framebuff && ctx->block_get) { /* wait here */
     mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-    while (!ctx->block_wake_pending &&
+    /* a wake for a frame already taken must not end this wait: drop it, and look
+     * once more under the lock, as the producer sets the wake under it after READY */
+    ctx->block_wake_pending = false;
+    framebuff = rx_st40p_claim_oldest_ready(ctx);
+    while (!framebuff && !ctx->block_wake_pending &&
            !atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) {
       int _ret = mt_pthread_cond_timedwait_ns(
           &ctx->block_wake_cond, &ctx->block_wake_mutex, ctx->block_timeout_ns);
@@ -352,10 +369,11 @@ struct st40_frame_info* st40p_rx_get_frame(st40p_rx_handle handle) {
     }
     ctx->block_wake_pending = false;
     mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-    if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
-    /* get again */
-    framebuff = rx_st40p_claim_available(ctx, ctx->framebuff_consumer_idx,
-                                         ST40P_RX_FRAME_READY, ST40P_RX_FRAME_IN_USER);
+    if (!framebuff) {
+      if (atomic_load_explicit(&ctx->lc_destroying, memory_order_acquire)) goto out;
+      /* get again */
+      framebuff = rx_st40p_claim_oldest_ready(ctx);
+    }
   }
 
   /* not any ready frame */

@@ -63,6 +63,12 @@ Tests for single-flow scenarios, where a single source transmits to a single des
   - Format compatibility
   - Audio quality verification
 
+- **st40p/**: Tests for the ST2110-40 ancillary pipeline
+  - Ancillary data transmission and reception
+  - ST2110-41 fast metadata DIT, K-bit, frame rate, and payload type
+  - Byte-exact data item delivery, multicast, and ST 2022-7 redundancy
+  - ST 2110-41 validation for reserved DITs and static payload types
+
 - **udp/**: Tests for UDP functionality
   - UDP packet transmission and reception
   - MTU handling

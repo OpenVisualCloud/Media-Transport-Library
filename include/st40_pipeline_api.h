@@ -52,9 +52,11 @@ struct st40_frame_info {
 
   /** Whether a marker bit was seen on any RTP packet in this frame. */
   bool rtp_marker;
-  /** True if a sequence number discontinuity was observed within this frame. */
+  /** True if a sequence number discontinuity was observed within this frame. With
+   * ST40P_RX_FLAG_FAST_METADATA: a break in the stream before this data item. */
   bool seq_discont;
-  /** Number of missing RTP sequence numbers observed while assembling this frame. */
+  /** Number of missing RTP sequence numbers observed while assembling this frame. With
+   * ST40P_RX_FLAG_FAST_METADATA: the RTP seq gaps since the previous data item. */
   uint32_t seq_lost;
 
   /** TAI timestamp measured right after the RTP packet for this frame was received */
@@ -67,6 +69,17 @@ struct st40_frame_info {
 
   /** frame status, set by lib before notify_frame_done: complete or dropped */
   enum st_frame_status status;
+
+  /**
+   * Data Item Type, set by lib on RX with ST40P_RX_FLAG_FAST_METADATA.
+   * TX takes it from st40p_tx_ops.fmd_dit instead.
+   */
+  uint32_t fmd_dit;
+  /**
+   * Data Item K-bit, set by lib on RX with ST40P_RX_FLAG_FAST_METADATA.
+   * TX takes it from st40p_tx_ops.fmd_k_bit instead.
+   */
+  uint8_t fmd_k_bit;
 
   /** priv pointer for lib, do not touch this */
   void* priv;
@@ -130,6 +143,16 @@ enum st40p_tx_flag {
   ST40P_TX_FLAG_EXACT_USER_PACING = (MTL_BIT32(9)),
   /** Force one ANC packet per RTP and allow splitting multi-ANC frames. */
   ST40P_TX_FLAG_SPLIT_ANC_BY_PKT = (MTL_BIT32(10)),
+  /**
+   * Send SMPTE ST 2110-41 fast metadata instead of RFC 8331 ANC, see
+   * ST40_TX_FLAG_FAST_METADATA. Each frame is one data item: its contents in
+   * udw_buff_addr, its size in udw_buffer_fill (at most 1436 bytes and at most
+   * udw_buffer_size, else st40p_tx_put_frame fails; the lib zero-pads it to a word);
+   * meta/meta_num are ignored. The Data Item Type and K-bit come from
+   * fmd_dit/fmd_k_bit of struct st40p_tx_ops.
+   * Not compatible with ST40P_TX_FLAG_SPLIT_ANC_BY_PKT.
+   */
+  ST40P_TX_FLAG_FAST_METADATA = (MTL_BIT32(11)),
   /** Enable the st40p_tx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st40p_tx_set_block_timeout to customize)*/
   ST40P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
@@ -191,6 +214,14 @@ struct st40p_tx_ops {
    * Valid if ST40P_TX_FLAG_USER_P(R)_MAC is enabled
    */
   uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
+
+  /**
+   * Optional, only with ST40P_TX_FLAG_FAST_METADATA. 22-bit Data Item Type, the
+   * reserved 0x300000-0x3FEFFF is rejected.
+   */
+  uint32_t fmd_dit;
+  /** Optional, only with ST40P_TX_FLAG_FAST_METADATA. Data Item K-bit, 0 or 1 */
+  uint8_t fmd_k_bit;
 };
 
 /** Bit define for flags of struct st40p_rx_ops. */
@@ -218,6 +249,20 @@ enum st40p_rx_flag {
    * RTP F bits and ignores the initial `interlaced` value once detection completes.
    */
   ST40P_RX_FLAG_DISABLE_AUTO_DETECT = (MTL_BIT32(3)),
+  /**
+   * Receive SMPTE ST 2110-41 fast metadata instead of RFC 8331 ANC, see
+   * ST40_RX_FLAG_FAST_METADATA. Each data item package is delivered as its own frame:
+   * udw_buff_addr/udw_buffer_fill hold the Data Item Contents, zero padding included
+   * (fill = Data Item Length * 4), meta_num is 0 and fmd_dit/fmd_k_bit of
+   * struct st40_frame_info hold its header. A zero-item packet delivers no frame, and
+   * an item larger than max_udw_buff_size is dropped.
+   * status is always ST_FRAME_STATUS_COMPLETE; seq_discont and seq_lost flag a break
+   * in the stream before the item (lost, late or locally dropped), as described for
+   * ST40_RX_FLAG_FAST_METADATA, and stat_frames_corrupted does not count it.
+   * Each item of a packet takes a free frame at once, so framebuff_cnt must cover the
+   * items per packet plus the frames the application holds, else the lib drops items.
+   */
+  ST40P_RX_FLAG_FAST_METADATA = (MTL_BIT32(4)),
   /** Enable the st40p_rx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st40p_rx_set_block_timeout to customize)*/
   ST40P_RX_FLAG_BLOCK_GET = (MTL_BIT32(15)),

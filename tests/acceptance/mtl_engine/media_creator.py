@@ -166,7 +166,9 @@ def create_text_file(size_kb: int, output_path: str = "test_anc.txt", host=None)
     command_parts = []
     for i in range(0, len(content), chunk_size):
         chunk = content[i : i + chunk_size]
-        escaped_chunk = chunk.replace("\\", "\\\\").replace("'", "'\"'\"'")
+        # A single-quoted shell word and printf '%s' keep a backslash as it
+        # is, so only the single quote needs an escape.
+        escaped_chunk = chunk.replace("'", "'\"'\"'")
         if i == 0:
             command_parts.append(f"printf '%s' '{escaped_chunk}' > {output_path}")
         else:

@@ -253,6 +253,31 @@ def check_tx_fps_performance(
     return False
 
 
+# The fields that app_rx_st40p_result (rx_st40p_app.c) adds to the RX result
+# of a fast metadata session. An RxTxApp without st40p fast metadata ignores
+# the fast_metadata keys, runs RFC 8331 and does not write them.
+_FMD_RX_RESULT_RE = re.compile(
+    r"seq_discont (\d+), marker_missing \d+, seq_lost (\d+), "
+    r"\d+ invalid, max gap [\d.]+ ms"
+)
+
+
+def _fast_metadata_rx_fault(line: str) -> str:
+    """Return why an OK fast metadata RX result fails, or "" if it passes."""
+    match = _FMD_RX_RESULT_RE.search(line)
+    if not match:
+        return "no fast metadata fields, RxTxApp did not check the data items"
+    seq_discont, seq_lost = (int(count) for count in match.groups())
+    if seq_discont or seq_lost:
+        # RX stays OK after a lost data item while the rate is within 5%, but
+        # every data item must arrive intact and in order.
+        return (
+            "data items lost or out of order "
+            f"(seq_discont {seq_discont}, seq_lost {seq_lost})"
+        )
+    return ""
+
+
 def check_rx_output(
     config: dict,
     output: list,
@@ -297,13 +322,21 @@ def check_rx_output(
     # framerate-tolerance gate passes (ST_APP_EXPECT_NEAR within 5%). The token
     # appears between the parenthesized session index and `fps F`.
     success_token = "OK"
+    rx_session = config["rx_sessions"][0][session_type][0]
+    fast_metadata = session_type == "st40p" and rx_session.get("fast_metadata")
+    fault = ""
 
     for line in output:
         if pattern.search(line) and success_token in line:
+            line_fault = _fast_metadata_rx_fault(line) if fast_metadata else ""
+            if line_fault:
+                fault = line_fault
+                logger.info(f"RX {session_type} result is not OK, {fault}: {line}")
+                continue
             ok_cnt += 1
             logger.info(f"Found RX {session_type} OK result: {line}")
 
-    replicas = config["rx_sessions"][0][session_type][0]["replicas"]
+    replicas = rx_session["replicas"]
 
     logger.info(f"RX {session_type} check: {ok_cnt}/{replicas} OK results found")
 
@@ -311,10 +344,11 @@ def check_rx_output(
         logger.info(f"RX {session_type} check PASSED: all {replicas} sessions OK")
         return True
 
+    msg = f"rx {session_type} session failed" + (f", {fault}" if fault else "")
     if fail_on_error:
-        log_fail(f"rx {session_type} session failed")
+        log_fail(msg)
     else:
-        logger.info(f"rx {session_type} session failed")
+        logger.info(msg)
 
     return False
 
@@ -732,6 +766,11 @@ class RxTxApp(Application):
         # We rebuild the legacy shell for all session types but only populate the active one.
 
         session_type = self.params.get("session_type", UNIVERSAL_PARAMS["session_type"])
+        if self.params.get("fast_metadata") and session_type != "st40p":
+            # Only st40p carries it here; anything else would silently run RFC 8331.
+            raise ValueError(
+                f"fast_metadata needs session_type st40p, not {session_type}"
+            )
         direction = self.params.get("direction")  # None means loopback
         test_mode = self.params.get("test_mode", UNIVERSAL_PARAMS["test_mode"])
 
@@ -1032,17 +1071,6 @@ class RxTxApp(Application):
                     session["ancillary_format"] = p("ancillary_format")
                     session["ancillary_url"] = p("ancillary_url")
                     session["ancillary_fps"] = p("ancillary_fps")
-                if p("fast_metadata"):
-                    # ST2110-41 opt-in. RX checks DIT/K-bit and compares every
-                    # data item against ancillary_url, the file TX sends.
-                    session.update(
-                        fast_metadata=True,
-                        fastmetadata_data_item_type=p(
-                            "fastmetadata_data_item_type", cast=int
-                        ),
-                        fastmetadata_k_bit=p("fastmetadata_k_bit", cast=int),
-                        ancillary_url=p("ancillary_url"),
-                    )
                 return session
 
             if session_type == "st30p":
@@ -1059,6 +1087,7 @@ class RxTxApp(Application):
             if session_type == "st40p":
                 # st40p (ancillary pipeline) — port/pt default to 40000/113;
                 # mirrors add_st40p_sessions() in legacy RxTxApp.py.
+                fast_metadata = p("fast_metadata")
                 session = {
                     **_hdr(port_default=40000, pt_default=113),
                     # RX needs the fps too: it is the expected rate the C-side
@@ -1067,8 +1096,18 @@ class RxTxApp(Application):
                     "interlaced": p("interlaced"),
                     "enable_rtcp": p("enable_rtcp"),
                 }
-                if is_tx:
+                if is_tx or fast_metadata:
+                    # ST2110-41 opt-in: RX compares every data item against
+                    # st40p_url, the file TX sends.
                     session["st40p_url"] = self.params.get("st40p_url", p("input_file"))
+                if fast_metadata:
+                    session.update(
+                        fast_metadata=True,
+                        fastmetadata_data_item_type=p(
+                            "fastmetadata_data_item_type", cast=int
+                        ),
+                        fastmetadata_k_bit=p("fastmetadata_k_bit", cast=int),
+                    )
                 return session
 
             logger.warning(
