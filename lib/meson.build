@@ -40,6 +40,11 @@ if get_option('enable_rx_video_pkt_prefetch') == true
   add_global_arguments('-DMTL_HAS_RX_VIDEO_PKT_PREFETCH', language : 'c')
 endif
 
+# rx video frame copy with non-temporal stores, the sse2 path of rv_frame_memcpy
+if get_option('enable_rx_video_nt_store') == true
+  add_global_arguments('-DMTL_HAS_RX_VIDEO_NT_STORE', language : 'c')
+endif
+
 # usdt check
 mtl_has_usdt = false
 

@@ -6,7 +6,9 @@
 
 #include <math.h>
 #include <rte_random.h>
-#if defined(__SSE2__)
+/* the streaming frame copy and the fences that order it, see rv_frame_memcpy */
+#if defined(__SSE2__) && defined(MTL_HAS_RX_VIDEO_NT_STORE)
+#define ST_RX_VIDEO_NT_STORE
 #include <emmintrin.h>
 #endif
 
@@ -858,7 +860,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
   struct st20_rx_frame_meta* meta = &slot->meta;
   struct st_frame_trans* frame = slot->frame;
 
-#if defined(__SSE2__)
+#ifdef ST_RX_VIDEO_NT_STORE
   /* order the streaming stores in rv_frame_memcpy before the app reads them */
   _mm_sfence();
 #endif
@@ -1004,7 +1006,7 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
   struct st22_rx_frame_meta* meta = &slot->st22_meta;
   struct st_frame_trans* frame = slot->frame;
 
-#if defined(__SSE2__)
+#ifdef ST_RX_VIDEO_NT_STORE
   /* order the streaming stores in rv_frame_memcpy before the app reads them */
   _mm_sfence();
 #endif
@@ -1111,7 +1113,7 @@ static void rv_slice_notify(struct st_rx_video_session_impl* s,
   meta->second_field = slot->second_field;
   meta->frame_recv_size = rv_slot_get_frame_size(slot);
   meta->frame_recv_lines = slice_info->ready_slices * s->slice_lines;
-#if defined(__SSE2__)
+#ifdef ST_RX_VIDEO_NT_STORE
   /* order the streaming stores in rv_frame_memcpy before the app reads them */
   _mm_sfence();
 #endif
@@ -1625,7 +1627,7 @@ static inline void rv_tp_pkt_handle(struct st_rx_video_session_impl* s,
 
 static inline void* rv_frame_memcpy(struct st_rx_video_session_impl* s, void* dst,
                                     const void* src, size_t n) {
-#if defined(__SSE2__)
+#ifdef ST_RX_VIDEO_NT_STORE
   /* The frame is write-only until the app consumes it, so an ordinary store
    * spends a read-for-ownership on every destination line and evicts the rx
    * mbufs that the following packets still have to read. Stream it instead;
@@ -1660,6 +1662,8 @@ static inline void* rv_frame_memcpy(struct st_rx_video_session_impl* s, void* ds
     if (head + nt < n) mt_memcpy(d + nt, p + nt, n - head - nt);
     return dst;
   }
+#else
+  MTL_MAY_UNUSED(s);
 #endif
   return mt_memcpy(dst, src, n);
 }
