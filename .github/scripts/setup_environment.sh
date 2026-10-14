@@ -56,7 +56,6 @@ fi
 # After MTL build
 : "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN:=0}"
 : "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN:=0}"
-: "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN:=0}"
 : "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN:=0}"
 
 : "${PLUGIN_BUILD_AND_INSTALL_SAMPLE:=0}"
@@ -94,7 +93,6 @@ setup_flags=(
 	"MTL_BUILD_AND_INSTALL_DOCKER_MANAGER:MTL manager Docker image"
 	"ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN:FFmpeg plugin"
 	"ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN:GStreamer plugin"
-	"ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN:RIST plugin"
 	"ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN:OBS plugin"
 	"PLUGIN_BUILD_AND_INSTALL_SAMPLE:Sample plugin"
 	"PLUGIN_BUILD_AND_INSTALL_AVCODEC:AVCodec plugin"
@@ -142,7 +140,8 @@ EOF
 }
 
 main() {
-	local STEP=1 mtl_build_options local_base enable_gpu enable_jpegxs jpegxs_bundle tai_bin
+	local STEP=1 mtl_build_options local_base jpegxs_bundle tai_bin
+	local -a ffmpeg_build_options
 	local entry var printed=0
 	local -a mtl_build_env jpegxs_build_options
 
@@ -159,6 +158,16 @@ main() {
 		;;
 	esac
 
+	# The unit test and fuzzing selections only change the MTL build: on their
+	# own they would build nothing. Stop before any work rather than guess.
+	for var in MTL_BUILD_AND_INSTALL_UNIT_TESTS MTL_BUILD_AND_INSTALL_FUZZ; do
+		if [ "${!var}" == "1" ] && [ "${MTL_BUILD_AND_INSTALL}" != "1" ] &&
+			[ "${MTL_BUILD_AND_INSTALL_DEBUG}" != "1" ]; then
+			log_error "${var}=1 needs MTL_BUILD_AND_INSTALL=1 or MTL_BUILD_AND_INSTALL_DEBUG=1."
+			exit 1
+		fi
+	done
+
 	# The trace shows each step in a CI log. A shell that sources the script
 	# does not get it.
 	set -x
@@ -170,6 +179,7 @@ main() {
 		if [ "${setup_build_ice}" == "1" ]; then dependencies+=(ice); fi
 		for entry in SETUP_BUILD_AND_INSTALL_EBPF_XDP:ebpf_xdp SETUP_BUILD_AND_INSTALL_GPU_DIRECT:gpu_direct \
 			ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN:ffmpeg PLUGIN_BUILD_AND_INSTALL_JPEGXS:jpegxs \
+			PLUGIN_BUILD_AND_INSTALL_AVCODEC:avcodec \
 			ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN:gstreamer ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN:obs \
 			HOOK_PYTHON:python HOOK_RUST:rust TOOLS_BUILD_AND_INSTALL_MTL_READPCAP:readpcap; do
 			var=${entry%%:*}
@@ -298,77 +308,31 @@ main() {
 		STEP=$((STEP + 1))
 	fi
 
-	# After MTL build
+	# After MTL build. Both scripts read MTL_INSTALL_PREFIX themselves and install
+	# into the ffmpeg and gstreamer siblings of its parent.
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN}" == "1" ]; then
 		log_info "$STEP Ecosystem FFMPEG plugin build and install"
-		if [ "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT}" == "1" ]; then
-			log_info "Building FFMPEG plugin with GPU Direct support"
-			enable_gpu="-g"
-		else
-			log_info "Building FFMPEG plugin without GPU Direct support"
-			enable_gpu=""
-		fi
-
-		# -j needs a JPEG XS bundle, not a JPEG XS build. The two are the same thing
-		# on a clean host, but not under per-component caching: JPEG XS can be
-		# restored while FFmpeg is rebuilt, and the plugin must still link it.
+		ffmpeg_build_options=()
+		[ "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT}" != "1" ] || ffmpeg_build_options+=(--gpu-direct)
+		# --jpegxs needs a JPEG XS bundle, not a JPEG XS build. The two are the
+		# same thing on a clean host, but not under per-component caching: JPEG XS
+		# can be restored while FFmpeg is rebuilt, and the plugin must still link it.
 		jpegxs_bundle=""
 		[ -z "${MTL_INSTALL_PREFIX:-}" ] || jpegxs_bundle="$(dirname "${MTL_INSTALL_PREFIX}")/jpegxs"
 		if [ "${PLUGIN_BUILD_AND_INSTALL_JPEGXS}" == "1" ] || [ -d "${jpegxs_bundle}" ]; then
-			export FFMPEG_ENABLE_SVT_JPEG_XS="1"
-			enable_jpegxs="-j"
-		else
-			enable_jpegxs=""
+			ffmpeg_build_options+=(--jpegxs)
 		fi
-
-		# FFmpeg installs to a sibling directory for independent caching
-		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
-			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
-			MTL_INSTALL_PREFIX="${local_base}/ffmpeg" bash "${root_folder}/ecosystem/ffmpeg_plugin/build.sh" ${enable_gpu} ${enable_jpegxs}
-		else
-			bash "${root_folder}/ecosystem/ffmpeg_plugin/build.sh" ${enable_gpu} ${enable_jpegxs}
-		fi
+		bash "${root_folder}/script/build_ffmpeg_plugin.sh" "${ffmpeg_build_options[@]}"
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
 		log_info "$STEP Ecosystem GStreamer plugin build and install"
-
-		# GStreamer plugins go to a sibling directory
-		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
-			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
-			MTL_INSTALL_PREFIX="${local_base}/gstreamer" bash "${root_folder}/ecosystem/gstreamer_plugin/build.sh"
-		else
-			pushd "${root_folder}/ecosystem/gstreamer_plugin" >/dev/null || exit 1
-			bash build.sh
-			popd >/dev/null
-		fi
-
-		pushd "${root_folder}/tests/tools/gstreamer_tools/" >/dev/null || exit 1
-		meson setup builddir
-		ninja -C builddir/
-
-		# Copy test tool .so files alongside gstreamer plugins
-		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
-			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
-			mkdir -p "${local_base}/gstreamer"
-			cp builddir/*.so "${local_base}/gstreamer/"
-		fi
-		cp builddir/*.so "${root_folder}/ecosystem/gstreamer_plugin/builddir/"
-		popd >/dev/null
+		# The test plugins of tests/tools/gstreamer_tools go beside the MTL ones.
+		bash "${root_folder}/script/build_gstreamer_plugin.sh" --test-tools
 		STEP=$((STEP + 1))
 	fi
 
-	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN}" == "1" ]; then
-		log_info "$STEP Ecosystem RIST plugin build and install"
-		if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
-			local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
-			MTL_INSTALL_PREFIX="${local_base}/librist" bash "${root_folder}/ecosystem/librist/build_librist_mtl.sh"
-		else
-			bash "${root_folder}/ecosystem/librist/build_librist_mtl.sh"
-		fi
-		STEP=$((STEP + 1))
-	fi
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN}" == "1" ]; then
 		log_info "$STEP Ecosystem OBS plugin build and install"
 		pushd "${root_folder}/ecosystem/obs_mtl" >/dev/null || exit 1
