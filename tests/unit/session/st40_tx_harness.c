@@ -6,7 +6,10 @@
 
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
+#include "common/ut_tx_ring.h"
+#include "datapath/mt_queue.h"
 #include "mt_main.h"
+#include "session/st40_tx_harness.h"
 #include "st2110/st_tx_ancillary_session.h"
 
 struct ut_txa_ctx {
@@ -29,9 +32,18 @@ struct ut_txa_ctx {
   uint32_t packet_len;
   int notify_late_calls;
   uint64_t notify_late_last_delta;
-};
 
-#include "session/st40_tx_harness.h"
+  /* ut_txa_pipe_*(): the session and its transmitter over ut_txr rings */
+  bool pipe_on;
+  struct ut_txr* pipe_ring[MTL_SESSION_PORT_MAX];
+  struct mt_txq_entry pipe_queue[MTL_SESSION_PORT_MAX];
+  struct st_ancillary_transmitter_impl pipe_trs;
+  struct rte_mbuf* pipe_held[UT_TXA_PIPE_HOLD_MAX];
+  int pipe_held_cnt;
+  uint64_t pipe_step;
+  uint64_t pipe_first_alloc_fail;
+  uint64_t pipe_first_burst_fail;
+};
 
 static uint64_t ut_txa_ptp_time_fn(struct mtl_main_impl* impl, enum mtl_port port) {
   (void)port;
@@ -76,9 +88,34 @@ static int ut_txa_notify_rtp_done(void* priv) {
   return 0;
 }
 
+static struct ut_txa_ctx* ut_txa_active_ctx;
+
+static uint16_t ut_txa_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
+                                 uint16_t nb_pkts);
+
 #define mt_get_tsc ut_txa_tsc_time_fn
+#define mt_txq_burst ut_txa_txq_burst
 #include "st2110/st_tx_ancillary_session.c"
+#define st_ancillary_transmitter_init ut_txa_unused_transmitter_init
+#define st_ancillary_transmitter_uinit ut_txa_unused_transmitter_uinit
+#include "st2110/st_ancillary_transmitter.c"
+#undef st_ancillary_transmitter_uinit
+#undef st_ancillary_transmitter_init
+#undef mt_txq_burst
 #undef mt_get_tsc
+
+static uint16_t ut_txa_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
+                                 uint16_t nb_pkts) {
+  struct ut_txa_ctx* ctx = ut_txa_active_ctx;
+
+  if (!ctx || !ctx->pipe_on) return mt_txq_burst(entry, tx_pkts, nb_pkts);
+  int leg = entry == &ctx->pipe_queue[MTL_SESSION_PORT_R] ? MTL_SESSION_PORT_R
+                                                          : MTL_SESSION_PORT_P;
+  uint16_t tx = ut_txr_xmit(ctx->pipe_ring[leg], tx_pkts, nb_pkts, ctx->mock_tsc_ns);
+  if (tx < nb_pkts && !ctx->pipe_first_burst_fail)
+    ctx->pipe_first_burst_fail = ctx->pipe_step;
+  return tx;
+}
 
 int ut_txa_init(void) {
   return ut_eal_init();
@@ -612,4 +649,171 @@ int ut_txa_ops_check(uint32_t flags, uint32_t fmd_dit, uint8_t fmd_k_bit,
   ops.fmd_k_bit = fmd_k_bit;
   ops.payload_type = payload_type;
   return tx_ancillary_ops_check(&ops);
+}
+
+/* ── session and transmitter over modeled NIC rings ───────────────────── */
+
+static struct rte_mempool* ut_txa_pipe_pool(unsigned int n, uint16_t data_room) {
+  static unsigned int pool_idx;
+  char name[RTE_MEMPOOL_NAMESIZE];
+
+  (void)snprintf(name, sizeof(name), "ut_txa_pipe_%u", pool_idx++);
+  return rte_pktmbuf_pool_create(name, n, 0, sizeof(struct mt_muf_priv_data),
+                                 RTE_PKTMBUF_HEADROOM + data_room, (int)rte_socket_id());
+}
+
+static int ut_txa_pipe_hold(struct ut_txa_ctx* ctx, struct rte_mempool* pool,
+                            unsigned int n) {
+  for (unsigned int i = 0; i < n; i++) {
+    if (ctx->pipe_held_cnt >= UT_TXA_PIPE_HOLD_MAX) return -ENOSPC;
+    struct rte_mbuf* m = rte_pktmbuf_alloc(pool);
+    if (!m) return -ENOMEM;
+    ctx->pipe_held[ctx->pipe_held_cnt++] = m;
+  }
+  return 0;
+}
+
+static int ut_txa_pipe_pools(struct ut_txa_ctx* ctx, const struct ut_txa_pipe_case* c) {
+  struct st_tx_ancillary_session_impl* s = &ctx->session;
+  uint16_t chain_room = ST_PKT_MAX_ETHER_BYTES - sizeof(struct mt_udp_hdr);
+  uint16_t hdr_room = sizeof(struct mt_udp_hdr) + (s->tx_no_chain ? chain_room : 0);
+
+  if (!c->hdr_pool[MTL_SESSION_PORT_P])
+    return tx_ancillary_session_mempool_init(&ctx->impl, &ctx->mgr, s);
+  for (int i = 0; i < c->num_port; i++) {
+    s->mbuf_mempool_hdr[i] = ut_txa_pipe_pool(c->hdr_pool[i], hdr_room);
+    if (!s->mbuf_mempool_hdr[i] ||
+        ut_txa_pipe_hold(ctx, s->mbuf_mempool_hdr[i], c->hold) < 0)
+      return -ENOMEM;
+  }
+  if (s->tx_no_chain) return 0;
+  s->mbuf_mempool_chain = ut_txa_pipe_pool(c->chain_pool, chain_room);
+  if (!s->mbuf_mempool_chain || ut_txa_pipe_hold(ctx, s->mbuf_mempool_chain, c->hold) < 0)
+    return -ENOMEM;
+  return 0;
+}
+
+int ut_txa_pipe_setup(ut_txa_ctx* ctx, const struct ut_txa_pipe_case* c) {
+  static unsigned int ring_idx;
+  struct st_tx_ancillary_session_impl* s = &ctx->session;
+  struct st_tx_ancillary_sessions_mgr* mgr = &ctx->mgr;
+  char name[RTE_RING_NAMESIZE];
+
+  memset(&ctx->frame, 0, sizeof(ctx->frame));
+  memset(&ctx->frame_data, 0, sizeof(ctx->frame_data));
+  ctx->frame.addr = &ctx->frame_data;
+  ctx->frame_count = INT_MAX;
+  s->st40_frames = &ctx->frame;
+  s->st40_frames_cnt = 1;
+  s->st40_frame_stat = ST40_TX_STAT_WAIT_FRAME;
+  s->calculate_time_cursor = true;
+  s->tx_no_chain = c->copy;
+  s->shared_queue = c->shared;
+  s->socket_id = (int)rte_socket_id();
+  s->ops.num_port = c->num_port;
+  s->ops.type = ST40_TYPE_FRAME_LEVEL;
+  if (ut_txa_set_fps(ctx, ST_FPS_P59_94) < 0) return -EINVAL;
+  ctx->mock_ptp_ns = 1000ull * NS_PER_S;
+  tx_ancillary_session_reset_pacing_epoch(&ctx->impl, s);
+  ctx->impl.user_para.num_ports = c->num_port;
+  ctx->pipe_trs.parent = &ctx->impl;
+  ctx->pipe_trs.mgr = mgr;
+  for (int i = 0; i < c->num_port; i++) {
+    struct mt_interface* inf = &ctx->impl.inf[i];
+    inf->nb_tx_desc = c->nb_tx_desc[i];
+    inf->ptp_get_time_fn = ut_txa_ptp_time_fn;
+    s->port_maps[i] = (enum mtl_port)i;
+    ctx->pipe_ring[i] = ut_txr_create((enum ut_txr_mode)c->ring_mode, c->nb_tx_desc[i],
+                                      32, c->free_thresh, c->hung[i] ? UT_TXR_HUNG : 1);
+    if (!ctx->pipe_ring[i]) return -ENOMEM;
+    if (s->shared_queue) {
+      (void)snprintf(name, sizeof(name), "ut_txa_pipe_%u", ring_idx++);
+      mgr->ring[i] = rte_ring_create(name, ST_TX_ANC_SESSIONS_RING_SIZE, s->socket_id,
+                                     RING_F_MP_HTS_ENQ | RING_F_SC_DEQ);
+      if (!mgr->ring[i]) return -ENOMEM;
+      mgr->queue[i] = &ctx->pipe_queue[i];
+    } else {
+      s->queue[i] = &ctx->pipe_queue[i];
+    }
+  }
+  if (ut_txa_pipe_pools(ctx, c) < 0) return -ENOMEM;
+  ctx->pipe_on = true;
+  return 0;
+}
+
+void ut_txa_pipe_hang(ut_txa_ctx* ctx, int leg) {
+  ut_txr_set_drain_ns(ctx->pipe_ring[leg], UT_TXR_HUNG);
+}
+
+static struct rte_mempool* ut_txa_pipe_mempool(const struct ut_txa_ctx* ctx, int pool) {
+  const struct st_tx_ancillary_session_impl* s = &ctx->session;
+  return pool < UT_TXA_PIPE_CHAIN ? s->mbuf_mempool_hdr[pool] : s->mbuf_mempool_chain;
+}
+
+static void ut_txa_pipe_note(struct ut_txa_ctx* ctx) {
+  if (!ctx->pipe_first_alloc_fail &&
+      ctx->session.stat_build_ret_code == -STI_FRAME_PKT_ALLOC_FAIL)
+    ctx->pipe_first_alloc_fail = ctx->pipe_step;
+}
+
+void ut_txa_pipe_run(ut_txa_ctx* ctx, uint64_t duration_ns, uint64_t step_ns) {
+  uint64_t end = ctx->mock_tsc_ns + duration_ns;
+
+  ut_txa_active_ctx = ctx;
+  while (ctx->mock_tsc_ns < end && !ctx->pipe_first_alloc_fail &&
+         !ctx->pipe_first_burst_fail) {
+    ctx->pipe_step++;
+    tx_ancillary_sessions_tasklet_handler(&ctx->mgr);
+    ut_txa_pipe_note(ctx);
+    if (ctx->session.shared_queue) st_ancillary_trs_tasklet_handler(&ctx->pipe_trs);
+    ctx->mock_tsc_ns += step_ns;
+    ctx->mock_ptp_ns += step_ns;
+  }
+  ut_txa_active_ctx = NULL;
+}
+
+int ut_txa_pipe_teardown(ut_txa_ctx* ctx) {
+  struct st_tx_ancillary_session_impl* s = &ctx->session;
+  struct st_tx_ancillary_sessions_mgr* mgr = &ctx->mgr;
+  int ret = 0;
+
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    if (mgr->ring[i]) {
+      ut_ring_drain(mgr->ring[i]);
+      rte_ring_free(mgr->ring[i]);
+      mgr->ring[i] = NULL;
+    }
+    rte_pktmbuf_free(ctx->pipe_trs.inflight[i]);
+    ctx->pipe_trs.inflight[i] = NULL;
+    rte_pktmbuf_free(s->inflight[i]);
+    s->inflight[i] = NULL;
+    ut_txr_destroy(ctx->pipe_ring[i]);
+    ctx->pipe_ring[i] = NULL;
+    mgr->queue[i] = NULL;
+    s->queue[i] = NULL;
+  }
+  for (int i = 0; i < ctx->pipe_held_cnt; i++) rte_pktmbuf_free(ctx->pipe_held[i]);
+  ctx->pipe_held_cnt = 0;
+  for (int i = 0; i <= UT_TXA_PIPE_CHAIN; i++) {
+    struct rte_mempool* mp = ut_txa_pipe_mempool(ctx, i);
+    if (!mp) continue;
+    if (rte_mempool_in_use_count(mp))
+      ret = -EBUSY;
+    else
+      rte_mempool_free(mp);
+  }
+  s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] = NULL;
+  s->mbuf_mempool_hdr[MTL_SESSION_PORT_R] = NULL;
+  s->mbuf_mempool_chain = NULL;
+  s->st40_frames = NULL;
+  ctx->pipe_on = false;
+  return ret;
+}
+
+uint64_t ut_txa_pipe_first_alloc_fail(const ut_txa_ctx* ctx) {
+  return ctx->pipe_first_alloc_fail;
+}
+
+uint64_t ut_txa_pipe_first_burst_fail(const ut_txa_ctx* ctx) {
+  return ctx->pipe_first_burst_fail;
 }

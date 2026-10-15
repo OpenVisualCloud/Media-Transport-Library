@@ -55,7 +55,8 @@ TEST_P(St20TxZeroCopyLazyTest, ZeroCopyWhereTheBoundAllowsNeverMeetsAReferencedF
   c.width = lc.width;
   c.height = lc.height;
   c.frames_cnt = lc.frames;
-  c.nb_tx_desc = lc.nb_tx_desc;
+  c.num_port = 1;
+  c.nb_tx_desc[MTL_SESSION_PORT_P] = lc.nb_tx_desc;
   c.ring_mode = std::get<1>(GetParam());
   c.free_thresh = 32;
   ASSERT_EQ(ut_txv_pipe_setup(ctx_, &c), 0);
@@ -69,6 +70,8 @@ TEST_P(St20TxZeroCopyLazyTest, ZeroCopyWhereTheBoundAllowsNeverMeetsAReferencedF
       ut_txv_pkts_capable_chain(bound, lc.nb_tx_desc, total_pkts, lc.frames, false);
   ut_txv_destroy(bound);
   EXPECT_GE(ut_txv_pipe_frames_asked(ctx_), 2u);
+  EXPECT_EQ(ut_txv_pipe_first_alloc_fail(ctx_), 0u);
+  EXPECT_EQ(ut_txv_pipe_first_burst_fail(ctx_), 0u);
   EXPECT_EQ(ut_txv_pipe_first_frame_busy(ctx_) == 0, zero_copy)
       << total_pkts << " pkts, " << lc.frames << " buffers";
 }

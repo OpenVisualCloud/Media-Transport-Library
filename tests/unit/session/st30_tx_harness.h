@@ -98,6 +98,45 @@ uint64_t ut_txa30_profile_rl(ut_txa30_ctx* ctx, uint64_t initial_bytes_per_sec);
 uint64_t ut_txa30_rl_queued_ns(const ut_txa30_ctx* ctx);
 uint64_t ut_txa30_slept_ns(const ut_txa30_ctx* ctx);
 
+/* ── session and transmitter over modeled NIC rings ───────────────────── */
+enum { UT_TXA30_PIPE_HOLD_MAX = 1024, UT_TXA30_PIPE_CHAIN = 2 };
+enum ut_txa30_pipe_pacing {
+  UT_TXA30_PIPE_TSC_SHARED, /* the manager ring and audio transmitter, the default */
+  UT_TXA30_PIPE_TSC_DEDICATED,
+  UT_TXA30_PIPE_RL, /* ST30_TX_RL_QUEUES_USED queues a leg, 3 pads a pkt */
+};
+/* A frame-level PCM24 stereo 48 kHz session of 10-pkt frames on num_port legs, leg i on
+ * port i whose TX queues are common/ut_tx_ring.h rings of nb_tx_desc[i] (rs 32, the
+ * PMD's free_thresh), hung or draining a descriptor a ns. The production session tasklet
+ * and, when shared, the audio transmitter run on the mock clocks. */
+struct ut_txa30_pipe_case {
+  enum st30_ptime ptime;
+  enum ut_txa30_pipe_pacing pacing;
+  int num_port;
+  bool copy;
+  uint16_t nb_tx_desc[2];
+  int ring_mode; /* enum ut_txr_mode */
+  uint16_t free_thresh;
+  bool hung[2];
+  /* exact header pool of each leg and chain pool; tx_audio_session_mempool_init()'s
+   * when 0 */
+  unsigned int hdr_pool[2];
+  unsigned int chain_pool;
+  /* mbufs taken out of each exact pool first, as other lcores' caches keep them */
+  unsigned int hold;
+};
+int ut_txa30_pipe_setup(ut_txa30_ctx* ctx, const struct ut_txa30_pipe_case* c);
+/* the leg's rings complete no descriptor posted from now on */
+void ut_txa30_pipe_hang(ut_txa30_ctx* ctx, int leg);
+/* stops at the first failed pkt alloc or refused burst */
+void ut_txa30_pipe_run(ut_txa30_ctx* ctx, uint64_t duration_ns, uint64_t step_ns);
+/* -EBUSY if a pool still had mbufs out once the rings and inflights were freed */
+int ut_txa30_pipe_teardown(ut_txa30_ctx* ctx);
+/* the run step a pkt alloc first failed and a NIC ring first refused a pkt; 0 for none */
+uint64_t ut_txa30_pipe_first_alloc_fail(const ut_txa30_ctx* ctx);
+uint64_t ut_txa30_pipe_first_burst_fail(const ut_txa30_ctx* ctx);
+unsigned int ut_txa30_pipe_trans_ring_thresh(const ut_txa30_ctx* ctx);
+
 #ifdef __cplusplus
 }
 #endif

@@ -394,26 +394,40 @@ int ut_txv_recovery_flushes(const ut_txv_ctx* ctx, int leg);
 int ut_txv_recovery_fallback_flushes(const ut_txv_ctx* ctx, int leg);
 int ut_txv_recovery_done_cleanups(const ut_txv_ctx* ctx, int leg);
 
-/* ── builder and transmitter over a modeled NIC ring ──────────────────── */
-/* A frame-level BPM 4:2:2 10-bit 59.94p zero-copy session on one port whose TX queue is
- * a common/ut_tx_ring.h ring of nb_tx_desc (rs 32, the PMD's free_thresh), draining a
- * descriptor a ns. The production builder (tvs_tasklet_handler()) and TSC transmitter
- * run on the mock clock; the app hands the frames over in turn. */
+/* ── builder and transmitter over modeled NIC rings ───────────────────── */
+enum { UT_TXV_PIPE_HOLD_MAX = 1024, UT_TXV_PIPE_CHAIN = MTL_SESSION_PORT_MAX };
+/* A frame-level BPM 4:2:2 10-bit 59.94p session on num_port legs, leg i on port i whose
+ * TX queue is a common/ut_tx_ring.h ring of nb_tx_desc[i] (rs 32, the PMD's free_thresh),
+ * hung or draining a descriptor a ns. The production builder (tvs_tasklet_handler()) and
+ * TSC transmitter run on the mock clock; the app hands the frames over in turn. */
 struct ut_txv_pipe_case {
   uint32_t width;
   uint32_t height;
   uint16_t frames_cnt;
-  uint16_t nb_tx_desc;
+  int num_port;
+  bool copy;
+  uint16_t nb_tx_desc[MTL_SESSION_PORT_MAX];
   int ring_mode; /* enum ut_txr_mode */
   uint16_t free_thresh;
+  bool hung[MTL_SESSION_PORT_MAX];
+  /* exact header pool of each leg and chain pool; tv_mempool_init()'s when 0 */
+  unsigned int hdr_pool[MTL_SESSION_PORT_MAX];
+  unsigned int chain_pool;
+  /* mbufs taken out of each exact pool first, as other lcores' caches keep them */
+  unsigned int hold;
 };
 int ut_txv_pipe_setup(ut_txv_ctx* ctx, const struct ut_txv_pipe_case* c);
-/* stops once the builder met a frame still referenced */
+/* the leg's ring completes no descriptor posted from now on */
+void ut_txv_pipe_hang(ut_txv_ctx* ctx, int leg);
+/* stops at the first frame still referenced, failed pkt alloc or refused burst */
 void ut_txv_pipe_run(ut_txv_ctx* ctx, uint64_t duration_ns, uint64_t step_ns);
 /* -EBUSY if a pool still had mbufs out once the rings and inflights were freed */
 int ut_txv_pipe_teardown(ut_txv_ctx* ctx);
-/* the run step the app handed over a frame still referenced, 0 for none */
+/* the run step the app handed over a frame still referenced, a pkt alloc first failed,
+ * and a NIC ring first refused a pkt; 0 for none */
 uint64_t ut_txv_pipe_first_frame_busy(const ut_txv_ctx* ctx);
+uint64_t ut_txv_pipe_first_alloc_fail(const ut_txv_ctx* ctx);
+uint64_t ut_txv_pipe_first_burst_fail(const ut_txv_ctx* ctx);
 uint64_t ut_txv_pipe_frames_asked(const ut_txv_ctx* ctx);
 int ut_txv_pipe_total_pkts(const ut_txv_ctx* ctx);
 
