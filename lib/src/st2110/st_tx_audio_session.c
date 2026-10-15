@@ -1416,6 +1416,7 @@ static uint16_t tx_audio_session_rl_tx_pkt(struct st_tx_audio_session_impl* s, i
   int pads_per_st30_pkt = rl->pads_per_st30_pkt;
   int cur_queue = rl_port->cur_queue;
   struct mt_txq_entry* queue = rl_port->queue[cur_queue];
+  // codechecker_suppress [core.VLASize] init_rl() sets pads_per_st30_pkt to 3 for good
   struct rte_mbuf* pads[pads_per_st30_pkt];
   uint16_t tx;
   uint16_t burst_size = 1;

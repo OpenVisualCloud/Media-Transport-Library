@@ -612,6 +612,7 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
   int valid_bulk = bulk;
   uint32_t pkt_idx = 0;
   for (int i = 0; i < bulk; i++) {
+    // codechecker_suppress [core.CallAndMessage] a nonzero bulk dequeue filled pkts[]
     pkt_idx = st_tx_mbuf_get_idx(pkts[i]);
     if (pkt_idx == ST_TX_DUMMY_PKT_IDX) {
       valid_bulk = i;
