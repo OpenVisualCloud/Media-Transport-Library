@@ -2,10 +2,8 @@
 # Copyright(c) 2026 Intel Corporation
 """Base application class providing unified interface for media framework adapters."""
 
-import json
 import logging
 import re
-import shlex
 import signal
 import time
 from abc import ABC, abstractmethod
@@ -13,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional, Sequence
 
 from .config.universal_params import UNIVERSAL_PARAMS
-from .const import PREFIX
+from .const import KAHAWAI_CFG
 from .execute import kill_stale_processes, log_fail, run
 from .integrity import min_expected_frames
 from .integrity_session import NO_INTEGRITY, IntegrityIntent
@@ -28,21 +26,17 @@ logger = logging.getLogger(__name__)
 MTL_PTP_INTERNAL_TIMEOUT = 180
 
 
-# Encoder name -> MTL st22 plugin shared object, for require_encoder()
-# pre-flight checks shared across framework adapters.
-MTL_ENCODER_PLUGIN_MAP = {
-    "libsvt_jpegxs": "libst_plugin_st22_svt_jpeg_xs.so",
-    "libopenh264": "libst_plugin_st22_avcodec.so",
-}
-
-# (kahawai plugin name, tree under PREFIX, shared object) of each ST22 codec
-# plugin that the local install can hold.
-_LOCAL_ST22_PLUGINS = (
-    ("st22_svt_jpegxs", "jpegxs", "libst_plugin_st22_svt_jpeg_xs.so"),
-    ("st22_avcodec", "plugins", "libst_plugin_st22_avcodec.so"),
-)
+# ST22P codec -> name prefix of the plugin device its sessions must get, as
+# st_plugin.c logs it ("get one session at <n> on dev <name>"). Any other
+# device, the sample plugin for one, means the codec under test did not run.
 _KAHAWAI_ENV_PREFIX = "env KAHAWAI_CFG_PATH="
-
+_ST22_CODEC_DEVICES = {
+    "JPEG-XS": "st22_svt_jpeg_xs_plugin",
+    "H264_CBR": "st22_plugin_avcodec",
+}
+_ST22_SESSION_DEV_RE = re.compile(
+    r"st22_get_(encoder|decoder)_session\(\d+\), get one session at \d+ on dev ([^\s,]+)"
+)
 _PACING_LOG_NAMES = {
     "auto": "auto",
     "rl": "ratelimit",
@@ -84,24 +78,23 @@ _RX_TIMING_RE = re.compile(
 )
 
 
-def mtl_plugin_check_cmd(plugin_so: str) -> str:
-    """Return a shell test that succeeds when *plugin_so* is loadable on the host.
-
-    Probes, in order: the dynamic-linker cache, the system plugin directories,
-    and the plugin path recorded in the active ``KAHAWAI_CFG_PATH`` registry --
-    which in CI points into the cached ``.local_install/plugins`` tree, so a
-    locally built (non system-installed) plugin is detected too.
-    """
-    return (
-        f"ldconfig -p 2>/dev/null | grep -q {plugin_so} "
-        f"|| test -f /usr/local/lib/x86_64-linux-gnu/{plugin_so} "
-        f"|| test -f /usr/local/lib64/{plugin_so} "
-        f"|| ( [ -d .local_install/plugins ] && find .local_install/plugins -name "
-        f"'{plugin_so}' 2>/dev/null | grep -q '{plugin_so}' ) "
-        '|| { cfg="${KAHAWAI_CFG_PATH:-kahawai.json}"; ok=1; '
-        f"for p in $(grep -F '{plugin_so}' \"$cfg\" 2>/dev/null | grep -oE '/[^\"]+\\.so'); do "
-        '[ -f "$p" ] && ok=0 && break; done; [ "$ok" = 0 ]; }'
-    )
+def st22_codec_devices_ok(output: str, codec: str, sides: Sequence[str]) -> bool:
+    """Return True when each *side* ("encoder", "decoder") has st22 sessions in
+    *output* and all of them run on the plugin of *codec*."""
+    prefix = _ST22_CODEC_DEVICES.get(codec)
+    if prefix is None:
+        return True
+    devices = {side: [] for side in sides}
+    for side, device in _ST22_SESSION_DEV_RE.findall(output or ""):
+        if side in devices:
+            devices[side].append(device)
+    for side, found in devices.items():
+        if not found or not all(device.startswith(prefix) for device in found):
+            logger.error(
+                f"ST22P {codec}: {side} sessions got {found or 'no device'}, expected {prefix}*"
+            )
+            return False
+    return True
 
 
 @dataclass
@@ -184,10 +177,6 @@ class Application(ABC):
     @abstractmethod
     def get_executable_name(self) -> str:
         """Return the executable name for this framework."""
-        pass
-
-    def require_encoder(self, host, encoder: str, use_mtl_plugin: bool = False) -> None:
-        """Check that *encoder* is available. No-op by default; override in subclasses."""
         pass
 
     def create_command(self, **kwargs):
@@ -612,46 +601,18 @@ class Application(ABC):
         """
         pass
 
-    def with_local_kahawai(self, command: str, build: str, remote_conn) -> str:
-        """Return *command* with ``KAHAWAI_CFG_PATH`` set to a local ST22 plugin registry.
+    def with_local_kahawai(self, command: str, build: str) -> str:
+        """Return *command* with ``KAHAWAI_CFG_PATH`` set to the plugin registry
+        of the local install in *build*.
 
         RxTxApp and FFmpeg run with ``cwd=build``. Without ``KAHAWAI_CFG_PATH``
         libmtl reads the tracked ``kahawai.json``, which disables JPEG XS and
-        enables the sample plugin in /usr/local. A JPEG XS session then encodes
-        with the sample plugin, and check_codec_loaded() still passes. This
-        writes ``<build>/.local_install/kahawai.json`` on the host of
-        *remote_conn* with only the local plugins, so a missing plugin fails
-        the session instead.
-
-        The file goes through one shell command, so a local and an SSH
-        connection write the same bytes. Returns *command* unchanged when it
-        already sets ``KAHAWAI_CFG_PATH`` or the local install holds no ST22
-        plugin.
+        enables the sample plugin in /usr/local. Returns *command* unchanged
+        when it already sets ``KAHAWAI_CFG_PATH``.
         """
         if command.startswith(_KAHAWAI_ENV_PREFIX):
             return command
-        plugins = []
-        for name, tree, plugin_so in _LOCAL_ST22_PLUGINS:
-            res = remote_conn.execute_command(
-                f"find {build}/{PREFIX}/{tree} -name {plugin_so} -print -quit 2>/dev/null",
-                shell=True,
-                expected_return_codes=None,
-            )
-            path = (res.stdout or "").strip()
-            if path:
-                plugins.append({"enabled": 1, "name": name, "path": path})
-        if not plugins:
-            logger.info(f"No ST22 plugin under {build}/{PREFIX}; default registry")
-            return command
-
-        kahawai_path = f"{build}/{PREFIX}/kahawai.json"
-        kahawai_json = json.dumps({"plugins": plugins}, indent=4)
-        remote_conn.execute_command(
-            f"printf '%s\\n' {shlex.quote(kahawai_json)} > {shlex.quote(kahawai_path)}",
-            shell=True,
-        )
-        logger.info(f"Wrote ST22 plugin registry {kahawai_path}: {plugins}")
-        return f"{_KAHAWAI_ENV_PREFIX}{kahawai_path} {command}"
+        return f"{_KAHAWAI_ENV_PREFIX}{build}/{KAHAWAI_CFG} {command}"
 
     def execute_test(
         self,

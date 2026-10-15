@@ -4,6 +4,11 @@
 
 #include "mt_dev.h"
 
+#ifndef WINDOWSENV
+#include <dlfcn.h>
+#include <sys/stat.h>
+#endif
+
 #include "../mt_flow.h"
 #include "../mt_log.h"
 #include "../mt_sch.h"
@@ -317,6 +322,54 @@ static void dev_build_pci_devarg(const struct mtl_init_params* p, enum mtl_port 
     snprintf(out, len, "%s", p->port[port]);
 }
 
+#if !defined(WINDOWSENV) && defined(RTE_EAL_PMD_PATH)
+static bool dev_is_dir(const char* path) {
+  struct stat st;
+  return !stat(path, &st) && S_ISDIR(st.st_mode);
+}
+
+/* a dangling compiled-in PMD dir's tail after the eal_dir name, put beside eal_dir */
+static int dev_eal_pmd_dir(const char* compiled_dir, const char* eal_dir, char* out,
+                           size_t len) {
+  const char* eal_name = strrchr(eal_dir, '/');
+  size_t name_len;
+  const char* tail = NULL;
+  int ret;
+
+  if (!compiled_dir[0] || dev_is_dir(compiled_dir)) return -EEXIST;
+  eal_name = eal_name ? eal_name + 1 : eal_dir;
+  name_len = strlen(eal_name);
+  for (const char* c = strchr(compiled_dir, '/'); name_len && c; c = strchr(c + 1, '/')) {
+    if (!strncmp(c + 1, eal_name, name_len) && c[1 + name_len] == '/')
+      tail = c + 2 + name_len;
+  }
+  if (!tail) {
+    tail = compiled_dir + strlen(compiled_dir);
+    for (int slashes = 0; tail > compiled_dir; tail--) {
+      if (*(tail - 1) == '/' && ++slashes == 2) break;
+    }
+  }
+  ret = snprintf(out, len, "%s/%s", eal_dir, tail);
+  if (ret < 0 || (size_t)ret >= len) return -ENAMETOOLONG;
+  if (!dev_is_dir(out)) return -ENOENT;
+  return 0;
+}
+
+static int dev_eal_loaded_pmd_dir(char* out, size_t len) {
+  Dl_info dl_info;
+  char eal_dir[PATH_MAX];
+  int ret;
+
+  if (!dladdr((void*)rte_eal_init, &dl_info) || !dl_info.dli_fname) return -ENOENT;
+  ret = snprintf(eal_dir, sizeof(eal_dir), "%s", dl_info.dli_fname);
+  if (ret < 0 || (size_t)ret >= sizeof(eal_dir)) return -ENAMETOOLONG;
+  char* slash = strrchr(eal_dir, '/');
+  if (!slash) return -ENOENT;
+  *slash = '\0';
+  return dev_eal_pmd_dir(RTE_EAL_PMD_PATH, eal_dir, out, len);
+}
+#endif
+
 static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_info) {
   char* argv[MT_EAL_MAX_ARGS];
   int argc, ret;
@@ -492,6 +545,17 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     argv[argc] = "--force-max-simd-bitwidth=512";
     argc++;
   }
+
+#if !defined(WINDOWSENV) && defined(RTE_EAL_PMD_PATH)
+  char pmd_dir[PATH_MAX];
+  if (!dev_eal_loaded_pmd_dir(pmd_dir, sizeof(pmd_dir))) {
+    info("%s, pmd dir: %s\n", __func__, pmd_dir);
+    argv[argc] = "-d";
+    argc++;
+    argv[argc] = pmd_dir;
+    argc++;
+  }
+#endif
 
   argv[argc] = "--";
   argc++;

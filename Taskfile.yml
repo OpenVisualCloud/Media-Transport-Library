@@ -125,7 +125,7 @@ tasks:
     desc: Validate every dependency -- host prerequisites and all install trees
     cmds:
       - bash {{.EBPF_SCRIPT}} --check build
-      - for: [dpdk, mtl, jpegxs, ffmpeg, gstreamer, plugins]
+      - for: [dpdk, mtl, jpegxs, ffmpeg, gstreamer, plugins, conf]
         task: ci:validate-cache
         vars: {COMPONENT: '{{.ITEM}}'}
       - '[ "$({{.TASK_EXE}} --silent ci:ice-required)" != true ] || {{.TASK_EXE}} ci:validate-cache COMPONENT=ice'

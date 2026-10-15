@@ -223,6 +223,51 @@ function multiarch_libdir() {
 	echo "lib${multiarch:+/${multiarch}}"
 }
 
+# Usage: register_plugin <kahawai.json> <name> <plugin path>
+# Enables the plugin at its absolute path as the one entry called <name> of
+# the plugin registry, and creates the registry if it does not exist yet.
+function register_plugin() {
+	python3 - "$@" <<'PY'
+import json
+import os
+import pathlib
+import stat
+import sys
+import tempfile
+
+config = pathlib.Path(sys.argv[1])
+name = sys.argv[2]
+plugin_path = str(pathlib.Path(sys.argv[3]).resolve())
+if config.exists():
+    config_mode = stat.S_IMODE(config.stat().st_mode)
+    data = json.loads(config.read_text())
+else:
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config_mode = 0o644
+    data = {}
+plugins = data.setdefault("plugins", [])
+matches = [index for index, item in enumerate(plugins) if item.get("name") == name]
+if matches:
+    selected = next((index for index in matches if plugins[index].get("path") == plugin_path), matches[0])
+    for index in matches:
+        plugins[index]["enabled"] = int(index == selected)
+    plugins[selected]["path"] = plugin_path
+else:
+    plugins.append({"enabled": 1, "name": name, "path": plugin_path})
+fd, temporary = tempfile.mkstemp(prefix=config.name + ".", dir=config.parent)
+os.chmod(temporary, config_mode)
+try:
+    with os.fdopen(fd, "w") as output:
+        json.dump(data, output, indent=4)
+        output.write("\n")
+    os.replace(temporary, config)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
+PY
+	log_success "Enabled ${2} in ${1}: ${3}"
+}
+
 # Usage: relocate_pkgconfig <prefix> [<module>...]
 # Rewrites the .pc file of each <module> below <prefix>, or every .pc file
 # there when no module is given, to describe its own location: the prefix

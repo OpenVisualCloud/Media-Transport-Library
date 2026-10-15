@@ -10,47 +10,20 @@ local_install="${root_dir}/.local_install"
 shadow_ssh_options=(-o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=30)
 
 case "$1" in
-make-executable)
-	find "$local_install" -type f \( -name '*.so*' -o -path '*/bin/*' \) -exec chmod +x {} +
-	;;
 dpdk-plugins)
-	# EAL loads drivers only from the build-time pmds path; see doc/ci_runner_setup.md.
+	# Earlier versions linked the build-time pmds path of librte_eal to the
+	# restored drivers. MTL passes -d itself when that path is missing, so a
+	# leftover link only keeps pointing at whichever tree created it.
 	eal=$(find "${local_install}/dpdk" -name 'librte_eal.so.*' -print -quit)
 	test -n "$eal"
 	baked=$(grep -a -o -m1 -E '/[^"'"'"' ]*/dpdk/pmds-[0-9.]+' "$eal" || true)
-	if [ -z "$baked" ]; then
-		echo "no plugin path is baked into ${eal}; EAL loads no plugins by itself" >&2
-		exit 1
-	fi
-	# meson installs each driver twice; only the pmds copy is the directory EAL scans.
-	drivers=$(find "${local_install}/dpdk" -path '*/dpdk/pmds-*' \
-		-name 'librte_mempool_ring.so' -print -quit)
-	test -n "$drivers"
-	drivers=${drivers%/*}
-	if [ "$baked" = "$drivers" ]; then
-		echo "dpdk plugins: ${baked} (built here, nothing to align)"
-	elif [ "$(readlink -f "$baked" 2>/dev/null)" = "$drivers" ]; then
-		echo "dpdk plugins: ${baked} -> ${drivers} (already aligned)"
-	elif [ -e "$baked" ] && [ ! -L "$baked" ]; then
-		echo "${baked} exists and is not our symlink; refusing to replace it" >&2
-		exit 1
-	else
-		mkdir -p "${baked%/*}" 2>/dev/null || sudo mkdir -p "${baked%/*}"
-		ln -sfn "$drivers" "$baked" 2>/dev/null || sudo ln -sfn "$drivers" "$baked"
-		echo "dpdk plugins: linked ${baked} -> ${drivers}"
+	if [ -n "$baked" ] && [ -L "$baked" ]; then
+		rm -f "$baked" 2>/dev/null || sudo rm -f "$baked"
+		echo "dpdk plugins: removed the stale link ${baked}"
 	fi
 	;;
-registry)
-	config="${RUNNER_TEMP:-/tmp}/kahawai_ci.json"
-	avcodec=$(find "${local_install}/plugins" -name libst_plugin_st22_avcodec.so -print -quit)
-	jpegxs=$(find "${local_install}/jpegxs" -name libst_plugin_st22_svt_jpeg_xs.so -print -quit)
-	test -n "$jpegxs"
-	avcodec_dir=${avcodec%/*}
-	[ -n "$avcodec" ] || avcodec_dir="${local_install}/plugins/lib/x86_64-linux-gnu"
-	sed -e "s|/usr/local/lib[^\"]*/libst_plugin_st22_svt_jpeg_xs.so|${jpegxs}|" \
-		-e "s|REPLACE_BY_CICD_PLUGIN_DIR|${avcodec_dir}|" \
-		"${root_dir}/.github/workflows/kahawai_template.json" >"$config"
-	echo "KAHAWAI_CFG_PATH=${config}" >>"$GITHUB_ENV"
+make-executable)
+	find "$local_install" -type f \( -name '*.so*' -o -path '*/bin/*' \) -exec chmod +x {} +
 	;;
 environment)
 	jpeg_pc=$(find "${local_install}/jpegxs" -name SvtJpegxs.pc -print -quit)
@@ -70,6 +43,8 @@ environment)
 	{
 		echo "GST_PLUGIN_PATH=${local_install}/gstreamer/gstreamer-1.0${GST_PLUGIN_PATH:+:$GST_PLUGIN_PATH}"
 		echo "GST_REGISTRY=${gst_registry}"
+		# The plugin registry build.sh wrote, restored with the MTL cache.
+		echo "KAHAWAI_CFG_PATH=${local_install}/conf/kahawai.json"
 		echo "PKG_CONFIG_PATH=$(dirname "$jpeg_pc"):${local_install}/dpdk/lib/x86_64-linux-gnu/pkgconfig:${local_install}/mtl/lib/x86_64-linux-gnu/pkgconfig"
 	} >>"$GITHUB_ENV"
 	printf '%s\n' "${local_install}/mtl/bin" "${local_install}/ffmpeg/bin" \

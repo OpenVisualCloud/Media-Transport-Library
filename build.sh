@@ -237,6 +237,23 @@ ninja
 do_install
 popd
 
+# The plugin registry of a prefix install, beside it in conf/: the JPEG XS and
+# st22 avcodec plugins where their scripts install them, so that the registry
+# is complete in the MTL cache. Not the sample plugin: it claims JPEG XS and
+# H.264 too, so a session the real codec cannot serve would pass on it.
+# Absolute paths: the tree runs where it was built. Point KAHAWAI_CFG_PATH at it.
+if [ -n "${MTL_INSTALL_PREFIX:-}" ] && [ "${OS:-}" != "Windows_NT" ]; then
+	(
+		. script/common.sh
+		local_base=$(dirname "${MTL_INSTALL_PREFIX}")
+		registry="${local_base}/conf/kahawai.json"
+		register_plugin "${registry}" st22_svt_jpegxs \
+			"${local_base}/jpegxs/$(multiarch_libdir)/libst_plugin_st22_svt_jpeg_xs.so"
+		register_plugin "${registry}" st22_avcodec \
+			"${local_base}/plugins/$(multiarch_libdir)/libst_plugin_st22_avcodec.so"
+	)
+fi
+
 # build ld_preload
 if [ "$OS" != "Windows_NT" ]; then
 	pushd ld_preload/
