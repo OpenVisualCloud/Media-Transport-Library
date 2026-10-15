@@ -57,6 +57,7 @@
 #define SYS_TASKLET_TIME_MEASURE_ENABLED() (0)
 #define SYS_SESSIONS_TIME_MEASURE_ENABLED() (0)
 #define SYS_CNI_PCAP_DUMP_ENABLED() (0)
+#define SYS_TASKLET_STAT_ENABLED() (0)
 
 #define ST20P_TX_FRAME_DUMP_ENABLED() (0)
 #define ST20P_RX_FRAME_DUMP_ENABLED() (0)
@@ -99,6 +100,10 @@
 #define MT_USDT_CNI_PCAP_DUMP(port, file, pkts) \
   MT_DTRACE_PROBE3(sys, cni_pcap_dump, port, file, pkts)
 #define MT_USDT_CNI_PCAP_DUMP_ENABLED() SYS_CNI_PCAP_DUMP_ENABLED()
+
+#define MT_USDT_SYS_TASKLET_STAT(sch_idx, name, cnt, sum, work_cnt, work_sum) \
+  MT_DTRACE_PROBE6(sys, tasklet_stat, sch_idx, name, cnt, sum, work_cnt, work_sum)
+#define MT_USDT_SYS_TASKLET_STAT_ENABLED() SYS_TASKLET_STAT_ENABLED()
 
 #define MT_USDT_ST20P_TX_FRAME_GET(idx, f_idx, va) \
   MT_DTRACE_PROBE3(st20p, tx_frame_get, idx, f_idx, va)

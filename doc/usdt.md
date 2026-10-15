@@ -65,6 +65,8 @@ provider sys {
   probe sessions_time_measure();
   /* attach to enable the pcap dump for cni rx queue */
   probe cni_pcap_dump(int port, char* dump_file, uint32_t pkts);
+  /* each stats dump, per tasklet: the cumulative time and work of mtl_sch_get_stats() */
+  probe tasklet_stat(int sch_idx, char* name, uint64_t cnt, uint64_t sum_ns, uint64_t work_cnt, uint64_t work_sum_ns);
 }
 ```
 
@@ -210,6 +212,34 @@ Example output like below:
 16:10:07 p1: dumped pcap file cni_p1_10000_Grf8CU.pcapng pkts 0
 16:10:17 p0: dumped pcap file cni_p0_10000_G8iOd6.pcapng pkts 206
 16:10:17 p1: dumped pcap file cni_p1_10000_Grf8CU.pcapng pkts 0
+```
+
+#### 2.1.5. tasklet_stat USDT
+
+Usage: read the counters of `mtl_sch_get_stats()` from outside the process. At each stats
+dump the probe fires once per tasklet with its cumulative `time` and `work` counters: `cnt`
+and `sum_ns` hold every handler call, `work_cnt` and `work_sum_ns` only the calls that
+returned a value other than `MTL_TASKLET_ALL_DONE`. The counters move only while the time
+measurement is on, so attach `tasklet_time_measure` in the same script. They count from
+`mtl_init()` or the last `mtl_sch_reset_stats()`; take the difference of two dumps for the
+work of the interval between them.
+
+```bash
+sudo bpftrace -e '
+usdt::sys:tasklet_time_measure {}
+usdt::sys:tasklet_stat {
+  printf("%s sch %d %s: calls %llu %llu ns, work %llu %llu ns\n", strftime("%H:%M:%S", nsecs),
+         arg0, str(arg1), arg2, arg3, arg4, arg5);
+}
+' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```text
+13:11:08 sch 1 rvs_pkt_rx: calls 15658343 1139064632 ns, work 107458 109238181 ns
+13:11:18 sch 1 rvs_pkt_rx: calls 95882204 6978718390 ns, work 657352 671996566 ns
+13:11:28 sch 1 rvs_pkt_rx: calls 176076510 12821487288 ns, work 1207399 1237241765 ns
 ```
 
 ### 2.2. PTP tracing

@@ -477,6 +477,11 @@ static int sch_stat(void* priv) {
     if (!tasklet) continue;
 
     dbg("SCH(%d): tasklet %s at %d\n", idx, tasklet->name, i);
+    if (MT_USDT_SYS_TASKLET_STAT_ENABLED()) {
+      MT_USDT_SYS_TASKLET_STAT(idx, tasklet->name, tasklet->user_stat_time.cnt,
+                               tasklet->user_stat_time.sum, tasklet->user_stat_work.cnt,
+                               tasklet->user_stat_work.sum);
+    }
     stat_time = &tasklet->stat_time;
     if (stat_time->cnt) {
       uint64_t avg_ns = stat_time->sum / stat_time->cnt;
