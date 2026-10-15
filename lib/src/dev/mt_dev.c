@@ -1152,6 +1152,7 @@ static uint16_t dev_tx_pkt_check(uint16_t port, uint16_t queue, struct rte_mbuf*
     if (!dev_pkt_valid(inf, queue, pkts[i])) {
       /* should never happen, replace with dummy pkt */
       rte_pktmbuf_free(pkts[i]);
+      if (inf->tx_deep) rte_mbuf_refcnt_update(inf->pad, 1);
       pkts[i] = inf->pad;
     }
   }
@@ -2385,6 +2386,23 @@ int mt_dev_uinit(struct mtl_init_params* p) {
   return 0;
 }
 
+/* a deep port's flushes send it from any thread: a ref of its own keeps
+ * rte_mbuf_refcnt_update() atomic */
+static struct rte_mbuf* dev_if_build_pad(struct mtl_main_impl* impl, enum mtl_port port) {
+  struct rte_mbuf* pad =
+      mt_build_pad(impl, mt_sys_tx_mempool(impl, port), port, RTE_ETHER_TYPE_IPV4, 1024);
+
+  if (pad && mt_if(impl, port)->tx_deep) rte_mbuf_refcnt_update(pad, 1);
+  return pad;
+}
+
+static void dev_if_free_pad(struct mt_interface* inf) {
+  if (!inf->pad) return;
+  if (inf->tx_deep) rte_pktmbuf_free(inf->pad); /* its own ref */
+  rte_pktmbuf_free(inf->pad);
+  inf->pad = NULL;
+}
+
 int mt_dev_if_uinit(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl), ret;
   struct mt_interface* inf;
@@ -2396,10 +2414,7 @@ int mt_dev_if_uinit(struct mtl_main_impl* impl) {
       mt_dev_xdp_uinit(inf);
     }
 
-    if (inf->pad) {
-      rte_pktmbuf_free(inf->pad);
-      inf->pad = NULL;
-    }
+    dev_if_free_pad(inf);
 
     dev_if_uinit_tx_queues(inf);
     dev_if_uinit_rx_queues(inf);
@@ -2717,8 +2732,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       return -ENOMEM;
     }
 
-    inf->pad =
-        mt_build_pad(impl, mt_sys_tx_mempool(impl, i), i, RTE_ETHER_TYPE_IPV4, 1024);
+    inf->pad = dev_if_build_pad(impl, i);
     if (!inf->pad) {
       err("%s(%d), pad alloc fail\n", __func__, i);
       mt_dev_if_uinit(impl);

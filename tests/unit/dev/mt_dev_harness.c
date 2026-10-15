@@ -410,7 +410,7 @@ ut_dev_ctx* ut_dev_create_ctx(void) {
 
 void ut_dev_destroy_ctx(ut_dev_ctx* ctx) {
   if (ut_active_ctx == ctx) ut_active_ctx = NULL;
-  rte_pktmbuf_free(ctx->impl.inf[MTL_PORT_P].pad);
+  dev_if_free_pad(&ctx->impl.inf[MTL_PORT_P]);
   rte_mempool_free(ctx->sys_tx_pool);
   for (int i = 0; i < UT_DEV_EAL_ARGV_MAX; i++) free(ctx->eal_argv[i]);
   free(ctx->lcores);
@@ -798,8 +798,8 @@ int ut_dev_attach_tx_ring(ut_dev_ctx* ctx, uint16_t queue, struct ut_txr* ring) 
     inf->tx_mbuf_pool = ctx->sys_tx_pool;
   }
   if (!inf->pad) {
-    inf->pad = rte_pktmbuf_alloc(ctx->sys_tx_pool);
-    if (!inf->pad || !rte_pktmbuf_append(inf->pad, UT_DEV_PAD_LEN)) return -ENOMEM;
+    inf->pad = dev_if_build_pad(&ctx->impl, MTL_PORT_P);
+    if (!inf->pad) return -ENOMEM;
   }
   tx_queue->port = MTL_PORT_P;
   tx_queue->port_id = inf->port_id;
@@ -810,6 +810,15 @@ int ut_dev_attach_tx_ring(ut_dev_ctx* ctx, uint16_t queue, struct ut_txr* ring) 
 
 struct rte_mbuf* ut_dev_pad(ut_dev_ctx* ctx) {
   return ctx->impl.inf[MTL_PORT_P].pad;
+}
+
+void ut_dev_free_pad(ut_dev_ctx* ctx) {
+  dev_if_free_pad(&ctx->impl.inf[MTL_PORT_P]);
+}
+
+uint16_t ut_dev_tx_pkt_check(ut_dev_ctx* ctx, struct rte_mbuf** pkts, uint16_t nb_pkts) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+  return dev_tx_pkt_check(inf->port_id, 0, pkts, nb_pkts, inf);
 }
 
 unsigned int ut_dev_sys_tx_pool_in_use(const ut_dev_ctx* ctx) {

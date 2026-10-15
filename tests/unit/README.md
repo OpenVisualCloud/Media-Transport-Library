@@ -130,6 +130,9 @@ Filter to a single suite or test:
 
 # list everything without running
 ./build_unit/tests/unit/UnitTest --gtest_list_tests
+
+# run the known-bug tests (UT_KNOWN_BUG in common/ut_known_bug.h) to see them still fail
+UT_RUN_KNOWN_BUGS=1 ./build_unit/tests/unit/UnitTest
 ```
 
 ### ST20 continuation bounds regression
