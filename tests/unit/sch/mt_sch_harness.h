@@ -48,6 +48,39 @@ int ut_sch_lcore_entry_mempolicy(int* mode, int* exit_mode);
  * temporary directory; *mode is its permission bits. Returns 0 on success. */
 int ut_sch_filelock_create_mode(unsigned int* mode);
 
+#define UT_SCH_SPIN_TASKLET_NAME "ut_spin"
+
+/* A main handle built with mtl_init_params flags whose sch 0 is active in thread mode
+ * and holds one tasklet, UT_SCH_SPIN_TASKLET_NAME in slot 1. With work_every 0 the
+ * tasklet spins spin_us on each call and returns MTL_TASKLET_ALL_DONE; with N it spins
+ * and returns MTL_TASKLET_HAS_PENDING on each Nth call only, and returns
+ * MTL_TASKLET_ALL_DONE at once on the others. Slot 0 stays empty. Caller frees with
+ * ut_sch_stats_main_destroy. */
+mtl_handle ut_sch_stats_main_create(uint64_t flags, unsigned int spin_us,
+                                    unsigned int work_every);
+void ut_sch_stats_main_destroy(mtl_handle mt);
+
+/* Fills the next count free slots of sch 0 with idle tasklets named ut_idle_<slot>.
+ * Returns 0 on success, -ENOSPC past the slot array. */
+int ut_sch_stats_add_idle_tasklets(mtl_handle mt, int count);
+
+/* Leaves sch 0 active with its tasklet array gone, the state sch_free() passes through.
+ */
+void ut_sch_stats_drop_tasklets(mtl_handle mt);
+
+/* sch_start()/sch_stop() of sch 0. Return 0 on success. */
+int ut_sch_stats_start(mtl_handle mt);
+int ut_sch_stats_stop(mtl_handle mt);
+
+/* Returns 0 once the spin tasklet ran at least calls times, -ETIMEDOUT after 2 s. */
+int ut_sch_stats_wait_calls(mtl_handle mt, uint64_t calls);
+
+/* The periodic stats dump callback of sch 0, sch_stat(). */
+int ut_sch_stats_dump(mtl_handle mt);
+
+/* Sample count of the per-dump loop time of sch 0, the one sch_stat() resets. */
+uint64_t ut_sch_stats_dump_loop_cnt(mtl_handle mt);
+
 #ifdef __cplusplus
 }
 #endif
