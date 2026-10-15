@@ -3,13 +3,27 @@
 | | |
 |---|---|
 | Status | Normative. Nothing is implemented. The headers in [sketch/include/mtl/experimental/](sketch/include/mtl/experimental/) win over this text |
-| Date | 2026-10-02 |
 
 This document is the timing contract of the unified API: what a time is, how a unit's media time and RTP timestamp are fixed, when its packets leave, how several essences stay in sync, and what a receiver can rely on. Names are those of `mtl.h`, `mtl_sync.h`, `mtl_options.h`, `mtl_observe.h` and `mtl_reasons.h`.
 The standards facts behind the rules are in [standards.md](standards.md), today's code in
 [legacy-internals.md](legacy-internals.md).
-`sc.*` and essence members (`video.sender_type` = `sc.video.sender_type`) are typed config fields; other knobs are option keys (`tx.late_policy` = `MTL_OPT_LATE_POLICY`), absent meaning the default given here; `info.*`,
-`time.*`, `tx.*` counters and `rx.*` counters are stats (`mtl_observe.h`). Three sentences carry the design:
+
+Who reads what:
+
+| Reader | Sections |
+|---|---|
+| user | §1, §2.1–§2.2, §4.1, §5.2, §6.2–§6.5, §7, §10, §11.1–§11.6 |
+| implementer | everything; first §6.8, §3.3, §9.2, §16 |
+
+The symbols (S, M, E, P, W, A and the ST 2110-21 terms) are in §1.1. How names are written:
+
+| Written as | Kind | Example |
+|---|---|---|
+| `sc.*` and essence members | typed config fields | `video.sender_type` = `sc.video.sender_type` |
+| other knobs | option keys; absent means the default given here | `tx.late_policy` = `MTL_OPT_LATE_POLICY` |
+| `info.*`, `time.*`, `tx.*` counters and `rx.*` counters | stats (`mtl_observe.h`) | `info.launch_delay`, `tx.indices_empty` |
+
+Three sentences carry the design:
 
 > **RTP describes the content. Pacing chooses when packets leave. Receive time is transmit time plus the network.**
 
@@ -35,6 +49,39 @@ Note 1: start time `st_tx_video_session.c:63-70`, cursor `:724-730`, RTP from th
 
 Decisions behind them: D-09 (media time and launch separate, one RTP rule), D-39 (no source kinds: `min_tx_delay_ns` is the one knob; the launch delay is reported, not configured), D-10 (default video media time is the frame epoch), D-11 (exact rationals), D-24 (wire-visible engine changes are opt-in on the legacy API and on in the unified API). See [decisions.md](decisions.md).
 
+### 1.1 Symbols
+
+The symbols used before the section that defines them. Some letters mean more than one thing; the
+*Context* column names the other meanings, and the section a symbol is used in says which one it is.
+
+| Symbol | Meaning | Defined in | Context |
+|---|---|---|---|
+| M, M(k) | the media time of unit k: `T0 + k × P` | §3.1 | also the suffix minimum M(j) of the ANC targets (§9.2) |
+| P | the session's index period, exact rational seconds | §3.1, §3.2 | also the ANC unit capacity of the create check and the prefix maximum P(j) of the early bounds (§9.2) |
+| k | a media index | §3.1 | |
+| T0 | the origin: 0 (1970-01-01 TAI) on the epoch, or the start's resolved T0 | §3.1, §3.3 | |
+| G | the common grid of the started sessions | §3.4 | |
+| A | the earliest feasible start, `now + lead + preroll_ns` | §3.3 | also the alignment line of the ANC timing (§9.2) and row A of the split formulas (§3.5) |
+| W | the requested start | §3.3 | also sender type W (`MTL_SENDER_W`, §5.1) and `anc.max_udw_words` in the ANC create check (§9.2) |
+| lead | the submit lead, the largest `max(0, min_submit_lead_ns)` of the started sessions | §3.3, §6.1 | |
+| S | samples per packet | §8 | also the start instant (§4.4, §6.4, §8's sample-accurate start) and the RP 168 switching line of the ANC timing (§9.2; S_f is two lines after it) |
+| E, E(N), E⁻¹(M) | E: a unit's epoch index; E(N) = `N × TFRAME`, the epoch instant of frame N; E⁻¹(M): the index of media time M | §3.4, §4.2, §5.1 | also row E of the split formulas (§3.5) and the engine changes E1–E13 (§15) |
+| N | the frame index since the SMPTE epoch; the launch index | §5.1, §5.2 | also sender type N (`MTL_SENDER_N`, §5.1) |
+| R, Fs | the RTP clock rate; the audio sample rate | §4.2 | |
+| TFRAME, TFIELD | the frame period; the field period, TFRAME/2 | §5.1, §3.2 | |
+| TROFFSET (TRO), TRODEFAULT | the read offset from E(N) to TVD, and its default | §5.1 | |
+| TVD, TPRj | `N × TFRAME + TROFFSET`, the read instant of packet 0; the read instant of packet j | §5.1 | |
+| TRS | the time between packets on the read schedule | §5.1 | |
+| VRX0, VRX_FULL | `scheduled_first = TVD − VRX0·TRS`: the packets the sender runs ahead of the read schedule, at most VRX_FULL | §5.1, §6.1 | |
+| scheduled_first | the first packet on the wire | §5.1, §6.1 | |
+| L | the launch delay, `N − E⁻¹(M)`, reported as `info.launch_delay` | §5.2 | |
+| L_v, L_anc | the video's granted launch delay, which its ANC and fastmeta follow; the ANC's own | §9.2 | |
+| D_a | the audio launch offset, `audio.launch_offset_ns` | §5.3 | |
+| D_fmd | the fastmeta target delay, `fastmeta.target_delay_ns` | §5.3 | |
+| pick-up lead | `pickup_lead_ns`: how long before `scheduled_first` the binding must take the unit | §6.1 | |
+| deadline | `scheduled_first − pickup_lead_ns`: the latest pick-up that meets the slot | §6.1 | |
+| δ | `mtl_grid_offset(B, rate)`: the forward distance from the programme's anchor B to the next frame instant | §10.5 | |
+
 ## 2. Clocks and the time base
 
 ### 2.1 What a time is
@@ -43,7 +90,7 @@ Decisions behind them: D-09 (media time and launch separate, one RTP rule), D-39
 
 - TAI while the time base is locked; flagged ESTIMATED when it is not (a free-running clock, the system clock). An RX value on a sender's own clock is flagged `MTL_UNITF_SENDER_TIME` (Phase 7, later).
 - `mtl_time_now(mt, &tai_ns, NULL, NULL)` is DP and wait-free (the last two, when not NULL, receive CLOCK_MONOTONIC and CLOCK_REALTIME of the same instant); it returns `MTL_TIMEF_VALID`, `MTL_TIMEF_ESTIMATED`, `MTL_TIMEF_HOLDOVER`, `MTL_TIMEF_ARB_TIMESCALE` and `MTL_TIMEF_UTC` as a mask (≥ 0).
-- Zero is never a sentinel. Validity is a flag: `MTL_UNITF_INDEX_VALID`, `MTL_UNITF_TAI_VALID` on units; `MTL_TXR_MEDIA_VALID`, `MTL_TXR_MARGIN_VALID`, `MTL_TXR_SENT_VALID`, `MTL_TXR_SENT_HW`, `MTL_TXR_ESTIMATED` on results; `MTL_TXF_*` and `MTL_RXF_*` in the full records.
+- Zero is never a sentinel. Which times have a value, and how "no value" reads (the validity flags of units, results and the full records): `mtl.h` R5 and [contract.md R5](contract.md#r5-times).
 - There is no TSC clock in the API. TSC is an internal detail of the published time base and differs between sockets.
 
 ### 2.2 Time sources
@@ -86,11 +133,53 @@ function (`ptp_get_time_fn`), so the launch decision's index math (§6.8) and th
 one clock; today's default is `CLOCK_REALTIME`, 37 s behind TAI ([engine.md](engine.md) §2.12).
 With AUTO that clock is `CLOCK_TAI` when it is valid, else `SYSTEM_TAI`; `PTP_BUILTIN` keeps
 today's PTP time function. A wrapper keeps the legacy time function; `mtl_time_now` reads its
-default and TSC clocks directly in MS1 and the others through a snapshot from MS2a
-([contract.md](contract.md) §2.8).
+default and TSC clocks directly in MS1 and the others through a snapshot from MS2a (the
+legacy bridge clock, below).
 
 MTL adjusts a clock only with `PTP_BUILTIN`: the PHC of a port it owns (a PF), or, on a VF, its own software time base; never `CLOCK_REALTIME`, never a clock a node daemon disciplines. The built-in phc2sys (`time.phc2sys`) steers the host's `CLOCK_REALTIME`; it is never used in a pod and restores the frequency at close. Instance time options: `time.ptp_domain`, `time.ptp_pi`, `time.ptp_unicast`,
 `time.ptp_source_tsc`, `time.ptp_pi_kp`, `time.ptp_pi_ki`, `time.ptp_announce_timeout`, `time.phc_trust` (keys 2200–2230); `time.fallback` and `time.freerun_slew_ppm` are Phase 7, under `MTL_LATER`.
+
+#### The legacy bridge clock
+
+On a wrapper of a legacy handle (`mtl_instance_from_legacy`, [contract.md](contract.md) §2.8), the
+wrapper runs on the legacy clock of port P, which its legacy sessions pace on; the
+video TX binding's index math reads the same function on the tasklet (the
+[contract.md](contract.md) R6 exception, D-144). `mtl_time_now` stays DP. MS1: the default clock and `MTL_FLAG_PTP_SOURCE_TSC` are read
+directly (VALID, ESTIMATED, UTC); a `ptp_get_time_fn` or the built-in PTP client is
+`-MTL_ENOTSUP` until MS2a. From MS2a: a two-record seqlocked offset to `CLOCK_MONOTONIC`,
+refreshed every 5 ms by a wrapper library thread (created by `mtl_instance_from_legacy`, joined
+by the wrapper's close), with the flags and states of the table below; a record older than
+100 ms adds ESTIMATED. TAI is not slewed until E9.
+
+- **The wrapper's core clock in MS1.** On a wrapper, the core's instance-context clock (C0,
+  [core.md](core.md) §2.4) is `mt_get_ptp_time(impl, MTL_PORT_P)`:
+  - the core's launch decision (`st_core_admit`, from the video TX binding's tasklet) reads it
+    on the tasklet;
+  - the core's CP calls that need "now" (the start's A = now + lead) read it on the calling
+    thread, as legacy `mtl_ptp_read_time` does;
+  - no DP call reads it, so `mtl_time_now` is the only "now" an application reads, and on a
+    wrapper it is the direct read or `-MTL_ENOTSUP` of the MS1 table.
+- **TAI on a wrapper.** The offset record makes MONOTONIC and REALTIME exact. TAI follows the
+  legacy clock and is not slewed. At a refresh it moves by at most age × |rate(legacy) −
+  rate(MONOTONIC)|, ≤ 2.5 µs at 5 ms and 500 ppm, forward or backward, plus any step of the
+  legacy clock itself (G-126).
+- **MS1 classification order**, the order of `dev/mt_dev.c:2280-2290`:
+  1. `MTL_FLAG_PTP_SOURCE_TSC`: the TSC row. It stays TSC even with `MTL_FLAG_PTP_ENABLE`,
+     because the PTP client then skips the switch (`mt_ptp.c:1062-1063`).
+  2. Else `ptp_get_time_fn`: `-MTL_ENOTSUP` (MS1).
+  3. Else PTP service enabled: `-MTL_ENOTSUP` (MS1); it will switch to `ptp_from_eth`.
+  4. Else the default row.
+- `mtl_instance_from_legacy` returns after the TSC calibration (about 1 s after `mtl_init`).
+
+| Legacy clock | Flags | `time.state` | `time.source` |
+|---|---|---|---|
+| default or TSC | VALID, ESTIMATED, UTC | FREERUN | LEGACY |
+| `ptp_get_time_fn` within 1 s of `CLOCK_REALTIME` at wrap time | VALID, ESTIMATED, UTC | FREERUN | LEGACY |
+| other `ptp_get_time_fn` | VALID, ESTIMATED; VALID after `mtl_time_set_reference` with `locked` = 1 | FREERUN; LOCKED | LEGACY |
+| PTP service on, before the first Announce | VALID, ESTIMATED, UTC | ACQUIRING | PTP_BUILTIN |
+| `ptp_from_eth`, not locked | VALID, ESTIMATED | ACQUIRING | PTP_BUILTIN |
+| `ptp_from_eth`, locked, a master result within H | VALID | LOCKED | PTP_BUILTIN |
+| `ptp_from_eth`, locked, no master result for H | VALID, ESTIMATED, HOLDOVER | HOLDOVER | PTP_BUILTIN |
 
 ### 2.3 Time state, events and the reference
 
@@ -328,12 +417,12 @@ flowchart LR
     IDX["MTL_MEDIA_INDEX<br/>T0 + media_index x period"] --> M
     TAI["MTL_MEDIA_TAI<br/>media_tai_ns,<br/>snapped to the grid"] --> M
     M --> RTP["RTP = floor(M x rate)"]
-    M --> LA["launch: the first index whose<br/>first packet is at or after<br/>M + min_tx_delay_ns"]
+    M --> LA["launch: the index of M<br/>+ the launch delay L (§5.2)"]
     SND["MTL_MEDIA_SENDER, Phase 7:<br/>the source's own instant,<br/>never snapped"] --> RS["RTP follows the source;<br/>launch = M + min_tx_delay_ns"]
 ```
 
-With `min_tx_delay_ns` 0 the launch index is the index of M; with one frame period plus the pick-up
-lead it is the next index (§5.2).
+The launch index is the index of M plus the launch delay L (§5.2), which follows from
+`min_tx_delay_ns`.
 
 | `media_mode` | Per unit the app sets | For |
 |---|---|---|
@@ -394,7 +483,7 @@ disagreement (T2, T6).
 - not with AUTO: `-MTL_EINVAL`, reason `RTP_TS_AUTO`. Under AUTO, RX-then-forward jitter makes L alternate and the RTP offset toggle (≈ −3003 / −4504 ticks at 1080p59.94), so the slot must come from an INDEX or TAI media time;
 - MTL validates regular increments and reports violations;
 - audio: the value is the first sample's RTP, later packets `+S`; an override off the session's packet grid (`(rtp − grid RTP) mod S ≠ 0`) is treated as a DISCONTINUITY and re-phased (§8);
-- the recommended way for a time-preserving processor is still *derived* RTP from the input's media time (§10.5).
+- the recommended way for a time-preserving processor is still *derived* RTP from the input's media time (§10.6).
 
 ### 4.3 Snapping TAI-mode times
 
@@ -556,7 +645,7 @@ With launch delay 0 the launch is at `M + TROFFSET`, which passes before a captu
 | Producer | `min_tx_delay_ns` | Result |
 |---|---|---|
 | playback: content exists before its media time (files, graphics, generators) | 0 (the default) | L = 0 |
-| capture: the unit exists only after its sampling instant (camera, microphone, encoder, RX → TX) | one frame period + the pick-up lead (§6.1); a processor sets its pipeline budget (§10.5) | L = 1 for a unit handed over when its readout ends |
+| capture: the unit exists only after its sampling instant (camera, microphone, encoder, RX → TX) | one frame period + the pick-up lead (§6.1); a processor sets its pipeline budget (§10.6) | L = 1 for a unit handed over when its readout ends |
 | gateway: SDI → IP or a low-latency camera sending in the same frame period | 0, with row units (§6.7) and, if needed, `sc.video.troffset_us` (< TFRAME, signalled TROFF) | L = 0 |
 
 The late policy follows the **media mode**, not the producer (§6.2). A session with a non-zero
@@ -646,9 +735,9 @@ Classes stay per port; sessions request and see the grant (D-19).
   | Producer | `sc.tsmode` | TSDELAY |
   |---|---|---|
   | playback, `min_tx_delay_ns` 0: RTP is the intended instant `N × TFRAME` | SAMP | `info.tsdelay_ns` |
-  | capture (`min_tx_delay_ns` = one frame period + the pick-up lead) whose media time is the sampling instant | SAMP | `info.tsdelay_ns` |
+  | capture (the capture `min_tx_delay_ns` and L of §5.2) whose media time is the sampling instant | SAMP | `info.tsdelay_ns` |
   | SDI or AES3 encapsulator (the gateway of §5.2) | SAMP only when its media time compensates the upstream delay (the RTP is the source's alignment-point instant); else NEW | `info.tsdelay_ns` |
-  | time-preserving processor (RX → TX keeping the input's media time, §10.5) | SAMP if its input was marked SAMP, else PRES | inclusive (shall): measured from the preserved RTP, `info.tsdelay_ns` already holds the input's delay, the processing and the session's own sending delay |
+  | time-preserving processor (RX → TX keeping the input's media time, §10.6) | SAMP if its input was marked SAMP, else PRES | inclusive (shall): measured from the preserved RTP, `info.tsdelay_ns` already holds the input's delay, the processing and the session's own sending delay |
   | processor that re-stamps: its own media times (AUTO, or a TAI of now), or an off-grid input that NEAREST moves (results with `MTL_TXR_SNAPPED`) | NEW | `info.tsdelay_ns` |
 
 - The values an SDP needs come from the session config and the `info.*` stats: `ts-refclk` and
@@ -704,9 +793,8 @@ flowchart LR
   About 0.475 ms with RL (128 × 3.7074 µs at 1080p59.94) and about 20 µs with TSC, which holds a bulk until its target; S0 measures the scheduler term; audio adds one packet (the carry, §8). It is not the builder ring depth: 512 packets × TRS ≈ 1.9 ms at 1080p59.94 is how far the builder may run ahead once it has the frame, information only. Code evidence: [engine.md](engine.md) §2.12.
 - **`min_submit_lead_ns`** (`mtl_session_info.min_submit_lead_ns`) = `M − deadline` = `pickup_lead_ns − (scheduled_first − M)`, constant for on-grid media. It is the one number a producer needs: **submit unit k before `M(k) − min_submit_lead_ns`**.
   It is negative when the deadline falls after the media time: for playback video on either
-  pacing class, and for a capture producer. A framework's minimum latency is never negative:
-  `mtl_session_info.latency_min_ns` = max(0, `min_submit_lead_ns`) ([contract.md](contract.md)
-  §3.5). The element adds the time its own submit spends copying or converting
+  pacing class, and for a capture producer. A framework's minimum latency,
+  `mtl_session_info.latency_min_ns`, is the TX min of [contract.md](contract.md) §3.5. The element adds the time its own submit spends copying or converting
   (`mtl_session_info.convert_ns`) and a margin: GStreamer render-delay, FFmpeg `-muxdelay` (§10.5).
 - `mtl_session_query` returns both before create (dry run).
 
@@ -1097,7 +1185,7 @@ of frame k arrive in the same frame period, so an SDI-reconstructing receiver ne
 
 - There is no window option: ANC and fastmeta always follow the first video of their start array (its raster and its launch delay), or use their own frame and L without a video. A media-frame window option is reserved for later (`MTL_LATER`).
 - The ANC submit deadline for unit k is the deadline above for frame N; with L_v = 1 a live producer has one more frame period; `mtl_tx_get_next` reports it.
-- L_v is constant (constant `min_tx_delay`, snapping keeps M on the grid). A dropped video unit does not move the ANC window: ANC k still goes out in frame k + L_v, and so does the keep-alive.
+- L_v is constant (constant `min_tx_delay`, snapping keeps M on the grid). A dropped video unit does not move the ANC window: ANC k still goes out in frame k + L_v, and so does the keep-alive (§6.3).
 - `info.anc_window_frame_offset` = L_anc. With L = 0 and the default target the ANC of a line-9 packet goes ≈ 0.62 ms (CTM) or ≈ 0.18 ms (LLTM) after the frame epoch at 1080p59.94, so ANC for frame k must be submitted before or with video frame k.
 - The GStreamer `mtl_st40p_tx` sink stamps `GST_BUFFER_PTS + pts_for_pacing_offset` as TAI today (`gst_mtl_st40p_tx.c:719-720`); it becomes TAI mode with the video's `min_tx_delay_ns`, started with its video, with no pacing offset of its own.
 
@@ -1108,7 +1196,7 @@ extension (ST 2110-41 §5.3 lets the item spec define it).
 
 - `fastmeta.video` is the **associated video raster**: one data item group per video frame or field, `media_index` = the video index, RTP = the video RTP, on the grid like ANC. All zero takes the raster and launch delay of the first video session of its start; with no video in the start it is required (`-MTL_EINVAL`, `FIELD_REQUIRED`).
 - `MTL_FASTMETA_FREE_RUNNING`: `video.fps` is the stream's own unit rate (required). The stream is off the video grid (excluded from G), `M(k) = T0 + k/rate` on the epoch; in TAI mode each unit's time is taken as given (no snap); RTP = `floor(M × 90000)`.
-- Field parity follows the index (`video.scan`); there is no `second_field` input. Launch `M + fastmeta.target_delay_ns` (§5.3); keep-alive every 450 ms; marker 0 on every packet (this edition; MTL sets 0, `st_tx_fastmetadata_session.c:186`).
+- Field parity follows the index (`video.scan`); there is no `second_field` input. Launch `M + fastmeta.target_delay_ns` (§5.3); keep-alive by the underrun policy (§6.3); marker 0 on every packet (this edition; MTL sets 0, `st_tx_fastmetadata_session.c:186`).
 
 ## 10. A/V/ANC synchronisation
 
@@ -1155,7 +1243,7 @@ A file holds 59.94p video (`time_base = 1001/60000`), 48 kHz audio (`1/48000`) a
   would be `FLUSHED/BEFORE_START`, §4.4).
 
 - RTP for video frame k, its ANC, and the audio sample at the same instant are exact functions of `T0 + k·1001/60000`, for any start index: no half-frame snap, no TR_OFFSET contamination, no floating point.
-- Each essence transmits on its own model: video at its launch index, audio at `M + D_a`, ANC in its window. Frames without ANC still get the empty keep-alive packet.
+- Each essence transmits on its own model: video at its launch index, audio at `M + D_a`, ANC in its window. Frames without ANC still get the empty ANC packet of the underrun policy (§6.3).
 - A late video frame 37 is dropped (DROP). Audio is unaffected and frame 38 keeps its media time. Nothing slides (G-24).
 - Today the same app gets up to half a video frame plus TR_OFFSET of RTP-derived A/V error with USER_PACING, and ST30P cannot set a user timestamp. Moving to the unified API closes that (§14.2).
 
@@ -1187,7 +1275,7 @@ One FFmpeg process per essence shares nothing but the epoch and an agreed start 
   `t_start`, each process rounds up to its own members' grid; video then starts up to one frame
   after it, audio within one sample, and the RTPs no longer match a single-process start.
 
-### 10.5 Recipes
+### 10.5 Live sinks and the programme phase
 
 **Live A/V phase.** MTL keeps no phase relation between sessions. The TAI-mode sessions of one
 programme stay in phase when each adds the same δ to every unit's `media_tai_ns` (or, known at
@@ -1221,17 +1309,21 @@ whose header comes first). `tx.phase_of` is not offered.
 - **OBS output.** The same, with `mtl_time_convert(MONOTONIC → TAI)` of the OBS timestamp (today's `tfmt = MEDIA_CLK` with a monotonic value is a bug).
 - NEAREST adapts a free-running camera or a 30.000 fps source on a 29.97 session by occasional `SNAP_COLLISION` drops or gaps and never locks out; `alsasrc` jitter is absorbed (§8).
 
-**Time-preserving processor (RX → TX)**, [ex23](sketch/examples/ex23_processor.c):
+### 10.6 Time-preserving processor
+
+RX → TX, [ex23](sketch/examples/ex23_processor.c):
 
 - `media_mode = MTL_MEDIA_TAI`, `unit.media_tai_ns` = the received unit's `media_tai_ns` (only when `MTL_UNITF_TAI_VALID`; a `mediaclk:sender` input has none);
-- `min_tx_delay_ns` = the pipeline budget (an RX → TX unit exists only after its media time, §5.2): the input's delivery, the RX session's `latency_min_ns` (RX completion at ≈ M + 16.7 ms for 1080p59.94 from a sender that launches at its media time), plus the input's own launch delay, plus processing, the pick-up lead and a margin; snap NEAREST.
+- `min_tx_delay_ns` = the pipeline budget (an RX → TX unit exists only after its media time, §5.2): the input's delivery, the RX session's `latency_min_ns` (RX completion at ≈ M + 16.7 ms for 1080p59.94 from a sender that launches at its media time), plus the input's own launch delay, plus processing, the pick-up lead (§6.1) and a margin; snap NEAREST.
 - The input's RTP time M is its sender's media time, not its launch: a camera, a capture sender or another processor has a launch delay of one frame, so its frame arrives from about M + 17.3 ms to M + 34 ms. The input's launch delay in whole frames comes from its SDP's TSDELAY less its TROFFSET, or from the measured first-packet latency (`arrival_first_tai_ns` − `media_tai_ns`, `mtl_rx_detail`).
 - L is fixed, because the slot comes from M, not from arrival jitter; a unit over budget is `DROPPED/TOO_LATE`, and L never toggles. The derived RTP equals the input RTP whenever the input was on the grid (the RX media time is exact to less than one tick, and NEAREST snaps back to the same `N·TFRAME`). An off-grid input is re-stamped to the grid; to keep its phase use
   `MTL_SUBMIT_RTP_TS` with INDEX or TAI (MS3).
 - TSMODE (§5.6), set by the application, which reads the input's SDP (the library cannot see it): SAMP when the input's SDP says SAMP, else PRES, both with the inclusive TSDELAY of `info.tsdelay_ns` (ST 2110-10 §8.7, shall); a processor whose input is off the grid re-stamps it, so it declares NEW.
 - Audio: the same with the RX unit's first-sample media time; output packets stay on their own grid, RTP `floor(M × Fs)` of each first sample, equal to the input RTP for equal S. ANC: the video unit's media time, so ANC RTP = video RTP.
 
-**Seeks with an INDEX sink.** TAI is recommended for any sink whose pts can restart. For INDEX: `mtl_session_discard(s, MTL_DISCARD_REBASE, new_pts_index)`: the session stays RUNNING; queued units become `FLUSHED/DISCARD`; `tx.index_offset` is set so that `first_index` maps to the next
+### 10.7 Seeks with an INDEX sink
+
+TAI is recommended for any sink whose pts can restart. For INDEX: `mtl_session_discard(s, MTL_DISCARD_REBASE, new_pts_index)`: the session stays RUNNING; queued units become `FLUSHED/DISCARD`; `tx.index_offset` is set so that `first_index` maps to the next
 feasible index on the epoch; the next submission is an implicit forward DISCONTINUITY;
 `mtl_get_option` of `tx.index_offset` (`MTL_OPT_INDEX_OFFSET`) then returns the re-based offset (an
 R key, the effective value). The app keeps submitting pts-derived indices; results report the
@@ -1239,7 +1331,9 @@ session's indices (epoch, or from T0 under `MTL_WHEN_ORIGIN`). Re-base the video
 ANC/fastmeta sessions' `tx.index_offset` to the video's new value (§10.3). A stop plus a start at
 `MTL_AT_INDEX` of an index already passed fails with `START_IN_PAST`; discard is the verb.
 
-**One video essence over several ST 2110-20 streams (RP 2110-23).** A 2SI split (3840×2160 as four 1920×1080 sub-images, ST 425-5; 4320 lines as four 2160-line or sixteen 1080-line streams) or a square division is one video TX session per stream, started together (MS6):
+### 10.8 One video essence over several streams
+
+One video essence over several ST 2110-20 streams (RP 2110-23): a 2SI split (3840×2160 as four 1920×1080 sub-images, ST 425-5; 4320 lines as four 2160-line or sixteen 1080-line streams) or a square division is one video TX session per stream, started together (MS6):
 
 - every session is itself a valid ST 2110-20/-21 stream (RP 2110-23 §5.1, §5.5) with the same raster rate, scan, sender type and `troffset_us` (0 on all, or the same value), so their TROFFSET is equal (§5.5, shall);
 - one start array (`mtl_session_start(s, n, when, &t0)`, §7.1), with INDEX or TAI media mode, and every sub-image of one source frame submitted with the same `media_index` (or `media_tai_ns`): one T0 and one grid give equal RTP timestamps on every stream (§5.5, shall);
@@ -1283,8 +1377,8 @@ A receiver computes a unit's times from its RTP timestamp in this order:
 
 - A unit with `delivered_tai_ns > presentation_tai_ns` carries `MTL_RXF_LATE_FOR_PRESENTATION` and counts in `rx.units_late_presentation`: the link offset is too small for this sender and network.
 - `info.tolerated_skew_ns` reports the tolerated 2022-7 path differential (from buffer and slot sizing); a warning is reported when `rx.link_offset_ns < rx.skew_budget_ns`.
-- `latency_min_ns` of an RX session with a link offset is that offset ([contract.md](contract.md)
-  §3.5), so the receivers of one start group report one minimum.
+- `latency_min_ns` of an RX session with a link offset: the RX min of [contract.md](contract.md)
+  §3.5.
 - **Scheduled delivery** (holding units until presentation) is later: the library reports the value and applications schedule. `MTL_LINK_OFFSET_AUTO` (the measured minimum) is an option value.
 
 ### 11.4 Starting receivers together
@@ -1457,12 +1551,20 @@ frame rate (MS4, §3.2).
 
 | Piece | Rule |
 |---|---|
-| `MTL_TIME_SOURCE_FREERUN` (MS6) | seeded once from the system clock, never stepped, ESTIMATED; state FREERUN, which health counts as ready. `SYSTEM_TAI` follows NTP steps and stays for other uses |
-| `time.freerun_slew_ppm` | FREERUN follows `CLOCK_TAI` by frequency only, bounded, never stepping. Without it a 10 ppm crystal drifts ≈ 0.86 s a day, past the 0.1 s the IS-05 test suite allows for absolute activations |
+| `MTL_TIME_SOURCE_FREERUN` (MS6, with the published time base, E9) | seeded once from `CLOCK_REALTIME` plus the UTC offset, then runs on the TSC or an undisciplined PHC; never stepped, ESTIMATED; state FREERUN (`MTL_TIME_FREERUN`), which health counts as ready. `SYSTEM_TAI` follows NTP steps and stays for other uses |
+| `time.freerun_slew_ppm` (2230, R) | FREERUN follows `CLOCK_TAI` by frequency only, bounded, never stepping; 0 = never. Without it a 10 ppm crystal drifts ≈ 0.86 s a day **[inferred]**, past the 0.1 s the IS-05 test suite allows for absolute activations. A Node can also convert IS-05 times with `mtl_time_convert()` |
 | AUTO at runtime | until Phase 7 AUTO chooses once at open and ends in `SYSTEM_TAI`. From Phase 7 its last step is `FREERUN` and it moves to a disciplined PHC or `CLOCK_TAI` when one appears (posts `TIME_STATE` and `TIME_STEP`; the Info Block ts-refclk changes from `localmac=` to `ptp=`); when the source is lost, holds over, then by `time.fallback` (default FREERUN) runs free without a step |
-| `MTL_MEDIA_SENDER` | RTP follows the source (below); without it, an async source at +50 ppm on a 59.94 session drops a frame every 5.6 minutes under NEAREST |
-| `MTL_SUBMIT_SENDER_TIME` | inline processors keeping the input's timing (TR-10-1 §9): RTP and the sender report's NTP come from the received unit (`unit.rtp`, `unit.media_tai_ns` with `SENDER_TIME`); launch = submit + `min_tx_delay_ns` on the instance clock |
+| `time.fallback` (2208) | HOLDOVER or FREERUN, default FREERUN: the fall back of AUTO at runtime (the row above) |
+| `MTL_MEDIA_SENDER` | RTP follows the source (below), the one exception to D-09's RTP = floor(M × rate) (C-I2); without it, an async source at +50 ppm on a 59.94 session drops a frame every 5.6 minutes under NEAREST |
+| `MTL_SUBMIT_SENDER_TIME` | inline processors keeping the input's timing (TR-10-1 §9, a MUST): RTP and the sender report's NTP come from the received unit (`unit.rtp`, `unit.media_tai_ns` with `SENDER_TIME`); launch = submit + `min_tx_delay_ns` on the instance clock, so the upstream clock never sets a launch time |
 | receivers | units of one sender align through its clock even without PTP: `mtl_rx_align` works on the media indices of one sender's sessions. `rx.mediaclk = AUTO` compares the Info Block's ts-refclk with the instance's grandmaster and uses the reports when they differ |
+
+**A new grandmaster.** When AUTO locks to a new grandmaster the internal clock steps (a step keeps
+every media time and fails pending updates with `TIME_STEP`, §12): SENDER sessions keep their RTP
+(it follows the source) and their report NTP values jump; INDEX and AUTO sessions on the epoch move
+their RTP to the PTP grid, which receivers see as a discontinuity. The Info Block version
+increments and `MTL_EVENT_RTCP_INFO` tells the application to update SDP and NMOS (TR-10-9 §12,
+PQCR §4.1.1).
 
 Which settings each source case takes:
 
@@ -1470,7 +1572,7 @@ Which settings each source case takes:
 |---|---|---|---|---|
 | file playout or test pattern, PTP present | `PHC` or `PTP_BUILTIN` | `INDEX` or `AUTO` | 0 | `direct=0` / `ptp=` |
 | file playout, no PTP (TR-10-9 §9: a sync sender) | `FREERUN` | `INDEX` or `AUTO` | 0 | `direct=0` / `localmac=` |
-| genlocked capture locked to PTP | `PHC` | `TAI` (NEAREST) or `INDEX` | one frame + the pick-up lead, or 0 with row units | `direct=0` / `ptp=` |
+| genlocked capture locked to PTP | `PHC` | `TAI` (NEAREST) or `INDEX` | the capture value of §5.2, or 0 with row units | `direct=0` / `ptp=` |
 | HDMI capture at its own rate, PTP or not | any | `SENDER` | as capture | `sender` / `ptp=` or `localmac=` |
 | inline processor keeping the input timing | any | `SENDER` + `MTL_SUBMIT_SENDER_TIME` | the processing budget | as the input |
 
@@ -1481,11 +1583,15 @@ absorbed or inserted.
 
 | Term | Formula | Note |
 |---|---|---|
-| RTP | `RTP0 + floor(k × period × rate)` | `RTP0 = floor(M0 × rate)` at the first unit or after a DISCONTINUITY |
-| k | `k += max(1, round((M − M_prev) / period))` per unit | a missed VSYNC skips one period; no drift builds up |
+| RTP | `RTP0 + floor(k × period × rate)` | `RTP0 = floor(M0 × rate)` at the first unit or after `MTL_SUBMIT_DISCONTINUITY`, which re-anchors it |
+| k | `k += max(1, round((M − M_prev) / period))` per unit | a missed VSYNC skips one period; no drift builds up, as it would with `round((M − M0) / period)`; a result's `media_index` is k |
 | launch | `M + min_tx_delay_ns` on the nominal-period schedule | an overlapping unit is `DROPPED/WOULD_OVERLAP` |
 
-`MTL_AT_INDEX`, `MTL_SESSION_RX_BY_INDEX` and `tx.precede` targets are `-MTL_EINVAL` on such a session; `MTL_INFO_MEDIACLK_SENDER` is set in the info. From Phase 7, AUTO's order in a pod ends in FREERUN, so a pod without PTP is an IPMX sender with `localmac=`, not an error. Details: [nmos-ipmx.md](nmos-ipmx.md) §19.
+`MTL_AT_INDEX`, `MTL_SESSION_RX_BY_INDEX` and `tx.precede` targets are `-MTL_EINVAL` on such a session, because its indices are not on a grid; `MTL_INFO_MEDIACLK_SENDER` is set in the info, and the sender report carries M.
+Late policy: SEND_LATE within `tx.late_tolerance_ns` by default, then DROP (`WOULD_OVERLAP`) (key 100,
+`tx.late_policy`; §6.2). An inline processor (`MTL_SUBMIT_SENDER_TIME`) also copies the input's
+ts-refclk and mediaclk into its own Info Block with `MTL_RTCP_REFCLK_APP` and
+`MTL_RTCP_MEDIACLK_APP`, so the output report keeps the input's time domain (TR-10-1 §9). From Phase 7, AUTO's order in a pod ends in FREERUN, so a pod without PTP is an IPMX sender with `localmac=`, not an error. The IPMX consequences and a worked example: [nmos-ipmx.md](nmos-ipmx.md) §19.
 
 ## 14. The legacy timing surface
 
@@ -1538,48 +1644,39 @@ E5b, E9 and E13 ([implementation-plan.md](implementation-plan.md) §6, §7).
 
 ### 16.1 Guarantees
 
-The full guarantee list is [implementation-plan.md](implementation-plan.md) §8.2; the methods of the timing guarantees not given here are [requirements.md](requirements.md) §4.3. Tiers: U unit (null backend, test clock), UB unit with the engine's packets, I integration on VFs, M measured with a capture. P = pass/fail, BE = best effort.
+The text, method, tier and P/BE of every guarantee are in [guarantees.md](guarantees.md): how to
+read an entry in [§1](guarantees.md#1-how-to-read-this-file), the entries in ID order in
+[§2](guarantees.md#2-guarantees-g-01g-142); [implementation-plan.md](implementation-plan.md) §8.2
+indexes them by milestone. The timing guarantees, with the section that states each rule:
 
-| ID | Guarantee | Tier |
+| ID | Tier | Rule in |
 |---|---|---|
-| G-17, G-18 | every time field names its clock, unit and validity (zero is valid when flagged); requested, resolved, scheduled, enqueued and observed times are separate fields | U |
-| G-19 | RTP = `floor(M × R) mod 2^32` exactly, every essence (second fields by §4.2), no cumulative drift | U, UB |
-| G-20 | default video media time is the frame epoch; ST20 and ST40 of one frame carry equal RTP. In MS1 it asserts the epoch RTP with today's engine rounding (§6.8), `floor` from E2 (MS3, or MS2a with the stretch task X) | UB |
-| G-21 | audio RTP identifies each packet's first sample; submission boundaries change no packet | UB |
-| G-22 | interlaced: each field its own M, `M(second) = M(first) + TFIELD`, `RTP(second) = RTP(first) + floor(TFRAME × 90000 / 2)` (§4.2); launch includes TLINE/2 (MS6, E5b) | UB |
-| G-23 | a start array starts all or none | U, I |
-| G-24 | under DROP, one unit's lateness shifts no later unit of any session | UB |
-| G-25, G-26 | arrival time never replaces media time; an invalid exact launch fails explicitly, never falls back | UB |
-| G-27 | the launch schedule matches ST 2110-21 for the granted sender type within the accuracy profile; an MS4 exit criterion | M |
-| G-28 | a late unit gets the policy's outcome and a result with margins | UB |
-| G-53 | submitting before the cursor's deadline is ON_TIME at the cursor's index; before `M − min_submit_lead_ns` never `TOO_LATE` | U, UB |
-| G-59 | no packet before its media time; `NOT_BEFORE t` never before t | UB, M |
-| G-61 | ST40 keep-alive per frame or field without ANC; ST41 at least every 500 ms | UB |
-| G-62 | a step keeps every media time and posts `TIME_STEP`; no session drops forever after a forward step | U, UB |
-| G-66 | cvideo follows `rate_mode`; oversize is `-MTL_ENOSPC` at submit | UB |
-| G-67 | RX honours `rx.rtp_offset`; large offsets post `RX_TIMEBASE_SUSPECT` | UB |
-| G-68 | the T0 formula: `T0·R` integer for every rate kept in G, whole frames for video/ANC/grid fastmeta, unit k at ≥ `now + lead + preroll` | U |
-| G-75 | flow updates at a media index or instant switch on every leg at that unit | U, I |
-| G-76 | RX reports the exact inverse `media_index` on the epoch; RX starts arm together | U, UB |
-| G-82 | a due RX unit is force-completed within one iteration; with no packets the due time is still checked within 1 ms | UB |
-| G-85 | TAI + NEAREST: collisions are `SNAP_COLLISION`, skips follow the underrun policy, never a permanent drop | U, UB |
-| G-86 | audio forward gaps keep the packet grid and are padded with silence (`samples_padded`), overlaps are dropped (`samples_dropped`); only DISCONTINUITY re-phases | UB |
-| G-94 | preroll extends the lead; the horizon counts from S; a stranded queue fails the start atomically | U |
-| G-104 | with video launch delay L_v, ANC k has RTP_v(k) and lies in the window of frame `E⁻¹(M(k)) + L_v`, keep-alive included | UB |
-| G-105 | two processes on the epoch with a grid-aligned `t_start` emit the RTP of one process | U, UB |
-| G-106 | a legacy session with E2's opt-in flag puts `floor(M × R)` of the timestamps it is given on the wire, equal to the oracle; without the flag its wire is unchanged (G-99) | UB |
-
-Methods that matter:
-
-- **G-19**: an exact 128-bit rational oracle at every rate including 1001 families; 10^7 units at today's TAI, across the 2^32 wrap (13.26 h at 90 kHz, 27.05 h at 44.1 kHz), 44.1 kHz with 1001 rates, ST41 at 90 kHz with rational unit rates, TAI past 2^61 ns. Negative indices (audio priming under `MTL_WHEN_ORIGIN`) are checked in the oracle at every rate, and in the engine as
-  `FLUSHED/BEFORE_START`. The six split formulas of §3.5 at the domain edges (index rate 2^29/s,
-  num × den = 2^33, clock 2^29 Hz, t = 2^63 − 1 ns) with every product checked for overflow.
-- **G-22** and **G-68**: the field increments of §4.2; starts at k = 0…100 and 20 random `now`/lead/preroll per configuration (59.94p + 48 kHz + ANC; 50p + 48 kHz + ANC; 29.97p + 48 + 96 kHz; 1080i59.94 + 48 kHz + ANC; 1080i50 + 48 kHz + ANC; 59.94p + 29.97p + 48 kHz; audio only; 59.94p + 48 + 44.1 kHz;
-  1199/20 + 48 kHz: 90 kHz and 48 kHz excluded, T0 on the frame grid): T0 on the grid, `S ≥ A`,
-  and no field-parity flip.
-- **G-85**: a 60.0 Hz source into a 59.94 session for a simulated 24 h on the test clock, and any source within ±1 %: the fraction of units sent is ≥ 1 − the rate error and every sent RTP is on the grid.
-- **G-86**: drop one video frame's audio (800.8 samples) repeatedly; every later packet's RTP stays on the original grid; packet p covers `[p·S, (p+1)·S)` with RTP `floor(T0·Fs) + p·S`; no submitted sample outside an overlap is dropped.
-- **G-94**: preroll a full pool, then start with a horizon one unit too short.
+| G-17, G-18 | U | §2.1, §6.6 |
+| G-19 | U, UB | §4.2 |
+| G-20 | UB | §4.1, §6.8 |
+| G-21 | UB | §8 |
+| G-22 | UB | §4.2, §5.1 |
+| G-23 | U, I | §7.1 |
+| G-24 | UB | §6.2, §10.2 |
+| G-25, G-26 | UB | §11.2, §5.4 |
+| G-27 | M | §5.1 |
+| G-28 | UB | §6.2 |
+| G-53 | U, UB | §6.1, §9.2 |
+| G-59 | UB, M | §5.6 |
+| G-61 | UB | §6.3 |
+| G-62 | U, UB | §12 |
+| G-66 | UB | §5.3 |
+| G-67 | UB | §11.1 |
+| G-68 | U | §3.3 |
+| G-75 | U, I | §11.4 |
+| G-76 | U, UB | §11.2, §11.4 |
+| G-82 | UB | §11.7 |
+| G-85 | U, UB | §4.3 |
+| G-86 | UB | §8 |
+| G-94 | U | §6.4 |
+| G-104 | UB | §9.2 |
+| G-105 | U, UB | §10.4 |
+| G-106 | UB | §14.2 |
 
 ### 16.2 Oracle and contract
 
@@ -1596,7 +1693,7 @@ replaces several of the contract's selection rules, so the contract needs an upd
 | audio packet 0 TX = the RTP instant | TX = M + D_a, D_a small |
 | ST20 packet offsets `index × interval`, no TLINE/2 | linear TRS for NL/W; `+TFRAME/2 + TLINE/2` for the second field |
 | `rtp_anchor_ticks` includes a delta | the RTP clock offset is zero; a deliberate trim is the whole-unit `tx.index_offset`, and `tx.rtp_trim_ns` keeps the legacy delta |
-| the user timestamp must be a non-zero TAI value | zero is valid when flagged (G-17); the media mode, not the value, says what is meant |
+| the user timestamp must be a non-zero TAI value | zero is valid when flagged ([contract.md R5](contract.md#r5-times)); the media mode, not the value, says what is meant |
 | audio RTP anchored at the first TX request in user mode | RTP from the epoch sample index (§8) |
 | `receive_timestamp` = 0 when packet 0 is missing | validity flags (`MTL_UNITF_*`, `MTL_RXF_*`) |
 | a `tx_queue_available_time` term in the scheduling cutoff | the pick-up deadline `scheduled_first − pickup_lead_ns` (§6.1); a late unit is dropped or deferred, never sent late |

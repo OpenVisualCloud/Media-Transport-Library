@@ -3,13 +3,26 @@
 | | |
 |---|---|
 | Status | Maintained reference of today's library at `main` @ `545a266a`; the code is identical at `149a0ad4`. Facts only: the normative headers are `sketch/include/mtl/experimental/` |
-| Date | 2026-10-02 |
 | Reads with | [engine.md](engine.md) |
 
 What the legacy API offers, how `lib/` behaves inside, and what its consumers rely on, each with
 its `path:line`. It serves whoever builds the core, the bindings, the API shell or the legacy
 wrappers, and the maintainers. How the unified API sits on this code, and every known defect, is
 [engine.md](engine.md); this file points there instead of repeating it.
+
+**Start here.** Find your job:
+
+| Job | Sections |
+|---|---|
+| an MS1 task (the implementing session) | §12: your task's row of §12.1, then §12.2 |
+| a binding over an engine | §5.1–§5.3, §6.1–§6.2, §7.2–§7.3 |
+| a legacy wrapper or a shim | §2, §3, §11.4 |
+| pod or operator facts | §4.2, §9 |
+| a consumer port (RxTxApp, KahawaiTest, the plugins) | §11 |
+| updating a live session; what a frame gap reads as | §4.4; §6.3 |
+| today's pacing, timestamps and RTP | §7 |
+| stats, events and logging | §8 |
+| errors, ABI and build | §10 |
 
 ## 1. How to read this
 
@@ -31,7 +44,7 @@ code plus DPDK, glibc or kernel behaviour, not executed. **[unknown]**: not esta
 | per-function "today → change" tables for st20p TX/RX, the TX builder, the transmitter, RX reassembly, scheduler, admin, device and PTP; linesize and chain build; placement and quota; pacing ways and every downgrade; instance lifecycle | engine.md §2 |
 | completing contexts and `sh_info`; `mtl_dma_map`, backing detection, the memseg budget, RX DMA thresholds, PA mode | core.md §4.3, engine.md §2.16 |
 | stalled queues, no TX queue stop, today's uninit order; recovery triggers | engine.md §4, §5 |
-| defects SF-01…SF-70, SP-01…SP-10, SC-01…SC-08, DD-01…DD-21, H-K-1…H-K-28, RTP-level defects | engine.md §7 |
+| defects SF-01…SF-88, SP-01…SP-10, SC-01…SC-08, DD-01…DD-21, H-K-1…H-K-28, RTP-level defects | engine.md §7 |
 | pod hazards with evidence; MtlManager trust, MtlManager in pods, AF_XDP rate in pods | [deployment.md §4.16](deployment.md), §1.6, §4.12, §4.13 |
 | legacy timing surface → unified | [timing.md §14](timing.md) |
 | per-consumer port notes and call-site counts; the ABI summary | [migration.md §11](migration.md), §7.1 |
@@ -73,10 +86,9 @@ Per header: `mtl_api.h` 70, `st_api.h` 12, `st20_api.h` 51, `st30_api.h` 23, `st
 `st_convert_api.h` 47, `st_convert_internal.h` 58, `mtl_sch_api.h` 6, `mtl_lcore_shm_api.h` 2,
 `st20_combined_api.h` 6.
 
-Online update exists in every session and pipeline family (`*_tx_update_destination`,
-`*_rx_update_source`, st20 to st41 and st20p to st40p; st20 TX also `st20_tx_set_ext_frame`), none
-in st20rc; at runtime the core changes only the log level (`mtl_set_log_level`) and scheduler sleep
-(`mtl_sch_enable_sleep`), lcore shm only `mtl_lcore_shm_clean`.
+Online update of a session: §4.4. At runtime the core changes only the log level
+(`mtl_set_log_level`) and scheduler sleep (`mtl_sch_enable_sleep`), lcore shm only
+`mtl_lcore_shm_clean`.
 
 **Getter symmetry** (families st20, st22, st30, st40, st41, st20p, st22p, st30p, st40p):
 
@@ -186,7 +198,7 @@ and ST41 and ST40P say "MEDIA_CLK is used" (`include/st41_api.h:48-50`,
 | 4 | enums as struct members; `mtl_pmd_type` says "not change the enum value any more" | `include/mtl_api.h:229-231` |
 | 5 | library-private `priv` in public structs (`st_frame`, `st30_frame`, `st40_frame_info`, plugin metas) | `include/st_pipeline_api.h:315-316` |
 | 6 | `st_convert_internal.h` (58 functions, `*_simd_dma` with `mtl_udma_handle`) installed and included by `st_convert_api.h:13` (coverage.md CUT-4) | `include/meson.build:4` |
-| 7 | `mtl_api.h:27` includes the generated `mtl_build_config.h`; no runtime header/library check | `meson.build:43-52` |
+| 7 | `mtl_api.h:27` includes the generated `mtl_build_config.h`; no runtime header/library check | `meson.build:38-52` |
 | 8 | debug fields in production structs: `port_packet_loss[]`, `st40_tx_ops.test`, `*_SIMULATE_PKT_LOSS`, `sim_loss_rate` | `include/mtl_api.h:577`, `include/st40_api.h:375-378` |
 | 9 | callbacks run on the tasklet with a one-sentence contract; st20p explicitly allows `st20p_tx_notify_ext_frame_free` from inside `notify_frame_done` (H1) | `include/st20_api.h:1183-1184`; `st20_pipeline_tx.c:265-266` |
 | 11 | `ptp_get_time_fn` becomes the time source used by pacing, with no latency or thread rule (H7) | `include/mtl_api.h:662-667`; `mt_main.h:1458`, `:1950-1951` |
@@ -200,7 +212,7 @@ and ST41 and ST40P say "MEDIA_CLK is used" (`include/st41_api.h:48-50`,
 | 22 | reserved fields: `st20_rx_ops.pacing`/`.packing`, `ST22_PACK_SLICE` "not support now", `sample_size`/`sample_num`, `tx/rx_sessions_cnt_max` | `include/st20_api.h:1509-1512`, `:386-387`; `include/st30_api.h:474-479`; `include/mtl_api.h:745-760` |
 | 25 | `epoch` never defined: frame periods for video, packet times for audio | `st_tx_audio_session.c:264-268` |
 | 27 | TX clock implicit; sessions on port R still pace on P (timing.md §2.4) | `st_tx_audio_session.c:266` |
-| 28 | `update_destination/source` mid-frame semantics unspecified **[unknown]** (core.md §5) | — |
+| 28 | `update_destination/source` mid-frame semantics unspecified (§4.4) | — |
 | 29 | media concepts in the core header (`st21_tx_pacing_way`, `tx_audio_sessions_max_per_sch`, `pkt_udp_suggest_max_size`, `nb_rx_hdr_split_queues`); pacing per instance | `include/mtl_api.h:318-335`, `:681-705` |
 | 30 | magic sizes: video framebuffers 2–8 (`include/st20_api.h:24`); ANC meta 20, excess truncated with a `warn()` on the data path (`st_rx_ancillary_session.c:205-207`); `MTL_PKT_MAX_RTP_BYTES` = 1460 − 8 − 100 (`include/mtl_api.h:89`); `failed_cause[64]`; `MTL_PCAP_FILE_MAX_LEN 32`; `ST30_TX_FIFO_DEFAULT_TIME_MS 10` (E11, E12, PE7) | as cited |
 
@@ -281,8 +293,8 @@ on **[inferred]**. Removed but not cleaned: the user-space UDP stack (`2b182cd87
   RL implies a dedicated queue. Default TX is one shared queue per manager unless RL or
   `DEDICATE_QUEUE` (`:2120-2123`); `st_tx_sessions_queue_cnt()` (`include/st_api.h:641`) counts
   all audio sessions as one TX queue. `fifo_size` (default 10 ms) between builder and pacer. No
-  `notify_event`, no ext frame, no EXACT. RX `RECEIVE_INCOMPLETE_FRAME` reads missing packets as
-  silence; timing parser META through `notify_timing_parser_result` every 200 ms.
+  `notify_event`, no ext frame, no EXACT. RX `RECEIVE_INCOMPLETE_FRAME` (what the gaps read:
+  §6.3); timing parser META through `notify_timing_parser_result` every 200 ms.
 - **ST 2110-40** (units: FRAME (≤ `ST40_MAX_META` = 20 ANC packets + UDW buffer,
   `include/st40_api.h:308`), RTP). Frame-level RX exists (transport-owned pool, 64-bit session-merged
   sequence bitmap) and is what st40p uses (`st40_pipeline_rx.c:175`); interlace auto-detected from the
@@ -341,7 +353,7 @@ MTL's NACK retransmission: RTCP APP-style packets with PT 204 (`MT_RTCP_PTYPE_NA
 |---|---|---|---|---|---|---|---|---|---|
 | frame / slice / RTP unit | Y / Y / Y | Y / N / Y | Y / N / Y | Y / N / Y | **N** / N / Y | Y / N / N | Y / N / N | Y / N / N | Y / N / N |
 | 2022-7 merge | packet bitmap | Y | timestamp dedup | sequence bitmap | Y | Y | Y | Y | Y |
-| incomplete delivery | flag | flag | flag (silence) | always, with status | — | flag | flag | flag | always |
+| incomplete delivery | flag | flag | flag (gaps: §6.3) | always, with status | — | flag | flag | flag | always |
 | ext frames dedicated / dynamic | Y / Y | N | N | N | N | Y / Y | N / Y | N | N |
 | per-pgroup callback | Y | N | N | N | N | `PKT_CONVERT` (3 formats) | N | N | N |
 | auto-detect | w/h/fps/packing/interlace, not format | N | N | interlace, default on | N | Y | N | N | Y |
@@ -400,8 +412,8 @@ behaviour (`st_tx_video_session.c:3372-3377`); migration is video only; DPDK sec
 impossible (`--in-memory`, DD-02); Windows has no MtlManager, kernel socket or AF_XDP
 (`mt_instance.c:7`, `datapath/mt_dp_socket.c:24`, `lib/meson.build:115`).
 
-Session management: create before or after `mtl_start` (`doc/design.md:66-103`); update cannot
-change the NIC port, `num_port`, SSRC or PT; TX SSRC 0 = default (deterministic, SF-52), RX 0
+Session management: create before or after `mtl_start` (`doc/design.md:66-103`); what an update
+cannot change: §4.4; TX SSRC 0 = default (deterministic, SF-52), RX 0
 disables the check; per-session NUMA override (not ST40/41) plus `MTL_PORT_FLAG_FORCE_NUMA`;
 scheduler introspection (`*_get_sch_idx`) for video only.
 
@@ -435,7 +447,9 @@ scheduler introspection (`*_get_sch_idx`) for video only.
     `MTL_FLAG_REDUNDANT_SIMULATE_PACKET_LOSS` + `port_packet_loss[]`).
 23. The SysV lcore manager (no MtlManager), which `doc/design.md:51` already advises against (§4.2).
 
-The unified home of each mode is in [coverage.md](coverage.md).
+The unified home of each mode is the "Easily forgotten modes" table of
+[coverage.md §6](coverage.md#6-st-2110-20-by-milestone); where it and a coverage.md U-row disagree,
+the U-row is right.
 
 ### 3.7 Documentation drift, with evidence
 
@@ -730,6 +744,24 @@ stateDiagram-v2
 Today `st20p_tx_free` drains by sleep-polling (up to about 1 s per frame) while `st20_tx_free`
 aborts.
 
+### 4.4 Updating a live session today
+
+Today's update paths, gathered from §2.1, §2.3, §3.5, §5.3 and §8.2. The unified update is
+[contract.md §4.7](contract.md#47-update) and [core.md §5](core.md#5-commands-and-acknowledgements);
+how the engines take it is [engine.md §2.17](engine.md#217-updates-on-a-running-session-today).
+
+- **What exists.** Online update exists in every session and pipeline family
+  (`*_tx_update_destination`, `*_rx_update_source`, st20 to st41 and st20p to st40p; st20 TX also
+  `st20_tx_set_ext_frame`), none in st20rc.
+- **What it cannot change.** An update cannot change the NIC port, `num_port`, SSRC or PT.
+- **Blocking.** `st20_tx_update_destination` blocks up to `arp_timeout_ms` (60 s) **holding S**, the
+  session spinlock (`st_tx_video_session.c:926` → `mt_arp.c:191`); `st20_rx_update_source` does flow,
+  queue and IGMP work holding S and allocates (RTCP). Both are SF-14 (§5.3).
+- **Mid-frame.** The mid-frame semantics of `update_destination/source` are unspecified
+  **[unknown]** (flaw 28 of §2.3; core.md §5).
+- **After an auto-detect failure.** Recovery needs `update_source` or a re-create **[inferred]**
+  (§8.2).
+
 ## 5. Scheduler, tasklets and threads
 
 **[verified]** unless marked. The hazards H1–H10 are engine.md §1.1; quota, placement, sleep and
@@ -851,8 +883,7 @@ Pipeline and instance callbacks:
 |---|---|---|
 | `st*_create`, `st*p_create` | yes: lcore IPC or `flock`, ARP wait, TSC wait | takes S only to publish; allocates hugepages, rings, mempools, flows |
 | `st*_free`, `st*p_free` | yes: guard drain, unregister wait (1 ms sleeps up to 1 s), queue flush | blocking S (`tv_mgr_detach`) |
-| `st20_tx_update_destination` | up to `arp_timeout_ms` (60 s) **holding S** (`st_tx_video_session.c:926` → `mt_arp.c:191`) | SF-14 |
-| `st20_rx_update_source` | flow, queue and IGMP work holding S; allocates (RTCP) | SF-14 |
+| `st20_tx_update_destination`, `st20_rx_update_source` | yes, holding S (§4.4) | SF-14 |
 | stats get/reset | short spin; self-deadlock from a callback | H2 |
 | `st20_tx_get_framebuffer`, `set_ext_frame` | no (refcnt read) | often called from inside `get_next_frame` |
 | `st20_tx_get_mbuf`/`put_mbuf` | no | `rte_ring_sp_enqueue`: **single producer** (`:4705`) |
@@ -1006,7 +1037,7 @@ frees leftovers with a warning and does not unmap them (`mt_dma.c:111-126`). GPU
 | ST20 TX ext (`set_ext_frame`) | `buf_len`, `addr`, `iova` non-0/BAD, slot `refcnt` 0 (`:4520-4557`, a quick read); in-transport check only warns (`:4539-4543`) | as above; `addr/iova` cleared after the callback (`:136-139`) | re-arm with `set_ext_frame` per use |
 | ST20 TX RTP | MTL mempool; `len` only | the driver frees the mbuf | none |
 | ST22 TX | codestream frames, boxes pre-copied (`:252-262`); no ext mode | after the copy (`tx_no_chain` forced, `:3413-3416`) | `notify_frame_done` |
-| ST20 RX internal | `mt_rte_zmalloc_socket` zeroed once (`st_rx_video_session.c:472`) | on `st20_rx_put_framebuff(addr)` (`:4692-4715`) | `notify_frame_ready` hands ownership (`:939`, `:978`); release looks the frame up by `addr` (`:4692`) |
+| ST20 RX internal | `mt_rte_zmalloc_socket` (`st_rx_video_session.c:472`; gaps: §6.3) | on `st20_rx_put_framebuff(addr)` (`:4692-4715`) | `notify_frame_ready` hands ownership (`:939`, `:978`); release looks the frame up by `addr` (`:4692`) |
 | ST20 RX RTP (`st20_rx_get_mbuf`) | MTL RX mempool, no checks | on `st20_rx_put_mbuf` | `notify_rtp_ready` |
 | ST22 RX internal | as ST20 RX internal; **no ext mode** (`st22_rx_ops` has no ext fields, `include/st20_api.h:1632-1700`) | on `st22_rx_put_framebuff` | `notify_frame_ready` |
 | ST20 RX dedicated `ext_frames[]` | `addr` non-NULL, `iova` non-0 even for CPU copy (`:439-450`); `buf_len` unchecked (SF-17) | as above | as above |
@@ -1049,7 +1080,7 @@ double-completion window SF-39 and the zeroed count SF-41 of
 [core.md §4.3](core.md#43-every-completing-context).
 
 **RX video frame**: `rv_get_frame` scans and increments (`:205-220`); completion waits for
-`mt_dma_empty()` (`:1507-1528`, `:1845`); recycled frames keep the previous bytes in gaps. The
+`mt_dma_empty()` (`:1507-1528`, `:1845`); what a recycled frame's gaps read: §6.3. The
 second picture shows the RX frame's states (`st_rx_video_session.c` lines).
 
 ```mermaid
@@ -1104,8 +1135,8 @@ for ST30/40/41. RX loses ownership (SF-18, SF-45, MF4): besides the silent recyc
 `notify_frame_ready` return on incomplete frames (`st_rx_video_session.c:978`), a dynamic ext buffer
 is stranded when the pipeline sanity check fails after a successful `query_ext_frame`, and frames the
 transport drops before delivery are never reported, so a buffer handed out by query gets no
-terminal result. Recycled frames are not re-zeroed. The DMA lender teardown does not drain (SP-06;
-the tasklet's only DMA wait at teardown is `mt_dma_empty`, `st_rx_video_session.c:2945`).
+terminal result. What gaps read in a recycled frame: §6.3. The DMA lender teardown does not drain
+(SP-06; the tasklet's only DMA wait at teardown is `mt_dma_empty`, `st_rx_video_session.c:2945`).
 `mtl_dma_map` maps port P only (SF-07, MF2). GPU "direct" is a misnomer. Pipeline memory bugs are
 SP-07a…d.
 
@@ -1178,6 +1209,18 @@ hook is `ST20P_RX_FLAG_USE_GPU_DIRECT_FRAMEBUFFERS` (`include/st20_api.h:1624-16
 offload with GPU frames would DMA to IOVA 0 (SP-05). **DMA-BUF, CUDA, gpudev**: none (a search over
 `lib include gpu_direct app ecosystem plugins` finds only FFmpeg's vendored `compat/cuda`).
 
+### 6.3 What a frame gap reads as today
+
+What a lost packet leaves in a delivered frame, gathered from §3.2, §3.3 and §6.1. The unified rule
+is [contract.md §9.8](contract.md#98-rx-placement).
+
+- **ST 2110-30.** RX `RECEIVE_INCOMPLETE_FRAME` reads missing packets as silence (§3.2; the
+  "incomplete delivery" row of §3.3).
+- **ST 2110-20 RX, internal frames.** `mt_rte_zmalloc_socket` zeroes a frame once, at allocation
+  (`st_rx_video_session.c:472`).
+- **Recycled RX video frames.** Recycled frames keep the previous bytes in gaps: they are not
+  re-zeroed (§6.1).
+
 ## 7. Pacing, timestamps and lateness
 
 **[verified]** unless marked. Downgrades are engine.md §2.9; the legacy timing surface and its
@@ -1219,9 +1262,12 @@ With built-in PTP every `mt_get_ptp_time` on a tasklet dispatches (`mt_main.h:19
 per call, possibly a virtchnl round trip to the PF on an iavf VF **[inferred]**. Tasklet callers:
 late checks and pacing at `st20_pipeline_tx.c:133`, `st_tx_video_session.c:615`, `:695`, `:1797`,
 `st_video_transmitter.c:573`, `:628`. `st10_get_tai(MEDIA_CLK, …)` returns zero-based ns, not "since
-the TAI epoch" (`include/st_api.h:588-606`). Zero is the sentinel for "no timestamp", "unset epoch",
-"no RX timestamp" and "no target" (`st_tx_video_session.c:654`, `:1779`, `st_rx_timing_parser.c:20`,
-`st_tx_audio_session.c:992`).
+the TAI epoch" (`include/st_api.h:588-606`). Today's "no value" sentinels (the unified rule:
+[contract.md R5](contract.md#r5-times)):
+
+| Sentinel | Stands for | Evidence |
+|---|---|---|
+| 0 | "no timestamp", "unset epoch", "no RX timestamp" and "no target" | `st_tx_video_session.c:654`, `:1779`, `st_rx_timing_parser.c:20`, `st_tx_audio_session.c:992` |
 
 | TX input | Pre-filled by the library | Consumed |
 |---|---|---|
@@ -1353,13 +1399,15 @@ All paths compute ticks from an absolute TAI value and truncate to 32 bits: no c
 | ST40 default | `round(90k · round_tick(N·T))`, no TR_OFFSET (`st_tx_ancillary_session.c:416-428`, `:451-468`) |
 | ST41 | `trunc(E · frame_time_sampling)` in `double`, a third rule (`st_tx_fastmetadata_session.c:230-237`, `:317-318`) |
 
-Simulation of these formulas over 2 × 10⁶ frames at 2026 TAI, `vrx = 4`, 4320 packets
-**[inferred]**: default ST20 RTP − floor(N·T·90k) = +56…+57 ticks at 59.94 (cadence 1501/1502),
-+56 at 60, +67 at 50, +140…+141 at 23.976 (3753/3754); the EPOCH flag differs from ST 2110-10 floor
-by +1 on every second 59.94 frame and on 50 % of 23.976 frames; at 1080i59.94 the second field gets
-+1502 where a separate floor gives +1501 (timing.md §14.1 gives +54.4…+55.7 with the real VRX0
-values). So default ST20 and ST40 RTP of one frame differ, against ST 2110-40. `frame_time` in
-`double` gives about 10² ns of absolute epoch error at today's TAI, harmless except at tie points
+Default ST20 RTP leads floor(N·T·90k) by +54.4…+55.7 ticks at 1080p59.94, for the VRX values of
+§7.3 (the number's home: [timing.md §14.1](timing.md#141-today--unified)). A simulation of these
+formulas over 2 × 10⁶ frames at 2026 TAI **[inferred]** gives the rest: the frame cadence is
+1501/1502 ticks at 59.94 and 3753/3754 at 23.976; the EPOCH flag differs from ST 2110-10 floor by +1
+on every second 59.94 frame and on 50 % of 23.976 frames; at 1080i59.94 the second field gets +1502
+where a separate floor gives +1501. The simulation ran with `vrx = 4` and 4320 packets, a VRX
+value no mode of §7.3 uses; with it the leads were +56…+57 ticks at 59.94, +56 at 60, +67 at 50
+and +140…+141 at 23.976 **[inferred]**. So default ST20 and ST40 RTP of one frame differ, against ST
+2110-40. `frame_time` in `double` gives about 10² ns of absolute epoch error at today's TAI, harmless except at tie points
 (hence `nextafterl`). `doc/design.md` §8.2's RL "latency compensation" is only the `−VRX·TRS` in
 the start time (DD-09).
 
@@ -1530,9 +1578,8 @@ Asynchronous conditions: TX queue hang (`tx_burst` returns 0 for > `tx_hang_dete
 pacing continues on a free-running PHC **[inferred]**); RX no signal (`get_frame` waits out the
 timeout); format mismatch without auto-detect (`stat_pkts_wrong_{len,pt,ssrc,interlace}_dropped`,
 no event); auto-detect failure (one `err_once`, then every packet silently dropped,
-`st_rx_video_session.c:2710-2716`, `:3206-3208`; recovery needs `update_source` or a re-create
-**[inferred]**); a format change after detection is not handled **[inferred]**; RX back-pressure
-(`stat_frames_dropped`, `stat_slot_get_frame_fail`, `stat_pkts_enqueue_fail`, a "sustained Kx"
+`st_rx_video_session.c:2710-2716`, `:3206-3208`; recovery: §4.4); a format change after detection
+is not handled **[inferred]**; RX back-pressure (`stat_frames_dropped`, `stat_slot_get_frame_fail`, `stat_pkts_enqueue_fail`, a "sustained Kx"
 log; self-healing); NIC drop/nombuf (port stats, per port, not per session, + an ERR log with
 xstats); scheduler overload (admin `cpu_busy_score`, `mt_admin.c:16-50`, an optional migration the
 app is not told about).
@@ -1566,7 +1613,7 @@ XDP programs and ethtool rules) and shared IPC (the SysV lcore table).
 | virtio_user exception path | `dev/mt_dev.c:1539-1594` | stop/close `:2557-2580` | the tap vanishes with its fd **[inferred]** |
 | DPDK AF_XDP/AF_PACKET vdevs | `dev/mt_dev.c:361-389` | PMD close | the af_xdp PMD may leave its XDP program **[inferred]** |
 
-`mt_tap.c` is Windows-only (`meson.build:25-28`). **Native AF_XDP**: refuses to start without
+`mt_tap.c` is Windows-only (`lib/src/meson.build:25-28`). **Native AF_XDP**: refuses to start without
 MtlManager (`dev/mt_af_xdp.c:727-733`), creates sockets with `XSK_LIBXDP_FLAGS__INHIBIT_PROG_LOAD`
 (`:417-419`) and receives the XSK map fd over `SCM_RIGHTS` (`:384-403`, `mt_instance.c:58-112`);
 ethtool ntuple rules and UDP filters are requested through MtlManager (`mt_socket.c:353-422`);
@@ -1642,10 +1689,10 @@ frame, `notify_frame_ready < 0` = the app rejects, `notify_event` ignored
 (`st_tx_video_session.c:1922-1928`). Only TX video raises asynchronous errors.
 
 **ABI facts** beyond migration.md §7.1: `VERSION` = `26.01.0.DEV`; `MTL_VERSION_MAJOR/MINOR/LAST/EXTRA`
-go into the generated `mtl_build_config.h` installed under `include/mtl` (`meson.build:5`, `:42-53`);
+go into the generated `mtl_build_config.h` installed under `include/mtl` (`meson.build:5`, `:38-52`);
 `MTL_VERSION_NUM(a,b,c) ((a)<<16|(b)<<8|(c))` (`include/mtl_api.h:44-49`); `mtl_version()` includes
 `__TIMESTAMP__`, git describe and the compiler (`mt_main.c:993`); no header-against-library check;
-Windows generates a `.def` of all exports (`-Wl,--output-def,libmtl.def`, `lib/meson.build:115-121`);
+Windows generates a `.def` of all exports (`-Wl,--output-def,libmtl.def`, `lib/meson.build:122-123`);
 tags `v22.04` … `v25.02`, `v25.12-rc1`, `v26.01`, never paired with ABI notes; since `v26.01`
 `incomplete_frames_cnt` → `stat_frames_incomplete` and other stats renames; enum `*_MAX` sentinels
 (about 30, `include/mtl_api.h:217-334`, `include/st20_api.h:315-399`); `enum mtl_init_flag` holds
@@ -1656,7 +1703,7 @@ tags `v22.04` … `v25.02`, `v25.12-rc1`, `v26.01`, never paired with ABI notes;
 `__mtl_deprecated_msg()` marks fields (`tx_sessions_cnt_max`, the `sip_addr` unions, `sample_size`),
 suppressed under `__MTL_LIB_BUILD__` and `__MTL_PYTHON_BUILD__`, with no removal schedule
 (`include/mtl_api.h:141-147`, `:742-760`; `include/st30_api.h:474`). `experimental/st20_combined_api.h`
-is installed with no opt-in macro or symbol tag (`include/meson.build:10-16`). The only versioned
+is installed with no opt-in macro or symbol tag (`include/meson.build:10-15`). The only versioned
 interface is the plugin ABI: `st_plugin_meta{version, magic}`, V1 only
 (`include/st_pipeline_api.h:61-82`, `st_plugin.c:903-917`). The shared library has no `soversion`
 (`lib/meson.build:151-159`), and none was added in the 31 commits that touched that file (`git log`,
@@ -1667,7 +1714,7 @@ apps rebuild per release and often per commit, and the unversioned soname hides 
 **Build and packaging constraints.** Public headers include `<pthread.h>` and expose `pthread_t`
 (`mtl_bind_to_lcore`, `include/mtl_api.h:12`, `:1157`); they must stay C++-includable and free of C11
 atomics. Headers install under `<prefix>/include/mtl/` and `mtl/experimental/`; pkg-config lists
-both `.` and `mtl`, so `<mtl_api.h>` and `<mtl/mtl_api.h>` both resolve (`meson.build:77-85`); the
+both `.` and `mtl`, so `<mtl_api.h>` and `<mtl/mtl_api.h>` both resolve (`meson.build:78-86`); the
 include guard of `mtl_api.h` sits after the system includes (`:12-21`). Windows: MSYS2/MinGW64 CI
 (`.github/workflows/msys2_build.yml`), POSIX shims in `lib/windows/win_posix.[ch]`, static DPDK,
 manager IPC `-ENOTSUP` (`mt_instance.c:277-345`); eventfd, `poll` and UNIX sockets need portable

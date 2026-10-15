@@ -1,7 +1,7 @@
 /* ex21 — a live framework sink (GStreamer without basesink sync, ffmpeg -re, an OBS
    output): each buffer's presentation time becomes its TAI media time, and the sinks of a
    programme share one latency and one phase, so they stay on the same frame times.
-   Needs: MS2. */
+   Needs: MS2 (MS2a: discard). */
 #include <mtl/experimental/mtl_sync.h>
 #include <mtl/experimental/mtl_util.h>
 

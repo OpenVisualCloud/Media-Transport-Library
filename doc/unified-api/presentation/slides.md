@@ -8,6 +8,36 @@ Slide deck for maintainers and users of MTL: the unified API, how it is built on
 engines, and the plan. It renders as Markdown on GitHub and in VS Code (mermaid diagrams
 included), and as slides with Marp (marp-cli with the mermaid plugin, or replace the diagrams
 with exports of the mermaid blocks). Speaker notes are the HTML comments under each slide.
+
+The deck restates; it states nothing. Each slide's facts live in its home. A changed home changes
+its slide in the same commit.
+
+| Slide | Home |
+|---|---|
+| A unified MTL API | README.md; the state: ms1-status.md |
+| Why: what users cannot do today | legacy-internals.md; engine.md §7 |
+| The first program | sketch/examples/ex01_tx_video.c; migration.md §4, §5.1; D-97 |
+| The idea in one picture | core.md §1 |
+| The core and its bindings | core.md §1–§3; migration.md §7.2 |
+| One model for everything | contract.md §4, §5, §6 |
+| A lean include file | examples.md §1; sketch/README.md §3; D-104, D-106 |
+| Every unit gets exactly one result | contract.md §6; D-14, D-207 |
+| Nothing on the pinned cores | engine.md §1; core.md §6.2; D-68, D-142, D-158, D-165, D-170 |
+| Waiting: a timeout, or a queue | contract.md §7; core.md §6.6; D-159, D-160, D-169, D-170, D-206 |
+| Two times, not one | timing.md §4, §5, §6.2; D-39, D-130 |
+| A/V/ANC in sync by construction | timing.md §7.1, §10 |
+| RTP passthrough, coherently | contract.md §13 |
+| Memory: zero-copy by policy | contract.md §9 |
+| Errors you can program against | contract.md §8 |
+| Only the high-level API is public | migration.md §7.2, §8.3 |
+| Built for frameworks and operators | migration.md §11, §12; deployment.md §4 |
+| Running in a Kubernetes pod | deployment.md §4; contract.md §2.4, §2.7 |
+| NMOS and IPMX | nmos-ipmx.md §8, §11; D-93, D-193 |
+| Engines first | engine.md §6; migration.md §6.3 |
+| Delivery | implementation-plan.md §1.2, §10 |
+| MS1: ST 2110-20 frames in a month | implementation-plan.md §5.2, §5.6, §5.8; D-107 |
+| How each change lands | implementation-plan.md §5.8, §8.5; D-107 |
+| Learn more | README.md §2 |
 -->
 
 # A unified MTL API
@@ -18,7 +48,7 @@ One small header for every ST 2110 essence ·
 results you can trust · exact A/V/ANC timing ·
 RTP passthrough without mbufs · nothing on the pinned cores
 
-`doc/unified-api/` · 2026-10-02 · nothing implemented yet
+`doc/unified-api/` · state: [ms1-status.md](../ms1-status.md)
 
 <!-- The design is settled; its history is in git. This talk is what will be built, on what, and in what order. -->
 

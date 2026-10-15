@@ -166,7 +166,7 @@ static inline int mtl_rx_align(const struct mtl_unit* video, const struct mtl_ra
    frame_rate on the epoch (k integer; the instant floored to ns). The TAI-mode sessions of a
    programme add the same offset, computed once, to their media times, so units at anchor +
    j frames (times exact to the ns) snap with an error of at most 1 ns and audio and ANC keep
-   the video's phase (timing.md §10.5).
+   the video's phase (timing.md §10.5, the programme phase).
    frame_rate is raster.fps, frames also when interlaced, so first fields land on even
    indices. 0, or -MTL_EINVAL: a rate outside the struct mtl_rational limits, or
    anchor_tai_ns < 0. AS. */

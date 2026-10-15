@@ -1,6 +1,6 @@
 /* ex19 — a framework element's setup, before media flows: options as properties, one
    shared instance, caps as formats, and the latency before the session exists. Needs:
-   MS2. */
+   MS2 (MS2a: the shared instance, the option, format and port parsers). */
 #include <mtl/experimental/mtl_format.h>
 #include <mtl/experimental/mtl_options.h>
 

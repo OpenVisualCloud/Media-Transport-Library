@@ -42,7 +42,7 @@ struct mtl_main_impl; /* the legacy mtl_handle */
    mtl_time_now() reads PTP_SOURCE_TSC and the default clock directly (MS1, vDSO and
    arithmetic only; UTC read as TAI) and the user and built-in PTP clocks from a snapshot a
    wrapper thread refreshes every 5 ms (MS2a; -MTL_ENOTSUP before), with their flags and
-   state (contract.md §2.8). Instance keys marked C are -MTL_EBUSY; from MS2a R keys act on
+   state (timing.md §2.2). Instance keys marked C are -MTL_EBUSY; from MS2a R keys act on
    the shared engine, legacy sessions included, through the legacy setters, and session
    defaults start from the legacy settings. CP. (MS1) */
 MTL_API_CP(1) int mtl_instance_from_legacy(struct mtl_main_impl* legacy, mtl_instance_h* out);

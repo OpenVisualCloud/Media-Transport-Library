@@ -241,7 +241,8 @@ MTL_API_DP(2) int mtl_rx_get_detail(mtl_session_h s, mtl_lease_h lease,
                                           bounded device step (a port reset is progress) */
 #define MTL_HEALTH_SESSION_LOST 0x4u   /* a started session lost every leg to removed ports,
                                           or every port is gone */
-#define MTL_HEALTH_DEVICE_FAULT 0x8u   /* a queue was quarantined; its memory is never freed */
+#define MTL_HEALTH_DEVICE_FAULT 0x8u   /* a queue, or a tasklet that could not be unregistered,
+                                          was quarantined; its memory is never freed */
 #define MTL_HEALTH_LIVENESS 0xffu
 /* Readiness: the instance cannot carry media now; may clear by itself. */
 #define MTL_HEALTH_STARTING 0x100u      /* phase below MTL_PHASE_READY */

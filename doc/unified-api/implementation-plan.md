@@ -3,11 +3,22 @@
 | | |
 |---|---|
 | Status | Plan of record. Nothing is implemented. The decisions it rests on are in [decisions.md](decisions.md) (D-99…D-112 shape it) |
-| Date | 2026-10-02 |
 | Baseline | `main` @ `545a266a`; the headers in [sketch/include/mtl/experimental/](sketch/include/mtl/experimental/) |
 
 The headers are normative. Every API name in this plan is a header name; names inside the
 library (the core, the bindings) are indicative.
+
+**Start here**, by role:
+
+| You are | Read |
+|---|---|
+| the implementing session | [README §1](README.md#1-for-the-implementing-session), then §1, §2 and §5 |
+| a task's agent | the task's row in §5.2 and the reading list of §5.2 for that task |
+| the maintainer | §1.2 (milestones), §5.6 (MS1 exit), §9 (risks), §10 (calendar) |
+
+`[I]` marks an estimate. The ID families (D-, OI-, G-, U-, the task IDs) are explained in
+[README §3](README.md#3-reading-the-ids); the assumptions A1–A10 of §1.1 are cited as "assumption
+A1", so they do not collide with the tasks A1, A2a–A2c.
 
 The milestones are **MS1…MS7** (§1.2, §5, §6), MS2 in two parts and MS4 in three (MS4a1, MS4a2,
 MS4b), followed by Phase 7. The Kubernetes fixes run as a parallel track (§6.10).
@@ -57,7 +68,7 @@ flowchart TB
 | Milestone | Scope | Calendar [I] |
 |---|---|---|
 | **MS1** ST 2110-20 frames | the core, the video and null bindings, the API shell inside libmtl for ST20 frames TX and RX, a test pool at four tiers, `UnifiedKahawaiTest` and `UnifiedRxTxApp` for `st20p` beside the frozen legacy ones, the acceptance smoke set on both apps (§5) | weeks 1–4 |
-| **MS2a** ST 2110-20 rows and completeness | the nightly comparison (§6.9); the wake checks S1a and S1b; queues for event loops (ex03); the `tick`, command acks, discard; **rows (slice)**; RX zero fill of library pools, due time and `RX_LATEST`; the direct open of PCI and `native_af_xdp:` ports; `mtl_log_add_sink`; C-FPS, C-GRANT, C-BRIDGE; the MS1 stretch tasks (§6.1) | month 2 |
+| **MS2a** ST 2110-20 rows and completeness | the nightly comparison (§6.9); the wake checks S1a and S1b; queues for event loops (ex03); the `tick`, command acks, discard; **rows (slice)**; RX fill of library pools, due time and `RX_LATEST`; the direct open of PCI and `native_af_xdp:` ports; `mtl_log_add_sink`; C-FPS, C-GRANT, C-BRIDGE; the MS1 stretch tasks (§6.1) | month 2 |
 | **MS2b** video memory and the st20p re-base | attach, by index, per-acquire layouts, holds, split-forward, converter plugins; then, last, st20p re-based on the core once the nightly comparison has burned in (§6.1) | month 3 |
 | **MS3** timing and observability | the ST20 timing subset (INDEX, start at TAI or index, `mtl_tx_get_next`, RX `media_index`, E1–E3); events, per-scheduler stats blocks, health; `mtl_session_update` on a stopped session; the libmtl soname, the `MTL_LEGACY` node and hidden internals; debug call-class checks; the FFmpeg plugin's st20p path on the new API (§6.2) | month 4 |
 | **MS4a1** audio, fastmeta and A/V sync | audio (st30p re-based), fastmeta (st41 frames), A/V on one epoch timeline (media mode AUTO; audio TAI and INDEX MS6); fastmeta at any frame rate; DSCP on their bindings; their `UnifiedRxTxApp` kinds and `UnifiedKahawaiTest` cases (§6.3) | month 5 |
@@ -91,7 +102,8 @@ returns `-MTL_ENOTSUP` with `MTL_REASON_NOT_IMPLEMENTED` until then (D-106).
 - media mode INDEX, start at a TAI or an index, `mtl_tx_get_next`, `MTL_SUBMIT_RTP_TS` (MS3);
   start arrays (MS6);
 - events, health, shutdown report (MS3);
-- command acks, RX due-time force-complete, zero fill of lost ranges in library pools (MS2a);
+- command acks, RX due-time force-complete, the fill of lost ranges in library pools (MS2a;
+  [contract.md §9.8](contract.md#98-rx-placement));
 - the direct open of PCI ports and `native_af_xdp:` (they reach unified sessions through the
   legacy bridge in MS1), `mtl_log_add_sink` (MS2a);
 - video rates outside the legacy `enum st_fps`; sender-type grants and their reports;
@@ -147,147 +159,29 @@ The picture, the parts and their rules are in [core.md](core.md) §1; in short:
 
 ### 2.3 Scope map
 
-The inventories of today's surface are the operating-mode catalogue
+The scope is [coverage.md](coverage.md): the operating-mode catalogue
 ([legacy-internals.md](legacy-internals.md)) and the use-case inventory of every public header,
-rows U-001…U-418 ([coverage.md](coverage.md)). The home of a feature's milestone is its U-row
-in coverage.md; this section is the index an implementer works from, and where the two
-disagree, coverage.md is right. The coverage gate D-87 holds: every legacy capability has a
-unified home and a milestone, or is removed (D-112). The rows that still need a home (U-348,
-U-402; OI-40, OI-42) are in [coverage.md](coverage.md).
-
-**Today's surfaces** ([legacy-internals.md](legacy-internals.md)): five media families × two
-directions × up to three units of work × two layers, plus `st20rc`:
-
-| Today | Unified home | When |
-|---|---|---|
-| `st20p_tx_*`, `st20p_rx_*` (frame) | `MTL_VIDEO`, `MTL_UNIT_FRAME`, conversion by `v.app_format` | MS1 |
-| `st20_tx_*`, `st20_rx_*` `ST20_TYPE_FRAME_LEVEL` (callbacks, ext frames) | the same session, push model; derive mode `v.app_format = 0`; app memory through `mtl_mem.h` | MS1 for library pools; ext frames MS2b |
-| `ST20_TYPE_SLICE_LEVEL` | `MTL_UNIT_ROWS` | MS2a |
-| `*_TYPE_RTP_LEVEL` (every family), ST 2022-6 through RTP level | `MTL_UNIT_PACKETS` (`mtl_packet.h`); `MTL_RTP` for ST 2022-6 and custom payloads | MS5 (D-82) |
-| `st22_*`, `st22p_*` | `MTL_CVIDEO` | MS4b |
-| `st30_*`, `st30p_*` | `MTL_AUDIO` | MS4a; sample-accurate submission MS6 |
-| `st40_*`, `st40p_*` | `MTL_ANC` | MS4a2; ANC following its video in a start array MS6 |
-| `st41_*` (RX RTP level only today) | `MTL_FASTMETA`, frame RX added | MS4a |
-| `st20rc_rx_*` | none: removed (D-112); two legs on one session do the same | — |
-| `st22_encoder_register`, `st20_converter_register`, `st_plugin_register` | plugin ABI v2 (`mtl_plugin.h`) | MS4b; converter plugins on the transform state MS2b |
-| `st_convert_api.h` (per-pair converters) | `mtl_convert()` (`mtl_format.h`); the public per-pair converters are removed (D-112) | MS4b |
-| `mtl_sch_*` user schedulers and tasklets | none: removed (D-112) | — |
-| `mtl_hp_*`, `mtl_dma_*`, `mtl_udma_*` | `mtl_mem.h` regions; user DMA removed (D-112) | MS2b (video); every other essence with its binding (MS4a, MS4b) |
-
-**ST 2110-20 use cases** ([coverage.md](coverage.md)):
-
-| Use case today | Unified home | When |
-|---|---|---|
-| pipeline loops `st20p_tx_get_frame`/`put_frame`, `st20p_rx_get_frame`/`put_frame` (U-180, U-200) | `mtl_tx_acquire` + `mtl_tx_submit`; `mtl_rx_dequeue` + `mtl_rx_release` | MS1 |
-| session pull model `get_next_frame`, push `notify_frame_ready` + `st20_rx_put_framebuff` (U-181, U-201) | push: acquire and submit; dequeue and release from any thread, in any order | MS1 |
-| TX from the caller's memory without a slot copy beforehand | `MTL_SUBMIT_SRC_PLANES` (a copy or the conversion into the slot during submit; any session but `MTL_SESSION_REQUIRE_DIRECT`) | MS1 |
-| framebuffers by index (U-182, U-183, U-224) | `info.unit_bytes`, `pool_count`; `mtl_session_get_slot` (`mtl_mem.h`) | MS1; by index MS2b |
-| ext frames: session per index, pipeline per frame, two-phase release, dedicated and dynamic RX (U-184…U-186, U-208, U-209) | `MTL_SESSION_POOL_ATTACHED`, `mtl_session_attach`, `mtl_tx_acquire_slot`, `MTL_SESSION_RX_BY_INDEX`; results as the release; `mtl_tx_acquire_layout`, `mtl_rx_provide` | MS2b |
-| interlaced, field as unit (U-187) | `v.raster.scan = MTL_INTERLACED`; parity from the media index | MS1 (1080i ports) |
-| linesize and padding (U-188) | `v.linesize` of library pools | MS2b (wave 2c) |
-| split-forward of RX tiles (U-189) | `mtl_session_get_pool_region`, `mtl_session_attach`, `unit.hold`, `mtl_tx_send_slot` (ex12) | MS2b |
-| user meta (U-190, U-221) | an `MTL_META_USER` record in the meta area (`mtl_meta_put`, `mtl_meta_find`) | MS1 |
-| packing, transport formats incl. the non-RFC 4175 ones (U-192…U-194) | `v.packing`; `v.format`, `MTL_YUV422P10LE_NONSTD`, `MTL_V210_NONSTD` (`MTL_INFO_NON_COMPLIANT`) | MS1 (port `transport_yuv422p10le`) |
-| library-paced TX on the epoch, epoch RTP (U-150, U-154) | `MTL_MEDIA_AUTO`, the default | MS1 |
-| legacy default RTP from the TX cursor (U-155) | not the default (D-10) | MS1; compared in the nightly (MS2a, G-99) |
-| RTP delta and TR offset (U-156) | `tx.rtp_trim_ns` (the RTP trimmed, the launch fixed); `sc.video.troffset_us` | TR offset default MS1, other values MS2a; `tx.rtp_trim_ns` MS3 |
-| user pacing, exact user pacing, user RTP (U-151…U-153) | `MTL_MEDIA_TAI` + `MTL_SUBMIT_NOT_BEFORE`; `MTL_SUBMIT_EXACT` + `unit.launch_tai_ns`; `MTL_SUBMIT_RTP_TS` | TAI and NOT_BEFORE MS1; EXACT B3 (else MS2a); RTP_TS and a launch in another slot than the media time MS3 (E1) |
-| drop when late, late notification (U-157, U-158) | `MTL_OPT_LATE_POLICY`; results with status, reason and margin | MS1; margins MS3 (E3) |
-| VSYNC (U-159) | `MTL_OPT_EPOCH_TICK`, `MTL_EVENT_EPOCH_TICK` | MS3 |
-| sender type, RL tuning knobs (U-160, U-162) | `v.sender_type`; `MTL_OPT_VIDEO_START_VRX`, `_PAD_INTERVAL`, `_STATIC_PAD_P`, `_DISABLE_BULK` | MS1 |
-| TR offset, TRS, VRX, scheduler index (U-161) | `mtl_session_get_info` | MS1 |
-| next frame due, frame late (U-163) | `mtl_tx_get_next`, `mtl_epoch_index_at` | MS3 |
-| incomplete frames, frame status (U-202, U-203) | delivered by default (`rx.incomplete = MTL_RX_DELIVER`), `unit.status`; `MTL_OPT_RX_INCOMPLETE = MTL_RX_DISCARD` | MS1 |
-| packets per leg, arrival times, bytes per frame (U-204, U-205, U-207) | `mtl_rx_get_detail` | A2b (else MS2a); the `frame_meta_*` ports in MS2a read them |
-| RX RTP and media time (U-206) | `unit.rtp`, `unit.media_tai_ns`, `unit.media_index` | MS1; `media_index` MS3 |
-| RX DMA offload (U-211) | `MTL_OPT_DMA`, `MTL_OPT_DMA_DEVICES`, `MTL_PATH_DIRECT_DMA` | B3 (else MS2a) |
-| auto-detect (U-212) | `v.detect = MTL_DETECT_ON`, `MTL_EVENT_RX_FORMAT` | MS3 |
-| timing parser in stats and per frame (U-214…U-216) | `MTL_OPT_RX_TIMING_PARSER`, keys `tp.*`, `mtl_rx_get_detail` (`timing[]`) | B3 (else MS2a) for the stats; per unit (`timing[]`) MS2a with RX detail |
-| two RX threads (U-217) | `MTL_OPT_RX_THREADS`; today's engine rejects 2 with two legs or rows units | B3 (else MS2a) |
-| per-packet conversion in st20p (U-220) | `MTL_OPT_RX_CONVERT_PER_PACKET`, on the RX tasklet (library code: the one exception to "no conversion on a tasklet") | B3 (else MS2a; port `digest_1080p_packet_convert_s2`) |
-| `uframe_pg_callback`, header split (U-219, U-213) | none: removed (D-112) | — |
-| simulated RX loss (U-223) | `mtl_debug_inject(MTL_FAULT_DROP_PKTS)`, `MTL_FAULT_DROP_RANDOM` | MS1 (`DROP_PKTS`); `DROP_RANDOM` MS2a |
-| pcapng dump | `mtl_session_capture` | MS4 |
-
-**Easily forgotten modes** ([legacy-internals.md](legacy-internals.md)):
-
-| # | Mode | Unified home | When |
-|---|---|---|---|
-| 1 | slice-level TX and RX | `MTL_UNIT_ROWS`, `mtl_tx_row_deadline`, `mtl_rx_wait_rows`, `MTL_OPT_RX_ROWS_STEP`, `MTL_OPT_ROWS_LATE` | MS2a |
-| 2 | RTP-level app-built packets, the only route to ST 2022-6 | `MTL_UNIT_PACKETS`, `MTL_RTP` | MS5 |
-| 3 | RX per-pixel-group callback on the tasklet | none: removed (D-112); per-packet conversion covers the conversion use | — |
-| 4 | st20p per-packet conversion (three output formats, DMA off) | `MTL_OPT_RX_CONVERT_PER_PACKET` | B3 (else MS2a) |
-| 5 | derive pipelines (no conversion or codec) | `v.app_format = 0`; cvideo codec bypass | MS1; cvideo MS4b |
-| 6 | ext frames in both TX flavours, two-phase release | attached pools, `mtl_tx_acquire_slot`, results; `mtl_tx_acquire_layout` | MS2b |
-| 7 | split-forward (4K → 4 × 1080p tiles) | pool region + attach + `unit.hold` (ex12) | MS2b |
-| 8 | RX dedicated and dynamic ext frames | `MTL_SESSION_POOL_ATTACHED`, `MTL_SESSION_RX_BY_INDEX`; `mtl_rx_provide` | MS2b |
-| 9 | GPU VRAM RX frames | `mtl_mem_open` with `MTL_MEM_DEVICE` (`-MTL_ENOTSUP` until then) | MS6 |
-| 10 | `DATA_PATH_ONLY`, queue meta (suspected NULL dereference, SP-02) | none: removed (D-112) | — |
-| 11 | exact user pacing, user pacing, normal | `MTL_SUBMIT_EXACT`, `MTL_MEDIA_TAI` + `MTL_SUBMIT_NOT_BEFORE`, `MTL_MEDIA_AUTO` | video: user pacing and normal MS1, exact B3 (else MS2a); ST40 MS6 |
-| 12 | epoch RTP and `rtp_timestamp_delta_us` | the default; `tx.rtp_trim_ns` | MS1; `tx.rtp_trim_ns` MS3 |
-| 13 | `DISABLE_BULK`, `TSC_NARROW`, `STATIC_PAD_P`, `start_vrx`, `pad_interval` | `MTL_OPT_VIDEO_*`, `MTL_OPT_PACING` | MS1 |
-| 14 | two RX threads above 40 Gb/s | `MTL_OPT_RX_THREADS` | B3 (else MS2a) |
-| 15 | header split | none: removed (D-112) | — |
-| 16 | field-as-frame interlace | `MTL_INTERLACED` units | MS1; packet units MS5 |
-| 17 | ST40 split by packet, interlace auto-detect | `MTL_ANCF_NEW_RTP` per entry, `sc.anc.detect` | MS4a2 |
-| 18 | ST30 build pacing, FIFO, RL warm-up | `MTL_OPT_AUDIO_BUILD_PACING`, `MTL_OPT_AUDIO_FIFO_MS`, `MTL_OPT_AUDIO_RL_ACCURACY_NS`, `MTL_OPT_AUDIO_RL_OFFSET_NS` | MS4a |
-| 19 | st22p codec threads | `MTL_OPT_CVIDEO_THREADS` | MS4b |
-| 20 | callback-driven vs polled completion | one push model: results, events, calls with a timeout and queues; no app code on tasklets (D-04) | MS1 (results, calls with a timeout); MS2a (queues); MS3 (events) |
-| 21 | non-RFC 4175 transport and `CUSTOM8` formats | `MTL_*_NONSTD`, `MTL_APP_YUV422_CUSTOM8` | MS1 |
-| 22 | debug knobs in public ops (`SIMULATE_PKT_LOSS`, `st40_tx_test_config`) | `mtl_debug_inject` (`DROP_PKTS`, `DROP_RANDOM`, `TX_MUTATE`) | MS1 entry point; faults per milestone (§8.3) |
-
-**Backends** ([legacy-internals.md](legacy-internals.md), [engine.md](engine.md) §1.7;
-`caps.backend`, `enum mtl_backend` in `mtl_observe.h`). The core and the video bindings sit on
-the video engine, which runs on every backend, so no binding is backend-specific; the table says
-which backend a unified job exercises.
-
-| Backend | Today | Unified jobs |
-|---|---|---|
-| DPDK PMD (PCI BDF), VF and PF | RL (ice PF, iavf VF), TSC, TSC_NARROW, TSN (E830 PF), PTP; zero copy if the NIC has multi-seg; flow director or shared RSS; queue-hang recovery only here | MS1 through the bridge: `UnifiedKahawaiTest` `St20p*` and the pytest `st20p` smoke set on `UnifiedRxTxApp`; MS2a: the direct open, the other ST20 ports and the nightly |
-| kernel socket (`kernel:`) | TSC only, single segment, no flow steering, still needs hugepages | MS1: `UnifiedKahawaiTest` `St20p*` on `kernel:lo` (§5.3); MS2a: the nightly `unified_st20p_kernel_loopback` |
-| native AF_XDP (`native_af_xdp:`) | RL through `tx_maxrate` on ice, else TSC; copies every segment into UMEM | direct open from MS2a; no unified job in MS1–MS2b; the pytest `xdp` group runs on `UnifiedRxTxApp` once its kinds are ported |
-| DPDK AF_XDP, DPDK AF_PACKET | experimental | removed (D-112, U-095) |
-| null (`null:<n>`) | none | new in MS1: the U tier |
-| Windows (NetUIO) | no MtlManager, no kernel socket, no AF_XDP | a compile-only CI job for the headers (G-74) |
-
-**The rest of the inventory, by area** ([coverage.md](coverage.md)):
-
-| Area | ST20 milestones | Later |
-|---|---|---|
-| instance lifecycle and init parameters | `mtl_instance_open` over `mtl_init` for `null:<n>` and `kernel:`, options the ST20 consumers set, the bridge (MS1); PCI BDFs and `native_af_xdp:` (MS2a) | runtime `mtl_port_open` (NG8; no header symbol; after MS7, on request) |
-| time source and PTP | `time_source` at open, AUTO once (`CLOCK_TAI` if valid, else `SYSTEM_TAI`); built-in PTP as today through the bridge (MS1), on a direct open (MS2a) (§2.4) | time events (MS3); a lock state that clears, clock steps, PHC and FREERUN with E9 (MS6); `mtl_time_set_reference` (MS2a); AUTO re-evaluation (Phase 7) |
-| schedulers, lcores, threads | `MTL_INSTANCE_TASKLET_THREAD`, `MTL_INSTANCE_TASKLET_SLEEP`, scheduler options (MS1) | lcore borrowing, user tasklets: removed (D-112) |
-| port tuning, ports and backends | the port options RxTxApp and KahawaiTest set (MS1); `mtl_port_get_spec` (A2b, else MS2a) | capacity queries (MS5) |
-| memory, DMA, zero copy | library pools (MS1); RX DMA through `MTL_OPT_DMA` (B3, else MS2a) | `mtl_mem.h` (MS2b for video) |
-| session plumbing | flows and two legs, MAC, NUMA, `sc.ssrc` and `sc.payload_type` (one identity for both legs), `mtl_flow.dscp`, source filter (MS1) | `mtl_session_update` (MS5) |
-| TX timing | video: AUTO, TAI with `NOT_BEFORE` (MS1); `EXACT` (B3, else MS2a); `RTP_TS`, INDEX, start at a TAI or an index, `mtl_tx_get_next` (MS3) | other essences (MS4a, MS6) |
-| completion, notification, blocking | results, calls with a timeout (MS1); queues for event loops (MS2a); events on sessions and on the instance (MS3) | — |
-| ST 2110-22, -30, -40, -41 | — | -30, -40, -41 MS4a; -22 MS4b; start arrays and sample-accurate audio MS6 |
-| RTP passthrough (common to every essence) | — | MS5 |
-| conversion, formats, helpers | st20p conversion by `v.app_format`, `MTL_SUBMIT_SRC_PLANES` (MS1); converter plugins (MS2b) | `mtl_convert` (MS4b) |
-| plugins | — | plugin ABI v2 (MS4b) |
-| stats and observability | ST20 counters (A2b, else MS2a); the stats registry's per-scheduler blocks (MS3) | the `st20_rx_user_stats` fields without a key (U-402) |
-| experimental and legacy remnants | — | removed (D-112) |
+rows U-001…U-420, give each feature's milestone, and the ST 2110-20 scope by milestone (today's
+surfaces, the use cases, the easily forgotten modes, the backends and the rest by area) is
+[coverage.md §6](coverage.md#6-st-2110-20-by-milestone), where a U-row wins over those tables. The
+coverage gate D-87 holds: every legacy capability has a unified home and a milestone, or is removed
+(D-112). The rows that still need a home (U-348, U-402; OI-40, OI-42) are in
+[coverage.md](coverage.md).
 
 ### 2.4 Time sources
 
-- A bridged instance (`UnifiedKahawaiTest` and `UnifiedRxTxApp` on VFs until MS2a, §4.1) keeps the
-  legacy time base: `MTL_FLAG_PTP_ENABLE`, `ptp_get_time_fn`, or the default. Unified sessions on
-  it read that time. MS1: `mtl_time_now` on it reads the default and TSC clocks (flagged UTC) and
-  is `-MTL_ENOTSUP` for the others until MS2a.
-- `mtl_instance_open` takes `time_source`. In MS1 `MTL_TIME_SOURCE_AUTO` chooses once, at open:
-  `CLOCK_TAI` if it is valid, else `SYSTEM_TAI` (a vDSO read). A NIC PHC (one syscall per read)
-  joins AUTO in MS6 with the published time base (E9), and so does FREERUN; re-evaluation while
-  running is Phase 7.
-- `MTL_TIME_SOURCE_PTP_BUILTIN` on a VF runs as today: the port has no timesync, so the client
-  disciplines MTL's own software time base (`ptp->no_timesync`, `mt_ptp.c:1390-1393`) and never the
-  VF's PHC. `MTL_REASON_CLOCK_NOT_OWNED` is only for a request to steer a PHC MTL does not own
-  (OI-7). On a direct open it needs the PCI open of MS2a; in MS1 it is reached through the bridge.
-- So `--ptp`, the NoCtx PTP cases and the nightly-pytest `ptp` group
-  (`.github/workflows/nightly-pytest.yml:40`, `tests/acceptance/tests/single/ptp/`) pass on both
-  apps and both binaries. The legacy gate
-  runs the `tests/unit/ptp/` suite, which pins the software time base (§8.5).
-- `ptp_get_time_fn` maps to `MTL_TIME_SOURCE_USER` + `mtl_time_set_reference` with `MTL_TIMEREF_USER_PAIR` ([migration.md](migration.md)).
+MS1 ships `MTL_TIME_SOURCE_AUTO` chosen once, at open; `MTL_TIME_SOURCE_PTP_BUILTIN` on a VF
+reached through the bridge (on a direct open it needs the PCI open of MS2a), with today's software
+time base; and on a bridged instance (`UnifiedKahawaiTest` and `UnifiedRxTxApp` on VFs until MS2a,
+§4.1) the legacy time base, which unified sessions on it read. The sources, the bridge clock and
+what each later milestone adds are [timing.md §2.2](timing.md#22-time-sources); `ptp_get_time_fn`
+maps to `MTL_TIME_SOURCE_USER` ([migration.md](migration.md)). `MTL_REASON_CLOCK_NOT_OWNED` is
+only for a request to steer a PHC MTL does not own (OI-7).
+
+The tests: `--ptp`, the NoCtx PTP cases and the nightly-pytest `ptp` group
+(`.github/workflows/nightly-pytest.yml:40`, `tests/acceptance/tests/single/ptp/`) pass on both apps
+and both binaries, and the legacy gate runs the `tests/unit/ptp/` suite, which pins the software
+time base (§8.5).
 
 ## 3. Prerequisites
 
@@ -340,7 +234,7 @@ OI-60):
 
 - **PR #1770** (open, 38 commits): of its rows MS1 needs SF-05/MF1 (an ext buffer is reported done
   before its `refcnt` is decremented, `tv_frame_free_cb`, `st_tx_video_session.c:134-135`), SF-08,
-  SF-09 and SF-23. If it is not merged by the end of week 1, the MF1 hunk is taken into task E1. The
+  SF-09 and SF-23. If it is not merged by the end of week 1, the MF1 hunk is taken into task E1a. The
   PR also fixes the video `update_destination` that writes the source UDP port into the destination
   port (`st_tx_video_session.c:3829-3830`).
 - **PR #1610's legacy st20p parity tests**, folded into main's harness
@@ -356,7 +250,7 @@ OI-60):
 |---|---|---|
 | S0 baseline | the legacy stack at the S0 loads (§5.2): the session visit cost, the iteration percentiles of P0's histogram, the lost frames and the monitor's compliance class, the legacy capacity per scheduler, and the A/A spread of each (§8.4) | MS1 week 1 (the §8.4 budgets; the capacity by MS2a's exit); E1 before it merges |
 | S1 waker | S1a: a futex wake, an eventfd `write` and `read`, the flush under the count bound, wake latency, the instance walk, a queue burst of 1–512 objects, the armed completion by line; S1b: pacing (ST4) under a synthetic wake load, TSC and RL; both aligned and staggered. Pass: ST1–ST9 (§8.4), else D-170's patterns, the slack gate, then the notifier (D-165) | MS2a |
-| S6 idle cleanup | rate and cost of `rte_eth_tx_done_cleanup` on an idle session | MS1 task E1 |
+| S6 idle cleanup | rate and cost of `rte_eth_tx_done_cleanup` on an idle session | MS1 task E1b |
 | S8 queue stop and start | do iavf and ice release chained external mbufs on `rte_eth_dev_tx_queue_stop`/`start` | MS3 (the stalled-queue close, attached memory after recovery) |
 
 ## 4. Where the code goes
@@ -388,7 +282,7 @@ exported then fails at link.
 
 ### 4.1 Two validation stacks
 
-Until the legacy API is removed, each API is validated by its own suites (A7–A9).
+Until the legacy API is removed, each API is validated by its own suites (assumptions A7–A9).
 
 | | Legacy API (frozen) | New API |
 |---|---|---|
@@ -592,14 +486,12 @@ is a MtlManager tool and stays.
   DROPPED); it drives the engine with `USER_PACING | RTP_TIMESTAMP_EPOCH` and `required_tai = N·T`,
   so RTP comes from the frame epoch (D-10) with today's rounding. `notify_frame_late` never fires
   for core sessions. `RTP_TS`, and a TAI unit whose `NOT_BEFORE` or `EXACT` launch lands in another
-  slot than its media time, are `-MTL_ENOTSUP` until E1 (MS3). The pick-up lead is max(RL warm-up
-  lead, one bulk build time + the S0 scheduler iteration bound) + any conversion stage
-  ([timing.md](timing.md) §6.1). The default `min_tx_delay_ns` 0 is
-  playback; a capture producer sets `min_tx_delay_ns` = one frame period + the pick-up lead and gets
-  a launch delay of one frame.
+  slot than its media time, are `-MTL_ENOTSUP` until E1 (MS3). B1 uses the pick-up lead of
+  [timing.md §6.1](timing.md#61-where-the-decision-happens) (D-130); the playback and capture
+  launch delays are [timing.md §5.2](timing.md#52-min_tx_delay_ns-and-the-launch-rule).
 - **RX:** incomplete units delivered with their status (the default
-  `rx.incomplete = MTL_RX_DELIVER`; the bytes of lost ranges are unspecified until zero fill of
-  library pools lands in MS2a, and the result says so with `MTL_RX_INCOMPLETE`),
+  `rx.incomplete = MTL_RX_DELIVER`; the bytes of lost ranges are unspecified until the fill of
+  library pools ([contract.md §9.8](contract.md#98-rx-placement)) lands in MS2a, and the result says so with `MTL_RX_INCOMPLETE`),
   `MTL_OPT_RX_INCOMPLETE = MTL_RX_DISCARD`; delivery in the completer's `pub_seq` order; two legs
   with the out-of-order window of `rx.skew_budget_ns`.
 - **Observe:** the D-110 log lines from `compat_log.c`; the latency fields and `convert_ns` (D-156).
@@ -757,7 +649,7 @@ WH10–WH12, WH14b–WH16, WH21, WC1–WC3, WC5 ([design/wait-tests.md](design/w
 
   In week 1 S0 runs the legacy stack only: the 12 video configurations, 3 runs each, about 6.6 h,
   unattended at night. It records in ms1-status §4 the medians and the A/A spread of every §8.4
-  metric, and the largest p99.99 of the TSC loads for the pick-up lead (D-130). The legacy
+  metric, and the largest p99.99 of the TSC loads for the pick-up lead (timing.md §6.1, D-130). The legacy
   capacity search of §8.4 runs on the next nights; MS2a's exit needs it. From R1 on, every gate run
   measures both stacks the same night. E1 merges after the at-quota data. A budget revision is a
   D-row, so ask first.
@@ -852,7 +744,7 @@ WH10–WH12, WH14b–WH16, WH21, WC1–WC3, WC5 ([design/wait-tests.md](design/w
   `doc/unified-api/design/models/` copied into `tests/unit/core/wait_model/` (exempt); the job
   `wait_model` (§8.2, "The wait evidence"). No pre-decided split: C1w is about 0.83 k, and MS1
   builds no descriptor (D-159).
-- **A1** carries two conditions of the wrapper's MS1 clock (conditions 1 and 3; contract.md §2.8):
+- **A1** carries two conditions of the wrapper's MS1 clock (conditions 1 and 3; timing.md §2.2):
   the C0 clock member on a wrapper is `mt_get_ptp_time(impl, MTL_PORT_P)`, and the wrapper's U tests
   run over a fake `struct mtl_main_impl`, in C2. It also carries `mtl_instance_params.log_level`
   (process-wide, the mismatch rule, written to the legacy global level). **I1 and R1** carry
@@ -1196,8 +1088,8 @@ of B1 and B2 and may slip to MS2a.
 ## 6. MS2–MS7
 
 Each milestone ends with its exit criteria, the legacy gate green, its samples of §4.2 in
-`app/sample/` with G-114 green, and the review gates of the repository. The detail of each item is in §2.3, §8 and the design documents; the engine items
-are in [engine.md](engine.md) §6.
+`app/sample/` with G-114 green, and the review gates of the repository. The detail of each item is
+in §8, coverage.md §6 and the design documents; the engine items are in [engine.md](engine.md) §6.
 
 ### 6.1 MS2: ST 2110-20 complete
 
@@ -1233,12 +1125,10 @@ are in [engine.md](engine.md) §6.
   (`st20_digest.cpp:584-695`, `st20_detect.cpp:289`) ported; RxTxApp `"video"` with `"slice"`;
   row waits gate on `progress.want` (RW1–RW2, D-163; WC4). Gateway latency needs MS3's INDEX and
   TAI and `mtl_tx_get_next`.
-- **RX completeness:** zero fill of lost ranges in library pools, in the caller's dequeue outside
-  the reaper lock, the bitmap copied only for incomplete units with the fill on (contract.md §9.8;
-  tests `UnifiedRx.FillOnlyMissingRanges`, `UnifiedRx.FillOutsideLock`,
-  `bind_video_rx.bitmap_only_incomplete`) (OI-26: the engine's packet
-  bitmap reaches the binding; attached RX pools are never zero-filled: the unit is
-  `MTL_RX_INCOMPLETE` with the loss counts of `mtl_rx_get_detail`), the RX due time and
+- **RX completeness:** the fill of lost ranges in library pools as [contract.md §9.8](contract.md#98-rx-placement) states it, in
+  the caller's dequeue outside the reaper lock (tests `UnifiedRx.FillOnlyMissingRanges`,
+  `UnifiedRx.FillOutsideLock`, `bind_video_rx.bitmap_only_incomplete`; OI-26: the engine's packet
+  bitmap reaches the binding), the RX due time and
   force-complete (E8 deadline part, G-82), `missed_before`, `MTL_SESSION_RX_LATEST`, the per-unit
   timing in `mtl_rx_get_detail`.
 - **Instance:** `mtl_instance_open` on PCI BDFs (with `PTP_BUILTIN`) and on `native_af_xdp:`, with
@@ -1306,7 +1196,7 @@ about 60 + 120 lines to C1q1 and C1q2 together.
 | RB1 | st20p TX re-based on the core: `get_frame` = acquire, `put_frame`/`put_ext_frame` = submit, `put_frame_abort` = release, `BLOCK_GET` = the core's wait, one notifier (R2); the `ST_CORE_LEGACY_*` modes of the ledger, no other | RB0 | ≤ the cap | yes | the frozen `St20p` TX cases, T1, the RB0 tests green; `check.sh` lint 8 green |
 | RB2 | st20p RX re-based on the core | RB0, RB1 | ≤ the cap | yes | the frozen `St20p` RX cases, T1 RX, the RB0 tests green |
 
-Exit: every ST20 legacy capability of §2.3 has a unified path except packet units (MS5) and the
+Exit: every ST20 legacy capability of coverage.md §6 has a unified path except packet units (MS5) and the
 timing subset of MS3; the legacy st20p suites green on the core; ex10, ex11, ex12 run (ex08
 needs `MTL_MEDIA_INDEX`, MS3); the `ptp` group green on both applications.
 
@@ -1596,89 +1486,8 @@ frozen beside their copies on the new API, and §6.9 compares the twins (D-109, 
 
 ### 8.0 Requirements and the guarantees that close them
 
-The text, level definitions and sources of each requirement are in
-[requirements.md](requirements.md); the rule text lives in [contract.md](contract.md),
-[timing.md](timing.md), [core.md](core.md) or [engine.md](engine.md). This table maps each requirement to the
-guarantees that close it and the milestone that closes them ("When").
-
-| ID | Level | Requirement (label) | Guarantees | When |
-|---|---|---|---|---|
-| R-OBJ-1 | MUST | one opaque session type for every essence and direction | G-45 | video MS1; G-45 MS4b |
-| R-OBJ-2 | MUST | direction verbs: TX acquire, submit, release; RX dequeue, release | G-46 | MS1 |
-| R-OBJ-3 | MUST | a buffer is a pool slot; per-use fields in `struct mtl_unit` | G-12, G-48 | MS2b (video), MS4a and MS4b (other essences) |
-| R-OBJ-4 | MUST | a 64-bit cookie returned verbatim in the result | G-47 | MS1 |
-| R-OBJ-5 | MUST | typed handles validated safely; stale, foreign and null handles fail | G-07, G-29, G-71 | MS1 |
-| R-OBJ-6 | SHOULD | many sessions waited on together (one queue and one descriptor for many sessions, epoll) | G-52, G-95 | per-session waits MS1; queues MS2a; instance-wide events MS3 |
-| R-MEM-1 | MUST | the library pool is the default | G-15 | library pools MS1; G-15 MS2b (video) |
-| R-MEM-2 | MUST | application memory imported once as a region | G-10, G-11, G-96, G-101, G-102 | MS2b (video), MS4a and MS4b (other essences) |
-| R-MEM-3 | MUST | a region outlives every reference | G-10, G-11 | MS2b (video), MS4a and MS4b (other essences) |
-| R-MEM-4 | MUST | an import maps into every device on the path, or fails | G-16 | MS2b (video), MS4a and MS4b (other essences) |
-| R-MEM-5 | MUST | data-path policy independent of allocation origin; path reported | G-13, G-14, G-84 | MS2b (video), MS4a and MS4b (other essences) |
-| R-MEM-6 | MUST | fixed pools, attached before start | G-35, G-36, G-103 | G-103 MS1; the rest MS2b |
-| R-MEM-7 | SHOULD | imported memory for every essence | G-15 | MS2b (video); every other essence with its binding (MS4a, MS4b) |
-| R-MEM-8 | SHOULD | RX leases released in any order; holds; exhaustion policy | G-56, G-60, G-83, G-137 | G-56 MS1; holds and G-137 MS2b |
-| R-MEM-9 | MAY | mixed-origin pools, device memory, per-acquire layouts | G-137 | per-acquire layouts and G-137 MS2b; device memory and mixed-origin pools MS6 |
-| R-TIME-1 | MUST | every time field names its clock, unit and epoch | G-17 | the ST20 fields MS1–MS3; the rest MS6 |
-| R-TIME-2 | MUST | media time and launch are separate inputs | G-18, G-59 | G-59 MS1 (UB; M tier MS6); G-18 MS6 |
-| R-TIME-3 | MUST | RTP = `floor(M × R) mod 2^32`, exact, one rule | G-19, G-21, G-22 | video MS3 (MS2a if task X is written in MS1); G-21, G-22 MS6 |
-| R-TIME-4 | MUST | default video media time is the frame epoch | G-20 | MS1 (video), MS4a (the ST40 half) |
-| R-TIME-5 | MUST | late and underrun policies with per-unit outcomes | G-26, G-28, G-61, G-66, G-85, G-86 | G-26 with EXACT (B3, else MS2a), the rest of G-26, G-28, G-85 MS3; G-61 MS4a; G-66 MS4b; G-86 MS6 |
-| R-TIME-6 | MUST | time source, lock state and offset, with events | G-54, G-62 | events MS3; G-54, G-62 MS6 |
-| R-TIME-7 | SHOULD | one exact epoch grid; all-or-none start arrays | G-23, G-24, G-63, G-68, G-94, G-104 | G-94 MS3; G-23, G-24, G-68, G-104 MS6 on the epoch timeline; G-63 with created timelines, not in v1 |
-| R-TIME-8 | SHOULD | sample-accurate audio submission | G-21 | MS6 |
-| R-TIME-9 | SHOULD | `mtl_tx_get_next`: next index and latest submit time | G-53 | MS3 |
-| R-TIME-10 | SHOULD | RX media time, per-leg arrival, optional link offset | G-25, G-67, G-82 | G-82 MS2a; the rest MS6 |
-| R-TIME-11 | MUST | progressive rows (`MTL_UNIT_ROWS`, slice mode) | G-113 | MS2a |
-| R-TIME-12 | SHOULD | RX `media_index`; essences align without app arithmetic | G-76, G-105 | video G-76 MS3; the rest MS6 |
-| R-TIME-13 | SHOULD | processes share the epoch grid without IPC | G-76, G-105 | MS6 (G-105) |
-| R-CMP-1 | MUST | exactly one terminal outcome per accepted submission | G-01, G-02 | MS1 |
-| R-CMP-2 | MUST | results are never lost | G-04, G-05 | MS1 |
-| R-CMP-3 | MUST | TX statuses ON_TIME, DROPPED, FLUSHED, FAILED (LATE: Phase 7) | G-28, G-57 | the MS1 statuses MS1; G-28, G-57 MS3 |
-| R-CMP-4 | MUST | "reusable" means nothing can still reach the storage | G-06, G-100 | MS2b |
-| R-CMP-5 | MUST | events in a separate bounded, coalesced queue | G-41, G-58 | MS3 |
-| R-CMP-6 | MUST | one error vocabulary; `mtl_last_error` | G-30, G-38, G-57, G-70 | G-30, G-70 MS1; G-57 MS3; G-38 MS4b |
-| R-CMP-7 | SHOULD | a portable queue descriptor; probes arm nothing | G-52 | MS2a |
-| R-OBS-1 | MUST | one stats schema; cumulative counters; lock-free reads | G-40, G-42 | G-42 MS2a (A2b); G-40 and per-scheduler stats blocks MS3 |
-| R-OBS-2 | MUST | queue gauges per slot state, from one scan | G-43, G-55 | G-43 MS3; G-55 MS6 |
-| R-OBS-3 | MUST | time, link, leg and scheduler status getters with events | G-41, G-54, G-91 | G-41 MS3; G-91 MS5; G-54 MS6 |
-| R-OBS-4 | SHOULD | lateness histograms; windowed maxima | G-43, G-55 | MS6 |
-| R-OBS-5 | SHOULD | logs carry instance, session and name; tasklets use the log ring | G-44, G-88, G-134, G-141 | G-88, G-141 MS1; G-134 MS2a; G-44 MS6 |
-| R-THR-1 | MUST | no public function and no application code on a tasklet | G-38 | measured MS1; P in MS4b |
-| R-THR-2 | MUST | lock-free tasklet ↔ application hand-off | G-39 | measured MS1; P in MS4b |
-| R-THR-3 | MUST | one call class per function, enforced in debug builds | G-50 | MS3 |
-| R-THR-4 | MUST | heavy per-unit work never on a tasklet; where it runs reported | G-14, G-39 | MS1; G-14 MS2b |
-| R-THR-5 | SHOULD | waking a sleeper costs a tasklet at most one signal | G-39, the waker budgets of §8.4 | MS1 (no syscall in a completing context); S1 in MS2a decides the notifier |
-| R-LIFE-1 | MUST | the nine session states; reversible start and stop; close anywhere | G-35, G-49, G-80 | G-49 MS1; G-80 and discard MS2a; G-35 MS2b |
-| R-LIFE-2 | MUST | DRAIN and FLUSH leave every accepted unit terminal | G-31 | MS1 |
-| R-LIFE-3 | MUST | interrupt and stop wake blocked callers with a distinct code | G-30, G-64 | MS1 |
-| R-LIFE-4 | MUST | after retirement no application code runs, no memory touched | G-29, G-37, G-65, G-77, G-81 | G-29, G-65, G-77 (exclusive open) MS1; the shared instance MS2a; G-37 MS2b; G-81 MS3 |
-| R-LIFE-5 | SHOULD | instance re-open within one process (#1341) | G-112 | MS1 (U); MS3 (I, wave 4) |
-| R-CAP-1 | MUST | capability query; REQUIRE, PREFER or OFF; granted values reported | G-13, G-14, G-34 | granted values MS1; G-13, G-14 MS2b; G-34 MS4b |
-| R-ABI-1 | MUST | `struct_size` inputs, opaque handles, unknown flags rejected | G-33, G-51, G-72 | MS1 |
-| R-ABI-2 | MUST | a version script with an experimental node; libmtl soname | G-33, G-51, G-72 | MS1 (the experimental node); MS3 (soname, `MTL_LEGACY`, `local: *`) |
-| R-ABI-3 | SHOULD | an experimental tier | G-51 | MS1 |
-| R-ABI-4 | MUST | versioned instance parameters; mismatching shared open fails | G-77 | MS1 (versioned parameters); MS2a (the shared instance) |
-| R-ABI-5 | MUST | C99 and C++17 with `-Wpadded -Werror`; size checks; `MTL_INIT` | G-73, G-74 | MS1 |
-| R-OPS-1 | MUST | flow changes on every leg commit atomically | G-75 | MS5 |
-| R-OPS-2 | MUST | resources reserved per configured leg; admin and oper state | G-91 | MS5 |
-| R-OPS-3 | MUST | a stable, unique session name; sessions listable | G-88 | MS1 (the listing: MS2a, A2b) |
-| R-OPS-4 | SHOULD | remaining capacity and a dry-run create | G-89 | MS5 |
-| R-OPS-5 | SHOULD | a STOPPED session reconfigured, keeping its identity | G-87 | MS3 |
-| R-OPS-6 | MUST | MtlManager loss never stalls running sessions | G-98, G-110 | G-110 MS3; G-98 MS5 |
-| R-OPS-7 | MUST | create and start never block on ARP or IGMP | G-90 | MS5 |
-| R-TEST-1 | MUST | the null backend `null:<n>` | G-92 | MS1 |
-| R-TEST-2 | MUST | the test clock | G-92 | MS1 |
-| R-TEST-3 | MUST | fault injection `mtl_debug_inject`, debug builds only | G-93, §8.3 | MS1; faults per milestone |
-| R-TEST-4 | SHOULD | the I tier pulls a link and resets a VF | §8.3 | MS5 (`vf_link`); MS6 (`vf_reset`) |
-| R-USE-1 | SHOULD | `mtl_session_open` with a library pool and results off | G-97 | MS1 |
-| R-USE-2 | SHOULD | binding helpers: stride-explicit reads, copy helpers, Python wrapper | G-72, G-97, the GIL test (§8.1) | MS6 |
-| R-FW-1 | MUST | framework buffers, latency and format changes without a re-create, and without loss when a consumer holds buffers | G-130–G-133, G-138–G-140 | G-130–G-132 MS1; G-133 MS2a; G-138, G-139 MS3; G-140 MS6 |
-| R-MIG-1 | MUST | every engine fix reaches legacy users; wire changes opt-in | G-99, G-106 | every milestone (§8.5); G-106 (E2's legacy opt-in) MS3 |
-| R-PERF-1 | MUST | numeric budgets before code, confirmed by S0 | §8.4 | MS1 |
-| R-SEC-1 | MUST | security properties of the new surfaces stated and tested | G-93, G-96 | G-93 MS1; G-96 MS2b |
-
-The Kubernetes requirements K-REQ-1…20 are mapped in [deployment.md](deployment.md); the
-lifecycle part MS1 and MS3 build is G-107…G-112.
+Each requirement, the guarantees that close it and the milestone that closes them: the "Closed by"
+and "When" columns of [requirements.md §3.1](requirements.md#31-the-catalogue).
 
 ### 8.1 Tiers and evidence
 
@@ -1694,8 +1503,8 @@ lifecycle part MS1 and MS3 build is G-107…G-112.
 A guarantee is **P** (promised: evidence exists or is funded in the named milestone; a red P
 test blocks its milestone) or **BE** (best effort until the named evidence exists). A behaviour
 without a test is not promised. A milestone is done only when every MUST requirement in its
-scope (§8.0) has a contract test at the cheapest tier that can observe it. A red P test blocks
-the exit; a BE guarantee never does, and its row says what evidence would make it P.
+scope ([requirements.md §3.1](requirements.md#31-the-catalogue)) has a contract test at the
+cheapest tier that can observe it. A red P test blocks the exit; a BE guarantee never does, and its row says what evidence would make it P.
 Why U over the null backend: UB is the most brittle tier; at `545a266a` 24 unit-test files
 `#include` production `.c` files, and 60 commits touched them in 2026. So guarantees that are
 properties of the core alone (G-04, G-30, G-49, G-57, G-64 and most later ones) are U over
@@ -1717,164 +1526,116 @@ call.
 
 ### 8.2 Guarantees of MS1–MS3
 
-The notes behind each method, and the text of the later guarantees, are in
-[requirements.md](requirements.md) and [timing.md](timing.md) §16.1. "M" is the milestone whose
-exit needs it.
+The index of the guarantees whose exit falls in MS1–MS3, by the first milestone that needs them.
+Each guarantee's text, tier, P or BE, milestone and full test method is its entry in
+[guarantees.md §2](guarantees.md#2-guarantees-g-01g-142); "M" is the milestone whose exit needs
+it. "Test" names the cases or jobs that carry it, "Pool" the list of the MS1 test pool (§5.3) that
+runs them; — means none is named.
 
-| ID | Guarantee | Tier | M | How |
+**MS1**
+
+| ID | Tier | M | Test | Pool |
 |---|---|---|---|---|
-| G-01 | every accepted TX submission has exactly one terminal outcome: a result when results are on, else a counter | U, UB, I | MS1 | count outcomes against accepted submits over randomised submit, release, stop and close sequences (discard from MS2a) on `null:1`, also under the §8.3 faults |
-| G-02 | a failed first submit gives no result and returns the slot to the pool, except on `-MTL_EBADF` and `-MTL_ESTALE`, which change no state (D-88) | U | MS1 | submit with each invalid-argument class: no result, and the slot is free again |
-| G-03 | an accepted unit progresses without another call, the last one before idle included | I | MS1 | submit one unit, call nothing else, observe its result (I1's `tx_idle_last_result` on a VF) |
-| G-04 | results are never lost: unread results make acquire return `-MTL_EAGAIN` with `blocked_on = MTL_BLOCKED_RESULTS` | U | MS1 | `MTL_SESSION_RESULTS` and no reap: acquire ends with `-MTL_EAGAIN` and `MTL_BLOCKED_RESULTS`; then every result is readable |
-| G-05 | a slot is not re-acquirable before its outcome is recorded | U, UB | MS1 | race acquire against completion in a stress loop, through the video binding over the real engine |
-| G-06 | "reusable" means no reader or writer remains (poisoned after the result, never on the wire) | UB, I | MS2b | poison the slot right after its result; a capture shows no poisoned packet |
-| G-07 | foreign or stale handles fail with `-MTL_EBADF`, returned leases with `-MTL_ESTALE`, without changing state | U | MS1 | fuzz handle values; double submit and release; release a lease on another session |
-| G-08 | transmit order is submit order | UB | MS1 | acquire A and B, submit B then A before pick-up: B is sent first |
-| G-09 | results are in submission order, each with its `seq` | UB | MS1 | completions forced from another thread and out of order: results still in `seq` order |
-| G-19 | RTP = `floor(M × R) mod 2^32`, exact, no drift, across the 2^32 wrap | U, UB | MS3 | the oracle method of [timing.md §16.1](timing.md), with the split formulas of timing.md §3.5 at the domain edges |
-| G-20 | default video media time is the frame epoch | UB | MS1 | the RTP of frame N equals the epoch RTP of index N with today's rounding (`st10_tai_to_media_clk`), with no TR offset term; `floor(N × TFRAME × 90 kHz)` from E2 (MS3, or MS2a with task X); the ST40 half (equal RTP for ST20 and ST40 of one frame) comes with MS4a |
-| G-26 | invalid exact launch requests fail and never fall back | UB | with EXACT (B3, else MS2a); the checks beyond the binding's MS3 | exact launches in the past, closer than the lead and beyond the horizon: `-MTL_ERANGE` with the reason, never another pacing mode |
-| G-28 | a late unit gets its policy's outcome and a result with margins | UB | MS3 | delay a submission across its deadline for each late policy and media mode |
-| G-29 | close cannot race an active call or a completion into freed memory | U, UB | MS1 (ASan); TSan from MS2a | N threads in DP and WT calls while another thread closes |
-| G-30 | stop and close wake blocked calls with `-MTL_ESHUTDOWN`, interrupt with `-MTL_ECANCELED`, ERROR with `-MTL_EIO` | U | MS1 | blocked acquire, dequeue and reap (event reads from MS3) return within a bound with the documented code on stop, interrupt, close and ERROR; WH11 |
-| G-31 | discard, DRAIN and FLUSH leave every accepted unit with a terminal outcome | U, UB | MS1 (discard MS2a) | discard, DRAIN and FLUSH with units at every stage; stop racing submit |
-| G-32 | a failed create leaves no session, flow, quota or handle | U, I | MS1 | inject a failure at each create step: `capacity.*` and `port.free_*` return to baseline |
-| G-33 | the library reads `min(struct_size, known)` and rejects unknown non-zero bytes (`NONZERO_TAIL`) | U | MS1 | compile against an older and a newer header copy; a non-zero tail or reserved field is `NONZERO_TAIL` |
-| G-40 | reading stats never blocks or delays a tasklet | UB | MS3 | lock instrumentation: no stats read takes a lock a tasklet takes |
-| G-41 | every state event has a getter that is right after an event overflow | U | MS3 | overflow a session's events, then compare every getter with the true state |
-| G-42 | every counter is monotonic for the life of the session; no call resets it | U | MS2a (A2b) | two readers with different periods over a randomised session life |
-| G-43 | gauges satisfy entries − exits = gauge at quiescent points | U, UB | MS3 | exact at ≥ 10^4 quiescent points (test clock paused, application threads parked); between them `abs(entries − exits − gauge)` ≤ the number of completing contexts |
-| G-46 | a TX verb on an RX session (and the reverse) is `-MTL_EINVAL` and changes nothing | U | MS1 | every TX verb on an RX session and the reverse |
-| G-47 | the cookie comes back verbatim; a cookie without results is `COOKIE_WITHOUT_RESULTS`; RX units of a provide session carry the destination's cookie (G-137) | U | MS1 | random cookies, and a cookie on a session without results |
-| G-49 | every call returns the documented code in every state; a closing handle accepts only close (which polls), `mtl_session_get_status`, the release of a lease taken before the close and interrupt (a no-op), and a retired one reads `MTL_STATE_RETIRED` | U | MS1 | the call table of `st_core_states.def` on `null:1`, the closed-by-instance column included; ERROR by `MTL_FAULT_FORCE_ERROR` |
-| G-50 | every function has one call class, enforced in debug builds | B, U | MS3 | header lint; the debug asserts under the U suite; a signal raised inside every CP call under `malloc` and `pthread_mutex_lock` interposers |
-| G-51 | one node per milestone part, `MTL_UNIFIED_EXPERIMENTAL_<rev>_MSn` and `_MSn.k`, the bridge in `_BRIDGE`; a sealed node never changes; a node the library lacks fails at load, never at a call; from MS3 a soname, `MTL_LEGACY`, `local: *` (below) | B | MS1, MS3, MS7 | `unified_exports`, `check_frozen_lists.sh`, `unified_seal_probe` and their mutations (§5.2 H1b; below) |
-| G-52 | no lost wake-up and no busy loop, with any number of threads on one object and on one queue (below; R2) | U | MS1 (calls with a timeout), MS2a (queues) | the model job (`wait_model`, below) and the pause-hook tests WH2, WH3, WH10–WH12, WC1–WC3, WC5 (`WaitHook.*`, UnifiedUnitTest, TestBinding and NullBinding), from MS2a QW1–QW22 (`QueueHook.*`); no random test counts as evidence |
-| G-53 | submitting before the cursor's deadline is ON_TIME at the cursor's index | U, UB | MS3 | submit just before `submit_deadline_tai_ns` of `mtl_tx_get_next`: `ON_TIME` at that index |
-| G-56 | RX leases released out of order or from other threads return to the pool | U | MS1 | release RX leases out of order and from other threads |
-| G-57 | each status, reason and code is produced by its documented trigger | U, UB | MS3 | the trigger list built from `reasons.def` (every row with `ms` ≤ `MTL_LEVEL`) on `null:1`, through `mtl_debug_inject` where no natural trigger exists |
-| G-64 | interrupt is sticky until cleared (`mtl_interrupt(o, MTL_INTR_OFF, 0)`), never wakes another session, and with a target mask wakes only those targets | U | MS1 | the GStreamer `unlock`/`unlock_stop` sequence, the reaper not spinning; session and instance interrupts combined; the `EINVAL` and `ENOTSUP` cases of contract §7.3 without `mtl_last_error()`; WH10 and WC3 |
-| G-65 | close with leases out returns 1; releases still work; a repeated close polls (0 or 1) and, with a timeout, waits for retirement | U | MS1 | close with leases out, close again with timeout 0 (1), release them later, close again (0) |
-| G-70 | each `MTL_E*` code has one meaning; RX dequeue with nothing ready returns `-MTL_EAGAIN` in CREATED, ARMED, RUNNING and STOPPED, never `-MTL_ESHUTDOWN` | U | MS1 | each code from its triggering call and state, including dequeue on a session never started |
-| G-71 | the null handle fails with `-MTL_EBADF`, except every close, which returns 0 | U | MS1 | the null handle to every function, table-driven over the headers |
-| G-72 | `mtl_reap` writes `min(rec_size, native)` per record at pitch `rec_size`; the typed wrappers pass `sizeof(*r)` | U | MS1 | record sizes larger and smaller than the library's, with `MTL_INIT` hoisted out of the loop |
-| G-73 | an input struct from `MTL_INIT` (zero in every field but `struct_size`) is the default configuration | B, U | MS1 | a zero-filled struct opens with the documented defaults; a lint lists every field whose zero means something else |
-| G-74 | headers and examples compile (`check.sh`) | B | MS1 | `check.sh` in CI, with `-pedantic` and clang, plus a compile-only Windows job; the examples to object code at their `Needs:` level; the availability probes (OI-64); candidate flags `-Wconversion -Wsign-conversion -Wcast-qual` (`-Wcast-qual` catches `mtl_pkt_tx_table()` returning a writable table) |
-| G-76 | RX `media_index` is the exact inverse of the TX rule (video, epoch timeline) | U, UB | MS3 | a sender on the grid at every video rate (1001 families, fields) across the 2^32 wrap, and a sender with a phase below one period, which maps to the slot it falls in; checked against the oracle |
-| G-77 | closing a shared instance's reference that is not the last only drops it (returns 0); the last one shuts down; a CLOSING session stays readable through `mtl_session_get_status` | U | MS1 (exclusive open); MS2a (SHARED) | MS1: a second open without SHARED is `-MTL_EEXIST` (OI-49); close polls with a session in CLOSING. MS2a: two SHARED opens, closed in both orders; the joins (below) |
-| G-80 | every command is acked; a missing ack puts the session in ERROR with `CMD_TIMEOUT` | U, UB | MS2a | a TX unit waiting 1 s for its launch: stop is immediate and the unit `FLUSHED`; RX with no packets; with `MTL_INSTANCE_TASKLET_SLEEP`; a stalled scheduler |
-| G-81 | close on a stalled queue completes (reset or quarantine) | UB (P), I (BE) | MS3 | `MTL_FAULT_TX_QUEUE_HANG`, then close: after retirement no descriptor references the session's memory |
-| G-82 | an RX unit past its due time is force-completed within one scheduler iteration | UB | MS2a | feed half a frame, then stop sending |
-| G-85 | TAI snapping NEAREST: collisions give `SNAP_COLLISION`, never a permanent drop | U, UB | MS3 | [timing.md §16.1](timing.md) |
-| G-88 | names are copied, unique per instance, and listed exactly once | U | MS1 (the listing: MS2a, A2b) | create and close churn with a concurrent `mtl_instance_list_sessions`; free the config's name buffer right after create |
-| G-92 | the null backend is deterministic with the test clock | U | MS1 | completions run synchronously inside `MTL_FAULT_CLOCK_ADVANCE` on the caller's thread; run the suites twice and diff the result records byte by byte; WH17 (the wake order under ADVANCE) |
-| G-93 | the debug API exists only with `-Denable_debug_api=true`; otherwise `-MTL_ENOTSUP` | U, B | MS1 | every fault reaches its outcome; in a release build `mtl_debug_inject` returns `-MTL_ENOTSUP` and `nm` shows no fault code |
-| G-94 | a start that would strand queued units beyond the horizon fails atomically (`BEYOND_HORIZON`) | U | MS3 | [timing.md §16.1](timing.md) |
-| G-95 | waiters are per target and never steal each other's wake-up: any number of threads may block on one session, on one target or on different ones, and a wake for one target never ends another target's wait | U | MS1 | WH3 (woken counts per lane), WC5 |
-| G-99 | with legacy opt-in flags off, legacy wire output is identical to the baseline; on, it matches the oracle | UB, I | every engine change | per engine change, a pcap diff against the baseline inside the legacy gate |
-| G-103 | `pool_count` above `max_count` fails at query and create with `-MTL_ERANGE`, `POOL_COUNT_MAX` | U | MS1 | `max_count` and `max_count + 1`, at query and at create |
-| G-107 | `mtl_instance_close(mt, timeout_ns)` returns within `timeout_ns` and only 0, `MTL_RETIRING` or `-MTL_EIO` (`QUEUE_QUARANTINED`); `mtl_session_close` 0 or `MTL_RETIRING`; only a DRAIN stop past its deadline returns `-MTL_ETIMEDOUT` | U, UB, I | MS1, MS3 | close with RUNNING sessions and leases out at timeouts 0, 10 ms, 1 s (`MTL_FAULT_TX_QUEUE_HANG` from MS3); elapsed time, return set |
-| G-108 | network first: TX stops at a unit boundary and RX leaves its groups before any port stops; `mtl_shutdown_report.groups_left` counts the leaves | U, I | MS3 | `mtl_instance_shutdown` with a report on `null:1`, the step order from the trace; at I a capture shows the IGMP leave before the device stops |
-| G-109 | liveness never depends on packets or time lock: `MTL_FAULT_LEG_DOWN` and `MTL_FAULT_TIME_LOST` never clear `MTL_HEALTH_LIVENESS`; readiness reports the time loss (`MTL_HEALTH_TIME_UNLOCKED`); `mtl_instance_get_health` takes no lock | U | MS3 | inject each fault while another thread polls health in a tight loop under lock instrumentation |
-| G-110 | `MTL_FAULT_MANAGER_LOST` posts `MTL_EVENT_MANAGER_LOST` and sets `MTL_HEALTH_MANAGER_LOST`; running sessions continue and no call blocks (the create half is G-98, MS5) | U | MS3 | inject the fault with sessions RUNNING; results keep arriving ON_TIME; every call returns within its bound |
-| G-111 | the AS calls (`mtl_instance_interrupt`, `mtl_instance_abort`) are safe at any time, during and after close, and never write a recycled descriptor; in a forked child every call but close fails with `-MTL_EBADF` (`FORKED`) | U | MS1 (the AS calls), MS3 (the fork rule) | a signal storm of the AS calls across open, close and re-open; `fork()`, then each function in the child; below |
-| G-112 | re-open: after a close, `mtl_instance_open` works again in the same process (EAL stays initialised); after a SIGKILL mid-stream, a new process opens the same VF without manual cleanup | U, I | MS1 (U), MS3 (I, wave 4) | 200 open and close cycles on `null:1` under ASan; a NoCtx case kills its child mid-stream and re-opens the VF |
-| G-113 | rows: a TX rows unit re-submitted with a growing `used` sends each row once it is ready, never beyond `used`; RX reports rows in order through `mtl_rx_wait_rows`; a complete rows unit equals the frame unit | UB, I | MS2a | the slice cases of `st20_digest.cpp` ported: rows released in steps, SHA-256 of the received frame, no packet of a row before its submit |
-| G-114 | the samples call every unified function libmtl exports (`mtl_debug.h` exempt), as do the examples; every essence and direction has a TX and an RX sample once it is on the new API | B | MS1, each later milestone | `nm -u` of the samples against libmtl's unified symbols, of the examples against `check.sh --tags` (§4.2); every sample runs 10 s on `null:1` (`from_legacy` on `kernel:lo`) |
-| G-123 | a raster rate is validated in one order (contract.md §3.3); `info.raster` carries the reduced value | U | MS1 | `RateRules.zero_terms` (each use, also DETECT_MAX), `RateRules.reduce_then_limit`, `RateRules.field_rate_guard`, `RateRules.engine_range` (frame rate 1–120 every scan; interlaced 1000/1001 refused), `RateRules.info_reduced` |
-| G-124 | `mtl_raster_from_legacy` maps every legacy pair as migration.md §5.1 | U | MS1 | `Legacy.raster_from_legacy`: 22 pairs, `ST_FPS_MAX`, 12 |
-| G-125 | sender types are granted by D-143 and every grant passes its ST 2110-21 model | U, UB | MS1 (the flag), MS2a | MS1: `Grant.ms1_non_compliant_flag` (NL, a 1920×1200 N and a 1080i N set the flag; W and 1080p N do not). MS2a: `Grant.table`, `Grant.w_bound_vrx_model` and `Grant.n_model_interlaced` (below); SD rows flagged |
-| G-126 | on a wrapper `mtl_time_now` is DP with the legacy clock's flags and state | U, I | MS1 (direct clocks), MS2a (snapshot) | MS1: `Bridge.time_direct_clocks`, `Bridge.time_enotsup_user_ptp`, `Bridge.tai_refresh_step_bound` (the step at a refresh within its bound against a fake legacy clock drifting at 500 ppm); MS2a: below; I with and without `--ptp` |
-| G-127 | lifetime and options on a wrapper | U | MS1, MS2a | MS1: `Bridge.uninit_with_open_wrapper` (a close that returns 1, then 0, with `mtl_uninit` returning `-EBUSY`, then 0), `Bridge.c_key_ebusy`; MS2a: below |
-| G-128 | `mtl_grid_offset` is in [0, TFRAME) and exact; one δ keeps two TAI sessions in phase; interlaced first fields land on even indices | U | MS1 (helper, parity), MS4a1 (A/V) | `Sync.grid_offset`, `Tai.interlaced_parity`, `Sync.av_phase_two_sinks` (snap error ≤ 1 ns, audio < 1 sample) |
-| G-129 | RX rate detection | UB | MS3 | `Detect.candidates`, `Detect.skipped_frames` (15 % skips, and 30 % in bursts), `Detect.approx` (1199/20 with the flag over ≥ 32 frames; 2997/50 consistent with 60000/1001) |
-| G-130 | RX library slots: planes packed at the stride, each slot 64 B aligned, `pool_slot_pitch` a multiple of 64 and ≥ `unit_bytes` + 64; the 64 B after every dequeued unit read zero, also after the application wrote them during an earlier lease; V210 rows of 128 B per 48 pixels; V210 at 1280, 2048 and 4096 wide `-MTL_ENOTSUP` until E15 | U | MS1 | below |
-| G-131 | a wrapped unit released after its session's close, from another thread, retires the session with no further call; released after the instance's close it returns 0, `mtl_session_get_status` reads RETIRED, ASan clean | U | MS1 | `UnifiedRx.ReleaseAfterCloseRetires`; `UnifiedRx.ReleaseAfterInstanceClose`, `CoreClose.orphan_freed_at_next_cp`; ex20, the element freed before release (ASan) |
-| G-132 | the latency fields equal the formulas exactly and are never negative; recomputed after an S option; `MTL_INFO_LATENCY_INFEASIBLE` if and only if max < min, and `ceil(min / U) + 1` clears it; `convert_ns` > 0 with conversion, > 0 on TX (the copy calibration), 0 on RX without conversion; query matches get_info except `convert_ns` | U | MS1 | below |
-| G-133 | the RX max bound: a consumer that releases each unit just before media time + max misses none, with one leg, two legs and skew; one that holds a unit one period longer misses units; with `TIMEBASE_SUSPECT` the test only checks that the status is set | U, UB | MS2a | `UnifiedRx.LatencyMaxBound` on `null:1` with the test clock and skew injection; over the binding with `FAULT_DROP_PKTS` |
-| G-134 | log sinks: each sink gets exactly its level and filter; `fn` never runs on a tasklet or two at once; remove and close from `fn` are safe; lines produced inside `fn` are dropped and counted; the last close hands its lines over first; without a sink, CP lines are written synchronously and are byte-identical to legacy; in a forked child add is `-MTL_EBADF` | U | MS2a | below |
-| G-135 | option text: every key of `mtl_option_list` round-trips through `mtl_option_parse`; every `enum_names` matches `^[a-z0-9_]+=-?[0-9]+(,[a-z0-9_]+=-?[0-9]+)*$` with values in range; "/N" stores `MTL_INDEX(N)`; STR keeps ',', '=' and ':'; errors carry reason and field | U | MS1 (the `enum_names` format, in H1b's .def test), MS2a (parse) | below |
-| G-136 | the `MTL_PORTS` grammar: gateway, IPv6 in brackets, no address, `null:` IDs, `env:`, whitespace, normalised duplicates (`null:1` with `null:01`; `AF:01.0` with `0000:af:01.0`), prefix 0 rejected, a trailing comma, a 64-byte name; `mtl_instance_open(NULL)` with `MTL_PORTS` gives the same specs as `mtl_port_parse` | U | MS1 (through open), MS2a (export) | below |
-| G-137 | provide: oldest-first assignment; reception-order delivery with the right cookies; a dropped unit's destination taken first; none held → missed and counted, never library memory; after a hand-back every cookie with g < `provide_gen` not dequeued is never written again and the others are; a destination held by a TX unit comes back only after that unit's result | U, UB | MS2b | below |
-| G-138 | publication: every format within the maximum is published, each format's first unit flagged with the right `raster` and `format_seq` (1 at each start); nothing before the first (`RX_DETECTING`) and nothing above the maximum until it fits again; a skipped frame, one stray packet, one lost unit or lost bottom rows never re-detect; two violating units do | U, UB | MS3 | below |
-| G-139 | FFmpeg: a 720p → 1080p change within the maximum decodes through rawvideo and the CLI with frames of both sizes, zero-copy where the fallback allows | A | MS3 | `test_ffmpeg_rx_format_change`, plus a unit test of the PARAM_CHANGE packet |
-| G-141 | `mtl_instance_params.log_level` DEBUG makes an unbridged MS1 instance print DEBUG lines; 0 leaves INFO; a second open with another non-zero level is `-MTL_EEXIST`; with a bridged instance open, an unbridged open with 0 leaves the legacy level and one with another level fails; from MS2a, removing the last sink restores the level | U | MS1 (MS2a part with G-134) | below |
-| G-142 | the wake flush of one loop iteration wakes at most the bound of D-142 of marked objects and queues; those beyond it are woken in later iterations, round robin; a loop never sleeps while an entry is marked (D-142) | U, I | MS1 (U), MS2a (I, S1b) | WH16 `WaitFlush.count_bound` (UnitTest, `mt_sch_harness.c`); the flush model; S1b's ST2 and ST3 |
+| G-01 | U, UB, I | MS1 | `Tx.roundtrip`, `Tx.exactly_once_random` | U |
+| G-02 | U | MS1 | `Tx.invalid_submit_returns_slot` | U |
+| G-03 | I | MS1 | `tx_idle_last_result` | I |
+| G-04 | U | MS1 | `Results.backpressure` | U |
+| G-05 | U, UB | MS1 | `no_reacquire_before_done` | UB |
+| G-07 | U | MS1 | `Tx.stale_foreign_lease` | U |
+| G-08 | UB | MS1 | `order_is_submit_order` | UB |
+| G-09 | UB | MS1 | `Results.order_cookie` | U |
+| G-20 | UB | MS1; the ST40 half MS4a | `rtp_epoch_default` | UB |
+| G-29 | U, UB | MS1 (ASan); TSan from MS2a | `Session.*` | U |
+| G-30 | U | MS1 | `Session.*`; WH11 | U |
+| G-31 | U, UB | MS1 (discard MS2a) | `Tx.exactly_once_random`, `Tx.stop_drain_flush`, `Tx.stop_submit_race`; `flush_reclaims_queued` | U, UB |
+| G-32 | U, I | MS1 | — | — |
+| G-33 | U | MS1 | `Api.struct_size_tail` | U |
+| G-38 | UB | measured MS1; P at MS4b | — | — |
+| G-39 | UB | measured MS1; P at MS4b | — | — |
+| G-45 | U, UB | video MS1; the other essences MS4b | — | — |
+| G-46 | U | MS1 | `Tx.verb_on_rx_session` | U |
+| G-47 | U | MS1 | `Results.order_cookie` | U |
+| G-49 | U | MS1 | `Tx.state_call_table`, `Rx.state_call_table` | U |
+| G-51 | B | MS1, MS3, MS7 | `unified_exports`, `check_frozen_lists.sh`, `unified_seal_probe` | — |
+| G-52 | U | MS1 (calls with a timeout), MS2a (queues) | `Wait.no_lost_wakeup`, `WaitHook.*`, `wait_model`; `QueueHook.*` (MS2a) | U |
+| G-56 | U | MS1 | `Rx.release_any_order` | U |
+| G-64 | U | MS1 | `Session.*`; WH10, WC3 | U |
+| G-65 | U | MS1 | `Session.*` | U |
+| G-70 | U | MS1 | `Api.error_codes`, `Api.not_implemented`, `Rx.dequeue_nothing_ready` | U |
+| G-71 | U | MS1 | `Api.null_handle_table` | U |
+| G-72 | U | MS1 | `Api.reap_rec_size` | U |
+| G-73 | B, U | MS1 | `Api.struct_size_tail` | U |
+| G-74 | B | MS1 | `check.sh` | — |
+| G-77 | U | MS1 (exclusive open); MS2a (SHARED) | `Instance.shared_subset_join`, `Instance.shared_missing_port_detail` (MS2a) | — |
+| G-88 | U | MS1 (the listing: MS2a, A2b) | `Session.names` | U |
+| G-92 | U | MS1 | `Determinism.replay`; WH17 | U |
+| G-93 | U, B | MS1 | `Debug.inject_gated` | U |
+| G-95 | U | MS1 | `Wait.per_target`; WH3, WC5 | U |
+| G-97 | — | MS1, each later milestone | ex01, ex02, ex20 on `null:1` (MS1) | — |
+| G-99 | UB, I | every engine change | the legacy gate (§8.5) | — |
+| G-103 | U | MS1 | `Tx.pool_count_max` | U |
+| G-107 | U, UB, I | MS1, MS3 | `Instance.close_timeout`; `close_while_streaming` | U, I |
+| G-111 | U | MS1 (the AS calls), MS3 (the fork rule) | WH15, WH21 | U |
+| G-112 | U, I | MS1 (U), MS3 (I, wave 4) | `Instance.open_close_reopen`; a NoCtx re-open case (MS3) | U |
+| G-114 | B | MS1, each later milestone | `nm -u` of the samples and examples | — |
+| G-123 | U | MS1 | `RateRules.*` | U |
+| G-124 | U | MS1 | `Legacy.raster_from_legacy` | U |
+| G-125 | U, UB | MS1 (the flag), MS2a | `Grant.ms1_non_compliant_flag`; `Grant.*` (MS2a) | UB |
+| G-126 | U, I | MS1 (direct clocks), MS2a (snapshot) | `Bridge.*` | U |
+| G-127 | U | MS1, MS2a | `Bridge.*` | U |
+| G-128 | U | MS1 (helper, parity), MS4a1 (A/V) | `Sync.grid_offset`, `Tai.interlaced_parity`; `Sync.av_phase_two_sinks` (MS4a1) | U |
+| G-130 | U | MS1 | `UnifiedRx.LibraryPoolLayoutPacked`, `UnifiedRx.TailZeroAtDequeue` | U |
+| G-131 | U | MS1 | `UnifiedRx.ReleaseAfterCloseRetires`, `UnifiedRx.ReleaseAfterInstanceClose`, `CoreClose.orphan_freed_at_next_cp` | U |
+| G-132 | U | MS1 | `UnifiedInfo.*` | U |
+| G-135 | U | MS1 (the `enum_names` format, in H1b's .def test), MS2a (parse) | `UnifiedOptions.EnumNamesPairs`; `UnifiedOptions.Parse*` (MS2a) | U |
+| G-136 | U | MS1 (through open), MS2a (export) | `UnifiedPorts.*` | U |
+| G-141 | U | MS1 (MS2a part with G-134) | `UnifiedLog.InstanceLogLevel`, `.BridgedLevelKept`; `.LastSinkRestores` (MS2a) | U |
+| G-142 | U, I | MS1 (U), MS2a (I, S1b) | `WaitFlush.count_bound`, `wait_model`; S1b (MS2a) | U |
 
-The methods marked "below":
+**MS2a**
 
-- G-51 in full: milestones ≤ `MTL_LEVEL` are exported in their nodes, none above `MTL_LEVEL` + 1,
-  none unversioned; a sealed node equals its list, which never changes; every node of a release tag
-  of the revision is sealed at HEAD with the tag's names, and a `.REL` tree has no open node. Each
-  mutation fails: a name added to a tagged node, an edited list, an open node in a `.REL` tree, an
-  MS2 function in an MS1 part, the bridge in `_MS1`.
-- G-52 in full: a thread asleep in a call with a timeout is woken once its target is ready, it is
-  interrupted or its state ends it, whatever other threads do on the object. From MS2a a sleeper on
-  a queue is woken once an armed object changes; sleep only after `-MTL_EAGAIN`; any thread may
-  make one call.
-- G-77, MS2a: `Instance.shared_subset_join` (`null:1,null:2`, then a SHARED open of `null:2`
-  joins, and `mtl_port_find` gives index 1), `Instance.shared_missing_port_detail`.
-- G-111 also: WH15 and WH21 (the latter in the non-ASan job).
-- G-125, MS2a: `Grant.w_bound_vrx_model` runs the engine's TRS, VRX0 and TRO through the ST 2110-21
-  §6.6.1 and §6.6.2 models at 1080p59.94, 1920×1200p60, 720p119.88, 2160p59.94, 4096×2160p59.94
-  at ≥ 900 k pps with NL's CMAX, and 1080p 1 fps, plus the 9 000- and 9 718-packet floor cases;
-  4320p12 is refused. `Grant.n_model_interlaced`: 1080i59.94, 1080i50 and 1080PsF23.98 on TSC and RL
-  against §6.3.3 with TLINE/2: peak ≤ VRXFULL, no underflow.
-- G-126, MS2a: `Bridge.time_flags_per_clock` (a fake legacy impl per row, a UTC user fn),
-  `Bridge.holdover_threshold` (stop `master_results`; a 1 s result period gives 4 s),
-  `Bridge.snapshot_two_records`, `Bridge.stale_estimated`, `Bridge.monotonic_never_backward`. The
-  MS1 direct-clock rows are exercised by the U tests and the `from_legacy` sample only, because
-  both harnesses install user functions.
-- G-127, MS2a: `Bridge.option_classes` (a C key read back; `instance.sched_sleep_us` reaches the
-  legacy schedulers; a session default from the legacy `pacing` and the typed `max_udp_payload`
-  default), `Bridge.second_wrap_reference` (two references, `mtl_uninit` `-EBUSY` until the
-  last closes), `Bridge.shared_open_joins_wrapper` (a SHARED open with a subset of the legacy
-  ports joins; one naming a time source or another port is `INSTANCE_MISMATCH` with its detail).
-- G-130: `UnifiedRx.LibraryPoolLayoutPacked` (UYVY 1920 and 1278, YUV422P10LE 1920 and 1282, V210
-  720 and 1920; V210 1280, 2048 and 4096 → ENOTSUP); `UnifiedRx.TailZeroAtDequeue`: poison every
-  slot's tail with 0xA5 after `mtl_session_get_slot`, run 100 units with each lease's tail rewritten
-  before release, and assert zeros at each dequeue.
-- G-132: `UnifiedInfo.LatencyFormulas` (one and two legs, flush offset, link offset set and absent,
-  pools 2–8, `RX_LATEST`, TX RL and TSC, 59.94p and 119.88p); `UnifiedInfo.InfeasibleRemedy`.
-- G-134 also requires: `dropped` is exact for an instance's rings; remove returns 0 and `fn` is
-  never called again; remove from inside `fn` returns `MTL_RETIRING` without deadlock; instance
-  close from `fn` is `-MTL_EDEADLK`; on a bridged instance a DEBUG sink makes legacy sessions' DEBUG
-  lines reach it. Tests: `UnifiedLog.TwoSinksLevels`, `.InstanceFilterShared`, `.FloodDropsCounted`,
-  `.RemoveRacesDispatch` (10^5 cycles, TSan), `.RemoveSelfInCallback`, `.CloseFromCallbackDeadlk`,
-  `.CallbackLinesDropped`, `.CloseDrainsLines`, `.StderrLegacyFormat`, `.BridgeLegacyLevel`,
-  `.ForkedChild`, `.RateLimitBeforeFormat` (10^5 lines a second from one tasklet site: at most
-  about 10 formatted a second, the rest in `dropped`).
-- G-135: `UnifiedOptions.EnumNamesPairs` (MS1), `.ParseRoundTrip`, `.ParseErrors`,
-  `.ParseReturnsKind`. G-136: `UnifiedPorts.Grammar` (table-driven), `.Normalise`,
-  `.OpenMatchesParse`.
-- G-137 also requires: a provide session starts with no slot, and a session with neither slots nor
-  provides fails `POOL_TOO_SMALL`. Tests: `UnifiedProvide.Order`; `.MissedWhenEmpty`; `.StartRules`;
-  `.HandBackExact`: two threads, one providing in a loop, the other cycling through stop and start,
-  discard in RUNNING, detach in STOPPED, and no-op stops, 10^4 times each, every returned
-  destination poisoned (ASan on `null:1`; UB with DMA) and the ledger compared; `.GenerationWrap`
-  (start at 2^31 − 3); `.HoldDelaysReturn`; `.TemplateCookie`.
-- G-138 also requires: above the maximum nothing is published (`FORMAT_CHANGED`, `RASTER_MISMATCH`);
-  a rate that fell to half and a smaller raster at the same rate re-detect; E14 measures width from
-  SRD (4096 × 2160 → 4096); no allocation on the tasklet. **U** on `null:1`: the null binding
-  reports the TX unit's raster as the detection, so `UnifiedDetect.Publication` tests the
-  publication rules (send 1280 × 720p50, 1920 × 1080i29.97, 3840 × 2160p25 above a 1920 × 1080p59.94
-  maximum, then back to 720p). **UB** over the binding with the engine's packets:
-  `UnifiedDetect.Dci4096`, `.SkippedFrameNoChange`, `.StrayPacketNoChange`,
-  `.TwoViolationsRedetect`, `.RateHalvedRedetects` (59.94 → 29.97 and 50 → 25),
-  `.SmallerRasterRedetects` (1080p50 → 720p50), `.BottomLossNoChange`, `.NoTaskletAlloc` (G-38's
-  malloc hook); the rate cases are G-129's.
-- G-141: the mismatch is `INSTANCE_MISMATCH`, field `log_level`. Tests:
-  `UnifiedLog.InstanceLogLevel`, `.BridgedLevelKept`, `.LastSinkRestores`.
+| ID | Tier | M | Test | Pool |
+|---|---|---|---|---|
+| G-26 | UB | with EXACT (B3, else MS2a); the checks beyond the binding's MS3 | — | — |
+| G-42 | U | MS2a (A2b) | `Stats.counters` | U |
+| G-80 | U, UB | MS2a | — | — |
+| G-82 | UB | MS2a | — | — |
+| G-113 | UB, I | MS2a | the `st20_digest.cpp` slice cases | — |
+| G-133 | U, UB | MS2a | `UnifiedRx.LatencyMaxBound` | — |
+| G-134 | U | MS2a | `UnifiedLog.*` | — |
 
-G-45 (the same verb sequence for every essence × direction) holds for video only until MS4b.
-G-39 (no syscall, no application-holdable lock and no allocation on the tasklet side of the PMD
-backend; a library loop's deferred wakes run after its handler loop, outside every tasklet, a
-bounded number per iteration (G-142); on the application side a data call makes only the
-syscalls of R6) and G-38 (no public function on a tasklet or library
-loop, by a debug-build assert) are measured in MS1 and become P in MS4b. G-97 is "every example
-compiles, and the ST20 ones run on `null:1`" (ex01, ex02 and ex20 from MS1; ex03 and ex19 from
-MS2a; ex10–ex12 from MS2b; ex04–ex08, ex16 and ex21 from MS3).
+**MS2b**
+
+| ID | Tier | M | Test | Pool |
+|---|---|---|---|---|
+| G-06 | UB, I | MS2b | — | — |
+| G-137 | U, UB | MS2b | `UnifiedProvide.*` | — |
+
+**MS3**
+
+| ID | Tier | M | Test | Pool |
+|---|---|---|---|---|
+| G-19 | U, UB | MS3 | the oracle; `RateMath.split_vs_oracle` | UB |
+| G-28 | UB | MS3 | — | — |
+| G-40 | UB | MS3 | — | — |
+| G-41 | U | MS3 | — | — |
+| G-43 | U, UB | MS3 | — | — |
+| G-50 | B, U | MS3 | — | — |
+| G-53 | U, UB | MS3 | `Anc.DeadlineCapacity` (ANC) | — |
+| G-57 | U, UB | MS3 | — | — |
+| G-76 | U, UB | video MS3; every rate MS6 | — | — |
+| G-81 | UB (P), I (BE) | MS3 | — | — |
+| G-85 | U, UB | MS3 | — | — |
+| G-94 | U | MS3 | — | — |
+| G-108 | U, I | MS3 | — | — |
+| G-109 | U | MS3 | — | — |
+| G-110 | U | MS3 | — | — |
+| G-129 | UB | MS3 | `Detect.*` | — |
+| G-138 | U, UB | MS3 | `UnifiedDetect.*` | — |
+| G-139 | A | MS3 | `test_ffmpeg_rx_format_change` | — |
+
+With parts in MS1–MS3 but no row here (their entries in guarantees.md give the milestones):
+G-14, G-17, G-18, G-58, G-59, G-87, G-106 and G-115 (the helper part).
 
 **The wait evidence.**
 
@@ -1884,7 +1645,7 @@ MS2a; ex10–ex12 from MS2b; ex04–ex08, ex16 and ex21 from MS3).
   mutant of `final_model.py`, `wait_flush.py` (with `wake_k` 1 and 4), and `check_labels.py`. Each
   case runs under 60 s, the job under 4 min on four cores, with a 10 min timeout; each case must
   give its expected result, each mutant must be killed, and the label sets must be equal.
-- The pause-hook tests are WH2, WH3, WH10–WH12, WH14, WH14b, WH15–WH17, WH19–WH21, WC1–WC5 and
+- The pause-hook tests are WH2, WH3, WH10–WH12, WH14, WH14b, WH15–WH17, WH19–WH21, WC1–WC6 and
   QW1–QW22 ([design/wait-tests.md](design/wait-tests.md)), with the hook points, the schedules and
   the step each one pins (Gate 2: each fails with that step reverted).
 - Random-yield stress ([design/models/stress.c](design/models/stress.c)) is a nightly smoke test,
@@ -1892,16 +1653,10 @@ MS2a; ex10–ex12 from MS2b; ex04–ex08, ex16 and ex21 from MS3).
 - ARM: the orderings are argued (core.md §6.1), not tested. MS2a runs herd7 or GenMC on the
   litmus shapes, or the hook tests on an Arm runner.
 
-Later milestones: G-10…G-16, G-35…G-37, G-60, G-78, G-83, G-84, G-96, G-100…G-102 (MS2b for
-video); G-27, G-34 (MS4a, MS4b); G-75, G-89…G-91, G-98 (MS5); G-17, G-18, G-21, G-22
-(with TLINE/2), G-23…G-25, G-59 at M, G-61, G-62, G-66…G-68, G-86, G-104, G-105, and G-44,
-G-54, G-55, G-58 at I (MS6); G-63 with created timelines (not in v1). Two of them are defined
-nowhere else in the maintained set:
-
-- G-34 (MS4b, I, BE until the per-NIC capability job runs): every advertised capability (`caps.*`)
-  passes its conformance test.
-- G-54 (MS6, UB with `MTL_FAULT_TIME_LOST`): the time state leaves LOCKED on sync loss and
-  `MTL_EVENT_TIME_STATE` is posted (pins SF-20).
+Later milestones ([guarantees.md](guarantees.md) has each entry): G-10…G-16, G-35…G-37, G-60,
+G-78, G-83, G-84, G-96, G-100…G-102 (MS2b for video); G-27, G-34 (MS4a, MS4b); G-61 (MS4a: ST40 MS4a2, ST41 MS4a1), G-66 (MS4b); G-75, G-89…G-91, G-98 (MS5); G-17, G-18, G-21, G-22
+(with TLINE/2), G-23…G-25, G-59 at M, G-62, G-67, G-68, G-86, G-104, G-105, and G-44,
+G-54, G-55, G-58 at I (MS6); G-63 with created timelines (not in v1).
 
 ### 8.3 Fault injection
 
@@ -1914,8 +1669,8 @@ Faults are injected with `mtl_debug_inject(obj, fault, &p)` in builds with
 | Fault | U/UB injection | I-tier step | Expected | Tested in |
 |---|---|---|---|---|
 | forced ERROR | `MTL_FAULT_FORCE_ERROR` (`p.reason`) | — | queued units FLUSHED (`SESSION_ERROR`), in flight FAILED once the device let go, waiters `-MTL_EIO` | MS1 (U) |
-| TX queue hang, recovery | `MTL_FAULT_TX_QUEUE_HANG`: the transmitter's burst returns 0 until cleared | none: a real hang cannot be forced | `MTL_EVENT_RECOVERY` begin and end; in-flight units DROPPED (`RECOVERY`), never ON_TIME (the verdict is in MS1, task E1); `sh_info` untouched; close completes (G-81) | MS3 (UB); G-81 at I in MS6 |
-| packet loss | `MTL_FAULT_DROP_PKTS` (pattern), `MTL_FAULT_DROP_RANDOM` (`drop_ppm`), per leg | — | `MTL_RX_INCOMPLETE`, zero fill in library pools, 2022-7 repair counted (`rx.units_used_redundancy`) | MS1 (`DROP_PKTS`, unit status); MS2a (zero fill, `DROP_RANDOM`; UB) |
+| TX queue hang, recovery | `MTL_FAULT_TX_QUEUE_HANG`: the transmitter's burst returns 0 until cleared | none: a real hang cannot be forced | `MTL_EVENT_RECOVERY` begin and end; in-flight units DROPPED (`RECOVERY`), never ON_TIME (the verdict is in MS1, task E1a); `sh_info` untouched; close completes (G-81) | MS3 (UB); G-81 at I in MS6 |
+| packet loss | `MTL_FAULT_DROP_PKTS` (pattern), `MTL_FAULT_DROP_RANDOM` (`drop_ppm`), per leg | — | `MTL_RX_INCOMPLETE`, the fill in library pools (contract.md §9.8), 2022-7 repair counted (`rx.units_used_redundancy`) | MS1 (`DROP_PKTS`, unit status); MS2a (the fill, `DROP_RANDOM`; UB) |
 | TX mutation | `MTL_FAULT_TX_MUTATE` (`MTL_TX_MUTATE_NO_MARKER`, `_SEQ_GAP`, `_BAD_PARITY`, `_PACED`) | — | the receiver counts and reports what it was fed; the legacy `st40_tx_test_config` cases | MS4a (ANC) |
 | the application stops reading results | none | — | `MTL_BLOCKED_RESULTS`, `MTL_EVENT_BACKPRESSURE`, no loss | MS1 (U; the event MS3) |
 | the application holds every RX slot | none | — | `rx.units_missed_pool_full`, `missed_before`, backpressure; `MTL_SESSION_RX_LATEST` reclaims unread units only | MS2a (U) |
@@ -1964,16 +1719,19 @@ configurations; from MS4a1 also the dense-audio load.
 | tasklet cost per completion (E1–E3, nothing armed) | ≤ 60 ns at the dense-audio reference load (D-184) | UB micro-benchmark on `null:1` (C1b); I at MS4a1 |
 | tasklet cost per armed completion (E1–E4 and the push, MS2a) | ≤ 130 ns when the armed sessions complete in aligned bursts, ≤ 250 ns staggered (D-166 is built only if the aligned row fails, OI-80) | S1a (MS2a); MS4a1 at the reference load |
 | completion latency (last packet handed, or last mbuf freed, until the result is visible) | ≤ the reported `completion_latency_ns` (`mtl_buffer_requirements`, key `info.completion_latency_ns`) + 10 % | UB, I |
-| wake flush per iteration (ST2) | ≤ `wake_k` wakes (one futex wake per object, one `write()` per queue; D-142) + the bitmap scan | WH16 (count), S1a (time, MS2a) |
-| tasklet iteration with wakes (ST3) | p99.9 ≤ W0's + 1 µs and p99.99 ≤ W0's + 2 µs (P0's histogram, medians of 3 runs); avg reported; max reported against W0's max + `wake_k` × ST1 max | S1b (I, MS2a) |
+| wake call cost (ST1) | per call on the pinned core: bare metal p99.9 ≤ 2 µs, max ≤ 10 µs; `FUTEX_WAKE` with no queued waiter p99.9 ≤ 0.5 µs; in a guest reported | S1a |
+| wake flush per iteration (ST2) | with N = 1–512 marked: ≤ `wake_k` wakes (one futex wake per object, one `write()` per queue; D-142) + the bitmap scan; the last object woken within N iterations | WH16 (count), S1a (time, MS2a) |
+| tasklet iteration with wakes (ST3) | p99.9 ≤ W0's + 1 µs and p99.99 ≤ W0's + 2 µs (P0's histogram, medians of 3 interleaved runs); avg reported; max reported against W0's max + `wake_k` × ST1 max | S1b (I, MS2a) |
 | pacing under wakes (ST4) | ST 2110-21 narrow compliance unchanged against W0; CMAX and VRX_FULL peaks ≤ W0; launch offset p99.99 ≤ W0 + 1 µs | S1b (I, timing parser) |
-| W2 wake latency (ST5) | p99 ≤ 10 µs with `wake_k` marked entries per iteration and the waiter's CPU at ≤ C1E; with C6 allowed, reported as `info.expected_wake_latency_ns`; calls with a timeout on sessions completed in one iteration are woken `wake_k` per iteration; sessions armed on one queue cost one wake together | S1; S1b adds a genlocked burst of 32 and 64 sessions, aligned and staggered |
+| W2 wake latency (ST5) | p99 ≤ 10 µs with `wake_k` marked entries per iteration and the waiter's CPU at ≤ C1E; with N marked ≤ 10 µs + N × the iteration p99; with C6 allowed, reported as `info.expected_wake_latency_ns` | S1; S1b adds a genlocked burst of 32 and 64 sessions, aligned and staggered |
+| W2 wakes per iteration (ST5) | calls with a timeout on sessions completed in one iteration are woken `wake_k` per iteration; sessions armed on one queue cost one wake together | as the row above |
 | notifier wake latency (ST5), only if the notifier is built (D-165) | p99 ≤ unit period / 10 for units ≥ 1 ms | S1b |
 | scheduler preemption (ST6) | 0 involuntary context switches per scheduler thread over 10 min, overlapping affinity and thread mode included | S1b |
 | wake rate (ST7) | flush time ≤ 2 % of a core per scheduler at the target load, a queue counting once per consumer cycle | S1b (synthetic, aligned and staggered arrivals), MS4a1 (the dense-audio load) |
+| notifier wake rate (ST7), only if the notifier is built (D-165) | ≥ N × f wakes at ≤ 50 % of its CPU | S1b |
 | dense audio (the reference load, D-184; MS4a1) | per scheduler 512 TX + 512 RX audio sessions at 1 ms units, in the three shapes of OI-80: flush ≤ 2 % of a core; p99 dequeue latency ≤ 2 ms; application sweep or queue consumer ≤ 5 % of a core | UB on `null:1` (the completion cost); I on a VF with `UnifiedRxTxApp` |
 | instance interrupt (ST8) | ≤ 2 ms at 65 536 entries + 3 µs per waiting object or armed queue | S1a |
-| no waiter (ST9) | 0 futex and 0 eventfd syscalls over 10^6 units with no sleeper and no armed queue, also after 10^5 calls that timed out | WH19, S1a |
+| no waiter (ST9) | 0 futex and 0 eventfd syscalls over 10^6 units with no sleeper and no armed queue, also after 10^5 calls that timed out; 0 syscalls in a W0 loop | WH19, S1a |
 | ST 2110-21 narrow compliance under stress | no regression versus legacy, for TSC and RL pacing, with a stats reader in a tight loop and 64 armed objects or queues: M's compliance class ≥ legacy's | I with M; measured in MS1, gating MS2a (§6.9) |
 
 **The DP-call benchmark** `UnifiedPerf.dp_calls` (U on `null:1`, skipped unless `MTL_PERF=1`)
@@ -2108,7 +1866,7 @@ The comparison table, with the question behind each difference, is in [timing.md
 | the bindings run on the tasklet under the session spinlock; a slow binding hurts every session on the scheduler | every milestone | wait-free rules for bindings (§2.1), the S0 budgets (§8.4), `mtl-reviewer` checks the binding diffs against the two-world rule |
 | re-basing st20p changes legacy behaviour (FREE before `notify_frame_done`, `st20_pipeline_tx.c:265-286`; done-flag order differs between st20p and st30p) | MS2b, MS4a, MS4b | the re-base comes last in MS2b, after the nightly burn-in; the legacy suites and T1's parity tests stay green; each legacy-visible behaviour is a ledger row (migration.md §6.5), decided in RB0 (below the table) |
 | the deferred wakes add jitter on isolated cores with many armed objects and queues | MS2a | the count bound from MS1 (D-142); S1a and S1b against ST1–ST9; D-170's patterns, the slack gate, then the notifier (D-165) |
-| TX completion latency: on the chain path about `nb_tx_desc` packets, never while idle | MS1 | idle descriptor cleanup (task E1, S6) |
+| TX completion latency: on the chain path about `nb_tx_desc` packets, never while idle | MS1 | idle descriptor cleanup (task E1b, S6) |
 | lost wake-ups from wrong orderings | MS1 | publish and arm meet on one event word (D-158), the queue interrupts are the one seq_cst pair (D-162); the `wait_model` job and the `WaitHook.*` and `QueueHook.*` tests (G-52); herd7 or GenMC on Arm in MS2a |
 | acceptance log greps | MS1 | D-110 as an exit criterion |
 | one instance, two APIs: teardown order, SP-01, behaviour before `mtl_start()` | MS1 | the wrapper closes first; bridge tests at U and I; RxTxApp already calls `mtl_start` before it creates sessions (`rxtx_app.c:480`, `:534`); OI-2 |
@@ -2127,7 +1885,7 @@ ledger row (`check.sh` lint 8), and the ledger is the deletion list at F+2.
 
 ## 10. Calendar and effort
 
-AI agents write the code (A1), so the pace is set by review and by the hardware gates, not by
+AI agents write the code (assumption A1), so the pace is set by review and by the hardware gates, not by
 writing. The calendar of §1.2 assumes:
 
 - three to four review units a week through `mtl-reviewer` and the maintainer, each commit under
@@ -2164,8 +1922,8 @@ every fix to a ported test is made once, in the new tree, since the legacy one i
 - what each spike measures: [engine.md](engine.md) §6.1;
 - the goals, non-goals and personas, and the full text and sources of each requirement:
   [requirements.md](requirements.md);
-- the notes behind every guarantee's test method: [requirements.md](requirements.md),
-  [timing.md](timing.md) §16.1; the oracle compared with the contract document:
+- every guarantee's text, tier, milestone and test method: [guarantees.md](guarantees.md); the
+  oracle compared with the contract document:
   [timing.md](timing.md) §16.2;
 - the row-by-row inventory, each feature's milestone, and the features reachable only through the
   session headers: [coverage.md](coverage.md); the feature × media matrix of today:

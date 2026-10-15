@@ -3,7 +3,6 @@
 | | |
 |---|---|
 | Status | The operator's document: security, containers, Kubernetes pods and crash safety. The Kubernetes rules are decisions D-89–D-92; the instance open and close land in MS1, health and the shutdown report in MS3 ([implementation-plan.md](implementation-plan.md) §6.2), and the engine fixes EK1–EK21 on the Kubernetes track beside the milestones, done by the MS3 exit (§6.10 there) |
-| Date | 2026-10-02 |
 | Headers | `mtl.h` (R4, R8, `mtl_instance_open`, `mtl_instance_close`, `mtl_instance_abort`, `env:` ports), `mtl_observe.h` (health, shutdown), `mtl_options.h` 400, 2010, 2020–2027, 2110, 2123–2125, 2203, 2207, `mtl_reasons.h` 10, 11, 104, 112–115, 520, 600–614, `mtl_events.h` events 23–25 |
 | Baseline | `main` @ `545a266a`, DPDK 26.07 |
 
@@ -15,6 +14,27 @@ after every way a process can end.
 
 Evidence labels: **[verified]** = the source line or document was read; **[inferred]** = reasoning,
 not re-checked: a hypothesis to test. Paths without a prefix are under `lib/src/`.
+
+**Start here.** For operators. Find your task:
+
+| Task | Sections |
+|---|---|
+| run a pod | §4.15 (a pod spec), §4.14 (files and privileges), §4.7 (CPUs), §4.8 (time), §4.9 (fail-fast open), §4.10 (health and probes) |
+| set the grace period and handle SIGTERM | §4.2, §4.3, §4.4 |
+| diagnose a crash loop or a stuck pod | §4.5, §4.10, §4.16 |
+| size hugepages and memlock | §4.11, §5 |
+| harden a host | §1 |
+| run on bare metal or in a container | §3 |
+| AF_XDP or MtlManager in a pod | §4.13, §4.12, §1.6 |
+| Windows; the release and support policy | §6; §7 |
+
+**IDs used here.** AS, CP and DP are call classes ([contract.md R6](contract.md#r6-call-classes));
+R1–R8 are the contract rules ([contract.md §1](contract.md#1-the-rules-r1r8)); EK-n and E-n are
+engine changes ([engine.md §6](engine.md#6-the-engine-change-list)); H-K-n are pod hazards (§4.16,
+[engine.md §7.3](engine.md#73-pod-hazards-h-k)); SF-n are library defects
+([engine.md §7.1](engine.md#71-library-sf-sp)); K-REQ-n are the Kubernetes requirements
+([requirements.md §5](requirements.md#5-kubernetes-k-req-120)); D-n and OI-n are
+[decisions.md](decisions.md) rows.
 
 ## 1. Threat model and surfaces
 
@@ -166,9 +186,9 @@ group (for example `mtl`), `SO_PEERCRED` identity, grants owned per client, SIGP
 **Bare metal.** Everything in §4 applies, except that the host owns the CPUs, the hugepage pool and the
 clock. MtlManager arbitrates CPUs and queues between processes; without it, `instance.runtime_dir`
 names a directory for one OFD lock per CPU, shared by the processes (§4.7). The built-in PTP client
-(`MTL_TIME_SOURCE_PTP_BUILTIN`) may discipline the PHC of a PF that MTL owns; on a VF it disciplines
-MTL's own software time base, as today, and never the VF's PHC (§4.8). `time.phc2sys` may steer
-`CLOCK_REALTIME`. Both restore the frequency at close (EK10).
+(`MTL_TIME_SOURCE_PTP_BUILTIN`) and `time.phc2sys` may steer clocks; which clock each one steers is
+[timing.md §2.2](timing.md#22-time-sources) (in a pod: §4.8). Both restore the frequency at close
+(EK10).
 
 **Containers** (Docker, Podman, or a pod) need the VFIO device nodes of their VFs (`/dev/vfio/N`,
 `/dev/vfio/vfio`); hugepages (with `--in-memory` the resource is enough, no hugetlbfs mount
@@ -457,12 +477,11 @@ namespace look dead).
 
 ### 4.8 Time in a pod
 
-| Source | In a pod |
-|---|---|
-| `MTL_TIME_SOURCE_AUTO` (default) | `CLOCK_TAI` when the kernel's TAI offset is set; else `SYSTEM_TAI` (`CLOCK_REALTIME` plus the UTC offset, ESTIMATED). From MS6 the VF's PHC comes first, read only, when a node daemon disciplines it (E9). AUTO chooses once, at open; from Phase 7 it is re-evaluated while running and falls back to `FREERUN` without a step ([timing.md](timing.md) §13). |
-| `_PHC`, `_CLOCK_TAI`, `_USER` | as named; read only. `CLOCK_TAI` is rejected while the kernel offset is 0. |
-| `_PTP_BUILTIN` | only when named, never by AUTO. On a PF that MTL owns it disciplines the PHC. On a VF it runs as today in software mode (`ptp->no_timesync`, `mt_ptp.c:1390-1393`): it disciplines MTL's own software time base, never the VF's PHC. `CLOCK_NOT_OWNED` is only for a request to steer a PHC MTL does not own. |
-| built-in phc2sys (`time.phc2sys`) | steers the node's `CLOCK_REALTIME`: never in a pod; restores the frequency at close. |
+What each `time_source` reads in a pod, which sources are read only, and which clock MTL may steer:
+[timing.md §2.2](timing.md#22-time-sources) and [§2.6](timing.md#26-time-in-a-pod). For the
+operator: AUTO, the default, never starts the built-in PTP client; `PTP_BUILTIN` on a VF
+disciplines only MTL's own software time base, never the VF's PHC; and the built-in phc2sys
+(`time.phc2sys`) steers the node's `CLOCK_REALTIME`, so it is never used in a pod.
 
 **The clocksource.** `CLOCK_TAI` and `CLOCK_REALTIME` are vDSO reads only on a clocksource the
 vDSO can read (`tsc`, `kvm-clock`, `hyperv_clocksource_tsc_page`, `arch_sys_counter`). On any other

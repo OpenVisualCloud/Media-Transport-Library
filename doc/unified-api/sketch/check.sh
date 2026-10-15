@@ -8,8 +8,11 @@
 # argument), the availability probes, the examples copied verbatim into examples.md, the
 # examples' calls of every exported function (G-114, nm -u), the example file names and
 # numbers (once each, no gap) and each example's own number on its first line, the reasons
-# table, one home per load-bearing number (numbers.txt) and a
-# migration.md §6.5 row for every legacy mode of the core.
+# table, one home per load-bearing number (numbers.txt), a
+# migration.md §6.5 row for every legacy mode of the core, and every section reference
+# qualified by a document and every link and #anchor of the documents (check_refs.py), and
+# that each still names the heading it named at the base revision (HEAD, or $CHECK_REFS_BASE)
+# unless its line was edited since.
 # Prints the exported functions per header, per call class and per milestone, and the
 # number of frozen names: the one place the documents take these counts from.
 # check.sh --tags prints "name<TAB>milestone<TAB>header" per exported function and exits
@@ -331,8 +334,8 @@ if [ "$(printf '%s\n' "$hdr_reasons" | sort)" != "$(printf '%s\n' "$doc_reasons"
 	fail=1
 fi
 
-# Lint 7: one home per load-bearing number (README §1, numbers.txt).
 docs="$(cd "$here/.." && pwd)"
+# Lint 7: one home per load-bearing number (README §1, numbers.txt).
 while IFS=$'\t' read -r name home re; do
 	case "$name" in '#'* | '') continue ;; esac
 	hits="$(grep -rniE --include='*.md' -- "$re" "$docs" | sed "s|^$docs/||" | grep -v "^$home:")"
@@ -352,6 +355,24 @@ if [ -d "$core" ]; then
 			fail=1
 		fi
 	done
+fi
+
+# Lint 11: every section reference qualified by a document ("contract.md §5.5", "README §1",
+# "[timing.md](timing.md) §6.1", lists and ranges after it) and every link and #anchor resolves
+# to a file and a heading (check_refs.py; bare "§n" references are not checked). In a git work
+# tree it also fails when a reference whose line was not edited since the base revision now
+# names a heading of another title than at the base: a section renumbered or retitled under
+# it. The base is HEAD, so uncommitted edits are checked against the last commit; for a
+# branch set CHECK_REFS_BASE to its merge base (CHECK_REFS_BASE="$(git merge-base main HEAD)").
+if command -v python3 >/dev/null 2>&1; then
+	base="${CHECK_REFS_BASE:-}"
+	if [ -z "$base" ] && git -C "$docs" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+		base=HEAD
+	fi
+	python3 -I "$here/check_refs.py" ${base:+--base "$base"} "$docs" || fail=1
+else
+	echo "FAIL: python3 not found: lint 11 cannot run"
+	fail=1
 fi
 
 # Function count: declarations start a line with a call-class macro; the MTL_LATER blocks

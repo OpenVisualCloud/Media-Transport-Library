@@ -4,14 +4,13 @@ This file carries the evidence of G-52, G-95 and G-142 (D-142, D-158–D-169) th
 the deterministic pause-hook tests (WH, WC and QW) and the models in [models/](models/). It is a
 design record: C1w, C2, C1q1, C1q2 and MS2 copy from it, and
 [implementation-plan.md](../implementation-plan.md) §8.2 ("The wait evidence") says which job runs
-what. The protocol and its step labels (E1–E4, M1, K1–K2, F1–F8, T1–T9, D1–D2, Q1–Q3, RW1–RW2,
-N0', N1–N9, V1–V2, X1–X4, Y1, P1–P3, PS1–PS4, U1–U2, A1–A11, J1–J10, C1–C5, Y2, DV1–DV3) are those of
-[core.md](../core.md) §6.1–§6.3 and §6.6; a step label is local to its procedure and is not a
-test.
+what. Step labels such as T4 or J8 are those of [core.md](../core.md) §6.1–§6.3 and §6.6 (the
+full list: [README §3](../README.md#3-reading-the-ids)). A label is local to its procedure. It is
+not a test ID, and it is not task T1 or A1.
 
-Random stress caught 1 of 4 mutants of an earlier protocol, so G-52, G-95 and G-142 rest on two
-pieces of deterministic evidence: **the model, run in CI**, and **pause-hook tests that replay its
-counterexamples**. Random stress (`stress.c`) is a nightly smoke test only.
+Random stress caught only 1 of 4 mutants of an earlier protocol. So G-52, G-95 and G-142 rest on
+two pieces of deterministic evidence: **the model, run in CI**, and **pause-hook tests that replay
+its counterexamples**. Random stress (`stress.c`) is a nightly smoke test only.
 
 ## 1. The models
 
@@ -19,9 +18,30 @@ They need only the Python 3 standard library (`stress.c`: a C compiler and Linux
 every interleaving under sequential consistency; every atomic operation and every syscall is one
 step. Weak-memory orderings are argued in core.md §6.1, not modelled.
 
+### 1.1 Names used below: cases, mutants, checks
+
+| Name | What it is |
+|---|---|
+| o1–o7, q1–q11, r1–r4, p1–p5 | the model cases: case names in `final_model.py`; each is a configuration whose interleavings the model explores, and `--trace CASE MUTANT` prints the counterexample a test replays |
+| the mutants | 23 mutants of `final_model.py`, each named by the step it breaks (below); the model prints the cases that kill each one |
+| LOST | a sleeper whose condition holds; LOST also fires when a sleeper's queue holds a pending post or an item no report served |
+| LEAK | a count that does not match its sleepers |
+| OVER | an attachment in two places |
+| SPIN | a cycle in the state graph |
+| XQ | a push onto a reused queue |
+| RPT | a report popped after its detach returned |
+| PAC | a post accepted by a closed or reused queue |
+
+The mutants: `bits`, `no_arm`, `load_after_attempt`, `producer_skip`, `intr_no_bump`, `no_dec`,
+`want_store`, `no_resignal`, `no_exit_resignal`, `reset_after_arm`, `no_reset`, `arm_store`,
+`arm_no_validate`, `claim_by_load`, `intr_no_claim`, `no_intr_recheck`, `no_qgen`, `no_dead`,
+`close_no_wait`, `post_no_claim`, `arm_ignores_post`, `post_no_check` and `post_before_publish`.
+
+### 1.2 What each model checks
+
 | File | What it checks | Run |
 |---|---|---|
-| [final_model.py](models/final_model.py) | the object path of core.md §6 (cases o1–o7), the queue path (q1–q11, r1–r4) and posts (p1–p5); 23 mutants named by the step they break; LOST, LEAK, OVER, SPIN, XQ, RPT, PAC (below) | `python3 final_model.py [CASE ...]`; `--trace CASE MUTANT` prints a counterexample; exit 1 unless every case gives its result and every mutant dies (6 s) |
+| [final_model.py](models/final_model.py) | the object path of core.md §6 (cases o1–o7), the queue path (q1–q11, r1–r4) and posts (p1–p5); 23 mutants named by the step they break; LOST, LEAK, OVER, SPIN, XQ, RPT, PAC (§1.1) | `python3 final_model.py [CASE ...]`; `--trace CASE MUTANT` prints a counterexample; exit 1 unless every case gives its result and every mutant dies (6 s) |
 | [wait_flush.py](models/wait_flush.py) | the count-bounded flush (F1–F8) of one library loop over three objects, sleepers arming while marks are carried, the loop's sleep check; the variant that ignores the flush's return; from M0 a queue entry among the marked entries and `wake_k` 1 and 4 | `python3 wait_flush.py`; the design cases must print LOST=0, the "return ignored" variant LOST > 0 |
 | [stress.c](models/stress.c) | random-yield stress on the real kernel (futex, eventfd, epoll LT or EPOLLONESHOT). Until M0 it still drives the superseded per-object handle (D-159); M0 rewrites it onto the event word and a queue consumer, with the mutants `-DBITS`, `-DLOAD_AFTER_ATTEMPT`, `-DNO_EXIT_RESIGNAL` | `cc -O2 -pthread stress.c -o stress; ./stress ROUNDS [1]`; a smoke test, not evidence |
 | [provide_model.py](models/provide_model.py) | the `mtl_rx_provide` hand-back of D-152 (contract.md §9.11): every interleaving of providers, hand-backs and a taking unit; the ledger rule | `python3 provide_model.py`; MS2b copies it into `tests/unit/core/` |
@@ -30,11 +50,8 @@ step. Weak-memory orderings are argued in core.md §6.1, not modelled.
 interrupts and their clearing (`MTL_INTR_OFF`, then a new call: o7), close and row waits; its
 queue path the push and claim, the reset and arm, the write-back rule, queue interrupts, their
 clearing (q11) and close, detach, a stale claimer and queue entry reuse, and the posts of
-`mtl_queue_post` (a poster thread `QP` that publishes an item, then posts). Its checks:
-LOST (a sleeper whose condition holds), LEAK (a count that does not match its sleepers), OVER (an
-attachment in two places), SPIN (a cycle in the state graph), XQ (a push onto a reused queue), RPT
-(a report popped after its detach returned), PAC (a post accepted by a closed or reused queue).
-LOST also fires when a sleeper's queue holds a pending post or an item no report served.
+`mtl_queue_post` (a poster thread `QP` that publishes an item, then posts). Its checks are
+LOST, LEAK, OVER, SPIN, XQ, RPT and PAC (§1.1).
 
 Not modelled, and argued in core.md §6.1 instead: weak memory, the instance walk, state-change
 reports (an EVENT with every lane), J5's return 1 (lock serialisation), the delivery count of the
@@ -181,22 +198,16 @@ Each test lands with the task that makes it runnable:
 | C1w | WH2, WH3, WH10, WH11 (close and stop), WH12, WH14b, WH15, WH16, WH21, WC1–WC3, WC5, on `TestBinding` |
 | C2 | WH11 (ERROR), WH17, WH19, WH20, and the `NullBinding` runs |
 | A2a | ex16's SIGTERM form |
-| MS2 | WC4 |
+| MS2 | WC4 (rows), WC6 (`acquire_slot`) |
 | C1q1 (MS2a) | QW1–QW5, QW7, QW10–QW12, QW14, QW18, QW20–QW22 |
 | C1q2 (MS2a) | WH14, QW6, QW8, QW9, QW13, QW15–QW17, QW19; WH15's and WH21's queue parts; ex03's public form |
 
-Retired with the per-object descriptor that queues replaced ([D-159](../decisions.md)): WH1,
-WH4–WH9, WH13, WH13b and WH18.
-Totals: 16 tests in MS1, 2 in MS2, 23 in MS2a.
+Totals: 16 tests in MS1, 2 in MS2, 23 in MS2a. Retired IDs, never reused: WH1, WH4–WH9, WH13,
+WH13b and WH18 (the per-object descriptor that queues replaced, [D-159](../decisions.md)).
 
-## 7. What the schedules replay
+## 7. Argued and tested, not modelled
 
-- **Model cases.** o1–o7, q1–q11, r1–r4 and p1–p5 are case names in `final_model.py`; each is a
-  configuration whose interleavings the model explores, and `--trace CASE MUTANT` prints the
-  counterexample a test replays.
-- **Mutants.** `bits`, `no_arm`, `load_after_attempt`, `producer_skip`, `intr_no_bump`, `no_dec`,
-  `want_store`, `no_resignal`, `no_exit_resignal`, `reset_after_arm`, `no_reset`, `arm_store`,
-  `arm_no_validate`, `claim_by_load`, `intr_no_claim`, `no_intr_recheck`, `no_qgen`, `no_dead`,
-  `close_no_wait`, `post_no_claim`, `arm_ignores_post`, `post_no_check` and `post_before_publish`; the model prints the cases that kill each one.
+The model cases, the mutants and the checks are named in §1.1.
+
 - **Argued and tested, not modelled**: the delivery count (QW17), the generation check of A3 and J2
   (QW18; the model checks it), the descriptors kept for the process's life (QW19).

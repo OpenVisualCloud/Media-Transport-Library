@@ -3,7 +3,6 @@
 | | |
 |---|---|
 | Status | Maintained reference. Nothing here is a decision; the headers in [sketch/include/mtl/experimental/](sketch/include/mtl/experimental/) win over this text |
-| Date | 2026-10-02 |
 | Reads with | [timing.md](timing.md), [nmos-ipmx.md](nmos-ipmx.md) |
 
 This file holds what the SMPTE, AES, IETF, VSF and AMWA texts require of an ST 2110 sender and receiver, with the
@@ -155,7 +154,7 @@ Marker bit and keep-alive per essence (what `MTL_PKT_SET_MARKER` and `MTL_PKT_TX
   [timing.md §5.6](timing.md#56-invariants-and-signalling).
 - **Derived signals** (ST 2110-10:2022 §7.9): a time-preserving sender keeps the input timestamp (`T_NEWRTP(j) = T_RTP(j)`),
   a time-resetting one stamps the current time (`T_NEWRTP(j) = T_NOW`); in all cases the regular-increment rules (§7.6.1,
-  §7.7.1) take precedence. The processor recipe is [timing.md §10.5](timing.md#105-recipes).
+  §7.7.1) take precedence. The processor recipe is [timing.md §10.6](timing.md#106-time-preserving-processor).
 - **SDP attributes that carry timing:** `mediaclk`, `ts-refclk` (§3), `TSMODE`, `TSDELAY` (-10 §8.7), `TP=` sender type,
   optional `TROFF` and `CMAX` (-21, §6), `exactframerate` and `SSN`/`TM` for ANC (§9), `rate=` for fast metadata (§10).
 - **ST 2110-20 SDP** (ST 2110-20:2022 §7, ST 2110-21:2022 §8, ST 2110-10:2022 §8.6):
@@ -257,7 +256,8 @@ count, and never uses the Extended UDP Size Limit. Senders signal `PM`; pgroups 
 LIST's `calculate_rtp_timestamp()` uses `round()`, not truncation, so tools tolerate ±1 tick where a strict reading
 (truncate) does not; the unified oracle does not tolerate it ([timing.md §16.3](timing.md#163-substrate-and-budgets)).
 Both video windows say "unless justified": a capture source with a launch delay L ≥ 1 reports an RTP offset of about
-−L·TFRAME and a latency of about L·TFRAME, which is the justified case (worked numbers in timing.md §5.2).
+−L·TFRAME and a latency of about L·TFRAME, which is the justified case (the launch delay and its
+worked numbers: [timing.md §5.2](timing.md#52-min_tx_delay_ns-and-the-launch-rule)).
 
 **RP 2110-25:2023** gives the names and formulas test equipment reports; the unified stats, the RX timing parser and
 the test oracles use them (all clauses RP 2110-25:2023):
@@ -909,7 +909,7 @@ reports are nmos-ipmx.md §16–§19. The facts the timing model takes from them
 | IS-05 activation: immediate and scheduled (`activation_time`) on the clock, `master_enable`, per-leg RTP transport parameters | IS-05 v1.2.0 Behaviour (nmos-ipmx.md §11) |
 | a file timestamp snaps to the closest media rate tick; priming samples sit before the zero point | MS-04 v1.0.0, timing explanation, example 5 |
 
-The source URLs are §16.
+The source URLs are §17.
 
 ## 15. Where MTL today disagrees with the standards
 
@@ -973,7 +973,7 @@ rules; these are the numbers to check them against).
 | ANC packet sizes (RFC 8331) | one ANC packet = 4 + round-up-to-4 of ⌈(n + 4) × 10 / 8⌉ bytes: 12 B at n = 0 UDW, 328 B at n = 255; payload room per RTP packet at the Standard UDP Size Limit 1460 − 8 − 12 − 8 = 1432 B: at most 119 ANC packets (`ANC_Count` 255 is unreachable) or 4 of 255 UDW |
 | RTP unwrap window | ±6.628 h at 90 kHz, ±12.43 h at 48 kHz, ±6.21 h at 96 kHz, ±13.53 h at 44.1 kHz |
 | second field, 29.97i, frames 0–3 | RTP 1501, 4504, 7507, 10510 on the epoch grid (both formulas agree there; they diverge for an off-grid T0) |
-| launch delay L = 1 at 1080p59.94, type N | first packet ≈ M + 17.30 ms (RL, VRX0 = 5); EBU LIST then reports an RTP offset of −1501/−1502 ticks against a `[−1, 59]` window and a latency of 17.3 ms against `[0, 1 ms]`: legal for a camera ("unless justified"), not for playback with L ≥ 2 |
+| launch delay L = 1 at 1080p59.94, type N | first packet ≈ M + 17.30 ms (RL, VRX0 = 5); EBU LIST then reports an RTP offset of −1501/−1502 ticks against a `[−1, 59]` window and a latency of 17.3 ms against `[0, 1 ms]`: legal for a camera ("unless justified"), not for playback with L ≥ 2 ([timing.md §5.2](timing.md#52-min_tx_delay_ns-and-the-launch-rule)) |
 | ST 2110-31 `ptime` 0.08 | 4 samples at 48 kHz (8 at 96 kHz) = 83⅓ µs, 12 000 packets/s; MTL's 80 µs period sends 4 samples per 80 µs, a 50 kHz rate (+4.17 %, about 41.7 ms per second against PTP; SF-35) |
 | audio payload at the level limits | L24: 48 × 8 × 3 = 6 × 64 × 3 = 96 × 4 × 3 = 12 × 32 × 3 = 1152 B (1172 B UDP); AM824: 6 × 60 × 4 = 12 × 30 × 4 = 1440 B (1460 B UDP, the limit), 4 × 80 × 4 = 1280 B, 96 × 2 × 4 = 768 B |
 | fastmeta package size | at most 359 content words (1436 B) per package at the Standard UDP Size Limit, although the 9-bit length allows 511; CMAX = 4 and TDRAIN = 1.25 ms for any stream below 727 packets/s |
@@ -1032,7 +1032,7 @@ semantics; per-leg observed times; an RX common link offset per group.
 | RFC 4175 (uncompressed video), RFC 8331 (ANC, read in full), RFC 9134 (JPEG XS) | `https://www.rfc-editor.org/rfc/rfcNNNN` | §4, §7, §9 |
 | RFC 8759 (TTML over RTP), RFC 3190 (`channel-order`), W3C TTML2 and IMSC 1.2 | not read; <https://www.rfc-editor.org/rfc/rfc8759>, <https://www.w3.org/TR/ttml2/>, <https://www.w3.org/TR/ttml-imsc1.2/> | §8, §10.1 |
 | RFC 7273 (`mediaclk`, `ts-refclk`) | `https://www.rfc-editor.org/rfc/rfc7273` | §3 |
-| RFC 3376 (IGMPv3) | <https://www.rfc-editor.org/rfc/rfc3376> | deployment.md §4.5 |
+| RFC 3376 (IGMPv3) | <https://www.rfc-editor.org/rfc/rfc3376> | §3; deployment.md §4.1; nmos-ipmx.md §18; `mtl_options.h` (`port.igmp_version`) |
 | RFC 4566 (SDP), RFC 4570 (source filters), RFC 7104 (duplication grouping), RFC 3605 (`a=rtcp`) | not read | nmos-ipmx.md, `mtl_sdp.h` |
 | RFC 8285 (header extensions), RFC 6184 (H.264), RFC 7798 (H.265), RFC 3640 (MPEG-4 audio) | not read | nmos-ipmx.md, packet units |
 | VSF TR-03 | 2015-11-12, <https://static.vsf.tv/download/technical_recommendations/VSF_TR-03_2015-11-12.pdf> | §3, §13 |
@@ -1066,7 +1066,6 @@ semantics; per-leg observed times; an RX common link offset per group.
 | linuxptp | <https://github.com/richardcochran/linuxptp> (`phc2sys.c`, `clockadj.c`) | deployment.md §4.1 |
 | libxdp, xdp-tools | <https://github.com/xdp-project/xdp-tools/tree/main/lib/libxdp> (`xsk.c`, `libxdp.c`, `README.org`) | deployment.md |
 | AF_XDP plugins for Kubernetes | <https://github.com/intel/afxdp-plugins-for-kubernetes> (unmaintained; fork `redhat-et/afxdp-plugins-for-kubernetes`) | deployment.md |
-| VPP, OVS | <https://github.com/FDio/vpp/blob/master/src/vlib/threads.c>; <https://github.com/openvswitch/ovs/blob/main/lib/ovs-rcu.c> | deployment.md §4.17 |
 | Kubernetes documentation | <https://kubernetes.io/docs/>: pod lifecycle, container lifecycle hooks, sidecar containers, process namespace sharing, node-pressure eviction, node shutdown, probes, volumes, pods, hugepages, CPU management policies, topology manager, pod security standards, user namespaces, feature gates, pod failure reasons | deployment.md §4 |
 | Kubernetes KEPs and issues | KEP-753 sidecars <https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/753-sidecar-containers>; KEP-2238 probe grace period; kubernetes/kubernetes#56374 (capabilities of non-root containers, open), #92211 (device ownership from security context) | deployment.md §4.14 |
 | SR-IOV | <https://github.com/k8snetworkplumbingwg/sriov-network-device-plugin>, <https://github.com/k8snetworkplumbingwg/sriov-cni>, <https://github.com/k8snetworkplumbingwg/sriov-network-operator> | deployment.md §4.1 |

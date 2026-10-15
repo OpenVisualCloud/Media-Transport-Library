@@ -3,7 +3,6 @@
 | | |
 |---|---|
 | Status | Maintained. The headers in [sketch/include/mtl/experimental/](sketch/include/mtl/experimental/) are normative: where this page and a header disagree, the header wins |
-| Date | 2026-10-02 |
 | Baseline | `main` @ `545a266a`; legacy headers in `include/`; the 15 unified headers (their function counts, per header and per milestone tag: `sketch/check.sh`) |
 
 This page is the safety net of port first (D-98): every use case today's public API offers, the
@@ -225,12 +224,12 @@ because the pipeline ops and frame structs embed these types (§4).
 | U-150 | library-paced TX on the epoch grid (default) | `sc.media_mode = MTL_MEDIA_AUTO` | MS1 | C; all |
 | U-151 | user pacing at a TAI time: `*_TX_FLAG_USER_PACING` + `timestamp`/`tfmt` | `MTL_MEDIA_TAI` (snapped), or `MTL_SUBMIT_NOT_BEFORE` + `u.launch_tai_ns` | MS1 (video) | Co; RXTX, GST 1, KT 4. MEDIA_CLK input is converted, not ignored |
 | U-152 | exact user pacing: `ST20/ST20P/ST40/ST40P_TX_FLAG_EXACT_USER_PACING` | `MTL_SESSION_EXACT_LAUNCH` in `sc.flags` at create, then per unit `MTL_SUBMIT_EXACT` + `u.launch_tai_ns`; `MTL_INFO_NON_COMPLIANT` | MS2 (video) | R; RXTX 1, KT 1, UT 3; audio and fastmeta `-MTL_ENOTSUP` (`NOT_IMPLEMENTED`) until MS6 |
-| U-153 | user-chosen RTP timestamp: `*_TX_FLAG_USER_TIMESTAMP` (absent on st30p) | `MTL_SUBMIT_RTP_TS` + `u.rtp` (TAI: the user's TAI in ticks, rounded to nearest, for the legacy RTP bytes; TAI mode alone if a snapped RTP is fine); needs INDEX or TAI (`RTP_TS_AUTO`); late units drop, not slip | MS3 (video, with E1) | Co; SMP 3, KT 2, UT 3. CHANGED |
+| U-153 | user-chosen RTP timestamp: `*_TX_FLAG_USER_TIMESTAMP` (absent on st30p) | `MTL_SUBMIT_RTP_TS` + `u.rtp`, or `u.media_tai_ns` alone in TAI mode; INDEX or TAI only (`RTP_TS_AUTO`); the rules and the late policy: [timing.md §14.1](timing.md#141-today--unified), §4.2 | MS3 (video, with E1) | Co; SMP 3, KT 2, UT 3. CHANGED |
 | U-154 | RTP exactly on the epoch: `ST20(P)_TX_FLAG_RTP_TIMESTAMP_EPOCH` | the default (D-10) | MS1 | R; RXTX 1, UT 2 |
-| U-155 | today's default ST20 RTP from the TX cursor (`st_tx_video_session.c`) | not the default (D-114); a positive `tx.rtp_trim_ns` (TRO − VRX0 × TRS) approximates it, flagged `MTL_INFO_RTP_OFF_GRID` | MS1; compared in the nightly (MS2, G-99) | Co; every legacy ST20 sender. CHANGED, wire-visible; mixed-API hazard ([migration.md](migration.md) §6.4) |
-| U-156 | RTP delta / TROFF trim: `rtp_timestamp_delta_us` (st20, st20p, st30, st30p) | `tx.rtp_trim_ns` = 1000 × the delta (RTP = floor((M + trim) × rate), launch unchanged; AUTO, INDEX), `MTL_OPT_INDEX_OFFSET`, `sc.video.troffset_us` (whole µs; TROFFSET 0 cannot be signalled) | MS3; TR offset: MS1 (the default), MS2 (others) | R; RXTX 2, KT 2, ext:bobi |
+| U-155 | today's default ST20 RTP from the TX cursor (`st_tx_video_session.c`) | not the default (D-114); a positive `tx.rtp_trim_ns` of the TX-cursor offset approximates it, flagged `MTL_INFO_RTP_OFF_GRID` ([timing.md](timing.md) T2, §4.5) | MS1; compared in the nightly (MS2, G-99) | Co; every legacy ST20 sender. CHANGED, wire-visible; mixed-API hazard ([migration.md](migration.md) §6.4) |
+| U-156 | RTP delta / TROFF trim: `rtp_timestamp_delta_us` (st20, st20p, st30, st30p) | `tx.rtp_trim_ns` = 1000 × the delta (the rule: [timing.md §4.5](timing.md#45-media-time-offsets-and-the-rtp-trim)), `MTL_OPT_INDEX_OFFSET`, `sc.video.troffset_us` (whole µs; TROFFSET 0 cannot be signalled) | MS3; TR offset: MS1 (the default), MS2 (others) | R; RXTX 2, KT 2, ext:bobi |
 | U-157 | drop late frames: `*P_TX_FLAG_DROP_WHEN_LATE` (pipelines, needs USER_PACING) | `MTL_OPT_LATE_POLICY = MTL_LATE_DROP` (every mode) | MS1 | Co; RXTX 1, KT 1 |
-| U-158 | late notification: `notify_frame_late(priv, epoch_skipped)` | `mtl_tx_reap` results: INDEX and TAI `MTL_TX_DROPPED` + `reason`, `margin_ns`; AUTO `MTL_TX_ON_TIME` + `MTL_TXR_DEFERRED`, `mtl_tx_result_full.indices_skipped_before` (`mtl_tx_reap_full`) | MS1 | Co; KT 1 |
+| U-158 | late notification: `notify_frame_late(priv, epoch_skipped)` | `mtl_tx_reap` results: `MTL_TX_DROPPED` + `reason`, `margin_ns`, or `MTL_TX_ON_TIME` + `MTL_TXR_DEFERRED` and `mtl_tx_result_full.indices_skipped_before` (`mtl_tx_reap_full`); which per media mode: [timing.md §6.2](timing.md#62-late-policy) | MS1 | Co; KT 1 |
 | U-159 | per-epoch vsync: `*_FLAG_ENABLE_VSYNC`, `ST_EVENT_VSYNC`, `st10_vsync_meta` (ST20/22 only) | `MTL_OPT_EPOCH_TICK` + `MTL_EVENT_EPOCH_TICK` | MS3 | R; RXTX 1, KT 1; t |
 | U-160 | ST 2110-21 sender type: `enum st21_pacing`, `transport_pacing` | `v.sender_type`, `c.sender_type` (`MTL_SENDER_N/NL/W`) | MS1 | Co; RXTX 2, MXL 2, KT 1; t |
 | U-161 | TR offset, TRS, VRX: `st20_tx_get_pacing_params`, `st20p_tx_get_pacing_params` | keys `info.troffset_ns`, `info.trs_ps`, `info.vrx_full`; `info.min_submit_lead_ns` | MS1 | R; KT 3. CHANGED: keys, not typed fields |
@@ -326,7 +325,7 @@ because the pipeline ops and frame structs embed these types (§4).
 | U-240 | PCM8/16/24 and AM824: `enum st30_fmt` | `enum mtl_audio_format` | MS4 | C; FF, GST, RXTX, KT; t |
 | U-241 | 48 / 96 / 44.1 kHz: `enum st30_sampling` | `a.sample_rate` (Hz) | MS4 | C; all audio; t |
 | U-242 | channel count: `channel` | `a.channels` | MS4 | C; all audio |
-| U-243 | packet time incl. ST 2110-31 values (1 ms, 125/250/333 µs, 4 ms, 80 µs, 1.09/0.14/0.09 ms): `enum st30_ptime` | `a.ptime` (`enum mtl_ptime`, legacy + 1; 0 = 1 ms) | MS4 | C; all audio; t. Non-integer samples (80 µs at 48 kHz): 4 samples paced at 4 / Fs, the granted packet time in `info.ptime_ps` |
+| U-243 | packet time incl. ST 2110-31 values (1 ms, 125/250/333 µs, 4 ms, 80 µs, 1.09/0.14/0.09 ms): `enum st30_ptime` | `a.ptime` (`enum mtl_ptime`, legacy + 1; 0 = 1 ms) | MS4 | C; all audio; t. Non-integer samples (80 µs at 48 kHz): `info.ptime_ps` ([timing.md §8](timing.md#8-audio)) |
 | U-244 | pipeline get/put: `st30p_tx/rx_get_frame`, `put_frame`, `struct st30_frame` | `mtl_tx_acquire`/`mtl_tx_submit` (`u.used` bytes), `mtl_rx_dequeue`, `mtl_tx_write` | MS4 | C; SMP 1, RXTX 1, FF 1, GST 1, RS 1, KT 2 |
 | U-245 | buffer size for a frame duration: `st30_calculate_framebuff_size`, `framebuff_size` | `a.unit_samples` (0 = 10 ms); `info.buffer_capacity_bytes`, `info.unit_samples` from `mtl_session_query` | MS4 | Co; SMP 2, RXTX 2, FF 2, GST 2, RS 1, KT 2; t |
 | U-246 | size/time math: `st30_get_packet_size`, `_sample_size`, `_sample_num`, `_sample_rate`, `_packet_time` | `mtl_audio_bytes`, `mtl_session_query` | MS4 | Co; RXTX 2, KT 5, UT 1; t |
@@ -336,7 +335,7 @@ because the pipeline ops and frame structs embed these types (§4).
 | U-250 | builder-to-pacer FIFO: `fifo_size` (packets) | `MTL_OPT_AUDIO_FIFO_MS` (ms, default 10) | MS4 | R; RXTX 1. CHANGED: unit |
 | U-251 | audio user timestamp: `ST30_TX_FLAG_USER_TIMESTAMP` (no st30p flag) | media mode TAI or INDEX + `MTL_SUBMIT_RTP_TS`; `MTL_OPT_AUDIO_ABSORB_SAMPLES` | MS6 | Co; KT 1, UT 3; S! |
 | U-252 | audio user pacing: `ST30(P)_TX_FLAG_USER_PACING` | `MTL_MEDIA_TAI` (+ `MTL_SUBMIT_NOT_BEFORE` in MS6) | MS6 | Co; RXTX 1, GST 1, KT 3 |
-| U-253 | lost packets read as silence: `ST30(P)_RX_FLAG_RECEIVE_INCOMPLETE_FRAME` | `MTL_OPT_RX_INCOMPLETE`; zero fill of library pools by default (`MTL_SESSION_RX_NO_FILL` opts out) | MS4 | R; KT 1, UT 1 |
+| U-253 | lost packets read as silence: `ST30(P)_RX_FLAG_RECEIVE_INCOMPLETE_FRAME` | `MTL_OPT_RX_INCOMPLETE`; lost packets: the library-pool fill, `MTL_SESSION_RX_NO_FILL` ([contract.md §9.8](contract.md#98-rx-placement)) | MS4 | R; KT 1, UT 1 |
 | U-254 | audio timing parser (dpvr, ipt, tsdf per 200 ms): `ST30_RX_FLAG_TIMING_PARSER_STAT/META`, `notify_timing_parser_result`, `st30_rx_tp_meta` | `MTL_OPT_RX_TIMING_PARSER`; per unit `mtl_rx_detail.timing[]` (`dpvr_max_ns`, `ipt_max_ns`, `tsdf_ns`); keys `tp.*` | MS4 | R; RXTX 1; S!. CHANGED: per unit, not a 200 ms callback |
 | U-255 | AM824 / AES3 subframe layouts: `struct st31_am824`, `st31_aes3` (+ convert `st31_*`) | `struct mtl_am824_subframe`; `mtl_convert` between `MTL_AM824` and `MTL_AES3` (`MTL_FORMAT_AUDIO`, one plane) | MS4 | R; KT; t |
 | U-256 | deprecated `sample_size`, `sample_num` | none ("Not use anymore, plan to remove") | removed (D-87, CUT-11) | L; none |
@@ -472,8 +471,8 @@ this section is the inventory behind it.
 
 | Fact | Evidence |
 |---|---|
-| all 13 top-level headers install into `<prefix>/include/mtl/`, `st20_combined_api.h` into `mtl/experimental/`; the generated `mtl_build_config.h` too, because `mtl_api.h:27` includes it | `include/meson.build:4-8`, `:11-16`; `meson.build:39-53` |
-| pkg-config emits `-I${includedir} -I${includedir}/mtl`, so `<mtl/st20_api.h>` and `<st20_api.h>` both resolve; apps use the first, the MXL POC the bare form | `meson.build:77-84`; `app/sample/sample_util.h:11`, `tests/tools/RxTxApp/src/app_base.h:12`, `ecosystem/MTL_with_MXL/poc/src/include/poc_mtl_rx.h:8-9` |
+| all 13 top-level headers install into `<prefix>/include/mtl/`, `st20_combined_api.h` into `mtl/experimental/`; the generated `mtl_build_config.h` too, because `mtl_api.h:27` includes it | `include/meson.build:4-8`, `:11-15`; `meson.build:38-52` |
+| pkg-config emits `-I${includedir} -I${includedir}/mtl`, so `<mtl/st20_api.h>` and `<st20_api.h>` both resolve; apps use the first, the MXL POC the bare form | `meson.build:78-86` (`subdirs` at `:84`); `app/sample/sample_util.h:11`, `tests/tools/RxTxApp/src/app_base.h:12`, `ecosystem/MTL_with_MXL/poc/src/include/poc_mtl_rx.h:8-9` |
 | no tiering: `st_convert_internal.h` says "for internal test usage only" yet is installed and SWIG-wrapped; the experimental header has no opt-in | `include/st_convert_internal.h:5-9`, `python/swig/pymtl.i:21`, `:30`; `st20_combined_api.h:6-8` |
 | include graph: `mtl_api.h` ← `st_api.h` ← `st20/30/40/41_api.h` (`:12`); `st_pipeline_api.h` ← `st20_api.h` (`:14`); `st30_pipeline_api.h` ← `st30_api.h` + `st_pipeline_api.h` (`:12-13`); `st40_pipeline_api.h` ← `st40_api.h` + `st_pipeline_api.h` (`:8-9`) | the headers |
 | `st_convert_api.h` ← `st_convert_internal.h` (`:13`) ← `st20_api.h`, `st30_api.h` (`:13-14`); `st20_combined_api.h` ← `st20_api.h` (`:12`); `mtl_sch_api.h`, `mtl_lcore_shm_api.h` ← `mtl_api.h` (`:12`) | the headers |
@@ -482,9 +481,9 @@ this section is the inventory behind it.
 | the st30/st40 pipelines take `st_tx_port`/`st_rx_port` from `st_pipeline_api.h` (`st30_pipeline_api.h:111`, `:274`; `st40_pipeline_api.h:140`, `:224`), which drags in all of `st20_api.h`; st40p uses `st40_meta` (`:24`), `st40_tx_test_config` (`:155`) | the headers |
 | the plugin ABI uses `mtl_handle` (`st_plugin_create_fn`, `:89`), `st_frame_fmt`, `struct st_frame`, `st_plugin_device`, `st22_quality_mode`, 64-bit caps masks; the convert API uses pgroup structs, `st31_am824`/`st31_aes3`, `mtl_simd_level`, `mtl_udma_handle` | `st_pipeline_api.h:85-95`, `:670-830`; `st_convert_api.h:13`, `:44`, `:1064`; internal `:48` |
 | ecosystem pipeline users need session types: GStreamer `st20_rx_frame_meta` (`gst_mtl_st20p_rx.c:140`), `st30_calculate_framebuff_size` (`gst_mtl_st30p_rx.c:229`), st40 UDW/parity (`gst_mtl_st40p_tx.c:706-707`); FFmpeg `st30_calculate_framebuff_size` (`mtl_st30p_rx.c:126`) and the session flag `ST20_RX_FLAG_DMA_OFFLOAD` on st20p ops (`mtl_st20p_rx.c:176`, a misuse) | the plugins |
-| ABI hygiene: no `-fvisibility`, no version script, no export macro; 757 dynamic symbols, about 228 internal `mt_*`; soname plain `libmtl.so`; the Windows `.def` generated from every export; `ALLOW_EXPERIMENTAL_API` set for lib only | `lib/meson.build:85-87`, `:150-157`, `:122-123`, `:8` |
+| ABI hygiene: no `-fvisibility`, no version script, no export macro; 757 dynamic symbols, about 228 internal `mt_*`; soname plain `libmtl.so`; the Windows `.def` generated from every export; `ALLOW_EXPERIMENTAL_API` set for lib only | `lib/meson.build:85-87`, `:151-159`, `:122-123`, `:8` |
 | deprecation: `__mtl_deprecated_msg()` on fields only, never functions; a no-op under `__MTL_PYTHON_BUILD__`, silenced in the library by `__MTL_LIB_BUILD__` | `include/mtl_api.h:141-147`, `:745-759`; `meson.build:30` |
-| `lib/src` uses the installed headers through `st_header.h:9-15`; `mt_main.h:24-25` includes `mtl_sch_api.h`, `mt_sch.c:15` `mtl_lcore_shm_api.h`; include path `include_directories('.', 'include')`, so moving the files needs one include-path change and no source edit | `lib/src/st2110/st_header.h`, `meson.build:58` |
+| `lib/src` uses the installed headers through `st_header.h:9-15`; `mt_main.h:24-25` includes `mtl_sch_api.h`, `mt_sch.c:15` `mtl_lcore_shm_api.h`; include path `include_directories('.', 'include')`, so moving the files needs one include-path change and no source edit | `lib/src/st2110/st_header.h`, `meson.build:57` |
 | the pipelines create sessions through the session API, which therefore stays the internal engine | `st20_pipeline_tx.c:482`, `:963`; `st20_pipeline_rx.c:599`, `st22_pipeline_tx.c:527`, `st30_pipeline_tx.c:300`, `st40_pipeline_rx.c:186` |
 
 No consumer outside the library uses `manager/`; `ld_preload/` has no sources (`ld_preload/meson.build`
@@ -605,7 +604,7 @@ The work stage F (MS7) waits for; the homes are in [migration.md](migration.md) 
 | H-03 format parity (+7 transport, ≈ +16 app formats) | `enum mtl_video_format`, `mtl_video_format_ext`, `enum mtl_app_format` | MS1 |
 | H-04 format helpers | `mtl_format_describe`, `mtl_format_parse`; no fps name parser (D-97) | MS2 |
 | H-05 NACK retransmission | `MTL_OPT_RTX*` options | MS2; MS4 (cvideo) |
-| H-06 video auto-detect (deliver nothing until accepted) | `v.detect`, `MTL_EVENT_RX_FORMAT` | MS2 |
+| H-06 video auto-detect (deliver nothing until accepted) | `v.detect`, `MTL_EVENT_RX_FORMAT` | MS3 |
 | H-07 per-unit ST 2110-21 results | `mtl_rx_detail.timing[]` per lease and leg | MS2 |
 | H-08 user tasklets | removed (CUT-10) | — |
 | H-09 RX destination per unit | `MTL_SESSION_RX_BY_INDEX`; `mtl_rx_provide` | MS2 |
@@ -677,3 +676,124 @@ Silent downgrades today, reported in the unified API: RL → TSC pacing (AUTO, S
 queue), chain → copy TX, DMA → CPU, 2 → 1 port pruning. Network headers are fixed today (TTL 64,
 DSCP 0, no VLAN, IPv4 only, MTU ≤ 1500); unified: `mtl_flow.dscp`, `.ttl`, with `ip_family` and
 `vlan` reserved.
+
+## 6. ST 2110-20 by milestone
+
+These tables are the index an implementer works from; [implementation-plan.md](implementation-plan.md)
+§2.3 links them. The home of a feature's milestone is its U-row (§2, D-137): where a table here
+and a U-row disagree, the U-row is right.
+
+**Today's surfaces** ([legacy-internals.md](legacy-internals.md)): five media families × two
+directions × up to three units of work × two layers, plus `st20rc`:
+
+| Today | Unified home | When |
+|---|---|---|
+| `st20p_tx_*`, `st20p_rx_*` (frame) | `MTL_VIDEO`, `MTL_UNIT_FRAME`, conversion by `v.app_format` | MS1 |
+| `st20_tx_*`, `st20_rx_*` `ST20_TYPE_FRAME_LEVEL` (callbacks, ext frames) | the same session, push model; derive mode `v.app_format = 0`; app memory through `mtl_mem.h` | MS1 for library pools; ext frames MS2b |
+| `ST20_TYPE_SLICE_LEVEL` | `MTL_UNIT_ROWS` | MS2a |
+| `*_TYPE_RTP_LEVEL` (every family), ST 2022-6 through RTP level | `MTL_UNIT_PACKETS` (`mtl_packet.h`); `MTL_RTP` for ST 2022-6 and custom payloads | MS5 (D-82) |
+| `st22_*`, `st22p_*` | `MTL_CVIDEO` | MS4b |
+| `st30_*`, `st30p_*` | `MTL_AUDIO` | MS4a; sample-accurate submission MS6 |
+| `st40_*`, `st40p_*` | `MTL_ANC` | MS4a2; ANC following its video in a start array MS6 |
+| `st41_*` (RX RTP level only today) | `MTL_FASTMETA`, frame RX added | MS4a |
+| `st20rc_rx_*` | none: removed (D-112); two legs on one session do the same | — |
+| `st22_encoder_register`, `st20_converter_register`, `st_plugin_register` | plugin ABI v2 (`mtl_plugin.h`) | MS4b; converter plugins on the transform state MS2b |
+| `st_convert_api.h` (per-pair converters) | `mtl_convert()` (`mtl_format.h`); the public per-pair converters are removed (D-112) | MS4b |
+| `mtl_sch_*` user schedulers and tasklets | none: removed (D-112) | — |
+| `mtl_hp_*`, `mtl_dma_*`, `mtl_udma_*` | `mtl_mem.h` regions; user DMA removed (D-112) | MS2b (video); every other essence with its binding (MS4a, MS4b) |
+
+**ST 2110-20 use cases** (§2):
+
+| Use case today | Unified home | When |
+|---|---|---|
+| pipeline loops `st20p_tx_get_frame`/`put_frame`, `st20p_rx_get_frame`/`put_frame` (U-180, U-200) | `mtl_tx_acquire` + `mtl_tx_submit`; `mtl_rx_dequeue` + `mtl_rx_release` | MS1 |
+| session pull model `get_next_frame`, push `notify_frame_ready` + `st20_rx_put_framebuff` (U-181, U-201) | push: acquire and submit; dequeue and release from any thread, in any order | MS1 |
+| TX from the caller's memory without a slot copy beforehand | `MTL_SUBMIT_SRC_PLANES` (a copy or the conversion into the slot during submit; any session but `MTL_SESSION_REQUIRE_DIRECT`) | MS1 |
+| framebuffers by index (U-182, U-183, U-224) | `info.unit_bytes`, `pool_count`; `mtl_session_get_slot` (`mtl_mem.h`) | MS1; by index MS2b |
+| ext frames: session per index, pipeline per frame, two-phase release, dedicated and dynamic RX (U-184…U-186, U-208, U-209) | `MTL_SESSION_POOL_ATTACHED`, `mtl_session_attach`, `mtl_tx_acquire_slot`, `MTL_SESSION_RX_BY_INDEX`; results as the release; `mtl_tx_acquire_layout`, `mtl_rx_provide` | MS2b |
+| interlaced, field as unit (U-187) | `v.raster.scan = MTL_INTERLACED`; parity from the media index | MS1 (1080i ports) |
+| linesize and padding (U-188) | `v.linesize` of library pools | MS2b (wave 2c) |
+| split-forward of RX tiles (U-189) | `mtl_session_get_pool_region`, `mtl_session_attach`, `unit.hold`, `mtl_tx_send_slot` (ex12) | MS2b |
+| user meta (U-190, U-221) | an `MTL_META_USER` record in the meta area (`mtl_meta_put`, `mtl_meta_find`) | MS1 |
+| packing, transport formats incl. the non-RFC 4175 ones (U-192…U-194) | `v.packing`; `v.format`, `MTL_YUV422P10LE_NONSTD`, `MTL_V210_NONSTD` (`MTL_INFO_NON_COMPLIANT`) | MS1 (port `transport_yuv422p10le`) |
+| library-paced TX on the epoch, epoch RTP (U-150, U-154) | `MTL_MEDIA_AUTO`, the default | MS1 |
+| legacy default RTP from the TX cursor (U-155) | not the default (D-10) | MS1; compared in the nightly (MS2a, G-99) |
+| RTP delta and TR offset (U-156) | `tx.rtp_trim_ns` (the RTP trimmed, the launch fixed); `sc.video.troffset_us` | TR offset default MS1, other values MS2a; `tx.rtp_trim_ns` MS3 |
+| user pacing, exact user pacing, user RTP (U-151…U-153) | `MTL_MEDIA_TAI` + `MTL_SUBMIT_NOT_BEFORE`; `MTL_SUBMIT_EXACT` + `unit.launch_tai_ns`; `MTL_SUBMIT_RTP_TS` | TAI and NOT_BEFORE MS1; EXACT B3 (else MS2a); RTP_TS and a launch in another slot than the media time MS3 (E1) |
+| drop when late, late notification (U-157, U-158) | `MTL_OPT_LATE_POLICY`; results with status, reason and margin | MS1; margins MS3 (E3) |
+| VSYNC (U-159) | `MTL_OPT_EPOCH_TICK`, `MTL_EVENT_EPOCH_TICK` | MS3 |
+| sender type, RL tuning knobs (U-160, U-162) | `v.sender_type`; `MTL_OPT_VIDEO_START_VRX`, `_PAD_INTERVAL`, `_STATIC_PAD_P`, `_DISABLE_BULK` | MS1 |
+| TR offset, TRS, VRX, scheduler index (U-161) | `mtl_session_get_info` | MS1 |
+| next frame due, frame late (U-163) | `mtl_tx_get_next`, `mtl_epoch_index_at` | MS3 |
+| incomplete frames, frame status (U-202, U-203) | delivered by default (`rx.incomplete = MTL_RX_DELIVER`), `unit.status`; `MTL_OPT_RX_INCOMPLETE = MTL_RX_DISCARD` | MS1 |
+| packets per leg, arrival times, bytes per frame (U-204, U-205, U-207) | `mtl_rx_get_detail` | A2b (else MS2a); the `frame_meta_*` ports in MS2a read them |
+| RX RTP and media time (U-206) | `unit.rtp`, `unit.media_tai_ns`, `unit.media_index` | MS1; `media_index` MS3 |
+| RX DMA offload (U-211) | `MTL_OPT_DMA`, `MTL_OPT_DMA_DEVICES`, `MTL_PATH_DIRECT_DMA` | B3 (else MS2a) |
+| auto-detect (U-212) | `v.detect = MTL_DETECT_ON`, `MTL_EVENT_RX_FORMAT` | MS3 |
+| timing parser in stats and per frame (U-214…U-216) | `MTL_OPT_RX_TIMING_PARSER`, keys `tp.*`, `mtl_rx_get_detail` (`timing[]`) | B3 (else MS2a) for the stats; per unit (`timing[]`) MS2a with RX detail |
+| two RX threads (U-217) | `MTL_OPT_RX_THREADS`; today's engine rejects 2 with two legs or rows units | B3 (else MS2a) |
+| per-packet conversion in st20p (U-220) | `MTL_OPT_RX_CONVERT_PER_PACKET`, on the RX tasklet (library code: the one exception to "no conversion on a tasklet") | B3 (else MS2a; port `digest_1080p_packet_convert_s2`) |
+| `uframe_pg_callback`, header split (U-219, U-213) | none: removed (D-112) | — |
+| simulated RX loss (U-223) | `mtl_debug_inject(MTL_FAULT_DROP_PKTS)`, `MTL_FAULT_DROP_RANDOM` | MS1 (`DROP_PKTS`); `DROP_RANDOM` MS2a |
+| pcapng dump | `mtl_session_capture` | MS4 |
+
+**Easily forgotten modes** ([legacy-internals.md](legacy-internals.md)):
+
+| # | Mode | Unified home | When |
+|---|---|---|---|
+| 1 | slice-level TX and RX | `MTL_UNIT_ROWS`, `mtl_tx_row_deadline`, `mtl_rx_wait_rows`, `MTL_OPT_RX_ROWS_STEP`, `MTL_OPT_ROWS_LATE` | MS2a |
+| 2 | RTP-level app-built packets, the only route to ST 2022-6 | `MTL_UNIT_PACKETS`, `MTL_RTP` | MS5 |
+| 3 | RX per-pixel-group callback on the tasklet | none: removed (D-112); per-packet conversion covers the conversion use | — |
+| 4 | st20p per-packet conversion (three output formats, DMA off) | `MTL_OPT_RX_CONVERT_PER_PACKET` | B3 (else MS2a) |
+| 5 | derive pipelines (no conversion or codec) | `v.app_format = 0`; cvideo codec bypass | MS1; cvideo MS4b |
+| 6 | ext frames in both TX flavours, two-phase release | attached pools, `mtl_tx_acquire_slot`, results; `mtl_tx_acquire_layout` | MS2b |
+| 7 | split-forward (4K → 4 × 1080p tiles) | pool region + attach + `unit.hold` (ex12) | MS2b |
+| 8 | RX dedicated and dynamic ext frames | `MTL_SESSION_POOL_ATTACHED`, `MTL_SESSION_RX_BY_INDEX`; `mtl_rx_provide` | MS2b |
+| 9 | GPU VRAM RX frames | `mtl_mem_open` with `MTL_MEM_DEVICE` (`-MTL_ENOTSUP` until then) | MS6 |
+| 10 | `DATA_PATH_ONLY`, queue meta (suspected NULL dereference, SP-02) | none: removed (D-112) | — |
+| 11 | exact user pacing, user pacing, normal | `MTL_SUBMIT_EXACT`, `MTL_MEDIA_TAI` + `MTL_SUBMIT_NOT_BEFORE`, `MTL_MEDIA_AUTO` | video: user pacing and normal MS1, exact B3 (else MS2a); ST40 MS6 |
+| 12 | epoch RTP and `rtp_timestamp_delta_us` | the default; `tx.rtp_trim_ns` | MS1; `tx.rtp_trim_ns` MS3 |
+| 13 | `DISABLE_BULK`, `TSC_NARROW`, `STATIC_PAD_P`, `start_vrx`, `pad_interval` | `MTL_OPT_VIDEO_*`, `MTL_OPT_PACING` | MS1 |
+| 14 | two RX threads above 40 Gb/s | `MTL_OPT_RX_THREADS` | B3 (else MS2a) |
+| 15 | header split | none: removed (D-112) | — |
+| 16 | field-as-frame interlace | `MTL_INTERLACED` units | MS1; packet units MS5 |
+| 17 | ST40 split by packet, interlace auto-detect | `MTL_ANCF_NEW_RTP` per entry, `sc.anc.detect` | MS4a2 |
+| 18 | ST30 build pacing, FIFO, RL warm-up | `MTL_OPT_AUDIO_BUILD_PACING`, `MTL_OPT_AUDIO_FIFO_MS`, `MTL_OPT_AUDIO_RL_ACCURACY_NS`, `MTL_OPT_AUDIO_RL_OFFSET_NS` | MS4a |
+| 19 | st22p codec threads | `MTL_OPT_CVIDEO_THREADS` | MS4b |
+| 20 | callback-driven vs polled completion | one push model: results, events, calls with a timeout and queues; no app code on tasklets (D-04) | MS1 (results, calls with a timeout); MS2a (queues); MS3 (events) |
+| 21 | non-RFC 4175 transport and `CUSTOM8` formats | `MTL_*_NONSTD`, `MTL_APP_YUV422_CUSTOM8` | MS1 |
+| 22 | debug knobs in public ops (`SIMULATE_PKT_LOSS`, `st40_tx_test_config`) | `mtl_debug_inject` (`DROP_PKTS`, `DROP_RANDOM`, `TX_MUTATE`) | MS1 entry point; faults per milestone ([implementation-plan.md](implementation-plan.md) §8.3) |
+| 23 | the SysV lcore manager (no MtlManager) | none: the SysV table is removed (D-92, EK6); CPUs come from `MTL_OPT_CPU_ARBITRATION` (`MTL_CPUARB_MANAGER`, `MTL_CPUARB_LOCKS` in `instance.runtime_dir`, or `MTL_CPUARB_NONE`); `mtl_lcore_shm_print` and `_clean` report nothing (U-072) | MS1 (`MTL_OPT_CPU_ARBITRATION`, U-036); EK6 MS3; the two calls leave at the freeze, MS7 |
+
+**Backends** ([legacy-internals.md](legacy-internals.md), [engine.md](engine.md) §1.7;
+`caps.backend`, `enum mtl_backend` in `mtl_observe.h`). The core and the video bindings sit on
+the video engine, which runs on every backend, so no binding is backend-specific; the table says
+which backend a unified job exercises.
+
+| Backend | Today | Unified jobs |
+|---|---|---|
+| DPDK PMD (PCI BDF), VF and PF | RL (ice PF, iavf VF), TSC, TSC_NARROW, TSN (E830 PF), PTP; zero copy if the NIC has multi-seg; flow director or shared RSS; queue-hang recovery only here | MS1 through the bridge: `UnifiedKahawaiTest` `St20p*` and the pytest `st20p` smoke set on `UnifiedRxTxApp`; MS2a: the direct open, the other ST20 ports and the nightly |
+| kernel socket (`kernel:`) | TSC only, single segment, no flow steering, still needs hugepages | MS1: `UnifiedKahawaiTest` `St20p*` on `kernel:lo` ([implementation-plan.md](implementation-plan.md) §5.3); MS2a: the nightly `unified_st20p_kernel_loopback` |
+| native AF_XDP (`native_af_xdp:`) | RL through `tx_maxrate` on ice, else TSC; copies every segment into UMEM | direct open from MS2a; no unified job in MS1–MS2b; the pytest `xdp` group runs on `UnifiedRxTxApp` once its kinds are ported |
+| DPDK AF_XDP, DPDK AF_PACKET | experimental | removed (D-112, U-095) |
+| null (`null:<n>`) | none | new in MS1: the U tier |
+| Windows (NetUIO) | no MtlManager, no kernel socket, no AF_XDP | a compile-only CI job for the headers (G-74) |
+
+**The rest of the inventory, by area** (§2):
+
+| Area | ST20 milestones | Later |
+|---|---|---|
+| instance lifecycle and init parameters | `mtl_instance_open` over `mtl_init` for `null:<n>` and `kernel:`, options the ST20 consumers set, the bridge (MS1); PCI BDFs and `native_af_xdp:` (MS2a) | runtime `mtl_port_open` (NG8; no header symbol; after MS7, on request) |
+| time source and PTP | `time_source` at open, AUTO once (`CLOCK_TAI` if valid, else `SYSTEM_TAI`); built-in PTP as today through the bridge (MS1), on a direct open (MS2a) ([implementation-plan.md](implementation-plan.md) §2.4) | time events (MS3); a lock state that clears, clock steps, PHC and FREERUN with E9 (MS6); `mtl_time_set_reference` (MS2a); AUTO re-evaluation (Phase 7) |
+| schedulers, lcores, threads | `MTL_INSTANCE_TASKLET_THREAD`, `MTL_INSTANCE_TASKLET_SLEEP`, scheduler options (MS1) | lcore borrowing, user tasklets: removed (D-112) |
+| port tuning, ports and backends | the port options RxTxApp and KahawaiTest set (MS1); `mtl_port_get_spec` (A2b, else MS2a) | capacity queries (MS5) |
+| memory, DMA, zero copy | library pools (MS1); RX DMA through `MTL_OPT_DMA` (B3, else MS2a) | `mtl_mem.h` (MS2b for video) |
+| session plumbing | flows and two legs, MAC, NUMA, `sc.ssrc` and `sc.payload_type` (one identity for both legs), `mtl_flow.dscp`, source filter (MS1) | `mtl_session_update` (MS5) |
+| TX timing | video: AUTO, TAI with `NOT_BEFORE` (MS1); `EXACT` (B3, else MS2a); `RTP_TS`, INDEX, start at a TAI or an index, `mtl_tx_get_next` (MS3) | other essences (MS4a, MS6) |
+| completion, notification, blocking | results, calls with a timeout (MS1); queues for event loops (MS2a); events on sessions and on the instance (MS3) | — |
+| ST 2110-22, -30, -40, -41 | — | -30, -40, -41 MS4a; -22 MS4b; start arrays and sample-accurate audio MS6 |
+| RTP passthrough (common to every essence) | — | MS5 |
+| conversion, formats, helpers | st20p conversion by `v.app_format`, `MTL_SUBMIT_SRC_PLANES` (MS1); converter plugins (MS2b) | `mtl_convert` (MS4b) |
+| plugins | — | plugin ABI v2 (MS4b) |
+| stats and observability | ST20 counters (A2b, else MS2a); the stats registry's per-scheduler blocks (MS3) | the `st20_rx_user_stats` fields without a key (U-402) |
+| experimental and legacy remnants | — | removed (D-112) |

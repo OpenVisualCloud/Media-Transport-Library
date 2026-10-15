@@ -3,7 +3,6 @@
 | | |
 |---|---|
 | Status | §1–§7: NMOS and IPMX explained, every feature MTL provides with its API and milestone, the open-source NMOS stacks, the integration and a demo plan. §8–§23: the design of **Phase 7** (after MS7, D-98), declared under `MTL_LATER` until its milestone (D-134). Earlier: `mtl_session_update` in **MS3** (running: MS5), TX sender reports in **MS5**, `MTL_TIME_SOURCE_FREERUN` in **MS6** (§8) |
-| Date | 2026-10-05 |
 | Headers | `mtl.h` (update contract, legs, status), [mtl_ipmx.h](sketch/include/mtl/experimental/mtl_ipmx.h) (RTCP sender reports, PEP), [mtl_sdp.h](sketch/include/mtl/experimental/mtl_sdp.h) (SDP, libmtl_sdp), `mtl_options.h` (113, 201–213, 1000–1039), `mtl_sync.h`, `mtl_format.h`, `mtl_events.h` (events 26–30), `mtl_packet.h` |
 | Reads with | [requirements.md](requirements.md) §6 (N-REQ) and §7 (I-REQ); [standards.md](standards.md) (specification URLs) |
 
@@ -369,43 +368,35 @@ The attribute-by-attribute table is §10.
   `activation_time` the actual instant. MTL switches every leg at the next index boundary, also
   when no unit is in flight, and reports it: `mtl_session_update(s, &sc, MTL_UPDATE_FLOWS |
   MTL_UPDATE_LEGS, NULL, NULL)`, `status.update_state`, `update_seq`, `update_applied_tai_ns`,
-  `MTL_EVENT_UPDATE`. Before MS5: stop, close and re-create the session; on the legacy API the
-  `update_*` calls change it in place (§5.1).
+  `MTL_EVENT_UPDATE`. Before MS5: §5.2.
 - **NM-ACT-SCHED Scheduled activation** (MS5, must). Apply at an absolute TAI time or after a
   delay, for salvos. The 202 reply carries the instant the switch will actually happen, which
   may be a later frame boundary. MTL plans the boundary and reports it at once; a time in the
-  past means now: `struct mtl_when` with `MTL_AT_TAI`, `planned_tai_ns`. Before MS5: create
-  early and `mtl_session_start()` with `MTL_AT_TAI` (MS3), or call MTL from the Node's own timer
-  at the instant (milliseconds late, not on a frame boundary).
+  past means now: `struct mtl_when` with `MTL_AT_TAI`, `planned_tai_ns`. Before MS5: §5.2.
 - **NM-ACT-ATOMIC All legs or none** (MS5, must). One PATCH changes one Sender or Receiver,
   every leg, at one instant; if any `auto` cannot be resolved, `/active` must not change. MTL
   reserves everything before it commits; `MTL_UPDATE_STATE_FAILED` keeps the old configuration.
 - **NM-ACT-CANCEL Cancel a scheduled activation** (P7, must). A PATCH with `activation.mode =
   null` cancels a pending activation and unlocks the resource. MTL drops the pending update or
   says it is too late: `mtl_session_update(s, NULL, 0, NULL, NULL)` returns 0 (cancelled), 1 (none
-  pending) or `-MTL_EBUSY` (`UPDATE_COMMITTING`). Before 7 the Node holds scheduled activations
-  in its own timer, which loses the exact boundary; proposal NX-3 moves cancel to MS5.
+  pending) or `-MTL_EBUSY` (`UPDATE_COMMITTING`). Before 7, and with NX-3: §5.2.
 - **NM-ACT-REAPPLY Re-activation** (P7, should). An activation with unchanged parameters still
   re-applies them, and IS-05 suggests a leave and join for multicast. MTL re-sends the IGMP
   reports and re-arms its rules without a leave (a leave on both 2022-7 legs at once is a
-  certain hit); TX resolves the neighbour again: `MTL_UPDATE_REAPPLY`. Proposal NX-3 moves it to
-  MS5.
+  certain hit); TX resolves the neighbour again: `MTL_UPDATE_REAPPLY`. With NX-3: §5.2.
 - **NM-ACT-LEG Per-leg enable** (MS5, should). `rtp_enabled` per leg turns one ST 2022-7 path
   on or off: bit i of `legs_disabled` = !(`master_enable` && `rtp_enabled[i]`), with
   `MTL_UPDATE_LEGS`.
 - **NM-ACT-MASTER `master_enable`** (P7, must). Turns the whole Sender or Receiver on or off,
   immediately or scheduled; IS-04 `subscription.active` follows it. MTL stops sending (TX) or
   leaves the groups (RX) at the boundary without tearing the session down: every leg's bit in
-  `legs_disabled` = muted, `MTL_STATUS_MUTED`, `tx.units_muted`. Before 7: `mtl_session_stop()`
-  and `mtl_session_start()` (MS1). Proposal NX-3 moves mute to MS5.
+  `legs_disabled` = muted, `MTL_STATUS_MUTED`, `tx.units_muted`. Before 7, and with NX-3: §5.2.
 - **NM-ACT-IDLE Exist before any connection** (P7, must). Senders and Receivers are published at
   boot, before any address is known. MTL holds a running session with no address yet: a
   **reserved leg** (its `legs_disabled` bit set, its `mtl_flow` all zero), enabled later with
-  `MTL_UPDATE_FLOWS | MTL_UPDATE_LEGS`. Before 7: create the session at the first activation and
-  close it on `master_enable = false`. Proposal NX-3 moves reserved legs to MS5.
+  `MTL_UPDATE_FLOWS | MTL_UPDATE_LEGS`. Before 7, and with NX-3: §5.2.
 - **NM-ACT-DRYRUN Validate staged parameters** (P7, should). A PATCH that does not activate
-  should still be rejected (400) if the values cannot work: `MTL_UPDATE_DRY_RUN`;
-  `mtl_session_query()` (MS1) checks a whole configuration meanwhile.
+  should still be rejected (400) if the values cannot work: `MTL_UPDATE_DRY_RUN`. Before 7: §5.2.
 - **NM-ACT-MEDIA New format at an activation** (MS5, should). A new SDP with another format, or
   an IS-11 constraint on a Sender. `MTL_UPDATE_MEDIA` in CREATED or STOPPED; colorimetry, TCS and
   range also while running (P7); a scheduled RX format change is the A/B swap of two sessions
@@ -735,24 +726,26 @@ with care [verified in `lib/`; effort I]:
 
 ### 5.2 On the unified API
 
-Before MS3 the unified API is a step back for an NMOS Node: every activation is a stop, close
-and create (close the old session and wait until its close returns 0, since a create with a
-live name is `-MTL_EEXIST`; or create the new one first under another name, `<uuid>.b`), where
-the legacy `update_*` calls change a running session. From MS3 an activation is stop,
-`mtl_session_update` and start (§11.5): the session keeps its handle, name, SSRC and counters,
-and a scheduled one starts at `MTL_AT_TAI`; the stream pauses from the stop to the start until
-MS5 updates a running session at the index boundary. A Node that must switch without a pause
-before MS5 stays on the legacy API.
+Before MS3 the unified API is a step back for an NMOS Node: every activation is a stop, close and
+create, where the legacy `update_*` calls change a running session. Re-creating follows the name
+rule: close the old session and wait until its close returns 0, since a create with a live name is
+`-MTL_EEXIST`; or create the new one first under another name, `<uuid>.b`. A Node that must switch
+without a pause before MS5 stays on the legacy API. Need by need (NX-3 is a proposal of §6):
 
-| Milestone | What a Node gains |
-|---|---|
-| MS1 | sessions with `sc.name`, granted values in `mtl_session_info`, DSCP for video, stop and start: a Node works with create-on-activation and the name rule above |
-| MS2 | `mtl_port_get_spec()` (the MAC with NX-3), `mtl_time_set_reference()` for ptp4l, stats for BCP-008 |
-| MS3 | events, `MTL_AT_TAI` starts, format detection; `mtl_session_update` in CREATED and STOPPED: stop, update, start keeps the session |
-| MS4 | audio, ANC, JPEG XS, any raster |
-| MS5 | `mtl_session_update()` while running: exact immediate and scheduled activations, per-leg enable, no ARP wait; sender reports with the library's Info Block; the link monitor; with NX-3 also mute, reserved legs, cancel and re-apply, which leaves only dry runs and port changes for Phase 7 |
-| MS6 | the free-running clock, the PHC time source and a PTP lock state that clears (E9), the link offset |
-| Phase 7 | the rest of IPMX: profile, IGMPv2, `mediaclk:sender` on RX, the application's Info Block entries, PEP, SDP helpers |
+| A Node needs | Legacy API (§5.1) | MS1–MS2 | MS3–MS4 | MS5–MS6 | Phase 7 |
+|---|---|---|---|---|---|
+| immediate activation (NM-ACT-NOW) | the `update_*` calls change the running session in place | stop, close and create, with the name rule | stop, `mtl_session_update`, start (§11.5): the session keeps its handle, name, SSRC and counters; the stream pauses from the stop to the start | `mtl_session_update()` while running: exact, at the index boundary, without the stop | |
+| scheduled activation (NM-ACT-SCHED) | cannot be scheduled | the Node's own timer calls MTL at the instant: milliseconds late, not on a frame boundary | the start at `MTL_AT_TAI` (after stop and update, or of a session created early), or the Node's timer | exact, at the index boundary | |
+| the update and its report: atomic `mtl_session_update` (today's `update_destination` / `update_source`), `planned_tai_ns`, `status.update_*`, `MTL_EVENT_UPDATE`, the switch at the index boundary by the clock, a past instant means now | | | in CREATED and STOPPED (MS3) | while running (MS5); it replaces an existing call, and the contract costs nothing extra once the update is atomic | |
+| per-leg enable (NM-ACT-LEG: `legs_disabled`, `MTL_UPDATE_LEGS`) | send the leg to an unused group | | | MS5 (today's redundancy legs) | |
+| `master_enable` (NM-ACT-MASTER) | TX: stop handing frames over; RX: free the session | `mtl_session_stop()` and `mtl_session_start()` (MS1) | as MS1–MS2 | as MS1–MS2; with NX-3, mute (every leg disabled) | mute (every leg disabled) |
+| exist before any connection (NM-ACT-IDLE) | create the Receiver at its first activation | create the session at the first activation and close it on `master_enable = false` | as MS1–MS2 | as MS1–MS2; with NX-3, reserved legs | reserved legs |
+| cancel a scheduled activation (NM-ACT-CANCEL) | | the Node holds scheduled activations in its own timer, which loses the exact boundary | as MS1–MS2 | as MS1–MS2; with NX-3, cancel | cancel |
+| re-activation (NM-ACT-REAPPLY) | | | | with NX-3, `MTL_UPDATE_REAPPLY` | `MTL_UPDATE_REAPPLY` |
+| dry run (NM-ACT-DRYRUN) | | `mtl_session_query()` (MS1) checks a whole configuration | as MS1–MS2 | as MS1–MS2 | `MTL_UPDATE_DRY_RUN` |
+| port changes while running, R options at the boundary, `rx.join_lead_ns` | | | | | all three |
+| other gains, MS1–MS4 | | MS1: sessions with `sc.name`, granted values in `mtl_session_info`, DSCP for video, stop and start; MS2: `mtl_port_get_spec()` (the MAC with NX-3), `mtl_time_set_reference()` for ptp4l, stats for BCP-008 | MS3: events, `MTL_AT_TAI` starts, format detection; MS4: audio, ANC, JPEG XS, any raster | | |
+| other gains, MS5 on | | | | MS5: no ARP wait, sender reports with the library's Info Block, the link monitor; MS6: the free-running clock, the PHC time source and a PTP lock state that clears (E9), the link offset | the rest of IPMX: profile, IGMPv2, `mediaclk:sender` on RX, the application's Info Block entries, PEP, SDP helpers |
 
 ### 5.3 Effort
 
@@ -914,9 +907,7 @@ the optional parts.
 
 | Item | When | Notes |
 |---|---|---|
-| atomic `mtl_session_update` (today's `update_destination` / `update_source`), `planned_tai_ns`, `status.update_*`, `MTL_EVENT_UPDATE`, the switch at the index boundary by the clock, a past instant means now | **MS5** (CREATED and STOPPED: **MS3**) | it replaces an existing call; the contract costs nothing extra once the update is atomic |
-| per-leg enable and disable (`legs_disabled`, `MTL_UPDATE_LEGS`) | **MS5** | today's redundancy legs |
-| the rest of the NMOS contract: `MTL_UPDATE_REAPPLY`, `MTL_UPDATE_DRY_RUN`, cancel, mute (every leg disabled), reserved legs, port changes while running, R options at the boundary, `rx.join_lead_ns` | 7 | an NMOS Node can be built on MS3 with stop, update and start, and on MS5 without the stop (§11.5) |
+| updating a session: atomic `mtl_session_update`, per-leg enable, the rest of the NMOS activation contract (`MTL_UPDATE_REAPPLY`, `MTL_UPDATE_DRY_RUN`, cancel, mute, reserved legs, port changes while running, R options at the boundary, `rx.join_lead_ns`) | **MS3**, **MS5**, 7 | per need and milestone: §5.2 |
 | `mtl_flow.dscp` into the IP TOS of every leg | **MS1** video, **MS4** the other essences | with the bindings; the IPMX profile's DSCP defaults and `MTL_FLOWF_DSCP_LITERAL` are 7 |
 | any raster and frame rate (the engine's rate table becomes rationals) | **MS2a** video, **MS4** the other essences | until then a rate outside the legacy table is `-MTL_ENOTSUP` (GI-7) |
 | `mtl_time_set_reference()` and `time.phc_trust` | **MS2** | the pod time rules need them: the application tells MTL the node lost its grandmaster ([deployment.md](deployment.md)) |
@@ -1043,33 +1034,10 @@ MTL_UPDATE_LEGS`, and `MTL_UPDATE_REAPPLY` from Phase 7 (C-N1). [ex18](sketch/ex
 keeps the Node's own copy of the session's configuration, copies only what IS-05 changed, updates,
 and reads `status.update_seq` to match the later event; the picture of one PATCH as one update, with
 its planned and applied instants, is in
-[examples.md §20](examples.md#20-an-nmos-node-is-04-interfaces-is-05-activation). The `mtl.h`
-comment is normative:
-
-- **All or nothing.** Resources are reserved before commit. The update reads only the members its
-  `parts` name, and `sc->options`; the rest of `sc` is ignored. `direction`, `essence` and `unit`
-  never change.
-- **Options in the update.** Keys in `sc->options` that may change while running (R) apply at the
-  same boundary (Phase 7). Any other key there must equal its current value (`-MTL_EBUSY`,
-  `OPTION_STATE`).
-- **Neighbours are not awaited.** Resolution starts at commit; a leg without one waits in
-  `MTL_FLOW_WAITING_NEIGHBOUR` and the update still applies (the IS-05 suite activates to 192.0.2.1).
-- **The switch is by the clock.** It happens at the index boundary whether a unit is there or not. TX
-  switches at the first index at or after `when`. RX switches for units whose media time is at or
-  after it. For SENDER or unlocked clocks RX classifies packets by local arrival time. Audio
-  switches at a packet boundary, so a salvo lands within one packet time. An idle or muted session
-  still reaches APPLIED.
-- **Times.** NULL `when` is now. An `AT_TAI` or `AT_INDEX` already past means now (G-N25). In ARMED,
-  a `when` before T0 means T0. In CREATED and STOPPED the update applies during the call, and
-  planned = applied = now.
-- **Result.** The call returns once posted; `planned_tai_ns` gets the media time of the boundary.
-  `status.update_state`, `update_reason`, `update_seq`, `update_applied_tai_ns` (INT64_MIN until
-  then) and `MTL_EVENT_UPDATE` (new = state, value[0] = applied TAI, value[1] = seq) report it.
-- **States.** `MTL_UPDATE_STATE_` NONE, PENDING, APPLIED, FAILED (the old configuration stays);
-  REPLACED and CANCELLED are Phase 7 (`MTL_LATER`). `update_seq` counts posted updates, not dry
-  runs or cancels; the Node serialises the updates of one session and reads the seq after the
-  call. A pending update fails
-  with `TIME_STEP` if the time base steps, and the Node re-schedules it.
+[examples.md §20](examples.md#20-an-nmos-node-is-04-interfaces-is-05-activation). What the update
+does (all or nothing, options, neighbours, the switch by the clock, times, result and states) is
+[contract.md §4.7](contract.md#47-update); the `mtl.h` comment is normative. A pending update that fails with `TIME_STEP`
+because the time base stepped is the Node's to re-schedule.
 
 What IS-05 itself requires, and how the contract meets it:
 
@@ -1509,43 +1477,26 @@ R5 says what a time is: ns on the instance clock, TAI while the time base is loc
 `MTL_TIMEF_ESTIMATED` when not, `MTL_UNITF_SENDER_TIME` for an RX value on another device's clock
 (C-I1). Time sources in general: [timing.md](timing.md); which time source, media mode and
 `min_tx_delay_ns` each IPMX case uses (playout with or without PTP, genlocked capture, HDMI capture, inline
-processor), and why SENDER mode exists: [timing.md](timing.md) §13.
+processor), and why SENDER mode exists:
+[timing.md §13](timing.md#13-timing-without-ptp-phase-7-later). That section also holds the pieces
+(`MTL_TIME_SOURCE_FREERUN`, `time.freerun_slew_ppm`, `time.fallback`, `MTL_MEDIA_SENDER`,
+`MTL_SUBMIT_SENDER_TIME`), AUTO at runtime and the rules of SENDER mode (RTP, k, launch, late
+policy). What they mean for an IPMX device:
 
-| Piece | Design |
-|---|---|
-| a clock that runs free without stepping | `MTL_TIME_SOURCE_FREERUN` (MS6, with the published time base, E9): seeded once from `CLOCK_REALTIME` plus the UTC offset, then runs on the TSC or an undisciplined PHC, never stepped, ESTIMATED. Its time state is `MTL_TIME_FREERUN`, which health counts as ready. `SYSTEM_TAI` follows NTP steps and stays for other uses |
-| staying close to the controller's clock | `time.freerun_slew_ppm` (2230, R): FREERUN follows `CLOCK_TAI` by frequency only, bounded, never stepping; 0 = never. A 10 ppm crystal drifts about 0.86 s a day **[inferred]**, past the 0.1 s the IS-05 test suite allows for absolute activations. A Node can also convert IS-05 times with `mtl_time_convert()` |
-| switching between free run and PTP while running | AUTO re-evaluated while running (below); `time.fallback` (2208: HOLDOVER or FREERUN, default FREERUN) |
-| async sources | `MTL_MEDIA_SENDER`: RTP follows the source, the one exception to D-09's RTP = floor(M × rate) (C-I2) |
-| inline processors keeping the input's timing (TR-10-1 §9, a MUST) | `MTL_SUBMIT_SENDER_TIME`: RTP and the report's NTP come from the received unit (`unit.rtp`, `unit.media_tai_ns` with SENDER_TIME); launch = submit + `min_tx_delay_ns` on the instance clock, so the upstream clock never sets a launch time |
-
-**AUTO at runtime.** AUTO picks a disciplined NIC PHC, else `CLOCK_TAI`, else FREERUN, and moves to
-a better source when one appears. The step posts `MTL_EVENT_TIME_STATE` and `MTL_EVENT_TIME_STEP`,
-and the Info Block's ts-refclk changes from `localmac=` to `ptp=`. When the source is lost, AUTO
-holds over and then, by `time.fallback`, runs free without a step. A step keeps every media time
-(`mtl_sync.h`); pending updates fail with `TIME_STEP`. When AUTO locks to a new
-grandmaster the internal clock steps: SENDER sessions keep their RTP (it follows the source) and
-their report NTP values jump; INDEX and AUTO sessions on the epoch move their RTP to the PTP grid, which receivers see as a discontinuity. The Info Block version increments and
-`MTL_EVENT_RTCP_INFO` tells the application to update SDP and NMOS (TR-10-9 §12, PQCR §4.1.1). In a pod AUTO's order ends in
-FREERUN, so a pod without PTP is an IPMX sender with `localmac=`, not an error.
-
-**SENDER mode** (`mtl.h`, `enum mtl_media_mode`). `unit.media_tai_ns` is the source's own sampling
-instant, read on the instance clock and never snapped:
-
-- RTP = RTP0 + floor(k × period × rate). RTP0 = floor(M0 × rate) at the first unit, or after
-  `MTL_SUBMIT_DISCONTINUITY`, which re-anchors it.
-- k advances by max(1, round((M − M_prev) / period)) per unit. A missed VSYNC skips one period, and
-  drift does not build up as it would with round((M − M0) / period). A result's `media_index` is k.
-- Launch = M + `min_tx_delay_ns` on the nominal-period schedule. A unit that would overlap the
-  previous one is DROPPED (`WOULD_OVERLAP`).
-- The sender report carries M. `MTL_INFO_MEDIACLK_SENDER` is set in the session info.
-- `MTL_AT_INDEX`, `RX_BY_INDEX` and `tx.precede` targets are `-MTL_EINVAL` on such a session,
-  because its indices are not on a grid.
+- A free-running clock drifts past the 0.1 s the IS-05 test suite allows for absolute activations
+  (a 10 ppm crystal: about 0.86 s a day **[inferred]**); FREERUN follows `CLOCK_TAI` by frequency
+  only with `time.freerun_slew_ppm`, and a Node can also convert IS-05 times with
+  `mtl_time_convert()`.
+- When AUTO steps from free run to PTP, the Info Block's ts-refclk changes from `localmac=` to
+  `ptp=`. When AUTO locks to a new grandmaster, the Info Block version increments and
+  `MTL_EVENT_RTCP_INFO` tells the application to update SDP and NMOS (TR-10-9 §12, PQCR §4.1.1).
+- In a pod AUTO's order ends in FREERUN, so a pod without PTP is an IPMX sender with `localmac=`,
+  not an error.
+- A SENDER session's sender report carries M, and `MTL_INFO_MEDIACLK_SENDER` is set in the session
+  info.
 - An inline processor (`MTL_SUBMIT_SENDER_TIME`) also copies the input's ts-refclk and mediaclk into
   its own Info Block with `MTL_RTCP_REFCLK_APP` and `MTL_RTCP_MEDIACLK_APP`, so the output report keeps
   the input's time domain (TR-10-1 §9).
-- Late policy: SEND_LATE within `tx.late_tolerance_ns` by default, then DROP (`WOULD_OVERLAP`)
-  (key 100, `tx.late_policy`).
 
 Without this mode, an async source at +50 ppm on a 59.94 session would drop a frame every 5.6
 minutes under NEAREST snapping. NEAREST stays the default for sync sources (C-I3).
@@ -1721,7 +1672,7 @@ also uses packet units, because frame units deliver ciphertext pixels and no ext
 | G-N9 join lead | adopted | `rx.join_lead_ns` | 7 |
 | G-N10 colorimetry, TCS, range | adopted; zero is the standard's default; colorimetry always rendered | `mtl.h`, `mtl_format.h` | 7 |
 | G-N11 time metadata | adopted | `mtl_time_set_reference()` (MS2, for pods), `time.gm_*` | MS2; 7 |
-| G-N12 grandmaster change | adopted | `MTL_EVENT_GRANDMASTER` (27) | 7 |
+| G-N12 grandmaster change | adopted | `MTL_EVENT_GRANDMASTER` (27) | MS3; 7 |
 | G-N13 MAC, port count | adopted | `mtl_port_spec.mac`, `instance.port_count` | 7 |
 | G-N14 LLDP | **deferred**: `chassis_id = null` is allowed; topology tools read the switch | — | later |
 | G-N15 bit rate, sizes | adopted | `info.*` keys | 7 |
