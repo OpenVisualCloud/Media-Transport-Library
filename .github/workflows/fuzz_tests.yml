@@ -87,7 +87,7 @@ jobs:
           key: fuzz-corpus-${{ github.run_id }}
           restore-keys: fuzz-corpus-
 
-      - name: Build the fuzz targets with clang and ASan
+      - name: Build the fuzz targets with clang, ASan and UBSan
         run: task ci:fuzz -- build
 
       - name: Run each fuzz target for FUZZ_TIME seconds
