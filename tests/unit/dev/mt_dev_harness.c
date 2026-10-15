@@ -840,7 +840,13 @@ struct rte_mempool* ut_dev_tx_sys_pool(ut_dev_ctx* ctx) {
 int ut_dev_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue) {
   ut_active_ctx = ctx;
   return mt_dpdk_flush_tx_queue(&ctx->impl, &ctx->tx_queues[queue],
-                                ctx->impl.inf[MTL_PORT_P].pad);
+                                ctx->impl.inf[MTL_PORT_P].pad, true);
+}
+
+int ut_dev_recovery_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue) {
+  ut_active_ctx = ctx;
+  return mt_dpdk_flush_tx_queue(&ctx->impl, &ctx->tx_queues[queue],
+                                ctx->impl.inf[MTL_PORT_P].pad, false);
 }
 
 int ut_dev_tx_done_cleanup(ut_dev_ctx* ctx, uint16_t queue) {

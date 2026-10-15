@@ -314,6 +314,29 @@ const char* ut_txv_stat_first_log_line(void);
 void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames);
 uint64_t ut_txv_stat_snapshot_port_frames(const ut_txv_ctx* ctx);
 
+/* st20_tx_queue_fatal_error() of a session on num_port legs, leg i on physical port i,
+ * each on a queue entry of its own; mt_txq_get() swaps it for the leg's other one. The
+ * session pools are the port's tx mono pool, so recovery replaces them without DPDK. Its
+ * one frame is still referenced by pkts on their way. */
+int ut_txv_recovery_setup(ut_txv_ctx* ctx, int num_port);
+int ut_txv_recovery_frame_refcnt(const ut_txv_ctx* ctx);
+/* the session ended unrecoverable */
+bool ut_txv_recovery_session_dead(const ut_txv_ctx* ctx);
+/* the ST_EVENT_FATAL_ERROR and ST_EVENT_RECOVERY_ERROR notify_event got */
+int ut_txv_recovery_fatal_events(const ut_txv_ctx* ctx);
+int ut_txv_recovery_recovered_events(const ut_txv_ctx* ctx);
+/* what mt_txq_recovery_flush() of a queue of leg returns, 0 unless set */
+void ut_txv_recovery_set_flush_ret(ut_txv_ctx* ctx, int leg, int ret);
+/* st20_tx_queue_fatal_error() of leg */
+int ut_txv_recover(ut_txv_ctx* ctx, int leg);
+/* warnings the recoveries logged */
+int ut_txv_recovery_warns(const ut_txv_ctx* ctx);
+/* mt_txq_recovery_flush() calls on the queues of leg */
+int ut_txv_recovery_flushes(const ut_txv_ctx* ctx, int leg);
+/* mt_txq_flush() calls on the leg, which may fall back to the per-pad loop */
+int ut_txv_recovery_fallback_flushes(const ut_txv_ctx* ctx, int leg);
+int ut_txv_recovery_done_cleanups(const ut_txv_ctx* ctx, int leg);
+
 #ifdef __cplusplus
 }
 #endif

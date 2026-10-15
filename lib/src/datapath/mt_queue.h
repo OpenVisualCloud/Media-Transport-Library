@@ -61,6 +61,9 @@ uint16_t mt_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
 uint16_t mt_txq_burst_busy(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
                            uint16_t nb_pkts, int timeout_ms);
 int mt_txq_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad);
+/* mt_txq_flush() for a TX recovery in the tasklet: -ENOMEM where the eager flush has no
+ * mbuf for its mark, rather than the per-pad loop */
+int mt_txq_recovery_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad);
 int mt_txq_put(struct mt_txq_entry* entry);
 int mt_txq_fatal_error(struct mt_txq_entry* entry);
 int mt_txq_done_cleanup(struct mt_txq_entry* entry);

@@ -86,9 +86,9 @@ int mt_dev_tx_queue_fatal_error(struct mtl_main_impl* impl, struct mt_tx_queue* 
 int mt_dev_set_tx_bps(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
                       uint64_t bytes_per_sec);
 /* frees what the queue holds; on a reclaim port bounded, -EBUSY if it did not drain in
- * time, and with no mbuf for its mark the per-pad loop */
+ * time, and with no mbuf for its mark the per-pad loop if lazy_fallback, else -ENOMEM */
 int mt_dpdk_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
-                           struct rte_mbuf* pad);
+                           struct rte_mbuf* pad, bool lazy_fallback);
 int mt_dev_tx_done_cleanup(struct mtl_main_impl* impl, struct mt_tx_queue* queue);
 static inline uint16_t mt_dpdk_tx_burst(struct mt_tx_queue* queue,
                                         struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
