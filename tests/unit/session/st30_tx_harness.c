@@ -239,6 +239,46 @@ out:
   return ret;
 }
 
+int ut_txa30_build_chain_r_dry(ut_txa30_ctx* ctx, unsigned int* pool_in_use) {
+  static unsigned int test_idx;
+  struct st_tx_audio_session_impl* s = &ctx->session;
+  char pool_name[RTE_MEMPOOL_NAMESIZE];
+  struct rte_mempool* pool;
+  int ret = -ENOMEM;
+
+  (void)snprintf(pool_name, sizeof(pool_name), "ut_txa30_dry_%u", test_idx++);
+  /* P header and payload take both mbufs, so the R header alloc fails */
+  pool = rte_pktmbuf_pool_create(pool_name, 2, 0, sizeof(struct mt_muf_priv_data),
+                                 RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
+  s->trans_ring[MTL_SESSION_PORT_P] = mt_u64_fifo_init(32, (int)rte_socket_id());
+  if (pool && s->trans_ring[MTL_SESSION_PORT_P]) {
+    s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] = pool;
+    s->mbuf_mempool_hdr[MTL_SESSION_PORT_R] = pool;
+    s->mbuf_mempool_chain = pool;
+    s->trans_ring_thresh = 32;
+    ctx->frame.addr = ctx->frame_data;
+    s->st30_frames = &ctx->frame;
+    s->st30_frames_cnt = 1;
+    s->st30_total_pkts = 1;
+    s->pkt_len = 1;
+    s->ops.num_port = 2;
+    tx_audio_session_tasklet_frame(&ctx->impl, s);
+    *pool_in_use = rte_mempool_in_use_count(pool);
+    ret = 0;
+  }
+
+  if (s->trans_ring[MTL_SESSION_PORT_P]) {
+    (void)mt_u64_fifo_uinit(s->trans_ring[MTL_SESSION_PORT_P]);
+    s->trans_ring[MTL_SESSION_PORT_P] = NULL;
+  }
+  rte_mempool_free(pool);
+  s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] = NULL;
+  s->mbuf_mempool_hdr[MTL_SESSION_PORT_R] = NULL;
+  s->mbuf_mempool_chain = NULL;
+  s->st30_frames = NULL;
+  return ret;
+}
+
 /* ── accessors ─────────────────────────────────────────────────────────── */
 
 uint64_t ut_txa30_stat_error_user_timestamp(const ut_txa30_ctx* ctx) {

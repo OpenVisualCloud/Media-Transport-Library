@@ -1148,8 +1148,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
       if (!pkt_r) {
         err("%s(%d), rte_pktmbuf_alloc fail\n", __func__, idx);
         s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
-        rte_pktmbuf_free(pkt);
-        rte_pktmbuf_free(pkt_rtp);
+        rte_pktmbuf_free(pkt); /* and pkt_rtp, chained to it */
         return MTL_TASKLET_ALL_DONE;
       }
       tx_ancillary_session_build_packet_chain(impl, s, pkt_r, pkt_rtp,

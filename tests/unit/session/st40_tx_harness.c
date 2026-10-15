@@ -302,7 +302,33 @@ void ut_txa_cleanup_frame_tasklet(ut_txa_ctx* ctx) {
     rte_mempool_free(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
     s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] = NULL;
   }
+  s->mbuf_mempool_chain = NULL;
+  s->mbuf_mempool_hdr[MTL_SESSION_PORT_R] = NULL;
   s->st40_frames = NULL;
+}
+
+int ut_txa_set_chain_r_dry(ut_txa_ctx* ctx) {
+  static unsigned int test_idx;
+  struct st_tx_ancillary_session_impl* s = &ctx->session;
+  char pool_name[RTE_MEMPOOL_NAMESIZE];
+  struct rte_mempool* pool;
+
+  (void)snprintf(pool_name, sizeof(pool_name), "ut_txa_dry_%u", test_idx++);
+  /* P header and payload take both mbufs, so the R header alloc fails */
+  pool = rte_pktmbuf_pool_create(pool_name, 2, 0, sizeof(struct mt_muf_priv_data),
+                                 RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
+  if (!pool) return -ENOMEM;
+  rte_mempool_free(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
+  s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] = pool;
+  s->mbuf_mempool_hdr[MTL_SESSION_PORT_R] = pool;
+  s->mbuf_mempool_chain = pool;
+  s->tx_no_chain = false;
+  s->ops.num_port = 2;
+  return 0;
+}
+
+unsigned int ut_txa_chain_pool_in_use(const ut_txa_ctx* ctx) {
+  return rte_mempool_in_use_count(ctx->session.mbuf_mempool_chain);
 }
 
 int ut_txa_run_frame_tasklet(ut_txa_ctx* ctx, enum st10_timestamp_fmt tfmt,

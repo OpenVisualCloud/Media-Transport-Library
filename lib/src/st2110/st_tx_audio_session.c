@@ -862,8 +862,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
       pkt_r = rte_pktmbuf_alloc(hdr_pool_r);
       if (!pkt_r) {
         err("%s(%d), rte_pktmbuf_alloc redundant fail\n", __func__, idx);
-        rte_pktmbuf_free(pkt);
-        rte_pktmbuf_free(pkt_rtp);
+        rte_pktmbuf_free(pkt); /* and pkt_rtp, chained to it */
         s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
         return MTL_TASKLET_ALL_DONE;
       }
