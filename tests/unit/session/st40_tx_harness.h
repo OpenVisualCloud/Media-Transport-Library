@@ -42,6 +42,9 @@ int ut_txa_prepare_frame_tasklet(ut_txa_ctx* ctx, enum st10_timestamp_fmt tfmt,
 int ut_txa_prepare_rtp_tasklet(ut_txa_ctx* ctx);
 /* Queue an app RTP packet as st40_tx_put_mbuf() does without chain. */
 int ut_txa_put_app_rtp(ut_txa_ctx* ctx, const uint8_t* rtp, uint16_t len);
+/* After prepare_frame_tasklet(): chained, two ports, R header alloc fails. */
+int ut_txa_set_chain_r_dry(ut_txa_ctx* ctx);
+unsigned int ut_txa_chain_pool_in_use(const ut_txa_ctx* ctx);
 int ut_txa_step_frame_tasklet(ut_txa_ctx* ctx);
 unsigned int ut_txa_queued_packets(const ut_txa_ctx* ctx);
 /* get_next_frame hands out frame 0 this many times; 1 after create. */

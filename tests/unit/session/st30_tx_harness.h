@@ -63,6 +63,10 @@ void ut_txa30_set_mock_tsc_time(ut_txa30_ctx* ctx, uint64_t tsc_ns);
 int ut_txa30_run_frame_tasklet(ut_txa30_ctx* ctx, enum st10_timestamp_fmt tfmt,
                                uint64_t timestamp, int total_pkts);
 
+/* One frame-tasklet build of a chained two-port session whose R header alloc fails,
+ * reporting the mbufs its pool still has in use. Returns 0 on success. */
+int ut_txa30_build_chain_r_dry(ut_txa30_ctx* ctx, unsigned int* pool_in_use);
+
 /* ── accessors ─────────────────────────────────────────────────────────── */
 uint64_t ut_txa30_stat_error_user_timestamp(const ut_txa30_ctx* ctx);
 int ut_txa30_notify_frame_done_calls(const ut_txa30_ctx* ctx);
