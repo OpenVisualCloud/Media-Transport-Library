@@ -1071,7 +1071,6 @@ static int tv_build_st20_redundant(struct st_tx_video_session_impl* s,
                                    struct rte_mbuf* pkt_r,
                                    const struct rte_mbuf* pkt_base) {
   struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt_r, struct mt_udp_hdr*);
-  struct mt_udp_hdr* hdr_base = rte_pktmbuf_mtod(pkt_base, struct mt_udp_hdr*);
   struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
   struct rte_udp_hdr* udp = &hdr->udp;
 
@@ -1093,7 +1092,7 @@ static int tv_build_st20_redundant(struct st_tx_video_session_impl* s,
   }
 
   /* copy rtp and payload, assume it's only one segment  */
-  size_t hdr_sz = sizeof(*hdr_base);
+  size_t hdr_sz = sizeof(struct mt_udp_hdr);
   void* pd_base = rte_pktmbuf_mtod_offset(pkt_base, void*, hdr_sz);
   void* pd_r = rte_pktmbuf_mtod_offset(pkt_r, void*, hdr_sz);
   size_t pd_len = pkt_base->pkt_len - hdr_sz;
@@ -2218,6 +2217,8 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
   struct rte_ring* ring_p = s->ring[MTL_SESSION_PORT_P];
   struct rte_ring* ring_r = NULL;
 
+  // codechecker_intentional [deadcode.DeadStores] this ret is read only by dbg(), which
+  // is empty unless DEBUG is defined
   ret = -1;
 
   if (rte_ring_full(ring_p)) {

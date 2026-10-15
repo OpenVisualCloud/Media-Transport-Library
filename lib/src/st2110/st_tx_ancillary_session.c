@@ -382,7 +382,6 @@ static inline uint64_t tx_ancillary_calc_epoch(struct st_tx_ancillary_session_im
 
   if (pacing->cur_epochs == UINT64_MAX) return current_epoch;
   next_free_epoch = pacing->cur_epochs + 1;
-  epoch = next_free_epoch;
 
   if (current_epoch <= next_free_epoch) {
     uint64_t onward = next_free_epoch - current_epoch;

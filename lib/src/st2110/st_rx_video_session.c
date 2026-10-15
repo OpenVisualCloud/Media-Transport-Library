@@ -2119,6 +2119,8 @@ static int rv_parse_st22_boxes(struct st_rx_video_session_impl* s, void* boxes,
         dbg("%s(%d): err colr_len %u, left %u\n", __func__, s->idx, colr_len, left);
         return -EIO;
       }
+      // codechecker_intentional [deadcode.DeadStores] read only by the #if 0 box dump
+      // below; the caller skips the boxes by st22_box_hdr_length
       boxes += colr_len;
     }
   }
@@ -2852,9 +2854,7 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
   line1_number &= ~ST20_SECOND_FIELD;
   struct st20_rfc4175_extra_rtp_hdr* extra_rtp = NULL;
   if (line1_offset & ST20_SRD_OFFSET_CONTINUATION) {
-    line1_offset &= ~ST20_SRD_OFFSET_CONTINUATION;
     extra_rtp = payload;
-    payload += sizeof(*extra_rtp);
   }
   uint32_t payload_length = ntohs(rtp->row_length);
   if (extra_rtp) payload_length += ntohs(extra_rtp->row_length);
@@ -3756,6 +3756,8 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
                          " slices %" PRIu64, slices_received);
     }
     if (pkts_redundant) {
+      // codechecker_intentional [deadcode.DeadStores] offset stays the length of
+      // extra_info, and cert-err33-c wants the snprintf() result used
       offset +=
           snprintf(extra_info + offset, sizeof(extra_info) - offset,
                    "%sredundant %" PRIu64, slices_received ? " + " : " ", pkts_redundant);

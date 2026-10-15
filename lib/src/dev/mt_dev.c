@@ -932,6 +932,11 @@ static int dev_config_rss_reta(struct mt_interface* inf) {
   struct rte_eth_rss_reta_entry64 entries[reta_group_size];
   int ret;
 
+  if (!inf->nb_rx_q) {
+    err("%s(%d), no rx queue for rss reta\n", __func__, port);
+    return -EINVAL;
+  }
+
   memset(entries, 0, sizeof(entries));
   for (int i = 0; i < reta_group_size; i++) {
     entries[i].mask = UINT64_MAX;

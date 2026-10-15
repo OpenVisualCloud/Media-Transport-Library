@@ -566,6 +566,9 @@ static struct rte_mbuf* rx_socket_recv_mbuf(struct mt_rx_socket_thread* t) {
   pkt->pkt_len = len + sizeof(*hdr);
   pkt->data_len = pkt->pkt_len;
   udp->dgram_len = htons(len + sizeof(*udp));
+  // codechecker_suppress [core.uninitialized.Assign] recvfrom() returned len > 0 on
+  // this AF_INET UDP socket, so it wrote addr_in; clang 14 CSA misses writes through
+  // glibc's transparent-union __SOCKADDR_ARG parameter
   udp->src_port = addr_in.sin_port;
   ipv4->src_addr = addr_in.sin_addr.s_addr;
   ipv4->next_proto_id = IPPROTO_UDP;

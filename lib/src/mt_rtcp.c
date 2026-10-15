@@ -91,6 +91,8 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
   struct st_rfc3550_rtp_hdr* rtp = rte_pktmbuf_mtod_offset(
       head_mbuf, struct st_rfc3550_rtp_hdr*, sizeof(struct mt_udp_hdr));
   ring_head_seq = ntohs(rtp->seq_number);
+  // codechecker_intentional [deadcode.DeadStores] ts is read only by dbg(), which is
+  // empty unless DEBUG is defined
   ts = ntohl(rtp->tmstamp);
 
   int cmp_result = rtp_seq_num_cmp(ring_head_seq, seq);

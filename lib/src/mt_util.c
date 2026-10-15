@@ -384,7 +384,6 @@ void mt_mbuf_dump_hdr(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m
     ipv4 = rte_pktmbuf_mtod_offset(m, struct rte_ipv4_hdr*, hdr_offset);
     hdr_offset += sizeof(*ipv4);
     udp = rte_pktmbuf_mtod_offset(m, struct rte_udp_hdr*, hdr_offset);
-    hdr_offset += sizeof(*udp);
   }
 
   if (ipv4) {

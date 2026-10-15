@@ -1240,7 +1240,6 @@ static int ptp_rxq_mbuf_handle(struct mt_ptp_impl* ptp, struct rte_mbuf* m) {
 
   hdr_offset = sizeof(struct rte_ether_hdr);
   ipv4_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ipv4_udp*, hdr_offset);
-  hdr_offset += sizeof(*ipv4_hdr);
   hdr = rte_pktmbuf_mtod_offset(m, struct mt_ptp_header*, sizeof(struct mt_udp_hdr));
   mt_ptp_parse(ptp, hdr, false, MT_PTP_L4, m->timesync, ipv4_hdr);
 

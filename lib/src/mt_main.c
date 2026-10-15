@@ -452,8 +452,12 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     /* bind current thread and its children to socket node */
     struct bitmask* mask = numa_bitmask_alloc(numa_nodes);
 
+    // codechecker_suppress [core.CallAndMessage] socket[MTL_PORT_P] is set: the
+    // port loop above ran, as mt_user_params_check() rejects num_ports <= 0
     info("%s, bind to socket %d, numa_nodes %d\n", __func__, socket[MTL_PORT_P],
          numa_nodes);
+    // codechecker_suppress [core.CallAndMessage] socket[MTL_PORT_P] is set: the
+    // port loop above ran, as mt_user_params_check() rejects num_ports <= 0
     numa_bitmask_setbit(mask, socket[MTL_PORT_P]);
     numa_bind(mask);
     numa_bitmask_free(mask);
@@ -464,6 +468,8 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   mt_asan_init();
 #endif
 
+  // codechecker_suppress [core.CallAndMessage] socket[MTL_PORT_P] is set: the
+  // port loop above ran, as mt_user_params_check() rejects num_ports <= 0
   impl = mt_rte_zmalloc_socket(sizeof(*impl), socket[MTL_PORT_P]);
   if (!impl) {
     err("%s, impl malloc fail on socket %d\n", __func__, socket[MTL_PORT_P]);
