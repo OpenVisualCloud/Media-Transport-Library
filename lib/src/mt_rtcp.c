@@ -156,6 +156,7 @@ static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
 
 rt_exit:
   tx->stat_rtp_retransmit_succ += send;
+  tx->retransmit_succ_seen += send;
   tx->stat_rtp_retransmit_fail += bulk - send;
 
   return ret;
@@ -166,7 +167,8 @@ rt_exit:
  * bytes. A shared count would log only some reasons of a repeated batch. */
 static void rtcp_tx_drop_invalid(struct mt_rtcp_tx* tx, enum mt_rtcp_drop_reason reason,
                                  const struct mt_rtcp_hdr* rtcp, size_t len) {
-  static const char* const names[MT_RTCP_DROP_MAX] = {"short", "flags", "name", "len"};
+  static const char* const names[MT_RTCP_DROP_MAX] = {"short", "flags", "name", "len",
+                                                      "ssrc"};
   MTL_MAY_UNUSED(names);
 
   tx->stat_nack_drop_invalid++;
@@ -217,7 +219,19 @@ int mt_rtcp_tx_parse_rtcp_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp
       rtcp_tx_drop_invalid(tx, MT_RTCP_DROP_NAME, rtcp, len);
       return -EIO;
     }
+    /* RFC4585 6.1: the "SSRC of media source" names the stream the feedback is
+     * about, so a nack for this sender must carry this session ssrc. The ssrc
+     * field sits inside the fixed header, already validated above. This is an
+     * opt-in identity check, not authentication: the ssrc travels in clear in
+     * every rtp packet, so it only stops a blind off-path forger. */
+    if (tx->ssrc_check && ntohl(rtcp->ssrc) != tx->ssrc) {
+      dbg("%s(%s), nack ssrc %u not session ssrc %u\n", __func__, tx->name,
+          ntohl(rtcp->ssrc), tx->ssrc);
+      rtcp_tx_drop_invalid(tx, MT_RTCP_DROP_SSRC, rtcp, len);
+      return -EIO;
+    }
     tx->stat_nack_received++;
+    tx->nack_recv_seen++;
 
     /* RFC3550: rtcp->len is the total length in 32-bit words minus one. With the
      * fixed header already validated, check the declared size against the bytes
@@ -426,11 +440,12 @@ static int rtcp_tx_stat(void* priv) {
     notice("%s(%s), nack drop invalid %u\n", __func__, tx->name,
            tx->stat_nack_drop_invalid);
     tx->stat_nack_drop_invalid = 0;
-    dbg("%s(%s), nack drop invalid by reason: short %u flags %u name %u len %u\n",
+    dbg("%s(%s), nack drop invalid by reason: short %u flags %u name %u len %u ssrc %u\n",
         __func__, tx->name, tx->stat_nack_drop_reason[MT_RTCP_DROP_SHORT],
         tx->stat_nack_drop_reason[MT_RTCP_DROP_FLAGS],
         tx->stat_nack_drop_reason[MT_RTCP_DROP_NAME],
-        tx->stat_nack_drop_reason[MT_RTCP_DROP_LEN]);
+        tx->stat_nack_drop_reason[MT_RTCP_DROP_LEN],
+        tx->stat_nack_drop_reason[MT_RTCP_DROP_SSRC]);
     memset(tx->stat_nack_drop_reason, 0, sizeof(tx->stat_nack_drop_reason));
   }
   if (tx->stat_rtp_retransmit_fail) {
@@ -446,6 +461,15 @@ static int rtcp_tx_stat(void* priv) {
   }
 
   return 0;
+}
+
+void mt_rtcp_tx_read_stats(struct mt_rtcp_tx* tx, struct mt_rtcp_tx_stats* stats) {
+  uint64_t drop_invalid = 0;
+  for (int i = 0; i < MT_RTCP_DROP_MAX; i++) drop_invalid += tx->nack_drop_seen[i];
+  stats->nack_received = tx->nack_recv_seen;
+  stats->nack_drop_invalid = drop_invalid;
+  stats->nack_drop_ssrc = tx->nack_drop_seen[MT_RTCP_DROP_SSRC];
+  stats->retransmit = tx->retransmit_succ_seen;
 }
 
 static int rtcp_rx_stat(void* priv) {
@@ -516,6 +540,7 @@ struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* impl,
   tx->mbuf_ring = ring;
 
   tx->ssrc = ops->ssrc;
+  tx->ssrc_check = ops->ssrc_check;
   snprintf(tx->name, sizeof(tx->name) - 1, "%s", name);
   mt_memcpy(&tx->udp_hdr, ops->udp_hdr, sizeof(tx->udp_hdr));
 

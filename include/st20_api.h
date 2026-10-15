@@ -1114,6 +1114,21 @@ struct st20_ext_frame {
 };
 
 /**
+ * Check of the ssrc of an inbound RTCP NACK, for st_tx_rtcp_ops.
+ */
+enum st_rtcp_nack_ssrc_check {
+  /** Accept a NACK with any ssrc. This is the default. */
+  ST_RTCP_NACK_SSRC_CHECK_DISABLE = 0,
+  /**
+   * Drop a NACK whose "SSRC of media source" (RFC4585 6.1) does not match the
+   * session ssrc. This stops a blind off-path sender that does not know the
+   * ssrc. It is an identity check, not authentication: the ssrc travels in
+   * clear in every rtp packet.
+   */
+  ST_RTCP_NACK_SSRC_CHECK_ENABLE,
+};
+
+/**
  * The RTCP info for tx st2110-20/22 session.
  */
 struct st_tx_rtcp_ops {
@@ -1124,6 +1139,17 @@ struct st_tx_rtcp_ops {
    * If leave it to 0 the lib will use ST_TX_VIDEO_RTCP_RING_SIZE.
    */
   uint16_t buffer_size;
+  /**
+   * Optional. Check the ssrc of an inbound RTCP NACK against the session ssrc.
+   * The default (0) accepts any ssrc, so the behavior does not change.
+   */
+  enum st_rtcp_nack_ssrc_check nack_ssrc_check;
+  /**
+   * Optional. The ssrc that nack_ssrc_check compares against. Leave it 0 to use
+   * the session ssrc. Set it only in RTP level mode, when the application writes
+   * the rtp header and its ssrc is not the session ssrc.
+   */
+  uint32_t nack_ssrc;
 };
 
 /**

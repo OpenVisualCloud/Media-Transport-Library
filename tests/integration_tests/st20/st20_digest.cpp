@@ -4,13 +4,12 @@
 
 #include "st20_common.h"
 
-static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type[],
-                                enum st20_packing packing[], enum st_fps fps[],
-                                int width[], int height[], bool interlaced[],
-                                enum st20_fmt fmt[], bool check_fps,
-                                enum st_test_level level, int sessions = 1,
-                                bool out_of_order = false, bool hdr_split = false,
-                                bool enable_rtcp = false) {
+static void st20_rx_digest_test(
+    enum st20_type tx_type[], enum st20_type rx_type[], enum st20_packing packing[],
+    enum st_fps fps[], int width[], int height[], bool interlaced[], enum st20_fmt fmt[],
+    bool check_fps, enum st_test_level level, int sessions = 1, bool out_of_order = false,
+    bool hdr_split = false, bool enable_rtcp = false, bool nack_ssrc_check = false,
+    uint32_t nack_ssrc = 0, bool nack_expect_blocked = false) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -85,6 +84,10 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     if (enable_rtcp) {
       ops_tx.flags |= ST20_TX_FLAG_ENABLE_RTCP;
       ops_tx.rtcp.buffer_size = 1024;
+      /* RFC4585 ssrc check. nack_ssrc 0 keeps the default (the session ssrc),
+       * a wrong value drives the reject path. */
+      if (nack_ssrc_check) ops_tx.rtcp.nack_ssrc_check = ST_RTCP_NACK_SSRC_CHECK_ENABLE;
+      ops_tx.rtcp.nack_ssrc = nack_ssrc;
     }
 
     // out of order
@@ -233,6 +236,34 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
   /* Auto-start makes mtl_stop() a no-op. Release sessions to freeze the counters. */
   for (int i = 0; i < sessions; i++)
     test_ctx_tx[i]->ready.store(false, std::memory_order_release);
+
+  /* Read the TX rtcp nack stats while the handles are still live. The reject
+   * path proves no wrong-ssrc nack is accepted: every nack drops at the ssrc
+   * gate, none is received, none drives a retransmit. */
+  if (enable_rtcp) {
+    for (int i = 0; i < sessions; i++) {
+      struct st20_tx_user_stats stats;
+      ret = st20_tx_get_session_stats(tx_handle[i], &stats);
+      EXPECT_GE(ret, 0);
+      uint64_t nack_received = stats.common.stat_rtcp_nack_received;
+      uint64_t drop_invalid = stats.common.stat_rtcp_nack_drop_invalid;
+      uint64_t drop_ssrc = stats.common.stat_rtcp_nack_drop_ssrc;
+      uint64_t retransmit = stats.common.stat_rtcp_retransmit;
+      info("%s, session %d nack recv %" PRIu64 " drop invalid %" PRIu64
+           " drop ssrc %" PRIu64 " retransmit %" PRIu64 "\n",
+           __func__, i, nack_received, drop_invalid, drop_ssrc, retransmit);
+      if (nack_expect_blocked) {
+        EXPECT_GT(drop_ssrc, 0u);
+        EXPECT_EQ(nack_received, 0u);
+        EXPECT_EQ(retransmit, 0u);
+      } else if (nack_ssrc_check) {
+        EXPECT_GT(nack_received, 0u);
+        EXPECT_GT(retransmit, 0u);
+        EXPECT_EQ(drop_ssrc, 0u);
+      }
+    }
+  }
+
   guard.release_sessions();
   for (int i = 0; i < sessions; i++) {
     uint64_t cur_time_ns = st_test_get_monotonic_time();
@@ -245,6 +276,15 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
         "incomplete %d\n",
         __func__, i, (double)start_delta_ns / NS_PER_MS, test_ctx_tx[i]->fb_send,
         test_ctx_rx[i]->fb_rec, test_ctx_rx[i]->incomplete_frame_cnt);
+    if (nack_expect_blocked) {
+      /* Every nack drops at the ssrc gate, so lost packets never recover and
+       * the stream collapses. The proof is the TX stat block above, not the
+       * frame counters here. */
+      info("%s, session %d nack blocked: fb_rec %d incomplete %d sha_fail %d\n", __func__,
+           i, test_ctx_rx[i]->fb_rec, test_ctx_rx[i]->incomplete_frame_cnt,
+           test_ctx_rx[i]->sha_fail_cnt);
+      continue;
+    }
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
     if (rx_type[i] == ST20_TYPE_SLICE_LEVEL)
@@ -753,4 +793,33 @@ TEST(St20_rx, digest_rtcp_s3) {
   /* no fps check */
   st20_rx_digest_test(type, type, packing, fps, width, height, interlaced, fmt, false,
                       ST_TEST_LEVEL_MANDATORY, 3, false, false, true);
+}
+
+TEST(St20_rx, digest_rtcp_ssrc_accept_s1) {
+  enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
+  enum st20_packing packing[1] = {ST20_PACKING_BPM};
+  enum st_fps fps[1] = {ST_FPS_P50};
+  int width[1] = {1920};
+  int height[1] = {1080};
+  bool interlaced[1] = {false};
+  enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
+  /* ssrc check on, default ssrc: the rx echoes the learned sender ssrc, so
+   * every nack passes the gate and recovers the loss. */
+  st20_rx_digest_test(type, type, packing, fps, width, height, interlaced, fmt, false,
+                      ST_TEST_LEVEL_MANDATORY, 1, false, false, true, true, 0, false);
+}
+
+TEST(St20_rx, digest_rtcp_ssrc_reject_s1) {
+  enum st20_type type[1] = {ST20_TYPE_FRAME_LEVEL};
+  enum st20_packing packing[1] = {ST20_PACKING_BPM};
+  enum st_fps fps[1] = {ST_FPS_P50};
+  int width[1] = {1920};
+  int height[1] = {1080};
+  bool interlaced[1] = {false};
+  enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
+  /* ssrc check on, wrong configured ssrc: every real nack fails the gate, so
+   * none is accepted and no retransmit runs. */
+  st20_rx_digest_test(type, type, packing, fps, width, height, interlaced, fmt, false,
+                      ST_TEST_LEVEL_MANDATORY, 1, false, false, true, true, 0xDEADBEEF,
+                      true);
 }
