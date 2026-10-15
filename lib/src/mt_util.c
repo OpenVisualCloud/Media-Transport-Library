@@ -31,8 +31,9 @@ struct mt_backtrace_info {
 
 /* List of backtrace info */
 MT_TAILQ_HEAD(mt_backtrace_info_list, mt_backtrace_info);
-static struct mt_backtrace_info_list g_bt_head;
-static pthread_mutex_t g_bt_mutex;
+/* static init: mt_rte_*malloc may run before mt_asan_init(), e.g. in the unit tests */
+static struct mt_backtrace_info_list g_bt_head = TAILQ_HEAD_INITIALIZER(g_bt_head);
+static pthread_mutex_t g_bt_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* additional memleak check for mempool_create since dpdk asan not support this */
 static int g_mt_mempool_create_cnt;
