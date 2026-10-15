@@ -29,6 +29,8 @@ runs:
   steps:
     - name: Install Task
       uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+      with:
+        repo-token: ${{ github.token }}
     - id: compute
       shell: bash
       run: task ci:hash-dependencies -- -o "$GITHUB_OUTPUT"
