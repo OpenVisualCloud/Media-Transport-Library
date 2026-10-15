@@ -122,6 +122,9 @@ enum {
   PROP_ST40P_TX_MAX_UDW_SIZE,
   PROP_ST40P_TX_INPUT_FORMAT,
   PROP_ST40P_TX_SPLIT_ANC_BY_PKT,
+  PROP_ST40P_TX_FAST_METADATA,
+  PROP_ST40P_TX_FMD_DIT,
+  PROP_ST40P_TX_FMD_K_BIT,
   PROP_ST40P_TX_TEST_MODE,
   PROP_ST40P_TX_TEST_PKT_COUNT,
   PROP_ST40P_TX_TEST_PACING_NS,
@@ -281,6 +284,24 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
                         0, G_MAXUINT, DEFAULT_MAX_UDW_SIZE,
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_FAST_METADATA,
+      g_param_spec_boolean("tx-fast-metadata", "Fast metadata",
+                           "Send SMPTE ST 2110-41 fast metadata, each buffer cut into "
+                           "data items",
+                           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_FMD_DIT,
+      g_param_spec_uint("tx-fmd-dit", "Data Item Type",
+                        "22-bit Data Item Type of the fast metadata", 0, 0x3FFFFF, 0,
+                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_FMD_K_BIT,
+      g_param_spec_uint("tx-fmd-k-bit", "Data Item K-bit", "K-bit of the fast metadata",
+                        0, 1, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
   gst_mtl_st40p_tx_test_install_properties(gobject_class);
 }
 
@@ -298,7 +319,7 @@ static gboolean gst_mtl_st40p_tx_start(GstBaseSink* bsink) {
     return FALSE;
   }
 
-  gst_mtl_st40p_tx_session_create(sink);
+  if (!gst_mtl_st40p_tx_session_create(sink)) return FALSE;
 
   gst_element_set_state(GST_ELEMENT(sink), GST_STATE_PLAYING);
 
@@ -376,6 +397,15 @@ static void gst_mtl_st40p_tx_set_property(GObject* object, guint prop_id,
     case PROP_ST40P_TX_MAX_UDW_SIZE:
       self->max_combined_udw_size = g_value_get_uint(value);
       break;
+    case PROP_ST40P_TX_FAST_METADATA:
+      self->fast_metadata = g_value_get_boolean(value);
+      break;
+    case PROP_ST40P_TX_FMD_DIT:
+      self->fmd_dit = g_value_get_uint(value);
+      break;
+    case PROP_ST40P_TX_FMD_K_BIT:
+      self->fmd_k_bit = g_value_get_uint(value);
+      break;
     default:
       if (gst_mtl_st40p_tx_test_set_property(self, prop_id, value)) break;
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -427,6 +457,15 @@ static void gst_mtl_st40p_tx_get_property(GObject* object, guint prop_id, GValue
       break;
     case PROP_ST40P_TX_MAX_UDW_SIZE:
       g_value_set_uint(value, sink->max_combined_udw_size);
+      break;
+    case PROP_ST40P_TX_FAST_METADATA:
+      g_value_set_boolean(value, sink->fast_metadata);
+      break;
+    case PROP_ST40P_TX_FMD_DIT:
+      g_value_set_uint(value, sink->fmd_dit);
+      break;
+    case PROP_ST40P_TX_FMD_K_BIT:
+      g_value_set_uint(value, sink->fmd_k_bit);
       break;
     default:
       if (gst_mtl_st40p_tx_test_get_property(sink, prop_id, value)) break;
@@ -511,6 +550,29 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
   if (sink->split_anc_by_pkt) {
     ops_tx.flags |= ST40P_TX_FLAG_SPLIT_ANC_BY_PKT;
     GST_DEBUG_OBJECT(sink, "TX START: enabling split ANC per RTP packet");
+  }
+
+  if (sink->fast_metadata) {
+    if (sink->input_format != GST_MTL_ST40P_TX_INPUT_FORMAT_RAW_UDW ||
+        sink->test_mode != GST_MTL_ST40P_TX_TEST_MODE_NONE) {
+      GST_ERROR(
+          "tx-fast-metadata sends the raw buffer bytes: set input-format=raw-udw "
+          "(parse-8331-meta=false) and no tx-test-mode");
+      return FALSE;
+    }
+    if (sink->did || sink->sdid)
+      GST_WARNING("tx-did %u and tx-sdid %u are ignored with tx-fast-metadata", sink->did,
+                  sink->sdid);
+    /* one data item per frame, a word multiple: the lib pads only the last item */
+    sink->frame_size = MIN(ops_tx.max_udw_buff_size, GST_MTL_FMD_MAX_ITEM_BYTES) & ~3u;
+    if (!sink->frame_size) {
+      GST_ERROR("max-combined-udw-size %u holds no 4-byte word",
+                ops_tx.max_udw_buff_size);
+      return FALSE;
+    }
+    ops_tx.flags |= ST40P_TX_FLAG_FAST_METADATA;
+    ops_tx.fmd_dit = sink->fmd_dit;
+    ops_tx.fmd_k_bit = sink->fmd_k_bit;
   }
 
   gst_mtl_st40p_tx_test_configure_ops(sink, &ops_tx);

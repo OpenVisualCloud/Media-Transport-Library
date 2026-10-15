@@ -192,6 +192,11 @@ GSTREAMER_PARAM_MAP = {
 # Common Configuration
 # ============================================================================
 
+# The ANC IDs RxTxApp's st40p sender uses (tx_st40p_app.c), so that every app
+# puts the same packets on the wire; the GStreamer plugin defaults to DID 0.
+ST40P_DID = 0x43
+ST40P_SDID = 0x02
+
 # Session type mapping for FFmpeg and GStreamer
 SESSION_TYPE_MAP = {
     "ffmpeg": {

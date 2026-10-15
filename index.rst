@@ -27,6 +27,7 @@ Contents
    :caption: Contents:
 
    doc/design.md
+   doc/st40_tx_session.md
    MTL Manager <manager/README.md>
    doc/build.md
    Build Guide on Windows <doc/build_WIN.md>

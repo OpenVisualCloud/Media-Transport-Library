@@ -2,6 +2,8 @@
 
 * st40: carry SMPTE ST 2110-41 Fast Metadata as an opt-in ST40 mode (`ST40_TX_FLAG_FAST_METADATA`/`ST40_RX_FLAG_FAST_METADATA`); add ABI fields `fmd_dit`/`fmd_k_bit` to `st40_tx_ops`; remove RxTxApp `"fastmetadata"` groups and `--*fmd*` options; share one 180-session scheduler limit between ANC and Fast Metadata (previously 180 each)
 * st40p: add `ST40P_TX_FLAG_FAST_METADATA` and `ST40P_RX_FLAG_FAST_METADATA`; ST40 RX frame level now accepts fast metadata and delivers each data item as its own frame; add ABI fields `fmd_dit`/`fmd_k_bit` to `st40p_tx_ops`, `st40_frame_info` and `st40_rx_frame_meta`
+* GStreamer: add fast metadata to `mtl_st40p_tx` (`tx-fast-metadata`, `tx-fmd-dit`, `tx-fmd-k-bit`) and `mtl_st40p_rx` (`rx-fast-metadata`); `mtl_st40p_rx` with no `payload-type` now receives only payload type 113, or 115 with fast metadata
+* FFmpeg: add the `mtl_st40p` device for ST 2110-40 ancillary data and ST 2110-41 fast metadata
 
 ## Changelog for 26.09
 

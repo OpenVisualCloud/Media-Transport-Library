@@ -57,6 +57,9 @@ $PY "tests/single/st20p/fps/test_fps.py::test_fps[|fps = p60|-ParkJoy_1080p]" -v
 $PY <selector> --collect-only -q                             # dry run
 ```
 
+The engine unit tests need no NIC and no root:
+`./venv/bin/python3 -m pytest --noconftest mtl_engine/tests -q`.
+
 Selection markers: `smoke` (smallest), `nightly` (bulk single-host), `performance` (long,
 hardware-bound). The full marker set and its authoring rules live in
 [mtl-acceptance-authoring.instructions.md](mtl-acceptance-authoring.instructions.md#markers).
@@ -93,6 +96,9 @@ sudo grep -E "EAL|hugepage|VF|RxTxApp|RemoteProcess|Traceback|err:" \
 | `netsniff-ng: command not found` | `sudo apt install -y netsniff-ng`. |
 | `build_dpdk.sh: line ...: unzip: command not found` | **(setup)** Fixed: `unzip` now in base apt deps. Re-run setup. |
 | `no element "mtl_st20p_tx"` (gstreamer) | **(setup)** Plugin not built. |
+| `no property "tx-fast-metadata"` or `no property "rx-fast-metadata"` (gstreamer st40p) | **(setup)** The plugin has no st40p fast metadata. Rebuild it with `setup --base-only --gstreamer`. |
+| `Requested output format 'mtl_st40p' is not known` or `Unknown input format: 'mtl_st40p'` (ffmpeg st40p) | **(setup)** The in-repo FFmpeg has no `mtl_st40p` device. Rebuild it with `setup --base-only --ffmpeg`. |
+| `is not ... repeated`, `frames show a lost or reordered packet` or `data items lack marker 0` (ffmpeg or gstreamer st40p) | **NOT setup.** The st40p check in `mtl_engine/integrity.py` found a lost, extra, reordered or changed frame, or a wrong marker, DIT or K-bit. See "st40p Streamer Integrity Check" in `tests/acceptance/tests/README.md`. |
 | `RemoteProcessInvalidState: Process is finished` (ffmpeg) | **(setup)** In-repo ffmpeg/libav not installed. |
 | RxTxApp exit `127` with `error while loading shared libraries: librte_*.so.26` | **(setup)** DPDK is installed but the dynamic linker cache is stale. Re-run setup (it refreshes `ldconfig`) or run `sudo ldconfig`, then confirm `ldd .local_install/mtl/bin/RxTxApp` has no `not found`. |
 | `RuntimeError: Failed to start MtlManager on host` (pytest `mtl_manager` fixture, setup error not a test failure) | **(setup)** `.local_install/mtl/bin/MtlManager` missing — the host only has the system-wide gtest build. Run `acceptance_setup.sh setup --base-only`; the `build_mtl`/`dpdk_build` MCP tools target `build/` + `/usr/local` instead, which pytest doesn't use. |

@@ -220,3 +220,94 @@ def calculate_st30p_framebuff_size(
         packet_per_frame = floor(desired_frame_time / packet_time)
 
     return packet_per_frame * packet_size
+
+
+# Each st40p TX (RxTxApp tx_st40p_app.c, mtl_st40p_tx, FFmpeg mtl_st40p) starts
+# every pass over its input at byte 0 and cuts it into frames of at most 255 UDW
+# bytes (RFC 8331) or into 1024-byte data items (fast metadata,
+# ST_APP_FMD_CHUNK_BYTES), the last one of a pass shorter.
+ANC_FRAME_BYTES = 255
+FMD_ITEM_BYTES = 1024
+_FRAME_INFO_FIELD = re.compile(r"(\w+)=(\d+)")
+
+
+def st40p_pass(src_size: int, fast_metadata: bool) -> tuple[int, int]:
+    """``(bytes, frames)`` of one TX pass over the input, as RX records it.
+
+    RX gets each data item zero padded to a 32-bit word, and only the last
+    item of a pass is not a whole number of words.
+    """
+    if fast_metadata:
+        return src_size + -src_size % 4, -(-src_size // FMD_ITEM_BYTES)
+    return src_size, -(-src_size // ANC_FRAME_BYTES)
+
+
+def st40p_frame_info_path(out: str) -> str:
+    """The per-frame log the st40p RX writes beside its recording."""
+    return f"{out}.info"
+
+
+def _st40p_repeats_cmd(src, out, src_size, out_size, fast_metadata) -> str:
+    """A host command that passes iff *out* holds the passes over *src* from
+    byte 0, the last one possibly cut."""
+    unit, _ = st40p_pass(src_size, fast_metadata)
+    if not src_size or out_size < unit:
+        return "false"
+    cmds = [f"cmp -s -n {src_size} {src} {out}"]
+    if unit > src_size:
+        # The zero padding of the last data item of a pass.
+        cmds.append(f"cmp -s -n {unit - src_size} -i {src_size}:0 {out} /dev/zero")
+    if out_size > unit:
+        # Each pass equals the one before it.
+        cmds.append(f"cmp -s -n {out_size - unit} {out} {out} {unit} 0")
+    return " && ".join(cmds)
+
+
+def st40p_recording_errors(host, params: dict, out: str, min_frames: int) -> list:
+    """Why an st40p RX recording is not the TX input, empty if it is.
+
+    The recording must hold the TX passes over ``input_file`` byte for byte,
+    and every line of its frame-info log ``seq_discont=0 seq_lost=0``. A fast
+    metadata data item must also carry marker 0 (ST 2110-41 §5.2) and the DIT
+    and K-bit TX set. The host runs ``cmp`` and ``uniq -c``, so only a few
+    lines cross the SSH channel.
+    """
+    src, fmd = params["input_file"], params["fast_metadata"]
+    dit = int(params["fastmetadata_data_item_type"])
+    k_bit = int(params["fastmetadata_k_bit"])
+
+    def run(cmd):
+        return host.connection.execute_command(
+            cmd, shell=True, expected_return_codes=None
+        )
+
+    errors = []
+    res = run(f"stat -c %s {src} {out}")
+    src_size, out_size = map(int, res.stdout.split()) if not res.return_code else (0, 0)
+    if run(_st40p_repeats_cmd(src, out, src_size, out_size, fmd)).return_code:
+        errors.append(
+            f"{out} ({out_size} B) is not {src} ({src_size} B) repeated"
+            + (" in passes padded to 32-bit words" if fmd else "")
+        )
+
+    log = st40p_frame_info_path(out)
+    summary = run(f"sed 's/^ts=[0-9]* //' {log} | sort | uniq -c").stdout
+    frames = lost = bad = 0
+    for line in summary.splitlines():
+        count, _, rest = line.strip().partition(" ")
+        if not count.isdigit():
+            continue
+        n, f = int(count), dict(_FRAME_INFO_FIELD.findall(rest))
+        frames += n
+        if f.get("seq_discont") != "0" or f.get("seq_lost") != "0":
+            lost += n
+        header = (f.get("rtp_marker"), f.get("fmd_dit"), f.get("fmd_k_bit"))
+        if fmd and header != ("0", str(dit), str(k_bit)):
+            bad += n
+    if frames < min_frames:
+        errors.append(f"{log} holds {frames} frames, expected >= {min_frames}")
+    if lost:
+        errors.append(f"{lost} frames show a lost or reordered packet")
+    if bad:
+        errors.append(f"{bad} data items lack marker 0, DIT {dit:#x} or K-bit {k_bit}")
+    return errors

@@ -1010,9 +1010,8 @@ struct st_rx_audio_sessions_mgr {
 };
 
 struct st_tx_ancillary_session_pacing {
-  long double frame_time;          /* time of the frame in nanoseconds */
-  long double frame_time_sampling; /* time of the frame in sampling(90k) */
-  uint64_t cur_epochs;             /* epoch of current frame */
+  long double frame_time; /* time of the frame in nanoseconds */
+  uint64_t cur_epochs;    /* epoch of current frame */
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
   long double ptp_time_cursor;
@@ -1038,7 +1037,6 @@ struct st_tx_ancillary_session_impl {
   /* if the eth dev support ipv4 checksum offload */
   bool eth_ipv4_cksum_offload[MTL_SESSION_PORT_MAX];
   struct rte_mbuf* inflight[MTL_SESSION_PORT_MAX];
-  int inflight_cnt[MTL_SESSION_PORT_MAX]; /* for stats */
   struct rte_ring* packet_ring;
   bool second_field;
 
@@ -1059,7 +1057,6 @@ struct st_tx_ancillary_session_impl {
 
   struct st_tx_ancillary_session_pacing pacing;
   bool calculate_time_cursor;
-  bool check_frame_done_time;
   struct st_fps_timing fps_tm;
 
   uint16_t st40_seq_id;     /* seq id for each pkt */

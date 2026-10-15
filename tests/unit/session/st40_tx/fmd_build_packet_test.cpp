@@ -817,6 +817,20 @@ TEST_F(St40TxRtpLevelTest, Rfc8331ChainSwapsChunk) {
   EXPECT_EQ(be32_at(got + 16), host_word_at(sent.data() + 16));
 }
 
+/* Interlaced: the field count reads F from the header mbuf, where the 0xa5 fill reads as
+ * 0b10, not from the app packet (known defect). The RTP chunk is still swapped once. */
+TEST_F(St40TxRtpLevelTest, Rfc8331ChainInterlacedReadsFieldFromHeaderMbuf) {
+  ut_txa_set_rtp_level(ctx_, true);
+  auto sent = app_rfc8331_packet(0x3);
+
+  const uint8_t* got = update_chain(sent);
+  ASSERT_NE(got, nullptr);
+
+  EXPECT_EQ(be32_at(got + 16), host_word_at(sent.data() + 16));
+  EXPECT_EQ(ut_txa_stat_interlace_first(ctx_), 1u);
+  EXPECT_EQ(ut_txa_stat_interlace_second(ctx_), 0u);
+}
+
 TEST_F(St40TxFmdTest, OpsCheckRejectsFmdWithSplitAnc) {
   EXPECT_EQ(ut_txa_ops_check(ST40_TX_FLAG_FAST_METADATA | ST40_TX_FLAG_SPLIT_ANC_BY_PKT,
                              0, 0, 0),

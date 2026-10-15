@@ -80,6 +80,7 @@ unit_sources = [
   'session/st40_tx/pacing_test.cpp',
   'session/st40_tx/rtp_gate_snap_test.cpp',
   'session/st40_tx/fmd_build_packet_test.cpp',
+  'session/st40_tx/packet_paths_test.cpp',
   'session/st30_harness.c',
   'session/st30/redundancy_test.cpp',
   'session/st30/timestamp_test.cpp',
@@ -204,7 +205,8 @@ if rxtxapp_json_c_dep.found() and rxtxapp_pcap_dep.found()
       rxtxapp_src + 'legacy/tx_video_app.c', rxtxapp_src + 'legacy/rx_video_app.c',
       rxtxapp_src + 'legacy/tx_st22_app.c', rxtxapp_src + 'legacy/rx_st22_app.c',
       rxtxapp_src + 'experimental/rx_st20r_app.c'),
-    c_args : unit_c_args + ['-Dmain=st_app_unit_main'],
+    # no global DEBUG, as in the RxTxApp build: args.c defines its own
+    c_args : unit_c_args + ['-Dmain=st_app_unit_main', '-UDEBUG'],
     include_directories : unit_include_dirs,
     dependencies : [mtl_internal_dep, rxtxapp_json_c_dep, rxtxapp_pcap_dep],
     install : false)

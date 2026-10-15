@@ -25,10 +25,11 @@ struct ut_txa_ctx {
   uint16_t notify_frame_done_idx;
   struct st40_tx_frame_meta notify_frame_done_meta;
   enum st40_tx_frame_status frame_status;
-  int frame_refcnt;
   uint32_t packet_len;
   int notify_late_calls;
   uint64_t notify_late_last_delta;
+  struct rte_mbuf* held[3 * 32]; /* ut_txa_hold_pool(): the 3 pools of 32 mbufs */
+  unsigned int held_cnt;
 };
 
 #include "session/st40_tx_harness.h"
@@ -228,15 +229,19 @@ int ut_txa_prepare_rtp_tasklet(ut_txa_ctx* ctx) {
 }
 
 int ut_txa_put_app_rtp(ut_txa_ctx* ctx, const uint8_t* rtp, uint16_t len) {
-  struct rte_mbuf* m = rte_pktmbuf_alloc(ut_pool());
+  bool chain = !ctx->session.tx_no_chain;
+  struct rte_mbuf* m =
+      rte_pktmbuf_alloc(chain ? ctx->session.mbuf_mempool_chain
+                              : ctx->session.mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
+  size_t offset = chain ? 0 : sizeof(struct mt_udp_hdr);
 
   if (!m) return -ENOMEM;
-  if (rte_pktmbuf_tailroom(m) < sizeof(struct mt_udp_hdr) + len) {
+  if (rte_pktmbuf_tailroom(m) < offset + len) {
     rte_pktmbuf_free(m);
     return -ENOSPC;
   }
-  memcpy(rte_pktmbuf_mtod_offset(m, uint8_t*, sizeof(struct mt_udp_hdr)), rtp, len);
-  m->data_len = sizeof(struct mt_udp_hdr) + len;
+  memcpy(rte_pktmbuf_mtod_offset(m, uint8_t*, offset), rtp, len);
+  m->data_len = offset + len;
   m->pkt_len = m->data_len;
   if (rte_ring_sp_enqueue(ctx->session.packet_ring, m) < 0) {
     rte_pktmbuf_free(m);
@@ -259,16 +264,10 @@ void ut_txa_set_frame_count(ut_txa_ctx* ctx, int frames) {
 }
 
 int ut_txa_pop_packet(ut_txa_ctx* ctx, uint64_t* packet_tsc, uint8_t* out, uint32_t cap) {
-  struct rte_mbuf* packet = NULL;
+  struct ut_txa_pkt_meta meta;
+  int len = ut_txa_pop_port_packet(ctx, MTL_SESSION_PORT_P, &meta, out, cap);
 
-  if (!ctx->mgr.ring[MTL_PORT_P] ||
-      rte_ring_sc_dequeue(ctx->mgr.ring[MTL_PORT_P], (void**)&packet) < 0)
-    return -ENOENT;
-  int len = RTE_MIN(packet->pkt_len, cap);
-  const void* data = rte_pktmbuf_read(packet, 0, len, out);
-  if (data != out) memcpy(out, data, len);
-  *packet_tsc = st_tx_mbuf_get_tsc(packet);
-  rte_pktmbuf_free(packet);
+  if (len >= 0) *packet_tsc = meta.tsc;
   return len;
 }
 
@@ -288,20 +287,26 @@ void ut_txa_cleanup_frame_tasklet(ut_txa_ctx* ctx) {
 
   if (!ctx) return;
   s = &ctx->session;
-  if (ctx->mgr.ring[MTL_PORT_P]) {
-    ut_ring_drain(ctx->mgr.ring[MTL_PORT_P]);
-    rte_ring_free(ctx->mgr.ring[MTL_PORT_P]);
-    ctx->mgr.ring[MTL_PORT_P] = NULL;
+  while (ctx->held_cnt) rte_pktmbuf_free(ctx->held[--ctx->held_cnt]);
+  for (int i = 0; i < MTL_PORT_MAX; i++) {
+    if (!ctx->mgr.ring[i]) continue;
+    ut_ring_drain(ctx->mgr.ring[i]);
+    rte_ring_free(ctx->mgr.ring[i]);
+    ctx->mgr.ring[i] = NULL;
   }
   if (s->packet_ring) {
     ut_ring_drain(s->packet_ring);
     rte_ring_free(s->packet_ring);
     s->packet_ring = NULL;
   }
-  if (s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]) {
-    rte_mempool_free(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
-    s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] = NULL;
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    rte_pktmbuf_free(s->inflight[i]);
+    s->inflight[i] = NULL;
+    rte_mempool_free(s->mbuf_mempool_hdr[i]);
+    s->mbuf_mempool_hdr[i] = NULL;
   }
+  rte_mempool_free(s->mbuf_mempool_chain);
+  s->mbuf_mempool_chain = NULL;
   s->st40_frames = NULL;
 }
 
@@ -314,7 +319,6 @@ int ut_txa_run_frame_tasklet(ut_txa_ctx* ctx, enum st10_timestamp_fmt tfmt,
   ctx->mock_tsc_ns = (uint64_t)ctx->session.pacing.tsc_time_cursor;
   ut_txa_step_frame_tasklet(ctx);
   ctx->frame_status = ctx->session.st40_frame_stat;
-  ctx->frame_refcnt = rte_atomic32_read(&ctx->frame.refcnt);
   ret = ut_txa_pop_packet_tsc(ctx, packet_tsc);
   ctx->packet_len = ctx->session.port_user_stats.common.port[MTL_SESSION_PORT_P].bytes;
   ut_txa_cleanup_frame_tasklet(ctx);
@@ -390,7 +394,11 @@ bool ut_txa_frame_is_waiting(const ut_txa_ctx* ctx) {
 }
 
 int ut_txa_frame_refcnt(const ut_txa_ctx* ctx) {
-  return ctx->frame_refcnt;
+  return rte_atomic32_read(&ctx->frame.refcnt);
+}
+
+void ut_txa_set_frame_refcnt(ut_txa_ctx* ctx, int refcnt) {
+  rte_atomic32_set(&ctx->frame.refcnt, refcnt);
 }
 
 uint64_t ut_txa_stat_port_build(const ut_txa_ctx* ctx) {
@@ -462,6 +470,7 @@ void ut_txa_set_anc_meta(ut_txa_ctx* ctx, uint16_t udw_size, uint32_t meta_num) 
     ctx->frame_data.meta[i].did = 0x41;
     ctx->frame_data.meta[i].sdid = 0x05;
     ctx->frame_data.meta[i].udw_size = udw_size;
+    ctx->frame_data.meta[i].udw_offset = i;
   }
   ctx->frame_data.meta_num = meta_num;
 }
@@ -494,8 +503,7 @@ int ut_txa_build_packet(ut_txa_ctx* ctx, struct rte_mbuf* pkt) {
 }
 
 int ut_txa_build_rtp_packet(ut_txa_ctx* ctx, struct rte_mbuf* pkt) {
-  return tx_ancillary_session_build_rtp_packet(&ctx->session, pkt,
-                                               ctx->session.st40_anc_idx);
+  return tx_ancillary_session_build_rtp_packet(&ctx->session, pkt);
 }
 
 uint8_t* ut_txa_pkt_data(struct rte_mbuf* pkt) {
@@ -595,3 +603,134 @@ void ut_txa_set_frame_source(ut_txa_ctx* ctx, const struct st40_tx_ops* src,
   ctx->session.ops.priv = src->priv;
   ctx->frame.addr = frame;
 }
+
+static struct rte_mempool* ut_txa_pool_create(const char* tag, uint16_t room) {
+  static unsigned int pool_idx;
+  char name[RTE_MEMPOOL_NAMESIZE];
+
+  snprintf(name, sizeof(name), "ut_txa_%s_%u", tag, pool_idx++);
+  return rte_pktmbuf_pool_create(name, 32, 0, sizeof(struct mt_muf_priv_data), room,
+                                 rte_socket_id());
+}
+
+static struct rte_ring* ut_txa_ring(ut_txa_ctx* ctx, enum mtl_session_port port) {
+  return ctx->mgr.ring[mt_port_logic2phy(ctx->session.port_maps, port)];
+}
+
+int ut_txa_enable_chain(ut_txa_ctx* ctx) {
+  ctx->session.mbuf_mempool_chain =
+      ut_txa_pool_create("chain", RTE_PKTMBUF_HEADROOM + ut_txa_chain_room());
+  if (!ctx->session.mbuf_mempool_chain) return -ENOMEM;
+  ctx->session.tx_no_chain = false;
+  return 0;
+}
+
+int ut_txa_enable_redundant(ut_txa_ctx* ctx) {
+  static unsigned int ring_idx;
+  struct st_tx_ancillary_session_impl* s = &ctx->session;
+  struct st_rfc8331_anc_hdr* hdr_r = &s->hdr[MTL_SESSION_PORT_R];
+  char ring_name[RTE_RING_NAMESIZE];
+
+  snprintf(ring_name, sizeof(ring_name), "ut_txa_ring_r_%u", ring_idx++);
+  ctx->mgr.ring[MTL_PORT_R] = ut_ring_create(ring_name, 32);
+  s->mbuf_mempool_hdr[MTL_SESSION_PORT_R] =
+      ut_txa_pool_create("r", RTE_MBUF_DEFAULT_BUF_SIZE);
+  if (!ctx->mgr.ring[MTL_PORT_R] || !s->mbuf_mempool_hdr[MTL_SESSION_PORT_R])
+    return -ENOMEM;
+  s->ops.num_port = 2;
+  s->port_maps[MTL_SESSION_PORT_R] = MTL_PORT_R;
+  *hdr_r = s->hdr[MTL_SESSION_PORT_P];
+  mt_eth_d_addr(&hdr_r->eth)->addr_bytes[5] ^= 0xff;
+  hdr_r->ipv4.dst_addr ^= htonl(1);
+  hdr_r->udp.dst_port = htons(ntohs(hdr_r->udp.dst_port) + 2);
+  return 0;
+}
+
+unsigned int ut_txa_pool_count(const ut_txa_ctx* ctx, enum ut_txa_pool pool) {
+  const struct st_tx_ancillary_session_impl* s = &ctx->session;
+  struct rte_mempool* mp =
+      pool == UT_TXA_POOL_CHAIN ? s->mbuf_mempool_chain : s->mbuf_mempool_hdr[pool];
+
+  /* rte_mempool_ops_get_count(), which DPDK does not export: unlike
+   * rte_mempool_avail_count() it does not clamp, so a double free reads above 32 */
+  return mp ? rte_mempool_get_ops(mp->ops_index)->get_count(mp) : 0;
+}
+
+void ut_txa_hold_pool(ut_txa_ctx* ctx, enum ut_txa_pool pool) {
+  struct st_tx_ancillary_session_impl* s = &ctx->session;
+  struct rte_mempool* mp =
+      pool == UT_TXA_POOL_CHAIN ? s->mbuf_mempool_chain : s->mbuf_mempool_hdr[pool];
+  struct rte_mbuf* m;
+
+  while (ctx->held_cnt < RTE_DIM(ctx->held) && (m = rte_pktmbuf_alloc(mp)))
+    ctx->held[ctx->held_cnt++] = m;
+}
+
+int ut_txa_pop_port_packet(ut_txa_ctx* ctx, enum mtl_session_port port,
+                           struct ut_txa_pkt_meta* meta, uint8_t* out, uint32_t cap) {
+  struct rte_ring* ring = ut_txa_ring(ctx, port);
+  struct rte_mbuf* packet = NULL;
+
+  if (!ring || rte_ring_sc_dequeue(ring, (void**)&packet) < 0) return -ENOENT;
+  int len = RTE_MIN(packet->pkt_len, cap);
+  const void* data = rte_pktmbuf_read(packet, 0, len, out);
+  if (data != out) memcpy(out, data, len);
+  meta->tsc = st_tx_mbuf_get_tsc(packet);
+  meta->idx = st_tx_mbuf_get_idx(packet);
+  meta->nb_segs = packet->nb_segs;
+  meta->ipv4_init = packet->l2_len == sizeof(struct rte_ether_hdr) &&
+                    packet->l3_len == sizeof(struct rte_ipv4_hdr) &&
+                    (packet->ol_flags & RTE_MBUF_F_TX_IPV4) &&
+                    (packet->ol_flags & RTE_MBUF_F_TX_IP_CKSUM);
+  rte_pktmbuf_free(packet);
+  return len;
+}
+
+int ut_txa_fill_ring(ut_txa_ctx* ctx, enum mtl_session_port port) {
+  struct rte_ring* ring = ut_txa_ring(ctx, port);
+
+  while (!rte_ring_full(ring)) {
+    struct rte_mbuf* m = rte_pktmbuf_alloc(ut_pool());
+    if (!m) return -ENOMEM;
+    rte_ring_sp_enqueue(ring, m);
+  }
+  return 0;
+}
+
+struct st_tx_port_stats ut_txa_port_stats(const ut_txa_ctx* ctx,
+                                          enum mtl_session_port port) {
+  return ctx->session.port_user_stats.common.port[port];
+}
+
+uint16_t ut_txa_seq(const ut_txa_ctx* ctx) {
+  return ctx->session.st40_seq_id;
+}
+
+const uint8_t* ut_txa_hdr(const ut_txa_ctx* ctx, enum mtl_session_port port) {
+  return (const uint8_t*)&ctx->session.hdr[port];
+}
+
+void ut_txa_set_interlaced(ut_txa_ctx* ctx, bool interlaced, bool second_field) {
+  ctx->session.ops.interlaced = interlaced;
+  ctx->frame.tc_meta.second_field = second_field;
+}
+
+void ut_txa_set_max_pkt_len(ut_txa_ctx* ctx, uint32_t len) {
+  ctx->session.max_pkt_len = len;
+}
+
+void ut_txa_set_cksum_offload(ut_txa_ctx* ctx, enum mtl_session_port port, bool on) {
+  ctx->session.eth_ipv4_cksum_offload[port] = on;
+}
+
+void ut_txa_set_sch_schedule_ns(ut_txa_ctx* ctx, uint32_t ns) {
+  ctx->impl.sch_schedule_ns = ns;
+}
+
+#ifdef MTL_SIMULATE_PACKET_DROPS
+void ut_txa_set_test_pattern(ut_txa_ctx* ctx, int pattern, uint16_t frames) {
+  ctx->session.ops.test.pattern = pattern;
+  ctx->session.ops.test.frame_count = frames;
+  TX_ANC_TEST_INIT(&ctx->session, &ctx->session.ops);
+}
+#endif

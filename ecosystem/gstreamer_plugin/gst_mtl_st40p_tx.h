@@ -57,6 +57,8 @@
 #define RFC_8331_WORD_BYTE_SIZE (4)
 #define RFC_8331_PAYLOAD_HEADER_SIZE 8
 #define RFC_8331_PAYLOAD_HEADER_LOST_BITS 2
+/* the largest ST40P_TX_FLAG_FAST_METADATA data item (st40_pipeline_api.h) */
+#define GST_MTL_FMD_MAX_ITEM_BYTES 1436
 
 #include <mtl/st40_pipeline_api.h>
 #include <st40_api.h>
@@ -102,6 +104,9 @@ struct _Gst_Mtl_St40p_Tx {
   gboolean split_anc_by_pkt;
   GstMtlSt40pTxInputFormat input_format;
   guint max_combined_udw_size;
+  gboolean fast_metadata;
+  guint fmd_dit;
+  guint fmd_k_bit;
   GstMtlSt40pTxTestMode test_mode;
   guint test_pkt_count;
   guint test_pacing_ns;

@@ -8,6 +8,10 @@ and the bytes of the file TX sends, in order. RX also holds every item to
 SMPTE ST 2110-41:2024: marker bit 0 (§5.2) and no more than 500 ms between
 items (§5.1). The lib parses the packets, so it never hands RX a
 zero-length or truncated data item (§5.4).
+
+With FFmpeg or GStreamer at RX, st40p_recording_errors() in
+mtl_engine/integrity.py checks the bytes, the DIT, the K-bit and the marker.
+Only RxTxApp checks the 500 ms limit, and FFmpeg does not check the rate.
 """
 
 import os
@@ -76,24 +80,7 @@ def _run(
 
 
 @pytest.mark.smoke
-@pytest.mark.parametrize(
-    "application",
-    [
-        "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg plugin has no st40p fast metadata option"
-            ),
-        ),
-        pytest.param(
-            "gstreamer",
-            marks=pytest.mark.skip(
-                reason="GStreamer st40p plugin has no fast metadata option"
-            ),
-        ),
-    ],
-)
+@pytest.mark.parametrize("application", ["rxtxapp", "ffmpeg", "gstreamer"])
 def test_fast_metadata_basic(
     application,
     app_factory,
@@ -115,6 +102,65 @@ def test_fast_metadata_basic(
         interfaces,
         test_time,
         fmd_payload,
+    )
+
+
+@pytest.mark.parametrize("application", ["ffmpeg", "gstreamer"])
+def test_fast_metadata_streamer_header(
+    application,
+    app_factory,
+    hosts,
+    mtl_path,
+    setup_interfaces: InterfaceSetup,
+    test_time,
+    test_config,
+    fmd_payload,
+):
+    """A streamer sends and receives every bit of the DIT and the K-bit."""
+    interfaces = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
+    _run(
+        app_factory(application),
+        hosts,
+        mtl_path,
+        interfaces,
+        test_time,
+        fmd_payload,
+        fastmetadata_data_item_type=ALLOCATABLE_DITS["experimental_max"],
+        fastmetadata_k_bit=1,
+    )
+
+
+@pytest.mark.parametrize(
+    "tx_application, rx_application",
+    [("rxtxapp", "gstreamer"), ("gstreamer", "rxtxapp")],
+    ids=["rxtxapp_to_gstreamer", "gstreamer_to_rxtxapp"],
+)
+def test_fast_metadata_cross_app(
+    tx_application,
+    rx_application,
+    app_factory,
+    hosts,
+    mtl_path,
+    setup_interfaces: InterfaceSetup,
+    test_time,
+    test_config,
+    fmd_payload,
+):
+    """RxTxApp and GStreamer cut the same data items, so each checks the other."""
+    interfaces = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
+    _run(
+        app_factory("gstreamer"),
+        hosts,
+        mtl_path,
+        interfaces,
+        test_time,
+        fmd_payload,
+        tx_application=tx_application,
+        rx_application=rx_application,
     )
 
 

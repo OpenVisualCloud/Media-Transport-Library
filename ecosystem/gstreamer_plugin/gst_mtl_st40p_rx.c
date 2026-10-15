@@ -130,6 +130,7 @@ enum {
   PROP_ST40P_RX_DISABLE_AUTO_DETECT,
   PROP_ST40P_RX_OUTPUT_FORMAT,
   PROP_ST40P_RX_FRAME_INFO_PATH,
+  PROP_ST40P_RX_FAST_METADATA,
   PROP_MAX
 };
 
@@ -288,11 +289,15 @@ static void gst_mtl_st40p_rx_log_frame_info(Gst_Mtl_St40p_Rx* src,
   fprintf(src->frame_info_fp,
           "ts=%" PRIu64
           " meta=%u rtp_marker=%u seq_discont=%u seq_lost=%u pkts_total=%u "
-          "pkts_recv_p=%u pkts_recv_r=%u\n",
+          "pkts_recv_p=%u pkts_recv_r=%u",
           frame_info->timestamp, frame_info->meta_num, frame_info->rtp_marker,
           frame_info->seq_discont, frame_info->seq_lost, frame_info->pkts_total,
           frame_info->pkts_recv[MTL_SESSION_PORT_P],
           frame_info->pkts_recv[MTL_SESSION_PORT_R]);
+  if (src->fast_metadata)
+    fprintf(src->frame_info_fp, " fmd_dit=%u fmd_k_bit=%u", frame_info->fmd_dit,
+            frame_info->fmd_k_bit);
+  fputc('\n', src->frame_info_fp);
   fflush(src->frame_info_fp);
 }
 
@@ -367,6 +372,13 @@ static void gst_mtl_st40p_rx_class_init(Gst_Mtl_St40p_RxClass* klass) {
                           "Optional path to append frame info/seq stats per frame", NULL,
                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_RX_FAST_METADATA,
+      g_param_spec_boolean("rx-fast-metadata", "Fast metadata",
+                           "Receive SMPTE ST 2110-41 fast metadata, one buffer per data "
+                           "item",
+                           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
   gst_element_class_set_static_metadata(
       gstelement_class, "MTL ST2110-40 Pipeline RX Source", "Source/Network",
       "Receive ST2110-40 ancillary data streams using MTL pipeline API",
@@ -431,6 +443,9 @@ static void gst_mtl_st40p_rx_set_property(GObject* object, guint prop_id,
       g_free(src->frame_info_path);
       src->frame_info_path = g_value_dup_string(value);
       break;
+    case PROP_ST40P_RX_FAST_METADATA:
+      src->fast_metadata = g_value_get_boolean(value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
@@ -473,6 +488,9 @@ static void gst_mtl_st40p_rx_get_property(GObject* object, guint prop_id, GValue
     case PROP_ST40P_RX_FRAME_INFO_PATH:
       g_value_set_string(value, src->frame_info_path);
       break;
+    case PROP_ST40P_RX_FAST_METADATA:
+      g_value_set_boolean(value, src->fast_metadata);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
@@ -514,6 +532,16 @@ static gboolean gst_mtl_st40p_rx_start(GstBaseSrc* basesrc) {
   ops_rx.interlaced = src->interlaced;
   if (src->disable_auto_detect) ops_rx.flags |= ST40P_RX_FLAG_DISABLE_AUTO_DETECT;
 
+  if (src->fast_metadata) {
+    if (src->output_format != GST_MTL_ST40P_RX_OUTPUT_FORMAT_RAW_UDW) {
+      GST_ERROR_OBJECT(src,
+                       "rx-fast-metadata delivers data items, not ANC packets: set "
+                       "output-format=raw-udw");
+      return FALSE;
+    }
+    ops_rx.flags |= ST40P_RX_FLAG_FAST_METADATA;
+  }
+
   /* Optional frame info logging */
   if (src->frame_info_path && !src->frame_info_fp) {
     src->frame_info_fp = fopen(src->frame_info_path, "a");
@@ -525,17 +553,6 @@ static gboolean gst_mtl_st40p_rx_start(GstBaseSrc* basesrc) {
     }
   }
 
-  if (src->portArgs.payload_type == 0) {
-    ops_rx.port.payload_type = 113;  // Default ST2110-40 payload type
-  } else if ((src->portArgs.payload_type < 0) || (src->portArgs.payload_type > 0x7F)) {
-    GST_ERROR("RX START: Invalid payload_type: %d", src->portArgs.payload_type);
-    return FALSE;
-  } else {
-    ops_rx.port.payload_type = src->portArgs.payload_type;
-  }
-
-  GST_DEBUG_OBJECT(src, "RX START: payload_type=%d", ops_rx.port.payload_type);
-
   gst_mtl_common_copy_general_to_session_args(&(src->generalArgs), &(src->portArgs));
 
   ops_rx.port.num_port =
@@ -544,6 +561,18 @@ static gboolean gst_mtl_st40p_rx_start(GstBaseSrc* basesrc) {
     GST_ERROR("Failed to parse port arguments");
     return FALSE;
   }
+
+  if (src->portArgs.payload_type == 0) {
+    ops_rx.port.payload_type =
+        src->fast_metadata ? PAYLOAD_TYPE_FAST_METADATA : PAYLOAD_TYPE_ANCILLARY;
+  } else if ((src->portArgs.payload_type < 0) || (src->portArgs.payload_type > 0x7F)) {
+    GST_ERROR("RX START: Invalid payload_type: %d", src->portArgs.payload_type);
+    return FALSE;
+  } else {
+    ops_rx.port.payload_type = src->portArgs.payload_type;
+  }
+
+  GST_DEBUG_OBJECT(src, "RX START: payload_type=%d", ops_rx.port.payload_type);
 
   GST_DEBUG_OBJECT(src, "RX START: Parsed %d ports, calling st40p_rx_create",
                    ops_rx.port.num_port);

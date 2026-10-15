@@ -27,8 +27,18 @@ from mtl_engine.application_base import (
     ProcSpec,
     mtl_plugin_check_cmd,
 )
-from mtl_engine.config.mappings import APP_NAME_MAP, ffmpeg_pix_fmt
+from mtl_engine.config.mappings import (
+    APP_NAME_MAP,
+    ST40P_DID,
+    ST40P_SDID,
+    ffmpeg_pix_fmt,
+)
 from mtl_engine.const import FFMPEG_EXE, RXTXAPP_EXE
+from mtl_engine.integrity import (
+    min_expected_frames,
+    st40p_frame_info_path,
+    st40p_recording_errors,
+)
 from mtl_engine.integrity_session import NO_INTEGRITY
 from mtl_engine.pcap_compliance import NO_COMPLIANCE
 
@@ -42,11 +52,13 @@ _MODE_RGB24 = "rgb24"  # FFmpeg TX (rgb24) + RxTxApp RX, single stream
 _MODE_RGB24_MULTI = "rgb24_multiple"  # FFmpeg TX×2 (rgb24) + RxTxApp RX, two streams
 _MODE_ST22P = "st22p"  # FFmpeg RX + FFmpeg TX via mtl_st22p (compressed video)
 _MODE_ST30P = "st30p"  # FFmpeg RX + FFmpeg TX via mtl_st30p (audio)
+_MODE_ST40P = "st40p"  # FFmpeg RX + FFmpeg TX via mtl_st40p (ancillary)
 
 # Map session_type → FFmpeg mode (used when no explicit ``mode`` kwarg given).
 _SESSION_TYPE_TO_MODE = {
     "st22p": _MODE_ST22P,
     "st30p": _MODE_ST30P,
+    "st40p": _MODE_ST40P,
 }
 
 
@@ -61,7 +73,7 @@ class FFmpeg(Application):
         "output_format",  # "yuv" | "h264"
         "multiple_sessions",  # bool
         "tx_is_ffmpeg",  # bool — False: TX is RxTxApp instead of FFmpeg
-        "mode",  # "yuv_h264" | "rgb24" | "rgb24_multiple" | "st22p" | "st30p"
+        "mode",  # "yuv_h264" | "rgb24" | "rgb24_multiple" | "st22p" | "st30p" | "st40p"
         "video_format_list",  # list[str]  — rgb24_multiple only
         "video_url_list",  # list[str]   — rgb24_multiple only
         "pix_fmt",  # str — yuv_h264 only; default "yuv422p10le"
@@ -225,10 +237,6 @@ class FFmpeg(Application):
         populated lazily in :meth:`prepare_execution` because file creation
         needs the live ``host`` connection.
         """
-        if self.params.get("fast_metadata"):
-            # The FFmpeg plugin has no fast metadata option, and st40p falls
-            # back to the video mode below.
-            raise ValueError("FFmpeg adapter does not support fast_metadata")
         # Resolve mode: explicit ``mode`` kwarg takes precedence; otherwise
         # infer from ``session_type`` (allows unified tests to pass
         # session_type="st22p" without also specifying mode="st22p").
@@ -247,6 +255,8 @@ class FFmpeg(Application):
         if mode is None:
             session_type = self.params.get("session_type", "st20p")
             mode = _SESSION_TYPE_TO_MODE.get(session_type, _MODE_YUV_H264)
+        if self.params.get("fast_metadata") and mode != _MODE_ST40P:
+            raise ValueError(f"fast_metadata needs the st40p mode, not {mode}")
         self._ff_params["mode"] = mode
         nic_port_list = self.params["nic_port_list"]
         if not nic_port_list:
@@ -262,6 +272,8 @@ class FFmpeg(Application):
             return self._build_st22p_cmds(nic_port_list)
         if mode == _MODE_ST30P:
             return self._build_st30p_cmds(nic_port_list)
+        if mode == _MODE_ST40P:
+            return self._build_st40p_cmds(nic_port_list)
         raise ValueError(f"Unknown FFmpeg mode: {mode}")
 
     # -- mode: yuv|h264 (FFmpeg RX, FFmpeg-or-RxTxApp TX) ----------------
@@ -574,6 +586,47 @@ class FFmpeg(Application):
         )
         return rx_cmd, None
 
+    # -- mode: st40p (FFmpeg TX via mtl_st40p, FFmpeg RX via mtl_st40p) --
+    def _st40p_dst_ip(self) -> str:
+        """The TX destination: the group, or the RX address for unicast."""
+        if self.params["test_mode"] == "multicast":
+            return ip_pools.rx_multicast[0]
+        return ip_pools.rx[0]
+
+    def _build_st40p_cmds(self, nic_port_list):
+        p = self.params
+        session = f"-udp_port {p['port']} -payload_type {p['payload_type']}"
+        if p["fast_metadata"]:
+            tx_ids = (
+                f"-fast_metadata 1 -fmd_dit {p['fastmetadata_data_item_type']} "
+                f"-fmd_k_bit {p['fastmetadata_k_bit']}"
+            )
+            rx_fmd = "-fast_metadata 1 "
+        else:
+            tx_ids, rx_fmd = f"-did {ST40P_DID} -sdid {ST40P_SDID}", ""
+        # TX egresses nic_port_list[0] and RX ingresses [1], as RxTxApp and
+        # GStreamer do. u8 PCM at 10240 Hz reads the input in 1024-byte packets,
+        # the data items RxTxApp sends, and each loop starts a new packet. -f data
+        # cannot seek, so -stream_loop stops it after one pass.
+        self._tx_commands = [
+            f"{FFMPEG_EXE} -stream_loop -1 -f u8 -ar 10240 -ac 1 "
+            f"-i {p['input_file']} -map 0 -c copy "
+            f"-p_port {nic_port_list[0]} -p_sip {ip_pools.tx[0]} "
+            f"-p_tx_ip {self._st40p_dst_ip()} {session} "
+            f"-fps {media_files.pformat_to_exact_fps(p['framerate'])} {tx_ids} "
+            f"-f mtl_st40p -"
+        ]
+        # RX -p_rx_ip is the group to join, or the sender's address for unicast.
+        multicast = p["test_mode"] == "multicast"
+        rx_cmd = (
+            f"{FFMPEG_EXE} -p_port {nic_port_list[1]} -p_sip {ip_pools.rx[0]} "
+            f"-p_rx_ip {self._st40p_dst_ip() if multicast else ip_pools.tx[0]} "
+            f"{session} {rx_fmd}"
+            f"-frame_info_path {{info}} -init_retry 20 "
+            f"-f mtl_st40p -i k -map 0 -c copy -f data {{out0}} -y"
+        )
+        return rx_cmd, None
+
     # --------------------------------------------------- prepare_execution
     def prepare_execution(self, build: str, host=None, **kwargs):
         """Create per-host artifacts (output files, RxTxApp configs).
@@ -654,7 +707,7 @@ class FFmpeg(Application):
                 "{test_time}", str(test_time)
             )
 
-        elif mode in (_MODE_ST22P, _MODE_ST30P):
+        elif mode in (_MODE_ST22P, _MODE_ST30P, _MODE_ST40P):
             # Use output_file from params if provided, else create a temp file.
             out_path_param = self.params.get("output_file")
             if out_path_param:
@@ -666,6 +719,10 @@ class FFmpeg(Application):
                 out_path = ffmpeg_app.create_empty_output_files(ext, 1, host, build)
                 self._output_files = out_path
             self.command = self.command.replace("{out0}", self._output_files[0])
+            if mode == _MODE_ST40P:
+                info = st40p_frame_info_path(self._output_files[0])
+                self._output_files.append(info)
+                self.command = self.command.replace("{info}", info)
             if mode == _MODE_ST22P:
                 conn = host.connection
                 self.command = self.with_local_kahawai(self.command, build, conn)
@@ -765,8 +822,11 @@ class FFmpeg(Application):
 
         Every FFmpeg command built here transmits to ``ip_pools.rx_multicast[0]``
         (see the ``-p_rx_ip`` tokens in the RX/TX builders), so the capture
-        filter target is fixed rather than read back from a config file.
+        filter target is fixed rather than read back from a config file. A
+        unicast st40p TX sends to ``ip_pools.rx[0]``.
         """
+        if self._ff_params.get("mode") == _MODE_ST40P:
+            return (self._st40p_dst_ip(),)
         return (ip_pools.rx_multicast[0],)
 
     # ----------------------------------------------------- validate
@@ -808,6 +868,23 @@ class FFmpeg(Application):
                 passed = ffmpeg_app.check_output_rgb24(self._rx_output or "", 1)
             elif mode == _MODE_RGB24_MULTI:
                 passed = ffmpeg_app.check_output_rgb24(self._rx_output or "", 2)
+            elif mode == _MODE_ST40P:
+                # No exit code gate: FFmpeg exits 255 on the SIGINT that ends RX.
+                errors = st40p_recording_errors(
+                    host,
+                    self.params,
+                    self._output_files[0],
+                    min_expected_frames(
+                        self.extract_framerate(self.params["framerate"]),
+                        self.params["test_time"],
+                    ),
+                )
+                self._cleanup_output_files(host)
+                if errors:
+                    self._fail_validation(
+                        f"FFmpeg test failed: {'; '.join(errors)}", fail_on_error
+                    )
+                passed = True
             elif mode in (_MODE_ST22P, _MODE_ST30P):
                 # Basic validation: output file exists and is non-empty.
                 out_file = self._output_files[0] if self._output_files else None

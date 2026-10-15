@@ -241,11 +241,58 @@ ffmpeg -stream_loop -1 -i test.wav -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p_t
 ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 30000 -payload_type 97 -pcm_fmt pcm16 -ptime 1ms -channels 2 -f mtl_st30p -i "0" dump_pcm16.wav -y
 ```
 
-## 5. St20 GPU direct guide
+## 5. ST40P ancillary and fast metadata run guide
+
+The `mtl_st40p` device sends and receives ST 2110-40 ancillary data (RFC 8331). With `-fast_metadata 1`, it sends and receives ST 2110-41 fast metadata. The data is raw bytes: the muxer takes a data stream or u8 audio, and the demuxer gives one data stream.
+
+1. TX cuts each input packet into frames. An ANC frame is one ANC packet of at most 255 user data words, with the `-did` and `-sdid` IDs (default 0x43 and 0x02). A fast metadata frame is one data item of at most 1436 bytes, with the `-fmd_dit` Data Item Type and the `-fmd_k_bit` K-bit.
+1. RX gives one packet per frame: the user data words of the frame, or one data item with its zero padding to a 32-bit word.
+1. After the first frame, RX ends the stream when no frame comes in `-timeout_s` (default 1 s). If the first frame does not come in `-init_retry` + 1 tries, RX fails.
+1. `-frame_info_path` writes one line per frame. It is the line of the `frame-info-path` property of the GStreamer `mtl_st40p_rx`.
+
+> **Note:** The default `payload_type` value is 112. Fast metadata needs a dynamic payload type (96-127). Below, ANC uses 113 and fast metadata uses 115.
+
+### 5.1. St40p output
+
+Reading a file in a loop as 1024-byte packets and sending it as ST 2110-40 on 239.168.85.40:40000 with payload_type 113. Each packet becomes five frames of at most 255 bytes:
+
+```bash
+ffmpeg -stream_loop -1 -f u8 -ar 10240 -ac 1 -i anc.bin -map 0 -c copy -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p_tx_ip 239.168.85.40 -udp_port 40000 -payload_type 113 -fps 59.94 -did 0x43 -sdid 0x02 -f mtl_st40p -
+```
+
+`-f u8 -ar 10240 -ac 1` reads the file as 1024-byte packets, and `-stream_loop` can loop it. `-f data` cannot loop. FFmpeg 4.4 and 6.1 read 1024-byte packets with `-ar 25600`.
+
+Sending the same file as ST 2110-41 fast metadata, one 1024-byte data item per frame, with payload_type 115:
+
+```bash
+ffmpeg -stream_loop -1 -f u8 -ar 10240 -ac 1 -i fmd.bin -map 0 -c copy -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p_tx_ip 239.168.85.40 -udp_port 40000 -payload_type 115 -fps 59.94 -fast_metadata 1 -fmd_dit 1234567 -fmd_k_bit 0 -f mtl_st40p -
+```
+
+### 5.2. St40p input
+
+Receiving ST 2110-40 on 239.168.85.40:40000 with payload_type 113 and writing the user data words to a file. FFmpeg does not select a data stream by itself, so `-map 0` is necessary:
+
+```bash
+ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.40 -udp_port 40000 -payload_type 113 -init_retry 20 -f mtl_st40p -i "0" -map 0 -c copy -f data anc_out.bin -y
+```
+
+Receiving ST 2110-41 fast metadata with payload_type 115, and writing one line of frame info per data item:
+
+```bash
+ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.40 -udp_port 40000 -payload_type 115 -fast_metadata 1 -frame_info_path fmd_out.info -init_retry 20 -f mtl_st40p -i "0" -map 0 -c copy -f data fmd_out.bin -y
+```
+
+A frame info line for fast metadata. For ANC, the line has no `fmd_dit` and `fmd_k_bit`:
+
+```text
+ts=4137576201 meta=0 rtp_marker=0 seq_discont=0 seq_lost=0 pkts_total=1 pkts_recv_p=1 pkts_recv_r=0 fmd_dit=1234567 fmd_k_bit=0
+```
+
+## 6. St20 GPU direct guide
 
 The MTL_GPU_DIRECT experimental feature aims at enhancing FFmpeg's performance by allowing direct access to GPU memory, which can be particularly beneficial when working with high-throughput video streams such as those handled by the MTL ST20 codec plugin.
 
-### 5.1. Enabling experimental MTL_GPU_DIRECT in FFmpeg with ST20p Support
+### 6.1. Enabling experimental MTL_GPU_DIRECT in FFmpeg with ST20p Support
 
 To take advantage of the MTL_GPU_DIRECT feature FFmpeg has to be built with this option enabled. Here’s how to do it:
 
@@ -266,7 +313,7 @@ enabled gpu_direct:
 ./ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 20000 -payload_type 96 -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -gpu_direct 1 -gpu_driver 0 -gpu_device 0 -f mtl_st20p -i "k" -f rawvideo /dev/null -y
 ```
 
-### 5.2. Additional Notes
+### 6.2. Additional Notes
 
 **GPU Direct Flag:** When compiling FFmpeg with the MTL_GPU_DIRECT feature enabled, ensure that your system's GPU drivers and hardware support direct GPU memory access.  
 GPU device IDs and GPU driver IDs are printed during initialization.

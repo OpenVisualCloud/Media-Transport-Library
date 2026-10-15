@@ -68,6 +68,7 @@ Tests for single-flow scenarios, where a single source transmits to a single des
   - ST2110-41 fast metadata DIT, K-bit, frame rate, and payload type
   - Byte-exact data item delivery, multicast, and ST 2022-7 redundancy
   - ST 2110-41 validation for reserved DITs and static payload types
+  - FFmpeg and GStreamer at both ends, and RxTxApp with GStreamer in each direction (see [st40p Streamer Integrity Check](#st40p-streamer-integrity-check))
 
 - **udp/**: Tests for UDP functionality
   - UDP packet transmission and reception
@@ -99,6 +100,27 @@ Tests for error handling and negative test cases:
 - Invalid configuration handling
 - Error recovery
 - Resource exhaustion scenarios
+
+## st40p Streamer Integrity Check
+
+When FFmpeg or GStreamer is at RX, `st40p_recording_errors()` in `mtl_engine/integrity.py` gives the verdict, for RFC 8331 ancillary data and for ST 2110-41 fast metadata. When RxTxApp is at RX, RxTxApp checks the data items itself.
+
+- Each TX starts each pass over the input at byte 0. It cuts the pass into frames of at most 255 bytes (RFC 8331), or into data items of 1024 bytes (fast metadata). The last frame of a pass is shorter.
+- RX writes the bytes of each frame to the recording, and one line per frame to `<recording>.info`. RX pads each data item with zeros to a 32-bit word.
+- The host compares the recording with the input in two or three `cmp` calls. The recording must be the passes in order, and only the last pass can be cut.
+- The host reduces the log with `sort | uniq -c`. Each frame must have `seq_discont=0 seq_lost=0`. Each data item must also have `rtp_marker=0`, and the `fmd_dit=` and `fmd_k_bit=` that the test sets.
+
+```mermaid
+flowchart LR
+  IN[input file] -->|"each pass from byte 0"| TX["TX: RxTxApp, mtl_st40p_tx or ffmpeg -f mtl_st40p"]
+  TX -->|"ST 2110-40 or ST 2110-41"| RX["RX: mtl_st40p_rx or ffmpeg -f mtl_st40p -i"]
+  RX -->|"bytes of each frame"| REC[recording]
+  RX -->|"one line per frame"| INFO[recording.info]
+  REC --> CMP["cmp with the input, on the host"]
+  INFO --> UNIQ["sort and uniq -c, on the host"]
+  CMP --> V["st40p_recording_errors()"]
+  UNIQ --> V
+```
 
 ## Running Tests
 

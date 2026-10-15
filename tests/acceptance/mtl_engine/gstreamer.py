@@ -21,13 +21,17 @@ import re
 from common.integrity.video_integrity import calculate_yuv_frame_size
 from mtl_engine import ip_pools
 from mtl_engine.application_base import Application, ProcSpec
-from mtl_engine.config.mappings import APP_NAME_MAP
+from mtl_engine.config.mappings import APP_NAME_MAP, ST40P_DID, ST40P_SDID
 from mtl_engine.const import GSTREAMER_LIB_PATH, RXTXAPP_PATH
 from mtl_engine.integrity import (
+    FMD_ITEM_BYTES,
     get_channel_number,
     get_frame_sample_number,
     get_sample_size,
     min_expected_frames,
+    st40p_frame_info_path,
+    st40p_pass,
+    st40p_recording_errors,
 )
 from mtl_engine.integrity_session import NO_INTEGRITY
 from mtl_engine.media_files import pformat_to_exact_fps
@@ -43,11 +47,6 @@ _VIDEO_FORMATS = {"YUV422PLANAR10LE": "i422-10le", "v210": "v210"}
 _PCM_FORMATS = {"PCM8": "s8", "PCM16": "s16be", "PCM24": "s24be"}
 _PTIMES = {"1": "1ms", "0.12": "125us", "0.25": "250us", "0.33": "333us", "4": "4ms"}
 _SAMPLING_HZ = {"48kHz": 48000, "96kHz": 96000}
-
-# The ANC IDs RxTxApp's st40p sender uses (tx_st40p_app.c), so that every app
-# puts the same packets on the wire; the plugin defaults to DID 0.
-_ST40P_DID = 0x43
-_ST40P_SDID = 0x02
 
 # The cross-app pairs (tx_application, rx_application), by the end RxTxApp takes.
 _RXTXAPP_END = {("rxtxapp", "gstreamer"): "tx", ("gstreamer", "rxtxapp"): "rx"}
@@ -98,10 +97,10 @@ class GStreamer(Application):
         }
         if session_type not in builders:
             raise ValueError(f"GStreamer adapter does not support {session_type}")
-        if self.params.get("fast_metadata"):
-            # The st40p plugin has no fast metadata option, so the pipeline
-            # would send RFC 8331.
-            raise ValueError("GStreamer adapter does not support fast_metadata")
+        if self.params.get("fast_metadata") and session_type != "st40p":
+            raise ValueError(
+                f"fast_metadata needs session_type st40p, not {session_type}"
+            )
         nic_port_list = self.params["nic_port_list"]
         if not nic_port_list or len(nic_port_list) < 2:
             raise ValueError("nic_port_list needs a TX and an RX port")
@@ -239,9 +238,18 @@ class GStreamer(Application):
         return tx, f"tx-ptime={ptime}", rx
 
     def _build_st40p(self) -> tuple[list[str], str, str]:
-        fps = pformat_to_exact_fps(self.params["framerate"])
-        tx_props = f"tx-fps={fps} tx-did={_ST40P_DID} tx-sdid={_ST40P_SDID}"
-        return [], tx_props, ""
+        p = self.params
+        tx = f"tx-fps={pformat_to_exact_fps(p['framerate'])}"
+        rx = f"frame-info-path={st40p_frame_info_path(p['output_file'])}"
+        if not p["fast_metadata"]:
+            return [], f"{tx} tx-did={ST40P_DID} tx-sdid={ST40P_SDID}", rx
+        # TX cuts each pass into the data items RxTxApp sends.
+        tx += (
+            f" tx-fast-metadata=true max-combined-udw-size={FMD_ITEM_BYTES} "
+            f"tx-fmd-dit={p['fastmetadata_data_item_type']} "
+            f"tx-fmd-k-bit={p['fastmetadata_k_bit']}"
+        )
+        return [], tx, f"rx-fast-metadata=true {rx}"
 
     # ----------------------------------------------------- execute_test
     def execute_test(  # type: ignore[override]
@@ -273,6 +281,11 @@ class GStreamer(Application):
 
         self.params["test_time"] = test_time
         self._output_files = [self.params["output_file"]]
+        if self.params["session_type"] == "st40p":
+            # mtl_st40p_rx appends to its frame-info log.
+            info = st40p_frame_info_path(self.params["output_file"])
+            host.connection.execute_command(f": > {info}", shell=True)
+            self._output_files.append(info)
         if self._rxtxapp:
             self._rxtxapp.prepare_execution(build=build, host=host)
         rx_cmd = self._rxtxapp.command if self._rxtxapp_end == "rx" else self.command
@@ -332,8 +345,11 @@ class GStreamer(Application):
                 * get_channel_number(p["audio_channels"][0])
             )
             return frame_size, _SAMPLING_HZ[p["audio_sampling"]] / frame_samples
-        # st40p: every frame carries the whole input file as its UDW.
-        return self._file_size(host, p["input_file"]), _exact_fps(p["framerate"])
+        # st40p: the mean frame of one TX pass over the input.
+        unit, frames = st40p_pass(
+            self._file_size(host, p["input_file"]), p["fast_metadata"]
+        )
+        return unit // frames, _exact_fps(p["framerate"])
 
     def _rx_stats(self) -> tuple[list[float], int]:
         """MTL's RX stats: the rate of each full interval, and the frames in all.
@@ -417,17 +433,9 @@ class GStreamer(Application):
                     f"MTL received"
                 )
             elif self.params["session_type"] == "st40p":
-                # No integrity check covers ANC. The recording repeats the UDW
-                # iff its first frame is the input and it equals itself shifted
-                # by one frame.
-                res = host.connection.execute_command(
-                    f"cmp -s -n {frame_size} {self.params['input_file']} {out_file} && "
-                    f"cmp -s -n {size - frame_size} {out_file} {out_file} {frame_size} 0",
-                    shell=True,
-                    expected_return_codes=None,
+                errors += st40p_recording_errors(
+                    host, self.params, out_file, min_frames
                 )
-                if res.return_code != 0 or size % frame_size:
-                    errors.append(f"{out_file} is not the input UDW repeated")
             self._cleanup_output_files(host)
         except AssertionError:
             raise

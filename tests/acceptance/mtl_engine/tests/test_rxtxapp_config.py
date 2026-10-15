@@ -147,31 +147,64 @@ def test_fast_metadata_rejection_markers_are_the_lib_errors():
     assert f"%u, {cases.STATIC_PAYLOAD_TYPE_ERROR}\\n" in source
 
 
-def test_gstreamer_refuses_fast_metadata():
+def _streamer(application: str, **params):
+    from mtl_engine.ffmpeg import FFmpeg
     from mtl_engine.gstreamer import GStreamer
 
     if not ip_pools.tx:
         ip_pools.init(1)
-    with pytest.raises(ValueError, match="fast_metadata"):
-        GStreamer().create_command(
-            session_type="st40p",
-            fast_metadata=True,
-            nic_port_list=["0000:00:01.0", "0000:00:01.1"],
-            input_file=PAYLOAD,
-            framerate="p59",
-        )
+    app = GStreamer() if application == "gstreamer" else FFmpeg(app_path="/unused")
+    app.create_command(
+        nic_port_list=["0000:00:01.0", "0000:00:01.1"],
+        input_file=PAYLOAD,
+        framerate="p59",
+        **params,
+    )
+    return app
 
 
-def test_ffmpeg_refuses_fast_metadata():
-    from mtl_engine.ffmpeg import FFmpeg
+FMD_PARAMS = dict(
+    session_type="st40p",
+    fast_metadata=True,
+    fastmetadata_data_item_type=0x3FFFFF,
+    fastmetadata_k_bit=1,
+    payload_type=115,
+)
 
-    if not ip_pools.tx:
-        ip_pools.init(1)
-    with pytest.raises(ValueError, match="fast_metadata"):
-        FFmpeg(app_path="/unused").create_command(
-            session_type="st40p",
-            fast_metadata=True,
-            nic_port_list=["0000:00:01.0", "0000:00:01.1"],
-            input_file=PAYLOAD,
-            framerate="p59",
-        )
+
+def test_gstreamer_st40p_fast_metadata_command():
+    app = _streamer("gstreamer", **FMD_PARAMS)
+    tx = app._tx_stages[-1]
+    assert "tx-fast-metadata=true max-combined-udw-size=1024" in tx
+    assert "tx-fmd-dit=4194303 tx-fmd-k-bit=1" in tx
+    assert "tx-did" not in tx and "payload-type=115" in tx
+    assert "rx-fast-metadata=true" in app.command
+    assert f"frame-info-path={app.params['output_file']}.info" in app.command
+
+
+def test_ffmpeg_st40p_fast_metadata_command():
+    app = _streamer("ffmpeg", **FMD_PARAMS)
+    tx = app._tx_commands[0]
+    assert "-stream_loop -1 -f u8 -ar 10240 -ac 1 -i " + PAYLOAD in tx
+    assert "-fast_metadata 1 -fmd_dit 4194303 -fmd_k_bit 1 -f mtl_st40p -" in tx
+    assert "-did" not in tx and "-payload_type 115" in tx
+    assert "-fast_metadata 1 -frame_info_path {info}" in app.command
+    assert "-f mtl_st40p -i k -map 0 -c copy -f data {out0}" in app.command
+
+
+@pytest.mark.parametrize(
+    "application, ids",
+    [("ffmpeg", "-did 67 -sdid 2"), ("gstreamer", "tx-did=67 tx-sdid=2")],
+)
+def test_plain_st40p_streamer_command_carries_no_fast_metadata(application, ids):
+    app = _streamer(application, session_type="st40p")
+    tx = app._tx_stages[-1] if application == "gstreamer" else app._tx_commands[0]
+    assert ids in tx
+    for cmd in (tx, app.command):
+        assert "fast" not in cmd and "fmd" not in cmd
+
+
+@pytest.mark.parametrize("application", ["ffmpeg", "gstreamer"])
+def test_streamer_refuses_fast_metadata_outside_st40p(application):
+    with pytest.raises(ValueError, match="fast_metadata needs"):
+        _streamer(application, session_type="st30p", fast_metadata=True)

@@ -418,12 +418,15 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 | tx-interlaced         | boolean  | Treat input as interlaced ANC; set `rx-interlaced=true` on RX to match. | TRUE/FALSE   | FALSE         |
 | tx-did                | uint     | Data ID for the ancillary data.                                    | 0 to 255         | 0             |
 | tx-sdid               | uint     | Secondary Data ID for the ancillary data.                          | 0 to 255         | 0             |
-| tx-split-anc-by-pkt   | boolean  | Emit at most one ANC block per RTP packet; marker on final packet of field. | TRUE/FALSE | FALSE         |
+| split-anc-by-pkt      | boolean  | Emit at most one ANC block per RTP packet; marker on final packet of field. | TRUE/FALSE | FALSE         |
 | use-pts-for-pacing    | gboolean | [User controlled timestamping offset](#233-pts-controlled-pacing)  | TRUE/FALSE       | FALSE         |
 | pts-pacing-offset     | uint     | [User controlled timestamping offset](#233-pts-controlled-pacing)  | 0 to G_MAXUINT   | 0             |
 | input-format          | enum     | Encoding of incoming ANC buffers (`raw-udw`, `rfc8331-packed`, `rfc8331`) | enum            | `raw-udw`     |
 | parse-8331-meta       | gboolean | **Deprecated.** Shortcut for `input-format=rfc8331-packed`.         | TRUE/FALSE       | FALSE         |
-| max-combined-udw-size | uint     | Maximum combined size of all user data words to send in one buffer | 0 to (20 * 255)  | 20 * 255      |
+| max-combined-udw-size | uint     | Maximum combined size of all user data words to send in one buffer. With `tx-fast-metadata`, the data item size. | 0 to (20 * 255)  | 20 * 255      |
+| tx-fast-metadata      | boolean  | Send SMPTE ST 2110-41 fast metadata instead of RFC 8331 ANC. See [5.3](#53-smpte-st-2110-41-fast-metadata). | TRUE/FALSE | FALSE |
+| tx-fmd-dit            | uint     | Data Item Type of each data item. The library refuses the reserved 0x300000 to 0x3FEFFF. | 0 to 0x3FFFFF | 0 |
+| tx-fmd-k-bit          | uint     | Data Item K-bit of each data item.                                 | 0 to 1           | 0             |
 | tx-test-mode          | enum     | **DEBUG build only.** Test-only mutations: `no-marker`, `seq-gap`, `bad-parity`, `paced` (see below). | enum      | none          |
 | tx-test-pkt-count     | uint     | **DEBUG build only.** Number of packets to emit for `tx-test-mode` patterns (e.g., paced burst). | 0 to G_MAXUINT | 0            |
 | tx-test-pacing-ns     | uint     | **DEBUG build only.** Inter-packet spacing in nanoseconds for `tx-test-mode=paced`.      | 0 to G_MAXUINT   | 0             |
@@ -478,7 +481,7 @@ These properties and the underlying hot-path logic are compiled only when `MTL_S
 | `tx-test-mode=paced`     | Emit a bounded packet burst (set `tx-test-pkt-count`) with optional inter-packet spacing (`tx-test-pacing-ns`) to check pacing and accumulation of multi-packet ANC fields. |
 
 Notes:
-- These knobs can be combined with `tx-split-anc-by-pkt=true` to stress the split-mode path.
+- These knobs can be combined with `split-anc-by-pkt=true` to stress the split-mode path.
 - Pair with RX `frame-info-path` to log packet counts, markers, and sequence discontinuities when validating.
 
 ### 5.2. Running the SMPTE ST 2110-40 Receiver Plugin `mtl_st40p_rx`
@@ -501,6 +504,7 @@ The `mtl_st40p_rx` plugin supports all pad capabilities (the data is not checked
 | rx-interlaced       | boolean | Whether the incoming ancillary stream is interlaced         | TRUE/FALSE                  | FALSE         |
 | rx-disable-auto-detect | boolean | Skip auto-detection and use the mode set by `rx-interlaced` (`true` = interlaced, `false` = progressive) | TRUE/FALSE | FALSE |
 | output-format       | enum    | Serialization format for received ancillary data            | `raw-udw` / `rfc8331`       | `raw-udw`     |
+| rx-fast-metadata    | boolean | Receive SMPTE ST 2110-41 fast metadata. Each data item is one buffer. See [5.3](#53-smpte-st-2110-41-fast-metadata). | TRUE/FALSE | FALSE |
 
 When `output-format` is set to `rfc8331`, each ancillary packet is serialized with an 8-byte
 header (C, line number, horizontal offset, S, stream number, DID, SDID, data count) followed by
@@ -527,5 +531,25 @@ export OUTPUT="path_to_the_file_we_want_to_save"
 
 # Run the receiver pipeline
 gst-launch-1.0 -v mtl_st40p_rx rx-queues=4 rx-framebuff-cnt=3 timeout=61 output-format=rfc8331 udp-port=40000 payload-type=113 dev-ip="$IP_PORT_R" ip="$IP_PORT_T" dev-port=$VFIO_PORT_R ! filesink location=$OUTPUT --gst-plugin-path $GSTREAMER_PLUGINS_PATH
+```
+
+### 5.3. SMPTE ST 2110-41 fast metadata
+
+Set `tx-fast-metadata=true` on `mtl_st40p_tx` and `rx-fast-metadata=true` on `mtl_st40p_rx`. Each frame is one data item.
+
+- TX cuts each input buffer into data items of `max-combined-udw-size` bytes. The maximum is 1436, the largest data item that one packet holds. TX rounds the value down to a multiple of 4. The last data item of a buffer can be shorter. TX sends one data item per frame at `tx-fps`.
+- The library pads each data item with zeros to a multiple of 4 bytes. RX pushes one buffer for each data item, with the padding. Thus RX gives each TX input buffer, padded with zeros to a multiple of 4 bytes.
+- Each data item has the Data Item Type `tx-fmd-dit` and the K-bit `tx-fmd-k-bit`. With `frame-info-path`, RX adds `fmd_dit=` and `fmd_k_bit=` to each line.
+- On TX, `payload-type` must be 0 or 96 to 127. With 0, both elements use 115.
+- TX needs `input-format=raw-udw` and no `tx-test-mode`. The library refuses `split-anc-by-pkt=true`. TX ignores `tx-did` and `tx-sdid`. RX needs `output-format=raw-udw`.
+- SMPTE ST 2110-41 needs a packet at least every 500 ms. Keep the input buffers flowing.
+- RX drops a data item that is larger than `max-udw-size`.
+
+```bash
+# TX: the input file again and again, in data items of 1024 bytes
+gst-launch-1.0 multifilesrc location=$INPUT loop=true ! mtl_st40p_tx tx-fast-metadata=true tx-fmd-dit=1234567 tx-fmd-k-bit=0 max-combined-udw-size=1024 tx-fps=60000/1001 udp-port=40000 payload-type=115 dev-ip="192.168.96.3" ip="239.168.75.30" dev-port=$VFIO_PORT_T --gst-plugin-path $GSTREAMER_PLUGINS_PATH
+
+# RX: one buffer per data item, with the Data Item Type and K-bit in $OUTPUT.info
+gst-launch-1.0 mtl_st40p_rx rx-fast-metadata=true frame-info-path=$OUTPUT.info udp-port=40000 payload-type=115 dev-ip="192.168.96.2" ip="239.168.75.30" dev-port=$VFIO_PORT_R ! filesink location=$OUTPUT --gst-plugin-path $GSTREAMER_PLUGINS_PATH
 ```
 

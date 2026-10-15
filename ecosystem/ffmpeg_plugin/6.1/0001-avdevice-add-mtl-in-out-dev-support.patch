@@ -5,10 +5,10 @@ Subject: [PATCH] avdevice: add mtl in/out dev support
 
 Signed-off-by: Frank Du <frank.du@intel.com>
 ---
- configure                | 9 +++++++++
- libavdevice/Makefile     | 6 ++++++
- libavdevice/alldevices.c | 9 +++++++++
- 3 files changed, 24 insertions(+)
+ configure                | 11 +++++++++++
+ libavdevice/Makefile     |  8 ++++++++
+ libavdevice/alldevices.c | 11 +++++++++++
+ 3 files changed, 30 insertions(+)
 
 diff --git a/configure b/configure
 index ca184072b3..b7582d0f39 100755
@@ -30,7 +30,7 @@ index ca184072b3..b7582d0f39 100755
      openal
      opengl
      openssl
-@@ -3597,6 +3599,12 @@ kmsgrab_indev_deps="libdrm"
+@@ -3597,6 +3599,14 @@ kmsgrab_indev_deps="libdrm"
  lavfi_indev_deps="avfilter"
  libcdio_indev_deps="libcdio"
  libdc1394_indev_deps="libdc1394"
@@ -40,10 +40,12 @@ index ca184072b3..b7582d0f39 100755
 +mtl_st22p_outdev_deps="mtl"
 +mtl_st30p_indev_deps="mtl"
 +mtl_st30p_outdev_deps="mtl"
++mtl_st40p_indev_deps="mtl"
++mtl_st40p_outdev_deps="mtl"
  openal_indev_deps="openal"
  opengl_outdev_deps="opengl"
  opengl_outdev_suggest="sdl2"
-@@ -6873,6 +6881,7 @@ enabled mmal              && { check_lib mmal interface/mmal/mmal.h mmal_port_co
+@@ -6873,6 +6883,7 @@ enabled mmal              && { check_lib mmal interface/mmal/mmal.h mmal_port_co
                                   check_lib mmal interface/mmal/mmal.h mmal_port_connect -lmmal_core -lmmal_util -lmmal_vc_client -lbcm_host; } ||
                                 die "ERROR: mmal not found" &&
                                 check_func_headers interface/mmal/mmal.h "MMAL_PARAMETER_VIDEO_MAX_NUM_CALLBACKS"; }
@@ -55,7 +57,7 @@ diff --git a/libavdevice/Makefile b/libavdevice/Makefile
 index c30449201d..23b0e130fe 100644
 --- a/libavdevice/Makefile
 +++ b/libavdevice/Makefile
-@@ -34,6 +34,12 @@ OBJS-$(CONFIG_IEC61883_INDEV)            += iec61883.o
+@@ -34,6 +34,14 @@ OBJS-$(CONFIG_IEC61883_INDEV)            += iec61883.o
  OBJS-$(CONFIG_JACK_INDEV)                += jack.o timefilter.o
  OBJS-$(CONFIG_KMSGRAB_INDEV)             += kmsgrab.o
  OBJS-$(CONFIG_LAVFI_INDEV)               += lavfi.o
@@ -65,6 +67,8 @@ index c30449201d..23b0e130fe 100644
 +OBJS-$(CONFIG_MTL_ST22P_OUTDEV)          += mtl_common.o mtl_st22p_tx.o
 +OBJS-$(CONFIG_MTL_ST30P_INDEV)           += mtl_common.o mtl_st30p_rx.o
 +OBJS-$(CONFIG_MTL_ST30P_OUTDEV)          += mtl_common.o mtl_st30p_tx.o
++OBJS-$(CONFIG_MTL_ST40P_INDEV)           += mtl_common.o mtl_st40p_rx.o
++OBJS-$(CONFIG_MTL_ST40P_OUTDEV)          += mtl_common.o mtl_st40p_tx.o
  OBJS-$(CONFIG_OPENAL_INDEV)              += openal-dec.o
  OBJS-$(CONFIG_OPENGL_OUTDEV)             += opengl_enc.o
  OBJS-$(CONFIG_OSS_INDEV)                 += oss_dec.o oss.o
@@ -72,7 +76,7 @@ diff --git a/libavdevice/alldevices.c b/libavdevice/alldevices.c
 index 8a90fcb5d7..b183c18e9c 100644
 --- a/libavdevice/alldevices.c
 +++ b/libavdevice/alldevices.c
-@@ -40,6 +40,15 @@ extern const AVInputFormat  ff_iec61883_demuxer;
+@@ -40,6 +40,17 @@ extern const AVInputFormat  ff_iec61883_demuxer;
  extern const AVInputFormat  ff_jack_demuxer;
  extern const AVInputFormat  ff_kmsgrab_demuxer;
  extern const AVInputFormat  ff_lavfi_demuxer;
@@ -85,6 +89,8 @@ index 8a90fcb5d7..b183c18e9c 100644
 +extern const AVInputFormat  ff_mtl_st30p_demuxer;
 +extern const FFOutputFormat ff_mtl_st30p_muxer;
 +extern const FFOutputFormat ff_mtl_st30p_pcm16_muxer;
++extern const AVInputFormat  ff_mtl_st40p_demuxer;
++extern const FFOutputFormat ff_mtl_st40p_muxer;
  extern const AVInputFormat  ff_openal_demuxer;
  extern const FFOutputFormat ff_opengl_muxer;
  extern const AVInputFormat  ff_oss_demuxer;

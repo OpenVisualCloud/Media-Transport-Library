@@ -672,6 +672,7 @@ Same lifecycle pattern as video, simplified:
 - No assembly complexity (1-8 packets per frame)
 - Low scheduler quota
 - Shared queue friendly
+- ST40 TX packet paths, error codes, test hooks and the tests of each function: `doc/st40_tx_session.md`
 - ST2110-41 fast metadata is not a separate session type: an ST40 session opts in with
   `ST40_TX_FLAG_FAST_METADATA` / `ST40_RX_FLAG_FAST_METADATA` (`st40_api.h`). The mode swaps
   only the RTP payload format: `struct st40_fmd_rtp_hdr` (22-bit DIT, K-bit, 9-bit word length,

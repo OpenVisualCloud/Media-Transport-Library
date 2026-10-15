@@ -11,12 +11,7 @@ from mtl_engine.media_files import anc_files
     "application",
     [
         "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st40p ancillary data pipeline"
-            ),
-        ),
+        "ffmpeg",
         "gstreamer",
     ],
 )
@@ -66,12 +61,7 @@ def test_st40p_basic(
     "application",
     [
         "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st40p ancillary data pipeline"
-            ),
-        ),
+        "ffmpeg",
         "gstreamer",
     ],
 )
@@ -134,9 +124,7 @@ def test_st40p_multicast_with_compliance(
         "rxtxapp",
         pytest.param(
             "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not support st40p ancillary data pipeline"
-            ),
+            marks=pytest.mark.skip(reason="the FFmpeg st40p device has no RTCP option"),
         ),
         pytest.param(
             "gstreamer",
