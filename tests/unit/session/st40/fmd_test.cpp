@@ -52,7 +52,7 @@ std::vector<uint8_t> fmd_packet(uint16_t seq, uint32_t ts,
 
   std::vector<uint8_t> pkt(sizeof(hdr) + item.size());
   memcpy(pkt.data(), &hdr, sizeof(hdr));
-  memcpy(pkt.data() + sizeof(hdr), item.data(), item.size());
+  if (!item.empty()) memcpy(pkt.data() + sizeof(hdr), item.data(), item.size());
   return pkt;
 }
 

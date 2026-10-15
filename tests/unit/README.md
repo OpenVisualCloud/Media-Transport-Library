@@ -64,15 +64,7 @@ runs `tests/unit/UnitTest`.
 
 AddressSanitizer covers this tier only in part. `./build.sh debug unit` and
 `MTL_BUILD_ENABLE_ASAN=true ./build.sh unit` set `-Denable_asan=true`, which `lib/meson.build`
-adds to the `libmtl.so` compile arguments only. Both commands configure and build cleanly, but
-the resulting suite is not green: `St22PipelineConcurrency.RxSingleProducerMultiConsumerNoDeadlock`
-takes a SEGV and the sanitizer aborts the process. gtest prints no summary, and the binary exits
-nonzero part-way through the 513 cases — one observed run stopped after 482 of them had reported
-`OK`. `build.sh` runs under `set -e`, so the command dies there with a raw sanitizer backtrace.
-To compare the ASan and non-ASan runs, exclude the suite: `--gtest_filter=-St22PipelineConcurrency.*` runs
-the other 511 of the 513 cases and all pass. The crash needs `enable_asan` — the same case
-passes 3/3 without it. Before filing a defect against `lib/`, read the allocator paragraph
-below; no causal link between the two is established. Tracked as T-61.
+adds to the `libmtl.so` compile arguments only. Both commands build and run the whole suite.
 
 Coverage also splits: no `UnitTest` object gets `-fsanitize=address`, so the production `.c`
 files this suite `#include`s into harness `.c` files are unchecked. Any `libmtl.so` symbol that

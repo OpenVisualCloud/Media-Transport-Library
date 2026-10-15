@@ -196,11 +196,14 @@ void ut_ptp_sync_from_user_no_timesync(ut_ptp_ctx* ctx) {
 }
 
 uint64_t ut_ptp_mbuf_time_stamp(ut_ptp_ctx* ctx, uint64_t raw_ns) {
-  struct ut_timestamp_mbuf {
+  /* static: a local gets only 32-byte alignment from gcc's ASan fake stack
+   * (detect_stack_use_after_return), struct rte_mbuf needs 64 */
+  static struct ut_timestamp_mbuf {
     struct rte_mbuf mbuf;
     rte_mbuf_timestamp_t timestamp;
-  } timestamp_mbuf = {0};
+  } timestamp_mbuf;
 
+  memset(&timestamp_mbuf, 0, sizeof(timestamp_mbuf));
   ctx->impl.ptp[MTL_PORT_P] = &ctx->ptp;
   ctx->impl.dynfield_offset = offsetof(struct ut_timestamp_mbuf, timestamp);
   ctx->impl.dyn_rx_timestamp_flag = ut_hw_rx_timestamp_flag();
