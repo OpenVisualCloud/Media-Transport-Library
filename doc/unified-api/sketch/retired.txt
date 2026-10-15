@@ -1,0 +1,23 @@
+# Retired names, each with the decision that retired it. check.sh lint 12 fails when one
+# appears outside decisions.md (whose superseded rows keep the history).
+MTL_UNITF_INDEX_VALID	D-215
+MTL_UNITF_TAI_VALID	D-215
+MTL_TXR_MEDIA_VALID	D-215
+MTL_TXR_MARGIN_VALID	D-215
+MTL_TXR_SENT_VALID	D-215
+MTL_TXF_ENQUEUED_VALID	D-215
+MTL_TXF_OBSERVED_	D-215
+MTL_RXF_ARRIVAL_LEG	D-215
+MTL_RXF_PRESENTATION	D-215
+MTL_RXF_TIMING_LEG	D-215
+MTL_PKTE_ARRIVAL_VALID	D-215
+MTL_EVF_TIME_VALID	D-215
+MTL_TIMEF_VALID	D-215
+MTL_UNDERRUN_EMPTY_ANC	D-243
+REPEAT_LAST	D-239
+mtl_rx_reserve	D-227
+units_repeated	D-244
+units_padded	D-244
+units_zero_filled	D-244
+bytes_zero_filled	D-244
+sink_eos	D-210

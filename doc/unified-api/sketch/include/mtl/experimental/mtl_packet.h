@@ -89,7 +89,7 @@ struct mtl_pkt_tx {
 #define MTL_PKTE_UNIT_START 0x2u /* timestamp differs from the previous packet's */
 #define MTL_PKTE_MARKER 0x4u
 #define MTL_PKTE_REDUNDANT 0x8u /* NO_DEDUP: the other leg's copy */
-#define MTL_PKTE_ARRIVAL_VALID 0x10u
+/* 0x10 retired, never reused */
 #define MTL_PKTE_HW_ARRIVAL 0x20u
 #define MTL_PKTE_HDR_EXT 0x40u /* CSRCs or an RFC 8285 extension follow the fixed header */
 /* RX packet table entry, one per delivered packet. */
@@ -103,7 +103,7 @@ struct mtl_pkt_rx {
   uint16_t gap;  /* saturating */
   uint32_t seq;  /* extended for video, else 16-bit */
   uint32_t reserved;
-  int64_t arrival_tai_ns; /* with MTL_PKTE_ARRIVAL_VALID */
+  int64_t arrival_tai_ns; /* MTL_TIME_NONE when unknown */
 };
 
 /* Layout helpers (bindings reimplement them: they only compute addresses). */

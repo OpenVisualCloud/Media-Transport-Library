@@ -1,5 +1,6 @@
 /* ex09 — packet units, both ways: build your own RTP packets, and forward received
    packets byte for byte, timed by their own timestamps. Needs: MS5. */
+#include <mtl/experimental/mtl_observe.h>
 #include <mtl/experimental/mtl_packet.h>
 #include <mtl/experimental/mtl_sync.h>
 #include <mtl/experimental/mtl_util.h>
@@ -50,7 +51,7 @@ int send_frame(mtl_session_h s, uint32_t ssrc) {
 
 /* ---- 2. A forwarder that keeps the input's timing ---------------------------------- */
 
-#define MARGIN MTL_MS(1) /* MTL's pick-up lead and the input's jitter */
+#define MARGIN MTL_MS(1) /* the input's jitter; MTL adds its own pick-up lead */
 void input_gap(uint8_t leg, uint32_t seq, uint16_t gap); /* what the network lost */
 void input_offset(int32_t ticks); /* first packet arrival - RTP: LIST's RTP offset */
 
@@ -59,12 +60,14 @@ void input_offset(int32_t ticks); /* first packet arrival - RTP: LIST's RTP offs
    frame. */
 int64_t input_delay(const struct mtl_pkt_rx* marker) {
   uint32_t ts = mtl_rtp_get_ts((const struct mtl_rtp_hdr*)marker->data);
+  if (marker->arrival_tai_ns == MTL_TIME_NONE) return MTL_TIME_NONE; /* not measured */
   return marker->arrival_tai_ns - mtl_media_tai(marker->arrival_tai_ns, ts, 90000);
 }
 
 /* The forwarder's TX: generic RTP at the input's rate, every byte verbatim (set_fields
-   0), each unit sent min_tx_delay_ns after its first packet's RTP time. Its pool holds
-   every chunk until it leaves: the frames of the delay, plus one. */
+   0), each unit ready min_tx_delay_ns after its first packet's RTP time and sent at the
+   first frame time MTL can make from then. Its pool holds every chunk until it leaves:
+   the frames of the launch delay MTL derived (its pick-up lead included), plus one. */
 int open_forward_tx(mtl_instance_h mt, int64_t input_delay_ns, mtl_session_h* tx) {
   struct mtl_session_config sc;
   struct mtl_session_info info;
@@ -80,20 +83,30 @@ int open_forward_tx(mtl_instance_h mt, int64_t input_delay_ns, mtl_session_h* tx
   sc.packet.packets_per_unit = PKTS;
   sc.packet.packets_per_chunk = CHUNK;
   sc.packet.unit_time = MTL_PKT_TIME_FROM_RTP;
+  if (input_delay_ns == MTL_TIME_NONE) { /* not measured yet */
+    *tx = MTL_NULL(mtl_session_h);
+    return ex_fail("forward tx", -MTL_EINVAL);
+  }
   sc.min_tx_delay_ns = input_delay_ns + MARGIN;
-  const int64_t frame_ns = mtl_frame_ns(sc.rtp.unit.fps);
-  int64_t frames = (sc.min_tx_delay_ns + frame_ns - 1) / frame_ns + 1;
-  int ret = mtl_session_query(mt, &sc, 0, &info, sizeof(info), NULL, 0); /* the limit */
-  sc.pool_count = (uint32_t)frames * CHUNKS;
+  int64_t launch = 0; /* L: whole frames from the media time to the launch */
+  int ret = mtl_session_create(mt, &sc, tx);
+  if (ret >= 0) ret = mtl_session_get_info(*tx, &info, sizeof(info));
+  if (ret >= 0) ret = mtl_stat_get(MTL_OBJ_OF_SESSION(*tx), "info.launch_delay", &launch);
+  sc.pool_count = (uint32_t)(launch + 1) * CHUNKS;
   if (ret >= 0 && sc.pool_count > info.max_count) ret = -MTL_ERANGE; /* delay too long */
-  if (ret >= 0) ret = mtl_session_open(mt, &sc, tx);
+  if (ret >= 0) ret = mtl_session_update(*tx, &sc, MTL_UPDATE_POOL, NULL, NULL);
+  if (ret >= 0) ret = mtl_session_start(tx, 1, NULL, NULL);
+  if (ret < 0) {
+    mtl_session_close(*tx, 0); /* not left CREATED */
+    *tx = MTL_NULL(mtl_session_h);
+  }
   return ret < 0 ? ex_fail("forward tx", ret) : 0;
 }
 
 /* What the input did: its losses per leg, and its RTP offset. */
 static void measure(const struct mtl_pkt_rx* p) {
   if (p->flags & MTL_PKTE_GAP_BEFORE) input_gap(p->leg, p->seq, p->gap);
-  if ((p->flags & MTL_PKTE_UNIT_START) && (p->flags & MTL_PKTE_ARRIVAL_VALID)) {
+  if ((p->flags & MTL_PKTE_UNIT_START) && p->arrival_tai_ns != MTL_TIME_NONE) {
     uint32_t ts = mtl_rtp_get_ts((const struct mtl_rtp_hdr*)p->data);
     input_offset((int32_t)(mtl_media_ticks(p->arrival_tai_ns, 90000) - ts));
   }

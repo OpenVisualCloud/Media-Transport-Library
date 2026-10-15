@@ -101,12 +101,12 @@ int run_three_frames(mtl_instance_h mt, mtl_session_h s) {
   return ret;
 }
 
-// The full timing record; the NIC launch time is valid only when flagged.
+// The full timing record; the NIC launch time is MTL_TIME_NONE without a NIC timestamp.
 void print_launches(mtl_session_h s) {
   std::array<mtl_tx_result_full, 4> full{};
   int n = mtl_tx_reap_full(s, full.data(), static_cast<uint32_t>(full.size()), 0);
   for (int i = 0; i < n; i++)
-    if (full[i].detail_flags & MTL_TXF_OBSERVED_LEG0)
+    if (full[i].observed_first_tai_ns[0] != MTL_TIME_NONE)
       std::printf("launch error %lld ns\n",
                   static_cast<long long>(full[i].observed_first_tai_ns[0] -
                                          full[i].scheduled_tai_ns));

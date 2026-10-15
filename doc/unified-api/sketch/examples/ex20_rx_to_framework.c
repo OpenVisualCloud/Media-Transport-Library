@@ -1,73 +1,65 @@
 /* ex20 — received frames lent to a framework (GstBuffer, AVBufferRef) without a copy, and
-   released on any thread. Needs: MS1. */
-#include <mtl/experimental/mtl_util.h>
-#include <stdlib.h>
-
+   released on any thread; MTL says when to copy instead. It lends with a pool_count of
+   R_copy + H (R_copy the slots MTL keeps, MTL_UNITF_COPY_ADVISED; H the units held
+   downstream at once); at the default pool of 3 every unit is copied. Needs: MS1. */
 #include "ex_common.h"
 
 #define EX_FLUSHING 1 /* the framework's "flushing" return (GST_FLOW_FLUSHING) */
+#define EX_DROPPED 2  /* the framework's "no buffer this time, call again" return */
 
-/* What one framework buffer keeps until its free callback runs: the handles by value,
-   never a pointer into the element, since a sink, a queue or an appsink application may
-   hold the buffer after the element is gone. */
-struct rx_ref {
-  mtl_session_h s;
-  mtl_lease_h lease;
-};
 /* The framework's wrap: gst_buffer_new_wrapped_full(0, data, size + MTL_RX_TAIL_BYTES, 0,
    size, ref, cb) or av_buffer_create(data, size, cb, ref, 0) (cb takes a second argument
    there). Library slots are packed (FFmpeg av_image_fill_arrays with align 1) and end in
    MTL_RX_TAIL_BYTES zero bytes (AV_INPUT_BUFFER_PADDING_SIZE). Then its copy into a
-   buffer of its own, and its count of wrapped buffers still out (an atomic the callback
-   decrements). */
+   buffer of its own: the downstream pool decide_allocation chose (GL, DMA-BUF or system
+   memory, so the copy is the upload), or an av_buffer_pool. The copy takes its buffer
+   without waiting (GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT) and returns 1 when none is
+   free: create never blocks on downstream. */
 typedef void (*release_fn)(void* ref);
 int wrap_as_framework_buffer(void* data, uint64_t size, release_fn cb, void* ref);
 int copy_to_framework_buffer(const void* data, uint64_t size);
-uint32_t framework_wrapped_out(void);
 
+/* What a framework buffer keeps until its free callback runs: the lease's id as the
+   callback's pointer, nothing of the element, since a sink, a queue or an appsink
+   application may hold the buffer after the element is gone. */
 static void release_cb(void* p) { /* any thread, any order, also after close */
-  struct rx_ref* ref = (struct rx_ref*)p;
-  mtl_rx_release(ref->s, ref->lease); /* 0 also once the session or instance closed */
-  free(ref);
+  mtl_lease_h lease = {(uint64_t)(uintptr_t)p};   /* names its session */
+  mtl_rx_release(MTL_NULL(mtl_session_h), lease); /* 0 also once either closed */
 }
 
-/* At start and at each GST_EVENT_LATENCY: the slots to keep for MTL, the units not yet
-   handed on. Once downstream holds the rest, the next unit is copied, so a slow consumer
-   costs a copy, never a lost unit. latency_ns: the pipeline's configured latency;
-   copy_ns: the measured copy of one unit (about 1 ms at 1080p). A pool_count below this +
-   the units held downstream (a sink's last sample, an aggregator pad) makes the copy path
-   run: log the pool_count it needs once. */
-int rx_reserve(mtl_session_h s, int64_t latency_ns, int64_t copy_ns) {
+/* GST_QUERY_LATENCY: live, min = latency_min_ns (the caller's work included), max =
+   latency_max_ns (GST_CLOCK_TIME_NONE for INT64_MAX, RX_LATEST). The units downstream
+   holds change neither: past MTL's budget the source copies, so no unit is lost to a
+   holder. Post a LATENCY message when either changes. */
+int rx_latency_query(mtl_session_h s, int64_t* min_ns, int64_t* max_ns) {
   struct mtl_session_info info;
   int ret = mtl_session_get_info(s, &info, sizeof(info));
-  return ret < 0 ? ret : mtl_rx_reserve(&info, NULL, latency_ns, copy_ns);
+  if (ret < 0) return ret;
+  *min_ns = info.latency_min_ns;
+  *max_ns = info.latency_max_ns;
+  return 0;
 }
 
-/* GstBaseSrc::create on the streaming thread: 0 = one buffer handed on; EX_FLUSHING after
-   unlock() or a stop, without waiting for unlock_stop(): the framework calls create again
-   once it has run; a negative code on an error. unit_bytes: mtl_session_info.unit_bytes
-   (with detection, the sum of stride x rows over the unit's planes); reserve: the last
-   rx_reserve(). */
-int rx_create(mtl_session_h s, uint64_t unit_bytes, uint32_t pool_count,
-              uint32_t reserve) {
+/* GstBaseSrc::create on the streaming thread: 0 = one buffer handed on; EX_DROPPED = a
+   flagged unit found no free buffer and was dropped; EX_FLUSHING after unlock() or a
+   stop, without waiting for unlock_stop(): the framework calls create again once it has
+   run; a negative code on an error. unit_bytes: mtl_session_info.unit_bytes
+   (with detection, the sum of stride x rows over the unit's planes). */
+int rx_create(mtl_session_h s, uint64_t unit_bytes) {
   struct mtl_unit u;
   MTL_INIT(&u);
   int ret = mtl_rx_dequeue(s, &u, MTL_FOREVER);
   if (ret == -MTL_ECANCELED || ret == -MTL_ESHUTDOWN) return EX_FLUSHING;
   if (ret < 0) return ex_fail("dequeue", ret); /* -MTL_EIO: status.error_reason */
-  if (framework_wrapped_out() + reserve >= pool_count) { /* copy into its own buffer */
+  if (u.flags & MTL_UNITF_COPY_ADVISED) { /* lending it would leave MTL too few slots */
     ret = copy_to_framework_buffer(u.plane[0].addr, unit_bytes);
     mtl_rx_release(s, u.lease);
+    if (ret == 1) return EX_DROPPED; /* no free buffer: the unit is dropped (QoS) */
     return ret < 0 ? -MTL_ENOMEM : 0;
   }
-  struct rx_ref* ref = (struct rx_ref*)malloc(sizeof(*ref));
-  if (ref) {
-    ref->s = s; /* by value */
-    ref->lease = u.lease;
-    if (wrap_as_framework_buffer(u.plane[0].addr, unit_bytes, release_cb, ref) == 0)
-      return 0;
-    free(ref);
-  }
+  if (wrap_as_framework_buffer(u.plane[0].addr, unit_bytes, release_cb,
+                               (void*)(uintptr_t)u.lease.id) == 0)
+    return 0;
   mtl_rx_release(s, u.lease);
   return -MTL_ENOMEM;
 }

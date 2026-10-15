@@ -1,7 +1,8 @@
-/* ex21 — a live framework sink (GStreamer without basesink sync, ffmpeg -re, an OBS
-   output): each buffer's presentation time becomes its TAI media time, and the sinks of a
-   programme share one latency and one phase, so they stay on the same frame times.
-   Needs: MS2 (MS2a: discard). */
+/* ex21 — a live sink that MTL paces (ffmpeg -re, an OBS output, an application; a
+   GStreamer basesink waits on its clock instead, migration.md §12.1): each buffer's
+   presentation time becomes its TAI media time, and the sinks of a programme share one
+   latency and one phase, so they stay on the same frame times. Needs: MS2 (MS2a:
+   discard). */
 #include <mtl/experimental/mtl_sync.h>
 #include <mtl/experimental/mtl_util.h>
 
@@ -10,8 +11,9 @@
 #define MARGIN MTL_MS(1) /* for the producer's jitter */
 
 /* A buffer: planes in the framework's memory, its presentation time on CLOCK_MONOTONIC
-   (GStreamer's system clock: base_time + running time) and its id. A framework on another
-   clock passes that one to mtl_time_convert. */
+   before the programme latency (OBS: its timestamp) and its id. A framework on another
+   clock passes that one to mtl_time_convert (FFmpeg: REALTIME, start_time_realtime + the
+   rescaled pts). */
 struct fw_buffer {
   uint64_t id;
   int64_t pts_monotonic_ns;
@@ -20,12 +22,13 @@ struct fw_buffer {
 };
 /* The framework's QoS for one buffer: ON_TIME, or DROPPED with SNAP_COLLISION (two
    buffers for one frame time) or TOO_LATE (the latency did not cover the producer);
-   margin_ns INT64_MIN when not valid. */
+   margin_ns MTL_TIME_NONE when it has none. */
 void fw_report(uint64_t id, uint32_t status, uint32_t reason, int64_t margin_ns);
 
-/* One per pipeline or process; every sink adds both to its media times. latency_ns: the
-   pipeline latency (GStreamer's LATENCY event), at least the largest minimum its sinks
-   reported. phase_ns: set by the first sink to render; -1 before. */
+/* One per programme, in the plugin's process state; every sink adds both to its media
+   times. latency_ns: at least the largest minimum of its sinks (sink_open), set before
+   the first render (FFmpeg: and at least -muxdelay). phase_ns: the application
+   initialises it to MTL_TIME_NONE, and the first sink to render sets it. */
 struct programme {
   struct mtl_rational fps; /* the video's raster.fps */
   int64_t latency_ns;
@@ -35,6 +38,11 @@ struct live_sink {
   mtl_instance_h mt;
   mtl_session_h s;
   struct programme* prog;
+  uint64_t unreported; /* buffers handed over whose report has not come back; render and
+                          the reap share a thread here (a reaper on another thread makes
+                          it atomic) */
+  uint64_t pins;       /* the last buffers MTL keeps to repeat: 0 (SKIP); 1, or 2 when
+                          interlaced, under MTL_UNDERRUN_REPEAT */
 };
 
 /* set_caps: base has the flows, raster and formats of the caps. *min_ns: this sink's
@@ -48,18 +56,19 @@ int sink_open(struct live_sink* k, const struct mtl_session_config* base,
   int ret = mtl_session_open(k->mt, &sc, &k->s);
   if (ret >= 0) ret = mtl_session_get_info(k->s, &info, sizeof(info));
   if (ret < 0) return ex_fail("sink", ret);
-  *min_ns = info.latency_min_ns                     /* MTL's lead */
-            + info.convert_ns                       /* the copy inside submit */
-            + MARGIN                                /* the producer's jitter */
-            + mtl_frame_ns(base->video.raster.fps); /* the phase: less than a frame */
+  /* MTL's lead with the copy inside submit, the producer's jitter, and one frame for the
+     snap's hysteresis: 5/8 frame at the default, one frame at most */
+  *min_ns = info.latency_min_ns + MARGIN + mtl_frame_ns(base->video.raster.fps);
+  k->unreported = 0;
+  k->pins = 0; /* SKIP here; under MTL_UNDERRUN_REPEAT 1, or 2 when interlaced */
   return 0;
 }
 
 /* Each buffer's report, by cookie (ex06's results). */
 static void on_result(void* priv, const struct mtl_tx_result* r) {
-  (void)priv;
-  int64_t margin = (r->flags & MTL_TXR_MARGIN_VALID) ? r->margin_ns : INT64_MIN;
-  fw_report(r->cookie, r->status, r->reason, margin);
+  struct live_sink* k = priv;
+  k->unreported--; /* exactly one result per accepted submit */
+  fw_report(r->cookie, r->status, r->reason, r->margin_ns);
 }
 
 /* render: 0 = handed over (its report follows); -MTL_ECANCELED after unlock. */
@@ -69,13 +78,14 @@ int sink_render(struct live_sink* k, const struct fw_buffer* buf) {
   int64_t tai = 0;
   int ret;
   MTL_INIT(&u);
-  ret = mtl_tx_reap_each(k->s, on_result, NULL); /* then it never waits on results */
+  ret = mtl_tx_reap_each(k->s, on_result, k); /* before each submit: no acquire waits on
+                                                  results, here or on another thread */
   if (ret >= 0) ret = mtl_tx_acquire(k->s, &u, MTL_FOREVER); /* a full pool waits */
   if (ret < 0) return ret;
   ret = mtl_time_convert(k->mt, buf->pts_monotonic_ns, MTL_CLOCK_MONOTONIC, MTL_CLOCK_TAI,
                          &tai);
   /* the first sink to render sets the phase (a plugin holds the programme's lock) */
-  if (ret >= 0 && p->phase_ns < 0)
+  if (ret >= 0 && p->phase_ns == MTL_TIME_NONE)
     ret = mtl_grid_offset(tai + p->latency_ns, p->fps, &p->phase_ns);
   if (ret < 0) {
     mtl_tx_release(k->s, u.lease);
@@ -88,15 +98,30 @@ int sink_render(struct live_sink* k, const struct fw_buffer* buf) {
     u.plane[i].addr = (void*)buf->plane[i];
     u.plane[i].stride = buf->stride[i];
   }
-  return mtl_tx_submit(k->s, &u); /* on a failure the slot goes back, without a result */
+  ret = mtl_tx_submit(k->s, &u); /* on a failure the slot goes back, without a result */
+  if (ret == 0) k->unreported++;
+  return ret;
 }
 
-/* EOS drains and reports every buffer; a seek (FLUSH_STOP) discards them: FLUSHED,
-   DISCARD, and TAI needs no rebase. */
-int sink_eos(struct live_sink* k, int seek) {
-  int ret = seek ? mtl_session_discard(k->s, 0, 0)
-                 : mtl_session_stop(&k->s, 1, MTL_STOP_DRAIN, MTL_SEC(2));
-  int r = mtl_tx_reap_each(k->s, on_result, NULL);
+/* End of input (GStreamer EOS; FFmpeg and OBS close next): the session stays RUNNING, and
+   the frame times after the last buffer follow the underrun policy. It returns once every
+   buffer but the k->pins last ones has its report, so the last buffer is on air, and a
+   seek afterwards needs no start. A reap that times out ends the wait too (a stalled
+   queue: close drains it). -MTL_ECANCELED: a flush came first (unlock). */
+int sink_end(struct live_sink* k) {
+  struct mtl_tx_result r;
+  int ret = 0;
+  while (k->unreported > k->pins && (ret = mtl_tx_reap(k->s, &r, 1, MTL_SEC(1))) > 0)
+    on_result(k, &r);
+  return ret < 0 && ret != -MTL_EAGAIN ? ret : 0;
+}
+
+/* A seek (GStreamer FLUSH_STOP): the queued buffers are FLUSHED, DISCARD, and a repeated
+   frame is released, so the frame times until the next buffer are empty; TAI needs no
+   rebase. */
+int sink_seek(struct live_sink* k) {
+  int ret = mtl_session_discard(k->s, 0, 0);
+  int r = mtl_tx_reap_each(k->s, on_result, k);
   return ret < 0 ? ret : r;
 }
 

@@ -43,9 +43,9 @@ every example from MS1.
 | [ex15_cvideo.c](sketch/examples/ex15_cvideo.c) | compressed video (ST 2110-22): your codec or a codec plugin | `mtl_plugin.h` | MS4 | [§17](#17-compressed-video-st-2110-22) |
 | [ex16_pod_service.c](sketch/examples/ex16_pod_service.c) | a service in a Kubernetes pod: SIGTERM, probes, a bounded shutdown | `mtl_observe.h` | MS3 | [§18](#18-a-service-in-a-kubernetes-pod-signals-probes-bounded-shutdown) |
 | [ex17_telemetry.c](sketch/examples/ex17_telemetry.c) | observe a running instance: logs, every stat, events | `mtl_observe.h` | MS3 | [§19](#19-telemetry-logs-stats-events) |
-| [ex18_nmos_node.c](sketch/examples/ex18_nmos_node.c) | an NMOS node: its IS-04 interfaces, one IS-05 PATCH as one update at one instant | `mtl.h`, `mtl_observe.h` | MS5 | [§20](#20-an-nmos-node-is-04-interfaces-is-05-activation) |
+| [ex18_nmos_node.c](sketch/examples/ex18_nmos_node.c) | an NMOS node: its IS-04 interfaces, one IS-05 PATCH as one update on one unit, leg by leg; a TX format hand-over | `mtl.h`, `mtl_observe.h`, `mtl_sync.h` | MS3 | [§20](#20-an-nmos-node-is-04-interfaces-is-05-activation) |
 | [ex19_framework_setup.c](sketch/examples/ex19_framework_setup.c) | a framework element's setup: options as properties, caps as formats, the shared instance, the latency | `mtl_options.h`, `mtl_format.h` | MS2 (MS2a: the shared instance, the option, format and port parsers) | [§21](#21-a-framework-elements-setup) |
-| [ex20_rx_to_framework.c](sketch/examples/ex20_rx_to_framework.c) | received frames lent to a framework, released on any thread | `mtl_util.h` | MS1 | [§22](#22-received-frames-lent-to-a-framework) |
+| [ex20_rx_to_framework.c](sketch/examples/ex20_rx_to_framework.c) | received frames lent to a framework, released on any thread | `mtl.h` | MS1 | [§22](#22-received-frames-lent-to-a-framework) |
 | [ex21_live_sink.c](sketch/examples/ex21_live_sink.c) | a live framework sink: presentation time to media time, one latency and phase per programme | `mtl_sync.h` | MS2 (MS2a: discard) | [§23](#23-a-live-sink-presentation-time-to-media-time) |
 | [ex22_av_playout.c](sketch/examples/ex22_av_playout.c) | video, audio and captions from one file, started together, exact RTP | `mtl_util.h` | MS6 | [§24](#24-video-audio-and-captions-from-one-file) |
 | [ex23_processor.c](sketch/examples/ex23_processor.c) | a processor (a down-converter) that keeps the input's media time and RTP | `mtl_util.h`, `mtl_format.h` | MS6 | [§25](#25-a-processor-that-keeps-the-inputs-timing) |
@@ -110,7 +110,7 @@ program reaches a VF through the legacy bridge (`mtl_legacy.h`).
 | audio sender or receiver (ST 2110-30, AES67) on its own | MS4a1 | the audio binding, media mode AUTO | ex13 |
 | ANC (captions, SCTE-104, timecode) timed to its video | MS4a2 | the ANC binding | ex14 |
 | compressed video (JPEG XS) with codec plugins | MS4b | cvideo, plugin ABI v2 | ex15 |
-| NMOS IS-05 Node that switches without re-creating | MS3 (stop, update, start); MS5 without the stop | `mtl_session_update` | ex18 |
+| NMOS IS-05 Node that switches without re-creating | MS3 (immediate activations while running); MS5 scheduled ones and per-leg enable | `mtl_session_update` | ex18 |
 | RTP passthrough, ST 2022-6 | MS5 | packet units | ex09 |
 | audio timed to video; V+A+ANC playout or processing with exact RTP | MS6 | audio TAI and INDEX, start arrays | ex22, ex23 |
 | a binary that keeps running on later releases without a rebuild | MS7 | `MTL_1.0` | — |
@@ -134,8 +134,8 @@ header's jobs; the second says which header to include for a job, and from which
 | `mtl_observe.h` | export stats, read full result records and RX detail, answer probes from health, shut down with a report, route logs, capture packets | MS1 (full TX results), MS2 (stats, RX detail, enumeration, ports, log sink), MS3 (health, shutdown), MS4 (capture) |
 | `mtl_options.h` | set a tuning knob (`MTL_OPT_*`), or list every knob by name | MS1 |
 | `mtl_reasons.h` | branch on a reason code | values only, no functions |
-| `mtl_format.h` | use an application pixel format other than the wire format; convert colour or audio formats outside a session | MS1 (application formats), MS4 (`mtl_convert`) |
-| `mtl_util.h` | the copy path (`mtl_tx_write`, from a byte buffer), one-call slot sends, every ready result (`mtl_tx_reap_each`), stride-aware plane copies, a frame's duration, L24 samples, meta records, ANC helpers, the RX reserve of a framework source | MS1 (audio and ANC sessions MS4), MS2 (named slots) |
+| `mtl_format.h` | use an application pixel format other than the wire format; convert colour or audio formats outside a session | MS1 (application formats), MS2 (`mtl_convert` with `MTL_CONVERT_CHECK`), MS4b (its conversions) |
+| `mtl_util.h` | the copy path (`mtl_tx_write`, from a byte buffer), one-call slot sends, every ready result (`mtl_tx_reap_each`), stride-aware plane copies, a frame's duration, L24 samples, meta records, ANC helpers | MS1 (audio and ANC sessions MS4), MS2 (named slots) |
 | `mtl_plugin.h` | write a codec plugin | MS4 |
 | `mtl_legacy.h` | share an instance with legacy code (`mtl_handle`) | MS1 |
 | `mtl_debug.h` | test clock and fault injection (debug builds) | MS1 |
@@ -155,9 +155,11 @@ application's SIGINT and SIGTERM handler (`ex_install_interrupt`, declared; ex16
 `mtl_instance_interrupt(mt, 1)`: every wait returns `-MTL_ECANCELED`, so the examples wait with
 `MTL_FOREVER` wherever a timeout is not itself the lesson, and a loop ends on that code. A finite
 timeout stays where `-MTL_EAGAIN` means something: no signal on a receiver (ex02, ex07), a slot
-that did not come within a frame (ex06). With results on, every example reads the ready results
-before an acquire that may block, so the acquire never waits on unread results (ex05, ex10, ex21,
-the C++ sender; [contract.md §5.5](contract.md#55-back-pressure)).
+that did not come within a frame (ex06). With results on, the examples that submit unit by unit
+read the ready results before each submit, so no acquire waits on unread results, on any thread
+(ex05, ex10, ex21, the C++ sender); ex04's `fill` and ex23's `pass_audio` submit several units
+between reaps, so they acquire with timeout 0 or a finite one and reap when it runs out
+([contract.md §5.5](contract.md#55-back-pressure)).
 
 @@EXAMPLE ex_common.h@@
 
@@ -219,8 +221,8 @@ flowchart LR
 What to notice:
 
 A frame with lost packets is still delivered, with `u.status == MTL_RX_INCOMPLETE`; what its gaps
-read as: [§9](#9-a-receiver-that-knows-what-it-got). `u.media_index` says which frame it is, valid when
-`MTL_UNITF_INDEX_VALID` is set. `-MTL_EAGAIN` with no signal means `status.flags` lacks
+read as: [§9](#9-a-receiver-that-knows-what-it-got). `u.media_index` says which frame it is,
+`MTL_TIME_NONE` until RX indices exist (video MS2b). `-MTL_EAGAIN` with no signal means `status.flags` lacks
 `MTL_STATUS_RX_SIGNAL`. What a receiver does with each of these, live: [§9](#9-a-receiver-that-knows-what-it-got).
 
 ## 5. Many sessions on one thread
@@ -325,9 +327,11 @@ What to notice:
   instance. A source that ends while they are queued still starts, so what is queued is sent, and
   `start_at` returns `SOURCE_ENDED`. This is how **separate processes**, one per essence (FFmpeg muxers, one playout process
   per output), start in sync: each is given the same `t_start` on a grid every essence lands on
-  exactly. A whole number of 1.001 s is such an instant for every 1001-rate frame and for 48 and
-  96 kHz samples (whole seconds for integer rates); an audio process passes its sample rate and
-  gets the index of its first sample. Every RTP timestamp then equals that of a start in one
+  exactly. Any instant of the programme's grid is such an instant; `mtl_grid_offset(t, {6000,
+  1001})` gives the offset from t to the next one for the 1001 family with 48 and 96 kHz (the frame rate for integer
+  rates); an audio process passes its sample rate and gets the index of its first sample, and an
+  interlaced one computes `2 × mtl_epoch_index_at(t_start, raster.fps)`, so it starts on a first
+  field. Every RTP timestamp then equals that of a start in one
   process (ex22), and nothing is shared but the epoch
   ([timing.md §10.4](timing.md#104-separate-processes)). The start at an instant lives here, not in
   ex05, because a scheduled start needs its frames queued before it; ex05 sets the launch of a unit.
@@ -368,8 +372,8 @@ What to notice:
   `MTL_INFO_NON_COMPLIANT` in `mtl_session_info.flags` says the stream may leave ST 2110-21. On an
   E830 the option `caps.pacing = MTL_PACING_HW_LAUNCH` gives the launch to the NIC.
 - **Did it make it?** The result is `ON_TIME` with `sent_tai_ns`, the first packet
-  (`MTL_TXR_SENT_HW` when the NIC stamped it), and `rtp`, the timestamp that left; `margin_ns`
-  (valid with `MTL_TXR_MARGIN_VALID`) is how early the frame was handed over. The full record
+  (`MTL_TXR_SENT_HW` when the NIC stamped it), and `rtp`, the unit's timestamp; `margin_ns`
+  is how early the frame was handed over (`MTL_TIME_NONE` when it has none). The full record
   (`mtl_tx_reap_full`) adds `scheduled_tai_ns`, the launch MTL planned, and with NIC timestamps (the
   instance's `MTL_INSTANCE_HW_TIMESTAMP`, the option `caps.hw_timestamps`) `observed_first_tai_ns`
   per leg. A launch in the past or inside the minimum lead is `-MTL_ERANGE` at submit
@@ -381,7 +385,7 @@ What to notice:
 
 ## 8. A live sender that survives late and missing frames
 
-[ex06_live_tx.c](sketch/examples/ex06_live_tx.c) (MS3: events and the update; the rest MS1) is a
+[ex06_live_tx.c](sketch/examples/ex06_live_tx.c) (MS3: events and the remedy's update; the rest MS1) is a
 camera or a capture card. The driver writes each frame into an acquired slot, its DMA target, and
 returns when the frame's readout ends, with its sampling instant. The picture is what happens to one
 frame, and how the program learns it.
@@ -404,23 +408,29 @@ What to notice:
 
 - **The session says what the source is** (`live_open`): `MTL_MEDIA_TAI` with the sampling
   instant, snapped to the nearest frame time; `min_tx_delay_ns` one unit period (a frame, a field
-  when interlaced: `mtl_frame_ns`) plus the pick-up lead, since the frame exists only after its readout, so it leaves one frame time
-  later (a launch delay of 1). MTL reports the lead, the stat `info.pickup_lead_ns` of the created
-  session (about 0.5 ms with rate-limit pacing), so the program creates the session, reads it, sets
-  the delay with `MTL_UPDATE_MEDIA` and starts; `tsmode` SAMP, because the RTP is the sampling instant
+  when interlaced: `mtl_frame_ns`), since the frame is ready only when its readout ends. MTL adds
+  its own pick-up lead (about 0.5 ms with rate-limit pacing) and sends the frame one frame time
+  later (`info.launch_delay` 1), so `mtl_session_open` is the whole setup; `tsmode` SAMP, because
+  the RTP is the sampling instant
   ([timing.md §5.2](timing.md#52-min_tx_delay_ns-and-the-launch-rule)). Capturing into the slot
   costs no copy, which is what makes that delay feasible: a frame handed over at the end of its
   readout has about 150 µs before its pick-up deadline. A driver that must own its buffers copies
-  in submit (`MTL_SUBMIT_SRC_PLANES`, ex21), and its delay must also cover `info.convert_ns`.
+  in submit (`MTL_SUBMIT_SRC_PLANES`, ex21) and adds that copy to its delay itself, since the
+  session does not convert.
 - **The camera never waits for MTL.** Acquire waits at most one frame period; with no free slot by
   then the driver has nowhere to write, and that frame is dropped at the source. The wait paces the
   loop, so it never spins, and the interrupt ends it.
 - **Nothing slides.** INDEX and TAI drop a late frame (`MTL_LATE_DROP`): its frame time stays empty
   and the next frame keeps its own. AUTO (ex01) defers it to a later frame time instead
   (`MTL_LATE_DEFER`, `ON_TIME` with `MTL_TXR_DEFERRED`). A source that stalls leaves its frame times
-  empty: video's underrun policy sends nothing, ANC sends its empty packet, fast metadata a
-  keep-alive, audio silence with `MTL_UNDERRUN_SILENCE`
+  empty: the default underrun policy of video, cvideo and audio, `MTL_UNDERRUN_SKIP`, sends nothing;
+  ANC and fast metadata default to their keep-alive (`MTL_UNDERRUN_KEEPALIVE`); audio sends
+  silence with `MTL_UNDERRUN_SILENCE`
   ([timing.md §6](timing.md#6-admission-and-lateness)).
+- **Repeat instead (MS4a1).** `struct mtl_option o = {.key = MTL_OPT_UNDERRUN_POLICY, .value =
+  MTL_UNDERRUN_REPEAT}` in `sc->options` repeats the last frame instead of leaving the frame time
+  empty; the application adds one slot to `pool_count` when interlaced (a pin per parity). ex06
+  keeps SKIP, since it needs MS3 only.
 - **Each result** names its outcome: `ON_TIME` with `margin_ns`, or `DROPPED` with `TOO_LATE` (the
   source missed its deadline), `SNAP_COLLISION` (a source faster than the session's rate),
   `WAITING_NEIGHBOUR` or `LINK_DOWN` (no leg could send), `RECOVERY` (a TX queue was reset
@@ -428,18 +438,20 @@ What to notice:
 - **Each incident** is an event, once (MS3), counted by its type, and each has a getter:
   `MTL_EVENT_LEG_STATE`, `MTL_EVENT_TX_UNDERRUN`, `MTL_EVENT_RECOVERY`,
   `MTL_EVENT_TIMING_INFEASIBLE`. After the last, the status names the `min_tx_delay_ns` that would
-  do (`status.suggested_min_tx_delay_ns`), and the program takes it on the same handle: a stop, `mtl_session_update` with `MTL_UPDATE_MEDIA`, a start. The SSRC stays and
-  the RTP continues the epoch grid.
+  do (`status.suggested_min_tx_delay_ns`), and the program takes it on the same handle: it reads
+  the status first and does nothing without `MTL_STATUS_TIMING_WARNING`, then a stop,
+  `mtl_session_update` with `MTL_UPDATE_MEDIA`, a start (from MS5 one update while running, at a
+  `when`). The SSRC stays and the RTP continues the epoch grid.
 - **Each result** goes through `mtl_tx_reap_each` (`mtl_util.h`), which reads every result ready
-  now and calls the program's function for each; `margin_ns` counts only with
-  `MTL_TXR_MARGIN_VALID`.
+  now and calls the program's function for each; ON_TIME carries its margin (MS3), and a result
+  without one reads `MTL_TIME_NONE`.
 - **ERROR** is `-MTL_EIO` from a data call; `status.error_reason` says why. A stop and a start on
   the same handle re-reserve what the fault took, or the start fails `-MTL_ENODEV` when the port is
   gone.
 
 ## 9. A receiver that knows what it got
 
-[ex07_live_rx.c](sketch/examples/ex07_live_rx.c) (MS3: `media_index`; the detail and
+[ex07_live_rx.c](sketch/examples/ex07_live_rx.c) (MS3; `media_index` MS2b, the detail and
 `MTL_SESSION_RX_LATEST` MS2) receives a live stream on two legs and logs, unit by unit, what the
 stream did. The picture is what one dequeue can say.
 
@@ -463,7 +475,7 @@ What to notice:
 | `u.missed_before` > 0 | the pool was full: the consumer was slow, and that many units were dropped |
 | the detail's `units_missing_before` | units that never arrived before this one, by index difference (fields when interlaced) |
 | `MTL_UNITF_DISCONTINUITY` | the sender re-anchored; with `MTL_UNITF_RELOCKED` it restarted, and the index may go back |
-| `MTL_RX_INCOMPLETE` | packets lost on both legs, by its due time; the gaps read as zero in library pools (from MS2, [contract.md §9.8](contract.md#98-rx-placement)); the detail's `missing_ranges` |
+| `MTL_RX_INCOMPLETE` | packets lost on both legs, by its due time; the gaps read as black (video) in library pools, zero in audio, cvideo and fastmeta, and ANC units are never filled (from MS2a, [contract.md §9.8](contract.md#98-rx-placement)); the detail's `missing_ranges` |
 | `MTL_UNITF_USED_REDUNDANCY` | one leg lost packets, the other had them |
 | the detail's `arrival_first_tai_ns` | the latency: first packet minus media time |
 
@@ -534,7 +546,7 @@ flowchart LR
     N(("input, two legs")):::net --> D["dequeue a chunk:<br/>leg, seq, gap, arrival"]:::mtl
     D --> C["copy each packet<br/>into a TX slot"]:::app
     C --> S["submit; UNIT_END<br/>at the marker"]:::mtl
-    S --> T["media time from the<br/>unit's first RTP,<br/>+ min_tx_delay_ns"]:::mtl
+    S --> T["media time from the<br/>unit's first RTP,<br/>+ min_tx_delay_ns,<br/>+ MTL's lead"]:::mtl
     T --> W(("output, two legs:<br/>the same RTP")):::net
     classDef app fill:#dbeafe,stroke:#2563eb,color:#111827
     classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
@@ -557,16 +569,17 @@ What to notice:
   (`MTL_PKT_RX_UNIT_ALIGNED`), the two legs' duplicates already removed; each packet carries its
   leg, sequence, gap and arrival. TX (`open_forward_tx`) is the generic RTP essence `MTL_RTP` with
   `set_fields` 0, every byte verbatim, and `MTL_PKT_TIME_FROM_RTP`: each unit's media time is read
-  from its first packet's RTP timestamp, taken as given, and the unit leaves `min_tx_delay_ns` after
-  it, the processor of ex23 at the packet level
+  from its first packet's RTP timestamp, taken as given, and the unit is ready `min_tx_delay_ns`
+  after it and leaves at the first frame time MTL can make, the processor of ex23 at the packet level
   ([contract.md §13.5](contract.md#135-pacing-and-unit-time)). A unit that misses that is `DROPPED`
   (`TOO_LATE`); `MTL_LATE_DEFER` is refused with FROM_RTP.
 - **The delay comes from the input.** An input's RTP time is its sender's media time, not its
   launch: a camera or an MTL capture sender (ex06) has a launch delay of one frame, and its last
   packet arrives about two frames after the media time. So `min_tx_delay_ns` is the input's last
   packet minus its media time, measured over a few units (`input_delay`, with `mtl_media_tai`) or
-  taken from its SDP's TSDELAY plus a frame, plus the pick-up lead and a margin (`MARGIN`). A
-  later increase is an update in STOPPED (`MTL_UPDATE_MEDIA` takes `min_tx_delay_ns`).
+  taken from its SDP's TSDELAY plus a frame, plus a margin for its jitter (`MARGIN`); MTL adds its
+  own pick-up lead. A later increase is an update in STOPPED (`MTL_UPDATE_MEDIA` takes
+  `min_tx_delay_ns`; while running at a `when`: MS5).
 - **The pool covers the delay.** Every chunk waits in the TX pool from its arrival until it
   leaves, so `pool_count` is the chunks of the delay's frames plus one frame:
   (ceil(`min_tx_delay_ns` / TFRAME) + 1) × `CHUNKS`, checked against `info.max_count` of a dry
@@ -609,9 +622,9 @@ flowchart LR
 What to notice:
 
 `mtl_tx_acquire_slot(s, i, ...)` leases exactly surface i, or returns `-MTL_EAGAIN` while it is
-still in flight. Application memory always produces results (rule MEM3,
-[contract.md §6.1](contract.md#61-when-there-are-results)), so a surface goes back to
-the framework only when its result says the network is done with it; `mtl_tx_reap_each` reads
+in flight or held behind an older unit. Application memory always produces results (rule MEM3,
+[contract.md §6.1](contract.md#61-when-there-are-results)): a unit's result says that its memory
+is no longer read, so a surface goes back to the framework only when its result says so; `mtl_tx_reap_each` reads
 the results. The loop waits up to 20 ms for the framework's next frame, so it never spins. At the
 end it stops with `MTL_STOP_DRAIN`, reaps, then closes with `MTL_FOREVER`: `mtl_session_close`
 returns once nothing references the arena any more, and then the arena may be freed. The session's path through
@@ -707,7 +720,7 @@ share.
 
 ## 15. Audio as host PCM
 
-[ex13_audio.c](sketch/examples/ex13_audio.c) (MS4; audio MS4a1, `media_index` from MS3) moves
+[ex13_audio.c](sketch/examples/ex13_audio.c) (MS4; audio MS4a1, `media_index` from MS6) moves
 audio the way an AES67 or ST 2110-30 bridge, a sound card or a framework's audio element needs it:
 as samples in the host's byte order, with the index of the first one. The picture is one received
 unit.
@@ -733,7 +746,7 @@ interleaved and each sample big-endian (network byte order: L16 two bytes, L24 t
 today's ST 2110-30 sessions do, so a program with little-endian PCM, as most sound APIs give, swaps
 the bytes itself. `u.used` counts the
 bytes, so the unit holds `u.used / row_bytes` sample times (`sc.audio.unit_samples` at most).
-`u.media_index`, valid with `MTL_UNITF_INDEX_VALID`, is the unit's first sample on the epoch at
+`u.media_index` (`MTL_TIME_NONE` until MS6 for audio) is the unit's first sample on the epoch at
 the sample rate, so the next unit starts at `media_index` + those sample times. A jump in it is
 lost time: `u.missed_before` counts the units a full pool could not take, and packets lost inside
 a unit read as silence (the fill of [§9](#9-a-receiver-that-knows-what-it-got)), with
@@ -899,10 +912,10 @@ What to notice:
 
 ## 20. An NMOS node: IS-04 interfaces, IS-05 activation
 
-[ex18_nmos_node.c](sketch/examples/ex18_nmos_node.c) (MS5: the update with its planned and
-applied instants and per-leg enable; mute and `MTL_UPDATE_REAPPLY` are Phase 7). One IS-05 PATCH is
-one `mtl_session_update`: destinations and leg enables (`rtp_enabled`) switch together on every leg
-at one instant, at a frame boundary on the wire. The picture is one activation, from the
+[ex18_nmos_node.c](sketch/examples/ex18_nmos_node.c) (MS3: immediate activations while running;
+MS5: scheduled ones and per-leg enable while running; mute and `MTL_UPDATE_REAPPLY` are Phase 7).
+One IS-05 PATCH is one `mtl_session_update`: destinations and leg enables (`rtp_enabled`) switch
+together on one unit, leg by leg, at a frame boundary on the wire. The picture is one activation, from the
 controller's PATCH to `/active`.
 
 ```mermaid
@@ -942,6 +955,11 @@ whose `update_state` is `MTL_UPDATE_STATE_FAILED`, means this activation did not
 stop. The update states are in [contract.md §4.7](contract.md#47-update); the contract
 in [nmos-ipmx.md §11](nmos-ipmx.md#11-is-05-the-activation-contract).
 
+**A TX format hand-over** (IS-11, a new SDP) needs no pause: `hand_over_begin` starts session b,
+created early with the new format, at `MTL_AT_TAI t`, and `hand_over_end` drains a right after
+its last unit before t, before a would pick up a repeat for b's first launch, then closes it; the
+Node's Sender is b from then on ([nmos-ipmx.md §11.5](nmos-ipmx.md#115-a-node-before-phase-7)).
+
 ## 21. A framework element's setup
 
 [ex19_framework_setup.c](sketch/examples/ex19_framework_setup.c) (MS2; the shared instance MS2a)
@@ -980,10 +998,16 @@ What to notice:
   `MTL_API_VERSION` catches an older library at run time.
 - **Caps.** `mtl_format_parse` maps a GStreamer, FFmpeg or SDP format name to an application or a
   transport format, and `mtl_format_describe` gives the frame size the framework's buffers must
-  have. An application format makes MTL convert in the caller.
+  have. An application format makes MTL convert in the caller. `caps_formats` lists the caps
+  before any instance (`MTL_CONVERT_CHECK`, MS2), the transport format itself only for a sink;
+  each name sits on one format, so `v210` caps never select a `_NONSTD` value.
 - **Latency.** `mtl_session_query` is the dry run of create: it grants and reports what create
-  would, `latency_min_ns` and `latency_max_ns` included, before the session exists. A sink adds
-  the copy inside its own submit (`convert_ns`, measured once the session exists; ex21).
+  would, `latency_min_ns` and `latency_max_ns` included, before the session exists. A sink's
+  minimum is `M_sink` = `latency_min_ns` + margin + TFRAME (a frame period;
+  [timing.md §10.5](timing.md#105-live-sinks-and-the-programme-phase)), and `latency_min_ns`
+  holds the copy inside its own submit (C): the dry run's C is the calibration of the conversion
+  the configuration implies, and `mtl_session_get_info`'s the same until the measured work rises
+  (ex21).
 
 ## 22. Received frames lent to a framework
 
@@ -1011,19 +1035,22 @@ and `(s, 0)`: the interrupted dequeue returns `-MTL_ECANCELED` at once, `create`
 without waiting for `unlock_stop`, and the framework calls it again after `unlock_stop`; the
 streaming thread never waits for it. `-MTL_ESHUTDOWN` means the element stopped or closed the
 session. `mtl_session_close(s, 0)` returns 1 while downstream still holds frames, which is not a
-failure; the session retires on the last release, and a later close returns 0. The source keeps R
-slots for MTL, so that downstream never holds the whole pool: `mtl_rx_reserve(&info, NULL,
-latency, copy_ns)` (`mtl_util.h`) gives R = ceil((L + c) / U) + 1 from the session's
-`latency_min_ns`, `convert_ns` and unit period, the framework's latency and the source's copy time
-([migration.md §12.8](migration.md#128-rx-sources-zero-copy-pool-size-and-latency)). Once
-`pool_count` − R units are lent out, the next one is copied; a `pool_count` of R + H, H the units
-held downstream at once, never copies.
+failure; the session retires on the last release, and a later close returns 0. MTL counts the
+units out itself and sets `MTL_UNITF_COPY_ADVISED` once lending another would leave it fewer than
+R_copy = ceil(`latency_min_ns` / U) + 1 slots, U the unit period (half a frame for fields)
+([contract.md §5.3](contract.md#53-rx)), `latency_min_ns` with the caller's work included. The source copies that unit into a buffer it takes without
+waiting and releases it at once, so a holder downstream costs a copy, never a lost unit; with no
+free buffer it drops the unit (QoS) and never blocks `create`. A `pool_count` of R_copy + H, where H is
+the units held downstream at once, never copies; at the default pool of 3 every unit is copied
+([migration.md §12.8](migration.md#128-rx-sources-zero-copy-pool-size-and-latency)). The free
+callback carries the lease alone, as its pointer: a lease names its session.
 
 ## 23. A live sink: presentation time to media time
 
 [ex21_live_sink.c](sketch/examples/ex21_live_sink.c) (MS2; TAI mode and the copy MS1; discard
-MS2) is the TX side of a framework (a GStreamer sink without basesink sync, `ffmpeg -re`, an OBS
-output) or of a playout engine on a wall clock. Each buffer comes with a presentation time on
+MS2a) is the TX side of a framework (`ffmpeg -re`, an OBS output; a GStreamer sink lets basesink
+wait instead, [migration.md §12.1](migration.md#121-live-sinks-gstreamer-synctrue-ffmpeg--re-obs-output))
+or of a playout engine on a wall clock. Each buffer comes with a presentation time on
 `CLOCK_MONOTONIC`; the picture follows one buffer from the framework to the wire and back to its
 report.
 
@@ -1045,29 +1072,33 @@ What to notice:
 
 - **One latency and one phase per programme.** The sinks of a pipeline (its video, audio and ANC)
   share a `struct programme`. Each sink reports its minimum latency to the framework's latency
-  query: `latency_min_ns` (how long before its frame time MTL takes a unit) plus `convert_ns` (the
-  copy inside submit) plus a margin, from `mtl_session_get_info`, plus one frame for the phase,
-  which adds less than one. The framework answers with one
-  pipeline latency, at least the largest minimum (GStreamer's LATENCY event, FFmpeg's `-muxdelay`),
+  query: `latency_min_ns` (how long before its frame time MTL takes a unit, the copy inside submit
+  included) plus a margin, from `mtl_session_get_info`, plus one frame for the snap, whose
+  hysteresis takes 5/8 frame at the default, one frame at most. The framework answers with one
+  pipeline latency, at least the largest minimum (FFmpeg: at least `-muxdelay`),
   and every sink adds that same latency and the same phase to each buffer's TAI. The phase, from
   `mtl_grid_offset` of the first buffer of any sink, puts the buffers on frame times, so units of
   one instant snap to the same index with an error of at most 1 ns
   ([timing.md §10.5](timing.md#105-live-sinks-and-the-programme-phase)). A sink alone could declare its latency as
   `sc.media_time_offset_ns`, which MTL adds the same way before snapping; sinks that each declared
   their own would drift apart by the difference.
-- **The presentation time is the latency-free one**: GStreamer's base_time + running time, FFmpeg's
-  `start_time_realtime` + pts (on `CLOCK_REALTIME`: convert from `MTL_CLOCK_REALTIME`). A sink with basesink sync, which hands each buffer over its latency
-  early and already includes it, adds no latency of its own.
+- **The presentation time is the latency-free one**: OBS's timestamp, FFmpeg's
+  `start_time_realtime` + pts (on `CLOCK_REALTIME`: convert from `MTL_CLOCK_REALTIME`). A GStreamer
+  sink with basesink sync gets a presentation time with the pipeline latency already in it and adds only δ: the
+  same media time ([timing.md §10.5](timing.md#105-live-sinks-and-the-programme-phase)).
 - **The outcome of each buffer** comes back by its `cookie`: `ON_TIME`, or `DROPPED` with
   `SNAP_COLLISION` (two buffers on one frame time: the producer runs fast) or `TOO_LATE` (the
   latency did not cover it). The reap is ex06's (`mtl_tx_reap_each`), reported to the
-  framework's QoS, with a margin only under `MTL_TXR_MARGIN_VALID`.
+  framework's QoS, with the margin, `MTL_TIME_NONE` when it has none.
 - `MTL_SUBMIT_SRC_PLANES` copies the framework's planes during submit, so the buffer is the
   framework's again when render returns, and the slot stays the back-pressure token.
-- **EOS** is a DRAIN stop; a **seek** is a discard (the next submission is an implicit
-  `MTL_SUBMIT_DISCONTINUITY`; an INDEX sink re-bases with `MTL_DISCARD_REBASE`). `unlock` is the
-  interrupt; a sink whose reaper waits on another thread interrupts acquire alone
-  (`mtl_interrupt` with `MTL_WAIT_ACQUIRE`). The GStreamer render-delay variant:
+- **End of input** (`sink_end`: GStreamer's EOS; FFmpeg and OBS close next) reaps until all but
+  `pins` reports are back and keeps the session RUNNING, so the last buffer is on air and a seek
+  afterwards needs no start; a **seek** (`sink_seek`, GStreamer's FLUSH_STOP) is a discard, which
+  also releases a repeated frame (the next submission is an implicit `MTL_SUBMIT_DISCONTINUITY`;
+  an INDEX sink re-bases with `MTL_DISCARD_REBASE`). Close begins with DRAIN and drops the pins.
+  `unlock` is the interrupt; a sink whose reaper waits on another thread interrupts acquire alone
+  (`mtl_interrupt` with `MTL_WAIT_ACQUIRE`). The GStreamer recipe, where basesink waits:
   [migration.md §12.1](migration.md#121-live-sinks-gstreamer-synctrue-ffmpeg--re-obs-output).
 
 ## 24. Video, audio and captions from one file
@@ -1100,7 +1131,9 @@ none and resolves T0 once on the common grid: media index 0 of each session is T
 frame and sample counts are media indices as they are. MTL turns the indices into RTP timestamps
 that agree exactly, and captions for frame k carry video frame k's timestamp. The ANC session takes
 its raster and launch delay from the first video of its start, and a frame without captions still
-gets the empty ANC packet. Audio uses the copy path, `mtl_tx_write`. `preroll_ns` puts T0 far
+gets the empty ANC packet. Audio uses the copy path, `mtl_tx_write`; priming samples (an audio pts
+below 0) are cut before it, since a media index below 0 is refused (`FIELD_REQUIRED`, mtl.h R5).
+`preroll_ns` puts T0 far
 enough ahead that the first unit of each session is queued before it. Acquire waits with
 `MTL_FOREVER` while a pool is full, so the file is read ahead of the wire, and the interrupt ends
 the wait. `mtl_tx_write` submits every byte of an audio packet, each unit at the packet's first
@@ -1117,7 +1150,7 @@ video index counts fields, two per frame of the file. How a media index becomes 
 ## 25. A processor that keeps the input's timing
 
 [ex23_processor.c](sketch/examples/ex23_processor.c) (MS6: audio in TAI mode; `process_video`:
-MS4, `pass_anc`: MS4a2) keeps the input's timing: each output unit is submitted with the media time
+MS4b, `pass_anc`: MS4a2) keeps the input's timing: each output unit is submitted with the media time
 of the input unit it came from, as in the picture. Its video stage is a UHD-to-HD down-converter,
 `mtl_convert` with `MTL_CONVERT_HALF_SCALE` from the received unit's planes into the acquired
 unit's, in the calling thread; a GPU or AI stage takes its place.
@@ -1139,16 +1172,16 @@ flowchart LR
 What to notice:
 
 - **The output's budget** (`open_output`) is everything between the input's media time and the
-  output's pick-up, one term per line in the code:
+  call of the output's submit, one term per line in the code:
   - the input's delivery: `latency_min_ns` of the RX session, which counts from a sender that
     launches at its media time;
   - the input's own launch delay in whole frames: zero for a playout source, one for a camera or
     another processor; its SDP's TSDELAY less its TROFFSET, or measured as ex07 measures latency
     (the first packet's arrival minus the media time), rounded down to whole frames;
-  - the processing (`process_ns`, measured);
-  - the pick-up lead, which MTL reports as the stat `info.pickup_lead_ns` of the created output,
-    so `open_output` creates it, reads the lead, sets the delay with `MTL_UPDATE_MEDIA` and
-    starts; a failure on the way closes it.
+  - the processing (`process_ns`, measured).
+
+  MTL adds its own pick-up lead, so `open_output` sets the sum and opens the output with
+  `mtl_session_open`, which closes it again on a failure.
 - **A fixed delay.** With `MTL_MEDIA_TAI` and that `min_tx_delay_ns` the delay is fixed and, for a
   compliant input, every output RTP equals the input's. `tsmode` is SAMP when the input's SDP says
   SAMP, else PRES; an input off the frame grid is re-stamped to it, or keeps its phase with
@@ -1208,8 +1241,9 @@ What to notice:
 - **The clock.** The wrapper runs on the legacy clock of port P, whose default is `CLOCK_REALTIME`,
   UTC read as TAI (`MTL_TIMEF_UTC`), about 37 s off a PTP receiver. ex24 installs `ptp_get_time_fn`
   on `CLOCK_TAI`, as the FFmpeg plugin does; it runs on MTL's tasklets, the one exception to "no
-  application code on the pinned cores", so it must not block. With it `mtl_time_now` is
-  `-MTL_ENOTSUP` until MS2a ([timing.md §2.2](timing.md#the-legacy-bridge-clock)).
+  application code on the pinned cores", so it must not block. Without it MS1 logs one WARNING;
+  with it `mtl_time_now` is `-MTL_ENOTSUP` until MS2a, and from MS2a it flags the `CLOCK_TAI`
+  function as CLOCK_TAI ([timing.md §2.2](timing.md#the-legacy-bridge-clock)).
 - **The order.** `mtl_start` comes before the first unified start; at the end the wrapper closes
   first, then `mtl_uninit`, which returns `-EBUSY` while a wrapper is open. The program includes the
   legacy `mtl_api.h` and `st_pipeline_api.h` next to the unified headers
@@ -1251,14 +1285,14 @@ The second function is a test bench that needs no NIC, one function per topic, c
   on the caller's thread);
 - the node's time reference (`set_time_reference`, `mtl_time_set_reference`, `mtl_sync.h`): what a
   node's PTP daemon reports, its grandmaster and clock class, with `locked` 0 once the node has lost
-  it, so readiness (`MTL_HEALTH_TIME_UNLOCKED`), the `time.*` stats and `MTL_EVENT_GRANDMASTER`
-  follow ([timing.md §2.3](timing.md#23-time-state-events-and-the-reference));
+  it, so the time state goes to HOLDOVER, and readiness (`MTL_HEALTH_TIME_UNLOCKED`, set on
+  ACQUIRING and LOST, never in HOLDOVER), the `time.*` stats and `MTL_EVENT_GRANDMASTER` follow ([timing.md §2.3](timing.md#23-time-state-events-and-the-reference));
 - a capacity dry run (`check_capacity`: `mtl_session_query` with `MTL_QUERY_CHECK_CAPACITY`,
   `-MTL_ENOSPC` with a `CAPACITY_*` reason);
 - a start at a TAI instant (`start_in_100ms`: `struct mtl_when` with `MTL_AT_TAI`);
 - a capture (`capture`: `mtl_session_capture` writes the session's packets on every leg to a
   pcapng file from a library worker, until `max_pkts`, and posts `MTL_EVENT_CAPTURE_DONE`);
 - full timing records (`print_launches`, `mtl_tx_reap_full`; the NIC launch time only when
-  `MTL_TXF_OBSERVED_LEG0` is set);
+  `observed_first_tai_ns[0]` is not `MTL_TIME_NONE`);
 - an injected loss of the time source (`inject_time_loss`, debug builds), and the instance's
   events (`mtl_instance_read_events`).

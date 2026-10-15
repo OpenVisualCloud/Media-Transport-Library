@@ -59,7 +59,7 @@ JOBS = [
     (
         "mtl_util.h",
         "inline helpers (it includes `mtl_mem.h` and `mtl_sync.h`): copy path, one-call slot "
-        "send, unit and plane copies, meta records, ANC tables and words, the RX reserve",
+        "send, unit and plane copies, meta records, ANC tables and words",
     ),
     ("mtl_plugin.h", "codec and converter plugin ABI v2"),
     ("mtl_legacy.h", "bridge from a legacy `mtl_handle`; legacy enum values as unified ones"),

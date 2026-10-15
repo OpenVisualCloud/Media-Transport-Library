@@ -39,12 +39,15 @@ The mutants: `bits`, `no_arm`, `load_after_attempt`, `producer_skip`, `intr_no_b
 
 ### 1.2 What each model checks
 
+The wait models are below. The other models of [models/](models/) (the provide hand-back, the
+results ring, the hold and the REPEAT pins), with their decisions and run lines, are
+[design/README.md](README.md).
+
 | File | What it checks | Run |
 |---|---|---|
 | [final_model.py](models/final_model.py) | the object path of core.md §6 (cases o1–o7), the queue path (q1–q11, r1–r4) and posts (p1–p5); 23 mutants named by the step they break; LOST, LEAK, OVER, SPIN, XQ, RPT, PAC (§1.1) | `python3 final_model.py [CASE ...]`; `--trace CASE MUTANT` prints a counterexample; exit 1 unless every case gives its result and every mutant dies (6 s) |
 | [wait_flush.py](models/wait_flush.py) | the count-bounded flush (F1–F8) of one library loop over three objects, sleepers arming while marks are carried, the loop's sleep check; the variant that ignores the flush's return; from M0 a queue entry among the marked entries and `wake_k` 1 and 4 | `python3 wait_flush.py`; the design cases must print LOST=0, the "return ignored" variant LOST > 0 |
 | [stress.c](models/stress.c) | random-yield stress on the real kernel (futex, eventfd, epoll LT or EPOLLONESHOT). Until M0 it still drives the superseded per-object handle (D-159); M0 rewrites it onto the event word and a queue consumer, with the mutants `-DBITS`, `-DLOAD_AFTER_ATTEMPT`, `-DNO_EXIT_RESIGNAL` | `cc -O2 -pthread stress.c -o stress; ./stress ROUNDS [1]`; a smoke test, not evidence |
-| [provide_model.py](models/provide_model.py) | the `mtl_rx_provide` hand-back of D-152 (contract.md §9.11): every interleaving of providers, hand-backs and a taking unit; the ledger rule | `python3 provide_model.py`; MS2b copies it into `tests/unit/core/` |
 
 `final_model.py`'s object path covers the event word with counts, calls with a timeout,
 interrupts and their clearing (`MTL_INTR_OFF`, then a new call: o7), close and row waits; its

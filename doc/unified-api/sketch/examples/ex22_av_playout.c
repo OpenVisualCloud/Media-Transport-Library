@@ -7,9 +7,12 @@
 #include "ex_common.h"
 
 #define FILE_FPS MTL_FPS_59_94
+#define AUDIO_CHANNELS 2
+#define AUDIO_FRAME_BYTES (3 * AUDIO_CHANNELS) /* MTL_PCM24: one sample frame */
 
 enum { VIDEO, AUDIO, CAPTIONS };
-/* the demuxer: video pts in frames, audio pts in samples, both from 0; 0 = a packet */
+/* the demuxer: video pts in frames, audio pts in samples, both from 0 (audio below 0 for
+   priming samples); 0 = a packet */
 int demux_next(int* stream, int64_t* pts, const void** data, size_t* size);
 void decode_into(struct mtl_unit* u, const void* data, size_t size);
 /* appends the caption ANC packets of frame pts to u (mtl_anc_put, 8-bit words, in raster
@@ -32,7 +35,7 @@ static int open_tx(mtl_instance_h mt, uint32_t essence, uint16_t port, mtl_sessi
   } else if (essence == MTL_AUDIO) {
     sc.audio.format = MTL_PCM24;
     sc.audio.sample_rate = 48000;
-    sc.audio.channels = 2;
+    sc.audio.channels = AUDIO_CHANNELS;
   } /* ANC: raster and launch delay come from the first video of its start */
   return mtl_session_create(mt, &sc, s);
 }
@@ -67,6 +70,13 @@ static int send_video(mtl_session_h s, int64_t pts, const void* data, size_t siz
    the sample after the last, so the audio stays exact. */
 static int send_audio(mtl_session_h s, int64_t first, const void* data, size_t size) {
   struct mtl_unit tmpl;
+  if (first < 0) { /* priming samples (pts < 0) are not sent: R5 */
+    size_t skip = (size_t)-first * AUDIO_FRAME_BYTES;
+    if (skip >= size) return 0;
+    data = (const uint8_t*)data + skip;
+    size -= skip;
+    first = 0;
+  }
   MTL_INIT(&tmpl);
   tmpl.media_index = first;
   int n = mtl_tx_write(s, data, size, &tmpl, MTL_FOREVER);

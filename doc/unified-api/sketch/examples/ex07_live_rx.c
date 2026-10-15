@@ -30,20 +30,20 @@ static void no_unit(mtl_session_h s) {
 /* What one unit says. Indices count fields when interlaced. */
 static void check_unit(mtl_session_h s, const struct mtl_unit* u) {
   struct mtl_rx_detail d;
-  int64_t k = (u->flags & MTL_UNITF_INDEX_VALID) ? u->media_index : -1;
+  int64_t k = u->media_index; /* MTL_TIME_NONE: unknown */
   if (mtl_rx_get_detail(s, u->lease, &d, sizeof(d)) < 0) return;
   if (u->missed_before) note("we were slow: our full pool dropped", k, u->missed_before);
   if (d.units_missing_before)
     note("never arrived from the network", k, d.units_missing_before);
-  /* RELOCKED: the sender restarted, and k may go back */
+  /* RELOCKED: the sender restarted or a FLOWS update switched the flow; k may go back */
   if (u->flags & MTL_UNITF_DISCONTINUITY)
-    note(u->flags & MTL_UNITF_RELOCKED ? "sender restarted" : "sender jumped", k, 0);
+    note("sender restarted, jumped, or the flow was switched", k, 0);
   if (u->flags & MTL_UNITF_USED_REDUNDANCY) note("one leg lost packets", k, 0);
   if (u->status == MTL_RX_INCOMPLETE)
     note("lost on both legs, runs", k, d.missing_ranges);
-  if ((d.flags & MTL_RXF_ARRIVAL_LEG0) && (u->flags & MTL_UNITF_TAI_VALID))
+  if (d.arrival_first_tai_ns[0] != MTL_TIME_NONE && u->media_tai_ns != MTL_TIME_NONE)
     note("latency ns", k, d.arrival_first_tai_ns[0] - u->media_tai_ns);
-  if ((d.flags & MTL_RXF_TIMING_LEG0) && d.timing[0].compliance == MTL_NOT_COMPLIANT)
+  if (d.timing[0].compliance == MTL_NOT_COMPLIANT)
     note(mtl_reason_name(d.timing[0].failed_cause), k, 0); /* with rx.timing_parser */
 }
 

@@ -11,14 +11,14 @@
  * and mtl_sync.h; an application could write it itself, and the library exports none of
  * them. They exist so that common code is written once: the copy path for byte-stream
  * essences, one-call sends from named slots, reading every ready result, plane copies, a
- * frame's duration, L24 sample conversion, meta records, ANC units, the ST 2110-40
- * user-data-word arithmetic and the RX reserve of a framework source. A parser of
- * bytes from the network is never here (the RFC 8331 codec is exported, mtl_packet.h). A
- * failure a helper detects itself (a bound, a malformed record) returns its code without
- * setting mtl_last_error(); a failure of a call it makes keeps that call's. A helper works
- * from the milestone of the latest function it calls: mtl_tx_send_slot from MS2
- * (mtl_tx_acquire_slot), the others from MS1; before that, a call to it fails to compile,
- * naming the function it calls (mtl.h, MTL_LEVEL).
+ * frame's duration, L24 sample conversion, meta records, ANC units and the ST 2110-40
+ * user-data-word arithmetic. A parser of bytes from the network is never here (the RFC
+ * 8331 codec is exported, mtl_packet.h). A failure a helper detects itself (a bound, a
+ * malformed record) returns its code without setting mtl_last_error(); a failure of a
+ * call it makes keeps that call's. A helper works from the milestone of the latest
+ * function it calls: mtl_tx_send_slot from MS2 (mtl_tx_acquire_slot), the others from
+ * MS1; before that, a call to it fails to compile, naming the function it calls (mtl.h,
+ * MTL_LEVEL).
  */
 
 #ifndef MTL_EXPERIMENTAL_MTL_UTIL_H
@@ -56,16 +56,22 @@ static inline void mtl_unit_from_template(struct mtl_unit* u, const struct mtl_u
    unit's capacity, rows x row_bytes) and submit, until every byte is submitted; each acquire
    waits up to timeout_ns. The media fields:
    - how NULL (AUTO): the units carry none, and MTL places each after the last;
-   - how with media_tai_ns 0 (INDEX): every unit takes the template fields of `how`, and
-     unit k media_index = how->media_index + the rows (audio: sample frames) of the units
-     before it, so the stream stays contiguous and never slides to a later index;
-   - how with media_tai_ns set (TAI): one unit, the first; the caller continues the rest at
-     how->media_tai_ns + the duration of the bytes accepted (it knows the rate).
-   An AUTO session passes NULL (a media field is -MTL_EINVAL there), so its writes carry no
-   cookie, hold or meta: for those it acquires and submits itself. Returns the bytes
-   accepted: all of them, those of the first unit in TAI, or fewer when a later acquire or
-   submit failed (call again with the rest, its media field advanced past them); the first
-   call's error when none was accepted. WT. */
+   - how with media_tai_ns <= 0 (0 or MTL_TIME_NONE; INDEX): every unit takes the template
+     fields of `how`, and unit k media_index = how->media_index + the rows (audio: sample
+     frames) of the units before it, so the stream stays contiguous and never slides to a
+     later index;
+   - how with media_tai_ns > 0 (TAI): one unit, the first; the caller continues the rest
+     at how->media_tai_ns + the duration of the bytes accepted (it knows the rate).
+   A received unit as `how` in an INDEX session: set how->media_tai_ns = MTL_TIME_NONE
+   first, or it writes one unit per call. An AUTO session passes NULL (a media field other
+   than 0 or MTL_TIME_NONE is -MTL_EINVAL there), so its writes carry no cookie, hold or
+   meta: for those it acquires and submits itself. Returns the bytes accepted: all of
+   them, those of the first unit in TAI, or fewer when a later acquire or submit failed
+   (call again with the rest, its media field advanced past them); the first call's error
+   when none was accepted. With results on it reaps nothing itself: a write of more units
+   than the ring has room for, with MTL_FOREVER, waits in acquire on unread results, so
+   reap before it, or pass a finite timeout and reap on -MTL_EAGAIN. A submit: one thread
+   at a time unless MTL_SESSION_MT_SUBMIT. WT. */
 static inline int mtl_tx_write(mtl_session_h s, const void* data, size_t bytes,
                                const struct mtl_unit* MTL_NULLABLE how, int64_t timeout_ns) {
   const uint8_t* src = (const uint8_t*)data;
@@ -95,14 +101,14 @@ static inline int mtl_tx_write(mtl_session_h s, const void* data, size_t bytes,
     if (ret < 0) break;
     done += n;
     index += (int64_t)(n / u.plane[0].row_bytes);
-  } while (done < bytes && !(how && how->media_tai_ns));
+  } while (done < bytes && !(how && how->media_tai_ns > 0));
   return done ? (int)done : ret;
 }
 
 /* Reads every TX result ready now, without waiting, and calls fn(priv, r) for each, in
    submission order. 0, or the first error of mtl_tx_reap (its -MTL_EAGAIN, nothing left,
-   is 0). Unread results hold slots (status.blocked_on MTL_BLOCKED_RESULTS), so a loop with
-   results calls it between acquires. WT with timeout 0: it never sleeps. */
+   is 0). Unread results hold ring entries (status.blocked_on MTL_BLOCKED_RESULTS), so a
+   loop with results calls it before each submit. WT with timeout 0: it never sleeps. */
 static inline int mtl_tx_reap_each(mtl_session_h s,
                                    void (*fn)(void* priv, const struct mtl_tx_result* r),
                                    void* priv) {
@@ -115,7 +121,9 @@ static inline int mtl_tx_reap_each(mtl_session_h s,
 
 /* Acquire slot `slot` and submit it with the template fields of `how` and its `used` (the
    slot already holds the content: a slot over another session's pool, a named framework
-   surface), or do nothing: -MTL_EAGAIN while the slot is still in flight. WT. */
+   surface), or do nothing: -MTL_EAGAIN while the slot is in flight, done behind an older
+   unit, or kept to repeat. A submit: one thread at a time unless MTL_SESSION_MT_SUBMIT.
+   WT. */
 static inline int mtl_tx_send_slot(mtl_session_h s, uint32_t slot,
                                    const struct mtl_unit* MTL_NULLABLE how,
                                    int64_t timeout_ns) {
@@ -194,35 +202,6 @@ static inline void mtl_s32_to_pcm24(uint8_t* dst, const int32_t* src, size_t n) 
     dst[1] = (uint8_t)(v >> 16);
     dst[2] = (uint8_t)(v >> 8);
   }
-}
-
-/* ---- RX sources that lend library slots (migration.md §12.8, D-150) ------------------- */
-
-/* The slots R a framework source keeps for MTL: R = ceil((L + c) / U) + 1, with
-   L = max(latency_ns, info->latency_min_ns + info->convert_ns), latency_ns the framework's
-   configured latency (GStreamer: GST_EVENT_LATENCY; 0 = none), c = copy_ns, the source's
-   measured copy of one unit, and U the unit period: 1 / rate->fps, half of it when rate->scan
-   is MTL_INTERLACED. rate NULL = info->raster (video, cvideo, ANC, fastmeta); a detect session
-   passes the unit's mtl_rx_detail.raster, and audio a raster with fps = {sample_rate,
-   unit_samples}. The source copies into a buffer of its own once pool_count - R units are lent
-   out, so a slow consumer costs a copy, never a lost unit; a pool_count of R + H, H the units
-   held downstream at once, never copies. Call it again at every latency or format change.
-   R >= 1, or -MTL_EINVAL: an fps term 0 or above 4194303, latency_ns or copy_ns negative or
-   above 1000 s, or R above 65535. AS. */
-static inline int mtl_rx_reserve(const struct mtl_session_info* info,
-                                 const struct mtl_raster* MTL_NULLABLE rate, int64_t latency_ns,
-                                 int64_t copy_ns) {
-  const struct mtl_raster* r = rate ? rate : &info->raster;
-  uint64_t num = r->fps.num, den = r->fps.den;
-  int64_t lib = info->latency_min_ns + info->convert_ns, l = latency_ns > lib ? latency_ns : lib;
-  if (num == 0 || den == 0 || num > 4194303u || den > 4194303u || latency_ns < 0 ||
-      copy_ns < 0 || l > MTL_SEC(1000) || copy_ns > MTL_SEC(1000))
-    return -MTL_EINVAL;
-  if (r->scan == MTL_INTERLACED) num *= 2; /* field units */
-  uint64_t t = (uint64_t)(l + copy_ns) * num; /* (L + c) / U = t / q, t < 2^64 */
-  uint64_t q = den * 1000000000u;
-  uint64_t n = t / q + (t % q != 0) + 1;
-  return n > 65535u ? -MTL_EINVAL : (int)n;
 }
 
 /* ---- Meta records (frame and row units, mtl.h) ---------------------------------------- */

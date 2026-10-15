@@ -6,13 +6,14 @@
 #include "ex_common.h"
 
 /* The framework's push: frames of interleaved int32 samples; first = the epoch index of
-   the first sample (-1 = unknown); discont = 1 after lost time (GStreamer DISCONT). */
+   the first sample (MTL_TIME_NONE = unknown); discont = 1 after lost time (GStreamer
+   DISCONT). */
 int push_pcm(const int32_t* pcm, uint32_t frames, int64_t first, int discont);
 
 /* pcm: room for info.unit_samples sample frames of every channel. */
 int rx_audio(mtl_session_h s, int32_t* pcm) {
   struct mtl_unit u;
-  int64_t next = -1; /* the sample expected next */
+  int64_t next = MTL_TIME_NONE; /* the sample expected next */
   int ret;
   MTL_INIT(&u);
   while ((ret = mtl_rx_dequeue(s, &u, MTL_FOREVER)) == 0) {
@@ -21,10 +22,10 @@ int rx_audio(mtl_session_h s, int32_t* pcm) {
     for (uint32_t f = 0; f < frames; f++)
       mtl_pcm24_to_s32(pcm + (size_t)f * channels,
                        (const uint8_t*)p->addr + (size_t)f * p->stride, channels);
-    int64_t first = (u.flags & MTL_UNITF_INDEX_VALID) ? u.media_index : -1;
+    int64_t first = u.media_index; /* MTL_TIME_NONE: unknown */
     int discont = u.missed_before > 0 || (u.flags & MTL_UNITF_DISCONTINUITY) ||
                   (first >= 0 && next >= 0 && first != next);
-    next = first >= 0 ? first + frames : -1;
+    next = first >= 0 ? first + frames : MTL_TIME_NONE;
     ret = mtl_rx_release(s, u.lease); /* copied: release before the push */
     if (ret >= 0) ret = push_pcm(pcm, frames, first, discont);
     if (ret < 0) break;

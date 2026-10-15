@@ -47,7 +47,7 @@ enum mtl_stat_unit {
   MTL_SU_SAMPLES = 6,
   MTL_SU_PCT_X100 = 7,
   MTL_SU_MBPS = 8,
-  MTL_SU_TAI_NS = 9, /* INT64_MIN = never */
+  MTL_SU_TAI_NS = 9, /* MTL_TIME_NONE = never */
   MTL_SU_ENUM = 10,
   MTL_SU_MASK = 11,
   MTL_SU_ID = 12, /* an identifier: an EUI-64, or a MAC in the low 48 bits */
@@ -114,25 +114,25 @@ enum mtl_manager_state { /* "instance.manager", MTL_EVENT_MANAGER_LOST */
 
 /* ---- Full result records ---------------------------------------------------------------- */
 
-/* TX: the full result record, read with mtl_tx_reap_full(). */
-#define MTL_TXF_ENQUEUED_VALID 0x1u
-#define MTL_TXF_OBSERVED_LEG0 0x2u /* NIC timestamps per leg */
-#define MTL_TXF_OBSERVED_LEG1 0x4u
-#define MTL_TXF_OBSERVED_LAST 0x8u
+/* TX: the full result record, read with mtl_tx_reap_full(). A time it has none for reads
+   MTL_TIME_NONE (R1). MTL_TXF_* flags 0x1-0x8 are retired, never reused. */
 struct mtl_tx_result_full {
   struct mtl_tx_result r;
-  uint32_t detail_flags; /* MTL_TXF_* */
-  uint32_t path;         /* enum mtl_path */
-  int64_t submitted_tai_ns;
+  uint32_t detail_flags;    /* MTL_TXF_*: none in v1; the bits of fields appended later
+                               (R3) */
+  uint32_t path;            /* enum mtl_path */
+  int64_t submitted_tai_ns; /* the instant submit returned (the hand-over) */
   int64_t deadline_tai_ns;
   int64_t scheduled_tai_ns; /* the first packet's planned launch */
   int64_t enqueued_tai_ns;  /* software: the burst of packet 0 */
-  int64_t observed_first_tai_ns[MTL_MAX_LEGS];
+  int64_t observed_first_tai_ns[MTL_MAX_LEGS]; /* NIC timestamps per leg */
   int64_t observed_last_tai_ns;
-  int64_t pickup_slack_ns; /* deadline - pickup */
+  int64_t pickup_slack_ns; /* deadline - pickup; MTL_TIME_NONE: never picked up */
   int32_t snap_error_ns;
   int32_t max_packet_lateness_ns;
-  uint32_t indices_skipped_before; /* media indices left empty on the wire before it */
+  uint32_t indices_skipped_before; /* media indices before it without a unit of the
+                                      application's; the underrun policy sent what it
+                                      sends for them (timing.md §6.3) */
   uint32_t samples_padded;   /* audio */
   uint32_t samples_dropped;  /* audio */
   uint32_t samples_inserted; /* audio */
@@ -166,7 +166,7 @@ enum mtl_compliance {
   MTL_COMPLIANT_NARROW_LINEAR = 4, /* type NL: linear, with the N limits */
 };
 struct mtl_rx_timing_result {
-  uint32_t compliance; /* enum mtl_compliance */
+  uint32_t compliance; /* enum mtl_compliance; 0: no result for this leg */
   uint32_t failed_cause; /* mtl_reasons.h, 0 if compliant */
   uint32_t pkts;
   int32_t cinst_min;
@@ -192,21 +192,18 @@ struct mtl_rx_timing_result {
                               negative = reordering (§4.8.7) */
 };
 
-/* RX: detail of a unit the caller holds (lease from mtl_rx_dequeue). */
-#define MTL_RXF_ARRIVAL_LEG0 0x1u
-#define MTL_RXF_ARRIVAL_LEG1 0x2u
+/* RX: detail of a unit the caller holds (lease from mtl_rx_dequeue). A time it has none
+   for reads MTL_TIME_NONE, a timing result it has none for compliance 0 (R1). Flags 0x1,
+   0x2, 0x8, 0x20 and 0x40 are retired, never reused. */
 #define MTL_RXF_HW_ARRIVAL 0x4u
-#define MTL_RXF_PRESENTATION 0x8u
 #define MTL_RXF_LATE_FOR_PRESENTATION 0x10u
-#define MTL_RXF_TIMING_LEG0 0x20u /* timing[0] is valid (rx.timing_parser) */
-#define MTL_RXF_TIMING_LEG1 0x40u
 #define MTL_RXF_INCOMPLETE_BY_DUE 0x80u /* force-completed at its due time, not by a stop */
 struct mtl_rx_detail {
   uint32_t flags; /* MTL_RXF_* */
   uint32_t path;  /* enum mtl_path */
   int64_t arrival_first_tai_ns[MTL_MAX_LEGS];
   int64_t arrival_last_tai_ns[MTL_MAX_LEGS];
-  int64_t presentation_tai_ns; /* media + rx.link_offset_ns */
+  int64_t presentation_tai_ns; /* media + rx.link_offset_ns, with both */
   int64_t delivered_tai_ns;
   int32_t media_phase_ticks;
   uint32_t units_missing_before; /* stream gap by index difference */
@@ -221,7 +218,8 @@ struct mtl_rx_detail {
   uint32_t marker_seen;    /* 1 = the unit's last packet carried the marker */
   uint64_t bytes_received;
   uint32_t seq_discont[MTL_MAX_LEGS]; /* sequence discontinuities per leg */
-  struct mtl_rx_timing_result timing[MTL_MAX_LEGS]; /* with MTL_RXF_TIMING_LEG* */
+  struct mtl_rx_timing_result timing[MTL_MAX_LEGS]; /* rx.timing_parser; compliance 0:
+                                                       none */
   struct mtl_raster raster; /* video: the unit's raster (detected, or the configured one) */
   uint32_t packing;         /* video: enum mtl_packing of the stream */
   uint32_t fps_approx;      /* 1: raster.fps matched no named rate (rx.detected.fps_approx) */
@@ -274,7 +272,8 @@ struct mtl_health {
   uint32_t sessions_started;
   uint32_t sessions_error;
   int64_t oldest_loop_age_ns; /* the slowest scheduler's last loop */
-  int64_t time_error_ns;      /* estimated error of the time base; INT64_MAX = unknown */
+  int64_t time_error_ns;      /* estimated error of the time base; INT64_MAX =
+                                 unknown, a bound (not MTL_TIME_NONE) */
   char detail[96];            /* "port 1 link down; time ACQUIRING"; "" if it changed while
                                  being copied */
 };
@@ -433,8 +432,12 @@ struct mtl_capture_params {
   uint64_t legs;     /* bit per leg; 0 = all */
   uint64_t reserved[4];
 };
-/* Copies a session's packets to a file from a library worker; MTL_EVENT_CAPTURE_DONE
-   when it ends. p NULL stops a running capture. CP. (MS4) */
+/* Copies a session's packets to a file from a library worker; MTL_EVENT_CAPTURE_DONE when
+   it ends. p NULL stops a running capture. An RX packet carries its arrival time (the
+   NIC's with caps.hw_rx_timestamp); a TX packet, outbound, the software time its burst
+   was handed to the NIC queue (on MTL_PACING_HW_LAUNCH the commanded launch time), never
+   a wire time: per-packet wire times are an RX capture's, on a monitor (contract.md
+   §15.4). CP. (MS4) */
 MTL_API_CP(4) int mtl_session_capture(mtl_session_h s,
                                       const struct mtl_capture_params* MTL_NULLABLE p);
 

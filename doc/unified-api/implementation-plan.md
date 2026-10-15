@@ -68,13 +68,13 @@ flowchart TB
 | Milestone | Scope | Calendar [I] |
 |---|---|---|
 | **MS1** ST 2110-20 frames | the core, the video and null bindings, the API shell inside libmtl for ST20 frames TX and RX, a test pool at four tiers, `UnifiedKahawaiTest` and `UnifiedRxTxApp` for `st20p` beside the frozen legacy ones, the acceptance smoke set on both apps (§5) | weeks 1–4 |
-| **MS2a** ST 2110-20 rows and completeness | the nightly comparison (§6.9); the wake checks S1a and S1b; queues for event loops (ex03); the `tick`, command acks, discard; **rows (slice)**; RX fill of library pools, due time and `RX_LATEST`; the direct open of PCI and `native_af_xdp:` ports; `mtl_log_add_sink`; C-FPS, C-GRANT, C-BRIDGE; the MS1 stretch tasks (§6.1) | month 2 |
-| **MS2b** video memory and the st20p re-base | attach, by index, per-acquire layouts, holds, split-forward, converter plugins; then, last, st20p re-based on the core once the nightly comparison has burned in (§6.1) | month 3 |
-| **MS3** timing and observability | the ST20 timing subset (INDEX, start at TAI or index, `mtl_tx_get_next`, RX `media_index`, E1–E3); events, per-scheduler stats blocks, health; `mtl_session_update` on a stopped session; the libmtl soname, the `MTL_LEGACY` node and hidden internals; debug call-class checks; the FFmpeg plugin's st20p path on the new API (§6.2) | month 4 |
-| **MS4a1** audio, fastmeta and A/V sync | audio (st30p re-based), fastmeta (st41 frames), A/V on one epoch timeline (media mode AUTO; audio TAI and INDEX MS6); fastmeta at any frame rate; DSCP on their bindings; their `UnifiedRxTxApp` kinds and `UnifiedKahawaiTest` cases (§6.3) | month 5 |
+| **MS2a** ST 2110-20 rows and completeness | the nightly comparison (§6.9); the wake checks S1a and S1b; queues for event loops (ex03); the `tick`, command acks, discard; **rows (slice)**; RX fill of library pools (video black), due time and `RX_LATEST`; the direct open of PCI and `native_af_xdp:` ports; `mtl_log_add_sink`; C-FPS, C-GRANT, C-BRIDGE; the MS1 stretch tasks (§6.1) | month 2 |
+| **MS2b** video memory and the st20p re-base | attach, by index with the video RX `media_index`, per-acquire layouts, holds, split-forward, converter plugins; then, last, st20p re-based on the core once the nightly comparison has burned in (§6.1) | month 3 |
+| **MS3** timing and observability | the ST20 timing subset (INDEX, start at TAI or index, `mtl_tx_get_next`, E1–E3); events, per-scheduler stats blocks, health; `mtl_session_update` on a stopped session, and FLOWS on a running one (G1); the libmtl soname, the `MTL_LEGACY` node and hidden internals; debug call-class checks; the FFmpeg plugin's st20p path on the new API (§6.2) | month 4 |
+| **MS4a1** audio, fastmeta and A/V sync | audio (st30p re-based), fastmeta (st41 frames), A/V on one epoch timeline (media mode AUTO; audio TAI and INDEX MS6); video `MTL_UNDERRUN_REPEAT` (T-REP); fastmeta at any frame rate; DSCP on their bindings; their `UnifiedRxTxApp` kinds and `UnifiedKahawaiTest` cases (§6.3) | month 5 |
 | **MS4a2** ANC | ANC (st40p re-based) at any frame rate, DSCP on its binding, its `UnifiedRxTxApp` kinds and `UnifiedKahawaiTest` cases, EBU LIST (tasks N1–N8, §6.3); its files are disjoint from MS4a1's, so it runs beside MS4a1 | month 5 (run after MS4a1, it moves MS4b and later by about 4 weeks) |
-| **MS4b** compressed video and plugins | cvideo (st22p re-based; codec plugins on the transform state) and its rates (JPEG XS n and n·1000/1001), plugin ABI v2, `mtl_convert` (§6.3) | month 6 |
-| **MS5** packets and operators | packet units on every essence over today's RTP paths (one shared chunk expander, PE1–PE8), the generic `MTL_RTP` essence and ST 2022-6 (PE7); E5a (linear NL and W, D-143); `mtl_session_update` while running, at a boundary; RTCP sender reports on TX (their names leave `MTL_LATER`); the link monitor, capacity query, manager reconnect (§6.4) | month 7 |
+| **MS4b** compressed video and plugins | cvideo (st22p re-based; codec plugins on the transform state) and its rates (JPEG XS n and n·1000/1001), cvideo REPEAT (JPEG XS), plugin ABI v2, `mtl_convert`'s conversions, its CHECK since MS2a (§6.3) | month 6 |
+| **MS5** packets and operators | packet units on every essence over today's RTP paths (one shared chunk expander, PE1–PE8), the generic `MTL_RTP` essence and ST 2022-6 (PE7); E5a (linear NL and W, D-143); `mtl_session_update` at an instant (legs, launch delay); RTCP sender reports on TX (their names leave `MTL_LATER`); the link monitor, capacity query, manager reconnect (§6.4) | month 7 |
 | **MS6** synchronisation and the ecosystem | start arrays, ANC and fastmeta following their video, sample-accurate audio, E5b–E13, the published time base with FREERUN (E9; its name leaves `MTL_LATER`); recovery on library workers; the GStreamer, OBS, Python and Rust ports and the rest of the FFmpeg plugin (§6.5) | months 8–9 |
 | **MS7** freeze and hide | the external review with the named consumers; the `MTL_1.0` freeze; the hiding stages F, F+1, F+2 (D-83) (§6.6) | month 10, then the deprecation releases at the targets of deployment.md §7 |
 | Phase 7 | NMOS extras, SDP, IPMX timing and the RTCP MIB, encryption, PEP ([nmos-ipmx.md](nmos-ipmx.md)), declared under `MTL_LATER` until then (D-98); a Phase 7 name leaves `MTL_LATER` in the milestone that implements it (RTCP sender reports MS5, FREERUN MS6) | after MS7 |
@@ -96,8 +96,8 @@ returns `-MTL_ENOTSUP` with `MTL_REASON_NOT_IMPLEMENTED` until then (D-106).
 
 - other essences (MS4a, MS4b); packet units (MS5); rows units (MS2a);
 - attached or imported memory, holds, per-acquire layouts (MS2b for video);
-- `mtl_session_update` (MS3 in CREATED and STOPPED, MS5 while running), `mtl_session_discard`
-  (MS2a);
+- `mtl_session_update` (MS3, also FLOWS while running with `when` NULL or `MTL_NOW`; MS5 at an
+  instant), `mtl_session_discard` (MS2a);
 - queues for event loops (`mtl_queue_*`, ex03; MS2a);
 - media mode INDEX, start at a TAI or an index, `mtl_tx_get_next`, `MTL_SUBMIT_RTP_TS` (MS3);
   start arrays (MS6);
@@ -124,7 +124,8 @@ keeps working with its software time base (§2.4).
 The picture, the parts and their rules are in [core.md](core.md) §1; in short:
 
 - **The core** (`lib/src/st2110/core/`, in libmtl) is the unit session: a slot table with one
-  64-bit slot word per slot (state, claim, holds, generation), an order ring of 64-byte submission
+  64-bit slot word per slot (state, claim, the hold bit W, the pin bit, holds, generation), an
+  order ring of 64-byte submission
   descriptors that is the pick-up, result and reap order, the nine session states (D-08), one
   event word per object with one `mt_wake()` (D-158), the handle table (R4) and the transform state for conversion and codecs
   (D-100). It reaches its environment (allocation on a socket, the clock, the wake flush, the
@@ -170,10 +171,12 @@ coverage gate D-87 holds: every legacy capability has a unified home and a miles
 
 ### 2.4 Time sources
 
-MS1 ships `MTL_TIME_SOURCE_AUTO` chosen once, at open; `MTL_TIME_SOURCE_PTP_BUILTIN` on a VF
+MS1 ships `MTL_TIME_SOURCE_AUTO` chosen at open (from MS3 it moves up without a step, to
+CLOCK_TAI, and in MS6 to a PHC; D-229); `MTL_TIME_SOURCE_PTP_BUILTIN` on a VF
 reached through the bridge (on a direct open it needs the PCI open of MS2a), with today's software
 time base; and on a bridged instance (`UnifiedKahawaiTest` and `UnifiedRxTxApp` on VFs until MS2a,
-§4.1) the legacy time base, which unified sessions on it read. The sources, the bridge clock and
+§4.1) the legacy time base, which unified sessions on it read; a wrapper whose clock reads UTC as
+TAI logs one WARNING (D-235). The sources, the bridge clock and
 what each later milestone adds are [timing.md §2.2](timing.md#22-time-sources); `ptp_get_time_fn`
 maps to `MTL_TIME_SOURCE_USER` ([migration.md](migration.md)). `MTL_REASON_CLOCK_NOT_OWNED` is
 only for a request to steer a PHC MTL does not own (OI-7).
@@ -236,7 +239,7 @@ OI-60):
   before its `refcnt` is decremented, `tv_frame_free_cb`, `st_tx_video_session.c:134-135`), SF-08,
   SF-09 and SF-23. If it is not merged by the end of week 1, the MF1 hunk is taken into task E1a. The
   PR also fixes the video `update_destination` that writes the source UDP port into the destination
-  port (`st_tx_video_session.c:3829-3830`).
+  port (`st_tx_video_session.c:3829-3830`); task G1a (MS3) takes that hunk if the PR is not merged.
 - **PR #1610's legacy st20p parity tests**, folded into main's harness
   (`tests/unit/pipeline/st20p_tx_harness.c`, `st20p_harness.c`) before any engine change of MS1, so
   they pin today's behaviour (task T1). Its eventfd and poll loop in `mt_session_event.c` and
@@ -419,7 +422,7 @@ pattern and a file source. The legacy `sample_util.*` is deleted with the last l
 | `cvideo` | ex15 | MS4b | `tx_st22_pipeline_sample.c`, `rx_st22_pipeline_sample.c`, `legacy/tx_st22_video_sample.c`, `legacy/rx_st22_video_sample.c` | `--plugin <so>` |
 | `pod_service` | ex16 | MS2a (health and the shutdown report MS3) | — | |
 | `telemetry` | ex17 | MS2a (A2b; events MS3, `mtl_session_capture` MS4b, from the C++ bench) | — | `--capture <path>` |
-| `nmos_node` | ex18 | MS3 (stop, update, start), MS5 | — | |
+| `nmos_node` | ex18 | MS3 (immediate, the TX hand-over), MS5 (scheduled) | — | |
 | `framework_setup` | ex19 | MS2a | — | |
 | `rx_to_framework` | ex20 | MS2a | — | |
 | `live_sink` | ex21 | MS2 | — | |
@@ -448,7 +451,7 @@ is a MtlManager tool and stays.
   to 1 (G-51).
 - **Core:** handles (process-wide, never freed, generations, R4); `mtl_last_error` (written only
   by failing calls), reasons, `MTL_INIT` and `struct_size` (R3); the slot table (one 64-bit word per
-  slot), the descriptor ring, the result reservation; stop against submit (exactly one wins); the
+  slot), the descriptor ring, the result reservation, the hold (D-209); stop against submit (exactly one wins); the
   nine-state table (ARMED only through a start `when`, which MS1 rejects); the event word and the
   calls with a timeout (D-158), `mtl_wait`, with the count-bounded flush (D-142); no descriptor
   (queues are MS2a, D-159); sticky interrupts with a wait-target mask; deferred, idempotent close.
@@ -458,9 +461,9 @@ is a MtlManager tool and stays.
   loop); `MTL_PORTS`, `MTL_INSTANCE_TASKLET_THREAD`/`_SLEEP`, time source AUTO; the bridge
   `mtl_instance_from_legacy`, through which PCI BDFs and `native_af_xdp:` reach unified sessions;
   `mtl_close` on an instance (0, 1 or `-MTL_EIO`); re-open after close on `null:`; the wrapper's
-  direct clocks and the `mtl_uninit` guard (OI-72).
+  direct clocks and the `mtl_uninit` guard (OI-72); the UTC WARNING of the wrapper's clock (D-235).
 - **Session:** `create`, `query`, `get_info` (with `wire_bps`), `start` (n = 1, `when` NULL or
-  NOW), `stop` (DRAIN, FLUSH, arrays), `close` (1 while retiring, 0 once retired; a repeated close
+  NOW) on the session's index grid (D-233), `stop` (DRAIN, FLUSH, arrays), `close` (1 while retiring, 0 once retired; a repeated close
   polls), `get_status` (state, `blocked_on`, legs).
 - **Data path:** `mtl_tx_acquire`, `mtl_tx_submit` (with `MTL_SUBMIT_SRC_PLANES`), `mtl_release`,
   `mtl_rx_dequeue`, `mtl_reap` with the typed `mtl_tx_reap` and `mtl_tx_reap_full`, `mtl_wait`;
@@ -469,7 +472,8 @@ is a MtlManager tool and stays.
   (D-151).
 - **Results:** `MTL_SESSION_RESULTS` with the records in `seq` order; ON_TIME (`MTL_TXR_DEFERRED`
   when AUTO moved the unit), DROPPED (the launch decision's `SNAP_COLLISION`, `BEHIND`, `TOO_LATE`;
-  the recovery verdict), FLUSHED; cookie verbatim; reservation at acquire. In copy mode (no chain:
+  the recovery verdict), FLUSHED; cookie verbatim; reservation at acquire; `margin_ns` and
+  `sent_tai_ns` read `MTL_TIME_NONE` until MS3 (D-215). In copy mode (no chain:
   kernel socket, AF_XDP, NICs without multi-segment) a result means built, not sent, until MS2a.
 - **Video:** `MTL_VIDEO`, `MTL_UNIT_FRAME`, TX and RX, one or two legs (ST 2022-7, one `sc.ssrc`
   and `sc.payload_type` for both), progressive and interlaced (a field per unit), library pools
@@ -482,19 +486,21 @@ is a MtlManager tool and stays.
   `get_next_frame` with its grid, with exact math: AUTO
   takes the next feasible index (a late unit is ON_TIME with `MTL_TXR_DEFERRED`; interlaced fields
   alternate in submission order and a defer skips whole frames), AUTO + `NOT_BEFORE` the first index
-  whose first-packet time is ≥ t, TAI the nearest index (`SNAP_COLLISION`, `BEHIND`, `TOO_LATE` as
-  DROPPED); it drives the engine with `USER_PACING | RTP_TIMESTAMP_EPOCH` and `required_tai = N·T`,
+  whose first-packet time is ≥ t, TAI the nearest index with timing.md §4.3's hysteresis and
+  `tx.snap_tolerance_ns` at most half the unit period (D-234; `SNAP_COLLISION`, `BEHIND`, `TOO_LATE` as DROPPED); it drives the engine with `USER_PACING | RTP_TIMESTAMP_EPOCH` and `required_tai = N·T`,
   so RTP comes from the frame epoch (D-10) with today's rounding. `notify_frame_late` never fires
   for core sessions. `RTP_TS`, and a TAI unit whose `NOT_BEFORE` or `EXACT` launch lands in another
   slot than its media time, are `-MTL_ENOTSUP` until E1 (MS3). B1 uses the pick-up lead of
-  [timing.md §6.1](timing.md#61-where-the-decision-happens) (D-130); the playback and capture
-  launch delays are [timing.md §5.2](timing.md#52-min_tx_delay_ns-and-the-launch-rule).
+  [timing.md §6.1](timing.md#61-where-the-decision-happens), which MTL adds itself to a positive
+  `min_tx_delay_ns` (D-218, C2b's launch steps); the playback and capture launch delays are
+  [timing.md §5.2](timing.md#52-min_tx_delay_ns-and-the-launch-rule).
 - **RX:** incomplete units delivered with their status (the default
   `rx.incomplete = MTL_RX_DELIVER`; the bytes of lost ranges are unspecified until the fill of
   library pools ([contract.md §9.8](contract.md#98-rx-placement)) lands in MS2a, and the result says so with `MTL_RX_INCOMPLETE`),
   `MTL_OPT_RX_INCOMPLETE = MTL_RX_DISCARD`; delivery in the completer's `pub_seq` order; two legs
   with the out-of-order window of `rx.skew_budget_ns`.
-- **Observe:** the D-110 log lines from `compat_log.c`; the latency fields and `convert_ns` (D-156).
+- **Observe:** the D-110 log lines from `compat_log.c`; the latency fields with the caller's work
+  C held in `latency_min_ns`, and `convert_ns` (D-225).
 - **Options:** the option table: every key known, the ST20 ones implemented.
 - **Test substrate:** the null binding with null loopback (an RX session receives the TX units
   whose destination IP and port it matches), the test clock (completions run synchronously inside
@@ -519,29 +525,29 @@ estimates [I].
 | # | Task | Depends on | Size | Gate 6 | Exit |
 |---|---|---|---|---|---|
 | P0 | tooling, main session (below): `run_gtest` options and `binary`, frozen-tree rules, `CLAUDE.md` files, acceptance rules for `UnifiedRxTxApp`; the iteration histogram (`mtl-developer`) and the S0 scripts | — | 300 + 150 + 300 | `run_gtest`, `St20p*`, TSC, also on `kernel:lo` | both runs green; each config diff approved; `mt_hist_test` green; the session restarted |
-| M0 | docs, main session, no review slot (below): `wait_flush.py` with a queue entry and `wake_k` 1 and 4, `final_model.py`'s joint and epoll-mode cases, `check_labels.py`, `run_models.py`, `stress.c`'s mutants | — (before week 2) | ≈ 350 | — | `run_models.py` gives every expected result; `check_labels.py` passes on core.md §6 and `final_model.py` |
+| M0 | docs, main session, no review slot (below): `wait_flush.py`'s queue entry and `wake_k` cases, `final_model.py`'s joint and epoll-mode cases, `check_labels.py`, `run_models.py`, `stress.c`'s mutants; the ring models in the model job | — (before week 2) | ≈ 400 | — | `run_models.py` gives every expected result; `check_labels.py` passes on core.md §6 and `final_model.py` |
 | S0 | baseline measurement, owned by the main session (detail below): the S0 loads, RL and TSC, through `.github/scripts/perf/` | P0 | — | — | the medians and A/A spreads of the §8.4 metrics per load in ms1-status §4, every A/A rule met or a revision asked for as a D-row; legacy's capacity C per load by MS2a's exit |
 | T1 | PR #1610's legacy st20p parity tests on main's harness: the 9 TX cases of `a693810c` and the 4 RX cases of `f23158c1` (legacy-internals.md §12.1) | — | 600 test | — | they pin today's behaviour and pass; Gate 2: each test fails with the line it pins reverted locally |
-| H1b | series of four (below): 0 the tables; 1 the headers moved, with the inline-helper U tests; 2 the API shell, nodes `_MS1` and `_BRIDGE`, the seal checks, `st_avail_check`, `st_api_ret`; 3 the run options | P0 | 1.4 k (1.0 k data); 3.6 k moved + 0.2 k; 1.05 k + 450; 150 | — | the four parts' exits (below) |
-| E1a | engine fixes, TX completion: MF1 (unless PR #1770 landed), MF7, the TX recovery verdict with the two alternating `sh_info` and the use generation in `fcb_opaque` (engine.md §5); the verdict part of `st_engine_core.h` | T1; S0's at-quota data before its commit | 230 + UB | yes | the legacy gate on a VF, TSC and RL; UB for MF1, MF7, the verdict |
-| E1b | idle descriptor cleanup, only in `WAIT_FRAME`, dedicated queues | E1a | 80 | yes | the legacy gate; UB `idle_cleanup_wait_frame_only` |
+| H1b | series of four (below): 0 the tables; 1 the headers moved, with the inline-helper U tests and G-148; 2 the API shell, nodes `_MS1` and `_BRIDGE`, the seal checks, `st_avail_check`, `st_api_ret`; 3 the run options | P0 | ≈ 1.45 k (1.0 k data); 3.6 k moved + 0.39 k; 1.05 k + 450; 150 | — | the four parts' exits (below) |
+| E1a | engine fixes, TX completion: MF1 (unless PR #1770 landed), MF7, the TX recovery verdict with the two alternating `sh_info` and the use generation in `fcb_opaque` (engine.md §5), storing no W (D-209); the verdict part of `st_engine_core.h` | T1; S0's at-quota data before its commit | 230 + UB | yes | the legacy gate on a VF, TSC and RL; UB for MF1, MF7, the verdict |
+| E1b | idle descriptor cleanup, only in `WAIT_FRAME`: on dedicated queues, and on shared queues by a rewrite of `mt_tsq_done_cleanup` that takes `tx_mutex` by trylock (lock on the recovery path, never `tsq_lock`), frees at most `tx_rs_thresh` per visit and skips AF_XDP (D-213) | E1a | 160 | yes | the legacy gate; UB G-147 |
 | E1c | RX: incomplete delivery always on, SF-45 (the hook never refuses); the RX put and per-leg arrival time of `st_engine_core.h` | T1 | 90 + UB | yes | the legacy gate; UB `rx_incomplete_status` |
 | E1d | SF-49, the ST30P and ST40P user timestamps, OI-3 teardown order, the wrapper count and the `mtl_uninit` guard | T1 | 130 | yes | the legacy gate; `tests/unit/session/st30_tx/pacing_test.cpp`, `multi_essence_sync_test.cpp` unchanged |
-| C0 | `st_core.h`: the slot word, the descriptor ring, line A and the in-flight line's `intr` (`alink`, line C reserved), the loop bitmap, the binding ops and core calls (core.md §2, §2.1), grant and grid (core.md §3.2), the instance context; the register | — | 640 + 60 | — | a TU with `st_core.h` builds; `check_register.sh` passes; `pahole` in the commit; checkpoint 1 (below) |
-| C1a | series of two: handles (line A, the in-flight line, `owner`, `hw`, per-node chunks), the state table and `st_core_states.def`, deferred and idempotent close, closed-by-instance, the orphan list, RETIRE per D-168, the lint `core_no_essence` | C0, H1b | 1.0 k + 0.5 k | — | U: G-07, G-29, G-49 (from the `.def`), G-65, G-71 (core part); `CoreClose.orphan_freed_at_next_cp` |
+| C0 | `st_core.h`: the slot word (D-118), the descriptor ring, line A and the in-flight line's `intr` (`alink`, line C reserved), the loop bitmap, the binding ops and core calls (core.md §2, §2.1), grant and grid (core.md §3.2), the instance context; the register | — | ≈ 710 | — | a TU with `st_core.h` builds; `check_register.sh` passes; `pahole` in the commit; checkpoint 1 (below) |
+| C1a | series of two: handles (line A, the in-flight line, `owner`, `hw`, per-node chunks, `lease_base`), the state table and `st_core_states.def`, deferred and idempotent close, closed-by-instance, the orphan list, RETIRE per D-168, the lint `core_no_essence` | C0, H1b | 1.0 k + 0.51 k | — | U: G-07, G-29, G-49 (from the `.def`), G-65, G-71 (core part); `CoreClose.orphan_freed_at_next_cp` |
 | C1w | the object path of core.md §6.1–§6.3 (D-158, D-167, D-168): EVENT, M1, K1, FLUSH with `wake_k`, WT T1–T9, DP, WAIT0, INTERRUPT, WALK, CLOSE, Y1, raw syscalls, hooks, USDT, `st_core_dump()` of line A; the model copied | C0, C1a, M0 | 350 + 480 | yes (legacy gate: flush line) | the model job; its hook tests (below); G-52, G-95, G-142; core parts of G-30, G-39, G-64, G-111 |
-| C1b | series of two: the slot table, the descriptor ring, results, the reservation, `st_core_tx_pick`, readiness predicates (loads before the reaper lock) and attempts, completions through EVENT, three stats blocks, the slot dump | C0, C1a, C1w | 1.03 k + 0.54 k | yes (legacy gate) | U: G-01, G-02, G-04, G-05, G-09, G-72 (core part), `Core.stats_blocks_at_create`; `UnifiedPerf.dp_calls` (§8.4) |
-| A1 | series of two: the instance (null-only EAL, the port table of core.md §2.4, the bridge in its node with OI-72, the MS1 port detail, the second-wrap `-MTL_ENOTSUP`, `log_level`, the clocksource check); errors, reasons, options with `NOT_APPLICABLE`; OI-2, OI-7, OI-49 | H1b, C1a, C1w, E1 | 1.0 k + 0.57 k | — | U: G-33, G-70, G-73, G-77 (MS1), G-111, G-112, G-141; the four tests below |
-| C2 | the null binding with loopback and its grid, the test clock and the loop's flush, `DROP_PKTS`, `FORCE_ERROR`, `DUMP_STATE`; `st_rate.h` rows A and B, `st_core_raster_check`; `st_core_admit` in `st_core_tx_pick`; the wrapper's U tests | C1b, A1 | 800 + 650 | — | U: G-92, G-93, G-123, `Admit.table`, `Tai.interlaced_parity`, `Rx.loopback_frame`, `Fault.*` with `dump_state`, G-49 on `null:1` |
-| B1 | the video TX binding: frames, legs, interlace, the video grid, the frame for the core's N, `st_rate_to_st_fps`, the §6.3.1 predicate, DSCP, conversion, `SRC_PLANES`, `info.*`, the MS1 flag, `LEGS_SHARE_PORT`; two C2 tests | C1b, E1, C2 | 0.9 k + 0.5 k UB | legacy `St20*` (TOS) | UB: G-08, G-20, `submit_carries_meta`, `slot_decision`, G-125, `internal_bytes_counts_pools`, `SharePortFlag` |
-| B2 | the video RX binding: `query_ext_frame` slots, one allocation per slot with the tail, the incomplete policy, legs and the two-leg default pool, the V210 check, `convert_ns`, `info.raster`, TSC arrival per burst | C1b, E1, C2 | 760 + 280 UB | — | UB: `rx_hold_release`, `rx_order_pub_seq`, `rx_incomplete_status`, two legs, `arrival_tsc_per_burst` |
-| A2a | the API shell, part 2: session calls, data path, reap, `mtl_wait`, `mtl_interrupt`, every return through `st_api_ret` | A1, C2, B1, B2 | 1.0 k + 0.5 k | — | U: G-31, G-46, G-47, G-88, G-103, G-107, G-70 (dequeue), the public forms of G-01, G-49, G-71 and of the wait tests; ex01, ex02 and ex20 run on `null:1` |
-| A2c | the API shell, part 3: `get_info`, `get_status` with the latency fields, `convert_ns`, `internal_bytes`, `format_reason`, `provide_gen`, `mtl_format_describe`, `mtl_session_get_slot`; the RX tail; the `MTL_PORTS` grammar; `compat_log.c` | A2a | 0.8 k + 0.7 k | — | U: G-130–G-132, G-136, `Compat.log_lines`, `PoolDefaultTwoLegs`, `DequeueWorksOutsideLock`; ex20 under ASan |
+| C1b | series of three or four (below): the slot table, the descriptor ring, results, the reservation, the hold, `st_core_tx_pick`, readiness predicates and attempts, completions through EVENT, three stats blocks, the slot dump | C0, C1a, C1w | ≈ 2.08 k | yes (legacy gate) | U: G-01, G-02, G-04, G-05, G-09, G-72 (core part), G-143, G-144, G-149, G-155, the cases below; `UnifiedPerf.dp_calls` |
+| A1 | series of two: the instance (null-only EAL, the port table of core.md §2.4, the bridge in its node with OI-72, D-235, the MS1 port detail, the second-wrap `-MTL_ENOTSUP`, `log_level`, the clocksource check); errors, reasons, options with `NOT_APPLICABLE`; OI-2, OI-7, OI-49 | H1b, C1a, C1w, E1 | ≈ 1.59 k | — | U: G-33, G-70, G-73, G-77 (MS1), G-111, G-112, G-141; the five tests below |
+| C2 | series of two (below): C2a the null binding, loopback, the test clock, faults; C2b `st_rate.h` rows A and B, `st_core_raster_check`, `st_core_admit` in `st_core_tx_pick` | C1b, A1 | ≈ 0.8 k; ≈ 0.85 k | — | U: G-92, G-93, G-123, G-151, `Admit.*`, `Tai.interlaced_parity`, `Rx.loopback_frame`, `Fault.*` with `dump_state`, G-49 on `null:1` |
+| B1 | video TX binding: frames, legs, interlace, its grid, the frame for the core's N, `st_rate_to_st_fps`, the §6.3.1 predicate, DSCP, conversion, `SRC_PLANES`, `info.*`, MS1's flag, `LEGS_SHARE_PORT` | C1b, E1, C2 | 0.9 k + 0.53 k UB | legacy `St20*` (TOS) | UB: G-08, G-20, `submit_carries_meta`, `slot_decision`, `ready_delay_video_grid`, G-125, `internal_bytes_counts_pools`, `SharePortFlag` |
+| B2 | video RX binding: `query_ext_frame` slots, one allocation per slot with the tail, the incomplete policy, legs and the two-leg default pool, the V210 check, `convert_ns`, the RX min and the copy budget, `info.raster`, TSC arrival per burst | C1b, E1, C2 | ≈ 1.21 k | — | UB: `rx_hold_release`, `rx_order_pub_seq`, `rx_incomplete_status`, two legs, `arrival_tsc_per_burst`; G-149, G-155 |
+| A2a | series of two (below): the API shell, part 2: session calls, data path, reap, `mtl_wait`, `mtl_interrupt`, every return through `st_api_ret`; then D-216, D-226, D-233 | A1, C2, B1, B2 | ≈ 1.70 k | — | U: G-31, G-46, G-47, G-88, G-103, G-107, G-70 (dequeue), G-150, the public forms of G-01, G-49, G-71 and of the wait tests; ex01, ex02, ex20 on `null:1` |
+| A2c | series of two (below): the API shell, part 3: `get_info`, `get_status` with the latency fields, `convert_ns`, `internal_bytes`, `mtl_session_get_slot`; the RX tail; then `mtl_format_describe`, the `MTL_PORTS` grammar, `compat_log.c` | A2a | ≈ 1.57 k | — | U: G-130–G-132, G-136, G-153, `Compat.log_lines`, `PoolDefaultTwoLegs`, `DequeueWorksOutsideLock`; ex20 under ASan |
 | I1 | `UnifiedKahawaiTest` (§4.1): the copy of §4.1 (week 2, no dependency), its instance through the bridge (`tests.cpp:805`), the `St20p` cases of §5.3, the suite `Cross`, `kernel:lo`; the rewrite after A2a | A2a | 4.2 k copied + 1.3 k | yes | `St20p*` green through `run_gtest` with `binary=legacy` and `=unified` (Gate 6), and through `gtest.sh --api both` in CI once P1 lands |
 | R1 | `UnifiedRxTxApp` (§4.1, §5.4): the copy of §4.1 (week 2, no dependency), then `st20p` TX and RX on the new API, the other kinds refused, SIGTERM → `mtl_interrupt`; unified-only JSON keys need `"api": "unified"`; the in-tree level line; the rewrite after A2a | A2a, A2c | 8 k copied + 1.03 k | — | the local loopback JSON runs on `UnifiedRxTxApp` with the output lines of `RxTxApp` |
 | P1 | acceptance: the `rxtxapp_unified` adapter, `--app`, its skip of unified-only configs, the smoke set on both apps; the baseline CI; the samples `tx_video`, `rx_video`, `from_legacy` (ex24) with `Needs:` lines, `g114_exempt.txt`, D-138 | I1, R1, A2c | 0.45 k + 0.55 k | main session runs pytest | the same pass list on both apps; the CI jobs; the samples in CI; G-114 green |
 | A2b | stretch: stats, `mtl_rx_get_detail`, `mtl_port_get_spec`, `mtl_instance_list_sessions`, `stats_keys.def`; committed in MS2a, so these six keep `MTL_API_*(2)` in the MS2 node | A2a | 0.75 k + 0.45 k | — | U: G-42, the G-88 listing, `Stats.catalogue`; RxTxApp's stats lines |
-| B3 | stretch: RX DMA, two RX threads, the RX timing parser, per-packet conversion, `MTL_SUBMIT_EXACT`; the RX packet lcore wakes its one session | B1, B2 | 815 + 300 UB | yes | G-26 (the binding's checks); `digest_1080p_packet_convert_s2` ported |
+| B3 | stretch: RX DMA, two RX threads, the RX timing parser, per-packet conversion, `MTL_SUBMIT_EXACT`; the RX packet lcore wakes its one session | B1, B2 | 815 + 300 UB | yes | G-26 (the binding's checks); G-150's launch case; `digest_1080p_packet_convert_s2` ported |
 | X | stretch: E2, exact `floor` RTP, for core sessions only | — | 400 | yes | the oracle unit tests; legacy rounding tests unchanged |
 
 Pre-decided splits (each keeps its review unit, so no review slot is added):
@@ -550,20 +556,29 @@ Pre-decided splits (each keeps its review unit, so no review slot is added):
   series; if part 2 is, the seal probe and the tag rule of `check_frozen_lists.sh` (about 90)
   move into part 3; if the series' review cannot finish by day 5, part 3 (the run options) moves
   into I1, its first user, with its exit.
-- **C1a, C1b, A1**: decided now as series of two, because their sizes reach the cap.
-- **A2a, A2c**: if A2a is over the cap at Gate 4, `UnifiedRx.DequeueWorksOutsideLock` (two
-  threads on one converting session: with thread A paused by a pause hook inside its conversion,
-  thread B's dequeue of the next unit returns) is already A2c's; if A2c is, `Compat.log_lines`' regex table moves into R1 (its first user).
-- If B1 or A1 still exceeds the cap at Gate 4, the tests that neither its exit nor §5.6 names
-  move to MS2a, as today; then stop and ask (ms1-status §3).
+- **C1a, A1**: series of two, because their sizes reach the cap. **C1b**: the series of three or
+  four below, in its order. **C2**: C2a, C2b. **A2a**: two. **A2c**: two.
+- **The valves beyond H1b's**, in this order: (1) `Compat.log_lines`' regex table moves into R1
+  (its first user) if A2c's second commit is over the cap; (2) an overrun of A2a (1) moves the
+  public forms of the wait tests into A2a (2); (3) in weeks 2 and 3 (6.0 k each, on the critical
+  path), a task still over the cap at Gate 4 after its series moves the tests that neither its
+  exit nor §5.6 names to MS2a. After those, any further overrun at Gate 4 goes straight to stop
+  and ask (ms1-status §3). `UnifiedRx.DequeueWorksOutsideLock` (two threads on one converting
+  session: with thread A paused by a pause hook inside its conversion, thread B's dequeue of the
+  next unit returns) is A2c's. A unit that misses its week takes the next week's first review
+  slot, and the day-10 and day-15 rules of the gates apply.
 
 C0's checkpoint 1: the maintainer approves `st_core.h` against core.md §2, §2.1 (every op and
 core call with its context, milestone and optional mark; the grant and the grid; no essence read by
-the core) and the register, on the answer line of ms1-status §3; the commit waits for it. In C0's
+the core) and the register, on the answer line of ms1-status §3; the commit waits for it. The
+register carries the slot word with the hold bit W and the pin bit (D-118), the seq of each slot's
+last submit, `lent` on its own line, the caller's work C (D-225) and the copy budget B (D-227) on
+`.app`, and `lease_base` in the entry header (core.md §4.1). In C0's
 commit `numbers.txt` makes `st_core.h` the slot word's home (no document states the layout), and
 D-118 links it. A1's
 tests besides its G-ids: `Bridge.tai_refresh_step_bound`, `Bridge.second_wrap_enotsup`,
-`UnifiedInstance.pci_port_ms1_detail`, `Instance.clocksource_check`. C1w's hook tests: WH2, WH3,
+`UnifiedInstance.pci_port_ms1_detail`, `Instance.clocksource_check`, `Bridge.utc_warning` (the
+WARNING of D-235). C1w's hook tests: WH2, WH3,
 WH10–WH12, WH14b–WH16, WH21, WC1–WC3, WC5 ([design/wait-tests.md](design/wait-tests.md) §6).
 
 **P0, S0, M0, T1 and H1b in detail.**
@@ -601,8 +616,10 @@ WH10–WH12, WH14b–WH16, WH21, WC1–WC3, WC5 ([design/wait-tests.md](design/w
     `include/mtl/experimental/` → core.md, engine.md §1 and contract.md §1, in
     `.github/instructions/mtl-kb-routing.instructions.md` or wherever the reviewer's Gate C reads
     routing;
-  - reviewer rules for MS1 core and binding code: RX gaps are unspecified until MS2a (§5.1), so
-    "RX frame buffers must be zero-initialized" does not apply to them yet; per-milestone exports
+  - reviewer rules for MS1 core and binding code: RX gaps are unspecified until MS2a (§5.1): until
+    then "RX frame buffers must be zero-initialized" does not apply to them; from MS2a the unified
+    fill of library pools writes video: the format's black; audio, cvideo and fastmeta: zero; ANC
+    units are never filled (D-242); per-milestone exports
     and `-MTL_ENOTSUP` for later values are required, not dead code; the prefixes `st_core_` and
     `bind_`, and `mtl_` only for exported symbols; the core reads no essence (lint
     `core_no_essence`) and only `bind_*.c` builds engine `ops` (core.md §2.1); a
@@ -649,7 +666,7 @@ WH10–WH12, WH14b–WH16, WH21, WC1–WC3, WC5 ([design/wait-tests.md](design/w
 
   In week 1 S0 runs the legacy stack only: the 12 video configurations, 3 runs each, about 6.6 h,
   unattended at night. It records in ms1-status §4 the medians and the A/A spread of every §8.4
-  metric, and the largest p99.99 of the TSC loads for the pick-up lead (timing.md §6.1, D-130). The legacy
+  metric, and the largest p99.99 of the TSC loads for the pick-up lead (timing.md §6.1, D-218). The legacy
   capacity search of §8.4 runs on the next nights; MS2a's exit needs it. From R1 on, every gate run
   measures both stacks the same night. E1 merges after the at-quota data. A budget revision is a
   D-row, so ask first.
@@ -660,7 +677,12 @@ WH10–WH12, WH14b–WH16, WH21, WC1–WC3, WC5 ([design/wait-tests.md](design/w
   and q9 ([design/wait-tests.md](design/wait-tests.md) §1); `check_labels.py` (the label sets of
   core.md §6.1 and §6.6, the model and, once it exists, `st_core_wait.c`, minus the model's
   `NOT_MODELLED` list); `run_models.py` (the one entry point of the model job) and `stress.c`'s
-  mutants. C1w copies the result.
+  mutants. `run_models.py` also runs the ring models of `design/models/` (`ring_bound.py`,
+  `pin_ring.py`, `trace_d207.py`, `w_noe2.py`; [design/README.md](design/README.md)), with their
+  tables as its expected results, `pin_ring.py`'s mixed `BEHIND` rows of D-212 included. The ring
+  models are in `design/models/` already, so M0 adds only their entries (about 40 lines [I]);
+  `w_noe2.py` is the one home of the check that a W store skipping E2 loses a wake-up (D-209,
+  G-143), so `final_model.py` gets no copy of it as a mutant. C1w copies the result.
 - **T1.** If `pr1610` is missing: `git fetch origin pull/1610/head:pr1610`; the line numbers are
   pinned to `14a1f80c`, so if the PR has moved, `git branch -f pr1610 14a1f80c` (keep the fetched
   head under another name).
@@ -672,8 +694,11 @@ WH10–WH12, WH14b–WH16, WH21, WC1–WC3, WC5 ([design/wait-tests.md](design/w
      script quoted in the commit message; a disagreement is a stop-and-ask); the regenerated
      `reason-enum` and `option-enum` blocks of the sketch headers and the `reasons`,
      `codes-per-call` and `options` regions of contract.md; `check.sh` runs `gen_api_doc.py
-     --check` and the availability lint, and drops the temporary reasons lint. Exit:
-     `check.sh` green; a hand edit of a generated region and a duplicate value each make it fail.
+     --check` and the availability lint, and drops the temporary reasons lint. The imported
+     rows include `MTL_UNDERRUN_REPEAT` = 5 with value 2 retired, `MTL_UNITF_COPY_ADVISED` and
+     `MTL_OPT_UTC_OFFSET_S` (2212, MS3); lint 12 (one "no value", `retired.txt`) keeps passing.
+     Exit: `check.sh` green; a hand edit of a generated region and a duplicate value each make it
+     fail.
   1. *The headers* (was H1a): moved verbatim to `include/mtl/experimental/` (`./format-coding.sh`
      leaves them unchanged), with a CI job and path filters. The same commit updates every path that
      names the headers: `sketch/gen_api_doc.py` (`HDR` at `:18`, the links at `:77`), the `inc=`
@@ -684,10 +709,14 @@ WH10–WH12, WH14b–WH16, WH21, WC1–WC3, WC5 ([design/wait-tests.md](design/w
      `MTL_LATER` blocks included (§3.1, D-106). The CI job runs `check.sh` with gcc and a
      clang ≥ 14, so the availability probes run. The G-73 field lint is a header lint in `check.sh`.
      The headers carry every design decided before MS1, ANC included, so H1b ships no name MS4a
-     would change. The part also carries the U tests of the inline helpers: the legacy enum
-     converters of `mtl_legacy.h`, each checked against the legacy headers by a table-driven test
-     in `UnitTest`, which includes both sets (R1 uses them for the JSON's legacy enum fields), and
-     `Util.rx_reserve_table` for `mtl_rx_reserve` in `UnifiedUnitTest`.
+     would change, and the per-call concurrency words of D-223 (about 12 comment lines over 8
+     functions, moved text). The part also carries the U tests of the inline helpers: the legacy
+     enum converters of `mtl_legacy.h`, each checked against the legacy headers by a table-driven
+     test in `UnitTest`, which includes both sets (R1 uses them for the JSON's legacy enum fields);
+     `Sync.grid_offset` and `Legacy.raster_from_legacy` (G-124, G-128 helper; about 120 lines);
+     and G-148's tests in `UnifiedUnitTest` (its `mtl_epoch_index_at` clause waits for MS3's
+     `Sync.epoch_index_at`), built with `-fsanitize=undefined
+     -fno-sanitize-recover`.
   2. *The API shell* (was H1b): it exports exactly the MS1 functions it implements:
      `mtl_last_error`, `mtl_reason_name`, `mtl_library_version`, `mtl_option_list`,
      `mtl_option_find`, in the node `MTL_UNIFIED_EXPERIMENTAL_0_2_MS1` of the version script
@@ -744,7 +773,9 @@ WH10–WH12, WH14b–WH16, WH21, WC1–WC3, WC5 ([design/wait-tests.md](design/w
   `doc/unified-api/design/models/` copied into `tests/unit/core/wait_model/` (exempt); the job
   `wait_model` (§8.2, "The wait evidence"). No pre-decided split: C1w is about 0.83 k, and MS1
   builds no descriptor (D-159).
-- **A1** carries two conditions of the wrapper's MS1 clock (conditions 1 and 3; timing.md §2.2):
+- **A1** gains the UTC WARNING of D-235 and its test, and the option-range checks of D-216 (5
+  lines; `mtl_epoch_index_at` stays MS3). It carries two conditions of the wrapper's MS1 clock
+  (conditions 1 and 3; timing.md §2.2):
   the C0 clock member on a wrapper is `mt_get_ptp_time(impl, MTL_PORT_P)`, and the wrapper's U tests
   run over a fake `struct mtl_main_impl`, in C2. It also carries `mtl_instance_params.log_level`
   (process-wide, the mismatch rule, written to the legacy global level). **I1 and R1** carry
@@ -752,32 +783,66 @@ WH10–WH12, WH14b–WH16, WH21, WC1–WC3, WC5 ([design/wait-tests.md](design/w
   `mtl_time_now` on a wrapper, until MS2a; and G-126's note (condition 4): the MS1 direct-clock rows
   are exercised by U tests and the `from_legacy` sample only, because both harnesses install user
   functions.
-- **C2** takes the rate rules (`st_rate.h` rows A and B, `st_core_raster_check` with
-  `FIELD_RATE`), `st_core_admit` and its table test, `Fault.dump_state` (every register field name
-  appears once), and the wrapper U tests
-  (`Bridge.time_direct_clocks`, `Bridge.uninit_with_open_wrapper`, `Bridge.c_key_ebusy`,
-  `Bridge.tai_refresh_step_bound`), the null-loop flush, loop parking and ADVANCE's FLUSH (WH11
-  ERROR, WH17, WH19, WH20), and `RateRules.*` (G-123). `st_rate_to_st_fps` and the §6.3.1
-  predicate go with B1, their one MS1 user, and so do the tests of two inline header helpers,
-  `Sync.grid_offset` and `Legacy.raster_from_legacy` (G-124, G-128 helper; about 120 lines), which
-  B1's exit adds to its own.
+- **C2** is a series of two commits. **C2a**: the null binding with loopback and its grid, the
+  test clock and the loop's flush, `DROP_PKTS`, `FORCE_ERROR`, `DUMP_STATE`, `Fault.dump_state`
+  (every register field name appears once), the wrapper U tests (`Bridge.time_direct_clocks`,
+  `Bridge.uninit_with_open_wrapper`, `Bridge.c_key_ebusy`, `Bridge.tai_refresh_step_bound`), the
+  null-loop flush, loop parking and ADVANCE's FLUSH (WH11 ERROR, WH17, WH19, WH20). **C2b**: the
+  rate rules (`st_rate.h` rows A and B, `st_core_raster_check` with `FIELD_RATE`) and
+  `RateRules.*` (G-123); `st_core_admit` and its table test, with the launch steps
+  (`st_core_launch_steps(d + C, grid)`, d the readiness delay and C the caller's work;
+  `Admit.ready_delay`, G-151, D-218), the create WARNING for
+  a delay that is n frames plus at most the lead, NEAREST's hysteresis and the `snap_tolerance`
+  range (D-234, the `Admit.table` rows of §5.3), and the drop behind a unit in flight
+  (`Admit.late_drop_behind_inflight`), all through the core's W test (D-209).
+  `st_rate_to_st_fps` and the §6.3.1 predicate go with B1, their one MS1 user; the tests of two
+  inline header helpers, `Sync.grid_offset` and `Legacy.raster_from_legacy`, are H1b part 1's.
 - **E1**: E1a–E1d are written in order and reviewed together as one unit, the series E1 (§5.8);
   "E1" elsewhere means the series: B1 and B2 depend on E1a and E1c, A1 on E1d.
 - **E1d** gains the wrapper's lifetime (contract.md §2.8): the `impl->wrappers` count
   under `impl->wrapper_mutex`; `mtl_uninit` `-EBUSY` while it is non-zero; about 10 + 20 lines; A1
   calls the increment and the decrement.
+- **C1b** is a series of three or four commits, in this order, with their sizes [I] (lib + tests,
+  2.08 k in all):
+  1. the slot table, the descriptor ring, results and the reservation at today's size,
+     `st_core_tx_pick`, the readiness predicates (loads before the reaper lock) and attempts,
+     completions through EVENT, `Core.stats_blocks_at_create`: about 1.0 k;
+  2. the W test of core.md §4.2 step 3 for every TX completer (flush, discard, D-121's own flush,
+     drops, the verdict), every publish with E2, acquire's W test, the debug check;
+     `Results.out_of_order_holds_slot` (G-143): about 40 + 190;
+  3. D-208's constant, G-04 adjusted and `Results.reap_before_submit_never_blocks` (G-144), which
+     needs that constant: about 10 + 20;
+  4. `CoreResults.guards_by_status`, three stats blocks, the slot dump, the NONE writes of D-215
+     (G-149 for TX), `lent` and the flag of D-227 (`Core.lent_exact_concurrent`, G-155), the slot
+     words seeded from `lease_base` (`CoreHandle.lease_base_after_reuse`, D-226): about 0.8 k.
+
+  Three commits means (2) and (3) merged (about 0.26 k), never (3) alone or before (2): D-208's
+  constant must not land without the hold. Every prefix of the series is live, because the hold
+  alone repairs D-207, and each commit passes the legacy gate.
 - **B1, B2**: the `convert_ns` calibration (one conversion, or one unit copy) about 30 lines each;
   B2's one allocation per slot, `round_up(unit_bytes + MTL_RX_TAIL_BYTES, 64)`, and the V210 width
   check; B1's `sc.tsmode` and its grid's TAI parity (1 ns tolerance); `MTL_TXR_DEFERRED` and
   `SNAP_COLLISION` are `st_core_admit`'s (C2). B1's `info.internal_bytes` includes the TX
   mempools and the core's allocations (`internal_bytes_counts_pools`: the reported value equals
   the pools the harness created plus the core's allocations, and the query is within 1 % of it).
-- **A2a**: `-MTL_ENOTSUP` for later wait bits; the public wait and interrupt (the public forms of
-  the wait tests: the SIGTERM shape of ex16); every return through `st_api_ret`.
-- **A2c**: the tail at dequeue; the latency fields, `convert_ns`, `MTL_INFO_LATENCY_INFEASIBLE`;
-  `status.format_reason` = 0 and `provide_gen` = 1; the `MTL_PORTS` grammar of contract.md §2.2 in
-  an internal `mt_port_parse` (exported in MS2a); G-130, G-131, G-132, G-136 (through open);
-  `compat_log.c` and `Compat.log_lines`.
+  B1 adds `ready_delay_video_grid` (UB, 30 lines, G-151). B2 adds the RX min function and the copy
+  budget B (D-227, 130 lines with the flag's UB test), the NONE fields of an RX unit (30, G-149 for
+  RX), and the caller's work C, the high-water mark of D-225: an atomic on `.app` raised by
+  CAS-max and reset at a start or format
+  change (about 10; the two-window rise lands with the measurement in MS2a).
+- **A2a** is a series of two commits. (1) `-MTL_ENOTSUP` for later wait bits; the public wait and
+  interrupt (the public forms of the wait tests: the SIGTERM shape of ex16); every return through
+  `st_api_ret`. (2) The input rule of D-216 (G-150), the release with a null `s` shared with
+  `u.hold` (D-226: `UnifiedRx.ReleaseByLeaseAlone`, `CoreClose.release_null_after_retire`; about
+  15 + 90 lines), and the single start on the session's index grid (D-233: `Start.single_grid`,
+  the NOW cases); about 0.2 k with their tests.
+- **A2c** is a series of two commits. (1) The tail at dequeue; the latency fields reading the
+  caller's work C
+  (D-225), `convert_ns`, `MTL_INFO_LATENCY_INFEASIBLE`; `get_info`, `get_status`,
+  `internal_bytes`; `status.format_reason` = 0 and `provide_gen` = 1; G-130, G-131, G-132.
+  (2) `mtl_format_describe` with the name rule of D-222 (G-153, `Format.names_one_value`); the
+  `MTL_PORTS` grammar of contract.md §2.2 in an internal `mt_port_parse` (exported in MS2a), G-136
+  (through open); `compat_log.c` and `Compat.log_lines`, whose regex table stays the valve into R1.
 - **P1** is three parts in one commit: the acceptance adapter and `--app` (§4.1); the baseline CI
   entries `St20p*` on `UnifiedKahawaiTest` with a `kernel:lo` case and the debug + ASan unit job
   (was CI1b; its exit: the jobs run on a pull request of the maintainer's, and `gtest.sh --api both`
@@ -806,16 +871,16 @@ the rest is a checklist or a trap.
 | T1 | §3.2, §5.3; legacy-internals.md §12, §12.1 (row T1), §12.2 rule 9 | `tests/unit/pipeline/st20p_tx_harness.c`, `st20p_harness.c`; `git show pr1610:tests/unit/pipeline/st20p_tx_test.cpp` |
 | H1b | §4, §4.1, §5.1; README.md §4; sketch/README.md; contract.md §1, §8, §12; migration.md §7.2; D-23, D-104, D-106, D-108, D-154; G-51, G-74; the gtest instructions | `check.sh`, `gen_api_doc.py`, `include/`, `path_filters.yml`, the workflows, `check-path-filters.py`; `lib/meson.build`, `meson_options.txt`, `build.sh`, `tests/unit/meson.build`; `gtest.sh`, `noctx/run.sh`, `run_pf.sh` |
 | C0 | core.md §1–§3, §4.1–§4.5, §6.1, §6.2, §8 (the files); engine.md §1.4; contract.md §4.1, §5.4, §6.2; decisions.md D-118, D-121, D-124, D-126, D-171–D-174, D-180 | `mtl.h`; `lib/src/mt_handle_guard.h` (the counter-pattern; not reused) |
-| C1a | core.md §2.1, §4.7, §6.3, §7; contract.md §1 (R4, R6), §4, §7.3, §7.4 | the core header of C0; `lib/src/mt_handle_guard.h` (the counter-pattern; not reused) |
+| C1a | core.md §2.1, §4.7, §6.3, §7; contract.md §1 (R4, R6), §4, §7.3, §7.4; D-226 | the core header of C0; `lib/src/mt_handle_guard.h` (the counter-pattern; not reused) |
 | C1w | engine.md §1.2–§1.5, core.md §2, §4.2, §4.3, §4.7, §6.1–§6.3; contract.md §1 (R2, R6), §4.2, §5.6, §7.1, §7.3–§7.5; decisions.md D-68, D-102, D-142, D-158–D-163, D-167–D-169; §8.2 "The wait evidence" | `lib/src/mt_sch.c:155-242`; `lib/src/mt_handle_guard.h:48-53` (the comment); `tests/unit/sch/mt_sch_harness.c`; the model files |
-| C1b | core.md §3.1, §2.1, §8 (the files), §4, §6.1, §6.2; contract.md §5, §6, §7.1 | the core header of C0; `lib/src/mt_sch.c:155-242` |
+| C1b | core.md §3.1, §2.1, §8 (the files), §4, §6.1, §6.2; contract.md §5, §6, §7.1; D-208, D-209, D-214, D-215, D-226, D-227 | the core header of C0; `lib/src/mt_sch.c:155-242` |
 | A1 | contract.md §1, §2, §8, §12; core.md §2.1 (options), engine.md §2.10, core.md §2.4; migration.md §4.2, §4.3, §6.2; decisions.md OI-2, OI-7, OI-49, D-153; contract.md §2.8; the A1, I1 and R1 bullets above (the four conditions) | `mtl.h`, `mtl_options.h`, `mtl_reasons.h`, `mtl_legacy.h`; `lib/src/mt_main.c`, `lib/src/dev/mt_dev.c` (init), `lib/src/mt_util.c` (port-name parsing, `:964-967`) |
-| C2 | core.md §1 (null backend), engine.md §1.7, core.md §2.1, §3.2, §2.4; contract.md §2.1, §2.2; `mtl_debug.h`; contract.md §3.3; timing.md §3.5, §6.8 | the core header of C0; the null port parsing of A1 |
-| E1 | engine.md §2, §5, §6, §7.1 (MF1, MF7, SF-45, SF-49); §7 of this plan; the E1 bullet above | `st_tx_video_session.c`, `st_video_transmitter.c`, `st_rx_video_session.c`, `datapath/mt_queue.c`, `mt_sch.c`, `st30_pipeline_tx.c`, `st40_pipeline_tx.c`, `mt_main.c` (`mtl_uninit`) |
-| B1 | §5.7; core.md §2.3, §2.1, §3.2, engine.md §2.1–§2.3, §2.12; contract.md §3, §5.2, §6, §9.9; timing.md §3.5, §4.1–§4.3, §5, §6.1, §6.2, §6.8; migration.md §4.4, §4.6; legacy-internals.md §12; D-143, D-156 | `st20_pipeline_tx.c` (the template to port, `tx_st20p_if_frame_late` at `:115-179`), `st_tx_video_session.c` (`get_next_frame` and `notify_frame_done` call sites), `st20_tx_harness.c` |
-| B2 | §5.7; core.md §2.3, §2.1, §2.2, engine.md §2.4, §2.5; contract.md §5.3, §6.5, §9.8; timing.md §11.5, §11.7; migration.md §4.5, §4.7; contract.md §9.1; decisions.md D-151, D-156 (`convert_ns`) | `st20_pipeline_rx.c` (template), `st_rx_video_session.c` (`notify_frame_ready`, `query_ext_frame`) |
-| A2a | contract.md §3.5, §4, §5, §6, §7 | the core header of C0; `examples/ex01_tx_video.c`, `ex02_rx_video.c` and the other examples of its exit |
-| A2c | contract.md §2.2, §3.5, §4.10, §5.3, §9.1; core.md §1 (the log-line rule); decisions.md D-154, D-156 | the shell of A2a; `lib/src/mt_util.c` (port-name parsing); `examples/ex20_rx_to_framework.c` |
+| C2 | core.md §1 (null backend), engine.md §1.7, core.md §2.1, §3.2, §2.4; contract.md §2.1, §2.2; `mtl_debug.h`; contract.md §3.3; timing.md §3.5, §4.3, §5.2, §6.8; D-218, D-234 | the core header of C0; the null port parsing of A1 |
+| E1 | engine.md §2, §5, §6, §7.1 (MF1, MF7, SF-45, SF-49); §7 of this plan; the E1 bullet above; D-213 | `st_tx_video_session.c`, `st_video_transmitter.c`, `st_rx_video_session.c`, `datapath/mt_queue.c`, `datapath/mt_shared_queue.c`, `mt_sch.c`, `st30_pipeline_tx.c`, `st40_pipeline_tx.c`, `mt_main.c` (`mtl_uninit`) |
+| B1 | §5.7; core.md §2.3, §2.1, §3.2, engine.md §2.1–§2.3, §2.12; contract.md §3, §5.2, §6, §9.9; timing.md §3.5, §4.1–§4.3, §5, §6.1, §6.2, §6.8; migration.md §4.4, §4.6; legacy-internals.md §12; D-143, D-225 | `st20_pipeline_tx.c` (the template to port, `tx_st20p_if_frame_late` at `:115-179`), `st_tx_video_session.c` (`get_next_frame` and `notify_frame_done` call sites), `st20_tx_harness.c` |
+| B2 | §5.7; core.md §2.3, §2.1, §2.2, engine.md §2.4, §2.5; contract.md §5.3, §6.5, §9.8; timing.md §11.5, §11.7; migration.md §4.5, §4.7; contract.md §9.1; decisions.md D-151, D-225 (C, `convert_ns`), D-227 | `st20_pipeline_rx.c` (template), `st_rx_video_session.c` (`notify_frame_ready`, `query_ext_frame`) |
+| A2a | contract.md §3.5, §4, §5, §6, §7; core.md §4.7 (release by lease); D-216, D-226, D-233 | the core header of C0; `examples/ex01_tx_video.c`, `ex02_rx_video.c` and the other examples of its exit |
+| A2c | contract.md §2.2, §3.5, §4.10, §5.3, §9.1; core.md §1 (the log-line rule); decisions.md D-154, D-222, D-225 | the shell of A2a; `lib/src/mt_util.c` (port-name parsing); `examples/ex20_rx_to_framework.c` |
 | A2b | contract.md §11; engine.md §1.8; `mtl_observe.h` | `lib/src/mt_stat.c`; the stats calls of `tests/tools/RxTxApp/src/rx_st20p_app.c` |
 | B3 | engine.md §2.5; contract.md §9.7, §9.8; timing.md §5.4, §6.1; migration.md §4.5, §4.7; legacy-internals.md §3.6 | `st_rx_video_session.c` (DMA, threads), `st_rx_timing_parser.c`, `st20_pipeline_rx.c` (per-packet conversion) |
 | I1 | §4.1, §5.3; `.github/instructions/mtl-gtest.instructions.md` | `tests/integration_tests/st20p_test.cpp`, `tests.hpp`, `tests.cpp`, `meson.build`; `tests/meson.build` |
@@ -833,19 +898,25 @@ the rest is a checklist or a trap.
 | 4 (days 16–20) | I1, R1, P1, fixes; A2b, B3, X written if the gates allow, committed in MS2a (week 4 holds four reviews) | A2c, I1, R1, P1 | day 17: feature freeze; the exit run (§5.6) on days 18–20 |
 
 Review units awaiting the maintainer: **4, 4, 4, 4**, 16 in all, as before; the commits behind
-them are 26 (H1b 4, E1 4, C1a, C1b and A1 2 each, the others 1). Not counted: C0, approved before
+them are 29 or 30 (H1b 4, E1 4, C1b 3 or 4, C1a, A1, C2, A2a and A2c 2 each, the others 1). Not
+counted: C0, approved before
 it is committed (checkpoint 1), the I1 and R1 copies of week 2, which the reviewer checks only as
 verbatim copies (`diff -r` against the frozen trees, §4.1), and M0, a docs commit on the design
 branch. If the maintainer counts the copies, they land inside their rewrite commits, I1 or R1 in
 week 4 (the copy is exempt from the cap), and the count stays 4, 4, 4, 4. The stretch tasks A2b,
 B3 and X are written in week 4 only if the gates allow and are committed in MS2a.
 
-The lines a review unit carries grow: week 1 about 5.1 k (P0 0.75 k, T1 0.6 k, H1b 3.25 k of
-which 1.0 k is imported data, E1 0.53 k + UB; plus 3.6 k moved), week 2 about 5.5 k, week 3 about
-5.4 k, week 4 about 4.8 k (copies excluded). Week 1 grows the most (about +2.2 k: the tables and
-the histogram), which is the calendar's risk (§5.7).
+The lines a review unit carries grow: week 1 about 5.4 k (P0 0.75 k, T1 0.6 k, H1b 3.5 k of
+which 1.0 k is imported data, E1 0.61 k + UB; plus 3.6 k moved), week 2 about 6.0 k, week 3 about
+6.0 k, week 4 about 4.9 k (copies excluded). Weeks 2 and 3 carry the most, on the critical path
+C1b → C2 → A2a; week 1 grew the most (about +2.2 k: the tables and the histogram) and carries
+checkpoint 1 (§5.7). Every pre-decided split is used or replaced by a series, so weeks 2–4 keep
+no slack but the valves of §5.2. Commits at or near the cap: H1b part 0 (1.45 k, of which 1.0 k is
+imported data; its valve makes `availability.def` its own commit), H1b part 2 (1.05 k + 450; its valve moves the seal probe into part 3) and A2a (1)
+(about 1.5 k; its overrun moves the public forms of the wait tests into A2a (2), which has about
+0.2 k).
 
-Critical path: P0 → H1b → C1a → C1w → A1 → C2 → B1/B2 → A2a → A2c → R1 and I1 → P1, with C0 →
+Critical path: P0 → H1b → C1a → C1w → A1 → C2 (C2a, C2b) → B1/B2 → A2a → A2c → R1 and I1 → P1, with C0 →
 C1a, M0 → C1w → C1b → C2, P0 → S0 → E1 → B1/B2 beside it; A2c before R1 (its log lines) and P1
 (its samples call `get_info`).
 
@@ -869,7 +940,7 @@ runners.
 |---|---|
 | `Instance.open_close_reopen` | 200 cycles, no leak (ASan): G-112 |
 | `Instance.close_timeout` | close returns within its timeout and only 0, 1 or `-MTL_EIO`, with sessions RUNNING and leases out: G-107 |
-| `Api.null_handle_table` | every function with handle 0 gives `-MTL_EBADF`, every close 0: G-71 |
+| `Api.null_handle_table` | every function with handle 0 gives `-MTL_EBADF`, every close 0, except `mtl_release`, whose null session takes the lease's: G-71 |
 | `Api.struct_size_tail` | `MTL_INIT` defaults; a non-zero tail is `NONZERO_TAIL`: G-33, G-73 |
 | `Api.error_codes`, `Api.not_implemented` | one meaning per code; every row of `availability.def` and `mtl_options.def` without `by` is `-MTL_ENOTSUP` with `NOT_IMPLEMENTED` naming it, every row with `by` is accepted, an undeclared value is `-MTL_EINVAL`; every return of every test is checked against `codes_per_call.def` (debug builds): G-70, D-106 |
 | `Api.option_table` | `mtl_option_list` returns exactly the rows of `mtl_options.def` with `by` set, with their type, range, default, when, scope, tier and applicability; a non-applicable key on a session is `NOT_APPLICABLE` |
@@ -878,12 +949,18 @@ runners.
 | `Tx.state_call_table`, `Rx.state_call_table` | every state and the closed-by-instance column × every verb, from `st_core_states.def`; every transition of the file, faults in DRAINING and FLUSHING included: G-49 |
 | `Tx.roundtrip`, `Tx.exactly_once_random` | exactly one outcome per accepted submit over random submit, release, stop and close: G-01, G-31 |
 | `Tx.invalid_submit_returns_slot`, `Tx.stale_foreign_lease`, `Tx.verb_on_rx_session`, `Tx.pool_count_max` | G-02, G-07, G-46, G-103 |
+| `CoreHandle.lease_base_after_reuse` (C1b) | a stale lease after its entry's reuse is `-MTL_ESTALE` and leaves the new slot untouched (D-226): G-07 |
+| `UnifiedRx.ReleaseByLeaseAlone`, `CoreClose.release_null_after_retire` (A2a) | a release with a null `s` reaches the lease's session, also after its retire (D-226): G-71 |
 | `Tx.stop_drain_flush`, `Tx.stop_submit_race` | DRAIN completes, FLUSH gives `FLUSHED`; of a racing stop and submit exactly one wins: G-31 |
 | `Session.interrupt_sticky`, `Session.interrupt_targets`, `Session.stop_close_wake`, `Session.close_leases_out`, `Session.close_idempotent`, `Session.close_race` | G-30, G-64, G-65, G-29 |
 | `Session.names` | names copied and unique per instance (the listing: MS2a, A2b): G-88 |
 | `Wait.no_lost_wakeup`, `Wait.per_target` | the arming litmus test; waiters never steal: G-52, G-95 |
 | `Rx.loopback_frame`, `Rx.release_any_order`, `Rx.dequeue_nothing_ready` | TX to RX on `null:1`; G-56; G-70 |
 | `Results.order_cookie`, `Results.backpressure` | `seq` order, cookie verbatim; unread results block acquire with `BLOCKED_RESULTS`, nothing lost: G-09, G-47, G-04 |
+| `Results.out_of_order_holds_slot` (C1b) | a unit done before an older one holds its slot (W) until the older ones are done; a waiter in `mtl_tx_acquire(MTL_FOREVER)` gets a slot at the older unit's completion: G-143 |
+| `Results.reap_before_submit_never_blocks` (C1b) | with a reap of every ready result before each first submit, no acquire waits on RESULTS, for `pool_count` 1…8; one entry beyond D-208's bound blocks: G-144 |
+| `Results.status_table` (C1b), `UnifiedRx.none_fields` (B2) | the TX status table of contract.md §6.4 on `null:1`, `margin_ns` and `sent_tai_ns` NONE before MS3; an MS1 RX unit's `media_index` and a one-leg unit's second arrival NONE: G-149 |
+| `Core.lent_exact_concurrent` (C1b) | `lent` is exact under concurrent dequeuers and foreign-thread releases, a TX completer included; the flag follows the copy budget B (D-227): G-155 |
 | `Determinism.replay` | the suite twice on the test clock, result records equal byte for byte: G-92 |
 | `Debug.inject_gated` | every MS1 fault reaches its outcome; the release-configured B job sees `-MTL_ENOTSUP`: G-93 |
 | `Fault.force_error` | queued units FLUSHED and waiters `-MTL_EIO` |
@@ -892,13 +969,16 @@ runners.
 | `WaitFlush.*` (`UnitTest`, `mt_sch_harness.c`) | WH16 `WaitFlush.count_bound`: one iteration's flush wakes at most `wake_k` entries whose wake makes a syscall (D-142): G-142 |
 | the `wait_model` job | the model cases of §8.2 ("The wait evidence"), each with its expected result, every mutant killed: G-52, G-95, G-142 |
 | `RateRules.*` | one validation order for a raster rate; `info.raster` reduced: G-123 |
-| `Admit.table` | every row of timing.md §6.8 through `st_core_admit` with the video, audio and null grids; `Tai.interlaced_parity`: interlaced first fields on even indices (G-128) |
+| `Admit.table` | every row of timing.md §6.8 through `st_core_admit` with the video, audio and null grids; NEAREST at phase U/2 with ±100 µs jitter (U the unit period): 0 collisions, 0 gaps; a unit 5/8 U late takes the expected slot; `snap_tolerance` > U/2 is `OPTION_RANGE` (D-234); `Tai.interlaced_parity`: interlaced first fields on even indices (G-128) |
+| `Admit.ready_delay`, `Admit.late_drop_behind_inflight` (C2b) | the launch steps of D-218 (G-151); a late drop behind a unit in flight stores W (D-209) |
+| `Start.single_grid` (A2a) | a single start lands on the session's index grid (D-233): the NOW cases; the `MTL_AT_*` cases in MS3 |
+| `Format.names_one_value` (A2c) | every format name parses back to one (value, kind): G-153 |
 | `Compat.log_lines` | the create and stat lines of `compat_log.c` match the regexes of `RxTxApp.py:973-976`, `rxtxapp.py:349`, `:401` and `application_base.py:424-426` (D-110) |
 | `Legacy.raster_from_legacy` | every legacy (fps, interlaced) pair: G-124 |
 | `Sync.grid_offset` | `mtl_grid_offset` exact and in [0, TFRAME): G-128 (the helper) |
-| `Bridge.*` (the MS1 cases) | `time_direct_clocks`, `time_enotsup_user_ptp`, `tai_refresh_step_bound`, `uninit_with_open_wrapper`, `c_key_ebusy` over a fake `struct mtl_main_impl`: G-126, G-127 (MS1 parts) |
+| `Bridge.*` (the MS1 cases) | `time_direct_clocks`, `time_enotsup_user_ptp`, `tai_refresh_step_bound`, `uninit_with_open_wrapper`, `c_key_ebusy`, `utc_warning` (D-235) over a fake `struct mtl_main_impl`: G-126, G-127 (MS1 parts) |
 | `UnifiedRx.*` (the MS1 cases) | RX library slot layout and the zero tail at dequeue; a release after close retires: G-130, G-131 |
-| `UnifiedInfo.*` | the latency fields and `MTL_INFO_LATENCY_INFEASIBLE`: G-132 |
+| `UnifiedInfo.*` | the latency fields and `MTL_INFO_LATENCY_INFEASIBLE`; the caller's work C held once in `latency_min_ns` (a converting session, TX, a start resets C; D-225): G-132 |
 | `UnifiedLog.InstanceLogLevel`, `.BridgedLevelKept` | `mtl_instance_params.log_level`: G-141 (MS1 part) |
 | `UnifiedPorts.*` | the `MTL_PORTS` grammar through open: G-136 (MS1 part) |
 | `UnifiedOptions.EnumNamesPairs` | every `enum_names` as `name=value` pairs: G-135 (MS1 part) |
@@ -911,7 +991,9 @@ reach the engine frame: the boundary where PR #1610 lost user pacing,
 sends at the N `st_core_admit` chose: AUTO, AUTO + `NOT_BEFORE`, TAI), `recovery_verdict`,
 `rx_hold_release`, `rx_order_pub_seq`, `rx_incomplete_status`, `rtp_epoch_default` (G-20 with
 today's rounding), `RateMath.split_vs_oracle` (the split formulas of timing.md §3.5),
-`Grant.ms1_non_compliant_flag` (G-125, MS1 part).
+`Grant.ms1_non_compliant_flag` (G-125, MS1 part), `ready_delay_video_grid` (G-151, B1), and E1b's
+idle cleanup on a shared queue (G-147: a video session's last frame completes without a later
+unit, a discard with a full queue completes, one visit frees at most `tx_rs_thresh` descriptors).
 
 **I, `UnifiedKahawaiTest`, the `St20p` cases rewritten from `KahawaiTest` with the same names (§4.1):**
 `tx_create_free_single`, `rx_create_free_single`, `tx_create_expect_fail`,
@@ -1048,9 +1130,10 @@ of B1 and B2 and may slip to MS2a.
 | two APIs in one process: teardown order | the wrapper closes before `mtl_uninit` (SP-01); U and I tests of the bridge |
 | review capacity | tasks under the commit cap (D-107), `mtl-reviewer` first, the WIP limits of §5.8; the gates of §5.2 cut stretch work first |
 | MS1 has 16 review units in 16 slots (4 a week) | C0, M0 and the two copies are not counted (else the copies land inside I1 and R1); I1's non-cross cases are the first to move to MS2a |
-| week 1 carries about 5.1 k lines for review, and checkpoint 1 approves the binding ops and the register with C0 | the valves of §5.2: H1b part 3 moves into I1, `availability.def` becomes its own commit, M0 is outside the review budget, and S0's capacity search runs on later nights (only MS2a's exit needs it) |
+| week 1 carries about 5.4 k lines for review, M0's about 0.4 k of docs beside them, and checkpoint 1 approves the binding ops and the register with C0 | the valves of §5.2: H1b part 3 moves into I1, `availability.def` becomes its own commit, M0 is outside the review budget, and S0's capacity search runs on later nights (only MS2a's exit needs it) |
 | the wrapper's lifetime | `mtl_uninit` returns `-EBUSY` while it is open (MS1); the time thread arrives in MS2a and is joined by the wrapper's close |
-| A2a, C2 and H1b near the cap | A2a is already split (A2c); H1b, E1, C1a, C1b and A1 are series; the pre-decided splits of §5.2 |
+| C1b, C2, A2a, A2c and H1b near the cap | A2a is already split (A2c); H1b, E1, C1a, C1b, A1, C2, A2a and A2c are series; the valves of §5.2 in their order (R1's regex table, A2a (1) into A2a (2), the weeks 2–3 tests to MS2a), then stop and ask |
+| weeks 2 and 3 carry about 6.0 k each, on the critical path C1b → C2 → A2a, with no pre-decided split left | valve (3) of §5.2 (unnamed tests to MS2a), then stop and ask; the day-10 gate cuts B3, A2b and X first |
 
 ### 5.8 How MS1 runs
 
@@ -1125,10 +1208,18 @@ in §8, coverage.md §6 and the design documents; the engine items are in [engin
   (`st20_digest.cpp:584-695`, `st20_detect.cpp:289`) ported; RxTxApp `"video"` with `"slice"`;
   row waits gate on `progress.want` (RW1–RW2, D-163; WC4). Gateway latency needs MS3's INDEX and
   TAI and `mtl_tx_get_next`.
-- **RX completeness:** the fill of lost ranges in library pools as [contract.md §9.8](contract.md#98-rx-placement) states it, in
-  the caller's dequeue outside the reaper lock (tests `UnifiedRx.FillOnlyMissingRanges`,
-  `UnifiedRx.FillOutsideLock`, `bind_video_rx.bitmap_only_incomplete`; OI-26: the engine's packet
-  bitmap reaches the binding), the RX due time and
+- **RX completeness:** the fill of lost ranges in library pools as [contract.md §9.8](contract.md#98-rx-placement) states it
+  (video: the format's black, D-242), in the caller's dequeue outside the reaper lock (tests
+  `Fmt.black_pgroup_table`, `UnifiedRx.FillBlackPerFormat`, `UnifiedRx.FillOnlyMissingRanges`,
+  which asserts black, `UnifiedRx.FillOutsideLock`, `bind_video_rx.bitmap_only_incomplete`, and
+  the bench within 1.2× of `memset`; about 95 + 170 lines; OI-26: the engine's packet bitmap
+  reaches the binding). The black-fill commit also changes the repository rule files
+  `.github/claude/CLAUDE.md` and `.github/instructions/mtl-c-coding.instructions.md`, with the
+  maintainer's own approval in that commit: "RX frame buffers must be zero-initialized at
+  allocation. Lost-packet gaps: the unified fill of library pools (MS2a,
+  `doc/unified-api/contract.md` §9.8) writes video: the format's black; audio, cvideo and
+  fastmeta: zero; ANC units are never filled; legacy sessions keep today's behaviour." Then the RX
+  due time and
   force-complete (E8 deadline part, G-82), `missed_before`, `MTL_SESSION_RX_LATEST`, the per-unit
   timing in `mtl_rx_get_detail`.
 - **Instance:** `mtl_instance_open` on PCI BDFs (with `PTP_BUILTIN`) and on `native_af_xdp:`, with
@@ -1139,17 +1230,22 @@ in §8, coverage.md §6 and the design documents; the engine items are in [engin
   (D-153: `mtl_log_add_sink`, removal by `mtl_close`, one log thread, CP lines synchronous without
   sinks; on a bridged instance the sinks set the legacy level) over the per-scheduler rings,
   checked (threshold, per-site token bucket, ring entry) before formatting.
-- **Helpers:** `mtl_media_ticks`, `mtl_media_tai`, `mtl_format_parse`, `mtl_time_set_reference`.
+- **Helpers:** `mtl_media_ticks`, `mtl_media_tai`, `mtl_format_parse` (one answer per name),
+  `mtl_time_set_reference` (a negative user pair is `FIELD_REQUIRED`, G-150), and `mtl_convert`
+  exported with `MTL_CONVERT_CHECK` only (D-222; U `Convert.check_matches_sessions`, G-154).
 - **Capacity:** the capacity gate of §8.4, against S0's capacity C per load (§6.9's exit).
 - **TX memory:** `MTL_SESSION_TX_SRC_PLANES`, a converting TX library pool without its
   app-format planes (`UnifiedTx.SrcPlanesNoAppPlanes`: no app planes in `req`, null plane
   addresses at acquire, `-MTL_EINVAL` without the submit flag).
 - **Text helpers and conversions:** `mtl_option_parse` and `mtl_port_parse` exported (D-154);
-  `instance.identity`; `convert_ns` measured; E15 (row-wise V210); the samples call the new exports
-  (G-114); G-133, G-134, G-135, G-136.
+  `instance.identity`; `convert_ns` measured, and the caller's work C rises with it: after two
+  1 s windows above C,
+  to the window rounded up to 250 µs (D-225), with G-132's MS2a case; E15 (row-wise V210); the
+  samples call the new exports (G-114); G-133, G-134, G-135, G-136.
 - **Rates, grants and the bridge:** the three tasks below.
-- **Samples:** `event_loop`, `rx_to_framework` (ex20: handles by value, copy fallback, no wait in
-  stop) and `pod_service`, moved from MS1 (§4.2).
+- **Samples:** `event_loop`, `rx_to_framework` (ex20: release by lease, flagged copies, the model
+  oracle, no wait in stop; about 200 lines; `UnifiedRx.LendModel`, `Lend.model`, G-156) and
+  `pod_service`, moved from MS1 (§4.2).
 - **RX parsing fixes** (legacy bugfixes too): RTP header extensions and CSRCs on video RX (RXHDR,
   SF-68; the other essences in MS4a); the timing parser against RP 2110-25 (TPARSER, SF-81) if B3
   did not land; the third-SRD and second-SRD placement fix (SF-76). Details in engine.md §6, §7.
@@ -1161,7 +1257,7 @@ in §8, coverage.md §6 and the design documents; the engine items are in [engin
 |---|---|---|---|---|---|
 | C-FPS | the internal rate entry for video TX and RX (engine.md §2.15) | B1, B2 | 200 + 200 | yes | UB `Fps.any_rate_engine`; G-99 legacy wire identical |
 | C-GRANT | the sender grants (D-143) with their reports, OI-76 and OI-77 included | B1, A2b (stats) | 220 + 260 | yes | U `Grant.table`; UB `Grant.w_bound_vrx_model`, `Grant.n_model_interlaced` (G-125) |
-| C-BRIDGE | the wrapper's time thread and snapshot, `time_kind`, `master_results`, `classify()`, option mapping and legacy-derived defaults | A1 | 330 + 280 | yes (legacy gate: `tests/unit/ptp/`, the `ptp` group) | U G-126, G-127; I `Bridge.time_on_vf` |
+| C-BRIDGE | the wrapper's time thread and snapshot, `time_kind`, `master_results`, `classify()`, option mapping and legacy-derived defaults; the 1 Hz recognition of a CLOCK_TAI or CLOCK_REALTIME `ptp_get_time_fn` (D-235) | A1 | 370 + 360 | yes (legacy gate: `tests/unit/ptp/`, the `ptp` group) | U G-126, G-127, `Bridge.time_recognised_flags`; I `Bridge.time_on_vf` |
 | C1q1 | the queue path of core.md §6.6, part 1: the queue table entry, `mtl_queue_create` (both kinds), `qword`, PUSH, U1–U2, QWAIT A1–A11 with the generation check of A3, `owed` and K2 in the flush, the loop registration of M1, E4, QCLOSE, Y2; POST (PS1–PS4, D-206) | C1w, A2a | 420 + 610 | yes (legacy gate: flush line) | `QueueHook` QW1–QW5, QW7, QW10–QW12, QW14, QW18, QW20–QW22; the model job |
 | C1q2 | the queue path, part 2: `mtl_queue_arm`, STATE reports, the delivery count, the kept descriptors, the Windows descriptor, ex03 (below) | C1q1 | 330 + 420 | — | `QueueHook` QW6, QW8, QW9, QW13, QW15–QW17, QW19, WH14; the queue parts of WH15 and WH21; ex03 on `null:1`; G-52 (queues) |
 
@@ -1174,7 +1270,10 @@ about 60 + 120 lines to C1q1 and C1q2 together.
 
 **MS2b: video memory, then the st20p re-base.**
 
-- **Video memory:** `mtl_session_attach`, `mtl_tx_acquire_slot`, `MTL_SESSION_RX_BY_INDEX` (MXL),
+- **Video memory:** `mtl_session_attach`, `mtl_tx_acquire_slot`, `MTL_SESSION_RX_BY_INDEX` (MXL)
+  with the video RX `media_index` (timing.md §11.2's inverse, G-76; one function with the
+  interlaced frame rule and the binding's write, about 50 + 100 lines [I], moved from MS3; ex11
+  keeps "Needs: MS2b"),
   `mtl_tx_acquire_layout` (cookie pre-filled) and `mtl_rx_provide` (GStreamer per-frame ext
   frames; D-152, with the binding's DMA drain at hand-back; G-137, with `design/models/provide_model.py` copied
   into `tests/unit/core/`), holds and
@@ -1205,38 +1304,70 @@ needs `MTL_MEDIA_INDEX`, MS3); the `ptp` group green on both applications.
 - **The ST20 timing subset:** media modes INDEX and TAI with snapping (`MTL_OPT_SNAP_MODE`),
   `MTL_SUBMIT_DISCONTINUITY`, `MTL_SUBMIT_RTP_TS`, `sc.media_time_offset_ns` (in TAI mode the
   producer's latency), `tx.rtp_trim_ns`, start `MTL_AT_TAI` and `MTL_AT_INDEX` (ARMED),
-  `mtl_tx_get_next`, RX `unit.media_index`; E1 (media time and launch carried apart, so a launch
-  may land at another index), E2 (exact `floor`), E3 reporting (margins at pick-up).
+  `mtl_tx_get_next`; E1 (media time and launch carried apart, so a launch may land at another
+  index), E2 (exact `floor`), E3 reporting (margins at pick-up); `mtl_epoch_index_at`'s ceil
+  (`Sync.epoch_index_at`, D-232), G-105 extended, `Start.single_grid`'s `MTL_AT_*` cases (about
+  1 + 120 lines). The RX `media_index` of video is MS2b's (§6.1).
 - **Format detection:** E14 with the RX rate detector of timing.md §11.9, within the joint rule of
-  D-155; G-129, G-138.
+  D-155; detection rewrites the copy budget B (D-227); G-129, G-138.
 - **Events, stats, health:** `mtl_read_events` with the session and instance events
   (`mtl_events.h`), the stats registry's per-scheduler blocks, `mtl_instance_get_health`,
   `mtl_instance_shutdown` with its report, the stalled-queue close after S8
-  (attached memory completes only after the queue stop and start).
-- **Update in CREATED and STOPPED** (D-193): `mtl_session_update` exported; every part
-  applies during the call through the binding's re-create of its engine session (core.md §5):
-  the core keeps the handle, name, counters and SSRC, and the RTP sequence restarts at 0 with
-  `info.seq_restarted` unless OI-62's seed lands; all or nothing across legs (re-create
-  failure restores the old engine session); `status.update_*` NONE and APPLIED; ARMED and
-  RUNNING `-MTL_ENOTSUP` until MS5; video bindings here, each later essence's binding with its
-  milestone (MS4); the `live_rx` sample calls it (`--monitor`); G-87; about 600 + 500 lines.
+  (attached memory completes only after the queue stop and start); `shortfall_ns` and
+  `suggested_min_tx_delay_ns` by D-219, and a G-57 trigger row (about 10 lines).
+- **AUTO moves up** (D-229), a commit of its own inside the time-events item (`mtl_read_events`
+  with `TIME_STATE`), which is then a series of two, so MS3 stays 14 units: from SYSTEM_TAI to
+  CLOCK_TAI without a step when the kernel TAI offset equals `time.utc_offset_s`; the poll on its
+  own 1 s admin-thread timer; no time state changes sending (D-230); about 140 + 300 lines, U
+  `TimeAuto.*`, `Time.auto_late_tai_offset`, `Time.holdover_sends_unchanged`; G-157, G-158.
+- **Update in CREATED and STOPPED** (D-193, amended by D-236): `mtl_session_update` exported;
+  FLOWS without a port change applies in place in STOPPED too and continues the RTP sequence; MEDIA, POOL, a changed set of
+  legs or a port change apply during the call through the binding's re-create of its engine
+  session (core.md §5): the core keeps the handle, name, counters and SSRC, and the RTP sequence
+  restarts at 0 with `info.seq_restarted` unless OI-62's seed lands; all or nothing across legs
+  (re-create failure restores the old engine session); `status.update_*` NONE and APPLIED; in
+  ARMED and RUNNING, FLOWS is task G1 (below), MEDIA and POOL `-MTL_EBUSY` (D-237's MEDIA fields at `when`
+  from MS5), the rest `-MTL_ENOTSUP` until MS5; video bindings
+  here, each later essence's binding with its milestone (MS4); the `live_rx` sample calls it
+  (`--monitor`); G-87; about 600 + 500 lines.
+- **Update while running** (D-236), task **G1**, one review unit as a series of two: G1a, the core
+  and TX (the template swap in the builder's `tick` at `WAIT_FRAME`; PR #1770's port fix if the PR
+  is not merged; about 270 + 200 lines), and G1b, RX (make-before-break rules, one switch instant for every
+  changed leg, core.md §5.4; the slot reset only when every enabled leg changes;
+  about 290–330 + 250 lines). `MTL_UPDATE_FLOWS` with `when` NULL or `MTL_NOW` on ARMED or RUNNING,
+  leg by leg, with the state rows of [contract.md §4.7](contract.md#47-update);
+  G-159, G-160, G-161, G-163 (SKIP), G-75's NOW case. The `nmos_node` sample switches to running
+  updates.
 - **ABI hygiene:** after an `nm` audit of the users of leaked symbols: the libmtl soname, the
   `MTL_LEGACY` node for the legacy headers' functions, then `local: *` (hidden internals) as a
   separate step; call-class enforcement in debug builds (D-05); the fork rule of R8.
 - **FFmpeg:** the plugin's st20p path rewritten on the new API, replacing its legacy path (A8):
-  wrapped library slots with the copy fallback (migration.md §12.8), both rates, `fb_cnt` 5,
+  wrapped library slots, copying flagged units (migration.md §12.8), both rates, `fb_cnt` 5,
   PARAM_CHANGE (§12.9), `latency_*_us` exports, `mtl_opts`, the log sink in `mtl_common.c`
   (§12.10); `mtl_common.c` holds both paths on one legacy instance: its `mtl_init` as today, and
   one `mtl_instance_from_legacy` reference per st20p context (migration.md §11.4); a test with an
   st20p and an st30p context in one `ffmpeg` process (`-f mtl_st20p -i … -f mtl_st30p -i …` on
   `kernel:lo`), both receiving for 10 s and exiting with `mtl_uninit` returning 0, in the
-  plugin's acceptance tests on both applications; G-139. Its acceptance tests then run the new
-  API. With the stats registry the stat dump also prints each session's `tx.units_dropped`
+  plugin's acceptance tests on both applications; G-139. EOS is `write_trailer` = reap and close,
+  with no stop (D-210; G-145's SKIP case). The ecosystem CI checks the plugins' format names
+  (`gst_*_format_from_string`, `av_get_pix_fmt`, `avcodec_descriptor_get_by_name`) against D-222's
+  rule, with a logged alias table for one cycle (about 40 lines). Its acceptance tests then run
+  the new API. With the stats registry the stat dump also prints each session's `tx.units_dropped`
   (contract.md §11); a main-session task, approved by the maintainer as P1's adapter was, moves
   the drop count of `application_base.py` to it for `rxtxapp_unified` and the rewritten plugins,
   so `compat_log.c` can leave at F+2.
-- **Tests:** gtest waves 3b, 3c and 4 (NoCtx) of §6.8; ex04, ex05, ex06, ex07, ex08, ex16 and
-  ex21 run.
+- **Tests:** gtest waves 3b, 3c and 4 (NoCtx) of §6.8, and the `update_*` cases of video (§6.8);
+  ex04, ex05, ex06, ex07, ex08, ex16, ex18 and ex21 run.
+- **Exit:** the tests above, and an immediate activation on a running 1080p59.94 2022-7 TX and RX
+  (G-161).
+- **Capacity:** about 14 units and 11.5 k lines, 3.5 weeks at four units a week (§10), only with
+  T-REP in MS4a1. The slip order is G1b, then AUTO's CLOCK_TAI move (§9):
+  - G1b slips to MS4a1: MS3's exit keeps G1a's TX half of G-161, G-160 and G-159's TX rows;
+    G-161's RX half and G-159's RX rows move to MS4a1, and FLOWS on a running RX session stays
+    `-MTL_ENOTSUP` (`NOT_IMPLEMENTED`) until then; the `nmos_node` sample's receiver keeps stop,
+    update and start.
+  - AUTO's move slips to MS4a1 as well: G-157 and G-158 move with it, and through MS3 AUTO stays
+    the source chosen at open (D-229's MS3 clause moves with them).
 - **Maintainer action (OI-75):** in the MS3 release notes, publish the no-earlier-than target
   releases of MS7 (F), F+1 and F+2 and the end of the LTS branch on F+1, under the policy of
   [deployment.md](deployment.md) §7 (D-69, D-83). The implementing session asks for them at the
@@ -1252,7 +1383,12 @@ A/V sync on the epoch timeline; fastmeta at any rate, through the rate entry of 
 essence members of `mtl_session_config`; RxTxApp kinds `st30p` and `"fastmetadata"` with
 `"type": "frame"` in `UnifiedRxTxApp`; their suites copied into `UnifiedKahawaiTest` (D-109);
 their acceptance directories on both applications; ex13 runs (ex14 at the exit of MS4a2, ex15
-at that of MS4b). The dense-audio reference load is
+at that of MS4b). **T-REP** (D-239, D-240, D-212): video `MTL_UNDERRUN_REPEAT`, about 1.25 k
+lines with the pin cases, one review unit under the commit cap, the Gate 6 legacy gate on TSC
+and RL, its files disjoint from audio and fastmeta; G-164, G-165, G-166, G-143's, G-145's and
+G-163's REPEAT cases. The fastmeta SKIP refusal (a create check, about 5 lines). Each essence
+binding of MS4a1, MS4a2 and MS4b brings its running FLOWS path with its `tick` (about 40 lines
+each), and its `update_*` gtests are ported. The dense-audio reference load is
 measured in the three shapes of D-170 (OI-80); D-164 and D-166 are built only if a budget of §8.4
 fails.
 
@@ -1294,8 +1430,12 @@ libFuzzer build is off. N5's commit also adds the target `anc_rfc8331_fuzz` to t
 EAL").
 
 **MS4b**: cvideo (st22p re-based; its ledger rows first; ST 2110-22 codec plugins on the transform state, the
-`video.*` keys apply; E10: ST22 CBR and the synchronous oversize check), plugin ABI v2 with `mtl_plugin_open`, `mtl_convert`, `mtl_session_capture`
-(pcapng); `UnifiedRxTxApp` `st22p`; cvideo rates, JPEG XS n/1 and n·1000/1001.
+`video.*` keys apply; E10: ST22 CBR and the synchronous oversize check), cvideo REPEAT (JPEG XS,
+D-239), plugin ABI v2 with `mtl_plugin_open` (the `latency_ns` parameter of `create_session`, the
+timed unit and its WARNING, D-220; U: a device declaring 4 ms and one declaring nothing; about
+40 + 40 lines), `mtl_convert`'s conversions (its CHECK since MS2a), `mtl_session_capture`
+(pcapng; TX packets stamp the hand-over, D-224, U `Capture.tx_stamps_handover`); `UnifiedRxTxApp`
+`st22p`; cvideo rates, JPEG XS n/1 and n·1000/1001.
 Exit: G-45 (one verb sequence for every essence × direction).
 
 ### 6.4 MS5: packets and operators
@@ -1306,12 +1446,13 @@ from the engine's RTP ring, PE2–PE8; the generic `MTL_RTP` essence and ST 2022
 size from the MTU (PE7; 2022-6 cannot be sent today, its 1396–1456 B packets exceed
 `MTL_PKT_MAX_RTP_BYTES` = 1352, `include/mtl_api.h:89`, SF-77) and E5a: the linear TRS for
 2022-6 (ST 2022-8 §6) and for NL and W on the frame path, one implementation; the sender grants
-switch to NL off-format (D-143). `mtl_session_update` in ARMED and RUNNING: FLOWS and LEGS at a
-boundary (the prepared header swap of D-103; the RTP sequence seed of OI-62),
+switch to NL off-format (D-143). `mtl_session_update` at an instant, with changed legs, and the
+launch delay at a boundary (D-237, G-162); the RTP sequence seed of OI-62; MS5 shrinks by about
+300 lines, since G1 (MS3) brings the running FLOWS path;
 RTCP sender reports on TX (driven by options, the library builds the Info Block; their names leave `MTL_LATER`), the link
 monitor, leg admin state, `MTL_QUERY_CHECK_CAPACITY`, MtlManager reconnect. `UnifiedRxTxApp`
 `"type": "rtp"`, the 61 RTP-level gtest sites, the st41 acceptance tests and pcap replay on the
-unified path. Exit: G-PKT-1…7, the update gtests ported, a 2022-6 stream accepted by a
+unified path. Exit: G-PKT-1…7, the scheduled-update gtests, a 2022-6 stream accepted by a
 third-party receiver.
 
 ### 6.5 MS6: synchronisation and the ecosystem
@@ -1319,11 +1460,15 @@ third-party receiver.
 Start arrays (`mtl_session_start` over n sessions with `MTL_WHEN_ORIGIN`: media index 0 of every
 started session is the start's T0), ANC and fastmeta following the first video of their start
 array (its raster and launch delay), sample-accurate audio, E5b, E9 (the published time base, a PHC
-as time source, FREERUN, whose name leaves `MTL_LATER`), E13, clock steps (media times are kept); recovery and auto-detect
+as time source, FREERUN, whose name leaves `MTL_LATER`; AUTO's PHC move within E9's slew
+threshold, the declared step of D-231 with the horizon extension, the excluded-rate ceil; about
+85 + 220 lines), E13, clock steps (media times are kept); recovery and auto-detect
 re-init on library workers; GStreamer and the rest of the FFmpeg plugin rewritten on the new
-API in place (A8), GStreamer with the basesink render rebase (migration.md §12.1), live sources
-with LATENCY, the `GST_EVENT_LATENCY` pool check, the copy fallback and `pool-count` 5 (§12.8),
-caps renegotiation (§12.9), one log sink in `gst_mtl_common` and the `options` structure
+API in place (A8), GStreamer with the basesink render rebase, async state changes on and
+GstMtlClock (migration.md §12.1; D-221; about 0.2 kLOC in `gst_mtl_common.c`, G-152), EOS by
+reaping, `FLUSH_STOP` = discard, stop at PAUSED → READY, the port registry in `gst_mtl_common.c`
+(D-210, D-211; G-145, G-146), live sources with LATENCY, flagged copies and `pool-count` 5
+(§12.8), caps renegotiation (§12.9), one log sink in `gst_mtl_common` and the `options` structure
 (§12.10), G-140; the OBS, Python (with the GIL test) and Rust ports, and the plugin owners'
 review of them. Exit: the A/V/ANC example
 through one start array with exact RTP; the plugins on the new API pass the acceptance smoke
@@ -1336,7 +1481,9 @@ owners, the MXL team, the external engine team) and the private-user questionnai
 header freezes; the `MTL_1.0` freeze (G-51 for `MTL_1.0`); the hiding stages F, F+1 and F+2
 (D-83) with the targets, slip rule, LTS branch and backport scope of [deployment.md](deployment.md)
 §7; F ships only when the pre-hide gate, the legacy-coverage check and the external review are
-green; at F the headers move to `include/mtl/` with the forwarding stubs (D-194). Exit: the
+green; at F the headers move to `include/mtl/` with the forwarding stubs (D-194). From the freeze,
+`lib/src/unified/check_frozen_lists.sh` also checks the growth rule of D-217: an appended output
+field names its flag bit or its version gate. Exit: the
 legacy headers carry the deprecation warning, and every in-tree consumer builds without
 `MTL_LEGACY_API`, except the frozen trees, on `mtl_legacy_dep`. The frozen suites and the legacy
 RxTxApp run until stage F+2 removes the legacy API; then task F2-1 makes one harness of the two:
@@ -1380,7 +1527,7 @@ Cases with a later milestone:
 | `St20_tx.rtp_*`, `St20_rx.rtp_*`, `digest_rtp_*`, `digest_frame_rtp_s3`, `digest_ooo_*`, `create_expect_fail_ring_sz`, `rtp_pkt_size` | packet units (the ooo cases send RTP-level packets) | MS5 |
 | `digest_*slice*`, `digest_tx_slice_s3`, `detect_mix_slice_s3` | row units | MS2a |
 | `St20p.*ext*`, `tx_ext_frame_manual_release_two_phase`, `St20_rx.ext_frame_*`, `dynamic_ext_frame_s3`, `linesize_digest_ext_s3`, `St20_tx.ext_frame_*`, `get_framebuffer*` | attached pools and `mtl_session_get_slot` (`mtl_mem.h`); `mtl_rx_provide` | MS2b |
-| `St20_tx.update_dest_*`, `St20_rx.update_source_*` | `mtl_session_update` with `MTL_UPDATE_FLOWS` | MS5 |
+| `St20_tx.update_dest_*`, `St20_rx.update_source_*` | `mtl_session_update` with `MTL_UPDATE_FLOWS` while running (G1) | MS3 |
 | `St20_rx.uframe_*`, `detect_uframe_mix_s2`, `digest_hdr_split` | removed (D-112) | deleted with the legacy API |
 | `St20_rx.pcap_dump` | `mtl_session_capture` | MS4 |
 | `St20p.plugin_register_*` | converter plugins on the transform state; plugin ABI v2 (`mtl_plugin.h`) | MS2b (converters), MS4b (ABI v2) |
@@ -1399,6 +1546,7 @@ The comparison runs as long as both APIs exist (D-109).
   `unified_st20p_auto_pacing_pa`, `_va`, `unified_st20p_tsc_pacing` (`St20p*:-*ext*`),
   `unified_st20p_kernel_loopback` (`kernel:lo`) and the unified NoCtx cases through
   `noctx/run.sh --api unified`; a suite not yet ported is skipped in `UnifiedKahawaiTest`;
+- `UnifiedPerf.dp_calls` with `MTL_PERF=1` on the reference host, its table published (§8.4);
 - the baseline block (pull requests) has only `unified_st2110_20p` and the `kernel:lo` case that
   P1 adds in MS1; the rest is nightly only;
 - `nightly-gtest.yml` uploads `${TMP_FOLDER}/gtest_*.xml` with `gtest.log`; today only `gtest.log`
@@ -1461,7 +1609,7 @@ R1, R2, MF1–MF10, EK1–EK21, PE1–PE9) with its `path:line` and milestones i
 | MF1: `tv_frame_free_cb` claims, decrements `refcnt` and clears the address before any completion | fix | E1a, unless PR #1770 landed | SF-05 |
 | MF7: the builder takes a reference on `sh_info` at frame start and drops it after the last attach | fix | E1a | — |
 | R1, the TX recovery verdict: in-flight units DROPPED (`RECOVERY`) in the slot, only software-held references dropped, publication by the last PMD reference; two alternating `sh_info` per engine frame with a use generation in `fcb_opaque` | fix | E1a | SF-12, SF-41 |
-| idle descriptor cleanup (`mt_txq_done_cleanup`, rate-limited, dedicated queues), only with the frame state `WAIT_FRAME` | fix | E1b (G-03, close drains) | S6 |
+| idle descriptor cleanup (`mt_txq_done_cleanup`, rate-limited; shared queues by E1b's rewrite of `mt_tsq_done_cleanup`, which today takes the wrong lock, D-213), only with the frame state `WAIT_FRAME` | fix | E1b (G-03, G-147, close drains) | S6 |
 | RX hook never refuses a frame | fix | E1c | SF-45 |
 | incomplete delivery always enabled internally | internal | E1c | — |
 | `rte_thread_register` for thread-mode schedulers | fix | E1d | SF-49 |
@@ -1477,7 +1625,7 @@ R1, R2, MF1–MF10, EK1–EK21, PE1–PE9) with its `path:line` and milestones i
 Not on the MS1 path, because the core avoids them by design: SF-13 (stats getter from a
 callback), SF-15 and SF-16 (the pipeline's `BLOCK_GET` mutex and `wake_block`; the core waits on
 its own wait targets, and the legacy pipelines get the fix when they are re-based), SF-14
-(`update_destination` under the spinlock; MS5).
+(`update_destination` under the spinlock; MS3 (G1) for video, MS4 for the others).
 
 ## 8. Test plan and guarantees
 
@@ -1528,7 +1676,7 @@ call.
 
 The index of the guarantees whose exit falls in MS1–MS3, by the first milestone that needs them.
 Each guarantee's text, tier, P or BE, milestone and full test method is its entry in
-[guarantees.md §2](guarantees.md#2-guarantees-g-01g-142); "M" is the milestone whose exit needs
+[guarantees.md §2](guarantees.md#2-guarantees-g-01g-166); "M" is the milestone whose exit needs
 it. "Test" names the cases or jobs that carry it, "Pool" the list of the MS1 test pool (§5.3) that
 runs them; — means none is named.
 
@@ -1567,6 +1715,7 @@ runs them; — means none is named.
 | G-73 | B, U | MS1 | `Api.struct_size_tail` | U |
 | G-74 | B | MS1 | `check.sh` | — |
 | G-77 | U | MS1 (exclusive open); MS2a (SHARED) | `Instance.shared_subset_join`, `Instance.shared_missing_port_detail` (MS2a) | — |
+| G-85 | U, UB | MS1 (the hysteresis), MS3 | `Admit.table` | U |
 | G-88 | U | MS1 (the listing: MS2a, A2b) | `Session.names` | U |
 | G-92 | U | MS1 | `Determinism.replay`; WH17 | U |
 | G-93 | U, B | MS1 | `Debug.inject_gated` | U |
@@ -1586,11 +1735,20 @@ runs them; — means none is named.
 | G-128 | U | MS1 (helper, parity), MS4a1 (A/V) | `Sync.grid_offset`, `Tai.interlaced_parity`; `Sync.av_phase_two_sinks` (MS4a1) | U |
 | G-130 | U | MS1 | `UnifiedRx.LibraryPoolLayoutPacked`, `UnifiedRx.TailZeroAtDequeue` | U |
 | G-131 | U | MS1 | `UnifiedRx.ReleaseAfterCloseRetires`, `UnifiedRx.ReleaseAfterInstanceClose`, `CoreClose.orphan_freed_at_next_cp` | U |
-| G-132 | U | MS1 | `UnifiedInfo.*` | U |
+| G-132 | U | MS1 (the window clause MS2a) | `UnifiedInfo.*` | U |
 | G-135 | U | MS1 (the `enum_names` format, in H1b's .def test), MS2a (parse) | `UnifiedOptions.EnumNamesPairs`; `UnifiedOptions.Parse*` (MS2a) | U |
 | G-136 | U | MS1 (through open), MS2a (export) | `UnifiedPorts.*` | U |
 | G-141 | U | MS1 (MS2a part with G-134) | `UnifiedLog.InstanceLogLevel`, `.BridgedLevelKept`; `.LastSinkRestores` (MS2a) | U |
 | G-142 | U, I | MS1 (U), MS2a (I, S1b) | `WaitFlush.count_bound`, `wait_model`; S1b (MS2a) | U |
+| G-143 | U, UB | MS1 (REPEAT case MS4a1) | `Results.out_of_order_holds_slot`; UB `w_behind_pin` | U |
+| G-144 | U | MS1 | `Results.reap_before_submit_never_blocks` | U |
+| G-147 | UB | MS1 | E1b's shared-queue UB | UB |
+| G-148 | U | MS1 (H1b part 1); the `mtl_epoch_index_at` clause MS3 (`Sync.epoch_index_at`) | the helper U tests | U |
+| G-149 | U | MS1 (C1b, B2) | `Results.status_table`, `UnifiedRx.none_fields` | U |
+| G-150 | UB | MS1 (A2a; `NOT_IMPLEMENTED` is checked first, so the `MTL_AT_TAI` case and the INDEX template are MS3 and the `MTL_WHEN_ORIGIN` case MS6); the launch with `MTL_SUBMIT_EXACT` (B3, else MS2a); `set_reference` MS2a | A2a's input-rule tests | UB |
+| G-151 | U, UB | MS1 | `Admit.ready_delay`, `ready_delay_video_grid` | U, UB |
+| G-153 | U | MS1 (A2c) | `Format.names_one_value` | U |
+| G-155 | U, UB | MS1 (C1b, B2) | `Core.lent_exact_concurrent`, the B2 UB | U, UB |
 
 **MS2a**
 
@@ -1603,12 +1761,15 @@ runs them; — means none is named.
 | G-113 | UB, I | MS2a | the `st20_digest.cpp` slice cases | — |
 | G-133 | U, UB | MS2a | `UnifiedRx.LatencyMaxBound` | — |
 | G-134 | U | MS2a | `UnifiedLog.*` | — |
+| G-154 | U | MS2a | `Convert.check_matches_sessions` | — |
+| G-156 | U | MS2a | `UnifiedRx.LendModel`, `Lend.model` | — |
 
 **MS2b**
 
 | ID | Tier | M | Test | Pool |
 |---|---|---|---|---|
 | G-06 | UB, I | MS2b | — | — |
+| G-76 | U, UB | video MS2b; every rate MS6 | — | — |
 | G-137 | U, UB | MS2b | `UnifiedProvide.*` | — |
 
 **MS3**
@@ -1623,9 +1784,8 @@ runs them; — means none is named.
 | G-50 | B, U | MS3 | — | — |
 | G-53 | U, UB | MS3 | `Anc.DeadlineCapacity` (ANC) | — |
 | G-57 | U, UB | MS3 | — | — |
-| G-76 | U, UB | video MS3; every rate MS6 | — | — |
+| G-75 | U, I | MS3 (NOW), MS5 (instants) | — | — |
 | G-81 | UB (P), I (BE) | MS3 | — | — |
-| G-85 | U, UB | MS3 | — | — |
 | G-94 | U | MS3 | — | — |
 | G-108 | U, I | MS3 | — | — |
 | G-109 | U | MS3 | — | — |
@@ -1633,6 +1793,16 @@ runs them; — means none is named.
 | G-129 | UB | MS3 | `Detect.*` | — |
 | G-138 | U, UB | MS3 | `UnifiedDetect.*` | — |
 | G-139 | A | MS3 | `test_ffmpeg_rx_format_change` | — |
+| G-145 | A | MS3 (FFmpeg, SKIP); MS4a1 (REPEAT); MS6 (GStreamer) | FFmpeg `write_trailer`; the `gst-play`-style loop | — |
+| G-157 | U | MS3 | `TimeAuto.upgrade_no_step` | — |
+| G-158 | U | MS3 | `Time.holdover_sends_unchanged` | — |
+| G-159 | U | MS3 | the core with `TestBinding` | — |
+| G-160 | U | MS3 | `st20_tx_harness.h` | — |
+| G-161 | I | MS3 | `KahawaiTest` beside `st20_update_source.cpp` | — |
+| G-163 | I | MS3 (SKIP); MS4a1 (REPEAT) | ex18 on VFs | — |
+
+If MS3 slips by its order (§6.2), the MS3 rows of G-159 (RX), G-161 (RX), G-157 and G-158 move to
+MS4a1 with their tasks.
 
 With parts in MS1–MS3 but no row here (their entries in guarantees.md give the milestones):
 G-14, G-17, G-18, G-58, G-59, G-87, G-106 and G-115 (the helper part).
@@ -1642,7 +1812,8 @@ G-14, G-17, G-18, G-58, G-59, G-87, G-106 and G-115 (the helper part).
 - The model job and the deterministic pause-hook tests carry G-52, G-95 and G-142.
 - The model job `wait_model` runs `design/models/run_models.py` per pull request touching the
   wait code or core.md §6, over the files of [design/models/](design/models/): every case and
-  mutant of `final_model.py`, `wait_flush.py` (with `wake_k` 1 and 4), and `check_labels.py`. Each
+  mutant of `final_model.py`, `wait_flush.py` (with `wake_k` 1 and 4), `ring_bound.py`,
+  `pin_ring.py`, `trace_d207.py`, `w_noe2.py` and `check_labels.py`. Each
   case runs under 60 s, the job under 4 min on four cores, with a 10 min timeout; each case must
   give its expected result, each mutant must be killed, and the label sets must be equal.
 - The pause-hook tests are WH2, WH3, WH10–WH12, WH14, WH14b, WH15–WH17, WH19–WH21, WC1–WC6 and
@@ -1654,7 +1825,7 @@ G-14, G-17, G-18, G-58, G-59, G-87, G-106 and G-115 (the helper part).
   litmus shapes, or the hook tests on an Arm runner.
 
 Later milestones ([guarantees.md](guarantees.md) has each entry): G-10…G-16, G-35…G-37, G-60,
-G-78, G-83, G-84, G-96, G-100…G-102 (MS2b for video); G-27, G-34 (MS4a, MS4b); G-61 (MS4a: ST40 MS4a2, ST41 MS4a1), G-66 (MS4b); G-75, G-89…G-91, G-98 (MS5); G-17, G-18, G-21, G-22
+G-78, G-83, G-84, G-96, G-100…G-102 (MS2b for video); G-27, G-34 (MS4a, MS4b); G-61 (MS4a: ST40 MS4a2, ST41 MS4a1), G-66 (MS4b); G-164…G-166 (MS4a1); G-75 at an instant, G-89…G-91, G-98, G-162 (MS5); G-146, G-152 (MS6); G-17, G-18, G-21, G-22
 (with TLINE/2), G-23…G-25, G-59 at M, G-62, G-67, G-68, G-86, G-104, G-105, and G-44,
 G-54, G-55, G-58 at I (MS6); G-63 with created timelines (not in v1).
 
@@ -1670,13 +1841,13 @@ Faults are injected with `mtl_debug_inject(obj, fault, &p)` in builds with
 |---|---|---|---|---|
 | forced ERROR | `MTL_FAULT_FORCE_ERROR` (`p.reason`) | — | queued units FLUSHED (`SESSION_ERROR`), in flight FAILED once the device let go, waiters `-MTL_EIO` | MS1 (U) |
 | TX queue hang, recovery | `MTL_FAULT_TX_QUEUE_HANG`: the transmitter's burst returns 0 until cleared | none: a real hang cannot be forced | `MTL_EVENT_RECOVERY` begin and end; in-flight units DROPPED (`RECOVERY`), never ON_TIME (the verdict is in MS1, task E1a); `sh_info` untouched; close completes (G-81) | MS3 (UB); G-81 at I in MS6 |
-| packet loss | `MTL_FAULT_DROP_PKTS` (pattern), `MTL_FAULT_DROP_RANDOM` (`drop_ppm`), per leg | — | `MTL_RX_INCOMPLETE`, the fill in library pools (contract.md §9.8), 2022-7 repair counted (`rx.units_used_redundancy`) | MS1 (`DROP_PKTS`, unit status); MS2a (the fill, `DROP_RANDOM`; UB) |
+| packet loss | `MTL_FAULT_DROP_PKTS` (pattern), `MTL_FAULT_DROP_RANDOM` (`drop_ppm`), per leg | — | `MTL_RX_INCOMPLETE`, the fill in library pools (video black; contract.md §9.8), 2022-7 repair counted (`rx.units_used_redundancy`) | MS1 (`DROP_PKTS`, unit status); MS2a (the fill, `DROP_RANDOM`; UB) |
 | TX mutation | `MTL_FAULT_TX_MUTATE` (`MTL_TX_MUTATE_NO_MARKER`, `_SEQ_GAP`, `_BAD_PARITY`, `_PACED`) | — | the receiver counts and reports what it was fed; the legacy `st40_tx_test_config` cases | MS4a (ANC) |
 | the application stops reading results | none | — | `MTL_BLOCKED_RESULTS`, `MTL_EVENT_BACKPRESSURE`, no loss | MS1 (U; the event MS3) |
 | the application holds every RX slot | none | — | `rx.units_missed_pool_full`, `missed_before`, backpressure; `MTL_SESSION_RX_LATEST` reclaims unread units only | MS2a (U) |
 | close mid-unit, with leases out, completions on another thread | none | — | G-01, G-65 (G-37 in MS2b) | MS1 (U, UB) |
-| time step | `MTL_FAULT_TIME_STEP` (`p.step_ns`), `MTL_FAULT_CLOCK_ADVANCE` | `phc_ctl <if> adj Δ` on the lab host | media times are kept; the late policy applies; no permanent drop; `TIME_STEP` posted (G-62) from MS6 | MS3 (U); I BE, MS6 |
-| time source lost | `MTL_FAULT_TIME_LOST` | stop `ptp4l` on the lab host | liveness unchanged, readiness `MTL_HEALTH_TIME_UNLOCKED` (G-109); `MTL_EVENT_TIME_STATE` to HOLDOVER (G-54) | MS3 (U, health); G-54 MS6 (UB); I BE |
+| time step | `MTL_FAULT_TIME_STEP` (`p.step_ns`), `MTL_FAULT_CLOCK_ADVANCE` | `phc_ctl <if> adj Δ` on the lab host | media times are kept; the late policy applies; no permanent drop for a re-syncing producer, per pacing class (timing.md §12); `TIME_STEP` posted (G-62) from MS6 | MS3 (U); I BE, MS6 |
+| time source lost | `MTL_FAULT_TIME_LOST` | stop `ptp4l` on the lab host | liveness unchanged and nothing sent changes (D-230, G-158); `MTL_EVENT_TIME_STATE` to HOLDOVER (G-54), then LOST; readiness `MTL_HEALTH_TIME_UNLOCKED` only in ACQUIRING and LOST (G-109) | MS3 (U, health); G-54 MS6 (UB); I BE |
 | link down on one 2022-7 leg | `MTL_FAULT_LEG_DOWN` (`p.leg`); `MTL_FAULT_LEG_UP` restores | new `nicctl.sh vf_link <vf_bdf> down\|up` (PF side: `ip link set <pf> vf <n> state disable\|enable`) | `MTL_EVENT_LEG_STATE` (oper down); units flow on the other leg, results `ON_TIME` | MS3 (U, liveness only, G-109); MS5 (U, UB, I) |
 | link down on the only leg | `MTL_FAULT_LEG_DOWN` | as above | `MTL_TX_DROPPED` with `LINK_DOWN`; the session stays RUNNING | MS5 (U, UB, I) |
 | VF reset | `MTL_FAULT_PORT_RESET` on `MTL_OBJ_OF_PORT(mt, p)` | new `nicctl.sh vf_reset <vf_bdf>` (`/sys/bus/pci/devices/<bdf>/reset`) | `MTL_EVENT_PORT_RESET`, sessions `MTL_EVENT_RECOVERY`; gap units `MTL_TX_FAILED` with `PORT_RESET` | MS3 (UB, EK14); I BE until MS6 |
@@ -1742,7 +1913,15 @@ DPC calls reported separately. L is the host's cross-core cache-line transfer, w
 measures first on the same two cores; the L terms are the lines the completer wrote that the call
 must read (the slot word and the descriptor or RX ring entry, for dequeue also the unit's per-use
 fields, for release and an advancing reap line A). The descriptor ring's gate is in C1b, then at
-every milestone exit on the reference host.
+every milestone exit on the reference host. The TX completion budget of a held RX unit counts the
+`lent` RMW of the FREE CAS winner, which can be a TX completer (D-227).
+
+**Published numbers.** From MS2a the nightly (§6.9) also runs `UnifiedPerf.dp_calls` with
+`MTL_PERF=1` on the reference host. It writes the p50, p99 and p99.9 of every DP call at 1 and 512
+sessions, with L and the host record of the topology table, as the job artifact `dp_calls.md`
+(`.github/scripts/perf/dp_calls_table.py`, about 60 lines). Each release's notes carry the last
+table of its commit. The table reports and does not gate: the budgets above are the gate, and this
+section stays their one home (D-223).
 
 **The compliance class** of a run is NARROW when M found at least 99.9 % of the frames it checked
 narrow, WIDE when at least 99.9 % were narrow or wide, else FAILED, read from the
@@ -1866,7 +2045,8 @@ The comparison table, with the question behind each difference, is in [timing.md
 | the bindings run on the tasklet under the session spinlock; a slow binding hurts every session on the scheduler | every milestone | wait-free rules for bindings (§2.1), the S0 budgets (§8.4), `mtl-reviewer` checks the binding diffs against the two-world rule |
 | re-basing st20p changes legacy behaviour (FREE before `notify_frame_done`, `st20_pipeline_tx.c:265-286`; done-flag order differs between st20p and st30p) | MS2b, MS4a, MS4b | the re-base comes last in MS2b, after the nightly burn-in; the legacy suites and T1's parity tests stay green; each legacy-visible behaviour is a ledger row (migration.md §6.5), decided in RB0 (below the table) |
 | the deferred wakes add jitter on isolated cores with many armed objects and queues | MS2a | the count bound from MS1 (D-142); S1a and S1b against ST1–ST9; D-170's patterns, the slack gate, then the notifier (D-165) |
-| TX completion latency: on the chain path about `nb_tx_desc` packets, never while idle | MS1 | idle descriptor cleanup (task E1b, S6) |
+| TX completion latency: on the chain path about `nb_tx_desc` packets, never while idle; a unit held behind it (D-209) | MS1 | idle descriptor cleanup on dedicated and shared queues (task E1b, S6, D-213) |
+| MS3 capacity with G1 and AUTO's move | MS3 | T-REP in MS4a1; slip order G1b, then AUTO's CLOCK_TAI move; fallback for G1 if MS2's `ctl`/`ack` slips: the legacy spinlock with the swap at `WAIT_FRAME` |
 | lost wake-ups from wrong orderings | MS1 | publish and arm meet on one event word (D-158), the queue interrupts are the one seq_cst pair (D-162); the `wait_model` job and the `WaitHook.*` and `QueueHook.*` tests (G-52); herd7 or GenMC on Arm in MS2a |
 | acceptance log greps | MS1 | D-110 as an exit criterion |
 | one instance, two APIs: teardown order, SP-01, behaviour before `mtl_start()` | MS1 | the wrapper closes first; bridge tests at U and I; RxTxApp already calls `mtl_start` before it creates sessions (`rxtx_app.c:480`, `:534`); OI-2 |
@@ -1896,15 +2076,15 @@ writing. The calendar of §1.2 assumes:
 
 | Milestone | Tasks [I] | Changed lines [I] | Weeks [I] |
 |---|---|---|---|
-| MS1 | 18, plus 3 stretch (M0, a main-session docs task, not counted) | about 21.5 k (about 10.5 k library; §5.2, copies excluded) | 4 |
-| MS2a | about 11 (C1q1, C1q2 and the shared join added) | about 9 k | 4 |
-| MS2b | about 8 (RB0–RB2) | about 6.3 k | 3–4 |
-| MS3 | about 13 (the update moved in) | about 10 k | 4 |
-| MS4a1 | about 6 (E16, E17, the dense measurement) | about 4.8 k | 3–4 |
+| MS1 | 18 in 16 review units, plus 3 stretch (M0, a main-session docs task, not counted) | about 22.9 k (§5.2, copies excluded) | 4 |
+| MS2a | about 11 (C1q1, C1q2 and the shared join added) | about 9.7 k (with the black fill, about 265; C-BRIDGE's recognition, 120; `rx_to_framework`, 200; `MTL_CONVERT_CHECK` and its test) | 4 |
+| MS2b | about 8 (RB0–RB2) | about 6.45 k (6.3 k + the video RX `media_index`, 0.15 k, from MS3) | 3–4 |
+| MS3 | about 14: 13 + G1 (AUTO's move is a commit inside the time-events item) | about 11.5 k: 10 k − the RX `media_index` 0.15 k + G1 about 1.05 k + AUTO's move 0.44 k + the timing-subset additions 0.12 k + the suggestion rows and the name check 0.05 k | 3.5–4 (3.5 at four units a week) |
+| MS4a1 | about 7 (E16, E17, the dense measurement, T-REP) | about 6.1 k | 3–4 |
 | MS4a2 | 9 (N1–N8 with N6a and N6b), beside MS4a1 | about 7.2 k (the exported codec and its fuzz harness) | 4 |
 | MS4b | about 10 | about 7 k | 4 |
-| MS5 | about 13 | about 9 k | 4–5 |
-| MS6 | about 16 | about 12 k | 6–8 |
+| MS5 | about 13 | about 8.7 k (G1 moved about 300 lines into MS3) | 4–5 |
+| MS6 | about 16 | about 12 k, plus E9's AUTO PHC move (about 305), GstMtlClock, the basesink rewrite and the port registry | 6–8 |
 | MS7 | about 6 | about 4 k (the stubs), then releases | 2–4, then the deprecation releases |
 | Kubernetes track | about 15, beside MS1–MS3 | about 5 k | — |
 

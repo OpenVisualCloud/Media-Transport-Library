@@ -230,28 +230,28 @@ caller, TK tasklet.
 
 | Op (the core calls) | Context | Called in | MS | Optional | Duty |
 |---|---|---|---|---|---|
-| `create(b, sc, flags, grant)` | CP | `mtl_session_create`; `mtl_session_query` (`ST_CORE_DRY_RUN`); `MTL_QUERY_CHECK_CAPACITY` (`ST_CORE_CHECK_CAPACITY`, MS5); update MEDIA or POOL (`ST_CORE_RECREATE`, MS5) | MS1 | no | check the essence member and the binding's keys; build the engine `ops` and session (not in a dry run); fill the grant (below). A failure leaves nothing behind (G-32) |
+| `create(b, sc, flags, grant)` | CP | `mtl_session_create`; `mtl_session_query` (`ST_CORE_DRY_RUN`); `MTL_QUERY_CHECK_CAPACITY` (`ST_CORE_CHECK_CAPACITY`, MS5); update MEDIA, POOL, the set of legs or a port (`ST_CORE_RECREATE`, MS3) | MS1 | no | check the essence member and the binding's keys; build the engine `ops` and session (not in a dry run); fill the grant; no residue on failure (G-32) |
 | `destroy(b)` | CP | close step 4 (detach); a failed create after `create` succeeded | MS1 | no | free the engine session; once it returns, no engine callback runs for the session |
 | `start(b, when)` | CP | `mtl_session_start` | MS1 | yes | engine work at start (none for video in MS1: its callbacks read the session state) |
 | `stop(b, mode)` | CP | `mtl_session_stop`, close step 2, after the core's flush CAS | MS1 | yes | engine work at stop (none in MS1) |
 | `set_option(b, key, scope, value)` | CP | `mtl_set_options` on a key the binding owns, after create | MS1 | yes: without it the change is `-MTL_ENOTSUP` (`NOT_IMPLEMENTED`) | apply the key now, at the next start (S keys) or at a unit boundary through `apply` (R keys) |
 | `info(b, info)` | CP | `mtl_session_get_info`, `mtl_session_get_status` | MS1 | yes | the engine's live values: the pacing class after RL training, TRS, TRO, VRX, `wire_bps` |
 | `submit_prep(b, unit, desc)` | DPC | `mtl_tx_submit`, after the lease and media-time checks (and the APP → XFORM claim when the grant asks for it), before the QUEUED store | MS1 | yes | the layout check, the caller's work, the derived descriptor fields (below). Returns 0; a refusal (the slot goes back FREE, nothing is queued); or a failed result (the unit gets its `seq` and a FAILED result) |
-| `dequeue_finish(b, unit, rec)` | DPC | `mtl_rx_dequeue`, after the slot is APP and the reaper lock is released | MS1 | yes | conversion, the zero fill of library pools (MS2a), the ANC decode (MS4a2), the packet copy of ring-RX (MS5) |
+| `dequeue_finish(b, unit, rec)` | DPC | `mtl_rx_dequeue`, after the slot is APP and the reaper lock is released | MS1 | yes | conversion, the fill of library pools (video black, MS2a), the ANC decode (MS4a2), the packet copy of ring-RX (MS5) |
 | `slot_free(b, slot)` | DP, TK, any thread | the core, when an RX slot reaches FREE: release, the last hold, `RX_LATEST` reclaim, discard | MS1 | yes; required when slots carry engine frames | give the engine its frame back (`rv_put_frame` through `st_engine_core.h`); wait-free |
-| `apply(b, cmd)` | TK | the `tick` applying a command (§5.1) | MS2 | yes | the engine side of a command: flush a unit waiting for its launch, drop the unit in assembly, detach, swap the prepared headers (MS5), cut at the next packet (abort) |
-| `update(b, parts, sc)` | CP | `mtl_session_update` with FLOWS or LEGS | MS5 | yes: without it `-MTL_ENOTSUP` | prepare the header templates and the worker work of §5.4 |
+| `apply(b, cmd)` | TK | the `tick` applying a command (§5.1) | MS2 | yes | the engine side of a command: flush a unit waiting for its launch, drop the unit in assembly, detach, swap the prepared headers (MS3: at the next boundary; MS5: at an instant), cut at the next packet (abort) |
+| `update(b, parts, sc)` | CP | `mtl_session_update` with FLOWS or LEGS | MS3 | yes: without it `-MTL_ENOTSUP` | diff each leg against the rule key; prepare the changed legs' header templates and the work of §5.4; a detached session is applied in place |
 | `ring_ready(b)` | DP | the readiness predicate of a ring-RX target (§6.1) | MS5 | ring-RX only | a load-only test: at least `packet.rx_min_packets`, a marker, or `packet.rx_max_wait_ns` since the chunk's first packet; the ring binding's tick calls `st_core_event(s, lane 0)` when `packet.rx_max_wait_ns` passes or the threshold or a marker is crossed |
 | `ring_take(b, slot)` | DP | `mtl_rx_dequeue` on a ring-RX session, under the reaper lock | MS5 | ring-RX only | move up to `packets_per_chunk` packets from the engine's RTP ring into the slot's packet table (the copy and the mbuf free are `dequeue_finish`'s, outside the lock) |
 
 | Core call (a binding calls) | Context | Called from | MS | Does |
 |---|---|---|---|---|
 | `st_core_state(s)` | any | the engine callbacks | MS1 | the session state, one acquire load |
-| `st_core_tx_pick(s, now, &pick)` | TK | `get_next_frame`; the null loop | MS1 | the descriptor at the pick cursor whose slot is QUEUED with its generation; runs the admission (§3.2); QUEUED → ENGINE with N and the launch instant, or completes a DROPPED unit and tries the next; "none" otherwise; wait-free (§1) |
+| `st_core_tx_pick(s, now, &pick)` | TK | `get_next_frame`; the null loop | MS1 | the descriptor at the pick cursor whose slot is QUEUED with its generation; runs the admission (§3.2); QUEUED → ENGINE with N and the launch instant, or completes a DROPPED unit and tries the next, or REPEAT with the pinned slot (MS4a1); "none" otherwise; wait-free (§1) |
 | `st_core_admit(s, d, now, g, &out)` | any; pure | `st_core_tx_pick`; U tests | MS1 (C2) | the launch decision (§3.2) |
-| `st_core_complete(s, slot, gen, &res)` | TK, WK, any | `notify_frame_done`, the PMD free callback, the stalled-queue worker | MS1 | the completion protocol (§4.2); wait-free (§1) |
+| `st_core_complete(s, slot, gen, &res)` | TK, WK, any | `notify_frame_done`, the PMD free callback, the stalled-queue worker | MS1 | the completion protocol (§4.2); NULL `res`: a repeat's send ended, drop its hold; wait-free (§1) |
 | `st_core_set_verdict(s, slot, gen, status, reason)` | TK | the recovery verdict hook | MS1 | records the outcome the last reference publishes ([engine.md](engine.md) §5) |
-| `st_core_rx_assign(s, key, &slot)` | TK | `query_ext_frame`, the ANC and fastmeta unit sinks, the audio frame path | MS1 (any FREE), MS2 (`RX_BY_INDEX`, `RX_LATEST`) | FREE → ENGINE, or the `RX_LATEST` reclaim; the first arrival recorded |
+| `st_core_rx_assign(s, key, &slot)` | TK | `query_ext_frame`, the ANC and fastmeta unit sinks, the audio frame path | MS1 (any FREE), MS2 (`RX_LATEST`), `RX_BY_INDEX` (video MS2b, the other essences MS6) | FREE → ENGINE, or the `RX_LATEST` reclaim; the first arrival recorded |
 | `st_core_rx_publish(s, slot, gen, &rec)` | TK, any | `notify_frame_ready`, the DMA drain, the packet lcore, the due time (MS2) | MS1 | ENGINE → PUBLISHED with the next `pub_seq` (§4.4), through §4.2; wait-free (§1) |
 | `st_core_progress(s, slot, gen, rows)` | TK | `query_frame_lines_ready`, `notify_slice_ready` | MS2 | rows: an RMW of `progress` that runs EVENT only at `want` (RW1, §6.1); wait-free (§1) |
 | `st_core_event(s, lanes)` | TK, any | session events (MS3); the packet RX handler at a threshold and the ring binding's tick (MS5); library threads post instance events directly | MS3 | EVENT (§6.1); wait-free (§1) |
@@ -331,7 +331,7 @@ and the engine work it needs.
 |---|---|---|
 | video TX, frames | `get_next_frame` (the descriptor at the pick cursor if its slot word is QUEUED with its generation; N from `st_core_tx_pick`, §3.2; the meta; ENGINE), `notify_frame_done` (the completion CAS, the result) | MF1 (`st_tx_video_session.c:134-139`), MF7, the recovery verdict and idle descriptor cleanup ([engine.md](engine.md) §5, §2.3); "last packet handed" for no-chain (MS2) |
 | video TX, rows (MS2) | the same, with the session created `ST20_TYPE_SLICE_LEVEL`; `query_frame_lines_ready` returns `rows(progress)` only (an acquire load), or the TRUNCATE code that ends the frame early | the TRUNCATE return code and `sc.video.troffset_us` ([engine.md](engine.md) §2.13); the rest is today's slice path (`st_tx_video_session.c:2005-2033`) |
-| video RX, frames | `query_ext_frame` hands the engine a core slot (MS1: any FREE; MS2: attached pools, by index, or the oldest unread with `RX_LATEST`) and records the first arrival; `notify_frame_ready` publishes it with the next `pub_seq` | incomplete delivery always on; the RX hook never refuses (SF-45); MF4; a tasklet-callable frame put and the frame count ([engine.md](engine.md) §2.11) |
+| video RX, frames | `query_ext_frame` hands the engine a core slot (MS1: any FREE; MS2: attached pools or the oldest unread (`RX_LATEST`); MS2b: by index) and records the first arrival; `notify_frame_ready` publishes it with the next `pub_seq` | incomplete delivery always on; the RX hook never refuses (SF-45); MF4; a tasklet-callable frame put and the frame count ([engine.md](engine.md) §2.11) |
 | video RX, rows (MS2) | `notify_slice_ready`: an RMW of `progress` that runs EVENT only at a reader's `want` (RW1, §6.1) | none |
 | per-packet conversion | the engine's `uframe_pg_callback` path, installed by the video RX binding (library code, the one tasklet conversion contract.md §9.7 allows) | none |
 | cvideo TX/RX (MS4) | the ST22 `get_next_frame` (`st_tx_video_session.c:2444`) and RX callbacks; codecs on the transform state | per-unit status, stats, CBR (E10), SF-42 |
@@ -360,7 +360,7 @@ API shell and declared in `st_core.h` (task C0):
 | Member | NIC or mixed instance | Null-only instance |
 |---|---|---|
 | allocate and free on a NUMA socket | `mt_rte_zmalloc_socket` with `mt_socket_id(impl, port)` | the same over EAL memory without hugepages |
-| clock: TAI now and TSC | the instance clock of [engine.md](engine.md) §2.12 and `mt_get_tsc` | the instance clock, or the test clock under `MTL_FAULT_TEST_CLOCK` |
+| clock: TAI now and TSC | the instance clock of [engine.md](engine.md) §2.12 and `mt_get_tsc`; from MS3 under AUTO, one function over the source the admin thread stores ([timing.md](timing.md) §2.7), installed at open, never swapped under a running tasklet | the instance clock, or the test clock under `MTL_FAULT_TEST_CLOCK` |
 | wake flush hook | called by `sch_tasklet_func` after its handler loop, its return added to `pending` (§6.2) | called by the instance's loop thread |
 | scheduler ID of the calling context | the scheduler's index | 0 |
 
@@ -490,7 +490,7 @@ sequenceDiagram
     E->>B: notify_frame_ready: complete,<br/>or incomplete with its status
     B->>C: st_core_rx_publish: ENGINE to PUBLISHED, RTP, arrival<br/>per leg, packet counts, pub_seq, E2, then mt_wake if a count<br/>or an attachment is armed
     A->>C: mtl_rx_dequeue
-    C->>B: PUBLISHED to APP, then dequeue_finish (DPC):<br/>conversion or zero fill where granted
+    C->>B: PUBLISHED to APP, then dequeue_finish (DPC):<br/>conversion or fill where granted
     C-->>A: unit: lease, slot, planes, status
     A->>D: hand it on (TX units may hold it)
     D->>C: mtl_rx_release (mtl_release),<br/>any thread, any order
@@ -517,9 +517,11 @@ stateDiagram-v2
     QUEUED --> XFORM: transform claim (bit X)
     XFORM --> QUEUED: converted or encoded
     QUEUED --> ENGINE: binding at pick-up
-    QUEUED --> PUBLISHED: flush, discard, close
-    ENGINE --> PUBLISHED: completion CAS
-    PUBLISHED --> APP: mtl_tx_acquire,<br/>result stays in the descriptor
+    QUEUED --> PUBLISHED: flush, discard, close<br/>(W when an older entry is not done)
+    ENGINE --> PUBLISHED: completion CAS<br/>(W when an older entry is not done)
+    ENGINE --> HELD: completion, pin or uses left (REPEAT)
+    HELD --> PUBLISHED: pin bit clear and holds 0<br/>(FREE with results off)
+    PUBLISHED --> APP: mtl_tx_acquire,<br/>result stays in the descriptor<br/>(a W slot once the older entries are done)
 ```
 
 An RX slot moves as the second picture shows:
@@ -540,10 +542,10 @@ stateDiagram-v2
 ```
 
 The pictures leave out the exits that end a unit without a result: with results off a TX
-completion goes from ENGINE (or QUEUED, when flushed) straight to FREE; RX discard takes ENGINE or
-PUBLISHED to FREE; a refused ANC unit goes XFORM to FREE, and a failed conversion ends XFORM with
-a failed result. The table names every exit and who takes it. XFORM is used from MS2 (converter
-plugins) and MS4 (codecs); MS1 converts in the caller.
+completion goes from ENGINE (or QUEUED, when flushed, or HELD under REPEAT) straight to FREE;
+RX discard takes ENGINE or PUBLISHED to FREE; a refused ANC unit goes XFORM to FREE, and a failed
+conversion ends XFORM with a failed result. The table names every exit and who takes it. XFORM is
+used from MS2 (converter plugins) and MS4 (codecs); MS1 converts in the caller.
 
 | State | TX | RX | Who moves it out |
 |---|---|---|---|
@@ -552,8 +554,8 @@ plugins) and MS4 (codecs); MS1 converts in the caller.
 | QUEUED (+ bit X: needs transform) | submitted, `seq` assigned | — | the binding at pick-up; a transform claim; a control-plane CAS for flush and discard |
 | XFORM | a converter or encoder owns it | a decoder or converter owns it | the transform's done |
 | ENGINE | picked up (in flight) | receiving | the completion CAS (TX done; RX ready, due time); RX discard (applied by the `tick`, §5.1): the completion CAS straight to FREE, counted in `rx.units_flushed`, never PUBLISHED |
-| PUBLISHED | result in its descriptor; the slot is acquirable again | unit readable | TX: `mtl_tx_acquire` (the result stays in the descriptor, §4.4); RX: `mtl_rx_dequeue`, `RX_LATEST` reclaim (tasklet CAS back to ENGINE), RX discard (control-plane CAS to FREE, counted in `rx.units_flushed`) |
-| HELD | — | released while TX units still hold it | the last hold drops (CAS to FREE) |
+| PUBLISHED | result in its descriptor; the slot is acquirable again, a W slot only once every older entry is done (§4.4) | unit readable | TX: `mtl_tx_acquire` (the result stays in the descriptor, §4.4); RX: `mtl_rx_dequeue`, `RX_LATEST` reclaim (tasklet CAS back to ENGINE), RX discard (control-plane CAS to FREE, counted in `rx.units_flushed`) |
+| HELD | done, result recorded, while the pin bit is set or repeat uses hold the slot (D-212) | released while TX units still hold it | TX: the CAS that leaves the pin bit clear and `holds` 0 stores PUBLISHED (FREE with results off), then E2 (§4.2); RX: the last hold drops (CAS to FREE) |
 
 **The slot word** (D-118) is one 64-bit atomic per slot. The table names its fields; the layout
 is D-118's.
@@ -563,8 +565,10 @@ is D-118's.
 | state | the slot's state (the table above) | the moves of the table above |
 | X | the transform bit: QUEUED + X needs a transform | the moves into and out of QUEUED + X (the table above, "Transform stages" below) |
 | C | the claim bit ("The completion CAS is the claim" below) | the completion CAS (§4.2 step 1) |
+| W | done while an older entry is not: the hold (D-209) | the completer, by the test of §4.2 step 3 |
+| pin | the REPEAT pin bit (D-212) | the builder (take, release), the CP (discard, leaving RUNNING), recovery: a CAS on the generation, so a second release finds the bit clear |
 | `xs` | the transform stage, 0 until Phase 7 (D-176) | each stage's claim and done ("Transform stages" below) |
-| `holds` | the hold count ("Holds and pins" below) | hold changes |
+| `holds` | RX: the TX units that hold the RX slot (`unit.hold`, at most 255); TX: the repeat uses in flight (REPEAT) ("Holds and pins" below) | hold changes |
 | generation | the slot's generation ("Generation" below) | acquire (TX) and dequeue (RX); never a tasklet |
 
 Acquire (TX) and dequeue (RX) write the new generation in the CAS that takes the slot; tasklet
@@ -579,12 +583,38 @@ never on a second check.
 - **Completion protocol**: §4.2.
 - **Order.** `seq` is the position in the descriptor ring (§4.4), so one ring gives pick-up
   order, result order and reap order. Acquire reserves a result entry through the `resv` counter
-  (§4.4); with results off the completer stores FREE.
+  (§4.4); with results off the completer stores FREE, and never W.
 - **Generation** advances whenever a lease is made (TX `mtl_tx_acquire`, RX `mtl_rx_dequeue`) and
   is written by that application thread inside the slot-word CAS, so a tasklet never changes it;
-  leases are `{session:16, slot:16, generation:32}` (§4.7).
-- **Holds and pins.** `unit.hold` on a TX submit adds one to the RX slot word's `holds` field (at
-  most 255), and the TX unit's terminal outcome removes it.
+  it starts at the entry's lease base, and leases are `{session:16, slot:16, generation:32}`
+  (§4.7).
+- **Holds and pins.**
+  - **RX holds.** `unit.hold` on a TX submit adds one to the RX slot word's `holds` field (at
+    most 255), and the TX unit's terminal outcome removes it. The last reference to a HELD RX
+    slot (a TX completing context or `mtl_release`) stores FREE.
+  - **TX pins** (`MTL_UNDERRUN_REPEAT`, RUNNING only; the rule is D-212, the behaviour
+    [timing.md](timing.md) §6.3). A unit finishes at the builder: a frame unit at its pick-up,
+    sent or dropped; a rows unit at its last row or when `tx.rows_late` ends it. After each
+    finish the pins are the whole units among the last `defer_step` finished units, one per
+    parity. A `TOO_LATE` or `SNAP_COLLISION` drop takes the pin; a `BEHIND` drop and a unit cut
+    short release their parity's pin, even one among the last `defer_step`, and take none, so
+    older content is never repeated. A discard and leaving RUNNING release every pin. The
+    builder keeps the pinned slots and generations, and the previous finished slot, on its own
+    line (`.tk`).
+  - **The pin is a bit, the uses a count.** Taking a pin: a CAS that sets the pin bit with the
+    same generation. Releasing it, from any context: a CAS that clears the bit if it is set and
+    the generation matches; a second release finds it clear and does nothing. A repeat pick: a
+    CAS that adds one to `holds` only while the bit is set and the generation matches; otherwise
+    the index stays empty. A hold drop in ENGINE only decrements. The first-use completer reads
+    the bit and `holds` in its claim CAS and stores HELD or PUBLISHED in one CAS; whoever later
+    leaves the bit clear and `holds` 0 publishes, keeping W (FREE with results off), with E2
+    (§4.2 step 4).
+  - **`lent`** (D-227, RX only) sits on a cache line of its own. The claim, under the reaper
+    lock, sets `MTL_UNITF_COPY_ADVISED` when `lent` ≥ B (B on `.app`, §4.1), and its CAS winner
+    adds one; the winner of the CAS that stores FREE, which can be a TX completer, subtracts one
+    before its last-reference check (X1). Retire never starts from a scan of the slot words, as
+    for `rv_put_frame`. The RMW counts in the TX completion budget of a held unit
+    ([implementation-plan.md](implementation-plan.md) §8.4).
 - **Progress**: `progress` (`used`) carries rows and packets in the same slot (§2.3), plus the
   `want` of a waiting rows reader (RW1, §6.1). For rows units `used` counts rows and 0 is legal,
   because the slot is claimed before row 0 exists.
@@ -623,25 +653,37 @@ flowchart LR
     ADM -->|"ON_TIME, N"| ENG["QUEUED to ENGINE;<br/>the binding hands the<br/>engine a frame for N"]
     ADM -->|"DROPPED"| DROP["complete it DROPPED,<br/>try the next descriptor"]
     DROP --> PICK
+    PICK -->|"no unit by D(E), REPEAT"| REP["the pinned slot again for E"]
     classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
-    class GNF,PICK,ADM,ENG,DROP mtl
+    class GNF,PICK,ADM,ENG,DROP,REP mtl
 ```
 
 `st_core_tx_pick` takes the descriptor at the pick cursor and calls `st_core_admit`. On
 `ON_TIME` the slot goes QUEUED → ENGINE with N and its launch instant, and the binding turns them
 into its engine's frame meta; on `DROPPED` the unit completes at once through §4.2 and the next
-descriptor is tried. A binding supplies only its grid, filled in `create` (§2.1):
+descriptor is tried.
+
+**REPEAT** (`MTL_UNDERRUN_REPEAT`, MS4a1). When `now` passes D(E) for an index E without a
+unit, the pick returns REPEAT with the pinned slot of E's parity (§3.1); it is sent only if it is
+picked by D(E) + `repeat_slack_ns`, which is at most the pick-up lead; before the deadline the
+pick returns "none". The descriptor of the next unit stays QUEUED. For one index E the old pin
+repeats first: a unit for E that the pick meets after D(E) is a `TOO_LATE` drop, and that drop
+takes the pin (D-212). The REPEAT rows of
+[timing.md](timing.md) §6.3 join `Admit.table` (T-REP, MS4a1).
+
+A binding supplies only its grid, filled in `create` (§2.1):
 
 ```c
 struct st_core_grid {     /* the essence's part of the launch decision, fixed at create */
   uint64_t rate_num;      /* index rate, reduced: frames, fields, samples or units */
   uint64_t rate_den;
   int64_t first_off_ns[2]; /* first-packet time of N minus its media time, for even, odd N */
-  int64_t lead_ns;        /* pick-up lead: N's deadline = its first-packet time - lead */
+  int64_t lead_ns;        /* pick-up lead, the stage term included (timing.md §6.1) */
   int64_t exact_lo_ns;    /* MTL_SUBMIT_EXACT window: now + lo <= t <= now + hi */
   int64_t exact_hi_ns;
   uint32_t defer_step;    /* a defer moves N by whole steps: 1, or 2 for fields */
   uint32_t index_bytes;   /* 0: a unit is one index; else used / index_bytes indices (audio) */
+  int64_t repeat_slack_ns; /* REPEAT: picked by deadline + this, else skipped */
 };
 /* Pure: reads the descriptor, the session's terms and its last N; writes only *out. */
 int st_core_admit(const struct st_core_session* s, const struct st_core_desc* d, int64_t now,
@@ -656,9 +698,14 @@ int st_core_admit(const struct st_core_session* s, const struct st_core_desc* d,
   parity included (`Tai.interlaced_parity`). So the U tier proves the rule every binding runs.
 - **The session's terms are the core's**: media mode, `tx.late_policy`, snapping,
   `min_tx_delay_ns`, `media_time_offset_ns`, `tx.horizon_ns`, the last N. The grid never repeats
-  them.
-- **Owners.** C2 writes it beside `st_rate.h` and gives `bind_null` its grid; C1b's
-  `st_core_tx_pick` calls it from C2 on; B1 fills the video grid once at create from
+  them. L, the launch delay in index steps, is derived from `min_tx_delay_ns` and the grid by
+  `st_core_launch_steps` when the terms are set (create, the dry run, and when an update changes
+  `min_tx_delay_ns` or the essence member): 0 for 0, else the fewest steps whose deadline at the
+  worse parity is at or after M + the delay (+ C on a converting session, D-218). `st_core_admit`
+  moves every outcome's N by it, and `Admit.table` and `Admit.ready_delay` test both.
+- **Owners.** C2b writes it beside `st_rate.h`, with NEAREST's hysteresis
+  ([timing.md](timing.md) §4.3) from MS1, and C2a gives `bind_null` its grid; C1b's
+  `st_core_tx_pick` calls it from C2b on; B1 fills the video grid once at create from
   `st20_tx_get_pacing_params`. A later binding adds a grid row to timing.md §6.8, never a copy of
   the rules.
 
@@ -675,7 +722,7 @@ one cache line together only at hand-over:
 | slot word and tasklet fields (own cache line per slot) | the 64-bit slot word (§3.1); `progress`; the RX unit record (frame meta, per-leg arrival, packet counts) | the application only at hand-over (acquire, submit, dequeue, release, hold changes); the binding and every completing context by CAS, generation preserved |
 | per-slot template (application half) | planes, meta pointer, the static layout (≈ 130 B) | the control plane at create and attach |
 | descriptor ring entry (64 B, one line) | `{seq:48 \| slot:16}`, generation, media time, launch, flags, `used`, cookie, …; after completion the result in place | the application at submit, in one line; the completer writes the result; the reaper reads it |
-| session lines (the register below) | `.app`: `resv`, submit tail, `reap_seq`, dequeue cursor, reaper lock; `.tk`: pick cursor, `pub_seq`, `ack`; `.cp`: constants, `ctl` | application threads; completing contexts; the control plane |
+| session lines (the register below) | `.app`: `resv`, submit tail, `reap_seq`, dequeue cursor, reaper lock, C, B; `.tk`: pick cursor, `pub_seq`, `ack`, the pins; `.cp`: constants, `ctl`; lines of their own: the in-flight line, `lent` (RX) | application threads; completing contexts; the control plane |
 
 The application writes the slot word only at hand-over: one line transfer per hand-over, which is
 inherent. Fields of `struct mtl_tx_result_full` beyond the 64-byte entry (the timing record, engine change E4)
@@ -711,20 +758,27 @@ submission. The columns are writer (W), reader (R), ordering (ord), reset and te
 
 | Line (struct) | Field | W | R | ord | reset | test |
 |---|---|---|---|---|---|---|
-| slot (`st_core_slot`, one line per slot, scheduler node) | `word` (layout: [D-118](decisions.md); `xs` the transform stage, D-176) | app (acquire, dequeue: CAS with a new gen; release, submit, holds), binding and completers (CAS, gen kept), CP (flush, discard CAS) | all | acq_rel CAS; the publish a release store (E1), then E2 on the event word | create (FREE, random gen) | G-05, G-07, G-49 |
+| slot (`st_core_slot`, one line per slot, scheduler node) | `word` (layout: [D-118](decisions.md); `xs` the transform stage, D-176) | app (acquire, dequeue: CAS with a new gen; release, submit, holds), binding and completers (CAS, gen kept), CP (flush, discard CAS) | all | acq_rel CAS; the publish a release store (E1), then E2 | create (FREE, gen = lease base) | G-05, G-07, G-49 |
+| slot | `word`: the W bit (D-209) | the completer, by the test of §4.2 step 3 | acquire's W test, the reaper, the next entry's completer | as the word | use | G-143 |
+| slot | `word`: the pin bit (D-212) | the builder (take, release), the CP (discard, leaving RUNNING), recovery: CAS on the gen | the builder (repeat pick), the completers | acq_rel CAS | use | G-164, G-165 |
+| slot | the `seq` of the slot's last submit | submit (plain, before QUEUED) | acquire's W test | plain (published by the word) | use | G-143 |
 | slot | `progress` (rows, ended, `want`: §6.1) | RW1 (the RX binding), RW2 (the reader), the TX app (re-submit) | the other side | RMW | use | G-113 (MS2a), WC4 |
 | slot | the RX unit record (meta, arrival per leg, packet counts) | the RX completer, before E1 | the app after dequeue | plain (published by E1) | use | `Rx.incomplete_status` |
 | template (`st_core_slot_tmpl`) | planes, meta pointer, layout | CP at create, attach | all | const | create | `Ub.submit_carries_meta` |
-| descriptor (`st_core_desc`, 64 B) | `{seq:48\|slot:16}`, gen, media time, launch, flags, `used`, cookie; the result in place | submitter (before its APP → QUEUED CAS); the completer (the result, before E1) | the binding (after the QUEUED load), the reaper | plain | use | G-08, G-09 |
-| session app line (`.app`) | `resv` | acquire (CAS), release (sub) | acquire | acq_rel | create | G-04 |
+| descriptor (`st_core_desc`, 64 B) | `{seq:48\|slot:16}`, gen, media time, launch, flags, `used`, cookie; the result in place | submitter (before its APP → QUEUED CAS); the completer (the result, before E1) | the binding (after the QUEUED load), the reaper, the next entry's completer (the tag) | plain; the tag last, a release store (acquire load) | use | G-08, G-09, G-143 |
+| session app line (`.app`) | `resv` | acquire (CAS), release (sub) | acquire | acq_rel | create | G-04, G-144 |
 | `.app` | submit tail | submit (plain; CAS with `MTL_SESSION_MT_SUBMIT`) | submit | plain / acq_rel | create | G-08 |
 | `.app` | `reap_seq` | the reaper (E1, then E2 with lane 0) | acquire (`resv` check), the reaper | release | create | G-09 |
 | `.app` | RX dequeue cursor | the reaper | the reaper | plain (reaper lock) | create | G-70 |
 | `.app` | the reaper lock | `mtl_reap`, `mtl_rx_dequeue` (the claim only, D-203) | same | TTAS spinlock (§4.4, D-183) | create | `Ub.reap_mp` |
+| `.app` | C (the caller's work held in `latency_min_ns`, D-225) | the dequeue (RX) or submit (TX) whose measurement raises it (CAS-max, from MS2a); CP at create, start, a format change | `get_info`, the RX min, the claim (via B) | relaxed | create, start, format | G-132 |
+| `.app` | B (the copy budget, RX, D-227) | the thread whose CAS raised C (CAS-min); CP at create, start, an RX-min key, a published format | the claim | relaxed | create, start | G-155 |
+| own line | `lent` (RX, D-227) | the claim's CAS winner (+1); the winner of the FREE CAS, an application thread or a TX completer (−1) | the claim | relaxed RMW | create | G-155 (`Core.lent_exact_concurrent`) |
 | session tasklet line (`.tk`) | pick cursor | the binding | the binding; CP flush with the session detached | plain (one writer) | create | G-08 |
 | `.tk` | `pub_seq` | RX completers (fetch_add) | dequeue | acq_rel | create | `Rx.order_pub_seq` |
 | `.tk` | `ack` (MS2) | the `tick` | CP | release | create | G-80 |
 | `.tk` | `provide_gen` (MS2b) | the RX binding at the stop, discard and detach acks | `mtl_session_get_status` | release / acquire | create | G-137 |
+| `.tk` | the pinned slots and generations, the previous finished slot (REPEAT, MS4a1) | the builder | the builder | plain (one writer) | create, discard | G-164 |
 | session CP line (`.cp`, read-mostly) | ring mask, slot count, pointers, scheduler index | CP | all | const | create | `Core.layout` |
 | `.cp` | `ctl` (MS2) | CP | the `tick` | release / relaxed load | create | G-80 |
 | stats blocks (own lines) | the home scheduler's, the application threads' and the library threads' blocks at create; a foreign scheduler's when a shared TX queue gains a session of it (D-202) | that context | stats readers (sum) | relaxed | never (G-42) | G-42, `Core.stats_blocks_at_create` |
@@ -732,6 +786,7 @@ submission. The columns are writer (W), reader (R), ordering (ord), reset and te
 | entry (`st_core_entry`) header | `gen` | CP at create and Y1 | every lookup | release / acquire | Y1 (advance) | G-07 |
 | entry header | `state` (nine states) | CP; a tasklet's ERROR entry (CAS); X1 by the last release | all | seq_cst | Y1 (CREATED, last) | G-49 |
 | entry header | `closed_by_instance` (D-186) | the instance's close (CP) | every call's entry check (`-MTL_ESHUTDOWN`) | release / acquire | Y1 | `UnifiedRx.ReleaseAfterInstanceClose` |
+| entry header | `lease_base` (D-226) | CP: a random seed at the entry's first use, raised at retire (after X2); never 0 | create (the slot words' seed) | plain | never | G-07 (`CoreHandle.lease_base_after_reuse`) |
 | entry in-flight line | `inflight` | every data call | close, retire (step X2), a queue's close (step C2) | seq_cst add, release sub | never | WH11, WH14b |
 | entry in-flight line, line A, line C | the wait words | §6.1's table | §6.1's table | §6.1's table (orderings) | §6.1's table (resets) | WC1–WC6, QW1–QW22 ([design/wait-tests.md](design/wait-tests.md) §5) |
 | process | the orphan-list head (D-186) | the last release of a session whose instance is gone (CAS, DP) | the control-plane entry `st_api_cp_enter` (drains it) | acq_rel | never | `CoreClose.orphan_freed_at_next_cp` |
@@ -739,6 +794,7 @@ submission. The columns are writer (W), reader (R), ordering (ord), reset and te
 | loop (`st_core_loop`, the scheduler's node) | `L0`, `L1`, `L2`, `cursor` | the loop's own thread | same | relaxed | never | WH16 |
 | loop | `wake_k` | CP at attach and detach | F2 | relaxed | create (1) | `WaitFlush.count_bound` |
 | loop | `wake_carried`, `wake_syscalls` | the loop | stats readers | relaxed | never | WH16 |
+| instance | the AUTO source (MS3, D-229) | the admin thread | the installed time function on tasklets | relaxed store and load (equal readings) | open | G-157 |
 
 The lines of a session follow the writer classes:
 
@@ -746,7 +802,19 @@ The lines of a session follow the writer classes:
 - `.tk` only by completing contexts;
 - `.cp` is read-mostly;
 - the in-flight line (with `intr`) and line A sit on lines of their own; line A is written by
-  tasklets and by sleeping or arming threads, never by probes.
+  tasklets and by sleeping or arming threads, never by probes;
+- `lent` (RX) sits on a line of its own: the claim writes it, and so does the winner of the CAS
+  that stores FREE, which can be a TX completer.
+
+**C and B** (D-225, D-227). Both are 64-bit atomics on `.app`, relaxed. C starts at create's
+calibration (the dry run times one unit of the conversion the configuration implies) and is
+stored again plainly by the CP at start and at a format change, while no dequeue or submit runs.
+From MS2a the dequeue (RX) or submit (TX) whose 1 s window `convert_ns` exceeds C in two
+consecutive windows raises C to that value rounded up to 250 µs, by a CAS-max loop: a smaller
+value never overwrites a larger one, so C never falls before the next start or format change.
+Each raise re-posts LATENCY once. Only the thread whose CAS raised C rewrites B, by a CAS-min (B
+only falls while running), so B is never older than C; the CP stores B at create, at start, at
+an option the RX min depends on and at a published format (by the same CAS while running).
 
 So the builder's idle poll (the pick cursor, the state) never shares a line with `resv` or
 `reap_seq`, which every DP call writes.
@@ -767,8 +835,8 @@ sequenceDiagram
     participant RD as Reader (reaper lock)
     CC->>SW: 1. claim CAS: adds C, same gen
     CC->>RS: 2. write the result (RX: take pub_seq)
-    CC->>SW: 3. store PUBLISHED, gen (release)
-    CC->>AW: 4. E2: fetch_add on the event word
+    CC->>SW: 3. store PUBLISHED (W by the test), gen (release)
+    CC->>AW: 4. E2
     opt a count or an attachment armed
         CC->>CC: 5. mt_wake, or E4 and push
     end
@@ -783,16 +851,30 @@ The completing context:
    QUEUED|gen → QUEUED+C|gen).
 2. **Write the result**: TX into the unit's descriptor, RX into the unit record (RX: take
    `pub_seq`).
-3. **Publish**: store the slot word = PUBLISHED\|gen (release). With results off it stores FREE.
+3. **Publish.** A TX completer stores W exactly when the entry at `seq` − 1 is not done. Three
+   loads: the descriptor's `{seq | slot}` tag (acquire), then the generation, then that slot's word
+   (acquire). A tag whose `seq` is older than `seq` − 1 means that entry is not written yet (a
+   flush of `MTL_SESSION_MT_SUBMIT` can run first): not done. Otherwise the entry is not done
+   when its slot word carries its generation and is not PUBLISHED, or is PUBLISHED with W; a
+   slot that carries another generation is done. The completer never rewrites a descriptor's
+   tag or generation, so the load does not race with the older entry's result write. It then
+   stores PUBLISHED\|gen, or HELD\|gen when the pin bit is set or repeat uses remain, with
+   W in either when the test says so (release); the store is a CAS when the slot can carry holds.
+   A later move from HELD to PUBLISHED keeps W. With results off it stores FREE, never W. An RX
+   completer stores PUBLISHED\|gen (release).
 4. **E2**: one `fetch_add` on the object's event word (acq_rel), which returns its counts and
-   attachment bits (§6.1); no fence.
+   attachment bits (§6.1); no fence. With RESULTS | ACQUIRE, it runs after every store of step 3,
+   W or not, and after every later store that moves a TX slot word out of HELD to PUBLISHED, or
+   to FREE with results off (a pin release, the last repeat use). A waiter woken while an older
+   entry is still not done re-checks and sleeps again (T2–T7).
 5. A count on a lane of the event: `mt_wake(object, lanes)`; an attachment bit (MS2a): step E4
    claims it and pushes the object to its queue.
 
 The reader:
 
-- **TX**: the entry at `reap_seq` is done once its slot word is PUBLISHED with the entry's gen, or
-  carries another gen; the reader copies the result out and advances `reap_seq` by 1.
+- **TX**: the entry at `reap_seq` is done once its slot word is PUBLISHED (with or without W)
+  with the entry's gen, or carries another gen; HELD is not done. The reader copies the result
+  out and advances `reap_seq` by 1.
 - **RX**: the entry at the dequeue cursor names a PUBLISHED slot; the reader CASes it to
   APP|gen + 1.
 
@@ -804,6 +886,7 @@ The reader:
   the tasklet writes can overflow, and the core has no tasklet: the bindings run inside the engine's
   own callbacks (the builder enters `get_next_frame` only while it waits for a frame).
 - **Migration-proof.** No state depends on which lcore produced the completion.
+- **Debug check** (C1b's W commit): every store without W has entry `seq` − 1 done and not held.
 - **Tasklet cost per unit:** the claim CAS, the release store and E2, two locked instructions on
   x86; the mark only when a sleeper or an attachment is armed; the budget is
   implementation-plan.md §8.4's. They run inside the PMD free callback inside `rte_eth_tx_burst`,
@@ -822,6 +905,7 @@ column is the block a completion writes ([engine.md](engine.md) §1.8).
 | TX recovery (on the transmitter until engine change R1 moves it to a worker in MS6): only the verdict and the software-held references ([engine.md](engine.md) §5); the PMD free callback still publishes | `:4293-4301` | tasklet: the scheduler's bitmap; worker: direct |
 | the transmitter state cleanup, which frees in-flight chain mbufs: at teardown and in recovery | `st_tx_video_transmitter_state_cleanup` `:3073` (per port `:3056`), called at `:3293` and `:4256` **[verified at HEAD]** | the calling context: direct |
 | another session's tasklet, on another scheduler, freeing the last mbuf in a shared TX queue | TSQ **[inferred]** | the bitmap and the stats block of that other scheduler |
+| the TSQ idle cleanup (E1b, D-213): a foreign scheduler's tasklet, by trylock of the queue's `tx_mutex` (by lock on the queue-fatal recovery path) | `mt_tsq_done_cleanup` (`datapath/mt_shared_queue.c:625-633`), which E1b rewrites | the bitmap and the stats block of that scheduler |
 | native AF_XDP TX copy: every segment is copied into UMEM and the original freed at once, so "transport done" there is the copy, before the wire | `dev/mt_af_xdp.c:555-597` **[verified at HEAD]** | the scheduler's bitmap and block |
 | queue stop/start after a stall, on a worker (new, [engine.md](engine.md) §4) | — | direct |
 | the application thread in `mtl_tx_submit` with in-caller conversion: it converts before the QUEUED store, so it completes a unit only when the conversion fails (today `put_frame`/`put_ext_frame` fire `notify_frame_done` here) | `st20_pipeline_tx.c:991-1000` | direct |
@@ -845,42 +929,62 @@ PMD reference publish; `sh_info` is written only at frame setup.
 
 ### 4.4 Results, the reaper and order
 
-- **The ring** (D-119, D-120, D-207). Each session has one descriptor ring of 64-byte entries,
-  indexed by `seq mod size`; its size is a power of two at least D-207's bound. Acquire
-  CAS-increments a counter `resv` while `resv − reap_seq` is below that bound, so every leased slot
-  already owns the entry its result will use, producing a result never waits, and a thread that
-  reaps before each acquire never blocks on its results
-  ([contract.md §5.5](contract.md#55-back-pressure)); releasing an APP lease decrements `resv`.
+- **The ring** (D-119, D-120, D-208). Each session has one descriptor ring of 64-byte entries,
+  indexed by `seq mod size`; its size is a power of two at least D-208's bound. Acquire reserves
+  an entry by CAS on `resv` while `resv − reap_seq` is below that bound (D-120), so every leased
+  slot already owns the entry its result will use, producing a result never waits, and a thread
+  that reaps every ready result before each submit never blocks on results, on any thread
+  (D-208, [contract.md §5.5](contract.md#55-back-pressure)); releasing an APP lease decrements
+  `resv`. With S submitting threads (`MTL_SESSION_MT_SUBMIT`) D-208's bound counts S, S − 1
+  entries more than with one, so a blocking acquire uses a finite timeout.
   When unread results fill the ring, acquire fails and `status.blocked_on` is
-  `MTL_BLOCKED_RESULTS`. Submit writes the whole entry in one line: `{seq:48 | slot:16}`, the
-  slot's generation, media time, launch, flags, `used`, cookie and the rest of the per-use fields;
-  then it moves the slot word APP → QUEUED. The binding picks up only the entry whose `seq` is its
-  pick cursor and whose slot word is QUEUED with the entry's generation, so pick-up is in
-  submission order (G-08; PR #1610 could send `A B D C`) and a stale entry is never picked. The
-  completer writes the result back into the same entry.
+  `MTL_BLOCKED_RESULTS`. Submit writes the whole entry in one line: the slot's generation, media
+  time, launch, flags, `used`, cookie and the rest of the per-use fields, then the tag
+  `{seq:48 | slot:16}` last, with a release store, so a completer's acquire load of the tag
+  (§4.2 step 3) never sees a half-written entry; then it moves the slot word APP → QUEUED. The
+  binding picks up only the entry whose `seq` is its pick cursor and whose slot word is QUEUED
+  with the entry's generation, so pick-up is in submission order (G-08; PR #1610 could send
+  `A B D C`) and a stale entry is never picked. The completer writes the result back into the
+  same entry.
 - **When results exist.** A session over application memory always produces results; a library
   pool produces them only with `MTL_SESSION_RESULTS` (D-77). Results off: the completer stores FREE
   (§4.2), and `mtl_tx_acquire` takes any FREE slot, in any order, and reserves nothing.
 - **Reaping.** `mtl_reap` returns entries from `reap_seq` on. An entry is done once its slot word is
-  PUBLISHED with the entry's generation or carries another one (the slot was reused, so this use
-  completed). A TX slot is acquirable again as soon as it is PUBLISHED, because its result lives in
-  the entry, so a unit that completes before an older one frees its slot at completion and only its
-  result waits for its predecessors (G-09). Units complete out of order only on a drop at pick-up
-  while an older unit is in flight, a flush, and recovery. Two legs in chain mode do not: `sh_info`
-  counts the mbufs of both queues, so a frame completes once.
+  PUBLISHED (W included) with the entry's generation or carries another one (the slot was reused,
+  so this use completed); a HELD entry is not done. Results wait for their predecessors (G-09).
+- **Reaping and W.** A TX slot is acquirable again as soon as it is PUBLISHED without W. A W slot
+  is acquirable once it is below `reap_seq`, or once every entry from `reap_seq` to its own passes
+  the done test, by loads only (D-209, G-143). `mtl_tx_acquire` runs that test only when no slot
+  without W is free; `mtl_tx_acquire_slot` runs it for the slot it names. Whether a
+  unit completed out of order is the W test of §4.2 step 3, never the path: a drop at pick-up, a
+  flush, a discard, a recovery verdict, a failed transform and, under REPEAT, a unit behind a
+  pinned one all meet it. Two legs in chain mode do not complete out of order: `sh_info` counts
+  the mbufs of both queues, so a frame completes once.
+- **Bounded completion** (D-213). Every unit handed to the engine completes within a bound
+  without a later unit of its session: on dedicated queues by E1b's idle cleanup; on shared
+  queues by E1b's `mt_tsq_done_cleanup` (trylock of `tx_mutex` on the idle path, at most
+  `tx_rs_thresh` descriptors per visit, skipped on AF_XDP; a failed trylock retries at the next
+  idle visit); on AF_XDP and kernel sockets at the copy or the send; with the link down by the
+  stalled-queue path ([engine.md](engine.md) §4, MS3). Until MS3 a queue that stops completing
+  holds every slot behind its oldest unit, and acquire returns `-MTL_EAGAIN` (BUFFERS) at its
+  timeout. The hold, the pins and the ring bound rely on this.
 - **RX order** (D-126). The completer takes the next `pub_seq` with one fetch-add and writes the
   slot index into RX ring entry `pub_seq mod size` before its PUBLISHED store; `mtl_rx_dequeue`
   takes entries in `pub_seq` order. Several completing contexts (the RX tasklet, the DMA drain, the
   packet lcore) can complete units of one session, hence the fetch-add.
 - **Records.** `mtl_tx_reap` (`mtl_reap` on a session) returns the 96-byte `struct mtl_tx_result`;
   passing the size of `struct mtl_tx_result_full` (`mtl_observe.h`, 216 B) fills the timing record.
+  Reap writes `MTL_TIME_NONE` for every time the entry has none (the status table,
+  [contract.md](contract.md) §6.4); dequeue writes NONE for an RX media field or a per-leg arrival
+  without a value; tasklets keep internal bits. A debug assert in reap and dequeue checks that each
+  time is ≥ 0 or NONE (D-215).
 - **The reaper lock** serialises application readers (`mtl_reap`, `mtl_rx_dequeue`) for the cursor
   move and the claim only. It is a test-and-test-and-set spinlock (`rte_spinlock_t`) on the
-  session's application line (§4.1), never held across a conversion, a zero fill or a syscall. A
+  session's application line (§4.1), never held across a conversion, a fill or a syscall. A
   reader first evaluates the predicate with loads only and returns `-MTL_EAGAIN` without the lock
   when nothing is ready (§6.1, ATTEMPT). Dequeue takes the next `pub_seq` entry and moves its slot
   PUBLISHED → APP under the lock, releases it, and only then does the caller's work on the claimed
-  unit: conversion, ANC decode, the zero fill, the tail write, the copy of packet units. The lock
+  unit: conversion, ANC decode, the fill, the tail write, the copy of packet units. The lock
   is never held across that work, so N threads dequeueing one session work on N consecutive units
   at once; the claim order is the delivery order, and a thread may return before an earlier
   claimant, as in the picture. Tasklets only trylock it. `mtl_tx_acquire` and `mtl_release` never
@@ -923,8 +1027,8 @@ Who may call each function, and from how many threads, is
 
 | Verb | Enforced by |
 |---|---|
-| `mtl_tx_acquire`, `mtl_tx_acquire_slot` | a CAS on the slot word, a CAS on `resv` |
-| `mtl_release` (`mtl_tx_release`, `mtl_rx_release`) | a CAS, or a hold-count change |
+| `mtl_tx_acquire`, `mtl_tx_acquire_slot`, `mtl_tx_acquire_layout` | a CAS on the slot word, a CAS on `resv`; a W slot's test by loads only (§4.4) |
+| `mtl_release` (`mtl_tx_release`, `mtl_rx_release`) | a CAS, or a hold-count change; with a null `s`, the ordered path of §4.7 |
 | `mtl_tx_submit` (and the inline `mtl_tx_write`, `mtl_tx_send_slot`) | with `MTL_SESSION_MT_SUBMIT`, a CAS on the submission tail, for several submitting threads (an exported pool whose only submitter is `render` does not need it) |
 | `mtl_reap`, `mtl_rx_dequeue` | the reaper lock (§4.4) |
 
@@ -958,13 +1062,24 @@ handle (R4). There are two layouts, with their fields in this order:
 |---|---|
 | tables | process-wide, one per type, never per instance (R4, EK20): grow-only chunked arrays of 256 chunk pointers × 256 entries = 65 536 objects per type, in chunks per NUMA node (below the table). A chunk is never freed, so a stale handle always indexes valid memory and fails the generation compare. Nothing is preallocated at 65 536 |
 | size check | the largest session count the engine allows today, 18 schedulers × (60 + 60 video + 512 + 1024 audio) = 29 808 (`st_header.h:33-34`, `:48`, `:50`), fits 16 bits |
-| generations | start from a random seed per table slot (per session for leases), skip 0, advance on every reuse. A lease of another session fails deterministically on the index (`-MTL_EBADF`); an old lease of the right session fails on the generation (`-MTL_ESTALE`), so a double submit or a double release cannot corrupt another lease (PR #1610 D4) |
+| generations | start from a random seed per table slot, slot generations from the entry's lease base (below); skip 0, advance on every reuse. A lease of another session fails deterministically on the index (`-MTL_EBADF`); an old lease of the right session fails on the generation (`-MTL_ESTALE`), so a double submit or a double release cannot corrupt another lease (PR #1610 D4) |
 | reuse | free slots are reused FIFO, as late as possible. Until reuse the slot is a tombstone: `mtl_session_get_state()` answers `MTL_STATE_RETIRED`; an object its instance closed keeps its slot with the condition *closed by the instance* (an entry flag set by the instance's close), where data calls return `-MTL_ESHUTDOWN` and close and release return 0 (contract.md §4.2, last column; R4) |
 | orphans | memory whose instance is gone (a session's slots released after its instance's close) goes on one process-wide lock-free list, each entry with its own free function, pushed by the last release (one CAS, DP); the API shell's control-plane entry, where the fork check runs, frees it before its own work; nothing else frees it, and exit returns it (contract.md §4.9, D-116) |
 | lookup | a chunk index, an array index and a 32-bit compare |
 | destroy protection | a per-object in-flight counter on its own cache line, never written inside a tasklet handler; no wake enters the in-flight counter; it covers data calls only; close and retire wait for it to drain (§7, §6.3). Rejected: QSBR or epochs per thread (below the table) |
 | no elision | every data call, stop included, takes the in-flight counter; `mtl_release` too, because it is legal from any thread during a deferred close |
 | wait words | line A and the in-flight line's `intr`, §6.1; they live as long as the process; reuse resets every word but `seq` and the counter (Y1) |
+
+**Generations** start at the entry's lease base, which is random at the entry's first use. At
+retire (CP, after X2) the base becomes base + max over the entry's slots of
+((gen − base) mod 2^32) + 2, skipping 0. A stale lease or `u.hold` of an earlier session in that
+entry then fails `-MTL_ESTALE` deterministically while no slot made 2^32 leases; no data-path
+write is needed (D-226).
+
+**Release by lease.** `mtl_release` with a null `s` takes the lease's session index: it adds to
+the entry's in-flight counter (seq_cst), loads the entry state (seq_cst) against X1's store and
+X2's load, and touches slot memory only in a state that owns it; an instance-closed entry keeps
+its slot memory on the orphan list (D-186). (D-226)
 
 **Chunks per node** (D-182). A chunk belongs to one NUMA node and holds the entries of objects
 whose scheduler is on that node (an instance and a queue: its main lcore's node); it is allocated
@@ -998,7 +1113,7 @@ commands at all: flush and discard of QUEUED units are control-plane CASes on th
 | Class | Commands | Applied |
 |---|---|---|
 | **immediate** | `mtl_session_stop` (DRAIN begin, FLUSH), `mtl_session_discard`, detach (close, ERROR entry), `mtl_instance_abort` (stop at the next packet) | by the `tick` on the tasklet's next visit of the session, outside a packet burst, every iteration, whether or not a unit is in progress |
-| **boundary** | `mtl_session_update` with `MTL_UPDATE_FLOWS` or `MTL_UPDATE_LEGS` (a leg never switches mid-unit), the media fields allowed while running, `mtl_session_discard` with `MTL_DISCARD_REBASE` | at the first unit boundary at or after the activation (`struct mtl_when`: `MTL_NOW` = next boundary, `MTL_AT_TAI`, `MTL_AT_INDEX`) |
+| **boundary** | `mtl_session_update` with `MTL_UPDATE_FLOWS` or `MTL_UPDATE_LEGS` (a leg never switches mid-unit), the media fields allowed while running, `mtl_session_discard` with `MTL_DISCARD_REBASE` | at the first unit boundary at or after the activation (`struct mtl_when`: `MTL_NOW` = next boundary, `MTL_AT_TAI`, `MTL_AT_INDEX`; MS3: `MTL_NOW`, instants MS5) |
 
 ### 5.1 The tick
 
@@ -1014,7 +1129,8 @@ visit it:
    applies the command and stores `ack` (release);
 2. force-completes an RX unit whose due time has passed (§6.4, engine change E8), comparing it with the
    scheduler's one TSC sample of this iteration;
-3. runs the rate-limited idle descriptor cleanup ([engine.md](engine.md) §2.3);
+3. runs the rate-limited idle descriptor cleanup ([engine.md](engine.md) §2.3), on shared queues by
+   trylock (D-213);
 4. advances the scheduler heartbeat (EK11).
 
 The per-session loops already run every iteration, and the transmitter returns to the scheduler
@@ -1052,41 +1168,83 @@ and the detached session hold for any posted command.
 
 ### 5.4 Update: running and stopped
 
-Flow updates while running (MS5) keep all blocking work off the tasklet; the swap is the prepared header swap of
+Flow updates while running (MS3 with `MTL_NOW`; MS5 at an instant and on the kernel-socket and RX
+AF_XDP backends) keep all blocking work off the tasklet; the swap is the prepared header swap of
 D-103. The application thread (CP) and the workers prepare everything off to the side, the
-tasklet only swaps at a unit boundary, and the old resources go after the ack, as the picture
-shows:
+tasklet only swaps at a unit boundary, and the old resources (TX templates, RX rules, groups and
+shared-queue entries) go after the APPLIED ack, as the picture shows:
 
 ```mermaid
 sequenceDiagram
     participant APP as APP (CP)
     participant WK as WK / AD
     participant TK as TK
-    APP->>APP: build new header templates<br/>for every leg, off to the side
+    APP->>APP: build new header templates<br/>for every changed leg, off to the side
     APP->>WK: the blocking work
-    WK->>WK: ARP resolve, flow create, IGMP join,<br/>RTCP header update, socket-backend<br/>queue re-create (all or nothing across legs)
+    WK->>WK: ARP resolve (MS3-MS4: in the CP call),<br/>flow create, IGMP join, and from MS5<br/>RTCP header update, socket-backend<br/>queue re-create (all or nothing across legs)
     WK->>TK: command: publish {templates, gen, activation}
-    TK->>TK: at the first unit boundary >= activation:<br/>swap every leg at once
-    TK-->>APP: ack {gen, first index}
-    Note over APP: waits for the ack (bounded)
-    Note over WK: after the ack: releases the old resources
+    TK-->>APP: receipt ack (PENDING)
+    TK->>TK: at the first unit boundary >= activation:<br/>swap every changed leg at once
+    TK-->>APP: APPLIED {gen, first index}
+    Note over APP: waits for the receipt ack (D-48's ack timeout)
+    Note over WK: after APPLIED: releases the old resources
 ```
 
 - Packets already in rings and descriptors carry the old header, so the ack reports the first
   media index sent to the new destination (this matches IS-05 scheduled activation).
-- The kernel-socket backend sends GSO to `t->send_addr`, fixed at queue creation
+- (MS5) The kernel-socket backend sends GSO to `t->send_addr`, fixed at queue creation
   (`datapath/mt_dp_socket.c:236`, SF-36): a worker creates a new queue and it is swapped at the
   boundary. The RTCP TX header copied from `s_hdr` at init (`st_tx_video_session.c:1023-1025`)
   is updated too (SF-37).
 - RX: the new flow rule joins the same queue before the old one is removed. With `MTL_AT_TAI t`
   the old rules accept only units whose media time is before t and the new ones only units at or
   after t; a worker removes the old rules and leaves the old groups after the first unit at or
-  after t completes, or at t + `rx.flush_offset_ns` + `rx.skew_budget_ns` if none does. RX
-  `MTL_NOW` switches at once; the unit being assembled from the old flow completes by its flush
-  deadline and is counted.
+  after t completes, or at t + `rx.flush_offset_ns` + `rx.skew_budget_ns` if none does (MS5).
 
-In CREATED and STOPPED every part (MS3) goes this way; `MTL_UPDATE_MEDIA` and `MTL_UPDATE_POOL`
-are allowed only there. They change what today's engines fix at create. The core runs the new configuration as a dry run, then the binding
+**Running FLOWS (MS3, D-236).** The CP diffs each leg against the hardware rule key. TX: the CP
+builds the changed legs' templates and posts one `ctl` command; the builder, the only writer of
+`s_hdr`, swaps them at `WAIT_FRAME`, so every changed leg switches on the first unit built after
+the call.
+
+RX: the binding adds a second rule only for a key-changed leg and joins before it leaves (IGMPv3
+source lists for a key-same leg). The switch is one instant for every changed leg, so leg skew
+cannot split it:
+
+- At the command the `tick` takes K, the newest unit in assembly (ENGINE); with none, the switch
+  is at once.
+- When every enabled leg's flow changes, the binding assigns no slot to a unit after K, so a
+  leading leg's packets of later old-flow units are dropped. With an enabled leg unchanged,
+  later units keep arriving on it as before.
+- The switch is the first `tick` after K and every older unit are published, by whichever
+  context publishes them (the `tick` at a due time, §6.4, the DMA drain; the packet lcore once
+  SP-03 is fixed). That
+  `tick` moves the accept filter of every changed leg to the new flow. Until then a new-flow
+  packet fails the old filter and is dropped, on a leg that leads as on one that lags.
+- When every enabled leg's flow changes, the same `tick` resets the slots, which then hold no
+  old-flow unit: timestamps to none, `redundant_error_cnt[]` zeroed (SF-71). The binding keeps
+  the newest RTP timestamp of a new-flow packet it dropped and drops every new-flow unit whose RTP
+  is at or before it, comparing new-flow timestamps only and wrap-aware (mod 2^32). The newest of
+  them may lack its first packets on both legs; it may also be whole through the lagging leg,
+  and dropping it then is conservative. The first unit delivered is the next one, flagged
+  DISCONTINUITY, and RELOCKED when its `media_index` is not after the last delivered; when
+  interlaced it may be a second field, and DISCONTINUITY tells the application. So no old-flow
+  unit is cut, and the new flow starts at a whole unit.
+- With an enabled leg unchanged nothing is reset, dropped whole or flagged: the changed leg's
+  new-flow packets join that leg's timeline (one RTP identity, D-133), and only the changed
+  leg's `redundant_error_cnt` is zeroed.
+- Every packet the switch drops counts in `rx.pkts_rejected{cause=flow_switch}`.
+
+The ack reports APPLIED at the switch `tick`. A slot with DMA copies in flight waits for
+`rv_dma_dequeue` before it is published (E8). The `tick` removes the old shared-queue entry from
+the session's poll set before it stores the APPLIED ack; the CP puts the entry only after that ack. With `rx.threads` = 2 the packet lcore
+runs concurrently with the `tick` (SP-03), so FLOWS while running is `-MTL_ENOTSUP` (field
+"rx.threads") until SP-03 is fixed for core sessions.
+
+In CREATED and STOPPED every part is allowed (MS3); `MTL_UPDATE_MEDIA` and `MTL_UPDATE_POOL`
+are allowed only there, but for the media fields a running session may change
+([contract.md §4.7](contract.md#47-update)). FLOWS without a port change is applied in place by
+the CP, with the same diff, and keeps the RTP sequence. MEDIA, POOL, a changed set of legs and a
+port change re-create: they change what today's engines fix at create. The core runs the new configuration as a dry run, then the binding
 re-creates the engine session while the core keeps the handle, the name, the counters (carried as
 core offsets) and the SSRC (pinned through `ops.ssrc`). The RTP sequence continues only if the
 engine counter can be seeded, which no ops field allows today (the seed of `st_engine_core.h`,
@@ -1100,7 +1258,10 @@ or an MXL grain-count change into stop, update, start instead of close and creat
 
 - **The ack.** The `tick` stores the acknowledged sequence (release) and a result (boundary
   commands: the first media index on the new state, which `status.update_applied_tai_ns` and
-  `MTL_EVENT_FLOW_STATE` report). The CP polls with a back-off from 50 µs to 1 ms; the tasklet
+  `MTL_EVENT_UPDATE` report).
+- **Acks.** A boundary command is acknowledged on receipt within D-48's ack timeout; its APPLIED
+  state follows at the boundary, which under `MTL_ROWS_STALL` may be later than the ack timeout
+  without `CMD_TIMEOUT`. The CP polls with a back-off from 50 µs to 1 ms; the tasklet
   makes no syscall.
 - **Ack timeout** (MS2). Fixed (D-48). On expiry the session enters ERROR with `MTL_REASON_CMD_TIMEOUT`, and the CP falls back to
   today's lock-based detach (`tv_mgr_detach`): the tasklet only `try_get`s the spinlock, so the
@@ -1164,7 +1325,8 @@ with a count > 0 in a; HA(i) = 1 << (28 + i). "enter"/"leave" = the in-flight co
 calls. Every syscall of a DP, WT or AS call is a raw syscall().
 
 EVENT(o, F): after every change that can make a target of the lanes F ready
-E1  publish (release is enough): the completion's PUBLISHED or FREE store | a release's
+E1  publish (release is enough): the completion's PUBLISHED or FREE store, W or not (D-209),
+    and a TX HELD -> PUBLISHED or FREE store (a pin release, the last repeat use) | a release's
     APP -> FREE CAS | store(reap_seq) | RW1's progress RMW | an event's pending state |
     store(state) (F = every lane) | N5's CAS of intr (F = its lanes) | MS5: the ring-RX
     enqueue crossing packet.rx_min_packets or a marker, and the tick that sees

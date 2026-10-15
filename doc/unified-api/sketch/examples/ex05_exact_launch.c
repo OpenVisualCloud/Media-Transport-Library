@@ -6,9 +6,9 @@
 #include "ex_common.h"
 
 void draw(struct mtl_unit* u, int64_t frame);
-/* r: the outcome (status, reason, cookie, rtp; margin_ns with MTL_TXR_MARGIN_VALID);
-   planned: the launch MTL scheduled; sent: the first packet (INT64_MIN: never sent), a
-   NIC timestamp when from_nic */
+/* r: the outcome (status, reason, cookie, rtp, margin_ns);
+   planned: the launch MTL scheduled; sent: the first packet (MTL_TIME_NONE: never sent),
+   a NIC timestamp when from_nic */
 void launch_report(const struct mtl_tx_result* r, int64_t planned, int64_t sent,
                    int from_nic);
 
@@ -34,9 +34,8 @@ int check_launches(mtl_session_h s) {
   while ((n = mtl_tx_reap_full(s, f, 8, 0)) > 0)
     for (int i = 0; i < n; i++) {
       const struct mtl_tx_result* r = &f[i].r;
-      int64_t sent = INT64_MIN; /* DROPPED, FLUSHED: never sent */
-      if (r->flags & MTL_TXR_SENT_VALID) sent = r->sent_tai_ns;
-      launch_report(r, f[i].scheduled_tai_ns, sent, (r->flags & MTL_TXR_SENT_HW) != 0);
+      launch_report(r, f[i].scheduled_tai_ns, r->sent_tai_ns,
+                    (r->flags & MTL_TXR_SENT_HW) != 0);
     }
   return n == -MTL_EAGAIN ? 0 : n;
 }

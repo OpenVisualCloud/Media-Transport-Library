@@ -46,7 +46,7 @@ int split_forward(mtl_session_h rx, mtl_session_h* tx) {
   if (ret >= 0) ret = mtl_session_start(&rx, 1, NULL, NULL);
 
   while (ret >= 0 && (ret = mtl_rx_dequeue(rx, &in, MTL_FOREVER)) == 0) {
-    if (!(in.flags & MTL_UNITF_TAI_VALID)) { /* no TAI time: it cannot be retimed */
+    if (in.media_tai_ns == MTL_TIME_NONE) { /* no TAI time: it cannot be retimed */
       ret = mtl_rx_release(rx, in.lease);
       continue;
     }

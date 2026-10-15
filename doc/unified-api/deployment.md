@@ -124,9 +124,12 @@ descriptor from the event loop before `mtl_queue_close`.
 
 - Handles are 64-bit values (`index | generation`) checked against a process-wide table whose slots are
   never freed (R4); no call dereferences them. 0 is null for every type; a closed handle is never reissued.
-- Lease generations are random per session and skip 0, and a lease names its session, so a foreign or
-  stale lease fails with `-MTL_EBADF` or `-MTL_ESTALE` instead of acting on another session's slot.
-- Handles are **not capabilities**: they mean nothing outside their process, and the randomness defends
+- Lease generations start at the entry's lease base (random at its first use) and skip 0, and a lease
+  names its session. Retire raises the base past every lease the session made, so a stale lease fails
+  with `-MTL_ESTALE` deterministically (while no slot made 2^32 leases, D-226), with or without its
+  session handle; with a handle, a foreign lease fails with `-MTL_EBADF`. Neither acts on another
+  session's slot.
+- Handles are **not capabilities**: they mean nothing outside their process, and the generations defend
   against mistakes (reuse after close, cross-session mix-ups), not hostile code.
 
 ### 1.5 Null backend, test clock and debug API
@@ -337,7 +340,9 @@ sequenceDiagram
 
 Close and shutdown return only these three values, never `-MTL_ETIMEDOUT`: a drain that runs out of
 time flushes the rest and the call still returns 0 or 1 (`units_flushed` counts it). `-MTL_ETIMEDOUT`
-comes only from a DRAIN `mtl_session_stop` that missed its deadline, and it is never the unsafe case;
+comes only from a DRAIN `mtl_session_stop` that missed its deadline, or (MS3–MS4) from a FLOWS
+update in ARMED or RUNNING whose unicast neighbour did not resolve (`WAITING_NEIGHBOUR`, nothing changed), and it
+is never the unsafe case;
 `mtl_session_close` returns 0 or 1. Freeing library memory under a lease the application holds would turn an application
 bug into a use-after-free; `mtl_rx_release` is DP and cannot free, so the next control-plane call does.
 
@@ -547,13 +552,15 @@ never silently and never inside a join:
 | Request | When | Failure |
 |---|---|---|
 | `port.promiscuous` (2110), or any other port setting that needs promiscuous or all-multicast, on a VF the probe found untrusted | open, after the probe | `-MTL_ENOTSUP`, reason `VF_UNTRUSTED` (612). Today `rte_eth_promiscuous_enable` is called and its result ignored (`dev/mt_dev.c:1292-1296`), so an untrusted VF stays filtered without a word |
-| one multicast group past the VF's filter budget (about 16 on an untrusted E810 VF, §4.1) | session create, or `mtl_session_update` with `MTL_UPDATE_FLOWS` | `-MTL_ENOSPC`, reason `MCAST_FILTERS` (115) |
+| one multicast group past the VF's filter budget (about 16 on an untrusted E810 VF, §4.1) | session create, or `mtl_session_update` with `MTL_UPDATE_FLOWS` (make-before-break holds both groups' filters for a moment; keep two of the VF's about 16 free) | `-MTL_ENOSPC`, reason `MCAST_FILTERS` (115) |
 
 MTL never sets the VF MAC (`mac` in `mtl_port_spec` is output only); the PF and the CNI own it.
 
 **Open does not wait** for links, neighbours or time lock (today up to 30 s, 60 s and 180 s, §4.16).
 Health reports the phase (`MTL_PHASE_LINKS`, `_TIME`, `_READY`, and `_SHUTDOWN` once close began). An application that must not send
-before lock waits for `MTL_EVENT_TIME_STATE` LOCKED; units sent before lock carry `MTL_TXR_ESTIMATED`.
+before lock waits for `MTL_EVENT_TIME_STATE` LOCKED; under AUTO it comes when ptp4l and phc2sys set the
+kernel TAI offset k with k = U_utc, the UTC offset `SYSTEM_TAI` used (`time.utc_offset_s`), even long after open (MS3, [timing.md §2.7](timing.md#27-auto-after-open)). Units sent
+before lock carry `MTL_TXR_ESTIMATED`.
 
 **Ports from Kubernetes.** `env:PCIDEVICE_INTEL_COM_E810_RED#0` takes the first address the device
 plugin put in that variable. Use **one resource per ST 2022-7 network** (red and blue), so each leg's VF

@@ -27,7 +27,7 @@ behaviour without a test is not promised. Each entry gives, in this order:
 
 | Field | Meaning |
 |---|---|
-| ID | G-01…G-142 (§2), G-PKT-1…7 (§3); an entry with two IDs states both with one text |
+| ID | G-01…G-166 (§2), G-PKT-1…7 (§3); an entry with two IDs states both with one text |
 | Tier | B build, U unit (the core over the null backend and the test clock), UB unit at the engine boundary (the real engine and its packets, through the bindings, without a NIC), I integration on VFs, A acceptance, M measured with a capture (HW timestamps, EBU LIST); where each runs: [implementation-plan.md §8.1](implementation-plan.md#81-tiers-and-evidence) |
 | P or BE | **P**: promised (pass/fail); evidence exists or is funded in the named milestone, and a red P test blocks its milestone. **BE**: best effort until the named evidence exists; it never blocks an exit, and its entry says what evidence would make it P ([implementation-plan.md §8.1](implementation-plan.md#81-tiers-and-evidence)). An entry that names neither states none in its sources |
 | M | the milestone whose exit needs it |
@@ -43,7 +43,7 @@ budgets [§8.4](implementation-plan.md#84-performance-budgets), test isolation
 [§8.1](implementation-plan.md#81-tiers-and-evidence), the oracle
 [timing.md §16.2](timing.md#162-oracle-and-contract).
 
-## 2. Guarantees G-01…G-142
+## 2. Guarantees G-01…G-166
 
 - **G-01** U, UB, I; MS1. Every accepted TX submission has exactly one terminal outcome: a result
   when results are on, else a counter. Test: count outcomes against accepted submits over
@@ -53,12 +53,15 @@ budgets [§8.4](implementation-plan.md#84-performance-budgets), test isolation
   on `-MTL_EBADF` and `-MTL_ESTALE`, which change no state (D-88). Test: submit with each
   invalid-argument class: no result, and the slot is free again.
 - **G-03** I; MS1. An accepted unit progresses without another call, the last one before idle
-  included. Test: submit one unit, call nothing else, observe its result (I1's
-  `tx_idle_last_result` on a VF). It pins a defect of today, chain-mode results that never arrive
-  while the application is idle; the core needs the idle descriptor cleanup of MS1 task E1b.
+  included, under every underrun policy but REPEAT; under REPEAT the newest unit of each parity
+  reports when its pin is released (D-212: a newer whole unit of its parity, or its age), a discard or a DRAIN (G-164). Test: submit one unit,
+  call nothing else, observe its result (I1's `tx_idle_last_result` on a VF). It pins a defect of
+  today, chain-mode results that never arrive while the application is idle; the core needs the idle
+  descriptor cleanup of MS1 task E1b, on shared queues too (D-213).
 - **G-04** U; MS1. Results are never lost: unread results make acquire return `-MTL_EAGAIN` with
   `blocked_on = MTL_BLOCKED_RESULTS`. Test: `MTL_SESSION_RESULTS` and no reap: acquire ends with
-  `-MTL_EAGAIN` and `MTL_BLOCKED_RESULTS`; then every result is readable.
+  `-MTL_EAGAIN` and `MTL_BLOCKED_RESULTS`; then every result is readable; one outstanding entry
+  beyond D-208's bound blocks.
 - **G-05** U, UB; MS1. A slot is not re-acquirable before its outcome is recorded. Test: race
   acquire against completion in a stress loop, through the video binding over the real engine.
   Today st20p stores FREE before it calls back, so the race is real.
@@ -67,17 +70,18 @@ budgets [§8.4](implementation-plan.md#84-performance-budgets), test isolation
   packet.
 - **G-07** U; MS1. Foreign or stale handles fail with `-MTL_EBADF`, returned leases with
   `-MTL_ESTALE`, without changing state. A lease of another session fails deterministically, on the
-  session index in the lease. Test: fuzz handle values; double submit and release; release a lease
-  on another session.
+  session index in the lease. `mtl_release` with a null session reaches the lease's own (D-226); a
+  stale lease after its session's entry is reused is `-MTL_ESTALE`, the new slot untouched. Test:
+  fuzz handle values; double submit and release; release a lease on another session;
+  `CoreHandle.lease_base_after_reuse`.
 - **G-08** UB; MS1. Transmit order is submit order. Test: acquire A and B, submit B then A before
   pick-up: B is sent first. Today st20p numbers frames at `get_frame`
   (`st20_pipeline_tx.c:806-808`) and the builder picks the lowest number
   (`tx_st20p_newest_available`, `:62-77`, SF-44), so it would send A first; the core assigns `seq`
   at submit.
-- **G-09** UB; MS1. Results are in submission order, each with its `seq`. A unit that completes
-  before an older in-flight unit frees its slot at completion; only its result waits for its
-  predecessors. Test: completions forced from another thread and out of order: results still in
-  `seq` order.
+- **G-09** UB; MS1. Results are in submission order, each with its `seq`. A unit done out of order
+  holds its slot (W) until the older units are done, and its result waits too (D-209). Test:
+  completions forced from another thread and out of order: results still in `seq` order.
 - **G-10** UB, I; P; MS2b for video, the other essences MS4. A region outlives every slot,
   conversion, packet and DMA reference. Test: `mtl_mem_close` at every stage of a unit's life.
 - **G-11** U; P; MS2b for video, the other essences MS4. `mtl_mem_close` on a referenced region
@@ -102,18 +106,18 @@ budgets [§8.4](implementation-plan.md#84-performance-budgets), test isolation
   session's path (both 2022-7 ports, the DMA engine), or fails. Test: a 2022-7 session on two ports
   plus a DMA engine under an IOMMU fault monitor (DMAR or AMD-Vi lines in `dmesg`); P once the
   I-tier job scans for IOMMU faults.
-- **G-17, G-18** U; P; the ST20 fields MS1–MS3, the rest MS6. Every time field names its clock,
-  unit and validity (zero is valid when flagged); requested, resolved, scheduled, enqueued and
-  observed times are separate fields. Test: a schema test over every output struct: each time field
-  has a validity flag and a clock.
+- **G-17, G-18** U; P; the ST20 fields MS1–MS3, the rest MS6. Every time field names its clock
+  and unit; no value is `MTL_TIME_NONE`, and zero is a real time; requested, resolved, scheduled,
+  enqueued and observed times are separate fields. Test: a schema test over every output struct:
+  each int64 time field states its `MTL_TIME_NONE` case and its clock; `check.sh` lint 12.
 - **G-19** U, UB; P; MS3. RTP = `floor(M × R) mod 2^32`, exact, for every essence (second fields
   by [timing.md §4.2](timing.md#42-derived-rtp-exact-and-its-exceptions)), with no cumulative drift
   and across the 2^32 wrap. Test: an exact 128-bit rational oracle
   ([timing.md §16.2](timing.md#162-oracle-and-contract)) at every rate including 1001 families;
   10^7 units at today's TAI, across the 2^32 wrap (13.26 h at 90 kHz, 27.05 h at 44.1 kHz),
   44.1 kHz with 1001 rates, ST41 at 90 kHz with rational unit rates, TAI past 2^61 ns. Negative
-  indices (audio priming under `MTL_WHEN_ORIGIN`) are checked in the oracle at every rate, and in
-  the engine as `FLUSHED/BEFORE_START`. The six split formulas of
+  indices (audio priming under `MTL_WHEN_ORIGIN`, MS6) are checked in the oracle at every rate,
+  and refused at submit (`FIELD_REQUIRED`). The six split formulas of
   [timing.md §3.5](timing.md#35-exact-arithmetic) at the domain edges (index rate 2^29/s,
   num × den = 2^33, clock 2^29 Hz, t = 2^63 − 1 ns) with every product checked for overflow.
 - **G-20** UB; P; MS1; the ST40 half MS4a. Default video media time is the frame epoch; ST20 and
@@ -267,17 +271,22 @@ budgets [§8.4](implementation-plan.md#84-performance-budgets), test isolation
 - **G-59** UB, M; P at UB, BE at M; MS1, the M tier MS6. No packet before its media time;
   `NOT_BEFORE t` never before t. Test: a wide sender with maximum pre-fill; UB checks the scheduled
   times, M the wire.
-- **G-60** U; P; MS2b for video, the other essences MS4. `mtl_tx_acquire_slot` leases exactly the
-  named slot; `MTL_SESSION_RX_BY_INDEX` places unit k in slot k mod `pool_count`. Test: named
+- **G-60** U; P; MS2b for video; the other essences MS4, their `MTL_SESSION_RX_BY_INDEX` MS6.
+  `mtl_tx_acquire_slot` leases exactly the named slot; `MTL_SESSION_RX_BY_INDEX` places unit k in
+  slot k mod `pool_count` (for the other essences with their `media_index`, MS6). Test: named
   acquires over every slot; an RX index sweep.
-- **G-61** UB; P; MS4a (ST40 MS4a2, ST41 MS4a1). ST40 keep-alive per
+- **G-61** UB; P; MS4a (ST40 MS4a2, ST41 MS4a1). `MTL_UNDERRUN_KEEPALIVE`: ST40 keep-alive per
   frame or field without ANC; ST41 at least every 500 ms. Test: no ANC submitted for 10 frames gives
   one empty packet per frame, field or PsF segment, each inside its window (a PsF unit with ANC only
   in one segment also gets an empty packet of its RTP in the other); ST41 at least every 500 ms.
 - **G-62** U, UB; P; MS6. A step keeps every media time and posts `TIME_STEP`; no session drops
-  forever after a forward step. Test: `MTL_FAULT_TIME_STEP` with `step_ns` = +37 s (today's UTC →
-  PHC switch), or `MTL_FAULT_CLOCK_ADVANCE`; the published time base never steps except at a
-  declared `MTL_EVENT_TIME_STEP`.
+  forever after a forward step when its producer re-syncs. Test: `MTL_FAULT_TIME_STEP` with
+  `step_ns` = +37 s (today's UTC → PHC switch), or `MTL_FAULT_CLOCK_ADVANCE`; the published time
+  base never steps except at a declared `MTL_EVENT_TIME_STEP`. Per pacing class (TSC, RL, PTP on
+  UB): a forward Δ = 2.5 P drops at most 4 queued units and a re-syncing producer none; a backward
+  Δ = 3 P with a live TAI producer gives about 3 `BEHIND` and loses no queued unit; a backward 1.5 s
+  with a 1 s horizon gives no `BEYOND_HORIZON`; an `MTL_AT_TAI` update pending across the step
+  fails, an immediate one applies.
 - **G-63** P; created timelines (`MTL_LATER`), not in v1. Test: sessions created slowly (test clock
   advanced between creates), then started: index 0 of a lazily anchored timeline is never late
   because of creation time.
@@ -303,14 +312,15 @@ budgets [§8.4](implementation-plan.md#84-performance-budgets), test isolation
 - **G-68** U; P; MS6. The T0 formula: `T0·R` integer for every rate kept in G, whole frames for
   video/ANC/grid fastmeta, unit k at ≥ `now + lead + preroll`. Test: the method of G-22, which
   covers both. Interlaced members contribute TFRAME, not TFIELD, to the grid, so T0 is a first-field
-  instant (at 59.94 with k = 3, 7 and 13, `T0·90000` is an integer); `MTL_AT_INDEX` on one session
-  gets the same checks.
+  instant (at 59.94 with k = 3, 7 and 13, `T0·90000` is an integer); for one session,
+  `MTL_AT_INDEX k` starts at k.
 - **G-70** U; MS1. Each `MTL_E*` code has one meaning; RX dequeue with nothing ready returns
   `-MTL_EAGAIN` in CREATED, ARMED, RUNNING and STOPPED, never `-MTL_ESHUTDOWN`. Test: each code from
   its triggering call and state, including dequeue on a session never started; the P1
   forgotten-start case. `-MTL_EAGAIN` sets only code and reason in `mtl_last_error`; `detail` stays
   empty for DP failures.
-- **G-71** U; MS1. The null handle fails with `-MTL_EBADF`, except every close, which returns 0.
+- **G-71** U; MS1. The null handle fails with `-MTL_EBADF`, except every close, which returns 0,
+  and `mtl_release`, whose null session is the lease's.
   Test: the null handle to every function, table-driven over the headers.
 - **G-72** U; MS1. `mtl_reap` writes `min(rec_size, native)` per record at pitch `rec_size`; the
   typed wrappers pass `sizeof(*r)`. Nothing is written beyond `max × rec_size`; the same for event
@@ -327,22 +337,25 @@ budgets [§8.4](implementation-plan.md#84-performance-budgets), test isolation
   examples to object code at their `Needs:` level; the availability probes (OI-64); candidate flags
   `-Wconversion -Wsign-conversion -Wcast-qual` (`-Wcast-qual` catches `mtl_pkt_tx_table()`
   returning a writable table).
-- **G-75** U, I; P; MS5. Flow updates at a media index or instant switch on every leg at that unit.
-  Test: both legs move to a new multicast pair at one TAI instant; a capture of both legs shows no
-  unit mixing old and new destinations. TX `MTL_AT_INDEX k`: unit k is the first on the new flows on
-  every leg; RX `MTL_AT_TAI t`: the new rule takes units with media time ≥ t, the old rule goes
-  after. An unresolved neighbour does not fail the update (the leg waits in
-  `MTL_FLOW_WAITING_NEIGHBOUR`); a capacity shortage is `-MTL_ENOSPC` and changes nothing; a port
-  change is `-MTL_EBUSY`, `PORT_CHANGE_NEEDS_STOP`, until make-before-break (Phase 7).
-- **G-76** U, UB; P; video MS3; every rate MS6. RX reports `media_index` as the exact inverse of the
-  TX rule on the epoch timeline; the RX members of a start array arm together. Test: a sender on the
-  grid at every video rate (1001 families, fields) across the 2^32 wrap, and a sender with a phase
-  below one period, which maps to the slot it falls in; checked against the oracle. Also: every
-  member of an RX start array started at t delivers its first unit with media ≥ t; start at
-  `MTL_AT_TAI t` with packets flowing before t, stop and start without an IGMP leave, the
-  latest-only recipe (`pool_count` 2, `MTL_SESSION_RX_LATEST`), video, audio and ANC aligned with
-  `mtl_rx_align`. At MS6 the inverse is checked at every rate (1001 families, fields, floor-aligned
-  44.1 kHz).
+- **G-75** U, I; P; MS5 (the NOW case MS3). Flow updates at a media index or instant switch on every
+  leg at that unit (MS5); the NOW case (MS3) switches every changed leg on the first unit built
+  after the call. Test: both legs move to a new multicast pair at one TAI instant; a capture of both
+  legs shows no unit mixing old and new destinations. TX `MTL_AT_INDEX k`: unit k is the first on
+  the new flows on every leg; RX `MTL_AT_TAI t`: the new rule takes units with media time ≥ t, the
+  old rule goes after. An unresolved neighbour does not fail the update (the leg waits in
+  `MTL_FLOW_WAITING_NEIGHBOUR`; MS5; MS3–MS4: `-MTL_ETIMEDOUT`, `WAITING_NEIGHBOUR`, after
+  `port.arp_timeout_s`, nothing changed); a capacity shortage is `-MTL_ENOSPC` and changes nothing;
+  a port change is `-MTL_EBUSY`, `PORT_CHANGE_NEEDS_STOP`, until make-before-break (Phase 7).
+- **G-76** U, UB; P; video MS2b (with `MTL_SESSION_RX_BY_INDEX`); every rate MS6. RX reports
+  `media_index` as the exact inverse of the TX rule on the epoch timeline (video MS2b); the RX
+  members of a start array arm together (MS6). Test (MS2b): a sender on the grid at every video rate
+  (1001 families, fields) across the 2^32 wrap, and a sender with a phase below one period, which
+  maps to the slot it falls in; checked against the oracle. Also: start at `MTL_AT_TAI t` with
+  packets flowing before t, stop and start without an IGMP leave, the latest-only recipe
+  (`pool_count` 2, `MTL_SESSION_RX_LATEST`) (MS3); every member of an RX start array started at t
+  delivers its first unit with media ≥ t, and video, audio and ANC aligned with `mtl_rx_align`
+  (MS6). At MS6 the inverse is checked at every rate (1001 families, fields, floor-aligned 44.1
+  kHz).
 - **G-77** U; MS1 (exclusive open); MS2a (SHARED). Closing a shared instance's reference that is not
   the last only drops it (returns 0); the last one shuts down; a CLOSING session stays readable
   through `mtl_session_get_status`. It also covers the framework teardown order (release the
@@ -391,8 +404,9 @@ budgets [§8.4](implementation-plan.md#84-performance-budgets), test isolation
   `pkts_copied_partial`; slots of one pool with different strides are `-MTL_EINVAL`,
   `STRIDE_MISMATCH`. Test: split-forward quarter frames and 2 × row-bytes field buffers with
   `MTL_SESSION_REQUIRE_DIRECT`: no copy where the engine needs none.
-- **G-85** U, UB; P; MS3. TAI snapping NEAREST: collisions are `SNAP_COLLISION`, skips follow the
-  underrun policy, never a permanent drop. Test: a 60.0 Hz source into a 59.94 session for a
+- **G-85** U, UB; P; MS3 (the hysteresis MS1). TAI snapping NEAREST: collisions are
+  `SNAP_COLLISION`, skips follow the underrun policy, never a permanent drop. Test: the hysteresis
+  rows of `Admit.table` (MS1); a 60.0 Hz source into a 59.94 session for a
   simulated 24 h on the test clock, and any source within ±1 %: the fraction of units sent is
   ≥ 1 − the rate error and every sent RTP is on the grid.
 - **G-86** UB; P; MS6. Audio forward gaps keep the packet grid and are padded with silence
@@ -471,15 +485,18 @@ budgets [§8.4](implementation-plan.md#84-performance-budgets), test isolation
   ANC keep-alive still lies in the window.
 - **G-105** U, UB; P; MS6. Two processes on the epoch with a grid-aligned `t_start` emit the RTP of
   one process. Test: both set-ups (two processes on the epoch with `mtl_epoch_index_at`, one process
-  with a start array) on the null backend; packet headers diffed.
+  with a start array) on the null backend; packet headers diffed; ⌊n·G⌋ for n ≡ 1, 2 (mod 3); an
+  off-grid activation through `mtl_grid_offset`; a 44.1 kHz process against an array (MS6); an RX
+  unit of a sender with RTP phase +1 and +59 ticks: `u.media_index` is used, never
+  `mtl_epoch_index_at(u.media_tai_ns)`.
 - **G-106** UB; P; MS3. A legacy session with E2's opt-in flag puts `floor(M × R)` of the
   timestamps it is given on the wire, equal to the oracle; without the flag its wire is unchanged
   (G-99).
 - **G-107** U, UB, I; MS1, MS3. `mtl_instance_close(mt, timeout_ns)` returns within `timeout_ns` and
   only 0, `MTL_RETIRING` or `-MTL_EIO` (`QUEUE_QUARANTINED`); `mtl_session_close` 0 or
-  `MTL_RETIRING`; only a DRAIN stop past its deadline returns `-MTL_ETIMEDOUT`. Test: close with
-  RUNNING sessions and leases out at timeouts 0, 10 ms, 1 s (`MTL_FAULT_TX_QUEUE_HANG` from MS3);
-  elapsed time, return set.
+  `MTL_RETIRING`; only a DRAIN stop past its deadline returns `-MTL_ETIMEDOUT`, besides an update's
+  neighbour wait (`WAITING_NEIGHBOUR`, MS3–MS4, G-75). Test: close with RUNNING sessions and leases
+  out at timeouts 0, 10 ms, 1 s (`MTL_FAULT_TX_QUEUE_HANG` from MS3); elapsed time, return set.
 - **G-108** U, I; MS3. Network first: TX stops at a unit boundary and RX leaves its groups before any
   port stops; `mtl_shutdown_report.groups_left` counts the leaves. Test: `mtl_instance_shutdown` with
   a report on `null:1`, the step order from the trace; at I a capture shows the IGMP leave before the
@@ -614,12 +631,14 @@ budgets [§8.4](implementation-plan.md#84-performance-budgets), test isolation
   `mtl_session_get_status` reads RETIRED, ASan clean. Test: `UnifiedRx.ReleaseAfterCloseRetires`;
   `UnifiedRx.ReleaseAfterInstanceClose`, `CoreClose.orphan_freed_at_next_cp`; ex20, the element
   freed before release (ASan).
-- **G-132** U; MS1. The latency fields equal the formulas exactly and are never negative; recomputed
-  after an S option; `MTL_INFO_LATENCY_INFEASIBLE` if and only if max < min, and `ceil(min / U) + 1`
-  clears it; `convert_ns` > 0 with conversion, > 0 on TX (the copy calibration), 0 on RX without
-  conversion; query matches get_info except `convert_ns`. Test: `UnifiedInfo.LatencyFormulas` (one
-  and two legs, flush offset, link offset set and absent, pools 2–8, `RX_LATEST`, TX RL and TSC,
-  59.94p and 119.88p); `UnifiedInfo.InfeasibleRemedy`.
+- **G-132** U; MS1 (the window cases MS2a). The latency fields equal the formulas exactly and are
+  never negative; recomputed after an S option; `MTL_INFO_LATENCY_INFEASIBLE` if and only if max <
+  min, and `ceil(min / U) + 1` clears it; `convert_ns` > 0 with conversion, > 0 on TX (the copy
+  calibration), 0 on RX without conversion; query matches get_info, C included (the dry run's C is
+  the calibration). Test: `UnifiedInfo.LatencyFormulas` (one and two legs, flush offset, link offset
+  set and absent, pools 2–8, `RX_LATEST`, TX RL and TSC, 59.94p and 119.88p, a converting session,
+  TX, a start resets C); `UnifiedInfo.InfeasibleRemedy`; (MS2a) one slow unit among fast ones leaves
+  C unchanged, and C rises after two windows above it, rounded up to 250 µs.
 - **G-133** U, UB; MS2a. The RX max bound: a consumer that releases each unit just before media time
   + max misses none, with one leg, two legs and skew; one that holds a unit one period longer misses
   units; with `TIMEBASE_SUSPECT` the test only checks that the status is set. Test:
@@ -689,6 +708,113 @@ budgets [§8.4](implementation-plan.md#84-performance-budgets), test isolation
   robin; a loop never sleeps while an entry is marked (D-142). Test: WH16 `WaitFlush.count_bound`
   (UnitTest, `mt_sch_harness.c`); the flush model; S1b's ST2 and ST3; the model job ("The wait
   evidence" of [implementation-plan.md §8.2](implementation-plan.md#82-guarantees-of-ms1ms3)).
+- **G-143** U, UB; MS1 (the REPEAT case MS4a1). A unit that completes before an older one holds its
+  slot (W) until the older units are done; a thread waiting in `mtl_tx_acquire(MTL_FOREVER)` is
+  woken by the older unit's completion and gets a slot; under interlaced REPEAT, unit k + 1
+  completing while k is pinned is stored W and `mtl_tx_acquire_slot(k + 1)` is `-MTL_EAGAIN`
+  (D-209). Test: `Results.out_of_order_holds_slot`; the `Admit` and UB case `w_behind_pin` (MS4a1
+  for the REPEAT case).
+- **G-144** U; MS1. With each unit's first submit after a reap of every ready result, no acquire on
+  any thread waits on RESULTS, for P = `pool_count` = 1…8; one outstanding entry beyond D-208's
+  bound blocks. Test: `Results.reap_before_submit_never_blocks`; G-04 adjusted.
+- **G-145** A; MS3 (FFmpeg, SKIP), MS4a1 (REPEAT), MS6 (GStreamer). A framework sink after EOS, then
+  a seek, plays on in under 2 frame times with no `-MTL_EAGAIN` and never leaves RUNNING (D-210).
+  Test: the `gst-play`-style loop; FFmpeg `write_trailer`.
+- **G-146** A; MS6. `mtlsrc port=VF0 ! … ! mtlsink port=VF1` and the reverse order both open; two
+  elements naming one port with two IPs fail at NULL → READY with the detail of
+  [contract.md §2.3](contract.md#23-shared-instance) (D-211). Test: the plugin registry tests.
+- **G-147** UB; MS1. On a shared TX queue: a video session's last frame completes without a later
+  unit; a discard with a full queue completes; a W slot behind the last sent frame becomes
+  acquirable within the cleanup bound; one visit frees at most `tx_rs_thresh` descriptors; G-03
+  passes on a TSQ (D-213). Test: E1b's TSQ UB, which replaces the scope of
+  `idle_cleanup_wait_frame_only`.
+- **G-148** U; MS1 (H1b part 1); the `mtl_epoch_index_at` clause MS3 (`Sync.epoch_index_at`).
+  `mtl_time_convert`, `mtl_rx_align`, `mtl_grid_offset` and `mtl_epoch_index_at` refuse a negative
+  input; `mtl_tx_write` with a TAI NONE template in INDEX writes every byte; every option key's
+  `min` > INT64_MIN / 2; `MTL_TIME_NONE` == INT64_MIN (D-215, D-216). Test: the helper U tests with
+  `-fsanitize=undefined -fno-sanitize-recover`.
+- **G-149** U; MS1 (C1b, B2). The TX result status table of
+  [contract.md §6.4](contract.md#64-the-records) on `null:1` (ON_TIME, DROPPED for `TOO_LATE`,
+  `SNAP_COLLISION` and `BEHIND`, FLUSHED before start and after pick-up, FAILED by
+  `MTL_FAULT_FORCE_ERROR`); before MS3 ON_TIME's `margin_ns` and `sent_tai_ns` read NONE; an MS1 RX
+  unit's `media_index` NONE; a one-leg unit's `arrival_*[1]` NONE (D-215). Test:
+  `Results.status_table`, `UnifiedRx.none_fields`.
+- **G-150** UB; MS1 (A2a, its second commit; `NOT_IMPLEMENTED` is checked first, so the `MTL_AT_TAI`
+  case and the INDEX template (`MTL_MEDIA_INDEX`) are MS3 and the `MTL_WHEN_ORIGIN` case MS6); the launch with `MTL_SUBMIT_EXACT` (B3, else
+  MS2a); `set_reference` MS2a. An INDEX template with NONE, a TAI unit at NONE + 3 ms, `MTL_AT_TAI`
+  at −1, a negative `MTL_WHEN_ORIGIN` index, a launch at NONE and `set_reference` with a negative
+  user pair are `-MTL_EINVAL`, `FIELD_REQUIRED`, the field named, no result, the slot back in the
+  pool; `min_tx_delay_ns` = −5 ms and `preroll_ns` < 0 are `INVALID_ARGUMENT` (D-216, D-88). Test:
+  A2a's input-rule tests.
+- **G-151** U, UB; MS1. With d = `min_tx_delay_ns` > 0 and `min_submit_lead_ns` ≤ −d at both
+  parities, a unit whose submit is called by M + d, M its media time, is never `TOO_LATE`, and the launch delay L
+  is the fewest steps that give it; with d = 0, L = 0; with d = n × `mtl_frame_ns` and no
+  conversion, L = n on every class; on RL with d = TFRAME a converting session with submit work C =
+  0.5 ms gets L = 2 and no `TOO_LATE` (D-218). Test: `Admit.ready_delay` (C2b),
+  `ready_delay_video_grid` (B1).
+- **G-152** A; MS6. One live source into an MTL st20p and an st30p sink: the pipeline LATENCY
+  includes the sink minimum `M_sink` (D-221); the video RTP of frame k and the audio RTP at the same
+  instant match [timing.md §10.1](timing.md#101-mechanism); both hold on GstSystemClock and under
+  GstMtlClock; PAUSED → PLAYING keeps the frame grid (D-221). Test: the GStreamer A test.
+- **G-153** U; MS1 (A2c). For every kind and value below 256: each name parses back to that (value,
+  kind); no `_NONSTD` value has a `gst` or `av_pix_fmt` name; `parse("v210")` is (`MTL_APP_V210`,
+  APP), `parse("UYVP")` (`MTL_YUV422_10`, TRANSPORT); `caps_formats` leaves the transport out unless
+  asked (D-222). Test: `Format.names_one_value`.
+- **G-154** U; MS2a. `MTL_CONVERT_CHECK` returns 0 exactly when a session create with that
+  `app_format` succeeds on `null:1` (D-222). Test: `Convert.check_matches_sessions`.
+- **G-155** U, UB; MS1 (C1b, B2). `MTL_UNITF_COPY_ADVISED` is set if and only if `lent` ≥ the copy
+  budget B (D-227), on both sides of every boundary; `lent` is exact under concurrent dequeuers and
+  foreign-thread releases, a TX completer included; B follows the submit work C (D-225), the legs
+  and the rate and is never older than C; never on rows, packet units, `RX_BY_INDEX` or provide
+  (D-227). Test: `Core.lent_exact_concurrent`, the B2 UB.
+- **G-156** U; MS2a. A source that follows the flag loses no unit while its latency is within
+  `latency_max_ns`; one that wraps every unit loses units with a tee (D-227, D-228). Test:
+  `UnifiedRx.LendModel`, `Lend.model`.
+- **G-157** U; MS3. AUTO moves from SYSTEM_TAI to CLOCK_TAI without a step: media times, indices,
+  RTP and launches equal a run opened on CLOCK_TAI; ESTIMATED before, clear after; one `TIME_STATE`,
+  no `TIME_STEP`; a stale `U_utc` = 36 posts value[1] = +1 s and stays (D-229). Test:
+  `TimeAuto.upgrade_no_step`.
+- **G-158** U; MS3. Holdover and loss change nothing sent: results identical except flags;
+  `TIME_UNLOCKED` only in ACQUIRING and LOST (D-230). Test: `Time.holdover_sends_unchanged`.
+- **G-159** U; MS3. The update state rows of [contract.md §4.7](contract.md#47-update): NOW →
+  PENDING, then APPLIED with seq and event; an instant, changed LEGS, kernel socket, RX AF_XDP and
+  `rx.threads` = 2 → `-MTL_ENOTSUP` with the field; a port change `-MTL_EBUSY`; `-MTL_EBUSY` while
+  PENDING; all legs unchanged → APPLIED with seq + 1; a failing op changes nothing; a `TIME_STEP`
+  during PENDING still APPLIES; a stalled rows unit keeps PENDING past the ack timeout without
+  `CMD_TIMEOUT`; in ARMED planned = applied = T0 (D-236). Test: the core with `TestBinding`.
+- **G-160** U; MS3. The TX swap point: frame k old on every changed leg, k + 1 new; an unchanged
+  leg's header bytes identical; `WAIT_FRAME` swaps at once; the RTP sequence continuous (D-236).
+  Test: `st20_tx_harness.h`.
+- **G-161** I; MS3. A running activation on VFs (1080p59.94, two legs): TX no frame on both groups
+  or split; RX with one leg changed and the other `{}`: no INCOMPLETE unit, no duplicate index, no
+  DISCONTINUITY, the unchanged leg's rule count stays 1; both legs changed: no old-flow unit cut
+  (the switch comes at the first tick after K, the newest unit in assembly at the call, and every
+  older unit are published), a first new-flow unit without its first packets dropped whole and
+  counted in `rx.pkts_rejected{cause=flow_switch}`, the first delivered new-flow unit DISCONTINUITY
+  (RELOCKED when its index is not after the last delivered), APPLIED at the switch; an SSM source change and a re-patch to
+  the same group: no second rule, no leave (D-236). Test: `KahawaiTest` beside
+  `st20_update_source.cpp`.
+- **G-162** U; MS5. The delay at a boundary: +1 unit at index k leaves the slot between to the
+  underrun policy; −1 is `BEHIND`; no late unit changes `info.launch_delay` (D-237). Test:
+  `Admit.table`.
+- **G-163** I; MS3 (SKIP), MS4a1 (REPEAT). The TX hand-over (ex18): no wire slot holds packets of
+  both sessions, no empty slot, a's last unit before T0 and b's first at T0; under REPEAT after
+  T-REP (D-238). Test: ex18 at MS3; VFs.
+- **G-164** U, UB, I; MS4a1. Under REPEAT, while RUNNING, every index from the first unit on carries
+  a unit, a repeat of its parity's pin picked by D(E) + `sched_ns` (D(E) the pick-up deadline of
+  index E), or nothing when that parity has no pin; a unit submitted before its deadline is never
+  displaced; a late unit is DROPPED and its index repeated (no pin: nothing); a `TOO_LATE` or `SNAP_COLLISION` drop
+  takes its parity's pin; a `BEHIND` drop, or a unit cut short (`tx.rows_late` TRUNCATE or PAD),
+  releases its parity's pin and takes none; for one index the old pin repeats first and a later unit
+  for it is `TOO_LATE`; a busy or late repeat leaves the index empty and counted; DRAIN repeats
+  nothing after the last queued unit (D-212, D-239). Test: `null:1` with the test clock; the REPEAT rows of `Admit.table`.
+- **G-165** U, UB; MS4a1. A slot is never written while a repeat may read it; the held unit's result
+  is its own first send; a pin released twice (builder and discard) leaves the pin bit clear once
+  and the slot published once, after its last repeat send; `busy` is read with acquire before a
+  reuse (D-212, D-240). Test: `bind_video_tx.repeat_inflight_frame`, `Core.pin_double_release`.
+- **G-166** U; MS4a1. A TX REPEAT session over an RX pool below n + 1 + `defer_step`, n the owner's
+  units in reception at once, fails at create (`POOL_TOO_SMALL`) (D-241). Test: `null:1`,
+  interlaced, owner pool 3, one leg.
 
 ## 3. Packet-unit guarantees G-PKT-1…7
 

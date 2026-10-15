@@ -98,9 +98,13 @@ struct mtl_plugin_device {
   uint32_t pair_count;
   const struct mtl_plugin_format_pair* pairs;
   void* dev_priv;
+  /* *latency_ns (the host sets 0): this session's worst-case time from get_work
+     returning a job to its put_work. MTL adds it to a TX session's pick-up lead
+     (timing.md §6.1); left 0, the host times one unit at create instead. A device shared
+     by sessions declares its latency under full load; the timed unit measures it idle. */
   int (*create_session)(void* dev_priv, const struct mtl_plugin_session_req* req,
                         const struct mtl_plugin_host* host, void* host_session,
-                        void** session_priv);
+                        void** session_priv, int64_t* latency_ns);
   int (*free_session)(void* dev_priv, void* session_priv);
   uint64_t reserved[4];
 };

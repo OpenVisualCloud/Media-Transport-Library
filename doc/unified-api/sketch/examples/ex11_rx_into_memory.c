@@ -38,7 +38,7 @@ int mxl_bridge(mtl_instance_h mt) {
   if (ret >= 0) ret = mtl_session_start(&s, 1, NULL, NULL);
 
   while (ret >= 0 && (ret = mtl_rx_dequeue(s, &u, MTL_FOREVER)) == 0) {
-    if (u.flags & MTL_UNITF_INDEX_VALID) /* u.slot == media_index mod GRAINS */
+    if (u.media_index != MTL_TIME_NONE) /* u.slot == media_index mod GRAINS */
       mxl_commit_grain(u.slot, u.media_index, u.status == MTL_RX_COMPLETE);
     ret = mtl_rx_release(s, u.lease);
   }
@@ -53,7 +53,7 @@ int mxl_bridge(mtl_instance_h mt) {
 
 /* A recorder: s is created with MTL_SESSION_POOL_ATTACHED, pool_count AHEAD and no slot.
    Each unit lands in a destination the recorder handed over, and its address says which.
-   Lost packets are never zero-filled here: the unit is MTL_RX_INCOMPLETE. */
+   Lost packets are never filled here: the unit is MTL_RX_INCOMPLETE. */
 int record(mtl_instance_h mt, mtl_session_h s, uint64_t frame_bytes) {
   struct mtl_mem_desc d;
   struct mtl_attach dest;

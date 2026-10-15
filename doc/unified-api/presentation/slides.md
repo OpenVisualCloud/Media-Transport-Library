@@ -21,10 +21,10 @@ its slide in the same commit.
 | The core and its bindings | core.md §1–§3; migration.md §7.2 |
 | One model for everything | contract.md §4, §5, §6 |
 | A lean include file | examples.md §1; sketch/README.md §3; D-104, D-106 |
-| Every unit gets exactly one result | contract.md §6; D-14, D-207 |
+| Every unit gets exactly one result | contract.md §6; D-14, D-208, D-209 |
 | Nothing on the pinned cores | engine.md §1; core.md §6.2; D-68, D-142, D-158, D-165, D-170 |
 | Waiting: a timeout, or a queue | contract.md §7; core.md §6.6; D-159, D-160, D-169, D-170, D-206 |
-| Two times, not one | timing.md §4, §5, §6.2; D-39, D-130 |
+| Two times, not one | timing.md §4, §5, §6.2; D-39, D-218 |
 | A/V/ANC in sync by construction | timing.md §7.1, §10 |
 | RTP passthrough, coherently | contract.md §13 |
 | Memory: zero-copy by policy | contract.md §9 |
@@ -32,7 +32,7 @@ its slide in the same commit.
 | Only the high-level API is public | migration.md §7.2, §8.3 |
 | Built for frameworks and operators | migration.md §11, §12; deployment.md §4 |
 | Running in a Kubernetes pod | deployment.md §4; contract.md §2.4, §2.7 |
-| NMOS and IPMX | nmos-ipmx.md §8, §11; D-93, D-193 |
+| NMOS and IPMX | nmos-ipmx.md §8, §11; D-93, D-193, D-236, D-237 |
 | Engines first | engine.md §6; migration.md §6.3 |
 | Delivery | implementation-plan.md §1.2, §10 |
 | MS1: ST 2110-20 frames in a month | implementation-plan.md §5.2, §5.6, §5.8; D-107 |
@@ -177,8 +177,8 @@ Rare knobs are **named options**: absent unless set, listable by name.
 ## Every unit gets exactly one result
 
 - `ON_TIME`, `DROPPED` (with a reason), `FLUSHED`, `FAILED`, plus a signed margin
-- results **cannot be lost**: the completer writes them into the unit's submission descriptor, and
-  nothing the tasklet writes can overflow
+- results **cannot be lost**: each is written in place into its unit's submission entry, so
+  nothing overflows
 - published in **submission order**
 - **off by default** for MTL's buffers, **always on** for your memory
 - `blocked_on` says why acquire waits: buffers, unread results, or leases you leaked
@@ -258,7 +258,8 @@ dense consumer polls a `MTL_QUEUE_POLLED` queue on its own timer (D-170). ex03 i
 - **Media time M**: what the unit represents → `RTP = floor(M × rate)`, exact, every essence
 - **Launch time**: when it leaves → from ST 2110-21 and `min_tx_delay_ns`
   - 0 (playback): content exists before its time, sent at the index of M
-  - one frame + the pick-up lead (capture): exists only after its sampling instant, the next index
+  - one unit period (capture; a field when interlaced): MTL adds its own lead; the unit goes at the
+    next index
   - rows units (gateway): SDI → IP, same frame, line by line
 - late units are dropped (INDEX, TAI) or moved to the next index (AUTO): nothing ever slides
 
@@ -306,7 +307,7 @@ flowchart LR
 - strided layouts stay direct: sub-rectangles, woven interlaced frames
 - **one RX frame → N TX sessions**, zero-copy (`u.hold`)
 - MXL rings: frame *k* lands in slot *k mod N*
-- video memory in MS2, the other essences in MS4
+- video memory in MS2 (by index MS2b), the other essences in MS4 (by index MS6)
 
 ---
 
@@ -380,10 +381,12 @@ deployment.md has the rules.
 
 ## NMOS and IPMX: port first, the rest in Phase 7
 
-- **MS3: an activation is stop, `mtl_session_update`, start**: handle, name, SSRC and counters kept
-- **MS5: one IS-05 PATCH = one `mtl_session_update`** while running: flows and legs, all or nothing
+- **MS3: flows change on a running session**, leg by leg, at the next unit boundary, all or
+  nothing: handle, name, SSRC, counters and, unless a port changes, the RTP sequence kept
+- **MS5: the change at an instant**, and the launch delay too
   - the call returns the planned instant (202); `status.update_*` says when it applied (200)
   - the switch is at the index boundary by the clock, unit or not
+- a format change is two sessions handing over (ex18)
 - **MS5: RTCP sender reports on TX**, driven by the `rtcp.*` options, Info Block built by MTL
 - **MS6: `MTL_TIME_SOURCE_FREERUN`**, with the published time base
 - **Phase 7, after MS7** (declared under `MTL_LATER`, the design kept):
@@ -399,8 +402,8 @@ deployment.md has the rules.
 
 <!--
 MTL is the transport, not the Node: the registry, REST and master_enable stay with the application
-or nmos-cpp. Port first (D-98): MS1-MS7 port today's functionality, so an NMOS Node is built on
-MS3 with stop, update and start, and on MS5 without the stop; the extras land in Phase 7. A Phase 7 name leaves MTL_LATER in
+or nmos-cpp. Port first (D-98): MS1-MS7 port today's functionality, so an NMOS Node switches
+without a stop from MS3, and scheduled activations are exact from MS5; the extras land in Phase 7. A Phase 7 name leaves MTL_LATER in
 the milestone that builds it (D-134). IPMX is session.profile = IPMX, which changes zero defaults
 and labels only. Without PTP, MTL_TIME_SOURCE_FREERUN never steps; async sources use
 MTL_MEDIA_SENDER. ex18 is one update per PATCH; nmos-ipmx.md has the rest.
@@ -425,9 +428,9 @@ MTL_MEDIA_SENDER. ex18 is one update per PATCH; nmos-ipmx.md has the rest.
 ```mermaid
 flowchart LR
     MS1["MS1, month 1:<br/>ST20 frames on the core"] --> MS2["MS2: rows, memory,<br/>st20p on the core"]
-    MS2 --> MS3["MS3: timing,<br/>events, health"]
+    MS2 --> MS3["MS3: timing, events,<br/>health, running update"]
     MS3 --> MS4["MS4: every essence"]
-    MS4 --> MS5["MS5: packets, update,<br/>RTCP sender reports"]
+    MS4 --> MS5["MS5: packets, scheduled<br/>update, RTCP sender reports"]
     MS5 --> MS6["MS6: start arrays,<br/>FREERUN, ecosystem ports"]
     MS6 --> MS7["MS7: freeze,<br/>hide legacy"]
     MS7 -.-> P7["Phase 7:<br/>NMOS extras, IPMX"]
@@ -443,9 +446,9 @@ milestone · MS1–MS7 port today's functionality; Phase 7 comes after
 
 | Week | Tasks |
 |---|---|
-| 1 | P0 tooling, S0 baseline, T1 legacy parity tests, H1b headers to `include/mtl/experimental/`, the API shell in libmtl and the run options, E1 engine fixes, C0 the core's header; M0 the wait models' tooling (docs) |
+| 1 | P0 tooling, S0 baseline, T1 legacy parity tests, H1b headers to `include/mtl/experimental/`, the API shell in libmtl and the run options, E1 engine fixes, C0 the core's header; M0 the wait and ring models (docs) |
 | 2 | C1a handles, states, close; C1w the wait protocol; C1b slot table, descriptor ring, results; A1 instance; the gtest and RxTxApp copies |
-| 3 | C2 null binding, test clock and rate rules, B1 video TX binding, B2 video RX binding, A2a session, data and wait calls, A2c info, status and latency fields |
+| 3 | C2a null binding and test clock, C2b rate rules and the launch decision, B1 video TX binding, B2 video RX binding, A2a session, data and wait calls, A2c info, status and latency fields |
 | 4 | I1 `St20p` cases in `UnifiedKahawaiTest`, R1 `UnifiedRxTxApp`, P1 acceptance smoke set, baseline CI entries and the samples `tx_video`, `rx_video`, `from_legacy`; stretch A2b, B3, X written if the gates allow, committed in MS2a |
 
 - one signed-off commit per task, or a short series, each under the commit cap (D-107) with its
@@ -456,7 +459,7 @@ milestone · MS1–MS7 port today's functionality; Phase 7 comes after
   them the samples `tx_video`, `rx_video` and `from_legacy` call every function of the MS1 node,
   the rest listed in ms1-status
 
-<!-- Critical path: P0 → H1b → C1a → C1w → A1 → C2 → B1/B2 → A2a → A2c → R1 and I1 → P1, with C0 → C1a, M0 → C1w → C1b → C2 and P0 → S0 → E1 → B1/B2 beside it. Four review units a week (C0, M0 and the two copies not counted). Gates on days 5, 10, 15 and 17 cut stretch work first. implementation-plan.md §5. -->
+<!-- Critical path: P0 → H1b → C1a → C1w → A1 → C2a, C2b → B1/B2 → A2a → A2c → R1 and I1 → P1, with C0 → C1a, M0 → C1w → C1b → C2 and P0 → S0 → E1 → B1/B2 beside it. Four review units a week (C0, M0 and the two copies not counted). Gates on days 5, 10, 15 and 17 cut stretch work first. implementation-plan.md §5. -->
 
 ---
 

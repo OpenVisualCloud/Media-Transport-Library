@@ -84,8 +84,35 @@ int caps_to_config(const char* format, uint32_t w, uint32_t h,
   return 0;
 }
 
-/* GST_QUERY_LATENCY in READY: the dry run of create (also wire_bps, for admission); a
-   sink adds the copy in its submit, info.convert_ns once the session exists. */
+/* class_init, before any instance: the caps formats for transport format t, by
+   GStreamer name: every application layout MTL converts to t, and t itself with
+   include_transport (on for a sink; off for a source, so that downstream never picks t
+   and unpacks it in software instead of MTL's conversion). */
+uint32_t caps_formats(uint32_t t, int include_transport, const char** names,
+                      uint32_t max) {
+  struct mtl_format_desc d;
+  struct mtl_convert_desc c;
+  uint32_t n = 0;
+  if (include_transport && max > 0 &&
+      mtl_format_describe(t, MTL_FORMAT_TRANSPORT, 0, 0, &d, sizeof(d)) == 0 && d.gst)
+    names[n++] = d.gst;
+  for (uint32_t a = 1; a < 256 && n < max; a++) { /* values of a kind are below 256 */
+    MTL_INIT(&c);
+    c.src.format = a;
+    c.src.kind = MTL_FORMAT_APP;
+    c.dst.format = t;
+    c.dst.kind = MTL_FORMAT_TRANSPORT;
+    c.flags = MTL_CONVERT_CHECK;
+    if (mtl_format_describe(a, MTL_FORMAT_APP, 0, 0, &d, sizeof(d)) == 0 && d.gst &&
+        mtl_convert(&c) == 0)
+      names[n++] = d.gst;
+  }
+  return n;
+}
+
+/* GST_QUERY_LATENCY before the first buffer: the dry run of create, whose C is the
+   calibration (PAUSED: the shared instance opens at READY -> PAUSED); also wire_bps, for
+   admission. latency_min_ns holds C once, as get_info's does later. */
 int query_latency(mtl_instance_h mt, const struct mtl_session_config* sc, int64_t* min_ns,
                   int64_t* max_ns) {
   struct mtl_session_info info;

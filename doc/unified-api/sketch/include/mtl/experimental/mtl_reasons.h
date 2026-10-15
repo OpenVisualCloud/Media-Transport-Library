@@ -46,7 +46,8 @@ enum mtl_reason {
   MTL_REASON_DEVICE_GONE = 104,
   MTL_REASON_BACKEND_FAILED = 105,
   MTL_REASON_PORT_NOT_OPEN = 106, /* -MTL_EINVAL: a flow or option names a port not opened */
-  MTL_REASON_WAITING_NEIGHBOUR = 107, /* also the TX drop reason "no neighbour" */
+  MTL_REASON_WAITING_NEIGHBOUR = 107, /* also the TX drop reason "no neighbour"; an
+                                         update's -MTL_ETIMEDOUT (MS3-MS4) */
   MTL_REASON_JOIN_FAILED = 108,
   MTL_REASON_LEG_DISABLED = 109,
   MTL_REASON_MANAGER_LOST = 110,
@@ -61,7 +62,8 @@ enum mtl_reason {
   MTL_REASON_INVALID_ARGUMENT = 200,
   MTL_REASON_UNKNOWN_BITS = 201,
   MTL_REASON_NONZERO_TAIL = 202, /* bytes beyond the known size, or struct_size 0 */
-  MTL_REASON_FIELD_REQUIRED = 203,
+  MTL_REASON_FIELD_REQUIRED = 203, /* a required field left zero, or an input time or
+                                      index below 0 (mtl.h R5) */
   MTL_REASON_OTHER_ESSENCE = 204, /* a non-zero member for another essence */
   MTL_REASON_INSTANCE_MISMATCH = 205, /* a shared open asks for an incompatible setting */
   MTL_REASON_OPTION_UNKNOWN = 206,
@@ -188,8 +190,10 @@ enum mtl_reason {
                                          agent */
   MTL_REASON_VF_UNTRUSTED = 612,      /* -MTL_ENOTSUP at create: the request needs a trusted
                                          VF */
-  MTL_REASON_TIME_SOURCE_UNAVAILABLE = 613, /* -MTL_ENOTSUP: the named time source cannot be
-                                               read */
+  MTL_REASON_TIME_SOURCE_UNAVAILABLE = 613, /* -MTL_ENOTSUP at open: the named source
+                                               cannot be read; -MTL_EAGAIN from
+                                               mtl_time_now while a USER source has no
+                                               reference yet */
   MTL_REASON_CLOCK_NOT_OWNED = 614,   /* -MTL_EINVAL: PTP_BUILTIN asked to steer a PHC MTL
                                          does not own */
   MTL_REASON_DESCRIPTOR_LIMIT = 615,  /* -MTL_ENOSPC: no descriptor for a queue

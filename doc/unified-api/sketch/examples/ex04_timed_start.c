@@ -56,14 +56,17 @@ int start_now(mtl_session_h s, int64_t unit_ns, int64_t* next) {
   return fill(s, next);
 }
 
-/* At an instant every process of the programme was given (one per essence). Give them
-   the same t_start, a multiple of 1.001 s (1 s for integer rates): it then falls exactly
-   on a frame and on a sample. unit_rate: the index rate (fields when interlaced;
-   {48000, 1} for audio). The frames are queued while the session is CREATED. */
+/* At an instant every process of the programme was given (one per essence): any instant
+   of the programme's grid, such as t + off for an activation t, with off from
+   mtl_grid_offset(t, {6000, 1001}, &off) for the 1001 family with 48 kHz. It falls
+   exactly on a frame and on a sample. unit_rate: the index rate (fields when interlaced;
+   {48000, 1} for audio); interlaced: next = 2 x mtl_epoch_index_at(t_start, raster.fps),
+   so the first index is a first field. The frames are queued while the session is
+   CREATED. */
 int start_at(mtl_session_h s, int64_t t_start, struct mtl_rational unit_rate,
              int64_t* next) {
   struct mtl_when when = {.kind = MTL_AT_TAI, .value = t_start};
-  int ret = mtl_epoch_index_at(t_start, unit_rate, next); /* exact on such a t_start */
+  int ret = mtl_epoch_index_at(t_start, unit_rate, next); /* the start's first index */
   int filled = ret < 0 ? ret : fill(s, next);             /* or SOURCE_ENDED */
   if (filled < 0) return filled;
   ret = mtl_session_start(&s, 1, &when, NULL); /* START_IN_PAST: t_start has gone */
@@ -73,7 +76,7 @@ int start_at(mtl_session_h s, int64_t t_start, struct mtl_rational unit_rate,
 /* margin_ns: the head start each frame had */
 static void on_result(void* priv, const struct mtl_tx_result* r) {
   (void)priv;
-  if (r->flags & MTL_TXR_MARGIN_VALID) report(mtl_reason_name(r->reason), r->margin_ns);
+  if (r->margin_ns != MTL_TIME_NONE) report(mtl_reason_name(r->reason), r->margin_ns);
 }
 
 /* A producer that fell behind skips to the first index that can still go. */
@@ -96,7 +99,7 @@ int run(mtl_instance_h mt, mtl_session_h s, int64_t next) {
     int64_t now;
     ret = mtl_session_wait(s, MTL_WAIT_ACQUIRE | MTL_WAIT_RESULTS, MTL_FOREVER);
     if (ret >= 0)
-      ret = mtl_tx_reap_each(s, on_result, NULL); /* unread, they hold slots */
+      ret = mtl_tx_reap_each(s, on_result, NULL); /* unread, they hold ring entries */
     if (ret >= 0) ret = catch_up(s, &next);
     if (ret >= 0) ret = fill(s, &next);
     if (ret == 0 && mtl_tx_get_next(s, &nx, sizeof(nx)) >= 0 &&

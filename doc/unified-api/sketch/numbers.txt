@@ -10,3 +10,4 @@ wait word layouts	core.md	seq:32|head:20|count:7
 sleepers per target	contract.md	127 (threads|sleepers|waiters)|beyond 127|128th
 queues per object	contract.md	(at most|on) 4 queues|four queues
 instance walk budget	implementation-plan.md	2 ms (plus|\+) 3 µs|3 µs per (sleeper|waiting object)
+results ring bound	decisions.md	2 ?(×|x|\*) ?`?pool_count`? ?\+ ?1|2 ?· ?P ?\+ ?1|\b2P ?\+ ?[1S]\b

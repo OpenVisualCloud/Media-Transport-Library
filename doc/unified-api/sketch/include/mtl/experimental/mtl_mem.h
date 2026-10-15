@@ -19,8 +19,9 @@
  *     mtl_mem_close() retires it once no session, slot, in-flight unit or DMA references it.
  * MEM2 A slot is one buffer of one session's pool, named by its index. Its layout is fixed
  *     when it is attached. Any stride >= row_bytes is direct (no copy).
- * MEM3 A session whose slots are application memory always produces results: a slot is
- *     never reused before the application has read the result that frees it.
+ * MEM3 A session whose slots are application memory always produces results: a unit's
+ *     result says that its memory is no longer read. An attached slot is acquirable when
+ *     PUBLISHED and not held behind an older unit (D-209), like every TX slot (D-214).
  */
 
 #ifndef MTL_EXPERIMENTAL_MTL_MEM_H
@@ -168,15 +169,17 @@ struct mtl_buffer_requirements {
 
 /* ---- Named slots -------------------------------------------------------------------- */
 
-/* TX: that slot, e.g. framework surface i; -MTL_EAGAIN while it is not free (R2). WT
-   (waiting: mtl.h). (MS2) */
+/* TX: that slot, e.g. framework surface i; -MTL_EAGAIN while it is not free (R2): in
+   flight, done behind an older unit in flight, or kept to repeat (MTL_UNDERRUN_REPEAT).
+   Any number of threads (MP-safe). WT (waiting: mtl.h). (MS2) */
 MTL_API_WT(2) int mtl_tx_acquire_slot(mtl_session_h s, uint32_t slot, struct mtl_unit* u,
                                       int64_t timeout_ns);
 
 /* A slot bound to a new layout per acquire: a framework buffer per frame (GStreamer TX,
    moving-cursor producers); u->cookie starts as one->cookie (a template applied later
    overwrites it: set how.cookie = one->cookie). The session needs no attached slot:
-   pool_count bounds the units in flight. WT (waiting: mtl.h). (MS2) */
+   pool_count bounds the units in flight. Any number of threads (MP-safe). WT (waiting:
+   mtl.h). (MS2) */
 MTL_API_WT(2) int mtl_tx_acquire_layout(mtl_session_h s, const struct mtl_attach* one,
                                         struct mtl_unit* u, int64_t timeout_ns);
 /* RX destination for one unit (the legacy query_ext_frame), for producers that choose it
@@ -200,7 +203,7 @@ MTL_API_WT(2) int mtl_tx_acquire_layout(mtl_session_h s, const struct mtl_attach
    gives its destination back, taken first next. A unit that finds none is missed
    (rx.units_missed_pool_full, the next unit's missed_before), never placed in library
    memory; with MTL_SESSION_RX_LATEST it takes the destination of the oldest unread unit.
-   Never zero-filled, no tail. A delivered destination is the caller's again once its
+   Never filled, no tail. A delivered destination is the caller's again once its
    lease is released and every TX unit holding it has its result. After a hand-back, every
    destination of generation < status.provide_gen not dequeued is the caller's again,
    except after stop those of ready units, which dequeue still returns. DP. (MS2) */

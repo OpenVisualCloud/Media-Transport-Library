@@ -1,6 +1,7 @@
 /* ex02 — a video receiver on two ST 2022-7 legs: dequeue, read, release. Needs: MS1. */
 #include "ex_common.h"
 
+/* media_index: MTL_TIME_NONE when the unit has none */
 void show(const void* addr, uint32_t stride, int complete, int64_t media_index);
 
 int rx_video(mtl_instance_h mt) {
@@ -28,10 +29,10 @@ int rx_video(mtl_instance_h mt) {
       ret = 0;
       continue;
     }
-    if (ret < 0) break;                         /* -MTL_ECANCELED: the interrupt */
-    int complete = u.status == MTL_RX_COMPLETE; /* else lost packets read as zero */
-    int64_t index = (u.flags & MTL_UNITF_INDEX_VALID) ? u.media_index : -1;
-    show(u.plane[0].addr, u.plane[0].stride, complete, index);
+    if (ret < 0) break; /* -MTL_ECANCELED: the interrupt */
+    /* complete, or else (from MS2a) lost packets read as black */
+    int complete = u.status == MTL_RX_COMPLETE;
+    show(u.plane[0].addr, u.plane[0].stride, complete, u.media_index);
     ret = mtl_rx_release(s, u.lease);
   }
 

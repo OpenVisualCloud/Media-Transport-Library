@@ -1,6 +1,7 @@
 /* ex24 — from the legacy API: a legacy program's st20p_tx_ops become a unified config,
    and its instance from mtl_init() is wrapped, so ex01's loop runs on it. The wrapper
-   runs on the legacy clock, here CLOCK_TAI. Run: ex24 0000:af:01.0 192.168.1.10.
+   runs on the legacy clock, here CLOCK_TAI (from MS2a mtl_time_now() flags it as
+   CLOCK_TAI). Run: ex24 0000:af:01.0 192.168.1.10.
    Needs: MS1 and the legacy headers (mtl_api.h, st_pipeline_api.h). */
 #define _POSIX_C_SOURCE 200809L
 #include <arpa/inet.h>
@@ -68,7 +69,8 @@ int main(int argc, char** argv) {
   p.num_ports = 1;
   p.tx_queues_cnt[MTL_PORT_P] = 1;
   p.log_level = MTL_LOG_LEVEL_INFO;
-  p.ptp_get_time_fn = tai_now; /* without it: UTC read as TAI (MTL_TIMEF_UTC) */
+  p.ptp_get_time_fn = tai_now; /* without it: UTC read as TAI (MTL_TIMEF_UTC) and one
+                                  WARNING (MS1) */
   legacy_ops(&ops);
 
   int ret = config_from_legacy(&ops, &sc);

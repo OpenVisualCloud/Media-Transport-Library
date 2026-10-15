@@ -1,7 +1,11 @@
-/* ex18 — an NMOS node: its IS-04 interfaces from the ports as granted, and one IS-05
-   PATCH as one update: destinations and rtp_enabled per leg switch together at one
-   instant, all or nothing. master_enable stays the Node's own state. Needs: MS5. */
+/* ex18 — an NMOS node: its IS-04 interfaces from the ports as granted, one IS-05 PATCH
+   as one update (destinations and rtp_enabled per leg switch together on one unit, all
+   or nothing), and a TX format change handed to a second session with no pause.
+   master_enable stays the Node's own state. Needs: MS3 (a scheduled `when` and a
+   changed rtp_enabled while running: MS5; until then the Node's timer activates at t
+   with NULL). */
 #include <mtl/experimental/mtl_observe.h>
+#include <mtl/experimental/mtl_sync.h>
 #include <string.h>
 
 #include "ex_common.h"
@@ -25,7 +29,7 @@ int inventory(mtl_instance_h mt) {
    - dest[i]: leg i's destination (ip, source_filter and udp_port are read), NULL keeps
    it;
    - legs_disabled: a bit per leg whose rtp_enabled is false;
-   - when: the activation time, NULL for activate_immediate;
+   - when: the activation time, NULL for activate_immediate (an instant: MS5);
    - planned_tai_ns and seq: out, the activation_time and the update's number. */
 int activate(mtl_session_h s, struct mtl_session_config* sc,
              const struct mtl_flow* const dest[MTL_MAX_LEGS], uint32_t legs_disabled,
@@ -58,4 +62,32 @@ int applied_at(mtl_session_h s, uint64_t seq, int64_t* tai_ns) {
   if (st.update_state != MTL_UPDATE_STATE_APPLIED) return 0;
   *tai_ns = st.update_applied_tai_ns;
   return 1;
+}
+
+/* A TX format change (IS-11, a new SDP) with no pause: session b, created early with the
+   new format and a's flows and min_tx_delay_ns, starts at t, and a sends only the units
+   whose media time is before t. Both sessions need capacity until t (-MTL_ENOSPC: stop,
+   MTL_UPDATE_MEDIA and start instead). lead_ns covers b's start; *t_tai_ns is the
+   activation_time and the producer's switch: units at or after it go to b. */
+int hand_over_begin(mtl_session_h a, mtl_session_h b, int64_t lead_ns,
+                    int64_t* t_tai_ns) {
+  struct mtl_tx_next n;
+  struct mtl_when at = {.kind = MTL_AT_TAI};
+  int ret = mtl_tx_get_next(a, &n, sizeof(n));
+  if (ret >= 0) {
+    at.value = n.next_media_tai_ns + lead_ns;
+    ret = mtl_session_start(&b, 1, &at, t_tai_ns); /* b's first index >= t */
+  }
+  return ret < 0 ? ex_fail("hand over", ret) : 0;
+}
+
+/* At once after the producer's last unit before t went to a, and before a would pick up
+   a repeat for b's first launch (T0 + b's delay - a's pick-up lead): a sends what it
+   holds and repeats nothing more (the REPEAT pins drop when DRAIN begins), then goes. */
+int hand_over_end(mtl_session_h* a, mtl_session_h b) {
+  int ret = mtl_session_stop(a, 1, MTL_STOP_DRAIN, MTL_SEC(1));
+  int closed = mtl_session_close(*a, MTL_MS(200)); /* whatever the drain did: a goes */
+  if (ret >= 0) ret = closed;
+  *a = b; /* the Node's Sender is b now: new flow id, SDP and IS-04 version */
+  return ret < 0 ? ex_fail("hand over end", ret) : 0;
 }

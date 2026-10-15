@@ -9,32 +9,21 @@
 void count(const char* what, int64_t n);
 
 /* The output of one input: TAI mode, min_tx_delay_ns = the pipeline budget (examples.md
-   derives it), the pick-up lead read from MTL. input_launch_ns: the input's own launch
+   derives it); MTL adds its own pick-up lead. input_launch_ns: the input's own launch
    delay, whole frames. tsmode: SAMP when the input's SDP says SAMP, else PRES. */
 int open_output(mtl_instance_h mt, mtl_session_h rx, int64_t input_launch_ns,
                 int64_t process_ns, struct mtl_session_config* sc, mtl_session_h* tx) {
   struct mtl_session_info info;
-  int64_t lead = 0;
   int ret = mtl_session_get_info(rx, &info, sizeof(info));
   if (ret < 0) return ret;
   sc->media_mode = MTL_MEDIA_TAI;
   if (!sc->tsmode) sc->tsmode = MTL_TSMODE_PRES;
   sc->flags |= MTL_SESSION_RESULTS;
-  ret = mtl_session_create(mt, sc, tx);
-  if (ret < 0) return ex_fail("output", ret);
-  ret = mtl_stat_get(MTL_OBJ_OF_SESSION(*tx), "info.pickup_lead_ns", &lead);
   sc->min_tx_delay_ns = info.latency_min_ns /* the input arrives this late */
                         + input_launch_ns   /* its sender's launch delay */
-                        + process_ns        /* our work */
-                        + lead;             /* MTL takes the unit this early */
-  if (ret >= 0) ret = mtl_session_update(*tx, sc, MTL_UPDATE_MEDIA, NULL, NULL);
-  if (ret >= 0) ret = mtl_session_start(tx, 1, NULL, NULL);
-  if (ret < 0) {
-    ex_fail("output", ret);
-    mtl_session_close(*tx, 0); /* not left CREATED */
-    *tx = MTL_NULL(mtl_session_h);
-  }
-  return ret < 0 ? ret : 0;
+                        + process_ns;       /* our work */
+  ret = mtl_session_open(mt, sc, tx);       /* on failure closed, *tx null */
+  return ret < 0 ? ex_fail("output", ret) : 0;
 }
 
 /* Each frame's outcome: ON_TIME with its margin, or DROPPED with TOO_LATE,
@@ -43,7 +32,7 @@ static void on_result(void* priv, const struct mtl_tx_result* r) {
   (void)priv;
   if (r->status != MTL_TX_ON_TIME)
     count(mtl_reason_name(r->reason), 1);
-  else if (r->flags & MTL_TXR_MARGIN_VALID)
+  else if (r->margin_ns != MTL_TIME_NONE)
     count("margin ns", r->margin_ns);
 }
 
@@ -59,7 +48,7 @@ int process_video(mtl_session_h rx, mtl_session_h tx) {
   MTL_INIT(&d);
   int ret = mtl_rx_dequeue(rx, &in, MTL_FOREVER);
   if (ret < 0) return ret;
-  if (!(in.flags & MTL_UNITF_TAI_VALID)) { /* a mediaclk:sender input: no TAI relation */
+  if (in.media_tai_ns == MTL_TIME_NONE) { /* a mediaclk:sender input: no TAI relation */
     mtl_rx_release(rx, in.lease);
     return -MTL_EINVAL;
   }
@@ -85,7 +74,7 @@ int process_video(mtl_session_h rx, mtl_session_h tx) {
   mtl_rx_release(rx, in.lease);
   if (ret == -MTL_EAGAIN) count("output full: unit lost", 1);
   if (ret < 0 && ret != -MTL_EAGAIN) return ret;
-  return mtl_tx_reap_each(tx, on_result, NULL); /* unread, results hold slots */
+  return mtl_tx_reap_each(tx, on_result, NULL); /* unread, results hold ring entries */
 }
 
 /* Audio: the copy path with the received unit as the template (its media time). A TAI
@@ -96,7 +85,7 @@ int pass_audio(mtl_session_h rx, mtl_session_h tx, uint32_t rate) {
   MTL_INIT(&in);
   int ret = mtl_rx_dequeue(rx, &in, MTL_FOREVER);
   if (ret < 0) return ret;
-  if (!(in.flags & MTL_UNITF_TAI_VALID)) { /* a mediaclk:sender input: no TAI relation */
+  if (in.media_tai_ns == MTL_TIME_NONE) { /* a mediaclk:sender input: no TAI relation */
     mtl_rx_release(rx, in.lease);
     return -MTL_EINVAL;
   }

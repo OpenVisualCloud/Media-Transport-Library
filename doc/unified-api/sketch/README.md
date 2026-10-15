@@ -21,6 +21,7 @@ the headers move to `include/mtl/experimental/`, and `check.sh` runs in CI.
 | `examples.md.in` | the prose of [examples.md](../examples.md), with `@@EXAMPLE <file>@@` and `@@HEADER_TABLE@@` markers |
 | `gen_api_doc.py` | writes [examples.md](../examples.md) from the template (every example copied verbatim; the header table from its own `JOBS` list), and from task H1b every marked table and enum block from its `.def` ([README §1, §4](../README.md)); `--check` only compares |
 | `numbers.txt` | the load-bearing numbers and their homes, for the number lint ([README §1](../README.md)) |
+| `retired.txt` | the names a decision retired, each with its D-row, for the retired-name lint (lint 12) |
 | `check_refs.py` | the reference lint (lint 11): document-qualified section references, links and anchors |
 | `check.sh` | the doc test, and the one source of the counts: exported functions per header, per call class and per milestone, and the number of frozen names |
 
@@ -35,7 +36,7 @@ flowchart LR
   G["gen_api_doc.py<br/>its JOBS list: the header table"]:::tool
   M["examples.md<br/>generated"]:::out
   O["the documents<br/>*.md"]:::out
-  C["check.sh<br/>compiles and lints;<br/>numbers.txt, check_refs.py"]:::tool
+  C["check.sh<br/>compiles and lints;<br/>numbers.txt, retired.txt,<br/>check_refs.py"]:::tool
   E --> G
   T --> G
   G --> M
@@ -127,6 +128,9 @@ It then runs the lints:
 | 9 | the examples do not call every exported function outside `MTL_LATER` and `mtl_debug.h` (G-114's method). Each example compiles at its `Needs` level, and `nm -u` of the objects is matched against `--tags`, so a call through an inline wrapper counts. An example that does not compile, or a host without `nm`, fails the lint |
 | 10 | `examples/` holds a file other than `ex_common.h`, the C++ file and `exNN_<name>.c`, a number is used twice or missing, or an example's first line does not start with its own number (`/* exNN —`, the C++ file `// <name> —`) |
 | 11 | a section reference qualified by a document ("contract.md §5.5", "README §1", a link then "§6.1", lists and ranges), a link or an `#anchor` names no file or heading; or, in a git work tree, a reference on a line not edited since the base revision (HEAD, or `CHECK_REFS_BASE`) names a heading whose title differs at the base. Bare "§n" references are not checked (`check_refs.py`) |
+| 12 | a header defines a validity flag (`MTL_*_VALID`), `INT64_MIN` appears in a header outside `MTL_TIME_NONE`'s definition and its check, an example builds its own sentinel (a ternary that falls back to -1, 0 or `INT64_MIN`, or a time or index set to -1), or a name of `retired.txt` appears outside decisions.md in a document, the template, the sketch or the models (D-215) |
+| 13 | a paragraph of a document or the template sets `min_tx_delay_ns` to a value that already holds the pick-up lead, which MTL adds itself, or an example or header reads `pickup_lead_ns` (D-218); decisions.md is skipped, its superseded rows keep the old recipe |
+| 14 | a document writes a live sink's media time, the TAI of its presentation time ct, without the programme phase `+ δ` after it, also across a line break (D-221) |
 
 From H1b, every enum constant and integer macro outside `MTL_LATER` also has exactly one row in
 `reasons.def`, `mtl_options.def` or `availability.def`.

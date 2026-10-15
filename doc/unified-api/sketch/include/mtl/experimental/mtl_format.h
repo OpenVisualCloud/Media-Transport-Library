@@ -13,10 +13,11 @@
  * wants frames in another layout sets mtl_video_config.app_format (or
  * mtl_cvideo_config.app_format for a codec plugin) to a value below and MTL converts, in
  * the caller or a library worker, never on a tasklet; the granted path is reported
- * (MTL_INFO_DIRECT, MTL_TXR_COPIED). mtl_convert() runs the same SIMD converters outside a
- * session (file tools, test pattern generators): one call replaces today's ~105 per-pair
- * functions; the pair, the CPU features and an optional DMA engine are chosen inside. Pure
- * functions on the caller's thread: no instance is needed unless DMA is wanted.
+ * (MTL_INFO_DIRECT, MTL_TXR_COPIED). mtl_convert() (its MTL_CONVERT_CHECK from MS2) runs
+ * the same SIMD converters outside a session (file tools, test pattern generators): one
+ * call replaces today's ~105 per-pair functions; the pair, the CPU features and an
+ * optional DMA engine are chosen inside. Pure functions on the caller's thread: no
+ * instance is needed unless DMA is wanted.
  */
 
 #ifndef MTL_EXPERIMENTAL_MTL_FORMAT_H
@@ -59,9 +60,9 @@ enum mtl_app_format {
 };
 
 /* ST 2110-20 colorimetry, TCS and RANGE (§7.5, §7.6, §7.3), in mtl_video_config and
-   mtl_cvideo_config: SDP and conversion matrices only, never on the wire. 0 = colorimetry
-   UNSPECIFIED (rendered, since §7.2 requires the parameter), TCS SDR, RANGE NARROW.
-   FULLPROTECT with BT2100 is -MTL_EINVAL at create. */
+   mtl_cvideo_config: SDP, conversion matrices and the black of the RX fill (RANGE), never
+   on the wire. 0 = colorimetry UNSPECIFIED (rendered, since §7.2 requires the parameter),
+   TCS SDR, RANGE NARROW. FULLPROTECT with BT2100 is -MTL_EINVAL at create. */
 enum mtl_colorimetry {
   MTL_COLOR_UNSPECIFIED = 0,
   MTL_COLOR_BT601 = 1,
@@ -117,12 +118,18 @@ enum mtl_format_kind {
 
 /* ---- Format descriptions ----------------------------------------------------------- */
 
-/* Output; the size argument versions it. Names are static, NULL where none exists. */
+/* Output; the size argument versions it. Names are static, NULL where none exists. A
+   string names one format of one kind in every field it appears in, so mtl_format_parse
+   has one answer. A GStreamer or FFmpeg name sits on the value a framework should use: a
+   compliant transport format before an application layout of the same bytes ("UYVP" is
+   MTL_YUV422_10, not MTL_APP_YUV422_PG2_BE10), and never on a _NONSTD value, which only
+   its MTL name reaches ("v210" is MTL_APP_V210). Values of every kind are below 256. */
 struct mtl_format_desc {
   const char* name;       /* "yuv422_10", "v210", "jpegxs", "pcm24" */
   const char* sdp;        /* "YCbCr-4:2:2/10"; codecs: the encoding name, "jxsv" */
-  const char* gst;        /* "v210", "UYVY", ... */
-  const char* av_pix_fmt; /* "yuv422p10le", ... */
+  const char* gst;        /* GstVideoFormat, GstAudioFormat: "v210", "UYVP", "S24BE" */
+  const char* av_pix_fmt; /* AVPixelFormat: "yuv422p10le"; audio the codec, "pcm_s24be"
+                             (FFmpeg has no packed 24-bit sample format) */
   uint32_t fourcc;
   uint32_t plane_count;
   uint32_t pg_bytes;  /* transport: RFC 4175 pixel group bytes; audio: bytes per sample */
@@ -188,8 +195,12 @@ struct mtl_convert_desc {
   const uint16_t* MTL_NULLABLE channel_map;
   uint64_t reserved[3];
 };
-/* -MTL_ENOTSUP for a pair MTL does not convert. DPC. (MS4) */
-MTL_API_DPC(4) int mtl_convert(const struct mtl_convert_desc* d);
+/* -MTL_ENOTSUP for a pair MTL does not convert. MTL_CONVERT_CHECK alone from MS2, for a
+   framework's caps before any instance: it does no work and may be called from any
+   thread; every conversion -MTL_ENOTSUP (NOT_IMPLEMENTED) until MS4b. With mt null it
+   answers for the built-in converters; with an instance also for its converter plugins
+   (MS2b). DPC. (MS2) */
+MTL_API_DPC(2) int mtl_convert(const struct mtl_convert_desc* d);
 
 /* ST 2110-31 AM824 subframe: byte 0 = B (block start) bit 5, F (frame start) bit 4,
    V, U, C, P bits 3-0; bytes 1-3 = the 24-bit sample, big endian. */

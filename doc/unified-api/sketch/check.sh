@@ -9,10 +9,13 @@
 # examples' calls of every exported function (G-114, nm -u), the example file names and
 # numbers (once each, no gap) and each example's own number on its first line, the reasons
 # table, one home per load-bearing number (numbers.txt), a
-# migration.md §6.5 row for every legacy mode of the core, and every section reference
+# migration.md §6.5 row for every legacy mode of the core, every section reference
 # qualified by a document and every link and #anchor of the documents (check_refs.py), and
 # that each still names the heading it named at the base revision (HEAD, or $CHECK_REFS_BASE)
-# unless its line was edited since.
+# unless its line was edited since; one "no value" (no validity flag, INT64_MIN only in
+# MTL_TIME_NONE, no sentinel of an example's own) and no retired name (retired.txt) outside
+# decisions.md; no min_tx_delay_ns that adds the pick-up lead itself; and a "+ δ" after every
+# live-sink "TAI(ct)".
 # Prints the exported functions per header, per call class and per milestone, and the
 # number of frozen names: the one place the documents take these counts from.
 # check.sh --tags prints "name<TAB>milestone<TAB>header" per exported function and exits
@@ -372,6 +375,79 @@ if command -v python3 >/dev/null 2>&1; then
 	python3 -I "$here/check_refs.py" ${base:+--base "$base"} "$docs" || fail=1
 else
 	echo "FAIL: python3 not found: lint 11 cannot run"
+	fail=1
+fi
+
+# Lint 12: one "no value" (D-215). No header defines a validity flag; INT64_MIN appears only in
+# MTL_TIME_NONE's definition and its check; no example builds its own sentinel (a ternary that
+# falls back to -1, 0 or INT64_MIN, or a time or index set to -1); no retired name
+# (retired.txt) appears outside decisions.md, in the documents, the template, the sketch and
+# the models.
+if grep -nE '^#define MTL_[A-Z0-9_]+_VALID ' "$hdr"/*.h; then
+	echo "FAIL: a validity flag is defined (D-215)"
+	fail=1
+fi
+if grep -n 'INT64_MIN' "$hdr"/*.h | grep -vE ':#define MTL_TIME_NONE |mtl_sz_time_none'; then
+	echo "FAIL: INT64_MIN outside MTL_TIME_NONE (D-215)"
+	fail=1
+fi
+if grep -rnE '\?[^:;]*(media_index|_ns|index)[^:;]*: *\(?(-1|INT64_MIN|0)\)? *;|[a-z_]*(index|_ns|first|next) *= *-1 *;' "$here/examples"; then
+	echo "FAIL: an example builds its own sentinel (D-215)"
+	fail=1
+fi
+while IFS=$'\t' read -r name row; do
+	case "$name" in '#'* | '') continue ;; esac
+	hits="$(grep -rnF --include='*.md' --include='*.in' --include='*.h' --include='*.c' --include='*.cpp' --include='*.py' --include='*.sh' --include='*.txt' -- "$name" "$docs" | sed "s|^$docs/||" | grep -vE '^(decisions\.md|sketch/retired\.txt):')"
+	if [ -n "$hits" ]; then
+		echo "FAIL: '$name' was retired by $row:"
+		echo "$hits" | cut -c1-160 | head -10
+		fail=1
+	fi
+done <"$here/retired.txt"
+
+# Lint 13: no text sets min_tx_delay_ns to a value that includes the pick-up lead (D-218: MTL
+# adds the lead itself), and no example or header reads pickup_lead_ns to add it. Paragraphs
+# are joined before matching.
+if grep -rn 'pickup_lead_ns' "$here/examples" "$hdr"; then
+	echo "FAIL: an example or header reads pickup_lead_ns; MTL adds the lead itself (D-218)"
+	fail=1
+fi
+# Lint 14: every live-sink "TAI(ct)" in the documents, code blocks included, is followed by
+# "+ δ" (D-221), also when the line wraps between them or a line holds two of them.
+if command -v python3 >/dev/null 2>&1; then
+	python3 -I - "$docs" <<'EOF' || fail=1
+import os, re, sys
+docs = sys.argv[1]
+bad = 0
+lead = r"(?:the |its |MTL's )?(?:pick-up )?lead\b"
+pat = re.compile(
+    r"(?:one|a) (?:frame|unit|field)(?: period)? (?:\+|plus) " + lead
+    + r"|(?<![+] )(?<![+] `)min_tx_delay_ns`?\s+(?:=|to|is|the)\s[^.;]{0,80}?(?:\+|plus)\s+" + lead
+    + r"|(?:\+|plus|,)\s*(?:the )?pick-up lead and a margin"
+    + r"|a margin that covers the lead", re.I)
+ct = re.compile(r"TAI\(ct\)(?!\s*\+\s*δ)")
+for root, _, files in os.walk(docs):
+    for f in files:
+        if not f.endswith((".md", ".in")) or f == "decisions.md":
+            continue
+        p = os.path.join(root, f)
+        raw = open(p, encoding="utf-8").read()
+        text = re.sub(r"```.*?```", "", raw, flags=re.S)
+        for para in re.split(r"\n\s*\n", text):
+            flat = " ".join(para.split())
+            for m in pat.finditer(flat):
+                print(f"FAIL: {os.path.relpath(p, docs)}: lint 13, the lead added to the delay: '{m.group(0)[:80]}'")
+                bad = 1
+        if f.endswith(".md"):
+            for para in re.split(r"\n\s*\n", raw):
+                flat = " ".join(para.split())
+                for m in ct.finditer(flat):
+                    print(f"FAIL: {os.path.relpath(p, docs)}: lint 14, a live-sink media time without + δ: '{flat[m.start():m.start() + 60]}'")
+                    bad = 1
+sys.exit(bad)
+EOF
+else
+	echo "FAIL: python3 not found: lints 13 and 14 cannot run"
 	fail=1
 fi
 

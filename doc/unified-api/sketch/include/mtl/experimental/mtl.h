@@ -36,7 +36,7 @@
  *   mtl_options.h  option keys for every tuning knob (key enum from mtl_options.def)
  *   mtl_reasons.h  the reason codes (enum from reasons.def)
  *   mtl_format.h   application formats, format descriptions, standalone conversion
- *   mtl_util.h     inline helpers built only on public calls (copy path, meta, ANC, RX reserve)
+ *   mtl_util.h     inline helpers built only on public calls (copy path, meta, ANC)
  *   mtl_ipmx.h     RTCP sender reports and the Info Block, payload encryption (Phase 7)
  *   mtl_sdp.h      SDP render and parse, in the companion library libmtl_sdp (Phase 7)
  *   mtl_plugin.h   codec and converter plugin ABI
@@ -48,9 +48,11 @@
  * R1  Returns: 0 or a count/mask > 0 on success, a negative MTL_E* code on failure. A known
  *     value that is not implemented yet (a flag, enum value, update part, when kind, wait
  *     mask, option key or port prefix) is -MTL_ENOTSUP with reason NOT_IMPLEMENTED and the
- *     item in mtl_last_error().field; an unknown value is -MTL_EINVAL; an output field not
- *     computed yet is zero with its VALID flag clear. A call that succeeds never writes
- *     mtl_last_error() (errno semantics).
+ *     item in mtl_last_error().field; an unknown value is -MTL_EINVAL. An output with no
+ *     value (not computed yet, or none for this unit) reads MTL_TIME_NONE when it is an
+ *     int64_t time, duration or index, and 0 when it is a count or an enum (enums start
+ *     at 1); no flag says that a value is valid (until MTL_1.0; growth: R3). A call that
+ *     succeeds never writes mtl_last_error() (errno semantics).
  * R2  Timeouts are the last argument, int64_t ns: 0 = do not wait, MTL_FOREVER = no limit;
  *     a timeout below MTL_FOREVER is -MTL_EINVAL. A timeout is a duration on
  *     CLOCK_MONOTONIC fixed at entry, never changed by a step of the time base. A data call
@@ -60,38 +62,55 @@
  *     timeout sleeps on its object, so any number of threads may wait on any targets of
  *     one object; an event loop waits on a queue (mtl_queue_create, MS2). An application
  *     that never sleeps never causes a wake-up syscall. A completing tasklet never makes
- *     the syscall itself: its scheduler wakes after its handler loop. -MTL_EAGAIN sets only code and
- *     reason in mtl_last_error(). -MTL_ETIMEDOUT is for control-plane deadlines (stop).
+ *     the syscall itself: its scheduler wakes after its handler loop. -MTL_EAGAIN sets
+ *     only code and reason in mtl_last_error(). -MTL_ETIMEDOUT is for control-plane
+ *     deadlines: a DRAIN stop, and (MS3-MS4) a FLOWS update in ARMED or RUNNING whose
+ *     unicast neighbour did not resolve within port.arp_timeout_s.
  * R3  Input structs start with uint32_t struct_size. MTL_INIT(&s) zero-fills a struct and
  *     sets its struct_size; zero in every other field is the default (struct_size 0 is
  *     -MTL_EINVAL). The library reads min(struct_size, known); unknown non-zero bytes are
  *     -MTL_EINVAL. Output structs carry no struct_size: the library fills them up to the
- *     size argument and zeroes what it does not know. A struct the library writes and reads
- *     back (mtl_unit) uses its own struct_size. Every pointer in an input struct is read
- *     during the call and deep-copied (strings included); the caller may free it on return.
- *     Embedded structs are fixed size.
+ *     size argument and zeroes what it does not know. A struct the library writes and
+ *     reads back (mtl_unit) uses its own struct_size. A field appended to an output after
+ *     MTL_1.0 that can have no value comes with a bit of its struct's flags word that
+ *     only a library filling the field sets, or, in a struct without one, is read only
+ *     when mtl_library_version_num() names its version: an older library reads it 0.
+ *     Every pointer in an input struct is read during the call and deep-copied (strings
+ *     included); the caller may free it on return. Embedded structs are fixed size.
  * R4  Handles are 64-bit values of distinct types; 0 is the null handle of every type and
- *     a closed handle is never reissued. A call with an out handle writes the null handle
- *     on failure. Close is idempotent: it returns 1 while the object retires and 0 once it
- *     retired, also when called again on the same handle and for a null handle; no other
- *     call is valid on a closing handle except mtl_session_get_status (CLOSING, RETIRED),
- *     mtl_release of a lease taken before the close (retirement waits for it),
- *     mtl_interrupt (AS; a no-op that returns 0), and on a queue an mtl_queue_wait already
- *     in progress, which returns -MTL_ESHUTDOWN (a later call on the handle: -MTL_EBADF). A
- *     stale or foreign handle fails with -MTL_EBADF, a lease already returned with
- *     -MTL_ESTALE; the one exception is mtl_instance_get_health on an instance consumed by
- *     close or shutdown, which returns -MTL_ESHUTDOWN, so a probe racing the close sees
- *     "shutting down". Handle entries are process-wide and never freed, so a handle stays safe
- *     to pass after its instance is gone: on an object the instance closed (deployment.md),
- *     data calls return -MTL_ESHUTDOWN, and its close and a lease's release return 0. A
- *     buffer is named by its pool slot index, never by a handle.
- * R5  Times are int64_t ns since 1970-01-01 TAI on the instance clock, valid only when their
- *     flag says so: TAI while the time base is locked, flagged ESTIMATED when it is not (a
- *     clock without PTP), and only a time common to the PTP domain when the grandmaster
- *     runs an ARB timescale (MTL_TIMEF_ARB_TIMESCALE), and UTC read as TAI where a
- *     legacy clock or the PTP client before its first Announce gives UTC (MTL_TIMEF_UTC);
- *     an RX value on the sender's clock
- *     is flagged SENDER_TIME (Phase 7, mtl_ipmx.h).
+ *     a closed handle is never reissued. mtl_release is the one data call that takes a
+ *     null session handle: the lease names its own. A call with an out handle writes the
+ *     null handle on failure. Close is idempotent: it returns 1 while the object retires
+ *     and 0 once it retired, also when called again on the same handle and for a null
+ *     handle; no other call is valid on a closing handle except mtl_session_get_status
+ *     (CLOSING, RETIRED), mtl_release of a lease taken before the close (retirement waits
+ *     for it), mtl_interrupt (AS; a no-op that returns 0), and on a queue an
+ *     mtl_queue_wait already in progress, which returns -MTL_ESHUTDOWN (a later call on
+ *     the handle: -MTL_EBADF). A stale or foreign handle fails with -MTL_EBADF
+ *     (mtl_release with a null s takes the lease's session), a lease already returned
+ *     with -MTL_ESTALE; the one exception is mtl_instance_get_health on an instance
+ *     consumed by close or shutdown, which returns -MTL_ESHUTDOWN, so a probe racing the
+ *     close sees "shutting down". Handle entries are process-wide and never freed, so a
+ *     handle stays safe to pass after its instance is gone: on an object the instance
+ *     closed (deployment.md), data calls return -MTL_ESHUTDOWN, and its close and a
+ *     lease's release return 0. A buffer is named by its pool slot index, never by a
+ *     handle.
+ * R5  Times are int64_t ns since 1970-01-01 TAI on the instance clock, MTL_TIME_NONE when
+ *     there is none (R1). An int-status call that reads a time instant or a media index
+ *     refuses one below 0 (MTL_TIME_NONE, NONE plus an offset, or an index before T0
+ *     under MTL_WHEN_ORIGIN): -MTL_EINVAL, reason FIELD_REQUIRED, naming the field; a
+ *     value not implemented yet is refused first (NOT_IMPLEMENTED, R1). The exceptions:
+ *     the helpers of mtl_sync.h (mtl_epoch_index_at, mtl_time_convert, mtl_rx_align,
+ *     mtl_grid_offset) return a bare -MTL_EINVAL with no reason (R6), mtl_tx_write passes
+ *     on submit's reason, and the value-returning mtl_media_ticks and mtl_media_tai give
+ *     0 and MTL_TIME_NONE. A duration is not an instant: a negative one, and MTL_TIME_NONE in a
+ *     signed one, is -MTL_EINVAL, reason INVALID_ARGUMENT; an option key keeps
+ *     OPTION_RANGE. Times are TAI while the time base is locked, flagged ESTIMATED when
+ *     it is not (a clock without PTP), and only a time common to the PTP domain when the
+ *     grandmaster runs an ARB timescale (MTL_TIMEF_ARB_TIMESCALE), and UTC read as TAI
+ *     where a legacy clock or the PTP client before its first Announce gives UTC
+ *     (MTL_TIMEF_UTC); an RX value on the sender's clock is flagged SENDER_TIME (Phase 7,
+ *     mtl_ipmx.h).
  * R6  Call classes: CP control plane (may allocate and block); DP data plane (O(1), no
  *     allocation, lock a tasklet takes or logging; its only syscalls are one wake when it
  *     makes a target ready for a sleeper (a futex wake, or a write() of a queue);
@@ -313,7 +332,8 @@ extern "C" {
                              would join or wait for */
 #define MTL_ENOTSUP 95    /* capability or option absent */
 #define MTL_ESHUTDOWN 108 /* the application stopped or closed the session or instance */
-#define MTL_ETIMEDOUT 110 /* a control-plane deadline passed (a DRAIN stop) */
+#define MTL_ETIMEDOUT 110 /* a control-plane deadline passed: a DRAIN stop; an update's
+                             unicast neighbour (MS3-MS4) */
 #define MTL_ESTALE 116    /* a lease that was already returned */
 #define MTL_ECANCELED 125 /* data waits interrupted; sticky until interrupt(..., 0) */
 
@@ -527,11 +547,11 @@ enum mtl_media_mode {
      snapped: an async source (IPMX mediaclk:sender). RTP follows the source: RTP = RTP0 +
      floor(k x period x rate), RTP0 = floor(M0 x rate) at the first unit or after a
      DISCONTINUITY, and k advances by max(1, round((M - M_prev) / period)) per unit, so a
-     missed VSYNC skips one period without drift building up. Launch = M + min_tx_delay_ns
-     on the nominal-period schedule; a unit that would overlap the previous one is DROPPED
-     (WOULD_OVERLAP); sender reports carry M (nmos-ipmx.md). AT_INDEX, RX_BY_INDEX and
-     tx.precede targets are -MTL_EINVAL on such a session; a result's media_index is k.
-     Phase 7. */
+     missed VSYNC skips one period without drift building up. Launch = M (min_tx_delay_ns
+     0), else M + min_tx_delay_ns + the pick-up lead, on the nominal-period schedule; a
+     unit that would overlap the previous one is DROPPED (WOULD_OVERLAP); sender reports
+     carry M (nmos-ipmx.md). AT_INDEX, RX_BY_INDEX and tx.precede targets are -MTL_EINVAL
+     on such a session; a result's media_index is k. Phase 7. */
   MTL_MEDIA_SENDER = 3,
 #endif
 };
@@ -558,9 +578,10 @@ enum mtl_stop_mode {
 /* Why acquire is waiting (status.blocked_on). */
 enum mtl_blocked_on {
   MTL_BLOCKED_NONE = 0,
-  MTL_BLOCKED_BUFFERS = 1,    /* every slot queued or in flight */
+  MTL_BLOCKED_BUFFERS = 1,    /* every slot queued, in flight, held behind an older unit,
+                                 or kept to repeat; the library frees one on its own */
   MTL_BLOCKED_RESULTS = 2,    /* unread results fill the ring: reap */
-  MTL_BLOCKED_APP_LEASES = 3, /* every slot is leased by the application */
+  MTL_BLOCKED_APP_LEASES = 3, /* every slot not kept to repeat is the application's */
 };
 
 /* Per-leg flow state (status.leg[].flow_state, MTL_EVENT_FLOW_STATE). */
@@ -594,7 +615,20 @@ enum mtl_time_state {
 
 /* ---- Time ------------------------------------------------------------------------- */
 
-#define MTL_TIMEF_VALID 0x1u
+/* No value (R1): an int64_t time, duration or index output that has none reads it, as
+   FFmpeg's AV_NOPTS_VALUE and GStreamer's GST_CLOCK_STIME_NONE do. It is never a value.
+   Compare with it before computing anything from the field: NONE + x is no longer NONE,
+   and NONE - x overflows. An int-status call that reads a time or an index refuses one
+   below 0 (R5), which catches NONE and NONE + x, never the overflow. Bindings read a
+   plain literal; C and C++ read an int64_t. */
+#if defined(SWIG) || defined(__bindgen)
+#define MTL_TIME_NONE (-0x7fffffffffffffffLL - 1)
+#else
+#define MTL_TIME_NONE ((int64_t)(-0x7fffffffffffffffLL - 1)) /* INT64_MIN */
+typedef char mtl_sz_time_none[(MTL_TIME_NONE == INT64_MIN) ? 1 : -1];
+#endif
+
+/* 0x1 retired, never reused */
 #define MTL_TIMEF_ESTIMATED 0x2u /* the time base is not locked, e.g. system clock */
 #define MTL_TIMEF_HOLDOVER 0x4u
 /* the grandmaster runs an ARB timescale (clockClass 220 or 228, or timeSource F0h, ST
@@ -607,9 +641,12 @@ enum mtl_time_state {
    ARB_TIMESCALE */
 #define MTL_TIMEF_UTC 0x10u
 /* TAI now from the published time base (a wrapper of a legacy instance: from a snapshot of
-   the legacy clock, mtl_legacy.h); returns MTL_TIMEF_* flags (>= 0). monotonic_ns
-   and realtime_ns (may be NULL) receive CLOCK_MONOTONIC and CLOCK_REALTIME of the same
-   instant: one consistent sample, for frameworks with their own clock. DP. (MS1) */
+   the legacy clock, mtl_legacy.h); returns MTL_TIMEF_* flags (>= 0) and *tai_ns, always a
+   value; -MTL_EAGAIN (reason TIME_SOURCE_UNAVAILABLE), *tai_ns MTL_TIME_NONE, while the
+   time base has no sample, which happens only for MTL_TIME_SOURCE_USER before its first
+   mtl_time_set_reference. monotonic_ns and realtime_ns (may be NULL) receive
+   CLOCK_MONOTONIC and CLOCK_REALTIME of the same instant: one consistent sample, for
+   frameworks with their own clock. DP. (MS1) */
 MTL_API_DP(1) int mtl_time_now(mtl_instance_h mt, int64_t* tai_ns,
                                int64_t* MTL_NULLABLE monotonic_ns,
                                int64_t* MTL_NULLABLE realtime_ns);
@@ -733,9 +770,12 @@ MTL_API_AS(2) int mtl_port_parse(const char* text, struct mtl_port_spec* MTL_NUL
 
 /* MTL adjusts a clock only with PTP_BUILTIN: the PHC of a port it owns (a PF), or, on a
    VF, its own software time base (as today; the VF's PHC is never steered); never
-   CLOCK_REALTIME, never a clock a node daemon disciplines (deployment.md). AUTO chooses
-   once, at open (Phase 7: it re-evaluates while running and falls back without a step,
-   nmos-ipmx.md). */
+   CLOCK_REALTIME, never a clock a node daemon disciplines (deployment.md). AUTO takes the
+   best valid source at open and moves up to a better one that becomes valid while it runs
+   only when the move is no step (CLOCK_TAI MS3, a PHC MS6; timing.md §2.7): a better
+   source that disagrees is reported (MTL_EVENT_TIME_STATE) and not taken. AUTO never
+   moves down: a lost source holds over (Phase 7: then falls back without a step,
+   nmos-ipmx.md). No time state changes what a session sends. */
 enum mtl_time_source {
   MTL_TIME_SOURCE_AUTO = 0,        /* CLOCK_TAI when its kernel offset is set, else
                                       SYSTEM_TAI, both read through the vDSO; from MS6 a
@@ -744,7 +784,8 @@ enum mtl_time_source {
   MTL_TIME_SOURCE_PTP_BUILTIN = 1, /* MTL's own PTP client (named only, never by AUTO) */
   MTL_TIME_SOURCE_PHC = 2,         /* ptp4l/phc2sys discipline the NIC PHC */
   MTL_TIME_SOURCE_CLOCK_TAI = 3,   /* CLOCK_TAI; rejected if the kernel offset is 0 */
-  MTL_TIME_SOURCE_SYSTEM_TAI = 4,  /* CLOCK_REALTIME + UTC offset, ESTIMATED, follows NTP */
+  MTL_TIME_SOURCE_SYSTEM_TAI = 4,  /* CLOCK_REALTIME + the UTC offset
+                                      (time.utc_offset_s), ESTIMATED, follows NTP */
   MTL_TIME_SOURCE_USER = 5,        /* the app feeds it (mtl_sync.h) */
 #if defined(MTL_LATER)
   MTL_TIME_SOURCE_FREERUN = 6,     /* seeded once from the system clock, never stepped,
@@ -1218,11 +1259,16 @@ enum mtl_tsmode { MTL_TSMODE_SAMP = 1, MTL_TSMODE_NEW = 2, MTL_TSMODE_PRES = 3 }
    RX_LATEST an unread (not leased) unit in that slot is replaced. */
 #define MTL_SESSION_RX_BY_INDEX 0x8u
 #define MTL_SESSION_RX_LATEST 0x10u     /* RX: a full pool reclaims the oldest unread unit */
-#define MTL_SESSION_RX_NO_FILL 0x20u    /* RX, library pools: do not zero what lost packets
-                                           left out. Attached pools are never zero-filled:
-                                           the unit is MTL_RX_INCOMPLETE and
-                                           mtl_rx_get_detail counts the loss */
-#define MTL_SESSION_MT_SUBMIT 0x40u     /* several threads submit (acquire is MP-safe) */
+#define MTL_SESSION_RX_NO_FILL 0x20u    /* RX, library pools: do not fill what lost
+                                           packets left out (video: the format's black;
+                                           audio, cvideo and fastmeta: zero; ANC units are
+                                           never filled; MS2a).
+                                           Attached pools are never filled: the unit is
+                                           MTL_RX_INCOMPLETE and mtl_rx_get_detail counts
+                                           the loss */
+#define MTL_SESSION_MT_SUBMIT 0x40u     /* several threads submit (acquire is MP-safe); a
+                                           blocking acquire uses a finite timeout
+                                           (contract.md §5.5) */
 /* TX: the session admits MTL_SUBMIT_EXACT units (exact launch is a property of the
    transport session); the other units of such a session start at their launch index's
    first-packet time. Without it, MTL_SUBMIT_EXACT is -MTL_EINVAL. */
@@ -1255,20 +1301,36 @@ struct mtl_session_config {
   uint32_t media_mode;                 /* enum mtl_media_mode */
   uint32_t ssrc;                       /* TX: 0 = one random SSRC for the session, on every
                                           leg; RX: 0 = no check */
-  int64_t min_tx_delay_ns;             /* TX: the earliest send after the media time. 0 =
-                                          playback (content exists before its media time);
-                                          a capture producer (camera, encoder, RX -> TX)
-                                          sets one frame period + the pick-up lead, a
-                                          launch delay of 1 (timing.md). MTL reports the
-                                          lead as the stat info.pickup_lead_ns of a created
-                                          session: set the delay with MTL_UPDATE_MEDIA
-                                          before the start (before MS3, close the session
-                                          and create it again with the delay) */
+  int64_t min_tx_delay_ns;             /* TX: how long after its media time M a unit is
+                                          ready: its submit is called by M + this. 0 =
+                                          playback: ready before M, launched at M's own
+                                          index; submit by M - min_submit_lead_ns
+                                          (mtl_session_info). > 0: MTL adds its own
+                                          pick-up lead and, when the session converts in
+                                          submit (video.app_format other than the
+                                          transport format, or MTL_SESSION_TX_SRC_PLANES),
+                                          the submit's work C (latency_min_ns, contract.md
+                                          §3.5): the launch delay is the fewest index
+                                          steps (fields when interlaced, always whole
+                                          frames) that meet it on either parity (the stat
+                                          info.launch_delay, timing.md §5.2). Without a
+                                          conversion, in submit or in a stage, n x
+                                          mtl_frame_ns gives n on every pacing class. A
+                                          camera sets one unit period (a field when
+                                          interlaced), a processor its input's delay plus
+                                          its work; a producer that copies with
+                                          MTL_SUBMIT_SRC_PLANES on a session that does not
+                                          convert adds that copy itself. < 0: -MTL_EINVAL
+                                          (INVALID_ARGUMENT). Changed by MTL_UPDATE_MEDIA
+                                          in CREATED or STOPPED; while running at an
+                                          update's when (MS5) */
   int64_t media_time_offset_ns;        /* TX, TAI mode: the producer's latency, which moves
                                           the index; RTP stays the index's, so no ST 2110-10
-                                          §7.6.3 bound applies. Other modes: 0, else
-                                          -MTL_EINVAL (the legacy RTP trim with the launch
-                                          fixed is the option tx.rtp_trim_ns) */
+                                          §7.6.3 bound applies. Other modes: 0;
+                                          MTL_TIME_NONE or another value there is
+                                          -MTL_EINVAL (INVALID_ARGUMENT) (the legacy RTP
+                                          trim with the launch fixed is the option
+                                          tx.rtp_trim_ns) */
   const struct mtl_option* MTL_NULLABLE options; /* caller's array, deep-copied */
   uint32_t option_count;
   uint8_t payload_type;                /* TX: 0 = the essence's default, else a dynamic
@@ -1362,16 +1424,22 @@ struct mtl_session_info {
                                the pool region, §9.6), a multiple of 64; video and cvideo
                                RX: >= unit_bytes (of the maximum) + MTL_RX_TAIL_BYTES */
   /* For framework latency queries; never negative; recomputed by every call from the
-     current format and options (contract §3.5):
-     RX min: the latest a unit is delivered, in normal operation, after its media time,
-       caller work excluded: rx.link_offset_ns when set, else S + U + F + W (S the sender's
+     current format and options and C (contract §3.5). C is the caller's work per unit
+     inside dequeue (RX) or submit (TX), held once in min: create's calibration (the dry
+     run times one unit of the conversion the configuration implies); from MS2a it rises
+     only when the 1 s window of convert_ns exceeds it in two consecutive windows, to that
+     value rounded up to 250 us, and it falls only at a start or a format change. Each
+     rise is one LATENCY re-post for a framework. min holds C once: a framework reports
+     min as it is and never adds convert_ns to it.
+     RX min: D + C, D the latest a unit is delivered, in normal operation, after
+       its media time: rx.link_offset_ns when set, else S + U + F + W (S the sender's
        offset: video and cvideo the RX TROFFSET, troffset_us or TRODEFAULT; ANC and
        fastmeta their timing model's target delay; audio one packet time; U the unit
        period, packet units packet.rx_max_wait_ns; F rx.flush_offset_ns; W
        info.expected_wake_latency_ns); rows units S + the time of rx.rows_step rows + W.
      RX max: a unit dequeued and released before its media time + max never makes the
        pool miss a unit: (pool_count - 1) x U; INT64_MAX with MTL_SESSION_RX_LATEST.
-     TX min: max(0, min_submit_lead_ns), the work of submit itself excluded.
+     TX min: max(0, min_submit_lead_ns + C).
      TX max: tx.horizon_ns, the largest lead accepted.
      Detect sessions: from the detected format, U the current unit's mtl_rx_detail.raster;
      before the first unit from the maximum, fps {0, 0} read as 120/1. */
@@ -1385,7 +1453,8 @@ struct mtl_session_info {
                          conversion, and on TX the copy of MTL_SUBMIT_SRC_PLANES; 0 for an
                          RX session without conversion. From create a calibration of one
                          unit's work, then the largest measured in the last second; query
-                         reports 0. Add it to latency_min_ns for a framework */
+                         reports the calibration. Information only: latency_min_ns
+                         already holds C, so adding it counts the work twice */
   struct mtl_raster raster; /* granted, fps reduced: video and cvideo their own; ANC and
                                fastmeta theirs or, all zero in the config, the start's
                                video (zero until the start); generic RTP its unit; audio
@@ -1420,8 +1489,9 @@ enum mtl_when_kind {
 struct mtl_when {
   uint32_t kind;  /* enum mtl_when_kind */
   uint32_t flags; /* MTL_WHEN_* */
-  int64_t value;
-  int64_t preroll_ns; /* start only (ignored by update): extra lead before the first unit */
+  int64_t value;      /* AT_TAI, AT_INDEX: below 0 is -MTL_EINVAL, FIELD_REQUIRED (R5) */
+  int64_t preroll_ns; /* start only (ignored by update): extra lead before the first unit;
+                         < 0: -MTL_EINVAL (INVALID_ARGUMENT) */
   uint64_t reserved[3];
 };
 
@@ -1449,15 +1519,20 @@ MTL_API_CP(1) int mtl_session_stop(const mtl_session_h* s, uint32_t n, uint32_t 
                                    int64_t timeout_ns);
 
 /* mtl_session_update() parts: one atomic change, applied at `when` on every leg. */
-#define MTL_UPDATE_FLOWS 0x1u /* sc->flows (IS-05); a port change while running is made
+#define MTL_UPDATE_FLOWS 0x1u /* sc->flows (IS-05), in place (not in DRAINING or
+                                 FLUSHING): without a port change the RTP sequence
+                                 continues (a port change re-creates). A port change while
+                                 running is made
                                  before break (Phase 7), or -MTL_EBUSY
                                  (PORT_CHANGE_NEEDS_STOP) on a backend that cannot, and on
                                  every backend until then */
-#define MTL_UPDATE_LEGS 0x2u  /* sc->legs_disabled; disabling every existing leg (mute) is
+#define MTL_UPDATE_LEGS 0x2u  /* sc->legs_disabled; while running: unchanged (MS3),
+                                 changed (MS5); disabling every existing leg (mute) is
                                  Phase 7, -MTL_ENOTSUP until then */
 #define MTL_UPDATE_MEDIA 0x4u /* the essence member, tsmode, max_udp_payload and
-                                 min_tx_delay_ns; CREATED or STOPPED (colorimetry, tcs and
-                                 range also while running) */
+                                 min_tx_delay_ns; CREATED or STOPPED (colorimetry, tcs,
+                                 range and min_tx_delay_ns also while running, at `when`:
+                                 MS5) */
 #define MTL_UPDATE_POOL 0x8u  /* pool_count; CREATED or STOPPED */
 #if defined(MTL_LATER)
 /* Modifiers (Phase 7) */
@@ -1468,37 +1543,61 @@ MTL_API_CP(1) int mtl_session_stop(const mtl_session_h* s, uint32_t n, uint32_t 
                                     reserved, posted or replaced, the status is untouched,
                                     and a later update may still fail with -MTL_ENOSPC */
 #endif
-/* All or nothing: resources reserved before commit; neighbours are resolved from then on
-   and a leg without one waits in WAITING_NEIGHBOUR, so the update still applies. Reads
-   only the members its `parts` name, and sc->options: a key there must equal its current
-   value (-MTL_EBUSY, OPTION_STATE), except that a key that may change while running (R)
-   applies at the same boundary (Phase 7; until then a changed R key is -MTL_ENOTSUP).
-   direction, essence and unit never change. `when` applies to FLOWS, LEGS, those
-   options, and colorimetry, tcs and range under MEDIA while running (NULL otherwise); in
-   ARMED, a `when` before T0 means T0; an AT_TAI or AT_INDEX already past means NOW. The
-   switch happens at the index boundary by the clock, whether a unit is there or not (TX:
-   the first index at or after `when`; RX: units with media time at or after it, or by
-   local arrival time for unlocked clocks; audio: a packet boundary, so a salvo lands
-   within one packet time). -MTL_EBUSY (WRONG_STATE) while an earlier update is pending.
-   sc NULL with parts 0 cancels a pending update (IS-05 activation mode null): 0
-   cancelled, 1 none pending, -MTL_EBUSY (UPDATE_COMMITTING) when it will still apply
-   (Phase 7; -MTL_ENOTSUP until then).
-   A pending update fails (TIME_STEP) if the time base steps. Returns once the change is
-   posted; planned_tai_ns (may be NULL) receives the media time of the boundary, and
-   status.update_* and MTL_EVENT_UPDATE report when it applied. In CREATED and STOPPED it
-   applies during the call and planned = applied = now (MS3, every part); in ARMED and
-   RUNNING it is -MTL_ENOTSUP (NOT_IMPLEMENTED, field "state") until MS5. update_seq counts
-   posted updates. CP. (MS3) */
+/* All or nothing on local resources: one spare rule, group-table entry and MAC filter per
+   changed leg are reserved before commit; a join the network leaves without traffic shows
+   JOIN_FAILED after APPLIED. Neighbours are resolved from commit on and a leg without one
+   waits in WAITING_NEIGHBOUR, so the update still applies (MS5; until then see below).
+   Reads only the members its `parts` name, and sc->options: a key there must equal its
+   current value (-MTL_EBUSY, OPTION_STATE), except that a key that may change while
+   running (R) applies at the same boundary (Phase 7; until then a changed R key is
+   -MTL_ENOTSUP). direction, essence and unit never change. `when` applies to FLOWS, LEGS,
+   those options, and colorimetry, tcs, range and min_tx_delay_ns under MEDIA while
+   running (MS5; NULL otherwise); in ARMED, a `when` before T0 means T0; an AT_TAI or
+   AT_INDEX already past means NOW (below 0: -MTL_EINVAL, FIELD_REQUIRED, R5). The switch
+   happens at the index boundary by the clock, whether a unit is there or not (TX: the
+   first index at or after `when`; RX: units with media time at or after it, or by local
+   arrival time for unlocked clocks; audio: a packet boundary, so a salvo lands within one
+   packet time). -MTL_EBUSY (WRONG_STATE) while an earlier update is pending. sc NULL with
+   parts 0 cancels a pending update (IS-05 activation mode null): 0 cancelled, 1 none
+   pending, -MTL_EBUSY (UPDATE_COMMITTING) when it will still apply (Phase 7; -MTL_ENOTSUP
+   until then).
+   Only an update pending for an instant fails (TIME_STEP) at a declared step; an
+   immediate one applies at the next boundary on the stepped clock. Returns once the
+   change is posted; planned_tai_ns (may be NULL) receives the media time of the boundary,
+   and status.update_* and MTL_EVENT_UPDATE report when it applied. In CREATED and STOPPED
+   it applies during the call and planned = applied = now (MS3, every part).
+   In ARMED and RUNNING, MS3 takes FLOWS (video; the other essences with their bindings,
+   MS4), and LEGS unchanged, with `when` NULL or MTL_NOW, leg by leg (an unchanged leg is
+   untouched): TX switches every changed leg on the first unit built after the call (the
+   next boundary by the clock when none is); RX takes at the call K, the newest unit in
+   assembly, and moves every changed leg's accept filter at the first tick after K and
+   every older unit are published (complete, or at their due time; with none, at once), so
+   no old-flow unit is cut. When every enabled leg changes, no unit after K gets a slot, a
+   new-flow packet before the switch is dropped, the new-flow unit that lost its first
+   packets so is dropped whole, and the first new-flow unit delivered carries
+   DISCONTINUITY (RELOCKED when its media_index is not after the last delivered); with an
+   enabled leg unchanged nothing is dropped whole or flagged. Packets the switch drops
+   count in rx.pkts_rejected{cause=flow_switch}. The update is APPLIED at the switch: the
+   call returns after the receipt acknowledgement with it PENDING until RX switches (TX:
+   while a changed leg's unit is in mid-build), else APPLIED; in ARMED planned = applied =
+   T0.
+   Until MS5 an instant `when`, a changed legs_disabled, a leg on the kernel-socket
+   backend and an RX leg on AF_XDP are -MTL_ENOTSUP (NOT_IMPLEMENTED, field "when",
+   "legs_disabled" or "port"), and so is RX with rx.threads 2 (field "rx.threads") until
+   SP-03 is fixed for core sessions; a unicast TX neighbour is resolved in the call within
+   port.arp_timeout_s (-MTL_ETIMEDOUT, WAITING_NEIGHBOUR, nothing changed). MTL never
+   changes the launch delay by itself. update_seq counts posted updates. CP. (MS3) */
 MTL_API_CP(3) int mtl_session_update(mtl_session_h s,
                                      const struct mtl_session_config* MTL_NULLABLE sc,
                                      uint64_t parts, const struct mtl_when* MTL_NULLABLE when,
                                      int64_t* MTL_NULLABLE planned_tai_ns);
 
 #define MTL_DISCARD_REBASE 0x1u /* map first_index to the next feasible index (seek) */
-/* The session stays where it is (seek). TX: queued units become FLUSHED (DISCARD). RX:
-   the unit being received and the ready, undequeued units are dropped and counted in
-   rx.units_flushed, so the first dequeue after the call is a new unit; a dequeued unit
-   stays the application's lease. CP. (MS2) */
+/* The session stays where it is (seek). TX: queued units become FLUSHED (DISCARD), and
+   every REPEAT pin is released (D-212). RX: the unit being received and the ready,
+   undequeued units are dropped and counted in rx.units_flushed, so the first dequeue
+   after the call is a new unit; a dequeued unit stays the application's lease.
+   CP. (MS2) */
 MTL_API_CP(2) int mtl_session_discard(mtl_session_h s, uint64_t flags, int64_t first_index);
 
 /* Stops (DRAIN until the deadline, then FLUSH), destroys, and waits up to timeout_ns for
@@ -1541,7 +1640,8 @@ struct mtl_leg_status {
                                               ON: above the maximum, or not identified);
                                               format_reason says why */
 #define MTL_STATUS_PACING_DOWNGRADED 0x4u  /* TX: running below the granted pacing class */
-#define MTL_STATUS_TIMING_WARNING 0x8u     /* TX: timing_reason, shortfall_ns are set */
+#define MTL_STATUS_TIMING_WARNING 0x8u     /* TX: timing_reason, shortfall_ns and
+                                              suggested_min_tx_delay_ns are set */
 #if defined(MTL_LATER)
 #define MTL_STATUS_MUTED 0x10u             /* every leg admin-disabled; RUNNING, nothing sent
                                               (a transport state: NMOS master_enable stays
@@ -1572,13 +1672,16 @@ struct mtl_session_status {
   uint32_t flags;        /* MTL_STATUS_* */
   uint32_t leg_count;
   uint32_t timing_reason;
-  int64_t shortfall_ns;              /* TIMING_WARNING */
-  int64_t suggested_min_tx_delay_ns; /* TIMING_WARNING */
+  int64_t shortfall_ns;              /* TIMING_WARNING: the worst hand-over - deadline;
+                                        else MTL_TIME_NONE */
+  int64_t suggested_min_tx_delay_ns; /* TIMING_WARNING: the worst hand-over - M, minus C
+                                        on a converting session; else MTL_TIME_NONE */
   struct mtl_leg_status leg[MTL_MAX_LEGS];
   uint32_t update_state;  /* enum mtl_update_state, of the last update call */
   uint32_t update_reason; /* FAILED: mtl_reasons.h */
   uint64_t update_seq;    /* +1 per posted update; read it after the call to match events */
-  int64_t update_applied_tai_ns; /* when it switched (IS-05 200); INT64_MIN until then */
+  int64_t update_applied_tai_ns; /* when it switched (IS-05 200); MTL_TIME_NONE until
+                                    then */
   uint32_t format_reason; /* with FORMAT_CHANGED: RASTER_MISMATCH (outside the raster, or
                              above the maximum) or DETECT_FAILED; else 0 */
   uint32_t provide_gen;   /* provide sessions: the generation of destinations provided now,
@@ -1620,8 +1723,8 @@ struct mtl_plane {
 #define MTL_SUBMIT_UNIT_END 0x10u     /* packet units: the last chunk of its unit */
 #if defined(MTL_LATER)
 /* SENDER mode, inline processors: RTP and the sender report's NTP come from unit.rtp and
-   unit.media_tai_ns (a received SENDER_TIME unit); launch = submit + min_tx_delay_ns
-   (Phase 7) */
+   unit.media_tai_ns (a received SENDER_TIME unit); launch = submit + the pick-up lead +
+   min_tx_delay_ns (Phase 7) */
 #define MTL_SUBMIT_SENDER_TIME 0x20u
 #endif
 /* plane[] names caller memory (with stride and rows) that submit reads during the call:
@@ -1631,9 +1734,7 @@ struct mtl_plane {
    submit converts in the caller or returns -MTL_ENOTSUP. */
 #define MTL_SUBMIT_SRC_PLANES 0x40u
 #define MTL_SUBMIT_MASK 0xffffffffull /* the TX bits; a template contributes these */
-/* unit.flags, RX outputs (bits 32-63) */
-#define MTL_UNITF_INDEX_VALID 0x100000000ull
-#define MTL_UNITF_TAI_VALID 0x200000000ull
+/* unit.flags, RX outputs (bits 32-63; 32 and 33 retired, never reused) */
 #define MTL_UNITF_USED_REDUNDANCY 0x400000000ull /* complete thanks to the other leg */
 #define MTL_UNITF_DISCONTINUITY 0x800000000ull
 #define MTL_UNITF_FORMAT_CHANGED 0x1000000000ull /* the first unit of a published format
@@ -1644,13 +1745,25 @@ struct mtl_plane {
 #define MTL_UNITF_SENDER_TIME 0x8000000000ull  /* media_tai_ns is on the sender's clock
                                                   (mtl_ipmx.h, Phase 7) */
 #endif
-/* with DISCONTINUITY: the receiver relocked onto a restarted sender, media_index may go
-   backwards (timing.md) */
+/* with DISCONTINUITY: the receiver relocked onto a restarted sender, or the first
+   new-flow unit of a FLOWS update that switched every enabled leg's flow is not after the
+   last delivered; media_index may go backwards (timing.md) */
 #define MTL_UNITF_RELOCKED 0x10000000000ull
+/* Lending this unit past the next dequeue would leave MTL fewer slots than it needs for
+   the units that arrive meanwhile: the session's other leased and held units number at
+   least pool_count - R_copy, R_copy = ceil(latency_min_ns / U) + 1, U the unit period
+   (half for fields), latency_min_ns of the current format. A framework source copies it
+   into a buffer of its own and releases it at once. Advice: a consumer that releases
+   before its next dequeue ignores it; a unit kept anyway may make the pool miss a later
+   one (missed_before). Frame units of library and attached pools; never on rows or packet
+   units, with MTL_SESSION_RX_BY_INDEX or on provide sessions (contract §5.3). */
+#define MTL_UNITF_COPY_ADVISED 0x20000000000ull
 
 enum mtl_rx_status {
   MTL_RX_COMPLETE = 1,
-  MTL_RX_INCOMPLETE = 2, /* lost packets; library pools read them as zero */
+  MTL_RX_INCOMPLETE = 2, /* lost packets; library pools fill them (MS2a): video the
+                            format's black; audio, cvideo and fastmeta zero; ANC units are
+                            never filled */
 };
 
 /* One unit. acquire and dequeue write every field up to struct_size but struct_size
@@ -1659,7 +1772,9 @@ enum mtl_rx_status {
    read, then release the lease. As a template (mtl_tx_write, mtl_tx_send_slot) a unit
    contributes media_index, media_tai_ns, cookie, hold, launch_tai_ns, meta and the TX
    bits of flags, and to mtl_tx_send_slot also used (the slot already holds the content);
-   a received unit is a valid template. A template for a session without
+   a received unit is a valid template: a media field it has none for reads MTL_TIME_NONE,
+   which submit refuses in the field the mode reads (R5) and AUTO takes as unset, like 0.
+   A template for a session without
    results carries cookie 0; a received unit's cookie is 0 unless it came from a provided
    destination (mtl_rx_provide), so a forwarder over a provide session sets it. */
 struct mtl_unit {
@@ -1681,13 +1796,15 @@ struct mtl_unit {
   uint64_t flags;    /* MTL_SUBMIT_* (TX, bits 0-31), MTL_UNITF_* (RX, bits 32-63) */
   uint32_t rtp;      /* TX: with MTL_SUBMIT_RTP_TS; RX: received */
   uint32_t missed_before; /* RX: units the pool could not take since the last one */
-  int64_t media_index;  /* TX: MTL_MEDIA_INDEX; RX: with MTL_UNITF_INDEX_VALID */
-  int64_t media_tai_ns; /* TX: MTL_MEDIA_TAI; RX: with MTL_UNITF_TAI_VALID */
+  int64_t media_index;  /* TX: MTL_MEDIA_INDEX; RX: MTL_TIME_NONE when unknown (video
+                           before MS2b, the other essences before MS6) */
+  int64_t media_tai_ns; /* TX: MTL_MEDIA_TAI; RX: MTL_TIME_NONE when unknown */
   uint64_t cookie;      /* TX: returned in the result; non-zero on a session without
                            results: -MTL_EINVAL (COOKIE_WITHOUT_RESULTS), in every build;
                            RX: the destination's cookie on a provide session, else 0 */
   mtl_lease_h hold;     /* TX: an RX lease this unit reads from, kept until its result */
-  int64_t launch_tai_ns; /* TX: with NOT_BEFORE or EXACT, and always with PKT_PACE_LAUNCH */
+  int64_t launch_tai_ns; /* TX: with NOT_BEFORE or EXACT, and always with PKT_PACE_LAUNCH;
+                            >= 0 (R5) */
   uint64_t reserved[2];
 };
 
@@ -1758,35 +1875,47 @@ struct mtl_anc_packet {
 
 /* ---- Data path ------------------------------------------------------------------------ */
 
-/* TX: a writable slot. 0, or -MTL_EAGAIN (none free by the timeout: status.blocked_on says
-   why), -MTL_ECANCELED (with a timeout), -MTL_ESHUTDOWN, -MTL_EIO, ... Unread results hold
-   ring entries (MTL_BLOCKED_RESULTS): after a reap of every ready result, one acquire never
-   blocks on them, even with MTL_FOREVER; a burst of several acquires between reaps can, so
-   such a loop uses a finite timeout and reaps on -MTL_EAGAIN (contract.md §5.5). WT
-   (Waiting, below). (MS1) */
+/* TX: a writable slot. 0, or -MTL_EAGAIN (none free by the timeout: status.blocked_on
+   says why), -MTL_ECANCELED (with a timeout), -MTL_ESHUTDOWN, -MTL_EIO, ... Unread
+   results hold ring entries (MTL_BLOCKED_RESULTS): while each unit's first submit follows
+   a reap of every ready result, no acquire waits on them, on any thread, with any
+   timeout; a session never reaped meets them (contract.md §5.5). Any number of threads
+   (MP-safe). With MTL_SESSION_MT_SUBMIT a blocking acquire uses a finite timeout and
+   reaps on -MTL_EAGAIN. WT (Waiting, below). (MS1) */
 MTL_API_WT(1) int mtl_tx_acquire(mtl_session_h s, struct mtl_unit* u, int64_t timeout_ns);
-/* Hands the unit to MTL; exactly one result follows (if results are on). The results
-   ring holds pool_count + 1 entries and acquire reserves one, so producing a result never
-   waits. A failed first submit returns the slot to the pool without a result, except
-   -MTL_EBADF and -MTL_ESTALE, which change no state. Rows units: submit the same lease
-   again with a larger `used` to publish more rows; once a submit was accepted, a later
-   failing submit ends the unit where its rows stopped (option tx.rows_late), consumes the
-   lease, and the unit's one result follows when its packets have left. DPC. (MS1) */
+/* Hands the unit to MTL; exactly one result follows (if results are on). The results ring
+   has room for every result the pool can owe (its bound: D-208; with
+   MTL_SESSION_MT_SUBMIT the bound grows with the submitting threads, so a blocking
+   acquire uses a finite timeout) and acquire reserves one, so producing a result never
+   waits. The media field the mode reads, and a launch, below 0 is -MTL_EINVAL
+   (FIELD_REQUIRED, R5), checked before admission. A failed first submit returns the slot
+   to the pool without a result (D-88), except -MTL_EBADF and -MTL_ESTALE, which change no
+   state. Rows units: submit the same lease again with a larger `used` to publish more
+   rows; once a submit was accepted, a later failing submit ends the unit where its rows
+   stopped (option tx.rows_late), consumes the lease, and the unit's one result follows
+   when its packets have left. One submitting thread at a time; any number with
+   MTL_SESSION_MT_SUBMIT. DPC. (MS1) */
 MTL_API_DPC(1) int mtl_tx_submit(mtl_session_h s, const struct mtl_unit* u);
 
-/* RX: a received unit, in delivery order. Missing packets read as zero (library pools)
-   and `status` says so. Video and cvideo library pools: the MTL_RX_TAIL_BYTES after the
-   unit (video: plane 0 + the sum of stride x rows; cvideo: plane 0 + used) are zero when
-   it returns. WT (Waiting, below); DPC when it works on the unit in the caller: packet
-   units without MTL_PKT_RX_LEND (mtl_packet.h), which it copies; a video.app_format
-   conversion; ANC units, which it decodes; the zero fill of a library-pool unit with lost
-   packets (MS2). It claims the unit first and works outside every lock, so concurrent
-   dequeues of one session work in parallel. (MS1) */
+/* RX: a received unit, in delivery order. Missing packets read as the format's black in
+   video and as zero in audio, cvideo and fastmeta (library pools, MS2a; ANC units are
+   never filled), and `status` says so. Video and cvideo library pools: the MTL_RX_TAIL_BYTES
+   after the unit (video: plane 0 + the sum of stride x rows; cvideo: plane 0 + used) are
+   zero when it returns. Sets MTL_UNITF_COPY_ADVISED when lending this unit would leave
+   too few slots (frame units of library and attached pools); a media field without a
+   value reads MTL_TIME_NONE. WT (Waiting, below); DPC when it works on the unit in the
+   caller: packet units without MTL_PKT_RX_LEND (mtl_packet.h), which it copies; a
+   video.app_format conversion; ANC units, which it decodes; the fill of a library-pool
+   unit with lost packets (MS2a). It claims the unit first and works outside every lock,
+   so concurrent dequeues of one session work in parallel. (MS1) */
 MTL_API_WT(1) int mtl_rx_dequeue(mtl_session_h s, struct mtl_unit* u, int64_t timeout_ns);
 
-/* Returns a lease to s. TX: an acquired, unsubmitted one, with no result (a submitted one
-   is -MTL_ESTALE); a call waiting in acquire is woken (R6). RX: a dequeued one, from any
-   thread, in any order. DP. (MS1) */
+/* Returns a lease to its session. TX: an acquired, unsubmitted one, with no result (a
+   submitted one is -MTL_ESTALE); a call waiting in acquire is woken (R6). RX: a dequeued
+   one. Any thread, any order (MP-safe). s may be null, since the lease names its session:
+   a free callback can carry the lease alone in its pointer argument. With s, a lease of
+   another session is -MTL_EBADF; with or without it, a stale lease is -MTL_ESTALE, also
+   once its session retired or its entry holds a newer session. DP. (MS1) */
 MTL_API_DP(1) int mtl_release(mtl_session_h s, mtl_lease_h lease);
 static inline int mtl_tx_release(mtl_session_h s, mtl_lease_h lease) {
   return mtl_release(s, lease);
@@ -1801,21 +1930,25 @@ enum mtl_tx_status {
 #if defined(MTL_LATER)
   MTL_TX_LATE = 2,    /* sent late within tx.late_tolerance_ns (MTL_LATE_SEND_LATE, Phase 7) */
 #endif
-  MTL_TX_DROPPED = 3, /* not sent; `reason` says why; its index stays empty on the wire */
+  MTL_TX_DROPPED = 3, /* not sent; `reason` says why; a not-sendable or TOO_LATE drop
+                         leaves its index to the underrun policy (empty under SKIP); a
+                         BEHIND, SNAP_COLLISION or DUPLICATE_INDEX drop leaves no gap */
   MTL_TX_FLUSHED = 4, /* stop(FLUSH), discard, close, abort, ERROR, before start */
   MTL_TX_FAILED = 5,  /* device or queue failure; `error` and `reason` */
 };
-/* mtl_tx_result.flags */
-#define MTL_TXR_MEDIA_VALID 0x1u  /* media_index, media_tai_ns */
-#define MTL_TXR_MARGIN_VALID 0x2u /* margin_ns */
-#define MTL_TXR_SENT_VALID 0x4u   /* sent_tai_ns */
+/* mtl_tx_result.flags (0x1-0x4 retired, never reused) */
 #define MTL_TXR_SENT_HW 0x8u      /* sent_tai_ns is a NIC timestamp */
 #define MTL_TXR_ESTIMATED 0x10u   /* the time base was not locked */
 #define MTL_TXR_SNAPPED 0x20u     /* TAI media time moved to the grid */
 #define MTL_TXR_DEFERRED 0x40u    /* AUTO unit moved to a later index (ON_TIME, MTL_LATE_DEFER) */
 #define MTL_TXR_COPIED 0x80u      /* this unit took a copy path */
 #define MTL_TXR_PKT_SHORT 0x100u  /* packet units: fewer packets than declared */
-/* The core result record; mtl_observe.h has the full one (mtl_tx_reap_full). */
+/* The core result record; mtl_observe.h has the full one (mtl_tx_reap_full). By status:
+   ON_TIME has the media fields and rtp, and from MS3 margin_ns and sent_tai_ns; DROPPED
+   has the media fields, rtp and from MS3 margin_ns, never sent_tai_ns; FLUSHED and FAILED
+   have what was known (an AUTO unit flushed before pick-up has no media time). From MS3
+   code that branches on ON_TIME or DROPPED compares nothing more; any field without a
+   value reads MTL_TIME_NONE. */
 struct mtl_tx_result {
   uint32_t status; /* enum mtl_tx_status */
   uint32_t reason; /* mtl_reasons.h */
@@ -1823,19 +1956,22 @@ struct mtl_tx_result {
   uint32_t flags;  /* MTL_TXR_* */
   uint64_t cookie;
   uint64_t seq; /* per session, in submission order */
-  int64_t media_index;
-  int64_t media_tai_ns;
-  int64_t margin_ns;   /* deadline - submit; negative = late */
-  int64_t sent_tai_ns; /* first packet */
-  uint32_t rtp;        /* first packet on the wire */
-  int32_t error;       /* MTL_E* for FAILED */
+  int64_t media_index;  /* MTL_TIME_NONE: none (an AUTO unit flushed before pick-up) */
+  int64_t media_tai_ns; /* likewise */
+  int64_t margin_ns;    /* deadline - submit; negative = late; MTL_TIME_NONE: no
+                           deadline */
+  int64_t sent_tai_ns;  /* first packet, stamped by the engine; MTL_TIME_NONE: not sent */
+  uint32_t rtp;         /* the unit's, sent or not; 0 when media_tai_ns is
+                           MTL_TIME_NONE */
+  int32_t error;        /* MTL_E* for FAILED */
   mtl_session_h session;
   uint64_t reserved[2];
 };
 /* The TX results of a session: up to max in submission order, each rec_size bytes apart
    (a larger record is filled further, mtl_observe.h). A count >= 1, or -MTL_EAGAIN when
    there is none; a reap that frees result space wakes a call waiting in acquire (R6). The
-   typed wrappers pass the size. WT (Waiting, below). (MS1) */
+   typed wrappers pass the size. Any number of threads, each result to one (MP-safe). WT
+   (Waiting, below). (MS1) */
 MTL_API_WT(1) int mtl_reap(struct mtl_object o, void* rec, size_t rec_size, uint32_t max,
                            int64_t timeout_ns);
 static inline int mtl_tx_reap(mtl_session_h s, struct mtl_tx_result* r, uint32_t max,

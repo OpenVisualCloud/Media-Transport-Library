@@ -71,7 +71,8 @@ enum mtl_option_key {
 #endif
   MTL_OPT_UNDERRUN_POLICY = 102,   /* "tx.underrun_policy" MTL_UNDERRUN_* (by essence) S */
   MTL_OPT_SNAP_MODE = 103,         /* "tx.snap_mode" MTL_SNAP_* (NEAREST) S */
-  MTL_OPT_SNAP_TOLERANCE_NS = 104, /* "tx.snap_tolerance_ns" (by snap mode) S */
+  MTL_OPT_SNAP_TOLERANCE_NS = 104, /* "tx.snap_tolerance_ns" (by snap mode), 0 to P/2
+                                      (TFRAME/2 interlaced), OPTION_RANGE above S */
 #if defined(MTL_LATER)
   MTL_OPT_OFF_GRID_POLICY = 105,   /* "tx.off_grid_policy" MTL_OFF_GRID_* (RELOCK) S (later) */
 #endif
@@ -270,7 +271,8 @@ enum mtl_option_key {
   MTL_OPT_AF_XDP_COPY = 2113,      /* "port.af_xdp_copy" bool: no zero-copy C P */
   MTL_OPT_TX_MONO_POOL = 2114,     /* "port.tx_mono_pool" bool C P */
   MTL_OPT_TX_NO_BURST_CHECK = 2115, /* "port.tx_no_burst_check" bool C P */
-  MTL_OPT_ARP_TIMEOUT_S = 2116,    /* "port.arp_timeout_s" C */
+  MTL_OPT_ARP_TIMEOUT_S = 2116,    /* "port.arp_timeout_s"; also bounds a running update's
+                                      unicast neighbour (MS3-MS4) C */
   MTL_OPT_RX_MONO_POOL = 2117,     /* "port.rx_mono_pool" bool C P */
   MTL_OPT_RX_USE_CNI = 2120,       /* "port.rx_use_cni" bool C P */
   MTL_OPT_DHCP = 2121,             /* "port.dhcp" bool: built-in DHCP on a DPDK port C */
@@ -305,6 +307,10 @@ enum mtl_option_key {
                                       built-in PTP (3, ST 2059-2 §5.5.1) C */
   /* 2210 is not used: log levels belong to the log sinks (mtl_observe.h) */
   MTL_OPT_STAT_DUMP_S = 2211,      /* "log.stat_dump_s" periodic stats in the log; 0 off (10) R */
+  MTL_OPT_UTC_OFFSET_S = 2212,     /* "time.utc_offset_s" TAI - UTC in s for SYSTEM_TAI
+                                      and AUTO's move test (37); after a leap second on a
+                                      running instance no source moves without a step C
+                                      (MS3) */
   MTL_OPT_DMA_DEVICES = 2220,      /* "instance.dma" str: "0000:80:04.0,0000:80:04.1" C P */
 #if defined(MTL_LATER)
   MTL_OPT_FREERUN_SLEW_PPM = 2230, /* "time.freerun_slew_ppm" FREERUN follows CLOCK_TAI by
@@ -322,11 +328,26 @@ enum mtl_late_policy {
 #endif
   MTL_LATE_DEFER = 3, /* AUTO only: the next feasible index (MTL_TXR_DEFERRED) */
 };
+/* What a media index without a unit of the application's sends (timing.md §6.3). 2 is
+   retired before MS1 (the ANC empty packet is KEEPALIVE), never reused. */
 enum mtl_underrun_policy {
-  MTL_UNDERRUN_SKIP = 1,
-  MTL_UNDERRUN_EMPTY_ANC = 2,
-  MTL_UNDERRUN_KEEPALIVE = 3,
-  MTL_UNDERRUN_SILENCE = 4,
+  MTL_UNDERRUN_SKIP = 1,      /* nothing (video, cvideo, audio); refused for ANC and
+                                 fastmeta frame units */
+  MTL_UNDERRUN_KEEPALIVE = 3, /* the essence's empty packet at its standard's cadence: ANC
+                                 one per empty frame, field or PsF segment (ST 2110-40
+                                 §5.5); fastmeta one after 450 ms with nothing sent
+                                 (ST 2110-41 §5.1); the default of both */
+  MTL_UNDERRUN_SILENCE = 4,   /* audio: zero samples on the packet grid */
+  MTL_UNDERRUN_REPEAT = 5,    /* video; cvideo with an intra codec (JPEG XS); RUNNING
+                                 only: its parity's pin, again, with the index's media
+                                 time and RTP (a BEHIND drop or a cut-short unit releases
+                                 the pin; no pin: nothing); not a unit: no seq, no
+                                 result, no user meta. Its slot stays MTL's while it may
+                                 be repeated; its result follows the rule of
+                                 contract.md §6.1. Its pins are 1, or 2 when interlaced
+                                 (one per parity); a pool below pins + 1 is
+                                 POOL_TOO_SMALL (MS4a1; cvideo MS4b; -MTL_ENOTSUP until
+                                 then) */
 };
 enum mtl_snap_mode {
   MTL_SNAP_NEAREST = 1,
@@ -429,7 +450,7 @@ struct mtl_option_desc {
   uint32_t reserved;
   int64_t min;
   int64_t max;
-  int64_t def;                 /* the default; derived defaults read as INT64_MIN */
+  int64_t def;                 /* the default; a derived default reads MTL_TIME_NONE */
   const char* enum_names;      /* static "name=value" pairs: every value of an ENUM key
                                   ("drop=1,defer=3"), the named values of an INT or NS
                                   key ("auto=-1"); NULL if none */

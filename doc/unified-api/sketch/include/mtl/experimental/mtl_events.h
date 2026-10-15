@@ -40,11 +40,17 @@ enum mtl_event_type {
   MTL_EVENT_RX_TIMEBASE_SUSPECT = 8, /* S; value[0] arrival - media ns; the getter is
                                         MTL_STATUS_TIMEBASE_SUSPECT */
   MTL_EVENT_PACING_CHANGED = 9,      /* S; enum mtl_pacing */
-  MTL_EVENT_TIMING_INFEASIBLE = 10,  /* S; value[0] shortfall, value[1] suggested delay */
+  MTL_EVENT_TIMING_INFEASIBLE = 10,  /* S; value[0] shortfall, value[1] suggested delay
+                                        (D-219) */
   MTL_EVENT_BACKPRESSURE = 11,       /* S; enum mtl_blocked_on; NONE -> X begins, X -> NONE
                                         ends */
   MTL_EVENT_TX_UNDERRUN = 12,        /* S; value[0] indices filled by the underrun policy */
-  MTL_EVENT_TIME_STATE = 13,         /* I; port; enum mtl_time_state; value[0] offset ns */
+  MTL_EVENT_TIME_STATE = 13,         /* I; port; enum mtl_time_state; value[0] offset ns;
+                                        value[1] (WARNING, state unchanged) a better
+                                        source minus the instance clock, ns, or on
+                                        CLOCK_TAI the change of the kernel TAI offset,
+                                        ns (a step under the source); MTL_TIME_NONE when
+                                        it clears */
   MTL_EVENT_TIME_STEP = 14,          /* I; value[0] step ns */
   MTL_EVENT_PORT_LINK = 15,          /* I; port; 0/1 up; value[0] Mb/s */
   MTL_EVENT_PORT_RESET = 16,         /* I; port */
@@ -59,8 +65,9 @@ enum mtl_event_type {
   MTL_EVENT_SCHED_STALLED = 24,  /* I; scheduler; value[0] loop age ns; at 1/8, 1/4, 1/2 of
                                     instance.stall_ns, before the health bit */
   MTL_EVENT_HEALTH = 25,         /* I; old -> new MTL_HEALTH_* flags */
-  MTL_EVENT_UPDATE = 26,         /* S; an update left PENDING: new = enum mtl_update_state;
-                                    value[0] applied TAI, value[1] update seq (nmos-ipmx.md) */
+  MTL_EVENT_UPDATE = 26,         /* S; an update applied or failed: new = enum
+                                    mtl_update_state; value[0] applied TAI, value[1]
+                                    update seq (nmos-ipmx.md) */
   MTL_EVENT_GRANDMASTER = 27,    /* I; port; grandmaster changed: value[0] new id, [1] old */
   MTL_EVENT_PORT_ADDRESS = 28,   /* I; port; the granted address changed (DHCP) */
 #if defined(MTL_LATER)
@@ -70,7 +77,7 @@ enum mtl_event_type {
                                     (Phase 7) */
 #endif
 };
-#define MTL_EVF_TIME_VALID 0x1u
+/* MTL_EVF_* (mtl_event.flags): 0x1 retired, never reused */
 /* One event record (ev_size versions it). */
 struct mtl_event {
   uint32_t type;      /* enum mtl_event_type */
@@ -78,10 +85,10 @@ struct mtl_event {
   uint32_t reason;    /* mtl_reasons.h, 0 if not applicable */
   uint32_t coalesced; /* occurrences this record stands for, >= 1 */
   uint64_t seq;       /* per reader; a gap means overflow */
-  int64_t time_tai_ns;
+  int64_t time_tai_ns; /* MTL_TIME_NONE when the time base had no sample */
   struct mtl_object origin;
   char origin_name[MTL_NAME_MAX]; /* readable after the origin retired */
-  uint32_t flags;                 /* MTL_EVF_* */
+  uint32_t flags;                 /* MTL_EVF_*: none in v1; for appended fields (R3) */
   uint32_t index;                 /* leg or port, else 0 */
   uint32_t old_value;
   uint32_t new_value;

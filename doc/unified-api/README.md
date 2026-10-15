@@ -28,7 +28,7 @@ The work is done by a main session that plans and integrates, and by the reposit
 diff (Gate 5), `mtl-system-admin` runs KahawaiTest on VFs (Gate 6); pytest runs from the main
 session. Their rules are in the repository's `CLAUDE.md` and `.github/claude/agents/`.
 
-**Read first, in this order** (about 43 k tokens in all, at 4 bytes a token):
+**Read first, in this order** (about 47 k tokens in all, at 4 bytes a token):
 
 1. this README §1 and [ms1-status.md](ms1-status.md) (where the work stands);
 2. [implementation-plan.md](implementation-plan.md) §1.1, §1.2, §1.3, §2.1, §2.2, §3, §4, §5.1,
@@ -122,21 +122,21 @@ of every task and the standing instructions are in [ms1-status.md](ms1-status.md
 | [nmos-ipmx.md](nmos-ipmx.md) | NMOS and IPMX products; Phase 7 | NMOS and IPMX in brief, every feature MTL provides for them (name, purpose, API, milestone), the open-source NMOS stacks, the integration, a demo plan; the Phase 7 design: the IS-05 contract, SDP, RTCP sender reports, timing without PTP, encryption |
 | [presentation/slides.md](presentation/slides.md) | presenters (a talk for maintainers and users) | a talk on the design and the plan (Marp) |
 | [sketch/](sketch/README.md) | everyone | the normative headers, the compiling examples, `check.sh` |
-| [design/](design/wait-tests.md) | implementers | the design models and the task that copies each (`final_model.py`: C1w, C1q1, C1q2; the provide model: MS2b); the wait protocol's pause-hook tests (WH, WC, QW) |
+| [design/](design/README.md) | implementers | the design models and the task that copies each (`final_model.py`: C1w, C1q1, C1q2; the provide model: MS2b; `ring_bound.py`, `pin_ring.py`, `trace_d207.py`, `w_noe2.py`: M0); the wait protocol's pause-hook tests (WH, WC, QW) in [design/wait-tests.md](design/wait-tests.md) |
 
 ## 3. Reading the IDs
 
 | ID | Means | Defined in |
 |---|---|---|
 | MS1…MS7, Phase 7 | milestones | [implementation-plan.md](implementation-plan.md) §1.2 |
-| P0, M0, S0, T1, H1b, E1 (E1a–E1d), C0, C1a, C1w, C1b, A1, C2, B1, B2, A2a, A2c, I1, R1, P1, A2b, B3, X | the tasks of MS1 | [implementation-plan.md](implementation-plan.md) §5.2 |
-| C-FPS, C-GRANT, C-BRIDGE, C1q1, C1q2 (MS2a), N1–N8, N6a, N6b (MS4a2) | later tasks named by the designs | [implementation-plan.md](implementation-plan.md) §6 |
+| P0, M0, S0, T1, H1b, E1 (E1a–E1d), C0, C1a, C1w, C1b, A1, C2 (C2a, C2b), B1, B2, A2a, A2c, I1, R1, P1, A2b, B3, X | the tasks of MS1 | [implementation-plan.md](implementation-plan.md) §5.2 |
+| C-FPS, C-GRANT, C-BRIDGE, C1q1, C1q2 (MS2a), G1 (G1a, G1b; MS3), T-REP (MS4a1), N1–N8, N6a, N6b (MS4a2) | later tasks named by the designs | [implementation-plan.md](implementation-plan.md) §6 |
 | RB0–RB2, F2-1 | the st20p re-base tasks (MS2b); the F+2 harness task | [implementation-plan.md](implementation-plan.md) §6.1, §6.6 |
 | R1–R8 | the rules every call follows | `mtl.h`, [contract.md](contract.md) §1 |
-| D-01…D-207 | design decisions and their reason | [decisions.md](decisions.md) §2 |
+| D-01…D-244 | design decisions and their reason | [decisions.md](decisions.md) §2 |
 | DF-01…DF-29 | the defaults for the ST20 port | [decisions.md](decisions.md) §4 |
 | OI-n | open implementation issues, each with its rule and milestone | [decisions.md](decisions.md) §5 |
-| G-01…G-142, G-PKT-1…7 | guarantees, each with its test | [guarantees.md](guarantees.md) |
+| G-01…G-166, G-PKT-1…7 | guarantees, each with its test | [guarantees.md](guarantees.md) |
 | R-xxx-n, R-PKT-n, K-REQ-n, N-REQ-n, I-REQ-n | requirements | [requirements.md](requirements.md) |
 | GO-n, NG-n, P1–P9 | goals, non-goals, personas | [requirements.md](requirements.md) §2 |
 | E1–E17 (E5 split into E5a, E5b), R1, R2, MF1–MF10, EK1–EK21, PE1–PE9 | engine changes | [engine.md](engine.md) §6 |
@@ -157,10 +157,10 @@ of every task and the standing instructions are in [ms1-status.md](ms1-status.md
 
 Some letters are reused: R1 and R2 are contract rules and also engine items (R1 also a task), H1 is
 a pinned-core hazard while H1b is a task, E1 is a task and an engine change, S0 a task and a spike,
-P1 a task and a persona (P1–P9), and G-Nn is an NMOS gap, not a guarantee G-xx. N1–N8 are MS4a2
-tasks, while core.md §6's N0' and N1–N9 are steps of INTERRUPT. A step label of core.md §6 (A1, C1,
-D1, E1, P1, T1, …) is local to its procedure: it is not a task or a test. The document in the
-third column settles which one a text means.
+P1 a task and a persona (P1–P9), G1 (G1a, G1b) is an MS3 task and G-Nn an NMOS gap, neither a
+guarantee G-xx. N1–N8 are MS4a2 tasks, while core.md §6's N0' and N1–N9 are steps of INTERRUPT. A
+step label of core.md §6 (A1, C1, D1, E1, P1, T1, …) is local to its procedure: it is not a task or
+a test. The document in the third column settles which one a text means.
 
 ## 4. The sketch
 

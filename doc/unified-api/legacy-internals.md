@@ -212,7 +212,7 @@ and ST41 and ST40P say "MEDIA_CLK is used" (`include/st41_api.h:48-50`,
 | 22 | reserved fields: `st20_rx_ops.pacing`/`.packing`, `ST22_PACK_SLICE` "not support now", `sample_size`/`sample_num`, `tx/rx_sessions_cnt_max` | `include/st20_api.h:1509-1512`, `:386-387`; `include/st30_api.h:474-479`; `include/mtl_api.h:745-760` |
 | 25 | `epoch` never defined: frame periods for video, packet times for audio | `st_tx_audio_session.c:264-268` |
 | 27 | TX clock implicit; sessions on port R still pace on P (timing.md §2.4) | `st_tx_audio_session.c:266` |
-| 28 | `update_destination/source` mid-frame semantics unspecified (§4.4) | — |
+| 28 | `update_destination/source` mid-frame semantics undocumented: TX switches at the next burst after the update, mid-frame; RX breaks before it makes, on every leg (§4.4) **[verified at HEAD]** | `st_tx_video_session.c:2682`, `:3848-3855`; `st_rx_video_session.c:3932-3975` |
 | 29 | media concepts in the core header (`st21_tx_pacing_way`, `tx_audio_sessions_max_per_sch`, `pkt_udp_suggest_max_size`, `nb_rx_hdr_split_queues`); pacing per instance | `include/mtl_api.h:318-335`, `:681-705` |
 | 30 | magic sizes: video framebuffers 2–8 (`include/st20_api.h:24`); ANC meta 20, excess truncated with a `warn()` on the data path (`st_rx_ancillary_session.c:205-207`); `MTL_PKT_MAX_RTP_BYTES` = 1460 − 8 − 100 (`include/mtl_api.h:89`); `failed_cause[64]`; `MTL_PCAP_FILE_MAX_LEN 32`; `ST30_TX_FIFO_DEFAULT_TIME_MS 10` (E11, E12, PE7) | as cited |
 
@@ -757,8 +757,11 @@ how the engines take it is [engine.md §2.17](engine.md#217-updates-on-a-running
 - **Blocking.** `st20_tx_update_destination` blocks up to `arp_timeout_ms` (60 s) **holding S**, the
   session spinlock (`st_tx_video_session.c:926` → `mt_arp.c:191`); `st20_rx_update_source` does flow,
   queue and IGMP work holding S and allocates (RTCP). Both are SF-14 (§5.3).
-- **Mid-frame.** The mid-frame semantics of `update_destination/source` are unspecified
-  **[unknown]** (flaw 28 of §2.3; core.md §5).
+- **Mid-frame.** No header states when an update takes effect (flaw 28 of §2.3). TX switches at
+  the next burst after `update_destination` releases the session lock, so mid-frame
+  (`st_tx_video_session.c:2682`, `:3848-3855`); RX removes every leg's flow rule and leaves its
+  groups before it installs the new ones (`st_rx_video_session.c:3932-3975`), so it breaks before
+  it makes **[verified at HEAD]**. The unified update switches at a unit boundary (core.md §5).
 - **After an auto-detect failure.** Recovery needs `update_source` or a re-create **[inferred]**
   (§8.2).
 
@@ -875,7 +878,7 @@ Pipeline and instance callbacks:
 | `sch->mutex`, `sch->*_mgr_mutex` (pthread) | never | register/unregister, create/free, migrate |
 | pipeline `block_wake_mutex` + cond | **yes**, on every frame event with BLOCK_GET (`st20_pipeline_tx.c:29-34`, `:41-43`; `st20_pipeline_rx.c:29-35`) | `get_frame` holds it while re-claiming and in `cond_timedwait` (`:774-789`) |
 | `sch->sleep_wake_mutex` + cond | the idle scheduler itself (`mt_sch.c:89-95`) | alarm thread signals (`:52-61`) |
-| TSQ `tx_mutex`, SRSS list lock | blocking spin inside tasklets (`datapath/mt_shared_queue.c:642`; `mt_shared_rss.c:22-24`, `:66-71`) | add/remove at create/free **[inferred]** |
+| TSQ `tx_mutex`, SRSS list lock | blocking spin inside tasklets (`datapath/mt_shared_queue.c:642`; `mt_shared_rss.c:22-24`, `:66-71`); `mt_tsq_done_cleanup` takes the pthread `tsq_lock` instead (`datapath/mt_shared_queue.c:394-396`, `:625-633`) | add/remove at create/free **[inferred]** |
 | stat list lock | never | register/unregister; the stat thread trylocks (`mt_stat.c:20-35`) |
 | handle guard `lc_refcnt` | never | a SEQ_CST RMW on every public call; free spins in `mt_handle_drain` |
 

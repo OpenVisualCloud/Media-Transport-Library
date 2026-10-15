@@ -38,11 +38,14 @@ struct mtl_main_impl; /* the legacy mtl_handle */
    on; the core and the bindings read that clock (on tasklets, and in CP calls such as a
    start), and a legacy ptp_get_time_fn therefore runs on tasklets, as legacy does, and
    from MS2a on the wrapper's time thread: the one exception to R6 (mtl.h), which ends with
-   this header. The call returns after the TSC calibration (about 1 s after mtl_init).
-   mtl_time_now() reads PTP_SOURCE_TSC and the default clock directly (MS1, vDSO and
-   arithmetic only; UTC read as TAI) and the user and built-in PTP clocks from a snapshot a
-   wrapper thread refreshes every 5 ms (MS2a; -MTL_ENOTSUP before), with their flags and
-   state (timing.md §2.2). Instance keys marked C are -MTL_EBUSY; from MS2a R keys act on
+   this header. The call returns after the TSC calibration (about 1 s after mtl_init), and
+   logs one WARNING when the wrapper's clock is UTC (MS1). mtl_time_now() reads
+   PTP_SOURCE_TSC and the default clock directly (MS1, vDSO and arithmetic only; UTC read
+   as TAI) and the user and built-in PTP clocks from a snapshot a wrapper thread refreshes
+   every 5 ms (MS2a; -MTL_ENOTSUP before), with their flags and state (timing.md §2.2): a
+   ptp_get_time_fn that the thread finds, once a second, to read CLOCK_TAI or
+   CLOCK_REALTIME takes that clock's flags (CLOCK_REALTIME: ESTIMATED, UTC), its value
+   always the function's. Instance keys marked C are -MTL_EBUSY; from MS2a R keys act on
    the shared engine, legacy sessions included, through the legacy setters, and session
    defaults start from the legacy settings. CP. (MS1) */
 MTL_API_CP(1) int mtl_instance_from_legacy(struct mtl_main_impl* legacy, mtl_instance_h* out);
