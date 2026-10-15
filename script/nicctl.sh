@@ -6,7 +6,8 @@
 set -euo pipefail
 
 script_name="$(basename "${BASH_SOURCE[0]}")"
-script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# The installed bin/nicctl.sh is a link to share/mtl/script/nicctl.sh.
+script_folder="$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")"
 # shellcheck disable=SC1091
 . "${script_folder}/common.sh"
 
@@ -19,7 +20,7 @@ VFs, and list the NIC ports. The list commands write the data to stdout and
 need no root. The other commands need root. Status messages go to stderr.
 
 REQUIRED PACKAGES (Debian/Ubuntu):
-	dpdk (dpdk-devbind.py, from script/build_dpdk.sh) iproute2 kmod
+	dpdk (dpdk-devbind.py, from script/build_dpdk.sh) pciutils iproute2 kmod
 
 OPTIONS:
 	-h, --help		Show this help message
@@ -38,14 +39,23 @@ Commands:
 	The default VF count [n] is 6.
 
 ENVIRONMENT:
-	MTL_INSTALL_PREFIX	Find dpdk-devbind.py in this tree first
-				(default: <repo>/.local_install)
+	MTL_INSTALL_PREFIX	The MTL prefix: find dpdk-devbind.py in its dpdk
+				sibling first (default: <repo>/.local_install/mtl,
+				or the prefix of an installed nicctl.sh)
 
 EXAMPLES:
 	${script_name} list all
 	sudo ${script_name} create_vf 0000:af:00.0 4
 	sudo ${script_name} bind_pmd 0000:af:00.0
 EOF
+}
+
+# Prints the dpdk-devbind.py status, or logs that it failed and returns 1.
+devbind_status() {
+	dpdk-devbind.py -s || {
+		log_error "dpdk-devbind.py -s failed."
+		return 1
+	}
 }
 
 # Prints the value of field $2 (for example "if" or "drv") of the
@@ -146,11 +156,12 @@ list_vf() {
 # Data on stdout: a table, read by .github/scripts/gtest.sh and
 # .github/scripts/ci/host/bind-test-ports.sh. Do not change the columns.
 list() {
-	local filter="${1:-}" id_counter=0 pci_bdf driver numa_node iommu_group interface_name
+	local filter="${1:-}" id_counter=0 status pci_bdf driver numa_node iommu_group interface_name
+	status=$(devbind_status) || return 1
 	trap '' PIPE
 	printf "%-4s\t%-12s\t%-12s\t%-4s\t%-6s\t%-10s\n" "ID" "PCI BDF" "Driver" "NUMA" "IOMMU" "IF Name"
 
-	for pci_bdf in $(dpdk-devbind.py -s | awk '/^Network devices/ {show=1; next} /^$/ {show=0} show && /drv=/ {print $1}'); do
+	while read -r pci_bdf; do
 
 		driver=$(basename "$(readlink /sys/bus/pci/devices/"${pci_bdf}"/driver)" 2>/dev/null || echo "N/A")
 
@@ -168,7 +179,7 @@ list() {
 			"$id_counter" "$pci_bdf" "$driver" "$numa_node" "$iommu_group" "$interface_name" 2>/dev/null || break
 
 		id_counter=$((id_counter + 1))
-	done
+	done < <(awk '/^Network devices/ {show=1; next} /^$/ {show=0} show && /drv=/ {print $1}' <<<"$status")
 }
 
 # Prints the VF count: $1, or 6 when $1 is empty.
@@ -185,10 +196,14 @@ vf_count() {
 }
 
 main() {
-	local cmd="${1:-}" numvfs local_dpdk_bin
+	local cmd="${1:-}" numvfs mtl_prefix local_dpdk_bin
 
-	# If local DPDK install is set or just exists then use that
-	local_dpdk_bin="${MTL_INSTALL_PREFIX:-${REPO_DIR}/.local_install}/dpdk/bin"
+	# The DPDK of build_dpdk.sh sits beside the MTL prefix: use it if it is there.
+	case "$REPO_DIR" in
+	*/share/mtl) mtl_prefix="${REPO_DIR%/share/mtl}" ;;
+	*) mtl_prefix="${REPO_DIR}/.local_install/mtl" ;;
+	esac
+	local_dpdk_bin="$(dirname -- "${MTL_INSTALL_PREFIX:-${mtl_prefix}}")/dpdk/bin"
 	if [ -d "$local_dpdk_bin" ]; then
 		PATH="${local_dpdk_bin}:${PATH}"
 	fi
@@ -217,12 +232,12 @@ main() {
 
 	if [ "$cmd" == "list" ]; then
 		if [ "$2" == "all" ]; then
-			require_commands dpdk-devbind.py:dpdk || exit 1
-			list
+			require_commands dpdk-devbind.py:dpdk lspci:pciutils || exit 1
+			list || exit 1
 			exit 0
 		elif [[ "$2" == "up" ]]; then
-			require_commands dpdk-devbind.py:dpdk ip:iproute2 || exit 1
-			list "up"
+			require_commands dpdk-devbind.py:dpdk lspci:pciutils ip:iproute2 || exit 1
+			list "up" || exit 1
 			exit 0
 		else
 			list_vf "$2"
@@ -231,14 +246,15 @@ main() {
 	fi
 
 	require_root "${script_name} ${cmd}" || exit 1
-	require_commands dpdk-devbind.py:dpdk ip:iproute2 modprobe:kmod || exit 1
+	require_commands dpdk-devbind.py:dpdk lspci:pciutils ip:iproute2 modprobe:kmod || exit 1
 
 	bdf=$2
 	numvfs=0
 	case "$cmd" in
 	create_*) numvfs=$(vf_count "${3:-}") ;;
 	esac
-	bdf_stat=$({ dpdk-devbind.py -s | { grep "$bdf" || true; }; } || true)
+	bdf_stat=$(devbind_status) || exit 1
+	bdf_stat=$(grep "$bdf" <<<"$bdf_stat" || true)
 	if [ -z "$bdf_stat" ]; then
 		log_error "$bdf not found in this platform"
 		exit 1

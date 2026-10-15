@@ -57,6 +57,8 @@ export MTL_INSTALL_PREFIX=$PWD/.local_install/mtl
 Such a tree needs no root, no `ldconfig` and no `LD_LIBRARY_PATH`: every program
 and library records where its siblings are relative to itself, and every `.pc`
 file points at its own location, so the whole tree can be moved and still runs.
+`.local_install/mtl/bin/nicctl.sh` is part of it and uses the `dpdk-devbind.py`
+of `.local_install/dpdk`.
 
 ### Set up the host with one command
 

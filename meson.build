@@ -84,3 +84,15 @@ pkg.generate(
   subdirs : ['.', meson.project_name()],
   description : 'Media Transport Library'
 )
+
+# nicctl.sh, with the common.sh and versions.env it sources, laid out as in the
+# repository. nicctl.sh finds its prefix by the share/mtl it sits in.
+if not is_windows
+  mtl_script_dir = get_option('datadir') / 'mtl'
+  install_data('script/nicctl.sh', install_dir: mtl_script_dir / 'script',
+    install_mode: 'rwxr-xr-x')
+  install_data('script/common.sh', install_dir: mtl_script_dir / 'script')
+  install_data('versions.env', install_dir: mtl_script_dir)
+  install_symlink('nicctl.sh', pointing_to: '..' / mtl_script_dir / 'script' / 'nicctl.sh',
+    install_dir: get_option('bindir'))
+endif

@@ -37,7 +37,9 @@ check_static() {
 	grep -q '^# SPDX-License-Identifier: BSD-3-Clause$' "$file" || fail "$file" "no SPDX line"
 	grep -qx 'set -euo pipefail' "$file" || fail "$file" "no 'set -euo pipefail' line"
 	grep -qx 'script_name="$(basename "${BASH_SOURCE\[0\]}")"' "$file" || fail "$file" "no script_name line"
-	grep -qx 'script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE\[0\]}")" \&\& pwd)"' "$file" ||
+	# An installed script reached through a link (nicctl.sh) resolves it first.
+	grep -qx -e 'script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE\[0\]}")" \&\& pwd)"' \
+		-e 'script_folder="$(dirname -- "$(readlink -f -- "${BASH_SOURCE\[0\]}")")"' "$file" ||
 		fail "$file" "no script_folder line"
 	grep -qE '^\. "\$\{(script|root)_folder\}/(script/)?common\.sh"$' "$file" || fail "$file" "does not source common.sh"
 	grep -q '^show_help() {$' "$file" || fail "$file" "no show_help()"
