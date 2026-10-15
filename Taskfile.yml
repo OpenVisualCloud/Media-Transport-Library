@@ -108,6 +108,11 @@ tasks:
     cmds:
       - bash {{.CI_SCRIPTS}}/pytest-run.sh {{.CLI_ARGS}}
 
+  ci:perf-compare:
+    desc: Stash, sync or clean the two build trees of perf-compare.yml (doc/perf_compare.md)
+    cmds:
+      - bash {{.CI_SCRIPTS}}/perf-compare.sh {{.CLI_ARGS}}
+
   ci:media-assets:
     desc: List, verify or generate the test media a suite reads (MEDIA_ASSET_SET)
     cmds:

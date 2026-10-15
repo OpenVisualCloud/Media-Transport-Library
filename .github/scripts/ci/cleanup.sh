@@ -17,3 +17,5 @@ root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 isolate_sh="$root_dir/tests/tools/isolate/isolate.sh"
 echo 'Removing stale CPU isolation partitions...'
 sudo "$isolate_sh" --sweep
+echo 'Removing what a perf-compare run left behind...'
+bash "$root_dir/.github/scripts/ci/perf-compare.sh" sweep

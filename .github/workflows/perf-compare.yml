@@ -1,0 +1,237 @@
+name: perf-compare
+# Two MTL builds, or one build with two configurations, side by side on the perf
+# pair: each instance a TX application on the companion and an RX application on
+# the SUT, with its own PF, CPUs, L3 ways and build tree, measured through USDT.
+# Design, isolation and metrics: doc/perf_compare.md.
+on:
+  workflow_dispatch:
+    inputs:
+      ref_a:
+        description: 'Reference build (A): branch, tag or SHA'
+        required: false
+        type: string
+        default: main
+      ref_b:
+        description: 'Candidate build (B): branch, tag or SHA; the same as A for an A/A run'
+        required: false
+        type: string
+        default: main
+      args_a:
+        description: 'Extra RxTxApp arguments of instance A'
+        required: false
+        type: string
+      args_b:
+        description: 'Extra RxTxApp arguments of instance B, e.g. --sch_session_quota 8'
+        required: false
+        type: string
+      sessions:
+        description: Sessions per instance
+        required: false
+        type: string
+        default: '16'
+      video:
+        description: Video format of every session
+        required: false
+        type: choice
+        options:
+          - 1080p59
+          - 1080p50
+          - 2160p59
+          - 2160p50
+        default: 1080p59
+      test_time:
+        description: Untraced window in seconds; the traced window is half of it
+        required: false
+        type: string
+        default: '120'
+      rounds:
+        description: Rounds; every other round swaps the slots
+        required: false
+        type: string
+        default: '2'
+      fail_pct:
+        description: 'Fail when B is worse than A by more than this percentage; empty only reports'
+        required: false
+        type: string
+  # The nightly compares main of the day before with main.
+  schedule:
+    - cron: '0 16 * * *'
+
+permissions:
+  contents: read
+  checks: read
+
+jobs:
+  refs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      sha_a: ${{ steps.refs.outputs.sha_a }}
+      sha_b: ${{ steps.refs.outputs.sha_b }}
+      label_a: ${{ steps.refs.outputs.label_a }}
+      label_b: ${{ steps.refs.outputs.label_b }}
+    steps:
+      - name: Harden-Runner
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+      - name: Resolve the two builds
+        id: refs
+        env:
+          REF_A: ${{ inputs.ref_a || 'main' }}
+          REF_B: ${{ inputs.ref_b || 'main' }}
+        run: task ci:workflow -- perf-compare-refs
+
+  build-a:
+    needs: refs
+    uses: ./.github/workflows/build.yml
+    with:
+      skip_linter_check: true
+      branch: ${{ needs.refs.outputs.sha_a }}
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: read
+
+  # After build-a, not beside it: a called workflow takes the caller's name in
+  # github.workflow, so both calls fall into one build.yml concurrency group and
+  # the second would cancel the first.
+  build-b:
+    needs: [refs, build-a]
+    if: needs.refs.outputs.sha_b != needs.refs.outputs.sha_a
+    uses: ./.github/workflows/build.yml
+    with:
+      skip_linter_check: true
+      branch: ${{ needs.refs.outputs.sha_b }}
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: read
+
+  compare:
+    needs: [refs, build-a, build-b]
+    if: >-
+      !cancelled() && needs.build-a.result == 'success' &&
+      (needs.build-b.result == 'success' || needs.build-b.result == 'skipped')
+    runs-on: [self-hosted, perf, sut]
+    timeout-minutes: 180
+    env:
+      BUILD_B: ${{ needs.build-b.result == 'success' && toJSON(needs.build-b.outputs) || toJSON(needs.build-a.outputs) }}
+    steps:
+      - name: Harden-Runner
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
+      - name: Set current date
+        run: echo "CURRENT_DATE=$(date '+%y%m%d-%H%M%S')" >> "$GITHUB_ENV"
+
+      # Build A: restored, checked against what build-a built, moved to its slot.
+      - name: 'A: Check out'
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@c382b88f7723f3187e52925364014732ba34d4c2
+        with:
+          ref: ${{ needs.build-a.outputs.mtl_commit }}
+          fetch-depth: '0'
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+      # Twice: the ref's own overlay-tests may be older than the workflow
+      # commit's. The first run checks out the workflow commit's copy, the
+      # second runs it.
+      - name: 'A: Overlay CI and tests from the workflow commit'
+        env:
+          MTL_SOURCE: ${{ needs.build-a.outputs.mtl_commit }}
+          TEST_SHA: ${{ github.sha }}
+          TEST_REF: ${{ github.ref_name }}
+        run: task ci:workflow -- overlay-tests && task ci:workflow -- overlay-tests
+      - name: 'A: Validate host and restore the build'
+        uses: ./.github/actions/validate-host
+        with:
+          build_outputs: ${{ toJSON(needs.build-a.outputs) }}
+      - name: 'A: Move the build to its slot'
+        run: task ci:perf-compare -- stash a
+
+      # Build B the same way, and sync the companion. Both validate-host runs
+      # align ICE, so the host ends with B's: a kernel module is one for both
+      # instances.
+      - name: 'B: Check out'
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@c382b88f7723f3187e52925364014732ba34d4c2
+        with:
+          ref: ${{ fromJSON(env.BUILD_B).mtl_commit }}
+          fetch-depth: '0'
+      - name: 'B: Overlay CI and tests from the workflow commit'
+        env:
+          MTL_SOURCE: ${{ fromJSON(env.BUILD_B).mtl_commit }}
+          TEST_SHA: ${{ github.sha }}
+          TEST_REF: ${{ github.ref_name }}
+        run: task ci:workflow -- overlay-tests && task ci:workflow -- overlay-tests
+      - name: 'B: Validate host and restore the build'
+        id: validate
+        uses: ./.github/actions/validate-host
+        with:
+          shadow_host: '/etc/mtl-ci/runner.env'
+          build_outputs: ${{ env.BUILD_B }}
+      - name: 'B: Move the build to its slot'
+        run: task ci:perf-compare -- stash b
+      - name: Copy both builds to the companion
+        env:
+          SHADOW_HOST_IP: ${{ steps.validate.outputs.shadow_host_ip }}
+          SHADOW_HOST_USER: ${{ steps.validate.outputs.shadow_host_user }}
+        run: task ci:perf-compare -- sync
+
+      - name: Ensure the acceptance virtualenv
+        run: task ci:pytest-setup -- ensure
+      - name: Set session ID
+        env:
+          RUNNER_NAME: ${{ runner.name }}
+        run: task ci:pytest-setup -- session
+      - name: Set PCI device
+        run: task ci:pytest-setup -- pci-env
+      - name: Generate pytest configuration files
+        env:
+          SESSION_ID: ${{ env.SESSION_ID }}
+          PCI_DEVICE: ${{ env.PCI_DEVICE }}
+          SHADOW_IP: ${{ steps.validate.outputs.shadow_host_ip }}
+          SHADOW_USER: ${{ steps.validate.outputs.shadow_host_user }}
+          TEST_TIME: ${{ inputs.test_time || '120' }}
+        run: task ci:pytest-setup -- config-perf
+      - name: Verify the perf media assets
+        env:
+          MEDIA_ASSET_SET: perf
+        run: task ci:media-assets -- verify
+
+      - name: Compare
+        env:
+          PERF_COMPARE_LABELS: ${{ needs.refs.outputs.label_a }},${{ needs.refs.outputs.label_b }}
+          ARGS_A: ${{ inputs.args_a }}
+          ARGS_B: ${{ inputs.args_b }}
+          SESSIONS: ${{ inputs.sessions || '16' }}
+          VIDEO: ${{ inputs.video || '1080p59' }}
+          ROUNDS: ${{ inputs.rounds || '2' }}
+          FAIL_PCT: ${{ inputs.fail_pct }}
+        run: task ci:pytest-run -- perf-compare
+      - name: Summarize the comparison
+        if: always()
+        run: task ci:report -- perf-compare
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "perf-compare-${{ runner.name }}-${{ env.CURRENT_DATE }}"
+          path: |
+            ./tests/acceptance/perf_compare.md
+            ./tests/acceptance/report.html
+            ./tests/acceptance/perf-logs.tar.gz
+      - name: Remove both builds and the cache partitions
+        if: always()
+        env:
+          SHADOW_HOST_IP: ${{ steps.validate.outputs.shadow_host_ip }}
+          SHADOW_HOST_USER: ${{ steps.validate.outputs.shadow_host_user }}
+        run: task ci:perf-compare -- clean
+      - name: Clean up
+        if: always()
+        uses: ./.github/actions/cleanup

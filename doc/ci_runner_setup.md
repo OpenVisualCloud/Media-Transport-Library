@@ -196,6 +196,13 @@ timed-out lookup is not remembered, so every session of the run pays the wait
 again. A single-port card is handled: it yields one entry and the redundant cases
 keep skipping, honestly, instead of failing against a port the host does not have.
 
+#### The perf pair traces with bpftrace
+
+`perf-compare.yml` measures both instances through USDT, so both perf hosts need
+`bpftrace` (the host package list of `setup_environment.sh` has it). The job checks
+for it when it copies the two builds to the companion and fails there if a host lacks
+it. Design and isolation: [perf_compare.md](perf_compare.md).
+
 ### The i225 leg of the smoke suite
 
 2.5 Gbps of link means only the `low_bandwidth` subset fits: ST 2110-22, ST

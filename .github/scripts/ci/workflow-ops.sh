@@ -40,6 +40,27 @@ check-built-sources)
 	done
 	exit "$status"
 	;;
+perf-compare-refs)
+	# The commits perf-compare.yml builds: the dispatched refs, or for the nightly
+	# main as it was a day before this run started and main now.
+	resolve() {
+		git -C "$root_dir" rev-parse --verify --quiet "origin/$1^{commit}" ||
+			git -C "$root_dir" rev-parse --verify "$1^{commit}"
+	}
+	if [[ ${GITHUB_EVENT_NAME:-} == schedule ]]; then
+		sha_a=$(git -C "$root_dir" rev-list -1 --first-parent --before='24 hours ago' origin/main)
+		name_a='main a day ago' sha_b=$(resolve main) name_b=main
+	else
+		sha_a=$(resolve "${REF_A:?REF_A is required}") name_a=$REF_A
+		sha_b=$(resolve "${REF_B:?REF_B is required}") name_b=$REF_B
+	fi
+	{
+		echo "sha_a=${sha_a}"
+		echo "sha_b=${sha_b}"
+		echo "label_a=${name_a} ${sha_a:0:9}"
+		echo "label_b=${name_b} ${sha_b:0:9}"
+	} | tee -a "${GITHUB_OUTPUT:?GITHUB_OUTPUT is required}"
+	;;
 both-workflows)
 	if [[ -n ${GTEST_RUN_ID:-} && -n ${PYTEST_RUN_ID:-} ]]; then
 		echo 'both_completed=true' >>"${GITHUB_OUTPUT:?GITHUB_OUTPUT is required}"
@@ -68,7 +89,7 @@ coverity-dpdk)
 	(cd "${root_dir}/script" && ./build_dpdk.sh)
 	;;
 *)
-	echo "Usage: $0 {overlay-tests|check-built-sources|both-workflows|docs-dependencies|coverity-dependencies|coverity-dpdk}" >&2
+	echo "Usage: $0 {overlay-tests|check-built-sources|perf-compare-refs|both-workflows|docs-dependencies|coverity-dependencies|coverity-dpdk}" >&2
 	exit 2
 	;;
 esac

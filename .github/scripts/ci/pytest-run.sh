@@ -27,6 +27,18 @@ performance)
 	[[ -n ${SCH_QUOTA:-} ]] && args+=(--sch_quota "$SCH_QUOTA")
 	(cd "$acceptance_dir" && "${pytest[@]}" "${args[@]}" ./tests/dual/performance)
 	;;
+perf-compare)
+	video=${VIDEO:-1080p59}
+	args=(-k "${video%p*}p and ${video##*p}fps" --template=html/index.html
+		--report="${acceptance_dir}/report.html"
+		--perf_compare_slots="${PERF_COMPARE_SLOTS:?PERF_COMPARE_SLOTS is required}"
+		--perf_compare_labels="${PERF_COMPARE_LABELS:-A,B}"
+		--perf_compare_args_a="${ARGS_A:-}" --perf_compare_args_b="${ARGS_B:-}")
+	[[ -n ${SESSIONS:-} ]] && args+=(--perf_compare_sessions "$SESSIONS")
+	[[ -n ${ROUNDS:-} ]] && args+=(--perf_compare_rounds "$ROUNDS")
+	[[ -n ${FAIL_PCT:-} ]] && args+=(--perf_compare_fail_pct "$FAIL_PCT")
+	(cd "$acceptance_dir" && "${pytest[@]}" "${args[@]}" ./tests/dual/performance/test_perf_compare.py)
+	;;
 nightly)
 	(cd "$acceptance_dir" && "${pytest[@]}" -m nightly --template=html/index.html \
 		--report=report.html "./tests/single/${TEST_PATH:?TEST_PATH is required}")
@@ -55,7 +67,7 @@ smoke | smoke-low-bandwidth)
 	(cd "$acceptance_dir" && "${pytest[@]}" "${args[@]}" ./tests)
 	;;
 *)
-	echo "Usage: $0 {custom|performance|nightly|smoke|smoke-low-bandwidth}" >&2
+	echo "Usage: $0 {custom|performance|perf-compare|nightly|smoke|smoke-low-bandwidth}" >&2
 	exit 2
 	;;
 esac

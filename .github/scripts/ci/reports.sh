@@ -46,6 +46,21 @@ performance)
 		echo "::warning::No performance logs found; skipping report generation"
 	fi
 	;;
+perf-compare)
+	acceptance_dir="${root_dir}/tests/acceptance"
+	report="${acceptance_dir}/logs/performance/latest/perf_compare.md"
+	if [[ -f $report ]]; then
+		cp "$report" "${acceptance_dir}/perf_compare.md"
+		cat "$report" >>"${GITHUB_STEP_SUMMARY:-/dev/null}"
+	else
+		echo "::warning::No perf-compare report found"
+	fi
+	if [[ -d ${acceptance_dir}/logs/performance ]]; then
+		# upload-artifact rejects the colons of the timestamped log directories.
+		tar -czf "${acceptance_dir}/perf-logs.tar.gz" -C "${acceptance_dir}" logs/performance ||
+			echo "::warning::Packing the performance logs failed"
+	fi
+	;;
 flatten-pytest) flatten_reports "${REPORT_DIR:-python-reports}" 'nightly-test-report-*' report.html html ;;
 flatten-gtest) flatten_reports "${REPORT_DIR:-gtest-reports}" 'nightly-gtest-report-*' gtest.log log ;;
 list-system-info)
@@ -153,7 +168,7 @@ smoke-summary)
 	} >>"${GITHUB_STEP_SUMMARY:?GITHUB_STEP_SUMMARY is required}"
 	;;
 *)
-	echo "Usage: $0 {status|performance|flatten-pytest|flatten-gtest|list-system-info|install-dependencies|combine-pytest|combine-all|smoke-summary}" >&2
+	echo "Usage: $0 {status|performance|perf-compare|flatten-pytest|flatten-gtest|list-system-info|install-dependencies|combine-pytest|combine-all|smoke-summary}" >&2
 	exit 2
 	;;
 esac
