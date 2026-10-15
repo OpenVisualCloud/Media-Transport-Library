@@ -66,6 +66,13 @@ int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,
 int ut_dev_eal_max_args(void);
 /** MT_EAL_LCORES_MAX_LEN, the width of the "-l" argument dev_eal_init() builds. */
 int ut_dev_eal_lcores_max_len(void);
+/** Derives the "-d" PMD dir beside eal_dir for a missing compiled_dir; 0 if found. */
+int ut_dev_eal_pmd_dir(const char* compiled_dir, const char* eal_dir, char* out,
+                       size_t len);
+/** Has dev_eal_init() see compiled_dir as RTE_EAL_PMD_PATH and librte_eal at
+ * eal_lib_path; NULL keeps the real value of either. Copies both. */
+void ut_dev_set_eal_pmd_paths(ut_dev_ctx* ctx, const char* compiled_dir,
+                              const char* eal_lib_path);
 /** Runs dev_eal_init(); returns its ret, always negative because the stub fails. */
 int ut_dev_eal_init(ut_dev_ctx* ctx);
 int ut_dev_eal_argc(const ut_dev_ctx* ctx);

@@ -24,7 +24,27 @@ done < <(find "$root" -type l -print0)
 
 case "$component" in
 dpdk) find "$root" -name libdpdk.pc -print -quit | grep -q . ;;
-mtl) find "$root" -name mtl.pc -print -quit | grep -q . ;;
+mtl)
+	find "$root" -name mtl.pc -print -quit | grep -q .
+	[ -f "${root%/*}/conf/kahawai.json" ] || {
+		echo "mtl cache lacks the plugin registry ${root%/*}/conf/kahawai.json" >&2
+		exit 1
+	}
+	;;
+conf)
+	# Every plugin the registry enables is installed at its path.
+	python3 - "${root}/kahawai.json" <<'PY'
+import json
+import os
+import sys
+
+missing = [item["path"] for item in json.load(open(sys.argv[1]))["plugins"]
+           if item.get("enabled") and not os.path.isfile(item["path"])]
+for path in missing:
+    print(f"{sys.argv[1]} enables a plugin that is not installed: {path}", file=sys.stderr)
+sys.exit(1 if missing else 0)
+PY
+	;;
 ffmpeg) find "$root" -name libavcodec.pc -print -quit | grep -q . ;;
 gstreamer | plugins) find "$root" -name '*.so' -print -quit | grep -q . ;;
 jpegxs)

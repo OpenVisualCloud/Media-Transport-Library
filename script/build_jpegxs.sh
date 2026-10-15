@@ -16,7 +16,7 @@ Usage: ${script_name} [OPTIONS]
 
 Build and install SVT-JPEG-XS and its MTL ST 2110-22 bridge plugin. The script
 uses the version in versions.env, installs into /usr/local by default, and
-updates kahawai.json to enable the installed plugin.
+enables the installed plugin in the plugin registry (kahawai.json).
 
 REQUIRED PACKAGES:
 	C/C++ compiler, cmake, meson, ninja, pkg-config, python3, tar, curl or wget
@@ -28,7 +28,8 @@ OPTIONS:
 	-s, --source-dir DIR	Use or download sources in DIR
 	-v, --version VERSION	Build VERSION (default: ${SVT_JPEG_XS_VER})
 	-j, --jobs JOBS		Parallel build jobs (default: ${NPROC})
-	    --config FILE	Update this plugin registry (default: kahawai.json)
+	    --config FILE	Update this plugin registry (default: conf/kahawai.json
+				beside the local prefix, else kahawai.json)
 	-h, --help		Show this help message
 
 ENVIRONMENT:
@@ -45,46 +46,8 @@ EXAMPLES:
 EOF
 }
 
-register_plugin() {
-	local config=$1 plugin=$2
-
-	python3 - "${config}" "${plugin}" <<'PY'
-import json
-import os
-import pathlib
-import stat
-import sys
-import tempfile
-
-config = pathlib.Path(sys.argv[1])
-plugin_path = str(pathlib.Path(sys.argv[2]).resolve())
-config_mode = stat.S_IMODE(config.stat().st_mode)
-data = json.loads(config.read_text())
-plugins = data.setdefault("plugins", [])
-matches = [index for index, item in enumerate(plugins) if item.get("name") == "st22_svt_jpegxs"]
-if matches:
-    selected = next((index for index in matches if plugins[index].get("path") == plugin_path), matches[0])
-    for index in matches:
-        plugins[index]["enabled"] = int(index == selected)
-    plugins[selected]["path"] = plugin_path
-else:
-    plugins.append({"enabled": 1, "name": "st22_svt_jpegxs", "path": plugin_path})
-fd, temporary = tempfile.mkstemp(prefix=config.name + ".", dir=config.parent)
-os.chmod(temporary, config_mode)
-try:
-    with os.fdopen(fd, "w") as output:
-        json.dump(data, output, indent=4)
-        output.write("\n")
-    os.replace(temporary, config)
-finally:
-    if os.path.exists(temporary):
-        os.unlink(temporary)
-PY
-	log_success "Enabled JPEG XS plugin in ${config}: ${plugin}"
-}
-
 main() {
-	local prefix="${JPEGXS_ROOT:-}" source_dir="" config="${KAHAWAI_CFG_PATH:-${REPO_DIR}/kahawai.json}"
+	local prefix="${JPEGXS_ROOT:-}" source_dir="" config="${KAHAWAI_CFG_PATH:-}"
 	local jobs="${NPROC}" force=0 source_dir_explicit=0 fetch_source=0
 	local option archive url stage cleanup jpeg_pc plugin plugin_relative plugin_libdir
 	local local_base="" mtl_pc="" dpdk_pc=""
@@ -150,6 +113,9 @@ main() {
 	# MTL_INSTALL_PREFIX says where MTL and DPDK are; --prefix says where JPEG XS
 	# goes. Without --prefix it goes beside them.
 	[ -z "${MTL_INSTALL_PREFIX:-}" ] || local_base="$(dirname "${MTL_INSTALL_PREFIX}")"
+	# build.sh writes the registry of a local install beside it.
+	[ -n "${config}" ] || config="${local_base:+${local_base}/conf/kahawai.json}"
+	config="${config:-${REPO_DIR}/kahawai.json}"
 	if [ -z "${prefix}" ]; then
 		prefix="${local_base:+${local_base}/jpegxs}"
 		prefix="${prefix:-/usr/local}"
@@ -249,7 +215,7 @@ main() {
 
 	require_resolved_libraries "${prefix}/${plugin_relative}" "${prefix}/lib" \
 		"$(pkg-config --variable=libdir mtl)" "$(pkg-config --variable=libdir libdpdk)" || exit 1
-	register_plugin "${config}" "${prefix}/${plugin_relative}"
+	register_plugin "${config}" st22_svt_jpegxs "${prefix}/${plugin_relative}"
 	log_success "JPEG XS ${SVT_JPEG_XS_VER} installed in ${prefix}"
 }
 

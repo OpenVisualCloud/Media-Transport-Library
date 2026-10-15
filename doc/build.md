@@ -58,7 +58,9 @@ Such a tree needs no root, no `ldconfig` and no `LD_LIBRARY_PATH`: every program
 and library records where its siblings are relative to itself, and every `.pc`
 file points at its own location, so the whole tree can be moved and still runs.
 `.local_install/mtl/bin/nicctl.sh` is part of it and uses the `dpdk-devbind.py`
-of `.local_install/dpdk`.
+of `.local_install/dpdk`. The plugin registry is `.local_install/conf/kahawai.json`:
+set `KAHAWAI_CFG_PATH` to it, see [plugin.md](./plugin.md). It holds absolute paths, the one
+part of the tree that does not move with it.
 
 ### Set up the host with one command
 

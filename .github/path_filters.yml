@@ -44,6 +44,8 @@ hash_mtl: &hash_mtl
   - script/install_dependencies.sh
   - script/nicctl.sh
   - script/common.sh
+  - script/build_jpegxs.sh
+  - script/build_st22_avcodec_plugin.sh
   - build.sh
   - script/hash_sources_mtl.env
   - meson.build
@@ -151,7 +153,6 @@ unit_sources: &unit_sources
 bare_metal_ci: &bare_metal_ci
   - .github/workflows/pr-gate.yml
   - .github/workflows/build.yml
-  - .github/workflows/kahawai_template.json
   - '.github/actions/validate-host/**'
   - '.github/actions/source-checksums/**'
   - '.github/actions/wait-for-workflow/**'

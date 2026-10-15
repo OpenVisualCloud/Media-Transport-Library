@@ -100,10 +100,10 @@ test_jpegxs_helpers() {
 	source_dir="${work}/source"
 	cp kahawai.json "${config}"
 	chmod 0644 "${config}"
-	bash -c '. script/build_jpegxs.sh; register_plugin "$1" "$2" >/dev/null' \
+	bash -c '. script/common.sh; register_plugin "$1" st22_svt_jpegxs "$2" >/dev/null' \
 		_ "${config}" /opt/jpegxs/lib/libst_plugin_st22_svt_jpeg_xs.so ||
-		fail script/build_jpegxs.sh "cannot update the plugin registry"
-	python3 - "${config}" <<'PY' || fail script/build_jpegxs.sh "plugin registry update is incorrect"
+		fail script/common.sh "cannot update the plugin registry"
+	python3 - "${config}" <<'PY' || fail script/common.sh "plugin registry update is incorrect"
 import json
 import sys
 
@@ -111,7 +111,19 @@ plugins = [item for item in json.load(open(sys.argv[1]))["plugins"] if item["nam
 assert sum(item["enabled"] for item in plugins) == 1
 assert next(item for item in plugins if item["enabled"])["path"] == "/opt/jpegxs/lib/libst_plugin_st22_svt_jpeg_xs.so"
 PY
-	[ "$(stat -c '%a' "${config}")" = 644 ] || fail script/build_jpegxs.sh "plugin registry mode changed"
+	[ "$(stat -c '%a' "${config}")" = 644 ] || fail script/common.sh "plugin registry mode changed"
+	# build.sh creates the registry of a local install.
+	bash -c '. script/common.sh; register_plugin "$1" st22_sample "$2" >/dev/null' \
+		_ "${work}/conf/kahawai.json" /opt/mtl/lib/libst_plugin_st22_sample.so ||
+		fail script/common.sh "cannot create the plugin registry"
+	python3 - "${work}/conf/kahawai.json" <<'PY' || fail script/common.sh "created plugin registry is incorrect"
+import json
+import sys
+
+assert json.load(open(sys.argv[1])) == {
+    "plugins": [{"enabled": 1, "name": "st22_sample", "path": "/opt/mtl/lib/libst_plugin_st22_sample.so"}]
+}
+PY
 
 	mkdir "${source_dir}"
 	touch "${source_dir}/sentinel"

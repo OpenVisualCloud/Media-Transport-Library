@@ -108,6 +108,7 @@ script/ice-*
 script/dpdk-*
 script/*.zip*
 script/xdp-tools
+script/SVT-JPEG-XS
 
 #Generated documentation
 doc/_build

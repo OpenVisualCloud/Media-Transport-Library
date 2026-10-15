@@ -33,7 +33,8 @@ OPTIONS:
 ENVIRONMENT:
 	MTL_PLUGIN_PREFIX	Install into this prefix as the current user, and take
 				MTL, DPDK and FFmpeg from its parent (the .local_install
-				layout). Without it, the plugin goes into the system as root.
+				layout), and enable the plugin in conf/kahawai.json there.
+				Without it, the plugin goes into the system as root.
 
 EXAMPLES:
 	${script_name}				# Release build, system install
@@ -43,7 +44,7 @@ EOF
 }
 
 check_build_packages() {
-	require_commands cc:gcc meson:meson ninja:ninja-build pkg-config:pkg-config realpath:coreutils || return 1
+	require_commands cc:gcc meson:meson ninja:ninja-build pkg-config:pkg-config realpath:coreutils python3:python3 || return 1
 	require_pkg_config "mtl:MTL (build and install it with build.sh)" "libdpdk:DPDK (build_dpdk.sh)" \
 		libavcodec:libavcodec-dev libavutil:libavutil-dev || return 1
 }
@@ -109,13 +110,16 @@ main() {
 		plugin_libdir="${MTL_PLUGIN_PREFIX}/$(multiarch_libdir)"
 		link_args=(--prefix="${MTL_PLUGIN_PREFIX}" "-Dc_link_args=$(origin_rpath_args "${plugin_libdir}" "${libdirs[@]}")")
 	fi
-	meson setup "${plugin_build_dir}" "${REPO_DIR}/plugins/st22_avcodec" -Dbuildtype="$buildtype" "${link_args[@]}"
+	# The libdir is set, so that the plugin is where the registry of build.sh says.
+	meson setup "${plugin_build_dir}" "${REPO_DIR}/plugins/st22_avcodec" -Dbuildtype="$buildtype" \
+		--libdir="$(multiarch_libdir)" "${link_args[@]}"
 	ninja -C "${plugin_build_dir}"
 	if [ -n "${MTL_PLUGIN_PREFIX:-}" ]; then
 		ninja -C "${plugin_build_dir}" install
 		# An FFmpeg with the SVT-JPEG-XS codecs brings libSvtJpegxs with it.
 		! pkg-config --exists SvtJpegxs || libdirs+=("$(pkg-config --variable=libdir SvtJpegxs)")
 		require_resolved_libraries "${plugin_libdir}/libst_plugin_st22_avcodec.so" "${libdirs[@]}" || exit 1
+		register_plugin "${local_base}/conf/kahawai.json" st22_avcodec "${plugin_libdir}/libst_plugin_st22_avcodec.so"
 	else
 		as_root ninja -C "${plugin_build_dir}" install
 	fi

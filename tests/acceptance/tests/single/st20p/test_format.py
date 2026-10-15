@@ -75,8 +75,6 @@ def test_format(
         test_config.get("interface_type", "VF")
     )
     app = app_factory(application)
-    if output_format == "h264":
-        app.require_encoder(host, "libopenh264")
     app.create_command(
         session_type="st20p",
         nic_port_list=interfaces_list,

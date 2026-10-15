@@ -38,10 +38,10 @@
 #define MT_DEV_LINK_POLL_INTERVAL_MS_RELAXED 10
 
 /**
- * Upper bound on the EAL argv dev_eal_init() builds: 17 fixed entries plus two per port
- * and two per DMA device. Bump the 17 when adding a fixed option.
+ * Upper bound on the EAL argv dev_eal_init() builds: 19 fixed entries plus two per port
+ * and two per DMA device. Bump the 19 when adding a fixed option.
  */
-#define MT_EAL_MAX_ARGS (17 + 2 * MTL_PORT_MAX + 2 * MTL_DMA_DEV_MAX)
+#define MT_EAL_MAX_ARGS (19 + 2 * MTL_PORT_MAX + 2 * MTL_DMA_DEV_MAX)
 
 /**
  * Width of the "-l" corelist dev_eal_init() builds: main_lcore plus every lcore named

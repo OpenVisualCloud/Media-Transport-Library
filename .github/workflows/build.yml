@@ -247,7 +247,10 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.mtl_key }}
-          path: .local_install/mtl
+          # The plugin registry build.sh writes beside the MTL prefix.
+          path: |
+            .local_install/mtl
+            .local_install/conf
 
       - name: 'stash: Restore JPEG XS cache'
         id: jpegxs-cache
@@ -318,7 +321,10 @@ jobs:
         uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           key: ${{ steps.keys.outputs.mtl_key }}
-          path: .local_install/mtl
+          # The plugin registry build.sh writes beside the MTL prefix.
+          path: |
+            .local_install/mtl
+            .local_install/conf
 
       - name: 'stash: Save JPEG XS cache'
         if: success() && steps.cache-state.outputs.jpegxs_miss == '1'
