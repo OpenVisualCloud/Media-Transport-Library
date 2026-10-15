@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "common/ut_common.h"
+#include "common/ut_known_bug.h"
 #include "common/ut_tx_ring.h"
 #include "dev/mt_dev_harness.h"
 
@@ -263,6 +264,64 @@ TEST_F(MtDevTxFlushTest, EagerFlushRefundsThePadsTheRingRefused) {
 
   EXPECT_EQ(FlushDescs(), 47u);
   ExpectPadRefsHeldByTheRingOnly();
+}
+
+/* The bounded flush and recovery of a deep port send the port pad from any thread: a ref
+ * of its own keeps its count above 1, where rte_mbuf_refcnt_update() adds atomically,
+ * and the uninit drops it. */
+TEST_F(MtDevTxFlushTest, PortPadKeepsARefOfItsOwn) {
+  EagerPort(2048, 1000);
+  struct rte_mbuf* pad = ut_dev_pad(ctx_);
+  Queue(1000);
+  EXPECT_EQ(rte_mbuf_refcnt_read(pad), 2);
+
+  EXPECT_EQ(Flush(), 0);
+
+  EXPECT_EQ(rte_mbuf_refcnt_read(pad), 2 + ut_txr_holds(ring_, pad));
+  ut_txr_destroy(ring_);
+  ring_ = nullptr;
+  ut_dev_free_pad(ctx_);
+  EXPECT_EQ(ut_dev_sys_tx_pool_in_use(ctx_), 0u);
+}
+
+/* the TX check sends the port pad in place of an invalid pkt, whose ref the PMD frees */
+TEST_F(MtDevTxFlushTest, PadInPlaceOfAnInvalidPktKeepsItsOwnRef) {
+  EagerPort(2048, 1000);
+  struct rte_mbuf* pad = ut_dev_pad(ctx_);
+  struct rte_mbuf* pkt = rte_pktmbuf_alloc(pool_);
+  ASSERT_NE(pkt, nullptr);
+
+  ASSERT_EQ(ut_dev_tx_pkt_check(ctx_, &pkt, 1), 1);
+
+  EXPECT_EQ(pkt, pad);
+  rte_pktmbuf_free(pkt);
+  EXPECT_EQ(rte_mbuf_refcnt_read(pad), 2);
+  EXPECT_EQ(SessionPktsHeld(), 0u);
+}
+
+TEST_F(MtDevTxFlushTest, NotDeepPortPadKeepsARefOfItsOwn) {
+  UT_KNOWN_BUG("the port pad has one ref, so two threads sending it can lose one");
+  LazyPort(128, 100);
+
+  EXPECT_GE(rte_mbuf_refcnt_read(ut_dev_pad(ctx_)), 2);
+}
+
+/* a sender's ref keeps the pad out of the pool whether the check took one or not */
+TEST_F(MtDevTxFlushTest, NotDeepPadInPlaceOfAnInvalidPktKeepsItsRef) {
+  UT_KNOWN_BUG("dev_tx_pkt_check() hands the PMD the port pad without a ref");
+  LazyPort(128, 100);
+  struct rte_mbuf* pad = ut_dev_pad(ctx_);
+  struct rte_mbuf* pkt = rte_pktmbuf_alloc(pool_);
+  ASSERT_NE(pkt, nullptr);
+  const uint16_t refs = rte_mbuf_refcnt_read(pad);
+  rte_mbuf_refcnt_update(pad, 1);
+
+  ASSERT_EQ(ut_dev_tx_pkt_check(ctx_, &pkt, 1), 1);
+
+  EXPECT_EQ(pkt, pad);
+  rte_pktmbuf_free(pkt);
+  EXPECT_EQ(rte_mbuf_refcnt_read(pad), refs + 1);
+  if (rte_mbuf_refcnt_read(pad) > refs) rte_mbuf_refcnt_update(pad, -1);
 }
 
 TEST_F(MtDevTxFlushTest, EagerPortWithoutACopyFlushesWithTheLazyLoop) {
