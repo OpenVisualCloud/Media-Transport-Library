@@ -711,7 +711,7 @@ struct mt_interface {
   struct rte_mempool* rx_mbuf_pool;
   uint16_t nb_tx_desc;
   uint16_t nb_rx_desc;
-  /* reclaim (dev_config_port()) */
+  /* reclaim and the bounded flush (dev_config_port()) */
   bool tx_deep;
   /* the rs batch a burst frees once 2 are in use, 0 if none (dev_start_port()) */
   uint16_t tx_reclaim_rs_thresh;

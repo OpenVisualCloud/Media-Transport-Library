@@ -162,6 +162,7 @@ void ut_dev_set_tx_cleanup_frees(ut_dev_ctx* ctx, bool frees);
  * its sys TX pool. */
 int ut_dev_attach_tx_ring(ut_dev_ctx* ctx, uint16_t queue, struct ut_txr* ring);
 struct rte_mbuf* ut_dev_pad(ut_dev_ctx* ctx);
+struct rte_mempool* ut_dev_tx_sys_pool(ut_dev_ctx* ctx);
 unsigned int ut_dev_sys_tx_pool_in_use(const ut_dev_ctx* ctx);
 void ut_dev_set_tx_queue_bps(ut_dev_ctx* ctx, uint16_t queue, uint64_t bps);
 void ut_dev_set_link_speed(ut_dev_ctx* ctx, uint32_t mbps);
