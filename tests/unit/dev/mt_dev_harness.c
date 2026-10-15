@@ -824,6 +824,10 @@ void ut_dev_set_link_speed(ut_dev_ctx* ctx, uint32_t mbps) {
   ctx->impl.inf[MTL_PORT_P].link_speed = mbps;
 }
 
+struct rte_mempool* ut_dev_tx_sys_pool(ut_dev_ctx* ctx) {
+  return ctx->sys_tx_pool;
+}
+
 int ut_dev_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue) {
   ut_active_ctx = ctx;
   return mt_dpdk_flush_tx_queue(&ctx->impl, &ctx->tx_queues[queue],

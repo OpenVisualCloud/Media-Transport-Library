@@ -1898,10 +1898,97 @@ uint16_t mt_dpdk_tx_burst_busy(struct mtl_main_impl* impl, struct mt_tx_queue* q
   return sent;
 }
 
+/* a send gives up after this with nothing accepted, plus one batch's drain time */
+#define MT_DEV_TX_FLUSH_STALL_NS (2 * (uint64_t)NS_PER_MS)
+/* the most bytes a pkt takes on the wire: 1518 and the preamble and gap */
+#define MT_DEV_TX_FLUSH_PKT_WIRE_BYTES (1538)
+#define MT_DEV_TX_FLUSH_POLL_NS (10 * (uint64_t)NS_PER_US)
+
+/* sends until all are queued, nothing went in for stall_ns, or the deadline passes */
+static uint16_t dev_flush_tx_send(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
+                                  struct rte_mbuf** pkts, uint16_t nb_pkts,
+                                  uint64_t stall_ns, uint64_t deadline) {
+  uint16_t sent = 0;
+  uint64_t progress = mt_get_tsc(impl);
+
+  while (sent < nb_pkts) {
+    uint64_t now = mt_get_tsc(impl);
+    if (now >= deadline || now - progress > stall_ns) break;
+    uint16_t tx = mt_dpdk_tx_burst(queue, &pkts[sent], nb_pkts - sent);
+    if (!tx) continue;
+    sent += tx;
+    progress = now;
+  }
+  return sent;
+}
+
+/* the PMD frees done batches in order, one a burst while 2 are in use: the mark, a copy
+ * of pad with 2 batches of pads behind it, is freed after every mbuf queued before it */
+static int dev_flush_tx_eager(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
+                              struct rte_mbuf* pad) {
+  enum mtl_port port = queue->port;
+  struct mt_interface* inf = mt_if(impl, port);
+  uint16_t rs = inf->tx_reclaim_rs_thresh;
+  uint16_t pads_left = 2 * rs;
+  struct rte_mbuf* pads[32];
+  uint64_t bps = queue->bps;
+  uint64_t stall_ns = MT_DEV_TX_FLUSH_STALL_NS;
+  uint64_t deadline = mt_get_tsc(impl) + MT_DEV_TX_FLUSH_STALL_NS;
+  uint64_t last_poll = 0;
+
+  if (!bps) bps = (uint64_t)inf->link_speed * 1000 * 1000 / 8;
+  if (bps) {
+    stall_ns += (uint64_t)rs * MT_DEV_TX_FLUSH_PKT_WIRE_BYTES * NS_PER_S / bps;
+    deadline +=
+        (uint64_t)inf->nb_tx_desc * MT_DEV_TX_FLUSH_PKT_WIRE_BYTES * NS_PER_S / bps;
+  }
+
+  struct rte_mbuf* mark =
+      rte_pktmbuf_copy(pad, mt_sys_tx_mempool(impl, port), 0, UINT32_MAX);
+  if (!mark) return -ENOMEM;
+  rte_mbuf_refcnt_update(mark, 1); /* the PMD's */
+  if (!dev_flush_tx_send(impl, queue, &mark, 1, stall_ns, deadline)) {
+    rte_mbuf_refcnt_update(mark, -1);
+    rte_pktmbuf_free(mark);
+    return -EBUSY;
+  }
+  while (pads_left) {
+    uint16_t n = RTE_MIN(pads_left, (uint16_t)RTE_DIM(pads));
+    for (uint16_t i = 0; i < n; i++) pads[i] = pad;
+    rte_mbuf_refcnt_update(pad, (int16_t)n);
+    uint16_t sent = dev_flush_tx_send(impl, queue, pads, n, stall_ns, deadline);
+    if (sent < n) {
+      rte_mbuf_refcnt_update(pad, (int16_t)(sent - n));
+      break;
+    }
+    pads_left -= n;
+  }
+
+  while (rte_mbuf_refcnt_read(mark) > 1) {
+    uint64_t now = mt_get_tsc(impl);
+    if (now >= deadline) break;
+    if (now - last_poll < MT_DEV_TX_FLUSH_POLL_NS) {
+      rte_pause();
+      continue;
+    }
+    last_poll = now;
+    mt_dpdk_tx_burst(queue, NULL, 0);
+  }
+  int ret = rte_mbuf_refcnt_read(mark) > 1 ? -EBUSY : 0;
+  rte_pktmbuf_free(mark);
+  if (ret < 0) warn("%s(%d), the queue did not drain in time\n", __func__, port);
+  return ret;
+}
+
 int mt_dpdk_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
                            struct rte_mbuf* pad) {
   enum mtl_port port = queue->port;
   uint16_t queue_id = queue->queue_id;
+
+  if (mt_if_tx_reclaim_rs_thresh(impl, port)) {
+    int ret = dev_flush_tx_eager(impl, queue, pad);
+    if (ret != -ENOMEM) return ret;
+  }
 
   /* use double to make sure all the fifo are burst out to clean all mbufs in the pool */
   int burst_pkts = mt_if_nb_tx_burst(impl, port) * 2;
