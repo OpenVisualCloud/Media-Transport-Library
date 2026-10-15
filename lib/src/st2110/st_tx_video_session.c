@@ -4415,6 +4415,9 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   /* clean the queue done mbuf */
   mt_txq_done_cleanup(s->queue[s_port]);
 
+  /* the rate pad_interval and the RL plan were trained on, which a later retrain of
+   * tv_rl_bps() for another session must not change */
+  uint64_t trained_bps = tv_queue_bps(s->queue[s_port]);
   mt_txq_fatal_error(s->queue[s_port]);
   mt_txq_put(s->queue[s_port]);
   s->queue[s_port] = NULL;
@@ -4423,6 +4426,7 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   memset(&flow, 0, sizeof(flow));
   flow.bytes_per_sec = tv_rl_bps(s);
   mt_pacing_train_bps_result_search(impl, port, flow.bytes_per_sec, &flow.bytes_per_sec);
+  if (trained_bps) flow.bytes_per_sec = trained_bps;
   mt_memcpy(&flow.dip_addr, &s->ops.dip_addr[s_port], MTL_IP_ADDR_LEN);
   flow.dst_port = s->ops.udp_port[s_port];
   s->queue[s_port] = mt_txq_get(impl, port, &flow);
