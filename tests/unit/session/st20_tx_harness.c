@@ -109,14 +109,18 @@ struct ut_txv_ctx {
   struct st_frame_trans recovery_frame;
   int fatal_events;
   int recovery_events;
-  /* ut_txv_pipe_*(): the builder and the TSC transmitter over a ut_txr ring */
+  /* ut_txv_pipe_*(): the builder and the TSC transmitter over a ut_txr ring a leg */
   bool pipe_on;
-  struct ut_txr* pipe_ring;
-  struct mt_txq_entry pipe_queue;
+  struct ut_txr* pipe_ring[MTL_SESSION_PORT_MAX];
+  struct mt_txq_entry pipe_queue[MTL_SESSION_PORT_MAX];
+  struct rte_mbuf* pipe_held[UT_TXV_PIPE_HOLD_MAX];
+  int pipe_held_cnt;
   uint16_t pipe_next_frame;
   uint64_t pipe_step;
   uint64_t pipe_first_frame_busy;
   uint64_t pipe_frames_asked;
+  uint64_t pipe_first_alloc_fail;
+  uint64_t pipe_first_burst_fail;
 };
 
 /* ── mocked time sources ──────────────────────────────────────────────── */
@@ -353,12 +357,17 @@ static int ut_txv_wait_tsc_stable(struct mtl_main_impl* impl) {
 static struct ut_txv_ctx* ut_txv_active_burst_ctx;
 static uint16_t ut_txv_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
                                  uint16_t nb_pkts) {
-  (void)entry;
   struct ut_txv_ctx* ctx = ut_txv_active_burst_ctx;
   if (!ctx) return 0;
   ctx->burst_calls++;
-  if (ctx->pipe_on)
-    return ut_txr_xmit(ctx->pipe_ring, tx_pkts, nb_pkts, ctx->mock_tsc_ns);
+  if (ctx->pipe_on) {
+    int leg = entry == &ctx->pipe_queue[MTL_SESSION_PORT_R] ? MTL_SESSION_PORT_R
+                                                            : MTL_SESSION_PORT_P;
+    uint16_t tx = ut_txr_xmit(ctx->pipe_ring[leg], tx_pkts, nb_pkts, ctx->mock_tsc_ns);
+    if (tx < nb_pkts && !ctx->pipe_first_burst_fail)
+      ctx->pipe_first_burst_fail = ctx->pipe_step;
+    return tx;
+  }
   for (uint16_t i = 0; i < nb_pkts; i++) {
     if (ctx->burst_packets_count < RTE_DIM(ctx->burst_packets))
       ctx->burst_packets[ctx->burst_packets_count++] = tx_pkts[i];
@@ -1812,13 +1821,54 @@ int ut_txv_recovery_done_cleanups(const ut_txv_ctx* ctx, int leg) {
   return ctx->recovery_done_cleanups[leg];
 }
 
-/* ── builder and transmitter over a modeled NIC ring ──────────────────── */
+/* ── builder and transmitter over modeled NIC rings ───────────────────── */
+
+static struct rte_mempool* ut_txv_pipe_pool(unsigned int n, uint16_t priv_size,
+                                            uint16_t data_room) {
+  static unsigned int pool_idx;
+  char name[RTE_MEMPOOL_NAMESIZE];
+
+  (void)snprintf(name, sizeof(name), "ut_txv_pipe_%u", pool_idx++);
+  return rte_pktmbuf_pool_create(name, n, 0, priv_size, RTE_PKTMBUF_HEADROOM + data_room,
+                                 (int)rte_socket_id());
+}
+
+static int ut_txv_pipe_hold(struct ut_txv_ctx* ctx, struct rte_mempool* pool,
+                            unsigned int n) {
+  for (unsigned int i = 0; i < n; i++) {
+    if (ctx->pipe_held_cnt >= UT_TXV_PIPE_HOLD_MAX) return -ENOSPC;
+    struct rte_mbuf* m = rte_pktmbuf_alloc(pool);
+    if (!m) return -ENOMEM;
+    ctx->pipe_held[ctx->pipe_held_cnt++] = m;
+  }
+  return 0;
+}
+
+static int ut_txv_pipe_pools(struct ut_txv_ctx* ctx, const struct ut_txv_pipe_case* c) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  uint16_t hdr_room = s->tx_no_chain ? s->st20_pkt_size
+                                     : sizeof(struct st_rfc4175_video_hdr) +
+                                           sizeof(struct st20_rfc4175_extra_rtp_hdr);
+
+  if (!c->hdr_pool[MTL_SESSION_PORT_P]) return tv_mempool_init(&ctx->impl, &ctx->mgr, s);
+  for (int i = 0; i < c->num_port; i++) {
+    s->mbuf_mempool_hdr[i] =
+        ut_txv_pipe_pool(c->hdr_pool[i], sizeof(struct mt_muf_priv_data), hdr_room);
+    if (!s->mbuf_mempool_hdr[i] ||
+        ut_txv_pipe_hold(ctx, s->mbuf_mempool_hdr[i], c->hold) < 0)
+      return -ENOMEM;
+  }
+  if (s->tx_no_chain) return 0;
+  s->mbuf_mempool_chain = ut_txv_pipe_pool(c->chain_pool, 0, 0);
+  if (!s->mbuf_mempool_chain || ut_txv_pipe_hold(ctx, s->mbuf_mempool_chain, c->hold) < 0)
+    return -ENOMEM;
+  return 0;
+}
 
 int ut_txv_pipe_setup(ut_txv_ctx* ctx, const struct ut_txv_pipe_case* c) {
   static unsigned int ring_idx;
   struct st_tx_video_session_impl* s = &ctx->session;
   struct st20_tx_ops* ops = &s->ops;
-  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
   char name[RTE_RING_NAMESIZE];
 
   ops->type = ST20_TYPE_FRAME_LEVEL;
@@ -1827,7 +1877,7 @@ int ut_txv_pipe_setup(ut_txv_ctx* ctx, const struct ut_txv_pipe_case* c) {
   ops->width = c->width;
   ops->height = c->height;
   ops->fps = ST_FPS_P59_94;
-  ops->num_port = 1;
+  ops->num_port = c->num_port;
   ops->framebuff_cnt = c->frames_cnt;
   if (st20_get_pgroup(ops->fmt, &s->st20_pg) < 0) return -EINVAL;
   if (st_get_fps_timing(ops->fps, &s->fps_tm) < 0) return -EINVAL;
@@ -1841,27 +1891,43 @@ int ut_txv_pipe_setup(ut_txv_ctx* ctx, const struct ut_txv_pipe_case* c) {
   s->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
   s->ring_count = ST_TX_VIDEO_SESSIONS_RING_SIZE;
   while (s->ring_count > s->st20_total_pkts) s->ring_count /= 2;
-  s->tx_no_chain = false;
+  s->tx_no_chain = c->copy;
   s->socket_id = (int)rte_socket_id();
   s->tx_hang_detect_time_thresh = UINT64_MAX;
   ctx->impl.pkt_udp_suggest_max_size = MTL_UDP_MAX_BYTES;
-  inf->nb_tx_desc = c->nb_tx_desc;
-  inf->ptp_get_time_fn = ut_txv_ptp_time_fn;
-  s->port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
-  s->pacing_way[MTL_SESSION_PORT_P] = ST21_TX_PACING_WAY_TSC;
-  ctx->pipe_ring =
-      ut_txr_create((enum ut_txr_mode)c->ring_mode, c->nb_tx_desc, 32, c->free_thresh, 1);
-  (void)snprintf(name, sizeof(name), "ut_txv_pipe_%u", ring_idx++);
-  s->ring[MTL_SESSION_PORT_P] =
-      rte_ring_create(name, s->ring_count, s->socket_id, RING_F_SP_ENQ | RING_F_SC_DEQ);
-  if (!ctx->pipe_ring || !s->ring[MTL_SESSION_PORT_P]) return -ENOMEM;
-  s->queue[MTL_SESSION_PORT_P] = &ctx->pipe_queue;
-  st_video_resolve_pacing_tasklet(s, MTL_SESSION_PORT_P);
+  for (int i = 0; i < c->num_port; i++) {
+    struct mt_interface* inf = &ctx->impl.inf[i];
+    inf->nb_tx_desc = c->nb_tx_desc[i];
+    inf->ptp_get_time_fn = ut_txv_ptp_time_fn;
+    s->port_maps[i] = (enum mtl_port)i;
+    s->pacing_way[i] = ST21_TX_PACING_WAY_TSC;
+    ctx->pipe_ring[i] = ut_txr_create((enum ut_txr_mode)c->ring_mode, c->nb_tx_desc[i],
+                                      32, c->free_thresh, c->hung[i] ? UT_TXR_HUNG : 1);
+    (void)snprintf(name, sizeof(name), "ut_txv_pipe_%u", ring_idx++);
+    s->ring[i] =
+        rte_ring_create(name, s->ring_count, s->socket_id, RING_F_SP_ENQ | RING_F_SC_DEQ);
+    if (!ctx->pipe_ring[i] || !s->ring[i]) return -ENOMEM;
+    s->queue[i] = &ctx->pipe_queue[i];
+    st_video_resolve_pacing_tasklet(s, i);
+  }
   if (tv_init_pacing(&ctx->impl, s) < 0) return -EINVAL;
-  if (tv_mempool_init(&ctx->impl, &ctx->mgr, s) < 0) return -ENOMEM;
+  if (ut_txv_pipe_pools(ctx, c) < 0) return -ENOMEM;
   if (tv_alloc_frames(&ctx->impl, s) < 0) return -ENOMEM;
   ctx->pipe_on = true;
   return 0;
+}
+
+void ut_txv_pipe_hang(ut_txv_ctx* ctx, int leg) {
+  ut_txr_set_drain_ns(ctx->pipe_ring[leg], UT_TXR_HUNG);
+}
+
+static void ut_txv_pipe_note(struct ut_txv_ctx* ctx) {
+  int code = -ctx->session.stat_build_ret_code;
+
+  if (!ctx->pipe_first_alloc_fail &&
+      (code == STI_FRAME_PKT_ALLOC_FAIL || code == STI_FRAME_PKT_ALLOC_CHAIN_FAIL ||
+       code == STI_FRAME_PKT_ALLOC_R_FAIL))
+    ctx->pipe_first_alloc_fail = ctx->pipe_step;
 }
 
 void ut_txv_pipe_run(ut_txv_ctx* ctx, uint64_t duration_ns, uint64_t step_ns) {
@@ -1869,14 +1935,17 @@ void ut_txv_pipe_run(ut_txv_ctx* ctx, uint64_t duration_ns, uint64_t step_ns) {
   uint64_t end = ctx->mock_tsc_ns + duration_ns;
 
   ut_txv_active_burst_ctx = ctx;
-  while (ctx->mock_tsc_ns < end) {
+  while (ctx->mock_tsc_ns < end && !ctx->pipe_first_alloc_fail &&
+         !ctx->pipe_first_burst_fail) {
     ctx->pipe_step++;
     tvs_tasklet_handler(&ctx->mgr);
+    ut_txv_pipe_note(ctx);
     if (s->stat_build_ret_code == -STI_FRAME_APP_ERR_TX_FRAME) {
       ctx->pipe_first_frame_busy = ctx->pipe_step;
       break; /* the builder errs on each later try */
     }
-    s->pacing_tasklet_func[MTL_SESSION_PORT_P](&ctx->impl, s, MTL_SESSION_PORT_P);
+    for (int i = 0; i < s->ops.num_port; i++)
+      s->pacing_tasklet_func[i](&ctx->impl, s, (enum mtl_session_port)i);
     ut_txv_advance(ctx, step_ns);
   }
   ut_txv_active_burst_ctx = NULL;
@@ -1886,22 +1955,23 @@ int ut_txv_pipe_teardown(ut_txv_ctx* ctx) {
   struct st_tx_video_session_impl* s = &ctx->session;
   int ret;
 
-  if (s->ring[MTL_SESSION_PORT_P]) {
-    ut_ring_drain(s->ring[MTL_SESSION_PORT_P]);
-    rte_ring_free(s->ring[MTL_SESSION_PORT_P]);
-    s->ring[MTL_SESSION_PORT_P] = NULL;
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    if (s->ring[i]) {
+      ut_ring_drain(s->ring[i]);
+      rte_ring_free(s->ring[i]);
+      s->ring[i] = NULL;
+    }
+    if (s->inflight[i][0]) rte_pktmbuf_free_bulk(s->inflight[i], s->bulk);
+    s->inflight[i][0] = NULL;
+    for (int j = 0; j < s->trs_inflight_num[i]; j++)
+      rte_pktmbuf_free(s->trs_inflight[i][s->trs_inflight_idx[i] + j]);
+    s->trs_inflight_num[i] = 0;
+    ut_txr_destroy(ctx->pipe_ring[i]);
+    ctx->pipe_ring[i] = NULL;
+    s->queue[i] = NULL;
   }
-  for (unsigned int j = 0; j < RTE_DIM(s->inflight[MTL_SESSION_PORT_P]); j++) {
-    rte_pktmbuf_free(s->inflight[MTL_SESSION_PORT_P][j]);
-    s->inflight[MTL_SESSION_PORT_P][j] = NULL;
-  }
-  for (int j = 0; j < s->trs_inflight_num[MTL_SESSION_PORT_P]; j++)
-    rte_pktmbuf_free(
-        s->trs_inflight[MTL_SESSION_PORT_P][s->trs_inflight_idx[MTL_SESSION_PORT_P] + j]);
-  s->trs_inflight_num[MTL_SESSION_PORT_P] = 0;
-  ut_txr_destroy(ctx->pipe_ring);
-  ctx->pipe_ring = NULL;
-  s->queue[MTL_SESSION_PORT_P] = NULL;
+  for (int i = 0; i < ctx->pipe_held_cnt; i++) rte_pktmbuf_free(ctx->pipe_held[i]);
+  ctx->pipe_held_cnt = 0;
   tv_free_frames(s);
   ret = tv_mempool_free(s);
   ctx->pipe_on = false;
@@ -1914,6 +1984,14 @@ uint64_t ut_txv_pipe_first_frame_busy(const ut_txv_ctx* ctx) {
 
 uint64_t ut_txv_pipe_frames_asked(const ut_txv_ctx* ctx) {
   return ctx->pipe_frames_asked;
+}
+
+uint64_t ut_txv_pipe_first_alloc_fail(const ut_txv_ctx* ctx) {
+  return ctx->pipe_first_alloc_fail;
+}
+
+uint64_t ut_txv_pipe_first_burst_fail(const ut_txv_ctx* ctx) {
+  return ctx->pipe_first_burst_fail;
 }
 
 int ut_txv_pipe_total_pkts(const ut_txv_ctx* ctx) {

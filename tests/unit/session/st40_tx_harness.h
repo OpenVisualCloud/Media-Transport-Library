@@ -131,6 +131,38 @@ uint64_t ut_txa_stat_interlace_second(const ut_txa_ctx* ctx);
 int ut_txa_ops_check(uint32_t flags, uint32_t fmd_dit, uint8_t fmd_k_bit,
                      uint8_t payload_type);
 
+/* ── session and transmitter over modeled NIC rings ───────────────────── */
+enum { UT_TXA_PIPE_HOLD_MAX = 1024, UT_TXA_PIPE_CHAIN = 2 };
+/* A frame-level 59.94 fps session of one pkt a frame on num_port legs, leg i on port i
+ * whose TX queue is a common/ut_tx_ring.h ring of nb_tx_desc[i] (rs 32, the PMD's
+ * free_thresh), hung or draining a descriptor a ns. The production session tasklet and,
+ * when shared, the ancillary transmitter run on the mock clocks. */
+struct ut_txa_pipe_case {
+  int num_port;
+  bool copy;
+  bool shared; /* the manager ring and ancillary transmitter, the default */
+  uint16_t nb_tx_desc[2];
+  int ring_mode; /* enum ut_txr_mode */
+  uint16_t free_thresh;
+  bool hung[2];
+  /* exact header pool of each leg and chain pool; tx_ancillary_session_mempool_init()'s
+   * when 0 */
+  unsigned int hdr_pool[2];
+  unsigned int chain_pool;
+  /* mbufs taken out of each exact pool first, as other lcores' caches keep them */
+  unsigned int hold;
+};
+int ut_txa_pipe_setup(ut_txa_ctx* ctx, const struct ut_txa_pipe_case* c);
+/* the leg's ring completes no descriptor posted from now on */
+void ut_txa_pipe_hang(ut_txa_ctx* ctx, int leg);
+/* stops at the first failed pkt alloc or refused burst */
+void ut_txa_pipe_run(ut_txa_ctx* ctx, uint64_t duration_ns, uint64_t step_ns);
+/* -EBUSY if a pool still had mbufs out once the rings and inflights were freed */
+int ut_txa_pipe_teardown(ut_txa_ctx* ctx);
+/* the run step a pkt alloc first failed and a NIC ring first refused a pkt; 0 for none */
+uint64_t ut_txa_pipe_first_alloc_fail(const ut_txa_ctx* ctx);
+uint64_t ut_txa_pipe_first_burst_fail(const ut_txa_ctx* ctx);
+
 #ifdef __cplusplus
 }
 #endif
