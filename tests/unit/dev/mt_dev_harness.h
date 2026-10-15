@@ -9,6 +9,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "common/ut_tx_ring.h"
 #include "mtl_api.h"
 
 #ifdef __cplusplus
@@ -150,9 +151,23 @@ int ut_dev_get_port_stats(ut_dev_ctx* ctx, struct mtl_port_status* stats);
 int ut_dev_reset_port_stats(ut_dev_ctx* ctx);
 void ut_dev_user_port_stats(const ut_dev_ctx* ctx, struct mtl_port_status* stats);
 
+/* TX queue flush and done cleanup of port P, the queues backed by common/ut_tx_ring.h
+ * rings and timed by its fake clock. */
+
+#define UT_DEV_PAD_LEN (64)
 /** MT_DEV_TX_CLEANUP_FREES: whether the iavf/ice cleanup frees mbufs, as DPDK 26.07
  * does. Each ctx starts with the build's own. */
 void ut_dev_set_tx_cleanup_frees(ut_dev_ctx* ctx, bool frees);
+/** Queue queue of port P sends to ring. The port gets a pad of UT_DEV_PAD_LEN bytes from
+ * its sys TX pool. */
+int ut_dev_attach_tx_ring(ut_dev_ctx* ctx, uint16_t queue, struct ut_txr* ring);
+struct rte_mbuf* ut_dev_pad(ut_dev_ctx* ctx);
+unsigned int ut_dev_sys_tx_pool_in_use(const ut_dev_ctx* ctx);
+void ut_dev_set_tx_queue_bps(ut_dev_ctx* ctx, uint16_t queue, uint64_t bps);
+void ut_dev_set_link_speed(ut_dev_ctx* ctx, uint32_t mbps);
+/** mt_dpdk_flush_tx_queue() of that queue with the port's pad. */
+int ut_dev_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue);
+int ut_dev_tx_done_cleanup(ut_dev_ctx* ctx, uint16_t queue);
 
 #ifdef __cplusplus
 }
