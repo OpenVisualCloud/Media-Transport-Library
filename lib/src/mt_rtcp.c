@@ -465,6 +465,13 @@ static int rtcp_rx_stat(void* priv) {
   return 0;
 }
 
+/* deep, the copies the queue keeps and those a retransmit loop makes before the burst */
+static uint32_t rtcp_tx_pool_n(struct mtl_main_impl* impl, enum mtl_port port,
+                               uint16_t buffer_size) {
+  if (!mt_if_tx_deep(impl, port)) return buffer_size + mt_if_nb_tx_desc(impl, port);
+  return mt_if_tx_pool_ring_share(impl, port, 1, 1) + MT_RTCP_RETRANSMIT_BULK;
+}
+
 struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* impl,
                                      struct mt_rtcp_tx_ops* ops) {
   const enum mtl_port port = ops->port;
@@ -485,7 +492,7 @@ struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* impl,
     ops->buffer_size = mt_if_nb_tx_desc(impl, port);
   }
 
-  uint32_t n = ops->buffer_size + mt_if_nb_tx_desc(impl, port);
+  uint32_t n = rtcp_tx_pool_n(impl, port, ops->buffer_size);
   struct rte_mempool* pool =
       mt_mempool_create(impl, port, name, n, MT_MBUF_CACHE_SIZE, 0, MTL_MTU_MAX_BYTES);
   if (!pool) {

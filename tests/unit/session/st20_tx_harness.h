@@ -367,6 +367,18 @@ uint64_t ut_txv_stat_snapshot_port_frames(const ut_txv_ctx* ctx);
 bool ut_txv_pkts_capable_chain(ut_txv_ctx* ctx, uint16_t nb_tx_desc, int total_pkts,
                                uint16_t frames_cnt, bool rtcp);
 
+/* tv_mempool_init() of a one-port frame-level RTCP session, deep at 2048:
+ * the mbufs of its header and payload pools, which then are freed again */
+int ut_txv_rtcp_mempool_sizes(ut_txv_ctx* ctx, uint16_t nb_tx_desc,
+                              uint16_t rtcp_buffer_size, unsigned int* hdr_size,
+                              unsigned int* chain_size);
+/* the same session's header pool, then the ring tv_init_rtcp() asks mt_rtcp for, and the
+ * header pool a TX recovery's tv_mempool_init() then makes */
+int ut_txv_rtcp_recovery_mempool_sizes(ut_txv_ctx* ctx, uint16_t nb_tx_desc,
+                                       uint16_t rtcp_buffer_size, unsigned int* hdr_size,
+                                       uint16_t* rtcp_ring,
+                                       unsigned int* recovery_hdr_size);
+
 /* st20_tx_queue_fatal_error() of a session on num_port legs, leg i on physical port i,
  * each on a queue entry of its own; mt_txq_get() swaps it for the leg's other one. The
  * session pools are the port's tx mono pool, so recovery replaces them without DPDK. Its
@@ -395,7 +407,11 @@ int ut_txv_recovery_fallback_flushes(const ut_txv_ctx* ctx, int leg);
 int ut_txv_recovery_done_cleanups(const ut_txv_ctx* ctx, int leg);
 
 /* ── builder and transmitter over modeled NIC rings ───────────────────── */
-enum { UT_TXV_PIPE_HOLD_MAX = 1024, UT_TXV_PIPE_CHAIN = MTL_SESSION_PORT_MAX };
+enum {
+  UT_TXV_PIPE_HOLD_MAX = 1024,
+  UT_TXV_PIPE_CHAIN = MTL_SESSION_PORT_MAX,
+  UT_TXV_PIPE_COPY, /* the chain copies of the line-crossing pkts of a padded frame */
+};
 /* A frame-level BPM 4:2:2 10-bit 59.94p session on num_port legs, leg i on port i whose
  * TX queue is a common/ut_tx_ring.h ring of nb_tx_desc[i] (rs 32, the PMD's free_thresh),
  * hung or draining a descriptor a ns. The production builder (tvs_tasklet_handler()) and
@@ -406,15 +422,21 @@ struct ut_txv_pipe_case {
   uint16_t frames_cnt;
   int num_port;
   bool copy;
+  /* bytes after each line of the frame buffer, which the line-crossing pkts copy around
+   */
+  uint32_t linesize_pad;
   uint16_t nb_tx_desc[MTL_SESSION_PORT_MAX];
   int ring_mode; /* enum ut_txr_mode */
   uint16_t free_thresh;
   bool hung[MTL_SESSION_PORT_MAX];
-  /* exact header pool of each leg and chain pool; tv_mempool_init()'s when 0 */
+  /* exact header pool of each leg, chain and copy pool; tv_mempool_init()'s when 0 */
   unsigned int hdr_pool[MTL_SESSION_PORT_MAX];
   unsigned int chain_pool;
+  unsigned int copy_pool;
   /* mbufs taken out of each exact pool first, as other lcores' caches keep them */
   unsigned int hold;
+  /* the app set nb_tx_desc: no port is deep; else 2048 is */
+  bool user_nb_tx_desc;
 };
 int ut_txv_pipe_setup(ut_txv_ctx* ctx, const struct ut_txv_pipe_case* c);
 /* the leg's ring completes no descriptor posted from now on */
@@ -428,6 +450,20 @@ int ut_txv_pipe_teardown(ut_txv_ctx* ctx);
 uint64_t ut_txv_pipe_first_frame_busy(const ut_txv_ctx* ctx);
 uint64_t ut_txv_pipe_first_alloc_fail(const ut_txv_ctx* ctx);
 uint64_t ut_txv_pipe_first_burst_fail(const ut_txv_ctx* ctx);
+/* the mbufs of a leg's header pool, UT_TXV_PIPE_CHAIN or UT_TXV_PIPE_COPY */
+unsigned int ut_txv_pipe_pool_size(const ut_txv_ctx* ctx, int pool);
+/* tv_mempool_n(): the mbufs tv_mempool_init() asks for the leg's header pool */
+unsigned int ut_txv_pipe_mempool_n(ut_txv_ctx* ctx, int leg);
+/* the same, were the leg paced by RL */
+unsigned int ut_txv_pipe_rl_mempool_n(ut_txv_ctx* ctx, int leg);
+/* MTL_FLAG_TX_VIDEO_MIGRATE in the instance's init flags */
+void ut_txv_set_tx_video_migrate(ut_txv_ctx* ctx, bool enable);
+/* tv_copy_mempool_n(): the copies a padded frame asks for beside a chain pool of chain_n
+ */
+unsigned int ut_txv_pipe_copy_mempool_n(ut_txv_ctx* ctx, unsigned int chain_n);
+/* the pkt payload, the bytes of a line, the frame bytes and pkts of the session */
+void ut_txv_pipe_geometry(const ut_txv_ctx* ctx, uint32_t* pkt_len, uint32_t* line_bytes,
+                          uint32_t* frame_size, int* total_pkts);
 uint64_t ut_txv_pipe_frames_asked(const ut_txv_ctx* ctx);
 int ut_txv_pipe_total_pkts(const ut_txv_ctx* ctx);
 

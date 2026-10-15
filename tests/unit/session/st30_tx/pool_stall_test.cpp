@@ -4,11 +4,13 @@
  * A stalled TX queue must show as a refused burst before the audio session pools run
  * dry. The production session tasklet and, on the shared queue, the audio transmitter
  * run into a hung ring, from the start or after a lazily freeing ring kept a mbuf in
- * every slot. A header pool holds the transmit ring up to its threshold, the pkt the
- * transmit stage waits on, what each of its queues keeps (ceil(nb_tx_desc / descriptors
- * a pkt), RL adding 3 pads a pkt on 2 queues) and the cache slack another lcore keeps;
- * the redundant chain pool that of the leg that keeps more. One mbuf less and the alloc
- * fails first, but on RL, where the warm-up pads keep descriptors too.
+ * every slot, with pools of exactly what tx_audio_session_mempool_n() asks for. On a
+ * deep port (2048 here): the transmit ring up to its threshold, the pkt the transmit
+ * stage waits on, what each of its queues keeps (ceil(nb_tx_desc / descriptors a pkt),
+ * RL adding 3 pads a pkt on 2 queues) and the cache slack another lcore keeps; the
+ * redundant chain pool that of the leg that keeps more. One mbuf less and the alloc
+ * fails first, but on RL, where the warm-up pads keep descriptors too. A port of 512 is
+ * not deep and gets main's pools, nb_tx_desc and the 1024 of the manager ring.
  *
  * Run: ./build_unit/tests/unit/UnitTest --gtest_filter='*St30TxPool*'
  */
@@ -23,8 +25,6 @@
 namespace {
 
 constexpr unsigned int kCacheSlack = 192; /* 1.5 x MT_MBUF_CACHE_SIZE */
-constexpr unsigned int kRlQueues = 2;     /* ST30_TX_RL_QUEUES_USED */
-constexpr unsigned int kRlPads = 3;
 constexpr uint64_t kStepNs = 1000;
 constexpr uint64_t kLazyNs =
     2500000000; /* 2500 pkts at 1 ms, every ring slot keeps one */
@@ -52,14 +52,6 @@ class St30TxPoolStallTest : public ::testing::TestWithParam<StallCase> {
     EXPECT_EQ(ut_txa30_pipe_teardown(ctx_), 0);
     ut_txa30_destroy(ctx_);
   }
-  unsigned int Pool(unsigned int thresh, bool copy) {
-    const StallCase& sc = GetParam();
-    bool rl = sc.pacing == UT_TXA30_PIPE_RL;
-    unsigned int desc_per_pkt = (copy ? 1 : 2) + (rl ? kRlPads : 0);
-    unsigned int queues = rl ? kRlQueues : 1;
-    return thresh + 1 + queues * ((sc.nb_tx_desc + desc_per_pkt - 1) / desc_per_pkt) +
-           kCacheSlack;
-  }
   ut_txa30_pipe_case Base() {
     const StallCase& sc = GetParam();
     ut_txa30_pipe_case c = {};
@@ -75,21 +67,21 @@ class St30TxPoolStallTest : public ::testing::TestWithParam<StallCase> {
     }
     return c;
   }
-  /* exact pools, shrink_pool one mbuf short: a leg's header pool or UT_TXA30_PIPE_CHAIN
-   */
+  /* the helper's pools, shrink_pool one mbuf short: a leg's header pool or
+   * UT_TXA30_PIPE_CHAIN */
   void RunExact(int shrink_pool) {
     ut_txa30_pipe_case c = Base();
-    /* the transmit ring threshold of the production session, from a sizing run */
     ASSERT_EQ(ut_txa30_pipe_setup(ctx_, &c), 0);
-    unsigned int thresh = ut_txa30_pipe_trans_ring_thresh(ctx_);
+    for (int i = 0; i < c.num_port; i++) {
+      c.hdr_pool[i] = ut_txa30_pipe_mempool_n(ctx_, i);
+      c.chain_pool = std::max(c.chain_pool, c.hdr_pool[i]);
+    }
     ASSERT_EQ(ut_txa30_pipe_teardown(ctx_), 0);
     ut_txa30_destroy(ctx_);
     ctx_ = ut_txa30_create();
     ASSERT_NE(ctx_, nullptr);
 
     c.hold = kCacheSlack;
-    for (int i = 0; i < c.num_port; i++) c.hdr_pool[i] = Pool(thresh, c.copy);
-    c.chain_pool = Pool(thresh, false);
     if (shrink_pool == UT_TXA30_PIPE_CHAIN)
       c.chain_pool--;
     else if (shrink_pool >= 0)
@@ -165,7 +157,7 @@ INSTANTIATE_TEST_SUITE_P(
     [](const testing::TestParamInfo<StallCase>& info) { return info.param.name; });
 
 /* RL audio is left out: its warm-up pads keep descriptors too, so one mbuf less may still
- * see the refused burst first */
+ * see the refused burst first. Only a deep port's pools are that tight. */
 using St30TxPoolBoundTest = St30TxPoolStallTest;
 
 TEST_P(St30TxPoolBoundTest, OneHeaderMbufLessFailsTheAllocFirst) {
@@ -187,9 +179,7 @@ TEST_P(St30TxPoolBoundTest, OneChainMbufLessFailsTheAllocFirst) {
 
 INSTANTIATE_TEST_SUITE_P(
     LazyRings, St30TxPoolBoundTest,
-    testing::Values(StallCase{"Lazy512", ST30_PTIME_1MS, UT_TXA30_PIPE_TSC_SHARED, 1,
-                              false, 512, 0, true},
-                    StallCase{"Lazy2048", ST30_PTIME_1MS, UT_TXA30_PIPE_TSC_SHARED, 1,
+    testing::Values(StallCase{"Lazy2048", ST30_PTIME_1MS, UT_TXA30_PIPE_TSC_SHARED, 1,
                               false, 2048, 0, true},
                     StallCase{"DedicatedLazy2048", ST30_PTIME_1MS,
                               UT_TXA30_PIPE_TSC_DEDICATED, 1, false, 2048, 0, true},
@@ -227,6 +217,72 @@ TEST(St30TxRedundantAllocTest, AFailedRedundantHeaderFreesThePayloadOnce) {
   EXPECT_NE(ut_txa30_pipe_first_alloc_fail(ctx), 0u);
   EXPECT_EQ(ut_txa30_pipe_teardown(ctx), 0) << "a pool lost or doubled mbufs";
   ut_txa30_destroy(ctx);
+}
+
+/* the redundant pkt shares the chain mbuf, so the chain pool needs the leg keeping more
+ */
+TEST(St30TxPoolSizeTest, RedundantChainPoolCoversTheDeeperLeg) {
+  ASSERT_EQ(ut_txa30_init(), 0);
+  for (auto nb : {std::make_pair(512, 2048), std::make_pair(2048, 512)}) {
+    SCOPED_TRACE(nb.first);
+    ut_txa30_ctx* ctx = ut_txa30_create();
+    ASSERT_NE(ctx, nullptr);
+    ut_txa30_pipe_case c = {};
+    c.ptime = ST30_PTIME_1MS;
+    c.pacing = UT_TXA30_PIPE_TSC_SHARED;
+    c.num_port = 2;
+    c.nb_tx_desc[MTL_SESSION_PORT_P] = nb.first;
+    c.nb_tx_desc[MTL_SESSION_PORT_R] = nb.second;
+    c.free_thresh = 32;
+    ASSERT_EQ(ut_txa30_pipe_setup(ctx, &c), 0);
+    EXPECT_EQ(ut_txa30_pipe_pool_size(ctx, UT_TXA30_PIPE_CHAIN),
+              std::max(ut_txa30_pipe_pool_size(ctx, MTL_SESSION_PORT_P),
+                       ut_txa30_pipe_pool_size(ctx, MTL_SESSION_PORT_R)));
+    EXPECT_EQ(ut_txa30_pipe_teardown(ctx), 0);
+    ut_txa30_destroy(ctx);
+  }
+}
+
+/* main's chain pool is the primary leg's alone: 1536 */
+TEST(St30TxPoolSizeTest, ARedundantSessionOffDeepPortsGetsThePrimaryChainPool) {
+  ASSERT_EQ(ut_txa30_init(), 0);
+  ut_txa30_ctx* ctx = ut_txa30_create();
+  ASSERT_NE(ctx, nullptr);
+  ut_txa30_pipe_case c = {};
+  c.ptime = ST30_PTIME_1MS;
+  c.pacing = UT_TXA30_PIPE_TSC_SHARED;
+  c.num_port = 2;
+  c.nb_tx_desc[MTL_SESSION_PORT_P] = 512;
+  c.nb_tx_desc[MTL_SESSION_PORT_R] = 1024;
+  c.free_thresh = 32;
+  ASSERT_EQ(ut_txa30_pipe_setup(ctx, &c), 0);
+  EXPECT_EQ(ut_txa30_pipe_mempool_n(ctx, MTL_SESSION_PORT_R), 1024u + 1024);
+  EXPECT_EQ(ut_txa30_pipe_pool_size(ctx, MTL_SESSION_PORT_R), 4095u);
+  EXPECT_EQ(ut_txa30_pipe_pool_size(ctx, UT_TXA30_PIPE_CHAIN), 2047u);
+  EXPECT_EQ(ut_txa30_pipe_teardown(ctx), 0);
+  ut_txa30_destroy(ctx);
+}
+
+/* deep, the 10 pkts of the transmit ring, the waiting one, the chained pkts of the queue
+ * and the cache slack: 1227 at 2048 descriptors; not deep, main's 512 + 1024 at 512 */
+TEST(St30TxPoolSizeTest, A1msSessionGets2047At2048DescriptorsAnd2047At512) {
+  ASSERT_EQ(ut_txa30_init(), 0);
+  for (auto nb : {std::make_pair(2048, 2047u), std::make_pair(512, 2047u)}) {
+    SCOPED_TRACE(nb.first);
+    ut_txa30_ctx* ctx = ut_txa30_create();
+    ASSERT_NE(ctx, nullptr);
+    ut_txa30_pipe_case c = {};
+    c.ptime = ST30_PTIME_1MS;
+    c.pacing = UT_TXA30_PIPE_TSC_SHARED;
+    c.num_port = 1;
+    c.nb_tx_desc[MTL_SESSION_PORT_P] = nb.first;
+    c.free_thresh = 32;
+    ASSERT_EQ(ut_txa30_pipe_setup(ctx, &c), 0);
+    EXPECT_EQ(ut_txa30_pipe_pool_size(ctx, MTL_SESSION_PORT_P), nb.second);
+    EXPECT_EQ(ut_txa30_pipe_pool_size(ctx, UT_TXA30_PIPE_CHAIN), nb.second);
+    EXPECT_EQ(ut_txa30_pipe_teardown(ctx), 0);
+    ut_txa30_destroy(ctx);
+  }
 }
 
 }  // namespace

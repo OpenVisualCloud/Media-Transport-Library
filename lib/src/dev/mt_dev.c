@@ -1391,6 +1391,19 @@ static int dev_if_uinit_rx_queues(struct mt_interface* inf) {
   return 0;
 }
 
+static unsigned int dev_tx_sys_pool_elements(struct mtl_main_impl* impl,
+                                             struct mt_interface* inf) {
+  unsigned int elements = inf->nb_tx_desc + 1024;
+
+  if (mt_user_tx_mono_pool(impl)) {
+    /* append as tx queues, double as tx ring */
+    elements += inf->nb_tx_q * inf->nb_tx_desc * 2;
+    /* a deep port's queues free their mbufs into the cache of each scheduler */
+    if (inf->tx_deep) elements += MT_MAX_SCH_NUM * MT_MBUF_CACHE_SLACK;
+  }
+  return elements;
+}
+
 static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface* inf) {
   if (!inf->nb_rx_q) return 0;
 
@@ -2711,11 +2724,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     }
 
     /* Create default mempool in memory to hold the system tx mbufs */
-    mbuf_elements = inf->nb_tx_desc + 1024;
-    if (mt_user_tx_mono_pool(impl)) {
-      /* append as tx queues, double as tx ring */
-      mbuf_elements += inf->nb_tx_q * inf->nb_tx_desc * 2;
-    }
+    mbuf_elements = dev_tx_sys_pool_elements(impl, inf);
     snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%d_SYS", MT_TX_MEMPOOL_PREFIX, i);
     mbuf_pool = mt_mempool_create_common(impl, i, pool_name, mbuf_elements);
     if (!mbuf_pool) {

@@ -90,6 +90,14 @@ static inline enum mtl_port mt_port_logic2phy(enum mtl_port* maps,
   return maps[logic];
 }
 
+/* whether any of the num_port session ports is a deep TX port */
+static inline bool mt_tx_deep_session(struct mtl_main_impl* impl, enum mtl_port* maps,
+                                      int num_port) {
+  for (int i = 0; i < num_port; i++)
+    if (mt_if_tx_deep(impl, mt_port_logic2phy(maps, i))) return true;
+  return false;
+}
+
 void st_video_rtp_dump(enum mtl_port port, int idx, char* tag,
                        struct st20_rfc4175_rtp_hdr* rtp);
 

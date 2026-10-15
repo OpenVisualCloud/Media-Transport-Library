@@ -135,7 +135,11 @@ int ut_txa30_pipe_teardown(ut_txa30_ctx* ctx);
 /* the run step a pkt alloc first failed and a NIC ring first refused a pkt; 0 for none */
 uint64_t ut_txa30_pipe_first_alloc_fail(const ut_txa30_ctx* ctx);
 uint64_t ut_txa30_pipe_first_burst_fail(const ut_txa30_ctx* ctx);
-unsigned int ut_txa30_pipe_trans_ring_thresh(const ut_txa30_ctx* ctx);
+/* the mbufs of a leg's header pool, or UT_TXA30_PIPE_CHAIN */
+unsigned int ut_txa30_pipe_pool_size(const ut_txa30_ctx* ctx, int pool);
+/* tx_audio_session_mempool_n(): the mbufs the production pool init asks for the leg's
+ * header pool */
+unsigned int ut_txa30_pipe_mempool_n(ut_txa30_ctx* ctx, int leg);
 
 #ifdef __cplusplus
 }

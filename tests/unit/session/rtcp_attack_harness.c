@@ -12,6 +12,8 @@
 #include <unistd.h>
 
 #include "common/ut_common.h"
+#include "common/ut_tx_ring.h"
+#include "dev/mt_dev.h"
 
 /* rtcp_tx_harness.c compiles mt_rtcp.c too; give this copy private names so
  * the link cannot pick the other one. Mock the burst and read_front. */
@@ -26,7 +28,19 @@
 #define mt_rtcp_rx_free ut_rtk_rx_free
 #define mt_txq_burst ut_rtk_txq_burst
 #define mt_u64_fifo_read_front ut_rtk_fifo_read_front
+#define mt_txq_get ut_rtk_txq_get
+#define mt_txq_put ut_rtk_txq_put
+#define mt_txq_flush ut_rtk_txq_flush
+#include "mt_stat.h"
+#define mt_stat_register(impl, cb, priv, name) \
+  ((void)(impl), (void)(cb), (void)(priv), (void)(name))
+#define mt_stat_unregister(impl, cb, priv) ((void)(impl), (void)(cb), (void)(priv))
 #include "mt_rtcp.c"
+#undef mt_stat_unregister
+#undef mt_stat_register
+#undef mt_txq_flush
+#undef mt_txq_put
+#undef mt_txq_get
 #undef mt_txq_burst
 #undef mt_u64_fifo_read_front
 
@@ -38,9 +52,14 @@ int mt_u64_fifo_read_front(struct mt_u64_fifo* fifo, uint64_t* item);
 #define UT_RTK_GUARD_VAL 0xdeadbeefcafef00dULL
 #define UT_RTK_SENT_CAP (1u << 18)
 #define UT_RTK_PKT_LEN (sizeof(struct mt_udp_hdr) + sizeof(struct st20_rfc4175_rtp_hdr))
+#define UT_RTK_HOLD_MAX 256
 
 struct ut_rtk_ctx {
   struct mt_rtcp_tx tx;
+  struct ut_txr* queue; /* the NIC queue the retransmits go to, NULL frees them */
+  uint64_t queue_ns;
+  struct rte_mbuf* held[UT_RTK_HOLD_MAX];
+  unsigned int held_cnt;
   struct mt_u64_fifo fifo;
   struct rte_mempool* src_pool;
   struct rte_mempool* copy_pool;
@@ -60,8 +79,14 @@ uint16_t ut_rtk_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** pkts,
                           uint16_t nb) {
   (void)entry;
   ut_rtk_ctx* ctx = ut_rtk_active;
-  uint16_t take = nb;
-  if (ctx->burst_limit >= 0 && take > ctx->burst_limit) take = ctx->burst_limit;
+  /* cap before the modeled ring takes them, so it owns exactly what is reported sent */
+  uint16_t n = nb;
+  if (ctx->burst_limit >= 0 && n > ctx->burst_limit) n = (uint16_t)ctx->burst_limit;
+  uint16_t take = n;
+  if (ctx->queue) {
+    ctx->queue_ns += 1000;
+    take = ut_txr_xmit(ctx->queue, pkts, n, ctx->queue_ns);
+  }
   for (uint16_t i = 0; i < take; i++) {
     struct st20_rfc4175_rtp_hdr* rtp = rte_pktmbuf_mtod_offset(
         pkts[i], struct st20_rfc4175_rtp_hdr*, sizeof(struct mt_udp_hdr));
@@ -71,8 +96,29 @@ uint16_t ut_rtk_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** pkts,
     }
     ctx->sent++;
   }
-  rte_pktmbuf_free_bulk(pkts, take);
+  if (!ctx->queue) rte_pktmbuf_free_bulk(pkts, take);
   return take;
+}
+
+static struct mt_txq_entry ut_rtk_queue_entry;
+
+struct mt_txq_entry* ut_rtk_txq_get(struct mtl_main_impl* impl, enum mtl_port port,
+                                    struct mt_txq_flow* flow) {
+  (void)impl;
+  (void)port;
+  (void)flow;
+  return &ut_rtk_queue_entry;
+}
+
+int ut_rtk_txq_put(struct mt_txq_entry* entry) {
+  (void)entry;
+  return 0;
+}
+
+int ut_rtk_txq_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad) {
+  (void)entry;
+  (void)pad;
+  return 0;
 }
 
 __attribute__((noinline, noclone)) int ut_rtk_fifo_read_front(struct mt_u64_fifo* fifo,
@@ -129,6 +175,8 @@ void ut_rtk_destroy(ut_rtk_ctx* ctx) {
   uint64_t item;
   while (mt_u64_fifo_get(&ctx->fifo, &item) >= 0)
     rte_pktmbuf_free((struct rte_mbuf*)item);
+  ut_txr_destroy(ctx->queue);
+  for (unsigned int i = 0; i < ctx->held_cnt; i++) rte_pktmbuf_free(ctx->held[i]);
   rte_mempool_free(ctx->src_pool);
   rte_mempool_free(ctx->copy_pool);
   free(ctx->fifo.data);
@@ -254,4 +302,56 @@ unsigned int ut_rtk_pool_avail(ut_rtk_ctx* ctx) {
 
 unsigned int ut_rtk_pool_avail_at_create(ut_rtk_ctx* ctx) {
   return ctx->copy_avail_at_create;
+}
+
+int ut_rtk_set_queue(ut_rtk_ctx* ctx, int ring_mode, uint16_t nb_tx_desc, bool hung) {
+  ctx->queue = ut_txr_create((enum ut_txr_mode)ring_mode, nb_tx_desc, 32, 32,
+                             hung ? UT_TXR_HUNG : 1);
+  return ctx->queue ? 0 : -ENOMEM;
+}
+
+int ut_rtk_hold_copies(ut_rtk_ctx* ctx, unsigned int n) {
+  for (unsigned int i = 0; i < n; i++) {
+    if (ctx->held_cnt >= UT_RTK_HOLD_MAX) return -ENOSPC;
+    struct rte_mbuf* m = rte_pktmbuf_alloc(ctx->copy_pool);
+    if (!m) return -ENOMEM;
+    ctx->held[ctx->held_cnt++] = m;
+  }
+  return 0;
+}
+
+unsigned int ut_rtk_tx_pool_size(uint16_t nb_tx_desc, uint16_t buffer_size) {
+  struct mtl_main_impl* impl = calloc(1, sizeof(*impl));
+  struct mt_udp_hdr udp_hdr;
+  struct mt_rtcp_tx_ops ops;
+  unsigned int size = 0;
+
+  if (!impl) return 0;
+  impl->inf[MTL_PORT_P].nb_tx_desc = nb_tx_desc;
+  impl->inf[MTL_PORT_P].tx_deep = nb_tx_desc == 2048;
+  memset(&udp_hdr, 0, sizeof(udp_hdr));
+  memset(&ops, 0, sizeof(ops));
+  ops.name = "ut_rtk_pool";
+  ops.udp_hdr = &udp_hdr;
+  ops.buffer_size = buffer_size;
+  ops.port = MTL_PORT_P;
+  struct mt_rtcp_tx* tx = ut_rtk_tx_create(impl, &ops);
+  if (tx) {
+    size = tx->mbuf_pool->size;
+    ut_rtk_tx_free(tx);
+  }
+  free(impl);
+  return size;
+}
+
+unsigned int ut_rtk_tx_pool_n(uint16_t nb_tx_desc, uint16_t buffer_size) {
+  struct mtl_main_impl* impl = calloc(1, sizeof(*impl));
+  unsigned int n;
+
+  if (!impl) return 0;
+  impl->inf[MTL_PORT_P].nb_tx_desc = nb_tx_desc;
+  impl->inf[MTL_PORT_P].tx_deep = nb_tx_desc == 2048;
+  n = rtcp_tx_pool_n(impl, MTL_PORT_P, buffer_size);
+  free(impl);
+  return n;
 }

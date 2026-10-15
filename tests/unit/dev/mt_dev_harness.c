@@ -853,3 +853,27 @@ int ut_dev_tx_done_cleanup(ut_dev_ctx* ctx, uint16_t queue) {
   ut_active_ctx = ctx;
   return mt_dev_tx_done_cleanup(&ctx->impl, &ctx->tx_queues[queue]);
 }
+
+unsigned int ut_dev_tx_sys_pool_elements(ut_dev_ctx* ctx, uint16_t nb_tx_q,
+                                         uint16_t nb_tx_desc, bool mono) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  inf->nb_tx_q = nb_tx_q;
+  inf->nb_tx_desc = nb_tx_desc;
+  inf->tx_deep = nb_tx_desc == 2048;
+  if (mono)
+    ctx->impl.user_para.flags |= MTL_FLAG_TX_MONO_POOL;
+  else
+    ctx->impl.user_para.flags &= ~MTL_FLAG_TX_MONO_POOL;
+  return dev_tx_sys_pool_elements(&ctx->impl, inf);
+}
+
+unsigned int ut_dev_mempool_size(ut_dev_ctx* ctx, unsigned int elements) {
+  if (ut_eal_init() < 0) return 0;
+  struct rte_mempool* mp = mt_mempool_create_by_ops(&ctx->impl, "ut_dev_size", elements,
+                                                    0, 0, 0, NULL, (int)rte_socket_id());
+  unsigned int size = mp ? mp->size : 0;
+
+  if (mp) mt_mempool_free(mp);
+  return size;
+}

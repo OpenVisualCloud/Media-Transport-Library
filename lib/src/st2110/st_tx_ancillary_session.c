@@ -1555,6 +1555,19 @@ static bool tx_ancillary_session_has_chain_buf(struct st_tx_ancillary_session_im
   return true;
 }
 
+/* mbufs a pool needs on port: a descriptor each and the manager ring; deep, the pkt a
+ * refused burst leaves and the ring share. The RTP ring comes on top. */
+static unsigned int tx_ancillary_session_mempool_n(struct mtl_main_impl* impl,
+                                                   struct st_tx_ancillary_session_impl* s,
+                                                   enum mtl_port port) {
+  unsigned int n = mt_if_nb_tx_desc(impl, port) + ST_TX_ANC_SESSIONS_RING_SIZE;
+
+  if (mt_if_tx_deep(impl, port))
+    n = 1 + mt_if_tx_pool_ring_share(impl, port, s->tx_no_chain ? 1 : 2, 1);
+  if (s->ops.type == ST40_TYPE_RTP_LEVEL) n += s->ops.rtp_ring_size;
+  return n;
+}
+
 static int tx_ancillary_session_mempool_init(struct mtl_main_impl* impl,
                                              struct st_tx_ancillary_sessions_mgr* mgr,
                                              struct st_tx_ancillary_session_impl* s) {
@@ -1580,8 +1593,7 @@ static int tx_ancillary_session_mempool_init(struct mtl_main_impl* impl,
     } else if (s->mbuf_mempool_hdr[i]) {
       warn("%s(%d), use previous hdr mempool for port %d\n", __func__, idx, i);
     } else {
-      n = mt_if_nb_tx_desc(impl, port) + ST_TX_ANC_SESSIONS_RING_SIZE;
-      if (ops->type == ST40_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
+      n = tx_ancillary_session_mempool_n(impl, s, port);
       char pool_name[32];
       snprintf(pool_name, 32, "%sM%dS%dP%d_HDR", ST_TX_ANCILLARY_PREFIX, mgr->idx, idx,
                i);
@@ -1596,11 +1608,15 @@ static int tx_ancillary_session_mempool_init(struct mtl_main_impl* impl,
     }
   }
 
-  /* allocate payload(chain) pool */
+  /* payload(chain) pool on primary port; the redundant pkt shares it, so with a deep
+   * port it is sized for the port that keeps more */
   if (!s->tx_no_chain) {
+    bool deep = mt_tx_deep_session(impl, s->port_maps, num_port);
     port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
-    n = mt_if_nb_tx_desc(impl, port) + ST_TX_ANC_SESSIONS_RING_SIZE;
-    if (ops->type == ST40_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
+    n = tx_ancillary_session_mempool_n(impl, s, port);
+    for (int i = 1; deep && i < num_port; i++)
+      n = RTE_MAX(
+          n, tx_ancillary_session_mempool_n(impl, s, mt_port_logic2phy(s->port_maps, i)));
 
     if (s->tx_mono_pool) {
       s->mbuf_mempool_chain = mt_sys_tx_mempool(impl, port);
