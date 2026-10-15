@@ -4,7 +4,7 @@ This file carries the evidence of G-52, G-95 and G-142 (D-142, D-158–D-169) th
 the deterministic pause-hook tests (WH, WC and QW) and the models in [models/](models/). It is a
 design record: C1w, C2, C1q1, C1q2 and MS2 copy from it, and
 [implementation-plan.md](../implementation-plan.md) §8.2 ("The wait evidence") says which job runs
-what. Step labels such as T4 or J8 are those of [core.md](../core.md) §6.1–§6.3 and §6.6 (the
+what. Step labels such as T4 or J8 are those of [wait-protocol.md](../wait-protocol.md) §3–§7 (the
 full list: [README §3](../README.md#3-reading-the-ids)). A label is local to its procedure. It is
 not a test ID, and it is not task T1 or A1.
 
@@ -16,7 +16,7 @@ its counterexamples**. Random stress (`stress.c`) is a nightly smoke test only.
 
 They need only the Python 3 standard library (`stress.c`: a C compiler and Linux). Each explores
 every interleaving under sequential consistency; every atomic operation and every syscall is one
-step. Weak-memory orderings are argued in core.md §6.1, not modelled.
+step. Weak-memory orderings are argued in wait-protocol.md §8, not modelled.
 
 ### 1.1 Names used below: cases, mutants, checks
 
@@ -45,7 +45,7 @@ results ring, the hold and the REPEAT pins), with their decisions and run lines,
 
 | File | What it checks | Run |
 |---|---|---|
-| [final_model.py](models/final_model.py) | the object path of core.md §6 (cases o1–o7), the queue path (q1–q11, r1–r4) and posts (p1–p5); 23 mutants named by the step they break; LOST, LEAK, OVER, SPIN, XQ, RPT, PAC (§1.1) | `python3 final_model.py [CASE ...]`; `--trace CASE MUTANT` prints a counterexample; exit 1 unless every case gives its result and every mutant dies (6 s) |
+| [final_model.py](models/final_model.py) | the object path of wait-protocol.md (cases o1–o7), the queue path (q1–q11, r1–r4) and posts (p1–p5); 23 mutants named by the step they break; LOST, LEAK, OVER, SPIN, XQ, RPT, PAC (§1.1) | `python3 final_model.py [CASE ...]`; `--trace CASE MUTANT` prints a counterexample; exit 1 unless every case gives its result and every mutant dies (6 s) |
 | [wait_flush.py](models/wait_flush.py) | the count-bounded flush (F1–F8) of one library loop over three objects, sleepers arming while marks are carried, the loop's sleep check; the variant that ignores the flush's return; from M0 a queue entry among the marked entries and `wake_k` 1 and 4 | `python3 wait_flush.py`; the design cases must print LOST=0, the "return ignored" variant LOST > 0 |
 | [stress.c](models/stress.c) | random-yield stress on the real kernel (futex, eventfd, epoll LT or EPOLLONESHOT). Until M0 it still drives the superseded per-object handle (D-159); M0 rewrites it onto the event word and a queue consumer, with the mutants `-DBITS`, `-DLOAD_AFTER_ATTEMPT`, `-DNO_EXIT_RESIGNAL` | `cc -O2 -pthread stress.c -o stress; ./stress ROUNDS [1]`; a smoke test, not evidence |
 
@@ -56,17 +56,17 @@ clearing (q11) and close, detach, a stale claimer and queue entry reuse, and the
 `mtl_queue_post` (a poster thread `QP` that publishes an item, then posts). Its checks are
 LOST, LEAK, OVER, SPIN, XQ, RPT and PAC (§1.1).
 
-Not modelled, and argued in core.md §6.1 instead: weak memory, the instance walk, state-change
+Not modelled, and argued in wait-protocol.md §8 instead: weak memory, the instance walk, state-change
 reports (an EVENT with every lane), J5's return 1 (lock serialisation), the delivery count of the
 detach (DV1–DV3), descriptors kept for the process's life, the flush bound (`wait_flush.py`), and
-the post's CAS made even when its bits are already pending (a weak-memory rule, core.md §6.1), the retire and reuse of an object's entry (X1–X4, Y1) under a stale K1 or interrupt (argued in
-core.md §6.1 "Lifetime" and by the generation in `intr`; tests WH12 and WC3). `final_model.py`'s
+the post's CAS made even when its bits are already pending (a weak-memory rule, wait-protocol.md §8.2), the retire and reuse of an object's entry (X1–X4, Y1) under a stale K1 or interrupt (argued in
+wait-protocol.md §8.1 "Lifetime" and by the generation in `intr`; tests WH12 and WC3). `final_model.py`'s
 `NOT_MODELLED` list names the labels it does not model (N1, N0', N2, N3, T1, T5, C3–C5, X3, Y1,
 Y2, J1–J6, DV1–DV3) with the reason for each.
 
 The two paths are explored apart: no case has a sleeper in a call with a timeout on an object
 that is also armed on a queue. They meet only on `ec`, whose every write is an RMW (T7, T9, E2,
-E4, J8), so the single-location lemma of core.md §6.1 covers both. A T7 or J8 CAS that fails
+E4, J8), so the single-location lemma of wait-protocol.md §8.1 covers both. A T7 or J8 CAS that fails
 because of the other path reloads `ec` and retries; neither path clears the other's bits. Task M0
 adds a joint case to `final_model.py`: a W on lane 0 and an E with the object armed for ACQUIRE,
 one P unit; both return (one report, one wake).
@@ -83,7 +83,7 @@ The earlier handle protocol's model drained every ready target and so missed tha
 "arm ACQUIRE only with a frame" is a user rule (contract.md §7.2), pinned by QW10, not by the
 model.
 
-Task M0 adds `check_labels.py` (the label sets of core.md §6.1 and §6.6, of the model and of
+Task M0 adds `check_labels.py` (the label sets of wait-protocol.md §3, §5, §6 and §7, of the model and of
 `st_core_wait.c` once it exists must agree, minus the `NOT_MODELLED` list) and `run_models.py`, the
 model job's one entry point. C1w copies the model files into `tests/unit/core/wait_model/` with
 `run_models.py`; a changed protocol step changes the model in the same commit, and

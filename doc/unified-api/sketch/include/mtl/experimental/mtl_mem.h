@@ -197,7 +197,7 @@ MTL_API_WT(2) int mtl_tx_acquire_layout(mtl_session_h s, const struct mtl_attach
    every destination queued with a generation older than G + 1 (discard, detach and close
    also those of the ready units they drop), then publishes provide_gen = G + 1 before it
    returns; a destination accepted meanwhile is re-tagged G + 1 and stays held, or is
-   withdrawn and the call is -MTL_ESHUTDOWN (contract §9.11, provide_model.py). A unit takes the oldest
+   withdrawn and the call is -MTL_ESHUTDOWN (contract §9.12, provide_model.py). A unit takes the oldest
    destination held when its first packet lands; units are delivered in reception order
    with u.cookie the destination's and u.slot UINT32_MAX; a unit dropped before delivery
    gives its destination back, taken first next. A unit that finds none is missed

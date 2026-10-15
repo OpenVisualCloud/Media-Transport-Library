@@ -19,16 +19,18 @@ is drawn in [examples.md](examples.md), at the head of its section. How to read 
 |---|---|
 | new to the API | §2–§5: the model, the first sender and receiver, the life of a unit; then what your program needs |
 | porting a legacy application | §12, then [migration.md](migration.md) |
-| writing a framework element (GStreamer, FFmpeg, OBS) | §6.2, §8, [examples.md §21–§23](examples.md#21-a-framework-elements-setup) |
+| writing a framework element (GStreamer, FFmpeg, OBS) | §6.2, §8, [frameworks.md](frameworks.md), [examples.md §21–§23](examples.md#21-a-framework-elements-setup) |
 | operating MTL in production | §6.5, §9 |
+| checking versions, the ABI and the symbol list | [abi.md](abi.md) |
+| looking up what a call promises, by G-id | [guarantees.md](guarantees.md) |
 
 IDs used before they are explained: D-n is a row of [decisions.md](decisions.md); R1–R8 are the
 rules of §2.3 ([contract.md §1](contract.md#1-the-rules-r1r8)); MEM3 is
 [contract.md §6.1](contract.md#61-when-there-are-results)'s; P1–P9 and GO-n are the personas and
 goals of [requirements.md §2](requirements.md#2-goals-non-goals-and-the-quality-bar); S0 is a task
-of [implementation-plan.md §5.2](implementation-plan.md#52-tasks) and S1 a spike of its
-[§3.3](implementation-plan.md#33-spikes); W2 is the wake design
-of [core.md §6.2](core.md#62-the-deferred-wake); MS1 … MS7: Appendix A.
+of [implementation-plan.md §5.2.1](implementation-plan.md#521-the-task-table) and S1 a spike of its
+[§3.3](implementation-plan.md#33-when-the-spikes-run); W2 is the wake design
+of [wait-protocol.md §4](wait-protocol.md#4-the-deferred-wake); MS1 … MS7: Appendix A.
 
 ## 1. Why a new API
 
@@ -127,7 +129,7 @@ and `MTL_RTP` (generic RTP such as ST 2022-6, packet units only). A unit is one 
 | `MTL_UNIT_PACKETS` | a chunk of RTP packets the application builds or parses (legacy `ST20_TYPE_RTP_LEVEL`) | forwarders, custom payloads ([ex09](sketch/examples/ex09_rtp_packets.c), `mtl_packet.h`) |
 
 The objects and who owns what: [contract.md](contract.md#object-verbs); the
-shape next to libfabric and Rivermax: [migration.md §13](migration.md#13-if-you-know-libfabric-or-rivermax).
+shape next to libfabric and Rivermax: [migration.md §10](migration.md#10-if-you-know-libfabric-or-rivermax).
 
 ### 2.2 The app pushes, MTL never calls back
 
@@ -168,8 +170,8 @@ mode from MS1). An event loop sleeps on a queue's descriptor instead (MS2a, §6.
 then writes it once for all the sessions that changed before the loop came back. A notifier thread
 that takes those wakes off the core is a contingency, built only by D-142's rules (S1, MS2a). The
 protocol is in [core.md §4.2](core.md#42-the-completing-context-protocol) and
-[§6](core.md#6-waking); who makes the wake-up syscall in every context:
-[core.md §6.2](core.md#62-the-deferred-wake); the threads:
+[§6](core.md#6-waking-summary); who makes the wake-up syscall in every context:
+[core.md §6](core.md#6-waking-summary); the threads:
 [engine.md §1.2](engine.md#12-execution-contexts).
 
 
@@ -508,7 +510,7 @@ stateDiagram-v2
 
 The full state machine: [contract.md §4.1](contract.md#41-states); what close does:
 [contract.md §4.9](contract.md#49-close); starting sessions together:
-[timing.md §7.1](timing.md#71-starting-sessions-together).
+[timing.md §7.3](timing.md#73-start-arrays).
 
 ### 5.4 Packet units
 
@@ -759,7 +761,7 @@ called by M + this. It is the one setting that says when content exists:
 
 The pick-up lead is how long before its frame time MTL takes a unit. MTL adds it to a positive
 delay itself, so the number is the producer's own; its value with each pacing, and with a
-conversion stage: [timing.md §6.1](timing.md#61-where-the-decision-happens). The launch delay is
+conversion stage: [timing.md §6.1](timing.md#61-the-pick-up-deadline-and-the-submit-lead). The launch delay is
 reported (`info.launch_delay`), never configured. In TAI mode `sc.media_time_offset_ns` declares the
 producer's latency and moves the frame time; the legacy RTP trim with the launch kept is the option
 `tx.rtp_trim_ns`. A processor that submits each output with its input's media time keeps the
@@ -1045,7 +1047,7 @@ The ten words of §2.1, plus:
 | media time (M) | the TAI instant a unit represents; RTP = `floor(M × rate)` |
 | null backend | a port named `null:<n>`: no NIC, no root; units complete on the clock |
 | packet unit | a chunk of application-built RTP packets (`MTL_UNIT_PACKETS`, RTP passthrough, §5.4) |
-| pick-up lead | how long before its frame time MTL takes a unit; MTL adds it to a positive `min_tx_delay_ns`; its value: [timing.md §6.1](timing.md#61-where-the-decision-happens) |
+| pick-up lead | how long before its frame time MTL takes a unit; MTL adds it to a positive `min_tx_delay_ns`; its value: [timing.md §6.1](timing.md#61-the-pick-up-deadline-and-the-submit-lead) |
 | pinned core | a core MTL's tasklets run on: packet work only, never your code, a call that blocks, or a lock your threads take (§2.2) |
 | pool | a session's slots: MTL's buffers, or your memory attached |
 | profile | `session.profile`, ST 2110 or IPMX (Phase 7): what zero means in a few fields, and the compliance labels |
@@ -1090,7 +1092,7 @@ existing includes still build. At the ABI freeze (release F, MS7) it is deprecat
 later it needs `MTL_LEGACY_API`, and from F+2 it is internal and no longer installed; the engines
 keep using it inside the library. Everything only it can do (RTP passthrough, slice mode, external
 frames, NACK retransmission) has a home in the new headers first; the few capabilities removed are
-listed in [migration.md](migration.md) §8.4 (D-83, D-87).
+listed in [coverage.md](coverage.md) §4.5 (D-83, D-87).
 
 **Can I try it?** The headers and examples compile today (`sketch/check.sh`), and the null backend
 runs the first code without a NIC. The first milestone is ST 2110-20 frames TX and RX
@@ -1122,7 +1124,9 @@ The null backend (`null:1`) needs none of these. In containers and pods:
 | read every example in full | [examples.md](examples.md), [sketch/examples/](sketch/examples/) |
 | know exactly what a call guarantees | [contract.md](contract.md) |
 | understand timing, sync and RX timing | [timing.md](timing.md) |
-| port an application or a plugin | [migration.md](migration.md) |
+| port an application or a plugin | [migration.md](migration.md); a framework element (GStreamer, FFmpeg, OBS): [frameworks.md](frameworks.md) |
+| check the versions, the ABI and the hidden legacy headers | [abi.md](abi.md) |
+| look up one guarantee by G-id | [guarantees.md](guarantees.md) |
 | implement it | [core.md](core.md), [engine.md](engine.md), [implementation-plan.md](implementation-plan.md) |
 | run it in containers or pods | [deployment.md](deployment.md) |
 | build an NMOS Node or an IPMX device | NMOS and IPMX: [nmos-ipmx.md](nmos-ipmx.md) (a Node on today's API, §5; the full design, Phase 7) |

@@ -328,7 +328,7 @@ enum mtl_late_policy {
 #endif
   MTL_LATE_DEFER = 3, /* AUTO only: the next feasible index (MTL_TXR_DEFERRED) */
 };
-/* What a media index without a unit of the application's sends (timing.md §6.3). 2 is
+/* What a media index without a unit of the application's sends (timing.md §6.4). 2 is
    retired before MS1 (the ANC empty packet is KEEPALIVE), never reused. */
 enum mtl_underrun_policy {
   MTL_UNDERRUN_SKIP = 1,      /* nothing (video, cvideo, audio); refused for ANC and

@@ -118,12 +118,12 @@ budgets [§8.4](implementation-plan.md#84-performance-budgets), test isolation
   44.1 kHz with 1001 rates, ST41 at 90 kHz with rational unit rates, TAI past 2^61 ns. Negative
   indices (audio priming under `MTL_WHEN_ORIGIN`, MS6) are checked in the oracle at every rate,
   and refused at submit (`FIELD_REQUIRED`). The six split formulas of
-  [timing.md §3.5](timing.md#35-exact-arithmetic) at the domain edges (index rate 2^29/s,
+  [timing.md §3.3](timing.md#33-exact-arithmetic) at the domain edges (index rate 2^29/s,
   num × den = 2^33, clock 2^29 Hz, t = 2^63 − 1 ns) with every product checked for overflow.
 - **G-20** UB; P; MS1; the ST40 half MS4a. Default video media time is the frame epoch; ST20 and
   ST40 of one frame carry equal RTP. Test: the RTP of frame N equals the epoch RTP of index N with
   today's engine rounding (`tai_from_frame_count`, then `st10_tai_to_media_clk`, round to nearest;
-  [timing.md §6.8](timing.md#68-the-launch-decision)), with no TR offset term;
+  [timing.md §6.2](timing.md#62-the-launch-decision)), with no TR offset term;
   `floor(N × TFRAME × 90 kHz)` from E2 (MS3, or MS2a with the stretch task X); the equal-RTP check
   comes with ANC on the core (MS4a). Today ST20 and ST40 of one frame differ by +54.4…+55.7 ticks
   at 1080p59.94, depending on the granted VRX0.
@@ -238,7 +238,7 @@ budgets [§8.4](implementation-plan.md#84-performance-budgets), test isolation
   node equals its list, which never changes; every node of a release tag of the revision is sealed
   at HEAD with the tag's names, and a `.REL` tree has no open node. Test: `unified_exports`,
   `check_frozen_lists.sh`, `unified_seal_probe` and their mutations
-  ([implementation-plan.md §5.2](implementation-plan.md#52-tasks) H1b). Each mutation fails: a name
+  ([implementation-plan.md §5.2.2](implementation-plan.md#522-task-cards) H1b). Each mutation fails: a name
   added to a tagged node, an edited list, an open node in a `.REL` tree, an MS2 function in an MS1
   part, the bridge in `_MS1`.
 - **G-52** U; MS1 (calls with a timeout), MS2a (queues). No lost wake-up and no busy loop, with any
@@ -366,7 +366,7 @@ budgets [§8.4](implementation-plan.md#84-performance-budgets), test isolation
   `mtl_port_find` gives index 1) and `Instance.shared_missing_port_detail`.
 - **G-78** U; P; MS2b for video, the other essences MS4. Export pool: a framework pool with one
   wrapper per slot, over `mtl_tx_acquire_slot`, submit and `mtl_tx_release`, recycles every wrapper
-  exactly once, with neither `MTL_SESSION_RESULTS` nor `MTL_SESSION_MT_SUBMIT` (migration.md §12.4).
+  exactly once, with neither `MTL_SESSION_RESULTS` nor `MTL_SESSION_MT_SUBMIT` (frameworks.md §7.1).
   An unsubmitted buffer's release releases its lease (`mtl_tx_release` on a submitted one is
   `-MTL_ESTALE` and changes nothing); a slot is leased again only after its wrapper came back and
   the slot has left; `set_active(FALSE)` is `mtl_session_stop(MTL_STOP_FLUSH)`. G-78 also serves
@@ -580,7 +580,7 @@ budgets [§8.4](implementation-plan.md#84-performance-budgets), test isolation
   st40p: DID 00h, line 0, any order, the legacy RX parse; only SF-87 and SF-88 frames differ. Test:
   G-99's pcap diff with the GStreamer defaults (`tx-did` 0, line 0) and the noctx `st40p_handler`
   tables; the frozen `St40*` and `St40p*` cases.
-- **G-123** U; MS1. A raster rate is validated in one order (contract.md §3.3); `info.raster`
+- **G-123** U; MS1. A raster rate is validated in one order (contract.md §3.4); `info.raster`
   carries the reduced value. Test: `RateRules.zero_terms` (each use, also DETECT_MAX),
   `RateRules.reduce_then_limit`, `RateRules.field_rate_guard`, `RateRules.engine_range` (frame rate
   1–120 every scan; interlaced 1000/1001 refused), `RateRules.info_reduced`.

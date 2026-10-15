@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """w_noe2.py: the stores that must run E2 (D-209, core.md §4.2 step 4), by exhaustive search under
-sequential consistency.  A waiter (MTL_FOREVER) follows core.md T2/T4/T7/T8/T9: load the event
+sequential consistency.  A waiter (MTL_FOREVER) follows wait-protocol.md T2/T4/T7/T8/T9: load the event
 word, attempt, arm by CAS against the loaded sequence, sleep while the sequence is unchanged,
 disarm.  E2 bumps the sequence and wakes a counted sleeper.  LOST = a terminal state in which the
 waiter sleeps while its target is ready.

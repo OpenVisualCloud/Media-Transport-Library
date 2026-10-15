@@ -305,7 +305,7 @@ What to notice:
 - **How deep.** `sc.pool_count` frames can be queued ahead, 8 here (133 ms at 59.94). A frame
   further ahead than the horizon (option `tx.horizon_ns`, 1 s from the start by default) is refused
   at submit with `-MTL_ERANGE` (`BEYOND_HORIZON`), so a deeper pre-roll raises that option too
-  ([timing.md §6.4](timing.md#64-early-too-far-ahead-and-preroll)).
+  ([timing.md §6.5](timing.md#65-horizon-and-preroll)).
 - **Back-pressure** is `-MTL_EAGAIN` from acquire, and `status.blocked_on` says on what:
   `MTL_BLOCKED_BUFFERS`, the pool is queued ahead, the normal state of a producer that is ahead, or
   `MTL_BLOCKED_RESULTS`, unread results fill the ring, which `run` reaps with
@@ -1042,14 +1042,14 @@ R_copy = ceil(`latency_min_ns` / U) + 1 slots, U the unit period (half a frame f
 waiting and releases it at once, so a holder downstream costs a copy, never a lost unit; with no
 free buffer it drops the unit (QoS) and never blocks `create`. A `pool_count` of R_copy + H, where H is
 the units held downstream at once, never copies; at the default pool of 3 every unit is copied
-([migration.md §12.8](migration.md#128-rx-sources-zero-copy-pool-size-and-latency)). The free
+([frameworks.md §9](frameworks.md#9-rx-sources-zero-copy-pool-size-and-latency)). The free
 callback carries the lease alone, as its pointer: a lease names its session.
 
 ## 23. A live sink: presentation time to media time
 
 [ex21_live_sink.c](sketch/examples/ex21_live_sink.c) (MS2; TAI mode and the copy MS1; discard
 MS2a) is the TX side of a framework (`ffmpeg -re`, an OBS output; a GStreamer sink lets basesink
-wait instead, [migration.md §12.1](migration.md#121-live-sinks-gstreamer-synctrue-ffmpeg--re-obs-output))
+wait instead, [frameworks.md §4](frameworks.md#4-live-sinks))
 or of a playout engine on a wall clock. Each buffer comes with a presentation time on
 `CLOCK_MONOTONIC`; the picture follows one buffer from the framework to the wire and back to its
 report.
@@ -1099,7 +1099,7 @@ What to notice:
   an INDEX sink re-bases with `MTL_DISCARD_REBASE`). Close begins with DRAIN and drops the pins.
   `unlock` is the interrupt; a sink whose reaper waits on another thread interrupts acquire alone
   (`mtl_interrupt` with `MTL_WAIT_ACQUIRE`). The GStreamer recipe, where basesink waits:
-  [migration.md §12.1](migration.md#121-live-sinks-gstreamer-synctrue-ffmpeg--re-obs-output).
+  [frameworks.md §4](frameworks.md#4-live-sinks).
 
 ## 24. Video, audio and captions from one file
 

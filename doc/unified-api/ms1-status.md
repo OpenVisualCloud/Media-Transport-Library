@@ -20,13 +20,15 @@ The maintainer's standing permission (2026-10-02):
   §5.8).
 - Add no AI attribution.
 - Never push. Never open a pull request.
+- Commit on the one work branch of the head; the maintainer reviews and pushes.
 
 This overrides the skill's "only when asked" for MS1 tasks.
 
 ## 1. Tasks
 
 States: todo, in progress, in review (`mtl-reviewer`), committed (waiting for the maintainer's
-approval), done (approved), cut. A series is one row; its Commit cell lists every commit.
+approval), done (approved), cut. A series is one row; its Commit cell lists every commit. The gate
+evidence names the tests and quotes the Gate 6 output.
 
 | Task | State | Branch | Commit | Gate evidence (Gates 2, 4, 5, 6) | Open questions |
 |---|---|---|---|---|---|
@@ -106,7 +108,7 @@ Confirmed column.
 | The repository rule on RX gaps changes in the rule files with the MS2a black-fill commit, not with the docs | MS2a | Decided: D-242; implementation-plan.md §6.1 quotes the text | |
 | One (format, kind) per format name, before the A2c table | A2c | Decided: D-222 | |
 | `mtl_release` with a null `s`; the entry's lease base | C1a, C1b, A2a | Decided: D-226 | |
-| C0: `st_core.h` against core.md §2, §2.1 (the binding ops and core calls, D-171), the grant and the grid of core.md §3.2 (the core reads no essence) and the state register of core.md §4.1 (D-180) | C0 (checkpoint 1) | Recommended as designed; the maintainer approves or changes the tables and the register with C0 | |
+| C0: `st_core.h` against core.md §2, §2.1 (the binding ops and core calls, D-171), the grant and the grid of core.md §3.2 (the core reads no essence) and the state register of core.md §4.8 (D-180) | C0 (checkpoint 1) | Recommended as designed; the maintainer approves or changes the tables and the register with C0 | |
 
 ## 4. Measurements
 

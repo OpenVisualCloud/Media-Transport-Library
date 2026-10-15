@@ -26,7 +26,7 @@ not re-checked: a hypothesis to test. Paths without a prefix are under `lib/src/
 | harden a host | §1 |
 | run on bare metal or in a container | §3 |
 | AF_XDP or MtlManager in a pod | §4.13, §4.12, §1.6 |
-| Windows; the release and support policy | §6; §7 |
+| Windows; the release and support policy | abi.md §5; abi.md §7 |
 
 **IDs used here.** AS, CP and DP are call classes ([contract.md R6](contract.md#r6-call-classes));
 R1–R8 are the contract rules ([contract.md §1](contract.md#1-the-rules-r1r8)); EK-n and E-n are
@@ -295,15 +295,22 @@ sequenceDiagram
     K-->>A: SIGKILL only if the grace period ran out
 ```
 
-| Step | What | Bounded by | Typical time |
-|---|---|---|---|
-| 0 | New data calls return `-MTL_ESHUTDOWN`; health shows `SHUTTING_DOWN`, so readiness fails. Threads already inside a data call are waited for through each session's in-flight counter. | the deadline | µs; a UHD conversion in the caller: ms |
-| 1 | TX: the unit whose first packet left is sent to its end at its pace, with its normal result: the wire never carries a partial unit. Rows units end by `tx.rows_late` (STALL as TRUNCATE). Queued units: `MTL_TX_FLUSHED`, reason `CLOSE`. `MTL_SHUTDOWN_DRAIN` sends every queued unit instead, until the deadline minus what steps 2–6 need. | the deadline | one unit (16.7 ms at 59.94p) |
-| 2 | RX: an IGMP/MLD leave on every leg before the queues close; incomplete units are discarded and counted. | never waits on the network | one packet per group |
-| 3 | Results no reader took are discarded and counted (`results_discarded`), so a framework that frees buffers on results reaps before it shuts down. Then the codec threads are joined, and the log thread once no sink and no other instance remain; one stuck in foreign code counts in `threads_unjoined`. | the deadline | ms |
-| 4 | Schedulers stop, then queues and ports; flows go, AF_XDP sockets close, regions leave the IOMMU only after the queues stopped. A stuck queue runs the stalled-queue steps ([engine.md](engine.md)): a port reset if the budget left covers `caps.reset_budget_ns`, else quarantine. | the deadline | ms; a stuck rate-limit queue: up to the reset budget |
-| 5 | MtlManager grants (CPUs, queues, flows, XDP references) are returned by closing the connection, after step 4: a grant returned while still in use is the double booking in today's `mtl_uninit`, where `mt_sch_mrg_uinit` releases the lcores before it frees the schedulers still polling them (`mt_sch.c:1022-1030`). | socket close | µs |
-| 6 | Library pools are freed, except slots under a lease the application still holds. | — | ms |
+The steps, what each does and what bounds it are [contract.md §2.4](contract.md#24-close-and-shutdown). Their typical times:
+
+| Step | Typical time |
+|---|---|
+| 0 | µs; a UHD conversion in the caller: ms |
+| 1 | one unit (16.7 ms at 59.94p) |
+| 2 | one packet per group |
+| 3 | ms |
+| 4 | ms; a stuck rate-limit queue: up to the reset budget |
+| 5 | µs |
+| 6 | ms |
+
+In step 5, MtlManager grants (CPUs, queues, flows, XDP references) are returned by closing the
+connection, after step 4: a grant returned while still in use is the double booking in today's
+`mtl_uninit`, where `mt_sch_mrg_uinit` releases the lcores before it frees the schedulers still
+polling them (`mt_sch.c:1022-1030`).
 
 - **Stuck threads.** A thread stuck in foreign code past the deadline is not joined, and the memory it
   can reach is not freed; nor is memory a thread still inside a data call can reach.
@@ -332,25 +339,22 @@ sequenceDiagram
 
 ### 4.3 Outcomes and the report
 
-| Return | Meaning | The application |
-|---|---|---|
-| 0 | retired: every object freed, every library thread joined | exits, or opens again |
-| 1 | quiesced: no device can reach any memory, but something is still held: leases or regions (`leases_out`, `regions_referenced`), or a library thread still in application code (`threads_unjoined`) | exits; or, long-lived, returns the leases. A slot's memory is freed by the process's next control-plane call after its last lease returns, or at exit (`bytes_kept`) |
-| `-MTL_EIO`, reason `QUEUE_QUARANTINED` | a port could not be stopped (`ports_unquiesced`); its memory is quarantined | exits now: the kernel's VFIO release turns bus mastering off and resets the function |
-
-Close and shutdown return only these three values, never `-MTL_ETIMEDOUT`: a drain that runs out of
-time flushes the rest and the call still returns 0 or 1 (`units_flushed` counts it). `-MTL_ETIMEDOUT`
-comes only from a DRAIN `mtl_session_stop` that missed its deadline, or (MS3–MS4) from a FLOWS
-update in ARMED or RUNNING whose unicast neighbour did not resolve (`WAITING_NEIGHBOUR`, nothing changed), and it
-is never the unsafe case;
-`mtl_session_close` returns 0 or 1. Freeing library memory under a lease the application holds would turn an application
-bug into a use-after-free; `mtl_rx_release` is DP and cannot free, so the next control-plane call does.
+Return values and the report: [contract.md §2.4](contract.md#24-close-and-shutdown); what a pod
+does with them:
 
 `struct mtl_shutdown_report` (200 B, filled whatever the call returns; `r` may be NULL) counts each
 step (`reason` names the first that did not finish; `ports_unquiesced` is a bit per port) and ends with
 `summary[128]`, one line for the termination message, for example
 `shutdown 41 ms: 3 sessions closed, 1 unit flushed, 4 groups left, 0 leases out, port 0 quiesced`.
 `kubectl describe` shows it; `terminationMessagePolicy: FallbackToLogsOnError` covers silent crashes.
+
+Close and shutdown return only the three values of [contract.md §2.4](contract.md#24-close-and-shutdown), never `-MTL_ETIMEDOUT`: a drain that runs out of
+time flushes the rest and the call still returns 0 or 1 (`units_flushed` counts it). `-MTL_ETIMEDOUT`
+comes only from a DRAIN `mtl_session_stop` that missed its deadline, or (MS3–MS4) from a FLOWS
+update in ARMED or RUNNING whose unicast neighbour did not resolve (`WAITING_NEIGHBOUR`, nothing changed), and it
+is never the unsafe case;
+`mtl_session_close` returns 0 or 1. Freeing library memory under a lease the application holds would turn an application
+bug into a use-after-free; `mtl_rx_release` is DP and cannot free, so the next control-plane call does.
 
 ### 4.4 Signals and fork (R8)
 
@@ -400,8 +404,8 @@ not recover, while the process runs. Owners: **K** kernel, **L** library, **M** 
 | Resource | (a) orderly | (b) SIGKILL | (c) device removal | Owner |
 |---|---|---|---|---|
 | instance threads | joined, or counted as stuck in foreign code | gone with the process | stay; `PORT_REMOVED`, health `DEGRADED` or `SESSION_LOST`; close works | L / K |
-| TX session | unit on the wire finished, rest `MTL_TX_FLUSHED`; every accepted unit has a result | the wire stops (bus master off at descriptor release); a partial frame on the wire | ERROR `DEVICE_GONE`, or a degraded 2022-7 leg; units `MTL_TX_FLUSHED`; waits `-MTL_ENODEV` | L / K |
-| RX session | leave sent on every leg | **no leave**: the switch floods until the querier ages the group out (about 260 s) | ERROR or degraded leg | L / K |
+| TX session | unit on the wire finished, rest `MTL_TX_FLUSHED`; every accepted unit has a result | the wire stops (bus master off at descriptor release); a partial frame may be on the wire | ERROR `DEVICE_GONE`, or a degraded 2022-7 leg; units `MTL_TX_FLUSHED`; waits `-MTL_ENODEV` | L / K |
+| RX session | leave sent on every leg | no leave: the switch keeps the group until the querier ages it out (about 260 s with IGMP defaults) | ERROR or degraded leg | L / K |
 | lease held by the application | release returns 0; the slot is freed after its last lease | gone | release still works; the slot is never reused for that device | L |
 | library pools (hugepages, `--in-memory`) | freed, slot by slot as leases return | freed by the kernel; with an IOMMU, pinned pages outlive the DMA | not freed under a lease | L / K |
 | imported regions | unmapped from the device before `mtl_mem_close` returns 0 | IOMMU unmap after DMA is off; the memory dies with the process | the removed port's mapping goes with its VFIO descriptor | L / K |
@@ -483,8 +487,8 @@ namespace look dead).
 ### 4.8 Time in a pod
 
 What each `time_source` reads in a pod, which sources are read only, and which clock MTL may steer:
-[timing.md §2.2](timing.md#22-time-sources) and [§2.6](timing.md#26-time-in-a-pod). For the
-operator: AUTO, the default, never starts the built-in PTP client; `PTP_BUILTIN` on a VF
+[timing.md §2.2](timing.md#22-time-sources), [§2.6](timing.md#26-time-in-a-pod) and
+[§2.8](timing.md#28-mtl-never-steers-a-nodes-clock-the-time-options). For the operator: AUTO, the default, never starts the built-in PTP client; `PTP_BUILTIN` on a VF
 disciplines only MTL's own software time base, never the VF's PHC; and the built-in phc2sys
 (`time.phc2sys`) steers the node's `CLOCK_REALTIME`, so it is never used in a pod.
 
@@ -600,18 +604,13 @@ stateDiagram-v2
     READY --> SHUTDOWN: close or shutdown
 ```
 
-| Bit (`MTL_HEALTH_`) | Liveness | Readiness | Source |
-|---|---|---|---|
-| `SCHED_STALLED` | ✓ | ✓ | a scheduler's last loop is older than `instance.stall_ns` (1 s). The heartbeat also advances on wake-ups and timer ticks, so a sleeping idle scheduler is not stalled; open rejects a `stall_ns` below twice the longest scheduler sleep. `MTL_EVENT_SCHED_STALLED` warns at 1/8, 1/4 and 1/2 of the limit. |
-| `WORKER_STALLED` | ✓ | ✓ | the admin worker (recovery, ARP, IGMP, commands) missed its heartbeat outside a bounded device step. A port reset, up to its budget, is progress, so a PF reset that hits every VF on a node never restarts every pod. |
-| `SESSION_LOST` | ✓ | ✓ | a started session lost every leg to removed ports, or every port is gone |
-| `DEVICE_FAULT` | ✓ | ✓ | a queue was quarantined, or a tasklet could not be unregistered and its memory was quarantined (EK2) |
-| `STARTING` | | ✓ | phase below `MTL_PHASE_READY` |
-| `NO_LINK` | | ✓ | no port has a link |
-| `TIME_UNLOCKED` | | ✓ | time state ACQUIRING or LOST; FREERUN and HOLDOVER are ready (IPMX runs without PTP) |
-| `MANAGER_LOST` | | ✓ | MtlManager went away; AF_XDP ports stop receiving |
-| `SHUTTING_DOWN` | | ✓ | close or shutdown has begun |
-| `DEGRADED` | | | information only: a link down or a port removed, or a started session in ERROR or with an enabled leg not resolved or joined |
+The bits, the two masks and when each bit is set: [contract.md §2.7](contract.md#27-health). In a
+pod:
+
+- open rejects a `stall_ns` below twice the longest scheduler sleep;
+- a port reset, up to its budget, is progress for the admin worker (recovery, ARP, IGMP, commands),
+  so a PF reset that hits every VF on a node never restarts every pod;
+- FREERUN and HOLDOVER are ready: IPMX runs without PTP.
 
 `MTL_HEALTH_LIVENESS` (0xff) and `MTL_HEALTH_READINESS` (0xffff) are the masks. **Liveness never
 depends on links, packets or PTP lock**, or a grandmaster outage or a switch reboot would restart every
@@ -817,8 +816,8 @@ What the audit found, with the engine fix that removes it ([engine.md](engine.md
 |---|---|---|---|
 | 1 | no-IOMMU never detected (no hit for `noiommu` or `enable_unsafe_noiommu_mode`); PA DMA into freed hugepages after SIGKILL **[inferred]** | grep of `lib/src`; `dev/mt_dev.c:453-461` | EK8 |
 | 2–3 | opt-in phc2sys steers the node's `CLOCK_REALTIME` (`ADJ_SETOFFSET`, `ADJ_FREQUENCY`, `ADJ_TICK`) and never restores it; the PTP client leaves its frequency offset on a shared PF PHC | `mt_ptp.c:163-240`, `:358-390` | EK10 |
-| 4 | MtlManager resolves a pod's ifindex in its own namespace: XDP on the wrong interface **[inferred]** | `dev/mt_af_xdp.c:390` (the client sends its ifindex); `manager/mtl_instance.hpp:274-276` (the UDP-filter handler takes it from the message); the resolution, `if_indextoname` in the manager's namespace, `manager/mtl_interface.hpp:171`, `:238`, `:272`, `:379`, and the attach at `:420` | EK5 |
-| 5 | manager restart: clients never reconnect; `clear_flow_rules` deletes every ntuple rule on the interface | `mt_main.h:1268-1270`; `manager/mtl_interface.hpp:73-91`, `:168-233` | EK5 |
+| 4 | MtlManager resolves a pod's ifindex in its own namespace | [engine.md §7.3](engine.md#73-pod-hazards-h-k) | EK5 |
+| 5 | manager restart: no reconnect, live rules wiped | [engine.md §7.3](engine.md#73-pod-hazards-h-k) | EK5 |
 | 6–7, 24 | manager: only SIGINT handled, so SIGTERM kills it without cleanup **[inferred]**; socket `0777`, identity self-reported; a second manager unlinks the live socket | `manager/mtl_manager.cpp:57-61`, `:85`, `:96`; `manager/mtl_instance.hpp:191-213` | EK5 |
 | 8 | library manager I/O: no timeout, no `MSG_NOSIGNAL`; a missing manager silently selects the shm allocator | `mt_instance.c:17`, `:24`, `:69`, `:91`; `mt_main.c:484` | EK4 |
 | 9 | CPU allocators keyed by remapped lcore ID (`--remap-lcore-ids`), not CPU | `manager/mtl_lcore.hpp:11-55`; `mt_sch.c:744-760`; `dev/mt_dev.c:443-446` | EK6 |
@@ -828,7 +827,7 @@ What the audit found, with the engine fix that removes it ([engine.md](engine.md
 | 13 | unbounded stop waits: `sch_stop`, `rte_eal_wait_lcore`, `mt_handle_drain`, `flock`, manager `recv` | `mt_sch.c:316-321`, `:517`; `mt_handle_guard.h:130`; `mt_instance.c:24` | EK1 |
 | 14 | tasklet unregister times out at 1 s with `-EIO`, callers free anyway: use-after-free **[inferred]** | `mt_sch.c:885-901`; `st2110/st_tx_video_session.c:3902-3914` | EK2 |
 | 15 | st20p TX free waits up to about 1 s per held frame; 16 sessions × 3 frames ≈ 48 s **[inferred]** | `st2110/pipeline/st20_pipeline_tx.c:722-753` | EK1 |
-| 16 | no SIGTERM path: the library has none, RxTxApp and the samples catch only SIGINT | `tests/tools/RxTxApp/src/rxtx_app.c:350-359`; `app/sample/sample_util.c:478-509` | ex16 recipe |
+| 16 | no SIGTERM path | [engine.md §7.3](engine.md#73-pod-hazards-h-k) | ex16 recipe |
 | 17 | `mt_mcast_uinit` frees the group list without leaves; no gratuitous ARP at start | `mt_mcast.c:527-559`, leaves only at `:735-743` | EK9 |
 | 18 | VF rate-limit state in the PF stays until a VF reset | `patches/ice_drv/2.6.7/0001-*.patch` | EK16 |
 | 19 | AF_XDP `tx_maxrate` left on the queue; UDP filter refcounts per interface, not per client | `dev/mt_af_xdp.c:867-892`; `manager/mtl_instance.hpp:272-287` | EK5 |
@@ -911,96 +910,11 @@ The requirement coverage K-REQ-1…20 is [requirements.md](requirements.md) §5.
 
 ## 6. Windows
 
-- **Stance.** The unified headers are one ABI on every OS (D-159). A queue's descriptor is
-  a manual-reset event `HANDLE` (from MS2a) in the same `intptr_t`; error codes are `MTL_E*` constants equal to the
-  Linux errno values on every OS, also where the UCRT lacks the name (`ESHUTDOWN`, `ESTALE`) or gives
-  it another value, so Windows code compares against `MTL_E*` only; values ≥ 1000 are reserved for
-  future MTL-only codes. Flags are plain integer literals.
-- **Waits (from MS2a).** `WaitForMultipleObjects` takes at most 64 handles; a framework with more
-  sessions arms them on one queue, or uses thread-pool waits. Sub-millisecond timeouts round up to 1 ms, and the 15.6 ms tick
-  applies unless `timeBeginPeriod` is set.
-- **v1 commitment.** A compile-only CI job builds the headers and the examples with MSVC and MinGW.
-  Runtime support follows the legacy library's Windows support; two of the eleven open issues at the
-  baseline are Windows build failures (#1672, #1301). Everything in §4 is Linux only.
+Windows, the one ABI on every OS and its waits: [abi.md §5](abi.md#5-windows). Everything in §4 is
+Linux only.
 
 ## 7. Release, deprecation and support policy
 
-Tags follow `vYY.MM` (v25.02, v25.12-rc1, v26.01; PR #1768 prepares v26.09).
-
-**Before the freeze.** The unified API ships inside libmtl in symbol version nodes per milestone,
-`MTL_UNIFIED_EXPERIMENTAL_<rev>_MSn`, and `_MSn.1`, `_MSn.2`, … when releases are cut while
-milestone n is open. All nodes are renamed together on every incompatible change, a new revision.
-Every node a release carries is sealed: its names never change ([migration.md](migration.md)
-§7.2). So `ld.so` refuses at load a binary linked against another revision, or one that needs a
-node the library lacks (an older release), and a binary never fails at a call for a missing
-function. `MTL_LEVEL` in `mtl.h` names the last milestone whose exit passed. There is no
-compatibility promise across revisions and no deprecation period for the unified API before the
-freeze. libmtl itself gets a soname and the `MTL_LEGACY` node in MS3.
-
-**Shipping before MS7.** A product may ship on the experimental API. Five rules keep it from
-failing in the field:
-
-1. **Link against a release, never a `.DEV` build.** A binary linked against release R loads on R
-   and on every later release of the same revision. `ld.so` refuses, at load, an older release or
-   another revision. A `.DEV` build carries an open node without that guarantee.
-2. **Require that release.** Ship libmtl with the product, or require the package at R or later and
-   check the revision in the release notes; a revision change is refused at load, never
-   misbehaves.
-3. **Build with `MTL_TARGET_LEVEL`** at the release's `MTL_LEVEL`. Use `MTL_LEVEL + 1` only to call
-   the open milestone's functions that this release exports; the link fails for those it lacks.
-4. **Check at start.** Log `mtl_library_version_num()`. A value of an exported call (a flag, an
-   option key) that the running library does not build yet returns `-MTL_ENOTSUP`
-   (`NOT_IMPLEMENTED`), so a product checks the values it depends on at start
-   (`mtl_session_query` for a configuration), not in the middle of a stream.
-5. **Relink at a revision change and at F.** Not on every release. At F the experimental nodes
-   become `MTL_1.0` (one relink), and `<mtl/experimental/…>` keeps compiling until F+2 through
-   forwarding stubs ([migration.md](migration.md) §7.2).
-
-**Targets.** The maintainer publishes, in this section and in the release notes of the MS3
-release, the `vYY.MM` of three releases:
-
-| Stage | Release | No earlier than |
-|---|---|---|
-| F: the `MTL_1.0` freeze (MS7); the legacy APIs deprecated | `<vYY.MM of F>` | `<YYYY-MM>` |
-| F+1: the last release that installs the legacy headers through `mtl.pc` | `<vYY.MM of F+1>` | the release after F |
-| F+2: the legacy session API leaves the public set (migration.md §8.3) | `<vYY.MM of F+2>` | `<YYYY-MM>`, at least 12 months after F ships |
-
-1. **Never earlier.** A published target may move later, announced at least one release ahead;
-   it never moves earlier, also when the work is early.
-2. **Calendar floor.** F+2 ships no earlier than 12 months after F, however many releases fall
-   between; this adds a time floor to the two-release rule of D-69.
-3. **Slip rule.** F moves to a later release whenever, at that release's feature freeze, the
-   pre-hide gate (migration.md §8.4), the legacy-coverage check (migration.md §8.3) or the
-   external review of MS7 is not green. When F moves, F+1 and F+2 move with it, so that F+1 is a
-   later release than F and F+2 keeps its 12-month floor; the new targets are published in the
-   release notes of the release that would have been F.
-4. **Notice.** The release before F lists every legacy symbol the deprecation covers with its
-   unified home (the output of the legacy-coverage check), and asks private users for their
-   `readelf -V` and `nm -D` reports.
-
-**Deprecation.** At F the unified API becomes `MTL_1.0`, and the legacy APIs it replaces carry
-`MTL_LEGACY_DEPRECATED` and a release-note entry. A deprecated legacy API is removed no earlier
-than two `vYY.MM` releases after the one that deprecated it and no earlier than the F+2 floor
-above, only when the migration map ([migration.md](migration.md)) covers every in-tree use, and
-the maintainer signs off. Removal moves the session headers to the internal tier; no legacy struct
-layout ever changes.
-
-**Long-term support.** F+1 gets a `vYY.MM.x` branch, maintained until `<YYYY-MM>`: at least
-24 months after F+1 ships and at least 12 months after F+2 ships. The branch pins one DPDK LTS and
-one ICE driver in `versions.env`, changed only for a security fix or a build break on a supported
-kernel. It never gains a symbol: no `MTL_1.1` node and no new legacy function. After F+2 the legacy
-session API is internal, and this branch is its only public maintenance until it ends.
-
-**Backport scope**, on the LTS branch (legacy API and `MTL_1.0` alike) and on the legacy session
-layer from F:
-
-- security fixes (MtlManager, §1.6; import validation, §1.1);
-- crashes, hangs and memory corruption;
-- data-plane correctness fixes: on the legacy API behind its legacy opt-in flags only, so no
-  default changes on the wire (D-24); on `MTL_1.0` as on the main branch, within its documented
-  behaviour;
-- build fixes for supported compilers and kernels;
-- no features and no new symbols.
-
-Every release note lists the legacy opt-in flags the engine work added, and which may become
-default at the freeze. From F the legacy session-level APIs (`st20_*`, …) take bugfixes only.
+The tags, the experimental nodes, the rules for shipping before MS7, the targets for F, F+1 and
+F+2, deprecation, long-term support and the backport scope:
+[abi.md §7](abi.md#7-release-deprecation-and-support-policy).

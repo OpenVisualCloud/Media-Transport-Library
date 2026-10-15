@@ -3,6 +3,7 @@
 """Reference lint for the unified API documents (check.sh lint 11).
 
 usage: check_refs.py [--stats] [--base REV] DOCS_DIR
+       check_refs.py --bare FILE...
 
 DOCS_DIR is doc/unified-api/. Checks every Markdown file under it (examples.md included:
 it is generated, so a hit there is fixed in sketch/examples.md.in or sketch/examples/),
@@ -38,6 +39,14 @@ with the hyphen ("ms1-status §3", "implementation-plan §5"), and "contract" ("
 Not checked: fenced code blocks of the Markdown files, a § with no document name before it
 (a clause of a standard, or a section of the same document).
 Prints "FAIL: <file>:<line>: <message>" per bad reference; exits 1 if there is any.
+
+--bare FILE... (a review aid for commit 3, not a check.sh lint) checks instead the bare "§n"
+references of each named file of the documents next to sketch/: every § item that no
+document name or link stands before, fenced blocks included, names a heading of that file.
+A § list after a standard's name (ST 2110-21, RFC 8331, RP 2110-25, TR-10-1, IS-04, AES67,
+SMPTE, clause, ...) is the standard's clause and is skipped, and so is a number that is no
+heading of the file in a paragraph (or a list's lead-in) that names a standard; the summary
+line counts both.
 """
 
 import os
@@ -66,6 +75,39 @@ LINK = re.compile(
 )
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 HEADING = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$")
+# --bare: a standard's name ("-40" is ST 2110-40 after a mention of it). Right before a §
+# list, with only clauses, tables and annexes between, the list is that standard's; anywhere
+# in the paragraph, a number that is no heading of the file is its clause.
+STANDARD_NAME = (
+    r"\b(?:ST|RP|OV|EG)\s*\d{3,4}(?:-\d+)*|\bRFC\s*\d+|\bTR-\d+(?:-\d+)*|\bIS-\d+"
+    r"|\bBCP-\d+(?:-\d+)*|\bAES\d+(?:-\d+)?|\bSMPTE\b|\bIEEE\s?\d+(?:\.\d+)*"
+    r"|\bISO(?:/IEC)?\s?\d+(?:-\d+)*|\bBT\.\d+|\bITU-R\b|\bIEC\s?\d+(?:-\d+)*"
+    r"|(?<![\w-])-\d{2}\b(?=\s*§)"
+)
+STANDARD = re.compile(
+    r"(?:" + STANDARD_NAME + r"|\b[Cc]lauses?)"
+    r"(?::\d{4}|\s?\(\d{4}\))?(?:'s|’s)?"
+    r"(?:[\s,;]|§" + NUM + r"|Table \d+|Annex [A-Z]|and\b|or\b|[–-])*$"
+)
+STANDARD_IN = re.compile(STANDARD_NAME)
+BLANK = re.compile(r"\n[ \t]*\n")
+BLOCK = re.compile(r"\s*(?:[-*+]\s|\d+\.\s|\||```|~~~)")  # a list, table or fence
+
+
+def paragraph_of(text, pos):
+    """The paragraph of text around pos; a list, table or fenced block also takes the blocks
+    before it up to its lead-in (at most three)."""
+    lo = max(0, pos - 6000)
+    window = text[lo : pos + 3000]
+    blanks = list(BLANK.finditer(window))
+    starts = [0] + [m.end() for m in blanks]
+    ends = [m.start() for m in blanks] + [len(window)]
+    paras = list(zip(starts, ends))
+    k = next(i for i, (a, b) in enumerate(paras) if pos - lo <= b)
+    j = k
+    while j > 0 and k - j < 3 and BLOCK.match(window, paras[j][0]):
+        j -= 1
+    return window[paras[j][0] : paras[k][1]]
 
 
 class Doc:
@@ -229,6 +271,8 @@ class Lint:
         self.cache = {}
         self.fails = []  # (relpath, line, message)
         self.stats = {}
+        # --bare: the spans of the § lists that a document name or a link qualifies.
+        self.spans = None
         # A document of doc/unified-api/ named without .md, where the name cannot be an
         # English word (see the module comment): "contract §9.1", "ms1-status §3".
         stems = sorted(
@@ -405,6 +449,7 @@ class Lint:
             for i in range(m.start(), m.end()):
                 if chars[i] != "\n":
                     chars[i] = " "
+            self.mark(text, m.end())
             if re.match(r"[a-zA-Z][a-zA-Z0-9+.-]*:", url) or url.startswith("//"):
                 continue
             path, _, anchor = url.partition("#")
@@ -498,6 +543,7 @@ class Lint:
             p = re.compile(r"[ \t]*\n?[ \t]*").match(text, m.end()).end()
             if not (SECLIST.match(text, p) or APPENDIX.match(text, p)):
                 continue
+            self.mark(text, m.end())
             if kind == "name without .md":
                 target = os.path.join(self.docs, name.replace(" ", "-") + ".md")
             else:
@@ -507,6 +553,58 @@ class Lint:
                 self.fail(src, text, m.start(), "%s: no such file" % name)
                 continue
             self.after(src, text, m.end(), target, name, "prose, " + kind)
+
+    def mark(self, text, pos):
+        """--bare: record the § list or appendix right after a name or link ending at pos."""
+        if self.spans is None:
+            return
+        p = re.compile(r"[ \t]*\n?[ \t]*").match(text, pos).end()
+        s = SECLIST.match(text, p) or APPENDIX.match(text, p)
+        if s:
+            self.spans.append(s.span())
+
+    def bare(self, path):
+        """--bare: check the bare § items of path against its headings; return their count."""
+        base = self.docs if path.endswith("examples.md.in") else os.path.dirname(path)
+        kept = (self.fails, self.stats)  # the lint's own results stay out of the report
+        self.fails, self.stats, self.spans = [], {}, []
+        raw = read(path)
+        text = self.links(path, raw.replace("`", " "), base)
+        self.prose(path, text)
+        chars = list(text)
+        for a, b in self.spans:
+            for i in range(a, b):
+                if chars[i] != "\n":
+                    chars[i] = " "
+        (self.fails, self.stats), self.spans = kept, None
+        text = "".join(chars)
+        doc = self.doc(path)
+        n = 0
+        for s in SECLIST.finditer(text):
+            if STANDARD.search(text[max(0, s.start() - 80) : s.start()]):
+                self.count("bare: after a standard's name")
+                continue
+            near = STANDARD_IN.search(paragraph_of(raw, s.start()))
+            for m in ITEM_RE.finditer(s.group(0)):
+                start, end = m.group(1), m.group(2)
+                keys = [start]
+                if end:
+                    sp, ep = start.split("."), end.split(".")
+                    alt = ".".join(sp[: len(sp) - len(ep)] + ep)
+                    keys.append(end if end in doc.numbers else alt)
+                for key in keys:
+                    n += 1
+                    if key not in doc.numbers and near:
+                        self.count("bare: a clause of the paragraph's standard")
+                    elif key not in doc.numbers:
+                        self.fail(
+                            path,
+                            text,
+                            s.start() + m.start(),
+                            "bare §%s: no heading %s in %s"
+                            % (key, key, self.rel(path)),
+                        )
+        return n
 
     def markdown(self, path, base):
         text = blank_fences(read(path)).replace("`", " ")
@@ -545,19 +643,41 @@ class Lint:
 
 
 def main(argv):
-    stats, base, args = False, None, []
+    stats, base, bare, args = False, None, False, []
     it = iter(argv[1:])
     for a in it:
         if a == "--stats":
             stats = True
+        elif a == "--bare":
+            bare = True
         elif a == "--base":
             base = next(it, "")
         elif a.startswith("--base="):
             base = a[len("--base=") :]
         else:
             args.append(a)
+    usage = "usage: check_refs.py [--stats] [--base REV] DOCS_DIR\n       check_refs.py --bare FILE...\n"
+    if bare:
+        if base is not None or stats or not args or not all(map(os.path.isfile, args)):
+            sys.stderr.write(usage)
+            return 2
+        lint = Lint(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+        n = sum(lint.bare(os.path.realpath(f)) for f in args)
+        for f, line, msg in sorted(set(lint.fails), key=lambda x: (x[0], x[1], x[2])):
+            print("FAIL: %s:%d: %s" % (f, line, msg))
+        print(
+            "bare references: %d checked, %d bad; skipped as clauses: %d lists after a "
+            "standard's name, %d numbers in a paragraph that names one"
+            % (
+                n,
+                len(set(lint.fails)),
+                lint.stats.get("bare: after a standard's name", 0),
+                lint.stats.get("bare: a clause of the paragraph's standard", 0),
+            )
+        )
+        return 1 if lint.fails else 0
     if base == "" or len(args) != 1 or not os.path.isdir(args[0]):
-        sys.stderr.write("usage: check_refs.py [--stats] [--base REV] DOCS_DIR\n")
+        sys.stderr.write(usage)
         return 2
     try:
         lint = Lint(args[0], base)

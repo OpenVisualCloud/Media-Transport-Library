@@ -1377,7 +1377,7 @@ messages are Node policy: MTL gives counters and events, and counts no status tr
 `tx.units_muted` is not an error. On a sender with `MTL_UNDERRUN_REPEAT`, `TOO_LATE` drops count for
 `essenceStatus`, not for `transmissionStatus`: their index carried a repeat (no pin: nothing). A `SNAP_COLLISION`
 drop's index already has a unit, so it stays a transmission count. A frozen source then
-shows as Unhealthy essence ([timing.md](timing.md) §6.3; `tx.indices_filled` is a subset of
+shows as Unhealthy essence ([timing.md](timing.md) §6.4; `tx.indices_filled` is a subset of
 `tx.indices_empty`, [contract.md](contract.md) §11.3).
 
 **The monitor**, one per session. On `MTL_EVENT_UPDATE` APPLIED, with auto-reset: read every value
@@ -1666,7 +1666,7 @@ key_version changes while active (`MTL_CRYPTO_PEP_RTP_KV`). The keys:
 in the caller at submit and dequeue (both become DPC) or on `crypto.workers` threads. In-caller
 encryption runs inside submit, so it is the producer's time and belongs in `min_tx_delay_ns`; it is
 not C, the conversion or `MTL_SESSION_TX_SRC_PLANES` copy that MTL adds ([contract.md](contract.md)
-§3.5). A crypto worker is
+§3.9). A crypto worker is
 an asynchronous stage, timed at create into the pick-up lead (D-220, [timing.md](timing.md) §6.1).
 
 | Path | TX | RX |

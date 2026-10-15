@@ -37,7 +37,7 @@ TR-10-n VSF IPMX technical recommendations; PQCR the IPMX product qualification 
 | GO-2 | a familiar shape: acquire → fill → submit → result on TX, dequeue → read → release on RX; a queue for many sessions; regions; a cookie per unit; requested versus granted; as in libfabric and Rivermax | acquire, submit, `mtl_reap`, dequeue, `mtl_release`; `mtl_queue_*`; `mtl_mem.h`; `unit.cookie`; `mtl_session_query` (G-46, G-47, G-34) | MS1; regions MS2; queues MS2a; events MS3 |
 | GO-3 | one buffer contract: library pool, imported memory and (later) device memory are the same pool slot with the same lifecycle; the allocation origin never implies a data path | library pools, `mtl_session_attach`, `mtl_mem_import`, `MTL_MEM_DEVICE`, `MTL_SESSION_REQUIRE_DIRECT` ([contract.md §9](contract.md#9-memory)) (G-13, G-15) | MS1; attached MS2, MS4; device memory MS6 |
 | GO-4 | timing correct by construction: media time and launch time apart; RTP from media time only; one exact rational epoch shared by essences on TX and RX; late handling an explicit policy with a per-unit result | `unit.media_tai_ns`, media modes, `min_tx_delay_ns`, `MTL_WHEN_ORIGIN`, `mtl_sync.h`, `tx.late_policy` ([timing.md](timing.md)) (G-19, G-26, G-28, G-76) | MS1; ST20 subset MS3; MS6 |
-| GO-5 | nothing happens silently: one terminal result per accepted unit with status, reason and timing; every downgrade reported as requested versus granted; every state change an event with a state getter | `struct mtl_tx_result`, `mtl_session_info`, `MTL_EVENT_PACING_CHANGED` ([contract.md §10](contract.md#10-events-and-queues)) (G-01, G-13, G-41) | results MS1; events MS3 |
+| GO-5 | nothing happens silently: one terminal result per accepted unit with status, reason and timing; every downgrade reported as requested versus granted; every state change an event with a state getter | `struct mtl_tx_result`, `mtl_session_info`, `MTL_EVENT_PACING_CHANGED` ([contract.md §10](contract.md#10-events-and-log-sinks)) (G-01, G-13, G-41) | results MS1; events MS3 |
 | GO-6 | real-time safety: no public call on a pinned tasklet core; tasklets never block, allocate, take a lock an application thread can hold, or run application code, not even by option (D-04; the `MTL_LATER` inline notify is the one reserved exception) | rule R6; the engine callbacks of the bindings ([engine.md §1](engine.md#1-the-pinned-core-rules)) (G-38, G-39) | measured MS1; P at MS4 |
 | GO-7 | a robust lifecycle: per-session states, drain versus flush, interruptible waits, stale-handle safety, no application code and no memory access after a close retires, errors as codes | `enum mtl_state`, `MTL_STOP_DRAIN`, `MTL_STOP_FLUSH`, `mtl_interrupt`, R4, `mtl_last_error` ([contract.md §4](contract.md#4-lifecycle-and-states)) (G-29…G-31, G-49, G-64, G-65) | MS1 |
 | GO-8 | an evolvable ABI: versioned structs, opaque handles, soname and symbol versions, an experimental tier | R3, R4, libmtl's version nodes `MTL_UNIFIED_EXPERIMENTAL_<rev>_MSn`, `MTL_SIZE_CHECK` (G-33, G-51, G-73, G-74) | MS1; the libmtl soname and `MTL_LEGACY` node MS3; `MTL_1.0` MS7 |
@@ -59,6 +59,14 @@ Several reserve the shape now, so they can come later without an ABI break.
 | NG6 | RX header split | compiled out on the pinned DPDK | not in the unified API; a cut candidate of the coverage gate (D-87) |
 | NG7 | library-scheduled RX delivery ("present at T") | report the presentation time first | `mtl_rx_detail.presentation_tai_ns` with `rx.link_offset_ns`; scheduling later |
 | NG8 | runtime `mtl_port_open` | needs a port parameter struct and the list of subsystems it brings up | no header symbol; after MS7, on request |
+
+**Not in any header, not before Phase 7.** Mixed pools (library and attached slots in one pool;
+multi-region slots such as host-visible RTP headers with a GPU-resident payload; an imported source
+plus an internal conversion destination as one slot; fallback capacity while an external producer
+withholds buffers), header/payload split regions, producer/consumer fences for device memory
+(with `MTL_MEM_DEVICE`), and a lost-range report in `mtl_rx_detail` (the packet bitmap D-203
+already copies). Each would be a backend capability, enabled only once its conformance tests pass,
+without changing the basic calls.
 
 ### 2.3 Personas and the quality bar
 
@@ -122,7 +130,7 @@ IDs are stable. "Closed by" names the guarantees that close each requirement
 | R-TIME-12 | SHOULD | RX reports `media_index` on the epoch; video, audio and ANC align without application arithmetic (`mtl_rx_align`) | G-76, G-105 | video G-76 MS2b; the rest MS6 |
 | R-TIME-13 | SHOULD | processes align without IPC: every session on the SMPTE epoch, and `mtl_epoch_index_at` | G-76, G-105 | MS6 (G-105) |
 | R-CMP-1 | MUST | every accepted submission has exactly one terminal outcome (a result, or a counter with results off); a failed first submit has none and returns the slot to the pool, except `-MTL_EBADF` and `-MTL_ESTALE`, which change no state (D-88) | G-01, G-02, G-147 | MS1 |
-| R-CMP-2 | MUST | results are never lost: producing a result never waits for ring space (the ring and acquire's reservation: [contract.md §5.5](contract.md#55-back-pressure); [core.md §4](core.md#4-lease-table-and-result-materialisation)) | G-04, G-05, G-143, G-144 | MS1 |
+| R-CMP-2 | MUST | results are never lost: producing a result never waits for ring space (the ring and acquire's reservation: [contract.md §5.5](contract.md#55-back-pressure); [core.md §4](core.md#4-results-completion-and-handles)) | G-04, G-05, G-143, G-144 | MS1 |
 | R-CMP-3 | MUST | TX statuses ON_TIME, DROPPED (with reason), FLUSHED, FAILED, and LATE for a bounded late send (Phase 7, `MTL_LATER`); `enum mtl_tx_status` starts at 1, so 0 is never terminal | G-28, G-57, G-149 | the MS1 statuses and G-149 MS1; G-28, G-57 MS3 |
 | R-CMP-4 | MUST | "reusable" means nothing (converter, packet, DMA, NIC) can still reach the storage | G-06, G-100 | MS2b |
 | R-CMP-5 | MUST | events in a bounded ring per session and per instance, apart from results, coalesced, overflow counted, a getter per state event | G-41, G-58 | MS3 |
@@ -218,7 +226,7 @@ Every guarantee G-xx and G-PKT-n, with its tier, P or BE, milestone and test, is
 What MTL must do inside a Kubernetes pod. The design is [deployment.md §4](deployment.md#4-kubernetes)
 (sections named per entry); the engine fixes EK1–EK21 are [engine.md §6](engine.md#6-the-engine-change-list)
 and run on the Kubernetes track beside the milestones, done by the MS3 exit
-([implementation-plan.md §6.10](implementation-plan.md#610-the-kubernetes-track)); today's pod hazards H-K-n are [engine.md §7.3](engine.md#73-pod-hazards-h-k).
+([implementation-plan.md §6.8](implementation-plan.md#68-the-kubernetes-track)); today's pod hazards H-K-n are [engine.md §7.3](engine.md#73-pod-hazards-h-k).
 Each entry: level; part; when; test.
 
 - **K-REQ-1 bounded orderly shutdown** (MUST; API, engine; MS1, report MS3; G-107). One call stops

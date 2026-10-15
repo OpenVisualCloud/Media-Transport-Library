@@ -920,7 +920,7 @@ The source URLs are §17.
 | 3 | rounding | truncate (ST 2110-10:2022 §7.6.1; RFC 4175, 8331, 9134) | round-to-nearest, ties down (`st10_tai_to_media_clk`); LIST `round()`; the contract draft says floor | floor (G-19) |
 | 4 | epoch arithmetic | exact (2059-1 §5.1) | `double frame_time` (+66 ns), EPOCH-mode RTP `floor + 1` on some frames *(emulated)* | exact rationals (D-11, E2) |
 | 5 | RTP clock offset | zero (ST 2110-10:2022 §7.3) | `rtp_timestamp_delta_us` shifts every RTP; the contract draft matches ST20/ST40 only "with the same RTP clock offset" | `media_time_offset_ns`, `tx.index_offset` (timing.md §4.5) |
-| 6 | grid anchor | TVD on the SMPTE epoch (ST 2110-21:2022 §6.2) | the contract draft's `normal_grid_anchor` is any fixed TAI value: compliant only when ≡ 0 mod TFRAME | T0 on the common grid (timing.md §3.3) |
+| 6 | grid anchor | TVD on the SMPTE epoch (ST 2110-21:2022 §6.2) | the contract draft's `normal_grid_anchor` is any fixed TAI value: compliant only when ≡ 0 mod TFRAME | T0 on the common grid (timing.md §7.1) |
 | 7 | interlaced second field TX | `TVD + TFRAME/2 + TLINE/2 + …` (ST 2110-21:2022 §6.3.3) | TLINE/2 omitted (coupled TX and RTP) | added once decoupled (E5, G-22) |
 | 8 | type NL and W schedule | linear (ST 2110-21:2022 §7.1.3, §7.1.4) | gapped on TX and in the RX parser; `ST21_PACING_LINEAR` is never read, so NL is sent as N | linear for NL and W (E5) |
 | 9 | exact user pacing | constant TROFFSET (ST 2110-21:2022 §6.2) | any per-unit target | `MTL_SUBMIT_EXACT`, counted non-compliant (timing.md §5.4) |
@@ -1072,8 +1072,8 @@ semantics; per-leg observed times; an RX common link offset per group.
 | OpenShift 4.16 | <https://docs.redhat.com/en/documentation/openshift_container_platform/4.16/HTML-single/scalability_and_performance/index>; <https://docs.redhat.com/en/documentation/openshift_container_platform/4.16/HTML/networking/using-ptp-hardware> | deployment.md |
 | NVIDIA Holoscan for Media | <https://docs.nvidia.com/holoscan-for-media/latest/user-guide/app-development/index.html> | deployment.md |
 | Media Communications Mesh | <https://github.com/OpenVisualCloud/Media-Communications-Mesh/tree/main/deployment> | deployment.md §4.1 |
-| libfabric | v2.7, man pages <https://ofiwg.github.io/libfabric/main/man/>, headers in <https://github.com/ofiwg/libfabric> | migration.md §13; decisions.md §3 |
-| NVIDIA Rivermax | <https://github.com/NVIDIA/rivermax-examples>, <https://github.com/NVIDIA/rivermax-dev-kit>, DOCA Rivermax guide <https://docs.nvidia.com/doca/sdk/doca-rivermax/index.html>, <https://developer.nvidia.com/networking/rivermax> | migration.md §13; decisions.md §3 |
+| libfabric | v2.7, man pages <https://ofiwg.github.io/libfabric/main/man/>, headers in <https://github.com/ofiwg/libfabric> | migration.md §10; decisions.md §3 |
+| NVIDIA Rivermax | <https://github.com/NVIDIA/rivermax-examples>, <https://github.com/NVIDIA/rivermax-dev-kit>, DOCA Rivermax guide <https://docs.nvidia.com/doca/sdk/doca-rivermax/index.html>, <https://developer.nvidia.com/networking/rivermax> | migration.md §10; decisions.md §3 |
 | Blackmagic DeckLink, AJA libajantv2 | DeckLink SDK Manual <https://documents.blackmagicdesign.com/UserManuals/DeckLinkSDKManual.pdf>; <https://github.com/aja-video/libajantv2> | decisions.md §3 |
 | GStreamer | design docs `qos.html`, `latency.html`, `synchronisation.html`, `bufferpool.html` under <https://gstreamer.freedesktop.org/documentation/additional/design/>; `gstbasesink` | decisions.md §3 |
 | io_uring, Vulkan, OpenXR | Linux `include/uapi/linux/io_uring.h`; Vulkan-Headers `vulkan_core.h`; <https://registry.khronos.org/OpenXR/specs/1.1/> | decisions.md §3 |
@@ -1081,4 +1081,4 @@ semantics; per-leg observed times; an RX common link offset per group.
 | NDI, SRT, WebRTC, OpenTelemetry | <https://docs.ndi.video/>; <https://github.com/Haivision/srt/blob/master/docs/API/statistics.md>; <https://www.w3.org/TR/webrtc-stats/>; <https://opentelemetry.io/docs/specs/otel/metrics/data-model/> | decisions.md §3 |
 | External MTL consumers | <https://github.com/bob-integration/bobistudio-plugin-2110_io>, <https://github.com/NUDA9A/ST2110-OBS-PLUGIN>, <https://github.com/CorangesS/GPT_mtl_encode_sdk>, <https://github.com/OpenVisualCloud/directview-led-software-toolkit> | legacy-internals.md |
 | MTL issues | issues #657, #687, #870, #948, #1139, #1147, #1157, #1170, #1176, #1179, #1185, #1208, #1211, #1222, #1239, #1242, #1276, #1305, #1318, #1321, #1325, #1337, #1341, #1357, #1370, #1378, #1424, #1517, #1560, #1620, #1678 at <https://github.com/OpenVisualCloud/Media-Transport-Library/issues> | legacy-internals.md |
-| MTL PR #1610 | <https://github.com/OpenVisualCloud/Media-Transport-Library/pull/1610> | legacy-internals.md |
+| MTL PR #1610 | <https://github.com/OpenVisualCloud/Media-Transport-Library/pull/1610> | pr1610.md |

@@ -14,7 +14,7 @@ wrappers, and the maintainers. How the unified API sits on this code, and every 
 
 | Job | Sections |
 |---|---|
-| an MS1 task (the implementing session) | §12: your task's row of §12.1, then §12.2 |
+| an MS1 task (the implementing session) | pr1610.md §2: your task's row of pr1610.md §3, then pr1610.md §5 |
 | a binding over an engine | §5.1–§5.3, §6.1–§6.2, §7.2–§7.3 |
 | a legacy wrapper or a shim | §2, §3, §11.4 |
 | pod or operator facts | §4.2, §9 |
@@ -47,7 +47,7 @@ code plus DPDK, glibc or kernel behaviour, not executed. **[unknown]**: not esta
 | defects SF-01…SF-88, SP-01…SP-10, SC-01…SC-08, DD-01…DD-21, H-K-1…H-K-28, RTP-level defects | engine.md §7 |
 | pod hazards with evidence; MtlManager trust, MtlManager in pods, AF_XDP rate in pods | [deployment.md §4.16](deployment.md), §1.6, §4.12, §4.13 |
 | legacy timing surface → unified | [timing.md §14](timing.md) |
-| per-consumer port notes and call-site counts; the ABI summary | [migration.md §11](migration.md), §7.1 |
+| per-consumer port notes and call-site counts; the ABI summary | [migration.md §9](migration.md); [abi.md](abi.md) |
 
 ## 2. The public surface today
 
@@ -925,7 +925,7 @@ sequenceDiagram
 ```
 
 The core replaces this with the event word and `mt_wake()`
-([core.md §6.2](core.md#62-the-deferred-wake)): no lock and no condition variable on the
+([core.md §6](core.md#6-waking-summary)): no lock and no condition variable on the
 tasklet.
 
 ### 5.4 Scheduler details beyond engine.md
@@ -953,6 +953,8 @@ tasklet.
   and falls back across nodes only with `MTL_FLAG_ALLOW_ACROSS_NUMA_CORE` (`mt_sch.c:781-786`).
   Migration finds its target with `mt_sch_get_by_socket`, which keeps the socket (`:1151`), so
   per-session memory needs no re-homing on migration today.
+- The limits a controller runs into today: 18 schedulers per instance (`MT_MAX_SCH_NUM`, `mt_main.h:49`); 60 video TX and 60 video RX sessions per scheduler (`ST_SCH_MAX_TX_VIDEO_SESSIONS`, `st_header.h:33-34`);
+  a data quota per scheduler (`instance.sched_quota_mbs`, default 12 × the 1080p59.94 4:2:2 10-bit bandwidth, `ST_QUOTA_TX1080P_PER_SCH`, `st_header.h:23`; `mt_sch_add_quota`, `mt_sch.c:1060`); TX and RX queue counts fixed when the port is configured; the rate-limited queues of each port. Today a create that finds no scheduler fails with an `err` log only ("no free sch", `mt_sch.c:378`, `:1171`).
 - Audio quota is `limit / rx_audio_sessions_max_per_sch` (`st_rx_audio_session.c:1646`); a manager
   per media and direction registers one tasklet over its sessions; schedulers grow lazily and are
   freed when `ref_cnt` reaches 0 (`mt_sch_put`, `mt_sch.c:1084-1137`); APP schedulers are never
@@ -1424,7 +1426,7 @@ buffer re-anchors to its own timestamp and packets chain at `ts + n·T_pkt`, tru
 10 ms keep-continuity window and a 1 s onward window (`:213-214`); the builder runs at most
 `fifo_size` ahead (`:1930-1935`); one 59.94 video frame is 800.8 samples at 48 kHz, so fixed buffers
 cannot be "one frame of audio". One video grid start `T0 = N·1001/60000 s` is a fractional audio
-tick, so the first sample needs a floor or round rule (timing.md §3.4, §8).
+tick, so the first sample needs a floor or round rule (timing.md §7.2, §8).
 
 **A/V sync recipes today:**
 
@@ -1677,8 +1679,8 @@ no recovery path; loss shows as incomplete frames and stats. `FATAL_ERROR` has f
 
 ## 10. Errors, ABI and build
 
-**[verified]** unless marked. The ABI summary is migration.md §7.1, the unified library plan
-migration.md §7.2, the binding rules migration.md §10.
+**[verified]** unless marked. The ABI summary is abi.md §1, the unified library plan
+abi.md §2, the binding rules migration.md §8.
 
 **Error model.** 0 is success, negative errno failure. `return -E*` in `lib/src/*.c`: `-EIO` 368,
 `-EINVAL` 312, `-ENOMEM` 136, `-EBUSY` 43, `-ENOTSUP` 27, `-EAGAIN` 3, `-ETIMEDOUT` 1, `-ETIME` 1,
@@ -1691,7 +1693,7 @@ timeouts, manager IPC). Callback returns differ untyped per callback: `get_next_
 frame, `notify_frame_ready < 0` = the app rejects, `notify_event` ignored
 (`st_tx_video_session.c:1922-1928`). Only TX video raises asynchronous errors.
 
-**ABI facts** beyond migration.md §7.1: `VERSION` = `26.01.0.DEV`; `MTL_VERSION_MAJOR/MINOR/LAST/EXTRA`
+**ABI facts** beyond abi.md §1: `VERSION` = `26.01.0.DEV`; `MTL_VERSION_MAJOR/MINOR/LAST/EXTRA`
 go into the generated `mtl_build_config.h` installed under `include/mtl` (`meson.build:5`, `:38-52`);
 `MTL_VERSION_NUM(a,b,c) ((a)<<16|(b)<<8|(c))` (`include/mtl_api.h:44-49`); `mtl_version()` includes
 `__TIMESTAMP__`, git describe and the compiler (`mt_main.c:993`); no header-against-library check;
@@ -1722,7 +1724,7 @@ include guard of `mtl_api.h` sits after the system includes (`:12-21`). Windows:
 (`.github/workflows/msys2_build.yml`), POSIX shims in `lib/windows/win_posix.[ch]`, static DPDK,
 manager IPC `-ENOTSUP` (`mt_instance.c:277-345`); eventfd, `poll` and UNIX sockets need portable
 equivalents; `lib/windows/win_posix.h` defines no errno shims, and `ESHUTDOWN` and `ESTALE` do not
-exist in the UCRT (why the unified `MTL_E*` codes carry fixed Linux values, deployment.md §6).
+exist in the UCRT (why the unified `MTL_E*` codes carry fixed Linux values, abi.md §5).
 
 **Bindings and the unit harness.** SWIG (`python/swig/pymtl.i`) includes six headers wholesale;
 `__MTL_PYTHON_BUILD__` hides packed RTP structs and bitfields (`include/st_api.h:94`,
@@ -1743,7 +1745,7 @@ C++-clean (`new` as an identifier), so a new core is tested through C shims.
 ## 11. Consumers and ecosystem
 
 **[verified]** unless marked (call sites counted with `git grep`; LOC over
-`.c/.h/.cpp/.hpp/.rs/.py/.i`). Call-site counts and the port of each consumer are migration.md §11.
+`.c/.h/.cpp/.hpp/.rs/.py/.i`). Call-site counts and the port of each consumer are migration.md §9.
 
 ### 11.1 How each consumer uses the API
 
@@ -1954,183 +1956,4 @@ because consumers read `addr[]`, `linesize[]`, `timestamp`, `tfmt`, `rtp_timesta
 per-frame adapter (metadata only); some flags lose meaning (`DISABLE_BULK`, `STATIC_PAD`,
 `FORCE_NUMA`). The session layer's tasklet callbacks and RTP/slice modes cannot be shimmed without a
 thread hop that changes the latency their users chose them for, so they stay as legacy headers on
-the existing code (core.md §1, migration.md §8).
-
-## 12. PR #1610: pitfalls to avoid
-
-PR #1610 (`pr1610` = `14a1f80c`, 16 commits, open; merge base `74c9af0e`) adds a parallel API,
-`include/mtl_session_api.h` (808 lines, 29 functions) and about 3.3 kLOC in `lib/src/new_api/`.
-Only ST20 TX/RX frame mode works. It wraps `st20_tx_create`/`st20_rx_create`, not st20p, and
-re-implements conversion, the frame state machine, drop-when-late and blocking get on top,
-reaching into transport internals (`handle_impl->impl`, `st20_frames[]`, `refcnt`, `tv_meta`:
-`mt_session_video_tx.c:943-946`, `:205`, `:384-401`). Its outcome is migration.md §14 (D-27). The
-defects below sit at the boundary every binding crosses; paths are at `pr1610`, `tx.c`/`rx.c` =
-`mt_session_video_{tx,rx}.c`. R4, R6, R7 and R9 are the review's claim numbers.
-
-| ID | Pitfall | Evidence (`pr1610`) |
-|---|---|---|
-| R4 | completions on a lossy ring: BUFFER_DONE is dropped when the 64-entry event ring is full and the return is ignored; RX BUFFER_READY carries the only reference to the user buffer; VSYNC and FRAME_LATE share the ring; after `stop()` `event_poll` returns `-EAGAIN` before dequeuing | `mt_session_event.c:89-94`; `tx.c:159`, `:193`, `:251`; `mt_session.c:356-358` |
-| R6 | slot scans reorder frames: the application takes the lowest FREE index and the tasklet the lowest READY, so with 3 or more slots the wire order can become A B D C; `main`'s pipelines pick the smallest `seq_number` | `tx.c:106-111`, `:336-340`, `:176-180` |
-| R7 | user timing and meta lost at the engine callback: `video_tx_get_next_frame` ignores its `meta` out-parameter; the transport fills defaults, calls `get_next_frame`, does `frame->tv_meta = meta`, copies `user_meta` and paces only from `meta`, so USER_PACING, USER_TIMESTAMP and `user_meta` are ignored for every frame | `tx.c:171`; `st_tx_video_session.c:1945` at `main` |
-| R9 | destroy unguarded: no refcount or destroying flag, so a thread in `buffer_get`'s `usleep` loop dereferences `s->inner.video_tx` after destroy, and the eventfd is closed under a possible `poll()` | `mt_session.c:212-229`; `tx.c:333`, `:336`, `:430-442` |
-| D1 | = R7; breaks RxTxApp parity for `user_pacing`, `user_timestamp`, `sha_check` (and stores a stack `shas` pointer); the stubbed unit suites could not see it | `tests/unit/new_api/st20_tx_harness.c:1-30` |
-| D2 | RX user-owned copies or converts a whole frame **on the RX tasklet** (`mtl_memcpy`/`video_convert_frame` in `notify_frame_ready`); the sample's destination is a `MAP_SHARED` file mapping, so the tasklet can page-fault on file I/O; `b400c5ec` moved conversion off the tasklet for TX only | `rx.c:118-153`, `:127-147`; `rx_video_user_owned_sample.c:66-99` |
-| D3 | "zero-copy" samples mmap a read-only page-cache file, "register" it (no mapping: `mem_register` only calls `rte_mem_virt2iova`/`mtl_hp_virt2iova`, never `mtl_dma_map`), then unmap before destroy after a stop that does not stop TX | `app/sample/new_api/tx_video_user_owned_sample.c:92`, `:302`, `:362-369` |
-| D4 | a double or foreign `buffer_put` is not rejected; it can store READY over TRANSMITTING | `tx.c:465-485`; `mt_session.h:334` |
-| D5 | `compressed = true` silently creates ST20 (logged "ST22", codec fields never read) | `mt_session.c:80`, `:124-126` |
-| D6 | RX VSYNC never fires: `notify_event` set without `ST20_RX_FLAG_ENABLE_VSYNC` | `rx.c:758-760` |
-| D7 | RX FORCE_NUMA ignored: `socket_id` without the flag; RxTxApp's `force_rx_video_numa` regresses | `rx.c:784-785` |
-| D8 | user-owned TX claim ignores the transport `refcnt`; the transport frees the slot before decrementing (SF-05), so a bind can fail with `-EINVAL` or a backlog entry returns through BUFFER_DONE unsent **[inferred]** | `tx.c:102-114` vs `:337` |
-| D9 | `get_next_frame` force-zeroes the transport `refcnt`, defeating its busy check | `tx.c:205` (since `8ae7ef6d5`) |
-| D10 | `video_session_notify_event` casts `priv` to the session, but the engine passes `ops.priv`, the binding context, so every VSYNC event is posted through a type-confused pointer | `mt_session_video_common.c:246-256`; `tx.c:888`, `rx.c:851` |
-
-The PR's parity suites `#include` production `.c` files with a stubbed transport and missed R7, D1,
-D6 and D9: tests at the engine callback boundary must run against the real tasklet code.
-
-### 12.1 What to reuse, per MS1 task
-
-About 1.1 kLOC of the PR is worth taking, roughly 8 % of MS1 [I]; most of it is T1's tests, the
-config-to-ops mapping of B1 and B2, and RxTxApp's field list for R1. Read it with
-`git show pr1610:<path>`. Short names as above, plus `cmn.c`/`cmn.h` =
-`mt_session_video_common.{c,h}`, `ev.c` = `mt_session_event.c`, `ses.c`/`ses.h` =
-`mt_session.{c,h}`. "Adapt" means take the code and change what the item says; "study" means read
-it as a checklist and write new code; "avoid" lists the defects above.
-
-- **P0**
-  - study: the `mtl-build` skill diff of `1f2fb61d` (unit binary path, stale root-owned
-    `.ninja_deps`, ninja jobserver); `main` has part of it
-- **T1**
-  - adapt: the 9 cases of `tests/unit/pipeline/st20p_tx_test.cpp:1-240` (`a693810c`) and the 4
-    RX cases `f23158c1` appends to `st20p_test.cpp`; the harness parts of `st20p_tx_harness.c`
-    (stubs `:31-42`, ptp and late stubs `:60-74`, `user_meta` allocation `:98-103`, setters,
-    next frame with meta and stats `:152-230`) and RX's `ut20p_inject_meta`. Fold them into
-    `main`'s `ut20p_*` harness files as `#define` renames before the `#include` (`main`
-    `st20p_harness.c:35-37`) and set `ctx->frame_period_ns`, which `tx_st20p_if_frame_late`
-    reads (`st20_pipeline_tx.c:137`)
-  - avoid: a second translation unit that also includes `st20_pipeline_tx.c` (duplicate symbols;
-    `main` links without `--allow-multiple-definition`, `tests/unit/meson.build:7-9`)
-- **H1b**
-  - study: the meson wiring `lib/src/new_api/meson.build:1-13`
-  - avoid: `include/mtl_session_api.h`; the vtable dispatch as an ABI (`ses.h:51-102`)
-- **C0**
-  - study: `ses.h:176-302` as a list of what a session holds (engine handle, socket, converter,
-    per-slot context)
-  - avoid: its layout: a per-slot enum array apart from the engine's `refcnt` (`tx.c:37-55`), a
-    union of impl pointers, magic numbers
-- **C1a**
-  - study: reverse-order teardown `tx.c:417-443`, `rx.c:424-458`
-  - avoid: R9; raw pointer plus magic as a handle (`ses.h:320-331`); release/acquire as the stop
-    flag (`ses.h:461-487`; D-121 needs the state table and a seq_cst re-load); a "signal-safe"
-    stop that calls `vt->stop` and `dbg()` (`ses.c:182-202`)
-- **C1w**
-  - adapt: `cmn.h:153-175`, deadlines in `int64_t` ns
-  - avoid:
-    - `cmn.c:191-221`, `poll()` on the session fd for WT waits, the ms round-up and draining in
-      every data call (OI-63);
-    - `ev.c:71-80`'s libc `write()`, which is a cancellation point: use `syscall(SYS_write)`;
-    - `ev.c:55-65`'s separate `closed` flag: the entry's in-flight counter and RETIRED state
-      replace it;
-    - R4 (`ev.c:19`, `:34-39`, `:82-105`), as today: the lossy ring, `write()` and the user
-      callback on the tasklet (`:98`, `:101-103`)
-- **C1q1**
-  - adapt: `ev.c:41-47`, the eventfd with `EFD_NONBLOCK | EFD_CLOEXEC`, created by
-    `mtl_queue_create` on a fresh entry (MS2a), a failure `-MTL_ENOSPC`
-- **C1b**
-  - avoid: `-EAGAIN` before dequeue after stop (`ses.c:356-358`, `cmn.c:178-180`)
-- **A1**
-  - study: default socket = `mt_socket_id(impl, P)` (`ses.c:68-69`)
-- **E1**
-  - avoid: D9 hid MF1 by zeroing `refcnt` (`tx.c:205`); fix `tv_frame_free_cb`
-- **B1**
-  - adapt: config to `st20_tx_ops` `tx.c:731-818`, checked against `tx_st20p_create_transport`
-    (the PR misses `rtcp` and the unconditional `notify_event` for FATAL and RECOVERY; always
-    set `USER_PACING | RTP_TIMESTAMP_EPOCH`, DSCP, ssrc); binding state allocated **before**
-    `st20_tx_create` (`tx.c:911-919`) without reading `handle_impl->impl` (`:942-946`); the
-    derive decision and the converter cached at create (`cmn.c:27-75`); staging buffers
-    (`cmn.c:77-122`); conversion (`cmn.c:128-168`) generalised to `mtl_plane[]` with strides for
-    `MTL_SUBMIT_SRC_PLANES`, a failure becoming a result
-  - study: the late check `tx.c:73-84` (replaced by the launch decision); buffer fill
-    `tx.c:299-323`; the done path `tx.c:218-255` (now the completion CAS and the result)
-  - avoid: D8, R6, R7, D9, D4 (`tx.c:102-114`, `:166-211`, `:332-362`, `:384-401`, `:465-485`);
-    a failed conversion silently FREE (`tx.c:472-476`); the user-owned backlog `tx.c:512-561`
-    (OI-59, MS2)
-- **B2**
-  - adapt: ops `rx.c:718-793` with `RECEIVE_INCOMPLETE_FRAME` always on (SF-18; the PR makes it
-    optional, `:774-775`), VSYNC and FORCE_NUMA with their flags (D6, D7); all binding state
-    before `st20_rx_create` (the PR runs `user_buf_init` after it, `:895-904`); meta to the unit
-    record (status, RTP, `pkts_recv[]`, `second_field`; `rx.c:266-304`); conversion at dequeue
-    in the caller (`rx.c:311-344`, OI-60)
-  - study: filling `st20_ext_frame` in `query_ext_frame` (`rx.c:204-242`); meta save
-    `rx.c:53-63` (use the slot index, not an address scan)
-  - avoid: D2 (`rx.c:105-173`); the lossy ready ring `:69-81`; a ring made `RING_F_SP_ENQ`
-    although the DMA drain or the packet lcore also completes (`:702-713`); a user
-    `query_ext_frame` on the tasklet (`:211-225`)
-- **A2a**
-  - study: argument checks and dispatch `ses.c:156-308`; frame size `:424-437` for `get_info`
-  - avoid: D5, the stubs below
-- **R1**
-  - study: `c67d3a1e` (with `daf7a167`, `1f4e8ddb`): the ops fields RxTxApp sets
-    (`tests/tools/RxTxApp/src/tx_st20p_app.c:235-356`, `rx_st20p_app.c:212-330`), the frame
-    loops (`tx:51-95`, `rx:67-138`), io_stat (`tx:211-232`, `rx:187-210`), the wire-stats block
-    `rx:359-421`
-  - avoid: replacing the legacy files in place (R1 makes a separate `UnifiedRxTxApp`, and the
-    legacy RxTxApp stays frozen); the output
-    drift of §12.2 rule 10
-- **A2b**
-  - study: io_stats and pcap passthrough `tx.c:672-684`, `rx.c:635-654`
-- **B3**
-  - adapt: the DMA, multi-thread and timing-parser flags `rx.c:776-789`
-- **P1** (the samples)
-  - study: only the wiring `app/sample/meson.build:53-57`, `app/meson.build:444-470`
-  - avoid: the samples `app/sample/new_api/*`, which carry D2 and D3; the new samples expand the
-    sketch examples (A2a runs those on `null:1`)
-
-S0, C2, I1 and X have nothing to take, nor have H1b's run options and P1's CI entries. `doc/new_API/*` is superseded
-(`GRACEFUL_SHUTDOWN.md` describes a guard the code does not have, R9).
-
-**U and UB test ideas** (`tests/unit/new_api/`, rewritten on the new harnesses):
-`EventPollStopWakesBlockedPoll` (tx `:656-677`) is the thread skeleton of
-`Session.stop_close_wake`; `EventPollPreStopReturnsEagain` (`:647`) becomes
-`Session.interrupt_sticky`; `BufferPoolSizeFollowsFrameCount` (`:577`) becomes
-`Tx.pool_count_max`; the `DropWhenLate*SlotReuse` scenarios (`:177-293`) become `slot_decision`
-and `no_reacquire_before_done`, asserting that a reused slot carries no old media time. RX:
-`IncompleteDeliveredWithStatusFlag` (`:121`) becomes `rx_incomplete_status`;
-`StatusCompleteVsReconstructed` (`:232`), `RtpTimestampAndTfmt` (`:331`), `VideoMetaFieldsFilled`
-(`:304`) and `UserMetaPassthrough` (`:289`) become unit-record tests through the real `rv_*`
-path. Invert, do not port, `EventPostDropsOnFullBumpsCounter` (tx `:599`),
-`BuffersDroppedWhenReadyRingFull` (rx `:99`) and `DroppedMonotonicWithOverflow` (rx `:215`): they
-pin lossy behaviour, and the contract is `Results.backpressure`. Do not copy the harness technique
-of `st20_tx_harness.c:19-49` (the binding `.c` over a fake transport); UB tests use `main`'s
-`tests/unit/session/st20_tx_harness.c` style, the real `st_tx_video_session.c` with
-`ut_txv_txq_burst` stubbed (`:131`).
-
-### 12.2 Rules for an implementing agent
-
-1. Never bypass the engine's `get_next_frame` meta: fill `tfmt`, `timestamp` = N·T, `user_meta`
-   and `second_field` in the callback from the descriptor; never write `st_frame_trans.tv_meta`
-   or `refcnt` (R7, D1, D9).
-2. No lowest-index slot scans for pick-up or acquire; pick-up is the descriptor at the pick
-   cursor (R6).
-3. No lossy queue, no syscall and no user callback on a tasklet: a result's place is reserved at
-   acquire, a wake is a bitmap bit flushed by the scheduler (R4).
-4. No copy or conversion on the RX tasklet (D2); a TX conversion failure is a result.
-5. Every option sets its engine flag, and the core always sets RX INCOMPLETE (D6, D7, SF-18);
-   `notify_event`'s `priv` is the binding context (D10).
-6. Handles are generation-checked and close is deferred (R9, D4).
-7. An unsupported configuration returns `-MTL_ENOTSUP` with `MTL_REASON_NOT_IMPLEMENTED`, never a
-   silent remap or no-op. The PR has D5, a stub `mtl_session_set_block_timeout`
-   (`ses.c:600-609`), `plugin_device` never read although RxTxApp sets it
-   (`tx_st20p_app.c:298`), and slice mode half-wired (`tx.c:893-899`).
-8. No fake DMA registration: `tx.c:567-605` only calls `virt2iova` with an `iova = 0` fallback,
-   and `buf.c:278-295` returns base + offset, wrong unless the region is IOVA-contiguous (D3).
-9. Unit harnesses on `main`: no `--allow-multiple-definition` (the PR's
-   `tests/unit/meson.build:7`), stubs by `#define` rename, one translation unit per included
-   production `.c`, UB tests on the real tasklet code.
-10. Output parity (D-110): the shell's `compat_log.c` prints `st20_pipeline_tx.c:1175` and
-    `st20_pipeline_rx.c:1104` in their format (`notice`, with the literal `st20p_tx_create` and
-    `st20p_rx_create`, not their own `__func__`) and the `TX_st20p(%d), frame get try …` line
-    (`st20_pipeline_tx.c:680`) from the core's counters; the PR prints others (`tx.c:958-961`, `rx.c:906-911`). In
-    RxTxApp the PR renamed "get frame time out" to "get buffer time out" (`tx_st20p_app.c:71`,
-    `rx_st20p_app.c:77`), dropped the `notify_event` logs, used `timeout = -1` (a `uint32_t`,
-    about 49 days, so the RX `auto_stop` count `rx:78-91` never fires) and kept the SHA in a
-    stack `shas` pointer (`tx:73-77`; now an `MTL_META_USER` record).
+the existing code (core.md §1, abi.md §6).

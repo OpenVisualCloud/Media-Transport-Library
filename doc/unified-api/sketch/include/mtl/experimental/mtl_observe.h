@@ -132,7 +132,7 @@ struct mtl_tx_result_full {
   int32_t max_packet_lateness_ns;
   uint32_t indices_skipped_before; /* media indices before it without a unit of the
                                       application's; the underrun policy sent what it
-                                      sends for them (timing.md §6.3) */
+                                      sends for them (timing.md §6.4) */
   uint32_t samples_padded;   /* audio */
   uint32_t samples_dropped;  /* audio */
   uint32_t samples_inserted; /* audio */

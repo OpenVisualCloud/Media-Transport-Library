@@ -12,7 +12,7 @@
  * opaque type, so it needs no legacy header. It is legacy tier, not part of MTL_1.0: its
  * function has its own version node (MTL_UNIFIED_EXPERIMENTAL_<rev>_BRIDGE, then
  * MTL_LEGACY_BRIDGE from release F), the header moves to mtl/legacy/ at F, and both leave
- * the public set with mtl_init() (migration.md §7.2, §8.3).
+ * the public set with mtl_init() (abi.md §2, §6.3).
  */
 
 #ifndef MTL_EXPERIMENTAL_MTL_LEGACY_H

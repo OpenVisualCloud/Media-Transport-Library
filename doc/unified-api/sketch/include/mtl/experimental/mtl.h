@@ -12,7 +12,7 @@
  * the prose disagrees, the header wins (sketch/README.md).
  *
  * libmtl exports this API in symbol version nodes per milestone, and a node that a release
- * carries never changes again (migration.md §7.2). A function is exported from the milestone its comment ends with, (MS1) to (MS7), which is
+ * carries never changes again (abi.md §2, §3). A function is exported from the milestone its comment ends with, (MS1) to (MS7), which is
  * also the argument of its call-class macro, MTL_API_CP(n) and the others; this header
  * declares the whole design, and a call to a function of a milestone above MTL_LEVEL fails
  * to compile, naming the milestone (the availability block below). A function tagged
@@ -655,7 +655,7 @@ MTL_API_DP(1) int mtl_time_now(mtl_instance_h mt, int64_t* tai_ns,
    terms and accepts it only when the reduced value has num <= 4194303 and den <= 1023, the
    widths of the rate fields of the IPMX Media Info Block (VSF TR-10-2 §10); then num x den
    < 2^32 and every conversion between ns, indices and ticks is exact in 64-bit integers
-   (timing.md §3.5).
+   (timing.md §3.3).
    {0, 0} means "not set"; exactly one zero term is -MTL_EINVAL. */
 struct mtl_rational {
   uint64_t num;
@@ -967,7 +967,7 @@ static inline int mtl_flow_parse(struct mtl_flow* f, const char* text) {
    (FIELD_RATE): legacy fps and names like 1080i59.94 count fields. The engines run 1 to
    120 frames per second; outside that range, and before the rate's milestone (MS1: the
    rates of the legacy enum st_fps, interlaced: half of them; any rate MS2a), -MTL_ENOTSUP
-   (contract.md §3.3). With video.detect ON, fps is the largest rate accepted ({0, 0}: 120,
+   (contract.md §3.4). With video.detect ON, fps is the largest rate accepted ({0, 0}: 120,
    the engines' maximum) and sizes the scheduler quota. */
 struct mtl_raster {
   uint32_t width;
@@ -1005,11 +1005,11 @@ enum mtl_packing { /* enum st20_packing: the same values and default */
   MTL_PACKING_GPM_SL = 2,
 };
 /* ST 2110-21 sender type as requested; create grants a type and reports it in the stat
-   info.sender_type, the SDP's TP (contract.md §3.3). Under the IPMX profile N keeps its CMAX
+   info.sender_type, the SDP's TP (contract.md §3.6). Under the IPMX profile N keeps its CMAX
    and adds the IPMX VRX (TP=2110TPN). */
 enum mtl_sender_type { /* enum st21_pacing: the same values */
   MTL_SENDER_N = 0,  /* ST21_PACING_NARROW: the gapped schedule, defined only for the
-                        formats of ST 2110-21 §6.3.1 (contract.md §3.3); on any other format
+                        formats of ST 2110-21 §6.3.1 (contract.md §3.6); on any other format
                         create grants NL, and W until the linear schedule lands (MS5).
                         cvideo: N on those formats, NL on the others (ST 2110-22 §5.3).
                         Grants from MS2a; MS1 sends every type as the legacy API does */
@@ -1032,7 +1032,7 @@ struct mtl_video_config {
                                bound the stream and size the pool, fps is the largest frame
                                rate and sizes the scheduler quota ({0, 0}: 120 frames per
                                second), scan must be MTL_PROGRESSIVE and every scan is
-                               accepted (contract §3.3) */
+                               accepted (contract §3.5) */
   uint32_t format;          /* enum mtl_video_format; 0 = from app_format */
   uint32_t app_format;      /* mtl_format.h; 0 = format itself, no conversion */
   uint32_t packing;         /* enum mtl_packing */
@@ -1310,7 +1310,7 @@ struct mtl_session_config {
                                           submit (video.app_format other than the
                                           transport format, or MTL_SESSION_TX_SRC_PLANES),
                                           the submit's work C (latency_min_ns, contract.md
-                                          §3.5): the launch delay is the fewest index
+                                          §3.9): the launch delay is the fewest index
                                           steps (fields when interlaced, always whole
                                           frames) that meet it on either parity (the stat
                                           info.launch_delay, timing.md §5.2). Without a
@@ -1383,7 +1383,7 @@ struct mtl_leg_info {
 };
 /* a mode outside ST 2110: MTL_CVIDEO_VBR_MAX, a transport format outside RFC 4175
    (mtl_format.h), MTL_PCM8, MTL_PKT_PACE_ASAP, MTL_SUBMIT_EXACT; video sender types the
-   wire does not meet (contract.md §3.3): in MS1 NL, N on a format outside ST 2110-21
+   wire does not meet (contract.md §3.6): in MS1 NL, N on a format outside ST 2110-21
    §6.3.1, and interlaced or PsF N; from MS2a only SD interlaced N, until E5b */
 #define MTL_INFO_NON_COMPLIANT 0x1u
 #if defined(MTL_LATER)
@@ -1397,7 +1397,7 @@ struct mtl_leg_info {
    grid */
 #define MTL_INFO_RTP_OFF_GRID 0x20u
 /* latency_max_ns < latency_min_ns: pool_count >= ceil(latency_min_ns / U) + 1, U the unit
-   period, makes it feasible; a consumer adds the units it holds (contract §3.5) */
+   period, makes it feasible; a consumer adds the units it holds (contract §3.9) */
 #define MTL_INFO_LATENCY_INFEASIBLE 0x40u
 /* both legs on one instance port: ST 2022-7 then covers loss on the network paths, not a
    NIC or link failure. Create accepts it and logs one WARNING line (contract.md §14.1) */
@@ -1424,7 +1424,7 @@ struct mtl_session_info {
                                the pool region, §9.6), a multiple of 64; video and cvideo
                                RX: >= unit_bytes (of the maximum) + MTL_RX_TAIL_BYTES */
   /* For framework latency queries; never negative; recomputed by every call from the
-     current format and options and C (contract §3.5). C is the caller's work per unit
+     current format and options and C (contract §3.9). C is the caller's work per unit
      inside dequeue (RX) or submit (TX), held once in min: create's calibration (the dry
      run times one unit of the conversion the configuration implies); from MS2a it rises
      only when the 1 s window of convert_ns exceeds it in two consecutive windows, to that

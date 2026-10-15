@@ -3,18 +3,26 @@
 | | |
 |---|---|
 | Status | The porting guide, and the map the legacy wrappers on the core implement. The headers in [sketch/include/mtl/experimental/](sketch/include/mtl/experimental/) are normative: where this page and a header disagree, the header wins |
-| Audience | application authors, framework and codec plugin authors, binding maintainers, implementers of the legacy pipeline wrappers |
+| Audience | application authors, codec plugin authors, binding maintainers, implementers of the legacy pipeline wrappers |
 
-What changes when code written against `mtl_api.h`, `st_pipeline_api.h` and the session headers
-(`st20_api.h` … `st41_api.h`) moves to the unified API (`mtl.h` and its optional headers): the
-call map, the field map of every legacy `ops` struct, the enum tables, coexistence, the library
-and ABI plan, hiding the legacy headers, the codec plugin ABI v2, and notes and recipes per
-consumer. The same maps are what the legacy `st*p_*` pipelines implement when they become
-wrappers on the core (st20p in MS2, st22p, st30p and st40p in MS4; §6.3): a legacy `ops` struct
-is translated field by field as §4 says. Read [concepts.md](concepts.md) for the model and
-[contract.md](contract.md) for the normative behaviour;
+This page moves code from today's MTL API to `mtl.h` and its optional headers. Today's API is
+`mtl_api.h`, `st_pipeline_api.h` and the session headers (`st20_api.h` … `st41_api.h`). The legacy
+`st*p_*` pipelines implement the same maps when they become wrappers on the core (§6.3): a legacy
+`ops` struct is translated field by field as §4 says. Read [concepts.md](concepts.md) for the model
+and [contract.md](contract.md) for the normative behaviour;
 [concepts.md §12](concepts.md#12-coming-from-the-legacy-api) shows an st20p program side by side
 with the unified one.
+
+**Start here.**
+
+| Job | Sections |
+|---|---|
+| port an application | [§1](#1-what-changes-for-an-application), [§2](#2-call-map-per-legacy-family), [§4](#4-field-maps), [§5](#5-enum-tables); find your mode in [§4.16](#416-coverage-of-todays-modes) |
+| port a framework plugin (GStreamer, FFmpeg, OBS) | [frameworks.md](frameworks.md) |
+| port a codec plugin | [§7](#7-codec-plugin-abi-v2-mtl_pluginh) |
+| maintain a language binding | [§8](#8-language-bindings) |
+| implement a legacy pipeline wrapper | [§6.3](#63-shared-engines-separate-wire-defaults), [§6.5](#65-the-legacy-behaviour-ledger) |
+| package or distribute libmtl: versions, ABI, the legacy headers | [abi.md](abi.md) |
 
 ## 1. What changes for an application
 
@@ -82,13 +90,10 @@ with the unified one.
 - **Blocking.** `*_FLAG_BLOCK_GET` and `*_set_block_timeout()` become the `timeout_ns` argument (0 =
   do not wait, `MTL_FOREVER`); `*_wake_block()` becomes `mtl_session_interrupt(s, 1)`, sticky until
   `(s, 0)`. Event loops use `mtl_queue_create` and `mtl_queue_arm` (MS2a): one queue for any
-  number of sessions. A report names a session once and disarms it: serve it with timeout-0 calls
-  and arm it again with what you want next. A loop sleeps in `mtl_queue_wait`, and the
-  application's threads wake it with `mtl_queue_post`; a framework's loop takes the descriptor (an
-  eventfd, a `HANDLE` on Windows) and sleeps on it only after `mtl_queue_wait(q, …, 0)` returned
-  `-MTL_EAGAIN` ([contract.md §7.2](contract.md#72-queues-ms2)).
+  number of sessions. The protocol (arm, serve each report with timeout-0 calls, sleep only after
+  `-MTL_EAGAIN`, wake the loop with `mtl_queue_post`) is [contract.md §7.2](contract.md#72-queues-ms2).
 - **Several threads.** `mtl_rx_release()` and `mtl_tx_acquire()` work from any thread. Set
-  `MTL_SESSION_MT_SUBMIT` when several threads submit (§12.3).
+  `MTL_SESSION_MT_SUBMIT` when several threads submit (frameworks.md §6).
 - **Latency parity** with today's tasklet callbacks (MXL bridge, fwd samples, slice users) comes
   from busy polling with timeout 0; `mtl_session_set_inline_notify()` stays under `MTL_LATER` and
   is added only if a measurement shows busy polling misses the target (D-04). **Signals**: the library installs no
@@ -109,7 +114,7 @@ with the unified one.
 - **Back-pressure.** When unread results fill the results ring, acquire returns `-MTL_EAGAIN` with
   `status.blocked_on = MTL_BLOCKED_RESULTS`. Reap every ready result before each submit, and no
   acquire waits on results; with `MTL_SESSION_MT_SUBMIT` a blocking acquire uses a finite timeout
-  and reaps on `-MTL_EAGAIN` instead (§12.3). The ring's size and the rule:
+  and reaps on `-MTL_EAGAIN` instead (frameworks.md §6). The ring's size and the rule:
   [contract.md §5.5](contract.md#55-back-pressure).
 - **RX.** `unit.status` is `MTL_RX_COMPLETE` or `MTL_RX_INCOMPLETE`; `unit.flags` carries
   `MTL_UNITF_*`; `unit.missed_before` counts units the pool could not take. Detail:
@@ -146,7 +151,7 @@ against RX 30000 + 2·idx (`st_tx_ancillary_session.c:1697`, `st_rx_ancillary_se
 
 | Legacy | Unified |
 |---|---|
-| `mtl_init(&p)` | `mtl_instance_open(&ip, &mt)`; `MTL_INSTANCE_SHARED` for plugins sharing one instance (§11.7); `ip` NULL reads `MTL_PORTS` |
+| `mtl_init(&p)` | `mtl_instance_open(&ip, &mt)`; `MTL_INSTANCE_SHARED` for plugins sharing one instance (frameworks.md §3); `ip` NULL reads `MTL_PORTS` |
 | `mtl_start()`, `mtl_stop()` | none: open starts the devices, close stops them |
 | `mtl_uninit()`, `mtl_abort()` | `mtl_instance_close(mt, timeout)` (or `mtl_instance_shutdown()` with flags and a report); `mtl_instance_abort(mt)` (AS) |
 | `mtl_ptp_read_time()`, `_raw()` | `mtl_time_now(mt, &tai, NULL, NULL)` (returns `MTL_TIMEF_*`; the last two take CLOCK_MONOTONIC and CLOCK_REALTIME of the same instant); `mtl_time_convert()` (`mtl_sync.h`) |
@@ -160,7 +165,7 @@ against RX 30000 + 2·idx (`st_tx_ancillary_session.c:1697`, `st_rx_ancillary_se
 | `mtl_is_manager_alive()` | `mtl_instance_get_health()` flag `MTL_HEALTH_MANAGER_LOST`; `MTL_EVENT_MANAGER_LOST` |
 | `mtl_hp_malloc()`, `mtl_dma_mem_alloc()`; `mtl_dma_map()`; `*_free()`, `mtl_dma_unmap()`; `mtl_hp_virt2iova()`, `mtl_dma_mem_iova()` | `mtl_mem_alloc()`; `mtl_mem_import()`; `mtl_mem_close()` (retires at the last reference); no IOVA call: MTL maps a region into every port and DMA engine a session needs, and `mtl_session_attach()` takes regions; `mtl_mem_get_info()` |
 | `mtl_version()`; `mtl_memcpy_action()` (Python) | `mtl_library_version()`, `mtl_library_version_num()`; `mtl_unit_copy_in()`, `mtl_unit_copy_out()`, `mtl_unit_copy_plane_in()`, `_out()` (stride-aware) |
-| `mtl_para_*()`, `st_txp_para_*()`, `st_rxp_para_*()` | not needed: the structs bind cleanly (§10.1) |
+| `mtl_para_*()`, `st_txp_para_*()`, `st_rxp_para_*()` | not needed: the structs bind cleanly (§8.1) |
 | `mtl_get_lcore()`, `mtl_bind_to_lcore()`, `mtl_udma_*`, `mtl_memcpy()`, `mtl_sleep_us()`, `mtl_delay_us()`, `mtl_thread_setname()`, `mtl_get_if_ip()`, `mtl_size_page_align()` | removed; sessions request DMA with `MTL_OPT_DMA` |
 | `mtl_sch_create()`, `mtl_sch_register_tasklet()` | removed |
 | `mtl_lcore_shm_print()`, `_clean()` (`mtl_lcore_shm_api.h`, the `app/tools/lcore_shmem_mgr.c` tool) | an internal admin tool. With EK6 ([engine.md](engine.md); also for legacy users) the SysV lcore table is gone: these calls report nothing and leave at the freeze; `doc/shm_lcore.md` and `docker/README.md:121-134` are rewritten for `MTL_CPUARB_LOCKS` with a shared `MTL_OPT_RUNTIME_DIR` |
@@ -218,7 +223,7 @@ way (§2.3).
 | `notify_timing_parser_result` (audio, every 200 ms per port) | `mtl_rx_detail.timing[]` per unit and leg (`dpvr_max_ns`, `ipt_max_ns`, `tsdf_ns`); stats `tp.*` |
 | `st40p_*_get_udw_buff_addr()`, `*_max_udw_buff_size()`; `struct st40_frame_info`, `struct st40_meta`; `st40_tx_get_framebuffer()` | `u.plane[1].addr` and `u.plane[1].rows` (`sc.anc.max_udw_words`); the entries of `u.plane[0]` (`mtl_anc_table`), `u.used` = `meta_num`; `mtl_session_get_slot()` ([contract.md](contract.md) §5.7) |
 | `st41_rx_*` (RTP level only today) | `MTL_UNIT_PACKETS` reproduces it; frame units on RX are new |
-| `st22_encoder_register()`, `st_plugin_register()` | plugin ABI v2 (§9) |
+| `st22_encoder_register()`, `st_plugin_register()` | plugin ABI v2 (§7) |
 
 ### 2.4 Shared helpers (`st_api.h`, `st_pipeline_api.h`, `st_convert_api.h`, `st40_api.h`)
 
@@ -245,7 +250,7 @@ way (§2.3).
 `sc.anc`, `f` = `sc.fastmeta`. `MTL_OPT_X = v` means one `struct mtl_option` in `sc.options` (or
 `ip.options`); "(port i)" means scope i + 1. Leg i is legacy session port i
 (`MTL_SESSION_PORT_P` = 0, `_R` = 1), `sc.flows[i]`. Conversion words: **same**, **+1**, **flag →
-option**, **callback → call**, **removed** (D-87; no unified home, §8.4), **`MTL_LATER`**
+option**, **callback → call**, **removed** (D-87; no unified home, coverage.md §4.5), **`MTL_LATER`**
 (declared in the sketch only: Phase 7, created timelines), **not carried**. "§4.1"
 means the row converts as in §4.1; each struct table starts by listing those fields, then gives the
 rest.
@@ -288,7 +293,7 @@ as `if (!u.media_tai_ns)` lets NONE through, because NONE is not 0 (and 0 is a r
 | `*_TX_FLAG_USER_PACING` | `sc.media_mode = MTL_MEDIA_TAI` + `u.media_tai_ns`, or per unit `MTL_SUBMIT_NOT_BEFORE` + `u.launch_tai_ns` | flag → mode; TAI media time snaps to the grid (`MTL_OPT_SNAP_MODE`) |
 | `*_TX_FLAG_EXACT_USER_PACING` | `MTL_SESSION_EXACT_LAUNCH` in `sc.flags` at create, then per unit `MTL_SUBMIT_EXACT` + `u.launch_tai_ns` | flag → session flag + per-unit flag (without the session flag `MTL_SUBMIT_EXACT` is `-MTL_EINVAL`); reported with `MTL_INFO_NON_COMPLIANT` |
 | `*_TX_FLAG_USER_TIMESTAMP` | `MTL_SUBMIT_RTP_TS` + `u.rtp`: `FMT_TAI`: the user's TAI in ticks, rounded to nearest (`st10_tai_to_media_clk`), with `MTL_MEDIA_TAI` and `u.media_tai_ns` = that TAI; `FMT_MEDIA_CLK`: the value | MS3; the legacy RTP bytes. TAI mode alone if the snapped, floored RTP is fine (MS1). Needs INDEX or TAI (`RTP_TS_AUTO`); a late unit drops, not slips (§1.6) |
-| `*P_TX_FLAG_DROP_WHEN_LATE` | `MTL_OPT_LATE_POLICY = MTL_LATE_DROP` | the INDEX/TAI default; inert without USER_PACING, as today; the legacy slip has no INDEX/TAI equivalent (DEFER is AUTO only, [timing.md](timing.md) §6.2) |
+| `*P_TX_FLAG_DROP_WHEN_LATE` | `MTL_OPT_LATE_POLICY = MTL_LATE_DROP` | the INDEX/TAI default; inert without USER_PACING, as today; the legacy slip has no INDEX/TAI equivalent (DEFER is AUTO only, [timing.md](timing.md) §6.3) |
 | `*_FLAG_ENABLE_VSYNC` | `MTL_OPT_EPOCH_TICK = 1` | `MTL_EVENT_EPOCH_TICK` per unit period |
 | `*P_*_FLAG_BLOCK_GET`, `*_set_block_timeout()` | the `timeout_ns` argument | no flag = 0; `*_wake_block()` → `mtl_session_interrupt(s, 1)` |
 | `*_RX_FLAG_RECEIVE_INCOMPLETE_FRAME` | `MTL_OPT_RX_INCOMPLETE` | the unified default delivers incomplete units; without the legacy flag set `MTL_RX_DISCARD` |
@@ -323,7 +328,7 @@ as `if (!u.media_tai_ns)` lets NONE through, because NONE is not 0 (and 0 is a r
 | `ptp_get_time_fn` | `ip.time_source = MTL_TIME_SOURCE_USER` + `mtl_time_set_reference(mt, 0, &ref)` with `MTL_TIMEREF_USER_PAIR` and `ref.user_tai_ns`, `ref.user_monotonic_ns` | pull → push; a `CLOCK_TAI` reader → `MTL_TIME_SOURCE_CLOCK_TAI` |
 | `ptp_sync_notify` | stats `time.offset_ns`, `time.utc_offset_s`, `time.last_sync_age_ns`; `MTL_EVENT_TIME_STATE`, `_TIME_STEP` | callback → stats and events |
 | `kp`, `ki` | `MTL_OPT_PTP_PI_KP`, `MTL_OPT_PTP_PI_KI` | double → integer × 1e9 |
-| `dump_period_s`; `stat_dump_cb_fn` | `MTL_OPT_STAT_DUMP_S`; `mtl_stat_list` + `mtl_stat_read` | same; callback → the application's loop (§11.8) |
+| `dump_period_s`; `stat_dump_cb_fn` | `MTL_OPT_STAT_DUMP_S`; `mtl_stat_list` + `mtl_stat_read` | same; callback → the application's loop (frameworks.md §11) |
 | `pacing`, `pkt_udp_suggest_max_size` | `MTL_OPT_PACING` (a session key set on the instance); `MTL_OPT_MAX_UDP_PAYLOAD` (`instance.max_udp_payload`, the default of every TX session's `max_udp_payload` field; RX takes the sender's SDP) | §5.2; same |
 | `data_quota_mbs_per_sch`, `tasklets_nb_per_sch` | `MTL_OPT_SCHED_QUOTA_MBS`, `MTL_OPT_TASKLETS_PER_SCHED` | same |
 | `tx_audio_sessions_max_per_sch`, `rx_…` | `MTL_OPT_SCHED_TX_AUDIO_MAX`, `MTL_OPT_SCHED_RX_AUDIO_MAX` | same |
@@ -340,7 +345,7 @@ as `if (!u.media_tai_ns)` lets NONE through, because NONE is not 0 (and 0 is a r
 |---|---|
 | `BIND_NUMA` (0), `UDP_LCORE` (10) | removed |
 | `PTP_ENABLE` (1) | `ip.time_source = MTL_TIME_SOURCE_PTP_BUILTIN`; on a VF it works as today (below). Without the flag and without `ptp_get_time_fn`: leave `time_source` 0 (AUTO, §1.6) |
-| `RX_SEPARATE_VIDEO_LCORE` (2), `TX_VIDEO_MIGRATE` (3), `RX_VIDEO_MIGRATE` (4) | `MTL_OPT_RX_SEPARATE_VIDEO_LCORE = 1` (an instance key: every shared open must agree, §11.7); `MTL_OPT_MIGRATE = 1` (`session.migrate`) set on the instance, the default of its sessions, one key for TX and RX |
+| `RX_SEPARATE_VIDEO_LCORE` (2), `TX_VIDEO_MIGRATE` (3), `RX_VIDEO_MIGRATE` (4) | `MTL_OPT_RX_SEPARATE_VIDEO_LCORE = 1` (an instance key: every shared open must agree, frameworks.md §3); `MTL_OPT_MIGRATE = 1` (`session.migrate`) set on the instance, the default of its sessions, one key for TX and RX |
 | `TASKLET_THREAD` (5), `TASKLET_SLEEP` (6), `ENABLE_HW_TIMESTAMP` (8) | `MTL_INSTANCE_TASKLET_THREAD` (0x4), `MTL_INSTANCE_TASKLET_SLEEP` (0x8), `MTL_INSTANCE_HW_TIMESTAMP` (0x10) |
 | `RXTX_SIMD_512` (7), `PTP_PI` (9) | `MTL_OPT_SIMD_512 = 1`, `MTL_OPT_PTP_PI = 1` |
 | `RANDOM_SRC_PORT` (11), `MULTI_SRC_PORT` (12) | `MTL_OPT_SRC_PORT_MODE` = `MTL_SRC_PORT_RANDOM` / `MTL_SRC_PORT_MULTI` (a session key) |
@@ -364,11 +369,12 @@ VFs. `CLOCK_NOT_OWNED` is only for a request to steer a PHC MTL does not own.
 
 ### 4.4 `st20p_tx_ops`, `ST20P_TX_FLAG_*`
 
-`sc.direction = MTL_TX`, `sc.essence = MTL_VIDEO`, `sc.unit = MTL_UNIT_FRAME`. As §4.1: `port`
-(`struct st_tx_port`), `fps`, `interlaced`, `framebuff_cnt`, `name`, `priv`, `socket_id`,
-`tx_dst_mac`, `rtp_timestamp_delta_us`, the four `notify_*` callbacks, and the flags `USER_P_MAC`
-(0), `USER_R_MAC` (1), `USER_PACING` (3), `USER_TIMESTAMP` (4), `ENABLE_VSYNC` (5), `ENABLE_RTCP`
-(7), `EXACT_USER_PACING` (8), `FORCE_NUMA` (11), `DROP_WHEN_LATE` (12), `BLOCK_GET` (15).
+`sc.direction = MTL_TX`, `sc.essence = MTL_VIDEO`, `sc.unit = MTL_UNIT_FRAME`.
+
+| Converted as §4.1 | Legacy names |
+|---|---|
+| fields | `port` (`struct st_tx_port`), `fps`, `interlaced`, `framebuff_cnt`, `name`, `priv`, `socket_id`, `tx_dst_mac`, `rtp_timestamp_delta_us`, the four `notify_*` callbacks |
+| flags (bit) | `USER_P_MAC` (0), `USER_R_MAC` (1), `USER_PACING` (3), `USER_TIMESTAMP` (4), `ENABLE_VSYNC` (5), `ENABLE_RTCP` (7), `EXACT_USER_PACING` (8), `FORCE_NUMA` (11), `DROP_WHEN_LATE` (12), `BLOCK_GET` (15) |
 
 | Legacy field | New field or option | Conversion |
 |---|---|---|
@@ -387,11 +393,12 @@ VFs. `CLOCK_NOT_OWNED` is only for a request to steer a PHC MTL does not own.
 
 ### 4.5 `st20p_rx_ops`, `ST20P_RX_FLAG_*`
 
-`sc.direction = MTL_RX`, `sc.essence = MTL_VIDEO`, `sc.unit = MTL_UNIT_FRAME`. As §4.1 or §4.4:
-`port` (`struct st_rx_port`), `width`, `height`, `fps`, `interlaced`, `transport_linesize`,
-`device`, `framebuff_cnt`, `name`, `priv`, `socket_id`, `notify_frame_available`, `notify_event`,
-and the flags `ENABLE_VSYNC` (1), `ENABLE_RTCP` (4), `SIMULATE_PKT_LOSS` (5), `FORCE_NUMA` (6),
-`BLOCK_GET` (15), `RECEIVE_INCOMPLETE_FRAME` (16, inverted default).
+`sc.direction = MTL_RX`, `sc.essence = MTL_VIDEO`, `sc.unit = MTL_UNIT_FRAME`.
+
+| Converted as §4.1 or §4.4 | Legacy names |
+|---|---|
+| fields | `port` (`struct st_rx_port`), `width`, `height`, `fps`, `interlaced`, `transport_linesize`, `device`, `framebuff_cnt`, `name`, `priv`, `socket_id`, `notify_frame_available`, `notify_event` |
+| flags (bit) | `ENABLE_VSYNC` (1), `ENABLE_RTCP` (4), `SIMULATE_PKT_LOSS` (5), `FORCE_NUMA` (6), `BLOCK_GET` (15), `RECEIVE_INCOMPLETE_FRAME` (16, inverted default) |
 
 | Legacy field | New field or option | Conversion |
 |---|---|---|
@@ -412,13 +419,12 @@ and the flags `ENABLE_VSYNC` (1), `ENABLE_RTCP` (4), `SIMULATE_PKT_LOSS` (5), `F
 
 ### 4.6 `st20_tx_ops`, `ST20_TX_FLAG_*`
 
-`sc.essence = MTL_VIDEO`, `v.app_format = 0`. As §4.1 or §4.4: the flow fields, `type`, `fps`,
-`interlaced`, `name`, `priv`, `framebuff_cnt`, `socket_id`, `rtp_timestamp_delta_us`,
-`rtcp.buffer_size`, `start_vrx`, `pad_interval`, `tx_hang_detect_ms`, `linesize` (as
-`transport_linesize`), the callbacks, and the flags `USER_P_MAC` (0), `USER_R_MAC` (1), `EXT_FRAME`
-(2), `USER_PACING` (3), `USER_TIMESTAMP` (4), `ENABLE_VSYNC` (5), `ENABLE_STATIC_PAD_P` (6),
-`ENABLE_RTCP` (7), `EXACT_USER_PACING` (8), `RTP_TIMESTAMP_EPOCH` (9, removed), `DISABLE_BULK` (10),
-`FORCE_NUMA` (11).
+`sc.essence = MTL_VIDEO`, `v.app_format = 0`.
+
+| Converted as §4.1 or §4.4 | Legacy names |
+|---|---|
+| fields | the flow fields, `type`, `fps`, `interlaced`, `name`, `priv`, `framebuff_cnt`, `socket_id`, `rtp_timestamp_delta_us`, `rtcp.buffer_size`, `start_vrx`, `pad_interval`, `tx_hang_detect_ms`, `linesize` (as `transport_linesize`), the callbacks |
+| flags (bit) | `USER_P_MAC` (0), `USER_R_MAC` (1), `EXT_FRAME` (2), `USER_PACING` (3), `USER_TIMESTAMP` (4), `ENABLE_VSYNC` (5), `ENABLE_STATIC_PAD_P` (6), `ENABLE_RTCP` (7), `EXACT_USER_PACING` (8), `RTP_TIMESTAMP_EPOCH` (9, removed), `DISABLE_BULK` (10), `FORCE_NUMA` (11) |
 
 | Legacy field | New field or option | Conversion |
 |---|---|---|
@@ -431,14 +437,11 @@ and the flags `ENABLE_VSYNC` (1), `ENABLE_RTCP` (4), `SIMULATE_PKT_LOSS` (5), `F
 
 ### 4.7 `st20_rx_ops`, `ST20_RX_FLAG_*`
 
-As §4.1 or §4.5: the flow fields, `type`, `width`, `height`, `fps`, `interlaced`, `name`, `priv`,
-`framebuff_cnt`, `socket_id`, `rx_burst_size`, `ext_frames` (`struct st20_ext_frame[]`:
-`buf_addr`, `buf_iova`, `buf_len`, `opaque`), `rtcp`, `linesize`, `notify_detected`,
-`query_ext_frame`, `gpu_context`, `gpu_direct_framebuffer_in_vram_device_address` (`MTL_MEM_DEVICE`, MS6),
-`rtp_ring_size`, the callbacks, and every flag: `DATA_PATH_ONLY` (0), `ENABLE_VSYNC` (1),
-`ENABLE_RTCP` (2), `SIMULATE_PKT_LOSS` (3), `FORCE_NUMA` (4), `RECEIVE_INCOMPLETE_FRAME` (16),
-`DMA_OFFLOAD` (17), `AUTO_DETECT` (18), `HDR_SPLIT` (19), `DISABLE_MIGRATE` (20),
-`TIMING_PARSER_STAT` (21), `TIMING_PARSER_META` (22), `USE_MULTI_THREADS` (23).
+| Converted as §4.1 or §4.5 | Legacy names |
+|---|---|
+| fields | the flow fields, `type`, `width`, `height`, `fps`, `interlaced`, `name`, `priv`, `framebuff_cnt`, `socket_id`, `rx_burst_size`, `ext_frames` (below), `rtcp`, `linesize`, `notify_detected`, `query_ext_frame`, `gpu_context`, `gpu_direct_framebuffer_in_vram_device_address` (`MTL_MEM_DEVICE`, MS6), `rtp_ring_size`, the callbacks |
+| `ext_frames` | `struct st20_ext_frame[]`: `buf_addr`, `buf_iova`, `buf_len`, `opaque` |
+| flags (bit) | every flag: `DATA_PATH_ONLY` (0), `ENABLE_VSYNC` (1), `ENABLE_RTCP` (2), `SIMULATE_PKT_LOSS` (3), `FORCE_NUMA` (4), `RECEIVE_INCOMPLETE_FRAME` (16), `DMA_OFFLOAD` (17), `AUTO_DETECT` (18), `HDR_SPLIT` (19), `DISABLE_MIGRATE` (20), `TIMING_PARSER_STAT` (21), `TIMING_PARSER_META` (22), `USE_MULTI_THREADS` (23) |
 
 | Legacy field | New field or option | Conversion |
 |---|---|---|
@@ -451,13 +454,12 @@ As §4.1 or §4.5: the flow fields, `type`, `width`, `height`, `fps`, `interlace
 ### 4.8 `st22p_tx_ops`, `st22p_rx_ops`, `ST22P_*_FLAG_*`
 
 `sc.essence = MTL_CVIDEO`, `sc.unit = MTL_UNIT_FRAME`; a codec plugin runs when `c.app_format` is
-not 0. As §4.1, §4.4 or §4.5: `port`, `width`, `height`, `fps`, `interlaced` (into `c.raster`),
-`framebuff_cnt`, `name`, `priv`, `socket_id`, `tx_dst_mac`, the callbacks, `rtcp`,
-`query_ext_frame` (`mtl_rx_provide()`), and the flags TX `USER_P_MAC` (0), `USER_R_MAC` (1), `USER_PACING`
-(3), `USER_TIMESTAMP` (4), `ENABLE_VSYNC` (5), `ENABLE_RTCP` (6), `EXT_FRAME` (8), `FORCE_NUMA` (9),
-`DROP_WHEN_LATE` (12), `BLOCK_GET` (15); RX `DATA_PATH_ONLY` (0, removed), `ENABLE_VSYNC` (1),
-`ENABLE_RTCP` (2), `SIMULATE_PKT_LOSS` (3), `EXT_FRAME` (4), `FORCE_NUMA` (5), `BLOCK_GET` (15),
-`RECEIVE_INCOMPLETE_FRAME` (16).
+not 0.
+
+| Converted as §4.1, §4.4 or §4.5 | Legacy names |
+|---|---|
+| fields | `port`, `width`, `height`, `fps`, `interlaced` (into `c.raster`), `framebuff_cnt`, `name`, `priv`, `socket_id`, `tx_dst_mac`, the callbacks, `rtcp`, `query_ext_frame` (`mtl_rx_provide()`) |
+| flags (bit) | TX `USER_P_MAC` (0), `USER_R_MAC` (1), `USER_PACING` (3), `USER_TIMESTAMP` (4), `ENABLE_VSYNC` (5), `ENABLE_RTCP` (6), `EXT_FRAME` (8), `FORCE_NUMA` (9), `DROP_WHEN_LATE` (12), `BLOCK_GET` (15); RX `DATA_PATH_ONLY` (0, removed), `ENABLE_VSYNC` (1), `ENABLE_RTCP` (2), `SIMULATE_PKT_LOSS` (3), `EXT_FRAME` (4), `FORCE_NUMA` (5), `BLOCK_GET` (15), `RECEIVE_INCOMPLETE_FRAME` (16) |
 
 | Legacy field | New field or option | Conversion |
 |---|---|---|
@@ -475,13 +477,12 @@ not 0. As §4.1, §4.4 or §4.5: `port`, `width`, `height`, `fps`, `interlaced` 
 
 `sc.essence = MTL_CVIDEO`, `c.codec = MTL_CODEC_JPEGXS` (implied today: RFC 9134), `c.app_format =
 0`. The legacy session sends what `get_next_frame` sizes; `c.rate_mode = MTL_CVIDEO_VBR_MAX` keeps
-that on the wire, the unified default CBR pads each unit. As §4.1, §4.6 or §4.7: the flow
-fields, `type`, `width`, `height`, `fps`, `interlaced`, `name`, `priv`, `framebuff_cnt`,
-`socket_id`, `rtcp`, the callbacks, the RTP-level fields (`rtp_ring_size`, `rtp_frame_total_pkts`,
-`rtp_pkt_size`, `notify_rtp_*`), and the flags TX `USER_P_MAC` (0), `USER_R_MAC` (1), `USER_PACING`
-(3), `USER_TIMESTAMP` (4), `ENABLE_VSYNC` (5), `ENABLE_RTCP` (6), `FORCE_NUMA` (8); RX
-`DATA_PATH_ONLY` (0, removed), `ENABLE_VSYNC` (1), `ENABLE_RTCP` (3), `SIMULATE_PKT_LOSS` (4),
-`FORCE_NUMA` (5), `RECEIVE_INCOMPLETE_FRAME` (16).
+that on the wire, the unified default CBR pads each unit.
+
+| Converted as §4.1, §4.6 or §4.7 | Legacy names |
+|---|---|
+| fields | the flow fields, `type`, `width`, `height`, `fps`, `interlaced`, `name`, `priv`, `framebuff_cnt`, `socket_id`, `rtcp`, the callbacks, the RTP-level fields (`rtp_ring_size`, `rtp_frame_total_pkts`, `rtp_pkt_size`, `notify_rtp_*`) |
+| flags (bit) | TX `USER_P_MAC` (0), `USER_R_MAC` (1), `USER_PACING` (3), `USER_TIMESTAMP` (4), `ENABLE_VSYNC` (5), `ENABLE_RTCP` (6), `FORCE_NUMA` (8); RX `DATA_PATH_ONLY` (0, removed), `ENABLE_VSYNC` (1), `ENABLE_RTCP` (3), `SIMULATE_PKT_LOSS` (4), `FORCE_NUMA` (5), `RECEIVE_INCOMPLETE_FRAME` (16) |
 
 | Legacy field | New field or option | Conversion |
 |---|---|---|
@@ -494,13 +495,12 @@ fields, `type`, `width`, `height`, `fps`, `interlaced`, `name`, `priv`, `framebu
 
 ### 4.10 `st30p_tx_ops`, `st30p_rx_ops`, `st30_tx_ops`, `st30_rx_ops`
 
-`sc.essence = MTL_AUDIO`; pipeline and session map alike. As §4.1: the flow fields (or `port` of
-the pipelines), `type`, `framebuff_cnt`, `name`, `priv`, `socket_id`, `rtp_timestamp_delta_us`, the
-callbacks and RTP-level fields, and the flags `USER_P_MAC` (0), `USER_R_MAC` (1), `USER_PACING`
-(3), `ST30_TX_FLAG_USER_TIMESTAMP` (4), `DEDICATE_QUEUE` (7), TX `FORCE_NUMA` (8), RX `FORCE_NUMA`
-(2), `BLOCK_GET` (15), `ST30P_TX_FLAG_DROP_WHEN_LATE` (16), RX `DATA_PATH_ONLY` (0, removed),
-`SIMULATE_PKT_LOSS` (3), `RECEIVE_INCOMPLETE_FRAME` (4), `ENABLE_RTCP` (TX 6, RX 1, removed). Audio
-media indices count samples.
+`sc.essence = MTL_AUDIO`; pipeline and session map alike. Audio media indices count samples.
+
+| Converted as §4.1 | Legacy names |
+|---|---|
+| fields | the flow fields (or `port` of the pipelines), `type`, `framebuff_cnt`, `name`, `priv`, `socket_id`, `rtp_timestamp_delta_us`, the callbacks and RTP-level fields |
+| flags (bit) | `USER_P_MAC` (0), `USER_R_MAC` (1), `USER_PACING` (3), `ST30_TX_FLAG_USER_TIMESTAMP` (4), `DEDICATE_QUEUE` (7), TX `FORCE_NUMA` (8), RX `FORCE_NUMA` (2), `BLOCK_GET` (15), `ST30P_TX_FLAG_DROP_WHEN_LATE` (16), RX `DATA_PATH_ONLY` (0, removed), `SIMULATE_PKT_LOSS` (3), `RECEIVE_INCOMPLETE_FRAME` (4), `ENABLE_RTCP` (TX 6, RX 1, removed) |
 
 | Legacy field | New field or option | Conversion |
 |---|---|---|
@@ -519,11 +519,12 @@ media indices count samples.
 ### 4.11 `st40_tx_ops`, `st40_rx_ops`, `st40p_tx_ops`, `st40p_rx_ops`
 
 `sc.essence = MTL_ANC`. Legacy RX has no `fps`; `n.video` is now required, or all zero to take the
-raster and launch delay of the first video session of its start array (MS6). As §4.1: the flow
-fields (or `port`), `type`, `name`, `priv`, the callbacks and RTP-level fields,
-and the flags `USER_P_MAC` (0), `USER_R_MAC` (1), `USER_PACING` (3), `USER_TIMESTAMP` (4),
-`DEDICATE_QUEUE` (6), `EXACT_USER_PACING` (ST40 7, ST40P 9), `ST40P_TX_FLAG_DROP_WHEN_LATE` (7),
-`BLOCK_GET` (15), RX `DATA_PATH_ONLY` (0, removed), `ENABLE_RTCP` (TX 5, RX 1, removed).
+raster and launch delay of the first video session of its start array (MS6).
+
+| Converted as §4.1 | Legacy names |
+|---|---|
+| fields | the flow fields (or `port`), `type`, `name`, `priv`, the callbacks and RTP-level fields |
+| flags (bit) | `USER_P_MAC` (0), `USER_R_MAC` (1), `USER_PACING` (3), `USER_TIMESTAMP` (4), `DEDICATE_QUEUE` (6), `EXACT_USER_PACING` (ST40 7, ST40P 9), `ST40P_TX_FLAG_DROP_WHEN_LATE` (7), `BLOCK_GET` (15), RX `DATA_PATH_ONLY` (0, removed), `ENABLE_RTCP` (TX 5, RX 1, removed) |
 
 | Legacy field | New field or option | Conversion |
 |---|---|---|
@@ -554,10 +555,12 @@ and the flags `USER_P_MAC` (0), `USER_R_MAC` (1), `USER_PACING` (3), `USER_TIMES
 
 ### 4.12 `st41_tx_ops`, `st41_rx_ops`
 
-`sc.essence = MTL_FASTMETA`. As §4.1: the flow fields, `type` (TX), `interlaced` (`f.video.scan`),
-`name`, `priv`, `framebuff_cnt` (TX), the callbacks and RTP-level fields, and the flags
-`USER_P_MAC` (0), `USER_R_MAC` (1), `USER_PACING` (3), `USER_TIMESTAMP` (4), `DEDICATE_QUEUE` (6),
-`ENABLE_RTCP` (TX 5, RX 1, removed), `ST41_RX_FLAG_DATA_PATH_ONLY` (0, removed).
+`sc.essence = MTL_FASTMETA`.
+
+| Converted as §4.1 | Legacy names |
+|---|---|
+| fields | the flow fields, `type` (TX), `interlaced` (`f.video.scan`), `name`, `priv`, `framebuff_cnt` (TX), the callbacks and RTP-level fields |
+| flags (bit) | `USER_P_MAC` (0), `USER_R_MAC` (1), `USER_PACING` (3), `USER_TIMESTAMP` (4), `DEDICATE_QUEUE` (6), `ENABLE_RTCP` (TX 5, RX 1, removed), `ST41_RX_FLAG_DATA_PATH_ONLY` (0, removed) |
 
 | Legacy field | New field or option | Conversion |
 |---|---|---|
@@ -675,10 +678,10 @@ the one home of a feature's milestone (D-137). Details: [legacy-internals.md](le
 | epoch RTP, `rtp_timestamp_delta_us` | the default (D-10); `tx.rtp_trim_ns` | U-154, U-156 |
 | pacing tuning (`DISABLE_BULK`, `TSC_NARROW`, `STATIC_PAD_P`, `start_vrx`, `pad_interval`) | options `MTL_OPT_VIDEO_*`, `MTL_PACING_SW_NARROW` | U-088, U-162 |
 | two RX threads (auto above 40 Gb/s) | `MTL_OPT_RX_THREADS` | U-217 |
-| field-as-frame interlace with library field parity | `MTL_INTERLACED`: the unit is a field (§12.6) | U-187 |
+| field-as-frame interlace with library field parity | `MTL_INTERLACED`: the unit is a field (frameworks.md §8) | U-187 |
 | ST 2110-40 split by packet, interlace auto-detect | `MTL_ANCF_NEW_RTP` per entry, `sc.anc.detect` | U-263, U-264 |
 | ST 2110-30 build pacing, FIFO, RL warm-up | `MTL_OPT_AUDIO_BUILD_PACING`, `MTL_OPT_AUDIO_FIFO_MS`, `MTL_OPT_AUDIO_RL_*` | U-248…U-250 |
-| ST 2110-22 codec threads, plugin blocking get | `MTL_OPT_CVIDEO_THREADS`; plugin ABI v2 `host->get_work(…, timeout)` (§9) | U-230, U-381 |
+| ST 2110-22 codec threads, plugin blocking get | `MTL_OPT_CVIDEO_THREADS`; plugin ABI v2 `host->get_work(…, timeout)` (§7) | U-230, U-381 |
 | transport layouts outside RFC 4175 (`YUV_422_PLANAR10LE`, `V210`, `*CUSTOM8`) | `mtl_video_format_ext` (`*_NONSTD`), `MTL_INFO_NON_COMPLIANT` | U-194, U-362 |
 | debug knobs in public `ops` (loss simulation, `st40_tx_test_config`, `port_packet_loss[]`) | `mtl_debug_inject()` (debug builds) | U-090, U-223, U-267 |
 | backends: DPDK PMD, native AF_XDP, kernel socket; DPDK AF_XDP and AF_PACKET PMDs | the port name prefix (§4.2); the two DPDK PMDs removed | U-092…U-095 |
@@ -711,7 +714,9 @@ these tables: `mtl_video_format_from_legacy`, `mtl_app_format_from_legacy`,
 `MTL_FPS_48` 13. A raster carries only the rational: `raster.fps = mtl_fps_rational(MTL_FPS_59_94)`
 for a named rate, any other as an exact rational (num ≤ 4194303, den ≤ 1023).
 
-**Interlaced.** Legacy `fps` is the field rate; `raster.fps` is the frame rate. Use
+**Interlaced.** Legacy `fps` is the field rate (`frame_time` is a field period,
+`st_tx_video_session.c:499-518`; the ST 2110-22 box header halves it back, `:865-866`);
+`raster.fps` is the frame rate. Use
 `mtl_raster_from_legacy()` (`mtl_legacy.h`), never a hand-made table:
 
 - `P59_94` → 30000/1001, `P50` → 25, `P60` → 30.
@@ -773,7 +778,7 @@ st21_pacing` → `enum mtl_sender_type` (`NARROW` 0 → `MTL_SENDER_N`, `WIDE` 1
 ## 6. Coexistence
 
 One process may run legacy and unified sessions on one instance while the legacy headers are
-installed (until F+2, §8.3), so a port can be gradual. Both APIs live in one library, libmtl, and
+installed (until F+2, abi.md §6.3), so a port can be gradual. Both APIs live in one library, libmtl, and
 end in the same core and the same engines, as the picture below shows (blue: your code; green:
 MTL):
 
@@ -799,7 +804,7 @@ Unified code reaches the engines through the core and its bindings, which create
 sessions through the legacy session API like any legacy session user. A legacy pipeline becomes a
 wrapper on the core when its essence is on it; until then it runs on the legacy session API as it
 does today. The legacy session API is never wrapped: it stays the engines' interface (§6.3), and
-its headers are hidden from MS7 on (§8). The dotted line is the bridge of §6.2.
+its headers are hidden from MS7 on (abi.md §6). The dotted line is the bridge of §6.2.
 
 ### 6.1 Both header sets in one file
 
@@ -841,14 +846,23 @@ flowchart LR
   in MS1; the user and PTP clocks from MS2a, when a `CLOCK_TAI` function gets `CLOCK_TAI`'s flags;
   [timing.md §2.2](timing.md#the-legacy-bridge-clock)); `mtl_uninit` returns `-EBUSY` while a reference to it is open; C instance keys
   are `-MTL_EBUSY`; from MS2a R keys act on the legacy sessions too and session defaults start from
-  the legacy settings ([contract.md](contract.md) §2.8).
+  the legacy settings (the table below).
+- **Options** on a wrapper:
+
+| Class | MS1 | MS2a (C-BRIDGE) |
+|---|---|---|
+| instance keys marked C | `mtl_set_option` `-MTL_EBUSY` (`OPTION_STATE`), the general rule after open; `mtl_get_option` `-MTL_ENOTSUP` | `mtl_get_option` returns the legacy value where migration.md §4.2 or §4.3 maps one, else `-MTL_ENOTSUP` |
+| instance keys marked R | `-MTL_ENOTSUP` on a wrapper | through the legacy setters, legacy sessions included: `instance.sched_sleep_us` scope 0 → `mtl_sch_set_sleep_us` + `mtl_sch_enable_sleep`; every other R key `-MTL_ENOTSUP` |
+| session keys and typed defaults set on the instance | accepted (the general [contract.md](contract.md) §12.4 rule) for later unified sessions | the initial defaults come from the legacy settings: `pacing` → `caps.pacing`; `pkt_udp_suggest_max_size` → the instance default of the typed `sc.max_udp_payload` (a session's 0 takes it) |
+| session keys and typed defaults, continued | | `SHARED_TX_QUEUE` → `session.tx_queue = MTL_TXQ_SHARED`; the migrate flags → `session.migrate`; the source-port flags → `session.src_port_mode`; `TX_NO_CHAIN` → `caps.tx_copy` |
+
 - On a wrapped instance whose legacy `mtl_start()` has not run yet, unified sessions may be created,
   but `mtl_session_start` is `-MTL_EBUSY` (`WRONG_STATE`) until it has; RxTxApp and KahawaiTest
   start the legacy instance first, or set `MTL_FLAG_DEV_AUTO_START_STOP` (OI-2).
 - It is CP and ships in MS1 (KahawaiTest's unified cases run on its global legacy instance through
   it; ex24 is the MS1 way onto a VF, [examples.md §26](examples.md#26-from-the-legacy-api)).
-  It is legacy tier, not part of `MTL_1.0`: its own version node (§7.2), the header in
-  `mtl/legacy/` from F, and both leave the public set with `mtl_init` (§8.3, D-190).
+  It is legacy tier, not part of `MTL_1.0`: its own version node (abi.md §2), the header in
+  `mtl/legacy/` from F, and both leave the public set with `mtl_init` (abi.md §6.3, D-190).
 
 ### 6.3 Shared engines, separate wire defaults
 
@@ -882,9 +896,11 @@ flowchart LR
 A legacy ST 2110-20 session on its default TX-cursor RTP stamps the media time plus the
 first-packet offset (TRO − VRX0 × TRS); every epoch-based session (unified, or legacy ANC and audio)
 stamps the media time. At 1080p59.94 the difference is about 604–619 µs depending on the granted
-VRX0, 54.4–55.7 ticks at 90 kHz. A legacy ST 2110-40 session next to a unified ST 2110-20 session
-agrees within ±1 tick. So never mix a legacy video session on its default RTP with anything else.
-There is no legacy timeline helper ([timing.md](timing.md) §14.2). Set
+VRX0 ([timing.md](timing.md) §6.1), 54.4–55.7 ticks at 90 kHz. A legacy ST 2110-40 session next
+to a unified ST 2110-20 session agrees within ±1 tick (legacy ANC stamps its epoch,
+`st_tx_ancillary_session.c:420-427`, `:462`; only the rounding differs). So never mix a legacy
+video session on its default RTP with anything else: every session of one programme must use the
+same RTP rule. There is no legacy timeline helper ([timing.md](timing.md) §14.2). Set
 `ST20(P)_TX_FLAG_RTP_TIMESTAMP_EPOCH` on the legacy video session, whose RTP is then the frame
 epoch as a unified session's; or set `USER_TIMESTAMP` on every legacy session with timestamps the
 application computes from one anchor (as RxTxApp does, `tests/tools/RxTxApp/src/rxtx_app.c:673-703`);
@@ -920,375 +936,7 @@ deleted.
 "Open" rows are decided in task RB0 (implementation-plan.md §6.1) before the re-base code starts;
 a re-base commit that touches an open row is rejected.
 
-## 7. Library and ABI plan
-
-### 7.1 Today
-
-There is no ABI promise. `libmtl.so` has no soname version (`lib/meson.build:151-159`: no
-`soversion`, `version`, `gnu_symbol_visibility` or version script) and exports everything: 757
-dynamic function symbols, 235 of them internal (`mt_*`, `tv_*`, `rv_*`). `ops` structs are copied
-with the library's `sizeof` and have no reserved fields, so silent breaks have shipped
-(`rl_burst_size` added inside `port_params[]` moved every later field). There are about 30 exported
-`_MAX` sentinels and a 64-bit `enum mtl_init_flag`; `mtl_version()` is a string only;
-`include/experimental/` has no opt-in; deprecation (`include/mtl_api.h:141-147`) marks fields only.
-
-### 7.2 The unified library
-
-One library, libmtl, carries both APIs (D-23): the API shell (`lib/src/unified/`) and the core
-(`lib/src/st2110/core/`) are compiled into it next to the engines and the legacy wrappers, so
-there is no second DSO and no ABI between the core and its callers. pkg-config stays `mtl`.
-
-The picture below is the shape an application sees: it includes `mtl.h`, adds optional headers only
-for the jobs it needs, and links libmtl.
-
-```mermaid
-flowchart LR
-    APP["Your application"]:::app --> MTLH["mtl.h<br/>instance, session, unit,<br/>start / stop, wait, errors"]:::mtl
-    APP -. "only if needed" .-> EXT["optional headers<br/>mtl_mem, mtl_sync, mtl_events,<br/>mtl_packet, mtl_observe,<br/>mtl_options, mtl_util, ..."]:::mtl
-    APP -. "Phase 7" .-> L7["mtl_ipmx: RTCP, PEP<br/>mtl_sdp: SDP"]:::mtl
-    EXT --> MTLH
-    L7 --> MTLH
-    subgraph LIBMTL["libmtl"]
-        LIB["the API shell, in one version node<br/>per milestone, MTL_UNIFIED_EXPERIMENTAL_rev_MSn"]:::mtl
-        ENG["the core, the bindings,<br/>the engines"]:::mtl
-    end
-    MTLH --> LIB
-    LIB --> ENG
-    classDef app fill:#dbeafe,stroke:#2563eb,color:#111827
-    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
-```
-
-`mtl.h` holds the core calls; every optional header includes it (`mtl_util.h` through `mtl_mem.h`
-and `mtl_sync.h`) and serves one kind of program ([examples.md §1](examples.md#1-the-headers)), and
-no unified header includes a legacy one. The rest is `static inline`: the typed wrappers of the
-object verbs `mtl_close`, `mtl_interrupt`, `mtl_wait`, `mtl_reap`, `mtl_read_events`, and of
-`mtl_release(s, lease)`, and helpers on public calls. What the version nodes, the exports and the headers
-promise is in the table; `sketch/check.sh` prints the functions per header and per milestone.
-
-| Item | Experimental (MS1 to the ABI freeze at MS7) | After the freeze |
-|---|---|---|
-| library | `libmtl.so`, the API shell and the core inside | the same |
-| companion library | `libmtl_sdp.so` (`mtl_sdp.h`), `MTL_SDP_EXPERIMENTAL_<rev>` | its own `MTL_SDP_1.0`, frozen on its own schedule |
-| unified symbols | one version node per milestone, `MTL_UNIFIED_EXPERIMENTAL_<rev>_MSn` (MS1: `..._0_2_MS1`), inheriting the previous, continued in parts `_MSn.k`; every node a release carries is sealed; the bridge in `_BRIDGE` (§6.2); all renamed on every incompatible change ([Sealing](#sealing)) | `MTL_1.0`; then one `MTL_1.k` per release that adds functions; the bridge in `MTL_LEGACY_BRIDGE` |
-| exports | a function is exported from the milestone its comment tag and call-class argument name, and the installed header declares the whole design, so a call above `MTL_LEVEL` fails to compile (GCC, Clang ≥ 14) or to link (D-106); a value of an exported call that is not built yet returns `-MTL_ENOTSUP` (`NOT_IMPLEMENTED`) | every function of the frozen set |
-| other symbols | today `lib/meson.build:151` has no version script; MS1 (H1b): `lib/src/unified/libmtl.map` holds only the unified nodes, the rest exported as today (no `local: *`), with the export checks; MS3, after an `nm` audit of leaked-symbol users: the soname, the `MTL_LEGACY` node for the legacy headers' functions, then `local: *` (D-108) | `MTL_LEGACY` hidden in stages (§8.3) |
-| headers | `include/mtl/experimental/` (`mtl.h` and its optional headers, moved verbatim from `doc/unified-api/sketch/` in MS1; the `MTL_LATER` blocks are installed for design checks only: a call into them fails to compile with GCC and Clang ≥ 14, else to link, and their names may change in any release) | `include/mtl/`; `include/mtl/experimental/<h>` a forwarding stub from F to F+2 (below) |
-| debug API | `mtl_debug.h` exists only with `-Denable_debug_api=true`; otherwise `-MTL_ENOTSUP` | same |
-| version | `MTL_API_VERSION` (compile time), `mtl_library_version_num()` (runtime), both `MTL_VERSION_NUM(a, b, c)`; today `MTL_VERSION_NUM(0, 2, 0)` | the release |
-
-With the soname of MS3 every consumer relinks once; older binaries bind their unversioned
-references to the default versions. Hiding the legacy symbols later removes names from `MTL_LEGACY`
-only: a binary that needs one fails at load, and binaries that use only `MTL_1.0` are untouched
-(the bridge is in `MTL_LEGACY_BRIDGE`, not `MTL_1.0`), so legacy removal never forces a unified application to relink. On Windows the `.def` is generated
-from the exports (`lib/meson.build:122-123`), so hidden visibility shrinks it automatically; legacy
-symbols stay exported until F+2. Distribution advice: `libmtl-dev` ships the public headers,
-`libmtl-legacy-dev` the legacy headers until F+2 (the DPDK driver-SDK precedent,
-`-Denable_driver_sdk`).
-
-**Headers at F.** The unified headers move to `include/mtl/`. `include/mtl/experimental/<h>` stays
-as a forwarding stub (`#include "../<h>"`) for every header, `mtl_legacy.h` forwarding to
-`../legacy/mtl_legacy.h`, from F to F+2, with a `#warning` (MSVC `#pragma message`) from F+1, and
-is removed at F+2; the include guards lose `EXPERIMENTAL_` at F and end in `_` (internal, so not
-frozen names) (D-194). `include/meson.build` generates each stub, with the warning lines when
-`legacy_stage` ≥ 2; at F itself the stub has none:
-
-```c
-/* mtl/experimental/mtl.h - forwarding stub, releases F to F+2: the unified API is
-   <mtl/mtl.h> from release F; this path is removed at F+2. */
-#if defined(_MSC_VER)
-#pragma message("<mtl/experimental/mtl.h> is <mtl/mtl.h> from release F; removed at F+2")
-#else
-#warning "<mtl/experimental/mtl.h> is <mtl/mtl.h> from release F; removed at F+2"
-#endif
-#include "../mtl.h"
-```
-
-#### Sealing
-
-Every node a release carries is sealed (`lib/src/unified/exports.<suffix>.list`:
-`exports.MS2.list`, `exports.MS2.1.list`, `exports.BRIDGE.list`) and never changes in its
-revision. A list's first line is `# <node> rev <rev> sealed <VERSION or "MSn exit">`, then one
-name per line, sorted. A release cut while milestone n is open seals its node, and n continues in
-`_MSn.1`, `_MSn.2`, …, each part inheriting the node before it (`_BRIDGE` inherits `_MS1`). At most
-one part per milestone is open: the last part of milestone `MTL_LEVEL` + 1, where every task adds
-its function, and `_BRIDGE` until the MS1 exit. If the last part has a list, the task opens the
-next part `.k+1`. A revision change renames every node and merges each milestone's parts into `_MSn`.
-`ld.so` checks every version a binary needs at load, also under lazy binding and for `dlopen`, so
-it refuses, at load, another revision or a node the library lacks, and a released library never
-fails a binary at a call (D-191).
-
-The table below says when a node is sealed.
-
-| Event | What happens |
-|---|---|
-| milestone exit | the exit commit runs `check_exports.sh --seal`: the open part gets its list; then `MTL_LEVEL` is bumped |
-| release | the release commit (the one that sets `VERSION` to `….REL`) runs `check_exports.sh --seal`; `MTL_LEVEL` does not change. A tag also seals by itself: the export check compares HEAD with every tag of the revision |
-| revision change | every node is renamed and every list gets the new rev line; the parts of each milestone merge into `_MSn` |
-| release F | the `_MSn` nodes merge into `MTL_1.0`, `_BRIDGE` becomes `MTL_LEGACY_BRIDGE`; after F, a release that adds functions ships them in a new `MTL_1.k`, which that release seals (`MTL_LEVEL` 7 + k) |
-
-The table below says what `ld.so` does with a binary.
-
-| Binary linked against | Run on | Result |
-|---|---|---|
-| release R | R, or a later release of the same revision | loads and runs |
-| release R2, using a function of the part `_MS2.1` | release R1, which carries only `_MS2` | refused at load: ``version `MTL_UNIFIED_EXPERIMENTAL_0_2_MS2.1' not found`` |
-| any release | a library of another revision | refused at load |
-| a `.DEV` build | another build | no guarantee: an open part may lack a function, which then aborts at its first call |
-
-The picture below follows the nodes of one revision through MS1–MS3 with one release cut during
-MS2a.
-
-```mermaid
-flowchart LR
-    M1["_MS1<br/>sealed at the MS1 exit"]:::mtl --> M2["_MS2<br/>sealed by release R1<br/>(cut during MS2a)"]:::mtl
-    M2 --> M21["_MS2.1<br/>sealed at the MS2 exit"]:::mtl
-    M21 --> M3["_MS3<br/>open; sealed by the<br/>next release or exit"]:::mtl
-    M1 --> BR["_BRIDGE<br/>sealed at the MS1 exit"]:::mtl
-    classDef mtl fill:#dcfce7,stroke:#16a34a,color:#111827
-```
-
-An example `libmtl.map` after release R1 (cut in MS2a), with MS2b work under way. MS1 holds only
-the unified nodes, with no `local: *` (D-108):
-
-```text
-MTL_UNIFIED_EXPERIMENTAL_0_2_MS1 { global: mtl_last_error; mtl_reason_name; ...; };
-MTL_UNIFIED_EXPERIMENTAL_0_2_BRIDGE { global: mtl_instance_from_legacy; } MTL_UNIFIED_EXPERIMENTAL_0_2_MS1;
-MTL_UNIFIED_EXPERIMENTAL_0_2_MS2 { global: mtl_session_discard; mtl_log_add_sink; ...; } MTL_UNIFIED_EXPERIMENTAL_0_2_MS1;
-MTL_UNIFIED_EXPERIMENTAL_0_2_MS2.1 { global: mtl_session_attach; } MTL_UNIFIED_EXPERIMENTAL_0_2_MS2;
-```
-
-No `-z now` is added to `mtl.pc`: sealing makes it unnecessary for releases, and it would impose
-bind-now on every consumer's own object (D-191).
-
-### 7.3 Struct compatibility: the strict rule
-
-- The library reads `min(struct_size, known)` of an input struct; fields beyond the caller's size
-  take their defaults, so an old program runs on a newer library.
-- `struct_size` 0, or smaller than the first published size, and non-zero bytes beyond the size the
-  library knows, are `-MTL_EINVAL` (`NONZERO_TAIL`). Stricter than Win32 `cbSize` on purpose: an
-  ignored field the application believes honoured is a silent timing or memory bug. So set a field
-  newer than the running library only after checking `mtl_library_version_num()`. An option name the
-  running library does not know is `-MTL_EINVAL` (`OPTION_UNKNOWN`) from `mtl_option_find()`, and
-  one it knows but does not implement yet is `-MTL_ENOTSUP` (`NOT_IMPLEMENTED`).
-- Output structs carry no `struct_size`: the library fills them up to the size argument and zeroes
-  what it does not know. Array reads (`mtl_reap`, `mtl_read_events`) take the record size per
-  call; their typed wrappers (`mtl_tx_reap`, `mtl_tx_reap_full`, `mtl_session_read_events`) pass
-  `sizeof(*r)`.
-- Structs grow only at the end; every hole is a named reserved field (`-Wpadded -Werror`); every
-  public struct has a C99 size check; enumerated fields are `uint32_t`; flags are plain literals; no
-  `_MAX` sentinel is exported.
-
-Why `MTL_INIT(&s)` and not an exported `mtl_<struct>_init(p)` per struct (D-74): an exported init
-writes the library's `sizeof` into the caller's object, so on a newer library it zeroes past the
-end of an older program's smaller struct (an out-of-bounds write), or, frozen at the old size,
-silently ignores new fields. `MTL_INIT` passes the size from the caller's compilation, which is
-right across versions. A generic `init(kind, ptr)` is rejected for the same reason: a kind cannot
-tell the library the caller's `sizeof`. The zero-default rule leaves nothing to set but the size.
-Also rejected: a process-global API-version call (two plugins in one process could not both be
-honoured).
-
-### 7.4 Windows
-
-`MTL_E*` codes equal the Linux errno values (`ESHUTDOWN` and `ESTALE` do not exist in the UCRT);
-a queue's descriptor is an `intptr_t` holding a manual-reset event `HANDLE` (from MS2a); `mtl_last_error()` copies
-thread-local state into caller memory, so no `__declspec(thread)` pointer crosses a DLL boundary;
-`MTL_API` is `__declspec(dllexport/dllimport)`. Windows is supported with the DPDK backend only,
-checked by a compile-only CI job. The headers support 64-bit targets only.
-
-## 8. Hiding the legacy headers
-
-Requirement: `include/st20_api.h` and the other session-level headers stop being public, with no
-loss of functionality beyond the removals of §8.4 (D-83). The deprecation stages run at MS7
-(release F) and the two releases after it; the session headers then become internal headers of the
-library, which the engines and the core's bindings keep using.
-
-### 8.1 Why they cannot simply stop being installed
-
-They are the vocabulary of every other installed header: `st_pipeline_api.h` includes
-`st20_api.h` and uses its types (`st21_pacing`, `st20_fmt`, RTCP ops, detect and timing-parser
-meta in `struct st_frame`); the st30 and st40 pipeline headers take `st_tx_port` from it; the plugin
-ABI lives in it; GStreamer uses `st20_rx_frame_meta` (`ecosystem/gstreamer_plugin/gst_mtl_st20p_rx.c:140`).
-Splitting them is churn on an API slated for deprecation, so the whole legacy set moves as one
-tier. The session layer stays the internal engine: the pipelines call `st20_tx_create()`
-(`lib/src/st2110/pipeline/st20_pipeline_tx.c:482`), and the core creates its engine sessions the
-same way, with the binding's callbacks in the `ops`.
-
-The two pictures below are today's include graph (from [coverage.md §4.1](coverage.md#41-todays-public-header-set),
-checked against `include/` at `545a266a`); an arrow means "includes". The first shows the session
-headers, which all reach `mtl_api.h`:
-
-```mermaid
-flowchart LR
-    subgraph MEDIA["each includes st_api.h"]
-        S20["st20_api.h<br/>(ST 20 and ST 22)"]
-        S30["st30_api.h"]
-        S40["st40_api.h"]
-        S41["st41_api.h"]
-    end
-    MEDIA --> ST["st_api.h"]
-    ST --> API["mtl_api.h"]
-    SCH["mtl_sch_api.h"] --> API
-    SHM["mtl_lcore_shm_api.h"] --> API
-    API --> CFG["mtl_build_config.h<br/>(generated)"]
-```
-
-The second shows the headers above them, which all reach a session header, so every installed
-legacy header reaches `st20_api.h` or `mtl_api.h`:
-
-```mermaid
-flowchart LR
-    P40["st40_pipeline_api.h"]
-    P30["st30_pipeline_api.h"]
-    COMB["experimental/<br/>st20_combined_api.h"]
-    CA["st_convert_api.h"]
-    P40 --> S40["st40_api.h"]
-    P40 --> PIPE["st_pipeline_api.h"]
-    P30 --> PIPE
-    PIPE --> S20["st20_api.h"]
-    P30 --> S30["st30_api.h"]
-    COMB --> S20
-    CA --> CI["st_convert_internal.h"]
-    CI --> S20
-    CI --> S30
-```
-
-### 8.2 Three tiers
-
-| Tier | Headers | Installed | Version nodes | Users |
-|---|---|---|---|---|
-| public | `mtl/experimental/mtl.h` and its optional headers (later `mtl/`) | always; pkg-config `mtl` | `MTL_UNIFIED_EXPERIMENTAL_<rev>_MSn`, then `MTL_1.0` | everyone |
-| legacy | today's headers and `mtl_build_config.h`, moved unchanged to `mtl/legacy/` | until F+2; pkg-config `mtl-legacy` adds `-I` and `-DMTL_LEGACY_API=1` | `MTL_LEGACY` (from MS3): `mtl_api.h`, `mtl_sch_*`, the pipelines (`st2xp_*`, `st_frame_*`, plugin ABI v1) and the sessions (`st20_` … `st41_`, `st20rc_`, `st10_*`, per-pair converters) | migrating and in-tree legacy code |
-| internal | `lib/include/mtl_internal/`: the session declarations from F+2 | never | none: `local: *`; an `error` attribute unless `MTL_ALLOW_INTERNAL_API` (as DPDK's `__rte_internal`) | the engines, the core's bindings, in-tree tests and tools |
-
-The install layout during the transition puts each tier in its own directory:
-
-| Path | Tier | Version node, or role |
-|---|---|---|
-| `include/mtl/experimental/mtl.h` and the optional headers | public | `MTL_UNIFIED_EXPERIMENTAL_<rev>_MSn`, then `MTL_1.0` (release F) |
-| `include/mtl/legacy/mtl_api.h`, `st_api.h`, `st20_api.h`, … | legacy | `MTL_LEGACY` (from MS3) |
-| `include/mtl/legacy/mtl_legacy_gate.h` | legacy | included first by every legacy header; reads `MTL_LEGACY_STAGE` |
-| `include/mtl/st20_api.h`, … | stubs | `#include "legacy/st20_api.h"`; removed at F+1 |
-| `include/mtl/experimental/mtl_legacy.h` (MS1 to F), `include/mtl/legacy/mtl_legacy.h` (from F) | legacy | `MTL_UNIFIED_EXPERIMENTAL_<rev>_BRIDGE`, `MTL_LEGACY_BRIDGE` from F |
-| `include/mtl/experimental/*.h` (F to F+2) | stubs | `#include "../<h>"`; a `#warning` from F+1; removed at F+2 |
-| `lib/include/mtl_internal/` | internal | session declarations from F+2; never installed; `local: *` |
-
-One legacy node: `readelf -V` shows that a binary uses the legacy API and `nm -D` which symbols,
-which the survey of private users before the freeze can ask for instead of source. The pipelines
-may leave later than the session layer: hiding goes by symbol list, not by node.
-
-### 8.3 Stages
-
-The picture below is the order of the stages, from the unified headers of MS1 to the internal
-session headers of F+2; the table after it says what each stage changes and what it asks of
-consumers.
-
-```mermaid
-flowchart LR
-    S1["MS1, task H1b<br/>unified headers in<br/>include/mtl/experimental/;<br/>the MS1 node in libmtl"] --> S3["MS3<br/>soname, MTL_LEGACY node,<br/>local: * after the nm audit;<br/>gate added, inert"]
-    S3 --> S6["MS4 to MS6<br/>pre-hide gaps closed; legacy in<br/>mtl/legacy/ + stubs; in-tree consumers port"]
-    S6 --> F["MS7, release F<br/>deprecation warnings;<br/>unified API is MTL_1.0"]
-    F --> F1["F+1<br/>#error unless MTL_LEGACY_API;<br/>stubs removed"]
-    F1 --> F2["F+2 or later<br/>session headers internal,<br/>their symbols local"]
-```
-
-| Stage | When | Headers and symbols | Consumers |
-|---|---|---|---|
-| A | MS3 | the soname and the `MTL_LEGACY` node (D-108), then `local: *` after the `nm` audit; the gate and `MTL_LEGACY_DEPRECATED` added but inert; the convert `static inline` wrappers become exported, so `st_convert_internal.h` leaves the installed set | the FFmpeg flag fix (§11.4); gate: legacy KahawaiTest and acceptance pass, no `mt_*` in `nm -D` |
-| B | before MS7 | legacy files in `mtl/legacy/` with forwarding stubs (`mtl/st20_api.h` includes `legacy/st20_api.h`) and an extra `-I` in `mtl.pc`; `mtl-legacy.pc`; an in-tree `mtl_legacy_dep` (the unified headers are installed from MS1) | no source change: `<mtl/st20_api.h>` and `<st20_api.h>` still resolve |
-| — | MS2–MS6 | the pre-hide gaps closed (§8.4); the legacy pipelines become wrappers on the core (st20p MS2, the others MS4); plugin ABI v2 in MS4 | in-tree consumers port (§11; the framework plugins in MS6) |
-| F | MS7 (release F) | `MTL_LEGACY_STAGE 1`: deprecation attributes on every legacy prototype; `#warning` (MSVC `#pragma message`) unless `MTL_LEGACY_API`; the unified API becomes `MTL_1.0`; the unified headers to `mtl/`, `mtl_legacy.h` to `mtl/legacy/` (below) | warnings; release notes map every legacy symbol; every in-tree consumer builds without `MTL_LEGACY_API` |
-| F+1 | the next release (its LTS branch, deployment.md §7) | `MTL_LEGACY_STAGE 2`: `#error` unless `MTL_LEGACY_API`; stubs removed; the unified stubs warn; `mtl.pc` public only | legacy only via `mtl-legacy.pc` |
-| ≥ F+2 | two releases and 12 months after F, or later (deployment.md §7) | `-Dlegacy_headers=false`; session headers to `lib/include/mtl_internal/`; their functions leave `MTL_LEGACY` for `local: *` (a binary needing one fails at load; no soname bump); plugin v1 loader removed; the pipeline headers then or later (set at the MS4 exit) | in-tree code on the internal dependency (libmtl's objects) |
-
-The unified headers and the bridge go through the stages too. At F the unified headers move to
-`mtl/`, with forwarding stubs at `mtl/experimental/` (§7.2, D-194), and `mtl_legacy.h` moves to
-`mtl/legacy/` with the gate, its node renamed `MTL_LEGACY_BRIDGE`. From F+1 the unified stubs warn.
-At ≥ F+2 the unified stubs are removed, and the bridge (`MTL_LEGACY_BRIDGE`, `mtl_legacy.h`) leaves
-with `mtl_init` (D-190).
-
-Removal comes no earlier than two `vYY.MM` releases after deprecation and 12 months after F (D-69, deployment.md §7). The legacy session
-layer is bugfix only from F and is never deleted, only moved to the internal tier; no legacy
-struct layout changes before F+2, and from F+2 it is the internal engine interface, free to
-change ([core.md §1.1](core.md#11-the-end-state-after-f2), D-178). Stages A and B are not values of `MTL_LEGACY_STAGE`, which is 1 from F and 2 from F+1. The gate is `mtl/legacy/mtl_legacy_gate.h`, included first by
-every legacy header: it reads `MTL_LEGACY_STAGE` from `mtl_build_config.h`, is silent inside the
-library (`__MTL_LIB_BUILD__`) and for Python (`__MTL_PYTHON_BUILD__`), and is silenced by
-`MTL_LEGACY_NO_DEPRECATION_WARNINGS`.
-
-- Every legacy prototype gets `MTL_LEGACY_API_FN` = `MTL_LEGACY_DEPRECATED("…") MTL_API` (the
-  export macro of stage A): about 370 prototypes, a scripted, reviewable diff; it and the gate
-  include are the only edits inside the legacy headers. `MTL_LEGACY_DEPRECATED` expands to
-  `__attribute__((deprecated(msg)))` from release F (`MTL_LEGACY_STAGE 1`), except inside the library, for Python, or with
-  `MTL_LEGACY_NO_DEPRECATION_WARNINGS`; bindgen ignores it.
-- During the transition `mtl.pc` emits `-I${includedir} -I${includedir}/mtl
-  -I${includedir}/mtl/legacy`: the bare `<st20_api.h>` resolves through the legacy directory,
-  `<mtl/st20_api.h>` through the forwarding stub. `mtl-legacy.pc` adds `-DMTL_LEGACY_API=1` and
-  `Requires:` the engine library, so a consumer opts in once in its build file. The move is an API
-  change only for consumers that hard-code `-I…/include/mtl` paths without pkg-config.
-- The internal guard `__mtl_internal` is `__attribute__((error("MTL internal API")))` unless
-  `MTL_ALLOW_INTERNAL_API`, exactly as DPDK's `rte_compat.h:35-53`; the in-tree internal dependency
-  defines it.
-
-**Build and CI.** Meson options `legacy_headers` (default `true` up to F+1) and `legacy_stage`.
-CI compiles the public headers with only the public include directory, so no legacy type leaks
-in; a legacy-coverage check blocks release F unless every symbol of the `MTL_LEGACY` node is mapped here or
-is one of the removals of §8.4; an `MTL_LEGACY_STAGE 2` job builds every in-tree consumer without `MTL_LEGACY_API` before
-F+1. In-tree legacy code (unit and fuzz tests, `app/perf`, `app/tools`, the frozen trees) uses
-`mtl_legacy_dep`, later `mtl_internal_dep`; `lib/src` needs one include-path change.
-
-### 8.4 Pre-hide gate
-
-Every feature reachable only through the session headers needs a unified home, or is one of the
-removals below, before F. Of the 19 such features, 16 have a home in the headers and a milestone,
-1 has no milestone yet (H-15, under `MTL_LATER`), and 2 are removed; the milestones are in
-[coverage.md](coverage.md) §4.4:
-
-| Gap | Feature | Unified home |
-|---|---|---|
-| H-01 | RTP level, every essence; ST 2022-6 | `MTL_UNIT_PACKETS`, the generic RTP essence `MTL_RTP` (D-82) |
-| H-02 | slice TX and RX | `MTL_UNIT_ROWS`, resubmit with a larger `used`, `mtl_rx_wait_rows()` |
-| H-03, H-04 | format parity, format helpers | `mtl_video_format`, `mtl_video_format_ext`, `mtl_app_format`; `mtl_format_describe()`, `mtl_format_parse()`, `mtl_session_info.wire_bps` |
-| H-05 | NACK retransmission | `MTL_OPT_RTX*` |
-| H-06, H-07 | video auto-detect; per-unit ST 2110-21 results | `video.detect`, `MTL_EVENT_RX_FORMAT`; `mtl_rx_detail.timing[]` |
-| H-08 | user tasklets | removed |
-| H-09, H-10 | RX destination per unit; GPU VRAM | `mtl_rx_provide()`, `MTL_MEM_DEVICE` of `mtl_mem_open()` (`-MTL_ENOTSUP` until its milestone) |
-| H-11, H-12, H-14 | pcapng capture; media-clock helpers; log sinks | `mtl_session_capture()`; `mtl_media_ticks()`, `mtl_media_tai()`; `mtl_log_add_sink()` |
-| H-13 | standalone conversion, AM824, ANC helpers | `mtl_convert()` (`mtl_format.h`); `mtl_anc_*` (`mtl_util.h`, inline) |
-| H-15 | latency parity for tasklet-callback users | busy polling; `mtl_session_set_inline_notify()` (`MTL_LATER`) only if it misses the target (D-04) |
-| H-16, H-18 | per-packet RX conversion; scheduler sleep | `MTL_OPT_RX_CONVERT_PER_PACKET`; `MTL_OPT_SCHED_SLEEP_US` |
-| H-17 | queue meta, `DATA_PATH_ONLY` | removed |
-| H-19 | codec plugin ABI v2 | `mtl_plugin.h` (§9) |
-
-**Removed** (D-87); no other legacy capability is removed (D-112):
-
-- header-split RX (`HDR_SPLIT`, `nb_rx_hdr_split_queues`);
-- `uframe_pg_callback` and `uframe_size` (application code per pixel group on the tasklet);
-- `st20rc_*`, the redundant-combined RX (a two-leg session does the same);
-- the public per-pair converters (≈ 105; `mtl_convert()` replaces them, they stay internal for tests);
-- public user DMA (`mtl_udma_*`) and lcore borrowing (`mtl_get_lcore`, `mtl_bind_to_lcore`);
-- user schedulers and tasklets (`mtl_sch_create`, `mtl_sch_register_tasklet`);
-- `ST22_*_FLAG_DISABLE_BOXES`, `ST22P_*_FLAG_DISABLE_BOXES`, and the `ENABLE_RTCP` flags on audio,
-  ANC and fastmeta (they do nothing today);
-- queue meta (`st20p_rx_get_queue_meta`) and `DATA_PATH_ONLY`;
-- thin wrappers: `st_draw_logo`, `mtl_memcpy`, `mtl_sleep_us`, `mtl_delay_us`,
-  `mtl_thread_setname`, `mtl_get_if_ip`, `mtl_udma_fill`, `mtl_size_page_align`;
-- dead fields: `tx_sessions_cnt_max`, `rx_sessions_cnt_max`, `sample_size`, `sample_num`, the RX
-  `sip_addr` alias, RX `pacing` and `packing`, `MTL_FLAG_BIND_NUMA`, `MTL_FLAG_UDP_LCORE`, the ST40P
-  `FORCE_NUMA` flags, `st40p_rx_ops.rtp_ring_size`;
-- the DPDK AF_XDP and AF_PACKET PMD backends (`dpdk_af_xdp:`, `dpdk_af_packet:`; native AF_XDP and
-  kernel sockets cover them): such a port name fails `mtl_instance_open` with `-MTL_ENOTSUP`
-  (`BACKEND_REMOVED`), and the detail names the replacement (`native_af_xdp:` or `kernel:`);
-- `st22_tx_ops.fmt`, `st22_rx_ops.fmt` (ignored by today's library).
-
-RxTxApp's header-split, `st20r` and `uframe_pg_callback` paths and the user-scheduler gtest
-(`sch_test.cpp`) are not ported; they go with the frozen trees.
-
-Rejected: `#ifdef` guards in installed headers (anyone can `-D` them; the ABI promise does not
-shrink); splitting `st20_api.h`; a separate `libmtl_legacy.so` (the engine calls the same functions
-internally, so `lib/src` would need renames; version nodes give the same audit and removal); a
-separate unified library (D-23: a second DSO needs an ABI between the core and its callers);
-shimming session callbacks, slice and RTP modes (latency).
-
-## 9. Codec plugin ABI v2 (`mtl_plugin.h`)
+## 7. Codec plugin ABI v2 (`mtl_plugin.h`)
 
 **Today.** Plugins are `.so` files listed in the JSON config (`KAHAWAI_CFG_PATH`) and loaded at
 `mtl_init` (`lib/src/mt_config.c:45-56`); the library resolves `st_plugin_get_meta`,
@@ -1322,7 +970,7 @@ shifts by 16 where 8 was meant (`include/st_pipeline_api.h:71`).
   In-process registration is used today by tests: `st22_decoder_register` and
   `st22_encoder_register` at `tests/integration_tests/st22p_test.cpp:356`, `:372`; these move to `mtl_plugin_open()` with a device.
   Plugin ABI v1 is frozen as a legacy interface, and v2 ships before release F; the v1 loader is
-  removed at ≥ F+2 (§8.3). The v2 port of the in-tree plugins is mostly mechanical because the
+  removed at ≥ F+2 (abi.md §6.3). The v2 port of the in-tree plugins is mostly mechanical because the
   work loop keeps its shape. Converter plugins, codec plugins and the core's own conversion share
   one transform state on the slot (D-100).
 
@@ -1337,9 +985,9 @@ The loader accepts v1 and v2 until F+2; a v1 plugin needs the legacy headers to 
 The in-tree plugins (`plugins/sample/st22_plugin_sample.c`, `plugins/st22_avcodec/`,
 `plugins/sample/convert_plugin_sample.c`, about 1.3 kLOC) port to v2 in MS4.
 
-## 10. Language bindings
+## 8. Language bindings
 
-### 10.1 Rules the headers follow
+### 8.1 Rules the headers follow
 
 Handles are `struct { uint64_t id; }`, 0 = null. `MTL_API_*` expand to nothing under `SWIG` and
 `__bindgen`. `MTL_INIT` is a macro over the inline `mtl_struct_init(p, size)`: bindings zero-fill and set
@@ -1351,10 +999,9 @@ without touching the address. Result arrays take the record size per call (alloc
 max`, index by pitch). No unions, no anonymous members, no 2-D char arrays (ports are
 `struct mtl_port_spec[]`), flags are plain literals. No callbacks into the binding language in the
 core. Release the Python GIL around WT calls (SWIG `%thread`); for `asyncio`, `add_reader()` on a
-queue's descriptor (MS2a): on each wake-up call `mtl_queue_wait(q, …, 0)`, serve each reported
-session with timeout-0 calls and arm it again, until `mtl_queue_wait` returns `-MTL_EAGAIN`.
+queue's descriptor (MS2a), served as [contract.md §7.2](contract.md#72-queues-ms2) says.
 
-### 10.2 Python
+### 8.2 Python
 
 `pymtl` binds six installed headers, an internal convert header included
 (`python/swig/pymtl.i:27-32`), holds the GIL in a blocking `get_frame`, and fills frames with
@@ -1366,7 +1013,7 @@ context managers for instance and session, a result iterator that owns the recor
 `KeyboardInterrupt`, buffers through `mtl_unit_copy_in()` / `_out()` or a `memoryview` over the
 address for zero copy.
 
-### 10.3 Rust
+### 8.3 Rust
 
 `imtl-rs` takes its `priv` pointer from a local inside a by-value `create(mut self)`, then the
 `notify_frame_done` trampoline dereferences it (`rust/src/imtl/video.rs:427`, `:482-484`,
@@ -1374,25 +1021,30 @@ address for zero copy.
 `mtl_uninit`). The rebind over `mtl.h` replaces the trampolines with reap and dequeue calls, which
 removes the dangling pointer; the safe layer is rewritten in MS6, with `Option<i64>` for the fields Python maps to `None`.
 
-## 11. Per-consumer notes
+## 9. In-tree consumers
 
-Legacy call sites in-tree (`git grep` at `545a266a`): RxTxApp 156 in 19 files (plus a 3.5 kLOC JSON
-parser), KahawaiTest 752 in 31 files (about 306 distinct functions), `app/sample` 260 in 35 files,
-FFmpeg 61 in 6, GStreamer 58 in 8, OBS 10 in 2, Python 48, Rust 36, MXL POC 52 in 8, `plugins/` 0
-(plugin ABI), unit tests 78 in 30 files: about 1,500 in all, half in KahawaiTest. About ten private
-downstream repositories were not inspected; they are surveyed before the header freeze (MS7).
+Legacy call sites in-tree (`git grep` at `545a266a`), and the effort if the pipelines go with no
+shim:
 
-Effort if the pipelines go with no shim: KahawaiTest very large (weeks; it is also the regression
-net, so the legacy API stays alive meanwhile); `app/sample` medium, mostly mechanical, many samples
-dropped or merged; RxTxApp medium to large (the acceptance suite depends on it); FFmpeg small
-(about 3 kLOC; a rewrite gains zero copy; vendored by directview-led); GStreamer small to medium (a chance
-to add clock, latency, unlock, buffer pool); OBS trivial (arguably unmaintained); MXL POC medium
-(it stresses the buffer model, a good validation target); Python small (SWIG regenerates; carry the
-Python-only helpers); Rust small (its safe layer has undefined behaviour and is rewritten anyway);
-plugins none while the plugin ABI is separate (§9); external users unknown (pinned versions; for
-bobistudio the cost is its patches, not the API; [legacy-internals.md](legacy-internals.md)).
+| Consumer | Call sites | Files | Effort | Note |
+|---|---|---|---|---|
+| RxTxApp | 156 | 19 | medium to large | plus a 3.5 kLOC JSON parser; the acceptance suite depends on it |
+| KahawaiTest | 752 | 31 | very large (weeks) | about 306 distinct functions; it is also the regression net, so the legacy API stays alive meanwhile |
+| `app/sample` | 260 | 35 | medium, mostly mechanical | many samples dropped or merged |
+| FFmpeg | 61 | 6 | small | about 3 kLOC; a rewrite gains zero copy; vendored by directview-led |
+| GStreamer | 58 | 8 | small to medium | a chance to add clock, latency, unlock, buffer pool |
+| OBS | 10 | 2 | trivial | arguably unmaintained |
+| Python | 48 | | small | SWIG regenerates; carry the Python-only helpers |
+| Rust | 36 | | small | its safe layer has undefined behaviour and is rewritten anyway |
+| MXL POC | 52 | 8 | medium | it stresses the buffer model, a good validation target |
+| `plugins/` | 0 (plugin ABI) | | none while the plugin ABI is separate ([§7](#7-codec-plugin-abi-v2-mtl_pluginh)) | |
+| unit tests | 78 | 30 | | |
+| external users | | | unknown | pinned versions; for bobistudio the cost is its patches, not the API ([legacy-internals.md](legacy-internals.md)) |
 
-### 11.1 RxTxApp (`tests/tools/RxTxApp/`)
+About 1,500 call sites in all, half in KahawaiTest. About ten private downstream repositories were
+not inspected; they are surveyed before the header freeze (MS7).
+
+### 9.1 RxTxApp (`tests/tools/RxTxApp/`)
 
 The first port target. RxTxApp stays frozen; `UnifiedRxTxApp` (`tests/tools/UnifiedRxTxApp/`) is
 its copy on the unified API, with the same CLI, JSON and output lines, and runs `st20p` TX and RX
@@ -1417,10 +1069,10 @@ copy changes.
 - **Port setup**, copied in about 16 files, becomes `mtl_flow_ipv4()` on `sc.flows[]`; **RX
   latency**, computed in 4 files from `mtl_ptp_read_time() - frame->timestamp`, becomes
   `mtl_rx_get_detail()` and the latency stats; **stats** (`stat_dump_cb_fn`, per-session get and
-  reset, with gaps for st22p TX, st30p, st40p, ANC and fastmeta) become the registry (§11.8), the
+  reset, with gaps for st22p TX, st30p, st40p, ANC and fastmeta) become the registry (frameworks.md §11), the
   same keys for every session; lcore and log hooks become `ip.lcores` and `mtl_log_add_sink()`.
 
-### 11.2 KahawaiTest (`tests/integration_tests/`)
+### 9.2 KahawaiTest (`tests/integration_tests/`)
 
 The plan also moves the gtests and the nightly onto the unified API
 ([implementation-plan.md](implementation-plan.md)). Patterns to drop: callbacks guarded with `if
@@ -1432,64 +1084,7 @@ and the results); `*_ops_init()` repeating the port block for `MTL_SESSION_PORT_
 removed (D-109); the session-level suite stays as the internal test of the session
 engine the bindings use, and as the D-24 gate.
 
-### 11.3 GStreamer plugin (`ecosystem/gstreamer_plugin/`)
-
-| Today | Unified |
-|---|---|
-| sources implement only `start`, `negotiate`, `create`: no `unlock`, so flushes wait out the timeout | `unlock()` → `mtl_interrupt(MTL_OBJ_OF_SESSION(s), MTL_INTR_ON, MTL_WAIT_ACQUIRE)` (a sink; a source names `MTL_WAIT_DEQUEUE`), so a reaper of the same session does not spin; `unlock_stop()` → `mtl_session_interrupt(s, 0)`; stop → `mtl_session_close()` |
-| st40p RX polls with a 1 ms sleep ("blocking causes preroll timeout", `gst_mtl_st40p_rx.c:499`) | `mtl_rx_dequeue(s, &u, timeout)`, which sleeps until a unit is ready and which `unlock` interrupts |
-| a global refcounted instance; the second element's device arguments silently ignored | `MTL_INSTANCE_SHARED` (§11.7); each element names its own port, and the port registry in `gst_mtl_common.c` opens the union (§12.10, MS6) |
-| RX `GST_BUFFER_PTS` = raw TAI; no clock, no LATENCY answer | reference timestamp meta from `u.media_tai_ns`; LATENCY from `info.latency_min_ns` / `_max_ns`; `mtl_time_convert()` / `mtl_time_now()` with the monotonic sample |
-| TX `use-pts-for-pacing` mutates the PTS by `pts-pacing-offset` (`gst_mtl_st20p_tx.c:210-217`) | TAI media mode; `sc.media_time_offset_ns` = the offset |
-| RX `query_ext_frame` allocates a `GstBuffer` per frame on the tasklet, never returned at stop (SF-85); `st_frame_fmt_planes(n_planes)` (SF-86) | RX zero copy from MS1: wrap the dequeued library slot (`gst_buffer_new_wrapped_full`) and release from its notify by lease alone, copying the units dequeue flags (§12.8); `mtl_rx_provide` is not the framework path |
-| sources set neither live mode nor format and do not answer LATENCY | `gst_base_src_set_live(TRUE)`, `gst_base_src_set_format(GST_FORMAT_TIME)`, the LATENCY answer of §12.8; the st40p "blocking causes preroll timeout" comment (`gst_mtl_st40p_rx.c:499`) is that missing live flag |
-| sinks install their own chain function (`gst_mtl_st20p_tx.c:263`, `st30p_tx.c:245`, `st40p_tx.c:327`), so basesink sync and render-delay never run | `render` (GstVideoSink `show_frame`); `render-delay` = M_sink = `info.latency_min_ns` + margin + TFRAME of [timing.md §10.5](timing.md#105-live-sinks-and-the-programme-phase) (§12.1) |
-| per-plugin format switches (`gst_mtl_common.c:22-83`, which also parse property values such as `YUV422PLANAR10LE`) and hand-written caps (`gst_mtl_st20p_rx.c:110-111`) | caps from `caps_formats` (ex19: `mtl_format_describe`, `MTL_CONVERT_CHECK`), the transport format only on request (off for sources); today's names stay one release cycle in a logged, deprecated alias table (D-222) |
-| one log route per element `GST_PLUGIN_DEFINE` (six plugins linking `libgstmtl_common.so`) | one MTL log sink, added once in `gst_mtl_common` (§12.10) |
-| TX ext frames with a parent/child refcount | TX: an exported pool (§12.4); an upstream buffer is the source of a submit with `MTL_SUBMIT_SRC_PLANES` (one copy, or the conversion, during the call; MS1), and from MS2 `mtl_tx_acquire_layout()` sends from it directly |
-| `ST40P_RX_FLAG_DISABLE_AUTO_DETECT` (`gst_mtl_st40p_rx.c:515`); ST40 test knobs (`gst_mtl_st40p_tx_test.h`) | `sc.anc.detect = MTL_DETECT_OFF`; `mtl_debug_inject(…, MTL_FAULT_TX_MUTATE, …)` |
-| st30p TX re-frames by hand; st40 UDW helpers from `st40_api.h` | `mtl_tx_write()`; `mtl_anc_*` |
-| ANC UDW capacity: TX `max_udw_buff_size` = 20 × 255 = 5100 B (`DEFAULT_MAX_UDW_SIZE`, `gst_mtl_st40p_tx.h:50-55`), RX 128 KiB (`gst_mtl_st40p_rx.c:121`) | `sc.anc.max_udw_words` (0 = max(255, 32 × `max_packets`) words, 1 024 by default; the plugin sets both from its properties) |
-| only `interleaved` interlace (`gst_mtl_st20p_tx.c:358-362`) | interleaved, alternate and PsF (§12.6) |
-| a second CAPS event is ignored with a warning (`gst_mtl_st20p_tx.c:452-455`, `gst_mtl_st30p_tx.c:457-460`) | stop → `mtl_session_update(s, &sc, MTL_UPDATE_MEDIA, NULL, NULL)` → start, keeping the handle, name, SSRC and counters; a detected RX format change (`MTL_EVENT_RX_FORMAT`) and an MXL grain-count change (`MTL_UPDATE_POOL`) take the same path |
-
-### 11.4 FFmpeg plugin (`ecosystem/ffmpeg_plugin/`)
-
-| Today | Unified |
-|---|---|
-| a global instance; every context repeats identical device options (`mtl_dev_params_compatible()` compares the whole `mtl_init_params`) | `MTL_INSTANCE_SHARED` (§11.7), with one legacy instance from MS3 to MS6 (below) |
-| a NULL frame → `AVERROR(EIO)`, which ends the run | `-MTL_EAGAIN` → `AVERROR(EAGAIN)`, `-MTL_ESHUTDOWN` → `AVERROR_EOF`, `-MTL_EIO` → error |
-| copies both ways (five `/* todo: zero copy */` comments): RX | RX zero copy: `mtl_rx_dequeue()` and `av_buffer_create(addr, unit_bytes, free_cb, opaque, 0)`, with the lease's id as `opaque` (`mtl_rx_release` with a null session, D-226) and a copy of the units dequeue flags (§12.8) |
-| copies both ways: TX | TX video: `mtl_tx_acquire()` and a submit with `MTL_SUBMIT_SRC_PLANES` naming the `AVFrame` planes (one copy, or the conversion, in the call), until per-frame layouts (`mtl_tx_acquire_layout()`) send from them directly; TX audio: `mtl_tx_write()`; on a converting session set `MTL_SESSION_TX_SRC_PLANES` |
-| `read_header` sets neither `avg_frame_rate` nor `r_frame_rate`; `fb_cnt` 3, at most 8 | set both rates; `fb_cnt` default 5 (at most `info.max_count`: 8 until E11 in MS2); wrap each unit, and copy the ones dequeue flags into an `av_buffer_pool` (§12.8): a pool of 5 keeps lending, the library's default of 3 copies every unit |
-| RX `pts` = a frame counter; TX ignores `pts` | RX `pts` from `u.media_tai_ns`; TX the PTS rescaled against `start_time_realtime`, TAI media mode |
-| `AVFMT_FLAG_NONBLOCK` unused | `read_packet` uses timeout 0 when set, `ff_check_interrupt()` between short timeouts otherwise; `write_packet` may block |
-| st30p TX re-frames to 10 ms, ignores `pkt->pts` | `mtl_tx_write()`; `pts` rescaled to the sample index (1/48000), gaps marked `MTL_SUBMIT_DISCONTINUITY` |
-| `ptp_get_time_fn` reads `CLOCK_TAI` (`mtl_common.c:39-45`, installed at `:125`) | leave `ip.time_source` 0 (AUTO, [timing.md §2.2](timing.md#22-time-sources), §2.7). `CLOCK_TAI` named is rejected while the kernel TAI offset is 0; AUTO then picks `SYSTEM_TAI`, ESTIMATED, with a warning (new without ptp4l); from MS3 it moves up without a step once the offset k = U_utc (`time.utc_offset_s`) |
-| `-pix_fmt` names chosen per plugin (`mtl_st20p_rx.c:118-160`); `yuv420p` selects the MTL-only YUV420CUSTOM8 passthrough (`:150-158`) | names from `mtl_format_parse()` (D-222): no `_NONSTD` value has an `av_pix_fmt` name, so `yuv420p` selects a compliant format, a change on MTL-to-MTL links; today's names stay one release cycle in a logged, deprecated alias table |
-| ST22 `pack_type` (`mtl_st22p_tx.c:81`) | `MTL_OPT_CVIDEO_PACK` (`SLICE` is `-MTL_ENOTSUP`) |
-| `ST20_RX_FLAG_DMA_OFFLOAD` on `st20p_rx_ops` (`mtl_st20p_rx.c:176`, wrong namespace) | `MTL_OPT_DMA = MTL_REQ_PREFER`; fixed on the legacy plugin meanwhile (stage A, §8.3) |
-| `GPU_DIRECT`, with `gpu_context` pointing at a stack local (`mtl_st20p_rx.c:207,217`) | `MTL_MEM_DEVICE` of `mtl_mem_open()` (U-117); GPU-pinned host memory works with `mtl_mem_import()` |
-
-From MS3 to MS6, while legacy paths remain, `mtl_common.c` keeps its one legacy instance
-(`mtl_init`, `mtl_start`, its clock and PTP flags as today). Each st20p context gets its own
-reference from `mtl_instance_from_legacy` on it and closes that reference. The last legacy unref
-calls `mtl_uninit` after every reference has closed. MS6 replaces both with
-`mtl_instance_open(MTL_INSTANCE_SHARED)` (§6.2).
-
-### 11.5 OBS (`ecosystem/obs_mtl/`)
-
-Input (st20p RX through a callback and condition variable with a stray unlock,
-`linux-mtl/mtl-input.c:86-125`; a per-source `mtl_init`, `:317-338`): `mtl_rx_dequeue(timeout)` on
-the source thread, `mtl_time_convert(…, MTL_CLOCK_TAI, MTL_CLOCK_MONOTONIC, …)` for the OBS
-timestamp, `MTL_INSTANCE_SHARED` across sources. Output (never finished, `#if TODO_OUTPUT`): the
-live-sink recipe (§12.1). The draft's `tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK` with an OBS monotonic
-timestamp (`linux-mtl/mtl-output.c:224-225`) is latent, not wrong on the wire: the output sets
-neither USER_PACING nor USER_TIMESTAMP (`mtl-output.c:154-168`), so st20p discards the timestamp
-(`st20_pipeline_tx.c:231-234`) and sends as AUTO. The port converts MONOTONIC → TAI. Per-source
-`lcores` and queue counts: `mtl-input.c:330-332`, `mtl-output.c:139-141` (§11.7).
-
-### 11.6 Other in-tree consumers
+### 9.3 Other in-tree consumers
 
 | Consumer | Port |
 |---|---|
@@ -1499,504 +1094,7 @@ neither USER_PACING nor USER_TIMESTAMP (`mtl-output.c:154-168`), so st20p discar
 | `app/perf`, `app/tools`; unit and fuzz tests | the internal tier; unit and fuzz compile library sources directly |
 | `manager/`, `ld_preload/` | no public-API use (`ld_preload/` has no sources since `2b182cd87`) |
 
-### 11.7 The process-wide instance
-
-FFmpeg, GStreamer and two external projects each re-implement a refcounted singleton, because
-`mtl_init` could not be called again after `mtl_uninit` (#1341). `MTL_INSTANCE_SHARED` creates the
-process-wide instance on the first open and joins it later; each open returns its own reference,
-and the last close shuts it down. After a close, open works again in the process on the same
-ports and a subset of the first open's CPUs.
-
-A later open that names a port the live instance lacks, or lcores, time source or options that
-differ from it, fails with `-MTL_EEXIST` (`INSTANCE_MISMATCH`), before any device is touched. So elements that share
-an instance must agree on lcores, time source and options: keep those in one place. Ports need not
-agree: an element may name only its own ports, which the instance must have (§12.10;
-contract.md §2.3). Legacy instance flags that are now session keys
-(`pacing`, the source-port modes, `TX_NO_CHAIN`, the migrate flags) need no agreement when each
-element sets them on its own sessions; instance options such as `MTL_OPT_RX_SEPARATE_VIDEO_LCORE`
-do. A field a later open leaves
-zero is not a request, so it never conflicts.
-
-Two in-tree consumers break this rule today, and a literal port fails:
-
-- **OBS** opens one instance per source with that source's `lcores` and its own queue counts
-  (input: TX 0, RX 1; output: TX 1, RX 0; `ecosystem/obs_mtl/linux-mtl/mtl-input.c:330-332`,
-  `mtl-output.c:139-141`). Mapped to `ip.lcores` and `ports[i].tx_queues` / `.rx_queues`, the
-  second MTL source of a scene with another CPU list fails open with `INSTANCE_MISMATCH`, and so
-  can an output next to an input.
-- **FFmpeg** sets `RX_SEPARATE_VIDEO_LCORE`, `TX_VIDEO_MIGRATE` and `RX_VIDEO_MIGRATE` on every
-  context (`ecosystem/ffmpeg_plugin/mtl_common.c:112-114`). Mapped to instance options
-  (`MTL_OPT_RX_SEPARATE_VIDEO_LCORE`, `MTL_OPT_MIGRATE` on the instance), an FFmpeg context in a
-  process whose instance was opened without them (a GStreamer element, an application) fails open
-  the same way, and the other way round.
-
-Today the first `mtl_init` wins and the later contexts' settings are silently ignored (§11.3,
-§11.4). The rule for the ports (OI-43, [contract.md §2.3](contract.md#23-shared-instance)):
-elements that share an instance leave `lcores` and the port queue counts at 0 and put what is
-theirs in session keys, `session.tx_queue` and `session.migrate`. There are no per-session
-queue-count keys.
-
-- `lcores` and the separate-lcore setting are instance settings: the plugins leave them zero (the
-  pod's CPU mask), which changes behaviour for users who set an OBS CPU list.
-- Migration is per session: the FFmpeg plugin sets `MTL_OPT_MIGRATE` on its sessions instead of on
-  the instance.
-- Queues are per session: each session takes its queue at create (`session.tx_queue` chooses a
-  dedicated or a shared TX queue), so the plugins leave `ports[i].tx_queues` and `.rx_queues` zero and queue
-  counts no longer take part in the agreement check; a create fails with `-MTL_ENOSPC`
-  (`CAPACITY_*_QUEUES`) when queues run out.
-
-### 11.8 Stats exporters
-
-Telegraf or Prometheus: `mtl_instance_list_sessions()`, `mtl_session_get_info()` for the name,
-`mtl_stat_list()` once and `mtl_stat_read()` per scrape (DP, lock-free; `-MTL_ESTALE` after a schema
-change: list again). Rates come from the exporter's previous snapshot. This replaces
-`stat_dump_cb_fn`.
-
-## 12. Framework recipes
-
-One distinction: **live sinks use TAI media mode; whole-timeline owners use INDEX.** A live sink in
-INDEX mode turns jittery PTS into `DROPPED` results (`BEHIND`, `DUPLICATE_INDEX`) and a just-in-time producer into a late unit on
-every frame. Normative rules: [timing.md](timing.md).
-
-### 12.1 Live sinks (GStreamer `sync=TRUE`, `ffmpeg -re`, OBS output)
-
-The recipe, with its numbers, is [timing.md §10.5](timing.md#105-live-sinks-and-the-programme-phase): TAI media mode with
-snap `MTL_SNAP_NEAREST` (the default), and one formula, `u.media_tai_ns = TAI(ct) + δ`. ct is the
-buffer's presentation time, which contains the programme latency L (one per programme), and δ is
-the programme's phase (D-221). A sink's minimum is M_sink = `latency_min_ns` + margin + TFRAME,
-with TFRAME the frame period and the margin the producer's jitter (1 ms, or more where measured);
-L is at least the largest M_sink of the programme's sinks. GStreamer lets basesink wait; FFmpeg,
-OBS and applications let MTL's pool wait (ex21). What a framework adds around it:
-
-- **Clocks.**
-  - GStreamer: the plugin's GstMtlClock (`gst_mtl_common.c`, MS6), a GstSystemClock on
-    `CLOCK_MONOTONIC` calibrated with `gst_clock_set_calibration` from `mtl_time_now(mt, &tai,
-    &mono, NULL)` pairs, so that it reads TAI. MTL elements provide it; an application forces it
-    with `gst_pipeline_use_clock()` when another element (an audio sink) would provide the
-    pipeline's clock. It stays monotonic: a declared backward `TIME_STEP` holds it until TAI
-    catches up, and the hold is logged once. On the default GstSystemClock,
-    `mtl_time_convert(MONOTONIC → TAI)` is enough. libmtl gets nothing new for this.
-  - FFmpeg: the PTS rescaled against `start_time_realtime`. OBS: MONOTONIC → TAI.
-  - The GStreamer st40p sink moves to TAI on the epoch, as its video does, so ANC keeps the video
-    RTP.
-- **Rate.** A collision is a `MTL_TX_DROPPED` result (`SNAP_COLLISION`); a frame time without a
-  buffer follows `MTL_OPT_UNDERRUN_POLICY` (`MTL_UNDERRUN_REPEAT` sends the last frame again,
-  MS4a1). Frame-rate adaptation is by drop and repeat, never a permanent relock.
-- **Seek or `FLUSH_STOP`:** `mtl_session_discard(s, 0, 0)`, which also releases a repeated frame;
-  TAI needs no rebase.
-- **End of stream.** EOS is not a stop (D-210). The session stays RUNNING: the frame times after
-  the last buffer follow the underrun policy (under REPEAT the last frame holds; under SKIP nothing
-  is sent while the flow, ARP, IGMP and the grid stay), and a seek afterwards needs no start.
-  - A sink with results reaps until at most `pins` buffers are unreported: 0 under SKIP, 1 under
-    REPEAT, 2 interlaced (ex21's `sink_end`). The pinned buffers report when the next clip's first
-    buffer of their parity finishes, at a seek (discard), or when DRAIN begins. The base class then posts EOS with
-    the last buffer on air.
-  - A reap that times out ends the wait, because a stalled queue is not an EOS error; close drains
-    it.
-  - The session stops at PAUSED → READY and closes at READY → NULL. FFmpeg's `write_trailer` reaps,
-    then closes, with no stop; an OBS output's stop closes. Close begins with DRAIN, so it releases
-    the pins and sends what is queued until its deadline.
-- **Pause and "repeat the last frame".** Set `MTL_OPT_UNDERRUN_POLICY` = `MTL_UNDERRUN_REPEAT`
-  (video, MS4a1; JPEG XS MS4b). A paused sink submits nothing and every frame time repeats the
-  last buffer of its parity (no pin: nothing), on every pool and with conversion. The last
-  buffer's result comes when its pin is released (a newer whole buffer of its parity after the pause, or its age), a discard (seek) or a DRAIN; a seek ends the repeat.
-- **Audio.** `MTL_OPT_AUDIO_ABSORB_SAMPLES` defaults to one packet in TAI mode, so submissions
-  within ± one packet are contiguous; larger deviations keep the packet grid (a gap is filled with
-  silence, `samples_padded`; an overlap trimmed, `samples_dropped`); only `MTL_SUBMIT_DISCONTINUITY`
-  re-phases ([timing.md](timing.md) §8).
-
-[examples.md §23](examples.md#23-a-live-sink-presentation-time-to-media-time) (ex21) is the
-recipe where MTL waits (FFmpeg, OBS, applications), as a compiling sink: the programme's one
-latency and phase are added to each media time.
-
-**The basesink render rebase** (GStreamer sinks). Today's sinks install their own chain
-function (`gst_mtl_st20p_tx.c:263`, `gst_mtl_st30p_tx.c:245`, `gst_mtl_st40p_tx.c:327`), so
-basesink's sync and render-delay never run. The port:
-
-- **Base class.** Video derives from `GstVideoSink` (`show_frame`); audio and ANC from
-  `GstBaseSink` (`render`). The chain functions go.
-- **At `set_caps`.** Create the TAI-mode session and call `mtl_session_get_info`.
-  `gst_base_sink_set_render_delay(sink, M_sink)`, with M_sink = `latency_min_ns` + margin + TFRAME
-  ([timing.md §10.5](timing.md#105-live-sinks-and-the-programme-phase)); the setter posts the
-  LATENCY message itself when the value changes. Keep `sync=TRUE`, and turn async state changes
-  back on (drop `gst_base_sink_set_async_enabled(bsink, FALSE)`), so that preroll, QoS,
-  `max-lateness`, `ts-offset` and PAUSED work as they do for any video sink.
-- **In `render`.**
-  - ct = `gst_element_get_base_time(sink)` + `gst_segment_to_running_time(&segment,
-    GST_FORMAT_TIME, GST_BUFFER_PTS(buf))` + `gst_base_sink_get_latency(sink)` +
-    `gst_base_sink_get_ts_offset(sink)`.
-  - Basesink calls `render` at ct − M_sink, so ct is the presentation clock time and already holds the
-    programme latency.
-  - Submit `u.media_tai_ns = TAI(ct) + δ`, with δ from the pipeline's programme state
-    ([timing.md §10.5](timing.md#105-live-sinks-and-the-programme-phase)), by
-    `MTL_SUBMIT_SRC_PLANES` or from the exported pool (§12.4).
-- **When `latency_min_ns` grows** (it follows C, the caller's work,
-  [contract.md §3.5](contract.md#35-query-and-info)). Set the new render-delay M_sink, about once a
-  second at most.
-- **Pool.** Units are handed over M_sink early, so `pool_count` = the upstream minimum + 1 (the last
-  sample, §12.4) + ceil(M_sink / U) suffices, U the unit period.
-- **Other handlers.** `unlock` and `unlock_stop` map to the interrupt (§11.3); EOS to reaping
-  (above); `FLUSH_STOP` to discard.
-- **Not consumed.** A sink's max is not consumed; `latency_max_ns` (the horizon) is information.
-
-**FFmpeg muxer.**
-
-- In `write_header`, create a TAI session (`media_time_offset_ns` 0;
-  [timing.md §10.5](timing.md#105-live-sinks-and-the-programme-phase)).
-- The plugin's process state holds L and δ:
-  - L = max(`s->max_delay` × 1000, the largest M_sink of the outputs open when the first packet is
-    written);
-  - an output opened later whose M_sink exceeds L logs one warning, because its units come
-    `TOO_LATE`: raise `-muxdelay`.
-- In `write_packet`, `u.media_tai_ns` = TAI(`s->start_time_realtime`, or `mtl_time_now` at
-  `write_header`) + `av_rescale_q(pkt->pts − first_pts, st->time_base, {1, 1000000000})` + L + δ
-  (ex21).
-- In `write_trailer`, reap, then `mtl_session_close` (no stop; D-210).
-
-### 12.2 Whole-timeline owners and processors
-
-- File playout, RxTxApp, an A/V/ANC set: INDEX media mode on the epoch. One process starts its
-  sessions as one array, `mtl_session_start(s, n, &when, &t0)` with `MTL_WHEN_ORIGIN` in
-  `when.flags`: media index 0 of every session is the start's T0, so a file's frame and sample
-  counts are media indices as they are (start arrays: U-121, [timing.md](timing.md) §7). Across
-  processes, start without `MTL_WHEN_ORIGIN` and agree on epoch indices (`mtl_epoch_index_at()`)
-  or on a programme-grid instant ([timing.md §10.4](timing.md#104-separate-processes)).
-  Seek: `mtl_session_discard(s, MTL_DISCARD_REBASE, first_index)` maps the new first index to the
-  next feasible index.
-- Processors and forwarders: TAI with the input's media time, and `sc.min_tx_delay_ns` = the
-  pipeline budget (at least one frame period, as a capture producer; MTL adds its pick-up lead).
-  `MTL_SUBMIT_RTP_TS` with media mode AUTO is rejected (`RTP_TS_AUTO`). A forwarder sending from the received slot sets `u.hold` to the RX lease
-  (`mtl_tx_send_slot()` with the received unit as template).
-
-### 12.3 Thread rules
-
-Set `MTL_SESSION_MT_SUBMIT` whenever two threads can submit (a queue element before the sink that
-submits on its own thread, FFmpeg frame threading); acquire is MP-safe without it, so an exported
-pool whose only submitter is `render` does not set it (§12.4). With it, a blocking acquire uses a
-finite timeout and reaps on `-MTL_EAGAIN`: the ring covers one submit per thread
-([contract.md §5.5](contract.md#55-back-pressure)). `mtl_rx_release()` is safe from any thread.
-
-Every session has its own results and events. A thread that serves one session waits on it
-(`mtl_session_wait()`, or the WT calls with a timeout). A thread that serves many uses one queue
-(`mtl_queue_create()`, MS2a): it arms each session on it (`mtl_queue_arm()`), and the instance
-with `MTL_WAIT_EVENTS` for port, time, health and manager events (MS3), and sleeps in
-`mtl_queue_wait`; the application's other threads wake it with `mtl_queue_post`. The wait returns
-one report per changed object; the thread serves that object with timeout-0 calls (reap, dequeue,
-`mtl_session_read_events()`; `mtl_instance_read_events()` for the instance) and arms it again with
-what it wants next. A framework's loop takes the queue's descriptor instead and sleeps on it only
-after `mtl_queue_wait(q, …, 0)` returned `-MTL_EAGAIN` ([contract.md §7.2](contract.md#72-queues-ms2)).
-
-### 12.4 Exporting a pool (GstBufferPool over MTL TX slots)
-
-Acquire is MP-safe and `render` is the only submitter (contract.md §5.6), so the session needs
-neither `MTL_SESSION_MT_SUBMIT` nor results: each wrapper is bound to one slot and leases it by name.
-
-| GstBufferPool | Unified API |
-|---|---|
-| `alloc_buffer` | one wrapper per slot i, `i < info.pool_count`, over the planes of `mtl_session_get_slot(s, i, &u)` |
-| `acquire_buffer` | take a wrapper i that came back to the pool, then `mtl_tx_acquire_slot(s, i, &u, timeout)`: `-MTL_EAGAIN` while slot i is still on its way out |
-| `render` | `mtl_tx_submit()` |
-| `release_buffer`, never submitted | `mtl_tx_release()` |
-| `release_buffer`, submitted | nothing: the wrapper is free again, and MTL frees slot i once it has left |
-| `set_active(FALSE)` | `mtl_session_stop(&s, 1, MTL_STOP_FLUSH, timeout)`; free the wrappers once `mtl_session_close()` returns 0 |
-
-**The last-sample reference.** GstBaseSink keeps the last rendered buffer (`enable-last-sample`,
-on by default), so a submitted wrapper comes back to the pool only when the next buffer renders.
-Binding each wrapper to its own slot keeps the last sample's bytes intact while the sink holds it:
-MTL never writes a TX buffer, and slot i is leased again only after wrapper i has come back. A
-pool that took any free slot with `mtl_tx_acquire` would hand the last sample's slot to upstream
-while the sink still shows it. The pool size counts that buffer: `pool_count` ≥ the upstream
-minimum + 1 (the last sample) + the units in flight.
-
-### 12.5 Importing the framework's pool
-
-1. **Negotiation.** `mtl_session_query()` (no allocation) answers ALLOCATION: `size =
-   info.unit_bytes`, `min_buffers = req.min_count_direct` (or `req.min_count` off the direct path)
-   **plus** the upstream pool's own `min_buffers`, `max_buffers ≤ req.max_count`, a `GstVideoMeta`
-   with `req.plane[i].stride` (any stride ≥ `row_bytes` is direct); LATENCY from
-   `info.latency_min_ns` / `_max_ns`.
-2. **Activation.** Import the upstream arena as **one** region (`mtl_mem_import()`,
-   `MTL_MEM_READ`, page aligned; the region budget is small), attach one slot per surface
-   (`mtl_session_attach()` with `slot_offset[]`), start.
-3. **Teardown.** Stop with FLUSH, reap, `mtl_session_close()`; while it returns 1, call it again
-   with a timeout; `mtl_mem_close()`; only then may the framework free the arena.
-
-### 12.6 Interlaced
-
-The unit is a field; a field layout has `rows = height / 2`. GStreamer `interleaved` is two field
-slots over one surface (plane offset 0 or one row, `stride = 2 × row_bytes`); `alternate` is one
-field per buffer; PsF is `MTL_PSF` (paced as interlaced, one RTP timestamp and one index per
-frame). Halve the legacy `fps` (§5.1). Today `st_fmt.c:611` halves the frame size for
-interlaced, and the GStreamer sink maps interleaved caps onto half-height field buffers
-(`gst_mtl_st20p_tx.c:358-363`); an interleaved buffer becomes two submissions that both hold the
-same GstBuffer, with no weave copy. RX works the same way: two field slots over one frame-sized
-region deliver a woven frame directly.
-
-### 12.7 What each producer gets
-
-Whether zero copy is possible at all depends on who allocates the buffer. "Copies" counts
-full-unit CPU copies by the application or MTL before the NIC, not the packet build of the
-copy-only essences.
-
-| Producer | Copies per unit | From |
-|---|---|---|
-| the application writes a library pool | 0 | MS1 |
-| a framework that honours the exported pool (§12.4) | 0 | MS2 |
-| an application that wants MTL-placed memory shared by several sessions (Rivermax "one registration for many streams") | 0: `mtl_mem_alloc()` once, attach every session over the region | MS2 |
-| a GStreamer upstream pool that ignores `propose_allocation` (most decoders, `videotestsrc`) | 1: a submit with `MTL_SUBMIT_SRC_PLANES` copies (or converts) the buffer into the slot during the call; 0 once it can be imported (page-aligned host memory within the region budget; MS2); on a converting session set `MTL_SESSION_TX_SRC_PLANES` | MS1 |
-| FFmpeg decoder frames (`av_buffer_pool`, 64 B aligned) | 1, through `MTL_SUBMIT_SRC_PLANES`; 0 only with an application `get_buffer2` that carves frames from one imported page-aligned arena (MS2) | MS1 |
-| FFmpeg TX `AVPacket`s for ST 2110-22 | packet build only: the codestream is always copied into packets (ST22 forces `tx_no_chain`, `st_tx_video_session.c:3413-3416`); `mtl_tx_write()` or a library slot | MS4 |
-| audio, ANC, fastmeta, any producer | packet build only; `mtl_tx_write()` needs no slot | MS4 |
-| MXL grains, fixed grain count | 0: attached pool, `MTL_SESSION_RX_BY_INDEX` | MS2b |
-| MXL flow re-created with another grain count | 0: stop, `mtl_session_update()` with `MTL_UPDATE_POOL`, detach, attach, start (one stop/start gap); or a per-acquire layout, which needs no re-attach | MS5 (update); MS2 (layout) |
-| moving cursor over one arena (`app/sample/ext_frame/tx_st20_pipeline_ext_frame_sample.c:147-162`; the sample first copies its file into `mtl_dma_mem_alloc` memory, `:80-99`) | 0: one region and `mtl_tx_acquire_layout()`, or one attached slot per arena frame (`pool_count` = F ≤ `max_count`) | MS2 |
-| playout server that mmaps media files | 0 from a hugetlbfs file (direct); a page-cache file (`MTL_BACKING_FILE`) is accepted copy only | MS2 |
-| capture SDK without an allocator hook (driver-owned buffers) | 0 if its buffers are stable, page-aligned host memory (attached pool); otherwise 1 | MS2 |
-| GPU-pinned host memory (`cudaHostAlloc`, `zeMemAllocHost`) | 0 on the NIC side: `mtl_mem_import()`, RX direct into it, then `cudaMemcpyAsync` host-to-device, the standard GPU ingest path | MS2 |
-| VA-API surfaces, CUDA device pools, DMA-BUF | 1: a CPU mapping plus a copy by the application, until `MTL_MEM_DEVICE` of `mtl_mem_open()` (MS6, U-117) | MS1 |
-| RX → TX forward over a library RX pool (`app/sample/fwd/rx_st20p_tx_st20p_fwd.c:161-165`); split forward 1 RX → 4 TX (`app/sample/fwd/rx_st20_tx_st20_split_fwd.c:263-265`, each TX slot a sub-rectangle) | 0: `mtl_session_get_pool_region()`, TX slots over it, `u.hold` (split forward: partial packet copies counted) | MS2 |
-
-To be importable, a framework allocates its pool from one page-aligned arena
-(`posix_memalign(4096)`, a GstAllocator with `align = 4095`, a custom `av_buffer_pool` allocator).
-Per buffer at steady state: from the exported pool, submit; from an importable upstream pool with
-`max_buffers` ≥ `req.min_count_direct` + 1, send from the imported arena (MS2,
-`mtl_tx_acquire_layout()`); otherwise submit an acquired unit with `MTL_SUBMIT_SRC_PLANES` naming
-the buffer's planes (the copy or the conversion happens during the call) and unref the buffer at
-once.
-
-### 12.8 RX sources: zero copy, pool size and LATENCY
-
-The recipe for every framework source (D-228). MTL owns the pool; the framework borrows units.
-
-#### The buffer
-
-- **GStreamer** (`create`): dequeue (the timeout of §12.3; `unlock` interrupts it). Then:
-  - `buf = gst_buffer_new_wrapped_full(0, u.plane[0].addr, unit_bytes + MTL_RX_TAIL_BYTES, 0,
-    unit_bytes, (gpointer)(uintptr_t)u.lease.id, notify)`; `notify(p)` calls
-    `mtl_rx_release(MTL_NULL(mtl_session_h), (mtl_lease_h){(uint64_t)(uintptr_t)p})`: the lease
-    names its session (D-226), so nothing is allocated per frame. The cast keeps the 64-bit id on a
-    64-bit host only. On a 32-bit host the pointer names entry `u.slot` of a table of `pool_count`
-    leases, written at dequeue (the slot is not dequeued again before its release). The table
-    belongs to the session, not to the element: allocate it with the session and free it only
-    after the session retires, from the last release once `mtl_session_close` has returned 1, or
-    at close when it returned 0.
-  - A unit dequeued with `MTL_UNITF_COPY_ADVISED` is copied instead ([below](#the-copy-fallback)).
-  - `unit_bytes` is `info.unit_bytes`, or with detection Σ `stride × rows` of the unit's planes.
-  - Leave the memory writable: a leased slot is the application's.
-  - Add `gst_buffer_add_video_meta_full()` when the layout differs from the `GstVideoInfo` default
-    ([contract.md](contract.md) §9.1). In `decide_allocation`, without `GST_VIDEO_META_API_TYPE`
-    downstream, copy.
-  - Field units: `interlace-mode=alternate` with the `format:Interlaced` caps feature and the
-    per-buffer `TOP_FIELD`/`BOTTOM_FIELD` flags.
-- **FFmpeg** (`read_packet`): dequeue (timeout 0 with `AVFMT_FLAG_NONBLOCK`, else short timeouts
-  between `ff_check_interrupt()` calls). Then:
-  - `pkt->buf = av_buffer_create(u.plane[0].addr, unit_bytes, free_cb,
-    (void*)(uintptr_t)u.lease.id, 0)`, `pkt->data = pkt->buf->data`, `pkt->size = unit_bytes`;
-    `free_cb` releases the lease with a null session (on a 32-bit host through the session's
-    per-slot table above); a flagged unit is copied instead.
-  - The tail meets `AV_INPUT_BUFFER_PADDING_SIZE`. rawvideo outputs without a copy
-    (`rawdec.c:227`, `:248`) in the packed layout (`:353`). For `AV_CODEC_ID_BITPACKED` (RFC 4175
-    4:2:2 10-bit, `codec_tag` UYVY, `bits_per_coded_sample` 20) give the transport format.
-- **Lifetime.** The callback's pointer is the lease: nothing of the element or the
-  `AVFormatContext`, which may be gone when a downstream holder frees the buffer. Stop and
-  `read_close` call `mtl_session_close(s, 0)` and return; 0 and `MTL_RETIRING` are both success.
-
-**Timestamps and live mode.**
-
-- GStreamer: in `start`, `gst_base_src_set_live(src, TRUE)` and `gst_base_src_set_format(src,
-  GST_FORMAT_TIME)`.
-  - `GST_BUFFER_PTS` = the pipeline clock's value of `u.media_tai_ns` − `base_time`: on
-    GstMtlClock the value itself; on GstSystemClock `mtl_time_convert(TAI → MONOTONIC,
-    u.media_tai_ns)`; with another pipeline clock, use GstMtlClock (§12.1). A refusal
-    (`u.media_tai_ns` NONE) gives `GST_CLOCK_TIME_NONE`. `GST_BUFFER_DURATION` = the unit period.
-  - On PAUSED → PLAYING, call `mtl_session_discard(s, 0, 0)` (MS2a): a live basesrc does not
-    produce in PAUSED.
-- FFmpeg: `pts = dts` = `u.media_tai_ns` (time base 1/1 000 000 000; `MTL_TIME_NONE` is
-  `AV_NOPTS_VALUE`, so no code); `avg_frame_rate` =
-  `r_frame_rate` = `raster.fps`, set in `read_header`.
-  - With both rates, probing stops after the first packet (`demux.c:2632-2660`).
-  - Without them, the default `probesize` (5 000 000 B) still stops after one 1080p 10-bit frame
-    (5.18 MB, `demux.c:2665-2681`). At 720p it reads up to 3 frames, which the copy covers.
-
-#### The copy fallback
-
-The library decides when to copy (D-227). Dequeue sets `MTL_UNITF_COPY_ADVISED` on a unit when
-lending one more would leave MTL fewer than R_copy = ceil(`latency_min_ns` / U) + 1 slots, U the
-unit period ([contract.md §5.3](contract.md#53-rx)). The source copies a flagged unit into a buffer of
-a framework pool and releases it at once: in GStreamer the pool `decide_allocation` chose (GL,
-DMA-BUF or system memory, so the copy is the upload), in FFmpeg an `av_buffer_pool`. Every other
-unit is wrapped.
-
-- Take the copy's buffer without waiting (`GST_BUFFER_POOL_ACQUIRE_FLAG_DONTWAIT`); with none
-  free, release the unit and drop it (QoS). Never block `create()` on downstream.
-- For the flagged copies the source keeps no count, measures nothing and computes nothing, at a
-  LATENCY event or at a format change.
-- Holders downstream cost a copy, never a lost unit: a sink's last sample, an aggregator pad's
-  current buffer (`GstVideoAggregatorPad` keeps it until a newer one arrives), a `queue`, the
-  ffmpeg CLI's thread queues (8 + 8, `fftools/ffmpeg_sched.h:241,246`), decoder frame threads.
-- `rx.units_copy_advised` counts the flagged units claimed while others were lent, so a pool that
-  is too small shows.
-
-#### Pool size
-
-One formula. With H wrapped units out at once at steady state, no unit is flagged when
-
-`pool_count` ≥ R_copy + H = ceil(`latency_min_ns` / U) + 1 + H.
-
-- H is 1 for the buffer being rendered or aggregated, plus 1 per element on the path that keeps
-  it after use: a sink's last sample, an aggregator pad's current buffer. One sink or one
-  aggregator gives H = 2; a tee to both gives 3.
-- The library's own bound is the case H = 0: the `MTL_INFO_LATENCY_INFEASIBLE` remedy
-  ceil(`latency_min_ns` / U) + 1 ([contract.md](contract.md) §3.5).
-- At the library's default pool (3 on one leg, D-204) every unit is flagged and copied, so a
-  source that wants zero copy sets `pool_count` = R_copy + H, as the defaults below do.
-- Defaults, from the formula (`latency_min_ns` of a session without conversion):
-
-  | Case | `latency_min_ns` | R_copy | H | `pool_count` |
-  |---|---|---|---|---|
-  | 1080p and 2160p59.94, one leg | 18.33 ms | 3 | 2 | **5** |
-  | the same, two legs (F, the skew budget `rx.skew_budget_ns`, 10 ms) | 27.33 ms | 3 | 2 | **5** |
-  | 119.88p, two legs | 18.67 ms (U 8.34) | 4 | 2 | 6 |
-  | 59.94p, class B skew (F 50 ms) | 67.33 ms | 6 | 2 | 8 (= `max_count` until E11) |
-
-- GStreamer `pool-count` defaults to 5, and the source raises it to the formula's value at
-  create when `info.max_count` allows.
-- FFmpeg `fb_cnt` defaults to 5. The ffmpeg CLI's queues (H up to 16) mostly take the copy:
-  size to 8 to copy less.
-
-#### LATENCY
-
-GStreamer `query` for `GST_QUERY_LATENCY` ([contract.md](contract.md) §3.5):
-
-- `live` = TRUE;
-- `min` = `info.latency_min_ns`, the caller's work C included (D-225). Before create, the dry run
-  (`mtl_session_query`) gives the same value, with C from create's calibration. A source that
-  copies every unit (no `GST_VIDEO_META_API_TYPE` downstream) measures its copy of one unit, c,
-  at create and again at each format change, and adds it; a flagged copy adds nothing, because basesink's `processing-deadline`
-  (20 ms by default in live pipelines) absorbs it;
-- `max` = `info.latency_max_ns`, and `GST_CLOCK_TIME_NONE` for `INT64_MAX` (`RX_LATEST`). There is
-  no H: when downstream holds more, the source copies.
-
-Post `gst_message_new_latency()` when either value changes:
-
-- after `mtl_set_options` of an S key;
-- at a format change (§12.9), with c measured again;
-- when `latency_min_ns` grows.
-
-`MTL_INFO_LATENCY_INFEASIBLE` means max < min for the library itself: raise `pool_count`.
-
-FFmpeg has no latency negotiation. The demuxer exports `latency_min_us` and `latency_max_us` as
-`AV_OPT_FLAG_EXPORT | AV_OPT_FLAG_READONLY` options, set in `read_header` and at each format
-change.
-
-#### Redundant inputs
-
-With two legs `latency_min_ns` includes `rx.skew_budget_ns` (10 ms by
-default), the time a unit waits for the late leg. A plugin exposes it as a property
-(`skew-budget`, ns) and sets `rx.skew_budget_ns` from it at create: a red/blue pair inside one
-facility with sub-millisecond skew sets 1 ms and saves 9 ms per hop. `leg.observed_skew_ns{window=60s}`
-shows the skew the receiver sees; the plugin never derives `min` from it, so the latency it
-announces holds through a failover of the leading leg.
-
-### 12.9 Format changes
-
-With `video.detect` ON every format within the maximum arrives in-band. The first unit of each
-carries `MTL_UNITF_FORMAT_CHANGED`, and `mtl_rx_get_detail` gives its `raster`, `packing`,
-`fps_approx` ([timing.md](timing.md) §11.9) and `format_seq`. `format_seq` restarts at 1 at every
-start. Reconfigure on that unit, never from stats.
-
-- **Waiting for the first format.** GStreamer `negotiate` (or the first `create`), and FFmpeg
-  `read_header`, dequeue with short timeouts until the first unit:
-  - GStreamer through `unlock` → `mtl_interrupt`;
-  - FFmpeg between `ff_check_interrupt()` calls, bounded by the plugin's `timeout_s`.
-
-  `MTL_STATUS_RX_DETECTING` means measuring; `MTL_STATUS_FORMAT_CHANGED` means the stream does
-  not fit. FFmpeg keeps the first unit as the first packet. Colorimetry comes from the
-  configuration.
-- **FFmpeg.**
-  - Fill `codecpar` from the first unit: width, height, `avg_frame_rate` = `r_frame_rate` =
-    `raster.fps`; field units as half-height frames at the field rate.
-  - On a later first unit, when width or height changed and the codec is rawvideo (an
-    `app_format` that is a pix_fmt, or `MTL_YUV422_8` as UYVY):
-    - `sd = av_packet_new_side_data(pkt, AV_PKT_DATA_PARAM_CHANGE, 12)`;
-    - `bytestream_put_le32(&sd, AV_SIDE_DATA_PARAM_CHANGE_DIMENSIONS)`, then the width and the
-      height.
-
-    rawvideo has `AV_CODEC_CAP_PARAM_CHANGE` (`rawdec.c:499`; `decode.c:82-130` applies it; the
-    CLI re-initialises filters with `-reinit_filter`).
-  - A rate change needs nothing in-band: update the `latency_*_us` export options.
-  - `AV_CODEC_ID_BITPACKED` and `V210` lack the capability, so with them a size change ends the
-    input with `AVERROR_INPUT_CHANGED`. Use rawvideo output when sources change size.
-- **GStreamer.** On the first unit of a new `format_seq`, before returning its buffer:
-  1. build caps from `raster`: width, height, `framerate` = fps num/den, `interlace-mode` =
-     progressive (PsF frames too), or alternate for field units with the `format:Interlaced`
-     feature, plus the configured colorimetry;
-  2. `gst_base_src_set_caps(src, caps)`;
-  3. `gst_base_src_negotiate(src)` (GStreamer ≥ 1.18), so ALLOCATION and the `GstVideoMeta`
-     decision rerun;
-  4. `gst_message_new_latency()`: the period changed;
-  5. push the buffer.
-- **Above the maximum.** No units arrive. Raise the maximum with stop,
-  `mtl_session_update(..., MTL_UPDATE_MEDIA, ...)` and start (MS3; until then close and create),
-  or wait.
-
-### 12.10 Logs, options and ports
-
-- **Log.** One sink per process, not per element or plugin.
-  - GStreamer: in `libgstmtl_common.so` (`gst_mtl_common.c`), added under a once guard by the
-    first element that opens the instance. The six `GST_PLUGIN_DEFINE`s all link it, so a
-    `plugin_init` sink would print every line six times.
-  - FFmpeg: in the plugin's process-wide module (`mtl_common.c`).
-  - Route by `r->origin`. Session origins go to the element that owns the session: a map from
-    session ID to a `GWeakRef` (GStreamer; `g_weak_ref_get`, then
-    `GST_CAT_LEVEL_LOG_OBJECT(cat, level, obj, ...)`), or to the `AVFormatContext` under a mutex
-    that `read_close` also takes before freeing the context (FFmpeg). Other origins go to the
-    plugin's category, or `av_log(NULL, ...)`.
-  - Prefix each line with `r->origin_name`. Map severities with this table:
-
-    | `enum mtl_severity` | GStreamer | FFmpeg |
-    |---|---|---|
-    | CRIT | `GST_LEVEL_ERROR` | `AV_LOG_FATAL` (8) |
-    | ERR | `GST_LEVEL_ERROR` | `AV_LOG_ERROR` (16) |
-    | WARNING | `GST_LEVEL_WARNING` | `AV_LOG_WARNING` (24) |
-    | NOTICE | `GST_LEVEL_INFO` | `AV_LOG_INFO` (32) |
-    | INFO | `GST_LEVEL_INFO` | `AV_LOG_INFO` (32) |
-    | DEBUG | `GST_LEVEL_DEBUG` | `AV_LOG_DEBUG` (48) |
-
-- **Severities.** At add, set `min_severity` from the category threshold
-  (`gst_debug_category_get_threshold`) or `av_log_get_level()`. When that changes, add the new
-  sink first, then remove the old one.
-- **Options.** GStreamer `options` (`GST_TYPE_STRUCTURE`) and FFmpeg `mtl_opts`
-  (`AV_OPT_TYPE_DICT`), each entry through `mtl_option_parse()`, routed by its return
-  ([contract.md](contract.md) §12.5). Instance keys must agree across the elements of a process
-  (§11.7); keep them in one place.
-- **Ports.** The element recipe, three rules:
-  1. the instance's ports come from one place before the first open (D-211): `MTL_PORTS`, or, in
-     GStreamer, the plugin's process registry in `gst_mtl_common.c` (MS6):
-     - each element adds its ports (normalised by `mtl_port_parse()`) at NULL → READY and removes
-       them at READY → NULL; the first element to reach READY → PAUSED opens the shared instance
-       with the union;
-     - inside one pipeline the element order never matters, because a `GstBin` takes every child
-       through NULL → READY before any child goes READY → PAUSED;
-     - two elements naming one port with different addresses fail at NULL → READY with the detail
-       of [contract.md §2.3](contract.md#23-shared-instance);
-     - an element that reaches NULL → READY after the open (a second pipeline, an element added
-       to a running bin) joins by contract.md §2.3, and fails with the detail when its port is
-       missing.
-
-     FFmpeg opens its inputs before its outputs, so it lists every port the process uses in
-     `MTL_PORTS`;
-  2. an element's `ports` property (GStreamer) or `-mtl_ports` option (FFmpeg) names only its own
-     ports, in the `MTL_PORTS` grammar, through `mtl_port_parse()` into
-     `mtl_instance_params.ports` of a shared open, which joins when they are a subset of the live
-     instance's ([contract.md §2.3](contract.md#23-shared-instance)); a port the instance lacks is
-     `INSTANCE_MISMATCH`, and its detail names the port;
-  3. for each of its ports, `mtl_port_find(mt, spec.name, &p)` gives the instance's index, and the
-     element sets `flows[i].port = MTL_INDEX(p)`.
-
-  Without a property, the open reads `MTL_PORTS`.
-
-## 13. If you know libfabric or Rivermax
+## 10. If you know libfabric or Rivermax
 
 The shared shape is: register memory, get a slot, fill, submit, read a completion. What only MTL
 has is **time**: libfabric has no scheduled transmit, deadline or late completion; Rivermax has a
@@ -2043,29 +1141,13 @@ A Rivermax sender loop computes `t0 + k × frame_period + TRO` and commits chunk
 sets `sc.media_mode = MTL_MEDIA_INDEX` and only writes `u.media_index = k` between acquire and
 submit, because packetisation, RTP headers, TRO and pacing are the library's job.
 
-## 14. Where the code goes, and PR #1610
-
-The paths are [implementation-plan.md](implementation-plan.md) §4: the core and its bindings in
-`lib/src/st2110/core/` inside libmtl (the legacy wrappers use it too), the null backend as one more
-binding (D-111), the API shell in `lib/src/unified/`, compiled into libmtl (a function is exported
-in the milestone that implements it; no stub generator), the headers in `include/mtl/experimental/`, unit tests in `tests/unit/unified/`, and
-the doc test `sketch/check.sh` reading the headers from `include/`. `lib/` formalises C11 atomics
-while the public headers stay C99 and C++ clean ([engine.md](engine.md) §7.2, DD-12).
-
-**PR #1610**, the earlier session-API attempt, stays open as a reference until the unified headers
-land in `include/`, then is closed with credit to its authors (D-27). The work takes concepts and
-tests from it, not commits: its parity tests of legacy st20p, ported to main's harness, pin today's
-behaviour in MS1 (task T1), and its allocation-free event ring with an eventfd
-(`lib/src/new_api/mt_session_event.c`) seeds the per-session events and the queues' descriptors. Its
-`doc/new_API/` is replaced by this directory. Baselines: `main` @ `545a266a`, PR #1610 @
-`14a1f80c`, PR #1770 @ `74b9991d`.
-
 ## Appendix A. Where the detail lives
 
 | Topic | Where |
 |---|---|
-| the 74 session-only features with consumer citations, the removal evidence | [coverage.md](coverage.md) §4.2, §4.5; the gate: §8.3–§8.4 above |
-| the ABI rules | §7 and §10 above; the rationale per decision: [decisions.md](decisions.md) |
+| the 74 session-only features with consumer citations, the removal evidence | [coverage.md](coverage.md) §4.2, §4.5; the gate: [abi.md](abi.md) §6.3–§6.4 |
+| the ABI rules | [abi.md](abi.md) and, for bindings, [§8.1](#81-rules-the-headers-follow); the rationale per decision: [decisions.md](decisions.md) |
 | consumer research: repeated boilerplate, GitHub issues by theme, downstream patches | [legacy-internals.md](legacy-internals.md) |
-| the full libfabric and Rivermax comparison | §13 above |
+| the full libfabric and Rivermax comparison | §10 above |
+| where the code goes; PR #1610 and what is taken from it (D-27) | [implementation-plan.md](implementation-plan.md) §4; [pr1610.md](pr1610.md) |
 | the row-by-row coverage of every legacy capability against the headers, and the milestone of each, behind §4.16 | [coverage.md](coverage.md) §2–§3; today's modes: [legacy-internals.md](legacy-internals.md) |

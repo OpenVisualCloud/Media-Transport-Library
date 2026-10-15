@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """final_model.py (v2): every interleaving, under sequential consistency, of the two paths of
-core.md §6.1 and §6.6, with their step labels.  Each atomic operation and each syscall is one step.
+wait-protocol.md §3 and §7, with their step labels.  Each atomic operation and each syscall is one step.
 
-Object path (core.md §6.1).  The event word ec = {seq, one WT count per lane}.  A producer bumps seq
+Object path (wait-protocol.md §3).  The event word ec = {seq, one WT count per lane}.  A producer bumps seq
 with one RMW (E2) and reads the counts; a WT waiter loads ec before its attempt (T2), arms with
 CAS(ec, e, e + ONE) (T7), sleeps in futex_wait on seq only (the real 32-bit compare, T8) and
 removes its own count (T9).  Row readers (MS2) also arm `want` in the slot's progress word by
 CAS before T7 (RW2); the binding fires EVENT(L1) only when the rows reach `want` (RW1).  An
 interrupt may be cleared again (N5's OFF: no E2), after which its waiter calls again (o7).
-Mutant `bits` is the rejected counters design (core.md §6.1): a sleeper bit cleared by a second
+Mutant `bits` is the rejected counters design (wait-protocol.md §3): a sleeper bit cleared by a second
 producer RMW.
 
-Queue path (core.md §6.6).  An attachment's H bit is in the object's ec.  A producer bumps seq (E2),
+Queue path (wait-protocol.md §7).  An attachment's H bit is in the object's ec.  A producer bumps seq (E2),
 claims H with fetch_and (E4) and pushes with one CAS on the queue word {list, qgen, ARMED,
 CLOSED} (P2); a push whose node carries another qgen, or that finds CLOSED, drops its node.  The
 descriptor is never closed while the entry exists (closing a queue keeps it for the next queue
@@ -37,7 +37,7 @@ queue).
 Usage: python3 final_model.py [CASE ...] | --trace CASE [MUTANT ...]; exit 1 unless every case
 gives its expected result and every mutant is reported by its cases.
 
-NOT_MODELLED below lists the step labels of core.md §6.1 and §6.6 that no case runs, with the
+NOT_MODELLED below lists the step labels of wait-protocol.md §3 and §7 that no case runs, with the
 reason; check_labels.py (task M0) subtracts them."""
 import sys
 import time
@@ -53,7 +53,7 @@ NOT_MODELLED = {
     "C4": "queue close after its calls: r4 models C1-C2",
     "C5": "queue close after its calls: r4 models C1-C2",
     "X3": "a closing object's slots: QW8",
-    "Y1": "object entry reuse: argued in core.md §6.1 (Lifetime, the generation in intr); WH12, WC3",
+    "Y1": "object entry reuse: argued in wait-protocol.md §8.1 (Lifetime, the generation in intr); WH12, WC3",
     "Y2": "queue entry reuse beyond r3, r4",
     "J1": "arm validation before J7: lock serialised",
     "J2": "arm validation before J7: lock serialised",

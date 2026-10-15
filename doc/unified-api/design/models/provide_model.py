@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exhaustive interleaving model of the mtl_rx_provide hand-back (D-152, contract.md §9.11).
+"""Exhaustive interleaving model of the mtl_rx_provide hand-back (D-152, contract.md §9.12).
 
 Every atomic action of the C11 implementation (seq_cst atomics) is one step. All interleavings
 of the actors are explored by a DFS over hashable states (memoised: equal states are explored

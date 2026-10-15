@@ -1,5 +1,5 @@
 /* ex21 — a live sink that MTL paces (ffmpeg -re, an OBS output, an application; a
-   GStreamer basesink waits on its clock instead, migration.md §12.1): each buffer's
+   GStreamer basesink waits on its clock instead, frameworks.md §4): each buffer's
    presentation time becomes its TAI media time, and the sinks of a programme share one
    latency and one phase, so they stay on the same frame times. Needs: MS2 (MS2a:
    discard). */

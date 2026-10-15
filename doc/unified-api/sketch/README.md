@@ -8,7 +8,7 @@
 Users: read [examples.md](../examples.md). This page is for editing a header or an example.
 
 This directory holds the normative header set of the unified MTL API and the worked examples as
-files that compile. In task H1b of MS1 ([implementation plan §5.2](../implementation-plan.md#52-tasks))
+files that compile. In task H1b of MS1 ([implementation plan §5.2.2](../implementation-plan.md#522-task-cards))
 the headers move to `include/mtl/experimental/`, and `check.sh` runs in CI.
 
 ## 1. What is here
@@ -66,7 +66,7 @@ examples and checks them, the generated page and the documents (§4).
 ## 3. The headers and the library
 
 There is one library, libmtl, with the unified functions in version nodes per milestone,
-sealed at every release ([migration.md §7.2](../migration.md#72-the-unified-library)).
+sealed at every release ([abi.md §3](../abi.md#3-version-nodes-and-sealing)).
 The sketch holds the whole design, and the installed header is the same file.
 
 - **Milestone tags.** Every exported function carries its milestone twice: the tag that ends its
@@ -149,7 +149,7 @@ part of `MTL_1.0`), and macros ending in `_` (internal). It exits non-zero on an
 check of libmtl. Documents do not repeat these counts; they point here.
 
 The candidate flags `-Wconversion -Wsign-conversion -Wcast-qual` are G-74's, for task H1b
-([implementation-plan.md §5.2](../implementation-plan.md#52-tasks)). Every header was clean with
+([implementation-plan.md §5.2.2](../implementation-plan.md#522-task-cards)). Every header was clean with
 them on 2026-10-02, with and without `-DMTL_LATER`; `-Wcast-qual` catches an inline helper that
 returns a writable pointer from a `const struct mtl_unit*`.
 
