@@ -1715,6 +1715,10 @@ static inline uint16_t mt_if_nb_tx_desc(struct mtl_main_impl* impl, enum mtl_por
   return mt_if(impl, port)->nb_tx_desc;
 }
 
+static inline bool mt_if_tx_deep(struct mtl_main_impl* impl, enum mtl_port port) {
+  return mt_if(impl, port)->tx_deep;
+}
+
 static inline uint16_t mt_if_tx_reclaim_rs_thresh(struct mtl_main_impl* impl,
                                                   enum mtl_port port) {
   return mt_if(impl, port)->tx_reclaim_rs_thresh;

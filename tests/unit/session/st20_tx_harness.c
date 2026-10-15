@@ -89,6 +89,17 @@ struct ut_txv_ctx {
   int trim_pad_tag;
   long double train_drain_end_ns;
   uint64_t slept_ns;
+  /* st20_tx_queue_fatal_error(): each leg's queue [0] and its replacement [1] */
+  struct mt_txq_entry recovery_queue[MTL_SESSION_PORT_MAX][2];
+  struct mt_tx_queue recovery_txq[MTL_SESSION_PORT_MAX][2];
+  int recovery_flush_ret[MTL_SESSION_PORT_MAX];
+  int recovery_flushes[MTL_SESSION_PORT_MAX];
+  int recovery_fallback_flushes[MTL_SESSION_PORT_MAX];
+  int recovery_warns;
+  int recovery_done_cleanups[MTL_SESSION_PORT_MAX];
+  struct st_frame_trans recovery_frame;
+  int fatal_events;
+  int recovery_events;
 };
 
 #include "session/st20_tx_harness.h"
@@ -133,6 +144,14 @@ static int ut_txv_notify_frame_done(void* priv, uint16_t frame_idx,
   return 0;
 }
 
+static int ut_txv_notify_event(void* priv, enum st_event event, void* args) {
+  struct ut_txv_ctx* ctx = priv;
+  (void)args;
+  if (event == ST_EVENT_FATAL_ERROR) ctx->fatal_events++;
+  if (event == ST_EVENT_RECOVERY_ERROR) ctx->recovery_events++;
+  return 0;
+}
+
 /* tv_tasklet_rtp() calls this unconditionally once it has an app packet. */
 static int ut_txv_notify_rtp_done(void* priv) {
   (void)priv;
@@ -151,14 +170,63 @@ static int ut_txv_st22_get_next_frame(void* priv, uint16_t* next_frame_idx,
   return 0;
 }
 
-/* Records the queue request and fails it, so tv_init_hw() stops right after. */
+static struct ut_txv_ctx* ut_txv_recovery_ctx;
+
+/* Records the queue request. Outside a recovery it fails it, so tv_init_hw() stops right
+ * after; in one it hands out the leg's next queue at the rate asked. */
 static struct mt_txq_entry* ut_txv_txq_get(struct mtl_main_impl* impl, enum mtl_port port,
                                            struct mt_txq_flow* flow) {
   struct ut_txv_ctx* ctx = (struct ut_txv_ctx*)impl;
   ctx->txq_get_calls++;
   ctx->txq_get_port = port;
   ctx->txq_get_bytes_per_sec = flow->bytes_per_sec;
-  return NULL;
+  if (ctx != ut_txv_recovery_ctx) return NULL;
+  /* the leg's other entry */
+  int q = ctx->session.queue[port] == &ctx->recovery_queue[port][0] ? 1 : 0;
+  ctx->recovery_txq[port][q].bps = flow->bytes_per_sec;
+  return &ctx->recovery_queue[port][q];
+}
+
+/* the leg a queue entry belongs to, -1 outside a recovery */
+static int ut_txv_recovery_leg(struct mt_txq_entry* entry) {
+  struct ut_txv_ctx* ctx = ut_txv_recovery_ctx;
+  if (!ctx) return -1;
+  for (int p = 0; p < MTL_SESSION_PORT_MAX; p++)
+    for (int q = 0; q < 2; q++)
+      if (entry == &ctx->recovery_queue[p][q]) return p;
+  return -1;
+}
+
+static int ut_txv_txq_recovery_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad) {
+  int leg = ut_txv_recovery_leg(entry);
+  (void)pad;
+  if (leg < 0) return 0;
+  ut_txv_recovery_ctx->recovery_flushes[leg]++;
+  return ut_txv_recovery_ctx->recovery_flush_ret[leg];
+}
+
+/* the flush that falls back to the per-pad loop */
+static int ut_txv_txq_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad) {
+  int leg = ut_txv_recovery_leg(entry);
+  (void)pad;
+  if (leg >= 0) ut_txv_recovery_ctx->recovery_fallback_flushes[leg]++;
+  return 0;
+}
+
+static int ut_txv_txq_done_cleanup(struct mt_txq_entry* entry) {
+  int leg = ut_txv_recovery_leg(entry);
+  if (leg >= 0) ut_txv_recovery_ctx->recovery_done_cleanups[leg]++;
+  return 0;
+}
+
+static int ut_txv_txq_fatal_error(struct mt_txq_entry* entry) {
+  (void)entry;
+  return 0;
+}
+
+static int ut_txv_txq_put(struct mt_txq_entry* entry) {
+  (void)entry;
+  return 0;
 }
 
 static struct ut_txv_ctx* ut_txv_train_ctx;
@@ -223,9 +291,19 @@ static int ut_txv_wait_tsc_stable(struct mtl_main_impl* impl) {
 #define mt_sleep_us ut_txv_sleep_us
 #define mt_ptp_wait_stable ut_txv_ptp_wait_stable
 #define mt_wait_tsc_stable ut_txv_wait_tsc_stable
+#define mt_txq_flush ut_txv_txq_flush
+#define mt_txq_recovery_flush ut_txv_txq_recovery_flush
+#define mt_txq_done_cleanup ut_txv_txq_done_cleanup
+#define mt_txq_fatal_error ut_txv_txq_fatal_error
+#define mt_txq_put ut_txv_txq_put
 #define mt_txq_set_tx_bps ut_txv_txq_set_tx_bps
 #include "st2110/st_tx_video_session.c"
 #undef mt_txq_set_tx_bps
+#undef mt_txq_put
+#undef mt_txq_fatal_error
+#undef mt_txq_done_cleanup
+#undef mt_txq_recovery_flush
+#undef mt_txq_flush
 #undef mt_wait_tsc_stable
 #undef mt_ptp_wait_stable
 #undef mt_sleep_us
@@ -1446,4 +1524,85 @@ void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames) {
 
 uint64_t ut_txv_stat_snapshot_port_frames(const ut_txv_ctx* ctx) {
   return ctx->session.stat_snapshot.common.port[MTL_SESSION_PORT_P].frames;
+}
+
+int ut_txv_recovery_setup(ut_txv_ctx* ctx, int num_port) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  s->ops.num_port = num_port;
+  s->ops.type = ST20_TYPE_FRAME_LEVEL;
+  s->ops.notify_event = ut_txv_notify_event;
+  s->tx_mono_pool = true;
+  s->tx_no_chain = true;
+  s->active = true;
+  /* its frame, whose pkts are on their way */
+  s->st20_frames = &ctx->recovery_frame;
+  s->st20_frames_cnt = 1;
+  rte_atomic32_set(&ctx->recovery_frame.refcnt, 1);
+  for (int p = 0; p < num_port; p++) {
+    s->port_maps[p] = (enum mtl_port)p;
+    /* tags: the mocks only compare them */
+    ctx->impl.inf[p].tx_mbuf_pool = (struct rte_mempool*)&ctx->trim_pad_tag;
+    s->pad[p][ST20_PKT_TYPE_NORMAL] = (struct rte_mbuf*)&ctx->trim_pad_tag;
+    for (int q = 0; q < 2; q++) ctx->recovery_queue[p][q].txq = &ctx->recovery_txq[p][q];
+    s->queue[p] = &ctx->recovery_queue[p][0];
+    s->last_burst_succ_time_tsc[p] = ctx->mock_tsc_ns;
+  }
+  return 0;
+}
+
+int ut_txv_recovery_frame_refcnt(const ut_txv_ctx* ctx) {
+  return rte_atomic32_read(&ctx->recovery_frame.refcnt);
+}
+
+bool ut_txv_recovery_session_dead(const ut_txv_ctx* ctx) {
+  const struct st_tx_video_session_impl* s = &ctx->session;
+  return !s->active && s->port_user_stats.common.stat_unrecoverable_error;
+}
+
+int ut_txv_recovery_fatal_events(const ut_txv_ctx* ctx) {
+  return ctx->fatal_events;
+}
+
+int ut_txv_recovery_recovered_events(const ut_txv_ctx* ctx) {
+  return ctx->recovery_events;
+}
+
+void ut_txv_recovery_set_flush_ret(ut_txv_ctx* ctx, int leg, int ret) {
+  ctx->recovery_flush_ret[leg] = ret;
+}
+
+static void ut_txv_count_recovery_warns(enum mtl_log_level level, const char* format,
+                                        ...) {
+  (void)format;
+  if (level == MTL_LOG_LEVEL_WARNING) ut_txv_recovery_ctx->recovery_warns++;
+}
+
+int ut_txv_recover(ut_txv_ctx* ctx, int leg) {
+  enum mtl_log_level level = mt_get_log_global_level();
+
+  ut_txv_recovery_ctx = ctx;
+  mt_set_log_global_level(MTL_LOG_LEVEL_WARNING);
+  mtl_set_log_printer(ut_txv_count_recovery_warns);
+  int ret = st20_tx_queue_fatal_error(&ctx->impl, &ctx->session, leg);
+  mtl_set_log_printer(NULL);
+  mt_set_log_global_level(level);
+  ut_txv_recovery_ctx = NULL;
+  return ret;
+}
+
+int ut_txv_recovery_warns(const ut_txv_ctx* ctx) {
+  return ctx->recovery_warns;
+}
+
+int ut_txv_recovery_flushes(const ut_txv_ctx* ctx, int leg) {
+  return ctx->recovery_flushes[leg];
+}
+
+int ut_txv_recovery_fallback_flushes(const ut_txv_ctx* ctx, int leg) {
+  return ctx->recovery_fallback_flushes[leg];
+}
+
+int ut_txv_recovery_done_cleanups(const ut_txv_ctx* ctx, int leg) {
+  return ctx->recovery_done_cleanups[leg];
 }

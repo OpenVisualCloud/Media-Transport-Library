@@ -4439,7 +4439,16 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   for (uint8_t i = 0; i < s->ops.num_port; i++) {
     if (i == s_port || !s->queue[i]) continue;
     struct rte_mbuf* pad = s->pad[i][ST20_PKT_TYPE_NORMAL];
-    if (pad) mt_txq_flush(s->queue[i], pad);
+    ret = pad ? mt_txq_recovery_flush(s->queue[i], pad) : 0;
+    if (ret < 0) {
+      /* its queue may still hold the frames and the pool mbufs: hand none back */
+      err("%s(%d,%d), flush port %u fail %d\n", __func__, s_port, idx, i, ret);
+      s->port_user_stats.common.stat_unrecoverable_error++;
+      s->active = false; /* mark current session to dead */
+      if (s->ops.notify_event)
+        s->ops.notify_event(s->ops.priv, ST_EVENT_FATAL_ERROR, NULL);
+      return ret;
+    }
   }
 
   /* cleanup frame manager (only valid for frame-type sessions) */

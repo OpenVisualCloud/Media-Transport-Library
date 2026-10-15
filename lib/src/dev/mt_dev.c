@@ -1982,13 +1982,13 @@ static int dev_flush_tx_eager(struct mtl_main_impl* impl, struct mt_tx_queue* qu
 }
 
 int mt_dpdk_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
-                           struct rte_mbuf* pad) {
+                           struct rte_mbuf* pad, bool lazy_fallback) {
   enum mtl_port port = queue->port;
   uint16_t queue_id = queue->queue_id;
 
   if (mt_if_tx_reclaim_rs_thresh(impl, port)) {
     int ret = dev_flush_tx_eager(impl, queue, pad);
-    if (ret != -ENOMEM) return ret;
+    if (ret != -ENOMEM || !lazy_fallback) return ret;
   }
 
   /* use double to make sure all the fifo are burst out to clean all mbufs in the pool */
@@ -2006,11 +2006,14 @@ int mt_dpdk_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue
 }
 
 int mt_dev_tx_done_cleanup(struct mtl_main_impl* impl, struct mt_tx_queue* queue) {
-  uint16_t port_id = queue->port_id;
-  uint16_t queue_id = queue->queue_id;
-  MTL_MAY_UNUSED(impl);
+  enum mtl_port port = queue->port;
 
-  return rte_eth_tx_done_cleanup(port_id, queue_id, 0);
+  if (!mt_if_tx_deep(impl, port))
+    return rte_eth_tx_done_cleanup(queue->port_id, queue->queue_id, 0);
+  /* its done cleanup frees the batches the xmit cleanup freed again: push them out */
+  struct rte_mbuf* pad = mt_get_pad(impl, port);
+  if (!mt_if_tx_reclaim_rs_thresh(impl, port) || !pad) return -ENOTSUP;
+  return dev_flush_tx_eager(impl, queue, pad);
 }
 
 int mt_dev_put_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue) {

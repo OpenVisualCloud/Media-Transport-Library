@@ -13,6 +13,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cerrno>
 #include <vector>
 
 #include "common/ut_common.h"
@@ -336,6 +337,31 @@ TEST_F(MtDevTxFlushTest, EagerPortWithoutACopyFlushesWithTheLazyLoop) {
   EXPECT_EQ(FlushDescs(), 2u * 2048);
   EXPECT_EQ(SessionPktsHeld(), 0u);
   for (struct rte_mbuf* m : sys) rte_pktmbuf_free(m);
+}
+
+/* the per-pad loop would hold the tasklet up to 2 x nb_tx_desc ms on a hung ring */
+TEST_F(MtDevTxFlushTest, EagerPortWithoutACopyGivesUpTheRecoveryFlush) {
+  EagerPort(2048, 100);
+  std::vector<struct rte_mbuf*> sys;
+  for (struct rte_mbuf* m; (m = rte_pktmbuf_alloc(ut_dev_tx_sys_pool(ctx_)));)
+    sys.push_back(m);
+  Queue(100);
+
+  EXPECT_EQ(ut_dev_recovery_flush_tx_queue(ctx_, 0), -ENOMEM);
+
+  EXPECT_EQ(FlushDescs(), 0u);
+  ExpectPadRefsHeldByTheRingOnly();
+  for (struct rte_mbuf* m : sys) rte_pktmbuf_free(m);
+}
+
+TEST_F(MtDevTxFlushTest, LazyPortRecoveryFlushSendsTwoRingsOfPads) {
+  LazyPort(512, 100);
+  Queue(100);
+
+  EXPECT_EQ(ut_dev_recovery_flush_tx_queue(ctx_, 0), 0);
+
+  EXPECT_EQ(FlushDescs(), 2u * 512);
+  EXPECT_EQ(SessionPktsHeld(), 0u);
 }
 
 }  // namespace

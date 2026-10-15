@@ -171,6 +171,8 @@ void ut_dev_set_tx_queue_bps(ut_dev_ctx* ctx, uint16_t queue, uint64_t bps);
 void ut_dev_set_link_speed(ut_dev_ctx* ctx, uint32_t mbps);
 /** mt_dpdk_flush_tx_queue() of that queue with the port's pad. */
 int ut_dev_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue);
+/** The same flush for a TX recovery, which does without the per-pad loop. */
+int ut_dev_recovery_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue);
 int ut_dev_tx_done_cleanup(ut_dev_ctx* ctx, uint16_t queue);
 
 #ifdef __cplusplus
