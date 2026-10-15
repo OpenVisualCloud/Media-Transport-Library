@@ -10,6 +10,7 @@
 
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
+#include "common/ut_tx_ring.h"
 #include "dev/mt_dev_harness.h"
 #include "mt_main.h"
 
@@ -57,10 +58,16 @@ struct ut_dev_ctx {
   int fail_tm_queue_node_add_call;
   int fail_tm_queue_node_add_error;
   int fail_tm_commit_error;
+  struct rte_mempool* sys_tx_pool;
 };
 
 static struct ut_dev_ctx* ut_active_ctx;
 static bool ut_dev_tx_cleanup_frees;
+
+/* the fake clock once a test starts it */
+static uint64_t ut_dev_tsc(struct mtl_main_impl* impl) {
+  return ut_clock_on() ? ut_clock_tick() : mt_get_tsc(impl);
+}
 
 static int ut_rte_eth_rx_queue_setup(uint16_t port_id, uint16_t rx_queue_id,
                                      uint16_t nb_rx_desc, unsigned int socket_id,
@@ -120,10 +127,16 @@ static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
 #define rte_tm_hierarchy_commit ut_rte_tm_hierarchy_commit
 #define mt_sch_mrg_uinit ut_mt_sch_mrg_uinit
 #define rte_spinlock_unlock ut_rte_spinlock_unlock
+#define rte_eth_tx_burst ut_eth_tx_burst
+#define rte_eth_tx_done_cleanup ut_eth_tx_done_cleanup
+#define mt_get_tsc ut_dev_tsc
 #define MT_DEV_TX_CLEANUP_FREES (ut_dev_tx_cleanup_frees)
 /* The pacing tests cover the iavf queue rate clear, which needs DPDK 26.07.91_mtl_. */
 #define MT_DEV_HAS_IAVF_TM_QOS_CHECK
 #include "dev/mt_dev.c"
+#undef mt_get_tsc
+#undef rte_eth_tx_done_cleanup
+#undef rte_eth_tx_burst
 #undef rte_spinlock_unlock
 #undef mt_sch_mrg_uinit
 #undef rte_tm_hierarchy_commit
@@ -397,6 +410,8 @@ ut_dev_ctx* ut_dev_create_ctx(void) {
 
 void ut_dev_destroy_ctx(ut_dev_ctx* ctx) {
   if (ut_active_ctx == ctx) ut_active_ctx = NULL;
+  rte_pktmbuf_free(ctx->impl.inf[MTL_PORT_P].pad);
+  rte_mempool_free(ctx->sys_tx_pool);
   for (int i = 0; i < UT_DEV_EAL_ARGV_MAX; i++) free(ctx->eal_argv[i]);
   free(ctx->lcores);
   free(ctx);
@@ -769,4 +784,53 @@ uint64_t ut_dev_tx_queue_bps(const ut_dev_ctx* ctx, int queue) {
 void ut_dev_set_tx_cleanup_frees(ut_dev_ctx* ctx, bool frees) {
   (void)ctx;
   ut_dev_tx_cleanup_frees = frees;
+}
+
+int ut_dev_attach_tx_ring(ut_dev_ctx* ctx, uint16_t queue, struct ut_txr* ring) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  if (queue >= UT_DEV_TX_QUEUES || ut_eal_init() < 0) return -EIO;
+  struct mt_tx_queue* tx_queue = &ctx->tx_queues[queue];
+  if (!ctx->sys_tx_pool) {
+    ctx->sys_tx_pool = rte_pktmbuf_pool_create(
+        "ut_dev_sys_tx", 63, 0, 0, RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
+    if (!ctx->sys_tx_pool) return -ENOMEM;
+    inf->tx_mbuf_pool = ctx->sys_tx_pool;
+  }
+  if (!inf->pad) {
+    inf->pad = rte_pktmbuf_alloc(ctx->sys_tx_pool);
+    if (!inf->pad || !rte_pktmbuf_append(inf->pad, UT_DEV_PAD_LEN)) return -ENOMEM;
+  }
+  tx_queue->port = MTL_PORT_P;
+  tx_queue->port_id = inf->port_id;
+  tx_queue->queue_id = queue;
+  ut_eth_attach_tx_ring(inf->port_id, queue, ring);
+  return 0;
+}
+
+struct rte_mbuf* ut_dev_pad(ut_dev_ctx* ctx) {
+  return ctx->impl.inf[MTL_PORT_P].pad;
+}
+
+unsigned int ut_dev_sys_tx_pool_in_use(const ut_dev_ctx* ctx) {
+  return rte_mempool_in_use_count(ctx->sys_tx_pool);
+}
+
+void ut_dev_set_tx_queue_bps(ut_dev_ctx* ctx, uint16_t queue, uint64_t bps) {
+  ctx->tx_queues[queue].bps = bps;
+}
+
+void ut_dev_set_link_speed(ut_dev_ctx* ctx, uint32_t mbps) {
+  ctx->impl.inf[MTL_PORT_P].link_speed = mbps;
+}
+
+int ut_dev_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue) {
+  ut_active_ctx = ctx;
+  return mt_dpdk_flush_tx_queue(&ctx->impl, &ctx->tx_queues[queue],
+                                ctx->impl.inf[MTL_PORT_P].pad);
+}
+
+int ut_dev_tx_done_cleanup(ut_dev_ctx* ctx, uint16_t queue) {
+  ut_active_ctx = ctx;
+  return mt_dev_tx_done_cleanup(&ctx->impl, &ctx->tx_queues[queue]);
 }

@@ -94,3 +94,33 @@ uint64_t ut_rte_alloc_count(void) {
   }
   return count;
 }
+
+/* ── fake clock ───────────────────────────────────────────────────────── */
+
+static bool g_clock_on;
+static uint64_t g_clock_ns;
+static uint64_t g_clock_step_ns;
+
+void ut_clock_start(uint64_t now_ns, uint64_t step_ns) {
+  g_clock_on = true;
+  g_clock_ns = now_ns;
+  g_clock_step_ns = step_ns;
+}
+
+void ut_clock_stop(void) {
+  g_clock_on = false;
+}
+
+bool ut_clock_on(void) {
+  return g_clock_on;
+}
+
+uint64_t ut_clock_tick(void) {
+  uint64_t now = g_clock_ns;
+  g_clock_ns += g_clock_step_ns;
+  return now;
+}
+
+uint64_t ut_clock_ns(void) {
+  return g_clock_ns;
+}
