@@ -24,6 +24,7 @@
 #include "common/ut_common.h"
 #include "common/ut_tx_ring.h"
 #include "datapath/mt_queue.h"
+#include "dev/mt_dev.h"
 #include "mt_main.h"
 #include "session/st30_tx_harness.h"
 #include "st2110/st_tx_audio_session.h"
@@ -511,7 +512,7 @@ static int ut_txa30_pipe_rl(struct ut_txa30_ctx* ctx, int leg) {
   rl->pad_pkt_size = MTL_UDP_MAX_BYTES;
   rl->required_accuracy_ns = 40 * NS_PER_US;
   rl->pkts_prepare_warmup = 4;
-  rl->pads_per_st30_pkt = 3;
+  rl->pads_per_st30_pkt = ST30_TX_RL_PADS_PER_PKT;
   rl->max_warmup_trs = 4;
   rl->pkts_per_sync = (int)((double)NS_PER_S / s->pacing.trs / 100);
   rl_port->pad = rte_pktmbuf_alloc(ctx->pipe_pad_pool);
@@ -571,6 +572,7 @@ int ut_txa30_pipe_setup(ut_txa30_ctx* ctx, const struct ut_txa30_pipe_case* c) {
   for (int i = 0; i < c->num_port; i++) {
     struct mt_interface* inf = &ctx->impl.inf[i];
     inf->nb_tx_desc = c->nb_tx_desc[i];
+    inf->tx_deep = c->nb_tx_desc[i] == 2048;
     inf->ptp_get_time_fn = ut_txa30_ptp_time_fn;
     s->port_maps[i] = (enum mtl_port)i;
     for (int j = 0; j < queues; j++) {
@@ -592,9 +594,9 @@ int ut_txa30_pipe_setup(ut_txa30_ctx* ctx, const struct ut_txa30_pipe_case* c) {
     }
   }
   ring_idx++;
-  if (ut_txa30_pipe_pools(ctx, c) < 0) return -ENOMEM;
   ret = tx_audio_session_init_trans_ring(mgr, s);
   if (ret < 0) return ret;
+  if (ut_txa30_pipe_pools(ctx, c) < 0) return -ENOMEM;
   ret = tx_audio_session_alloc_frames(s);
   if (ret < 0) return ret;
   ctx->pipe_on = true;
@@ -689,6 +691,14 @@ uint64_t ut_txa30_pipe_first_burst_fail(const ut_txa30_ctx* ctx) {
   return ctx->pipe_first_burst_fail;
 }
 
-unsigned int ut_txa30_pipe_trans_ring_thresh(const ut_txa30_ctx* ctx) {
-  return ctx->session.trans_ring_thresh;
+unsigned int ut_txa30_pipe_pool_size(const ut_txa30_ctx* ctx, int pool) {
+  const struct st_tx_audio_session_impl* s = &ctx->session;
+  struct rte_mempool* mp =
+      pool < UT_TXA30_PIPE_CHAIN ? s->mbuf_mempool_hdr[pool] : s->mbuf_mempool_chain;
+  return mp ? mp->size : 0;
+}
+
+unsigned int ut_txa30_pipe_mempool_n(ut_txa30_ctx* ctx, int leg) {
+  struct st_tx_audio_session_impl* s = &ctx->session;
+  return tx_audio_session_mempool_n(&ctx->impl, s, mt_port_logic2phy(s->port_maps, leg));
 }

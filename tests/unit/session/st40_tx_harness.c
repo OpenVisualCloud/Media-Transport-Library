@@ -8,6 +8,7 @@
 #include "common/ut_common.h"
 #include "common/ut_tx_ring.h"
 #include "datapath/mt_queue.h"
+#include "dev/mt_dev.h"
 #include "mt_main.h"
 #include "session/st40_tx_harness.h"
 #include "st2110/st_tx_ancillary_session.h"
@@ -721,6 +722,7 @@ int ut_txa_pipe_setup(ut_txa_ctx* ctx, const struct ut_txa_pipe_case* c) {
   for (int i = 0; i < c->num_port; i++) {
     struct mt_interface* inf = &ctx->impl.inf[i];
     inf->nb_tx_desc = c->nb_tx_desc[i];
+    inf->tx_deep = c->nb_tx_desc[i] == 2048;
     inf->ptp_get_time_fn = ut_txa_ptp_time_fn;
     s->port_maps[i] = (enum mtl_port)i;
     ctx->pipe_ring[i] = ut_txr_create((enum ut_txr_mode)c->ring_mode, c->nb_tx_desc[i],
@@ -816,4 +818,17 @@ uint64_t ut_txa_pipe_first_alloc_fail(const ut_txa_ctx* ctx) {
 
 uint64_t ut_txa_pipe_first_burst_fail(const ut_txa_ctx* ctx) {
   return ctx->pipe_first_burst_fail;
+}
+
+unsigned int ut_txa_pipe_pool_size(const ut_txa_ctx* ctx, int pool) {
+  const struct st_tx_ancillary_session_impl* s = &ctx->session;
+  struct rte_mempool* mp =
+      pool < UT_TXA_PIPE_CHAIN ? s->mbuf_mempool_hdr[pool] : s->mbuf_mempool_chain;
+  return mp ? mp->size : 0;
+}
+
+unsigned int ut_txa_pipe_mempool_n(ut_txa_ctx* ctx, int leg) {
+  struct st_tx_ancillary_session_impl* s = &ctx->session;
+  return tx_ancillary_session_mempool_n(&ctx->impl, s,
+                                        mt_port_logic2phy(s->port_maps, leg));
 }

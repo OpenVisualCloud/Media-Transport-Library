@@ -1719,6 +1719,19 @@ static inline bool mt_if_tx_deep(struct mtl_main_impl* impl, enum mtl_port port)
   return mt_if(impl, port)->tx_deep;
 }
 
+/* mbufs another lcore's pool cache keeps: DPDK flushes a cache past 1.5x its size */
+#define MT_MBUF_CACHE_SLACK (MT_MBUF_CACHE_SIZE * 3 / 2)
+
+/* mbufs of a TX pool that q queues of port can keep at desc_per_mbuf descriptors each,
+ * plus the cache slack */
+static inline unsigned int mt_if_tx_pool_ring_share(struct mtl_main_impl* impl,
+                                                    enum mtl_port port,
+                                                    unsigned int desc_per_mbuf,
+                                                    unsigned int q) {
+  unsigned int nb_tx_desc = mt_if_nb_tx_desc(impl, port);
+  return q * ((nb_tx_desc + desc_per_mbuf - 1) / desc_per_mbuf) + MT_MBUF_CACHE_SLACK;
+}
+
 static inline uint16_t mt_if_tx_reclaim_rs_thresh(struct mtl_main_impl* impl,
                                                   enum mtl_port port) {
   return mt_if(impl, port)->tx_reclaim_rs_thresh;

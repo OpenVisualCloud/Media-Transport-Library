@@ -3172,6 +3172,37 @@ static void tv_init_tx_chain(struct mtl_main_impl* impl,
   if (s->tx_no_chain) s->reclaim.enabled = false;
 }
 
+/* mbufs a pool needs for session port i: a descriptor each and the builder ring; deep,
+ * what the session holds and the ring share. The RTCP and RTP rings come on top. */
+static unsigned int tv_mempool_n(struct mtl_main_impl* impl,
+                                 struct st_tx_video_session_impl* s, int i) {
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
+  bool deep = mt_if_tx_deep(impl, port);
+  unsigned int n = mt_if_nb_tx_desc(impl, port) + s->ring_count;
+
+  if (deep) {
+    unsigned int trs_bulks = s->pacing_way[i] == ST21_TX_PACING_WAY_RL ? 2 : 1;
+    unsigned int held = s->ring_count + trs_bulks * s->bulk +
+                        mt_if_tx_pool_ring_share(impl, port, s->tx_no_chain ? 1 : 2, 1);
+    /* a migrated session leaves mbufs in the cache of a second lcore */
+    n = mt_user_tx_video_migrate(impl) ? RTE_MAX(n, held + MT_MBUF_CACHE_SLACK) : held;
+  }
+  if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP)
+    n += deep ? tv_rtcp_buffer_size(impl, s, port) : s->ops.rtcp.buffer_size;
+  if (s->ops.type == ST20_TYPE_RTP_LEVEL) n += s->ops.rtp_ring_size;
+  return n;
+}
+
+/* a padded frame copies the chain of each pkt across a line end: one a line the held
+ * pkts of chain_n span and one more a frame they touch, plus the copy pool's own slack */
+static unsigned int tv_copy_mempool_n(struct st_tx_video_session_impl* s,
+                                      unsigned int chain_n) {
+  uint64_t held = chain_n - MT_MBUF_CACHE_SLACK;
+
+  return held * s->st20_pkt_len / s->st20_bytes_in_line + held / s->st20_total_pkts + 2 +
+         MT_MBUF_CACHE_SLACK;
+}
+
 static int tv_mempool_init(struct mtl_main_impl* impl,
                            struct st_tx_video_sessions_mgr* mgr,
                            struct st_tx_video_session_impl* s) {
@@ -3212,9 +3243,7 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
       info("%s(%d), use tx mono hdr mempool(%p) for port %d\n", __func__, idx,
            s->mbuf_mempool_hdr[i], i);
     } else {
-      n = mt_if_nb_tx_desc(impl, port) + s->ring_count;
-      if (ops->flags & ST20_TX_FLAG_ENABLE_RTCP) n += ops->rtcp.buffer_size;
-      if (ops->type == ST20_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
+      n = tv_mempool_n(impl, s, i);
       if (s->mbuf_mempool_hdr[i]) {
         warn("%s(%d), use previous hdr mempool for port %d\n", __func__, idx, i);
       } else {
@@ -3233,12 +3262,13 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
     }
   }
 
-  /* allocate payload(chain) mbuf pool on primary port */
+  /* payload(chain) mbuf pool on primary port; the redundant pkt shares it, so with a deep
+   * port it is sized for the port that keeps more */
   if (!s->tx_no_chain) {
+    bool deep = mt_tx_deep_session(impl, s->port_maps, num_port);
     port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
-    n = mt_if_nb_tx_desc(impl, port) + s->ring_count;
-    if (ops->flags & ST20_TX_FLAG_ENABLE_RTCP) n += ops->rtcp.buffer_size;
-    if (ops->type == ST20_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
+    n = tv_mempool_n(impl, s, MTL_SESSION_PORT_P);
+    for (int i = 1; deep && i < num_port; i++) n = RTE_MAX(n, tv_mempool_n(impl, s, i));
 
     if (s->tx_mono_pool) {
       s->mbuf_mempool_chain = mt_sys_tx_mempool(impl, port);
@@ -3260,7 +3290,10 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
       if (s->st20_linesize > s->st20_bytes_in_line &&
           s->ops.packing != ST20_PACKING_GPM_SL) {
         chain_room_size = s->st20_pkt_len;
-        n /= s->st20_total_pkts / s->st20_pkt_info[ST20_PKT_TYPE_EXTRA].number;
+        if (deep)
+          n = tv_copy_mempool_n(s, n);
+        else
+          n /= s->st20_total_pkts / s->st20_pkt_info[ST20_PKT_TYPE_EXTRA].number;
         char pool_name[32];
         snprintf(pool_name, 32, "%sM%dS%d_COPY_%d", ST_TX_VIDEO_PREFIX, mgr->idx, idx,
                  s->recovery_idx);

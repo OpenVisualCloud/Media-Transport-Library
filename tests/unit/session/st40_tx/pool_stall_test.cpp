@@ -4,15 +4,18 @@
  * A stalled TX queue must show as a refused burst before the ancillary session pools run
  * dry. The production session tasklet and, on the shared queue, the ancillary transmitter
  * run into a hung ring, from the start or after a lazily freeing ring kept a mbuf in
- * every slot. A header pool holds the pkt the burst refused, what the ring keeps
- * (ceil(nb_tx_desc / descriptors a pkt)) and the cache slack another lcore keeps; the
- * redundant chain pool that of the leg that keeps more. One mbuf less and the alloc
- * fails first.
+ * every slot, with pools of exactly what tx_ancillary_session_mempool_n() asks for. On a
+ * deep port (2048 here): the pkt the burst refused, what the ring keeps (ceil(nb_tx_desc
+ * / descriptors a pkt)) and the cache slack another lcore keeps; the redundant chain pool
+ * that of the leg that keeps more. One mbuf less and the alloc fails first. A port of 512
+ * is not deep and gets main's pools, nb_tx_desc and the 512 of the manager ring.
  *
  * Run: ./build_unit/tests/unit/UnitTest --gtest_filter='*St40TxPool*'
  */
 
 #include <gtest/gtest.h>
+
+#include <algorithm>
 
 #include "common/ut_tx_ring.h"
 #include "session/st40_tx_harness.h"
@@ -35,11 +38,6 @@ struct StallCase {
   bool lazy; /* drain on a ring that frees on reuse, then hang */
 };
 
-unsigned int Pool(uint16_t nb_tx_desc, bool copy) {
-  unsigned int desc_per_pkt = copy ? 1 : 2;
-  return 1 + (nb_tx_desc + desc_per_pkt - 1) / desc_per_pkt + kCacheSlack;
-}
-
 class St40TxPoolStallTest : public ::testing::TestWithParam<StallCase> {
  protected:
   void SetUp() override {
@@ -51,9 +49,7 @@ class St40TxPoolStallTest : public ::testing::TestWithParam<StallCase> {
     EXPECT_EQ(ut_txa_pipe_teardown(ctx_), 0);
     ut_txa_destroy(ctx_);
   }
-  /* exact pools unless production, shrink_pool one mbuf short: a leg's header pool or
-   * UT_TXA_PIPE_CHAIN */
-  ut_txa_pipe_case Case(bool production, int shrink_pool) {
+  ut_txa_pipe_case Base() {
     const StallCase& sc = GetParam();
     ut_txa_pipe_case c = {};
     c.shared = sc.shared;
@@ -65,15 +61,28 @@ class St40TxPoolStallTest : public ::testing::TestWithParam<StallCase> {
       c.nb_tx_desc[i] = sc.nb_tx_desc;
       c.hung[i] = !sc.lazy && i == sc.hung_leg;
     }
-    if (production) return c;
+    return c;
+  }
+  /* the helper's pools, shrink_pool one mbuf short: a leg's header pool or
+   * UT_TXA_PIPE_CHAIN */
+  void RunExact(int shrink_pool) {
+    ut_txa_pipe_case c = Base();
+    ASSERT_EQ(ut_txa_pipe_setup(ctx_, &c), 0);
+    for (int i = 0; i < c.num_port; i++) {
+      c.hdr_pool[i] = ut_txa_pipe_mempool_n(ctx_, i);
+      c.chain_pool = std::max(c.chain_pool, c.hdr_pool[i]);
+    }
+    ASSERT_EQ(ut_txa_pipe_teardown(ctx_), 0);
+    ut_txa_destroy(ctx_);
+    ctx_ = ut_txa_create();
+    ASSERT_NE(ctx_, nullptr);
+
     c.hold = kCacheSlack;
-    for (int i = 0; i < sc.num_port; i++) c.hdr_pool[i] = Pool(sc.nb_tx_desc, sc.copy);
-    c.chain_pool = Pool(sc.nb_tx_desc, false);
     if (shrink_pool == UT_TXA_PIPE_CHAIN)
       c.chain_pool--;
     else if (shrink_pool >= 0)
       c.hdr_pool[shrink_pool]--;
-    return c;
+    Run(c);
   }
   void Run(const ut_txa_pipe_case& c) {
     ASSERT_EQ(ut_txa_pipe_setup(ctx_, &c), 0);
@@ -100,12 +109,12 @@ class St40TxPoolStallTest : public ::testing::TestWithParam<StallCase> {
 };
 
 TEST_P(St40TxPoolStallTest, StallShowsAsARefusedBurstBeforeAnAllocFail) {
-  Run(Case(false, -1));
+  RunExact(-1);
   ExpectBurstFailFirst();
 }
 
 TEST_P(St40TxPoolStallTest, TheProductionPoolsSeeTheRefusedBurstFirst) {
-  Run(Case(true, -1));
+  Run(Base());
   ExpectBurstFailFirst();
 }
 
@@ -125,30 +134,29 @@ INSTANTIATE_TEST_SUITE_P(
     [](const testing::TestParamInfo<StallCase>& info) { return info.param.name; });
 
 /* a lazily freeing ring keeps a mbuf in every slot, the most it can; a hung one keeps a
- * descriptor less */
+ * descriptor less. Only a deep port's pools are that tight. */
 using St40TxPoolBoundTest = St40TxPoolStallTest;
 
 TEST_P(St40TxPoolBoundTest, OneHeaderMbufLessFailsTheAllocFirst) {
-  Run(Case(false, MTL_SESSION_PORT_P));
+  RunExact(MTL_SESSION_PORT_P);
   ExpectAllocFailFirst();
 }
 
 TEST_P(St40TxPoolBoundTest, OneRedundantHeaderMbufLessFailsTheAllocFirst) {
   if (GetParam().num_port < 2) GTEST_SKIP() << "one leg";
-  Run(Case(false, MTL_SESSION_PORT_R));
+  RunExact(MTL_SESSION_PORT_R);
   ExpectAllocFailFirst();
 }
 
 TEST_P(St40TxPoolBoundTest, OneChainMbufLessFailsTheAllocFirst) {
   if (GetParam().copy) GTEST_SKIP() << "no chain pool";
-  Run(Case(false, UT_TXA_PIPE_CHAIN));
+  RunExact(UT_TXA_PIPE_CHAIN);
   ExpectAllocFailFirst();
 }
 
 INSTANTIATE_TEST_SUITE_P(
     LazyRings, St40TxPoolBoundTest,
-    testing::Values(StallCase{"Lazy512", true, 1, false, 512, 0, true},
-                    StallCase{"Lazy2048", true, 1, false, 2048, 0, true},
+    testing::Values(StallCase{"Lazy2048", true, 1, false, 2048, 0, true},
                     StallCase{"DedicatedLazy2048", false, 1, false, 2048, 0, true},
                     StallCase{"CopyLazy2048", true, 1, true, 2048, 0, true},
                     StallCase{"RedundantRLazy2048", true, 2, false, 2048, 1, true},
@@ -177,6 +185,69 @@ TEST(St40TxRedundantAllocTest, AFailedRedundantHeaderFreesThePayloadOnce) {
   EXPECT_NE(ut_txa_pipe_first_alloc_fail(ctx), 0u);
   EXPECT_EQ(ut_txa_pipe_teardown(ctx), 0) << "a pool lost or doubled mbufs";
   ut_txa_destroy(ctx);
+}
+
+/* the redundant pkt shares the chain mbuf, so the chain pool needs the leg keeping more
+ */
+TEST(St40TxPoolSizeTest, RedundantChainPoolCoversTheDeeperLeg) {
+  ASSERT_EQ(ut_txa_init(), 0);
+  for (auto nb : {std::make_pair(512, 2048), std::make_pair(2048, 512)}) {
+    SCOPED_TRACE(nb.first);
+    ut_txa_ctx* ctx = ut_txa_create();
+    ASSERT_NE(ctx, nullptr);
+    ut_txa_pipe_case c = {};
+    c.shared = true;
+    c.num_port = 2;
+    c.nb_tx_desc[MTL_SESSION_PORT_P] = nb.first;
+    c.nb_tx_desc[MTL_SESSION_PORT_R] = nb.second;
+    c.free_thresh = 32;
+    ASSERT_EQ(ut_txa_pipe_setup(ctx, &c), 0);
+    EXPECT_EQ(ut_txa_pipe_pool_size(ctx, UT_TXA_PIPE_CHAIN),
+              std::max(ut_txa_pipe_pool_size(ctx, MTL_SESSION_PORT_P),
+                       ut_txa_pipe_pool_size(ctx, MTL_SESSION_PORT_R)));
+    EXPECT_EQ(ut_txa_pipe_teardown(ctx), 0);
+    ut_txa_destroy(ctx);
+  }
+}
+
+/* main's chain pool is the primary leg's alone: 1024 */
+TEST(St40TxPoolSizeTest, ARedundantSessionOffDeepPortsGetsThePrimaryChainPool) {
+  ASSERT_EQ(ut_txa_init(), 0);
+  ut_txa_ctx* ctx = ut_txa_create();
+  ASSERT_NE(ctx, nullptr);
+  ut_txa_pipe_case c = {};
+  c.shared = true;
+  c.num_port = 2;
+  c.nb_tx_desc[MTL_SESSION_PORT_P] = 512;
+  c.nb_tx_desc[MTL_SESSION_PORT_R] = 1536;
+  c.free_thresh = 32;
+  ASSERT_EQ(ut_txa_pipe_setup(ctx, &c), 0);
+  EXPECT_EQ(ut_txa_pipe_mempool_n(ctx, MTL_SESSION_PORT_R), 1536u + 512);
+  EXPECT_EQ(ut_txa_pipe_pool_size(ctx, MTL_SESSION_PORT_R), 4095u);
+  EXPECT_EQ(ut_txa_pipe_pool_size(ctx, UT_TXA_PIPE_CHAIN), 2047u);
+  EXPECT_EQ(ut_txa_pipe_teardown(ctx), 0);
+  ut_txa_destroy(ctx);
+}
+
+/* deep, the refused pkt, the chained pkts of the queue and the cache slack: 1217 at 2048
+ * descriptors; not deep, main's 512 + 512 at 512 */
+TEST(St40TxPoolSizeTest, ASessionGets2047At2048DescriptorsAnd2047At512) {
+  ASSERT_EQ(ut_txa_init(), 0);
+  for (auto nb : {std::make_pair(2048, 2047u), std::make_pair(512, 2047u)}) {
+    SCOPED_TRACE(nb.first);
+    ut_txa_ctx* ctx = ut_txa_create();
+    ASSERT_NE(ctx, nullptr);
+    ut_txa_pipe_case c = {};
+    c.shared = true;
+    c.num_port = 1;
+    c.nb_tx_desc[MTL_SESSION_PORT_P] = nb.first;
+    c.free_thresh = 32;
+    ASSERT_EQ(ut_txa_pipe_setup(ctx, &c), 0);
+    EXPECT_EQ(ut_txa_pipe_pool_size(ctx, MTL_SESSION_PORT_P), nb.second);
+    EXPECT_EQ(ut_txa_pipe_pool_size(ctx, UT_TXA_PIPE_CHAIN), nb.second);
+    EXPECT_EQ(ut_txa_pipe_teardown(ctx), 0);
+    ut_txa_destroy(ctx);
+  }
 }
 
 }  // namespace

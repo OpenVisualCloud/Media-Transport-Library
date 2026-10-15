@@ -175,6 +175,14 @@ int ut_dev_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue);
 int ut_dev_recovery_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue);
 int ut_dev_tx_done_cleanup(ut_dev_ctx* ctx, uint16_t queue);
 
+/** dev_tx_sys_pool_elements() of port P with nb_tx_q queues of nb_tx_desc, deep at
+ * 2048, the TX mono pool on or off. */
+unsigned int ut_dev_tx_sys_pool_elements(ut_dev_ctx* ctx, uint16_t nb_tx_q,
+                                         uint16_t nb_tx_desc, bool mono);
+/** The mbufs mt_mempool_create_by_ops() gives a pool asked for elements, of no data
+ * room. */
+unsigned int ut_dev_mempool_size(ut_dev_ctx* ctx, unsigned int elements);
+
 #ifdef __cplusplus
 }
 #endif

@@ -727,6 +727,7 @@ struct st_tx_audio_session_pacing {
 };
 
 #define ST30_TX_RL_QUEUES_USED (2)
+#define ST30_TX_RL_PADS_PER_PKT (3)
 
 enum st30_tx_rl_stage {
   ST30_TX_RL_STAGE_PREPARE,

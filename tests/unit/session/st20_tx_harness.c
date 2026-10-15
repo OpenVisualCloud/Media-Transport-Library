@@ -29,7 +29,9 @@
 #include "common/ut_common.h"
 #include "common/ut_tx_ring.h"
 #include "datapath/mt_queue.h"
+#include "dev/mt_dev.h"
 #include "mt_main.h"
+#include "mt_rtcp.h"
 #include "session/st20_tx_harness.h"
 #include "st2110/st_tx_video_session.h"
 
@@ -326,7 +328,38 @@ static int ut_txv_wait_tsc_stable(struct mtl_main_impl* impl) {
   return 0;
 }
 
+/* the retransmit ring tv_init_rtcp() last asked mt_rtcp_tx_create() for */
+static uint16_t ut_txv_rtcp_ring;
+
+static struct mt_rtcp_tx* ut_txv_rtcp_tx_create(struct mtl_main_impl* impl,
+                                                struct mt_rtcp_tx_ops* ops) {
+  (void)impl;
+  ut_txv_rtcp_ring = ops->buffer_size;
+  return (struct mt_rtcp_tx*)&ut_txv_rtcp_ring;
+}
+
+static void ut_txv_rtcp_tx_free(struct mt_rtcp_tx* tx) {
+  (void)tx;
+}
+
+static struct mt_rxq_entry* ut_txv_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
+                                           struct mt_rxq_flow* flow) {
+  (void)impl;
+  (void)port;
+  (void)flow;
+  return (struct mt_rxq_entry*)&ut_txv_rtcp_ring;
+}
+
+static int ut_txv_rxq_put(struct mt_rxq_entry* entry) {
+  (void)entry;
+  return 0;
+}
+
 /* Seams: these calls in st_tx_video_session.c hit the mocks. */
+#define mt_rtcp_tx_create ut_txv_rtcp_tx_create
+#define mt_rtcp_tx_free ut_txv_rtcp_tx_free
+#define mt_rxq_get ut_txv_rxq_get
+#define mt_rxq_put ut_txv_rxq_put
 #define mt_get_tsc ut_txv_tsc_time_fn
 #define mt_txq_get ut_txv_txq_get
 #define mt_txq_burst_busy ut_txv_txq_burst_busy
@@ -353,6 +386,10 @@ static int ut_txv_wait_tsc_stable(struct mtl_main_impl* impl) {
 #undef mt_txq_burst_busy
 #undef mt_txq_reclaim
 #undef mt_txq_get
+#undef mt_rxq_put
+#undef mt_rxq_get
+#undef mt_rtcp_tx_free
+#undef mt_rtcp_tx_create
 #define mt_txq_burst ut_txv_txq_burst
 static struct ut_txv_ctx* ut_txv_active_burst_ctx;
 static uint16_t ut_txv_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
@@ -1730,6 +1767,52 @@ bool ut_txv_pkts_capable_chain(ut_txv_ctx* ctx, uint16_t nb_tx_desc, int total_p
   return tv_pkts_capable_chain(&ctx->impl, s);
 }
 
+static int ut_txv_rtcp_mempool_init(ut_txv_ctx* ctx, unsigned int* hdr_size,
+                                    unsigned int* chain_size) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  int ret = tv_mempool_init(&ctx->impl, &ctx->mgr, s);
+
+  if (ret < 0) return ret;
+  *hdr_size = s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]->size;
+  if (chain_size) *chain_size = s->mbuf_mempool_chain->size;
+  return tv_mempool_free(s);
+}
+
+int ut_txv_rtcp_mempool_sizes(ut_txv_ctx* ctx, uint16_t nb_tx_desc,
+                              uint16_t rtcp_buffer_size, unsigned int* hdr_size,
+                              unsigned int* chain_size) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  ctx->impl.inf[MTL_PORT_P].nb_tx_desc = nb_tx_desc;
+  ctx->impl.inf[MTL_PORT_P].tx_deep = nb_tx_desc == 2048;
+  s->ops.type = ST20_TYPE_FRAME_LEVEL;
+  s->ops.num_port = 1;
+  s->ops.flags |= ST20_TX_FLAG_ENABLE_RTCP;
+  s->ops.rtcp.buffer_size = rtcp_buffer_size;
+  s->port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
+  s->ring_count = ST_TX_VIDEO_SESSIONS_RING_SIZE;
+  s->bulk = RTE_MIN(4, ST_SESSION_MAX_BULK);
+  s->st20_pkt_size = 1262;
+  s->socket_id = (int)rte_socket_id();
+  return ut_txv_rtcp_mempool_init(ctx, hdr_size, chain_size);
+}
+
+int ut_txv_rtcp_recovery_mempool_sizes(ut_txv_ctx* ctx, uint16_t nb_tx_desc,
+                                       uint16_t rtcp_buffer_size, unsigned int* hdr_size,
+                                       uint16_t* rtcp_ring,
+                                       unsigned int* recovery_hdr_size) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  int ret = ut_txv_rtcp_mempool_sizes(ctx, nb_tx_desc, rtcp_buffer_size, hdr_size, NULL);
+
+  if (ret < 0) return ret;
+  ret = tv_init_rtcp(&ctx->impl, &ctx->mgr, s);
+  if (ret < 0) return ret;
+  *rtcp_ring = ut_txv_rtcp_ring;
+  ret = ut_txv_rtcp_mempool_init(ctx, recovery_hdr_size, NULL);
+  tv_uinit_rtcp(s);
+  return ret;
+}
+
 int ut_txv_recovery_setup(ut_txv_ctx* ctx, int num_port) {
   struct st_tx_video_session_impl* s = &ctx->session;
 
@@ -1862,6 +1945,11 @@ static int ut_txv_pipe_pools(struct ut_txv_ctx* ctx, const struct ut_txv_pipe_ca
   s->mbuf_mempool_chain = ut_txv_pipe_pool(c->chain_pool, 0, 0);
   if (!s->mbuf_mempool_chain || ut_txv_pipe_hold(ctx, s->mbuf_mempool_chain, c->hold) < 0)
     return -ENOMEM;
+  if (!c->linesize_pad) return 0;
+  s->mbuf_mempool_copy_chain = ut_txv_pipe_pool(c->copy_pool, 0, s->st20_pkt_len);
+  if (!s->mbuf_mempool_copy_chain ||
+      ut_txv_pipe_hold(ctx, s->mbuf_mempool_copy_chain, c->hold) < 0)
+    return -ENOMEM;
   return 0;
 }
 
@@ -1883,7 +1971,8 @@ int ut_txv_pipe_setup(ut_txv_ctx* ctx, const struct ut_txv_pipe_case* c) {
   if (st_get_fps_timing(ops->fps, &s->fps_tm) < 0) return -EINVAL;
   s->st20_linesize = ops->width * s->st20_pg.size / s->st20_pg.coverage;
   s->st20_frame_size = s->st20_linesize * ops->height;
-  s->st20_fb_size = s->st20_frame_size;
+  s->st20_linesize += c->linesize_pad;
+  s->st20_fb_size = s->st20_linesize * ops->height;
   s->st20_frames_cnt = c->frames_cnt;
   if (tv_init_pkt(&ctx->impl, s, ops, NULL) < 0) return -EINVAL;
   s->st21_vrx_narrow = 8;
@@ -1898,6 +1987,7 @@ int ut_txv_pipe_setup(ut_txv_ctx* ctx, const struct ut_txv_pipe_case* c) {
   for (int i = 0; i < c->num_port; i++) {
     struct mt_interface* inf = &ctx->impl.inf[i];
     inf->nb_tx_desc = c->nb_tx_desc[i];
+    inf->tx_deep = !c->user_nb_tx_desc && c->nb_tx_desc[i] == 2048;
     inf->ptp_get_time_fn = ut_txv_ptp_time_fn;
     s->port_maps[i] = (enum mtl_port)i;
     s->pacing_way[i] = ST21_TX_PACING_WAY_TSC;
@@ -1926,7 +2016,8 @@ static void ut_txv_pipe_note(struct ut_txv_ctx* ctx) {
 
   if (!ctx->pipe_first_alloc_fail &&
       (code == STI_FRAME_PKT_ALLOC_FAIL || code == STI_FRAME_PKT_ALLOC_CHAIN_FAIL ||
-       code == STI_FRAME_PKT_ALLOC_R_FAIL))
+       code == STI_FRAME_PKT_ALLOC_R_FAIL ||
+       ctx->session.port_user_stats.stat_pkts_chain_realloc_fail))
     ctx->pipe_first_alloc_fail = ctx->pipe_step;
 }
 
@@ -1996,4 +2087,46 @@ uint64_t ut_txv_pipe_first_burst_fail(const ut_txv_ctx* ctx) {
 
 int ut_txv_pipe_total_pkts(const ut_txv_ctx* ctx) {
   return ctx->session.st20_total_pkts;
+}
+
+unsigned int ut_txv_pipe_pool_size(const ut_txv_ctx* ctx, int pool) {
+  const struct st_tx_video_session_impl* s = &ctx->session;
+  struct rte_mempool* mp = pool < UT_TXV_PIPE_CHAIN    ? s->mbuf_mempool_hdr[pool]
+                           : pool == UT_TXV_PIPE_CHAIN ? s->mbuf_mempool_chain
+                                                       : s->mbuf_mempool_copy_chain;
+  return mp ? mp->size : 0;
+}
+
+unsigned int ut_txv_pipe_mempool_n(ut_txv_ctx* ctx, int leg) {
+  return tv_mempool_n(&ctx->impl, &ctx->session, leg);
+}
+
+unsigned int ut_txv_pipe_rl_mempool_n(ut_txv_ctx* ctx, int leg) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  enum st21_tx_pacing_way way = s->pacing_way[leg];
+
+  s->pacing_way[leg] = ST21_TX_PACING_WAY_RL;
+  unsigned int n = tv_mempool_n(&ctx->impl, s, leg);
+  s->pacing_way[leg] = way;
+  return n;
+}
+
+void ut_txv_set_tx_video_migrate(ut_txv_ctx* ctx, bool enable) {
+  if (enable)
+    ctx->impl.user_para.flags |= MTL_FLAG_TX_VIDEO_MIGRATE;
+  else
+    ctx->impl.user_para.flags &= ~MTL_FLAG_TX_VIDEO_MIGRATE;
+}
+
+unsigned int ut_txv_pipe_copy_mempool_n(ut_txv_ctx* ctx, unsigned int chain_n) {
+  return tv_copy_mempool_n(&ctx->session, chain_n);
+}
+
+void ut_txv_pipe_geometry(const ut_txv_ctx* ctx, uint32_t* pkt_len, uint32_t* line_bytes,
+                          uint32_t* frame_size, int* total_pkts) {
+  const struct st_tx_video_session_impl* s = &ctx->session;
+  *pkt_len = s->st20_pkt_len;
+  *line_bytes = s->st20_bytes_in_line;
+  *frame_size = s->st20_frame_size;
+  *total_pkts = s->st20_total_pkts;
 }

@@ -1330,7 +1330,7 @@ static int tx_audio_session_init_rl(struct mtl_main_impl* impl,
     info("%s(%d), user required offset %dns\n", __func__, idx, s->ops.rl_offset_ns);
   }
   rl->pkts_prepare_warmup = 4;
-  rl->pads_per_st30_pkt = 3;
+  rl->pads_per_st30_pkt = ST30_TX_RL_PADS_PER_PKT;
   rl->max_warmup_trs = 4; /* max 4 trs warmup sync */
   /* sync every 10ms */
   rl->pkts_per_sync = (double)NS_PER_S / s->pacing.trs / 100;
@@ -1810,6 +1810,26 @@ static bool tx_audio_session_has_chain_buf(struct st_tx_audio_session_impl* s) {
   return true;
 }
 
+/* mbufs a pool needs on port: a descriptor each and the manager ring; deep, what the
+ * session holds and the ring share, RL adding its pads. The RTP ring comes on top. */
+static unsigned int tx_audio_session_mempool_n(struct mtl_main_impl* impl,
+                                               struct st_tx_audio_session_impl* s,
+                                               enum mtl_port port) {
+  unsigned int n = mt_if_nb_tx_desc(impl, port) + ST_TX_AUDIO_SESSIONS_RING_SIZE;
+
+  if (mt_if_tx_deep(impl, port)) {
+    bool rl = s->tx_pacing_way == ST30_TX_PACING_WAY_RL;
+    unsigned int desc_per_pkt =
+        (s->tx_no_chain ? 1 : 2) + (rl ? ST30_TX_RL_PADS_PER_PKT : 0);
+    unsigned int ring = s->trans_ring[MTL_SESSION_PORT_P]->size;
+    n = RTE_MIN(s->trans_ring_thresh, ring) + 1 +
+        mt_if_tx_pool_ring_share(impl, port, desc_per_pkt,
+                                 rl ? ST30_TX_RL_QUEUES_USED : 1);
+  }
+  if (s->ops.type == ST30_TYPE_RTP_LEVEL) n += s->ops.rtp_ring_size;
+  return n;
+}
+
 static int tx_audio_session_mempool_init(struct mtl_main_impl* impl,
                                          struct st_tx_audio_sessions_mgr* mgr,
                                          struct st_tx_audio_session_impl* s) {
@@ -1835,8 +1855,7 @@ static int tx_audio_session_mempool_init(struct mtl_main_impl* impl,
     } else if (s->mbuf_mempool_hdr[i]) {
       warn("%s(%d), use previous hdr mempool for port %d\n", __func__, idx, i);
     } else {
-      n = mt_if_nb_tx_desc(impl, port) + ST_TX_AUDIO_SESSIONS_RING_SIZE;
-      if (ops->type == ST30_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
+      n = tx_audio_session_mempool_n(impl, s, port);
       char pool_name[32];
       snprintf(pool_name, 32, "%sM%dS%dP%d_HDR_%d", ST_TX_AUDIO_PREFIX, mgr->idx, idx, i,
                s->recovery_idx);
@@ -1851,11 +1870,15 @@ static int tx_audio_session_mempool_init(struct mtl_main_impl* impl,
     }
   }
 
-  /* allocate payload(chain) pool */
+  /* payload(chain) pool on primary port; the redundant pkt shares it, so with a deep
+   * port it is sized for the port that keeps more */
   if (!s->tx_no_chain) {
+    bool deep = mt_tx_deep_session(impl, s->port_maps, num_port);
     port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
-    n = mt_if_nb_tx_desc(impl, port) + ST_TX_AUDIO_SESSIONS_RING_SIZE;
-    if (ops->type == ST30_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
+    n = tx_audio_session_mempool_n(impl, s, port);
+    for (int i = 1; deep && i < num_port; i++)
+      n = RTE_MAX(
+          n, tx_audio_session_mempool_n(impl, s, mt_port_logic2phy(s->port_maps, i)));
 
     if (s->tx_mono_pool) {
       s->mbuf_mempool_chain = mt_sys_tx_mempool(impl, port);
@@ -2030,18 +2053,18 @@ static int tx_audio_session_init_sw(struct mtl_main_impl* impl,
   struct st30_tx_ops* ops = &s->ops;
   int idx = s->idx, ret;
 
+  ret = tx_audio_session_init_trans_ring(mgr, s);
+  if (ret < 0) {
+    err("%s(%d), mbuf ring init fail %d\n", __func__, idx, ret);
+    tx_audio_session_uinit_sw(mgr, s);
+    return ret;
+  }
+
   /* free the pool if any in previous session */
   tx_audio_session_mempool_free(s);
   ret = tx_audio_session_mempool_init(impl, mgr, s);
   if (ret < 0) {
     err("%s(%d), mempool init fail %d\n", __func__, idx, ret);
-    tx_audio_session_uinit_sw(mgr, s);
-    return ret;
-  }
-
-  ret = tx_audio_session_init_trans_ring(mgr, s);
-  if (ret < 0) {
-    err("%s(%d), mbuf ring init fail %d\n", __func__, idx, ret);
     tx_audio_session_uinit_sw(mgr, s);
     return ret;
   }
