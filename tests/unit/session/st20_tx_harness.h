@@ -325,6 +325,10 @@ bool ut_txv_recovery_session_dead(const ut_txv_ctx* ctx);
 /* the ST_EVENT_FATAL_ERROR and ST_EVENT_RECOVERY_ERROR notify_event got */
 int ut_txv_recovery_fatal_events(const ut_txv_ctx* ctx);
 int ut_txv_recovery_recovered_events(const ut_txv_ctx* ctx);
+/* the bytes/s programmed on leg's first queue, 0 for none */
+void ut_txv_recovery_set_queue_bps(ut_txv_ctx* ctx, int leg, uint64_t bps);
+/* the bytes/s of the last mt_txq_get() */
+uint64_t ut_txv_txq_get_bps(const ut_txv_ctx* ctx);
 /* what mt_txq_recovery_flush() of a queue of leg returns, 0 unless set */
 void ut_txv_recovery_set_flush_ret(ut_txv_ctx* ctx, int leg, int ret);
 /* st20_tx_queue_fatal_error() of leg */

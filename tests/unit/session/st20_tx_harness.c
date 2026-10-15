@@ -1535,7 +1535,9 @@ int ut_txv_recovery_setup(ut_txv_ctx* ctx, int num_port) {
   s->tx_mono_pool = true;
   s->tx_no_chain = true;
   s->active = true;
-  /* its frame, whose pkts are on their way */
+  /* a frame of 1080p GPM, for tv_rl_bps(), whose pkts are on their way */
+  s->st20_pkt_size = 1262;
+  s->st20_total_pkts = 4320;
   s->st20_frames = &ctx->recovery_frame;
   s->st20_frames_cnt = 1;
   rte_atomic32_set(&ctx->recovery_frame.refcnt, 1);
@@ -1566,6 +1568,14 @@ int ut_txv_recovery_fatal_events(const ut_txv_ctx* ctx) {
 
 int ut_txv_recovery_recovered_events(const ut_txv_ctx* ctx) {
   return ctx->recovery_events;
+}
+
+void ut_txv_recovery_set_queue_bps(ut_txv_ctx* ctx, int leg, uint64_t bps) {
+  ctx->recovery_txq[leg][0].bps = bps;
+}
+
+uint64_t ut_txv_txq_get_bps(const ut_txv_ctx* ctx) {
+  return ctx->txq_get_bytes_per_sec;
 }
 
 void ut_txv_recovery_set_flush_ret(ut_txv_ctx* ctx, int leg, int ret) {

@@ -6,7 +6,8 @@
  * tasklet. On a deep port that flush is bounded: where R did not drain in time, or there
  * was no mbuf for the flush's mark, R's queue may still reference the frames and pool
  * mbufs, so the session ends unrecoverable before it hands a frame back. These sessions
- * are on the mono pool, which tv_mempool_free() never refuses to replace.
+ * are on the mono pool, which tv_mempool_free() never refuses to replace. A new queue
+ * keeps the rate the leg trained on.
  *
  * Run: ./build_unit/tests/unit/UnitTest --gtest_filter='St20TxQueueRecoveryTest.*'
  */
@@ -85,5 +86,28 @@ INSTANTIATE_TEST_SUITE_P(Ret, St20TxQueueRecoveryFlushFailTest,
                          [](const ::testing::TestParamInfo<int>& info) {
                            return info.param == -EBUSY ? "NotDrained" : "NoMark";
                          });
+
+/* The leg trained its pad interval and plan at its queue's rate, which a later session's
+ * retrain of tv_rl_bps(), the one tv_init_hw() would program now, must not change. */
+TEST_F(St20TxQueueRecoveryTest, RecoveryKeepsTheQueueRateTheLegTrainedOn) {
+  constexpr uint64_t kTrainedBps = 300000000;
+  ut_txv_recovery_set_queue_bps(ctx_, kP, kTrainedBps);
+  ASSERT_EQ(ut_txv_add_trained_bps(ctx_, kTrainedBps + 3000000), 0);
+
+  ASSERT_EQ(ut_txv_recover(ctx_, kP), 0);
+
+  EXPECT_EQ(ut_txv_txq_get_bps(ctx_), kTrainedBps);
+}
+
+/* a queue without a programmed rate, a shared one: the rate tv_init_hw() asks for */
+TEST_F(St20TxQueueRecoveryTest, RecoveryOfAQueueWithoutARateLooksItUp) {
+  constexpr uint64_t kRetrainedBps = 303000000;
+  ut_txv_recovery_set_queue_bps(ctx_, kP, 0);
+  ASSERT_EQ(ut_txv_add_trained_bps(ctx_, kRetrainedBps), 0);
+
+  ASSERT_EQ(ut_txv_recover(ctx_, kP), 0);
+
+  EXPECT_EQ(ut_txv_txq_get_bps(ctx_), kRetrainedBps);
+}
 
 }  // namespace
