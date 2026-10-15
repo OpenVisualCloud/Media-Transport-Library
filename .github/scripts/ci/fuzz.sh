@@ -11,11 +11,12 @@ fuzz_time=${FUZZ_TIME:-600}
 case "${1:-}" in
 build)
 	# clang has no gcc libasan, so ASan comes from b_sanitize, not enable_asan.
+	# UBSan carries on after a report by default: -fno-sanitize-recover makes it a crash.
 	reconfigure=()
 	[[ -d $build_dir ]] && reconfigure=(--reconfigure)
 	CC=clang CXX=clang++ meson setup "${reconfigure[@]}" "$build_dir" . \
-		-Denable_fuzzing=true -Db_sanitize=address -Db_lundef=false \
-		-Dc_args=-Wno-error=unused-but-set-variable
+		-Denable_fuzzing=true -Db_sanitize=address,undefined -Db_lundef=false \
+		"-Dc_args=-Wno-error=unused-but-set-variable -fno-sanitize-recover=all"
 	ninja -C "$build_dir"
 	;;
 run)
