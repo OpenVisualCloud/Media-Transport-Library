@@ -107,7 +107,7 @@ def _app_cmd(opts, media_config, media_path, fps, test_time):
 def _side(role, host) -> pc.Side:
     vfs = [(getattr(host, attr, None) or [None])[0] for attr in ("vfs", "vfs_r")]
     if None in vfs:
-        pytest.skip(f"{host.name} needs a VF on each of two PFs")
+        pytest.fail(f"{host.name} needs a VF on each of two PFs")
     return pc.Side(
         host,
         role,
@@ -150,7 +150,7 @@ def _report(opts, video, sides, rounds) -> tuple[str, dict]:
             )
     lines += ["", "| Round | Slot 0 | Slot 1 | Result |", "| --- | --- | --- | --- |"]
     for n, r in enumerate(rounds, 1):
-        result = "; ".join(r["problems"] + r["notes"]) or "valid"
+        result = "; ".join(r["problems"] + r["notes"]).replace("|", "\\|") or "valid"
         lines.append(f"| {n} | {r['order'][0]} | {r['order'][1]} | {result} |")
     tables = {s.role: pc.compare(valid, s.role) for s in sides}
     for s in sides:
@@ -193,7 +193,7 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
     rx_host = next((h for h in hosts.values() if is_host_sut(h)), None)
     tx_host = next((h for h in hosts.values() if h is not rx_host), None)
     if not rx_host or not tx_host:
-        pytest.skip("perf-compare needs a SUT and a second host")
+        pytest.fail("perf-compare needs a SUT and a second host")
     media_config, media_path = media_file
     video = f"{media_config['height']}p{fps}"
     out_dir = os.path.join(os.environ.get("MTL_LOG_FOLDER", "logs"), "latest")
@@ -209,19 +209,32 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
             sides[-1].rdt = pc.rdt_setup(host)
         for n in range(opts["rounds"]):
             order = ("A", "B") if n % 2 == 0 else ("B", "A")
-            results, problems, notes = pc.run_round(
-                sides,
-                opts["trees"],
-                order,
-                app_cmd,
-                RUN_DIR,
-                os.path.join(out_dir, "perf_compare", f"round{n + 1}"),
-                opts["sessions"],
-                FPS[fps],
-                WARMUP_S,
-                test_time,
-                traced_s,
-            )
+            try:
+                results, problems, notes = pc.run_round(
+                    sides,
+                    opts["trees"],
+                    order,
+                    app_cmd,
+                    RUN_DIR,
+                    os.path.join(out_dir, "perf_compare", f"round{n + 1}"),
+                    opts["sessions"],
+                    FPS[fps],
+                    WARMUP_S,
+                    test_time,
+                    traced_s,
+                )
+            except Exception as e:  # keep the rounds so far for the report
+                logger.exception(f"Round {n + 1} {order} failed")
+                rounds.append(
+                    {
+                        "order": order,
+                        "metrics": {"A": {}, "B": {}},
+                        # the first line: the rest is the log's, not the table's
+                        "problems": [f"failed: {(str(e) or repr(e)).splitlines()[0]}"],
+                        "notes": [],
+                    }
+                )
+                break
             logger.info(f"Round {n + 1} {order}: {problems or 'valid'} {notes}")
             rounds.append(
                 {

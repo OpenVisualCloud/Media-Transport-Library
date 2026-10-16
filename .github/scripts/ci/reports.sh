@@ -49,17 +49,21 @@ performance)
 perf-compare)
 	acceptance_dir="${root_dir}/tests/acceptance"
 	report="${acceptance_dir}/logs/performance/latest/perf_compare.md"
+	status=0
 	if [[ -f $report ]]; then
 		cp "$report" "${acceptance_dir}/perf_compare.md"
 		cat "$report" >>"${GITHUB_STEP_SUMMARY:-/dev/null}"
 	else
-		echo "::warning::No perf-compare report found"
+		# pytest passes a skipped case, so without the report nothing was compared.
+		echo "::error::No perf-compare report found" >&2
+		status=1
 	fi
 	if [[ -d ${acceptance_dir}/logs/performance ]]; then
 		# upload-artifact rejects the colons of the timestamped log directories.
 		tar -czf "${acceptance_dir}/perf-logs.tar.gz" -C "${acceptance_dir}" logs/performance ||
 			echo "::warning::Packing the performance logs failed"
 	fi
+	exit "$status"
 	;;
 flatten-pytest) flatten_reports "${REPORT_DIR:-python-reports}" 'nightly-test-report-*' report.html html ;;
 flatten-gtest) flatten_reports "${REPORT_DIR:-gtest-reports}" 'nightly-gtest-report-*' gtest.log log ;;
