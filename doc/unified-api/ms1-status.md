@@ -4,25 +4,27 @@
 |---|---|
 | Status | The ledger of milestone MS1. The implementing session keeps it current: one row per task, updated when a task changes state |
 | Reads with | [implementation-plan.md](implementation-plan.md) §5 (tasks, gates, process), [README.md](README.md) §1 |
-| Work branch | `unified-api-ms1`, from the doc-set commit on `unified-api-design` |
+| Work branch | `unified-api-impl`, from the doc-set commit on `unified-api-design` ([autonomous-run.md](autonomous-run.md) §5) |
 | Base commit | (record the doc-set commit here when the work branch is made) |
 
-On every resume: read [README.md](README.md) §1, this file and `git log --oneline -20`, then
-continue with the first task that is not done.
+On every resume: read [README.md](README.md) §1, [autonomous-run.md](autonomous-run.md), this
+file and `git log --oneline -20`, then continue with the first task that is not done.
 
 ## 0. Standing instructions
 
-The maintainer's standing permission (2026-10-02):
+The maintainer's standing permission for the autonomous run (2026-10-16), which replaces that of
+2026-10-02:
 
-- Commit each task through the `mtl-commit` skill once Gate 5 is APPROVE and Gate 6 has run where
-  marked.
-- Make one signed-off commit per commit of a task (a series has several, implementation-plan.md
-  §5.8).
+- Commit each review unit through the `mtl-commit` skill once Gate 5 is APPROVE and Gate 6 has
+  run where marked, one signed-off commit per commit of a task (a series has several,
+  implementation-plan.md §5.8).
 - Add no AI attribution.
-- Never push. Never open a pull request.
-- Commit on the one work branch of the head; the maintainer reviews and pushes.
+- Push after every commit to the fork, `git push sakoram unified-api-impl`; never force-push,
+  never push to `origin`, never open a pull request.
+- No maintainer answers during the run: the approvals, checkpoints and questions of this file are
+  handled by [autonomous-run.md](autonomous-run.md) §3 and §4.
 
-This overrides the skill's "only when asked" for MS1 tasks.
+This overrides the skill's "only when asked" for the tasks of every milestone.
 
 ## 1. Tasks
 
@@ -67,7 +69,9 @@ evidence names the tests and quotes the Gate 6 output.
 ## 3. Questions for the maintainer
 
 Batch them; ask at a checkpoint, not between. An open question gives the options, a
-recommendation, and an answer line (§3.1).
+recommendation, and an answer line (§3.1). In the autonomous run each takes its recommendation,
+or the design as written, and its Answer or Confirmed cell says "taken in the run"
+([autonomous-run.md](autonomous-run.md) §3).
 
 ### 3.1 Open questions
 

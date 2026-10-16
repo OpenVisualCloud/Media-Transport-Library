@@ -30,7 +30,7 @@ includes `mtl.h`; fourteen optional headers add what a kind of program needs, on
 | writing a framework or codec plugin | [concepts.md](concepts.md) §2–§8 | [frameworks.md](frameworks.md); [examples.md](examples.md) §21–§23 | contract.md §3.8–§3.9 (query, latency), §7 (waiting), §9 (memory); timing.md §10.5 (live sinks); migration.md §7 (plugin ABI); [abi.md](abi.md) (versions) |
 | operating MTL (pods, hosts) | [deployment.md](deployment.md) | contract.md §2.4–§2.7 (shutdown, health, device events), §11 (stats) | timing.md §2 (clock policy); abi.md §7 (release and deprecation) |
 | building an NMOS or IPMX product | [nmos-ipmx.md](nmos-ipmx.md) §1–§7 | [examples.md](examples.md) §20 | nmos-ipmx.md §10–§23 (Phase 7) |
-| the implementing session | §1 below | [ms1-status.md](ms1-status.md) | [implementation-plan.md](implementation-plan.md) §5.2 (one card per task) |
+| the implementing session | §1 below; [autonomous-run.md](autonomous-run.md) | [run-status.md](run-status.md), [ms1-status.md](ms1-status.md) | [implementation-plan.md](implementation-plan.md) §5.2 (one card per task) |
 | a task agent | your card in implementation-plan.md §5.2.2 | the sections it lists | [legacy-internals.md](legacy-internals.md) (today's code); [pr1610.md](pr1610.md); [standards.md](standards.md) (a clause) |
 | testing | [guarantees.md](guarantees.md) | implementation-plan.md §8; [design/README.md](design/README.md) and design/wait-tests.md | the G-xx of the task |
 | maintaining the design | [requirements.md](requirements.md) §2; [decisions.md](decisions.md) §1 and its topic index | decisions.md §2, §5; coverage.md | [abi.md](abi.md) |
@@ -43,11 +43,16 @@ Example IDs (ex21) and the section numbers of [examples.md](examples.md) (§23) 
 The work is done by a main session that plans and integrates, and by the repository's subagents:
 `mtl-developer` writes code and tests for one task (Gates 0–4), `mtl-reviewer` reviews every saved
 diff (Gate 5), `mtl-system-admin` runs KahawaiTest on VFs (Gate 6); pytest runs from the main
-session. Their rules are in the repository's `CLAUDE.md` and `.github/claude/agents/`.
+session. Their rules are in the repository's `CLAUDE.md` and `.github/claude/agents/`. The run
+is autonomous, with no maintainer to ask: [autonomous-run.md](autonomous-run.md) gives the roles
+(an orchestrator, one lead per milestone), what replaces the maintainer's approvals and
+stop-and-ask, how a question or a plan bug is decided, and the git and push rules. Where it
+differs from the process rules below or in the plan, it wins.
 
 **Read first, in this order** (about 39 k tokens in all, at 4 bytes a token):
 
-1. this README §1 and [ms1-status.md](ms1-status.md) (where the work stands);
+1. this README §1, [autonomous-run.md](autonomous-run.md), [run-status.md](run-status.md) and
+   [ms1-status.md](ms1-status.md) (how the run works, where the work stands);
 2. [implementation-plan.md](implementation-plan.md) §1.1, §1.2, §2.1, §2.2, §3, §4, §5.1, §5.2.1,
    §5.2.3, §5.6, §5.8, §8.4: the assumptions, milestones, the architecture, prerequisites,
    where the code goes, MS1's scope (its non-goals are implementation-plan.md §5.1 "Out"), the task table, the order and
@@ -106,10 +111,12 @@ agent reads. Do not load whole documents into one context; the large ones are re
 
 **Starting MS1:**
 
-1. The doc set is committed on `unified-api-design` (the maintainer pushes it). `standards/` is in
-   `.git/info/exclude` on the maintainer's machine; keep it out of every commit. Create the work
-   branch `unified-api-ms1` from that commit and record it in [ms1-status.md](ms1-status.md).
-2. Then, in calendar order: P0 (the tooling and the histogram), S0 (baseline nights), T1, H1b
+1. The doc set is committed on `unified-api-design`, and the work branch `unified-api-impl` starts
+   from that commit (autonomous-run.md §5); record the commit in [run-status.md](run-status.md)
+   and [ms1-status.md](ms1-status.md). `standards/` is in `.git/info/exclude` on the maintainer's
+   machine; keep it out of every commit.
+2. R0 first, the re-pin to the new base ([autonomous-run.md](autonomous-run.md) §1). Then, in
+   calendar order: P0 (the tooling and the histogram), S0 (baseline nights), T1, H1b
    and E1 (two series), C0 (the maintainer's first checkpoint); M0 before week 2.
 
 The order, the gates and how the work runs are in implementation-plan.md §5.2.3 and §5.8; the state
@@ -127,6 +134,8 @@ of every task and the standing instructions are in [ms1-status.md](ms1-status.md
 | [migration.md](migration.md) | porters, wrapper implementers | the call, field and enum maps; coexistence; plugin ABI; bindings |
 | [frameworks.md](frameworks.md) | framework and plugin owners | GStreamer, FFmpeg and OBS on the unified API |
 | **Implementers** | | |
+| [autonomous-run.md](autonomous-run.md) | the implementing session | the autonomous run: roles, what replaces the maintainer, deciding questions and plan bugs, git, cost, resume |
+| [run-status.md](run-status.md) | the implementing session; the maintainer after the run | the run's ledger: milestones, decisions taken in the run, items blocked outside it, the final report |
 | [ms1-status.md](ms1-status.md) | the implementing session; the maintainer at checkpoints | the state of every MS1 task, standing instructions, open questions |
 | [implementation-plan.md](implementation-plan.md) | implementers | milestones, MS1 task cards, tests, budgets, risks, calendar |
 | [core.md](core.md) | implementers | the core and its seams: slot table, admission, results, handles, commands, close |

@@ -14,7 +14,7 @@ and a header disagree, the header wins.
 
 - A D-xx states one decision in its current form; **Where** names the document that specifies it,
   with its section where the row gives one (`contract.md §5.5`); a new row names its section.
-- IDs are stable, never renumbered or reused; the next free numbers are D-245 and OI-85.
+- IDs are stable, never renumbered or reused; the next free numbers are D-246 and OI-85.
 - D-12, D-20, D-22, D-25, D-28, D-29, D-35, D-40, D-46, D-61 and D-65 (superseded by D-78,
   D-80, D-74, D-82, D-44, D-50, D-77, D-55, D-73, D-79, D-72) and D-47 were dropped in
   `b7885ddf`; they stay unused.
@@ -50,7 +50,7 @@ Each D-row and OI-row under one topic; the home names the documents that specify
 | Headers and structs | D-05, D-33, D-34, D-45, D-71, D-72, D-74, D-97, D-104, D-105, D-137, D-140, D-185, D-187, D-195, D-217, D-223 | OI-70 | the headers, contract.md, README.md |
 | Versioning and export | D-23, D-83, D-106, D-108, D-190, D-191, D-194 | OI-64 | migration.md |
 | Legacy APIs and engines | D-18, D-24, D-27, D-57, D-112, D-114, D-123, D-125, D-178, D-189, D-197, D-240 | OI-3, OI-81 | migration.md, engine.md |
-| Validation and process | D-64, D-66, D-87, D-98, D-107, D-109, D-110, D-113, D-135, D-136, D-138, D-184, D-188, D-200 | — | implementation-plan.md |
+| Validation and process | D-64, D-66, D-87, D-98, D-107, D-109, D-110, D-113, D-135, D-136, D-138, D-184, D-188, D-200, D-245 | — | implementation-plan.md, autonomous-run.md |
 | Deployment and pods | D-49, D-63, D-69, D-89, D-90, D-91, D-92, D-116, D-117 | OI-23, OI-43, OI-75 | deployment.md |
 | NMOS, SDP and IPMX | D-93, D-94, D-95, D-96, D-196 | — | nmos-ipmx.md |
 
@@ -180,7 +180,7 @@ Each D-row and OI-row under one topic; the home names the documents that specify
 | D-132 | In MS1 AUTO is `CLOCK_TAI` if valid, else SYSTEM_TAI (vDSO); a PHC, one syscall per read, comes in MS6 with the published time base (E9) | timing.md |
 | D-133 | ST 2022-7: one RTP identity per session (`sc.ssrc`, `sc.payload_type`; 0 = one random SSRC per session, the essence's default PT); RX relocks only when the stale value lags the newest by more than `rx.skew_budget_ns` worth of ticks or every enabled leg is stale; ceil(skew_budget / TFRAME) + 1 out-of-order slots, else `info.tolerated_skew_ns` and a warning | timing.md, contract.md |
 | D-134 | DSCP lands with the bindings (`mtl_flow.dscp` into the TX builders' TOS; video MS1, the rest MS4); RTCP sender reports in MS5; FREERUN with E9 in MS6 (those names leave `MTL_LATER` then); any video frame rate in MS2a (C-FPS), fastmeta MS4a1, ANC MS4a2, cvideo MS4b; a rational outside the legacy table is `-MTL_ENOTSUP` until then | implementation-plan.md |
-| D-135 | The implementing session commits per task after its gates pass (signed off through the mtl-commit skill, no AI attribution) on a work branch; it never pushes and never opens PRs; the maintainer reviews and pushes | implementation-plan.md |
+| D-135 | The implementing session commits per task after its gates pass (signed off through the mtl-commit skill, no AI attribution) on a work branch; it never pushes and never opens PRs; the maintainer reviews and pushes. Amended by D-245: the autonomous run pushes to the fork | implementation-plan.md |
 | D-136 | Tooling task P0 opens MS1: `run_gtest` gains `pacing_way`, `kernel:lo`, whitelisted args and `binary`; `mtl-developer` may edit the new trees of plan §4.1 and §4.2, the new pytest application, `.github/`, `build.sh`, `meson_options.txt`, `doc/unified-api/`; the frozen trees are BLOCKER paths for `mtl-reviewer` | implementation-plan.md |
 | D-137 | Counts (functions per header, frozen names, functions per milestone tag) come only from `check.sh`; a function's milestone is its header tag, a value's its row in the data tables (D-185), a feature's its coverage.md U-row; other documents link them | README.md |
 | D-138 | Samples on the new API only: each legacy sample in `app/sample/` is deleted in the commit that adds its replacement (those of cut features in MS1); the new samples together call every exported function, checked in CI (G-114) | implementation-plan.md §4.2 |
@@ -290,6 +290,7 @@ Each D-row and OI-row under one topic; the home names the documents that specify
 | D-242 | Fill of lost data in library pools (MS2a): video, the format's black (sampling, depth, `video.range`, the NONSTD formats too; RGB FULL a `memset`); audio, cvideo and fastmeta: zero; ANC units are never filled; the tail zero. (continued below the table) | contract.md §9.8 |
 | D-243 | One keep-alive value: `MTL_UNDERRUN_KEEPALIVE` is the essence's keep-alive at its standard's cadence and the default of ANC and fastmeta; `MTL_UNDERRUN_EMPTY_ANC` is removed and value 2 retired; SKIP is refused for ANC and fastmeta frame units (`OPTION_RANGE`); packet units keep SKIP. | timing.md §6.4 |
 | D-244 | Stats: `tx.units_repeated` removed; `tx.units_padded` → `tx.indices_filled`, a subset of `tx.indices_empty`; `rx.units_zero_filled` → `rx.units_filled` and `rx.bytes_zero_filled` → `rx.bytes_filled`, for every essence. Amends D-203. | contract.md §11.3 |
+| D-245 | The autonomous run (2026-10-16): agents implement MS1–MS7 with no maintainer available. Its process rules replace the maintainer's approvals, checkpoints and stop-and-ask for the run. Questions and plan bugs are decided by competing designers and a judge, and recorded as D-rows to confirm. Each commit is pushed to the fork branch `unified-api-impl`. Amends D-135 | autonomous-run.md |
 
 Rows too long for the table, continued:
 

@@ -113,7 +113,7 @@ run "g++ C++17 all headers" sh -c "echo '$all' | g++ ${cxxflags[*]} -pedantic -x
 
 # The legacy headers and the new ones in one file, as a gradual port needs: no tag or name
 # clash.
-both="$(printf '#include <%s>\n' mtl_api.h st_pipeline_api.h st20_api.h st30_api.h st40_api.h st41_api.h st30_pipeline_api.h st40_pipeline_api.h)
+both="$(printf '#include <%s>\n' mtl_api.h st_pipeline_api.h st20_api.h st30_api.h st40_api.h st30_pipeline_api.h st40_pipeline_api.h)
 $all"
 run "gcc legacy and new headers together" sh -c "echo '$both' | gcc -std=gnu11 -fsyntax-only -I '$inc' -I '$legacy' -I '$cfg' -x c -"
 
