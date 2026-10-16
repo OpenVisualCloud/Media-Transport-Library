@@ -16,7 +16,7 @@ root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # Next to the workspace, not in it: checkout-clean removes .local_install and the
 # checkout cleans untracked files. Not in RUNNER_TEMP either: the companion is a
 # runner as well, which empties its _temp whenever it starts a job.
-slots=${PERF_COMPARE_DIR:-$(dirname "$root_dir")/perf-compare}
+slots=$(dirname "$root_dir")/perf-compare
 prefix="${root_dir}/.local_install"
 ssh_options=(-o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=30)
 
@@ -86,14 +86,20 @@ build)
 	du -sh "${slots}/a" "${slots}/b"
 	;;
 sync)
-	companion "sudo rm -rf '${slots}' && mkdir -p '${slots}' && command -v bpftrace >/dev/null" || {
-		echo "::error::The companion has no bpftrace; it is host image content (doc/perf_compare.md)" >&2
-		exit 1
-	}
 	command -v bpftrace >/dev/null || {
-		echo "::error::This host has no bpftrace; it is host image content (doc/perf_compare.md)" >&2
+		echo "::error::This host has no bpftrace; it is host image content (doc/ci_runner_setup.md)" >&2
 		exit 1
 	}
+	rc=0
+	companion "command -v bpftrace >/dev/null" || rc=$?
+	if ((rc == 255)); then
+		echo "::error::The companion is not reachable over ssh" >&2
+		exit 1
+	elif ((rc)); then
+		echo "::error::The companion has no bpftrace; it is host image content (doc/ci_runner_setup.md)" >&2
+		exit 1
+	fi
+	companion "sudo rm -rf '${slots}' && mkdir -p '${slots}'"
 	for slot in a b; do
 		rsync -az --delete -e "ssh ${ssh_options[*]}" "${slots}/${slot}/" \
 			"${SHADOW_HOST_USER}@${SHADOW_HOST_IP}:${slots}/${slot}/"

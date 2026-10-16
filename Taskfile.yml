@@ -109,7 +109,7 @@ tasks:
       - bash {{.CI_SCRIPTS}}/pytest-run.sh {{.CLI_ARGS}}
 
   ci:perf-compare:
-    desc: Build, sync or clean the two build trees of perf-compare.yml (doc/perf_compare.md)
+    desc: Build, sync, sweep or clean the two build trees of perf-compare.yml (doc/perf_compare.md)
     cmds:
       - bash {{.CI_SCRIPTS}}/perf-compare.sh {{.CLI_ARGS}}
 

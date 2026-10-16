@@ -112,6 +112,16 @@ def _side(role, host) -> pc.Side:
     )
 
 
+def _write_report(out_dir, opts, video, sides, rounds) -> str:
+    report, data = _report(opts, video, sides, rounds)
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, "perf_compare.md"), "w") as f:
+        f.write(report)
+    with open(os.path.join(out_dir, "perf_compare.json"), "w") as f:
+        json.dump(data, f, indent=2)
+    return report
+
+
 def _report(opts, video, sides, rounds) -> tuple[str, dict]:
     labels, args = opts["labels"], opts["args"]
     names = {s.role: pc.sh(s.host, "hostname").strip() for s in sides}
@@ -124,7 +134,7 @@ def _report(opts, video, sides, rounds) -> tuple[str, dict]:
         f"# perf-compare: A `{labels['A']}` vs B `{labels['B']}`",
         "",
         f"{opts['sessions']} st20p {video} sessions per instance, RxTxApp, "
-        f"{len(rounds)} rounds with the slots swapped every other round.",
+        f"{len(rounds)} rounds, A and B swapping slots every round.",
         "",
         "| | A | B |",
         "| --- | --- | --- |",
@@ -167,10 +177,6 @@ def _report(opts, video, sides, rounds) -> tuple[str, dict]:
 
 @pytest.mark.dual
 @pytest.mark.perf_compare
-@pytest.mark.skipif(
-    "not config.getoption('--perf_compare_slots')",
-    reason="perf-compare runs only with --perf_compare_slots (doc/perf_compare.md)",
-)
 @pytest.mark.parametrize(
     "media_file",
     [
@@ -228,6 +234,7 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
                         "notes": [],
                     }
                 )
+                _write_report(out_dir, opts, video, sides, rounds)
                 break
             logger.info(f"Round {n + 1} {order}: {problems or 'valid'} {notes}")
             rounds.append(
@@ -238,18 +245,12 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
                     "notes": notes,
                 }
             )
+            # after each round: a job that times out keeps what it measured
+            logger.info("\n" + _write_report(out_dir, opts, video, sides, rounds))
     finally:
         for s in sides:
             pc.stop_units(s.host)
             pc.rdt_teardown(s.host)
-
-    report, data = _report(opts, video, sides, rounds)
-    os.makedirs(out_dir, exist_ok=True)
-    with open(os.path.join(out_dir, "perf_compare.md"), "w") as f:
-        f.write(report)
-    with open(os.path.join(out_dir, "perf_compare.json"), "w") as f:
-        json.dump(data, f, indent=2)
-    logger.info("\n" + report)
 
     problems = [p for r in rounds for p in r["problems"]]
     if problems:

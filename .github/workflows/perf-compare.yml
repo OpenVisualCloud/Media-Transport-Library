@@ -12,12 +12,12 @@ on:
         type: string
         default: main
       ref_b:
-        description: 'Build B, compared with A: branch, tag or commit. The same as A shows the noise.'
+        description: 'Build B, compared with A: branch, tag or commit. Set it to A to see the noise.'
         required: false
         type: string
         default: main
       args_a:
-        description: 'Extra RxTxApp options for A (e.g. --sch_session_quota 8)'
+        description: 'Extra RxTxApp options for A, e.g. --sch_session_quota 8. RxTxApp ignores an option it does not know.'
         required: false
         type: string
       args_b:
@@ -35,20 +35,20 @@ on:
           - 2160p50
         default: 1080p59
       sessions:
-        description: Video sessions per build
+        description: 'Video sessions per build, each on one 100G port: 16 fits 1080p, 8 fits 2160p'
         required: false
-        type: string
-        default: '16'
+        type: number
+        default: 16
       test_time:
-        description: Seconds measured in each round
+        description: 'Seconds measured untraced in each round; the traced part adds half'
         required: false
-        type: string
-        default: '120'
+        type: number
+        default: 120
       rounds:
         description: 'Rounds; A and B swap places each round, so keep it even'
         required: false
-        type: string
-        default: '2'
+        type: number
+        default: 2
   # The nightly compares the main of the last passed night with main.
   schedule:
     - cron: '0 16 * * *'

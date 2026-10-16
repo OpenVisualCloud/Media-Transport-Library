@@ -364,12 +364,11 @@ class Instance:
         probes = set(re.findall(r"sys:(\w+)", out))
         if "log_msg" not in probes:  # attached since the start, so the listing failed
             raise RuntimeError(f"{self.name}: bpftrace lists no sys probes: {out}")
+        # A build has both, sys:tasklet_stat and sampling, or neither, as before them.
         if "tasklet_time_sample" in probes:
             self.trace_mode, script = "sampled", f"{SAMPLE_SCRIPT} {STAT_SCRIPT}"
-        elif "tasklet_stat" in probes:
-            self.trace_mode, script = "full", f"{TRACE_SCRIPT} {STAT_SCRIPT}"
         else:
-            self.trace_mode, script = "full, no counters", TRACE_SCRIPT
+            self.trace_mode, script = "full", TRACE_SCRIPT
         self.collect("trace", script)
 
     def records(self, tail: int = 0) -> list[str]:
@@ -619,9 +618,8 @@ def metrics(direction, untraced, traced, proc0, proc1, clk_tck, rdt0, rdt1) -> d
     return m
 
 
-# Metrics of the traced window. They compare only when A and B were timed alike:
-# sampled, every loop with the cumulative counters of sys:tasklet_stat, or every loop
-# without them, which costs less again.
+# Metrics of the traced window. They compare only when A and B were timed alike,
+# both sampled or both in full.
 TRACED = re.compile(r"traced|\(ns/call\)|work \(")
 
 
@@ -815,10 +813,7 @@ def run_round(
             )
             continue
         m = metrics(direction, untraced, traced, p0, p1, clk[id(i.host)], r0, r1)
-        if (
-            i.trace_mode != "full, no counters"
-            and f"{direction} work (ns/pkt)" not in m
-        ):
+        if i.trace_mode == "sampled" and f"{direction} work (ns/pkt)" not in m:
             problems.append(f"{i.name} ({i.label}): no sys:tasklet_stat records")
         worst = m["fps (worst session)"]
         if worst < STEADY_FPS * fps:

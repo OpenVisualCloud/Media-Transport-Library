@@ -199,9 +199,9 @@ When `/sys/fs/resctrl` offers L3 allocation and no other user has groups there, 
 
 On the test host (12 ways, `shareable_bits` `c00`) the slots get `00f` and `0f0`, and
 the default group `f00`, which holds the DDIO ways. The groups are removed and the default
-mask restored at the end of the case, before the next setup, and by
-`.github/scripts/ci/cleanup.sh`, which every CI job runs. A host without RDT runs without
-it, and the report says so.
+mask restored at the end of the case, before the next setup; after a job that did not
+get there, `perf-compare.sh clean` does it on both hosts and the SUT's next job
+(`cleanup.sh`) on the SUT. A host without RDT runs without it, and the report says so.
 
 The groups also count memory bandwidth (MBM) and LLC occupancy (CMT), reported per
 instance.
@@ -293,9 +293,8 @@ slot tree of that instance through the mount namespace and needs no path:
 
   | The build has | Timing probe | The traced window is |
   | --- | --- | --- |
-  | `sys:tasklet_time_sample` | `sys:tasklet_time_sample` | `sampled`: 1 loop in 64 timed, counters scaled (§5.3) |
-  | `sys:tasklet_stat`, no sampling | `sys:tasklet_time_measure` | `full`: every loop timed |
-  | neither, any release before them | `sys:tasklet_time_measure` | `full, no counters`: every loop timed, no work rows |
+  | `sys:tasklet_time_sample` and `sys:tasklet_stat` | `sys:tasklet_time_sample` | `sampled`: 1 loop in 64 timed, counters scaled (§5.3) |
+  | neither, any release before them | `sys:tasklet_time_measure` | `full`: every loop timed, no work rows |
 
 The bpftrace programs and the instance scripts are written to files on the host and the
 units run those files: systemd expands `$` in `ExecStart=` (`$$` became `$`, and
@@ -352,11 +351,9 @@ polling tasklet is called millions of times a second and nearly all calls are id
 average of all calls hardly moves with the load; the work counters do.
 
 Compare traced rows only between builds timed alike, and the report header names the
-mode of each. Timing every loop costs a sampled build tens of percent of its loop (§5.3),
-and a build with the cumulative counters makes two more counter updates per timed
-call: on the test host its traced loop and `video_transmitter` rows read
-3-4% above a build without them, while every untraced row agreed. When A and B were timed
-in different modes, the report shows their traced rows as "traced unlike".
+mode of each: timing every loop costs tens of percent of the loop that sampling does
+not (§5.3). When A and B were timed in different modes, the report shows their traced
+rows as "traced unlike".
 
 ### 5.3. Tracing cost
 
@@ -475,7 +472,7 @@ code, and run enough rounds to see the slow state of the reference.
 | `ref_b` | `main` | Build B, compared with A; the same as A measures the noise (an A/A run) |
 | `args_a`, `args_b` | empty | Extra RxTxApp options of each build: letters, digits, spaces and `_./:=,+-` |
 | `video` | `1080p59` | `1080p59`, `1080p50`, `2160p59` or `2160p50` |
-| `sessions` | `16` | Video sessions per build; 16 × 1080p59 is 42 Gb/s per PF |
+| `sessions` | `16` | Video sessions per build, each on one 100G port: 16 × 1080p59 is 42 Gb/s; 2160p takes 8 at most |
 | `test_time` | `120` | Seconds measured in each round; the traced window adds half of it |
 | `rounds` | `2` | Rounds; A and B swap places each round, so keep it even |
 
@@ -551,9 +548,10 @@ night 2                  ├── A₂ = B₁ … B₂ ──┤
 
 GitHub starts a scheduled run 2 to 7 hours late, by a different amount every night, so a
 window counted back from the start would leave commits to no night. A failed night
-widens the next one; with no passed night yet, or when the Actions API read fails, A is
-`main` of 24 hours ago. The refs job
-reads the last passed run through the Actions API (`actions: read`). When `main` did not
+widens the next one. A is `main` of 24 hours ago with no passed night yet, when the
+Actions API read fails, and when the last night's B is not an ancestor of this one, as
+after an older night is run again. The refs job reads the last passed run through the
+Actions API (`actions: read`). When `main` did not
 move, the night is an A/A run.
 
 ### 6.4. Host requirements and the first run
@@ -626,7 +624,7 @@ current build. The report is `logs/performance/latest/perf_compare.md`, the raw 
 
 | Step | State |
 | --- | --- |
-| Tasklet time and work counters (Dawid Wesierski's proposal) | Done, inside `mt_sch.c` and read through `sys:tasklet_stat`; 9 unit tests. The public `mtl_sch_get_stats()` API and the `perf_testing` tool of the proposal are left out: perf-compare does not need them, and an API is an ABI to keep |
+| Tasklet time and work counters (Dawid Wesierski's proposal) | Done, inside `mt_sch.c` and read through `sys:tasklet_stat`; 9 unit tests |
 | USDT probe `sys:tasklet_stat` | Done; six arguments, because bpftrace 0.14 reads only `arg0`-`arg5` |
 | Release build without USDT | Fixed (the probe stubs evaluate their arguments); `base_build.yml` builds it |
 | Instance placement, RDT, collectors, parser, statistics, report (`mtl_engine/perf_compare.py`) | Done |

@@ -1097,7 +1097,7 @@ def pytest_addoption(parser):
         ("args_a", str, "", "extra RxTxApp arguments of instance A"),
         ("args_b", str, "", "extra RxTxApp arguments of instance B"),
         ("sessions", int, 16, "sessions per instance"),
-        ("rounds", int, 2, "rounds; every other one swaps the slots"),
+        ("rounds", int, 2, "rounds; A and B swap slots every round"),
     ):
         parser.addoption(
             f"--perf_compare_{name}", type=kind, default=default, help=text
@@ -1432,12 +1432,17 @@ def ffmpeg_app() -> FFmpeg:
     return FFmpeg(FFMPEG_PATH)
 
 
-def pytest_collection_modifyitems(items):
+def pytest_collection_modifyitems(config, items):
     """Add ``base_performance`` marker to 1080p / 59fps combinations."""
     mark = pytest.mark.base_performance
     for item in items:
         if "1080p" in item.nodeid and "59fps" in item.nodeid:
             item.add_marker(mark)
+    # perf-compare runs only on the builds it is given, and is no skip in other runs
+    if not config.getoption("--perf_compare_slots"):
+        off = [item for item in items if item.get_closest_marker("perf_compare")]
+        config.hook.pytest_deselected(items=off)
+        items[:] = [item for item in items if item not in off]
 
 
 # ---------------------------------------------------------------------------
