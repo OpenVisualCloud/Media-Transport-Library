@@ -1,0 +1,92 @@
+From dc1ba480f7c35db0a74c647009427d4617061a14 Mon Sep 17 00:00:00 2001
+From: pkeroulas <patrick.keroulas@gmail.com>
+Date: Tue, 8 Sep 2026 15:37:37 -0400
+Subject: [PATCH v1] avdevice: add mtl in/out devsupport
+
+---
+ configure                | 9 +++++++++
+ libavdevice/Makefile     | 6 ++++++
+ libavdevice/alldevices.c | 9 +++++++++
+ 3 files changed, 24 insertions(+)
+
+diff --git a/configure b/configure
+index 3b132d07c9..b3edbf1af8 100755
+--- a/configure
++++ b/configure
+@@ -325,6 +325,7 @@ External library support:
+                            if openssl, gnutls or libtls is not used [no]
+   --enable-mediacodec      enable Android MediaCodec support [no]
+   --enable-mediafoundation enable encoding via MediaFoundation [auto]
++  --enable-mtl             enable Media transport libraray support for st2110 [no]
+   --disable-metal          disable Apple Metal framework [autodetect]
+   --enable-libmysofa       enable libmysofa, needed for sofalizer filter [no]
+   --enable-ohcodec         enable OpenHarmony Codec support [no]
+@@ -2033,6 +2034,7 @@ EXTERNAL_LIBRARY_LIST="
+     libzvbi
+     lv2
+     mediacodec
++    mtl
+     ohcodec
+     openal
+     opengl
+@@ -3875,6 +3877,12 @@ kmsgrab_indev_deps="libdrm"
+ lavfi_indev_deps="avfilter"
+ libcdio_indev_deps="libcdio"
+ libdc1394_indev_deps="libdc1394"
++mtl_st20p_indev_deps="mtl"
++mtl_st20p_outdev_deps="mtl"
++mtl_st22p_indev_deps="mtl"
++mtl_st22p_outdev_deps="mtl"
++mtl_st30p_indev_deps="mtl"
++mtl_st30p_outdev_deps="mtl"
+ openal_indev_deps="openal"
+ oss_indev_deps_any="sys_soundcard_h"
+ oss_outdev_deps_any="sys_soundcard_h"
+@@ -7312,6 +7320,7 @@ enabled mbedtls           && { check_pkg_config mbedtls mbedtls mbedtls/x509_crt
+                                check_lib mbedtls mbedtls/ssl.h mbedtls_ssl_init -lmbedtls -lmbedx509 -lmbedcrypto ||
+                                die "ERROR: mbedTLS not found"; }
+ enabled mediacodec        && { enabled jni || die "ERROR: mediacodec requires --enable-jni"; }
++enabled mtl               && require_pkg_config mtl "mtl >= 22.12.0" mtl/st_pipeline_api.h mtl_init
+ enabled mmal              && { check_lib mmal interface/mmal/mmal.h mmal_port_connect -lmmal_core -lmmal_util -lmmal_vc_client -lbcm_host ||
+                                { ! enabled cross_compile &&
+                                  add_cflags -isystem/opt/vc/include/ -isystem/opt/vc/include/interface/vmcs_host/linux -isystem/opt/vc/include/interface/vcos/pthreads -fgnu89-inline &&
+diff --git a/libavdevice/Makefile b/libavdevice/Makefile
+index a226368d16..cb6b1a63a8 100644
+--- a/libavdevice/Makefile
++++ b/libavdevice/Makefile
+@@ -33,6 +33,12 @@ OBJS-$(CONFIG_IEC61883_INDEV)            += iec61883.o
+ OBJS-$(CONFIG_JACK_INDEV)                += jack.o timefilter.o
+ OBJS-$(CONFIG_KMSGRAB_INDEV)             += kmsgrab.o
+ OBJS-$(CONFIG_LAVFI_INDEV)               += lavfi.o
++OBJS-$(CONFIG_MTL_ST20P_INDEV)           += mtl_common.o mtl_st20p_rx.o
++OBJS-$(CONFIG_MTL_ST20P_OUTDEV)          += mtl_common.o mtl_st20p_tx.o
++OBJS-$(CONFIG_MTL_ST22P_INDEV)           += mtl_common.o mtl_st22p_rx.o
++OBJS-$(CONFIG_MTL_ST22P_OUTDEV)          += mtl_common.o mtl_st22p_tx.o
++OBJS-$(CONFIG_MTL_ST30P_INDEV)           += mtl_common.o mtl_st30p_rx.o
++OBJS-$(CONFIG_MTL_ST30P_OUTDEV)          += mtl_common.o mtl_st30p_tx.o
+ OBJS-$(CONFIG_OPENAL_INDEV)              += openal-dec.o
+ OBJS-$(CONFIG_OSS_INDEV)                 += oss_dec.o oss.o
+ OBJS-$(CONFIG_OSS_OUTDEV)                += oss_enc.o oss.o
+diff --git a/libavdevice/alldevices.c b/libavdevice/alldevices.c
+index 573595f416..c3dc05cb17 100644
+--- a/libavdevice/alldevices.c
++++ b/libavdevice/alldevices.c
+@@ -43,6 +43,15 @@ extern const FFInputFormat  ff_iec61883_demuxer;
+ extern const FFInputFormat  ff_jack_demuxer;
+ extern const FFInputFormat  ff_kmsgrab_demuxer;
+ extern const FFInputFormat  ff_lavfi_demuxer;
++extern const FFInputFormat  ff_mtl_st20p_demuxer;
++extern const FFOutputFormat ff_mtl_st20p_muxer;
++extern const FFInputFormat  ff_mtl_st22_demuxer;
++extern const FFInputFormat  ff_mtl_st22p_demuxer;
++extern const FFOutputFormat ff_mtl_st22_muxer;
++extern const FFOutputFormat ff_mtl_st22p_muxer;
++extern const FFInputFormat  ff_mtl_st30p_demuxer;
++extern const FFOutputFormat ff_mtl_st30p_muxer;
++extern const FFOutputFormat ff_mtl_st30p_pcm16_muxer;
+ extern const FFInputFormat  ff_openal_demuxer;
+ extern const FFInputFormat  ff_oss_demuxer;
+ extern const FFOutputFormat ff_oss_muxer;
+-- 
+2.43.0
+

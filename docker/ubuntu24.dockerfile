@@ -27,7 +27,7 @@ RUN apt-get update -y && \
         git build-essential pkg-config \
         libnuma-dev libjson-c-dev libpcap-dev libgtest-dev \
         libsdl2-dev libsdl2-ttf-dev libssl-dev systemtap-sdt-dev \
-        m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib && \
+        m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib nasm && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
@@ -50,6 +50,10 @@ RUN ./build.sh unit && \
     ninja -C build install && \
     DESTDIR=/install ninja -C build install && \
     setcap 'cap_net_raw+ep' tests/tools/RxTxApp/build/RxTxApp
+
+# Build MTL
+WORKDIR "${MTL_REPO}/ecosystem/ffmpeg_plugin"
+RUN ./build.sh
 
 # Ubuntu 24.04, runtime/final stage
 FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:24.04" AS final
@@ -74,7 +78,7 @@ WORKDIR /home/imtl/
 RUN apt-get clean -y && rm -rf /var/lib/apt/lists/* && \
     apt-get update -y && \
     apt-get install -y --no-install-recommends ca-certificates sudo curl unzip && \
-    apt-get install -y --no-install-recommends libnuma1 libjson-c5 libpcap0.8t64 libsdl2-2.0-0 libsdl2-ttf-2.0-0 libssl3t64 zlib1g libelf1t64 libcap-ng0 libatomic1 pciutils && \
+    apt-get install -y --no-install-recommends libnuma1 libjson-c5 libpcap0.8t64 libsdl2-2.0-0 libsdl2-ttf-2.0-0 libsndio7.0 libxv1 libssl3t64 zlib1g libelf1t64 libcap-ng0 libatomic1 pciutils iproute2 && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
@@ -83,7 +87,7 @@ RUN apt-get clean -y && rm -rf /var/lib/apt/lists/* && \
     useradd -m -G vfio,root,sudo -u 20001 imtl
 
 # Copy libraries and binaries
-COPY --from=builder /usr/local/lib/x86_64-linux-gnu/* /usr/local/lib/x86_64-linux-gnu/
+COPY --from=builder /usr/local/lib/* /usr/local/lib/
 COPY --from=builder /usr/local/bin/* /usr/local/bin/
 COPY --chown=imtl --from=builder /install /
 COPY --chown=imtl --from=builder "${MTL_REPO}/build" "/home/imtl"
