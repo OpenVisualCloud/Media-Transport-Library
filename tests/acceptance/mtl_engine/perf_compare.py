@@ -618,6 +618,10 @@ def metrics(direction, untraced, traced, proc0, proc1, clk_tck, rdt0, rdt1) -> d
 
 # Metrics a regression check looks at; lower is better for all of them.
 PRIMARY = re.compile(r"avg loop \(ns\)|process \(cores\)|work \(ns/pkt\)")
+# Metrics of the traced window. A build with the cumulative counters of
+# mtl_sch_get_stats() pays more for tracing than one without them, so these rows
+# compare only when both builds have them or neither has.
+TRACED = re.compile(r"traced|\(ns/call\)|work \(")
 
 
 @dataclass
@@ -627,6 +631,7 @@ class Row:
     b: float | None
     diff: float | None
     noise: float | None
+    alike: bool = True  # False: A and B trace differently, so the diff means nothing
 
     @property
     def regression(self) -> float | None:
@@ -654,15 +659,20 @@ def compare(rounds: list[dict], side: str) -> list[Row]:
     for r in rounds:
         for inst in ("A", "B"):
             names += [n for n in r[inst].get(side, {}) if n not in names]
+    work = [
+        any("work (" in n for r in rounds for n in r[inst].get(side, {}))
+        for inst in ("A", "B")
+    ]
     rows = []
     for name in names:
         a_vals = [r["A"].get(side, {}).get(name) for r in rounds]
         b_vals = [r["B"].get(side, {}).get(name) for r in rounds]
         a = _mean(a_vals)
         b = _mean(b_vals)
-        diff = 100 * (b - a) / a if a and b is not None else None
+        alike = work[0] == work[1] or not TRACED.search(name)
+        diff = 100 * (b - a) / a if a and b is not None and alike else None
         spreads = [s for s in (_spread(a_vals), _spread(b_vals)) if s is not None]
-        rows.append(Row(name, a, b, diff, max(spreads) if spreads else None))
+        rows.append(Row(name, a, b, diff, max(spreads) if spreads else None, alike))
     return rows
 
 
@@ -675,7 +685,9 @@ def _fmt(v) -> str:
 def render_rows(rows: list[Row]) -> list[str]:
     out = ["| Metric | A | B | Diff | Noise |", "| --- | ---: | ---: | ---: | ---: |"]
     for r in rows:
-        if r.diff is None:
+        if not r.alike:
+            diff = "traced unlike"
+        elif r.diff is None:
             diff = "n/a"
         elif abs(r.diff) < 0.05 or r.noise is not None and abs(r.diff) <= r.noise:
             diff = f"~ ({r.diff:+.1f}%)"
