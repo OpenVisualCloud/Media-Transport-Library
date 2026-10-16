@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="858" viewBox="0 0 1400 858" role="img" aria-labelledby="t d">
+<title id="t">TX packet pacing</title>
+<desc id="d">A frame goes into the packet builder, which builds packets with a timestamp. The packets go to one of three pacing ways: TSC pacing, RL pacing, or TSN pacing. The paced packets then go to the NIC.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect width="1400" height="858" fill="#ffffff"/>
+<text x="30.0" y="60.0" font-size="34" font-weight="700" fill="#1F271B" text-anchor="start">TX packet pacing</text>
+<rect x="30" y="90" width="660" height="226" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M30 140 V98 Q30 90 38 90 H682 Q690 90 690 98 V140 Z" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="48.0" y="124.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="start">RL pacing: queue rate limit of the NIC</text>
+<circle cx="52" cy="169.4" r="5" fill="#1F271B"/>
+<text x="68.0" y="176.0" font-size="20" fill="#1F271B" text-anchor="start">Many modern NICs support it.</text>
+<circle cx="52" cy="201.4" r="5" fill="#1F271B"/>
+<text x="68.0" y="208.0" font-size="20" fill="#1F271B" text-anchor="start">A padding-based runtime profile improves</text>
+<text x="68.0" y="234.0" font-size="20" fill="#1F271B" text-anchor="start">the precision and granularity for VRX.</text>
+<circle cx="52" cy="259.4" r="5" fill="#1F271B"/>
+<text x="68.0" y="266.0" font-size="20" fill="#1F271B" text-anchor="start">A warmup before the first packet meets</text>
+<text x="68.0" y="292.0" font-size="20" fill="#1F271B" text-anchor="start">the critical TR_OFFSET.</text>
+<rect x="30" y="338" width="660" height="168" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M30 388 V346 Q30 338 38 338 H682 Q690 338 690 346 V388 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<text x="48.0" y="372.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="start">TSN pacing: NIC TX timestamp</text>
+<circle cx="52" cy="417.4" r="5" fill="#1F271B"/>
+<text x="68.0" y="424.0" font-size="20" fill="#1F271B" text-anchor="start">Full hardware solution.</text>
+<circle cx="52" cy="449.4" r="5" fill="#1F271B"/>
+<text x="68.0" y="456.0" font-size="20" fill="#1F271B" text-anchor="start">Needs an Intel E830 NIC, a PF port,</text>
+<text x="68.0" y="482.0" font-size="20" fill="#1F271B" text-anchor="start">and the built-in PTP. E810: no support.</text>
+<rect x="30" y="528" width="660" height="232" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M30 578 V536 Q30 528 38 528 H682 Q690 528 690 536 V578 Z" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="48.0" y="562.0" font-size="24" font-weight="700" fill="#1F271B" text-anchor="start">TSC pacing (fallback): CPU rdtsc</text>
+<circle cx="52" cy="607.4" r="5" fill="#1F271B"/>
+<text x="68.0" y="614.0" font-size="20" fill="#1F271B" text-anchor="start">Does not depend on a NIC feature.</text>
+<circle cx="52" cy="639.4" r="5" fill="#1F271B"/>
+<text x="68.0" y="646.0" font-size="20" fill="#1F271B" text-anchor="start">The TSC frequency is about 3 GHz.</text>
+<circle cx="52" cy="671.4" r="5" fill="#1F271B"/>
+<text x="68.0" y="678.0" font-size="20" fill="#1F271B" text-anchor="start">Modern x86 CPUs have constant_tsc.</text>
+<circle cx="52" cy="703.4" r="5" fill="#1F271B"/>
+<text x="68.0" y="710.0" font-size="20" fill="#1F271B" text-anchor="start">VRX and TR_OFFSET fail if the</text>
+<text x="68.0" y="736.0" font-size="20" fill="#1F271B" text-anchor="start">tasklet is scheduled out.</text>
+<line x1="720" y1="30" x2="720" y2="828" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="760" y1="30" x2="760" y2="828" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="800" y1="30" x2="800" y2="828" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="840" y1="30" x2="840" y2="828" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="880" y1="30" x2="880" y2="828" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="920" y1="30" x2="920" y2="828" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="960" y1="30" x2="960" y2="828" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="1000" y1="30" x2="1000" y2="828" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="1040" y1="30" x2="1040" y2="828" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="1080" y1="30" x2="1080" y2="828" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="1120" y1="30" x2="1120" y2="828" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="1160" y1="30" x2="1160" y2="828" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="1200" y1="30" x2="1200" y2="828" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="1240" y1="30" x2="1240" y2="828" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="1280" y1="30" x2="1280" y2="828" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="1320" y1="30" x2="1320" y2="828" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="1360" y1="30" x2="1360" y2="828" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="30" x2="1370" y2="30" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="70" x2="1370" y2="70" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="110" x2="1370" y2="110" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="150" x2="1370" y2="150" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="190" x2="1370" y2="190" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="230" x2="1370" y2="230" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="270" x2="1370" y2="270" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="310" x2="1370" y2="310" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="350" x2="1370" y2="350" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="390" x2="1370" y2="390" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="430" x2="1370" y2="430" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="470" x2="1370" y2="470" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="510" x2="1370" y2="510" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="550" x2="1370" y2="550" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="590" x2="1370" y2="590" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="630" x2="1370" y2="630" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="670" x2="1370" y2="670" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="710" x2="1370" y2="710" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="750" x2="1370" y2="750" stroke="#DCC7BE" stroke-width="1.5"/>
+<line x1="720" y1="790" x2="1370" y2="790" stroke="#DCC7BE" stroke-width="1.5"/>
+<path d="M985.0 70.0 L1105.0 70.0 L1105.0 162.0 L1121.0 162.0 L1045.0 190.0 L969.0 162.0 L985.0 162.0 Z" fill="#ffffff" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<text x="1045.0" y="126.0" font-size="24" font-weight="700" fill="#1F271B" text-anchor="middle">Frame</text>
+<rect x="895.0" y="190" width="300" height="110" rx="16" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="1045.0" y="236.6" font-size="24" font-weight="700" fill="#ffffff" text-anchor="middle">Build packets</text>
+<text x="1045.0" y="267.8" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">with timestamp</text>
+<path d="M967.0 300.0 L967.0 390.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M967.0 406.0 L957.1 388.0 L976.9 388.0 Z" fill="#1F271B"/>
+<path d="M993.0 300.0 L993.0 390.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M993.0 406.0 L983.1 388.0 L1002.9 388.0 Z" fill="#1F271B"/>
+<path d="M1019.0 300.0 L1019.0 390.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M1019.0 406.0 L1009.1 388.0 L1028.9 388.0 Z" fill="#1F271B"/>
+<path d="M1045.0 300.0 L1045.0 390.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M1045.0 406.0 L1035.1 388.0 L1054.9 388.0 Z" fill="#1F271B"/>
+<path d="M1071.0 300.0 L1071.0 390.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M1071.0 406.0 L1061.1 388.0 L1080.9 388.0 Z" fill="#1F271B"/>
+<path d="M1097.0 300.0 L1097.0 390.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M1097.0 406.0 L1087.1 388.0 L1106.9 388.0 Z" fill="#1F271B"/>
+<path d="M1123.0 300.0 L1123.0 390.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M1123.0 406.0 L1113.1 388.0 L1132.9 388.0 Z" fill="#1F271B"/>
+<line x1="715.0" y1="420" x2="1375.0" y2="420" stroke="#1F271B" stroke-width="6" stroke-linecap="round" stroke-dasharray="0.1 18"/>
+<rect x="725.0" y="454" width="200" height="110" rx="16" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="825.0" y="514.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">TSC pacing</text>
+<rect x="945.0" y="454" width="200" height="110" rx="16" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="1045.0" y="514.4" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">RL pacing</text>
+<rect x="1165.0" y="454" width="200" height="110" rx="16" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<text x="1265.0" y="514.4" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">TSN pacing</text>
+<line x1="715.0" y1="598" x2="1375.0" y2="598" stroke="#1F271B" stroke-width="6" stroke-linecap="round" stroke-dasharray="0.1 18"/>
+<path d="M985.0 564.0 L985.0 702.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M985.0 718.0 L975.1 700.0 L994.9 700.0 Z" fill="#1F271B"/>
+<path d="M1009.0 564.0 L1009.0 702.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M1009.0 718.0 L999.1 700.0 L1018.9 700.0 Z" fill="#1F271B"/>
+<path d="M1033.0 564.0 L1033.0 702.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M1033.0 718.0 L1023.1 700.0 L1042.9 700.0 Z" fill="#1F271B"/>
+<path d="M1057.0 564.0 L1057.0 702.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M1057.0 718.0 L1047.1 700.0 L1066.9 700.0 Z" fill="#1F271B"/>
+<path d="M1081.0 564.0 L1081.0 702.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M1081.0 718.0 L1071.1 700.0 L1090.9 700.0 Z" fill="#1F271B"/>
+<path d="M1105.0 564.0 L1105.0 702.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M1105.0 718.0 L1095.1 700.0 L1114.9 700.0 Z" fill="#1F271B"/>
+<text x="1130.0" y="663.0" font-size="24" font-weight="700" fill="#1F271B" text-anchor="start">Paced</text>
+<rect x="905" y="718" width="280" height="100" rx="16" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="1045.0" y="774.4" font-size="26" font-weight="700" fill="#ffffff" text-anchor="middle">NIC</text>
+</g>
+</svg>
