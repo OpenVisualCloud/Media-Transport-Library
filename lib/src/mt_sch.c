@@ -121,6 +121,23 @@ static bool sch_tasklet_time_measure(struct mtl_main_impl* impl) {
   return enabled;
 }
 
+static bool sch_tasklet_time_sample(struct mtl_main_impl* impl) {
+  return mt_user_tasklet_time_sample(impl) || MT_USDT_TASKLET_TIME_SAMPLE_ENABLED();
+}
+
+/* 1 to 2 * MTL_SCH_TIME_SAMPLE_PERIOD - 1 loops, the period on average: a random gap, as
+ * a fixed one would alias with a tasklet whose work repeats every few loops. xorshift32,
+ * whose state is never 0. */
+static uint32_t sch_time_sample_gap(uint32_t* state) {
+  uint32_t x = *state;
+
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+  *state = x;
+  return 1 + x % (2 * MTL_SCH_TIME_SAMPLE_PERIOD - 1);
+}
+
 /* MPOL_LOCAL lacks the default policy's MPOL_F_MOF, so a NUMA balancing scan run on this
  * busy thread rewrites no PTEs and faults migrate nothing; allocation is unchanged. */
 static bool sch_set_local_mempolicy(struct mtl_sch_impl* sch) {
@@ -158,6 +175,9 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
   struct mt_sch_tasklet_impl* tasklet;
   uint64_t loop_cal_start_ns;
   uint64_t loop_cnt = 0;
+  /* time sample: loops left to the next timed one, and the state of its random gap */
+  uint32_t tm_sample_left = 0;
+  uint32_t tm_sample_rng = 2463534242u;
 
   bool local_mempolicy = sch_set_local_mempolicy(sch);
 
@@ -182,8 +202,18 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
   while (rte_atomic32_read(&sch->request_stop) == 0) {
     int pending = MTL_TASKLET_ALL_DONE;
     bool time_measure = sch_tasklet_time_measure(impl);
+    /* the loops this one is timed for: itself, the gap to the next sample, or none */
+    uint32_t tm_weight = time_measure ? 1 : 0;
     uint64_t tm_sch_tsc_s = 0; /* for sch time_measure */
 
+    if (!time_measure && sch_tasklet_time_sample(impl)) {
+      if (tm_sample_left) {
+        tm_sample_left--;
+      } else {
+        tm_weight = sch_time_sample_gap(&tm_sample_rng);
+        tm_sample_left = tm_weight - 1;
+      }
+    }
     if (time_measure) tm_sch_tsc_s = mt_get_tsc(impl);
 
     num_tasklet = sch->max_tasklet_idx;
@@ -199,15 +229,15 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
       ops = &tasklet->ops;
 
       uint64_t tm_tasklet_tsc_s = 0; /* for tasklet time_measure */
-      if (time_measure) tm_tasklet_tsc_s = mt_get_tsc(impl);
+      if (tm_weight) tm_tasklet_tsc_s = mt_get_tsc(impl);
       int ret = ops->handler(ops->priv);
       pending += ret;
-      if (time_measure) {
+      if (tm_weight) {
         uint64_t delta_ns = mt_get_tsc(impl) - tm_tasklet_tsc_s;
-        mt_stat_u64_update(&tasklet->stat_time, delta_ns);
-        mt_stat_u64_update(&tasklet->user_stat_time, delta_ns);
+        if (time_measure) mt_stat_u64_update(&tasklet->stat_time, delta_ns);
+        mt_stat_u64_update_n(&tasklet->user_stat_time, delta_ns, tm_weight);
         if (ret != MTL_TASKLET_ALL_DONE)
-          mt_stat_u64_update(&tasklet->user_stat_work, delta_ns);
+          mt_stat_u64_update_n(&tasklet->user_stat_work, delta_ns, tm_weight);
       }
     }
     if (sch->allow_sleep && (pending == MTL_TASKLET_ALL_DONE)) {
@@ -223,6 +253,7 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
       loop_cal_start_ns = mt_get_tsc(impl);
     }
 
+    /* not sampled: a timed loop pays for its TSC reads, which its gap would multiply */
     if (time_measure) {
       uint64_t delta_ns = mt_get_tsc(impl) - tm_sch_tsc_s;
       mt_stat_u64_update(&sch->stat_time, delta_ns);
@@ -1505,6 +1536,8 @@ int mtl_sch_get_stats(mtl_handle mt, int sch_idx, struct mtl_sch_stats* stats) {
   snprintf(stats->name, sizeof(stats->name), "%s", sch->name);
   stats->lcore = sch->run_in_thread ? UINT32_MAX : sch->lcore;
   stats->time_measure_enabled = sch_tasklet_time_measure(sch->parent);
+  stats->time_sample_enabled =
+      !stats->time_measure_enabled && sch_tasklet_time_sample(sch->parent);
   stats->avg_ns_per_loop = mt_sch_avg_ns_loop(sch);
   sch_time_stats_copy(&stats->loop_time, &sch->user_stat_time);
   for (int i = 0; i < sch->max_tasklet_idx; i++) {

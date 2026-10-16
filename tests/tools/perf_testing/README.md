@@ -35,6 +35,9 @@ load and cannot compare the RX paths. Compare `work_avg_ns`, `work_busy_pct` and
   (`ldd tests/tools/perf_testing/build/perf_testing | grep mtl`). Without the
   flag and without the probe the tool still runs and reports `time_measure` as `0`
   (`false` in JSON) with all time counters at zero.
+- The probe `sys:tasklet_time_sample` moves the tasklet counters at a fraction of the
+  cost (`doc/usdt.md`); `time_measure` then reads `0`, the loop row stays at zero and
+  the tasklet rows are estimates.
 
 The API counters are cumulative. The tool keeps the previous sample per scheduler and
 tasklet and prints the difference per interval. It takes the first sample after the

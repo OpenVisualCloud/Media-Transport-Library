@@ -496,6 +496,12 @@ enum mtl_init_flag {
    * correctly; a session whose every port is down will still fail to create.
    */
   MTL_FLAG_ALLOW_DOWN_PORTS = (MTL_BIT64(48)),
+  /**
+   * Time the tasklets in 1 scheduler loop of MTL_SCH_TIME_SAMPLE_PERIOD on average, for
+   * the cumulative counters of mtl_sch_get_stats() only, at a fraction of the cost of
+   * MTL_FLAG_TASKLET_TIME_MEASURE, which wins when both are set.
+   */
+  MTL_FLAG_TASKLET_TIME_SAMPLE = (MTL_BIT64(49)),
 
   /** Debug option to enable dropping some percentage of packets for
    *  testing redundant video streams only works for video, needs the
@@ -1133,6 +1139,8 @@ int mtl_sch_set_sleep_us(mtl_handle mt, uint64_t us);
 #define MTL_SCH_TASKLET_NAME_LEN (32)
 /** Max tasklet entries one mtl_sch_get_stats() call reports. */
 #define MTL_SCH_MAX_TASKLETS (64)
+/** Loops per timed loop, on average, while the time is sampled. */
+#define MTL_SCH_TIME_SAMPLE_PERIOD (64)
 
 /**
  * Timing distribution of a measured routine, in ns. cnt is 0 when the measurement was
@@ -1164,7 +1172,12 @@ struct mtl_sch_tasklet_stats {
  * counters are cumulative since mtl_init() or the last mtl_sch_reset_stats(); the
  * periodic stats dump does not reset them. They move only while
  * MTL_FLAG_TASKLET_TIME_MEASURE is set or the USDT probe sys:tasklet_time_measure is
- * attached.
+ * attached, which times every loop. The tasklet counters also move while
+ * MTL_FLAG_TASKLET_TIME_SAMPLE is set or the USDT probe sys:tasklet_time_sample is
+ * attached, which times a random 1 loop in MTL_SCH_TIME_SAMPLE_PERIOD and counts its
+ * calls for the loops up to the next timed one: time.cnt then counts every call to within
+ * one gap, work.cnt and the sums are estimates, and min_ns and max_ns are of the timed
+ * calls. loop_time is not sampled; avg_ns_per_loop is always measured.
  */
 struct mtl_sch_stats {
   /** Scheduler name. */
@@ -1175,11 +1188,13 @@ struct mtl_sch_stats {
   uint16_t nb_tasklets;
   /** Tasklets registered on the scheduler; tasklets[] holds the first nb_tasklets. */
   uint16_t nb_tasklets_total;
-  /** True when the time counters are updated right now. */
+  /** True when every loop is timed right now. */
   bool time_measure_enabled;
+  /** True when 1 loop in MTL_SCH_TIME_SAMPLE_PERIOD is timed right now, on average. */
+  bool time_sample_enabled;
   /** Average loop time in ns, always available. */
   uint64_t avg_ns_per_loop;
-  /** One sample per pass over all tasklets. */
+  /** One sample per pass over all tasklets, while every loop is timed. */
   struct mtl_time_stats loop_time;
   /** The first nb_tasklets registered tasklets, in slot order. */
   struct mtl_sch_tasklet_stats tasklets[MTL_SCH_MAX_TASKLETS];
@@ -1216,9 +1231,10 @@ int mtl_sch_get_stats(mtl_handle mt, int sch_idx, struct mtl_sch_stats* stats);
 
 /**
  * Reset the cumulative time counters of a scheduler and its tasklets.
- * The reset is approximate against a running scheduler: a sample in flight can land after
- * it. The call takes the scheduler lock, so it can block behind a tasklet unregister for
- * up to 1 s.
+ * The scheduler updates the counters without a lock, so against a running scheduler a
+ * timed call in flight can undo the reset of the counter it updates; for an exact
+ * interval take the difference of two mtl_sch_get_stats() instead. The call takes the
+ * scheduler lock, so it can block behind a tasklet unregister for up to 1 s.
  *
  * @param mt
  *   The handle to the MTL transport device context.

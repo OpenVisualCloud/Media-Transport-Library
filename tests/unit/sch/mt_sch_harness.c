@@ -272,8 +272,18 @@ int ut_sch_stats_dump(mtl_handle mt) {
   return sch_stat(mt_sch_instance(mt, 0));
 }
 
+uint64_t ut_sch_stats_calls(mtl_handle mt) {
+  struct ut_sch_stats_ctx* ctx = (struct ut_sch_stats_ctx*)mt;
+
+  return atomic_load_explicit(&ctx->calls, memory_order_relaxed);
+}
+
 uint64_t ut_sch_stats_dump_loop_cnt(mtl_handle mt) {
   return mt_sch_instance(mt, 0)->stat_time.cnt;
+}
+
+uint64_t ut_sch_stats_dump_tasklet_cnt(mtl_handle mt) {
+  return ((struct ut_sch_stats_ctx*)mt)->tasklet.stat_time.cnt;
 }
 
 int ut_sch_filelock_create_mode(unsigned int* mode) {

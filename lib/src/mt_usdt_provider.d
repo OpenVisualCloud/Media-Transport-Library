@@ -9,6 +9,8 @@ provider sys {
   probe log_msg(int level, char* msg);
   /* attach to enable the tasklet_time_measure at runtime */
   probe tasklet_time_measure();
+  /* attach to time 1 loop in MTL_SCH_TIME_SAMPLE_PERIOD for mtl_sch_get_stats() */
+  probe tasklet_time_sample();
   /* attach to enable the sessions_time_measure at runtime */
   probe sessions_time_measure();
   /* attach to enable the pcap dump for cni rx queue */

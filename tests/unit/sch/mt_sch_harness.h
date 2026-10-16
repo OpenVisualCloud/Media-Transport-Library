@@ -75,11 +75,17 @@ int ut_sch_stats_stop(mtl_handle mt);
 /* Returns 0 once the spin tasklet ran at least calls times, -ETIMEDOUT after 2 s. */
 int ut_sch_stats_wait_calls(mtl_handle mt, uint64_t calls);
 
+/* The calls of the spin tasklet so far. */
+uint64_t ut_sch_stats_calls(mtl_handle mt);
+
 /* The periodic stats dump callback of sch 0, sch_stat(). */
 int ut_sch_stats_dump(mtl_handle mt);
 
 /* Sample count of the per-dump loop time of sch 0, the one sch_stat() resets. */
 uint64_t ut_sch_stats_dump_loop_cnt(mtl_handle mt);
+
+/* Sample count of the per-dump time of the spin tasklet, the one sch_stat() resets. */
+uint64_t ut_sch_stats_dump_tasklet_cnt(mtl_handle mt);
 
 #ifdef __cplusplus
 }

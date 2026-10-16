@@ -2,7 +2,7 @@
  * Copyright(c) 2026 Intel Corporation
  *
  * mtl_sch_get_stats() reports the cumulative tasklet and loop timing of one scheduler.
- * The counters move only while the time measurement is enabled, survive the periodic
+ * The counters move only while the time is measured or sampled, survive the periodic
  * stats dump, and clear on mtl_sch_reset_stats().
  */
 
@@ -174,6 +174,63 @@ TEST_F(MtlSchStatsTest, WorkStaysZeroForATaskletThatReportsIdle) {
   EXPECT_EQ(stats_.tasklets[0].work.sum_ns, 0u);
   EXPECT_EQ(stats_.tasklets[0].work.min_ns, 0u);
   EXPECT_EQ(stats_.tasklets[0].work.max_ns, 0u);
+}
+
+TEST_F(MtlSchStatsTest, SampleTimesSomeLoopsAndCountsEveryCall) {
+  Create(MTL_FLAG_TASKLET_TIME_SAMPLE);
+  RunCalls(MTL_SCH_TIME_SAMPLE_PERIOD * 32);
+  Stop();
+
+  ASSERT_EQ(mtl_sch_get_stats(mt_, 0, &stats_), 0);
+  EXPECT_FALSE(stats_.time_measure_enabled);
+  EXPECT_TRUE(stats_.time_sample_enabled);
+  ASSERT_EQ(stats_.nb_tasklets, 1);
+  const struct mtl_time_stats& t = stats_.tasklets[0].time;
+  /* every call is counted; the last timed one stands for a gap that can outrun the
+   * loops the scheduler made */
+  uint64_t calls = ut_sch_stats_calls(mt_);
+  EXPECT_GE(t.cnt, calls);
+  EXPECT_LT(t.cnt, calls + 2 * MTL_SCH_TIME_SAMPLE_PERIOD);
+  EXPECT_GE(t.min_ns, kSpinFloorNs);
+  uint64_t avg = t.sum_ns / t.cnt;
+  EXPECT_LE(t.min_ns, avg);
+  EXPECT_LE(avg, t.max_ns);
+  /* a timed loop pays for its own timing, so the loop time is never sampled */
+  EXPECT_EQ(stats_.loop_time.cnt, 0u);
+  /* the stats dump reports full measurements only */
+  EXPECT_EQ(ut_sch_stats_dump_loop_cnt(mt_), 0u);
+  EXPECT_EQ(ut_sch_stats_dump_tasklet_cnt(mt_), 0u);
+}
+
+TEST_F(MtlSchStatsTest, SampleEstimatesTheWorkShare) {
+  /* work on every 4th call divides the period: a sample every 64th loop would see only
+   * work calls or none */
+  Create(MTL_FLAG_TASKLET_TIME_SAMPLE, kWorkEvery);
+  RunCalls(kWorkEvery * MTL_SCH_TIME_SAMPLE_PERIOD * 64);
+  Stop();
+
+  ASSERT_EQ(mtl_sch_get_stats(mt_, 0, &stats_), 0);
+  ASSERT_EQ(stats_.nb_tasklets, 1);
+  const struct mtl_time_stats& t = stats_.tasklets[0].time;
+  const struct mtl_time_stats& w = stats_.tasklets[0].work;
+  ASSERT_GT(t.cnt, 0u);
+  double share = (double)w.cnt / t.cnt;
+  EXPECT_GT(share, 0.15);
+  EXPECT_LT(share, 0.35);
+  EXPECT_GE(w.min_ns, kSpinFloorNs);
+}
+
+TEST_F(MtlSchStatsTest, MeasureWinsOverSample) {
+  Create(MTL_FLAG_TASKLET_TIME_MEASURE | MTL_FLAG_TASKLET_TIME_SAMPLE);
+  RunCalls(20);
+  Stop();
+
+  ASSERT_EQ(mtl_sch_get_stats(mt_, 0, &stats_), 0);
+  EXPECT_TRUE(stats_.time_measure_enabled);
+  EXPECT_FALSE(stats_.time_sample_enabled);
+  EXPECT_GT(ut_sch_stats_dump_loop_cnt(mt_), 0u);
+  EXPECT_GT(ut_sch_stats_dump_tasklet_cnt(mt_), 0u);
+  EXPECT_EQ(stats_.tasklets[0].time.cnt, ut_sch_stats_calls(mt_));
 }
 
 TEST_F(MtlSchStatsTest, DumpResetsOnlyThePerDumpCounters) {
