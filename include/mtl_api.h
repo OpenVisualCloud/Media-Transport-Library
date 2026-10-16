@@ -1169,8 +1169,9 @@ struct mtl_sch_tasklet_stats {
 
 /**
  * Timing statistics of one scheduler, as returned by mtl_sch_get_stats(). The time
- * counters are cumulative since mtl_init() or the last mtl_sch_reset_stats(); the
- * periodic stats dump does not reset them. They move only while
+ * counters are cumulative since the scheduler was requested, those of a tasklet since it
+ * was registered, or since the last mtl_sch_reset_stats(); the periodic stats dump does
+ * not reset them. They move only while
  * MTL_FLAG_TASKLET_TIME_MEASURE is set or the USDT probe sys:tasklet_time_measure is
  * attached, which times every loop. The tasklet counters also move while
  * MTL_FLAG_TASKLET_TIME_SAMPLE is set or the USDT probe sys:tasklet_time_sample is
@@ -1213,8 +1214,8 @@ int mtl_sch_get_count(mtl_handle mt);
 
 /**
  * Retrieve the timing statistics of a scheduler and its tasklets.
- * The call takes the scheduler lock, so it can block behind a tasklet unregister for up
- * to 1 s.
+ * The call takes the scheduler lock, so it waits for a tasklet register or unregister,
+ * up to 1 s, or a scheduler stop.
  *
  * @param mt
  *   The handle to the MTL transport device context.
@@ -1234,7 +1235,8 @@ int mtl_sch_get_stats(mtl_handle mt, int sch_idx, struct mtl_sch_stats* stats);
  * The scheduler updates the counters without a lock, so against a running scheduler a
  * timed call in flight can undo the reset of the counter it updates; for an exact
  * interval take the difference of two mtl_sch_get_stats() instead. The call takes the
- * scheduler lock, so it can block behind a tasklet unregister for up to 1 s.
+ * scheduler lock, so it waits for a tasklet register or unregister, up to 1 s, or a
+ * scheduler stop.
  *
  * @param mt
  *   The handle to the MTL transport device context.

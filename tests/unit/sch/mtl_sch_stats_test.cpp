@@ -233,6 +233,26 @@ TEST_F(MtlSchStatsTest, MeasureWinsOverSample) {
   EXPECT_EQ(stats_.tasklets[0].time.cnt, ut_sch_stats_calls(mt_));
 }
 
+TEST_F(MtlSchStatsTest, RegisterClearsTheCountersOfAReusedSlot) {
+  Create(MTL_FLAG_TASKLET_TIME_MEASURE);
+  /* slot 0, the empty one before the spin tasklet */
+  ASSERT_EQ(ut_sch_stats_register_busy(mt_), 0);
+  RunCalls(20);
+  Stop();
+  ASSERT_EQ(mtl_sch_get_stats(mt_, 0, &stats_), 0);
+  ASSERT_EQ(stats_.nb_tasklets, 2);
+  ASSERT_STREQ(stats_.tasklets[0].name, "ut_registered");
+  EXPECT_GT(stats_.tasklets[0].time.cnt, 0u);
+  EXPECT_GT(stats_.tasklets[0].work.cnt, 0u);
+
+  ASSERT_EQ(ut_sch_stats_register_busy(mt_), 0);
+  ASSERT_EQ(mtl_sch_get_stats(mt_, 0, &stats_), 0);
+  ASSERT_STREQ(stats_.tasklets[0].name, "ut_registered");
+  EXPECT_EQ(stats_.tasklets[0].time.cnt, 0u);
+  EXPECT_EQ(stats_.tasklets[0].work.cnt, 0u);
+  EXPECT_GT(stats_.tasklets[1].time.cnt, 0u);
+}
+
 TEST_F(MtlSchStatsTest, DumpResetsOnlyThePerDumpCounters) {
   Create(MTL_FLAG_TASKLET_TIME_MEASURE, kWorkEvery);
   RunCalls(kWorkEvery * 20);

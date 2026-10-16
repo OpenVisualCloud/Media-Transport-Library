@@ -164,6 +164,7 @@ struct ut_sch_stats_ctx {
   unsigned int spin_us;
   unsigned int work_every;
   _Atomic uint64_t calls;
+  mtl_tasklet_handle registered;
 };
 
 static int ut_sch_spin_handler(void* priv) {
@@ -197,8 +198,6 @@ mtl_handle ut_sch_stats_main_create(uint64_t flags, unsigned int spin_us,
   snprintf(ctx->tasklet.name, sizeof(ctx->tasklet.name), "%s", UT_SCH_SPIN_TASKLET_NAME);
   ctx->tasklet.idx = 1;
   mt_stat_u64_init(&ctx->tasklet.stat_time);
-  mt_stat_u64_init(&ctx->tasklet.user_stat_time);
-  mt_stat_u64_init(&ctx->tasklet.user_stat_work);
   ctx->tasklets[1] = &ctx->tasklet;
 
   struct mtl_sch_impl* sch = mt_sch_instance(impl, 0);
@@ -210,8 +209,12 @@ mtl_handle ut_sch_stats_main_create(uint64_t flags, unsigned int spin_us,
   sch->max_tasklet_idx = 2;
   sch->run_in_thread = true;
   mt_stat_u64_init(&sch->stat_time);
-  mt_stat_u64_init(&sch->user_stat_time);
+  if (sch_user_stats_alloc(0, UT_SCH_STATS_SLOTS) < 0) {
+    free(ctx);
+    return NULL;
+  }
   if (mt_pthread_mutex_init(&sch->mutex, NULL)) {
+    sch_user_stats_free(0);
     free(ctx);
     return NULL;
   }
@@ -222,7 +225,9 @@ mtl_handle ut_sch_stats_main_create(uint64_t flags, unsigned int spin_us,
 void ut_sch_stats_main_destroy(mtl_handle mt) {
   struct ut_sch_stats_ctx* ctx = (struct ut_sch_stats_ctx*)mt;
   if (!ctx) return;
+  if (ctx->registered) mtl_sch_unregister_tasklet(ctx->registered);
   mt_pthread_mutex_destroy(&mt_sch_instance(&ctx->impl, 0)->mutex);
+  sch_user_stats_free(0);
   free(ctx);
 }
 
@@ -238,12 +243,27 @@ int ut_sch_stats_add_idle_tasklets(mtl_handle mt, int count) {
     tasklet->sch = sch;
     tasklet->idx = slot;
     mt_stat_u64_init(&tasklet->stat_time);
-    mt_stat_u64_init(&tasklet->user_stat_time);
-    mt_stat_u64_init(&tasklet->user_stat_work);
     ctx->tasklets[slot] = tasklet;
     sch->max_tasklet_idx = slot + 1;
   }
   return 0;
+}
+
+static int ut_sch_busy_handler(void* priv) {
+  MTL_MAY_UNUSED(priv);
+  return MTL_TASKLET_HAS_PENDING;
+}
+
+int ut_sch_stats_register_busy(mtl_handle mt) {
+  struct ut_sch_stats_ctx* ctx = (struct ut_sch_stats_ctx*)mt;
+  struct mtl_tasklet_ops ops = {.name = "ut_registered", .handler = ut_sch_busy_handler};
+
+  if (ctx->registered) {
+    int ret = mtl_sch_unregister_tasklet(ctx->registered);
+    if (ret < 0) return ret;
+  }
+  ctx->registered = mtl_sch_register_tasklet(mt_sch_instance(mt, 0), &ops);
+  return ctx->registered ? 0 : -ENOMEM;
 }
 
 void ut_sch_stats_drop_tasklets(mtl_handle mt) {

@@ -135,6 +135,10 @@ NIC receives multicast packet (flow rule steers to session's RX queue)
 
 Max schedulers: `MT_MAX_SCH_NUM = 18` (in `mt_main.h`)
 
+Layout-sensitive (`doc/perf_compare.md` §5.5):
+- `struct mtl_sch_impl` is an array in `mtl_main_impl` (`sch_mgr.sch[]`, 25720 B each, session mgrs embedded). +32 B there, or `struct mt_sch_tasklet_impl` 128 → 192 B (shifts the DPDK heap), slowed the 2nd RX scheduler 10-15% on the perf pair with no code change; `main` hits the same slow state in ~1 of 10 runs
+- Keep new per-scheduler state out of both (the `mtl_sch_get_stats()` counters are a static table in `mt_sch.c`), and prove a one-scheduler perf diff with a padded reference build
+
 Both modes enter `sch_tasklet_func()`, which switches a thread still on `MPOL_DEFAULT` to `MPOL_LOCAL` until the scheduler stops; any other policy is kept:
 - Under `kernel.numa_balancing=1` the `task_numa_work` scan runs as task work on busy threads; without `MPOL_F_MOF` it rewrites no PTEs there and nothing migrates on fault, but the VMA walk still runs
 - Mitigation only: scans on other default-policy threads still mark shared PTEs, so scheduler threads still take hinting faults; `kernel.numa_balancing=0` is the fix

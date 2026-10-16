@@ -453,9 +453,21 @@ and no other change:
 The schedulers sit in one array in `struct mtl_main_impl`, each with its session managers
 embedded, so a few more bytes in one move the hot state of every later scheduler, and a
 larger tasklet moves every later DPDK heap allocation. Neither change touches what the
-loop does, yet one RX scheduler lost 10-15%. When a candidate differs from the reference
-on one scheduler only, compare the reference with itself padded to the candidate's
-struct sizes before putting the difference on the code.
+loop does, yet one RX scheduler lost 10-15%. `main` lands in the same slow state on its
+own now and then, so where the memory of a run falls plays a part too: 593 ns in 1 of its
+10 rounds on the pair, with the same binary as the others. The larger structs put it there
+in all 6 of theirs.
+
+The counters of `mtl_sch_get_stats()` therefore live in a static table in `mt_sch.c`,
+outside both structs and the DPDK heap: every struct, `struct mtl_main_impl` and the heap
+are laid out as on `main`. With that, the second RX scheduler read 495-500 ns in all 4
+rounds of a run against `main` (496-502 ns, and 593 ns in its slow round). The fragility
+itself is `main`'s and a change of its own: cache-aligning `struct mtl_sch_impl`, or
+finding the shared line with `perf c2c` and a `perf` that knows the CPU.
+
+When a candidate differs from the reference on one scheduler only, compare the reference
+with itself padded to the candidate's struct sizes before putting the difference on the
+code, and run enough rounds to see the slow state of the reference.
 
 ## 6. CI
 
@@ -627,7 +639,8 @@ current build. The report is `logs/performance/latest/perf_compare.md`, the raw 
 | Proof on one host and on `mtl-runner-7` / `mtl-runner-8` | Done, below |
 | Same isolation on `mtl-runner-8` as on `mtl-runner-7` | Recommended (§4.6); new kernel parameters and a reboot |
 | Sampled tracing | Done: `sys:tasklet_time_sample`, `MTL_FLAG_TASKLET_TIME_SAMPLE`, the harness picks it per build; proved on one host (§5.3) and on the perf pair (below) |
-| Layout of the new counters | Open: they grow the scheduler and tasklet structs, which costs the second RX scheduler of the perf pair 15-17% (§5.5) |
+| Layout of the new counters | Done: a static table in `mt_sch.c`, so the structs and the DPDK heap are as on `main`; the second RX scheduler of the perf pair is at `main`'s level again (§5.5) |
+| Layout sensitivity of the RX schedulers | Open, in `main`: a change of its own (§5.5) |
 | FFmpeg and GStreamer | Not recommended now (§7) |
 
 The sampling proof on the test host is in §5.3. The proof on one host (E810, kernel 5.15,
@@ -667,4 +680,5 @@ with both rounds valid. A was timed in full and B sampled:
 
 The untraced rows of A and B agreed within the noise or within 2%, except RX `sch_2`:
 586 against 500 ns, +17% in both slots. `main` padded to the struct sizes of B gives
-+15% of it (§5.5), so it is the layout of the new counters, not their code.
++15% of it (§5.5), so it is the layout of the new counters, not their code. With the
+counters moved out of the structs, a fourth run of 4 rounds found it at `main`'s level.

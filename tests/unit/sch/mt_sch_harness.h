@@ -75,6 +75,10 @@ int ut_sch_stats_stop(mtl_handle mt);
 /* Returns 0 once the spin tasklet ran at least calls times, -ETIMEDOUT after 2 s. */
 int ut_sch_stats_wait_calls(mtl_handle mt, uint64_t calls);
 
+/* Register a tasklet that always has work through mtl_sch_register_tasklet(), into the
+ * first free slot; a second call unregisters the first, so it lands in the same slot. */
+int ut_sch_stats_register_busy(mtl_handle mt);
+
 /* The calls of the spin tasklet so far. */
 uint64_t ut_sch_stats_calls(mtl_handle mt);
 

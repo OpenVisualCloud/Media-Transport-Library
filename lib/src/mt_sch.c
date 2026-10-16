@@ -36,6 +36,41 @@ static inline void sch_unlock(struct mtl_sch_impl* sch) {
   mt_pthread_mutex_unlock(&sch->mutex);
 }
 
+/* The mtl_sch_get_stats() counters, out of the sch and tasklet structs and the DPDK heap
+ * (doc/perf_compare.md §5.5). Static: one MTL instance per process. */
+struct __rte_cache_aligned mt_sch_tasklet_user_stats {
+  struct mt_stat_u64 time;
+  struct mt_stat_u64 work;
+};
+
+struct __rte_cache_aligned mt_sch_user_stats {
+  struct mt_stat_u64 loop;
+  struct mt_sch_tasklet_user_stats* tasklets; /* nb_tasklets slots */
+  void* tasklets_mem;                         /* tasklets before the alignment */
+};
+static struct mt_sch_user_stats g_sch_user_stats[MT_MAX_SCH_NUM];
+
+static int sch_user_stats_alloc(int idx, uint32_t nb_tasklets) {
+  struct mt_sch_user_stats* us = &g_sch_user_stats[idx];
+
+  us->tasklets_mem =
+      mt_zmalloc(sizeof(*us->tasklets) * nb_tasklets + RTE_CACHE_LINE_SIZE);
+  if (!us->tasklets_mem) return -ENOMEM;
+  us->tasklets = RTE_PTR_ALIGN_CEIL(us->tasklets_mem, RTE_CACHE_LINE_SIZE);
+  mt_stat_u64_init(&us->loop);
+  for (uint32_t i = 0; i < nb_tasklets; i++) {
+    mt_stat_u64_init(&us->tasklets[i].time);
+    mt_stat_u64_init(&us->tasklets[i].work);
+  }
+  return 0;
+}
+
+static void sch_user_stats_free(int idx) {
+  mt_free(g_sch_user_stats[idx].tasklets_mem);
+  g_sch_user_stats[idx].tasklets_mem = NULL;
+  g_sch_user_stats[idx].tasklets = NULL;
+}
+
 static const char* lcore_type_names[MT_LCORE_TYPE_MAX] = {
     "lib_sch", "lib_tap", "lib_rxv_ring", "app_allocated", "lib_app_sch",
 };
@@ -234,10 +269,12 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
       pending += ret;
       if (tm_weight) {
         uint64_t delta_ns = mt_get_tsc(impl) - tm_tasklet_tsc_s;
+        struct mt_sch_tasklet_user_stats* us = &g_sch_user_stats[idx].tasklets[i];
+
         if (time_measure) mt_stat_u64_update(&tasklet->stat_time, delta_ns);
-        mt_stat_u64_update_n(&tasklet->user_stat_time, delta_ns, tm_weight);
+        mt_stat_u64_update_n(&us->time, delta_ns, tm_weight);
         if (ret != MTL_TASKLET_ALL_DONE)
-          mt_stat_u64_update_n(&tasklet->user_stat_work, delta_ns, tm_weight);
+          mt_stat_u64_update_n(&us->work, delta_ns, tm_weight);
       }
     }
     if (sch->allow_sleep && (pending == MTL_TASKLET_ALL_DONE)) {
@@ -257,7 +294,7 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
     if (time_measure) {
       uint64_t delta_ns = mt_get_tsc(impl) - tm_sch_tsc_s;
       mt_stat_u64_update(&sch->stat_time, delta_ns);
-      mt_stat_u64_update(&sch->user_stat_time, delta_ns);
+      mt_stat_u64_update(&g_sch_user_stats[idx].loop, delta_ns);
     }
   }
 
@@ -396,6 +433,14 @@ static struct mtl_sch_impl* sch_request(struct mtl_main_impl* impl, enum mt_sch_
         sch_unlock(sch);
         return NULL;
       }
+      if (sch_user_stats_alloc(sch_idx, sch->nb_tasklets) < 0) {
+        err("%s(%d), %u tasklet stats malloc fail\n", __func__, sch_idx,
+            sch->nb_tasklets);
+        mt_rte_free(sch->tasklet);
+        sch->tasklet = NULL;
+        sch_unlock(sch);
+        return NULL;
+      }
       rte_atomic32_inc(&sch->active);
       rte_atomic32_inc(&mt_sch_get_mgr(impl)->sch_cnt);
       sch_unlock(sch);
@@ -434,6 +479,7 @@ static int sch_free(struct mtl_sch_impl* sch) {
     }
     mt_rte_free(sch->tasklet);
     sch->tasklet = NULL;
+    sch_user_stats_free(idx);
   }
   sch->nb_tasklets = 0;
   rte_atomic32_dec(&mt_sch_get_mgr(sch->parent)->sch_cnt);
@@ -509,9 +555,10 @@ static int sch_stat(void* priv) {
 
     dbg("SCH(%d): tasklet %s at %d\n", idx, tasklet->name, i);
     if (MT_USDT_SYS_TASKLET_STAT_ENABLED()) {
-      MT_USDT_SYS_TASKLET_STAT(idx, tasklet->name, tasklet->user_stat_time.cnt,
-                               tasklet->user_stat_time.sum, tasklet->user_stat_work.cnt,
-                               tasklet->user_stat_work.sum);
+      struct mt_sch_tasklet_user_stats* us = &g_sch_user_stats[idx].tasklets[i];
+
+      MT_USDT_SYS_TASKLET_STAT(idx, tasklet->name, us->time.cnt, us->time.sum,
+                               us->work.cnt, us->work.sum);
     }
     stat_time = &tasklet->stat_time;
     if (stat_time->cnt) {
@@ -985,8 +1032,8 @@ mtl_tasklet_handle mtl_sch_register_tasklet(struct mtl_sch_impl* sch,
     tasklet->sch = sch;
     tasklet->idx = i;
     mt_stat_u64_init(&tasklet->stat_time);
-    mt_stat_u64_init(&tasklet->user_stat_time);
-    mt_stat_u64_init(&tasklet->user_stat_work);
+    mt_stat_u64_init(&g_sch_user_stats[idx].tasklets[i].time);
+    mt_stat_u64_init(&g_sch_user_stats[idx].tasklets[i].work);
 
     sch->tasklet[i] = tasklet;
     sch->max_tasklet_idx = RTE_MAX(sch->max_tasklet_idx, i + 1);
@@ -1033,7 +1080,6 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
     sch->data_quota_mbs_limit = data_quota_mbs_limit;
     sch->run_in_thread = mt_user_tasklet_thread(impl);
     mt_stat_u64_init(&sch->stat_time);
-    mt_stat_u64_init(&sch->user_stat_time);
 
     /* sleep info init */
     sch->allow_sleep = mt_user_tasklet_sleep(impl);
@@ -1539,7 +1585,8 @@ int mtl_sch_get_stats(mtl_handle mt, int sch_idx, struct mtl_sch_stats* stats) {
   stats->time_sample_enabled =
       !stats->time_measure_enabled && sch_tasklet_time_sample(sch->parent);
   stats->avg_ns_per_loop = mt_sch_avg_ns_loop(sch);
-  sch_time_stats_copy(&stats->loop_time, &sch->user_stat_time);
+  struct mt_sch_user_stats* us = &g_sch_user_stats[sch_idx];
+  sch_time_stats_copy(&stats->loop_time, &us->loop);
   for (int i = 0; i < sch->max_tasklet_idx; i++) {
     struct mt_sch_tasklet_impl* tasklet = sch->tasklet[i];
     if (!tasklet) continue;
@@ -1547,8 +1594,8 @@ int mtl_sch_get_stats(mtl_handle mt, int sch_idx, struct mtl_sch_stats* stats) {
     if (stats->nb_tasklets >= MTL_SCH_MAX_TASKLETS) continue;
     struct mtl_sch_tasklet_stats* dst = &stats->tasklets[stats->nb_tasklets++];
     snprintf(dst->name, sizeof(dst->name), "%s", tasklet->name);
-    sch_time_stats_copy(&dst->time, &tasklet->user_stat_time);
-    sch_time_stats_copy(&dst->work, &tasklet->user_stat_work);
+    sch_time_stats_copy(&dst->time, &us->tasklets[i].time);
+    sch_time_stats_copy(&dst->work, &us->tasklets[i].work);
   }
   sch_unlock(sch);
   return 0;
@@ -1565,12 +1612,12 @@ int mtl_sch_reset_stats(mtl_handle mt, int sch_idx) {
     sch_unlock(sch);
     return -ENOENT;
   }
-  mt_stat_u64_init(&sch->user_stat_time);
+  struct mt_sch_user_stats* us = &g_sch_user_stats[sch_idx];
+  mt_stat_u64_init(&us->loop);
   for (int i = 0; i < sch->max_tasklet_idx; i++) {
-    struct mt_sch_tasklet_impl* tasklet = sch->tasklet[i];
-    if (!tasklet) continue;
-    mt_stat_u64_init(&tasklet->user_stat_time);
-    mt_stat_u64_init(&tasklet->user_stat_work);
+    if (!sch->tasklet[i]) continue;
+    mt_stat_u64_init(&us->tasklets[i].time);
+    mt_stat_u64_init(&us->tasklets[i].work);
   }
   sch_unlock(sch);
   return 0;
