@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | The operator's document: security, containers, Kubernetes pods and crash safety. The Kubernetes rules are decisions D-89–D-92; the instance open and close land in MS1, health and the shutdown report in MS3 ([implementation-plan.md](implementation-plan.md) §6.2), and the engine fixes EK1–EK21 on the Kubernetes track beside the milestones, done by the MS3 exit (§6.10 there) |
+| Status | The operator's document: security, containers, Kubernetes pods and crash safety. The Kubernetes rules are decisions D-89–D-92; the instance open and close land in MS1, health and the shutdown report in MS3 ([implementation-plan.md](implementation-plan.md) §6.2), and the engine fixes EK1–EK21 on the Kubernetes track beside the milestones, done by the MS3 exit (§6.8 there) |
 | Headers | `mtl.h` (R4, R8, `mtl_instance_open`, `mtl_instance_close`, `mtl_instance_abort`, `env:` ports), `mtl_observe.h` (health, shutdown), `mtl_options.h` 400, 2010, 2020–2027, 2110, 2123–2125, 2203, 2207, `mtl_reasons.h` 10, 11, 104, 112–115, 520, 600–614, `mtl_events.h` events 23–25 |
 | Baseline | `main` @ `545a266a`, DPDK 26.07 |
 

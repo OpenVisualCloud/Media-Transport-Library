@@ -115,9 +115,9 @@ agent reads. Do not load whole documents into one context; the large ones are re
    from that commit (autonomous-run.md §5); record the commit in [run-status.md](run-status.md)
    and [ms1-status.md](ms1-status.md). `standards/` is in `.git/info/exclude` on the maintainer's
    machine; keep it out of every commit.
-2. R0 first, the re-pin to the new base ([autonomous-run.md](autonomous-run.md) §1). Then, in
-   calendar order: P0 (the tooling and the histogram), S0 (baseline nights), T1, H1b
-   and E1 (two series), C0 (the maintainer's first checkpoint); M0 before week 2.
+2. R0 and L0 first ([autonomous-run.md](autonomous-run.md) §1). Then, in the plan's order: P0
+   (the tooling and the histogram), S0 (baseline nights), T1, H1b and E1 (two series), C0 and M0;
+   autonomous-run.md §3 replaces the calendar and the maintainer's checkpoints.
 
 The order, the gates and how the work runs are in implementation-plan.md §5.2.3 and §5.8; the state
 of every task and the standing instructions are in [ms1-status.md](ms1-status.md).

@@ -5,7 +5,7 @@
 | Status | The ledger of milestone MS1. The implementing session keeps it current: one row per task, updated when a task changes state |
 | Reads with | [implementation-plan.md](implementation-plan.md) §5 (tasks, gates, process), [README.md](README.md) §1 |
 | Work branch | `unified-api-impl`, from the doc-set commit on `unified-api-design` ([autonomous-run.md](autonomous-run.md) §5) |
-| Base commit | (record the doc-set commit here when the work branch is made) |
+| Base commit | (`git rev-parse HEAD` when R0 starts, as in [run-status.md](run-status.md)) |
 
 On every resume: read [README.md](README.md) §1, [autonomous-run.md](autonomous-run.md), this
 file and `git log --oneline -20`, then continue with the first task that is not done.
