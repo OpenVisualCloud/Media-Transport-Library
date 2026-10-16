@@ -42,7 +42,8 @@ This page is the design and the plan. Section 9 tracks what is implemented and p
 | How are the CPUs isolated? | A transient systemd unit per instance whose `AllowedCPUs` (a cgroup v2 cpuset) is the slot, no `--lcores`, app threads off the scheduler CPUs | §4.2. `taskset` isolates nothing: `numa_bind()` in `mtl_init()` widened a `[2,3]` mask to `0-31` on the test host. `isolate.sh` holds one host-wide lock for its one partition, so two instances cannot use it at once. |
 | How is the cache shared? | Intel RDT CAT: each slot gets an equal, exclusive set of L3 ways | Without it the instance with the larger footprint evicts the other one, and the slot swap does not cancel that: it follows the instance, not the slot. |
 | What is measured? | The MTL stats dump through the USDT probe `sys:log_msg`, the tasklet counters through the new probe `sys:tasklet_stat`, per-thread CPU from `/proc`, memory bandwidth from RDT | §5. `sys:log_msg` fires whatever the log level of the app is and exists in every release since 2024, so `v26.01` is measured the same way as `main`. |
-| Which application? | RxTxApp now; FFmpeg and GStreamer can reuse the instance and measurement code | §7 |
+| Which application? | RxTxApp | §7: FFmpeg and GStreamer can run in the same harness, but they measure their own frame copies more than MTL |
+| How much does tracing distort? | The primary rows are untraced; the traced rows compare only between builds that trace alike | §5.2, §5.3 |
 
 ## 3. Topology and one round
 
@@ -171,14 +172,36 @@ protect.
 | Residual effect | Handling |
 | --- | --- |
 | PF 0 and PF 1, and the two core sets, are not identical | The slot swap: each instance runs once in each slot |
-| `mtl-runner-7` isolates cores, `mtl-runner-8` does not | Both slots of a host get the same treatment; the hosts are never compared with each other |
+| `mtl-runner-7` isolates cores, `mtl-runner-8` does not | Both slots of a host get the same treatment and the hosts are never compared with each other; §4.6 recommends the same isolation on both |
 | Shared memory controller, DDIO ways, socket power budget | Common mode for both instances; the A/A run measures what is left |
 | Another job on the companion, which also serves other repositories | The round notes it when `Runner.Worker` ran on the companion |
-| Host tasks on the slot cores of a host without `isolcpus` (`mtl-runner-8`), and on the SMT siblings of slot cores | Not prevented: the cpuset bounds the instance, not the host. Reported as `sch preemptions (/s)`; an exclusive cpuset partition per slot, under a root-level slice, would prevent it |
+| Host tasks on the slot cores of a host without `isolcpus` (`mtl-runner-8`), and on the SMT siblings of slot cores | Not prevented: the cpuset bounds the instance, not the host. Reported as `sch preemptions (/s)`; §4.6 |
 
 An A/A run (`ref_a` = `ref_b`) measures the noise floor of the rig. The nightly run is
 one whenever `main` did not move for a day. With equal refs B is a copy of A's build,
 so the two instances run the same binaries.
+
+### 4.6. Host isolation of the perf pair
+
+Both hosts should isolate the same cores, so the TX instances get what the RX instances
+get. `mtl-runner-7` boots with `isolcpus=4-20 nohz_full=4-20 rcu_nocbs=4-20`;
+`mtl-runner-8` isolates nothing, so its kernel ticks, RCU callbacks and any task can land
+on the TX slot cores (2 preemptions a second there against 0.3 on `mtl-runner-7`).
+The kernel parameters recommended for both, on the NIC's node 0 (CPUs 0-31, SMT siblings
+128-159):
+
+```text
+isolcpus=managed_irq,domain,4-20,132-148 nohz_full=4-20,132-148 rcu_nocbs=4-20,132-148
+```
+
+Cores 4-19 are the two slots (`cpu_layout()` picks them when 16 isolated cores exist);
+core 20 stays isolated for perf-pytest, which runs its schedulers on the isolated list.
+The siblings 132-148 are isolated too, so no host task shares a physical core with a
+polling scheduler; they also get no MTL work, as `cpu_layout()` uses one thread per
+core. `managed_irq` keeps managed interrupts, such as the NVMe queues, off them. CPUs 0-3,
+21-31 and the other nodes keep the OS, the collectors and the CI runner. A dynamic
+alternative without a reboot, a cgroup v2 `isolated` partition per slot as `isolate.sh`
+makes one, removes the cores from load balancing but keeps the ticks.
 
 ## 5. Measurement
 
@@ -242,7 +265,27 @@ traced: on the test host its traced loop and `video_transmitter` rows read 3-4% 
 build without them, while every untraced row agreed. When only one of A and B has the
 work counters, the report shows its traced rows as "traced unlike".
 
-### 5.3. Statistics
+### 5.3. Tracing cost
+
+Tracing is not free: on the perf pair the traced loop of the RX schedulers was 25% longer
+than the untraced one (508 against 635 ns) and of the TX scheduler 10% (1104 against
+1215 ns). Each traced tasklet call reads the TSC twice; a microbenchmark on
+`mtl-runner-7` puts a traced call at 36-47 cycles, nearly all of them the two `rdtsc`.
+The conversion to ns in `mt_get_tsc()` adds 1-4 cycles, so counting in TSC cycles would
+not help. What would:
+
+| Approach | Cost | Trade-off |
+| --- | --- | --- |
+| The untraced rows (loop time, cpu busy, CPU, memory bandwidth) | None | What the comparison rests on today; they work for every build |
+| Chained timestamps: the end of one tasklet call is the start of the next | About 40% less | The counter updates of one tasklet land in the time of the next |
+| Sampling: time 1 loop in N | About N times less | Averages become unbiased estimates and `min`/`max` samples; the counters need the sampling rate to scale sums |
+| A PMU sampling profile of the scheduler threads (`perf record` at 1 kHz) | About 0.1%, the same for every build | Shows where the time goes by function, but not which call did work; needs `perf` for the running kernel |
+
+Sampling is the change that would make the traced window nearly free; it changes what
+`mtl_sch_get_stats()` and the time measure report, so it is a library decision, not a
+harness one.
+
+### 5.4. Statistics
 
 For each metric and instance the round value is the median of the dumps of its window, or
 the window difference for `/proc`, RDT and the cumulative counters. The instance value is
@@ -327,19 +370,28 @@ runs by hand (§8).
 ## 7. Other frameworks
 
 The instance and measurement code runs whatever application command it is given;
-nothing in it is RxTxApp specific. A framework needs three things to be compared with it:
+nothing in it is RxTxApp specific. Both plugins can be the application: each runs N st20p sessions in one process on one
+shared MTL instance (FFmpeg: `mtl_dev_get()` in `mtl_common.c`, with identical device
+arguments on every input and output; GStreamer: `common_handle` in
+`libgstmtl_common.so`). The cpuset places EAL's lcores without an lcore option (§4.2).
+What they would measure, though, is mostly not MTL:
 
-1. A multi-session TX and RX command. FFmpeg can send N streams from one input
-   (`mtl_engine/ffmpeg.py` does it for its RGB24 multi mode) and take N inputs; GStreamer
-   can run N `mtl_st20p_rx` branches in one pipeline.
-2. Lcores. The FFmpeg and GStreamer plugins have no lcore option, and none is needed: the
-   cpuset places EAL's lcores (§4.2).
-3. Frame processing. Both frameworks convert and copy each frame, which dominates
-   `process` CPU ("encoder noise"); the scheduler and tasklet metrics stay comparable.
+1. Both always convert: no FFmpeg pixel format maps to the RFC 4175 transport, and the
+   GStreamer caps are v210 and I422_10LE only. FFmpeg also copies each frame once more and
+   allocates an 8 MB packet per frame, so `process (cores)` is the framework's.
+2. The GStreamer RX allocates a GstBuffer per frame inside `rvs_pkt_rx`, on the scheduler
+   lcore, which puts the allocator into the loop and work rows.
+3. Neither can turn off migration (FFmpeg forces it on), set a dedicated system lcore or a
+   scheduler quota, so their scheduler layout is not RxTxApp's and their rows are not
+   comparable with it.
+4. Each slot would need its own FFmpeg or GStreamer plugin build, and the media would be
+   new (`yuv422p10le` or v210 instead of the RFC 4175 perf set).
 
-RxTxApp is the first framework because it runs N sessions per process in every release.
-FFmpeg and GStreamer are a later step: they need builders for the multi-session commands,
-which `mtl_engine` does not have yet.
+The library code those paths add over RxTxApp is the st20p converter of the pipeline, and
+an RxTxApp session whose input or output format differs from the transport exercises the
+same converter without the framework around it. That, an RxTxApp profile with
+conversion, is the cheaper way to cover it. An FFmpeg or GStreamer comparison is worth
+building when the plugins themselves are the code under test.
 
 ## 8. Running it by hand
 
@@ -374,7 +426,9 @@ current build. The report is `logs/performance/latest/perf_compare.md`, the raw 
 | pytest case, options, CI scripts, `perf-compare.yml` | Done; the workflow runs once it is on `main` (§6.4) |
 | A and B compiled by the compare job, any ref | Done; `perf-compare.sh build` proved by hand with `v26.01` against `main`, the workflow first runs on `main` |
 | Proof on one host and on `mtl-runner-7` / `mtl-runner-8` | Done, below |
-| FFmpeg and GStreamer | Not started (§7) |
+| Same isolation on `mtl-runner-8` as on `mtl-runner-7` | Recommended (§4.6); new kernel parameters and a reboot |
+| Sampled tracing | Proposed (§5.3); a library change |
+| FFmpeg and GStreamer | Not recommended now (§7) |
 
 The proof on one host (E810, kernel 5.15, bpftrace 0.14) ran `pc.run_round()` with both
 instances' TX and RX on one host: A was `main` without `sys:tasklet_stat`, B this change,
