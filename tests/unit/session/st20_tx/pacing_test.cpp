@@ -872,6 +872,17 @@ INSTANTIATE_TEST_SUITE_P(AllSoftwareWaitPaths, St20TxTransmitterBoundaryTest,
                          ::testing::Values(UT_TXV_PACING_TSC, UT_TXV_PACING_PTP,
                                            UT_TXV_PACING_RL));
 
+/* Launch-time pacing leaves the wait to the NIC: the transmitter hands the packet over at
+ * once, with its PTP target in the tx timestamp field and the flag the driver keys on. */
+TEST_F(St20TxSyncPacingTest, LaunchTimeHandsThePacketOverWithItsPtpTarget) {
+  uint64_t launch_time = 0;
+  bool launch_flag = false;
+
+  ASSERT_EQ(ut_txv_run_launch_time(ctx_, kCurrentTai, &launch_time, &launch_flag), 0);
+  EXPECT_EQ(launch_time, kCurrentTai);
+  EXPECT_TRUE(launch_flag);
+}
+
 TEST_F(St20TxSyncPacingTest, ExactTargetBeyondOneSecondFallsBackBeforePacketBuild) {
   uint64_t packet_tsc = 0;
   uint64_t packet_ptp = 0;

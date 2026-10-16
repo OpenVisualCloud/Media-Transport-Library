@@ -411,12 +411,11 @@ int ut_txa30_setup_rl(ut_txa30_ctx* ctx, long double trs_ns, uint16_t nb_tx_desc
 
   ctx->impl.inf[MTL_PORT_P].nb_tx_desc = nb_tx_desc;
   s->pacing.trs = trs_ns;
-  s->rl.pads_per_st30_pkt = 3;
   rl_port->queue[0] = (struct mt_txq_entry*)&ctx->rl_queue_tag;
   rl_port->pad = rte_pktmbuf_alloc(ut_pool());
   rl_port->pkt = rte_pktmbuf_alloc(ut_pool());
   if (!rl_port->pad || !rl_port->pkt) return -ENOMEM;
-  ctx->rl_desc_ns = trs_ns / (1 + s->rl.pads_per_st30_pkt);
+  ctx->rl_desc_ns = trs_ns / (1 + ST30_TX_RL_PADS_PER_PKT);
   return 0;
 }
 
@@ -512,7 +511,6 @@ static int ut_txa30_pipe_rl(struct ut_txa30_ctx* ctx, int leg) {
   rl->pad_pkt_size = MTL_UDP_MAX_BYTES;
   rl->required_accuracy_ns = 40 * NS_PER_US;
   rl->pkts_prepare_warmup = 4;
-  rl->pads_per_st30_pkt = ST30_TX_RL_PADS_PER_PKT;
   rl->max_warmup_trs = 4;
   rl->pkts_per_sync = (int)((double)NS_PER_S / s->pacing.trs / 100);
   rl_port->pad = rte_pktmbuf_alloc(ctx->pipe_pad_pool);
@@ -701,4 +699,61 @@ unsigned int ut_txa30_pipe_pool_size(const ut_txa30_ctx* ctx, int pool) {
 unsigned int ut_txa30_pipe_mempool_n(ut_txa30_ctx* ctx, int leg) {
   struct st_tx_audio_session_impl* s = &ctx->session;
   return tx_audio_session_mempool_n(&ctx->impl, s, mt_port_logic2phy(s->port_maps, leg));
+}
+
+static uint16_t ut_txa30_rl_last_burst;
+
+static uint16_t ut_txa30_rl_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
+                                  uint16_t nb_pkts) {
+  (void)entry;
+  for (uint16_t i = 0; i < nb_pkts; i++) rte_pktmbuf_free(tx_pkts[i]);
+  ut_txa30_rl_last_burst = nb_pkts;
+  return nb_pkts;
+}
+
+int ut_txa30_rl_pads_after_pkt(ut_txa30_ctx* ctx, int* budget_pads) {
+  static unsigned int pool_idx;
+  struct st_tx_audio_session_impl* s = &ctx->session;
+  struct st_tx_audio_session_rl_port* rl_port = &s->rl.port_info[MTL_SESSION_PORT_P];
+  struct mt_txq_entry queue = {.burst = ut_txa30_rl_burst};
+  char pool_name[RTE_MEMPOOL_NAMESIZE];
+  struct rte_mempool* pool;
+  struct rte_mbuf* pkt = NULL;
+  int num_port = s->ops.num_port, ret;
+
+  s->ops.num_port = 0;
+  ret = tx_audio_session_init_rl(&ctx->impl, s);
+  s->ops.num_port = num_port;
+  if (ret < 0) return ret;
+  /* the bytes the queue rate allows per packet time, less the packet: its pads */
+  long double budget_bytes =
+      (long double)tx_audio_session_initial_rl_bps(s) * s->pacing.trs / NS_PER_S;
+  *budget_pads = (int)((budget_bytes - s->st30_pkt_size) / s->rl.pad_pkt_size + 0.5);
+
+  (void)snprintf(pool_name, sizeof(pool_name), "ut_txa30_rl_pool_%u", pool_idx++);
+  pool = rte_pktmbuf_pool_create(pool_name, 8, 0, 0, RTE_MBUF_DEFAULT_BUF_SIZE,
+                                 (int)rte_socket_id());
+  if (!pool) return -ENOMEM;
+  rl_port->pad = rte_pktmbuf_alloc(pool);
+  pkt = rte_pktmbuf_alloc(pool);
+  if (!rl_port->pad || !pkt) {
+    rte_pktmbuf_free(pkt);
+    ret = -ENOMEM;
+    goto out;
+  }
+  rl_port->queue[0] = &queue;
+  rl_port->cur_queue = 0;
+
+  ut_txa30_rl_last_burst = 0;
+  /* the queue frees what it takes: the packet, then each pad reference */
+  ret = tx_audio_session_rl_tx_pkt(s, MTL_SESSION_PORT_P, pkt) == 1
+            ? ut_txa30_rl_last_burst
+            : -EIO;
+  rl_port->queue[0] = NULL;
+
+out:
+  rte_pktmbuf_free(rl_port->pad);
+  rl_port->pad = NULL;
+  rte_mempool_free(pool);
+  return ret;
 }

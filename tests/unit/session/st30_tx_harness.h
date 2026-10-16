@@ -88,7 +88,7 @@ int ut_txa30_wire_rtp_timestamp_count(const ut_txa30_ctx* ctx);
 uint32_t ut_txa30_wire_rtp_timestamp(const ut_txa30_ctx* ctx, int i);
 
 /* RL profiling against a modeled queue of nb_tx_desc descriptors that drains one
- * descriptor per trs / (1 + pads_per_st30_pkt), the trained rate; the mock clock
+ * descriptor per trs / (1 + ST30_TX_RL_PADS_PER_PKT), the trained rate; the mock clock
  * moves only while a full queue holds a busy burst, or in mt_sleep_us() */
 int ut_txa30_setup_rl(ut_txa30_ctx* ctx, long double trs_ns, uint16_t nb_tx_desc);
 void ut_txa30_teardown_rl(ut_txa30_ctx* ctx);
@@ -140,6 +140,13 @@ unsigned int ut_txa30_pipe_pool_size(const ut_txa30_ctx* ctx, int pool);
 /* tx_audio_session_mempool_n(): the mbufs the production pool init asks for the leg's
  * header pool */
 unsigned int ut_txa30_pipe_mempool_n(ut_txa30_ctx* ctx, int leg);
+
+/* Runs tx_audio_session_init_rl() without a port, so it sets only the per-session RL
+ * values, then sends one packet through tx_audio_session_rl_tx_pkt() on a queue that
+ * takes everything. Returns the pads sent after the packet, or a negative errno, and
+ * sets *budget_pads to the pads per packet that tx_audio_session_initial_rl_bps()
+ * budgets in the queue rate. */
+int ut_txa30_rl_pads_after_pkt(ut_txa30_ctx* ctx, int* budget_pads);
 
 #ifdef __cplusplus
 }
