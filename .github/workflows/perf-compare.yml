@@ -55,7 +55,7 @@ on:
         description: 'Fail when B is worse than A by more than this percentage; empty only reports'
         required: false
         type: string
-  # The nightly compares main of the day before with main.
+  # The nightly compares the main of the last passed night with main.
   schedule:
     - cron: '0 16 * * *'
 
@@ -67,6 +67,10 @@ jobs:
   refs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      # the nightly reads the commit its last passed run compared
+      actions: read
     outputs:
       sha_a: ${{ steps.refs.outputs.sha_a }}
       sha_b: ${{ steps.refs.outputs.sha_b }}
@@ -88,6 +92,8 @@ jobs:
         env:
           REF_A: ${{ inputs.ref_a || 'main' }}
           REF_B: ${{ inputs.ref_b || 'main' }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: task ci:workflow -- perf-compare-refs
 
   # The workflow commit: the CI scripts, the tests, the ICE driver and the tree

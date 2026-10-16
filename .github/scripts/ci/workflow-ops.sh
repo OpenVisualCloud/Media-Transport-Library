@@ -42,7 +42,7 @@ check-built-sources)
 	;;
 perf-compare-refs)
 	# The commits perf-compare.yml builds: the dispatched refs, or for the nightly
-	# main as it was a day before this run started and main now.
+	# the main of the last nightly that passed and the main of this one.
 	resolve() {
 		# A name, a SHA or a ~ or ^ suffix; no option, no ^{/regex} and no newline,
 		# which would add a line to GITHUB_OUTPUT.
@@ -54,8 +54,19 @@ perf-compare-refs)
 			git -C "$root_dir" rev-parse --verify "$1^{commit}"
 	}
 	if [[ ${GITHUB_EVENT_NAME:-} == schedule ]]; then
-		sha_a=$(git -C "$root_dir" rev-list -1 --first-parent --before='24 hours ago' origin/main)
-		name_a='main a day ago' sha_b=$(resolve main) name_b=main
+		# GitHub starts each night hours late, by a different amount, so a window
+		# counted back from the start would leave commits to no night. Without a
+		# passed night, main a day ago.
+		sha_b=${GITHUB_SHA:?GITHUB_SHA is required} name_b=main
+		name_a='main of the last nightly'
+		sha_a=$(gh api 'repos/{owner}/{repo}/actions/workflows/perf-compare.yml/runs?event=schedule&status=success&per_page=1' \
+			--jq '.workflow_runs[0].head_sha // empty') ||
+			echo '::warning::The last passed nightly is unknown: the Actions API read failed' >&2
+		# Not an ancestor of B when an older night is run again after a newer one passed.
+		if [[ -z $sha_a ]] || ! git -C "$root_dir" merge-base --is-ancestor "$sha_a" "$sha_b"; then
+			name_a='main a day ago'
+			sha_a=$(git -C "$root_dir" rev-list -1 --first-parent --before='24 hours ago' origin/main)
+		fi
 	else
 		sha_a=$(resolve "${REF_A:?REF_A is required}") name_a=$REF_A
 		sha_b=$(resolve "${REF_B:?REF_B is required}") name_b=$REF_B
