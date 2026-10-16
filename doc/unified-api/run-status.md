@@ -15,6 +15,7 @@ The `status_report` of `mtl-system-admin` before MS1, and every later change to 
 
 | Date | Check | Result |
 |---|---|---|
+| 2026-10-16 | preparation, at the doc-set commit | `./build.sh` green after `build/` was moved back to the `/usr/local` prefix; `./build.sh unit` 959 passed, 1 skipped; KahawaiTest `St20p*` 44/44 on `0000:15:01.0`/`.1`; MtlManager of this tree running; stale `/usr/local/include/mtl/st41_api.h` removed |
 
 ## 2. Milestones
 

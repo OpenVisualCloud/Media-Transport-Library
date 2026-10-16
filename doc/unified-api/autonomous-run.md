@@ -131,21 +131,38 @@ never bend for a deadline.
   force-push, never push to `origin`, never push another branch, never open a pull request.
 - **Never commit** `standards/` (copyrighted, in `.git/info/exclude`), build trees, logs or
   secrets. Never print an environment variable or a key unmasked.
+- **Guards.** Local git hooks enforce these rules on every commit and push, whoever runs git:
+  `commit-msg` rejects AI attribution and a missing `Signed-off-by`; `pre-commit` rejects
+  `standards/`, build trees, status dumps, files over 2 MB and secret-looking lines, then runs
+  `./checkpatch.sh --staged` (the repository's lint, as CI runs it); `pre-push` allows only a
+  fast-forward of `unified-api-impl` to `sakoram`. A Claude Code `PreToolUse` hook
+  (`.git/autonomous-run/bash-guard.py`, enabled with the denial of `AskUserQuestion` by the
+  gitignored `.github/claude/settings.local.json`) blocks bypassing the hooks, force pushes, pull requests
+  and printing the environment. A rejected commit is fixed, never forced through: the run never
+  uses `--no-verify` or edits the guards. When `checkpatch` reformats a file, review the change,
+  stage it and commit again.
 - **Docs stay true.** A commit that changes what a document says passes
   `doc/unified-api/sketch/check.sh`, and from H1b the exit command of implementation-plan.md §5.8.
 
-## 6. Agents and cost
+## 6. Agents and models
+
+The maintainer's rule for the run (2026-10-16): **Opus 5.5 does the work.** Every job that needs
+logic or judgement runs on Opus 5.5: the leads, the designers and the judges, every
+`mtl-developer` and `mtl-reviewer` call, reading code to understand it, and diagnosing a failing
+test. Pass `model: "opus"` explicitly on every Agent call, also to `mtl-system-admin`, whose own
+setting is `haiku`, when it must interpret a failure. A smaller model is allowed only for a
+purely mechanical job with nothing to decide:
 
 | Job | Model |
 |---|---|
-| a lead, a designer, a judge; `mtl-developer` on the core, waiting, a binding or the engine; `mtl-reviewer` on those diffs and at checkpoints | the large model (the default) |
-| `mtl-developer` on copies, ports of tests, samples, docs; `mtl-reviewer` on docs, test-only and mechanical diffs; reading one file or one topic | `sonnet` |
-| greps, counts, link checks, "is X still used" | `haiku`, or Bash yourself |
-| `mtl-system-admin` | its own (`haiku`) |
+| everything that needs thinking (the default) | `opus` |
+| a grep, a count, a link or anchor check, copying text verbatim, "is X still used" | `haiku`, or Bash yourself |
+| running a known `mtl-system-admin` tool and returning its output | its own (`haiku`) |
 
-Give every agent a narrow scope, and tell it to read by section (`sed -n`, grep), not whole files.
-Re-review only the delta since the last verdict (save an interdiff). Run lints, builds and
-scripts yourself with Bash, not through an agent.
+This overrides the cost rules of the global `~/.claude/CLAUDE.md` (Sonnet for single-file reviews)
+for the run. Cost is still saved by scope: give every agent a narrow task, tell it to read by
+section (`sed -n`, grep) and not whole files, re-review only the delta since the last verdict
+(save an interdiff), and run lints, builds and scripts yourself with Bash.
 
 ## 7. Interruptions
 
@@ -166,16 +183,27 @@ scripts yourself with Bash, not through an agent.
 
 ## 8. This machine
 
+The state when the run was prepared (2026-10-16):
+
 | | |
 |---|---|
-| NIC | Intel E830-CC, PFs `0000:15:00.0` and `0000:15:00.1`, VFs on `0000:15:01.x` and `0000:15:11.x` bound for DPDK |
+| NIC | Intel E830-CC, PFs `0000:15:00.0` and `0000:15:00.1`, VFs on `0000:15:01.x` and `0000:15:11.x` bound for DPDK; `run_gtest` picks `0000:15:01.0` and `0000:15:01.1`. A second NIC has VFs on `0000:c9:01.x` and `0000:c9:11.x` |
 | Memory | 2 MB hugepages configured (`mtl-system-admin` `hugepages_get`); PTP clocks `/dev/ptp0`, `/dev/ptp1` |
 | Root | `sudo` works without a password |
-| Acceptance | `/mnt/media` mounted; `tests/acceptance/venv`; the `.local_install` tree of CLAUDE.md |
-| Disk | `/` was 86 % full when the run was prepared: delete stale build trees of finished worktrees and keep at least 20 GB free |
-| Shared | an MtlManager from another clone (`/home/labrat/Media-Transport-Library`) was running. Never edit that clone. When a task changes the manager or needs this tree's MtlManager, restart it through `mtl-system-admin` (`manager_stop`, `manager_start`) and note it in the ledger |
+| Baseline | `./build.sh` green, `./build.sh unit` 959 passed and 1 skipped, KahawaiTest `St20p*` 44 of 44 on the VFs, all at the doc-set commit |
+| MtlManager | this tree's, started by `mtl-system-admin` `manager_start`; the other clones' managers were stopped. Never edit another clone (`/home/labrat/Media-Transport-Library`, `/home/labrat/mtl-3`) |
+| Acceptance | `/mnt/media` mounted; `tests/acceptance/venv`; the `.local_install` tree of the repository `CLAUDE.md` |
+| Disk | `/` was 89 % full: delete stale build trees of finished worktrees and keep at least 20 GB free |
+| Doc tools | `/home/labrat/wip/unified-api-impl/tools/`: `diag/mmcheck.py --dark <files>` renders the mermaid blocks, `linkcheck.py`; markdownlint is `~/.npm/_npx/0eb49c4b924aad8b/node_modules/.bin/markdownlint -c .github/linters/.markdown-lint.yml` |
 
-Check it before MS1 starts: `mtl-system-admin` `status_report`, and record the result in
+**One build tree, two prefixes.** `build/` serves both install trees: `./build.sh` installs to its
+configured prefix, and the acceptance setup (`.github/scripts/acceptance_setup_base.sh`) rebuilds
+it with the `.local_install` prefix, which then sticks. A later `./build.sh` installs `libmtl` into
+`.local_install` while `build/tests` keeps compiling against the old headers in `/usr/local`, and
+KahawaiTest fails to build or tests stale code. After every acceptance build, run
+`meson configure build -Dprefix=/usr/local` before the next `./build.sh`.
+
+Check the host before MS1 starts: `mtl-system-admin` `status_report`, and record the result in
 [run-status.md](run-status.md) §1.
 
 ## 9. Starting and restarting
