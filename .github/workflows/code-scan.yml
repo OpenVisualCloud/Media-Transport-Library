@@ -59,8 +59,9 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.clang_tidy == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
     runs-on: ubuntu-24.04
-    # The scan, plus the wait for Build on a DPDK cache miss.
-    timeout-minutes: 105
+    # The scans, plus at most 10 minutes queued and 10 running for Build on a
+    # DPDK cache miss.
+    timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: read
@@ -105,7 +106,7 @@ jobs:
         uses: ./.github/actions/wait-for-workflow
         with:
           check_name: build
-          queue_timeout: '4200'
+          queue_timeout: '600'
 
       - name: 'stash: Restore DPDK cache after Build'
         if: ${{ steps.dpdk.outputs.cache-hit != 'true' }}
