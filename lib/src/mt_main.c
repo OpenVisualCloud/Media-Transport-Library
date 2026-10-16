@@ -460,10 +460,6 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   }
 #endif
 
-#ifdef MTL_HAS_ASAN
-  mt_asan_init();
-#endif
-
   impl = mt_rte_zmalloc_socket(sizeof(*impl), socket[MTL_PORT_P]);
   if (!impl) {
     err("%s, impl malloc fail on socket %d\n", __func__, socket[MTL_PORT_P]);
