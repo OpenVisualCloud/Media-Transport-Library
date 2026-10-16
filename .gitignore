@@ -116,6 +116,11 @@ doc/_build
 fuzz-report/
 fuzz-corpus/
 
+# The output of .github/scripts/ci/clang-analyzer.sh
+csa_compile_commands.json
+csa-reports/
+csa.sarif
+
 # Gpu direct files
 gpu_direct/tests/fff.h
 gpu_direct/subprojects/*
