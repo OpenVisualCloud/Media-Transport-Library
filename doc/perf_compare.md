@@ -8,8 +8,7 @@ own. Both are measured through USDT, including the scheduler counters of
 `mtl_sch_get_stats()`.
 
 It answers "is build B slower or faster than build A, and where", for example the nightly
-"main today against main yesterday", a branch against `main`, or, by hand (§6.4), `v26.09`
-against `v26.01`.
+"main today against main yesterday", a branch against `main`, or `v26.09` against `v26.01`.
 It also compares one build with two configurations, such as two values of
 `--sch_session_quota`. It does not search for a session ceiling; `perf-pytest.yml` does
 that.
@@ -35,9 +34,10 @@ This page is the design and the plan. Section 9 tracks what is implemented and p
 
 | Question | Decision | Why |
 | --- | --- | --- |
-| Run A and B one after the other, or at the same time? | At the same time, then again with the slots swapped | Concurrent runs share every time-varying disturbance (the shared switch floods up to 47 Gb/s of other runners' multicast, other jobs, thermal state) as common mode, which a sequential run turns into a difference. The swap cancels what differs between the two slots (§4.6). |
-| Extend `perf-pytest.yml` or a new workflow? | A new workflow, `perf-compare.yml` | perf-pytest restores one tree and searches a capacity ceiling for hours; perf-compare builds and restores two trees and reports a difference after minutes. One workflow for both would give every input two meanings. Both need the `sut` runner, so GitHub runs them one after the other. |
-| A pytest case or a standalone tool? | A pytest case in `tests/acceptance/tests/dual/performance/` | The workflow overlays `tests/acceptance` from the workflow commit onto each ref, so both builds run the same harness. The case reuses the topology, the VFs on both PFs, the media ramdisk, the RxTxApp config builder and the log layout. |
+| Run A and B one after the other, or at the same time? | At the same time, then again with the slots swapped | Concurrent runs share every time-varying disturbance (the shared switch floods up to 47 Gb/s of other runners' multicast, other jobs, thermal state) as common mode, which a sequential run turns into a difference. The swap cancels what differs between the two slots (§4.5). |
+| Extend `perf-pytest.yml` or a new workflow? | A new workflow, `perf-compare.yml` | perf-pytest restores one tree and searches a capacity ceiling for hours; perf-compare builds two trees and reports a difference after minutes. One workflow for both would give every input two meanings. Both need the `sut` runner, so GitHub runs them one after the other. |
+| A pytest case or a standalone tool? | A pytest case in `tests/acceptance/tests/dual/performance/` | Both builds run under the same harness, the workflow commit's. The case reuses the topology, the VFs on both PFs, the media ramdisk, the RxTxApp config builder and the log layout. |
+| Where are A and B built? | In the compare job, one after the other on the SUT, with the workflow commit's build scripts | One host, compiler and set of flags for both, so a difference is the code's; a cached build can come from another toolchain or host. It also builds `v26.01`, which `build.yml` cannot: its scripts install into `/usr/local`. Both take about 80 s. |
 | How do two builds that expect the same path run side by side? | Each instance runs in a private mount namespace with its tree bind-mounted over `<mtl>/.local_install` | DPDK bakes `RTE_EAL_PMD_PATH` into `librte_eal` as an absolute path with no override, so a moved tree loads the wrong drivers or none; `v26.01` pins DPDK 25.11 and `main` 26.07. |
 | How are the CPUs isolated? | A transient systemd unit per instance whose `AllowedCPUs` (a cgroup v2 cpuset) is the slot, no `--lcores`, app threads off the scheduler CPUs | §4.2. `taskset` isolates nothing: `numa_bind()` in `mtl_init()` widened a `[2,3]` mask to `0-31` on the test host. `isolate.sh` holds one host-wide lock for its one partition, so two instances cannot use it at once. |
 | How is the cache shared? | Intel RDT CAT: each slot gets an equal, exclusive set of L3 ways | Without it the instance with the larger footprint evicts the other one, and the slot swap does not cancel that: it follows the instance, not the slot. |
@@ -177,7 +177,8 @@ protect.
 | Host tasks on the slot cores of a host without `isolcpus` (`mtl-runner-8`), and on the SMT siblings of slot cores | Not prevented: the cpuset bounds the instance, not the host. Reported as `sch preemptions (/s)`; an exclusive cpuset partition per slot, under a root-level slice, would prevent it |
 
 An A/A run (`ref_a` = `ref_b`) measures the noise floor of the rig. The nightly run is
-one whenever `main` did not move for a day.
+one whenever `main` did not move for a day. With equal refs B is a copy of A's build,
+so the two instances run the same binaries.
 
 ## 5. Measurement
 
@@ -238,7 +239,8 @@ average of all calls hardly moves with the load; the work counters do.
 Compare traced rows only between builds that trace alike. A build with the cumulative
 counters of `mtl_sch_get_stats()` makes two more counter updates per tasklet call while
 traced: on the test host its traced loop and `video_transmitter` rows read 3-4% above a
-build without them, while every untraced row agreed.
+build without them, while every untraced row agreed. When only one of A and B has the
+work counters, the report shows its traced rows as "traced unlike".
 
 ### 5.3. Statistics
 
@@ -276,26 +278,27 @@ do not invalidate a round; they are counted, and the round notes them.
 
 1. `refs` resolves both refs to SHAs on a GitHub-hosted runner
    (`task ci:workflow -- perf-compare-refs`).
-2. `build-a` and `build-b` call `build.yml` with `branch: <sha>`. `build-b` waits for
-   `build-a`: a called workflow takes the caller's name in `github.workflow`, so two calls
-   in one run share the `build.yml` concurrency group, and the second would cancel the
-   first. `build-b` is skipped when both SHAs are equal.
+2. `build` calls `build.yml` for the workflow commit: the tests, the CI scripts, the ICE
+   driver and the tree the framework runs (MtlManager, `nicctl.sh`).
 3. `compare` runs on `[self-hosted, perf, sut]`:
-   1. check out the commit `build-a` built, overlay the tests from the workflow commit, run
-      `validate-host` with the `build-a` outputs, which proves that the restored tree is
-      the one that build hashed, and move `.local_install` to `<workspace>/../perf-compare/a`;
-   2. the same for B into `.../b`, with `validate-host` also syncing the companion; `.local_install` keeps B as hard links, for the framework's own use
-      (`nicctl.sh`, MtlManager);
+   1. check out the workflow commit and run `validate-host` with the `build` outputs,
+      which aligns ICE and syncs the companion;
+   2. `task ci:perf-compare -- build`: move the workflow commit's `.local_install` aside,
+      build A and then B at `<workspace>/.local_install`, move each to
+      `<workspace>/../perf-compare/{a,b}`, and put the workflow commit's tree back;
    3. copy both trees to the same path on the companion, check bpftrace on both hosts and
       export the two paths as `PERF_COMPARE_SLOTS`;
    4. `task ci:pytest-run -- perf-compare`;
    5. append the report to the job summary and upload it with the logs;
    6. stop every unit, undo the RDT groups and remove the trees on both hosts.
 
-The trees live next to the workspace, not in `RUNNER_TEMP`: the companion is a runner as
-well, and a runner empties its `_temp` whenever it starts a job. Both `validate-host`
-runs align ICE, so the host ends with the driver of ref B; a kernel module cannot differ
-between two processes.
+A slot is what an instance runs: DPDK, libmtl and RxTxApp, built from `git archive <sha>`
+with the workflow commit's `build_dpdk.sh`, and with the ref's own `versions.env` and DPDK
+patches, so each build gets its own DPDK. The prefix is the workspace's `.local_install`,
+the path DPDK bakes its driver path into and the instances bind their slot over. The
+trees live next to the workspace, not in `RUNNER_TEMP`: the companion is a runner as well,
+and a runner empties its `_temp` whenever it starts a job. The ICE driver is the workflow
+commit's; a kernel module cannot differ between two processes.
 
 ### 6.3. Nightly
 
@@ -309,11 +312,13 @@ is an A/A run.
 bpftrace on both perf hosts is host image content (`setup_environment.sh` lists it; jobs
 install nothing). The job fails at the copy step on a host without it.
 
-A ref goes through `build.yml` and the compare job only when its tree has the
-`ci:workflow` task that overlays the tests (`main` since 2026-09-01; `build.yml`,
-`perf-pytest.yml` and `custom-pytest.yml` have the same limit). The `v26.01` and `v26.09`
-tags do not have it, so they are compared by hand (§8); the measurement itself works for
-them, as `sys:log_msg` does.
+Three choices are independent: the workflow ref (the "Use workflow from" field of the
+dispatch, which brings the tests and the CI scripts), `ref_a` and `ref_b`. A and B can be
+any ref with `tests/tools/RxTxApp`, a `versions.env` and the DPDK patches it names, which
+`v25.12-rc1`, `v26.01`, `v26.09` and every later commit have; `v26.01` was built and
+compared on the perf pair. The workflow ref needs this workflow, so it is `main` or a later
+branch or tag. RxTxApp ignores an option it does not know, so an `args_a` or `args_b`
+newer than its build has no effect there.
 
 GitHub dispatches a workflow only when its file is on the default branch, so the first
 `perf-compare.yml` run is possible after the workflow lands on `main`. Until then the case
@@ -349,7 +354,10 @@ sudo -E ./venv/bin/python3 -m pytest \
 ```
 
 A slot is a `.local_install` tree built at `<mtl>/.local_install` and copied to the same
-path on both hosts: build ref A there and move it to its slot, then the same for ref B.
+path on both hosts. `SHA_A=<ref> SHA_B=<ref> .github/scripts/ci/perf-compare.sh build`
+builds both next to the checkout, in `../perf-compare/{a,b}`. Keep the checkout out of a
+world-writable directory such as `/tmp`: EAL refuses to load drivers from below one
+("directory path /tmp is world-writable and insecure").
 `--perf_compare_slots=<mtl>/.local_install,<mtl>/.local_install` is an A/A run of the
 current build. The report is `logs/performance/latest/perf_compare.md`, the raw values
 `perf_compare.json` next to it, and the logs and collector records of each round
@@ -359,12 +367,13 @@ current build. The report is `logs/performance/latest/perf_compare.md`, the raw 
 
 | Step | State |
 | --- | --- |
-| Scheduler stats API and the `perf_testing` tool | Done; 14 new unit tests pass, `perf_testing` builds against `main` |
+| Scheduler stats API and the `perf_testing` tool | Done; 14 new unit tests pass; `base_build.yml` builds the tool |
 | USDT probe `sys:tasklet_stat` | Done; six arguments, because bpftrace 0.14 reads only `arg0`-`arg5` |
+| Release build without USDT | Fixed (the probe stubs evaluate their arguments); `base_build.yml` builds it |
 | Instance placement, RDT, collectors, parser, statistics, report (`mtl_engine/perf_compare.py`) | Done |
 | pytest case, options, CI scripts, `perf-compare.yml` | Done; the workflow runs once it is on `main` (§6.4) |
-| Proof on one host | Done |
-| Proof on `mtl-runner-7` / `mtl-runner-8` | Done |
+| A and B compiled by the compare job, any ref | Done; `perf-compare.sh build` proved by hand with `v26.01` against `main`, the workflow first runs on `main` |
+| Proof on one host and on `mtl-runner-7` / `mtl-runner-8` | Done, below |
 | FFmpeg and GStreamer | Not started (§7) |
 
 The proof on one host (E810, kernel 5.15, bpftrace 0.14) ran `pc.run_round()` with both
@@ -373,16 +382,19 @@ instances' TX and RX on one host: A was `main` without `sys:tasklet_stat`, B thi
 and B agreed within the noise, as two builds with no data path change should, and B
 alone had the work rows (`RX work` 316 ns per packet, `TX work` 661 ns per packet).
 
-The proof on the perf pair ran the pytest case itself, from a private checkout with the
-CI virtualenv and the CI configuration of `perf-pytest.yml`: A was the tree the last CI
-job had left in the runner workspace (a pull request build, without
-`sys:tasklet_stat`), B the same tree with this change's MTL built on `mtl-runner-7`;
-16 × 1080p59 per instance, E830 rate limiter pacing, 2 rounds, `test_time` 60. The case
-passed in 6 min 22 s with both rounds valid. RX ran on isolated cores 4-11 and 12-19,
-TX on 2-9 and 10-17; CAT gave each slot 5 of the 16 L3 ways; the schedulers saw 0.3
-(RX) and 2 (TX) preemptions a second. The spread between the rounds was 0-2% for most
-rows. TX agreed within it. On RX, B's second scheduler looped 15.7% longer, `rvs_pkt_rx`
-took 9% more per call and the instance held 15% less LLC, each far beyond the spread. A
-and B differ in source and in build host, so that is a real difference between those two
-trees, found at that resolution. It is not a verdict on any one commit. The runners were
-left as found: no units, no RDT groups and the full L3 mask.
+The first proof on the perf pair compared the tree the last CI job had left in the runner
+workspace with this change built on `mtl-runner-7`: two build hosts, so its RX difference
+could not be put on the code. That is why the compare job now builds A and B itself.
+
+The second ran the case with both slots built by `perf-compare.sh build` on
+`mtl-runner-7` (A `v26.01` on DPDK 25.11, B `main` 2fe5599f9 on DPDK 26.07, 81 s), from a
+private checkout with the CI virtualenv and the `perf-pytest.yml` configuration:
+16 × 1080p59 per instance, E830 rate limiter pacing, 2 rounds, `test_time` 60. It passed
+in 6 min 19 s with both rounds valid; RX ran on isolated cores 4-11 and 12-19, TX on 2-9
+and 10-17, and CAT gave each slot 5 of the 16 L3 ways. The spread between the rounds was
+0-2% for the loop, CPU and bandwidth rows. Against `v26.01`, `main`'s RX schedulers loop
+37% longer (375 against 514 ns) and move 37% less memory (23.1 against 14.5 GB/s), its TX
+schedulers loop 19% longer and move 14% less. That is the shape of the non-temporal RX
+copy that came after `v26.01`: more time per packet in the loop, much less memory
+traffic; at a fixed load it says nothing yet about how many sessions a core carries. The
+runners were left as found: no units, no RDT groups and the full L3 mask.

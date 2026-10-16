@@ -2,12 +2,14 @@ name: perf-compare
 # Two MTL builds, or one build with two configurations, side by side on the perf
 # pair: each instance a TX application on the companion and an RX application on
 # the SUT, with its own PF, CPUs, L3 ways and build tree, measured through USDT.
+# The tests and CI scripts are the workflow ref's ("Use workflow from"); A and B
+# can be any commit, branch or tag, releases that predate this workflow included.
 # Design, isolation and metrics: doc/perf_compare.md.
 on:
   workflow_dispatch:
     inputs:
       ref_a:
-        description: 'Reference build (A): branch, tag or SHA'
+        description: 'Reference build (A): branch, tag or SHA, e.g. v26.01'
         required: false
         type: string
         default: main
@@ -88,41 +90,22 @@ jobs:
           REF_B: ${{ inputs.ref_b || 'main' }}
         run: task ci:workflow -- perf-compare-refs
 
-  build-a:
-    needs: refs
+  # The workflow commit: the CI scripts, the tests, the ICE driver and the tree
+  # the framework itself runs (MtlManager, nicctl.sh). The two compared builds are
+  # built in the compare job, from any ref, by the same host and toolchain.
+  build:
     uses: ./.github/workflows/build.yml
     with:
       skip_linter_check: true
-      branch: ${{ needs.refs.outputs.sha_a }}
-    permissions:
-      contents: read
-      checks: read
-      pull-requests: read
-
-  # After build-a, not beside it: a called workflow takes the caller's name in
-  # github.workflow, so both calls fall into one build.yml concurrency group and
-  # the second would cancel the first.
-  build-b:
-    needs: [refs, build-a]
-    if: needs.refs.outputs.sha_b != needs.refs.outputs.sha_a
-    uses: ./.github/workflows/build.yml
-    with:
-      skip_linter_check: true
-      branch: ${{ needs.refs.outputs.sha_b }}
     permissions:
       contents: read
       checks: read
       pull-requests: read
 
   compare:
-    needs: [refs, build-a, build-b]
-    if: >-
-      !cancelled() && needs.build-a.result == 'success' &&
-      (needs.build-b.result == 'success' || needs.build-b.result == 'skipped')
+    needs: [refs, build]
     runs-on: [self-hosted, perf, sut]
     timeout-minutes: 180
-    env:
-      BUILD_B: ${{ needs.build-b.result == 'success' && toJSON(needs.build-b.outputs) || toJSON(needs.build-a.outputs) }}
     steps:
       - name: Harden-Runner
         uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
@@ -130,53 +113,24 @@ jobs:
           egress-policy: audit
       - name: Set current date
         run: echo "CURRENT_DATE=$(date '+%y%m%d-%H%M%S')" >> "$GITHUB_ENV"
-
-      # Build A: restored, checked against what build-a built, moved to its slot.
-      - name: 'A: Check out'
+      - name: Check out the workflow commit
         uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@c382b88f7723f3187e52925364014732ba34d4c2
         with:
-          ref: ${{ needs.build-a.outputs.mtl_commit }}
+          ref: ${{ needs.build.outputs.mtl_commit }}
           fetch-depth: '0'
       - name: Install Task
         uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
-      # Twice: the ref's own overlay-tests may be older than the workflow
-      # commit's. The first run checks out the workflow commit's copy, the
-      # second runs it.
-      - name: 'A: Overlay CI and tests from the workflow commit'
-        env:
-          MTL_SOURCE: ${{ needs.build-a.outputs.mtl_commit }}
-          TEST_SHA: ${{ github.sha }}
-          TEST_REF: ${{ github.ref_name }}
-        run: task ci:workflow -- overlay-tests && task ci:workflow -- overlay-tests
-      - name: 'A: Validate host and restore the build'
-        uses: ./.github/actions/validate-host
-        with:
-          build_outputs: ${{ toJSON(needs.build-a.outputs) }}
-      - name: 'A: Move the build to its slot'
-        run: task ci:perf-compare -- stash a
-
-      # Build B the same way, and sync the companion. Both validate-host runs
-      # align ICE, so the host ends with B's: a kernel module is one for both
-      # instances.
-      - name: 'B: Check out'
-        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@c382b88f7723f3187e52925364014732ba34d4c2
-        with:
-          ref: ${{ fromJSON(env.BUILD_B).mtl_commit }}
-          fetch-depth: '0'
-      - name: 'B: Overlay CI and tests from the workflow commit'
-        env:
-          MTL_SOURCE: ${{ fromJSON(env.BUILD_B).mtl_commit }}
-          TEST_SHA: ${{ github.sha }}
-          TEST_REF: ${{ github.ref_name }}
-        run: task ci:workflow -- overlay-tests && task ci:workflow -- overlay-tests
-      - name: 'B: Validate host and restore the build'
+      - name: Validate host and restore the workflow commit's build
         id: validate
         uses: ./.github/actions/validate-host
         with:
           shadow_host: '/etc/mtl-ci/runner.env'
-          build_outputs: ${{ env.BUILD_B }}
-      - name: 'B: Move the build to its slot'
-        run: task ci:perf-compare -- stash b
+          build_outputs: ${{ toJSON(needs.build.outputs) }}
+      - name: Build A and B
+        env:
+          SHA_A: ${{ needs.refs.outputs.sha_a }}
+          SHA_B: ${{ needs.refs.outputs.sha_b }}
+        run: task ci:perf-compare -- build
       - name: Copy both builds to the companion
         env:
           SHADOW_HOST_IP: ${{ steps.validate.outputs.shadow_host_ip }}

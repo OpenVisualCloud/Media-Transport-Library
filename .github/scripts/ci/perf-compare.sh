@@ -3,8 +3,7 @@
 # Copyright 2026 Intel Corporation
 #
 # Host side of perf-compare.yml (doc/perf_compare.md):
-#   stash a|b  move the restored .local_install to its slot; b stays in place too,
-#              for the framework's own use (nicctl.sh, MtlManager)
+#   build      build SHA_A and SHA_B into the slots a and b
 #   sync       copy both slots to the same path on the companion, check that both
 #              hosts can trace, and name the slots in PERF_COMPARE_SLOTS
 #   sweep      stop the units and undo the cache partitioning a run left behind,
@@ -18,6 +17,7 @@ root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # checkout cleans untracked files. Not in RUNNER_TEMP either: the companion is a
 # runner as well, which empties its _temp whenever it starts a job.
 slots=${PERF_COMPARE_DIR:-$(dirname "$root_dir")/perf-compare}
+prefix="${root_dir}/.local_install"
 ssh_options=(-o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=30)
 
 companion() {
@@ -37,15 +37,50 @@ sweep() {
 	fi
 }
 
+# DPDK, libmtl and RxTxApp of commit $1, at $prefix: DPDK bakes that path in, and the
+# instance binds its slot over it. The build scripts are the workflow commit's, so a
+# release that predates prefix installs builds alike; versions.env and the patches
+# stay the ref's.
+build_slot() {
+	local src="${slots}/src" pc libs
+	rm -rf "$src" "$prefix"
+	mkdir -p "$src"
+	git -C "$root_dir" archive "$1" | tar -x -C "$src"
+	cp "${root_dir}/script/build_dpdk.sh" "${root_dir}/script/common.sh" "${src}/script/"
+	MTL_INSTALL_PREFIX="${prefix}/dpdk" bash "${src}/script/build_dpdk.sh" -f
+	pc="${prefix}/dpdk/lib/x86_64-linux-gnu/pkgconfig:/usr/lib64/pkgconfig:/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig"
+	PKG_CONFIG_PATH="$pc" meson setup "${src}/build" "$src" --prefix="${prefix}/mtl" -Dbuildtype=release
+	ninja -C "${src}/build" install
+	pc="${prefix}/mtl/lib/x86_64-linux-gnu/pkgconfig:${pc}"
+	# ld resolves the libraries libmtl needs through LD_LIBRARY_PATH before the host's
+	# linker cache, which names whatever .local_install the framework last ran.
+	libs="${prefix}/mtl/lib/x86_64-linux-gnu:${prefix}/dpdk/lib/x86_64-linux-gnu"
+	LD_LIBRARY_PATH="$libs" PKG_CONFIG_PATH="$pc" meson setup "${src}/rxtx" \
+		"${src}/tests/tools/RxTxApp" -Dbuildtype=release
+	LD_LIBRARY_PATH="$libs" ninja -C "${src}/rxtx"
+	# Copied, not installed: RxTxApp has no install rule in older releases.
+	install -D -m 755 "${src}/rxtx/RxTxApp" "${prefix}/mtl/bin/RxTxApp"
+	rm -rf "$src"
+}
+
 case "${1:-}" in
-stash)
-	slot=${2:?usage: perf-compare.sh stash a|b}
-	[ "$slot" != a ] || sudo rm -rf "$slots"
+build)
+	: "${SHA_A:?SHA_A is required}" "${SHA_B:?SHA_B is required}"
+	sudo rm -rf "$slots"
 	mkdir -p "$slots"
-	mv "${root_dir}/.local_install" "${slots}/${slot}"
-	# Hard links: the same files, so the framework runs the B tree as it is.
-	[ "$slot" != b ] || cp -al "${slots}/b" "${root_dir}/.local_install"
-	du -sh "${slots}/${slot}"
+	# The workflow commit's own tree serves the framework (MtlManager, nicctl.sh);
+	# it steps aside while the slots are built at its path.
+	mv "$prefix" "${slots}/platform"
+	trap 'rm -rf "$prefix"; mv "${slots}/platform" "$prefix"' EXIT
+	build_slot "$SHA_A"
+	mv "$prefix" "${slots}/a"
+	if [ "$SHA_B" = "$SHA_A" ]; then
+		cp -a "${slots}/a" "${slots}/b"
+	else
+		build_slot "$SHA_B"
+		mv "$prefix" "${slots}/b"
+	fi
+	du -sh "${slots}/a" "${slots}/b"
 	;;
 sync)
 	companion "sudo rm -rf '${slots}' && mkdir -p '${slots}' && command -v bpftrace >/dev/null" || {
@@ -56,7 +91,10 @@ sync)
 		echo "::error::This host has no bpftrace; it is host image content (doc/perf_compare.md)" >&2
 		exit 1
 	}
-	rsync -az --delete -e "ssh ${ssh_options[*]}" "${slots}/" "${SHADOW_HOST_USER}@${SHADOW_HOST_IP}:${slots}/"
+	for slot in a b; do
+		rsync -az --delete -e "ssh ${ssh_options[*]}" "${slots}/${slot}/" \
+			"${SHADOW_HOST_USER}@${SHADOW_HOST_IP}:${slots}/${slot}/"
+	done
 	echo "PERF_COMPARE_SLOTS=${slots}/a,${slots}/b" >>"${GITHUB_ENV:?GITHUB_ENV is required}"
 	;;
 sweep) sweep ;;
@@ -69,7 +107,7 @@ clean)
 	sudo rm -rf "$slots"
 	;;
 *)
-	echo "Usage: $0 {stash a|b|sync|sweep|clean}" >&2
+	echo "Usage: $0 {build|sync|sweep|clean}" >&2
 	exit 2
 	;;
 esac
