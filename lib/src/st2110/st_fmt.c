@@ -1363,6 +1363,7 @@ struct st_frame* st_frame_create_by_malloc(enum st_frame_fmt fmt, uint32_t w, ui
     st_frame_free(frame);
     return NULL;
   }
+  frame->addr[0] = data; /* st_frame_free() frees it */
   frame->buffer_size = data_sz;
   frame->data_size = data_sz;
   /* init plane */

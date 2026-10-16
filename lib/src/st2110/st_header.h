@@ -758,7 +758,6 @@ struct st_tx_audio_session_rl_port {
 struct st_tx_audio_session_rl_info {
   /* size for padding pkt which include the header */
   uint32_t pad_pkt_size;
-  int pads_per_st30_pkt;
   int pkts_per_sync;
   int pkts_prepare_warmup;
   uint32_t required_accuracy_ns;

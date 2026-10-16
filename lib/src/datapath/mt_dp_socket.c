@@ -552,7 +552,7 @@ static struct rte_mbuf* rx_socket_recv_mbuf(struct mt_rx_socket_thread* t) {
   void* payload = &hdr[1];
   struct rte_udp_hdr* udp = &hdr->udp;
   struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
-  struct sockaddr_in addr_in;
+  struct sockaddr_in addr_in = {0};
   socklen_t addr_in_len = sizeof(addr_in);
 
   t->stat_rx_try++;

@@ -116,3 +116,65 @@ out:
   free(impl);
   return sent;
 }
+
+int ut_dps_rx_source(uint16_t* sender_port, uint16_t* src_port, uint32_t* src_addr) {
+  static unsigned int pool_idx;
+  struct mtl_main_impl* impl = calloc(1, sizeof(*impl));
+  struct mt_rx_socket_entry* entry = calloc(1, sizeof(*entry));
+  struct mt_rx_socket_thread* t = entry ? &entry->threads_data[0] : NULL;
+  struct sockaddr_in dst = {.sin_family = AF_INET,
+                            .sin_addr.s_addr = htonl(INADDR_LOOPBACK)};
+  char payload[UT_DPS_PAYLOAD_LEN] = {0};
+  char pool_name[RTE_MEMPOOL_NAMESIZE];
+  struct rte_mbuf* pkt = NULL;
+  struct mt_udp_hdr* hdr;
+  uint16_t rx_port = 0;
+  int tx_fd = -1, ret = -ENOMEM;
+
+  if (entry) entry->fd = -1; /* before any goto out, which closes it */
+  if (!impl || !entry) goto out;
+  if (ut_eal_init() < 0) goto out;
+
+  entry->parent = impl;
+  entry->port = MTL_PORT_P;
+  entry->pool_element_sz = UT_DPS_PAYLOAD_LEN;
+  t->parent = entry;
+  entry->fd = ut_dps_rx_socket(&rx_port);
+  tx_fd = ut_dps_rx_socket(sender_port);
+  if (entry->fd < 0 || tx_fd < 0) {
+    ret = -ENODEV;
+    goto out;
+  }
+  (void)snprintf(pool_name, sizeof(pool_name), "ut_dps_rx_pool_%u", pool_idx++);
+  entry->pool = rte_pktmbuf_pool_create(pool_name, 32, 0, 0, RTE_MBUF_DEFAULT_BUF_SIZE,
+                                        (int)rte_socket_id());
+  if (!entry->pool) goto out;
+
+  dst.sin_port = htons(rx_port);
+  /* the receive timeout bounds the MSG_PEEK wait for the datagram, which
+   * rx_socket_recv_mbuf() then reads with MSG_DONTWAIT */
+  if (sendto(tx_fd, payload, sizeof(payload), 0, (struct sockaddr*)&dst, sizeof(dst)) !=
+          sizeof(payload) ||
+      recv(entry->fd, payload, sizeof(payload), MSG_PEEK) != sizeof(payload)) {
+    ret = -EIO;
+    goto out;
+  }
+  pkt = rx_socket_recv_mbuf(t);
+  if (!pkt) {
+    ret = -EIO;
+    goto out;
+  }
+  hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
+  *src_port = ntohs(hdr->udp.src_port);
+  *src_addr = ntohl(hdr->ipv4.src_addr);
+  ret = 0;
+
+out:
+  rte_pktmbuf_free(pkt);
+  if (entry) rte_mempool_free(entry->pool);
+  if (tx_fd >= 0) close(tx_fd);
+  if (entry && entry->fd >= 0) close(entry->fd);
+  free(entry);
+  free(impl);
+  return ret;
+}

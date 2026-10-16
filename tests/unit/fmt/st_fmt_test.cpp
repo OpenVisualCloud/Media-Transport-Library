@@ -253,3 +253,18 @@ TEST(StFrameCreateByMalloc, FormatWithoutASizeReturnsNull) {
   EXPECT_EQ(st_frame_create_by_malloc(ST_FRAME_FMT_JPEGXS_CODESTREAM, 1920, 1080, false),
             nullptr);
 }
+
+/* st_frame_free() frees addr[0], so every frame the call hands out must keep its buffer
+ * there. */
+TEST(StFrameCreateByMalloc, EveryFormatWithASizeKeepsItsBufferInPlaneZero) {
+  for (int fmt = 0; fmt < ST_FRAME_FMT_MAX; fmt++) {
+    size_t size = st_frame_size((enum st_frame_fmt)fmt, 1920, 1080, false);
+    if (!size) continue;
+    struct st_frame* frame =
+        st_frame_create_by_malloc((enum st_frame_fmt)fmt, 1920, 1080, false);
+    ASSERT_NE(frame, nullptr) << "fmt " << fmt;
+    EXPECT_NE(frame->addr[0], nullptr) << "fmt " << fmt;
+    EXPECT_EQ(frame->buffer_size, size) << "fmt " << fmt;
+    EXPECT_EQ(st_frame_free(frame), 0) << "fmt " << fmt;
+  }
+}

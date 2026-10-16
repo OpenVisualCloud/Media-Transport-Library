@@ -1078,6 +1078,70 @@ out:
   return ret;
 }
 
+int ut_txv_run_launch_time(ut_txv_ctx* ctx, uint64_t target_ptp, uint64_t* launch_time,
+                           bool* launch_flag) {
+  static unsigned int test_idx;
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct mt_interface* inf =
+      mt_if(&ctx->impl, mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P));
+  struct rte_mbuf* packet = NULL;
+  char pool_name[RTE_MEMPOOL_NAMESIZE];
+  char ring_name[RTE_RING_NAMESIZE];
+  uint64_t flag = 0;
+  int offset, ret = -1;
+
+  if (rte_mbuf_dyn_tx_timestamp_register(&offset, &flag) < 0) return -1;
+  inf->tx_dynfield_offset = offset;
+  inf->tx_launch_time_flag = flag;
+  (void)snprintf(pool_name, sizeof(pool_name), "ut_txv_lt_pool_%u", test_idx);
+  (void)snprintf(ring_name, sizeof(ring_name), "ut_txv_lt_ring_%u", test_idx++);
+  s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] =
+      rte_pktmbuf_pool_create(pool_name, 32, 0, sizeof(struct mt_muf_priv_data),
+                              RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
+  s->ring[MTL_SESSION_PORT_P] = ut_ring_create(ring_name, 32);
+  if (!s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] || !s->ring[MTL_SESSION_PORT_P]) goto out;
+  packet = rte_pktmbuf_alloc(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
+  if (!packet) goto out;
+  packet->pkt_len = 64;
+  st_tx_mbuf_set_idx(packet, 1);
+  st_tx_mbuf_set_ptp(packet, target_ptp);
+  if (rte_ring_sp_enqueue(s->ring[MTL_SESSION_PORT_P], packet) < 0) goto out;
+  packet = NULL;
+
+  s->bulk = 1;
+  s->ops.num_port = 1;
+  s->queue[MTL_SESSION_PORT_P] = (struct mt_txq_entry*)ctx;
+  s->pacing_way[MTL_SESSION_PORT_P] = ST21_TX_PACING_WAY_TSN;
+  s->tx_hang_detect_time_thresh = UINT64_MAX;
+  ctx->burst_calls = 0;
+  ctx->burst_packets_count = 0;
+  ut_txv_active_burst_ctx = ctx;
+  st_video_resolve_pacing_tasklet(s, MTL_SESSION_PORT_P);
+  s->pacing_tasklet_func[MTL_SESSION_PORT_P](&ctx->impl, s, MTL_SESSION_PORT_P);
+  if (ctx->burst_packets_count != 1) goto out;
+  *launch_time = *RTE_MBUF_DYNFIELD(ctx->burst_packets[0], offset, uint64_t*);
+  *launch_flag = (ctx->burst_packets[0]->ol_flags & flag) != 0;
+  ret = 0;
+
+out:
+  ut_txv_active_burst_ctx = NULL;
+  rte_pktmbuf_free(packet);
+  for (unsigned int i = 0; i < ctx->burst_packets_count; i++)
+    rte_pktmbuf_free(ctx->burst_packets[i]);
+  ctx->burst_packets_count = 0;
+  if (s->ring[MTL_SESSION_PORT_P]) {
+    ut_ring_drain(s->ring[MTL_SESSION_PORT_P]);
+    rte_ring_free(s->ring[MTL_SESSION_PORT_P]);
+  }
+  rte_mempool_free(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
+  s->ring[MTL_SESSION_PORT_P] = NULL;
+  s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] = NULL;
+  s->queue[MTL_SESSION_PORT_P] = NULL;
+  inf->tx_dynfield_offset = 0;
+  inf->tx_launch_time_flag = 0;
+  return ret;
+}
+
 int ut_txv_run_init_hw_rl_lookup(ut_txv_ctx* ctx, enum mtl_port phy_port,
                                  uint64_t trained_bps, enum mtl_port* queue_port,
                                  uint64_t* queue_bps) {

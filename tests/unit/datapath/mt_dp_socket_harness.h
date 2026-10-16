@@ -6,9 +6,11 @@
 #define TESTS_UNIT_DATAPATH_MT_DP_SOCKET_HARNESS_H
 
 /*
- * C API for driving the kernel-socket TX path (mt_dp_socket.c) over loopback.
+ * C API for driving the kernel-socket TX and RX paths (mt_dp_socket.c) over loopback.
  * Needs no NIC; SO_BINDTODEVICE needs no root on Linux 5.7 and later.
  */
+
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,6 +24,13 @@ extern "C" {
  * the host refuses the loopback sockets, another negative errno on other setup
  * failures. */
 int ut_dps_gso_burst(int pkt_count, int* flow_port_datagrams, int* hdr_port_datagrams);
+
+/* Sends one datagram from 127.0.0.1:<port S> to an RX socket entry on loopback and
+ * takes it through rx_socket_recv_mbuf(). Sets *sender_port to S, and *src_port and
+ * *src_addr to the UDP source port and IPv4 source address of the packet it built,
+ * all in host order. Returns 0, -ENODEV if the host refuses the loopback sockets,
+ * another negative errno on other setup failures. */
+int ut_dps_rx_source(uint16_t* sender_port, uint16_t* src_port, uint32_t* src_addr);
 
 #ifdef __cplusplus
 }

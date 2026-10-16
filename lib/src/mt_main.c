@@ -376,7 +376,7 @@ static int _mt_stop(struct mtl_main_impl* impl) {
 
 mtl_handle mtl_init(struct mtl_init_params* p) {
   struct mtl_main_impl* impl = NULL;
-  int socket[MTL_PORT_MAX], ret;
+  int socket[MTL_PORT_MAX] = {0}, ret;
   int num_ports = p->num_ports;
   struct mt_kport_info kport_info;
   struct mt_interface* inf;

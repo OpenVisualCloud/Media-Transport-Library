@@ -171,6 +171,13 @@ uint64_t ut_txv_reclaim_interval_ns(void);
 int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
                                     uint64_t delta_ns, int* bursts_before_target,
                                     int* bursts_at_target);
+/* Runs the launch-time (TSN) transmitter once over one packet whose PTP target is
+ * target_ptp, with the tx timestamp dynfield and flag registered as mt_dev.c does.
+ * Sets *launch_time to the packet's timestamp dynfield and *launch_flag to whether it
+ * carries the tx timestamp flag, as handed to the queue. Returns 0, < 0 if the packet
+ * did not reach the queue or on setup failure. */
+int ut_txv_run_launch_time(ut_txv_ctx* ctx, uint64_t target_ptp, uint64_t* launch_time,
+                           bool* launch_flag);
 /* Drives tv_init_hw() for a one-port session whose logical port P maps to
  * phy_port, after recording a rate-limiter training result (trained_bps) for the
  * session's bitrate on phy_port only. The TX queue request is intercepted and

@@ -1221,8 +1221,9 @@ static int tx_audio_session_uinit_rl(struct mtl_main_impl* impl,
 static inline uint64_t tx_audio_session_initial_rl_bps(
     struct st_tx_audio_session_impl* s) {
   struct st_tx_audio_session_rl_info* rl = &s->rl;
-  double bps = (double)(s->st30_pkt_size + rl->pad_pkt_size * rl->pads_per_st30_pkt) *
-               (double)NS_PER_S / s->pacing.trs;
+  double bps =
+      (double)((double)(s->st30_pkt_size + rl->pad_pkt_size * ST30_TX_RL_PADS_PER_PKT) *
+               (double)NS_PER_S / s->pacing.trs);
   return bps;
 }
 
@@ -1273,8 +1274,8 @@ static inline uint64_t tx_audio_session_profiling_rl_bps(
       mt_txq_burst_busy(queue, &pad, 1, 10);
 
       pad = rl_port->pad;
-      rte_mbuf_refcnt_update(pad, rl->pads_per_st30_pkt);
-      for (int i = 0; i < rl->pads_per_st30_pkt; i++) {
+      rte_mbuf_refcnt_update(pad, ST30_TX_RL_PADS_PER_PKT);
+      for (int i = 0; i < ST30_TX_RL_PADS_PER_PKT; i++) {
         mt_txq_burst_busy(queue, &pad, 1, 10);
       }
     }
@@ -1301,7 +1302,7 @@ static inline uint64_t tx_audio_session_profiling_rl_bps(
   }
   /* the queue still holds a ring of training traffic: let it drain, or the session's
    * first chunks on this queue leave behind it */
-  mt_sleep_us((unsigned int)((double)pad_pkts / (1 + rl->pads_per_st30_pkt) /
+  mt_sleep_us((unsigned int)((double)pad_pkts / (1 + ST30_TX_RL_PADS_PER_PKT) /
                                  actual_per_sec * US_PER_S +
                              1));
   info("%s(%d), pkts per second, expect %f actual %f with time %fs\n", __func__, idx,
@@ -1330,7 +1331,6 @@ static int tx_audio_session_init_rl(struct mtl_main_impl* impl,
     info("%s(%d), user required offset %dns\n", __func__, idx, s->ops.rl_offset_ns);
   }
   rl->pkts_prepare_warmup = 4;
-  rl->pads_per_st30_pkt = ST30_TX_RL_PADS_PER_PKT;
   rl->max_warmup_trs = 4; /* max 4 trs warmup sync */
   /* sync every 10ms */
   rl->pkts_per_sync = (double)NS_PER_S / s->pacing.trs / 100;
@@ -1421,10 +1421,9 @@ static uint16_t tx_audio_session_rl_tx_pkt(struct st_tx_audio_session_impl* s, i
                                            struct rte_mbuf* pkt) {
   struct st_tx_audio_session_rl_info* rl = &s->rl;
   struct st_tx_audio_session_rl_port* rl_port = &rl->port_info[s_port];
-  int pads_per_st30_pkt = rl->pads_per_st30_pkt;
   int cur_queue = rl_port->cur_queue;
   struct mt_txq_entry* queue = rl_port->queue[cur_queue];
-  struct rte_mbuf* pads[pads_per_st30_pkt];
+  struct rte_mbuf* pads[ST30_TX_RL_PADS_PER_PKT];
   uint16_t tx;
   uint16_t burst_size = 1;
 
@@ -1439,20 +1438,20 @@ static uint16_t tx_audio_session_rl_tx_pkt(struct st_tx_audio_session_impl* s, i
   s->port_user_stats.stat_pkts_burst += burst_size;
 
   /* insert the pads */
-  for (int i = 0; i < pads_per_st30_pkt; i++) {
+  for (int i = 0; i < ST30_TX_RL_PADS_PER_PKT; i++) {
     pads[i] = rl_port->pad;
   }
-  rte_mbuf_refcnt_update(rl_port->pad, pads_per_st30_pkt);
-  tx = mt_txq_burst(queue, pads, pads_per_st30_pkt);
+  rte_mbuf_refcnt_update(rl_port->pad, ST30_TX_RL_PADS_PER_PKT);
+  tx = mt_txq_burst(queue, pads, ST30_TX_RL_PADS_PER_PKT);
   rl_port->stat_pad_pkts_burst += tx;
   s->port_user_stats.common.port[s_port].packets += tx;
   s->port_user_stats.common.port[s_port].bytes += (uint64_t)rl_port->pad->pkt_len * tx;
   s->port_user_stats.stat_pad_pkts_burst += tx;
-  if (tx != pads_per_st30_pkt) {
+  if (tx != ST30_TX_RL_PADS_PER_PKT) {
     dbg("%s(%d,%d), sending %u pad pkts only %u succ\n", __func__, s->idx, s_port,
-        pads_per_st30_pkt, tx);
+        ST30_TX_RL_PADS_PER_PKT, tx);
     /* save to pad inflight */
-    rl_port->trs_pad_inflight_num = pads_per_st30_pkt - tx;
+    rl_port->trs_pad_inflight_num = ST30_TX_RL_PADS_PER_PKT - tx;
   } else {
     tx_audio_session_rl_inc_pkt_idx(rl, rl_port);
   }
@@ -1486,12 +1485,12 @@ static uint16_t tx_audio_session_rl_warmup_pkt(struct st_tx_audio_session_impl* 
     mt_txq_burst(queue, &pad, 1);
 
     pad = rl_port->pad;
-    rte_mbuf_refcnt_update(pad, rl->pads_per_st30_pkt);
-    for (int j = 0; j < rl->pads_per_st30_pkt; j++) {
+    rte_mbuf_refcnt_update(pad, ST30_TX_RL_PADS_PER_PKT);
+    for (int j = 0; j < ST30_TX_RL_PADS_PER_PKT; j++) {
       mt_txq_burst(queue, &pad, 1);
     }
   }
-  uint64_t warmup_pkts_burst = ((uint64_t)pkts * rl->pads_per_st30_pkt);
+  uint64_t warmup_pkts_burst = ((uint64_t)pkts * ST30_TX_RL_PADS_PER_PKT);
   rl_port->stat_warmup_pkts_burst += warmup_pkts_burst;
   s->port_user_stats.stat_warmup_pkts_burst += warmup_pkts_burst;
   s->port_user_stats.common.port[s_port].packets += warmup_pkts_burst;
