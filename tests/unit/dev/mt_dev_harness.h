@@ -74,6 +74,8 @@ void ut_dev_set_tx_pacing(ut_dev_ctx* ctx, enum st21_tx_pacing_way pacing);
  * chose, or its error. */
 int ut_dev_config_port_nb_tx_desc(ut_dev_ctx* ctx, uint16_t nb_tx_desc);
 uint16_t ut_dev_nb_tx_desc(const ut_dev_ctx* ctx);
+/* Runs dev_config_rss_reta() on a port with nb_rx_q rx queues and a reta of reta_size. */
+int ut_dev_config_rss_reta(ut_dev_ctx* ctx, uint16_t nb_rx_q, uint16_t reta_size);
 /* Runs dev_config_port() on an iavf (else ice) port with a user nb_rx_desc, the RX
  * timestamp offload on or off and rx_desc_lim.nb_max. Returns the RX ring size chosen. */
 int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,

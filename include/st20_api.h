@@ -2064,7 +2064,7 @@ int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps
  *     Bandwidth(mega per second)
  */
 static inline uint64_t st20_1080p59_yuv422_10bit_bandwidth_mps(void) {
-  uint64_t bps;
+  uint64_t bps = 0;
   st20_get_bandwidth_bps(1920, 1080, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94, false, &bps);
   return bps / 1000 / 1000;
 }
