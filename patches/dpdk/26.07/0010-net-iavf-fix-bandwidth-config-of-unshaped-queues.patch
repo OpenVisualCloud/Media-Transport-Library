@@ -1,0 +1,53 @@
+From 0cfc3a946f3499eee8c56af373c895e84c8c7de2 Mon Sep 17 00:00:00 2001
+From: Dawid Wesierski <dawid.wesierski@intel.com>
+Date: Thu, 17 Sep 2026 14:20:00 +0200
+Subject: [PATCH] net/iavf: fix bandwidth config of unshaped queues
+
+iavf_hierarchy_commit() sends one virtchnl_queue_bw entry for each queue
+node, but it sets queue_id and tc only for a node that has a shaper
+profile. The entry of a node without a profile keeps queue_id 0 and
+tc 0. The PF then applies the default bandwidth to queue 0 once for
+each such entry, and the queue that the node describes keeps its old
+rate limit.
+
+The ice PF keeps the queue rate limits of a VF and applies them again
+at each queue enable, also for a later process on the same VF. Thus an
+application cannot remove the rate limits of an earlier process with a
+commit of queue nodes without shaper profiles.
+
+Set queue_id and tc for each queue node. A node without a shaper
+profile now gives the default bandwidth to its own queue.
+
+Fixes: 5779a8894d15 ("net/iavf: support queue rate limit configuration")
+Cc: stable@dpdk.org
+
+Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
+---
+ drivers/net/intel/iavf/iavf_tm.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/intel/iavf/iavf_tm.c b/drivers/net/intel/iavf/iavf_tm.c
+index faa2d4b8a0..944b6a2c1d 100644
+--- a/drivers/net/intel/iavf/iavf_tm.c
++++ b/drivers/net/intel/iavf/iavf_tm.c
+@@ -867,15 +867,15 @@ static int iavf_hierarchy_commit(struct rte_eth_dev *dev,
+ 		}
+ 		q_tc_mapping->tc[tm_node->tc].req.queue_count++;
+ 
++		q_bw->cfg[node_committed].queue_id = tm_node->id;
++		q_bw->cfg[node_committed].tc = tm_node->tc;
+ 		if (tm_node->shaper_profile) {
+-			q_bw->cfg[node_committed].queue_id = tm_node->id;
+ 			q_bw->cfg[node_committed].shaper.peak =
+ 			tm_node->shaper_profile->profile.peak.rate /
+ 			1000 * IAVF_BITS_PER_BYTE;
+ 			q_bw->cfg[node_committed].shaper.committed =
+ 			tm_node->shaper_profile->profile.committed.rate /
+ 			1000 * IAVF_BITS_PER_BYTE;
+-			q_bw->cfg[node_committed].tc = tm_node->tc;
+ 		}
+ 
+ 		node_committed++;
+-- 
+2.43.0
+

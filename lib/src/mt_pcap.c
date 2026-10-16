@@ -82,9 +82,8 @@ uint16_t mt_pcap_dump(struct mtl_main_impl* impl, enum mtl_port port,
 
   for (uint16_t i = 0; i < nb; i++) {
     pkt = mbufs[i];
-    mc = rte_pcapng_copy_ts(port_id, 0, pkt, pcap->mp, pcap->max_len,
-                            RTE_PCAPNG_DIRECTION_IN, NULL,
-                            mt_mbuf_time_stamp(impl, pkt, port));
+    mc = mt_pcapng_copy(port_id, 0, pkt, pcap->mp, pcap->max_len, RTE_PCAPNG_DIRECTION_IN,
+                        NULL, mt_mbuf_time_stamp(impl, pkt, port));
     if (!mc) {
       warn("%s(%d,%d), copy packet fail\n", __func__, port, pcap->fd);
       break;
