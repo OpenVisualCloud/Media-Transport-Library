@@ -237,6 +237,7 @@ base_build:
   - *hash_gstreamer
   - script/build_ebpf_xdp.sh
   - 'tests/fuzz/**'
+  - 'tests/tools/perf_testing/**'
   - 'gpu_direct/**'
   - 'ecosystem/obs_mtl/linux-mtl/**'
   - 'python/swig/**'

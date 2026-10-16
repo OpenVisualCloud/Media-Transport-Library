@@ -47,7 +47,8 @@ first interval and after each sample; then `min_ns` and `max_ns` are per interva
 
 ## Build
 
-The tool is its own meson project and is not part of `build.sh`. Build the library first,
+The tool is its own meson project and is not part of `build.sh`; the release job of
+`base_build.yml` builds it against the installed library. Build the library first,
 then point `pkg-config` at its `mtl.pc`:
 
 ```bash

@@ -82,6 +82,16 @@ jobs:
       - name: Build the Rust no_std example
         run: bash .github/scripts/ci/build-rust-example.sh
 
+      # Windows, the other build without USDT, runs only by hand, so this is the
+      # build that sees a variable kept only for a probe argument.
+      - name: Build the library without USDT
+        run: meson setup build_no_usdt -Dbuildtype=release -Denable_usdt=false && ninja -C build_no_usdt
+
+      # A standalone meson project that build.sh does not build; it uses the
+      # scheduler stats API of the MTL installed above.
+      - name: Build the perf_testing tool
+        run: meson setup build_perf_testing tests/tools/perf_testing && ninja -C build_perf_testing
+
       - name: 'upload release build artifacts'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
