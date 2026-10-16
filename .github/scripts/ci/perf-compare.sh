@@ -65,7 +65,10 @@ build_slot() {
 
 case "${1:-}" in
 build)
-	: "${SHA_A:?SHA_A is required}" "${SHA_B:?SHA_B is required}"
+	[[ ${SHA_A:-} =~ ^[0-9a-f]{40}$ && ${SHA_B:-} =~ ^[0-9a-f]{40}$ ]] || {
+		echo "SHA_A and SHA_B must be full commit SHAs (git rev-parse <ref>)" >&2
+		exit 2
+	}
 	sudo rm -rf "$slots"
 	mkdir -p "$slots"
 	# The workflow commit's own tree serves the framework (MtlManager, nicctl.sh);

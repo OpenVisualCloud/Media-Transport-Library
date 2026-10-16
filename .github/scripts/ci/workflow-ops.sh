@@ -44,6 +44,12 @@ perf-compare-refs)
 	# The commits perf-compare.yml builds: the dispatched refs, or for the nightly
 	# main as it was a day before this run started and main now.
 	resolve() {
+		# A name, a SHA or a ~ or ^ suffix; no option, no ^{/regex} and no newline,
+		# which would add a line to GITHUB_OUTPUT.
+		[[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._/~^-]*$ ]] || {
+			echo "::error::Not a branch, tag or SHA: ${1@Q}" >&2
+			return 1
+		}
 		git -C "$root_dir" rev-parse --verify --quiet "origin/$1^{commit}" ||
 			git -C "$root_dir" rev-parse --verify "$1^{commit}"
 	}

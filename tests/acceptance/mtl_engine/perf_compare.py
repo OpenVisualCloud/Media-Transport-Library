@@ -749,7 +749,8 @@ def run_round(
     clk = {id(s.host): int(sh(s.host, "getconf CLK_TCK")) for s in sides}
     for s in sides:
         stop_units(s.host)
-        sh(s.host, f"rm -rf {run_dir}; mkdir -p {run_dir}")
+        # Its scripts run as root: no one else may write there, or own it first.
+        sh(s.host, f"rm -rf {run_dir} && mkdir -m 700 {run_dir}")
     wire0 = [
         (pf_unicast(tx.host, tx.vfs[i]), pf_unicast(rx.host, rx.vfs[i])) for i in (0, 1)
     ]
