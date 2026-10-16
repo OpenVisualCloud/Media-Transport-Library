@@ -31,7 +31,8 @@ struct mt_backtrace_info {
 
 /* List of backtrace info */
 MT_TAILQ_HEAD(mt_backtrace_info_list, mt_backtrace_info);
-/* static init: mt_rte_*malloc may run before mt_asan_init(), e.g. in the unit tests */
+/* Static, for the life of the process: the tracked allocators may run before mtl_init(),
+ * e.g. in the unit tests, and mtl_init() may run again after mtl_uninit() */
 static struct mt_backtrace_info_list g_bt_head = TAILQ_HEAD_INITIALIZER(g_bt_head);
 static pthread_mutex_t g_bt_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -39,8 +40,8 @@ static pthread_mutex_t g_bt_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int g_mt_mempool_create_cnt;
 
 int mt_asan_init(void) {
-  mt_pthread_mutex_init(&g_bt_mutex, NULL);
-  MT_TAILQ_INIT(&g_bt_head);
+  /* g_bt_head and g_bt_mutex are static: initialising them again would drop the records
+   * of earlier allocations, and re-initialising a mutex is undefined */
   return 0;
 }
 
@@ -66,8 +67,6 @@ int mt_asan_check(void) {
   }
   if (leak_cnt)
     info("%s, \033[33mfound %d rte_malloc leak(s) in total\033[0m\n", __func__, leak_cnt);
-
-  mt_pthread_mutex_destroy(&g_bt_mutex);
 
   if (g_mt_mempool_create_cnt != 0) {
     err("%s, detect not free mempool, leak cnt %d\n", __func__, g_mt_mempool_create_cnt);
