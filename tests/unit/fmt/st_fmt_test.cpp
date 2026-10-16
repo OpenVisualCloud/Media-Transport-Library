@@ -245,3 +245,11 @@ TEST(StFrameFmtIsCodestream, EndSentinelIsNotACodestream) {
   EXPECT_FALSE(st_frame_fmt_is_codestream(ST_FRAME_FMT_MAX));
   EXPECT_FALSE(st_frame_fmt_is_codestream(ST_FRAME_FMT_RGB_END));
 }
+
+/* A codestream frame has no size of its own: st_frame_size() gives 0, so there is no
+ * buffer to hand out, as with st_frame_create(). */
+TEST(StFrameCreateByMalloc, FormatWithoutASizeReturnsNull) {
+  ASSERT_EQ(st_frame_size(ST_FRAME_FMT_JPEGXS_CODESTREAM, 1920, 1080, false), 0u);
+  EXPECT_EQ(st_frame_create_by_malloc(ST_FRAME_FMT_JPEGXS_CODESTREAM, 1920, 1080, false),
+            nullptr);
+}

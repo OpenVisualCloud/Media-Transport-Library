@@ -533,6 +533,15 @@ uint16_t ut_dev_nb_tx_desc(const ut_dev_ctx* ctx) {
   return ctx->impl.inf[MTL_PORT_P].nb_tx_desc;
 }
 
+int ut_dev_config_rss_reta(ut_dev_ctx* ctx, uint16_t nb_rx_q, uint16_t reta_size) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  inf->nb_rx_q = nb_rx_q;
+  inf->dev_info.reta_size = reta_size;
+  ut_active_ctx = ctx;
+  return dev_config_rss_reta(inf);
+}
+
 int ut_dev_create_ports(ut_dev_ctx* ctx) {
   ut_active_ctx = ctx;
   return mt_dev_create(&ctx->impl);

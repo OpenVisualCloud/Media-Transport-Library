@@ -1357,7 +1357,7 @@ struct st_frame* st_frame_create_by_malloc(enum st_frame_fmt fmt, uint32_t w, ui
   frame->flags = ST_FRAME_FLAG_SINGLE_MALLOC;
 
   size_t data_sz = st_frame_size(fmt, w, h, interlaced);
-  void* data = mt_zmalloc(data_sz);
+  void* data = data_sz ? mt_zmalloc(data_sz) : NULL;
   if (!data) {
     err("%s, data malloc fail, size %" PRIu64 "\n", __func__, data_sz);
     st_frame_free(frame);
