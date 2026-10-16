@@ -1075,8 +1075,11 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
     s->port_user_stats.stat_frames_incomplete++;
     /* record the miss pkts */
     float pd_sz_per_pkt = (float)s->st22_expect_size_per_frame / slot->pkts_received;
-    int miss_pkts =
-        (s->st22_expect_size_per_frame - meta->frame_total_size) / pd_sz_per_pkt;
+    int miss_pkts = 0;
+    /* no expected size yet or a bigger frame: the quotient does not fit an int */
+    if (s->st22_expect_size_per_frame > meta->frame_total_size)
+      miss_pkts = (int)((float)(s->st22_expect_size_per_frame - meta->frame_total_size) /
+                        pd_sz_per_pkt);
     if (miss_pkts < 0) miss_pkts = 0;
     dbg("%s(%d), miss pkts %d for current frame\n", __func__, s->idx, miss_pkts);
     if (miss_pkts > 0) s->port_user_stats.common.stat_pkts_unrecovered += miss_pkts;
@@ -2078,10 +2081,11 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
   return 0;
 }
 
+/* packed: read in place from the payload, which has no alignment */
 struct st22_box {
   uint32_t lbox; /* box lenght */
   char tbox[4];
-};
+} __attribute__((__packed__));
 
 /* Video Support Box and Color Specification Box */
 static int rv_parse_st22_boxes(struct st_rx_video_session_impl* s, void* boxes,
