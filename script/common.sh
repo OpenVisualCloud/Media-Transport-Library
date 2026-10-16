@@ -178,6 +178,25 @@ function as_root() {
 	$AS_ROOT "${CMD_TO_EVALUATE[*]}"
 }
 
+# Compiler hardening, see doc/build.md: the flags for a build with ${CC:-cc}.
+# A _FORTIFY_SOURCE level the compiler sets is kept; else level 3 where the
+# compiler and glibc support it (gcc 12+, clang 9+, glibc 2.34+), and 2.
+function hardening_cflags() {
+	local flags="-fstack-protector-strong -fstack-clash-protection -fcf-protection=full -Wformat -Wformat-security -Werror=format-security"
+	if ! echo | "${CC:-cc}" -O2 -dM -E - | grep -q _FORTIFY_SOURCE; then
+		if echo "#include <string.h>" | "${CC:-cc}" -O2 -D_FORTIFY_SOURCE=3 -dM -E -x c - 2>/dev/null | grep -q "__USE_FORTIFY_LEVEL 3"; then
+			flags+=" -D_FORTIFY_SOURCE=3"
+		else
+			flags+=" -D_FORTIFY_SOURCE=2"
+		fi
+	fi
+	echo "$flags"
+}
+
+function hardening_ldflags() {
+	echo "-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack"
+}
+
 function github_api_call() {
 	url=$1
 	shift
