@@ -341,13 +341,4 @@ static inline void mt_stat_u64_update(struct mt_stat_u64* stat, uint64_t new) {
   stat->cnt++;
 }
 
-/* A sample that stands for weight samples of the same value. */
-static inline void mt_stat_u64_update_n(struct mt_stat_u64* stat, uint64_t value,
-                                        uint32_t weight) {
-  stat->max = RTE_MAX(stat->max, value);
-  stat->min = RTE_MIN(stat->min, value);
-  stat->sum += value * weight;
-  stat->cnt += weight;
-}
-
 #endif

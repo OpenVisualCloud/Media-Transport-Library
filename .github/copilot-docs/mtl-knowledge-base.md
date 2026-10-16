@@ -496,7 +496,7 @@ Probes in `lib/src/mt_usdt_provider.d`, compiled when `MTL_HAS_USDT`. Attach wit
 Several probes are **attach-to-enable**: zero cost until tracing tool attaches.
 
 - `log_msg` fires for every log call whatever the log level, so `bpftrace -p <pid>` on it reads the full stats dump of any MTL app, of any release since 2024.
-- `tasklet_stat` reports, per tasklet and stats dump, cumulative `time` and `work` counters (work = calls not returning `MTL_TASKLET_ALL_DONE`), internal to `mt_sch.c` (no public API); they move only while time measure or its sampling is on. `doc/perf_compare.md` is built on these.
+- `tasklet_stat` reports, per tasklet and stats dump, cumulative `time` and `work` counters (work = calls not returning `MTL_TASKLET_ALL_DONE`), internal to `mt_sch.c`; they move only while time measure or its sampling is on. `doc/perf_compare.md` is built on these.
 - Sampling (`tasklet_time_sample`, attach only) times 1 loop in 64 at random xorshift gaps and weights its tasklet calls by the gap: `cnt` is exact to within a gap, the sums and `work_cnt` are estimates. It never feeds the per-dump `stat_time` lines.
 - Keep a probe at ≤ 6 arguments: bpftrace 0.14 rejects `arg6` even for USDT.
 - Running a traced app under `systemd-run`: systemd expands `$` in `ExecStart=` (`$$` becomes `$`), so put scripts in files.

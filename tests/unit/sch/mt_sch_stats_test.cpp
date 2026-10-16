@@ -6,14 +6,13 @@
  * and start at zero for every tasklet registered.
  */
 
-#include <errno.h>
 #include <gtest/gtest.h>
 #include <mtl_api.h>
 
 #include "sch/mt_sch_harness.h"
 
 /* The spin budget of the one tasklet; the measurement brackets the handler, so every
- * sample is at least this long minus nothing. */
+ * timed call that spins is at least the floor below. */
 static const unsigned int kSpinUs = 50;
 static const uint64_t kSpinFloorNs = 40000;
 static const unsigned int kWorkEvery = 4;
@@ -21,7 +20,7 @@ static const int kSpinSlot = 1;
 /* MT_SCH_TIME_SAMPLE_PERIOD: loops per timed loop, on average, while sampled */
 static const uint64_t kSamplePeriod = 64;
 
-class MtlSchStatsTest : public testing::Test {
+class MtSchStatsTest : public testing::Test {
  protected:
   void SetUp() override {
     ASSERT_EQ(ut_sch_init(), 0);
@@ -59,7 +58,7 @@ class MtlSchStatsTest : public testing::Test {
   bool sampling_ = false;
 };
 
-TEST_F(MtlSchStatsTest, CountersStayZeroWhileNothingTimes) {
+TEST_F(MtSchStatsTest, CountersStayZeroWhileNothingTimes) {
   Create(0, kWorkEvery);
   RunCalls(kWorkEvery * 20);
   Stop();
@@ -68,7 +67,7 @@ TEST_F(MtlSchStatsTest, CountersStayZeroWhileNothingTimes) {
   EXPECT_EQ(ut_sch_stats_counter(kSpinSlot, true).cnt, 0u);
 }
 
-TEST_F(MtlSchStatsTest, MeasureTimesEveryCall) {
+TEST_F(MtSchStatsTest, MeasureTimesEveryCall) {
   Create(MTL_FLAG_TASKLET_TIME_MEASURE);
   RunCalls(20);
   Stop();
@@ -80,9 +79,12 @@ TEST_F(MtlSchStatsTest, MeasureTimesEveryCall) {
   EXPECT_LE(t.min, avg);
   EXPECT_LE(avg, t.max);
   EXPECT_GE(t.min, kSpinFloorNs);
+  /* the tasklet reports idle on every call */
+  EXPECT_EQ(ut_sch_stats_counter(kSpinSlot, true).cnt, 0u);
+  EXPECT_EQ(ut_sch_stats_counter(kSpinSlot, true).sum, 0u);
 }
 
-TEST_F(MtlSchStatsTest, WorkCountsOnlyTheCallsThatReportPending) {
+TEST_F(MtSchStatsTest, WorkCountsOnlyTheCallsThatReportPending) {
   Create(MTL_FLAG_TASKLET_TIME_MEASURE, kWorkEvery);
   RunCalls(kWorkEvery * 20);
   Stop();
@@ -97,17 +99,7 @@ TEST_F(MtlSchStatsTest, WorkCountsOnlyTheCallsThatReportPending) {
   EXPECT_LT(t.min, kSpinFloorNs);
 }
 
-TEST_F(MtlSchStatsTest, WorkStaysZeroForATaskletThatReportsIdle) {
-  Create(MTL_FLAG_TASKLET_TIME_MEASURE);
-  RunCalls(20);
-  Stop();
-
-  EXPECT_GT(ut_sch_stats_counter(kSpinSlot, false).cnt, 0u);
-  EXPECT_EQ(ut_sch_stats_counter(kSpinSlot, true).cnt, 0u);
-  EXPECT_EQ(ut_sch_stats_counter(kSpinSlot, true).sum, 0u);
-}
-
-TEST_F(MtlSchStatsTest, SampleTimesSomeLoopsAndCountsEveryCall) {
+TEST_F(MtSchStatsTest, SampleTimesSomeLoopsAndCountsEveryCall) {
   Create(0);
   Sample();
   RunCalls(kSamplePeriod * 32);
@@ -128,7 +120,7 @@ TEST_F(MtlSchStatsTest, SampleTimesSomeLoopsAndCountsEveryCall) {
   EXPECT_EQ(ut_sch_stats_dump_tasklet_cnt(mt_), 0u);
 }
 
-TEST_F(MtlSchStatsTest, SampleEstimatesTheWorkShare) {
+TEST_F(MtSchStatsTest, SampleEstimatesTheWorkShare) {
   /* work on every 4th call divides the period: a sample every 64th loop would see only
    * work calls or none */
   Create(0, kWorkEvery);
@@ -145,7 +137,7 @@ TEST_F(MtlSchStatsTest, SampleEstimatesTheWorkShare) {
   EXPECT_GE(w.min, kSpinFloorNs);
 }
 
-TEST_F(MtlSchStatsTest, MeasureWinsOverSample) {
+TEST_F(MtSchStatsTest, MeasureWinsOverSample) {
   Create(MTL_FLAG_TASKLET_TIME_MEASURE);
   Sample();
   RunCalls(20);
@@ -156,7 +148,7 @@ TEST_F(MtlSchStatsTest, MeasureWinsOverSample) {
   EXPECT_EQ(ut_sch_stats_counter(kSpinSlot, false).cnt, ut_sch_stats_calls(mt_));
 }
 
-TEST_F(MtlSchStatsTest, RegisterClearsTheCountersOfAReusedSlot) {
+TEST_F(MtSchStatsTest, RegisterClearsTheCountersOfAReusedSlot) {
   Create(MTL_FLAG_TASKLET_TIME_MEASURE);
   /* slot 0, the empty one before the spin tasklet */
   ASSERT_EQ(ut_sch_stats_register_busy(mt_), 0);
@@ -171,7 +163,7 @@ TEST_F(MtlSchStatsTest, RegisterClearsTheCountersOfAReusedSlot) {
   EXPECT_GT(ut_sch_stats_counter(kSpinSlot, false).cnt, 0u);
 }
 
-TEST_F(MtlSchStatsTest, DumpResetsOnlyThePerDumpCounters) {
+TEST_F(MtSchStatsTest, DumpResetsOnlyThePerDumpCounters) {
   Create(MTL_FLAG_TASKLET_TIME_MEASURE, kWorkEvery);
   RunCalls(kWorkEvery * 20);
   Stop();
@@ -188,4 +180,22 @@ TEST_F(MtlSchStatsTest, DumpResetsOnlyThePerDumpCounters) {
   EXPECT_EQ(ut_sch_stats_counter(kSpinSlot, false).sum, t.sum);
   EXPECT_EQ(ut_sch_stats_counter(kSpinSlot, true).cnt, w.cnt);
   EXPECT_EQ(ut_sch_stats_counter(kSpinSlot, true).sum, w.sum);
+}
+
+TEST_F(MtSchStatsTest, TheStatsDumpHandsTheCountersToTheProbe) {
+  Create(MTL_FLAG_TASKLET_TIME_MEASURE, kWorkEvery);
+  RunCalls(kWorkEvery * 20);
+  Stop();
+
+  EXPECT_EQ(ut_sch_stats_dump(mt_), 0);
+  struct ut_sch_tasklet_stat p = ut_sch_stats_probe();
+  struct ut_sch_stat t = ut_sch_stats_counter(kSpinSlot, false);
+  struct ut_sch_stat w = ut_sch_stats_counter(kSpinSlot, true);
+  ASSERT_GT(w.cnt, 0u);
+  EXPECT_EQ(p.sch_idx, 0);
+  EXPECT_STREQ(p.name, "ut_spin");
+  EXPECT_EQ(p.cnt, t.cnt);
+  EXPECT_EQ(p.sum, t.sum);
+  EXPECT_EQ(p.work_cnt, w.cnt);
+  EXPECT_EQ(p.work_sum, w.sum);
 }

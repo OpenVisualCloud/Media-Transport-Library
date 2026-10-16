@@ -175,7 +175,7 @@ unit_sources = [
   'pipeline/tx_frame_done_notify_test.cpp',
   'sch/mt_sch_harness.c',
   'sch/mtl_sch_api_test.cpp',
-  'sch/mtl_sch_stats_test.cpp',
+  'sch/mt_sch_stats_test.cpp',
   'sch/mt_sch_mempolicy_test.cpp',
   'sch/mt_sch_filelock_test.cpp',
   'ptp/ptp_harness.c',

@@ -48,10 +48,8 @@ int ut_sch_lcore_entry_mempolicy(int* mode, int* exit_mode);
  * temporary directory; *mode is its permission bits. Returns 0 on success. */
 int ut_sch_filelock_create_mode(unsigned int* mode);
 
-#define UT_SCH_SPIN_TASKLET_NAME "ut_spin"
-
 /* A main handle built with mtl_init_params flags whose sch 0 is active in thread mode
- * and holds one tasklet, UT_SCH_SPIN_TASKLET_NAME in slot 1. With work_every 0 the
+ * and holds one tasklet, ut_spin in slot 1. With work_every 0 the
  * tasklet spins spin_us on each call and returns MTL_TASKLET_ALL_DONE; with N it spins
  * and returns MTL_TASKLET_HAS_PENDING on each Nth call only, and returns
  * MTL_TASKLET_ALL_DONE at once on the others. Slot 0 stays empty. Caller frees with
@@ -81,6 +79,17 @@ struct ut_sch_stat {
 
 /* The time counter of a tasklet slot of sch 0, or with work its work counter. */
 struct ut_sch_stat ut_sch_stats_counter(int slot, bool work);
+
+/* The arguments of the last sys:tasklet_stat that the stats dump fired. */
+struct ut_sch_tasklet_stat {
+  int sch_idx;
+  const char* name;
+  uint64_t cnt;
+  uint64_t sum;
+  uint64_t work_cnt;
+  uint64_t work_sum;
+};
+struct ut_sch_tasklet_stat ut_sch_stats_probe(void);
 
 /* Attach (on) or detach sys:tasklet_time_sample, as bpftrace does: through the semaphore
  * of the probe. */
