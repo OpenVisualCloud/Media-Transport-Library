@@ -562,6 +562,17 @@ yuv_files_interlace = dict(
     },
 )
 
+# yuv_files_interlace as planar, for the JPEG XS encoder, which takes planar input
+# only. Each file is its RFC 4175 twin, converted field by field.
+yuv_files_interlace_422p10le = {
+    key: {
+        **info,
+        "filename": info["filename"].replace(".yuv", "_yuv422p10le.yuv"),
+        "file_format": "YUV422PLANAR10LE",
+    }
+    for key, info in yuv_files_interlace.items()
+}
+
 yuv_files_422rfc10 = dict(
     Penguin_720p={
         "filename": "HDR_BBC_v4_008_Penguin1_1280x720_10bit_25Hz_P422_180frames.yuv",
