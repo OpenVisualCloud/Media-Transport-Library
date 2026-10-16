@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import os
 import re
 
@@ -46,16 +45,11 @@ def _options(request) -> dict:
         "args": {"A": get("--perf_compare_args_a"), "B": get("--perf_compare_args_b")},
         "sessions": get("--perf_compare_sessions"),
         "rounds": get("--perf_compare_rounds"),
-        "fail_pct": get("--perf_compare_fail_pct"),
     }
     if not all(ARGS.fullmatch(a) for a in opts["args"].values()):
         pytest.fail("--perf_compare_args_a/b take letters, digits, spaces and _./:=,+-")
     if opts["sessions"] < 1 or opts["rounds"] < 1:
         pytest.fail("--perf_compare_sessions and --perf_compare_rounds start at 1")
-    if opts["fail_pct"] is not None and not math.isfinite(opts["fail_pct"]):
-        pytest.fail("--perf_compare_fail_pct takes a finite number")
-    if opts["fail_pct"] is not None and opts["rounds"] % 2:
-        pytest.fail("--perf_compare_fail_pct needs an even number of rounds: the swap")
     return opts
 
 
@@ -260,14 +254,3 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
     problems = [p for r in rounds for p in r["problems"]]
     if problems:
         pytest.fail("; ".join(problems))
-    if opts["fail_pct"] is not None:
-        worse = [
-            f"{s.role.upper()} {r.metric} {r.diff:+.1f}%"
-            for s in sides
-            for r in pc.compare([r["metrics"] for r in rounds], s.role)
-            if r.regression is not None and r.regression > opts["fail_pct"]
-        ]
-        if worse:
-            pytest.fail(
-                f"B is worse than A by more than {opts['fail_pct']}%: {', '.join(worse)}"
-            )

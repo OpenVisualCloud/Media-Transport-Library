@@ -1,0 +1,190 @@
+name: perf-compare
+# Runs build A and build B at the same time on the perf pair and reports how B differs
+# from A: scheduler loop time, CPU, memory bandwidth and the work per packet. Each
+# build gets its own NIC port, CPUs and cache, and the two swap places every round.
+# The tests and CI scripts come from "Use workflow from". doc/perf_compare.md
+on:
+  workflow_dispatch:
+    inputs:
+      ref_a:
+        description: 'Build A, the reference: branch, tag or commit (e.g. main, v26.01)'
+        required: false
+        type: string
+        default: main
+      ref_b:
+        description: 'Build B, compared with A: branch, tag or commit. The same as A shows the noise.'
+        required: false
+        type: string
+        default: main
+      args_a:
+        description: 'Extra RxTxApp options for A (e.g. --sch_session_quota 8)'
+        required: false
+        type: string
+      args_b:
+        description: Extra RxTxApp options for B
+        required: false
+        type: string
+      video:
+        description: Video format of every session
+        required: false
+        type: choice
+        options:
+          - 1080p59
+          - 1080p50
+          - 2160p59
+          - 2160p50
+        default: 1080p59
+      sessions:
+        description: Video sessions per build
+        required: false
+        type: string
+        default: '16'
+      test_time:
+        description: Seconds measured in each round
+        required: false
+        type: string
+        default: '120'
+      rounds:
+        description: 'Rounds; A and B swap places each round, so keep it even'
+        required: false
+        type: string
+        default: '2'
+  # The nightly compares the main of the last passed night with main.
+  schedule:
+    - cron: '0 16 * * *'
+
+permissions:
+  contents: read
+  checks: read
+
+jobs:
+  refs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # the nightly reads the commit its last passed run compared
+      actions: read
+    outputs:
+      sha_a: ${{ steps.refs.outputs.sha_a }}
+      sha_b: ${{ steps.refs.outputs.sha_b }}
+      label_a: ${{ steps.refs.outputs.label_a }}
+      label_b: ${{ steps.refs.outputs.label_b }}
+    steps:
+      - name: Harden-Runner
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+      - name: Resolve the two builds
+        id: refs
+        env:
+          REF_A: ${{ inputs.ref_a || 'main' }}
+          REF_B: ${{ inputs.ref_b || 'main' }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: task ci:workflow -- perf-compare-refs
+
+  # The workflow commit: the CI scripts, the tests, the ICE driver and the tree
+  # the framework itself runs (MtlManager, nicctl.sh). The two compared builds are
+  # built in the compare job, from any ref, by the same host and toolchain.
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      skip_linter_check: true
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: read
+
+  compare:
+    needs: [refs, build]
+    runs-on: [self-hosted, perf, sut]
+    timeout-minutes: 180
+    steps:
+      - name: Harden-Runner
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
+      - name: Set current date
+        run: echo "CURRENT_DATE=$(date '+%y%m%d-%H%M%S')" >> "$GITHUB_ENV"
+      - name: Check out the workflow commit
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@c382b88f7723f3187e52925364014732ba34d4c2
+        with:
+          ref: ${{ needs.build.outputs.mtl_commit }}
+          fetch-depth: '0'
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+      - name: Validate host and restore the workflow commit's build
+        id: validate
+        uses: ./.github/actions/validate-host
+        with:
+          shadow_host: '/etc/mtl-ci/runner.env'
+          build_outputs: ${{ toJSON(needs.build.outputs) }}
+      - name: Build A and B
+        env:
+          SHA_A: ${{ needs.refs.outputs.sha_a }}
+          SHA_B: ${{ needs.refs.outputs.sha_b }}
+        run: task ci:perf-compare -- build
+      - name: Copy both builds to the companion
+        env:
+          SHADOW_HOST_IP: ${{ steps.validate.outputs.shadow_host_ip }}
+          SHADOW_HOST_USER: ${{ steps.validate.outputs.shadow_host_user }}
+        run: task ci:perf-compare -- sync
+
+      - name: Ensure the acceptance virtualenv
+        run: task ci:pytest-setup -- ensure
+      - name: Set session ID
+        env:
+          RUNNER_NAME: ${{ runner.name }}
+        run: task ci:pytest-setup -- session
+      - name: Set PCI device
+        run: task ci:pytest-setup -- pci-env
+      - name: Generate pytest configuration files
+        env:
+          SESSION_ID: ${{ env.SESSION_ID }}
+          PCI_DEVICE: ${{ env.PCI_DEVICE }}
+          SHADOW_IP: ${{ steps.validate.outputs.shadow_host_ip }}
+          SHADOW_USER: ${{ steps.validate.outputs.shadow_host_user }}
+          TEST_TIME: ${{ inputs.test_time || '120' }}
+        run: task ci:pytest-setup -- config-perf
+      - name: Verify the perf media assets
+        env:
+          MEDIA_ASSET_SET: perf
+        run: task ci:media-assets -- verify
+
+      - name: Compare
+        env:
+          PERF_COMPARE_LABELS: ${{ needs.refs.outputs.label_a }},${{ needs.refs.outputs.label_b }}
+          ARGS_A: ${{ inputs.args_a }}
+          ARGS_B: ${{ inputs.args_b }}
+          SESSIONS: ${{ inputs.sessions || '16' }}
+          VIDEO: ${{ inputs.video || '1080p59' }}
+          ROUNDS: ${{ inputs.rounds || '2' }}
+        run: task ci:pytest-run -- perf-compare
+      - name: Summarize the comparison
+        if: always()
+        run: task ci:report -- perf-compare
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "perf-compare-${{ runner.name }}-${{ env.CURRENT_DATE }}"
+          path: |
+            ./tests/acceptance/perf_compare.md
+            ./tests/acceptance/report.html
+            ./tests/acceptance/perf-logs.tar.gz
+      - name: Remove both builds and the cache partitions
+        if: always()
+        env:
+          SHADOW_HOST_IP: ${{ steps.validate.outputs.shadow_host_ip }}
+          SHADOW_HOST_USER: ${{ steps.validate.outputs.shadow_host_user }}
+        run: task ci:perf-compare -- clean
+      - name: Clean up
+        if: always()
+        uses: ./.github/actions/cleanup

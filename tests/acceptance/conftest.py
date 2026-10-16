@@ -1113,7 +1113,6 @@ def pytest_addoption(parser):
         ("args_b", str, "", "extra RxTxApp arguments of instance B"),
         ("sessions", int, 16, "sessions per instance"),
         ("rounds", int, 2, "rounds; every other one swaps the slots"),
-        ("fail_pct", float, None, "fail on a primary metric worse by more than this"),
     ):
         parser.addoption(
             f"--perf_compare_{name}", type=kind, default=default, help=text

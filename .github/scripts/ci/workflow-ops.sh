@@ -40,35 +40,9 @@ check-built-sources)
 	done
 	exit "$status"
 	;;
-perf-plan)
-	# The mode of a perf-pytest.yml run, with no input of the other mode set, and for
-	# compare the commits it builds: the dispatched refs, or for the nightly the main
-	# of the last nightly that passed and the main of this one.
-	case ${MODE:?MODE is required} in
-	capacity) other=(REF_A ARGS_A ARGS_B ROUNDS FAIL_PCT) ;;
-	compare) other=(MARKER SCH_QUOTA) ;;
-	*)
-		echo "::error::Unknown mode ${MODE@Q}" >&2
-		exit 2
-		;;
-	esac
-	# A night picks both builds itself, and only main has nights: the next one takes
-	# its baseline from this one.
-	if [[ -n ${NIGHTLY:-} ]]; then
-		other+=(REF_A BRANCH)
-		[[ ${GITHUB_REF:-} == refs/heads/main ]] || {
-			echo "::error::The nightly runs on main only, not on ${GITHUB_REF:-?}" >&2
-			exit 2
-		}
-	fi
-	for input in "${other[@]}"; do
-		[[ -z ${!input:-} ]] || {
-			echo "::error::${input,,} is not an input of a ${MODE}${NIGHTLY:+ nightly} run" >&2
-			exit 2
-		}
-	done
-	echo "mode=${MODE}" | tee -a "${GITHUB_OUTPUT:?GITHUB_OUTPUT is required}"
-	[[ $MODE == compare ]] || exit 0
+perf-compare-refs)
+	# The commits perf-compare.yml builds: the dispatched refs, or for the nightly
+	# the main of the last nightly that passed and the main of this one.
 	resolve() {
 		# A name, a SHA or a ~ or ^ suffix; no option, no ^{/regex} and no newline,
 		# which would add a line to GITHUB_OUTPUT.
@@ -79,16 +53,14 @@ perf-plan)
 		git -C "$root_dir" rev-parse --verify --quiet "origin/$1^{commit}" ||
 			git -C "$root_dir" rev-parse --verify "$1^{commit}"
 	}
-	if [[ -n ${NIGHTLY:-} ]]; then
+	if [[ ${GITHUB_EVENT_NAME:-} == schedule ]]; then
 		# GitHub starts each night hours late, by a different amount, so a window
 		# counted back from the start would leave commits to no night. Without a
-		# passed night, main a day ago. The run-name of perf-pytest.yml marks a night.
+		# passed night, main a day ago.
 		sha_b=${GITHUB_SHA:?GITHUB_SHA is required} name_b=main
 		name_a='main of the last nightly'
-		workflow=${GITHUB_WORKFLOW_REF:?GITHUB_WORKFLOW_REF is required}
-		workflow=${workflow%%@*}
-		sha_a=$(gh api "repos/{owner}/{repo}/actions/workflows/${workflow##*/}/runs?branch=main&status=success&per_page=100" \
-			--jq "[.workflow_runs[] | select(.display_title == \"${GITHUB_WORKFLOW} compare nightly\")][0].head_sha // empty") ||
+		sha_a=$(gh api 'repos/{owner}/{repo}/actions/workflows/perf-compare.yml/runs?branch=main&event=schedule&status=success&per_page=1' \
+			--jq '.workflow_runs[0].head_sha // empty') ||
 			echo '::warning::The last passed nightly is unknown: the Actions API read failed' >&2
 		# Not an ancestor of B when an older night is run again after a newer one passed.
 		if [[ -z $sha_a ]] || ! git -C "$root_dir" merge-base --is-ancestor "$sha_a" "$sha_b"; then
@@ -96,9 +68,8 @@ perf-plan)
 			sha_a=$(git -C "$root_dir" rev-list -1 --first-parent --before='24 hours ago' origin/main)
 		fi
 	else
-		name_a=${REF_A:-main} name_b=${BRANCH:-${GITHUB_REF_NAME:?GITHUB_REF_NAME is required}}
-		sha_a=$(resolve "$name_a")
-		sha_b=$(resolve "$name_b")
+		sha_a=$(resolve "${REF_A:?REF_A is required}") name_a=$REF_A
+		sha_b=$(resolve "${REF_B:?REF_B is required}") name_b=$REF_B
 	fi
 	{
 		echo "sha_a=${sha_a}"
@@ -135,7 +106,7 @@ coverity-dpdk)
 	(cd "${root_dir}/script" && ./build_dpdk.sh)
 	;;
 *)
-	echo "Usage: $0 {overlay-tests|check-built-sources|perf-plan|both-workflows|docs-dependencies|coverity-dependencies|coverity-dpdk}" >&2
+	echo "Usage: $0 {overlay-tests|check-built-sources|perf-compare-refs|both-workflows|docs-dependencies|coverity-dependencies|coverity-dpdk}" >&2
 	exit 2
 	;;
 esac

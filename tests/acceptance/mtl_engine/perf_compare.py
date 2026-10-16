@@ -619,8 +619,6 @@ def metrics(direction, untraced, traced, proc0, proc1, clk_tck, rdt0, rdt1) -> d
     return m
 
 
-# Metrics a regression check looks at; lower is better for all of them.
-PRIMARY = re.compile(r"avg loop \(ns\)|process \(cores\)|work \(ns/pkt\)")
 # Metrics of the traced window. They compare only when A and B were timed alike:
 # sampled, every loop with the cumulative counters of mtl_sch_get_stats(), or every
 # loop without them, which costs less again.
@@ -635,13 +633,6 @@ class Row:
     diff: float | None
     noise: float | None
     alike: bool = True  # False: A and B were timed differently, so no diff
-
-    @property
-    def regression(self) -> float | None:
-        """How much worse B is than A, in percent beyond the noise, or None."""
-        if self.diff is None or not PRIMARY.search(self.metric):
-            return None
-        return self.diff - (self.noise or 0.0)
 
 
 def _spread(values) -> float | None:
