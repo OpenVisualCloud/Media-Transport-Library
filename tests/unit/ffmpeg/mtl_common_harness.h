@@ -7,6 +7,7 @@
 
 #include <errno.h>
 #include <mtl/mtl_api.h>
+#include <mtl/st_pipeline_api.h>
 #include <stdint.h>
 #include <time.h>
 
@@ -63,6 +64,7 @@ int ut_ffmpeg_parse_rx_port(const struct StDevArgs* dev_args,
 int ut_ffmpeg_parse_tx_port(const struct StDevArgs* dev_args,
                             const struct StTxSessionPortArgs* args,
                             struct st_tx_port* port);
+int ut_ffmpeg_parse_st22_quality(const char* value, enum st22_quality_mode* quality);
 void ut_ffmpeg_block_first_init(void);
 bool ut_ffmpeg_wait_for_init_calls(int count);
 bool ut_ffmpeg_wait_for_lifecycle_lock_calls(int count);

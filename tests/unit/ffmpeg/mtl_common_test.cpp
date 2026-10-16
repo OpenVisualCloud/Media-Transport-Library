@@ -523,6 +523,29 @@ TEST_F(FfmpegMtlCommonTest, PacingWayOptionTargetsBothDeviceDirections) {
   }
 }
 
+TEST_F(FfmpegMtlCommonTest, St22QualityMapsCanonicalValues) {
+  enum st22_quality_mode quality = ST22_QUALITY_MODE_QUALITY;
+  EXPECT_EQ(ut_ffmpeg_parse_st22_quality("speed", &quality), 0);
+  EXPECT_EQ(quality, ST22_QUALITY_MODE_SPEED);
+  EXPECT_EQ(ut_ffmpeg_parse_st22_quality("quality", &quality), 0);
+  EXPECT_EQ(quality, ST22_QUALITY_MODE_QUALITY);
+}
+
+TEST_F(FfmpegMtlCommonTest, NullSt22QualityKeepsCallerValue) {
+  enum st22_quality_mode quality = ST22_QUALITY_MODE_QUALITY;
+  EXPECT_EQ(ut_ffmpeg_parse_st22_quality(nullptr, &quality), 0);
+  EXPECT_EQ(quality, ST22_QUALITY_MODE_QUALITY);
+}
+
+TEST_F(FfmpegMtlCommonTest, InvalidSt22QualityRejectsAndKeepsCallerValue) {
+  for (const char* name : {"Quality", "SPEED", "ultra", "", "speed "}) {
+    enum st22_quality_mode quality = ST22_QUALITY_MODE_MAX;
+    EXPECT_EQ(ut_ffmpeg_parse_st22_quality(name, &quality), AVERROR(EINVAL))
+        << "'" << name << "'";
+    EXPECT_EQ(quality, ST22_QUALITY_MODE_MAX) << "'" << name << "'";
+  }
+}
+
 TEST_F(FfmpegMtlCommonTest, PtpDependenciesRejectBeforeMtlInit) {
   for (int pi = 0; pi <= 1; pi++) {
     for (int unicast = 0; unicast <= 1; unicast++) {

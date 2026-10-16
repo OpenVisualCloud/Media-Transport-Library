@@ -214,7 +214,7 @@ ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv420p -i yuv
 
 ### 3.5. St22p support
 
-Another option involves utilizing the MTL built-in ST22 codec plugin, where FFmpeg can directly send or retrieve the YUV raw frame to/from the MTL ST22P plugin. MTL will then internally decode or encode the codec stream.
+Another option involves utilizing the MTL built-in ST22 codec plugin, where FFmpeg can directly send or retrieve the YUV raw frame to/from the MTL ST22P plugin. MTL will then internally decode or encode the codec stream. On the TX side, `-st22_quality speed|quality` selects the encoder quality mode (default `speed`).
 
 Reading a ST 2110-22 pipeline jpegxs codestream on 239.168.85.20:20000 with payload_type 98:
 
