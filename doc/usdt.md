@@ -61,13 +61,13 @@ provider sys {
   probe log_msg(int level, char* msg);
   /* attach to enable the tasklet_time_measure at runtime */
   probe tasklet_time_measure();
-  /* attach to time 1 loop in MTL_SCH_TIME_SAMPLE_PERIOD for mtl_sch_get_stats() */
+  /* attach to time 1 scheduler loop in 64 for the counters of tasklet_stat */
   probe tasklet_time_sample();
   /* attach to enable the sessions_time_measure at runtime */
   probe sessions_time_measure();
   /* attach to enable the pcap dump for cni rx queue */
   probe cni_pcap_dump(int port, char* dump_file, uint32_t pkts);
-  /* each stats dump, per tasklet: the cumulative time and work of mtl_sch_get_stats() */
+  /* each stats dump, per tasklet: its cumulative time and work, while timed or sampled */
   probe tasklet_stat(int sch_idx, char* name, uint64_t cnt, uint64_t sum_ns, uint64_t work_cnt, uint64_t work_sum_ns);
 }
 ```
@@ -218,15 +218,14 @@ Example output like below:
 
 #### 2.1.5. tasklet_stat USDT
 
-Usage: read the counters of `mtl_sch_get_stats()` from outside the process. At each stats
-dump the probe fires once per tasklet with its cumulative `time` and `work` counters: `cnt`
-and `sum_ns` hold every handler call, `work_cnt` and `work_sum_ns` only the calls that
-returned a value other than `MTL_TASKLET_ALL_DONE`, scaled from the timed calls while
-sampled (2.1.6). The counters move only while the time
-measurement or its sampling is on, so attach `tasklet_time_measure` or, cheaper,
-`tasklet_time_sample` (2.1.6) in the same script. They count from
-`mtl_init()` or the last `mtl_sch_reset_stats()`; take the difference of two dumps for the
-work of the interval between them.
+Usage: read how much time each tasklet takes, and how much of it is real work. At each
+stats dump the probe fires once per tasklet with its cumulative `time` and `work`
+counters: `cnt` and `sum_ns` hold every handler call, `work_cnt` and `work_sum_ns` only
+the calls that returned a value other than `MTL_TASKLET_ALL_DONE`, scaled from the timed
+calls while sampled (2.1.6). The counters move only while the time measurement or its
+sampling is on, so attach `tasklet_time_measure` or, cheaper, `tasklet_time_sample` in
+the same script. They count from the registration of the tasklet; take the difference
+of two dumps for the work of the interval between them.
 
 ```bash
 sudo bpftrace -e '
@@ -248,15 +247,13 @@ Example output like below:
 
 #### 2.1.6. tasklet_time_sample USDT
 
-Usage: feed the counters of `mtl_sch_get_stats()` and `tasklet_stat` at a fraction of the
-cost of `tasklet_time_measure`. While it is attached, or with `MTL_FLAG_TASKLET_TIME_SAMPLE`,
-each scheduler times 1 loop in `MTL_SCH_TIME_SAMPLE_PERIOD` (64) on average, at random
-gaps of 1 to 127 loops, so periodic work cannot fall in step with it. The calls of a
-timed loop stand for the calls of the loops of its gap: `cnt` still counts every call to
-within one gap, `work_cnt` and the sums are estimates, and `min`/`max` come from the
-timed calls. The loop time of `mtl_sch_get_stats()` and the per-dump `tasklet ..., avg`
-and `time avg` lines of 2.1.2 stay off. When `tasklet_time_measure` is attached too,
-every loop is timed.
+Usage: feed the counters of `tasklet_stat` at a fraction of the cost of
+`tasklet_time_measure`. While it is attached, each scheduler times 1 loop in 64 on
+average, at random gaps of 1 to 127 loops, so periodic work cannot fall in step with it.
+The calls of a timed loop stand for the calls of the loops of its gap: `cnt` still
+counts every call to within one gap, `work_cnt` and the sums are estimates. The per-dump
+`tasklet ..., avg` and `time avg` lines of 2.1.2 stay off. When `tasklet_time_measure`
+is attached too, every loop is timed.
 
 ```bash
 sudo bpftrace -e '

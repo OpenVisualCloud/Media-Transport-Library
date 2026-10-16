@@ -9,13 +9,13 @@ provider sys {
   probe log_msg(int level, char* msg);
   /* attach to enable the tasklet_time_measure at runtime */
   probe tasklet_time_measure();
-  /* attach to time 1 loop in MTL_SCH_TIME_SAMPLE_PERIOD for mtl_sch_get_stats() */
+  /* attach to time 1 scheduler loop in 64 for the counters of tasklet_stat */
   probe tasklet_time_sample();
   /* attach to enable the sessions_time_measure at runtime */
   probe sessions_time_measure();
   /* attach to enable the pcap dump for cni rx queue */
   probe cni_pcap_dump(int port, char* dump_file, uint32_t pkts);
-  /* each stats dump, per tasklet: the cumulative time and work of mtl_sch_get_stats() */
+  /* each stats dump, per tasklet: its cumulative time and work, while timed or sampled */
   probe tasklet_stat(int sch_idx, char* name, uint64_t cnt, uint64_t sum_ns, uint64_t work_cnt, uint64_t work_sum_ns);
 }
 

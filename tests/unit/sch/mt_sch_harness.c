@@ -19,10 +19,15 @@
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
 #include "mt_platform.h"
+#include "mt_usdt.h"
 /* Only the filelock helper swaps this: the host lock may be held or keep its old mode. */
 static const char* ut_sch_flock_path = MT_FLOCK_PATH;
 #undef MT_FLOCK_PATH
 #define MT_FLOCK_PATH ut_sch_flock_path
+/* The semaphore of sys:tasklet_time_sample, which a probe attach raises. */
+static unsigned short ut_sch_time_sample_semaphore;
+#undef MT_USDT_TASKLET_TIME_SAMPLE_ENABLED
+#define MT_USDT_TASKLET_TIME_SAMPLE_ENABLED() (ut_sch_time_sample_semaphore != 0)
 #include "mt_sch.c"
 
 int ut_sch_init(void) {
@@ -153,14 +158,13 @@ int ut_sch_lcore_entry_mempolicy(int* mode, int* exit_mode) {
   return ret;
 }
 
-/* Two more slots than the API reports: one empty, one that overflows tasklets[]. */
-#define UT_SCH_STATS_SLOTS (MTL_SCH_MAX_TASKLETS + 2)
+/* Slot 0 empty for ut_sch_stats_register_busy(), slot 1 the spin tasklet. */
+#define UT_SCH_STATS_SLOTS (2)
 
 struct ut_sch_stats_ctx {
   struct mtl_main_impl impl; /* first, the handle is its address */
   struct mt_sch_tasklet_impl tasklet;
   struct mt_sch_tasklet_impl* tasklets[UT_SCH_STATS_SLOTS];
-  struct mt_sch_tasklet_impl idle[UT_SCH_STATS_SLOTS];
   unsigned int spin_us;
   unsigned int work_every;
   _Atomic uint64_t calls;
@@ -231,24 +235,6 @@ void ut_sch_stats_main_destroy(mtl_handle mt) {
   free(ctx);
 }
 
-int ut_sch_stats_add_idle_tasklets(mtl_handle mt, int count) {
-  struct ut_sch_stats_ctx* ctx = (struct ut_sch_stats_ctx*)mt;
-  struct mtl_sch_impl* sch = mt_sch_instance(&ctx->impl, 0);
-
-  for (int slot = sch->max_tasklet_idx; count > 0; slot++, count--) {
-    if (slot >= UT_SCH_STATS_SLOTS) return -ENOSPC;
-    struct mt_sch_tasklet_impl* tasklet = &ctx->idle[slot];
-    tasklet->ops.handler = ut_sch_idle_handler;
-    snprintf(tasklet->name, sizeof(tasklet->name), "ut_idle_%d", slot);
-    tasklet->sch = sch;
-    tasklet->idx = slot;
-    mt_stat_u64_init(&tasklet->stat_time);
-    ctx->tasklets[slot] = tasklet;
-    sch->max_tasklet_idx = slot + 1;
-  }
-  return 0;
-}
-
 static int ut_sch_busy_handler(void* priv) {
   MTL_MAY_UNUSED(priv);
   return MTL_TASKLET_HAS_PENDING;
@@ -264,10 +250,6 @@ int ut_sch_stats_register_busy(mtl_handle mt) {
   }
   ctx->registered = mtl_sch_register_tasklet(mt_sch_instance(mt, 0), &ops);
   return ctx->registered ? 0 : -ENOMEM;
-}
-
-void ut_sch_stats_drop_tasklets(mtl_handle mt) {
-  mt_sch_instance(mt, 0)->tasklet = NULL;
 }
 
 int ut_sch_stats_start(mtl_handle mt) {
@@ -290,6 +272,21 @@ int ut_sch_stats_wait_calls(mtl_handle mt, uint64_t calls) {
 
 int ut_sch_stats_dump(mtl_handle mt) {
   return sch_stat(mt_sch_instance(mt, 0));
+}
+
+struct ut_sch_stat ut_sch_stats_counter(int slot, bool work) {
+  struct mt_sch_tasklet_user_stats* us = &g_sch_user_stats[0].tasklets[slot];
+  struct mt_stat_u64* s = work ? &us->work : &us->time;
+  struct ut_sch_stat stat = {s->cnt, s->sum, s->min, s->max};
+
+  return stat;
+}
+
+void ut_sch_stats_sample(bool on) {
+  if (on)
+    ut_sch_time_sample_semaphore++;
+  else
+    ut_sch_time_sample_semaphore--;
 }
 
 uint64_t ut_sch_stats_calls(mtl_handle mt) {

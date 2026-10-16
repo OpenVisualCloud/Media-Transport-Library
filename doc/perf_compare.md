@@ -4,8 +4,8 @@ perf-compare runs two instances of the same end-to-end workload at the same time
 MTL build or configuration, and reports the difference between them. An instance is a TX
 application on one host and an RX application on the other. Each instance has a PF of its
 own on both hosts, CPU cores of its own, L3 cache ways of its own and a build tree of its
-own. Both are measured through USDT, including the scheduler counters of
-`mtl_sch_get_stats()`.
+own. Both are measured through USDT, including the scheduler's counters of how long
+each tasklet runs and how much of that is work (`sys:tasklet_stat`).
 
 It answers "is build B slower or faster than build A, and where", for example the nightly
 "main today against main yesterday", a branch against `main`, or `v26.09` against `v26.01`.
@@ -23,7 +23,7 @@ This page is the design and the plan. Section 9 tracks what is implemented and p
 | R2 | Each instance on a PF of its own, on both hosts | §4.1 |
 | R3 | Each instance on lcores of its own, isolated from the other | §4.2, §4.3 |
 | R4 | The instances must not interfere with each other | §4 |
-| R5 | Measure with USDT and the scheduler stats of `mtl_sch_get_stats()` | §5 |
+| R5 | Measure with USDT and the scheduler counters of Dawid Wesierski's proposal | §5 |
 | R6 | Choose a commit, tag or branch per instance; `main` is the default reference | §6 |
 | R7 | Every night: `main` of the day before against `main` of the day | §6.3 |
 | R8 | Same version, different configuration | §6.1 |
@@ -288,8 +288,8 @@ slot tree of that instance through the mount namespace and needs no path:
   timestamp, whatever the log level of the app is;
 - the tasklet timing and `sys:tasklet_stat` for the traced window only: the first makes
   the scheduler time tasklet calls, the second reports the cumulative time and work
-  counters of `mtl_sch_get_stats()` at each stats dump. The collector lists the probes of
-  the process and takes the cheapest timing it has:
+  counters of each tasklet at each stats dump. The collector lists the probes of the
+  process and takes the cheapest timing it has:
 
   | The build has | Timing probe | The traced window is |
   | --- | --- | --- |
@@ -304,7 +304,7 @@ the RDT join failed), so no script text goes through it.
 ```text
 RxTxApp + libmtl (slot tree)        bpftrace -p <pid>, CPU 1           perf_compare.py, the case
  stats dump, every 10 s ──── sys:log_msg ───▶ "<ns> L <line>"   ─┐
- mtl_sch_get_stats() at a dump ─ sys:tasklet_stat ─▶ "<ns> T <sch> <tasklet> cnt sum wcnt wsum"
+ the counters at a dump ── sys:tasklet_stat ─▶ "<ns> T <sch> <tasklet> cnt sum wcnt wsum"
  /proc/<pid>/task/*, RDT mon_data, /proc/timer_list ─── read at both ends of the untraced window
                                                                  │
           parse_dumps():  records into dumps, each with its CLOCK_MONOTONIC time
@@ -353,8 +353,8 @@ average of all calls hardly moves with the load; the work counters do.
 
 Compare traced rows only between builds timed alike, and the report header names the
 mode of each. Timing every loop costs a sampled build tens of percent of its loop (§5.3),
-and a build with the cumulative counters of `mtl_sch_get_stats()` makes two more counter
-updates per timed call: on the test host its traced loop and `video_transmitter` rows read
+and a build with the cumulative counters makes two more counter updates per timed
+call: on the test host its traced loop and `video_transmitter` rows read
 3-4% above a build without them, while every untraced row agreed. When A and B were timed
 in different modes, the report shows their traced rows as "traced unlike".
 
@@ -374,9 +374,9 @@ not help. The options were:
 | Sampling: time 1 loop in N (implemented) | About N times less | The sums and the work count become estimates; `min`/`max` are of the timed calls |
 | A PMU sampling profile of the scheduler threads (`perf record` at 1 kHz) | About 0.1%, the same for every build | Shows where the time goes by function, but not which call did work; needs `perf` for the running kernel |
 
-The library samples: while `sys:tasklet_time_sample` is attached, or with
-`MTL_FLAG_TASKLET_TIME_SAMPLE`, each scheduler times 1 loop in 64 on average and counts
-the calls of that loop for every loop up to the next timed one.
+The library samples: while `sys:tasklet_time_sample` is attached, each scheduler times 1
+loop in 64 on average and counts the calls of that loop for every loop up to the next
+timed one.
 
 ```text
 loop      1   2   3   4   5   6   7   8   9  10  11  12  …
@@ -387,16 +387,14 @@ sampled   T₅  ·   ·   ·   ·   T₂  ·   T₄  ·   ·   ·   T₇    Tₙ
 - The gap is random, 1 to 127 loops (xorshift32, drawn before the loop runs). A fixed gap
   would fall in step with a tasklet whose work repeats every few loops, and the unit
   test with work on every 4th call checks that it does not.
-- `time.cnt` counts every call to within one gap. `sum_ns`, `work.cnt` and
-  `work.sum_ns` are estimates, from the timed calls, of the totals of the loop as it
-  runs, and `min_ns` and `max_ns` are of the timed calls.
-- The loop time of `mtl_sch_get_stats()` stays empty while sampled: a timed loop pays for
-  its own TSC reads, and the gap would multiply them. `avg_ns_per_loop` and the dump's
-  `avg loop` are always measured and carry whatever timing is on: under 1% sampled, and
-  38-45% with every loop timed on the test host.
-- While nothing is attached the scheduler only tests the flags and the probe semaphores
-  of both timings, and the countdown is a local of the scheduler loop, not a field of
-  the scheduler.
+- `cnt` of `sys:tasklet_stat` counts every call to within one gap. `sum_ns`, `work_cnt`
+  and `work_sum_ns` are estimates, from the timed calls, of the totals of the loop as it
+  runs.
+- The dump's `avg loop` is always measured and carries whatever timing is on: under 1%
+  sampled, and 38-45% with every loop timed on the test host.
+- While nothing is attached the scheduler only tests the time-measure flag and the
+  semaphores of both probes, and the countdown is a local of the scheduler loop, not a
+  field of the scheduler.
 
 On the test host (E810, 4 × 1080p50 per instance, TSC pacing, 4 rounds), A a build that
 times every loop and B the same build with sampling:
@@ -456,7 +454,7 @@ own now and then, so where the memory of a run falls plays a part too: 593 ns in
 10 rounds on the pair, with the same binary as the others. The larger structs put it there
 in all 6 of theirs.
 
-The counters of `mtl_sch_get_stats()` therefore live in a static table in `mt_sch.c`,
+The counters therefore live in a static table in `mt_sch.c`,
 outside both structs and the DPDK heap: every struct, `struct mtl_main_impl` and the heap
 are laid out as on `main`. With that, the second RX scheduler read 495-500 ns in all 4
 rounds of a run against `main` (496-502 ns, and 593 ns in its slow round). The fragility
@@ -628,7 +626,7 @@ current build. The report is `logs/performance/latest/perf_compare.md`, the raw 
 
 | Step | State |
 | --- | --- |
-| Scheduler stats API and the `perf_testing` tool | Done; 17 new unit tests pass; `base_build.yml` builds the tool |
+| Tasklet time and work counters (Dawid Wesierski's proposal) | Done, inside `mt_sch.c` and read through `sys:tasklet_stat`; 9 unit tests. The public `mtl_sch_get_stats()` API and the `perf_testing` tool of the proposal are left out: perf-compare does not need them, and an API is an ABI to keep |
 | USDT probe `sys:tasklet_stat` | Done; six arguments, because bpftrace 0.14 reads only `arg0`-`arg5` |
 | Release build without USDT | Fixed (the probe stubs evaluate their arguments); `base_build.yml` builds it |
 | Instance placement, RDT, collectors, parser, statistics, report (`mtl_engine/perf_compare.py`) | Done |
@@ -636,7 +634,7 @@ current build. The report is `logs/performance/latest/perf_compare.md`, the raw 
 | A and B compiled by the compare job, any ref | Done; `perf-compare.sh build` proved by hand with `v26.01` against `main`, the workflow first runs on `main` |
 | Proof on one host and on `mtl-runner-7` / `mtl-runner-8` | Done, below |
 | Same isolation on `mtl-runner-8` as on `mtl-runner-7` | Recommended (§4.6); new kernel parameters and a reboot |
-| Sampled tracing | Done: `sys:tasklet_time_sample`, `MTL_FLAG_TASKLET_TIME_SAMPLE`, the harness picks it per build; proved on one host (§5.3) and on the perf pair (below) |
+| Sampled tracing | Done: `sys:tasklet_time_sample`, which the harness picks per build; proved on one host (§5.3) and on the perf pair (below) |
 | Layout of the new counters | Done: a static table in `mt_sch.c`, so the structs and the DPDK heap are as on `main`; the second RX scheduler of the perf pair is at `main`'s level again (§5.5) |
 | Layout sensitivity of the RX schedulers | Open, in `main`: a change of its own (§5.5) |
 | FFmpeg and GStreamer | Not recommended now (§7) |

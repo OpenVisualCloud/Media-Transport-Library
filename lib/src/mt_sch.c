@@ -36,15 +36,17 @@ static inline void sch_unlock(struct mtl_sch_impl* sch) {
   mt_pthread_mutex_unlock(&sch->mutex);
 }
 
-/* The mtl_sch_get_stats() counters, out of the sch and tasklet structs and the DPDK heap
- * (doc/perf_compare.md §5.5). Static: one MTL instance per process. */
+/* Loops per timed loop, on average, while sys:tasklet_time_sample is attached. */
+#define MT_SCH_TIME_SAMPLE_PERIOD (64)
+
+/* The cumulative counters of sys:tasklet_stat, out of the sch and tasklet structs and
+ * the DPDK heap (doc/perf_compare.md §5.5). Static: one MTL instance per process. */
 struct __rte_cache_aligned mt_sch_tasklet_user_stats {
   struct mt_stat_u64 time;
   struct mt_stat_u64 work;
 };
 
-struct __rte_cache_aligned mt_sch_user_stats {
-  struct mt_stat_u64 loop;
+struct mt_sch_user_stats {
   struct mt_sch_tasklet_user_stats* tasklets; /* nb_tasklets slots */
   void* tasklets_mem;                         /* tasklets before the alignment */
 };
@@ -57,7 +59,6 @@ static int sch_user_stats_alloc(int idx, uint32_t nb_tasklets) {
       mt_zmalloc(sizeof(*us->tasklets) * nb_tasklets + RTE_CACHE_LINE_SIZE);
   if (!us->tasklets_mem) return -ENOMEM;
   us->tasklets = RTE_PTR_ALIGN_CEIL(us->tasklets_mem, RTE_CACHE_LINE_SIZE);
-  mt_stat_u64_init(&us->loop);
   for (uint32_t i = 0; i < nb_tasklets; i++) {
     mt_stat_u64_init(&us->tasklets[i].time);
     mt_stat_u64_init(&us->tasklets[i].work);
@@ -156,11 +157,7 @@ static bool sch_tasklet_time_measure(struct mtl_main_impl* impl) {
   return enabled;
 }
 
-static bool sch_tasklet_time_sample(struct mtl_main_impl* impl) {
-  return mt_user_tasklet_time_sample(impl) || MT_USDT_TASKLET_TIME_SAMPLE_ENABLED();
-}
-
-/* 1 to 2 * MTL_SCH_TIME_SAMPLE_PERIOD - 1 loops, the period on average: a random gap, as
+/* 1 to 2 * MT_SCH_TIME_SAMPLE_PERIOD - 1 loops, the period on average: a random gap, as
  * a fixed one would alias with a tasklet whose work repeats every few loops. xorshift32,
  * whose state is never 0. */
 static uint32_t sch_time_sample_gap(uint32_t* state) {
@@ -170,7 +167,7 @@ static uint32_t sch_time_sample_gap(uint32_t* state) {
   x ^= x >> 17;
   x ^= x << 5;
   *state = x;
-  return 1 + x % (2 * MTL_SCH_TIME_SAMPLE_PERIOD - 1);
+  return 1 + x % (2 * MT_SCH_TIME_SAMPLE_PERIOD - 1);
 }
 
 /* MPOL_LOCAL lacks the default policy's MPOL_F_MOF, so a NUMA balancing scan run on this
@@ -241,7 +238,7 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
     uint32_t tm_weight = time_measure ? 1 : 0;
     uint64_t tm_sch_tsc_s = 0; /* for sch time_measure */
 
-    if (!time_measure && sch_tasklet_time_sample(impl)) {
+    if (!time_measure && MT_USDT_TASKLET_TIME_SAMPLE_ENABLED()) {
       if (tm_sample_left) {
         tm_sample_left--;
       } else {
@@ -290,11 +287,9 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
       loop_cal_start_ns = mt_get_tsc(impl);
     }
 
-    /* not sampled: a timed loop pays for its TSC reads, which its gap would multiply */
     if (time_measure) {
       uint64_t delta_ns = mt_get_tsc(impl) - tm_sch_tsc_s;
       mt_stat_u64_update(&sch->stat_time, delta_ns);
-      mt_stat_u64_update(&g_sch_user_stats[idx].loop, delta_ns);
     }
   }
 
@@ -1522,103 +1517,5 @@ int mtl_sch_stop(mtl_sch_handle sch) {
     return ret;
   }
   info("%s(%d), succ\n", __func__, idx);
-  return 0;
-}
-
-static int sch_stats_lookup(mtl_handle mt, int sch_idx, struct mtl_sch_impl** out) {
-  struct mtl_main_impl* impl = mt;
-
-  if (!impl || impl->type != MT_HANDLE_MAIN) {
-    err("%s, invalid handle\n", __func__);
-    return -EINVAL;
-  }
-  if (sch_idx < 0 || sch_idx >= MT_MAX_SCH_NUM) {
-    err("%s, invalid sch_idx %d\n", __func__, sch_idx);
-    return -EINVAL;
-  }
-
-  *out = mt_sch_instance(impl, sch_idx);
-  return 0;
-}
-
-/* Under sch_lock: sch_free() can run between an unlocked active check and the lock. */
-static bool sch_stats_ready(struct mtl_sch_impl* sch) {
-  return mt_sch_is_active(sch) && sch->tasklet;
-}
-
-static void sch_time_stats_copy(struct mtl_time_stats* dst, struct mt_stat_u64* src) {
-  dst->cnt = src->cnt;
-  dst->sum_ns = src->sum;
-  dst->max_ns = src->max;
-  dst->min_ns = src->cnt ? src->min : 0;
-}
-
-int mtl_sch_get_count(mtl_handle mt) {
-  struct mtl_main_impl* impl = mt;
-
-  if (!impl || impl->type != MT_HANDLE_MAIN) {
-    err("%s, invalid handle\n", __func__);
-    return -EINVAL;
-  }
-  return MT_MAX_SCH_NUM;
-}
-
-int mtl_sch_get_stats(mtl_handle mt, int sch_idx, struct mtl_sch_stats* stats) {
-  struct mtl_sch_impl* sch;
-
-  if (!stats) {
-    err("%s(%d), null stats\n", __func__, sch_idx);
-    return -EINVAL;
-  }
-  int ret = sch_stats_lookup(mt, sch_idx, &sch);
-  if (ret < 0) return ret;
-
-  sch_lock(sch);
-  if (!sch_stats_ready(sch)) {
-    sch_unlock(sch);
-    return -ENOENT;
-  }
-  memset(stats, 0, sizeof(*stats));
-  snprintf(stats->name, sizeof(stats->name), "%s", sch->name);
-  stats->lcore = sch->run_in_thread ? UINT32_MAX : sch->lcore;
-  stats->time_measure_enabled = sch_tasklet_time_measure(sch->parent);
-  stats->time_sample_enabled =
-      !stats->time_measure_enabled && sch_tasklet_time_sample(sch->parent);
-  stats->avg_ns_per_loop = mt_sch_avg_ns_loop(sch);
-  struct mt_sch_user_stats* us = &g_sch_user_stats[sch_idx];
-  sch_time_stats_copy(&stats->loop_time, &us->loop);
-  for (int i = 0; i < sch->max_tasklet_idx; i++) {
-    struct mt_sch_tasklet_impl* tasklet = sch->tasklet[i];
-    if (!tasklet) continue;
-    stats->nb_tasklets_total++;
-    if (stats->nb_tasklets >= MTL_SCH_MAX_TASKLETS) continue;
-    struct mtl_sch_tasklet_stats* dst = &stats->tasklets[stats->nb_tasklets++];
-    snprintf(dst->name, sizeof(dst->name), "%s", tasklet->name);
-    sch_time_stats_copy(&dst->time, &us->tasklets[i].time);
-    sch_time_stats_copy(&dst->work, &us->tasklets[i].work);
-  }
-  sch_unlock(sch);
-  return 0;
-}
-
-int mtl_sch_reset_stats(mtl_handle mt, int sch_idx) {
-  struct mtl_sch_impl* sch;
-
-  int ret = sch_stats_lookup(mt, sch_idx, &sch);
-  if (ret < 0) return ret;
-
-  sch_lock(sch);
-  if (!sch_stats_ready(sch)) {
-    sch_unlock(sch);
-    return -ENOENT;
-  }
-  struct mt_sch_user_stats* us = &g_sch_user_stats[sch_idx];
-  mt_stat_u64_init(&us->loop);
-  for (int i = 0; i < sch->max_tasklet_idx; i++) {
-    if (!sch->tasklet[i]) continue;
-    mt_stat_u64_init(&us->tasklets[i].time);
-    mt_stat_u64_init(&us->tasklets[i].work);
-  }
-  sch_unlock(sch);
   return 0;
 }

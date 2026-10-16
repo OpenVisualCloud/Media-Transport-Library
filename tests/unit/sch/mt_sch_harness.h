@@ -60,14 +60,6 @@ mtl_handle ut_sch_stats_main_create(uint64_t flags, unsigned int spin_us,
                                     unsigned int work_every);
 void ut_sch_stats_main_destroy(mtl_handle mt);
 
-/* Fills the next count free slots of sch 0 with idle tasklets named ut_idle_<slot>.
- * Returns 0 on success, -ENOSPC past the slot array. */
-int ut_sch_stats_add_idle_tasklets(mtl_handle mt, int count);
-
-/* Leaves sch 0 active with its tasklet array gone, the state sch_free() passes through.
- */
-void ut_sch_stats_drop_tasklets(mtl_handle mt);
-
 /* sch_start()/sch_stop() of sch 0. Return 0 on success. */
 int ut_sch_stats_start(mtl_handle mt);
 int ut_sch_stats_stop(mtl_handle mt);
@@ -78,6 +70,21 @@ int ut_sch_stats_wait_calls(mtl_handle mt, uint64_t calls);
 /* Register a tasklet that always has work through mtl_sch_register_tasklet(), into the
  * first free slot; a second call unregisters the first, so it lands in the same slot. */
 int ut_sch_stats_register_busy(mtl_handle mt);
+
+/* A cumulative counter of sys:tasklet_stat; min is UINT64_MAX before the first sample. */
+struct ut_sch_stat {
+  uint64_t cnt;
+  uint64_t sum;
+  uint64_t min;
+  uint64_t max;
+};
+
+/* The time counter of a tasklet slot of sch 0, or with work its work counter. */
+struct ut_sch_stat ut_sch_stats_counter(int slot, bool work);
+
+/* Attach (on) or detach sys:tasklet_time_sample, as bpftrace does: through the semaphore
+ * of the probe. */
+void ut_sch_stats_sample(bool on);
 
 /* The calls of the spin tasklet so far. */
 uint64_t ut_sch_stats_calls(mtl_handle mt);

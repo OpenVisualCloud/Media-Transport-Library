@@ -620,8 +620,8 @@ def metrics(direction, untraced, traced, proc0, proc1, clk_tck, rdt0, rdt1) -> d
 
 
 # Metrics of the traced window. They compare only when A and B were timed alike:
-# sampled, every loop with the cumulative counters of mtl_sch_get_stats(), or every
-# loop without them, which costs less again.
+# sampled, every loop with the cumulative counters of sys:tasklet_stat, or every loop
+# without them, which costs less again.
 TRACED = re.compile(r"traced|\(ns/call\)|work \(")
 
 

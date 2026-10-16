@@ -137,7 +137,7 @@ Max schedulers: `MT_MAX_SCH_NUM = 18` (in `mt_main.h`)
 
 Layout-sensitive (`doc/perf_compare.md` §5.5):
 - `struct mtl_sch_impl` is an array in `mtl_main_impl` (`sch_mgr.sch[]`, 25720 B each, session mgrs embedded). +32 B there, or `struct mt_sch_tasklet_impl` 128 → 192 B (shifts the DPDK heap), slowed the 2nd RX scheduler 10-15% on the perf pair with no code change; `main` hits the same slow state in ~1 of 10 runs
-- Keep new per-scheduler state out of both (the `mtl_sch_get_stats()` counters are a static table in `mt_sch.c`), and prove a one-scheduler perf diff with a padded reference build
+- Keep new per-scheduler state out of both (the `sys:tasklet_stat` counters are a static table in `mt_sch.c`), and prove a one-scheduler perf diff with a padded reference build
 
 Both modes enter `sch_tasklet_func()`, which switches a thread still on `MPOL_DEFAULT` to `MPOL_LOCAL` until the scheduler stops; any other policy is kept:
 - Under `kernel.numa_balancing=1` the `task_numa_work` scan runs as task work on busy threads; without `MPOL_F_MOF` it rewrites no PTEs there and nothing migrates on fault, but the VMA walk still runs
@@ -496,8 +496,8 @@ Probes in `lib/src/mt_usdt_provider.d`, compiled when `MTL_HAS_USDT`. Attach wit
 Several probes are **attach-to-enable**: zero cost until tracing tool attaches.
 
 - `log_msg` fires for every log call whatever the log level, so `bpftrace -p <pid>` on it reads the full stats dump of any MTL app, of any release since 2024.
-- `mtl_sch_get_stats()` / `mtl_sch_reset_stats()` read the cumulative per-scheduler and per-tasklet `time` and `work` counters (work = calls not returning `MTL_TASKLET_ALL_DONE`); they move only while time measure or its sampling is on. `tasklet_stat` exports them per stats dump. `doc/perf_compare.md` is built on these.
-- Sampling (`tasklet_time_sample` / `MTL_FLAG_TASKLET_TIME_SAMPLE`) times 1 loop in 64 at random xorshift gaps and weights its tasklet calls by the gap: `time.cnt` is exact to within a gap, the sums and `work.cnt` are estimates. It never feeds `loop_time` (a timed loop pays for its own TSC reads) or the per-dump `stat_time` lines.
+- `tasklet_stat` reports, per tasklet and stats dump, cumulative `time` and `work` counters (work = calls not returning `MTL_TASKLET_ALL_DONE`), internal to `mt_sch.c` (no public API); they move only while time measure or its sampling is on. `doc/perf_compare.md` is built on these.
+- Sampling (`tasklet_time_sample`, attach only) times 1 loop in 64 at random xorshift gaps and weights its tasklet calls by the gap: `cnt` is exact to within a gap, the sums and `work_cnt` are estimates. It never feeds the per-dump `stat_time` lines.
 - Keep a probe at ≤ 6 arguments: bpftrace 0.14 rejects `arg6` even for USDT.
 - Running a traced app under `systemd-run`: systemd expands `$` in `ExecStart=` (`$$` becomes `$`), so put scripts in files.
 
