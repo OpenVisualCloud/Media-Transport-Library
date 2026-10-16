@@ -1090,6 +1090,18 @@ def pytest_addoption(parser):
     parser.addoption("--nic", help="list of PCI IDs of network devices")
     parser.addoption("--dma", help="list of PCI IDs of DMA devices")
     parser.addoption("--time", help="seconds to run every test (default=15)")
+    # tests/dual/performance/test_perf_compare.py, doc/perf_compare.md
+    for name, kind, default, text in (
+        ("slots", str, None, "build trees of instance A and B, comma-separated"),
+        ("labels", str, "A,B", "names of instance A and B in the report"),
+        ("args_a", str, "", "extra RxTxApp arguments of instance A"),
+        ("args_b", str, "", "extra RxTxApp arguments of instance B"),
+        ("sessions", int, 16, "sessions per instance"),
+        ("rounds", int, 2, "rounds; every other one swaps the slots"),
+    ):
+        parser.addoption(
+            f"--perf_compare_{name}", type=kind, default=default, help=text
+        )
     parser.addoption(
         "--num_sessions",
         type=int,
@@ -1105,18 +1117,6 @@ def pytest_addoption(parser):
         "Lower quota = more cores; higher quota = fewer cores. "
         "Use 60 for minimal cores. Example: --sch_quota 60",
     )
-    # tests/dual/performance/test_perf_compare.py, doc/perf_compare.md
-    for name, kind, default, text in (
-        ("slots", str, None, "build trees of instance A and B, comma-separated"),
-        ("labels", str, "A,B", "names of instance A and B in the report"),
-        ("args_a", str, "", "extra RxTxApp arguments of instance A"),
-        ("args_b", str, "", "extra RxTxApp arguments of instance B"),
-        ("sessions", int, 16, "sessions per instance"),
-        ("rounds", int, 2, "rounds; every other one swaps the slots"),
-    ):
-        parser.addoption(
-            f"--perf_compare_{name}", type=kind, default=default, help=text
-        )
 
 
 @pytest.fixture(scope="session", autouse=True)
