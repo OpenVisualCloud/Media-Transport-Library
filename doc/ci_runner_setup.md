@@ -198,7 +198,7 @@ keep skipping, honestly, instead of failing against a port the host does not hav
 
 #### The perf pair traces with bpftrace
 
-`perf-compare.yml` measures both instances through USDT, so both perf hosts need
+The compare mode of `perf-pytest.yml` measures both instances through USDT, so both perf hosts need
 `bpftrace` (the host package list of `setup_environment.sh` has it). The job checks
 for it when it copies the two builds to the companion and fails there if a host lacks
 it. Design and isolation: [perf_compare.md](perf_compare.md).

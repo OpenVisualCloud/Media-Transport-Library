@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2026 Intel Corporation
 #
-# Host side of perf-compare.yml (doc/perf_compare.md):
+# Host side of the compare mode of perf-pytest.yml (doc/perf_compare.md):
 #   build      build SHA_A and SHA_B into the slots a and b
 #   sync       copy both slots to the same path on the companion, check that both
 #              hosts can trace, and name the slots in PERF_COMPARE_SLOTS

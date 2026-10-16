@@ -1,13 +1,34 @@
 name: perf-pytest
+# Performance tests on the perf pair, in one of two modes:
+#   capacity  the session ceiling of one build (tests/dual/performance)
+#   compare   two builds, or one build with two configurations, side by side, each
+#             instance on its own PF, CPUs, L3 ways and build tree, measured through
+#             USDT (doc/perf_compare.md)
+# The 16:00 schedule is the compare nightly; run-name and the plan job tell it by
+# that string, and the nightly finds its baseline by the run-name.
+run-name: >-
+  ${{ github.workflow }}${{ (inputs.mode == 'compare' || inputs.nightly || github.event.schedule == '0 16 * * *') && ' compare' || '' }}${{ (inputs.nightly || github.event.schedule == '0 16 * * *') && ' nightly' || '' }}
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: 'capacity: the session ceiling of one build; compare: two builds side by side'
+        required: false
+        type: choice
+        options:
+          - capacity
+          - compare
+        default: capacity
       branch:
-        description: MTL branch to build and test (defaults to workflow branch)
+        description: MTL branch to build and test (defaults to workflow branch); B in compare
+        required: false
+        type: string
+      ref_a:
+        description: '[compare] Reference build A: branch, tag or SHA, e.g. v26.01; main when empty'
         required: false
         type: string
       marker:
-        description: 'Pytest marker filter (-m), e.g. performance'
+        description: '[capacity] Pytest marker filter (-m), e.g. performance'
         required: false
         type: string
       test_filter:
@@ -16,28 +37,109 @@ on:
         type: string
         default: '1080p and 59fps'
       num_sessions:
-        description: Fixed session count (skip binary search)
+        description: Fixed session count (skip binary search); per instance in compare, 16 when empty
         required: false
         type: string
       sch_quota:
-        description: Scheduler session quota override
+        description: '[capacity] Scheduler session quota override'
         required: false
         type: string
       test_time:
-        description: Test duration in seconds
+        description: Test duration in seconds; in compare the untraced window, the traced one is half
         required: false
         type: string
         default: '120'
+      args_a:
+        description: '[compare] Extra RxTxApp arguments of instance A'
+        required: false
+        type: string
+      args_b:
+        description: '[compare] Extra RxTxApp arguments of instance B, e.g. --sch_session_quota 8'
+        required: false
+        type: string
+      rounds:
+        description: '[compare] Rounds; every other round swaps the slots; 2 when empty'
+        required: false
+        type: string
+      fail_pct:
+        description: '[compare] Fail when B is worse than A by more than this percentage; empty only reports'
+        required: false
+        type: string
+      nightly:
+        description: 'Run the compare nightly on main, as the 16:00 schedule does: the main of the last passed night against main'
+        required: false
+        type: boolean
+        default: false
   schedule:
     - cron: '0 22 * * *'
+    - cron: '0 16 * * *'
 
 permissions:
   contents: read
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # the compare nightly reads the commit its last passed run compared
+      actions: read
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      sha_a: ${{ steps.plan.outputs.sha_a }}
+      sha_b: ${{ steps.plan.outputs.sha_b }}
+      label_a: ${{ steps.plan.outputs.label_a }}
+      label_b: ${{ steps.plan.outputs.label_b }}
+    steps:
+      - name: Harden-Runner
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Install Task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+      - name: Check the inputs of the mode and resolve the compared builds
+        id: plan
+        env:
+          MODE: ${{ (inputs.nightly || github.event.schedule == '0 16 * * *') && 'compare' || inputs.mode || 'capacity' }}
+          NIGHTLY: ${{ (inputs.nightly || github.event.schedule == '0 16 * * *') && 'true' || '' }}
+          REF_A: ${{ inputs.ref_a }}
+          BRANCH: ${{ inputs.branch }}
+          MARKER: ${{ inputs.marker }}
+          SCH_QUOTA: ${{ inputs.sch_quota }}
+          ARGS_A: ${{ inputs.args_a }}
+          ARGS_B: ${{ inputs.args_b }}
+          ROUNDS: ${{ inputs.rounds }}
+          FAIL_PCT: ${{ inputs.fail_pct }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: task ci:workflow -- perf-plan
+
+  # compare: the workflow commit, which brings the CI scripts, the tests, the ICE
+  # driver and the tree the framework runs (MtlManager, nicctl.sh). The compared
+  # builds are built in the perf job, from any ref, by the same host and toolchain.
+  build:
+    needs: plan
+    if: needs.plan.outputs.mode == 'compare'
+    uses: ./.github/workflows/build.yml
+    with:
+      skip_linter_check: true
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: read
+
   run-perf-tests:
+    needs: [plan, build]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && contains(fromJSON('["success", "skipped"]'), needs.build.result) }}
     runs-on: [self-hosted, perf, sut]
-    timeout-minutes: 720
+    timeout-minutes: ${{ needs.plan.outputs.mode == 'compare' && 180 || 720 }}
+    env:
+      MODE: ${{ needs.plan.outputs.mode }}
     steps:
       - name: Harden-Runner
         uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
@@ -48,7 +150,8 @@ jobs:
       - name: 'preparation: Clean workspace and checkout MTL'
         uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@c382b88f7723f3187e52925364014732ba34d4c2
         with:
-          ref: '${{ inputs.branch || github.ref }}'
+          # compare tests its builds from the workflow commit that the build job built
+          ref: ${{ needs.plan.outputs.mode == 'compare' && needs.build.outputs.mtl_commit || inputs.branch || github.ref }}
           fetch-depth: '0'
       - name: Install Task
         uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
@@ -56,7 +159,7 @@ jobs:
       # commit's. The first run checks out the workflow commit's copy, the
       # second runs it.
       - name: Overlay test framework from workflow branch
-        if: inputs.branch != ''
+        if: env.MODE == 'capacity' && inputs.branch != ''
         env:
           MTL_SOURCE: ${{ inputs.branch }}
           TEST_SHA: ${{ github.sha }}
@@ -67,6 +170,19 @@ jobs:
         uses: ./.github/actions/validate-host
         with:
           shadow_host: '/etc/mtl-ci/runner.env'
+          build_outputs: ${{ needs.plan.outputs.mode == 'compare' && toJSON(needs.build.outputs) || '' }}
+      - name: Build A and B
+        if: env.MODE == 'compare'
+        env:
+          SHA_A: ${{ needs.plan.outputs.sha_a }}
+          SHA_B: ${{ needs.plan.outputs.sha_b }}
+        run: task ci:perf-compare -- build
+      - name: Copy both builds to the companion
+        if: env.MODE == 'compare'
+        env:
+          SHADOW_HOST_IP: ${{ steps.validate.outputs.shadow_host_ip }}
+          SHADOW_HOST_USER: ${{ steps.validate.outputs.shadow_host_user }}
+        run: task ci:perf-compare -- sync
       - name: Ensure the acceptance virtualenv
         run: task ci:pytest-setup -- ensure
       - name: Set session ID
@@ -98,19 +214,31 @@ jobs:
           PYTEST_FILTER: ${{ inputs.test_filter || '1080p and 59fps' }}
           NUM_SESSIONS: ${{ inputs.num_sessions }}
           SCH_QUOTA: ${{ inputs.sch_quota }}
-        run: task ci:pytest-run -- performance
+          PERF_COMPARE_LABELS: ${{ needs.plan.outputs.label_a }},${{ needs.plan.outputs.label_b }}
+          ARGS_A: ${{ inputs.args_a }}
+          ARGS_B: ${{ inputs.args_b }}
+          ROUNDS: ${{ inputs.rounds }}
+          FAIL_PCT: ${{ inputs.fail_pct }}
+        run: task ci:pytest-run -- ${{ env.MODE == 'compare' && 'perf-compare' || 'performance' }}
       - name: Generate performance report
         if: always()
-        run: task ci:report -- performance
+        run: task ci:report -- ${{ env.MODE == 'compare' && 'perf-compare' || 'performance' }}
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: "perf-test-report-${{ runner.name }}-${{ env.CURRENT_DATE }}"
+          name: "${{ env.MODE == 'compare' && 'perf-compare' || 'perf-test-report' }}-${{ runner.name }}-${{ env.CURRENT_DATE }}"
           path: |
             ./tests/acceptance/report.html
             ./tests/acceptance/performance_report.html
+            ./tests/acceptance/perf_compare.md
             ./tests/acceptance/perf-logs.tar.gz
+      - name: Remove both builds and the cache partitions
+        if: always() && env.MODE == 'compare'
+        env:
+          SHADOW_HOST_IP: ${{ steps.validate.outputs.shadow_host_ip }}
+          SHADOW_HOST_USER: ${{ steps.validate.outputs.shadow_host_user }}
+        run: task ci:perf-compare -- clean
       - name: Clean up
         if: always()
         uses: ./.github/actions/cleanup

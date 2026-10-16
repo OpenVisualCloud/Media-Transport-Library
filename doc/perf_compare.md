@@ -10,8 +10,8 @@ own. Both are measured through USDT, including the scheduler counters of
 It answers "is build B slower or faster than build A, and where", for example the nightly
 "main today against main yesterday", a branch against `main`, or `v26.09` against `v26.01`.
 It also compares one build with two configurations, such as two values of
-`--sch_session_quota`. It does not search for a session ceiling; `perf-pytest.yml` does
-that.
+`--sch_session_quota`. It is the `compare` mode of `perf-pytest.yml`, whose `capacity`
+mode searches the session ceiling of one build.
 
 This page is the design and the plan. Section 9 tracks what is implemented and proved.
 
@@ -35,7 +35,7 @@ This page is the design and the plan. Section 9 tracks what is implemented and p
 | Question | Decision | Why |
 | --- | --- | --- |
 | Run A and B one after the other, or at the same time? | At the same time, then again with the slots swapped | Concurrent runs share every time-varying disturbance (the shared switch floods up to 47 Gb/s of other runners' multicast, other jobs, thermal state) as common mode, which a sequential run turns into a difference. The swap cancels what differs between the two slots (§4.5). |
-| Extend `perf-pytest.yml` or a new workflow? | A new workflow, `perf-compare.yml` | perf-pytest restores one tree and searches a capacity ceiling for hours; perf-compare builds two trees and reports a difference after minutes. One workflow for both would give every input two meanings. Both need the `sut` runner, so GitHub runs them one after the other. |
+| Extend `perf-pytest.yml` or a new workflow? | A mode of `perf-pytest.yml`: `compare` next to `capacity` | Same runner, host preparation and media, and the run and report steps already took a mode (`ci:pytest-run`, `ci:report`). Only a few steps differ: compare builds two refs on the SUT, resolves them and its nightly baseline first, and times out sooner (§6). |
 | A pytest case or a standalone tool? | A pytest case in `tests/acceptance/tests/dual/performance/` | Both builds run under the same harness, the workflow commit's. The case reuses the topology, the VFs on both PFs, the media ramdisk, the RxTxApp config builder and the log layout. |
 | Where are A and B built? | In the compare job, one after the other on the SUT, with the workflow commit's build scripts | One host, compiler and set of flags for both, so a difference is the code's; a cached build can come from another toolchain or host. It also builds `v26.01`, which `build.yml` cannot: its scripts install into `/usr/local`. Both take about 80 s. |
 | How do two builds that expect the same path run side by side? | Each instance runs in a private mount namespace with its tree bind-mounted over `<mtl>/.local_install` | DPDK bakes `RTE_EAL_PMD_PATH` into `librte_eal` as an absolute path with no override, so a moved tree loads the wrong drivers or none; `v26.01` pins DPDK 25.11 and `main` 26.07. |
@@ -219,7 +219,7 @@ protect.
 | Another job on the companion, which also serves other repositories | The round notes it when `Runner.Worker` ran on the companion |
 | Host tasks on the slot cores of a host without `isolcpus` (`mtl-runner-8`), and on the SMT siblings of slot cores | Not prevented: the cpuset bounds the instance, not the host. Tasks on slot cores show as `sch preemptions (/s)`, tasks on siblings only as a longer loop and a wider spread; §4.6 |
 
-An A/A run (`ref_a` = `ref_b`) measures the noise floor of the rig. The nightly run is
+An A/A run (`ref_a` = `branch`) measures the noise floor of the rig. The nightly run is
 one whenever `main` did not move for a day. With equal refs B is a copy of A's build,
 so the two instances run the same binaries.
 
@@ -471,42 +471,50 @@ code, and run enough rounds to see the slow state of the reference.
 
 ## 6. CI
 
-### 6.1. Inputs of `perf-compare.yml`
+### 6.1. Inputs of `perf-pytest.yml` in `compare` mode
 
 | Input | Default | Meaning |
 | --- | --- | --- |
-| `ref_a` | `main` | Reference build: branch, tag or SHA, with an optional `~n` or `^` |
-| `ref_b` | `main` | Candidate build; equal to `ref_a` it makes an A/A run |
-| `args_a`, `args_b` | empty | Extra RxTxApp arguments of each instance: letters, digits, spaces and `._/:=,+-` |
-| `sessions` | `16` | Sessions per instance; 16 × 1080p59 is 42 Gb/s per PF |
-| `video` | `1080p59` | `1080p59`, `1080p50`, `2160p59`, `2160p50` |
+| `mode` | `capacity` | `compare` for this page |
+| `ref_a` | `main` when empty | Reference build A: branch, tag or SHA, with an optional `~n` or `^` |
+| `branch` | the workflow branch | Candidate build B, the build under test of either mode; equal to `ref_a` it makes an A/A run |
+| `args_a`, `args_b` | empty | Extra RxTxApp arguments of each instance: letters, digits, spaces and `_./:=,+-` |
+| `num_sessions` | `16` | Sessions per instance; 16 × 1080p59 is 42 Gb/s per PF |
+| `test_filter` | `1080p and 59fps` | The case: `1080p` or `2160p`, `50fps` or `59fps` |
 | `test_time` | `120` | Untraced window in seconds; the traced one is half |
 | `rounds` | `2` | Rounds; an even number keeps the slot swap balanced |
 | `fail_pct` | empty | Fail on a regression beyond this percentage; needs an even `rounds` |
+| `nightly` | `false` | Run the compare nightly (§6.3), on `main` only and whatever `mode` says, for a dispatcher that replaces the schedule |
 
-The refs job rejects a bad ref before anything is built, and the case rejects bad
-arguments and numbers before it starts an instance. A ref must be a plain name: no option, no `^{/regex}`, no comma and no newline, as it reaches `git`,
-`GITHUB_OUTPUT` and the labels. The arguments must not hold shell characters, as they
-reach a root shell script on both hosts and the report.
+`marker` and `sch_quota` belong to `capacity`; the plan job fails a run that sets an input
+of the other mode, so a compare-only input such as `ref_a` never silently runs a capacity
+search, and a nightly that sets `ref_a` or `branch`, as it picks both itself. It
+also rejects a bad ref before anything is built, and the case rejects bad arguments and
+numbers before it starts an instance. A ref must be a plain name: no option, no
+`^{/regex}`, no comma and no newline, as it reaches `git`, `GITHUB_OUTPUT` and the
+labels. The arguments must not hold shell characters, as they reach a root shell script
+on both hosts and the report.
 
 ### 6.2. Jobs
 
 ```mermaid
 flowchart LR
-  dispatch["workflow_dispatch<br/>Use workflow from: the tests and CI scripts<br/>ref_a, ref_b, args_a, args_b, …"] --> refs
-  nightly["schedule 16:00 UTC<br/>main of the last passed night, main"] --> refs
-  dispatch --> build
-  nightly --> build
-  refs["refs<br/>ubuntu-latest<br/>ref_a, ref_b to SHAs and labels"] --> compare
-  build["build<br/>build.yml, the workflow commit<br/>ICE driver, framework tree"] --> compare
-  compare["compare<br/>self-hosted perf sut: mtl-runner-7<br/>companion: mtl-runner-8"]
+  dispatch["workflow_dispatch, mode: compare<br/>Use workflow from: the tests and CI scripts<br/>ref_a, branch, args_a, args_b, …"] --> plan
+  nightly["schedule 16:00 UTC, or nightly: true<br/>main of the last passed night, main"] --> plan
+  plan["plan<br/>ubuntu-latest<br/>the mode, its inputs, A and B to SHAs and labels"] --> build
+  plan --> run
+  build["build, compare only<br/>build.yml, the workflow commit<br/>ICE driver, framework tree"] --> run
+  run["run-perf-tests<br/>self-hosted perf sut: mtl-runner-7<br/>companion: mtl-runner-8"]
 ```
 
-1. `refs` resolves both refs to SHAs on a GitHub-hosted runner
-   (`task ci:workflow -- perf-compare-refs`).
-2. `build` calls `build.yml` for the workflow commit: the tests, the CI scripts, the ICE
-   driver and the tree the framework runs (MtlManager, `nicctl.sh`).
-3. `compare` runs on `[self-hosted, perf, sut]`:
+1. `plan` decides the mode (the input, or `compare` for the 16:00 schedule), fails on an
+   input of the other mode, and in `compare` resolves A and B to SHAs on a GitHub-hosted
+   runner (`task ci:workflow -- perf-plan`).
+2. `build`, in `compare` only, calls `build.yml` for the workflow commit: the tests, the
+   CI scripts, the ICE driver and the tree the framework runs (MtlManager, `nicctl.sh`).
+   `capacity` restores the build of the branch under test instead, as it always did.
+3. `run-perf-tests` runs on `[self-hosted, perf, sut]`, the job both modes share; the
+   compare steps are:
    1. check out the workflow commit and run `validate-host` with the `build` outputs,
       which restores the workflow commit's build from its cache, aligns ICE and syncs the
       companion;
@@ -516,7 +524,7 @@ flowchart LR
    3. copy both trees to the same path on the companion, check bpftrace on both hosts and
       export the two paths as `PERF_COMPARE_SLOTS`;
    4. prepare the acceptance virtualenv, the pytest configuration and the perf media,
-      then `task ci:pytest-run -- perf-compare`;
+      as `capacity` does, then `task ci:pytest-run -- perf-compare`;
    5. append the report to the job summary and upload it with the logs;
    6. stop every unit, undo the RDT groups and remove the trees on both hosts.
 
@@ -543,9 +551,10 @@ commit's; a kernel module cannot differ between two processes.
 
 ### 6.3. Nightly
 
-The schedule runs with `ref_a` = the `main` that the last passed night compared as its B,
-and `ref_b` = the `main` of this run (`GITHUB_SHA`), so every commit is in exactly one
-night's window:
+The 16:00 schedule (22:00 is the capacity one), or a dispatch on `main` with
+`nightly: true`, runs with A = the `main` that the last passed night compared as its B,
+and B = the `main` of this run (`GITHUB_SHA`), so every commit is in exactly one night's
+window:
 
 ```text
 main   ──●───●──●────────●───●──────●───────●──▶
@@ -556,9 +565,13 @@ night 2                  ├── A₂ = B₁ … B₂ ──┤
 GitHub starts a scheduled run 2 to 7 hours late, by a different amount every night, so a
 window counted back from the start would leave commits to no night. A failed night
 widens the next one; with no passed night yet, or when the Actions API read fails, A is
-`main` of 24 hours ago. The refs job
-reads the last passed run through the Actions API (`actions: read`). When `main` did not
-move, the night is an A/A run.
+`main` of 24 hours ago. The plan job reads the last passed run through the Actions API
+(`actions: read`). Both modes are runs of one workflow, so a compare night carries the
+run name `perf-pytest compare nightly` and the plan job looks for that title among the
+passed runs on `main`; a capacity run keeps the plain `perf-pytest` it always had. A
+nightly dispatched from another branch fails at once: its B would not be on `main`, and
+the next night would lose its baseline. When `main` did not move, the night is
+an A/A run.
 
 ### 6.4. Host requirements and the first run
 
@@ -566,16 +579,16 @@ bpftrace on both perf hosts is host image content (`setup_environment.sh` lists 
 install nothing). The job fails at the copy step on a host without it.
 
 Three choices are independent: the workflow ref (the "Use workflow from" field of the
-dispatch, which brings the tests and the CI scripts), `ref_a` and `ref_b`. A and B can be
-any ref with `tests/tools/RxTxApp`, a `versions.env` and the DPDK patches it names, which
-`v25.12-rc1`, `v26.01`, `v26.09` and every later commit have; `v26.01` was built and
-compared on the perf pair. The workflow ref needs this workflow, so it is `main` or a later
-branch or tag. RxTxApp ignores an option it does not know, so an `args_a` or `args_b`
-newer than its build has no effect there.
+dispatch, which brings the tests and the CI scripts), `ref_a` and `branch`. A and B can
+be any ref with `tests/tools/RxTxApp`, a `versions.env` and the DPDK patches it names,
+which `v25.12-rc1`, `v26.01`, `v26.09` and every later commit have; `v26.01` was built and
+compared on the perf pair. The workflow ref needs the compare mode, so it is this branch,
+`main` once it lands, or a later branch or tag. RxTxApp ignores an option it does not
+know, so an `args_a` or `args_b` newer than its build has no effect there.
 
-GitHub dispatches a workflow only when its file is on the default branch, so the first
-`perf-compare.yml` run is possible after the workflow lands on `main`. Until then the case
-runs by hand (§8).
+GitHub dispatches a workflow only when its file is on the default branch, and
+`perf-pytest.yml` is: the compare mode can run before it is merged, with "Use workflow
+from" set to this branch and `mode: compare`. The schedule only runs the copy on `main`.
 
 ## 7. Other frameworks
 
@@ -634,7 +647,7 @@ current build. The report is `logs/performance/latest/perf_compare.md`, the raw 
 | USDT probe `sys:tasklet_stat` | Done; six arguments, because bpftrace 0.14 reads only `arg0`-`arg5` |
 | Release build without USDT | Fixed (the probe stubs evaluate their arguments); `base_build.yml` builds it |
 | Instance placement, RDT, collectors, parser, statistics, report (`mtl_engine/perf_compare.py`) | Done |
-| pytest case, options, CI scripts, `perf-compare.yml` | Done; the workflow runs once it is on `main` (§6.4) |
+| pytest case, options, CI scripts, the `compare` mode of `perf-pytest.yml` | Done; it can be dispatched from this branch before the merge (§6.4) |
 | A and B compiled by the compare job, any ref | Done; `perf-compare.sh build` proved by hand with `v26.01` against `main`, the workflow first runs on `main` |
 | Proof on one host and on `mtl-runner-7` / `mtl-runner-8` | Done, below |
 | Same isolation on `mtl-runner-8` as on `mtl-runner-7` | Recommended (§4.6); new kernel parameters and a reboot |
