@@ -45,11 +45,17 @@ RUN ./build_dpdk.sh -f
 
 # Run the unit suite, then build MTL
 WORKDIR "${MTL_REPO}"
+# The final stage copies /install, /usr/local/bin, the libraries, build/ and
+# RxTxApp, so check all of them. pip's ninja and meson's configure probes are
+# build tools, so they aren't shipped.
 RUN ./build.sh unit && \
     ./build.sh && \
     ninja -C build install && \
     DESTDIR=/install ninja -C build install && \
-    setcap 'cap_net_raw+ep' tests/tools/RxTxApp/build/RxTxApp
+    setcap 'cap_net_raw+ep' tests/tools/RxTxApp/build/RxTxApp && \
+    python3 -m pip uninstall -y --break-system-packages ninja && \
+    find build -name meson-private -type d -prune -exec rm -rf {} + && \
+    .github/scripts/ci/check-hardening.sh /install /usr/local/bin /usr/local/lib/x86_64-linux-gnu build tests/tools/RxTxApp/build/RxTxApp
 
 # Ubuntu 24.04, runtime/final stage
 FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:24.04" AS final
