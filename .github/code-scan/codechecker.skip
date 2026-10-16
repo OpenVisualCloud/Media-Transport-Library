@@ -1,0 +1,6 @@
+-*/.local_install/*
+-/usr/*
+-*/build/*
++*/lib/*
++*/include/*
+-*

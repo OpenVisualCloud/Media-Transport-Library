@@ -21,7 +21,7 @@ updates:
     commit-message:
       prefix: "Ci: "
 
-  # The Bandit release of the Bandit workflow
+  # The Bandit and CodeChecker releases of the Code scan workflow
   - package-ecosystem: pip
     directory: /.github/code-scan
     schedule:

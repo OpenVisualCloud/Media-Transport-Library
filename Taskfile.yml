@@ -141,6 +141,32 @@ tasks:
     cmds:
       - bash {{.CI_SCRIPTS}}/clang-tidy-setup.sh
 
+  ci:clang-analyzer:
+    desc: Run the Clang Static Analyzer with cross-TU analysis over libmtl and write csa.sarif; fails if a file fails to analyze
+    summary: |
+      Needs compile_commands.json from ci:clang-tidy-setup, clang 18 with
+      clang-tools-18, and CodeChecker from .github/code-scan/codechecker-requirements.txt.
+
+      It analyzes the libmtl entries of compile_commands.json only: with --ctu the
+      other projects would join the CTU pre-analysis, and their duplicate
+      definitions drop mtl_init() and others from the CTU map. -march=native
+      becomes -march=x86-64-v4, so the result does not depend on the runner CPU.
+      ctu-phase1-inlining=all: since clang 16 the first pass inlines only small
+      functions of other files, and then misses the NULL flow of 8afeaa6fc.
+      deadcode.DeadStores is off: dbg() compiles to nothing, so a value read
+      only by dbg() would count as dead. csa.sarif holds the reports nobody
+      reviewed, for code scanning.
+    cmds:
+      - bash {{.CI_SCRIPTS}}/clang-analyzer.sh analyze
+
+  ci:clang-analyzer-check:
+    desc: Fail on a Clang Static Analyzer report that no review comment marks, with its bug path
+    summary: |
+      Fix the code, or review the report and mark the line above it
+      // codechecker_suppress [<checker>] <what the review found>
+    cmds:
+      - bash {{.CI_SCRIPTS}}/clang-analyzer.sh check
+
   ci:cargo-audit:
     desc: Audit the Rust lock files; rust/ commits none, so audit what a build resolves today
     cmds:
