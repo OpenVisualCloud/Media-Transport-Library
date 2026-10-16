@@ -108,6 +108,11 @@ def _side(role, host) -> pc.Side:
 def _report(opts, video, sides, rounds) -> tuple[str, dict]:
     labels, args = opts["labels"], opts["args"]
     names = {s.role: pc.sh(s.host, "hostname").strip() for s in sides}
+    valid = [r["metrics"] for r in rounds if not r["problems"]]
+    timed = {
+        k: "; ".join(sorted({m for r in valid for m in r[k].get("trace", {}).values()}))
+        for k in ("A", "B")
+    }
     lines = [
         f"# perf-compare: A `{labels['A']}` vs B `{labels['B']}`",
         "",
@@ -118,6 +123,7 @@ def _report(opts, video, sides, rounds) -> tuple[str, dict]:
         "| --- | --- | --- |",
         f"| Build | `{labels['A']}` | `{labels['B']}` |",
         f"| Extra args | `{args['A'] or '-'}` | `{args['B'] or '-'}` |",
+        f"| Traced window timing | {timed['A'] or '-'} | {timed['B'] or '-'} |",
         "",
         "| Host | Role | Slot | CPUs | isolcpus | CAT |",
         "| --- | --- | --- | --- | --- | --- |",
@@ -133,7 +139,6 @@ def _report(opts, video, sides, rounds) -> tuple[str, dict]:
     for n, r in enumerate(rounds, 1):
         result = "; ".join(r["problems"] + r["notes"]) or "valid"
         lines.append(f"| {n} | {r['order'][0]} | {r['order'][1]} | {result} |")
-    valid = [r["metrics"] for r in rounds if not r["problems"]]
     tables = {s.role: pc.compare(valid, s.role) for s in sides}
     for s in sides:
         lines += [

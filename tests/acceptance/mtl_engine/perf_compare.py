@@ -31,6 +31,7 @@ COLLECTOR_CPU = 1
 # An explicit newline: BPFTRACE_STRLEN cuts a long message before its own.
 LOG_SCRIPT = 'usdt::sys:log_msg { printf("%llu L %s\\n", nsecs, str(arg1)); }'
 TRACE_SCRIPT = "usdt::sys:tasklet_time_measure {}"
+SAMPLE_SCRIPT = "usdt::sys:tasklet_time_sample {}"
 STAT_SCRIPT = (
     'usdt::sys:tasklet_stat { printf("%llu T %d %s %llu %llu %llu %llu\\n", '
     "nsecs, arg0, str(arg1), arg2, arg3, arg4, arg5); }"
@@ -54,7 +55,6 @@ RECORD = re.compile(r"^\d+ [LT] ")
 RE_SCH = re.compile(
     r"SCH\((\d+):[^)]*\): tasklets \d+, lcore \d+\(t_pid: (\d+)\), avg loop (\d+) ns"
 )
-RE_SCH_TIME = re.compile(r"SCH\((\d+)\): time avg ([\d.]+)us")
 RE_TASKLET = re.compile(r"SCH\((\d+),\d+\): tasklet ([^,]+), avg ([\d.]+)us")
 RE_FPS = re.compile(r"(RX|TX)_VIDEO_SESSION\((\d+),(\d+):[^)]*\): fps ([\d.]+)")
 RE_BUSY = re.compile(
@@ -314,11 +314,11 @@ class Instance:
     log: str
     rdt: str | None = None
     pid: int = 0
-    stat: bool | None = None  # the build has sys:tasklet_stat; None: not traced yet
+    trace_mode: str | None = None  # how the traced window timed it; None: not yet
 
     @property
     def units(self) -> list[str]:
-        traced = [f"{self.name}-trace"] if self.stat is not None else []
+        traced = [f"{self.name}-trace"] if self.trace_mode else []
         return [self.name, f"{self.name}-log", *traced]
 
     def start(self, mtl_path: str, app_cmd: str) -> None:
@@ -359,14 +359,18 @@ class Instance:
         )
 
     def trace(self) -> None:
-        """Attach the traced window's probes; sys:tasklet_stat where the build has it."""
-        out = sh(
-            self.host,
-            f"bpftrace -l 'usdt:*:sys:tasklet_stat' -p {self.pid}",
-            check=False,
-        )
-        self.stat = "sys:tasklet_stat" in out
-        self.collect("trace", TRACE_SCRIPT + (" " + STAT_SCRIPT if self.stat else ""))
+        """Attach the traced window's probes, the cheapest timing the build has."""
+        out = sh(self.host, f"bpftrace -l 'usdt:*:sys:*' -p {self.pid}", check=False)
+        probes = set(re.findall(r"sys:(\w+)", out))
+        if "log_msg" not in probes:  # attached since the start, so the listing failed
+            raise RuntimeError(f"{self.name}: bpftrace lists no sys probes: {out}")
+        if "tasklet_time_sample" in probes:
+            self.trace_mode, script = "sampled", f"{SAMPLE_SCRIPT} {STAT_SCRIPT}"
+        elif "tasklet_stat" in probes:
+            self.trace_mode, script = "full", f"{TRACE_SCRIPT} {STAT_SCRIPT}"
+        else:
+            self.trace_mode, script = "full, no counters", TRACE_SCRIPT
+        self.collect("trace", script)
 
     def records(self, tail: int = 0) -> list[str]:
         """The collector lines of all kinds in time order, or the last *tail* of each."""
@@ -468,7 +472,6 @@ class Dump:
     ts: int
     traced: bool = False
     sch: dict = field(default_factory=dict)  # idx: (avg loop ns, t_pid)
-    sch_traced: dict = field(default_factory=dict)  # idx: avg loop ns, traced
     tasklet_avg: dict = field(default_factory=dict)  # name: [avg ns per call]
     tasklets: dict = field(default_factory=dict)  # (sch, name): [cnt, sum, wcnt, wsum]
     fps: dict = field(default_factory=dict)  # (dir, m, s): fps
@@ -501,8 +504,6 @@ def parse_dumps(records: list[str]) -> list[Dump]:
             cur = None
         elif m := RE_SCH.search(msg):
             cur.sch[int(m[1])] = (int(m[3]), int(m[2]))
-        elif m := RE_SCH_TIME.search(msg):
-            cur.sch_traced[int(m[1])] = float(m[2]) * 1000
         elif m := RE_TASKLET.search(msg):
             cur.tasklet_avg.setdefault(m[2], []).append(float(m[3]) * 1000)
             cur.traced = True
@@ -584,20 +585,23 @@ def metrics(direction, untraced, traced, proc0, proc1, clk_tck, rdt0, rdt1) -> d
     m["hw dropped pkts"] = sum(d.hw_dropped for d in untraced)
 
     base, traced = traced[:1], traced[1:]
-    for idx in sorted({i for d in traced for i in d.sch_traced}):
+    # The loop time MTL always measures, now with the timing cost in it.
+    for idx in sorted({i for d in traced for i in d.sch}):
         m[f"sch_{idx} avg loop, traced (ns)"] = _median(
-            d.sch_traced[idx] for d in traced if idx in d.sch_traced
+            d.sch[idx][0] for d in traced if idx in d.sch
         )
+    per_name: dict = {}
     if traced and base[0].tasklets and traced[-1].tasklets:
         first, last = base[0], traced[-1]
         dt_ns = last.ts - first.ts
-        per_name: dict = {}
         for key, vals in last.tasklets.items():
             delta = [b - a for a, b in zip(first.tasklets.get(key, [0, 0, 0, 0]), vals)]
             acc = per_name.setdefault(key[1], [0, 0, 0, 0])
             for i, v in enumerate(delta):
                 acc[i] += v
-        for name, (_, _, wcnt, wsum) in sorted(per_name.items()):
+        for name, (cnt, tsum, wcnt, wsum) in sorted(per_name.items()):
+            if cnt:
+                m[f"{name} avg (ns/call)"] = tsum / cnt
             if wcnt:
                 m[f"{name} work (ns/call)"] = wsum / wcnt
                 m[f"{name} work (% of a core)"] = 100 * wsum / dt_ns
@@ -605,9 +609,8 @@ def metrics(direction, untraced, traced, proc0, proc1, clk_tck, rdt0, rdt1) -> d
         work = sum(per_name.get(n, [0, 0, 0, 0])[3] for n in WORK_TASKLETS[direction])
         if pkts and work:
             m[f"{direction} work (ns/pkt)"] = work / pkts
-    # Every build prints these while traced. Builds with and without the
-    # cumulative counters of mtl_sch_get_stats() pay different tracing costs.
-    for name in sorted({n for d in traced for n in d.tasklet_avg}):
+    # A build without sys:tasklet_stat prints these while every loop is timed.
+    for name in sorted({n for d in traced for n in d.tasklet_avg} - per_name.keys()):
         m[f"{name} avg (ns/call)"] = _median(
             statistics.mean(d.tasklet_avg[name])
             for d in traced
@@ -618,9 +621,9 @@ def metrics(direction, untraced, traced, proc0, proc1, clk_tck, rdt0, rdt1) -> d
 
 # Metrics a regression check looks at; lower is better for all of them.
 PRIMARY = re.compile(r"avg loop \(ns\)|process \(cores\)|work \(ns/pkt\)")
-# Metrics of the traced window. A build with the cumulative counters of
-# mtl_sch_get_stats() pays more for tracing than one without them, so these rows
-# compare only when both builds have them or neither has.
+# Metrics of the traced window. They compare only when A and B were timed alike:
+# sampled, every loop with the cumulative counters of mtl_sch_get_stats(), or every
+# loop without them, which costs less again.
 TRACED = re.compile(r"traced|\(ns/call\)|work \(")
 
 
@@ -631,7 +634,7 @@ class Row:
     b: float | None
     diff: float | None
     noise: float | None
-    alike: bool = True  # False: A and B trace differently, so the diff means nothing
+    alike: bool = True  # False: A and B were timed differently, so no diff
 
     @property
     def regression(self) -> float | None:
@@ -659,9 +662,8 @@ def compare(rounds: list[dict], side: str) -> list[Row]:
     for r in rounds:
         for inst in ("A", "B"):
             names += [n for n in r[inst].get(side, {}) if n not in names]
-    work = [
-        any("work (" in n for r in rounds for n in r[inst].get(side, {}))
-        for inst in ("A", "B")
+    modes = [
+        {r[inst].get("trace", {}).get(side) for r in rounds} for inst in ("A", "B")
     ]
     rows = []
     for name in names:
@@ -669,7 +671,7 @@ def compare(rounds: list[dict], side: str) -> list[Row]:
         b_vals = [r["B"].get(side, {}).get(name) for r in rounds]
         a = _mean(a_vals)
         b = _mean(b_vals)
-        alike = work[0] == work[1] or not TRACED.search(name)
+        alike = modes[0] == modes[1] or not TRACED.search(name)
         diff = 100 * (b - a) / a if a and b is not None and alike else None
         spreads = [s for s in (_spread(a_vals), _spread(b_vals)) if s is not None]
         rows.append(Row(name, a, b, diff, max(spreads) if spreads else None, alike))
@@ -739,7 +741,8 @@ def run_round(
     *sides* is [rx side, tx side], *order[slot]* names the instance ("A" or "B")
     in that slot, *trees* maps it to its build tree and *app_cmd(side, slot,
     label)* returns its application command. The logs and records of the round
-    are copied to *out_dir*. Returns ({label: {role: metrics}}, problems, notes).
+    are copied to *out_dir*. Returns ({label: {role: metrics, "trace": {role: mode}}},
+    problems, notes).
     """
     rx, tx = sides
     problems, notes, insts = [], [], []
@@ -820,7 +823,10 @@ def run_round(
             )
             continue
         m = metrics(direction, untraced, traced, p0, p1, clk[id(i.host)], r0, r1)
-        if i.stat and f"{direction} work (ns/pkt)" not in m:
+        if (
+            i.trace_mode != "full, no counters"
+            and f"{direction} work (ns/pkt)" not in m
+        ):
             problems.append(f"{i.name} ({i.label}): no sys:tasklet_stat records")
         worst = m["fps (worst session)"]
         if worst < STEADY_FPS * fps:
@@ -829,4 +835,5 @@ def run_round(
             if m[loss]:
                 notes.append(f"{i.name} ({i.label}): {m[loss]} {loss}")
         results[i.label][i.role] = m
+        results[i.label].setdefault("trace", {})[i.role] = i.trace_mode
     return results, problems, notes
