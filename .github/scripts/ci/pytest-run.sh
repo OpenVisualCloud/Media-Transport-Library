@@ -25,6 +25,9 @@ performance)
 	[[ -n ${PYTEST_MARKER:-} ]] && args+=(-m "$PYTEST_MARKER")
 	[[ -n ${NUM_SESSIONS:-} ]] && args+=(--num_sessions "$NUM_SESSIONS")
 	[[ -n ${SCH_QUOTA:-} ]] && args+=(--sch_quota "$SCH_QUOTA")
+	# Joined with '=': the value starts with '--', which pytest would otherwise
+	# read as an option of its own.
+	[[ -n ${SUT_APP_ARGS:-} ]] && args+=("--sut_app_args=$SUT_APP_ARGS")
 	(cd "$acceptance_dir" && "${pytest[@]}" "${args[@]}" ./tests/dual/performance)
 	;;
 nightly)
