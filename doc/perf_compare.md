@@ -639,42 +639,11 @@ current build. The report is `logs/performance/latest/perf_compare.md`, the raw 
 | Layout sensitivity of the RX schedulers | Open, in `main`: a change of its own (§5.5) |
 | FFmpeg and GStreamer | Not recommended now (§7) |
 
-The sampling proof on the test host is in §5.3. The proof on one host (E810, kernel 5.15,
-bpftrace 0.14) ran `pc.run_round()` with both
-instances' TX and RX on one host: A was `main` without `sys:tasklet_stat`, B the
-`sys:tasklet_stat` change,
-4 × 1080p50 each, TSC pacing, 2 rounds. Both rounds were valid, every untraced row of A
-and B agreed within the noise, as two builds with no data path change should, and B
-alone had the work rows (`RX work` 316 ns per packet, `TX work` 661 ns per packet).
+Proofs, all with both rounds valid and the runners left as found:
 
-The first proof on the perf pair compared the tree the last CI job had left in the runner
-workspace with the `sys:tasklet_stat` change built on `mtl-runner-7`: two build hosts, so its RX difference
-could not be put on the code. That is why the compare job now builds A and B itself.
-
-The second ran the case with both slots built by `perf-compare.sh build` on
-`mtl-runner-7` (A `v26.01` on DPDK 25.11, B `main` 2fe5599f9 on DPDK 26.07, 81 s), from a
-private checkout with the CI virtualenv and the `perf-pytest.yml` configuration:
-16 × 1080p59 per instance, E830 rate limiter pacing, 2 rounds, `test_time` 60. It passed
-in 6 min 19 s with both rounds valid; RX ran on isolated cores 4-11 and 12-19, TX on 2-9
-and 10-17, and CAT gave each slot 5 of the 16 L3 ways. The spread between the rounds was
-0-2% for the loop, CPU and bandwidth rows. Against `v26.01`, `main`'s RX schedulers loop
-37% longer (514 against 375 ns) and move 37% less memory (14.5 against 23.1 GB/s), its TX
-schedulers loop 19% longer and move 14% less. That is the shape of the non-temporal RX
-copy that came after `v26.01`: more time per packet in the loop, much less memory
-traffic; at a fixed load it says nothing yet about how many sessions a core carries. The
-runners were left as found: no units, no RDT groups and the full L3 mask.
-
-The third ran `main` 2fe5599f9 (A) against this branch (B) the same way, in 6 min 20 s
-with both rounds valid. A was timed in full and B sampled:
-
-| Scheduler loop, untraced → traced | A, full | B, sampled |
-| --- | ---: | ---: |
-| RX `sch_1` | 508 → 644 ns (+27%) | 514 → 518 ns (+0.8%) |
-| RX `sch_2` | 500 → 640 ns (+28%) | 586 → 594 ns (+1.4%) |
-| TX `sch_1` | 1092 → 1209 ns (+11%) | 1104 → 1106 ns (+0.2%) |
-| TX `sch_2` | 256 → 332 ns (+30%) | 260 → 260 ns (0%) |
-
-The untraced rows of A and B agreed within the noise or within 2%, except RX `sch_2`:
-586 against 500 ns, +17% in both slots. `main` padded to the struct sizes of B gives
-+15% of it (§5.5), so it is the layout of the new counters, not their code. With the
-counters moved out of the structs, a fourth run of 4 rounds found it at `main`'s level.
+| Run | What it showed |
+| --- | --- |
+| One host, A `main` against B with `sys:tasklet_stat`, 4 × 1080p50 | Every untraced row agreed within the noise; B alone had the work rows |
+| Pair, A `v26.01` (DPDK 25.11) against B `main` (DPDK 26.07), 16 × 1080p59 | Both built by `perf-compare.sh build` in 81 s; spread between rounds 0-2%. `main`'s RX loop is 37% longer and moves 37% less memory: the non-temporal RX copy after `v26.01` |
+| Pair, `main` timed in full against B sampled | Traced loop +11-30% in full, 0-1.4% sampled; B's second RX scheduler +17% untraced, a layout effect (§5.5) |
+| Pair, `main` against B with the counters out of the structs, 4 rounds | Every untraced row within the noise of `main`, the second RX scheduler included |
