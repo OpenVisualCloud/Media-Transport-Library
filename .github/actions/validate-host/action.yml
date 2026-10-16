@@ -37,7 +37,13 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: ./.github/actions/cleanup
+    # Every step below is a Task; a fleet runner does not have it on PATH.
+    - name: Install Task
+      uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
+    - name: Cleanup processes
+      shell: bash
+      run: task cleanup
 
     - name: Compute local source checksums
       id: local-checksums
@@ -77,7 +83,10 @@ runs:
       uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
       with:
         key: ${{ steps.keys.outputs.mtl_key }}
-        path: .local_install/mtl
+        # The plugin registry build.sh writes beside the MTL prefix.
+        path: |
+          .local_install/mtl
+          .local_install/conf
         fail-on-cache-miss: true
 
     - name: 'cache: Restore JPEG XS'
@@ -133,13 +142,9 @@ runs:
       shell: bash
       run: task ci:configure-host -- make-executable
 
-    - name: Align the DPDK driver plugin path with the restored tree
+    - name: Remove a stale DPDK driver plugin link
       shell: bash
       run: task ci:configure-host -- dpdk-plugins
-
-    - name: Generate CI plugin registry
-      shell: bash
-      run: task ci:configure-host -- registry
 
     - name: Preserve Task path for privileged activation
       shell: bash
@@ -151,6 +156,10 @@ runs:
       if: steps.ice.outputs.required == 'true'
       shell: bash
       run: sudo -E env -u BASH_XTRACEFD "$TASK_BIN" ci:activate-ice
+
+    - name: Refuse stray system copies of the install's libraries
+      shell: bash
+      run: task ci:configure-host -- stray-libraries
 
     - name: Configure dependency environment
       shell: bash
@@ -171,3 +180,11 @@ runs:
         SHADOW_HOST_IP: ${{ steps.shadow-creds.outputs.ip }}
         SHADOW_HOST_USER: ${{ steps.shadow-creds.outputs.user }}
       run: task ci:configure-host -- shadow-sync
+
+    - name: Activate ICE on the shadow host
+      if: steps.shadow-creds.outputs.ip != '' && steps.ice.outputs.required == 'true'
+      shell: bash
+      env:
+        SHADOW_HOST_IP: ${{ steps.shadow-creds.outputs.ip }}
+        SHADOW_HOST_USER: ${{ steps.shadow-creds.outputs.user }}
+      run: task ci:configure-host -- shadow-activate-ice

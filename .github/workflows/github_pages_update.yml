@@ -5,13 +5,6 @@ on:
   push:
     branches: [ "main" ]
   pull_request:
-    paths:
-      - '**.md'
-      - '**.rst'
-      - 'doc/**'
-      - 'VERSION'
-      - '.github/workflows/github_pages_update.yml'
-      - '.github/scripts/ci/workflow-ops.sh'
 
 env:
   DEBIAN_FRONTEND: noninteractive
@@ -24,9 +17,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The docs filter of .github/path_filters.yml says what the Sphinx build
+  # reads. A manual run builds regardless.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      docs: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.docs == 'true' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        with:
+          filters: .github/path_filters.yml
+
   # See doc/sphinx/build_docs.md: this job runs the steps of that guide.
   buildDocumentation:
     name: Build documentation
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
     runs-on: 'ubuntu-24.04'
     timeout-minutes: 20
     steps:

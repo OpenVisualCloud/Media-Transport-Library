@@ -90,7 +90,7 @@ that's a bug in the agent's behavior, not permission to allow it.
 ./build.sh debugonly        # debug, no ASan
 ./build.sh unit             # configure build_unit/, build and RUN the unit gtest suite, then exit
 ./build.sh enable_fuzzing   # add libFuzzer harnesses
-MTL_INSTALL_PREFIX=$PWD/.local_install ./build.sh   # local prefix install
+MTL_INSTALL_PREFIX=$PWD/.local_install/mtl ./build.sh   # local prefix install
 ```
 
 `build.sh` is a sequence of `meson setup` + `ninja` + `ninja install` per component; each

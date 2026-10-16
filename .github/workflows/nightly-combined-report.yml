@@ -79,7 +79,22 @@ jobs:
           BASELINE_PYTEST_RUN_NUMBER: ${{ github.event.inputs.baseline_pytest_run_number }}
           BASELINE_GTEST_RUN_NUMBER: ${{ github.event.inputs.baseline_gtest_run_number }}
         with:
-          script: return require(`${{ github.workspace }}/.github/scripts/ci/find-nightly-runs.js`)({ github, context, core })
+          script: |
+            const env = process.env;
+            const list = async (suite, per_page, branch) =>
+              (await github.rest.actions.listWorkflowRuns({
+                ...context.repo, workflow_id: `nightly-${suite}.yml`, status: 'completed', per_page, ...(branch && { branch }),
+              })).data.workflow_runs;
+            const byNumber = async (suite, n) => (await list(suite, 100)).find((r) => r.run_number == n);
+            for (const suite of ['pytest', 'gtest']) {
+              const S = suite.toUpperCase();
+              const run = env[`${S}_RUN_NUMBER`] ? await byNumber(suite, env[`${S}_RUN_NUMBER`]) : (await list(suite, 1, env[`${S}_BRANCH`]))[0];
+              const baseline = env[`BASELINE_${S}_RUN_NUMBER`]
+                ? await byNumber(suite, env[`BASELINE_${S}_RUN_NUMBER`])
+                : (await list(suite, 5)).find((r) => r.id != run?.id);
+              core.setOutput(`${suite}_run_id`, run?.id || '');
+              core.setOutput(`baseline_${suite}_run_id`, baseline?.id || '');
+            }
 
       - name: Check if both workflows completed
         id: check-status
@@ -106,21 +121,17 @@ jobs:
 
       - name: Get pytest run metadata
         id: pytest-metadata
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
+          GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ needs.wait-for-both-workflows.outputs.pytest_run_id }}
-          RUN_LABEL: Pytest
-        with:
-          script: return require(`${{ github.workspace }}/.github/scripts/ci/workflow-run-metadata.js`)({ github, context, core })
+        run: task ci:run-metadata
 
       - name: Get gtest run metadata
         id: gtest-metadata
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
+          GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ needs.wait-for-both-workflows.outputs.gtest_run_id }}
-          RUN_LABEL: GTest
-        with:
-          script: return require(`${{ github.workspace }}/.github/scripts/ci/workflow-run-metadata.js`)({ github, context, core })
+        run: task ci:run-metadata
 
       - name: Download pytest artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -197,39 +208,29 @@ jobs:
         if: needs.wait-for-both-workflows.outputs.baseline_pytest_run_id != ''
         env:
           REPORT_DIR: baseline-pytest-reports
-        run: |
-          if [[ -d $REPORT_DIR ]]; then
-            task ci:report -- flatten-pytest
-          fi
+        run: task ci:flatten-pytest-if-present
 
       - name: Flatten baseline gtest report structure
         if: needs.wait-for-both-workflows.outputs.baseline_gtest_run_id != ''
         env:
           REPORT_DIR: baseline-gtest-reports
-        run: |
-          if [[ -d $REPORT_DIR ]]; then
-            task ci:report -- flatten-gtest
-          fi
+        run: task ci:flatten-gtest-if-present
 
       - name: Get baseline pytest run metadata
         id: baseline-pytest-metadata
         if: needs.wait-for-both-workflows.outputs.baseline_pytest_run_id != ''
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
+          GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ needs.wait-for-both-workflows.outputs.baseline_pytest_run_id }}
-          RUN_LABEL: Baseline Pytest
-        with:
-          script: return require(`${{ github.workspace }}/.github/scripts/ci/workflow-run-metadata.js`)({ github, context, core })
+        run: task ci:run-metadata
 
       - name: Get baseline gtest run metadata
         id: baseline-gtest-metadata
         if: needs.wait-for-both-workflows.outputs.baseline_gtest_run_id != ''
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
+          GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ needs.wait-for-both-workflows.outputs.baseline_gtest_run_id }}
-          RUN_LABEL: Baseline GTest
-        with:
-          script: return require(`${{ github.workspace }}/.github/scripts/ci/workflow-run-metadata.js`)({ github, context, core })
+        run: task ci:run-metadata
 
       - name: Install dependencies
         env:

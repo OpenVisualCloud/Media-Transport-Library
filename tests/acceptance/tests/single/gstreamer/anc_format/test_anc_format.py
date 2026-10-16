@@ -7,6 +7,10 @@ Exercises ANC payload handling over GStreamer across frame rates, payload
 sizes, frame buffers, and RFC8331 pseudo streams to ensure pacing, metadata,
 and capture remain stable end to end when using paired virtual functions on
 a single physical port.
+
+The cases that drive TX through tx-test-mode (seq-gap, no-marker, bad-parity,
+paced) need a debug build of MTL and of the GStreamer plugin. On a release
+build they skip with a warning.
 """
 
 import os
@@ -18,6 +22,7 @@ import mtl_engine.media_creator as media_create
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import GstreamerApp, ip_pools
+from mtl_engine.const import GSTREAMER_LIB_PATH
 from mtl_engine.execute import log_info, log_warn, run
 
 
@@ -35,14 +40,29 @@ _FRAME_INFO_PATTERN = re.compile(
 )
 
 
-def _skip_without_tx_test_hooks(host) -> None:
-    """Skip unless libmtl on *host* announces MTL_SIMULATE_PACKET_DROPS (mt_main.c)."""
-    lib = "$(ldconfig -p | awk '/libmtl\\.so /{print $NF; exit}')"
+def _skip_without_tx_test_hooks(host, mtl_path) -> None:
+    """Skip, with a warning, unless the TX plugin and its libmtl are debug builds.
+
+    tx-test-mode needs both: a debug plugin registers the property, and a
+    debug libmtl announces MTL_SIMULATE_PACKET_DROPS (mt_main.c). The libmtl
+    checked is the one the plugin loads, not the first one in the ldconfig
+    cache: a .local_install is never in that cache, but a system copy may be.
+    """
+    plugin = os.path.join(mtl_path, GSTREAMER_LIB_PATH, "libgstmtl_st40p_tx.so")
+    lib = f"$(ldd {plugin} | awk '/libmtl\\.so/{{print $3; exit}}')"
     notice = "MTL_SIMULATE_PACKET_DROPS is defined for this build"
-    if run(f'grep -qaF "{notice}" "{lib}"', host=host).return_code == 1:
-        pytest.skip(
-            "libmtl does not announce MTL_SIMULATE_PACKET_DROPS; tx-test-mode needs it"
-        )
+    checks = {
+        "the mtl_st40p_tx plugin has no tx-test-mode": f'grep -qaF tx-test-mode "{plugin}"',
+        "libmtl does not announce MTL_SIMULATE_PACKET_DROPS": f'grep -qaF "{notice}" "{lib}"',
+    }
+    for missing, command in checks.items():
+        if run(command, host=host).return_code == 1:
+            reason = (
+                f"{missing}: tx-test-mode needs a debug build of MTL and of the "
+                "GStreamer plugin (build.sh debugonly, build_gstreamer_plugin.sh debug)"
+            )
+            log_warn(reason)
+            pytest.skip(reason)
 
 
 def _append_redundant_params(
@@ -487,7 +507,7 @@ def test_st40p_redundant_progressive_gap(
     Redundant ST40P progressive with TX seq-gap injection to exercise RX gap handling.
     """
     host = list(hosts.values())[0]
-    _skip_without_tx_test_hooks(host)
+    _skip_without_tx_test_hooks(host, mtl_path)
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF"), count=4
     )
@@ -737,7 +757,7 @@ def test_st40p_redundant_progressive_split_gap(
     Redundant ST40P split ANC with TX seq-gap injection to test RX redundancy.
     """
     host = list(hosts.values())[0]
-    _skip_without_tx_test_hooks(host)
+    _skip_without_tx_test_hooks(host, mtl_path)
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF"), count=4
     )
@@ -990,7 +1010,7 @@ def test_st40i_redundant_split_gap(
     Redundant ST40i split-mode with TX seq-gap injection to probe RX redundancy.
     """
     host = list(hosts.values())[0]
-    _skip_without_tx_test_hooks(host)
+    _skip_without_tx_test_hooks(host, mtl_path)
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF"), count=4
     )
@@ -1650,7 +1670,7 @@ def test_st40p_interlace_auto_detect_reset(
     """
 
     host = list(hosts.values())[0]
-    _skip_without_tx_test_hooks(host)
+    _skip_without_tx_test_hooks(host, mtl_path)
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
@@ -2071,6 +2091,7 @@ def test_st40p_split_mode_pacing_respected(
     :param media_file: Fixture providing input/output media paths.
     """
     host = list(hosts.values())[0]
+    _skip_without_tx_test_hooks(host, mtl_path)
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
@@ -2199,7 +2220,7 @@ def test_st40p_rx_missing_marker_no_ready(
     :param media_file: Fixture providing input/output media paths.
     """
     host = list(hosts.values())[0]
-    _skip_without_tx_test_hooks(host)
+    _skip_without_tx_test_hooks(host, mtl_path)
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
@@ -2300,7 +2321,7 @@ def test_st40p_rx_seq_loss_logged(
     :param media_file: Fixture providing input/output media paths.
     """
     host = list(hosts.values())[0]
-    _skip_without_tx_test_hooks(host)
+    _skip_without_tx_test_hooks(host, mtl_path)
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
@@ -2427,7 +2448,7 @@ def test_st40p_rx_bad_parity_drops_payload(
     :param media_file: Fixture providing input/output media paths.
     """
     host = list(hosts.values())[0]
-    _skip_without_tx_test_hooks(host)
+    _skip_without_tx_test_hooks(host, mtl_path)
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
@@ -2539,6 +2560,7 @@ def test_st40p_rx_multi_packet_field_accumulates(
     :param media_file: Fixture providing input/output media paths.
     """
     host = list(hosts.values())[0]
+    _skip_without_tx_test_hooks(host, mtl_path)
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
@@ -2631,6 +2653,7 @@ def test_st40p_split_padding_alignment_boundary(
     """
 
     host = list(hosts.values())[0]
+    _skip_without_tx_test_hooks(host, mtl_path)
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
@@ -2728,6 +2751,7 @@ def test_st40p_split_tx_mtu_guard_no_stall(
     """
 
     host = list(hosts.values())[0]
+    _skip_without_tx_test_hooks(host, mtl_path)
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )

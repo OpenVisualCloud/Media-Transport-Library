@@ -2,6 +2,8 @@
  * Copyright(c) 2026 Intel Corporation
  */
 
+#define _GNU_SOURCE /* as mt_main.h, before any system header */
+#include <dlfcn.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +30,8 @@ struct ut_dev_ctx {
   struct mt_tx_queue tx_queues[UT_DEV_TX_QUEUES];
   struct mt_kport_info kport_info;
   char* lcores;
+  char* compiled_pmd_dir;
+  char* eal_lib_path;
   int eal_init_calls;
   int eal_argc;
   char* eal_argv[UT_DEV_EAL_ARGV_MAX];
@@ -107,6 +111,13 @@ static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
 static int ut_mt_sch_mrg_uinit(struct mtl_main_impl* impl);
 static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
 
+static int ut_dladdr(const void* addr, Dl_info* info);
+static const char* ut_dev_compiled_pmd_dir(void);
+static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
+
+#undef RTE_EAL_PMD_PATH
+#define RTE_EAL_PMD_PATH ut_dev_compiled_pmd_dir()
+#define dladdr ut_dladdr
 #define rte_eth_rx_queue_setup ut_rte_eth_rx_queue_setup
 #define rte_eth_tx_queue_setup ut_rte_eth_tx_queue_setup
 #define rte_eth_add_tx_callback ut_rte_eth_add_tx_callback
@@ -157,6 +168,19 @@ static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
 #undef rte_eth_add_tx_callback
 #undef rte_eth_tx_queue_setup
 #undef rte_eth_rx_queue_setup
+#undef dladdr
+
+static int ut_dladdr(const void* addr, Dl_info* info) {
+  if (!ut_active_ctx || !ut_active_ctx->eal_lib_path) return dladdr(addr, info);
+  memset(info, 0, sizeof(*info));
+  info->dli_fname = ut_active_ctx->eal_lib_path;
+  return 1;
+}
+
+static const char* ut_dev_compiled_pmd_dir(void) {
+  if (!ut_active_ctx || !ut_active_ctx->compiled_pmd_dir) return ut_dev_real_pmd_dir;
+  return ut_active_ctx->compiled_pmd_dir;
+}
 
 static void ut_dev_record(enum ut_dev_event event) {
   if (ut_active_ctx && ut_active_ctx->event_count < (int)RTE_DIM(ut_active_ctx->events))
@@ -414,6 +438,8 @@ void ut_dev_destroy_ctx(ut_dev_ctx* ctx) {
   rte_mempool_free(ctx->sys_tx_pool);
   for (int i = 0; i < UT_DEV_EAL_ARGV_MAX; i++) free(ctx->eal_argv[i]);
   free(ctx->lcores);
+  free(ctx->compiled_pmd_dir);
+  free(ctx->eal_lib_path);
   free(ctx);
 }
 
@@ -586,6 +612,19 @@ int ut_dev_eal_max_args(void) {
 
 int ut_dev_eal_lcores_max_len(void) {
   return MT_EAL_LCORES_MAX_LEN;
+}
+
+int ut_dev_eal_pmd_dir(const char* compiled_dir, const char* eal_dir, char* out,
+                       size_t len) {
+  return dev_eal_pmd_dir(compiled_dir, eal_dir, out, len);
+}
+
+void ut_dev_set_eal_pmd_paths(ut_dev_ctx* ctx, const char* compiled_dir,
+                              const char* eal_lib_path) {
+  free(ctx->compiled_pmd_dir);
+  free(ctx->eal_lib_path);
+  ctx->compiled_pmd_dir = compiled_dir ? strdup(compiled_dir) : NULL;
+  ctx->eal_lib_path = eal_lib_path ? strdup(eal_lib_path) : NULL;
 }
 
 int ut_dev_eal_init(ut_dev_ctx* ctx) {

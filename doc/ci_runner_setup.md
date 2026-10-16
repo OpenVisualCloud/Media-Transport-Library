@@ -82,6 +82,14 @@ The shadow/SUT host pair used by `perf-pytest.yml` and the optional shadow sync
 in `custom-pytest.yml` reads `/etc/mtl-ci/shadow-host`, a file defining `IP` and
 `USER`.
 
+The validate-host action syncs the SUT's `.local_install`, `script/`, `tests/`
+and its cache and host scripts to the shadow, at the same path, and then runs
+the SUT's ICE activation there: the shadow loads the same Kahawai ice module.
+The shadow therefore runs the SUT's kernel release, and `SHADOW_USER` has
+passwordless sudo; with another kernel the bundle has no module for it, and
+the step fails. The VFs need no kernel module: DPDK's iavf driver is part of the
+synced `.local_install`.
+
 Only credentials for genuinely external services remain repository secrets:
 `COVERITY_EMAIL`, `COVERITY_TOKEN`, and the built-in `GITHUB_TOKEN`.
 
@@ -226,8 +234,7 @@ back to the DUT interface when no sniff device is named.
 The build job installs DPDK under its own workspace, and meson bakes that prefix
 into the install: `libdpdk.pc` records it, and `librte_eal` records
 `RTE_EAL_PMD_PATH`, `<prefix>/lib/<arch>/dpdk/pmds-<abi>`, as the one directory
-EAL loads drivers from. There is no environment override for it, and MTL builds a
-fixed EAL argv, so there is no `-d` either.
+EAL loads drivers from. There is no environment override for it.
 
 When the runner that builds and the runner that tests keep their workspace at the
 same path, this is invisible. When they do not — a different `_work` root, or a
@@ -240,11 +247,20 @@ Error: mtl_init, st dev if init fail -12
 ```
 
 The mempool, not the NIC, because the mempool ops MTL asks for (`stack`) ship as
-a plugin like every driver. `task ci:configure-host -- dpdk-plugins` makes the
-baked path resolve to the drivers that were actually restored, and
-`.github/actions/validate-host` runs it right after the restore. It is a symlink,
-so it also serves the acceptance tests, which reach the host over SSH and inherit
-none of the job's environment.
+a plugin like every driver. So when the baked directory does not exist, MTL looks
+for the same `dpdk/pmds-<abi>` beside the `librte_eal` it actually loaded and
+passes it to EAL with `-d` (`dev_eal_pmd_dir` in `lib/src/dev/mt_dev.c`). A tree
+restored or moved anywhere loads its own drivers, in CI jobs and in the acceptance
+tests over SSH alike. Earlier versions linked the baked path to the restored
+drivers instead; `task ci:configure-host -- dpdk-plugins` now removes such a
+leftover link, which would otherwise keep a runner on another tree's drivers.
+
+The plugin registry has no such fallback. `build.sh` writes
+`.local_install/conf/kahawai.json` with the absolute plugin paths of the build
+job's workspace, the MTL cache carries it, and every job points
+`KAHAWAI_CFG_PATH` at it. So the build and test runners must keep the workspace
+at the same path. When they do not, `task ci:validate-dependencies` fails with
+`enables a plugin that is not installed`.
 
 ## The EBU LIST compliance analyser
 

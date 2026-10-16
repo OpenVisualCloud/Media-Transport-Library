@@ -6,13 +6,24 @@ FFmpeg is an open source project licensed under LGPL and GPL. See <https://www.f
 
 ## 1. Build
 
-You can use the ./build.sh that will build the script for you automatically,
+`script/build_ffmpeg_plugin.sh` does the whole build: it downloads the FFmpeg
+release in `versions.env`, adds the MTL devices and the patches of this
+directory, builds openh264 when the system has none, and installs into
+`/usr/local`. Run it from the top of the source tree, as your own user, after
+MTL is installed:
 
-``` bash
-apt-get install wget patch unzip
-# in the  ecosystem/ffmpeg_plugin/ folder
-./build.sh
+```bash
+./script/install_dependencies.sh ffmpeg   # the build packages, Ubuntu only
+./script/build_ffmpeg_plugin.sh           # add --jpegxs for the SVT-JPEG-XS codecs
+./script/build_ffmpeg_plugin.sh -h        # all options
 ```
+
+With `MTL_INSTALL_PREFIX` set, as `build.sh` and `build_dpdk.sh` take it, FFmpeg
+goes into the `ffmpeg` sibling of that prefix (`.local_install/ffmpeg` beside
+`.local_install/mtl`). The installed `ffmpeg` then records the paths of the MTL,
+DPDK and SVT-JPEG-XS libraries it was built against, so it runs without
+`LD_LIBRARY_PATH` and cannot pick up another copy; the script checks that with
+`ldd` before it finishes. The paths are relative, so the tree can be moved.
 
 The manual way of building is described below
 

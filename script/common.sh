@@ -12,7 +12,7 @@ if [ -f "$VERSIONS_ENV_PATH" ]; then
 	# shellcheck disable=SC1090
 	. "$VERSIONS_ENV_PATH"
 else
-	echo -e "${RED}Error: versions.env file not found at $VERSIONS_ENV_PATH.${NC}"
+	echo "ERROR: versions.env file not found at $VERSIONS_ENV_PATH." >&2
 	exit 1
 fi
 
@@ -40,7 +40,7 @@ function log_message() {
 	local HEADER="${type}: "
 	local FOOTER=""
 	# case $(echo $type | tr '[:upper:]' '[:lower:]') in
-	if [ -z "${DISABLE_COLOR_PRINT}" ]; then
+	if [ -z "${DISABLE_COLOR_PRINT:-}" ]; then
 		FOOTER='\e[0m'
 		case "${type}" in
 		ERROR) HEADER="${REGULAR}${RED}${type}:  ${BOLD}${RED}" ;;
@@ -156,26 +156,239 @@ function command_exists {
 	command -v "$@" >/dev/null 2>&1
 }
 
+# Runs the command as root. Each argument stays one argument, so a path with
+# a space is safe. Stdin goes to the command, so "... | as_root tee FILE" works.
 function as_root() {
-	CMD_TO_EVALUATE="$*"
-	CURRENT_USER_ID="$(id -u)"
-	EFECTIVE_USER_ID="${EUID:-$CURRENT_USER_ID}"
-	AS_ROOT="/bin/bash -c"
+	local effective_user_id="${EUID:-$(id -u)}"
 
-	if [ "${EFECTIVE_USER_ID}" -ne 0 ]; then
-		if command_exists sudo; then
-			AS_ROOT="sudo -E /bin/bash -c"
-		elif command_exists su; then
-			AS_ROOT="su -c"
-		else
-			log_error "This command must be run as root [EUID=0] ${CMD_TO_EVALUATE[*]}."
-			log_error "- current [EUID=${EFECTIVE_USER_ID}]."
-			log_error "- 'sudo' nor 'su' commands were found in PATH."
-			log_error "Re-run the script as sudo or install sudo pkg."
-			exit 1
-		fi
+	if [ "${effective_user_id}" -eq 0 ]; then
+		"$@"
+	elif command_exists sudo; then
+		sudo -E "$@"
+	elif command_exists su; then
+		su -c "$(printf '%q ' "$@")"
+	else
+		log_error "This command must be run as root [EUID=0]: $*"
+		log_error "- current [EUID=${effective_user_id}]."
+		log_error "- 'sudo' nor 'su' commands were found in PATH."
+		log_error "Re-run the script as sudo or install sudo pkg."
+		exit 1
 	fi
-	$AS_ROOT "${CMD_TO_EVALUATE[*]}"
+}
+
+# Usage: require_commands <command>[:<package>]...
+# Logs the package of each command that is not in PATH, and returns 1 if one
+# is missing. A script calls it before it downloads or deletes anything.
+function require_commands() {
+	local item missing=()
+
+	for item in "$@"; do
+		command_exists "${item%%:*}" || missing+=("${item#*:}")
+	done
+	[ "${#missing[@]}" -eq 0 ] && return 0
+	log_error "Required packages are missing:"
+	printf '  %s\n' "${missing[@]}" >&2
+	return 1
+}
+
+# Usage: require_pkg_config <module>[:<package>]...
+# Logs the package of each pkg-config module that is not installed, and
+# returns 1 if one is missing.
+function require_pkg_config() {
+	local item missing=()
+
+	require_commands pkg-config:pkg-config || return 1
+	for item in "$@"; do
+		pkg-config --exists "${item%%:*}" || missing+=("${item#*:}")
+	done
+	[ "${#missing[@]}" -eq 0 ] && return 0
+	log_error "Required packages are missing:"
+	printf '  %s\n' "${missing[@]}" >&2
+	return 1
+}
+
+# Usage: prefix_writable <dir>
+# Creates <dir> when it does not exist, and succeeds when the current user may
+# write to it: an install goes there as this user, otherwise through as_root.
+function prefix_writable() {
+	mkdir -p "$1" 2>/dev/null && [ -w "$1" ]
+}
+
+# Prints lib/<multiarch> (lib/x86_64-linux-gnu on Debian and Ubuntu), the
+# library directory meson and DPDK use below a prefix, or lib where the
+# compiler has no multiarch.
+function multiarch_libdir() {
+	local multiarch
+	multiarch=$("${CC:-cc}" -print-multiarch 2>/dev/null || true)
+	echo "lib${multiarch:+/${multiarch}}"
+}
+
+# Usage: register_plugin <kahawai.json> <name> <plugin path>
+# Enables the plugin at its absolute path as the one entry called <name> of
+# the plugin registry, and creates the registry if it does not exist yet.
+function register_plugin() {
+	python3 - "$@" <<'PY'
+import json
+import os
+import pathlib
+import stat
+import sys
+import tempfile
+
+config = pathlib.Path(sys.argv[1])
+name = sys.argv[2]
+plugin_path = str(pathlib.Path(sys.argv[3]).resolve())
+if config.exists():
+    config_mode = stat.S_IMODE(config.stat().st_mode)
+    data = json.loads(config.read_text())
+else:
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config_mode = 0o644
+    data = {}
+plugins = data.setdefault("plugins", [])
+matches = [index for index, item in enumerate(plugins) if item.get("name") == name]
+if matches:
+    selected = next((index for index in matches if plugins[index].get("path") == plugin_path), matches[0])
+    for index in matches:
+        plugins[index]["enabled"] = int(index == selected)
+    plugins[selected]["path"] = plugin_path
+else:
+    plugins.append({"enabled": 1, "name": name, "path": plugin_path})
+fd, temporary = tempfile.mkstemp(prefix=config.name + ".", dir=config.parent)
+os.chmod(temporary, config_mode)
+try:
+    with os.fdopen(fd, "w") as output:
+        json.dump(data, output, indent=4)
+        output.write("\n")
+    os.replace(temporary, config)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
+PY
+	log_success "Enabled ${2} in ${1}: ${3}"
+}
+
+# Usage: relocate_pkgconfig <prefix> [<module>...]
+# Rewrites the .pc file of each <module> below <prefix>, or every .pc file
+# there when no module is given, to describe its own location: the prefix
+# becomes ${pcfiledir}/..., and a libdir, includedir or exec_prefix that
+# FFmpeg and others write as an absolute path becomes ${prefix}/..., so that
+# the tree can be moved and pkg-config still finds what it describes. A link,
+# or a file with no prefix variable, is left as it is.
+function relocate_pkgconfig() {
+	local prefix=$1 pc relative absolute
+	shift
+
+	for pc in "${prefix}"/lib/pkgconfig/*.pc "${prefix}"/lib/*/pkgconfig/*.pc "${prefix}"/lib64/pkgconfig/*.pc; do
+		[[ -f "${pc}" && ! -L "${pc}" ]] || continue
+		grep -q '^prefix=' "${pc}" || continue
+		[ "$#" -eq 0 ] || [[ " $* " == *" $(basename "${pc}" .pc) "* ]] || continue
+		relative=$(realpath -m --relative-to="$(dirname "${pc}")" "${prefix}")
+		sed -i "s#^prefix=.*#prefix=\${pcfiledir}/${relative}#" "${pc}"
+		for absolute in "${prefix}" "$(realpath -m "${prefix}")"; do
+			sed -i "s#^\(exec_prefix\|libdir\|includedir\)=${absolute}#\1=\${prefix}#" "${pc}"
+		done
+	done
+}
+
+# Usage: origin_rpath <dir of the binary> <library dir>...
+# Prints the library directories relative to the binary ($ORIGIN), colon
+# separated, for an rpath.
+function origin_rpath() {
+	local from=$1 dir rpath=""
+	shift
+
+	for dir in "$@"; do
+		rpath+="${rpath:+:}\$ORIGIN/$(realpath -m --relative-to="${from}" "${dir}")"
+	done
+	echo "${rpath}"
+}
+
+# Usage: origin_rpath_args <dir of the binary> <library dir>...
+# Prints linker flags that record each library directory relative to the
+# binary ($ORIGIN), so that an install runs from wherever it is, without
+# ldconfig or LD_LIBRARY_PATH, and can be moved as one tree. DT_RPATH rather
+# than RUNPATH: the lookup then also covers what the libraries themselves
+# load, and LD_LIBRARY_PATH cannot point it at another copy.
+function origin_rpath_args() {
+	local from=$1 dir args="-Wl,--disable-new-dtags"
+	shift
+
+	for dir in "$@"; do
+		args+=",-rpath,\$ORIGIN/$(realpath -m --relative-to="${from}" "${dir}")"
+	done
+	echo "${args}"
+}
+
+# Usage: download_file <url> <file>
+# Fetches with curl, or wget when there is no curl, retrying a few times.
+function download_file() {
+	local url=$1 file=$2
+
+	if command_exists curl; then
+		curl --fail --location --retry 3 --connect-timeout 15 --max-time 600 \
+			"${url}" --output "${file}"
+	elif command_exists wget; then
+		wget --tries=3 --timeout=600 "${url}" -O "${file}"
+	else
+		log_error "Required package is missing: curl or wget"
+		return 1
+	fi
+}
+
+# Usage: require_resolved_libraries <file> <libdir>...
+# Checks with ldd that <file> resolves every shared library, and that the
+# libraries this repository builds or bundles -- libmtl, DPDK, SVT-JPEG-XS,
+# FFmpeg, openh264, the GStreamer plugins -- resolve under one of the given
+# <libdir>s: the install the file was linked against, not a copy elsewhere.
+# Both sides are compared as plain paths: an $ORIGIN rpath and a relocated
+# .pc file give ones with ../ in them.
+function require_resolved_libraries() {
+	local file=$1 line lib path dir ok failed=0 output
+	shift
+
+	command_exists ldd || return 0
+	output=$(ldd "${file}" 2>&1) || {
+		log_error "${file}: ldd fails: ${output}"
+		return 1
+	}
+	while IFS= read -r line; do
+		lib=${line%% =>*}
+		lib=${lib##[[:space:]]}
+		case "${line}" in
+		*"not found"*)
+			log_error "${file}: ${lib} not found"
+			failed=1
+			continue
+			;;
+		esac
+		case "${lib}" in
+		libmtl.so* | librte_*.so* | libSvtJpegxs.so* | libopenh264.so* | libgstmtl_*.so* | \
+			libavcodec.so* | libavdevice.so* | libavfilter.so* | libavformat.so* | libavutil.so* | \
+			libswresample.so* | libswscale.so* | libpostproc.so*) ;;
+		*) continue ;;
+		esac
+		path=${line#*=> }
+		path=$(realpath -m "${path%% (*}")
+		ok=0
+		for dir in "$@"; do
+			[[ ${path} == "$(realpath -m "${dir}")"/* ]] && ok=1
+		done
+		if [ "${ok}" -eq 0 ]; then
+			log_error "${file}: ${lib} resolves to ${path}, not under: $*"
+			failed=1
+		fi
+	done <<<"${output}"
+	[ "${failed}" -eq 0 ] || return 1
+	log_info "${file##*/}: shared libraries resolve inside the install"
+}
+
+# Usage: require_root [<what>]
+# Returns 1 with an error when the shell does not run as root.
+function require_root() {
+	[ "${EUID:-$(id -u)}" -eq 0 ] && return 0
+	log_error "${1:-${script_name:-This script}} needs root. Run it with sudo."
+	return 1
 }
 
 function github_api_call() {
@@ -185,7 +398,7 @@ function github_api_call() {
 	INPUT_OWNER=$(echo "${url#"${GITHUB_API_URL}/repos/"}" | cut -f1 -d'/')
 	INPUT_REPO=$(echo "${url#"${GITHUB_API_URL}/repos/"}" | cut -f2 -d'/')
 	API_SUBPATH="${url#"${GITHUB_API_URL}/repos/${INPUT_OWNER}/${INPUT_REPO}/"}"
-	if [ -z "${INPUT_GITHUB_TOKEN}" ]; then
+	if [ -z "${INPUT_GITHUB_TOKEN:-}" ]; then
 		echo >&2 "Set the INPUT_GITHUB_TOKEN env variable first."
 		return
 	fi
@@ -211,7 +424,7 @@ function github_api_call() {
 }
 
 function print_logo() {
-	if [[ -z "$blue_code" ]]; then
+	if [[ -z "${blue_code:-}" ]]; then
 		local blue_code=(26 27 20 19 20 20 21 04 27 26 32 12 33 06 39 38 44 45)
 	fi
 	local IFS
@@ -353,7 +566,7 @@ function git_download_strip_unpack() {
 	version="${2}"
 	dest_dir="${3}"
 	filename="$(get_filename "${version}")"
-	[ -n "${GITHUB_CREDENTIALS}" ] && creds="${GITHUB_CREDENTIALS}@" || creds=""
+	[ -n "${GITHUB_CREDENTIALS:-}" ] && creds="${GITHUB_CREDENTIALS}@" || creds=""
 
 	mkdir -p "${dest_dir}"
 	curl -Lf "https://${creds}github.com/${name}/archive/${version}.tar.gz" -o "${dest_dir}/${filename}.tar.gz"
@@ -369,7 +582,7 @@ function wget_download_strip_unpack() {
 	local source_url="${1}"
 	local dest_dir="${2}"
 	filename="$(get_filename "${source_url}")"
-	[ -n "${GITHUB_CREDENTIALS}" ] && creds="${GITHUB_CREDENTIALS}@" || creds=""
+	[ -n "${GITHUB_CREDENTIALS:-}" ] && creds="${GITHUB_CREDENTIALS}@" || creds=""
 
 	mkdir -p "${dest_dir}"
 	curl -Lf "${source_url}" -o "${dest_dir}/${filename}.tar.gz"
@@ -381,7 +594,7 @@ function wget_download_strip_unpack() {
 #	PM="$(setup_package_manager)" && \
 #	$PM install python3
 function setup_package_manager() {
-	TIBER_USE_PM="${PM:-$1}"
+	TIBER_USE_PM="${PM:-${1:-}}"
 	if [[ -x "$(command -v "$TIBER_USE_PM")" ]]; then
 		export PM="${TIBER_USE_PM}"
 	elif [[ -x "$(command -v yum)" ]]; then
@@ -412,18 +625,25 @@ function setup_distribution() {
 	. /etc/os-release
 	ID_LIKE="${ID_LIKE:-}"
 
-	case "${ID}" in
-	ubuntu)
+	# The apt-get install commands set DEBIAN_FRONTEND themselves, so a package
+	# prompt, such as the time zone of tzdata, cannot stop them. sudo-rs, the
+	# sudo of Ubuntu 26.04, ignores the "sudo -E" in as_root.
+	case " ${ID} ${ID_LIKE} " in
+	*" ubuntu "*)
 		PACKAGE_MANAGER="apt-get"
-		PACKAGE_INSTALL_COMMAND="apt-get install -y"
+		PACKAGE_INSTALL_COMMAND="env DEBIAN_FRONTEND=noninteractive apt-get install -y"
 		DRIVER_PACKAGE="linux-modules-${KERNEL_VERSION}"
+		NUMA_DEVEL_PACKAGE="libnuma-dev"
+		PYELFTOOLS_PACKAGE="python3-pyelftools"
 		;;
-	debian)
+	*" debian "*)
 		PACKAGE_MANAGER="apt-get"
-		PACKAGE_INSTALL_COMMAND="apt-get install -y"
+		PACKAGE_INSTALL_COMMAND="env DEBIAN_FRONTEND=noninteractive apt-get install -y"
 		DRIVER_PACKAGE="linux-image-${KERNEL_VERSION}"
+		NUMA_DEVEL_PACKAGE="libnuma-dev"
+		PYELFTOOLS_PACKAGE="python3-pyelftools"
 		;;
-	centos | fedora | rhel | rockos | rocky)
+	*" centos "* | *" fedora "* | *" rhel "* | *" rockos "* | *" rocky "*)
 		if command_exists dnf; then
 			PACKAGE_MANAGER="dnf"
 		else
@@ -431,16 +651,48 @@ function setup_distribution() {
 		fi
 		PACKAGE_INSTALL_COMMAND="${PACKAGE_MANAGER} install -y"
 		DRIVER_PACKAGE="kernel-modules-core-${KERNEL_VERSION}"
+		NUMA_DEVEL_PACKAGE="numactl-devel"
+		PYELFTOOLS_PACKAGE="python3-pyelftools"
+		;;
+	*" suse "*)
+		PACKAGE_MANAGER="zypper"
+		PACKAGE_INSTALL_COMMAND="zypper --non-interactive install"
+		DRIVER_PACKAGE=""
+		NUMA_DEVEL_PACKAGE="libnuma-devel"
+		PYELFTOOLS_PACKAGE="python3-pyelftools"
+		;;
+	*" arch "*)
+		PACKAGE_MANAGER="pacman"
+		PACKAGE_INSTALL_COMMAND="pacman --noconfirm -S"
+		DRIVER_PACKAGE=""
+		NUMA_DEVEL_PACKAGE="numactl"
+		PYELFTOOLS_PACKAGE="python-pyelftools"
+		;;
+	*" alpine "*)
+		PACKAGE_MANAGER="apk"
+		PACKAGE_INSTALL_COMMAND="apk add"
+		DRIVER_PACKAGE=""
+		NUMA_DEVEL_PACKAGE="numactl-dev"
+		PYELFTOOLS_PACKAGE="py3-elftools"
+		;;
+	*" void "*)
+		PACKAGE_MANAGER="xbps-install"
+		PACKAGE_INSTALL_COMMAND="xbps-install -Sy"
+		DRIVER_PACKAGE=""
+		NUMA_DEVEL_PACKAGE="numactl-devel"
+		PYELFTOOLS_PACKAGE="python3-pyelftools"
 		;;
 	*)
 		PACKAGE_MANAGER=""
 		PACKAGE_INSTALL_COMMAND=""
 		DRIVER_PACKAGE=""
+		NUMA_DEVEL_PACKAGE=""
+		PYELFTOOLS_PACKAGE=""
 		;;
 	esac
 
 	PM="${PACKAGE_MANAGER}"
-	export ID VERSION_ID ID_LIKE PM PACKAGE_MANAGER PACKAGE_INSTALL_COMMAND DRIVER_PACKAGE
+	export ID VERSION_ID ID_LIKE PM PACKAGE_MANAGER PACKAGE_INSTALL_COMMAND DRIVER_PACKAGE NUMA_DEVEL_PACKAGE PYELFTOOLS_PACKAGE
 }
 
 function install_packages() {
@@ -459,7 +711,7 @@ function install_packages() {
 # FFMPEG_VER taken from environment or forced by 1st parameter
 # Exports FFMPEG_DIR and FFMPEG_VER
 function lib_setup_ffmpeg_dir_and_version() {
-	FFMPEG_VER="${1:-$FFMPEG_VER}"
+	FFMPEG_VER="${1:-${FFMPEG_VER:-${FFMPEG_VERSION:-}}}"
 	FFMPEG_7_0_DIR="${FFMPEG_7_0_DIR:-ffmpeg-7-0}"
 	FFMPEG_6_1_DIR="${FFMPEG_6_1_DIR:-ffmpeg-6-1}"
 

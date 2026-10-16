@@ -44,15 +44,7 @@ def test_st22p_codec(
     if codec == "H264_CBR" and "10" in media_file_info["file_format"]:
         pytest.skip("H264_CBR codec plugin does not support 10-bit formats")
 
-    # Check codec encoder availability
-    codec_encoder_map = {
-        "H264_CBR": "libopenh264",
-        "JPEG-XS": "libsvt_jpegxs",
-    }
-    encoder = codec_encoder_map.get(codec)
     app = app_factory(application)
-    if encoder:
-        app.require_encoder(host, encoder, use_mtl_plugin=True)
 
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
