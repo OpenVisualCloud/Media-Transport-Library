@@ -22,35 +22,44 @@
   DTRACE_PROBE5(provider, probe, parm1, parm2, parm3, parm4, parm5)
 #define MT_DTRACE_PROBE6(provider, probe, parm1, parm2, parm3, parm4, parm5, parm6) \
   DTRACE_PROBE6(provider, probe, parm1, parm2, parm3, parm4, parm5, parm6)
-#define MT_DTRACE_PROB76(provider, probe, parm1, parm2, parm3, parm4, parm5, parm6, \
-                         parm7)                                                     \
-  DTRACE_PROBE7(provider, probe, parm1, parm2, parm3, parm4, parm5, parm6, parm7)
 #else
 
+/*
+ * Without USDT a probe still evaluates its arguments, as DTRACE_PROBEn does, so a
+ * variable that exists only to feed a probe is not reported as unused.
+ */
 #define MT_DTRACE_PROBE(provider, probe) \
   do {                                   \
   } while (0)
 #define MT_DTRACE_PROBE1(provider, probe, parm1) \
   do {                                           \
+    (void)(parm1);                               \
   } while (0)
 #define MT_DTRACE_PROBE2(provider, probe, parm1, parm2) \
   do {                                                  \
+    (void)(parm1);                                      \
+    (void)(parm2);                                      \
   } while (0)
 #define MT_DTRACE_PROBE3(provider, probe, parm1, parm2, parm3) \
   do {                                                         \
+    (void)(parm1);                                             \
+    (void)(parm2);                                             \
+    (void)(parm3);                                             \
   } while (0)
 #define MT_DTRACE_PROBE4(provider, probe, parm1, parm2, parm3, parm4) \
   do {                                                                \
+    MT_DTRACE_PROBE2(provider, probe, parm1, parm2);                  \
+    MT_DTRACE_PROBE2(provider, probe, parm3, parm4);                  \
   } while (0)
 #define MT_DTRACE_PROBE5(provider, probe, parm1, parm2, parm3, parm4, parm5) \
   do {                                                                       \
+    MT_DTRACE_PROBE3(provider, probe, parm1, parm2, parm3);                  \
+    MT_DTRACE_PROBE2(provider, probe, parm4, parm5);                         \
   } while (0)
 #define MT_DTRACE_PROBE6(provider, probe, parm1, parm2, parm3, parm4, parm5, parm6) \
   do {                                                                              \
-  } while (0)
-#define MT_DTRACE_PROB76(provider, probe, parm1, parm2, parm3, parm4, parm5, parm6, \
-                         parm7)                                                     \
-  do {                                                                              \
+    MT_DTRACE_PROBE3(provider, probe, parm1, parm2, parm3);                         \
+    MT_DTRACE_PROBE3(provider, probe, parm4, parm5, parm6);                         \
   } while (0)
 
 #define SYS_LOG_MSG_ENABLED() (0)
