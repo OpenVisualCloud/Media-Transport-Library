@@ -1,0 +1,140 @@
+name: Hardening Tools
+
+# Checks the binaries MTL builds and bundles with two binary-hardening scanners,
+# hardening-check (devscripts) and checksec.
+# The readelf gate in build.yml and the rocky9 image is the primary check; this
+# workflow is the independent, tool-based confirmation, run where both tools
+# install from packages.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'maint-**'
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Pinned release of https://github.com/slimm609/checksec, with the sha512
+  # from its checksec_checksums.sha512 asset.
+  CHECKSEC_VERSION: 3.2.0
+  CHECKSEC_SHA512: a5bdee9f82c9e0ee2c57fbbea7f64c4bec139cec989122145412827ca2f54a74614d568125f2f37e75c7931d50ecf9d4d80535b227563e4b2ca2ee23f588e146
+
+jobs:
+  changes:
+    runs-on: ubuntu-22.04
+    permissions:
+      pull-requests: read
+    outputs:
+      hardening_tools: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.hardening_tools == 'true' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        with:
+          filters: .github/path_filters.yml
+
+  hardening-tools:
+    needs: changes
+    if: ${{ needs.changes.outputs.hardening_tools == 'true' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      SETUP_ENVIRONMENT: 1
+      CICD_BUILD: 1
+      CI_BUILD_ICE: 0
+      CI_BUILD_JPEGXS: 0
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install hardening-check and checksec
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends devscripts
+          curl -fsSLo checksec.tar.gz "https://github.com/slimm609/checksec/releases/download/${CHECKSEC_VERSION}/checksec_${CHECKSEC_VERSION}_linux_amd64.tar.gz"
+          echo "${CHECKSEC_SHA512}  checksec.tar.gz" | sha512sum -c -
+          sudo tar -C /usr/local/bin -xzf checksec.tar.gz checksec
+
+      # Both scanners must fail a library that lacks only BIND_NOW (partial
+      # RELRO), one that has SHSTK without IBT, and an unhardened executable,
+      # or a green run below proves nothing. Their ::error:: lines for these
+      # files and reports are the expected result, so stderr and the job
+      # summary are dropped here and only an unexpected pass becomes an
+      # annotation. Each unhardened file gets its own directory, so a file
+      # that fails cannot hide one that passes. A directory with no ELF file
+      # must fail the scan too, also next to one that passes.
+      - name: Negative control
+        run: |
+          mkdir lazy shstk-only unhardened-exe unhardened-openh264 hardened empty
+          echo 'int f(int a) { return a; }' | gcc -shared -fPIC -fcf-protection=full -Wl,-z,relro,-z,lazy -x c - -o lazy/libu.so
+          echo 'int f(int a) { return a; }' | gcc -shared -fPIC -fcf-protection=return -Wl,-z,relro,-z,now -x c - -o shstk-only/libu.so
+          echo 'int main(void) { return 0; }' | gcc -no-pie -fcf-protection=none -x c - -o unhardened-exe/u
+          cp lazy/libu.so unhardened-openh264/libopenh264.so.0
+          echo 'int main(void) { return 0; }' | gcc -fcf-protection=full -fPIE -pie -Wl,-z,relro,-z,now -x c - -o hardened/h
+          GITHUB_STEP_SUMMARY='' .github/scripts/ci/hardening-tools.sh checksec --nostackprotector hardened >/dev/null
+          if GITHUB_STEP_SUMMARY='' .github/scripts/ci/hardening-tools.sh checksec --nostackprotector hardened empty 2>/dev/null; then
+            echo "::error::hardening-tools.sh passed an empty directory"
+            exit 1
+          fi
+          for tool in hardening-check checksec; do
+            for dir in lazy shstk-only unhardened-exe unhardened-openh264; do
+              if GITHUB_STEP_SUMMARY='' .github/scripts/ci/hardening-tools.sh "$tool" --nostackprotector "$dir" 2>/dev/null; then
+                echo "::error::$tool passed an unhardened binary in $dir"
+                exit 1
+              fi
+            done
+          done
+
+      # The trees the Build workflow caches and gates, built by the same script,
+      # with FFmpeg built without SVT-JPEG-XS.
+      - name: Build the dependency trees
+        id: build
+        run: bash .github/scripts/ci/build-dependencies.sh
+
+      # DPDK separately: some of its small libraries have no function that
+      # needs a stack canary, so both tools report "no canary" for them by
+      # heuristic.
+      # Each run writes its report to the job summary and to the artifact; a
+      # failing file is also a ::error:: annotation. checksec runs even when
+      # hardening-check failed, so one run gives both reports.
+      - name: hardening-check
+        shell: bash
+        run: |
+          .github/scripts/ci/hardening-tools.sh hardening-check .local_install/mtl .local_install/ffmpeg .local_install/gstreamer .local_install/plugins | tee -a hardening-report.md
+          .github/scripts/ci/hardening-tools.sh hardening-check --nostackprotector .local_install/dpdk | tee -a hardening-report.md
+
+      - name: checksec
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          .github/scripts/ci/hardening-tools.sh checksec .local_install/mtl .local_install/ffmpeg .local_install/gstreamer .local_install/plugins | tee -a hardening-report.md
+          .github/scripts/ci/hardening-tools.sh checksec --nostackprotector .local_install/dpdk | tee -a hardening-report.md
+
+      - name: Upload the report
+        if: ${{ always() && steps.build.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hardening-report
+          path: hardening-report.md
