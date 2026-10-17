@@ -53,11 +53,6 @@ jobs:
       - name: 'cleanup: Kill stale processes before test'
         run: task cleanup
 
-      # env -u BASH_XTRACEFD for the same reason as gtest-bare-metal.yml: the
-      # descriptor the variable names does not exist in the privileged shell.
-      - name: 'preparation: Bind the test ports'
-        run: sudo -E env -u BASH_XTRACEFD "$TASK_BIN" ci:bind-test-ports
-
       - name: run gtest bare metal
         env:
           NIGHTLY: 1

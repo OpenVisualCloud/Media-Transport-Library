@@ -76,7 +76,7 @@ while read -r file; do
 	echo "--- ${file}"
 	check_static "$file"
 done < <(
-	git ls-files 'script/*.sh' | grep -vx 'script/common.sh'
+	find script -maxdepth 1 -type f -name '*.sh' ! -name common.sh | sort
 	echo .github/scripts/setup_environment.sh
 )
 

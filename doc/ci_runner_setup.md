@@ -151,9 +151,8 @@ nothing tying it to the driver. `rte_tm_capabilities_get` is no help as a
 pre-check: the iavf implementation reads the same pointer in its first
 instructions.
 
-So on the fleet the alignment is a job step (`sudo -E env -u BASH_XTRACEFD
-"$TASK_BIN" ci:activate-ice`, idempotent, a no-op when the running module is
-already the cached one).
+The validation action aligns the driver on the fleet. It runs `ci:activate-ice`
+on the test host and on a configured shadow host.
 
 After driver activation, verify that each expected PF has a kernel netdev and
 that the capture PF exposes a PHC and hardware RX timestamping (`ethtool -T`).
@@ -175,7 +174,7 @@ carrying the card.
 
 #### The NoCtx strict pacing cases need both ports cabled
 
-`bind-test-ports` gives the second port of the chosen card two VFs when its link
+`script/prepare_test_ports.sh` gives the second port of the chosen card two VFs when its link
 is up, and the NoCtx run transmits on one port and receives on the other. The six
 strict pacing cases need the NIC RX timestamp, which only traffic that crossed the
 wire carries, so they fail if the second port has no link (the step logs `no
@@ -391,12 +390,12 @@ unlink a root-owned file); and because `sudo` does not pass signals to its child
 the capture is reaped with `sudo pkill` on the argv rather than through the
 process handle, the same way `conftest._reap_ptp_daemons` reaps ptp4l.
 
-## The DMA channels the job serves itself
+## The DMA channels that host validation serves
 
-`sudo task ci:bind-test-ports` serves two DMA channels on the test card's NUMA
-node, and it takes them from wherever they are: a channel already on vfio-pci is
-left as it is, a channel with no driver is bound, and a channel `idxd` holds is
-taken from it. All three are the same `dpdk-devbind.py -b vfio-pci <bdf>` call.
+`script/prepare_test_ports.sh` serves two DMA channels on the test card's NUMA node.
+It leaves a channel on vfio-pci as it is. It binds a channel that has no driver,
+and it takes a channel from `idxd`. All three states use the same
+`dpdk-devbind.py -b vfio-pci <bdf>` call.
 
 Taking them is the whole point, because a stock host serves none. Every DSA
 device comes up on `idxd`, so a step that refused to touch those refused every
@@ -450,9 +449,9 @@ One thing the step does *not* do is unbind a channel afterwards. `idxd` is a
 kernel accelerator driver that nothing else on a test host uses, and leaving the
 two channels on vfio-pci is what makes the next job's preparation a no-op.
 
-## Hugepages are reserved by the job, not by the image
+## Host validation reserves hugepages
 
-`bind-test-ports` also reserves 2048 × 2 MB hugepages (`MIN_HUGEPAGES`) on each
+`script/prepare_test_ports.sh` also reserves 2048 × 2 MB hugepages (`MIN_HUGEPAGES`) on each
 NUMA node that has fewer, because every process the gtest suite starts is a DPDK
 process and EAL stops on `Cannot get hugepage information` without them — several
 steps later, in words about DPDK rather than about the host. A reboot clears the

@@ -147,7 +147,7 @@ unit_sources: &unit_sources
 # is not here: the workflows use it at a pinned commit, not from this tree.
 # .github/path_filters.yml is not here: check-path-filters.py checks it, and a
 # run on the NIC hosts does not. Each file of script/ is named: gtest.sh,
-# bind-test-ports.sh and tests/acceptance call nicctl.sh, the validate-host
+# prepare_test_ports.sh, and tests/acceptance call nicctl.sh. The validate-host
 # action and ci:validate-dependencies call build_ebpf_xdp.sh, and
 # source-checksums calls hash_sources.sh.
 bare_metal_ci: &bare_metal_ci
