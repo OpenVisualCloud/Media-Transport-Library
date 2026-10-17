@@ -74,15 +74,6 @@ jobs:
       - name: 'cleanup: Kill stale processes before test'
         run: task cleanup
 
-      # sudo -E carries the whole environment across, BASH_XTRACEFD included, and
-      # that variable names a file descriptor of the shell that set it. In the
-      # privileged shell the descriptor is closed, so every step below used to
-      # open with `bash: BASH_XTRACEFD: 19: invalid value for trace file
-      # descriptor` -- a line that reads like the start of a failure and is not
-      # one. Dropping the variable is the whole fix; nothing here traces.
-      - name: Bind the test ports
-        run: sudo -E env -u BASH_XTRACEFD "$TASK_BIN" ci:bind-test-ports
-
       - name: Run gtest bare metal
         env:
           NIGHTLY: 0

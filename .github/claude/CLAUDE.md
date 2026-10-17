@@ -239,3 +239,7 @@ simpler media types.
 Minimal diffs; no speculative helpers, no commented-out code, no reformatting lines you
 aren't functionally changing. `./format-coding.sh` then `./build.sh` before proposing a
 change; add or extend a test at the cheapest tier that can catch the bug.
+
+All shell commands in `script/` must use the same structure. Source
+`script/common.sh`, use its helpers, provide `show_help()` and `main()`, and use
+the standard sourced guard. Keep these scripts uniform.

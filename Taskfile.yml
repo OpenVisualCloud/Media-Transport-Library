@@ -111,11 +111,6 @@ tasks:
         echo "$required"
         [ -z "${GITHUB_OUTPUT:-}" ] || echo "required=$required" >>"$GITHUB_OUTPUT"
 
-  ci:bind-test-ports:
-    desc: Bind one PF's trusted VFs and two DMA channels to vfio-pci for the gtest suite
-    cmds:
-      - bash {{.CI_SCRIPTS}}/host/bind-test-ports.sh
-
   ci:build-dependencies:
     desc: Build dependency cache misses selected by CI_BUILD_ variables
     cmds:

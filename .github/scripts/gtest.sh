@@ -1,16 +1,8 @@
 #!/bin/bash
 # shellcheck disable=SC2317
 #
-# Runs the KahawaiTest suite on a host that is already prepared for it: the ICE
-# driver loaded by `sudo task ci:activate-ice`, and the ports created by
-# `sudo task ci:bind-test-ports`.
-#
-# This script changes no NIC state, only the NoCtx CPU isolation isolate.sh
-# restores. It finds the ports, runs the cases and
-# reports. A port that is missing is reported with the command that creates it
-# and never created here: bringing a driver or a set of VFs back underneath a
-# suite that is already running is how a bare-metal runner ends up wedged for
-# hours, and preparing the host is the CI/CD side's job, not the tests'.
+# Runs the KahawaiTest suite on the ports that host validation prepared.
+# This script discovers the ports, runs the cases, and reports the results.
 
 script_name=$(basename "${BASH_SOURCE[0]}")
 script_path=$(readlink -qe "${BASH_SOURCE[0]}")
@@ -168,9 +160,7 @@ nicctl_wedged() {
 
 not_prepared() {
 	echo "✗ $1"
-	echo "The host is not prepared for the suite. Prepare it with:"
-	echo "  sudo task ci:activate-ice       # E8xx cards, which need the Kahawai driver"
-	echo "  sudo task ci:bind-test-ports"
+	echo "Host validation did not prepare the host for the suite."
 	time_taken_by_script
 	exit 1
 }
@@ -236,8 +226,7 @@ noctx_ports() {
 	printf '%s\n' "$@"
 }
 
-# What the suite runs on: four ports of one PF, and two DMA channels beside
-# them. Reading, only -- see the header.
+# What the suite runs on: four ports of one PF and two DMA channels beside them.
 discover_ports() {
 	local listing="${TMP_FOLDER}/ports.listing" ports=() channels=() numa dma_list free_pages
 
@@ -274,14 +263,13 @@ discover_ports() {
 	# than not at all. Every case that copies with DMA asks the library for a
 	# channel first (st_test_dma_available) and reports itself skipped when there
 	# is none, so refusing here would cost the leg every case that has nothing to
-	# do with DMA -- and serving a channel is the preparation step's job
-	# (`sudo task ci:bind-test-ports`), not this script's.
+	# do with DMA.
 	if [ "${#channels[@]}" -eq 0 ]; then
 		if [ "$(dma_channels | wc -l)" -gt 0 ]; then
 			echo "This host's DMA channels are not on NUMA node ${numa}, which is where the ports"
 			echo "are, so none of them can be used here."
 		else
-			echo "No DMA channel on vfio-pci: 'sudo task ci:bind-test-ports' serves them."
+			echo "Host validation did not serve a DMA channel on vfio-pci."
 		fi
 		echo "The suite runs without DMA offload, and its DMA cases will report themselves"
 		echo "skipped."

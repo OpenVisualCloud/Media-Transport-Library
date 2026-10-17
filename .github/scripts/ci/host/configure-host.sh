@@ -92,6 +92,13 @@ shadow-activate-ice)
 	ssh "${shadow_ssh_options[@]}" "$remote" \
 		"sudo -n bash '${root_dir}/.github/scripts/ci/host/activate-ice.sh'"
 	;;
+shadow-prepare-test-ports)
+	# Prepare the synced shadow with the same command that prepared the SUT.
+	remote="${SHADOW_HOST_USER}@${SHADOW_HOST_IP}"
+	# shellcheck disable=SC2029
+	ssh "${shadow_ssh_options[@]}" "$remote" \
+		"sudo -n bash '${root_dir}/script/prepare_test_ports.sh'"
+	;;
 *)
 	echo "unknown configure-host mode: $1" >&2
 	exit 2
