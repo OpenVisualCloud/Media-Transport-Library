@@ -1540,12 +1540,16 @@ def app_factory(mtl_path, hosts, host_dma_devices):
             app._default_dma_dev = dma_dev
             return app
         elif application == "ffmpeg":
-            return FFmpeg(
+            app = FFmpeg(
                 app_path=os.path.join(mtl_path, FFMPEG_PATH.removeprefix("./"))
             )
+            app._default_dma_dev = dma_dev
+            return app
         elif application == "gstreamer":
             # gst-launch-1.0 is the system binary; only the plugin is in-tree.
-            return GStreamer()
+            app = GStreamer()
+            app._default_dma_dev = dma_dev
+            return app
         else:
             raise ValueError(f"Unknown application: {application}")
 

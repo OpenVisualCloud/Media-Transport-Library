@@ -117,6 +117,8 @@ class GStreamer(Application):
                 nic_port_list[0 if self._rxtxapp_end == "tx" else 1]
             ]
             self._rxtxapp = RxTxApp(RXTXAPP_PATH)
+            if self._rxtxapp_end == "rx":
+                self._rxtxapp._default_dma_dev = self._default_dma_dev
             self._rxtxapp.create_command(**params)
         if not self.params.get("output_file"):
             # st40p and cross-app tests assert on the wire and pass no
@@ -213,6 +215,10 @@ class GStreamer(Application):
             rx_extra = f" num-buffers={cap // frame_size}"
         # retry counts 1 s blocking gets; the default 10 gives up before TX
         # finishes pacing training -- FFmpeg's -init_retry 20 for the same reason.
+        # The RX side alone probes the DMA devices: vfio-pci gives a device to
+        # one process, so a TX that probed first would leave none for RX.
+        if p.get("dma_auto"):
+            rx_extra += " dma-auto=true enable-dma-offload=true"
         rx = (
             f"retry=20 rx-width={width} rx-height={height} rx-fps={fps} "
             f"rx-pixel-format={p['pixel_format']}{rx_extra}"
