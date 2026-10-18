@@ -138,6 +138,20 @@ When utilizing the built-in application, simply use the `--dma_dev` argument to 
 --dma_dev 0000:80:04.0,0000:80:04.1,0000:80:04.2
 ```
 
+With `--dma_auto` instead of `--dma_dev`, MTL finds the DMA devices itself. It
+uses each Intel CBDMA or DSA device on `vfio-pci` on the NUMA node of a port. A
+device that another process holds is skipped, so the second process gets the
+devices that are free. MTL registers 32 DMA queues at most, and a DSA device
+gives up to 16 of them. When the ports are on more than one NUMA node, each
+node gets the same share of the 32 queues.
+
+```bash
+--dma_auto
+```
+
+The FFmpeg plugin has `-dma_auto 1` and the GStreamer plugin has
+`dma-auto=true` for the same function.
+
 ### 3.2. DMA configuration in API
 
 If you're directly interfacing with the API, the initial step involves incorporating DMA information into the `struct mtl_init_params` before making the `mtl_init` call. Subsequently, the initialization routine will attempt to parse and initialize the DMA device, and if the DMA is prepared, it will be added to the DMA list.
@@ -153,6 +167,9 @@ If you're directly interfacing with the API, the initial step involves incorpora
   /** Optional. The element number in the dma_dev_port array, leave to zero if no DMA */
   uint8_t num_dma_dev_port;
 ```
+
+Or set `MTL_FLAG_DMA_AUTO` in `flags` and leave `dma_dev_port` empty: MTL then
+finds the DMA devices on the NUMA node of the ports, as `--dma_auto` does.
 
 To enable DMA offloading, set the `ST20_RX_FLAG_DMA_OFFLOAD` flag in the `st20_rx_create` function, or `ST20P_RX_FLAG_DMA_OFFLOAD` when operating in pipeline mode. During the creation of the RX session, the system will attempt to locate a DMA device.
 However, be aware that this process may fail if a suitable DMA device is not available, due to various reasons. For detailed information in case of failure, please consult the logs.

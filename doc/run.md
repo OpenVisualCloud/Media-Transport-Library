@@ -323,6 +323,7 @@ If it failed to run the sample, please help to collect the system setup status b
 --lcores <lcore list>                : the DPDK lcore list for this run, e.g. --lcores 28,29,30,31. If not assigned, lib will allocate lcore from system socket cores.
 --test_time <seconds>                : the run duration, unit: seconds
 --dma_dev <DMA1,DMA2,DMA3...>        : DMA dev list to offload the packet memory copy for RX video frame session.
+--dma_auto                           : Use each Intel DMA device on vfio-pci on the NUMA node of a port, without a --dma_dev list.
 --log_level <level>                  : set log level. e.g. debug, info, notice, warning, error.
 --log_file <file path>               : set log file for mtl log. If you're initiating multiple RxTxApp processes simultaneously, please ensure each process has a unique filename path. Default the log is writing to stderr.
 
