@@ -174,12 +174,10 @@ carrying the card.
 
 #### The NoCtx strict pacing cases need both ports cabled
 
-`script/prepare_test_ports.sh` gives the second port of the chosen card two VFs when its link
-is up, and the NoCtx run transmits on one port and receives on the other. The six
-strict pacing cases need the NIC RX timestamp, which only traffic that crossed the
-wire carries, so they fail if the second port has no link (the step logs `no
-other port of <pf>'s card has its link up`) or is cabled elsewhere (the cases
-receive nothing).
+The NoCtx run transmits on one port and receives on the other. The six strict
+pacing cases need the NIC RX timestamp. Only traffic that crossed the wire has
+this timestamp. Thus, the cases fail if the second port has no link or connects
+to a different port.
 
 #### The ST 2022-7 leg needs both ports cabled too
 
@@ -411,10 +409,10 @@ process handle, the same way `conftest._reap_ptp_daemons` reaps ptp4l.
 
 ## The DMA channels that host validation serves
 
-`script/prepare_test_ports.sh` serves two DMA channels on the test card's NUMA node.
-It leaves a channel on vfio-pci as it is. It binds a channel that has no driver,
-and it takes a channel from `idxd`. All three states use the same
-`dpdk-devbind.py -b vfio-pci <bdf>` call.
+`script/dma_setup.sh reset` serves two DMA channels on each NUMA node, on the
+test host and on the shadow host. It first unbinds each channel from vfio-pci,
+except a channel that a process holds, so a job starts from the same state.
+Then it binds a channel that has no driver, and it takes a channel from `idxd`.
 
 Taking them is the whole point, because a stock host serves none. Every DSA
 device comes up on `idxd`, so a step that refused to touch those refused every
@@ -433,16 +431,13 @@ Two facts make the runtime version work, and neither needs a reboot:
 - `idxd` releases a DSA device on request. On the EMR host this was proven on
   (kernel 6.8) `dpdk-devbind.py -b vfio-pci` moved one over with `dmesg` reading
   `device denylist disabled - allowing device 8086:0b25`, and all 17 `Dma` gtest
-  cases then passed on it. A driver that wedges instead is caught by the timeout
-  every NIC operation in that script runs under, and reported as a host fault.
+  cases then passed on it.
 
 `dpdk-devbind.py --status-dev dma` is the check: two entries reading
 `drv=vfio-pci` on the same NUMA node as the test card. A host that ends up with
 fewer runs the suite anyway — the cases that copy with DMA ask the library for a
 channel and report themselves skipped when there is none, so the alternative is
-running nothing at all. The step says so on the run summary, and a host that is
-meant to serve channels sets `MTL_CI_REQUIRE_DMA=1` in `runner.env` to make the
-shortfall a failure again.
+running nothing at all.
 
 The node the channels are on is a requirement and not a preference. MTL grants a
 session a channel of the port's own socket and no other
@@ -464,18 +459,11 @@ so the reload cannot happen, is the one case left for the boot-time version:
 echo 'options vfio-pci disable_denylist=1' | sudo tee /etc/modprobe.d/vfio-pci.conf
 ```
 
-One thing the step does *not* do is unbind a channel afterwards. `idxd` is a
-kernel accelerator driver that nothing else on a test host uses, and leaving the
-two channels on vfio-pci is what makes the next job's preparation a no-op.
+## Test hosts need hugepages
 
-## Host validation reserves hugepages
-
-`script/prepare_test_ports.sh` also reserves 2048 × 2 MB hugepages (`MIN_HUGEPAGES`) on each
-NUMA node that has fewer, because every process the gtest suite starts is a DPDK
-process and EAL stops on `Cannot get hugepage information` without them — several
-steps later, in words about DPDK rather than about the host. A reboot clears the
-reservation, so this is exactly the kind of state that is missing on a host
-nobody has touched since one.
+Each NUMA node needs at least 2048 x 2 MB hugepages. Every gtest process is a
+DPDK process. EAL stops with `Cannot get hugepage information` without these
+pages. A reboot clears the reservation.
 
 The floor is per node, not per host. EAL allocates a port's pools on the port's
 node, and a global count is split evenly across nodes, so 2048 pages on a

@@ -154,7 +154,7 @@ list_vf() {
 }
 
 # Data on stdout: a table, read by .github/scripts/gtest.sh and
-# script/prepare_test_ports.sh. Do not change the columns.
+# script/dma_setup.sh. Do not change the columns.
 list() {
 	local filter="${1:-}" id_counter=0 status pci_bdf driver numa_node iommu_group interface_name
 	status=$(devbind_status) || return 1
