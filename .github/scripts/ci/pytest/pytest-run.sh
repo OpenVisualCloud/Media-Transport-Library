@@ -25,7 +25,10 @@ performance)
 	# read as an option of its own.
 	[[ -n ${SUT_APP_ARGS:-} ]] && args+=("--sut_app_args=$SUT_APP_ARGS")
 	;;
-nightly) args=("./tests/single/${TEST_PATH:?TEST_PATH is required}" -m nightly) ;;
+nightly)
+	args=("./tests/single/${TEST_PATH:?TEST_PATH is required}" -m nightly)
+	[[ -n ${PYTEST_FILTER:-} ]] && args+=(-k "$PYTEST_FILTER")
+	;;
 smoke | smoke-low-bandwidth)
 	# The upload step and reports.sh read the reports from the workspace root.
 	report=${root_dir}/report.html
