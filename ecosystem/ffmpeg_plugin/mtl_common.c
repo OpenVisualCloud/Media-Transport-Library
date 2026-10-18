@@ -125,6 +125,8 @@ static int mtl_dev_build_params(AVFormatContext* ctx, const struct StDevArgs* ar
     p->ptp_get_time_fn = mtl_get_tai_time;
   }
 
+  if (args->dma_auto) p->flags |= MTL_FLAG_DMA_AUTO;
+
   if (args->dma_dev) {
     char devs[128] = {0};
     char* next_dev;

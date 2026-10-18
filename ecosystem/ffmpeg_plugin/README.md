@@ -114,6 +114,12 @@ Reading a ST 2110-20 10-bit YUV422 stream on 239.168.85.20:20000 with payload_ty
 ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 20000 -payload_type 96 -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -f mtl_st20p -i "k" -c:v libopenh264 out.264 -y
 ```
 
+The st20p input copies the payload with DMA if it has a DMA device. Give the
+devices with `-dma_dev 0000:80:04.0,0000:80:04.1`, or give `-dma_auto 1` to use
+the DMA devices on `vfio-pci` on the NUMA node of the port (see
+[DMA setup](../../doc/dma.md)). Give the same DMA option to each input of one
+process.
+
 ### 2.2. St20p output
 
 Reading from a yuv stream from a local file and sending a ST 2110-20 10-bit YUV422 stream on 239.168.85.20:20000 with payload_type 96:

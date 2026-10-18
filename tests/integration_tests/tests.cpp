@@ -22,6 +22,7 @@ enum test_args_cmd {
   TEST_ARG_LOG_LEVEL,
   TEST_ARG_SCH_SESSION_QUOTA,
   TEST_ARG_DMA_DEV,
+  TEST_ARG_DMA_AUTO,
   TEST_ARG_CNI_THREAD,
   TEST_ARG_LIB_PTP,
   TEST_ARG_RX_MONO_POOL,
@@ -66,6 +67,7 @@ static struct option test_args_options[] = {
     {"level", required_argument, 0, TEST_ARG_LEVEL},
     {"sch_session_quota", required_argument, 0, TEST_ARG_SCH_SESSION_QUOTA},
     {"dma_dev", required_argument, 0, TEST_ARG_DMA_DEV},
+    {"dma_auto", no_argument, 0, TEST_ARG_DMA_AUTO},
     {"cni_thread", no_argument, 0, TEST_ARG_CNI_THREAD},
     {"ptp", no_argument, 0, TEST_ARG_LIB_PTP},
     {"rx_mono_pool", no_argument, 0, TEST_ARG_RX_MONO_POOL},
@@ -170,6 +172,9 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         break;
       case TEST_ARG_DMA_DEV:
         test_args_dma_dev(p, optarg);
+        break;
+      case TEST_ARG_DMA_AUTO:
+        p->flags |= MTL_FLAG_DMA_AUTO;
         break;
       case TEST_ARG_LOG_LEVEL:
         if (!strcmp(optarg, "debug"))
