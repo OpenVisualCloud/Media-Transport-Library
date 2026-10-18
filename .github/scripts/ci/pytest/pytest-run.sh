@@ -22,7 +22,10 @@ performance)
 	[[ -n ${NUM_SESSIONS:-} ]] && args+=(--num_sessions "$NUM_SESSIONS")
 	[[ -n ${SCH_QUOTA:-} ]] && args+=(--sch_quota "$SCH_QUOTA")
 	;;
-nightly) args=("./tests/single/${TEST_PATH:?TEST_PATH is required}" -m nightly) ;;
+nightly)
+	args=("./tests/single/${TEST_PATH:?TEST_PATH is required}" -m nightly)
+	[[ -n ${PYTEST_FILTER:-} ]] && args+=(-k "$PYTEST_FILTER")
+	;;
 smoke | smoke-low-bandwidth)
 	# The upload step and reports.sh read the reports from the workspace root.
 	report=${root_dir}/report.html

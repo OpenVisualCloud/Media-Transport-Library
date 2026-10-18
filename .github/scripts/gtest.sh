@@ -38,6 +38,7 @@ SUDO_PREFIX="sudo -E env PATH=${PATH}"
 : "${HOST_OP_TIMEOUT:=180}"                             # Hard bound for one nicctl listing
 : "${TEST_KILL_GRACE:=30}"                              # SIGKILL delay after SIGTERM for a test case
 : "${MIN_VFIO_PORTS:=4}"                                # Ports of one PF the suite needs on vfio-pci
+: "${GTEST_CASES:=}"                                    # Regex of the case names to run (empty = every case)
 : "${SYSFS_PCI_DEVICES:=/sys/bus/pci/devices}"          # Where the ports are looked up; the contract tests point this at a fixture
 : "${PROC_MEMINFO:=/proc/meminfo}"                      # Where the hugepages are counted; likewise a fixture under test
 : "${HOST_FAULT_EXIT:=3}"                               # Exit code meaning "host needs recovery, not a test failure"
@@ -519,6 +520,7 @@ generate_test_cases
 print_configuration
 
 for test_name in "${!test_cases[@]}"; do
+	[[ -z ${GTEST_CASES} || $test_name =~ ${GTEST_CASES} ]] || continue
 	echo "$test_name" "${test_cases[$test_name]}"
 	if ! run_test_with_retry "$test_name"; then
 		retval=$?

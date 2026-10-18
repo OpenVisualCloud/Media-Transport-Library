@@ -7,6 +7,10 @@ on:
         description: 'Commit SHA to test (leave empty for current tip)'
         required: false
         default: ''
+      gtest_cases:
+        description: 'Regex of the gtest.sh case names to run, for example ^Dma (empty = all)'
+        required: false
+        default: ''
   schedule:
   - cron: '7 18 * * 1-5' # Monday to Friday at 18:07 UTC
 permissions:
@@ -56,6 +60,7 @@ jobs:
       - name: run gtest bare metal
         env:
           NIGHTLY: 1
+          GTEST_CASES: ${{ inputs.gtest_cases }}
           EXIT_ON_FAILURE: 0
           LOG_FILE: "${{ github.workspace }}/gtest.log"
           TEST_CASE_TIMEOUT: 1800
