@@ -236,13 +236,12 @@ from the artifact being the file at the `updates/` path modprobe prefers, the
 loaded `srcversion` matching that file, and the reported Kahawai version. On a
 mismatch it stops NIC users, zeroes the VFs of the ice PFs, unloads dependent
 modules and ICE, installs the validated module, and confirms the running driver
-is that artifact. Host validation then creates the VF state that the test suites
-need. Gtest and pytest jobs never compile, install, or reload a driver.
+is that artifact. Gtest and pytest jobs never compile, install, or reload a
+driver.
 
 Host validation prepares each E8xx NIC before a test suite starts.
-`script/prepare_test_ports.sh` creates the trusted VFs on one PF. It creates two
-more on the other port for NoCtx. It also binds two DMA channels on the PF's
-NUMA node. Validation runs the same script on a configured shadow host.
+`script/dma_setup.sh reset` binds two DMA channels on each NUMA node. Validation
+runs the same script on a configured shadow host.
 
 The detailed artifact contracts and acceptance criteria are maintained in
 [the GitHub Actions issue](../.github/github_actions_issue.md).

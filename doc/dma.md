@@ -51,7 +51,41 @@ dpdk-devbind.py -b vfio-pci 0000:80:04.1
 dpdk-devbind.py -b vfio-pci 0000:80:04.2
 ```
 
-### 2.3. Intel DSA and the vfio-pci denylist
+### 2.3. Set up DMA for local tests
+
+`script/dma_setup.sh` does the steps of 2.1, 2.2, and 2.4 for each Intel DMA
+device that DPDK supports: CBDMA (`ioat` driver) and DSA (`idxd` driver). A port
+is a PCI address or an interface name. MTL uses a DMA device only on the NUMA
+node of the port (see 3.4), so the script selects the DMA devices by the NUMA
+node of the port.
+
+Bind two DMA devices on the NUMA node of the port to `vfio-pci`:
+
+```bash
+sudo ./script/dma_setup.sh bind 0000:af:00.0
+```
+
+Set `DMA_CHANNELS` to change the number of devices. Without a port, the script
+binds the devices on each NUMA node. If DSA needs it, the script loads
+`vfio-pci` with `disable_denylist=1`.
+
+To start again from a known state, `reset` unbinds each DMA device on the
+NUMA node from `vfio-pci`, and then binds as `bind` does. A device that a
+process holds stays on `vfio-pci`. Host validation runs `reset` on the test
+host and on the shadow host before each job:
+
+```bash
+sudo ./script/dma_setup.sh reset
+```
+
+Print the DMA devices on `vfio-pci` for a port, in the format of `--dma_dev`:
+
+```bash
+./script/dma_setup.sh get 0000:af:01.0
+0000:80:04.0,0000:80:04.1
+```
+
+### 2.4. Intel DSA and the vfio-pci denylist
 
 A DSA device (`8086:0b25`, SPR and later) is on `vfio-pci`'s built-in denylist, so
 the bind above fails with `Cannot bind to driver vfio-pci: [Errno 22]` and `dmesg`

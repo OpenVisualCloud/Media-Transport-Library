@@ -92,12 +92,12 @@ shadow-activate-ice)
 	ssh "${shadow_ssh_options[@]}" "$remote" \
 		"sudo -n bash '${root_dir}/.github/scripts/ci/host/activate-ice.sh'"
 	;;
-shadow-prepare-test-ports)
+shadow-reset-dma)
 	# Prepare the synced shadow with the same command that prepared the SUT.
 	remote="${SHADOW_HOST_USER}@${SHADOW_HOST_IP}"
 	# shellcheck disable=SC2029
 	ssh "${shadow_ssh_options[@]}" "$remote" \
-		"sudo -n bash '${root_dir}/script/prepare_test_ports.sh'"
+		"sudo -n bash '${root_dir}/script/dma_setup.sh' reset"
 	;;
 *)
 	echo "unknown configure-host mode: $1" >&2

@@ -157,10 +157,10 @@ runs:
       shell: bash
       run: sudo -E env -u BASH_XTRACEFD "$TASK_BIN" ci:activate-ice
 
-    - name: Prepare test ports
+    - name: Set up DMA
       if: steps.ice.outputs.required == 'true'
       shell: bash
-      run: sudo -E env -u BASH_XTRACEFD ./script/prepare_test_ports.sh
+      run: sudo -E env -u BASH_XTRACEFD ./script/dma_setup.sh reset
 
     - name: Refuse stray system copies of the install's libraries
       shell: bash
@@ -186,7 +186,7 @@ runs:
         SHADOW_HOST_USER: ${{ steps.shadow-creds.outputs.user }}
       run: task ci:configure-host -- shadow-sync
 
-    - name: Activate ICE and prepare test ports on the shadow host
+    - name: Activate ICE and set up DMA on the shadow host
       if: steps.shadow-creds.outputs.ip != '' && steps.ice.outputs.required == 'true'
       shell: bash
       env:
@@ -194,4 +194,4 @@ runs:
         SHADOW_HOST_USER: ${{ steps.shadow-creds.outputs.user }}
       run: |
         task ci:configure-host -- shadow-activate-ice
-        task ci:configure-host -- shadow-prepare-test-ports
+        task ci:configure-host -- shadow-reset-dma

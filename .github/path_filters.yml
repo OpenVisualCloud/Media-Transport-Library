@@ -146,10 +146,10 @@ unit_sources: &unit_sources
 # or lint scripts. checkout-clean
 # is not here: the workflows use it at a pinned commit, not from this tree.
 # .github/path_filters.yml is not here: check-path-filters.py checks it, and a
-# run on the NIC hosts does not. Each file of script/ is named: gtest.sh,
-# prepare_test_ports.sh, and tests/acceptance call nicctl.sh. The validate-host
-# action and ci:validate-dependencies call build_ebpf_xdp.sh, and
-# source-checksums calls hash_sources.sh.
+# run on the NIC hosts does not. Each file of script/ is named: gtest.sh and
+# tests/acceptance call nicctl.sh. The validate-host action calls dma_setup.sh,
+# the validate-host action and ci:validate-dependencies call build_ebpf_xdp.sh,
+# and source-checksums calls hash_sources.sh.
 bare_metal_ci: &bare_metal_ci
   - .github/workflows/pr-gate.yml
   - .github/workflows/build.yml
@@ -162,6 +162,7 @@ bare_metal_ci: &bare_metal_ci
   - Taskfile.yml
   - script/common.sh
   - script/nicctl.sh
+  - script/dma_setup.sh
   - script/build_ebpf_xdp.sh
   - script/hash_sources.sh
 
@@ -328,6 +329,7 @@ scripts:
   - script/build_st22_avcodec_plugin.sh
   - script/check_dpdk_patches.sh
   - script/common.sh
+  - script/dma_setup.sh
   - script/dos2unix.sh
   - script/hash_sources.sh
   - script/if_filter_delete.sh
