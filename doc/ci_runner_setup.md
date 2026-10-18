@@ -394,6 +394,8 @@ process handle, the same way `conftest._reap_ptp_daemons` reaps ptp4l.
 test host and on the shadow host. It first unbinds each channel from vfio-pci,
 except a channel that a process holds, so a job starts from the same state.
 Then it binds a channel that has no driver, and it takes a channel from `idxd`.
+The gtest suite and the pytest suite give `--dma_auto` to the library, and the
+library takes the channels on the NUMA node of the ports.
 
 Taking them is the whole point, because a stock host serves none. Every DSA
 device comes up on `idxd`, so a step that refused to touch those refused every

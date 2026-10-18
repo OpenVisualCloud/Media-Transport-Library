@@ -38,7 +38,6 @@ SUDO_PREFIX="sudo -E env PATH=${PATH}"
 : "${HOST_OP_TIMEOUT:=180}"                             # Hard bound for one nicctl listing
 : "${TEST_KILL_GRACE:=30}"                              # SIGKILL delay after SIGTERM for a test case
 : "${MIN_VFIO_PORTS:=4}"                                # Ports of one PF the suite needs on vfio-pci
-: "${DMA_CHANNELS:=2}"                                  # DMA channels a case is given when the host serves them
 : "${SYSFS_PCI_DEVICES:=/sys/bus/pci/devices}"          # Where the ports are looked up; the contract tests point this at a fixture
 : "${PROC_MEMINFO:=/proc/meminfo}"                      # Where the hugepages are counted; likewise a fixture under test
 : "${HOST_FAULT_EXIT:=3}"                               # Exit code meaning "host needs recovery, not a test failure"
@@ -165,14 +164,6 @@ not_prepared() {
 	exit 1
 }
 
-# The DMA channels a case can be given: bound to vfio-pci, and on one NUMA node
-# when a node is named.
-dma_channels() {
-	dpdk-devbind.py --status-dev dma |
-		awk -v want="${1:-}" '$1 !~ /^[0-9a-f]+:[0-9a-f]+:[0-9a-f]+\.[0-9a-f]+$/ {next}
-			/drv=vfio-pci/ && (want == "" || $0 ~ ("numa_node=" want)) {print $1}'
-}
-
 # Prints the vfio-pci ports of the first PF in a nicctl.sh listing that has
 # enough of them.
 #
@@ -226,9 +217,9 @@ noctx_ports() {
 	printf '%s\n' "$@"
 }
 
-# What the suite runs on: four ports of one PF and two DMA channels beside them.
+# What the suite runs on: four ports of one PF.
 discover_ports() {
-	local listing="${TMP_FOLDER}/ports.listing" ports=() channels=() numa dma_list free_pages
+	local listing="${TMP_FOLDER}/ports.listing" ports=() free_pages
 
 	nicctl_list "${listing}" all || true
 	mapfile -t ports < <(ports_of_one_pf "${listing}")
@@ -248,46 +239,12 @@ discover_ports() {
 		not_prepared "No free 2 MB hugepages on this host, and every case's EAL needs them."
 	fi
 
-	# The DMA channels of the ports' own NUMA node, and only those. The library
-	# pairs a session with a channel of the port's socket and no other
-	# (mt_dma_request_dev, doc/dma.md 3.4), so a channel on another node
-	# registers, is counted by st_test_dma_available -- and is then never handed
-	# to a session. Passing one makes every DMA case run without the offload it
-	# is testing instead of skipping: on an E810 host whose card sits on NUMA 2
-	# with the channels on 0 and 1, that turned digest_ooo_slice_4320p into 143
-	# incomplete frames against a limit of 16.
-	numa=$(awk -v port="${ports[0]}" '$2 == port {print $4}' "${listing}")
-	mapfile -t channels < <(dma_channels "${numa}")
-
-	# A host with no channel of its own runs the suite without DMA offload rather
-	# than not at all. Every case that copies with DMA asks the library for a
-	# channel first (st_test_dma_available) and reports itself skipped when there
-	# is none, so refusing here would cost the leg every case that has nothing to
-	# do with DMA.
-	if [ "${#channels[@]}" -eq 0 ]; then
-		if [ "$(dma_channels | wc -l)" -gt 0 ]; then
-			echo "This host's DMA channels are not on NUMA node ${numa}, which is where the ports"
-			echo "are, so none of them can be used here."
-		else
-			echo "Host validation did not serve a DMA channel on vfio-pci."
-		fi
-		echo "The suite runs without DMA offload, and its DMA cases will report themselves"
-		echo "skipped."
-	fi
-
 	export TEST_PORT_1="${ports[0]}" TEST_PORT_2="${ports[1]}"
 	export TEST_PORT_3="${ports[2]}" TEST_PORT_4="${ports[3]}"
 	mapfile -t noctx_port < <(noctx_ports "${listing}" "${ports[@]:0:4}")
-	export TEST_DMA_PORT_P="${channels[0]:-}" TEST_DMA_PORT_R="${channels[1]:-}"
-	# What every case is given, built once: the option with the channels this
-	# host serves, and nothing at all when it serves none -- an empty --dma_dev
-	# is a device named "" for the library to look for and not find.
-	if [ "${#channels[@]}" -gt 0 ]; then
-		dma_list=${channels[*]}
-		export TEST_DMA_ARG="--dma_dev \"${dma_list// /,}\""
-	else
-		export TEST_DMA_ARG=""
-	fi
+	# The library probes the DMA devices on vfio-pci on the NUMA node of the
+	# ports itself. A host with none runs the DMA cases as skipped.
+	export TEST_DMA_ARG="--dma_auto"
 }
 
 # ── the cases ───────────────────────────────────────────────────────────────
@@ -538,7 +495,7 @@ print_configuration() {
 	echo "TEST_PORT_1..4: ${TEST_PORT_1} ${TEST_PORT_2} ${TEST_PORT_3} ${TEST_PORT_4}"
 	echo "NoCtx ports: ${noctx_port[*]}"
 	echo "NoCtx CPU isolation: ${noctx_isolation:-<not probed, no noctx case>}"
-	echo "DMA channels: ${TEST_DMA_ARG:-<none, the DMA cases skip themselves>}"
+	echo "DMA: ${TEST_DMA_ARG}"
 	echo "=========================================="
 	echo ""
 }
