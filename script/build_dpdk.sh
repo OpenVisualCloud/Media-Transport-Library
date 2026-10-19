@@ -109,7 +109,10 @@ if [ "$sourced" -eq 0 ]; then
 	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 		MTL_PREFIX_ARGS="--prefix=$MTL_INSTALL_PREFIX"
 	fi
-	meson build ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"}
+	# Compiler hardening, see doc/build.md. -Dc_args replaces
+	# CFLAGS, so pass them through.
+	meson build ${MTL_PREFIX_ARGS:+"$MTL_PREFIX_ARGS"} -Db_pie=true -Dc_args="${CFLAGS:+$CFLAGS }$(hardening_cflags)" \
+		-Dc_link_args="${LDFLAGS:+$LDFLAGS }$(hardening_ldflags)"
 	ninja -C build
 	(
 		cd build || exit 1

@@ -56,6 +56,20 @@ while getopts ":v:hgj" opt; do
 	esac
 done
 
+# Compiler hardening, see doc/build.md. openh264 and FFmpeg
+# build with gcc unless told otherwise; keep the _FORTIFY_SOURCE level it
+# already sets (Ubuntu 24.04: 3).
+hardening_cflags="-fstack-protector-strong -fstack-clash-protection -fcf-protection=full -Wformat -Wformat-security -Werror=format-security"
+if ! echo | gcc -O2 -dM -E - | grep -q _FORTIFY_SOURCE; then
+	# 3 where the compiler and glibc support it (gcc 12+, clang 9+, glibc 2.34+)
+	if echo "#include <string.h>" | gcc -O2 -D_FORTIFY_SOURCE=3 -dM -E -x c - 2>/dev/null | grep -q "__USE_FORTIFY_LEVEL 3"; then
+		hardening_cflags+=" -D_FORTIFY_SOURCE=3"
+	else
+		hardening_cflags+=" -D_FORTIFY_SOURCE=2"
+	fi
+fi
+hardening_ldflags="-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack"
+
 build_openh264() {
 	if command -v pkg-config >/dev/null 2>&1; then
 		if pkg-config --exists "openh264 >= ${OPENH264_VER}"; then
@@ -74,11 +88,12 @@ build_openh264() {
 	wget "https://github.com/cisco/openh264/archive/refs/tags/v${OPENH264_VER}.zip"
 	unzip "v${OPENH264_VER}.zip" && rm -f "v${OPENH264_VER}.zip"
 	cd "openh264-${OPENH264_VER}"
+	# The Makefile appends its own flags to CFLAGS and LDFLAGS from the environment
 	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
-		make -j "$(nproc)" PREFIX="${MTL_INSTALL_PREFIX}"
+		CFLAGS="${CFLAGS:+$CFLAGS }$hardening_cflags" LDFLAGS="${LDFLAGS:+$LDFLAGS }$hardening_ldflags" make -j "$(nproc)" PREFIX="${MTL_INSTALL_PREFIX}"
 		make install PREFIX="${MTL_INSTALL_PREFIX}"
 	else
-		make -j "$(nproc)"
+		CFLAGS="${CFLAGS:+$CFLAGS }$hardening_cflags" LDFLAGS="${LDFLAGS:+$LDFLAGS }$hardening_ldflags" make -j "$(nproc)"
 		sudo make install
 	fi
 	cd ../
@@ -105,7 +120,7 @@ build_ffmpeg() {
 	done
 
 	# Use bash array to pass extra configuration flags to avoid shellcheck SC2086 word-splitting warnings.
-	extra_config_flags=()
+	extra_config_flags=("--extra-cflags=${hardening_cflags}" "--extra-ldflags=${hardening_ldflags}" "--extra-ldexeflags=-pie")
 
 	if [ "$enable_gpu" = true ]; then
 		echo "Building with MTL_GPU_DIRECT_ENABLED"
