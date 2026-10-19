@@ -50,7 +50,7 @@ jobs:
       - name: Set current date
         run: echo "CURRENT_DATE=$(date '+%y%m%d-%H%M%S')" >> "$GITHUB_ENV"
       - name: 'preparation: Clean workspace and checkout MTL'
-        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@497c4107ae027a4f9d6da088d027639df40064e3
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@dd14ac1cf113e9ed39c5284c8ef6efa5b8bb9447
         with:
           ref: '${{ inputs.branch || github.ref }}'
           fetch-depth: '0'
