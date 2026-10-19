@@ -35,9 +35,8 @@ automatically:
 
 ### MTL USDT integration
 
-The 8 USDT tracing tools attach directly to MTL's 82 built-in USDT probes
-(11 providers: sys, ptp, st20, st20p, st22, st22p, st30, st30p, st40, st40p,
-st41). USDT is the preferred data source — zero overhead when not attached,
+The 8 USDT tracing tools attach directly to MTL's 78 built-in USDT probes
+(10 providers: sys, ptp, st20, st20p, st22, st22p, st30, st30p, st40, st40p). USDT is the preferred data source — zero overhead when not attached,
 real-time introspection when active:
 
 | Tool | What it measures |

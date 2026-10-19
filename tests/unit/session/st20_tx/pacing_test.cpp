@@ -21,6 +21,8 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+
 #include "session/st20_tx_harness.h"
 
 namespace {
@@ -870,6 +872,17 @@ INSTANTIATE_TEST_SUITE_P(AllSoftwareWaitPaths, St20TxTransmitterBoundaryTest,
                          ::testing::Values(UT_TXV_PACING_TSC, UT_TXV_PACING_PTP,
                                            UT_TXV_PACING_RL));
 
+/* Launch-time pacing leaves the wait to the NIC: the transmitter hands the packet over at
+ * once, with its PTP target in the tx timestamp field and the flag the driver keys on. */
+TEST_F(St20TxSyncPacingTest, LaunchTimeHandsThePacketOverWithItsPtpTarget) {
+  uint64_t launch_time = 0;
+  bool launch_flag = false;
+
+  ASSERT_EQ(ut_txv_run_launch_time(ctx_, kCurrentTai, &launch_time, &launch_flag), 0);
+  EXPECT_EQ(launch_time, kCurrentTai);
+  EXPECT_TRUE(launch_flag);
+}
+
 TEST_F(St20TxSyncPacingTest, ExactTargetBeyondOneSecondFallsBackBeforePacketBuild) {
   uint64_t packet_tsc = 0;
   uint64_t packet_ptp = 0;
@@ -887,4 +900,349 @@ TEST_F(St20TxSyncPacingTest, ExactTargetBeyondOneSecondFallsBackBeforePacketBuil
   EXPECT_EQ(ut_txv_notify_frame_done_timestamp(ctx_), kCurrentTai);
   EXPECT_EQ(ut_txv_notify_frame_done_epoch(ctx_), kCurrentEpoch);
   EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 1u);
+}
+
+/* tv_init_pacing()'s per-port RL warm-up plan: the shaper sends pad_interval + 1
+ * packets in pad_interval trs, its full burst bucket, filled at the rate programmed on
+ * the queue, leaves at once, and it releases packets on a grid of token timeslots. A plan
+ * needs a measured pad_interval, a known bucket and a programmed rate, else packet 0 is
+ * held. */
+class St20TxRlPlanTest : public ::testing::Test {
+ protected:
+  static constexpr int kPortP = 0;
+  static constexpr int kPortR = 1;
+  static constexpr long double kNormalPadSize = 1262;
+  static constexpr long double kVfBurstSize = 2048;
+  /* tv_rl_bps() of 1080p59.94, 4320 pkts of 1262 B a frame */
+  static constexpr uint64_t kRlBps = 326783616;
+  /* and of 2160p59.94, 17280 pkts, where half the 512-descriptor ring binds before the
+   * bucket refill */
+  static constexpr uint64_t kUhdRlBps = 1307134465;
+  /* the most tokens ice adds a timeslot below 1.47 GB/s, st_tx_video_rl_tokens() */
+  static constexpr long double kQuantumBytes = 257;
+  static constexpr long double kTimeslotMaxNs = 2000; /* ST_TX_VIDEO_RL_TIMESLOT_MAX_NS */
+  static constexpr double kTolNs = 1e-6;
+  const float kTrained[2] = {164, 170};
+
+  void SetUp() override {
+    ASSERT_EQ(ut_txv_init(), 0);
+    ctx_ = ut_txv_create();
+    ASSERT_NE(ctx_, nullptr);
+  }
+  void TearDown() override {
+    ut_txv_destroy(ctx_);
+  }
+  /* The NORMAL pad's: training drains a frame of 1200-byte pkts of 2.5-byte pixels, a
+   * pkt crossing or ending a line EXTRA and 6 bytes longer, then NORMAL ones to a
+   * multiple of 32, so its mean pad is longer. */
+  long double Drain(long double pad_interval, uint32_t width = 1920,
+                    uint32_t height = 1080) {
+    const uint64_t line = width * 5 / 2, frame = line * height;
+    const uint64_t pkts = (frame + 1199) / 1200;
+    uint64_t extra = 0;
+    for (uint64_t i = 0; i < pkts; i++)
+      if ((i * 1200 + 1200) >= (i * 1200 / line + 1) * line) extra++;
+    const long double pads = pkts + 32 - pkts % 32;
+    const long double share = kNormalPadSize * pads / (kNormalPadSize * pads + 6 * extra);
+    return ut_txv_pacing_trs(ctx_) * pad_interval / (pad_interval + 1) * share;
+  }
+  /* the shaper time of one token timeslot at most, the plan's aim past the target */
+  static long double Aim(long double drain) {
+    return kQuantumBytes * drain / kNormalPadSize;
+  }
+  /* a full bucket at the rate programmed on the queue, plus the aim */
+  static long double Credit(long double burst, uint64_t bps, long double drain) {
+    return burst * 1e9L / bps + Aim(drain);
+  }
+  void ExpectHold(int port) {
+    EXPECT_FALSE(ut_txv_rl_armed(ctx_, port));
+    EXPECT_EQ((double)ut_txv_rl_drain(ctx_, port), 0.0);
+    EXPECT_EQ((double)ut_txv_rl_credit(ctx_, port), 0.0);
+  }
+  ut_txv_ctx* ctx_ = nullptr;
+};
+
+TEST_F(St20TxRlPlanTest, DrainFollowsEachPortsTrainedPadInterval) {
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 2, 0, false, kTrained, false), 0);
+
+  EXPECT_NEAR((double)ut_txv_rl_drain(ctx_, kPortP), (double)Drain(164), kTolNs);
+  EXPECT_NEAR((double)ut_txv_rl_drain(ctx_, kPortR), (double)Drain(170), kTolNs);
+}
+
+/* what the pre-arm reads besides the drain: the NORMAL pad and the pads its last
+ * burst keeps for the cut, 1262 / 64 coarse + 64 / 8 fine ones */
+TEST_F(St20TxRlPlanTest, PlannedPortIsArmedWithItsNormalPad) {
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 2, 0, false, kTrained, false), 0);
+
+  for (int port : {kPortP, kPortR}) {
+    SCOPED_TRACE(port);
+    EXPECT_TRUE(ut_txv_rl_armed(ctx_, port));
+    EXPECT_EQ(ut_txv_rl_pad_size(ctx_, port), (uint16_t)kNormalPadSize);
+    EXPECT_EQ(ut_txv_rl_trim_pads(ctx_, port), 1262 / 64 + 64 / 8);
+  }
+}
+
+TEST_F(St20TxRlPlanTest, UserPadIntervalHolds) {
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 200, false, nullptr, false), 0);
+
+  ExpectHold(kPortP);
+}
+
+TEST_F(St20TxRlPlanTest, StaticPadIntervalHolds) {
+  /* g_cvl_static_pad_tables has 1080p59 gpm */
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, true, nullptr, false), 0);
+
+  ExpectHold(kPortP);
+}
+
+TEST_F(St20TxRlPlanTest, VfCreditIsThePatchedKernelIceBucket) {
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
+
+  EXPECT_NEAR((double)ut_txv_rl_credit(ctx_, kPortP),
+              (double)Credit(kVfBurstSize, kRlBps, Drain(164)), kTolNs);
+}
+
+/* the bucket fills at the rate programmed, not at the faster one training measures on a
+ * NIC whose clock runs ahead of the psm_clk ice computes the profile with */
+TEST_F(St20TxRlPlanTest, CreditFollowsTheRateProgrammedOnTheQueue) {
+  constexpr uint64_t kRetrainedBps = 306359640;
+  ut_txv_set_rl_queue_bps(ctx_, kPortP, kRetrainedBps);
+
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
+
+  EXPECT_NEAR((double)ut_txv_rl_credit(ctx_, kPortP),
+              (double)Credit(kVfBurstSize, kRetrainedBps, Drain(164)), kTolNs);
+}
+
+/* Pins the hold, not the bps guard: without it, B / 0 is an infinite bucket the ring
+ * check rejects all the same. The guard keeps the division off a zero rate. */
+TEST_F(St20TxRlPlanTest, PortWithoutAProgrammedRateHolds) {
+  ut_txv_set_rl_queue_bps(ctx_, kPortP, 0);
+
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
+
+  ExpectHold(kPortP);
+}
+
+TEST_F(St20TxRlPlanTest, PfWithDefaultBucketHolds) {
+  ut_txv_set_ice_pf(ctx_, kPortP, 0);
+
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
+
+  ExpectHold(kPortP);
+}
+
+/* 2160p59.94, so that the largest bucket still refills before the warm-up */
+TEST_F(St20TxRlPlanTest, PfCreditIsTheBucketTheIcePmdPrograms) {
+  /* ice_cfg_rl_burst_size(): nearest 64 B up to 2047 * 64 B, else nearest 1 KB */
+  const uint32_t cases[][2] = {
+      {4000, 4032}, {3990, 3968}, {131008, 131008}, {131040, 131072}, {150000, 149504},
+  };
+
+  for (const auto& c : cases) {
+    SCOPED_TRACE(c[0]);
+    ut_txv_ctx* ctx = ut_txv_create();
+    ASSERT_NE(ctx, nullptr);
+    ut_txv_set_rl_format(ctx, 3840, 2160, false, ST_FPS_P59_94);
+    ut_txv_set_ice_pf(ctx, kPortP, c[0]);
+    EXPECT_EQ(ut_txv_init_rl_pacing(ctx, 1, 0, false, kTrained, false), 0);
+    EXPECT_NEAR((double)ut_txv_rl_credit(ctx, kPortP),
+                (double)Credit(c[1], kUhdRlBps, ut_txv_rl_drain(ctx, kPortP)), kTolNs);
+    ut_txv_destroy(ctx);
+  }
+}
+
+/* 2160p59.94: ~332 pads of credit, more than the 512-descriptor ring should hold, in a
+ * bucket that refills before the warm-up */
+TEST_F(St20TxRlPlanTest, PfBucketBeyondHalfTheTxRingHolds) {
+  ut_txv_set_rl_format(ctx_, 3840, 2160, false, ST_FPS_P59_94);
+  ut_txv_set_ice_pf(ctx_, kPortP, 400000);
+
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
+
+  ExpectHold(kPortP);
+}
+
+/* The bucket refills between the previous frame's last pkt and the warm-up open,
+ * frame_time * (1 - reactive) - warm_pkts * trs, 192.8 us at 1080p59.94: a larger one
+ * would meet the pads short of full. */
+TEST_F(St20TxRlPlanTest, PfBucketThatCannotRefillBeforeTheWarmUpHolds) {
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
+  const long double frame_ns = 1e9L * 1001 / 60000;
+  const long double idle_ns = frame_ns * (1 - 1080.0L / 1125) -
+                              ut_txv_pacing_warm_pkts(ctx_) * ut_txv_pacing_trs(ctx_);
+  /* the largest bucket ice_cfg_rl_burst_size() programs that refills in time */
+  const uint32_t fits = (uint32_t)(idle_ns * kRlBps / 1e9L) / 64 * 64;
+
+  for (uint32_t burst : {fits, fits + 64}) {
+    SCOPED_TRACE(burst);
+    ut_txv_ctx* ctx = ut_txv_create();
+    ASSERT_NE(ctx, nullptr);
+    ut_txv_set_ice_pf(ctx, kPortP, burst);
+
+    ASSERT_EQ(ut_txv_init_rl_pacing(ctx, 1, 0, false, kTrained, false), 0);
+
+    EXPECT_EQ(ut_txv_rl_armed(ctx, kPortP), burst == fits);
+    ut_txv_destroy(ctx);
+  }
+}
+
+/* (128 trs + credit) / drain + 1 pads must fit half the 512-descriptor ring, 256: the
+ * largest bucket ice_cfg_rl_burst_size() programs within it, rounded to 1 KB, at
+ * 2160p59.94 */
+TEST_F(St20TxRlPlanTest, PlanFitsHalfTheTxRing) {
+  ut_txv_set_rl_format(ctx_, 3840, 2160, false, ST_FPS_P59_94);
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
+  const long double drain = ut_txv_rl_drain(ctx_, kPortP);
+  const long double room_ns = 255 * drain - 128 * ut_txv_pacing_trs(ctx_) - Aim(drain);
+  const uint32_t fits = (uint32_t)(room_ns * kUhdRlBps / 1e9L) / 1024 * 1024;
+  ASSERT_GT(fits, 2047u * 64);
+
+  for (uint32_t burst : {fits, fits + 1024}) {
+    SCOPED_TRACE(burst);
+    ut_txv_ctx* ctx = ut_txv_create();
+    ASSERT_NE(ctx, nullptr);
+    ut_txv_set_rl_format(ctx, 3840, 2160, false, ST_FPS_P59_94);
+    ut_txv_set_ice_pf(ctx, kPortP, burst);
+
+    ASSERT_EQ(ut_txv_init_rl_pacing(ctx, 1, 0, false, kTrained, false), 0);
+
+    EXPECT_EQ(ut_txv_rl_armed(ctx, kPortP), burst == fits);
+    ut_txv_destroy(ctx);
+  }
+}
+
+/* tv_init_hw() builds no trim pads where a 64-byte cut would leave no frame */
+TEST_F(St20TxRlPlanTest, PortWithoutTrimPadsHolds) {
+  ut_txv_set_no_trim_pads(ctx_);
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
+
+  ExpectHold(kPortP);
+}
+
+/* only an RL port uses them, and only where the NORMAL pkt less a 64-byte cut is still
+ * a frame of 64 bytes: an RTP-level session may set an rtp_pkt_size of 1 */
+TEST_F(St20TxRlPlanTest, TrimPadsOnlyForRlPortsWithAFrameAfterTheCut) {
+  const struct {
+    enum st21_tx_pacing_way way;
+    uint32_t normal, coarse, fine;
+  } cases[] = {
+      {ST21_TX_PACING_WAY_RL, 1262, 1198, 1254}, {ST21_TX_PACING_WAY_RL, 128, 64, 120},
+      {ST21_TX_PACING_WAY_RL, 127, 0, 0},        {ST21_TX_PACING_WAY_RL, 1 + 42, 0, 0},
+      {ST21_TX_PACING_WAY_TSC, 1262, 0, 0},
+  };
+
+  for (const auto& c : cases) {
+    SCOPED_TRACE(c.normal);
+    uint32_t lens[2];
+    ASSERT_EQ(ut_txv_init_trim_pads(ctx_, c.way, c.normal, lens), 0);
+    EXPECT_EQ(lens[0], c.coarse);
+    EXPECT_EQ(lens[1], c.fine);
+  }
+}
+
+/* At most 576 lines warm up 8 pkts, fewer pads than the last burst keeps to cut up to a
+ * pad: the plan could not reach its aim. 119.88 fps keeps the timeslot short. */
+TEST_F(St20TxRlPlanTest, WindowShortOfTheTrimPadsHolds) {
+  for (uint32_t height : {480u, 576u}) {
+    SCOPED_TRACE(height);
+    ut_txv_ctx* ctx = ut_txv_create();
+    ASSERT_NE(ctx, nullptr);
+    ut_txv_set_rl_format(ctx, 1920, height, false, ST_FPS_P119_88);
+
+    ASSERT_EQ(ut_txv_init_rl_pacing(ctx, 1, 0, false, kTrained, false), 0);
+
+    EXPECT_EQ(ut_txv_pacing_warm_pkts(ctx), 8u);
+    EXPECT_FALSE(ut_txv_rl_armed(ctx, kPortP));
+    ut_txv_destroy(ctx);
+  }
+}
+
+/* armed while the window holds more than trim_pads - 1 pads, so the plan's first burst
+ * takes trim_pads of them. A queue rate a tenth of the trained one, far from any NIC, is
+ * only a knob that moves the credit across that edge. */
+TEST_F(St20TxRlPlanTest, PlanNeedsTheTrimPadsInItsWindow) {
+  constexpr int64_t kTrimPads = 1262 / 64 + 64 / 8;
+  ut_txv_set_rl_format(ctx_, 1920, 576, false, ST_FPS_P119_88);
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
+  const long double drain = Drain(164, 1920, 576);
+  const long double edge_ns =
+      (kTrimPads - 1) * drain - 8 * ut_txv_pacing_trs(ctx_) - Aim(drain);
+  const uint64_t edge_bps = (uint64_t)(kVfBurstSize * 1e9L / edge_ns);
+
+  for (uint64_t bps : {edge_bps - 1, edge_bps + 1}) {
+    SCOPED_TRACE(bps);
+    ut_txv_ctx* ctx = ut_txv_create();
+    ASSERT_NE(ctx, nullptr);
+    ut_txv_set_rl_format(ctx, 1920, 576, false, ST_FPS_P119_88);
+    ut_txv_set_rl_queue_bps(ctx, kPortP, bps);
+
+    ASSERT_EQ(ut_txv_init_rl_pacing(ctx, 1, 0, false, kTrained, false), 0);
+
+    EXPECT_EQ(ut_txv_rl_armed(ctx, kPortP), bps < edge_bps);
+    ut_txv_destroy(ctx);
+  }
+}
+
+/* A plan lands packet 0 up to 2 * aim later than the hold path, so it is kept only up to
+ * an aim of 2 us, 257 B of NORMAL pad drain: a pad of at most 9.8 us, a drain of at least
+ * ~128.5 MB/s. 720p50 is just over (aim ~2.02 us here); SD holds on its window first. */
+TEST_F(St20TxRlPlanTest, TimeslotPastTwoMicrosecondsHolds) {
+  const struct {
+    uint32_t width, height;
+    bool interlaced;
+    enum st_fps fps;
+    bool armed;
+  } cases[] = {
+      {3840, 2160, false, ST_FPS_P59_94, true}, {1920, 1080, false, ST_FPS_P59_94, true},
+      {1920, 1080, false, ST_FPS_P50, true},    {1920, 1080, false, ST_FPS_P29_97, true},
+      {1920, 1080, false, ST_FPS_P25, true},    {1920, 1080, true, ST_FPS_P59_94, true},
+      {1280, 720, false, ST_FPS_P59_94, true},  {1280, 720, false, ST_FPS_P50, false},
+      {1280, 720, false, ST_FPS_P25, false},
+  };
+
+  for (const auto& c : cases) {
+    SCOPED_TRACE(std::to_string(c.width) + "x" + std::to_string(c.height) +
+                 (c.interlaced ? "i" : "p") + " fps " + std::to_string(c.fps));
+    ut_txv_ctx* ctx = ut_txv_create();
+    ASSERT_NE(ctx, nullptr);
+    ut_txv_set_rl_format(ctx, c.width, c.height, c.interlaced, c.fps);
+
+    ASSERT_EQ(ut_txv_init_rl_pacing(ctx, 1, 0, false, kTrained, false), 0);
+
+    EXPECT_EQ(ut_txv_rl_armed(ctx, kPortP), c.armed);
+    ut_txv_destroy(ctx);
+  }
+}
+
+/* armed up to a NORMAL pad drain of 2000 * 1262 / 257 = 9821.0 ns. 972 lines at 25 fps
+ * have a 9876 ns trs, the pad interval sets the drain around it. */
+TEST_F(St20TxRlPlanTest, TwoMicrosecondsBoundTheTimeslot) {
+  constexpr uint32_t kHeight = 972;
+  constexpr long double kEdgeDrain = kTimeslotMaxNs * kNormalPadSize / kQuantumBytes;
+  ut_txv_set_rl_format(ctx_, 1920, kHeight, false, ST_FPS_P25);
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
+  /* the drain as pad_interval grows */
+  const long double full = Drain(1e30L, 1920, kHeight);
+
+  for (long double drain : {kEdgeDrain - 0.05L, kEdgeDrain + 0.05L}) {
+    SCOPED_TRACE((double)drain);
+    const float pad_interval[1] = {(float)(drain / (full - drain))};
+    ASSERT_GT(pad_interval[0], 32);
+    ut_txv_ctx* ctx = ut_txv_create();
+    ASSERT_NE(ctx, nullptr);
+    ut_txv_set_rl_format(ctx, 1920, kHeight, false, ST_FPS_P25);
+
+    ASSERT_EQ(ut_txv_init_rl_pacing(ctx, 1, 0, false, pad_interval, false), 0);
+
+    EXPECT_EQ(ut_txv_rl_armed(ctx, kPortP), drain < kEdgeDrain);
+    ut_txv_destroy(ctx);
+  }
+}
+
+TEST_F(St20TxRlPlanTest, WidePacingHolds) {
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, true), 0);
+
+  ASSERT_EQ(ut_txv_pacing_warm_pkts(ctx_), 0u);
+  ExpectHold(kPortP);
 }

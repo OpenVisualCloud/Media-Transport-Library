@@ -1,0 +1,118 @@
+---
+name: Fuzz Tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
+  # A schedule runs on the default branch only, so this is the nightly run of main.
+  schedule:
+    - cron: '43 1 * * *' # Every day at 01:43 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      # A pull request runs the targets only when the fuzz_tests filter matches.
+      # The nightly run and a manual run always run them.
+      fuzz_tests: ${{ github.event_name != 'pull_request' || steps.filter.outputs.fuzz_tests == 'true' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: ${{ github.event_name == 'pull_request' }}
+        with:
+          filters: .github/path_filters.yml
+
+  # The fuzz targets need no NIC and no hugepages, so they run on a GitHub-hosted
+  # runner. Clang 14 of Ubuntu 22.04 builds them; clang 18 of Ubuntu 24.04 does
+  # not (T-115).
+  fuzz-tests:
+    needs: changes
+    if: ${{ needs.changes.outputs.fuzz_tests == 'true' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      # A pull request gets a short run. The nightly run gets the long run.
+      FUZZ_TIME: ${{ github.event_name == 'pull_request' && '60' || '600' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
+
+      - name: Install the dependencies and DPDK
+        run: sudo -E .github/scripts/setup_environment.sh
+        env:
+          SETUP_ENVIRONMENT: 1
+          SETUP_BUILD_AND_INSTALL_DPDK: 1
+          CICD_BUILD: 1
+
+      # The install scripts do not run ldconfig. Without it, EAL cannot dlopen
+      # the DPDK drivers in /usr/local and each fuzz target aborts at init.
+      - name: Update the runtime linker cache
+        run: sudo ldconfig
+
+      # Each run starts from the corpus of the last run. A pull request can read
+      # the cache of main, and main cannot read the cache of a pull request.
+      - name: Restore the fuzz corpus
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz-corpus
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: fuzz-corpus-
+
+      - name: Build the fuzz targets with clang, ASan and UBSan
+        run: task ci:fuzz -- build
+
+      - name: Run each fuzz target for FUZZ_TIME seconds
+        run: task ci:fuzz -- run
+
+      - name: Upload the fuzz report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-report
+          path: fuzz-report/
+          if-no-files-found: ignore
+
+  # The one check to require in branch protection. It always runs, so it
+  # reports even when the path filter skips the fuzz targets, and it fails only
+  # if a job it needs failed or was cancelled.
+  fuzz-tests-result:
+    name: fuzz-tests-result
+    needs: [changes, fuzz-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All fuzz targets ok
+        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+        run: exit 0
+      - name: A fuzz target failed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1

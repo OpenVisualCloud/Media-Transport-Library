@@ -213,9 +213,9 @@ build_and_install() {
 
 	# The runtime linker's default search path is as distribution-specific as
 	# pkg-config's, and a library it cannot find fails at load time rather than
-	# at link time. Naming the directory is idempotent and cheap.
+	# at link time. Naming the directory is idempotent and cheap. The caller
+	# runs ldconfig: this script only installs.
 	printf '%s\n' "${libdir}" | as_root tee /etc/ld.so.conf.d/mtl-xdp.conf >/dev/null
-	as_root ldconfig
 
 	# Only where the install landed outside the search path, which is the case
 	# install_libdir() cannot solve on its own.

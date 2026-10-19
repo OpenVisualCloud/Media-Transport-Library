@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
+import subprocess  # nosec B404 # tool args are validated before reaching a shell
 import textwrap
 import threading
 import time

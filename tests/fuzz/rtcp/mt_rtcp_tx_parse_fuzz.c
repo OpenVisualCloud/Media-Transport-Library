@@ -1,4 +1,16 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+
+/**
+ * @file mt_rtcp_tx_parse_fuzz.c
+ *
+ * Sends each input as one RTCP packet to mt_rtcp_tx_parse_rtcp_packet(), the NACK
+ * parser of the TX side.
+ *
+ * The harness copies the input to a fixed 2048-byte buffer and gives the parser the
+ * length of the input. The retransmit ring is empty, so the parser touches no mempool.
+ * The harness starts no EAL, and sets the MTL log level to CRIT.
+ */
+
 #include <arpa/inet.h>
 #include <stdarg.h>
 #include <stdbool.h>

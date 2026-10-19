@@ -55,6 +55,24 @@ def test_rx_timing_requires_every_result_to_be_narrow():
         app.assert_rx_timing_compliance(expected_sessions=3)
 
 
+def test_rejected_needs_both_a_failed_run_and_the_mtl_error():
+    app = _rxtxapp({})
+    marker = "invalid fmd_dit"
+    app.last_output = f"tx_ancillary_ops_check, {marker} 0x300000"
+
+    app.last_return_code = 0
+    with pytest.raises(AssertionError, match="accepted a setting"):
+        app.assert_rejected(marker)
+
+    app.last_return_code = 1
+    app.last_output = "EAL: VFIO group is not viable"
+    with pytest.raises(AssertionError, match="failed without"):
+        app.assert_rejected(marker)
+
+    app.last_output = f"tx_ancillary_ops_check, {marker} 0x300000"
+    app.assert_rejected(marker)
+
+
 def test_ebu_report_states_are_distinct():
     client = object.__new__(PcapComplianceClient)
     unavailable, _ = client.check_compliance(False)

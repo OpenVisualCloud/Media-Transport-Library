@@ -46,6 +46,7 @@ struct ut22p_ctx {
   int framebuff_cnt;
   bool blocking;
   bool decode_blocking;
+  struct st22_decode_dev_impl decode_dev;
 };
 
 #include "pipeline/st22p_harness.h"
@@ -118,6 +119,24 @@ void ut22p_wake_block(ut22p_ctx* ctx) {
   st22p_rx_wake_block(&ctx->pipeline);
 }
 
+void ut22p_lock_block_mutex(ut22p_ctx* ctx) {
+  mt_pthread_mutex_lock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut22p_post_wake_locked(ut22p_ctx* ctx) {
+  ctx->pipeline.block_wake_pending = true;
+  mt_pthread_cond_broadcast(&ctx->pipeline.block_wake_cond);
+}
+
+void ut22p_unlock_block_mutex(ut22p_ctx* ctx) {
+  mt_pthread_mutex_unlock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut22p_set_frame_decoded(ut22p_ctx* ctx, int idx) {
+  atomic_store_explicit(&ctx->framebuffs[idx].stat, ST22P_RX_FRAME_DECODED,
+                        memory_order_release);
+}
+
 void ut22p_ctx_enable_decode_blocking(ut22p_ctx* ctx, uint64_t timeout_ns) {
   struct st22p_rx_ctx* p = &ctx->pipeline;
   mt_pthread_mutex_init(&p->decode_block_wake_mutex, NULL);
@@ -127,8 +146,25 @@ void ut22p_ctx_enable_decode_blocking(ut22p_ctx* ctx, uint64_t timeout_ns) {
   ctx->decode_blocking = true;
 }
 
+void ut22p_ctx_set_decoder(ut22p_ctx* ctx) {
+  struct st22_decode_session_impl* session = &ctx->decode_dev.sessions[0];
+  session->parent = &ctx->decode_dev;
+  ctx->pipeline.decode_impl = session;
+  ctx->pipeline.derive = false;
+}
+
+void ut22p_set_ready(ut22p_ctx* ctx, bool ready) {
+  ctx->pipeline.ready = ready;
+}
+
 void ut22p_decode_wake_block(ut22p_ctx* ctx) {
   rx_st22p_decode_wake_block(&ctx->pipeline);
+}
+
+void ut22p_begin_destroy(ut22p_ctx* ctx) {
+  struct st22p_rx_ctx* p = &ctx->pipeline;
+  mt_handle_begin_destroy(&p->lc_destroying, &p->type, MT_ST22_HANDLE_PIPELINE_RX);
+  rx_st22p_block_wake_all(p);
 }
 
 int ut22p_decode_get_frame(ut22p_ctx* ctx) {
@@ -166,4 +202,24 @@ int ut22p_frame_idx(const struct st_frame* frame) {
 
 int ut22p_frame_stat(const ut22p_ctx* ctx, int i) {
   return (int)ctx->framebuffs[i].stat;
+}
+
+st22p_rx_handle ut22p_handle(ut22p_ctx* ctx) {
+  return &ctx->pipeline;
+}
+
+void ut22p_force_destroying(ut22p_ctx* ctx) {
+  atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
+}
+
+static struct mtl_main_impl ut22p_rx_create_impl;
+
+st22p_rx_handle ut22p_rx_create(struct st22p_rx_ops* ops) {
+  struct mtl_main_impl* impl = &ut22p_rx_create_impl;
+  impl->type = MT_HANDLE_MAIN;
+  impl->user_para.num_ports = 1;
+  snprintf(impl->user_para.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "ut22p_port");
+  impl->inf[MTL_PORT_P].socket_id = rte_socket_id();
+  snprintf(ops->port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut22p_port");
+  return st22p_rx_create(impl, ops);
 }

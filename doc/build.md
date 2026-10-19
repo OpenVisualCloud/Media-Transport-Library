@@ -12,7 +12,7 @@ Please note that the DPDK dependency remains necessary when utilizing the XDP/ke
 
 ```bash
 sudo apt-get update
-sudo apt-get install git gcc meson ninja-build python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libssl-dev systemtap-sdt-dev llvm clang flex byacc
+sudo apt-get install git gcc meson ninja-build python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libgmock-dev libssl-dev systemtap-sdt-dev llvm clang flex byacc
 ```
 
 Newer Ubuntu and Debian releases enable Python's externally managed environment

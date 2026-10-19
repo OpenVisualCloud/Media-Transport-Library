@@ -64,6 +64,7 @@ struct ut40p_ctx {
   struct st40p_rx_ctx pipeline;
   struct st40p_rx_frame* framebuffs;
   int framebuff_cnt;
+  bool blocking;
 };
 
 #include "pipeline/st40p_harness.h"
@@ -108,8 +109,46 @@ ut40p_ctx* ut40p_ctx_create(int framebuff_cnt) {
 
 void ut40p_ctx_destroy(ut40p_ctx* ctx) {
   if (!ctx) return;
+  if (ctx->blocking) {
+    mt_pthread_mutex_destroy(&ctx->pipeline.block_wake_mutex);
+    mt_pthread_cond_destroy(&ctx->pipeline.block_wake_cond);
+  }
   free(ctx->framebuffs);
   free(ctx);
+}
+
+void ut40p_ctx_enable_blocking(ut40p_ctx* ctx, uint64_t timeout_ns) {
+  struct st40p_rx_ctx* p = &ctx->pipeline;
+  mt_pthread_mutex_init(&p->block_wake_mutex, NULL);
+  mt_pthread_cond_wait_init(&p->block_wake_cond);
+  p->block_timeout_ns = timeout_ns;
+  p->block_get = true;
+  ctx->blocking = true;
+}
+
+void ut40p_begin_destroy(ut40p_ctx* ctx) {
+  struct st40p_rx_ctx* p = &ctx->pipeline;
+  mt_handle_begin_destroy(&p->lc_destroying, &p->type, MT_ST40_HANDLE_PIPELINE_RX);
+  rx_st40p_block_wake(p);
+}
+
+void ut40p_set_ready_no_notify(ut40p_ctx* ctx, int i, void* udw_addr) {
+  struct st40p_rx_frame* fb = &ctx->framebuffs[i];
+  fb->frame_info.udw_buff_addr = (uint8_t*)udw_addr;
+  atomic_store_explicit(&fb->stat, ST40P_RX_FRAME_READY, memory_order_release);
+}
+
+void ut40p_lock_block_mutex(ut40p_ctx* ctx) {
+  mt_pthread_mutex_lock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut40p_post_wake_locked(ut40p_ctx* ctx) {
+  ctx->pipeline.block_wake_pending = true;
+  mt_pthread_cond_broadcast(&ctx->pipeline.block_wake_cond);
+}
+
+void ut40p_unlock_block_mutex(ut40p_ctx* ctx) {
+  mt_pthread_mutex_unlock(&ctx->pipeline.block_wake_mutex);
 }
 
 int ut40p_inject_frame(ut40p_ctx* ctx, void* udw_addr, enum st_frame_status status,

@@ -46,13 +46,13 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
@@ -65,7 +65,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -73,6 +73,11 @@ jobs:
 
       - name: Build Release
         run: sudo -E .github/scripts/setup_environment.sh
+
+      # DPDK, MTL, openh264, and FFmpeg go to /usr/local. The install scripts
+      # do not run ldconfig, so the workflow does.
+      - name: Update the runtime linker cache
+        run: sudo ldconfig
 
       - name: Build the Rust no_std example
         run: bash .github/scripts/ci/build-rust-example.sh
@@ -90,7 +95,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -105,6 +110,11 @@ jobs:
           SETUP_BUILD_AND_INSTALL_EBPF_XDP: 1
           TOOLS_BUILD_AND_INSTALL_MTL_MONITORS: 1
 
+      # build_ebpf_xdp.sh names the libxdp directory in /etc/ld.so.conf.d, and
+      # does not run ldconfig, so the workflow does.
+      - name: Update the runtime linker cache
+        run: sudo ldconfig
+
   ubuntu-debug:
     needs: changes
     if: ${{ needs.changes.outputs.base_build == 'true' }}
@@ -112,7 +122,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 

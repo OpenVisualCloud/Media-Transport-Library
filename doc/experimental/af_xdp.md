@@ -51,10 +51,10 @@ Customize the kernel network interface name `enp175s0f0np0` as your setup
 ```json
     "interfaces": [
         {
-            "name": "af_xdp:enp175s0f0np0",
+            "name": "dpdk_af_xdp:enp175s0f0np0",
         },
         {
-            "name": "af_xdp:enp175s0f1np1",
+            "name": "dpdk_af_xdp:enp175s0f1np1",
         }
     ],
 ```

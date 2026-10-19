@@ -1,0 +1,309 @@
+name: Code scan
+
+# clang-tidy on the C and C++ lines that a change touches, the Clang Static
+# Analyzer with cross-TU analysis over libmtl, cargo-audit on the Rust lock
+# files, and Bandit on every tracked Python file. The clang-tidy job configures
+# MTL against the Build workflow's DPDK cache, and waits for Build only when
+# the change has a DPDK of its own. code-scan-result is the one check name that
+# branch protection needs.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'maint-**'
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
+  # The Clang Static Analyzer results of main, which code scanning compares
+  # the alerts of a pull request with.
+  schedule:
+    - cron: '23 2 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: read
+  actions: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-22.04
+    permissions:
+      pull-requests: read
+    outputs:
+      clang_tidy: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event_name == 'pull_request' && steps.filter.outputs.clang_tidy == 'true') }}
+      cargo_audit: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.cargo_audit == 'true' }}
+      bandit: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.bandit == 'true' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # A schedule run has no change to filter: it runs the analyzer only.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+        with:
+          filters: .github/path_filters.yml
+
+  clang-tidy:
+    needs: changes
+    if: ${{ needs.changes.outputs.clang_tidy == 'true' && github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+    runs-on: ubuntu-24.04
+    # The scans, plus at most 10 minutes queued and 10 running for Build on a
+    # DPDK cache miss.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      actions: read
+      security-events: write # for github/codeql-action/upload-sarif
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Compute source checksums
+        id: sums
+        uses: ./.github/actions/source-checksums
+
+      - name: Compute exact cache keys
+        id: keys
+        env:
+          HASH_DPDK: ${{ steps.sums.outputs.dpdk }}
+          HASH_MTL: ${{ steps.sums.outputs.mtl }}
+          HASH_JPEGXS: ${{ steps.sums.outputs.jpegxs }}
+          HASH_ICE: ${{ steps.sums.outputs.ice }}
+          HASH_FFMPEG: ${{ steps.sums.outputs.ffmpeg }}
+          HASH_GSTREAMER: ${{ steps.sums.outputs.gstreamer }}
+          HASH_PLUGINS: ${{ steps.sums.outputs.plugins }}
+        run: task ci:cache-keys
+
+      # Main's DPDK cache, unless the change has a DPDK of its own: then the
+      # Build workflow of this change saves it.
+      - name: 'stash: Restore DPDK cache'
+        id: dpdk
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ steps.keys.outputs.dpdk_key }}
+          path: .local_install/dpdk
+
+      - name: Wait for Build workflow
+        if: ${{ steps.dpdk.outputs.cache-hit != 'true' && github.event_name == 'pull_request' }}
+        uses: ./.github/actions/wait-for-workflow
+        with:
+          check_name: build
+          queue_timeout: '600'
+
+      - name: 'stash: Restore DPDK cache after Build'
+        if: ${{ steps.dpdk.outputs.cache-hit != 'true' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ steps.keys.outputs.dpdk_key }}
+          path: .local_install/dpdk
+          fail-on-cache-miss: true
+
+      - name: Write compile_commands.json
+        run: task ci:clang-tidy-setup
+
+      # The checks of .clang-tidy, on the lines that the pull request changes.
+      # The findings go to the log as annotations, to the job summary, and to
+      # the clang-tidy-report artifact. A schedule run has no changed lines.
+      - name: clang-tidy
+        id: lint
+        if: ${{ github.event_name != 'schedule' }}
+        uses: cpp-linter/cpp-linter-action@8120e05c7fbd25fa09fa93424ec49f55f7b304ab # v2.23.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # The newest clang-tidy in the Ubuntu 24.04 archive. For a version
+          # that the archive does not have, the action runs the apt.llvm.org
+          # install script with sudo.
+          version: 20
+          # The sources only. compile_commands.json has no entry for a header,
+          # so clang-tidy cannot check a header on its own.
+          extensions: c,cpp,cc,cxx
+          style: ''
+          tidy-checks: ''
+          database: .
+          lines-changed-only: true
+          extra-args: -Wno-error
+          step-summary: true
+          summary-output-file: clang-tidy-summary.md
+
+      # compile_commands.json holds the flags each file was checked with.
+      - name: Upload the clang-tidy report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: clang-tidy-report
+          path: |
+            clang-tidy-summary.md
+            compile_commands.json
+
+      # The Clang Static Analyzer with cross-TU analysis over libmtl. Any
+      # finding fails the job: fix it, or review it and mark the line above it
+      # `// codechecker_suppress [<checker>] <what the review found>`.
+      # Ubuntu 24.04's python is externally managed, so pip needs setup-python.
+      - name: Set up Python for CodeChecker
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install CodeChecker
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends clang-tools-18
+          python -m pip install -r .github/code-scan/codechecker-requirements.txt
+
+      - name: Clang Static Analyzer
+        run: task ci:clang-analyzer
+
+      # The findings on the changed lines become review comments of the pull
+      # request, with their bug paths; a pull request from a fork can upload too.
+      # The upload only reports: a failed upload must not decide the check.
+      - name: Upload the Clang Static Analyzer results to code scanning
+        if: ${{ !cancelled() }}
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        continue-on-error: true
+        with:
+          sarif_file: csa.sarif
+          category: clang-analyzer
+
+      - name: Fail on a clang-tidy finding
+        if: ${{ github.event_name != 'schedule' && steps.lint.outputs.checks-failed > 0 }}
+        run: exit 1
+
+      - name: Clang Static Analyzer check
+        if: ${{ !cancelled() }}
+        run: task ci:clang-analyzer-check
+
+  cargo-audit:
+    needs: changes
+    if: ${{ needs.changes.outputs.cargo_audit == 'true' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with:
+          tool: cargo-audit@0.22.2
+
+      - name: cargo-audit
+        run: task ci:cargo-audit
+
+      - name: Upload the cargo-audit reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cargo-audit
+          path: cargo-audit/
+
+  # Bandit on every tracked Python file, with the required test set in
+  # .github/code-scan/bandit.config. Any finding fails the job: fix the code,
+  # or review it and mark the line `# nosec <ID> # <what the review found>`.
+  bandit:
+    needs: changes
+    if: ${{ needs.changes.outputs.bandit == 'true' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read # for actions/checkout to fetch code
+      security-events: write # for github/codeql-action/upload-sarif
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install Bandit
+        run: python -m pip install -r .github/code-scan/requirements.txt
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
+
+      # The reports come before the scan, so that they exist when it fails.
+      - name: Write Bandit reports
+        run: task ci:bandit-reports
+
+      - name: Summarize Bandit results
+        run: task ci:bandit-summary
+
+      # Both uploads only report: a failed upload must not decide the check or
+      # stop the scan below from running.
+      - name: Upload Bandit reports
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        continue-on-error: true
+        with:
+          name: bandit-report
+          path: |
+            bandit.html
+            bandit.json
+            bandit.sarif
+
+      # A pull request from a fork gets a read-only token, so it cannot upload.
+      # Dependabot's token is raised by the job permissions above.
+      - name: Upload Bandit results to code scanning
+        if: >-
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        continue-on-error: true
+        with:
+          sarif_file: bandit.sarif
+          category: bandit
+
+      # The console report, and the step that fails on any finding. Run the
+      # same task locally.
+      - name: Run Bandit
+        run: task ci:bandit
+
+      - name: Check that Bandit scanned every file
+        run: task ci:bandit-skipped
+
+  code-scan-result:
+    name: code-scan-result
+    needs: [changes, clang-tidy, cargo-audit, bandit]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All scans ok
+        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+        run: exit 0
+      - name: A scan failed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1

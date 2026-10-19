@@ -44,6 +44,15 @@ static uint16_t rx_dpdk_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_p
 
 struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
                                 struct mt_rxq_flow* flow) {
+  uint32_t flags = flow ? flow->flags : 0;
+
+  /* no flow: a dedicated queue the app steers to, which only the plain dpdk path has */
+  if (!flow && (mt_pmd_is_kernel_socket(impl, port) || mt_has_srss(impl, port) ||
+                mt_user_shared_rxq(impl, port) || mt_pmd_is_native_af_xdp(impl, port))) {
+    err("%s(%d), this rx backend needs a flow\n", __func__, port);
+    return NULL;
+  }
+
   struct mt_rxq_entry* entry =
       mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
   if (!entry) {
@@ -52,8 +61,8 @@ struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
   }
   entry->parent = impl;
 
-  dbg("%s(%d), flags 0x%x\n", __func__, port, flow->flags);
-  if (mt_pmd_is_kernel_socket(impl, port) || (flow->flags & MT_RXQ_FLOW_F_FORCE_SOCKET)) {
+  dbg("%s(%d), flags 0x%x\n", __func__, port, flags);
+  if (mt_pmd_is_kernel_socket(impl, port) || (flags & MT_RXQ_FLOW_F_FORCE_SOCKET)) {
     entry->rx_socket_q = mt_rx_socket_get(impl, port, flow);
     if (!entry->rx_socket_q) goto fail;
     entry->queue_id = mt_rx_socket_queue_id(entry->rx_socket_q);
@@ -73,7 +82,7 @@ struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
     if (!entry->rx_xdp_q) goto fail;
     entry->queue_id = mt_rx_xdp_queue_id(entry->rx_xdp_q);
     entry->burst = rx_xdp_burst;
-  } else if (flow->flags & MT_RXQ_FLOW_F_FORCE_CNI) {
+  } else if (flags & MT_RXQ_FLOW_F_FORCE_CNI) {
     entry->csq = mt_csq_get(impl, port, flow);
     if (!entry->csq) goto fail;
     entry->queue_id = mt_csq_queue_id(entry->csq);
@@ -219,6 +228,12 @@ int mt_txq_done_cleanup(struct mt_txq_entry* entry) {
   return 0;
 }
 
+int mt_txq_reclaim(struct mt_txq_entry* entry) {
+  if (!entry->txq) return -ENOTSUP;
+  mt_dpdk_tx_burst(entry->txq, NULL, 0); /* a burst of none */
+  return 0;
+}
+
 int mt_txq_set_tx_bps(struct mt_txq_entry* entry, uint64_t bytes_per_sec) {
   if (!entry->txq) {
     err("%s(%u), not txq\n", __func__, entry->queue_id);
@@ -228,13 +243,22 @@ int mt_txq_set_tx_bps(struct mt_txq_entry* entry, uint64_t bytes_per_sec) {
   return mt_dev_set_tx_bps(entry->parent, entry->txq, bytes_per_sec);
 }
 
-int mt_txq_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad) {
+static int txq_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad,
+                     bool lazy_fallback) {
   if (entry->tsq)
     return mt_tsq_flush(entry->parent, entry->tsq, pad);
   else if (entry->txq)
-    return mt_dpdk_flush_tx_queue(entry->parent, entry->txq, pad);
+    return mt_dpdk_flush_tx_queue(entry->parent, entry->txq, pad, lazy_fallback);
   else
     return 0;
+}
+
+int mt_txq_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad) {
+  return txq_flush(entry, pad, true);
+}
+
+int mt_txq_recovery_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad) {
+  return txq_flush(entry, pad, false);
 }
 
 uint16_t mt_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,

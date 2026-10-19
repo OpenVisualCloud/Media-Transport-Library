@@ -1,4 +1,17 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
+
+/**
+ * @file st20_rx_frame_fuzz.c
+ *
+ * Sends each input as one packet to rv_handle_frame_pkt(), the RX path of an
+ * ST 2110-20 session of the type ST20_TYPE_FRAME_LEVEL (640x480, YUV 4:2:2 8-bit,
+ * BPM).
+ *
+ * The input is a full packet that starts with the Ethernet header. The harness ignores
+ * an input shorter than struct st20_rfc4175_rtp_hdr (20 bytes), and an input larger
+ * than the 2048-byte data room of one mbuf.
+ */
+
 #include <rte_atomic.h>
 #include <rte_eal.h>
 #include <rte_ether.h>
@@ -25,7 +38,6 @@
 #undef MTL_HAS_USDT
 #include "st2110/st_rx_video_session.c"
 #include "st40_api.h"
-#include "st41_api.h"
 #include "st_api.h"
 
 extern int mt_set_log_global_level(enum mtl_log_level level);

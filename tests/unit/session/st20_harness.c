@@ -27,6 +27,12 @@
 #define mt_dma_borrow_mbuf ut20_dma_borrow_mbuf
 #define mt_dma_drop_mbuf ut20_dma_drop_mbuf
 #define mt_dma_full ut20_dma_full
+/* rv_init_dma()'s requests are counted and refused; tests attach the fake directly. */
+struct mtl_main_impl;
+struct mt_dma_request_req;
+static struct mtl_dma_lender_dev* ut20_dma_request_dev(struct mtl_main_impl* impl,
+                                                       struct mt_dma_request_req* req);
+#define mt_dma_request_dev ut20_dma_request_dev
 #include "st2110/st_rx_video_session.h"
 #undef ST_RX_VIDEO_DMA_MIN_SIZE
 #define ST_RX_VIDEO_DMA_MIN_SIZE 0
@@ -37,6 +43,7 @@
 #undef mt_dma_borrow_mbuf
 #undef mt_dma_drop_mbuf
 #undef mt_dma_full
+#undef mt_dma_request_dev
 /* Also compiled in, not just linked from libmtl: -DMTL_HAS_ASAN is scoped to the
  * lib target, so libmtl's mt_rte_zmalloc_socket() is the backtrace-tracking one
  * whose list head only mtl_init() ever initialises. Compiling rv_tp_init() here
@@ -102,6 +109,10 @@ struct ut20_test_ctx {
   struct st22_rx_video_info st22_info; /* only used after ut20_ctx_enable_st22() */
   uint64_t st22_frames_ready;
   size_t st22_last_frame_size;
+  struct st20_ext_frame query_ext_frame;
+  uint8_t ext_frame_storage[UT20_MAX_FRAME_SIZE];
+  struct st20_ext_frame ext_frames[UT20_FRAME_COUNT];
+  struct mtl_dma_lender_dev idle_dma_dev;
 };
 
 #include "session/st20_harness.h"
@@ -157,6 +168,16 @@ int ut20_dma_drop_mbuf(struct mtl_dma_lender_dev* dev, uint16_t nb_mbuf) {
 
 bool ut20_dma_full(struct mtl_dma_lender_dev* dev) {
   return dev->nb_borrowed >= UT20_DMA_MAX_BORROWED;
+}
+
+static int ut20_dma_requests;
+
+static struct mtl_dma_lender_dev* ut20_dma_request_dev(struct mtl_main_impl* impl,
+                                                       struct mt_dma_request_req* req) {
+  (void)impl;
+  (void)req;
+  ut20_dma_requests++;
+  return NULL;
 }
 
 /* ── PTP time stub ────────────────────────────────────────────────────── */
@@ -541,6 +562,68 @@ int ut20_feed_rtp_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq, uint32_t ts
   return rc;
 }
 
+/* ── external frames ──────────────────────────────────────────────────── */
+
+static int ut20_query_ext_frame(void* priv, struct st20_ext_frame* ext_frame,
+                                struct st20_rx_frame_meta* meta) {
+  ut20_test_ctx* ctx = priv;
+  (void)meta;
+  *ext_frame = ctx->query_ext_frame;
+  return 0;
+}
+
+void ut20_ctx_enable_query_ext_frame(ut20_test_ctx* ctx, bool has_addr, uint64_t iova) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  ctx->query_ext_frame.buf_addr = has_addr ? ctx->ext_frame_storage : NULL;
+  ctx->query_ext_frame.buf_iova = iova;
+  ctx->query_ext_frame.buf_len = s->st20_fb_size;
+  s->ops.query_ext_frame = ut20_query_ext_frame;
+  s->ops.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
+}
+
+void ut20_ctx_attach_idle_dma(ut20_test_ctx* ctx) {
+  ctx->session.dma_dev = &ctx->idle_dma_dev;
+}
+
+int ut20_alloc_ext_frames(ut20_test_ctx* ctx, size_t buf_len) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  for (int i = 0; i < UT20_FRAME_COUNT; i++) {
+    ctx->ext_frames[i].buf_addr = ctx->frame_storage[i];
+    ctx->ext_frames[i].buf_iova = 0x1000 * (uint64_t)(i + 1);
+    ctx->ext_frames[i].buf_len = buf_len;
+  }
+  s->ops.ext_frames = ctx->ext_frames;
+  ctx->impl.pkt_udp_suggest_max_size = MTL_PKT_MAX_RTP_BYTES;
+  int ret = rv_alloc_frames(&ctx->impl, s);
+  if (ret == 0) rv_free_frames(s);
+  s->ops.ext_frames = NULL;
+  s->st20_frames = ctx->frames;
+  return ret;
+}
+
+int ut20_init_sw_dma_requests(ut20_test_ctx* ctx, bool gpu_frames) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  for (int i = 0; i < UT20_FRAME_COUNT; i++) {
+    ctx->ext_frames[i].buf_addr = ctx->frame_storage[i];
+    ctx->ext_frames[i].buf_iova = 0x1000 * (uint64_t)(i + 1);
+    ctx->ext_frames[i].buf_len = s->st20_fb_size;
+  }
+  s->ops.ext_frames = ctx->ext_frames;
+  s->ops.flags |= ST20_RX_FLAG_DMA_OFFLOAD;
+  s->ops.gpu_direct_framebuffer_in_vram_device_address = gpu_frames;
+  ctx->impl.pkt_udp_suggest_max_size = MTL_PKT_MAX_RTP_BYTES;
+
+  ut20_dma_requests = 0;
+  int ret = rv_init_sw(&ctx->impl, &ctx->mgr, s, NULL);
+  if (ret == 0) rv_uinit_sw(&ctx->impl, s);
+
+  s->ops.ext_frames = NULL;
+  s->st20_frames = ctx->frames;
+  for (int i = 0; i < ST_VIDEO_RX_REC_NUM_OFO; i++)
+    s->slots[i].frame_bitmap = ctx->bitmaps[i];
+  return ret < 0 ? ret : ut20_dma_requests;
+}
+
 /* ── ST 2110-22 (codestream) mode ─────────────────────────────────────── */
 
 static int ut20_st22_notify_frame_ready(void* priv, void* frame,
@@ -687,6 +770,44 @@ int ut20_feed_pkt_via_wrapper(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
   return rc;
 }
 
+int ut20_feed_frame_burst_via_wrapper(ut20_test_ctx* ctx, const int* pkt_idx, int nb,
+                                      uint32_t ts, enum mtl_session_port port) {
+  if (nb <= 0) return -1;
+
+  /* exactly nb entries, so a look-ahead which walks off the end of the burst is
+   * a heap overflow ASan can see, not a read of an in-bounds spare slot */
+  struct rte_mbuf** mbufs = calloc((size_t)nb, sizeof(struct rte_mbuf*));
+  if (!mbufs) return -1;
+
+  for (int i = 0; i < nb; i++) {
+    uint16_t ln, lo, ll;
+    uint32_t seq = ts * (uint32_t)ctx->session.ops.height + (uint32_t)pkt_idx[i];
+
+    pkt_idx_to_line(pkt_idx[i], &ln, &lo, &ll);
+    mbufs[i] = make_video_mbuf_full(seq, ts, ln, lo, ll, ctx->session.ops.payload_type,
+                                    ctx->session.ops.ssrc);
+    if (!mbufs[i]) {
+      for (int j = 0; j < i; j++) rte_pktmbuf_free(mbufs[j]);
+      free(mbufs);
+      return -1;
+    }
+  }
+
+  int rc = rv_handle_mbuf(&ctx->session.priv[port], mbufs, (uint16_t)nb);
+  for (int i = 0; i < nb; i++) rte_pktmbuf_free(mbufs[i]);
+  free(mbufs);
+  return rc;
+}
+
+void* ut20_frame_memcpy(ut20_test_ctx* ctx, bool pkt_lcore, void* dst, const void* src,
+                        size_t n) {
+  bool has_pkt_lcore = ctx->session.has_pkt_lcore;
+  ctx->session.has_pkt_lcore = pkt_lcore;
+  void* ret = rv_frame_memcpy(&ctx->session, dst, src, n);
+  ctx->session.has_pkt_lcore = has_pkt_lcore;
+  return ret;
+}
+
 int ut20_feed_frame_pkt_via_wrapper(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
                                     enum mtl_session_port port) {
   uint32_t seq = ts * (uint32_t)ctx->session.ops.height + (uint32_t)pkt_idx;
@@ -744,6 +865,33 @@ void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port
   ctx->impl.inf[phy].feature |= MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP;
 }
 
+void ut20_ctx_enable_timing_parser_stat(ut20_test_ctx* ctx) {
+  ctx->session.enable_timing_parser_stat = true;
+}
+
+void ut20_tp_stat_add_frame(ut20_test_ctx* ctx, enum mtl_session_port port,
+                            int32_t vrx_min, int32_t vrx_max, int32_t ipt_min,
+                            int32_t ipt_max) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  struct st_rv_tp_slot slot;
+
+  rv_tp_slot_init(&slot);
+  slot.meta.vrx_min = vrx_min;
+  slot.meta.vrx_max = vrx_max;
+  slot.meta.ipt_min = ipt_min;
+  slot.meta.ipt_max = ipt_max;
+  slot.meta.pkts_cnt = 1;
+  rv_tp_slot_parse_result(s, port, &slot, false);
+}
+
+int32_t ut20_tp_stat_vrx_max(const ut20_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.tp->stat[port].slot.meta.vrx_max;
+}
+
+int32_t ut20_tp_stat_ipt_max(const ut20_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.tp->stat[port].slot.meta.ipt_max;
+}
+
 void ut20_ctx_set_ptp_no_timesync_delta(ut20_test_ctx* ctx, int64_t delta) {
   ctx->ptp_storage.no_timesync_delta = delta;
 }
@@ -797,6 +945,10 @@ uint64_t ut20_stat_no_slot(const ut20_test_ctx* ctx) {
 
 uint64_t ut20_stat_slot_get_frame_fail(const ut20_test_ctx* ctx) {
   return ctx->session.port_user_stats.stat_slot_get_frame_fail;
+}
+
+uint64_t ut20_stat_slot_query_ext_fail(const ut20_test_ctx* ctx) {
+  return ctx->session.port_user_stats.stat_slot_query_ext_fail;
 }
 
 void ut20_set_hold_frames(ut20_test_ctx* ctx, bool hold) {
@@ -869,6 +1021,10 @@ int ut20_total_frame_pkts(void) {
 
 int ut20_pkts_per_frame(const ut20_test_ctx* ctx) {
   return (int)ctx->session.ops.height;
+}
+
+size_t ut20_frame_size(const ut20_test_ctx* ctx) {
+  return ctx->session.st20_fb_size;
 }
 
 bool ut20_bitmap_guard_intact(const ut20_test_ctx* ctx) {

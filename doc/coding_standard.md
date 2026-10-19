@@ -241,6 +241,8 @@ is listed here explicitly, and runs in the `residual-linters` job of
 | `VALIDATE_RUST_*`, `VALIDATE_RUST_CLIPPY` | residual | rustfmt and clippy need a Rust toolchain per environment. Carried over unchanged rather than narrowed, since narrowing the edition list would be a rule change |
 | `VALIDATE_EDITORCONFIG` | **dropped** | it was default-on before, and enforced nothing: no `.editorconfig` existed. The one that exists now declares only `charset`, `end_of_line` and shfmt's shell indent, all of which the hooks or `.gitattributes` already cover |
 | commit-message style (gitlint) | own `commit-messages` job | a message is not a file, so `checkpatch.sh` cannot reach it. The job runs the same `commit-msg` hook over each PR commit that the git `commit-msg` hook runs locally, so version and rules stay in one place. Not in `residual-linters`: that is the super-linter allow-list, and MTL's capitalized, scope-free format is not one |
+| Bandit | `bandit` job of `code-scan.yml` | a security scan with a mandated test set, not a style rule. The test set is `.github/code-scan/bandit.config`, apart from the linter configs in `.github/linters/`. `task ci:bandit` reproduces the scan locally, with the Bandit release pinned in `.github/code-scan/requirements.txt`, which Dependabot updates |
+| clang-tidy, on the C and C++ lines a pull request changes | own `clang-tidy` job in `code-scan.yml` | it needs the compile commands of configured builds, which `checkpatch.sh` has no part in. The checks are `.clang-tidy`'s, run by `cpp-linter/cpp-linter-action`; the report is the `clang-tidy-report` artifact. After `./build.sh`, `clang-tidy-20 -p build <file>` runs them on one file locally |
 
 That job was a deny-list of nine `VALIDATE_*: false` keys and is now an
 **allow-list**, so anything not named above is no longer enforced -- the two real
@@ -400,3 +402,21 @@ for that a regular expression cannot judge -- imperative mood, "explain why, not
 chat-or-process leakage, body wrapping -- stays a reviewer's call, in the same
 bucket as the two-world rule and the prefixes in
 [`.github/instructions/mtl-c-coding.instructions.md`](../.github/instructions/mtl-c-coding.instructions.md).
+
+## 8. Diagram colors
+
+The diagrams in `doc/png/` use the five palette colors.
+
+| Color | Hex | Use |
+| --- | --- | --- |
+| Intel Classic Blue | `#0068B5` | The MTL logo, `png/mtl_logo.svg` |
+
+| Hex | Use in the diagrams |
+| --- | --- |
+| `#1F271B` | Text, lines, arrows and borders |
+| `#0B4F6C` | Session blocks and the control plane panel |
+| `#145C9E` | The MTL block and the data plane panel |
+| `#CBB9A8` | Group panels, for example Pipeline API and Device |
+| `#DCC7BE` | Page background and labels |
+
+The logo letters are polygons. Thus, installed fonts do not change the logo.

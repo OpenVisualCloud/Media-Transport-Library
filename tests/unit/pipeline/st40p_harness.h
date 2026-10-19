@@ -33,6 +33,25 @@ int ut40p_init(void);
 ut40p_ctx* ut40p_ctx_create(int framebuff_cnt);
 void ut40p_ctx_destroy(ut40p_ctx* ctx);
 
+/**
+ * Turn on ST40P_RX_FLAG_BLOCK_GET behaviour: init the block cond/mutex as
+ * st40p_rx_create() does and set the blocking get_frame timeout.
+ */
+void ut40p_ctx_enable_blocking(ut40p_ctx* ctx, uint64_t timeout_ns);
+
+/** The first two steps of st40p_rx_free(): begin_destroy, then wake_on_destroy. */
+void ut40p_begin_destroy(ut40p_ctx* ctx);
+
+/** Set frame i directly to READY, with udw_addr as its UDW buffer and no notify. */
+void ut40p_set_ready_no_notify(ut40p_ctx* ctx, int i, void* udw_addr);
+
+/** Hold block_wake_mutex from the test so a woken waiter cannot read the token
+ *  until unlock; post_wake_locked runs the st40p_rx_wake_block() body (token +
+ *  broadcast) while the caller holds it. */
+void ut40p_lock_block_mutex(ut40p_ctx* ctx);
+void ut40p_post_wake_locked(ut40p_ctx* ctx);
+void ut40p_unlock_block_mutex(ut40p_ctx* ctx);
+
 /** Inject one synthetic ANC frame as if the transport just completed it.
  *  udw_addr is any non-NULL sentinel pointer identifying the transport slot.
  *  Returns 0 on accept, -EBUSY when no free framebuf (drives the

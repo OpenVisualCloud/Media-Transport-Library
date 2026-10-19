@@ -953,6 +953,23 @@ uint64_t st_muldiv_u64_round_closest(uint64_t value, uint64_t multiplier,
   return (uint64_t)quotient;
 }
 
+uint64_t st_epoch_to_tai(uint64_t epoch, uint32_t mul, uint32_t den) {
+  __uint128_t tai = (__uint128_t)epoch * NS_PER_S * den / mul;
+
+  return tai >= UINT64_MAX ? UINT64_MAX : (uint64_t)tai;
+}
+
+uint64_t st_tai_to_epoch(uint64_t tai_ns, uint32_t mul, uint32_t den) {
+  return (uint64_t)((((__uint128_t)tai_ns + 1) * mul - 1) /
+                    ((__uint128_t)NS_PER_S * den));
+}
+
+uint64_t st_tai_to_nearest_epoch(uint64_t tai_ns, uint32_t mul, uint32_t den) {
+  __uint128_t period_num = (__uint128_t)NS_PER_S * den;
+
+  return (uint64_t)(((__uint128_t)2 * tai_ns * mul + period_num) / (2 * period_num));
+}
+
 uint64_t st_tai_round_to_media_clk_ns(uint64_t tai_ns, uint32_t sampling_rate) {
   if (!sampling_rate) {
     /* degrade to a no-op snap: returning 0 would put the caller's transmission
@@ -1109,7 +1126,7 @@ double st30_get_packet_time(enum st30_ptime ptime) {
       packet_time_ns = (double)1000000000.0 * 4 / 1000;
       break;
     case ST31_PTIME_80US:
-      packet_time_ns = (double)1000000000.0 * 1 / 12500;
+      packet_time_ns = (double)1000000000.0 * 4 / 48000;
       break;
     case ST31_PTIME_1_09MS:
       packet_time_ns = (double)1000000000.0 * 48 / 44100;
@@ -1340,12 +1357,13 @@ struct st_frame* st_frame_create_by_malloc(enum st_frame_fmt fmt, uint32_t w, ui
   frame->flags = ST_FRAME_FLAG_SINGLE_MALLOC;
 
   size_t data_sz = st_frame_size(fmt, w, h, interlaced);
-  void* data = mt_zmalloc(data_sz);
+  void* data = data_sz ? mt_zmalloc(data_sz) : NULL;
   if (!data) {
     err("%s, data malloc fail, size %" PRIu64 "\n", __func__, data_sz);
     st_frame_free(frame);
     return NULL;
   }
+  frame->addr[0] = data; /* st_frame_free() frees it */
   frame->buffer_size = data_sz;
   frame->data_size = data_sz;
   /* init plane */

@@ -26,6 +26,7 @@
 #include <stdint.h>
 
 #include "mtl_api.h"
+#include "st40_api.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -100,6 +101,25 @@ void ut40_ctx_set_ssrc(ut_test_ctx* ctx, uint32_t ssrc);
  * field bit from the first interlaced packet seen; when disabled the
  * session enforces its configured value. */
 void ut40_ctx_set_interlace_auto(ut_test_ctx* ctx, bool enable);
+bool ut40_ctx_interlaced(const ut_test_ctx* ctx);
+
+/* Set ST40_RX_FLAG_FAST_METADATA on the session. */
+void ut40_ctx_set_fmd(ut_test_ctx* ctx);
+
+/* Feed `len` bytes of RTP header + payload, behind a zeroed eth/ipv4/udp header
+ * whose UDP length covers them, to the per-packet handler. */
+int ut40_feed_rtp_bytes(ut_test_ctx* ctx, const uint8_t* rtp, uint16_t len,
+                        enum mtl_session_port port);
+/* Same, with `eth_pad` zero bytes of Ethernet padding past the UDP datagram. */
+int ut40_feed_rtp_bytes_padded(ut_test_ctx* ctx, const uint8_t* rtp, uint16_t len,
+                               uint16_t eth_pad, enum mtl_session_port port);
+
+/* Dequeue one packet through st40_rx_get_mbuf() and copy the `len` bytes it reports
+ * into `out`. Returns that length, or < 0 if the ring is empty or `cap` is too small. */
+int ut40_ring_dequeue_rtp(ut_test_ctx* ctx, uint8_t* out, uint16_t cap);
+
+/* rx_ancillary_ops_check() on single-port ops of `type` with every callback set. */
+int ut40_ops_check(enum st40_type type, uint32_t flags);
 
 /* Enable the HW RX-timestamp offload path on `port`: registers the DPDK
  * dynfield, installs an identity-mapped PTP correction, and sets

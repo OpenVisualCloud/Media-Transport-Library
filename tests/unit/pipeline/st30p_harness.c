@@ -64,6 +64,7 @@ struct ut30p_ctx {
   struct st30p_rx_ctx pipeline;
   struct st30p_rx_frame* framebuffs;
   int framebuff_cnt;
+  bool blocking;
 };
 
 #include "pipeline/st30p_harness.h"
@@ -111,8 +112,27 @@ ut30p_ctx* ut30p_ctx_create(int framebuff_cnt) {
 
 void ut30p_ctx_destroy(ut30p_ctx* ctx) {
   if (!ctx) return;
+  if (ctx->blocking) {
+    mt_pthread_mutex_destroy(&ctx->pipeline.block_wake_mutex);
+    mt_pthread_cond_destroy(&ctx->pipeline.block_wake_cond);
+  }
   free(ctx->framebuffs);
   free(ctx);
+}
+
+void ut30p_ctx_enable_blocking(ut30p_ctx* ctx, uint64_t timeout_ns) {
+  struct st30p_rx_ctx* p = &ctx->pipeline;
+  mt_pthread_mutex_init(&p->block_wake_mutex, NULL);
+  mt_pthread_cond_wait_init(&p->block_wake_cond);
+  p->block_timeout_ns = timeout_ns;
+  p->block_get = true;
+  ctx->blocking = true;
+}
+
+void ut30p_begin_destroy(ut30p_ctx* ctx) {
+  struct st30p_rx_ctx* p = &ctx->pipeline;
+  mt_handle_begin_destroy(&p->lc_destroying, &p->type, MT_ST30_HANDLE_PIPELINE_RX);
+  rx_st30p_block_wake(p);
 }
 
 int ut30p_inject_frame(ut30p_ctx* ctx, enum st_frame_status status, uint32_t timestamp) {
@@ -170,4 +190,34 @@ int ut30p_get_session_stats(ut30p_ctx* ctx, struct st30_rx_user_stats* stats) {
 
 int ut30p_reset_session_stats(ut30p_ctx* ctx) {
   return st30p_rx_reset_session_stats(&ctx->pipeline);
+}
+
+st30p_rx_handle ut30p_handle(ut30p_ctx* ctx) {
+  return &ctx->pipeline;
+}
+
+void ut30p_force_destroying(ut30p_ctx* ctx) {
+  atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
+}
+
+int ut30p_get_queue_meta(ut30p_ctx* ctx, struct st_queue_meta* meta) {
+  return st30p_rx_get_queue_meta(&ctx->pipeline, meta);
+}
+
+void ut30p_lock_block_mutex(ut30p_ctx* ctx) {
+  mt_pthread_mutex_lock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut30p_post_wake_locked(ut30p_ctx* ctx) {
+  ctx->pipeline.block_wake_pending = true;
+  mt_pthread_cond_broadcast(&ctx->pipeline.block_wake_cond);
+}
+
+void ut30p_unlock_block_mutex(ut30p_ctx* ctx) {
+  mt_pthread_mutex_unlock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut30p_set_ready_no_notify(ut30p_ctx* ctx, int idx) {
+  atomic_store_explicit(&ctx->framebuffs[idx].stat, ST30P_RX_FRAME_READY,
+                        memory_order_release);
 }

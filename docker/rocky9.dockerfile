@@ -5,7 +5,7 @@
 
 # Rocky Linux 9 with eBPF/XDP support
 ARG IMAGE_CACHE_REGISTRY=docker.io
-FROM "${IMAGE_CACHE_REGISTRY}/library/rockylinux:9" AS builder
+FROM "${IMAGE_CACHE_REGISTRY}/rockylinux/rockylinux:9" AS builder
 
 LABEL maintainer="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 
@@ -58,7 +58,7 @@ RUN ./build.sh unit && \
     setcap 'cap_net_raw+ep' tests/tools/RxTxApp/build/RxTxApp
 
 # Rocky Linux 9, runtime/final stage
-FROM "${IMAGE_CACHE_REGISTRY}/library/rockylinux:9" AS final
+FROM "${IMAGE_CACHE_REGISTRY}/rockylinux/rockylinux:9" AS final
 
 LABEL org.opencontainers.image.authors="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 LABEL org.opencontainers.image.url="https://github.com/OpenVisualCloud/Media-Transport-Library"

@@ -4,8 +4,8 @@
  * ST20p (video) TX pipeline blocking get_frame() wake-loss regression test.
  *
  * In ST20P_TX_FLAG_BLOCK_GET mode, st20p_tx_get_frame() blocks on a condition
- * variable when no FREE slot is available and is woken by tx_st20p_block_wake()
- * (fired from frame_done, the public wake API, and the destroy hook).
+ * variable when no FREE slot is available and is woken by frame_done, the
+ * public wake API, or the destroy hook.
  *
  * The producer of FREE slots (the transport frame_done callback) runs on a
  * different thread than the app consumer, so a wake can be signalled in the
@@ -117,7 +117,7 @@ TEST(St20PipelineTxBlocking, StaleWakeFromEarlierFastPathDoesNotShortCircuitBloc
    * tx_st20p_notify_frame_available(); here we call the same wake function
    * directly. Nobody is blocked right now, so this just signals a condition
    * variable nobody is waiting on yet -- a true no-op under ground truth. */
-  ut20p_tx_wake_block(ctx);
+  ut20p_tx_frame_free_wake(ctx);
 
   /* Step 3: claim slot 1. Still FREE, so this is another fast-path claim. */
   struct st_frame* held1 = ut20p_tx_get_frame(ctx);
@@ -276,5 +276,44 @@ TEST(St20PipelineTxBlocking, ContendedLosingConsumerHonorsAbsoluteDeadline) {
          "of honoring one absolute deadline";
 
   if (measured_frame) ut20p_tx_put_frame_abort(ctx, measured_frame);
+  ut20p_tx_ctx_destroy(ctx);
+}
+
+TEST(St20PipelineTxBlocking, DestroyEndsEveryBlockedGet) {
+  ASSERT_EQ(ut20p_tx_init(), 0) << "EAL init failed";
+
+  constexpr int kFrameCnt = 1;
+  constexpr uint64_t kBlockTimeoutNs = 2ULL * 1000 * 1000 * 1000; /* 2 s */
+
+  ut20p_tx_ctx* ctx = ut20p_tx_ctx_create(kFrameCnt);
+  ASSERT_NE(ctx, nullptr);
+  ut20p_tx_ctx_enable_blocking(ctx, kBlockTimeoutNs);
+
+  struct st_frame* held = ut20p_tx_get_frame(ctx);
+  ASSERT_NE(held, nullptr);
+
+  struct st_frame* frames[2] = {};
+  uint64_t elapsed_ns[2] = {};
+  auto getter = [&](int i) {
+    const auto t0 = std::chrono::steady_clock::now();
+    frames[i] = ut20p_tx_get_frame(ctx);
+    elapsed_ns[i] = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - t0)
+                        .count();
+  };
+  std::thread g0(getter, 0);
+  std::thread g1(getter, 1);
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(80));
+  ut20p_tx_begin_destroy(ctx);
+  g0.join();
+  g1.join();
+
+  for (int i = 0; i < 2; i++) {
+    EXPECT_EQ(frames[i], nullptr) << "getter " << i;
+    EXPECT_LT(elapsed_ns[i], kBlockTimeoutNs / 2)
+        << "destroy did not end the wait of getter " << i;
+  }
+
   ut20p_tx_ctx_destroy(ctx);
 }

@@ -286,8 +286,6 @@ def check_rx_output(
         pattern = re.compile(r"app_rx_st30p_result")
     elif session_type == "st40p":
         pattern = re.compile(r"app_rx_st40p_result")
-    elif session_type == "fastmetadata":
-        pattern = re.compile(r"app_rx_fmd_result")
     elif session_type == "video":
         pattern = re.compile(r"app_rx_video_result")
     elif session_type == "audio":
@@ -532,7 +530,6 @@ class RxTxApp(Application):
         "st30p": (30000, 111),
         "ancillary": (40000, 113),
         "st40p": (40000, 113),
-        "fastmetadata": (40000, 115),
     }
 
     @classmethod
@@ -731,7 +728,7 @@ class RxTxApp(Application):
         Returns:
             Complete RxTxApp configuration dictionary
         """
-        # Currently only st20p/st22p/st30p/video/audio/ancillary/fastmetadata supported
+        # Currently only st20p/st22p/st30p/video/audio/ancillary supported
         # We rebuild the legacy shell for all session types but only populate the active one.
 
         session_type = self.params.get("session_type", UNIVERSAL_PARAMS["session_type"])
@@ -1035,6 +1032,17 @@ class RxTxApp(Application):
                     session["ancillary_format"] = p("ancillary_format")
                     session["ancillary_url"] = p("ancillary_url")
                     session["ancillary_fps"] = p("ancillary_fps")
+                if p("fast_metadata"):
+                    # ST2110-41 opt-in. RX checks DIT/K-bit and compares every
+                    # data item against ancillary_url, the file TX sends.
+                    session.update(
+                        fast_metadata=True,
+                        fastmetadata_data_item_type=p(
+                            "fastmetadata_data_item_type", cast=int
+                        ),
+                        fastmetadata_k_bit=p("fastmetadata_k_bit", cast=int),
+                        ancillary_url=p("ancillary_url"),
+                    )
                 return session
 
             if session_type == "st30p":
@@ -1046,22 +1054,6 @@ class RxTxApp(Application):
                     "audio_ptime": p("audio_ptime"),
                 }
                 session["audio_url"] = p("input_file") if is_tx else p("output_file")
-                return session
-
-            if session_type == "fastmetadata":
-                session = {
-                    **_hdr(),
-                    "fastmetadata_data_item_type": p(
-                        "fastmetadata_data_item_type", cast=int
-                    ),
-                    "fastmetadata_k_bit": p("fastmetadata_k_bit", cast=int),
-                }
-                if is_tx:
-                    session["type"] = p("type_mode")
-                    session["fastmetadata_fps"] = p("fastmetadata_fps")
-                    session["fastmetadata_url"] = p("input_file")
-                else:
-                    session["fastmetadata_url"] = p("output_file")
                 return session
 
             if session_type == "st40p":
@@ -1268,7 +1260,7 @@ class RxTxApp(Application):
         legacy ``RxTxApp.execute_test()``:
 
         - ``st20p``: RX output + TX/RX converter outputs (no plain TX check).
-        - ``st22p``/``st30p``/``st40p``/``fastmetadata``/``ancillary``: RX
+        - ``st22p``/``st30p``/``st40p``/``ancillary``: RX
           output only. ST22P additionally logs a warning if
           codec/encoder/decoder did not load, but does not fail on it (codecs
           may register lazily).
@@ -1280,7 +1272,7 @@ class RxTxApp(Application):
                 and check_tx_converter_output(self.config, output_lines, "st20p", False)
                 and check_rx_converter_output(self.config, output_lines, "st20p", False)
             )
-        if session_type in ("st22p", "st30p", "st40p", "fastmetadata", "ancillary"):
+        if session_type in ("st22p", "st30p", "st40p", "ancillary"):
             rx_session_type = "anc" if session_type == "ancillary" else session_type
             ok = check_rx_output(self.config, output_lines, rx_session_type, False)
             if session_type == "st22p" and not check_codec_loaded(
@@ -1307,7 +1299,6 @@ class RxTxApp(Application):
         "st20p",
         "st30p",
         "st40p",
-        "fastmetadata",
         "video",
         "audio",
         "ancillary",

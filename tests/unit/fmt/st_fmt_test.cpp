@@ -13,7 +13,7 @@
  * loud for every rate that is really being substituted.
  *
  * Run:   ./build_unit/tests/unit/UnitTest
- *          --gtest_filter='StFramePeriodNs*:StFrameRateToStFps*'
+ *          --gtest_filter='StFramePeriodNs*:StEpochTai*:StFrameRateToStFps*'
  */
 
 #include <errno.h>
@@ -50,6 +50,71 @@ TEST(StFramePeriodNs, InvalidFpsLeavesPeriodUntouched) {
 
   EXPECT_EQ(st_frame_period_ns(ST_FPS_MAX, &period_ns), -EINVAL);
   EXPECT_EQ(period_ns, 0xdeadbeefu);
+}
+
+/* The epoch math every TX session paces from: epoch k of a den/mul s period starts at
+ * the last ns at or before k * 1e9 * den / mul, kept exact at today's ~1e11 epochs. */
+static constexpr uint64_t kNsPerS = 1000000000;
+
+static uint64_t ExactEpochTai(uint64_t k, uint64_t mul, uint64_t den) {
+  return (uint64_t)((unsigned __int128)k * kNsPerS * den / mul);
+}
+
+TEST(StEpochTai, RoundTripsAtTodaysTaiForEveryFps) {
+  for (int fps = 0; fps < ST_FPS_MAX; fps++) {
+    struct st_fps_timing tm;
+    if (st_get_fps_timing((enum st_fps)fps, &tm) < 0) continue;
+    const uint64_t period_floor = kNsPerS * tm.den / tm.mul;
+    const uint64_t first = 1790000000ull * tm.mul / tm.den;
+
+    for (uint64_t k = first; k < first + 10000; k++) {
+      const uint64_t tai = st_epoch_to_tai(k, tm.mul, tm.den);
+      ASSERT_EQ(tai, ExactEpochTai(k, tm.mul, tm.den)) << tm.name << " epoch " << k;
+      ASSERT_EQ(st_tai_to_epoch(tai, tm.mul, tm.den), k) << tm.name << " epoch " << k;
+      ASSERT_EQ(st_tai_to_epoch(tai - 1, tm.mul, tm.den), k - 1)
+          << tm.name << " epoch " << k;
+      const uint64_t step = st_epoch_to_tai(k + 1, tm.mul, tm.den) - tai;
+      ASSERT_TRUE(step == period_floor || step == period_floor + 1)
+          << tm.name << " epoch " << k << " step " << step;
+    }
+  }
+}
+
+/* the 90 kHz tick of an epoch is the exact instant's, ties down as
+ * st10_tai_to_media_clk() rounds: odd 59.94 epochs sit on a half tick */
+TEST(StEpochTai, EpochKeepsTheExactMediaClockTick) {
+  for (int fps = 0; fps < ST_FPS_MAX; fps++) {
+    struct st_fps_timing tm;
+    if (st_get_fps_timing((enum st_fps)fps, &tm) < 0) continue;
+    const uint64_t first = 1790000000ull * tm.mul / tm.den;
+    const unsigned __int128 tick_den = tm.mul;
+
+    for (uint64_t k = first; k < first + 10000; k++) {
+      const unsigned __int128 num =
+          (unsigned __int128)k * tm.sampling_clock_rate * tm.den;
+      uint64_t tick = (uint64_t)(num / tick_den);
+      if (2 * (num % tick_den) > tick_den) tick++;
+      ASSERT_EQ(st10_tai_to_media_clk(st_epoch_to_tai(k, tm.mul, tm.den),
+                                      tm.sampling_clock_rate),
+                (uint32_t)tick)
+          << tm.name << " epoch " << k;
+    }
+  }
+}
+
+TEST(StEpochTai, NearestEpochTiesToTheLater) {
+  constexpr uint64_t kEpoch = 44750000000ull; /* 25 fps, 40 ms */
+  const uint64_t half = kEpoch * 40000000 + 20000000;
+
+  EXPECT_EQ(st_tai_to_nearest_epoch(half - 1, 25, 1), kEpoch);
+  EXPECT_EQ(st_tai_to_nearest_epoch(half, 25, 1), kEpoch + 1);
+}
+
+TEST(StEpochTai, SaturatesPastTheLastNs) {
+  EXPECT_EQ(st_epoch_to_tai(UINT64_MAX / 1000, 60000, 1001), UINT64_MAX);
+  EXPECT_EQ(st_tai_to_epoch(UINT64_MAX, 60000, 1001),
+            (uint64_t)((unsigned __int128)UINT64_MAX * 60000 /
+                       ((unsigned __int128)kNsPerS * 1001)));
 }
 
 static int g_warn_cnt;
@@ -155,4 +220,51 @@ TEST_F(StFrameRateToStFps, OffListRatesWarnAndStillSnap) {
 TEST_F(StFrameRateToStFps, RateOutsideEveryWindowIsRejected) {
   EXPECT_EQ(st_frame_rate_to_st_fps(48.0), ST_FPS_MAX);
   EXPECT_EQ(g_warn_cnt, 0);
+}
+
+/* The pacer sends one packet per st30_get_packet_time() and the RTP clock advances by
+ * st30_get_sample_num() per packet, so the two must agree with the sampling rate. */
+TEST(St30PacketTime, CarriesExactlyTheSamplesOfOnePacket) {
+  for (int sampling = 0; sampling < ST30_SAMPLING_MAX; sampling++) {
+    for (int ptime = 0; ptime < ST30_PTIME_MAX; ptime++) {
+      int samples =
+          st30_get_sample_num((enum st30_ptime)ptime, (enum st30_sampling)sampling);
+      if (samples < 0) continue;
+      double rate = st30_get_sample_rate((enum st30_sampling)sampling);
+      double pkt_time_ns = st30_get_packet_time((enum st30_ptime)ptime);
+      EXPECT_NEAR(pkt_time_ns, samples * 1e9 / rate, 1.0)
+          << "ptime " << ptime << " sampling " << sampling;
+    }
+  }
+}
+
+TEST(StFrameFmtIsCodestream, EndSentinelIsNotACodestream) {
+  EXPECT_TRUE(st_frame_fmt_is_codestream(ST_FRAME_FMT_JPEGXS_CODESTREAM));
+  EXPECT_TRUE(st_frame_fmt_is_codestream(ST_FRAME_FMT_H265_CODESTREAM));
+  EXPECT_FALSE(st_frame_fmt_is_codestream(ST_FRAME_FMT_CODESTREAM_END));
+  EXPECT_FALSE(st_frame_fmt_is_codestream(ST_FRAME_FMT_MAX));
+  EXPECT_FALSE(st_frame_fmt_is_codestream(ST_FRAME_FMT_RGB_END));
+}
+
+/* A codestream frame has no size of its own: st_frame_size() gives 0, so there is no
+ * buffer to hand out, as with st_frame_create(). */
+TEST(StFrameCreateByMalloc, FormatWithoutASizeReturnsNull) {
+  ASSERT_EQ(st_frame_size(ST_FRAME_FMT_JPEGXS_CODESTREAM, 1920, 1080, false), 0u);
+  EXPECT_EQ(st_frame_create_by_malloc(ST_FRAME_FMT_JPEGXS_CODESTREAM, 1920, 1080, false),
+            nullptr);
+}
+
+/* st_frame_free() frees addr[0], so every frame the call hands out must keep its buffer
+ * there. */
+TEST(StFrameCreateByMalloc, EveryFormatWithASizeKeepsItsBufferInPlaneZero) {
+  for (int fmt = 0; fmt < ST_FRAME_FMT_MAX; fmt++) {
+    size_t size = st_frame_size((enum st_frame_fmt)fmt, 1920, 1080, false);
+    if (!size) continue;
+    struct st_frame* frame =
+        st_frame_create_by_malloc((enum st_frame_fmt)fmt, 1920, 1080, false);
+    ASSERT_NE(frame, nullptr) << "fmt " << fmt;
+    EXPECT_NE(frame->addr[0], nullptr) << "fmt " << fmt;
+    EXPECT_EQ(frame->buffer_size, size) << "fmt " << fmt;
+    EXPECT_EQ(st_frame_free(frame), 0) << "fmt " << fmt;
+  }
 }

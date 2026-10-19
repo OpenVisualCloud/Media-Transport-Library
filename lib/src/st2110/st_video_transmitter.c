@@ -142,6 +142,125 @@ static void video_trs_rl_warm_up(struct mtl_main_impl* impl,
   }
 }
 
+/* the burst's first coarse pads become the coarse trim pad, the next fine ones the fine
+ */
+static void video_trs_rl_trim(struct st_tx_video_session_impl* s,
+                              enum mtl_session_port s_port, struct rte_mbuf** pads,
+                              const struct st_tx_video_rl_burst* b) {
+  for (unsigned int i = 0; i < b->coarse + b->fine; i++)
+    pads[i] = s->trim_pad[s_port][i < b->coarse ? ST_TX_VIDEO_RL_TRIM_PAD_COARSE
+                                                : ST_TX_VIDEO_RL_TRIM_PAD_FINE];
+}
+
+/* one update per mbuf, as each same-mbuf atomic ahead of the doorbell delays packet 0 */
+static inline void video_trs_rl_pads_ref(struct st_tx_video_session_impl* s,
+                                         enum mtl_session_port s_port, int16_t coarse,
+                                         int16_t fine, int16_t normal) {
+  struct rte_mbuf** trim_pad = s->trim_pad[s_port];
+
+  if (coarse) rte_mbuf_refcnt_update(trim_pad[ST_TX_VIDEO_RL_TRIM_PAD_COARSE], coarse);
+  if (fine) rte_mbuf_refcnt_update(trim_pad[ST_TX_VIDEO_RL_TRIM_PAD_FINE], fine);
+  if (normal) rte_mbuf_refcnt_update(s->pad[s_port][ST20_PKT_TYPE_NORMAL], normal);
+}
+
+/* Queues NORMAL pads for packet 0 to launch behind. They are timed so that a shaper with
+ * the plan's bucket finishes them at the target, within a fine trim; the real bucket is
+ * an aim smaller, so the real shaper finishes them one aim later. Returns false when
+ * packet 0 must instead be held until its target. */
+static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
+                                 struct st_tx_video_session_impl* s,
+                                 enum mtl_session_port s_port) {
+  struct st_tx_video_pacing* pacing = &s->pacing;
+  const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
+  uint64_t target_tsc = s->trs_target_tsc[s_port];
+  long double drain = plan->pad_ns;
+  long double credit = plan->bucket_ns;
+  uint16_t pad_size = plan->pad_size;
+  int64_t trim_pads = plan->trim_pads;
+  struct rte_mbuf* pad = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
+  struct rte_mbuf* pads[ST_TX_VIDEO_RL_MAX_PADS_PER_BURST];
+  struct st_tx_video_rl_burst b;
+  int64_t gap;
+  long double drained;
+  unsigned int tx;
+  int sent = 0;
+  bool hold = false;
+
+  if (!target_tsc) {
+    err("%s(%d), target_tsc is zero\n", __func__, s->idx);
+    return false;
+  }
+
+  gap = (int64_t)(target_tsc - mt_get_tsc(impl));
+  /* the lower bound is video_trs_rl_warm_up()'s pkts_needed < 0 */
+  if (gap > pacing->warm_pkts * pacing->trs || gap <= 1 - 2 * pacing->trs) {
+    dbg("%s(%d), mismatch timing with gap %" PRId64 "\n", __func__, s->idx, gap);
+    s->port_user_stats.stat_trans_troffset_mismatch++;
+    return false;
+  }
+  if (gap <= 0) return false;
+
+  /* when the shaper finishes what is queued: an idle one sends the plan's bucket, credit
+   * ns, at once */
+  drained = target_tsc - gap - credit;
+  /* a late entry leaves fewer than the trim_pads enough to cut up to a pad: hold */
+  if (ceill((target_tsc - drained) / drain) < trim_pads) {
+    dbg("%s(%d), late entry with gap %" PRId64 ", hold\n", __func__, s->idx, gap);
+    return false;
+  }
+
+  /* Each burst is sized from a fresh tsc. Pads the NIC refuses are retried ahead of
+   * packet 0, so counting them as queued now can only make the launch later. */
+  while (true) {
+    long double start = mt_get_tsc(impl) - credit;
+    if (drained < start) {
+      drained = start;
+      if (sent) {
+        s->port_user_stats.stat_trans_recalculate_warmup++;
+        dbg("%s(%d), shaper idle after %d pkts\n", __func__, s->idx, sent);
+        /* the rest no longer fits trim_pads: hold packet 0 behind the queued pads */
+        if (ceill((target_tsc - drained) / drain) < trim_pads) {
+          dbg("%s(%d), too few pads left, hold\n", __func__, s->idx);
+          hold = true;
+          break;
+        }
+      }
+    }
+    if (target_tsc <= drained) break;
+
+    b = st_tx_video_rl_next_burst(drain, pad_size, trim_pads, target_tsc, drained);
+    for (unsigned int i = 0; i < b.n; i++) pads[i] = pad;
+    video_trs_rl_trim(s, s_port, pads, &b);
+    video_trs_rl_pads_ref(s, s_port, (int16_t)b.coarse, (int16_t)b.fine,
+                          (int16_t)(b.n - b.coarse - b.fine));
+    tx = video_trs_burst_pad(impl, s, s_port, pads, b.n);
+    /* a refused trim pad is retried as a NORMAL one: later, never early */
+    if (tx < b.coarse + b.fine) {
+      int16_t coarse = (int16_t)(b.coarse - RTE_MIN(b.coarse, tx));
+      int16_t fine = (int16_t)(b.coarse + b.fine - RTE_MAX(b.coarse, tx));
+      video_trs_rl_pads_ref(s, s_port, (int16_t)-coarse, (int16_t)-fine,
+                            (int16_t)(coarse + fine));
+    }
+    s->trs_pad_inflight_num[s_port] += b.n - tx;
+
+    /* A burst returning ST_TX_VIDEO_RL_STALL_NS past the plan stalled: its doorbell may
+     * have found the shaper idle. Plan on from the return, which never overfills, and
+     * hold packet 0, which behind these pads could leave late or early. */
+    long double latest = s->last_burst_succ_time_tsc[s_port] - credit;
+    if (tx && drained + ST_TX_VIDEO_RL_STALL_NS < latest) {
+      s->port_user_stats.stat_trans_recalculate_warmup++;
+      dbg("%s(%d), burst stalled after %d pkts\n", __func__, s->idx, sent);
+      drained = latest;
+      hold = true;
+    }
+    drained += st_tx_video_rl_burst_ns(&b, drain, pad_size);
+    sent += (int)b.n;
+    if (b.last) break;
+  }
+
+  return !hold;
+}
+
 static int video_burst_packet(struct mtl_main_impl* impl,
                               struct st_tx_video_session_impl* s,
                               enum mtl_session_port s_port, struct rte_mbuf** pkts,
@@ -198,6 +317,27 @@ static bool video_trs_rl_target_reached(struct mtl_main_impl* impl,
   return false;
 }
 
+static inline void video_trs_rl_set_idle(struct st_tx_video_session_impl* s,
+                                         enum mtl_session_port s_port) {
+  s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_IDLE;
+  s->trs_target_tsc[s_port] = 0;
+}
+
+/* The state a port goes to once the warm-up window of packet 0 opens. Without a plan it
+ * sends the warm-up pads and waits for the target. With one it pre-arms the shaper,
+ * which then releases packet 0, unless the pre-arm fails and it waits for the target. */
+static enum st_tx_video_rl_state video_trs_rl_frame_start(
+    struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
+    enum mtl_session_port s_port) {
+  if (!s->rl_plan[s_port].armed) {
+    video_trs_rl_warm_up(impl, s, s_port);
+    return ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
+  }
+  if (!video_trs_rl_pre_arm(impl, s, s_port)) return ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
+  s->trs_target_tsc[s_port] = 0;
+  return ST_TX_VIDEO_RL_STATE_IDLE;
+}
+
 static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
                                  enum mtl_session_port s_port, int* ret_status) {
@@ -230,15 +370,19 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     int tasklet_ret;
     if (!video_trs_rl_target_reached(impl, s, warmup_tsc, ret_status, &tasklet_ret))
       return tasklet_ret;
-    video_trs_rl_warm_up(impl, s, s_port);
-    s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
+    s->rl_state[s_port] = video_trs_rl_frame_start(impl, s, s_port);
   }
 
   /* check if any padding inflight pkts in transmitter */
   if (s->trs_pad_inflight_num[s_port] > 0) {
+    struct rte_mbuf* pads[ST_TX_VIDEO_RL_MAX_PADS_PER_BURST];
+    n = s->rl_plan[s_port].armed
+            ? RTE_MIN(s->trs_pad_inflight_num[s_port], ST_TX_VIDEO_RL_MAX_PADS_PER_BURST)
+            : 1;
     dbg("%s(%d), inflight padding pkts %d\n", __func__, idx,
         s->trs_pad_inflight_num[s_port]);
-    tx = video_trs_burst_pad(impl, s, s_port, &s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
+    for (unsigned int i = 0; i < n; i++) pads[i] = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
+    tx = video_trs_burst_pad(impl, s, s_port, pads, n);
     s->trs_pad_inflight_num[s_port] -= tx;
     if (tx > 0) {
       *ret_status = 1;
@@ -253,8 +397,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     int tasklet_ret;
     if (!video_trs_rl_target_reached(impl, s, target_tsc, ret_status, &tasklet_ret))
       return tasklet_ret;
-    s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_IDLE;
-    s->trs_target_tsc[s_port] = 0;
+    video_trs_rl_set_idle(s, s_port);
   }
 
   /* check if any inflight pkts in transmitter */
@@ -274,7 +417,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
   }
 
   /* dequeue from ring */
-  struct rte_mbuf* pkts[bulk];
+  struct rte_mbuf* pkts[ST_SESSION_MAX_BULK] = {NULL};
   n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
   if (n == 0) {
     *ret_status = -STI_RLTRS_DEQUEUE_FAIL;
@@ -336,10 +479,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
       }
     } else {
       s->trs_target_tsc[s_port] = target_tsc;
-      s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_WAIT_WARMUP;
       video_trs_rl_warm_up(impl, s, s_port);
-      s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_IDLE;
-      s->trs_target_tsc[s_port] = 0;
+      video_trs_rl_set_idle(s, s_port);
     }
   }
 
@@ -414,7 +555,7 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
   }
 
   /* dequeue from ring */
-  struct rte_mbuf* pkts[bulk];
+  struct rte_mbuf* pkts[ST_SESSION_MAX_BULK] = {NULL};
   n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
   if (n == 0) {
     s->stat_trs_ret_code[s_port] = -STI_TSCTRS_DEQUEUE_FAIL;
@@ -507,7 +648,7 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
   }
 
   /* dequeue from ring */
-  struct rte_mbuf* pkts[bulk];
+  struct rte_mbuf* pkts[ST_SESSION_MAX_BULK] = {NULL};
   n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
   if (n == 0) {
     s->stat_trs_ret_code[s_port] = -STI_TSCTRS_DEQUEUE_FAIL;
@@ -601,7 +742,7 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
   }
 
   /* dequeue from ring */
-  struct rte_mbuf* pkts[bulk];
+  struct rte_mbuf* pkts[ST_SESSION_MAX_BULK] = {NULL};
   n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
   if (n == 0) {
     s->stat_trs_ret_code[s_port] = -STI_TSCTRS_DEQUEUE_FAIL;

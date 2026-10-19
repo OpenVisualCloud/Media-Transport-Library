@@ -48,6 +48,17 @@ uint64_t ut_hw_rx_timestamp_flag(void);
 void ut_mbuf_set_hw_timestamp(struct rte_mbuf* mbuf, int dynfield_offset,
                               uint64_t raw_ns);
 
+/** Number of live rte_malloc allocations, summed over all sockets. */
+uint64_t ut_rte_alloc_count(void);
+
+/* Fake TSC for the mt_get_tsc() seams of the harnesses, off until started: each
+ * ut_clock_tick() then returns the time and advances it by step_ns. */
+void ut_clock_start(uint64_t now_ns, uint64_t step_ns);
+void ut_clock_stop(void);
+bool ut_clock_on(void);
+uint64_t ut_clock_tick(void);
+uint64_t ut_clock_ns(void);
+
 #ifdef __cplusplus
 }
 #endif

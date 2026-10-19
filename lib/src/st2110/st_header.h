@@ -9,11 +9,11 @@
 #include "st20_api.h"
 #include "st30_api.h"
 #include "st40_api.h"
-#include "st41_api.h"
 #include "st_convert.h"
 #include "st_fmt.h"
 #include "st_pipeline_api.h"
 #include "st_pkt.h"
+#include "st_tx_video_rl.h"
 
 #define ST_MAX_NAME_LEN (32)
 
@@ -54,11 +54,6 @@
 #define ST_TX_ANC_SESSIONS_RING_SIZE (512)
 #define ST_MAX_RX_ANC_SESSIONS (180)
 
-/* max tx/rx fmd(st41) sessions */
-#define ST_MAX_TX_FMD_SESSIONS (180)
-#define ST_TX_FMD_SESSIONS_RING_SIZE (512)
-#define ST_MAX_RX_FMD_SESSIONS (180)
-
 /* max dl plugin lib number */
 #define ST_MAX_DL_PLUGINS (8)
 /* max encoder devices number */
@@ -97,12 +92,6 @@ enum st40_tx_frame_status {
   ST40_TX_STAT_UNKNOWN = 0,
   ST40_TX_STAT_WAIT_FRAME,
   ST40_TX_STAT_SENDING_PKTS,
-};
-
-enum st41_tx_frame_status {
-  ST41_TX_STAT_UNKNOWN = 0,
-  ST41_TX_STAT_WAIT_FRAME,
-  ST41_TX_STAT_SENDING_PKTS,
 };
 
 struct st_tx_muf_priv_data {
@@ -145,6 +134,7 @@ struct st_frame_trans {
 
   uint32_t flags;                          /* ST_FT_FLAG_* */
   struct rte_mbuf_ext_shared_info sh_info; /* for st20 tx ext shared */
+  void* done_addr; /* st20 tx ext: the cleared addr, during notify_frame_done */
 
   void* user_meta; /* the meta data from user */
   size_t user_meta_buffer_size;
@@ -158,7 +148,10 @@ struct st_frame_trans {
     struct st30_tx_frame_meta ta_meta;
     struct st30_rx_frame_meta ra_meta; /* not use now */
     struct st40_tx_frame_meta tc_meta;
-    struct st41_tx_frame_meta tf_meta;
+  };
+  union { /* st20/st22 tx: the meta notify_frame_done reports, kept past the release */
+    struct st20_tx_frame_meta done_tv_meta;
+    struct st22_tx_frame_meta done_st22_meta;
   };
 };
 
@@ -269,6 +262,13 @@ struct st_vsync_info {
   bool init;
 };
 
+/* zero copy: the app is asked for a frame once the earlier ones are reclaimed */
+struct st_tx_video_reclaim {
+  bool enabled;
+  uint64_t last_tsc;
+  uint64_t wait_tsc; /* 0 while no frame is waited for */
+};
+
 struct st_tx_video_session_impl {
   struct mtl_main_impl* impl;
   struct st_tx_video_sessions_mgr* mgr;
@@ -346,6 +346,7 @@ struct st_tx_video_session_impl {
 
   uint16_t st20_frame_idx; /* current frame index */
   enum st21_tx_frame_status st20_frame_stat;
+  struct st_tx_video_reclaim reclaim;
   uint16_t st20_frame_lines_ready;
 
   struct st20_pgroup st20_pg;
@@ -364,6 +365,7 @@ struct st_tx_video_session_impl {
 
   struct st20_packet_group_info st20_pkt_info[ST20_PKT_TYPE_MAX];
   struct rte_mbuf* pad[MTL_SESSION_PORT_MAX][ST20_PKT_TYPE_MAX];
+  struct rte_mbuf* trim_pad[MTL_SESSION_PORT_MAX][ST_TX_VIDEO_RL_TRIM_PAD_MAX];
 
   /* the cpu resource to handle tx, 0: full, 100: cpu is very busy */
   double cpu_busy_score;
@@ -391,6 +393,9 @@ struct st_tx_video_session_impl {
   uint32_t stat_max_notify_frame_us;
   double stat_cpu_busy_score;
   struct mt_stat_u64 stat_time;
+
+  /* cold, read once a frame, so it sits last, off the hot cache lines */
+  struct st_tx_video_rl_plan rl_plan[MTL_SESSION_PORT_MAX];
 };
 
 struct st_tx_video_sessions_mgr {
@@ -722,6 +727,7 @@ struct st_tx_audio_session_pacing {
 };
 
 #define ST30_TX_RL_QUEUES_USED (2)
+#define ST30_TX_RL_PADS_PER_PKT (3)
 
 enum st30_tx_rl_stage {
   ST30_TX_RL_STAGE_PREPARE,
@@ -752,7 +758,6 @@ struct st_tx_audio_session_rl_port {
 struct st_tx_audio_session_rl_info {
   /* size for padding pkt which include the header */
   uint32_t pad_pkt_size;
-  int pads_per_st30_pkt;
   int pkts_per_sync;
   int pkts_prepare_warmup;
   uint32_t required_accuracy_ns;
@@ -1269,164 +1274,6 @@ struct st_ancillary_transmitter_impl {
   int inflight_cnt[MTL_PORT_MAX];          /* for stats */
 };
 
-struct st_tx_fastmetadata_session_pacing {
-  long double frame_time;          /* time of the frame in nanoseconds */
-  long double frame_time_sampling; /* time of the frame in sampling(90k) */
-  uint64_t cur_epochs;             /* epoch of current frame */
-  /* timestamp for rtp header */
-  uint32_t rtp_time_stamp;
-  /* timestamp for pacing */
-  uint32_t pacing_time_stamp;
-  long double ptp_time_cursor;
-  long double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
-  /* ptp time may onward */
-  uint32_t max_onward_epochs;
-};
-
-struct st_tx_fastmetadata_session_impl {
-  int idx; /* index for current session */
-  int socket_id;
-  struct st_tx_fastmetadata_sessions_mgr* mgr;
-  struct st41_tx_ops ops;
-  char ops_name[ST_MAX_NAME_LEN];
-
-  enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
-  struct rte_mempool* mbuf_mempool_hdr[MTL_SESSION_PORT_MAX];
-  struct rte_mempool* mbuf_mempool_chain;
-  bool tx_mono_pool; /* if reuse tx mono pool */
-  bool tx_no_chain;  /* if tx not use chain mbuf */
-  /* if the eth dev support chain buff */
-  bool eth_has_chain[MTL_SESSION_PORT_MAX];
-  /* if the eth dev support ipv4 checksum offload */
-  bool eth_ipv4_cksum_offload[MTL_SESSION_PORT_MAX];
-  struct rte_mbuf* inflight[MTL_SESSION_PORT_MAX];
-  int inflight_cnt[MTL_SESSION_PORT_MAX]; /* for stats */
-  struct rte_ring* packet_ring;
-  bool second_field;
-
-  /* dedicated queue tx mode */
-  struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
-  bool shared_queue;
-
-  uint32_t max_pkt_len; /* max data len(byte) for each pkt */
-
-  uint16_t st41_frames_cnt; /* numbers of frames requested */
-  struct st_frame_trans* st41_frames;
-  uint16_t st41_frame_idx; /* current frame index */
-  enum st41_tx_frame_status st41_frame_stat;
-
-  uint16_t st41_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
-  uint16_t st41_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
-  struct st41_fmd_hdr hdr[MTL_SESSION_PORT_MAX];
-
-  struct st_tx_fastmetadata_session_pacing pacing;
-  bool calculate_time_cursor;
-  bool check_frame_done_time;
-  struct st_fps_timing fps_tm;
-
-  uint16_t st41_seq_id; /* seq id for each pkt */
-  int st41_total_pkts;  /* total pkts in one frame */
-  int st41_pkt_idx;     /* pkt index in current frame */
-  int st41_rtp_time;    /* record rtp time */
-
-  int stat_build_ret_code;
-
-  struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
-
-  /* stat – port_user_stats is the single source for API-visible counters (monotonic) */
-  struct st41_tx_user_stats port_user_stats;
-  struct st41_tx_user_stats stat_snapshot; /* for delta computation in stat dump */
-  /* internal-only stats */
-  uint64_t stat_last_time;
-  uint32_t stat_max_next_frame_us;
-  uint32_t stat_max_notify_frame_us;
-  struct mt_stat_u64 stat_time;
-};
-
-struct st_tx_fastmetadata_sessions_mgr {
-  struct mtl_main_impl* parent;
-  int socket_id;
-  int idx;     /* index for current sessions mgr */
-  int max_idx; /* max session index */
-  struct mt_sch_tasklet_impl* tasklet;
-
-  /* all fmd sessions share same ring/queue */
-  struct rte_ring* ring[MTL_PORT_MAX];
-  struct mt_txq_entry* queue[MTL_PORT_MAX];
-
-  struct st_tx_fastmetadata_session_impl* sessions[ST_MAX_TX_FMD_SESSIONS];
-  /* protect session, spin(fast) lock as it call from tasklet aslo */
-  rte_spinlock_t mutex[ST_MAX_TX_FMD_SESSIONS];
-
-  rte_atomic32_t transmitter_started;
-  rte_atomic32_t transmitter_clients;
-
-  /* status */
-  int stat_pkts_burst;
-
-  int stat_trs_ret_code[MTL_PORT_MAX];
-};
-
-struct st_rx_fastmetadata_session_impl {
-  int idx; /* index for current session */
-  int socket_id;
-  struct st_rx_fastmetadata_sessions_mgr* mgr;
-  bool attached;
-  struct st41_rx_ops ops;
-  char ops_name[ST_MAX_NAME_LEN];
-  struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
-  struct st_rx_fastmetadata_session_handle_impl* st41_handle;
-
-  enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
-  struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
-  struct rte_ring* packet_ring;
-
-  uint16_t st41_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
-  bool mcast_joined[MTL_SESSION_PORT_MAX];
-  int session_seq_id; /* global session seq id to track continuity across redundant */
-  int latest_seq_id[MTL_SESSION_PORT_MAX]; /* latest seq id */
-
-  /* Redundant packet threshold guard: Accept packets after error threshold
-   * to prevent deadlock when streams reset or have large timestamp or seq_id jumps.
-   * Handles edge case of 2^31 timestamp wraparound (highly unlikely)
-   * and 2^15 seq_id wraparound (unlikely). */
-  int redundant_error_cnt[MTL_SESSION_PORT_MAX];
-
-  struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
-
-  /* the timestamp */
-  int64_t tmstamp;
-  /* stat – port_user_stats is the single source for API-visible counters (monotonic) */
-  struct st41_rx_user_stats port_user_stats;
-  struct st41_rx_user_stats stat_snapshot; /* for delta computation in stat dump */
-  /* internal-only stats */
-  rte_atomic32_t stat_frames_received; /* session-total atomic for cross-thread */
-  uint64_t stat_last_time;
-  uint32_t stat_max_notify_rtp_us;
-  struct mt_stat_u64 stat_time;
-};
-
-struct st_rx_fastmetadata_sessions_mgr {
-  struct mtl_main_impl* parent;
-  int idx;     /* index for current session mgr */
-  int max_idx; /* max session index */
-  struct mt_sch_tasklet_impl* tasklet;
-
-  struct st_rx_fastmetadata_session_impl* sessions[ST_MAX_RX_FMD_SESSIONS];
-  /* protect session, spin(fast) lock as it call from tasklet aslo */
-  rte_spinlock_t mutex[ST_MAX_RX_FMD_SESSIONS];
-};
-
-struct st_fastmetadata_transmitter_impl {
-  struct mtl_main_impl* parent;
-  struct st_tx_fastmetadata_sessions_mgr* mgr;
-  struct mt_sch_tasklet_impl* tasklet;
-  int idx; /* index for current transmitter */
-
-  struct rte_mbuf* inflight[MTL_PORT_MAX]; /* inflight mbuf */
-  int inflight_cnt[MTL_PORT_MAX];          /* for stats */
-};
-
 struct st22_get_encoder_request {
   enum st_plugin_device device;
   struct st22_encoder_create_req req;
@@ -1588,17 +1435,6 @@ struct st_tx_ancillary_session_handle_impl {
 };
 
 /* See note on st_tx_video_session_handle_impl re: ->impl lifetime. */
-struct st_tx_fastmetadata_session_handle_impl {
-  struct mtl_main_impl* parent;
-  enum mt_handle_type type;
-  struct mtl_sch_impl* sch; /* the sch this session attached */
-  int quota_mbs;            /* data quota for this session */
-  struct st_tx_fastmetadata_session_impl* impl;
-  _Atomic uint32_t lc_destroying;
-  _Atomic uint32_t lc_refcnt;
-};
-
-/* See note on st_tx_video_session_handle_impl re: ->impl lifetime. */
 struct st_rx_video_session_handle_impl {
   struct mtl_main_impl* parent;
   enum mt_handle_type type;
@@ -1638,17 +1474,6 @@ struct st_rx_ancillary_session_handle_impl {
   struct mtl_sch_impl* sch; /* the sch this session attached */
   int quota_mbs;            /* data quota for this session */
   struct st_rx_ancillary_session_impl* impl;
-  _Atomic uint32_t lc_destroying;
-  _Atomic uint32_t lc_refcnt;
-};
-
-/* See note on st_tx_video_session_handle_impl re: ->impl lifetime. */
-struct st_rx_fastmetadata_session_handle_impl {
-  struct mtl_main_impl* parent;
-  enum mt_handle_type type;
-  struct mtl_sch_impl* sch; /* the sch this session attached */
-  int quota_mbs;            /* data quota for this session */
-  struct st_rx_fastmetadata_session_impl* impl;
   _Atomic uint32_t lc_destroying;
   _Atomic uint32_t lc_refcnt;
 };

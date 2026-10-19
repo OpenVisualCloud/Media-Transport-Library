@@ -89,13 +89,13 @@ jobs:
       run: ${{ (github.event_name != 'pull_request' && github.event_name != 'push') || steps.filter.outputs.build_workflow == 'true' }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
         with:
@@ -115,7 +115,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -147,7 +147,7 @@ jobs:
       commit: ${{ steps.checkout.outputs.commit }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
@@ -163,7 +163,7 @@ jobs:
           fetch-depth: ${{ inputs.branch && '0' || '1' }}
 
       - name: Install Task
-        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
 
       # Twice: the branch's own overlay-tests may be older than the workflow
       # commit's. The first run checks out the workflow commit's copy, the
@@ -189,18 +189,18 @@ jobs:
       ice_cache_key: ${{ steps.keys.outputs.ice_key }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
 
       - name: Checkout MTL
-        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@2f540b33d05ab93541c816182b791c0fb6b5d143
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@497c4107ae027a4f9d6da088d027639df40064e3
         with:
           ref: ${{ needs.checksums.outputs.commit }}
           fetch-depth: ${{ inputs.branch && '0' || '1' }}
 
       - name: Install Task
-        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
 
       # Twice: the branch's own overlay-tests may be older than the workflow
       # commit's. The first run checks out the workflow commit's copy, the
@@ -308,49 +308,49 @@ jobs:
 
       - name: 'stash: Save DPDK cache'
         if: success() && steps.cache-state.outputs.dpdk_miss == '1'
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.dpdk_key }}
           path: .local_install/dpdk
 
       - name: 'stash: Save MTL cache'
         if: success() && steps.cache-state.outputs.mtl_miss == '1'
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.mtl_key }}
           path: .local_install/mtl
 
       - name: 'stash: Save JPEG XS cache'
         if: success() && steps.cache-state.outputs.jpegxs_miss == '1'
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.jpegxs_key }}
           path: .local_install/jpegxs
 
       - name: 'stash: Save FFmpeg cache'
         if: success() && steps.cache-state.outputs.ffmpeg_miss == '1'
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.ffmpeg_key }}
           path: .local_install/ffmpeg
 
       - name: 'stash: Save GStreamer cache'
         if: success() && steps.cache-state.outputs.gstreamer_miss == '1'
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.gstreamer_key }}
           path: .local_install/gstreamer
 
       - name: 'stash: Save plugins cache'
         if: success() && steps.cache-state.outputs.plugins_miss == '1'
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.plugins_key }}
           path: .local_install/plugins
 
       - name: 'stash: Save ICE cache'
         if: success() && steps.cache-state.outputs.ice_miss == '1'
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.ice_key }}
           path: .local_install/ice

@@ -67,9 +67,13 @@ int mt_ring_dequeue_clean(struct rte_ring* ring);
 void mt_mbuf_sanity_check(struct rte_mbuf** mbufs, uint16_t nb, char* tag);
 
 int mt_pacing_train_pad_result_add(struct mtl_main_impl* impl, enum mtl_port port,
-                                   uint64_t input_bps, float pad_interval);
+                                   uint64_t input_bps, uint64_t queue_bps,
+                                   const struct mt_pacing_pad_mix* mix,
+                                   float pad_interval);
 int mt_pacing_train_pad_result_search(struct mtl_main_impl* impl, enum mtl_port port,
-                                      uint64_t input_bps, float* pad_interval);
+                                      uint64_t input_bps, uint64_t queue_bps,
+                                      const struct mt_pacing_pad_mix* mix,
+                                      float* pad_interval);
 
 int mt_pacing_train_bps_result_add(struct mtl_main_impl* impl, enum mtl_port port,
                                    uint64_t input_bps, uint64_t profiled_bps);
@@ -84,6 +88,14 @@ int mt_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* m
 static inline enum mtl_port mt_port_logic2phy(enum mtl_port* maps,
                                               enum mtl_session_port logic) {
   return maps[logic];
+}
+
+/* whether any of the num_port session ports is a deep TX port */
+static inline bool mt_tx_deep_session(struct mtl_main_impl* impl, enum mtl_port* maps,
+                                      int num_port) {
+  for (int i = 0; i < num_port; i++)
+    if (mt_if_tx_deep(impl, mt_port_logic2phy(maps, i))) return true;
+  return false;
 }
 
 void st_video_rtp_dump(enum mtl_port port, int idx, char* tag,

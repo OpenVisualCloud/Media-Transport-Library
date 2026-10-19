@@ -36,6 +36,10 @@ ut_txa30_ctx* ut_txa30_create(void);
 void ut_txa30_destroy(ut_txa30_ctx* ctx);
 
 /* ── pacing setup ──────────────────────────────────────────────────────── */
+/* ptime, sampling and their samples per packet, then tx_audio_session_init_pacing() */
+int ut_txa30_set_ptime(ut_txa30_ctx* ctx, enum st30_ptime ptime,
+                       enum st30_sampling sampling);
+void ut_txa30_set_cur_epochs(ut_txa30_ctx* ctx, uint64_t cur_epochs);
 /* Toggle ST30_TX_FLAG_USER_PACING on the session's ops.flags. */
 void ut_txa30_set_user_pacing(ut_txa30_ctx* ctx, bool enable);
 /* Toggle ST30_TX_FLAG_USER_TIMESTAMP on the session's ops.flags: the RTP
@@ -63,7 +67,16 @@ void ut_txa30_set_mock_tsc_time(ut_txa30_ctx* ctx, uint64_t tsc_ns);
 int ut_txa30_run_frame_tasklet(ut_txa30_ctx* ctx, enum st10_timestamp_fmt tfmt,
                                uint64_t timestamp, int total_pkts);
 
+/* tx_audio_session_sync_pacing() without the TSC delay to the epoch */
+int ut_txa30_sync_pacing(ut_txa30_ctx* ctx, uint64_t required_tai);
+
+/* One frame-tasklet build of a chained two-port session whose R header alloc fails,
+ * reporting the mbufs its pool still has in use. Returns 0 on success. */
+int ut_txa30_build_chain_r_dry(ut_txa30_ctx* ctx, unsigned int* pool_in_use);
+
 /* ── accessors ─────────────────────────────────────────────────────────── */
+uint64_t ut_txa30_cur_epochs(const ut_txa30_ctx* ctx);
+uint64_t ut_txa30_ptp_time_cursor(const ut_txa30_ctx* ctx);
 uint64_t ut_txa30_stat_error_user_timestamp(const ut_txa30_ctx* ctx);
 int ut_txa30_notify_frame_done_calls(const ut_txa30_ctx* ctx);
 uint64_t ut_txa30_notify_frame_done_timestamp(const ut_txa30_ctx* ctx);
@@ -73,6 +86,67 @@ uint32_t ut_txa30_notify_frame_done_rtp_timestamp(const ut_txa30_ctx* ctx);
  * the wire, independent of what notify_frame_done() was told. */
 int ut_txa30_wire_rtp_timestamp_count(const ut_txa30_ctx* ctx);
 uint32_t ut_txa30_wire_rtp_timestamp(const ut_txa30_ctx* ctx, int i);
+
+/* RL profiling against a modeled queue of nb_tx_desc descriptors that drains one
+ * descriptor per trs / (1 + ST30_TX_RL_PADS_PER_PKT), the trained rate; the mock clock
+ * moves only while a full queue holds a busy burst, or in mt_sleep_us() */
+int ut_txa30_setup_rl(ut_txa30_ctx* ctx, long double trs_ns, uint16_t nb_tx_desc);
+void ut_txa30_teardown_rl(ut_txa30_ctx* ctx);
+/* tx_audio_session_profiling_rl_bps() of the first RL queue; 0 on failure */
+uint64_t ut_txa30_profile_rl(ut_txa30_ctx* ctx, uint64_t initial_bytes_per_sec);
+/* how long the modeled queue still drains what is queued, from the mock clock */
+uint64_t ut_txa30_rl_queued_ns(const ut_txa30_ctx* ctx);
+uint64_t ut_txa30_slept_ns(const ut_txa30_ctx* ctx);
+
+/* ── session and transmitter over modeled NIC rings ───────────────────── */
+enum { UT_TXA30_PIPE_HOLD_MAX = 1024, UT_TXA30_PIPE_CHAIN = 2 };
+enum ut_txa30_pipe_pacing {
+  UT_TXA30_PIPE_TSC_SHARED, /* the manager ring and audio transmitter, the default */
+  UT_TXA30_PIPE_TSC_DEDICATED,
+  UT_TXA30_PIPE_RL, /* ST30_TX_RL_QUEUES_USED queues a leg, 3 pads a pkt */
+};
+/* A frame-level PCM24 stereo 48 kHz session of 10-pkt frames on num_port legs, leg i on
+ * port i whose TX queues are common/ut_tx_ring.h rings of nb_tx_desc[i] (rs 32, the
+ * PMD's free_thresh), hung or draining a descriptor a ns. The production session tasklet
+ * and, when shared, the audio transmitter run on the mock clocks. */
+struct ut_txa30_pipe_case {
+  enum st30_ptime ptime;
+  enum ut_txa30_pipe_pacing pacing;
+  int num_port;
+  bool copy;
+  uint16_t nb_tx_desc[2];
+  int ring_mode; /* enum ut_txr_mode */
+  uint16_t free_thresh;
+  bool hung[2];
+  /* exact header pool of each leg and chain pool; tx_audio_session_mempool_init()'s
+   * when 0 */
+  unsigned int hdr_pool[2];
+  unsigned int chain_pool;
+  /* mbufs taken out of each exact pool first, as other lcores' caches keep them */
+  unsigned int hold;
+};
+int ut_txa30_pipe_setup(ut_txa30_ctx* ctx, const struct ut_txa30_pipe_case* c);
+/* the leg's rings complete no descriptor posted from now on */
+void ut_txa30_pipe_hang(ut_txa30_ctx* ctx, int leg);
+/* stops at the first failed pkt alloc or refused burst */
+void ut_txa30_pipe_run(ut_txa30_ctx* ctx, uint64_t duration_ns, uint64_t step_ns);
+/* -EBUSY if a pool still had mbufs out once the rings and inflights were freed */
+int ut_txa30_pipe_teardown(ut_txa30_ctx* ctx);
+/* the run step a pkt alloc first failed and a NIC ring first refused a pkt; 0 for none */
+uint64_t ut_txa30_pipe_first_alloc_fail(const ut_txa30_ctx* ctx);
+uint64_t ut_txa30_pipe_first_burst_fail(const ut_txa30_ctx* ctx);
+/* the mbufs of a leg's header pool, or UT_TXA30_PIPE_CHAIN */
+unsigned int ut_txa30_pipe_pool_size(const ut_txa30_ctx* ctx, int pool);
+/* tx_audio_session_mempool_n(): the mbufs the production pool init asks for the leg's
+ * header pool */
+unsigned int ut_txa30_pipe_mempool_n(ut_txa30_ctx* ctx, int leg);
+
+/* Runs tx_audio_session_init_rl() without a port, so it sets only the per-session RL
+ * values, then sends one packet through tx_audio_session_rl_tx_pkt() on a queue that
+ * takes everything. Returns the pads sent after the packet, or a negative errno, and
+ * sets *budget_pads to the pads per packet that tx_audio_session_initial_rl_bps()
+ * budgets in the queue rate. */
+int ut_txa30_rl_pads_after_pkt(ut_txa30_ctx* ctx, int* budget_pads);
 
 #ifdef __cplusplus
 }

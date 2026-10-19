@@ -554,17 +554,6 @@ struct mtl_sch_impl {
   bool rx_anc_init;
   pthread_mutex_t rx_anc_mgr_mutex; /* protect rx_anc_mgr */
 
-  /* one tx fast metadata sessions mgr/transmitter for one sch */
-  struct st_tx_fastmetadata_sessions_mgr tx_fmd_mgr;
-  struct st_fastmetadata_transmitter_impl fmd_trs;
-  bool tx_fmd_init;
-  pthread_mutex_t tx_fmd_mgr_mutex; /* protect tx_fmd_mgr */
-
-  /* one rx fast metadata sessions mgr for one sch */
-  struct st_rx_fastmetadata_sessions_mgr rx_fmd_mgr;
-  bool rx_fmd_init;
-  pthread_mutex_t rx_fmd_mgr_mutex; /* protect rx_fmd_mgr */
-
   /* sch sleep info */
   bool allow_sleep;
   pthread_cond_t sleep_wake_cond;
@@ -614,10 +603,20 @@ struct mt_sch_mgr {
   enum mt_lcore_type local_lcores_type[RTE_MAX_LCORE];
 };
 
+/* the pads a frame of video RL training sends: their bytes, NORMAL size and count */
+struct mt_pacing_pad_mix {
+  uint64_t bytes;
+  uint32_t normal;
+  uint32_t pkts;
+};
+
 struct mt_pacing_train_result {
   uint64_t input_bps;        /* input, byte per sec */
   uint64_t profiled_bps;     /* profiled result */
   float pacing_pad_interval; /* result */
+  /* what pacing_pad_interval was trained with, on a queue programmed at queue_bps */
+  struct mt_pacing_pad_mix pad_mix;
+  uint64_t queue_bps;
 };
 
 struct mt_rl_shaper {
@@ -654,6 +653,7 @@ struct mt_tx_queue {
   /* VF, caused by malicious detection in the PF */
   bool fatal_error;
   int rl_shapers_mapping; /* map to tx_rl_shapers */
+  bool rl_node;           /* queue node in the tm hierarchy, with or without a shaper */
   uint64_t bps;           /* bytes per sec for rate limit */
 };
 
@@ -711,6 +711,10 @@ struct mt_interface {
   struct rte_mempool* rx_mbuf_pool;
   uint16_t nb_tx_desc;
   uint16_t nb_rx_desc;
+  /* MT_DEV_TX_DESC_DEEP, reclaim and the bounded flush (dev_config_port()) */
+  bool tx_deep;
+  /* the rs batch a burst frees once 2 are in use, 0 if none (dev_start_port()) */
+  uint16_t tx_reclaim_rs_thresh;
 
   struct rte_mbuf* pad;
   /*
@@ -1229,12 +1233,10 @@ struct mtl_main_impl {
   rte_atomic32_t st22_tx_sessions_cnt;
   rte_atomic32_t st30_tx_sessions_cnt;
   rte_atomic32_t st40_tx_sessions_cnt;
-  rte_atomic32_t st41_tx_sessions_cnt;
   rte_atomic32_t st20_rx_sessions_cnt;
   rte_atomic32_t st22_rx_sessions_cnt;
   rte_atomic32_t st30_rx_sessions_cnt;
   rte_atomic32_t st40_rx_sessions_cnt;
-  rte_atomic32_t st41_rx_sessions_cnt;
   /* active lcore cnt */
   rte_atomic32_t lcore_cnt;
 
@@ -1711,6 +1713,28 @@ static inline struct rte_mempool* mt_if_hdr_split_pool(struct mt_interface* inf,
 
 static inline uint16_t mt_if_nb_tx_desc(struct mtl_main_impl* impl, enum mtl_port port) {
   return mt_if(impl, port)->nb_tx_desc;
+}
+
+static inline bool mt_if_tx_deep(struct mtl_main_impl* impl, enum mtl_port port) {
+  return mt_if(impl, port)->tx_deep;
+}
+
+/* mbufs another lcore's pool cache keeps: DPDK flushes a cache past 1.5x its size */
+#define MT_MBUF_CACHE_SLACK (MT_MBUF_CACHE_SIZE * 3 / 2)
+
+/* mbufs of a TX pool that q queues of port can keep at desc_per_mbuf descriptors each,
+ * plus the cache slack */
+static inline unsigned int mt_if_tx_pool_ring_share(struct mtl_main_impl* impl,
+                                                    enum mtl_port port,
+                                                    unsigned int desc_per_mbuf,
+                                                    unsigned int q) {
+  unsigned int nb_tx_desc = mt_if_nb_tx_desc(impl, port);
+  return q * ((nb_tx_desc + desc_per_mbuf - 1) / desc_per_mbuf) + MT_MBUF_CACHE_SLACK;
+}
+
+static inline uint16_t mt_if_tx_reclaim_rs_thresh(struct mtl_main_impl* impl,
+                                                  enum mtl_port port) {
+  return mt_if(impl, port)->tx_reclaim_rs_thresh;
 }
 
 static inline bool mt_if_port_is_down(struct mtl_main_impl* impl, enum mtl_port port) {

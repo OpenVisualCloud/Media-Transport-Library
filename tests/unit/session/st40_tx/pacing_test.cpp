@@ -669,3 +669,31 @@ TEST_F(St40TxPacingTest, FrameTaskletUserTimestampMediaClkAnchorsToRealisticEpoc
   EXPECT_NEAR((double)ut_txa_notify_frame_done_timestamp(ctx_), (double)kRealisticTai,
               2.0 * (double)kFramePeriodNs);
 }
+
+/* 59.94 at today's TAI, ~1.07e11 epochs: the epoch TAI is exact, and maps back to its
+ * epoch. USER_TIMESTAMP keeps the start off the media-clock snap. */
+TEST(St40TxExactEpochTest, EpochTaiRoundTripsAt5994) {
+  constexpr uint64_t kMul = 60000, kDen = 1001;
+  ASSERT_EQ(ut_txa_init(), 0);
+  ut_txa_ctx* ctx = ut_txa_create();
+  ASSERT_NE(ctx, nullptr);
+  ASSERT_EQ(ut_txa_set_fps(ctx, ST_FPS_P59_94), 0);
+  ut_txa_set_user_timestamp(ctx, true);
+
+  const uint64_t first = 1790000000ull * kMul / kDen;
+  for (uint64_t k = first; k < first + 2000; k++) {
+    const uint64_t tai =
+        (uint64_t)((unsigned __int128)k * kNanosecondsPerSecond * kDen / kMul);
+    for (uint64_t now : {tai, tai - 1}) {
+      const uint64_t epoch = now == tai ? k : k - 1;
+      ut_txa_set_cur_epochs(ctx, UINT64_MAX);
+      ut_txa_set_mock_ptp_time(ctx, now);
+      ASSERT_EQ(ut_txa_sync_pacing(ctx, 0), 0);
+      ASSERT_EQ(ut_txa_cur_epochs(ctx), epoch) << "PTP " << now;
+      if (now == tai) {
+        ASSERT_EQ(ut_txa_ptp_time_cursor(ctx), tai) << "epoch " << k;
+      }
+    }
+  }
+  ut_txa_destroy(ctx);
+}

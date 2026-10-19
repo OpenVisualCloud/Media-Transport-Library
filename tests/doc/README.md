@@ -1,6 +1,6 @@
 # MTL Test Documentation
 
-Sphinx documentation for MTL test suite (pytest and gtest).
+Sphinx documentation for MTL test suite (pytest, gtest and fuzz).
 
 ## Prerequisites
 
@@ -38,7 +38,9 @@ doc/
 │   ├── index.rst
 │   ├── kernel_socket.rst
 │   └── common.rst
-└── gtest/              # C++ tests
+├── gtest/              # C++ tests
+│   └── index.rst
+└── fuzz/               # libFuzzer harnesses
     └── index.rst
 ```
 

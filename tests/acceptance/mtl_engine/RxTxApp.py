@@ -465,50 +465,6 @@ def add_st40p_sessions(
     return config
 
 
-def add_st41_sessions(
-    config: dict,
-    no_chain: bool,
-    nic_port_list: list,
-    test_mode: str,
-    payload_type: str,
-    type_: str,
-    fastmetadata_data_item_type: str,
-    fastmetadata_k_bit: str,
-    fastmetadata_fps: str,
-    fastmetadata_url: str,
-) -> dict:
-    config = set_tx_no_chain(config, no_chain)
-    config = add_interfaces(
-        config=config, nic_port_list=nic_port_list, test_mode=test_mode
-    )
-    tx_session = copy.deepcopy(rxtxapp_config.config_tx_st41_session)
-    config["tx_sessions"][0]["fastmetadata"].append(tx_session)
-    rx_session = copy.deepcopy(rxtxapp_config.config_rx_st41_session)
-    config["rx_sessions"][0]["fastmetadata"].append(rx_session)
-
-    config["tx_sessions"][0]["fastmetadata"][0]["payload_type"] = payload_type
-    config["tx_sessions"][0]["fastmetadata"][0]["type"] = type_
-    config["tx_sessions"][0]["fastmetadata"][0][
-        "fastmetadata_data_item_type"
-    ] = fastmetadata_data_item_type
-    config["tx_sessions"][0]["fastmetadata"][0][
-        "fastmetadata_k_bit"
-    ] = fastmetadata_k_bit
-    config["tx_sessions"][0]["fastmetadata"][0]["fastmetadata_fps"] = fastmetadata_fps
-    config["tx_sessions"][0]["fastmetadata"][0]["fastmetadata_url"] = fastmetadata_url
-
-    config["rx_sessions"][0]["fastmetadata"][0]["payload_type"] = payload_type
-    config["rx_sessions"][0]["fastmetadata"][0][
-        "fastmetadata_data_item_type"
-    ] = fastmetadata_data_item_type
-    config["rx_sessions"][0]["fastmetadata"][0][
-        "fastmetadata_k_bit"
-    ] = fastmetadata_k_bit
-    config["rx_sessions"][0]["fastmetadata"][0]["fastmetadata_url"] = fastmetadata_url
-
-    return config
-
-
 # Global variable to store timestamp for consistent logging
 _log_timestamp = None
 
@@ -708,16 +664,6 @@ def execute_test(
             config=config,
             output=output,
             session_type="anc",
-            fail_on_error=fail_on_error,
-            host=host,
-            build=build,
-        )
-
-    if len(config["tx_sessions"][0]["fastmetadata"]) > 0:
-        passed = passed and check_rx_output(
-            config=config,
-            output=output,
-            session_type="fastmetadata",
             fail_on_error=fail_on_error,
             host=host,
             build=build,
@@ -1366,6 +1312,8 @@ def check_rx_output(
         pattern = re.compile(r"app_rx_st22p_result")
     elif session_type == "st30p":
         pattern = re.compile(r"app_rx_st30p_result")
+    elif session_type == "st40p":
+        pattern = re.compile(r"app_rx_st40p_result")
     elif session_type == "video":
         pattern = re.compile(r"app_rx_video_result")
     elif session_type == "audio":
@@ -1643,16 +1591,6 @@ def _build_summary_block(
             f"fs={st30p.get('audio_sampling', '')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
         )
 
-    if config["tx_sessions"][0].get("fastmetadata"):
-        fmd = config["tx_sessions"][0]["fastmetadata"][0]
-        replicas = fmd.get("replicas", 1)
-        rx_ok = _count_ok_markers(output, re.compile(r"app_rx_fastmetadata_result"))
-        lines.append(
-            "fastmetadata: "
-            f"type={fmd.get('type', '')} fps={fmd.get('fastmetadata_fps', '')} "
-            f"replicas={replicas} rx_ok={rx_ok}/{replicas}"
-        )
-
     if config["tx_sessions"][0].get("st22p"):
         st22p = config["tx_sessions"][0]["st22p"][0]
         replicas = st22p.get("replicas", 1)
@@ -1879,11 +1817,15 @@ def add_st40p_dual_sessions(
     tx_nic_port_list: list,
     rx_nic_port_list: list,
     test_mode: str,
-    type_: str,
-    ancillary_format: str,
-    ancillary_fps: str,
-    ancillary_url: str,
+    fps: str,
+    st40p_url: str,
+    payload_type: int = 113,
+    interlaced: bool = False,
+    enable_rtcp: bool = False,
 ) -> dict:
+    """Add a TX st40p session on one host and the matching RX st40p session on
+    the other. The pipeline API has no type or ancillary_format: the pipeline
+    cuts the file into frames at the given fps."""
     tx_config = config["tx_config"]
     rx_config = config["rx_config"]
 
@@ -1895,19 +1837,20 @@ def add_st40p_dual_sessions(
         test_mode=test_mode,
     )
 
-    tx_session = copy.deepcopy(rxtxapp_config.config_tx_ancillary_session)
-    tx_config["tx_sessions"][0]["ancillary"].append(tx_session)
-    tx_config["tx_sessions"][0]["ancillary"][0]["type"] = type_
-    tx_config["tx_sessions"][0]["ancillary"][0]["ancillary_format"] = ancillary_format
-    tx_config["tx_sessions"][0]["ancillary"][0]["ancillary_fps"] = ancillary_fps
-    tx_config["tx_sessions"][0]["ancillary"][0]["ancillary_url"] = ancillary_url
+    tx_session = copy.deepcopy(rxtxapp_config.config_tx_st40p_session)
+    tx_session["fps"] = fps
+    tx_session["st40p_url"] = st40p_url
+    tx_session["payload_type"] = payload_type
+    tx_session["interlaced"] = interlaced
+    tx_session["enable_rtcp"] = enable_rtcp
+    tx_config["tx_sessions"][0]["st40p"].append(tx_session)
 
-    rx_session = copy.deepcopy(rxtxapp_config.config_rx_ancillary_session)
-    rx_config["rx_sessions"][0]["ancillary"].append(rx_session)
-    rx_config["rx_sessions"][0]["ancillary"][0]["type"] = type_
-    rx_config["rx_sessions"][0]["ancillary"][0]["ancillary_format"] = ancillary_format
-    rx_config["rx_sessions"][0]["ancillary"][0]["ancillary_fps"] = ancillary_fps
-    rx_config["rx_sessions"][0]["ancillary"][0]["ancillary_url"] = ancillary_url
+    rx_session = copy.deepcopy(rxtxapp_config.config_rx_st40p_session)
+    rx_session["fps"] = fps
+    rx_session["payload_type"] = payload_type
+    rx_session["interlaced"] = interlaced
+    rx_session["enable_rtcp"] = enable_rtcp
+    rx_config["rx_sessions"][0]["st40p"].append(rx_session)
 
     return {"tx_config": tx_config, "rx_config": rx_config}
 
@@ -2045,6 +1988,14 @@ def execute_dual_test(
             config=rx_config,
             output=rx_output,
             session_type="st30p",
+            fail_on_error=fail_on_error,
+        )
+
+    if len(rx_config["rx_sessions"][0]["st40p"]) > 0:
+        passed = passed and check_rx_output(
+            config=rx_config,
+            output=rx_output,
+            session_type="st40p",
             fail_on_error=fail_on_error,
         )
 

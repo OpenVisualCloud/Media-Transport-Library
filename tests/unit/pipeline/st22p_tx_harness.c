@@ -12,12 +12,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define st22_tx_create ut22p_tx_capture_create
 #undef MTL_HAS_USDT
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 #include "st2110/pipeline/st22_pipeline_tx.c"
 #pragma GCC diagnostic pop
+#undef st22_tx_create
 
 #include "common/ut_common.h"
 
@@ -29,6 +31,7 @@ struct ut22p_tx_ctx {
   uint64_t mock_ptp_ns;
   bool encode_blocking;
   bool blocking;
+  struct st22_encode_dev_impl encode_dev;
 };
 
 #include "pipeline/st22p_tx_harness.h"
@@ -118,8 +121,31 @@ void ut22p_tx_ctx_enable_encode_blocking(ut22p_tx_ctx* ctx, uint64_t timeout_ns)
   ctx->encode_blocking = true;
 }
 
+void ut22p_tx_ctx_set_encoder(ut22p_tx_ctx* ctx) {
+  struct st22_encode_session_impl* session = &ctx->encode_dev.sessions[0];
+  session->parent = &ctx->encode_dev;
+  ctx->pipeline.encode_impl = session;
+  ctx->pipeline.derive = false;
+  for (int i = 0; i < ctx->framebuff_cnt; i++)
+    ctx->framebuffs[i].src.priv = &ctx->framebuffs[i];
+}
+
+void ut22p_tx_set_ready(ut22p_tx_ctx* ctx, bool ready) {
+  ctx->pipeline.ready = ready;
+}
+
+void ut22p_tx_wake_block(ut22p_tx_ctx* ctx) {
+  st22p_tx_wake_block(&ctx->pipeline);
+}
+
 void ut22p_tx_encode_wake_block(ut22p_tx_ctx* ctx) {
   tx_st22p_encode_wake_block(&ctx->pipeline);
+}
+
+void ut22p_tx_begin_destroy(ut22p_tx_ctx* ctx) {
+  struct st22p_tx_ctx* p = &ctx->pipeline;
+  mt_handle_begin_destroy(&p->lc_destroying, &p->type, MT_ST22_HANDLE_PIPELINE_TX);
+  tx_st22p_block_wake_all(p);
 }
 
 int ut22p_tx_encode_get_frame(ut22p_tx_ctx* ctx) {
@@ -202,4 +228,32 @@ int ut22p_tx_all_free(const ut22p_tx_ctx* ctx) {
 
 int ut22p_tx_frame_stat(const ut22p_tx_ctx* ctx, int i) {
   return (int)ctx->framebuffs[i].stat;
+}
+
+static struct st22_tx_ops ut22p_tx_transport_ops;
+
+st22_tx_handle ut22p_tx_capture_create(mtl_handle mt, struct st22_tx_ops* ops) {
+  (void)mt;
+  ut22p_tx_transport_ops = *ops;
+  return NULL;
+}
+
+int ut22p_tx_transport_report_late(ut22p_tx_ctx* ctx, uint64_t epoch_skipped) {
+  memset(&ut22p_tx_transport_ops, 0, sizeof(ut22p_tx_transport_ops));
+  tx_st22p_create_transport(&ctx->impl, &ctx->pipeline, &ctx->pipeline.ops);
+  if (!ut22p_tx_transport_ops.notify_frame_late) return -ENOENT;
+  return ut22p_tx_transport_ops.notify_frame_late(ut22p_tx_transport_ops.priv,
+                                                  epoch_skipped);
+}
+
+static struct mtl_main_impl ut22p_tx_create_impl;
+
+st22p_tx_handle ut22p_tx_create(struct st22p_tx_ops* ops) {
+  struct mtl_main_impl* impl = &ut22p_tx_create_impl;
+  impl->type = MT_HANDLE_MAIN;
+  impl->user_para.num_ports = 1;
+  snprintf(impl->user_para.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "ut22p_port");
+  impl->inf[MTL_PORT_P].socket_id = rte_socket_id();
+  snprintf(ops->port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut22p_port");
+  return st22p_tx_create(impl, ops);
 }

@@ -6,7 +6,7 @@ This section provides a detailed design concept of the Media Transport Library, 
 
 Similar to other network processing libraries, it consists of a control plane and a data plane. In the data plane, a lockless design is adopted to achieve ultra-high performance.
 
-![Software Stack](png/software_stack.png)
+![Software Stack](png/software_stack.svg)
 
 ## 2. Core management
 
@@ -21,7 +21,7 @@ With this PMD design, it is expected that a CPU thread will always be utilized t
 We provide an option `MTL_FLAG_TASKLET_SLEEP` that enables the sleep option for the PMD thread. However, take note that enabling this option may impact latency, as the CPU may enter a sleep state when there are no packets on the network. If you are utilizing the RxTxApp, it can be enable by `--tasklet_sleep` arguments.
 Additionally, the `MTL_FLAG_TASKLET_THREAD` option is provided to disable pinning to a single CPU core, for cases where a pinned core is not feasible.
 
-![Tasklet](png/tasklet.png)
+![Tasklet](png/tasklet.svg)
 
 ### 2.1. Tasklet design
 
@@ -214,9 +214,15 @@ In one typical setup, capable of sending approximately 50 Gbps (equivalent to 16
 
 During the packet construction process, only the RTP header is regenerated to represent the packet position within a frame. The video data is carried in the second segment of an mbuf, which directly points to the original frame.
 
+A zero-copy frame stays in use until the NIC has sent the last packet that points into it.
+On a port with the 2048-descriptor default queue (see [4.3.2](#432-st2110-21-pacing)), every TX burst frees the packets the NIC has sent, and a session asks the application for a new frame only once its earlier frames are back, so two frame buffers keep zero copy.
+Elsewhere (other ports, RTCP retransmission, or fewer than 32 packets a frame) a packet is freed only about one TX queue later, and a session whose other frame buffers do not cover the queue copies its frames instead.
+With RTCP on that port the retransmit ring keeps the last 2048 packets, so on 2 frame buffers 720p and 1080i copy; set `nb_tx_desc` to 512, or use 3 frame buffers, to keep them zero copy.
+More frame buffers (`framebuff_cnt`) keep it zero copy.
+
 Note that if the currently used NIC does not support the multi-buffer feature, the MTL will need to copy the video frame into the descriptor, resulting in a loss of performance.
 
-![TX Zero Copy](png/tx_zero_copy.png)
+![TX Zero Copy](png/tx_zero_copy.svg)
 
 #### 4.3.2. ST2110-21 pacing
 
@@ -225,15 +231,33 @@ The specific standard ST2110-21 deals with the traffic shaping and delivery timi
 Due to the stringent timing requirements at the microsecond level, existing solutions are primarily built on hardware implementations, which introduce significant dependencies not conducive to cloud-native deployments. The MTL adopts a software-based approach, embracing cloud-native concepts.
 MTL addresses this challenge by leveraging the NIC's rate-limiting features along with a software algorithm. This combination has successfully passed numerous third-party interoperability verifications.
 
-The default NIC queue depth is set to 512 in MTL, and MTL will always ensure the queue is fully utilized by the tasklet engine. In the case of 1080p at 50fps, one packet time in ST2110-21 is approximately ~5us.
-With a queue depth of 512, the MTL can tolerate a kernel scheduler jitter of up to ~2.5ms. If you observe any packet timing jitter, consider increasing the queue depth. MTL provides the `nb_tx_desc` option for this adjustment.
-However, for a 4K 50fps session, the time for one packet is approximately ~1us, indicating that the duration for 512 packets is around ~500us. With a queue depth of 512, MTL can only tolerate a scheduler jitter of about ~500us. However, by adjusting the depth to the maximum hardware-permitted value of 4096, MTL should be capable of handling a maximum scheduler jitter of 4ms.
+The default NIC TX queue depth (`nb_tx_desc`) is 2048 descriptors on a rate-limited (RL, TSN, or AUTO with the iavf/ice TM) port whose iavf or ice driver frees the sent packets every burst, DPDK 26.07 or later, without a shared TX queue or a user `nb_tx_desc`.
+Only such a port has the library free the sent packets as each burst leaves and size its TX pools from what that queue keeps.
+Every other port keeps 512, and its queue holds what it sent until the slots are reused, as in earlier releases. MTL always keeps the queue full from the tasklet engine. While the scheduler thread is off its CPU, the NIC keeps sending only what is queued, so the queue depth in time is the jitter MTL tolerates within a frame.
+A zero-copy video packet takes 2 descriptors (header and payload), so the 2048-descriptor queue holds 1024 packets: ~3.8 ms at 1080p59.94, more than the time slice a busy CPU gives another runnable task (~3 ms). Longer stalls leave a gap on the wire and the receiver's VRX underflows.
+For a 4K 60fps session one packet time is ~1 µs, so 2048 descriptors cover ~1 ms. If you observe packet timing jitter, raise `nb_tx_desc`, up to the driver maximum (8160 for iavf).
+A deeper queue does not move the packets on the wire, but each frame is queued, and taken from the application, that much earlier.
+It also takes more hugepage memory for the TX mbuf pools, and where packets are freed only a queue later (see [4.3.1](#431-zero-copy-packet-build)) a format with few packets per frame and few frame buffers falls back from zero copy to copy mode.
+
+The start of each frame has its own, shorter tolerance. With the rate limiter, the library starts sending padding packets a short time before a frame's scheduled first-packet time, so that the NIC shaper releases the first packet on time (see [8.2](#82-rtp-timestamps-of-paced-video)).
+That time is 80% of the ST 2110-21 TR_OFFSET, but at most 128 packet times. If the scheduler reaches the frame later than that, the first packet leaves late by how far past its scheduled time the scheduler reaches it.
+The frame-start tolerance below applies when the port has a pad plan (see [8.2](#82-rtp-timestamps-of-paced-video)); without one, the library holds the first packet until its scheduled time, so any scheduler delay at the frame start makes it late.
+
+| Format | One packet time | Frame-start tolerance | Frame tolerance at 2048 descriptors |
+|---|---|---|---|
+| 1080p29.97 | ~7.8 µs | ~1.0 ms | ~8.0 ms |
+| 1080p59.94 | ~3.9 µs | ~0.5 ms | ~4.0 ms |
+| 1080p119.88 | ~1.9 µs | ~0.25 ms | ~2.0 ms |
+| 2160p59.94 | ~1.0 µs | ~0.12 ms | ~1.0 ms |
+
+The frame-start tolerance cannot exceed the idle time ST 2110-21 leaves between two frames: about 4% of the frame time for gapped senders.
+MTL sends every ST 2110-20 stream with the gapped schedule. `ST21_PACING_LINEAR` is not implemented for TX.
 
 > **Tip:** Isolating CPU cores significantly reduces scheduler jitter, lowering the need for large queue depths. See the [CPU Isolation Guide](isolation.md) for setup instructions.
 
 In the case that the rate-limiting feature is unavailable, TSC (Timestamp Counter) based software pacing is provided as a fallback option.
 
-![TX Pacing](png/tx_pacing.png)
+![TX Pacing](png/tx_pacing.svg)
 
 #### 4.3.3. TSN launch-time pacing
 
@@ -252,7 +276,7 @@ Once the packet is received and validated as legitimate, the RX session will cop
 
 The process of copying data between packets and frames consumes a significant amount of CPU resources. MTL can be configured to use DMA to offload this copy operation, thereby enhancing performance. For detailed usage instructions, please refer to [DMA Guide](dma.md)
 
-![RX DMA Offload](png/rx_dma_offload.png)
+![RX DMA Offload](png/rx_dma_offload.svg)
 
 ## 5. Control path
 
@@ -387,7 +411,7 @@ st40p_rx_get_frame
 st40p_rx_put_frame
 ```
 
-- **TX pipeline (`st40p_tx_*`)** wraps the lower-level `st40_tx_*` APIs while honoring redundancy, user timestamps, and user-managed frame buffers (for example when `ST40P_TX_FLAG_EXT_FRAME` is enabled). The helper also exposes the maximum user data word (UDW) size via `st40p_tx_max_udw_buff_size()` so that producers can pack metadata deterministically.
+- **TX pipeline (`st40p_tx_*`)** wraps the lower-level `st40_tx_*` APIs while honoring redundancy and user pacing/timestamps; frame and UDW buffers are always allocated by the library (there is no external-frame mode). The helper also exposes the maximum user data word (UDW) size via `st40p_tx_max_udw_buff_size()` so that producers can pack metadata deterministically.
 - **RX pipeline (`st40p_rx_*`)** is a thin shim over the **FRAME_LEVEL transport**
   (`ST40_TYPE_FRAME_LEVEL` on `st40_rx_ops`). The transport owns the frame-buffer pool,
   parses RFC 8331 packets, and assembles full frames using a 64-bit per-frame
@@ -545,9 +569,10 @@ Consequently, the application will receive notifications through `notify_event` 
 By default, applications simply push frames into MTL TX sessions, where the MTL TX session automatically assigns timestamps and epochs based on timing.
 
 The ST**_TX_FLAG_USER_TIMESTAMP flag allows applications to assign the RTP timestamp for each frame. MTL retrieves the timestamp from st**_tx_frame_meta and calculates RTP timestamp straight from this value.
-Transmission time in unchanged.
+Transmission time is unchanged.
 
-The ST**_TX_FLAG_USER_TIMESTAMP flag is provided to enable applications to use their own timestamp values for each frame. Consequently, the RTP timestamp for all packets that belong to that frame will be assigned the customized value.
+The ST**_TX_FLAG_USER_PACING flag allows applications to control when each frame is sent. MTL reads a TAI timestamp from st**_tx_frame_meta and holds the frame until that time; only ST10_TIMESTAMP_FMT_TAI is honored, other formats fall back to the default epoch-based pacing.
+Video and ancillary sessions round the timestamp to the nearest frame epoch and pace from there; with ST20_TX_FLAG_EXACT_USER_PACING / ST40_TX_FLAG_EXACT_USER_PACING the first packet of the frame leaves exactly at the given time instead.
 
 ### 6.12. SIMD for color space convert
 
@@ -571,6 +596,10 @@ To offer significant flexibility in switch/forward scenarios, it is advantageous
   st20p_rx_update_source
   st22p_tx_update_destination
   st22p_rx_update_source
+  st30p_tx_update_destination
+  st30p_rx_update_source
+  st40p_tx_update_destination
+  st40p_rx_update_source
 ```
 
 ### 6.14. Ecosystem
@@ -615,7 +644,8 @@ In MTL, similar to st20 video, each field is treated as an individual frame, wit
 
 For instance, with a 1080i50 format, you should use the following session parameters when creating a session: `interlaced: true, fps: ST_FPS_P50`.
 
-For transmission (TX), users can specify whether the current field is the first or second by using the `second_field` flag within the `struct st40_tx_frame_meta`. For reception (RX), RTP passthrough mode is the only supported, it's application's duty to check the if it's the first or second by inspecting the F bits in rfc8331 header.
+For transmission (TX), users can specify whether the current field is the first or second by using the `second_field` flag within the `struct st40_tx_frame_meta`. For reception (RX), the frame-level transport (`ST40_TYPE_FRAME_LEVEL`) and the st40p pipeline report it in `second_field` of the frame meta;
+in RTP passthrough mode (`ST40_TYPE_RTP_LEVEL`) it's application's duty to check if it's the first or second by inspecting the F bits in rfc8331 header.
 
 ## 7. Misc
 
@@ -672,12 +702,49 @@ On Intel Xeon 6 CPUs (GNR), the `isolcpus` kernel parameter may not be fully res
 
 This is fixed in kernel 6.19 by the following patch: [sched/fair: Fix imbalance overflow for SD_NUMA domain](https://kernel.googlesource.com/pub/scm/linux/kernel/git/sudeep.holla/linux/+/4d6dd05d07d00bc3bd91183dab4d75caa8018db9). If running an older kernel on GNR, consider backporting this fix, upgrading your kernel, or using `taskset` as a workaround for pinning threads to specific cores.
 
-### 8.2. RTP timestamps and latency compensation in rate-limit pacing
+### 8.2. RTP timestamps of paced video
 
-When the rate limiter is used for ST 2110-21 pacing, the library applies a small latency compensation: packets rtp_timestamps are increased to account for NIC queue and processing delay.
-Without this workaround, packets appear on the wire marginally earlier than the theoretical transmission schedule.
+By default the RTP timestamp of a video frame is the scheduled transmission time of its first packet, `epoch + TR_OFFSET - VRX × TRS` (`transmission_start_time()` in `st_tx_video_session.c`), rounded to the media clock.
+It is the scheduled time, not a measured wire time; no separate latency compensation is applied to the RTP timestamp.
+With the rate limiter, if the library knows the port's shaper, it has the NIC start the first packet at that time: shortly before it, the library queues padding the NIC shaper finishes draining at the scheduled time, then queues the first packet behind it.
+It knows the shaper when it measured (trained) the port's pad interval and knows its burst bucket: 2 KB for a VF on the patched kernel ice driver MTL requires for rate limiting, or the `rl_burst_size` set for a DPDK-driven ice PF, and when its packets are at least 128 bytes, so it can cut 64 bytes from a padding packet.
+The first packet then is not sent before the scheduled time, provided the padding is queued before it, so the load of the TX scheduler does not move it.
+The model puts the first packet at the scheduled time, or within one 8-byte step after it: the library cuts up to 64 bytes from each of the last padding packets, in 8-byte steps, so the padding drains within one step of it, never before. Measured on E830 VF against the scheduled time, the first packet arrives 1.4 to 6.1 µs late at 1080p25/50/60/59.94, 720p59.94 and 2160p59.94, never early.
+A tasklet stall between two padding bursts that ends before the scheduled time only shrinks the rest of the padding.
+A stall inside a burst (an interrupt or a preemption) can delay its doorbell by an unknown time.
+If the padding already queued does not cover it and the burst returns more than 2 µs late, the library plans the rest from the latest time the doorbell can have rung and holds the first packet until the scheduled time, as without a known shaper. A shorter stall can delay the first packet by up to its length.
+After a stall past it the first packet leaves when the tasklet returns. The NIC and the clocks add the rest.
 
-Because the RTP timestamp embedded in frame packets reflects the actual wire time (the moment the first packet leaves the NIC), the compensation shift is subtracted from the RTP timestamp so that receivers see timestamps consistent with the true on-wire timing.
+```mermaid
+sequenceDiagram
+    participant T as TX tasklet
+    participant N as NIC queue and shaper
+    participant W as Wire
+    Note over T: up to 128 packet intervals before the scheduled time
+    loop bursts of up to 32 padding packets
+        T->>N: padding
+        N->>W: padding, at the session rate
+    end
+    alt every burst returns in time
+        T->>N: first packet, behind the padding
+        N->>W: first packet, as the padding ends: at the scheduled time
+    else a burst returns more than 2 µs late (interrupt, preemption)
+        Note over T: holds the first packet, counts stat_trans_recalculate_warmup
+        T->>N: first packet, once the TSC reaches the scheduled time
+        N->>W: first packet
+    end
+```
+
+A stall inside a padding burst comes from the CPU of the TX scheduler:
+
+| Sign | Cause | Remedy |
+|---|---|---|
+| `stat_trans_recalculate_warmup` grows, at integer frame rates often on the same frame of a cycle | The kernel timer tick (1 ms, 2-10 µs long) runs inside a burst, at fixed phases of a whole-ms frame grid: every frame at 50p, one in 3 at 60p; at 59.94p it drifts and rarely does. | Stop the tick on the scheduler cores: `nohz_full` or `isolcpus=…,nohz` ([CPU Isolation Guide](isolation.md)) |
+| Single frames late by tens to hundreds of µs; with ST 2022-7 on one leg only, as each leg pads on its own | The scheduler thread is preempted past the scheduled time, for example by a `kworker` | Isolate the scheduler cores |
+
+Measured on E830 VF TX at 1080p25 to 1080p120 and 2160p60, with and without redundancy, the minimum first-packet latency was 1.0 µs or more.
+Without a known shaper, for example with a user-set pad interval, the library pads one packet per interval and holds the first packet until the scheduled time, so a busy scheduler can send it late.
+With ST20 user metadata, the metadata packet goes out when the first packet is queued, so up to the warm-up time (at most 128 packet intervals) before it.
 
 Applications that need RTP timestamps aligned to exact epoch boundaries (N × T_FRAME) should enable `ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH`. This flag derives the RTP timestamp from the frame's epoch count rather than from the pacing cursor, producing timestamps that land precisely on N × T_FRAME points. This is required for compliance with SMPTE ST 2110-20 §7.6.3,
 which states that for synthetic or storage-playback video the RTP timestamp of a frame should represent a point in time of N × T_FRAME and shall not deviate by more than ±T_FRAME from the most recent such point.

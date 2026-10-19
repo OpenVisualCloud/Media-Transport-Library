@@ -112,7 +112,6 @@ MTL_INSTALL_PREFIX="$LOCAL_PREFIX" \
 	ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN="$INCLUDE_FFMPEG_PLUGIN" \
 	ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN="$INCLUDE_GSTREAMER_PLUGIN" \
 	bash .github/scripts/setup_environment.sh
-sudo ldconfig 2>/dev/null || true
 
 if vd_local_install_ready "$LOCAL_PREFIX"; then
 	ok "Step 3/5: MtlManager + RxTxApp present under $LOCAL_PREFIX/bin"

@@ -22,7 +22,7 @@
 #include "handlers/st20p_handler.hpp"
 #include "strategies/st20p_strategies.hpp"
 
-static_assert(kNoCtxPacingEarlyMaxNs == 1 * NS_PER_US, "comments quote -1 us");
+static_assert(kNoCtxPacingEarlyMaxNs == 0, "comments quote 0 us early");
 static_assert(kNoCtxPacingLateMaxNs == 10 * NS_PER_US, "comments quote +10 us");
 static_assert(kNoCtxPacingElapsedErrorMaxNs == 10 * NS_PER_US, "comments quote +-10 us");
 
@@ -30,15 +30,16 @@ static_assert(kNoCtxPacingElapsedErrorMaxNs == 10 * NS_PER_US, "comments quote +
  * Config:    initStrictPacingContext(); one session TX TEST_PORT_1 -> RX TEST_PORT_2,
  *            1080i50: kInterlaced, kFps = 50 fields/s (T = 20 ms), YUV 4:2:2 10-bit
  *            BPM, 3 buffers; TX kTxFlags = USER_PACING.
- * Plan:      t_user(n) = start + n*T per field, start = PTP now + 800 ms
- *            (kSt20pUserPacingLeadNs) rounded up to T.
- * Expect:    on every field, St20pInterlacedUserPacingOracle with expected TX =
- *            t_user(n) + TR_offset - VRX*trs, one field later if field 0 lands on
- *            an odd frame-grid slot
+ * Plan:      t_user(n) = epoch n after start per field, start = the epoch at or after
+ *            PTP now + 800 ms (kSt20pUserPacingLeadNs).
+ * Expect:    on every field, St20pInterlacedUserPacingOracle with expected launch =
+ *            the 90 kHz tick of t_user(n) + TR_offset - VRX*trs, one field later if
+ *            field 0 lands on an odd frame-grid slot
  *            0. interlaced, second_field == (n odd)   rxTestFrameModifier()
- *            1-6 as in st20p_user_pacing (launch -1/+10 us, kNoCtxPacingEarlyMaxNs,
- *               kNoCtxPacingLateMaxNs; elapsed +-10 us, kNoCtxPacingElapsedErrorMaxNs;
- *               RTP == tick90k(expected TX), step 1800)
+ *            1-6 as in st20p_user_pacing (launch and RTP instant 0/+10 us,
+ *               kNoCtxPacingEarlyMaxNs, kNoCtxPacingLateMaxNs; elapsed +-10 us,
+ *               kNoCtxPacingElapsedErrorMaxNs; RTP == tick90k(expected launch),
+ *               step 1800)
  *            in the test, after mtl_start():
  *            7. getPacingParameters() == 0; TR_offset, trs, VRX > 0
  *            after stop:

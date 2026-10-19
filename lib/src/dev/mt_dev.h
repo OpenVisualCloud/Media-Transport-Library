@@ -10,6 +10,9 @@
 /* default desc nb for tx and rx */
 #define MT_DEV_RX_DESC (4096 / 2)
 #define MT_DEV_TX_DESC (4096 / 8)
+/* tx of a shaped port that frees sent mbufs each burst: 1024 chained video pkts, ~3.8 ms
+ * at 1080p59.94, ride out a lost scheduler slice */
+#define MT_DEV_TX_DESC_DEEP (4096 / 2)
 
 /* Port link-up detection loop parameters.
  *
@@ -85,8 +88,10 @@ static inline uint16_t mt_dev_tx_queue_id(struct mt_tx_queue* queue) {
 int mt_dev_tx_queue_fatal_error(struct mtl_main_impl* impl, struct mt_tx_queue* queue);
 int mt_dev_set_tx_bps(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
                       uint64_t bytes_per_sec);
+/* frees what the queue holds; on a reclaim port bounded, -EBUSY if it did not drain in
+ * time, and with no mbuf for its mark the per-pad loop if lazy_fallback, else -ENOMEM */
 int mt_dpdk_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
-                           struct rte_mbuf* pad);
+                           struct rte_mbuf* pad, bool lazy_fallback);
 int mt_dev_tx_done_cleanup(struct mtl_main_impl* impl, struct mt_tx_queue* queue);
 static inline uint16_t mt_dpdk_tx_burst(struct mt_tx_queue* queue,
                                         struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {

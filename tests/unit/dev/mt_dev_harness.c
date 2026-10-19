@@ -2,23 +2,30 @@
  * Copyright(c) 2026 Intel Corporation
  */
 
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
+#include "common/ut_tx_ring.h"
 #include "dev/mt_dev_harness.h"
 #include "mt_main.h"
 
 /* Wider than MT_EAL_MAX_ARGS so an argc past that bound can be recorded, and compared
  * against it, without the harness overflowing in turn. */
 #define UT_DEV_EAL_ARGV_MAX (256)
+#define UT_DEV_TX_QUEUES (4)
+#define UT_DEV_TM_NODES_MAX (16)
+/* dev_rl_shaper_add() takes profile ids 1..MT_MAX_RL_ITEMS */
+#define UT_DEV_TM_PROFILES_MAX (MT_MAX_RL_ITEMS + 1)
 
 struct ut_dev_ctx {
   struct mtl_main_impl impl;
   struct mt_rx_queue rx_queue;
-  struct mt_tx_queue tx_queue;
+  struct mt_tx_queue tx_queues[UT_DEV_TX_QUEUES];
   struct mt_kport_info kport_info;
   char* lcores;
   int eal_init_calls;
@@ -33,10 +40,34 @@ struct ut_dev_ctx {
   int fail_timesync_read_call;
   int fail_timesync_read_error;
   int fail_port_start_error;
+  uint16_t tx_free_thresh[UT_DEV_TX_QUEUES];
   uint64_t last_shaper_rate;
+  struct mtl_port_status sw_stats;
+  pthread_t stats_writer;
+  bool stats_writer_started;
+  rte_atomic32_t stats_writer_holding;
+  bool stats_writer_on_unlock;
+  struct ut_dev_tm_node tm_nodes[UT_DEV_TM_NODES_MAX];
+  int tm_node_count;
+  bool tm_profiles[UT_DEV_TM_PROFILES_MAX];
+  int tm_call_count;
+  int tm_commit_count;
+  int fail_tm_capabilities_error;
+  int fail_tm_node_add_error;
+  int tm_queue_node_adds;
+  int fail_tm_queue_node_add_call;
+  int fail_tm_queue_node_add_error;
+  int fail_tm_commit_error;
+  struct rte_mempool* sys_tx_pool;
 };
 
 static struct ut_dev_ctx* ut_active_ctx;
+static bool ut_dev_tx_cleanup_frees;
+
+/* the fake clock once a test starts it */
+static uint64_t ut_dev_tsc(struct mtl_main_impl* impl) {
+  return ut_clock_on() ? ut_clock_tick() : mt_get_tsc(impl);
+}
 
 static int ut_rte_eth_rx_queue_setup(uint16_t port_id, uint16_t rx_queue_id,
                                      uint16_t nb_rx_desc, unsigned int socket_id,
@@ -60,6 +91,8 @@ static int ut_rte_eth_dev_adjust_nb_rx_tx_desc(uint16_t port_id, uint16_t* nb_rx
                                                uint16_t* nb_tx_desc);
 static int ut_rte_eth_dev_get_supported_ptypes(uint16_t port_id, uint32_t ptype_mask,
                                                uint32_t* ptypes, int num);
+static int ut_rte_tm_capabilities_get(uint16_t port_id, struct rte_tm_capabilities* cap,
+                                      struct rte_tm_error* error);
 static int ut_rte_tm_node_add(uint16_t port_id, uint32_t node_id, uint32_t parent_node_id,
                               uint32_t priority, uint32_t weight, uint32_t level_id,
                               const struct rte_tm_node_params* params,
@@ -72,6 +105,7 @@ static int ut_rte_tm_shaper_profile_add(uint16_t port_id, uint32_t shaper_profil
 static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
                                       struct rte_tm_error* error);
 static int ut_mt_sch_mrg_uinit(struct mtl_main_impl* impl);
+static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
 
 #define rte_eth_rx_queue_setup ut_rte_eth_rx_queue_setup
 #define rte_eth_tx_queue_setup ut_rte_eth_tx_queue_setup
@@ -86,17 +120,30 @@ static int ut_mt_sch_mrg_uinit(struct mtl_main_impl* impl);
 #define rte_eth_dev_configure ut_rte_eth_dev_configure
 #define rte_eth_dev_adjust_nb_rx_tx_desc ut_rte_eth_dev_adjust_nb_rx_tx_desc
 #define rte_eth_dev_get_supported_ptypes ut_rte_eth_dev_get_supported_ptypes
+#define rte_tm_capabilities_get ut_rte_tm_capabilities_get
 #define rte_tm_node_add ut_rte_tm_node_add
 #define rte_tm_node_delete ut_rte_tm_node_delete
 #define rte_tm_shaper_profile_add ut_rte_tm_shaper_profile_add
 #define rte_tm_hierarchy_commit ut_rte_tm_hierarchy_commit
 #define mt_sch_mrg_uinit ut_mt_sch_mrg_uinit
+#define rte_spinlock_unlock ut_rte_spinlock_unlock
+#define rte_eth_tx_burst ut_eth_tx_burst
+#define rte_eth_tx_done_cleanup ut_eth_tx_done_cleanup
+#define mt_get_tsc ut_dev_tsc
+#define MT_DEV_TX_CLEANUP_FREES (ut_dev_tx_cleanup_frees)
+/* The pacing tests cover the iavf queue rate clear, which needs DPDK 26.07.91_mtl_. */
+#define MT_DEV_HAS_IAVF_TM_QOS_CHECK
 #include "dev/mt_dev.c"
+#undef mt_get_tsc
+#undef rte_eth_tx_done_cleanup
+#undef rte_eth_tx_burst
+#undef rte_spinlock_unlock
 #undef mt_sch_mrg_uinit
 #undef rte_tm_hierarchy_commit
 #undef rte_tm_shaper_profile_add
 #undef rte_tm_node_delete
 #undef rte_tm_node_add
+#undef rte_tm_capabilities_get
 #undef rte_eth_dev_get_supported_ptypes
 #undef rte_eth_dev_adjust_nb_rx_tx_desc
 #undef rte_eth_dev_configure
@@ -134,10 +181,10 @@ static int ut_rte_eth_tx_queue_setup(uint16_t port_id, uint16_t tx_queue_id,
                                      uint16_t nb_tx_desc, unsigned int socket_id,
                                      const struct rte_eth_txconf* tx_conf) {
   (void)port_id;
-  (void)tx_queue_id;
   (void)nb_tx_desc;
   (void)socket_id;
-  (void)tx_conf;
+  if (tx_queue_id < UT_DEV_TX_QUEUES)
+    ut_active_ctx->tx_free_thresh[tx_queue_id] = tx_conf->tx_free_thresh;
   ut_dev_record(UT_DEV_EVENT_TX_QUEUE_SETUP);
   return 0;
 }
@@ -235,46 +282,99 @@ static int ut_rte_eth_dev_get_supported_ptypes(uint16_t port_id, uint32_t ptype_
   return 0;
 }
 
+static int ut_rte_tm_capabilities_get(uint16_t port_id, struct rte_tm_capabilities* cap,
+                                      struct rte_tm_error* error) {
+  (void)port_id;
+  (void)cap;
+  (void)error;
+  ut_active_ctx->tm_call_count++;
+  return ut_active_ctx->fail_tm_capabilities_error;
+}
+
 static int ut_rte_tm_node_add(uint16_t port_id, uint32_t node_id, uint32_t parent_node_id,
                               uint32_t priority, uint32_t weight, uint32_t level_id,
                               const struct rte_tm_node_params* params,
                               struct rte_tm_error* error) {
+  ut_dev_ctx* ctx = ut_active_ctx;
+
   (void)port_id;
-  (void)node_id;
-  (void)parent_node_id;
   (void)priority;
   (void)weight;
   (void)level_id;
-  (void)params;
   (void)error;
+  ctx->tm_call_count++;
+  if (ctx->fail_tm_node_add_error) return ctx->fail_tm_node_add_error;
+  if (node_id < UT_DEV_TX_QUEUES &&
+      ++ctx->tm_queue_node_adds == ctx->fail_tm_queue_node_add_call)
+    return ctx->fail_tm_queue_node_add_error;
+  if (ctx->tm_node_count >= UT_DEV_TM_NODES_MAX) return -ENOSPC;
+  /* As in the real PMD: a duplicate id, a second root, or an unknown parent fails. */
+  bool is_root = parent_node_id == RTE_TM_NODE_ID_NULL;
+  bool root_found = false;
+  bool parent_found = false;
+  for (int i = 0; i < ctx->tm_node_count; i++) {
+    if (ctx->tm_nodes[i].node_id == node_id) return -EINVAL;
+    if (ctx->tm_nodes[i].parent_node_id == RTE_TM_NODE_ID_NULL) root_found = true;
+    if (ctx->tm_nodes[i].node_id == parent_node_id) parent_found = true;
+  }
+  if (is_root && root_found) return -EINVAL;
+  if (!is_root && !parent_found) return -EINVAL;
+  ctx->tm_nodes[ctx->tm_node_count].node_id = node_id;
+  ctx->tm_nodes[ctx->tm_node_count].parent_node_id = parent_node_id;
+  ctx->tm_nodes[ctx->tm_node_count].shaper_profile_id = params->shaper_profile_id;
+  ctx->tm_node_count++;
   return 0;
 }
 
 static int ut_rte_tm_node_delete(uint16_t port_id, uint32_t node_id,
                                  struct rte_tm_error* error) {
+  ut_dev_ctx* ctx = ut_active_ctx;
+
   (void)port_id;
-  (void)node_id;
   (void)error;
-  return 0;
+  ctx->tm_call_count++;
+  /* As in the real PMD: an unknown id fails. */
+  for (int i = 0; i < ctx->tm_node_count; i++) {
+    if (ctx->tm_nodes[i].node_id != node_id) continue;
+    ctx->tm_nodes[i] = ctx->tm_nodes[--ctx->tm_node_count];
+    return 0;
+  }
+  return -EINVAL;
 }
 
 static int ut_rte_tm_shaper_profile_add(uint16_t port_id, uint32_t shaper_profile_id,
                                         const struct rte_tm_shaper_params* profile,
                                         struct rte_tm_error* error) {
+  ut_dev_ctx* ctx = ut_active_ctx;
+
   (void)port_id;
-  (void)shaper_profile_id;
   (void)error;
-  ut_active_ctx->last_shaper_rate = profile->peak.rate;
+  ctx->tm_call_count++;
+  /* As in the real PMD: an id in use fails, even after the nodes using it are deleted. */
+  if (shaper_profile_id >= UT_DEV_TM_PROFILES_MAX || ctx->tm_profiles[shaper_profile_id])
+    return -EINVAL;
+  ctx->tm_profiles[shaper_profile_id] = true;
+  ctx->last_shaper_rate = profile->peak.rate;
   return 0;
 }
 
 static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
                                       struct rte_tm_error* error) {
+  ut_dev_ctx* ctx = ut_active_ctx;
+  int ret = ctx->fail_tm_commit_error;
+
   (void)port_id;
-  (void)clear_on_fail;
   (void)error;
   ut_dev_record(UT_DEV_EVENT_TX_RL_COMMIT);
-  return 0;
+  ctx->tm_call_count++;
+  ctx->tm_commit_count++;
+  ctx->fail_tm_commit_error = 0;
+  /* as iavf: a failed commit with clear_on_fail drops every node and profile */
+  if (ret && clear_on_fail) {
+    ctx->tm_node_count = 0;
+    memset(ctx->tm_profiles, 0, sizeof(ctx->tm_profiles));
+  }
+  return ret;
 }
 
 static int ut_mt_sch_mrg_uinit(struct mtl_main_impl* impl) {
@@ -300,14 +400,18 @@ ut_dev_ctx* ut_dev_create_ctx(void) {
   inf->nb_rx_desc = 128;
   inf->nb_tx_desc = 128;
   inf->rx_queues = &ctx->rx_queue;
-  inf->tx_queues = &ctx->tx_queue;
+  inf->tx_queues = &ctx->tx_queues[0];
+  for (int q = 0; q < UT_DEV_TX_QUEUES; q++) ctx->tx_queues[q].rl_shapers_mapping = -1;
   inf->rx_mbuf_pool = (struct rte_mempool*)(uintptr_t)1;
+  ut_dev_tx_cleanup_frees = RTE_VERSION >= RTE_VERSION_NUM(26, 7, 0, 0);
   ut_active_ctx = ctx;
   return ctx;
 }
 
 void ut_dev_destroy_ctx(ut_dev_ctx* ctx) {
   if (ut_active_ctx == ctx) ut_active_ctx = NULL;
+  dev_if_free_pad(&ctx->impl.inf[MTL_PORT_P]);
+  rte_mempool_free(ctx->sys_tx_pool);
   for (int i = 0; i < UT_DEV_EAL_ARGV_MAX; i++) free(ctx->eal_argv[i]);
   free(ctx->lcores);
   free(ctx);
@@ -325,6 +429,44 @@ void ut_dev_fail_timesync_read(ut_dev_ctx* ctx, int call, int error) {
 
 void ut_dev_fail_port_start(ut_dev_ctx* ctx, int error) {
   ctx->fail_port_start_error = error;
+}
+
+int ut_dev_set_tx_ring(ut_dev_ctx* ctx, uint16_t nb_tx_q, uint16_t nb_tx_desc,
+                       uint16_t tx_rs_thresh) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  if (nb_tx_q > UT_DEV_TX_QUEUES) return -EINVAL;
+  inf->nb_tx_q = nb_tx_q;
+  inf->nb_tx_desc = nb_tx_desc;
+  inf->dev_info.default_txconf.tx_rs_thresh = tx_rs_thresh;
+  return 0;
+}
+
+uint16_t ut_dev_tx_free_thresh(const ut_dev_ctx* ctx, uint16_t queue) {
+  return queue < UT_DEV_TX_QUEUES ? ctx->tx_free_thresh[queue] : 0;
+}
+
+uint16_t ut_dev_tx_reclaim_rs_thresh(ut_dev_ctx* ctx) {
+  return mt_if_tx_reclaim_rs_thresh(&ctx->impl, MTL_PORT_P);
+}
+
+bool ut_dev_init_tx_deep(ut_dev_ctx* ctx) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  inf->tx_deep = dev_tx_deep(inf);
+  return inf->tx_deep;
+}
+
+bool ut_dev_tx_deep(const ut_dev_ctx* ctx) {
+  return ctx->impl.inf[MTL_PORT_P].tx_deep;
+}
+
+void ut_dev_set_user_nb_tx_desc(ut_dev_ctx* ctx, uint16_t nb_tx_desc) {
+  ctx->impl.user_para.nb_tx_desc = nb_tx_desc;
+}
+
+void ut_dev_set_driver(ut_dev_ctx* ctx, const char* driver_name) {
+  parse_driver_info(driver_name, &ctx->impl.inf[MTL_PORT_P].drv_info);
 }
 
 void ut_dev_use_non_igc_driver(ut_dev_ctx* ctx) {
@@ -373,6 +515,33 @@ int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,
   return ret < 0 ? ret : inf->nb_rx_desc;
 }
 
+void ut_dev_set_tx_pacing(ut_dev_ctx* ctx, enum st21_tx_pacing_way pacing) {
+  ctx->impl.inf[MTL_PORT_P].tx_pacing_way = pacing;
+}
+
+int ut_dev_config_port_nb_tx_desc(ut_dev_ctx* ctx, uint16_t nb_tx_desc) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+  int ret;
+
+  ctx->impl.user_para.nb_tx_desc = nb_tx_desc;
+  ut_active_ctx = ctx;
+  ret = dev_config_port(inf);
+  return ret < 0 ? ret : inf->nb_tx_desc;
+}
+
+uint16_t ut_dev_nb_tx_desc(const ut_dev_ctx* ctx) {
+  return ctx->impl.inf[MTL_PORT_P].nb_tx_desc;
+}
+
+int ut_dev_config_rss_reta(ut_dev_ctx* ctx, uint16_t nb_rx_q, uint16_t reta_size) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  inf->nb_rx_q = nb_rx_q;
+  inf->dev_info.reta_size = reta_size;
+  ut_active_ctx = ctx;
+  return dev_config_rss_reta(inf);
+}
+
 int ut_dev_create_ports(ut_dev_ctx* ctx) {
   ut_active_ctx = ctx;
   return mt_dev_create(&ctx->impl);
@@ -386,7 +555,8 @@ void ut_dev_set_started_iavf_tx(ut_dev_ctx* ctx, bool rl_root_active,
   inf->drv_info.port_type = MT_PORT_VF;
   inf->status |= MT_IF_STAT_PORT_STARTED;
   inf->link_speed = RTE_ETH_SPEED_NUM_25G;
-  inf->tx_rl_root_active = rl_root_active;
+  /* Builds the non-leaf chain in the fake, so the reset finds the queue parent. */
+  if (rl_root_active) dev_rl_init_nonleaf_nodes(inf);
   inf->tx_pacing_way = pacing_way;
 }
 
@@ -487,4 +657,232 @@ void ut_dev_set_log_level(ut_dev_ctx* ctx, enum mtl_log_level level) {
 
 void ut_dev_enable_rxtx_simd_512(ut_dev_ctx* ctx) {
   ctx->impl.user_para.flags |= MTL_FLAG_RXTX_SIMD_512;
+}
+
+void ut_dev_use_sw_stats(ut_dev_ctx* ctx) {
+  ctx->impl.inf[MTL_PORT_P].dev_stats_sw = &ctx->sw_stats;
+}
+
+/* Holds stats_lock across a two-step update of user_stats_port, as a concurrent
+ * dev_inf_get_stat() would, with the lock held long enough to be observed. */
+static void* ut_dev_stats_writer(void* arg) {
+  ut_dev_ctx* ctx = arg;
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  rte_spinlock_lock(&inf->stats_lock);
+  inf->user_stats_port.rx_packets += UT_DEV_STATS_WRITER_STEP;
+  rte_atomic32_set(&ctx->stats_writer_holding, 1);
+  usleep(50 * 1000);
+  inf->user_stats_port.tx_packets += UT_DEV_STATS_WRITER_STEP;
+  rte_spinlock_unlock(&inf->stats_lock);
+  return NULL;
+}
+
+int ut_dev_stats_writer_start(ut_dev_ctx* ctx) {
+  rte_atomic32_set(&ctx->stats_writer_holding, 0);
+  int ret = pthread_create(&ctx->stats_writer, NULL, ut_dev_stats_writer, ctx);
+  if (ret) return -ret;
+  ctx->stats_writer_started = true;
+  while (!rte_atomic32_read(&ctx->stats_writer_holding)) rte_pause();
+  return 0;
+}
+
+int ut_dev_stats_writer_join(ut_dev_ctx* ctx) {
+  if (!ctx->stats_writer_started) return -ENOENT;
+  ctx->stats_writer_started = false;
+  return -pthread_join(ctx->stats_writer, NULL);
+}
+
+void ut_dev_stats_writer_start_on_unlock(ut_dev_ctx* ctx) {
+  ctx->stats_writer_on_unlock = true;
+}
+
+static void ut_rte_spinlock_unlock(rte_spinlock_t* sl) {
+  ut_dev_ctx* ctx = ut_active_ctx;
+
+  rte_spinlock_unlock(sl);
+  if (ctx && ctx->stats_writer_on_unlock && sl == &ctx->impl.inf[MTL_PORT_P].stats_lock) {
+    ctx->stats_writer_on_unlock = false;
+    ut_dev_stats_writer_start(ctx);
+  }
+}
+
+int ut_dev_get_port_stats(ut_dev_ctx* ctx, struct mtl_port_status* stats) {
+  return mtl_get_port_stats(&ctx->impl, MTL_PORT_P, stats);
+}
+
+int ut_dev_reset_port_stats(ut_dev_ctx* ctx) {
+  return mtl_reset_port_stats(&ctx->impl, MTL_PORT_P);
+}
+
+void ut_dev_user_port_stats(const ut_dev_ctx* ctx, struct mtl_port_status* stats) {
+  *stats = ctx->impl.inf[MTL_PORT_P].user_stats_port;
+}
+
+void ut_dev_set_pacing_port(ut_dev_ctx* ctx, bool iavf, enum st21_tx_pacing_way pacing) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  inf->drv_info.drv_type = iavf ? MT_DRV_IAVF : MT_DRV_ICE;
+  inf->drv_info.rl_type = MT_RL_TYPE_TM;
+  inf->nb_tx_q = UT_DEV_TX_QUEUES;
+  inf->tx_pacing_way = pacing;
+}
+
+void ut_dev_set_shared_txq(ut_dev_ctx* ctx) {
+  ctx->impl.user_para.flags |= MTL_FLAG_SHARED_TX_QUEUE;
+}
+
+void ut_dev_fail_tm_capabilities(ut_dev_ctx* ctx, int error) {
+  ctx->fail_tm_capabilities_error = error;
+}
+
+void ut_dev_fail_tm_node_add(ut_dev_ctx* ctx, int error) {
+  ctx->fail_tm_node_add_error = error;
+}
+
+void ut_dev_fail_tm_queue_node_add(ut_dev_ctx* ctx, int call, int error) {
+  ctx->fail_tm_queue_node_add_call = call;
+  ctx->fail_tm_queue_node_add_error = error;
+}
+
+void ut_dev_fail_tm_commit(ut_dev_ctx* ctx, int error) {
+  ctx->fail_tm_commit_error = error;
+}
+
+int ut_dev_init_pacing(ut_dev_ctx* ctx) {
+  ut_active_ctx = ctx;
+  return dev_if_init_pacing(&ctx->impl.inf[MTL_PORT_P]);
+}
+
+enum st21_tx_pacing_way ut_dev_pacing_way(const ut_dev_ctx* ctx) {
+  return ctx->impl.inf[MTL_PORT_P].tx_pacing_way;
+}
+
+int ut_dev_nb_tx_queues(void) {
+  return UT_DEV_TX_QUEUES;
+}
+
+int ut_dev_tm_call_count(const ut_dev_ctx* ctx) {
+  return ctx->tm_call_count;
+}
+
+int ut_dev_tm_commit_count(const ut_dev_ctx* ctx) {
+  return ctx->tm_commit_count;
+}
+
+int ut_dev_tm_node_count(const ut_dev_ctx* ctx) {
+  return ctx->tm_node_count;
+}
+
+struct ut_dev_tm_node ut_dev_tm_node_at(const ut_dev_ctx* ctx, int index) {
+  return ctx->tm_nodes[index];
+}
+
+uint32_t ut_dev_tm_shaper_none(void) {
+  return RTE_TM_SHAPER_PROFILE_ID_NONE;
+}
+
+int ut_dev_tx_queue_rl_mapping(const ut_dev_ctx* ctx, int queue) {
+  return ctx->tx_queues[queue].rl_shapers_mapping;
+}
+
+uint64_t ut_dev_tx_queue_bps(const ut_dev_ctx* ctx, int queue) {
+  return ctx->tx_queues[queue].bps;
+}
+
+void ut_dev_set_tx_cleanup_frees(ut_dev_ctx* ctx, bool frees) {
+  (void)ctx;
+  ut_dev_tx_cleanup_frees = frees;
+}
+
+int ut_dev_attach_tx_ring(ut_dev_ctx* ctx, uint16_t queue, struct ut_txr* ring) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  if (queue >= UT_DEV_TX_QUEUES || ut_eal_init() < 0) return -EIO;
+  struct mt_tx_queue* tx_queue = &ctx->tx_queues[queue];
+  if (!ctx->sys_tx_pool) {
+    ctx->sys_tx_pool = rte_pktmbuf_pool_create(
+        "ut_dev_sys_tx", 63, 0, 0, RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
+    if (!ctx->sys_tx_pool) return -ENOMEM;
+    inf->tx_mbuf_pool = ctx->sys_tx_pool;
+  }
+  if (!inf->pad) {
+    inf->pad = dev_if_build_pad(&ctx->impl, MTL_PORT_P);
+    if (!inf->pad) return -ENOMEM;
+  }
+  tx_queue->port = MTL_PORT_P;
+  tx_queue->port_id = inf->port_id;
+  tx_queue->queue_id = queue;
+  ut_eth_attach_tx_ring(inf->port_id, queue, ring);
+  return 0;
+}
+
+struct rte_mbuf* ut_dev_pad(ut_dev_ctx* ctx) {
+  return ctx->impl.inf[MTL_PORT_P].pad;
+}
+
+void ut_dev_free_pad(ut_dev_ctx* ctx) {
+  dev_if_free_pad(&ctx->impl.inf[MTL_PORT_P]);
+}
+
+uint16_t ut_dev_tx_pkt_check(ut_dev_ctx* ctx, struct rte_mbuf** pkts, uint16_t nb_pkts) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+  return dev_tx_pkt_check(inf->port_id, 0, pkts, nb_pkts, inf);
+}
+
+unsigned int ut_dev_sys_tx_pool_in_use(const ut_dev_ctx* ctx) {
+  return rte_mempool_in_use_count(ctx->sys_tx_pool);
+}
+
+void ut_dev_set_tx_queue_bps(ut_dev_ctx* ctx, uint16_t queue, uint64_t bps) {
+  ctx->tx_queues[queue].bps = bps;
+}
+
+void ut_dev_set_link_speed(ut_dev_ctx* ctx, uint32_t mbps) {
+  ctx->impl.inf[MTL_PORT_P].link_speed = mbps;
+}
+
+struct rte_mempool* ut_dev_tx_sys_pool(ut_dev_ctx* ctx) {
+  return ctx->sys_tx_pool;
+}
+
+int ut_dev_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue) {
+  ut_active_ctx = ctx;
+  return mt_dpdk_flush_tx_queue(&ctx->impl, &ctx->tx_queues[queue],
+                                ctx->impl.inf[MTL_PORT_P].pad, true);
+}
+
+int ut_dev_recovery_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue) {
+  ut_active_ctx = ctx;
+  return mt_dpdk_flush_tx_queue(&ctx->impl, &ctx->tx_queues[queue],
+                                ctx->impl.inf[MTL_PORT_P].pad, false);
+}
+
+int ut_dev_tx_done_cleanup(ut_dev_ctx* ctx, uint16_t queue) {
+  ut_active_ctx = ctx;
+  return mt_dev_tx_done_cleanup(&ctx->impl, &ctx->tx_queues[queue]);
+}
+
+unsigned int ut_dev_tx_sys_pool_elements(ut_dev_ctx* ctx, uint16_t nb_tx_q,
+                                         uint16_t nb_tx_desc, bool mono) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  inf->nb_tx_q = nb_tx_q;
+  inf->nb_tx_desc = nb_tx_desc;
+  inf->tx_deep = nb_tx_desc == MT_DEV_TX_DESC_DEEP;
+  if (mono)
+    ctx->impl.user_para.flags |= MTL_FLAG_TX_MONO_POOL;
+  else
+    ctx->impl.user_para.flags &= ~MTL_FLAG_TX_MONO_POOL;
+  return dev_tx_sys_pool_elements(&ctx->impl, inf);
+}
+
+unsigned int ut_dev_mempool_size(ut_dev_ctx* ctx, unsigned int elements) {
+  if (ut_eal_init() < 0) return 0;
+  struct rte_mempool* mp = mt_mempool_create_by_ops(&ctx->impl, "ut_dev_size", elements,
+                                                    0, 0, 0, NULL, (int)rte_socket_id());
+  unsigned int size = mp ? mp->size : 0;
+
+  if (mp) mt_mempool_free(mp);
+  return size;
 }

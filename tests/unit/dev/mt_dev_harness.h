@@ -9,6 +9,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "common/ut_tx_ring.h"
 #include "mtl_api.h"
 
 #ifdef __cplusplus
@@ -27,12 +28,32 @@ enum ut_dev_event {
   UT_DEV_EVENT_TX_RL_COMMIT,
 };
 
+struct ut_dev_tm_node {
+  uint32_t node_id;
+  uint32_t parent_node_id;
+  uint32_t shaper_profile_id;
+};
+
 ut_dev_ctx* ut_dev_create_ctx(void);
 void ut_dev_destroy_ctx(ut_dev_ctx* ctx);
 void ut_dev_fail_timesync_enable(ut_dev_ctx* ctx, int call, int error);
 void ut_dev_fail_timesync_read(ut_dev_ctx* ctx, int call, int error);
 /** Injects the rte_eth_dev_start() return; 0 keeps the mocked start successful. */
 void ut_dev_fail_port_start(ut_dev_ctx* ctx, int error);
+/* nb_tx_q queues of nb_tx_desc, and the tx_rs_thresh the PMD reports; -EINVAL past 4 */
+int ut_dev_set_tx_ring(ut_dev_ctx* ctx, uint16_t nb_tx_q, uint16_t nb_tx_desc,
+                       uint16_t tx_rs_thresh);
+/* tx_free_thresh dev_start_port() set up the queue with, 0 for the PMD default */
+uint16_t ut_dev_tx_free_thresh(const ut_dev_ctx* ctx, uint16_t queue);
+uint16_t ut_dev_tx_reclaim_rs_thresh(ut_dev_ctx* ctx);
+/** Marks port P deep as dev_config_port() would, from its driver, pacing way and user
+ * params, without configuring it. Returns the flag. */
+bool ut_dev_init_tx_deep(ut_dev_ctx* ctx);
+bool ut_dev_tx_deep(const ut_dev_ctx* ctx);
+/** mtl_init_params.nb_tx_desc, 0 for none */
+void ut_dev_set_user_nb_tx_desc(ut_dev_ctx* ctx, uint16_t nb_tx_desc);
+/** Takes the drv info a real port with this ethdev driver name gets. */
+void ut_dev_set_driver(ut_dev_ctx* ctx, const char* driver_name);
 void ut_dev_use_non_igc_driver(ut_dev_ctx* ctx);
 void ut_dev_set_ptp_enabled(ut_dev_ctx* ctx, bool enabled);
 void ut_dev_set_port(ut_dev_ctx* ctx, enum mtl_port port, const char* bdf,
@@ -47,6 +68,14 @@ void ut_dev_set_started_iavf_tx(ut_dev_ctx* ctx, bool rl_root_active,
                                 enum st21_tx_pacing_way pacing_way);
 void ut_dev_set_port_stopped(ut_dev_ctx* ctx);
 int ut_dev_free_ports(ut_dev_ctx* ctx);
+/** The pacing way mtl_init_params asked of port P, as mt_dev_if_init() copies it. */
+void ut_dev_set_tx_pacing(ut_dev_ctx* ctx, enum st21_tx_pacing_way pacing);
+/** dev_config_port() of port P with a user nb_tx_desc, 0 for none: the TX ring size it
+ * chose, or its error. */
+int ut_dev_config_port_nb_tx_desc(ut_dev_ctx* ctx, uint16_t nb_tx_desc);
+uint16_t ut_dev_nb_tx_desc(const ut_dev_ctx* ctx);
+/* Runs dev_config_rss_reta() on a port with nb_rx_q rx queues and a reta of reta_size. */
+int ut_dev_config_rss_reta(ut_dev_ctx* ctx, uint16_t nb_rx_q, uint16_t reta_size);
 /* Runs dev_config_port() on an iavf (else ice) port with a user nb_rx_desc, the RX
  * timestamp offload on or off and rx_desc_lim.nb_max. Returns the RX ring size chosen. */
 int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,
@@ -75,12 +104,86 @@ void ut_dev_set_iova_mode(ut_dev_ctx* ctx, enum mtl_iova_mode mode);
 void ut_dev_set_log_level(ut_dev_ctx* ctx, enum mtl_log_level level);
 void ut_dev_enable_rxtx_simd_512(ut_dev_ctx* ctx);
 
+/* Pacing init. The rte_tm_* calls of mt_dev.c go to fakes that record each node add. */
+
+void ut_dev_set_pacing_port(ut_dev_ctx* ctx, bool iavf, enum st21_tx_pacing_way pacing);
+void ut_dev_set_shared_txq(ut_dev_ctx* ctx);
+/** Injects the rte_tm_capabilities_get() return; 0 keeps the port TM capable. */
+void ut_dev_fail_tm_capabilities(ut_dev_ctx* ctx, int error);
+/** Injects the rte_tm_node_add() return; 0 keeps the fake checking parent and id. */
+void ut_dev_fail_tm_node_add(ut_dev_ctx* ctx, int error);
+/** Fails the call-th TX queue node add (1-based) with error. */
+void ut_dev_fail_tm_queue_node_add(ut_dev_ctx* ctx, int call, int error);
+/** Fails the next rte_tm_hierarchy_commit() with error, clearing as iavf does. */
+void ut_dev_fail_tm_commit(ut_dev_ctx* ctx, int error);
+int ut_dev_init_pacing(ut_dev_ctx* ctx);
+enum st21_tx_pacing_way ut_dev_pacing_way(const ut_dev_ctx* ctx);
+int ut_dev_nb_tx_queues(void);
+/** Every rte_tm_* call, of any kind. */
+int ut_dev_tm_call_count(const ut_dev_ctx* ctx);
+int ut_dev_tm_commit_count(const ut_dev_ctx* ctx);
+int ut_dev_tm_node_count(const ut_dev_ctx* ctx);
+struct ut_dev_tm_node ut_dev_tm_node_at(const ut_dev_ctx* ctx, int index);
+/** RTE_TM_SHAPER_PROFILE_ID_NONE, so the tests need no DPDK header. */
+uint32_t ut_dev_tm_shaper_none(void);
+int ut_dev_tx_queue_rl_mapping(const ut_dev_ctx* ctx, int queue);
+uint64_t ut_dev_tx_queue_bps(const ut_dev_ctx* ctx, int queue);
+
 int ut_dev_event_count(const ut_dev_ctx* ctx);
 enum ut_dev_event ut_dev_event_at(const ut_dev_ctx* ctx, int index);
 bool ut_dev_port_started(const ut_dev_ctx* ctx);
 bool ut_dev_timesync_feature(const ut_dev_ctx* ctx);
 /** peak.rate, in bytes/s, of the last shaper profile added. */
 uint64_t ut_dev_last_shaper_rate(const ut_dev_ctx* ctx);
+
+/* Port stats. The writer thread holds the port's stats_lock while it adds
+ * UT_DEV_STATS_WRITER_STEP to user_stats_port rx_packets, sleeps 50 ms, then adds it to
+ * tx_packets, so a copy taken under the lock always sees the two counters equal. */
+#define UT_DEV_STATS_WRITER_STEP (100u)
+/** Feeds the stats from the zeroed software counters instead of rte_eth_stats_get(). */
+void ut_dev_use_sw_stats(ut_dev_ctx* ctx);
+/** Returns once the writer holds the lock mid-update. */
+int ut_dev_stats_writer_start(ut_dev_ctx* ctx);
+/** Returns -ENOENT if no writer was started. */
+int ut_dev_stats_writer_join(ut_dev_ctx* ctx);
+/** Starts the writer, as ut_dev_stats_writer_start(), right after mt_dev.c next
+ * releases the port's stats_lock. */
+void ut_dev_stats_writer_start_on_unlock(ut_dev_ctx* ctx);
+int ut_dev_get_port_stats(ut_dev_ctx* ctx, struct mtl_port_status* stats);
+int ut_dev_reset_port_stats(ut_dev_ctx* ctx);
+void ut_dev_user_port_stats(const ut_dev_ctx* ctx, struct mtl_port_status* stats);
+
+/* TX queue flush and done cleanup of port P, the queues backed by common/ut_tx_ring.h
+ * rings and timed by its fake clock. */
+
+/** MT_DEV_TX_CLEANUP_FREES: whether the iavf/ice cleanup frees mbufs, as DPDK 26.07
+ * does. Each ctx starts with the build's own. */
+void ut_dev_set_tx_cleanup_frees(ut_dev_ctx* ctx, bool frees);
+/** Queue queue of port P sends to ring. The port gets its pad from its sys TX pool, as
+ * mt_dev_if_init() builds it. */
+int ut_dev_attach_tx_ring(ut_dev_ctx* ctx, uint16_t queue, struct ut_txr* ring);
+struct rte_mbuf* ut_dev_pad(ut_dev_ctx* ctx);
+/** Frees the port pad as mt_dev_if_uinit() does. */
+void ut_dev_free_pad(ut_dev_ctx* ctx);
+/** The TX callback dev_tx_pkt_check() of queue 0 over pkts. */
+uint16_t ut_dev_tx_pkt_check(ut_dev_ctx* ctx, struct rte_mbuf** pkts, uint16_t nb_pkts);
+struct rte_mempool* ut_dev_tx_sys_pool(ut_dev_ctx* ctx);
+unsigned int ut_dev_sys_tx_pool_in_use(const ut_dev_ctx* ctx);
+void ut_dev_set_tx_queue_bps(ut_dev_ctx* ctx, uint16_t queue, uint64_t bps);
+void ut_dev_set_link_speed(ut_dev_ctx* ctx, uint32_t mbps);
+/** mt_dpdk_flush_tx_queue() of that queue with the port's pad. */
+int ut_dev_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue);
+/** The same flush for a TX recovery, which does without the per-pad loop. */
+int ut_dev_recovery_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue);
+int ut_dev_tx_done_cleanup(ut_dev_ctx* ctx, uint16_t queue);
+
+/** dev_tx_sys_pool_elements() of port P with nb_tx_q queues of nb_tx_desc, deep at
+ * MT_DEV_TX_DESC_DEEP, the TX mono pool on or off. */
+unsigned int ut_dev_tx_sys_pool_elements(ut_dev_ctx* ctx, uint16_t nb_tx_q,
+                                         uint16_t nb_tx_desc, bool mono);
+/** The mbufs mt_mempool_create_by_ops() gives a pool asked for elements, of no data
+ * room. */
+unsigned int ut_dev_mempool_size(ut_dev_ctx* ctx, unsigned int elements);
 
 #ifdef __cplusplus
 }

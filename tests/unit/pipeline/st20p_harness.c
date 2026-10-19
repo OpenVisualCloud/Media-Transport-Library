@@ -9,10 +9,10 @@
  * _corrupted) are about producer/consumer flow, not packet semantics,
  * so transport realism is not required.
  *
- * The pipeline is configured with derive=true so that the converter
- * path is bypassed and frame_ready takes the simple branch:
+ * By default the pipeline is configured with derive=true so that the
+ * converter path is bypassed and frame_ready takes the simple branch:
  *   framebuff->dst = framebuff->src; stat = ST20P_RX_FRAME_CONVERTED;
- * This is the path get_frame() consumes ST20P_RX_FRAME_CONVERTED from.
+ * After ut20p_ctx_set_internal_converter() it leaves frames READY instead.
  */
 
 #include <stdlib.h>
@@ -83,6 +83,7 @@ struct ut20p_ctx {
   struct st20p_rx_ctx pipeline;
   struct st20p_rx_frame* framebuffs;
   int framebuff_cnt;
+  bool blocking;
 };
 
 #include "pipeline/st20p_harness.h"
@@ -111,8 +112,7 @@ ut20p_ctx* ut20p_ctx_create(int framebuff_cnt) {
     ctx->framebuffs[i].stat = ST20P_RX_FRAME_FREE;
     ctx->framebuffs[i].idx = i;
     /* mirrors production init: put_frame() reads frame->priv to recover
-     * the owning st20p_rx_frame.  With derive=true frame_ready does
-     * `dst = src`, so setting src.priv is sufficient. */
+     * the owning st20p_rx_frame. */
     ctx->framebuffs[i].src.priv = &ctx->framebuffs[i];
     ctx->framebuffs[i].dst.priv = &ctx->framebuffs[i];
     /* convert_frame.priv lets ut20p_convert_frame_idx() recover the
@@ -142,8 +142,72 @@ ut20p_ctx* ut20p_ctx_create(int framebuff_cnt) {
 
 void ut20p_ctx_destroy(ut20p_ctx* ctx) {
   if (!ctx) return;
+  if (ctx->blocking) {
+    mt_pthread_mutex_destroy(&ctx->pipeline.block_wake_mutex);
+    mt_pthread_cond_destroy(&ctx->pipeline.block_wake_cond);
+  }
   free(ctx->framebuffs);
   free(ctx);
+}
+
+void ut20p_ctx_enable_blocking(ut20p_ctx* ctx, uint64_t timeout_ns) {
+  struct st20p_rx_ctx* p = &ctx->pipeline;
+  mt_pthread_mutex_init(&p->block_wake_mutex, NULL);
+  mt_pthread_cond_wait_init(&p->block_wake_cond);
+  p->block_timeout_ns = timeout_ns;
+  p->block_get = true;
+  ctx->blocking = true;
+}
+
+void ut20p_wake_block(ut20p_ctx* ctx) {
+  st20p_rx_wake_block(&ctx->pipeline);
+}
+
+void ut20p_notify_frame_available(ut20p_ctx* ctx) {
+  rx_st20p_notify_frame_available(&ctx->pipeline);
+}
+
+void ut20p_begin_destroy(ut20p_ctx* ctx) {
+  struct st20p_rx_ctx* p = &ctx->pipeline;
+  mt_handle_begin_destroy(&p->lc_destroying, &p->type, MT_ST20_HANDLE_PIPELINE_RX);
+  rx_st20p_block_wake(p);
+}
+
+static void (*ut20p_convert_hook)(void* arg);
+static void* ut20p_convert_hook_arg;
+
+void ut20p_set_convert_hook(void (*hook)(void* arg), void* arg) {
+  ut20p_convert_hook_arg = arg;
+  ut20p_convert_hook = hook;
+}
+
+void ut20p_lock_block_mutex(ut20p_ctx* ctx) {
+  mt_pthread_mutex_lock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut20p_unlock_block_mutex(ut20p_ctx* ctx) {
+  mt_pthread_mutex_unlock(&ctx->pipeline.block_wake_mutex);
+}
+
+void ut20p_post_wake_locked(ut20p_ctx* ctx) {
+  ctx->pipeline.block_wake_pending = true;
+  mt_pthread_cond_broadcast(&ctx->pipeline.block_wake_cond);
+}
+
+static int ut20p_stub_convert(struct st_frame* src, struct st_frame* dst) {
+  MTL_MAY_UNUSED(src);
+  MTL_MAY_UNUSED(dst);
+  if (ut20p_convert_hook) ut20p_convert_hook(ut20p_convert_hook_arg);
+  return 0;
+}
+
+static struct st_frame_converter ut20p_stub_converter = {
+    .convert_func = ut20p_stub_convert,
+};
+
+void ut20p_ctx_set_internal_converter(ut20p_ctx* ctx) {
+  ctx->pipeline.derive = false;
+  ctx->pipeline.internal_converter = &ut20p_stub_converter;
 }
 
 /* ── inject one frame via rx_st20p_frame_ready ────────────────────────── */
@@ -177,7 +241,13 @@ int ut20p_put_frame(ut20p_ctx* ctx, struct st_frame* frame) {
   return st20p_rx_put_frame(&ctx->pipeline, frame);
 }
 void ut20p_set_frame_ready(ut20p_ctx* ctx, int idx) {
-  __atomic_store_n(&ctx->framebuffs[idx].stat, ST20P_RX_FRAME_READY, __ATOMIC_RELEASE);
+  atomic_store_explicit(&ctx->framebuffs[idx].stat, ST20P_RX_FRAME_READY,
+                        memory_order_release);
+}
+
+void ut20p_set_frame_converted(ut20p_ctx* ctx, int idx) {
+  atomic_store_explicit(&ctx->framebuffs[idx].stat, ST20P_RX_FRAME_CONVERTED,
+                        memory_order_release);
 }
 
 struct st20_convert_frame_meta* ut20p_convert_get_frame(ut20p_ctx* ctx) {
@@ -234,4 +304,12 @@ int ut20p_get_session_stats(ut20p_ctx* ctx, struct st20_rx_user_stats* stats) {
 
 int ut20p_reset_session_stats(ut20p_ctx* ctx) {
   return st20p_rx_reset_session_stats(&ctx->pipeline);
+}
+
+st20p_rx_handle ut20p_handle(ut20p_ctx* ctx) {
+  return &ctx->pipeline;
+}
+
+void ut20p_force_destroying(ut20p_ctx* ctx) {
+  atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
 }

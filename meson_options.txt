@@ -7,6 +7,10 @@ option('enable_fuzzing', type: 'boolean', value: false,
 	description: 'enable libFuzzer harnesses for RX paths')
 option('enable_unit_tests', type: 'boolean', value: false,
 	description: 'build the tests/unit gtest suite; adds the subdir and defines no macro')
+option('enable_rx_video_pkt_prefetch', type: 'boolean', value: true,
+	description: 'enable/disable prefetch of the next RX video packet in the burst')
+option('enable_rx_video_nt_store', type: 'boolean', value: true,
+	description: 'enable/disable non-temporal stores for RX video frame copies')
 
 option('enable_tap', type: 'boolean', value: false, description: 'enable/disable Windows TAP')
 option('dpdk_root_dir', type: 'string', value: '..\dpdk', description: 'dpdk source code root dir, for Windows')

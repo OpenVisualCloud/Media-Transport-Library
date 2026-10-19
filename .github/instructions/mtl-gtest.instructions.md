@@ -34,8 +34,7 @@ applyTo: "tests/integration_tests/**,.github/scripts/gtest.sh"
 | `St20_rx*` | ST2110-20 raw RX | ~2 min |
 | `St22*` | ST2110-22 compressed video | ~1 min |
 | `St30*` | ST2110-30 audio | ~1 min |
-| `St40*` | ST2110-40 ancillary | ~30s |
-| `St41*` | ST2110-41 fast metadata | ~30s |
+| `St40*` | ST2110-40 ancillary, incl. the ST2110-41 fast metadata opt-in | ~30s |
 | `Misc*` | Miscellaneous / utility | ~30s |
 | `Sch*` | Scheduler tests | ~1 min |
 | `Dma*` | DMA engine tests (need --dma_dev) | ~1 min |
@@ -97,7 +96,8 @@ pass/fail.
 
 Strict pacing cases SKIP unless TX and RX are on different physical ports with a
 reachable PHC and NIC RX timestamps (FAIL with `NOCTX_REQUIRE_STRICT=1`, as in
-CI); `st30p_user_pacing` FAILs outside an isolated
+CI); `st20p_redundant_1080p59_s8_equal_vrx_margin` needs 4 ports, TX on one PF and RX
+on the other on both legs (fewer than 4 ports: FAIL); `st30p_user_pacing` FAILs outside an isolated
 cpuset partition (`run.sh` creates one via `tests/tools/isolate/isolate.sh`). Per-case oracles and
 tolerances: [tests/integration_tests/noctx/README.md](../../tests/integration_tests/noctx/README.md).
 
@@ -120,7 +120,7 @@ tolerances: [tests/integration_tests/noctx/README.md](../../tests/integration_te
 
 ## 4-Port / Redundancy Tests
 
-Tests named `*redundant*` need 4 ports. The test skips gracefully if only 2 ports are provided:
+KahawaiTest cases named `*redundant*` need 4 ports and skip gracefully if only 2 ports are provided (NoCtx redundant cases FAIL instead):
 ```text
 TestBody, need 4 ports for redundant test, skipping
 ```

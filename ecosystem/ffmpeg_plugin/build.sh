@@ -80,7 +80,6 @@ build_openh264() {
 	else
 		make -j "$(nproc)"
 		sudo make install
-		sudo ldconfig
 	fi
 	cd ../
 }
@@ -156,7 +155,6 @@ build_ffmpeg() {
 		./configure --enable-shared --disable-static --enable-pic --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl "${extra_config_flags[@]}"
 		make -j "$(nproc)"
 		sudo make install
-		sudo ldconfig
 	fi
 	popd
 	popd

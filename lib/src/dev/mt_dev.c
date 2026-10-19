@@ -648,14 +648,14 @@ static struct mt_rl_shaper* dev_rl_shaper_get(struct mt_interface* inf, uint64_t
   return dev_rl_shaper_add(inf, bps);
 }
 
-static int dev_init_ratelimit_all(struct mt_interface* inf) {
+/* bps 0 adds each queue without a shaper */
+static int dev_init_ratelimit_all(struct mt_interface* inf, uint64_t bps) {
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
   struct rte_tm_error error;
   struct rte_tm_node_params qp;
   struct mt_tx_queue* tx_queue;
-  struct mt_rl_shaper* shaper;
-  uint64_t bps = ST_DEFAULT_RL_BPS;
+  struct mt_rl_shaper* shaper = NULL;
   int ret;
 
   memset(&error, 0, sizeof(error));
@@ -663,13 +663,16 @@ static int dev_init_ratelimit_all(struct mt_interface* inf) {
   for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
     tx_queue = &inf->tx_queues[q];
 
-    shaper = dev_rl_shaper_get(inf, bps);
-    if (!shaper) {
-      err("%s(%d), rl shaper get fail for q %d\n", __func__, port, q);
-      return -EIO;
-    }
     memset(&qp, 0, sizeof(qp));
-    qp.shaper_profile_id = shaper->shaper_profile_id;
+    qp.shaper_profile_id = RTE_TM_SHAPER_PROFILE_ID_NONE;
+    if (bps) {
+      shaper = dev_rl_shaper_get(inf, bps);
+      if (!shaper) {
+        err("%s(%d), rl shaper get fail for q %d\n", __func__, port, q);
+        return -EIO;
+      }
+      qp.shaper_profile_id = shaper->shaper_profile_id;
+    }
     qp.leaf.cman = RTE_TM_CMAN_TAIL_DROP;
     qp.leaf.wred.wred_profile_id = RTE_TM_WRED_PROFILE_ID_NONE;
     if (inf->drv_info.drv_type == MT_DRV_IAVF) {
@@ -684,10 +687,14 @@ static int dev_init_ratelimit_all(struct mt_interface* inf) {
           mt_string_safe(error.message));
       return ret;
     }
-    tx_queue->rl_shapers_mapping = shaper->idx;
+    tx_queue->rl_shapers_mapping = shaper ? shaper->idx : -1;
+    tx_queue->rl_node = true;
     tx_queue->bps = bps;
-    info("%s(%d), q %d link to shaper id %d\n", __func__, port, q,
-         shaper->shaper_profile_id);
+    if (shaper)
+      info("%s(%d), q %d link to shaper id %d\n", __func__, port, q,
+           shaper->shaper_profile_id);
+    else
+      info("%s(%d), q %d link to no shaper\n", __func__, port, q);
   }
 
   ret = rte_tm_hierarchy_commit(port_id, 1, &error);
@@ -720,7 +727,7 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
   if (bps == tx_queue->bps) return 0;
 
   /* delete old queue node */
-  if (tx_queue->rl_shapers_mapping >= 0) {
+  if (tx_queue->rl_node) {
     ret = rte_tm_node_delete(port_id, queue, &error);
     if (ret < 0) {
       err("%s(%d), node %d delete fail %d(%s)\n", __func__, port, queue, ret,
@@ -728,6 +735,7 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
       return ret;
     }
     tx_queue->rl_shapers_mapping = -1;
+    tx_queue->rl_node = false;
   }
 
   if (bps) {
@@ -753,6 +761,7 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
       return ret;
     }
     tx_queue->rl_shapers_mapping = shaper->idx;
+    tx_queue->rl_node = true;
     info("%s(%d), q %d link to shaper id %d(%" PRIu64 ")\n", __func__, port, queue,
          shaper->shaper_profile_id, shaper->rl_bps);
   }
@@ -923,6 +932,11 @@ static int dev_config_rss_reta(struct mt_interface* inf) {
   struct rte_eth_rss_reta_entry64 entries[reta_group_size];
   int ret;
 
+  if (!inf->nb_rx_q) {
+    err("%s(%d), no rx queue for rss reta\n", __func__, port);
+    return -EINVAL;
+  }
+
   memset(entries, 0, sizeof(entries));
   for (int i = 0; i < reta_group_size; i++) {
     entries[i].mask = UINT64_MAX;
@@ -940,11 +954,32 @@ static int dev_config_rss_reta(struct mt_interface* inf) {
   return 0;
 }
 
+/* before DPDK 26.07 iavf and ice cleanup frees no mbufs, they wait for reuse */
+#ifndef MT_DEV_TX_CLEANUP_FREES
+#define MT_DEV_TX_CLEANUP_FREES (RTE_VERSION >= RTE_VERSION_NUM(26, 7, 0, 0))
+#endif
+
+/* a shaped iavf/ice port whose PMD frees each burst, on the default ring; set before
+ * pacing, so AUTO on tsc stays deep */
+static bool dev_tx_deep(struct mt_interface* inf) {
+  enum st21_tx_pacing_way pacing = inf->tx_pacing_way;
+  enum mt_driver_type drv = inf->drv_info.drv_type;
+  bool shaped =
+      pacing == ST21_TX_PACING_WAY_RL || pacing == ST21_TX_PACING_WAY_TSN ||
+      (pacing == ST21_TX_PACING_WAY_AUTO && inf->drv_info.rl_type == MT_RL_TYPE_TM);
+
+  return shaped && MT_DEV_TX_CLEANUP_FREES && (drv == MT_DRV_IAVF || drv == MT_DRV_ICE) &&
+         !mt_user_shared_txq(inf->parent, inf->port) &&
+         !mt_get_user_params(inf->parent)->nb_tx_desc;
+}
+
 static int dev_config_port(struct mt_interface* inf) {
   struct mtl_main_impl* impl = inf->parent;
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
-  uint16_t nb_rx_desc = MT_DEV_RX_DESC, nb_tx_desc = MT_DEV_TX_DESC;
+  inf->tx_deep = dev_tx_deep(inf);
+  uint16_t nb_rx_desc = MT_DEV_RX_DESC;
+  uint16_t nb_tx_desc = inf->tx_deep ? MT_DEV_TX_DESC_DEEP : MT_DEV_TX_DESC;
   int ret;
   struct mtl_init_params* p = mt_get_user_params(impl);
   uint16_t nb_rx_q = inf->nb_rx_q, nb_tx_q = inf->nb_tx_q;
@@ -1106,7 +1141,7 @@ static uint16_t dev_tx_pkt_check(uint16_t port, uint16_t queue, struct rte_mbuf*
   MTL_MAY_UNUSED(nb_pkts);
 
 #if MT_DEV_SIMULATE_MALICIOUS_PKT /* for recovery test */
-  if (port == 0 && queue > 0) {
+  if (port == 0 && queue > 0 && nb_pkts) {
     if (!inf->simulate_malicious_pkt_tsc)
       inf->simulate_malicious_pkt_tsc = mt_get_tsc(inf->parent);
 
@@ -1123,6 +1158,7 @@ static uint16_t dev_tx_pkt_check(uint16_t port, uint16_t queue, struct rte_mbuf*
     if (!dev_pkt_valid(inf, queue, pkts[i])) {
       /* should never happen, replace with dummy pkt */
       rte_pktmbuf_free(pkts[i]);
+      if (inf->tx_deep) rte_mbuf_refcnt_update(inf->pad, 1);
       pkts[i] = inf->pad;
     }
   }
@@ -1256,8 +1292,14 @@ static int dev_start_port(struct mt_interface* inf) {
     }
   }
 
+  /* iavf/ice scalar xmit (MULTI_SEGS) frees a done rs batch per burst, empty ones too,
+   * while fewer than tx_free_thresh are free: here while 2 batches are in use */
+  uint16_t tx_rs_thresh = inf->dev_info.default_txconf.tx_rs_thresh;
+  bool tx_reclaim = inf->tx_deep && tx_rs_thresh && nb_tx_desc >= 3 * tx_rs_thresh;
+  inf->tx_reclaim_rs_thresh = tx_reclaim ? tx_rs_thresh : 0;
   for (uint16_t q = 0; q < nb_tx_q; q++) {
     tx_port_conf = inf->dev_info.default_txconf;
+    if (tx_reclaim) tx_port_conf.tx_free_thresh = nb_tx_desc - 2 * tx_rs_thresh;
 #if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
     if (inf->feature & MT_IF_FEATURE_TX_OFFLOAD_SEND_ON_TIMESTAMP) {
       tx_port_conf.offloads |= RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP;
@@ -1317,7 +1359,8 @@ static int dev_start_port(struct mt_interface* inf) {
   }
   rte_eth_stats_reset(port_id); /* reset stats */
 
-  info("%s(%d), rx_defer %d\n", __func__, port, rx_deferred_start);
+  info("%s(%d), rx_defer %d tx_reclaim_rs_thresh %u\n", __func__, port, rx_deferred_start,
+       inf->tx_reclaim_rs_thresh);
   return 0;
 }
 
@@ -1352,6 +1395,19 @@ static int dev_if_uinit_rx_queues(struct mt_interface* inf) {
   inf->rx_queues = NULL;
 
   return 0;
+}
+
+static unsigned int dev_tx_sys_pool_elements(struct mtl_main_impl* impl,
+                                             struct mt_interface* inf) {
+  unsigned int elements = inf->nb_tx_desc + 1024;
+
+  if (mt_user_tx_mono_pool(impl)) {
+    /* append as tx queues, double as tx ring */
+    elements += inf->nb_tx_q * inf->nb_tx_desc * 2;
+    /* a deep port's queues free their mbufs into the cache of each scheduler */
+    if (inf->tx_deep) elements += MT_MAX_SCH_NUM * MT_MBUF_CACHE_SLACK;
+  }
+  return elements;
 }
 
 static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface* inf) {
@@ -1474,7 +1530,7 @@ static int dev_if_init_tx_queues(struct mt_interface* inf) {
 }
 
 /* detect pacing */
-static int dev_if_init_pacing(struct mt_interface* inf) {
+static int dev_if_select_pacing(struct mt_interface* inf) {
   enum mtl_port port = inf->port;
   int ret;
   bool auto_detect = false;
@@ -1524,7 +1580,7 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
     }
     /* IAVF require all q config with RL */
     if (inf->drv_info.drv_type == MT_DRV_IAVF) {
-      ret = dev_init_ratelimit_all(inf);
+      ret = dev_init_ratelimit_all(inf, ST_DEFAULT_RL_BPS);
     } else {
       ret = dev_tx_queue_set_rl_rate(inf, 0, ST_DEFAULT_RL_BPS);
       if (ret >= 0) dev_tx_queue_set_rl_rate(inf, 0, 0);
@@ -1554,6 +1610,68 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
     }
   }
 
+  return 0;
+}
+
+/* MTL DPDK patch "net/iavf: reject TM ops without QoS capability", from 26.07.91 */
+#if RTE_VERSION >= RTE_VERSION_NUM(26, 7, 91, 0)
+#define MT_DEV_HAS_IAVF_TM_QOS_CHECK
+#endif
+
+#ifdef MT_DEV_HAS_IAVF_TM_QOS_CHECK
+/* deletes the nodes a failed rl init left; iavf may have cleared them already */
+static void dev_rl_drop_hierarchy(struct mt_interface* inf) {
+  uint16_t port_id = inf->port_id;
+  struct rte_tm_error error;
+
+  for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
+    rte_tm_node_delete(port_id, q, &error);
+    inf->tx_queues[q].rl_node = false;
+    inf->tx_queues[q].rl_shapers_mapping = -1;
+    inf->tx_queues[q].bps = 0;
+  }
+  for (int i = ST_TM_NONLEAF_NODES_NUM_VF - 1; i >= 0; i--)
+    rte_tm_node_delete(port_id, ST_ROOT_NODE_ID + i, &error);
+  inf->tx_rl_root_active = false;
+}
+#endif
+
+/* the PF replays old VF queue rates on queue enable; a no-shaper commit clears them */
+static void dev_if_clear_iavf_queue_rate(struct mt_interface* inf) {
+#ifdef MT_DEV_HAS_IAVF_TM_QOS_CHECK
+  enum mtl_port port = inf->port;
+  struct rte_tm_capabilities cap;
+  struct rte_tm_error error;
+  int ret;
+
+  if (inf->drv_info.drv_type != MT_DRV_IAVF ||
+      inf->tx_pacing_way == ST21_TX_PACING_WAY_RL)
+    return;
+  if (inf->tx_rl_root_active) dev_rl_drop_hierarchy(inf); /* auto rl init failed */
+
+  memset(&error, 0, sizeof(error));
+  /* probe only: -ENOTSUP means the PF gave no QoS offload */
+  ret = rte_tm_capabilities_get(inf->port_id, &cap, &error);
+  if (ret == -ENOTSUP) {
+    info("%s(%d), no tm on this vf, no queue rate to clear\n", __func__, port);
+    return;
+  }
+
+  ret = dev_rl_init_nonleaf_nodes(inf);
+  if (ret >= 0) ret = dev_init_ratelimit_all(inf, 0);
+  if (ret < 0)
+    warn("%s(%d), queue rate clear fail %d, a stale PF queue rate may cap tx\n", __func__,
+         port, ret);
+#else
+  MTL_MAY_UNUSED(inf);
+#endif
+}
+
+static int dev_if_init_pacing(struct mt_interface* inf) {
+  int ret = dev_if_select_pacing(inf);
+
+  if (ret < 0) return ret;
+  dev_if_clear_iavf_queue_rate(inf);
   return 0;
 }
 
@@ -1800,10 +1918,97 @@ uint16_t mt_dpdk_tx_burst_busy(struct mtl_main_impl* impl, struct mt_tx_queue* q
   return sent;
 }
 
+/* a send gives up after this with nothing accepted, plus one batch's drain time */
+#define MT_DEV_TX_FLUSH_STALL_NS (2 * (uint64_t)NS_PER_MS)
+/* the most bytes a pkt takes on the wire: 1518 and the preamble and gap */
+#define MT_DEV_TX_FLUSH_PKT_WIRE_BYTES (1538)
+#define MT_DEV_TX_FLUSH_POLL_NS (10 * (uint64_t)NS_PER_US)
+
+/* sends until all are queued, nothing went in for stall_ns, or the deadline passes */
+static uint16_t dev_flush_tx_send(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
+                                  struct rte_mbuf** pkts, uint16_t nb_pkts,
+                                  uint64_t stall_ns, uint64_t deadline) {
+  uint16_t sent = 0;
+  uint64_t progress = mt_get_tsc(impl);
+
+  while (sent < nb_pkts) {
+    uint64_t now = mt_get_tsc(impl);
+    if (now >= deadline || now - progress > stall_ns) break;
+    uint16_t tx = mt_dpdk_tx_burst(queue, &pkts[sent], nb_pkts - sent);
+    if (!tx) continue;
+    sent += tx;
+    progress = now;
+  }
+  return sent;
+}
+
+/* the PMD frees done batches in order, one a burst while 2 are in use: the mark, a copy
+ * of pad with 2 batches of pads behind it, is freed after every mbuf queued before it */
+static int dev_flush_tx_eager(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
+                              struct rte_mbuf* pad) {
+  enum mtl_port port = queue->port;
+  struct mt_interface* inf = mt_if(impl, port);
+  uint16_t rs = inf->tx_reclaim_rs_thresh;
+  uint16_t pads_left = 2 * rs;
+  struct rte_mbuf* pads[32];
+  uint64_t bps = queue->bps;
+  uint64_t stall_ns = MT_DEV_TX_FLUSH_STALL_NS;
+  uint64_t deadline = mt_get_tsc(impl) + MT_DEV_TX_FLUSH_STALL_NS;
+  uint64_t last_poll = 0;
+
+  if (!bps) bps = (uint64_t)inf->link_speed * 1000 * 1000 / 8;
+  if (bps) {
+    stall_ns += (uint64_t)rs * MT_DEV_TX_FLUSH_PKT_WIRE_BYTES * NS_PER_S / bps;
+    deadline +=
+        (uint64_t)inf->nb_tx_desc * MT_DEV_TX_FLUSH_PKT_WIRE_BYTES * NS_PER_S / bps;
+  }
+
+  struct rte_mbuf* mark =
+      rte_pktmbuf_copy(pad, mt_sys_tx_mempool(impl, port), 0, UINT32_MAX);
+  if (!mark) return -ENOMEM;
+  rte_mbuf_refcnt_update(mark, 1); /* the PMD's */
+  if (!dev_flush_tx_send(impl, queue, &mark, 1, stall_ns, deadline)) {
+    rte_mbuf_refcnt_update(mark, -1);
+    rte_pktmbuf_free(mark);
+    return -EBUSY;
+  }
+  while (pads_left) {
+    uint16_t n = RTE_MIN(pads_left, (uint16_t)RTE_DIM(pads));
+    for (uint16_t i = 0; i < n; i++) pads[i] = pad;
+    rte_mbuf_refcnt_update(pad, (int16_t)n);
+    uint16_t sent = dev_flush_tx_send(impl, queue, pads, n, stall_ns, deadline);
+    if (sent < n) {
+      rte_mbuf_refcnt_update(pad, (int16_t)(sent - n));
+      break;
+    }
+    pads_left -= n;
+  }
+
+  while (rte_mbuf_refcnt_read(mark) > 1) {
+    uint64_t now = mt_get_tsc(impl);
+    if (now >= deadline) break;
+    if (now - last_poll < MT_DEV_TX_FLUSH_POLL_NS) {
+      rte_pause();
+      continue;
+    }
+    last_poll = now;
+    mt_dpdk_tx_burst(queue, NULL, 0);
+  }
+  int ret = rte_mbuf_refcnt_read(mark) > 1 ? -EBUSY : 0;
+  rte_pktmbuf_free(mark);
+  if (ret < 0) warn("%s(%d), the queue did not drain in time\n", __func__, port);
+  return ret;
+}
+
 int mt_dpdk_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
-                           struct rte_mbuf* pad) {
+                           struct rte_mbuf* pad, bool lazy_fallback) {
   enum mtl_port port = queue->port;
   uint16_t queue_id = queue->queue_id;
+
+  if (mt_if_tx_reclaim_rs_thresh(impl, port)) {
+    int ret = dev_flush_tx_eager(impl, queue, pad);
+    if (ret != -ENOMEM || !lazy_fallback) return ret;
+  }
 
   /* use double to make sure all the fifo are burst out to clean all mbufs in the pool */
   int burst_pkts = mt_if_nb_tx_burst(impl, port) * 2;
@@ -1820,11 +2025,14 @@ int mt_dpdk_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue
 }
 
 int mt_dev_tx_done_cleanup(struct mtl_main_impl* impl, struct mt_tx_queue* queue) {
-  uint16_t port_id = queue->port_id;
-  uint16_t queue_id = queue->queue_id;
-  MTL_MAY_UNUSED(impl);
+  enum mtl_port port = queue->port;
 
-  return rte_eth_tx_done_cleanup(port_id, queue_id, 0);
+  if (!mt_if_tx_deep(impl, port))
+    return rte_eth_tx_done_cleanup(queue->port_id, queue->queue_id, 0);
+  /* its done cleanup frees the batches the xmit cleanup freed again: push them out */
+  struct rte_mbuf* pad = mt_get_pad(impl, port);
+  if (!mt_if_tx_reclaim_rs_thresh(impl, port) || !pad) return -ENOTSUP;
+  return dev_flush_tx_eager(impl, queue, pad);
 }
 
 int mt_dev_put_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue) {
@@ -2200,6 +2408,23 @@ int mt_dev_uinit(struct mtl_init_params* p) {
   return 0;
 }
 
+/* a deep port's flushes send it from any thread: a ref of its own keeps
+ * rte_mbuf_refcnt_update() atomic */
+static struct rte_mbuf* dev_if_build_pad(struct mtl_main_impl* impl, enum mtl_port port) {
+  struct rte_mbuf* pad =
+      mt_build_pad(impl, mt_sys_tx_mempool(impl, port), port, RTE_ETHER_TYPE_IPV4, 1024);
+
+  if (pad && mt_if(impl, port)->tx_deep) rte_mbuf_refcnt_update(pad, 1);
+  return pad;
+}
+
+static void dev_if_free_pad(struct mt_interface* inf) {
+  if (!inf->pad) return;
+  if (inf->tx_deep) rte_pktmbuf_free(inf->pad); /* its own ref */
+  rte_pktmbuf_free(inf->pad);
+  inf->pad = NULL;
+}
+
 int mt_dev_if_uinit(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl), ret;
   struct mt_interface* inf;
@@ -2211,10 +2436,7 @@ int mt_dev_if_uinit(struct mtl_main_impl* impl) {
       mt_dev_xdp_uinit(inf);
     }
 
-    if (inf->pad) {
-      rte_pktmbuf_free(inf->pad);
-      inf->pad = NULL;
-    }
+    dev_if_free_pad(inf);
 
     dev_if_uinit_tx_queues(inf);
     dev_if_uinit_rx_queues(inf);
@@ -2508,11 +2730,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     }
 
     /* Create default mempool in memory to hold the system tx mbufs */
-    mbuf_elements = inf->nb_tx_desc + 1024;
-    if (mt_user_tx_mono_pool(impl)) {
-      /* append as tx queues, double as tx ring */
-      mbuf_elements += inf->nb_tx_q * inf->nb_tx_desc * 2;
-    }
+    mbuf_elements = dev_tx_sys_pool_elements(impl, inf);
     snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%d_SYS", MT_TX_MEMPOOL_PREFIX, i);
     mbuf_pool = mt_mempool_create_common(impl, i, pool_name, mbuf_elements);
     if (!mbuf_pool) {
@@ -2532,8 +2750,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       return -ENOMEM;
     }
 
-    inf->pad =
-        mt_build_pad(impl, mt_sys_tx_mempool(impl, i), i, RTE_ETHER_TYPE_IPV4, 1024);
+    inf->pad = dev_if_build_pad(impl, i);
     if (!inf->pad) {
       err("%s(%d), pad alloc fail\n", __func__, i);
       mt_dev_if_uinit(impl);
@@ -2671,7 +2888,9 @@ int mtl_get_port_stats(mtl_handle mt, enum mtl_port port, struct mtl_port_status
 
   struct mt_interface* inf = mt_if(impl, port);
   dev_inf_get_stat(inf);
+  rte_spinlock_lock(&inf->stats_lock);
   memcpy(stats, &inf->user_stats_port, sizeof(*stats));
+  rte_spinlock_unlock(&inf->stats_lock);
 
   return 0;
 }
@@ -2689,7 +2908,9 @@ int mtl_reset_port_stats(mtl_handle mt, enum mtl_port port) {
   }
 
   struct mt_interface* inf = mt_if(impl, port);
+  rte_spinlock_lock(&inf->stats_lock);
   memset(&inf->user_stats_port, 0, sizeof(inf->user_stats_port));
+  rte_spinlock_unlock(&inf->stats_lock);
 
   return 0;
 }

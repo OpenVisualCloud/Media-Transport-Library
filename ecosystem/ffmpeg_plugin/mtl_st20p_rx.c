@@ -47,7 +47,7 @@ typedef struct MtlSt20pDemuxerContext {
   bool gpu_direct_enabled;
   int gpu_driver_index;
   int gpu_device_index;
-  void* gpu_context;
+  GpuContext gpu_context;
 #endif /* MTL_GPU_DIRECT_ENABLED */
 } MtlSt20pDemuxerContext;
 
@@ -70,7 +70,7 @@ static int mtl_st20p_read_close(AVFormatContext* ctx) {
 
 #ifdef MTL_GPU_DIRECT_ENABLED
   if (s->gpu_direct_enabled) {
-    free_gpu_context(s->gpu_context);
+    free_gpu_context(&s->gpu_context);
   }
 #endif /* MTL_GPU_DIRECT_ENABLED */
 
@@ -203,18 +203,15 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
 
 #ifdef MTL_GPU_DIRECT_ENABLED
   if (s->gpu_direct_enabled) {
-    /* create context for one gpu device */
-    GpuContext gpu_ctx = {0};
-
     /* print GPU device and driver IDs */
     print_gpu_drivers_and_devices();
 
-    ret = init_gpu_device(&gpu_ctx, s->gpu_driver_index, s->gpu_device_index);
+    ret = init_gpu_device(&s->gpu_context, s->gpu_driver_index, s->gpu_device_index);
     if (ret < 0) {
       err(ctx, "%s, app gpu initialization failed %d\n", __func__, ret);
       return -ENXIO;
     }
-    ops_rx.gpu_context = (void*)(&gpu_ctx);
+    ops_rx.gpu_context = &s->gpu_context;
     ops_rx.flags |= ST20P_RX_FLAG_USE_GPU_DIRECT_FRAMEBUFFERS;
   }
 #endif /* MTL_GPU_DIRECT_ENABLED */

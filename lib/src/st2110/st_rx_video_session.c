@@ -6,6 +6,11 @@
 
 #include <math.h>
 #include <rte_random.h>
+/* the streaming frame copy and the fences that order it, see rv_frame_memcpy */
+#if defined(__SSE2__) && defined(MTL_HAS_RX_VIDEO_NT_STORE)
+#define ST_RX_VIDEO_NT_STORE
+#include <emmintrin.h>
+#endif
 
 #include "../datapath/mt_queue.h"
 #include "../mt_handle_guard.h"
@@ -448,6 +453,12 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
         rv_free_frames(s);
         return -EIO;
       }
+      if (s->ops.ext_frames[i].buf_len < size) {
+        err("%s(%d), external framebuffer %d size %" PRIu64 " < %" PRIu64 "\n", __func__,
+            idx, i, s->ops.ext_frames[i].buf_len, size);
+        rv_free_frames(s);
+        return -EIO;
+      }
       st20_frame->addr = frame;
       st20_frame->iova = frame_iova;
       st20_frame->flags = ST_FT_FLAG_EXT;
@@ -849,6 +860,11 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
   struct st20_rx_frame_meta* meta = &slot->meta;
   struct st_frame_trans* frame = slot->frame;
 
+#ifdef ST_RX_VIDEO_NT_STORE
+  /* order the streaming stores in rv_frame_memcpy before the app reads them */
+  _mm_sfence();
+#endif
+
   if (s->enable_timing_parser) {
     for (int s_port = 0; s_port < ops->num_port; s_port++) {
       struct st_rv_tp_slot* tp_slot = &s->tp->slots[slot->idx][s_port];
@@ -990,6 +1006,11 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
   struct st22_rx_frame_meta* meta = &slot->st22_meta;
   struct st_frame_trans* frame = slot->frame;
 
+#ifdef ST_RX_VIDEO_NT_STORE
+  /* order the streaming stores in rv_frame_memcpy before the app reads them */
+  _mm_sfence();
+#endif
+
   meta->second_field = slot->second_field;
   if (ops->interlaced) {
     if (slot->second_field)
@@ -1054,8 +1075,11 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
     s->port_user_stats.stat_frames_incomplete++;
     /* record the miss pkts */
     float pd_sz_per_pkt = (float)s->st22_expect_size_per_frame / slot->pkts_received;
-    int miss_pkts =
-        (s->st22_expect_size_per_frame - meta->frame_total_size) / pd_sz_per_pkt;
+    int miss_pkts = 0;
+    /* no expected size yet or a bigger frame: the quotient does not fit an int */
+    if (s->st22_expect_size_per_frame > meta->frame_total_size)
+      miss_pkts = (int)((float)(s->st22_expect_size_per_frame - meta->frame_total_size) /
+                        pd_sz_per_pkt);
     if (miss_pkts < 0) miss_pkts = 0;
     dbg("%s(%d), miss pkts %d for current frame\n", __func__, s->idx, miss_pkts);
     if (miss_pkts > 0) s->port_user_stats.common.stat_pkts_unrecovered += miss_pkts;
@@ -1092,6 +1116,10 @@ static void rv_slice_notify(struct st_rx_video_session_impl* s,
   meta->second_field = slot->second_field;
   meta->frame_recv_size = rv_slot_get_frame_size(slot);
   meta->frame_recv_lines = slice_info->ready_slices * s->slice_lines;
+#ifdef ST_RX_VIDEO_NT_STORE
+  /* order the streaming stores in rv_frame_memcpy before the app reads them */
+  _mm_sfence();
+#endif
   ops->notify_slice_ready(ops->priv, slot->frame->addr, meta);
   s->port_user_stats.stat_slices_received++;
 }
@@ -1282,6 +1310,14 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
       s->port_user_stats.stat_slot_query_ext_fail++;
       err("%s(%d): ext frame size too small, required %" PRIu64 " but get %" PRIu64 "\n",
           __func__, s->idx, fb_size, ext_frame.buf_len);
+      rte_atomic32_dec(&frame_info->refcnt);
+      return NULL;
+    }
+    if (!ext_frame.buf_addr ||
+        (s->dma_dev && (ext_frame.buf_iova == 0 || ext_frame.buf_iova == MTL_BAD_IOVA))) {
+      s->port_user_stats.stat_slot_query_ext_fail++;
+      err("%s(%d): ext frame addr %p iova 0x%" PRIx64 " not usable\n", __func__, s->idx,
+          ext_frame.buf_addr, ext_frame.buf_iova);
       rte_atomic32_dec(&frame_info->refcnt);
       return NULL;
     }
@@ -1592,6 +1628,49 @@ static inline void rv_tp_pkt_handle(struct st_rx_video_session_impl* s,
   rv_tp_on_packet(s, s_port, tp_slot, tmstamp, pkt_ns, pkt_idx);
 }
 
+static inline void* rv_frame_memcpy(struct st_rx_video_session_impl* s, void* dst,
+                                    const void* src, size_t n) {
+#ifdef ST_RX_VIDEO_NT_STORE
+  /* The frame is write-only until the app consumes it, so an ordinary store
+   * spends a read-for-ownership on every destination line and evicts the rx
+   * mbufs that the following packets still have to read. Stream it instead;
+   * rv_frame_notify/rv_slice_notify/rv_st22_frame_notify fence before the app
+   * sees the frame. */
+  /* A fence orders only the stores of the core that runs it. With a pkt lcore
+   * the tasklet also copies into the frame when the pkt ring is full, and either
+   * thread may hand the frame over, so keep ordinary stores there: x86 makes
+   * those visible in order, which that handover relies on. A session moving to
+   * another scheduler mid-frame needs no fence: the tasklet releases the session
+   * spinlock after each poll, and that x86 unlock is a locked xchg, which drains
+   * the streaming stores of the old core. */
+  /* Stream only whole cache lines: a partial write-combining flush costs a
+   * read-modify-write at the memory controller, which is worse than the
+   * read-for-ownership it was meant to avoid. Payload offsets are 16B but
+   * rarely 64B aligned, so copy the head and tail normally. */
+  size_t head = (64 - ((uintptr_t)dst & 63)) & 63;
+  if (!s->has_pkt_lcore && n >= head + 256) {
+    size_t nt = (n - head) & ~(size_t)63;
+    uint8_t* d = (uint8_t*)dst + head;
+    const uint8_t* p = (const uint8_t*)src + head;
+    if (head) mt_memcpy(dst, src, head);
+    for (size_t i = 0; i < nt; i += 64) {
+      _mm_stream_si128((__m128i*)(d + i), _mm_loadu_si128((const __m128i*)(p + i)));
+      _mm_stream_si128((__m128i*)(d + i + 16),
+                       _mm_loadu_si128((const __m128i*)(p + i + 16)));
+      _mm_stream_si128((__m128i*)(d + i + 32),
+                       _mm_loadu_si128((const __m128i*)(p + i + 32)));
+      _mm_stream_si128((__m128i*)(d + i + 48),
+                       _mm_loadu_si128((const __m128i*)(p + i + 48)));
+    }
+    if (head + nt < n) mt_memcpy(d + nt, p + nt, n - head - nt);
+    return dst;
+  }
+#else
+  MTL_MAY_UNUSED(s);
+#endif
+  return mt_memcpy(dst, src, n);
+}
+
 static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf* mbuf,
                                enum mtl_session_port s_port, bool ctrl_thread) {
   struct st20_rx_ops* ops = &s->ops;
@@ -1826,9 +1905,9 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     /* copy the payload to target frame by dma or cpu */
     if (extra_rtp && s->st20_linesize > s->st20_bytes_in_line) {
       /* packet crosses line padding, copy two lines data */
-      mt_memcpy(slot->frame->addr + offset, payload, line1_length);
-      mt_memcpy(slot->frame->addr + (line1_number + 1) * s->st20_linesize,
-                payload + line1_length, payload_length - line1_length);
+      rv_frame_memcpy(s, slot->frame->addr + offset, payload, line1_length);
+      rv_frame_memcpy(s, slot->frame->addr + (line1_number + 1) * s->st20_linesize,
+                      payload + line1_length, payload_length - line1_length);
     } else if (dma_dev && (payload_length > ST_RX_VIDEO_DMA_MIN_SIZE) &&
                !mt_dma_full(dma_dev) &&
                !rv_frame_payload_cross_page(s, slot->frame, offset, payload_length)) {
@@ -1839,7 +1918,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
                         payload_iova, payload_length);
       if (ret < 0) {
         /* use cpu copy if dma copy fail */
-        mt_memcpy(slot->frame->addr + offset, payload, payload_length);
+        rv_frame_memcpy(s, slot->frame->addr + offset, payload, payload_length);
       } else {
         /* abstract dma dev takes ownership of this mbuf */
         st_rx_mbuf_set_offset(mbuf, offset);
@@ -1851,7 +1930,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
         s->port_user_stats.stat_pkts_dma++;
       }
     } else {
-      mt_memcpy(slot->frame->addr + offset, payload, payload_length);
+      rv_frame_memcpy(s, slot->frame->addr + offset, payload, payload_length);
     }
   }
 
@@ -2002,10 +2081,11 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
   return 0;
 }
 
+/* packed: read in place from the payload, which has no alignment */
 struct st22_box {
   uint32_t lbox; /* box lenght */
   char tbox[4];
-};
+} __attribute__((__packed__));
 
 /* Video Support Box and Color Specification Box */
 static int rv_parse_st22_boxes(struct st_rx_video_session_impl* s, void* boxes,
@@ -2245,7 +2325,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
     s->port_user_stats.stat_pkts_offset_dropped++;
     return -EIO;
   }
-  mt_memcpy(slot->frame->addr + offset, payload, payload_length);
+  rv_frame_memcpy(s, slot->frame->addr + offset, payload, payload_length);
   rv_slot_add_frame_size(slot, payload_length);
   s->port_user_stats.common.stat_pkts_received++;
   slot->pkts_received++;
@@ -2442,7 +2522,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   }
 
   if (need_copy) {
-    mt_memcpy(slot->frame->addr + offset, payload, payload_length);
+    rv_frame_memcpy(s, slot->frame->addr + offset, payload, payload_length);
   }
 
   rv_slot_add_frame_size(slot, payload_length);
@@ -2598,7 +2678,8 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
 
   /* try to request dma dev */
   if (st20_is_frame_type(type) && (ops->flags & ST20_RX_FLAG_DMA_OFFLOAD) &&
-      !s->st20_uframe_size && !rv_is_hdr_split(s)) {
+      !s->st20_uframe_size && !rv_is_hdr_split(s) &&
+      !rv_framebuffer_in_gpu_direct_vram(s)) {
     rv_init_dma(impl, s);
   }
 
@@ -2936,8 +3017,27 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   }
   if (!nb) return 0;
 
+#ifdef MTL_HAS_RX_VIDEO_PKT_PREFETCH
+  /* only a handler which copies the payload on the cpu out of this mbuf gains
+   * from warming up the line behind the header. a header split copies out of
+   * mbuf->next instead, and a dma session takes the payload on the device for
+   * every packet large enough to matter - it still copies the small, cross page
+   * and dma full ones on the cpu, but they are not worth a per packet test */
+  bool warm_payload = !s->dma_dev && ((s->pkt_handler == rv_handle_frame_pkt) ||
+                                      (s->pkt_handler == rv_handle_st22_pkt));
+#endif
+
   /* now dispatch the pkts to handler */
   for (uint16_t i = 0; i < nb; i++) {
+#ifdef MTL_HAS_RX_VIDEO_PKT_PREFETCH
+    if (i + 1 < nb) {
+      /* the handlers read the rtp header first, so warm up the line holding it,
+       * and the one behind it which holds the payload start on a 64 byte line */
+      const uint8_t* next_pkt = rte_pktmbuf_mtod(mbuf[i + 1], const uint8_t*);
+      rte_prefetch0(next_pkt);
+      if (warm_payload) rte_prefetch0(next_pkt + RTE_CACHE_LINE_SIZE);
+    }
+#endif
     if ((s->ops.flags & ST20_RX_FLAG_SIMULATE_PKT_LOSS) && rv_simulate_pkt_loss(s))
       continue;
     if (s->rtcp_rx[s_port]) {

@@ -18,11 +18,13 @@
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <climits>
 #include <cmath>
 #include <cstdint>
@@ -44,6 +46,50 @@ constexpr const char* kStrictTopology =
     "the RX port, and NIC RX timestamps delivered: ";
 constexpr int kPhcReadAttempts = 3;
 constexpr int kPtpMappingSamples = 4;
+constexpr int64_t kPhcFollowIntervalNs = 10 * static_cast<int64_t>(NS_PER_MS);
+constexpr int64_t kPhcFollowMaxSlopePpb = int64_t{100} * 1000;
+
+/* PhcFollowingClock::now() - CLOCK_MONOTONIC_RAW is base_offset_ns at base_mono_ns and
+ * changes by slope_ppb; a seqlock, so readers spin while the writer is mid-update. */
+struct PhcFollowingOffset {
+  std::atomic<uint32_t> seq{0};
+  std::atomic<uint64_t> base_mono_ns{0};
+  std::atomic<int64_t> base_offset_ns{0};
+  std::atomic<int64_t> slope_ppb{0};
+};
+PhcFollowingOffset g_phc_offset;
+
+int64_t phcOffsetAt(uint64_t mono_ns) {
+  uint32_t seq;
+  uint64_t base_mono_ns;
+  int64_t base_offset_ns, slope_ppb;
+  do {
+    seq = g_phc_offset.seq.load(std::memory_order_acquire);
+    base_mono_ns = g_phc_offset.base_mono_ns.load(std::memory_order_relaxed);
+    base_offset_ns = g_phc_offset.base_offset_ns.load(std::memory_order_relaxed);
+    slope_ppb = g_phc_offset.slope_ppb.load(std::memory_order_relaxed);
+    std::atomic_thread_fence(std::memory_order_acquire);
+  } while ((seq & 1) || seq != g_phc_offset.seq.load(std::memory_order_relaxed));
+  return base_offset_ns +
+         static_cast<int64_t>(mono_ns - base_mono_ns) * slope_ppb / (int64_t)NS_PER_S;
+}
+
+/* Only the follower thread writes, or the test thread while it does not run. */
+void setPhcOffset(uint64_t base_mono_ns, int64_t base_offset_ns, int64_t slope_ppb) {
+  const uint32_t seq = g_phc_offset.seq.load(std::memory_order_relaxed);
+  g_phc_offset.seq.store(seq + 1, std::memory_order_relaxed);
+  std::atomic_thread_fence(std::memory_order_release);
+  g_phc_offset.base_mono_ns.store(base_mono_ns, std::memory_order_relaxed);
+  g_phc_offset.base_offset_ns.store(base_offset_ns, std::memory_order_relaxed);
+  g_phc_offset.slope_ppb.store(slope_ppb, std::memory_order_relaxed);
+  g_phc_offset.seq.store(seq + 2, std::memory_order_release);
+}
+
+uint64_t monotonicRawNs() {
+  timespec mono;
+  (void)clock_gettime(CLOCK_MONOTONIC_RAW, &mono);
+  return static_cast<uint64_t>(mono.tv_sec) * NS_PER_S + mono.tv_nsec;
+}
 
 uint32_t expectedBpmPackets(const St20pHandler* handler) {
   const auto& ops = handler->sessionsOpsTx;
@@ -174,23 +220,12 @@ std::string readPhc(int fd, uint64_t* phc_ns, uint64_t* mono_ns,
          std::to_string(*uncertainty_ns) + "ns)";
 }
 
-/* Default pacing stamps RTP at frame TX start: k * frame + tr_offset - vrx * trs. */
-void expectRtpOnEpoch(const st_frame* frame, St20pHandler* handler, uint64_t* launch_ns) {
-  double tr_offset_ns = 0, trs_ns = 0;
-  uint32_t vrx_pkts = 0;
-  ASSERT_EQ(st20p_tx_get_pacing_params(handler->sessionsHandleTx, &tr_offset_ns, &trs_ns,
-                                       &vrx_pkts),
-            0);
-  const long double frame_ns =
-      static_cast<long double>(NS_PER_S) / st_frame_rate(handler->sessionsOpsTx.fps);
-  const long double offset_ns = tr_offset_ns - vrx_pkts * trs_ns;
-  const uint64_t rtp_tai = st10_media_clk_to_tai(mtl_ptp_read_time(handler->ctx->handle),
-                                                 frame->rtp_timestamp, VIDEO_CLOCK_HZ);
-  const long double k = std::round((rtp_tai - offset_ns) / frame_ns);
-  *launch_ns = static_cast<uint64_t>(k * frame_ns + offset_ns);
-  const uint32_t expected = st10_tai_to_media_clk(*launch_ns, VIDEO_CLOCK_HZ);
-  EXPECT_EQ(frame->rtp_timestamp, expected)
-      << "frame 0 RTP timestamp is not on an epoch boundary (nearest epoch " << k << ")";
+/* The RTP timestamp names the tick packet 0 was aimed at. */
+void expectRtpOnLaunch(uint64_t frame_idx, const st_frame* frame, uint64_t epoch,
+                       uint64_t launch_ns) {
+  EXPECT_EQ(frame->rtp_timestamp, st10_tai_to_media_clk(launch_ns, VIDEO_CLOCK_HZ))
+      << "frame " << frame_idx << " RTP timestamp is not the tick of epoch " << epoch
+      << "'s launch " << launch_ns << "ns";
 }
 
 void skipOrFailWithoutNicRxTimestamps(const char* port, uint64_t receive_timestamp) {
@@ -238,11 +273,30 @@ void expectPacingElapsed(uint64_t frame_idx, const RxTime& rx, const PacingAncho
       << u << "ns expected elapsed=" << expected_elapsed_ns << "ns";
 }
 
-/* Packet-0 launch and elapsed checks; the first frame checked becomes the anchor. */
+/* Packet 0 against the instant its RTP timestamp names, the launch bounds +-slack_ns. */
+void expectNearRtpTimestamp(uint64_t frame_idx, uint64_t receive_ptp_ns, uint32_t rtp,
+                            int64_t slack_ns, int64_t u, PacingErrorLog* log) {
+  const uint64_t rtp_ns = st10_media_clk_to_tai(receive_ptp_ns, rtp, VIDEO_CLOCK_HZ);
+  const int64_t rtp_error_ns = static_cast<int64_t>(receive_ptp_ns - rtp_ns);
+  log->rtp_error_ns.add(rtp_error_ns);
+
+  EXPECT_GE(rtp_error_ns - u, -kNoCtxPacingEarlyMaxNs - slack_ns)
+      << "frame " << frame_idx << ": packet 0 rtp_error=" << rtp_error_ns << "+-" << u
+      << "ns measured=" << receive_ptp_ns << "ns RTP " << rtp << " names " << rtp_ns
+      << "ns";
+  EXPECT_LE(rtp_error_ns + u, kNoCtxPacingLateMaxNs + slack_ns)
+      << "frame " << frame_idx << ": packet 0 rtp_error=" << rtp_error_ns << "+-" << u
+      << "ns measured=" << receive_ptp_ns << "ns RTP " << rtp << " names " << rtp_ns
+      << "ns";
+}
+
+/* Packet-0 launch, RTP and elapsed checks; the first frame checked becomes the anchor. */
 void expectPacing(uint64_t frame_idx, mtl_handle mt, const RxTime& rx,
-                  uint64_t expected_ns, PacingAnchor* anchor, PacingErrorLog* log) {
+                  uint64_t expected_ns, uint32_t rtp, int64_t rtp_slack_ns,
+                  PacingAnchor* anchor, PacingErrorLog* log) {
   const RxTime ptp = monotonicRawToPtp(mt, rx);
   expectPacingLaunch(frame_idx, ptp.ns, expected_ns, ptp.u_ns, log);
+  expectNearRtpTimestamp(frame_idx, ptp.ns, rtp, rtp_slack_ns, ptp.u_ns, log);
   if (!anchor->rx.ns) {
     *anchor = {rx, expected_ns};
     return;
@@ -250,6 +304,41 @@ void expectPacing(uint64_t frame_idx, mtl_handle mt, const RxTime& rx,
   expectPacingElapsed(frame_idx, rx, *anchor, expected_ns, log);
 }
 }  // namespace
+
+St20pFrameRate st20pFrameRate(enum st_fps fps) {
+  const double fps_rate = st_frame_rate(fps);
+  St20pFrameRate rate;
+  if (fps_rate <= 0) {
+    ADD_FAILURE() << "fps " << fps << " has no frame rate";
+    return rate;
+  }
+  rate.den = std::fabs(fps_rate - std::round(fps_rate)) < 1e-6 ? 1 : 1001;
+  rate.mul =
+      static_cast<uint64_t>(std::llround(fps_rate * static_cast<double>(rate.den)));
+  EXPECT_EQ(static_cast<double>(rate.mul) / static_cast<double>(rate.den), fps_rate)
+      << "fps " << fps << " is no x/1 or x/1001 rate";
+  return rate;
+}
+
+uint64_t st20pEpochTaiNs(const St20pFrameRate& rate, uint64_t epoch) {
+  return static_cast<uint64_t>(static_cast<unsigned __int128>(epoch) * NS_PER_S *
+                               rate.den / rate.mul);
+}
+
+uint64_t st20pNearestEpoch(const St20pFrameRate& rate, uint64_t t_ns) {
+  const unsigned __int128 period = static_cast<unsigned __int128>(NS_PER_S) * rate.den;
+  return static_cast<uint64_t>(
+      (static_cast<unsigned __int128>(2) * t_ns * rate.mul + period) / (2 * period));
+}
+
+uint64_t st20pRoundedLaunchNs(const St20pFrameRate& rate, uint64_t epoch,
+                              double tr_offset_ns, double trs_ns, uint32_t vrx_pkts) {
+  const long double start = static_cast<long double>(st20pEpochTaiNs(rate, epoch)) +
+                            tr_offset_ns - vrx_pkts * static_cast<long double>(trs_ns);
+  const uint64_t start_ns = start <= 0 ? 0 : static_cast<uint64_t>(start);
+  return st10_media_clk_to_tai(start_ns, st10_tai_to_media_clk(start_ns, VIDEO_CLOCK_HZ),
+                               VIDEO_CLOCK_HZ);
+}
 
 std::string strictPacingTopologyError(const char* tx_port, const char* rx_port) {
   const std::string tx_pf = physicalPort(tx_port);
@@ -273,6 +362,96 @@ std::string strictPacingTopologyError(const char* tx_port, const char* rx_port) 
 bool strictPacingRequired() {
   const char* required = getenv("NOCTX_REQUIRE_STRICT");
   return required && !strcmp(required, "1");
+}
+
+std::string sharedPhcError(const char* port_a, const char* port_b) {
+  const int a = openPortPhc(port_a), b = openPortPhc(port_b);
+  struct stat stat_a, stat_b;
+  const bool shared = a >= 0 && b >= 0 && !fstat(a, &stat_a) && !fstat(b, &stat_b) &&
+                      stat_a.st_rdev == stat_b.st_rdev;
+  if (a >= 0) close(a);
+  if (b >= 0) close(b);
+  if (shared) return "";
+  return std::string(kStrictTopology) + "RX " + port_a + " and RX " + port_b +
+         " must timestamp on one PHC";
+}
+
+PhcFollowingClock::~PhcFollowingClock() {
+  stop();
+  if (fd >= 0) close(fd);
+}
+
+std::string PhcFollowingClock::open(const char* port, int64_t ptp_minus_phc) {
+  ptp_minus_phc_ns = ptp_minus_phc;
+  fd = openPortPhc(port);
+  if (fd < 0) return std::string("no PHC found for ") + port;
+  uint64_t phc_ns, mono_ns, uncertainty_ns;
+  const std::string why = readPhc(fd, &phc_ns, &mono_ns, &uncertainty_ns);
+  if (!why.empty()) return std::string("cannot read the PHC of ") + port + ": " + why;
+  setPhcOffset(mono_ns, static_cast<int64_t>(phc_ns - mono_ns) + ptp_minus_phc_ns, 0);
+  return "";
+}
+
+void PhcFollowingClock::follow() {
+  follow_mono_ns = monotonicRawNs();
+  thread = std::thread(&PhcFollowingClock::run, this);
+}
+
+void PhcFollowingClock::stop() {
+  stopping.store(true, std::memory_order_relaxed);
+  if (!thread.joinable()) return;
+  thread.join();
+  stop_mono_ns = monotonicRawNs();
+  setPhcOffset(stop_mono_ns, phcOffsetAt(stop_mono_ns), 0);
+  (void)fprintf(
+      stderr,
+      "NoCtx PHC follower: %llu reads in %.1f s, %llu failed, lag max %llu ns, gap "
+      "max %.1f ms\n",
+      (unsigned long long)reads, (double)(stop_mono_ns - follow_mono_ns) / NS_PER_S,
+      (unsigned long long)failed_reads, (unsigned long long)max_lag_ns,
+      (double)max_gap_ns / NS_PER_MS);
+}
+
+uint64_t PhcFollowingClock::now(void* /*priv*/) {
+  const uint64_t mono_ns = monotonicRawNs();
+  return mono_ns + phcOffsetAt(mono_ns);
+}
+
+std::string PhcFollowingClock::healthError() const {
+  const uint64_t slots = (stop_mono_ns - follow_mono_ns) / kPhcFollowIntervalNs;
+  if (max_lag_ns <= kPhcFollowMaxLagNs && max_gap_ns <= kPhcFollowMaxGapNs &&
+      static_cast<double>(reads) >= kPhcFollowMinReadShare * static_cast<double>(slots))
+    return "";
+  return "MTL's PTP time did not follow the RX PHC: " + std::to_string(reads) +
+         " reads in " + std::to_string(slots) + " 10 ms slots, " +
+         std::to_string(failed_reads) + " failed, lag max " + std::to_string(max_lag_ns) +
+         " ns, gap max " + std::to_string(max_gap_ns) +
+         " ns; the PHC was stepped or drifts > 100 ppm, its reads failed, or the "
+         "follower thread was starved";
+}
+
+void PhcFollowingClock::run() {
+  const auto interval = std::chrono::nanoseconds(kPhcFollowIntervalNs);
+  auto next = std::chrono::steady_clock::now();
+  while (!stopping.load(std::memory_order_relaxed)) {
+    next = std::max(next + interval, std::chrono::steady_clock::now());
+    std::this_thread::sleep_until(next);
+    uint64_t phc_ns, mono_ns, uncertainty_ns;
+    if (!readPhc(fd, &phc_ns, &mono_ns, &uncertainty_ns).empty()) {
+      failed_reads++;
+      continue;
+    }
+    if (last_read_mono_ns) max_gap_ns = std::max(max_gap_ns, mono_ns - last_read_mono_ns);
+    last_read_mono_ns = mono_ns;
+    reads++;
+    const int64_t offset = phcOffsetAt(mono_ns);
+    const int64_t lag =
+        static_cast<int64_t>(phc_ns - mono_ns) + ptp_minus_phc_ns - offset;
+    max_lag_ns = std::max(max_lag_ns, static_cast<uint64_t>(std::llabs(lag)));
+    const int64_t max_lag = kPhcFollowMaxSlopePpb * kPhcFollowIntervalNs / NS_PER_S;
+    const int64_t slew = std::max(-max_lag, std::min(lag, max_lag));
+    setPhcOffset(mono_ns, offset, slew * (int64_t)NS_PER_S / kPhcFollowIntervalNs);
+  }
 }
 
 RxTime monotonicRawToPtp(mtl_handle mt, const RxTime& rx) {
@@ -302,11 +481,14 @@ PacingErrorLog::~PacingErrorLog() {
   if (!abs_error_ns.count) return;
   const PacingErrorSeries& a = abs_error_ns;
   const PacingErrorSeries& e = elapsed_error_ns;
+  const PacingErrorSeries& r = rtp_error_ns;
   fprintf(stderr,
           "NoCtx pacing: %llu frames, abs_error_ns min/avg/max %lld/%lld/%lld, "
+          "rtp_error_ns min/avg/max %lld/%lld/%lld, "
           "elapsed_error_ns min/avg/max %lld/%lld/%lld\n",
           (unsigned long long)a.count, (long long)a.min,
-          (long long)(a.sum / (int64_t)a.count), (long long)a.max,
+          (long long)(a.sum / (int64_t)a.count), (long long)a.max, (long long)r.min,
+          (long long)(r.sum / (int64_t)r.count), (long long)r.max,
           (long long)(e.count ? e.min : 0),
           (long long)(e.count ? e.sum / (int64_t)e.count : 0),
           (long long)(e.count ? e.max : 0));
@@ -381,34 +563,39 @@ bool RxPhcClock::receiveTimeMonotonicRaw(uint64_t frame_idx, uint64_t receive_ti
 
 St20pDefaultPacingOracle::St20pDefaultPacingOracle(St20pHandler* parentHandler)
     : FrameTestStrategy(parentHandler, false, true) {
-  if (parentHandler)
-    rxPhc.start(parentHandler->sessionsOpsRx.port.port[MTL_SESSION_PORT_P]);
+  if (!parentHandler) return;
+  rate = st20pFrameRate(parentHandler->sessionsOpsTx.fps);
+  rxPhc.start(parentHandler->sessionsOpsRx.port.port[MTL_SESSION_PORT_P]);
 }
 
 void St20pDefaultPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
   auto* f = static_cast<st_frame*>(frame);
   auto* st20pParent = static_cast<St20pHandler*>(parent);
-  uint64_t framebuffTime =
-      st10_tai_to_media_clk(st20pParent->nsFrameTime, VIDEO_CLOCK_HZ);
 
   expectCompletePrimaryFrame(idx_rx, f, st20pParent);
   expectRtpTimestamp(idx_rx, f);
-  if (idx_rx == 0) expectRtpOnEpoch(f, st20pParent, &firstLaunchNs);
-
-  if (lastTimestamp != 0) {
-    uint64_t diff = f->timestamp - lastTimestamp;
-    EXPECT_TRUE(diff == framebuffTime) << " idx_rx: " << idx_rx << " diff: " << diff;
+  if (idx_rx == 0) {
+    ASSERT_EQ(st20p_tx_get_pacing_params(st20pParent->sessionsHandleTx, &trOffsetNs,
+                                         &trsNs, &vrxPkts),
+              0);
+    const uint64_t rtp_ns = st10_media_clk_to_tai(
+        mtl_ptp_read_time(st20pParent->ctx->handle), f->rtp_timestamp, VIDEO_CLOCK_HZ);
+    const long double start = rtp_ns - (trOffsetNs - vrxPkts * (long double)trsNs);
+    firstEpoch = st20pNearestEpoch(rate, start <= 0 ? 0 : static_cast<uint64_t>(start));
   }
+  const uint64_t epoch = firstEpoch + idx_rx;
+  const uint64_t launch_ns =
+      st20pRoundedLaunchNs(rate, epoch, trOffsetNs, trsNs, vrxPkts);
+  expectRtpOnLaunch(idx_rx, f, epoch, launch_ns);
 
   RxTime rx;
   if (rxPhc.receiveTimeMonotonicRaw(
           idx_rx, f->receive_timestamp,
           st20pParent->sessionsOpsRx.port.port[MTL_SESSION_PORT_P],
           st20pParent->ctx->handle, &rx))
-    expectPacing(idx_rx, st20pParent->ctx->handle, rx,
-                 firstLaunchNs + idx_rx * st20pParent->nsFrameTime, &anchor, &pacingLog);
+    expectPacing(idx_rx, st20pParent->ctx->handle, rx, launch_ns, f->rtp_timestamp, 0,
+                 &anchor, &pacingLog);
 
-  lastTimestamp = f->timestamp;
   idx_rx++;
 }
 
@@ -450,21 +637,19 @@ void St20pUserPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_size
   verifyReceiveTiming(frame_idx, f, expected_transmit_time_ns);
   expectRtpTimestamp(frame_idx, f);
   verifyMediaClock(frame_idx, f->timestamp, expected_media_clk);
-  verifyTimestampStep(frame_idx, f->timestamp);
-
-  lastTimestamp = f->timestamp;
 }
 
 uint64_t St20pUserPacingOracle::plannedTimestampNs(uint64_t frame_idx) const {
-  uint64_t base = plannedTimestampBaseNs(frame_idx);
-  int64_t offset = frameTimeNs * offsetMultiplierForFrame(frame_idx);
-  int64_t adjusted = base + offset;
-  return adjusted < 0 ? 0 : (adjusted);
+  const int64_t base = static_cast<int64_t>(plannedTimestampBaseNs(frame_idx));
+  const double period_ns = static_cast<double>(NS_PER_S) * static_cast<double>(rate.den) /
+                           static_cast<double>(rate.mul);
+  const int64_t adjusted =
+      base + std::llround(period_ns * offsetMultiplierForFrame(frame_idx));
+  return adjusted < 0 ? 0 : adjusted;
 }
 
 uint64_t St20pUserPacingOracle::plannedTimestampBaseNs(uint64_t frame_idx) const {
-  int64_t base = startingTime + frame_idx * frameTimeNs;
-  return base < 0 ? 0 : base;
+  return startingTime + st20pEpochTaiNs(rate, frame_idx);
 }
 
 double St20pUserPacingOracle::offsetMultiplierForFrame(uint64_t frame_idx) const {
@@ -477,16 +662,13 @@ double St20pUserPacingOracle::offsetMultiplierForFrame(uint64_t frame_idx) const
 }
 
 uint64_t St20pUserPacingOracle::expectedTransmitTimeNs(uint64_t frame_idx) const {
-  /* snap the requested TAI to the epoch the transmitter will pick */
-  const double requested_ts = static_cast<double>(plannedTimestampNs(frame_idx));
-  const double snapped_epoch =
-      std::floor((requested_ts + frameTimeNs / 2.0) / frameTimeNs) * frameTimeNs;
+  return st20pRoundedLaunchNs(rate,
+                              st20pNearestEpoch(rate, plannedTimestampNs(frame_idx)),
+                              pacing_tr_offset_ns, pacing_trs_ns, pacing_vrx_pkts);
+}
 
-  const double pacing_adjustment =
-      pacing_tr_offset_ns - static_cast<double>(pacing_vrx_pkts) * pacing_trs_ns;
-
-  const double expected = snapped_epoch + pacing_adjustment;
-  return expected <= 0.0 ? 0 : static_cast<uint64_t>(expected);
+int64_t St20pUserPacingOracle::rtpSlackNs() const {
+  return 0;
 }
 
 void St20pUserPacingOracle::verifyReceiveTiming(uint64_t frame_idx, const st_frame* frame,
@@ -496,8 +678,8 @@ void St20pUserPacingOracle::verifyReceiveTiming(uint64_t frame_idx, const st_fra
   if (rxPhc.receiveTimeMonotonicRaw(frame_idx, frame->receive_timestamp,
                                     handler->sessionsOpsRx.port.port[MTL_SESSION_PORT_P],
                                     handler->ctx->handle, &rx))
-    expectPacing(frame_idx, handler->ctx->handle, rx, expected_transmit_time_ns, &anchor,
-                 &pacingLog);
+    expectPacing(frame_idx, handler->ctx->handle, rx, expected_transmit_time_ns,
+                 frame->rtp_timestamp, rtpSlackNs(), &anchor, &pacingLog);
 }
 
 void St20pUserPacingOracle::verifyMediaClock(uint64_t frame_idx,
@@ -508,49 +690,17 @@ void St20pUserPacingOracle::verifyMediaClock(uint64_t frame_idx,
       << " received timestamp: " << timestamp_media_clk;
 }
 
-void St20pUserPacingOracle::verifyTimestampStep(uint64_t frame_idx,
-                                                uint64_t current_timestamp) {
-  if (!lastTimestamp) {
-    return;
-  }
-
-  double current_target = plannedTimestampBaseNs(frame_idx);
-  double previous_target = plannedTimestampBaseNs(frame_idx ? frame_idx - 1 : 0);
-  double expected_step_ns = current_target - previous_target;
-  if (expected_step_ns < 0.0) {
-    expected_step_ns = 0.0;
-  }
-
-  uint64_t expected_step_input = static_cast<uint64_t>(expected_step_ns);
-  const uint64_t expected_step =
-      st10_tai_to_media_clk(expected_step_input, VIDEO_CLOCK_HZ);
-  const uint64_t diff = current_timestamp - lastTimestamp;
-  EXPECT_EQ(diff, expected_step) << " idx_rx: " << frame_idx << " diff: " << diff;
-}
-
 void St20pUserPacingOracle::initializeTiming(St20pHandler* handler) {
   if (!handler) {
     throw std::invalid_argument("St20pUserPacingOracle expects a valid handler");
   }
 
-  frameTimeNs = handler->nsFrameTime;
-
-  if (!frameTimeNs) {
-    double framerate = st_frame_rate(handler->sessionsOpsTx.fps);
-    if (framerate > 0.0) {
-      long double frame_time = static_cast<long double>(NS_PER_S) / framerate;
-      frameTimeNs = static_cast<uint64_t>(frame_time + 0.5L);
-    }
-  }
-
-  if (!frameTimeNs) {
-    frameTimeNs = NS_PER_S / 25;
-  }
-
+  rate = st20pFrameRate(handler->sessionsOpsTx.fps);
   /* The fake PTP clock starts at init, so plan from now rather than from zero. */
-  const uint64_t frame_ns = static_cast<uint64_t>(frameTimeNs);
-  const uint64_t now = mtl_ptp_read_time(handler->ctx->handle);
-  startingTime = (now + kSt20pUserPacingLeadNs + frame_ns - 1) / frame_ns * frame_ns;
+  const uint64_t lead = mtl_ptp_read_time(handler->ctx->handle) + kSt20pUserPacingLeadNs;
+  uint64_t epoch = st20pNearestEpoch(rate, lead);
+  if (st20pEpochTaiNs(rate, epoch) < lead) epoch++;
+  startingTime = st20pEpochTaiNs(rate, epoch);
 }
 
 St20pRedundantStreamPlan::St20pRedundantStreamPlan(unsigned int latency,
@@ -573,19 +723,17 @@ uint64_t St20pExactUserPacingOracle::expectedTransmitTimeNs(uint64_t frame_idx) 
   return plannedTimestampNs(frame_idx);
 }
 
-void St20pExactUserPacingOracle::verifyTimestampStep(uint64_t /*frame_idx*/,
-                                                     uint64_t /*current_timestamp*/) {
-  /* Exact pacing uses user-provided deltas; no fixed increment enforced here. */
+int64_t St20pExactUserPacingOracle::rtpSlackNs() const {
+  return kNoCtxRtpHalfTickNs;
 }
 
 /* Frame grid: a first field takes an even slot, a second field an odd one. */
 uint64_t St20pInterlacedUserPacingOracle::expectedTransmitTimeNs(
     uint64_t frame_idx) const {
-  const uint64_t frame_ns = static_cast<uint64_t>(frameTimeNs);
-  const uint64_t epoch = (plannedTimestampNs(frame_idx) + frame_ns / 2) / frame_ns;
-  const bool second_field = frame_idx & 1;
-  const uint64_t expected = St20pUserPacingOracle::expectedTransmitTimeNs(frame_idx);
-  return (epoch & 1) == second_field ? expected : expected + frame_ns;
+  uint64_t epoch = st20pNearestEpoch(rate, plannedTimestampNs(frame_idx));
+  if ((epoch & 1) != (frame_idx & 1)) epoch++;
+  return st20pRoundedLaunchNs(rate, epoch, pacing_tr_offset_ns, pacing_trs_ns,
+                              pacing_vrx_pkts);
 }
 
 void St20pInterlacedUserPacingOracle::rxTestFrameModifier(void* frame,
@@ -595,4 +743,42 @@ void St20pInterlacedUserPacingOracle::rxTestFrameModifier(void* frame,
   EXPECT_EQ(f->second_field, (idx_rx & 1) != 0)
       << "field " << idx_rx << " has the wrong first/second-field identity";
   St20pUserPacingOracle::rxTestFrameModifier(frame, frame_size);
+}
+
+St20pVrxRecorder::St20pVrxRecorder(St20pHandler* parentHandler, int64_t ptp_minus_phc)
+    : FrameTestStrategy(parentHandler, false, true), ptp_minus_phc_ns(ptp_minus_phc) {
+}
+
+void St20pVrxRecorder::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
+  auto* f = static_cast<st_frame*>(frame);
+  auto* handler = static_cast<St20pHandler*>(parent);
+  if (!first_rx_ns) first_rx_ns = f->receive_timestamp;
+  const uint64_t t = f->receive_timestamp - first_rx_ns;
+  if (t < (uint64_t)kSt20pVrxWarmupS * NS_PER_S ||
+      t >= (uint64_t)(kSt20pVrxWarmupS + kSt20pVrxWindowS) * NS_PER_S)
+    return;
+  delivery_ns.push_back(static_cast<int64_t>(mtl_ptp_read_time(handler->ctx->handle) -
+                                             f->receive_timestamp));
+
+  /* The parser's epochs come from its packet times: on the PHC they lag the TX epochs,
+   * and so the RTP, by ptp_minus_phc_ns; software times are PTP times and do not. */
+  const double frame_ticks = VIDEO_CLOCK_HZ / st_frame_rate(handler->sessionsOpsRx.fps);
+  const double shift_ticks = (double)ptp_minus_phc_ns * VIDEO_CLOCK_HZ / NS_PER_S;
+  for (int port = 0; port < MTL_SESSION_PORT_MAX; port++) {
+    const st20_rx_tp_meta* tp = f->tp[port];
+    if (!tp || !tp->pkts_cnt) continue;
+    if (std::fabs(tp->rtp_offset) < frame_ticks) {
+      sw_rx_frames[port]++;
+      continue;
+    }
+    if (std::fabs(tp->rtp_offset - shift_ticks) >= frame_ticks / 2) {
+      off_band_frames[port]++;
+      continue;
+    }
+    vrx_min[port].push_back(tp->vrx_min);
+    const uint32_t missing =
+        f->pkts_total > tp->pkts_cnt ? f->pkts_total - tp->pkts_cnt : 0;
+    max_missing_pkts[port] = std::max(max_missing_pkts[port], missing);
+    if (missing > kSt20pVrxMaxLegLagPkts) partial_frames[port]++;
+  }
 }

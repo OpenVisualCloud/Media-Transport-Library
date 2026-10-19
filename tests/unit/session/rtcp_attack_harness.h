@@ -9,6 +9,7 @@
 #ifndef _UT_RTCP_ATTACK_HARNESS_H_
 #define _UT_RTCP_ATTACK_HARNESS_H_
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -64,6 +65,19 @@ uint16_t ut_rtk_sent_row_length(ut_rtk_ctx* ctx, unsigned int idx);
 
 /* Guard slots after the fifo data are untouched. */
 int ut_rtk_fifo_guard_intact(ut_rtk_ctx* ctx);
+
+/* The retransmits go to a common/ut_tx_ring.h ring of nb_tx_desc (rs 32, free_thresh
+ * 32), hung or draining a descriptor a ns, 1 us a burst call, instead of being freed at
+ * once. */
+int ut_rtk_set_queue(ut_rtk_ctx* ctx, int ring_mode, uint16_t nb_tx_desc, bool hung);
+/* Take n mbufs out of the copy pool, as other lcores' caches keep them. */
+int ut_rtk_hold_copies(ut_rtk_ctx* ctx, unsigned int n);
+
+/* mt_rtcp_tx_create() on a port of nb_tx_desc, deep at MT_DEV_TX_DESC_DEEP: the mbufs of
+ * its copy pool, 0 if it failed. */
+unsigned int ut_rtk_tx_pool_size(uint16_t nb_tx_desc, uint16_t buffer_size);
+/* the mbufs it asks that pool for, before the 2^q - 1 rounding */
+unsigned int ut_rtk_tx_pool_n(uint16_t nb_tx_desc, uint16_t buffer_size);
 
 /* Free mbufs of the copy pool now, and at create time. */
 unsigned int ut_rtk_pool_avail(ut_rtk_ctx* ctx);

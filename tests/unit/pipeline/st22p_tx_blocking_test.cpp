@@ -2,10 +2,10 @@
  * Copyright(c) 2026 Intel Corporation
  *
  * ST22p (compressed video) TX pipeline encoder-plugin blocking-wait wake-token
- * regression tests for tx_st22p_encode_get_block_wait(), the wait
+ * regression tests for the wait in tx_st22p_encode_get_frame(), which
  * st22_encoder_get_frame() takes under ST22_ENCODER_RESP_FLAG_BLOCK_GET. It is
- * woken by tx_st22p_encode_block_wake() from put_frame, from the encoder's
- * wake_block callback, and from the destroy hook.
+ * woken by a put_frame signal, and by tx_st22p_encode_block_wake() from the
+ * encoder's wake_block callback and from the destroy hook.
  *
  * The app thread that readies frames is not the encoder plugin thread, so a
  * wake can be signalled in the window after the plugin's claim fails but
@@ -14,18 +14,20 @@
  * wake and sleeps the entire timeout; a spurious wakeup makes the same waiter
  * give up early.
  *
- * The fix records the wake in a sticky encode_block_wake_pending flag,
- * re-checks it in a predicate loop, and clears it on the way out. Both halves
- * need pinning and neither case pins both: WakePostedBeforeWaitIsNotLost only
- * fails if the waker stops recording the token (flag = true),
- * OneWakeSatisfiesOnlyOneWait only fails if the waiter stops spending it
- * (flag = false).
+ * A frame cannot fall in that window: the plugin claims under the wake mutex
+ * on every wake, up to one deadline. The encoder's wake_block and destroy
+ * record the wake in a sticky encode_block_wake_pending flag, which the
+ * predicate loop re-checks and clears on the way out. Both halves need pinning
+ * and neither case pins both: WakePostedBeforeWaitIsNotLost only fails if the
+ * waker stops recording the token (flag = true), OneWakeSatisfiesOnlyOneWait
+ * only fails if the waiter stops spending it (flag = false).
  */
 
 #include <gtest/gtest.h>
 
 #include <cerrno>
 #include <chrono>
+#include <thread>
 
 #include "pipeline/st22p_tx_harness.h"
 
@@ -36,9 +38,11 @@ namespace {
  * the bug regresses. */
 constexpr uint64_t kLostWakeTimeoutNs = 2ULL * 1000 * 1000 * 1000; /* 2 s */
 
-/* The token-spending case pays this timeout in full on every run, so keep it
+/* The token-spending cases pay this timeout in full on every run, so keep it
  * small. */
 constexpr uint64_t kSpendTokenTimeoutNs = 400ULL * 1000 * 1000; /* 400 ms */
+
+constexpr auto kWakeDelay = std::chrono::milliseconds(80);
 
 }  // namespace
 
@@ -50,8 +54,8 @@ TEST(St22PipelineTxEncodeBlocking, WakePostedBeforeWaitIsNotLost) {
   ut22p_tx_ctx_enable_encode_blocking(ctx, kLostWakeTimeoutNs);
 
   /* Every framebuffer starts FREE, so the READY->IN_ENCODING claim fails and
-   * the first encode_get_frame() enters the wait. Posting the wake before that
-   * call is exactly the lost-wake window a real put_frame producer hits. */
+   * the first encode_get_frame() enters the wait. A wake_block posted before
+   * that call must still end it. */
   ut22p_tx_encode_wake_block(ctx);
 
   const auto t0 = std::chrono::steady_clock::now();
@@ -83,13 +87,134 @@ TEST(St22PipelineTxEncodeBlocking, OneWakeSatisfiesOnlyOneWait) {
   int ret = ut22p_tx_encode_get_frame(ctx);
   const auto elapsed = std::chrono::steady_clock::now() - t0;
 
-  /* The wait derives its deadline from CLOCK_MONOTONIC after t0 was read from
-   * the same clock, so the full timeout must elapse -- exact, not approximate.
-   * A spurious wakeup re-arms a fresh deadline, so this stays a lower bound. */
+  /* the deadline is read from CLOCK_MONOTONIC after t0, so the full timeout elapses */
   EXPECT_EQ(ret, -EBUSY);
   EXPECT_GE(elapsed, std::chrono::nanoseconds(kSpendTokenTimeoutNs))
       << "second encode_get_frame returned early: the first wait did not spend "
          "the token";
+
+  ut22p_tx_ctx_destroy(ctx);
+}
+
+/* A put_frame notify that no encoder get waits for must not end a later empty wait. */
+TEST(St22PipelineTxEncodeBlocking, StaleFrameWakeDoesNotSkipTheWait) {
+  ASSERT_EQ(ut22p_tx_init(), 0) << "EAL init failed";
+
+  ut22p_tx_ctx* ctx = ut22p_tx_ctx_create(2);
+  ASSERT_NE(ctx, nullptr);
+  ut22p_tx_ctx_set_encoder(ctx);
+  ut22p_tx_ctx_enable_encode_blocking(ctx, kSpendTokenTimeoutNs);
+
+  struct st_frame* frame = ut22p_tx_get_frame(ctx);
+  ASSERT_NE(frame, nullptr);
+  ASSERT_EQ(ut22p_tx_put_frame(ctx, frame), 0);
+  ASSERT_EQ(ut22p_tx_encode_get_frame(ctx), 0);
+
+  const auto t0 = std::chrono::steady_clock::now();
+  int ret = ut22p_tx_encode_get_frame(ctx);
+  const uint64_t elapsed_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                  std::chrono::steady_clock::now() - t0)
+                                  .count();
+
+  EXPECT_EQ(ret, -EBUSY);
+  EXPECT_GT(elapsed_ns, kSpendTokenTimeoutNs / 2)
+      << "the empty encode_get_frame returned without waiting for the timeout";
+
+  ut22p_tx_ctx_destroy(ctx);
+}
+
+TEST(St22PipelineTxEncodeBlocking, FrameReadyWakesABlockedGet) {
+  ASSERT_EQ(ut22p_tx_init(), 0) << "EAL init failed";
+
+  ut22p_tx_ctx* ctx = ut22p_tx_ctx_create(2);
+  ASSERT_NE(ctx, nullptr);
+  ut22p_tx_ctx_set_encoder(ctx);
+  ut22p_tx_ctx_enable_encode_blocking(ctx, kLostWakeTimeoutNs);
+
+  int put_ret = -1;
+  std::thread producer([&]() {
+    std::this_thread::sleep_for(kWakeDelay);
+    struct st_frame* frame = ut22p_tx_get_frame(ctx);
+    if (frame) put_ret = ut22p_tx_put_frame(ctx, frame);
+  });
+
+  const auto t0 = std::chrono::steady_clock::now();
+  int ret = ut22p_tx_encode_get_frame(ctx);
+  const uint64_t elapsed_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                  std::chrono::steady_clock::now() - t0)
+                                  .count();
+  producer.join();
+
+  EXPECT_EQ(put_ret, 0);
+  EXPECT_EQ(ret, 0) << "the frame put during the wait was not handed back";
+  EXPECT_LT(elapsed_ns, kLostWakeTimeoutNs / 2)
+      << "the put_frame notify did not wake the encode_get_frame";
+
+  ut22p_tx_ctx_destroy(ctx);
+}
+
+/* An encoder can call get before create sets ready; the first frame ends that wait. */
+TEST(St22PipelineTxEncodeBlocking, FirstFrameEndsANotReadyWait) {
+  ASSERT_EQ(ut22p_tx_init(), 0) << "EAL init failed";
+
+  ut22p_tx_ctx* ctx = ut22p_tx_ctx_create(2);
+  ASSERT_NE(ctx, nullptr);
+  ut22p_tx_ctx_set_encoder(ctx);
+  ut22p_tx_ctx_enable_encode_blocking(ctx, kLostWakeTimeoutNs);
+  ut22p_tx_set_ready(ctx, false);
+
+  int put_ret = -1;
+  std::thread producer([&]() {
+    std::this_thread::sleep_for(kWakeDelay);
+    ut22p_tx_set_ready(ctx, true);
+    struct st_frame* frame = ut22p_tx_get_frame(ctx);
+    if (frame) put_ret = ut22p_tx_put_frame(ctx, frame);
+  });
+
+  const auto t0 = std::chrono::steady_clock::now();
+  ut22p_tx_encode_get_frame(ctx);
+  const uint64_t elapsed_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                  std::chrono::steady_clock::now() - t0)
+                                  .count();
+  producer.join();
+
+  EXPECT_EQ(put_ret, 0);
+  EXPECT_LT(elapsed_ns, kLostWakeTimeoutNs / 2)
+      << "the first put_frame did not end the encode_get_frame that waited for ready";
+
+  ut22p_tx_ctx_destroy(ctx);
+}
+
+TEST(St22PipelineTxEncodeBlocking, DestroyEndsEveryBlockedGet) {
+  ASSERT_EQ(ut22p_tx_init(), 0) << "EAL init failed";
+
+  ut22p_tx_ctx* ctx = ut22p_tx_ctx_create(2);
+  ASSERT_NE(ctx, nullptr);
+  ut22p_tx_ctx_enable_blocking(ctx, kLostWakeTimeoutNs);
+  ut22p_tx_ctx_enable_encode_blocking(ctx, kLostWakeTimeoutNs);
+
+  int rets[2] = {0, 0};
+  uint64_t elapsed_ns[2] = {};
+  auto getter = [&](int i) {
+    const auto t0 = std::chrono::steady_clock::now();
+    rets[i] = ut22p_tx_encode_get_frame(ctx);
+    elapsed_ns[i] = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - t0)
+                        .count();
+  };
+  std::thread g0(getter, 0);
+  std::thread g1(getter, 1);
+
+  std::this_thread::sleep_for(kWakeDelay);
+  ut22p_tx_begin_destroy(ctx);
+  g0.join();
+  g1.join();
+
+  for (int i = 0; i < 2; i++) {
+    EXPECT_EQ(rets[i], -EBUSY) << "getter " << i;
+    EXPECT_LT(elapsed_ns[i], kLostWakeTimeoutNs / 2)
+        << "destroy did not end the wait of getter " << i;
+  }
 
   ut22p_tx_ctx_destroy(ctx);
 }

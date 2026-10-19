@@ -31,17 +31,12 @@ struct mt_backtrace_info {
 
 /* List of backtrace info */
 MT_TAILQ_HEAD(mt_backtrace_info_list, mt_backtrace_info);
-static struct mt_backtrace_info_list g_bt_head;
-static pthread_mutex_t g_bt_mutex;
+/* static init: mt_rte_*malloc may run before mtl_init(), e.g. in the unit tests */
+static struct mt_backtrace_info_list g_bt_head = TAILQ_HEAD_INITIALIZER(g_bt_head);
+static pthread_mutex_t g_bt_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* additional memleak check for mempool_create since dpdk asan not support this */
 static int g_mt_mempool_create_cnt;
-
-int mt_asan_init(void) {
-  mt_pthread_mutex_init(&g_bt_mutex, NULL);
-  MT_TAILQ_INIT(&g_bt_head);
-  return 0;
-}
 
 int mt_asan_check(void) {
   /* check if any not freed */
@@ -65,8 +60,6 @@ int mt_asan_check(void) {
   }
   if (leak_cnt)
     info("%s, \033[33mfound %d rte_malloc leak(s) in total\033[0m\n", __func__, leak_cnt);
-
-  mt_pthread_mutex_destroy(&g_bt_mutex);
 
   if (g_mt_mempool_create_cnt != 0) {
     err("%s, detect not free mempool, leak cnt %d\n", __func__, g_mt_mempool_create_cnt);
@@ -274,13 +267,17 @@ int mt_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* m
 }
 
 int mt_pacing_train_pad_result_add(struct mtl_main_impl* impl, enum mtl_port port,
-                                   uint64_t input_bps, float pad_interval) {
+                                   uint64_t input_bps, uint64_t queue_bps,
+                                   const struct mt_pacing_pad_mix* mix,
+                                   float pad_interval) {
   struct mt_pacing_train_result* ptr = &mt_if(impl, port)->pt_results[0];
 
   for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
     if (ptr[i].input_bps) continue;
     ptr[i].input_bps = input_bps;
     ptr[i].pacing_pad_interval = pad_interval;
+    ptr[i].pad_mix = *mix;
+    ptr[i].queue_bps = queue_bps;
     return 0;
   }
 
@@ -289,11 +286,16 @@ int mt_pacing_train_pad_result_add(struct mtl_main_impl* impl, enum mtl_port por
 }
 
 int mt_pacing_train_pad_result_search(struct mtl_main_impl* impl, enum mtl_port port,
-                                      uint64_t rl_bps, float* pad_interval) {
+                                      uint64_t rl_bps, uint64_t queue_bps,
+                                      const struct mt_pacing_pad_mix* mix,
+                                      float* pad_interval) {
   struct mt_pacing_train_result* ptr = &mt_if(impl, port)->pt_results[0];
 
   for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
-    if (rl_bps == ptr[i].input_bps && ptr[i].pacing_pad_interval) {
+    const struct mt_pacing_pad_mix* trained = &ptr[i].pad_mix;
+    if (rl_bps == ptr[i].input_bps && ptr[i].pacing_pad_interval &&
+        queue_bps == ptr[i].queue_bps && trained->bytes == mix->bytes &&
+        trained->normal == mix->normal && trained->pkts == mix->pkts) {
       *pad_interval = ptr[i].pacing_pad_interval;
       return 0;
     }

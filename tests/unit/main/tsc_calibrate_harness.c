@@ -96,3 +96,11 @@ uint64_t ut_tsc_calibrate(uint64_t tsc_hz, uint64_t read_ns, uint64_t cold_read_
   free(impl);
   return calibrated;
 }
+
+bool ut_mtl_init_fails_with_num_ports(int num_ports) {
+  struct mtl_init_params p;
+
+  memset(&p, 0, sizeof(p));
+  p.num_ports = num_ports;
+  return ut_tsc_calibrate_mtl_init(&p) == NULL;
+}
