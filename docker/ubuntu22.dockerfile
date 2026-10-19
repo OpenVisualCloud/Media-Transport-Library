@@ -5,7 +5,7 @@
 
 # Ubuntu 22.04 — no eBPF/XDP (unsupported with DPDK >= 26.03 on Ubuntu 22)
 ARG IMAGE_CACHE_REGISTRY=docker.io
-FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:22.04@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7ca37" AS builder
+FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956" AS builder
 
 LABEL maintainer="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 
@@ -49,7 +49,7 @@ RUN ./build.sh unit && \
     setcap 'cap_net_raw+ep' tests/tools/RxTxApp/build/RxTxApp
 
 # Ubuntu 22.04, runtime/final stage
-FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:22.04@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7ca37" AS final
+FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956" AS final
 
 LABEL org.opencontainers.image.authors="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 LABEL org.opencontainers.image.url="https://github.com/OpenVisualCloud/Media-Transport-Library"
