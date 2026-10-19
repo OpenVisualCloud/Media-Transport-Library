@@ -675,9 +675,77 @@ def _kv_table(title: str, rows: list[tuple[str, str]]) -> str:
     return "\n".join(lines)
 
 
+def html_head(title: str, generated: str) -> str:
+    """The start of a report page: its style and a header with *title* (HTML)."""
+    return _CSS.replace("{{TITLE}}", title).replace("{{TS}}", generated)
+
+
+_SW_KEYS = [
+    "sw_configuration",
+    ("OS", "os"),
+    ("Kernel", "kernel"),
+    ("BIOS Version", "bios_version"),
+    ("Microcode", "microcode"),
+    ("MTL Version", "mtl_version"),
+    ("DPDK Version", "dpdk_driver"),
+    ("ICE Version", "ice_version"),
+    ("DDP Version", "ddp_version"),
+    ("BIOS VT-X &amp; VT-D", "bios_vtx_vtd"),
+    ("Isolated CPUs", "isolcpus"),
+    ("Hugepages", "hugepages"),
+    ("CPU Governor", "cpu_cores"),
+    ("NUMA Balancing", "numa_balancing"),
+    ("IRQ Balance", "irq_balance"),
+    ("Max C-State", "max_cstate"),
+]
+_HW_KEYS = [
+    "hw_configuration",
+    ("Server (Platform)", "server"),
+    ("Processor Sockets", "processor_sockets"),
+    ("CPU", "cpu"),
+    ("Hyper-Threading (SMT)", "hyper_threading"),
+    ("Turbo Boost", "turbo_boost"),
+    ("TDP", "tdp"),
+    ("NUMA Nodes", "numa_nodes"),
+    ("Memory (RAM)", "memory"),
+    ("Storage", "storage"),
+    ("NIC", "nic"),
+]
+
+
+def _config_rows(plat, keys):
+    section = plat.get(keys[0], {})
+    return [(label, section.get(key, "N/A")) for label, key in keys[1:]]
+
+
+def _side_by_side(title_l, rows_l, title_r, rows_r) -> str:
+    """Two key/value tables next to each other."""
+    return "\n".join(
+        [
+            '<div class="side-by-side">',
+            f"<div>{_kv_table(title_l, rows_l)}</div>",
+            f"<div>{_kv_table(title_r, rows_r)}</div>",
+            "</div>",
+        ]
+    )
+
+
+def platform_html(left_label: str, left: dict, right_label: str, right: dict) -> str:
+    """The SW and HW configuration of two hosts, from their platform_config.json."""
+    return "\n".join(
+        _side_by_side(
+            f"{kind} Configuration — {left_label}",
+            _config_rows(left, keys),
+            f"{kind} Configuration — {right_label}",
+            _config_rows(right, keys),
+        )
+        for kind, keys in (("SW", _SW_KEYS), ("HW", _HW_KEYS))
+    )
+
+
 def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    p = [_CSS.replace("{{TS}}", now)]
+    p = [html_head("MTL ST2110 VF Performance Report", now)]
 
     # Resolve DUT / companion
     dut = comp = None
@@ -755,60 +823,7 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
     # ── Platform & Topology section ──
     p.append('<div class="sec"><h2>Platform &amp; Topology</h2>')
 
-    def _side_by_side(title_l, rows_l, title_r, rows_r):
-        p.append('<div class="side-by-side">')
-        p.append(f"<div>{_kv_table(title_l, rows_l)}</div>")
-        p.append(f"<div>{_kv_table(title_r, rows_r)}</div>")
-        p.append("</div>")
-
-    def _config_rows(plat, keys):
-        section = plat.get(keys[0], {})
-        return [(label, section.get(key, "N/A")) for label, key in keys[1:]]
-
-    _SW_KEYS = [
-        "sw_configuration",
-        ("OS", "os"),
-        ("Kernel", "kernel"),
-        ("BIOS Version", "bios_version"),
-        ("Microcode", "microcode"),
-        ("MTL Version", "mtl_version"),
-        ("DPDK Version", "dpdk_driver"),
-        ("ICE Version", "ice_version"),
-        ("DDP Version", "ddp_version"),
-        ("BIOS VT-X &amp; VT-D", "bios_vtx_vtd"),
-        ("Isolated CPUs", "isolcpus"),
-        ("Hugepages", "hugepages"),
-        ("CPU Governor", "cpu_cores"),
-        ("NUMA Balancing", "numa_balancing"),
-        ("IRQ Balance", "irq_balance"),
-        ("Max C-State", "max_cstate"),
-    ]
-    _HW_KEYS = [
-        "hw_configuration",
-        ("Server (Platform)", "server"),
-        ("Processor Sockets", "processor_sockets"),
-        ("CPU", "cpu"),
-        ("Hyper-Threading (SMT)", "hyper_threading"),
-        ("Turbo Boost", "turbo_boost"),
-        ("TDP", "tdp"),
-        ("NUMA Nodes", "numa_nodes"),
-        ("Memory (RAM)", "memory"),
-        ("Storage", "storage"),
-        ("NIC", "nic"),
-    ]
-
-    _side_by_side(
-        f"SW Configuration — {dut_label}",
-        _config_rows(dut_plat, _SW_KEYS),
-        f"SW Configuration — {comp_label}",
-        _config_rows(comp_plat, _SW_KEYS),
-    )
-    _side_by_side(
-        f"HW Configuration — {dut_label}",
-        _config_rows(dut_plat, _HW_KEYS),
-        f"HW Configuration — {comp_label}",
-        _config_rows(comp_plat, _HW_KEYS),
-    )
+    p.append(platform_html(dut_label, dut_plat, comp_label, comp_plat))
 
     # NIC Configuration
     def _nic_rows(h, plat, show_all_pairs=True):
@@ -834,11 +849,13 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
         )
         return rows
 
-    _side_by_side(
-        f"NIC Configuration — {dut_label}",
-        _nic_rows(dut, dut_plat, show_all_pairs=False),
-        f"NIC Configuration — {comp_label}",
-        _nic_rows(comp, comp_plat, show_all_pairs=True),
+    p.append(
+        _side_by_side(
+            f"NIC Configuration — {dut_label}",
+            _nic_rows(dut, dut_plat, show_all_pairs=False),
+            f"NIC Configuration — {comp_label}",
+            _nic_rows(comp, comp_plat, show_all_pairs=True),
+        )
     )
 
     # DMA Configuration
@@ -862,11 +879,13 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
             ("NUMA Match", f"{sym} {nd.numa_match}"),
         ]
 
-    _side_by_side(
-        f"DMA Configuration — {dut_label}",
-        _dma_rows(dut, True),
-        f"DMA Configuration — {comp_label}",
-        _dma_rows(comp, False),
+    p.append(
+        _side_by_side(
+            f"DMA Configuration — {dut_label}",
+            _dma_rows(dut, True),
+            f"DMA Configuration — {comp_label}",
+            _dma_rows(comp, False),
+        )
     )
     p.append("</div>")
 
@@ -1172,7 +1191,7 @@ table.st tr.f td:nth-child(2){color:var(--red);font-weight:600}
   .sec{box-shadow:none;border:1px solid #ddd}}
 </style></head><body><div class="w">
 <div class="hdr">
-<h1>MTL ST2110 VF Performance Report</h1>
+<h1>{{TITLE}}</h1>
 <div class="sub">Generated {{TS}}</div>
 </div>
 """
