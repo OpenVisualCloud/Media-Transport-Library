@@ -67,42 +67,42 @@ runs:
       run: task ci:cache-keys
 
     - name: 'cache: Restore DPDK'
-      uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         key: ${{ steps.keys.outputs.dpdk_key }}
         path: .local_install/dpdk
         fail-on-cache-miss: true
 
     - name: 'cache: Restore MTL'
-      uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         key: ${{ steps.keys.outputs.mtl_key }}
         path: .local_install/mtl
         fail-on-cache-miss: true
 
     - name: 'cache: Restore JPEG XS'
-      uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         key: ${{ steps.keys.outputs.jpegxs_key }}
         path: .local_install/jpegxs
         fail-on-cache-miss: true
 
     - name: 'cache: Restore FFmpeg'
-      uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         key: ${{ steps.keys.outputs.ffmpeg_key }}
         path: .local_install/ffmpeg
         fail-on-cache-miss: true
 
     - name: 'cache: Restore GStreamer'
-      uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         key: ${{ steps.keys.outputs.gstreamer_key }}
         path: .local_install/gstreamer
         fail-on-cache-miss: true
 
     - name: 'cache: Restore plugins'
-      uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         key: ${{ steps.keys.outputs.plugins_key }}
         path: .local_install/plugins
@@ -117,7 +117,7 @@ runs:
 
     - name: 'cache: Restore ICE'
       if: steps.ice.outputs.required == 'true'
-      uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         key: ${{ steps.keys.outputs.ice_key }}
         path: .local_install/ice
