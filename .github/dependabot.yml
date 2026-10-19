@@ -42,6 +42,10 @@ updates:
       interval: "monthly"
     commit-message:
       prefix: "Ci: "
+    # Digest updates only: the manager image stays on Ubuntu 24.04 LTS.
+    ignore:
+      - dependency-name: ubuntu
+        versions: [">24.04"]
 
   - package-ecosystem: docker
     directory: /docker
