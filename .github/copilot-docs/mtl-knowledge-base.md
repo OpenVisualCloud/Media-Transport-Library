@@ -988,6 +988,7 @@ Registration: `dlopen` → resolve 3 symbols (`st_plugin_get_meta`, `st_plugin_c
 Binding: search by capability bitmask (`input_fmt_caps`, `output_fmt_caps`). First match wins.
 
 - Plugins own their threads (not called from tasklets)
+- The session handle is live as soon as `create_session` is entered: its `*_get_frame` returns NULL until the pipeline is ready, and the plugin's writes to the create request land in the session's copy
 - Max 8 plugins per MTL instance (`ST_MAX_DL_PLUGINS = 8`)
 - Loaded during `mtl_init()` from JSON config
 

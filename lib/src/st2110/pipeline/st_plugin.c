@@ -97,7 +97,6 @@ static struct st22_encode_session_impl* st22_get_encoder_session(
     struct st22_encode_dev_impl* dev_impl, struct st22_get_encoder_request* req) {
   struct st22_encoder_dev* dev = &dev_impl->dev;
   int idx = dev_impl->idx;
-  struct st22_encoder_create_req* create_req = &req->req;
   struct st22_encode_session_impl* session_impl;
   st22_encode_priv session;
 
@@ -105,18 +104,20 @@ static struct st22_encode_session_impl* st22_get_encoder_session(
     session_impl = &dev_impl->sessions[i];
     if (session_impl->session) continue;
 
-    session = dev->create_session(dev->priv, session_impl, create_req);
+    /* the plugin's worker may call get_frame before create_session returns */
+    session_impl->req = *req;
+    session_impl->type = MT_ST22_HANDLE_PIPELINE_ENCODE;
+    session = dev->create_session(dev->priv, session_impl, &session_impl->req.req);
     if (session) {
       session_impl->session = session;
-      session_impl->codestream_max_size = create_req->max_codestream_size;
-      session_impl->req = *req;
-      session_impl->type = MT_ST22_HANDLE_PIPELINE_ENCODE;
+      session_impl->codestream_max_size = session_impl->req.req.max_codestream_size;
       info("%s(%d), get one session at %d on dev %s, max codestream size %" PRIu64 "\n",
            __func__, idx, i, dev->name, session_impl->codestream_max_size);
       info("%s(%d), input fmt: %s, output fmt: %s\n", __func__, idx,
            st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
       return session_impl;
     } else {
+      session_impl->type = MT_HANDLE_UNKNOWN;
       err("%s(%d), fail to create one session at %d on dev %s\n", __func__, idx, i,
           dev->name);
       return NULL;
@@ -195,7 +196,6 @@ static struct st22_decode_session_impl* st22_get_decoder_session(
     struct st22_decode_dev_impl* dev_impl, struct st22_get_decoder_request* req) {
   struct st22_decoder_dev* dev = &dev_impl->dev;
   int idx = dev_impl->idx;
-  struct st22_decoder_create_req* create_req = &req->req;
   struct st22_decode_session_impl* session_impl;
   st22_decode_priv session;
 
@@ -203,16 +203,17 @@ static struct st22_decode_session_impl* st22_get_decoder_session(
     session_impl = &dev_impl->sessions[i];
     if (session_impl->session) continue;
 
-    session = dev->create_session(dev->priv, session_impl, create_req);
+    session_impl->req = *req;
+    session_impl->type = MT_ST22_HANDLE_PIPELINE_DECODE;
+    session = dev->create_session(dev->priv, session_impl, &session_impl->req.req);
     if (session) {
       session_impl->session = session;
-      session_impl->req = *req;
-      session_impl->type = MT_ST22_HANDLE_PIPELINE_DECODE;
       info("%s(%d), get one session at %d on dev %s\n", __func__, idx, i, dev->name);
       info("%s(%d), input fmt: %s, output fmt: %s\n", __func__, idx,
            st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
       return session_impl;
     } else {
+      session_impl->type = MT_HANDLE_UNKNOWN;
       err("%s(%d), fail to create one session at %d on dev %s\n", __func__, idx, i,
           dev->name);
       return NULL;
@@ -296,7 +297,6 @@ static struct st20_convert_session_impl* st20_get_converter_session(
     struct st20_convert_dev_impl* dev_impl, struct st20_get_converter_request* req) {
   struct st20_converter_dev* dev = &dev_impl->dev;
   int idx = dev_impl->idx;
-  struct st20_converter_create_req* create_req = &req->req;
   struct st20_convert_session_impl* session_impl;
   st20_convert_priv session;
 
@@ -304,16 +304,17 @@ static struct st20_convert_session_impl* st20_get_converter_session(
     session_impl = &dev_impl->sessions[i];
     if (session_impl->session) continue;
 
-    session = dev->create_session(dev->priv, session_impl, create_req);
+    session_impl->req = *req;
+    session_impl->type = MT_ST20_HANDLE_PIPELINE_CONVERT;
+    session = dev->create_session(dev->priv, session_impl, &session_impl->req.req);
     if (session) {
       session_impl->session = session;
-      session_impl->req = *req;
-      session_impl->type = MT_ST20_HANDLE_PIPELINE_CONVERT;
       info("%s(%d), get one session at %d on dev %s\n", __func__, idx, i, dev->name);
       info("%s(%d), input fmt: %s, output fmt: %s\n", __func__, idx,
            st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
       return session_impl;
     } else {
+      session_impl->type = MT_HANDLE_UNKNOWN;
       err("%s(%d), fail to create one session at %d on dev %s\n", __func__, idx, i,
           dev->name);
       return NULL;

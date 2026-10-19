@@ -196,6 +196,8 @@ unit_sources = [
   'pipeline/tx_wake_block_test.cpp',
   'pipeline/stale_handle_stats_test.cpp',
   'pipeline/tx_frame_done_notify_test.cpp',
+  'pipeline/st_plugin_harness.c',
+  'pipeline/st_plugin_session_test.cpp',
   'sch/mt_sch_harness.c',
   'sch/mtl_sch_api_test.cpp',
   'sch/mt_sch_mempolicy_test.cpp',
