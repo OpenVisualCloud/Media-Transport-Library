@@ -75,6 +75,52 @@ def test_rejected_needs_both_a_failed_run_and_the_mtl_error():
     app.assert_rejected(marker)
 
 
+def _per_port_arrivals(*intervals) -> str:
+    # The line libmtl prints each stat interval (st_rx_video_session.c), one per
+    # (P, R) pair; assert_redundant_paths() reads only the two pkt counts.
+    return "\n".join(
+        f"RX_VIDEO_SESSION(0,0): per-port arrivals P={p} pkts (0 frames complete, "
+        f"0 needed redundancy), R={r} pkts (0 frames complete, 0 needed redundancy)"
+        for p, r in intervals
+    )
+
+
+@pytest.mark.parametrize(
+    "intervals", [[(1000, 1000)], [(1000, 500)]], ids=["equal", "r_half"]
+)
+def test_redundant_paths_accept_a_leg_with_half_the_other(intervals):
+    app = _rxtxapp({})
+    app.last_output = _per_port_arrivals(*intervals)
+    app.assert_redundant_paths()
+
+
+@pytest.mark.parametrize(
+    "intervals",
+    [
+        [(1000, 0)],
+        [(1000, 499)],
+        [(499, 1000)],
+        [(1000, 1000)] + [(1000, 0)] * 3 + [(1000, 1000)],
+    ],
+    ids=["no_r", "r_short", "p_short", "r_gap"],
+)
+def test_redundant_paths_reject_a_leg_with_less_than_half(intervals):
+    app = _rxtxapp({})
+    app.last_output = _per_port_arrivals(*intervals)
+    with pytest.raises(AssertionError, match="ST 2022-7 receiver got"):
+        app.assert_redundant_paths()
+
+
+def test_redundant_paths_read_only_the_video_line():
+    app = _rxtxapp({})
+    app.last_output = (
+        "RX_AUDIO_SESSION(0,0): per-port arrivals P=1000 pkts (0 frames first), "
+        "R=1000 pkts (0 frames first)"
+    )
+    with pytest.raises(AssertionError, match="no per-port arrival counts"):
+        app.assert_redundant_paths()
+
+
 def test_ebu_report_states_are_distinct():
     client = object.__new__(PcapComplianceClient)
     unavailable, _ = client.check_compliance(False)
