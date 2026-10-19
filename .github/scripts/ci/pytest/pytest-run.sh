@@ -25,6 +25,15 @@ performance)
 	# read as an option of its own.
 	[[ -n ${SUT_APP_ARGS:-} ]] && args+=("--sut_app_args=$SUT_APP_ARGS")
 	;;
+perf-compare)
+	video=${VIDEO:-1080p59}
+	args=(./tests/dual/performance/test_perf_compare.py -k "${video%p*}p and ${video##*p}fps"
+		--perf_compare_slots="${PERF_COMPARE_SLOTS:?PERF_COMPARE_SLOTS is required}"
+		--perf_compare_labels="${PERF_COMPARE_LABELS:-A,B}"
+		--perf_compare_args_a="${ARGS_A:-}" --perf_compare_args_b="${ARGS_B:-}")
+	[[ -n ${SESSIONS:-} ]] && args+=(--perf_compare_sessions "$SESSIONS")
+	[[ -n ${ROUNDS:-} ]] && args+=(--perf_compare_rounds "$ROUNDS")
+	;;
 nightly)
 	args=("./tests/single/${TEST_PATH:?TEST_PATH is required}" -m nightly)
 	[[ -n ${PYTEST_FILTER:-} ]] && args+=(-k "$PYTEST_FILTER")
@@ -38,7 +47,7 @@ smoke | smoke-low-bandwidth)
 	if [[ $1 == smoke ]]; then args+=(-m smoke -x); else args+=(-m low_bandwidth); fi
 	;;
 *)
-	echo "Usage: $0 {custom|performance|nightly|smoke|smoke-low-bandwidth}" >&2
+	echo "Usage: $0 {custom|performance|perf-compare|nightly|smoke|smoke-low-bandwidth}" >&2
 	exit 2
 	;;
 esac

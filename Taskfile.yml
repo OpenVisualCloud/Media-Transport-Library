@@ -28,6 +28,7 @@ tasks:
       - sudo killall -SIGINT pytest MtlManager phc2sys ptp4l netsniff-ng || true
       - sleep 2
       - sudo {{.TASKFILE_DIR}}/tests/tools/isolate/isolate.sh --sweep
+      - bash {{.CI_SCRIPTS}}/pytest/perf-compare.sh sweep
 
   ebpf:check:
     desc: Check this host's eBPF/XDP prerequisites; name the package for each missing one
@@ -134,6 +135,11 @@ tasks:
     desc: Run one acceptance-test workflow variant
     cmds:
       - bash {{.CI_SCRIPTS}}/pytest/pytest-run.sh {{.CLI_ARGS}}
+
+  ci:perf-compare:
+    desc: Build, sync, sweep or clean the two build trees of perf-compare.yml (doc/perf_compare.md)
+    cmds:
+      - bash {{.CI_SCRIPTS}}/pytest/perf-compare.sh {{.CLI_ARGS}}
 
   ci:media-assets:
     desc: Verify the test media a suite reads (MEDIA_ASSET_SET)
