@@ -70,7 +70,7 @@ jobs:
           output: Trivy-dockerfile.sarif
 
       - name: Upload Trivy scan results as artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: trivy-dockerfile-sarif
           path: Trivy-dockerfile.sarif
@@ -119,7 +119,7 @@ jobs:
           output: Trivy-manager-dockerfile.sarif
 
       - name: Upload Trivy scan results as artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: trivy-manager-dockerfile-sarif
           path: Trivy-manager-dockerfile.sarif
@@ -178,7 +178,7 @@ jobs:
           mv Trivy-sbom.spdx.json.tmp Trivy-sbom.spdx.json
 
       - name: Upload SBOM as artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: trivy-sbom-spdx
           path: Trivy-sbom.spdx.json
@@ -194,7 +194,7 @@ jobs:
           output: Trivy-sbom-vulnerabilities.json
 
       - name: Upload vulnerability report as artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: trivy-sbom-vulnerabilities
           path: Trivy-sbom-vulnerabilities.json

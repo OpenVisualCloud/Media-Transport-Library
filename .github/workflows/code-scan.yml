@@ -147,7 +147,7 @@ jobs:
       # compile_commands.json holds the flags each file was checked with.
       - name: Upload the clang-tidy report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: clang-tidy-report
           path: |
@@ -219,7 +219,7 @@ jobs:
 
       - name: Upload the cargo-audit reports
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cargo-audit
           path: cargo-audit/
@@ -266,7 +266,7 @@ jobs:
       # Both uploads only report: a failed upload must not decide the check or
       # stop the scan below from running.
       - name: Upload Bandit reports
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         continue-on-error: true
         with:
           name: bandit-report
