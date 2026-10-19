@@ -527,6 +527,17 @@ yuv_files_gstreamer_input_formats = {
     },
 }
 
+# The yuv_files_input_formats footage the JPEG XS encoder takes besides yuv422p10le.
+# The I420 file is YUV420PLANAR8 here; st20p passes it through as YUV420CUSTOM8.
+yuv_files_st22p_input_formats = {
+    key: yuv_files_input_formats[key]
+    for key in ("yuv422p12le", "yuv444p10le", "yuv444p12le", "gbrp10le", "gbrp12le")
+}
+yuv_files_st22p_input_formats["yuv420p"] = {
+    **yuv_files_input_formats["yuv420p"],
+    "file_format": "YUV420PLANAR8",
+}
+
 yuv_files_interlace = dict(
     Crosswalk_480p={
         "filename": "Netflix_Crosswalk_720x480_interlace_10bit_60Hz_P422.yuv",
