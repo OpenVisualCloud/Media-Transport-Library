@@ -10,7 +10,7 @@ env:
   # A workspace-relative cache location is the one path that works identically on
   # Linux, macOS and Windows runners.
   PRE_COMMIT_HOME: ${{ github.workspace }}/.pre-commit-cache
-  PRE_COMMIT_VERSION: 4.6.2
+  PRE_COMMIT_VERSION: 4.7.0
 
 jobs:
   # Every style and lint rule this repository enforces lives in
