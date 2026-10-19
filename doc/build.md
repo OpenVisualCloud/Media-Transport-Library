@@ -359,7 +359,7 @@ Not applied, and why:
 | SVT-JPEG-XS | Its CMake build gives `libSvtJpegxs.so` an executable stack, partial RELRO and no CET. The fix belongs in SVT-JPEG-XS, whose assembly needs the CET marks anyway |
 | Windows (MSVC, ICX) options | MTL releases no Windows binary |
 
-To check an install tree, run the check CI runs on the DPDK, MTL, FFmpeg, GStreamer and plugins caches and in the container image builds. Under `/usr/local` it also reports other software installed there.
+To check an install tree, run the check CI runs on the DPDK, MTL, FFmpeg, GStreamer and plugins caches and in the container image builds. Under `/usr/local` it also reports other software installed there. The `Hardening Tools` workflow repeats the check with `hardening-check` and `checksec`, two independent binary-hardening scanners.
 
 ```bash
 .github/scripts/ci/check-hardening.sh /usr/local/lib /usr/local/bin
