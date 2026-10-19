@@ -344,7 +344,7 @@ newer merely to parse its own source, so an older system Node was a crash and a
 newer one was an unpinned variable.
 
 One thing genuinely *not* pinned is the engine: the config's floor is
-`minimum_pre_commit_version: 3.5.0`, CI runs 4.6.2, and a distribution package
+`minimum_pre_commit_version: 3.5.0`, CI runs 4.7.0, and a distribution package
 may be older than either. If a hook behaves differently for you than in CI, check
 `pre-commit --version` first -- CI is authoritative.
 
