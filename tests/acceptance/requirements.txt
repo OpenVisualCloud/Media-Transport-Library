@@ -16,9 +16,9 @@ pytest-mfd-config==3.27.0        # TopologyModel + auto-loaded plugin
 pytest-mfd-logging==1.26.0       # AmberLogFormatter + auto-loaded plugin
 
 # --- mfd-* libraries directly imported by tests ---
-mfd-connect==7.19.0              # SSHConnection, ConnectionCalledProcessError
-mfd-common-libs==1.11.0          # custom_logger, log_levels
-mfd-network-adapter==14.5.0      # NetworkInterface (common/nicctl.py)
+mfd-connect==7.23.0              # SSHConnection, ConnectionCalledProcessError
+mfd-common-libs==1.12.0          # custom_logger, log_levels
+mfd-network-adapter==14.6.0      # NetworkInterface (common/nicctl.py)
 
 # --- third-party libs directly imported ---
 requests==2.34.2                 # compliance/compliance_client.py
