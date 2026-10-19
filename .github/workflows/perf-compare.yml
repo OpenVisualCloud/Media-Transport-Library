@@ -1,0 +1,23 @@
+name: perf-compare
+# A placeholder: GitHub dispatches only a workflow the default branch has, so this
+# lists perf-compare in the Actions tab and the branch that brings the real one can
+# be run from "Use workflow from" before it merges. That branch replaces this file.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Harden-Runner
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
+      - name: Explain the placeholder
+        run: |
+          echo '::error::Nothing to compare here: set "Use workflow from" to the branch that brings perf-compare.'
+          exit 1
