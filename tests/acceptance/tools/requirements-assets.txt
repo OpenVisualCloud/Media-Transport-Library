@@ -1,2 +1,2 @@
 # Optional dependencies for manual media generation only.
-numpy==2.5.1
+numpy==2.5.4
