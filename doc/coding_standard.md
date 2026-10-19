@@ -82,19 +82,19 @@ reformat waiting to happen.
 | Language | Tool | Fixes | Rule file |
 |---|---|---|---|
 | any | pre-commit-hooks 6.0.0 -- five structural guards | no | -- |
-| C, C++ | clang-format 22.1.8 | yes | `.clang-format` |
-| Python | isort 8.0.1 (`--profile black`) | yes | -- |
-| Python | black 26.5.1 (`--line-length 88`) | yes | -- |
-| Python | flake8 7.3.0 | no | `.github/linters/.flake8` |
-| Python | ruff 0.16.3 | partly | `.github/linters/.ruff.toml` |
-| Shell | shfmt 3.13.1 | yes | `.editorconfig` (`[*.sh]`) |
+| C, C++ | clang-format 23.1.3 | yes | `.clang-format` |
+| Python | isort 9.0.2 (`--profile black`) | yes | -- |
+| Python | black 26.10.1 (`--line-length 88`) | yes | -- |
+| Python | flake8 7.4.1 | no | `.github/linters/.flake8` |
+| Python | ruff 0.17.1 | partly | `.github/linters/.ruff.toml` |
+| Shell | shfmt 3.14.1 | yes | `.editorconfig` (`[*.sh]`) |
 | Shell | shellcheck 0.11.0 | no | -- |
 | Markdown | markdownlint-cli 0.49.1 | yes | `.github/linters/.markdown-lint.yml` |
 | Markdown prose | textlint 15.8.0 + terminology 4.0.1 | yes | `.github/linters/.textlintrc` |
 | YAML | yamllint 1.38.0 | no | `.github/linters/.yaml-lint.yml` |
 | GitHub Actions | actionlint 1.7.12 | no | `.github/linters/actionlint.yaml` |
 | HTML | htmlhint 1.9.2 | no | `.github/linters/.htmlhintrc` |
-| staged diff | gitleaks 8.30.0 | no | -- |
+| staged diff | gitleaks 8.30.1 | no | -- |
 | CI path filters | `.github/scripts/ci/check-path-filters.py` | no | `.github/path_filters.yml` |
 | commit message | gitlint 0.19.1 | no | `.github/linters/.gitlint` |
 
@@ -127,7 +127,7 @@ down.** Both halves of that were learned the hard way here:
 flake8 and ruff both run, and the overlap is deliberate rather than accidental.
 `.ruff.toml` selects `E`, `W`, `F` -- flake8's own rule set, since flake8 declares
 no `select` either -- so the two are as close to interchangeable as they can be.
-They are not yet interchangeable in one direction: **ruff 0.16 does not implement
+They are not yet interchangeable in one direction: **ruff 0.17 does not implement
 F824** ("dead `global` declaration") at all; `ruff rule F824` answers "unknown
 rule". flake8 7.3 found two of them here, both genuinely dead. That single rule is
 the whole reason the flake8 hook still exists, which is also why its rule set is

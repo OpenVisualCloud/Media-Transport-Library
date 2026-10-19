@@ -285,7 +285,7 @@ stage_preflight() {
 	elif [[ -f /usr/local/lib/x86_64-linux-gnu/libmtl.so || -f /usr/local/lib64/libmtl.so || -f /usr/local/lib/libmtl.so ]]; then
 		mtl_found=1
 	fi
-	if ((!mtl_found)); then
+	if ((! mtl_found)); then
 		warn "preflight: libmtl.so missing in ld cache"
 		missing=1
 	fi
@@ -493,7 +493,7 @@ stage_configs() {
 		else
 			log "configs: kept (already present)"
 		fi
-		if ((!need_regen)); then
+		if ((! need_regen)); then
 			return 0
 		fi
 	fi
