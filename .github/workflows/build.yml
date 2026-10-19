@@ -308,49 +308,49 @@ jobs:
 
       - name: 'stash: Save DPDK cache'
         if: success() && steps.cache-state.outputs.dpdk_miss == '1'
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.dpdk_key }}
           path: .local_install/dpdk
 
       - name: 'stash: Save MTL cache'
         if: success() && steps.cache-state.outputs.mtl_miss == '1'
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.mtl_key }}
           path: .local_install/mtl
 
       - name: 'stash: Save JPEG XS cache'
         if: success() && steps.cache-state.outputs.jpegxs_miss == '1'
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.jpegxs_key }}
           path: .local_install/jpegxs
 
       - name: 'stash: Save FFmpeg cache'
         if: success() && steps.cache-state.outputs.ffmpeg_miss == '1'
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.ffmpeg_key }}
           path: .local_install/ffmpeg
 
       - name: 'stash: Save GStreamer cache'
         if: success() && steps.cache-state.outputs.gstreamer_miss == '1'
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.gstreamer_key }}
           path: .local_install/gstreamer
 
       - name: 'stash: Save plugins cache'
         if: success() && steps.cache-state.outputs.plugins_miss == '1'
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.plugins_key }}
           path: .local_install/plugins
 
       - name: 'stash: Save ICE cache'
         if: success() && steps.cache-state.outputs.ice_miss == '1'
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: ${{ steps.keys.outputs.ice_key }}
           path: .local_install/ice
