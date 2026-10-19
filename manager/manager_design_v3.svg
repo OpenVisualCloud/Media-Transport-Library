@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1280" viewBox="0 0 1400 1280" role="img" aria-labelledby="t d">
+<title id="t">MTL Manager design</title>
+<desc id="d">MTL instances connect to mtl_manager.sock and send messages. The MTL Manager listens on the socket, receives the messages, and loads or unloads the XDP program in the Linux kernel. Each AF_XDP socket adds itself to xsks_map, and the UDP port filter is kept in udp_filter_map. Packets flow between XDP and the AF_XDP socket. The manager does lcore management, XDP loading, NIC management, and clears the status when a client crashes or disconnects.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect width="1400" height="1280" fill="#ffffff"/>
+<path d="M620 100 C540 30 230 40 198.2 102.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-dasharray="14 9"/>
+<path d="M190.0 118.0 L189.3 95.2 L208.9 105.2 Z" fill="#1F271B"/>
+<text x="380.0" y="44.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">add/del port</text>
+<rect x="40" y="120" width="300" height="66" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="190.0" y="158.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">udp_filter_map</text>
+<rect x="40" y="206" width="300" height="66" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="190.0" y="244.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">xsks_map</text>
+<rect x="40" y="320" width="300" height="400" rx="26" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<text x="190.0" y="526.9" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">Linux Kernel</text>
+<rect x="64" y="344" width="252" height="90" rx="8" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<text x="190.0" y="395.4" font-size="26" font-weight="700" fill="#ffffff" text-anchor="middle">XDP</text>
+<rect x="64" y="610" width="252" height="86" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="190.0" y="658.9" font-size="24" font-weight="700" fill="#1F271B" text-anchor="middle">Driver</text>
+<rect x="40" y="750" width="300" height="110" rx="8" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="190.0" y="811.4" font-size="26" font-weight="700" fill="#ffffff" text-anchor="middle">NIC</text>
+<path d="M316.0 389.0 L346.0 353.0 L346.0 369.0 L520.0 369.0 L520.0 304.0 L504.0 304.0 L540.0 274.0 L576.0 304.0 L560.0 304.0 L560.0 409.0 L346.0 409.0 L346.0 425.0 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<text x="430.0" y="350.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Datapath</text>
+<rect x="500" y="100" width="240" height="120" rx="8" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="645.0" y="152.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="middle">mtl instance</text>
+<rect x="470" y="190" width="140" height="84" rx="8" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<text x="540.0" y="224.4" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">AF_XDP</text>
+<text x="540.0" y="253.0" font-size="20" fill="#ffffff" text-anchor="middle">socket</text>
+<rect x="800" y="100" width="240" height="120" rx="8" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="945.0" y="152.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="middle">mtl instance</text>
+<rect x="770" y="190" width="140" height="84" rx="8" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<text x="840.0" y="224.4" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">AF_XDP</text>
+<text x="840.0" y="253.0" font-size="20" fill="#ffffff" text-anchor="middle">socket</text>
+<rect x="1100" y="100" width="240" height="120" rx="8" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="1245.0" y="152.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="middle">mtl instance</text>
+<rect x="1070" y="190" width="140" height="84" rx="8" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<text x="1140.0" y="224.4" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">AF_XDP</text>
+<text x="1140.0" y="253.0" font-size="20" fill="#ffffff" text-anchor="middle">socket</text>
+<path d="M470.0 239.0 L358.0 239.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M340.0 239.0 L360.0 228.0 L360.0 250.0 Z" fill="#1F271B"/>
+<text x="405.0" y="208.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">add</text>
+<rect x="420" y="510" width="260" height="110" rx="8" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="550.0" y="571.4" font-size="26" font-weight="700" fill="#ffffff" text-anchor="middle">mtl manager</text>
+<rect x="800" y="560" width="270" height="66" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="935.0" y="598.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">mtl_manager.sock</text>
+<rect x="835" y="508" width="60" height="52" rx="6" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="905" y="508" width="60" height="52" rx="6" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="975" y="508" width="60" height="52" rx="6" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M450 510 C450 460 190 490 190.0 454.0" fill="none" stroke="#1F271B" stroke-width="4"/>
+<path d="M190.0 436.0 L201.0 456.0 L179.0 456.0 Z" fill="#1F271B"/>
+<text x="470.0" y="488.0" font-size="20" font-weight="700" fill="#1F271B" text-anchor="start">load/unload program</text>
+<path d="M835.0 535.0 L698.0 535.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M680.0 535.0 L700.0 524.0 L700.0 546.0 Z" fill="#1F271B"/>
+<text x="757.5" y="506.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">recv</text>
+<path d="M680.0 593.0 L782.0 593.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M800.0 593.0 L780.0 604.0 L780.0 582.0 Z" fill="#1F271B"/>
+<text x="740.0" y="628.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">listen</text>
+<path d="M690.0 220.0 L855.6 488.7" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M865.0 504.0 L845.1 492.7 L863.9 481.2 Z" fill="#1F271B"/>
+<text x="735.6" y="320.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="end">connect</text>
+<text x="764.0" y="366.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="end">send</text>
+<path d="M935.0 220.0 L935.0 486.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M935.0 504.0 L924.0 484.0 L946.0 484.0 Z" fill="#1F271B"/>
+<text x="919.0" y="320.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="end">connect</text>
+<text x="919.0" y="366.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="end">send</text>
+<path d="M1230.0 220.0 L1016.2 489.9" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M1005.0 504.0 L1008.8 481.5 L1026.0 495.2 Z" fill="#1F271B"/>
+<text x="1134.8" y="320.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="end">connect</text>
+<text x="1098.3" y="366.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="end">send</text>
+<rect x="1090" y="460" width="290" height="190" rx="4" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M1090 490 H1380 M1120 460 V650" stroke="#1F271B" stroke-width="3"/>
+<text x="1134.0" y="532.0" font-size="20" font-weight="700" fill="#1F271B" text-anchor="start">struct message {</text>
+<text x="1154.0" y="562.0" font-size="20" fill="#1F271B" text-anchor="start">header(magic, type),</text>
+<text x="1154.0" y="592.0" font-size="20" fill="#1F271B" text-anchor="start">body(union)</text>
+<text x="1134.0" y="622.0" font-size="20" font-weight="700" fill="#1F271B" text-anchor="start">}</text>
+<rect x="400" y="750" width="224" height="110" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<text x="512.0" y="796.5" font-size="21" font-weight="700" fill="#1F271B" text-anchor="middle">Lcore</text>
+<text x="512.0" y="823.8" font-size="21" font-weight="700" fill="#1F271B" text-anchor="middle">management</text>
+<rect x="652" y="750" width="224" height="110" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<text x="764.0" y="782.8" font-size="21" font-weight="700" fill="#1F271B" text-anchor="middle">XDP loader,</text>
+<text x="764.0" y="810.1" font-size="21" font-weight="700" fill="#1F271B" text-anchor="middle">send map fd,</text>
+<text x="764.0" y="837.4" font-size="21" font-weight="700" fill="#1F271B" text-anchor="middle">set port filter</text>
+<rect x="904" y="750" width="224" height="110" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<text x="1016.0" y="796.5" font-size="21" font-weight="700" fill="#1F271B" text-anchor="middle">NIC</text>
+<text x="1016.0" y="823.8" font-size="21" font-weight="700" fill="#1F271B" text-anchor="middle">management</text>
+<rect x="1156" y="750" width="224" height="110" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<text x="1268.0" y="782.8" font-size="21" font-weight="700" fill="#1F271B" text-anchor="middle">Status clear</text>
+<text x="1268.0" y="810.1" font-size="21" font-weight="700" fill="#1F271B" text-anchor="middle">on client</text>
+<text x="1268.0" y="837.4" font-size="21" font-weight="700" fill="#1F271B" text-anchor="middle">crash/disconnect</text>
+<circle cx="740.0" cy="593" r="19" fill="#1F271B" stroke="#ffffff" stroke-width="3"/>
+<text x="740.0" y="601.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+<circle cx="935" cy="280" r="19" fill="#1F271B" stroke="#ffffff" stroke-width="3"/>
+<text x="935.0" y="288.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+<circle cx="757.5" cy="535" r="19" fill="#1F271B" stroke="#ffffff" stroke-width="3"/>
+<text x="757.5" y="543.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+<circle cx="377" cy="480" r="19" fill="#1F271B" stroke="#ffffff" stroke-width="3"/>
+<text x="377.0" y="488.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">4</text>
+<circle cx="405" cy="239" r="19" fill="#1F271B" stroke="#ffffff" stroke-width="3"/>
+<text x="405.0" y="247.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">5</text>
+<circle cx="242" cy="79" r="19" fill="#1F271B" stroke="#ffffff" stroke-width="3"/>
+<text x="242.0" y="87.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">6</text>
+<circle cx="430" cy="389" r="19" fill="#1F271B" stroke="#ffffff" stroke-width="3"/>
+<text x="430.0" y="397.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">7</text>
+<rect x="40" y="900" width="1320" height="246" rx="12" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<text x="64.0" y="942.0" font-size="26" font-weight="700" fill="#1F271B" text-anchor="start">Steps</text>
+<circle cx="84" cy="983" r="19" fill="#1F271B" stroke="#ffffff" stroke-width="3"/>
+<text x="84.0" y="991.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+<text x="114.0" y="990.0" font-size="21" fill="#1F271B" text-anchor="start">The manager listens on mtl_manager.sock.</text>
+<circle cx="84" cy="1027" r="19" fill="#1F271B" stroke="#ffffff" stroke-width="3"/>
+<text x="84.0" y="1035.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+<text x="114.0" y="1034.0" font-size="21" fill="#1F271B" text-anchor="start">Each instance connects and sends messages.</text>
+<circle cx="84" cy="1071" r="19" fill="#1F271B" stroke="#ffffff" stroke-width="3"/>
+<text x="84.0" y="1079.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+<text x="114.0" y="1078.0" font-size="21" fill="#1F271B" text-anchor="start">The manager receives the messages.</text>
+<circle cx="84" cy="1115" r="19" fill="#1F271B" stroke="#ffffff" stroke-width="3"/>
+<text x="84.0" y="1123.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">4</text>
+<text x="114.0" y="1122.0" font-size="21" fill="#1F271B" text-anchor="start">The manager loads the XDP program.</text>
+<circle cx="744" cy="983" r="19" fill="#1F271B" stroke="#ffffff" stroke-width="3"/>
+<text x="744.0" y="991.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">5</text>
+<text x="774.0" y="990.0" font-size="21" fill="#1F271B" text-anchor="start">The AF_XDP socket adds itself to xsks_map.</text>
+<circle cx="744" cy="1027" r="19" fill="#1F271B" stroke="#ffffff" stroke-width="3"/>
+<text x="744.0" y="1035.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">6</text>
+<text x="774.0" y="1034.0" font-size="21" fill="#1F271B" text-anchor="start">The manager adds or deletes a UDP port.</text>
+<circle cx="744" cy="1071" r="19" fill="#1F271B" stroke="#ffffff" stroke-width="3"/>
+<text x="744.0" y="1079.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">7</text>
+<text x="774.0" y="1078.0" font-size="21" fill="#1F271B" text-anchor="start">Packets flow between XDP and AF_XDP.</text>
+<rect x="40" y="1170" width="1320" height="80" rx="12" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="64.0" y="1218.0" font-size="24" font-weight="700" fill="#1F271B" text-anchor="start">Legend</text>
+<path d="M190.0 1210.0 L252.0 1210.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M270.0 1210.0 L250.0 1221.0 L250.0 1199.0 Z" fill="#1F271B"/>
+<text x="284.0" y="1218.0" font-size="21" font-weight="700" fill="#1F271B" text-anchor="start">Control message</text>
+<path d="M530.0 1210.0 L592.0 1210.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M610.0 1210.0 L590.0 1221.0 L590.0 1199.0 Z" fill="#1F271B"/>
+<text x="624.0" y="1218.0" font-size="21" font-weight="700" fill="#1F271B" text-anchor="start">Through the manager</text>
+<path d="M910.0 1210.0 L932.0 1188.0 L932.0 1200.0 L988.0 1200.0 L988.0 1188.0 L1010.0 1210.0 L988.0 1232.0 L988.0 1220.0 L932.0 1220.0 L932.0 1232.0 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<text x="1026.0" y="1218.0" font-size="21" font-weight="700" fill="#1F271B" text-anchor="start">Packet datapath</text>
+</g>
+</svg>
