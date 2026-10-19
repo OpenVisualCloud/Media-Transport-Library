@@ -93,11 +93,13 @@ jobs:
           fetch-depth: 0
 
       - name: Lint Code Base
-        uses: github/super-linter/slim@4e51915f4a812abf59fed160bb14595c0a38a9e7 # v6
+        uses: super-linter/super-linter/slim@2da136927bd4a73596db63044b504547c62cb854 # v9.0.0
         env:
           DEFAULT_BRANCH: main
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LOG_LEVEL: WARN
+          # On by default since super-linter 8.4.0; this job's token can only read.
+          ENABLE_GITHUB_PULL_REQUEST_SUMMARY_COMMENT: false
           # .sh files must keep their executable bit. Trivial to check but there
           # is no upstream pre-commit hook with these exact semantics -- the
           # nearest one, check-shebang-scripts-are-executable, is broader and
@@ -109,13 +111,6 @@ jobs:
           # deny-list workflow ran it by default; keeping it explicit here is
           # what stops the allow-list conversion from dropping it silently.
           VALIDATE_GITLEAKS: true
-          # dotenv-linter. Carried over unchanged, and it currently fails all 8
-          # tracked *.env files whole-tree: script/hash_sources_*.env and
-          # script/isolation_*.env are path manifests rather than dotenv files,
-          # and versions.env trips UnorderedKey, which wants alphabetical order
-          # and would destroy its deliberate grouping. Only changed files are
-          # linted, which is why this has not blocked anyone yet.
-          VALIDATE_ENV: true
           # eslint over 135 *.ts. Cannot move into checkpatch until
           # tests/tools/perf_debug_mcp/package.json is tracked -- .gitignore's
           # blanket `*.json` currently excludes it, so the project has no
