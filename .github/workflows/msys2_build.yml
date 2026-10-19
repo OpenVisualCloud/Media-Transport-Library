@@ -36,7 +36,7 @@ jobs:
           egress-policy: audit
 
       - name: Install dependencies
-        uses: msys2/setup-msys2@7efe20baefed56359985e327d329042cde2434ff # v2
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
         with:
           msystem: ${{ matrix.sys }}
           update: true
