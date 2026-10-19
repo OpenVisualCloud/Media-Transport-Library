@@ -72,6 +72,11 @@ _PORT_TYPE_NAMES = {
     6: "native_af_xdp",
 }
 _PORT_TYPE_RE = re.compile(r"mt_dev_if_init\((\d+)\), port_id \d+ port_type (\d+)")
+# libmtl's RX video per-port stat line, printed only for a two-port (ST 2022-7) session.
+_RX_PORT_ARRIVALS_RE = re.compile(
+    r"RX_VIDEO_SESSION\(\d+,\d+\): per-port arrivals "
+    r"P=(\d+) pkts \([^)]*\), R=(\d+) pkts"
+)
 _VIRTIO_RE = re.compile(
     r"dev_if_init_virtio_user\((\d+)\), succ, kernel interface (\S+)"
 )
@@ -516,6 +521,25 @@ class Application(ABC):
                 f"{resolved.get(port)!r} (all ports: {resolved})"
             )
         return resolved
+
+    def assert_redundant_paths(self) -> None:
+        """Assert the ST 2022-7 receiver got the stream on both legs.
+
+        Either leg alone completes every frame, so a delivered stream does not
+        show that the redundant leg carried anything. Each leg carries a full
+        copy, so each must bring at least half as many packets as the other,
+        which leaves room for a transient loss on one leg.
+        """
+        arrivals = [
+            (int(p), int(r))
+            for p, r in _RX_PORT_ARRIVALS_RE.findall(self.last_output or "")
+        ]
+        assert arrivals, "no per-port arrival counts found in application output"
+        primary = sum(p for p, _ in arrivals)
+        redundant = sum(r for _, r in arrivals)
+        assert (
+            2 * min(primary, redundant) >= max(primary, redundant) > 0
+        ), f"ST 2022-7 receiver got {primary} packets on P and {redundant} on R"
 
     def assert_virtio_user(self, ports: list[int]):
         """Assert virtio-user initialized on each requested port."""
