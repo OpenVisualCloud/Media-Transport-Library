@@ -9,15 +9,22 @@ backend without failing initialization.
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
-from mtl_engine.media_files import parse_fps_to_pformat, yuv_files
+from mtl_engine.media_files import parse_fps_to_pformat, yuv_files, yuv_files_422p10le
 
 pytestmark = [pytest.mark.verified, pytest.mark.nightly]
 
+# The JPEG XS encoder takes planar input only, so the st22p row sends planar media.
+_SESSIONS = [
+    pytest.param("st20p", yuv_files["i1080p59"], id="i1080p59-|session_type = st20p|"),
+    pytest.param(
+        "st22p",
+        yuv_files_422p10le["Penguin_1080p"],
+        id="Penguin_1080p-|session_type = st22p|",
+    ),
+]
 
-@pytest.mark.parametrize("session_type", ["st20p", "st22p"])
-@pytest.mark.parametrize(
-    "media_file", [yuv_files["i1080p59"]], indirect=True, ids=["i1080p59"]
-)
+
+@pytest.mark.parametrize("session_type, media_file", _SESSIONS, indirect=["media_file"])
 def test_backend_kernel_socket(
     app_factory,
     hosts,
@@ -68,10 +75,7 @@ def test_backend_kernel_socket(
 
 
 @pytest.mark.parametrize("test_mode", ["unicast", "multicast"])
-@pytest.mark.parametrize("session_type", ["st20p", "st22p"])
-@pytest.mark.parametrize(
-    "media_file", [yuv_files["i1080p59"]], indirect=True, ids=["i1080p59"]
-)
+@pytest.mark.parametrize("session_type, media_file", _SESSIONS, indirect=["media_file"])
 def test_backend_af_xdp(
     app_factory,
     hosts,
