@@ -675,9 +675,11 @@ def _kv_table(title: str, rows: list[tuple[str, str]]) -> str:
     return "\n".join(lines)
 
 
-def html_head(title: str, generated: str) -> str:
-    """The start of a report page: its style and a header with *title* (HTML)."""
-    return _CSS.replace("{{TITLE}}", title).replace("{{TS}}", generated)
+def html_head(title: str, generated: str, css: str = "") -> str:
+    """The start of a report page: its style with *css* added, and a header with
+    *title* (HTML)."""
+    head = _CSS.replace("{{CSS}}", css)
+    return head.replace("{{TITLE}}", title).replace("{{TS}}", generated)
 
 
 _SW_KEYS = [
@@ -1186,7 +1188,7 @@ table.st td{padding:5px 12px;border-bottom:1px solid #f0f0f0}
 table.st tr.p td:nth-child(2){color:var(--green);font-weight:600}
 table.st tr.f td:nth-child(2){color:var(--red);font-weight:600}
 
-.section-title{font-weight:700;font-size:15px;margin:20px 0 6px;color:var(--text)}
+.section-title{font-weight:700;font-size:15px;margin:20px 0 6px;color:var(--text)}{{CSS}}
 @media print{body{background:#fff}.w{max-width:100%}
   .sec{box-shadow:none;border:1px solid #ddd}}
 </style></head><body><div class="w">

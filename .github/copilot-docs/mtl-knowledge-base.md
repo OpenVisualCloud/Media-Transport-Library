@@ -135,7 +135,7 @@ NIC receives multicast packet (flow rule steers to session's RX queue)
 
 Max schedulers: `MT_MAX_SCH_NUM = 18` (in `mt_main.h`)
 
-Layout-sensitive:
+Layout-sensitive (`doc/perf_compare.md`, "Layout effects"):
 - `struct mtl_sch_impl` is an array in `mtl_main_impl` (`sch_mgr.sch[]`, 25720 B each, session mgrs embedded). +32 B there, or `struct mt_sch_tasklet_impl` 128 → 192 B (shifts the DPDK heap), slowed the 2nd RX scheduler 10-15% on the perf pair with no code change; `main` hits the same slow state in ~1 of 10 runs
 - Keep new per-scheduler state out of both (the `sys:tasklet_stat` counters are a static table in `mt_sch.c`), and prove a one-scheduler perf diff with a padded reference build
 
@@ -746,7 +746,7 @@ Probes in `lib/src/mt_usdt_provider.d`, compiled when `MTL_HAS_USDT`. Attach wit
 
 Several probes are **attach-to-enable**: zero cost until tracing tool attaches.
 
-- `tasklet_stat` and `tasklet_time_sample`: `doc/usdt.md` §2.1.5. The sample exists because timing every loop reads the TSC twice per tasklet call; its gaps are random so periodic work cannot fall in step with them.
+- `tasklet_stat` and `tasklet_time_sample`: `doc/usdt.md` §2.1.5; `doc/perf_compare.md` is built on them. The sample exists because timing every loop reads the TSC twice per tasklet call (loops 10-45% longer); its gaps are random so periodic work cannot fall in step with them.
 - Keep a probe at ≤ 6 arguments: bpftrace 0.14 rejects `arg6` even for USDT.
 
 ---

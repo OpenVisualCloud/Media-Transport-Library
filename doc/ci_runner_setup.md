@@ -339,6 +339,11 @@ including a session that is streaming -- sees the media clock jump by the
 leap-second offset. Change the watchdog's expected value if the fleet needs a
 different one.
 
+The same watchdog deletes `/usr/local/bin/ffmpeg` and `ffprobe` unless they lead
+to the runner workspace's `.local_install/ffmpeg/bin`, a job running or not, and
+reports the runner as not clean. A job that moves `.local_install` must leave
+`ffmpeg` in place: `perf-compare.sh build` moves only the DPDK and MTL it rebuilds.
+
 CI activation retries a PF that reports no hardware RX timestamps or PHC once,
 after every PF has probed and before VFs are created, because a PF probed ahead
 of its shared-clock owner comes up without one. A PF still without one is
@@ -559,6 +564,12 @@ Three prerequisites are easy to miss:
   which are 24-frame prefixes of full-length lab assets rather than synthetic
   files — `generate` cuts them from the parent on the share, so that set needs
   the share present and writable. The perf leg verifies it before running.
+- `bpftrace` on both perf hosts. `perf-compare.yml` measures its two builds through
+  USDT; the host package list of `setup_environment.sh` has it, and the job fails when
+  it copies the builds to the companion if a host lacks it. Optionally a
+  `linux-tools-<version>` package on both, for the `perf stat` rows; the tools of another
+  6.8 kernel count on the perf hosts, and a host without them is measured without those
+  rows. Design and isolation: [perf_compare.md](perf_compare.md).
 
 ## A red gate that means the fleet was busy
 
