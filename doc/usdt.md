@@ -61,10 +61,14 @@ provider sys {
   probe log_msg(int level, char* msg);
   /* attach to enable the tasklet_time_measure at runtime */
   probe tasklet_time_measure();
+  /* attach to time 1 scheduler loop in 64 for the counters of tasklet_stat */
+  probe tasklet_time_sample();
   /* attach to enable the sessions_time_measure at runtime */
   probe sessions_time_measure();
   /* attach to enable the pcap dump for cni rx queue */
   probe cni_pcap_dump(int port, char* dump_file, uint32_t pkts);
+  /* each stats dump, per tasklet: its cumulative time and work, while timed or sampled */
+  probe tasklet_stat(int sch_idx, char* name, uint64_t cnt, uint64_t sum_ns, uint64_t work_cnt, uint64_t work_sum_ns);
 }
 ```
 
@@ -210,6 +214,34 @@ Example output like below:
 16:10:07 p1: dumped pcap file cni_p1_10000_Grf8CU.pcapng pkts 0
 16:10:17 p0: dumped pcap file cni_p0_10000_G8iOd6.pcapng pkts 206
 16:10:17 p1: dumped pcap file cni_p1_10000_Grf8CU.pcapng pkts 0
+```
+
+#### 2.1.5. tasklet_stat and tasklet_time_sample USDT
+
+Usage: at each stats dump `tasklet_stat` fires once per tasklet with the scheduler index,
+the name, `cnt` and `sum_ns` of its calls since it was registered, and `work_cnt` and
+`work_sum_ns` of those that did not return `MTL_TASKLET_ALL_DONE`. They count only while
+the time is measured (2.1.2: the flag or the attached probe) or sampled. Sampling runs
+while `tasklet_time_sample` is attached and leaves the 2.1.2 lines off. It times 1 loop
+in 64 on average, at random gaps, and weights its calls by the gap, so `cnt` is exact to
+within a gap and the rest are estimates. With the time also measured, every loop is
+timed.
+
+```bash
+sudo bpftrace -e '
+usdt::sys:tasklet_time_sample {}
+usdt::sys:tasklet_stat {
+  printf("%s sch %d %s: calls %llu %llu ns, work %llu %llu ns\n", strftime("%H:%M:%S", nsecs),
+         arg0, str(arg1), arg2, arg3, arg4, arg5);
+}
+' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```text
+13:11:08 sch 1 rvs_pkt_rx: calls 15658343 1139064632 ns, work 107458 109238181 ns
+13:11:18 sch 1 rvs_pkt_rx: calls 95882204 6978718390 ns, work 657352 671996566 ns
 ```
 
 ### 2.2. PTP tracing

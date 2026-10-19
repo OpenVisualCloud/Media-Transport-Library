@@ -36,6 +36,37 @@ static inline void sch_unlock(struct mtl_sch_impl* sch) {
   mt_pthread_mutex_unlock(&sch->mutex);
 }
 
+/* The cumulative counters of sys:tasklet_stat, out of the sch and tasklet structs and
+ * the DPDK heap: a field more there moves the hot state of every later scheduler.
+ * Static: one MTL instance per process. */
+struct __rte_cache_aligned mt_sch_tasklet_stat {
+  uint64_t cnt;
+  uint64_t sum_ns;
+  uint64_t work_cnt;
+  uint64_t work_sum_ns;
+};
+
+struct mt_sch_tasklet_stats {
+  struct mt_sch_tasklet_stat* slots; /* nb_tasklets, set on register */
+  void* mem;                         /* slots before the alignment */
+};
+static struct mt_sch_tasklet_stats g_sch_tasklet_stats[MT_MAX_SCH_NUM];
+
+static int sch_tasklet_stats_alloc(int idx, uint32_t nb_tasklets) {
+  struct mt_sch_tasklet_stats* ts = &g_sch_tasklet_stats[idx];
+
+  ts->mem = mt_zmalloc(sizeof(*ts->slots) * nb_tasklets + RTE_CACHE_LINE_SIZE);
+  if (!ts->mem) return -ENOMEM;
+  ts->slots = RTE_PTR_ALIGN_CEIL(ts->mem, RTE_CACHE_LINE_SIZE);
+  return 0;
+}
+
+static void sch_tasklet_stats_free(int idx) {
+  mt_free(g_sch_tasklet_stats[idx].mem);
+  g_sch_tasklet_stats[idx].mem = NULL;
+  g_sch_tasklet_stats[idx].slots = NULL;
+}
+
 static const char* lcore_type_names[MT_LCORE_TYPE_MAX] = {
     "lib_sch", "lib_tap", "lib_rxv_ring", "app_allocated", "lib_app_sch",
 };
@@ -121,6 +152,21 @@ static bool sch_tasklet_time_measure(struct mtl_main_impl* impl) {
   return enabled;
 }
 
+/* Loops per timed loop, on average, while sys:tasklet_time_sample is attached. */
+#define MT_SCH_TIME_SAMPLE_PERIOD (64)
+
+/* A random gap, as a fixed one would alias with work that repeats every few loops: 1 to
+ * 2 * MT_SCH_TIME_SAMPLE_PERIOD - 1 loops, xorshift32 whose state is never 0. */
+static uint32_t sch_time_sample_gap(uint32_t* state) {
+  uint32_t x = *state;
+
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+  *state = x;
+  return 1 + x % (2 * MT_SCH_TIME_SAMPLE_PERIOD - 1);
+}
+
 /* MPOL_LOCAL lacks the default policy's MPOL_F_MOF, so a NUMA balancing scan run on this
  * busy thread rewrites no PTEs and faults migrate nothing; allocation is unchanged. */
 static bool sch_set_local_mempolicy(struct mtl_sch_impl* sch) {
@@ -158,6 +204,9 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
   struct mt_sch_tasklet_impl* tasklet;
   uint64_t loop_cal_start_ns;
   uint64_t loop_cnt = 0;
+  /* time sample: loops left to the next timed one, and the state of its random gap */
+  uint32_t tm_sample_left = 0;
+  uint32_t tm_sample_rng = 2463534242u;
 
   bool local_mempolicy = sch_set_local_mempolicy(sch);
 
@@ -182,8 +231,18 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
   while (rte_atomic32_read(&sch->request_stop) == 0) {
     int pending = MTL_TASKLET_ALL_DONE;
     bool time_measure = sch_tasklet_time_measure(impl);
+    /* the loops this one is timed for: itself, the gap to the next sample, or none */
+    uint32_t tm_weight = time_measure ? 1 : 0;
     uint64_t tm_sch_tsc_s = 0; /* for sch time_measure */
 
+    if (!time_measure && MT_USDT_TASKLET_TIME_SAMPLE_ENABLED()) {
+      if (tm_sample_left) {
+        tm_sample_left--;
+      } else {
+        tm_weight = sch_time_sample_gap(&tm_sample_rng);
+        tm_sample_left = tm_weight - 1;
+      }
+    }
     if (time_measure) tm_sch_tsc_s = mt_get_tsc(impl);
 
     num_tasklet = sch->max_tasklet_idx;
@@ -199,11 +258,20 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
       ops = &tasklet->ops;
 
       uint64_t tm_tasklet_tsc_s = 0; /* for tasklet time_measure */
-      if (time_measure) tm_tasklet_tsc_s = mt_get_tsc(impl);
-      pending += ops->handler(ops->priv);
-      if (time_measure) {
+      if (tm_weight) tm_tasklet_tsc_s = mt_get_tsc(impl);
+      int ret = ops->handler(ops->priv);
+      pending += ret;
+      if (tm_weight) {
         uint64_t delta_ns = mt_get_tsc(impl) - tm_tasklet_tsc_s;
-        mt_stat_u64_update(&tasklet->stat_time, delta_ns);
+        struct mt_sch_tasklet_stat* ts = &g_sch_tasklet_stats[idx].slots[i];
+
+        if (time_measure) mt_stat_u64_update(&tasklet->stat_time, delta_ns);
+        ts->cnt += tm_weight;
+        ts->sum_ns += delta_ns * tm_weight;
+        if (ret != MTL_TASKLET_ALL_DONE) {
+          ts->work_cnt += tm_weight;
+          ts->work_sum_ns += delta_ns * tm_weight;
+        }
       }
     }
     if (sch->allow_sleep && (pending == MTL_TASKLET_ALL_DONE)) {
@@ -360,6 +428,14 @@ static struct mtl_sch_impl* sch_request(struct mtl_main_impl* impl, enum mt_sch_
         sch_unlock(sch);
         return NULL;
       }
+      if (sch_tasklet_stats_alloc(sch_idx, sch->nb_tasklets) < 0) {
+        err("%s(%d), %u tasklet stats malloc fail\n", __func__, sch_idx,
+            sch->nb_tasklets);
+        mt_rte_free(sch->tasklet);
+        sch->tasklet = NULL;
+        sch_unlock(sch);
+        return NULL;
+      }
       rte_atomic32_inc(&sch->active);
       rte_atomic32_inc(&mt_sch_get_mgr(impl)->sch_cnt);
       sch_unlock(sch);
@@ -398,6 +474,7 @@ static int sch_free(struct mtl_sch_impl* sch) {
     }
     mt_rte_free(sch->tasklet);
     sch->tasklet = NULL;
+    sch_tasklet_stats_free(idx);
   }
   sch->nb_tasklets = 0;
   rte_atomic32_dec(&mt_sch_get_mgr(sch->parent)->sch_cnt);
@@ -472,6 +549,12 @@ static int sch_stat(void* priv) {
     if (!tasklet) continue;
 
     dbg("SCH(%d): tasklet %s at %d\n", idx, tasklet->name, i);
+    if (MT_USDT_SYS_TASKLET_STAT_ENABLED()) {
+      struct mt_sch_tasklet_stat* ts = &g_sch_tasklet_stats[idx].slots[i];
+
+      MT_USDT_SYS_TASKLET_STAT(idx, tasklet->name, ts->cnt, ts->sum_ns, ts->work_cnt,
+                               ts->work_sum_ns);
+    }
     stat_time = &tasklet->stat_time;
     if (stat_time->cnt) {
       uint64_t avg_ns = stat_time->sum / stat_time->cnt;
@@ -944,6 +1027,7 @@ mtl_tasklet_handle mtl_sch_register_tasklet(struct mtl_sch_impl* sch,
     tasklet->sch = sch;
     tasklet->idx = i;
     mt_stat_u64_init(&tasklet->stat_time);
+    g_sch_tasklet_stats[idx].slots[i] = (struct mt_sch_tasklet_stat){0};
 
     sch->tasklet[i] = tasklet;
     sch->max_tasklet_idx = RTE_MAX(sch->max_tasklet_idx, i + 1);
