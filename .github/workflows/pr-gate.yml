@@ -46,7 +46,7 @@ jobs:
       - name: Clean workspace and checkout
         uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@497c4107ae027a4f9d6da088d027639df40064e3
 
-      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         if: ${{ github.event_name != 'workflow_dispatch' }}
         id: filter
         with:
