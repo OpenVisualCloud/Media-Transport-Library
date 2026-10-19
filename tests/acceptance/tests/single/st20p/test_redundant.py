@@ -60,3 +60,4 @@ def test_st20p_redundant(
         compliance=pcap_capture,
         integrity=media_integrity,
     )
+    app.assert_redundant_paths()
