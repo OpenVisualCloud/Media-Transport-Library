@@ -23,6 +23,7 @@ from mtl_engine.execute import kill_stale_processes, read_remote_log, run
 from mtl_engine.integrity import calculate_yuv_frame_size
 from mtl_engine.media_files import yuv_files_422rfc10
 from mtl_engine.performance_monitoring import (
+    HUGEPAGE_FALLBACK_MARKER,
     CpuCoreMonitor,
     display_session_results,
     log_cpu_core_results,
@@ -33,6 +34,7 @@ from mtl_engine.performance_monitoring import (
     monitor_tx_fps,
     monitor_tx_frames,
     monitor_tx_throughput,
+    wire_balance,
 )
 from mtl_engine.rxtxapp import RxTxApp
 
@@ -131,10 +133,6 @@ MAX_SESSIONS = {
 # shrink.
 PERF_SOURCE_FRAMES = 24
 
-# What RxTxApp prints, once, when a session's source no longer fits in
-# hugepages and it reads through mmap() instead (tx_st20p_app.c).
-HUGEPAGE_FALLBACK_MARKER = "source malloc on hugepage fail"
-
 CRASH_RECOVERY_WAIT = 30  # Seconds to wait after VF reset for link recovery
 
 
@@ -208,43 +206,6 @@ def _has_hugepage_source_fallback(tx_lines) -> bool:
     report is the one signal that covers every cause.
     """
     return any(HUGEPAGE_FALLBACK_MARKER in line for line in tx_lines)
-
-
-def _wire_balance(tx_host, tx_vfs, rx_host, rx_vfs) -> list[int] | None:
-    """Return, per leg, the packets the TX port sent minus those the RX port got.
-
-    Both are the MAC's own unicast counters on the PF behind each VF, and a
-    clean path delivers every packet, so the change across an iteration is
-    what the network lost on that leg.  None if a counter cannot be read (a NIC
-    without ice's .nic statistics, or the host not answering).
-    """
-    counts = []
-    for host, vfs, counter in (
-        (tx_host, tx_vfs, "tx_unicast.nic"),
-        (rx_host, rx_vfs, "rx_unicast.nic"),
-    ):
-        try:
-            result = host.connection.execute_command(
-                "; ".join(
-                    f"ethtool -S $(ls /sys/bus/pci/devices/{vf}/physfn/net) | "
-                    f"awk '$1 == \"{counter}:\" {{print $2}}'"
-                    for vf in vfs
-                ),
-                shell=True,
-                timeout=20,
-                expected_return_codes=None,
-            )
-            values = (result.stdout or "").split()
-        except Exception as e:
-            logger.warning(f"{host.name}: cannot read {counter}: {e}")
-            return None
-        if len(values) != len(vfs) or not all(v.isdigit() for v in values):
-            logger.warning(f"{host.name}: no {counter} for {vfs}: {values}")
-            return None
-        counts.append([int(v) for v in values])
-
-    sent, received = counts
-    return [s - r for s, r in zip(sent, received)]
 
 
 def _apply_side_kwargs(
@@ -578,7 +539,7 @@ def _run_iteration(
     # A TX verdict is taken at the sender, so only RX depends on delivery.
     tx_vfs = [tx_vf] + ([tx_vf_r] if redundant else [])
     rx_vfs = [rx_vf] + ([rx_vf_r] if redundant else [])
-    balance = None if is_tx else _wire_balance(tx_host, tx_vfs, rx_host, rx_vfs)
+    balance = None if is_tx else wire_balance(tx_host, tx_vfs, rx_host, rx_vfs)
 
     companion_process = companion_host.connection.start_process(
         f"mkdir -p $(dirname {companion_log}) && "
@@ -702,7 +663,7 @@ def _run_iteration(
         if balance is not None:
             # Stopped first: reads taken while packets are in flight disagree.
             companion_app.stop_process()
-            after = _wire_balance(tx_host, tx_vfs, rx_host, rx_vfs)
+            after = wire_balance(tx_host, tx_vfs, rx_host, rx_vfs)
             if after is not None:
                 losses = [a - b for a, b in zip(after, balance)]
 
