@@ -82,6 +82,11 @@ jobs:
       - name: Build the Rust no_std example
         run: bash .github/scripts/ci/build-rust-example.sh
 
+      # Windows, the other build without USDT, runs only by hand, so this is the
+      # build that sees a variable kept only for a probe argument.
+      - name: Build the library without USDT
+        run: meson setup build_no_usdt -Dbuildtype=release -Denable_usdt=false && ninja -C build_no_usdt
+
       - name: 'upload release build artifacts'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
