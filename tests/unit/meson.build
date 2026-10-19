@@ -46,6 +46,7 @@ unit_sources = [
   'common/mt_bitmap_test.cpp',
   'ffmpeg/mtl_common_harness.c',
   'ffmpeg/mtl_common_test.cpp',
+  'avcodec/st22_avcodec_encode_test.cpp',
   'dev/mt_dev_harness.c',
   'dev/mt_dev_igc_test.cpp',
   'dev/mt_dev_rx_desc_test.cpp',
@@ -221,10 +222,18 @@ unit_sources = [
   'main.cpp',
 ]
 
+# A library of its own keeps the FFmpeg stub headers off every other unit source's path.
+ut_avcodec_harness_lib = static_library('ut_avcodec_harness', 'avcodec/st22_avcodec_harness.c',
+  c_args : unit_c_args,
+  include_directories : unit_include_dirs + include_directories('avcodec/ffmpeg_stub'),
+  dependencies : [mtl_internal_dep],
+  install : false)
+
 executable('UnitTest', unit_sources,
   c_args : unit_c_args,
   cpp_args : unit_cpp_args,
   link_args : unit_link_args,
+  link_with : ut_avcodec_harness_lib,
   build_rpath : unit_build_rpath,
   include_directories : unit_include_dirs,
   dependencies : [mtl_internal_dep, dpdk_dep, libm_dep, libnuma_dep, gtest_dep, gmock_dep,
