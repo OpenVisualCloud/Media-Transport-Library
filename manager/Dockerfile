@@ -6,7 +6,7 @@
 # Please review and modify as necessary before using in a production environment.
 
 # Build stage, ubuntu 24.04
-FROM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517 AS builder
+FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac AS builder
 
 LABEL maintainer="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 
@@ -44,7 +44,7 @@ RUN meson setup build && \
     DESTDIR=/install meson install -C build
 
 # Runtime stage, ubuntu 24.04
-FROM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517
+FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
 
 # Install runtime dependencies
 RUN apt-get update -y && \
