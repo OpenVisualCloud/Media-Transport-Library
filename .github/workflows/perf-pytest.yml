@@ -51,7 +51,7 @@ jobs:
           ref: '${{ inputs.branch || github.ref }}'
           fetch-depth: '0'
       - name: Install Task
-        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
       # Twice: the branch's own overlay-tests may be older than the workflow
       # commit's. The first run checks out the workflow commit's copy, the
       # second runs it.
