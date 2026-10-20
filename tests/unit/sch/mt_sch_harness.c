@@ -180,6 +180,7 @@ struct ut_sch_stats_ctx {
   mtl_tasklet_handle tasklet;
   mtl_tasklet_handle idle;
   unsigned int work_every;
+  unsigned int long_every;
   uint64_t loops;
   uint64_t calls;
   uint64_t stop_at;
@@ -197,9 +198,10 @@ static int ut_sch_filler_handler(void* priv) {
 static int ut_sch_stats_handler(void* priv) {
   struct ut_sch_stats_ctx* ctx = priv;
   uint64_t call = ++ctx->calls;
-  bool work = ctx->work_every && call % ctx->work_every == 0;
+  bool is_long = ctx->long_every && call % ctx->long_every == 0;
+  bool work = is_long || (ctx->work_every && call % ctx->work_every == 0);
 
-  ut_clock_advance(work ? UT_SCH_WORK_NS : UT_SCH_IDLE_NS);
+  ut_clock_advance(is_long ? UT_SCH_LONG_NS : work ? UT_SCH_WORK_NS : UT_SCH_IDLE_NS);
   if (call == ctx->stop_at) rte_atomic32_set(&ctx->filler.sch->request_stop, 1);
   return work ? MTL_TASKLET_HAS_PENDING : MTL_TASKLET_ALL_DONE;
 }
@@ -255,7 +257,8 @@ void ut_sch_stats_main_destroy(mtl_handle mt) {
   free(ctx);
 }
 
-int ut_sch_stats_register(mtl_handle mt, unsigned int work_every) {
+int ut_sch_stats_register(mtl_handle mt, unsigned int work_every,
+                          unsigned int long_every) {
   struct ut_sch_stats_ctx* ctx = (struct ut_sch_stats_ctx*)mt;
   struct mtl_tasklet_ops ops = {
       .name = "ut_tasklet", .priv = ctx, .handler = ut_sch_stats_handler};
@@ -265,6 +268,7 @@ int ut_sch_stats_register(mtl_handle mt, unsigned int work_every) {
     if (ret < 0) return ret;
   }
   ctx->work_every = work_every;
+  ctx->long_every = long_every;
   ctx->tasklet = mtl_sch_register_tasklet(mt_sch_instance(mt, UT_SCH_STATS_SCH), &ops);
   return ctx->tasklet ? 0 : -ENOMEM;
 }
@@ -305,6 +309,31 @@ struct ut_sch_tasklet_stat ut_sch_stats_counter(int slot) {
                                       .sum = ts->sum_ns,
                                       .work_cnt = ts->work_cnt,
                                       .work_sum = ts->work_sum_ns};
+}
+
+uint64_t ut_sch_stats_hist_cnt(int slot) {
+  struct mt_sch_tasklet_hist* hist = &g_sch_tasklet_stats[UT_SCH_STATS_SCH].hist[slot];
+  uint64_t cnt = 0;
+
+  for (unsigned int b = 0; b < MT_SCH_HIST_NB; b++) cnt += hist->calls[b];
+  return cnt;
+}
+
+unsigned int ut_sch_hist_nb(void) {
+  return MT_SCH_HIST_NB;
+}
+
+unsigned int ut_sch_hist_bucket(uint64_t ns) {
+  return sch_hist_bucket(ns);
+}
+
+uint64_t ut_sch_hist_bucket_lo(unsigned int b) {
+  return sch_hist_bucket_lo(b);
+}
+
+double ut_sch_hist_quantile(const uint64_t* hist, uint64_t min, uint64_t max,
+                            unsigned int q) {
+  return sch_hist_quantile(hist, min, max, q);
 }
 
 struct ut_sch_tasklet_stat ut_sch_stats_probe(void) {

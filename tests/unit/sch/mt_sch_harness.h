@@ -50,6 +50,7 @@ int ut_sch_filelock_create_mode(unsigned int* mode);
 
 #define UT_SCH_IDLE_NS (100)
 #define UT_SCH_WORK_NS (50000)
+#define UT_SCH_LONG_NS (200000)
 /* not 0, so a tasklet timed from the loop start, not from its own call, is off by it */
 #define UT_SCH_FILLER_NS (7)
 /* not 0, so a stats lookup that ignores the scheduler index fails */
@@ -65,9 +66,11 @@ void ut_sch_stats_main_destroy(mtl_handle mt);
 
 /* Registers the tasklet ut_tasklet through mtl_sch_register_tasklet(), into slot 1, the
  * first free one, unregistering the one before. On the fake clock its every work_every-th
- * call (none with 0) takes UT_SCH_WORK_NS and returns MTL_TASKLET_HAS_PENDING, the others
- * UT_SCH_IDLE_NS and MTL_TASKLET_ALL_DONE. Returns 0 on success. */
-int ut_sch_stats_register(mtl_handle mt, unsigned int work_every);
+ * call (none with 0) takes UT_SCH_WORK_NS and its every long_every-th (none with 0)
+ * UT_SCH_LONG_NS, both returning MTL_TASKLET_HAS_PENDING; the others take UT_SCH_IDLE_NS
+ * and return MTL_TASKLET_ALL_DONE. Returns 0 on success. */
+int ut_sch_stats_register(mtl_handle mt, unsigned int work_every,
+                          unsigned int long_every);
 
 /* Registers the tasklet ut_idle, which returns MTL_TASKLET_ALL_DONE at once, through
  * mtl_sch_register_tasklet() into the first free slot. Returns 0 on success. */
@@ -94,6 +97,18 @@ struct ut_sch_tasklet_stat {
 
 /* The counters of a tasklet slot of sch UT_SCH_STATS_SCH, without sch_idx and name. */
 struct ut_sch_tasklet_stat ut_sch_stats_counter(int slot);
+
+/* The calls in the per-dump time histogram of a tasklet slot of sch UT_SCH_STATS_SCH. */
+uint64_t ut_sch_stats_hist_cnt(int slot);
+
+/* The per-dump time histogram: its bucket count, the bucket of a call of ns, the lower
+ * bound in ns of bucket b, and the q-th percentile in ns of hist[ut_sch_hist_nb()] for
+ * calls of min to max ns. */
+unsigned int ut_sch_hist_nb(void);
+unsigned int ut_sch_hist_bucket(uint64_t ns);
+uint64_t ut_sch_hist_bucket_lo(unsigned int b);
+double ut_sch_hist_quantile(const uint64_t* hist, uint64_t min, uint64_t max,
+                            unsigned int q);
 
 /* The arguments of the last sys:tasklet_stat that the stats dump fired. */
 struct ut_sch_tasklet_stat ut_sch_stats_probe(void);
