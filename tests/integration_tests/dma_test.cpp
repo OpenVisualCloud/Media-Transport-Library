@@ -2,6 +2,11 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
+#include <dirent.h>
+
+#include <fstream>
+#include <string>
+
 #include "log.h"
 #include "tests.hpp"
 
@@ -75,6 +80,57 @@ TEST(Dma, create_multi) {
   if (!st_test_dma_available(ctx)) return;
 
   for (int i = 0; i < 10; i++) test_dma_create_one(ctx);
+}
+
+static std::string test_dma_sysfs(const std::string& dev, const char* attr) {
+  std::ifstream file("/sys/bus/pci/devices/" + dev + "/" + attr);
+  std::string value;
+  file >> value;
+  return value;
+}
+
+/* Intel DMA devices (PCI class 0x0880) on vfio-pci on NUMA node numa */
+static int test_dma_vfio_cnt(int numa) {
+  DIR* dir = opendir("/sys/bus/pci/devices");
+  struct dirent* ent;
+  char link[256];
+  int cnt = 0;
+
+  if (!dir) return 0;
+  while ((ent = readdir(dir))) {
+    std::string dev = ent->d_name;
+    if (test_dma_sysfs(dev, "vendor") != "0x8086") continue;
+    if (test_dma_sysfs(dev, "class").rfind("0x0880", 0)) continue;
+    if (test_dma_sysfs(dev, "numa_node") != std::to_string(numa)) continue;
+    std::string driver = "/sys/bus/pci/devices/" + dev + "/driver";
+    ssize_t len = readlink(driver.c_str(), link, sizeof(link) - 1);
+    if (len < 0) continue;
+    link[len] = 0;
+    std::string name = link;
+    if (name.substr(name.find_last_of('/') + 1) == "vfio-pci") cnt++;
+  }
+  closedir(dir);
+  return cnt;
+}
+
+/* --dma_auto gives each port a DMA device of its NUMA node, if the node has one */
+TEST(Dma, auto_each_port) {
+  struct st_tests_context* ctx = st_test_ctx();
+
+  if (!(ctx->para.flags & MTL_FLAG_DMA_AUTO)) {
+    info("%s, skip as no --dma_auto\n", __func__);
+    return;
+  }
+  if (!st_test_dma_available(ctx)) return;
+
+  for (int i = 0; i < ctx->para.num_ports; i++) {
+    enum mtl_port port = (enum mtl_port)i;
+    int numa = mtl_get_numa_id(ctx->handle, port);
+    if (!test_dma_vfio_cnt(numa)) continue;
+    mtl_udma_handle dma = mtl_udma_create(ctx->handle, 128, port);
+    EXPECT_TRUE(dma != nullptr) << "port " << i << " has no DMA device of NUMA " << numa;
+    if (dma) mtl_udma_free(dma);
+  }
 }
 
 static void _test_dma_copy(mtl_handle st, mtl_udma_handle dma, uint32_t off,

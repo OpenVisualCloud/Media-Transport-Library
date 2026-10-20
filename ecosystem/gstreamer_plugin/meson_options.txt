@@ -1,0 +1,2 @@
+option('rpath', type : 'string', value : '',
+  description : 'Library directories the plugins record after $ORIGIN, colon separated')

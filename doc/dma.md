@@ -51,7 +51,41 @@ dpdk-devbind.py -b vfio-pci 0000:80:04.1
 dpdk-devbind.py -b vfio-pci 0000:80:04.2
 ```
 
-### 2.3. Intel DSA and the vfio-pci denylist
+### 2.3. Set up DMA for local tests
+
+`script/dma_setup.sh` does the steps of 2.1, 2.2, and 2.4 for each Intel DMA
+device that DPDK supports: CBDMA (`ioat` driver) and DSA (`idxd` driver). A port
+is a PCI address or an interface name. MTL uses a DMA device only on the NUMA
+node of the port (see 3.4), so the script selects the DMA devices by the NUMA
+node of the port.
+
+Bind two DMA devices on the NUMA node of the port to `vfio-pci`:
+
+```bash
+sudo ./script/dma_setup.sh bind 0000:af:00.0
+```
+
+Set `DMA_CHANNELS` to change the number of devices. Without a port, the script
+binds the devices on each NUMA node. If DSA needs it, the script loads
+`vfio-pci` with `disable_denylist=1`.
+
+To start again from a known state, `reset` unbinds each DMA device on the
+NUMA node from `vfio-pci`, and then binds as `bind` does. A device that a
+process holds stays on `vfio-pci`. Host validation runs `reset` on the test
+host and on the shadow host before each job:
+
+```bash
+sudo ./script/dma_setup.sh reset
+```
+
+Print the DMA devices on `vfio-pci` for a port, in the format of `--dma_dev`:
+
+```bash
+./script/dma_setup.sh get 0000:af:01.0
+0000:80:04.0,0000:80:04.1
+```
+
+### 2.4. Intel DSA and the vfio-pci denylist
 
 A DSA device (`8086:0b25`, SPR and later) is on `vfio-pci`'s built-in denylist, so
 the bind above fails with `Cannot bind to driver vfio-pci: [Errno 22]` and `dmesg`
@@ -104,6 +138,20 @@ When utilizing the built-in application, simply use the `--dma_dev` argument to 
 --dma_dev 0000:80:04.0,0000:80:04.1,0000:80:04.2
 ```
 
+With `--dma_auto` instead of `--dma_dev`, MTL finds the DMA devices itself. It
+uses each Intel CBDMA or DSA device on `vfio-pci` on the NUMA node of a port. A
+device that another process holds is skipped, so the second process gets the
+devices that are free. MTL registers 32 DMA queues at most, and a DSA device
+gives up to 16 of them. When the ports are on more than one NUMA node, each
+node gets the same share of the 32 queues.
+
+```bash
+--dma_auto
+```
+
+The FFmpeg plugin has `-dma_auto 1` and the GStreamer plugin has
+`dma-auto=true` for the same function.
+
 ### 3.2. DMA configuration in API
 
 If you're directly interfacing with the API, the initial step involves incorporating DMA information into the `struct mtl_init_params` before making the `mtl_init` call. Subsequently, the initialization routine will attempt to parse and initialize the DMA device, and if the DMA is prepared, it will be added to the DMA list.
@@ -119,6 +167,9 @@ If you're directly interfacing with the API, the initial step involves incorpora
   /** Optional. The element number in the dma_dev_port array, leave to zero if no DMA */
   uint8_t num_dma_dev_port;
 ```
+
+Or set `MTL_FLAG_DMA_AUTO` in `flags` and leave `dma_dev_port` empty: MTL then
+finds the DMA devices on the NUMA node of the ports, as `--dma_auto` does.
 
 To enable DMA offloading, set the `ST20_RX_FLAG_DMA_OFFLOAD` flag in the `st20_rx_create` function, or `ST20P_RX_FLAG_DMA_OFFLOAD` when operating in pipeline mode. During the creation of the RX session, the system will attempt to locate a DMA device.
 However, be aware that this process may fail if a suitable DMA device is not available, due to various reasons. For detailed information in case of failure, please consult the logs.

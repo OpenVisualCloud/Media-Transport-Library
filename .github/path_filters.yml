@@ -6,7 +6,7 @@
 # dorny ignores a '!' pattern with the default predicate, so do not exclude
 # paths: list the paths to include.
 #
-# .github/scripts/ci/check-path-filters.py (a checkpatch hook) enforces the
+# .github/scripts/ci/lint/check-path-filters.py (a checkpatch hook) enforces the
 # rules below. Run it after each change to this file.
 #
 #   - hash_<name> holds the paths of script/hash_sources_<name>.env, one to one
@@ -16,6 +16,14 @@
 #     tracked file.
 #   - build_workflow holds each filter that pr-gate.yml gets, because the tests
 #     wait for the Build workflow. If Build skips, the wait times out.
+#   - A filter names each file of script/ that its job runs. A glob such as
+#     'script/**' runs the job for a change to a script that it never calls.
+#   - scripts holds each script/*.sh and .github/scripts/setup_environment.sh,
+#     because test-scripts.sh checks each of them.
+#   - .github/scripts/ci/ is one folder per job family (cache, host, pytest,
+#     report, scan, fuzz, lint, workflow). A filter names a folder, as
+#     '.github/scripts/ci/host/**', never the whole tree: a change to the fuzz
+#     script must not run the bare-metal jobs.
 
 # ---------------------------------------------------------------- Artifacts
 # script/hash_sources.sh chains the hashes: dpdk -> mtl -> jpegxs -> ffmpeg,
@@ -23,7 +31,8 @@
 
 hash_dpdk: &hash_dpdk
   - .github/scripts/setup_environment.sh
-  - .github/scripts/ci/build-dependencies.sh
+  - script/install_dependencies.sh
+  - .github/scripts/ci/cache/build-dependencies.sh
   - script/hash_sources_dpdk.env
   - 'patches/dpdk/**'
   - versions.env
@@ -32,6 +41,11 @@ hash_dpdk: &hash_dpdk
 
 hash_mtl: &hash_mtl
   - .github/scripts/setup_environment.sh
+  - script/install_dependencies.sh
+  - script/nicctl.sh
+  - script/common.sh
+  - script/build_jpegxs.sh
+  - script/build_st22_avcodec_plugin.sh
   - build.sh
   - script/hash_sources_mtl.env
   - meson.build
@@ -54,18 +68,19 @@ hash_mtl: &hash_mtl
   - tests/meson_options.txt
 
 hash_jpegxs: &hash_jpegxs
-  - .github/scripts/ci/build-jpegxs.sh
-  - .github/scripts/ci/jpegxs-source.sh
-  - .github/scripts/ci/validate-jpegxs.sh
   - .github/scripts/setup_environment.sh
-  - ecosystem/ffmpeg_plugin/build.sh
+  - script/build_jpegxs.sh
+  - script/install_dependencies.sh
+  - script/build_ffmpeg_plugin.sh
+  - script/common.sh
   - script/hash_sources_jpegxs.env
   - versions.env
 
 hash_ice: &hash_ice
-  - .github/scripts/ci/build-dependencies.sh
-  - .github/scripts/ci/validate-ice.sh
+  - .github/scripts/ci/cache/build-dependencies.sh
+  - .github/scripts/ci/cache/validate-ice.sh
   - .github/scripts/setup_environment.sh
+  - script/install_dependencies.sh
   - 'patches/ice_drv/**'
   - script/build_drivers.sh
   - script/common.sh
@@ -74,20 +89,28 @@ hash_ice: &hash_ice
 
 hash_ffmpeg: &hash_ffmpeg
   - .github/scripts/setup_environment.sh
+  - script/install_dependencies.sh
+  - script/build_ffmpeg_plugin.sh
+  - script/common.sh
   - script/hash_sources_ffmpeg.env
   - 'ecosystem/ffmpeg_plugin/**'
   - versions.env
 
 hash_gstreamer: &hash_gstreamer
   - .github/scripts/setup_environment.sh
+  - script/install_dependencies.sh
+  - script/build_gstreamer_plugin.sh
+  - script/common.sh
   - script/hash_sources_gstreamer.env
   - 'ecosystem/gstreamer_plugin/**'
   - 'tests/tools/gstreamer_tools/**'
 
 hash_plugins: &hash_plugins
   - .github/scripts/setup_environment.sh
+  - script/install_dependencies.sh
   - script/hash_sources_plugins.env
   - script/build_st22_avcodec_plugin.sh
+  - script/common.sh
   - 'plugins/st22_avcodec/**'
   - VERSION
 
@@ -118,21 +141,30 @@ unit_sources: &unit_sources
   - ecosystem/ffmpeg_plugin/mtl_common.h
 
 # What a bare-metal test job runs besides the artifacts: the gate, the host
-# setup actions, the ci:* tasks and the scripts that they call. checkout-clean
+# setup actions, the ci:* tasks and the scripts that they call: the cache
+# validation, the host setup and the workflow glue, not the pytest, fuzz, scan
+# or lint scripts. checkout-clean
 # is not here: the workflows use it at a pinned commit, not from this tree.
 # .github/path_filters.yml is not here: check-path-filters.py checks it, and a
-# run on the NIC hosts does not.
+# run on the NIC hosts does not. Each file of script/ is named: gtest.sh and
+# tests/acceptance call nicctl.sh. The validate-host action calls dma_setup.sh,
+# the validate-host action and ci:validate-dependencies call build_ebpf_xdp.sh,
+# and source-checksums calls hash_sources.sh.
 bare_metal_ci: &bare_metal_ci
   - .github/workflows/pr-gate.yml
   - .github/workflows/build.yml
-  - .github/workflows/kahawai_template.json
   - '.github/actions/validate-host/**'
-  - '.github/actions/cleanup/**'
   - '.github/actions/source-checksums/**'
   - '.github/actions/wait-for-workflow/**'
-  - '.github/scripts/ci/**'
+  - '.github/scripts/ci/cache/**'
+  - '.github/scripts/ci/host/**'
+  - '.github/scripts/ci/workflow/**'
   - Taskfile.yml
-  - 'script/**'
+  - script/common.sh
+  - script/nicctl.sh
+  - script/dma_setup.sh
+  - script/build_ebpf_xdp.sh
+  - script/hash_sources.sh
 
 # ------------------------------------------------------------ Filters (jobs)
 
@@ -146,6 +178,7 @@ gtest: &gtest
   - *hash_dpdk
   - *libmtl
   - .github/scripts/setup_environment.sh
+  - script/install_dependencies.sh
   - versions.env
   - plugins/meson.build
   - plugins/meson_options.txt
@@ -169,6 +202,7 @@ smoke_tests: &smoke_tests
   - *hash_sources
   - *bare_metal_ci
   - .github/workflows/smoke-tests.yml
+  - '.github/scripts/ci/pytest/**'
   - .github/scripts/lib/mtl_acceptance_venv.sh
   - 'tests/acceptance/**'
 
@@ -184,8 +218,8 @@ clang_tidy: &clang_tidy
   - .clang-tidy
   - .github/path_filters.yml
   - .github/workflows/code-scan.yml
-  - .github/scripts/ci/clang-tidy-setup.sh
-  - .github/scripts/ci/clang-analyzer.sh
+  - .github/scripts/ci/scan/clang-tidy-setup.sh
+  - .github/scripts/ci/scan/clang-analyzer.sh
   - .github/code-scan/codechecker.skip
   - .github/code-scan/codechecker-requirements.txt
   - Taskfile.yml
@@ -205,7 +239,6 @@ build_workflow:
 unit_tests:
   - .github/path_filters.yml
   - .github/workflows/unit_tests.yml
-  - .github/scripts/ci/unit-test-dependencies.sh
   - *hash_dpdk
   - *libmtl
   - *unit_sources
@@ -217,7 +250,7 @@ unit_tests:
 fuzz_tests:
   - .github/path_filters.yml
   - .github/workflows/fuzz_tests.yml
-  - .github/scripts/ci/fuzz.sh
+  - .github/scripts/ci/fuzz/fuzz.sh
   - Taskfile.yml
   - *hash_dpdk
   - meson.build
@@ -234,7 +267,6 @@ fuzz_tests:
 base_build:
   - .github/path_filters.yml
   - .github/workflows/base_build.yml
-  - .github/scripts/ci/build-rust-example.sh
   - *hash_dpdk
   - *hash_mtl
   - *hash_ffmpeg
@@ -252,13 +284,17 @@ base_build:
 # docker_build.yml, ubuntu-docker-build. The build context is the repository
 # root less .dockerignore, which drops .github/, so the hash_<name> filters do
 # not apply: they hold .github/scripts/setup_environment.sh. Each image builds
-# DPDK, runs build.sh and the unit suite, and copies script/ into the image.
+# DPDK and the eBPF/XDP libraries with the scripts named below, and runs
+# build.sh and the unit suite. The image also holds a copy of script/, but the
+# job runs no other script, so a change to one does not run the job.
 docker_build:
   - .github/path_filters.yml
   - .github/workflows/docker_build.yml
   - 'docker/*.dockerfile'
   - .dockerignore
-  - 'script/**'
+  - script/common.sh
+  - script/build_dpdk.sh
+  - script/build_ebpf_xdp.sh
   - 'patches/dpdk/**'
   - versions.env
   - *libmtl
@@ -275,6 +311,52 @@ docker_build:
   - 'tests/integration_tests/**'
   - 'tests/tools/RxTxApp/**'
   - *unit_sources
+
+# unit_tests.yml, script-tests. test-scripts.sh checks the common structure of
+# each script, and runs the scripts that need no NIC and no root.
+scripts:
+  - .github/path_filters.yml
+  - .github/workflows/unit_tests.yml
+  - .github/scripts/ci/lint/test-scripts.sh
+  - .github/scripts/setup_environment.sh
+  - versions.env
+  - 'patches/dpdk/**'
+  - script/build_app.sh
+  - script/build_dpdk.sh
+  - script/build_drivers.sh
+  - script/build_ebpf_xdp.sh
+  - script/build_ffmpeg_plugin.sh
+  - script/build_gstreamer_plugin.sh
+  - script/build_jpegxs.sh
+  - script/build_obs_plugin.sh
+  - script/build_python.sh
+  - script/build_st22_avcodec_plugin.sh
+  - script/check_dpdk_patches.sh
+  - script/common.sh
+  - script/dma_setup.sh
+  - script/dos2unix.sh
+  - script/hash_sources.sh
+  - script/if_filter_delete.sh
+  - script/install_dependencies.sh
+  - script/isolation_monitor.sh
+  - script/isolation_report.sh
+  - script/lcore_stat_dump.sh
+  - script/nicctl.sh
+  - script/status_report.sh
+
+# github_pages_update.yml, buildDocumentation. Sphinx renders doc/ and the
+# Markdown and reStructuredText files that index.rst pulls in from the whole
+# tree, conf.py reads VERSION, and the job installs its packages with
+# task ci:workflow -- docs-dependencies.
+docs:
+  - .github/path_filters.yml
+  - .github/workflows/github_pages_update.yml
+  - .github/scripts/ci/workflow/workflow-ops.sh
+  - Taskfile.yml
+  - '**/*.md'
+  - '**/*.rst'
+  - 'doc/**'
+  - VERSION
 
 # docker_build.yml, manager-docker-build. The build context is manager/.
 manager_build:

@@ -114,12 +114,11 @@ jobs:
         run: task ci:pytest-setup -- tag
 
       - name: 'cleanup: Kill stale processes before test'
-        uses: ./.github/actions/cleanup
+        run: task cleanup
 
       - name: Run tests
         run: task ci:pytest-run -- custom
         env:
-          LD_LIBRARY_PATH: ${{ github.workspace }}/build/lib
           PYTEST_MARKER: ${{ inputs.marker }}
           PYTEST_FILTER: ${{ inputs.test_filter }}
           TEST_PATH: ${{ inputs.dir }}
@@ -132,4 +131,4 @@ jobs:
 
       - name: 'cleanup: Kill test processes'
         if: always()
-        uses: ./.github/actions/cleanup
+        run: task cleanup

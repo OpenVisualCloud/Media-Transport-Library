@@ -22,12 +22,7 @@ import dataclasses
 import logging
 
 from mtl_engine import ffmpeg_app, ip_pools, media_files
-from mtl_engine.application_base import (
-    MTL_ENCODER_PLUGIN_MAP,
-    Application,
-    ProcSpec,
-    mtl_plugin_check_cmd,
-)
+from mtl_engine.application_base import Application, ProcSpec, st22_codec_devices_ok
 from mtl_engine.config.mappings import APP_NAME_MAP, ffmpeg_pix_fmt
 from mtl_engine.const import FFMPEG_EXE, RXTXAPP_EXE
 from mtl_engine.integrity_session import NO_INTEGRITY, IntegrityIntent
@@ -76,6 +71,7 @@ class FFmpeg(Application):
         self._tx_commands: list[str] = []
         self._build: str | None = None
         self._rx_output: str | None = None
+        self._tx_output: str | None = None
         self._rx_frame_spec: tuple[str, str, int] | None = None
 
     # ------------------------------------------------------------------ ABCs
@@ -114,42 +110,6 @@ class FFmpeg(Application):
         paths = self.rx_output_files()
         return [dataclasses.replace(intent, out_url=p) for p in paths] or [intent]
 
-    def require_encoder(self, host, encoder: str, use_mtl_plugin: bool = False) -> None:
-        """Raise EnvironmentError if *encoder* is not available on *host*.
-
-        When *use_mtl_plugin* is True the codec is delivered by the MTL st22p
-        device (FFmpeg uses ``-f mtl_st22p``), so the matching MTL plugin .so is
-        checked instead of FFmpeg's built-in encoder list. Otherwise FFmpeg's
-        own encoder (e.g. ``-c:v libopenh264`` for an st20p YUV->H264 pipe) is
-        verified against ``ffmpeg -encoders``.
-        """
-        if use_mtl_plugin:
-            # Codecs delivered via MTL plugin (FFmpeg uses -f mtl_st22p)
-            plugin_so = MTL_ENCODER_PLUGIN_MAP.get(encoder)
-            if plugin_so:
-                res = host.connection.execute_command(
-                    mtl_plugin_check_cmd(plugin_so),
-                    shell=True,
-                    expected_return_codes=None,
-                )
-                if res.return_code != 0:
-                    raise EnvironmentError(
-                        f"MTL codec plugin {plugin_so} (for {encoder}) not found; "
-                        f"install the codec library and rebuild MTL plugins"
-                    )
-            return
-
-        res = host.connection.execute_command(
-            f"ffmpeg -encoders 2>/dev/null | grep {encoder} || true",
-            shell=True,
-            timeout=10,
-        )
-        if encoder not in (res.stdout or ""):
-            raise EnvironmentError(
-                f"{encoder} encoder not available in FFmpeg; "
-                f"install the codec library and rebuild FFmpeg"
-            )
-
     # ----------------------------------------------------- param plumbing
     def set_params(self, **kwargs):
         """Strip FFmpeg-only kwargs into ``self._ff_params`` first, then defer.
@@ -170,6 +130,14 @@ class FFmpeg(Application):
     _RXTXAPP_RX_TMPL = (
         f"{RXTXAPP_EXE} --config_file {{rx_cfg}} --test_time {{test_time}}"
     )
+
+    def _rx_dma(self) -> str:
+        """The RX side alone probes the DMA devices: vfio-pci gives a device
+        to one process, so a TX that probed first would leave none for RX."""
+        return "-dma_auto 1 " if self.params.get("dma_auto") else ""
+
+    def _rxtxapp_rx_dma(self) -> str:
+        return " --dma_auto" if self.params.get("dma_auto") else ""
 
     @staticmethod
     def _ffmpeg_st20p_tx_cmd(
@@ -341,7 +309,7 @@ class FFmpeg(Application):
         if not multiple:
             rx_cmd = (
                 f"{FFMPEG_EXE} -p_port {nic_port_list[1]} "
-                f"-p_sip {ip_pools.rx[0]} "
+                f"-p_sip {ip_pools.rx[0]} {self._rx_dma()}"
                 f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
                 f"-video_size {video_size} -init_retry 20 "
@@ -356,13 +324,13 @@ class FFmpeg(Application):
             # configuration mismatch" -- reported by ffmpeg as "Error opening
             # input file 2."
             rx_cmd = (
-                f"{FFMPEG_EXE} -p_sip {ip_pools.rx[0]} "
+                f"{FFMPEG_EXE} -p_sip {ip_pools.rx[0]} {self._rx_dma()}"
                 f"-p_port {nic_port_list[1]} "
                 f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
                 f"-video_size {video_size} -init_retry 20 "
                 f"-f mtl_st20p -i 1 "
-                f"-p_sip {ip_pools.rx[0]} "
+                f"-p_sip {ip_pools.rx[0]} {self._rx_dma()}"
                 f"-p_port {nic_port_list[1]} "
                 f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20002 "
                 f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
@@ -434,7 +402,7 @@ class FFmpeg(Application):
                 pacing_way=self.params.get("pacing_way"),
             )
         ]
-        return self._RXTXAPP_RX_TMPL, None
+        return self._RXTXAPP_RX_TMPL + self._rxtxapp_rx_dma(), None
 
     # -- mode: rgb24_multiple (FFmpeg TX×2, RxTxApp RX, two streams) -----
     def _build_rgb24_multiple_cmds(self, nic_port_list):
@@ -463,7 +431,7 @@ class FFmpeg(Application):
                     pacing_way=self.params.get("pacing_way"),
                 )
             )
-        return self._RXTXAPP_RX_TMPL, None
+        return self._RXTXAPP_RX_TMPL + self._rxtxapp_rx_dma(), None
 
     # -- mode: st22p (FFmpeg TX via mtl_st22p, FFmpeg RX via mtl_st22p) --
     def _build_st22p_cmds(self, nic_port_list):
@@ -688,11 +656,9 @@ class FFmpeg(Application):
                 self._output_files = out_path
             self.command = self.command.replace("{out0}", self._output_files[0])
             if mode == _MODE_ST22P:
-                conn = host.connection
-                self.command = self.with_local_kahawai(self.command, build, conn)
+                self.command = self.with_local_kahawai(self.command, build)
                 self._tx_commands = [
-                    self.with_local_kahawai(cmd, build, conn)
-                    for cmd in self._tx_commands
+                    self.with_local_kahawai(cmd, build) for cmd in self._tx_commands
                 ]
 
     # ----------------------------------------------------- execute_test
@@ -767,6 +733,7 @@ class FFmpeg(Application):
         )
         # RX is always specs[0] (started first); validation reads its output.
         self._rx_output = specs[0].captured_output
+        self._tx_output = "\n".join(spec.captured_output or "" for spec in specs[1:])
         self.last_output = self._rx_output
         self.last_return_code = self._safe_return_code(specs[0].proc)
 
@@ -849,6 +816,12 @@ class FFmpeg(Application):
                     fps,
                     self.params.get("test_time") or 30,
                     self.rx_recording_cap(),
+                )
+                codec = self.params.get("codec", "JPEG-XS")
+                passed = (
+                    st22_codec_devices_ok(self._rx_output, codec, ("decoder",))
+                    and st22_codec_devices_ok(self._tx_output, codec, ("encoder",))
+                    and passed
                 )
                 self._cleanup_output_files(host)
             elif mode == _MODE_ST30P:

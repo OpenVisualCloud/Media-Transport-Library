@@ -82,6 +82,14 @@ The shadow/SUT host pair used by `perf-pytest.yml` and the optional shadow sync
 in `custom-pytest.yml` reads `/etc/mtl-ci/shadow-host`, a file defining `IP` and
 `USER`.
 
+The validate-host action syncs the SUT's `.local_install`, `script/`, `tests/`
+and its cache and host scripts to the shadow, at the same path, and then runs
+the SUT's ICE activation there: the shadow loads the same Kahawai ice module.
+The shadow therefore runs the SUT's kernel release, and `SHADOW_USER` has
+passwordless sudo; with another kernel the bundle has no module for it, and
+the step fails. The VFs need no kernel module: DPDK's iavf driver is part of the
+synced `.local_install`.
+
 Only credentials for genuinely external services remain repository secrets:
 `COVERITY_EMAIL`, `COVERITY_TOKEN`, and the built-in `GITHUB_TOKEN`.
 
@@ -143,9 +151,8 @@ nothing tying it to the driver. `rte_tm_capabilities_get` is no help as a
 pre-check: the iavf implementation reads the same pointer in its first
 instructions.
 
-So on the fleet the alignment is a job step (`sudo -E env -u BASH_XTRACEFD
-"$TASK_BIN" ci:activate-ice`, idempotent, a no-op when the running module is
-already the cached one).
+The validation action aligns the driver on the fleet. It runs `ci:activate-ice`
+on the test host and on a configured shadow host.
 
 After driver activation, verify that each expected PF has a kernel netdev and
 that the capture PF exposes a PHC and hardware RX timestamping (`ethtool -T`).
@@ -167,12 +174,10 @@ carrying the card.
 
 #### The NoCtx strict pacing cases need both ports cabled
 
-`bind-test-ports` gives the second port of the chosen card two VFs when its link
-is up, and the NoCtx run transmits on one port and receives on the other. The six
-strict pacing cases need the NIC RX timestamp, which only traffic that crossed the
-wire carries, so they fail if the second port has no link (the step logs `no
-other port of <pf>'s card has its link up`) or is cabled elsewhere (the cases
-receive nothing).
+The NoCtx run transmits on one port and receives on the other. The six strict
+pacing cases need the NIC RX timestamp. Only traffic that crossed the wire has
+this timestamp. Thus, the cases fail if the second port has no link or connects
+to a different port.
 
 #### The ST 2022-7 leg needs both ports cabled too
 
@@ -245,8 +250,7 @@ back to the DUT interface when no sniff device is named.
 The build job installs DPDK under its own workspace, and meson bakes that prefix
 into the install: `libdpdk.pc` records it, and `librte_eal` records
 `RTE_EAL_PMD_PATH`, `<prefix>/lib/<arch>/dpdk/pmds-<abi>`, as the one directory
-EAL loads drivers from. There is no environment override for it, and MTL builds a
-fixed EAL argv, so there is no `-d` either.
+EAL loads drivers from. There is no environment override for it.
 
 When the runner that builds and the runner that tests keep their workspace at the
 same path, this is invisible. When they do not — a different `_work` root, or a
@@ -259,11 +263,20 @@ Error: mtl_init, st dev if init fail -12
 ```
 
 The mempool, not the NIC, because the mempool ops MTL asks for (`stack`) ship as
-a plugin like every driver. `task ci:configure-host -- dpdk-plugins` makes the
-baked path resolve to the drivers that were actually restored, and
-`.github/actions/validate-host` runs it right after the restore. It is a symlink,
-so it also serves the acceptance tests, which reach the host over SSH and inherit
-none of the job's environment.
+a plugin like every driver. So when the baked directory does not exist, MTL looks
+for the same `dpdk/pmds-<abi>` beside the `librte_eal` it actually loaded and
+passes it to EAL with `-d` (`dev_eal_pmd_dir` in `lib/src/dev/mt_dev.c`). A tree
+restored or moved anywhere loads its own drivers, in CI jobs and in the acceptance
+tests over SSH alike. Earlier versions linked the baked path to the restored
+drivers instead; `task ci:configure-host -- dpdk-plugins` now removes such a
+leftover link, which would otherwise keep a runner on another tree's drivers.
+
+The plugin registry has no such fallback. `build.sh` writes
+`.local_install/conf/kahawai.json` with the absolute plugin paths of the build
+job's workspace, the MTL cache carries it, and every job points
+`KAHAWAI_CFG_PATH` at it. So the build and test runners must keep the workspace
+at the same path. When they do not, `task ci:validate-dependencies` fails with
+`enables a plugin that is not installed`.
 
 ## The EBU LIST compliance analyser
 
@@ -394,12 +407,14 @@ unlink a root-owned file); and because `sudo` does not pass signals to its child
 the capture is reaped with `sudo pkill` on the argv rather than through the
 process handle, the same way `conftest._reap_ptp_daemons` reaps ptp4l.
 
-## The DMA channels the job serves itself
+## The DMA channels that host validation serves
 
-`sudo task ci:bind-test-ports` serves two DMA channels on the test card's NUMA
-node, and it takes them from wherever they are: a channel already on vfio-pci is
-left as it is, a channel with no driver is bound, and a channel `idxd` holds is
-taken from it. All three are the same `dpdk-devbind.py -b vfio-pci <bdf>` call.
+`script/dma_setup.sh reset` serves two DMA channels on each NUMA node, on the
+test host and on the shadow host. It first unbinds each channel from vfio-pci,
+except a channel that a process holds, so a job starts from the same state.
+Then it binds a channel that has no driver, and it takes a channel from `idxd`.
+The gtest suite and the pytest suite give `--dma_auto` to the library, and the
+library takes the channels on the NUMA node of the ports.
 
 Taking them is the whole point, because a stock host serves none. Every DSA
 device comes up on `idxd`, so a step that refused to touch those refused every
@@ -418,16 +433,13 @@ Two facts make the runtime version work, and neither needs a reboot:
 - `idxd` releases a DSA device on request. On the EMR host this was proven on
   (kernel 6.8) `dpdk-devbind.py -b vfio-pci` moved one over with `dmesg` reading
   `device denylist disabled - allowing device 8086:0b25`, and all 17 `Dma` gtest
-  cases then passed on it. A driver that wedges instead is caught by the timeout
-  every NIC operation in that script runs under, and reported as a host fault.
+  cases then passed on it.
 
 `dpdk-devbind.py --status-dev dma` is the check: two entries reading
 `drv=vfio-pci` on the same NUMA node as the test card. A host that ends up with
 fewer runs the suite anyway — the cases that copy with DMA ask the library for a
 channel and report themselves skipped when there is none, so the alternative is
-running nothing at all. The step says so on the run summary, and a host that is
-meant to serve channels sets `MTL_CI_REQUIRE_DMA=1` in `runner.env` to make the
-shortfall a failure again.
+running nothing at all.
 
 The node the channels are on is a requirement and not a preference. MTL grants a
 session a channel of the port's own socket and no other
@@ -449,18 +461,11 @@ so the reload cannot happen, is the one case left for the boot-time version:
 echo 'options vfio-pci disable_denylist=1' | sudo tee /etc/modprobe.d/vfio-pci.conf
 ```
 
-One thing the step does *not* do is unbind a channel afterwards. `idxd` is a
-kernel accelerator driver that nothing else on a test host uses, and leaving the
-two channels on vfio-pci is what makes the next job's preparation a no-op.
+## Test hosts need hugepages
 
-## Hugepages are reserved by the job, not by the image
-
-`bind-test-ports` also reserves 2048 × 2 MB hugepages (`MIN_HUGEPAGES`) on each
-NUMA node that has fewer, because every process the gtest suite starts is a DPDK
-process and EAL stops on `Cannot get hugepage information` without them — several
-steps later, in words about DPDK rather than about the host. A reboot clears the
-reservation, so this is exactly the kind of state that is missing on a host
-nobody has touched since one.
+Each NUMA node needs at least 2048 x 2 MB hugepages. Every gtest process is a
+DPDK process. EAL stops with `Cannot get hugepage information` without these
+pages. A reboot clears the reservation.
 
 The floor is per node, not per host. EAL allocates a port's pools on the port's
 node, and a global count is split evenly across nodes, so 2048 pages on a
