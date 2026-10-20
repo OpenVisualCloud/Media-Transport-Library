@@ -46,8 +46,21 @@ struct __rte_cache_aligned mt_sch_tasklet_stat {
   uint64_t work_sum_ns;
 };
 
+/* tasklet time buckets: 8 per power of two from 8 ns to 2^18 ns, plus one at each end */
+#define MT_SCH_HIST_SUB_SHIFT (3)
+#define MT_SCH_HIST_MIN_SHIFT (3)
+#define MT_SCH_HIST_MAX_SHIFT (18)
+#define MT_SCH_HIST_NB \
+  (((MT_SCH_HIST_MAX_SHIFT - MT_SCH_HIST_MIN_SHIFT) << MT_SCH_HIST_SUB_SHIFT) + 2)
+
+/* The calls of the full time measure by bucket, reset per stats dump. */
+struct __rte_cache_aligned mt_sch_tasklet_hist {
+  uint64_t calls[MT_SCH_HIST_NB];
+};
+
 struct mt_sch_tasklet_stats {
   struct mt_sch_tasklet_stat* slots; /* nb_tasklets, set on register */
+  struct mt_sch_tasklet_hist* hist;  /* nb_tasklets, after the slots */
   void* mem;                         /* slots before the alignment */
 };
 static struct mt_sch_tasklet_stats g_sch_tasklet_stats[MT_MAX_SCH_NUM];
@@ -55,9 +68,11 @@ static struct mt_sch_tasklet_stats g_sch_tasklet_stats[MT_MAX_SCH_NUM];
 static int sch_tasklet_stats_alloc(int idx, uint32_t nb_tasklets) {
   struct mt_sch_tasklet_stats* ts = &g_sch_tasklet_stats[idx];
 
-  ts->mem = mt_zmalloc(sizeof(*ts->slots) * nb_tasklets + RTE_CACHE_LINE_SIZE);
+  ts->mem = mt_zmalloc((sizeof(*ts->slots) + sizeof(*ts->hist)) * nb_tasklets +
+                       RTE_CACHE_LINE_SIZE);
   if (!ts->mem) return -ENOMEM;
   ts->slots = RTE_PTR_ALIGN_CEIL(ts->mem, RTE_CACHE_LINE_SIZE);
+  ts->hist = (struct mt_sch_tasklet_hist*)(ts->slots + nb_tasklets);
   return 0;
 }
 
@@ -65,6 +80,49 @@ static void sch_tasklet_stats_free(int idx) {
   mt_free(g_sch_tasklet_stats[idx].mem);
   g_sch_tasklet_stats[idx].mem = NULL;
   g_sch_tasklet_stats[idx].slots = NULL;
+  g_sch_tasklet_stats[idx].hist = NULL;
+}
+
+static unsigned int sch_hist_bucket(uint64_t ns) {
+  RTE_BUILD_BUG_ON(MT_SCH_HIST_MIN_SHIFT < MT_SCH_HIST_SUB_SHIFT);
+  if (ns < (1ull << MT_SCH_HIST_MIN_SHIFT)) return 0;
+  if (ns >= (1ull << MT_SCH_HIST_MAX_SHIFT)) return MT_SCH_HIST_NB - 1;
+
+  unsigned int msb = rte_fls_u64(ns) - 1;
+  unsigned int sub =
+      (ns >> (msb - MT_SCH_HIST_SUB_SHIFT)) & ((1u << MT_SCH_HIST_SUB_SHIFT) - 1);
+  return 1 + ((msb - MT_SCH_HIST_MIN_SHIFT) << MT_SCH_HIST_SUB_SHIFT) + sub;
+}
+
+static uint64_t sch_hist_bucket_lo(unsigned int b) {
+  if (!b) return 0;
+
+  unsigned int octave = (b - 1) >> MT_SCH_HIST_SUB_SHIFT;
+  unsigned int sub = (b - 1) & ((1u << MT_SCH_HIST_SUB_SHIFT) - 1);
+  return (uint64_t)((1u << MT_SCH_HIST_SUB_SHIFT) + sub)
+         << (MT_SCH_HIST_MIN_SHIFT - MT_SCH_HIST_SUB_SHIFT + octave);
+}
+
+/* nearest rank, linear within its bucket, the last bucket ending at max */
+static double sch_hist_quantile(const uint64_t* hist, uint64_t min, uint64_t max,
+                                unsigned int q) {
+  uint64_t n = 0, below = 0;
+
+  for (unsigned int b = 0; b < MT_SCH_HIST_NB; b++) n += hist[b];
+  uint64_t rank = RTE_MAX((q * n + 99) / 100, (uint64_t)1);
+  for (unsigned int b = 0; b < MT_SCH_HIST_NB; b++) {
+    uint64_t calls = hist[b];
+
+    if (below + calls < rank) {
+      below += calls;
+      continue;
+    }
+    double lo = (double)sch_hist_bucket_lo(b);
+    double hi = (double)((b + 1 < MT_SCH_HIST_NB) ? sch_hist_bucket_lo(b + 1) : max);
+    double ns = lo + (hi - lo) * (double)(rank - below) / (double)calls;
+    return RTE_MIN(RTE_MAX(ns, (double)min), (double)max);
+  }
+  return (double)max;
 }
 
 static const char* lcore_type_names[MT_LCORE_TYPE_MAX] = {
@@ -265,7 +323,10 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
         uint64_t delta_ns = mt_get_tsc(impl) - tm_tasklet_tsc_s;
         struct mt_sch_tasklet_stat* ts = &g_sch_tasklet_stats[idx].slots[i];
 
-        if (time_measure) mt_stat_u64_update(&tasklet->stat_time, delta_ns);
+        if (time_measure) {
+          mt_stat_u64_update(&tasklet->stat_time, delta_ns);
+          g_sch_tasklet_stats[idx].hist[i].calls[sch_hist_bucket(delta_ns)]++;
+        }
         ts->cnt += tm_weight;
         ts->sum_ns += delta_ns * tm_weight;
         if (ret != MTL_TASKLET_ALL_DONE) {
@@ -556,12 +617,21 @@ static int sch_stat(void* priv) {
                                ts->work_sum_ns);
     }
     stat_time = &tasklet->stat_time;
+    struct mt_sch_tasklet_hist* hist = &g_sch_tasklet_stats[idx].hist[i];
     if (stat_time->cnt) {
       uint64_t avg_ns = stat_time->sum / stat_time->cnt;
-      notice("SCH(%d,%d): tasklet %s, avg %.2fus max %.2fus min %.2fus\n", idx, i,
-             tasklet->name, (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
-             (float)stat_time->min / NS_PER_US);
+      double p90 = sch_hist_quantile(hist->calls, stat_time->min, stat_time->max, 90);
+      double p95 = sch_hist_quantile(hist->calls, stat_time->min, stat_time->max, 95);
+      double p99 = sch_hist_quantile(hist->calls, stat_time->min, stat_time->max, 99);
+      notice(
+          "SCH(%d,%d): tasklet %s, avg %.2fus max %.2fus min %.2fus, "
+          "p90 %.2fus p95 %.2fus p99 %.2fus\n",
+          idx, i, tasklet->name, (float)avg_ns / NS_PER_US,
+          (float)stat_time->max / NS_PER_US, (float)stat_time->min / NS_PER_US,
+          p90 / NS_PER_US, p95 / NS_PER_US, p99 / NS_PER_US);
       mt_stat_u64_init(stat_time);
+      /* unlocked, as stat_time: an update racing the reset can undo it for one bucket */
+      memset(hist, 0, sizeof(*hist));
     }
   }
 
@@ -1028,6 +1098,7 @@ mtl_tasklet_handle mtl_sch_register_tasklet(struct mtl_sch_impl* sch,
     tasklet->idx = i;
     mt_stat_u64_init(&tasklet->stat_time);
     g_sch_tasklet_stats[idx].slots[i] = (struct mt_sch_tasklet_stat){0};
+    memset(&g_sch_tasklet_stats[idx].hist[i], 0, sizeof(struct mt_sch_tasklet_hist));
 
     sch->tasklet[i] = tasklet;
     sch->max_tasklet_idx = RTE_MAX(sch->max_tasklet_idx, i + 1);

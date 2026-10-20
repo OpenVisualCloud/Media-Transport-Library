@@ -119,25 +119,16 @@ sudo bpftrace -e 'usdt::sys:tasklet_time_measure { printf("%s", strftime("%H:%M:
 ```
 
 Then you can then monitor the tasklet execution time by reviewing the relevant log entries.
+Each tasklet line gives the average, max and min time of its calls since the previous
+dump, then their 90th, 95th and 99th percentiles, read from a histogram of 8 buckets per
+power of two: within 12.5% of the exact value from 8 ns to 2^18 ns (about 262 us).
+
+For example, one scheduler of a TX application of 16 1080p59 sessions:
 
 ```text
-MTL: 2024-03-26 16:00:19, * *    M T    D E V   S T A T E   * *
-MTL: 2024-03-26 16:00:19, DEV(0): Avr rate, tx: 2612.232158 Mb/s, rx: 0.000000 Mb/s, pkts, tx: 2476211, rx: 0
-MTL: 2024-03-26 16:00:19, DEV(1): Avr rate, tx: 0.000000 Mb/s, rx: 2604.192667 Mb/s, pkts, tx: 0, rx: 2476103
-MTL: 2024-03-26 16:00:19, SCH(0:sch_0): tasklets 9, lcore 29(t_pid: 338795), avg loop 465 ns
-MTL: 2024-03-26 16:00:19, SCH(0): time avg 0.46us max 115.02us min 0.41us
-MTL: 2024-03-26 16:00:19, SCH(0,0): tasklet cni, avg 0.02us max 89.46us min 0.02us
-MTL: 2024-03-26 16:00:19, SCH(0,1): tasklet tx_video_sessions_mgr, avg 0.04us max 49.32us min 0.03us
-MTL: 2024-03-26 16:00:19, SCH(0,2): tasklet video_transmitter, avg 0.08us max 54.36us min 0.02us
-MTL: 2024-03-26 16:00:19, SCH(0,3): tasklet tx_audio_sessions, avg 0.05us max 67.64us min 0.03us
-MTL: 2024-03-26 16:00:19, SCH(0,4): tasklet audio_transmitter, avg 0.01us max 34.32us min 0.01us
-MTL: 2024-03-26 16:00:19, SCH(0,5): tasklet tx_ancillary_sessions_mgr, avg 0.05us max 51.70us min 0.03us
-MTL: 2024-03-26 16:00:19, SCH(0,6): tasklet ancillary_transmitter, avg 0.01us max 32.79us min 0.01us
-MTL: 2024-03-26 16:00:19, SCH(0,7): tasklet rx_audio_sessions_mgr, avg 0.05us max 114.62us min 0.03us
-MTL: 2024-03-26 16:00:19, SCH(0,8): tasklet rx_anc_sessions_mgr, avg 0.04us max 41.12us min 0.03us
-MTL: 2024-03-26 16:00:19, SCH(1:sch_1): tasklets 1, lcore 30(t_pid: 338796), avg loop 88 ns
-MTL: 2024-03-26 16:00:19, SCH(1): time avg 0.08us max 18.59us min 0.06us
-MTL: 2024-03-26 16:00:19, SCH(1,0): tasklet rvs_pkt_rx, avg 0.05us max 18.54us min 0.03us
+MTL: 2026-10-20 18:02:01, SCH(1): time avg 1.76us max 67.63us min 0.91us
+MTL: 2026-10-20 18:02:01, SCH(1,0): tasklet tx_video_sessions_mgr, avg 0.79us max 21.35us min 0.48us, p90 1.16us p95 2.42us p99 4.57us
+MTL: 2026-10-20 18:02:01, SCH(1,1): tasklet video_transmitter, avg 0.92us max 67.06us min 0.38us, p90 1.89us p95 2.75us p99 6.30us
 ```
 
 And if you want to trace both tasklet_time_measure and log_msg, follow below bpftrace script.
