@@ -1,0 +1,335 @@
+From 6512e24ae6b197137326cbd8ac532b3425feda9a Mon Sep 17 00:00:00 2001
+From: Dawid Wesierski <dawid.wesierski@intel.com>
+Date: Wed, 14 Oct 2026 17:21:43 +0000
+Subject: [PATCH] pcapng: add user-supplied timestamp support
+
+Add a timestamp parameter to rte_pcapng_copy(). An application that
+has a better time for the packet than the TSC at copy time, for
+example a hardware Rx timestamp, can then give it in nanoseconds
+since the Unix epoch.
+
+If the timestamp is 0, rte_pcapng_copy() stores the TSC with bit 63
+set, and rte_pcapng_write_packets() converts it with the clock of the
+capture file, as before. A different value goes into the file as it
+is. The epoch time in nanoseconds sets bit 63 only in the year 2262,
+so rte_pcapng_copy() rejects a timestamp that sets it.
+
+This changes the API of rte_pcapng_copy(). The ABI version changes
+in 26.11, so the old symbol is not kept.
+
+Signed-off-by: Marek Kasiewicz <marek.kasiewicz@intel.com>
+Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
+---
+MTL copy of v8, applied on v26.07. v8 is v7
+(<20261014172102.1090177-1-dawid.wesierski@intel.com>) without
+rte_pcapng_tsc_to_ns(). MTL does not call that function: it gives the
+PTP time of the packet to rte_pcapng_copy().
+The upstream patch also adds an entry to release_26_11.rst, which
+v26.07 does not have, and uses pcapng_timestamp() after the 26.11
+revert of the reciprocal divide; v26.07 still has tsc_to_ns_epoch().
+v26.07 has no test_long_timestamp(), so the upstream hunk for it is not here.
+ app/test/test_pcapng.c               | 103 ++++++++++++++++++++++++++-
+ doc/guides/prog_guide/pcapng_lib.rst |   3 +
+ lib/graph/graph_pcap.c               |   2 +-
+ lib/pcapng/rte_pcapng.c              |  35 ++++++---
+ lib/pcapng/rte_pcapng.h              |  12 +++-
+ lib/pdump/rte_pdump.c                |   2 +-
+ 6 files changed, 142 insertions(+), 15 deletions(-)
+
+diff --git a/app/test/test_pcapng.c b/app/test/test_pcapng.c
+index d14ea84f0d..2fd69c62e7 100644
+--- a/app/test/test_pcapng.c
++++ b/app/test/test_pcapng.c
+@@ -17,6 +17,7 @@
+ #endif
+ 
+ #include <rte_bus_vdev.h>
++#include <rte_errno.h>
+ #include <rte_ethdev.h>
+ #include <rte_ether.h>
+ #include <rte_ip.h>
+@@ -302,7 +303,7 @@ fill_pcapng_file(rte_pcapng_t *pcapng)
+ 			mbuf1_resize(&mbfs, rte_rand_max(MAX_DATA_SIZE));
+ 
+ 			mc = rte_pcapng_copy(port_id, 0, orig, mp, rte_pktmbuf_pkt_len(orig),
+-					     RTE_PCAPNG_DIRECTION_IN, comment);
++					     RTE_PCAPNG_DIRECTION_IN, comment, 0);
+ 			if (mc == NULL) {
+ 				printf("Cannot copy packet\n");
+ 				return -1;
+@@ -612,7 +613,7 @@ test_write_before_open(void)
+ 	for (i = 0; i < (int)count; i++) {
+ 		clones[i] = rte_pcapng_copy(port_id, 0, &mbfs.mb[0], mp,
+ 					    rte_pktmbuf_pkt_len(&mbfs.mb[0]),
+-					    RTE_PCAPNG_DIRECTION_IN, NULL);
++					    RTE_PCAPNG_DIRECTION_IN, NULL, 0);
+ 		if (clones[i] == NULL) {
+ 			fprintf(stderr, "Cannot copy packet before open\n");
+ 			rte_pktmbuf_free_bulk(clones, i);
+@@ -672,6 +673,103 @@ test_write_before_open(void)
+ 	return -1;
+ }
+ 
++static int
++test_pcapng_timestamp(void)
++{
++	char file_name[PATH_MAX] = "/tmp/pcapng_test_XXXXXX.pcapng";
++	char errbuf[PCAP_ERRBUF_SIZE];
++	rte_pcapng_t *pcapng = NULL;
++	struct dummy_mbuf mbfs;
++	struct pcap_pkthdr h;
++	struct rte_mbuf *mc;
++	uint64_t pcap_ts, ns;
++	pcap_t *pcap;
++	int ret, tmp_fd;
++
++	tmp_fd = mkstemps(file_name, strlen(".pcapng"));
++	if (tmp_fd == -1) {
++		perror("mkstemps() failure");
++		return -1;
++	}
++
++	pcapng = rte_pcapng_fdopen(tmp_fd, NULL, NULL, "pcapng_ts_test", NULL);
++	if (pcapng == NULL) {
++		printf("rte_pcapng_fdopen failed\n");
++		close(tmp_fd);
++		goto fail;
++	}
++
++	ret = rte_pcapng_add_interface(pcapng, port_id, DLT_EN10MB, NULL, NULL, NULL);
++	if (ret < 0) {
++		printf("can not add port %u\n", port_id);
++		goto fail;
++	}
++
++	mbuf1_prepare(&mbfs);
++
++	/* Bit 63 marks a TSC value, so a caller timestamp must not set it. */
++	mc = rte_pcapng_copy(port_id, 0, &mbfs.mb[0], mp,
++			     rte_pktmbuf_pkt_len(&mbfs.mb[0]),
++			     RTE_PCAPNG_DIRECTION_IN, NULL, UINT64_C(1) << 63);
++	if (mc != NULL || rte_errno != EINVAL) {
++		printf("rte_pcapng_copy accepted a timestamp with bit 63 set\n");
++		rte_pktmbuf_free(mc);
++		goto fail;
++	}
++
++	/* One second ahead, so that it cannot be the TSC of the copy. */
++	pcap_ts = current_timestamp() + NS_PER_S;
++	mc = rte_pcapng_copy(port_id, 0, &mbfs.mb[0], mp,
++			     rte_pktmbuf_pkt_len(&mbfs.mb[0]),
++			     RTE_PCAPNG_DIRECTION_IN, "custom_ts", pcap_ts);
++	if (mc == NULL) {
++		printf("rte_pcapng_copy failed\n");
++		goto fail;
++	}
++
++	ret = rte_pcapng_write_packets(pcapng, &mc, 1);
++	rte_pktmbuf_free(mc);
++	if (ret <= 0) {
++		printf("Write of custom timestamp packet failed\n");
++		goto fail;
++	}
++
++	rte_pcapng_close(pcapng);
++	pcapng = NULL;
++
++	pcap = pcap_open_offline_with_tstamp_precision(file_name,
++						       PCAP_TSTAMP_PRECISION_NANO,
++						       errbuf);
++	if (pcap == NULL) {
++		printf("pcap_open_offline failed: %s\n", errbuf);
++		goto fail;
++	}
++
++	if (pcap_next(pcap, &h) == NULL) {
++		printf("No packets in file\n");
++		pcap_close(pcap);
++		goto fail;
++	}
++	pcap_close(pcap);
++
++	/* With nanosecond precision, tv_usec holds nanoseconds. */
++	ns = (uint64_t)h.ts.tv_sec * NS_PER_S + h.ts.tv_usec;
++	if (ns != pcap_ts) {
++		printf("Timestamp mismatch: expected %"PRIu64" got %"PRIu64"\n",
++		       pcap_ts, ns);
++		goto fail;
++	}
++
++	remove(file_name);
++	return 0;
++
++fail:
++	if (pcapng)
++		rte_pcapng_close(pcapng);
++	remove(file_name);
++	return -1;
++}
++
+ static void
+ test_cleanup(void)
+ {
+@@ -688,6 +786,7 @@ unit_test_suite test_pcapng_suite  = {
+ 		TEST_CASE(test_add_interface),
+ 		TEST_CASE(test_write_packets),
+ 		TEST_CASE(test_write_before_open),
++		TEST_CASE(test_pcapng_timestamp),
+ 		TEST_CASES_END()
+ 	}
+ };
+diff --git a/doc/guides/prog_guide/pcapng_lib.rst b/doc/guides/prog_guide/pcapng_lib.rst
+index d18ebdbd1f..cc17b42eed 100644
+--- a/doc/guides/prog_guide/pcapng_lib.rst
++++ b/doc/guides/prog_guide/pcapng_lib.rst
+@@ -32,6 +32,9 @@ to determine the lower bound based on MTU.
+ Collecting packets is done in two parts.
+ The function ``rte_pcapng_copy`` is used to format and copy mbuf data
+ and ``rte_pcapng_write_packets`` writes a burst of packets to the output file.
++The timestamp of each packet is the time in nanoseconds
++that the caller gives to ``rte_pcapng_copy``.
++If the caller gives 0, it is the TSC at the time of ``rte_pcapng_copy``.
+ 
+ The function ``rte_pcapng_write_stats`` can be used
+ to write statistics information into the output file.
+diff --git a/lib/graph/graph_pcap.c b/lib/graph/graph_pcap.c
+index 78859ec2d4..4d907c78aa 100644
+--- a/lib/graph/graph_pcap.c
++++ b/lib/graph/graph_pcap.c
+@@ -216,7 +216,7 @@ graph_pcap_dispatch(struct rte_graph *graph,
+ 		struct rte_mbuf *mc;
+ 		mbuf = (struct rte_mbuf *)objs[i];
+ 
+-		mc = rte_pcapng_copy(mbuf->port, 0, mbuf, pkt_mp, mbuf->pkt_len, 0, comment);
++		mc = rte_pcapng_copy(mbuf->port, 0, mbuf, pkt_mp, mbuf->pkt_len, 0, comment, 0);
+ 		if (mc == NULL)
+ 			break;
+ 
+diff --git a/lib/pcapng/rte_pcapng.c b/lib/pcapng/rte_pcapng.c
+index b5d1026891..6c18e981c8 100644
+--- a/lib/pcapng/rte_pcapng.c
++++ b/lib/pcapng/rte_pcapng.c
+@@ -37,6 +37,9 @@
+ /* upper bound for strings in pcapng option data */
+ #define PCAPNG_STR_MAX	UINT16_MAX
+ 
++/* Flag to indicate timestamp is in TSC cycles (bit 63) */
++#define PCAPNG_TSC_FLAG	(1ULL << 63)
++
+ /*
+  * Converter from TSC values to nanoseconds since Unix epoch.
+  * Uses reciprocal multiply to avoid runtime division.
+@@ -553,12 +556,12 @@ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
+ 		struct rte_mempool *mp,
+ 		uint32_t length,
+ 		enum rte_pcapng_direction direction,
+-		const char *comment)
++		const char *comment,
++		uint64_t timestamp)
+ {
+ 	struct pcapng_enhance_packet_block *epb;
+ 	uint32_t orig_len, pkt_len, padding, flags;
+ 	struct pcapng_option *opt;
+-	uint64_t timestamp;
+ 	uint16_t optlen;
+ 	struct rte_mbuf *mc;
+ 	bool rss_hash;
+@@ -570,6 +573,12 @@ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
+ 	 */
+ 	RTE_ETH_VALID_PORTID_OR_ERR_RET(port_id, NULL);
+ #endif
++	/* Bit 63 marks a TSC value, see rte_pcapng_write_packets(). */
++	if (unlikely(timestamp & PCAPNG_TSC_FLAG)) {
++		rte_errno = EINVAL;
++		return NULL;
++	}
++
+ 	orig_len = rte_pktmbuf_pkt_len(md);
+ 
+ 	/* Take snapshot of the data */
+@@ -690,8 +699,13 @@ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
+ 	/* Interface index is filled in later during write */
+ 	mc->port = port_id;
+ 
+-	/* Put timestamp in cycles here - adjust in packet write */
+-	timestamp = rte_get_tsc_cycles();
++	/*
++	 * Without a caller timestamp, put the TSC here and set the flag.
++	 * rte_pcapng_write_packets() converts it to epoch nanoseconds.
++	 */
++	if (timestamp == 0)
++		timestamp = rte_get_tsc_cycles() | PCAPNG_TSC_FLAG;
++
+ 	epb->timestamp_hi = timestamp >> 32;
+ 	epb->timestamp_lo = (uint32_t)timestamp;
+ 	epb->capture_length = pkt_len;
+@@ -738,14 +752,17 @@ rte_pcapng_write_packets(rte_pcapng_t *self,
+ 		}
+ 
+ 		/*
+-		 * When data is captured by pcapng_copy the current TSC is stored.
+-		 * Adjust the value recorded in file to PCAP epoch units.
++		 * If rte_pcapng_copy() stored the TSC (flag bit set),
++		 * convert it to PCAP epoch units. Else the caller gave
++		 * the time in nanoseconds since the epoch: keep it.
+ 		 */
+ 		cycles = (uint64_t)epb->timestamp_hi << 32;
+ 		cycles += epb->timestamp_lo;
+-		timestamp = tsc_to_ns_epoch(&self->clock, cycles);
+-		epb->timestamp_hi = timestamp >> 32;
+-		epb->timestamp_lo = (uint32_t)timestamp;
++		if (cycles & PCAPNG_TSC_FLAG) {
++			timestamp = tsc_to_ns_epoch(&self->clock, cycles & ~PCAPNG_TSC_FLAG);
++			epb->timestamp_hi = timestamp >> 32;
++			epb->timestamp_lo = (uint32_t)timestamp;
++		}
+ 
+ 		/*
+ 		 * Handle case of highly fragmented and large burst size
+diff --git a/lib/pcapng/rte_pcapng.h b/lib/pcapng/rte_pcapng.h
+index d8d328f710..3399b79ea6 100644
+--- a/lib/pcapng/rte_pcapng.h
++++ b/lib/pcapng/rte_pcapng.h
+@@ -129,16 +129,24 @@ enum rte_pcapng_direction {
+  * @param comment
+  *   Optional per packet comment.
+  *   Truncated to UINT16_MAX characters.
++ * @param timestamp
++ *   Time of the packet in nanoseconds since the Unix epoch,
++ *   for example a hardware timestamp. Bit 63 must be zero.
++ *   If zero, the current TSC is used,
++ *   and rte_pcapng_write_packets() converts it to the epoch.
+  *
+  * @return
+  *   - The pointer to the new mbuf formatted for pcapng_write
+- *   - NULL on error such as invalid port or out of memory.
++ *   - NULL on error such as invalid port, invalid timestamp
++ *     or out of memory. rte_errno is EINVAL if bit 63 of
++ *     the timestamp is set.
+  */
+ struct rte_mbuf *
+ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
+ 		const struct rte_mbuf *m, struct rte_mempool *mp,
+ 		uint32_t length,
+-		enum rte_pcapng_direction direction, const char *comment);
++		enum rte_pcapng_direction direction,
++		const char *comment, uint64_t timestamp);
+ 
+ 
+ /**
+diff --git a/lib/pdump/rte_pdump.c b/lib/pdump/rte_pdump.c
+index ac94efe7ff..a85a95a808 100644
+--- a/lib/pdump/rte_pdump.c
++++ b/lib/pdump/rte_pdump.c
+@@ -176,7 +176,7 @@ pdump_copy_burst(uint16_t port_id, uint16_t queue_id,
+ 		 */
+ 		if (cbs->ver == V2)
+ 			p = rte_pcapng_copy(port_id, queue_id, pkts[i], mp, cbs->snaplen,
+-					    direction, NULL);
++					    direction, NULL, 0);
+ 		else
+ 			p = rte_pktmbuf_copy(pkts[i], mp, 0, cbs->snaplen);
+ 
+-- 
+2.43.0
+
