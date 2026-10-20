@@ -218,12 +218,65 @@ noctx_ports() {
 	printf '%s\n' "$@"
 }
 
+nicctl_vf() {
+	sudo timeout --foreground --signal=SIGTERM --kill-after="${TEST_KILL_GRACE}" \
+		"${HOST_OP_TIMEOUT}" "${mtl_folder}/script/nicctl.sh" "$@"
+}
+
+# Removes the VFs that create_vfs made, so the next job finds the host as it was.
+remove_vfs() {
+	local pf
+	for pf in "${created_vf_pfs[@]}"; do
+		echo "Removing the VFs of ${pf}"
+		nicctl_vf disable_vf "${pf}" || echo "✗ nicctl.sh disable_vf ${pf} failed"
+	done
+	created_vf_pfs=()
+}
+
+# Creates six trusted VFs on an ice PF with link up, and two on another port of
+# its card for NoCtx (see noctx_ports). A PF whose card has a second port up
+# comes first.
+created_vf_pfs=()
+create_vfs() {
+	local listing="${TMP_FOLDER}/up.listing" pfs=() pf="" sibling="" candidate other
+
+	nicctl_list "${listing}" up || true
+	nicctl_wedged && host_fault "nicctl.sh stopped responding while listing NIC ports"
+	mapfile -t pfs < <(awk '$3 == "ice" {print $2}' "${listing}")
+	pf=${pfs[0]:-}
+	for candidate in "${pfs[@]}"; do
+		for other in "${pfs[@]}"; do
+			if [ "${other}" != "${candidate}" ] && [ "${other%.*}" = "${candidate%.*}" ]; then
+				pf=${candidate} sibling=${other}
+				break 2
+			fi
+		done
+	done
+	[ -n "${pf}" ] || return 0
+
+	trap remove_vfs EXIT
+	echo "Creating 6 trusted VFs on ${pf}"
+	created_vf_pfs+=("${pf}")
+	nicctl_vf create_tvf "${pf}" 6 || echo "✗ nicctl.sh create_tvf ${pf} failed"
+	if [ -n "${sibling}" ]; then
+		echo "Creating 2 trusted VFs on ${sibling} for NoCtx"
+		created_vf_pfs+=("${sibling}")
+		nicctl_vf create_tvf "${sibling}" 2 || echo "✗ nicctl.sh create_tvf ${sibling} failed"
+	fi
+}
+
 # What the suite runs on: four ports of one PF.
 discover_ports() {
 	local listing="${TMP_FOLDER}/ports.listing" ports=() free_pages
 
 	nicctl_list "${listing}" all || true
 	mapfile -t ports < <(ports_of_one_pf "${listing}")
+	if [ "${#ports[@]}" -lt "${MIN_VFIO_PORTS}" ]; then
+		nicctl_wedged && host_fault "nicctl.sh stopped responding while listing NIC ports"
+		create_vfs
+		nicctl_list "${listing}" all || true
+		mapfile -t ports < <(ports_of_one_pf "${listing}")
+	fi
 	if [ "${#ports[@]}" -lt "${MIN_VFIO_PORTS}" ]; then
 		nicctl_wedged && host_fault "nicctl.sh stopped responding while listing NIC ports"
 		cat "${listing}"
