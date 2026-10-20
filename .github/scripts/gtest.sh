@@ -40,7 +40,7 @@ SUDO_PREFIX="sudo -E env PATH=${PATH}"
 : "${MIN_VFIO_PORTS:=4}"                                # Ports of one PF the suite needs on vfio-pci
 : "${GTEST_CASES:=}"                                    # Regex of the case names to run (empty = every case)
 : "${SYSFS_PCI_DEVICES:=/sys/bus/pci/devices}"          # Where the ports are looked up; the contract tests point this at a fixture
-: "${PROC_MEMINFO:=/proc/meminfo}"                      # Where the hugepages are counted; likewise a fixture under test
+: "${SYS_HUGEPAGES:=/sys/kernel/mm/hugepages}"          # Where the hugepages are counted; likewise a fixture under test
 : "${HOST_FAULT_EXIT:=3}"                               # Exit code meaning "host needs recovery, not a test failure"
 : "${TEST_SIP_SEED:=$((RANDOM))}"                       # Seed for the test subnet, so two hosts rarely share one
 : "${TEST_P_SIP:="192.168.$((TEST_SIP_SEED % 256)).1"}" # Address of the primary port. Host octet stays in 1..254
@@ -288,9 +288,10 @@ discover_ports() {
 	# information" -- a message about DPDK, on a host that has simply been
 	# rebooted since it was prepared. Read and named here, reserved by the
 	# preparation step, same rule as the ports above.
-	free_pages=$(awk '/^HugePages_Free:/ {print $2}' "${PROC_MEMINFO}")
-	if [ "${free_pages:-0}" -eq 0 ]; then
-		not_prepared "No free 2 MB hugepages on this host, and every case's EAL needs them."
+	free_pages=$(cat "${SYS_HUGEPAGES}"/hugepages-{2048,1048576}kB/free_hugepages 2>/dev/null |
+		awk '{sum += $1} END {print sum + 0}')
+	if [ "${free_pages}" -eq 0 ]; then
+		not_prepared "No free 2 MB or 1 GB hugepages on this host, and every case's EAL needs them."
 	fi
 
 	export TEST_PORT_1="${ports[0]}" TEST_PORT_2="${ports[1]}"
