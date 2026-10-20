@@ -1,4 +1,4 @@
-From 17b238cb1381a4c4c2f526badabca692e55f1aca Mon Sep 17 00:00:00 2001
+From 6512e24ae6b197137326cbd8ac532b3425feda9a Mon Sep 17 00:00:00 2001
 From: Dawid Wesierski <dawid.wesierski@intel.com>
 Date: Wed, 14 Oct 2026 17:21:43 +0000
 Subject: [PATCH] pcapng: add user-supplied timestamp support
@@ -14,44 +14,41 @@ capture file, as before. A different value goes into the file as it
 is. The epoch time in nanoseconds sets bit 63 only in the year 2262,
 so rte_pcapng_copy() rejects a timestamp that sets it.
 
-Add rte_pcapng_tsc_to_ns() to expose the conversion of the capture
-file clock: a caller can take the TSC at packet arrival, convert it,
-and give the result to rte_pcapng_copy().
-
 This changes the API of rte_pcapng_copy(). The ABI version changes
 in 26.11, so the old symbol is not kept.
 
 Signed-off-by: Marek Kasiewicz <marek.kasiewicz@intel.com>
 Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
 ---
-MTL copy of v7 (sent 2026-10-14, Message-ID
-<20261014172102.1090177-1-dawid.wesierski@intel.com>), applied on v26.07.
-The upstream patch also adds two entries to release_26_11.rst, which
+MTL copy of v8, applied on v26.07. v8 is v7
+(<20261014172102.1090177-1-dawid.wesierski@intel.com>) without
+rte_pcapng_tsc_to_ns(). MTL does not call that function: it gives the
+PTP time of the packet to rte_pcapng_copy().
+The upstream patch also adds an entry to release_26_11.rst, which
 v26.07 does not have, and uses pcapng_timestamp() after the 26.11
 revert of the reciprocal divide; v26.07 still has tsc_to_ns_epoch().
 v26.07 has no test_long_timestamp(), so the upstream hunk for it is not here.
- app/test/test_pcapng.c               | 113 ++++++++++++++++++++++++++-
- doc/guides/prog_guide/pcapng_lib.rst |   2 +
+ app/test/test_pcapng.c               | 103 ++++++++++++++++++++++++++-
+ doc/guides/prog_guide/pcapng_lib.rst |   3 +
  lib/graph/graph_pcap.c               |   2 +-
- lib/pcapng/rte_pcapng.c              |  42 +++++++---
- lib/pcapng/rte_pcapng.h              |  33 +++++++-
+ lib/pcapng/rte_pcapng.c              |  35 ++++++---
+ lib/pcapng/rte_pcapng.h              |  12 +++-
  lib/pdump/rte_pdump.c                |   2 +-
- 6 files changed, 179 insertions(+), 15 deletions(-)
+ 6 files changed, 142 insertions(+), 15 deletions(-)
 
 diff --git a/app/test/test_pcapng.c b/app/test/test_pcapng.c
-index d14ea84f0d..b84d55db18 100644
+index d14ea84f0d..2fd69c62e7 100644
 --- a/app/test/test_pcapng.c
 +++ b/app/test/test_pcapng.c
-@@ -17,6 +17,8 @@
+@@ -17,6 +17,7 @@
  #endif
  
  #include <rte_bus_vdev.h>
-+#include <rte_cycles.h>
 +#include <rte_errno.h>
  #include <rte_ethdev.h>
  #include <rte_ether.h>
  #include <rte_ip.h>
-@@ -302,7 +304,7 @@ fill_pcapng_file(rte_pcapng_t *pcapng)
+@@ -302,7 +303,7 @@ fill_pcapng_file(rte_pcapng_t *pcapng)
  			mbuf1_resize(&mbfs, rte_rand_max(MAX_DATA_SIZE));
  
  			mc = rte_pcapng_copy(port_id, 0, orig, mp, rte_pktmbuf_pkt_len(orig),
@@ -60,7 +57,7 @@ index d14ea84f0d..b84d55db18 100644
  			if (mc == NULL) {
  				printf("Cannot copy packet\n");
  				return -1;
-@@ -612,7 +614,7 @@ test_write_before_open(void)
+@@ -612,7 +613,7 @@ test_write_before_open(void)
  	for (i = 0; i < (int)count; i++) {
  		clones[i] = rte_pcapng_copy(port_id, 0, &mbfs.mb[0], mp,
  					    rte_pktmbuf_pkt_len(&mbfs.mb[0]),
@@ -69,7 +66,7 @@ index d14ea84f0d..b84d55db18 100644
  		if (clones[i] == NULL) {
  			fprintf(stderr, "Cannot copy packet before open\n");
  			rte_pktmbuf_free_bulk(clones, i);
-@@ -672,6 +674,112 @@ test_write_before_open(void)
+@@ -672,6 +673,103 @@ test_write_before_open(void)
  	return -1;
  }
  
@@ -82,7 +79,7 @@ index d14ea84f0d..b84d55db18 100644
 +	struct dummy_mbuf mbfs;
 +	struct pcap_pkthdr h;
 +	struct rte_mbuf *mc;
-+	uint64_t pcap_ts, ns, now_ns, tsc_ns;
++	uint64_t pcap_ts, ns;
 +	pcap_t *pcap;
 +	int ret, tmp_fd;
 +
@@ -102,15 +99,6 @@ index d14ea84f0d..b84d55db18 100644
 +	ret = rte_pcapng_add_interface(pcapng, port_id, DLT_EN10MB, NULL, NULL, NULL);
 +	if (ret < 0) {
 +		printf("can not add port %u\n", port_id);
-+		goto fail;
-+	}
-+
-+	/* The helper converts with the clock of the file: close to the wall clock. */
-+	tsc_ns = rte_pcapng_tsc_to_ns(pcapng, rte_get_tsc_cycles());
-+	now_ns = current_timestamp();
-+	if (tsc_ns + NS_PER_S / 10 < now_ns || tsc_ns > now_ns + NS_PER_S / 10) {
-+		printf("rte_pcapng_tsc_to_ns: %"PRIu64" ns, wall clock %"PRIu64" ns\n",
-+		       tsc_ns, now_ns);
 +		goto fail;
 +	}
 +
@@ -182,7 +170,7 @@ index d14ea84f0d..b84d55db18 100644
  static void
  test_cleanup(void)
  {
-@@ -688,6 +796,7 @@ unit_test_suite test_pcapng_suite  = {
+@@ -688,6 +786,7 @@ unit_test_suite test_pcapng_suite  = {
  		TEST_CASE(test_add_interface),
  		TEST_CASE(test_write_packets),
  		TEST_CASE(test_write_before_open),
@@ -191,15 +179,16 @@ index d14ea84f0d..b84d55db18 100644
  	}
  };
 diff --git a/doc/guides/prog_guide/pcapng_lib.rst b/doc/guides/prog_guide/pcapng_lib.rst
-index d18ebdbd1f..79fda561d3 100644
+index d18ebdbd1f..cc17b42eed 100644
 --- a/doc/guides/prog_guide/pcapng_lib.rst
 +++ b/doc/guides/prog_guide/pcapng_lib.rst
-@@ -32,6 +32,8 @@ to determine the lower bound based on MTU.
+@@ -32,6 +32,9 @@ to determine the lower bound based on MTU.
  Collecting packets is done in two parts.
  The function ``rte_pcapng_copy`` is used to format and copy mbuf data
  and ``rte_pcapng_write_packets`` writes a burst of packets to the output file.
-+The timestamp of each packet is the TSC at the time of ``rte_pcapng_copy``,
-+or the time in nanoseconds that the caller gives to ``rte_pcapng_copy``.
++The timestamp of each packet is the time in nanoseconds
++that the caller gives to ``rte_pcapng_copy``.
++If the caller gives 0, it is the TSC at the time of ``rte_pcapng_copy``.
  
  The function ``rte_pcapng_write_stats`` can be used
  to write statistics information into the output file.
@@ -217,7 +206,7 @@ index 78859ec2d4..4d907c78aa 100644
  			break;
  
 diff --git a/lib/pcapng/rte_pcapng.c b/lib/pcapng/rte_pcapng.c
-index b5d1026891..fd53520288 100644
+index b5d1026891..6c18e981c8 100644
 --- a/lib/pcapng/rte_pcapng.c
 +++ b/lib/pcapng/rte_pcapng.c
 @@ -37,6 +37,9 @@
@@ -230,21 +219,7 @@ index b5d1026891..fd53520288 100644
  /*
   * Converter from TSC values to nanoseconds since Unix epoch.
   * Uses reciprocal multiply to avoid runtime division.
-@@ -480,6 +483,13 @@ rte_pcapng_mbuf_size(uint32_t length)
- 		+ sizeof(uint32_t);		  /*  length */
- }
- 
-+RTE_EXPORT_EXPERIMENTAL_SYMBOL(rte_pcapng_tsc_to_ns, 26.11)
-+uint64_t
-+rte_pcapng_tsc_to_ns(const rte_pcapng_t *self, uint64_t tsc)
-+{
-+	return tsc_to_ns_epoch(&self->clock, tsc);
-+}
-+
- /* More generalized version rte_vlan_insert() */
- static int
- pcapng_vlan_insert(struct rte_mbuf *m, uint16_t ether_type, uint16_t tci)
-@@ -553,12 +563,12 @@ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
+@@ -553,12 +556,12 @@ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
  		struct rte_mempool *mp,
  		uint32_t length,
  		enum rte_pcapng_direction direction,
@@ -259,7 +234,7 @@ index b5d1026891..fd53520288 100644
  	uint16_t optlen;
  	struct rte_mbuf *mc;
  	bool rss_hash;
-@@ -570,6 +580,12 @@ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
+@@ -570,6 +573,12 @@ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
  	 */
  	RTE_ETH_VALID_PORTID_OR_ERR_RET(port_id, NULL);
  #endif
@@ -272,7 +247,7 @@ index b5d1026891..fd53520288 100644
  	orig_len = rte_pktmbuf_pkt_len(md);
  
  	/* Take snapshot of the data */
-@@ -690,8 +706,13 @@ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
+@@ -690,8 +699,13 @@ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
  	/* Interface index is filled in later during write */
  	mc->port = port_id;
  
@@ -288,7 +263,7 @@ index b5d1026891..fd53520288 100644
  	epb->timestamp_hi = timestamp >> 32;
  	epb->timestamp_lo = (uint32_t)timestamp;
  	epb->capture_length = pkt_len;
-@@ -738,14 +759,17 @@ rte_pcapng_write_packets(rte_pcapng_t *self,
+@@ -738,14 +752,17 @@ rte_pcapng_write_packets(rte_pcapng_t *self,
  		}
  
  		/*
@@ -312,10 +287,10 @@ index b5d1026891..fd53520288 100644
  		/*
  		 * Handle case of highly fragmented and large burst size
 diff --git a/lib/pcapng/rte_pcapng.h b/lib/pcapng/rte_pcapng.h
-index d8d328f710..4609d79309 100644
+index d8d328f710..3399b79ea6 100644
 --- a/lib/pcapng/rte_pcapng.h
 +++ b/lib/pcapng/rte_pcapng.h
-@@ -129,16 +129,45 @@ enum rte_pcapng_direction {
+@@ -129,16 +129,24 @@ enum rte_pcapng_direction {
   * @param comment
   *   Optional per packet comment.
   *   Truncated to UINT16_MAX characters.
@@ -329,7 +304,8 @@ index d8d328f710..4609d79309 100644
   *   - The pointer to the new mbuf formatted for pcapng_write
 - *   - NULL on error such as invalid port or out of memory.
 + *   - NULL on error such as invalid port, invalid timestamp
-+ *     or out of memory.
++ *     or out of memory. rte_errno is EINVAL if bit 63 of
++ *     the timestamp is set.
   */
  struct rte_mbuf *
  rte_pcapng_copy(uint16_t port_id, uint32_t queue,
@@ -338,28 +314,6 @@ index d8d328f710..4609d79309 100644
 -		enum rte_pcapng_direction direction, const char *comment);
 +		enum rte_pcapng_direction direction,
 +		const char *comment, uint64_t timestamp);
-+
-+/**
-+ * @warning
-+ * @b EXPERIMENTAL: this API may change, or be removed, without prior notice.
-+ *
-+ * Convert a TSC value to nanoseconds since the Unix epoch.
-+ *
-+ * Uses the calibrated clock of the capture file, the same conversion
-+ * that rte_pcapng_write_packets() applies to a TSC timestamp.
-+ * A caller can take the TSC at packet arrival, convert it,
-+ * and give the result to rte_pcapng_copy().
-+ *
-+ * @param self
-+ *  The handle to the packet capture file.
-+ * @param tsc
-+ *  The TSC value to convert.
-+ * @return
-+ *  Nanoseconds since the Unix epoch.
-+ */
-+__rte_experimental
-+uint64_t
-+rte_pcapng_tsc_to_ns(const rte_pcapng_t *self, uint64_t tsc);
  
  
  /**
