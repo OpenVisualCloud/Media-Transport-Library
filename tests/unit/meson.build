@@ -135,6 +135,8 @@ unit_sources = [
   'session/st20_tx/epoch_test.cpp',
   'session/st20_tx/interlaced_field_epoch_test.cpp',
   'session/st20_tx/pacing_test.cpp',
+  'session/st20_tx/frame_stamp_test.cpp',
+  'session/st20_tx/frame_iova_test.cpp',
   'session/st20_tx/zero_copy_test.cpp',
   'session/st20_tx/zero_copy_lazy_test.cpp',
   'session/st20_tx/pool_stall_test.cpp',
