@@ -54,6 +54,19 @@
 #define ST_TX_ANC_SESSIONS_RING_SIZE (512)
 #define ST_MAX_RX_ANC_SESSIONS (180)
 
+/* packets of a session whose lock was taken (the stat thread), tried again first */
+#define ST_RX_MGR_QUEUE_DEFER_MAX (64)
+
+/* the rx queue of an audio or ancillary session manager, see st_rx_mgr_queue.h */
+struct st_rx_mgr_queue {
+  _Atomic(struct mt_rxq_entry*) rxq[MTL_PORT_MAX];
+  _Atomic uint32_t* map[MTL_PORT_MAX]; /* udp dst port -> key + 1, 0 is no session */
+  struct rte_mbuf* defer[MTL_PORT_MAX][ST_RX_MGR_QUEUE_DEFER_MAX];
+  uint16_t defer_n[MTL_PORT_MAX];
+  _Atomic uint64_t stat_defer_drop; /* the defer list was full */
+  atomic_int own_rxq_cnt;           /* session ports with an rx queue of their own */
+};
+
 /* max dl plugin lib number */
 #define ST_MAX_DL_PLUGINS (8)
 /* max encoder devices number */
@@ -945,6 +958,7 @@ struct st_rx_audio_session_impl {
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
+  struct mt_rx_flow_rsp* mq_flow[MTL_SESSION_PORT_MAX]; /* its rule on mgr->mq */
 
   uint16_t st30_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
   bool mcast_joined[MTL_SESSION_PORT_MAX];
@@ -1016,6 +1030,7 @@ struct st_rx_audio_sessions_mgr {
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
   struct mt_sch_tasklet_impl* tasklet;
+  struct st_rx_mgr_queue mq;
 
   struct st_rx_audio_session_impl* sessions[ST_SCH_MAX_RX_AUDIO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
@@ -1187,6 +1202,7 @@ struct st_rx_ancillary_session_impl {
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
+  struct mt_rx_flow_rsp* mq_flow[MTL_SESSION_PORT_MAX]; /* its rule on mgr->mq */
   struct rte_ring* packet_ring;
 
   /* Frame-mode (ST40_TYPE_FRAME_LEVEL) slot pool — owned by transport.
@@ -1261,6 +1277,7 @@ struct st_rx_ancillary_sessions_mgr {
   int max_idx;   /* max session index */
   int next_sidx; /* the session where the next tasklet call starts */
   struct mt_sch_tasklet_impl* tasklet;
+  struct st_rx_mgr_queue mq;
 
   struct st_rx_ancillary_session_impl* sessions[ST_MAX_RX_ANC_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */

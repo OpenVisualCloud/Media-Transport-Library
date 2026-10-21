@@ -19,6 +19,7 @@ sources += files(
   'st_fmt.c',
   'st_rx_timing_parser.c',
   'st_rx_common.c',
+  'st_rx_mgr_queue.c',
 )
 
 subdir('pipeline')

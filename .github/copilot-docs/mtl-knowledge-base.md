@@ -968,7 +968,8 @@ Sessions organized into managers (`st_tx_video_sessions_mgr`), one per session t
 - Fixed-size session array (indexed by `idx`)
 - Manager mutex protects attach/detach
 - Tasklet handler iterates all sessions in local array
-- Exception, ST40 TX and RX: one call handles at most 4 sessions with work (TX: a built packet), then returns `MTL_TASKLET_HAS_PENDING`; the next call starts at `next_sidx`. Lip-synced sessions all have work at one instant, and this lets the other tasklets of the scheduler run inside that burst. The video and audio managers still visit every session per call
+- Exception, ST40 TX and RX: one call handles at most 4 sessions with work (TX: a built packet), then returns `MTL_TASKLET_HAS_PENDING`; the next call starts at `next_sidx`. Lip-synced sessions all have work at one instant, and this lets the other tasklets of the scheduler run inside that burst. The video managers still visit every session per call
+- ST30/ST40 RX: the handler first reads the manager RX queue (§7 Queue Architecture) of each port, then runs the session loop (and the ST40 4-session bound) only while a session has an RX queue of its own (`mq.own_rxq_cnt`)
 
 Per-scheduler (not global) → no filtering needed in tasklet hot path.
 
@@ -1043,6 +1044,7 @@ Well-known group `224.0.0.1` always joined for IGMP query reception (unless kern
 | **Dedicated queue** | Default for video | One TX/RX queue per session, best isolation |
 | **Flow director** | NIC supports flow rules | Multiple sessions share port, flow rules steer to per-session queues |
 | **Shared RX Queue (RSQ)** | Flow director unavailable | Dispatcher distributes mbufs to per-session rings |
+| **Manager RX queue** (`st_rx_mgr_queue.c`) | Frame-level ST30/ST40 RX | One queue per port per audio/ANC manager, flow rules steer to it; per call and port: up to 8 (ANC) / 16 (audio) kept pkts, then a queue read of as many, by UDP dst port, IP checked under the slot lock; a locked session's pkts wait in order in a shared 64-entry list. Lives until manager uinit. Fallbacks: `st_rx_mgr_queue.h` |
 | **Shared TX Queue (TSQ)** | Low-bandwidth sessions | Spinlock-protected, multiple sessions enqueue |
 | **RSS** | Fallback | Hash-based distribution, no per-flow control |
 
@@ -1071,6 +1073,8 @@ Pads actively force the ring to cycle, guaranteeing completion regardless of NIC
 Default burst: 128 (runtime assignment: `s->rx_burst_size = 128`). RX packets fit in a single mbuf because `data_room = 1664` > max packet size (1494 bytes) — no multi-segment reassembly needed.
 
 Continuous burst: if `rte_eth_rx_burst` returns ≥ `rx_burst_size / 2` (≥64), track as continuous burst. Tasklet returns `MTL_TASKLET_HAS_PENDING` when any packets received → scheduler re-polls immediately.
+
+A burst of less than 8 packets reads none on the iavf/ice vector paths (`RTE_ALIGN_FLOOR(nb_pkts, 8)`); `st_rx_mgr_queue_tasklet()` raises a smaller burst to 8.
 
 ### Header-Split RX
 Intel E810 with `ST20_RX_FLAG_HDR_SPLIT`: NIC writes payload directly into frame buffer, bypassing CPU memcpy. Requires DPDK ice driver patches.

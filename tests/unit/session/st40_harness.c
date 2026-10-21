@@ -214,6 +214,8 @@ int ut40_mgr_add(ut_test_ctx* ctx, int idx, ut_test_ctx* peer) {
   peer->session.idx = idx;
   ctx->mgr.sessions[idx] = &peer->session;
   if (ctx->mgr.max_idx <= idx) ctx->mgr.max_idx = idx + 1;
+  /* the harness sessions read an rx queue of their own, not the manager queue */
+  ctx->mgr.mq.own_rxq_cnt++;
   return 0;
 }
 
@@ -839,4 +841,98 @@ int ut40_ops_check(enum st40_type type, uint32_t flags) {
   ops.notify_frame_ready = ut_notify_frame_ready;
 
   return rx_ancillary_ops_check(&ops);
+}
+
+/* ── the queue of the manager ─────────────────────────────────────────── */
+
+#define UT40_MQ_MAX_PKTS (64)
+#define UT40_MQ_QUEUE_ID (9)
+
+static struct rte_mbuf* g_mq_pkts[UT40_MQ_MAX_PKTS];
+static int g_mq_n;
+static struct mt_rxq_entry g_mq_entry;
+static _Atomic uint32_t g_mq_map[UINT16_MAX + 1];
+static struct mt_rx_flow_rsp g_mq_rsp;
+
+static uint16_t ut40_mq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** pkts,
+                              const uint16_t nb_pkts) {
+  uint16_t n = RTE_MIN(nb_pkts, (uint16_t)g_mq_n);
+
+  (void)entry;
+  memcpy(pkts, g_mq_pkts, n * sizeof(*pkts));
+  memmove(g_mq_pkts, g_mq_pkts + n, (g_mq_n - n) * sizeof(*pkts));
+  g_mq_n -= n;
+  return n;
+}
+
+void ut40_mq_setup(ut_test_ctx* ctx, uint16_t udp_port) {
+  struct st_rx_ancillary_session_impl* s = &ctx->session;
+  const uint8_t ip[MTL_IP_ADDR_LEN] = {239, 1, 1, 1};
+
+  rte_spinlock_init(&ctx->mgr.mutex[0]);
+  ctx->mgr.sessions[0] = s;
+  ctx->mgr.max_idx = 1;
+  s->port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
+  memcpy(s->ops.ip_addr[MTL_SESSION_PORT_P], ip, MTL_IP_ADDR_LEN);
+  s->st40_dst_port[MTL_SESSION_PORT_P] = udp_port;
+  s->mq_flow[MTL_SESSION_PORT_P] = &g_mq_rsp;
+  memset(g_mq_map, 0, sizeof(g_mq_map));
+  g_mq_map[udp_port] = 1; /* key 0: session 0, port P */
+  g_mq_entry.queue_id = UT40_MQ_QUEUE_ID;
+  g_mq_entry.burst = ut40_mq_burst;
+  ctx->mgr.mq.map[MTL_PORT_P] = g_mq_map;
+  ctx->mgr.mq.rxq[MTL_PORT_P] = &g_mq_entry;
+}
+
+void ut40_mq_clear(ut_test_ctx* ctx) {
+  for (int i = 0; i < g_mq_n; i++) rte_pktmbuf_free(g_mq_pkts[i]);
+  g_mq_n = 0;
+  /* the fake queue and map are not from the device: uinit frees the kept packets */
+  ctx->mgr.mq.rxq[MTL_PORT_P] = NULL;
+  ctx->mgr.mq.map[MTL_PORT_P] = NULL;
+  st_rx_mgr_queue_uinit(&ctx->mgr.mq);
+  ctx->session.mq_flow[MTL_SESSION_PORT_P] = NULL;
+}
+
+int ut40_mq_push(ut_test_ctx* ctx, uint16_t seq, uint8_t ip_last) {
+  struct rte_mbuf* m;
+  struct mt_udp_hdr* hdr;
+  const uint8_t ip[MTL_IP_ADDR_LEN] = {239, 1, 1, ip_last};
+
+  if (g_mq_n >= UT40_MQ_MAX_PKTS) return -ENOSPC;
+  m = make_anc_mbuf(seq, seq, 1);
+  if (!m) return -ENOMEM;
+  hdr = rte_pktmbuf_mtod(m, struct mt_udp_hdr*);
+  hdr->udp.dst_port = htons(ctx->session.st40_dst_port[MTL_SESSION_PORT_P]);
+  memcpy(&hdr->ipv4.dst_addr, ip, MTL_IP_ADDR_LEN);
+  g_mq_pkts[g_mq_n++] = m;
+  return 0;
+}
+
+int ut40_mq_left(void) {
+  return g_mq_n;
+}
+
+uint16_t ut40_mq_deferred(ut_test_ctx* ctx) {
+  return ctx->mgr.mq.defer_n[MTL_PORT_P];
+}
+
+void ut40_mq_lock(ut_test_ctx* ctx) {
+  rte_spinlock_lock(&ctx->mgr.mutex[0]);
+}
+
+void ut40_mq_unlock(ut_test_ctx* ctx) {
+  rte_spinlock_unlock(&ctx->mgr.mutex[0]);
+}
+
+void ut40_mq_set_phy_port(ut_test_ctx* ctx, enum mtl_port port) {
+  ctx->session.port_maps[MTL_SESSION_PORT_P] = port;
+}
+
+uint16_t ut40_mq_queue_id(ut_test_ctx* ctx) {
+  return rx_ancillary_queue_id(&ctx->session, MTL_SESSION_PORT_P);
+}
+
+unsigned int ut40_mbufs_in_use(void) {
+  return rte_mempool_in_use_count(ut_pool());
 }

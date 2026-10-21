@@ -484,3 +484,49 @@ void ut30_feed_full_frame(ut30_test_ctx* ctx, uint16_t seq_start, uint32_t ts_st
 void ut30_invoke_rx_audio_session_stat(ut30_test_ctx* ctx) {
   rx_audio_session_stat(&ctx->mgr, &ctx->session);
 }
+
+uint16_t ut30_mq_queue_id(ut30_test_ctx* ctx) {
+  static struct mt_rxq_entry entry = {.queue_id = 9};
+  static struct mt_rx_flow_rsp rsp;
+  struct st_rx_audio_session_impl* s = &ctx->session;
+  uint16_t id;
+
+  s->port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
+  s->rxq[MTL_SESSION_PORT_P] = NULL;
+  s->mq_flow[MTL_SESSION_PORT_P] = &rsp;
+  ctx->mgr.mq.rxq[MTL_PORT_P] = &entry;
+  id = rx_audio_queue_id(s, MTL_SESSION_PORT_P);
+  s->mq_flow[MTL_SESSION_PORT_P] = NULL;
+  ctx->mgr.mq.rxq[MTL_PORT_P] = NULL;
+  return id;
+}
+
+int ut30_mq_dispatch(ut30_test_ctx* ctx, enum mtl_port phy, uint32_t key, uint8_t ip_last,
+                     bool locked) {
+  static struct mt_rx_flow_rsp rsp;
+  struct st_rx_audio_session_impl* s = &ctx->session;
+  const uint8_t ip[MTL_IP_ADDR_LEN] = {239, 1, 1, 1};
+  const uint8_t pkt_ip[MTL_IP_ADDR_LEN] = {239, 1, 1, ip_last};
+  struct rte_mbuf* m = make_audio_mbuf(0, 0);
+  struct mt_udp_hdr* hdr;
+  int ret;
+
+  if (!m) return -ENOMEM;
+  s->idx = 2;
+  ctx->mgr.sessions[2] = s;
+  rte_spinlock_init(&ctx->mgr.mutex[2]);
+  s->port_maps[MTL_SESSION_PORT_R] = MTL_PORT_R;
+  memcpy(s->ops.ip_addr[MTL_SESSION_PORT_R], ip, MTL_IP_ADDR_LEN);
+  s->st30_dst_port[MTL_SESSION_PORT_R] = 30000;
+  s->mq_flow[MTL_SESSION_PORT_R] = &rsp;
+  hdr = rte_pktmbuf_mtod(m, struct mt_udp_hdr*);
+  hdr->udp.dst_port = htons(30000);
+  memcpy(&hdr->ipv4.dst_addr, pkt_ip, MTL_IP_ADDR_LEN);
+  if (locked) rte_spinlock_lock(&ctx->mgr.mutex[2]);
+  ret = rx_audio_sessions_queue_dispatch(&ctx->mgr, phy, key, m);
+  if (locked) rte_spinlock_unlock(&ctx->mgr.mutex[2]);
+  rte_pktmbuf_free(m);
+  s->mq_flow[MTL_SESSION_PORT_R] = NULL;
+  ctx->mgr.sessions[2] = NULL;
+  return ret;
+}
