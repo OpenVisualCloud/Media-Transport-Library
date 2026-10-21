@@ -120,6 +120,12 @@ To isolate CPU cores at boot time, use the `isolcpus` kernel boot parameter. For
 
 Once cores are isolated, you can manually assign them to MTL instances using the `lcores` parameter in `struct mtl_init_params` (see §2.7), or via the RxTxApp `--lcores` command-line option. This ensures MTL tasks run with minimal interference from other system processes.
 
+The kernel does not move a thread off an isolated core, and a new thread starts on the core of the thread that creates it.
+So `mtl_init()` takes the isolated cores and the `lcores` cores out of the CPU mask of the calling thread, after the NUMA bind.
+`mtl_admin`, `mtl_stat` and every thread that the application creates later from that thread inherit that mask, and no thread that is not a scheduler shares a core with one.
+With `MTL_FLAG_NOT_BIND_PROCESS_NUMA` the calling thread keeps its mask, and only the MTL threads get the reduced one.
+With `MTL_FLAG_TASKLET_THREAD` nothing changes: its schedulers are threads that are not on dedicated cores.
+
 
 ## 3. Memory management
 

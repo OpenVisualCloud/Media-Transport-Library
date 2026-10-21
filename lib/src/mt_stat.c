@@ -159,6 +159,7 @@ int mt_stat_init(struct mtl_main_impl* impl) {
     return ret;
   }
   mtl_thread_setname(mgr->stat_tid, "mtl_stat");
+  mt_thread_set_ctrl_affinity(impl, mgr->stat_tid);
 
   if (!p->dump_period_s) p->dump_period_s = MT_STAT_INTERVAL_S_DEFAULT;
   mgr->dump_period_us = (uint64_t)p->dump_period_s * US_PER_S;

@@ -27,7 +27,9 @@ static int admin_cal_cpu_busy(struct mtl_main_impl* impl) {
     /* cal tx video cpu */
     tx_mgr = &sch->tx_video_mgr;
     for (int j = 0; j < tx_mgr->max_idx; j++) {
-      tx_s = tx_video_session_get(tx_mgr, j);
+      /* try: a session that its tasklet holds is skipped this period, the admin thread
+       * must not spin on a lock that a preempted scheduler holds */
+      tx_s = tx_video_session_try_get(tx_mgr, j);
       if (tx_s) {
         tx_video_session_cal_cpu_busy(sch, tx_s);
         tx_video_session_put(tx_mgr, j);
@@ -37,7 +39,7 @@ static int admin_cal_cpu_busy(struct mtl_main_impl* impl) {
     /* cal rx video cpu */
     rx_mgr = &sch->rx_video_mgr;
     for (int j = 0; j < rx_mgr->max_idx; j++) {
-      rx_s = rx_video_session_get(rx_mgr, j);
+      rx_s = rx_video_session_try_get(rx_mgr, j);
       if (rx_s) {
         rx_video_session_cal_cpu_busy(sch, rx_s);
         rx_video_session_put(rx_mgr, j);
@@ -62,7 +64,7 @@ static int admin_clear_cpu_busy(struct mtl_main_impl* impl) {
     /* cal tx video cpu */
     tx_mgr = &sch->tx_video_mgr;
     for (int j = 0; j < tx_mgr->max_idx; j++) {
-      tx_s = tx_video_session_get(tx_mgr, j);
+      tx_s = tx_video_session_try_get(tx_mgr, j); /* see admin_cal_cpu_busy() */
       if (tx_s) {
         tx_video_session_clear_cpu_busy(tx_s);
         tx_video_session_put(tx_mgr, j);
@@ -72,7 +74,7 @@ static int admin_clear_cpu_busy(struct mtl_main_impl* impl) {
     /* cal rx video cpu */
     rx_mgr = &sch->rx_video_mgr;
     for (int j = 0; j < rx_mgr->max_idx; j++) {
-      rx_s = rx_video_session_get(rx_mgr, j);
+      rx_s = rx_video_session_try_get(rx_mgr, j);
       if (rx_s) {
         rx_video_session_clear_cpu_busy(rx_s);
         rx_video_session_put(rx_mgr, j);
@@ -384,6 +386,7 @@ int mt_admin_init(struct mtl_main_impl* impl) {
   int ret = pthread_create(&admin->admin_tid, NULL, admin_thread, impl);
   if (ret < 0) return ret;
   mtl_thread_setname(admin->admin_tid, "mtl_admin");
+  mt_thread_set_ctrl_affinity(impl, admin->admin_tid);
 
   rte_eal_alarm_set(admin->period_us, admin_alarm_handler, impl);
 
