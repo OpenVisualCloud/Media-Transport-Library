@@ -187,7 +187,7 @@ Ring = shock absorber. Builder can be slow; transmitter still has queued packets
 
 **Ring sizing**: Default 512 entries (`ST_TX_VIDEO_SESSIONS_RING_SIZE`, ≈ 1/9 of a 1080p frame's ~4500 packets). Halved if exceeds `st20_total_pkts`. Uses SP/SC (single-producer/single-consumer) mode — both tasklets run on the same lcore, so no atomics needed (~2-3ns vs ~20+ns for multi-producer).
 
-**Bulk enqueue semantics**: `rte_ring_sp_enqueue_bulk` (all-or-nothing) not `_burst` (best-effort). The 4 packets have sequential RTP sequence numbers and pacing timestamps — they must be sent as a unit. Partial enqueue would break batch integrity.
+**Bulk enqueue semantics**: `rte_ring_sp_enqueue_bulk` (all-or-nothing) not `_burst` (best-effort). The 4 packets have sequential RTP sequence numbers and pacing timestamps (on an all-RL session only a frame's pkt 0 is stamped, the only stamp RL reads) — they must be sent as a unit. Partial enqueue would break batch integrity.
 
 ### Cooperative tx_burst: No Retry Loop
 If `rte_eth_tx_burst()` returns fewer than requested:
@@ -311,8 +311,8 @@ payload_size >= 1024 (ST_RX_VIDEO_DMA_MIN_SIZE)?
 
 | TX fields (`st_tx_muf_priv_data`) | RX fields (`st_rx_muf_priv_data`) |
 |---|---|
-| `tsc_time_stamp` (8B) — pacing timestamp | `offset` — destination offset in frame |
-| `ptp_time_stamp` (8B) — RTP timestamp source | `len` — payload length |
+| `tsc_time_stamp` (8B) — TSC pacing target; all-RL ST20 frames: pkt 0 only | `offset` — destination offset in frame |
+| `ptp_time_stamp` (8B) — PTP / launch-time target; all-RL ST20 frames: pkt 0 only | `len` — payload length |
 | `priv` (8B) — pointer to owning session/frame | `lender` — borrowed mbuf pointer (DMA) |
 | `idx` (4B) — packet index within frame | `padding` |
 

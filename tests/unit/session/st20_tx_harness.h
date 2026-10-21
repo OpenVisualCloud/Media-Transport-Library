@@ -101,6 +101,28 @@ uint64_t ut_txv_pacing_required_tai(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfm
 int ut_txv_run_frame_tasklet(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
                              uint64_t timestamp, uint64_t* packet_tsc,
                              uint64_t* packet_ptp);
+enum { UT_TXV_STAMP_PKTS = 8 };
+/* what a pkt the builder did not stamp carries */
+#define UT_TXV_NO_STAMP UINT64_MAX
+/* the TSC/PTP stamp of each pkt of each session port, in ring order */
+struct ut_txv_stamps {
+  uint64_t tsc[MTL_SESSION_PORT_MAX][UT_TXV_STAMP_PKTS];
+  uint64_t ptp[MTL_SESSION_PORT_MAX][UT_TXV_STAMP_PKTS];
+};
+/* Drives tv_tasklet_frame() over one copy-mode frame of total_pkts pkts, bulk pkts a
+ * build, on num_port session ports. ways[] holds the pacing way of all
+ * MTL_SESSION_PORT_MAX ports, used or not. The cursors start where tv_sync_pacing()
+ * puts them for the mocked clocks; the mock TSC then advances build_ns after each
+ * build. Returns the pkts each port got, dummies included, < 0 on failure. */
+int ut_txv_run_frame_stamps(ut_txv_ctx* ctx, const enum st21_tx_pacing_way* ways,
+                            int num_port, unsigned int bulk, int total_pkts,
+                            uint64_t build_ns, struct ut_txv_stamps* stamps);
+enum { UT_TXV_IOVA_PAGES_MAX = 2, UT_TXV_IOVA_PAGE_LEN = 64 };
+/* tv_frame_get_offset_iova() of a frame at iova or, with pages > 0, of one whose page
+ * table maps page i of UT_TXV_IOVA_PAGE_LEN bytes at page_iova[i] */
+mtl_iova_t ut_txv_frame_offset_iova(ut_txv_ctx* ctx, mtl_iova_t iova,
+                                    const mtl_iova_t* page_iova, uint16_t pages,
+                                    size_t offset);
 /* Drives tv_tasklet_rtp() with one app packet whose st20_rfc4175_rtp_hdr row
  * number carries the given field parity, so the production builders' F-bit
  * extraction is what tv_sync_pacing() is told. tx_no_chain selects tv_build_rtp()
