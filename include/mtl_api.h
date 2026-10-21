@@ -759,6 +759,13 @@ struct mtl_init_params {
 #else
   uint16_t rx_sessions_cnt_max __mtl_deprecated_msg("Use rx_queues_cnt instead");
 #endif
+  /**
+   * Optional for MTL_TRANSPORT_ST2110. Payload mbufs of each hdr split rx queue, the
+   * most packet slots a hdr split session can use, see ST20_RX_FLAG_HDR_SPLIT. Leave to
+   * zero for 21600, which holds 4 frames of 1080p GPM_SL. At least nb_rx_desc +
+   * rx_free_thresh + 32 when set.
+   */
+  uint32_t hdr_split_slots;
 };
 
 /**
@@ -1128,6 +1135,108 @@ int mtl_sch_enable_sleep(mtl_handle mt, int sch_idx, bool enable);
  *   - <0: Error code.
  */
 int mtl_sch_set_sleep_us(mtl_handle mt, uint64_t us);
+
+/** Max length of a scheduler or tasklet name in the stats, with the terminator. */
+#define MTL_SCH_TASKLET_NAME_LEN (32)
+/** Max tasklet entries one mtl_sch_get_stats() call reports. */
+#define MTL_SCH_MAX_TASKLETS (64)
+
+/**
+ * Timing distribution of a measured routine, in ns. cnt is 0 when the measurement was
+ * never enabled, and min_ns is then 0.
+ */
+struct mtl_time_stats {
+  /** Number of samples. */
+  uint64_t cnt;
+  /** Sum of all samples in ns. */
+  uint64_t sum_ns;
+  /** Shortest sample in ns, 0 when cnt is 0. */
+  uint64_t min_ns;
+  /** Longest sample in ns. */
+  uint64_t max_ns;
+};
+
+/** Timing of one tasklet of a scheduler. */
+struct mtl_sch_tasklet_stats {
+  /** Tasklet name. */
+  char name[MTL_SCH_TASKLET_NAME_LEN];
+  /** One sample per handler call. */
+  struct mtl_time_stats time;
+  /** Calls that returned a value other than MTL_TASKLET_ALL_DONE. */
+  struct mtl_time_stats work;
+};
+
+/**
+ * Timing statistics of one scheduler, as returned by mtl_sch_get_stats(). The time
+ * counters are cumulative since mtl_init() or the last mtl_sch_reset_stats(); the
+ * periodic stats dump does not reset them. They move only while
+ * MTL_FLAG_TASKLET_TIME_MEASURE is set or the USDT probe sys:tasklet_time_measure is
+ * attached.
+ */
+struct mtl_sch_stats {
+  /** Scheduler name. */
+  char name[MTL_SCH_TASKLET_NAME_LEN];
+  /** Lcore of the scheduler, or UINT32_MAX when it runs in a thread. */
+  uint32_t lcore;
+  /** Valid entries in tasklets[]. */
+  uint16_t nb_tasklets;
+  /** Tasklets registered on the scheduler; tasklets[] holds the first nb_tasklets. */
+  uint16_t nb_tasklets_total;
+  /** True when the time counters are updated right now. */
+  bool time_measure_enabled;
+  /** Average loop time in ns, always available. */
+  uint64_t avg_ns_per_loop;
+  /** One sample per pass over all tasklets. */
+  struct mtl_time_stats loop_time;
+  /** The first nb_tasklets registered tasklets, in slot order. */
+  struct mtl_sch_tasklet_stats tasklets[MTL_SCH_MAX_TASKLETS];
+};
+
+/**
+ * Get the number of scheduler slots; a slot can be inactive.
+ *
+ * @param mt
+ *   The handle to the MTL transport device context.
+ * @return
+ *   - >0: The slot count, the valid sch_idx range is [0, count).
+ *   - <0: Error code.
+ */
+int mtl_sch_get_count(mtl_handle mt);
+
+/**
+ * Retrieve the timing statistics of a scheduler and its tasklets.
+ * The call takes the scheduler lock, so it can block behind a tasklet unregister for up
+ * to 1 s.
+ *
+ * @param mt
+ *   The handle to the MTL transport device context.
+ * @param sch_idx
+ *   The sch index, in [0, mtl_sch_get_count()).
+ * @param stats
+ *   A pointer to stats structure.
+ * @return
+ *   - 0: Success.
+ *   - -EINVAL: Bad handle, index or pointer.
+ *   - -ENOENT: The slot holds no active scheduler.
+ */
+int mtl_sch_get_stats(mtl_handle mt, int sch_idx, struct mtl_sch_stats* stats);
+
+/**
+ * Reset the cumulative time counters of a scheduler and its tasklets.
+ * The reset is approximate against a running scheduler: a sample in flight can land after
+ * it. The call takes the scheduler lock, so it can block behind a tasklet unregister for
+ * up to 1 s.
+ *
+ * @param mt
+ *   The handle to the MTL transport device context.
+ * @param sch_idx
+ *   The sch index, in [0, mtl_sch_get_count()).
+ * @return
+ *   - 0: Success.
+ *   - -EINVAL: Bad handle or index.
+ *   - -ENOENT: The slot holds no active scheduler.
+ */
+int mtl_sch_reset_stats(mtl_handle mt, int sch_idx);
 
 /**
  * Request one DPDK lcore from the MTL transport device context.

@@ -675,7 +675,6 @@ struct st_app_context {
   uint64_t last_stat_time_ns;
 
   bool runtime_session;
-  bool enable_hdr_split;
   bool tx_copy_once;
   bool app_bind_lcore;
   bool enable_timing_parser;

@@ -1,0 +1,53 @@
+From bd0809a9062ff84473ad5b34d2c6dbde7c36af78 Mon Sep 17 00:00:00 2001
+From: Dawid Wesierski <dawid.wesierski@intel.com>
+Date: Wed, 14 Oct 2026 19:19:17 +0000
+Subject: [PATCH] net/ice: fix Rx path selection for per-queue buffer split
+
+ice_set_rx_function() selects the Rx path from the port Rx offloads
+only. An application can enable RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT on one
+queue in rte_eth_rx_queue_setup(), and the port offloads then do not
+have it. The common path selection then picks a vector path, which
+does not support buffer split.
+
+Since commit 82a5e5cfef ("net/intel: remove redundant Rx offload
+check") nothing else stops that, because the per-queue check was
+removed with the argument that path selection validates the offloads.
+On such a queue the vector Rx path ignores the payload segment, and
+the vector release frees only the header mbuf of each descriptor. Each
+port stop then leaks one payload mbuf per descriptor, and the next
+start fails: "Failed to allocate payload mbuf for RX". A TM hierarchy
+commit on a started port stops and starts it, so a rate limit
+configuration after the start is enough to hit the fault.
+
+Add the offloads of each Rx queue to the offloads that the path must
+support, so that a buffer split queue gets the scalar path.
+
+Fixes: 82a5e5cfef ("net/intel: remove redundant Rx offload check")
+Cc: stable@dpdk.org
+Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
+---
+ drivers/net/intel/ice/ice_rxtx.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/net/intel/ice/ice_rxtx.c b/drivers/net/intel/ice/ice_rxtx.c
+index d3f3f98ee4..04b70c53bd 100644
+--- a/drivers/net/intel/ice/ice_rxtx.c
++++ b/drivers/net/intel/ice/ice_rxtx.c
+@@ -3436,6 +3436,14 @@ ice_set_rx_function(struct rte_eth_dev *dev)
+ 	if (dev->data->dev_started)
+ 		goto out;
+ 
++	/* A queue can enable an offload, such as buffer split, that the port does not. */
++	for (uint16_t q = 0; q < dev->data->nb_rx_queues; q++) {
++		struct ci_rx_queue *rxq = dev->data->rx_queues[q];
++
++		if (rxq != NULL)
++			req_features.rx_offloads |= rxq->offloads;
++	}
++
+ #ifdef RTE_ARCH_X86
+ 	if (ad->ptp_ena || !ad->rx_bulk_alloc_allowed) {
+ 		rx_simd_width = RTE_VECT_SIMD_DISABLED;
+-- 
+2.43.0
+

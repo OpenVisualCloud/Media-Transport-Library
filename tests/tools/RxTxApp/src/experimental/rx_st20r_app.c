@@ -290,7 +290,6 @@ static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t
   ops.payload_type = video ? video->base.payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
   ops.notify_frame_ready = app_rx_st20r_frame_ready;
   ops.framebuff_cnt = s->framebuff_cnt;
-  if (ctx->enable_hdr_split) ops.flags |= ST20RC_RX_FLAG_HDR_SPLIT;
 
   st_pthread_mutex_init(&s->st20_wake_mutex, NULL);
   st_pthread_cond_init(&s->st20_wake_cond, NULL);

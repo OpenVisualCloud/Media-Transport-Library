@@ -102,8 +102,10 @@ fail:
 }
 
 int mt_rxq_put(struct mt_rxq_entry* entry) {
+  int ret = 0;
+
   if (entry->rxq) {
-    mt_dev_put_rx_queue(entry->parent, entry->rxq);
+    ret = mt_dev_put_rx_queue(entry->parent, entry->rxq);
     entry->rxq = NULL;
   }
   if (entry->rsq) {
@@ -127,7 +129,7 @@ int mt_rxq_put(struct mt_rxq_entry* entry) {
     entry->rx_xdp_q = NULL;
   }
   mt_rte_free(entry);
-  return 0;
+  return ret;
 }
 
 uint16_t mt_rxq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,

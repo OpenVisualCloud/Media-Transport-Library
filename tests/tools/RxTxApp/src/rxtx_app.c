@@ -427,11 +427,6 @@ int main(int argc, char** argv) {
     }
   }
 
-  /* hdr split special */
-  if (ctx->enable_hdr_split) {
-    ctx->para.nb_rx_hdr_split_queues = ctx->rx_video_session_cnt;
-  }
-
   if (ctx->ptp_systime_sync) ctx->para.ptp_sync_notify = app_ptp_sync_notify;
 
   ctx->st = mtl_init(&ctx->para);

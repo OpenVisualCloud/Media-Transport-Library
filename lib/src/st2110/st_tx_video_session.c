@@ -608,7 +608,11 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   info("%s(%d), Retrain pacing with bps changed to %" PRIu64 "\n", __func__, idx,
        bps_to_set);
   mt_pacing_train_bps_result_add(impl, port, rl_bps, bps_to_set);
-  mt_txq_set_tx_bps(queue, bps_to_set);
+  ret = mt_txq_set_tx_bps(queue, bps_to_set);
+  if (ret < 0) {
+    err("%s(%d), set bps %" PRIu64 " fail %d\n", __func__, idx, bps_to_set, ret);
+    return ret;
+  }
   ret = tv_train_pacing(impl, s, s_port);
   return ret;
 }
