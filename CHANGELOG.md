@@ -1,5 +1,6 @@
 # Changelog
 
+* DPDK: two 26.07 TX hot path patches: 0012 builds the TX offload word in one store, 0013 passes iavf's IPsec TX callbacks only with `RTE_ETH_TX_OFFLOAD_SECURITY`; rebuild DPDK (26.07.93_mtl_)
 * st20/st22 TX: the video tasklets no longer take the session spinlock; on a session's own scheduler, `*_tx_free()` and `*_tx_update_destination()` (st20, st22, st20p, st22p) return `-EBUSY` instead of deadlocking, as do the stats APIs from the session's own callbacks
 * ice: default to driver version 2.7.6, built as released with no MTL patches; versions before 2.7.6 keep their `patches/ice_drv` series
 * nicctl.sh: give each VF of an ice PF a 512-entry RSS LUT, so that it can have more than 16 queue pairs; `vf_rss_lut` does so for existing VFs
