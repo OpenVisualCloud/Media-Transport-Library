@@ -728,8 +728,8 @@ int ut_txv_run_frame_stamps(ut_txv_ctx* ctx, const enum st21_tx_pacing_way* ways
   struct st_tx_video_session_impl* s = &ctx->session;
   struct st_frame_trans frame = {0};
   uint8_t frame_data[UT_TXV_STAMP_PKTS * UT_TXV_FRAME_SIZE] = {0};
-  int builds = (total_pkts + bulk - 1) / bulk;
-  int pkts = builds * bulk;
+  int builds = (total_pkts + (int)bulk - 1) / (int)bulk;
+  int pkts = builds * (int)bulk;
   int ret = -1;
 
   if (pkts > UT_TXV_STAMP_PKTS) return -EINVAL;
@@ -740,7 +740,7 @@ int ut_txv_run_frame_stamps(ut_txv_ctx* ctx, const enum st21_tx_pacing_way* ways
     if (ut_txv_mark_unstamped(s->mbuf_mempool_hdr[port]) < 0) goto out;
   }
   ut_txv_frame_setup(ctx, &frame, frame_data, total_pkts);
-  s->st20_frame_size = total_pkts * UT_TXV_FRAME_SIZE;
+  s->st20_frame_size = (size_t)total_pkts * UT_TXV_FRAME_SIZE;
   s->st20_fb_size = s->st20_frame_size;
   s->ops.height = total_pkts;
   s->ops.num_port = num_port;
@@ -782,7 +782,7 @@ mtl_iova_t ut_txv_frame_offset_iova(ut_txv_ctx* ctx, mtl_iova_t iova,
   if (pages > UT_TXV_IOVA_PAGES_MAX) return MTL_BAD_IOVA;
   for (uint16_t i = 0; i < pages; i++) {
     page_table[i].iova = page_iova[i];
-    page_table[i].addr = va + i * UT_TXV_IOVA_PAGE_LEN;
+    page_table[i].addr = va + (size_t)i * UT_TXV_IOVA_PAGE_LEN;
     page_table[i].len = UT_TXV_IOVA_PAGE_LEN;
   }
   return tv_frame_get_offset_iova(&ctx->session, &frame, offset);
@@ -1128,13 +1128,16 @@ int ut_txv_peer_get_next_frame_calls(const ut_txv_ctx* ctx) {
   return ctx->peer_get_next_frame_calls;
 }
 
-static int ut_txv_lock_probe_get_next_frame(void* priv, uint16_t* next_frame_idx,
-                                            struct st20_tx_frame_meta* meta) {
-  struct ut_txv_ctx* ctx = priv;
-  (void)next_frame_idx;
-  (void)meta;
+static void ut_txv_lock_probe_record(struct ut_txv_ctx* ctx) {
   ctx->lock_probe_runs++;
   ctx->lock_probe_locked = rte_spinlock_is_locked(&ctx->mgr.mutex[0]);
+}
+
+static int ut_txv_lock_probe_get_next_frame(void* priv, uint16_t* next_frame_idx,
+                                            struct st20_tx_frame_meta* meta) {
+  *next_frame_idx = 0;
+  (void)meta;
+  ut_txv_lock_probe_record(priv);
   return -EBUSY;
 }
 
@@ -1143,7 +1146,7 @@ static int ut_txv_lock_probe_pacing(struct mtl_main_impl* impl,
                                     enum mtl_session_port s_port) {
   (void)impl;
   (void)s_port;
-  ut_txv_lock_probe_get_next_frame(s->ops.priv, NULL, NULL);
+  ut_txv_lock_probe_record(s->ops.priv);
   return MTL_TASKLET_ALL_DONE;
 }
 
@@ -1211,7 +1214,7 @@ static void* ut_txv_fake_sch_thread(void* arg) {
       rte_pause();
       continue;
     }
-    f->waits += token - seen;
+    f->waits += (int)(token - seen);
     if (!rte_spinlock_is_locked(f->lock)) f->unlocked_waits++;
     if (f->migrate_to) ut_txv_migrate(f->migrate_ctx, f->migrate_to);
     f->migrate_to = NULL;

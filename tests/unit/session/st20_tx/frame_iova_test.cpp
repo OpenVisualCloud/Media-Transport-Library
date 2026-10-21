@@ -45,9 +45,9 @@ TEST_F(St20TxFrameIovaTest, PageTableMapsOffsetIntoItsPage) {
 }
 
 TEST_F(St20TxFrameIovaTest, OffsetPastThePageTableIsBadIova) {
-  EXPECT_EQ(
-      ut_txv_frame_offset_iova(ctx_, kFrameIova, kPageIova, 2, 2 * UT_TXV_IOVA_PAGE_LEN),
-      MTL_BAD_IOVA);
+  EXPECT_EQ(ut_txv_frame_offset_iova(ctx_, kFrameIova, kPageIova, 2,
+                                     size_t{2} * UT_TXV_IOVA_PAGE_LEN),
+            MTL_BAD_IOVA);
 }
 
 }  // namespace
