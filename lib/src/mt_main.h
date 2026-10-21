@@ -45,6 +45,7 @@
 #define MT_MBUF_CACHE_SIZE (128)
 #define MT_MBUF_HEADROOM_SIZE (RTE_PKTMBUF_HEADROOM)          /* 128 */
 #define MT_MBUF_DEFAULT_DATA_SIZE (RTE_MBUF_DEFAULT_DATAROOM) /* 2048 */
+#define MT_MEMPOOL_COLORS (64) /* cache lines of a 4 KB page: every L1D set */
 
 #define MT_MAX_SCH_NUM (18) /* max 18 scheduler lcore */
 
