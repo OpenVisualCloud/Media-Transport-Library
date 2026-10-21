@@ -2926,7 +2926,7 @@ unsigned int ut_txv_attach_bulk(ut_txv_ctx* ctx, const struct ut_txv_bulk_case* 
   ops.rtp_ring_size = 1024;
   ops.notify_rtp_done = ut_txv_notify_rtp_done;
   ops.priv = ctx;
-  st22_ops.framebuff_max_size = 64 * 1024;
+  st22_ops.framebuff_max_size = (size_t)64 * 1024;
   (void)tv_attach(&ctx->impl, &ctx->mgr, s, &ops,
                   c->st22 ? MT_ST22_HANDLE_TX_VIDEO : MT_HANDLE_TX_VIDEO,
                   c->st22 ? &st22_ops : NULL);
