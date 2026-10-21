@@ -459,12 +459,11 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
     tx_handle[i] = st22_tx_create(m_handle, &ops_tx);
 
     ASSERT_TRUE(tx_handle[i] != NULL);
+    test_ctx_tx[i]->handle = tx_handle[i];
     if (type[i] == ST22_TYPE_RTP_LEVEL) {
       test_ctx_tx[i]->stop = false;
       rtp_thread_tx[i] = std::thread(st22_tx_feed_packet, test_ctx_tx[i]);
     }
-
-    test_ctx_tx[i]->handle = tx_handle[i];
   }
 
   for (int i = 0; i < sessions; i++) {
