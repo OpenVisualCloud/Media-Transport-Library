@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1390" height="840" viewBox="0 0 1390 840" role="img" aria-labelledby="t d">
+<title id="t">RX header split: the NIC writes each payload into its frame slot</title>
+<desc id="d">The E810 NIC splits each received packet after the UDP header. It writes the Ethernet, IP and UDP headers into a header mbuf, and the RTP header, SRD headers and pixels into slot k of the frame buffer, which starts at the frame address plus k times the stride. The RX video tasklet reads the RTP header from the slot, checks the slot of the packet and copies no payload, then gives the slotted frame to the application. The tasklet frees the mbuf to the slot pool, and the pool refills the RX descriptor ring with the mbuf of the next slot, in frame order.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect width="1390" height="840" fill="#ffffff"/>
+<text x="40.0" y="58.0" font-size="32" font-weight="700" fill="#1F271B" text-anchor="start">RX header split: the NIC writes each payload into its frame slot</text>
+<text x="205.0" y="120.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">E810 PF, ice PMD</text>
+<text x="695.0" y="120.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">Host memory</text>
+<text x="1175.0" y="120.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">MTL</text>
+<rect x="40" y="150" width="330" height="600" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="205.0" y="186.0" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Received packet</text>
+<rect x="60" y="200" width="120" height="56" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="120.0" y="233.6" font-size="16" font-weight="700" fill="#1F271B" text-anchor="middle">Eth IP UDP</text>
+<rect x="188" y="200" width="84" height="56" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="230.0" y="232.9" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">RTP SRD</text>
+<rect x="280" y="200" width="70" height="56" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="315.0" y="233.6" font-size="16" font-weight="700" fill="#1F271B" text-anchor="middle">Pixels</text>
+<path d="M199.0 262.0 L199.0 282.0 L189.0 282.0 L205.0 302.0 L221.0 282.0 L211.0 282.0 L211.0 262.0 Z" fill="#1F271B" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<rect x="60" y="306" width="290" height="220" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="340.0" y="368.0" font-size="16" font-weight="700" fill="#1F271B" text-anchor="end">Headers</text>
+<text x="205.0" y="420.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Buffer split</text>
+<text x="205.0" y="448.0" font-size="16" fill="#1F271B" text-anchor="middle">after the UDP header</text>
+<text x="340.0" y="498.0" font-size="16" font-weight="700" fill="#1F271B" text-anchor="end">Payload</text>
+<path d="M199.0 636.0 L199.0 550.0 L189.0 550.0 L205.0 530.0 L221.0 550.0 L211.0 550.0 L211.0 636.0 Z" fill="#1F271B" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<text x="222.0" y="590.0" font-size="16" fill="#1F271B" text-anchor="start">Descriptors</text>
+<rect x="60" y="640" width="290" height="64" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="205.0" y="678.3" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">RX descriptor ring</text>
+<rect x="470" y="150" width="450" height="600" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="3" stroke-dasharray="12 8"/>
+<text x="695.0" y="196.0" font-size="18" fill="#1F271B" text-anchor="middle">Slot k starts at frame + k × stride</text>
+<text x="695.0" y="224.0" font-size="18" fill="#1F271B" text-anchor="middle">stride is 1664 B by default</text>
+<rect x="490" y="330" width="410" height="64" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="695.0" y="368.3" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">Header mbuf: Eth, IP, UDP</text>
+<text x="695.0" y="452.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Frame buffer</text>
+<rect x="490" y="470" width="98" height="44" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="539.0" y="496.9" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">Headroom</text>
+<rect x="594" y="470" width="86" height="44" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="637.0" y="496.9" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">RTP SRD</text>
+<rect x="686" y="470" width="154" height="44" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="763.0" y="496.9" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">Pixels, slot 0</text>
+<rect x="845" y="470" width="55" height="44" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="872.5" y="496.9" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">Pad</text>
+<rect x="490" y="524" width="98" height="44" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="539.0" y="550.9" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">Headroom</text>
+<rect x="594" y="524" width="86" height="44" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="637.0" y="550.9" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">RTP SRD</text>
+<rect x="686" y="524" width="154" height="44" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="763.0" y="550.9" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">Pixels, slot 1</text>
+<rect x="845" y="524" width="55" height="44" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="872.5" y="550.9" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">Pad</text>
+<rect x="490" y="578" width="98" height="44" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="539.0" y="604.9" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">Headroom</text>
+<rect x="594" y="578" width="86" height="44" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="637.0" y="604.9" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">RTP SRD</text>
+<rect x="686" y="578" width="154" height="44" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="763.0" y="604.9" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">Pixels, slot 2</text>
+<rect x="845" y="578" width="55" height="44" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="872.5" y="604.9" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">Pad</text>
+<rect x="490" y="668" width="98" height="44" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="539.0" y="694.9" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">Headroom</text>
+<rect x="594" y="668" width="86" height="44" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="637.0" y="694.9" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">RTP SRD</text>
+<rect x="686" y="668" width="154" height="44" rx="8" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<text x="763.0" y="694.9" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">Pixels, slot k</text>
+<rect x="845" y="668" width="55" height="44" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="872.5" y="694.9" font-size="14" font-weight="700" fill="#1F271B" text-anchor="middle">Pad</text>
+<text x="695.0" y="650.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">⋯</text>
+<path d="M354.0 356.0 L466.0 356.0 L466.0 346.0 L486.0 362.0 L466.0 378.0 L466.0 368.0 L354.0 368.0 Z" fill="#1F271B" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<text x="420.0" y="350.0" font-size="16" fill="#1F271B" text-anchor="middle">DMA</text>
+<path d="M354.0 486.0 L466.0 486.0 L466.0 476.0 L486.0 492.0 L466.0 508.0 L466.0 498.0 L354.0 498.0 Z" fill="#1F271B" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<text x="420.0" y="480.0" font-size="16" fill="#1F271B" text-anchor="middle">DMA</text>
+<rect x="1000" y="150" width="350" height="80" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1175.0" y="184.0" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Application</text>
+<text x="1175.0" y="212.0" font-size="16" fill="#1F271B" text-anchor="middle">gets the slotted frame</text>
+<path d="M1169.0 276.0 L1169.0 254.0 L1159.0 254.0 L1175.0 234.0 L1191.0 254.0 L1181.0 254.0 L1181.0 276.0 Z" fill="#1F271B" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<text x="1192.0" y="262.0" font-size="16" fill="#1F271B" text-anchor="start">Notify</text>
+<rect x="1000" y="280" width="350" height="170" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1175.0" y="316.0" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">RX video tasklet</text>
+<text x="1175.0" y="348.0" font-size="16" fill="#1F271B" text-anchor="middle">Reads the RTP header</text>
+<text x="1175.0" y="370.0" font-size="16" fill="#1F271B" text-anchor="middle">from the slot, mbuf-&gt;next</text>
+<text x="1175.0" y="398.0" font-size="16" fill="#1F271B" text-anchor="middle">Checks the slot of the packet</text>
+<text x="1175.0" y="426.0" font-size="16" fill="#1F271B" text-anchor="middle">Copies no payload</text>
+<path d="M924.0 414.0 L976.0 414.0 L976.0 404.0 L996.0 420.0 L976.0 436.0 L976.0 426.0 L924.0 426.0 Z" fill="#1F271B" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<text x="960.0" y="404.0" font-size="16" fill="#1F271B" text-anchor="middle">Reads</text>
+<path d="M1169.0 450.0 L1169.0 476.0 L1159.0 476.0 L1175.0 496.0 L1191.0 476.0 L1181.0 476.0 L1181.0 450.0 Z" fill="#1F271B" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<text x="1192.0" y="480.0" font-size="16" fill="#1F271B" text-anchor="start">Frees the mbuf</text>
+<rect x="1000" y="500" width="350" height="150" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="1175.0" y="536.0" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">Slot pool, mt_hdr_split.c</text>
+<text x="1175.0" y="568.0" font-size="16" fill="#1F271B" text-anchor="middle">Pinned external mbufs,</text>
+<text x="1175.0" y="590.0" font-size="16" fill="#1F271B" text-anchor="middle">one mbuf for each slot</text>
+<text x="1175.0" y="618.0" font-size="16" fill="#1F271B" text-anchor="middle">Gives the slots in frame order</text>
+<path d="M1175 650 L1175 790 L205 790 L205 728" fill="none" stroke="#1F271B" stroke-width="12" stroke-linejoin="round"/>
+<path d="M189 728 L205 708 L221 728 Z" fill="#1F271B" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<text x="695.0" y="776.0" font-size="18" fill="#1F271B" text-anchor="middle">Refill with the mbuf of the next slot</text>
+</g>
+</svg>

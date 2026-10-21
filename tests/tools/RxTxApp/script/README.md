@@ -73,23 +73,7 @@ Edit the setup.sh as the setup and also the JSON files, then run:
 ./redundant_test.sh
 ```
 
-## 5. Header split test(PF PMD mode only)
-
-### 5.1. Bind to PF pmd mode with root
-
-```bash
-export PATH=$PATH:/usr/local/bin/
-../../script/nicctl.sh bind_pmd 0000:af:00.0
-../../script/nicctl.sh bind_pmd 0000:af:00.1
-```
-
-### 5.2. Run the test with loop JSON
-
-```bash
-./hdr_split_test.sh
-```
-
-## 6. Sample test
+## 5. Sample test
 
 Customize sample_test.sh as the setup and run
 
