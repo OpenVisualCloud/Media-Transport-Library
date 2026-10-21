@@ -259,6 +259,13 @@ A deep port's TX session pools cover what the session holds while its queue drai
 
 Default mempool ops: `"stack"` (LIFO) — better cache reuse than FIFO ring ops. LIFO returns the most-recently-freed mbuf (L1/L2 hot, ~3-5ns). FIFO returns the oldest freed mbuf (L3/DRAM cold, ~15-40ns). Over 260K alloc/free cycles/sec per 1080p60 stream, this saves ~2.6-9.1ms/sec. The spinlock in stack ops is uncontended (single-threaded access) — costs ~1ns.
 
+Pool header coloring (`mt_mempool_create_by_ops()`, `MtMempoolTest`):
+- A pool header memzone (`struct rte_mempool` + `RTE_MAX_LCORE` × `struct rte_mempool_cache`, ~1 MB) has one length for every pool with a per-lcore cache and equal private size, whatever the element size,
+  and lands at the end of freshly mapped hugepages: such pools (a TX session's header and chain pools alike) share their header address modulo 128 KB, so all their `mp` lines and the scheduler lcore's cache lines hit the same L1/L2 sets.
+- Each pool's private area is padded by `(mempool_idx % MT_MEMPOOL_COLORS)` cache lines (at most 4032 B), cycling the headers over every cache line of a 4 KB page, i.e. every L1D set. This inlines `rte_pktmbuf_pool_create_by_ops()`; keep it in step on a DPDK bump.
+- Measured (Xeon 8480+, E810 VF, DPDK 26.07, one TX scheduler, N × 1080p59.94 RL): uncolored, 81% of the scheduler's L2 misses were in the builder's `rte_mempool_default_cache()`/cache get.
+  28 sessions: 5.60 Mpps and failing uncolored (21-22 pass), 6.90 Mpps with all 28 at full rate colored, matching `MTL_FLAG_TX_MONO_POOL`; core capped at 2.0 GHz, 30 sessions: 4.38 → 5.27 Mpps (+20%). Set aliasing, not locality, so per-session pools stay.
+
 ### Zero-Copy TX Design
 - Header mbufs: allocated from per-session pool, contain RTP/UDP/IP/Eth headers (~62 bytes)
 - Chain mbufs: `rte_pktmbuf_attach_extbuf()` points to app's frame buffer (no copy)
@@ -729,6 +736,7 @@ back-to-back, never across time.
 5. **Ring underflow?** Transmitter sends fewer packets than expected → increase ring or reduce builder load
 6. **RX losing packets?** NIC `imissed` counter → increase `nb_rx_desc`, mempool, or drain faster (continuous burst: if `rte_eth_rx_burst` returns ≥ `rx_burst_size/2`, loop immediately via `MTL_TASKLET_HAS_PENDING`)
 7. **RX memcpy bottleneck?** 4K60 = 1.2GB/s memcpy per stream. Use DMA engine for payloads ≥1024 bytes
+8. **TX scheduler L2 misses in mempool cache get?** Pool headers aliasing on the same cache sets: the logged pool addresses (`succ at %p`) should spread over bits 6-11 (§3 pool header coloring)
 
 ### USDT Tracepoints
 Probes in `lib/src/mt_usdt_provider.d`, compiled when `MTL_HAS_USDT`. Attach with bpftrace/SystemTap.
