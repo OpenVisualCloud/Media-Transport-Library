@@ -648,6 +648,8 @@ struct st_rx_video_session_impl {
   /* additional lcore for pkt handling */
   unsigned int pkt_lcore;
   bool has_pkt_lcore;
+  /* copy into the frame with non-temporal stores, see rv_frame_memcpy() */
+  bool nt_store;
   struct rte_ring* pkt_lcore_ring;
   rte_atomic32_t pkt_lcore_active;
   rte_atomic32_t pkt_lcore_stopped;

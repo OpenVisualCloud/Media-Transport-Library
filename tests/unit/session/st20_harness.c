@@ -799,13 +799,36 @@ int ut20_feed_frame_burst_via_wrapper(ut20_test_ctx* ctx, const int* pkt_idx, in
   return rc;
 }
 
-void* ut20_frame_memcpy(ut20_test_ctx* ctx, bool pkt_lcore, void* dst, const void* src,
+void* ut20_frame_memcpy(ut20_test_ctx* ctx, bool nt_store, void* dst, const void* src,
                         size_t n) {
-  bool has_pkt_lcore = ctx->session.has_pkt_lcore;
-  ctx->session.has_pkt_lcore = pkt_lcore;
+  bool saved = ctx->session.nt_store;
+  ctx->session.nt_store = nt_store;
   void* ret = rv_frame_memcpy(&ctx->session, dst, src, n);
-  ctx->session.has_pkt_lcore = has_pkt_lcore;
+  ctx->session.nt_store = saved;
   return ret;
+}
+
+bool ut20_use_nt_store(ut20_test_ctx* ctx, bool lib_nt_store, bool pkt_lcore) {
+  bool saved_lib = ctx->impl.rx_video_nt_store;
+  bool saved_pkt_lcore = ctx->session.has_pkt_lcore;
+  ctx->impl.rx_video_nt_store = lib_nt_store;
+  ctx->session.has_pkt_lcore = pkt_lcore;
+  bool ret = rv_use_nt_store(&ctx->impl, &ctx->session);
+  ctx->impl.rx_video_nt_store = saved_lib;
+  ctx->session.has_pkt_lcore = saved_pkt_lcore;
+  return ret;
+}
+
+bool ut20_nt_store_built(void) {
+#ifdef ST_RX_VIDEO_NT_STORE
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool ut20_rx_video_copy_stream_auto(bool intel, uint32_t family, uint32_t model) {
+  return mt_rx_video_copy_stream_auto(intel, family, model);
 }
 
 int ut20_feed_frame_pkt_via_wrapper(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,

@@ -205,11 +205,15 @@ If `rte_eth_tx_burst()` returns fewer than requested:
 |--------|---------|--------|
 | Scheduler (×18 max) | Tasklet polling | Lcore-pinned or pthread |
 | TSC Calibration (×1) | Measures TSC frequency | Joins before sessions start transmitting (called lazily by `_mt_start()` and pacing init) |
-| Admin (×1) | Watchdog, migration | Periodic alarm-based |
+| Admin (×1) | Watchdog, migration | Periodic alarm-based; takes video sessions with `*_try_get()` for the busy score, never spins on a session lock |
 | Statistics (×1) | Stat dump | Configurable `dump_period_us` |
 | CNI (×1) | ARP/PTP/DHCP/IGMP | Tasklet or thread mode (`MTL_FLAG_CNI_THREAD`) |
 | Socket TX/RX (×4 each) | Kernel socket backend | Only with `kernel:` backend |
 | SRSS (×1) | Shared RSS polling | Only for NICs without flow director |
+
+Every thread in the table except the schedulers runs on the control CPUs.
+`mtl_init()` takes the isolated CPUs and the `lcores` CPUs out of the mask of its caller after `numa_bind()` (`mt_ctrl_cpuset_get()`), and the threads created later inherit it; `mt_thread_set_ctrl_affinity()` applies it to `mtl_admin` and `mtl_stat`.
+With `isolcpus` nothing moves a thread off an isolated CPU, so a thread born on a scheduler core stays there and a preempted scheduler loses a whole time slice.
 
 ---
 
@@ -223,6 +227,8 @@ If `rte_eth_tx_burst()` returns fewer than requested:
 Every copy in `lib/` goes through `mt_memcpy()` (`mt_util.h`, `static inline`), never `rte_memcpy` and never a bare `memcpy` in new code. Its one line selects the backend for the whole library, so a change of copy primitive is a one-line change with no call-site churn.
 Today that backend is libc `memcpy`: glibc reads the CPU at load time and picks an AVX-512, AVX2 or ERMS path, `rte_memcpy` is fixed to the path DPDK was built for, and `rte_memcpy` measured slower on the RX frame write path. `mtl_memcpy()` is the public API over the same call.
 The one exception is that RX frame write path: `rv_frame_memcpy()` (`st_rx_video_session.c`) streams whole cache lines with non-temporal stores, and copies the misaligned head, the sub-line tail and short payloads through `mt_memcpy()`.
+It streams only when `s->nt_store` is set: `mtl_init()` resolves `mtl_init_params.rx_video_copy` once, and `rv_init_sw()` sets the flag per session (`rv_use_nt_store()`).
+AUTO streams only on the CPUs of `mt_rx_video_copy_stream_auto()`, today Granite Rapids SP/AP, because the streaming copy holds fewer sessions per core on Ice Lake. See `doc/performance.md` §5.
 A session with a pkt lcore keeps `mt_memcpy()` for the whole copy: two threads write its frame and either may hand it over, and a fence orders only the stores of its own core. A session that migrates mid-frame needs none: the x86 unlock of its session spinlock, released after every tasklet poll, is a locked `xchg` and drains the old core's streaming stores.
 
 ### NUMA Matters

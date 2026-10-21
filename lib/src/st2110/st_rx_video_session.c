@@ -862,7 +862,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
 
 #ifdef ST_RX_VIDEO_NT_STORE
   /* order the streaming stores in rv_frame_memcpy before the app reads them */
-  _mm_sfence();
+  if (s->nt_store) _mm_sfence();
 #endif
 
   if (s->enable_timing_parser) {
@@ -1008,7 +1008,7 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
 
 #ifdef ST_RX_VIDEO_NT_STORE
   /* order the streaming stores in rv_frame_memcpy before the app reads them */
-  _mm_sfence();
+  if (s->nt_store) _mm_sfence();
 #endif
 
   meta->second_field = slot->second_field;
@@ -1118,7 +1118,7 @@ static void rv_slice_notify(struct st_rx_video_session_impl* s,
   meta->frame_recv_lines = slice_info->ready_slices * s->slice_lines;
 #ifdef ST_RX_VIDEO_NT_STORE
   /* order the streaming stores in rv_frame_memcpy before the app reads them */
-  _mm_sfence();
+  if (s->nt_store) _mm_sfence();
 #endif
   ops->notify_slice_ready(ops->priv, slot->frame->addr, meta);
   s->port_user_stats.stat_slices_received++;
@@ -1628,6 +1628,19 @@ static inline void rv_tp_pkt_handle(struct st_rx_video_session_impl* s,
   rv_tp_on_packet(s, s_port, tp_slot, tmstamp, pkt_ns, pkt_idx);
 }
 
+/* the copy of rv_frame_memcpy() for a session: mtl_init() selects it per cpu, and a
+ * session with a pkt lcore keeps ordinary stores, see below */
+static inline bool rv_use_nt_store(struct mtl_main_impl* impl,
+                                   struct st_rx_video_session_impl* s) {
+#ifdef ST_RX_VIDEO_NT_STORE
+  return mt_rx_video_nt_store(impl) && !s->has_pkt_lcore;
+#else
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(s);
+  return false;
+#endif
+}
+
 static inline void* rv_frame_memcpy(struct st_rx_video_session_impl* s, void* dst,
                                     const void* src, size_t n) {
 #ifdef ST_RX_VIDEO_NT_STORE
@@ -1648,7 +1661,7 @@ static inline void* rv_frame_memcpy(struct st_rx_video_session_impl* s, void* ds
    * read-for-ownership it was meant to avoid. Payload offsets are 16B but
    * rarely 64B aligned, so copy the head and tail normally. */
   size_t head = (64 - ((uintptr_t)dst & 63)) & 63;
-  if (!s->has_pkt_lcore && n >= head + 256) {
+  if (s->nt_store && n >= head + 256) {
     size_t nt = (n - head) & ~(size_t)63;
     uint8_t* d = (uint8_t*)dst + head;
     const uint8_t* p = (const uint8_t*)src + head;
@@ -2813,6 +2826,10 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
     info("%s(%d), advice sleep us %" PRIu64 "\n", __func__, idx, s->advice_sleep_us);
   }
 
+  s->nt_store = rv_use_nt_store(impl, s);
+  /* debug, drop before merge */
+  info("%s(%d), DBG frame copy %s\n", __func__, idx, s->nt_store ? "stream" : "cached");
+
   return 0;
 }
 
@@ -3730,6 +3747,10 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
                     struct st_rx_video_session_impl* s) {
   int m_idx = mgr->idx;
   int idx = s->idx;
+
+  /* debug, drop before merge */
+  notice("DBG RX_VIDEO_SESSION(%d,%d): frame copy %s\n", m_idx, idx,
+         s->nt_store ? "stream" : "cached");
   uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
   int frames_received = rte_atomic32_read(&s->stat_frames_received);

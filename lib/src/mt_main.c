@@ -23,6 +23,10 @@
 #include "mt_util.h"
 #include "st2110/pipeline/st_plugin.h"
 
+#if defined(RTE_ARCH_X86) && defined(__GNUC__)
+#include <cpuid.h>
+#endif
+
 enum mtl_port mt_port_by_id(struct mtl_main_impl* impl, uint16_t port_id) {
   int num_ports = mt_num_ports(impl);
   int i;
@@ -336,7 +340,212 @@ static int mt_user_params_check(struct mtl_init_params* p) {
     }
   }
 
+  if (p->rx_video_copy >= MTL_RX_VIDEO_COPY_MAX) {
+    err("%s, invalid rx_video_copy %d\n", __func__, p->rx_video_copy);
+    return -EINVAL;
+  }
+
   return 0;
+}
+
+/* resolve mtl_init_params.rx_video_copy into impl->rx_video_nt_store */
+static void mt_rx_video_copy_init(struct mtl_main_impl* impl) {
+  enum mtl_rx_video_copy copy = mt_get_user_params(impl)->rx_video_copy;
+  bool stream = false;
+  bool intel = false;
+  uint32_t family = 0, model = 0;
+
+#if defined(RTE_ARCH_X86) && defined(__GNUC__)
+  unsigned int eax, ebx, ecx, edx;
+  if (__get_cpuid(0, &eax, &ebx, &ecx, &edx)) /* "GenuineIntel" */
+    intel = (ebx == 0x756e6547) && (edx == 0x49656e69) && (ecx == 0x6c65746e);
+  if (__get_cpuid(1, &eax, &ebx, &ecx, &edx)) {
+    family = (eax >> 8) & 0xf;
+    model = ((eax >> 4) & 0xf) | (((eax >> 16) & 0xf) << 4);
+  }
+#endif
+
+  if (copy == MTL_RX_VIDEO_COPY_STREAM)
+    stream = true;
+  else if (copy == MTL_RX_VIDEO_COPY_AUTO)
+    stream = mt_rx_video_copy_stream_auto(intel, family, model);
+
+#if !(defined(__SSE2__) && defined(MTL_HAS_RX_VIDEO_NT_STORE))
+  if (copy == MTL_RX_VIDEO_COPY_STREAM)
+    warn("%s, built without enable_rx_video_nt_store, use the cached copy\n", __func__);
+  stream = false;
+#endif
+
+  impl->rx_video_nt_store = stream;
+  info("%s, %s copy, %s, cpu %s family %u model 0x%x\n", __func__,
+       stream ? "stream" : "cached", copy == MTL_RX_VIDEO_COPY_AUTO ? "auto" : "user",
+       intel ? "intel" : "other", family, model);
+}
+
+#ifndef WINDOWSENV
+/* parse a cpu list in the "-l" format of EAL, "1-3,8", into set */
+static void mt_cpulist_parse(const char* list, rte_cpuset_t* set) {
+  const char* c = list;
+
+  while (c && *c) {
+    char* end;
+    long first = strtol(c, &end, 10);
+    if (end == c) break;
+    long last = first;
+    if (*end == '-') last = strtol(end + 1, &end, 10);
+    for (long cpu = first; cpu <= last && cpu < CPU_SETSIZE; cpu++)
+      if (cpu >= 0) CPU_SET(cpu, set);
+    c = (*end == ',') ? end + 1 : NULL;
+  }
+}
+
+/* The cpus of the calling thread without the isolated ones and without the user lcores.
+ * With isolcpus nothing moves a thread off an isolated cpu, so a thread created there by
+ * the caller of mtl_init() stays on a scheduler core, and a preempted scheduler then
+ * loses a whole time slice. Returns false when nothing is left to remove or to keep, and
+ * with MTL_FLAG_TASKLET_THREAD, whose schedulers are threads that inherit this mask. */
+static bool mt_ctrl_cpuset_get(struct mtl_init_params* p, rte_cpuset_t* ctrl) {
+  rte_cpuset_t cur, sch;
+  char isolated[256] = {0};
+
+  if (p->flags & MTL_FLAG_TASKLET_THREAD) return false;
+  if (pthread_getaffinity_np(pthread_self(), sizeof(cur), &cur)) return false;
+
+  CPU_ZERO(&sch);
+  FILE* f = fopen("/sys/devices/system/cpu/isolated", "r");
+  if (f) {
+    if (fgets(isolated, sizeof(isolated), f)) mt_cpulist_parse(isolated, &sch);
+    fclose(f);
+  }
+  if (p->lcores) mt_cpulist_parse(p->lcores, &sch);
+
+  CPU_ZERO(ctrl);
+  int removed = 0;
+  for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
+    if (!CPU_ISSET(cpu, &cur)) continue;
+    if (CPU_ISSET(cpu, &sch))
+      removed++;
+    else
+      CPU_SET(cpu, ctrl);
+  }
+  if (!removed) return false;
+  if (!CPU_COUNT(ctrl)) {
+    warn("%s, every cpu is isolated or an lcore, the control threads may share them\n",
+         __func__);
+    return false;
+  }
+  info("%s, control threads on %d cpus, %d isolated or lcore cpus removed\n", __func__,
+       CPU_COUNT(ctrl), removed);
+  return true;
+}
+
+/* automatic NUMA balancing scans the address space as task work on the thread it scans,
+ * often a busy scheduler thread, see doc/run.md */
+static void mt_numa_balancing_check(void) {
+  FILE* f = fopen("/proc/sys/kernel/numa_balancing", "r");
+  int mode = 0;
+
+  if (!f) return;
+  if (fscanf(f, "%d", &mode) != 1) mode = 0;
+  fclose(f);
+  if (mode)
+    warn(
+        "%s, kernel.numa_balancing is %d, its scans stall the scheduler threads, set it "
+        "to 0\n",
+        __func__, mode);
+}
+#endif
+
+int mt_thread_set_ctrl_affinity(struct mtl_main_impl* impl, pthread_t tid) {
+#ifndef WINDOWSENV
+  if (!impl->ctrl_cpuset) return 0;
+  int ret = pthread_setaffinity_np(tid, sizeof(cpu_set_t), impl->ctrl_cpuset);
+  if (ret) {
+    warn("%s, set affinity fail %d\n", __func__, ret);
+    return -ret;
+  }
+#else
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(tid);
+#endif
+  return 0;
+}
+
+/* debug, drop before merge: field 10 (minflt) and 39 (processor) of the stat of a thread
+ * of this process */
+int mt_dbg_task_stat(int tid, int* cpu, uint64_t* minflt) {
+#ifndef WINDOWSENV
+  char path[64], buf[1024];
+  snprintf(path, sizeof(path), "/proc/self/task/%d/stat", tid);
+  FILE* f = fopen(path, "r");
+  if (!f) return -EIO;
+  size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+  fclose(f);
+  buf[n] = 0;
+  char* c = strrchr(buf, ')'); /* the comm may hold spaces */
+  if (!c) return -EIO;
+  int field = 2;
+  char* save = NULL;
+  for (char* tok = strtok_r(c + 1, " ", &save); tok; tok = strtok_r(NULL, " ", &save)) {
+    field++;
+    if (field == 10) *minflt = strtoull(tok, NULL, 10);
+    if (field == 39) {
+      *cpu = atoi(tok);
+      return 0;
+    }
+  }
+  return -EIO;
+#else
+  MTL_MAY_UNUSED(tid);
+  MTL_MAY_UNUSED(cpu);
+  MTL_MAY_UNUSED(minflt);
+  return -ENOTSUP;
+#endif
+}
+
+/* debug, drop before merge: where the threads that are not schedulers run, against the
+ * cpus of the schedulers, and what mtl_init() selected */
+void mt_dbg_dump(struct mtl_main_impl* impl) {
+  struct {
+    const char* name;
+    int tid;
+  } ctrl[] = {
+      {"mtl_init caller", impl->dbg_caller_tid},
+      {"mtl_admin", impl->admin.t_pid},
+      {"mtl_stat", impl->stat_mgr.t_pid},
+  };
+  uint64_t minflt = 0;
+
+  for (size_t i = 0; i < RTE_DIM(ctrl); i++) {
+    int cpu = -1;
+    if (ctrl[i].tid <= 0 || mt_dbg_task_stat(ctrl[i].tid, &cpu, &minflt)) continue;
+    notice("DBG CTRL: %s tid %d on cpu %d\n", ctrl[i].name, ctrl[i].tid, cpu);
+    for (int idx = 0; idx < MT_MAX_SCH_NUM; idx++) {
+      struct mtl_sch_impl* sch = mt_sch_instance(impl, idx);
+      int sch_cpu = -1;
+      if (!mt_sch_started(sch) || sch->run_in_thread || sch->t_pid <= 0) continue;
+      if (mt_dbg_task_stat(sch->t_pid, &sch_cpu, &minflt)) continue;
+      if (sch_cpu == cpu)
+        warn("DBG CTRL: %s tid %d shares cpu %d with sch %d\n", ctrl[i].name, ctrl[i].tid,
+             cpu, idx);
+    }
+  }
+
+  int numa_balancing = -1;
+#ifndef WINDOWSENV
+  FILE* f = fopen("/proc/sys/kernel/numa_balancing", "r");
+  if (f) {
+    if (fscanf(f, "%d", &numa_balancing) != 1) numa_balancing = -1;
+    fclose(f);
+  }
+#endif
+  int skipped = rte_atomic32_read(&impl->admin.dbg_busy_skipped);
+  rte_atomic32_sub(&impl->admin.dbg_busy_skipped, skipped);
+  notice(
+      "DBG: rx video copy %s, control cpus %s, numa_balancing %d, admin busy check "
+      "skipped %d sessions\n",
+      impl->rx_video_nt_store ? "stream" : "cached",
+      impl->ctrl_cpuset ? "fenced" : "unchanged", numa_balancing, skipped);
 }
 
 static int _mt_start(struct mtl_main_impl* impl) {
@@ -458,6 +667,17 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     numa_bind(mask);
     numa_bitmask_free(mask);
   }
+
+  /* the threads that are not schedulers: mtl_admin, mtl_stat and every app thread that
+   * the caller creates later inherit this mask, see mt_ctrl_cpuset_get() */
+  rte_cpuset_t ctrl_cpuset;
+  CPU_ZERO(&ctrl_cpuset);
+  bool ctrl_cpuset_valid = mt_ctrl_cpuset_get(p, &ctrl_cpuset);
+  if (ctrl_cpuset_valid && !(p->flags & MTL_FLAG_NOT_BIND_PROCESS_NUMA)) {
+    ret = pthread_setaffinity_np(pthread_self(), sizeof(ctrl_cpuset), &ctrl_cpuset);
+    if (ret) warn("%s, set the control cpus fail %d\n", __func__, ret);
+  }
+  mt_numa_balancing_check();
 #endif
 
   impl = mt_rte_zmalloc_socket(sizeof(*impl), socket[MTL_PORT_P]);
@@ -480,6 +700,15 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   mt_instance_init(impl, p);
 
   mt_memcpy(&impl->user_para, p, sizeof(*p));
+  impl->dbg_caller_tid = rte_sys_gettid(); /* debug, drop before merge */
+#ifndef WINDOWSENV
+  if (ctrl_cpuset_valid) {
+    impl->ctrl_cpuset = mt_zmalloc(sizeof(ctrl_cpuset));
+    if (impl->ctrl_cpuset)
+      mt_memcpy(impl->ctrl_cpuset, &ctrl_cpuset, sizeof(ctrl_cpuset));
+  }
+#endif
+  mt_rx_video_copy_init(impl);
   impl->var_para.sch_default_sleep_us = 1 * US_PER_MS; /* default 1ms */
   /* use sleep zero if sleep us is smaller than this thresh */
   impl->var_para.sch_zero_sleep_threshold_us = 200;
@@ -647,6 +876,10 @@ int mtl_uninit(mtl_handle mt) {
 
   mt_instance_uinit(impl);
 
+  if (impl->ctrl_cpuset) {
+    mt_free(impl->ctrl_cpuset);
+    impl->ctrl_cpuset = NULL;
+  }
   mt_rte_free(impl);
 
   mt_dev_uinit(p);

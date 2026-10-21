@@ -1,11 +1,12 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2026 Intel Corporation
  *
- * rv_frame_memcpy(): the RX frame copy streams whole destination cache lines
- * and copies the misaligned head and the sub-line tail normally, or copies it
- * all normally below head + 256 bytes or with a pkt lcore. Every one of those
- * splits must land exactly the source bytes and touch nothing outside the
- * destination range.
+ * rv_frame_memcpy(): the streaming RX frame copy streams whole destination
+ * cache lines and copies the misaligned head and the sub-line tail normally, or
+ * copies it all normally below head + 256 bytes; the cached copy copies it all
+ * normally. Every one of those splits must land exactly the source bytes and
+ * touch nothing outside the destination range. rv_use_nt_store() and
+ * mt_rx_video_copy_stream_auto() select the copy of a session.
  *
  * Build: meson setup build_unit -Denable_unit_tests=true && ninja -C build_unit
  * Run:   ./build_unit/tests/unit/UnitTest --gtest_filter='St20RxFrameMemcpyTest.*'
@@ -52,12 +53,12 @@ class St20RxFrameMemcpyTest : public St20RxBaseTest {
     St20RxBaseTest::TearDown();
   }
 
-  void check_copy(bool pkt_lcore, size_t dst_off, size_t src_off, size_t n) {
+  void check_copy(bool nt_store, size_t dst_off, size_t src_off, size_t n) {
     memset(dst_buf_, kGuardByte, buf_size_);
     uint8_t* dst = dst_buf_ + kGuard + dst_off;
     const uint8_t* src = src_buf_ + kGuard + src_off;
 
-    void* ret = ut20_frame_memcpy(ctx_, pkt_lcore, dst, src, n);
+    void* ret = ut20_frame_memcpy(ctx_, nt_store, dst, src, n);
 
     ASSERT_EQ(ret, dst) << "dst_off " << dst_off << " src_off " << src_off << " n " << n;
     ASSERT_EQ(memcmp(dst, src, n), 0)
@@ -71,7 +72,7 @@ class St20RxFrameMemcpyTest : public St20RxBaseTest {
           << " n " << n;
   }
 
-  void check_all(bool pkt_lcore) {
+  void check_all(bool nt_store) {
     const size_t fixed[] = {0, 1, 15, 63, 64, 65, 255, 256, 257, 1200, 1260, 4096 + 33};
     const size_t src_offs[] = {0, 1, 16, 33};
     for (size_t dst_off = 0; dst_off < 64; dst_off++) {
@@ -83,7 +84,7 @@ class St20RxFrameMemcpyTest : public St20RxBaseTest {
         lens.push_back(head + extra);
       for (size_t src_off : src_offs) {
         for (size_t n : lens) {
-          check_copy(pkt_lcore, dst_off, src_off, n);
+          check_copy(nt_store, dst_off, src_off, n);
           if (HasFatalFailure()) return;
         }
       }
@@ -91,11 +92,27 @@ class St20RxFrameMemcpyTest : public St20RxBaseTest {
   }
 };
 
-TEST_F(St20RxFrameMemcpyTest, CopiesExactlyAtEveryDestinationAlignment) {
+TEST_F(St20RxFrameMemcpyTest, StreamCopiesExactlyAtEveryDestinationAlignment) {
+  check_all(true);
+}
+
+TEST_F(St20RxFrameMemcpyTest, CachedCopiesExactlyAtEveryDestinationAlignment) {
   check_all(false);
 }
 
-/* a session with a pkt lcore never streams, and must still copy exactly */
-TEST_F(St20RxFrameMemcpyTest, PktLcoreCopiesExactlyAtEveryDestinationAlignment) {
-  check_all(true);
+/* a session with a pkt lcore keeps ordinary stores, whatever the library selected */
+TEST_F(St20RxFrameMemcpyTest, SessionStreamsOnlyWithoutPktLcore) {
+  EXPECT_EQ(ut20_use_nt_store(ctx_, true, false), ut20_nt_store_built());
+  EXPECT_FALSE(ut20_use_nt_store(ctx_, true, true));
+  EXPECT_FALSE(ut20_use_nt_store(ctx_, false, false));
+  EXPECT_FALSE(ut20_use_nt_store(ctx_, false, true));
+}
+
+/* only a measured cpu takes the streaming copy by default */
+TEST(St20RxVideoCopyAutoTest, StreamsOnlyOnGraniteRapids) {
+  EXPECT_TRUE(ut20_rx_video_copy_stream_auto(true, 6, 0xad));   /* Granite Rapids SP/AP */
+  EXPECT_FALSE(ut20_rx_video_copy_stream_auto(true, 6, 0x6a));  /* Ice Lake SP */
+  EXPECT_FALSE(ut20_rx_video_copy_stream_auto(true, 6, 0x8f));  /* Sapphire Rapids */
+  EXPECT_FALSE(ut20_rx_video_copy_stream_auto(false, 6, 0xad)); /* not Intel */
+  EXPECT_FALSE(ut20_rx_video_copy_stream_auto(true, 15, 0xad)); /* other family */
 }

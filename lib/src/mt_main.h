@@ -507,6 +507,10 @@ struct mtl_sch_impl {
   bool run_in_thread; /* Run the tasklet inside one thread instead of a pinned lcore. */
   pthread_t tid;      /* thread id for run_in_thread */
   int t_pid;          /* gettid */
+  /* debug, drop before merge: the longest loop and the minor faults of a stat period */
+  uint64_t dbg_loop_tsc;
+  uint64_t dbg_loop_max_ns;
+  uint64_t dbg_minflt;
 
   int data_quota_mbs_total; /* total data quota(mb/s) for current sch */
   int data_quota_mbs_limit; /* limit data quota(mb/s) for current sch */
@@ -852,6 +856,8 @@ struct mtl_dma_mem {
 struct mt_admin {
   uint64_t period_us;
   pthread_t admin_tid;
+  int t_pid;                       /* debug, drop before merge */
+  rte_atomic32_t dbg_busy_skipped; /* debug: sessions the busy check skipped */
   pthread_cond_t admin_wake_cond;
   pthread_mutex_t admin_wake_mutex;
   rte_atomic32_t admin_stop;
@@ -906,6 +912,7 @@ struct mt_stat_mgr {
   struct mt_stat_items_list head;
 
   pthread_t stat_tid;
+  int t_pid; /* debug, drop before merge */
   pthread_cond_t stat_wake_cond;
   pthread_mutex_t stat_wake_mutex;
   rte_atomic32_t stat_stop;
@@ -1255,8 +1262,16 @@ struct mtl_main_impl {
   int arp_timeout_ms;
   bool privileged; /* if app running with root privilege */
 
+  /* the RX video frame copy streams with non-temporal stores, see mtl_init() */
+  bool rx_video_nt_store;
+  /* the cpu_set_t of the threads that are not schedulers, NULL to keep their cpus, see
+   * mt_thread_set_ctrl_affinity() */
+  void* ctrl_cpuset;
+
   /* connect to mtl manager */
   int instance_fd;
+
+  int dbg_caller_tid; /* debug, drop before merge: the thread that called mtl_init() */
 };
 
 static inline struct mtl_init_params* mt_get_user_params(struct mtl_main_impl* impl) {
@@ -1265,6 +1280,25 @@ static inline struct mtl_init_params* mt_get_user_params(struct mtl_main_impl* i
 
 static inline bool mt_is_privileged(struct mtl_main_impl* impl) {
   return impl->privileged;
+}
+
+static inline bool mt_rx_video_nt_store(struct mtl_main_impl* impl) {
+  return impl->rx_video_nt_store;
+}
+
+/* The cpus on which the RX video streaming copy (rv_frame_memcpy) gives more 1080p59
+ * sessions per core than the cached copy. Granite Rapids SP/AP (6/0xad) holds 24 with it
+ * and none of 24 without; Ice Lake SP (6/0x6a) holds 14 without it and not 14 with it.
+ * A cpu that is not measured yet takes the cached copy. */
+static inline bool mt_rx_video_copy_stream_auto(bool intel, uint32_t family,
+                                                uint32_t model) {
+  if (!intel || family != 6) return false;
+  switch (model) {
+    case 0xad: /* Granite Rapids SP/AP */
+      return true;
+    default:
+      return false;
+  }
 }
 
 static inline bool mt_is_manager_connected(struct mtl_main_impl* impl) {
@@ -1521,6 +1555,14 @@ static inline bool mt_user_tasklet_time_measure(struct mtl_main_impl* impl) {
 }
 
 bool mt_sessions_time_measure(struct mtl_main_impl* impl);
+
+/* keep a thread that is not a scheduler off the scheduler and isolated cpus */
+int mt_thread_set_ctrl_affinity(struct mtl_main_impl* impl, pthread_t tid);
+
+/* debug, drop before merge: the cpu and the minor faults of a thread of this process */
+int mt_dbg_task_stat(int tid, int* cpu, uint64_t* minflt);
+/* debug, drop before merge: thread placement and checks, at each stat dump */
+void mt_dbg_dump(struct mtl_main_impl* impl);
 
 /* if user enable rx mono pool */
 static inline bool mt_user_rx_mono_pool(struct mtl_main_impl* impl) {

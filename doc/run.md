@@ -401,7 +401,7 @@ This section includes some optional guides. If you are not familiar with the det
 
 ### 7.2. Disable Automatic NUMA Balancing
 
-On timing-critical hosts, disable automatic NUMA balancing. Its periodic scans run on the busy MTL scheduler threads and can stall them for up to a few hundred microseconds:
+On timing-critical hosts, disable automatic NUMA balancing. Its periodic scans run as task work on a thread of the process, often a busy MTL scheduler thread, and stall all the tasklets of that scheduler for 30 µs to about 1.5 ms, about once per second. `mtl_init()` logs a warning when it is on:
 
 ```bash
 sudo sysctl -w kernel.numa_balancing=0
@@ -409,7 +409,7 @@ sudo sysctl -w kernel.numa_balancing=0
 echo "kernel.numa_balancing=0" | sudo tee /etc/sysctl.d/99-mtl-numa-balancing.conf
 ```
 
-MTL moves scheduler threads that run with the default memory policy to `MPOL_LOCAL`, which only shortens those scans. See also the [sysctl tuning list](experimental/performance_optimizations.md).
+MTL moves scheduler threads that run with the default memory policy to `MPOL_LOCAL`. That stops the NUMA hinting faults on the scheduler memory, but the scan itself still runs on the scheduler thread. See also the [sysctl tuning list](experimental/performance_optimizations.md).
 
 ## 8. FAQs
 

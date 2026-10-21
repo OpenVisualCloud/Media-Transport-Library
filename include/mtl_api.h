@@ -278,6 +278,21 @@ enum mtl_iova_mode {
 };
 
 /**
+ * RX video frame copy, see doc/performance.md
+ */
+enum mtl_rx_video_copy {
+  /** select by the CPU model: non-temporal stores where they give more sessions per
+     core (Granite Rapids SP/AP), the cached copy on every other CPU */
+  MTL_RX_VIDEO_COPY_AUTO = 0,
+  /** non-temporal stores; needs a build with enable_rx_video_nt_store */
+  MTL_RX_VIDEO_COPY_STREAM,
+  /** cached copy (mtl_memcpy) */
+  MTL_RX_VIDEO_COPY_CACHED,
+  /** max value of this enum */
+  MTL_RX_VIDEO_COPY_MAX,
+};
+
+/**
  * Interface network protocol
  */
 enum mtl_net_proto {
@@ -759,6 +774,10 @@ struct mtl_init_params {
 #else
   uint16_t rx_sessions_cnt_max __mtl_deprecated_msg("Use rx_queues_cnt instead");
 #endif
+
+  /** Optional. The RX video frame copy, leave to zero (MTL_RX_VIDEO_COPY_AUTO) to let
+   * the library select it by the CPU model. */
+  enum mtl_rx_video_copy rx_video_copy;
 };
 
 /**
