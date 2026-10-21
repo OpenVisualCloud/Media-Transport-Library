@@ -33,6 +33,10 @@
 #define ST_SCH_MAX_TX_VIDEO_SESSIONS (60) /* max video tx sessions per sch lcore */
 #define ST_SCH_MAX_RX_VIDEO_SESSIONS (60) /* max video rx sessions per sch lcore */
 #define ST_SESSION_MAX_BULK (4)
+/* the bulk of an all-RL ST20 frame-level TX session */
+#define ST_TX_VIDEO_RL_BULK (16)
+#define ST_TX_VIDEO_MAX_BULK \
+  (ST_TX_VIDEO_RL_BULK > ST_SESSION_MAX_BULK ? ST_TX_VIDEO_RL_BULK : ST_SESSION_MAX_BULK)
 #define ST_TX_VIDEO_SESSIONS_RING_SIZE (512)
 
 /* number of tmstamp it will tracked for out of order pkts */
@@ -318,17 +322,18 @@ struct st_tx_video_session_impl {
   enum mt_handle_type s_type; /* st22 or st20 */
 
   unsigned int bulk; /* Enqueue bulk objects on the ring */
-  struct rte_mbuf* inflight[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
+  struct rte_mbuf* inflight[MTL_SESSION_PORT_MAX][ST_TX_VIDEO_MAX_BULK];
   int inflight_cnt[MTL_SESSION_PORT_MAX]; /* for stats */
 
   /* info for transmitter */
   uint64_t trs_target_tsc[MTL_SESSION_PORT_MAX];
-  struct rte_mbuf* trs_inflight[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
+  struct rte_mbuf* trs_inflight[MTL_SESSION_PORT_MAX][ST_TX_VIDEO_MAX_BULK];
   unsigned int trs_inflight_num[MTL_SESSION_PORT_MAX];
   unsigned int trs_inflight_idx[MTL_SESSION_PORT_MAX];
+  bool trs_inflight_new_slice[MTL_SESSION_PORT_MAX]; /* RL: starts an untried pad slice */
   unsigned int trs_pad_inflight_num[MTL_SESSION_PORT_MAX]; /* inflight padding */
   int trs_inflight_cnt[MTL_SESSION_PORT_MAX];              /* for stats */
-  struct rte_mbuf* trs_inflight2[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
+  struct rte_mbuf* trs_inflight2[MTL_SESSION_PORT_MAX][ST_TX_VIDEO_MAX_BULK];
   unsigned int trs_inflight_num2[MTL_SESSION_PORT_MAX];
   unsigned int trs_inflight_idx2[MTL_SESSION_PORT_MAX];
   int trs_inflight_cnt2[MTL_SESSION_PORT_MAX]; /* for stats */

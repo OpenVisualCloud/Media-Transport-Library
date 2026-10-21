@@ -619,6 +619,19 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   return ret;
 }
 
+/* TSC spends bulk - 1 of the vrx and a slice-level bulk waits for its lines, so only
+ * all-RL frame-level sessions whose ring (ring_count - 1 deep) takes it get the RL bulk
+ */
+static unsigned int tv_bulk(struct st_tx_video_session_impl* s) {
+  if (s->ops.flags & ST20_TX_FLAG_DISABLE_BULK) return 1;
+  if (s->s_type != MT_HANDLE_TX_VIDEO || s->ops.type != ST20_TYPE_FRAME_LEVEL ||
+      s->ring_count <= ST_TX_VIDEO_RL_BULK)
+    return ST_SESSION_MAX_BULK;
+  for (int i = 0; i < s->ops.num_port; i++)
+    if (s->pacing_way[i] != ST21_TX_PACING_WAY_RL) return ST_SESSION_MAX_BULK;
+  return ST_TX_VIDEO_RL_BULK;
+}
+
 static int tv_init_pacing(struct mtl_main_impl* impl,
                           struct st_tx_video_session_impl* s) {
   int idx = s->idx;
@@ -678,6 +691,8 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
       s->pacing_way[MTL_SESSION_PORT_R] = ST21_TX_PACING_WAY_TSC;
     }
   }
+  /* a fallback from RL shrinks the bulk the pools were sized for */
+  s->bulk = RTE_MIN(s->bulk, tv_bulk(s));
 
   uint32_t pkts_in_tr_offset = pacing->tr_offset / pacing->trs;
   /* calculate warmup pkts for rl */
@@ -3379,6 +3394,7 @@ static void tv_transmitter_port_state_init(struct st_tx_video_session_impl* s, i
   s->trs_target_tsc[i] = 0;
   s->trs_inflight_num[i] = 0;
   s->trs_inflight_idx[i] = 0;
+  s->trs_inflight_new_slice[i] = false;
   s->trs_pad_inflight_num[i] = 0;
   s->trs_inflight_cnt[i] = 0;
   s->trs_inflight_num2[i] = 0;
@@ -3746,12 +3762,6 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   s->st20_seq_id = 0;
   s->st20_rtp_time = UINT32_MAX;
   s->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
-  if (ops->flags & ST20_TX_FLAG_DISABLE_BULK) {
-    s->bulk = 1;
-    info("%s(%d), bulk is disabled\n", __func__, idx);
-  } else {
-    s->bulk = RTE_MIN(4, ST_SESSION_MAX_BULK);
-  }
 
   if (ops->name) {
     snprintf(s->ops_name, sizeof(s->ops_name), "%s", ops->name);
@@ -3809,6 +3819,8 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
       s->pacing_way[i] = ST21_TX_PACING_WAY_TSC;
     }
   }
+  /* the pools and tv_init_pacing() need it */
+  s->bulk = tv_bulk(s);
 
   ret = tv_init_sw(impl, mgr, s, st22_frame_ops);
   if (ret < 0) {
@@ -3876,9 +3888,10 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   info("%s(%d), len %d(%d) total %d each line %d type %d flags 0x%x, %s\n", __func__, idx,
        s->st20_pkt_len, s->st20_pkt_size, s->st20_total_pkts, s->st20_pkts_in_line,
        ops->type, ops->flags, ops->interlaced ? "interlace" : "progressive");
-  info("%s(%d), w %u h %u fmt %s packing %d pt %d, pacing way: %s\n", __func__, idx,
-       ops->width, ops->height, st20_fmt_name(ops->fmt), ops->packing, ops->payload_type,
-       st_tx_pacing_way_name(s->pacing_way[MTL_SESSION_PORT_P]));
+  info("%s(%d), w %u h %u fmt %s packing %d pt %d, pacing way: %s, bulk %u\n", __func__,
+       idx, ops->width, ops->height, st20_fmt_name(ops->fmt), ops->packing,
+       ops->payload_type, st_tx_pacing_way_name(s->pacing_way[MTL_SESSION_PORT_P]),
+       s->bulk);
   return 0;
 }
 
