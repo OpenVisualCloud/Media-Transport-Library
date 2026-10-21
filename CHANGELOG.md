@@ -1,5 +1,6 @@
 # Changelog
 
+* DPDK: two 26.07 TX hot path patches: 0013 builds the TX offload word in one store, 0014 passes iavf's IPsec TX callbacks only with `RTE_ETH_TX_OFFLOAD_SECURITY`; rebuild DPDK (26.07.93_mtl_)
 * st20 RX timing parser: at a frame rate with a fractional number of 90 kHz ticks per frame (59.94, 23.98, 119.88 fps), every other frame's latency no longer reads half a tick (5.6 µs at 59.94) low, which failed frames whose first packet arrives less than that after their RTP time
 * pcapng dumps (st20/st22/st30 RX, CNI): the filename no longer carries the packet count, which at 100,000 packets or more overflowed `MTL_PCAP_FILE_MAX_LEN` (32) and failed the dump; the count stays in the log
 * st20/st22 TX: the video tasklets no longer take the session spinlock; on a session's own scheduler, `*_tx_free()` and `*_tx_update_destination()` (st20, st22, st20p, st22p) return `-EBUSY` instead of deadlocking, as do the stats APIs from the session's own callbacks
