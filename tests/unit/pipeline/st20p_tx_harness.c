@@ -260,3 +260,20 @@ int ut20p_tx_transport_report_late(ut20p_tx_ctx* ctx, uint64_t epoch_skipped) {
 st20p_tx_handle ut20p_tx_handle(ut20p_tx_ctx* ctx) {
   return &ctx->pipeline;
 }
+
+int ut20p_tx_free_in_callback(ut20p_tx_ctx* ctx, bool* destroying) {
+  struct st20p_tx_ctx* p = &ctx->pipeline;
+  struct st_tx_video_session_handle_impl transport = {
+      .type = MT_HANDLE_TX_VIDEO,
+      .sch = mt_sch_instance(&ctx->impl, 0),
+  };
+  st20_tx_handle stub = p->transport;
+
+  transport.sch->t_pid = rte_gettid(); /* the caller plays the transport's scheduler */
+  p->transport = &transport;
+  int ret = st20p_tx_free(p);
+  *destroying = atomic_load(&p->lc_destroying);
+  p->transport = stub;
+  transport.sch->t_pid = 0;
+  return ret;
+}

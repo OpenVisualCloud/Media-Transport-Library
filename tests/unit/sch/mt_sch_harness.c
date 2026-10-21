@@ -17,13 +17,61 @@
 #include <unistd.h>
 
 #undef MTL_HAS_USDT
+#include <rte_pause.h>
+
 #include "common/ut_common.h"
+#include "mt_main.h"
 #include "mt_platform.h"
 /* Only the filelock helper swaps this: the host lock may be held or keep its old mode. */
 static const char* ut_sch_flock_path = MT_FLOCK_PATH;
 #undef MT_FLOCK_PATH
 #define MT_FLOCK_PATH ut_sch_flock_path
+/* Seams: each poll of mt_sch_quiescent_wait(), spinning or sleeping, and the scheduler's
+ * short sleeps. */
+static void ut_sch_qs_pause(void);
+static void ut_sch_qs_sleep_us(unsigned int us);
+static void ut_sch_sleep_ms(unsigned int ms);
+#define rte_pause ut_sch_qs_pause
+#define mt_sleep_us ut_sch_qs_sleep_us
+#define mt_sleep_ms ut_sch_sleep_ms
 #include "mt_sch.c"
+#undef mt_sleep_ms
+#undef mt_sleep_us
+#undef rte_pause
+
+static atomic_int ut_sch_qs_polls;
+/* when set, a poll marks it offline, so a wait that should not poll cannot hang */
+static struct mtl_sch_impl* ut_sch_qs_unblock;
+
+static void ut_sch_qs_poll(void) {
+  atomic_fetch_add(&ut_sch_qs_polls, 1);
+  if (ut_sch_qs_unblock) sch_qs_offline(ut_sch_qs_unblock);
+}
+
+static void ut_sch_qs_pause(void) {
+  ut_sch_qs_poll();
+  rte_pause();
+}
+
+static void ut_sch_qs_sleep_us(unsigned int us) {
+  ut_sch_qs_poll();
+  mt_sleep_us(us);
+}
+
+static struct mtl_sch_impl* ut_sch_qs_sleeper; /* whose own sleeps are counted */
+static atomic_int ut_sch_qs_sleeps;
+static atomic_int ut_sch_qs_online_sleeps;
+
+static void ut_sch_sleep_ms(unsigned int ms) {
+  struct mtl_sch_impl* sch = ut_sch_qs_sleeper;
+
+  if (sch && rte_gettid() == sch->t_pid) {
+    if (atomic_load(&sch->qs_seen) != UINT64_MAX)
+      atomic_fetch_add(&ut_sch_qs_online_sleeps, 1);
+    atomic_fetch_add(&ut_sch_qs_sleeps, 1);
+  }
+  mt_sleep_ms(ms);
+}
 
 int ut_sch_init(void) {
   return ut_eal_init();
@@ -181,5 +229,213 @@ int ut_sch_filelock_create_mode(unsigned int* mode) {
   unlink(path);
   free(mgr);
   rmdir(dir);
+  return ret;
+}
+
+static struct ut_sch_mempolicy_ctx* ut_sch_qs_ctx_create(int (*handler)(void* priv),
+                                                         void* priv) {
+  int mode;
+  struct ut_sch_mempolicy_ctx* ctx = ut_sch_mempolicy_ctx_create(&mode);
+  if (!ctx) return NULL;
+
+  ctx->tasklet.ops.start = NULL;
+  ctx->tasklet.ops.handler = handler;
+  ctx->tasklet.ops.priv = priv;
+  return ctx;
+}
+
+/* Spins below are bounded by 1 s, so a scheduler that stops running fails a case. */
+static uint64_t ut_sch_qs_deadline(void) {
+  return rte_get_tsc_cycles() + rte_get_tsc_hz();
+}
+
+static bool ut_sch_qs_before(uint64_t deadline) {
+  return rte_get_tsc_cycles() < deadline;
+}
+
+static int ut_sch_qs_wait_unblocked(struct mtl_sch_impl* sch) {
+  atomic_store(&ut_sch_qs_polls, 0);
+  ut_sch_qs_unblock = sch;
+  mt_sch_quiescent_wait(sch, 0);
+  ut_sch_qs_unblock = NULL;
+  return atomic_load(&ut_sch_qs_polls);
+}
+
+int ut_sch_qs_wait_after_stop(int* polls) {
+  struct ut_sch_mempolicy_ctx* ctx = ut_sch_qs_ctx_create(ut_sch_idle_handler, NULL);
+  if (!ctx) return -ENOMEM;
+
+  int ret = sch_start(&ctx->sch);
+  if (!ret) ret = sch_stop(&ctx->sch);
+  if (!ret) *polls = ut_sch_qs_wait_unblocked(&ctx->sch);
+  ut_sch_mempolicy_ctx_destroy(ctx);
+  return ret;
+}
+
+struct ut_sch_qs_self {
+  struct mtl_sch_impl* sch;
+  int polls;
+  atomic_bool done;
+};
+
+static int ut_sch_qs_self_handler(void* priv) {
+  struct ut_sch_qs_self* self = priv;
+
+  if (!atomic_load(&self->done)) {
+    self->polls = ut_sch_qs_wait_unblocked(self->sch);
+    atomic_store(&self->done, true);
+  }
+  return MTL_TASKLET_ALL_DONE;
+}
+
+int ut_sch_qs_wait_on_sch_thread(int* polls) {
+  struct ut_sch_qs_self self = {0};
+  struct ut_sch_mempolicy_ctx* ctx = ut_sch_qs_ctx_create(ut_sch_qs_self_handler, &self);
+  if (!ctx) return -ENOMEM;
+
+  self.sch = &ctx->sch;
+  int ret = sch_start(&ctx->sch);
+  if (!ret) {
+    uint64_t deadline = ut_sch_qs_deadline();
+    while (!atomic_load(&self.done) && ut_sch_qs_before(deadline)) rte_pause();
+    if (!atomic_load(&self.done)) ret = -ETIMEDOUT;
+    int stop = sch_stop(&ctx->sch);
+    if (!ret) ret = stop;
+  }
+  *polls = self.polls;
+  ut_sch_mempolicy_ctx_destroy(ctx);
+  return ret;
+}
+
+struct ut_sch_qs_waiter {
+  struct mtl_sch_impl* sch;
+  atomic_bool done;
+};
+
+static void* ut_sch_qs_waiter_thread(void* arg) {
+  struct ut_sch_qs_waiter* waiter = arg;
+
+  mt_sch_quiescent_wait(waiter->sch, 0);
+  atomic_store(&waiter->done, true);
+  return NULL;
+}
+
+/* polls a correct wait cannot make between the end of the pass and its return */
+#define UT_SCH_QS_POLLS_AFTER_END (10000)
+
+int ut_sch_qs_wait_across_pass(enum ut_sch_qs_pass_end end, bool* returned_in_pass,
+                               bool* returned_after_end) {
+  struct mtl_sch_impl* sch = calloc(1, sizeof(*sch));
+  struct ut_sch_qs_waiter waiter = {.sch = sch};
+  pthread_t thread;
+  if (!sch) return -ENOMEM;
+
+  sch_qs_online(sch);
+  atomic_store(&ut_sch_qs_polls, 0);
+  int ret = -pthread_create(&thread, NULL, ut_sch_qs_waiter_thread, &waiter);
+  if (!ret) {
+    uint64_t deadline = ut_sch_qs_deadline();
+    while (!atomic_load(&ut_sch_qs_polls) && !atomic_load(&waiter.done) &&
+           ut_sch_qs_before(deadline))
+      rte_pause();
+    if (!atomic_load(&ut_sch_qs_polls) && !atomic_load(&waiter.done)) ret = -ETIMEDOUT;
+    *returned_in_pass = atomic_load(&waiter.done);
+    if (end == UT_SCH_QS_END_OF_PASS)
+      sch_qs_pass_end(sch);
+    else
+      sch_qs_offline(sch);
+    int polls_at_end = atomic_load(&ut_sch_qs_polls);
+    while (!atomic_load(&waiter.done) &&
+           atomic_load(&ut_sch_qs_polls) - polls_at_end < UT_SCH_QS_POLLS_AFTER_END)
+      rte_pause();
+    *returned_after_end = atomic_load(&waiter.done);
+    sch_qs_offline(sch); /* lets a broken wait return */
+    int join = -pthread_join(thread, NULL);
+    if (!ret) ret = join;
+  }
+  free(sch);
+  return ret;
+}
+
+int ut_sch_qs_sleeps_offline(int* sleeps, int* online_sleeps) {
+  struct ut_sch_mempolicy_ctx* ctx = ut_sch_qs_ctx_create(ut_sch_idle_handler, NULL);
+  if (!ctx) return -ENOMEM;
+
+  ctx->sch.allow_sleep = true;
+  /* a sleep below the threshold is the mt_sleep_ms(0) yield */
+  ctx->impl.var_para.sch_zero_sleep_threshold_us = 1;
+  atomic_store(&ut_sch_qs_sleeps, 0);
+  atomic_store(&ut_sch_qs_online_sleeps, 0);
+  ut_sch_qs_sleeper = &ctx->sch;
+  int ret = sch_start(&ctx->sch);
+  if (!ret) {
+    uint64_t deadline = ut_sch_qs_deadline();
+    while (atomic_load(&ut_sch_qs_sleeps) < 3 && ut_sch_qs_before(deadline)) rte_pause();
+    int stop = sch_stop(&ctx->sch);
+    ret = atomic_load(&ut_sch_qs_sleeps) < 3 ? -ETIMEDOUT : stop;
+  }
+  ut_sch_qs_sleeper = NULL;
+  *sleeps = atomic_load(&ut_sch_qs_sleeps);
+  *online_sleeps = atomic_load(&ut_sch_qs_online_sleeps);
+  ut_sch_mempolicy_ctx_destroy(ctx);
+  return ret;
+}
+
+enum ut_sch_qs_step {
+  UT_SCH_QS_HOLD,  /* hold the next pass until a wait began */
+  UT_SCH_QS_HELD,  /* holding it */
+  UT_SCH_QS_CHECK, /* in the pass after: did the held one's end satisfy the wait */
+  UT_SCH_QS_DONE,
+};
+
+struct ut_sch_qs_pass {
+  struct mtl_sch_impl* sch;
+  atomic_int step;
+  bool published;
+};
+
+static int ut_sch_qs_pass_handler(void* priv) {
+  struct ut_sch_qs_pass* pass = priv;
+  struct mtl_sch_impl* sch = pass->sch;
+  int step = atomic_load(&pass->step);
+
+  if (step == UT_SCH_QS_HOLD) {
+    uint64_t token = atomic_load(&sch->qs_token);
+    atomic_store(&pass->step, UT_SCH_QS_HELD);
+    while (atomic_load(&sch->qs_token) == token) rte_pause();
+    atomic_store(&pass->step, UT_SCH_QS_CHECK);
+  } else if (step == UT_SCH_QS_CHECK) {
+    pass->published = atomic_load(&sch->qs_seen) >= atomic_load(&sch->qs_token);
+    if (!pass->published) sch_qs_offline(sch); /* release the waiter */
+    atomic_store(&pass->step, UT_SCH_QS_DONE);
+  }
+  return MTL_TASKLET_ALL_DONE;
+}
+
+int ut_sch_qs_pass_end_publishes(bool* published) {
+  struct ut_sch_qs_pass pass = {0};
+  struct ut_sch_mempolicy_ctx* ctx = ut_sch_qs_ctx_create(ut_sch_qs_pass_handler, &pass);
+  if (!ctx) return -ENOMEM;
+
+  pass.sch = &ctx->sch;
+  int ret = sch_start(&ctx->sch);
+  if (!ret) {
+    uint64_t deadline = ut_sch_qs_deadline();
+    while (atomic_load(&pass.step) != UT_SCH_QS_HELD && ut_sch_qs_before(deadline))
+      rte_pause();
+    if (atomic_load(&pass.step) == UT_SCH_QS_HELD)
+      mt_sch_quiescent_wait(&ctx->sch, US_PER_S);
+    deadline = ut_sch_qs_deadline();
+    while (atomic_load(&pass.step) != UT_SCH_QS_DONE && ut_sch_qs_before(deadline))
+      rte_pause();
+    if (atomic_load(&pass.step) != UT_SCH_QS_DONE) {
+      ret = -ETIMEDOUT;
+      atomic_fetch_add(&ctx->sch.qs_token, 1); /* releases a held pass */
+    }
+    int stop = sch_stop(&ctx->sch);
+    if (!ret) ret = stop;
+  }
+  *published = pass.published;
+  ut_sch_mempolicy_ctx_destroy(ctx);
   return ret;
 }

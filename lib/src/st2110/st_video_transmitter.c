@@ -812,7 +812,7 @@ static int video_trs_tasklet_handler(void* priv) {
   int pending = MTL_TASKLET_ALL_DONE;
 
   for (sidx = 0; sidx < mgr->max_idx; sidx++) {
-    s = tx_video_session_try_get(mgr, sidx);
+    s = tx_video_session_dp_get(mgr, sidx);
     if (!s) continue;
 
     for (s_port = 0; s_port < s->ops.num_port; s_port++) {
@@ -824,7 +824,6 @@ static int video_trs_tasklet_handler(void* priv) {
       }
       pending += s->pacing_tasklet_func[s_port](impl, s, s_port);
     }
-    tx_video_session_put(mgr, sidx);
   }
 
   return pending;
