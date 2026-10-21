@@ -521,6 +521,9 @@ struct mtl_sch_impl {
   rte_atomic32_t active; /* if this sch is active */
   rte_atomic32_t ref_cnt;
   enum mt_sch_type type;
+  /* quiescent state: writers bump qs_token, each pass end publishes it to qs_seen */
+  _Atomic uint64_t qs_token;
+  _Atomic uint64_t qs_seen; /* UINT64_MAX while asleep, stopped or never started */
 
   /* one tx video sessions mgr/transmitter for one sch */
   struct st_video_transmitter_impl video_transmitter;
@@ -2019,12 +2022,22 @@ static inline json_object* mt_json_object_get(json_object* obj, const char* key)
 }
 #endif
 
+/* polls a control-plane wait spins before it sleeps, as it may hold a scheduler's CPU */
+#define MT_SPIN_POLLS_BEFORE_SLEEP (1000)
+
 static inline bool mt_spinlock_lock_timeout(struct mtl_main_impl* impl,
                                             rte_spinlock_t* lock, int timeout_us) {
   uint64_t time = mt_get_tsc(impl);
   uint64_t end = time + timeout_us * NS_PER_US;
+  int polls = 0;
   while (time < end) {
     if (rte_spinlock_trylock(lock)) return true;
+    if (polls < MT_SPIN_POLLS_BEFORE_SLEEP) {
+      polls++;
+      rte_pause();
+    } else {
+      mt_sleep_us(1);
+    }
     time = mt_get_tsc(impl);
   }
   return false; /* timeout */

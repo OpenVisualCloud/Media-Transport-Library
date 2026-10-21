@@ -405,7 +405,7 @@ struct st_tx_video_sessions_mgr {
   struct mt_sch_tasklet_impl* tasklet;
 
   struct st_tx_video_session_impl* sessions[ST_SCH_MAX_TX_VIDEO_SESSIONS];
-  /* protect session, spin(fast) lock as it call from tasklet aslo */
+  /* control plane only, the tasklets skip a session while it is held */
   rte_spinlock_t mutex[ST_SCH_MAX_TX_VIDEO_SESSIONS];
 };
 

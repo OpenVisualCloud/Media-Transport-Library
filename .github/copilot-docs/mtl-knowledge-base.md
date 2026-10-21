@@ -125,6 +125,7 @@ NIC receives multicast packet (flow rule steers to session's RX queue)
 - Deliberate exception: `rv_dma_flush()` busy-polls at most `ST_RX_VIDEO_DMA_FLUSH_TIMEOUT_NS` per newer frame per DMA session, only while the previous frame's copies are pending, since the new frame cannot take a slot before they finish. Do not copy this pattern without such a bound
 - Signal "I have work" (positive return) or "I'm idle" (return 0)
 - Scheduler-to-tasklet: 1:many
+- Each pass ends by publishing the scheduler's quiescent state, which the TX video control plane waits on instead of the tasklets taking session locks (§4)
 
 ### Two Scheduler Modes
 
@@ -410,16 +411,42 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
 - **Control plane**: `pthread_mutex_t` — allowed to sleep, used in create/destroy
 
 ### Session Access Pattern
-Three variants:
+Three variants (RX video; audio and ancillary alike):
 - `rx_video_session_get()` — blocking `rte_spinlock_lock`
-- `rx_video_session_try_get()` — non-blocking `rte_spinlock_trylock`
+- `rx_video_session_try_get()` — non-blocking `rte_spinlock_trylock`, used by the tasklets
 - `rx_video_session_get_timeout()` — `mt_spinlock_lock_timeout`
 
 Paired with `rx_video_session_put()` (unlock). Always get→work→put.
 
-Never log under a session spinlock: tasklets `*_try_get()` it and skip the session while
-it is held. Copy the counters under the lock, `put`, then log the copy (TX video:
-`tv_stat_collect()` / `tv_stat_log()`).
+TX video (ST20/ST22) tasklets take no lock. `tx_video_session_dp_get()` checks
+`rte_spinlock_is_locked()` (an acquire load) and skips the session while it is held; there is
+no put. Every control-plane
+access (`tx_video_session_get()`, `_get_timeout()`, `_get_empty()`, and
+`tv_api_lock()` for stats get/reset and `update_destination`) locks, then calls
+`mt_sch_quiescent_wait()` on the manager's scheduler (`mt_sch_instance(mgr->parent, mgr->idx)`).
+`st_tx_video_session_migrate()` re-points `s->mgr` / `s->idx` before the old slot is released,
+so `tv_api_lock()` that finds the old slot no longer holding `s` retries once at the new one;
+-EIO only if neither try found `s` where it read it (migrations racing both, e.g. across a
+stall of one admin period):
+- Writer: `t = fetch_add(qs_token) + 1`, a seq_cst fence, then poll until `qs_seen >= t`: `MT_SPIN_POLLS_BEFORE_SLEEP` (1000) `rte_pause()` polls, then 1 µs sleeps, since an unpinned `MTL_FLAG_TASKLET_THREAD` scheduler may need the writer's CPU; `mt_spinlock_lock_timeout()` backs off the same way. Returns at once on the scheduler's own thread
+- `_get_timeout()` bounds the lock and the wait each, unlocks and returns NULL on timeout; the stats dump passes `ST_TX_VIDEO_STAT_TIMEOUT_US` (1 ms), as a busy pass takes tens of µs
+- Scheduler (`sch_tasklet_func()`): a pass ends by publishing `qs_seen = qs_token` when the token changed; asleep or stopped, `qs_seen = UINT64_MAX` (offline), so it never blocks a writer. Going online stores the token then a full fence, else the pass's first loads could pass that store
+- Publishing and going offline issue `rte_wmb()` first: the old per-session unlock `xchg` drained the WC / MOVDIRI doorbell stores, and a migrated session keeps its TX queue on the new core
+- `ops->start` runs offline on the scheduler thread at loop entry, so its wait returns at once; it still takes the blocking get, as `tv_tasklet_start()` does, to exclude other writers.
+  On runtime registration (`mtl_sch_register_tasklet()` on a started scheduler) it runs on the registering thread with the scheduler online, but the manager has no sessions yet (`max_idx == 0`), so it takes no lock and does not wait
+- Loading the writer's token, not counting passes, is what makes it sound: the next pass's loads cannot pass that acquire load. Against going online it is the store-buffering pattern: writer stores the lock, fence, loads `qs_seen`; scheduler stores `qs_seen`, fence, loads the lock
+- A get holds the lock until no pass that could have missed it runs, so the tasklets can skip that session for up to about two passes: the rest of the pass in flight, the next one, until the put. Admin CPU-busy does this to every TX video session every 6 s, the stats dump every 10 s
+- Callbacks run on a scheduler thread, mid-pass, and a writer may hold a session lock while it waits for that very pass. From a callback only stats get/reset of the callback's own session are allowed: on the session's own scheduler thread `tv_api_lock()` only trylocks (-EBUSY) and skips the wait.
+  Migration moves a session to another scheduler at any time, so "a session of the same scheduler" cannot be relied on for any other session
+- Everything else is not for callbacks: `*_tx_free()` and `st20p/st22p_tx_free()` return -EBUSY on the session's own scheduler thread (the calling tasklet may still use the session, and the pipeline would free a ctx the transport still calls back into); `update_destination` too, as `tv_init_hdr()` may wait for ARP (`arp_timeout_ms`, 60 s by default) and stall the scheduler;
+  `*_tx_create()` takes `tx_video_mgr_mutex`, which attach/detach hold across an untimed wait; and a call for another scheduler's session waits a pass of it, two schedulers doing so to each other deadlock
+- The untimed wait is unbounded and, unlike the lock it replaces, spans a whole pass of every tasklet on that scheduler (RX, audio, ancillary, CNI, user callbacks), not one session: a writer must hold nothing any of them blocks on
+- Why: the per-session `trylock`/`unlock` is a locked `xchg` each, and the unlock after `rte_eth_tx_burst()` waits for the descriptor stores and the doorbell; it was ~19% of a saturated scheduler core. An unprotected prototype that dropped both locks went from 6.98 to 7.89 Mpps (+13%); this protocol, 28 1080p59.94 sessions at full clock:
+  5.60 to 6.45 Mpps (+15%, the aliasing still present; Xeon 8480+, E810 VF, RL pacing)
+
+Never log under a session spinlock: tasklets skip the session while it is held. Copy the
+counters under the lock, `put`, then log the copy (TX video: `tv_stat_collect()` /
+`tv_stat_log()`).
 
 ### Lock Ordering
 - Manager mutex → session spinlock (never reverse)
