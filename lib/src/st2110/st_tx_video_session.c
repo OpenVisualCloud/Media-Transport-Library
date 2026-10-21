@@ -2890,12 +2890,22 @@ static int tvs_tasklet_handler(void* priv) {
     if (s->ops.flags & ST20_TX_FLAG_ENABLE_VSYNC) tv_poll_vsync(impl, s);
 
     s->stat_build_ret_code = 0;
-    if (s->st22_info)
+    if (s->st22_info) {
       pending += tv_tasklet_st22(impl, s);
-    else if (st20_is_frame_type(s->ops.type))
-      pending += tv_tasklet_frame(impl, s);
-    else
+    } else if (st20_is_frame_type(s->ops.type)) {
+      int ret = tv_tasklet_frame(impl, s);
+      pending += ret;
+      /* one bulk per call limits a session to bulk / loop time packets per second: a
+       * session whose next packet is already due builds more bulks in this call */
+      for (int b = 1; b < ST_TX_VIDEO_LATE_BULKS_MAX && ret == MTL_TASKLET_HAS_PENDING &&
+                      s->pacing.tsc_time_cursor < (long double)mt_get_tsc(impl);
+           b++) {
+        ret = tv_tasklet_frame(impl, s);
+        pending += ret;
+      }
+    } else {
       pending += tv_tasklet_rtp(impl, s);
+    }
 
     if (time_measure) {
       uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
@@ -3825,6 +3835,7 @@ void tx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
   uint64_t avg_ns_per_loop = mt_sch_avg_ns_loop(sch);
   int cbs_build_timeout;
 
+  /* one bulk per loop, also when a late session builds and sends more in one call */
   s->cpu_busy_score = (double)avg_ns_per_loop / s->bulk / s->pacing.trs * 100.0;
 
   /* build timeout check */

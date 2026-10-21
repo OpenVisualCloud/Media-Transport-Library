@@ -157,6 +157,7 @@ unit_sources = [
   'session/st20_tx/stat_dump_test.cpp',
   'session/st20_tx/ext_frame_done_test.cpp',
   'session/st20_tx/tasklet_pending_test.cpp',
+  'session/st20_tx/late_bulks_test.cpp',
   'session/st20_tx/init_hw_test.cpp',
   'session/st20_tx/update_destination_test.cpp',
   'session/multi_essence_sync_test.cpp',

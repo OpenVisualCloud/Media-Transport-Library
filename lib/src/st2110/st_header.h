@@ -33,6 +33,9 @@
 #define ST_SCH_MAX_TX_VIDEO_SESSIONS (60) /* max video tx sessions per sch lcore */
 #define ST_SCH_MAX_RX_VIDEO_SESSIONS (60) /* max video rx sessions per sch lcore */
 #define ST_SESSION_MAX_BULK (4)
+/* the bulks that a late tx video session builds or sends in one tasklet call, at most. An
+ * on-time session builds 1 bulk per call and its RL transmitter sends 2 */
+#define ST_TX_VIDEO_LATE_BULKS_MAX (8)
 #define ST_TX_VIDEO_SESSIONS_RING_SIZE (512)
 
 /* number of tmstamp it will tracked for out of order pkts */

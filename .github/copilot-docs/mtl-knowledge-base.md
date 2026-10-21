@@ -188,6 +188,12 @@ Ring = shock absorber. Builder can be slow; transmitter still has queued packets
 
 **Bulk enqueue semantics**: `rte_ring_sp_enqueue_bulk` (all-or-nothing) not `_burst` (best-effort). The 4 packets have sequential RTP sequence numbers and pacing timestamps — they must be sent as a unit. Partial enqueue would break batch integrity.
 
+**Bulks per call**: on time, the builder does 1 bulk per call and the RL transmitter 2, so a session gets at most that many per scheduler loop (2160p59.94 is ~990K pkt/s: 4 pkts per loop need a loop below 4 us).
+- Late builder (`tvs_tasklet_handler()`, ST20 frame and slice level only, all pacing ways): more bulks while `pacing.tsc_time_cursor` (its next packet) is due, up to `ST_TX_VIDEO_LATE_BULKS_MAX` (8). ST22 and RTP level build 1 bulk per call.
+- Late RL transmitter (`video_trs_rl_tasklet()`, ST20, ST22 and RTP level): more bulks while the last packet of the bulk it just sent was due. A pad or an inflight retry sets no due time, so it never counts as late. The TSC, launch-time and PTP transmitters send as before.
+- `cpu_busy_score` (migration) still counts one bulk per loop.
+- An always-8 version made audio on the same scheduler p99.9 94 -> 263 us: each 720p transmitter refilled its NIC queue in long calls at each frame start.
+
 ### Cooperative tx_burst: No Retry Loop
 If `rte_eth_tx_burst()` returns fewer than requested:
 1. Save unsent packets to `inflight` array
@@ -458,7 +464,7 @@ When no hardware RL available:
 ### Bulk Size: Why 4
 `ST_SESSION_MAX_BULK = 4` (compile-time constant in `st_header.h`). Sizes `trs_inflight[port][4]` arrays.
 
-**RL mode**: NIC paces regardless of CPU burst size. RL transmitter sends up to 8 packets per iteration (double-call). VRX compensation is for NIC burst behavior (`max_burst_size=2048`):
+**RL mode**: NIC paces regardless of CPU burst size. RL transmitter sends up to 2 bulks (8 pkts) per call, up to `ST_TX_VIDEO_LATE_BULKS_MAX` bulks when late (see Builder vs Transmitter Split). VRX compensation is for NIC burst behavior (`max_burst_size=2048`):
 ```c
 pacing->vrx -= 2; /* VRX compensate to rl burst */
 pacing->vrx -= 2; /* leave VRX space for deviation */

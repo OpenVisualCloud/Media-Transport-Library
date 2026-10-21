@@ -1005,6 +1005,82 @@ uint64_t ut_txv_reclaim_interval_ns(void) {
   return ST_TX_VIDEO_RECLAIM_NS;
 }
 
+#define UT_TXV_MID_FRAME_PKTS (32)
+
+int ut_txv_run_mid_frame(ut_txv_ctx* ctx, long double cursor_ns, uint64_t now_ns) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st_frame_trans frame = {0};
+  uint8_t data[UT_TXV_MID_FRAME_PKTS * UT_TXV_FRAME_SIZE] = {0};
+  int built = -1;
+
+  if (ut_txv_tx_path_init(ctx) < 0) goto out;
+  /* one 4-byte packet per line, a frame of UT_TXV_MID_FRAME_PKTS lines */
+  ut_txv_frame_setup(ctx, &frame, data, UT_TXV_MID_FRAME_PKTS);
+  s->st20_frame_size = sizeof(data);
+  s->st20_fb_size = sizeof(data);
+  s->ops.height = UT_TXV_MID_FRAME_PKTS;
+  s->st20_frame_stat = ST21_TX_STAT_SENDING_PKTS;
+  s->st20_pkt_idx = 1;
+  s->pacing.trs = NS_PER_US;
+  s->pacing.tsc_time_cursor = cursor_ns;
+  ctx->mock_tsc_ns = now_ns;
+
+  tvs_tasklet_handler(&ctx->mgr);
+  built = (int)rte_ring_count(s->ring[MTL_SESSION_PORT_P]);
+
+out:
+  ut_txv_tx_path_uinit(ctx);
+  s->st20_frames = NULL;
+  return built;
+}
+
+int ut_txv_bulks_per_call(void) {
+  return ST_TX_VIDEO_LATE_BULKS_MAX;
+}
+
+int ut_txv_run_frame_end(ut_txv_ctx* ctx, long double cursor_ns, uint64_t now_ns,
+                         uint64_t ptp_ns, uint64_t cur_epochs, bool app_busy,
+                         uint64_t* first_tsc, int* gets) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st_frame_trans frame = {0};
+  uint8_t data[UT_TXV_MID_FRAME_PKTS * UT_TXV_FRAME_SIZE] = {0};
+  int built = -1;
+  struct rte_mbuf* m;
+
+  *first_tsc = 0;
+  *gets = 0;
+  if (ut_txv_tx_path_init(ctx) < 0) goto out;
+  ut_txv_frame_setup(ctx, &frame, data, UT_TXV_MID_FRAME_PKTS);
+  s->st20_frame_size = sizeof(data);
+  s->st20_fb_size = sizeof(data);
+  s->ops.height = UT_TXV_MID_FRAME_PKTS;
+  s->st20_frame_stat = ST21_TX_STAT_SENDING_PKTS;
+  s->st20_pkt_idx = UT_TXV_MID_FRAME_PKTS - 2;
+  s->st20_frame_idx = 0;
+  rte_atomic32_set(&frame.refcnt, 1);
+  s->pacing.trs = NS_PER_US;
+  s->pacing.tsc_time_cursor = cursor_ns;
+  s->pacing.cur_epochs = cur_epochs;
+  ctx->mock_tsc_ns = now_ns;
+  ctx->mock_ptp_ns = ptp_ns;
+  ctx->app_busy = app_busy;
+  ctx->app_frame_idx = 0;
+  ctx->get_next_frame_calls = 0;
+
+  tvs_tasklet_handler(&ctx->mgr);
+  built = (int)rte_ring_count(s->ring[MTL_SESSION_PORT_P]);
+  *gets = ctx->get_next_frame_calls;
+  while (rte_ring_sc_dequeue(s->ring[MTL_SESSION_PORT_P], (void**)&m) == 0) {
+    if (st_tx_mbuf_get_idx(m) == 0) *first_tsc = st_tx_mbuf_get_tsc(m);
+    rte_pktmbuf_free(m);
+  }
+
+out:
+  ut_txv_tx_path_uinit(ctx);
+  s->st20_frames = NULL;
+  return built;
+}
+
 int ut_txv_peer_get_next_frame_calls(const ut_txv_ctx* ctx) {
   return ctx->peer_get_next_frame_calls;
 }

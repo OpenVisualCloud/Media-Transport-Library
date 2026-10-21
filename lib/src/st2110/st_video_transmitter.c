@@ -340,7 +340,8 @@ static enum st_tx_video_rl_state video_trs_rl_frame_start(
 
 static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
-                                 enum mtl_session_port s_port, int* ret_status) {
+                                 enum mtl_session_port s_port, int* ret_status,
+                                 uint64_t* last_tsc) {
   unsigned int bulk = s->bulk;
   struct rte_ring* ring = s->ring[s_port];
   int idx = s->idx;
@@ -486,6 +487,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
 
   int pos = (valid_bulk == bulk) ? 0 : valid_bulk;
 
+  /* only a bulk of video pkts sets it, so a pad or a retry is never late */
+  *last_tsc = st_tx_mbuf_get_tsc(pkts[bulk - 1]);
   video_burst_packet(impl, s, s_port, &pkts[pos], bulk - pos, false);
 
   *ret_status = 1;
@@ -497,15 +500,19 @@ static int video_trs_rl_tasklet(struct mtl_main_impl* impl,
                                 enum mtl_session_port s_port) {
   int pending = MTL_TASKLET_ALL_DONE;
   int ret_status = 0;
+  uint64_t last_tsc = UINT64_MAX;
 
-  pending += _video_trs_rl_tasklet(impl, s, s_port, &ret_status);
+  pending += _video_trs_rl_tasklet(impl, s, s_port, &ret_status, &last_tsc);
   /*
    * Try to burst pkts again for the performance, in this way nic tx get double
-   * bulk since tx pkt is in critical path
+   * bulk since tx pkt is in critical path. Two bulks per call cap a session at two
+   * bulks per scheduler loop, so a session whose last sent pkt is already due sends more.
    */
-  if (ret_status > 0) {
+  for (int b = 1; b < ST_TX_VIDEO_LATE_BULKS_MAX && ret_status > 0; b++) {
+    if (b > 1 && last_tsc >= mt_get_tsc(impl)) break;
+    last_tsc = UINT64_MAX;
     ret_status = 0;
-    pending += _video_trs_rl_tasklet(impl, s, s_port, &ret_status);
+    pending += _video_trs_rl_tasklet(impl, s, s_port, &ret_status, &last_tsc);
   }
   s->stat_trs_ret_code[s_port] = ret_status;
   return pending;

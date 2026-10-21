@@ -166,6 +166,19 @@ bool ut_txv_zc_take_recovery(ut_txv_ctx* ctx, int leg);
 /* packet 0 target of the frame built last, pacing.tsc_time_frame_start */
 void ut_txv_zc_set_next_frame_due(ut_txv_ctx* ctx, uint64_t tsc_ns);
 unsigned int ut_txv_zc_built_pkts(const ut_txv_ctx* ctx);
+/* A frame-level session in the middle of a frame, one 4-byte packet per bulk, whose
+ * next packet is due at cursor_ns; one tvs_tasklet_handler() call at now_ns (trs 1 us).
+ * Returns the packets it built, < 0 on setup failure. */
+int ut_txv_run_mid_frame(ut_txv_ctx* ctx, long double cursor_ns, uint64_t now_ns);
+/* ST_TX_VIDEO_LATE_BULKS_MAX */
+int ut_txv_bulks_per_call(void);
+/* A late frame-level session at the last 2 pkts of a frame (cursor_ns in the past), PTP
+ * time ptp_ns and cur_epochs; app_busy: the app has no next frame. One
+ * tvs_tasklet_handler() call at now_ns. Returns the pkts built (< 0 on setup failure),
+ * the tsc of pkt 0 of the next frame (0 for none) and the get_next_frame calls. */
+int ut_txv_run_frame_end(ut_txv_ctx* ctx, long double cursor_ns, uint64_t now_ns,
+                         uint64_t ptp_ns, uint64_t cur_epochs, bool app_busy,
+                         uint64_t* first_tsc, int* gets);
 /* ST_TX_VIDEO_RECLAIM_NS: the least time between two reclaims of a session */
 uint64_t ut_txv_reclaim_interval_ns(void);
 int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
