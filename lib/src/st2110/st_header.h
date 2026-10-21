@@ -95,8 +95,8 @@ enum st40_tx_frame_status {
 };
 
 struct st_tx_muf_priv_data {
-  uint64_t tsc_time_stamp; /* tsc time stamp of current mbuf */
-  uint64_t ptp_time_stamp; /* ptp time stamp of current mbuf */
+  uint64_t tsc_time_stamp; /* tsc pacing target; all-RL st20 frames: pkt 0 only */
+  uint64_t ptp_time_stamp; /* ptp pacing target; all-RL st20 frames: pkt 0 only */
   void* priv;              /* private data to current frame */
   uint32_t idx;            /* index of packet in current frame */
 };
