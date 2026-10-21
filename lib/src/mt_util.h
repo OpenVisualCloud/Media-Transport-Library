@@ -146,6 +146,11 @@ int mt_macaddr_get(struct mtl_main_impl* impl, enum mtl_port port,
 /* default with stack */
 #define MT_MEMPOOL_OPS_DEFAULT ("stack")
 
+/* mt_mempool_create_by_ops() colors the pool headers on the DPDK versions its copy of
+ * rte_pktmbuf_pool_create_by_ops() was checked against, 21.05 to 26.07; a newer DPDK
+ * gets uncolored pools until the copy is checked against it */
+#define MT_MEMPOOL_COLORED (RTE_VERSION < RTE_VERSION_NUM(26, 11, 0, 0))
+
 struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl, const char* name,
                                              unsigned int n, unsigned int cache_size,
                                              uint16_t priv_size, uint16_t element_size,

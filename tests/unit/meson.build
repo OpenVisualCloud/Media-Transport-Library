@@ -53,6 +53,8 @@ unit_sources = [
   'common/ut_tx_ring_test.cpp',
   'common/mt_bitmap_harness.c',
   'common/mt_bitmap_test.cpp',
+  'common/mt_mempool_harness.c',
+  'common/mt_mempool_test.cpp',
   'dev/mt_dev_harness.c',
   'dev/mt_dev_igc_test.cpp',
   'dev/mt_dev_rx_desc_test.cpp',
