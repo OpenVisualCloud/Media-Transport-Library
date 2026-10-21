@@ -1197,6 +1197,14 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
 int st20p_tx_free(st20p_tx_handle handle) {
   struct st20p_tx_ctx* ctx = handle;
   struct mtl_main_impl* impl = ctx->impl;
+  struct st_tx_video_session_handle_impl* transport = ctx->transport;
+
+  /* the transport would refuse and stay attached to the ctx freed below */
+  if (ctx->type == MT_ST20_HANDLE_PIPELINE_TX && transport &&
+      mt_sch_on_own_thread(transport->sch)) {
+    warn("%s(%d), not from a callback of its scheduler\n", __func__, ctx->idx);
+    return -EBUSY;
+  }
 
   int _gd = mt_handle_begin_destroy(&ctx->lc_destroying, &ctx->type,
                                     MT_ST20_HANDLE_PIPELINE_TX);
@@ -1341,9 +1349,11 @@ int st20p_tx_reset_session_stats(st20p_tx_handle handle) {
 
   MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
 
-  atomic_store_explicit(&ctx->stat_frames_sent, 0, memory_order_relaxed);
-  atomic_store_explicit(&ctx->stat_frames_dropped, 0, memory_order_relaxed);
   ret = st20_tx_reset_session_stats(ctx->transport);
+  if (!ret) {
+    atomic_store_explicit(&ctx->stat_frames_sent, 0, memory_order_relaxed);
+    atomic_store_explicit(&ctx->stat_frames_dropped, 0, memory_order_relaxed);
+  }
   MT_HANDLE_RELEASE(ctx);
   return ret;
 }

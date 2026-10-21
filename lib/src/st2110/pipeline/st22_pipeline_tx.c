@@ -1126,6 +1126,14 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
 int st22p_tx_free(st22p_tx_handle handle) {
   struct st22p_tx_ctx* ctx = handle;
   struct mtl_main_impl* impl = ctx->impl;
+  struct st22_tx_video_session_handle_impl* transport = ctx->transport;
+
+  /* the transport would refuse and stay attached to the ctx freed below */
+  if (ctx->type == MT_ST22_HANDLE_PIPELINE_TX && transport &&
+      mt_sch_on_own_thread(transport->sch)) {
+    warn("%s(%d), not from a callback of its scheduler\n", __func__, ctx->idx);
+    return -EBUSY;
+  }
 
   notice("%s(%d), start\n", __func__, ctx->idx);
 
