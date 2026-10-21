@@ -2299,8 +2299,8 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       s->port_user_stats.common.port[MTL_SESSION_PORT_P].build++;
     }
     if (stamp) {
-      st_tx_mbuf_set_tsc(pkts[i], tsc_cursor);
-      st_tx_mbuf_set_ptp(pkts[i], ptp_cursor);
+      st_tx_mbuf_set_tsc(pkts[i], (uint64_t)tsc_cursor);
+      st_tx_mbuf_set_ptp(pkts[i], (uint64_t)ptp_cursor);
     }
 
     if (send_r) {
@@ -2316,8 +2316,8 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
         s->port_user_stats.common.port[MTL_SESSION_PORT_R].build++;
       }
       if (stamp) {
-        st_tx_mbuf_set_tsc(pkts_r[i], tsc_cursor);
-        st_tx_mbuf_set_ptp(pkts_r[i], ptp_cursor);
+        st_tx_mbuf_set_tsc(pkts_r[i], (uint64_t)tsc_cursor);
+        st_tx_mbuf_set_ptp(pkts_r[i], (uint64_t)ptp_cursor);
       }
     }
 

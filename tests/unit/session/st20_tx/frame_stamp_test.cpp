@@ -16,7 +16,7 @@
 
 namespace {
 
-constexpr uint64_t kFramePeriodNs = 1000 * 1000;
+constexpr uint64_t kFramePeriodNs = uint64_t{1000} * 1000;
 constexpr uint64_t kCurrentTai = 10 * kFramePeriodNs;
 constexpr uint64_t kCurrentTsc = kFramePeriodNs / 2;
 /* a fraction that a sum of whole-ns steps drifts away from */

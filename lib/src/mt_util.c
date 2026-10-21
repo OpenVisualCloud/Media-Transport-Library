@@ -582,7 +582,7 @@ struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl, const c
     element_size = (element_size / cache_size + 1) * cache_size;
 
   idx = impl->mempool_idx++;
-  snprintf(name_with_idx, sizeof(name_with_idx), "%s_%d", name, idx);
+  (void)snprintf(name_with_idx, sizeof(name_with_idx), "%s_%d", name, idx);
   data_room_size = element_size + MT_MBUF_HEADROOM_SIZE; /* include head room */
   /* pools with a per-lcore cache share one header length, so would share cache sets */
   pad = (idx % MT_MEMPOOL_COLORS) * RTE_CACHE_LINE_SIZE;
