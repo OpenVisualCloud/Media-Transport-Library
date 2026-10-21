@@ -2083,6 +2083,18 @@ static bool tv_frames_out(struct mtl_main_impl* impl,
   return false;
 }
 
+/* deep TX queues hand header mbufs back cold and a store to a cold line stalls the store
+ * buffer: prefetch this many pkts ahead, as more overrun the L1 fill buffers */
+#define TV_PREFETCH_HDR_AHEAD (2)
+
+static inline void tv_prefetch_hdr(struct rte_mbuf* m) {
+  char* hdr = rte_pktmbuf_mtod(m, char*);
+
+  rte_prefetch0_write(hdr);
+  rte_prefetch0_write(hdr + sizeof(struct st_rfc4175_video_hdr) - 1);
+  rte_prefetch0_write(rte_mbuf_to_priv(m));
+}
+
 static int tv_tasklet_frame(struct mtl_main_impl* impl,
                             struct st_tx_video_session_impl* s) {
   unsigned int bulk = s->bulk;
@@ -2291,6 +2303,11 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     }
   }
 
+  for (unsigned int i = 0; i < bulk && i < TV_PREFETCH_HDR_AHEAD; i++) {
+    tv_prefetch_hdr(pkts[i]);
+    if (send_r) tv_prefetch_hdr(pkts_r[i]);
+  }
+
   /* RL transmitters read only the stamps of a frame's first pkt */
   bool stamp_all = s->pacing_way[MTL_SESSION_PORT_P] != ST21_TX_PACING_WAY_RL ||
                    (send_r && s->pacing_way[MTL_SESSION_PORT_R] != ST21_TX_PACING_WAY_RL);
@@ -2300,6 +2317,10 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
   for (unsigned int i = 0; i < bulk; i++) {
     bool stamp = stamp_all || !s->st20_pkt_idx;
 
+    if (i + TV_PREFETCH_HDR_AHEAD < bulk) {
+      tv_prefetch_hdr(pkts[i + TV_PREFETCH_HDR_AHEAD]);
+      if (send_r) tv_prefetch_hdr(pkts_r[i + TV_PREFETCH_HDR_AHEAD]);
+    }
     st_tx_mbuf_set_priv(pkts[i], &s->st20_frames[s->st20_frame_idx]);
     if (s->st20_pkt_idx >= s->st20_total_pkts) {
       s->port_user_stats.stat_pkts_dummy++;
