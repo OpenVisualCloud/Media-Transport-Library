@@ -154,10 +154,9 @@ static void tv_frame_free_cb(void* addr, void* opaque) {
   dbg("%s(%d), succ frame_idx %d\n", __func__, s_idx, frame_idx);
 }
 
-static rte_iova_t tv_frame_get_offset_iova(struct st_tx_video_session_impl* s,
-                                           struct st_frame_trans* frame_info,
-                                           size_t offset) {
-  if (frame_info->page_table_len == 0) return frame_info->iova + offset;
+static rte_iova_t tv_frame_get_page_iova(struct st_tx_video_session_impl* s,
+                                         struct st_frame_trans* frame_info,
+                                         size_t offset) {
   void* addr = RTE_PTR_ADD(frame_info->addr, offset);
   struct st_page_info* page;
   for (uint16_t i = 0; i < frame_info->page_table_len; i++) {
@@ -169,6 +168,13 @@ static rte_iova_t tv_frame_get_offset_iova(struct st_tx_video_session_impl* s,
   err("%s(%d,%d), offset %" PRIu64 " get iova fail\n", __func__, s->idx, frame_info->idx,
       offset);
   return MTL_BAD_IOVA;
+}
+
+static inline rte_iova_t tv_frame_get_offset_iova(struct st_tx_video_session_impl* s,
+                                                  struct st_frame_trans* frame_info,
+                                                  size_t offset) {
+  if (frame_info->page_table_len == 0) return frame_info->iova + offset;
+  return tv_frame_get_page_iova(s, frame_info, offset);
 }
 
 static int tv_frame_create_page_table(struct st_tx_video_session_impl* s,
@@ -2279,7 +2285,15 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     }
   }
 
+  /* RL transmitters read only the stamps of a frame's first pkt */
+  bool stamp_all = s->pacing_way[MTL_SESSION_PORT_P] != ST21_TX_PACING_WAY_RL ||
+                   (send_r && s->pacing_way[MTL_SESSION_PORT_R] != ST21_TX_PACING_WAY_RL);
+  long double tsc_cursor = pacing->tsc_time_cursor;
+  long double ptp_cursor = pacing->ptp_time_cursor;
+
   for (unsigned int i = 0; i < bulk; i++) {
+    bool stamp = stamp_all || !s->st20_pkt_idx;
+
     st_tx_mbuf_set_priv(pkts[i], &s->st20_frames[s->st20_frame_idx]);
     if (s->st20_pkt_idx >= s->st20_total_pkts) {
       s->port_user_stats.stat_pkts_dummy++;
@@ -2293,7 +2307,10 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       st_tx_mbuf_set_idx(pkts[i], s->st20_pkt_idx);
       s->port_user_stats.common.port[MTL_SESSION_PORT_P].build++;
     }
-    pacing_set_mbuf_time_stamp(pkts[i], pacing);
+    if (stamp) {
+      st_tx_mbuf_set_tsc(pkts[i], tsc_cursor);
+      st_tx_mbuf_set_ptp(pkts[i], ptp_cursor);
+    }
 
     if (send_r) {
       st_tx_mbuf_set_priv(pkts_r[i], &s->st20_frames[s->st20_frame_idx]);
@@ -2307,12 +2324,18 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
         st_tx_mbuf_set_idx(pkts_r[i], s->st20_pkt_idx);
         s->port_user_stats.common.port[MTL_SESSION_PORT_R].build++;
       }
-      pacing_set_mbuf_time_stamp(pkts_r[i], pacing);
+      if (stamp) {
+        st_tx_mbuf_set_tsc(pkts_r[i], tsc_cursor);
+        st_tx_mbuf_set_ptp(pkts_r[i], ptp_cursor);
+      }
     }
 
-    pacing_forward_cursor(pacing); /* pkt forward */
+    tsc_cursor += pacing->trs;
+    ptp_cursor += pacing->trs;
     s->st20_pkt_idx++;
   }
+  pacing->tsc_time_cursor = tsc_cursor;
+  pacing->ptp_time_cursor = ptp_cursor;
 
   bool done = false;
 
