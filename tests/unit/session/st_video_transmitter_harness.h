@@ -131,6 +131,34 @@ void ut_trs_stall_stream(ut_trs_ctx* ctx, uint64_t stall_ns);
 long double ut_trs_stream_max_late_ns(const ut_trs_ctx* ctx);
 uint32_t ut_trs_stream_nic_desc_used(const ut_trs_ctx* ctx);
 
+/* ut_trs_wire() of a pad */
+#define UT_TRS_WIRE_PAD (UINT32_MAX - 1)
+
+/* Frames mode: frames of total_pkts pkts reach the ring as tv_tasklet_frame() builds
+ * them, bulk pkts at a time, dummies past a frame's end. Pkt 0 is due hold_ns after its
+ * bulk is queued, or long past when hold_ns is 0. */
+struct ut_trs_frames_case {
+  unsigned int bulk;
+  int total_pkts;
+  int frames;
+  float pad_interval;
+  uint64_t hold_ns;
+  uint16_t accept_limit; /* most pkts a burst takes, 0 = all */
+  uint32_t fail_every;   /* every fail_every-th burst call takes none, 0 = never */
+  /* the last lead pkts of an earlier frame precede frame 0 in its first bulk, as an RTP
+   * level timestamp change mid-bulk leaves them, so frame 0's bulks are not 4-aligned */
+  unsigned int lead;
+};
+/* runs the RL tasklet until every frame is out; < 0 if it stops short */
+int ut_trs_run_frames(ut_trs_ctx* ctx, const struct ut_trs_frames_case* c);
+/* what the bursts took, in order: a pkt's index in its frame, or UT_TRS_WIRE_PAD */
+uint32_t ut_trs_wire_count(const ut_trs_ctx* ctx);
+uint32_t ut_trs_wire(const ut_trs_ctx* ctx, uint32_t pos);
+uint64_t ut_trs_wire_tsc(const ut_trs_ctx* ctx, uint32_t pos);
+uint64_t ut_trs_frame_target(const ut_trs_ctx* ctx, int frame);
+int ut_trs_stat_pkts_burst_dummy(const ut_trs_ctx* ctx);
+unsigned int ut_trs_frame_pkts_in_use(const ut_trs_ctx* ctx);
+
 #ifdef __cplusplus
 }
 #endif
