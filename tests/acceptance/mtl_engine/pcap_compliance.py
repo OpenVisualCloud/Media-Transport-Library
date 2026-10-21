@@ -117,64 +117,6 @@ def _resolution_mismatch_streams(
     return mismatches
 
 
-# MTL transport_format -> EBU LIST's own (media_specific.sampling,
-# media_specific.color_depth). This is a closed, explicit table over the
-# transport_format values mtl_engine.media_files/rxtxapp_config actually
-# produce, rather than parsing the string (e.g. splitting on "_" and
-# stripping a "bit" suffix) -- "v210" and "I422_10LE" don't decompose into a
-# "{SAMPLING}_{DEPTH}bit" shape at all, so a generic parser silently (and
-# incorrectly) treats them as unrecognized and skips the check. Sampling
-# strings verified against pi-list cpp/libs/core/lib/src/ebu/list/core/
-# media/video/sampling.cpp's video::to_string(video_sampling).
-_TRANSPORT_FORMAT_TO_EBU_SAMPLING = {
-    "YUV_420_8bit": ("YCbCr-4:2:0", 8),
-    "YUV_422_8bit": ("YCbCr-4:2:2", 8),
-    "YUV_422_10bit": ("YCbCr-4:2:2", 10),
-    "YUV_422_12bit": ("YCbCr-4:2:2", 12),
-    "YUV_444_10bit": ("YCbCr-4:4:4", 10),
-    "YUV_444_12bit": ("YCbCr-4:4:4", 12),
-    "RGB_10bit": ("RGB", 10),
-    "RGB_12bit": ("RGB", 12),
-    "I422_10LE": ("YCbCr-4:2:2", 10),  # planar 10-bit 4:2:2
-    "v210": ("YCbCr-4:2:2", 10),  # packed 10-bit 4:2:2 (v210 fourcc)
-}
-
-
-def _sampling_mismatch_streams(report: dict, expected_transport_format) -> list[dict]:
-    """Return video streams whose EBU LIST sampling/color_depth disagree with *expected_transport_format*.
-
-    *expected_transport_format* is the MTL ``transport_format`` config value
-    (e.g. ``"YUV_422_10bit"``, ``"v210"``), looked up in
-    ``_TRANSPORT_FORMAT_TO_EBU_SAMPLING``. Returns an empty list (with a
-    warning logged) when the value has no known mapping -- an unmappable
-    format is a harness gap, not a passing test, so it must not disappear
-    silently.
-    """
-    if not expected_transport_format:
-        return []
-    expected = _TRANSPORT_FORMAT_TO_EBU_SAMPLING.get(expected_transport_format)
-    if expected is None:
-        logger.warning(
-            "transport_format=%r has no known EBU LIST sampling/color_depth "
-            "mapping -- sampling/color_depth compliance check skipped for "
-            "this test (add it to _TRANSPORT_FORMAT_TO_EBU_SAMPLING)",
-            expected_transport_format,
-        )
-        return []
-    expected_sampling, expected_depth = expected
-    mismatches = []
-    for s in _video_streams(report):
-        media_specific = s.get("media_specific", {})
-        sampling = media_specific.get("sampling")
-        depth = media_specific.get("color_depth")
-        if sampling not in (None, expected_sampling) or depth not in (
-            None,
-            expected_depth,
-        ):
-            mismatches.append(s)
-    return mismatches
-
-
 # NTSC frame rates are truncated for their MTL ``pXX``/``iXX`` label (e.g.
 # 59.94 -> "p59", never "p59.94" -- see media_files.py's fps_to_framerate_field)
 # while EBU LIST reports the true rate as an exact rational (verified against
@@ -272,7 +214,6 @@ class CaptureIntent:
     pacing: Optional[str] = None
     width: Optional[int] = None
     height: Optional[int] = None
-    transport_format: Optional[str] = None
     framerate: Optional[str] = None
     expected_video_streams: int = 1
     # What an st30p session sends; None for any other session type.
@@ -506,7 +447,7 @@ class ComplianceSession:
         Raises ``AssertionError`` when the capture is not compliant, when a
         video stream is only ST 2110-21 "wide" compliant (not narrow/
         narrow_linear) and ``allow_wide`` is False, or when a video stream's
-        EBU LIST ``packing_mode``/resolution/sampling+color_depth/framerate
+        EBU LIST ``packing_mode``/resolution/framerate
         disagrees with the configured MTL values (all always checked, no
         opt-out marker, since a mismatch means the stream isn't actually
         using the requested wire format). Narrow (or narrow linear) is the
@@ -514,6 +455,11 @@ class ComplianceSession:
         capture PF and the primary/TX PF are not properly PTP-synchronized
         (sync the system clock to the capturing NIC's PHC via phc2sys before
         capture).
+
+        Sampling and colour depth are not checked: EBU LIST 2.2 does not
+        detect them and reports YCbCr-4:2:2 10-bit for every video stream
+        (pi-list cpp/libs/st2110/lib/src/ebu/list/st2110/d20/
+        video_format_detector.cpp).
 
         When ``fail_on_error`` is True, also records a hard pytest failure
         via ``log_fail``; when False, only logs at INFO so soft-fail callers
@@ -699,22 +645,6 @@ class ComplianceSession:
                 f"stream(s) report a resolution that disagrees with the configured "
                 f"{intent.width}x{intent.height} (observed {observed}) -- the stream "
                 "is not actually transporting the requested resolution on the wire."
-            )
-            self._fail(msg, fail_on_error)
-
-        sampling_mismatch = _sampling_mismatch_streams(report, intent.transport_format)
-        if sampling_mismatch:
-            observed_specific = sampling_mismatch[0].get("media_specific", {})
-            observed = (
-                f"sampling={observed_specific.get('sampling')!r} "
-                f"color_depth={observed_specific.get('color_depth')!r}"
-            )
-            msg = (
-                f"PCAP compliance check failed: {len(sampling_mismatch)} video "
-                f"stream(s) report a sampling/color_depth that disagrees with the "
-                f"configured transport_format={intent.transport_format!r} (observed "
-                f"{observed}) -- the stream is not actually using the requested "
-                "pixel format on the wire."
             )
             self._fail(msg, fail_on_error)
 
