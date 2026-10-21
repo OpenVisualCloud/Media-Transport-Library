@@ -4,6 +4,8 @@
 
 #include "mt_util.h"
 
+#include <rte_mbuf_pool_ops.h>
+
 #ifndef WINDOWSENV
 #include <pwd.h>
 #endif
@@ -515,6 +517,42 @@ int mt_mempool_dump(struct rte_mempool* mp) {
   return 0;
 }
 
+/* DPDK 25.11/26.07 rte_pktmbuf_pool_create_by_ops() plus pad: keep in step on bumps */
+static struct rte_mempool* pktmbuf_pool_create_by_ops_colored(
+    const char* name, unsigned int n, unsigned int cache_size, uint16_t priv_size,
+    uint16_t data_room_size, int socket_id, const char* ops_name, unsigned int pad) {
+  struct rte_pktmbuf_pool_private mbp_priv;
+  struct rte_mempool* mp;
+  int ret;
+
+  if (RTE_ALIGN(priv_size, RTE_MBUF_PRIV_ALIGN) != priv_size) {
+    rte_errno = EINVAL;
+    return NULL;
+  }
+  memset(&mbp_priv, 0, sizeof(mbp_priv));
+  mbp_priv.mbuf_data_room_size = data_room_size;
+  mbp_priv.mbuf_priv_size = priv_size;
+
+  mp = rte_mempool_create_empty(name, n,
+                                sizeof(struct rte_mbuf) + priv_size + data_room_size,
+                                cache_size, sizeof(mbp_priv) + pad, socket_id, 0);
+  if (!mp) return NULL;
+
+  ret = rte_mempool_set_ops_byname(mp, ops_name ? ops_name : rte_mbuf_best_mempool_ops(),
+                                   NULL);
+  if (ret == 0) {
+    rte_pktmbuf_pool_init(mp, &mbp_priv);
+    ret = rte_mempool_populate_default(mp);
+  }
+  if (ret < 0) {
+    rte_mempool_free(mp);
+    rte_errno = -ret;
+    return NULL;
+  }
+  rte_mempool_obj_iter(mp, rte_pktmbuf_init, NULL);
+  return mp;
+}
+
 struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl, const char* name,
                                              unsigned int n, unsigned int cache_size,
                                              uint16_t priv_size, uint16_t element_size,
@@ -523,7 +561,9 @@ struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl, const c
                              use concise names so it won't exceed this length */
   struct rte_mempool* mbuf_pool;
   uint16_t data_room_size;
+  unsigned int pad;
   unsigned int ret = 1;
+  int idx;
   float size_m;
 
   /*
@@ -541,14 +581,18 @@ struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl, const c
   if (cache_size && (element_size % cache_size)) /* align to cache size */
     element_size = (element_size / cache_size + 1) * cache_size;
 
-  snprintf(name_with_idx, sizeof(name_with_idx), "%s_%d", name, impl->mempool_idx++);
+  idx = impl->mempool_idx++;
+  (void)snprintf(name_with_idx, sizeof(name_with_idx), "%s_%d", name, idx);
   data_room_size = element_size + MT_MBUF_HEADROOM_SIZE; /* include head room */
-  mbuf_pool = rte_pktmbuf_pool_create_by_ops(name_with_idx, n, cache_size, priv_size,
-                                             data_room_size, socket_id, ops_name);
+  /* pools with a per-lcore cache share one header length, so would share cache sets */
+  pad = (idx % MT_MEMPOOL_COLORS) * RTE_CACHE_LINE_SIZE;
+  mbuf_pool = pktmbuf_pool_create_by_ops_colored(
+      name_with_idx, n, cache_size, priv_size, data_room_size, socket_id, ops_name, pad);
 
   if (!mbuf_pool) {
-    err("%s(%d), fail(%s) for %s, n %u\n", __func__, socket_id, rte_strerror(rte_errno),
-        name, n);
+    err("%s(%d), fail(%s) for %s, n %u ops %s\n", __func__, socket_id,
+        rte_strerror(rte_errno), name, n,
+        ops_name ? ops_name : rte_mbuf_best_mempool_ops());
   } else {
     size_m = (float)n * (data_room_size + priv_size) / (1024 * 1024);
     info("%s(%d), succ at %p size %fm n %u d %u for %s\n", __func__, socket_id, mbuf_pool,
