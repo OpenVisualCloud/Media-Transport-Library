@@ -486,6 +486,7 @@ struct ut_txv_pipe_case {
   unsigned int hold;
   /* the app set nb_tx_desc: no port is deep; else MT_DEV_TX_DESC_DEEP is */
   bool user_nb_tx_desc;
+  bool iavf; /* the ports are iavf VFs, else of the default driver */
 };
 int ut_txv_pipe_setup(ut_txv_ctx* ctx, const struct ut_txv_pipe_case* c);
 /* the leg's ring completes no descriptor posted from now on */
@@ -515,6 +516,62 @@ void ut_txv_pipe_geometry(const ut_txv_ctx* ctx, uint32_t* pkt_len, uint32_t* li
                           uint32_t* frame_size, int* total_pkts);
 uint64_t ut_txv_pipe_frames_asked(const ut_txv_ctx* ctx);
 int ut_txv_pipe_total_pkts(const ut_txv_ctx* ctx);
+
+/* ── direct chain: payloads point into the frame, its last pkt holds it ─── */
+enum ut_txv_drv {
+  UT_TXV_DRV_IAVF, /* the default */
+  UT_TXV_DRV_ICE,
+  UT_TXV_DRV_IGC,
+  UT_TXV_DRV_I40E,
+  UT_TXV_DRV_MLX5,
+  UT_TXV_DRV_DEFAULT, /* the entry of a driver MTL does not know */
+};
+/* what tv_tx_direct_chain() rules on; all zero is a direct frame-level session */
+struct ut_txv_direct_chain_case {
+  bool no_chain;
+  bool slice_level;
+  bool rtp_level;
+  bool rtcp;
+  bool mono_pool;
+  bool iova_pa;
+  bool shared_txq;
+  enum ut_txv_drv drv[2]; /* of port P and R */
+};
+/* tv_tx_direct_chain() of a session on two ports */
+bool ut_txv_tx_direct_chain(ut_txv_ctx* ctx, const struct ut_txv_direct_chain_case* c);
+/* tv_attach() of a 1080p BPM frame session on an iavf VF, with MTL_FLAG_TX_MONO_POOL or
+ * not, up to its TX queue request, which fails. Outputs the s->tx_direct_chain it set */
+int ut_txv_attach_direct_chain(ut_txv_ctx* ctx, bool mono_pool, bool* direct);
+/* the payload segment of a pkt the pipe session built, against frame 0 */
+struct ut_txv_payload {
+  bool extbuf; /* attached to the frame's sh_info */
+  bool copy;   /* from the copy pool of a padded frame */
+  uint64_t addr_off;
+  uint64_t iova_off;
+  uint32_t len;
+};
+enum { UT_TXV_PIPE_BUILT_MAX = 64 };
+/* the builder alone builds frame 0 until leg P kept pkts of it or it is built; every leg
+ * keeps its pkts in build order, dummies freed. Returns the pkts leg P kept, < 0 past
+ * UT_TXV_PIPE_BUILT_MAX */
+int ut_txv_pipe_build(ut_txv_ctx* ctx, int pkts);
+void ut_txv_pipe_payload(const ut_txv_ctx* ctx, int idx, struct ut_txv_payload* payload);
+/* frees the next n pkts the leg kept, in build order */
+void ut_txv_pipe_free_built(ut_txv_ctx* ctx, int leg, int n);
+/* frees the last pkt the leg kept, ahead of the others */
+void ut_txv_pipe_free_last_built(ut_txv_ctx* ctx, int leg);
+/* what mt_txq_flush() of the leg returns; below 0 its queue keeps what it holds */
+void ut_txv_pipe_set_flush_ret(ut_txv_ctx* ctx, int leg, int ret);
+/* tv_uinit() with the kept pkts in their leg's TX queue, but each leg's last back in its
+ * builder ring unsent; mt_txq_flush() frees what a queue holds */
+int ut_txv_pipe_stop_last_pkt_unsent(ut_txv_ctx* ctx);
+/* the recovery session as a direct chain on iavf legs with pools of its own, whose
+ * frame's last pkt failed to burst on every leg, its payload the frame's only extbuf ref;
+ * the earlier pkts are in the queues */
+int ut_txv_recovery_set_last_pkt_unsent(ut_txv_ctx* ctx);
+/* notify_frame_done calls when the leg's first mt_txq_flush() or mt_txq_recovery_flush()
+ * started, -1 for none */
+int ut_txv_done_at_flush(const ut_txv_ctx* ctx, int leg);
 
 #ifdef __cplusplus
 }

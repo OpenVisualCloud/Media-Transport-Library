@@ -1425,6 +1425,12 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
     /* do not attach extbuf, copy to data room */
     void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
     mt_memcpy(payload, frame_info->addr + offset, left_len);
+  } else if (s->tx_direct_chain && s->st20_pkt_idx < s->st20_total_pkts - 1) {
+    /* only the last pkt holds the frame: the PMD frees it after the rest completed */
+    pkt_chain->buf_addr = frame_info->addr + offset;
+    rte_mbuf_iova_set(pkt_chain, tv_frame_get_offset_iova(s, frame_info, offset));
+    pkt_chain->buf_len = left_len;
+    pkt_chain->data_off = 0;
   } else {
     /* attach payload to chainbuf */
     rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,
@@ -3168,6 +3174,22 @@ static void tv_init_tx_chain(struct mtl_main_impl* impl,
   if (s->tx_no_chain) s->reclaim.enabled = false;
 }
 
+/* a recycled direct mbuf may not be written (PA cross-page copy, mono pool headers) or
+ * resent (RTCP); ice, iavf, igc free a dedicated queue's mbufs only after DD, in order */
+static bool tv_tx_direct_chain(struct mtl_main_impl* impl,
+                               struct st_tx_video_session_impl* s) {
+  if (s->tx_no_chain || !st20_is_frame_type(s->ops.type) || s->tx_mono_pool) return false;
+  if ((s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) || impl->iova_mode == RTE_IOVA_PA)
+    return false;
+  for (int i = 0; i < s->ops.num_port; i++) {
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
+    enum mt_driver_type drv = mt_if(impl, port)->drv_info.drv_type;
+    if (drv != MT_DRV_ICE && drv != MT_DRV_IAVF && drv != MT_DRV_IGC) return false;
+    if (mt_user_shared_txq(impl, port)) return false;
+  }
+  return true;
+}
+
 /* mbufs a pool needs for session port i: a descriptor each and the builder ring; deep,
  * what the session holds and the ring share. The RTCP and RTP rings come on top. */
 static unsigned int tv_mempool_n(struct mtl_main_impl* impl,
@@ -3351,15 +3373,35 @@ static void tv_transmitter_state_init(struct st_tx_video_session_impl* s) {
   }
 }
 
+/* teardown frees software-held pkts before the queues flush the older ones */
+static void tv_frames_hold(struct st_tx_video_session_impl* s) {
+  if (!s->tx_direct_chain || !s->st20_frames) return;
+  for (uint16_t i = 0; i < s->st20_frames_cnt; i++) {
+    struct st_frame_trans* frame = &s->st20_frames[i];
+    if (rte_atomic32_read(&frame->refcnt)) rte_mbuf_ext_refcnt_update(&frame->sh_info, 1);
+  }
+}
+
+/* with no payload out no queue can still send a held frame: it is done, built or not */
+static void tv_frames_release(struct st_tx_video_session_impl* s) {
+  if (!s->tx_direct_chain || !s->st20_frames) return;
+  if (s->mbuf_mempool_chain && rte_mempool_in_use_count(s->mbuf_mempool_chain)) return;
+  for (uint16_t i = 0; i < s->st20_frames_cnt; i++) {
+    struct st_frame_trans* frame = &s->st20_frames[i];
+    if (rte_atomic32_read(&frame->refcnt) &&
+        !rte_mbuf_ext_refcnt_update(&frame->sh_info, -1))
+      tv_frame_free_cb(frame->addr, frame);
+  }
+}
+
 /* Releases every mbuf reference this port still holds in software. Must run before
  * tv_uinit_hw(), which frees and clears s->pad[]: the pad references retained by
  * failed bursts can only be given back while that pointer is still live.
  *
- * A chain mbuf may carry an extbuf reference to the frame, so freeing it drops one
- * sh_info reference and may run tv_frame_free_cb(). That is safe here because
- * sh_info counts every live chain mbuf, including the ones the NIC still owns: the
- * callback cannot fire while any packet of that frame is outstanding in a TX
- * descriptor. tv_uinit_hw() still has to precede tv_free_frames(). */
+ * A chain mbuf may carry an extbuf reference to the frame, so freeing it may run
+ * tv_frame_free_cb() while the NIC still owns earlier pkts of the frame: a direct
+ * chain's only reference is its last pkt, so tv_frames_hold() must run first.
+ * tv_uinit_hw() still has to precede tv_free_frames(). */
 static void tv_transmitter_port_state_cleanup(struct st_tx_video_session_impl* s, int i) {
   struct rte_mbuf* pad = s->pad[i][ST20_PKT_TYPE_NORMAL];
 
@@ -3597,8 +3639,10 @@ static int tv_uinit(struct st_tx_video_session_impl* s) {
   tv_uinit_rtcp(s);
   /* software mbufs, then hw, then pools and frames -- ordering rationale is on
    * tv_transmitter_port_state_cleanup() */
+  tv_frames_hold(s);
   st_tx_video_transmitter_state_cleanup(s);
   tv_uinit_hw(s);
+  tv_frames_release(s);
   tv_uinit_sw(s);
   return 0;
 }
@@ -3724,8 +3768,12 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   } else {
     tv_init_tx_chain(impl, s);
   }
+  s->tx_direct_chain = tv_tx_direct_chain(impl, s);
   if (s->tx_no_chain) {
     info("%s(%d), no chain mbuf support\n", __func__, idx);
+  } else {
+    info("%s(%d), chain mbuf, direct %s\n", __func__, idx,
+         s->tx_direct_chain ? "yes" : "no");
   }
 
   enum mtl_port port;
@@ -4576,6 +4624,7 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
     return -EIO;
   }
 
+  tv_frames_hold(s); /* the frame manager cleanup below drops the holds */
   /* clear all tx ring buffer */
   if (s->packet_ring) mt_ring_dequeue_clean(s->packet_ring);
   for (uint8_t i = 0; i < s->ops.num_port; i++) {

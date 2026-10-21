@@ -282,6 +282,8 @@ struct st_tx_video_session_impl {
   bool tx_mono_pool;   /* if reuse tx mono pool */
   bool tx_no_chain;    /* if tx not use chain mbuf */
   bool multi_src_port; /* if tx use multiple src port */
+  /* only a frame's last payload mbuf holds its extbuf */
+  bool tx_direct_chain;
   /* if the eth dev support chain buff */
   bool eth_has_chain[MTL_SESSION_PORT_MAX];
   /* if the eth dev support ipv4 checksum offload */
