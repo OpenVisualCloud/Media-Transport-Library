@@ -140,6 +140,48 @@ int ut_txv_run_tasklet_slots(ut_txv_ctx* ctx, enum ut_txv_work work,
 /* get_next_frame calls the peers of the last ut_txv_run_tasklet_slots() received. */
 int ut_txv_peer_get_next_frame_calls(const ut_txv_ctx* ctx);
 
+enum ut_txv_tasklet {
+  UT_TXV_TASKLET_BUILDER,     /* tvs_tasklet_handler() */
+  UT_TXV_TASKLET_TRANSMITTER, /* video_trs_tasklet_handler() */
+};
+/* One pass of a TX video tasklet over a session in slot 0, its lock held by the control
+ * plane or not. Returns how often the tasklet ran the session; *locked_in_run is whether
+ * the lock was held while it did, *locked_after whether it is held after the pass. */
+int ut_txv_run_tasklet_lock_probe(ut_txv_ctx* ctx, enum ut_txv_tasklet tasklet,
+                                  bool hold_lock, bool* locked_in_run,
+                                  bool* locked_after);
+enum ut_txv_control {
+  UT_TXV_GET,         /* tx_video_session_get() */
+  UT_TXV_GET_TIMEOUT, /* tx_video_session_get_timeout() */
+  UT_TXV_GET_EMPTY,   /* tx_video_session_get_empty(), of an empty slot */
+  UT_TXV_STATS_GET,   /* st20_tx_get_session_stats() */
+  UT_TXV_STATS_RESET, /* st20_tx_reset_session_stats() */
+  UT_TXV_UPDATE_DST,  /* st20_tx_update_destination() */
+  UT_TXV_FREE,        /* st20_tx_free() */
+};
+/* Runs a control-plane call on the session while a thread acting as its scheduler, in a
+ * pass, ends the pass on each quiescent wait. Returns how many waits the call began, < 0
+ * if it failed; *locked_at_wait is whether the session lock was held at each. */
+int ut_txv_run_control(ut_txv_ctx* ctx, enum ut_txv_control call, bool* locked_at_wait);
+/* The same once the session migrated to another slot of another scheduler, which then
+ * acts as the one in a pass. */
+int ut_txv_run_control_after_migration(ut_txv_ctx* ctx, enum ut_txv_control call,
+                                       bool* locked_at_wait);
+/* The call while the session migrates to another scheduler during the call's wait on the
+ * old slot's scheduler, so the slot no longer holds it once waited. Returns the result.
+ */
+int ut_txv_run_control_racing_migration(ut_txv_ctx* ctx, enum ut_txv_control call);
+/* The call while a migration holds the old slot, as tx_video_migrate_to() does: the call
+ * blocks on it and finds it empty once locked. Returns the call's result. */
+int ut_txv_run_control_blocked_by_migration(ut_txv_ctx* ctx, enum ut_txv_control call);
+/* The call from the scheduler's own thread, as from a callback, while (held) a writer
+ * holds the session lock and waits for the pass in flight. Returns the call's result. */
+int ut_txv_run_control_in_callback(ut_txv_ctx* ctx, enum ut_txv_control call, bool held);
+/* tx_video_session_get_timeout() while the scheduler is in a pass that never ends.
+ * Returns whether it got the session; *locked_after whether the lock stayed held. */
+bool ut_txv_get_timeout_on_endless_pass(ut_txv_ctx* ctx, int timeout_us,
+                                        bool* locked_after);
+
 /* A frame-level session of UT_TXV_ZC_FRAMES one-pkt frames, run by tvs_tasklet_handler()
  * against an app that hands over a chosen frame, or is busy, with reclaim.enabled or not.
  * Pkts keep a frame referenced (refs); mt_txq_reclaim() frees those ut_txv_zc_nic_sent()

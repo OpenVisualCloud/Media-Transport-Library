@@ -2879,9 +2879,8 @@ static int tvs_tasklet_handler(void* priv) {
   bool time_measure = mt_sessions_time_measure(impl);
 
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
-    s = tx_video_session_try_get(mgr, sidx);
-    if (!s) continue;
-    if (!s->active) goto exit;
+    s = tx_video_session_dp_get(mgr, sidx);
+    if (!s || !s->active) continue;
 
     if (time_measure) tsc_s = mt_get_tsc(impl);
 
@@ -2901,9 +2900,6 @@ static int tvs_tasklet_handler(void* priv) {
       uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
       mt_stat_u64_update(&s->stat_time, delta_ns);
     }
-
-  exit:
-    tx_video_session_put(mgr, sidx);
   }
 
   return pending;
@@ -3862,7 +3858,7 @@ struct tv_stat_dump {
   uint32_t max_notify_frame_us;
 };
 
-/* runs under the session spinlock the tasklets try_get, so copy and reset only, no log */
+/* the tasklets skip the session while this holds its lock: copy and reset only, no log */
 static void tv_stat_collect(struct st_tx_video_sessions_mgr* mgr,
                             struct st_tx_video_session_impl* s, struct tv_stat_dump* d) {
   uint64_t cur_time_ns = mt_get_monotonic_time();
@@ -4150,21 +4146,45 @@ static int tv_update_dst(struct mtl_main_impl* impl, struct st_tx_video_session_
   return 0;
 }
 
-static int tv_mgr_update_dst(struct st_tx_video_sessions_mgr* mgr,
-                             struct st_tx_video_session_impl* s,
-                             struct st_tx_dest_info* dst) {
-  int ret = -EIO, midx = mgr->idx, idx = s->idx;
+/* For the public APIs on s: 0 with its lock held and its slot in *mgr / *idx; -EIO if
+ * neither try found s in the slot it read, i.e. migrations raced both. In a callback, on
+ * the scheduler's own thread, -EBUSY rather than spin on the lock. */
+static int tv_api_lock(struct st_tx_video_session_impl* s,
+                       struct st_tx_video_sessions_mgr** mgr, int* idx) {
+  /* a migration moves s before it releases the old slot, so one retry finds it */
+  for (int tries = 0; tries < 2; tries++) {
+    struct st_tx_video_sessions_mgr* m = s->mgr;
+    int i = s->idx;
 
-  s = tx_video_session_get(mgr, idx); /* get the lock */
-  if (!s) {
-    err("%s(%d,%d), get session fail\n", __func__, midx, idx);
-    return -EIO;
+    if (mt_sch_on_own_thread(mt_sch_instance(m->parent, m->idx))) {
+      if (!rte_spinlock_trylock(&m->mutex[i])) return -EBUSY;
+    } else if (!tx_video_session_get(m, i)) {
+      continue;
+    }
+    if (m->sessions[i] == s) {
+      *mgr = m;
+      *idx = i;
+      return 0;
+    }
+    tx_video_session_put(m, i);
   }
+  return -EIO;
+}
+
+static int tv_mgr_update_dst(struct st_tx_video_session_impl* s,
+                             struct st_tx_dest_info* dst) {
+  struct st_tx_video_sessions_mgr* mgr = s->mgr;
+  int idx;
+
+  /* in a callback the ARP lookup of the new destination would stall the scheduler */
+  if (mt_sch_on_own_thread(mt_sch_instance(mgr->parent, mgr->idx))) return -EBUSY;
+  int ret = tv_api_lock(s, &mgr, &idx);
+  if (ret < 0) return ret;
 
   ret = tv_update_dst(mgr->parent, s, dst);
   tx_video_session_put(mgr, idx);
   if (ret < 0) {
-    err("%s(%d,%d), fail %d\n", __func__, midx, idx, ret);
+    err("%s(%d,%d), fail %d\n", __func__, mgr->idx, idx, ret);
     return ret;
   }
 
@@ -4252,7 +4272,7 @@ static int tv_sessions_stat(void* priv) {
   struct tv_stat_dump dump;
 
   for (int j = 0; j < mgr->max_idx; j++) {
-    s = tx_video_session_get_timeout(mgr, j, ST_SESSION_STAT_TIMEOUT_US);
+    s = tx_video_session_get_timeout(mgr, j, ST_TX_VIDEO_STAT_TIMEOUT_US);
     if (!s) continue;
     tv_stat_collect(mgr, s, &dump);
     tx_video_session_put(mgr, j);
@@ -4302,7 +4322,7 @@ int st_tx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mtl_sch_im
 
 int st_tx_video_session_migrate(struct st_tx_video_sessions_mgr* mgr,
                                 struct st_tx_video_session_impl* s, int idx) {
-  MTL_MAY_UNUSED(mgr);
+  s->mgr = mgr;
   tv_init(s, idx);
   return 0;
 }
@@ -5082,12 +5102,16 @@ int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* 
 
   MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, -EINVAL);
   struct st_tx_video_session_impl* s = s_impl->impl;
+  struct st_tx_video_sessions_mgr* mgr;
+  int idx;
 
-  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
-  memcpy(stats, &s->port_user_stats, sizeof(*stats));
-  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
+  int ret = tv_api_lock(s, &mgr, &idx);
+  if (!ret) {
+    memcpy(stats, &s->port_user_stats, sizeof(*stats));
+    tx_video_session_put(mgr, idx);
+  }
   MT_HANDLE_RELEASE(s_impl);
-  return 0;
+  return ret;
 }
 
 int st20_tx_reset_session_stats(st20_tx_handle handle) {
@@ -5100,13 +5124,17 @@ int st20_tx_reset_session_stats(st20_tx_handle handle) {
 
   MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, -EINVAL);
   struct st_tx_video_session_impl* s = s_impl->impl;
+  struct st_tx_video_sessions_mgr* mgr;
+  int idx;
 
-  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
-  memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
-  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
-  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
+  int ret = tv_api_lock(s, &mgr, &idx);
+  if (!ret) {
+    memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+    memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
+    tx_video_session_put(mgr, idx);
+  }
   MT_HANDLE_RELEASE(s_impl);
-  return 0;
+  return ret;
 }
 
 int st20_tx_free(st20_tx_handle handle) {
@@ -5115,6 +5143,12 @@ int st20_tx_free(st20_tx_handle handle) {
   struct mtl_sch_impl* sch;
   struct st_tx_video_session_impl* s;
   int ret, sch_idx, idx;
+
+  /* in a callback on its scheduler the calling tasklet may still use the session */
+  if (s_impl->type == MT_HANDLE_TX_VIDEO && mt_sch_on_own_thread(s_impl->sch)) {
+    warn("%s, not from a callback of its scheduler\n", __func__);
+    return -EBUSY;
+  }
 
   int _gd =
       mt_handle_begin_destroy(&s_impl->lc_destroying, &s_impl->type, MT_HANDLE_TX_VIDEO);
@@ -5165,7 +5199,11 @@ int st20_tx_update_destination(st20_tx_handle handle, struct st_tx_dest_info* ds
   ret = st_tx_dest_info_check(dst, s->ops.num_port);
   if (ret < 0) goto out;
 
-  ret = tv_mgr_update_dst(&s_impl->sch->tx_video_mgr, s, dst);
+  ret = tv_mgr_update_dst(s, dst);
+  if (ret == -EBUSY) {
+    warn("%s(%d), not from a callback of its scheduler\n", __func__, idx);
+    goto out;
+  }
   if (ret < 0) {
     err("%s(%d), online update fail %d\n", __func__, idx, ret);
     goto out;
@@ -5344,6 +5382,12 @@ int st22_tx_free(st22_tx_handle handle) {
   struct st_tx_video_session_impl* s;
   int ret, sch_idx, idx;
 
+  /* in a callback on its scheduler the calling tasklet may still use the session */
+  if (s_impl->type == MT_ST22_HANDLE_TX_VIDEO && mt_sch_on_own_thread(s_impl->sch)) {
+    warn("%s, not from a callback of its scheduler\n", __func__);
+    return -EBUSY;
+  }
+
   int _gd = mt_handle_begin_destroy(&s_impl->lc_destroying, &s_impl->type,
                                     MT_ST22_HANDLE_TX_VIDEO);
   if (_gd < 0) {
@@ -5393,7 +5437,11 @@ int st22_tx_update_destination(st22_tx_handle handle, struct st_tx_dest_info* ds
   ret = st_tx_dest_info_check(dst, s->ops.num_port);
   if (ret < 0) goto out;
 
-  ret = tv_mgr_update_dst(&s_impl->sch->tx_video_mgr, s, dst);
+  ret = tv_mgr_update_dst(s, dst);
+  if (ret == -EBUSY) {
+    warn("%s(%d), not from a callback of its scheduler\n", __func__, idx);
+    goto out;
+  }
   if (ret < 0) {
     err("%s(%d), online update fail %d\n", __func__, idx, ret);
     goto out;

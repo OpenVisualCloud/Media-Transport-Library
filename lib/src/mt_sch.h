@@ -76,6 +76,15 @@ static inline uint64_t mt_sch_avg_ns_loop(struct mtl_sch_impl* sch) {
   return sch->avg_ns_per_loop;
 }
 
+/* 0 once no pass of sch begun before the call still runs; at once if sch is offline or
+ * the caller is its thread. -ETIMEDOUT after timeout_us unless that is 0. */
+int mt_sch_quiescent_wait(struct mtl_sch_impl* sch, int timeout_us);
+
+/* Whether the caller is sch's own thread, e.g. in a callback of one of its sessions. */
+static inline bool mt_sch_on_own_thread(struct mtl_sch_impl* sch) {
+  return rte_gettid() == sch->t_pid;
+}
+
 int mt_sch_put_lcore(struct mtl_main_impl* impl, unsigned int lcore);
 int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
                      enum mt_lcore_type type, int socket);
