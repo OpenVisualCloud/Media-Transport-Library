@@ -57,12 +57,14 @@ static void stat_dump(struct mt_stat_mgr* mgr) {
     dbg("%s, start stat_dump_cb_fn\n", __func__);
     p->stat_dump_cb_fn(p->priv);
   }
+  mt_dbg_dump(impl); /* debug, drop before merge */
   notice("* *    E N D    S T A T E   * * \n\n");
 }
 
 static void* stat_thread(void* arg) {
   struct mt_stat_mgr* mgr = arg;
 
+  mgr->t_pid = rte_sys_gettid(); /* debug, drop before merge */
   info("%s, start\n", __func__);
   while (rte_atomic32_read(&mgr->stat_stop) == 0) {
     mt_pthread_mutex_lock(&mgr->stat_wake_mutex);

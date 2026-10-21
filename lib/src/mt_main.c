@@ -471,6 +471,83 @@ int mt_thread_set_ctrl_affinity(struct mtl_main_impl* impl, pthread_t tid) {
   return 0;
 }
 
+/* debug, drop before merge: field 10 (minflt) and 39 (processor) of the stat of a thread
+ * of this process */
+int mt_dbg_task_stat(int tid, int* cpu, uint64_t* minflt) {
+#ifndef WINDOWSENV
+  char path[64], buf[1024];
+  snprintf(path, sizeof(path), "/proc/self/task/%d/stat", tid);
+  FILE* f = fopen(path, "r");
+  if (!f) return -EIO;
+  size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+  fclose(f);
+  buf[n] = 0;
+  char* c = strrchr(buf, ')'); /* the comm may hold spaces */
+  if (!c) return -EIO;
+  int field = 2;
+  char* save = NULL;
+  for (char* tok = strtok_r(c + 1, " ", &save); tok; tok = strtok_r(NULL, " ", &save)) {
+    field++;
+    if (field == 10) *minflt = strtoull(tok, NULL, 10);
+    if (field == 39) {
+      *cpu = atoi(tok);
+      return 0;
+    }
+  }
+  return -EIO;
+#else
+  MTL_MAY_UNUSED(tid);
+  MTL_MAY_UNUSED(cpu);
+  MTL_MAY_UNUSED(minflt);
+  return -ENOTSUP;
+#endif
+}
+
+/* debug, drop before merge: where the threads that are not schedulers run, against the
+ * cpus of the schedulers, and what mtl_init() selected */
+void mt_dbg_dump(struct mtl_main_impl* impl) {
+  struct {
+    const char* name;
+    int tid;
+  } ctrl[] = {
+      {"mtl_init caller", impl->dbg_caller_tid},
+      {"mtl_admin", impl->admin.t_pid},
+      {"mtl_stat", impl->stat_mgr.t_pid},
+  };
+  uint64_t minflt = 0;
+
+  for (size_t i = 0; i < RTE_DIM(ctrl); i++) {
+    int cpu = -1;
+    if (ctrl[i].tid <= 0 || mt_dbg_task_stat(ctrl[i].tid, &cpu, &minflt)) continue;
+    notice("DBG CTRL: %s tid %d on cpu %d\n", ctrl[i].name, ctrl[i].tid, cpu);
+    for (int idx = 0; idx < MT_MAX_SCH_NUM; idx++) {
+      struct mtl_sch_impl* sch = mt_sch_instance(impl, idx);
+      int sch_cpu = -1;
+      if (!mt_sch_started(sch) || sch->run_in_thread || sch->t_pid <= 0) continue;
+      if (mt_dbg_task_stat(sch->t_pid, &sch_cpu, &minflt)) continue;
+      if (sch_cpu == cpu)
+        warn("DBG CTRL: %s tid %d shares cpu %d with sch %d\n", ctrl[i].name, ctrl[i].tid,
+             cpu, idx);
+    }
+  }
+
+  int numa_balancing = -1;
+#ifndef WINDOWSENV
+  FILE* f = fopen("/proc/sys/kernel/numa_balancing", "r");
+  if (f) {
+    if (fscanf(f, "%d", &numa_balancing) != 1) numa_balancing = -1;
+    fclose(f);
+  }
+#endif
+  int skipped = rte_atomic32_read(&impl->admin.dbg_busy_skipped);
+  rte_atomic32_sub(&impl->admin.dbg_busy_skipped, skipped);
+  notice(
+      "DBG: rx video copy %s, control cpus %s, numa_balancing %d, admin busy check "
+      "skipped %d sessions\n",
+      impl->rx_video_nt_store ? "stream" : "cached",
+      impl->ctrl_cpuset ? "fenced" : "unchanged", numa_balancing, skipped);
+}
+
 static int _mt_start(struct mtl_main_impl* impl) {
   int ret;
 
@@ -623,6 +700,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   mt_instance_init(impl, p);
 
   mt_memcpy(&impl->user_para, p, sizeof(*p));
+  impl->dbg_caller_tid = rte_sys_gettid(); /* debug, drop before merge */
 #ifndef WINDOWSENV
   if (ctrl_cpuset_valid) {
     impl->ctrl_cpuset = mt_zmalloc(sizeof(ctrl_cpuset));

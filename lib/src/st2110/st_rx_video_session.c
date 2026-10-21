@@ -2827,6 +2827,8 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
   }
 
   s->nt_store = rv_use_nt_store(impl, s);
+  /* debug, drop before merge */
+  info("%s(%d), DBG frame copy %s\n", __func__, idx, s->nt_store ? "stream" : "cached");
 
   return 0;
 }
@@ -3745,6 +3747,10 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
                     struct st_rx_video_session_impl* s) {
   int m_idx = mgr->idx;
   int idx = s->idx;
+
+  /* debug, drop before merge */
+  notice("DBG RX_VIDEO_SESSION(%d,%d): frame copy %s\n", m_idx, idx,
+         s->nt_store ? "stream" : "cached");
   uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
   int frames_received = rte_atomic32_read(&s->stat_frames_received);

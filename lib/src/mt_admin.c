@@ -33,6 +33,8 @@ static int admin_cal_cpu_busy(struct mtl_main_impl* impl) {
       if (tx_s) {
         tx_video_session_cal_cpu_busy(sch, tx_s);
         tx_video_session_put(tx_mgr, j);
+      } else if (tx_mgr->sessions[j]) { /* debug, drop before merge */
+        rte_atomic32_inc(&impl->admin.dbg_busy_skipped);
       }
     }
 
@@ -43,6 +45,8 @@ static int admin_cal_cpu_busy(struct mtl_main_impl* impl) {
       if (rx_s) {
         rx_video_session_cal_cpu_busy(sch, rx_s);
         rx_video_session_put(rx_mgr, j);
+      } else if (rx_mgr->sessions[j]) { /* debug, drop before merge */
+        rte_atomic32_inc(&impl->admin.dbg_busy_skipped);
       }
     }
   }
@@ -361,6 +365,7 @@ static void* admin_thread(void* arg) {
   struct mtl_main_impl* impl = arg;
   struct mt_admin* admin = mt_get_admin(impl);
 
+  admin->t_pid = rte_sys_gettid(); /* debug, drop before merge */
   info("%s, start\n", __func__);
   while (rte_atomic32_read(&admin->admin_stop) == 0) {
     mt_pthread_mutex_lock(&admin->admin_wake_mutex);
