@@ -41,7 +41,8 @@ std::vector<Run> Bulk4Runs(const ut_trs_frames_case& c) {
         pos++;
       }
       bool held = c.hold_ns && !first;
-      bool due = !held && fmodf(first + 1 + c.pad_interval / 2, c.pad_interval) < k;
+      bool due = !held && fmodf((float)(first + 1) + c.pad_interval / 2, c.pad_interval) <
+                              (float)k;
       runs.push_back({first, k, due, start});
       start += k;
     }
