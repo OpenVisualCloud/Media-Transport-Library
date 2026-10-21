@@ -187,7 +187,7 @@ Ring = shock absorber. Builder can be slow; transmitter still has queued packets
 
 **Ring sizing**: Default 512 entries (`ST_TX_VIDEO_SESSIONS_RING_SIZE`, ≈ 1/9 of a 1080p frame's ~4500 packets). Halved if exceeds `st20_total_pkts`. Uses SP/SC (single-producer/single-consumer) mode — both tasklets run on the same lcore, so no atomics needed (~2-3ns vs ~20+ns for multi-producer).
 
-**Bulk enqueue semantics**: `rte_ring_sp_enqueue_bulk` (all-or-nothing) not `_burst` (best-effort). The 4 packets have sequential RTP sequence numbers and pacing timestamps (on an all-RL session only a frame's pkt 0 is stamped, the only stamp RL reads) — they must be sent as a unit. Partial enqueue would break batch integrity.
+**Bulk enqueue semantics**: `rte_ring_sp_enqueue_bulk` (all-or-nothing) not `_burst` (best-effort). A bulk's packets (4, 16 on an all-RL ST20 frame-level session) have sequential RTP sequence numbers and pacing timestamps (on an all-RL session only a frame's pkt 0 is stamped, the only stamp RL reads) — they must be sent as a unit. Partial enqueue would break batch integrity.
 
 ### Cooperative tx_burst: No Retry Loop
 If `rte_eth_tx_burst()` returns fewer than requested:
@@ -501,14 +501,30 @@ When no hardware RL available:
 - Too early → return, let scheduler poll again
 - On time → transmit
 
-### Bulk Size: Why 4
-`ST_SESSION_MAX_BULK = 4` (compile-time constant in `st_header.h`). Sizes `trs_inflight[port][4]` arrays.
+### Bulk Size: 4, or 16 on RL
+`s->bulk` is the pkts a builder visit builds and enqueues and an RL/TSC transmitter dequeues and bursts. `tv_bulk()` sets it in `tv_attach()` once every port's pacing way is known and before `tv_init_sw()`, as `tv_mempool_n()` (two transmitter bulks on RL) needs it (`St20TxBulkAttachTest`, `St20TxBulkTest`):
+- `ST_TX_VIDEO_RL_BULK` 16: an ST20 frame-level session (`MT_HANDLE_TX_VIDEO`, `ST20_TYPE_FRAME_LEVEL`) whose every port is RL and whose builder ring takes a bulk (`ring_count` > 16, so frames of ≥ 32 pkts).
+  The per-visit cost (tasklet dispatch, ring ops, the `mt_txq_burst()` layers, the PMD prologue, the doorbell) then covers 16 pkts. E810 VF, core capped at 1.2 GHz: 2022-7 18 sessions 2.59 → 3.14 Mpps a leg (+21%), single-port 30 sessions 4.72 → 5.53 Mpps (+17%); a bulk of 32 gained no more.
+- `ST_SESSION_MAX_BULK` 4 (which `ST22_ENCODE_MIN_FRAME_SZ` also uses) otherwise: slice level (a bulk waits for the lines of all its pkts), RTP level, ST22, any TSC/PTP/TSN port.
+- 1 with `ST20_TX_FLAG_DISABLE_BULK`, and `tv_init_pacing()` forces 1 on TSC Narrow.
+- `tv_init_pacing()` re-runs `tv_bulk()` after an RL training fails to TSC, and keeps the smaller: TSC needs 4, and the pools stay sized for 16.
+- `ST_TX_VIDEO_MAX_BULK` sizes `inflight`, `trs_inflight`, `trs_inflight2` and the transmitters' local `pkts[]` (not zeroed: only dequeued entries are read).
 
-**RL mode**: NIC paces regardless of CPU burst size. RL transmitter sends up to 8 packets per iteration (double-call). VRX compensation is for NIC burst behavior (`max_burst_size=2048`):
+**RL mode**: NIC paces regardless of CPU burst size. The RL transmitter sends up to 2 bulks per iteration (double-call). VRX compensation is for NIC burst behavior (`max_burst_size=2048`):
 ```c
 pacing->vrx -= 2; /* VRX compensate to rl burst */
 pacing->vrx -= 2; /* leave VRX space for deviation */
 ```
+
+**RL pads stay where bulk-4 bursts put them.** A pad follows the first burst of a bulk-4 run (a dequeue's pkts up to a frame's start or end) at frame index q of k pkts when `fmodf(q + 1 + pad_interval / 2, pad_interval) < k`; its retries send none.
+- `video_trs_rl_burst()` walks a bulk of 16 in 4-pkt slices from its first pkt, bursting up to each due slice's end, then its pad. Frame-level bulks start at multiples of the bulk, so the slices are those runs.
+- When no burst comes up short the pkt and pad order is bulk 4's, a small user `pad_interval` putting several pads in one bulk (`St20TxRlBulkWireTest` checks both against a run model of bulk 4).
+- A short burst stashes the rest in `trs_inflight` and pads the slice it stopped in at once, or counts the pad in `trs_pad_inflight_num`, as that slice's bulk-4 burst would; the retry skips that slice's pad and walks the next ones.
+- A refused pad stops the bulk too, so no pkt passes it: the rest then starts at an untried slice (`trs_inflight_new_slice`), whose pad the retry checks.
+- A held frame's first bulk (`trs_inflight` until the target) sends no pad after its first slice, as bulk 4 never did; its later slices pad as usual.
+- So under backpressure each pad leaves after 0..k pkts of its slice, as at bulk 4, though the split points differ (`St20TxRlBulkShortBurstTest`).
+- Bulks of 4 or less keep the plain `trs_inflight` retry: RTP-level bulks need not be 4-aligned, as `st20_pkt_idx` restarts at an RTP timestamp change mid-bulk (`St20TxRlBulkOffsetTest`).
+- The user-meta pkt (`st20_frame_tx_start()` after a burst from pkt 0) goes out on the session queue on `MT_DRV_F_NO_SYS_TX_QUEUE` drivers, so it follows up to 16 pkts instead of 4.
 
 **TSC mode**: CPU controls timing. Bulk=4 → 3 packets of VRX budget consumed:
 ```c
@@ -519,8 +535,8 @@ pacing->vrx -= (s->bulk - 1); /* compensate for bulk */
 
 | Constraint | Impact |
 |-----------|--------|
-| `ST_SESSION_MAX_BULK = 4` | Array sizing, compile-time |
-| Ring efficiency | Amortizes ring atomics over 4 entries |
+| `ST_TX_VIDEO_MAX_BULK = 16` | Array sizing, compile-time |
+| Ring efficiency | Amortizes ring atomics over a bulk |
 | PCIe doorbell | ~200-500ns per `tx_burst` MMIO. Bulk=4 → ~65K doorbells/sec vs 260K at bulk=1 |
 | TSC VRX headroom | 3 of ~8 packets Narrow budget consumed |
 | `ST20_TX_FLAG_DISABLE_BULK` | App can override to bulk=1 |

@@ -582,6 +582,27 @@ bool ut_txv_tx_direct_chain(ut_txv_ctx* ctx, const struct ut_txv_direct_chain_ca
 /* tv_attach() of a 1080p BPM frame session on an iavf VF, with MTL_FLAG_TX_MONO_POOL or
  * not, up to its TX queue request, which fails. Outputs the s->tx_direct_chain it set */
 int ut_txv_attach_direct_chain(ut_txv_ctx* ctx, bool mono_pool, bool* direct);
+/* tv_attach() of a 1920-wide 59.94 BPM session on iavf ports, its pacing way the
+ * port's, up to its TX queue request, which fails. Returns the bulk it chose */
+struct ut_txv_bulk_case {
+  bool slice_level;
+  bool rtp_level;
+  bool st22;
+  int num_port;
+  enum st21_tx_pacing_way way[MTL_SESSION_PORT_MAX];
+  bool disable_bulk;
+  bool deep;       /* MT_DEV_TX_DESC_DEEP ports */
+  uint32_t height; /* 1080 when 0 */
+};
+unsigned int ut_txv_attach_bulk(ut_txv_ctx* ctx, const struct ut_txv_bulk_case* c);
+/* the n the first pool tv_mempool_init() made was asked for: port P's header pool */
+unsigned int ut_txv_first_pool_n(const ut_txv_ctx* ctx);
+/* ut_txv_init_rl_pacing() of a one-port 1080p59.94 frame-level session tv_attach() gave
+ * bulk, pre-trained, or with its training failing when train_fails */
+int ut_txv_init_rl_pacing_at_bulk(ut_txv_ctx* ctx, unsigned int bulk, bool train_fails);
+unsigned int ut_txv_bulk(const ut_txv_ctx* ctx);
+uint32_t ut_txv_pacing_vrx(const ut_txv_ctx* ctx);
+enum st21_tx_pacing_way ut_txv_pacing_way(const ut_txv_ctx* ctx, int port);
 /* the payload segment of a pkt the pipe session built, against frame 0 */
 struct ut_txv_payload {
   bool extbuf; /* attached to the frame's sh_info */
