@@ -785,6 +785,18 @@ deeper per-session backlog is a colder backlog. Benchmark on a quiet host — co
 memory traffic moves this ceiling by a whole session, so compare variants interleaved
 back-to-back, never across time.
 
+### TX Builder Header Stores Miss on a Deep Queue
+
+With 2048 TX descriptors a header mbuf returns to its pool only thousands of pkts after it was sent, so its priv and header lines have left L1/L2. The first store to a cold line stalls the in-order store buffer.
+- Xeon 8480+, E810 VF, one scheduler, N × 1080p59.94 RL, CPU-bound: `resource_stalls.sb` was 8.6% of the scheduler's cycles, ~2.65 L2 RFO misses per pkt.
+- `tv_tasklet_frame()` prefetches for write (`tv_prefetch_hdr()`: header first and last byte, `rte_mbuf_to_priv()`) the header mbufs of both legs `TV_PREFETCH_HDR_AHEAD` (2) pkts ahead: the first 2 after `rte_pktmbuf_alloc_bulk()`, then pkt i + 2 as the loop builds pkt i, overlapping those misses with the build.
+- Measured, prefetching the whole bulk up front: store-buffer-full stalls 544M → 228M per 4 s, IPC 3.25 → 3.67.
+- Up front, a bulk of 16 issues 48 `prefetchw` (96 on 2022-7) back to back, more than the core's L1 fill buffers hold. Pipelined, E810 VF, core capped at 1.2 GHz, bulk 16:
+  single-port 30 sessions 6.39 Mpps up front, 6.60 at 2 ahead (+3.2%), 6.52-6.57 at 4, 6.50 at 8; 2022-7 18 sessions 3.43 Mpps a leg up front, 3.58-3.59 at 1, 2 or 4 ahead (+4.3%).
+- On top of the RL bulk of 16 (§5 Bulk Size), E810 VF, core capped at 1.2 GHz: 2022-7 18 sessions 3.14 → 3.50 Mpps a leg (+11%), single-port 30 sessions 5.53 → 6.61 Mpps (+20%); both against bulk 4 with no prefetch, 2.59 → 3.50 (+35%) and 4.72 → 6.61 (+40%).
+  At full clock 36 single-port and 18 two-leg 1080p59.94 sessions pass with zero epoch drops and troffset mismatches.
+- A layout touching fewer lines (header right after priv, `data_off` 0) did not help, so the layout stays. The RTP-level and ST22 builders are not measured and have no prefetch.
+
 ### Performance Debugging Mental Model
 
 1. **NIC bottleneck?** Check `stat_tx_burst` vs `stat_tx_bytes`
