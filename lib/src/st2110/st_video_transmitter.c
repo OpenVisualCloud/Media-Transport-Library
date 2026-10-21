@@ -432,16 +432,14 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
       break; /* break if it's the first pkt of frame or it's the start of dummy */
     }
   }
-  dbg("%s(%d), pkt_idx %u valid_bulk %d ts %" PRIu64 "\n", __func__, idx, pkt_idx,
-      valid_bulk, st_tx_mbuf_get_tsc(pkts[0]));
+  dbg("%s(%d), pkt_idx %u valid_bulk %d\n", __func__, idx, pkt_idx, valid_bulk);
 
   /* builder always build bulk pkts per enqueue, pkts after dummy are all dummy */
   if (unlikely(pkt_idx == ST_TX_DUMMY_PKT_IDX)) {
     video_burst_packet(impl, s, s_port, pkts, valid_bulk, false);
     rte_pktmbuf_free_bulk(&pkts[valid_bulk], bulk - valid_bulk);
     s->stat_pkts_burst_dummy += bulk - valid_bulk;
-    dbg("%s(%d), pkt_idx %" PRIu64 " ts %" PRIu64 "\n", __func__, idx, (uint64_t)pkt_idx,
-        st_tx_mbuf_get_tsc(pkts[0]));
+    dbg("%s(%d), pkt_idx %" PRIu64 "\n", __func__, idx, (uint64_t)pkt_idx);
     *ret_status = -STI_RLTRS_BURST_HAS_DUMMY;
     return MTL_TASKLET_HAS_PENDING;
   }
@@ -812,7 +810,7 @@ static int video_trs_tasklet_handler(void* priv) {
   int pending = MTL_TASKLET_ALL_DONE;
 
   for (sidx = 0; sidx < mgr->max_idx; sidx++) {
-    s = tx_video_session_try_get(mgr, sidx);
+    s = tx_video_session_dp_get(mgr, sidx);
     if (!s) continue;
 
     for (s_port = 0; s_port < s->ops.num_port; s_port++) {
@@ -824,7 +822,6 @@ static int video_trs_tasklet_handler(void* priv) {
       }
       pending += s->pacing_tasklet_func[s_port](impl, s, s_port);
     }
-    tx_video_session_put(mgr, sidx);
   }
 
   return pending;
