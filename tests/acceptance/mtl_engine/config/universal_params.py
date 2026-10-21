@@ -84,7 +84,6 @@ UNIVERSAL_PARAMS = {
     "static_pad": False,  # Send pad packets from a static buffer
     "no_bulk": False,  # Disable bulk mbuf allocation
     "random_src_port": False,  # Randomise the UDP source port
-    "hdr_split": False,  # Split RX header and payload into separate queues
     "rx_video_fb_cnt": None,  # RX video framebuffer count
     # RxTxApp specific parameters
     "config_file": None,  # JSON config file path

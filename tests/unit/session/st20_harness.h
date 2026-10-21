@@ -367,6 +367,34 @@ bool ut20_bitmap_guard_intact(const ut20_test_ctx* ctx);
  * production `rv_detach` runs before its final stat dump. */
 void ut20_session_detach(ut20_test_ctx* ctx);
 
+/* Sets the session up for hdr split with GPM_SL packing, as rv_attach() does, on a port
+ * with nb_rx_desc RX descriptors and a burst of burst, and binds a payload pool to its
+ * slots. Returns the rv_init_hdr_split() ret. */
+int ut20_ctx_hdr_split_init(ut20_test_ctx* ctx, uint16_t nb_rx_desc, uint16_t burst);
+/* Feeds packet line_num as the NIC splits it: a 42-byte eth/ip/udp mbuf chained to a
+ * payload mbuf from the session pool, which holds the RTP header and the pixels. */
+int ut20_feed_hdr_split_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
+                            uint16_t line_num, bool marker);
+/* ut20_ctx_hdr_split_init() of a 4 descriptor port for a session width pixels wide. */
+int ut20_ctx_hdr_split_init_width(ut20_test_ctx* ctx, uint32_t width);
+void ut20_ctx_set_data_path_only(ut20_test_ctx* ctx);
+/* Takes and frees one payload mbuf, as for a packet the NIC flushed. */
+void ut20_hdr_split_skip_slot(ut20_test_ctx* ctx);
+/* RTP row_number at packet pkt_idx of the slotted frame last notified. */
+int ut20_hdr_split_frame_row(const ut20_test_ctx* ctx, int pkt_idx);
+uint64_t ut20_stat_wrong_payload_hdr_split(const ut20_test_ctx* ctx);
+uint64_t ut20_stat_copy_hdr_split(const ut20_test_ctx* ctx);
+/* rv_uinit_hw() of a session with a port P queue whose mt_rxq_put() returns put_ret. */
+int ut20_hdr_split_uinit_hw(ut20_test_ctx* ctx, int put_ret);
+bool ut20_hdr_split_slots_kept(const ut20_test_ctx* ctx);
+/* rv_update_src() to an empty source. Only for a session whose slots are kept: else it
+ * takes a real rx queue. */
+int ut20_hdr_split_update_src(ut20_test_ctx* ctx);
+int ut20_hdr_split_uinit(ut20_test_ctx* ctx);
+bool ut20_hdr_split_frames_allocated(const ut20_test_ctx* ctx);
+/* rv_ops_check() of valid one port frame ops with ST20_RX_FLAG_HDR_SPLIT | flags. */
+int ut20_ops_check_hdr_split(uint32_t flags);
+
 #ifdef __cplusplus
 }
 #endif

@@ -6,8 +6,8 @@
 
 #include <cmath>
 
-uint16_t udp_port_for_idx(int idx, bool hdr_split, int base) {
-  return (hdr_split ? 6970 : base) + idx * 2;
+uint16_t udp_port_for_idx(int idx, int base) {
+  return base + idx * 2;
 }
 
 std::vector<St20SessionConfig> build_sessions(int sessions, enum st20_type type[],
@@ -1062,9 +1062,31 @@ int st20_digest_rx_field_ready(void* priv, void* frame, struct st20_rx_frame_met
   return 0;
 }
 
+/* Packet k of a ST20_RX_FLAG_HDR_SPLIT frame is in slot k, behind its RTP and SRD
+ * headers. */
+static const unsigned char* st20_hdr_split_gather(tests_context* ctx, void* frame,
+                                                  std::vector<uint8_t>& pixels) {
+  size_t pkt_len = ctx->hdr_split_pkt_len;
+  size_t slot = sizeof(struct st20_rfc4175_rtp_hdr) +
+                sizeof(struct st20_rfc4175_extra_rtp_hdr) + pkt_len;
+  /* 1536, the RX buffer of the default rx_pool_data_size */
+  size_t stride = (128 + std::max(slot, (size_t)1536) + 63) / 64 * 64;
+
+  pixels.resize(ctx->fb_size);
+  for (size_t off = 0, k = 0; off < ctx->fb_size; off += pkt_len, k++) {
+    auto rtp = (struct st20_rfc4175_rtp_hdr*)((uint8_t*)frame + k * stride);
+    auto src = (uint8_t*)&rtp[1];
+    if (ntohs(rtp->row_offset) & ST20_SRD_OFFSET_CONTINUATION)
+      src += sizeof(struct st20_rfc4175_extra_rtp_hdr);
+    memcpy(pixels.data() + off, src, std::min(pkt_len, ctx->fb_size - off));
+  }
+  return pixels.data();
+}
+
 void st20_digest_rx_frame_check(void* args) {
   auto ctx = (tests_context*)args;
   unsigned char result[SHA256_DIGEST_LENGTH];
+  std::vector<uint8_t> pixels;
   while (true) {
     void* frame;
     {
@@ -1076,8 +1098,10 @@ void st20_digest_rx_frame_check(void* args) {
     }
     dbg("%s, frame %p\n", __func__, frame);
     int i;
-    SHA256((unsigned char*)frame, ctx->uframe_size ? ctx->uframe_size : ctx->fb_size,
-           result);
+    const unsigned char* data = ctx->hdr_split_pkt_len
+                                    ? st20_hdr_split_gather(ctx, frame, pixels)
+                                    : (const unsigned char*)frame;
+    SHA256(data, ctx->uframe_size ? ctx->uframe_size : ctx->fb_size, result);
     for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
       unsigned char* target_sha = ctx->shas[i];
       if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;

@@ -33,6 +33,8 @@ struct mt_dma_request_req;
 static struct mtl_dma_lender_dev* ut20_dma_request_dev(struct mtl_main_impl* impl,
                                                        struct mt_dma_request_req* req);
 #define mt_dma_request_dev ut20_dma_request_dev
+/* the rx queue put of rv_uinit_hw(), with an injected return */
+#define mt_rxq_put ut20_rxq_put
 #include "st2110/st_rx_video_session.h"
 #undef ST_RX_VIDEO_DMA_MIN_SIZE
 #define ST_RX_VIDEO_DMA_MIN_SIZE 0
@@ -44,6 +46,7 @@ static struct mtl_dma_lender_dev* ut20_dma_request_dev(struct mtl_main_impl* imp
 #undef mt_dma_drop_mbuf
 #undef mt_dma_full
 #undef mt_dma_request_dev
+#undef mt_rxq_put
 /* Also compiled in, not just linked from libmtl: -DMTL_HAS_ASAN is scoped to the
  * lib target, so libmtl's mt_rte_zmalloc_socket() is the backtrace-tracking one
  * whose list head only mtl_init() ever initialises. Compiling rv_tp_init() here
@@ -87,6 +90,9 @@ struct ut20_fake_dma {
 
 #define UT20_FRAME_COUNT 2
 
+/* payload mbufs of the hdr split pool, more than the 95 slots of 2 frames of 32 pkts */
+#define UT20_HDR_SPLIT_MBUFS 128
+
 /* ── opaque context ───────────────────────────────────────────────────── */
 
 struct ut20_test_ctx {
@@ -100,6 +106,9 @@ struct ut20_test_ctx {
   uint8_t user_meta_storage[UT20_FRAME_COUNT][UT20_USER_META_SIZE];
 
   bool hold_frames;
+  void* last_frame;
+  struct mt_hdr_split_pool* hdr_split_pool;
+  struct mt_rx_queue hdr_split_queue;
   struct mt_ptp_impl ptp_storage;
   uint64_t last_timestamp_first_pkt;
   enum st_rx_tp_compliant last_tp_compliant;
@@ -205,6 +214,7 @@ static int ut20_notify_frame_ready(void* priv, void* frame,
                                    struct st20_rx_frame_meta* meta) {
   ut20_test_ctx* ctx = priv;
   if (!ctx || !frame) return 0;
+  ctx->last_frame = frame;
   ctx->last_timestamp_first_pkt = meta->timestamp_first_pkt;
   if (meta->tp[MTL_SESSION_PORT_P]) {
     ctx->last_tp_compliant = meta->tp[MTL_SESSION_PORT_P]->compliant;
@@ -324,6 +334,9 @@ void ut20_ctx_destroy(ut20_test_ctx* ctx) {
   if (!ctx) return;
   /* ASan is preloaded in this suite, so the tp allocation must be released. */
   rv_tp_uinit(&ctx->session);
+  if (ctx->hdr_split_pool) mt_hdr_split_pool_free(ctx->hdr_split_pool);
+  ctx->session.hdr_split_info.slots_kept = false;
+  rv_uinit_hdr_split(&ctx->session);
   ut20_dma_drop_mbuf(&ctx->dma.lender, ctx->dma.lender.nb_borrowed);
   /* Drain any held refcnts so destroy-while-holding is safe. */
   for (int i = 0; i < UT20_FRAME_COUNT; i++) {
@@ -1103,4 +1116,166 @@ uint64_t ut20_stat_frames_partial(const ut20_test_ctx* ctx, enum mtl_session_por
 
 uint64_t ut20_stat_pkts_unrecovered(const ut20_test_ctx* ctx) {
   return ctx->session.port_user_stats.common.stat_pkts_unrecovered;
+}
+
+int ut20_ctx_hdr_split_init(ut20_test_ctx* ctx, uint16_t nb_rx_desc, uint16_t burst) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  if (!ctx->hdr_split_pool) {
+    ctx->hdr_split_pool = mt_hdr_split_pool_create("ut20_hs", UT20_HDR_SPLIT_MBUFS, 1,
+                                                   2048, rte_socket_id());
+    if (!ctx->hdr_split_pool) return -ENOMEM;
+  }
+  /* the port the session finds its hdr split queue on */
+  ctx->hdr_split_queue.hdr_split = ctx->hdr_split_pool;
+  inf->rx_queues = &ctx->hdr_split_queue;
+  inf->nb_rx_q = 1;
+  inf->feature |= MT_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT;
+  inf->nb_rx_desc = nb_rx_desc;
+  s->rx_burst_size = burst;
+  s->is_hdr_split = true;
+  s->ops.packing = ST20_PACKING_GPM_SL;
+  int ret = rv_init_hdr_split(&ctx->impl, s);
+  if (ret < 0) return ret;
+  ret = mt_hdr_split_bind(ctx->hdr_split_pool, s->hdr_split_info.slots);
+  if (ret < 0) return ret;
+  s->pkt_handler = rv_handle_hdr_split_pkt;
+  return 0;
+}
+
+int ut20_ctx_hdr_split_init_width(ut20_test_ctx* ctx, uint32_t width) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+
+  s->ops.width = width;
+  s->st20_bytes_in_line = width / s->st20_pg.coverage * s->st20_pg.size;
+  s->st20_frame_size = s->st20_bytes_in_line * s->ops.height;
+  return ut20_ctx_hdr_split_init(ctx, 4, 2);
+}
+
+void ut20_ctx_set_data_path_only(ut20_test_ctx* ctx) {
+  ctx->session.ops.flags |= ST20_RX_FLAG_DATA_PATH_ONLY;
+}
+
+int ut20_feed_hdr_split_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
+                            uint16_t line_num, bool marker) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  size_t hdr_len =
+      sizeof(struct st_rfc4175_video_hdr) - sizeof(struct st20_rfc4175_rtp_hdr);
+  struct rte_mbuf* hdr = rte_pktmbuf_alloc(ut_pool());
+  if (!hdr) return -ENOMEM;
+  struct rte_mbuf* pay = rte_mbuf_raw_alloc(ctx->hdr_split_pool->mp);
+  if (!pay) {
+    rte_pktmbuf_free(hdr);
+    return -ENOBUFS;
+  }
+
+  memset(rte_pktmbuf_mtod(hdr, void*), 0, hdr_len);
+  hdr->data_len = hdr_len;
+
+  struct st20_rfc4175_rtp_hdr* rtp = rte_pktmbuf_mtod(pay, struct st20_rfc4175_rtp_hdr*);
+  memset(rtp, 0, sizeof(*rtp));
+  rtp->base.version = 2;
+  rtp->base.marker = marker;
+  rtp->base.seq_number = htons((uint16_t)(seq & 0xFFFF));
+  rtp->base.tmstamp = htonl(ts);
+  rtp->seq_number_ext = htons((uint16_t)(seq >> 16));
+  rtp->row_number = htons(line_num);
+  rtp->row_length = htons(UT20_PAYLOAD_PER_PKT);
+  memset(&rtp[1], line_num, UT20_PAYLOAD_PER_PKT);
+  pay->data_len = sizeof(*rtp) + UT20_PAYLOAD_PER_PKT;
+
+  hdr->next = pay;
+  hdr->nb_segs = 2;
+  hdr->pkt_len = hdr->data_len + pay->data_len;
+  int rc = rv_handle_hdr_split_pkt(s, hdr, MTL_SESSION_PORT_P, true);
+  rte_pktmbuf_free(hdr);
+  return rc;
+}
+
+void ut20_hdr_split_skip_slot(ut20_test_ctx* ctx) {
+  rte_pktmbuf_free(rte_mbuf_raw_alloc(ctx->hdr_split_pool->mp));
+}
+
+int ut20_hdr_split_frame_row(const ut20_test_ctx* ctx, int pkt_idx) {
+  const struct st20_rfc4175_rtp_hdr* rtp =
+      (const struct st20_rfc4175_rtp_hdr*)((const uint8_t*)ctx->last_frame +
+                                           pkt_idx *
+                                               ctx->session.hdr_split_info.slots->stride);
+  return ntohs(rtp->row_number);
+}
+
+uint64_t ut20_stat_wrong_payload_hdr_split(const ut20_test_ctx* ctx) {
+  return ctx->session.port_user_stats.stat_pkts_wrong_payload_hdr_split;
+}
+
+uint64_t ut20_stat_copy_hdr_split(const ut20_test_ctx* ctx) {
+  return ctx->session.port_user_stats.stat_pkts_copy_hdr_split;
+}
+
+static int ut20_rxq_put_ret;
+
+int ut20_rxq_put(struct mt_rxq_entry* entry) {
+  (void)entry;
+  return ut20_rxq_put_ret;
+}
+
+int ut20_hdr_split_uinit_hw(ut20_test_ctx* ctx, int put_ret) {
+  /* rv_uinit_hw() only hands the entry to the put */
+  ctx->session.rxq[MTL_SESSION_PORT_P] = (struct mt_rxq_entry*)(uintptr_t)0x1;
+  ut20_rxq_put_ret = put_ret;
+  int ret = rv_uinit_hw(&ctx->session);
+  ut20_rxq_put_ret = 0;
+  return ret;
+}
+
+bool ut20_hdr_split_slots_kept(const ut20_test_ctx* ctx) {
+  return ctx->session.hdr_split_info.slots_kept;
+}
+
+int ut20_hdr_split_update_src(ut20_test_ctx* ctx) {
+  struct st_rx_source_info src;
+
+  memset(&src, 0, sizeof(src));
+  return rv_update_src(&ctx->mgr, &ctx->session, &src);
+}
+
+int ut20_hdr_split_uinit(ut20_test_ctx* ctx) {
+  return rv_uinit_hdr_split(&ctx->session);
+}
+
+bool ut20_hdr_split_frames_allocated(const ut20_test_ctx* ctx) {
+  const struct mt_hdr_split_slots* slots = ctx->session.hdr_split_info.slots;
+  return slots && slots->frames;
+}
+
+static int ut20_ops_notify_frame(void* priv, void* frame,
+                                 struct st20_rx_frame_meta* meta) {
+  (void)priv;
+  (void)frame;
+  (void)meta;
+  return 0;
+}
+
+static int ut20_ops_notify_detected(void* priv, const struct st20_detect_meta* meta,
+                                    struct st20_detect_reply* reply) {
+  (void)priv;
+  (void)meta;
+  (void)reply;
+  return 0;
+}
+
+int ut20_ops_check_hdr_split(uint32_t flags) {
+  struct st20_rx_ops ops;
+
+  memset(&ops, 0, sizeof(ops));
+  ops.num_port = 1;
+  ops.ip_addr[MTL_SESSION_PORT_P][0] = 239;
+  ops.ip_addr[MTL_SESSION_PORT_P][3] = 1;
+  ops.type = ST20_TYPE_FRAME_LEVEL;
+  ops.framebuff_cnt = 2;
+  ops.notify_frame_ready = ut20_ops_notify_frame;
+  ops.notify_detected = ut20_ops_notify_detected;
+  ops.flags = ST20_RX_FLAG_HDR_SPLIT | flags;
+  return rv_ops_check(&ops);
 }

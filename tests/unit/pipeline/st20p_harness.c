@@ -33,6 +33,8 @@
  * and crashed.
  */
 #define st20_rx_put_framebuff ut20p_stub_put_framebuff
+#define st20_rx_create ut20p_stub_rx_create
+#define st20_rx_free ut20p_stub_rx_free
 #define st20_rx_get_session_stats ut20p_stub_get_session_stats
 #define st20_rx_reset_session_stats ut20p_stub_reset_session_stats
 #undef MTL_HAS_USDT
@@ -41,6 +43,8 @@
 #include "st2110/pipeline/st20_pipeline_rx.c"
 #pragma GCC diagnostic pop
 #undef st20_rx_put_framebuff
+#undef st20_rx_create
+#undef st20_rx_free
 #undef st20_rx_get_session_stats
 #undef st20_rx_reset_session_stats
 
@@ -74,6 +78,20 @@ int ut20p_stub_get_session_stats(st20_rx_handle handle,
 int ut20p_stub_reset_session_stats(st20_rx_handle handle) {
   (void)handle;
   return 0;
+}
+
+static enum st20_packing ut20p_last_rx_packing;
+static int ut20p_rx_free_ret;
+
+int ut20p_stub_rx_free(st20_rx_handle handle) {
+  (void)handle;
+  return ut20p_rx_free_ret;
+}
+
+st20_rx_handle ut20p_stub_rx_create(mtl_handle mt, struct st20_rx_ops* ops) {
+  (void)mt;
+  ut20p_last_rx_packing = ops->packing;
+  return (st20_rx_handle)(uintptr_t)0x1;
 }
 
 /* ── opaque context ───────────────────────────────────────────────────── */
@@ -312,4 +330,45 @@ st20p_rx_handle ut20p_handle(ut20p_ctx* ctx) {
 
 void ut20p_force_destroying(ut20p_ctx* ctx) {
   atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
+}
+
+int ut20p_check_hdr_split(enum st_frame_fmt output_fmt, bool pkt_convert) {
+  struct st20p_rx_ops ops;
+
+  memset(&ops, 0, sizeof(ops));
+  ops.flags = ST20P_RX_FLAG_HDR_SPLIT;
+  if (pkt_convert) ops.flags |= ST20P_RX_FLAG_PKT_CONVERT;
+  ops.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  ops.output_fmt = output_fmt;
+  return rx_st20p_check_hdr_split(&ops);
+}
+
+int ut20p_transport_packing(enum st20_packing packing) {
+  struct st20p_rx_ctx ctx;
+  struct st20p_rx_ops ops;
+
+  memset(&ctx, 0, sizeof(ctx));
+  memset(&ops, 0, sizeof(ops));
+  ops.port.num_port = 1;
+  ops.width = 16;
+  ops.height = 2;
+  ops.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  ops.transport_packing = packing;
+  ut20p_last_rx_packing = ST20_PACKING_BPM;
+  if (rx_st20p_create_transport(NULL, &ctx, &ops) < 0) return -1;
+  return ut20p_last_rx_packing;
+}
+
+int ut20p_free_with_transport_ret(int transport_ret) {
+  struct st20p_rx_ctx* ctx = mt_rte_zmalloc_socket(sizeof(*ctx), rte_socket_id());
+  if (!ctx) return -ENOMEM;
+
+  ctx->type = MT_ST20_HANDLE_PIPELINE_RX;
+  ctx->transport = (st20_rx_handle)(uintptr_t)0x1;
+  mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
+  mt_pthread_cond_wait_init(&ctx->block_wake_cond);
+  ut20p_rx_free_ret = transport_ret;
+  int ret = st20p_rx_free(ctx);
+  ut20p_rx_free_ret = 0;
+  return ret;
 }

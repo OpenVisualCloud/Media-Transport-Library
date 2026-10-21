@@ -34,7 +34,7 @@ struct St20SessionConfig {
   enum st20_fmt fmt;
 };
 
-uint16_t udp_port_for_idx(int idx, bool hdr_split = false, int base = 10000);
+uint16_t udp_port_for_idx(int idx, int base = 10000);
 std::vector<St20SessionConfig> build_sessions(int sessions, enum st20_type type[],
                                               enum st20_packing packing[],
                                               enum st_fps fps[], int width[],
