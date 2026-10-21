@@ -238,7 +238,7 @@ ut20_test_ctx* ut20_ctx_create_geom(int num_port, int pkts_per_frame) {
   const size_t bitmap_size = (size_t)((height + 7) / 8);
 
   ctx->impl.type = MT_HANDLE_MAIN;
-  ctx->impl.tsc_hz = rte_get_tsc_hz();
+  mt_set_tsc_hz(&ctx->impl, rte_get_tsc_hz());
   ctx->impl.ptp_usync = 1000000;
   ctx->impl.ptp_usync_tsc = rte_get_tsc_cycles();
   for (int i = 0; i < MTL_PORT_MAX; i++) {

@@ -430,7 +430,7 @@ ut_txv_ctx* ut_txv_create(void) {
   if (!ctx) return NULL;
 
   ctx->impl.type = MT_HANDLE_MAIN;
-  ctx->impl.tsc_hz = rte_get_tsc_hz();
+  mt_set_tsc_hz(&ctx->impl, rte_get_tsc_hz());
   ctx->impl.inf[MTL_PORT_P].ptp_get_time_fn = ut_txv_ptp_time_fn;
   ctx->mgr.parent = &ctx->impl;
   ctx->mgr.max_idx = 1;

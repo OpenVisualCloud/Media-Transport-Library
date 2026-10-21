@@ -111,7 +111,7 @@ ut30_test_ctx* ut30_ctx_create(int num_port) {
   if (!ctx) return NULL;
 
   ctx->impl.type = MT_HANDLE_MAIN;
-  ctx->impl.tsc_hz = rte_get_tsc_hz();
+  mt_set_tsc_hz(&ctx->impl, rte_get_tsc_hz());
   ctx->impl.ptp_usync = 0;
   for (int i = 0; i < MTL_PORT_MAX; i++) {
     ctx->impl.inf[i].parent = &ctx->impl;

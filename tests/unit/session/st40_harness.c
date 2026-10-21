@@ -100,7 +100,7 @@ ut_test_ctx* ut40_ctx_create(int num_port) {
   mt_stat_u64_init(&ctx->session.stat_time);
 
   ctx->impl.type = MT_HANDLE_MAIN;
-  ctx->impl.tsc_hz = rte_get_tsc_hz();
+  mt_set_tsc_hz(&ctx->impl, rte_get_tsc_hz());
   for (int i = 0; i < MTL_PORT_MAX; i++) {
     ctx->impl.inf[i].parent = &ctx->impl;
     ctx->impl.inf[i].port = i;
