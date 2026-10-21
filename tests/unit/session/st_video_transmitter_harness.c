@@ -15,6 +15,12 @@
 #define UT_TRS_NIC_FIFO 8192
 #define UT_TRS_MAX_SEND_HISTORY 8
 #define UT_TRS_PAD_SIZE 1262 /* the NORMAL pad of 1080p59 GPM */
+#define UT_TRS_MAX_BULK 16
+#define UT_TRS_MAX_FRAMES 4
+#define UT_TRS_WIRE_MAX 16384
+#define UT_TRS_SENT_MAX 128
+#define UT_TRS_FRAME_TRS 1000 /* ns */
+#define UT_TRS_FRAME_STEPS 1000000
 
 /* pads accepted on a port ahead of its first real packet */
 struct ut_trs_train {
@@ -73,6 +79,19 @@ struct ut_trs_ctx {
   uint16_t stream_segs;
   uint32_t stream_idx;
   struct rte_mempool* stream_pool;
+
+  /* frames mode: the pkts of ut_trs_run_frames(), freed once a burst returned, and what
+   * every burst took, in order */
+  struct rte_mempool* frame_pool;
+  struct rte_mbuf* sent[UT_TRS_SENT_MAX];
+  uint32_t sent_count;
+  uint64_t frame_target[UT_TRS_MAX_FRAMES];
+  int feed_frame;
+  int feed_next; /* < 0: the lead pkts before frame 0 */
+  uint32_t burst_fail_every;
+  uint32_t wire[UT_TRS_WIRE_MAX];
+  uint64_t wire_tsc[UT_TRS_WIRE_MAX];
+  uint32_t wire_count;
 };
 
 #include "session/st_video_transmitter_harness.h"
@@ -154,6 +173,7 @@ static uint16_t ut_trs_txq_burst_mock(struct mt_txq_entry* entry,
   if (ctx->nic_desc) return ut_trs_nic_burst(ctx, tx_pkts, nb_pkts);
   ut_trs_burst_stall(ctx, false);
   if (ctx->burst_force_fail) return 0;
+  if (ctx->burst_fail_every && !(ctx->burst_call_count % ctx->burst_fail_every)) return 0;
 
   int port = (entry == (struct mt_txq_entry*)&ctx->queue_tag[MTL_SESSION_PORT_R])
                  ? MTL_SESSION_PORT_R
@@ -163,7 +183,14 @@ static uint16_t ut_trs_txq_burst_mock(struct mt_txq_entry* entry,
     nb_pkts = ctx->burst_accept_limit;
   for (uint16_t i = 0; i < nb_pkts; i++) {
     struct rte_mbuf* m = tx_pkts[i];
-    if (m->pool != ut_trs_priv_pool()) { /* pads come from ut_pool() */
+    bool frame_pkt = ctx->frame_pool && m->pool == ctx->frame_pool;
+    bool pad = m->pool != ut_trs_priv_pool() && !frame_pkt; /* pads come from ut_pool() */
+    if (ctx->wire_count < UT_TRS_WIRE_MAX) {
+      ctx->wire[ctx->wire_count] = pad ? UT_TRS_WIRE_PAD : st_tx_mbuf_get_idx(m);
+      ctx->wire_tsc[ctx->wire_count++] = ctx->last_tsc;
+    }
+    if (frame_pkt && ctx->sent_count < UT_TRS_SENT_MAX) ctx->sent[ctx->sent_count++] = m;
+    if (pad) {
       ctx->pad_send_count++;
       ctx->last_pad_send_tsc = ctx->last_tsc;
       if (!train->closed) {
@@ -318,8 +345,8 @@ fail:
 void ut_trs_destroy(ut_trs_ctx* ctx) {
   if (!ctx) return;
   if (ut_trs_active_ctx == ctx) ut_trs_active_ctx = NULL;
-  /* stream mode leaves its own pkts in inflight, never the ctx mbufs */
-  bool stream = ctx->stream_pool;
+  /* stream and frames modes leave their own pkts in inflight, never the ctx mbufs */
+  bool stream = ctx->stream_pool || ctx->frame_pool;
   bool owns_inflight = !stream && ctx->session.trs_inflight_num[MTL_SESSION_PORT_P] > 0;
   bool owns_inflight2 = !stream && ctx->session.trs_inflight_num2[MTL_SESSION_PORT_P] > 0;
   bool owns_redundant = !stream && ctx->session.trs_inflight_num[MTL_SESSION_PORT_R] > 0;
@@ -334,11 +361,15 @@ void ut_trs_destroy(ut_trs_ctx* ctx) {
   if (ctx->inflight2_mbuf) rte_pktmbuf_free(ctx->inflight2_mbuf);
   if (ctx->redundant_inflight_mbuf) rte_pktmbuf_free(ctx->redundant_inflight_mbuf);
   if (ctx->session.ring[MTL_SESSION_PORT_P]) {
-    /* only stream mode leaves pkts of its own in the ring */
-    if (ctx->stream_pool) mt_ring_dequeue_clean(ctx->session.ring[MTL_SESSION_PORT_P]);
+    /* only stream and frames modes leave pkts of their own in the ring */
+    if (stream) mt_ring_dequeue_clean(ctx->session.ring[MTL_SESSION_PORT_P]);
     rte_ring_free(ctx->session.ring[MTL_SESSION_PORT_P]);
   }
   if (ctx->stream_pool) rte_mempool_free(ctx->stream_pool);
+  if (ctx->frame_pool) {
+    rte_pktmbuf_free_bulk(ctx->sent, ctx->sent_count);
+    rte_mempool_free(ctx->frame_pool);
+  }
   free(ctx);
 }
 
@@ -774,4 +805,120 @@ long double ut_trs_stream_max_late_ns(const ut_trs_ctx* ctx) {
 
 uint32_t ut_trs_stream_nic_desc_used(const ut_trs_ctx* ctx) {
   return ctx->nic_used;
+}
+
+/* the next bulk, as tv_tasklet_frame() builds it: dummies past a frame's end, a target
+ * on pkt 0 only */
+static int ut_trs_feed_bulk(ut_trs_ctx* ctx, const struct ut_trs_frames_case* c) {
+  void* pkts[UT_TRS_MAX_BULK];
+
+  if (rte_pktmbuf_alloc_bulk(ctx->frame_pool, (struct rte_mbuf**)pkts, c->bulk) < 0)
+    return -ENOMEM;
+  for (unsigned int i = 0; i < c->bulk; i++) {
+    int idx = ctx->feed_next < 0 ? ctx->feed_next + c->total_pkts : ctx->feed_next;
+    st_tx_mbuf_set_priv(pkts[i], NULL);
+    st_tx_mbuf_set_idx(pkts[i],
+                       idx < c->total_pkts ? (uint32_t)idx : ST_TX_DUMMY_PKT_IDX);
+    if (!ctx->feed_next) {
+      int f = ctx->feed_frame;
+      ctx->frame_target[f] = c->hold_ns ? ctx->last_tsc + c->hold_ns : 1;
+      st_tx_mbuf_set_tsc(pkts[i], ctx->frame_target[f]);
+    }
+    if (ctx->feed_next < c->total_pkts) ctx->feed_next++;
+  }
+  if (ctx->feed_next >= c->total_pkts) {
+    ctx->feed_frame++;
+    ctx->feed_next = 0;
+  }
+  if (!rte_ring_sp_enqueue_bulk(ctx->session.ring[MTL_SESSION_PORT_P], pkts, c->bulk,
+                                NULL)) {
+    rte_pktmbuf_free_bulk((struct rte_mbuf**)pkts, c->bulk);
+    return -ENOSPC;
+  }
+  return 0;
+}
+
+static bool ut_trs_frames_idle(const struct st_tx_video_session_impl* s) {
+  return rte_ring_empty(s->ring[MTL_SESSION_PORT_P]) &&
+         !s->trs_inflight_num[MTL_SESSION_PORT_P] &&
+         !s->trs_inflight_num2[MTL_SESSION_PORT_P] &&
+         !s->trs_pad_inflight_num[MTL_SESSION_PORT_P];
+}
+
+int ut_trs_run_frames(ut_trs_ctx* ctx, const struct ut_trs_frames_case* c) {
+  static unsigned int frames_idx;
+  struct st_tx_video_session_impl* s = &ctx->session;
+  char name[RTE_MEMPOOL_NAMESIZE];
+  int ret = -ETIMEDOUT;
+
+  if (!c->bulk || c->bulk > UT_TRS_MAX_BULK || c->bulk > RTE_DIM(s->trs_inflight[0]) ||
+      c->lead >= c->bulk || c->frames > UT_TRS_MAX_FRAMES || ctx->frame_pool ||
+      ctx->stream_pool)
+    return -EINVAL;
+  (void)snprintf(name, sizeof(name), "ut_trs_frames_%u", frames_idx);
+  ctx->frame_pool =
+      rte_pktmbuf_pool_create(name, 512, 0, sizeof(struct mt_muf_priv_data),
+                              RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
+  (void)snprintf(name, sizeof(name), "ut_trs_frames_ring_%u", frames_idx++);
+  struct rte_ring* ring = ut_ring_create(name, 64);
+  if (!ctx->frame_pool || !ring) {
+    if (ring) rte_ring_free(ring);
+    return -ENOMEM;
+  }
+  rte_ring_free(s->ring[MTL_SESSION_PORT_P]);
+  s->ring[MTL_SESSION_PORT_P] = ring;
+
+  s->bulk = c->bulk;
+  s->pacing.pad_interval = c->pad_interval;
+  s->pacing.trs = UT_TRS_FRAME_TRS;
+  /* no warm-up pads: packet 0 waits for its target in WAIT_WARMUP */
+  s->pacing.warm_pkts = 0;
+  ctx->burst_accept_limit = c->accept_limit;
+  ctx->burst_fail_every = c->fail_every;
+  ctx->tsc_script_len = 0;
+  ctx->feed_frame = 0;
+  ctx->feed_next = -(int)c->lead;
+
+  ut_trs_active_ctx = ctx;
+  for (uint32_t step = 0; step < UT_TRS_FRAME_STEPS; step++) {
+    while (ctx->feed_frame < c->frames && rte_ring_free_count(ring) >= c->bulk) {
+      ret = ut_trs_feed_bulk(ctx, c);
+      if (ret < 0) goto out;
+    }
+    if (ctx->feed_frame == c->frames && ut_trs_frames_idle(s)) {
+      ret = 0;
+      break;
+    }
+    ret = -ETIMEDOUT;
+    video_trs_rl_tasklet(&ctx->impl, s, MTL_SESSION_PORT_P);
+    rte_pktmbuf_free_bulk(ctx->sent, ctx->sent_count);
+    ctx->sent_count = 0;
+  }
+out:
+  ut_trs_active_ctx = NULL;
+  return ret;
+}
+
+uint32_t ut_trs_wire_count(const ut_trs_ctx* ctx) {
+  return ctx->wire_count;
+}
+
+uint32_t ut_trs_wire(const ut_trs_ctx* ctx, uint32_t pos) {
+  return pos < ctx->wire_count ? ctx->wire[pos] : UINT32_MAX;
+}
+
+uint64_t ut_trs_wire_tsc(const ut_trs_ctx* ctx, uint32_t pos) {
+  return pos < ctx->wire_count ? ctx->wire_tsc[pos] : 0;
+}
+
+uint64_t ut_trs_frame_target(const ut_trs_ctx* ctx, int frame) {
+  return frame < UT_TRS_MAX_FRAMES ? ctx->frame_target[frame] : 0;
+}
+
+int ut_trs_stat_pkts_burst_dummy(const ut_trs_ctx* ctx) {
+  return ctx->session.stat_pkts_burst_dummy;
+}
+
+unsigned int ut_trs_frame_pkts_in_use(const ut_trs_ctx* ctx) {
+  return ctx->frame_pool ? rte_mempool_in_use_count(ctx->frame_pool) : 0;
 }
