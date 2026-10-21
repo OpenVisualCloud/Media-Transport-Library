@@ -273,6 +273,18 @@ Pool header coloring (`mt_mempool_create_by_ops()`, `MtMempoolTest`):
   - In **IOVA VA mode** (default with `--in-memory`): chain pool `data_room = 0` — chain mbufs are pure pointer containers
   - In **IOVA PA mode** (legacy): chain pool `data_room = s->st20_pkt_len` (~1200-1260B, session-calculated) — cross-page payloads copied into mbuf
 - Cross-page fallback: if payload spans hugepage boundary, memcpy into chain mbuf's data room instead of extbuf
+- **Direct chain** (`s->tx_direct_chain`, `tv_tx_direct_chain()`): every payload mbuf but the frame's last is a plain direct mbuf whose `buf_addr`/iova point into the frame; only the last attaches the extbuf and takes the frame's one `sh_info` ref, so `tv_frame_free_cb()` fires once, on its free.
+  - Saves 2 locked atomics and the detach a pkt: 4.38 → 4.60 Mpps (+5%) on main, N × 1080p59.94 RL, E810 VF, 8480+ capped at 2.0 GHz.
+  - Only where each leg's PMD frees a mbuf only after its descriptor's DD write-back, and the queue completes in order (DPDK 25.11 and 26.07):
+    - ice and iavf: the scalar xmit MULTI_SEGS forces (Intel common `ci_xmit_pkts()` in 26.07, `ice_xmit_pkts()`/`iavf_xmit_pkts()` in 25.11).
+    - igc: `igc_xmit_pkts()` frees a slot's mbuf when it reuses the slot, and its done cleanup stops at the first pkt without DD.
+    - mlx5 inlines a short pkt and frees it at burst while earlier ones wait for DMA: it, every other driver and shared TX queues (another session's burst may free the last pkt) keep a ref a pkt.
+  - A redundant pkt's shared payload (mbuf refcnt 2) frees once both legs did. Per-pkt refs complete a frame early if every pkt built so far was freed before the rest were built (`St20TxDirectChainTest`).
+  - Eligible also needs chain mode, frame/slice level, no RTCP (its ring resends older pkts), no mono pool (its pool hands chain mbufs out as headers), not IOVA PA (cross-page copy into the data room): a recycled direct mbuf's data room is the frame it last pointed into.
+    - Line padding is fine: its line-crossing pkts copy into the copy pool and the last pkt never crosses. Logged at attach: "chain mbuf, direct yes/no".
+  - Teardown frees software-held pkts before the queues flush (TX Destroy Order): `tv_frames_hold()` refs every frame in flight first.
+    - Stop drops it once the chain pool has no mbuf out (`tv_frames_release()`), so a queue that did not drain keeps its frames. It then also hands back a frame the builder took but built no pkt of, which a ref-a-pkt session never does.
+    - Recovery's frame cleanup resets it; a failed recovery keeps it (hand none back).
 - `rte_mbuf_ext_shared_info` callback (`tv_frame_free_cb`) copies the frame's meta for the callback, clears an ext frame's addr/iova (`st20_tx_get_framebuffer()` still returns the buffer during the callback), decrements frame refcnt, then calls `notify_frame_done` — so the app (or st20p) may re-arm and re-queue the frame from inside the callback
 - **Cost without zero-copy**: memcpy at 312 MB/s per 1080p60 stream, 1.2 GB/s at 4K60. A 16-stream appliance would need ~19 GB/s just for copying — most of a NUMA node's memory bandwidth
 - NIC scatter-gather DMA: segment 1 = header mbuf (~62B), segment 2 = chain extbuf (~1260B). Requires `RTE_ETH_TX_OFFLOAD_MULTI_SEGS`
@@ -819,11 +831,13 @@ Alternative path: `rv_detector_init()` instead of `rv_init_sw()` when auto-detec
 Dependency chain: `NIC TX descriptors → hold mbufs → hold extbuf refs → point to frame buffers`
 
 Actual sequence in `tv_uinit()`:
+0. direct chain only: `tv_frames_hold()` refs every frame in flight (see below)
 1. `st_tx_video_transmitter_state_cleanup()` — free software-held mbufs: `inflight[]`,
    `trs_inflight[]`, `trs_inflight2[]`, and one pad reference per `trs_pad_inflight_num`
 2. `tv_uinit_hw()` — drain ring (`mt_ring_dequeue_clean`), free ring, flush TX queue
    (`mt_txq_flush()` pushes pad packets to force all session mbufs out of the NIC),
    release queue (`mt_txq_put()`), then free the pad mbufs
+   - direct chain only: `tv_frames_release()` drops those refs if the chain pool has no mbuf out
 3. `tv_uinit_sw()` — free packet ring, chain + header pools (`tv_mempool_free()`),
    then frame buffers (`tv_free_frames()` → `rte_free(frame->addr)`)
 
@@ -834,9 +848,11 @@ from the per-interface `tx_mbuf_pool` (`mt_sys_tx_mempool()`), not a session poo
 is never reclaimed for the process lifetime and never shows up in `tv_mempool_free()`.
 
 **Why this is not a use-after-free**: freeing a chain mbuf drops one `sh_info` reference and can
-run `tv_frame_free_cb()`. `sh_info` counts *every* live chain mbuf, NIC-owned ones included
-(`rte_mbuf_ext_refcnt_update(&frame_info->sh_info, 1)` per `rte_pktmbuf_attach_extbuf`), so the
-callback cannot fire while any packet of that frame is still in a TX descriptor.
+run `tv_frame_free_cb()`. With a ref a pkt, `sh_info` counts every live chain mbuf, NIC-owned ones
+included, so the callback cannot fire while a packet of that frame is still in a TX descriptor.
+A direct chain (§3) holds the frame by its last pkt alone, which step 1 or the ring drain may free
+first, so `tv_uinit()` refs every frame in flight before step 1 and drops it after step 2 once no
+payload is out; `st20_tx_queue_fatal_error()` holds them the same way.
 
 **Why HW before the pools and frames (step 2 before 3)**: after the flush the NIC holds no
 references, so the frame buffers the extbufs pointed into can finally be freed. This is the
