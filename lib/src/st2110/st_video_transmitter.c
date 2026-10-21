@@ -261,13 +261,49 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
   return !hold;
 }
 
+/* Bursts pkts with an RL pad after each due ST_SESSION_MAX_BULK slice, as such bulks do.
+ * Stops at a short burst, padding its slice if due, or a refused pad: *new_slice. */
+static unsigned int video_trs_rl_burst(struct mtl_main_impl* impl,
+                                       struct st_tx_video_session_impl* s,
+                                       enum mtl_session_port s_port,
+                                       struct rte_mbuf** pkts, unsigned int n,
+                                       bool* new_slice) {
+  struct st_tx_video_pacing* pacing = &s->pacing;
+  struct rte_mbuf** pad = &s->pad[s_port][ST20_PKT_TYPE_NORMAL];
+  int pkt_idx = st_tx_mbuf_get_idx(pkts[0]);
+  /* only an RL bulk retries a tried slice, and its bulks are frame aligned */
+  unsigned int q = *new_slice ? 0 : ST_SESSION_MAX_BULK - pkt_idx % ST_SESSION_MAX_BULK;
+  unsigned int sent = 0;
+
+  *new_slice = false;
+  for (; q < n; q += ST_SESSION_MAX_BULK) {
+    unsigned int k = RTE_MIN((unsigned int)ST_SESSION_MAX_BULK, n - q);
+    int idx = pkt_idx + (int)q;
+    if (fmodf(idx + 1 + pacing->pad_interval / 2, pacing->pad_interval) < k) {
+      unsigned int nb = q + k - sent;
+      unsigned int tx = video_trs_burst(impl, s, s_port, &pkts[sent], nb);
+      sent += tx;
+      if (sent < q) return sent;
+      rte_mbuf_refcnt_update(*pad, 1);
+      bool padded = video_trs_burst_pad(impl, s, s_port, pad, 1);
+      if (!padded) s->trs_pad_inflight_num[s_port]++;
+      if (tx < nb) return sent;
+      if (!padded) {
+        *new_slice = true;
+        return sent;
+      }
+    }
+  }
+  if (sent < n) sent += video_trs_burst(impl, s, s_port, &pkts[sent], n - sent);
+  return sent;
+}
+
 static int video_burst_packet(struct mtl_main_impl* impl,
                               struct st_tx_video_session_impl* s,
                               enum mtl_session_port s_port, struct rte_mbuf** pkts,
                               int bulk, bool use_two) {
-  struct st_tx_video_pacing* pacing = &s->pacing;
-  int tx = video_trs_burst(impl, s, s_port, &pkts[0], bulk);
-  int pkt_idx = st_tx_mbuf_get_idx(pkts[0]);
+  bool new_slice = true;
+  int tx = video_trs_rl_burst(impl, s, s_port, pkts, bulk, &new_slice);
 
   if (tx < bulk) {
     unsigned int i;
@@ -276,6 +312,7 @@ static int video_burst_packet(struct mtl_main_impl* impl,
     if (!use_two) {
       s->trs_inflight_num[s_port] = remaining;
       s->trs_inflight_idx[s_port] = 0;
+      s->trs_inflight_new_slice[s_port] = new_slice;
       s->trs_inflight_cnt[s_port]++;
       for (i = 0; i < remaining; i++) s->trs_inflight[s_port][i] = pkts[tx + i];
     } else {
@@ -284,13 +321,6 @@ static int video_burst_packet(struct mtl_main_impl* impl,
       s->trs_inflight_cnt2[s_port]++;
       for (i = 0; i < remaining; i++) s->trs_inflight2[s_port][i] = pkts[tx + i];
     }
-  }
-
-  /* check if it need insert padding packet */
-  if (fmodf(pkt_idx + 1 + pacing->pad_interval / 2, pacing->pad_interval) < bulk) {
-    rte_mbuf_refcnt_update(s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
-    tx = video_trs_burst_pad(impl, s, s_port, &s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
-    if (tx < 1) s->trs_pad_inflight_num[s_port]++;
   }
 
   return 0;
@@ -402,9 +432,13 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
 
   /* check if any inflight pkts in transmitter */
   if (s->trs_inflight_num[s_port] > 0) {
-    tx = video_trs_burst(impl, s, s_port,
-                         &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]],
-                         s->trs_inflight_num[s_port]);
+    struct rte_mbuf** inflight = &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]];
+    /* up to ST_SESSION_MAX_BULK it is the rest of one slice, its pad decided */
+    if (bulk > ST_SESSION_MAX_BULK)
+      tx = video_trs_rl_burst(impl, s, s_port, inflight, s->trs_inflight_num[s_port],
+                              &s->trs_inflight_new_slice[s_port]);
+    else
+      tx = video_trs_burst(impl, s, s_port, inflight, s->trs_inflight_num[s_port]);
     s->trs_inflight_num[s_port] -= tx;
     s->trs_inflight_idx[s_port] += tx;
     if (tx > 0) {
@@ -417,7 +451,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
   }
 
   /* dequeue from ring */
-  struct rte_mbuf* pkts[ST_SESSION_MAX_BULK] = {NULL};
+  struct rte_mbuf* pkts[ST_TX_VIDEO_MAX_BULK];
   n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
   if (n == 0) {
     *ret_status = -STI_RLTRS_DEQUEUE_FAIL;
@@ -462,9 +496,10 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
       if (likely(delta <= (int64_t)NS_PER_S || s->trs_inflight_num2[s_port])) {
         s->trs_target_tsc[s_port] = target_tsc;
         s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_WAIT_WARMUP;
-        /* save it on inflight */
+        /* save it on inflight, its first slice tried: no pad after it */
         s->trs_inflight_num[s_port] = bulk - valid_bulk;
         s->trs_inflight_idx[s_port] = 0;
+        s->trs_inflight_new_slice[s_port] = false;
         s->trs_inflight_cnt[s_port]++;
         for (i = 0; i < bulk - valid_bulk; i++)
           s->trs_inflight[s_port][i] = pkts[i + valid_bulk];
@@ -553,7 +588,7 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
   }
 
   /* dequeue from ring */
-  struct rte_mbuf* pkts[ST_SESSION_MAX_BULK] = {NULL};
+  struct rte_mbuf* pkts[ST_TX_VIDEO_MAX_BULK];
   n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
   if (n == 0) {
     s->stat_trs_ret_code[s_port] = -STI_TSCTRS_DEQUEUE_FAIL;
@@ -646,7 +681,7 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
   }
 
   /* dequeue from ring */
-  struct rte_mbuf* pkts[ST_SESSION_MAX_BULK] = {NULL};
+  struct rte_mbuf* pkts[ST_TX_VIDEO_MAX_BULK];
   n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
   if (n == 0) {
     s->stat_trs_ret_code[s_port] = -STI_TSCTRS_DEQUEUE_FAIL;
@@ -740,7 +775,7 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
   }
 
   /* dequeue from ring */
-  struct rte_mbuf* pkts[ST_SESSION_MAX_BULK] = {NULL};
+  struct rte_mbuf* pkts[ST_TX_VIDEO_MAX_BULK];
   n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
   if (n == 0) {
     s->stat_trs_ret_code[s_port] = -STI_TSCTRS_DEQUEUE_FAIL;
