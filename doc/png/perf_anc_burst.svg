@@ -1,0 +1,57 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 760 252' width='760' height='252' font-family='Helvetica, Arial, sans-serif'>
+<title>One ANC burst on scheduler 0, 32 lip-synced sessions</title>
+<rect width='760' height='252' fill='#fcfcfb'/>
+<text x='110' y='26' font-size='16' font-weight='bold' fill='#0b0b0b'>One ANC burst on scheduler 0, 32 lip-synced sessions</text>
+<text x='110' y='45' font-size='12' fill='#52514e'>Model. Measured: 32 sessions take 55 us on TX and 100 us on RX. Audio takes 4 us.</text>
+<text x='100' y='118' font-size='12' fill='#0b0b0b' text-anchor='end'>before</text>
+<line x1='110' x2='740' y1='132' y2='132' stroke='#e4e3df'/>
+<rect x='111.0' y='102' width='171.2' height='28' rx='3' fill='#eb6834'><title>TX ANC, 32 sessions: 0 to 55 us</title></rect>
+<text x='196.6' y='98' font-size='11' fill='#0b0b0b' text-anchor='middle'>TX ANC, 32 sessions</text>
+<rect x='284.2' y='102' width='313.0' height='28' rx='3' fill='#eb6834'><title>RX ANC, 32 sessions: 55 to 155 us</title></rect>
+<text x='440.8' y='98' font-size='11' fill='#0b0b0b' text-anchor='middle'>RX ANC, 32 sessions</text>
+<rect x='599.2' y='102' width='10.6' height='28' rx='3' fill='#2a78d6'><title>audio TX and RX: 155 to 159 us</title></rect>
+<text x='598.2' y='148' font-size='11' fill='#52514e' text-anchor='middle'>audio waits 155 us</text>
+<text x='100' y='188' font-size='12' fill='#0b0b0b' text-anchor='end'>after</text>
+<line x1='110' x2='740' y1='202' y2='202' stroke='#e4e3df'/>
+<rect x='111.0' y='172' width='19.7' height='28' rx='3' fill='#eb6834'><title>TX ANC sessions 0-3: 0 to 6.9 us</title></rect>
+<rect x='132.7' y='172' width='37.4' height='28' rx='3' fill='#eb6834'><title>RX ANC sessions 0-3: 6.9 to 19.4 us</title></rect>
+<rect x='172.1' y='172' width='10.6' height='28' rx='3' fill='#2a78d6'><title>audio TX and RX: 19.4 to 23.4 us</title></rect>
+<rect x='184.7' y='172' width='19.7' height='28' rx='3' fill='#eb6834'><title>TX ANC sessions 4-7: 23.4 to 30.3 us</title></rect>
+<rect x='206.4' y='172' width='37.4' height='28' rx='3' fill='#eb6834'><title>RX ANC sessions 4-7: 30.3 to 42.8 us</title></rect>
+<rect x='245.8' y='172' width='10.6' height='28' rx='3' fill='#2a78d6'><title>audio TX and RX: 42.8 to 46.8 us</title></rect>
+<rect x='258.4' y='172' width='19.7' height='28' rx='3' fill='#eb6834'><title>TX ANC sessions 8-11: 46.8 to 53.7 us</title></rect>
+<rect x='280.2' y='172' width='37.4' height='28' rx='3' fill='#eb6834'><title>RX ANC sessions 8-11: 53.7 to 66.2 us</title></rect>
+<rect x='319.5' y='172' width='10.6' height='28' rx='3' fill='#2a78d6'><title>audio TX and RX: 66.2 to 70.2 us</title></rect>
+<rect x='332.1' y='172' width='19.7' height='28' rx='3' fill='#eb6834'><title>TX ANC sessions 12-15: 70.2 to 77.1 us</title></rect>
+<rect x='353.9' y='172' width='37.4' height='28' rx='3' fill='#eb6834'><title>RX ANC sessions 12-15: 77.1 to 89.6 us</title></rect>
+<rect x='393.2' y='172' width='10.6' height='28' rx='3' fill='#2a78d6'><title>audio TX and RX: 89.6 to 93.6 us</title></rect>
+<rect x='405.8' y='172' width='19.7' height='28' rx='3' fill='#eb6834'><title>TX ANC sessions 16-19: 93.6 to 100.5 us</title></rect>
+<rect x='427.6' y='172' width='37.4' height='28' rx='3' fill='#eb6834'><title>RX ANC sessions 16-19: 100.5 to 113 us</title></rect>
+<rect x='466.9' y='172' width='10.6' height='28' rx='3' fill='#2a78d6'><title>audio TX and RX: 113 to 117 us</title></rect>
+<rect x='479.5' y='172' width='19.7' height='28' rx='3' fill='#eb6834'><title>TX ANC sessions 20-23: 117 to 123.9 us</title></rect>
+<rect x='501.3' y='172' width='37.4' height='28' rx='3' fill='#eb6834'><title>RX ANC sessions 20-23: 123.9 to 136.4 us</title></rect>
+<rect x='540.7' y='172' width='10.6' height='28' rx='3' fill='#2a78d6'><title>audio TX and RX: 136.4 to 140.4 us</title></rect>
+<rect x='553.3' y='172' width='19.7' height='28' rx='3' fill='#eb6834'><title>TX ANC sessions 24-27: 140.4 to 147.3 us</title></rect>
+<rect x='575.0' y='172' width='37.4' height='28' rx='3' fill='#eb6834'><title>RX ANC sessions 24-27: 147.3 to 159.8 us</title></rect>
+<rect x='614.4' y='172' width='10.6' height='28' rx='3' fill='#2a78d6'><title>audio TX and RX: 159.8 to 163.8 us</title></rect>
+<rect x='627.0' y='172' width='19.7' height='28' rx='3' fill='#eb6834'><title>TX ANC sessions 28-31: 163.8 to 170.7 us</title></rect>
+<rect x='648.7' y='172' width='37.4' height='28' rx='3' fill='#eb6834'><title>RX ANC sessions 28-31: 170.7 to 183.2 us</title></rect>
+<rect x='688.1' y='172' width='10.6' height='28' rx='3' fill='#2a78d6'><title>audio TX and RX: 183.2 to 187.2 us</title></rect>
+<text x='171.1' y='218' font-size='11' fill='#52514e' text-anchor='middle'>audio every 23 us</text>
+<text x='687.1' y='218' font-size='11' fill='#52514e' text-anchor='middle'>ANC ends 183 us</text>
+<text x='110.0' y='240' font-size='11' fill='#52514e' text-anchor='middle'>0 us</text>
+<text x='173.0' y='240' font-size='11' fill='#52514e' text-anchor='middle'>20 us</text>
+<text x='236.0' y='240' font-size='11' fill='#52514e' text-anchor='middle'>40 us</text>
+<text x='299.0' y='240' font-size='11' fill='#52514e' text-anchor='middle'>60 us</text>
+<text x='362.0' y='240' font-size='11' fill='#52514e' text-anchor='middle'>80 us</text>
+<text x='425.0' y='240' font-size='11' fill='#52514e' text-anchor='middle'>100 us</text>
+<text x='488.0' y='240' font-size='11' fill='#52514e' text-anchor='middle'>120 us</text>
+<text x='551.0' y='240' font-size='11' fill='#52514e' text-anchor='middle'>140 us</text>
+<text x='614.0' y='240' font-size='11' fill='#52514e' text-anchor='middle'>160 us</text>
+<text x='677.0' y='240' font-size='11' fill='#52514e' text-anchor='middle'>180 us</text>
+<text x='740.0' y='240' font-size='11' fill='#52514e' text-anchor='middle'>200 us</text>
+<rect x='110' y='62' width='12' height='12' rx='2' fill='#eb6834'/>
+<text x='127' y='72' font-size='12' fill='#0b0b0b'>ANC tasklets</text>
+<rect x='260' y='62' width='12' height='12' rx='2' fill='#2a78d6'/>
+<text x='277' y='72' font-size='12' fill='#0b0b0b'>audio tasklets</text>
+</svg>
