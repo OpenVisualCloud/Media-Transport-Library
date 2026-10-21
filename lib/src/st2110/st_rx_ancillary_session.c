@@ -776,6 +776,11 @@ static int rx_ancillary_session_tasklet(struct st_rx_ancillary_session_impl* s) 
   return done ? MTL_TASKLET_ALL_DONE : MTL_TASKLET_HAS_PENDING;
 }
 
+/* Lip-synced sessions all receive at the same instant. One call handles at most this
+ * many sessions with packets, so the other tasklets of the scheduler run between the
+ * parts of the burst */
+#define ST_RX_ANC_BUSY_SESSIONS_PER_CALL (4)
+
 static int rx_ancillary_sessions_tasklet_handler(void* priv) {
   struct st_rx_ancillary_sessions_mgr* mgr = priv;
   struct mtl_main_impl* impl = mgr->parent;
@@ -783,20 +788,33 @@ static int rx_ancillary_sessions_tasklet_handler(void* priv) {
   int pending = MTL_TASKLET_ALL_DONE;
   uint64_t tsc_s = 0;
   bool time_measure = mt_sessions_time_measure(impl);
+  int max_idx = mgr->max_idx;
+  int busy = 0;
 
-  for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
+  if (mgr->next_sidx >= max_idx) mgr->next_sidx = 0;
+  for (int i = 0; i < max_idx; i++) {
+    int sidx = mgr->next_sidx + i;
+    if (sidx >= max_idx) sidx -= max_idx;
     s = rx_ancillary_session_try_get(mgr, sidx);
     if (!s) continue;
     if (time_measure) tsc_s = mt_get_tsc(impl);
 
-    pending += rx_ancillary_session_tasklet(s);
+    int ret = rx_ancillary_session_tasklet(s);
+    pending += ret;
 
     if (time_measure) {
       uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
       mt_stat_u64_update(&s->stat_time, delta_ns);
     }
     rx_ancillary_session_put(mgr, sidx);
+    if (ret == MTL_TASKLET_HAS_PENDING && ++busy >= ST_RX_ANC_BUSY_SESSIONS_PER_CALL &&
+        i + 1 < max_idx) {
+      mgr->next_sidx = sidx + 1;
+      return MTL_TASKLET_HAS_PENDING;
+    }
   }
+  /* all sessions seen: the next burst starts at session 0, each stream keeps its slot */
+  mgr->next_sidx = 0;
 
   return pending;
 }

@@ -18,7 +18,14 @@
  */
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
+#include "datapath/mt_queue.h"
+
+static uint16_t ut40_rxq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
+                               uint16_t nb_pkts);
+
+#define mt_rxq_burst ut40_rxq_burst
 #include "st2110/st_rx_ancillary_session.c"
+#undef mt_rxq_burst
 
 _Static_assert(
     __builtin_types_compatible_p(typeof(((struct st_rx_anc_frame_slot*)0)->state),
@@ -33,6 +40,9 @@ struct ut_test_ctx {
   struct st_rx_ancillary_sessions_mgr mgr;
   struct st_rx_ancillary_session_impl session;
   struct mt_ptp_impl ptp_storage;
+  struct mt_rxq_entry rxq; /* port P queue of ut40_rxq_burst(), rxq_pkts deep */
+  int rxq_pkts;
+  uint16_t rxq_seq;
 };
 
 /* pull in the header after the struct definition so types resolve */
@@ -181,6 +191,43 @@ static struct rte_mbuf* make_anc_mbuf_full(uint16_t seq, uint32_t ts, int marker
 
 static struct rte_mbuf* make_anc_mbuf(uint16_t seq, uint32_t ts, int marker) {
   return make_anc_mbuf_full(seq, ts, marker, 0, 0, 0);
+}
+
+static uint16_t ut40_rxq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
+                               uint16_t nb_pkts) {
+  struct ut_test_ctx* ctx = container_of(entry, struct ut_test_ctx, rxq);
+  uint16_t n = 0;
+
+  while (n < nb_pkts && ctx->rxq_pkts > 0) {
+    rx_pkts[n] = make_anc_mbuf(ctx->rxq_seq, 0, 1);
+    if (!rx_pkts[n]) break;
+    ctx->rxq_seq++;
+    ctx->rxq_pkts--;
+    n++;
+  }
+  return n;
+}
+
+int ut40_mgr_add(ut_test_ctx* ctx, int idx, ut_test_ctx* peer) {
+  if (idx < 0 || idx >= ST_MAX_RX_ANC_SESSIONS) return -EINVAL;
+  rte_spinlock_init(&ctx->mgr.mutex[idx]);
+  peer->session.idx = idx;
+  ctx->mgr.sessions[idx] = &peer->session;
+  if (ctx->mgr.max_idx <= idx) ctx->mgr.max_idx = idx + 1;
+  return 0;
+}
+
+int ut40_mgr_tasklet(ut_test_ctx* ctx) {
+  return rx_ancillary_sessions_tasklet_handler(&ctx->mgr);
+}
+
+void ut40_rxq_add(ut_test_ctx* ctx, int pkts) {
+  ctx->session.rxq[MTL_SESSION_PORT_P] = &ctx->rxq;
+  ctx->rxq_pkts += pkts;
+}
+
+int ut40_rxq_left(const ut_test_ctx* ctx) {
+  return ctx->rxq_pkts;
 }
 
 /* ── feed functions ───────────────────────────────────────────────────── */

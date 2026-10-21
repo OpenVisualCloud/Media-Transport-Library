@@ -294,6 +294,19 @@ int ut_txa_step_frame_tasklet(ut_txa_ctx* ctx) {
   return tx_ancillary_sessions_tasklet_handler(&ctx->mgr);
 }
 
+int ut_txa_mgr_add(ut_txa_ctx* ctx, int idx, ut_txa_ctx* peer) {
+  if (idx < 1 || idx >= ST_MAX_TX_ANC_SESSIONS) return -EINVAL;
+  rte_spinlock_init(&ctx->mgr.mutex[idx]);
+  peer->session.idx = idx;
+  ctx->mgr.sessions[idx] = &peer->session;
+  if (ctx->mgr.max_idx <= idx) ctx->mgr.max_idx = idx + 1;
+  return 0;
+}
+
+void ut_txa_set_sch_schedule_ns(ut_txa_ctx* ctx, uint32_t ns) {
+  ctx->impl.sch_schedule_ns = ns;
+}
+
 unsigned int ut_txa_queued_packets(const ut_txa_ctx* ctx) {
   if (!ctx->mgr.ring[MTL_PORT_P]) return 0;
   return rte_ring_count(ctx->mgr.ring[MTL_PORT_P]);

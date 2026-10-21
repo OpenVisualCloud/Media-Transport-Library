@@ -1113,9 +1113,11 @@ struct st_tx_ancillary_session_impl {
 struct st_tx_ancillary_sessions_mgr {
   struct mtl_main_impl* parent;
   int socket_id;
-  int idx;     /* index for current sessions mgr */
-  int max_idx; /* max session index */
+  int idx;       /* index for current sessions mgr */
+  int max_idx;   /* max session index */
+  int next_sidx; /* the session where the next tasklet call starts */
   struct mt_sch_tasklet_impl* tasklet;
+  uint32_t build_cnt; /* packets built on port P, for the tasklet handler */
 
   /* all anc sessions share same ring/queue */
   struct rte_ring* ring[MTL_PORT_MAX];
@@ -1255,8 +1257,9 @@ struct st_rx_ancillary_session_impl {
 
 struct st_rx_ancillary_sessions_mgr {
   struct mtl_main_impl* parent;
-  int idx;     /* index for current session mgr */
-  int max_idx; /* max session index */
+  int idx;       /* index for current session mgr */
+  int max_idx;   /* max session index */
+  int next_sidx; /* the session where the next tasklet call starts */
   struct mt_sch_tasklet_impl* tasklet;
 
   struct st_rx_ancillary_session_impl* sessions[ST_MAX_RX_ANC_SESSIONS];

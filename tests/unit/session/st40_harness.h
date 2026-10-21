@@ -52,6 +52,16 @@ void ut40_ctx_destroy(ut_test_ctx* ctx);
  * state between tests. */
 void ut40_drain_ring(void);
 
+/* Serve the session of `peer` (`ctx` itself too) from slot `idx` of the manager of
+ * `ctx`, as one scheduler serves many: ut40_mgr_tasklet(ctx) then runs them all. */
+int ut40_mgr_add(ut_test_ctx* ctx, int idx, ut_test_ctx* peer);
+/* rx_ancillary_sessions_tasklet_handler() on the manager of `ctx`. */
+int ut40_mgr_tasklet(ut_test_ctx* ctx);
+/* `pkts` more packets arrive on the port P queue the session tasklet reads, and
+ * ut40_rxq_left() is what it did not read yet. */
+void ut40_rxq_add(ut_test_ctx* ctx, int pkts);
+int ut40_rxq_left(const ut_test_ctx* ctx);
+
 /* Build and feed one RFC 8331 ancillary packet directly to the per-packet
  * handler. `marker` sets the RTP marker bit (1 = end of frame, 0 = mid).
  * Returns the production handler's return code (0 = accepted, < 0 = error

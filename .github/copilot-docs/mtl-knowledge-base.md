@@ -968,6 +968,7 @@ Sessions organized into managers (`st_tx_video_sessions_mgr`), one per session t
 - Fixed-size session array (indexed by `idx`)
 - Manager mutex protects attach/detach
 - Tasklet handler iterates all sessions in local array
+- Exception, ST40 TX and RX: one call handles at most 4 sessions with work (TX: a built packet), then returns `MTL_TASKLET_HAS_PENDING`; the next call starts at `next_sidx`. Lip-synced sessions all have work at one instant, and this lets the other tasklets of the scheduler run inside that burst. The video and audio managers still visit every session per call
 
 Per-scheduler (not global) → no filtering needed in tasklet hot path.
 
