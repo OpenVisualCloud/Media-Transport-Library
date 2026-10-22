@@ -527,6 +527,17 @@ yuv_files_gstreamer_input_formats = {
     },
 }
 
+# The yuv_files_input_formats footage the JPEG XS encoder takes besides yuv422p10le.
+# The I420 file is YUV420PLANAR8 here; st20p passes it through as YUV420CUSTOM8.
+yuv_files_st22p_input_formats = {
+    key: yuv_files_input_formats[key]
+    for key in ("yuv422p12le", "yuv444p10le", "yuv444p12le", "gbrp10le", "gbrp12le")
+}
+yuv_files_st22p_input_formats["yuv420p"] = {
+    **yuv_files_input_formats["yuv420p"],
+    "file_format": "YUV420PLANAR8",
+}
+
 yuv_files_interlace = dict(
     Crosswalk_480p={
         "filename": "Netflix_Crosswalk_720x480_interlace_10bit_60Hz_P422.yuv",
@@ -555,6 +566,43 @@ yuv_files_interlace = dict(
     ParkJoy_1080p={
         "filename": "ParkJoy_1920x1080_interlace_10bit_50Hz_P422.yuv",
         "file_format": "YUV422RFC4175PG2BE10",
+        "format": "YUV_422_10bit",
+        "width": 1920,
+        "height": 1080,
+        "fps": "50",
+    },
+)
+
+# yuv_files_interlace as planar, for the JPEG XS encoder, which takes planar input
+# only. Each file is its RFC 4175 twin, converted field by field.
+yuv_files_interlace_422p10le = dict(
+    Crosswalk_480p={
+        "filename": "Netflix_Crosswalk_720x480_interlace_10bit_60Hz_P422_yuv422p10le.yuv",
+        "file_format": "YUV422PLANAR10LE",
+        "format": "YUV_422_10bit",
+        "width": 720,
+        "height": 480,
+        "fps": "60",
+    },
+    ParkJoy_576p={
+        "filename": "ParkJoy_720x576_interlace_10bit_50Hz_P422_yuv422p10le.yuv",
+        "file_format": "YUV422PLANAR10LE",
+        "format": "YUV_422_10bit",
+        "width": 720,
+        "height": 576,
+        "fps": "50",
+    },
+    Crosswalk_1080p={
+        "filename": "Netflix_Crosswalk_1920x1080_interlace_10bit_60Hz_P422_yuv422p10le.yuv",
+        "file_format": "YUV422PLANAR10LE",
+        "format": "YUV_422_10bit",
+        "width": 1920,
+        "height": 1080,
+        "fps": "60",
+    },
+    ParkJoy_1080p={
+        "filename": "ParkJoy_1920x1080_interlace_10bit_50Hz_P422_yuv422p10le.yuv",
+        "file_format": "YUV422PLANAR10LE",
         "format": "YUV_422_10bit",
         "width": 1920,
         "height": 1080,

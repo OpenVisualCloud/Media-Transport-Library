@@ -56,13 +56,13 @@ test -n "$mtl_pc" -a -n "$dpdk_pc"
 jpeg_pc=$(find "$stage" -name SvtJpegxs.pc -print -quit)
 test -n "$jpeg_pc"
 
-rm -rf "${source_dir}/imtl-plugin/build-ci"
+rm -rf "${source_dir}/mtl-plugin/build-ci"
 PKG_CONFIG_PATH="$(dirname "$jpeg_pc"):$(dirname "$mtl_pc"):$(dirname "$dpdk_pc")" \
-	meson setup "${source_dir}/imtl-plugin/build-ci" "${source_dir}/imtl-plugin" \
+	meson setup "${source_dir}/mtl-plugin/build-ci" "${source_dir}/mtl-plugin" \
 	--buildtype release --prefix "$stage"
 PKG_CONFIG_PATH="$(dirname "$jpeg_pc"):$(dirname "$mtl_pc"):$(dirname "$dpdk_pc")" \
-	meson compile -C "${source_dir}/imtl-plugin/build-ci"
-meson install -C "${source_dir}/imtl-plugin/build-ci"
+	meson compile -C "${source_dir}/mtl-plugin/build-ci"
+meson install -C "${source_dir}/mtl-plugin/build-ci"
 
 while IFS= read -r pc_file; do
 	relative_prefix=$(realpath --relative-to="$(dirname "$pc_file")" "$stage")
