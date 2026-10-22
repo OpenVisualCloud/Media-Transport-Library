@@ -21,6 +21,9 @@
 #define UT_DEV_TM_NODES_MAX (16)
 /* dev_rl_shaper_add() takes profile ids 1..MT_MAX_RL_ITEMS */
 #define UT_DEV_TM_PROFILES_MAX (MT_MAX_RL_ITEMS + 1)
+#define UT_DEV_INIT_PAYLOAD_POOL ((struct rte_mempool*)(uintptr_t)0x20)
+#define UT_DEV_HDR_SPLIT_POOL ((struct mt_hdr_split_pool*)(uintptr_t)0x30)
+#define UT_DEV_HDR_SPLIT_SLOTS ((struct mt_hdr_split_slots*)(uintptr_t)0x40)
 
 struct ut_dev_ctx {
   struct mtl_main_impl impl;
@@ -41,6 +44,15 @@ struct ut_dev_ctx {
   int fail_timesync_read_error;
   int fail_port_start_error;
   uint16_t tx_free_thresh[UT_DEV_TX_QUEUES];
+  uint16_t last_rx_nseg;
+  struct rte_mempool* last_rx_payload_pool;
+  int fail_hdr_split_bind_error;
+  int fail_hdr_split_unbind_error;
+  uint16_t mtu;
+  struct mt_hdr_split_pool bound_pool;
+  struct mt_hdr_split_slots bound_slots;
+  int rx_queue_start_calls;
+  int fail_rx_queue_start_call;
   uint64_t last_shaper_rate;
   struct mtl_port_status sw_stats;
   pthread_t stats_writer;
@@ -81,6 +93,20 @@ static const struct rte_eth_rxtx_callback* ut_rte_eth_add_tx_callback(
 static int ut_rte_eth_timesync_enable(uint16_t port_id);
 static int ut_rte_eth_timesync_read_time(uint16_t port_id, struct timespec* time);
 static int ut_rte_eth_dev_start(uint16_t port_id);
+static int ut_rte_eth_dev_rx_queue_start(uint16_t port_id, uint16_t rx_queue_id);
+static int ut_rte_eth_dev_rx_queue_stop(uint16_t port_id, uint16_t rx_queue_id);
+static int ut_rte_eth_dev_get_mtu(uint16_t port_id, uint16_t* mtu);
+struct mt_hdr_split_pool;
+struct mt_hdr_split_slots;
+static int ut_rte_eth_dev_get_mtu(uint16_t port_id, uint16_t* mtu) {
+  (void)port_id;
+  *mtu = ut_active_ctx->mtu;
+  return 0;
+}
+
+static int ut_mt_hdr_split_bind(struct mt_hdr_split_pool* hp,
+                                struct mt_hdr_split_slots* slots);
+static int ut_mt_hdr_split_unbind(struct mt_hdr_split_pool* hp);
 static int ut_rte_eth_dev_stop(uint16_t port_id);
 static int ut_rte_eth_stats_reset(uint16_t port_id);
 static int ut_rte_eth_promiscuous_enable(uint16_t port_id);
@@ -113,6 +139,11 @@ static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
 #define rte_eth_timesync_enable ut_rte_eth_timesync_enable
 #define rte_eth_timesync_read_time ut_rte_eth_timesync_read_time
 #define rte_eth_dev_start ut_rte_eth_dev_start
+#define rte_eth_dev_rx_queue_start ut_rte_eth_dev_rx_queue_start
+#define rte_eth_dev_rx_queue_stop ut_rte_eth_dev_rx_queue_stop
+#define rte_eth_dev_get_mtu ut_rte_eth_dev_get_mtu
+#define mt_hdr_split_bind ut_mt_hdr_split_bind
+#define mt_hdr_split_unbind ut_mt_hdr_split_unbind
 #define rte_eth_dev_stop ut_rte_eth_dev_stop
 #define rte_eth_stats_reset ut_rte_eth_stats_reset
 #define rte_eth_promiscuous_enable ut_rte_eth_promiscuous_enable
@@ -151,6 +182,11 @@ static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
 #undef rte_eth_promiscuous_enable
 #undef rte_eth_stats_reset
 #undef rte_eth_dev_stop
+#undef mt_hdr_split_unbind
+#undef mt_hdr_split_bind
+#undef rte_eth_dev_get_mtu
+#undef rte_eth_dev_rx_queue_stop
+#undef rte_eth_dev_rx_queue_start
 #undef rte_eth_dev_start
 #undef rte_eth_timesync_read_time
 #undef rte_eth_timesync_enable
@@ -171,10 +207,43 @@ static int ut_rte_eth_rx_queue_setup(uint16_t port_id, uint16_t rx_queue_id,
   (void)rx_queue_id;
   (void)nb_rx_desc;
   (void)socket_id;
-  (void)rx_conf;
   (void)mb_pool;
   ut_dev_record(UT_DEV_EVENT_RX_QUEUE_SETUP);
+  ut_active_ctx->last_rx_nseg = rx_conf->rx_nseg;
+  ut_active_ctx->last_rx_payload_pool =
+      rx_conf->rx_nseg == 2 ? rx_conf->rx_seg[1].split.mp : NULL;
   return 0;
+}
+
+static int ut_rte_eth_dev_rx_queue_start(uint16_t port_id, uint16_t rx_queue_id) {
+  (void)port_id;
+  (void)rx_queue_id;
+  ut_dev_record(UT_DEV_EVENT_RX_QUEUE_START);
+  ut_active_ctx->rx_queue_start_calls++;
+  if (ut_active_ctx->rx_queue_start_calls == ut_active_ctx->fail_rx_queue_start_call)
+    return -EIO;
+  return 0;
+}
+
+static int ut_rte_eth_dev_rx_queue_stop(uint16_t port_id, uint16_t rx_queue_id) {
+  (void)port_id;
+  (void)rx_queue_id;
+  ut_dev_record(UT_DEV_EVENT_RX_QUEUE_STOP);
+  return 0;
+}
+
+static int ut_mt_hdr_split_bind(struct mt_hdr_split_pool* hp,
+                                struct mt_hdr_split_slots* slots) {
+  (void)hp;
+  (void)slots;
+  ut_dev_record(UT_DEV_EVENT_HDR_SPLIT_BIND);
+  return ut_active_ctx->fail_hdr_split_bind_error;
+}
+
+static int ut_mt_hdr_split_unbind(struct mt_hdr_split_pool* hp) {
+  (void)hp;
+  ut_dev_record(UT_DEV_EVENT_HDR_SPLIT_UNBIND);
+  return ut_active_ctx->fail_hdr_split_unbind_error;
 }
 
 static int ut_rte_eth_tx_queue_setup(uint16_t port_id, uint16_t tx_queue_id,
@@ -540,6 +609,130 @@ int ut_dev_config_rss_reta(ut_dev_ctx* ctx, uint16_t nb_rx_q, uint16_t reta_size
   inf->dev_info.reta_size = reta_size;
   ut_active_ctx = ctx;
   return dev_config_rss_reta(inf);
+}
+
+bool ut_dev_get_hdr_split_rx_queue(ut_dev_ctx* ctx, bool has_hdr_split, bool payload_pool,
+                                   bool runtime_rx_queue) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+  struct mt_rxq_flow flow;
+
+  if (has_hdr_split) inf->feature |= MT_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT;
+  if (runtime_rx_queue) inf->feature |= MT_IF_FEATURE_RUNTIME_RX_QUEUE;
+  ctx->rx_queue.mbuf_payload_pool = payload_pool ? UT_DEV_INIT_PAYLOAD_POOL : NULL;
+  ctx->rx_queue.hdr_split = payload_pool ? UT_DEV_HDR_SPLIT_POOL : NULL;
+  inf->nb_rx_desc = 0; /* no ring to flush, the port is not started */
+  memset(&flow, 0, sizeof(flow));
+  /* MT_RXQ_FLOW_F_SYS_QUEUE skips the rte_flow rule, the harness has no flow stub */
+  flow.flags = MT_RXQ_FLOW_F_HDR_SPLIT | MT_RXQ_FLOW_F_SYS_QUEUE;
+  flow.hdr_split_slots = UT_DEV_HDR_SPLIT_SLOTS;
+  ut_active_ctx = ctx;
+  return mt_dev_get_rx_queue(&ctx->impl, MTL_PORT_P, &flow) != NULL;
+}
+
+void ut_dev_fail_hdr_split_bind(ut_dev_ctx* ctx, int error) {
+  ctx->fail_hdr_split_bind_error = error;
+}
+
+void ut_dev_fail_hdr_split_unbind(ut_dev_ctx* ctx, int error) {
+  ctx->fail_hdr_split_unbind_error = error;
+}
+
+void ut_dev_fail_rx_queue_start(ut_dev_ctx* ctx, int call) {
+  ctx->fail_rx_queue_start_call = call;
+}
+
+int ut_dev_hdr_split_check(ut_dev_ctx* ctx, bool iova_va, uint16_t nb_rx_desc,
+                           uint16_t rx_free_thresh, uint32_t hdr_split_slots) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  inf->feature |= MT_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT;
+  inf->system_rx_queues_end = 0;
+  inf->hdr_split_rx_queues_end = 1;
+  inf->nb_rx_desc = nb_rx_desc;
+  inf->dev_info.default_rxconf.rx_free_thresh = rx_free_thresh;
+  ctx->impl.iova_mode = iova_va ? RTE_IOVA_VA : RTE_IOVA_PA;
+  ctx->impl.user_para.hdr_split_slots = hdr_split_slots;
+  ut_active_ctx = ctx;
+  return dev_hdr_split_check(&ctx->impl, inf);
+}
+
+int ut_dev_set_rl_rate_with_bound_hdr_split(ut_dev_ctx* ctx, uint64_t bytes_per_sec) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  ctx->bound_pool.slots = &ctx->bound_slots;
+  ctx->rx_queue.hdr_split = &ctx->bound_pool;
+  ut_active_ctx = ctx;
+  return dev_tx_queue_set_rl_rate(inf, 0, bytes_per_sec);
+}
+
+bool ut_dev_get_rl_tx_queue_with_bound_hdr_split(ut_dev_ctx* ctx,
+                                                 uint64_t bytes_per_sec) {
+  struct mt_txq_flow flow;
+
+  memset(&flow, 0, sizeof(flow));
+  flow.bytes_per_sec = bytes_per_sec;
+  ctx->bound_pool.slots = &ctx->bound_slots;
+  ctx->rx_queue.hdr_split = &ctx->bound_pool;
+  ut_active_ctx = ctx;
+  return mt_dev_get_tx_queue(&ctx->impl, MTL_PORT_P, &flow) != NULL;
+}
+
+int ut_dev_set_tx_bps_with_bound_hdr_split(ut_dev_ctx* ctx, uint64_t bytes_per_sec) {
+  ctx->bound_pool.slots = &ctx->bound_slots;
+  ctx->rx_queue.hdr_split = &ctx->bound_pool;
+  ut_active_ctx = ctx;
+  return mt_dev_set_tx_bps(&ctx->impl, &ctx->tx_queues[1], bytes_per_sec);
+}
+
+bool ut_dev_hdr_split_nic_buf_ok(ut_dev_ctx* ctx, uint16_t data_room, uint16_t mtu) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+  static int pool_idx;
+  char name[32];
+
+  if (ut_eal_init() < 0) return false;
+  snprintf(name, sizeof(name), "ut_dev_hs_%d", pool_idx++);
+  struct rte_mempool* mp =
+      rte_pktmbuf_pool_create(name, 63, 0, 0, data_room, rte_socket_id());
+  if (!mp) return false;
+  inf->feature |= MT_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT;
+  inf->system_rx_queues_end = 0;
+  inf->hdr_split_rx_queues_end = 1;
+  ctx->mtu = mtu;
+  ut_active_ctx = ctx;
+  bool ok = dev_hdr_split_nic_buf_ok(inf, mp);
+  rte_mempool_free(mp);
+  return ok;
+}
+
+bool ut_dev_has_hdr_split_queues(const ut_dev_ctx* ctx) {
+  const struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+  return (inf->feature & MT_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT) &&
+         (inf->hdr_split_rx_queues_end > inf->system_rx_queues_end);
+}
+
+int ut_dev_put_rx_queue(ut_dev_ctx* ctx) {
+  ut_active_ctx = ctx;
+  return mt_dev_put_rx_queue(&ctx->impl, &ctx->rx_queue);
+}
+
+int ut_dev_start_hdr_split_port(ut_dev_ctx* ctx) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  inf->feature |= MT_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT | MT_IF_FEATURE_RUNTIME_RX_QUEUE;
+  ctx->rx_queue.mbuf_payload_pool = UT_DEV_INIT_PAYLOAD_POOL;
+  ut_active_ctx = ctx;
+  return dev_start_port(inf);
+}
+
+int ut_dev_last_rx_nseg(const ut_dev_ctx* ctx) {
+  return ctx->last_rx_nseg;
+}
+
+enum ut_dev_pool ut_dev_last_rx_payload_pool(const ut_dev_ctx* ctx) {
+  if (!ctx->last_rx_payload_pool) return UT_DEV_POOL_NONE;
+  if (ctx->last_rx_payload_pool == UT_DEV_INIT_PAYLOAD_POOL)
+    return UT_DEV_POOL_INIT_PAYLOAD;
+  return UT_DEV_POOL_OTHER;
 }
 
 int ut_dev_create_ports(ut_dev_ctx* ctx) {

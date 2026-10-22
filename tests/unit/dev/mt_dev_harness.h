@@ -26,6 +26,17 @@ enum ut_dev_event {
   UT_DEV_EVENT_PORT_START,
   UT_DEV_EVENT_PORT_STOP,
   UT_DEV_EVENT_TX_RL_COMMIT,
+  UT_DEV_EVENT_RX_QUEUE_START,
+  UT_DEV_EVENT_RX_QUEUE_STOP,
+  UT_DEV_EVENT_HDR_SPLIT_BIND,
+  UT_DEV_EVENT_HDR_SPLIT_UNBIND,
+};
+
+/* The payload segment pool of an RX queue setup. */
+enum ut_dev_pool {
+  UT_DEV_POOL_NONE,
+  UT_DEV_POOL_INIT_PAYLOAD, /* the hdr split pool the queue gets at port init */
+  UT_DEV_POOL_OTHER,
 };
 
 struct ut_dev_tm_node {
@@ -80,6 +91,41 @@ int ut_dev_config_rss_reta(ut_dev_ctx* ctx, uint16_t nb_rx_q, uint16_t reta_size
  * timestamp offload on or off and rx_desc_lim.nb_max. Returns the RX ring size chosen. */
 int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,
                                   uint16_t nb_rx_desc, uint16_t nb_max);
+/* Runs mt_dev_get_rx_queue() for a hdr split flow with session slots on a port with or
+ * without the buffer split offload and runtime RX queue setup, whose one RX queue has or
+ * lacks a hdr split pool. True if it got a queue. */
+bool ut_dev_get_hdr_split_rx_queue(ut_dev_ctx* ctx, bool has_hdr_split, bool payload_pool,
+                                   bool runtime_rx_queue);
+/* Injects the mt_hdr_split_bind() return; 0 keeps the bind successful. */
+void ut_dev_fail_hdr_split_bind(ut_dev_ctx* ctx, int error);
+/* Injects the mt_hdr_split_unbind() return; 0 keeps the unbind successful. */
+void ut_dev_fail_hdr_split_unbind(ut_dev_ctx* ctx, int error);
+/* Fails rte_eth_dev_rx_queue_start() call number call, counted from 1; 0 fails none. */
+void ut_dev_fail_rx_queue_start(ut_dev_ctx* ctx, int call);
+/* Runs dev_hdr_split_check() on a port with one hdr split queue, IOVA as VA or PA, the
+ * given ring and rx_free_thresh, and mtl_init_params.hdr_split_slots. */
+int ut_dev_hdr_split_check(ut_dev_ctx* ctx, bool iova_va, uint16_t nb_rx_desc,
+                           uint16_t rx_free_thresh, uint32_t hdr_split_slots);
+/* Sets the rate limit of tx queue 0 while the one RX queue has a bound hdr split pool. */
+int ut_dev_set_rl_rate_with_bound_hdr_split(ut_dev_ctx* ctx, uint64_t bytes_per_sec);
+/* Runs mt_dev_get_tx_queue() for a rate of bytes_per_sec while the one RX queue has a
+ * bound hdr split pool. True if it got a queue. */
+bool ut_dev_get_rl_tx_queue_with_bound_hdr_split(ut_dev_ctx* ctx, uint64_t bytes_per_sec);
+/* Runs mt_dev_set_tx_bps() on tx queue 1 while a hdr split pool is bound. */
+int ut_dev_set_tx_bps_with_bound_hdr_split(ut_dev_ctx* ctx, uint64_t bytes_per_sec);
+/* Runs dev_hdr_split_nic_buf_ok() for a header pool of data_room bytes on a port of the
+ * given MTU, which has one hdr split queue. */
+bool ut_dev_hdr_split_nic_buf_ok(ut_dev_ctx* ctx, uint16_t data_room, uint16_t mtu);
+/* True if the port still has the buffer split feature and hdr split queues. */
+bool ut_dev_has_hdr_split_queues(const ut_dev_ctx* ctx);
+/* Runs mt_dev_put_rx_queue() on the one RX queue. */
+int ut_dev_put_rx_queue(ut_dev_ctx* ctx);
+/* Runs dev_start_port() on a port that can split, whose one RX queue has a payload pool.
+ */
+int ut_dev_start_hdr_split_port(ut_dev_ctx* ctx);
+/* rx_nseg and the payload segment pool of the last rte_eth_rx_queue_setup(). */
+int ut_dev_last_rx_nseg(const ut_dev_ctx* ctx);
+enum ut_dev_pool ut_dev_last_rx_payload_pool(const ut_dev_ctx* ctx);
 
 /* EAL argv builder. rte_eal_init() is stubbed out and fails, which keeps dev_eal_init()'s
  * one-shot guard unlatched, so these may be called repeatedly in one process. */

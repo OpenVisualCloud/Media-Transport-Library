@@ -71,7 +71,6 @@ RXTXAPP_CMDLINE_PARAM_MAP = {
     "static_pad": "--static_pad",
     "no_bulk": "--no_bulk",
     "random_src_port": "--random_src_port",
-    "hdr_split": "--hdr_split",
     "rx_video_fb_cnt": "--rx_video_fb_cnt",
     "phc2sys": "--phc2sys",
     "ptp_sync_sys": "--ptp_sync_sys",

@@ -13,6 +13,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cerrno>
+
 #include "pipeline/st20p_harness.h"
 
 class St20PipelineRxTest : public ::testing::Test {
@@ -199,4 +201,26 @@ TEST_F(St20PipelineRxTest, GetFbAddrReturnsFrameBuffer) {
   EXPECT_EQ(st20p_rx_get_fb_addr(ut20p_handle(ctx_), ut20p_frame_idx(f)), f->addr[0]);
 
   EXPECT_EQ(put_frame(f), 0);
+}
+
+TEST(St20PipelineRxTransportTest, PassesTheTransportPackingToTheSession) {
+  ASSERT_EQ(ut20p_init(), 0);
+  EXPECT_EQ(ut20p_transport_packing(ST20_PACKING_GPM_SL), ST20_PACKING_GPM_SL);
+}
+
+TEST(St20PipelineRxTransportTest, HdrSplitTakesTheTransportFormat) {
+  EXPECT_EQ(ut20p_check_hdr_split(ST_FRAME_FMT_YUV422RFC4175PG2BE10, false), 0);
+}
+
+TEST(St20PipelineRxTransportTest, HdrSplitRejectsAConverter) {
+  EXPECT_LT(ut20p_check_hdr_split(ST_FRAME_FMT_YUV422PLANAR10LE, false), 0);
+}
+
+TEST(St20PipelineRxTransportTest, HdrSplitRejectsThePacketConvert) {
+  EXPECT_LT(ut20p_check_hdr_split(ST_FRAME_FMT_YUV422RFC4175PG2BE10, true), 0);
+}
+
+TEST(St20PipelineRxTransportTest, FreeReturnsTheBusyOfTheTransport) {
+  ASSERT_EQ(ut20p_init(), 0);
+  EXPECT_EQ(ut20p_free_with_transport_ret(-EBUSY), -EBUSY);
 }

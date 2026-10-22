@@ -772,7 +772,7 @@ Alternative path: `rv_detector_init()` instead of `rv_init_sw()` when auto-detec
 ### RX Packet Handlers (set by `rv_init_pkt_handler`)
 - `rv_handle_frame_pkt` — frame/slice mode (the default for `st20_is_frame_type`)
 - `rv_handle_rtp_pkt` — RTP passthrough (`ST20_TYPE_RTP_LEVEL`), enqueues to `rtps_ring`
-- `rv_handle_hdr_split_pkt` — header-split mode, payload lives in `mbuf->next`
+- `rv_handle_hdr_split_pkt` — header-split mode, RTP header and payload live in `mbuf->next`
 - `rv_handle_st22_pkt` — compressed video
 - `rv_handle_detect_pkt` — auto-detection mode
 - `rv_handle_detect_err` — detection error handler
@@ -1072,7 +1072,19 @@ Default burst: 128 (runtime assignment: `s->rx_burst_size = 128`). RX packets fi
 Continuous burst: if `rte_eth_rx_burst` returns ≥ `rx_burst_size / 2` (≥64), track as continuous burst. Tasklet returns `MTL_TASKLET_HAS_PENDING` when any packets received → scheduler re-polls immediately.
 
 ### Header-Split RX
-Intel E810 with `ST20_RX_FLAG_HDR_SPLIT`: NIC writes payload directly into frame buffer, bypassing CPU memcpy. Requires DPDK ice driver patches.
+Intel E810 (ice PF) with `ST20_RX_FLAG_HDR_SPLIT`, stock DPDK API (buffer split with `proto_hdr = L2|IPV4|UDP`). The NIC writes the UDP payload (RTP + SRD + pixels) of each packet into the frame, no CPU copy.
+- **Layout**: slotted frame, packet k in slot k at `frame + k * stride`, `stride = RTE_CACHE_LINE_ROUNDUP(128 + max(slot, buf))`, `slot = 20 + 6 + pkt_len`, `buf` = header pool data room - 128 (1536, so stride 1664), as ice sizes the payload buffer from the header pool. `pkt_len` comes from `ops.packing` (`st20p_rx_ops.transport_packing`). Doc at `ST20_RX_FLAG_HDR_SPLIT`.
+- **Payload pool** (`mt_hdr_split.c`): one per hdr split queue, made in `dev_if_init_rx_queues()`, `mtl_init_params.hdr_split_slots` pinned external mbufs (default 21600), `cache_size = 0`, MTL mempool ops `mtl_hdr_split`. Unbound, the mbufs point at scratch buffers, one per mbuf the PMD holds (`mt_hdr_split_in_use_max()`: nb_rx_desc + rx_free_thresh + 32 rx_stage).
+- **Dequeue**: `mt_hdr_split_bind()` points mbuf i at slot i of a session. `dequeue` hands slots out in frame order and wraps to slot 0 at the first frame start (on the grid of the last frame start the handler saw) that no longer fits; a slot still in use fails the alloc.
+- **Alloc fail**: only the scalar bulk alloc Rx path of ice takes a refused payload alloc back cleanly; the scalar `ice_recv_pkts()` leaks the received mbuf and leaves a NULL ring entry.
+- **Queue**: ice has no runtime rx queue setup, so the queue is set up once at port start with rx_seg [header pool, hdr split pool] (ice picks the scalar split Rx path). `mt_dev_get_rx_queue()` stops the queue, binds the session slots and starts it; `mt_dev_put_rx_queue()` stops it, unbinds and, on a port without `MT_IF_FEATURE_RUNTIME_RX_QUEUE`, starts it again.
+- **Checks** (`dev_hdr_split_check()` after `dev_config_port()`): IOVA as VA (slots at base iova + offset) and the preconditions of the scalar bulk alloc Rx path (`rx_free_thresh >= 32`, `< nb_rx_desc`, divides it), else the port drops hdr split; `hdr_split_slots` below the PMD mbufs fails init.
+- **Port restart**: an ice `rte_tm_hierarchy_commit()` stops and starts the port outside the RX session lock, so `dev_tx_queue_set_rl_rate()` returns -EBUSY while a pool is bound. `mt_dev_get_tx_queue()` then returns NULL (no TSC fallback, `tx_pacing_way` stays RL) and `mt_dev_set_tx_bps()` returns the error.
+- **TX retrain**: the rate change fails, so that TX session falls back to TSC. A queue that fails to unbind stays bound until the process exits.
+- **ice fix**: `patches/dpdk/26.07/0012` — without it a per-queue buffer split queue gets a vector Rx path that leaks payload mbufs.
+- **Ops table**: DPDK has 16 mempool ops slots and a full shared build registers 16. `mt_dev_init()` registers the MTL ops before `rte_eal_init()` only when `nb_rx_hdr_split_queues` is set; then the DPDK driver ops that registers last, by the order of the plugin directory, fails ("Maximum number of mempool ops structs exceeded").
+- **Ops check**: `mt_hdr_split_ops_check()` errs after `rte_eal_init()` if the lost entry was `MT_MEMPOOL_OPS_DEFAULT` ("stack").
+- **Scalar Rx path**: once one queue splits, ice takes the scalar bulk alloc Rx path for every RX queue of the port; a header pool buffer below MTU + 26 would give the scattered path, so `dev_hdr_split_nic_buf_ok()` drops hdr split then.
 
 ### iavf HW RX Timestamp Workaround
 Only with `MTL_FLAG_ENABLE_HW_TIMESTAMP` on iavf VFs.

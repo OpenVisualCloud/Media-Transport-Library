@@ -486,18 +486,14 @@ struct st22_rx_video_info {
 };
 
 struct st_rx_video_hdr_split_info {
-  void* frames;
+  struct mt_hdr_split_slots* slots;
   size_t frames_size;
-  rte_iova_t frames_iova;
-  uint32_t mbuf_alloc_idx;
-  uint32_t mbufs_per_frame;
-  uint32_t mbufs_total;
-  bool mbuf_pool_ready;
-
-  /* base frame add for current frame */
-  void* cur_frame_addr;
-  /* mbuf idx for current frame */
-  uint32_t cur_frame_mbuf_idx;
+  /* pixel bytes of every packet but the last */
+  uint32_t pkt_len;
+  /* the largest UDP payload of a packet */
+  uint32_t slot_size;
+  /* an rx queue failed to unbind and may still write the frames */
+  bool slots_kept;
 };
 
 struct st_rx_video_sessions_mgr; /* forward declare */
@@ -587,7 +583,7 @@ struct st_rx_video_session_impl {
   struct st22_rx_video_info* st22_info;
 
   bool is_hdr_split;
-  struct st_rx_video_hdr_split_info hdr_split_info[MTL_SESSION_PORT_MAX];
+  struct st_rx_video_hdr_split_info hdr_split_info;
 
   /* st20 detector info */
   struct st_rx_video_detector detector;

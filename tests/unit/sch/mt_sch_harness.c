@@ -153,6 +153,129 @@ int ut_sch_lcore_entry_mempolicy(int* mode, int* exit_mode) {
   return ret;
 }
 
+/* Two more slots than the API reports: one empty, one that overflows tasklets[]. */
+#define UT_SCH_STATS_SLOTS (MTL_SCH_MAX_TASKLETS + 2)
+
+struct ut_sch_stats_ctx {
+  struct mtl_main_impl impl; /* first, the handle is its address */
+  struct mt_sch_tasklet_impl tasklet;
+  struct mt_sch_tasklet_impl* tasklets[UT_SCH_STATS_SLOTS];
+  struct mt_sch_tasklet_impl idle[UT_SCH_STATS_SLOTS];
+  unsigned int spin_us;
+  unsigned int work_every;
+  _Atomic uint64_t calls;
+};
+
+static int ut_sch_spin_handler(void* priv) {
+  struct ut_sch_stats_ctx* ctx = priv;
+  uint64_t call = atomic_load_explicit(&ctx->calls, memory_order_relaxed) + 1;
+  bool work = ctx->work_every && call % ctx->work_every == 0;
+
+  if (work || !ctx->work_every) {
+    uint64_t end = mt_get_tsc(&ctx->impl) + (uint64_t)ctx->spin_us * NS_PER_US;
+    while (mt_get_tsc(&ctx->impl) < end) {
+    }
+  }
+  atomic_store_explicit(&ctx->calls, call, memory_order_relaxed);
+  return work ? MTL_TASKLET_HAS_PENDING : MTL_TASKLET_ALL_DONE;
+}
+
+mtl_handle ut_sch_stats_main_create(uint64_t flags, unsigned int spin_us,
+                                    unsigned int work_every) {
+  struct ut_sch_stats_ctx* ctx = calloc(1, sizeof(*ctx));
+  if (!ctx) return NULL;
+
+  struct mtl_main_impl* impl = &ctx->impl;
+  impl->type = MT_HANDLE_MAIN;
+  impl->user_para.flags = flags;
+  impl->tsc_hz = rte_get_tsc_hz();
+  ctx->spin_us = spin_us;
+  ctx->work_every = work_every;
+
+  ctx->tasklet.ops.handler = ut_sch_spin_handler;
+  ctx->tasklet.ops.priv = ctx;
+  snprintf(ctx->tasklet.name, sizeof(ctx->tasklet.name), "%s", UT_SCH_SPIN_TASKLET_NAME);
+  ctx->tasklet.idx = 1;
+  mt_stat_u64_init(&ctx->tasklet.stat_time);
+  mt_stat_u64_init(&ctx->tasklet.user_stat_time);
+  mt_stat_u64_init(&ctx->tasklet.user_stat_work);
+  ctx->tasklets[1] = &ctx->tasklet;
+
+  struct mtl_sch_impl* sch = mt_sch_instance(impl, 0);
+  snprintf(sch->name, sizeof(sch->name), "ut_sch");
+  sch->parent = impl;
+  ctx->tasklet.sch = sch;
+  sch->tasklet = ctx->tasklets;
+  sch->nb_tasklets = UT_SCH_STATS_SLOTS;
+  sch->max_tasklet_idx = 2;
+  sch->run_in_thread = true;
+  mt_stat_u64_init(&sch->stat_time);
+  mt_stat_u64_init(&sch->user_stat_time);
+  if (mt_pthread_mutex_init(&sch->mutex, NULL)) {
+    free(ctx);
+    return NULL;
+  }
+  rte_atomic32_set(&sch->active, 1);
+  return impl;
+}
+
+void ut_sch_stats_main_destroy(mtl_handle mt) {
+  struct ut_sch_stats_ctx* ctx = (struct ut_sch_stats_ctx*)mt;
+  if (!ctx) return;
+  mt_pthread_mutex_destroy(&mt_sch_instance(&ctx->impl, 0)->mutex);
+  free(ctx);
+}
+
+int ut_sch_stats_add_idle_tasklets(mtl_handle mt, int count) {
+  struct ut_sch_stats_ctx* ctx = (struct ut_sch_stats_ctx*)mt;
+  struct mtl_sch_impl* sch = mt_sch_instance(&ctx->impl, 0);
+
+  for (int slot = sch->max_tasklet_idx; count > 0; slot++, count--) {
+    if (slot >= UT_SCH_STATS_SLOTS) return -ENOSPC;
+    struct mt_sch_tasklet_impl* tasklet = &ctx->idle[slot];
+    tasklet->ops.handler = ut_sch_idle_handler;
+    snprintf(tasklet->name, sizeof(tasklet->name), "ut_idle_%d", slot);
+    tasklet->sch = sch;
+    tasklet->idx = slot;
+    mt_stat_u64_init(&tasklet->stat_time);
+    mt_stat_u64_init(&tasklet->user_stat_time);
+    mt_stat_u64_init(&tasklet->user_stat_work);
+    ctx->tasklets[slot] = tasklet;
+    sch->max_tasklet_idx = slot + 1;
+  }
+  return 0;
+}
+
+void ut_sch_stats_drop_tasklets(mtl_handle mt) {
+  mt_sch_instance(mt, 0)->tasklet = NULL;
+}
+
+int ut_sch_stats_start(mtl_handle mt) {
+  return sch_start(mt_sch_instance(mt, 0));
+}
+
+int ut_sch_stats_stop(mtl_handle mt) {
+  return sch_stop(mt_sch_instance(mt, 0));
+}
+
+int ut_sch_stats_wait_calls(mtl_handle mt, uint64_t calls) {
+  struct ut_sch_stats_ctx* ctx = (struct ut_sch_stats_ctx*)mt;
+
+  for (int i = 0; i < 2000; i++) {
+    if (atomic_load_explicit(&ctx->calls, memory_order_relaxed) >= calls) return 0;
+    mt_sleep_ms(1);
+  }
+  return -ETIMEDOUT;
+}
+
+int ut_sch_stats_dump(mtl_handle mt) {
+  return sch_stat(mt_sch_instance(mt, 0));
+}
+
+uint64_t ut_sch_stats_dump_loop_cnt(mtl_handle mt) {
+  return mt_sch_instance(mt, 0)->stat_time.cnt;
+}
+
 int ut_sch_filelock_create_mode(unsigned int* mode) {
   char dir[] = "/tmp/ut_sch_flock_XXXXXX";
   if (!mkdtemp(dir)) return -errno;

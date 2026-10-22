@@ -38,6 +38,14 @@ int ut20p_init(void);
 ut20p_ctx* ut20p_ctx_create(int framebuff_cnt);
 void ut20p_ctx_destroy(ut20p_ctx* ctx);
 
+/* The packing of the st20 RX ops rx_st20p_create_transport() builds from a transport
+ * packing; -1 if it fails. */
+int ut20p_transport_packing(enum st20_packing packing);
+/* The st20p_rx_create() check of a hdr split session with a YUV 422 10 bit transport. */
+int ut20p_check_hdr_split(enum st_frame_fmt output_fmt, bool pkt_convert);
+/* st20p_rx_free() of a session whose st20_rx_free() returns transport_ret. */
+int ut20p_free_with_transport_ret(int transport_ret);
+
 /**
  * Turn on ST20P_RX_FLAG_BLOCK_GET behaviour: init the block cond/mutex as
  * st20p_rx_create() does and set the blocking get_frame timeout.

@@ -628,8 +628,12 @@ enum st20p_rx_flag {
   ST20P_RX_FLAG_AUTO_DETECT = (MTL_BIT32(18)),
   /**
    * Flag bit in flags of struct st20p_rx_ops.
-   * Only ST20_PACKING_BPM stream can enable this offload as software limit
-   * Try to enable header split offload feature.
+   * Enable the header split offload, see ST20_RX_FLAG_HDR_SPLIT. The frame has the
+   * slotted layout of ST20_RX_FLAG_HDR_SPLIT, which no converter can read: the output
+   * format must be the transport format, without ST20P_RX_FLAG_PKT_CONVERT. As for
+   * st20_rx_free(), st20p_rx_free() returns -EBUSY if the rx queue keeps the frames, and
+   * a st20p_rx_create() that fails logs "the rx queue keeps the slots"; ext frames must
+   * stay allocated.
    */
   ST20P_RX_FLAG_HDR_SPLIT = (MTL_BIT32(19)),
   /**
@@ -1066,6 +1070,8 @@ struct st20p_rx_ops {
 
   /* use to store framebuffers on vram */
   void* gpu_context;
+  /** Optional. Session transport packing, sizes the slots of ST20P_RX_FLAG_HDR_SPLIT */
+  enum st20_packing transport_packing;
 };
 
 /** The structure describing how to create a tx st2110-22 pipeline session. */
@@ -2013,6 +2019,8 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops);
  * @return
  *   - 0: Success, rx st2110-20 pipeline session freed.
  *   - <0: Error code of the rx st2110-20 pipeline session free.
+ *   - -EBUSY: freed, but the rx queue keeps the hdr split frames; ext frames must stay
+ *     allocated.
  */
 int st20p_rx_free(st20p_rx_handle handle);
 

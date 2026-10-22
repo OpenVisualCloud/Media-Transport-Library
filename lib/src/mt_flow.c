@@ -16,61 +16,6 @@ static inline void rx_flow_unlock(struct mt_flow_impl* flow) {
   mt_pthread_mutex_unlock(&flow->mutex);
 }
 
-static struct rte_flow* rte_rx_flow_create_raw(struct mt_interface* inf, uint16_t q,
-                                               struct mt_rxq_flow* flow) {
-  struct rte_flow_error error;
-  struct rte_flow* r_flow;
-
-  struct rte_flow_attr attr = {0};
-  struct rte_flow_item pattern[2];
-  struct rte_flow_action action[2];
-  struct rte_flow_item_raw spec = {0};
-  struct rte_flow_item_raw mask = {0};
-  struct rte_flow_action_queue to_queue = {0};
-
-  uint16_t port_id = inf->port_id;
-  char pkt_buf[] =
-      "0000000000010000000000020800450000300000000000110000010101010202020200001B3A001C00"
-      "008000000000000000000000000000000000000000";
-  char msk_buf[] =
-      "000000000000000000000000000000000000000000000000000000000000000000000000FFFF000000"
-      "000000000000000000000000000000000000000000";
-  MTL_MAY_UNUSED(flow);
-
-  attr.ingress = 1;
-
-  memset(&error, 0, sizeof(error));
-  memset(pattern, 0, sizeof(pattern));
-  memset(action, 0, sizeof(action));
-
-  spec.pattern = (const void*)pkt_buf;
-  spec.length = 62;
-  mask.pattern = (const void*)msk_buf;
-  mask.length = 62;
-
-  pattern[0].type = RTE_FLOW_ITEM_TYPE_RAW;
-  pattern[0].spec = &spec;
-  pattern[0].mask = &mask;
-  pattern[1].type = RTE_FLOW_ITEM_TYPE_END;
-
-  to_queue.index = q;
-  action[0].type = RTE_FLOW_ACTION_TYPE_QUEUE;
-  action[0].conf = &to_queue;
-  action[1].type = RTE_FLOW_ACTION_TYPE_END;
-
-  mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
-  r_flow = rte_flow_create(port_id, &attr, pattern, action, &error);
-  mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
-  if (!r_flow) {
-    err("%s(%d), rte_flow_create fail for queue %d, %s\n", __func__, port_id, q,
-        mt_string_safe(error.message));
-    return NULL;
-  }
-
-  info("%s(%d), queue %u succ\n", __func__, inf->port, q);
-  return r_flow;
-}
-
 static struct rte_flow* rte_rx_flow_create(struct mt_interface* inf, uint16_t q,
                                            struct mt_rxq_flow* flow) {
   struct rte_flow_attr attr;
@@ -106,11 +51,6 @@ static struct rte_flow* rte_rx_flow_create(struct mt_interface* inf, uint16_t q,
       info("%s(%d), no ip flow as MTL_FLAG_RX_UDP_PORT_ONLY is set\n", __func__, port);
       has_ip_flow = false;
     }
-  }
-
-  /* only raw flow can be applied on the hdr split queue */
-  if (mt_if_hdr_split_pool(inf, q)) {
-    return rte_rx_flow_create_raw(inf, q, flow);
   }
 
   /* queue */

@@ -571,8 +571,8 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         ctx->rx_st22_session_cnt = atoi(optarg);
         break;
       case ST_ARG_HDR_SPLIT:
-        ctx->enable_hdr_split = true;
-        break;
+        err("%s, --hdr_split is not supported, its frames are slotted\n", __func__);
+        return -EINVAL;
       case ST_ARG_PACING_WAY:
         if (!strcmp(optarg, "auto"))
           p->pacing = ST21_TX_PACING_WAY_AUTO;
