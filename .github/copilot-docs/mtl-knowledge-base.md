@@ -188,6 +188,12 @@ Ring = shock absorber. Builder can be slow; transmitter still has queued packets
 
 **Bulk enqueue semantics**: `rte_ring_sp_enqueue_bulk` (all-or-nothing) not `_burst` (best-effort). The 4 packets have sequential RTP sequence numbers and pacing timestamps — they must be sent as a unit. Partial enqueue would break batch integrity.
 
+**Bulks per call**: on time, the builder does 1 bulk per call and the RL transmitter 2, so a session gets at most that many per scheduler loop (2160p59.94 is ~990K pkt/s: 4 pkts per loop need a loop below 4 us).
+- Late builder (`tvs_tasklet_handler()`, ST20 frame and slice level only, all pacing ways): more bulks while `pacing.tsc_time_cursor` (its next packet) is due, up to `ST_TX_VIDEO_LATE_BULKS_MAX` (8). ST22 and RTP level build 1 bulk per call.
+- Late RL transmitter (`video_trs_rl_tasklet()`, ST20, ST22 and RTP level): more bulks while the last packet of the bulk it just sent was due. A pad or an inflight retry sets no due time, so it never counts as late. The TSC, launch-time and PTP transmitters send as before.
+- `cpu_busy_score` (migration) still counts one bulk per loop.
+- An always-8 version made audio on the same scheduler p99.9 94 -> 263 us: each 720p transmitter refilled its NIC queue in long calls at each frame start.
+
 ### Cooperative tx_burst: No Retry Loop
 If `rte_eth_tx_burst()` returns fewer than requested:
 1. Save unsent packets to `inflight` array
@@ -458,7 +464,7 @@ When no hardware RL available:
 ### Bulk Size: Why 4
 `ST_SESSION_MAX_BULK = 4` (compile-time constant in `st_header.h`). Sizes `trs_inflight[port][4]` arrays.
 
-**RL mode**: NIC paces regardless of CPU burst size. RL transmitter sends up to 8 packets per iteration (double-call). VRX compensation is for NIC burst behavior (`max_burst_size=2048`):
+**RL mode**: NIC paces regardless of CPU burst size. RL transmitter sends up to 2 bulks (8 pkts) per call, up to `ST_TX_VIDEO_LATE_BULKS_MAX` bulks when late (see Builder vs Transmitter Split). VRX compensation is for NIC burst behavior (`max_burst_size=2048`):
 ```c
 pacing->vrx -= 2; /* VRX compensate to rl burst */
 pacing->vrx -= 2; /* leave VRX space for deviation */
@@ -968,6 +974,8 @@ Sessions organized into managers (`st_tx_video_sessions_mgr`), one per session t
 - Fixed-size session array (indexed by `idx`)
 - Manager mutex protects attach/detach
 - Tasklet handler iterates all sessions in local array
+- Exception, ST40 TX and RX: one call handles at most 4 sessions with work (TX: a built packet), then returns `MTL_TASKLET_HAS_PENDING`; the next call starts at `next_sidx`. Lip-synced sessions all have work at one instant, and this lets the other tasklets of the scheduler run inside that burst. The video managers still visit every session per call
+- ST30/ST40 RX: the handler first reads the manager RX queue (§7 Queue Architecture) of each port, then runs the session loop (and the ST40 4-session bound) only while a session has an RX queue of its own (`mq.own_rxq_cnt`)
 
 Per-scheduler (not global) → no filtering needed in tasklet hot path.
 
@@ -1042,6 +1050,7 @@ Well-known group `224.0.0.1` always joined for IGMP query reception (unless kern
 | **Dedicated queue** | Default for video | One TX/RX queue per session, best isolation |
 | **Flow director** | NIC supports flow rules | Multiple sessions share port, flow rules steer to per-session queues |
 | **Shared RX Queue (RSQ)** | Flow director unavailable | Dispatcher distributes mbufs to per-session rings |
+| **Manager RX queue** (`st_rx_mgr_queue.c`) | Frame-level ST30/ST40 RX | One queue per port per audio/ANC manager, flow rules steer to it; per call and port: up to 8 (ANC) / 16 (audio) kept pkts, then a queue read of as many, by UDP dst port, IP checked under the slot lock; a locked session's pkts wait in order in a shared 64-entry list. Lives until manager uinit. Fallbacks: `st_rx_mgr_queue.h` |
 | **Shared TX Queue (TSQ)** | Low-bandwidth sessions | Spinlock-protected, multiple sessions enqueue |
 | **RSS** | Fallback | Hash-based distribution, no per-flow control |
 
@@ -1070,6 +1079,8 @@ Pads actively force the ring to cycle, guaranteeing completion regardless of NIC
 Default burst: 128 (runtime assignment: `s->rx_burst_size = 128`). RX packets fit in a single mbuf because `data_room = 1664` > max packet size (1494 bytes) — no multi-segment reassembly needed.
 
 Continuous burst: if `rte_eth_rx_burst` returns ≥ `rx_burst_size / 2` (≥64), track as continuous burst. Tasklet returns `MTL_TASKLET_HAS_PENDING` when any packets received → scheduler re-polls immediately.
+
+A burst of less than 8 packets reads none on the iavf/ice vector paths (`RTE_ALIGN_FLOOR(nb_pkts, 8)`); `st_rx_mgr_queue_tasklet()` raises a smaller burst to 8.
 
 ### Header-Split RX
 Intel E810 with `ST20_RX_FLAG_HDR_SPLIT`: NIC writes payload directly into frame buffer, bypassing CPU memcpy. Requires DPDK ice driver patches.

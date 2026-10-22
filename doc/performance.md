@@ -113,3 +113,286 @@ ninja -C build_no_nt
 ```
 
 With the option off every RX video frame copy goes through `mt_memcpy()` and the three store fences that publish a frame to the application are compiled out with it. Build both ways and compare `incomplete frames` at a fixed session count to tell a copy-bound RX regression apart from a pacing or scheduling one.
+
+## 6. Host and application setup for low latency
+
+Each item of this section compares one change with the setup before it, and keeps the rest the same. Item 6.5 changes two settings together.
+The host is 2 x Xeon Gold 6348 (Ice Lake) with an E810-C, the TX and the RX VF on one port, TX and RX in one process. Item 6.1 was also measured on Granite Rapids (2 x Xeon 6767P, E830). All sessions use `*_TX_FLAG_USER_PACING`. Run the commands of this section as root. Two workloads:
+
+* client mix: 1 x 2160p59.94 and 2 x 1080p59.94 st20p, 8 st30p (audio) and 16 st40p (ANC) sessions (items 6.1, 6.2 and the switch count of 6.3).
+* full mix: 2 x 2160p59.94, 4 x 1080p59.94 and 8 x 720p59.94 st20p, 16 st30p (audio, 1 ms frames) and 32 st40p (ANC) sessions, 40.6 Gb/s TX and 40.6 Gb/s RX, also with `*_TX_FLAG_USER_TIMESTAMP` (the other items).
+
+The test application writes the media instant and the create time into each payload, so the receiver measures each frame against its media instant.
+
+In the full mix, the lcores are 1-15, and their HT siblings 57-71 stay idle. The application threads use CPUs 16-27 and 72-83 on node 0, the NUMA node of the port. The other processes of the host use CPUs 0, 28-56 and 84-111. The client mix ran on a host with `isolcpus=1,2`, on 2 to 7 lcores (1-7 in item 6.2).
+
+The CPU numbers are for the test host: 112 CPUs, node 0 is 0-27 and 56-83, and the HT sibling of CPU n is n + 56. Read the values of your host with `lscpu -e=CPU,NODE,CORE` and change the CPU lists to match.
+
+### 6.1. Turn off automatic NUMA balancing
+
+With `kernel.numa_balancing=1` the kernel scans the address space of each process about once per second, as task work on one of its threads. For MTL that thread is often a busy-polling scheduler, and every tasklet of that scheduler waits until the scan ends, for 32 us to 1.4 ms.
+
+main sets `MPOL_LOCAL` on the scheduler threads, and v26.01 does not. v26.01 also takes 30 to 61 NUMA hinting faults per minute on the scheduler threads. Worst tasklet call in 60 s (Ice Lake with the fence of 6.3, Granite Rapids without it). In brackets: the NUMA scans and the hinting faults on the `mtl_sch_*` threads. A dash means not measured:
+
+host | build | `numa_balancing=1` | `numa_balancing=0`
+--- | --- | --- | ---
+Ice Lake | main | 206 us (66 scans) | -
+Ice Lake | v26.01 | 748 us (29 scans, 61 faults) | below 200 us (0 scans, 0 faults)
+Granite Rapids | main | 869 us (68 scans) | -
+Granite Rapids | v26.01 | 1.38 ms (46 scans, 37 faults) | 344 us and 370 us (0 scans, 0 faults)
+
+```bash
+sysctl -w kernel.numa_balancing=0
+# keep it after a reboot
+echo "kernel.numa_balancing=0" > /etc/sysctl.d/99-mtl-numa-balancing.conf
+```
+
+[Run Guide section 7.2](run.md#72-disable-automatic-numa-balancing) gives the same setting.
+
+### 6.2. Start the application on a CPU that is not an lcore
+
+`mtl_init()` binds the calling thread to the NUMA node of the port. When that thread runs on the other node, the kernel moves it to a CPU of the port node, and it can select an isolated CPU that is also an lcore.
+
+The kernel never load-balances a task off an isolated CPU, and the threads created after that (`mtl_admin`, `mtl_stat` and the frame threads of the application) start on the same CPU. The admin thread then spins on a session lock that the preempted scheduler holds, for one full time slice.
+
+Started on the lcore of `mtl_sch_0`, the worst tasklet call was 2.5 to 13 ms in 6 of 6 runs, and audio and ANC of that scheduler arrived up to 12.6 ms late. Started on CPU 8 of the same node, outside the lcore list of these runs (1-7), and with the host processes fenced off the lcores as in 6.3, main had no tasklet call above 200 us in 3 of 3 runs, and v26.01 had 1 to 2 calls of about 300 us.
+
+Start the process on a CPU of the port node that is not in the lcore list. Then `numa_bind()` moves no thread, and no thread starts on an lcore. With the fence of 6.3, start the process in the scope that 6.3 shows:
+
+```bash
+# lcores 1-15 on NUMA node 0
+taskset -c 16 ./app --lcores 1-15 ...
+```
+
+### 6.3. Keep other processes off the lcores and the application CPUs
+
+`isolcpus` keeps the load balancer away from a CPU, but it does not move a task that starts on that CPU or inherits it. In a 60 s run of the client mix with `isolcpus=1,2`, one interactive process of the host alone switched in 5300 times (and 41500 times in a second run) on the two lcores.
+
+The application threads that feed MTL need the same protection as the lcores: an ANC producer thread that shared its CPU with other processes woke 8.8 ms late and put its frame 6.8 ms after the media instant. MTL sent that frame 14 us after the put.
+
+A cgroup cpuset, the fence, moves the processes of the host to the other CPUs at runtime. The MTL application gets a scope of its own: a process in a fenced slice cannot use the application CPUs or the lcores, and then `taskset` and `rte_eal_init()` fail. The fence needs cgroup v2 (`stat -fc %T /sys/fs/cgroup` gives `cgroup2fs`) and systemd 244 or later.
+
+Set the fence only when no other MTL or DPDK process runs on the host. The fence changes the CPUs of all processes in these slices at once.
+A thread that is pinned to an lcore moves to the house CPUs, and a DPDK process that starts in these slices after that stops in `rte_eal_init()`, because it cannot pin its lcores. Before you remove a fence, make sure that you set it: `systemctl show -p AllowedCPUs user.slice` shows the CPUs of the fence.
+
+```bash
+all=0-$(($(nproc --all) - 1))
+house=0,28-56,84-111   # all CPUs minus the lcores, their HT siblings and the application CPUs
+for s in user.slice system.slice init.scope; do
+  systemctl set-property --runtime "$s" AllowedCPUs="$house"
+done
+systemd-run --scope --slice=mtl.slice -p AllowedCPUs="$all" -- taskset -c 16 ./app ...
+```
+
+A cpuset moves processes, not kernel threads. To keep device interrupts, timers, unbound kworkers and RCU callbacks off the lcores too, put the lcores and their HT siblings in the kernel boot parameters ([CPU Isolation Guide](isolation.md)): `isolcpus=managed_irq,domain,1-15,57-71 nohz_full=1-15,57-71 rcu_nocbs=1-15,57-71 irqaffinity=0,16-56,72-111`.
+
+`managed_irq` moves only the managed interrupts. `irqaffinity` sends the other interrupts, for example the queues of the ice PF, to the other CPUs. The per-CPU threads (`ksoftirqd/N`, `kworker/N`) stay, but get less work. Do not put the application CPUs in `isolcpus`: the `domain` flag stops the load balancer, and the application threads then stay on the CPU where they started.
+
+To remove the fence, set `AllowedCPUs` to all CPUs, then remove the runtime drop-in of that property. Do not use `systemctl revert`: it also removes the drop-ins that an administrator put in `/etc/systemd/system/<unit>.d/` and `/etc/systemd/system.control/`.
+
+```bash
+all=0-$(($(nproc --all) - 1))
+for s in user.slice system.slice init.scope; do
+  systemctl set-property --runtime "$s" AllowedCPUs="$all"
+  rm -f "/run/systemd/system.control/$s.d/50-AllowedCPUs.conf"
+done
+systemctl daemon-reload
+```
+
+### 6.4. Turn off deep C-states on the application CPUs
+
+The application threads sleep between two frames. A consumer in a blocking `st20p_rx_get_frame()` (`ST20P_RX_FLAG_BLOCK_GET`) sleeps for one frame period, and a producer sleeps until the time to put its next frame. A CPU with nothing to do for one frame period (16.7 ms at 59.94 fps) enters its deepest idle state, and the next wake-up pays the exit latency of that state.
+
+On the Ice Lake host C6 has an exit latency of 170 us (`/sys/devices/system/cpu/cpu*/cpuidle/state*/latency`), and the `menu` governor selects it when it expects at least 600 us of idle time.
+
+The consumer wake-up is the time from the `notify_frame_available` callback to the return of `st20p_rx_get_frame()`. The values below are with C6 on and with C6 off on the application CPUs only, 2 interleaved 60 s runs each (full mix, all session types):
+
+metric | C6 on | C6 off
+--- | --- | ---
+consumer wake-up, p50 | 11 to 14 us | 10 to 11 us
+consumer wake-up, p99 | 121 to 147 us | 14 to 20 us
+consumer wake-up, p99.9 | 170 to 221 us | 25 to 31 us
+frames with a consumer wake-up of 50 us or more | 1.7 to 7.6 % | 0.0 %
+producer wake-up delay, p99.9 | 101 to 103 us | 63 to 64 us
+2160p create to get, p99.9 | 18.82 ms | 18.65 to 18.66 ms
+
+The frame complete times, the jitter and the RTP timestamps did not change: the schedulers busy-poll on their lcores and never enter an idle state. Only the application threads see the exit latency.
+
+```bash
+# application CPUs 16-27 and 72-83: turn off each idle state with an exit latency above 10 us
+for c in $(seq 16 27) $(seq 72 83); do
+  for s in /sys/devices/system/cpu/cpu"$c"/cpuidle/state*; do
+    [ -f "$s/latency" ] || continue
+    [ "$(cat "$s/latency")" -gt 10 ] && echo 1 > "$s/disable"
+  done
+done
+```
+
+C1 and C1E (1 us and 4 us) stay on. Granite Rapids also has C6P (210 us), and the same loop turns it off. Write 0 to `disable` to turn a state on again.
+
+For a limit on one CPU only, write it to `/sys/devices/system/cpu/cpuN/power/pm_qos_resume_latency_us` (for example 10), and write 0 to remove it. A process can also hold `/dev/cpu_dma_latency` open with a limit, but that limit applies to every CPU of the host.
+
+### 6.5. Set the session create order and the scheduler quota
+
+MTL places a session on a scheduler when the session is created. An ANC session has no quota and goes to the first scheduler. An audio session has a small quota (the scheduler quota / 300 for TX, / 1000 for RX) and goes to the first scheduler with that much free quota. A video session goes to the first scheduler with free quota for its bandwidth, or MTL starts a new scheduler.
+
+With the create order 2160p, 1080p, 720p, audio, ANC and the default quota, MTL put both 2160p, three 1080p and two 720p sessions on one scheduler, and the ANC sessions with them. The 2160p sessions then ran at 25 to 40 fps and were up to 6.9 s late, until the admin thread moved the video sessions one at a time, 3, 9 and 15 s after the start.
+
+Create the 720p, audio and ANC sessions first and then the 2160p and 1080p sessions, and set the quota of a scheduler to one 2160p session:
+
+```c
+struct mtl_init_params p;
+memset(&p, 0, sizeof(p));
+/* ... */
+/* MTL counts 10357 Mb/s for one 2160p59.94 10 bit 4:2:2 session: no 1080p or 720p
+ * session fits beside it */
+p.data_quota_mbs_per_sch = 11000;
+```
+
+Then each 2160p session has a scheduler of its own from the start. In the measured runs no video frame was late or lost.
+
+Each scheduler needs an lcore of its own. With this quota, the full mix with TX and RX in one process used 8 schedulers on lcores 1-15. With fewer lcores, the session create fails (`no free sch`). Section 7.5 gives a layout for two lcores.
+
+### 6.6. Increase the RX frame buffers of audio and ANC
+
+A pipeline RX session holds `framebuff_cnt` frames for the application. A 1 ms st30p session fills 4 frames in 4 ms, so with `framebuff_cnt = 4` a consumer that was 4 ms late lost audio frames (`back-pressure: framebuff pool empty`). With 16 frames for st30p and 8 for st40p, the full mix lost no frame:
+
+```c
+struct st30p_rx_ops ops_rx_audio;
+struct st40p_rx_ops ops_rx_anc;
+/* ... */
+ops_rx_audio.framebuff_cnt = 16; /* 1 ms frames: 16 ms for the application */
+ops_rx_anc.framebuff_cnt = 8;
+```
+
+## 7. Scheduler efficiency: the full mix on two scheduler cores
+
+Section 6 gives the host setup. This section gives four library changes. With them, two scheduler cores carry the full mix of section 6, 40.6 Gb/s TX and 40.6 Gb/s RX.
+
+The default layout is the setup of section 6: lcores 1-15, `data_quota_mbs_per_sch = 11000`, the create order of 6.5, `MTL_FLAG_RX_SEPARATE_VIDEO_LCORE`, `MTL_FLAG_TX_VIDEO_MIGRATE` and `MTL_FLAG_RX_VIDEO_MIGRATE`. It uses 8 schedulers. Before the changes, on two scheduler cores the 2160p frames were up to 18.5 s late.
+
+In the default layout, each change was measured against the change before it, with 2 interleaved 60 s runs of each build and `MTL_FLAG_TASKLET_TIME_MEASURE` off. The values come from one series of runs, so they differ a little from the values in the commit messages.
+The rows 7.3 and 7.4 of this series used builds from before the last review fixes of 7.3 and 7.4. These fixes do not change the measured code path. One run of the final 7.4 build gave a scheduler 0 loop of 2.53 us, audio 95.7 us and ANC 236 us (p99.9). The "+ 7.4" row of section 7.5 and the two-core capture of section 7.6 come from the final build.
+
+"Frame at the RX app" is the time from the media instant of a frame to the `notify_frame_available` callback of its RX pipeline session.
+
+![Scheduler 0 loop time per change](png/perf_sch_loop.svg)
+
+build | scheduler 0 loop | audio frame at the RX app, p99.9 | ANC frame at the RX app, p99.9
+--- | --- | --- | ---
+main | 3.99 us | 200 us | 222 us
+\+ 7.1 integer TSC | 3.88 us | 201 us | 218 us
+\+ 7.2 bounded ANC call | 4.02 us | 91 us | 263 us
+\+ 7.3 manager RX queue | 2.55 us | 97 us | 239 us
+\+ 7.4 late video bulks | 2.56 us | 96 us | 240 us
+
+![Audio and ANC frame at the RX app per change](png/perf_audio_anc.svg)
+
+### 7.1. TSC to nanoseconds without a division
+
+`mt_get_tsc()` returned `tsc / (tsc_hz / NS_PER_S)`: two double divisions per call. Each session manager calls it for each session in each scheduler loop, and with `MTL_FLAG_TASKLET_TIME_MEASURE` twice more.
+
+VTune found the divider active in 14.9 % of the clock ticks of the scheduler cores. `mt_set_tsc_hz()` now computes a multiplier with 52 fraction bits, and `mt_get_tsc()` does one 128-bit multiply and one shift. The divider then took 0.3 % of the clock ticks.
+
+The scheduler 0 loop went from 3.99 to 3.88 us with the time measure off. With the time measure on, a first version with a 40-bit multiplier went from 10.43 to 9.29 us.
+
+### 7.2. Bounded ANC work in one tasklet call
+
+The 32 lip-synced st40 sessions send and receive at the same media instant. Each ANC manager handled all 32 sessions in one tasklet call. The call took about 55 us on TX and 100 us on RX, and the audio tasklets of the same scheduler waited for the call to end.
+
+Now one call handles at most 4 sessions that build or receive a packet. The next call starts at the next session, and the other tasklets run between the parts of the burst. The graph is a model from the measured call times:
+
+![Model of one ANC burst on scheduler 0, before and after](png/perf_anc_burst.svg)
+
+The audio frame at the RX app went from 201 to 91 us (p99.9). The cost is on the ANC sessions: the last sessions of an instant wait more loop passes, and the ANC frame at the RX app went from 218 to 263 us (p99.9).
+
+### 7.3. One RX queue for the audio and ANC sessions of a manager
+
+Each st30 and st40 RX session read an RX queue of its own in each scheduler loop. On scheduler 0 that is 48 queues per loop, and most reads found the queue empty.
+
+Now each audio and each ANC RX manager has one RX queue per port. The flow rule of each session steers its packets to that queue. The manager reads the queue once per call and gives each packet to its session by the UDP destination port. The RX queues that the sessions read went from 62 to 16, and the scheduler 0 loop went from 4.02 to 2.55 us.
+
+One call gives at most 8 ANC packets or 16 audio packets per port to the sessions. For an ANC RX session on the manager queue, this bound replaces the 4 sessions of 7.2. The TX ANC manager keeps the bound of 7.2. The cost is on audio: the audio frame at the RX app went from 91 to 96.5 us (p99.9).
+
+A session keeps an RX queue of its own when it cannot use the shared one:
+
+* an RTP level session
+* an audio session with the timing parser
+* a data path only session
+* a session with a UDP port that another session of the manager has already
+* a session on a port with a flow rule without the IP (`MTL_FLAG_RX_UDP_PORT_ONLY`, or a NIC whose flow rules cannot match the IP), the kernel socket, the native AF_XDP or AF_PACKET backend, shared RSS, `MTL_FLAG_SHARED_RX_QUEUE`, or CNI RX
+
+The queue of a manager stays in use until the scheduler is freed.
+
+### 7.4. More video bulks in one call for a late session
+
+A TX video session builds one bulk of 4 packets in one tasklet call, and the rate limit transmitter sends one or two bulks. A 2160p59.94 stream has 16458 packets per frame, about 990 000 packets per second. With one bulk per call, its scheduler loop must stay below 4 us.
+
+Before this change, on two scheduler cores the scheduler 0 loop (with the 2160p sessions) was 4.8 us and the scheduler 1 loop 16.7 us, and the 2160p streams fell behind their pacing more and more.
+
+Now an ST20 frame or slice level session whose next packet is already due builds more bulks in the same call. A rate limit transmitter whose last sent video packet was already due sends more bulks. Each part does up to 8 bulks per call (`ST_TX_VIDEO_LATE_BULKS_MAX`). A pad or a retry of an inflight packet does not count as late. The TSC, launch time and PTP transmitters do not change.
+
+A session that is on time does what it did before, so the default layout does not change: scheduler 0 loop 2.55 us before and 2.56 us after, audio p99.9 96.5 us before and 95.7 us after.
+
+On two scheduler cores the cost is on audio. The audio frame at the RX app went from 26.4 to 30.5 us (p50), from 46.5 to 73.6 us (p99) and from 70 to 84 us (p99.9).
+In one of the two runs, MTL reported 8 of 960 288 audio frames late, and the application put 7 frames after their media instant. The loops went to 6.6 and 17.3 us. The jitter of the frame at the RX app is 0.32 ms for 1080p and 0.15 ms for 720p (p99.9), against 17 and 31 us in the default layout.
+
+### 7.5. The full mix on two scheduler cores
+
+build | 2160p frames received (of 7136) | latest 2160p frame at the RX app | 1080p frame at the RX app, p99.9 | audio frame at the RX app, p99.9 | ANC frame at the RX app, p99.9
+--- | --- | --- | --- | --- | ---
+main, 1 run | 4922 | 18.5 s late | 1.06 s | 165 us | 186 us
+\+ 7.1 to 7.3, 1 run | 6038 | 9.2 s late | 1.81 s | 70 us | 211 us
+\+ 7.4, 2 runs | 7136 | on time (latest 16.8 ms) | 17.0 ms | 84 us | 185 us
+
+![2160p frames received on two scheduler cores](png/perf_two_cores.svg)
+
+The measured runs use the host setup of section 6 without a change: `isolcpus`, `nohz_full` and `rcu_nocbs` on 1-15 and 57-71, the fence of 6.3 (`house=0,28-56,84-111`), `kernel.numa_balancing=0`, C6 off on the application CPUs 16-27 and 72-83, and the process starts on CPU 16.
+Only the lcore list and the quota change. CPUs 3-15 and 57-71 stay idle, and the application threads use the 24 application CPUs.
+
+To get the same layout with the MTL API:
+
+1. Set the init parameters, then call `mtl_init()`:
+
+   ```c
+   struct mtl_init_params p;
+   memset(&p, 0, sizeof(p));
+   /* ports, IP addresses, tx_queues_cnt and rx_queues_cnt: the values of your application */
+   p.lcores = "1-2";
+   /* audio 3120 + 4 x 2160p59.94 41428 = 44548: no 1080p fits */
+   p.data_quota_mbs_per_sch = 45000;
+   /* no MTL_FLAG_RX_SEPARATE_VIDEO_LCORE: RX video stays on the TX schedulers */
+   /* no MTL_FLAG_TX_VIDEO_MIGRATE or MTL_FLAG_RX_VIDEO_MIGRATE: a migration needs a free lcore */
+   ```
+
+2. Create the sessions in this order: 16 st30p, 32 st40p, 2 x 2160p, 4 x 1080p and 8 x 720p st20p. Create the TX session and then the RX session of a stream before the next stream. Use the frame buffers of 6.6, `*_TX_FLAG_USER_PACING`, and `*_TX_FLAG_USER_TIMESTAMP` for st20p and st40p. Put each frame 2 ms (video, ANC) or 0.5 ms (audio) before its media instant.
+
+3. Set the CPU affinity of each thread that is not `mtl_sch_*` to the application CPUs: the application threads, `mtl_admin`, `mtl_stat`, `dpdk-intr`, `dpdk-iavf-event` and `dpdk-telemet-v2`. `rte_eal_init()` binds the thread that calls `mtl_init()` to the EAL main lcore (CPU 0 when `p.main_lcore` is 0), and each thread that it starts after that starts on CPU 0.
+
+MTL puts a session on the first scheduler with free quota. A 2160p59.94 session takes 10357 Mb/s, a 1080p59.94 session 2589 Mb/s and a 720p59.94 session 1150 Mb/s. An st30 session also takes quota: the scheduler quota / 300 for TX and / 1000 for RX, here 150 and 45 Mb/s. An st40 session takes no quota and goes to scheduler 0.
+
+Scheduler 0 then holds the audio (3120 Mb/s), the ANC and the TX and RX sessions of both 2160p streams (41428 Mb/s): 44548 Mb/s. The first 1080p session does not fit, and MTL starts scheduler 1 for the 1080p and 720p sessions (39112 Mb/s). A quota from 44500 to 45729 gives this layout. To check it, find `quota 10357 total now 44548` and then `sch_request(1)` in the log.
+
+Do not use the create order of section 6.5 here: with it, the second 2160p stream goes to scheduler 1. With the 2160p sessions first, scheduler 0 also gets the TX session of the first 1080p stream and 5 of the 16 audio streams. Scheduler 1 gets the other 11 audio streams, and the audio frame at the RX app is 267 us (p99.9, an earlier build of 7.1 to 7.4, 1 run) instead of 84 us.
+
+One scheduler core does not carry the same mix. With a draft of changes 7.1 to 7.4, `p.lcores = "1"` and `data_quota_mbs_per_sch` 90000 (1 run), the scheduler loop is 126 us, and only 1862 of 7136 2160p frames arrive in 60 s, 1856 of them late.
+
+### 7.6. ST 2110-21 compliance on the wire
+
+The two VFs of a run are on one port, so the traffic between them stays in the NIC. For a capture, the 1080p59.94 TX session `fhd_0` sent its stream through the lab switch to a port of a second E810 controller, and its RX session got no frame. The other sessions of the mix ran as before, VF to VF.
+
+`tcpdump` captured the stream on the second port with hardware timestamps. `phc2sys` held the PTP hardware clock (PHC) of that port within 150 ns of the system clock, which is also the clock of the sender. EBU LIST 2.2.2 analyzed one capture per row of the table, of 53 to 102 frames (0.9 to 1.7 s):
+
+layout | build | largest Cinst (narrow Cmax: 5) | VRX, lowest to highest (narrow VRX_FULL: 9) | measured TRoffset (TROdefault 637.7 us)
+--- | --- | --- | --- | ---
+default (8 schedulers) | main | 2, narrow | -10 to 4 packets | 627 to 635 us
+default (8 schedulers) | main + 7.1 to 7.4 | 2, narrow | -10 to 4 packets | 627 to 633 us
+two scheduler cores | main + 7.1 to 7.4 | 3, narrow | -88 to 4 packets | 628 to 774 us
+
+In the default layout the changes do not change the packet spacing: Cinst stays narrow, and VRX stays at 1 to 4 of the 9 packets that narrow allows.
+The one exception is the frame where the capture lost packets: 12 with main and 13 with 7.1 to 7.4, 5.6 to 5.7 ms after the first packet of the capture. The two-core capture lost 12 packets at the same place. In that frame VRX goes down to -10. EBU LIST marks VRX as not compliant in all captures, because VRX goes below 0. In the default layout the capture causes this, not the sender.
+
+EBU LIST gives the error `vrx_above_maximum` for each VRX that is not compliant, also when VRX goes below 0. The multicast checks fail because the stream is unicast.
+
+On two scheduler cores with 7.1 to 7.4 (78 frames), VRX is below 0 in 86 % of the time and at -50 packets or lower in 11 %, with a mean of -18 packets. The first packet of a frame leaves up to 137 us after TROdefault (TRoffset average 639.9 us). In the capture run, scheduler 1 has a loop of 10.8 us (17.3 us in the runs of section 7.5).
+A late transmitter queues its packets in the NIC, where the rate limiter sends them at the stream rate (3.89 us per packet), so the stream does not catch up before the end of the frame.

@@ -1171,11 +1171,13 @@ struct mtl_main_impl {
   struct mtl_init_params user_para;
   struct mt_var_params var_para;
   struct mt_kport_info kport_info;
-  enum mt_handle_type type; /* for sanity check */
+  enum mt_handle_type type;     /* for sanity check */
+  enum rte_iova_mode iova_mode; /* current IOVA mode */
   uint64_t tsc_hz;
+  /* set only by mt_set_tsc_hz(), with tsc_hz */
+  uint64_t tsc_ns_mult;
   pthread_t tsc_cal_tid;
 
-  enum rte_iova_mode iova_mode; /* current IOVA mode */
   size_t page_size;
 
   /* flow */
@@ -1870,12 +1872,24 @@ static inline int mt_wait_tsc_stable(struct mtl_main_impl* impl) {
   return 0;
 }
 
-/* Return relative TSC time in nanoseconds */
+/* 52 fraction bits: the relative error of mt_get_tsc() is below 1e-15, and tsc * mult
+ * stays far below 2^128 */
+#define MT_TSC_NS_SHIFT (52)
+
+/* set the TSC frequency and the multiplier of mt_get_tsc() together; 0 gives 0 ns */
+static inline void mt_set_tsc_hz(struct mtl_main_impl* impl, uint64_t tsc_hz) {
+  impl->tsc_hz = tsc_hz;
+  impl->tsc_ns_mult =
+      tsc_hz
+          ? (uint64_t)((((__uint128_t)NS_PER_S << MT_TSC_NS_SHIFT) + tsc_hz / 2) / tsc_hz)
+          : 0;
+}
+
+/* Return relative TSC time in nanoseconds. It runs for each session in each scheduler
+ * loop, so it is a multiply and a shift, with no division */
 static inline uint64_t mt_get_tsc(struct mtl_main_impl* impl) {
-  double tsc = rte_get_tsc_cycles();
-  double tsc_hz = impl->tsc_hz;
-  double time_nano = tsc / (tsc_hz / ((double)NS_PER_S));
-  return time_nano;
+  return (uint64_t)(((__uint128_t)rte_get_tsc_cycles() * impl->tsc_ns_mult) >>
+                    MT_TSC_NS_SHIFT);
 }
 
 /* busy loop until target time reach */

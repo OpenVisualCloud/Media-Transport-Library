@@ -49,6 +49,11 @@ int ut_txa_put_app_rtp(ut_txa_ctx* ctx, const uint8_t* rtp, uint16_t len);
 int ut_txa_set_chain_r_dry(ut_txa_ctx* ctx);
 unsigned int ut_txa_chain_pool_in_use(const ut_txa_ctx* ctx);
 int ut_txa_step_frame_tasklet(ut_txa_ctx* ctx);
+/* Serve the session of `peer` from slot `idx` of the manager of `ctx` too, as one
+ * scheduler serves many: ut_txa_step_frame_tasklet(ctx) then runs both on the clocks
+ * and the manager ring of `ctx`. Destroy `ctx` first: its ring holds peer mbufs. */
+int ut_txa_mgr_add(ut_txa_ctx* ctx, int idx, ut_txa_ctx* peer);
+void ut_txa_set_sch_schedule_ns(ut_txa_ctx* ctx, uint32_t ns);
 unsigned int ut_txa_queued_packets(const ut_txa_ctx* ctx);
 /* get_next_frame hands out frame 0 this many times; 1 after create. */
 void ut_txa_set_frame_count(ut_txa_ctx* ctx, int frames);

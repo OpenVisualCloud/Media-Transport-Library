@@ -52,6 +52,16 @@ void ut40_ctx_destroy(ut_test_ctx* ctx);
  * state between tests. */
 void ut40_drain_ring(void);
 
+/* Serve the session of `peer` (`ctx` itself too) from slot `idx` of the manager of
+ * `ctx`, as one scheduler serves many: ut40_mgr_tasklet(ctx) then runs them all. */
+int ut40_mgr_add(ut_test_ctx* ctx, int idx, ut_test_ctx* peer);
+/* rx_ancillary_sessions_tasklet_handler() on the manager of `ctx`. */
+int ut40_mgr_tasklet(ut_test_ctx* ctx);
+/* `pkts` more packets arrive on the port P queue the session tasklet reads, and
+ * ut40_rxq_left() is what it did not read yet. */
+void ut40_rxq_add(ut_test_ctx* ctx, int pkts);
+int ut40_rxq_left(const ut_test_ctx* ctx);
+
 /* Build and feed one RFC 8331 ancillary packet directly to the per-packet
  * handler. `marker` sets the RTP marker bit (1 = end of frame, 0 = mid).
  * Returns the production handler's return code (0 = accepted, < 0 = error
@@ -147,6 +157,25 @@ uint64_t ut40_stat_port_duplicates(const ut_test_ctx* ctx, enum mtl_session_port
 uint64_t ut40_stat_unrecovered(const ut_test_ctx* ctx);
 uint64_t ut40_stat_redundant(const ut_test_ctx* ctx);
 uint64_t ut40_stat_received(const ut_test_ctx* ctx);
+
+/* The queue of the manager: a fake one on port P that holds the packets of
+ * ut40_mq_push(). Session 0 (ctx) is on it with udp_port and group 239.1.1.1, and has no
+ * rx queue of its own, so ut40_mgr_tasklet() reads only this queue. */
+void ut40_mq_setup(ut_test_ctx* ctx, uint16_t udp_port);
+/* Free the packets of the fake queue and the kept packets, and take the queue away. */
+void ut40_mq_clear(ut_test_ctx* ctx);
+/* One ANC packet with seq to the udp port of the session and group 239.1.1.ip_last. */
+int ut40_mq_push(ut_test_ctx* ctx, uint16_t seq, uint8_t ip_last);
+int ut40_mq_left(void);
+uint16_t ut40_mq_deferred(ut_test_ctx* ctx);
+/* Hold the slot lock of session 0, as the stat thread does. */
+void ut40_mq_lock(ut_test_ctx* ctx);
+void ut40_mq_unlock(ut_test_ctx* ctx);
+/* Map the session port P to another physical port. */
+void ut40_mq_set_phy_port(ut_test_ctx* ctx, enum mtl_port port);
+/* rx_ancillary_queue_id() of the session port P. */
+uint16_t ut40_mq_queue_id(ut_test_ctx* ctx);
+unsigned int ut40_mbufs_in_use(void);
 uint64_t ut40_stat_lost_pkts(const ut_test_ctx* ctx);
 
 /* Last accepted RTP sequence number (a.k.a. session "watermark"). */
