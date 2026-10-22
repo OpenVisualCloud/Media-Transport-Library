@@ -11,12 +11,7 @@ from mtl_engine.media_files import yuv_files_422p10le
     "application",
     [
         "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not expose JPEG-XS encoder quality parameter"
-            ),
-        ),
+        "ffmpeg",
         pytest.param(
             "gstreamer",
             marks=pytest.mark.skip(reason="GStreamer does not support st22p pipeline"),

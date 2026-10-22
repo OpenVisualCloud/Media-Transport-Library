@@ -105,6 +105,10 @@ int ut_ffmpeg_parse_tx_port(const struct StDevArgs* dev_args,
   return mtl_parse_tx_port(NULL, dev_args, args, port);
 }
 
+int ut_ffmpeg_parse_st22_quality(const char* value, enum st22_quality_mode* quality) {
+  return mtl_parse_st22_quality(NULL, value, quality);
+}
+
 void ut_ffmpeg_block_first_init(void) {
   pthread_mutex_lock(&ut_init_mutex);
   ut_block_init = true;
