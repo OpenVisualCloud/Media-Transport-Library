@@ -297,7 +297,6 @@ class Application(ABC):
             pacing=self.params.get("pacing"),
             width=self.params.get("width"),
             height=self.params.get("height"),
-            transport_format=self.params.get("transport_format"),
             framerate=self.params.get("framerate"),
             expected_video_streams=self._expected_video_streams(),
             audio_format=audio.get("audio_format"),
