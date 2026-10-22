@@ -111,11 +111,16 @@ libmtl: &libmtl
   - 'include/**'
   - 'lib/**'
 
-# The unit suite. tests/unit/ffmpeg compiles these two plugin files.
+# The unit suite, and the plugin files that tests/unit/ffmpeg and
+# tests/unit/avcodec compile.
 unit_sources: &unit_sources
   - 'tests/unit/**'
   - ecosystem/ffmpeg_plugin/mtl_common.c
   - ecosystem/ffmpeg_plugin/mtl_common.h
+  - plugins/log.h
+  - plugins/plugin_platform.h
+  - plugins/st22_avcodec/st22_avcodec_plugin.c
+  - plugins/st22_avcodec/st22_avcodec_plugin.h
 
 # What a bare-metal test job runs besides the artifacts: the gate, the host
 # setup actions, the ci:* tasks and the scripts that they call. checkout-clean
