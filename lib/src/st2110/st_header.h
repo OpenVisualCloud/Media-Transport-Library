@@ -396,6 +396,8 @@ struct st_tx_video_session_impl {
 
   /* cold, read once a frame, so it sits last, off the hot cache lines */
   struct st_tx_video_rl_plan rl_plan[MTL_SESSION_PORT_MAX];
+  /* debug, drop before merge */
+  struct st_tx_video_rl_dbg dbg_rl[MTL_SESSION_PORT_MAX];
 };
 
 struct st_tx_video_sessions_mgr {

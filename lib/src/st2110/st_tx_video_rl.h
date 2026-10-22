@@ -45,6 +45,27 @@ static inline long double st_tx_video_rl_tokens(uint64_t bps) {
                  (long double)bps / (ST_TX_VIDEO_RL_PSM_CLK_MIN / 32.0L) + 0.5L);
 }
 
+/* debug, drop before merge: what the RL frame starts of a port did in a stat period */
+enum st_tx_video_rl_dbg_result {
+  ST_TX_VIDEO_RL_DBG_PRE_ARMED = 0, /* the shaper launches packet 0 */
+  ST_TX_VIDEO_RL_DBG_HOLD_LATE,     /* late entry or target passed: held until target */
+  ST_TX_VIDEO_RL_DBG_HOLD_IDLE,     /* the shaper went idle, too few pads left: held */
+  ST_TX_VIDEO_RL_DBG_HOLD_STALL,    /* a pad burst stalled: held */
+  ST_TX_VIDEO_RL_DBG_MISMATCH,      /* the window opened outside the warm-up */
+  ST_TX_VIDEO_RL_DBG_NO_PLAN,       /* no plan: warm-up pads, then held */
+};
+
+struct st_tx_video_rl_dbg {
+  uint32_t starts;
+  uint32_t result[ST_TX_VIDEO_RL_DBG_NO_PLAN + 1];
+  uint32_t replan_idle;   /* the shaper went idle between pad bursts */
+  uint32_t refused;       /* pads the NIC refused */
+  uint32_t q_busy;        /* starts with descriptors still owned by the NIC */
+  uint32_t q_pending_max; /* most such descriptors, to rs_thresh steps */
+  int last_pads;          /* pads the last start queued */
+  int last_result;        /* enum st_tx_video_rl_dbg_result of the last start */
+};
+
 /* the RL pre-arm plan of a port, set by tv_rl_plan_init() */
 struct st_tx_video_rl_plan {
   long double pad_ns;    /* shaper time of one NORMAL pad, 0 without a plan */

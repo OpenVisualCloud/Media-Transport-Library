@@ -23,6 +23,9 @@ provider ptp {
 provider st20 {
   /* tx */
   probe tx_frame_next(int m_idx, int s_idx, int f_idx, void* va, uint32_t tmstamp);
+  /* debug, drop before merge: an RL frame start at the warm-up open, result is enum
+   * st_tx_video_rl_dbg_result, pending the descriptors the NIC still owns */
+  probe tx_rl_frame_start(int s_idx, int port, int64_t gap_ns, int pads, int pending, int result);
   probe tx_frame_done(int m_idx, int s_idx, int f_idx, uint32_t tmstamp);
   /* attach to enable the frame dump at runtime */
   probe tx_frame_dump(int m_idx, int s_idx, char* dump_file, void* va, uint32_t data_size);

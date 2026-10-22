@@ -166,6 +166,9 @@
 #define MT_USDT_ST20_TX_FRAME_DUMP(m_idx, s_idx, file, va, sz) \
   MT_DTRACE_PROBE5(st20, tx_frame_dump, m_idx, s_idx, file, va, sz)
 #define MT_USDT_ST20_TX_FRAME_DUMP_ENABLED() ST20_TX_FRAME_DUMP_ENABLED()
+/* debug, drop before merge */
+#define MT_USDT_ST20_TX_RL_FRAME_START(s_idx, port, gap_ns, pads, pending, result) \
+  MT_DTRACE_PROBE6(st20, tx_rl_frame_start, s_idx, port, gap_ns, pads, pending, result)
 
 #define MT_USDT_ST20_RX_FRAME_AVAILABLE(m_idx, s_idx, f_idx, va, tmstamp, data_size) \
   MT_DTRACE_PROBE6(st20, rx_frame_available, m_idx, s_idx, f_idx, va, tmstamp, data_size)

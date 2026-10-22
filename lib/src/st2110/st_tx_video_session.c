@@ -446,6 +446,12 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
               /* aim, the bound of the unknown timeslot, is short enough */
               aim <= ST_TX_VIDEO_RL_TIMESLOT_MAX_NS;
     }
+    /* debug, drop before merge: MTL_DBG_RL_NO_PRE_ARM holds packet 0 as v26.09 did */
+    if (armed && getenv("MTL_DBG_RL_NO_PRE_ARM")) {
+      info("%s[%02d], port %d DBG pre-arm off by MTL_DBG_RL_NO_PRE_ARM\n", __func__, idx,
+           i);
+      armed = false;
+    }
     if (!armed) {
       plan->pad_ns = 0;
       plan->bucket_ns = 0;
@@ -3860,6 +3866,7 @@ struct tv_stat_dump {
   struct mt_stat_u64 stat_time;
   uint32_t max_next_frame_us;
   uint32_t max_notify_frame_us;
+  struct st_tx_video_rl_dbg dbg_rl[MTL_SESSION_PORT_MAX]; /* debug, drop before merge */
 };
 
 /* runs under the session spinlock the tasklets try_get, so copy and reset only, no log */
@@ -3907,6 +3914,9 @@ static void tv_stat_collect(struct st_tx_video_sessions_mgr* mgr,
   d->max_notify_frame_us = s->stat_max_notify_frame_us;
   s->stat_max_next_frame_us = 0;
   s->stat_max_notify_frame_us = 0;
+  /* debug, drop before merge: the tasklet may count one start more meanwhile */
+  memcpy(d->dbg_rl, s->dbg_rl, sizeof(d->dbg_rl));
+  memset(s->dbg_rl, 0, sizeof(s->dbg_rl));
 }
 
 static void tv_stat_log(const struct tv_stat_dump* dump) {
@@ -3960,6 +3970,20 @@ static void tv_stat_log(const struct tv_stat_dump* dump) {
   if (d) {
     notice("TX_VIDEO_SESSION(%d,%d): transmitter recalculate warmup %" PRIu64 "\n", m_idx,
            idx, d);
+  }
+  for (int p = 0; p < MTL_SESSION_PORT_MAX; p++) { /* debug, drop before merge */
+    const struct st_tx_video_rl_dbg* g = &dump->dbg_rl[p];
+    if (!g->starts) continue;
+    notice(
+        "TX_VIDEO_SESSION(%d,%d): DBG rl p%d starts %u, pre-armed %u, hold late %u idle "
+        "%u "
+        "stall %u, mismatch %u, no plan %u, replan idle %u, pads refused %u, queue busy "
+        "at open %u (max %u desc)\n",
+        m_idx, idx, p, g->starts, g->result[ST_TX_VIDEO_RL_DBG_PRE_ARMED],
+        g->result[ST_TX_VIDEO_RL_DBG_HOLD_LATE], g->result[ST_TX_VIDEO_RL_DBG_HOLD_IDLE],
+        g->result[ST_TX_VIDEO_RL_DBG_HOLD_STALL], g->result[ST_TX_VIDEO_RL_DBG_MISMATCH],
+        g->result[ST_TX_VIDEO_RL_DBG_NO_PLAN], g->replan_idle, g->refused, g->q_busy,
+        g->q_pending_max);
   }
   d = us->common.stat_epoch_drop - snap->common.stat_epoch_drop;
   if (d) {

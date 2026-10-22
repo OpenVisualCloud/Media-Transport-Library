@@ -94,6 +94,51 @@ static uint16_t video_trs_burst(struct mtl_main_impl* impl,
   return tx;
 }
 
+/* debug, drop before merge: the descriptors of the session queue that the NIC still
+ * owns, to rs_thresh steps. The NIC sets the done bit in order, so a binary search on
+ * the descriptors before the tail finds the newest one it finished. */
+static int video_trs_dbg_txq_pending(struct st_tx_video_session_impl* s,
+                                     enum mtl_session_port s_port) {
+  struct mt_txq_entry* q = s->queue[s_port];
+  struct rte_eth_txq_info qinfo;
+
+  if (!q || !q->txq) return -1;
+  uint16_t port_id = q->txq->port_id, queue_id = q->txq->queue_id;
+  if (rte_eth_tx_queue_info_get(port_id, queue_id, &qinfo) < 0 || qinfo.nb_desc < 2)
+    return -1;
+  int nb = qinfo.nb_desc, lo = 1, hi = nb - 1, first_done = nb;
+  while (lo <= hi) {
+    int k = (lo + hi) / 2;
+    int st = rte_eth_tx_descriptor_status(port_id, queue_id, (uint16_t)(nb - k));
+    if (st < 0) return -1;
+    if (st == RTE_ETH_TX_DESC_DONE) {
+      first_done = k;
+      hi = k - 1;
+    } else {
+      lo = k + 1;
+    }
+  }
+  return first_done - 1;
+}
+
+/* debug, drop before merge: count one frame start of a port */
+static void video_trs_dbg_start(struct mtl_main_impl* impl,
+                                struct st_tx_video_session_impl* s,
+                                enum mtl_session_port s_port, int64_t gap_ns, int pending,
+                                int result) {
+  struct st_tx_video_rl_dbg* g = &s->dbg_rl[s_port];
+
+  g->starts++;
+  g->result[result]++;
+  if (pending > 0) {
+    g->q_busy++;
+    if ((uint32_t)pending > g->q_pending_max) g->q_pending_max = (uint32_t)pending;
+  }
+  MT_USDT_ST20_TX_RL_FRAME_START(s->idx, (int)s_port, gap_ns, g->last_pads, pending,
+                                 result);
+  MTL_MAY_UNUSED(impl);
+}
+
 static inline int64_t video_trs_rl_pkts_needed(struct mtl_main_impl* impl,
                                                uint64_t target_tsc, long double trs) {
   uint64_t cur_tsc = mt_get_tsc(impl);
@@ -193,9 +238,13 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
 
   gap = (int64_t)(target_tsc - mt_get_tsc(impl));
   /* the lower bound is video_trs_rl_warm_up()'s pkts_needed < 0 */
+  struct st_tx_video_rl_dbg* g = &s->dbg_rl[s_port]; /* debug, drop before merge */
+  g->last_pads = 0;
+  g->last_result = ST_TX_VIDEO_RL_DBG_HOLD_LATE;
   if (gap > pacing->warm_pkts * pacing->trs || gap <= 1 - 2 * pacing->trs) {
     dbg("%s(%d), mismatch timing with gap %" PRId64 "\n", __func__, s->idx, gap);
     s->port_user_stats.stat_trans_troffset_mismatch++;
+    g->last_result = ST_TX_VIDEO_RL_DBG_MISMATCH;
     return false;
   }
   if (gap <= 0) return false;
@@ -217,10 +266,12 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
       drained = start;
       if (sent) {
         s->port_user_stats.stat_trans_recalculate_warmup++;
+        g->replan_idle++;
         dbg("%s(%d), shaper idle after %d pkts\n", __func__, s->idx, sent);
         /* the rest no longer fits trim_pads: hold packet 0 behind the queued pads */
         if (ceill((target_tsc - drained) / drain) < trim_pads) {
           dbg("%s(%d), too few pads left, hold\n", __func__, s->idx);
+          g->last_result = ST_TX_VIDEO_RL_DBG_HOLD_IDLE;
           hold = true;
           break;
         }
@@ -242,6 +293,7 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
                             (int16_t)(coarse + fine));
     }
     s->trs_pad_inflight_num[s_port] += b.n - tx;
+    g->refused += b.n - tx;
 
     /* A burst returning ST_TX_VIDEO_RL_STALL_NS past the plan stalled: its doorbell may
      * have found the shaper idle. Plan on from the return, which never overfills, and
@@ -251,6 +303,7 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
       s->port_user_stats.stat_trans_recalculate_warmup++;
       dbg("%s(%d), burst stalled after %d pkts\n", __func__, s->idx, sent);
       drained = latest;
+      if (!hold) g->last_result = ST_TX_VIDEO_RL_DBG_HOLD_STALL;
       hold = true;
     }
     drained += st_tx_video_rl_burst_ns(&b, drain, pad_size);
@@ -258,6 +311,8 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
     if (b.last) break;
   }
 
+  g->last_pads = sent;
+  if (!hold) g->last_result = ST_TX_VIDEO_RL_DBG_PRE_ARMED;
   return !hold;
 }
 
@@ -329,11 +384,19 @@ static inline void video_trs_rl_set_idle(struct st_tx_video_session_impl* s,
 static enum st_tx_video_rl_state video_trs_rl_frame_start(
     struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
     enum mtl_session_port s_port) {
+  /* debug, drop before merge: the gap and the NIC queue at the warm-up open */
+  int64_t gap_ns = (int64_t)(s->trs_target_tsc[s_port] - mt_get_tsc(impl));
+  int pending = video_trs_dbg_txq_pending(s, s_port);
+
   if (!s->rl_plan[s_port].armed) {
     video_trs_rl_warm_up(impl, s, s_port);
+    s->dbg_rl[s_port].last_pads = 0;
+    video_trs_dbg_start(impl, s, s_port, gap_ns, pending, ST_TX_VIDEO_RL_DBG_NO_PLAN);
     return ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
   }
-  if (!video_trs_rl_pre_arm(impl, s, s_port)) return ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
+  bool pre_armed = video_trs_rl_pre_arm(impl, s, s_port);
+  video_trs_dbg_start(impl, s, s_port, gap_ns, pending, s->dbg_rl[s_port].last_result);
+  if (!pre_armed) return ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
   s->trs_target_tsc[s_port] = 0;
   return ST_TX_VIDEO_RL_STATE_IDLE;
 }
@@ -479,6 +542,11 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
       }
     } else {
       s->trs_target_tsc[s_port] = target_tsc;
+      /* debug, drop before merge: packet 0 dequeued after its target */
+      s->dbg_rl[s_port].last_pads = 0;
+      video_trs_dbg_start(impl, s, s_port, (int64_t)(target_tsc - cur_tsc),
+                          video_trs_dbg_txq_pending(s, s_port),
+                          ST_TX_VIDEO_RL_DBG_HOLD_LATE);
       video_trs_rl_warm_up(impl, s, s_port);
       video_trs_rl_set_idle(s, s_port);
     }
