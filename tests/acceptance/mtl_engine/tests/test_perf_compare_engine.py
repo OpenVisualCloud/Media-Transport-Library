@@ -601,7 +601,9 @@ def test_a_change_is_as_sure_as_it_is_far_from_its_noise():
     # each round's own difference, whatever their signs
     r = _row((100, 1000), (100, 99))
     assert pc.outcome(r) == "regression" and pc.confidence(r) == "low"
-    assert pc._per_round(r) == "+900 / -1.0" and pc._per_round(_row((1, 2))) == "+100"
+    assert (
+        pc._per_round(r) == "+900% / -1.0%" and pc._per_round(_row((1, 2))) == "+100%"
+    )
     assert pc._per_round(_row((None, 2), (None, 2))) == "n/a"
     # the noise: twice the standard error of the mean, the difference of two rounds,
     # which more rounds of the same spread narrow
@@ -850,12 +852,12 @@ def test_the_call_times_read_as_one_table_of_calls_and_schedulers():
     # by call, then by scheduler; a line above the first row of the next call; the
     # better value bold, a cell of no change muted
     t1 = '<tr><td>t</td><td>sch_1</td><td class="i" title="✅ improvement (high); '
-    t1 += 'rounds -50 / -50">2 → <b>1</b><small>✅ -50.0% ±1.0%</small></td>'
+    t1 += 'rounds -50% / -50%">2 → <b>1</b><small>✅ -50.0% ±1.0%</small></td>'
     t1 += '<td class="u">n/a</td></tr>'
     t2 = '<tr><td>t</td><td>sch_2</td><td class="r" title="❌ regression (high); '
-    t2 += 'rounds +100 / +100"><b>1</b> → 2<small>❌ +100.0% ±1.0%</small></td>'
+    t2 += 'rounds +100% / +100%"><b>1</b> → 2<small>❌ +100.0% ±1.0%</small></td>'
     t2 += '<td class="u">n/a</td></tr>'
-    same_cell = '<td class="u" title="unchanged; rounds +0.0 / +0.0">'
+    same_cell = '<td class="u" title="unchanged; rounds +0.0% / +0.0%">'
     u1 = f'<tr class="next"><td>u</td><td>sch_1</td>{same_cell}1 → 1'
     u1 += f"<small>~ (+0.0%) ±1.0%</small></td>{same_cell}5 → 5"
     u1 += "<small>~ (+0.0%) ±0.2%</small></td></tr>"
@@ -1024,7 +1026,8 @@ def test_report_html_opens_the_setup_folds_the_instances_and_escapes_every_text(
     bar = '<span class="bar"><i style="left:50.0%;width:20.0%"></i></span>'
     x = f"<td>x ↓</td><td><b>100</b></td><td>110</td><td>{bar}+10.0%</td><td>±0.0%</td>"
     assert (
-        f'<tr class="r">{x}<td>+10 / +10</td><td>❌ regression (high)</td></tr>' in page
+        f'<tr class="r">{x}<td>+10% / +10%</td><td>❌ regression (high)</td></tr>'
+        in page
     )
     # the call times in one table, a column for each stat a build has; one round of
     # them gives no noise
@@ -1032,12 +1035,12 @@ def test_report_html_opens_the_setup_folds_the_instances_and_escapes_every_text(
     head = "<th>Scheduler</th>\n<th>avg (us) ↓</th>\n<th>p90 (us) ↓</th>\n"
     assert f"{head}<th>max (us) ↓</th>" in page and "p95 (us)" not in page
     t = "<tr><td>t</td><td>sch_1</td>"
-    t += '<td class="u" title="unchanged; rounds +0.0">1 → 1<small>~ (+0.0%)</small></td>'
+    t += '<td class="u" title="unchanged; rounds +0.0%">1 → 1<small>~ (+0.0%)</small></td>'
     t += '<td class="u" title="n/a; rounds n/a">n/a → 1.50<small>n/a</small></td>'
-    t += '<td class="u" title="n/a; rounds +50">2 → 3<small>+50.0%</small></td></tr>'
+    t += '<td class="u" title="n/a; rounds +50%">2 → 3<small>+50.0%</small></td></tr>'
     sessions = "<h3>Video session call times, every session timed</h3>"
     s = '<tr><td>RX video session</td><td>sch_2</td><td class="u" title="n/a; rounds '
-    s += '+100">0.250 → 0.500<small>+100.0%</small></td></tr>'
+    s += '+100%">0.250 → 0.500<small>+100.0%</small></td></tr>'
     assert page.index(t) < page.index(sessions) < page.index(s)
     assert page.count("In each cell") == 1  # under the role, before its first matrix
     assert "differs, in grey:" in page and "The bar of a change ends at -25%" in page

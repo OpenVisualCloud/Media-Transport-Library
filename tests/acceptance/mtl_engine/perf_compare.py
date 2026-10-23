@@ -1093,8 +1093,8 @@ def _bar(r: Row) -> str:
 
 
 def _per_round(r: Row) -> str:
-    """The candidate's difference in each round, in whole percent from 10."""
-    text = (f"{d:+.0f}" if abs(d) >= 10 else f"{d:+.1f}" for d in r.rounds)
+    """The candidate's difference in each round, in percent, whole from 10."""
+    text = (f"{d:+.0f}%" if abs(d) >= 10 else f"{d:+.1f}%" for d in r.rounds)
     return " / ".join(text) or "n/a"
 
 
