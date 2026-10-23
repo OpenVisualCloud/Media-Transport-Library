@@ -6,7 +6,7 @@
  * paces packet 0 of the first frames as if that queue were idle. Training traffic still
  * queued at return makes them leave late, behind it.
  *
- * Run: ./build_unit/tests/unit/UnitTest --gtest_filter='St20TxRlTrainingTest.*'
+ * Run: ./build_unit/tests/unit/UnitTest --gtest_filter='*St20TxRl*Train*Test.*'
  */
 
 #include <gtest/gtest.h>
@@ -149,3 +149,55 @@ TEST_F(St20TxRlPreTrainTest, PreTrainedIntervalMatchesTheRatesAndTheWholeMix) {
   EXPECT_EQ(-EINVAL,
             ut_txv_pad_result_search(ctx_, 1000, 1005, 5000, 1200, 5, &pad_interval));
 }
+
+/* GPM_SL: a line whose bytes do not split evenly into pkts ends in a shorter LINE_TAIL
+ * pkt, which the shaper drains by its bytes; training on NORMAL pads only overstates a
+ * frame's time, so the trained pad_interval leaves the frame short of its active time */
+namespace {
+
+struct LineTailCase {
+  const char* name;
+  enum st20_fmt fmt;
+  uint32_t width;
+  uint32_t height;
+  uint32_t line_tail_pkts;
+};
+
+class St20TxRlTrainLineTailTest : public ::testing::TestWithParam<LineTailCase> {
+ protected:
+  void SetUp() override {
+    ASSERT_EQ(ut_txv_init(), 0);
+    ctx_ = ut_txv_create();
+    ASSERT_NE(ctx_, nullptr);
+  }
+  void TearDown() override {
+    ut_txv_destroy(ctx_);
+  }
+  ut_txv_ctx* ctx_ = nullptr;
+};
+
+/* the queue drains a NORMAL pad 0.3% faster than trs, which the pads fill */
+TEST_P(St20TxRlTrainLineTailTest, FrameFillsItsActiveTime) {
+  const LineTailCase& c = GetParam();
+  ASSERT_EQ(0, ut_txv_train_rl_gpm_sl(ctx_, c.fmt, c.width, c.height, 0.997L));
+  ASSERT_EQ(ut_txv_line_tail_pkts(ctx_), c.line_tail_pkts);
+  ASSERT_GT(ut_txv_pad_interval(ctx_), 32);
+  const long double trs = ut_txv_pacing_trs(ctx_);
+
+  /* a frame short by more than a pkt pushes VRX up a pkt by its end */
+  EXPECT_NEAR(ut_txv_gpm_sl_frame_ns(ctx_), trs * ut_txv_pipe_total_pkts(ctx_), trs)
+      << "pad_interval " << ut_txv_pad_interval(ctx_);
+  /* the pre-arm queues NORMAL pads: the plan keeps the NORMAL pad's drain */
+  EXPECT_NEAR(ut_txv_rl_drain(ctx_, 0), trs * 0.997L, 0.001L);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    GpmSl, St20TxRlTrainLineTailTest,
+    ::testing::Values(
+        LineTailCase{"Yuv422_10bit1080p", ST20_FMT_YUV_422_10BIT, 1920, 1080, 0},
+        LineTailCase{"Yuv444_12bit1080p", ST20_FMT_YUV_444_12BIT, 1920, 1080, 1080},
+        LineTailCase{"Rgb12bit1080p", ST20_FMT_RGB_12BIT, 1920, 1080, 1080},
+        LineTailCase{"Yuv422_10bit720p", ST20_FMT_YUV_422_10BIT, 1280, 720, 720},
+        LineTailCase{"Yuv422_10bit2160p", ST20_FMT_YUV_422_10BIT, 3840, 2160, 2160}),
+    [](const ::testing::TestParamInfo<LineTailCase>& info) { return info.param.name; });
+}  // namespace
