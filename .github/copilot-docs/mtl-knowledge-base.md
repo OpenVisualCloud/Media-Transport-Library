@@ -135,6 +135,10 @@ NIC receives multicast packet (flow rule steers to session's RX queue)
 
 Max schedulers: `MT_MAX_SCH_NUM = 18` (in `mt_main.h`)
 
+Layout-sensitive (`doc/perf_compare.md`, "Layout effects"):
+- `struct mtl_sch_impl` is an array in `mtl_main_impl` (`sch_mgr.sch[]`, 25720 B each, session mgrs embedded). +32 B there, or `struct mt_sch_tasklet_impl` 128 → 192 B (shifts the DPDK heap), slowed the 2nd RX scheduler 10-15% on the perf pair with no code change; `main` hits the same slow state in ~1 of 10 runs
+- Keep new per-scheduler state out of both (the `sys:tasklet_stat` counters are a static table in `mt_sch.c`), and prove a one-scheduler perf diff with a padded reference build
+
 Both modes enter `sch_tasklet_func()`, which switches a thread still on `MPOL_DEFAULT` to `MPOL_LOCAL` until the scheduler stops; any other policy is kept:
 - Under `kernel.numa_balancing=1` the `task_numa_work` scan runs as task work on busy threads; without `MPOL_F_MOF` it rewrites no PTEs there and nothing migrates on fault, but the VMA walk still runs
 - Mitigation only: scans on other default-policy threads still mark shared PTEs, so scheduler threads still take hinting faults; `kernel.numa_balancing=0` is the fix
@@ -735,12 +739,15 @@ Probes in `lib/src/mt_usdt_provider.d`, compiled when `MTL_HAS_USDT`. Attach wit
 
 | Provider | Key Probes | Traces |
 |----------|-----------|--------|
-| `sys` | `log_msg`, `tasklet_time_measure` | Logging, tasklet timing |
+| `sys` | `log_msg`, `tasklet_time_measure`, `tasklet_time_sample`, `sessions_time_measure`, `tasklet_stat` | Logging, tasklet timing, cumulative tasklet time and work |
 | `ptp` | `ptp_msg`, `ptp_result` | PTP timestamps, sync delta |
 | `st20`/`st22`/`st30` | `tx_frame_next/done`, `rx_frame_available/put` | Session frame lifecycle |
 | `st20p`/`st22p`/`st30p`/`st40p` | `tx_frame_get/put/drop`, `rx_frame_get/put` | Pipeline frame transitions |
 
 Several probes are **attach-to-enable**: zero cost until tracing tool attaches.
+
+- `tasklet_stat` and `tasklet_time_sample`: `doc/usdt.md` §2.1.5; `doc/perf_compare.md` is built on them. The sample exists because timing every loop reads the TSC twice per tasklet call (loops 10-45% longer); its gaps are random so periodic work cannot fall in step with them.
+- Keep a probe at ≤ 6 arguments: bpftrace 0.14 rejects `arg6` even for USDT.
 
 ---
 

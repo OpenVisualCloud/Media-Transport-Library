@@ -115,6 +115,7 @@ function setup_ubuntu_install_dependencies() {
 		linuxptp \
 		ethtool \
 		netsniff-ng \
+		bpftrace \
 		unzip
 
 	python3 -m pip install --upgrade pip

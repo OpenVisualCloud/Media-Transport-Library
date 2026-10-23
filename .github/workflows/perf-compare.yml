@@ -1,23 +1,207 @@
 name: perf-compare
-# A placeholder: GitHub dispatches only a workflow the default branch has, so this
-# lists perf-compare in the Actions tab and the branch that brings the real one can
-# be run from "Use workflow from" before it merges. That branch replaces this file.
+# Runs builds A and B at once on the perf pair and reports how B differs from A
+# (doc/perf_compare.md). The tests and CI scripts come from "Use workflow from".
 on:
   workflow_dispatch:
+    inputs:
+      ref_a:
+        description: 'A, the baseline: branch, tag or commit (e.g. main, v26.01)'
+        required: false
+        type: string
+        default: main
+      ref_b:
+        description: 'B, the build under test, reported as (B - A) / A; the same as A measures the noise'
+        required: false
+        type: string
+        default: main
+      args_a:
+        description: 'Extra RxTxApp options for A, e.g. --sch_session_quota 8'
+        required: false
+        type: string
+      args_b:
+        description: Extra RxTxApp options for B
+        required: false
+        type: string
+      video:
+        description: Video format of every session
+        required: false
+        type: choice
+        options:
+          - 1080p59
+          - 1080p50
+          - 1080p29
+          - 1080p25
+          - 2160p59
+          - 2160p50
+          - 2160p29
+          - 2160p25
+          - 4320p59
+          - 4320p50
+          - 4320p29
+          - 4320p25
+        default: 1080p59
+      # Strings, not numbers: a number input reaches a step's env as 120.0.
+      sessions:
+        description: 'Video sessions per build on its own 100G port; 36 x 1080p59 is the most that fits, 2160p59 9, 4320p59 2'
+        required: false
+        type: string
+        default: '36'
+      test_time:
+        description: 'Seconds of the untraced window of each round, at least 30; three more windows add half of it each'
+        required: false
+        type: string
+        default: '120'
+      rounds:
+        description: 'Rounds; A and B swap places each round, so keep it even. Fewer than 4 give a rough noise estimate'
+        required: false
+        type: string
+        default: '4'
+  # The nightly compares the main of the last passed night with main.
+  schedule:
+    - cron: '0 16 * * *'
 
 permissions:
   contents: read
 
 jobs:
-  placeholder:
+  refs:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # the nightly reads the commit its last passed run compared
+      actions: read
+    outputs:
+      sha_a: ${{ steps.refs.outputs.sha_a }}
+      sha_b: ${{ steps.refs.outputs.sha_b }}
+      label_a: ${{ steps.refs.outputs.label_a }}
+      label_b: ${{ steps.refs.outputs.label_b }}
     steps:
       - name: Harden-Runner
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
           egress-policy: audit
-      - name: Explain the placeholder
-        run: |
-          echo '::error::Nothing to compare here: set "Use workflow from" to the branch that brings perf-compare.'
-          exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
+      - name: Resolve the two builds and check the numbers
+        id: refs
+        env:
+          REF_A: ${{ inputs.ref_a || 'main' }}
+          REF_B: ${{ inputs.ref_b || 'main' }}
+          SESSIONS: ${{ inputs.sessions }}
+          TEST_TIME: ${{ inputs.test_time }}
+          ROUNDS: ${{ inputs.rounds }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: task ci:workflow -- perf-compare-refs
+
+  # The workflow commit: the CI scripts, the tests and the tree the framework itself
+  # runs. The compare job builds A and B, from any ref, on one host and toolchain.
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      skip_linter_check: true
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: read
+
+  compare:
+    needs: [refs, build]
+    runs-on: [self-hosted, perf, sut]
+    timeout-minutes: 180
+    steps:
+      - name: Harden-Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+      - name: Set current date
+        run: echo "CURRENT_DATE=$(date '+%y%m%d-%H%M%S')" >> "$GITHUB_ENV"
+      - name: Check out the workflow commit
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@497c4107ae027a4f9d6da088d027639df40064e3
+        with:
+          ref: ${{ needs.build.outputs.mtl_commit }}
+          fetch-depth: '0'
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
+      - name: Validate host and restore the workflow commit's build
+        id: validate
+        uses: ./.github/actions/validate-host
+        with:
+          shadow_host: '/etc/mtl-ci/runner.env'
+          build_outputs: ${{ toJSON(needs.build.outputs) }}
+      - name: Build A and B
+        env:
+          SHA_A: ${{ needs.refs.outputs.sha_a }}
+          SHA_B: ${{ needs.refs.outputs.sha_b }}
+        run: task ci:perf-compare -- build
+      - name: Copy both builds to the companion
+        env:
+          SHADOW_HOST_IP: ${{ steps.validate.outputs.shadow_host_ip }}
+          SHADOW_HOST_USER: ${{ steps.validate.outputs.shadow_host_user }}
+        run: task ci:perf-compare -- sync
+
+      - name: Ensure the acceptance virtualenv
+        run: task ci:pytest-setup -- ensure
+      - name: Set session ID
+        env:
+          RUNNER_NAME: ${{ runner.name }}
+        run: task ci:pytest-setup -- session
+      - name: Set PCI device
+        run: task ci:pytest-setup -- pci-env
+      - name: Generate pytest configuration files
+        env:
+          SESSION_ID: ${{ env.SESSION_ID }}
+          PCI_DEVICE: ${{ env.PCI_DEVICE }}
+          SHADOW_IP: ${{ steps.validate.outputs.shadow_host_ip }}
+          SHADOW_USER: ${{ steps.validate.outputs.shadow_host_user }}
+          TEST_TIME: ${{ inputs.test_time }}
+        run: task ci:pytest-setup -- config-perf
+      - name: Verify the perf media assets
+        env:
+          MEDIA_ASSET_SET: perf
+        run: task ci:media-assets -- verify
+
+      - name: Compare
+        env:
+          PERF_COMPARE_LABELS: ${{ needs.refs.outputs.label_a }},${{ needs.refs.outputs.label_b }}
+          ARGS_A: ${{ inputs.args_a }}
+          ARGS_B: ${{ inputs.args_b }}
+          SESSIONS: ${{ inputs.sessions }}
+          VIDEO: ${{ inputs.video }}
+          ROUNDS: ${{ inputs.rounds }}
+        run: task ci:pytest-run -- perf-compare
+      - name: Summarize the comparison
+        if: always()
+        run: task ci:report -- perf-compare
+      - name: Upload report
+        id: upload
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: "perf-compare-${{ runner.name }}-${{ env.CURRENT_DATE }}"
+          path: |
+            ./tests/acceptance/perf_compare.html
+            ./tests/acceptance/report.html
+            ./tests/acceptance/perf-logs.tar.gz
+      - name: Link the full report from the summary
+        if: always() && steps.upload.outputs.artifact-url
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        run: echo "<p><a href=\"$ARTIFACT_URL\">The full report and the logs</a></p>" >>"$GITHUB_STEP_SUMMARY"
+      - name: Remove both builds and the cache partitions
+        if: always()
+        env:
+          SHADOW_HOST_IP: ${{ steps.validate.outputs.shadow_host_ip }}
+          SHADOW_HOST_USER: ${{ steps.validate.outputs.shadow_host_user }}
+        run: task ci:perf-compare -- clean
+      - name: Clean up
+        if: always()
+        uses: ./.github/actions/cleanup
