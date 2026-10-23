@@ -1105,6 +1105,8 @@ def pytest_addoption(parser):
         ("args_b", str, "", "extra RxTxApp arguments of instance B"),
         ("sessions", int, 36, "sessions per instance"),
         ("rounds", int, 4, "rounds; A and B swap slots every round"),
+        ("dma", str, "none", "none, A, B or both: the builds whose RX uses a DSA"),
+        ("nics", str, "single", "single, span, pairs or pooled: how they use the NICs"),
     ):
         parser.addoption(
             f"--perf_compare_{name}", type=kind, default=default, help=text

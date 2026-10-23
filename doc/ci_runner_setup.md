@@ -183,7 +183,11 @@ ports the named card has and declares two of them, because a redundant session
 needs a second interface to put its second leg on and `gen_config.py` numbers
 `interface_index` within a `vendor:device` group. Two is also the ceiling — index
 0 becomes `host.vfs` and index 1 `host.vfs_r`, and nothing reads a third, so a
-card with more ports still declares two. Naming a single port instead
+card with more ports still declares two. The exception is perf-compare with
+`nics` other than `single`, which asks for four (`PERF_PORTS=4`): both ports of the
+second card, so both perf hosts need that card cabled port to port like the first;
+`pooled` also needs it at the first's speed and NVM, with its node's cores isolated
+alike ([perf_compare.md](perf_compare.md#35-two-nics-and-dma)). Naming a single port instead
 leaves `conftest.py` no port to build `host.vfs_r` on, and every `*_redundant`
 case skips with `Redundant requires VFs on TX port 1` inside a run that reports
 success.
