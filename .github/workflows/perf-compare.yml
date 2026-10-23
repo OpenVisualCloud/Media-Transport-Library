@@ -22,6 +22,26 @@ on:
         description: Extra RxTxApp options for B
         required: false
         type: string
+      dma:
+        description: The builds whose RX instances copy the payload with a DSA (DMA) of their NUMA node
+        required: false
+        type: choice
+        options:
+          - none
+          - A
+          - B
+          - both
+        default: none
+      nics:
+        description: 'single: a pair of slots on NIC 0; span: a slot on a port of each NIC, as many sessions on each; pairs: a pair on each NIC, its rows apart; pooled: a pair on each NIC, each NIC a sample'
+        required: false
+        type: choice
+        options:
+          - single
+          - span
+          - pairs
+          - pooled
+        default: single
       video:
         description: Video format of every session
         required: false
@@ -42,7 +62,7 @@ on:
         default: 1080p59
       # Strings, not numbers: a number input reaches a step's env as 120.0.
       sessions:
-        description: 'Video sessions per build on its own 100G port; 36 x 1080p59 is the most that fits, 2160p59 9, 4320p59 2'
+        description: 'Video sessions of each build on each of its 100G ports; 36 x 1080p59 is the most that fits, 2160p59 9, 4320p59 2'
         required: false
         type: string
         default: '36'
@@ -155,6 +175,9 @@ jobs:
           RUNNER_NAME: ${{ runner.name }}
         run: task ci:pytest-setup -- session
       - name: Set PCI device
+        env:
+          # both ports of two cards for the modes that use NIC 1
+          PERF_PORTS: ${{ (inputs.nics || 'single') == 'single' && '2' || '4' }}
         run: task ci:pytest-setup -- pci-env
       - name: Generate pytest configuration files
         env:
@@ -174,6 +197,8 @@ jobs:
           PERF_COMPARE_LABELS: ${{ needs.refs.outputs.label_a }},${{ needs.refs.outputs.label_b }}
           ARGS_A: ${{ inputs.args_a }}
           ARGS_B: ${{ inputs.args_b }}
+          DMA: ${{ inputs.dma }}
+          NICS: ${{ inputs.nics }}
           SESSIONS: ${{ inputs.sessions }}
           VIDEO: ${{ inputs.video }}
           ROUNDS: ${{ inputs.rounds }}

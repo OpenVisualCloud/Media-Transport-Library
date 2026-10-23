@@ -9,6 +9,7 @@ import subprocess  # nosec B404 # runs bash on proc()'s own script and a fixed c
 import sys
 import time
 from collections import Counter
+from dataclasses import replace
 from html.parser import HTMLParser
 from types import SimpleNamespace
 
@@ -53,7 +54,8 @@ def _layout(monkeypatch, node_cpus, isolated, cores):
 def test_cpu_layout_takes_isolated_first_threads_after_the_os_cores(monkeypatch):
     slots = _layout(monkeypatch, "0-31", "4-20", 16)
     assert [s.cpus for s in slots] == [[4, 5, 6, 7], [8, 9, 10, 11]]
-    assert all(s.isolated and s.node == 0 for s in slots)
+    assert all(s.isolated and s.nodes == [0] for s in slots)
+    assert [s.ports for s in slots] == [[0], [1]]
 
 
 def test_cpu_layout_keeps_both_slots_off_isolated_cores_when_too_few(monkeypatch):
@@ -117,7 +119,7 @@ def test_pin_app_threads_gives_each_free_cpu_its_share_of_the_threads(monkeypatc
             assert time.monotonic() < deadline, "the threads did not start"
             time.sleep(0.01)
         inst = pc.Instance(
-            None, "tx0", "tx", "A", pc.Slot(0, 0, cpus, True), "/t", "/l"
+            None, "tx0", "tx", "A", pc.Slot(0, [0], cpus, True), "/t", "/l"
         )
         inst.pid = proc.pid
         monkeypatch.setattr(inst, "records", lambda tail=0: _dump(S, tid=sch))
@@ -143,7 +145,7 @@ def test_pin_app_threads_waits_for_the_schedulers_and_skips_one_that_left(
     monkeypatch, tid, why
 ):
     inst = pc.Instance(
-        None, "tx0", "tx", "A", pc.Slot(0, 0, [4, 5, 6], True), "/t", "/l"
+        None, "tx0", "tx", "A", pc.Slot(0, [0], [4, 5, 6], True), "/t", "/l"
     )
     inst.pid = os.getpid()
     monkeypatch.setattr(inst, "records", lambda tail=0: _dump(S, tid=tid))
@@ -153,6 +155,19 @@ def test_pin_app_threads_waits_for_the_schedulers_and_skips_one_that_left(
     )
     assert inst.pin_app_threads() == why
     assert not any("taskset" in script for script in scripts)
+
+
+def test_pin_app_threads_spreads_the_threads_numa_bind_left_on_one_node(monkeypatch):
+    slot = pc.Slot(0, [0, 2], [4, 5, 68, 69], True, [0, 2])
+    inst = pc.Instance(None, "tx0", "tx", "A", slot, "/t", "/l")
+    inst.pid = 9
+    monkeypatch.setattr(inst, "records", lambda tail=0: _dump(S, tid=101))
+    scripts = _sh(
+        monkeypatch, lambda script: "5\n" if "for t in 101;" in script else ""
+    )
+    assert inst.pin_app_threads() == ""
+    assert scripts[-1].startswith("cpus=(4 68 69); ")
+    assert '/status)" = 4-5 ] || continue; taskset' in scripts[-1]
 
 
 @pytest.mark.parametrize(
@@ -190,6 +205,147 @@ def test_rdt_setup_runs_without_cat_rather_than_take_resctrl(monkeypatch, probe)
     assert not any("mkdir" in s for s in scripts)
 
 
+def _nics(nics):
+    """The slots of *nics* from two cpu_layout()s: NIC 0's on node 0, isolated, NIC
+    1's on node 2, not, as on the perf pair until it isolates node 2 too."""
+    return pc.nic_slots(
+        nics,
+        *(
+            [pc.Slot(i, [n], [n * 32 + 4 + i], n == 0, [i]) for i in (0, 1)]
+            for n in (0, 2)
+        ),
+    )
+
+
+def test_the_nics_modes_map_their_slots_to_ports_and_nodes():
+    span = _nics("span")
+    assert [(s.idx, s.ports, s.nodes, s.cpus, s.isolated, s.nic) for s in span] == [
+        (0, [0, 2], [0, 2], [4, 68], False, None),  # isolated only if both nodes are
+        (1, [1, 3], [0, 2], [5, 69], False, None),
+    ]
+    pairs = _nics("pairs")
+    assert [(s.idx, s.ports, s.nodes, s.isolated, s.nic) for s in pairs] == [
+        (0, [0], [0], True, 0),
+        (1, [1], [0], True, 0),
+        (2, [2], [2], False, 1),
+        (3, [3], [2], False, 1),
+    ]
+    # each round A and B on each port of each NIC, slots swapped every round
+    assert pc.round_order(0, 2) == ("A", "B") and pc.round_order(1, 2) == ("B", "A")
+    assert pc.round_order(0, 4) == ("A", "B", "B", "A")
+    assert pc.round_order(1, 4) == ("B", "A", "A", "B")
+
+
+def test_the_ports_of_a_run_on_both_nics_are_two_of_each_of_two_cards():
+    assert pc.two_cards(
+        ["0000:15:00.0", "0000:15:00.1", "0000:c9:00.0", "0000:c9:00.1"]
+    )
+    for pfs in (
+        ["0000:15:00.0", "0000:15:00.1"],  # one card
+        ["0000:15:00.0", "0000:15:00.1", "0000:15:00.2", "0000:15:00.3"],  # of 4 ports
+        ["0000:15:00.0", "0000:c9:00.0", "0000:15:00.1", "0000:c9:00.1"],  # mixed
+        ["0000:15:00.0", "0000:80:00.0", "0000:c9:00.0", "0000:c9:00.1"],  # 3 cards
+    ):
+        assert not pc.two_cards(pfs), pfs
+
+
+def test_nic_links_reads_the_speed_and_firmware_of_each_port(monkeypatch):
+    reply = "100000 2.10 0x80018d29 1.4002.0\n 1.00 0x80016fed 1.3833.0\n"
+    scripts = _sh(monkeypatch, lambda script: reply)
+    links = pc.nic_links(HOST, ["0000:15:00.0", "0000:c9:00.0", "0000:c9:00.1"])
+    assert links == [
+        (100000, "2.10 0x80018d29 1.4002.0"),
+        (0, "1.00 0x80016fed 1.3833.0"),
+        (0, ""),
+    ]
+    assert scripts[0].startswith("for pf in 0000:15:00.0 0000:c9:00.0 0000:c9:00.1; do")
+    # a port must carry its sessions, and a pooled run two alike NICs
+    links = [(100000, "2.10"), (100000, "2.10"), (40000, "1.00"), (40000, "1.00")]
+    pfs = ["p0", "p1", "p2", "p3"]
+    assert pc.slow_ports(pfs, links, 39e9) == []
+    assert pc.slow_ports(pfs, links, 41e9) == [
+        "p2 links at 40 Gb/s",
+        "p3 links at 40 Gb/s",
+    ]
+    pairs = _nics("pairs")
+    assert pc.unlike_nics(links, pairs) == (
+        "Mb/s 100000 on NIC 0, 40000 on NIC 1; firmware 2.10 on NIC 0, 1.00 on NIC 1; "
+        "isolated cores True on NIC 0, False on NIC 1"
+    )
+    alike = [replace(s, isolated=True) for s in pairs]
+    assert pc.unlike_nics([(100000, "2.10")] * 4, alike) == ""
+
+
+def test_a_port_carries_the_streams_its_link_speed_allows():
+    hd, uhd, fuhd = (
+        pc.stream_bps(w, h, FPS) for w, h in ((1920, 1080), (3840, 2160), (7680, 4320))
+    )
+    # MTL's packets of 1320 bytes of pixels take 1406 on the wire
+    assert hd == pytest.approx(1920 * 1080 * 20 * FPS * 1125 / 1080 * 1406 / 1320)
+    assert 36 * hd < 100e9 < 37 * hd and 14 * hd < 40e9 < 15 * hd
+    assert 9 * uhd < 100e9 < 10 * uhd and 2 * fuhd < 100e9 < 3 * fuhd
+
+
+def test_add_port_gives_the_second_port_as_many_sessions():
+    for role, peer in (("tx", "dip"), ("rx", "ip")):
+        config = {
+            "interfaces": [{"name": "vf0", "ip": "own", "rx_queues_cnt": 64}],
+            f"{role}_sessions": [
+                {peer: ["peer"], "interface": [0], "st20p": [{"replicas": 3}]}
+            ],
+        }
+        pc.add_port(config, role, "vf2", "tx2", "rx2")
+        own, other = ("tx2", "rx2") if role == "tx" else ("rx2", "tx2")
+        assert config["interfaces"][1] == {
+            "name": "vf2",
+            "ip": own,
+            "rx_queues_cnt": 64,
+        }
+        assert config[f"{role}_sessions"][1] == {
+            peer: [other],
+            "interface": [1],
+            "st20p": [{"replicas": 3}],
+        }
+        assert config[f"{role}_sessions"][0][peer] == ["peer"]  # a copy, not the same
+
+
+def test_rdt_setup_gives_the_pair_of_each_nic_the_ways_of_the_first(monkeypatch):
+    probe = "fff\n1\nc00\n    L3:0=fff;1=fff\ninfo\nmon_groups\n"
+    scripts = _sh(monkeypatch, lambda script: probe if "cbm_mask" in script else "")
+    paths = pc.rdt_setup(HOST, 4)
+    assert paths == [f"{pc.RESCTRL}/{pc.RDT_PREFIX}{n}" for n in range(4)]
+    for path, mask in zip(paths, ("f;1=f", "f0;1=f0") * 2):
+        assert f"mkdir {path} && echo 'L3:0={mask}' > {path}/schemata" in scripts[-1]
+
+
+def test_dsa_layout_gives_each_slot_of_a_node_a_dsa_of_its_own(monkeypatch):
+    listing = "Y\n0000:05:01.0 0\n0000:00:01.0 0\n0000:80:01.0 2\n"
+    _sh(monkeypatch, lambda script: listing)
+    bound = []
+    monkeypatch.setattr(pc, "bind_dma_to_vfio", lambda h, bdf: bound.append(bdf) or 1)
+    slots = [pc.Slot(0, [0], [4], True), pc.Slot(1, [0], [8], True)]
+    assert pc.dsa_layout(HOST, slots) == ["0000:00:01.0", "0000:05:01.0"] == bound
+    node2 = [pc.Slot(0, [2], [66], False), pc.Slot(1, [2], [74], False)]
+    with pytest.raises(RuntimeError, match="node 2 has 1 DSA, its slots need 2"):
+        pc.dsa_layout(HOST, node2)
+    monkeypatch.setattr(pc, "bind_dma_to_vfio", lambda h, bdf: False)
+    with pytest.raises(RuntimeError, match="DSA 0000:00:01.0 is not on vfio-pci"):
+        pc.dsa_layout(HOST, slots)
+    # a slot on two nodes takes a DSA of each
+    listing += "0000:85:01.0 2\n"
+    _sh(monkeypatch, lambda script: listing)
+    monkeypatch.setattr(pc, "bind_dma_to_vfio", lambda h, bdf: True)
+    span = [pc.Slot(p, [0, 2], [4 + p, 68 + p], True, [p, p + 2]) for p in (0, 1)]
+    assert pc.dsa_layout(HOST, span) == [
+        "0000:00:01.0,0000:80:01.0",
+        "0000:05:01.0,0000:85:01.0",
+    ]
+    # lifting the denylist would reload vfio-pci, which unbinds every VF
+    _sh(monkeypatch, lambda script: listing.replace("Y", "N", 1))
+    with pytest.raises(RuntimeError, match="vfio-pci still refuses DSA"):
+        pc.dsa_layout(HOST, slots)
+
+
 # A dump's sys:tasklet_stat increments of each tasklet: calls, ns, work calls, work ns.
 # rvs_pkt_rx works when it receives, the TX builder never and the transmitter nearly
 # always.
@@ -202,11 +358,14 @@ TASKLETS = {
 }
 
 
-def _dump(ts, sessions=2, fps=FPS, tid=101, tx=False, lost=0, pacing=(), **window):
+def _dump(
+    ts, sessions=2, fps=FPS, tid=101, tx=False, lost=0, pacing=(), dma=(), **window
+):
     """The collector records of one stats dump of one instance; *window* marks it
     traced=, timed= (percentiles=False for a build without them) or session_timed=.
 
-    *pacing* holds the (TX pacing counter, value) pairs of each session. The call
+    *pacing* holds the (TX pacing counter, value) pairs of each session, *dma* the
+    packets that DMA copied of each session that has a DMA device. The call
     times grow by 0.1 us a dump from 110 s, the session times from 150 s, session
     1's 0.1 us above session 0's.
     """
@@ -224,6 +383,11 @@ def _dump(ts, sessions=2, fps=FPS, tid=101, tx=False, lost=0, pacing=(), **windo
         )
     for s in range(sessions):
         lines += [f"{t} L TX_VIDEO_SESSION(1,{s}): {n} {v}" for n, v in pacing]
+    for s, pkts in enumerate(dma):
+        lines.append(
+            f"{t} L RX_VIDEO_SESSION(1,{s}): pkts {pkts} by dma copy, dma busy 0.000000, "
+            "flush timeouts 0"
+        )
     if lost:
         lines += [
             f"{t} L {d}_VIDEO_SESSION(1,0): incomplete frames {lost}, pkts (x)",
@@ -303,6 +467,7 @@ def test_parse_dumps_reads_one_dump_and_ignores_what_lies_outside():
         f"{10 * S} L DEV(0): Status: rx_hw_dropped_packets 7 rx_err_packets 0",
         f"{10 * S} T 1 rvs_pkt_rx 2 20 1 10",
         f"{10 * S} T 1 rvs_pkt_rx 3 30 2 20",
+        f"{10 * S} L RX_VIDEO_SESSION(1,0): pkts 7 by dma copy, dma busy 0.25, flush",
         f"{10 * S} L RX_VIDEO_SESSION(2,1): tasklet time avg 0.27us max 9.10us min 0.05us",
         f"{10 * S} L {pc.DUMP_END}",
     ]
@@ -315,6 +480,7 @@ def test_parse_dumps_reads_one_dump_and_ignores_what_lies_outside():
     assert d.tasklets == {(1, "rvs_pkt_rx"): [5, 50, 3, 30]}
     assert d.session_times == {("RX", 2, 1): {"avg": 0.27, "max": 9.1, "min": 0.05}}
     assert not d.tasklet_times
+    assert d.dma == {("1", "0"): 7}
 
 
 def test_is_steady_needs_every_session_at_rate():
@@ -1078,6 +1244,56 @@ def test_report_html_opens_the_setup_folds_the_instances_and_escapes_every_text(
     assert aa in page
 
 
+def test_the_report_names_the_builds_whose_launches_had_dma_and_their_dsa():
+    slots = [{**SLOTS[0], "dsa": "0000:00:01.0"}, {**SLOTS[0], "role": "tx"}]
+    launch = dict(role="rx", slot=0, script="exec RxTxApp --x", config={})
+    launches = [{**launch, "label": "A"}, {**launch, "label": "B"}]
+    launches[1]["script"] += " --dma_dev 0000:00:01.0"  # what B ran with
+    rounds = [_round(_rounds((1, 1))[0], launches=launches)]
+    platforms = [("s (RX)", {}), ("c (TX)", {})]
+    page = pc.report_html(LABELS, ARGS, [], slots, rounds, platforms)
+    assert "<td>RX copies with DMA</td><td>no</td><td>yes</td>" in page
+    assert "<th>perf</th>\n<th>DSA</th>" in page
+    assert "<td>no</td><td>0000:00:01.0</td></tr>" in page
+    tx = (
+        "<td>TX</td><td>0</td><td>4-7</td><td>yes</td><td>yes</td><td>no</td><td>-</td>"
+    )
+    assert tx in page
+    summary = pc.summary_html(LABELS, ARGS, slots, rounds)
+    assert "<td>RX copies with DMA</td><td>no</td><td>yes</td>" in summary
+    rounds = [_round(_rounds((1, 1))[0], launches=launches[:1])]
+    page = pc.report_html(LABELS, ARGS, [], SLOTS, rounds, platforms)
+    assert "RX copies with DMA" not in page and "DSA" not in page
+
+
+def test_the_report_keeps_the_pair_of_each_nic_apart_or_pools_them():
+    slots = [{**SLOTS[0], "slot": n, "nic": n // 2, "pfs": f"pf{n}"} for n in range(4)]
+    loop = "sch_1 avg loop (ns)"
+    metrics = [_rounds((100, 110 + nic), metric=loop)[0] for nic in (0, 1)]
+    both = {
+        x: {f"rx NIC {nic}": m[x]["rx"] for nic, m in enumerate(metrics)} for x in "AB"
+    }
+    rounds = [_round(both, pc.round_order(n, 4)) for n in range(2)]
+    platforms = [("s (RX)", {}), ("c (TX)", {})]
+    page = pc.report_html(LABELS, ARGS, [], slots, rounds, platforms, nics="pairs")
+    for nic in (0, 1):
+        assert f"<h2>RX NIC {nic} (s&lt;t)</h2>" in page
+    assert "<td>RX NIC 1 · sch_1 avg loop (ns) ↓</td>" in page  # the verdict's
+    assert "<th>Slot 3</th>\n<th>Result</th>" in page
+    assert (
+        "<td>main</td><td>a&lt;b</td><td>a&lt;b</td><td>main</td><td>valid</td>" in page
+    )
+    assert "<th>perf</th>\n<th>PFs</th>" in page and "<td>pf3</td>" in page
+    assert "2 valid rounds, the slots swapped each round." in page
+    page = pc.report_html(LABELS, ARGS, [], slots, rounds, platforms, nics="pooled")
+    assert "<h2>RX (s&lt;t)</h2>" in page and "NIC 1 (s" not in page
+    assert "2 valid rounds on each of 2 NICs, the slots swapped each round." in page
+    assert "Under 4" not in page  # 4 samples
+    one = pc.report_html(LABELS, ARGS, [], slots, rounds[:1], platforms, nics="pooled")
+    assert "1 valid round on each of 2 NICs" in one and "Under 4 samples the" in one
+    assert "<td>+10% / +11% / +10% / +11%</td>" in page  # a sample per NIC and round
+
+
 class _Fake:
     """run_round on fake hosts: every host call answered from these attributes."""
 
@@ -1090,6 +1306,8 @@ class _Fake:
         self.dead = set()  # the units that inactive() reports
         self.busy = False
         self.pin = ""  # what pin_app_threads() returns
+        self.dma = ""  # the labels whose RX instances are given --dma_dev
+        self.slots = [pc.Slot(i, [0], [4 + 4 * i], True, [i]) for i in (0, 1)]
         self.wire = ([0, 0], [0, 0])  # what each slot's two reads of the wire count
         self.pmu = {}  # the perf stat counts of an instance, PMU without
         self.paced = {}  # the pacing way lines of an instance's log
@@ -1156,16 +1374,21 @@ class _Fake:
 
     def round(self):
         host = SimpleNamespace(name="h")
+        vfs = [f"vf{p}" for s in self.slots for p in s.ports]
         sides = [
-            pc.Side(host, r, "/mtl", ["vf0", "vf1"], [None, None], None, self.perf)
+            pc.Side(host, r, "/mtl", vfs, self.slots, None, self.perf)
             for r in ("rx", "tx")
         ]
         self.launches, self.reads, self.wires = [], {}, iter(self.wire)
         return pc.run_round(
             sides,
             {"A": "/a", "B": "/b"},
-            ("A", "B"),
-            lambda side, slot, label: (f"app {label}", {"slot": slot}),
+            pc.round_order(0, len(self.slots)),
+            lambda side, slot, label: (
+                f"app {label}"
+                + " --dma_dev d" * (side.role == "rx" and label in self.dma),
+                {"slot": slot},
+            ),
             str(self.tmp_path),
             2,
             FPS,
@@ -1227,8 +1450,11 @@ def test_start_keeps_the_script_its_unit_runs(monkeypatch):
     monkeypatch.setattr(
         pc, "write_file", lambda host, path, text: written.update({path: text})
     )
-    monkeypatch.setattr(pc, "_start_unit", lambda *a, **k: 7)
-    slot = pc.Slot(0, 0, [4, 5, 6, 7], True)
+    props = []
+    monkeypatch.setattr(
+        pc, "_start_unit", lambda h, n, c, p, *a, **k: props.extend(p) or 7
+    )
+    slot = pc.Slot(0, [0], [4, 5, 6, 7], True)
     rdt = "/sys/fs/resctrl/mtl_perf_0"
     inst = pc.Instance(None, "rx0", "rx", "A", slot, "/t/a", "/run/A_rx0", rdt)
     inst.start("/mtl", "RxTxApp --x")
@@ -1238,6 +1464,11 @@ def test_start_keeps_the_script_its_unit_runs(monkeypatch):
         f"&& echo $$ > {rdt}/tasks && cd /mtl && exec taskset -c 4 taskset -c 4-7 env "
     )
     assert join in inst.script and inst.script.endswith(" RxTxApp --x")
+    assert props == ["AllowedCPUs=4-7", "AllowedMemoryNodes=0", "Nice=-20"]
+    props.clear()
+    inst.slot = pc.Slot(0, [0, 2], [4, 5, 68, 69], True)  # span: both nodes
+    inst.start("/mtl", "RxTxApp --x")
+    assert props == ["AllowedCPUs=4-5,68-69", "AllowedMemoryNodes=0,2", "Nice=-20"]
 
 
 def test_run_round_counts_every_instance_over_its_untraced_window(fake):
@@ -1284,6 +1515,39 @@ def test_run_round_rejects_a_session_below_the_frame_rate(fake):
     assert fake.round()[1] == [
         f"mtl-perf-rx0 (main): a session fell to {FPS * 0.95:.2f} fps"
     ]
+
+
+def test_run_round_runs_a_pair_on_each_nic_and_keeps_their_rows_apart(fake):
+    fake.slots = _nics("pairs")
+    fake.wire = ([0, 0, 0, 0], [0, 0, 5, 0])
+    fake.paced = {f"{x}_tx{n}": "pacing way: ratelimit\n" for n, x in enumerate("ABB")}
+    fake.paced["A_tx3"] = "pacing way: tsc\n"
+    results, problems, notes = fake.round()
+    assert problems == []
+    ran = [(x["label"], x["role"], x["slot"]) for x in fake.launches]
+    assert ran == [(x, r, n) for r in ("rx", "tx") for n, x in enumerate("ABBA")]
+    keys = ["rx NIC 0", "rx NIC 1", "tx NIC 0", "tx NIC 1"]
+    assert sorted(results["A"]) == sorted(results["B"]) == keys
+    assert "slot 2: 5 packets lost between the hosts" in notes
+    paced = [n for n in notes if "pace" in n]
+    assert paced == ["the builds pace TX differently on NIC 1: main tsc; dev ratelimit"]
+
+
+def test_run_round_counts_the_losses_of_both_ports_of_a_slot_of_two_nics(fake):
+    fake.slots = _nics("span")
+    fake.wire = ([0, 0, 0, 0], [0, 0, 5, 0])  # port 2: NIC 1's of slot 0
+    results, problems, notes = fake.round()
+    assert problems == [] and sorted(results["A"]) == ["rx", "tx"]
+    assert "slot 0: 5 packets lost between the hosts" in notes
+
+
+def test_run_round_rejects_an_rx_session_of_a_dma_build_that_dma_did_not_copy(fake):
+    fake.dma = "B"  # B runs in slot 1
+    fake.runs["mtl-perf-rx1"] = _records(dma=(5, 5))
+    assert fake.round()[1] == []
+    for dma in ((5,), (5, 0)):  # a session that MTL gave no DMA, or one it copied 0
+        fake.runs["mtl-perf-rx1"] = _records(dma=dma)
+        assert fake.round()[1] == ["mtl-perf-rx1 (dev): 1 of 2 sessions copied by DMA"]
 
 
 def test_run_round_rejects_tasklet_stat_records_without_the_work_tasklets(fake):

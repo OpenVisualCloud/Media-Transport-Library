@@ -22,7 +22,9 @@ An A/A run, of one build twice, measures the noise floor of the rig.
 | How do two builds that expect the same path run side by side? | A private mount namespace binds each tree over `<mtl>/.local_install` (§3.2) | DPDK bakes `RTE_EAL_PMD_PATH` into `librte_eal` as an absolute path with no override, so a moved tree loads the wrong drivers or none; `v26.01` pins DPDK 25.11 and `main` 26.07. |
 | How are the CPUs isolated? | A transient systemd unit per instance whose cgroup v2 cpuset is the slot (§3.1) | `taskset` isolates nothing: `numa_bind()` in `mtl_init()` widened a `[2,3]` mask to `0-31`. `isolate.sh` holds one host-wide lock for its one partition. |
 | How is the L3 shared? | Intel RDT CAT: equal, exclusive ways per slot (§3.3) | Otherwise the larger footprint evicts the other, and the swap does not cancel that: it follows the instance, not the slot. |
-| One NUMA node for both slots, or one each? | Both on the node of the NICs | A slot on the other node would reach its NIC and hugepages across the socket link, which no production MTL does; the swap cancels that in the mean but not in the spread. |
+| One NUMA node for both slots, or one each? | Both on the node of their NIC; with both NICs, each NIC's slots on its own node (§3.5) | A slot on the other node would reach its NIC and hugepages across the socket link, which no production MTL does; the swap cancels that in the mean but not in the spread. |
+| How do the builds use a second NIC? | As the `nics` input says: an instance on a port of each NIC (`span`), or a pair of slots on each NIC whose rows stay apart (`pairs`) or are pooled (`pooled`) (§3.5) | `span` loads one MTL instance with two NICs; `pairs` and `pooled` repeat the comparison on the other socket, a block of its own, never A on one socket and B on the other. |
+| Does an instance copy with DMA? | Per build (`dma`): its RX instances, each with a DSA of its own on its port's node (§3.5) | MTL has no TX DMA, gives a session only a DMA device on its port's node, and a vfio device belongs to one process. |
 | What is measured? | The stats dump through `sys:log_msg`, the tasklet counters through `sys:tasklet_stat`, `/proc`, RDT and `perf stat` (§4) | `sys:log_msg` fires at any log level and exists in every release since 2024, so `v26.01` is measured the same way as `main`. |
 | Which application? | RxTxApp | FFmpeg and GStreamer measure their own frame copies more than MTL. |
 | Does the report say whether the candidate regressed? | Per row and in a verdict (§4.4); the case never fails on a score, only on an invalid round or a setup it cannot run | The answer first, from the candidate's side, as benchmark tools give it. |
@@ -120,7 +122,8 @@ mtl-perf-rx0-pmu                         perf stat -p <pid>, the untraced window
 thread each so no slot holds an SMT sibling of the other's, after two cores for the OS
 and the collectors. Both slots are isolated cores when the node isolates 16 or more,
 else neither is. Both perf hosts boot `isolcpus=4-20`, so on each the slots are the
-isolated cores 4-11 and 12-19.
+isolated cores 4-11 and 12-19 of NIC 0's node 0. NIC 1 is on node 2, whose slots stay
+off isolated cores until the hosts isolate 16 of its cores too, e.g. `68-84`.
 
 The cpuset alone places the threads:
 
@@ -147,7 +150,8 @@ we are the first user"). DPDK's `--in-memory` shares no hugepage file.
 ### 3.3. Cache and memory bandwidth
 
 When resctrl offers L3 allocation and holds no other groups, the groups `mtl_perf_0` and
-`mtl_perf_1` get `ways / 3` L3 ways each, at the end of the mask away from the
+`mtl_perf_1` get `ways / 3` L3 ways each (with a pair on each NIC, `mtl_perf_2` and
+`mtl_perf_3` the same ways in the other socket's L3), at the end of the mask away from the
 `shareable_bits`. Those are the ways the NIC writes into (DDIO), which both instances
 use and neither may own, so the default group keeps them with the rest: with 12 ways and
 `shareable_bits` `c00`, the slots get `00f` and `0f0` and the default group `f00`. Each
@@ -155,6 +159,9 @@ instance joins its group before `exec`, and the group also gives its memory band
 (MBM) and LLC occupancy (CMT). MBA is not used: the load is a few GB/s on a host with
 hundreds, and MBA throttles by inserting delay, which changes the latency it would
 protect.
+
+On these SNC2 hosts kernel 6.8's resctrl monitoring knows no sub-NUMA clusters (that
+came with 6.11), so check the memory bandwidth rows in an A/A run before trusting them.
 
 A host without RDT runs without CAT, as the report's placement table says. The case
 restores the default mask, saved in `/run/mtl-perf-compare.schemata`, at its end, or
@@ -169,6 +176,34 @@ after an aborted job `perf-compare.sh clean` (§6).
 | Shared memory controller, DDIO ways, socket power budget | Common mode; an A/A run measures what is left. The nightly is one when `main` did not move, and equal refs run the same binaries |
 | Another job on the companion, which serves other repositories too | The round notes a `Runner.Worker` on the companion at its start or end |
 | Host tasks and IRQs on the SMT siblings of slot cores, IRQs on the slot cores | Not prevented: the cpuset bounds the instance, not the host. A task on a slot core shows as `sch preemptions (/s)`, the rest as a longer loop and a wider spread |
+| NIC 0 and NIC 1, and their sockets | `span`: both slots have a port of each. `pairs`: each NIC's rows apart. `pooled`: refused unless both NICs link at one speed, run one firmware and are alike isolated |
+
+### 3.5. Two NICs and DMA
+
+`nics` sets how the builds use the NICs of the perf pair, each of two ports, NIC 0 on
+node 0 and NIC 1 on node 2. The topology then declares all four ports
+(`PERF_PORTS=4`); NIC 1's ports take a VF each and the subnets 100 above NIC 0's.
+
+| `nics` | Slots of a host | Results |
+| --- | --- | --- |
+| `single` | 0 and 1: port 0 and 1 of NIC 0 | As above |
+| `span` | 0 and 1: port 0 or 1 of each NIC, the cores and memory of both nodes, `sessions` on each port | One instance a build drives both NICs; `mtl_init()` binds its application threads to port 0's node, and the case spreads them over the free CPUs of the slot |
+| `pairs` | 0 and 1 on NIC 0, 2 and 3 on NIC 1, each on its NIC's node; NIC 1's pair runs the other way round, so every round has each build on both NICs | A section and rows of their own per NIC, all key rows in the one verdict |
+| `pooled` | As `pairs` | One table per role, each NIC of each round a sample, so one round already gives a noise estimate: more samples, but the noise holds the NIC difference too |
+
+RxTxApp allocates a TX source on the node of its instance's first port, so in `span`
+NIC 1's TX sessions read theirs across the socket link, and node 0 holds the sources
+of both TX instances: about 18 GB at 36 x 1080p59 a port, of its 24 1 GB hugepages. A
+TX that runs out reads its source through `mmap()`, which fails the round (§6).
+
+`dma` gives the RX instances of A, B or both `--dma_dev`: the slot's DSA on each of its
+nodes, the i-th slot of a node its i-th DSA, bound to vfio-pci, so the DSA follows the
+slot when the builds swap. vfio-pci must already allow DSA (`disable_denylist`, set by
+the session's `host_dma_devices`): lifting it in the case would reload the module and
+unbind the VFs. MTL falls back to the CPU copy for a session it gives no DMA, so a
+round in which a session of a DMA instance copied nothing by DMA is invalid. DMA also
+changes MTL's scheduler quota (12 rather than 8 1080p sessions a scheduler), so its
+scheduler rows move with it.
 
 ## 4. Measurement
 
@@ -253,7 +288,7 @@ less of that than the min and the avg.
 | Round value | The median of the window's dumps; the sum of its dumps for the loss and late frame rows, which MTL prints per dump; the change over the window for `/proc`, the RDT memory traffic, `perf stat` and the cumulative counters; LLC occupancy is the reading at the end |
 | Instance value, difference | The mean of its rounds; `(B - A) / A`. A and B run at once, so each round's difference, in the Rounds column, is a paired one |
 | Noise | Twice the standard error of a build's mean over its rounds, the larger build's, so it includes the slot effect. For two rounds it is their difference; more rounds of the same spread narrow it, where a range would widen. A time MTL prints has at least one print step of noise, of the smaller value: 1 ns for a loop, 10 ns for a call or a session |
-| Change | From 2% and twice the noise, a size and a margin over the noise as LNT and Perfherder also ask for; the factor keeps the rough noise estimate of a few rounds from making a change. No change reads `~`, and one valid round scores no row |
+| Change | From 2% and twice the noise, a size and a margin over the noise as LNT and Perfherder also ask for; the factor keeps the rough noise estimate of a few rounds from making a change. No change reads `~`, and one valid round scores no row (of `pooled`, one sample) |
 | Confidence | High from 5 times the noise, medium from 3, else low |
 | Outcome | A change of a row with a better direction is a regression (❌) or an improvement (✅) of the candidate, in a light red or green tint; a change of any other row only differs (➖), in grey. A color-blind reader may not tell red from green, so the mark, the word and the bold better value carry the outcome as well |
 | Better higher | `fps (worst session)` |
@@ -301,11 +336,19 @@ The inputs of `perf-compare.yml`, and the pytest options of a run by hand (§5.4
 | Input | pytest | Default | Meaning |
 | --- | --- | --- | --- |
 | `ref_a`, `ref_b` | `--perf_compare_slots`, `--perf_compare_labels` | `main`, `main` | A, the baseline, and B, the candidate: a branch, tag or commit, with an optional `~n` or `^`; the same twice measures the noise. pytest takes the two built trees and their labels |
-| `args_a`, `args_b` | `--perf_compare_args_a`, `--perf_compare_args_b` | empty | Extra RxTxApp options of each build: letters, digits, spaces and `_./:=,+-`; not `--tasklet_time`, which would time every window. RxTxApp ignores an option it does not know |
+| `args_a`, `args_b` | `--perf_compare_args_a`, `--perf_compare_args_b` | empty | Extra RxTxApp options of each build: letters, digits, spaces and `_./:=,+-`; not `--tasklet_time`, which would time every window, nor `--dma_dev`. RxTxApp ignores an option it does not know |
+| `dma` | `--perf_compare_dma` | `none` | `none`, `A`, `B` or `both`: the builds whose RX instances copy with a DSA (§3.5) |
+| `nics` | `--perf_compare_nics` | `single` | `single`, `span`, `pairs` or `pooled` (§3.5) |
 | `video` | `-k "1080p and 59fps"` | `1080p59` | 1080p, 2160p or 4320p at 59, 50, 29 or 25 fps, from the perf media set |
-| `sessions` | `--perf_compare_sessions` | `36` | Video sessions of each build, on its own 100G port. A 59 fps session is 2.6 Gb/s at 1080p, 10.4 at 2160p and 42 at 4320p; 50, 29 and 25 fps take 0.83, 0.5 and 0.42 of that. 36 x 1080p59, about 94 Gb/s, is the most that fits: at 37 no session reached its rate. 2160p59 fits 9, 4320p59 2 |
+| `sessions` | `--perf_compare_sessions` | `36` | Video sessions of each build on each of its ports; the case refuses a count that a port's link does not carry (below) |
 | `test_time` | `test_time` of `test_config.yaml` | `120` | Seconds of the untraced window; at least 30, for two whole stats dumps. The three later windows add half of it each |
 | `rounds` | `--perf_compare_rounds` | `4` | Rounds; A and B swap places each round, so keep it even. Fewer than 4 give a rough noise estimate |
+
+A 59 fps session takes 2.76 Gb/s on the wire at 1080p, 11.0 at 2160p and 44.1 at 4320p
+(20 bits a pixel, paced over 1125 of 1080 lines, in MTL's packets of 1320 bytes of
+pixels, 1406 on the wire); 50, 29 and 25 fps take 0.83, 0.5 and 0.42 of that. 36 x
+1080p59, 99.3 Gb/s, is the most a 100G port carries (at 37 no session reached its
+rate); 2160p59 fits 9, 4320p59 2.
 
 At 36 x 1080p59 every session holds its rate, but two `main` TX instances on the
 companion count about 210,000 build timeout frames each a round, which the rounds note;
@@ -366,7 +409,8 @@ later. Both perf hosts need bpftrace, and optionally a perf: see the prerequisit
 
 ### 5.4. By hand
 
-On a dual-host acceptance setup (`gen_config.py` with both hosts and two PCI devices):
+On a dual-host acceptance setup (`gen_config.py` with both hosts and two PCI devices,
+or the card's device four times for a `nics` that uses both cards):
 
 ```bash
 cd tests/acceptance
@@ -404,6 +448,11 @@ notes, which do not.
 | `perf stat did not count every event` (note) | The host's perf left an event of the instance uncounted, so it has no PMU rows | Its `.pmu` record in `perf_compare/round<N>/` |
 | Placement `perf` no | No perf on the host counts every event: no PMU rows at all | A `linux-tools-<version>` package of a 6.8 kernel |
 | Placement `CAT` no | No L3 allocation, or other resctrl groups | Remove the groups, or accept a shared L3 |
+| `N x <video> take N Gb/s on a port, and <PF> links at N Gb/s` | The session count does not fit a port's link, or the port has none (0 Gb/s) | Fewer `sessions`, or the cable and the link of that port |
+| `--perf_compare_nics <mode> takes two ports of each of two NICs`, `both NICs are on NUMA node N` | The topology declares fewer than four ports (`PERF_PORTS`), or they are not two ports of each of two cards on two nodes | The second card of both hosts, cabled port to port |
+| `pooled takes alike NICs, but ...` | The NICs differ in speed, firmware or isolated cores | Make them alike, or run `pairs` |
+| `vfio-pci still refuses DSA`, `NUMA node N has N DSA, its slots need N`, `DSA <BDF> is not on vfio-pci` | vfio-pci kept its denylist, a node has fewer DSA than slots, or a DSA would not bind | `doc/dma.md`; DSA enabled in the BIOS on every node in use |
+| `N of M sessions copied by DMA` | MTL gave a session of a DMA instance no DMA device, or it copied nothing | Its log: `rv_init_dma` and the DMA lines of its dumps |
 | A change in an A/A run | The rough noise estimate of a few rounds | More rounds; a low confidence change is a hint |
 | The job fails copying to the companion | A host has no bpftrace | Host image content, [ci_runner_setup.md](ci_runner_setup.md) |
 | `No perf-compare report found` | The case failed or skipped before a round, as without a SUT or a VF on two PFs | The pytest log |
