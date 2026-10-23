@@ -1297,13 +1297,49 @@ static struct rte_mbuf* ut_txv_train_pad(uint16_t len) {
   return pad;
 }
 
+/* tv_train_pacing() of the session the caller laid out, against the RL queue mock: a
+ * NORMAL pad drains in pad_ns, any other by its bytes. Builds a pad for each pkt type the
+ * frame has, as tv_init_hw() does. */
+static int ut_txv_train_rl(ut_txv_ctx* ctx, uint16_t nb_tx_desc, long double pad_ns) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+  int ret = 0;
+
+  inf->drv_info.drv_type = MT_DRV_IAVF;
+  inf->nb_tx_desc = nb_tx_desc;
+  s->port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
+  s->pacing_way[MTL_SESSION_PORT_P] = ST21_TX_PACING_WAY_RL;
+  ctx->rl_txq[MTL_SESSION_PORT_P].bps = ut_txv_init_hw_bps(ctx, MTL_PORT_P);
+  ctx->rl_queue[MTL_SESSION_PORT_P].txq = &ctx->rl_txq[MTL_SESSION_PORT_P];
+  s->queue[MTL_SESSION_PORT_P] = &ctx->rl_queue[MTL_SESSION_PORT_P];
+  for (int t = 0; t < ST20_PKT_TYPE_MAX; t++) {
+    s->pad[MTL_SESSION_PORT_P][t] = NULL;
+    if (!s->st20_pkt_info[t].number) continue;
+    s->pad[MTL_SESSION_PORT_P][t] = ut_txv_train_pad(s->st20_pkt_info[t].size);
+    if (!s->pad[MTL_SESSION_PORT_P][t]) ret = -ENOMEM;
+  }
+  ctx->train_pad_ns = pad_ns;
+  ctx->train_normal_len = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+  ctx->train_drain_end_ns = ctx->mock_tsc_ns;
+
+  if (!ret) {
+    ut_txv_train_ctx = ctx;
+    ret = tv_train_pacing(&ctx->impl, s, MTL_SESSION_PORT_P);
+    ut_txv_train_ctx = NULL;
+  }
+  for (int t = 0; t < ST20_PKT_TYPE_MAX; t++) {
+    rte_pktmbuf_free(s->pad[MTL_SESSION_PORT_P][t]);
+    s->pad[MTL_SESSION_PORT_P][t] = NULL;
+  }
+  s->queue[MTL_SESSION_PORT_P] = NULL;
+  return ret;
+}
+
 int ut_txv_train_rl_pacing(ut_txv_ctx* ctx, uint16_t nb_tx_desc, long double pad_ns,
                            bool bpm) {
   struct st_tx_video_session_impl* s = &ctx->session;
-  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
   struct st20_packet_group_info* normal = &s->st20_pkt_info[ST20_PKT_TYPE_NORMAL];
   struct st20_packet_group_info* extra = &s->st20_pkt_info[ST20_PKT_TYPE_EXTRA];
-  int ret = -ENOMEM;
 
   if (st_get_fps_timing(ST_FPS_P59_94, &s->fps_tm) < 0) return -EINVAL;
   s->ops.fmt = ST20_FMT_YUV_422_10BIT;
@@ -1329,31 +1365,48 @@ int ut_txv_train_rl_pacing(ut_txv_ctx* ctx, uint16_t nb_tx_desc, long double pad
   extra->size = normal->size + sizeof(struct st20_rfc4175_extra_rtp_hdr);
   s->pacing.trs = (long double)s->fps_tm.den * NS_PER_S / s->fps_tm.mul * 1080 / 1125 /
                   s->st20_total_pkts;
-  inf->drv_info.drv_type = MT_DRV_IAVF;
-  inf->nb_tx_desc = nb_tx_desc;
-  s->port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
-  s->pacing_way[MTL_SESSION_PORT_P] = ST21_TX_PACING_WAY_RL;
-  ctx->rl_txq[MTL_SESSION_PORT_P].bps = ut_txv_init_hw_bps(ctx, MTL_PORT_P);
-  ctx->rl_queue[MTL_SESSION_PORT_P].txq = &ctx->rl_txq[MTL_SESSION_PORT_P];
-  s->queue[MTL_SESSION_PORT_P] = &ctx->rl_queue[MTL_SESSION_PORT_P];
-  s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL] = ut_txv_train_pad(normal->size);
-  s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_EXTRA] = ut_txv_train_pad(extra->size);
-  ctx->train_pad_ns = pad_ns;
-  ctx->train_normal_len = normal->size;
-  ctx->train_drain_end_ns = ctx->mock_tsc_ns;
+  return ut_txv_train_rl(ctx, nb_tx_desc, pad_ns);
+}
 
-  if (s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL] &&
-      s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_EXTRA]) {
-    ut_txv_train_ctx = ctx;
-    ret = tv_train_pacing(&ctx->impl, s, MTL_SESSION_PORT_P);
-    ut_txv_train_ctx = NULL;
-  }
-  for (int t = ST20_PKT_TYPE_NORMAL; t <= ST20_PKT_TYPE_EXTRA; t++) {
-    rte_pktmbuf_free(s->pad[MTL_SESSION_PORT_P][t]);
-    s->pad[MTL_SESSION_PORT_P][t] = NULL;
-  }
-  s->queue[MTL_SESSION_PORT_P] = NULL;
-  return ret;
+int ut_txv_train_rl_gpm_sl(ut_txv_ctx* ctx, enum st20_fmt fmt, uint32_t width,
+                           uint32_t height, long double pad_trs) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st20_tx_ops* ops = &s->ops;
+  int ret;
+
+  if (st_get_fps_timing(ST_FPS_P25, &s->fps_tm) < 0) return -EINVAL;
+  s->s_type = MT_HANDLE_TX_VIDEO;
+  ops->type = ST20_TYPE_FRAME_LEVEL;
+  ops->packing = ST20_PACKING_GPM_SL;
+  ops->fmt = fmt;
+  ops->width = width;
+  ops->height = height;
+  ops->fps = ST_FPS_P25;
+  ops->num_port = 1;
+  if (st20_get_pgroup(fmt, &s->st20_pg) < 0) return -EINVAL;
+  ret = tv_init_pkt(&ctx->impl, s, ops, NULL);
+  if (ret < 0) return ret;
+  s->pacing.trs = (long double)s->fps_tm.den * NS_PER_S / s->fps_tm.mul * 1080 / 1125 /
+                  s->st20_total_pkts;
+  return ut_txv_train_rl(ctx, 512, s->pacing.trs * pad_trs);
+}
+
+long double ut_txv_gpm_sl_frame_ns(const ut_txv_ctx* ctx) {
+  const struct st_tx_video_session_impl* s = &ctx->session;
+  uint32_t hdr = sizeof(struct st_rfc4175_video_hdr);
+  uint32_t pkts_in_line = s->st20_pkts_in_line;
+  /* tv_build_st20() packs the line in pkts of st20_pkt_len, the last one the rest */
+  uint32_t last = s->st20_bytes_in_line - (pkts_in_line - 1) * s->st20_pkt_len;
+  uint32_t line = (pkts_in_line - 1) * (s->st20_pkt_len + hdr) + last + hdr;
+  uint32_t lines = s->st20_total_pkts / pkts_in_line;
+  long double pads = (long double)s->st20_total_pkts / s->pacing.pad_interval;
+
+  /* the shaper drains a pkt by its bytes, video_burst_packet()'s pads are NORMAL */
+  return ctx->train_pad_ns * ((long double)lines * line / ctx->train_normal_len + pads);
+}
+
+uint32_t ut_txv_line_tail_pkts(const ut_txv_ctx* ctx) {
+  return ctx->session.st20_pkt_info[ST20_PKT_TYPE_LINE_TAIL].number;
 }
 
 float ut_txv_pad_interval(const ut_txv_ctx* ctx) {
