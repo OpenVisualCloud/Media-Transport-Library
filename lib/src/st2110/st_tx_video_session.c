@@ -345,9 +345,14 @@ static int uint64_t_cmp(const void* a, const void* b) {
 /* the pad tv_train_pacing() sends for pkt i of a frame */
 static enum st20_packet_type tv_train_pad_type(struct st_tx_video_session_impl* s,
                                                int i) {
-  if ((s->ops.type == ST20_TYPE_RTP_LEVEL) || (s->s_type == MT_ST22_HANDLE_TX_VIDEO) ||
-      (s->ops.packing == ST20_PACKING_GPM_SL))
+  if ((s->ops.type == ST20_TYPE_RTP_LEVEL) || (s->s_type == MT_ST22_HANDLE_TX_VIDEO))
     return ST20_PKT_TYPE_NORMAL;
+  /* a GPM_SL line ends in a shorter pkt unless its bytes split evenly */
+  if (s->ops.packing == ST20_PACKING_GPM_SL)
+    return (s->st20_pkt_info[ST20_PKT_TYPE_LINE_TAIL].number &&
+            i % s->st20_pkts_in_line == s->st20_pkts_in_line - 1)
+               ? ST20_PKT_TYPE_LINE_TAIL
+               : ST20_PKT_TYPE_NORMAL;
   /* frame type */
   uint32_t offset = s->st20_pkt_len * i;
   uint16_t line1_number = offset / s->st20_bytes_in_line;
