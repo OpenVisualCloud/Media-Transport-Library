@@ -35,7 +35,16 @@ _GTEST_COLUMNS = [
 # Regression detail sections: (data_key, label, subtitle, show_baseline, css_mod)
 _REGRESSION_SECTIONS = [
     ("regressions", "Regressions", "previously passed, now failing", True, "danger"),
+    ("now_failing", "Now Failing", "skipped in baseline, now failing", True, "danger"),
     ("new_failures", "New Failures", "not present in baseline", False, "warning"),
+    (
+        "changed_failures",
+        "Changed Failures",
+        "failing for another reason",
+        True,
+        "warning",
+    ),
+    ("lost_coverage", "Lost Coverage", "ran in baseline, now skipped", True, "warning"),
     ("fixes", "Fixes", "previously failing, now passing", True, "success"),
 ]
 
@@ -338,21 +347,13 @@ def _generate_system_info(system_info_list):
 
 def _generate_regression_section(regression_data):
     """Generate regression analysis section with collapsible detail tables."""
-    regressions = regression_data.get("regressions", [])
-    fixes = regression_data.get("fixes", [])
-    new_failures = regression_data.get("new_failures", [])
-
-    html = '<div class="section"><h2>Regression Analysis</h2>'
-    html += (
-        '<div class="card-grid">'
-        f'<div class="card card-danger"><div class="card-label">Regressions</div>'
-        f'<div class="card-value">{len(regressions)}</div></div>'
-        f'<div class="card card-success"><div class="card-label">Fixes</div>'
-        f'<div class="card-value">{len(fixes)}</div></div>'
-        f'<div class="card card-warning"><div class="card-label">New Failures</div>'
-        f'<div class="card-value">{len(new_failures)}</div></div>'
-        "</div>"
-    )
+    html = '<div class="section"><h2>Regression Analysis</h2><div class="card-grid">'
+    for key, label, _subtitle, _show_baseline, modifier in _REGRESSION_SECTIONS:
+        html += (
+            f'<div class="card card-{modifier}"><div class="card-label">{label}</div>'
+            f'<div class="card-value">{len(regression_data.get(key, []))}</div></div>'
+        )
+    html += "</div>"
 
     coverage = regression_data.get("coverage")
     if coverage:
@@ -383,14 +384,14 @@ def _generate_regression_section(regression_data):
             f'<div id="{detail_id}" class="details">'
             f"<h4>{label} &mdash; {subtitle}</h4>"
         )
-        html += _build_regression_table(entries, show_baseline)
+        html += _build_regression_table(key, entries, show_baseline)
         html += "</div>"
 
     html += "</div>"
     return html
 
 
-def _build_regression_table(entries, show_baseline):
+def _build_regression_table(key, entries, show_baseline):
     """Render a regression/fix/new-failure detail table."""
     html = (
         "<table><thead><tr><th>Platform</th><th>NIC</th>"
@@ -402,7 +403,7 @@ def _build_regression_table(entries, show_baseline):
 
     for idx, e in enumerate(entries):
         log = e.get("log", "")
-        log_id = f"reglog-{e['nic']}-{idx}"
+        log_id = f"reglog-{key}-{e['nic']}-{idx}"
         log_cell = ""
         if log:
             log_cell = (
