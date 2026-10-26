@@ -16,7 +16,9 @@ module.exports = async ({ github, context, core }) => {
       : runs.data.workflow_runs[0] || null;
   }
 
-  async function findBaseline(workflow, explicitRunNumber, currentRunId) {
+  // The last scheduled run of main before the current one that kept its reports: a
+  // branch dispatch is no baseline for main, and a run without reports compares nothing.
+  async function findBaseline(workflow, reportPrefix, explicitRunNumber, currentRun) {
     if (explicitRunNumber) {
       const run = await findRun(workflow, '', explicitRunNumber);
       return run ? run.id : '';
@@ -25,10 +27,22 @@ module.exports = async ({ github, context, core }) => {
       owner: context.repo.owner,
       repo: context.repo.repo,
       workflow_id: `${workflow}.yml`,
-      per_page: 5,
+      branch: 'main',
+      event: 'schedule',
+      per_page: 10,
       status: 'completed',
     });
-    return runs.data.workflow_runs.find((run) => run.id != currentRunId)?.id || '';
+    for (const run of runs.data.workflow_runs) {
+      if (currentRun && (run.id == currentRun.id || run.created_at >= currentRun.created_at)) continue;
+      const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        run_id: run.id,
+        per_page: 100,
+      });
+      if (artifacts.data.artifacts.some((a) => !a.expired && a.name.startsWith(reportPrefix))) return run.id;
+    }
+    return '';
   }
 
   const pytestRun = await findRun('nightly-pytest', process.env.PYTEST_BRANCH, process.env.PYTEST_RUN_NUMBER);
@@ -36,9 +50,9 @@ module.exports = async ({ github, context, core }) => {
   core.setOutput('pytest_run_id', pytestRun?.id || '');
   core.setOutput('gtest_run_id', gtestRun?.id || '');
   core.setOutput('baseline_pytest_run_id', String(await findBaseline(
-    'nightly-pytest', process.env.BASELINE_PYTEST_RUN_NUMBER, pytestRun?.id || '',
+    'nightly-pytest', 'nightly-test-report-', process.env.BASELINE_PYTEST_RUN_NUMBER, pytestRun,
   )));
   core.setOutput('baseline_gtest_run_id', String(await findBaseline(
-    'nightly-gtest', process.env.BASELINE_GTEST_RUN_NUMBER, gtestRun?.id || '',
+    'nightly-gtest', 'nightly-gtest-report-', process.env.BASELINE_GTEST_RUN_NUMBER, gtestRun,
   )));
 };
