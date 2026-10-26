@@ -238,11 +238,14 @@ of a `-p` process. The perf is the first of `/usr/bin/perf` and
 
 ### 4.2. Metrics
 
+[perf_compare_metrics.md](perf_compare_metrics.md) takes each row apart: its source line in
+MTL, how MTL and the case compute it, and why the numbers hold.
+
 | Metric | Source | Meaning |
 | --- | --- | --- |
 | **Untraced window** | | **The production view, the primary signals** |
 | `sch_N avg loop (ns)` | `SCH(N:...): ... avg loop X ns` | One pass over the tasklets of scheduler N; more work per packet lengthens it at the same load |
-| `video cpu busy (%)` | `RX/TX_VIDEO_SESSION(...): ... cpu busy X` | MTL's load score of a session, the avg loop over the packet interval |
+| `video cpu busy (%)` | `RX/TX_VIDEO_SESSION(...): ... cpu busy X` | MTL's load score of a session: its scheduler's avg loop over 3 packet intervals (RX) or a TX bulk of them, refreshed every 6 s ([perf_compare_metrics.md](perf_compare_metrics.md#43-cpu)) |
 | `scheduler threads (cores)`, `other threads (cores)` | `/proc/<pid>/task/*/stat` | CPU in cores; a scheduler thread is the `t_pid` of its `SCH` line |
 | `sch preemptions (/s)` | `nonvoluntary_ctxt_switches` of the scheduler threads | Isolation quality; what the swap leaves is a cost of the build |
 | `memory bandwidth (MB/s)`, `LLC occupancy (MB)` | `mon_data` of the RDT group | Memory traffic over the window, and the cache footprint at its end |
@@ -272,8 +275,8 @@ pair up only while both builds place the tasklets alike.
 
 ### 4.3. Tracing cost
 
-A timed call reads the TSC twice, and timing every loop made it 10-45% longer on the
-perf pair. The traced window samples instead: each scheduler times 1 loop in 64 at
+A timed call reads the TSC twice, and timing every loop made it 11-30% longer on the
+perf pair (38-45% on the host it was first measured on). The traced window samples instead: each scheduler times 1 loop in 64 at
 random gaps and counts a timed loop as many times as its gap (`tasklet_stat` in
 [usdt.md](usdt.md) says what stays exact). That costs 0-1.4% of the loop, and nothing
 while the probe is detached. The timed and sessions windows come after the measured ones
