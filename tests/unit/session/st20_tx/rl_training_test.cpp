@@ -183,21 +183,48 @@ TEST_P(St20TxRlTrainLineTailTest, FrameFillsItsActiveTime) {
   ASSERT_EQ(ut_txv_line_tail_pkts(ctx_), c.line_tail_pkts);
   ASSERT_GT(ut_txv_pad_interval(ctx_), 32);
   const long double trs = ut_txv_pacing_trs(ctx_);
+  const long double active = trs * ut_txv_pipe_total_pkts(ctx_);
+  const long double frame = ut_txv_gpm_sl_frame_ns(ctx_);
 
-  /* a frame short by more than a pkt pushes VRX up a pkt by its end */
-  EXPECT_NEAR(ut_txv_gpm_sl_frame_ns(ctx_), trs * ut_txv_pipe_total_pkts(ctx_), trs)
-      << "pad_interval " << ut_txv_pad_interval(ctx_);
+  /* a frame ending more than a pkt early pushes VRX up a pkt by its end; RL starts it
+   * at least 4 pkts early, so one ending more than 4 trs late underflows VRX */
+  EXPECT_GE(frame, active - trs) << "ends " << (active - frame) / trs << " trs early";
+  EXPECT_LE(frame, active + 4 * trs) << "ends " << (frame - active) / trs << " trs late";
   /* the pre-arm queues NORMAL pads: the plan keeps the NORMAL pad's drain */
   EXPECT_NEAR(ut_txv_rl_drain(ctx_, 0), trs * 0.997L, 0.001L);
 }
 
+/* the nine st20p transport formats at the three common rasters; the tail count pins
+ * which of them end each line in a shorter pkt */
 INSTANTIATE_TEST_SUITE_P(
     GpmSl, St20TxRlTrainLineTailTest,
     ::testing::Values(
-        LineTailCase{"Yuv422_10bit1080p", ST20_FMT_YUV_422_10BIT, 1920, 1080, 0},
-        LineTailCase{"Yuv444_12bit1080p", ST20_FMT_YUV_444_12BIT, 1920, 1080, 1080},
-        LineTailCase{"Rgb12bit1080p", ST20_FMT_RGB_12BIT, 1920, 1080, 1080},
+        LineTailCase{"Yuv422_8bit720p", ST20_FMT_YUV_422_8BIT, 1280, 720, 0},
+        LineTailCase{"Yuv422_8bit1080p", ST20_FMT_YUV_422_8BIT, 1920, 1080, 0},
+        LineTailCase{"Yuv422_8bit2160p", ST20_FMT_YUV_422_8BIT, 3840, 2160, 0},
         LineTailCase{"Yuv422_10bit720p", ST20_FMT_YUV_422_10BIT, 1280, 720, 720},
-        LineTailCase{"Yuv422_10bit2160p", ST20_FMT_YUV_422_10BIT, 3840, 2160, 2160}),
+        LineTailCase{"Yuv422_10bit1080p", ST20_FMT_YUV_422_10BIT, 1920, 1080, 0},
+        LineTailCase{"Yuv422_10bit2160p", ST20_FMT_YUV_422_10BIT, 3840, 2160, 2160},
+        LineTailCase{"Yuv422_12bit720p", ST20_FMT_YUV_422_12BIT, 1280, 720, 720},
+        LineTailCase{"Yuv422_12bit1080p", ST20_FMT_YUV_422_12BIT, 1920, 1080, 0},
+        LineTailCase{"Yuv422_12bit2160p", ST20_FMT_YUV_422_12BIT, 3840, 2160, 2160},
+        LineTailCase{"Yuv444_10bit720p", ST20_FMT_YUV_444_10BIT, 1280, 720, 0},
+        LineTailCase{"Yuv444_10bit1080p", ST20_FMT_YUV_444_10BIT, 1920, 1080, 0},
+        LineTailCase{"Yuv444_10bit2160p", ST20_FMT_YUV_444_10BIT, 3840, 2160, 2160},
+        LineTailCase{"Yuv444_12bit720p", ST20_FMT_YUV_444_12BIT, 1280, 720, 0},
+        LineTailCase{"Yuv444_12bit1080p", ST20_FMT_YUV_444_12BIT, 1920, 1080, 1080},
+        LineTailCase{"Yuv444_12bit2160p", ST20_FMT_YUV_444_12BIT, 3840, 2160, 2160},
+        LineTailCase{"Rgb10bit720p", ST20_FMT_RGB_10BIT, 1280, 720, 0},
+        LineTailCase{"Rgb10bit1080p", ST20_FMT_RGB_10BIT, 1920, 1080, 0},
+        LineTailCase{"Rgb10bit2160p", ST20_FMT_RGB_10BIT, 3840, 2160, 2160},
+        LineTailCase{"Rgb12bit720p", ST20_FMT_RGB_12BIT, 1280, 720, 0},
+        LineTailCase{"Rgb12bit1080p", ST20_FMT_RGB_12BIT, 1920, 1080, 1080},
+        LineTailCase{"Rgb12bit2160p", ST20_FMT_RGB_12BIT, 3840, 2160, 2160},
+        LineTailCase{"Rgb8bit720p", ST20_FMT_RGB_8BIT, 1280, 720, 720},
+        LineTailCase{"Rgb8bit1080p", ST20_FMT_RGB_8BIT, 1920, 1080, 0},
+        LineTailCase{"Rgb8bit2160p", ST20_FMT_RGB_8BIT, 3840, 2160, 2160},
+        LineTailCase{"Yuv420_8bit720p", ST20_FMT_YUV_420_8BIT, 1280, 720, 0},
+        LineTailCase{"Yuv420_8bit1080p", ST20_FMT_YUV_420_8BIT, 1920, 1080, 0},
+        LineTailCase{"Yuv420_8bit2160p", ST20_FMT_YUV_420_8BIT, 3840, 2160, 0}),
     [](const ::testing::TestParamInfo<LineTailCase>& info) { return info.param.name; });
 }  // namespace
