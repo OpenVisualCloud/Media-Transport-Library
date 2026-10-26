@@ -933,15 +933,15 @@ class St20TxRlPlanTest : public ::testing::Test {
     ut_txv_destroy(ctx_);
   }
   /* The NORMAL pad's: training drains a frame of 1200-byte pkts of 2.5-byte pixels, a
-   * pkt crossing or ending a line EXTRA and 6 bytes longer, then NORMAL ones to a
-   * multiple of 32, so its mean pad is longer. */
+   * pkt crossing a line end EXTRA and 6 bytes longer, then NORMAL ones to a multiple of
+   * 32. Lines 1920 or 3840 pixels wide split into whole pkts: the mean pad is NORMAL. */
   long double Drain(long double pad_interval, uint32_t width = 1920,
                     uint32_t height = 1080) {
     const uint64_t line = width * 5 / 2, frame = line * height;
     const uint64_t pkts = (frame + 1199) / 1200;
     uint64_t extra = 0;
     for (uint64_t i = 0; i < pkts; i++)
-      if ((i * 1200 + 1200) >= (i * 1200 / line + 1) * line) extra++;
+      if ((i * 1200 + 1200) > (i * 1200 / line + 1) * line) extra++;
     const long double pads = pkts + 32 - pkts % 32;
     const long double share = kNormalPadSize * pads / (kNormalPadSize * pads + 6 * extra);
     return ut_txv_pacing_trs(ctx_) * pad_interval / (pad_interval + 1) * share;

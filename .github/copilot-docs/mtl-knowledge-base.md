@@ -484,15 +484,15 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
 - A plan needs the inputs below, and the trim pads `tv_init_trim_pads()` builds only on an RL port whose NORMAL pkt is at least 128 B, so a 64 B cut leaves a frame:
   - `pad_ns` = `trs`·pi/(pi+1), the shaper time of the mean training pad at that port's own
     measured `pad_interval` pi (trained or pre-trained, `tv_set_measured_pad_interval()`), scaled
-    to a NORMAL pad by bytes: training sends a frame's NORMAL and EXTRA pads (`tv_train_pad_type()`,
-    EXTRA 6 bytes longer; GPM_SL its NORMAL and LINE_TAIL ones), the pre-arm NORMAL ones. Unscaled, 1080p25 BPM (share 0.99881) launched
+    to a NORMAL pad by bytes: training sends a frame's pkts as pads (`tv_train_pad_type()`, as `tv_build_st20()`
+    builds them: EXTRA 6 bytes longer, FRAME_TAIL the frame's rest; GPM_SL its NORMAL and LINE_TAIL ones), the pre-arm NORMAL ones. Unscaled, 1080p25 BPM (share 0.99881 before its FRAME_TAIL pad, 0.99904 now) launched
     packet 0 13 ns a pad early on E830, 1.7 µs over a 130-pad warm-up. `tv_train_pacing()`
     keeps the whole ring full of pads for 71 frames, then sleeps until it drains (`nb_tx_desc` pads,
     ~7.5 ms at 2048 and 1080p59.94): the pre-arm and the WAIT_TARGET hold both assume an idle queue.
     Untrained rates only. A pre-train result is keyed by the rate and the training's pad mix
     (`struct mt_pacing_pad_mix`, `tv_train_mix()`: bytes, NORMAL size, pads with the remain), so a
     session of another mix at that rate trains its own; reused, its `pad_ns` came out 0.119% too
-    long and packet 0 early. It is keyed by the queue's programmed rate too (`txq->bps`): a retrain
+    long (that BPM mix, before its FRAME_TAIL pad) and packet 0 early. It is keyed by the queue's programmed rate too (`txq->bps`): a retrain
     for another mix makes `tv_init_hw()` program the rate's later queues ≥ 0.5% faster, so a
     session of the first mix trains again there. The bps retrain result stays the rate's alone,
     as audio uses it, and a new mix measuring slow on a retrained rate falls back to TSC.

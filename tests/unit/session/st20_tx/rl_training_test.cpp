@@ -228,3 +228,68 @@ INSTANTIATE_TEST_SUITE_P(
         LineTailCase{"Yuv420_8bit2160p", ST20_FMT_YUV_420_8BIT, 3840, 2160, 0}),
     [](const ::testing::TestParamInfo<LineTailCase>& info) { return info.param.name; });
 }  // namespace
+
+/* tv_train_pacing() sends a frame of pads, one for each pkt: a pad of another size than
+ * its pkt moves the trained pad_interval off the frame's active time */
+namespace {
+
+struct Raster {
+  uint32_t width;
+  uint32_t height;
+};
+
+using PadCase = std::tuple<enum st20_packing, enum st20_fmt, Raster>;
+
+class St20TxRlTrainPadTest : public ::testing::TestWithParam<PadCase> {
+ protected:
+  void SetUp() override {
+    ASSERT_EQ(ut_txv_init(), 0);
+    ctx_ = ut_txv_create();
+    ASSERT_NE(ctx_, nullptr);
+  }
+  void TearDown() override {
+    ut_txv_destroy(ctx_);
+  }
+  ut_txv_ctx* ctx_ = nullptr;
+};
+
+TEST_P(St20TxRlTrainPadTest, EveryPadIsTheSizeOfItsPkt) {
+  const Raster r = std::get<2>(GetParam());
+  ASSERT_EQ(0, ut_txv_init_frame(ctx_, std::get<0>(GetParam()), std::get<1>(GetParam()),
+                                 r.width, r.height));
+  EXPECT_EQ(ut_txv_mis_sized_pads(ctx_), 0)
+      << "of " << ut_txv_pipe_total_pkts(ctx_) << " pkts";
+}
+
+std::string PadCaseName(const ::testing::TestParamInfo<PadCase>& info) {
+  const enum st20_packing packing = std::get<0>(info.param);
+  const Raster r = std::get<2>(info.param);
+  return std::string(packing == ST20_PACKING_BPM   ? "Bpm"
+                     : packing == ST20_PACKING_GPM ? "Gpm"
+                                                   : "GpmSl") +
+         (st20_fmt_name(std::get<1>(info.param)) + strlen("ST20_FMT")) + "_" +
+         std::to_string(r.width) + "x" + std::to_string(r.height);
+}
+
+/* BPM and GPM pack a frame as one run of bytes: a pkt crossing a line end carries a
+ * second row header, and the last pkt holds the rest of the frame */
+INSTANTIATE_TEST_SUITE_P(
+    Formats, St20TxRlTrainPadTest,
+    ::testing::Combine(
+        ::testing::Values(ST20_PACKING_BPM, ST20_PACKING_GPM, ST20_PACKING_GPM_SL),
+        ::testing::Values(ST20_FMT_YUV_422_8BIT, ST20_FMT_YUV_422_10BIT,
+                          ST20_FMT_YUV_422_12BIT, ST20_FMT_YUV_444_10BIT,
+                          ST20_FMT_YUV_444_12BIT, ST20_FMT_RGB_8BIT, ST20_FMT_RGB_10BIT,
+                          ST20_FMT_RGB_12BIT, ST20_FMT_YUV_420_8BIT),
+        ::testing::Values(Raster{1280, 720}, Raster{1920, 1080}, Raster{3840, 2160})),
+    PadCaseName);
+
+/* lines of whole pkts, 2520 bytes of 1260-byte BPM ones, 2640 of 1320-byte GPM ones:
+ * no pkt crosses a line end and the frame ends in a full pkt */
+INSTANTIATE_TEST_SUITE_P(
+    WholePkts, St20TxRlTrainPadTest,
+    ::testing::Values(
+        PadCase{ST20_PACKING_BPM, ST20_FMT_YUV_422_10BIT, Raster{1008, 720}},
+        PadCase{ST20_PACKING_GPM, ST20_FMT_YUV_422_10BIT, Raster{1056, 720}}),
+    PadCaseName);
+}  // namespace

@@ -212,9 +212,16 @@ int ut_txv_init_pacing(ut_txv_ctx* ctx, uint32_t height, bool interlaced,
  * pad_ns and any other by its bytes. */
 int ut_txv_train_rl_pacing(ut_txv_ctx* ctx, uint16_t nb_tx_desc, long double pad_ns,
                            bool bpm);
-/* tv_train_pacing() of a one-port progressive 25 fps GPM_SL session of fmt, laid out by
- * the real tv_init_pkt(), against the same RL queue mock as ut_txv_train_rl_pacing(): a
- * NORMAL pad drains in pad_trs of a trs, any other pad by its bytes. */
+/* A one-port progressive 25 fps session of fmt in packing, laid out by the real
+ * tv_init_pkt(). */
+int ut_txv_init_frame(ut_txv_ctx* ctx, enum st20_packing packing, enum st20_fmt fmt,
+                      uint32_t width, uint32_t height);
+/* Pkts of that session's frame, as tv_build_st20() builds them, whose training pad
+ * differs from them in bytes. */
+int ut_txv_mis_sized_pads(ut_txv_ctx* ctx);
+/* tv_train_pacing() of the ut_txv_init_frame() GPM_SL session of fmt, against the same
+ * RL queue mock as ut_txv_train_rl_pacing(): a NORMAL pad drains in pad_trs of a trs,
+ * any other pad by its bytes. */
 int ut_txv_train_rl_gpm_sl(ut_txv_ctx* ctx, enum st20_fmt fmt, uint32_t width,
                            uint32_t height, long double pad_trs);
 /* Shaper time of one frame of that session at the trained pad_interval: every line's
