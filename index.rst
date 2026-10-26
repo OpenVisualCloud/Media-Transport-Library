@@ -91,6 +91,7 @@ Development and Testing
    doc/acceptance-design.md
    doc/ci_runner_setup.md
    doc/perf_compare.md
+   doc/perf_compare_metrics.md
    doc/cicd_setup_proposition.md
 
 Doxygen
