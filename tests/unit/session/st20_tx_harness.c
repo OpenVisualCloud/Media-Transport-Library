@@ -1230,6 +1230,7 @@ static uint64_t ut_txv_init_hw_bps(struct ut_txv_ctx* ctx, enum mtl_port port) {
 int ut_txv_init_rl_pacing(ut_txv_ctx* ctx, int num_port, uint16_t user_pad_interval,
                           bool static_pad, const float* trained_pad_interval, bool wide) {
   struct st_tx_video_session_impl* s = &ctx->session;
+  struct st20_packet_group_info* tail = &s->st20_pkt_info[ST20_PKT_TYPE_FRAME_TAIL];
   uint32_t width = ctx->rl_width ? ctx->rl_width : 1920;
   uint32_t height = ctx->rl_height ? ctx->rl_height : 1080;
   uint32_t lines = ctx->rl_interlaced ? height / 2 : height;
@@ -1251,15 +1252,22 @@ int ut_txv_init_rl_pacing(ut_txv_ctx* ctx, int num_port, uint16_t user_pad_inter
   s->st20_pkt_len = 1200;
   s->st20_pkt_size = 1262;
   s->st20_bytes_in_line = (int)(width * 5 / 2);
-  /* the EXTRA pads training sends; tv_init_pkt() leaves out pkts ending on a line end
-   * (480, not 720, at 1280x720), which only its pools count */
+  s->st20_frame_size = (size_t)s->st20_bytes_in_line * lines;
+  /* as tv_init_pkt(): a frame that is not whole pkts ends in a FRAME_TAIL */
+  if (s->st20_frame_size % s->st20_pkt_len) {
+    tail->number = 1;
+    tail->size =
+        s->st20_frame_size % s->st20_pkt_len + sizeof(struct st_rfc4175_video_hdr);
+  }
+  /* the pkts crossing a line end, 480 at 1280x720 */
   for (int i = 0; i < s->st20_total_pkts; i++)
     if (tv_train_pad_type(s, i) == ST20_PKT_TYPE_EXTRA) extra++;
   s->st20_pkt_info[ST20_PKT_TYPE_EXTRA].size =
       s->st20_pkt_size + sizeof(struct st20_rfc4175_extra_rtp_hdr);
   s->st20_pkt_info[ST20_PKT_TYPE_EXTRA].number = extra;
   s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size = s->st20_pkt_size;
-  s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].number = s->st20_total_pkts - extra;
+  s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].number =
+      s->st20_total_pkts - extra - tail->number;
   s->st21_vrx_narrow = 8;
   s->st21_vrx_wide = 720;
   /* before the tags below, which the failed tv_init_hw() would free */
@@ -1340,6 +1348,7 @@ int ut_txv_train_rl_pacing(ut_txv_ctx* ctx, uint16_t nb_tx_desc, long double pad
   struct st_tx_video_session_impl* s = &ctx->session;
   struct st20_packet_group_info* normal = &s->st20_pkt_info[ST20_PKT_TYPE_NORMAL];
   struct st20_packet_group_info* extra = &s->st20_pkt_info[ST20_PKT_TYPE_EXTRA];
+  struct st20_packet_group_info* tail = &s->st20_pkt_info[ST20_PKT_TYPE_FRAME_TAIL];
 
   if (st_get_fps_timing(ST_FPS_P59_94, &s->fps_tm) < 0) return -EINVAL;
   s->ops.fmt = ST20_FMT_YUV_422_10BIT;
@@ -1348,47 +1357,90 @@ int ut_txv_train_rl_pacing(ut_txv_ctx* ctx, uint16_t nb_tx_desc, long double pad
   s->ops.fps = ST_FPS_P59_94;
   s->ops.num_port = 1;
   s->st20_bytes_in_line = 4800;
-  if (bpm) { /* 1028 of the 4115 pkts cross a line end: EXTRA, 6 bytes longer */
+  s->st20_frame_size = (size_t)4800 * 1080;
+  if (bpm) { /* 1028 of the 4115 pkts cross a line end: EXTRA, 6 bytes longer; the
+              * last holds the frame's last 360 bytes */
     s->ops.packing = ST20_PACKING_BPM;
     s->st20_total_pkts = 4115;
     s->st20_pkt_len = ST_VIDEO_BPM_SIZE;
     extra->number = 1028;
+    tail->number = 1;
+    tail->size = 360 + sizeof(struct st_rfc4175_video_hdr);
   } else { /* NORMAL pads only */
     s->ops.packing = ST20_PACKING_GPM_SL;
     s->st20_total_pkts = 4320;
+    s->st20_pkts_in_line = 4;
     s->st20_pkt_len = 1200;
     extra->number = 0;
+    tail->number = 0;
   }
   s->st20_pkt_size = s->st20_pkt_len + sizeof(struct st_rfc4175_video_hdr);
   normal->size = s->st20_pkt_size;
-  normal->number = s->st20_total_pkts - extra->number;
+  normal->number = s->st20_total_pkts - extra->number - tail->number;
   extra->size = normal->size + sizeof(struct st20_rfc4175_extra_rtp_hdr);
   s->pacing.trs = (long double)s->fps_tm.den * NS_PER_S / s->fps_tm.mul * 1080 / 1125 /
                   s->st20_total_pkts;
   return ut_txv_train_rl(ctx, nb_tx_desc, pad_ns);
 }
 
-int ut_txv_train_rl_gpm_sl(ut_txv_ctx* ctx, enum st20_fmt fmt, uint32_t width,
-                           uint32_t height, long double pad_trs) {
+int ut_txv_init_frame(ut_txv_ctx* ctx, enum st20_packing packing, enum st20_fmt fmt,
+                      uint32_t width, uint32_t height, bool interlaced) {
   struct st_tx_video_session_impl* s = &ctx->session;
   struct st20_tx_ops* ops = &s->ops;
+  uint32_t lines = interlaced ? height >> 1 : height;
   int ret;
 
   if (st_get_fps_timing(ST_FPS_P25, &s->fps_tm) < 0) return -EINVAL;
   s->s_type = MT_HANDLE_TX_VIDEO;
   ops->type = ST20_TYPE_FRAME_LEVEL;
-  ops->packing = ST20_PACKING_GPM_SL;
+  ops->packing = packing;
   ops->fmt = fmt;
   ops->width = width;
   ops->height = height;
+  ops->interlaced = interlaced;
   ops->fps = ST_FPS_P25;
   ops->num_port = 1;
   if (st20_get_pgroup(fmt, &s->st20_pg) < 0) return -EINVAL;
+  /* as mtl_init() and tv_attach() set them, a field's lines when interlaced */
+  ctx->impl.pkt_udp_suggest_max_size = MTL_PKT_MAX_RTP_BYTES;
+  s->st20_linesize =
+      (width * s->st20_pg.size + s->st20_pg.coverage - 1) / s->st20_pg.coverage;
+  s->st20_frame_size = width * lines * s->st20_pg.size / s->st20_pg.coverage;
   ret = tv_init_pkt(&ctx->impl, s, ops, NULL);
   if (ret < 0) return ret;
   s->pacing.trs = (long double)s->fps_tm.den * NS_PER_S / s->fps_tm.mul * 1080 / 1125 /
                   s->st20_total_pkts;
-  return ut_txv_train_rl(ctx, 512, s->pacing.trs * pad_trs);
+  return 0;
+}
+
+int ut_txv_mis_sized_pads(ut_txv_ctx* ctx) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st_frame_trans frame = {.addr = calloc(1, s->st20_frame_size)};
+  struct rte_mbuf* pkt = rte_pktmbuf_alloc(ut_pool());
+  int mis_sized = 0;
+
+  if (frame.addr && pkt) {
+    s->st20_frames = &frame;
+    s->st20_frame_idx = 0;
+    for (s->st20_pkt_idx = 0; s->st20_pkt_idx < s->st20_total_pkts; s->st20_pkt_idx++) {
+      tv_build_st20(s, pkt);
+      if (pkt->data_len != s->st20_pkt_info[tv_train_pad_type(s, s->st20_pkt_idx)].size)
+        mis_sized++;
+    }
+    s->st20_frames = NULL;
+  } else {
+    mis_sized = -ENOMEM;
+  }
+  rte_pktmbuf_free(pkt);
+  free(frame.addr);
+  return mis_sized;
+}
+
+int ut_txv_train_rl_gpm_sl(ut_txv_ctx* ctx, enum st20_fmt fmt, uint32_t width,
+                           uint32_t height, long double pad_trs) {
+  int ret = ut_txv_init_frame(ctx, ST20_PACKING_GPM_SL, fmt, width, height, false);
+  if (ret < 0) return ret;
+  return ut_txv_train_rl(ctx, 512, ctx->session.pacing.trs * pad_trs);
 }
 
 long double ut_txv_gpm_sl_frame_ns(const ut_txv_ctx* ctx) {
@@ -1407,6 +1459,10 @@ long double ut_txv_gpm_sl_frame_ns(const ut_txv_ctx* ctx) {
 
 uint32_t ut_txv_line_tail_pkts(const ut_txv_ctx* ctx) {
   return ctx->session.st20_pkt_info[ST20_PKT_TYPE_LINE_TAIL].number;
+}
+
+uint32_t ut_txv_normal_pkts(const ut_txv_ctx* ctx) {
+  return ctx->session.st20_pkt_info[ST20_PKT_TYPE_NORMAL].number;
 }
 
 float ut_txv_pad_interval(const ut_txv_ctx* ctx) {

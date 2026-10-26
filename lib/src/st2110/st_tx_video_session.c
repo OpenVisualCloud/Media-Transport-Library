@@ -362,13 +362,10 @@ static enum st20_packet_type tv_train_pad_type(struct st_tx_video_session_impl* 
             i % s->st20_pkts_in_line == s->st20_pkts_in_line - 1)
                ? ST20_PKT_TYPE_LINE_TAIL
                : ST20_PKT_TYPE_NORMAL;
-  /* frame type */
+  /* frame type, as tv_build_st20() packs it: the last pkt holds the rest of the frame */
   uint32_t offset = s->st20_pkt_len * i;
-  uint16_t line1_number = offset / s->st20_bytes_in_line;
-  /* last pkt should be treated as normal pkt also */
-  if ((offset + s->st20_pkt_len) < (line1_number + 1) * s->st20_bytes_in_line)
-    return ST20_PKT_TYPE_NORMAL;
-  return ST20_PKT_TYPE_EXTRA;
+  if (offset + s->st20_pkt_len > s->st20_frame_size) return ST20_PKT_TYPE_FRAME_TAIL;
+  return tv_pkt_has_extra_hdr(s, offset) ? ST20_PKT_TYPE_EXTRA : ST20_PKT_TYPE_NORMAL;
 }
 
 /* the pads of a frame tv_train_pacing() sends, the remain NORMAL ones included */
