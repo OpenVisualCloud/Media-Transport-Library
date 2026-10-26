@@ -96,7 +96,7 @@ sudo grep -E "EAL|hugepage|VF|RxTxApp|RemoteProcess|Traceback|err:" \
 | `RemoteProcessInvalidState: Process is finished` (ffmpeg) | **(setup)** In-repo ffmpeg/libav not installed. |
 | RxTxApp exit `127` with `error while loading shared libraries: librte_*.so.26` | **(setup)** DPDK is installed but the dynamic linker cache is stale. Re-run setup (it refreshes `ldconfig`) or run `sudo ldconfig`, then confirm `ldd .local_install/mtl/bin/RxTxApp` has no `not found`. |
 | `RuntimeError: Failed to start MtlManager on host` (pytest `mtl_manager` fixture, setup error not a test failure) | **(setup)** `.local_install/mtl/bin/MtlManager` missing — the host only has the system-wide gtest build. Run `acceptance_setup.sh setup --base-only`; the `build_mtl`/`dpdk_build` MCP tools target `build/` + `/usr/local` instead, which pytest doesn't use. |
-| `Media file not present on <host>: /mnt/media/...` (SKIPPED) | **(setup)** NFS empty/unmounted. ASK the user for the NFS source; never skip silently. |
+| `Media file not present on <host>: /mnt/media/...` (ERROR) | **(setup)** NFS empty/unmounted. ASK the user for the NFS source; never skip silently. |
 | `cp: cannot stat /mnt/media/...` | **(setup)** Same — NFS not populated. |
 | `mount: bad option ... mount.<type> helper` | **(setup)** `nfs-common` missing. |
 | `SSHConnection.__init__() missing … 'password'` | **(setup)** Topology needs `password: ''`. |
