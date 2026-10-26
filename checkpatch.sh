@@ -117,8 +117,13 @@ bootstrap() {
 
 	for py in python3 python py; do
 		command -v "$py" >/dev/null 2>&1 || continue
-		echo "Installing pre-commit with $py -m pip install --user pre-commit"
-		if ! "$py" -m pip install --user pre-commit; then
+		if [ -n "${VIRTUAL_ENV:-}" ]; then
+			pip_args=
+		else
+			pip_args=--user
+		fi
+		echo "Installing pre-commit with $py -m pip install ${pip_args:+$pip_args }pre-commit"
+		if ! "$py" -m pip install ${pip_args:+"$pip_args"} pre-commit; then
 			echo "$PROG: pip install failed." >&2
 			distro_hint >&2
 			exit 2
