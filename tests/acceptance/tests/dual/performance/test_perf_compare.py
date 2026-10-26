@@ -283,9 +283,9 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
             links = pc.nic_links(host, pfs[role])
             if slow := pc.slow_ports(pfs[role], links, opts["sessions"] * rate):
                 pytest.fail(
-                    f"{host.name}: {opts['sessions']} x {video} take "
-                    f"{opts['sessions'] * rate / 1e9:.1f} Gb/s on a port, and "
-                    f"{', '.join(slow)}"
+                    f"{host.name}: {opts['sessions']} x {video} on a port take "
+                    f"{opts['sessions'] * rate / 1e9:.1f} Gb/s, and {', '.join(slow)} "
+                    "(--perf_compare_sessions counts per port, with one NIC or two)"
                 )
             slots = _slots(host, vfs, opts["nics"])
             if opts["nics"] == "pooled":

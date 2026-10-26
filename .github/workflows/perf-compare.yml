@@ -23,7 +23,7 @@ on:
         required: false
         type: string
       dma:
-        description: The builds whose RX instances copy the payload with a DSA (DMA) of their NUMA node
+        description: 'The builds whose RX instances copy the payload with a DSA (DMA) of their NUMA node; TX has no DMA'
         required: false
         type: choice
         options:
@@ -32,16 +32,17 @@ on:
           - B
           - both
         default: none
+      # Each choice says what it does; the case takes its word before the colon.
       nics:
-        description: 'single: a pair of slots on NIC 0; span: a slot on a port of each NIC, as many sessions on each; pairs: a pair on each NIC, its rows apart; pooled: a pair on each NIC, each NIC a sample'
+        description: How the builds use the two E830 NICs of each host; sessions counts per port in every mode
         required: false
         type: choice
         options:
-          - single
-          - span
-          - pairs
-          - pooled
-        default: single
+          - 'single: NIC 0 only, A and B on its two ports'
+          - 'span: one instance a build, on a port of each NIC'
+          - 'pairs: an A/B pair on each NIC, the NICs reported apart'
+          - 'pooled: an A/B pair on each NIC, both NICs one result'
+        default: 'single: NIC 0 only, A and B on its two ports'
       video:
         description: Video format of every session
         required: false
@@ -62,7 +63,7 @@ on:
         default: 1080p59
       # Strings, not numbers: a number input reaches a step's env as 120.0.
       sessions:
-        description: 'Video sessions of each build on each of its 100G ports; 36 x 1080p59 is the most that fits, 2160p59 9, 4320p59 2'
+        description: 'Video sessions of each build on each port it uses, in every nics mode: a 100G port carries 36 x 1080p59, 9 x 2160p59, 2 x 4320p59; span puts that many on each of its 2 ports'
         required: false
         type: string
         default: '36'
@@ -177,7 +178,7 @@ jobs:
       - name: Set PCI device
         env:
           # both ports of two cards for the modes that use NIC 1
-          PERF_PORTS: ${{ (inputs.nics || 'single') == 'single' && '2' || '4' }}
+          PERF_PORTS: ${{ startsWith(inputs.nics || 'single', 'single') && '2' || '4' }}
         run: task ci:pytest-setup -- pci-env
       - name: Generate pytest configuration files
         env:

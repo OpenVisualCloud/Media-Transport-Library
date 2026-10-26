@@ -459,7 +459,7 @@ def nic_links(host, pfs: list[str]) -> list[tuple[int, str]]:
 def slow_ports(pfs: list[str], links: list[tuple[int, str]], bps: float) -> list[str]:
     """The ports of *pfs*, with their speed, whose links carry less than *bps*."""
     return [
-        f"{pf} links at {speed / 1000:g} Gb/s"
+        f"{pf} links at {speed / 1000:g} Gb/s" if speed else f"{pf} has no link"
         for pf, (speed, _) in zip(pfs, links)
         if bps > speed * 10**6
     ]

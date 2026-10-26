@@ -341,9 +341,9 @@ The inputs of `perf-compare.yml`, and the pytest options of a run by hand (§5.4
 | `ref_a`, `ref_b` | `--perf_compare_slots`, `--perf_compare_labels` | `main`, `main` | A, the baseline, and B, the candidate: a branch, tag or commit, with an optional `~n` or `^`; the same twice measures the noise. pytest takes the two built trees and their labels |
 | `args_a`, `args_b` | `--perf_compare_args_a`, `--perf_compare_args_b` | empty | Extra RxTxApp options of each build: letters, digits, spaces and `_./:=,+-`; not `--tasklet_time`, which would time every window, nor `--dma_dev`. RxTxApp ignores an option it does not know |
 | `dma` | `--perf_compare_dma` | `none` | `none`, `A`, `B` or `both`: the builds whose RX instances copy with a DSA (§3.5) |
-| `nics` | `--perf_compare_nics` | `single` | `single`, `span`, `pairs` or `pooled` (§3.5) |
+| `nics` | `--perf_compare_nics` | `single` | `single`, `span`, `pairs` or `pooled` (§3.5); each choice of the form says what it does, and the case takes the word before its colon |
 | `video` | `-k "1080p and 59fps"` | `1080p59` | 1080p, 2160p or 4320p at 59, 50, 29 or 25 fps, from the perf media set |
-| `sessions` | `--perf_compare_sessions` | `36` | Video sessions of each build on each of its ports; the case refuses a count that a port's link does not carry (below) |
+| `sessions` | `--perf_compare_sessions` | `36` | Video sessions of each build on each port it uses, in every `nics` mode (`span` puts that many on each of its two ports); the case refuses a count that a port's link does not carry (below) |
 | `test_time` | `test_time` of `test_config.yaml` | `120` | Seconds of the untraced window; at least 30, for two whole stats dumps. The three later windows add half of it each |
 | `rounds` | `--perf_compare_rounds` | `4` | Rounds; A and B swap places each round, so keep it even. Fewer than 4 give a rough noise estimate |
 
@@ -451,7 +451,7 @@ notes, which do not.
 | `perf stat did not count every event` (note) | The host's perf left an event of the instance uncounted, so it has no PMU rows | Its `.pmu` record in `perf_compare/round<N>/` |
 | Placement `perf` no | No perf on the host counts every event: no PMU rows at all | A `linux-tools-<version>` package of a 6.8 kernel |
 | Placement `CAT` no | No L3 allocation, or other resctrl groups | Remove the groups, or accept a shared L3 |
-| `N x <video> take N Gb/s on a port, and <PF> links at N Gb/s` | The session count does not fit a port's link, or the port has none (0 Gb/s) | Fewer `sessions`, or the cable and the link of that port |
+| `N x <video> on a port take N Gb/s, and <PF> links at N Gb/s` or `<PF> has no link` | The sessions of a port do not fit its link, or the port has none: `sessions` counts per port also with two NICs | Fewer `sessions`, or the cable and the link of that port |
 | `--perf_compare_nics <mode> takes two ports of each of two NICs`, `both NICs are on NUMA node N` | The topology declares fewer than four ports (`PERF_PORTS`), or they are not two ports of each of two cards on two nodes | The second card of both hosts, cabled port to port |
 | `pooled takes alike NICs, but ...` | The NICs differ in speed, firmware or isolated cores | Make them alike, or run `pairs` |
 | `vfio-pci still refuses DSA`, `NUMA node N has N DSA, its slots need N`, `DSA <BDF> is not on vfio-pci` | vfio-pci kept its denylist, a node has fewer DSA than slots, or a DSA would not bind | `doc/dma.md`; DSA enabled in the BIOS on every node in use |
