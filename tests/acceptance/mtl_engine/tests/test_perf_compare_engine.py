@@ -267,6 +267,7 @@ def test_nic_links_reads_the_speed_and_firmware_of_each_port(monkeypatch):
         "p2 links at 40 Gb/s",
         "p3 links at 40 Gb/s",
     ]
+    assert pc.slow_ports(["p4"], [(0, "")], 1e9) == ["p4 has no link"]
     pairs = _nics("pairs")
     assert pc.unlike_nics(links, pairs) == (
         "Mb/s 100000 on NIC 0, 40000 on NIC 1; firmware 2.10 on NIC 0, 1.00 on NIC 1; "
