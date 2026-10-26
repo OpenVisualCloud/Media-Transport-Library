@@ -241,6 +241,13 @@ repos:
         entry: python .github/scripts/ci/check-path-filters.py
         always_run: true
         pass_filenames: false
+      # The nightly report's unit tests, on a change to its generators.
+      - id: report-generator-tests
+        name: report-generator-tests (nightly report unit tests)
+        language: python
+        entry: python -m unittest discover -s .github/scripts/report_generators -t .github/scripts -p test_*.py
+        files: ^\.github/scripts/report_generators/
+        pass_filenames: false
 
   # ------------------------------------------- Node-based, no upstream hook repo
   - repo: local

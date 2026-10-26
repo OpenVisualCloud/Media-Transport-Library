@@ -375,8 +375,23 @@ def _create_regression_sheet(wb, regression_data):
             "regressions",
             COLOR_REGRESSION,
         ),
+        (
+            "NOW FAILING (skipped in baseline, now failing)",
+            "now_failing",
+            COLOR_REGRESSION,
+        ),
         ("FIXES (previously failing, now passing)", "fixes", COLOR_FIXED),
         ("NEW FAILURES (not present in baseline)", "new_failures", COLOR_NEW_FAILURE),
+        (
+            "CHANGED FAILURES (failing for another reason)",
+            "changed_failures",
+            COLOR_NEW_FAILURE,
+        ),
+        (
+            "LOST COVERAGE (ran in baseline, now skipped)",
+            "lost_coverage",
+            COLOR_NEW_FAILURE,
+        ),
     ]
 
     coverage = regression_data.get("coverage")
