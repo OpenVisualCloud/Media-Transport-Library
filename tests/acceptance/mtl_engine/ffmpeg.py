@@ -22,12 +22,7 @@ import dataclasses
 import logging
 
 from mtl_engine import ffmpeg_app, ip_pools, media_files
-from mtl_engine.application_base import (
-    MTL_ENCODER_PLUGIN_MAP,
-    Application,
-    ProcSpec,
-    mtl_plugin_check_cmd,
-)
+from mtl_engine.application_base import Application, ProcSpec, st22_codec_devices_ok
 from mtl_engine.config.mappings import APP_NAME_MAP, ffmpeg_pix_fmt
 from mtl_engine.const import FFMPEG_EXE, RXTXAPP_EXE
 from mtl_engine.integrity_session import NO_INTEGRITY, IntegrityIntent
@@ -76,6 +71,7 @@ class FFmpeg(Application):
         self._tx_commands: list[str] = []
         self._build: str | None = None
         self._rx_output: str | None = None
+        self._tx_output: str | None = None
         self._rx_frame_spec: tuple[str, str, int] | None = None
 
     # ------------------------------------------------------------------ ABCs
@@ -113,42 +109,6 @@ class FFmpeg(Application):
         intent = self.integrity_intent(test_repo_path, host)
         paths = self.rx_output_files()
         return [dataclasses.replace(intent, out_url=p) for p in paths] or [intent]
-
-    def require_encoder(self, host, encoder: str, use_mtl_plugin: bool = False) -> None:
-        """Raise EnvironmentError if *encoder* is not available on *host*.
-
-        When *use_mtl_plugin* is True the codec is delivered by the MTL st22p
-        device (FFmpeg uses ``-f mtl_st22p``), so the matching MTL plugin .so is
-        checked instead of FFmpeg's built-in encoder list. Otherwise FFmpeg's
-        own encoder (e.g. ``-c:v libopenh264`` for an st20p YUV->H264 pipe) is
-        verified against ``ffmpeg -encoders``.
-        """
-        if use_mtl_plugin:
-            # Codecs delivered via MTL plugin (FFmpeg uses -f mtl_st22p)
-            plugin_so = MTL_ENCODER_PLUGIN_MAP.get(encoder)
-            if plugin_so:
-                res = host.connection.execute_command(
-                    mtl_plugin_check_cmd(plugin_so),
-                    shell=True,
-                    expected_return_codes=None,
-                )
-                if res.return_code != 0:
-                    raise EnvironmentError(
-                        f"MTL codec plugin {plugin_so} (for {encoder}) not found; "
-                        f"install the codec library and rebuild MTL plugins"
-                    )
-            return
-
-        res = host.connection.execute_command(
-            f"ffmpeg -encoders 2>/dev/null | grep {encoder} || true",
-            shell=True,
-            timeout=10,
-        )
-        if encoder not in (res.stdout or ""):
-            raise EnvironmentError(
-                f"{encoder} encoder not available in FFmpeg; "
-                f"install the codec library and rebuild FFmpeg"
-            )
 
     # ----------------------------------------------------- param plumbing
     def set_params(self, **kwargs):
@@ -688,11 +648,9 @@ class FFmpeg(Application):
                 self._output_files = out_path
             self.command = self.command.replace("{out0}", self._output_files[0])
             if mode == _MODE_ST22P:
-                conn = host.connection
-                self.command = self.with_local_kahawai(self.command, build, conn)
+                self.command = self.with_local_kahawai(self.command, build)
                 self._tx_commands = [
-                    self.with_local_kahawai(cmd, build, conn)
-                    for cmd in self._tx_commands
+                    self.with_local_kahawai(cmd, build) for cmd in self._tx_commands
                 ]
 
     # ----------------------------------------------------- execute_test
@@ -767,6 +725,7 @@ class FFmpeg(Application):
         )
         # RX is always specs[0] (started first); validation reads its output.
         self._rx_output = specs[0].captured_output
+        self._tx_output = "\n".join(spec.captured_output or "" for spec in specs[1:])
         self.last_output = self._rx_output
         self.last_return_code = self._safe_return_code(specs[0].proc)
 
@@ -849,6 +808,12 @@ class FFmpeg(Application):
                     fps,
                     self.params.get("test_time") or 30,
                     self.rx_recording_cap(),
+                )
+                codec = self.params.get("codec", "JPEG-XS")
+                passed = (
+                    st22_codec_devices_ok(self._rx_output, codec, ("decoder",))
+                    and st22_codec_devices_ok(self._tx_output, codec, ("encoder",))
+                    and passed
                 )
                 self._cleanup_output_files(host)
             elif mode == _MODE_ST30P:

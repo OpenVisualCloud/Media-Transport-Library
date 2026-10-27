@@ -56,6 +56,7 @@
 #                    captures it and only prints the tail on failure
 #   CHECK_ONLY=0     when 1, every stage runs probes only and prints
 #                    pass | would install | missing; never modifies the host
+#                    and exits 2 when a stage would install
 #
 # == Expected wall time ===========================================================
 #   Cold run (venv + configs + NFS + SSH)       : ~1-3 min total
@@ -104,7 +105,7 @@ warn() { printf '%s[setup_acceptance] WARN:%s %s\n' "$YEL" "$CLR" "$*" >&2; }
 ok() { printf '%s[setup_acceptance] OK:%s %s\n' "$GRN" "$CLR" "$*" >&2; }
 err() { printf '%s[setup_acceptance] FAIL:%s %s\n' "$RED" "$CLR" "$*" >&2; }
 
-invoking_user="${SUDO_USER:-$USER}"
+invoking_user="${SUDO_USER:-${USER:-$(id -un)}}"
 invoking_home=$(getent passwd "$invoking_user" | cut -d: -f6)
 
 declare -A STAGE_DURATION # stage -> seconds
@@ -219,7 +220,7 @@ print_summary() {
 	if [[ -f tests/acceptance/configs/test_config.yaml ]]; then
 		log " compliance     : $(grep -m1 '^compliance:' tests/acceptance/configs/test_config.yaml | awk '{print $2}')"
 	fi
-	log " run log        : $RUN_LOG"
+	log " run log        : $RUN_LOG (deleted on success)"
 	log "════════════════════════════════════════════════════════════════════"
 	trap_arm
 }
@@ -335,7 +336,6 @@ nfs_assert_has_media() {
 }
 
 stage_nfs() {
-	sudo mkdir -p /mnt/media
 	if mountpoint -q /mnt/media; then
 		log "nfs: /mnt/media already mounted from $(findmnt -no SOURCE /mnt/media)"
 		nfs_assert_has_media
@@ -373,6 +373,7 @@ EOF
 		log "nfs: installing nfs-common (required for mount.nfs)"
 		sudo apt-get install -y nfs-common
 	fi
+	sudo mkdir -p /mnt/media
 	log "nfs: mounting $NFS_SOURCE -> /mnt/media (opts: $NFS_MOUNT_OPTS)"
 	sudo mount -t nfs -o "$NFS_MOUNT_OPTS" "$NFS_SOURCE" /mnt/media || {
 		err "nfs: mount failed; check connectivity (ping ${NFS_SOURCE%%:*}) and export"
@@ -466,27 +467,42 @@ stage_venv() {
 		}
 }
 
+# Prints the vendor:device of PCI address $1, as gen_config.py writes it.
+pci_vendor_device() {
+	[[ "$1" == *.* ]] || {
+		echo "$1"
+		return
+	}
+	local out
+	out=$(lspci -s "${1#0000:}" -n 2>/dev/null | awk '{print $3}')
+	echo "${out:-$1}"
+}
+
 stage_configs() {
-	local detected_bdf detected_vendor_device cur_vd need_regen=0
+	local detected_bdf detected_vendor_device cur_vd need_regen=0 cur_sniff want_sniff=""
 	detected_bdf=$(lspci -nn | grep -Ei '8086:(1592|12d2|579d|1249)' | head -1 | awk '{print "0000:"$1}')
+	# The requested PF decides, not the first PF of lspci.
+	[[ -z "$PCI_DEVICE_BDF" ]] || detected_bdf="${PCI_DEVICE_BDF%%,*}"
 	if [[ -n "$detected_bdf" ]]; then
-		detected_vendor_device=$(lspci -s "${detected_bdf#0000:}" -n 2>/dev/null | awk '{print $3}')
+		detected_vendor_device=$(pci_vendor_device "$detected_bdf")
 	fi
+	[[ -z "$CAPTURE_PCI_DEVICE" ]] || want_sniff=$(pci_vendor_device "$CAPTURE_PCI_DEVICE")
 
 	if [[ -f tests/acceptance/configs/topology_config.yaml &&
 		-f tests/acceptance/configs/test_config.yaml ]]; then
 		cur_vd=$(grep -m1 'pci_device:' tests/acceptance/configs/topology_config.yaml | tr -d "' " | cut -d: -f2-)
-		local cur_compliance cur_has_capture
+		local cur_compliance
 		cur_compliance=$(grep -m1 '^compliance:' tests/acceptance/configs/test_config.yaml | awk '{print $2}')
-		cur_has_capture=$(grep -qm1 '^capture_cfg:' tests/acceptance/configs/test_config.yaml && echo 1 || echo 0)
+		cur_sniff=$(grep -m1 'sniff_pci_device:' tests/acceptance/configs/test_config.yaml | tr -d "' " | cut -d: -f2-)
+		cur_sniff=$(pci_vendor_device "$cur_sniff")
 		if [[ -n "$detected_vendor_device" && "$cur_vd" != "$detected_vendor_device" ]]; then
-			warn "configs: stale pci_device '$cur_vd' != detected '$detected_vendor_device' — regenerating"
+			warn "configs: stale pci_device '$cur_vd' != requested '$detected_vendor_device' — regenerating"
 			need_regen=1
 		elif [[ -n "$EBU_IP" && "$cur_compliance" != "true" ]]; then
 			warn "configs: EBU_IP provided but compliance not yet enabled in existing config — regenerating"
 			need_regen=1
-		elif [[ -n "$CAPTURE_PCI_DEVICE" && "$cur_has_capture" != "1" ]]; then
-			warn "configs: CAPTURE_PCI_DEVICE provided but capture_cfg missing from existing config — regenerating"
+		elif [[ "$cur_sniff" != "$want_sniff" ]]; then
+			warn "configs: sniff_pci_device '${cur_sniff:-<none>}' != CAPTURE_PCI_DEVICE '${want_sniff:-<none>}' — regenerating"
 			need_regen=1
 		elif [[ -n "$detected_vendor_device" ]]; then
 			log "configs: kept (already present, NIC=$cur_vd)"
@@ -524,7 +540,9 @@ stage_configs() {
 
 	local ebu_args=()
 	if [[ -n "$EBU_IP" ]]; then
-		ebu_args=(--ebu_ip "$EBU_IP" --ebu_user "$EBU_USER" --ebu_password "$EBU_PASSWORD")
+		# gen_config.py reads EBU_PASSWORD from the environment.
+		export EBU_PASSWORD
+		ebu_args=(--ebu_ip "$EBU_IP" --ebu_user "$EBU_USER")
 	fi
 
 	log "configs: gen_config.py PCI=$pci_device_arg CAPTURE_PCI=${CAPTURE_PCI_DEVICE:-<none>} KEY=$SSH_KEY TEST_TIME=$TEST_TIME$([[ -n "$EBU_IP" ]] && echo " EBU_IP=$EBU_IP")"
@@ -558,7 +576,7 @@ done
 log " inputs         : NFS_SOURCE='${NFS_SOURCE:-<unset>}' PCI=${PCI_DEVICE_BDF:-<auto>} TEST_TIME=$TEST_TIME"
 log " compliance     : EBU_IP=${EBU_IP:-<unset>} CAPTURE_PCI_DEVICE=${CAPTURE_PCI_DEVICE:-<unset>}"
 log " mode           : $([[ "$CHECK_ONLY" == "1" ]] && echo 'CHECK_ONLY=1 (probe only, no install)' || echo install)"
-log " run log        : $RUN_LOG"
+log " run log        : $RUN_LOG (deleted on success)"
 log " expected time  : cold ~1-3 min ; warm <5s ; CHECK_ONLY <2s — agents must NOT time out"
 log " note           : broad host setup is done by MCP tool setup_acceptance_tests_base"
 log "════════════════════════════════════════════════════════════════════"
@@ -582,9 +600,17 @@ if [[ "$STAGE_CONFIGS" == "1" ]]; then run_stage configs "configs" stage_configs
 
 print_summary
 
+if [[ "$CHECK_ONLY" == "1" && " ${STAGE_RESULT[*]} " == *" would-install "* ]]; then
+	warn "CHECK_ONLY=1: one or more stages would install. The host is not ready."
+	exit 2
+fi
+
 log ""
 log "Next: cd tests/acceptance && sudo -E ./venv/bin/python3 -m pytest \\"
 log "        --topology_config=configs/topology_config.yaml \\"
 log "        --test_config=configs/test_config.yaml \\"
 log "        \"tests/single/st20p/test_fps.py::test_st20p_fps[|fps = p60|-Penguin_1080p-|application = rxtxapp|]\" \\"
 log "        --tb=short -v"
+
+# The run log is necessary only after a failure, as the stage output files are.
+rm -f "$RUN_LOG"

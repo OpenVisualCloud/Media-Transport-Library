@@ -6,6 +6,7 @@
 #include <mtl_api.h>
 #include <rte_lcore.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <string>
 #include <vector>
@@ -29,6 +30,29 @@ class MtDevEalArgvTest : public testing::Test {
 
   void TearDown() override {
     ut_dev_destroy_ctx(ctx_);
+    if (!tmp_.empty()) {
+      std::string cmd = "rm -rf '" + tmp_ + "'";
+      ASSERT_EQ(system(cmd.c_str()), 0);
+    }
+  }
+
+  /* A DPDK built under <tmp>/old and moved to <tmp>/new; returns the PMD dir in new. */
+  std::string RelocateDpdk() {
+    char tmpl[] = "/tmp/mt_dev_eal_argv_test.XXXXXX";
+    if (!mkdtemp(tmpl)) return "<mkdtemp failed>";
+    tmp_ = tmpl;
+    std::string pmd_dir = tmp_ + "/new/lib/x86_64-linux-gnu/dpdk/pmds-26.2";
+    std::string cmd = "mkdir -p '" + pmd_dir + "'";
+    if (system(cmd.c_str())) return "<mkdir failed>";
+    ut_dev_set_eal_pmd_paths(
+        ctx_, (tmp_ + "/old/lib/x86_64-linux-gnu/dpdk/pmds-26.2").c_str(),
+        (tmp_ + "/new/lib/x86_64-linux-gnu/librte_eal.so.26").c_str());
+    return pmd_dir;
+  }
+
+  bool HasOption(const std::string& option) {
+    std::vector<std::string> argv = Argv();
+    return std::find(argv.begin(), argv.end(), option) != argv.end();
   }
 
   std::vector<std::string> Argv() {
@@ -49,6 +73,7 @@ class MtDevEalArgvTest : public testing::Test {
   }
 
   ut_dev_ctx* ctx_ = nullptr;
+  std::string tmp_;
 };
 
 /* Every documented maximum at once: the argv vector must still hold them all. */
@@ -63,12 +88,50 @@ TEST_F(MtDevEalArgvTest, WorstCaseParamsFitTheArgvVector) {
   ut_dev_set_iova_mode(ctx_, MTL_IOVA_MODE_VA);
   ut_dev_set_log_level(ctx_, MTL_LOG_LEVEL_DEBUG);
   ut_dev_enable_rxtx_simd_512(ctx_);
+  std::string pmd_dir = RelocateDpdk();
 
   ut_dev_eal_init(ctx_);
 
   EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 1);
-  EXPECT_GT(ut_dev_eal_argc(ctx_), 0);
+  EXPECT_EQ(ValueAfter("-d"), pmd_dir);
   EXPECT_LE(ut_dev_eal_argc(ctx_), ut_dev_eal_max_args());
+}
+
+TEST_F(MtDevEalArgvTest, RelocatedDpdkAddsThePmdDirBeforeTheSeparator) {
+  std::string pmd_dir = RelocateDpdk();
+
+  ut_dev_eal_init(ctx_);
+
+  std::vector<std::string> argv = Argv();
+  ASSERT_GE(argv.size(), 3u);
+  EXPECT_EQ(argv[argv.size() - 3], "-d");
+  EXPECT_EQ(argv[argv.size() - 2], pmd_dir);
+  EXPECT_EQ(argv.back(), "--");
+}
+
+/* Adding -d next to a compiled-in dir that EAL loads anyway double-loads every driver. */
+TEST_F(MtDevEalArgvTest, ExistingCompiledPmdDirAddsNoPmdOption) {
+  std::string pmd_dir = RelocateDpdk();
+  ut_dev_set_eal_pmd_paths(ctx_, pmd_dir.c_str(),
+                           (tmp_ + "/new/lib/x86_64-linux-gnu/librte_eal.so.26").c_str());
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 1);
+  EXPECT_FALSE(HasOption("-d"));
+}
+
+/* A static DPDK is linked into the library that holds rte_eal_init, drivers included. */
+TEST_F(MtDevEalArgvTest, StaticDpdkAddsNoPmdOption) {
+  RelocateDpdk();
+  ut_dev_set_eal_pmd_paths(ctx_,
+                           (tmp_ + "/old/lib/x86_64-linux-gnu/dpdk/pmds-26.2").c_str(),
+                           (tmp_ + "/new/lib/x86_64-linux-gnu/libmtl.so.26").c_str());
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 1);
+  EXPECT_FALSE(HasOption("-d"));
 }
 
 /* The modest configuration that already overran a 32 entry vector. */

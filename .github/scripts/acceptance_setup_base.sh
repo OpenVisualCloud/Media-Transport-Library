@@ -17,10 +17,11 @@
 #     implementation instead of two.
 #
 # Stages: apt dependencies -> ICE driver check/rebuild -> DPDK+MTL(+plugins)
-# build into .local_install -> hugepages -> CPU governor.
+# build into .local_install -> hugepages -> CPU governor -> net.core.rmem_max.
 #
 # == Inputs (env vars) ==============================================
-#   NR_HUGEPAGES=2048         number of 2MB hugepages (4GB default)
+#   NR_HUGEPAGES=2048         number of 2MB hugepages (4GB default); a higher
+#                             current value stays
 #   BUILD_MODE=release        release|debug|debugonly
 #   INCLUDE_FFMPEG_PLUGIN=0   1 to also build the FFmpeg plugin
 #   INCLUDE_GSTREAMER_PLUGIN=0  1 to also build the GStreamer plugin
@@ -73,19 +74,31 @@ log "═════════════════════════
 
 # -------------------- Step 1: apt dependencies --------------------
 if [[ "$SKIP_APT" == "1" ]]; then
-	log "Step 1/5: apt dependencies — skipped (SKIP_APT=1)"
+	log "Step 1/6: apt dependencies — skipped (SKIP_APT=1)"
 else
-	log "Step 1/5: apt dependencies"
-	mh_install_dependencies
+	log "Step 1/6: apt dependencies"
+	components=()
+	[[ "$INCLUDE_FFMPEG_PLUGIN" == "1" ]] && components+=(ffmpeg)
+	[[ "$INCLUDE_GSTREAMER_PLUGIN" == "1" ]] && components+=(gstreamer)
+	mh_install_dependencies || {
+		err "Step 1/6: apt dependencies failed (exit $?)"
+		exit 1
+	}
+	if [[ ${#components[@]} -gt 0 ]]; then
+		bash "$repo_root/script/install_dependencies.sh" "${components[@]}" || {
+			err "Step 1/6: apt dependencies of ${components[*]} failed (exit $?)"
+			exit 1
+		}
+	fi
 fi
 
 # -------------------- Step 2: ICE driver --------------------
 if [[ "$SKIP_ICE" == "1" ]]; then
-	log "Step 2/5: ICE driver — skipped (SKIP_ICE=1)"
+	log "Step 2/6: ICE driver — skipped (SKIP_ICE=1)"
 elif vd_ice_driver_ok; then
-	ok "Step 2/5: ICE driver already OK ($(vd_ice_live_version))"
+	ok "Step 2/6: ICE driver already OK ($(vd_ice_live_version))"
 else
-	log "Step 2/5: ICE driver needs rebuild (required=$(vd_ice_required_version) live=$(vd_ice_live_version))"
+	log "Step 2/6: ICE driver needs rebuild (required=$(vd_ice_required_version) live=$(vd_ice_live_version))"
 	mh_ice_driver_rebuild
 	if vd_ice_driver_ok; then
 		ok "ICE driver rebuilt OK"
@@ -96,7 +109,7 @@ else
 fi
 
 # -------------------- Step 3: DPDK + MTL (+plugins) build --------------------
-log "Step 3/5: build DPDK + MTL into $LOCAL_PREFIX"
+log "Step 3/6: build DPDK + MTL into $LOCAL_PREFIX"
 mtl_build_flag=1
 mtl_build_debug_flag=0
 if [[ "$BUILD_MODE" != "release" ]]; then
@@ -111,28 +124,45 @@ MTL_INSTALL_PREFIX="$LOCAL_PREFIX" \
 	MTL_BUILD_AND_INSTALL_DEBUG="$mtl_build_debug_flag" \
 	ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN="$INCLUDE_FFMPEG_PLUGIN" \
 	ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN="$INCLUDE_GSTREAMER_PLUGIN" \
-	bash .github/scripts/setup_environment.sh
+	bash .github/scripts/setup_environment.sh || {
+	err "Step 3/6: setup_environment.sh failed (exit $?)"
+	exit 1
+}
 
 if vd_local_install_ready "$LOCAL_PREFIX"; then
-	ok "Step 3/5: MtlManager + RxTxApp present under $LOCAL_PREFIX/bin"
+	ok "Step 3/6: MtlManager + RxTxApp present under $LOCAL_PREFIX/bin"
 else
-	err "Step 3/5: $LOCAL_PREFIX/bin/{MtlManager,RxTxApp} missing after build"
+	err "Step 3/6: $LOCAL_PREFIX/bin/{MtlManager,RxTxApp} missing after build"
 	exit 1
 fi
 
 # -------------------- Step 4: hugepages --------------------
-log "Step 4/5: hugepages"
-mh_hugepages_set "$NR_HUGEPAGES"
+log "Step 4/6: hugepages"
+# Only grow: a host can need more than this default for other work.
+hp_cur=$(cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages 2>/dev/null || echo 0)
+if ((hp_cur >= NR_HUGEPAGES)); then
+	log "Step 4/6: keep the current ${hp_cur} hugepages (requested ${NR_HUGEPAGES}). This step does not decrease them."
+else
+	mh_hugepages_set "$NR_HUGEPAGES"
+fi
 vd_report_hugepages
 
 # -------------------- Step 5: CPU governor --------------------
-log "Step 5/5: CPU governor -> performance"
+log "Step 5/6: CPU governor -> performance"
 mh_cpu_governor_set_performance
 if vd_cpu_governor_is_performance; then
-	ok "Step 5/5: all CPUs at performance governor"
+	ok "Step 5/6: all CPUs at performance governor"
 else
-	err "Step 5/5: some CPUs not at performance governor"
+	err "Step 5/6: some CPUs not at performance governor"
 fi
+
+# -------------------- Step 6: kernel socket buffer --------------------
+# Kernel socket RX asks SO_RCVBUF for 4 MiB, capped by rmem_max (doc/kernel_socket.md).
+log "Step 6/6: net.core.rmem_max >= 4194304"
+if (($(sysctl -n net.core.rmem_max) < 4194304)); then
+	sudo sysctl -q -w net.core.rmem_max=4194304
+fi
+ok "Step 6/6: net.core.rmem_max is $(sysctl -n net.core.rmem_max)"
 
 log "════════════════════════════════════════════════════════════════════"
 ok "Broad acceptance_tests host setup complete"
