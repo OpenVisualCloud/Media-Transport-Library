@@ -1232,6 +1232,7 @@ void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_tx[i] = NULL;
   }
   for (int i = 0; i < sessions; i++) {
+    if (para->rx_check) para->rx_check(rx_handle[i]);
     ret = st20p_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
     info("%s, session %d fb_rec %d framerate %f:%f\n", __func__, i,

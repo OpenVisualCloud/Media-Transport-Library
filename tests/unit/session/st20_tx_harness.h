@@ -17,6 +17,9 @@
 #include <stdint.h>
 
 #include "st_api.h"
+#ifdef MTL_HAS_IPMX
+#include "st20_api.h"
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -489,6 +492,11 @@ uint8_t ut_txv_hdr_tos(const ut_txv_ctx* ctx, enum mtl_session_port port);
  * tv_build_st20() for port P, tv_build_st20_redundant() of that packet for port R. */
 int ut_txv_build_ipv4_hdr(ut_txv_ctx* ctx, enum mtl_session_port port,
                           uint8_t ipv4_hdr[UT_TXV_IPV4_HDR_LEN]);
+#ifdef MTL_HAS_IPMX
+/* tv_init_pkt()'s packets per frame of a progressive BPM frame level session */
+int ut_txv_frame_total_pkts(ut_txv_ctx* ctx, uint32_t width, uint32_t height,
+                            enum st20_fmt fmt);
+#endif
 
 #ifdef __cplusplus
 }

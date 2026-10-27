@@ -34,6 +34,8 @@ struct st20p_rx_digest_test_para {
   bool rx_auto_detect;
   bool zero_payload_type;
   bool ipmx;
+  /* called on each RX session after mtl_stop(), before st20p_rx_free() */
+  void (*rx_check)(st20p_rx_handle handle);
 };
 
 void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para);

@@ -870,6 +870,13 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     for (int s_port = 0; s_port < ops->num_port; s_port++) {
       struct st_rv_tp_slot* tp_slot = &s->tp->slots[slot->idx][s_port];
       rv_tp_slot_parse_result(s, s_port, tp_slot, slot->second_field);
+#ifdef MTL_HAS_IPMX
+      if (ops->flags & ST20_RX_FLAG_IPMX) {
+        bool complete = rv_slot_get_frame_size(slot) >= s->st20_frame_size &&
+                        slot->pkts_recv_per_port[s_port] >= slot->pkts_received;
+        ipmx_vrx_frame_done(&s->tp->ipmx, s_port, &tp_slot->ipmx, complete);
+      }
+#endif
       if (s->enable_timing_parser_meta) {
         meta->tp[s_port] = &tp_slot->meta;
       }

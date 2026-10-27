@@ -15,6 +15,10 @@
 #include "st_pkt.h"
 #include "st_tx_video_rl.h"
 
+#ifdef MTL_HAS_IPMX
+#include "../ipmx/ipmx_vrx.h"
+#endif
+
 #define ST_MAX_NAME_LEN (32)
 
 #define ST_PLUGIN_MAX_PATH_LEN (128)
@@ -523,6 +527,9 @@ struct st_rv_tp_slot {
   int64_t vrx_sum;
   /* Inter-packet time(ns), packet level check */
   int64_t ipt_sum;
+#ifdef MTL_HAS_IPMX
+  struct ipmx_vrx_frame ipmx;
+#endif
 };
 
 struct st_rv_tp_stat {
@@ -558,6 +565,9 @@ struct st_rx_video_tp {
   /* for the status */
   struct st_rv_tp_stat stat[MTL_SESSION_PORT_MAX];
   uint32_t stat_untrusted_pkts;
+#ifdef MTL_HAS_IPMX
+  struct ipmx_vrx ipmx;
+#endif
 };
 
 struct st_rx_video_session_impl {

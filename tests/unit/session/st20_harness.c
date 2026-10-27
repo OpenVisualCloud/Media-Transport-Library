@@ -1141,3 +1141,29 @@ int ut20_update_src_rejected(ut20_test_ctx* ctx, uint16_t udp_port, bool* flow_k
 uint16_t ut20_dst_port(const ut20_test_ctx* ctx, enum mtl_session_port port) {
   return ctx->session.st20_dst_port[port];
 }
+
+#ifdef MTL_HAS_IPMX
+int ut20_ipmx_tp_stat(ut20_test_ctx* ctx, enum mtl_session_port port,
+                      struct ipmx_rx_tp_stat* stat) {
+  return ipmx_vrx_stat_get(&ctx->session, port, stat);
+}
+
+int ut20_ipmx_tp_limit(ut20_test_ctx* ctx, int pkt_per_frame, enum st_fps fps,
+                       struct ipmx_vrx_limit* limit) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  struct st_fps_timing fps_tm;
+  int ret;
+
+  if (st_get_fps_timing(fps, &fps_tm) < 0) return -EINVAL;
+  s->ops.fps = fps;
+  s->ops.flags |= ST20_RX_FLAG_IPMX;
+  s->frame_time = (double)NS_PER_S * fps_tm.den / fps_tm.mul;
+  s->frame_time_sampling = (double)fps_tm.sampling_clock_rate * fps_tm.den / fps_tm.mul;
+  s->detector.pkt_per_frame = pkt_per_frame;
+  s->enable_timing_parser = true;
+  ret = rv_tp_init(&ctx->impl, s);
+  if (ret < 0) return ret;
+  *limit = s->tp->ipmx.limit;
+  return 0;
+}
+#endif

@@ -2258,3 +2258,22 @@ out:
   s->st20_frames = NULL;
   return ret;
 }
+
+#ifdef MTL_HAS_IPMX
+int ut_txv_frame_total_pkts(ut_txv_ctx* ctx, uint32_t width, uint32_t height,
+                            enum st20_fmt fmt) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st20_tx_ops* ops = &s->ops;
+
+  ops->type = ST20_TYPE_FRAME_LEVEL;
+  ops->packing = ST20_PACKING_BPM;
+  ops->interlaced = false;
+  ops->fmt = fmt;
+  ops->width = width;
+  ops->height = height;
+  if (st20_get_pgroup(fmt, &s->st20_pg) < 0) return -EINVAL;
+  s->st20_frame_size = width * height * s->st20_pg.size / s->st20_pg.coverage;
+  if (tv_init_pkt(&ctx->impl, s, ops, NULL) < 0) return -EINVAL;
+  return s->st20_total_pkts;
+}
+#endif

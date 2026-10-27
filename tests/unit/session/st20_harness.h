@@ -382,6 +382,17 @@ int ut20_update_src_rejected(ut20_test_ctx* ctx, uint16_t udp_port, bool* flow_k
 /* the session's UDP destination port, the one its flow listens on */
 uint16_t ut20_dst_port(const ut20_test_ctx* ctx, enum mtl_session_port port);
 
+#ifdef MTL_HAS_IPMX
+/* ipmx_vrx_stat_get() of the session */
+struct ipmx_rx_tp_stat;
+int ut20_ipmx_tp_stat(ut20_test_ctx* ctx, enum mtl_session_port port,
+                      struct ipmx_rx_tp_stat* stat);
+/* rv_tp_init() with IPMX for a stream of pkt_per_frame packets at fps, its IPMX limits */
+struct ipmx_vrx_limit;
+int ut20_ipmx_tp_limit(ut20_test_ctx* ctx, int pkt_per_frame, enum st_fps fps,
+                       struct ipmx_vrx_limit* limit);
+#endif
+
 #ifdef __cplusplus
 }
 #endif
