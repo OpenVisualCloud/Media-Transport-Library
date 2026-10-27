@@ -29,6 +29,8 @@ from mtl_engine.dma import bind_dma_to_vfio
 from mtl_engine.performance_monitoring import (
     FPS_TOLERANCE_PCT,
     HUGEPAGE_FALLBACK_MARKER,
+    format_cpus,
+    parse_cpus,
     wire_balance,
 )
 
@@ -305,24 +307,6 @@ def write_file(host, path: str, text: str) -> None:
 def steady_timeout(sessions: int) -> int:
     """Seconds an instance may take to carry all its sessions."""
     return 120 + 3 * sessions  # the E830 rate limiter takes ~2 s per TX queue
-
-
-def parse_cpus(text: str) -> list[int]:
-    cpus = []
-    for part in filter(None, text.strip().split(",")):
-        lo, _, hi = part.partition("-")
-        cpus.extend(range(int(lo), int(hi or lo) + 1))
-    return cpus
-
-
-def format_cpus(cpus) -> str:
-    ranges: list[list[int]] = []
-    for c in sorted(cpus):
-        if ranges and c == ranges[-1][1] + 1:
-            ranges[-1][1] = c
-        else:
-            ranges.append([c, c])
-    return ",".join(str(a) if a == b else f"{a}-{b}" for a, b in ranges)
 
 
 @dataclass
