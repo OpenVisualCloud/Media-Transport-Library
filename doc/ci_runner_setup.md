@@ -3,84 +3,49 @@
 MTL's hardware jobs run on self-hosted bare-metal runners that own the NIC they
 test. This page describes the contract between those hosts and the workflows.
 
-## Jobs install nothing onto the host
+## Who configures what
 
-A CI job never installs onto a runner. `apt`, a kernel module, a DMA binding, the
-media share: each mutates a host that other jobs share, races with those jobs,
-and hides drift in the host image — a runner missing a package looks healthy for
-months because every job silently repairs it, until one job repairs it
-differently.
+Three layers configure a test host, and each setting belongs to one of them.
+The full table is in
+[`mtl-scripts.instructions.md`](../.github/instructions/mtl-scripts.instructions.md#who-configures-what).
 
-So the host image carries those dependencies and the job only checks for them:
+| Layer | When | Who does it | Examples |
+| --- | --- | --- | --- |
+| Host | Once, and again after each boot | Not CI: the fleet watchdog, or a person with `setup_environment.sh` and `acceptance_setup.sh` | packages, kernel command-line, hugepages, CPU governor, `vfio` access, `net.core.rmem_max`, `/mnt/media`, SSH self-login, `/etc/mtl-ci/runner.env` |
+| Test cycle | Start of each CI job | the `validate-host` action and the `ci:pytest-setup` steps | stop stale processes, restore the builds, load the ICE module under test, bind the DMA devices, the acceptance virtualenv |
+| Test | One test or suite, undone after it | `gtest.sh`, the pytest fixtures | VFs on a PF, PF driver, `/dev/vfio` owner, C-states, cores offline, NoCtx CPU isolation |
 
-| Job step                            | What it does                                    |
-| ----------------------------------- | ----------------------------------------------- |
-| `task ci:pytest-setup -- ensure`    | Uses the acceptance virtualenv, building it the first time on a host |
+A CI job never installs packages and never changes a host setting. A missing
+host setting fails the job, and the host owner fixes the host. A host that
+silently gets repaired by each job hides the drift of its image, and two jobs
+that repair it at the same time race.
 
-The acceptance virtualenv is the one exception, and the reason is that it is not
-host state. It is built from `tests/acceptance/requirements.txt` in the checkout
-that is about to run, it lives in the runner user's cache rather than on the
-system, and it is identical for every job on the host — a cache, not something a
-host image can be out of date about. `ensure` treats it as one: it builds it when
-there is none, rebuilds it when `requirements.txt` no longer matches the hash
-recorded inside it, and otherwise costs a `pytest --version`. Both events print a
-line naming the reason, so a host whose cache keeps disappearing says so in the
-log instead of looking like a host that never needed one.
-
-Two jobs on the same host can reach that step together, so the build takes an
-`flock` on the virtualenv and the loser keeps the winner's work. `verify` — the
-pure check, which installs nothing and fails with the command that provisions —
-is what `Provision runner` and a human ask.
-
-A missing dependency fails the job with the command that provisions it. The
-provisioning commands still exist and are meant to be run by hand on the host:
-
-```bash
-task ci:pytest-setup -- install         # ~/.cache/mtl-ci/acceptance-venv
-```
-
-On a fleet whose machines are not reachable from every desk that maintains
-them, the runner itself is the way in: the `Provision runner` workflow
-(`.github/workflows/provision-runner.yml`) runs those same commands on the host
-carrying a given NIC label.
-
-```bash
-gh workflow run provision-runner.yml -f nic=e810   # then e830, e835, ...
-```
-
-It is `workflow_dispatch` only and installing is all it does, so it does not
-weaken the rule above — that rule is about a *test* job repairing its host
-silently, hiding drift and racing with everything else on the machine. This is
-the opposite: it says which host it touched, and it ends with `verify`, so a green
-run means the leg that was failing for a missing prerequisite will not fail for
-that reason again.
-
-`workflow_dispatch` only works from the default branch, though, so a fleet whose
-hosts are missing something a branch has just started asking for cannot be
-provisioned from that branch. Until this file is on `main`, provisioning the
-acceptance virtualenv there is one SSH session per host — which is exactly why
-the virtualenv step became `ensure`.
-
-The acceptance virtualenv lives outside the workspace, because a cache kept
-inside it is not one: every hardware job starts with `actions/checkout`, whose
-default clean is `git clean -ffdx`, and `tests/acceptance/.venv` is gitignored —
-so `-x` deletes it before the step that uses it runs, and a virtualenv built
-there is built again for every job. `MTL_CI_VENV` names another location; an existing
-in-workspace virtualenv is still used where one is present, under either
-`tests/acceptance/.venv` or the `tests/acceptance/venv` that
-`setup_acceptance.sh` writes, so a developer machine needs no second copy.
-Accepting both names is not tidiness: `verify` used to look only for the
-dotted one, so a host provisioned by `setup_acceptance.sh` had a working
-virtualenv that the job called missing.
+The acceptance virtualenv is a test-cycle item, not a host setting. It is built
+from `tests/acceptance/requirements.txt` of the checkout, it lives in the cache
+of the runner user, and `task ci:pytest-setup -- ensure` builds it again when
+`requirements.txt` changes. Two jobs can reach that step together, so the build
+takes an `flock`. It lives outside the workspace (`~/.cache/mtl-ci`, or
+`MTL_CI_VENV`), because the clean of `actions/checkout` deletes the gitignored
+`tests/acceptance/.venv`. An existing `tests/acceptance/.venv` or the
+`tests/acceptance/venv` that `setup_acceptance.sh` writes is used when it is
+present.
 
 ## Host configuration instead of repository secrets
 
 Lab facts live on the runner, in `/etc/mtl-ci/runner.env`, not in GitHub
-secrets. Point `MTL_CI_RUNNER_ENV` elsewhere to test the mechanism locally.
+secrets.
 
 The shadow/SUT host pair used by `perf-pytest.yml` and the optional shadow sync
 in `custom-pytest.yml` reads `/etc/mtl-ci/shadow-host`, a file defining `IP` and
 `USER`.
+
+The validate-host action syncs the SUT's `.local_install`, `script/`, `tests/`
+and its cache and host scripts to the shadow, at the same path, and then runs
+the SUT's ICE activation there: the shadow loads the same Kahawai ice module.
+The shadow therefore runs the SUT's kernel release, and `SHADOW_USER` has
+passwordless sudo; with another kernel the bundle has no module for it, and
+the step fails. The VFs need no kernel module: DPDK's iavf driver is part of the
+synced `.local_install`.
 
 Only credentials for genuinely external services remain repository secrets:
 `COVERITY_EMAIL`, `COVERITY_TOKEN`, and the built-in `GITHUB_TOKEN`.
@@ -143,9 +108,8 @@ nothing tying it to the driver. `rte_tm_capabilities_get` is no help as a
 pre-check: the iavf implementation reads the same pointer in its first
 instructions.
 
-So on the fleet the alignment is a job step (`sudo -E env -u BASH_XTRACEFD
-"$TASK_BIN" ci:activate-ice`, idempotent, a no-op when the running module is
-already the cached one).
+The validation action aligns the driver on the fleet. It runs `ci:activate-ice`
+on the test host and on a configured shadow host.
 
 After driver activation, verify that each expected PF has a kernel netdev and
 that the capture PF exposes a PHC and hardware RX timestamping (`ethtool -T`).
@@ -167,12 +131,10 @@ carrying the card.
 
 #### The NoCtx strict pacing cases need both ports cabled
 
-`bind-test-ports` gives the second port of the chosen card two VFs when its link
-is up, and the NoCtx run transmits on one port and receives on the other. The six
-strict pacing cases need the NIC RX timestamp, which only traffic that crossed the
-wire carries, so they fail if the second port has no link (the step logs `no
-other port of <pf>'s card has its link up`) or is cabled elsewhere (the cases
-receive nothing).
+The NoCtx run transmits on one port and receives on the other. The six strict
+pacing cases need the NIC RX timestamp. Only traffic that crossed the wire has
+this timestamp. Thus, the cases fail if the second port has no link or connects
+to a different port.
 
 #### The ST 2022-7 leg needs both ports cabled too
 
@@ -245,8 +207,7 @@ back to the DUT interface when no sniff device is named.
 The build job installs DPDK under its own workspace, and meson bakes that prefix
 into the install: `libdpdk.pc` records it, and `librte_eal` records
 `RTE_EAL_PMD_PATH`, `<prefix>/lib/<arch>/dpdk/pmds-<abi>`, as the one directory
-EAL loads drivers from. There is no environment override for it, and MTL builds a
-fixed EAL argv, so there is no `-d` either.
+EAL loads drivers from. There is no environment override for it.
 
 When the runner that builds and the runner that tests keep their workspace at the
 same path, this is invisible. When they do not — a different `_work` root, or a
@@ -259,11 +220,21 @@ Error: mtl_init, st dev if init fail -12
 ```
 
 The mempool, not the NIC, because the mempool ops MTL asks for (`stack`) ship as
-a plugin like every driver. `task ci:configure-host -- dpdk-plugins` makes the
-baked path resolve to the drivers that were actually restored, and
-`.github/actions/validate-host` runs it right after the restore. It is a symlink,
-so it also serves the acceptance tests, which reach the host over SSH and inherit
-none of the job's environment.
+a plugin like every driver. So when the baked directory does not exist, MTL looks
+for the same `dpdk/pmds-<abi>` beside the `librte_eal` it actually loaded and
+passes it to EAL with `-d` (`dev_eal_pmd_dir` in `lib/src/dev/mt_dev.c`). A tree
+restored or moved anywhere loads its own drivers, in CI jobs and in the acceptance
+tests over SSH alike. Earlier versions linked the baked path to the restored
+drivers instead. Such a leftover link keeps a runner on another tree's drivers, so
+`task ci:configure-host -- dpdk-plugins` fails the job when it finds one, and the
+host owner removes it.
+
+The plugin registry has no such fallback. `build.sh` writes
+`.local_install/conf/kahawai.json` with the absolute plugin paths of the build
+job's workspace, the MTL cache carries it, and every job points
+`KAHAWAI_CFG_PATH` at it. So the build and test runners must keep the workspace
+at the same path. When they do not, `task ci:validate-dependencies` fails with
+`enables a plugin that is not installed`.
 
 ## The EBU LIST compliance analyser
 
@@ -276,7 +247,7 @@ analyser therefore produces no verdict, and says so late, inside a test.
 `task ci:ebu-list -- verify` checks it up front: that `netsniff-ng` is installed
 and can be run under passwordless sudo, and that the instance in `EBU_IP` returns
 a token for `EBU_USER`/`EBU_PASSWORD`. Like every other CI-facing check it installs
-nothing and fails with the command that provisions.
+nothing and fails with one line that names what is missing.
 
 It separates absence from misconfiguration, because only one of the two is the
 leg's problem. With `EBU_IP` unset there is nothing to configure wrongly:
@@ -293,20 +264,10 @@ deployed. Absence then fails the leg on that host, so a stack that stops
 answering is a red leg rather than a run that silently stopped judging
 compliance.
 
-EBU LIST is a Docker Compose stack, deployed from the `ebu-list` directory of the
-internal `Media-Transport-Library-Devtools` repository. Clone it **outside** the
-MTL checkout so it never appears in `git status`:
-
-```bash
-gh repo clone intel-sandbox/Media-Transport-Library-Devtools ~/mtl/devtools
-cd ~/mtl/devtools/ebu-list
-cp .env.template .env            # then set EBU_LIST_USERNAME/PASSWORD
-task ci:ebu-list -- up           # docker compose up -d, from the MTL checkout
-```
-
-The stack publishes port 80 through an nginx proxy, so a host running its own
-analyser sets `EBU_IP=127.0.0.1`. `EBU_LIST_DIR` in `runner.env` points
-`task ci:ebu-list` at the clone.
+EBU LIST is a Docker Compose stack. On the fleet, the watchdog writes and starts
+the stack on a host with `EBU_LIST_ROLE=server`. The stack publishes port 80
+through an nginx proxy, so a host running its own analyser sets
+`EBU_IP=127.0.0.1`.
 
 pi-list has no self-service registration, so the account named by `EBU_USER` has
 to be created once against the running instance — the web UI has no sign-up form
@@ -394,12 +355,14 @@ unlink a root-owned file); and because `sudo` does not pass signals to its child
 the capture is reaped with `sudo pkill` on the argv rather than through the
 process handle, the same way `conftest._reap_ptp_daemons` reaps ptp4l.
 
-## The DMA channels the job serves itself
+## The DMA channels that host validation serves
 
-`sudo task ci:bind-test-ports` serves two DMA channels on the test card's NUMA
-node, and it takes them from wherever they are: a channel already on vfio-pci is
-left as it is, a channel with no driver is bound, and a channel `idxd` holds is
-taken from it. All three are the same `dpdk-devbind.py -b vfio-pci <bdf>` call.
+`script/dma_setup.sh reset` serves two DMA channels on each NUMA node, on the
+test host and on the shadow host. It first unbinds each channel from vfio-pci,
+except a channel that a process holds, so a job starts from the same state.
+Then it binds a channel that has no driver, and it takes a channel from `idxd`.
+The gtest suite and the pytest suite give `--dma_auto` to the library, and the
+library takes the channels on the NUMA node of the ports.
 
 Taking them is the whole point, because a stock host serves none. Every DSA
 device comes up on `idxd`, so a step that refused to touch those refused every
@@ -418,16 +381,13 @@ Two facts make the runtime version work, and neither needs a reboot:
 - `idxd` releases a DSA device on request. On the EMR host this was proven on
   (kernel 6.8) `dpdk-devbind.py -b vfio-pci` moved one over with `dmesg` reading
   `device denylist disabled - allowing device 8086:0b25`, and all 17 `Dma` gtest
-  cases then passed on it. A driver that wedges instead is caught by the timeout
-  every NIC operation in that script runs under, and reported as a host fault.
+  cases then passed on it.
 
 `dpdk-devbind.py --status-dev dma` is the check: two entries reading
 `drv=vfio-pci` on the same NUMA node as the test card. A host that ends up with
 fewer runs the suite anyway — the cases that copy with DMA ask the library for a
 channel and report themselves skipped when there is none, so the alternative is
-running nothing at all. The step says so on the run summary, and a host that is
-meant to serve channels sets `MTL_CI_REQUIRE_DMA=1` in `runner.env` to make the
-shortfall a failure again.
+running nothing at all.
 
 The node the channels are on is a requirement and not a preference. MTL grants a
 session a channel of the port's own socket and no other
@@ -449,28 +409,19 @@ so the reload cannot happen, is the one case left for the boot-time version:
 echo 'options vfio-pci disable_denylist=1' | sudo tee /etc/modprobe.d/vfio-pci.conf
 ```
 
-One thing the step does *not* do is unbind a channel afterwards. `idxd` is a
-kernel accelerator driver that nothing else on a test host uses, and leaving the
-two channels on vfio-pci is what makes the next job's preparation a no-op.
+## Test hosts need hugepages
 
-## Hugepages are reserved by the job, not by the image
-
-`bind-test-ports` also reserves 2048 × 2 MB hugepages (`MIN_HUGEPAGES`) on each
-NUMA node that has fewer, because every process the gtest suite starts is a DPDK
-process and EAL stops on `Cannot get hugepage information` without them — several
-steps later, in words about DPDK rather than about the host. A reboot clears the
-reservation, so this is exactly the kind of state that is missing on a host
-nobody has touched since one.
+Each NUMA node needs at least 2048 x 2 MB hugepages. Every gtest process is a
+DPDK process. EAL stops with `Cannot get hugepage information` without these
+pages. A reboot clears a reservation that is not on the kernel command-line.
 
 The floor is per node, not per host. EAL allocates a port's pools on the port's
 node, and a global count is split evenly across nodes, so 2048 pages on a
 two-node host leave 2 GiB beside the NIC. `NoCtxTest.init_128_queues` needs about
 2.8 GiB there and fails `mtl_init` with ENOMEM on less.
 
-It is raised, never lowered: a host may have reserved more for something else,
-and this suite is not the one to take them back. What it cannot do is defragment
-memory — a kernel that serves fewer pages than it was asked for says so in the
-step's log, and the fix is to free memory or reboot.
+Hugepages are a host setting. The host reserves them; `gtest.sh` and the pytest
+session only check that free pages exist, and fail when there are none.
 
 ## The VFIO group nodes are handed to the test account by the suite
 
@@ -524,12 +475,8 @@ Three prerequisites are easy to miss:
   toolchain is in [`xdp.md`](xdp.md). A host that only builds MTL does not need
   it, which is what the build scope above is for.
 - `python3-venv`. Debian and Ubuntu keep the venv module out of `python3`, and
-  `python3 -m venv` stops on "ensurepip is not available". A host that has
-  `virtualenv` or `uv` instead is fine — both carry their own pip and the job
-  uses whichever it finds, which is still the host as it is and not a job
-  installing anything. A host with none of the three is told which package to
-  install, before it leaves a half-built directory behind. This is what the i225
-  leg failed on twelve seconds into its first run on a new host.
+  `python3 -m venv` stops on "ensurepip is not available". The job builds the
+  acceptance virtualenv with `python3 -m venv` only.
 - **an SSH login to itself.** The framework talks to the DUT over SSH even when
   the DUT is the runner: `gen_config.py` writes `ip_address: 127.0.0.1` with
   `connection_type: SSHConnection`, and mfd_connect opens a paramiko session
@@ -549,16 +496,10 @@ Three prerequisites are easy to miss:
   `ssh` instead, in its own step, and prints what `ssh` said.
 - the media assets. The tests read ST 2110 source files from `media_path`
   (`/mnt/media` by default), normally the lab's NFS share. `task ci:media-assets
-  -- list` reports which files a host is missing, `-- verify` turns that into a
-  verdict — which is what the test jobs run, because a case whose file is absent
-  skips and a host that lost the share otherwise reports a green leg having
-  transmitted nothing — and `task ci:media-assets -- generate` synthesises
-  stand-ins of the right geometry and format for a host that has no share,
-  enough to exercise the suite and not a substitute for the real content.
-  `MEDIA_ASSET_SET=perf` selects the performance sweep's own sources instead,
-  which are 24-frame prefixes of full-length lab assets rather than synthetic
-  files — `generate` cuts them from the parent on the share, so that set needs
-  the share present and writable. The perf leg verifies it before running.
+  -- verify` lists each file a suite reads and fails when one is missing. The test
+  jobs run it, because a case whose file is absent skips, and a host that lost
+  the share would otherwise report a green leg that transmitted nothing.
+  `MEDIA_ASSET_SET=perf` selects the sources of the performance sweep.
 
 ## A red gate that means the fleet was busy
 

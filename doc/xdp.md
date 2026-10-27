@@ -56,6 +56,12 @@ sudo apt-get update
 sudo apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libpcap-dev libcap2-bin gcc-multilib
 ```
 
+Or install them with the script, together with the MTL build packages:
+
+```bash
+./script/install_dependencies.sh ebpf_xdp
+```
+
 CentOS/Red Hat:
 
 ```bash

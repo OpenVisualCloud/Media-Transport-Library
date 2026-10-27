@@ -151,10 +151,11 @@ regression from a test change. Left empty, nothing is overlaid.
 
 - `branch` takes a branch, a tag or a **full 40-character commit SHA**. A
   shorter SHA is read as a branch or tag name and fails the `checksums` job.
-- The ref must contain 0aff97f0 (#1700). Older trees lack the `Taskfile.yml`
-  and `overlay-tests` that perform the overlay, and `script/` interfaces the
-  current CI calls. They fail in the `checksums` job, before any hardware
-  runner is taken.
+- The ref must contain the script rework (#1836) up to `MTL_FLAG_DMA_AUTO`.
+  The current CI and tests call its interfaces: `hash_sources.sh` sources the
+  new `common.sh`, the setup calls the new build scripts, and the tests pass
+  `--dma_auto` to RxTxApp and the plugins. `overlay-tests` refuses an older ref
+  in the `checksums` job, before any hardware runner is taken.
 - The overlay adds and replaces files but deletes none: a file removed under
   the overlaid paths after the `branch` commit is still there.
 - `Build` takes the same input on a manual run, so a ref can be built on its
@@ -212,8 +213,9 @@ flowchart LR
 The JPEG XS bundle is installed under `.local_install/jpegxs` and contains the
 SVT runtime, `pkg-config` metadata, and MTL bridge plugin. Its hash includes the
 SVT revision, MTL hash, architecture, toolchain/build options, and bridge
-sources. Consumers update `LD_LIBRARY_PATH`, `PKG_CONFIG_PATH`, and the Kahawai
-plugin registry to use that tree; they do not install it into `/usr/local`.
+sources. Consumers update `LD_LIBRARY_PATH` and `PKG_CONFIG_PATH` to use that
+tree, and point `KAHAWAI_CFG_PATH` at `.local_install/conf/kahawai.json`, which
+`build.sh` writes and the MTL cache carries; they do not install it into `/usr/local`.
 
 The ICE output contains the patched `ice.ko` plus metadata describing its
 source hash, target kernel release, architecture, compiler, and vermagic.
@@ -235,17 +237,12 @@ from the artifact being the file at the `updates/` path modprobe prefers, the
 loaded `srcversion` matching that file, and the reported Kahawai version. On a
 mismatch it stops NIC users, zeroes the VFs of the ice PFs, unloads dependent
 modules and ICE, installs the validated module, and confirms the running driver
-is that artifact. VFs are not recreated: the test jobs build the VF state they
-need. Gtest and pytest jobs never compile, install, or reload a driver.
+is that artifact. Gtest and pytest jobs never compile, install, or reload a
+driver.
 
-Preparing the NIC is likewise the job's step and not the suite's work. A gtest
-job runs `sudo task ci:bind-test-ports`, which creates the trusted VFs on one
-PF, two more on the other port of its card for NoCtx, and binds two DMA channels
-on that PF's NUMA node; `.github/scripts/gtest.sh` then only reads what that
-left, runs the cases and reports. A retry re-runs the
-case on the same ports: a card rebuilt under a running suite is how a bare-metal
-runner ends up wedged, and a case that only passes after its NIC was rebuilt is
-not a pass worth reporting.
+Host validation prepares each E8xx NIC before a test suite starts.
+`script/dma_setup.sh reset` binds two DMA channels on each NUMA node. Validation
+runs the same script on a configured shadow host.
 
 The detailed artifact contracts and acceptance criteria are maintained in
 [the GitHub Actions issue](../.github/github_actions_issue.md).

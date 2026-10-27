@@ -8,6 +8,18 @@ The Media Transport Library needs rate limit patches that the E810/E830 driver d
 
 > **Note:** After a reboot, Ubuntu can upgrade to a new kernel version. If the kernel changes, rebuild the driver for the new kernel.
 
+`./script/build_drivers.sh --driver ice` does Sections 1.1 to 1.4 in one command. It downloads the driver version in `versions.env`, applies the patches, then builds, installs, and reloads the driver. It needs the headers of the running kernel, which `./script/install_dependencies.sh ice` installs on Ubuntu.
+Run the commands from the top of the Media Transport Library source tree.
+
+```bash
+./script/install_dependencies.sh ice
+./script/build_drivers.sh --driver ice
+```
+
+The script does nothing if the patched driver of that version is already installed for the running kernel. Use `--force` to rebuild it anyway.
+The driver reload removes the VFs of each E800-series PF, so create them again after the script finishes.
+Then continue with [Section 1.5](#15-verify-both-the-driver-and-ddp-version) to verify the driver.
+
 ### 1.1. Download the Driver Source Code
 
 `versions.env` in the Media Transport Library source tree holds the driver version to use. Read the file to set `ICE_VER` and `ICE_DMID`, then download the source code.
