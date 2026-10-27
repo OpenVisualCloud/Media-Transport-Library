@@ -162,7 +162,7 @@ bind_node() {
 dma_in_use() {
 	local group
 	group=$(basename "$(readlink -f "${SYSFS_PCI_DEVICES}/$1/iommu_group")")
-	find /proc/[0-9]*/fd -lname "/dev/vfio/${group}" -print -quit 2>/dev/null | grep -q .
+	{ find /proc/[0-9]*/fd -lname "/dev/vfio/${group}" -print -quit 2>/dev/null || true; } | grep -q .
 }
 
 # Unbinds each DMA device on NUMA node $1 from vfio-pci, except a device in use

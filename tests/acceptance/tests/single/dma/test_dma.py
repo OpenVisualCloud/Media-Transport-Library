@@ -6,6 +6,7 @@ import re
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
+from mtl_engine.dma import get_numa_node_from_pci
 from mtl_engine.media_files import yuv_files_422p10le
 
 pytestmark = pytest.mark.verified
@@ -18,12 +19,25 @@ def _run(host, command: str) -> str:
     return host.connection.execute_command(command, shell=True).stdout.strip()
 
 
-def _numa(host, bdf: str) -> str:
-    return _run(host, f"cat /sys/bus/pci/devices/{bdf}/numa_node")
-
-
 def _driver(host, bdf: str) -> str:
     return _run(host, f"basename $(readlink /sys/bus/pci/devices/{bdf}/driver)")
+
+
+def _skip_without_dma_on_port_node(host) -> str:
+    """Skip unless the bound DMA device is on the NUMA node of the port.
+
+    setup_host_dma falls back to a device on another node, but the auto probe
+    only takes devices on the node of a port. Return the port BDF.
+    """
+    dma = getattr(host, "dma_device", None)
+    if not dma:
+        pytest.skip("no DMA device on vfio-pci")
+    port = host.network_interfaces[0].pci_address.lspci
+    if get_numa_node_from_pci(host, dma.split(",")[0]) != get_numa_node_from_pci(
+        host, port
+    ):
+        pytest.skip(f"DMA device {dma} is not on the NUMA node of {port}")
+    return port
 
 
 @pytest.mark.smoke
@@ -49,8 +63,7 @@ def test_dma_auto_st20p(
 ):
     """With --dma_auto, the st20p RX copies with a DMA device of its NUMA node."""
     host = next(iter(hosts.values()))
-    if not getattr(host, "dma_device", None):
-        pytest.skip("no DMA device on vfio-pci on the NUMA node of the NIC")
+    _skip_without_dma_on_port_node(host)
 
     media_file_info, media_file_path = media_file
     app = app_factory(application)
@@ -87,13 +100,12 @@ def test_dma_auto_st20p(
 def test_dma_setup_get(hosts, mtl_path, host_dma_devices):
     """dma_setup.sh get prints DMA devices on vfio-pci on the NUMA node of the port."""
     host = next(iter(hosts.values()))
-    if not getattr(host, "dma_device", None):
-        pytest.skip("no DMA device on vfio-pci on the NUMA node of the NIC")
-
-    port = host.network_interfaces[0].pci_address.lspci
+    port = _skip_without_dma_on_port_node(host)
     devices = _run(host, f"{mtl_path}/script/dma_setup.sh get {port}").split(",")
 
     assert host.dma_device.split(",")[0] in devices
     for dev in devices:
-        assert _numa(host, dev) == _numa(host, port), f"{dev} is on another node"
+        assert get_numa_node_from_pci(host, dev) == get_numa_node_from_pci(
+            host, port
+        ), f"{dev} is on another node"
         assert _driver(host, dev) == "vfio-pci", f"{dev} is not on vfio-pci"

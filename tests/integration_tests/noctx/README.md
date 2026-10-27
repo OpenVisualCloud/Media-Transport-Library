@@ -76,7 +76,8 @@ VFs of one PF are switched inside the NIC and get no RX timestamp, so on a host
 with two cabled ports interleave the VFs: `TEST_PORT_1=<PF0 VF0>`,
 `TEST_PORT_2=<PF1 VF0>`, `TEST_PORT_3=<PF0 VF1>`, `TEST_PORT_4=<PF1 VF1>`.
 
-**CI.** The test host must provide VFs on both ports. For the NoCtx run,
+**CI.** When no PF has four VFs on vfio-pci, `.github/scripts/gtest.sh` creates six on a PF
+with link up and two on its sibling port, and removes them at exit. For the NoCtx run,
 `.github/scripts/gtest.sh` interleaves them as above, for example
 `15:01.0,15:11.0,15:01.1,15:11.1` on an E830 with PFs `15:00.0` and `15:00.1`.
 Without VFs on the other port it passes the four VFs of one PF that the other

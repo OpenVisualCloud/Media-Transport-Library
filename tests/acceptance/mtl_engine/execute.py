@@ -287,7 +287,7 @@ def log_result_note(note: str):
 
 
 # Canonical list of MTL-related process names that may be left over
-# after a crash or timeout.  Mirrors .github/actions/cleanup/action.yml.
+# after a crash or timeout.  Mirrors the cleanup task of Taskfile.yml.
 #
 # DPDK's rte_eal_init renames the process main thread to "<argv0>_main"
 # via pthread_setname_np, truncated to TASK_COMM_LEN-1 = 15 chars. That

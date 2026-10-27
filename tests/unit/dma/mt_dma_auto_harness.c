@@ -54,7 +54,7 @@ static int ut_rte_dev_probe(const char* devargs) {
   if (!ctx) return rte_dev_probe(devargs);
   if (ctx->nb_probes >= UT_DMA_AUTO_PROBES_MAX) return -ENOSPC;
   int call = ctx->nb_probes++;
-  snprintf(ctx->probe_bdf[call], sizeof(ctx->probe_bdf[call]), "%s", devargs);
+  (void)snprintf(ctx->probe_bdf[call], sizeof(ctx->probe_bdf[call]), "%s", devargs);
   if (!ctx->probe_ret[call]) ctx->nb_dmadev += ctx->probe_dmadevs[call];
   return ctx->probe_ret[call];
 }
@@ -71,8 +71,8 @@ static int ut_write_val(const char* dir, const char* attr, const char* fmt, long
     return -ENAMETOOLONG;
   FILE* fp = fopen(path, "w");
   if (!fp) return -errno;
-  fprintf(fp, fmt, val);
-  fprintf(fp, "\n");
+  (void)fprintf(fp, fmt, val);
+  (void)fprintf(fp, "\n");
   return fclose(fp) ? -errno : 0;
 }
 
@@ -89,7 +89,7 @@ ut_dma_auto_ctx* ut_dma_auto_create(void) {
 
   struct ut_dma_auto_ctx* ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
-  snprintf(ctx->root, sizeof(ctx->root), "/tmp/mt_dma_auto_test.XXXXXX");
+  (void)snprintf(ctx->root, sizeof(ctx->root), "/tmp/mt_dma_auto_test.XXXXXX");
   if (!mkdtemp(ctx->root)) {
     free(ctx);
     return NULL;
@@ -97,7 +97,7 @@ ut_dma_auto_ctx* ut_dma_auto_create(void) {
   for (int i = 0; i < UT_DMA_AUTO_PROBES_MAX; i++) ctx->probe_dmadevs[i] = 1;
   ctx->impl.type = MT_HANDLE_MAIN;
 
-  snprintf(ut_dma_pci_dir, sizeof(ut_dma_pci_dir), "%s", ctx->root);
+  (void)snprintf(ut_dma_pci_dir, sizeof(ut_dma_pci_dir), "%s", ctx->root);
   ut_active_ctx = ctx;
   return ctx;
 }
@@ -109,7 +109,7 @@ void ut_dma_auto_destroy(ut_dma_auto_ctx* ctx) {
     mt_pthread_mutex_destroy(&mt_get_dma_mgr(&ctx->impl)->mutex);
   }
   ut_active_ctx = NULL;
-  snprintf(ut_dma_pci_dir, sizeof(ut_dma_pci_dir), "%s", ut_dma_real_pci_dir);
+  (void)snprintf(ut_dma_pci_dir, sizeof(ut_dma_pci_dir), "%s", ut_dma_real_pci_dir);
   nftw(ctx->root, ut_rm_entry, 16, FTW_DEPTH | FTW_PHYS);
   free(ctx);
 }

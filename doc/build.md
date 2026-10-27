@@ -44,14 +44,19 @@ Build MTL with `./build.sh` before you build a plugin or the Python binding.
 
 ### Install into a local prefix
 
-`MTL_INSTALL_PREFIX` makes each script install into a tree of its own instead of
-the system, as the CI does with `.local_install/`:
+`MTL_INSTALL_PREFIX` makes `build.sh`, `build_dpdk.sh`, `build_drivers.sh`,
+`build_jpegxs.sh`, `build_ffmpeg_plugin.sh` and `build_gstreamer_plugin.sh`
+install into a tree of their own instead of the system, as the CI does with
+`.local_install/`. `build_st22_avcodec_plugin.sh` reads `MTL_PLUGIN_PREFIX`
+instead. `build_ebpf_xdp.sh`, `build_python.sh` and `build_obs_plugin.sh` always
+install into the system:
 
 ```bash
 export MTL_INSTALL_PREFIX=$PWD/.local_install/mtl
 ./script/build_dpdk.sh         # into .local_install/dpdk
 ./build.sh                     # into .local_install/mtl
 ./script/build_jpegxs.sh       # into .local_install/jpegxs, beside them
+MTL_PLUGIN_PREFIX=$PWD/.local_install/plugins ./script/build_st22_avcodec_plugin.sh
 ```
 
 Such a tree needs no root, no `ldconfig` and no `LD_LIBRARY_PATH`: every program
