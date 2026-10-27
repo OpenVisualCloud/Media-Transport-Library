@@ -1066,7 +1066,7 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
   memset(ipv4, 0x0, sizeof(*ipv4));
   ipv4->version_ihl = (4 << 4) | (sizeof(struct rte_ipv4_hdr) / 4);
   ipv4->time_to_live = 64;
-  ipv4->type_of_service = 0;
+  ipv4->type_of_service = (ops->flags & ST20_TX_FLAG_IPMX) ? IPMX_VIDEO_IPV4_TOS : 0;
   ipv4->packet_id = 0; /* always 0 when DONT_FRAGMENT set */
   ipv4->fragment_offset = MT_IP_DONT_FRAGMENT_FLAG;
   ipv4->next_proto_id = IPPROTO_UDP;

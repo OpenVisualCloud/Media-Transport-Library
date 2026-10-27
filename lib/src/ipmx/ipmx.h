@@ -8,6 +8,9 @@
 #include "../mt_log.h"
 #include "st20_api.h"
 
+/* TR-10-9 section 16: DSCP AF42 (36), ECN 0 */
+#define IPMX_VIDEO_IPV4_TOS (36 << 2)
+
 #ifdef MTL_HAS_IPMX
 /** Validate st20 TX ops against the IPMX rules, 0 if compliant else negative errno. */
 int ipmx_tx_ops_check(const struct st20_tx_ops* ops);

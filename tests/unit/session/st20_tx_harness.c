@@ -2207,3 +2207,54 @@ void ut_txv_add_flags(ut_txv_ctx* ctx, uint32_t flags) {
 uint16_t ut_txv_hdr_dst_port(const ut_txv_ctx* ctx, enum mtl_session_port port) {
   return ntohs(ctx->session.s_hdr[port].udp.dst_port);
 }
+
+int ut_txv_init_hdrs(ut_txv_ctx* ctx, int num_port) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  ctx->impl.inf[MTL_PORT_P].drv_info.flags |= MT_DRV_F_NOT_DPDK_PMD;
+  s->ops.num_port = num_port;
+  s->ops.flags |= ST20_TX_FLAG_USER_P_MAC | ST20_TX_FLAG_USER_R_MAC;
+  for (int i = 0; i < num_port; i++) {
+    uint8_t dip[MTL_IP_ADDR_LEN] = {239, 0, 0, (uint8_t)(1 + i)};
+    memcpy(s->ops.dip_addr[i], dip, sizeof(dip));
+    int ret = tv_init_hdr(&ctx->impl, s, i);
+    if (ret < 0) return ret;
+  }
+  return 0;
+}
+
+uint8_t ut_txv_hdr_tos(const ut_txv_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.s_hdr[port].ipv4.type_of_service;
+}
+
+int ut_txv_build_ipv4_hdr(ut_txv_ctx* ctx, enum mtl_session_port port,
+                          uint8_t ipv4_hdr[UT_TXV_IPV4_HDR_LEN]) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st_frame_trans frame = {0};
+  uint8_t frame_data[UT_TXV_FRAME_SIZE] = {0};
+  struct rte_mbuf* pkts[MTL_SESSION_PORT_MAX] = {NULL};
+  int num_port = s->ops.num_port;
+  int ret = -1;
+
+  if (ut_txv_tx_path_init(ctx) < 0) goto out;
+  ut_txv_frame_setup(ctx, &frame, frame_data, 1);
+  s->ops.num_port = num_port;
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    s->eth_ipv4_cksum_offload[i] = false;
+    pkts[i] = rte_pktmbuf_alloc(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
+    if (!pkts[i]) goto out;
+  }
+  if (tv_build_st20(s, pkts[MTL_SESSION_PORT_P]) < 0) goto out;
+  if (port == MTL_SESSION_PORT_R &&
+      tv_build_st20_redundant(s, pkts[MTL_SESSION_PORT_R], pkts[MTL_SESSION_PORT_P]) < 0)
+    goto out;
+  memcpy(ipv4_hdr, &rte_pktmbuf_mtod(pkts[port], struct mt_udp_hdr*)->ipv4,
+         UT_TXV_IPV4_HDR_LEN);
+  ret = 0;
+
+out:
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) rte_pktmbuf_free(pkts[i]);
+  ut_txv_tx_path_uinit(ctx);
+  s->st20_frames = NULL;
+  return ret;
+}

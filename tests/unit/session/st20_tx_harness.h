@@ -480,6 +480,15 @@ int ut_txv_ops_check(struct st20_tx_ops* ops);
 void ut_txv_add_flags(ut_txv_ctx* ctx, uint32_t flags);
 /* the UDP destination port in the session's packet header template, host order */
 uint16_t ut_txv_hdr_dst_port(const ut_txv_ctx* ctx, enum mtl_session_port port);
+/* tv_init_hdr() on session ports [0, num_port) with user MACs */
+int ut_txv_init_hdrs(ut_txv_ctx* ctx, int num_port);
+/* the IPv4 TOS byte in the session's packet header template */
+uint8_t ut_txv_hdr_tos(const ut_txv_ctx* ctx, enum mtl_session_port port);
+#define UT_TXV_IPV4_HDR_LEN (20)
+/* The IPv4 header of one packet built from the template with software checksum:
+ * tv_build_st20() for port P, tv_build_st20_redundant() of that packet for port R. */
+int ut_txv_build_ipv4_hdr(ut_txv_ctx* ctx, enum mtl_session_port port,
+                          uint8_t ipv4_hdr[UT_TXV_IPV4_HDR_LEN]);
 
 #ifdef __cplusplus
 }
