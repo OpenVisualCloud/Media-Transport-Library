@@ -4,6 +4,10 @@ add_languages('cpp', required : true)
 
 unit_cpp_args = ['-Wall', '-Werror']
 unit_c_args = ['-Wall', '-Werror']
+# The converter rows must match the SIMD levels libmtl was compiled with.
+foreach simd_arg : ['-DMTL_HAS_AVX2', '-DMTL_HAS_AVX512', '-DMTL_HAS_AVX512_VBMI2']
+  unit_c_args += mtl_c_args.contains(simd_arg) ? [simd_arg] : []
+endforeach
 # Deliberately no '-Wl,--allow-multiple-definition': harnesses shadow production symbols by
 # #define rename, so a real duplicate must fail the link.
 unit_link_args = []
@@ -69,6 +73,8 @@ unit_sources = [
   'datapath/mt_queue_harness.c',
   'datapath/mt_queue_test.cpp',
   'fmt/st_fmt_test.cpp',
+  'convert/simd_scalar_harness.c',
+  'convert/simd_scalar_test.cpp',
   'session/st40_harness.c',
   'session/st40_tx_test_harness.c',
   'session/st40/redundancy_test.cpp',
