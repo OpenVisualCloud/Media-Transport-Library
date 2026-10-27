@@ -1,9 +1,14 @@
 name: perf-compare
 # Runs builds A and B at once on the perf pair and reports how B differs from A
 # (doc/perf_compare.md). The tests and CI scripts come from "Use workflow from".
+run-name: >-
+  ${{ github.event_name == 'schedule' && 'perf-compare: nightly' ||
+  format('perf-compare: {0} against {1}, {2} x {3}', inputs.ref_b || 'main',
+  inputs.ref_a || 'main', inputs.sessions || '36', inputs.video || '1080p59') }}
 on:
   workflow_dispatch:
     inputs:
+      # What is compared: the two builds and their own RxTxApp options
       ref_a:
         description: 'A, the baseline: branch, tag or commit (e.g. main, v26.01)'
         required: false
@@ -15,34 +20,14 @@ on:
         type: string
         default: main
       args_a:
-        description: 'Extra RxTxApp options for A, e.g. --sch_session_quota 8'
+        description: 'Extra RxTxApp options of A, e.g. --sch_session_quota 12; not --dma_dev, --lcores or --tasklet_time, which the case sets, nor a scheduler option with single_core'
         required: false
         type: string
       args_b:
-        description: Extra RxTxApp options for B
+        description: Extra RxTxApp options of B, as for A
         required: false
         type: string
-      dma:
-        description: 'The builds whose RX instances copy the payload with a DSA (DMA) of their NUMA node; TX has no DMA'
-        required: false
-        type: choice
-        options:
-          - none
-          - A
-          - B
-          - both
-        default: none
-      # Each choice says what it does; the case takes its word before the colon.
-      nics:
-        description: How the builds use the two E830 NICs of each host; sessions counts per port in every mode
-        required: false
-        type: choice
-        options:
-          - 'single: NIC 0 only, A and B on its two ports'
-          - 'span: one instance a build, on a port of each NIC'
-          - 'pairs: an A/B pair on each NIC, the NICs reported apart'
-          - 'pooled: an A/B pair on each NIC, both NICs one result'
-        default: 'single: NIC 0 only, A and B on its two ports'
+      # The load: the same for both builds
       video:
         description: Video format of every session
         required: false
@@ -61,22 +46,51 @@ on:
           - 4320p29
           - 4320p25
         default: 1080p59
-      # Strings, not numbers: a number input reaches a step's env as 120.0.
+      # sessions, cores, test_time and rounds are strings, not numbers: a number
+      # input reaches a step's env as 120.0.
       sessions:
-        description: 'Video sessions of each build on each port it uses, in every nics mode: a 100G port carries 36 x 1080p59, 9 x 2160p59, 2 x 4320p59; span puts that many on each of its 2 ports'
+        description: 'Sessions of each build on each port it uses (span: on each of its 2), at most what a 100G port carries: 36 x 1080p59, 9 x 2160p59, 2 x 4320p59'
         required: false
         type: string
         default: '36'
+      # Where and how the instances run
+      # Each choice says what it does; the case takes its word before the colon.
+      nics:
+        description: How the builds use the two E830 NICs of each host; sessions counts per port in every mode
+        required: false
+        type: choice
+        options:
+          - 'single: NIC 0 only, A and B on its two ports'
+          - 'span: one instance a build, on a port of each NIC'
+          - 'pairs: an A/B pair on each NIC, the NICs reported apart'
+          - 'pooled: an A/B pair on each NIC, both NICs one result'
+        default: 'single: NIC 0 only, A and B on its two ports'
+      dma:
+        description: 'The builds whose RX instances copy the payload with a DSA (DMA) of their NUMA node; TX has no DMA'
+        required: false
+        type: choice
+        options:
+          - none
+          - A
+          - B
+          - both
+        default: none
+      single_core:
+        description: 'The roles whose instances run on one scheduler on each NIC they use, as perf-pytest single core: --sch_session_quota 99, the system tasklets on that of the first NIC. Set sessions to what a core carries, ~21 RX or 28 TX 1080p59 without DMA, 60 at most'
+        required: false
+        type: choice
+        options:
+          - none
+          - RX
+          - TX
+          - both
+        default: none
       cores:
-        description: 'CPUs per instance (span: on each NIC node): 1 for the app threads, 1 for the system tasklets (none with single_core), the rest for schedulers. 3 to 8 on the perf pair (2 to 8 with single_core). MTL starts as many schedulers as its quota needs; to change the quota, add --sch_session_quota to args'
+        description: 'CPUs of a slot (span: on each NIC node): 1 for the app threads, 1 for the system tasklets except in a single core role, the rest for schedulers; 3 to 8 on the perf pair, 2 to 8 when single_core is both. MTL starts the schedulers its quota needs'
         required: false
         type: string
         default: '8'
-      single_core:
-        description: 'Single core, as in perf-pytest: each instance runs its sessions and the system tasklets on one scheduler (--sch_session_quota 99, no dedicated system lcore). Set sessions to what one core carries (perf-pytest notes ~21 RX, 28 TX 1080p59 without DMA), at most 60; not with span'
-        required: false
-        type: boolean
-        default: false
+      # The measurement
       test_time:
         description: 'Seconds of the untraced window of each round, at least 30; three more windows add half of it each'
         required: false
@@ -129,6 +143,7 @@ jobs:
           ROUNDS: ${{ inputs.rounds }}
           CORES: ${{ inputs.cores }}
           SINGLE_CORE: ${{ inputs.single_core }}
+          VIDEO: ${{ inputs.video }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: task ci:workflow -- perf-compare-refs

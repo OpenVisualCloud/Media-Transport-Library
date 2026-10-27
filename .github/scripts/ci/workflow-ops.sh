@@ -67,11 +67,27 @@ perf-compare-refs)
 		exit 1
 	fi
 	# A slot's CPU for the application threads, one for a scheduler and one for
-	# the system tasklets, except in single core mode.
+	# the system tasklets, unless both roles are single core.
 	floor=3
-	[[ ${SINGLE_CORE:-} != true ]] || floor=2
+	[[ ${SINGLE_CORE:-none} != both ]] || floor=2
 	if ((${CORES:-3} < floor)); then
 		echo "::error::cores must be at least ${floor}: ${CORES}" >&2
+		exit 1
+	fi
+	# An MTL scheduler takes 60 video sessions at most.
+	if [[ ${SINGLE_CORE:-none} != none ]] && ((${SESSIONS:-36} > 60)); then
+		echo "::error::single_core takes up to 60 sessions a port: ${SESSIONS}" >&2
+		exit 1
+	fi
+	# What a port of the case carries, at most 100G: the rate of pc.stream_bps(),
+	# keep in step, 20-bit pixels paced over 1125 of 1080 lines, 1406 bytes for 1320
+	# of pixels.
+	video=${VIDEO:-1080p59}
+	if ! awk -v n="${SESSIONS:-36}" -v h="${video%p*}" -v f="${video#*p}" 'BEGIN {
+		fps[25] = 25; fps[29] = 30000 / 1001; fps[50] = 50; fps[59] = 60000 / 1001
+		exit n * h * h * 16 / 9 * 20 * fps[f] * 1125 / 1080 * 1406 / 1320 > 100e9
+	}'; then
+		echo "::error::${SESSIONS:-36} x ${video} take more than a 100G port carries" >&2
 		exit 1
 	fi
 	if [[ ${GITHUB_EVENT_NAME:-} == schedule ]]; then

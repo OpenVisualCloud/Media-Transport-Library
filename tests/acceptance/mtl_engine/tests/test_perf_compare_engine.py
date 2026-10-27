@@ -1288,12 +1288,14 @@ def test_the_report_names_the_builds_whose_launches_had_dma_and_their_dsa():
 
 def test_the_report_says_when_each_instance_ran_on_one_scheduler():
     rounds = [_round(_rounds((1, 1))[0])]
-    row = "<td>Single core</td><td>yes</td><td>yes</td>"
     platforms = [("s (RX)", {}), ("c (TX)", {})]
-    page = pc.report_html(LABELS, ARGS, [], SLOTS, rounds, platforms, "single", True)
-    assert row in page and row in pc.summary_html(
-        LABELS, ARGS, SLOTS, rounds, "single", True
-    )
+    for roles, shown in ((("rx",), "RX"), (("rx", "tx"), "RX and TX")):
+        row = f"<td>Single core</td><td>{shown}</td><td>{shown}</td>"
+        page = pc.report_html(
+            LABELS, ARGS, [], SLOTS, rounds, platforms, "single", roles
+        )
+        assert row in page
+        assert row in pc.summary_html(LABELS, ARGS, SLOTS, rounds, "single", roles)
 
 
 def test_the_report_keeps_the_pair_of_each_nic_apart_or_pools_them():
@@ -1337,7 +1339,7 @@ class _Fake:
         self.busy = False
         self.pin = ""  # what pin_app_threads() returns
         self.dma = ""  # the labels whose RX instances are given --dma_dev
-        self.single_core = False
+        self.single_core = ()  # the roles on one scheduler a NUMA node
         self.slots = [pc.Slot(i, [0], [4 + 4 * i], True, [i]) for i in (0, 1)]
         self.wire = ([0, 0], [0, 0])  # what each slot's two reads of the wire count
         self.pmu = {}  # the perf stat counts of an instance, PMU without
@@ -1592,17 +1594,27 @@ def test_run_round_rejects_an_rx_session_of_a_dma_build_that_dma_did_not_copy(fa
 
 
 def test_run_round_rejects_a_second_scheduler_of_a_single_core_instance(fake):
-    records = []
-    for r in _records():
-        records.append(r)
-        if "SCH(1:" in r and int(r.split(" ", 1)[0]) >= 40 * S:  # one more from 40 s
-            records.append(r.replace("SCH(1:sch_1)", "SCH(2:sch_2)"))
+    def more(records, idx, since=0):  # scheduler *idx* too, in each dump from *since* s
+        out = []
+        for r in records:
+            out.append(r)
+            if "SCH(1:" in r and int(r.split(" ", 1)[0]) >= since * S:
+                out.append(r.replace("SCH(1:sch_1)", f"SCH({idx}:sch_{idx})"))
+        return out
+
+    records = more(_records(), 2, since=40)
     fake.runs["mtl-perf-rx1"] = records
     assert fake.round()[1] == []  # multi core: as many as the quota needs
-    fake.single_core = True
-    assert fake.round()[1] == ["mtl-perf-rx1 (dev): 2 schedulers, single core runs one"]
-    del fake.runs["mtl-perf-rx1"]
+    fake.single_core = ("tx",)
     assert fake.round()[1] == []
+    fake.single_core = ("rx",)
+    one = "single core runs one a NUMA node"
+    assert fake.round()[1] == [f"mtl-perf-rx1 (dev): 2 schedulers, {one}"]
+    # span: a scheduler on each NUMA node of the slot
+    fake.slots = [replace(s, nodes=[0, 2]) for s in fake.slots]
+    assert fake.round()[1] == []
+    fake.runs["mtl-perf-rx1"] = more(records, 3)
+    assert fake.round()[1] == [f"mtl-perf-rx1 (dev): 3 schedulers, {one}"]
 
 
 def test_run_round_rejects_tasklet_stat_records_without_the_work_tasklets(fake):
