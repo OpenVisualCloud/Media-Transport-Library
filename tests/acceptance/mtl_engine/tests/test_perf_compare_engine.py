@@ -66,7 +66,7 @@ def test_cpu_layout_keeps_both_slots_off_isolated_cores_when_too_few(monkeypatch
 
 
 def test_cpu_layout_refuses_a_node_without_enough_cores(monkeypatch):
-    with pytest.raises(RuntimeError, match="fewer than 8 free cores"):
+    with pytest.raises(RuntimeError, match="0 isolated free cores and 4 others, not 8"):
         _layout(monkeypatch, "0-11", "", 6)
 
 

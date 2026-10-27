@@ -26,7 +26,6 @@ from mtl_engine.rxtxapp import RxTxApp
 
 logger = logging.getLogger(__name__)
 
-SLOT_CORES = 8
 FPS = {25: 25.0, 29: 30000 / 1001, 50: 50.0, 59: 60000 / 1001}
 # The extra arguments go into a root shell script and into the report as they are.
 ARGS = re.compile(r"[A-Za-z0-9_ ./:=,+-]*")
@@ -55,6 +54,7 @@ def _options(request) -> dict:
         "args": {"A": get("--perf_compare_args_a"), "B": get("--perf_compare_args_b")},
         "sessions": get("--perf_compare_sessions"),
         "rounds": get("--perf_compare_rounds"),
+        "cores": get("--perf_compare_cores"),
         "dma": DMA.get(get("--perf_compare_dma")),
         "nics": get("--perf_compare_nics"),
     }
@@ -72,13 +72,21 @@ def _options(request) -> dict:
             "gives each RX instance its own"
         )
     if any(re.fullmatch(r"--?lc(o(r(es?)?)?)?", t) for t in options):
-        pytest.fail("--lcores would replace the CPUs cpu_layout() gives each slot")
+        pytest.fail(
+            "--lcores would replace the slot's CPUs; --perf_compare_cores sets how "
+            "many each slot has"
+        )
     if opts["dma"] is None:
         pytest.fail(f"--perf_compare_dma is one of {', '.join(DMA)}")
     if opts["nics"] not in NICS:
         pytest.fail(f"--perf_compare_nics is one of {', '.join(NICS)}")
     if opts["sessions"] < 1 or opts["rounds"] < 1:
         pytest.fail("--perf_compare_sessions and --perf_compare_rounds start at 1")
+    if opts["cores"] < 3:
+        pytest.fail(
+            "--perf_compare_cores starts at 3: one for the application threads, one for "
+            "MTL's system tasklets (dedicated_sys_lcore) and one for a scheduler"
+        )
     return opts
 
 
@@ -164,12 +172,12 @@ def _ports(host, nics: str) -> tuple[list[str], list[str]]:
     return pfs, vfs
 
 
-def _slots(host, vfs: list[str], nics: str) -> list[pc.Slot]:
+def _slots(host, vfs: list[str], nics: str, cores: int) -> list[pc.Slot]:
     """cpu_layout()'s slots of NIC 0, or of both NICs as *nics* uses them."""
-    nic0 = pc.cpu_layout(host, vfs[0], SLOT_CORES)
+    nic0 = pc.cpu_layout(host, vfs[0], cores)
     if nics == "single":
         return nic0
-    nic1 = pc.cpu_layout(host, vfs[2], SLOT_CORES)
+    nic1 = pc.cpu_layout(host, vfs[2], cores)
     if nic0[0].nodes == nic1[0].nodes:
         pytest.fail(f"{host.name}: both NICs are on NUMA node {nic0[0].nodes[0]}")
     return pc.nic_slots(nics, nic0, nic1)
@@ -290,7 +298,7 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
                     f"{opts['sessions'] * rate / 1e9:.1f} Gb/s, and {', '.join(slow)} "
                     "(--perf_compare_sessions counts per port, with one NIC or two)"
                 )
-            slots = _slots(host, vfs, opts["nics"])
+            slots = _slots(host, vfs, opts["nics"], opts["cores"])
             if opts["nics"] == "pooled":
                 if unlike := pc.unlike_nics(links, slots):
                     pytest.fail(f"{host.name}: pooled takes alike NICs, but {unlike}")

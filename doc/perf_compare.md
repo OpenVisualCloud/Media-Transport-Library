@@ -118,13 +118,14 @@ mtl-perf-rx0-pmu                         perf stat -p <pid>, the untraced window
 
 ### 3.1. CPU
 
-`cpu_layout()` gives each slot 8 physical cores of the VF's NUMA node, one hardware
-thread each so no slot holds an SMT sibling of the other's, after two cores for the OS
-and the collectors. Both slots are isolated cores when the node isolates 16 or more,
-else neither is. `isolcpus=4-20,68-84` (and the same `nohz_full` and `rcu_nocbs`)
-isolates 17 cores on the node of each NIC of the perf hosts: the slots are then 4-11
-and 12-19 on NIC 0's node 0 and 68-75 and 76-83 on NIC 1's node 2. With node 0's
-alone, NIC 1's slots are cores that are not isolated.
+`cpu_layout()` gives each slot `cores` (8) physical cores of the VF's NUMA node, one
+hardware thread each so no slot holds an SMT sibling of the other's, after two cores for
+the OS and the collectors. Both slots are isolated cores when the node isolates twice
+`cores` or more, else neither is. `isolcpus=4-20,68-84` (and the same `nohz_full` and
+`rcu_nocbs`) isolates 17 cores on the node of each NIC of the perf hosts: the slots are
+then 4-11 and 12-19 on NIC 0's node 0 and 68-75 and 76-83 on NIC 1's node 2, and
+`cores` takes at most 8. With node 0's alone, NIC 1's slots are cores that are not
+isolated.
 
 The slot's CPUs but its first are the instance's `--lcores`, as perf-pytest gives MTL
 the isolated CPUs of its NIC's node, and the cpuset keeps the instance in the slot and
@@ -357,6 +358,7 @@ The inputs of `perf-compare.yml`, and the pytest options of a run by hand (§5.4
 | `nics` | `--perf_compare_nics` | `single` | `single`, `span`, `pairs` or `pooled` (§3.5); each choice of the form says what it does, and the case takes the word before its colon |
 | `video` | `-k "1080p and 59fps"` | `1080p59` | 1080p, 2160p or 4320p at 59, 50, 29 or 25 fps, from the perf media set |
 | `sessions` | `--perf_compare_sessions` | `36` | Video sessions of each build on each port it uses, in every `nics` mode (`span` puts that many on each of its two ports); the case refuses a count that a port's link does not carry (below) |
+| `cores` | `--perf_compare_cores` | `8` | CPUs of each slot on a NIC's node, at least 3; `span` has that many on each node. The first takes the application threads, the others are its `--lcores`: one for MTL's system tasklets, the schedulers on the rest (§3.1). How many sessions a scheduler of a build takes is `--sch_session_quota` in its `args` |
 | `test_time` | `test_time` of `test_config.yaml` | `120` | Seconds of the untraced window; at least 30, for two whole stats dumps. The three later windows add half of it each |
 | `rounds` | `--perf_compare_rounds` | `4` | Rounds; A and B swap places each round, so keep it even. Fewer than 4 give a rough noise estimate |
 
@@ -372,7 +374,7 @@ companion count about 210,000 build timeout frames each a round, which the round
 instances, so an A/A run of `main` notes them every round.
 
 The refs job rejects a bad ref, a number that is not a positive integer, and a
-`test_time` under 30, before the compare job builds anything; the numbers are strings, as a number
+`test_time` under 30 or `cores` under 3, before the compare job builds anything; the numbers are strings, as a number
 input reaches a step as `120.0`. A ref takes no option, `^{/regex}`, comma or newline:
 it reaches `git`, `GITHUB_OUTPUT` and the labels. The case rejects bad arguments before
 it starts an instance, as they reach a root shell script on both hosts.
@@ -451,7 +453,7 @@ notes, which do not.
 
 | Problem, or (note) | Cause | What to do |
 | --- | --- | --- |
-| `not steady after N s`, `a session fell to N fps` | A session stayed under 99% of its rate. The 8 cores of a slot, or the companion's hugepages, which hold the TX source of every session of both builds, can limit the sessions before the link | Fewer `sessions`; for a candidate that cannot carry the load the failure is the result |
+| `not steady after N s`, `a session fell to N fps` | A session stayed under 99% of its rate. The `cores` of a slot, or the companion's hugepages, which hold the TX source of every session of both builds, can limit the sessions before the link | Fewer `sessions`; for a candidate that cannot carry the load the failure is the result |
 | `exited before steady state`, `exited during the measurement` | An application or a collector stopped | The application's output and its `.log` and `.trace` records in `perf_compare/round<N>/`; a timed or sessions collector's output only stays in `/tmp/mtl-perf-compare/` on its host, until the next round |
 | `N untraced, N traced, N timed and N session timed dumps`, `N of M sessions` | A window held fewer than two whole dumps, or not every session reported | A `test_time` of 30 or more; the application and collector logs |
 | `its source is not in hugepages` | A TX read its source through `mmap()` | More hugepages on the companion, or fewer sessions |
