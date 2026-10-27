@@ -706,8 +706,26 @@ static int dev_init_ratelimit_all(struct mt_interface* inf, uint64_t bps) {
   return ret;
 }
 
+/* iavf sends every queue's rate to the PF at each commit, ~41 ms */
+static int dev_tm_commit(struct mt_interface* inf) {
+  struct rte_tm_error error;
+  int ret;
+
+  memset(&error, 0, sizeof(error));
+  rte_atomic32_set(&inf->resetting, true);
+  mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
+  ret = rte_tm_hierarchy_commit(inf->port_id, 1, &error);
+  mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
+  rte_atomic32_set(&inf->resetting, false);
+  if (ret < 0)
+    err("%s(%d), commit error (%d)%s\n", __func__, inf->port, ret,
+        mt_string_safe(error.message));
+  return ret;
+}
+
+/* without commit the new rate waits for the next dev_tm_commit() */
 static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
-                                    uint64_t bytes_per_sec) {
+                                    uint64_t bytes_per_sec, bool commit) {
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
   struct mt_tx_queue* tx_queue = &inf->tx_queues[queue];
@@ -765,16 +783,9 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
     info("%s(%d), q %d link to shaper id %d(%" PRIu64 ")\n", __func__, port, queue,
          shaper->shaper_profile_id, shaper->rl_bps);
   }
-  rte_atomic32_set(&inf->resetting, true);
-  mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
-  ret = rte_tm_hierarchy_commit(port_id, 1, &error);
-  mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
-  rte_atomic32_set(&inf->resetting, false);
-  if (ret < 0) {
-    err("%s(%d), commit error (%d)%s\n", __func__, port, ret,
-        mt_string_safe(error.message));
-    return ret;
-  }
+  if (!commit) return 0; /* the caller records bps once it commits */
+  ret = dev_tm_commit(inf);
+  if (ret < 0) return ret;
 
   tx_queue->bps = bps;
 
@@ -793,13 +804,16 @@ static void dev_tx_queues_reset_line_rate(struct mt_interface* inf) {
   }
 
   for (uint16_t q = 0; q < inf->nb_tx_q && ret >= 0; q++)
-    ret = dev_tx_queue_set_rl_rate(inf, q, line_bps);
-  if (ret < 0)
+    ret = dev_tx_queue_set_rl_rate(inf, q, line_bps, false);
+  if (ret >= 0) ret = dev_tm_commit(inf); /* once for every queue */
+  if (ret < 0) {
     warn("%s(%d), tx queues may keep their rate limit, reset fail %d\n", __func__, port,
          ret);
-  else
-    info("%s(%d), tx queues reset to line rate %" PRIu64 " bytes/s\n", __func__, port,
-         line_bps);
+    return;
+  }
+  for (uint16_t q = 0; q < inf->nb_tx_q; q++) inf->tx_queues[q].bps = line_bps;
+  info("%s(%d), tx queues reset to line rate %" PRIu64 " bytes/s\n", __func__, port,
+       line_bps);
 }
 
 static int dev_stop_port(struct mt_interface* inf) {
@@ -1582,8 +1596,8 @@ static int dev_if_select_pacing(struct mt_interface* inf) {
     if (inf->drv_info.drv_type == MT_DRV_IAVF) {
       ret = dev_init_ratelimit_all(inf, ST_DEFAULT_RL_BPS);
     } else {
-      ret = dev_tx_queue_set_rl_rate(inf, 0, ST_DEFAULT_RL_BPS);
-      if (ret >= 0) dev_tx_queue_set_rl_rate(inf, 0, 0);
+      ret = dev_tx_queue_set_rl_rate(inf, 0, ST_DEFAULT_RL_BPS, true);
+      if (ret >= 0) dev_tx_queue_set_rl_rate(inf, 0, 0, true);
     }
     if (ret < 0) { /* fallback to tsc if no rl */
       if (auto_detect) {
@@ -1787,7 +1801,7 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
     if (tx_queue->active || tx_queue->fatal_error) continue;
 
     if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL && bytes_per_sec) {
-      ret = dev_tx_queue_set_rl_rate(inf, q, bytes_per_sec);
+      ret = dev_tx_queue_set_rl_rate(inf, q, bytes_per_sec, true);
       if (ret < 0) {
         err("%s(%d), fallback to tsc as rl fail\n", __func__, port);
         inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
@@ -2113,7 +2127,7 @@ int mt_dev_set_tx_bps(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
     return -ENOTSUP;
   }
 
-  dev_tx_queue_set_rl_rate(inf, queue_id, bytes_per_sec);
+  dev_tx_queue_set_rl_rate(inf, queue_id, bytes_per_sec, true);
 
   return 0;
 }

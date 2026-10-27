@@ -66,10 +66,36 @@ TEST_F(MtDevPacingTest, IavfTmTscClearedQueuesResetAtTeardown) {
   ASSERT_EQ(ut_dev_init_pacing(ctx_), 0);
   ut_dev_set_started_iavf_tx(ctx_, false, ST21_TX_PACING_WAY_TSC);
   ASSERT_EQ(ut_dev_free_ports(ctx_), 0);
-  EXPECT_EQ(ut_dev_tm_commit_count(ctx_), 1 + ut_dev_nb_tx_queues());
+  EXPECT_EQ(ut_dev_tm_commit_count(ctx_), 2);
   EXPECT_EQ(CountQueueNodes(true), ut_dev_nb_tx_queues());
   EXPECT_EQ(CountQueueNodes(false), 0);
   EXPECT_EQ(ut_dev_last_shaper_rate(ctx_), 25000ull * 1000 * 1000 / 8);
+}
+
+/* every commit takes ~41 ms on iavf: one for all queues, not one each (#1883) */
+TEST_F(MtDevPacingTest, IavfTmRlTeardownResetsEveryQueueInOneCommit) {
+  ut_dev_set_pacing_port(ctx_, true, ST21_TX_PACING_WAY_RL);
+  ASSERT_EQ(ut_dev_init_pacing(ctx_), 0);
+  ut_dev_set_started_iavf_tx(ctx_, false, ST21_TX_PACING_WAY_RL);
+  ASSERT_EQ(ut_dev_free_ports(ctx_), 0);
+  EXPECT_EQ(ut_dev_tm_commit_count(ctx_), 2);
+  EXPECT_EQ(CountQueueNodes(true), ut_dev_nb_tx_queues());
+  EXPECT_EQ(CountQueueNodes(false), 0);
+  EXPECT_EQ(ut_dev_last_shaper_rate(ctx_), 25000ull * 1000 * 1000 / 8);
+  for (int q = 0; q < ut_dev_nb_tx_queues(); q++)
+    EXPECT_EQ(ut_dev_tx_queue_bps(ctx_, q), 25000ull * 1000 * 1000 / 8);
+}
+
+/* bps is the committed rate: set_rl_rate() skips a queue whose bps already matches */
+TEST_F(MtDevPacingTest, IavfTmRlTeardownCommitFailureKeepsQueueRates) {
+  ut_dev_set_pacing_port(ctx_, true, ST21_TX_PACING_WAY_RL);
+  ASSERT_EQ(ut_dev_init_pacing(ctx_), 0);
+  ut_dev_set_started_iavf_tx(ctx_, false, ST21_TX_PACING_WAY_RL);
+  ut_dev_fail_tm_commit(ctx_, -EIO);
+  ASSERT_EQ(ut_dev_free_ports(ctx_), 0);
+  EXPECT_EQ(ut_dev_tm_commit_count(ctx_), 2);
+  for (int q = 0; q < ut_dev_nb_tx_queues(); q++)
+    EXPECT_EQ(ut_dev_tx_queue_bps(ctx_, q), 1024ull * 1024 * 1024 / 8);
 }
 
 TEST_F(MtDevPacingTest, IavfTmClearCommitFailureKeepsTsc) {
