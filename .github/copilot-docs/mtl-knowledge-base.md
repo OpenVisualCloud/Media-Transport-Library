@@ -1206,7 +1206,7 @@ ninja -C build_fuzz
 ```
 
 The guide is `tests/doc/fuzz/index.rst`.
-The `fuzz-tests` job of `fuzz_tests.yml` runs `.github/scripts/ci/fuzz.sh` (`task ci:fuzz -- build|run`) on `ubuntu-22.04` (clang 14) and uploads `fuzz-report`: 60 s per target on a pull request that matches the `fuzz_tests` path filter, 600 s per target on the nightly schedule of `main` and on a manual run.
+The `fuzz-tests` job of `fuzz_tests.yml` runs `.github/scripts/ci/fuzz/fuzz.sh` (`task ci:fuzz -- build|run`) on `ubuntu-22.04` (clang 14) and uploads `fuzz-report`: 60 s per target on a pull request that matches the `fuzz_tests` path filter, 600 s per target on the nightly schedule of `main` and on a manual run.
 The harnesses link `libmtl`, so the filter holds all of `lib/**` and `include/**`. `fuzz-tests-result` always runs and is the check to require.
 
 ### Acceptance Tests (`tests/acceptance/`)

@@ -72,10 +72,11 @@ and relative links inside a skill body resolve against `.github/skills/<name>/`.
 deferred: call `ToolSearch` before invoking `mcp__mtl-system-setup__*` etc. The wrapper scripts
 create and populate `.github/mcp/.venv` on first launch.
 
-**Path-scoped context** — `lib/`, `tests/unit/`, `tests/integration_tests/`, and
-`tests/acceptance/` each carry a small `CLAUDE.md` that imports the matching
-`.github/instructions/*.md`. That reproduces the Copilot `applyTo:` auto-attach, so the C rules
-or the gtest/pytest instructions load when you actually work in those trees.
+**Path-scoped context** — `lib/`, `tests/unit/`, `tests/integration_tests/`,
+`tests/acceptance/`, `script/`, `.github/scripts/`, `.github/workflows/` and `.github/actions/`
+each carry a small `CLAUDE.md` that imports the matching `.github/instructions/*.md`. That
+reproduces the Copilot `applyTo:` auto-attach, so the C rules, the gtest/pytest instructions or
+the script rules load when you actually work in those trees.
 
 One difference from the Copilot version worth knowing: `mtl-system-admin`'s "MCP tools only, never
 a shell" rule is enforced by its prompt rather than by withholding the Bash tool, because MCP
@@ -90,7 +91,7 @@ that's a bug in the agent's behavior, not permission to allow it.
 ./build.sh debugonly        # debug, no ASan
 ./build.sh unit             # configure build_unit/, build and RUN the unit gtest suite, then exit
 ./build.sh enable_fuzzing   # add libFuzzer harnesses
-MTL_INSTALL_PREFIX=$PWD/.local_install ./build.sh   # local prefix install
+MTL_INSTALL_PREFIX=$PWD/.local_install/mtl ./build.sh   # local prefix install
 ```
 
 `build.sh` is a sequence of `meson setup` + `ninja` + `ninja install` per component; each
@@ -239,3 +240,11 @@ simpler media types.
 Minimal diffs; no speculative helpers, no commented-out code, no reformatting lines you
 aren't functionally changing. `./format-coding.sh` then `./build.sh` before proposing a
 change; add or extend a test at the cheapest tier that can catch the bug.
+
+Scripts follow `.github/instructions/mtl-scripts.instructions.md`. The user scripts in
+`script/` source `script/common.sh`, use its helpers, provide `show_help()` and `main()`, and use
+the standard sourced guard. The CI scripts in `.github/scripts/ci/`, the workflows and the
+`ci:` tasks stay as simple as possible: no help, no argument checks, no fixture variables. Host
+settings (packages, hugepages, governor, IOMMU, NFS) are not CI's job; CI does what each test
+cycle needs (load the ICE module under test, bind DMA), and the test harness does what one test
+needs (VFs, C-states) and undoes it. The table in that file says which layer owns which setting.

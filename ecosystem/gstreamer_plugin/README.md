@@ -23,12 +23,24 @@ sudo apt install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreame
 
 ### 1.2. Automated Build
 
-To build the GStreamer plugins using the provided script, run the following commands:
+`script/build_gstreamer_plugin.sh` builds the plugins and installs them into the
+GStreamer plugin directory of `/usr/local`. Run it from the top of the source
+tree, as your own user, after MTL is installed:
 
 ```bash
-cd Media-Transport-Library/ecosystem/gstreamer_plugin
-./build.sh
+./script/install_dependencies.sh gstreamer   # the build packages, Ubuntu only
+./script/build_gstreamer_plugin.sh           # add debug for the test-only properties
+./script/build_gstreamer_plugin.sh -h        # all options
 ```
+
+With `MTL_INSTALL_PREFIX` set, as `build.sh` and `build_dpdk.sh` take it, the
+plugins go into `<prefix parent>/gstreamer/gstreamer-1.0`
+(`.local_install/gstreamer/gstreamer-1.0` beside `.local_install/mtl`); point
+`GST_PLUGIN_PATH` at that directory, as at `/usr/local`'s plugin directory:
+GStreamer searches only its own. An installed plugin records the paths of
+the MTL and DPDK libraries it was built against, so it loads without
+`LD_LIBRARY_PATH` and cannot pick up another copy; the script checks that with
+`ldd` and `gst-inspect-1.0` before it finishes.
 
 ### 1.3. Manual Build Instructions
 
@@ -106,7 +118,8 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 | tx-queues     | uint   | Number of TX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
 | rx-queues     | uint   | Number of RX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
 | enable-dma-offload | boolean | Request DMA offload for sessions that support it.                                                | TRUE/FALSE               |
-| dma-dev       | string | DPDK port bound for DMA engines, exported as described in `doc/dma.md`. Required when `enable-dma-offload=true`. | N/A                      |
+| dma-dev       | string | DPDK port bound for DMA engines, exported as described in `doc/dma.md`. `enable-dma-offload=true` needs this or `dma-auto`. | N/A                      |
+| dma-auto      | boolean | Use each Intel DMA device on vfio-pci on the NUMA node of the ports, without `dma-dev`. Sets `MTL_FLAG_DMA_AUTO`. | TRUE/FALSE               |
 | allow-down-ports | boolean | Allow MTL to initialize even if port links are down. Sets `MTL_FLAG_ALLOW_DOWN_PORTS` which enables `MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION` on every configured port. Sessions still require at least one functioning port to operate. | TRUE/FALSE |
 | payload-type  | uint   | SMPTE ST 2110 payload type.                                                                       | 0 to G_MAXUINT           |
 | port          | string | Session DPDK device port. If not specified it will be taken from the dev-port argument.           | N/A                      |
@@ -115,7 +128,8 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 When `enable-dma-offload` is set to `true`, every plugin that supports DMA will request
 `ST20P_RX_FLAG_DMA_OFFLOAD` during session creation (currently `mtl_st20p_rx`). Make sure
 the `dma-dev` port is bound and exported as described in `doc/dma.md` before enabling the
-flag.
+flag. With `dma-auto=true` instead of `dma-dev`, the plugin uses the DMA devices that
+`script/dma_setup.sh bind` binds on the NUMA node of the port.
 
 When `allow-down-ports` is set to `true`, MTL will proceed with initialization even if
 one or both NIC links are down. Any session whose `port` or `port-red` maps to a down
@@ -278,7 +292,7 @@ The `mtl_st20p_rx` plugin supports the following pad capabilities:
 | rx-pixel-format     | string   | Pixel format of the video.                          | `v210`, `YUV444PLANAR10LE` | `v210`        |
 
 > **Tip:** Enable DMA offload for this plugin by passing the general property
-> `enable-dma-offload=true` alongside a configured `dma-dev`.
+> `enable-dma-offload=true` alongside a configured `dma-dev`, or `dma-auto=true`.
 
 #### 3.2.2. Preparing output path
 

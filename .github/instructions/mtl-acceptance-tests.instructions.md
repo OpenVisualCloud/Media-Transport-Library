@@ -66,8 +66,8 @@ hardware-bound). The full marker set and its authoring rules live in
 | Category | Backend | Build artifact |
 |---|---|---|
 | `st20p`/`st22p`/`st30p`/`st40`/`st40p`/`dma`/`ptp`/`rss_mode`/`rx_timing`/`udp`/`virtio_user`/`xdp`/`kernel_socket` | RxTxApp | `.local_install/mtl/bin/RxTxApp` |
-| `ffmpeg/` | in-repo FFmpeg + MTL muxer | `ecosystem/ffmpeg_plugin/FFmpeg-release-*/ffmpeg` (system ffmpeg unused) |
-| `gstreamer/` | in-repo GStreamer plugin | `ecosystem/gstreamer_plugin/builddir/libgstmtl_*.so` |
+| `ffmpeg/` | in-repo FFmpeg + MTL muxer | `.local_install/ffmpeg/bin/ffmpeg`, built by `script/build_ffmpeg_plugin.sh` (system ffmpeg unused) |
+| `gstreamer/` | in-repo GStreamer plugin | `.local_install/gstreamer/gstreamer-1.0/libgstmtl_*.so`, built by `script/build_gstreamer_plugin.sh` |
 | `performance/` | RxTxApp capacity sweep | RxTxApp; very long |
 
 ## Logs
