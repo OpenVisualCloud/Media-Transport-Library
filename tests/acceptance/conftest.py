@@ -1113,6 +1113,11 @@ def pytest_addoption(parser):
             f"--perf_compare_{name}", type=kind, default=default, help=text
         )
     parser.addoption(
+        "--perf_compare_single_core",
+        action="store_true",
+        help="each instance's sessions and system tasklets on one scheduler",
+    )
+    parser.addoption(
         "--num_sessions",
         type=int,
         default=None,

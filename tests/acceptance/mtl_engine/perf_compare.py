@@ -1580,10 +1580,10 @@ def _pool(metrics: dict, nic: int) -> dict:
     }
 
 
-def _results(labels, args, slots, rounds, styled, nics) -> list[str]:
+def _results(labels, args, slots, rounds, styled, nics, single_core) -> list[str]:
     """The builds, the rounds, the summary and the tables of each role; the tables
     folded unless *styled*. *nics* is how the builds use the NICs: single, span,
-    pairs or pooled."""
+    pairs or pooled; *single_core* whether each instance had one scheduler."""
     valid = [r["metrics"] for r in rounds if not r["problems"]]
     if nics == "pooled":  # each NIC's pair of each round is a sample
         valid = [_pool(v, nic) for v in valid for nic in (0, 1)]
@@ -1607,6 +1607,8 @@ def _results(labels, args, slots, rounds, styled, nics) -> list[str]:
         builds.append(
             ["RX copies with DMA", *("yes" if x in dma else "no" for x in "AB")]
         )
+    if single_core:
+        builds.append(["Single core", "yes", "yes"])
     runs = [
         [
             n,
@@ -1638,19 +1640,21 @@ def _results(labels, args, slots, rounds, styled, nics) -> list[str]:
     return p
 
 
-def summary_html(labels, args, slots, rounds, nics="single") -> str:
+def summary_html(labels, args, slots, rounds, nics="single", single_core=False) -> str:
     """The report as the job summary shows it, which keeps no style: the builds, the
     rounds and the summary, and the tables of each role folded; the workflow links the
     full report, with the setup and the instances, after it."""
     title = html.escape(f"MTL perf-compare: {labels['B']} against {labels['A']}")
     page = [
         f"<h2>{title}</h2>",
-        *_results(labels, args, slots, rounds, False, nics),
+        *_results(labels, args, slots, rounds, False, nics, single_core),
     ]
     return "\n".join(page)
 
 
-def report_html(labels, args, details, slots, rounds, platforms, nics="single") -> str:
+def report_html(
+    labels, args, details, slots, rounds, platforms, nics="single", single_core=False
+) -> str:
     """The report of a case: its builds, its rounds, how B differs from A, then its
     setup and its instances as they ran.
 
@@ -1658,13 +1662,14 @@ def report_html(labels, args, details, slots, rounds, platforms, nics="single") 
     each host (host, role, slot, cpus, isolated, cat, perf; dsa of an RX slot when
     a build uses DMA; nic and pfs when the builds use both NICs), *rounds* the rounds
     as the case keeps them, with the launches of run_round(), *platforms* the
-    (label, platform_config.json) of the SUT and the companion, and *nics* how the
-    builds use the NICs: single, span, pairs or pooled.
+    (label, platform_config.json) of the SUT and the companion, *nics* how the
+    builds use the NICs: single, span, pairs or pooled, and *single_core* whether
+    each instance had one scheduler.
     """
     title = f"MTL perf-compare: {labels['B']} against {labels['A']}"
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     p = [html_head(html.escape(title), now, STYLE)]
-    p += _results(labels, args, slots, rounds, True, nics)
+    p += _results(labels, args, slots, rounds, True, nics, single_core)
     info = _text_table(["Parameter", "Value"], details, "kv")
     p.append(_details("Test Information", [info], opened=True))
     yes = {True: "yes", False: "no"}
@@ -1757,6 +1762,7 @@ def run_round(
     traced_s,
     launches,
     names,
+    single_core=False,
 ):
     """Run one round of every instance at once.
 
@@ -1765,7 +1771,8 @@ def run_round(
     label)* returns its application command and the configuration to report with
     it. The logs and records of the round are copied to *out_dir*, and *launches*
     gets what each instance ran, its label, role, slot, script and configuration,
-    also when the round raises. The problems and notes name the builds by *names*.
+    also when the round raises. The problems and notes name the builds by *names*;
+    with *single_core*, an instance with more than one scheduler is one.
     Returns ({label: {Instance.key: metrics}}, problems, notes).
     """
     rx, tx = sides
@@ -1897,6 +1904,10 @@ def run_round(
         named = len({k for d in untraced for k in d.fps if k[0] == direction})
         if named != sessions:
             problems.append(f"{who(i)}: {named} of {sessions} sessions")
+            continue
+        schedulers = len({s for d in untraced for s in d.sch})
+        if single_core and schedulers != 1:
+            problems.append(f"{who(i)}: {schedulers} schedulers, single core runs one")
             continue
         # MTL falls back to the CPU copy, silently, for a session it gives no DMA
         copied = len({k for d in untraced for k, n in d.dma.items() if n})

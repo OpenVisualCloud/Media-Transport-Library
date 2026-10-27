@@ -66,10 +66,12 @@ perf-compare-refs)
 		echo "::error::test_time must be at least 30: ${TEST_TIME}" >&2
 		exit 1
 	fi
-	# A slot's CPU for the application threads, one for the system tasklets, one
-	# for a scheduler.
-	if ((${CORES:-3} < 3)); then
-		echo "::error::cores must be at least 3: ${CORES}" >&2
+	# A slot's CPU for the application threads, one for a scheduler and one for
+	# the system tasklets, except in single core mode.
+	floor=3
+	[[ ${SINGLE_CORE:-} != true ]] || floor=2
+	if ((${CORES:-3} < floor)); then
+		echo "::error::cores must be at least ${floor}: ${CORES}" >&2
 		exit 1
 	fi
 	if [[ ${GITHUB_EVENT_NAME:-} == schedule ]]; then

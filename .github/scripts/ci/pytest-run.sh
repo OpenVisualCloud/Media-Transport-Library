@@ -43,6 +43,7 @@ perf-compare)
 	[[ -n ${SESSIONS:-} ]] && args+=(--perf_compare_sessions "$SESSIONS")
 	[[ -n ${ROUNDS:-} ]] && args+=(--perf_compare_rounds "$ROUNDS")
 	[[ -n ${CORES:-} ]] && args+=(--perf_compare_cores "$CORES")
+	[[ ${SINGLE_CORE:-} == true ]] && args+=(--perf_compare_single_core)
 	(cd "$acceptance_dir" && "${pytest[@]}" "${args[@]}" ./tests/dual/performance/test_perf_compare.py)
 	;;
 nightly)
