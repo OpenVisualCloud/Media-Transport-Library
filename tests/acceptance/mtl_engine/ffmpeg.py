@@ -131,6 +131,14 @@ class FFmpeg(Application):
         f"{RXTXAPP_EXE} --config_file {{rx_cfg}} --test_time {{test_time}}"
     )
 
+    def _rx_dma(self) -> str:
+        """The RX side alone probes the DMA devices: vfio-pci gives a device
+        to one process, so a TX that probed first would leave none for RX."""
+        return "-dma_auto 1 " if self.params.get("dma_auto") else ""
+
+    def _rxtxapp_rx_dma(self) -> str:
+        return " --dma_auto" if self.params.get("dma_auto") else ""
+
     @staticmethod
     def _ffmpeg_st20p_tx_cmd(
         *,
@@ -301,7 +309,7 @@ class FFmpeg(Application):
         if not multiple:
             rx_cmd = (
                 f"{FFMPEG_EXE} -p_port {nic_port_list[1]} "
-                f"-p_sip {ip_pools.rx[0]} "
+                f"-p_sip {ip_pools.rx[0]} {self._rx_dma()}"
                 f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
                 f"-video_size {video_size} -init_retry 20 "
@@ -316,13 +324,13 @@ class FFmpeg(Application):
             # configuration mismatch" -- reported by ffmpeg as "Error opening
             # input file 2."
             rx_cmd = (
-                f"{FFMPEG_EXE} -p_sip {ip_pools.rx[0]} "
+                f"{FFMPEG_EXE} -p_sip {ip_pools.rx[0]} {self._rx_dma()}"
                 f"-p_port {nic_port_list[1]} "
                 f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
                 f"-video_size {video_size} -init_retry 20 "
                 f"-f mtl_st20p -i 1 "
-                f"-p_sip {ip_pools.rx[0]} "
+                f"-p_sip {ip_pools.rx[0]} {self._rx_dma()}"
                 f"-p_port {nic_port_list[1]} "
                 f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20002 "
                 f"-payload_type 112 -fps {fps} -pix_fmt {pix_fmt} "
@@ -394,7 +402,7 @@ class FFmpeg(Application):
                 pacing_way=self.params.get("pacing_way"),
             )
         ]
-        return self._RXTXAPP_RX_TMPL, None
+        return self._RXTXAPP_RX_TMPL + self._rxtxapp_rx_dma(), None
 
     # -- mode: rgb24_multiple (FFmpeg TX×2, RxTxApp RX, two streams) -----
     def _build_rgb24_multiple_cmds(self, nic_port_list):
@@ -423,7 +431,7 @@ class FFmpeg(Application):
                     pacing_way=self.params.get("pacing_way"),
                 )
             )
-        return self._RXTXAPP_RX_TMPL, None
+        return self._RXTXAPP_RX_TMPL + self._rxtxapp_rx_dma(), None
 
     # -- mode: st22p (FFmpeg TX via mtl_st22p, FFmpeg RX via mtl_st22p) --
     def _build_st22p_cmds(self, nic_port_list):

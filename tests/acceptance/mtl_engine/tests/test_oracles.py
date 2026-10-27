@@ -185,17 +185,18 @@ class _MinimalApp(Application):
         return True
 
 
-def test_create_command_defaults_dma_dev_from_app_factory_when_unset():
+def test_create_command_defaults_dma_auto_from_app_factory_when_unset():
     """app_factory stashes the host's bound DMA channel(s) on
-    _default_dma_dev; create_command() must apply it when the test itself
-    never mentions dma_dev.
+    _default_dma_dev; create_command() must turn on dma_auto when the test
+    itself never mentions dma_dev.
     """
     app = _MinimalApp(app_path="minimal")
     app._default_dma_dev = "0000:80:01.0,0000:85:01.0"
 
     app.create_command(session_type="st20p")
 
-    assert app.params["dma_dev"] == "0000:80:01.0,0000:85:01.0"
+    assert app.params["dma_auto"] is True
+    assert app.params["dma_dev"] is None
 
 
 def test_create_command_explicit_dma_dev_overrides_default():
@@ -208,6 +209,19 @@ def test_create_command_explicit_dma_dev_overrides_default():
     app.create_command(session_type="st20p", dma_dev="0000:aa:01.0")
 
     assert app.params["dma_dev"] == "0000:aa:01.0"
+    assert app.params["dma_auto"] is False
+
+
+def test_create_command_keeps_dma_auto_off_for_a_tx_only_process():
+    """A TX-only process must not probe the DMA devices: vfio-pci gives a
+    device to one process, and the RX of the same test needs it.
+    """
+    app = _MinimalApp(app_path="minimal")
+    app._default_dma_dev = "0000:80:01.0"
+
+    app.create_command(session_type="st20p", direction="tx")
+
+    assert app.params["dma_auto"] is False
 
 
 def test_create_command_leaves_dma_dev_none_without_a_default():
@@ -219,6 +233,7 @@ def test_create_command_leaves_dma_dev_none_without_a_default():
     app.create_command(session_type="st20p")
 
     assert app.params["dma_dev"] is None
+    assert app.params["dma_auto"] is False
 
 
 @pytest.mark.parametrize(

@@ -303,6 +303,13 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
           "MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION on every configured port. "
           "Note: sessions still require at least one functioning port to operate.",
           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_GENERAL_DEV_ARGS_DMA_AUTO,
+      g_param_spec_boolean("dma-auto", "Find the DMA devices",
+                           "Probe each Intel DMA device on vfio-pci on the NUMA node of "
+                           "the ports, without dma-dev. Sets MTL_FLAG_DMA_AUTO.",
+                           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
@@ -372,6 +379,9 @@ void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
     case PROP_GENERAL_DEV_ARGS_ALLOW_DOWN:
       general_args->allow_down_ports = g_value_get_boolean(value);
       break;
+    case PROP_GENERAL_DEV_ARGS_DMA_AUTO:
+      general_args->dma_auto = g_value_get_boolean(value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
@@ -436,6 +446,9 @@ void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
       break;
     case PROP_GENERAL_DEV_ARGS_ALLOW_DOWN:
       g_value_set_boolean(value, general_args->allow_down_ports);
+      break;
+    case PROP_GENERAL_DEV_ARGS_DMA_AUTO:
+      g_value_set_boolean(value, general_args->dma_auto);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -633,6 +646,8 @@ gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init
     mtl_init_params->flags |= MTL_FLAG_ALLOW_DOWN_PORTS;
     GST_INFO("allow-down-ports enabled: MTL_FLAG_ALLOW_DOWN_PORTS set for all ports");
   }
+
+  if (general_args->dma_auto) mtl_init_params->flags |= MTL_FLAG_DMA_AUTO;
 
   if (strlen(general_args->dma_dev)) {
     gchar** dma_tokens = g_strsplit(general_args->dma_dev, ",", MTL_DMA_DEV_MAX + 1);

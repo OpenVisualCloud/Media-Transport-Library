@@ -152,6 +152,7 @@ enum st_args_cmd {
   ST_ARG_TX_USER_CLOCK_OFFSET,
   ST_ARG_AUTO_STOP,
   ST_ARG_RX_MAX_FILE_SIZE,
+  ST_ARG_DMA_AUTO,
   ST_ARG_MAX,
 };
 
@@ -254,6 +255,7 @@ static struct option st_app_args_options[] = {
     {"nb_tx_desc", required_argument, 0, ST_ARG_NB_TX_DESC},
     {"nb_rx_desc", required_argument, 0, ST_ARG_NB_RX_DESC},
     {"dma_dev", required_argument, 0, ST_ARG_DMA_DEV},
+    {"dma_auto", no_argument, 0, ST_ARG_DMA_AUTO},
     {"tsc", no_argument, 0, ST_ARG_TSC_PACING},
     {"pcapng_dump", required_argument, 0, ST_ARG_PCAPNG_DUMP},
     {"runtime_session", no_argument, 0, ST_ARG_RUNTIME_SESSION},
@@ -772,6 +774,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_DMA_DEV:
         app_args_dma_dev(p, optarg);
+        break;
+      case ST_ARG_DMA_AUTO:
+        p->flags |= MTL_FLAG_DMA_AUTO;
         break;
       case ST_ARG_PCAPNG_DUMP:
         ctx->pcapng_max_pkts = atoi(optarg);

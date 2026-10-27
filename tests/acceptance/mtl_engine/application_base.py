@@ -150,8 +150,9 @@ class Application(ABC):
         self._user_provided_params = set()
         # host.dma_device (set by nic_port_list's Nicctl.bind_dma()), stashed
         # by app_factory -- see conftest.py for where that value comes from.
-        # Applied in create_command() only when the caller didn't pass
-        # dma_dev= itself.
+        # When it is set, create_command() turns on dma_auto, unless the
+        # caller passed dma_dev= itself: the library then probes the DMA
+        # devices on the NUMA node of the ports.
         self._default_dma_dev: str | None = None
         self.command: str | None = None
         self.config: dict | None = None
@@ -211,8 +212,13 @@ class Application(ABC):
         # silently leak into the next test and cause spurious failures.
         self.params = UNIVERSAL_PARAMS.copy()
         self.set_params(**kwargs)
-        if "dma_dev" not in self._user_provided_params and self._default_dma_dev:
-            self.params["dma_dev"] = self._default_dma_dev
+        # A TX-only process does not probe: it would take the devices of the RX.
+        if (
+            "dma_dev" not in self._user_provided_params
+            and self._default_dma_dev
+            and self.params.get("direction") != "tx"
+        ):
+            self.params["dma_auto"] = True
         self.command, self.config = self._create_command_and_config()
         return self.command, self.config
 
