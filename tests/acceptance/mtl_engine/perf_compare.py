@@ -390,8 +390,9 @@ def add_port(config: dict, role: str, vf: str, tx_ip: str, rx_ip: str) -> None:
 
 def nic_slots(nics: str, nic0: list[Slot], nic1: list[Slot]) -> list[Slot]:
     """The slots of a host from cpu_layout()'s of each NIC, as *nics* uses them: for
-    span, slot p has port p of each NIC; for pairs and pooled, NIC 0's slots 0 and 1
-    are followed by NIC 1's, slots 2 and 3."""
+    span, slot p has port p of each NIC; for split, slot 0 port 0 of NIC 0 and slot 1
+    that of NIC 1, a socket each; for pairs and pooled, NIC 0's slots 0 and 1 are
+    followed by NIC 1's, slots 2 and 3."""
     if nics == "span":
         return [
             replace(
@@ -403,6 +404,8 @@ def nic_slots(nics: str, nic0: list[Slot], nic1: list[Slot]) -> list[Slot]:
             )
             for p, (a, b) in enumerate(zip(nic0, nic1))
         ]
+    if nics == "split":
+        return [nic0[0], replace(nic1[0], idx=1, ports=[2])]
     return [
         replace(s, idx=2 * nic + s.idx, ports=[2 * nic + s.idx], nic=nic)
         for nic, layout in enumerate((nic0, nic1))
@@ -520,8 +523,9 @@ def rdt_teardown(host) -> None:
     )
 
 
-def rdt_setup(host, count: int = 2) -> list[str]:
-    """Give each of *count* slots an equal, exclusive share of the L3 ways.
+def rdt_setup(host, count: int = 2, partition: bool = True) -> list[str]:
+    """Give each of *count* slots an equal, exclusive share of the L3 ways, or all of
+    them without *partition*, for slots that share no L3: their groups only monitor.
 
     Returns a group path per slot, or [] when the host has no L3 allocation or
     another user owns resctrl. Slot i has the ways of slot i % 2 in every L3,
@@ -547,6 +551,16 @@ def rdt_setup(host, count: int = 2) -> list[str]:
         logger.warning(f"{host.name}: resctrl groups {sorted(others)} exist; no CAT")
         return []
     full, min_bits, shared = int(out[0], 16), int(out[1]), int(out[2], 16)
+    domains = [d.split("=")[0] for d in out[3].split(":", 1)[1].split(";")]
+    paths = [f"{RESCTRL}/{RDT_PREFIX}{i}" for i in range(count)]
+    if not partition:
+        line = "L3:" + ";".join(f"{d}={full:x}" for d in domains)
+        sh(
+            host,
+            " && ".join(f"mkdir {p} && echo '{line}' > {p}/schemata" for p in paths),
+        )
+        logger.info(f"{host.name}: no CAT, the slots share no L3; RDT monitors them")
+        return paths
     ways = bin(full).count("1")
     share = ways // 3
     # A CBM must be contiguous, so the slots take one end of it and the rest of the
@@ -559,10 +573,8 @@ def rdt_setup(host, count: int = 2) -> list[str]:
         return []
     slot0 = ((1 << share) - 1) << ends[0]
     masks = [full & ~(slot0 | slot0 << share), slot0, slot0 << share]
-    domains = [d.split("=")[0] for d in out[3].split(":", 1)[1].split(";")]
     lines = ["L3:" + ";".join(f"{d}={m:x}" for d in domains) for m in masks]
     slot_lines = [lines[1 + i % 2] for i in range(count)]
-    paths = [f"{RESCTRL}/{RDT_PREFIX}{i}" for i in range(count)]
     sh(
         host,
         f"grep '^ *L3:' {RESCTRL}/schemata > {RDT_SAVE} && "
@@ -1582,7 +1594,7 @@ def _pool(metrics: dict, nic: int) -> dict:
 
 def _results(labels, args, slots, rounds, styled, nics, single_core) -> list[str]:
     """The builds, the rounds, the summary and the tables of each role; the tables
-    folded unless *styled*. *nics* is how the builds use the NICs: single, span,
+    folded unless *styled*. *nics* is how the builds use the NICs: single, span, split,
     pairs or pooled; *single_core* the roles whose instances had one scheduler."""
     valid = [r["metrics"] for r in rounds if not r["problems"]]
     if nics == "pooled":  # each NIC's pair of each round is a sample
@@ -1664,7 +1676,7 @@ def report_html(
     a build uses DMA; nic and pfs when the builds use both NICs), *rounds* the rounds
     as the case keeps them, with the launches of run_round(), *platforms* the
     (label, platform_config.json) of the SUT and the companion, *nics* how the
-    builds use the NICs: single, span, pairs or pooled, and *single_core* the roles
+    builds use the NICs: single, span, split, pairs or pooled, and *single_core* the roles
     whose instances had one scheduler.
     """
     title = f"MTL perf-compare: {labels['B']} against {labels['A']}"

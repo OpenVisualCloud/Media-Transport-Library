@@ -1113,7 +1113,12 @@ def pytest_addoption(parser):
             "none, RX, TX or both: the roles on one scheduler",
         ),
         ("dma", str, "none", "none, A, B or both: the builds whose RX uses a DSA"),
-        ("nics", str, "single", "single, span, pairs or pooled: how they use the NICs"),
+        (
+            "nics",
+            str,
+            "single",
+            "single, span, split, pairs or pooled: how they use the NICs",
+        ),
     ):
         parser.addoption(
             f"--perf_compare_{name}", type=kind, default=default, help=text

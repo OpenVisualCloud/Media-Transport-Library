@@ -241,6 +241,11 @@ def test_the_nics_modes_map_their_slots_to_ports_and_nodes():
         (0, [0, 2], [0, 2], [4, 68], False, None),  # isolated only if both nodes are
         (1, [1, 3], [0, 2], [5, 69], False, None),
     ]
+    split = _nics("split")  # a socket each, the rows of one table
+    assert [(s.idx, s.ports, s.nodes, s.cpus, s.isolated, s.nic) for s in split] == [
+        (0, [0], [0], [4], True, None),
+        (1, [2], [2], [68], False, None),
+    ]
     pairs = _nics("pairs")
     assert [(s.idx, s.ports, s.nodes, s.isolated, s.nic) for s in pairs] == [
         (0, [0], [0], True, 0),
@@ -326,6 +331,18 @@ def test_add_port_gives_the_second_port_as_many_sessions():
             "st20p": [{"replicas": 3}],
         }
         assert config[f"{role}_sessions"][0][peer] == ["peer"]  # a copy, not the same
+
+
+def test_rdt_setup_only_monitors_slots_that_share_no_l3(monkeypatch):
+    probe = "fff\n1\nc00\n    L3:0=fff;1=fff\ninfo\nmon_groups\n"
+    scripts = _sh(monkeypatch, lambda script: probe if "cbm_mask" in script else "")
+    paths = pc.rdt_setup(HOST, 2, partition=False)
+    assert paths == [f"{pc.RESCTRL}/{pc.RDT_PREFIX}{n}" for n in (0, 1)]
+    for path in paths:
+        assert f"mkdir {path} && echo 'L3:0=fff;1=fff' > {path}/schemata" in scripts[-1]
+    assert (
+        f"> {pc.RESCTRL}/schemata" not in scripts[-1] and pc.RDT_SAVE not in scripts[-1]
+    )
 
 
 def test_rdt_setup_gives_the_pair_of_each_nic_the_ways_of_the_first(monkeypatch):
