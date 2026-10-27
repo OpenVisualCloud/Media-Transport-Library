@@ -71,6 +71,8 @@ def _options(request) -> dict:
             "--dma_dev would give one DSA to both slots and hosts; --perf_compare_dma "
             "gives each RX instance its own"
         )
+    if any(re.fullmatch(r"--?lc(o(r(es?)?)?)?", t) for t in options):
+        pytest.fail("--lcores would replace the CPUs cpu_layout() gives each slot")
     if opts["dma"] is None:
         pytest.fail(f"--perf_compare_dma is one of {', '.join(DMA)}")
     if opts["nics"] not in NICS:
@@ -124,6 +126,7 @@ def _app_cmd(opts, media_config, media_path, fps, test_time):
             packing="GPM",
             replicas=opts["sessions"],
             nic_port=side.vfs[first],
+            lcores=pc.format_cpus(side.slots[slot].cpus[1:]),  # see pc.Slot
             dedicated_sys_lcore=True,
             disable_migrate=True,
             test_time=test_time,
