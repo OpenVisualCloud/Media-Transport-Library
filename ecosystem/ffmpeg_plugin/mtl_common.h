@@ -98,6 +98,14 @@
        .flags = DEC},                                                                      \
       {"dma_dev",          "mtl dma dev", OFFSET(devArgs.dma_dev),                         \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = DEC},                                   \
+      {"dma_auto",                                                                         \
+       "probe the DMA devices on the NUMA node of the ports",                              \
+       OFFSET(devArgs.dma_auto),                                                           \
+       AV_OPT_TYPE_BOOL,                                                                   \
+       {.i64 = 0},                                                                         \
+       0,                                                                                  \
+       1,                                                                                  \
+       DEC},                                                                               \
       {"r_rx_queues",                                                                      \
        "mtl r_port device amount of rx queues",                                            \
        OFFSET(devArgs.rx_queues_cnt[MTL_PORT_R]),                                          \
@@ -312,6 +320,14 @@
        ENC},                                                                               \
       {"dma_dev",          "mtl dma dev", OFFSET(devArgs.dma_dev),                         \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
+      {"dma_auto",                                                                         \
+       "probe the DMA devices on the NUMA node of the ports",                              \
+       OFFSET(devArgs.dma_auto),                                                           \
+       AV_OPT_TYPE_BOOL,                                                                   \
+       {.i64 = 0},                                                                         \
+       0,                                                                                  \
+       1,                                                                                  \
+       ENC},                                                                               \
       {"r_rx_queues",                                                                      \
        "mtl r_port device amount of rx queues",                                            \
        OFFSET(devArgs.rx_queues_cnt[MTL_PORT_R]),                                          \
@@ -391,6 +407,7 @@ typedef struct StDevArgs {
   int tx_queues_cnt[MTL_PORT_MAX];
   int rx_queues_cnt[MTL_PORT_MAX];
   char* dma_dev;
+  int dma_auto;
   int ptp_enable;
   char* pacing_way;
   int ptp_pi;

@@ -496,6 +496,11 @@ enum mtl_init_flag {
    * correctly; a session whose every port is down will still fail to create.
    */
   MTL_FLAG_ALLOW_DOWN_PORTS = (MTL_BIT64(48)),
+  /**
+   * Find the DMA devices without dma_dev_port. MTL probes each Intel CBDMA or DSA
+   * device on vfio-pci on the NUMA node of a port. Linux only.
+   */
+  MTL_FLAG_DMA_AUTO = (MTL_BIT64(49)),
 
   /** Debug option to enable dropping some percentage of packets for
    *  testing redundant video streams only works for video, needs the
