@@ -260,3 +260,14 @@ int ut20p_tx_transport_report_late(ut20p_tx_ctx* ctx, uint64_t epoch_skipped) {
 st20p_tx_handle ut20p_tx_handle(ut20p_tx_ctx* ctx) {
   return &ctx->pipeline;
 }
+
+struct st20p_tx_ops* ut20p_tx_ops(ut20p_tx_ctx* ctx) {
+  return &ctx->pipeline.ops;
+}
+
+int ut20p_tx_capture_transport_ops(ut20p_tx_ctx* ctx, struct st20_tx_ops* ops) {
+  memset(&ut20p_tx_transport_ops, 0, sizeof(ut20p_tx_transport_ops));
+  int ret = tx_st20p_create_transport(&ctx->impl, &ctx->pipeline, &ctx->pipeline.ops);
+  *ops = ut20p_tx_transport_ops;
+  return ret;
+}

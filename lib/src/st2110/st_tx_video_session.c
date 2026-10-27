@@ -7,6 +7,7 @@
 #include <math.h>
 
 #include "../datapath/mt_queue.h"
+#include "../ipmx/ipmx.h"
 #include "../mt_handle_guard.h"
 #include "../mt_log.h"
 #include "../mt_rtcp.h"
@@ -4130,6 +4131,11 @@ static int tv_update_dst(struct mtl_main_impl* impl, struct st_tx_video_session_
   int idx = s->idx, num_port = s->ops.num_port;
   struct st20_tx_ops* ops = &s->ops;
 
+  if (ops->flags & ST20_TX_FLAG_IPMX) {
+    ret = ipmx_udp_ports_check(s->ops_name, dst->udp_port, num_port);
+    if (ret < 0) return ret;
+  }
+
   /* update ip and port */
   for (int i = 0; i < num_port; i++) {
     memcpy(ops->dip_addr[i], dst->dip_addr[i], MTL_IP_ADDR_LEN);
@@ -4425,6 +4431,8 @@ static int tv_ops_check(struct st20_tx_ops* ops) {
         ops->flags);
     return -EINVAL;
   }
+
+  if (ops->flags & ST20_TX_FLAG_IPMX) return ipmx_tx_ops_check(ops);
 
   return 0;
 }

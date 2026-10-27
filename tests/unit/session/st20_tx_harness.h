@@ -191,7 +191,8 @@ void ut_txv_set_random_src_port(ut_txv_ctx* ctx, bool enable);
 /* Drives tv_update_dst() on a one-port session with the given ops.udp_src_port and
  * the source port st20_tx_create() chose (created_src_port). A user-supplied
  * destination MAC keeps ARP out of it. Outputs the UDP ports now in the session's
- * packet header template, host order. Returns 0 on success. */
+ * packet header template, host order. Returns 0 on success, else tv_update_dst()'s
+ * negative errno. */
 int ut_txv_update_dst(ut_txv_ctx* ctx, uint16_t udp_src_port, uint16_t created_src_port,
                       uint16_t new_udp_port, uint16_t* hdr_src_port,
                       uint16_t* hdr_dst_port);
@@ -473,6 +474,12 @@ void ut_txv_pipe_geometry(const ut_txv_ctx* ctx, uint32_t* pkt_len, uint32_t* li
                           uint32_t* frame_size, int* total_pkts);
 uint64_t ut_txv_pipe_frames_asked(const ut_txv_ctx* ctx);
 int ut_txv_pipe_total_pkts(const ut_txv_ctx* ctx);
+/* tv_ops_check(): the st20_tx_create() ops validation, 0 or negative errno */
+int ut_txv_ops_check(struct st20_tx_ops* ops);
+/* OR flags into the session's ops.flags */
+void ut_txv_add_flags(ut_txv_ctx* ctx, uint32_t flags);
+/* the UDP destination port in the session's packet header template, host order */
+uint16_t ut_txv_hdr_dst_port(const ut_txv_ctx* ctx, enum mtl_session_port port);
 
 #ifdef __cplusplus
 }

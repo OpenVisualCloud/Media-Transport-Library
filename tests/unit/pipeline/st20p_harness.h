@@ -135,6 +135,16 @@ st20p_rx_handle ut20p_handle(ut20p_ctx* ctx);
 /** Force ctx->lc_destroying, as a *_free() in progress sets it. */
 void ut20p_force_destroying(ut20p_ctx* ctx);
 
+/** The pipeline ops create_transport reads. */
+struct st20p_rx_ops* ut20p_ops(ut20p_ctx* ctx);
+
+/**
+ * Run create_transport against a stub transport create and copy out the
+ * st20_rx_ops it passed down. Returns create_transport's return, which is
+ * -EIO since the stub creates no session.
+ */
+int ut20p_capture_transport_ops(ut20p_ctx* ctx, struct st20_rx_ops* ops);
+
 #ifdef __cplusplus
 }
 #endif

@@ -523,6 +523,8 @@ enum st20p_tx_flag {
    * immediately after notify_frame_done).
    */
   ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE = (MTL_BIT32(13)),
+  /** Enable IPMX (VSF TR-10) mode on the transport session, see ST20_TX_FLAG_IPMX */
+  ST20P_TX_FLAG_IPMX = (MTL_BIT32(14)),
   /** Enable the st20p_tx_get_frame block behavior to wait until a frame becomes
      available or (default: 1s, use st20p_tx_set_block_timeout to customize) */
   ST20P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
@@ -654,6 +656,8 @@ enum st20p_rx_flag {
    * Use gpu_direct vram for framebuffers
    */
   ST20P_RX_FLAG_USE_GPU_DIRECT_FRAMEBUFFERS = (MTL_BIT32(24)),
+  /** Enable IPMX (VSF TR-10) mode on the transport session, see ST20_RX_FLAG_IPMX */
+  ST20P_RX_FLAG_IPMX = (MTL_BIT32(25)),
 };
 
 /** Bit define for flag_resp of struct st22_decoder_create_req. */

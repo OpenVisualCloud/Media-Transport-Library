@@ -149,6 +149,16 @@ int ut20p_tx_transport_report_late(ut20p_tx_ctx* ctx, uint64_t epoch_skipped);
 /** The pipeline handle, for calling the public st*p API directly. */
 st20p_tx_handle ut20p_tx_handle(ut20p_tx_ctx* ctx);
 
+/** The pipeline ops create_transport reads. */
+struct st20p_tx_ops* ut20p_tx_ops(ut20p_tx_ctx* ctx);
+
+/**
+ * Run create_transport against a stub transport create and copy out the
+ * st20_tx_ops it passed down. Returns create_transport's return, which is
+ * -EIO since the stub creates no session.
+ */
+int ut20p_tx_capture_transport_ops(ut20p_tx_ctx* ctx, struct st20_tx_ops* ops);
+
 #ifdef __cplusplus
 }
 #endif

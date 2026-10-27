@@ -1184,7 +1184,8 @@ int ut_txv_update_dst(ut_txv_ctx* ctx, uint16_t udp_src_port, uint16_t created_s
   s->ops.flags |= ST20_TX_FLAG_USER_P_MAC;
   s->ops.udp_src_port[MTL_SESSION_PORT_P] = udp_src_port;
   s->st20_src_port[MTL_SESSION_PORT_P] = created_src_port;
-  if (tv_update_dst(&ctx->impl, s, &dst) < 0) return -1;
+  int ret = tv_update_dst(&ctx->impl, s, &dst);
+  if (ret < 0) return ret;
   *hdr_src_port = ntohs(s->s_hdr[MTL_SESSION_PORT_P].udp.src_port);
   *hdr_dst_port = ntohs(s->s_hdr[MTL_SESSION_PORT_P].udp.dst_port);
   return 0;
@@ -2193,4 +2194,16 @@ void ut_txv_pipe_geometry(const ut_txv_ctx* ctx, uint32_t* pkt_len, uint32_t* li
   *line_bytes = s->st20_bytes_in_line;
   *frame_size = s->st20_frame_size;
   *total_pkts = s->st20_total_pkts;
+}
+
+int ut_txv_ops_check(struct st20_tx_ops* ops) {
+  return tv_ops_check(ops);
+}
+
+void ut_txv_add_flags(ut_txv_ctx* ctx, uint32_t flags) {
+  ctx->session.ops.flags |= flags;
+}
+
+uint16_t ut_txv_hdr_dst_port(const ut_txv_ctx* ctx, enum mtl_session_port port) {
+  return ntohs(ctx->session.s_hdr[port].udp.dst_port);
 }

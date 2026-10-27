@@ -1104,3 +1104,40 @@ uint64_t ut20_stat_frames_partial(const ut20_test_ctx* ctx, enum mtl_session_por
 uint64_t ut20_stat_pkts_unrecovered(const ut20_test_ctx* ctx) {
   return ctx->session.port_user_stats.common.stat_pkts_unrecovered;
 }
+
+int ut20_rx_ops_check(struct st20_rx_ops* ops) {
+  return rv_ops_check(ops);
+}
+
+void ut20_ctx_add_flags(ut20_test_ctx* ctx, uint32_t flags) {
+  ctx->session.ops.flags |= flags;
+}
+
+int ut20_update_src_rejected(ut20_test_ctx* ctx, uint16_t udp_port, bool* flow_kept) {
+  static char sentinel;
+  struct st_rx_video_session_impl* s = &ctx->session;
+  struct st_rx_source_info src;
+  memset(&src, 0, sizeof(src));
+  for (int i = 0; i < s->ops.num_port; i++) {
+    uint8_t ip[MTL_IP_ADDR_LEN] = {239, 0, 0, (uint8_t)(1 + i)};
+    memcpy(src.ip_addr[i], ip, sizeof(ip));
+    src.udp_port[i] = udp_port;
+    s->rxq[i] = (struct mt_rxq_entry*)&sentinel;
+    s->rtcp_rx[i] = (struct mt_rtcp_rx*)&sentinel;
+  }
+
+  int ret = rv_update_src(&ctx->mgr, s, &src);
+
+  *flow_kept = true;
+  for (int i = 0; i < s->ops.num_port; i++) {
+    if (s->rxq[i] != (struct mt_rxq_entry*)&sentinel) *flow_kept = false;
+    if (s->rtcp_rx[i] != (struct mt_rtcp_rx*)&sentinel) *flow_kept = false;
+    s->rxq[i] = NULL;
+    s->rtcp_rx[i] = NULL;
+  }
+  return ret;
+}
+
+uint16_t ut20_dst_port(const ut20_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.st20_dst_port[port];
+}

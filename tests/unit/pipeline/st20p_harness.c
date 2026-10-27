@@ -32,6 +32,7 @@
  * HW-backed symbol here, which dereferenced our fake transport handle
  * and crashed.
  */
+#define st20_rx_create ut20p_capture_create
 #define st20_rx_put_framebuff ut20p_stub_put_framebuff
 #define st20_rx_get_session_stats ut20p_stub_get_session_stats
 #define st20_rx_reset_session_stats ut20p_stub_reset_session_stats
@@ -40,6 +41,7 @@
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #include "st2110/pipeline/st20_pipeline_rx.c"
 #pragma GCC diagnostic pop
+#undef st20_rx_create
 #undef st20_rx_put_framebuff
 #undef st20_rx_get_session_stats
 #undef st20_rx_reset_session_stats
@@ -312,4 +314,23 @@ st20p_rx_handle ut20p_handle(ut20p_ctx* ctx) {
 
 void ut20p_force_destroying(ut20p_ctx* ctx) {
   atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
+}
+
+static struct st20_rx_ops ut20p_transport_ops;
+
+st20_rx_handle ut20p_capture_create(mtl_handle mt, struct st20_rx_ops* ops) {
+  (void)mt;
+  ut20p_transport_ops = *ops;
+  return NULL;
+}
+
+struct st20p_rx_ops* ut20p_ops(ut20p_ctx* ctx) {
+  return &ctx->pipeline.ops;
+}
+
+int ut20p_capture_transport_ops(ut20p_ctx* ctx, struct st20_rx_ops* ops) {
+  memset(&ut20p_transport_ops, 0, sizeof(ut20p_transport_ops));
+  int ret = rx_st20p_create_transport(&ctx->impl, &ctx->pipeline, &ctx->pipeline.ops);
+  *ops = ut20p_transport_ops;
+  return ret;
 }

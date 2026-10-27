@@ -45,6 +45,10 @@ if get_option('enable_rx_video_nt_store') == true
   add_global_arguments('-DMTL_HAS_RX_VIDEO_NT_STORE', language : 'c')
 endif
 
+if get_option('enable_ipmx') == true
+  add_global_arguments('-DMTL_HAS_IPMX', language : 'c')
+endif
+
 # usdt check
 mtl_has_usdt = false
 

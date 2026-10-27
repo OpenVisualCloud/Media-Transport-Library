@@ -13,6 +13,7 @@
 #endif
 
 #include "../datapath/mt_queue.h"
+#include "../ipmx/ipmx.h"
 #include "../mt_handle_guard.h"
 #include "../mt_log.h"
 #include "../mt_pcap.h"
@@ -4073,6 +4074,11 @@ static int rv_update_src(struct st_rx_video_sessions_mgr* mgr,
   struct st20_rx_ops* ops = &s->ops;
   struct mtl_main_impl* impl = mgr->parent;
 
+  if (ops->flags & ST20_RX_FLAG_IPMX) {
+    ret = ipmx_udp_ports_check(s->ops_name, src->udp_port, num_port);
+    if (ret < 0) return ret;
+  }
+
   rv_uinit_rtcp(s);
   rv_uinit_mcast(impl, s);
   rv_uinit_hw(s);
@@ -4466,6 +4472,8 @@ static int rv_ops_check(struct st20_rx_ops* ops) {
     err("%s, invalid payload_type %d\n", __func__, ops->payload_type);
     return -EINVAL;
   }
+
+  if (ops->flags & ST20_RX_FLAG_IPMX) return ipmx_rx_ops_check(ops);
 
   return 0;
 }

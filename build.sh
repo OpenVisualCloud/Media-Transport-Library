@@ -90,7 +90,7 @@ UNIT_BUILD_DIR=${WORKSPACE}/build_unit
 
 # build and run the unit gtest suite (tests/unit), then exit
 if [ "$build_unit" == "true" ]; then
-	meson setup "${UNIT_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan" -Denable_unit_tests=true
+	meson setup "${UNIT_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan" -Denable_unit_tests=true -Denable_ipmx=true
 	ninja -C "${UNIT_BUILD_DIR}"
 
 	if [ "$enable_asan" == "true" ]; then

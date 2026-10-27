@@ -216,6 +216,16 @@ unit_sources = [
   'main.cpp',
 ]
 
+if get_option('enable_ipmx')
+  unit_sources += [
+    'ipmx/ipmx_stub_harness.c',
+    'ipmx/ipmx_disabled_test.cpp',
+    'ipmx/ipmx_tx_validate_test.cpp',
+    'ipmx/ipmx_rx_validate_test.cpp',
+    'ipmx/ipmx_pipeline_test.cpp',
+  ]
+endif
+
 executable('UnitTest', unit_sources,
   c_args : unit_c_args,
   cpp_args : unit_cpp_args,
