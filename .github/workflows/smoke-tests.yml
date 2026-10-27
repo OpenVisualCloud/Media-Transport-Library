@@ -103,9 +103,6 @@ jobs:
         with:
           nic: ${{ matrix.nic }}
 
-      - name: 'cleanup: Kill stale processes before test'
-        uses: ./.github/actions/cleanup
-
       - name: 'preparation: Ensure the acceptance virtualenv'
         run: task ci:pytest-setup -- ensure
       # The suite reaches the DUT over SSH even when the DUT is this runner, so a
@@ -168,7 +165,7 @@ jobs:
 
       - name: 'cleanup: Kill test processes'
         if: always()
-        uses: ./.github/actions/cleanup
+        run: task cleanup
 
   # The one check to require in branch protection. A skipped matrix job
   # publishes no per-leg check name, so a required "run-smoke-tests (e810)"

@@ -1,16 +1,8 @@
 #!/bin/bash
 # shellcheck disable=SC2317
 #
-# Runs the KahawaiTest suite on a host that is already prepared for it: the ICE
-# driver loaded by `sudo task ci:activate-ice`, and the ports created by
-# `sudo task ci:bind-test-ports`.
-#
-# This script changes no NIC state, only the NoCtx CPU isolation isolate.sh
-# restores. It finds the ports, runs the cases and
-# reports. A port that is missing is reported with the command that creates it
-# and never created here: bringing a driver or a set of VFs back underneath a
-# suite that is already running is how a bare-metal runner ends up wedged for
-# hours, and preparing the host is the CI/CD side's job, not the tests'.
+# Runs the KahawaiTest suite on the ports that host validation prepared.
+# This script discovers the ports, runs the cases, and reports the results.
 
 script_name=$(basename "${BASH_SOURCE[0]}")
 script_path=$(readlink -qe "${BASH_SOURCE[0]}")
@@ -22,9 +14,9 @@ declare -A test_cases
 
 # Detect whether to use .local_install (CI) or local build/system paths
 if [ -d "${mtl_folder}/.local_install" ]; then
-	# CI mode: use .local_install prefix tree
+	# CI mode: use .local_install prefix tree. Its binaries find their
+	# libraries relative to themselves; no LD_LIBRARY_PATH.
 	export PATH="${mtl_folder}/.local_install/dpdk/bin:${mtl_folder}/.local_install/mtl/bin:${PATH}"
-	export LD_LIBRARY_PATH="${mtl_folder}/.local_install/mtl/lib/x86_64-linux-gnu:${mtl_folder}/.local_install/dpdk/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 	: "${KAHAWAI_TEST_BINARY:="${mtl_folder}/.local_install/mtl/bin/KahawaiTest"}"
 else
@@ -32,10 +24,8 @@ else
 	: "${KAHAWAI_TEST_BINARY:="${mtl_folder}/build/tests/KahawaiTest"}"
 fi
 
-# sudo strips LD_LIBRARY_PATH even with -E; pass it explicitly via env. A tree
-# with no .local_install never set it, and a caller running under `set -u` is
-# entitled to source this script without tripping over that.
-SUDO_PREFIX="sudo -E env LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-} PATH=${PATH}"
+# sudo resets PATH even with -E; pass it explicitly via env.
+SUDO_PREFIX="sudo -E env PATH=${PATH}"
 
 : "${MAX_RETRIES:=2}"
 : "${RETRY_DELAY:=20}"
@@ -48,9 +38,7 @@ SUDO_PREFIX="sudo -E env LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-} PATH=${PATH}"
 : "${HOST_OP_TIMEOUT:=180}"                             # Hard bound for one nicctl listing
 : "${TEST_KILL_GRACE:=30}"                              # SIGKILL delay after SIGTERM for a test case
 : "${MIN_VFIO_PORTS:=4}"                                # Ports of one PF the suite needs on vfio-pci
-: "${DMA_CHANNELS:=2}"                                  # DMA channels a case is given when the host serves them
-: "${SYSFS_PCI_DEVICES:=/sys/bus/pci/devices}"          # Where the ports are looked up; the contract tests point this at a fixture
-: "${PROC_MEMINFO:=/proc/meminfo}"                      # Where the hugepages are counted; likewise a fixture under test
+: "${GTEST_CASES:=}"                                    # Regex of the case names to run (empty = every case)
 : "${HOST_FAULT_EXIT:=3}"                               # Exit code meaning "host needs recovery, not a test failure"
 : "${TEST_SIP_SEED:=$((RANDOM))}"                       # Seed for the test subnet, so two hosts rarely share one
 : "${TEST_P_SIP:="192.168.$((TEST_SIP_SEED % 256)).1"}" # Address of the primary port. Host octet stays in 1..254
@@ -170,19 +158,9 @@ nicctl_wedged() {
 
 not_prepared() {
 	echo "✗ $1"
-	echo "The host is not prepared for the suite. Prepare it with:"
-	echo "  sudo task ci:activate-ice       # E8xx cards, which need the Kahawai driver"
-	echo "  sudo task ci:bind-test-ports"
+	echo "Host validation did not prepare the host for the suite."
 	time_taken_by_script
 	exit 1
-}
-
-# The DMA channels a case can be given: bound to vfio-pci, and on one NUMA node
-# when a node is named.
-dma_channels() {
-	dpdk-devbind.py --status-dev dma |
-		awk -v want="${1:-}" '$1 !~ /^[0-9a-f]+:[0-9a-f]+:[0-9a-f]+\.[0-9a-f]+$/ {next}
-			/drv=vfio-pci/ && (want == "" || $0 ~ ("numa_node=" want)) {print $1}'
 }
 
 # Prints the vfio-pci ports of the first PF in a nicctl.sh listing that has
@@ -196,7 +174,7 @@ ports_of_one_pf() {
 	local listing=$1 port pf group=()
 	declare -A by_pf=()
 	while read -r port; do
-		pf=$(basename "$(readlink -f "${SYSFS_PCI_DEVICES}/${port}/physfn" 2>/dev/null)")
+		pf=$(basename "$(readlink -f "/sys/bus/pci/devices/${port}/physfn" 2>/dev/null)")
 		by_pf["${pf:-standalone}"]+="${port} "
 	done < <(awk '$3 == "vfio-pci" {print $2}' "${listing}")
 
@@ -220,9 +198,9 @@ noctx_ports() {
 	local listing=$1 pf_a port pf group=()
 	shift
 	declare -A by_pf=()
-	pf_a=$(basename "$(readlink -f "${SYSFS_PCI_DEVICES}/$1/physfn" 2>/dev/null)")
+	pf_a=$(basename "$(readlink -f "/sys/bus/pci/devices/$1/physfn" 2>/dev/null)")
 	while read -r port; do
-		pf=$(basename "$(readlink -f "${SYSFS_PCI_DEVICES}/${port}/physfn" 2>/dev/null)")
+		pf=$(basename "$(readlink -f "/sys/bus/pci/devices/${port}/physfn" 2>/dev/null)")
 		if [ "${pf}" != "${pf_a}" ] && [ "${pf%.*}" = "${pf_a%.*}" ]; then
 			by_pf["${pf}"]+="${port} "
 		fi
@@ -238,70 +216,86 @@ noctx_ports() {
 	printf '%s\n' "$@"
 }
 
-# What the suite runs on: four ports of one PF, and two DMA channels beside
-# them. Reading, only -- see the header.
+nicctl_vf() {
+	sudo timeout --foreground --signal=SIGTERM --kill-after="${TEST_KILL_GRACE}" \
+		"${HOST_OP_TIMEOUT}" "${mtl_folder}/script/nicctl.sh" "$@"
+}
+
+# Removes the VFs that create_vfs made, so the next job finds the host as it was.
+remove_vfs() {
+	local pf
+	for pf in "${created_vf_pfs[@]}"; do
+		echo "Removing the VFs of ${pf}"
+		nicctl_vf disable_vf "${pf}" || echo "✗ nicctl.sh disable_vf ${pf} failed"
+	done
+	created_vf_pfs=()
+}
+
+# Creates six trusted VFs on an ice PF with link up, and two on another port of
+# its card for NoCtx (see noctx_ports). A PF whose card has a second port up
+# comes first.
+created_vf_pfs=()
+create_vfs() {
+	local listing="${TMP_FOLDER}/up.listing" pfs=() pf="" sibling="" candidate other
+
+	nicctl_list "${listing}" up || true
+	nicctl_wedged && host_fault "nicctl.sh stopped responding while listing NIC ports"
+	mapfile -t pfs < <(awk '$3 == "ice" {print $2}' "${listing}")
+	pf=${pfs[0]:-}
+	for candidate in "${pfs[@]}"; do
+		for other in "${pfs[@]}"; do
+			if [ "${other}" != "${candidate}" ] && [ "${other%.*}" = "${candidate%.*}" ]; then
+				pf=${candidate} sibling=${other}
+				break 2
+			fi
+		done
+	done
+	[ -n "${pf}" ] || return 0
+
+	trap remove_vfs EXIT
+	echo "Creating 6 trusted VFs on ${pf}"
+	created_vf_pfs+=("${pf}")
+	nicctl_vf create_tvf "${pf}" 6 || echo "✗ nicctl.sh create_tvf ${pf} failed"
+	if [ -n "${sibling}" ]; then
+		echo "Creating 2 trusted VFs on ${sibling} for NoCtx"
+		created_vf_pfs+=("${sibling}")
+		nicctl_vf create_tvf "${sibling}" 2 || echo "✗ nicctl.sh create_tvf ${sibling} failed"
+	fi
+}
+
+# What the suite runs on: four ports of one PF.
 discover_ports() {
-	local listing="${TMP_FOLDER}/ports.listing" ports=() channels=() numa dma_list free_pages
+	local listing="${TMP_FOLDER}/ports.listing" ports=() free_pages
 
 	nicctl_list "${listing}" all || true
 	mapfile -t ports < <(ports_of_one_pf "${listing}")
+	if [ "${#ports[@]}" -lt "${MIN_VFIO_PORTS}" ]; then
+		nicctl_wedged && host_fault "nicctl.sh stopped responding while listing NIC ports"
+		create_vfs
+		nicctl_list "${listing}" all || true
+		mapfile -t ports < <(ports_of_one_pf "${listing}")
+	fi
 	if [ "${#ports[@]}" -lt "${MIN_VFIO_PORTS}" ]; then
 		nicctl_wedged && host_fault "nicctl.sh stopped responding while listing NIC ports"
 		cat "${listing}"
 		not_prepared "No PF has the ${MIN_VFIO_PORTS} vfio-pci ports the suite needs."
 	fi
 
-	# Hugepages are as much a prerequisite as a port: every case is a DPDK
-	# process, and one that finds none stops inside EAL on "Cannot get hugepage
-	# information" -- a message about DPDK, on a host that has simply been
-	# rebooted since it was prepared. Read and named here, reserved by the
-	# preparation step, same rule as the ports above.
-	free_pages=$(awk '/^HugePages_Free:/ {print $2}' "${PROC_MEMINFO}")
-	if [ "${free_pages:-0}" -eq 0 ]; then
-		not_prepared "No free 2 MB hugepages on this host, and every case's EAL needs them."
-	fi
-
-	# The DMA channels of the ports' own NUMA node, and only those. The library
-	# pairs a session with a channel of the port's socket and no other
-	# (mt_dma_request_dev, doc/dma.md 3.4), so a channel on another node
-	# registers, is counted by st_test_dma_available -- and is then never handed
-	# to a session. Passing one makes every DMA case run without the offload it
-	# is testing instead of skipping: on an E810 host whose card sits on NUMA 2
-	# with the channels on 0 and 1, that turned digest_ooo_slice_4320p into 143
-	# incomplete frames against a limit of 16.
-	numa=$(awk -v port="${ports[0]}" '$2 == port {print $4}' "${listing}")
-	mapfile -t channels < <(dma_channels "${numa}")
-
-	# A host with no channel of its own runs the suite without DMA offload rather
-	# than not at all. Every case that copies with DMA asks the library for a
-	# channel first (st_test_dma_available) and reports itself skipped when there
-	# is none, so refusing here would cost the leg every case that has nothing to
-	# do with DMA -- and serving a channel is the preparation step's job
-	# (`sudo task ci:bind-test-ports`), not this script's.
-	if [ "${#channels[@]}" -eq 0 ]; then
-		if [ "$(dma_channels | wc -l)" -gt 0 ]; then
-			echo "This host's DMA channels are not on NUMA node ${numa}, which is where the ports"
-			echo "are, so none of them can be used here."
-		else
-			echo "No DMA channel on vfio-pci: 'sudo task ci:bind-test-ports' serves them."
-		fi
-		echo "The suite runs without DMA offload, and its DMA cases will report themselves"
-		echo "skipped."
+	# Every case is a DPDK process, and one that finds no hugepages stops in EAL
+	# on "Cannot get hugepage information". The host reserves them; this only
+	# checks.
+	free_pages=$(cat /sys/kernel/mm/hugepages/hugepages-{2048,1048576}kB/free_hugepages 2>/dev/null |
+		awk '{sum += $1} END {print sum + 0}')
+	if [ "${free_pages}" -eq 0 ]; then
+		not_prepared "No free 2 MB or 1 GB hugepages on this host, and every case's EAL needs them."
 	fi
 
 	export TEST_PORT_1="${ports[0]}" TEST_PORT_2="${ports[1]}"
 	export TEST_PORT_3="${ports[2]}" TEST_PORT_4="${ports[3]}"
 	mapfile -t noctx_port < <(noctx_ports "${listing}" "${ports[@]:0:4}")
-	export TEST_DMA_PORT_P="${channels[0]:-}" TEST_DMA_PORT_R="${channels[1]:-}"
-	# What every case is given, built once: the option with the channels this
-	# host serves, and nothing at all when it serves none -- an empty --dma_dev
-	# is a device named "" for the library to look for and not find.
-	if [ "${#channels[@]}" -gt 0 ]; then
-		dma_list=${channels[*]}
-		export TEST_DMA_ARG="--dma_dev \"${dma_list// /,}\""
-	else
-		export TEST_DMA_ARG=""
-	fi
+	# The library probes the DMA devices on vfio-pci on the NUMA node of the
+	# ports itself. A host with none runs the DMA cases as skipped.
+	export TEST_DMA_ARG="--dma_auto"
 }
 
 # ── the cases ───────────────────────────────────────────────────────────────
@@ -552,7 +546,7 @@ print_configuration() {
 	echo "TEST_PORT_1..4: ${TEST_PORT_1} ${TEST_PORT_2} ${TEST_PORT_3} ${TEST_PORT_4}"
 	echo "NoCtx ports: ${noctx_port[*]}"
 	echo "NoCtx CPU isolation: ${noctx_isolation:-<not probed, no noctx case>}"
-	echo "DMA channels: ${TEST_DMA_ARG:-<none, the DMA cases skip themselves>}"
+	echo "DMA: ${TEST_DMA_ARG}"
 	echo "=========================================="
 	echo ""
 }
@@ -576,6 +570,7 @@ generate_test_cases
 print_configuration
 
 for test_name in "${!test_cases[@]}"; do
+	[[ -z ${GTEST_CASES} || $test_name =~ ${GTEST_CASES} ]] || continue
 	echo "$test_name" "${test_cases[$test_name]}"
 	if ! run_test_with_retry "$test_name"; then
 		retval=$?
