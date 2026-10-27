@@ -358,7 +358,8 @@ def cpu_layout(host, pf: str, cores: int) -> list[Slot]:
     picked = picked[: 2 * cores]
     if len(picked) < 2 * cores:
         raise RuntimeError(
-            f"{host.name}: NUMA node {node} has fewer than {2 * cores} free cores"
+            f"{host.name}: NUMA node {node} has {len(iso)} isolated free cores and "
+            f"{len(pool) - len(iso)} others, not {2 * cores} of either"
         )
     return [
         Slot(

@@ -67,6 +67,11 @@ on:
         required: false
         type: string
         default: '36'
+      cores:
+        description: 'CPUs of each slot, span: on each NIC node. The first for the app and EAL control threads, the rest its --lcores: one for the system tasklets, the schedulers on the others. 3 to 8 on the perf pair. Sessions a scheduler takes: --sch_session_quota in args'
+        required: false
+        type: string
+        default: '8'
       test_time:
         description: 'Seconds of the untraced window of each round, at least 30; three more windows add half of it each'
         required: false
@@ -117,6 +122,7 @@ jobs:
           SESSIONS: ${{ inputs.sessions }}
           TEST_TIME: ${{ inputs.test_time }}
           ROUNDS: ${{ inputs.rounds }}
+          CORES: ${{ inputs.cores }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: task ci:workflow -- perf-compare-refs
@@ -203,6 +209,7 @@ jobs:
           SESSIONS: ${{ inputs.sessions }}
           VIDEO: ${{ inputs.video }}
           ROUNDS: ${{ inputs.rounds }}
+          CORES: ${{ inputs.cores }}
         run: task ci:pytest-run -- perf-compare
       - name: Summarize the comparison
         if: always()

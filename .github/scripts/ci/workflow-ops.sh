@@ -55,7 +55,7 @@ perf-compare-refs)
 	}
 	# The numbers are string inputs (perf-compare.yml says why), so the form
 	# takes any text: stop a typo here, before the build.
-	for v in SESSIONS TEST_TIME ROUNDS; do
+	for v in SESSIONS TEST_TIME ROUNDS CORES; do
 		[[ -z ${!v:-} || ${!v} =~ ^[1-9][0-9]*$ ]] || {
 			echo "::error::${v,,} must be a positive number: ${!v@Q}" >&2
 			exit 1
@@ -64,6 +64,12 @@ perf-compare-refs)
 	# Each window of the case needs two whole stats dumps, 10 s apart.
 	if ((${TEST_TIME:-30} < 30)); then
 		echo "::error::test_time must be at least 30: ${TEST_TIME}" >&2
+		exit 1
+	fi
+	# A slot's CPU for the application threads, one for the system tasklets, one
+	# for a scheduler.
+	if ((${CORES:-3} < 3)); then
+		echo "::error::cores must be at least 3: ${CORES}" >&2
 		exit 1
 	fi
 	if [[ ${GITHUB_EVENT_NAME:-} == schedule ]]; then
