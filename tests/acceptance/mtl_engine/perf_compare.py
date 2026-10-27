@@ -44,6 +44,8 @@ RDT_PREFIX = "mtl_perf_"
 RDT_SAVE = "/run/mtl-perf-compare.schemata"
 # The collectors run on an OS core, outside both slots (cpu_layout leaves cores 0 and 1).
 COLLECTOR_CPU = 1
+# MTL gives EAL "-l 0,<lcores>", so the other OS core is every instance's main lcore.
+MAIN_LCORE = 0
 
 # An explicit newline: BPFTRACE_STRLEN cuts a long message before its own.
 LOG_SCRIPT = 'usdt::sys:log_msg { printf("%llu L %s\\n", nsecs, str(arg1)); }'
@@ -313,9 +315,10 @@ def steady_timeout(sessions: int) -> int:
 class Slot:
     """The CPUs and the ports of one slot on one host.
 
-    EAL's main lcore is cpus[0]; the schedulers take others, and the
-    application and control threads the ones they leave. A slot on two NUMA
-    nodes has the CPUs of its first node first, as many as of the second.
+    The first CPU is its instance's application and EAL control threads', the
+    others its --lcores: the schedulers take some, and the application threads
+    also the ones they leave. A slot on two NUMA nodes has the CPUs of its first
+    node first, as many as of the second.
     """
 
     idx: int
@@ -324,6 +327,7 @@ class Slot:
     isolated: bool
     ports: list[int] = field(default_factory=list)  # its VFs, indices into Side.vfs
     nic: int | None = None  # its NIC when each NIC has a pair of slots
+    main_node: int = 0  # the NUMA node of MAIN_LCORE
 
 
 def cpu_layout(host, pf: str, cores: int) -> list[Slot]:
@@ -336,12 +340,14 @@ def cpu_layout(host, pf: str, cores: int) -> list[Slot]:
     """
     lines = sh(
         host,
-        f"n=$(cat /sys/bus/pci/devices/{pf}/numa_node); [ $n -ge 0 ] || n=0; echo $n; "
+        f"n=$(cat /sys/bus/pci/devices/{pf}/numa_node); [ $n -ge 0 ] || n=0; "
+        f"echo $n /sys/devices/system/cpu/cpu{MAIN_LCORE}/node*; "
         "cat /sys/devices/system/node/node$n/cpulist /sys/devices/system/cpu/isolated "
         "/sys/devices/system/cpu/cpu[0-9]*/topology/thread_siblings_list",
     ).split("\n")
+    nic_node, main_node = lines[0].split()
     node, node_cpus, isolated = (
-        int(lines[0]),
+        int(nic_node),
         parse_cpus(lines[1]),
         set(parse_cpus(lines[2])),
     )
@@ -356,7 +362,12 @@ def cpu_layout(host, pf: str, cores: int) -> list[Slot]:
         )
     return [
         Slot(
-            i, [node], picked[i * cores : (i + 1) * cores], set(picked) <= isolated, [i]
+            i,
+            [node],
+            picked[i * cores : (i + 1) * cores],
+            set(picked) <= isolated,
+            [i],
+            main_node=int(main_node.rsplit("node", 1)[1]),
         )
         for i in (0, 1)
     ]
@@ -382,12 +393,12 @@ def nic_slots(nics: str, nic0: list[Slot], nic1: list[Slot]) -> list[Slot]:
     are followed by NIC 1's, slots 2 and 3."""
     if nics == "span":
         return [
-            Slot(
-                p,
-                a.nodes + b.nodes,
-                a.cpus + b.cpus,
-                a.isolated and b.isolated,
-                [p, p + 2],
+            replace(
+                a,
+                nodes=a.nodes + b.nodes,
+                cpus=a.cpus + b.cpus,
+                isolated=a.isolated and b.isolated,
+                ports=[p, p + 2],
             )
             for p, (a, b) in enumerate(zip(nic0, nic1))
         ]
@@ -669,18 +680,16 @@ class Instance:
     def start(self, mtl_path: str, app_cmd: str) -> None:
         """Start *app_cmd* in its slot's cpuset, with its own tree at <mtl>/.local_install.
 
-        The process starts on cpus[0], and its mask is then widened to the slot:
-        EAL takes its lcores from that mask, so the schedulers get the other
-        CPUs and every unpinned thread starts where the main thread is.
+        MTL gives EAL MAIN_LCORE as the main lcore, so the cpuset has it and its
+        node's memory too: DPDK allocates on the main lcore's node for a thread that
+        is no lcore and asks for no node, and its dmadev data only there.
         """
         libs = ":".join(f"{mtl_path}/{p}" for p in LD_LIB_PATH_REL.split(":"))
-        cpus = format_cpus(self.slot.cpus)
         join_rdt = f"echo $$ > {self.rdt}/tasks && " if self.rdt else ""
         self.script = (
             f"mount --bind {self.tree} {mtl_path}/.local_install && "
             "mkdir -p /var/run/imtl && mount -t tmpfs tmpfs /var/run/imtl && "
-            f"{join_rdt}cd {mtl_path} && exec taskset -c {self.slot.cpus[0]} "
-            f"taskset -c {cpus} env LD_LIBRARY_PATH={libs} {app_cmd}"
+            f"{join_rdt}cd {mtl_path} && exec env LD_LIBRARY_PATH={libs} {app_cmd}"
         )
         write_file(self.host, f"{self.log}.sh", self.script + "\n")
         self.pid = _start_unit(
@@ -688,8 +697,9 @@ class Instance:
             self.name,
             f"unshare --mount --ipc --propagation private sh {self.log}.sh",
             [
-                f"AllowedCPUs={cpus}",
-                f"AllowedMemoryNodes={format_cpus(self.slot.nodes)}",
+                f"AllowedCPUs={format_cpus({MAIN_LCORE, *self.slot.cpus})}",
+                "AllowedMemoryNodes="
+                f"{format_cpus({self.slot.main_node, *self.slot.nodes})}",
                 "Nice=-20",
             ],
             self.log,
@@ -762,10 +772,11 @@ class Instance:
         return sorted(lines, key=lambda line: int(line.split(" ", 1)[0]))
 
     def pin_app_threads(self) -> str:
-        """Move the threads that may run anywhere in the slot off the scheduler CPUs.
+        """Move the threads that may run on more than one CPU off the scheduler CPUs.
 
-        CFS would otherwise move an application thread onto a CPU that a
-        scheduler polls. Each gets one of the free CPUs in turn: the kernel
+        EAL pins each thread it starts to one CPU; CFS would move one that the
+        main thread started, as the application's, onto a CPU that a scheduler
+        polls. Each gets one of the free CPUs in turn: the kernel
         balances no task across isolated CPUs, so threads that shared a mask
         would all stay on the CPU they started on. Returns why it could not, or "".
         """
@@ -785,14 +796,11 @@ class Instance:
         free = [c for c in self.slot.cpus if c not in busy]
         if not free:
             return "the schedulers use every CPU of the slot"
-        # mtl_init() numa_bind()s the threads it starts to its first port's node
-        bound = self.slot.cpus[: len(self.slot.cpus) // len(self.slot.nodes)]
         sh(
             self.host,
             f"cpus=({' '.join(map(str, free))}); n=0; "
             f"for t in /proc/{self.pid}/task/*; do "
-            f'[ "$({CPUS_ALLOWED} $t/status)" = '
-            f"{format_cpus(bound)} ] || continue; "
+            f"case $({CPUS_ALLOWED} $t/status) in *[,-]*) ;; *) continue ;; esac; "
             "taskset -pc ${cpus[n++ % ${#cpus[@]}]} ${t##*/} >/dev/null; "
             "done",
             check=False,

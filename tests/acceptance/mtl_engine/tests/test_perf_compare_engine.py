@@ -47,7 +47,8 @@ def test_cpu_lists_round_trip():
 def _layout(monkeypatch, node_cpus, isolated, cores):
     """cpu_layout on sysfs reads where core c has the SMT sibling c + cores."""
     siblings = [f"{c},{c + cores}" for c in range(cores)] * 2
-    _sh(monkeypatch, lambda script: "\n".join(["0", node_cpus, isolated, *siblings]))
+    nodes = "0 /sys/devices/system/cpu/cpu0/node0"  # the VF's and MAIN_LCORE's
+    _sh(monkeypatch, lambda script: "\n".join([nodes, node_cpus, isolated, *siblings]))
     return pc.cpu_layout(HOST, "0000:15:00.0", 4)
 
 
@@ -67,6 +68,20 @@ def test_cpu_layout_keeps_both_slots_off_isolated_cores_when_too_few(monkeypatch
 def test_cpu_layout_refuses_a_node_without_enough_cores(monkeypatch):
     with pytest.raises(RuntimeError, match="fewer than 8 free cores"):
         _layout(monkeypatch, "0-11", "", 6)
+
+
+def test_cpu_layout_takes_the_isolated_cores_of_nic_1_and_the_main_lcore_node(
+    monkeypatch,
+):
+    siblings = [f"{c},{c + 128}" for c in range(64, 96)]
+    sysfs = ["2 /sys/devices/system/cpu/cpu0/node1", "64-95", "4-20,68-84", *siblings]
+    scripts = _sh(monkeypatch, lambda script: "\n".join(sysfs))
+    slots = pc.cpu_layout(HOST, "0000:c9:00.0", 8)
+    assert [(s.nodes, s.cpus, s.isolated, s.main_node) for s in slots] == [
+        ([2], list(range(68, 76)), True, 1),
+        ([2], list(range(76, 84)), True, 1),
+    ]
+    assert "echo $n /sys/devices/system/cpu/cpu0/node*; " in scripts[0]
 
 
 @pytest.mark.skipif(
@@ -96,16 +111,18 @@ def test_proc_reads_a_process_whose_threads_come_and_go(monkeypatch):
 def test_pin_app_threads_gives_each_free_cpu_its_share_of_the_threads(monkeypatch):
     monkeypatch.setattr(pc, "sh", _bash)
     cpus = sorted(os.sched_getaffinity(0))[:4]
-    # a scheduler thread on cpus[1] and seven that may run anywhere in the slot
+    # a scheduler thread on cpus[1], a control thread EAL pinned to cpus[3], and six
+    # that may run on more than one CPU: one of them as numa_bind() narrows a mask
     app = (
         "import os, threading, time\n"
         f"os.sched_setaffinity(0, {set(cpus)})\n"
-        "def sch():\n"
-        f"    os.sched_setaffinity(0, {{{cpus[1]}}})\n"
+        "def pinned(mask):\n"
+        "    os.sched_setaffinity(0, mask)\n"
         "    print(threading.get_native_id(), flush=True)\n"
         "    time.sleep(60)\n"
-        "threading.Thread(target=sch, daemon=True).start()\n"
-        "for _ in range(6):\n"
+        f"for mask in ({{{cpus[1]}}}, {{{cpus[3]}}}, {{{cpus[0]}, {cpus[2]}}}):\n"
+        "    threading.Thread(target=pinned, args=(mask,), daemon=True).start()\n"
+        "for _ in range(4):\n"
         "    threading.Thread(target=time.sleep, args=(60,), daemon=True).start()\n"
         "time.sleep(60)\n"
     )
@@ -113,7 +130,7 @@ def test_pin_app_threads_gives_each_free_cpu_its_share_of_the_threads(monkeypatc
         [sys.executable, "-c", app], stdout=subprocess.PIPE, text=True
     )
     try:
-        sch = int(proc.stdout.readline())
+        sch, ctrl, _ = (int(proc.stdout.readline()) for _ in range(3))
         deadline = time.monotonic() + 10
         while len(os.listdir(f"/proc/{proc.pid}/task")) < 8:
             assert time.monotonic() < deadline, "the threads did not start"
@@ -126,10 +143,10 @@ def test_pin_app_threads_gives_each_free_cpu_its_share_of_the_threads(monkeypatc
         assert inst.pin_app_threads() == ""
         tasks = os.listdir(f"/proc/{proc.pid}/task")
         allowed = {int(tid): os.sched_getaffinity(int(tid)) for tid in tasks}
-        assert allowed.pop(sch) == {cpus[1]}
+        assert allowed.pop(sch) == {cpus[1]} and allowed[ctrl] == {cpus[3]}
         assert all(len(mask) == 1 for mask in allowed.values()), allowed
         shares = sorted(Counter(min(mask) for mask in allowed.values()).items())
-        assert shares == [(cpus[0], 3), (cpus[2], 2), (cpus[3], 2)]
+        assert shares == [(cpus[0], 2), (cpus[2], 2), (cpus[3], 3)]
         assert inst.pin_app_threads() == ""  # done: no thread left in the slot's mask
         assert {int(t): os.sched_getaffinity(int(t)) for t in allowed} == allowed
     finally:
@@ -157,7 +174,9 @@ def test_pin_app_threads_waits_for_the_schedulers_and_skips_one_that_left(
     assert not any("taskset" in script for script in scripts)
 
 
-def test_pin_app_threads_spreads_the_threads_numa_bind_left_on_one_node(monkeypatch):
+def test_pin_app_threads_spreads_the_threads_over_the_free_cpus_of_both_nodes(
+    monkeypatch,
+):
     slot = pc.Slot(0, [0, 2], [4, 5, 68, 69], True, [0, 2])
     inst = pc.Instance(None, "tx0", "tx", "A", slot, "/t", "/l")
     inst.pid = 9
@@ -167,7 +186,6 @@ def test_pin_app_threads_spreads_the_threads_numa_bind_left_on_one_node(monkeypa
     )
     assert inst.pin_app_threads() == ""
     assert scripts[-1].startswith("cpus=(4 68 69); ")
-    assert '/status)" = 4-5 ] || continue; taskset' in scripts[-1]
 
 
 @pytest.mark.parametrize(
@@ -207,7 +225,7 @@ def test_rdt_setup_runs_without_cat_rather_than_take_resctrl(monkeypatch, probe)
 
 def _nics(nics):
     """The slots of *nics* from two cpu_layout()s: NIC 0's on node 0, isolated, NIC
-    1's on node 2, not, as on the perf pair until it isolates node 2 too."""
+    1's on node 2, not, as on a host that isolates node 0's cores alone."""
     return pc.nic_slots(
         nics,
         *(
@@ -1461,15 +1479,24 @@ def test_start_keeps_the_script_its_unit_runs(monkeypatch):
     inst.start("/mtl", "RxTxApp --x")
     assert written == {"/run/A_rx0.sh": inst.script + "\n"} and inst.pid == 7
     assert inst.script.startswith("mount --bind /t/a /mtl/.local_install && ")
-    join = (
-        f"&& echo $$ > {rdt}/tasks && cd /mtl && exec taskset -c 4 taskset -c 4-7 env "
-    )
+    join = f"&& echo $$ > {rdt}/tasks && cd /mtl && exec env LD_LIBRARY_PATH="
     assert join in inst.script and inst.script.endswith(" RxTxApp --x")
-    assert props == ["AllowedCPUs=4-7", "AllowedMemoryNodes=0", "Nice=-20"]
+    # MTL makes CPU 0 the main lcore of every instance
+    assert props == ["AllowedCPUs=0,4-7", "AllowedMemoryNodes=0", "Nice=-20"]
     props.clear()
     inst.slot = pc.Slot(0, [0, 2], [4, 5, 68, 69], True)  # span: both nodes
     inst.start("/mtl", "RxTxApp --x")
-    assert props == ["AllowedCPUs=4-5,68-69", "AllowedMemoryNodes=0,2", "Nice=-20"]
+    assert props == ["AllowedCPUs=0,4-5,68-69", "AllowedMemoryNodes=0,2", "Nice=-20"]
+    # a slot off the main lcore's node: DPDK puts the dmadev data on that node
+    for main_node, mems in ((0, "0,2"), (1, "1-2")):
+        props.clear()
+        inst.slot = pc.Slot(2, [2], [68, 69], True, [2], 1, main_node=main_node)
+        inst.start("/mtl", "RxTxApp --x")
+        assert props == [
+            "AllowedCPUs=0,68-69",
+            f"AllowedMemoryNodes={mems}",
+            "Nice=-20",
+        ]
 
 
 def test_run_round_counts_every_instance_over_its_untraced_window(fake):

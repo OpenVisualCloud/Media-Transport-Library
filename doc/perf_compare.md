@@ -20,9 +20,9 @@ An A/A run, of one build twice, measures the noise floor of the rig.
 | A pytest case or a standalone tool? | A case in `tests/acceptance/tests/dual/performance/` | Both builds run under the workflow commit's harness, with its topology, VFs, media ramdisk, RxTxApp config builder and log layout. |
 | Where are A and B built? | In the compare job, on the SUT, with the workflow commit's build scripts | One host, compiler and set of flags for both, so a difference is the code's. `build.yml` cannot build `v26.01`: its scripts install into `/usr/local`. |
 | How do two builds that expect the same path run side by side? | A private mount namespace binds each tree over `<mtl>/.local_install` (§3.2) | DPDK bakes `RTE_EAL_PMD_PATH` into `librte_eal` as an absolute path with no override, so a moved tree loads the wrong drivers or none; `v26.01` pins DPDK 25.11 and `main` 26.07. |
-| How are the CPUs isolated? | A transient systemd unit per instance whose cgroup v2 cpuset is the slot (§3.1) | `taskset` isolates nothing: `numa_bind()` in `mtl_init()` widened a `[2,3]` mask to `0-31`. `isolate.sh` holds one host-wide lock for its one partition. |
+| How are the CPUs isolated? | A transient systemd unit per instance whose cgroup v2 cpuset is the slot and CPU 0, the main lcore MTL gives EAL; the slot's CPUs but its first are its `--lcores` (§3.1) | `taskset` isolates nothing: `numa_bind()` in `mtl_init()` widened a `[2,3]` mask to `0-31`. `isolate.sh` holds one host-wide lock for its one partition. |
 | How is the L3 shared? | Intel RDT CAT: equal, exclusive ways per slot (§3.3) | Otherwise the larger footprint evicts the other, and the swap does not cancel that: it follows the instance, not the slot. |
-| One NUMA node for both slots, or one each? | Both on the node of their NIC; with both NICs, each NIC's slots on its own node (§3.5) | A slot on the other node would reach its NIC and hugepages across the socket link, which no production MTL does; the swap cancels that in the mean but not in the spread. |
+| One NUMA node for both slots, or one each? | Both on the node of their NIC; with both NICs, each NIC's slots on its own node (§3.5) | A slot on the other node would reach its NIC and hugepages across the socket link, which no production MTL does (DPDK's control data aside, §3.1); the swap cancels that in the mean but not in the spread. |
 | How do the builds use a second NIC? | As the `nics` input says: an instance on a port of each NIC (`span`), or a pair of slots on each NIC whose rows stay apart (`pairs`) or are pooled (`pooled`) (§3.5) | `span` loads one MTL instance with two NICs; `pairs` and `pooled` repeat the comparison on the other socket, a block of its own, never A on one socket and B on the other. |
 | Does an instance copy with DMA? | Per build (`dma`): its RX instances, each with a DSA of its own on its port's node (§3.5) | MTL has no TX DMA, gives a session only a DMA device on its port's node, and a vfio device belongs to one process. |
 | What is measured? | The stats dump through `sys:log_msg`, the tasklet counters through `sys:tasklet_stat`, `/proc`, RDT and `perf stat` (§4) | `sys:log_msg` fires at any log level and exists in every release since 2024, so `v26.01` is measured the same way as `main`. |
@@ -104,14 +104,14 @@ a link of its own](ci_runner_setup.md#the-perf-pair-needs-a-link-of-its-own).
 One instance on one host, from the outside in:
 
 ```text
-systemd-run --unit mtl-perf-rx0          AllowedCPUs=4-11 AllowedMemoryNodes=0 (cgroup v2), Nice=-20
+systemd-run --unit mtl-perf-rx0          AllowedCPUs=0,4-11 AllowedMemoryNodes=0 (cgroup v2), Nice=-20
 └─ unshare --mount --ipc                 its own mount table and SysV IPC
    └─ sh /tmp/mtl-perf-compare/A_rx0.sh
       ├─ mount --bind <slot tree> <mtl>/.local_install     its build, at the path DPDK expects (§3.2)
       ├─ mount -t tmpfs tmpfs /var/run/imtl                no MtlManager; a private lcore table
       ├─ echo $$ > /sys/fs/resctrl/mtl_perf_0/tasks        its L3 ways (§3.3)
-      └─ cd <mtl> && exec taskset -c 4 taskset -c 4-11 env LD_LIBRARY_PATH=<its libs> RxTxApp …
-                                                           main lcore 4, schedulers on 5-11 (§3.1)
+      └─ cd <mtl> && exec env LD_LIBRARY_PATH=<its libs> RxTxApp … --lcores 5-11 …
+                                       schedulers on 5-11, application and EAL control threads on 4 (§3.1)
 mtl-perf-rx0-{log,trace,timed,sessions}  bpftrace -p <pid>, the probes of each window, on CPU 1
 mtl-perf-rx0-pmu                         perf stat -p <pid>, the untraced window, on CPU 1
 ```
@@ -121,23 +121,36 @@ mtl-perf-rx0-pmu                         perf stat -p <pid>, the untraced window
 `cpu_layout()` gives each slot 8 physical cores of the VF's NUMA node, one hardware
 thread each so no slot holds an SMT sibling of the other's, after two cores for the OS
 and the collectors. Both slots are isolated cores when the node isolates 16 or more,
-else neither is. Both perf hosts boot `isolcpus=4-20`, so on each the slots are the
-isolated cores 4-11 and 12-19 of NIC 0's node 0. NIC 1 is on node 2, whose slots stay
-off isolated cores until the hosts isolate 16 of its cores too, e.g. `68-84`.
+else neither is. `isolcpus=4-20,68-84` (and the same `nohz_full` and `rcu_nocbs`)
+isolates 17 cores on the node of each NIC of the perf hosts: the slots are then 4-11
+and 12-19 on NIC 0's node 0 and 68-75 and 76-83 on NIC 1's node 2. With node 0's
+alone, NIC 1's slots are cores that are not isolated.
 
-The cpuset alone places the threads:
+The slot's CPUs but its first are the instance's `--lcores`, as perf-pytest gives MTL
+the isolated CPUs of its NIC's node, and the cpuset keeps the instance in the slot and
+CPU 0:
 
-- No `--lcores`: MTL would pass `-l 0,<lcores>` to EAL, which pins the main lcore to CPU
-  0 or fails ("Cannot set affinity"), so every instance would need CPU 0. Without it EAL
-  takes the process's affinity mask, the lowest CPU as the main lcore.
-- The process starts on the slot's first CPU and is then widened to the slot, as
-  `isolate.sh` does: the schedulers take the other CPUs and the unpinned threads start
-  on the main lcore. The kernel clamps `mtl_init()`'s `numa_bind()` to the cpuset.
-- Once the instance's sessions and schedulers run, each thread still allowed the whole
-  slot gets one of its CPUs that no scheduler uses, in turn. CFS would otherwise move
-  one onto a polled CPU, and the kernel never balances isolated CPUs: 36 TX sessions of
-  1080p59 left on the main lcore's CPU sent 40 to 43 fps, spread over the free CPUs
-  59.94.
+- MTL passes `-l 0,<lcores>` to EAL and RxTxApp has no option for the main lcore, so
+  CPU 0 is the main lcore of every instance and the cpuset has it too, else EAL fails
+  ("Cannot set affinity"). `rte_eal_init()` runs there, on a thread of its own. The
+  process starts where the kernel puts it in the cpuset, often CPU 0, and so do the
+  threads it starts until they are moved (below), before the warm-up.
+- EAL pins its control threads (interrupts, the iavf events, telemetry) to the CPUs of
+  the cpuset that are no lcore: the slot's first, where the application threads also
+  always have a CPU no scheduler polls.
+- The cpuset also has the memory of CPU 0's node, for NIC 1's slots node 0 beside node
+  2. DPDK allocates on the main lcore's node for a thread that is no lcore and names no
+  node, such as iavf's rate limiter and flow rules from MTL's main thread, and its
+  dmadev data only there: with node 2 alone each such allocation faults a 1 GB page of
+  node 2 and drops it, and a DSA fails to probe ("Cannot initialize dmadevs data"). So
+  DPDK's control data of NIC 1's instances is on node 0; MTL puts their queues, buffers
+  and frames on their port's node 2.
+- Once the instance's sessions and schedulers run, each thread allowed more than one
+  CPU, the main thread and those it started, gets one of the slot's CPUs that no
+  scheduler uses, in turn; EAL pins each of its own threads to one. CFS would otherwise
+  move one onto a polled CPU, and the kernel never balances isolated CPUs: 36 TX
+  sessions of 1080p59 left on the one CPU they started on sent 40 to 43 fps, spread over
+  the free CPUs 59.94.
 
 ### 3.2. Software state
 
@@ -339,7 +352,7 @@ The inputs of `perf-compare.yml`, and the pytest options of a run by hand (§5.4
 | Input | pytest | Default | Meaning |
 | --- | --- | --- | --- |
 | `ref_a`, `ref_b` | `--perf_compare_slots`, `--perf_compare_labels` | `main`, `main` | A, the baseline, and B, the candidate: a branch, tag or commit, with an optional `~n` or `^`; the same twice measures the noise. pytest takes the two built trees and their labels |
-| `args_a`, `args_b` | `--perf_compare_args_a`, `--perf_compare_args_b` | empty | Extra RxTxApp options of each build: letters, digits, spaces and `_./:=,+-`; not `--tasklet_time`, which would time every window, nor `--dma_dev`. RxTxApp ignores an option it does not know |
+| `args_a`, `args_b` | `--perf_compare_args_a`, `--perf_compare_args_b` | empty | Extra RxTxApp options of each build: letters, digits, spaces and `_./:=,+-`; not `--tasklet_time`, which would time every window, nor `--dma_dev` or `--lcores`. RxTxApp ignores an option it does not know |
 | `dma` | `--perf_compare_dma` | `none` | `none`, `A`, `B` or `both`: the builds whose RX instances copy with a DSA (§3.5) |
 | `nics` | `--perf_compare_nics` | `single` | `single`, `span`, `pairs` or `pooled` (§3.5); each choice of the form says what it does, and the case takes the word before its colon |
 | `video` | `-k "1080p and 59fps"` | `1080p59` | 1080p, 2160p or 4320p at 59, 50, 29 or 25 fps, from the perf media set |
