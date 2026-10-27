@@ -802,6 +802,13 @@ void ut_dev_set_tx_queue_bps(ut_dev_ctx* ctx, uint16_t queue, uint64_t bps) {
   ctx->tx_queues[queue].bps = bps;
 }
 
+int ut_dev_set_tx_bps(ut_dev_ctx* ctx, uint16_t queue, uint64_t bytes_per_sec) {
+  ut_active_ctx = ctx;
+  ctx->tx_queues[queue].port = MTL_PORT_P;
+  ctx->tx_queues[queue].queue_id = queue;
+  return mt_dev_set_tx_bps(&ctx->impl, &ctx->tx_queues[queue], bytes_per_sec);
+}
+
 void ut_dev_set_link_speed(ut_dev_ctx* ctx, uint32_t mbps) {
   ctx->impl.inf[MTL_PORT_P].link_speed = mbps;
 }

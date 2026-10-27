@@ -2092,9 +2092,7 @@ int mt_dev_set_tx_bps(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
     return -ENOTSUP;
   }
 
-  dev_tx_queue_set_rl_rate(inf, queue_id, bytes_per_sec);
-
-  return 0;
+  return dev_tx_queue_set_rl_rate(inf, queue_id, bytes_per_sec);
 }
 
 int mt_dev_put_rx_queue(struct mtl_main_impl* impl, struct mt_rx_queue* queue) {

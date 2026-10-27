@@ -60,6 +60,7 @@ unit_sources = [
   'dev/iavf_intr_unregister_test.cpp',
   'dev/mt_dev_port_stats_test.cpp',
   'dev/mt_dev_pacing_test.cpp',
+  'dev/mt_dev_set_tx_bps_test.cpp',
   'dev/mt_flow_harness.c',
   'dev/mt_flow_retry_test.cpp',
   'datapath/mt_dp_socket_harness.c',
