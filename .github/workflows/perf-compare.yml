@@ -62,6 +62,7 @@ on:
         options:
           - 'single: NIC 0 only, A and B on its two ports'
           - 'span: one instance a build, on a port of each NIC'
+          - 'split: A on one NIC, B on the other, swapped each round; a socket each'
           - 'pairs: an A/B pair on each NIC, the NICs reported apart'
           - 'pooled: an A/B pair on each NIC, both NICs one result'
         default: 'single: NIC 0 only, A and B on its two ports'
@@ -76,7 +77,7 @@ on:
           - both
         default: none
       single_core:
-        description: 'The roles whose instances run on one scheduler on each NIC they use, as perf-pytest single core: --sch_session_quota 99, the system tasklets on that of the first NIC. Set sessions to what a core carries, ~21 RX or 28 TX 1080p59 without DMA, 60 at most'
+        description: 'The roles whose instances run on one scheduler on each NIC they use, as perf-pytest single core: --sch_session_quota 99, the system tasklets on that of the first NIC. Alone a core carries 28 RX (36 with DMA) or 35 TX 1080p59, 60 at most; two builds on a socket fall short of that, nics split gives each its own'
         required: false
         type: choice
         options:

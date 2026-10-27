@@ -59,6 +59,7 @@ DMA = {"none": "", "A": "A", "B": "B", "both": "AB"}
 NICS = {
     "single": "NIC 0: a slot on each of its ports",
     "span": "both NICs: each slot has a port of each, as many sessions on each",
+    "split": "both NICs: a slot on port 0 of each, so each build has a socket of its own",
     "pairs": "both NICs: a pair of slots on each, its rows apart",
     "pooled": "both NICs: a pair of slots on each, each NIC of a round a sample",
 }
@@ -249,7 +250,7 @@ def _write_report(out_dir, opts, details, hostnames, sides, pfs, rounds) -> None
             "slot": slot.idx,
             "cpus": pc.format_cpus(slot.cpus),
             "isolated": slot.isolated,
-            "cat": bool(s.rdt),
+            "cat": bool(s.rdt) and opts["nics"] != "split",  # split: RDT only monitors
             "perf": bool(s.perf),
             **({"dsa": s.dma[slot.idx]} if s.dma else {}),
             **({"nic": slot.nic} if slot.nic is not None else {}),
@@ -342,18 +343,26 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
         for role, host in (("rx", rx_host), ("tx", tx_host)):
             pfs[role], vfs = _ports(host, opts["nics"])
             links = pc.nic_links(host, pfs[role])
-            if slow := pc.slow_ports(pfs[role], links, opts["sessions"] * rate):
+            slots = _slots(host, vfs, opts["nics"], opts["cores"])
+            used = sorted({p for slot in slots for p in slot.ports})  # split: 2 of 4
+            used_pfs = [pfs[role][p] for p in used]
+            used_links = [links[p] for p in used]
+            if slow := pc.slow_ports(used_pfs, used_links, opts["sessions"] * rate):
                 pytest.fail(
                     f"{host.name}: {opts['sessions']} x {video} on a port take "
                     f"{opts['sessions'] * rate / 1e9:.1f} Gb/s, and {', '.join(slow)} "
                     "(--perf_compare_sessions counts per port, with one NIC or two)"
                 )
-            slots = _slots(host, vfs, opts["nics"], opts["cores"])
             if opts["nics"] == "pooled":
                 if unlike := pc.unlike_nics(links, slots):
                     pytest.fail(f"{host.name}: pooled takes alike NICs, but {unlike}")
+            if opts["nics"] == "split" and slots[0].isolated != slots[1].isolated:
+                pytest.fail(
+                    f"{host.name}: split takes the cores of both NICs' nodes isolated "
+                    "alike, as each round puts a build in each slot"
+                )
             sides.append(pc.Side(host, role, get_host_mtl_path(host), vfs, slots, []))
-            sides[-1].rdt = pc.rdt_setup(host, len(slots))
+            sides[-1].rdt = pc.rdt_setup(host, len(slots), opts["nics"] != "split")
             sides[-1].perf = pc.perf_tool(host)
             if role == "rx" and opts["dma"]:  # MTL has no TX DMA
                 sides[-1].dma = pc.dsa_layout(host, slots)
