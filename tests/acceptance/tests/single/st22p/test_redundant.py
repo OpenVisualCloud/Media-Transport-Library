@@ -36,7 +36,6 @@ def test_st22p_redundant(
     test_time = max(test_time, 90)
 
     app = app_factory(application)
-    app.require_encoder(host, "libsvt_jpegxs", use_mtl_plugin=True)
     app.create_command(
         session_type="st22p",
         nic_port_list=interfaces,
