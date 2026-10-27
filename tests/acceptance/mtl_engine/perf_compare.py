@@ -1583,7 +1583,7 @@ def _pool(metrics: dict, nic: int) -> dict:
 def _results(labels, args, slots, rounds, styled, nics, single_core) -> list[str]:
     """The builds, the rounds, the summary and the tables of each role; the tables
     folded unless *styled*. *nics* is how the builds use the NICs: single, span,
-    pairs or pooled; *single_core* whether each instance had one scheduler."""
+    pairs or pooled; *single_core* the roles whose instances had one scheduler."""
     valid = [r["metrics"] for r in rounds if not r["problems"]]
     if nics == "pooled":  # each NIC's pair of each round is a sample
         valid = [_pool(v, nic) for v in valid for nic in (0, 1)]
@@ -1608,7 +1608,8 @@ def _results(labels, args, slots, rounds, styled, nics, single_core) -> list[str
             ["RX copies with DMA", *("yes" if x in dma else "no" for x in "AB")]
         )
     if single_core:
-        builds.append(["Single core", "yes", "yes"])
+        roles = " and ".join(r.upper() for r in single_core)
+        builds.append(["Single core", roles, roles])
     runs = [
         [
             n,
@@ -1640,7 +1641,7 @@ def _results(labels, args, slots, rounds, styled, nics, single_core) -> list[str
     return p
 
 
-def summary_html(labels, args, slots, rounds, nics="single", single_core=False) -> str:
+def summary_html(labels, args, slots, rounds, nics="single", single_core=()) -> str:
     """The report as the job summary shows it, which keeps no style: the builds, the
     rounds and the summary, and the tables of each role folded; the workflow links the
     full report, with the setup and the instances, after it."""
@@ -1653,7 +1654,7 @@ def summary_html(labels, args, slots, rounds, nics="single", single_core=False) 
 
 
 def report_html(
-    labels, args, details, slots, rounds, platforms, nics="single", single_core=False
+    labels, args, details, slots, rounds, platforms, nics="single", single_core=()
 ) -> str:
     """The report of a case: its builds, its rounds, how B differs from A, then its
     setup and its instances as they ran.
@@ -1663,8 +1664,8 @@ def report_html(
     a build uses DMA; nic and pfs when the builds use both NICs), *rounds* the rounds
     as the case keeps them, with the launches of run_round(), *platforms* the
     (label, platform_config.json) of the SUT and the companion, *nics* how the
-    builds use the NICs: single, span, pairs or pooled, and *single_core* whether
-    each instance had one scheduler.
+    builds use the NICs: single, span, pairs or pooled, and *single_core* the roles
+    whose instances had one scheduler.
     """
     title = f"MTL perf-compare: {labels['B']} against {labels['A']}"
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -1762,7 +1763,7 @@ def run_round(
     traced_s,
     launches,
     names,
-    single_core=False,
+    single_core=(),
 ):
     """Run one round of every instance at once.
 
@@ -1772,7 +1773,8 @@ def run_round(
     it. The logs and records of the round are copied to *out_dir*, and *launches*
     gets what each instance ran, its label, role, slot, script and configuration,
     also when the round raises. The problems and notes name the builds by *names*;
-    with *single_core*, an instance with more than one scheduler is one.
+    an instance of a role in *single_core* with more schedulers than the NUMA nodes
+    of its slot is one.
     Returns ({label: {Instance.key: metrics}}, problems, notes).
     """
     rx, tx = sides
@@ -1906,8 +1908,10 @@ def run_round(
             problems.append(f"{who(i)}: {named} of {sessions} sessions")
             continue
         schedulers = len({s for d in untraced for s in d.sch})
-        if single_core and schedulers != 1:
-            problems.append(f"{who(i)}: {schedulers} schedulers, single core runs one")
+        if i.role in single_core and schedulers > len(i.slot.nodes):
+            problems.append(
+                f"{who(i)}: {schedulers} schedulers, single core runs one a NUMA node"
+            )
             continue
         # MTL falls back to the CPU copy, silently, for a session it gives no DMA
         copied = len({k for d in untraced for k, n in d.dma.items() if n})

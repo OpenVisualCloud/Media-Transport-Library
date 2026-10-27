@@ -27,12 +27,32 @@ from mtl_engine.rxtxapp import RxTxApp
 logger = logging.getLogger(__name__)
 
 FPS = {25: 25.0, 29: 30000 / 1001, 50: 50.0, 59: 60000 / 1001}
-# --perf_compare_single_core: the largest quota RxTxApp takes, perf-pytest's too
+# --perf_compare_single_core: the roles whose instances run on one scheduler on each
+# NUMA node of their slot, with the largest quota RxTxApp takes, perf-pytest's too
+SINGLE_CORE = {"none": (), "RX": ("rx",), "TX": ("tx",), "both": ("rx", "tx")}
 SINGLE_CORE_QUOTA = 99
 # The most video sessions of one direction an MTL scheduler takes.
 SCH_MAX_SESSIONS = 60
 # The extra arguments go into a root shell script and into the report as they are.
 ARGS = re.compile(r"[A-Za-z0-9_ ./:=,+-]*")
+# RxTxApp takes a long option with one dash too, and by a prefix no other one has:
+# the shortest such prefix of each option the case sets itself.
+SHORTEST = {
+    "tasklet_time": "tasklet_ti",
+    "dma_dev": "dm",
+    "lcores": "lc",
+    "sch_session_quota": "sch_s",
+    "sch_data_quota": "sch_d",
+    "dedicated_sys_lcore": "de",
+    "rx_separate_lcore": "rx_se",
+}
+# the options that would give a single core instance more schedulers
+SCHEDULING = (
+    "sch_session_quota",
+    "sch_data_quota",
+    "dedicated_sys_lcore",
+    "rx_separate_lcore",
+)
 # --perf_compare_dma: the builds whose RX instances copy with a DSA
 DMA = {"none": "", "A": "A", "B": "B", "both": "AB"}
 # --perf_compare_nics, doc/perf_compare.md
@@ -42,6 +62,16 @@ NICS = {
     "pairs": "both NICs: a pair of slots on each, its rows apart",
     "pooled": "both NICs: a pair of slots on each, each NIC of a round a sample",
 }
+
+
+def _given(options: list[str], name: str) -> bool:
+    """Whether *options* hold RxTxApp's --*name*, by any prefix it takes."""
+    return any(
+        (m := re.fullmatch(r"--?(\w+)", t))
+        and m[1].startswith(SHORTEST[name])
+        and name.startswith(m[1])
+        for t in options
+    )
 
 
 def _options(request) -> dict:
@@ -59,50 +89,49 @@ def _options(request) -> dict:
         "sessions": get("--perf_compare_sessions"),
         "rounds": get("--perf_compare_rounds"),
         "cores": get("--perf_compare_cores"),
-        "single_core": get("--perf_compare_single_core"),
+        "single_core": SINGLE_CORE.get(get("--perf_compare_single_core")),
         "dma": DMA.get(get("--perf_compare_dma")),
         "nics": get("--perf_compare_nics"),
     }
     if not all(ARGS.fullmatch(a) for a in opts["args"].values()):
         pytest.fail("--perf_compare_args_a/b take letters, digits, spaces and _./:=,+-")
-    # RxTxApp takes long options by a prefix and with one dash too
     options = [t.split("=")[0] for a in opts["args"].values() for t in a.split()]
-    if any(re.fullmatch(r"--?tasklet_ti(me?)?", t) for t in options):
+    if _given(options, "tasklet_time"):
         pytest.fail(
             "--tasklet_time would time every window; the timed window is the case's"
         )
-    if any(re.fullmatch(r"--?dm(a(_(d(ev?)?)?)?)?", t) for t in options):
+    if _given(options, "dma_dev"):
         pytest.fail(
             "--dma_dev would give one DSA to both slots and hosts; --perf_compare_dma "
             "gives each RX instance its own"
         )
-    if any(re.fullmatch(r"--?lc(o(r(es?)?)?)?", t) for t in options):
+    if _given(options, "lcores"):
         pytest.fail(
             "--lcores would replace the slot's CPUs; --perf_compare_cores sets how "
             "many each slot has"
         )
     if opts["dma"] is None:
         pytest.fail(f"--perf_compare_dma is one of {', '.join(DMA)}")
+    if opts["single_core"] is None:
+        pytest.fail(f"--perf_compare_single_core is one of {', '.join(SINGLE_CORE)}")
     if opts["nics"] not in NICS:
         pytest.fail(f"--perf_compare_nics is one of {', '.join(NICS)}")
     if opts["sessions"] < 1 or opts["rounds"] < 1:
         pytest.fail("--perf_compare_sessions and --perf_compare_rounds start at 1")
-    if opts["single_core"] and opts["nics"] == "span":
-        pytest.fail(
-            "--perf_compare_single_core takes a NIC an instance: MTL schedules a "
-            "session on its port's NUMA node, so span has a scheduler on each"
-        )
     if opts["single_core"] and opts["sessions"] > SCH_MAX_SESSIONS:
         pytest.fail(
-            f"--perf_compare_single_core takes up to {SCH_MAX_SESSIONS} sessions, "
-            "as many as an MTL scheduler"
+            f"--perf_compare_single_core takes up to {SCH_MAX_SESSIONS} sessions a "
+            "port, as many as an MTL scheduler"
         )
-    floor = 2 if opts["single_core"] else 3
+    given = [n for n in SCHEDULING if _given(options, n)]
+    if opts["single_core"] and given:
+        pytest.fail(f"--{given[0]} would give a single core instance more schedulers")
+    floor = 2 if opts["single_core"] == SINGLE_CORE["both"] else 3
     if opts["cores"] < floor:
         pytest.fail(
             f"--perf_compare_cores starts at {floor}: one for the application threads "
             "and one for a scheduler, and one for MTL's system tasklets "
-            "(dedicated_sys_lcore) unless --perf_compare_single_core"
+            "(dedicated_sys_lcore) unless both roles are single core"
         )
     return opts
 
@@ -136,7 +165,7 @@ def _app_cmd(opts, media_config, media_path, fps, test_time):
         )
         if side.dma and label in opts["dma"]:  # the RX side's DSA of the slot
             extra["dma_dev"] = side.dma[slot]
-        if opts["single_core"]:  # the system tasklets on the one scheduler too
+        if side.role in opts["single_core"]:  # the system tasklets on it too
             extra["sch_session_quota"] = SINGLE_CORE_QUOTA
         else:
             extra["dedicated_sys_lcore"] = True

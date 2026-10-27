@@ -348,20 +348,37 @@ its own in about 1 round in 10.
 
 ### 5.1. Inputs
 
-The inputs of `perf-compare.yml`, and the pytest options of a run by hand (§5.4):
+The inputs of `perf-compare.yml` in the order of the form, in four groups: what is
+compared, the load, where and how the instances run, and the measurement; and the pytest
+options of a run by hand (§5.4):
 
 | Input | pytest | Default | Meaning |
 | --- | --- | --- | --- |
 | `ref_a`, `ref_b` | `--perf_compare_slots`, `--perf_compare_labels` | `main`, `main` | A, the baseline, and B, the candidate: a branch, tag or commit, with an optional `~n` or `^`; the same twice measures the noise. pytest takes the two built trees and their labels |
-| `args_a`, `args_b` | `--perf_compare_args_a`, `--perf_compare_args_b` | empty | Extra RxTxApp options of each build: letters, digits, spaces and `_./:=,+-`; not `--tasklet_time`, which would time every window, nor `--dma_dev` or `--lcores`. RxTxApp ignores an option it does not know |
-| `dma` | `--perf_compare_dma` | `none` | `none`, `A`, `B` or `both`: the builds whose RX instances copy with a DSA (§3.5) |
-| `nics` | `--perf_compare_nics` | `single` | `single`, `span`, `pairs` or `pooled` (§3.5); each choice of the form says what it does, and the case takes the word before its colon |
+| `args_a`, `args_b` | `--perf_compare_args_a`, `--perf_compare_args_b` | empty | Extra RxTxApp options of each build: letters, digits, spaces and `_./:=,+-`. RxTxApp ignores an option it does not know |
 | `video` | `-k "1080p and 59fps"` | `1080p59` | 1080p, 2160p or 4320p at 59, 50, 29 or 25 fps, from the perf media set |
-| `sessions` | `--perf_compare_sessions` | `36` | Video sessions of each build on each port it uses, in every `nics` mode (`span` puts that many on each of its two ports); the case refuses a count that a port's link does not carry (below) |
-| `cores` | `--perf_compare_cores` | `8` | CPUs of a slot on each NIC node it uses, at least 3 (2 with `single_core`). The first takes the application threads, the rest are its `--lcores` (§3.1): one for MTL's system tasklets except with `single_core`, the others for as many schedulers as MTL's quota needs; a build's quota is `--sch_session_quota` in its `args` |
-| `single_core` | `--perf_compare_single_core` | off | perf-pytest's single core mode: `--sch_session_quota 99` and no `--dedicated_sys_lcore`, so each instance runs its sessions and MTL's system tasklets on one scheduler. Set `sessions` to what a core carries (perf-pytest: ~21 RX, 28 TX 1080p59 without DMA), 60 at most. Not with `span`, which has a scheduler on each NIC's node |
+| `sessions` | `--perf_compare_sessions` | `36` | Video sessions of each build on each port it uses, in every `nics` mode (`span` puts that many on each of its two ports) |
+| `nics` | `--perf_compare_nics` | `single` | `single`, `span`, `pairs` or `pooled` (§3.5); each choice of the form says what it does, and the case takes the word before its colon |
+| `dma` | `--perf_compare_dma` | `none` | `none`, `A`, `B` or `both`: the builds whose RX instances copy with a DSA (§3.5) |
+| `single_core` | `--perf_compare_single_core` | `none` | `none`, `RX`, `TX` or `both`: the roles whose instances run as perf-pytest's single core, `--sch_session_quota 99` without `--dedicated_sys_lcore`: one scheduler on each NIC node of the slot, that of the first NIC with MTL's system tasklets. A core carries about 21 RX or 28 TX 1080p59 without DMA (perf-pytest) |
+| `cores` | `--perf_compare_cores` | `8` | CPUs of a slot on each NIC node it uses. The first takes the application threads, the rest are its `--lcores` (§3.1): one for MTL's system tasklets except in a single core role, the others for as many schedulers as MTL's quota needs |
 | `test_time` | `test_time` of `test_config.yaml` | `120` | Seconds of the untraced window; at least 30, for two whole stats dumps. The three later windows add half of it each |
 | `rounds` | `--perf_compare_rounds` | `4` | Rounds; A and B swap places each round, so keep it even. Fewer than 4 give a rough noise estimate |
+
+Where two inputs depend on each other, one input limits the other, and the refs job,
+or the case for what only the case knows, refuses a pair that cannot run before
+anything is built or started:
+
+| Inputs | How they interact | Checked by |
+| --- | --- | --- |
+| `sessions`, `video` | A port carries at most 100 Gb/s of sessions (below) | refs job; the case against each port's own link |
+| `sessions`, `single_core` | An MTL scheduler takes 60 video sessions at most | refs job and case |
+| `cores`, `single_core` | At least 3 CPUs, or 2 when both roles are single core | refs job and case |
+| `args`, `single_core` | `--sch_session_quota`, `--sch_data_quota`, `--dedicated_sys_lcore` and `--rx_separate_lcore` would give a single core instance more schedulers | case |
+| `args`, `dma` / `cores` / `test_time` | `--dma_dev`, `--lcores` and `--tasklet_time` are the case's own; by any prefix RxTxApp takes | case |
+| `nics`, `single_core` | `span` gets a scheduler on each NIC's node, as MTL schedules a session on its port's node | none needed |
+| `nics`, `cores` | `cores` is a slot's on each node, so a `span` instance has twice as many | none needed |
+| `nics`, hardware | `pooled` takes NICs alike in speed, firmware and isolation | case |
 
 A 59 fps session takes 2.76 Gb/s on the wire at 1080p, 11.0 at 2160p and 44.1 at 4320p
 (20 bits a pixel, paced over 1125 of 1080 lines, in MTL's packets of 1320 bytes of
@@ -374,9 +391,9 @@ companion count about 210,000 build timeout frames each a round, which the round
 `main` beside `v26.01` counts none. Such late frames follow the load of both TX
 instances, so an A/A run of `main` notes them every round.
 
-The refs job rejects a bad ref, a number that is not a positive integer, and a
-`test_time` under 30 or `cores` under 3 (2 with `single_core`), before the compare job builds anything; the numbers are strings, as a number
-input reaches a step as `120.0`. A ref takes no option, `^{/regex}`, comma or newline:
+The refs job rejects a bad ref, a number that is not a positive integer, a `test_time`
+under 30, and the pairs of inputs it checks above, before the compare job builds anything; the
+numbers are strings, as a number input reaches a step as `120.0`. A ref takes no option, `^{/regex}`, comma or newline:
 it reaches `git`, `GITHUB_OUTPUT` and the labels. The case rejects bad arguments before
 it starts an instance, as they reach a root shell script on both hosts.
 
@@ -455,7 +472,7 @@ notes, which do not.
 | Problem, or (note) | Cause | What to do |
 | --- | --- | --- |
 | `not steady after N s`, `a session fell to N fps` | A session stayed under 99% of its rate. The `cores` of a slot, or the companion's hugepages, which hold the TX source of every session of both builds, can limit the sessions before the link | Fewer `sessions`; for a candidate that cannot carry the load the failure is the result |
-| `N schedulers, single core runs one` | With `single_core`, MTL started a second scheduler, for an option in the build's `args`: `--sch_session_quota`, `--dedicated_sys_lcore` or `--rx_separate_lcore` | None of them in `args` |
+| `N schedulers, single core runs one a NUMA node` | An instance of a `single_core` role had more schedulers than its slot has NUMA nodes, which none of the options the case allows asks for | Its application output: the `sch_start` lines and the scheduler of each session |
 | `exited before steady state`, `exited during the measurement` | An application or a collector stopped | The application's output and its `.log` and `.trace` records in `perf_compare/round<N>/`; a timed or sessions collector's output only stays in `/tmp/mtl-perf-compare/` on its host, until the next round |
 | `N untraced, N traced, N timed and N session timed dumps`, `N of M sessions` | A window held fewer than two whole dumps, or not every session reported | A `test_time` of 30 or more; the application and collector logs |
 | `its source is not in hugepages` | A TX read its source through `mmap()` | More hugepages on the companion, or fewer sessions |
