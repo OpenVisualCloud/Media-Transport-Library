@@ -43,6 +43,10 @@ if get_option('buildtype') != 'debug'
   test_cpp_args += ['-Werror']
 endif
 
+if mtl.get_variable(pkgconfig : 'ipmx', default_value : 'false') == 'true'
+  test_cpp_args += ['-DMTL_HAS_IPMX']
+endif
+
 test_c_args += ['-Wall']
 test_cpp_args += ['-Wall']
 
