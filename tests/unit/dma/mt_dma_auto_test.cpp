@@ -28,7 +28,7 @@ class MtDmaAutoProbeTest : public ::testing::Test {
 
   static std::string Bdf(int node, int dev) {
     char bdf[32];
-    snprintf(bdf, sizeof(bdf), "0000:%02x:%02x.0", 0x10 * (node + 1), dev);
+    (void)snprintf(bdf, sizeof(bdf), "0000:%02x:%02x.0", 0x10 * (node + 1), dev);
     return bdf;
   }
 

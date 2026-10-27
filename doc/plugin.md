@@ -43,8 +43,10 @@ export KAHAWAI_CFG_PATH=your_json_config_file_path
 
 A local install (`MTL_INSTALL_PREFIX=$PWD/.local_install/mtl`, see [build.md](./build.md)) has a
 config file of its own, `.local_install/conf/kahawai.json`. `./build.sh` writes it with the absolute
-paths of the SVT JPEG XS and st22 avcodec plugins of the tree, and the plugin build scripts
-update it, so it is right without any edit:
+paths of the SVT JPEG XS and st22 avcodec plugins of the tree. `build_jpegxs.sh` with
+`MTL_INSTALL_PREFIX` and `build_st22_avcodec_plugin.sh` with
+`MTL_PLUGIN_PREFIX=$PWD/.local_install/plugins` install the plugins at those paths, so it is
+right without any edit:
 
 ```bash
 export KAHAWAI_CFG_PATH=$PWD/.local_install/conf/kahawai.json

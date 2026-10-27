@@ -31,12 +31,14 @@ A person runs these scripts by hand, so each one explains itself.
 - Put the work in `main()`. End with the sourced guard, so that a test can
   source the script without running it:
 
+  <!-- markdownlint-disable MD010 -->
   ```bash
   (return 0 2>/dev/null) && sourced=1 || sourced=0
   if [ "${sourced}" -eq 0 ]; then
-   main "$@"
+  	main "$@"
   fi
   ```
+  <!-- markdownlint-enable MD010 -->
 
 - Work from any current directory. Find files from `script_folder` or
   `REPO_DIR`.

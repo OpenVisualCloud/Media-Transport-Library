@@ -213,8 +213,8 @@ flowchart LR
 The JPEG XS bundle is installed under `.local_install/jpegxs` and contains the
 SVT runtime, `pkg-config` metadata, and MTL bridge plugin. Its hash includes the
 SVT revision, MTL hash, architecture, toolchain/build options, and bridge
-sources. Consumers update `LD_LIBRARY_PATH` and `PKG_CONFIG_PATH` to use that
-tree, and point `KAHAWAI_CFG_PATH` at `.local_install/conf/kahawai.json`, which
+sources. Consumers update `PKG_CONFIG_PATH` to use that tree (the libraries find
+each other through their `$ORIGIN` rpaths), and point `KAHAWAI_CFG_PATH` at `.local_install/conf/kahawai.json`, which
 `build.sh` writes and the MTL cache carries; they do not install it into `/usr/local`.
 
 The ICE output contains the patched `ice.ko` plus metadata describing its
