@@ -68,10 +68,15 @@ on:
         type: string
         default: '36'
       cores:
-        description: 'CPUs of each slot, span: on each NIC node. The first for the app and EAL control threads, the rest its --lcores: one for the system tasklets, the schedulers on the others. 3 to 8 on the perf pair. Sessions a scheduler takes: --sch_session_quota in args'
+        description: 'CPUs per instance (span: on each NIC node): 1 for the app threads, 1 for the system tasklets (none with single_core), the rest for schedulers. 3 to 8 on the perf pair (2 to 8 with single_core). MTL starts as many schedulers as its quota needs; to change the quota, add --sch_session_quota to args'
         required: false
         type: string
         default: '8'
+      single_core:
+        description: 'Single core, as in perf-pytest: each instance runs its sessions and the system tasklets on one scheduler (--sch_session_quota 99, no dedicated system lcore). Set sessions to what one core carries (perf-pytest notes ~21 RX, 28 TX 1080p59 without DMA), at most 60; not with span'
+        required: false
+        type: boolean
+        default: false
       test_time:
         description: 'Seconds of the untraced window of each round, at least 30; three more windows add half of it each'
         required: false
@@ -123,6 +128,7 @@ jobs:
           TEST_TIME: ${{ inputs.test_time }}
           ROUNDS: ${{ inputs.rounds }}
           CORES: ${{ inputs.cores }}
+          SINGLE_CORE: ${{ inputs.single_core }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: task ci:workflow -- perf-compare-refs
@@ -210,6 +216,7 @@ jobs:
           VIDEO: ${{ inputs.video }}
           ROUNDS: ${{ inputs.rounds }}
           CORES: ${{ inputs.cores }}
+          SINGLE_CORE: ${{ inputs.single_core }}
         run: task ci:pytest-run -- perf-compare
       - name: Summarize the comparison
         if: always()
