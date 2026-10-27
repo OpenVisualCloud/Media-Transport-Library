@@ -7,6 +7,14 @@ on:
         description: 'MTL branch, tag or full 40-char SHA to build and test; CI and tests stay from the workflow branch (empty = workflow branch)'
         required: false
         type: string
+      dir:
+        description: 'Only this directory of tests/single, for example st20p (empty = all)'
+        required: false
+        type: string
+      test_filter:
+        description: 'pytest -k expression for each directory (empty = all nightly tests)'
+        required: false
+        type: string
   schedule:
   - cron: '7 18 * * 1-5' # Monday to Friday at 18:07 UTC
 permissions:
@@ -32,22 +40,17 @@ jobs:
           - e810
           - e830
           - e835
-        suite:
-          - dir: cross_app
-          - dir: st40p
-          - dir: gstreamer
-          - dir: kernel_socket
-          - dir: rss_mode
-          - dir: rx_timing
-          # On one runner st20p takes about 6 h, every other suite 3 h at
-          # most. Shards spread it over the NIC's runners.
-          - {dir: st20p, shard: 1, shards: 4}
-          - {dir: st20p, shard: 2, shards: 4}
-          - {dir: st20p, shard: 3, shards: 4}
-          - {dir: st20p, shard: 4, shards: 4}
-          - dir: st22p
-          - dir: st30p
-          - dir: xdp
+        # st20p takes about 6 h on one runner, so 4 shards spread it over the
+        # runners of the NIC. A dispatch with dir runs only that one directory.
+        suite: >-
+          ${{ fromJSON(inputs.dir && format('[{{"dir": {0}}}]', toJSON(inputs.dir)) || '[
+          {"dir": "cross_app"}, {"dir": "st40p"}, {"dir": "gstreamer"},
+          {"dir": "kernel_socket"}, {"dir": "rss_mode"}, {"dir": "rx_timing"},
+          {"dir": "st20p", "shard": 1, "shards": 4},
+          {"dir": "st20p", "shard": 2, "shards": 4},
+          {"dir": "st20p", "shard": 3, "shards": 4},
+          {"dir": "st20p", "shard": 4, "shards": 4},
+          {"dir": "st22p"}, {"dir": "st30p"}, {"dir": "xdp"}]') }}
       fail-fast: false
     runs-on: ${{ matrix.nic }}
     timeout-minutes: 720
@@ -83,9 +86,6 @@ jobs:
         with:
           build_outputs: ${{ toJSON(needs.build.outputs) }}
 
-      - name: 'cleanup: Kill stale processes before test'
-        uses: ./.github/actions/cleanup
-
       - name: 'preparation: Ensure the acceptance virtualenv'
         id: pytest-verify
         run: task ci:pytest-setup -- ensure
@@ -115,6 +115,7 @@ jobs:
         env:
           TEST_PATH: ${{ matrix.suite.dir }}
           PYTEST_SHARD: ${{ matrix.suite.shard && format('{0}/{1}', matrix.suite.shard, matrix.suite.shards) }}
+          PYTEST_FILTER: ${{ inputs.test_filter }}
         run: task ci:pytest-run -- nightly
       - name: 'collect: System status report'
         if: always()
@@ -131,7 +132,7 @@ jobs:
 
       - name: 'cleanup: Kill test processes'
         if: always()
-        uses: ./.github/actions/cleanup
+        run: task cleanup
 
       - name: "upload system info"
         if: always()

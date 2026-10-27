@@ -7,6 +7,10 @@ on:
         description: 'Commit SHA to test (leave empty for current tip)'
         required: false
         default: ''
+      gtest_cases:
+        description: 'Regex of the gtest.sh case names to run, for example ^Dma (empty = all)'
+        required: false
+        default: ''
   schedule:
   - cron: '7 18 * * 1-5' # Monday to Friday at 18:07 UTC
 permissions:
@@ -50,24 +54,17 @@ jobs:
       - name: 'preparation: Validate host and download artifacts'
         uses: ./.github/actions/validate-host
 
-      - name: 'cleanup: Kill stale processes before test'
-        uses: ./.github/actions/cleanup
-
-      # env -u BASH_XTRACEFD for the same reason as gtest-bare-metal.yml: the
-      # descriptor the variable names does not exist in the privileged shell.
-      - name: 'preparation: Bind the test ports'
-        run: sudo -E env -u BASH_XTRACEFD "$TASK_BIN" ci:bind-test-ports
-
       - name: run gtest bare metal
         env:
           NIGHTLY: 1
+          GTEST_CASES: ${{ inputs.gtest_cases }}
           EXIT_ON_FAILURE: 0
           LOG_FILE: "${{ github.workspace }}/gtest.log"
           TEST_CASE_TIMEOUT: 1800
         run: task ci:gtest-nightly
       - name: 'cleanup: Kill test processes'
         if: always()
-        uses: ./.github/actions/cleanup
+        run: task cleanup
       - name: 'collect: System status report'
         if: always()
         env:
