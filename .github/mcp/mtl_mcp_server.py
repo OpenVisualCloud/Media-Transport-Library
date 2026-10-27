@@ -108,34 +108,11 @@ def _exclude_noctx_tests(gtest_filter: str) -> str:
 
 
 def _test_runtime_env() -> dict[str, str]:
-    """Prefer the libraries this checkout just built, then any it installed.
-
-    build/lib comes first deliberately. Every test tool below runs
-    REPO_ROOT/build/tests/KahawaiTest, but `build_mtl` installs to /usr/local and
-    never refreshes .local_install/mtl -- so putting .local_install first made a run
-    silently validate whatever library happened to be there, reporting green for code
-    it never executed. .local_install stays as a fallback for CI checkouts that only
-    populate that tree.
-    """
-    install_root = REPO_ROOT / ".local_install"
-    library_dirs: list[Path] = []
-    build_lib = REPO_ROOT / "build" / "lib"
-    if build_lib.is_dir():
-        library_dirs.append(build_lib)
-    for component in ("mtl", "dpdk"):
-        lib_root = install_root / component / "lib"
-        multiarch_dirs = sorted(
-            path for path in lib_root.glob("*-linux-gnu") if path.is_dir()
-        )
-        library_dirs.extend(multiarch_dirs)
-        if not multiarch_dirs and lib_root.is_dir():
-            library_dirs.append(lib_root)
-
-    existing = os.environ.get("LD_LIBRARY_PATH", "")
-    entries = [str(path) for path in library_dirs]
-    if existing:
-        entries.append(existing)
-    return {"LD_LIBRARY_PATH": os.pathsep.join(entries)}
+    """No library path: a build tree carries meson's build rpath, and a prefix
+    install records its libraries relative to itself ($ORIGIN). An inherited
+    LD_LIBRARY_PATH would make a run validate whatever library it points at,
+    so clear it; the loader ignores an empty value."""
+    return {"LD_LIBRARY_PATH": ""}
 
 
 def _noctx_failure_excerpt(out: str) -> str:
