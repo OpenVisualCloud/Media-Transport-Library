@@ -64,6 +64,24 @@ def wire_balance(tx_host, tx_vfs, rx_host, rx_vfs) -> list[int] | None:
     return [s - r for s, r in zip(sent, received)]
 
 
+def parse_cpus(text: str) -> list[int]:
+    cpus = []
+    for part in filter(None, text.strip().split(",")):
+        lo, _, hi = part.partition("-")
+        cpus.extend(range(int(lo), int(hi or lo) + 1))
+    return cpus
+
+
+def format_cpus(cpus) -> str:
+    ranges: list[list[int]] = []
+    for c in sorted(cpus):
+        if ranges and c == ranges[-1][1] + 1:
+            ranges[-1][1] = c
+        else:
+            ranges.append([c, c])
+    return ",".join(str(a) if a == b else f"{a}-{b}" for a, b in ranges)
+
+
 # ── FPS Monitoring ──────────────────────────────────────────────────────
 
 
