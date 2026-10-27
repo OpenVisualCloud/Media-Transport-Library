@@ -75,6 +75,9 @@ jobs:
       - name: Build and run the unit suite
         run: ./build.sh unit
 
+      - name: Build and run the unit suite under ASan and UBSan
+        run: ./build.sh unit sanitize
+
   # The one check to require in branch protection. It always runs, so it
   # reports even when the path filter skips the unit tests, and it fails only
   # if a job it needs failed or was cancelled.

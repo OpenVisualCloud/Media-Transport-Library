@@ -15,6 +15,7 @@ Run from the repository root:
 | `./build.sh debug` | Debug + ASAN | Debugging with AddressSanitizer (`-O0 -g`). Slower but catches memory bugs |
 | `./build.sh debugonly` | Debug only | Debug symbols without ASAN. Faster than `debug` for general development |
 | `./build.sh unit` | Unit gtest | Configures `build_unit/` with `-Denable_unit_tests=true`, builds it, and runs `tests/unit/UnitTest`. Combine with `debug` (e.g. `./build.sh debug unit`) to run under ASan via `LD_PRELOAD` |
+| `./build.sh unit sanitize` | Unit gtest + ASan + UBSan | Configures `build_unit_san/` (gcc `-O0`, `-Db_sanitize=address,undefined`), builds it, and runs `tests/unit/UnitTest` with every compiled object checked; the first finding fails the run. CI runs it on every PR |
 
 ## Format Code
 
