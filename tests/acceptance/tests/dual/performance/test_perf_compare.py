@@ -60,6 +60,14 @@ SCHEDULING = (
 REDUNDANT_QUOTA = {"tx": 36, "rx": 21, "rx dma": 18}
 # --perf_compare_dma: the builds whose RX instances copy with a DSA
 DMA = {"none": "", "A": "A", "B": "B", "both": "AB"}
+# --perf_compare_pixel_format: the applications' frames, which MTL converts from on
+# TX and to on RX (st_convert.c); none keeps them in the format on the wire
+PIXEL_FORMATS = {
+    "none": None,
+    "yuv422p10le": "YUV422PLANAR10LE",
+    "v210": "V210",
+    "y210": "Y210",
+}
 # --perf_compare_nics, doc/perf_compare.md; with a NIC, and so a socket, a build
 APART = ("split", "redundant")
 NICS = {
@@ -104,6 +112,7 @@ def _options(request) -> dict:
         "single_core": SINGLE_CORE.get(get("--perf_compare_single_core")),
         "dma": DMA.get(get("--perf_compare_dma")),
         "nics": get("--perf_compare_nics"),
+        "pixel_format": get("--perf_compare_pixel_format"),
     }
     if not all(ARGS.fullmatch(a) for a in opts["args"].values()):
         pytest.fail("--perf_compare_args_a/b take letters, digits, spaces and _./:=,+-")
@@ -128,6 +137,8 @@ def _options(request) -> dict:
         pytest.fail(f"--perf_compare_single_core is one of {', '.join(SINGLE_CORE)}")
     if opts["nics"] not in NICS:
         pytest.fail(f"--perf_compare_nics is one of {', '.join(NICS)}")
+    if opts["pixel_format"] not in PIXEL_FORMATS:
+        pytest.fail(f"--perf_compare_pixel_format is one of {', '.join(PIXEL_FORMATS)}")
     if opts["sessions"] < 1 or opts["rounds"] < 1:
         pytest.fail("--perf_compare_sessions and --perf_compare_rounds start at 1")
     if opts["single_core"] and opts["sessions"] > SCH_MAX_SESSIONS:
@@ -199,7 +210,8 @@ def _app_cmd(opts, media_config, media_path, fps, test_time):
             direction=side.role,
             test_mode="unicast",
             transport_format=media_config["format"],
-            pixel_format=media_config["file_format"],
+            pixel_format=PIXEL_FORMATS[opts["pixel_format"]]
+            or media_config["file_format"],
             width=media_config["width"],
             height=media_config["height"],
             framerate=f"p{fps}",
@@ -352,7 +364,13 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
         (
             "Video",
             f"{video}: {media_config['width']}x{media_config['height']} "
-            f"{media_config['format']}, GPM, narrow pacing",
+            f"{media_config['format']}, GPM, narrow pacing"
+            + (
+                f"; the applications' frames {PIXEL_FORMATS[opts['pixel_format']]}, "
+                "which MTL converts from on TX and to on RX"
+                if PIXEL_FORMATS[opts["pixel_format"]]
+                else ""
+            ),
         ),
         *([("NICs", NICS[opts["nics"]])] if opts["nics"] != "single" else []),
         (

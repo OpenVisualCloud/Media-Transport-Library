@@ -1112,12 +1112,18 @@ def pytest_addoption(parser):
             "none",
             "none, RX, TX or both: the roles on one scheduler",
         ),
+        (
+            "pixel_format",
+            str,
+            "none",
+            "none, yuv422p10le, v210 or y210: the applications' frames, converted by MTL",
+        ),
         ("dma", str, "none", "none, A, B or both: the builds whose RX uses a DSA"),
         (
             "nics",
             str,
             "single",
-            "single, span, split, pairs or pooled: how they use the NICs",
+            "single, split, redundant, span, pairs or pooled: how they use the NICs",
         ),
     ):
         parser.addoption(
