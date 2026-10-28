@@ -41,7 +41,6 @@ struct ut_dev_ctx {
   int fail_timesync_read_error;
   int fail_port_start_error;
   uint16_t tx_free_thresh[UT_DEV_TX_QUEUES];
-  uint64_t last_shaper_rate;
   struct mtl_port_status sw_stats;
   pthread_t stats_writer;
   bool stats_writer_started;
@@ -104,7 +103,6 @@ static int ut_rte_tm_shaper_profile_add(uint16_t port_id, uint32_t shaper_profil
                                         struct rte_tm_error* error);
 static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
                                       struct rte_tm_error* error);
-static int ut_mt_sch_mrg_uinit(struct mtl_main_impl* impl);
 static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
 
 #define rte_eth_rx_queue_setup ut_rte_eth_rx_queue_setup
@@ -125,7 +123,6 @@ static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
 #define rte_tm_node_delete ut_rte_tm_node_delete
 #define rte_tm_shaper_profile_add ut_rte_tm_shaper_profile_add
 #define rte_tm_hierarchy_commit ut_rte_tm_hierarchy_commit
-#define mt_sch_mrg_uinit ut_mt_sch_mrg_uinit
 #define rte_spinlock_unlock ut_rte_spinlock_unlock
 #define rte_eth_tx_burst ut_eth_tx_burst
 #define rte_eth_tx_done_cleanup ut_eth_tx_done_cleanup
@@ -138,7 +135,6 @@ static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
 #undef rte_eth_tx_done_cleanup
 #undef rte_eth_tx_burst
 #undef rte_spinlock_unlock
-#undef mt_sch_mrg_uinit
 #undef rte_tm_hierarchy_commit
 #undef rte_tm_shaper_profile_add
 #undef rte_tm_node_delete
@@ -348,13 +344,13 @@ static int ut_rte_tm_shaper_profile_add(uint16_t port_id, uint32_t shaper_profil
   ut_dev_ctx* ctx = ut_active_ctx;
 
   (void)port_id;
+  (void)profile;
   (void)error;
   ctx->tm_call_count++;
   /* As in the real PMD: an id in use fails, even after the nodes using it are deleted. */
   if (shaper_profile_id >= UT_DEV_TM_PROFILES_MAX || ctx->tm_profiles[shaper_profile_id])
     return -EINVAL;
   ctx->tm_profiles[shaper_profile_id] = true;
-  ctx->last_shaper_rate = profile->peak.rate;
   return 0;
 }
 
@@ -365,7 +361,6 @@ static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
 
   (void)port_id;
   (void)error;
-  ut_dev_record(UT_DEV_EVENT_TX_RL_COMMIT);
   ctx->tm_call_count++;
   ctx->tm_commit_count++;
   ctx->fail_tm_commit_error = 0;
@@ -375,11 +370,6 @@ static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
     memset(ctx->tm_profiles, 0, sizeof(ctx->tm_profiles));
   }
   return ret;
-}
-
-static int ut_mt_sch_mrg_uinit(struct mtl_main_impl* impl) {
-  (void)impl;
-  return 0;
 }
 
 ut_dev_ctx* ut_dev_create_ctx(void) {
@@ -545,32 +535,6 @@ int ut_dev_config_rss_reta(ut_dev_ctx* ctx, uint16_t nb_rx_q, uint16_t reta_size
 int ut_dev_create_ports(ut_dev_ctx* ctx) {
   ut_active_ctx = ctx;
   return mt_dev_create(&ctx->impl);
-}
-
-void ut_dev_set_started_iavf_tx(ut_dev_ctx* ctx, bool rl_root_active,
-                                enum st21_tx_pacing_way pacing_way) {
-  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
-
-  inf->drv_info.drv_type = MT_DRV_IAVF;
-  inf->drv_info.port_type = MT_PORT_VF;
-  inf->status |= MT_IF_STAT_PORT_STARTED;
-  inf->link_speed = RTE_ETH_SPEED_NUM_25G;
-  /* Builds the non-leaf chain in the fake, so the reset finds the queue parent. */
-  if (rl_root_active) dev_rl_init_nonleaf_nodes(inf);
-  inf->tx_pacing_way = pacing_way;
-}
-
-void ut_dev_set_port_stopped(ut_dev_ctx* ctx) {
-  ctx->impl.inf[MTL_PORT_P].status &= ~MT_IF_STAT_PORT_STARTED;
-}
-
-int ut_dev_free_ports(ut_dev_ctx* ctx) {
-  ut_active_ctx = ctx;
-  return mt_dev_free(&ctx->impl);
-}
-
-uint64_t ut_dev_last_shaper_rate(const ut_dev_ctx* ctx) {
-  return ctx->last_shaper_rate;
 }
 
 int ut_dev_event_count(const ut_dev_ctx* ctx) {
