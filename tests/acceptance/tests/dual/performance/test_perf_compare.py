@@ -63,13 +63,16 @@ DMA = {"none": "", "A": "A", "B": "B", "both": "AB"}
 # --perf_compare_nics, doc/perf_compare.md; with a NIC, and so a socket, a build
 APART = ("split", "redundant")
 NICS = {
-    "single": "NIC 0: a slot on each of its ports",
-    "span": "both NICs: each slot has a port of each, as many sessions on each",
-    "split": "both NICs: a slot on port 0 of each, so each build has a socket of its own",
-    "redundant": "both NICs: ST 2022-7, a NIC a build, port 0 the primary, port 1 the "
-    "redundant leg",
-    "pairs": "both NICs: a pair of slots on each, its rows apart",
-    "pooled": "both NICs: a pair of slots on each, each NIC of a round a sample",
+    "single": "NIC 0 only, A on port 0 and B on port 1",
+    "split": "A on NIC 0 and B on NIC 1, port 0 each, a CPU socket each",
+    "redundant": "ST 2022-7, A on NIC 0 and B on NIC 1, each with its primary stream "
+    "on port 0 and its redundant stream on port 1",
+    "span": "one instance a build on two ports, A on port 0 of both NICs and B on "
+    "port 1 of both NICs",
+    "pairs": "two comparisons at once, A and B on the two ports of NIC 0 and again of "
+    "NIC 1, each NIC reported apart",
+    "pooled": "two comparisons at once, A and B on the two ports of NIC 0 and again "
+    "of NIC 1, both NICs in one result with twice the samples a round",
 }
 
 

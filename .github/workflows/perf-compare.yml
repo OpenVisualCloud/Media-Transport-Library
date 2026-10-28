@@ -56,17 +56,17 @@ on:
       # Where and how the instances run
       # Each choice says what it does; the case takes its word before the colon.
       nics:
-        description: 'Which NIC ports each build uses. Each host has two E830 NICs of two ports; A and B swap places every round. sessions is the number of streams on each port, in every mode'
+        description: 'Where A and B run on the two E830 NICs (two ports each) of each host. The places below are those of the first round; A and B swap them every round. sessions is the number of streams on each port'
         required: false
         type: choice
         options:
-          - 'single: both builds on NIC 0, one port each'
-          - 'split: each build on a NIC of its own, port 0, and so a CPU socket each'
-          - 'redundant: ST 2022-7, each build on a NIC of its own, port 0 primary and port 1 redundant'
-          - 'span: each build on a port of both NICs'
-          - 'pairs: both builds on each NIC, a result per NIC'
-          - 'pooled: both builds on each NIC, one result for both NICs'
-        default: 'single: both builds on NIC 0, one port each'
+          - 'single: NIC 0 only, A on port 0 and B on port 1'
+          - 'split: A on NIC 0 and B on NIC 1, port 0 each, so each build has a CPU socket to itself'
+          - 'redundant: ST 2022-7, A on NIC 0 and B on NIC 1, each with its primary stream on port 0 and its redundant stream on port 1'
+          - 'span: one instance a build on two ports, A on port 0 of both NICs and B on port 1 of both NICs'
+          - 'pairs: two comparisons at once, A and B on the two ports of NIC 0 and again of NIC 1, each NIC reported apart'
+          - 'pooled: two comparisons at once, A and B on the two ports of NIC 0 and again of NIC 1, both NICs in one result with twice the samples a round'
+        default: 'single: NIC 0 only, A on port 0 and B on port 1'
       dma:
         description: 'The builds whose RX instances copy the payload with a DSA (DMA) of their NUMA node; TX has no DMA'
         required: false
