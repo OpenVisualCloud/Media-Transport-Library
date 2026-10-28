@@ -200,6 +200,7 @@ rows tell scheduler threads from the others.
 
 | Metric | Source | Calculation | Unit | Better |
 | --- | --- | --- | --- | --- |
+| `schedulers (CPUs)` | the `SCH(N:...)` lines | the schedulers in the dumps of the window; each polls a CPU of its own, so the CPUs MTL takes for the sessions, of the slot's `--lcores` (Test Information gives the slot's CPUs) | CPUs | ↓ |
 | `video cpu busy (%)` | `..._VIDEO_SESSION(m,s): throughput X Mb/s, cpu busy Y` | per dump, the mean over the instance's sessions; then the median of dumps | score, % | ↓ |
 | `scheduler threads (cores)` | `/proc/<pid>/task/<tid>/stat`, the threads named by `t_pid` | Δ(utime + stime) of the scheduler threads ÷ `CLK_TCK` ÷ Δt | cores | ↓ |
 | `other threads (cores)` | the same, every other thread of the process | Δ(utime + stime) of the threads present at both reads, minus the scheduler threads ÷ `CLK_TCK` ÷ Δt | cores | ↓ |
