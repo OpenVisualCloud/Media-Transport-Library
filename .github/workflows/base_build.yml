@@ -24,6 +24,7 @@ env:
   ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN: 1
   TOOLS_BUILD_AND_INSTALL_MTL_READPCAP: 1
   TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR: 1
+  TOOLS_BUILD_AND_INSTALL_MTL_PERF_TESTING: 1
 
 # A superseded run of this workflow builds a commit nobody is looking at any
 # more, and its four legs each spend most of an hour installing the same

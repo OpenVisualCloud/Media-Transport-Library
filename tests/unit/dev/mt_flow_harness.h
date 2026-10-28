@@ -35,6 +35,11 @@ uint32_t ut_flow_create_call_group(const ut_flow_ctx* ctx, int call_index);
 
 /* Calls the static rte_rx_flow_create() directly for a unicast flow. */
 bool ut_flow_rx_flow_create(ut_flow_ctx* ctx, bool no_ip_flow);
+/* Same, for a unicast flow on a queue that has a hdr split payload pool. */
+bool ut_flow_rx_flow_create_hdr_split_queue(ut_flow_ctx* ctx);
+/* UDP destination port of the last rte_flow_create() pattern, -1 if it has no UDP item.
+ */
+int ut_flow_last_udp_dst_port(const ut_flow_ctx* ctx);
 
 /* Calls the static rx_flow_free() directly on a synthetic response with a flow set. */
 int ut_flow_rx_flow_free(ut_flow_ctx* ctx);

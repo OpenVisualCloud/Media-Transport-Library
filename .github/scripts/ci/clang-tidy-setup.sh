@@ -28,7 +28,7 @@ meson compile -C build usdt_provider_header
 # source file, so cpp-linter does not report it, and the file passes unchecked.
 ln -sfn ../include build/mtl
 for project in app tests plugins ld_preload manager tests/tools/RxTxApp ecosystem/gstreamer_plugin \
-	tests/tools/gstreamer_tools ecosystem/obs_mtl/linux-mtl tools/set_tai_offset; do
+	tests/tools/gstreamer_tools tests/tools/perf_testing ecosystem/obs_mtl/linux-mtl tools/set_tai_offset; do
 	meson setup "build/$(basename "$project")" "$project"
 done
 jq -s add build/compile_commands.json build/*/compile_commands.json >compile_commands.json

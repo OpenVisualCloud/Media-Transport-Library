@@ -558,6 +558,7 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
   ops_rx.height = ops->height;
   ops_rx.fps = ops->fps;
   ops_rx.fmt = ops->transport_fmt;
+  ops_rx.packing = ops->transport_packing;
   ops_rx.interlaced = ops->interlaced;
   ops_rx.linesize = ops->transport_linesize;
   ops_rx.payload_type = ops->port.payload_type;
@@ -1013,6 +1014,16 @@ out:
   return ret;
 }
 
+static int rx_st20p_check_hdr_split(struct st20p_rx_ops* ops) {
+  if (!(ops->flags & ST20P_RX_FLAG_HDR_SPLIT)) return 0;
+  if (!st_frame_fmt_equal_transport(ops->output_fmt, ops->transport_fmt) ||
+      (ops->flags & ST20P_RX_FLAG_PKT_CONVERT)) {
+    err("%s, a hdr split frame is slotted, no converter can read it\n", __func__);
+    return -EINVAL;
+  }
+  return 0;
+}
+
 st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
   static int st20p_rx_idx;
   struct mtl_main_impl* impl = mt;
@@ -1042,6 +1053,7 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
       return NULL;
     }
   }
+  if (rx_st20p_check_hdr_split(ops) < 0) return NULL;
 
   if (auto_detect) {
     info("%s(%d), auto_detect enabled\n", __func__, idx);
@@ -1137,6 +1149,7 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
 int st20p_rx_free(st20p_rx_handle handle) {
   struct st20p_rx_ctx* ctx = handle;
   struct mtl_main_impl* impl = ctx->impl;
+  int ret = 0;
 
   int _gd = mt_handle_begin_destroy(&ctx->lc_destroying, &ctx->type,
                                     MT_ST20_HANDLE_PIPELINE_RX);
@@ -1164,7 +1177,7 @@ int st20p_rx_free(st20p_rx_handle handle) {
   }
 
   if (ctx->transport) {
-    st20_rx_free(ctx->transport);
+    ret = st20_rx_free(ctx->transport);
     ctx->transport = NULL;
   }
   rx_st20p_uinit_dst_fbs(ctx);
@@ -1174,7 +1187,7 @@ int st20p_rx_free(st20p_rx_handle handle) {
   notice("%s(%d), succ\n", __func__, ctx->idx);
   mt_rte_free(ctx);
 
-  return 0;
+  return ret;
 }
 
 void* st20p_rx_get_fb_addr(st20p_rx_handle handle, uint16_t idx) {

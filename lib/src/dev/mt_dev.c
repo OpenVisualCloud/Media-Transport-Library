@@ -5,6 +5,7 @@
 #include "mt_dev.h"
 
 #include "../mt_flow.h"
+#include "../mt_hdr_split.h"
 #include "../mt_log.h"
 #include "../mt_sch.h"
 #include "../mt_socket.h"
@@ -706,8 +707,17 @@ static int dev_init_ratelimit_all(struct mt_interface* inf, uint64_t bps) {
   return ret;
 }
 
-static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
-                                    uint64_t bytes_per_sec) {
+static bool dev_hdr_split_bound(struct mt_interface* inf) {
+  if (!inf->rx_queues) return false;
+  for (uint16_t q = 0; q < inf->nb_rx_q; q++) {
+    struct mt_hdr_split_pool* hp = inf->rx_queues[q].hdr_split;
+    if (hp && hp->slots) return true;
+  }
+  return false;
+}
+
+static int dev_tx_queue_update_rl_rate(struct mt_interface* inf, uint16_t queue,
+                                       uint64_t bytes_per_sec) {
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
   struct mt_tx_queue* tx_queue = &inf->tx_queues[queue];
@@ -725,6 +735,14 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
 
   /* not changed */
   if (bps == tx_queue->bps) return 0;
+
+  /* the commit stops and starts the port, which runs the pool ops of a bound hdr split
+   * queue outside the session lock */
+  if (dev_hdr_split_bound(inf)) {
+    err("%s(%d), no rate limit change for q %d while a hdr split session runs\n",
+        __func__, port, queue);
+    return -EBUSY;
+  }
 
   /* delete old queue node */
   if (tx_queue->rl_node) {
@@ -779,6 +797,17 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
   tx_queue->bps = bps;
 
   return 0;
+}
+
+static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
+                                    uint64_t bytes_per_sec) {
+  int ret;
+
+  /* no hdr split bind while the commit runs */
+  mt_pthread_mutex_lock(&inf->rx_queues_mutex);
+  ret = dev_tx_queue_update_rl_rate(inf, queue, bytes_per_sec);
+  mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
+  return ret;
 }
 
 /* the PF keeps VF queue rates after this process, the next one may not program them */
@@ -1210,6 +1239,48 @@ static int dev_start_eth_port(struct mt_interface* inf) {
   return 0;
 }
 
+/* A non NULL payload_pool sets the queue up for hdr split, the payload in its own mbuf */
+static int dev_rx_queue_setup(struct mt_interface* inf, uint16_t q,
+                              struct rte_mempool* payload_pool) {
+  struct mtl_main_impl* impl = inf->parent;
+  enum mtl_port port = inf->port;
+  uint16_t nb_rx_desc = mt_if_nb_rx_desc(impl, port);
+  struct rte_eth_rxconf rx_conf = inf->dev_info.default_rxconf;
+  struct rte_mempool* mbuf_pool = inf->rx_queues[q].mbuf_pool
+                                      ? inf->rx_queues[q].mbuf_pool
+                                      : mt_sys_rx_mempool(impl, port);
+  int ret;
+
+  if (!mbuf_pool) {
+    err("%s(%d), no mbuf_pool for queue %d\n", __func__, port, q);
+    return -ENOMEM;
+  }
+
+  rx_conf.offloads = 0;
+  rx_conf.rx_nseg = 0;
+  rx_conf.rx_seg = NULL;
+  rx_conf.rx_deferred_start = (inf->feature & MT_IF_FEATURE_RUNTIME_RX_QUEUE) ? 1 : 0;
+  if (!payload_pool) {
+    ret = rte_eth_rx_queue_setup(inf->port_id, q, nb_rx_desc, inf->socket_id, &rx_conf,
+                                 mbuf_pool);
+  } else {
+    union rte_eth_rxseg rx_usegs[2] = {};
+
+    rx_usegs[0].split.proto_hdr =
+        RTE_PTYPE_L2_ETHER | RTE_PTYPE_L3_IPV4_EXT_UNKNOWN | RTE_PTYPE_L4_UDP;
+    rx_usegs[0].split.mp = mbuf_pool;
+    rx_usegs[1].split.mp = payload_pool;
+    rx_conf.offloads = RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT;
+    rx_conf.rx_nseg = 2;
+    rx_conf.rx_seg = rx_usegs;
+    ret = rte_eth_rx_queue_setup(inf->port_id, q, nb_rx_desc, inf->socket_id, &rx_conf,
+                                 NULL);
+  }
+  if (ret < 0)
+    err("%s(%d), rte_eth_rx_queue_setup fail %d for queue %d\n", __func__, port, ret, q);
+  return ret;
+}
+
 static int dev_start_port(struct mt_interface* inf) {
   int ret;
   struct mtl_main_impl* impl = inf->parent;
@@ -1217,11 +1288,8 @@ static int dev_start_port(struct mt_interface* inf) {
   enum mtl_port port = inf->port;
   int socket_id = inf->socket_id;
   uint16_t nb_rx_q = inf->nb_rx_q, nb_tx_q = inf->nb_tx_q;
-  uint16_t nb_rx_desc = mt_if_nb_rx_desc(impl, port);
   uint16_t nb_tx_desc = mt_if_nb_tx_desc(impl, port);
-  uint8_t rx_deferred_start = 0;
   struct rte_eth_txconf tx_port_conf;
-  struct rte_eth_rxconf rx_port_conf;
 
   if (inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD) {
     inf->status |= MT_IF_STAT_PORT_STARTED;
@@ -1229,67 +1297,11 @@ static int dev_start_port(struct mt_interface* inf) {
     return 0;
   }
 
-  if (inf->feature & MT_IF_FEATURE_RUNTIME_RX_QUEUE) rx_deferred_start = 1;
-  rx_port_conf.rx_deferred_start = rx_deferred_start;
-
-  struct rte_mempool* mbuf_pool;
   for (uint16_t q = 0; q < nb_rx_q; q++) {
-    mbuf_pool = inf->rx_queues[q].mbuf_pool ? inf->rx_queues[q].mbuf_pool
-                                            : mt_sys_rx_mempool(impl, port);
-    if (!mbuf_pool) {
-      err("%s(%d), no mbuf_pool for queue %d\n", __func__, port, q);
-      return -ENOMEM;
-    }
-
-    rx_port_conf = inf->dev_info.default_rxconf;
-
-    rx_port_conf.offloads = 0;
-    rx_port_conf.rx_nseg = 0;
-    rx_port_conf.rx_seg = NULL;
-    if (mt_if_hdr_split_pool(inf, q) && mt_if_has_hdr_split(impl, port)) {
-#ifdef ST_HAS_DPDK_HDR_SPLIT
-      rx_port_conf.offloads = RTE_ETH_RX_OFFLOAD_BUFFER_SPLIT;
-      info("%s(%d), enable hdr split for queue %d\n", __func__, port, q);
-      /* two segments */
-      union rte_eth_rxseg rx_usegs[2] = {};
-      struct rte_eth_rxseg_split* rx_seg;
-
-      rx_seg = &rx_usegs[0].split;
-#if RTE_VERSION >= RTE_VERSION_NUM(22, 11, 0, 0)
-      rx_seg->proto_hdr =
-          RTE_PTYPE_L2_ETHER | RTE_PTYPE_L3_IPV4_EXT_UNKNOWN | RTE_PTYPE_L4_UDP;
-#else
-      rx_seg->proto_hdr = RTE_PTYPE_L4_UDP;
-#endif
-
-      rx_seg->offset = 0;
-      rx_seg->length = 0;
-      rx_seg->mp = mbuf_pool;
-
-      rx_seg = &rx_usegs[1].split;
-      rx_seg->proto_hdr = 0;
-      rx_seg->offset = 0;
-      rx_seg->length = 0;
-      rx_seg->mp = mt_if_hdr_split_pool(inf, q);
-
-      rx_port_conf.rx_nseg = 2;
-      rx_port_conf.rx_seg = rx_usegs;
-
-      ret =
-          rte_eth_rx_queue_setup(port_id, q, nb_rx_desc, socket_id, &rx_port_conf, NULL);
-#else
-      err("%s, no hdr split support for this dpdk build\n", __func__);
-      return -ENOTSUP;
-#endif
-    } else {
-      ret = rte_eth_rx_queue_setup(port_id, q, nb_rx_desc, socket_id, &rx_port_conf,
-                                   mbuf_pool);
-    }
-    if (ret < 0) {
-      err("%s(%d), rte_eth_rx_queue_setup fail %d for queue %d\n", __func__, port, ret,
-          q);
-      return ret;
-    }
+    struct rte_mempool* payload_pool =
+        mt_if_has_hdr_split(impl, port) ? mt_if_hdr_split_pool(inf, q) : NULL;
+    ret = dev_rx_queue_setup(inf, q, payload_pool);
+    if (ret < 0) return ret;
   }
 
   /* iavf/ice scalar xmit (MULTI_SEGS) frees a done rs batch per burst, empty ones too,
@@ -1323,8 +1335,9 @@ static int dev_start_port(struct mt_interface* inf) {
   if (ret < 0) return ret;
 
   if (mt_has_virtio_user(impl, port)) {
-    mbuf_pool = inf->rx_queues[0].mbuf_pool ? inf->rx_queues[0].mbuf_pool
-                                            : mt_sys_rx_mempool(impl, port);
+    struct rte_mempool* mbuf_pool = inf->rx_queues[0].mbuf_pool
+                                        ? inf->rx_queues[0].mbuf_pool
+                                        : mt_sys_rx_mempool(impl, port);
     ret = rte_eth_rx_queue_setup(inf->virtio_port_id, 0, 0, socket_id, NULL, mbuf_pool);
     if (ret < 0) {
       err("%s(%d), rte_eth_rx_queue_setup fail %d for virtio port\n", __func__, port,
@@ -1359,9 +1372,61 @@ static int dev_start_port(struct mt_interface* inf) {
   }
   rte_eth_stats_reset(port_id); /* reset stats */
 
-  info("%s(%d), rx_defer %d tx_reclaim_rs_thresh %u\n", __func__, port, rx_deferred_start,
+  info("%s(%d), rx_defer %d tx_reclaim_rs_thresh %u\n", __func__, port,
+       (inf->feature & MT_IF_FEATURE_RUNTIME_RX_QUEUE) ? 1 : 0,
        inf->tx_reclaim_rs_thresh);
   return 0;
+}
+
+/*
+ * The slots sit at base iova + offset, so hdr split needs IOVA as VA. The pool refuses a
+ * slot still in use, which only the ice bulk alloc Rx path takes back cleanly; ice picks
+ * it when rx_free_thresh and nb_rx_desc meet its preconditions.
+ */
+static int dev_hdr_split_check(struct mtl_main_impl* impl, struct mt_interface* inf) {
+  enum mtl_port port = inf->port;
+  uint16_t nb_rx_desc = inf->nb_rx_desc;
+  uint16_t thresh = inf->dev_info.default_rxconf.rx_free_thresh;
+  uint32_t slots = mt_get_user_params(impl)->hdr_split_slots;
+  uint32_t in_use_max = mt_hdr_split_in_use_max(nb_rx_desc, thresh);
+  const char* cause = NULL;
+
+  if (inf->hdr_split_rx_queues_end <= inf->system_rx_queues_end) return 0;
+
+  if (slots && (slots < in_use_max)) {
+    err("%s(%d), hdr_split_slots %u must be at least %u\n", __func__, port, slots,
+        in_use_max);
+    return -EINVAL;
+  }
+  if (impl->iova_mode != RTE_IOVA_VA)
+    cause = "IOVA is not VA";
+  else if ((thresh < MT_HDR_SPLIT_RX_STAGE) || (thresh >= nb_rx_desc) ||
+           (nb_rx_desc % thresh))
+    cause = "rx_free_thresh and nb_rx_desc miss the bulk alloc Rx path";
+  if (!cause) return 0;
+
+  err("%s(%d), no hdr split queues as %s, nb_rx_desc %u rx_free_thresh %u\n", __func__,
+      port, cause, nb_rx_desc, thresh);
+  inf->feature &= ~MT_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT;
+  inf->hdr_split_rx_queues_end = inf->system_rx_queues_end;
+  return 0;
+}
+
+/* ice takes its scattered Rx path, which has no buffer split, when a frame of the MTU
+ * exceeds the buffer of the header pool */
+static bool dev_hdr_split_nic_buf_ok(struct mt_interface* inf, struct rte_mempool* pool) {
+  uint32_t buf_len =
+      RTE_ALIGN_FLOOR(rte_pktmbuf_data_room_size(pool) - RTE_PKTMBUF_HEADROOM, 128);
+  uint16_t mtu = RTE_ETHER_MTU;
+
+  rte_eth_dev_get_mtu(inf->port_id, &mtu);
+  if (buf_len >= (uint32_t)mtu + MT_HDR_SPLIT_ETH_OVERHEAD) return true;
+
+  err("%s(%d), no hdr split queues as the rx buffer %u is below mtu %u + %u\n", __func__,
+      inf->port, buf_len, mtu, MT_HDR_SPLIT_ETH_OVERHEAD);
+  inf->feature &= ~MT_IF_FEATURE_RXQ_OFFLOAD_BUFFER_SPLIT;
+  inf->hdr_split_rx_queues_end = inf->system_rx_queues_end;
+  return false;
 }
 
 static int dev_if_uinit_rx_queues(struct mt_interface* inf) {
@@ -1385,8 +1450,9 @@ static int dev_if_uinit_rx_queues(struct mt_interface* inf) {
       mt_mempool_free(rx_queue->mbuf_pool);
       rx_queue->mbuf_pool = NULL;
     }
-    if (rx_queue->mbuf_payload_pool) {
-      mt_mempool_free(rx_queue->mbuf_payload_pool);
+    if (rx_queue->hdr_split) {
+      mt_hdr_split_pool_free(rx_queue->hdr_split);
+      rx_queue->hdr_split = NULL;
       rx_queue->mbuf_payload_pool = NULL;
     }
   }
@@ -1461,22 +1527,24 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
       rx_queues[q].mbuf_elements = mbuf_elements;
 
       /* hdr split payload mbuf */
-      if ((q >= inf->system_rx_queues_end) && (q < inf->hdr_split_rx_queues_end)) {
-        if (!mt_if_has_hdr_split(impl, inf->port)) {
-          err("%s(%d), no hdr split feature\n", __func__, inf->port);
-          dev_if_uinit_rx_queues(inf);
-          return -EIO;
-        }
-        snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%dQ%d_PAYLOAD", MT_RX_MEMPOOL_PREFIX,
-                 inf->port, q);
-        mbuf_pool = mt_mempool_create(impl, inf->port, pool_name, mbuf_elements,
-                                      MT_MBUF_CACHE_SIZE, sizeof(struct mt_muf_priv_data),
-                                      ST_PKT_MAX_ETHER_BYTES);
-        if (!mbuf_pool) {
+      if ((q >= inf->system_rx_queues_end) && (q < inf->hdr_split_rx_queues_end) &&
+          dev_hdr_split_nic_buf_ok(inf, mbuf_pool)) {
+        uint32_t slots = mt_get_user_params(impl)->hdr_split_slots;
+        /* DMA targets of the unbound mbufs, as large as a header pool buffer; no packet
+         * reaches the queue before a session binds, so they share the buffers */
+        uint32_t nb_scratch = mt_hdr_split_in_use_max(
+            inf->nb_rx_desc, inf->dev_info.default_rxconf.rx_free_thresh);
+        snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%dQ%d_HS_%d", MT_RX_MEMPOOL_PREFIX,
+                 inf->port, q, impl->mempool_idx++);
+        struct mt_hdr_split_pool* hp = mt_hdr_split_pool_create(
+            pool_name, slots ? slots : MT_HDR_SPLIT_SLOTS_DEFAULT, nb_scratch,
+            rte_pktmbuf_data_room_size(mbuf_pool), inf->socket_id);
+        if (!hp) {
           dev_if_uinit_rx_queues(inf);
           return -ENOMEM;
         }
-        rx_queues[q].mbuf_payload_pool = mbuf_pool;
+        rx_queues[q].hdr_split = hp;
+        rx_queues[q].mbuf_payload_pool = hp->mp;
       }
     }
   }
@@ -1788,6 +1856,10 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
 
     if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL && bytes_per_sec) {
       ret = dev_tx_queue_set_rl_rate(inf, q, bytes_per_sec);
+      if (ret == -EBUSY) { /* a hdr split session runs, keep rl for the port */
+        mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
+        return NULL;
+      }
       if (ret < 0) {
         err("%s(%d), fallback to tsc as rl fail\n", __func__, port);
         inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
@@ -1809,6 +1881,41 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
   return NULL;
 }
 
+/* ice has no runtime rx queue setup: the pool mbufs move to the session slots, or back
+ * to the scratch buffers, while the queue is stopped, as ice returns the ring mbufs at
+ * stop and refills from the pool at start */
+static int dev_hdr_split_rebind(struct mt_interface* inf, uint16_t q,
+                                struct mt_hdr_split_slots* slots) {
+  struct mt_hdr_split_pool* hp = inf->rx_queues[q].hdr_split;
+  bool restart = !(inf->feature & MT_IF_FEATURE_RUNTIME_RX_QUEUE);
+  int ret;
+
+  if (restart) {
+    ret = rte_eth_dev_rx_queue_stop(inf->port_id, q);
+    if (ret < 0) {
+      err("%s(%d), stop rx queue %d fail %d\n", __func__, inf->port, q, ret);
+      return ret;
+    }
+  }
+  ret = slots ? mt_hdr_split_bind(hp, slots) : mt_hdr_split_unbind(hp);
+  /* a mbuf still in use may point at the session, keep the queue stopped */
+  if ((ret < 0) && !slots) return ret;
+  if (!restart) return ret;
+
+  int start_ret = rte_eth_dev_rx_queue_start(inf->port_id, q);
+  if (start_ret < 0) {
+    err("%s(%d), start rx queue %d fail %d\n", __func__, inf->port, q, start_ret);
+    if (!ret && slots) {
+      /* the session frees its slots after this fail, start the queue unbound */
+      ret = mt_hdr_split_unbind(hp);
+      if (ret < 0) return ret;
+      rte_eth_dev_rx_queue_start(inf->port_id, q);
+    }
+    if (!ret) ret = start_ret;
+  }
+  return ret;
+}
+
 struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
                                         struct mt_rxq_flow* flow) {
   struct mt_interface* inf = mt_if(impl, port);
@@ -1826,27 +1933,18 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
     return NULL;
   }
 
+  bool hdr_split = flow && (flow->flags & MT_RXQ_FLOW_F_HDR_SPLIT);
+  if (hdr_split && !mt_if_has_hdr_split(impl, port)) {
+    err("%s(%d), port has no hdr split feature\n", __func__, port);
+    return NULL;
+  }
+
   mt_pthread_mutex_lock(&inf->rx_queues_mutex);
   for (uint16_t q = 0; q < inf->nb_rx_q; q++) {
     rx_queue = &inf->rx_queues[q];
     if (rx_queue->active) continue;
-    if (flow && (flow->flags & MT_RXQ_FLOW_F_HDR_SPLIT)) {
-      /* continue if not hdr split queue */
-      if (!mt_if_hdr_split_pool(inf, q)) continue;
-#ifdef ST_HAS_DPDK_HDR_SPLIT
-      if (flow->hdr_split_mbuf_cb) {
-        ret = rte_eth_hdrs_set_mbuf_callback(
-            inf->port_id, q, flow->hdr_split_mbuf_cb_priv, flow->hdr_split_mbuf_cb);
-        if (ret < 0) {
-          err("%s(%d), hdrs callback fail %d for queue %d\n", __func__, port, ret, q);
-          mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
-          return NULL;
-        }
-      }
-#endif
-    } else { /* continue if hdr split queue */
-      if (mt_if_hdr_split_pool(inf, q)) continue;
-    }
+    /* a hdr split flow takes only a hdr split queue, any other flow only another queue */
+    if (hdr_split != !!mt_if_hdr_split_pool(inf, q)) continue;
 
     /* free the dummy flow if any */
     if (rx_queue->flow_rsp) {
@@ -1865,17 +1963,19 @@ struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_por
       rx_queue->flow = *flow;
     }
 
-    if (inf->feature & MT_IF_FEATURE_RUNTIME_RX_QUEUE) {
+    ret = hdr_split ? dev_hdr_split_rebind(inf, q, flow->hdr_split_slots) : 0;
+    if (!ret && (inf->feature & MT_IF_FEATURE_RUNTIME_RX_QUEUE)) {
       ret = rte_eth_dev_rx_queue_start(inf->port_id, q);
-      if (ret < 0) {
-        err("%s(%d), start runtime rx queue %d fail %d\n", __func__, port, q, ret);
-        if (rx_queue->flow_rsp) {
-          mt_rx_flow_free(impl, port, rx_queue->flow_rsp);
-          rx_queue->flow_rsp = NULL;
-        }
-        mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
-        return NULL;
+      if ((ret < 0) && hdr_split) dev_hdr_split_rebind(inf, q, NULL);
+    }
+    if (ret < 0) {
+      err("%s(%d), start rx queue %d fail %d\n", __func__, port, q, ret);
+      if (rx_queue->flow_rsp) {
+        mt_rx_flow_free(impl, port, rx_queue->flow_rsp);
+        rx_queue->flow_rsp = NULL;
       }
+      mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
+      return NULL;
     }
     rx_queue->active = true;
     mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
@@ -2113,9 +2213,7 @@ int mt_dev_set_tx_bps(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
     return -ENOTSUP;
   }
 
-  dev_tx_queue_set_rl_rate(inf, queue_id, bytes_per_sec);
-
-  return 0;
+  return dev_tx_queue_set_rl_rate(inf, queue_id, bytes_per_sec);
 }
 
 int mt_dev_put_rx_queue(struct mtl_main_impl* impl, struct mt_rx_queue* queue) {
@@ -2141,17 +2239,22 @@ int mt_dev_put_rx_queue(struct mtl_main_impl* impl, struct mt_rx_queue* queue) {
     rx_queue->flow_rsp = NULL;
   }
 
-  if (rx_queue->flow.flags & MT_RXQ_FLOW_F_HDR_SPLIT) {
-#ifdef ST_HAS_DPDK_HDR_SPLIT
-    /* clear hdrs mbuf callback */
-    rte_eth_hdrs_set_mbuf_callback(inf->port_id, queue_id, NULL, NULL);
-#endif
-  }
-
   if (inf->feature & MT_IF_FEATURE_RUNTIME_RX_QUEUE) {
     ret = rte_eth_dev_rx_queue_stop(inf->port_id, queue_id);
     if (ret < 0)
       err("%s(%d), stop runtime rx queue %d fail %d\n", __func__, port, queue_id, ret);
+  }
+
+  /* the session frees its slots after this put, a queue that keeps them stays taken */
+  if (rx_queue->hdr_split) {
+    mt_pthread_mutex_lock(&inf->rx_queues_mutex);
+    ret = dev_hdr_split_rebind(inf, queue_id, NULL);
+    mt_pthread_mutex_unlock(&inf->rx_queues_mutex);
+    if (ret < 0) {
+      err("%s(%d), q %d keeps the hdr split slots, unbind fail %d\n", __func__, port,
+          queue_id, ret);
+      return ret;
+    }
   }
 
   rx_queue->active = false;
@@ -2390,10 +2493,26 @@ int mt_dev_init(struct mtl_init_params* p, struct mt_kport_info* kport_info) {
   }
 #endif
 
+  /* before rte_eal_init(), which fills the mempool ops table with the DPDK drivers */
+  if (p->nb_rx_hdr_split_queues) {
+    ret = mt_hdr_split_ops_register();
+    if (ret < 0) {
+      err("%s, hdr split mempool ops register fail %d\n", __func__, ret);
+      return ret;
+    }
+  }
+
   ret = dev_eal_init(p, kport_info);
   if (ret < 0) {
     err("%s, dev_eal_init fail %d\n", __func__, ret);
     return ret;
+  }
+  if (p->nb_rx_hdr_split_queues) {
+    ret = mt_hdr_split_ops_check();
+    if (ret < 0) {
+      rte_eal_cleanup();
+      return ret;
+    }
   }
 
   return 0;
@@ -2692,6 +2811,12 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       dbg("%s(%d), has rxq hdr split\n", __func__, i);
     }
 #endif
+    /* hdr split queues only on a port that can split, a session asking for one fails */
+    if (!mt_if_has_hdr_split(impl, i) &&
+        (inf->hdr_split_rx_queues_end > inf->system_rx_queues_end)) {
+      warn("%s(%d), no hdr split feature, no hdr split queues\n", __func__, i);
+      inf->hdr_split_rx_queues_end = inf->system_rx_queues_end;
+    }
 
     if (mt_has_virtio_user(impl, i)) {
       ret = dev_if_init_virtio_user(inf);
@@ -2710,6 +2835,12 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       err("%s(%d), dev_config_port fail %d\n", __func__, i, ret);
       mt_dev_if_uinit(impl);
       return -EIO;
+    }
+
+    ret = dev_hdr_split_check(impl, inf);
+    if (ret < 0) {
+      mt_dev_if_uinit(impl);
+      return ret;
     }
 
     unsigned int mbuf_elements = 1024;

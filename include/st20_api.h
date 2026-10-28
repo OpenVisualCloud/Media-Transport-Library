@@ -219,9 +219,33 @@ extern "C" {
 #define ST20_RX_FLAG_AUTO_DETECT (MTL_BIT32(18))
 /**
  * Flag bit in flags of struct st20_rx_ops.
- * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
- * Only ST20_PACKING_BPM stream can enable this offload as software limit
- * Try to enable header split offload feature.
+ * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL, one port, no
+ * ST20_RX_FLAG_AUTO_DETECT, no ST20_RX_FLAG_DATA_PATH_ONLY.
+ * Enable the header split offload. The NIC splits each packet after the UDP header and
+ * writes the UDP payload (RTP header, SRD headers, pixels) into the frame, with no CPU
+ * copy. The frame is slotted: the packet at pixel byte offset k * pkt_len of the frame
+ * is in slot k, which starts at the frame address + k * stride, where:
+ *   pkt_len = pixel bytes per packet of the packing (ops.packing), 1260 for BPM; for
+ *     GPM and GPM_SL the length the MTL TX session picks, so other senders may differ,
+ *   slot = 20 (RTP and SRD header) + 6 (second SRD header) + pkt_len,
+ *   buf = data room of the RX mbufs - 128, 1536 by default (see rx_pool_data_size),
+ *   stride = (128 + max(slot, buf) + 63) / 64 * 64, 128 is RTE_PKTMBUF_HEADROOM.
+ * Every packet of a frame but the last must carry pkt_len pixel bytes, other packets
+ * are dropped. The NIC writes a slot again one lap of the slots later, also while the
+ * app still holds the frame of that slot, and from slot 0 again right after
+ * st20_rx_update_source().
+ * framebuff_cnt * packets per frame must exceed nb_rx_desc + rx_free_thresh + 32 +
+ * rx_burst_size. The session uses (framebuff_cnt + 1) * packets per frame - 1 slots, at
+ * most hdr_split_slots of struct mtl_init_params. Needs IOVA as VA, a port with buffer
+ * split, a dedicated rx queue (no shared RSS, shared rx queue or CNI rx) and
+ * nb_rx_hdr_split_queues in struct mtl_init_params. No timing parser.
+ * While the session runs, a rate limit change on the port, which the ice commit does by
+ * a port stop and start, fails with -EBUSY: a TX session of rate limit pacing on the port
+ * gets no queue and fails to create, a TX session whose rate limit training changes its
+ * rate falls back to TSC pacing, and the port keeps rate limit pacing. If the rx queue
+ * fails to give the frames back, the queue stays bound and this lasts until the process
+ * exits: st20_rx_free() then returns -EBUSY, and a st20_rx_create() that fails after it
+ * took the queue logs "the rx queue keeps the slots"; ext frames must stay allocated.
  */
 #define ST20_RX_FLAG_HDR_SPLIT (MTL_BIT32(19))
 /**
@@ -1509,7 +1533,7 @@ struct st20_rx_ops {
   uint32_t ssrc;
   /** Optional. Not in use now as RX support all pacing type, reserved for future */
   enum st21_pacing pacing;
-  /** Optional. Not in use now as RX support all packing type, reserved for future */
+  /** Optional. Session packing, only ST20_RX_FLAG_HDR_SPLIT uses it to size the slots */
   enum st20_packing packing;
 
   /** Optional. Name */
@@ -2226,7 +2250,9 @@ int st20_rx_pcapng_dump(st20_rx_handle handle, uint32_t max_dump_packets, bool s
  *   The handle to the rx st2110-20(video) session.
  * @return
  *   - 0: Success, rx st2110-20(video) session freed.
- *   - <0: Error code of the rx st2110-20(video) session free.
+ *   - <0: Error code of the rx st2110-20(video) session free. The session is freed also
+ *     then, except for an invalid handle or a free of it that already runs.
+ *   - -EBUSY: freed, but the rx queue keeps the frames; ext frames must stay allocated.
  */
 int st20_rx_free(st20_rx_handle handle);
 

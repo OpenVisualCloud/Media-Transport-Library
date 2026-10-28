@@ -74,3 +74,8 @@ TEST_F(MtFlowRetryTest, FreeExhaustsRetriesButStillReturnsZero) {
   EXPECT_EQ(ut_flow_destroy_calls(ctx_), 5);
   EXPECT_TRUE(ut_flow_last_free_flow_cleared(ctx_));
 }
+
+TEST_F(MtFlowRetryTest, HdrSplitQueueGetsTheUdpFlowOfTheSession) {
+  EXPECT_TRUE(ut_flow_rx_flow_create_hdr_split_queue(ctx_));
+  EXPECT_EQ(ut_flow_last_udp_dst_port(ctx_), 20000);
+}

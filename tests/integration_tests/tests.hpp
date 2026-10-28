@@ -218,6 +218,8 @@ class tests_context {
   size_t frame_size = 0;
   size_t fb_size;
   size_t uframe_size = 0;
+  /* pixel bytes per packet of a ST20_RX_FLAG_HDR_SPLIT frame, 0 for a plain frame */
+  size_t hdr_split_pkt_len = 0;
   uint8_t shas[TEST_MAX_SHA_HIST_NUM][SHA256_DIGEST_LENGTH] = {};
   /* frame buff alloc in the test context */
   uint8_t* frame_buf[TEST_MAX_SHA_HIST_NUM] = {};

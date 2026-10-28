@@ -248,6 +248,7 @@ base_build:
   - 'tools/ebpf/**'
   - 'tools/readpcap/**'
   - 'tools/sch_smi_emulate/**'
+  - 'tests/tools/perf_testing/**'
 
 # docker_build.yml, ubuntu-docker-build. The build context is the repository
 # root less .dockerignore, which drops .github/, so the hash_<name> filters do

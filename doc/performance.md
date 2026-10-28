@@ -113,3 +113,49 @@ ninja -C build_no_nt
 ```
 
 With the option off every RX video frame copy goes through `mt_memcpy()` and the three store fences that publish a frame to the application are compiled out with it. Build both ways and compare `incomplete frames` at a fixed session count to tell a copy-bound RX regression apart from a pacing or scheduling one.
+
+## 6. RX header split
+
+Without an offload, the RX video tasklet copies the payload of each packet from the mbuf into the frame. The copy reads about 1.2 KB and writes about 1.2 KB for each packet, and it fills the cache with lines that the next packets need.
+DMA offload gives the copy to a DSA device, but the tasklet must submit the copy and poll for its completion. With header split, the NIC writes the payload of each packet directly into its slot in the frame, so the CPU does no payload copy and needs no DMA device.
+
+![RX header split](png/hdr_split.svg)
+
+See [Header Split Guide](experimental/header_split.md) for the use cases, the requirements and the frame layout.
+
+### 6.1. Where header split helps
+
+* Many RX video sessions on one core, when the payload copy limits the session count. The copy is the largest per packet cost of the CPU copy path, so a receiver at 4K or with many 1080p sessions gains most.
+* A host that is bound by memory bandwidth, see section 3. Header split removes the read and the write of the copy, so each session moves less DDR traffic.
+* A host without a DSA device, or with its DSA devices used for other work. Header split takes the copy off the CPU without a DMA device.
+* An application that reads the frame in the transport format: for example a recorder or a forwarder of RFC 4175 data, or an application that reads the frame one packet at a time and can step over the slots.
+
+### 6.2. Where header split does not help
+
+* An application that needs a contiguous frame, or a `st20p` converter. The converters cannot read a slotted frame, and a copy out of the slots costs as much as the copy that header split removes.
+* ST 2022-7 redundancy, a VF on iavf, shared RSS, a shared RX queue, AF_XDP or the kernel socket path. Header split needs a dedicated RX queue on an ice PF.
+* A port that changes its rate limit while it receives. A rate limit change fails with `-EBUSY` while a header split session runs.
+* A port with many plain RX sessions. When one RX queue of the port splits, the ice PMD uses the scalar RX path for all RX queues of the port, and the plain sessions can cost more.
+* A sender whose GPM packet length is not the length that the RX session expects, or GPM_SL lines that end in a shorter packet.
+* An application that holds a frame for longer than one lap of the slots. The NIC writes the slots again while the application reads them.
+
+### 6.3. Measure the gain
+
+Measure on the target platform before you select header split. `tests/tools/perf_testing` gives the RX cost for each packet from the work counters of the scheduler. Run it with `--time_measure` once for each RX path, with the same session count and format, and compare `ns_per_pkt` of the `rxcost` record and `work_avg_ns` of the `rvs_pkt_rx` tasklet:
+
+```bash
+# CPU copy
+sudo tests/tools/perf_testing/build/perf_testing \
+  --p_port 0000:af:00.0 --p_sip 192.168.85.80 \
+  --tx --t_port 0000:af:00.1 --t_sip 192.168.85.81 \
+  --sessions 8 --time_measure --duration 60
+# header split, the same load
+sudo tests/tools/perf_testing/build/perf_testing \
+  --p_port 0000:af:00.0 --p_sip 192.168.85.80 \
+  --tx --t_port 0000:af:00.1 --t_sip 192.168.85.81 \
+  --sessions 8 --time_measure --duration 60 --hdr_split
+```
+
+The TX sessions of the same process can share the RX scheduler. At a high session count, send from a second process with `--tx_only`, as the [perf_testing guide](../tests/tools/perf_testing/README.md) says.
+
+Then add sessions until the first incomplete frame for each path, to find the session count on one core. The CPU copy baseline changes with `enable_rx_video_nt_store` of section 5, so record that option with the result.

@@ -318,6 +318,24 @@ struct mt_ptp_impl {
 /* force to use socket, only for MT_DRV_F_KERNEL_BASED */
 #define MT_RXQ_FLOW_F_FORCE_SOCKET (MTL_BIT32(5))
 
+/* payload pool of a hdr split rx queue, mbuf i is on slot i of the bound session */
+struct mt_hdr_split_pool {
+  struct rte_mempool* mp;
+  uint32_t nb_mbufs;
+  /* by mbuf idx, NULL while the mbuf is in use */
+  struct rte_mbuf** mbufs;
+  /* DMA target of the mbufs no session slot holds */
+  void* scratch;
+  rte_iova_t scratch_iova;
+  uint32_t scratch_size;
+  uint32_t nb_scratch;
+  struct mt_hdr_split_slots* slots;
+  /* the dequeue hands out mbufs 0 to nb_active - 1 */
+  uint32_t nb_active;
+  uint32_t mbufs_per_frame;
+  uint32_t alloc_idx;
+};
+
 /* request of rx queue flow */
 struct mt_rxq_flow {
   /* mandatory if not no_ip_flow */
@@ -330,11 +348,8 @@ struct mt_rxq_flow {
   /* rate in bytes */
   uint64_t bytes_per_sec;
 
-  /* optional for hdr split */
-  void* hdr_split_mbuf_cb_priv;
-#ifdef ST_HAS_DPDK_HDR_SPLIT /* rte_eth_hdrs_mbuf_callback_fn define with this marco */
-  rte_eth_hdrs_mbuf_callback_fn hdr_split_mbuf_cb;
-#endif
+  /* slots of a MT_RXQ_FLOW_F_HDR_SPLIT flow */
+  struct mt_hdr_split_slots* hdr_split_slots;
 };
 
 struct mt_cni_udp_detect_entry {
@@ -476,8 +491,10 @@ struct mt_sch_tasklet_impl {
   bool request_exit;
   bool ack_exit;
 
-  /* for time measure */
+  /* time measure: stat_time resets on each stats dump, user_stat_* on user request */
   struct mt_stat_u64 stat_time;
+  struct mt_stat_u64 user_stat_time;
+  struct mt_stat_u64 user_stat_work;
 };
 
 enum mt_sch_type {
@@ -570,8 +587,9 @@ struct mtl_sch_impl {
   uint32_t stat_sleep_cnt;
   uint64_t stat_sleep_ns_min;
   uint64_t stat_sleep_ns_max;
-  /* for time measure */
+  /* time measure: stat_time resets on each stats dump, user_stat_time on user request */
   struct mt_stat_u64 stat_time;
+  struct mt_stat_u64 user_stat_time;
 };
 
 struct mt_lcore_mgr {
@@ -641,8 +659,9 @@ struct mt_rx_queue {
   struct mt_rx_flow_rsp* flow_rsp;
   struct rte_mempool* mbuf_pool;
   unsigned int mbuf_elements;
-  /* pool for hdr split payload */
+  /* pool for hdr split payload, the mp of hdr_split */
   struct rte_mempool* mbuf_payload_pool;
+  struct mt_hdr_split_pool* hdr_split;
 };
 
 struct mt_tx_queue {
@@ -1709,6 +1728,15 @@ static inline bool mt_if_has_packet_loss_simulation(struct mtl_main_impl* impl) 
 static inline struct rte_mempool* mt_if_hdr_split_pool(struct mt_interface* inf,
                                                        uint16_t q) {
   return inf->rx_queues[q].mbuf_payload_pool;
+}
+
+/* bytes the NIC may write into a hdr split payload buffer, 0 without a hdr split queue */
+static inline uint32_t mt_if_hdr_split_nic_buf_len(struct mt_interface* inf) {
+  for (uint16_t q = 0; q < inf->nb_rx_q; q++) {
+    struct mt_hdr_split_pool* hp = inf->rx_queues[q].hdr_split;
+    if (hp) return hp->scratch_size - RTE_PKTMBUF_HEADROOM;
+  }
+  return 0;
 }
 
 static inline uint16_t mt_if_nb_tx_desc(struct mtl_main_impl* impl, enum mtl_port port) {

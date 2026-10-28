@@ -66,8 +66,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     test_ctx_tx[i]->ready.store(false, std::memory_order_relaxed);
     test_ctx_tx[i]->stop = false;
 
-    init_single_port_tx(ops_tx, test_ctx_tx[i], "st20_digest_test",
-                        udp_port_for_idx(i, hdr_split));
+    init_single_port_tx(ops_tx, test_ctx_tx[i], "st20_digest_test", udp_port_for_idx(i));
     ops_tx.packing = packing[i];
     ops_tx.type = tx_type[i];
     ops_tx.width = width[i];
@@ -135,8 +134,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
     test_ctx_rx[i]->stop = false;
 
-    init_single_port_rx(ops_rx, test_ctx_rx[i], "st20_digest_test",
-                        udp_port_for_idx(i, hdr_split));
+    init_single_port_rx(ops_rx, test_ctx_rx[i], "st20_digest_test", udp_port_for_idx(i));
     ops_rx.type = rx_type[i];
     ops_rx.width = width[i];
     ops_rx.height = height[i];
@@ -152,7 +150,10 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     ops_rx.notify_rtp_ready = rx_rtp_ready;
     ops_rx.rtp_ring_size = 1024 * 2;
     ops_rx.flags = ST20_RX_FLAG_DMA_OFFLOAD;
-    if (hdr_split) ops_rx.flags |= ST20_RX_FLAG_HDR_SPLIT;
+    if (hdr_split) {
+      ops_rx.flags |= ST20_RX_FLAG_HDR_SPLIT;
+      ops_rx.packing = packing[i];
+    }
     if (enable_rtcp) {
       ops_rx.flags |= ST20_RX_FLAG_ENABLE_RTCP | ST20_RX_FLAG_SIMULATE_PKT_LOSS;
       ops_rx.rtcp.nack_interval_us = 250;
@@ -185,6 +186,11 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     dbg("%s(%d), frame_time %f\n", __func__, i, test_ctx_rx[i]->frame_time);
     test_ctx_rx[i]->frame_size = test_ctx_tx[i]->frame_size;
     test_ctx_rx[i]->fb_size = test_ctx_tx[i]->frame_size;
+    if (hdr_split) {
+      /* the pkt len of BPM, ST_VIDEO_BPM_SIZE */
+      ASSERT_EQ(packing[i], ST20_PACKING_BPM);
+      test_ctx_rx[i]->hdr_split_pkt_len = 1260;
+    }
     test_ctx_rx[i]->width = ops_rx.width;
     st20_get_pgroup(ops_rx.fmt, &test_ctx_rx[i]->st20_pg);
     memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,

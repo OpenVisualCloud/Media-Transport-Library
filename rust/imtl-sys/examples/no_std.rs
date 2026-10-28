@@ -61,6 +61,7 @@ fn main() {
             rss_sch_nb: [0; 8],
             memzone_max: 0,
             port_params: [port_param; 8],
+            hdr_split_slots: 0,
         };
 
         /* initialize dev handle */

@@ -64,4 +64,15 @@ struct mt_rx_pcap {
   bool usdt_dump;
 };
 
+/* slot memory of a hdr split session, slot i at frames + i * stride */
+struct mt_hdr_split_slots {
+  void* frames;
+  rte_iova_t frames_iova;
+  uint32_t stride;
+  uint32_t nb_slots;
+  uint32_t mbufs_per_frame;
+  /* slot of the last first packet of a frame the session handler saw */
+  uint32_t cur_frame_mbuf_idx;
+};
+
 #endif

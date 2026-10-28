@@ -51,9 +51,6 @@ static void ut_rte_free(void* ptr);
 
 struct ut_flow_ctx {
   struct mtl_main_impl impl;
-  /* rte_rx_flow_create() indexes inf->rx_queues[q] via mt_if_hdr_split_pool()
-   * before the retry loop even runs; must be a real, zeroed queue so that
-   * path resolves a NULL pool and skips the (untested) hdr-split branch. */
   struct mt_rx_queue rx_queue;
   int create_calls;
   /* -1 fails every rte_flow_create() call; N fails the first N calls then
@@ -62,6 +59,9 @@ struct ut_flow_ctx {
   /* attr.group observed on each rte_flow_create() call, used to confirm the
    * e810 group-2 fallback attempt. */
   uint32_t create_call_group[8];
+  /* UDP destination port of the last rte_flow_create() pattern, -1 if it has no UDP item
+   */
+  int last_udp_dst_port;
   int destroy_calls;
   /* Same shape as create_fail_count, for rte_flow_destroy(). */
   int destroy_fail_count;
@@ -86,10 +86,15 @@ static struct rte_flow* ut_rte_flow_create(uint16_t port_id,
                                            const struct rte_flow_action actions[],
                                            struct rte_flow_error* error) {
   (void)port_id;
-  (void)pattern;
   (void)actions;
   struct ut_flow_ctx* ctx = ut_active_ctx;
 
+  ctx->last_udp_dst_port = -1;
+  for (int i = 0; pattern[i].type != RTE_FLOW_ITEM_TYPE_END; i++) {
+    if (pattern[i].type != RTE_FLOW_ITEM_TYPE_UDP) continue;
+    const struct rte_flow_item_udp* udp = pattern[i].spec;
+    ctx->last_udp_dst_port = ntohs(udp->hdr.dst_port);
+  }
   if ((size_t)ctx->create_calls < RTE_DIM(ctx->create_call_group))
     ctx->create_call_group[ctx->create_calls] = attr->group;
   ctx->create_calls++;
@@ -206,4 +211,15 @@ int ut_flow_rx_flow_free(ut_flow_ctx* ctx) {
 
 bool ut_flow_last_free_flow_cleared(const ut_flow_ctx* ctx) {
   return ctx->last_free_flow_cleared;
+}
+
+bool ut_flow_rx_flow_create_hdr_split_queue(ut_flow_ctx* ctx) {
+  ctx->rx_queue.mbuf_payload_pool = (struct rte_mempool*)(uintptr_t)0x1;
+  bool created = ut_flow_rx_flow_create(ctx, false);
+  ctx->rx_queue.mbuf_payload_pool = NULL;
+  return created;
+}
+
+int ut_flow_last_udp_dst_port(const ut_flow_ctx* ctx) {
+  return ctx->last_udp_dst_port;
 }
