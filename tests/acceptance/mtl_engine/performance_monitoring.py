@@ -23,6 +23,24 @@ _TS_RE = re.compile(r"MTL:\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}),?")
 _TS_FMT = "%Y-%m-%d %H:%M:%S"
 
 
+def parse_cpus(text: str) -> list[int]:
+    cpus = []
+    for part in filter(None, text.strip().split(",")):
+        lo, _, hi = part.partition("-")
+        cpus.extend(range(int(lo), int(hi or lo) + 1))
+    return cpus
+
+
+def format_cpus(cpus) -> str:
+    ranges: list[list[int]] = []
+    for c in sorted(cpus):
+        if ranges and c == ranges[-1][1] + 1:
+            ranges[-1][1] = c
+        else:
+            ranges.append([c, c])
+    return ",".join(str(a) if a == b else f"{a}-{b}" for a, b in ranges)
+
+
 # ── FPS Monitoring ──────────────────────────────────────────────────────
 
 
