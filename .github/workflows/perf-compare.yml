@@ -46,6 +46,17 @@ on:
           - 4320p29
           - 4320p25
         default: 1080p59
+      # Each choice says what it does; the case takes its word before the colon.
+      pixel_format:
+        description: 'The pixel format of the applications. MTL converts it to the format on the wire on TX and back on RX, on the application threads, as an application that works in that format sees it. At cores 8 those carry about 20 x 1080p59 sessions in yuv422p10le, 24 in v210'
+        required: false
+        type: choice
+        options:
+          - 'none: the applications use the format on the wire, nothing is converted'
+          - 'yuv422p10le: planar 10-bit 4:2:2, as FFmpeg and most software use'
+          - 'v210: packed 10-bit 4:2:2, as SDI and broadcast cards use'
+          - 'y210: packed 4:2:2, 10 bits in 16-bit words, as GPU and media APIs use'
+        default: 'none: the applications use the format on the wire, nothing is converted'
       # sessions, cores, test_time and rounds are strings, not numbers: a number
       # input reaches a step's env as 120.0.
       sessions:
@@ -234,6 +245,7 @@ jobs:
           ROUNDS: ${{ inputs.rounds }}
           CORES: ${{ inputs.cores }}
           SINGLE_CORE: ${{ inputs.single_core }}
+          PIXEL_FORMAT: ${{ inputs.pixel_format }}
         run: task ci:pytest-run -- perf-compare
       - name: Summarize the comparison
         if: always()

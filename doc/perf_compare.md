@@ -377,6 +377,7 @@ options of a run by hand (§5.4):
 | `ref_a`, `ref_b` | `--perf_compare_slots`, `--perf_compare_labels` | `main`, `main` | A, the baseline, and B, the candidate: a branch, tag or commit, with an optional `~n` or `^`; the same twice measures the noise. pytest takes the two built trees and their labels |
 | `args_a`, `args_b` | `--perf_compare_args_a`, `--perf_compare_args_b` | empty | Extra RxTxApp options of each build: letters, digits, spaces and `_./:=,+-`. RxTxApp ignores an option it does not know |
 | `video` | `-k "1080p and 59fps"` | `1080p59` | 1080p, 2160p or 4320p at 59, 50, 29 or 25 fps, from the perf media set |
+| `pixel_format` | `--perf_compare_pixel_format` | `none` | `none`, `yuv422p10le`, `v210` or `y210`: the pixel format of the applications, which MTL converts to the format on the wire on TX and back on RX (below) |
 | `sessions` | `--perf_compare_sessions` | `36` | Video sessions of each build on each port it uses, in every `nics` mode (`span` puts that many on each of its two ports) |
 | `nics` | `--perf_compare_nics` | `single` | `single`, `split`, `redundant`, `span`, `pairs` or `pooled` (§3.5); each choice of the form says what it does, and the case takes the word before its colon |
 | `dma` | `--perf_compare_dma` | `none` | `none`, `A`, `B` or `both`: the builds whose RX instances copy with a DSA (§3.5) |
@@ -394,6 +395,7 @@ anything is built or started:
 | `sessions`, `video` | A port carries at most 100 Gb/s of sessions (below) | refs job; the case against each port's own link |
 | `sessions`, `single_core` | An MTL scheduler takes 60 video sessions at most | refs job and case |
 | `cores`, `single_core` | At least 3 CPUs, or 2 when both roles are single core | refs job and case |
+| `pixel_format`, `sessions`, `cores` | The conversion runs on the application threads, on the slot's first CPU and the lcores the schedulers leave: at `cores` 8 about 20 x 1080p59 sessions in yuv422p10le and 24 in v210 hold their rate (above) | none needed |
 | `args`, `nics` | With `redundant`, a build's `--sch_session_quota` replaces the quota the case gives (§3.5) | none needed |
 | `args`, `single_core` | `--sch_session_quota`, `--sch_data_quota`, `--dedicated_sys_lcore` and `--rx_separate_lcore` would give a single core instance more schedulers | case |
 | `args`, `dma` / `cores` / `test_time` | `--dma_dev`, `--lcores` and `--tasklet_time` are the case's own; by any prefix RxTxApp takes | case |
@@ -406,6 +408,28 @@ A 59 fps session takes 2.76 Gb/s on the wire at 1080p, 11.0 at 2160p and 44.1 at
 pixels, 1406 on the wire); 50, 29 and 25 fps take 0.83, 0.5 and 0.42 of that. 36 x
 1080p59, 99.3 Gb/s, is the most a 100G port carries (at 37 no session reached its
 rate); 2160p59 fits 9, 4320p59 2.
+
+With a `pixel_format` other than `none` the applications work in that format, as an
+application in that format does: MTL converts a frame to the format on the wire in `st20p_tx_put_frame()` and back in
+`st20p_rx_get_frame()`, both on the application threads and with its own SIMD
+converters, as no converter plugin is registered. Their CPU shows in `other threads
+(cores)`, not in the scheduler rows. The TX source stays the perf media in the format
+on the wire, read as frames of the chosen one: a conversion does the same work whatever
+the pixels hold, and nothing checks them.
+
+The conversion costs the application threads several CPUs. At `cores`
+8, two instances a host as in `single`, 36 x 1080p59 sessions held 33 fps in yuv422p10le
+and 43 in v210, the TX application threads using every CPU the schedulers left. These
+held their rate:
+
+| `pixel_format` | Sessions at 1080p59 | Cores of the TX application threads, of the 5 free | RX application threads |
+| --- | --- | --- | --- |
+| `yuv422p10le` | 20 | 4.5 | 2.5 |
+| `v210` | 24 | 4.1 | 2.5 |
+
+`y210` was not measured; its frames are as large as yuv422p10le's. The pipelines add frames of that format on the
+node of the session, 2 a TX session and 3 an RX one: at 36 x 1080p, 0.6 and 0.9 GB an
+instance in planar or Y210, two thirds of that in V210.
 
 At 36 x 1080p59 every session holds its rate, but two `main` TX instances on the
 companion count about 210,000 build timeout frames each a round, which the rounds note;
