@@ -56,16 +56,17 @@ on:
       # Where and how the instances run
       # Each choice says what it does; the case takes its word before the colon.
       nics:
-        description: How the builds use the two E830 NICs of each host; sessions counts per port in every mode
+        description: 'Which NIC ports each build uses. Each host has two E830 NICs of two ports; A and B swap places every round. sessions is the number of streams on each port, in every mode'
         required: false
         type: choice
         options:
-          - 'single: NIC 0 only, A and B on its two ports'
-          - 'span: one instance a build, on a port of each NIC'
-          - 'split: A on one NIC, B on the other, swapped each round; a socket each'
-          - 'pairs: an A/B pair on each NIC, the NICs reported apart'
-          - 'pooled: an A/B pair on each NIC, both NICs one result'
-        default: 'single: NIC 0 only, A and B on its two ports'
+          - 'single: both builds on NIC 0, one port each'
+          - 'split: each build on a NIC of its own, port 0, and so a CPU socket each'
+          - 'redundant: ST 2022-7, each build on a NIC of its own, port 0 primary and port 1 redundant'
+          - 'span: each build on a port of both NICs'
+          - 'pairs: both builds on each NIC, a result per NIC'
+          - 'pooled: both builds on each NIC, one result for both NICs'
+        default: 'single: both builds on NIC 0, one port each'
       dma:
         description: 'The builds whose RX instances copy the payload with a DSA (DMA) of their NUMA node; TX has no DMA'
         required: false

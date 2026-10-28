@@ -246,6 +246,11 @@ def test_the_nics_modes_map_their_slots_to_ports_and_nodes():
         (0, [0], [0], [4], True, None),
         (1, [2], [2], [68], False, None),
     ]
+    redundant = _nics("redundant")  # both ports of a NIC, the second the 2022-7 leg
+    assert [(s.idx, s.ports, s.nodes, s.cpus, s.nic) for s in redundant] == [
+        (0, [0, 1], [0], [4], None),
+        (1, [2, 3], [2], [68], None),
+    ]
     pairs = _nics("pairs")
     assert [(s.idx, s.ports, s.nodes, s.isolated, s.nic) for s in pairs] == [
         (0, [0], [0], True, 0),
@@ -1357,6 +1362,7 @@ class _Fake:
         self.pin = ""  # what pin_app_threads() returns
         self.dma = ""  # the labels whose RX instances are given --dma_dev
         self.single_core = ()  # the roles on one scheduler a NUMA node
+        self.queues = None
         self.slots = [pc.Slot(i, [0], [4 + 4 * i], True, [i]) for i in (0, 1)]
         self.wire = ([0, 0], [0, 0])  # what each slot's two reads of the wire count
         self.pmu = {}  # the perf stat counts of an instance, PMU without
@@ -1447,6 +1453,7 @@ class _Fake:
             self.launches,
             {"A": "main", "B": "dev"},
             self.single_core,
+            self.queues,
         )
 
 
@@ -1673,6 +1680,14 @@ def test_run_round_rejects_an_instance_that_exits_during_the_measurement(fake):
     assert len(fake.launches) == 4  # what ran, for the report of a failed round
 
 
+def test_run_round_waits_as_long_as_the_tx_queues_take(fake, monkeypatch):
+    waits = []
+    monkeypatch.setattr(pc, "_wait_steady", lambda *a: waits.append(a[1:]) or [])
+    fake.queues = 4  # redundant: two queues a session
+    fake.round()
+    assert waits == [(2, FPS, 4)]
+
+
 def test_run_round_keeps_what_ran_when_it_raises(fake, monkeypatch):
     def wait_steady(*a):
         raise RuntimeError("rx0: lost")
@@ -1801,6 +1816,8 @@ def test_wait_steady_waits_for_the_last_dump_of_every_instance(monkeypatch):
     insts = _steady_insts(monkeypatch, [steady, steady + short])
     timeout = pc.steady_timeout(2)
     assert pc._wait_steady(insts, 2, FPS) == [f"not steady after {timeout} s: rx1"]
+    timeout = pc.steady_timeout(4)
+    assert pc._wait_steady(insts, 2, FPS, 4) == [f"not steady after {timeout} s: rx1"]
 
 
 def test_wait_steady_moves_the_app_threads_once_a_dump_shows_all_sessions(
