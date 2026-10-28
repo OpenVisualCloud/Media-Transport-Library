@@ -6,6 +6,9 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+# How long to wait for LIST to analyze an uploaded PCAP.
+REPORT_WAIT_S = 60
+
 # How many seconds a re-analysis gets to publish a report distinct from the one
 # it replaces. Measured at 3 ms on an idle EBU LIST 2.2.2; the margin is for a
 # loaded one, and the wait ends as soon as the new report appears.
@@ -108,43 +111,51 @@ class PcapComplianceClient:
             raise Exception("Upload failed: No UUID received.")
         return self.pcap_id
 
-    def download_report(self, retries=10):
+    def download_report(self, wait_s=REPORT_WAIT_S):
         """
         Download the compliance report for the uploaded PCAP file.
-        returns the report as a JSON object.
+        returns the report as a JSON object, or False if LIST has not analyzed
+        the PCAP within *wait_s* seconds.
+
+        LIST analyzes an idle PCAP in about a second, but it is shared by every
+        runner, so a busy one can take far longer: the wait backs off from 1 s
+        to 10 s between polls, until *wait_s* has passed.
         """
         if not self.pcap_id:
             raise ValueError("No PCAP ID available to download report.")
-        if retries is None or retries <= 0:
-            logger.error(
-                "Invalid retries value (%s), skipping compliance check", retries
-            )
-            return False
         url = f"http://{self.ebu_ip}/api/pcap/{self.pcap_id}/report?type=json"
         headers = {"Authorization": f"Bearer {self.token}"}
-        initial_retries = retries
-        while retries > 0:
-            response = self.session.get(
-                url, headers=headers, verify=False, proxies=self.proxies
-            )
-
-            # EBU LIST may return 404 until the report is generated.
-            if response.status_code == 404:
-                time.sleep(1)
-                retries -= 1
-                continue
-
-            response.raise_for_status()
-            report = response.json()
-            if report.get("analyzed", False):
-                return report
-
-            time.sleep(1)
-            retries -= 1
+        start = time.monotonic()
+        deadline = start + wait_s
+        delay = 1
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                response = self.session.get(
+                    url,
+                    headers=headers,
+                    verify=False,
+                    proxies=self.proxies,
+                    timeout=max(1, min(10, deadline - time.monotonic())),
+                )
+                # EBU LIST may return 404 until the report is generated.
+                if response.status_code != 404:
+                    response.raise_for_status()
+                    report = response.json()
+                    if report.get("analyzed", False):
+                        return report
+            except (requests.ConnectionError, requests.Timeout) as e:
+                logger.warning("EBU LIST report poll %d failed: %s", attempts, e)
+            if time.monotonic() + delay > deadline:
+                break
+            time.sleep(delay)
+            delay = min(delay * 2, 10)
 
         logger.error(
-            "Report is unavailable or not analyzed after %s attempts",
-            initial_retries,
+            "Report is unavailable or not analyzed after %d attempts in %.0f s",
+            attempts,
+            time.monotonic() - start,
         )
         return False
 
