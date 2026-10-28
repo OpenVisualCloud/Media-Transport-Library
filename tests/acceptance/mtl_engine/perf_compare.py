@@ -306,9 +306,9 @@ def write_file(host, path: str, text: str) -> None:
     sh(host, f"echo {base64.b64encode(text.encode()).decode()} | base64 -d > {path}")
 
 
-def steady_timeout(sessions: int) -> int:
-    """Seconds an instance may take to carry all its sessions."""
-    return 120 + 3 * sessions  # the E830 rate limiter takes ~2 s per TX queue
+def steady_timeout(queues: int) -> int:
+    """Seconds an instance may take to carry all its sessions, by their TX queues."""
+    return 120 + 3 * queues  # the E830 rate limiter takes ~2 s per TX queue
 
 
 @dataclass
@@ -391,8 +391,8 @@ def add_port(config: dict, role: str, vf: str, tx_ip: str, rx_ip: str) -> None:
 def nic_slots(nics: str, nic0: list[Slot], nic1: list[Slot]) -> list[Slot]:
     """The slots of a host from cpu_layout()'s of each NIC, as *nics* uses them: for
     span, slot p has port p of each NIC; for split, slot 0 port 0 of NIC 0 and slot 1
-    that of NIC 1, a socket each; for pairs and pooled, NIC 0's slots 0 and 1 are
-    followed by NIC 1's, slots 2 and 3."""
+    that of NIC 1, a socket each; for redundant, both ports of either NIC; for pairs
+    and pooled, NIC 0's slots 0 and 1 are followed by NIC 1's, slots 2 and 3."""
     if nics == "span":
         return [
             replace(
@@ -406,6 +406,8 @@ def nic_slots(nics: str, nic0: list[Slot], nic1: list[Slot]) -> list[Slot]:
         ]
     if nics == "split":
         return [nic0[0], replace(nic1[0], idx=1, ports=[2])]
+    if nics == "redundant":  # ST 2022-7: port 0 the primary, port 1 the redundant leg
+        return [replace(nic0[0], ports=[0, 1]), replace(nic1[0], idx=1, ports=[2, 3])]
     return [
         replace(s, idx=2 * nic + s.idx, ports=[2 * nic + s.idx], nic=nic)
         for nic, layout in enumerate((nic0, nic1))
@@ -1595,7 +1597,8 @@ def _pool(metrics: dict, nic: int) -> dict:
 def _results(labels, args, slots, rounds, styled, nics, single_core) -> list[str]:
     """The builds, the rounds, the summary and the tables of each role; the tables
     folded unless *styled*. *nics* is how the builds use the NICs: single, span, split,
-    pairs or pooled; *single_core* the roles whose instances had one scheduler."""
+    redundant, pairs or pooled; *single_core* the roles whose instances had one scheduler.
+    """
     valid = [r["metrics"] for r in rounds if not r["problems"]]
     if nics == "pooled":  # each NIC's pair of each round is a sample
         valid = [_pool(v, nic) for v in valid for nic in (0, 1)]
@@ -1676,7 +1679,7 @@ def report_html(
     a build uses DMA; nic and pfs when the builds use both NICs), *rounds* the rounds
     as the case keeps them, with the launches of run_round(), *platforms* the
     (label, platform_config.json) of the SUT and the companion, *nics* how the
-    builds use the NICs: single, span, split, pairs or pooled, and *single_core* the roles
+    builds use the NICs: single, span, split, redundant, pairs or pooled, and *single_core* the roles
     whose instances had one scheduler.
     """
     title = f"MTL perf-compare: {labels['B']} against {labels['A']}"
@@ -1734,14 +1737,15 @@ def _exited(insts) -> list[str]:
     return [u for i in insts for u in inactive(i.host, i.units)]
 
 
-def _wait_steady(insts, sessions, fps) -> list[str]:
-    """Wait until the last dump of every instance shows all its sessions at speed.
+def _wait_steady(insts, sessions, fps, queues=None) -> list[str]:
+    """Wait until the last dump of every instance shows all its sessions at speed, for
+    as long as their TX *queues* take, a queue a session unless given.
 
     The application threads of an instance leave its scheduler CPUs once a dump shows
     all its sessions, so that they exist: on isolated CPUs they could not reach speed
     on the one CPU they started on.
     """
-    timeout = steady_timeout(sessions)
+    timeout = steady_timeout(queues or sessions)
     deadline = time.monotonic() + timeout
     moved: set[str] = set()
 
@@ -1776,6 +1780,7 @@ def run_round(
     launches,
     names,
     single_core=(),
+    queues=None,
 ):
     """Run one round of every instance at once.
 
@@ -1786,7 +1791,7 @@ def run_round(
     gets what each instance ran, its label, role, slot, script and configuration,
     also when the round raises. The problems and notes name the builds by *names*;
     an instance of a role in *single_core* with more schedulers than the NUMA nodes
-    of its slot is one.
+    of its slot is one. *queues* are the TX queues of an instance, see _wait_steady().
     Returns ({label: {Instance.key: metrics}}, problems, notes).
     """
     rx, tx = sides
@@ -1832,7 +1837,7 @@ def run_round(
                     }
                 )
                 inst.collect("log", LOG_SCRIPT)
-        problems += _wait_steady(insts, sessions, fps)
+        problems += _wait_steady(insts, sessions, fps, queues)
         if not problems:
             for i in insts:
                 if why := i.pin_app_threads():

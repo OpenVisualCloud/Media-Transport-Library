@@ -21,9 +21,9 @@ An A/A run, of one build twice, measures the noise floor of the rig.
 | Where are A and B built? | In the compare job, on the SUT, with the workflow commit's build scripts | One host, compiler and set of flags for both, so a difference is the code's. `build.yml` cannot build `v26.01`: its scripts install into `/usr/local`. |
 | How do two builds that expect the same path run side by side? | A private mount namespace binds each tree over `<mtl>/.local_install` (§3.2) | DPDK bakes `RTE_EAL_PMD_PATH` into `librte_eal` as an absolute path with no override, so a moved tree loads the wrong drivers or none; `v26.01` pins DPDK 25.11 and `main` 26.07. |
 | How are the CPUs isolated? | A transient systemd unit per instance whose cgroup v2 cpuset is the slot and CPU 0, the main lcore MTL gives EAL; the slot's CPUs but its first are its `--lcores` (§3.1) | `taskset` isolates nothing: `numa_bind()` in `mtl_init()` widened a `[2,3]` mask to `0-31`. `isolate.sh` holds one host-wide lock for its one partition. |
-| How is the L3 shared? | Intel RDT CAT: equal, exclusive ways per slot; none with `split`, whose slots share no L3 (§3.3) | Otherwise the larger footprint evicts the other, and the swap does not cancel that: it follows the instance, not the slot. |
-| One NUMA node for both slots, or one each? | Both on the node of their NIC; with both NICs, each NIC's slots on its own node, with `split` a socket each (§3.5) | A slot on the other node would reach its NIC and hugepages across the socket link, which no production MTL does (DPDK's control data aside, §3.1); the swap cancels that in the mean but not in the spread. |
-| How do the builds use a second NIC? | As `nics` says: `span`, an instance on a port of each NIC; `split`, a build on each; `pairs` or `pooled`, a pair of slots on each, rows apart or pooled (§3.5) | `span` loads one instance with two NICs; `pairs` and `pooled` repeat the comparison on the other socket; `split` gives each build a socket, and the swap cancels their difference. |
+| How is the L3 shared? | Intel RDT CAT: equal, exclusive ways per slot; none with `split` or `redundant`, whose slots share no L3 (§3.3) | Otherwise the larger footprint evicts the other, and the swap does not cancel that: it follows the instance, not the slot. |
+| One NUMA node for both slots, or one each? | Both on the node of their NIC; with both NICs, each NIC's slots on its own node, with `split` and `redundant` a socket each (§3.5) | A slot on the other node would reach its NIC and hugepages across the socket link, which no production MTL does (DPDK's control data aside, §3.1); the swap cancels that in the mean but not in the spread. |
+| How do the builds use a second NIC? | As `nics` says: `span`, an instance on a port of each NIC; `split` and `redundant`, a build on each; `pairs` or `pooled`, a pair of slots on each, rows apart or pooled (§3.5) | `span` loads one instance with two NICs; `pairs` and `pooled` repeat the comparison on the other socket; `split` and `redundant` give each build a socket, the swap cancelling it. |
 | Does an instance copy with DMA? | Per build (`dma`): its RX instances, each with a DSA of its own on its port's node (§3.5) | MTL has no TX DMA, gives a session only a DMA device on its port's node, and a vfio device belongs to one process. |
 | What is measured? | The stats dump through `sys:log_msg`, the tasklet counters through `sys:tasklet_stat`, `/proc`, RDT and `perf stat` (§4) | `sys:log_msg` fires at any log level and exists in every release since 2024, so `v26.01` is measured the same way as `main`. |
 | Which application? | RxTxApp | FFmpeg and GStreamer measure their own frame copies more than MTL. |
@@ -172,8 +172,8 @@ use and neither may own, so the default group keeps them with the rest: with 12 
 instance joins its group before `exec`, and the group also gives its memory bandwidth
 (MBM) and LLC occupancy (CMT). MBA is not used: the load is a few GB/s on a host with
 hundreds, and MBA throttles by inserting delay, which changes the latency it would
-protect. With `split` the slots are on different sockets and share no L3, so their groups
-keep every way and only monitor.
+protect. With `split` and `redundant` the slots are on different sockets and share no L3,
+so their groups keep every way and only monitor.
 
 On these SNC2 hosts kernel 6.8's resctrl monitoring knows no sub-NUMA clusters (that
 came with 6.11), so check the memory bandwidth rows in an A/A run before trusting them.
@@ -187,7 +187,7 @@ after an aborted job `perf-compare.sh clean` (§6).
 | Residual effect | Handling |
 | --- | --- |
 | PF 0 and PF 1, and the two core sets, are not identical | The slot swap: each instance runs once in each slot |
-| With `split`, the slots are on different sockets and NICs, and socket 0 also carries the OS cores, the main lcore CPU 0 and the collectors on CPU 1 | The slot swap; a slot that is isolated while the other is not refuses the run |
+| With `split` and `redundant`, the slots are on different sockets and NICs, and socket 0 also carries the OS cores, the main lcore CPU 0 and the collectors on CPU 1 | The slot swap; a slot that is isolated while the other is not refuses the run |
 | The two hosts are not identical | Both slots of a host are treated alike; the hosts are never compared |
 | Shared memory controller, DDIO ways, socket power budget | Common mode; an A/A run measures what is left. The nightly is one when `main` did not move, and equal refs run the same binaries |
 | Another job on the companion, which serves other repositories too | The round notes a `Runner.Worker` on the companion at its start or end |
@@ -205,6 +205,7 @@ node 0 and NIC 1 on node 2. The topology then declares all four ports
 | `single` | 0 and 1: port 0 and 1 of NIC 0 | As above |
 | `span` | 0 and 1: port 0 or 1 of each NIC, the cores and memory of both nodes, `sessions` on each port | One instance a build drives both NICs; `mtl_init()` binds its application threads to port 0's node, and the case spreads them over the free CPUs of the slot |
 | `split` | 0: port 0 of NIC 0, 1: port 0 of NIC 1, each on its NIC's node | One table per role, as `single`; each build has a socket, its L3, memory and NIC, to itself, which a load at the limit of a core needs (below). The swap cancels the difference between the NICs in the mean, not in the noise |
+| `redundant` | As `split`, with port 1 of the NIC beside port 0: ST 2022-7, each session sent and received on both | As `split`; the port rate, `hw dropped pkts` and `RX work` rows hold both legs. A redundant session is charged on both ports, so multi-core instances take perf-pytest's redundant quotas: 18 1080p59 sessions a TX scheduler, 10 an RX one, 9 with a DSA, unless `args` give one |
 | `pairs` | 0 and 1 on NIC 0, 2 and 3 on NIC 1, each on its NIC's node; NIC 1's pair runs the other way round, so every round has each build on both NICs | A section and rows of their own per NIC, all key rows in the one verdict |
 | `pooled` | As `pairs` | One table per role, each NIC of each round a sample, so one round already gives a noise estimate: more samples, but the noise holds the NIC difference too |
 
@@ -376,7 +377,7 @@ options of a run by hand (§5.4):
 | `args_a`, `args_b` | `--perf_compare_args_a`, `--perf_compare_args_b` | empty | Extra RxTxApp options of each build: letters, digits, spaces and `_./:=,+-`. RxTxApp ignores an option it does not know |
 | `video` | `-k "1080p and 59fps"` | `1080p59` | 1080p, 2160p or 4320p at 59, 50, 29 or 25 fps, from the perf media set |
 | `sessions` | `--perf_compare_sessions` | `36` | Video sessions of each build on each port it uses, in every `nics` mode (`span` puts that many on each of its two ports) |
-| `nics` | `--perf_compare_nics` | `single` | `single`, `span`, `split`, `pairs` or `pooled` (§3.5); each choice of the form says what it does, and the case takes the word before its colon |
+| `nics` | `--perf_compare_nics` | `single` | `single`, `split`, `redundant`, `span`, `pairs` or `pooled` (§3.5); each choice of the form says what it does, and the case takes the word before its colon |
 | `dma` | `--perf_compare_dma` | `none` | `none`, `A`, `B` or `both`: the builds whose RX instances copy with a DSA (§3.5) |
 | `single_core` | `--perf_compare_single_core` | `none` | `none`, `RX`, `TX` or `both`: the roles whose instances run as perf-pytest's single core, `--sch_session_quota 99` without `--dedicated_sys_lcore`: a scheduler on each NIC node of the slot, the first NIC's with MTL's system tasklets. Alone, a core carries 28 RX, 36 with DMA, or 35 TX 1080p59 (perf-pytest); at that limit run `split` |
 | `cores` | `--perf_compare_cores` | `8` | CPUs of a slot on each NIC node it uses. The first takes the application threads, the rest are its `--lcores` (§3.1): one for MTL's system tasklets except in a single core role, the others for as many schedulers as MTL's quota needs |
@@ -392,6 +393,7 @@ anything is built or started:
 | `sessions`, `video` | A port carries at most 100 Gb/s of sessions (below) | refs job; the case against each port's own link |
 | `sessions`, `single_core` | An MTL scheduler takes 60 video sessions at most | refs job and case |
 | `cores`, `single_core` | At least 3 CPUs, or 2 when both roles are single core | refs job and case |
+| `args`, `nics` | With `redundant`, a build's `--sch_session_quota` replaces the quota the case gives (§3.5) | none needed |
 | `args`, `single_core` | `--sch_session_quota`, `--sch_data_quota`, `--dedicated_sys_lcore` and `--rx_separate_lcore` would give a single core instance more schedulers | case |
 | `args`, `dma` / `cores` / `test_time` | `--dma_dev`, `--lcores` and `--tasklet_time` are the case's own; by any prefix RxTxApp takes | case |
 | `nics`, `single_core` | `span` gets a scheduler on each NIC's node, as MTL schedules a session on its port's node; at a core's limit two instances on a socket fall short of it, `split` gives each build a socket (§3.5) | none needed |
