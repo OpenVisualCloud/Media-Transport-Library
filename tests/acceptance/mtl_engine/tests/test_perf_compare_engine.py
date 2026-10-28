@@ -84,6 +84,18 @@ def test_cpu_layout_takes_the_isolated_cores_of_nic_1_and_the_main_lcore_node(
     assert "echo $n /sys/devices/system/cpu/cpu0/node*; " in scripts[0]
 
 
+def test_cpu_layout_gives_one_slot_all_the_isolated_cores_of_the_node(monkeypatch):
+    siblings = [f"{c},{c + 128}" for c in range(32)]
+    sysfs = ["0 /sys/devices/system/cpu/cpu0/node0", "0-31,128-159", "4-20,68-84"]
+    _sh(monkeypatch, lambda script: "\n".join(sysfs + siblings))
+    slots = pc.cpu_layout(HOST, "0000:15:00.0", 17, 1)  # split and redundant
+    assert [(s.idx, s.cpus, s.isolated, s.ports) for s in slots] == [
+        (0, list(range(4, 21)), True, [0])
+    ]
+    with pytest.raises(RuntimeError, match="17 isolated free cores and 13 others"):
+        pc.cpu_layout(HOST, "0000:15:00.0", 18, 1)
+
+
 @pytest.mark.skipif(
     os.geteuid() != 0, reason="proc() reads /proc/timer_list, root only"
 )
@@ -225,11 +237,13 @@ def test_rdt_setup_runs_without_cat_rather_than_take_resctrl(monkeypatch, probe)
 
 def _nics(nics):
     """The slots of *nics* from two cpu_layout()s: NIC 0's on node 0, isolated, NIC
-    1's on node 2, not, as on a host that isolates node 0's cores alone."""
+    1's on node 2, not, as on a host that isolates node 0's cores alone; split and
+    redundant have one slot a node, as the case asks for."""
+    count = 1 if nics in ("split", "redundant") else 2
     return pc.nic_slots(
         nics,
         *(
-            [pc.Slot(i, [n], [n * 32 + 4 + i], n == 0, [i]) for i in (0, 1)]
+            [pc.Slot(i, [n], [n * 32 + 4 + i], n == 0, [i]) for i in range(count)]
             for n in (0, 2)
         ),
     )

@@ -55,7 +55,7 @@ SCHEDULING = (
 )
 # --perf_compare_nics redundant: perf-pytest's quotas of its redundant multi-core
 # cases. MTL charges a redundant session on both ports, so at its default 36 RX
-# sessions would take 9 schedulers, more than a slot has; TX and DMA RX take
+# sessions would take 9 schedulers, more than a slot of 8 has; TX and DMA RX take
 # perf-pytest's too, so that the mode measures what perf-pytest does
 REDUNDANT_QUOTA = {"tx": 36, "rx": 21, "rx dma": 18}
 # --perf_compare_dma: the builds whose RX instances copy with a DSA
@@ -260,11 +260,13 @@ def _ports(host, nics: str) -> tuple[list[str], list[str]]:
 
 
 def _slots(host, vfs: list[str], nics: str, cores: int) -> list[pc.Slot]:
-    """cpu_layout()'s slots of NIC 0, or of both NICs as *nics* uses them."""
-    nic0 = pc.cpu_layout(host, vfs[0], cores)
+    """cpu_layout()'s slots of NIC 0, or of both NICs as *nics* uses them: split and
+    redundant take one slot of each NIC's node, so its cores are a build's alone."""
+    count = 1 if nics in APART else 2
+    nic0 = pc.cpu_layout(host, vfs[0], cores, count)
     if nics == "single":
         return nic0
-    nic1 = pc.cpu_layout(host, vfs[2], cores)
+    nic1 = pc.cpu_layout(host, vfs[2], cores, count)
     if nic0[0].nodes == nic1[0].nodes:
         pytest.fail(f"{host.name}: both NICs are on NUMA node {nic0[0].nodes[0]}")
     return pc.nic_slots(nics, nic0, nic1)

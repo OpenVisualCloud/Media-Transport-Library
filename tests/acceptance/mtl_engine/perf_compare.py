@@ -331,13 +331,13 @@ class Slot:
     main_node: int = 0  # the NUMA node of MAIN_LCORE
 
 
-def cpu_layout(host, pf: str, cores: int) -> list[Slot]:
-    """Split the physical cores of *pf*'s NUMA node into two equal slots.
+def cpu_layout(host, pf: str, cores: int, count: int = 2) -> list[Slot]:
+    """Split the physical cores of *pf*'s NUMA node into *count* equal slots.
 
-    One hardware thread per core, so no slot owns an SMT sibling of the other's
+    One hardware thread per core, so no slot owns an SMT sibling of another's
     cores; the node's first two cores stay with the OS. Isolated cores
     (isolcpus) are used when the node has enough of them, else only cores that
-    are not isolated, so both slots are alike.
+    are not isolated, so all slots are alike.
     """
     lines = sh(
         host,
@@ -355,12 +355,13 @@ def cpu_layout(host, pf: str, cores: int) -> list[Slot]:
     first_threads = {min(parse_cpus(line)) for line in lines[3:] if line.strip()}
     pool = sorted(c for c in node_cpus if c in first_threads)[2:]
     iso = [c for c in pool if c in isolated]
-    picked = iso if len(iso) >= 2 * cores else [c for c in pool if c not in isolated]
-    picked = picked[: 2 * cores]
-    if len(picked) < 2 * cores:
+    need = count * cores
+    picked = iso if len(iso) >= need else [c for c in pool if c not in isolated]
+    picked = picked[:need]
+    if len(picked) < need:
         raise RuntimeError(
             f"{host.name}: NUMA node {node} has {len(iso)} isolated free cores and "
-            f"{len(pool) - len(iso)} others, not {2 * cores} of either"
+            f"{len(pool) - len(iso)} others, not {need} of either"
         )
     return [
         Slot(
@@ -371,7 +372,7 @@ def cpu_layout(host, pf: str, cores: int) -> list[Slot]:
             [i],
             main_node=int(main_node.rsplit("node", 1)[1]),
         )
-        for i in (0, 1)
+        for i in range(count)
     ]
 
 
