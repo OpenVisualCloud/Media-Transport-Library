@@ -34,6 +34,12 @@ struct st20p_rx_digest_test_para {
   bool rx_auto_detect;
   bool zero_payload_type;
   bool ipmx;
+  /* TX on ports P and R, RX on ports 2 and 3, all multicast; needs 4 ports */
+  bool redundant;
+  /* streaming time, 0 for 10 s */
+  int duration_s;
+  /* called halfway through the streaming time with every TX and RX session */
+  void (*mid_stream)(st20p_tx_handle* tx, st20p_rx_handle* rx, int sessions);
   /* called on each RX session after mtl_stop(), before st20p_rx_free() */
   void (*rx_check)(st20p_rx_handle handle);
 };

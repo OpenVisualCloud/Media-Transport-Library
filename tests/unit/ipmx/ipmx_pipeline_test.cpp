@@ -85,6 +85,12 @@ TEST_F(IpmxPipelineTxTest, InterlacedRejected) {
   EXPECT_EQ(CaptureAndCheck(&transport), -ENOTSUP);
 }
 
+TEST_F(IpmxPipelineTxTest, EnableRtcpRejected) {
+  ut20p_tx_ops(ctx_)->flags |= ST20P_TX_FLAG_ENABLE_RTCP;
+  struct st20_tx_ops transport;
+  EXPECT_EQ(CaptureAndCheck(&transport), -ENOTSUP);
+}
+
 class IpmxPipelineRxTest : public ::testing::Test {
  protected:
   void SetUp() override {

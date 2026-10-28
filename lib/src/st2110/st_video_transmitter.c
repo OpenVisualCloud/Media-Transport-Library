@@ -7,6 +7,9 @@
 #include <math.h>
 
 #include "../datapath/mt_queue.h"
+#ifdef MTL_HAS_IPMX
+#include "../ipmx/ipmx_sr.h"
+#endif
 #include "../mt_log.h"
 #include "../mt_ptp.h"
 #include "../mt_rtcp.h"
@@ -67,6 +70,11 @@ static uint16_t video_trs_burst(struct mtl_main_impl* impl,
                                 struct st_tx_video_session_impl* s,
                                 enum mtl_session_port s_port, struct rte_mbuf** tx_pkts,
                                 uint16_t nb_pkts) {
+#ifdef MTL_HAS_IPMX
+  if (s->ipmx_sr && nb_pkts &&
+      !ipmx_sr_tx_before_burst(s->ipmx_sr, s_port, s->queue[s_port], tx_pkts[0]))
+    return video_trs_burst_fail(impl, s, s_port);
+#endif
   if (s->rtcp_tx[s_port]) mt_mbuf_refcnt_inc_bulk(tx_pkts, nb_pkts);
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
   if (!tx) {
@@ -190,6 +198,10 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
     err("%s(%d), target_tsc is zero\n", __func__, s->idx);
     return false;
   }
+#ifdef MTL_HAS_IPMX
+  /* an armed plan ends the pads the SR's shaper time early, packet 0 keeps its launch */
+  if (s->ipmx_sr) target_tsc -= ipmx_sr_tx_rl_lead_ns(s->ipmx_sr, s_port, plan);
+#endif
 
   gap = (int64_t)(target_tsc - mt_get_tsc(impl));
   /* the lower bound is video_trs_rl_warm_up()'s pkts_needed < 0 */
@@ -452,6 +464,10 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
       video_burst_packet(impl, s, s_port, pkts, valid_bulk, true);
     }
     uint64_t target_tsc = st_tx_mbuf_get_tsc(pkts[valid_bulk]);
+#ifdef MTL_HAS_IPMX
+    if (s->ipmx_sr)
+      ipmx_sr_tx_frame_start(s->ipmx_sr, s_port, pkts[valid_bulk], cur_tsc >= target_tsc);
+#endif
     dbg("%s(%d), first pkt, ts cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
         cur_tsc, target_tsc);
     if (likely(cur_tsc < target_tsc || s->trs_inflight_num2[s_port])) {
@@ -579,6 +595,11 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
     s->stat_trs_ret_code[s_port] = -STI_TSCTRS_BURST_HAS_DUMMY;
   }
 
+#ifdef MTL_HAS_IPMX
+  if (s->ipmx_sr && valid_bulk && !st_tx_mbuf_get_idx(pkts[0]))
+    ipmx_sr_tx_frame_start(s->ipmx_sr, s_port, pkts[0],
+                           mt_get_tsc(impl) >= st_tx_mbuf_get_tsc(pkts[0]));
+#endif
   if (s->pacing_way[s_port] != ST21_TX_PACING_WAY_BE || pkt_idx == 0) {
     cur_tsc = mt_get_tsc(impl);
     target_tsc = st_tx_mbuf_get_tsc(pkts[0]);
@@ -671,6 +692,12 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
   }
 
   if (valid_bulk > 0) {
+#ifdef MTL_HAS_IPMX
+    if (s->ipmx_sr && !st_tx_mbuf_get_idx(pkts[0]))
+      ipmx_sr_tx_frame_start(
+          s->ipmx_sr, s_port, pkts[0],
+          mt_get_ptp_time(impl, MTL_PORT_P) >= st_tx_mbuf_get_ptp(pkts[0]));
+#endif
     for (i = 0; i < valid_bulk; i++) {
       target_ptp = st_tx_mbuf_get_ptp(pkts[i]);
       /* Put tx timestamp into transmit descriptor */
@@ -768,6 +795,10 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
 
   cur_ptp = mt_get_ptp_time(impl, MTL_PORT_P);
   target_ptp = st_tx_mbuf_get_ptp(pkts[0]);
+#ifdef MTL_HAS_IPMX
+  if (s->ipmx_sr && valid_bulk && !st_tx_mbuf_get_idx(pkts[0]))
+    ipmx_sr_tx_frame_start(s->ipmx_sr, s_port, pkts[0], cur_ptp >= target_ptp);
+#endif
   if (cur_ptp < target_ptp) {
     unsigned int i;
     uint64_t delta = target_ptp - cur_ptp;

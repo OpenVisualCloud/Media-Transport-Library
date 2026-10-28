@@ -382,6 +382,9 @@ struct st_tx_video_session_impl {
 
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rtcp_q[MTL_SESSION_PORT_MAX];
+#ifdef MTL_HAS_IPMX
+  struct ipmx_sr_tx* ipmx_sr; /* NULL without ST20_TX_FLAG_IPMX */
+#endif
 
   /* stat – port_user_stats is the single source for API-visible counters (monotonic) */
   struct st20_tx_user_stats port_user_stats;

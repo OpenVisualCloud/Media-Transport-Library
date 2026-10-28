@@ -28,3 +28,22 @@ Measured on E835 VFs (TX on PF1, RX on PF0), run as root:
 
 The PHC check needs read access to `/dev/ptpN`, which is root-only by default. On
 E835 only PF0 exposes `device/ptp`, so RX must be a VF of PF0.
+
+## Create/free cycles
+
+`st20p_ipmx_create_free_cycles` and its baseline `st20p_noipmx_create_free_cycles` run
+30 cycles of one 1080p60 RGB 4:4:4 8-bit st20p pair (create, `mtl_start()`, 2 s,
+`mtl_stop()`, free) on an instance without `MTL_FLAG_RANDOM_SRC_PORT`, so every cycle
+reuses one UDP tuple and the CNI UDP stream detect list, one entry per tuple until
+`mtl_uninit()`, stops growing after cycle 1. No strict topology or PHC is needed; with
+fewer than 2 ports the case errors (`std::runtime_error`).
+
+| Test | Proves | Oracle |
+|---|---|---|
+| `st20p_ipmx_create_free_cycles` | An IPMX TX/RX pair, Sender Report state and pool included, gives back every DPDK heap allocation it takes | Every cycle receives >= 60 frames (half of 2 s at 60 fps) whose TX stamps at the first and last word match; after the last cycle the DPDK heap live allocations and bytes are <= after cycle 0 |
+| `st20p_noipmx_create_free_cycles` | The same without the IPMX flags | As above |
+
+Both log the heap after every cycle (`NoCtx ipmx cycles(N)`). `IPMX_TEST_HEAP_DUMP=1`
+adds `rte_memzone_dump()` and `rte_malloc_dump_heaps()` after the first and the last
+cycle.
+

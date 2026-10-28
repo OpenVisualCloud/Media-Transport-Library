@@ -114,6 +114,18 @@ TEST_F(IpmxTxValidateTest, InterlacedRejected) {
   EXPECT_EQ(ut_txv_ops_check(&ops), -ENOTSUP);
 }
 
+TEST_F(IpmxTxValidateTest, EnableRtcpRejected) {
+  struct st20_tx_ops ops = TxOps();
+  ops.flags |= ST20_TX_FLAG_ENABLE_RTCP;
+  EXPECT_EQ(ut_txv_ops_check(&ops), -ENOTSUP);
+}
+
+TEST_F(IpmxTxValidateTest, FlagOffEnableRtcpAccepted) {
+  struct st20_tx_ops ops = TxOps();
+  ops.flags = ST20_TX_FLAG_ENABLE_RTCP;
+  EXPECT_EQ(ut_txv_ops_check(&ops), 0);
+}
+
 TEST_F(IpmxTxValidateTest, NonD6ProgressiveRateAccepted) {
   struct st20_tx_ops ops = TxOps();
   ops.fps = ST_FPS_P25;

@@ -52,6 +52,13 @@ int ipmx_tx_ops_check(const struct st20_tx_ops* ops) {
     return -EINVAL;
   }
 
+  if (ops->flags & ST20_TX_FLAG_ENABLE_RTCP) {
+    err("%s(%s), ST20_TX_FLAG_ENABLE_RTCP not supported, its NACK port is media port + "
+        "1, which TR-10-1 section 8.7 reserves for the sender report\n",
+        __func__, name);
+    return -ENOTSUP;
+  }
+
   return ipmx_video_check(name, ops->type, ops->interlaced);
 }
 

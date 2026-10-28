@@ -8,6 +8,9 @@
 
 #include "../datapath/mt_queue.h"
 #include "../ipmx/ipmx.h"
+#ifdef MTL_HAS_IPMX
+#include "../ipmx/ipmx_sr.h"
+#endif
 #include "../mt_handle_guard.h"
 #include "../mt_log.h"
 #include "../mt_rtcp.h"
@@ -3604,6 +3607,9 @@ static int tv_uinit(struct st_tx_video_session_impl* s) {
    * tv_transmitter_port_state_cleanup() */
   st_tx_video_transmitter_state_cleanup(s);
   tv_uinit_hw(s);
+#ifdef MTL_HAS_IPMX
+  ipmx_sr_tx_uinit(s); /* after the queue flush returned its mbufs */
+#endif
   tv_uinit_sw(s);
   return 0;
 }
@@ -3776,6 +3782,17 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     }
   }
 
+#ifdef MTL_HAS_IPMX
+  if (ops->flags & ST20_TX_FLAG_IPMX) {
+    ret = ipmx_sr_tx_init(impl, s);
+    if (ret < 0) {
+      err("%s(%d), ipmx_sr_tx_init fail %d\n", __func__, idx, ret);
+      tv_uinit(s);
+      return ret;
+    }
+  }
+#endif
+
   ret = tv_init_pacing(impl, s);
   if (ret < 0) {
     err("%s(%d), tx_session_init_pacing fail %d\n", __func__, idx, ret);
@@ -3861,6 +3878,10 @@ struct tv_stat_dump {
   struct mt_stat_u64 stat_time;
   uint32_t max_next_frame_us;
   uint32_t max_notify_frame_us;
+#ifdef MTL_HAS_IPMX
+  bool ipmx_sr_on;
+  struct ipmx_sr_stat ipmx_sr;
+#endif
 };
 
 /* runs under the session spinlock the tasklets try_get, so copy and reset only, no log */
@@ -3908,6 +3929,13 @@ static void tv_stat_collect(struct st_tx_video_sessions_mgr* mgr,
   d->max_notify_frame_us = s->stat_max_notify_frame_us;
   s->stat_max_next_frame_us = 0;
   s->stat_max_notify_frame_us = 0;
+#ifdef MTL_HAS_IPMX
+  d->ipmx_sr_on = s->ipmx_sr != NULL;
+  if (s->ipmx_sr) {
+    d->ipmx_sr = s->ipmx_sr->stat;
+    memset(&s->ipmx_sr->stat, 0, sizeof(s->ipmx_sr->stat));
+  }
+#endif
 }
 
 static void tv_stat_log(const struct tv_stat_dump* dump) {
@@ -4043,6 +4071,9 @@ static void tv_stat_log(const struct tv_stat_dump* dump) {
     notice("TX_VIDEO_SESSION(%d,%d): get next frame max %uus, notify done max %uus\n",
            m_idx, idx, dump->max_next_frame_us, dump->max_notify_frame_us);
   }
+#ifdef MTL_HAS_IPMX
+  if (dump->ipmx_sr_on) ipmx_sr_stat_log(&dump->ipmx_sr, m_idx, idx);
+#endif
 }
 
 static int tv_detach(struct st_tx_video_sessions_mgr* mgr,

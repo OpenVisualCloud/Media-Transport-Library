@@ -1,7 +1,11 @@
 /* SPDX-License-Identifier: LicenseRef-IPMX-TBD */
 
 /* st20p TX to RX with the IPMX flag on both sides: RGB 4:4:4 8-bit and 10-bit at the D6
- * rates, and the TR-10-1 section 8.1 CMAX / VRX result of the RX timing parser. */
+ * rates, the TR-10-1 section 8.1 CMAX / VRX result of the RX timing parser, and the
+ * session life cycle with the per-frame Sender Report on: a destination update, several
+ * sessions, ST 2022-7, soaks. The noipmx_ cases are the same streams without the flag,
+ * for wire comparison. Create/free cycles are NoCtxTest.st20p_*ipmx_create_free_cycles,
+ * which need an instance without MTL_FLAG_RANDOM_SRC_PORT. */
 
 #ifdef MTL_HAS_IPMX
 
@@ -9,21 +13,34 @@
 #include "log.h"
 #include "st20p_test.h"
 
-static void ipmx_st20p_digest(enum st_frame_fmt fmt, enum st20_fmt transport_fmt,
-                              enum st_fps fps, int width, int height) {
-  enum st_fps fps_arr[1] = {fps};
-  int width_arr[1] = {width};
-  int height_arr[1] = {height};
-  enum st_frame_fmt tx_fmt[1] = {fmt};
-  enum st20_fmt t_fmt[1] = {transport_fmt};
-  enum st_frame_fmt rx_fmt[1] = {fmt};
+#define IPMX_TEST_SESSIONS_MAX (4)
 
+static void ipmx_st20p_digest_para(enum st_frame_fmt fmt, enum st20_fmt transport_fmt,
+                                   enum st_fps fps, int width, int height,
+                                   struct st20p_rx_digest_test_para* para) {
+  enum st_fps fps_arr[IPMX_TEST_SESSIONS_MAX];
+  int width_arr[IPMX_TEST_SESSIONS_MAX];
+  int height_arr[IPMX_TEST_SESSIONS_MAX];
+  enum st_frame_fmt tx_fmt[IPMX_TEST_SESSIONS_MAX];
+  enum st20_fmt t_fmt[IPMX_TEST_SESSIONS_MAX];
+
+  for (int i = 0; i < IPMX_TEST_SESSIONS_MAX; i++) {
+    fps_arr[i] = fps;
+    width_arr[i] = width;
+    height_arr[i] = height;
+    tx_fmt[i] = fmt;
+    t_fmt[i] = transport_fmt;
+  }
+  para->device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+  st20p_rx_digest_test(fps_arr, width_arr, height_arr, tx_fmt, t_fmt, tx_fmt, para);
+}
+
+static void ipmx_st20p_digest(enum st_frame_fmt fmt, enum st20_fmt transport_fmt,
+                              enum st_fps fps, int width, int height, bool ipmx = true) {
   struct st20p_rx_digest_test_para para;
   test_st20p_init_rx_digest_para(&para);
-  para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
-  para.ipmx = true;
-
-  st20p_rx_digest_test(fps_arr, width_arr, height_arr, tx_fmt, t_fmt, rx_fmt, &para);
+  para.ipmx = ipmx;
+  ipmx_st20p_digest_para(fmt, transport_fmt, fps, width, height, &para);
 }
 
 static int32_t ipmx_tp_expect_cmax;
@@ -131,6 +148,132 @@ TEST(Ipmx_st20p, rgb10_tp_1080p60) {
 TEST(Ipmx_st20p, rgb10_tp_2160p60) {
   ipmx_st20p_tp(ST_FRAME_FMT_RGBRFC4175PG4BE10, ST20_FMT_RGB_10BIT, ST_FPS_P60, 3840,
                 2160, 68);
+}
+
+TEST(Ipmx_st20p, yuv422p10_digest_1080p60) {
+  ipmx_st20p_digest(ST_FRAME_FMT_YUV422RFC4175PG2BE10, ST20_FMT_YUV_422_10BIT, ST_FPS_P60,
+                    1920, 1080);
+}
+
+TEST(Ipmx_st20p, noipmx_rgb8_digest_1080p59_94) {
+  ipmx_st20p_digest(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P59_94, 1920, 1080,
+                    false);
+}
+
+TEST(Ipmx_st20p, noipmx_rgb8_digest_2160p60) {
+  ipmx_st20p_digest(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P60, 3840, 2160, false);
+}
+
+TEST(Ipmx_st20p, noipmx_yuv422p10_digest_1080p60) {
+  ipmx_st20p_digest(ST_FRAME_FMT_YUV422RFC4175PG2BE10, ST20_FMT_YUV_422_10BIT, ST_FPS_P60,
+                    1920, 1080, false);
+}
+
+TEST(Ipmx_st20p, rgb8_digest_1080p60_s4) {
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.ipmx = true;
+  para.sessions = 4;
+  ipmx_st20p_digest_para(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P60, 1920, 1080,
+                         &para);
+}
+
+TEST(Ipmx_st20p, rgb8_digest_1080p60_redundant) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  if (ctx->para.num_ports < 4)
+    GTEST_SKIP() << "ST 2022-7 needs 4 ports, have " << ctx->para.num_ports;
+
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.ipmx = true;
+  para.redundant = true;
+  ipmx_st20p_digest_para(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P60, 1920, 1080,
+                         &para);
+}
+
+#define IPMX_TEST_UPDATED_UDP_PORT (20100)
+
+static uint64_t ipmx_rx_frames_before_update[IPMX_TEST_SESSIONS_MAX];
+static st20p_rx_handle ipmx_rx_updated[IPMX_TEST_SESSIONS_MAX];
+
+static uint64_t ipmx_st20p_rx_frames(st20p_rx_handle handle) {
+  struct st20_rx_user_stats stats;
+
+  if (st20p_rx_get_session_stats(handle, &stats) < 0) return 0;
+  return stats.common.stat_frames_received;
+}
+
+/* both ends move to the R multicast group and another port */
+static void ipmx_st20p_update_destination(st20p_tx_handle* tx, st20p_rx_handle* rx,
+                                          int sessions) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+
+  for (int i = 0; i < sessions; i++) {
+    struct st_tx_dest_info dst;
+    struct st_rx_source_info src;
+    uint16_t udp_port = IPMX_TEST_UPDATED_UDP_PORT + i * 2;
+
+    memset(&dst, 0, sizeof(dst));
+    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    dst.udp_port[MTL_SESSION_PORT_P] = udp_port;
+    memset(&src, 0, sizeof(src));
+    memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    src.udp_port[MTL_SESSION_PORT_P] = udp_port;
+
+    EXPECT_EQ(st20p_rx_update_source(rx[i], &src), 0);
+    EXPECT_EQ(st20p_tx_update_destination(tx[i], &dst), 0);
+    ipmx_rx_updated[i] = rx[i];
+    ipmx_rx_frames_before_update[i] = ipmx_st20p_rx_frames(rx[i]);
+  }
+}
+
+/* the half after the update at 60 fps, 5 s, delivers well over one second of frames */
+static void ipmx_st20p_check_rx_after_update(st20p_rx_handle handle) {
+  for (int i = 0; i < IPMX_TEST_SESSIONS_MAX; i++) {
+    if (ipmx_rx_updated[i] != handle) continue;
+    uint64_t after = ipmx_st20p_rx_frames(handle);
+    info("%s(%d), frames %" PRIu64 " before the update, %" PRIu64 " at the end\n",
+         __func__, i, ipmx_rx_frames_before_update[i], after);
+    EXPECT_GT(after, ipmx_rx_frames_before_update[i] + 60);
+    return;
+  }
+  ADD_FAILURE() << "rx session was not updated";
+}
+
+TEST(Ipmx_st20p, rgb8_digest_1080p60_update_destination) {
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.ipmx = true;
+  para.check_fps = false; /* the frames lost in the switch */
+  para.mid_stream = ipmx_st20p_update_destination;
+  para.rx_check = ipmx_st20p_check_rx_after_update;
+  memset(ipmx_rx_updated, 0, sizeof(ipmx_rx_updated));
+  ipmx_st20p_digest_para(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P60, 1920, 1080,
+                         &para);
+}
+
+/* soak for IPMX_SOAK_S seconds, skipped when unset */
+static void ipmx_st20p_soak(enum st_frame_fmt fmt, enum st20_fmt transport_fmt,
+                            enum st_fps fps, int width, int height) {
+  const char* soak_s = getenv("IPMX_SOAK_S");
+  if (!soak_s || atoi(soak_s) <= 0) GTEST_SKIP() << "set IPMX_SOAK_S to the soak seconds";
+
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.ipmx = true;
+  para.duration_s = atoi(soak_s);
+  ipmx_st20p_digest_para(fmt, transport_fmt, fps, width, height, &para);
+}
+
+TEST(Ipmx_st20p, rgb8_soak_1080p59_94) {
+  ipmx_st20p_soak(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P59_94, 1920, 1080);
+}
+
+TEST(Ipmx_st20p, rgb10_soak_2160p60) {
+  ipmx_st20p_soak(ST_FRAME_FMT_RGBRFC4175PG4BE10, ST20_FMT_RGB_10BIT, ST_FPS_P60, 3840,
+                  2160);
 }
 
 #endif

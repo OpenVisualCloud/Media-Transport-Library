@@ -113,8 +113,10 @@ extern "C" {
  * Flag bit in flags of struct st20_tx_ops.
  * Enable IPMX (VSF TR-10) mode. st20_tx_create() fails (returns NULL) and logs the
  * reason if the library is built without enable_ipmx, or if the ops break an IPMX rule:
- * odd or <= 1024 udp_port, ST21_PACING_LINEAR, ST20_TYPE_RTP_LEVEL or interlaced.
+ * odd or <= 1024 udp_port, ST21_PACING_LINEAR, ST20_TYPE_RTP_LEVEL, interlaced or
+ * ST20_TX_FLAG_ENABLE_RTCP.
  * st20_tx_update_destination() rejects a udp_port that breaks the same port rule.
+ * The primary port sends an RTCP Sender Report to udp_port + 1 right before each frame.
  */
 #define ST20_TX_FLAG_IPMX (MTL_BIT32(12))
 
