@@ -278,6 +278,7 @@ MTL, how MTL and the case compute it, and why the numbers hold.
 | --- | --- | --- |
 | **Untraced window** | | **The production view, the primary signals** |
 | `sch_N avg loop (ns)` | `SCH(N:...): ... avg loop X ns` | One pass over the tasklets of scheduler N; more work per packet lengthens it at the same load |
+| `schedulers (CPUs)` | `SCH(N:...)` lines | The CPUs MTL's schedulers poll, one each, of the slot's `--lcores`; Test Information gives the slot's size |
 | `video cpu busy (%)` | `RX/TX_VIDEO_SESSION(...): ... cpu busy X` | MTL's load score of a session: its scheduler's avg loop over 3 packet intervals (RX) or a TX bulk of them, refreshed every 6 s ([perf_compare_metrics.md](perf_compare_metrics.md#43-cpu)) |
 | `scheduler threads (cores)`, `other threads (cores)` | `/proc/<pid>/task/*/stat` | CPU in cores; a scheduler thread is the `t_pid` of its `SCH` line |
 | `sch preemptions (/s)` | `nonvoluntary_ctxt_switches` of the scheduler threads | Isolation quality; what the swap leaves is a cost of the build |

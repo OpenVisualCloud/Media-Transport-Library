@@ -355,6 +355,13 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
             f"{media_config['format']}, GPM, narrow pacing",
         ),
         *([("NICs", NICS[opts["nics"]])] if opts["nics"] != "single" else []),
+        (
+            "CPUs",
+            f"{opts['cores']} a slot"
+            f"{' on each NIC node' if opts['nics'] == 'span' else ''}: the application "
+            f"threads on the first, the other {opts['cores'] - 1} MTL's --lcores; "
+            "the schedulers row counts those its schedulers polled",
+        ),
         ("Rounds", f"{opts['rounds']}; the builds swap slots every round"),
         ("Warm-up", f"{pc.WARMUP_S} s after every session is steady"),
         ("Untraced window", f"{test_time} s: the primary rows"),

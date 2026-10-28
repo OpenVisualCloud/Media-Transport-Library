@@ -189,6 +189,7 @@ GROUPS = (
     (
         "CPU",
         (
+            "schedulers (CPUs)",
             "video cpu busy (%)",
             "scheduler threads (cores)",
             "other threads (cores)",
@@ -996,6 +997,8 @@ def metrics(direction, dumps, proc0, proc1, clk_tck, rdt0, rdt1, pmu=None) -> di
         m[f"sch_{idx} avg loop (ns)"] = _median(
             d.sch[idx][0] for d in untraced if idx in d.sch
         )
+    # each scheduler polls a CPU of its own: the CPUs MTL takes for the sessions
+    m["schedulers (CPUs)"] = len({i for d in untraced for i in d.sch})
     m["video cpu busy (%)"] = _median(
         statistics.mean(v for k, v in d.busy.items() if k[0] == direction)
         for d in untraced

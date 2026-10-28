@@ -565,6 +565,7 @@ def test_metrics_of_an_instance():
     del untraced[2].fps[("RX", "1", "0")]  # one lost line counts as 0 fps there
     m = _metrics(dumps, rdt=RDT)
     assert m["sch_1 avg loop (ns)"] == 500
+    assert m["schedulers (CPUs)"] == 1
     assert m["scheduler threads (cores)"] == pytest.approx(0.1)  # tid 101 only
     assert m["other threads (cores)"] == pytest.approx(0.01)  # 103 not in both reads
     assert m["sch preemptions (/s)"] == pytest.approx(0.2)  # of the schedulers only
@@ -582,6 +583,8 @@ def test_metrics_of_an_instance():
         d.fps.pop(("RX", "1", "0"), None)
     m = _metrics(dumps)  # and no RDT
     assert m["fps (worst session)"] == 0.0 and "memory bandwidth (MB/s)" not in m
+    untraced[1].sch[2] = (600, 102)  # a second scheduler in any dump counts
+    assert _metrics(dumps)["schedulers (CPUs)"] == 2
 
 
 def test_metrics_of_a_tx_instance_count_its_late_frames_in_the_window():
