@@ -447,7 +447,7 @@ Intel E810 Traffic Manager enforces per-flow rate limits:
 - NIC hardware spaces packets — CPU just enqueues
 - Sub-microsecond accuracy, zero CPU overhead for timing
 - Max shapers: `MT_MAX_RL_ITEMS = 128` per port
-- IAVF queue rates persist in the PF across processes, so `mt_dev_free()` puts every queue back to line rate; a killed RL process, a `mtl_init()` that fails in `mt_dev_create()` or a link speed iavf reports as 0 (e.g. 200G) still leave them; the next non-RL process clears them, see [iavf Per-Queue Rate Limits Outlive the Process](#iavf-per-queue-rate-limits-outlive-the-process)
+- IAVF queue rates persist in the PF across processes and nothing resets them at uninit; with DPDK 26.07.91 or later the next non-RL init clears them, and an RL init overwrites them, see [iavf Per-Queue Rate Limits Outlive the Process](#iavf-per-queue-rate-limits-outlive-the-process)
 
 ### Software TSC Pacing — Fallback
 When no hardware RL available:
@@ -1094,7 +1094,7 @@ Only with `MTL_FLAG_ENABLE_HW_TIMESTAMP` on iavf VFs.
 - **Defect (ice PF)**: RL pacing puts every iavf TX queue on a shaper (`ST_DEFAULT_RL_BPS`, then each session's rate). The PF saves each queue's rate and replays it whenever a later process enables the queue, until the VF is destroyed.
 - **Symptom**: a later TSC run on the same VFs is capped, e.g. 1080p59.94 at ~27 fps.
 - **Fix**: `dev_if_clear_iavf_queue_rate()` commits every TX queue without a shaper, which the PF applies as no limit, for every non-RL way, the shared TX queue included. After an AUTO RL init that failed past the TM root, `dev_rl_drop_hierarchy()` first deletes the nodes it left. Best effort: a failure only warns.
-  - The clear marks the RL root active, so `mt_dev_free()` then puts the queues on line rate.
+  - Nothing resets the rates at uninit, so after an RL run a non-MTL user of the VF, or an MTL run built against DPDK older than 26.07.91, inherits the caps.
   - Needs DPDK 26.07.91 (`MT_DEV_HAS_IAVF_TM_QOS_CHECK`): patch 0010 sends each unshaped queue's own ID, and 0011 makes the TM ops return `-ENOTSUP` on a VF without PF-granted QoS, where `rte_tm_capabilities_get()` probes first.
 - **Verify**: `UnitTest --gtest_filter='MtDevPacingTest.*'`; on hardware `NoCtxTest.st20p_tsc_pacing_after_rl_process_full_fps` via `noctx/run.sh`.
 
