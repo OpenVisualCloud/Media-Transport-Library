@@ -234,21 +234,27 @@ def _apply_side_kwargs(
 
 
 def _get_isolcpus(host, port: str) -> str | None:
-    """Return the isolated CPUs (isolcpus=) of *port*'s NUMA node on *host*.
+    """Return the isolated CPUs of *port*'s NUMA node on *host*, one per core.
 
-    E.g. "4-20" of "4-20,68-84" for a port on node 0, or None if its node has
-    none. The others would only add idle EAL threads on another node, and keep
-    their cores online in optimize_cpu_cores_for_turbo().
+    E.g. "4-20" of isolated "4-20,68-84,132-148,196-212" for a port on node 0, or
+    None if that node has none. Only the first hardware thread of each core is
+    kept, so no two schedulers share a core; the CPUs of other nodes would only
+    add idle EAL threads there, and keep their cores online in
+    optimize_cpu_cores_for_turbo().
     """
     try:
         result = host.connection.execute_command(
             f"n=$(cat /sys/bus/pci/devices/{port}/numa_node); [ $n -ge 0 ] || n=0; "
-            "cat /sys/devices/system/cpu/isolated /sys/devices/system/node/node$n/cpulist",
+            "cat /sys/devices/system/cpu/isolated /sys/devices/system/node/node$n/cpulist "
+            "/sys/devices/system/cpu/cpu[0-9]*/topology/thread_siblings_list",
             shell=True,
         )
-        isolated, node = (result.stdout or "").split("\n")[:2]
-        value = format_cpus(set(parse_cpus(isolated)) & set(parse_cpus(node)))
-        logger.info(f"Host {host.name}: isolated CPUs of {port}'s node: {value}")
+        isolated, node, *siblings = (result.stdout or "").split("\n")
+        cores = {min(parse_cpus(line)) for line in siblings if line.strip()}
+        value = format_cpus(set(parse_cpus(isolated)) & set(parse_cpus(node)) & cores)
+        logger.info(
+            f"Host {host.name}: isolated CPUs of {port}'s node: {value or None}"
+        )
         return value or None
     except Exception as e:
         logger.warning(f"Host {host.name}: could not read isolcpus: {e}")
