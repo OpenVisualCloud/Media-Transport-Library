@@ -48,7 +48,7 @@ on:
         default: 1080p59
       # Each choice says what it does; the case takes its word before the colon.
       pixel_format:
-        description: 'The pixel format of the applications. MTL converts it to the format on the wire on TX and back on RX, on the application threads, as an application that works in that format sees it. At cores 8 those carry about 20 x 1080p59 sessions in yuv422p10le, 24 in v210'
+        description: 'The pixel format of the applications. MTL converts it to the format on the wire on TX and back on RX, on the application threads, as an application that works in that format sees it. At cores 8 those carry about 20 x 1080p59 sessions in yuv422p10le, 24 in v210; split and redundant take cores up to 17 for more sessions'
         required: false
         type: choice
         options:
@@ -99,7 +99,7 @@ on:
           - both
         default: none
       cores:
-        description: 'CPUs of a slot (span: on each NIC node): 1 for the app threads, 1 for the system tasklets except in a single core role, the rest for schedulers; 3 to 8 on the perf pair, 2 to 8 when single_core is both. MTL starts the schedulers its quota needs'
+        description: 'CPUs of a slot (span: on each NIC node): 1 for the app threads, 1 for the system tasklets except in a single core role, the rest for schedulers. On the perf pair 3 to 8, or to 17 with split or redundant, which give each build a NIC node of its own; from 2 when single_core is both. MTL starts the schedulers its quota needs'
         required: false
         type: string
         default: '8'
