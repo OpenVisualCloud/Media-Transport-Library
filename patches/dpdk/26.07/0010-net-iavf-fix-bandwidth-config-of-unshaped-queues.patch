@@ -1,27 +1,30 @@
-From 0cfc3a946f3499eee8c56af373c895e84c8c7de2 Mon Sep 17 00:00:00 2001
+From 66927db3725a66c63b22bc47a3ea606785dc9e43 Mon Sep 17 00:00:00 2001
 From: Dawid Wesierski <dawid.wesierski@intel.com>
 Date: Thu, 17 Sep 2026 14:20:00 +0200
 Subject: [PATCH] net/iavf: fix bandwidth config of unshaped queues
 
-iavf_hierarchy_commit() sends one virtchnl_queue_bw entry for each queue
-node, but it sets queue_id and tc only for a node that has a shaper
-profile. The entry of a node without a profile keeps queue_id 0 and
-tc 0. The PF then applies the default bandwidth to queue 0 once for
-each such entry, and the queue that the node describes keeps its old
-rate limit.
+When configuring queue bandwidth via virtchnl in iavf_hierarchy_commit(),
+an entry in the bandwidth configuration array is allocated for each queue
+node. However, the driver only populated queue_id and tc for nodes that
+had an active shaper profile.
 
-The ice PF keeps the queue rate limits of a VF and applies them again
-at each queue enable, also for a later process on the same VF. Thus an
-application cannot remove the rate limits of an earlier process with a
-commit of queue nodes without shaper profiles.
+Because the configuration buffer is zero-initialized with calloc(), any
+unshaped queue node left its entry with queue_id 0, tc 0, and zero rate
+limits. Consequently, the PF interpreted each unshaped queue entry as a
+request to reset queue 0 to default bandwidth, leaving the actual target
+queue untouched on the PF. Any previously configured rate limit on that
+queue remained active, even across subsequent queue enables or process
+restarts.
 
-Set queue_id and tc for each queue node. A node without a shaper
-profile now gives the default bandwidth to its own queue.
+Fix this by setting queue_id and tc for every queue node, ensuring
+unshaped queues properly send zeroed shaper rates for their own queue ID
+so the PF restores their default bandwidth.
 
 Fixes: 5779a8894d15 ("net/iavf: support queue rate limit configuration")
 Cc: stable@dpdk.org
 
 Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
+Acked-by: Bruce Richardson <bruce.richardson@intel.com>
 ---
  drivers/net/intel/iavf/iavf_tm.c | 4 ++--
  1 file changed, 2 insertions(+), 2 deletions(-)

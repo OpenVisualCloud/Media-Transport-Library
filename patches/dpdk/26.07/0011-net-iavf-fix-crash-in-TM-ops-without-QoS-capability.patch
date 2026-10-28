@@ -1,4 +1,4 @@
-From 9db3d632fd7a10c97e777710a26d688a57fe58eb Mon Sep 17 00:00:00 2001
+From dc5c5a1d04589eb2ff6a1b78aeebd9091df1f8b3 Mon Sep 17 00:00:00 2001
 From: Dawid Wesierski <dawid.wesierski@intel.com>
 Date: Fri, 25 Sep 2026 10:00:00 +0200
 Subject: [PATCH] net/iavf: fix crash in TM ops without QoS capability
@@ -18,6 +18,7 @@ Fixes: 44d0a720a538 ("net/iavf: query QoS capabilities and set queue TC mapping"
 Cc: stable@dpdk.org
 
 Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
+Acked-by: Bruce Richardson <bruce.richardson@intel.com>
 ---
  drivers/net/intel/iavf/iavf_tm.c | 37 ++++++++++++++++++++++++++++++--
  1 file changed, 35 insertions(+), 2 deletions(-)
