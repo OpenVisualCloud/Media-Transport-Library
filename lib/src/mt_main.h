@@ -47,7 +47,7 @@
 #define MT_MBUF_DEFAULT_DATA_SIZE (RTE_MBUF_DEFAULT_DATAROOM) /* 2048 */
 #define MT_MEMPOOL_COLORS (64) /* cache lines of a 4 KB page: every L1D set */
 
-#define MT_MAX_SCH_NUM (18) /* max 18 scheduler lcore */
+#define MT_MAX_SCH_NUM (48) /* at most 64, the bits of mt_sch_mask_t */
 
 /* max RL items */
 #define MT_MAX_RL_ITEMS (128)

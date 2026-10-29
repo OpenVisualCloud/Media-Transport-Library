@@ -384,6 +384,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
 
   RTE_BUILD_BUG_ON(MTL_SESSION_PORT_MAX > (int)MTL_PORT_MAX);
   RTE_BUILD_BUG_ON(sizeof(struct mt_udp_hdr) != 42);
+  RTE_BUILD_BUG_ON(MT_MAX_SCH_NUM > (int)(sizeof(mt_sch_mask_t) * 8));
 
   /* place holder to let bpf trace can attach to runtime point */
   MT_SYS_TASKLET_TIME_MEASURE();
