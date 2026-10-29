@@ -22,7 +22,8 @@
 #include "common/ut_common.h"
 #include "mt_main.h"
 #include "mt_platform.h"
-/* Only the filelock helper swaps this: the host lock may be held or keep its old mode. */
+/* Only the filelock and lcore helpers swap this: the host lock may be held or keep its
+ * old mode. */
 static const char* ut_sch_flock_path = MT_FLOCK_PATH;
 #undef MT_FLOCK_PATH
 #define MT_FLOCK_PATH ut_sch_flock_path
@@ -31,10 +32,18 @@ static const char* ut_sch_flock_path = MT_FLOCK_PATH;
 static void ut_sch_qs_pause(void);
 static void ut_sch_qs_sleep_us(unsigned int us);
 static void ut_sch_sleep_ms(unsigned int ms);
+/* Seams: the worker lcores mt_sch_get_lcore() walks, and a bounded flock() so a lock left
+ * held fails a get instead of hanging the binary. */
+static unsigned int ut_sch_next_lcore(unsigned int i, int skip_main, int wrap);
+static int ut_sch_flock(int fd, int op);
 #define rte_pause ut_sch_qs_pause
 #define mt_sleep_us ut_sch_qs_sleep_us
 #define mt_sleep_ms ut_sch_sleep_ms
+#define rte_get_next_lcore ut_sch_next_lcore
+#define flock ut_sch_flock
 #include "mt_sch.c"
+#undef flock
+#undef rte_get_next_lcore
 #undef mt_sleep_ms
 #undef mt_sleep_us
 #undef rte_pause
@@ -71,6 +80,24 @@ static void ut_sch_sleep_ms(unsigned int ms) {
     atomic_fetch_add(&ut_sch_qs_sleeps, 1);
   }
   mt_sleep_ms(ms);
+}
+
+static unsigned int ut_sch_nb_lcores; /* when set, lcores 1..n stand in for EAL workers */
+
+static unsigned int ut_sch_next_lcore(unsigned int i, int skip_main, int wrap) {
+  if (!ut_sch_nb_lcores) return rte_get_next_lcore(i, skip_main, wrap);
+  return i < ut_sch_nb_lcores ? i + 1 : RTE_MAX_LCORE;
+}
+
+static int ut_sch_flock(int fd, int op) {
+  if (op != LOCK_EX) return flock(fd, op);
+
+  uint64_t deadline = rte_get_tsc_cycles() + rte_get_tsc_hz();
+  while (flock(fd, LOCK_EX | LOCK_NB) < 0) {
+    if (errno != EWOULDBLOCK || rte_get_tsc_cycles() > deadline) return -1;
+    mt_sleep_us(10);
+  }
+  return 0;
 }
 
 int ut_sch_init(void) {
@@ -230,6 +257,70 @@ int ut_sch_filelock_create_mode(unsigned int* mode) {
   free(mgr);
   rmdir(dir);
   return ret;
+}
+
+struct ut_sch_lcore_main {
+  struct mtl_main_impl impl;
+  struct mt_lcore_shm shm;
+  char dir[sizeof("/tmp/ut_sch_lcore_XXXXXX")];
+  char path[PATH_MAX];
+  const char* old_path;
+  enum mtl_log_level old_level;
+};
+
+mtl_handle ut_sch_create_lcore_main(unsigned int nb_lcores) {
+  struct ut_sch_lcore_main* m = calloc(1, sizeof(*m));
+  if (!m) return NULL;
+
+  snprintf(m->dir, sizeof(m->dir), "/tmp/ut_sch_lcore_XXXXXX");
+  if (!mkdtemp(m->dir)) {
+    free(m);
+    return NULL;
+  }
+  snprintf(m->path, sizeof(m->path), "%s/lock", m->dir);
+
+  struct mtl_main_impl* impl = &m->impl;
+  struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
+  if (mt_pthread_mutex_init(&mgr->lcore_mutex, NULL)) {
+    rmdir(m->dir);
+    free(m);
+    return NULL;
+  }
+  impl->type = MT_HANDLE_MAIN;
+  impl->instance_fd = -1;
+  impl->user_para.flags = MTL_FLAG_NOT_BIND_NUMA;
+  impl->u_info.pid = getpid();
+  mgr->lcore_lock_fd = -1;
+  mgr->lcore_mgr.lcore_shm = &m->shm;
+  mgr->lcore_mgr.lcore_shm_id = -1;
+
+  m->old_path = ut_sch_flock_path;
+  ut_sch_flock_path = m->path;
+  ut_sch_nb_lcores = nb_lcores;
+  m->old_level = mt_get_log_global_level();
+  mt_set_log_global_level(MTL_LOG_LEVEL_ERR);
+  return impl;
+}
+
+void ut_sch_destroy_lcore_main(mtl_handle mt) {
+  struct ut_sch_lcore_main* m = (struct ut_sch_lcore_main*)mt;
+  if (!m) return;
+
+  mt_set_log_global_level(m->old_level);
+  ut_sch_nb_lcores = 0;
+  ut_sch_flock_path = m->old_path;
+  unlink(m->path);
+  rmdir(m->dir);
+  mt_pthread_mutex_destroy(&mt_sch_get_mgr(&m->impl)->lcore_mutex);
+  free(m);
+}
+
+int ut_sch_lcore_shm_used(mtl_handle mt) {
+  return ((struct ut_sch_lcore_main*)mt)->shm.used;
+}
+
+int ut_sch_lcore_cnt(mtl_handle mt) {
+  return rte_atomic32_read(&((struct mtl_main_impl*)mt)->lcore_cnt);
 }
 
 static struct ut_sch_mempolicy_ctx* ut_sch_qs_ctx_create(int (*handler)(void* priv),

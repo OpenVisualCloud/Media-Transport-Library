@@ -601,6 +601,8 @@ struct mt_sch_mgr {
 
   struct mt_lcore_mgr lcore_mgr;
   int lcore_lock_fd;
+  /* serialises lcore get/put and their lcore_lock_fd; init/uinit run single-threaded */
+  pthread_mutex_t lcore_mutex;
 
   /* local lcores info */
   bool local_lcores_active[RTE_MAX_LCORE];

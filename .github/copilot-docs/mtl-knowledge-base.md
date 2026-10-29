@@ -487,6 +487,7 @@ counters under the lock, `put`, then log the copy (TX video: `tv_stat_collect()`
 ### Lock Ordering
 - Manager mutex → session spinlock (never reverse)
 - Migration: target manager mutex → source manager mutex
+- `lcore_mutex` serialises lcore get/put per instance and is a leaf, taken under `mgr_mutex`, a scheduler's `mutex` and the RX video slot spinlocks; only the lcore flock and the manager round trip run inside it. Other `instance_fd` messages (flow, UDP filter, queue, xsk map) are not serialised with it. RX auto-detect takes it on a tasklet to add a pkt lcore, where flock / IPC already blocked
 
 ### Atomics Usage
 - Frame refcnt (`rte_atomic32_t`) — TX extbuf lifecycle
