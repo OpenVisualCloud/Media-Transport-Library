@@ -215,6 +215,7 @@ whether a compliance verdict is meaningful), and `allow_wide_compliance`
 | `--media`, `--build`, `--nic`, `--dma` | Override the config values |
 | `--num_sessions N`, `--sch_quota N` | Performance sweeps only |
 | `--sut_app_args='ARGS'` | Performance sweeps only: extra RxTxApp arguments for the measured app |
+| `--shard K/N` | Run only shard K of N of the selected tests; the N shards together run each test once |
 
 ### Output
 

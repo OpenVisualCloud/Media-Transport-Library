@@ -10,6 +10,7 @@ import re
 import shlex
 import shutil
 import time
+import zlib
 from typing import Any, Dict
 
 import pytest
@@ -1086,6 +1087,14 @@ def mtl_manager(hosts):
         mgr.stop()
 
 
+def _shard(value):
+    """Parse ``K/N`` into the 1-based shard ``K`` of ``N``."""
+    index, total = map(int, value.split("/"))
+    if not 0 < index <= total:
+        raise ValueError(value)
+    return index, total
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--keep", help="keep result media files: all, failed, none (default)"
@@ -1122,6 +1131,12 @@ def pytest_addoption(parser):
         type=lambda args: shlex.join(shlex.split(args)),
         help="Extra RxTxApp arguments for the measured app of a performance "
         "sweep. Example: --sut_app_args='--nb_rx_desc 1024 --rx_pool_data_size 1300'",
+    )
+    parser.addoption(
+        "--shard",
+        type=_shard,
+        help="run only shard K of N of the selected tests, e.g. 2/4; the N "
+        "shards together run every test once",
     )
 
 
@@ -1438,12 +1453,28 @@ def ffmpeg_app() -> FFmpeg:
     return FFmpeg(FFMPEG_PATH)
 
 
-def pytest_collection_modifyitems(items):
-    """Add ``base_performance`` marker to 1080p / 59fps combinations."""
+def pytest_collection_modifyitems(config, items):
+    """Add ``base_performance`` marker to 1080p / 59fps combinations.
+
+    With ``--shard``, also deselect the tests of the other shards.
+    """
     mark = pytest.mark.base_performance
     for item in items:
         if "1080p" in item.nodeid and "59fps" in item.nodeid:
             item.add_marker(mark)
+    shard = config.getoption("--shard")
+    if shard:
+        index, total = shard
+        kept, deselected = [], []
+        for item in items:
+            # crc32, not hash(): str hashes differ per process, and the shards
+            # of a run must agree on where each test goes.
+            if zlib.crc32(item.nodeid.encode()) % total == index - 1:
+                kept.append(item)
+            else:
+                deselected.append(item)
+        config.hook.pytest_deselected(items=deselected)
+        items[:] = kept
 
 
 # ---------------------------------------------------------------------------
