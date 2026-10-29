@@ -142,9 +142,10 @@ Notation used below:
 | Metric | Source (MTL line) | Calculation | Unit | Better |
 | --- | --- | --- | --- | --- |
 | `fps (worst session)` | `RX/TX_VIDEO_SESSION(m,s:name): fps X frames N` | per session, the **median of dumps** (a dump missing the session counts 0); then the **lowest** session | frames/s | ↑ |
-| `RX rate (Mb/s)` / `TX rate (Mb/s)` | `DEV(N): Avr rate, tx: X Mb/s, rx: Y Mb/s` | per dump, the sum over the instance's ports; then the median of dumps | Mb/s | ⊘ |
-| `incomplete frames` | `RX_VIDEO_SESSION(m,s): incomplete frames N` | the **sum** over the untraced dumps | frames | ↓ |
-| `hw dropped pkts` | `DEV(N): Status: rx_hw_dropped_packets N` | the sum over the untraced dumps | packets | ↓ |
+| `RX rate, port N (Gb/s)` / `TX rate, port N (Gb/s)` | `DEV(N): Avr rate, tx: X Mb/s, rx: Y Mb/s` | of an instance on two ports (`redundant`, `span`), per port N of the instance, 0 the primary and 1 the redundant one, or with `span` the port on NIC 0 and NIC 1: the median of dumps | Gb/s | ⊘ |
+| `RX rate (Gb/s)` / `TX rate (Gb/s)` | the same lines | per dump, the sum over the instance's ports; then the median of dumps | Gb/s | ⊘ |
+| `incomplete frames` (RX) | `RX_VIDEO_SESSION(m,s): incomplete frames N` | the **sum** over the untraced dumps | frames | ↓ |
+| `hw dropped pkts` (RX) | `DEV(N): Status: rx_hw_dropped_packets N` | the sum over the untraced dumps | packets | ↓ |
 | `build timeout frames` (TX) | `TX_VIDEO_SESSION(m,s): build timeout frames N` | the sum over the untraced dumps | frames | ↓ |
 | `epoch drop` (TX) | `TX_VIDEO_SESSION(m,s): epoch drop N` | the sum over the untraced dumps | frame periods | ↓ |
 | `transmitter mismatch troffset` (TX) | `TX_VIDEO_SESSION(m,s): transmitter mismatch troffset N` | the sum over the untraced dumps | frames | ↓ |
@@ -158,7 +159,8 @@ How MTL computes them:
   the wire: a frame sent late shows in the TX late-frame rows, not in fps.
 - **The port rate** is the bytes of `rte_eth_stats` since the last dump × 8 ÷ the
   nominal 10 s (`dev_inf_stat()`, `lib/src/dev/mt_dev.c`). It holds every frame of the
-  port, video, pads, ARP and PTP, so it has no better direction.
+  port, video, pads, ARP and PTP, so it has no better direction. The rows of each port
+  are the counters perf-pytest reports as "Throughput (per port)".
 - **incomplete frames** counts frames that MTL had to hand on with fewer bytes than a
   frame (`rv_frame_notify()`), because their slot was needed for a newer timestamp.
   **hw dropped pkts** is the NIC's `imissed`: packets it dropped because no RX
@@ -191,19 +193,26 @@ How MTL computes it (`sch_tasklet_func()`, `lib/src/mt_sch.c`): the scheduler th
 counts its loops and, every time more than 2 s have passed, sets `avg loop` to the
 elapsed time ÷ the loop count. One loop is one pass over all its tasklets, including the
 sleep of an idle scheduler. More work per packet makes the loop longer at the same load,
-which is why it is the first key row.
+which is why it is a key row.
 
 The `t_pid` of this line is the Linux TID of the scheduler thread; it is how the CPU
 rows tell scheduler threads from the others.
 
 ### 4.3 CPU
 
+The report shows the first rows as **CPU by stage**, right after Delivery: one table of a
+row per kind of thread, which add up to all threads, and below it a bar of each build,
+the cores of each kind on the CPUs of its slot. The other rows follow the loops as **CPU**.
+
 | Metric | Source | Calculation | Unit | Better |
 | --- | --- | --- | --- | --- |
 | `schedulers (CPUs)` | the `SCH(N:...)` lines | the schedulers in the dumps of the window; each polls a CPU of its own, so the CPUs MTL takes for the sessions, of the slot's `--lcores` (Test Information gives the slot's CPUs) | CPUs | ↓ |
-| `video cpu busy (%)` | `..._VIDEO_SESSION(m,s): throughput X Mb/s, cpu busy Y` | per dump, the mean over the instance's sessions; then the median of dumps | score, % | ↓ |
 | `scheduler threads (cores)` | `/proc/<pid>/task/<tid>/stat`, the threads named by `t_pid` | Δ(utime + stime) of the scheduler threads ÷ `CLK_TCK` ÷ Δt | cores | ↓ |
-| `other threads (cores)` | the same, every other thread of the process | Δ(utime + stime) of the threads present at both reads, minus the scheduler threads ÷ `CLK_TCK` ÷ Δt | cores | ↓ |
+| `application threads (cores)` | the same, the threads whose `comm` is `tx_st20p_N` or `rx_st20p_N` | the same, of RxTxApp's frame threads, a thread a session | cores | ↓ |
+| `other threads (cores)` | the same | all threads minus the two rows above | cores | ↓ |
+| `all threads (cores)` | the same | Δ(utime + stime) of the threads present at both reads ÷ `CLK_TCK` ÷ Δt | cores | ↓ |
+| `<kind> threads per frame (ms)` | the cores above, `fps` | the cores of the kind × 1000 ÷ the frames per second of all the instance's sessions, the sum of their medians | ms of CPU | ⊘ |
+| `video cpu busy (%)` | `..._VIDEO_SESSION(m,s): throughput X Mb/s, cpu busy Y` | per dump, the mean over the instance's sessions; then the median of dumps | score, % | ↓ |
 | `sch preemptions (/s)` | `/proc/<pid>/task/<tid>/status`: `nonvoluntary_ctxt_switches` | Δ of the scheduler threads ÷ Δt | /s | ↓ |
 | `IPC` | `perf stat`: `instructions`, `cycles` | instructions ÷ cycles | ratio | ⊘ |
 | `core clock (GHz)` | `perf stat`: `cycles`, `task-clock` | cycles ÷ task-clock | GHz | ⊘ |
@@ -219,7 +228,17 @@ rows tell scheduler threads from the others.
 
 - **The cores** count what the kernel charged each thread, so a scheduler that polls
   all the time reads about 1 core, one that sleeps when idle less. A build that needs
-  more schedulers for the same sessions reads more.
+  more schedulers for the same sessions reads more. A scheduler sends or receives the
+  packets of its sessions; its load shows in its loop and tasklet rows, not its cores.
+- **The application threads** fill the frames on TX and read them on RX, and with a
+  `pixel_format` MTL converts each frame on them, in `st20p_tx_put_frame()` and
+  `st20p_rx_get_frame()`. They wait when they have no frame, so their cores are the
+  work of the frame path, and per frame its cost, which a faster converter lowers.
+- **Per frame** is shown, not scored: every valid round holds the frame rate, so it
+  follows its cores row, which scores it. A scheduler's is the CPU it polls per frame,
+  not its work.
+- **The other threads** are MTL's control threads, such as `mtl_stat` and `mtl_admin`,
+  EAL's threads and RxTxApp's main thread.
 - **The preemptions** are a measure of isolation: a scheduler that keeps its CPU is
   never switched out involuntarily. What the slot swap does not cancel is the build's.
 - **IPC and the clock** have no better direction: a polling loop raises IPC with idle
@@ -359,7 +378,7 @@ fails, so a bad round can never move a mean.
 
 | Gate | Rule |
 | --- | --- |
-| Steady | every session of every instance at **99%** of its frame rate in one dump, within `120 + 3 × sessions` s; then 30 s of warm-up |
+| Steady | every session of every instance at **99%** of its frame rate in one dump, within `120 + 3 × TX queues` s, a queue a session and port; then 30 s of warm-up |
 | Alive | no application or collector exited during the measurement |
 | Whole windows | at least two whole dumps in each window (the traced one only for a build that has it) |
 | Every session | every session reported in the untraced window |
@@ -393,7 +412,7 @@ fails, so a bad round can never move a mean.
 | **Too few rounds** | The noise is twice the standard error and narrows with rounds; a change needs 2% **and** twice the noise; confidence says how sure; under 4 rounds the verdict warns |
 | **Differences below what MTL can print** | The noise is floored at one print step of the value |
 | **A broken round slipping through** | The validity gates of §6, with the problem named in the report |
-| **A bug in the harness** | The calculation engine runs without hosts in 75 tests; 388 deliberate mutations of it are each caught by a test; a golden master of recorded real runs pins every report byte; the raw records of every round are kept |
+| **A bug in the harness** | The calculation engine has a host-free unit suite, `mtl_engine/tests/test_perf_compare_engine.py`, and the raw records of every round are kept |
 | **How much noise is normal** | An **A/A run**, the same build twice, measures the rig's noise floor; the nightly is one when `main` did not move |
 
 ---
