@@ -61,6 +61,10 @@ void ut_sr_set_mac(ut_sr_ctx* ctx, const uint8_t mac[6]);
 struct ipmx_video_info;
 /* ipmx_video_info_from_session() of the session, 0 or its negative errno */
 int ut_sr_video_info(ut_sr_ctx* ctx, struct ipmx_video_info* info);
+/* ipmx_sr_tx_set_block_version() of the session */
+int ut_sr_set_block_version(ut_sr_ctx* ctx, uint8_t version);
+/* ipmx_sr_tx_get_info() of the session */
+int ut_sr_get_info(ut_sr_ctx* ctx, struct ipmx_video_info* info);
 /* ipmx_sr_tx_init(), 0 or its negative errno */
 int ut_sr_attach(ut_sr_ctx* ctx);
 void ut_sr_detach(ut_sr_ctx* ctx);

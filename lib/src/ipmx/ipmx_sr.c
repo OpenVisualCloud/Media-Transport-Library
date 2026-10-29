@@ -45,6 +45,8 @@ static uint16_t ipmx_sr_tx_build(const struct ipmx_sr_tx* sr, uint8_t* rtcp,
   ipmx_put_be32(&rtcp[20], sr->pkt_count);
   ipmx_put_be32(&rtcp[24], sr->octet_count);
   memcpy(&rtcp[IPMX_RTCP_SR_LEN], sr->info_block, IPMX_INFO_BLOCK_LEN);
+  rtcp[IPMX_RTCP_SR_LEN + IPMX_INFO_BLOCK_VERSION_OFFSET] =
+      atomic_load_explicit(&sr->block_version, memory_order_relaxed);
 
   memset(sdes, 0, sdes_len);
   sdes[0] = (2 << 6) | 1; /* V=2, P=0, SC=1 */
@@ -156,7 +158,6 @@ static unsigned int ipmx_sr_pool_n(struct mtl_main_impl* impl,
 int ipmx_sr_tx_init(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
   const uint8_t* sip = (const uint8_t*)&s->s_hdr[MTL_SESSION_PORT_P].ipv4.src_addr;
-  struct ipmx_video_info vinfo;
   struct ipmx_sr_tx* sr;
   char pool_name[32];
   unsigned int n;
@@ -165,11 +166,13 @@ int ipmx_sr_tx_init(struct mtl_main_impl* impl, struct st_tx_video_session_impl*
   RTE_BUILD_BUG_ON(sizeof(struct mt_udp_hdr) + IPMX_RTCP_SR_IPMX_LEN +
                        IPMX_RTCP_SDES_MAX_LEN >
                    IPMX_SR_POOL_DATA_SIZE);
-  ret = ipmx_video_info_from_session(impl, s, &vinfo);
-  if (ret < 0) return ret;
-
   sr = mt_rte_zmalloc_socket(sizeof(*sr), mt_socket_id(impl, port));
   if (!sr) return -ENOMEM;
+  ret = ipmx_video_info_from_session(impl, s, &sr->info);
+  if (ret < 0) {
+    mt_rte_free(sr);
+    return ret;
+  }
   snprintf(pool_name, sizeof(pool_name), "%sM%dS%d_SR_%d", ST_TX_VIDEO_PREFIX,
            s->mgr->idx, s->idx, s->recovery_idx);
   n = ipmx_sr_pool_n(impl, s);
@@ -184,7 +187,7 @@ int ipmx_sr_tx_init(struct mtl_main_impl* impl, struct st_tx_video_session_impl*
   sr->media_hdr = &s->s_hdr[MTL_SESSION_PORT_P];
   sr->ipv4_cksum_offload = s->eth_ipv4_cksum_offload[MTL_SESSION_PORT_P];
   sr->sampling_rate = s->fps_tm.sampling_clock_rate;
-  ipmx_info_block_build(&vinfo, sr->info_block);
+  ipmx_info_block_build(&sr->info, sr->info_block);
   /* TR-10-9 section 8 asks for a CNAME, RFC 3550 section 6.5.1 allows the numeric host */
   sr->cname_len = snprintf(sr->cname, sizeof(sr->cname), "%u.%u.%u.%u", sip[0], sip[1],
                            sip[2], sip[3]);
@@ -198,7 +201,7 @@ int ipmx_sr_tx_init(struct mtl_main_impl* impl, struct st_tx_video_session_impl*
 
   s->ipmx_sr = sr;
   info("%s(%d), cname %s, %s, %u pkts %u octets per frame\n", __func__, s->idx, sr->cname,
-       vinfo.ts_refclk, sr->frame_pkts, sr->frame_octets);
+       sr->info.ts_refclk, sr->frame_pkts, sr->frame_octets);
   return 0;
 }
 
@@ -210,6 +213,32 @@ void ipmx_sr_tx_uinit(struct st_tx_video_session_impl* s) {
   mt_mempool_free(sr->pool);
   mt_rte_free(sr);
   s->ipmx_sr = NULL;
+}
+
+int ipmx_sr_tx_set_block_version(struct st_tx_video_session_impl* s, uint8_t version) {
+  if (!s->ipmx_sr) {
+    err("%s(%d), IPMX not enabled\n", __func__, s->idx);
+    return -EIO;
+  }
+  atomic_store_explicit(&s->ipmx_sr->block_version, version, memory_order_relaxed);
+  return 0;
+}
+
+int ipmx_sr_tx_get_info(struct st_tx_video_session_impl* s,
+                        struct ipmx_video_info* info) {
+  struct ipmx_sr_tx* sr = s->ipmx_sr;
+
+  if (!sr) {
+    err("%s(%d), IPMX not enabled\n", __func__, s->idx);
+    return -EIO;
+  }
+  if (!info) {
+    err("%s(%d), NULL info\n", __func__, s->idx);
+    return -EINVAL;
+  }
+  mt_memcpy(info, &sr->info, sizeof(*info));
+  info->version = atomic_load_explicit(&sr->block_version, memory_order_relaxed);
+  return 0;
 }
 
 void ipmx_sr_stat_log(const struct ipmx_sr_stat* stat, int m_idx, int idx) {

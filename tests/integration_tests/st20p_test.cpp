@@ -1009,6 +1009,7 @@ void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     }
 
     test_ctx_tx[i]->handle = tx_handle[i];
+    if (para->tx_created) para->tx_created(tx_handle[i]);
 
     tx_thread[i] = std::thread(test_st20p_tx_frame_thread, test_ctx_tx[i]);
   }

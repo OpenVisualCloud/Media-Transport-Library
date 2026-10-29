@@ -102,8 +102,8 @@ uint16_t ipmx_info_block_build(const struct ipmx_video_info* info, uint8_t* buf)
   RTE_BUILD_BUG_ON(IPMX_INFO_HDR_LEN + IPMX_MEDIA_INFO_VIDEO_LEN != IPMX_INFO_BLOCK_LEN);
   ipmx_info_put_be16(&buf[0], IPMX_INFO_TAG);
   ipmx_info_put_be16(&buf[2], IPMX_INFO_BLOCK_LEN / 4 - 1);
-  buf[4] = info->version;
-  memset(&buf[5], 0, 3);
+  buf[IPMX_INFO_BLOCK_VERSION_OFFSET] = info->version;
+  memset(&buf[IPMX_INFO_BLOCK_VERSION_OFFSET + 1], 0, 3);
   memcpy(&buf[8], info->ts_refclk, sizeof(info->ts_refclk));
   memcpy(&buf[72], info->mediaclk, sizeof(info->mediaclk));
 

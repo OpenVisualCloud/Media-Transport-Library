@@ -10,6 +10,8 @@
 #define ipmx_sr_tx_send_pending ut_sr_tx_send_pending
 #define ipmx_sr_tx_rl_lead_ns ut_sr_tx_rl_lead_ns
 #define ipmx_sr_stat_log ut_sr_stat_log
+#define ipmx_sr_tx_set_block_version ut_sr_tx_set_block_version
+#define ipmx_sr_tx_get_info ut_sr_tx_get_info
 
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
@@ -249,6 +251,14 @@ void ut_sr_set_mac(ut_sr_ctx* ctx, const uint8_t mac[6]) {
 
 int ut_sr_video_info(ut_sr_ctx* ctx, struct ipmx_video_info* info) {
   return ipmx_video_info_from_session(&ctx->impl, &ctx->session, info);
+}
+
+int ut_sr_set_block_version(ut_sr_ctx* ctx, uint8_t version) {
+  return ut_sr_tx_set_block_version(&ctx->session, version);
+}
+
+int ut_sr_get_info(ut_sr_ctx* ctx, struct ipmx_video_info* info) {
+  return ut_sr_tx_get_info(&ctx->session, info);
 }
 
 int ut_sr_attach(ut_sr_ctx* ctx) {

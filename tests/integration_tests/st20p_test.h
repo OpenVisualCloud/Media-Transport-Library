@@ -38,6 +38,8 @@ struct st20p_rx_digest_test_para {
   bool redundant;
   /* streaming time, 0 for 10 s */
   int duration_s;
+  /* called on each TX session after st20p_tx_create(), before its first frame */
+  void (*tx_created)(st20p_tx_handle handle);
   /* called halfway through the streaming time with every TX and RX session */
   void (*mid_stream)(st20p_tx_handle* tx, st20p_rx_handle* rx, int sessions);
   /* called on each RX session after mtl_stop(), before st20p_rx_free() */

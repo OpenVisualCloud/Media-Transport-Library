@@ -3,6 +3,7 @@
 #ifndef _IPMX_SR_H_
 #define _IPMX_SR_H_
 
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -34,6 +35,9 @@ struct ipmx_sr_tx {
   bool ipv4_cksum_offload;
   uint32_t sampling_rate;
   struct rte_mempool* pool;
+  /* fixed after init, version unused: block_version is the one on the wire */
+  struct ipmx_video_info info;
+  _Atomic uint8_t block_version;
   uint8_t info_block[IPMX_INFO_BLOCK_LEN];
   char cname[IPMX_SR_CNAME_MAX];
   uint8_t cname_len;
@@ -79,6 +83,10 @@ static inline bool ipmx_sr_tx_before_burst(struct ipmx_sr_tx* sr,
  */
 uint64_t ipmx_sr_tx_rl_lead_ns(const struct ipmx_sr_tx* sr, enum mtl_session_port s_port,
                                const struct st_tx_video_rl_plan* plan);
+/** -EIO without s->ipmx_sr; never blocks the transmitter. */
+int ipmx_sr_tx_set_block_version(struct st_tx_video_session_impl* s, uint8_t version);
+/** -EIO without s->ipmx_sr, -EINVAL on NULL info. */
+int ipmx_sr_tx_get_info(struct st_tx_video_session_impl* s, struct ipmx_video_info* info);
 void ipmx_sr_stat_log(const struct ipmx_sr_stat* stat, int m_idx, int idx);
 
 #ifdef __cplusplus

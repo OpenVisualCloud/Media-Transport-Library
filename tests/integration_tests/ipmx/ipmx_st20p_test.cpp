@@ -3,9 +3,10 @@
 /* st20p TX to RX with the IPMX flag on both sides: RGB 4:4:4 8-bit and 10-bit at the D6
  * rates, the TR-10-1 section 8.1 CMAX / VRX result of the RX timing parser, and the
  * session life cycle with the per-frame Sender Report on: a destination update, several
- * sessions, ST 2022-7, soaks. The noipmx_ cases are the same streams without the flag,
- * for wire comparison. Create/free cycles are NoCtxTest.st20p_*ipmx_create_free_cycles,
- * which need an instance without MTL_FLAG_RANDOM_SRC_PORT. */
+ * sessions, ST 2022-7, soaks, the block version. The noipmx_ cases are the same streams
+ * without the flag, for wire comparison. Create/free cycles are
+ * NoCtxTest.st20p_*ipmx_create_free_cycles, which need an instance without
+ * MTL_FLAG_RANDOM_SRC_PORT. */
 
 #ifdef MTL_HAS_IPMX
 
@@ -250,6 +251,47 @@ TEST(Ipmx_st20p, rgb8_digest_1080p60_update_destination) {
   para.mid_stream = ipmx_st20p_update_destination;
   para.rx_check = ipmx_st20p_check_rx_after_update;
   memset(ipmx_rx_updated, 0, sizeof(ipmx_rx_updated));
+  ipmx_st20p_digest_para(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P60, 1920, 1080,
+                         &para);
+}
+
+#define IPMX_TEST_BLOCK_VERSION (5)
+
+/* API plumbing only: the version on the wire is pinned by tests/unit/ipmx until RX parses
+ * the SR (task 11) */
+static void ipmx_st20p_set_block_version(st20p_tx_handle handle) {
+  struct ipmx_video_info info;
+
+  ASSERT_EQ(ipmx_st20p_tx_set_block_version(handle, IPMX_TEST_BLOCK_VERSION), 0);
+  ASSERT_EQ(ipmx_st20p_tx_get_info(handle, &info), 0);
+  EXPECT_EQ(info.version, IPMX_TEST_BLOCK_VERSION);
+  EXPECT_STREQ(info.sampling, "RGB");
+  EXPECT_EQ(info.depth, 8);
+  EXPECT_EQ(info.width, 1920);
+  EXPECT_EQ(info.height, 1080);
+  EXPECT_EQ(ipmx_st20p_tx_get_info(handle, NULL), -EINVAL);
+}
+
+TEST(Ipmx_st20p, rgb8_digest_1080p60_block_version) {
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.ipmx = true;
+  para.tx_created = ipmx_st20p_set_block_version;
+  ipmx_st20p_digest_para(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P60, 1920, 1080,
+                         &para);
+}
+
+static void ipmx_st20p_no_block_version(st20p_tx_handle handle) {
+  struct ipmx_video_info info;
+
+  EXPECT_EQ(ipmx_st20p_tx_set_block_version(handle, IPMX_TEST_BLOCK_VERSION), -EIO);
+  EXPECT_EQ(ipmx_st20p_tx_get_info(handle, &info), -EIO);
+}
+
+TEST(Ipmx_st20p, noipmx_rgb8_digest_1080p60_block_version) {
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.tx_created = ipmx_st20p_no_block_version;
   ipmx_st20p_digest_para(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P60, 1920, 1080,
                          &para);
 }
