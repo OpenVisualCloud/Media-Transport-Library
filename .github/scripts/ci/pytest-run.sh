@@ -31,8 +31,9 @@ performance)
 	(cd "$acceptance_dir" && "${pytest[@]}" "${args[@]}" ./tests/dual/performance)
 	;;
 nightly)
-	(cd "$acceptance_dir" && "${pytest[@]}" -m nightly --template=html/index.html \
-		--report=report.html "./tests/single/${TEST_PATH:?TEST_PATH is required}")
+	args=(-m nightly --template=html/index.html --report=report.html)
+	[[ -n ${PYTEST_SHARD:-} ]] && args+=(--shard "$PYTEST_SHARD")
+	(cd "$acceptance_dir" && "${pytest[@]}" "${args[@]}" "./tests/single/${TEST_PATH:?TEST_PATH is required}")
 	;;
 smoke | smoke-low-bandwidth)
 	# The HTML report the workflow uploads and the JSON its summary counts
