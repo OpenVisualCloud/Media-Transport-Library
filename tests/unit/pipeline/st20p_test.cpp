@@ -103,6 +103,26 @@ TEST_F(St20PipelineRxTest, FramesDroppedWhenFramebufsFull) {
   EXPECT_EQ(frames_received(), 0u) << "dropped frames must not be counted as received";
 }
 
+/* The session hands an incomplete frame over for good, so one the pipeline has no
+ * framebuffer for goes back through st20_rx_put_framebuff(); the session itself
+ * puts back a refused complete frame. */
+TEST_F(St20PipelineRxTest, RefusedIncompleteFramePutBackByPipeline) {
+  static int put_cnt;
+  put_cnt = 0;
+  ut20p_set_put_framebuff(
+      [](void*, void*) {
+        put_cnt++;
+        return 0;
+      },
+      nullptr);
+  for (uint32_t ts = 1000; ts <= 3000; ts += 1000) ASSERT_EQ(inject_complete(ts), 0);
+
+  EXPECT_EQ(inject_complete(4000), -EBUSY);
+  EXPECT_EQ(put_cnt, 0);
+  EXPECT_EQ(inject_corrupted(5000), -EBUSY);
+  EXPECT_EQ(put_cnt, 1);
+}
+
 /* CORRUPTED frames are still delivered to the application.  They bump
  * BOTH stat_frames_received and stat_frames_corrupted; COMPLETE frames
  * bump only the former. */

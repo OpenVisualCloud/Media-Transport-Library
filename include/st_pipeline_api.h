@@ -598,8 +598,12 @@ enum st20p_rx_flag {
   ST20P_RX_FLAG_EXT_FRAME = (MTL_BIT32(2)),
   /**
    * Only used for internal convert mode and limited formats:
-   * ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210, ST_FRAME_FMT_UYVY
+   * ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210, ST_FRAME_FMT_UYVY,
+   * ST_FRAME_FMT_YUV422PLANAR16LE
    * Perform the color format conversion on each packet.
+   * Not supported with ST20P_RX_FLAG_EXT_FRAME, ST20P_RX_FLAG_USE_MULTI_THREADS or
+   * ST20P_RX_FLAG_AUTO_DETECT, nor above 40 Gb/s per session, where the transport
+   * would add a packet lcore.
    */
   ST20P_RX_FLAG_PKT_CONVERT = (MTL_BIT32(3)),
   /**

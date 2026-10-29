@@ -25,7 +25,6 @@
 #include <stdint.h>
 
 #include "st20_api.h"
-#include "st_api.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -73,6 +72,9 @@ int ut20_feed_continuation_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
  * `pkt_idx` as the RTP sequence number (no per-port sequence tracking). */
 int ut20_feed_frame_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
                         enum mtl_session_port port);
+/* ut20_feed_frame_pkt() with every payload byte set to `fill`. */
+int ut20_feed_frame_pkt_fill(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
+                             enum mtl_session_port port, uint8_t fill);
 
 /* Same as ut20_feed_frame_pkt() but stamps the mbuf's HW RX-timestamp
  * dynfield with `hw_raw_ns` before feeding it. Requires a prior
@@ -286,6 +288,26 @@ uint64_t ut20_stat_user_meta_err(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_idx_dropped(const ut20_test_ctx* ctx);
 /* Bumped once per frame whose first pkt carried accepted ST 2110-22 boxes. */
 uint64_t ut20_stat_st22_boxes(const ut20_test_ctx* ctx);
+
+/* ── user frame callbacks ─────────────────────────────────────────────── */
+
+/* Hand every payload to a harness uframe_pg_callback, as a user frame session
+ * does, that refuses (-EBUSY) the payload of row `refuse_row`. */
+void ut20_ctx_enable_uframe(ut20_test_ctx* ctx, int refuse_row);
+
+/* Ask for incomplete frames, then in notify_frame_ready put each one back and
+ * return -1, as an app that drops them does. */
+void ut20_ctx_refuse_incomplete_frames(ut20_test_ctx* ctx);
+
+/* Take the flags, priv, notify_frame_ready, uframe_pg_callback and uframe_size
+ * a pipeline passed to st20_rx_create(), so the packets fed here reach it. */
+void ut20_ctx_set_rx_ops(ut20_test_ctx* ctx, const struct st20_rx_ops* ops);
+
+/* Return a frame the pipeline held, as st20_rx_put_framebuff() does. */
+int ut20_put_framebuff(ut20_test_ctx* ctx, void* frame);
+
+/* Frames neither assembling nor held: a frame put twice or never stops counting. */
+int ut20_free_frames(const ut20_test_ctx* ctx);
 
 /* ── external frames ──────────────────────────────────────────────────── */
 

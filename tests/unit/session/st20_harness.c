@@ -122,6 +122,8 @@ struct ut20_test_ctx {
   uint8_t ext_frame_storage[UT20_MAX_FRAME_SIZE];
   struct st20_ext_frame ext_frames[UT20_FRAME_COUNT];
   struct mtl_dma_lender_dev idle_dma_dev;
+  int uframe_refuse_row;
+  bool refuse_incomplete;
 };
 
 #include "session/st20_harness.h"
@@ -214,6 +216,10 @@ static int ut20_notify_frame_ready(void* priv, void* frame,
                                    struct st20_rx_frame_meta* meta) {
   ut20_test_ctx* ctx = priv;
   if (!ctx || !frame) return 0;
+  if (ctx->refuse_incomplete && meta->status == ST_FRAME_STATUS_CORRUPTED) {
+    ut20_release_frame(ctx, frame);
+    return -1;
+  }
   ctx->last_timestamp_first_pkt = meta->timestamp_first_pkt;
   if (meta->tp[MTL_SESSION_PORT_P]) {
     ctx->last_tp_compliant = meta->tp[MTL_SESSION_PORT_P]->compliant;
@@ -444,14 +450,22 @@ static void pkt_idx_to_line(int pkt_idx, uint16_t* line_num, uint16_t* line_offs
 
 /* ── feed functions ───────────────────────────────────────────────────── */
 
-int ut20_feed_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t line_num,
-                  uint16_t line_offset, uint16_t line_length,
-                  enum mtl_session_port port) {
+static int feed_pkt_fill(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t line_num,
+                         uint16_t line_offset, uint16_t line_length,
+                         enum mtl_session_port port, uint8_t fill) {
   struct rte_mbuf* m = make_video_mbuf(seq, ts, line_num, line_offset, line_length);
   if (!m) return -1;
+  memset(rte_pktmbuf_mtod_offset(m, uint8_t*, sizeof(struct st_rfc4175_video_hdr)), fill,
+         line_length);
   int rc = rv_handle_frame_pkt(&ctx->session, m, port, true);
   rte_pktmbuf_free(m);
   return rc;
+}
+
+int ut20_feed_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts, uint16_t line_num,
+                  uint16_t line_offset, uint16_t line_length,
+                  enum mtl_session_port port) {
+  return feed_pkt_fill(ctx, seq, ts, line_num, line_offset, line_length, port, 0);
 }
 
 void ut20_ctx_enable_user_meta(ut20_test_ctx* ctx) {
@@ -492,12 +506,17 @@ int ut20_feed_continuation_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
   return rc;
 }
 
-int ut20_feed_frame_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
-                        enum mtl_session_port port) {
+int ut20_feed_frame_pkt_fill(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
+                             enum mtl_session_port port, uint8_t fill) {
   uint32_t seq = ts * (uint32_t)ctx->session.ops.height + (uint32_t)pkt_idx;
   uint16_t ln, lo, ll;
   pkt_idx_to_line(pkt_idx, &ln, &lo, &ll);
-  return ut20_feed_pkt(ctx, seq, ts, ln, lo, ll, port);
+  return feed_pkt_fill(ctx, seq, ts, ln, lo, ll, port, fill);
+}
+
+int ut20_feed_frame_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
+                        enum mtl_session_port port) {
+  return ut20_feed_frame_pkt_fill(ctx, pkt_idx, ts, port, 0);
 }
 
 static int feed_frame_pkt_dynfield_ts(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts,
@@ -569,6 +588,46 @@ int ut20_feed_rtp_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq, uint32_t ts
   }
   rte_pktmbuf_free(m);
   return rc;
+}
+
+/* ── user frame callbacks ─────────────────────────────────────────────── */
+
+static int ut20_uframe_pg(void* priv, void* frame, struct st20_rx_uframe_pg_meta* meta) {
+  ut20_test_ctx* ctx = priv;
+  (void)frame;
+  return (int)meta->row_number == ctx->uframe_refuse_row ? -EBUSY : 0;
+}
+
+void ut20_ctx_enable_uframe(ut20_test_ctx* ctx, int refuse_row) {
+  ctx->uframe_refuse_row = refuse_row;
+  ctx->session.ops.uframe_pg_callback = ut20_uframe_pg;
+  ctx->session.st20_uframe_size = ctx->session.st20_frame_size;
+}
+
+void ut20_ctx_refuse_incomplete_frames(ut20_test_ctx* ctx) {
+  ctx->refuse_incomplete = true;
+  ctx->session.ops.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
+}
+
+void ut20_ctx_set_rx_ops(ut20_test_ctx* ctx, const struct st20_rx_ops* ops) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  s->ops.flags = ops->flags;
+  s->ops.priv = ops->priv;
+  s->ops.notify_frame_ready = ops->notify_frame_ready;
+  s->ops.uframe_pg_callback = ops->uframe_pg_callback;
+  s->st20_uframe_size = ops->uframe_size;
+}
+
+int ut20_put_framebuff(ut20_test_ctx* ctx, void* frame) {
+  ut20_release_frame(ctx, frame);
+  return 0;
+}
+
+int ut20_free_frames(const ut20_test_ctx* ctx) {
+  int free_cnt = 0;
+  for (int i = 0; i < UT20_FRAME_COUNT; i++)
+    free_cnt += rte_atomic32_read(&ctx->frames[i].refcnt) == 0;
+  return free_cnt;
 }
 
 /* ── external frames ──────────────────────────────────────────────────── */
