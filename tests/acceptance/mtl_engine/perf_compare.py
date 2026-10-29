@@ -72,6 +72,10 @@ TIME_SCRIPTS = {
 # its inflight, and the transmitter returns pending while a packet waits for the
 # pacer, so their work cannot be told from their polling.
 WORK_TASKLET = "rvs_pkt_rx"
+# RxTxApp's frame threads, a thread a session (tx_st20p_app.c, rx_st20p_app.c): they
+# fill or read the frames, and MTL converts a frame of another pixel format on them,
+# in st20p_tx_put_frame() and st20p_rx_get_frame().
+APP_THREAD = re.compile(r"(tx|rx)_st20p_\d+")
 DUMP_PERIOD_S = 10  # MT_STAT_INTERVAL_S_DEFAULT
 POLL_S = 5
 # Enough lines of a collector log to hold the last complete dump of 64 sessions.
@@ -90,7 +94,7 @@ RE_BUSY = re.compile(
     r"(RX|TX)_VIDEO_SESSION\((\d+),(\d+)\): throughput .*cpu busy ([\d.]+)"
 )
 RE_DEV = re.compile(
-    r"DEV\(\d+\): Avr rate, tx: ([\d.]+) Mb/s, rx: ([\d.]+) Mb/s, pkts, tx: \d+, rx: (\d+)"
+    r"DEV\((\d+)\): Avr rate, tx: ([\d.]+) Mb/s, rx: ([\d.]+) Mb/s, pkts, tx: \d+, rx: (\d+)"
 )
 RE_INCOMPLETE = re.compile(r"RX_VIDEO_SESSION\(\d+,\d+\): incomplete frames (\d+)")
 RE_HW_DROP = re.compile(r"DEV\(\d+\): Status: rx_hw_dropped_packets (\d+)")
@@ -119,18 +123,13 @@ RE_PERF = re.compile(r"^([\d.]+),[^,]*,([^,]+)", re.M)
 # The rows with no better direction, which the report does not score: the clock; IPC,
 # which a polling loop raises with idle polls as much as with speed; the cache
 # footprint, hits and miss ratio; the port rates, which carry pads and other traffic;
-# and the re-plans, which releases count differently. The frame rate is better
-# higher, and every other row is a cost, better lower, as the time of a call, which is
-# also a wait for the tasklets after it on its scheduler.
-UNSCORED = (
-    "core clock (GHz)",
-    "IPC",
-    "LLC occupancy (MB)",
-    "LLC hits (M/s)",
-    "LLC miss ratio (%)",
-    "RX rate (Mb/s)",
-    "TX rate (Mb/s)",
-    f"{TX_REPLAN} (/s)",
+# the re-plans, which releases count differently; and the CPU per frame, the cores of
+# its row over the frame rate that every valid round holds, which that row scores. The
+# frame rate is better higher, and every other row is a cost, better lower, as the
+# time of a call, which is also a wait for the tasklets after it on its scheduler.
+UNSCORED = re.compile(
+    r"core clock \(GHz\)|IPC|LLC occupancy \(MB\)|LLC hits \(M/s\)|LLC miss ratio \(%\)"
+    rf"|(RX|TX) rate(, port \d+)? \(Gb/s\)|{TX_REPLAN} \(/s\)|\w+ threads per frame \(ms\)"
 )
 HIGHER = ("fps (worst session)",)
 # A difference is a change from MIN_CHANGE_PCT and NOISE_FACTOR times the noise, else
@@ -168,35 +167,46 @@ LOSS_ROWS = (*RX_LOSS, *TX_LATE)
 # The tasklet rows that the summary scores outside its verdict: the timed window runs
 # slower than production, and a tasklet on several schedulers would count several times.
 TASKLET_ROWS = re.compile(r"sch_\d+ .+ (avg|p99), timed \(us\)")
-# The groups of a role's rows in report order, by name or pattern; the call times of
-# the last two each read as one table, see _matrix().
+# The groups of a role's rows in report order, by name or pattern; CPU by stage and the
+# call times of the last two each read as one table of _cell()s.
+DELIVERY = "Delivery"
+CPU_STAGES = "CPU by stage"
+# The threads of an instance by what they do, the rows of CPU_STAGES, which add up to
+# all threads, and its columns after the CPUs of the schedulers.
+STAGES = ("scheduler", "application", "other", "all")
+STAGE_COLS = ("(cores)", "per frame (ms)")
+STAGE_TEXT = {
+    "scheduler": ("schedulers", "Schedulers: send or receive the packets"),
+    "application": (
+        "application",
+        "Application threads: fill or read the frames, and convert them",
+    ),
+    "other": ("other", "Other: MTL's control threads, EAL, the main thread"),
+    "all": ("all", "All threads"),
+}
 SAMPLED = "Tasklets, 1 loop in 64 timed"
 TIMED = "Tasklet call times, every call timed"
 SESSIONS = "Video session call times, every session timed"
 CALL_STATS = ("avg", "p90", "p95", "p99", "min", "max")
 GROUPS = (
     (
-        "Delivery",
-        (
-            "fps (worst session)",
-            "RX rate (Mb/s)",
-            "TX rate (Mb/s)",
-            *LOSS_ROWS,
-            f"{TX_REPLAN} (/s)",
+        DELIVERY,
+        re.compile(
+            r"fps \(worst session\)|(RX|TX) rate(, port \d+)? \(Gb/s\)"
+            rf"|{'|'.join(LOSS_ROWS)}|{TX_REPLAN} \(/s\)"
+        ),
+    ),
+    (
+        CPU_STAGES,
+        re.compile(
+            rf"schedulers \(CPUs\)|({'|'.join(STAGES)}) threads "
+            rf"({'|'.join(map(re.escape, STAGE_COLS))})"
         ),
     ),
     ("Scheduler loops", re.compile(r"sch_\d+ avg loop \(ns\)")),
     (
         "CPU",
-        (
-            "schedulers (CPUs)",
-            "video cpu busy (%)",
-            "scheduler threads (cores)",
-            "other threads (cores)",
-            "sch preemptions (/s)",
-            "IPC",
-            "core clock (GHz)",
-        ),
+        ("video cpu busy (%)", "sch preemptions (/s)", "IPC", "core clock (GHz)"),
     ),
     ("Memory and cache", re.compile(r"memory bandwidth \(MB/s\)|LLC .+")),
     (
@@ -216,8 +226,9 @@ RE_TIMED_ROW = re.compile(r"sch_(\d+) (.+) (\w+), (?:session )?timed \(us\)")
 # its outcome, or grey where it differs with no better direction, and its text stays
 # in the page's ink. A table of class cmp has the baseline in column 2 and the
 # candidate in column 3, one of class scored also the change, the noise, the rounds
-# and the outcome, at the same widths in every group; class tm is a table of call
-# times, see _matrix(). The heads of both stay in view while their rows scroll past.
+# and the outcome, at the same widths in every group; class tm is a table of _cell()s,
+# of call times or, also of class stg, of CPU by stage, under which a div of class cpu
+# is a build's bar. The heads of both stay in view while their rows scroll past.
 STYLE = """
 :root{--i:#229954;--i-tint:#cbecd9;--r:#e74c3c;--r-tint:#f9d4d0;--d-tint:#efefef}
 .sw::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;
@@ -272,6 +283,18 @@ details.fold[open]>summary{border-bottom:0}
 .verdict.i{border-left-color:var(--i);background:var(--i-tint)}
 .verdict.r{border-left-color:var(--r);background:var(--r-tint)}
 .note{font-size:.82em;color:var(--text-muted);margin:8px 0}
+table.stg th:nth-child(1){width:34%}
+table.stg th:nth-child(2),table.stg td:nth-child(2){width:12%;text-align:right}
+table.stg tr:last-child td{border-top:2px solid var(--border)}
+.cpu{display:grid;grid-template-columns:22% 1fr 40%;gap:12px;align-items:center;
+  margin:8px 0;font-size:.84em;color:var(--text-muted)}
+.cpu b{display:flex;height:12px;border-radius:4px;overflow:hidden;background:#e8ecf1}
+.cpu i{border-right:2px solid #fff}
+.k::before{content:"";display:inline-block;width:9px;height:9px;border-radius:2px;
+  margin:0 4px 0 8px}
+.cpu i.scheduler,.k.scheduler::before{background:#2a78d6}
+.cpu i.application,.k.application::before{background:#eb6834}
+.cpu i.other,.k.other::before{background:#1baf7a}
 """
 
 
@@ -824,8 +847,8 @@ class Instance:
         )
         return ""
 
-    def proc(self) -> tuple[int, dict[int, tuple[int, int]]]:
-        """(CLOCK_MONOTONIC ns, {tid: (cpu ticks, involuntary switches)}).
+    def proc(self) -> tuple[int, dict[int, tuple[int, int, str]]]:
+        """(CLOCK_MONOTONIC ns, {tid: (cpu ticks, involuntary switches, name)}).
 
         CLOCK_MONOTONIC is the clock of the bpftrace timestamps.
         """
@@ -833,13 +856,14 @@ class Instance:
             self.host,
             f"grep -m1 'now at' /proc/timer_list; for t in /proc/{self.pid}/task/*; do "
             "s=$(cat $t/stat) && n=$(grep ^nonvoluntary_ctxt_switches $t/status) && "
-            'echo "${t##*/} ${s##*) } ${n##*[[:space:]]}" || :; done 2>/dev/null',
+            "c=${s#*(} && c=${c%)*} && c=${c//[[:space:]]/_} && "
+            'echo "${t##*/} ${c:-_} ${s##*) } ${n##*[[:space:]]}" || :; done 2>/dev/null',
         ).split("\n")
         threads = {}
         for line in filter(None, out[1:]):
             f = line.split()
-            # f[1] is field 3 of /proc/<pid>/stat, so utime and stime are f[12] and f[13].
-            threads[int(f[0])] = (int(f[12]) + int(f[13]), int(f[-1]))
+            # f[2] is field 3 of /proc/<pid>/stat, so utime and stime are f[13] and f[14].
+            threads[int(f[0])] = (int(f[13]) + int(f[14]), int(f[-1]), f[1])
         return int(out[0].split()[2]), threads
 
     def save(self, out_dir: str) -> None:
@@ -890,7 +914,8 @@ class Dump:
     tasklets: dict = field(default_factory=dict)  # (sch, name): [cnt, sum, wcnt, wsum]
     fps: dict = field(default_factory=dict)  # (dir, m, s): fps
     busy: dict = field(default_factory=dict)  # (dir, m, s): cpu busy
-    dev: list = field(default_factory=list)  # [tx Mb/s, rx Mb/s, rx pkts]
+    dev: list = field(default_factory=list)  # [tx Mb/s, rx Mb/s, rx pkts] of all ports
+    ports: dict = field(default_factory=dict)  # port: (tx Mb/s, rx Mb/s)
     counts: Counter = field(default_factory=Counter)  # LOSS_ROWS or TX_REPLAN: sum
     tasklet_times: dict = field(default_factory=dict)  # (sch, name): {stat: us}
     session_times: dict = field(default_factory=dict)  # (dir, m, s): {stat: us}
@@ -924,7 +949,8 @@ def parse_dumps(records: list[str]) -> list[Dump]:
         elif m := RE_BUSY.search(msg):
             cur.busy[(m[1], m[2], m[3])] = float(m[4])
         elif m := RE_DEV.search(msg):
-            vals = [float(m[1]), float(m[2]), int(m[3])]
+            vals = [float(m[2]), float(m[3]), int(m[4])]
+            cur.ports[int(m[1])] = tuple(vals[:2])
             cur.dev = [a + b for a, b in zip(cur.dev, vals)] if cur.dev else vals
         elif m := RE_INCOMPLETE.search(msg):
             cur.counts["incomplete frames"] += int(m[1])
@@ -1009,10 +1035,13 @@ def metrics(direction, dumps, proc0, proc1, clk_tck, rdt0, rdt1, pmu=None) -> di
     sch_tids = {d.sch[i][1] for d in untraced for i in d.sch}
     both = proc0[1].keys() & proc1[1].keys()
     ticks = {t: proc1[1][t][0] - proc0[1][t][0] for t in both}
-    cores = sum(ticks.values()) / clk_tck / dt
-    sch_cores = sum(ticks[t] for t in both & sch_tids) / clk_tck / dt
-    m["scheduler threads (cores)"] = sch_cores
-    m["other threads (cores)"] = cores - sch_cores
+    app_tids = {t for t in both if APP_THREAD.fullmatch(proc1[1][t][2])} - sch_tids
+    # each kind of thread from its own ticks, so a kind that ran none reads 0
+    for stage, tids in zip(
+        STAGES, (both & sch_tids, app_tids, both - sch_tids - app_tids)
+    ):
+        m[f"{stage} threads (cores)"] = sum(ticks[t] for t in tids) / clk_tck / dt
+    m["all threads (cores)"] = sum(m[f"{s} threads (cores)"] for s in STAGES[:3])
     m["sch preemptions (/s)"] = (
         sum(proc1[1][t][1] - proc0[1][t][1] for t in both & sch_tids) / dt
     )
@@ -1031,17 +1060,28 @@ def metrics(direction, dumps, proc0, proc1, clk_tck, rdt0, rdt1, pmu=None) -> di
     sessions = {k for d in untraced for k in d.fps if k[0] == direction}
     # The median of each session, so one dump that lost packets does not void
     # the round; the loss counters below report it.
-    m["fps (worst session)"] = min(
-        _median(d.fps.get(k, 0.0) for d in untraced) for k in sessions
-    )
+    fps = [_median(d.fps.get(k, 0.0) for d in untraced) for k in sessions]
+    m["fps (worst session)"] = min(fps)
+    if frames := sum(fps):
+        for stage in STAGES:
+            m[f"{stage} threads per frame (ms)"] = (
+                m[f"{stage} threads (cores)"] * 1e3 / frames
+            )
+    # the rate of each port when the instance has two, then of the instance
     rate = 1 if direction == "RX" else 0
-    m[f"{direction} rate (Mb/s)"] = _median(d.dev[rate] for d in untraced if d.dev)
+    ports = sorted({p for d in untraced for p in d.ports})
+    mbps = {
+        f", port {p}": [d.ports[p][rate] for d in untraced if p in d.ports]
+        for p in (ports if len(ports) > 1 else ())
+    }
+    mbps[""] = [d.dev[rate] for d in untraced if d.dev]
+    for port, values in mbps.items():
+        mid = _median(values)
+        m[f"{direction} rate{port} (Gb/s)"] = None if mid is None else mid / 1000
     counts = sum((d.counts for d in untraced), Counter())
-    for name in RX_LOSS:
+    for name in RX_LOSS if direction == "RX" else TX_LATE:
         m[name] = counts[name]
     if direction == "TX":
-        for name in TX_LATE:
-            m[name] = counts[name]
         m[f"{TX_REPLAN} (/s)"] = counts[TX_REPLAN] / (len(untraced) * DUMP_PERIOD_S)
 
     base, traced = traced[:1], traced[1:]
@@ -1167,12 +1207,11 @@ def cells(r: Row) -> list[str]:
         diff = f"{r.diff:+.1f}%"
     noise = "n/a" if r.noise is None else f"±{r.noise:.1f}%"
     a, b = _fmt(r.a), _fmt(r.b)
-    # decimals until two values that differ beyond float rounding print apart
+    # a decimal more for two values that differ beyond float rounding but print alike;
+    # no more, as digits below the noise tell nothing
     if a == b and None not in (r.a, r.b) and not math.isclose(r.a, r.b):
-        places = max(_places(r.a), _places(r.b))
-        while a == b and places < 12:
-            places += 1
-            a, b = f"{r.a:,.{places}f}", f"{r.b:,.{places}f}"
+        places = max(_places(r.a), _places(r.b)) + 1
+        a, b = f"{r.a:,.{places}f}", f"{r.b:,.{places}f}"
     return [r.metric, a, b, diff, noise]
 
 
@@ -1195,7 +1234,7 @@ def outcome(r: Row) -> str:
         return "unchanged" if r.a == r.b or small else "n/a"
     if _no_change(_change(r), r.noise):
         return "unchanged"
-    if r.metric in UNSCORED:
+    if UNSCORED.fullmatch(r.metric):
         return "differs"
     return "improvement" if (_change(r) > 0) == (r.metric in HIGHER) else "regression"
 
@@ -1281,7 +1320,7 @@ def _per_round(r: Row) -> str:
 
 def _direction(metric: str) -> str:
     """The arrow of the better direction of *metric*, if it has one."""
-    return "" if metric in UNSCORED else " ↑" if metric in HIGHER else " ↓"
+    return "" if UNSCORED.fullmatch(metric) else " ↑" if metric in HIGHER else " ↓"
 
 
 def _cmp_table(items: list[tuple[str, Row]], names: dict) -> str:
@@ -1335,11 +1374,24 @@ def _by_size(items: list[tuple[str, Row]]) -> list[tuple[str, Row]]:
     return sorted(items, key=key)
 
 
+def _cell(r: Row | None) -> str:
+    """A cell of both builds' values of *r*, the better one in bold, and below them the
+    change and the noise, in the class of its outcome, muted for no change; its title
+    gives its outcome and rounds."""
+    if r is None:
+        return '<td class="u">n/a</td>'
+    cls, why, a, b, diff, noise = _values(r)
+    mark = OUTCOMES[outcome(r)][1]
+    below = " ".join(x for x in (mark, diff, noise) if x and x != "n/a") or diff
+    title = html.escape(f"{why}; rounds {_per_round(r)}")
+    return (
+        f'<td class="{cls or "u"}" title="{title}">{a} → {b}<small>{below}</small></td>'
+    )
+
+
 def _matrix(rows: list[Row]) -> str:
-    """The call times of *rows* as one table: a row per call and scheduler and a column
-    per stat that a build has. A cell holds both builds' values, the better one in bold,
-    and below them the change and the noise, in the class of its outcome, muted for no
-    change; its title gives its outcome and rounds."""
+    """The call times of *rows* as one table: a row per call and scheduler and a _cell()
+    per stat that a build has."""
     grid: dict = {}
     for r in rows:
         m = RE_TIMED_ROW.fullmatch(r.metric)
@@ -1350,35 +1402,66 @@ def _matrix(rows: list[Row]) -> str:
     stats = [s for s in CALL_STATS if s in shown]
     trs, last = [], None
     for (call, sch), g in sorted(grid.items()):
-        tds = []
-        for stat in stats:
-            if stat not in g:
-                tds.append('<td class="u">n/a</td>')
-                continue
-            r = g[stat]
-            cls, why, a, b, diff, noise = _values(r)
-            mark = OUTCOMES[outcome(r)][1]
-            below = " ".join(x for x in (mark, diff, noise) if x and x != "n/a") or diff
-            title = html.escape(f"{why}; rounds {_per_round(r)}")
-            tds.append(
-                f'<td class="{cls or "u"}" title="{title}">{a} → {b}'
-                f"<small>{below}</small></td>"
-            )
+        tds = "".join(_cell(g.get(stat)) for stat in stats)
         first = ' class="next"' if last is not None and call != last else ""
         last = call
         trs.append(
-            f"<tr{first}><td>{html.escape(call)}</td><td>sch_{sch}</td>{''.join(tds)}</tr>"
+            f"<tr{first}><td>{html.escape(call)}</td><td>sch_{sch}</td>{tds}</tr>"
         )
     return _table(["Call", "Scheduler", *(f"{s} (us) ↓" for s in stats)], trs, "mx tm")
 
 
-def _tables(groups: list[tuple[str, list[Row]]], names: dict) -> str:
-    """Each of *groups* under its title: one of call times as a single _matrix(), the
-    first of those after a note on how its cells read, another as its changes."""
+def _stages(rows: list[Row], names: dict, cpus: int) -> str:
+    """The rows of CPU_STAGES as one table, a row per stage of _cell()s, and when the
+    slots have *cpus*, a bar of each build: the cores of each stage on them."""
+    by = {r.metric: r for r in rows}
+    first = {
+        "scheduler": _cell(by.get("schedulers (CPUs)")),
+        "all": f'<td class="u">{cpus or ""}</td>',
+    }
+    trs = []
+    for stage in STAGES:
+        tds = "".join(_cell(by.get(f"{stage} threads {c}")) for c in STAGE_COLS)
+        cpu = first.get(stage, "<td></td>")
+        trs.append(f"<tr><td>{STAGE_TEXT[stage][1]}</td>{cpu}{tds}</tr>")
+    head = ["Threads", "CPUs ↓", "cores ↓", "CPU per frame (ms)"]
+    parts = [_table(head, trs, "mx tm stg")]
+    for x in "AB" if cpus else ():
+        used = [
+            getattr(by.get(f"{s} threads (cores)"), x.lower(), None) for s in STAGES
+        ]
+        if None in used:
+            continue
+        scale = max(cpus, used[-1])
+        segs = "".join(
+            f'<i class="{s}" style="width:{100 * v / scale:.1f}%"></i>'
+            for s, v in zip(STAGES, used[:-1])
+        )
+        keys = " ".join(
+            f'<span class="k {s}">{STAGE_TEXT[s][0]} {_fmt(v)}</span>'
+            for s, v in zip(STAGES, used[:-1])
+        )
+        parts.append(
+            f'<div class="cpu"><span>{html.escape(names[x])}</span><b>{segs}</b>'
+            f"<span>{keys} = {_fmt(used[-1])} of {cpus} CPUs</span></div>"
+        )
+    return "\n".join(parts)
+
+
+def _tables(groups: list[tuple[str, list[Row]]], names: dict, cpus: int = 0) -> str:
+    """Each of *groups* under its title: the delivery as all its rows, the CPU of each
+    stage as _stages() on slots of *cpus*, one of call times as a single _matrix(), the
+    first table of cells after a note on how they read, another as its changes."""
     parts, noted = [], False
     for title, rows in groups:
         parts.append(f"<h3>{html.escape(title)}</h3>")
-        if not all(RE_TIMED_ROW.fullmatch(r.metric) for r in rows):
+        if title == DELIVERY:
+            parts.append(_cmp_table([(r.metric, r) for r in rows], names))
+            continue
+        grid = title == CPU_STAGES or all(
+            RE_TIMED_ROW.fullmatch(r.metric) for r in rows
+        )
+        if not grid:
             parts.append(_changes([(r.metric, r) for r in rows], names))
             continue
         if not noted:
@@ -1388,7 +1471,9 @@ def _tables(groups: list[tuple[str, list[Row]]], names: dict) -> str:
                 "gives its outcome and its rounds.</div>"
             )
             noted = True
-        parts.append(_matrix(rows))
+        parts.append(
+            _stages(rows, names, cpus) if title == CPU_STAGES else _matrix(rows)
+        )
     return "\n".join(parts)
 
 
@@ -1648,10 +1733,12 @@ def _results(labels, args, slots, rounds, styled, nics, single_core) -> list[str
         "</div>",
         _summary(valid, hosts, names, styled, 2 if nics == "pooled" else 1),
     ]
+    cpus = {s["role"]: len(parse_cpus(s["cpus"])) for s in slots}
     for role, host in hosts.items():
         title = f"{role.upper()} ({html.escape(host)})"
         rows = compare(valid, role)
-        tables = _tables(_groups(rows), names)
+        size = cpus.get(role.split()[0], 0) if styled else 0
+        tables = _tables(_groups(rows), names, size)
         if not styled:
             p.append(_details(f"{title}: every row", [tables]))
             continue
@@ -1756,6 +1843,14 @@ def _wait_steady(insts, sessions, fps, queues=None) -> list[str]:
     def steady(i, last, rate):
         return any(is_steady(d, i.role.upper(), sessions, rate) for d in last[i.name])
 
+    def short(i, last) -> str:  # how far its last dump was from steady
+        rates = [
+            v for d in last[i.name] for k, v in d.fps.items() if k[0] == i.role.upper()
+        ]
+        if not rates:
+            return f"{i.name} (no session yet)"
+        return f"{i.name} ({min(rates):.1f} fps at worst, {len(rates)} of {sessions} sessions)"
+
     while True:
         if dead := _exited(insts):
             return [f"exited before steady state: {', '.join(dead)}"]
@@ -1763,11 +1858,12 @@ def _wait_steady(insts, sessions, fps, queues=None) -> list[str]:
         for i in insts:  # every session, at any rate
             if steady(i, last, 0) and i.name not in moved and not i.pin_app_threads():
                 moved.add(i.name)
-        waiting = [i.name for i in insts if not steady(i, last, fps)]
+        waiting = [i for i in insts if not steady(i, last, fps)]
         if not waiting:
             return []
         if time.monotonic() > deadline:
-            return [f"not steady after {timeout} s: {', '.join(waiting)}"]
+            behind = ", ".join(short(i, last) for i in waiting)
+            return [f"not steady after {timeout} s: {behind}"]
         time.sleep(POLL_S)
 
 

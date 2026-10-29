@@ -72,7 +72,7 @@ PIXEL_FORMATS = {
 APART = ("split", "redundant")
 NICS = {
     "single": "NIC 0 only, A on port 0 and B on port 1",
-    "split": "A on NIC 0 and B on NIC 1, port 0 each, a CPU socket each",
+    "split": "A on NIC 0 and B on NIC 1, port 0 each, so each build has a CPU socket to itself",
     "redundant": "ST 2022-7, A on NIC 0 and B on NIC 1, each with its primary stream "
     "on port 0 and its redundant stream on port 1",
     "span": "one instance a build on two ports, A on port 0 of both NICs and B on "
@@ -378,9 +378,10 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
         (
             "CPUs",
             f"{opts['cores']} a slot"
-            f"{' on each NIC node' if opts['nics'] == 'span' else ''}: the application "
-            f"threads on the first, the other {opts['cores'] - 1} MTL's --lcores; "
-            "the schedulers row counts those its schedulers polled",
+            f"{' on each NIC node' if opts['nics'] == 'span' else ''}: MTL's schedulers "
+            f"poll one each of the other {opts['cores'] - 1}, its --lcores; the "
+            "application threads, which convert and copy the frames, and MTL's other "
+            "threads share the first and the lcores the schedulers leave (CPU by stage)",
         ),
         ("Rounds", f"{opts['rounds']}; the builds swap slots every round"),
         ("Warm-up", f"{pc.WARMUP_S} s after every session is steady"),
