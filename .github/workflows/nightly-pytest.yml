@@ -32,20 +32,29 @@ jobs:
           - e810
           - e830
           - e835
-        dir:
-          - cross_app
-          - st40p
-          - gstreamer
-          - kernel_socket
-          - rss_mode
-          - rx_timing
-          - st20p
-          - st22p
-          - st30p
-          - xdp
+        suite:
+          - dir: cross_app
+          - dir: st40p
+          - dir: gstreamer
+          - dir: kernel_socket
+          - dir: rss_mode
+          - dir: rx_timing
+          # On one runner st20p takes about 6 h, every other suite 3 h at
+          # most. Shards spread it over the NIC's runners.
+          - {dir: st20p, shard: 1, shards: 4}
+          - {dir: st20p, shard: 2, shards: 4}
+          - {dir: st20p, shard: 3, shards: 4}
+          - {dir: st20p, shard: 4, shards: 4}
+          - dir: st22p
+          - dir: st30p
+          - dir: xdp
       fail-fast: false
     runs-on: ${{ matrix.nic }}
     timeout-minutes: 720
+    env:
+      # Names the artifacts: <dir>, or <dir>-<shard>, which the report parser
+      # files under <dir>, the category the baseline run has.
+      SUITE: ${{ matrix.suite.dir }}${{ matrix.suite.shard && format('-{0}', matrix.suite.shard) }}
     steps:
       - name: 'preparation: Harden Runner'
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -104,19 +113,20 @@ jobs:
         run: task ci:pytest-setup -- tag
       - name: 'execution: Run nightly-bare-metal tests in virtual environment'
         env:
-          TEST_PATH: ${{ matrix.dir }}
+          TEST_PATH: ${{ matrix.suite.dir }}
+          PYTEST_SHARD: ${{ matrix.suite.shard && format('{0}/{1}', matrix.suite.shard, matrix.suite.shards) }}
         run: task ci:pytest-run -- nightly
       - name: 'collect: System status report'
         if: always()
         env:
-          STATUS_NAME: system-info-${{ matrix.nic }}-${{ matrix.dir }}
+          STATUS_NAME: system-info-${{ matrix.nic }}-${{ env.SUITE }}
         run: task ci:report -- status
       - name: "upload report python"
         if: always()
         id: upload-report
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: nightly-test-report-${{ matrix.nic }}-${{ matrix.dir }}
+          name: nightly-test-report-${{ matrix.nic }}-${{ env.SUITE }}
           path: ./tests/acceptance/report.html
 
       - name: 'cleanup: Kill test processes'
@@ -127,8 +137,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: system-info-${{ matrix.nic }}-${{ matrix.dir }}
-          path: ./system-info-${{ matrix.nic }}-${{ matrix.dir }}
+          name: system-info-${{ matrix.nic }}-${{ env.SUITE }}
+          path: ./system-info-${{ matrix.nic }}-${{ env.SUITE }}
 
   aggregate-python-reports:
     needs: run-pytest
