@@ -63,8 +63,32 @@ struct ipmx_video_info;
 int ut_sr_video_info(ut_sr_ctx* ctx, struct ipmx_video_info* info);
 /* ipmx_sr_tx_set_block_version() of the session */
 int ut_sr_set_block_version(ut_sr_ctx* ctx, uint8_t version);
+/* ipmx_sr_tx_set_ts_refclk() of the session */
+int ut_sr_set_ts_refclk(ut_sr_ctx* ctx, const char* ts_refclk);
+/* ipmx_sr_tx_set_ts_refclk() stopped before the write ends, and its end */
+void ut_sr_set_ts_refclk_begin(ut_sr_ctx* ctx, const char* ts_refclk);
+void ut_sr_set_ts_refclk_end(ut_sr_ctx* ctx);
 /* ipmx_sr_tx_get_info() of the session */
 int ut_sr_get_info(ut_sr_ctx* ctx, struct ipmx_video_info* info);
+/* The built-in PTP state of port P, as mt_ptp.c leaves it */
+struct ut_sr_ptp {
+  bool ptp_service; /* MTL_FLAG_PTP_ENABLE */
+  bool active;
+  bool connected;
+  uint64_t announce_ns; /* the TSC ns of the master's last Announce, 0 for none */
+  int8_t log_announce_interval;
+  uint64_t gm_id;
+  uint8_t domain;
+};
+/* port P gets a PTP instance in this state, none for NULL; callable between frames */
+void ut_sr_set_ptp(ut_sr_ctx* ctx, const struct ut_sr_ptp* ptp);
+/* the stores of one Announce of the master as mt_ptp.c does them, stopped before the
+ * write ends, and its end */
+void ut_sr_ptp_announce_begin(ut_sr_ctx* ctx, uint64_t gm_id, uint8_t domain,
+                              uint64_t announce_ns);
+void ut_sr_ptp_announce_end(ut_sr_ctx* ctx);
+/* the application's MTL_FLAG_PTP_SOURCE_TSC and its own ptp_get_time_fn */
+void ut_sr_set_ptp_source(ut_sr_ctx* ctx, bool tsc, bool user_fn);
 /* ipmx_sr_tx_init(), 0 or its negative errno */
 int ut_sr_attach(ut_sr_ctx* ctx);
 void ut_sr_detach(ut_sr_ctx* ctx);

@@ -3,6 +3,7 @@
 #ifndef _IPMX_SR_H_
 #define _IPMX_SR_H_
 
+#include <rte_seqcount.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -35,9 +36,21 @@ struct ipmx_sr_tx {
   bool ipv4_cksum_offload;
   uint32_t sampling_rate;
   struct rte_mempool* pool;
-  /* fixed after init, version unused: block_version is the one on the wire */
+  /* version unused: block_version is the one on the wire; ts_refclk under info_seq */
   struct ipmx_video_info info;
   _Atomic uint8_t block_version;
+  rte_seqcount_t info_seq; /* the transmitter writes ts_refclk and the version under it */
+  char localmac[IPMX_TS_REFCLK_LEN];
+  /* ipmx_sr_tx_set_ts_refclk() stages these, the transmitter takes them at packet 0 */
+  rte_seqcount_t app_seq;
+  bool app_on;
+  char app_refclk[IPMX_TS_REFCLK_LEN];
+  /* transmitter only */
+  uint32_t app_seq_seen;
+  bool app_active;
+  struct ipmx_refclk refclk;
+  bool refclk_known; /* false: refclk is not the one on the wire */
+  bool sr_built;
   uint8_t info_block[IPMX_INFO_BLOCK_LEN];
   char cname[IPMX_SR_CNAME_MAX];
   uint8_t cname_len;
@@ -85,6 +98,8 @@ uint64_t ipmx_sr_tx_rl_lead_ns(const struct ipmx_sr_tx* sr, enum mtl_session_por
                                const struct st_tx_video_rl_plan* plan);
 /** -EIO without s->ipmx_sr; never blocks the transmitter. */
 int ipmx_sr_tx_set_block_version(struct st_tx_video_session_impl* s, uint8_t version);
+/** -EIO without s->ipmx_sr, -EINVAL on a malformed ts_refclk; NULL drops the override. */
+int ipmx_sr_tx_set_ts_refclk(struct st_tx_video_session_impl* s, const char* ts_refclk);
 /** -EIO without s->ipmx_sr, -EINVAL on NULL info. */
 int ipmx_sr_tx_get_info(struct st_tx_video_session_impl* s, struct ipmx_video_info* info);
 void ipmx_sr_stat_log(const struct ipmx_sr_stat* stat, int m_idx, int idx);

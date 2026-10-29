@@ -70,6 +70,26 @@ int ipmx_st20p_tx_set_block_version(st20p_tx_handle handle, uint8_t version) {
   return ret;
 }
 
+int ipmx_st20_tx_set_ts_refclk(st20_tx_handle handle, const char* ts_refclk) {
+  struct st_tx_video_session_handle_impl* s_impl = handle;
+  int ret;
+
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, -EIO);
+  ret = ipmx_sr_tx_set_ts_refclk(s_impl->impl, ts_refclk);
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
+}
+
+int ipmx_st20p_tx_set_ts_refclk(st20p_tx_handle handle, const char* ts_refclk) {
+  struct st20p_tx_ctx* ctx = handle;
+  int ret;
+
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
+  ret = ipmx_st20_tx_set_ts_refclk(ctx->transport, ts_refclk);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
+}
+
 int ipmx_st20_tx_get_info(st20_tx_handle handle, struct ipmx_video_info* info) {
   struct st_tx_video_session_handle_impl* s_impl = handle;
   int ret;

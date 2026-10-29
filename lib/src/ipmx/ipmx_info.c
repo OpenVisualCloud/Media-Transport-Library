@@ -68,7 +68,7 @@ int ipmx_video_info_from_session(struct mtl_main_impl* impl,
   }
 
   memset(info, 0, sizeof(*info));
-  /* TR-10-1 section 10.4 localmac form, the PTP form is not tracked yet */
+  /* TR-10-1 section 10.4 localmac form, the SR switches to PTP when it applies */
   snprintf(info->ts_refclk, sizeof(info->ts_refclk),
            "localmac=%02X-%02X-%02X-%02X-%02X-%02X", m[0], m[1], m[2], m[3], m[4], m[5]);
   /* TR-10-1 section 10.5: the RTP clock derives from the Internal Clock */
@@ -104,7 +104,7 @@ uint16_t ipmx_info_block_build(const struct ipmx_video_info* info, uint8_t* buf)
   ipmx_info_put_be16(&buf[2], IPMX_INFO_BLOCK_LEN / 4 - 1);
   buf[IPMX_INFO_BLOCK_VERSION_OFFSET] = info->version;
   memset(&buf[IPMX_INFO_BLOCK_VERSION_OFFSET + 1], 0, 3);
-  memcpy(&buf[8], info->ts_refclk, sizeof(info->ts_refclk));
+  memcpy(&buf[IPMX_TS_REFCLK_OFFSET], info->ts_refclk, sizeof(info->ts_refclk));
   memcpy(&buf[72], info->mediaclk, sizeof(info->mediaclk));
 
   ipmx_info_put_be16(&mib[0], IPMX_MEDIA_INFO_VIDEO);
@@ -126,4 +126,44 @@ uint16_t ipmx_info_block_build(const struct ipmx_video_info* info, uint8_t* buf)
   ipmx_info_put_be16(&mib[88], info->htotal);
   ipmx_info_put_be16(&mib[90], info->vtotal);
   return IPMX_INFO_BLOCK_LEN;
+}
+
+struct ipmx_refclk ipmx_refclk_from_ptp(const struct ipmx_ptp_snap* snap,
+                                        uint64_t now_ns) {
+  struct ipmx_refclk clk = {0};
+  int log_interval;
+  uint64_t timeout_ns;
+
+  /* RFC 7273: an IEEE1588-2008 ptp-domain is 0 to 127 */
+  if (!snap->builtin || !snap->connected || !snap->announce_ns || snap->domain > 127)
+    return clk;
+  /* the IEEE 1588 default and the ST 2059-2 profile ranges */
+  log_interval = RTE_MAX(-3, RTE_MIN(4, snap->log_announce_interval));
+  timeout_ns = log_interval >= 0 ? (3ull * NS_PER_S) << log_interval
+                                 : (3ull * NS_PER_S) >> -log_interval;
+  /* signed: an Announce stamped on the PTP thread after now_ns was read is fresh */
+  if ((int64_t)(now_ns - snap->announce_ns) >= (int64_t)timeout_ns) return clk;
+
+  clk.ptp = true;
+  clk.domain = snap->domain;
+  clk.gm_id = snap->gm_id;
+  return clk;
+}
+
+void ipmx_refclk_print(const struct ipmx_refclk* clk, const char* localmac,
+                       char* ts_refclk) {
+  const uint64_t id = clk->gm_id;
+
+  if (!clk->ptp) {
+    memcpy(ts_refclk, localmac, IPMX_TS_REFCLK_LEN);
+    return;
+  }
+  memset(ts_refclk, 0, IPMX_TS_REFCLK_LEN);
+  /* ST 2110-10 section 8.2 */
+  snprintf(ts_refclk, IPMX_TS_REFCLK_LEN,
+           "ptp=IEEE1588-2008:%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X:%u",
+           (unsigned int)(id >> 56) & 0xff, (unsigned int)(id >> 48) & 0xff,
+           (unsigned int)(id >> 40) & 0xff, (unsigned int)(id >> 32) & 0xff,
+           (unsigned int)(id >> 24) & 0xff, (unsigned int)(id >> 16) & 0xff,
+           (unsigned int)(id >> 8) & 0xff, (unsigned int)id & 0xff, clk->domain);
 }

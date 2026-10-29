@@ -3,6 +3,7 @@
 #ifndef _IPMX_INFO_H_
 #define _IPMX_INFO_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "ipmx/ipmx_api.h"
@@ -14,6 +15,8 @@ extern "C" {
 /* TR-10-2 section 10: the IPMX Info Block with one uncompressed video Media Info Block */
 #define IPMX_INFO_BLOCK_LEN (176)
 #define IPMX_INFO_BLOCK_VERSION_OFFSET (4)
+#define IPMX_TS_REFCLK_OFFSET (8)
+#define IPMX_TS_REFCLK_LEN (64)
 
 struct mtl_main_impl;
 struct st_tx_video_session_impl;
@@ -23,6 +26,33 @@ int ipmx_video_info_from_session(struct mtl_main_impl* impl,
                                  struct ipmx_video_info* info);
 /** Write the IPMX Info Block of info to buf, returns IPMX_INFO_BLOCK_LEN. */
 uint16_t ipmx_info_block_build(const struct ipmx_video_info* info, uint8_t* buf);
+
+/* The built-in PTP state of one port, as the ts-refclk decision reads it */
+struct ipmx_ptp_snap {
+  bool builtin;         /* the built-in PTP gives the port its PTP time */
+  bool connected;       /* at least one delay request/response exchange */
+  uint64_t announce_ns; /* TSC ns of the last Announce of the master, 0 for none */
+  int8_t log_announce_interval;
+  uint64_t gm_id;
+  uint8_t domain;
+};
+
+/* The Common Reference Clock a ts-refclk names, localmac when ptp is false */
+struct ipmx_refclk {
+  bool ptp;
+  uint8_t domain;
+  uint64_t gm_id;
+};
+
+/**
+ * TR-10-1 section 10.4: the PTP grandmaster when the built-in PTP has a master it
+ * exchanged delays with and whose last Announce is within 3 announce intervals of now_ns.
+ */
+struct ipmx_refclk ipmx_refclk_from_ptp(const struct ipmx_ptp_snap* snap,
+                                        uint64_t now_ns);
+/** Write the ts-refclk of clk zero padded to its 64 bytes, localmac copied if not ptp. */
+void ipmx_refclk_print(const struct ipmx_refclk* clk, const char* localmac,
+                       char* ts_refclk);
 
 #ifdef __cplusplus
 }

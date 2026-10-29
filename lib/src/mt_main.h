@@ -10,6 +10,7 @@
 #include <rte_cpuflags.h>
 #include <rte_errno.h>
 #include <rte_ethdev.h>
+#include <rte_seqcount.h>
 #include <rte_thash.h>
 #include <rte_tm.h>
 #include <rte_version.h>
@@ -222,6 +223,12 @@ struct mt_ptp_impl {
   uint8_t sip_addr[MTL_IP_ADDR_LEN]; /* source IP */
   enum mt_ptp_addr_mode master_addr_mode;
   int16_t master_utc_offset; /* offset to UTC of current master PTP */
+  /* from each Announce of the current master, written under master_announce_seq */
+  rte_seqcount_t master_announce_seq;
+  _Atomic uint64_t master_gm_id; /* grandmasterIdentity, octet 0 most significant */
+  _Atomic uint8_t master_domain;
+  _Atomic int8_t master_log_announce_interval;
+  _Atomic uint64_t master_announce_ns; /* mt_get_tsc() of the last one, 0 for none */
 
   uint64_t t1;
   uint8_t t1_domain_number;

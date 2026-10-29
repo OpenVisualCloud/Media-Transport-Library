@@ -206,6 +206,7 @@ unit_sources = [
   'ptp/user_sync_test.cpp',
   'ptp/delta_math_test.cpp',
   'ptp/t3_test.cpp',
+  'ptp/announce_test.cpp',
   'main/tsc_calibrate_harness.c',
   'main/tsc_calibrate_test.cpp',
   'main/mtl_init_params_test.cpp',
@@ -232,6 +233,7 @@ if get_option('enable_ipmx')
     'ipmx/ipmx_sr_trs_test.cpp',
     'ipmx/ipmx_info_test.cpp',
     'ipmx/ipmx_block_version_test.cpp',
+    'ipmx/ipmx_refclk_test.cpp',
   ]
 endif
 

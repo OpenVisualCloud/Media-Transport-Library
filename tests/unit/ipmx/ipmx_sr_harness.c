@@ -12,6 +12,7 @@
 #define ipmx_sr_stat_log ut_sr_stat_log
 #define ipmx_sr_tx_set_block_version ut_sr_tx_set_block_version
 #define ipmx_sr_tx_get_info ut_sr_tx_get_info
+#define ipmx_sr_tx_set_ts_refclk ut_sr_tx_set_ts_refclk
 
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
@@ -42,6 +43,7 @@ struct ut_sr_ctx {
   uint8_t last_sr[UT_SR_PKT_MAX];
   uint16_t last_sr_len;
   char pool_name[RTE_MEMPOOL_NAMESIZE];
+  struct mt_ptp_impl ptp;
 };
 
 /* mt_txq_burst() and mt_get_tsc() have no private context argument */
@@ -257,8 +259,73 @@ int ut_sr_set_block_version(ut_sr_ctx* ctx, uint8_t version) {
   return ut_sr_tx_set_block_version(&ctx->session, version);
 }
 
+int ut_sr_set_ts_refclk(ut_sr_ctx* ctx, const char* ts_refclk) {
+  return ut_sr_tx_set_ts_refclk(&ctx->session, ts_refclk);
+}
+
+void ut_sr_set_ts_refclk_begin(ut_sr_ctx* ctx, const char* ts_refclk) {
+  struct ipmx_sr_tx* sr = ctx->session.ipmx_sr;
+
+  rte_seqcount_write_begin(&sr->app_seq);
+  sr->app_on = true;
+  memset(sr->app_refclk, 0, sizeof(sr->app_refclk));
+  memcpy(sr->app_refclk, ts_refclk, strlen(ts_refclk));
+}
+
+void ut_sr_set_ts_refclk_end(ut_sr_ctx* ctx) {
+  rte_seqcount_write_end(&ctx->session.ipmx_sr->app_seq);
+}
+
 int ut_sr_get_info(ut_sr_ctx* ctx, struct ipmx_video_info* info) {
   return ut_sr_tx_get_info(&ctx->session, info);
+}
+
+void ut_sr_set_ptp(ut_sr_ctx* ctx, const struct ut_sr_ptp* state) {
+  struct mt_ptp_impl* ptp = &ctx->ptp;
+
+  ctx->impl.ptp[MTL_PORT_P] = state ? ptp : NULL;
+  if (!state) return;
+  if (state->ptp_service)
+    ctx->impl.user_para.flags |= MTL_FLAG_PTP_ENABLE;
+  else
+    ctx->impl.user_para.flags &= ~MTL_FLAG_PTP_ENABLE;
+  ptp->active = state->active;
+  ptp->connected = state->connected;
+  ptp->locked = state->connected;
+  ptp->master_initialized = state->announce_ns != 0;
+  atomic_store(&ptp->master_gm_id, state->gm_id);
+  atomic_store(&ptp->master_domain, state->domain);
+  atomic_store(&ptp->master_log_announce_interval, state->log_announce_interval);
+  atomic_store(&ptp->master_announce_ns, state->announce_ns);
+}
+
+void ut_sr_ptp_announce_begin(ut_sr_ctx* ctx, uint64_t gm_id, uint8_t domain,
+                              uint64_t announce_ns) {
+  struct mt_ptp_impl* ptp = &ctx->ptp;
+
+  rte_seqcount_write_begin(&ptp->master_announce_seq);
+  atomic_store_explicit(&ptp->master_gm_id, gm_id, memory_order_relaxed);
+  atomic_store_explicit(&ptp->master_domain, domain, memory_order_relaxed);
+  atomic_store_explicit(&ptp->master_announce_ns, announce_ns, memory_order_relaxed);
+}
+
+void ut_sr_ptp_announce_end(ut_sr_ctx* ctx) {
+  rte_seqcount_write_end(&ctx->ptp.master_announce_seq);
+}
+
+static uint64_t ut_sr_user_ptp_time(void* priv) {
+  MTL_MAY_UNUSED(priv);
+  return 0;
+}
+
+void ut_sr_set_ptp_source(ut_sr_ctx* ctx, bool tsc, bool user_fn) {
+  struct mtl_init_params* p = &ctx->impl.user_para;
+
+  if (tsc)
+    p->flags |= MTL_FLAG_PTP_SOURCE_TSC;
+  else
+    p->flags &= ~MTL_FLAG_PTP_SOURCE_TSC;
+  p->ptp_get_time_fn = user_fn ? ut_sr_user_ptp_time : NULL;
 }
 
 int ut_sr_attach(ut_sr_ctx* ctx) {

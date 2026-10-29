@@ -22,9 +22,9 @@ extern "C" {
  * section 10. The strings are zero padded to their field size, not always terminated.
  */
 struct ipmx_video_info {
-  /** block version, an 8-bit counter the application bumps when the stream changes */
+  /** block version, see ipmx_st20_tx_set_block_version() */
   uint8_t version;
-  /** ts-refclk, the SDP ts-refclk attribute value, TR-10-1 section 10.4 */
+  /** ts-refclk, the SDP ts-refclk attribute value, TR-10-1 section 10.4; can change */
   char ts_refclk[64];
   /** mediaclk, the SDP mediaclk attribute value, TR-10-1 section 10.5 */
   char mediaclk[12];
@@ -138,7 +138,11 @@ int ipmx_st20p_rx_get_tp_stat(st20p_rx_handle handle, enum mtl_session_port port
  * the call; 0 until set. TR-10-1 section 8.7 ties the version to the Info Block content,
  * so change it only with the stream, normally once before the first frame.
  *
- * The application owns the counter, the library keeps no state across sessions. When it
+ * The library itself adds 1, wrapping from 255 to 0, in the first Sender Report with a
+ * new ts-refclk (see ipmx_st20_tx_get_info()), not before the first Sender Report. A set
+ * racing that bump can undo it, so set the version before the first frame.
+ *
+ * The library keeps no state across sessions. When the application
  * re-creates a session with new parameters it sets the version to the one
  * ipmx_st20_tx_get_info() reported for the old session + 1, wrapping from 255 to 0,
  * before the get_next_frame callback returns the first frame, so every Sender Report of
@@ -162,9 +166,51 @@ int ipmx_st20_tx_set_block_version(st20_tx_handle handle, uint8_t version);
 int ipmx_st20p_tx_set_block_version(st20p_tx_handle handle, uint8_t version);
 
 /**
+ * Override the ts-refclk of an st20 TX session created with ST20_TX_FLAG_IPMX, for an
+ * application that supplies the PTP time (ptp_get_time_fn, e.g. linuxptp ptp4l and
+ * phc2sys), which the library cannot trace to a grandmaster. Read the grandmaster
+ * identity and domain from ptp4l (pmc "GET PARENT_DATA_SET", "GET TIME_STATUS_NP"), set
+ * "ptp=IEEE1588-2008:<grandmasterIdentity as XX-XX-XX-XX-XX-XX-XX-XX>:<domain>" and set
+ * it again on a change; set NULL or a localmac string while gmPresent is false.
+ *
+ * Callable at any time from the control plane, it goes into the next Sender Report built
+ * and ipmx_st20_tx_get_info() reports it from then. While set, the library does not
+ * follow the built-in PTP for the session. A string other than the one on the wire adds
+ * 1 to the block version in the same Sender Report, but not before the first Sender
+ * Report. Concurrent calls on one session from several threads are not supported.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(video) session.
+ * @param ts_refclk
+ *   The value after "a=ts-refclk:": "ptp=" or "localmac=" and more visible ASCII, at
+ *   most 63 chars. NULL goes back to the string the library derives.
+ * @return
+ *   - 0: Success.
+ *   - -EIO: invalid handle, or IPMX not enabled on the session.
+ *   - -EINVAL: malformed ts_refclk.
+ */
+int ipmx_st20_tx_set_ts_refclk(st20_tx_handle handle, const char* ts_refclk);
+
+/**
+ * ipmx_st20_tx_set_ts_refclk() of the transport session of an st20p TX pipeline created
+ * with ST20P_TX_FLAG_IPMX.
+ */
+int ipmx_st20p_tx_set_ts_refclk(st20p_tx_handle handle, const char* ts_refclk);
+
+/**
  * Get the IPMX Info Block content the Sender Reports of an st20 TX session created with
- * ST20_TX_FLAG_IPMX carry: the current block version and the stream values, which are
- * fixed at create.
+ * ST20_TX_FLAG_IPMX carry: the current block version and the stream values. All but
+ * ts_refclk and the version are fixed at create; the copy has the ts_refclk and the
+ * version of one Sender Report state.
+ *
+ * ts_refclk is "ptp=IEEE1588-2008:<grandmaster EUI-64>:<domain>" while the built-in PTP
+ * (MTL_FLAG_PTP_ENABLE, without ptp_get_time_fn or MTL_FLAG_PTP_SOURCE_TSC) of the
+ * primary port has a master it exchanged delays with, in domain 0 to 127, whose last
+ * Announce is younger than 3 announce intervals, else "localmac=<primary port MAC>", or
+ * the string of ipmx_st20_tx_set_ts_refclk(). The transmitter checks it at each frame
+ * start, so it changes without an application call. TR-10 TP-1 sections 13.2 and 13.3
+ * compare the Sender Report ts-refclk with the SDP: poll this function and republish
+ * the SDP whenever the version changes, also after ipmx_st20_tx_set_ts_refclk().
  *
  * @param handle
  *   The handle to the tx st2110-20(video) session.

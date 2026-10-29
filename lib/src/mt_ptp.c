@@ -1067,6 +1067,22 @@ static int ptp_parse_announce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_ms
       mt_if(ptp->impl, port)->ptp_get_time_fn = ptp_from_eth;
   }
 
+  if (ptp_port_id_equal(&msg->hdr.source_port_identity, &ptp->master_port_id)) {
+    uint64_t gm_id;
+
+    memcpy(&gm_id, &msg->grandmaster_identity.id[0], sizeof(gm_id));
+    rte_seqcount_write_begin(&ptp->master_announce_seq);
+    atomic_store_explicit(&ptp->master_gm_id, rte_be_to_cpu_64(gm_id),
+                          memory_order_relaxed);
+    atomic_store_explicit(&ptp->master_domain, msg->hdr.domain_number,
+                          memory_order_relaxed);
+    atomic_store_explicit(&ptp->master_log_announce_interval,
+                          msg->hdr.log_message_interval, memory_order_relaxed);
+    atomic_store_explicit(&ptp->master_announce_ns, mt_get_tsc(ptp->impl),
+                          memory_order_relaxed);
+    rte_seqcount_write_end(&ptp->master_announce_seq);
+  }
+
   return 0;
 }
 
@@ -1298,6 +1314,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   ptp->port_id = port_id;
   ptp->mbuf_pool = mt_sys_tx_mempool(impl, port);
   ptp->master_initialized = false;
+  rte_seqcount_init(&ptp->master_announce_seq);
   ptp->t3_sequence_id = 0x1000 * port;
   ptp->coefficient = 1.0;
   ptp->kp = impl->user_para.kp < 1e-15 ? MT_PTP_DEFAULT_KP : impl->user_para.kp;

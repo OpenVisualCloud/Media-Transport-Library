@@ -71,6 +71,18 @@ uint64_t ut_ptp_get_raw_time(void);
 void ut_ptp_set_user_time(ut_ptp_ctx* ctx, uint64_t user_ns);
 
 /* ── exercise the production code under test ──────────────────────────── */
+/* mt_ptp_parse() of an L2 Announce from clock src_clock port src_port */
+int ut_ptp_rx_announce(ut_ptp_ctx* ctx, const uint8_t src_clock[8], uint16_t src_port,
+                       const uint8_t gm[8], uint8_t domain, int8_t log_interval);
+/* what the PTP instance keeps of its master's last Announce */
+struct ut_ptp_master_announce {
+  uint64_t gm_id;
+  uint8_t domain;
+  int8_t log_interval;
+  uint64_t tsc_ns;
+};
+void ut_ptp_master_announce(const ut_ptp_ctx* ctx, struct ut_ptp_master_announce* out);
+
 void ut_ptp_adjust_delta(ut_ptp_ctx* ctx, int64_t delta, bool error_correct);
 void ut_ptp_sync_from_user(ut_ptp_ctx* ctx);
 /* Same, but on the no_timesync path: the NIC PHC is never adjusted and the

@@ -42,6 +42,8 @@ struct st20p_rx_digest_test_para {
   void (*tx_created)(st20p_tx_handle handle);
   /* called halfway through the streaming time with every TX and RX session */
   void (*mid_stream)(st20p_tx_handle* tx, st20p_rx_handle* rx, int sessions);
+  /* called on each TX session after mtl_stop(), before st20p_tx_free() */
+  void (*tx_check)(st20p_tx_handle handle);
   /* called on each RX session after mtl_stop(), before st20p_rx_free() */
   void (*rx_check)(st20p_rx_handle handle);
 };

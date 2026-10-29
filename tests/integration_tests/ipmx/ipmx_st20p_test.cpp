@@ -3,8 +3,8 @@
 /* st20p TX to RX with the IPMX flag on both sides: RGB 4:4:4 8-bit and 10-bit at the D6
  * rates, the TR-10-1 section 8.1 CMAX / VRX result of the RX timing parser, and the
  * session life cycle with the per-frame Sender Report on: a destination update, several
- * sessions, ST 2022-7, soaks, the block version. The noipmx_ cases are the same streams
- * without the flag, for wire comparison. Create/free cycles are
+ * sessions, ST 2022-7, soaks, the block version, the ts-refclk. The noipmx_ cases are the
+ * same streams without the flag, for wire comparison. Create/free cycles are
  * NoCtxTest.st20p_*ipmx_create_free_cycles, which need an instance without
  * MTL_FLAG_RANDOM_SRC_PORT. */
 
@@ -293,6 +293,51 @@ TEST(Ipmx_st20p, noipmx_rgb8_digest_1080p60_block_version) {
   test_st20p_init_rx_digest_para(&para);
   para.tx_created = ipmx_st20p_no_block_version;
   ipmx_st20p_digest_para(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P60, 1920, 1080,
+                         &para);
+}
+
+/* what an app with its own PTP time builds from pmc PARENT_DATA_SET grandmasterIdentity
+ * 444988.fffe.0695e0 and the domain */
+static const char* const ipmx_ts_refclk_domain127 =
+    "ptp=IEEE1588-2008:44-49-88-FF-FE-06-95-E0:127";
+static const char* const ipmx_ts_refclk_domain0 =
+    "ptp=IEEE1588-2008:44-49-88-FF-FE-06-95-E0:0";
+
+static void ipmx_st20p_set_ts_refclk(st20p_tx_handle handle) {
+  ASSERT_EQ(ipmx_st20p_tx_set_ts_refclk(handle, ipmx_ts_refclk_domain127), 0);
+}
+
+static void ipmx_st20p_expect_ts_refclk(st20p_tx_handle handle, const char* ts_refclk,
+                                        uint8_t version) {
+  struct ipmx_video_info info;
+
+  ASSERT_EQ(ipmx_st20p_tx_get_info(handle, &info), 0);
+  EXPECT_STREQ(info.ts_refclk, ts_refclk);
+  EXPECT_EQ(info.version, version);
+}
+
+/* the first SR took the string set before the first frame without a bump; a new one
+ * bumps the version in the SR that first carries it */
+static void ipmx_st20p_change_ts_refclk(st20p_tx_handle* tx, st20p_rx_handle*,
+                                        int sessions) {
+  for (int i = 0; i < sessions; i++) {
+    ipmx_st20p_expect_ts_refclk(tx[i], ipmx_ts_refclk_domain127, 0);
+    EXPECT_EQ(ipmx_st20p_tx_set_ts_refclk(tx[i], ipmx_ts_refclk_domain0), 0);
+  }
+}
+
+static void ipmx_st20p_check_ts_refclk_changed(st20p_tx_handle handle) {
+  ipmx_st20p_expect_ts_refclk(handle, ipmx_ts_refclk_domain0, 1);
+}
+
+TEST(Ipmx_st20p, rgb8_digest_1080p59_94_ts_refclk) {
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.ipmx = true;
+  para.tx_created = ipmx_st20p_set_ts_refclk;
+  para.mid_stream = ipmx_st20p_change_ts_refclk;
+  para.tx_check = ipmx_st20p_check_ts_refclk_changed;
+  ipmx_st20p_digest_para(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P59_94, 1920, 1080,
                          &para);
 }
 

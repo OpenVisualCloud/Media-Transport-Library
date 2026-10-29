@@ -4,6 +4,7 @@
 
 #include "../datapath/mt_queue.h"
 #include "../mt_log.h"
+#include "../mt_ptp.h"
 #include "../mt_util.h"
 #include "../st2110/st_tx_video_session.h"
 
@@ -92,6 +93,81 @@ static uint64_t ipmx_sr_rtp_tai(uint64_t anchor_ns, uint32_t rtp_ts, uint32_t ra
   return ((__uint128_t)tick * NS_PER_S + rate - 1) / rate;
 }
 
+/* false while an Announce is being stored */
+static bool ipmx_sr_ptp_snap(struct mtl_main_impl* impl, enum mtl_port port,
+                             struct ipmx_ptp_snap* snap) {
+  const struct mt_ptp_impl* ptp = mt_get_ptp(impl, port);
+  uint32_t sn;
+
+  memset(snap, 0, sizeof(*snap));
+  /* an application time source is not known to follow the master the PTP stack sees */
+  if (!ptp || !ptp->active || !mt_user_ptp_service(impl) || mt_user_ptp_time_fn(impl) ||
+      mt_user_ptp_tsc_source(impl))
+    return true;
+  snap->builtin = true;
+  snap->connected = ptp->connected;
+  sn = rte_seqcount_read_begin(&ptp->master_announce_seq);
+  snap->announce_ns =
+      atomic_load_explicit(&ptp->master_announce_ns, memory_order_relaxed);
+  snap->log_announce_interval =
+      atomic_load_explicit(&ptp->master_log_announce_interval, memory_order_relaxed);
+  snap->gm_id = atomic_load_explicit(&ptp->master_gm_id, memory_order_relaxed);
+  snap->domain = atomic_load_explicit(&ptp->master_domain, memory_order_relaxed);
+  return !rte_seqcount_read_retry(&ptp->master_announce_seq, sn);
+}
+
+static bool ipmx_sr_refclk_now(const struct ipmx_sr_tx* sr, struct ipmx_refclk* clk) {
+  struct ipmx_ptp_snap snap;
+
+  if (!ipmx_sr_ptp_snap(sr->impl, sr->port, &snap)) return false;
+  *clk = ipmx_refclk_from_ptp(&snap, mt_get_tsc(sr->impl));
+  return true;
+}
+
+/* 1 with the staged string in ts_refclk when the setter changed it, 0 when it did not,
+ * -EBUSY while it writes */
+static int ipmx_sr_app_refclk_take(struct ipmx_sr_tx* sr, char* ts_refclk) {
+  const uint32_t sn = rte_seqcount_read_begin(&sr->app_seq);
+  bool on;
+
+  if (sn == sr->app_seq_seen) return 0;
+  on = sr->app_on;
+  memcpy(ts_refclk, sr->app_refclk, IPMX_TS_REFCLK_LEN);
+  if (rte_seqcount_read_retry(&sr->app_seq, sn)) return -EBUSY;
+  sr->app_seq_seen = sn;
+  sr->app_active = on;
+  if (!on) sr->refclk_known = false;
+  return 1;
+}
+
+/* TR-10-1 section 8.7 and TR-10-9 section 12: a new ts-refclk is a new block version,
+ * except before the first SR, which no receiver saw */
+static void ipmx_sr_refclk_update(struct ipmx_sr_tx* sr) {
+  char ts_refclk[IPMX_TS_REFCLK_LEN];
+  const int app = ipmx_sr_app_refclk_take(sr, ts_refclk);
+  struct ipmx_refclk clk;
+
+  if (app < 0 || (sr->app_active && !app)) return;
+  if (!sr->app_active) {
+    if (!ipmx_sr_refclk_now(sr, &clk)) return;
+    if (sr->refclk_known && clk.ptp == sr->refclk.ptp && clk.gm_id == sr->refclk.gm_id &&
+        clk.domain == sr->refclk.domain)
+      return;
+    sr->refclk = clk;
+    sr->refclk_known = true;
+    ipmx_refclk_print(&clk, sr->localmac, ts_refclk);
+  }
+  if (!memcmp(ts_refclk, sr->info.ts_refclk, IPMX_TS_REFCLK_LEN)) return;
+
+  rte_seqcount_write_begin(&sr->info_seq);
+  memcpy(sr->info.ts_refclk, ts_refclk, IPMX_TS_REFCLK_LEN);
+  memcpy(&sr->info_block[IPMX_TS_REFCLK_OFFSET], ts_refclk, IPMX_TS_REFCLK_LEN);
+  if (sr->sr_built)
+    atomic_fetch_add_explicit(&sr->block_version, 1, memory_order_relaxed);
+  rte_seqcount_write_end(&sr->info_seq);
+  dbg("%s, ts-refclk %s\n", __func__, ts_refclk);
+}
+
 static inline uint32_t ipmx_sr_pkt_rtp_ts(struct rte_mbuf* pkt) {
   return ntohl(rte_pktmbuf_mtod(pkt, struct st_rfc4175_video_hdr*)->rtp.base.tmstamp);
 }
@@ -111,9 +187,13 @@ void ipmx_sr_tx_frame_start(struct ipmx_sr_tx* sr, enum mtl_session_port s_port,
     sr->stat.dropped++;
   }
   if (late) sr->stat.late++;
+  ipmx_sr_refclk_update(sr);
   tai_ns = ipmx_sr_rtp_tai(st_tx_mbuf_get_ptp(pkt0), rtp_ts, sr->sampling_rate);
   sr->pending = ipmx_sr_tx_pkt(sr, tai_ns, rtp_ts);
-  if (!sr->pending) sr->stat.alloc_fail++;
+  if (sr->pending)
+    sr->sr_built = true;
+  else
+    sr->stat.alloc_fail++;
   sr->pkt_count += sr->frame_pkts;
   sr->octet_count += sr->frame_octets;
 }
@@ -187,6 +267,12 @@ int ipmx_sr_tx_init(struct mtl_main_impl* impl, struct st_tx_video_session_impl*
   sr->media_hdr = &s->s_hdr[MTL_SESSION_PORT_P];
   sr->ipv4_cksum_offload = s->eth_ipv4_cksum_offload[MTL_SESSION_PORT_P];
   sr->sampling_rate = s->fps_tm.sampling_clock_rate;
+  rte_seqcount_init(&sr->info_seq);
+  rte_seqcount_init(&sr->app_seq);
+  memcpy(sr->localmac, sr->info.ts_refclk, sizeof(sr->localmac));
+  while (!ipmx_sr_refclk_now(sr, &sr->refclk)) rte_pause();
+  sr->refclk_known = true;
+  ipmx_refclk_print(&sr->refclk, sr->localmac, sr->info.ts_refclk);
   ipmx_info_block_build(&sr->info, sr->info_block);
   /* TR-10-9 section 8 asks for a CNAME, RFC 3550 section 6.5.1 allows the numeric host */
   sr->cname_len = snprintf(sr->cname, sizeof(sr->cname), "%u.%u.%u.%u", sip[0], sip[1],
@@ -224,9 +310,45 @@ int ipmx_sr_tx_set_block_version(struct st_tx_video_session_impl* s, uint8_t ver
   return 0;
 }
 
+static bool ipmx_sr_ts_refclk_valid(const char* ts_refclk) {
+  const size_t len = strnlen(ts_refclk, IPMX_TS_REFCLK_LEN);
+
+  if (len >= IPMX_TS_REFCLK_LEN) return false;
+  if (!(len > 4 && !strncmp(ts_refclk, "ptp=", 4)) &&
+      !(len > 9 && !strncmp(ts_refclk, "localmac=", 9)))
+    return false;
+  for (size_t i = 0; i < len; i++) {
+    /* visible ASCII, an SDP attribute value has no space */
+    if (ts_refclk[i] <= ' ' || ts_refclk[i] > '~') return false;
+  }
+  return true;
+}
+
+int ipmx_sr_tx_set_ts_refclk(struct st_tx_video_session_impl* s, const char* ts_refclk) {
+  struct ipmx_sr_tx* sr = s->ipmx_sr;
+
+  if (!sr) {
+    err("%s(%d), IPMX not enabled\n", __func__, s->idx);
+    return -EIO;
+  }
+  if (ts_refclk && !ipmx_sr_ts_refclk_valid(ts_refclk)) {
+    err("%s(%d), invalid ts-refclk\n", __func__, s->idx);
+    return -EINVAL;
+  }
+
+  rte_seqcount_write_begin(&sr->app_seq);
+  sr->app_on = ts_refclk != NULL;
+  memset(sr->app_refclk, 0, sizeof(sr->app_refclk));
+  if (ts_refclk) memcpy(sr->app_refclk, ts_refclk, strlen(ts_refclk));
+  rte_seqcount_write_end(&sr->app_seq);
+  info("%s(%d), ts-refclk %s\n", __func__, s->idx, ts_refclk ? ts_refclk : "automatic");
+  return 0;
+}
+
 int ipmx_sr_tx_get_info(struct st_tx_video_session_impl* s,
                         struct ipmx_video_info* info) {
   struct ipmx_sr_tx* sr = s->ipmx_sr;
+  uint32_t sn;
 
   if (!sr) {
     err("%s(%d), IPMX not enabled\n", __func__, s->idx);
@@ -236,8 +358,11 @@ int ipmx_sr_tx_get_info(struct st_tx_video_session_impl* s,
     err("%s(%d), NULL info\n", __func__, s->idx);
     return -EINVAL;
   }
-  mt_memcpy(info, &sr->info, sizeof(*info));
-  info->version = atomic_load_explicit(&sr->block_version, memory_order_relaxed);
+  do {
+    sn = rte_seqcount_read_begin(&sr->info_seq);
+    mt_memcpy(info, &sr->info, sizeof(*info));
+    info->version = atomic_load_explicit(&sr->block_version, memory_order_relaxed);
+  } while (rte_seqcount_read_retry(&sr->info_seq, sn));
   return 0;
 }
 
