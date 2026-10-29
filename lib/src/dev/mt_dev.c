@@ -1030,6 +1030,85 @@ static bool dev_tx_deep(struct mt_interface* inf) {
          !mt_get_user_params(inf->parent)->nb_tx_desc;
 }
 
+static uint16_t dev_rx_data_room(struct mtl_main_impl* impl, struct mt_interface* inf) {
+  if (impl->rx_pool_data_size) return impl->rx_pool_data_size; /* user suggested */
+  /* to avoid igc/ixgbe nic split mbuf */
+  if (inf->drv_info.drv_type == MT_DRV_IGC || inf->drv_info.drv_type == MT_DRV_IXGBE)
+    return MT_MBUF_DEFAULT_DATA_SIZE;
+  return ST_PKT_MAX_ETHER_BYTES;
+}
+
+static uint16_t dev_sys_rx_queues(struct mtl_main_impl* impl) {
+  if (mt_user_no_system_rxq(impl)) return 0;
+  uint16_t queues = 1; /* cni rx */
+  if (mt_user_ptp_service(impl)) queues++;
+#ifdef MTL_HAS_TAP
+  queues++;
+#endif
+  return queues;
+}
+
+/* bytes a mbuf takes in an ice/iavf session queue's pool: its own or the mono one */
+static uint32_t dev_rx_elem_size(struct mtl_main_impl* impl, struct mt_interface* inf) {
+  uint32_t data_room = mt_user_rx_mono_pool(impl) ? MT_MBUF_DEFAULT_DATA_SIZE
+                                                  : dev_rx_data_room(impl, inf);
+
+  data_room = RTE_ALIGN_CEIL(data_room, MT_MBUF_CACHE_SIZE) + MT_MBUF_HEADROOM_SIZE;
+  return rte_mempool_calc_obj_size(
+      sizeof(struct rte_mbuf) + sizeof(struct mt_muf_priv_data) + data_room, 0, NULL);
+}
+
+/* rx queues mt_dev_if_init() gives port; dev_probe_port_info() fills max_rx_queues */
+static uint32_t dev_port_rx_queues(struct mtl_main_impl* impl, enum mtl_port port) {
+  struct mtl_init_params* p = mt_get_user_params(impl);
+  uint16_t max_rx_queues = mt_if(impl, port)->dev_info.max_rx_queues;
+  uint32_t nb_rx_q = p->rx_queues_cnt[port];
+
+  if (mt_pmd_is_dpdk_af_packet(impl, port)) return 1;
+  if (mt_pmd_is_dpdk_user(impl, port)) {
+    if (p->rx_sessions_cnt_max) nb_rx_q = p->rx_sessions_cnt_max;
+    nb_rx_q += dev_sys_rx_queues(impl);
+  }
+  if (max_rx_queues) nb_rx_q = RTE_MIN(nb_rx_q, max_rx_queues);
+  return nb_rx_q;
+}
+
+static uint32_t dev_socket_rx_queues(struct mtl_main_impl* impl, int socket) {
+  uint32_t nb_rx_q = 0;
+
+  for (int i = 0; i < mt_num_ports(impl); i++)
+    if (mt_socket_id(impl, i) == socket) nb_rx_q += dev_port_rx_queues(impl, i);
+  return nb_rx_q;
+}
+
+/* deepest pow2 ring, 1024 to 2048, whose mbufs on nb_rx_q queues fit the L3 share */
+static uint16_t dev_rx_desc_by_l3(uint64_t l3_size, uint32_t nb_rx_q,
+                                  uint32_t elem_size) {
+  if (!l3_size || !nb_rx_q) return MT_DEV_RX_DESC;
+  uint64_t fit = l3_size * MT_DEV_RX_L3_PERCENT / 100 / ((uint64_t)nb_rx_q * elem_size);
+  return RTE_MAX(rte_align32prevpow2(RTE_MIN(fit, (uint64_t)MT_DEV_RX_DESC)),
+                 (uint32_t)MT_DEV_RX_DESC_MIN);
+}
+
+static uint16_t dev_rx_desc_default(struct mt_interface* inf) {
+  struct mtl_main_impl* impl = inf->parent;
+  enum mt_driver_type drv = inf->drv_info.drv_type;
+
+  /* measured only on ice/iavf with dedicated rx queues and cpus */
+  if ((drv != MT_DRV_ICE && drv != MT_DRV_IAVF) || mt_user_tasklet_thread(impl) ||
+      mt_user_shared_rxq(impl, inf->port) || mt_has_srss(impl, inf->port))
+    return MT_DEV_RX_DESC;
+  uint32_t elem_size = dev_rx_elem_size(impl, inf);
+  uint32_t nb_rx_q = dev_socket_rx_queues(impl, inf->socket_id);
+  uint64_t l3_size = mt_l3_size(inf->socket_id);
+  uint16_t nb_rx_desc = dev_rx_desc_by_l3(l3_size, nb_rx_q, elem_size);
+
+  info("%s(%d), nb_rx_desc %u for l3 %" PRIu64
+       " over %u rx queues of socket %d, mbuf %u\n",
+       __func__, inf->port, nb_rx_desc, l3_size, nb_rx_q, inf->socket_id, elem_size);
+  return nb_rx_desc;
+}
+
 static int dev_config_port(struct mt_interface* inf) {
   struct mtl_main_impl* impl = inf->parent;
   uint16_t port_id = inf->port_id;
@@ -1120,7 +1199,7 @@ static int dev_config_port(struct mt_interface* inf) {
 
   /* apply if user has rx_tx_desc config */
   if (p->nb_tx_desc) nb_tx_desc = p->nb_tx_desc;
-  if (p->nb_rx_desc) nb_rx_desc = p->nb_rx_desc;
+  nb_rx_desc = p->nb_rx_desc ? p->nb_rx_desc : dev_rx_desc_default(inf);
 
   ret = rte_eth_dev_adjust_nb_rx_tx_desc(port_id, &nb_rx_desc, &nb_tx_desc);
   if (ret < 0) {
@@ -1524,16 +1603,9 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
         if (q < inf->system_rx_queues_end)
           mbuf_pool = mt_mempool_create_common(impl, inf->port, pool_name, mbuf_elements);
         else {
-          uint16_t data_room_sz = ST_PKT_MAX_ETHER_BYTES;
-          /* to avoid igc/igxbe nic split mbuf */
-          if (inf->drv_info.drv_type == MT_DRV_IGC ||
-              inf->drv_info.drv_type == MT_DRV_IXGBE)
-            data_room_sz = MT_MBUF_DEFAULT_DATA_SIZE;
-          if (impl->rx_pool_data_size) /* user suggested data room size */
-            data_room_sz = impl->rx_pool_data_size;
-          mbuf_pool = mt_mempool_create(impl, inf->port, pool_name, mbuf_elements,
-                                        MT_MBUF_CACHE_SIZE,
-                                        sizeof(struct mt_muf_priv_data), data_room_sz);
+          mbuf_pool = mt_mempool_create(
+              impl, inf->port, pool_name, mbuf_elements, MT_MBUF_CACHE_SIZE,
+              sizeof(struct mt_muf_priv_data), dev_rx_data_room(impl, inf));
         }
       }
       if (!mbuf_pool) {
@@ -2582,63 +2654,82 @@ int mt_dev_if_uinit(struct mtl_main_impl* impl) {
   return 0;
 }
 
+/* the kernel dispatches af_packet RX, so an af_packet port shares the rx queues of all */
+static void dev_force_shared_rxq(struct mtl_main_impl* impl) {
+  for (int i = 0; i < mt_num_ports(impl); i++)
+    if (mt_pmd_is_dpdk_af_packet(impl, i))
+      mt_get_user_params(impl)->flags |= MTL_FLAG_SHARED_RX_QUEUE;
+}
+
+static int dev_probe_port_info(struct mtl_main_impl* impl, enum mtl_port i) {
+  struct mtl_init_params* p = mt_get_user_params(impl);
+  struct mt_interface* inf = mt_if(impl, i);
+  struct rte_eth_dev_info* dev_info = &inf->dev_info;
+  uint16_t port_id;
+  char* port;
+  int ret;
+
+  inf->port = i;
+  if (mt_pmd_is_kernel_socket(impl, i) || mt_pmd_is_native_af_xdp(impl, i)) {
+    port = impl->kport_info.kernel_if[i];
+    port_id = i;
+  } else {
+    port = mt_pmd_is_kernel_based(impl, i) ? impl->kport_info.dpdk_port[i] : p->port[i];
+    ret = rte_eth_dev_get_port_by_name(port, &port_id);
+    if (ret < 0) {
+      err("%s, failed to get port for %s\n", __func__, port);
+      return ret;
+    }
+    ret = rte_eth_dev_info_get(port_id, dev_info);
+    if (ret < 0) {
+      err("%s, failed to get dev info for %s\n", __func__, port);
+      return ret;
+    }
+    dbg("%s(%d), reta_size %u\n", __func__, i, dev_info->reta_size);
+  }
+  inf->port_id = port_id;
+
+  if (mt_pmd_is_kernel_socket(impl, i))
+    ret = parse_driver_info("kernel_socket", &inf->drv_info);
+  else if (mt_pmd_is_native_af_xdp(impl, i))
+    ret = parse_driver_info("native_af_xdp", &inf->drv_info);
+  else
+    ret = parse_driver_info(dev_info->driver_name, &inf->drv_info);
+  if (ret < 0) {
+    err("%s, parse drv_info fail(%d) for %s\n", __func__, ret, port);
+    return ret;
+  }
+  return 0;
+}
+
 int mt_dev_if_init(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   struct mtl_init_params* p = mt_get_user_params(impl);
-  uint16_t port_id;
-  char* port;
   struct rte_eth_dev_info* dev_info;
   struct mt_interface* inf;
   int ret;
 
+  dev_force_shared_rxq(impl); /* before any port's dev_config_port() reads it */
   for (int i = 0; i < num_ports; i++) {
     inf = mt_if(impl, i);
-    dev_info = &inf->dev_info;
-    inf->port = i;
-
-    /* parse port id */
-    if (mt_pmd_is_kernel_socket(impl, i) || mt_pmd_is_native_af_xdp(impl, i)) {
-      port = impl->kport_info.kernel_if[i];
-      port_id = i;
-    } else {
-      if (mt_pmd_is_kernel_based(impl, i))
-        port = impl->kport_info.dpdk_port[i];
-      else
-        port = p->port[i];
-      ret = rte_eth_dev_get_port_by_name(port, &port_id);
-      if (ret < 0) {
-        err("%s, failed to get port for %s\n", __func__, port);
-        mt_dev_if_uinit(impl);
-        return ret;
-      }
-      ret = rte_eth_dev_info_get(port_id, dev_info);
-      if (ret < 0) {
-        err("%s, failed to get dev info for %s\n", __func__, port);
-        mt_dev_if_uinit(impl);
-        return ret;
-      }
-      dbg("%s(%d), reta_size %u\n", __func__, i, dev_info->reta_size);
-    }
-    inf->port_id = port_id;
-
-    /* parse drv info */
-    if (mt_pmd_is_kernel_socket(impl, i))
-      ret = parse_driver_info("kernel_socket", &inf->drv_info);
-    else if (mt_pmd_is_native_af_xdp(impl, i))
-      ret = parse_driver_info("native_af_xdp", &inf->drv_info);
-    else
-      ret = parse_driver_info(dev_info->driver_name, &inf->drv_info);
-    if (ret < 0) {
-      err("%s, parse drv_info fail(%d) for %s\n", __func__, ret, port);
-      mt_dev_if_uinit(impl);
-      return ret;
-    }
-
-    inf->tx_pacing_way = p->pacing;
     mt_pthread_mutex_init(&inf->tx_queues_mutex, NULL);
     mt_pthread_mutex_init(&inf->rx_queues_mutex, NULL);
     mt_pthread_mutex_init(&inf->vf_cmd_mutex, NULL);
     rte_spinlock_init(&inf->stats_lock);
+  }
+  /* read every port's dev_info before any port's dev_config_port() sums socket queues */
+  for (int i = 0; i < num_ports; i++) {
+    ret = dev_probe_port_info(impl, i);
+    if (ret < 0) {
+      mt_dev_if_uinit(impl);
+      return ret;
+    }
+  }
+  for (int i = 0; i < num_ports; i++) {
+    inf = mt_if(impl, i);
+    dev_info = &inf->dev_info;
+
+    inf->tx_pacing_way = p->pacing;
 
     if (mt_user_ptp_tsc_source(impl)) {
       info("%s(%d), use tsc ptp source\n", __func__, i);
@@ -2673,7 +2764,6 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->nb_tx_q++; /* arp, mcast, ptp use shared sys queue */
       /* force to shared since the packet is dispatched by kernel */
       inf->nb_rx_q = 1;
-      p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
       inf->system_rx_queues_end = 0;
     } else if (mt_pmd_is_dpdk_af_xdp(impl, i)) {
       /* no system queues as no cni */
@@ -2700,18 +2790,8 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
 
       inf->nb_rx_q =
           p->rx_sessions_cnt_max ? p->rx_sessions_cnt_max : p->rx_queues_cnt[i];
-      if (!mt_user_no_system_rxq(impl)) {
-        inf->nb_rx_q++;
-        inf->system_rx_queues_end = 1; /* cni rx */
-        if (mt_user_ptp_service(impl)) {
-          inf->nb_rx_q++;
-          inf->system_rx_queues_end++;
-        }
-#ifdef MTL_HAS_TAP
-        inf->nb_rx_q++;
-        inf->system_rx_queues_end++;
-#endif
-      }
+      inf->system_rx_queues_end = dev_sys_rx_queues(impl);
+      inf->nb_rx_q += inf->system_rx_queues_end;
       inf->hdr_split_rx_queues_end =
           inf->system_rx_queues_end + p->nb_rx_hdr_split_queues;
     }
@@ -2895,7 +2975,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       }
     }
 
-    info("%s(%d), port_id %d port_type %d drv_type %d\n", __func__, i, port_id,
+    info("%s(%d), port_id %d port_type %d drv_type %d\n", __func__, i, inf->port_id,
          inf->drv_info.port_type, inf->drv_info.drv_type);
     info("%s(%d), dev_capa 0x%" PRIx64 ", offload 0x%" PRIx64 ":0x%" PRIx64
          " queue offload 0x%" PRIx64 ":0x%" PRIx64 ", rss : 0x%" PRIx64 "\n",
