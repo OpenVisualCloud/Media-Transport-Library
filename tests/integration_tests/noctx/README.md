@@ -239,8 +239,10 @@ rtp_timestamp`; the user-paced tests request `t_user(n) = start + n·T`, with
 ### Equal VRX margin oracle
 
 `st20p_redundant_1080p59_s8_equal_vrx_margin` runs 8 ST 2022-7 1080p59.94
-sessions, all TX created first, so one TX scheduler holds ≥ 3 sessions and
-≥ 2 schedulers are in use (else FAIL). It skips the start-up underflows of the
+sessions under a scheduler quota of 10 1080p59 bandwidths, all TX created first,
+so TX packs 5 + 3: one TX scheduler holds ≥ 3 sessions and ≥ 2 schedulers are in
+use (else FAIL). RX, charged its bandwidth alone under a user quota, packs 5 + 3
+(10 streams a core) on schedulers of its own. It skips the start-up underflows of the
 first 20 s after each session's first frame, measures for 30 s, NIC timed (see
 [Timing model](#timing-model)), and checks:
 
@@ -252,6 +254,9 @@ first 20 s after each session's first frame, measures for 30 s, NIC timed (see
   every ~13.25 h is not handled) with it off the K shift by ≥ T/2;
 - the PHC follower: no read lagging by more than 5 µs, no gap of more than
   100 ms between reads, and ≥ 90 % of the 10 ms slots read.
+
+The results below were measured with the earlier packing, TX 6 + 2 and RX 4 + 4,
+and are to be re-run at 5 + 3.
 
 The 1-packet tolerance is measured: with the RL pre-arm plan and the
 redundant-leg rate fix, the best-minus-worst trimmed-mean `vrx_min` spread per

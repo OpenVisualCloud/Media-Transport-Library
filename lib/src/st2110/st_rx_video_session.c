@@ -4617,8 +4617,10 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
     if (ST20_TYPE_RTP_LEVEL == ops->type) {
       quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_RX1080P_RTP_PER_SCH;
     } else {
-      quota_mbs_wo_dma =
-          quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_RX1080P_NO_DMA_PER_SCH;
+      int no_dma_per_sch = ST20_TYPE_SLICE_LEVEL == ops->type
+                               ? ST_QUOTA_RX1080P_NO_DMA_SLICE_PER_SCH
+                               : ST_QUOTA_RX1080P_NO_DMA_PER_SCH;
+      quota_mbs_wo_dma = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / no_dma_per_sch;
       quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_RX1080P_PER_SCH;
     }
   }
@@ -5022,6 +5024,9 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
     }
     quota_mbs = bps / (1000 * 1000);
     quota_mbs *= ops->num_port;
+  }
+  if (!mt_user_quota_active(impl)) {
+    quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_RX1080P_ST22_PER_SCH;
   }
 
   enum mtl_port port = mt_port_by_name(impl, ops->port[MTL_SESSION_PORT_P]);

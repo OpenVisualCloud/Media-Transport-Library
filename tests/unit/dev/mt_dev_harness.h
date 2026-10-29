@@ -209,6 +209,8 @@ unsigned int ut_dev_tx_sys_pool_elements(ut_dev_ctx* ctx, uint16_t nb_tx_q,
 /** The mbufs mt_mempool_create_by_ops() gives a pool asked for elements, of no data
  * room. */
 unsigned int ut_dev_mempool_size(ut_dev_ctx* ctx, unsigned int elements);
+/** The data quota (Mb/s) dev_sch_init() gives each scheduler, or a negative error. */
+int ut_dev_sch_init_quota(ut_dev_ctx* ctx);
 
 #ifdef __cplusplus
 }

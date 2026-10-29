@@ -134,7 +134,7 @@ NIC receives multicast packet (flow rule steers to session's RX queue)
 | **Lcore** (default) | DPDK lcores, CPU-pinned via `rte_eal_remote_launch()` | Deterministic latency |
 | **Pthread** (`MTL_FLAG_TASKLET_THREAD`) | Regular pthreads, not pinned | Containers, non-dedicated cores |
 
-Max schedulers: `MT_MAX_SCH_NUM = 18` (in `mt_main.h`)
+Max schedulers: `MT_MAX_SCH_NUM = 48` (in `mt_main.h`); at most 64, one bit each in `mt_sch_mask_t` (`RTE_BUILD_BUG_ON` in `mtl_init()`)
 
 Both modes enter `sch_tasklet_func()`, which switches a thread still on `MPOL_DEFAULT` to `MPOL_LOCAL` until the scheduler stops; any other policy is kept:
 - Under `kernel.numa_balancing=1` the `task_numa_work` scan runs as task work on busy threads; without `MPOL_F_MOF` it rewrites no PTEs there and nothing migrates on fault, but the VMA walk still runs
@@ -151,8 +151,14 @@ Both modes enter `sch_tasklet_func()`, which switches a thread still on `MPOL_DE
 ### Quota System
 Sessions assigned to schedulers by weight in "1080p-equivalents":
 1. Search existing schedulers for capacity on right NUMA node
-2. If none found, allocate new scheduler (up to 18)
+2. If none found, allocate new scheduler (up to `MT_MAX_SCH_NUM`)
 3. As sessions freed, quota returned
+
+Without a user `data_quota_mbs_per_sch`, a scheduler holds `ST_QUOTA_TX1080P_PER_SCH` (24) 1080p59 TX sessions' bandwidth (`dev_sch_init()`, `MtDevSchQuotaTest`), and only frame-level ST20 TX charges its bandwidth as is.
+The others are scaled by `ST_QUOTA_TX1080P_PER_SCH` / their own constant (`st_header.h`): a scheduler packs 8 RTP TX (ST20 and ST22), 12 slice-level ST20 TX, 12 RX with DMA or RTP, 11 frame-level RX without DMA, 8 slice-level RX without DMA (`St20_rx.no_dma_*_sessions_per_sch`),
+and frame-level ST22 TX and ST22 RX (frame or RTP) are scaled by 24 / 12, each by a constant of its own (`TxVideoSchQuotaTest`, `St22RxQuotaTest`).
+With a user `data_quota_mbs_per_sch` none of these constants applies: a session charges the bandwidth its create computes, times its ports (ST22 RTP RX still takes a quarter of the 4:2:2 10-bit rate, doubled), and RX without DMA no extra.
+Audio takes the limit / `tx/rx_audio_sessions_max_per_sch`, ancillary none.
 
 **If adding a new session type**: define its quota correctly or schedulers get overloaded.
 
@@ -204,7 +210,7 @@ If `rte_eth_tx_burst()` returns fewer than requested:
 
 | Thread | Purpose | Detail |
 |--------|---------|--------|
-| Scheduler (×18 max) | Tasklet polling | Lcore-pinned or pthread |
+| Scheduler (×48 max) | Tasklet polling | Lcore-pinned or pthread |
 | TSC Calibration (×1) | Measures TSC frequency | Joins before sessions start transmitting (called lazily by `_mt_start()` and pacing init) |
 | Admin (×1) | Watchdog, migration | Periodic alarm-based |
 | Statistics (×1) | Stat dump | Configurable `dump_period_us` |
@@ -362,9 +368,10 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
     - Pools: every TX session pool (video, audio, anc, fmd: its ring share, see Mempool Architecture), the per-port sys
       TX pool (`nb_tx_desc` + 1024), the shared-queue pool, and
       with `MTL_FLAG_TX_MONO_POOL` main's `nb_tx_q` × 2 × `nb_tx_desc` more mbufs per port,
-      and on a deep port a cache slack for each of `MT_MAX_SCH_NUM` schedulers, as its queues
-      free into the bursting scheduler's cache (`dev_tx_sys_pool_elements()`: 131071 at 17
-      queues of 2048; 32767 at 512); RTCP rings, RTP rings, audio and anc sessions on top of
+      and on a deep port a cache slack for each of `MT_MAX_SCH_NUM` schedulers, at most one per
+      EAL lcore (`rte_lcore_count()`), as its queues free into the bursting scheduler's cache and
+      only EAL lcores have one (`dev_tx_sys_pool_elements()`: 131071 at 17 queues of 2048;
+      32767 at 512); RTCP rings, RTP rings, audio and anc sessions on top of
       that are not counted, as on main.
     - RTCP: on a deep port the retransmit ring is at least `nb_tx_desc` (`tv_rtcp_buffer_size()`), and the TX video pools count it.
       Its copy pool (`rtcp_tx_pool_n()`) holds what its queue keeps, a descriptor a copy, the 32 copies a retransmit loop makes before it bursts them, and the cache slack: 4095 at 2048, as many retransmits from a whole-ring NACK as a pool a ring larger (`RtcpCopyPoolParityTest`).

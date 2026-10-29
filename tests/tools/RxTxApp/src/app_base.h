@@ -49,7 +49,7 @@
 /* ST 2110-41: a sender sends a packet at least every 500 ms */
 #define ST_APP_FMD_MAX_GAP_NS (500 * (uint64_t)NS_PER_MS)
 
-#define ST_APP_MAX_LCORES (32)
+#define ST_APP_MAX_LCORES (48) /* follows MT_MAX_SCH_NUM, indexed by sch idx */
 
 #define ST_APP_DEFAULT_FB_CNT (3)
 

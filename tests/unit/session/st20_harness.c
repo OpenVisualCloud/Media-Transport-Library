@@ -34,9 +34,15 @@ static struct mtl_dma_lender_dev* ut20_dma_request_dev(struct mtl_main_impl* imp
                                                        struct mt_dma_request_req* req);
 #define mt_dma_request_dev ut20_dma_request_dev
 #include "st2110/st_rx_video_session.h"
+/* Records a create's quota and gives no scheduler, so the create stops there. */
+static struct mtl_sch_impl* ut20_sch_get_by_socket(struct mtl_main_impl* impl,
+                                                   int quota_mbs, enum mt_sch_type type,
+                                                   mt_sch_mask_t mask, int socket);
+#define mt_sch_get_by_socket ut20_sch_get_by_socket
 #undef ST_RX_VIDEO_DMA_MIN_SIZE
 #define ST_RX_VIDEO_DMA_MIN_SIZE 0
 #include "st2110/st_rx_video_session.c"
+#undef mt_sch_get_by_socket
 #undef mt_dma_copy
 #undef mt_dma_submit
 #undef mt_dma_completed
@@ -70,6 +76,9 @@ static struct mtl_dma_lender_dev* ut20_dma_request_dev(struct mtl_main_impl* imp
 
 /* Mbufs the fake DMA engine can hold borrowed at once. */
 #define UT20_DMA_MAX_BORROWED 64
+
+/* framebuff_max_size of the quota checks' ST22 sessions: a 1080p 4:2:2 10-bit frame */
+#define UT20_ST22_QUOTA_FRAME_SIZE (1920 * 1080 * 5 / 2)
 
 /* Copies complete only once submitted, and not at all while stalled. */
 struct ut20_fake_dma {
@@ -1103,4 +1112,64 @@ uint64_t ut20_stat_frames_partial(const ut20_test_ctx* ctx, enum mtl_session_por
 
 uint64_t ut20_stat_pkts_unrecovered(const ut20_test_ctx* ctx) {
   return ctx->session.port_user_stats.common.stat_pkts_unrecovered;
+}
+
+static int ut20_sch_quota_mbs;
+
+static struct mtl_sch_impl* ut20_sch_get_by_socket(struct mtl_main_impl* impl,
+                                                   int quota_mbs, enum mt_sch_type type,
+                                                   mt_sch_mask_t mask, int socket) {
+  (void)impl;
+  (void)type;
+  (void)mask;
+  (void)socket;
+  ut20_sch_quota_mbs = quota_mbs;
+  return NULL;
+}
+
+static int ut20_st22_frame_ready(void* priv, void* frame,
+                                 struct st22_rx_frame_meta* meta) {
+  (void)priv;
+  (void)frame;
+  (void)meta;
+  return 0;
+}
+
+static int ut20_st22_rtp_ready(void* priv) {
+  (void)priv;
+  return 0;
+}
+
+int ut20_st22_rx_quota_mbs(enum st22_type type, bool user_quota) {
+  struct mtl_main_impl* impl = calloc(1, sizeof(*impl));
+  if (!impl) return -ENOMEM;
+  impl->type = MT_HANDLE_MAIN;
+  impl->user_para.num_ports = 1;
+  snprintf(impl->user_para.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "ut20");
+  if (user_quota) impl->user_para.data_quota_mbs_per_sch = 100000;
+
+  struct st22_rx_ops ops;
+  memset(&ops, 0, sizeof(ops));
+  ops.name = "ut20_quota";
+  ops.type = type;
+  ops.num_port = 1;
+  snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut20");
+  ops.ip_addr[MTL_SESSION_PORT_P][0] = 239;
+  ops.ip_addr[MTL_SESSION_PORT_P][3] = 1;
+  ops.udp_port[MTL_SESSION_PORT_P] = 20000;
+  ops.width = 1920;
+  ops.height = 1080;
+  ops.fps = ST_FPS_P59_94;
+  ops.payload_type = 112;
+  ops.pack_type = ST22_PACK_CODESTREAM;
+  ops.framebuff_cnt = 2;
+  ops.framebuff_max_size = UT20_ST22_QUOTA_FRAME_SIZE;
+  ops.notify_frame_ready = ut20_st22_frame_ready;
+  ops.rtp_ring_size = 1024;
+  ops.notify_rtp_ready = ut20_st22_rtp_ready;
+
+  ut20_sch_quota_mbs = -EINVAL;
+  st22_rx_handle handle = st22_rx_create(impl, &ops);
+  free(impl);
+  return handle ? -EEXIST : ut20_sch_quota_mbs;
 }

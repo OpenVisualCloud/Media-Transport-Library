@@ -1465,8 +1465,10 @@ static unsigned int dev_tx_sys_pool_elements(struct mtl_main_impl* impl,
   if (mt_user_tx_mono_pool(impl)) {
     /* append as tx queues, double as tx ring */
     elements += inf->nb_tx_q * inf->nb_tx_desc * 2;
-    /* a deep port's queues free their mbufs into the cache of each scheduler */
-    if (inf->tx_deep) elements += MT_MAX_SCH_NUM * MT_MBUF_CACHE_SLACK;
+    /* a deep port's queues free into the cache of each scheduler on an EAL lcore */
+    if (inf->tx_deep)
+      elements +=
+          RTE_MIN((unsigned int)MT_MAX_SCH_NUM, rte_lcore_count()) * MT_MBUF_CACHE_SLACK;
   }
   return elements;
 }

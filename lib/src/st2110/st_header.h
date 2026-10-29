@@ -19,16 +19,24 @@
 
 #define ST_PLUGIN_MAX_PATH_LEN (128)
 
-/* max 12 1080p tx session per sch lcore */
-#define ST_QUOTA_TX1080P_PER_SCH (12)
+/* max 24 1080p st20 tx frame session per sch lcore */
+#define ST_QUOTA_TX1080P_PER_SCH (24)
 /* max 8 1080p rtp tx session per sch lcore */
 #define ST_QUOTA_TX1080P_RTP_PER_SCH (8)
+/* max 12 1080p st20 tx slice session per sch lcore */
+#define ST_QUOTA_TX1080P_SLICE_PER_SCH (12)
+/* max 12 1080p st22 tx frame session per sch lcore */
+#define ST_QUOTA_TX1080P_ST22_FRAME_PER_SCH (12)
 /* max 12 1080p rx session per sch lcore */
 #define ST_QUOTA_RX1080P_PER_SCH (12)
 /* max 12 1080p rtp rx session per sch lcore, rtp unpack run on other threads */
 #define ST_QUOTA_RX1080P_RTP_PER_SCH (12)
-/* max 8 1080p rx(without DMA) session per sch lcore */
-#define ST_QUOTA_RX1080P_NO_DMA_PER_SCH (8)
+/* max 12 1080p st22 rx session per sch lcore, frame or rtp */
+#define ST_QUOTA_RX1080P_ST22_PER_SCH (12)
+/* max 11 1080p rx(without DMA) frame session per sch lcore */
+#define ST_QUOTA_RX1080P_NO_DMA_PER_SCH (11)
+/* max 8 1080p rx(without DMA) slice session per sch lcore */
+#define ST_QUOTA_RX1080P_NO_DMA_SLICE_PER_SCH (8)
 
 #define ST_SCH_MAX_TX_VIDEO_SESSIONS (60) /* max video tx sessions per sch lcore */
 #define ST_SCH_MAX_RX_VIDEO_SESSIONS (60) /* max video rx sessions per sch lcore */
