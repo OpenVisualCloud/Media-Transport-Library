@@ -66,6 +66,9 @@ struct st20p_rx_ctx {
 
   struct st20_convert_session_impl* convert_impl;
   struct st_frame_converter* internal_converter;
+  void* nt_scratch; /* for st_frame_convert_nt(), NULL when NT convert is off */
+  size_t nt_scratch_size;
+  _Atomic uint32_t nt_scratch_busy; /* one app thread at a time uses the scratch */
   bool ready;
   bool derive;
   bool dynamic_ext_frame;

@@ -59,6 +59,23 @@ void ut20p_begin_destroy(ut20p_ctx* ctx);
  */
 void ut20p_ctx_set_internal_converter(ut20p_ctx* ctx);
 
+/**
+ * Make the ctx a converting session as st20p_rx_create() does: the internal converter
+ * from the 4:2:2 10-bit transport to output_fmt, zeroed width x height frames on both
+ * sides, ops.flags = flags, then the NT scratch. Returns the scratch setup result.
+ */
+int ut20p_ctx_set_converting_frames(ut20p_ctx* ctx, enum st_frame_fmt output_fmt,
+                                    uint32_t width, uint32_t height, uint32_t flags);
+
+/** Bytes of the session's NT scratch, 0 when it has none. */
+size_t ut20p_nt_scratch_size(const ut20p_ctx* ctx);
+
+/** The session's NT scratch, ut20p_nt_scratch_size() bytes. */
+void* ut20p_nt_scratch(ut20p_ctx* ctx);
+
+/** Whether the NT scratch is held. */
+bool ut20p_nt_scratch_held(const ut20p_ctx* ctx);
+
 /** Call hook(arg) inside the internal converter's convert_func, i.e. after
  *  get_frame claimed the frame and before it returns. NULL clears. */
 void ut20p_set_convert_hook(void (*hook)(void* arg), void* arg);

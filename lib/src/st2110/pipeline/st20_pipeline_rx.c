@@ -779,6 +779,39 @@ static int rx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_rx_ct
   return 0;
 }
 
+static int rx_st20p_init_nt_scratch(struct st20p_rx_ctx* ctx, struct st20p_rx_ops* ops) {
+  /* the width that sizes the scratch is not known before detection */
+  if (ops->flags & (ST20P_RX_FLAG_DISABLE_NT_CONVERT | ST20P_RX_FLAG_AUTO_DETECT))
+    return 0;
+  if (!ctx->internal_converter ||
+      !st_frame_nt_supported(ctx->internal_converter, ops->width))
+    return 0;
+
+  ctx->nt_scratch_size = st_frame_nt_scratch_size(ops->output_fmt, ops->width);
+  if (!ctx->nt_scratch_size) return 0;
+  ctx->nt_scratch = mt_rte_zmalloc_socket(ctx->nt_scratch_size, ctx->socket_id);
+  if (!ctx->nt_scratch) {
+    err("%s(%d), nt scratch malloc fail\n", __func__, ctx->idx);
+    return -ENOMEM;
+  }
+  return 0;
+}
+
+/* st_frame_convert_nt() with the scratch, or without while another app thread has it */
+static int rx_st20p_convert_nt(struct st20p_rx_ctx* ctx,
+                               const struct st_frame_converter* converter,
+                               struct st_frame* src, struct st_frame* dst) {
+  uint32_t idle = 0;
+  bool own = ctx->nt_scratch && atomic_compare_exchange_strong_explicit(
+                                    &ctx->nt_scratch_busy, &idle, 1, memory_order_acquire,
+                                    memory_order_relaxed);
+  int ret = st_frame_convert_nt(converter, src, dst, own ? ctx->nt_scratch : NULL,
+                                ctx->nt_scratch_size);
+
+  if (own) atomic_store_explicit(&ctx->nt_scratch_busy, 0, memory_order_release);
+  return ret;
+}
+
 static int rx_st20p_stat(void* priv) {
   struct st20p_rx_ctx* ctx = priv;
   struct st20p_rx_frame* framebuff = ctx->framebuffs;
@@ -887,7 +920,7 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
     if (!framebuff) {
       goto out;
     }
-    ctx->internal_converter->convert_func(&framebuff->src, &framebuff->dst);
+    rx_st20p_convert_nt(ctx, ctx->internal_converter, &framebuff->src, &framebuff->dst);
   } else {
     framebuff =
         rx_st20p_claim_available(ctx, ctx->framebuff_consumer_idx,
@@ -1104,6 +1137,13 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
     }
   }
 
+  ret = rx_st20p_init_nt_scratch(ctx, ops);
+  if (ret < 0) {
+    err("%s(%d), init nt scratch fail %d\n", __func__, idx, ret);
+    st20p_rx_free(ctx);
+    return NULL;
+  }
+
   /* init fbs */
   ret = rx_st20p_init_dst_fbs(impl, ctx, ops);
   if (ret < 0) {
@@ -1161,6 +1201,11 @@ int st20p_rx_free(st20p_rx_handle handle) {
   if (ctx->internal_converter) {
     mt_rte_free(ctx->internal_converter);
     ctx->internal_converter = NULL;
+  }
+
+  if (ctx->nt_scratch) {
+    mt_rte_free(ctx->nt_scratch);
+    ctx->nt_scratch = NULL;
   }
 
   if (ctx->transport) {

@@ -223,8 +223,25 @@ If `rte_eth_tx_burst()` returns fewer than requested:
 ### Copy Primitive
 Every copy in `lib/` goes through `mt_memcpy()` (`mt_util.h`, `static inline`), never `rte_memcpy` and never a bare `memcpy` in new code. Its one line selects the backend for the whole library, so a change of copy primitive is a one-line change with no call-site churn.
 Today that backend is libc `memcpy`: glibc reads the CPU at load time and picks an AVX-512, AVX2 or ERMS path, `rte_memcpy` is fixed to the path DPDK was built for, and `rte_memcpy` measured slower on the RX frame write path. `mtl_memcpy()` is the public API over the same call.
-The one exception is that RX frame write path: `rv_frame_memcpy()` (`st_rx_video_session.c`) streams whole cache lines with non-temporal stores, and copies the misaligned head, the sub-line tail and short payloads through `mt_memcpy()`.
-A session with a pkt lcore keeps `mt_memcpy()` for the whole copy: two threads write its frame and either may hand it over, and a fence orders only the stores of its own core. A session that migrates mid-frame needs none: the x86 unlock of its session spinlock, released after every tasklet poll, is a locked `xchg` and drains the old core's streaming stores.
+Two paths stream whole cache lines with non-temporal stores instead: the st20p conversion (next section) and the RX frame write path, `rv_frame_memcpy()` (`st_rx_video_session.c`), which copies the misaligned head, the sub-line tail and short payloads through `mt_memcpy()`.
+On that RX frame write path a session with a pkt lcore keeps `mt_memcpy()` for the whole copy: two threads write its frame and either may hand it over, and a fence orders only the stores of its own core. A session that migrates mid-frame needs none: the x86 unlock of its session spinlock, released after every tasklet poll, is a locked `xchg` and drains the old core's streaming stores.
+
+### st20p Conversion With Non-Temporal Stores
+- `st_frame_convert_nt()` (`st_convert.c`) runs a converter whose table entry sets `nt_width_align` (rfc4175 422be10 to and from yuv422p10le and v210) 8 lines at a time into a scratch that stays in L2.
+  It streams each block to the frame with SSE2 `_mm_stream_si128` and fences once before returning, so the frame is never read for ownership and never fills L3.
+  Measured: 28–38 % less DRAM traffic per frame; RX `yuv422p10le` `st20p_rx_get_frame` 12.7 → 8.8 app cores at 375 Gb/s.
+  An RX frame converted this way comes back cold in cache: a consumer that reads it right after `st20p_rx_get_frame`, such as the `mtl_memcpy()` into the packet in `ecosystem/ffmpeg_plugin/mtl_st20p_rx.c`, reads it from DRAM, and at low session counts may prefer `ST20P_RX_FLAG_DISABLE_NT_CONVERT`.
+- Blocks need a width the kernels take a line at a time (`st_frame_nt_supported()`): any even width for yuv422p10le, a multiple of 48 for v210.
+  48 gives whole 12-pg avx512_vbmi batches on every line, and 8-line 422be10 blocks of whole cache lines (20 × width bytes) on the TX side.
+  v210 widths that are no multiple of 3 (1280, 2048, 4096) have no whole-byte lines at all: `st_frame_least_linesize()` is 0.
+- It falls back to one plain `convert_func()` call for another width, a zero least linesize, padded destination lines, a destination plane or block start off a cache line (the Cr plane of a contiguous 720x486 yuv422p10le frame), or a scratch short of one block.
+  A sub-cache-line block tail goes through `mt_memcpy()`, a short last block covers heights such as 540 and 486, and padded source lines are fine.
+- The scratch is per session (`nt_scratch` in `st20p_tx_ctx` / `st20p_rx_ctx`): `mt_rte_zmalloc_socket()` on the session socket at create, 8 output lines (`st_frame_nt_scratch_size()`, 38,400 B for 1080p 422be10), 16-byte aligned for `_mm_load_si128`.
+  `nt_scratch_busy` guards it with one CAS per conversion: a second app thread that breaks the one-thread-per-session model converts with ordinary stores instead of corrupting it.
+  None is allocated with `ST20P_TX_FLAG_DISABLE_NT_CONVERT` / `ST20P_RX_FLAG_DISABLE_NT_CONVERT`, for an unsupported width or a TX ext-frame derive session, or for RX `AUTO_DETECT`, whose width is unknown at create, so it always converts with ordinary stores.
+- A TX derive session with a 422be10 frame gets one too, for `st20p_tx_convert_block()`: the app converts its own yuv422p10le or v210 lines straight into the wire-format frame got by `st20p_tx_get_frame()`, block by block.
+  App thread, field lines on an interlaced session; error codes in `include/st_pipeline_api.h`.
+- Output is byte-identical to the stock converters, and the converter call count shows which path ran (`*St20p*NtConvert*`, `*St20pTxConvertBlock*`, `*St20p*NtScratch*` in `tests/unit/pipeline/st20p_nt_convert_test.cpp`).
 
 ### NUMA Matters
 All DPDK allocations take `socket_id` from `mt_socket_id(impl, port)`. Socket mismatch → 2× DMA latency. Fallback: if preferred socket has no hugepages, allocate from any socket (logs warning).
