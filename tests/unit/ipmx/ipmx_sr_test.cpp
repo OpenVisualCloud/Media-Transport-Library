@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: LicenseRef-IPMX-TBD */
 
 /*
- * The IPMX video Sender Report (TR-10-1 sections 8.7, 8.8.2): an RTCP SR followed by
- * an SDES CNAME (TR-10-9 section 8), once per frame, to the media port + 1 on the
- * session's own queue right before packet 0.
+ * The IPMX video Sender Report (TR-10-1 sections 8.7, 8.8.2): an RTCP SR with the IPMX
+ * Info Block followed by an SDES CNAME (TR-10-9 section 8), once per frame, to the media
+ * port + 1 on the session's own queue right before packet 0.
  *
  * Run: ./build_unit/tests/unit/UnitTest --gtest_filter='IpmxSr*'
  */
@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "common/ut_common.h"
+#include "ipmx/ipmx_info.h"
 #include "ipmx/ipmx_sr_harness.h"
 #include "st_api.h"
 
@@ -32,7 +33,9 @@ constexpr uint32_t k90k = 90000;
 constexpr int kPortP = 0;
 constexpr int kPortR = 1;
 constexpr int kPktTypeNormal = 0;
-constexpr uint32_t kSrPktLen = UT_SR_UDP_HDR_LEN + 52; /* CNAME "192.168.1.10" */
+/* SR 28, IPMX Info Block 176 */
+constexpr uint32_t kSdesOffset = 204;
+constexpr uint32_t kSrPktLen = UT_SR_UDP_HDR_LEN + kSdesOffset + 24; /* "192.168.1.10" */
 /* Ethernet, IPv4, UDP and the 12 octet RTP header of an st20 packet */
 constexpr uint32_t kSt20HdrLen = 62;
 constexpr uint32_t kRtpPayloadOverhead = 54;
@@ -88,24 +91,34 @@ class IpmxSrTest : public ::testing::Test {
   ut_sr_ctx* ctx_ = nullptr;
 };
 
-TEST_F(IpmxSrTest, BuildsSrThenSdesCnameGolden) {
+TEST_F(IpmxSrTest, BuildsSrThenInfoBlockThenSdesCnameGolden) {
   ASSERT_NO_FATAL_FAILURE(Attach());
-  const uint8_t golden[] = {
-      0x80, 0xc8, 0x00, 0x06,                            /* V=2 RC=0 PT=SR length 6 */
-      0x12, 0x34, 0x56, 0x78,                            /* SSRC */
-      0x65, 0x53, 0xf1, 0x00,                            /* 1700000000 s */
-      0x07, 0x5b, 0xcd, 0x15,                            /* 123456789 ns */
-      0xa1, 0xb2, 0xc3, 0xd4,                            /* RTP timestamp */
-      0x00, 0x00, 0x00, 0x00,                            /* packet count */
-      0x00, 0x00, 0x00, 0x00,                            /* octet count */
+  const uint8_t sr_golden[] = {
+      0x80, 0xc8, 0x00, 0x32, /* V=2 RC=0 PT=SR length 50 */
+      0x12, 0x34, 0x56, 0x78, /* SSRC */
+      0x65, 0x53, 0xf1, 0x00, /* 1700000000 s */
+      0x07, 0x5b, 0xcd, 0x15, /* 123456789 ns */
+      0xa1, 0xb2, 0xc3, 0xd4, /* RTP timestamp */
+      0x00, 0x00, 0x00, 0x00, /* packet count */
+      0x00, 0x00, 0x00, 0x00, /* octet count */
+  };
+  const uint8_t sdes_golden[] = {
       0x81, 0xca, 0x00, 0x05,                            /* V=2 SC=1 PT=SDES length 5 */
       0x12, 0x34, 0x56, 0x78,                            /* SSRC */
       0x01, 0x0c, '1',  '9',  '2', '.',  '1',  '6', '8', /* CNAME, 12 octets */
       '.',  '1',  '.',  '1',  '0', 0x00, 0x00,           /* two nulls to the word end */
   };
+  struct ipmx_video_info info;
+  ASSERT_EQ(ut_sr_video_info(ctx_, &info), 0);
+  uint8_t block[IPMX_INFO_BLOCK_LEN];
+  ipmx_info_block_build(&info, block);
+
   uint8_t rtcp[UT_SR_PKT_MAX];
-  ASSERT_EQ(ut_sr_build(ctx_, rtcp, kTaiNs, kRtpTs), sizeof(golden));
-  EXPECT_EQ(0, memcmp(rtcp, golden, sizeof(golden)));
+  ASSERT_EQ(ut_sr_build(ctx_, rtcp, kTaiNs, kRtpTs), kSdesOffset + sizeof(sdes_golden));
+  EXPECT_EQ(0, memcmp(rtcp, sr_golden, sizeof(sr_golden)));
+  EXPECT_EQ(0, memcmp(rtcp + 28, block, sizeof(block)));
+  EXPECT_EQ(Be16(rtcp + 28), 0x5831);
+  EXPECT_EQ(0, memcmp(rtcp + kSdesOffset, sdes_golden, sizeof(sdes_golden)));
 }
 
 class IpmxSrCnameTest : public ::testing::TestWithParam<std::vector<uint8_t>> {
@@ -126,10 +139,10 @@ TEST_P(IpmxSrCnameTest, CnameNullTerminatedToWordBoundary) {
   uint16_t len = ut_sr_build(ctx, rtcp, kTaiNs, kRtpTs);
   ut_sr_destroy(ctx);
 
-  const uint8_t* sdes = rtcp + 28;
+  const uint8_t* sdes = rtcp + kSdesOffset;
   const size_t item_end = 8 + 2 + cname.size();
   const size_t sdes_len = (item_end + 1 + 3) / 4 * 4; /* at least one null */
-  ASSERT_EQ(len, 28 + sdes_len);
+  ASSERT_EQ(len, kSdesOffset + sdes_len);
   EXPECT_EQ(Be16(sdes + 2), sdes_len / 4 - 1);
   EXPECT_EQ(sdes[8], 1); /* CNAME */
   EXPECT_EQ(sdes[9], cname.size());

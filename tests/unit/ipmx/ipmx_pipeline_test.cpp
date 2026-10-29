@@ -91,6 +91,15 @@ TEST_F(IpmxPipelineTxTest, EnableRtcpRejected) {
   EXPECT_EQ(CaptureAndCheck(&transport), -ENOTSUP);
 }
 
+TEST_F(IpmxPipelineTxTest, NonRfc4175TransportFormatsRejected) {
+  for (enum st20_fmt fmt : {ST20_FMT_V210, ST20_FMT_YUV_422_PLANAR10LE}) {
+    ut20p_tx_ops(ctx_)->transport_fmt = fmt;
+    struct st20_tx_ops transport;
+    EXPECT_EQ(CaptureAndCheck(&transport), -ENOTSUP) << fmt;
+    EXPECT_EQ(transport.fmt, fmt);
+  }
+}
+
 class IpmxPipelineRxTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -143,6 +152,15 @@ TEST_F(IpmxPipelineRxTest, InterlacedRejected) {
   ut20p_ops(ctx_)->interlaced = true;
   struct st20_rx_ops transport;
   EXPECT_EQ(CaptureAndCheck(&transport), -ENOTSUP);
+}
+
+TEST_F(IpmxPipelineRxTest, NonRfc4175TransportFormatsRejected) {
+  for (enum st20_fmt fmt : {ST20_FMT_V210, ST20_FMT_YUV_422_PLANAR10LE}) {
+    ut20p_ops(ctx_)->transport_fmt = fmt;
+    struct st20_rx_ops transport;
+    EXPECT_EQ(CaptureAndCheck(&transport), -ENOTSUP) << fmt;
+    EXPECT_EQ(transport.fmt, fmt);
+  }
 }
 
 }  // namespace

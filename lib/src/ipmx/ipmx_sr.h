@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include "../mt_main.h"
+#include "ipmx_info.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,6 +34,7 @@ struct ipmx_sr_tx {
   bool ipv4_cksum_offload;
   uint32_t sampling_rate;
   struct rte_mempool* pool;
+  uint8_t info_block[IPMX_INFO_BLOCK_LEN];
   char cname[IPMX_SR_CNAME_MAX];
   uint8_t cname_len;
   uint32_t frame_pkts;

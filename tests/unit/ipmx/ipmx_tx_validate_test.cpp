@@ -114,6 +114,21 @@ TEST_F(IpmxTxValidateTest, InterlacedRejected) {
   EXPECT_EQ(ut_txv_ops_check(&ops), -ENOTSUP);
 }
 
+TEST_F(IpmxTxValidateTest, NonRfc4175FormatsRejected) {
+  struct st20_tx_ops ops = TxOps();
+  ops.fmt = ST20_FMT_V210;
+  EXPECT_EQ(ut_txv_ops_check(&ops), -ENOTSUP);
+  ops.fmt = ST20_FMT_YUV_422_PLANAR10LE;
+  EXPECT_EQ(ut_txv_ops_check(&ops), -ENOTSUP);
+}
+
+TEST_F(IpmxTxValidateTest, FlagOffNonRfc4175FormatAccepted) {
+  struct st20_tx_ops ops = TxOps();
+  ops.flags = 0;
+  ops.fmt = ST20_FMT_V210;
+  EXPECT_EQ(ut_txv_ops_check(&ops), 0);
+}
+
 TEST_F(IpmxTxValidateTest, EnableRtcpRejected) {
   struct st20_tx_ops ops = TxOps();
   ops.flags |= ST20_TX_FLAG_ENABLE_RTCP;

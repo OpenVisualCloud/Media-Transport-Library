@@ -6,6 +6,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "st20_api.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -17,7 +19,7 @@ extern "C" {
  */
 typedef struct ut_sr_ctx ut_sr_ctx;
 
-#define UT_SR_PKT_MAX (256)
+#define UT_SR_PKT_MAX (320)
 #define UT_SR_UDP_HDR_LEN (42) /* Ethernet, IPv4, UDP */
 
 enum ut_sr_wire_kind {
@@ -50,6 +52,15 @@ void ut_sr_destroy(ut_sr_ctx* ctx);
 void ut_sr_set_pkt_info(ut_sr_ctx* ctx, int type, uint32_t size, uint32_t number);
 /* the session's st20_total_pkts, read by ipmx_sr_tx_init() */
 void ut_sr_set_frame_pkts(ut_sr_ctx* ctx, uint32_t total_pkts);
+/* the session's ops and fps_tm ipmx_sr_tx_init() describes, 1080p59.94 YUV 4:2:2 10-bit
+ * BPM by default */
+int ut_sr_set_video(ut_sr_ctx* ctx, enum st20_fmt fmt, uint32_t width, uint32_t height,
+                    enum st20_packing packing, enum st_fps fps);
+/* the port P MAC, 02-00-00-00-00-01 by default */
+void ut_sr_set_mac(ut_sr_ctx* ctx, const uint8_t mac[6]);
+struct ipmx_video_info;
+/* ipmx_video_info_from_session() of the session, 0 or its negative errno */
+int ut_sr_video_info(ut_sr_ctx* ctx, struct ipmx_video_info* info);
 /* ipmx_sr_tx_init(), 0 or its negative errno */
 int ut_sr_attach(ut_sr_ctx* ctx);
 void ut_sr_detach(ut_sr_ctx* ctx);

@@ -14,6 +14,7 @@
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
 #include "ipmx/ipmx.h"
+#include "ipmx/ipmx_info.h"
 #include "ipmx/ipmx_sr.h"
 #include "ipmx/ipmx_sr_harness.h"
 #include "mt_main.h"
@@ -153,6 +154,9 @@ ut_sr_ctx* ut_sr_create(const uint8_t sip[4], uint32_t ssrc, uint16_t media_dst_
   ctx->impl.type = MT_HANDLE_MAIN;
   ctx->impl.inf[MTL_PORT_P].socket_id = rte_socket_id();
   ctx->impl.inf[MTL_PORT_P].nb_tx_desc = 64;
+  /* mt_macaddr_get() reads k_mac_addr, no ethdev */
+  ctx->impl.inf[MTL_PORT_P].drv_info.flags = MT_DRV_F_NOT_DPDK_PMD;
+  memcpy(ctx->impl.inf[MTL_PORT_P].k_mac_addr.addr_bytes, smac, sizeof(smac));
   ctx->mgr.parent = &ctx->impl;
 
   s->impl = &ctx->impl;
@@ -162,8 +166,13 @@ ut_sr_ctx* ut_sr_create(const uint8_t sip[4], uint32_t ssrc, uint16_t media_dst_
   s->ops.flags = ST20_TX_FLAG_IPMX;
   s->port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
   s->eth_ipv4_cksum_offload[MTL_SESSION_PORT_P] = false;
-  s->fps_tm.sampling_clock_rate = ST10_VIDEO_SAMPLING_RATE_90K;
+  st_get_fps_timing(ST_FPS_P59_94, &s->fps_tm);
   s->bulk = 1;
+  s->ops.width = 1920;
+  s->ops.height = 1080;
+  s->ops.fmt = ST20_FMT_YUV_422_10BIT;
+  s->ops.packing = ST20_PACKING_BPM;
+  s->ops.fps = ST_FPS_P59_94;
   s->tx_hang_detect_time_thresh = NS_PER_S;
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++)
     s->queue[i] = (struct mt_txq_entry*)&ctx->queue_tag[i];
@@ -220,6 +229,26 @@ void ut_sr_set_frame_pkts(ut_sr_ctx* ctx, uint32_t total_pkts) {
 void ut_sr_set_pkt_info(ut_sr_ctx* ctx, int type, uint32_t size, uint32_t number) {
   ctx->session.st20_pkt_info[type].size = size;
   ctx->session.st20_pkt_info[type].number = number;
+}
+
+int ut_sr_set_video(ut_sr_ctx* ctx, enum st20_fmt fmt, uint32_t width, uint32_t height,
+                    enum st20_packing packing, enum st_fps fps) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  s->ops.fmt = fmt;
+  s->ops.width = width;
+  s->ops.height = height;
+  s->ops.packing = packing;
+  s->ops.fps = fps;
+  return st_get_fps_timing(fps, &s->fps_tm);
+}
+
+void ut_sr_set_mac(ut_sr_ctx* ctx, const uint8_t mac[6]) {
+  memcpy(ctx->impl.inf[MTL_PORT_P].k_mac_addr.addr_bytes, mac, RTE_ETHER_ADDR_LEN);
+}
+
+int ut_sr_video_info(ut_sr_ctx* ctx, struct ipmx_video_info* info) {
+  return ipmx_video_info_from_session(&ctx->impl, &ctx->session, info);
 }
 
 int ut_sr_attach(ut_sr_ctx* ctx) {

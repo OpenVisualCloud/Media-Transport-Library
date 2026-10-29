@@ -26,7 +26,8 @@ int ipmx_udp_ports_check(const char* name, const uint16_t* udp_port, int num_por
   return 0;
 }
 
-static int ipmx_video_check(const char* name, enum st20_type type, bool interlaced) {
+static int ipmx_video_check(const char* name, enum st20_type type, enum st20_fmt fmt,
+                            bool interlaced) {
   if (type == ST20_TYPE_RTP_LEVEL) {
     err("%s(%s), ST20_TYPE_RTP_LEVEL not supported, the TR-10-1 section 8.8.2 sender "
         "report schedule needs library built packets\n",
@@ -35,6 +36,11 @@ static int ipmx_video_check(const char* name, enum st20_type type, bool interlac
   }
   if (interlaced) {
     err("%s(%s), interlaced not supported by the IPMX MVP\n", __func__, name);
+    return -ENOTSUP;
+  }
+  if (fmt == ST20_FMT_V210 || fmt == ST20_FMT_YUV_422_PLANAR10LE) {
+    err("%s(%s), fmt %d not allowed, no ST 2110-20 section 7.4.1 sampling\n", __func__,
+        name, fmt);
     return -ENOTSUP;
   }
   return 0;
@@ -59,7 +65,7 @@ int ipmx_tx_ops_check(const struct st20_tx_ops* ops) {
     return -ENOTSUP;
   }
 
-  return ipmx_video_check(name, ops->type, ops->interlaced);
+  return ipmx_video_check(name, ops->type, ops->fmt, ops->interlaced);
 }
 
 int ipmx_rx_ops_check(const struct st20_rx_ops* ops) {
@@ -69,5 +75,5 @@ int ipmx_rx_ops_check(const struct st20_rx_ops* ops) {
   ret = ipmx_udp_ports_check(name, ops->udp_port, ops->num_port);
   if (ret < 0) return ret;
 
-  return ipmx_video_check(name, ops->type, ops->interlaced);
+  return ipmx_video_check(name, ops->type, ops->fmt, ops->interlaced);
 }

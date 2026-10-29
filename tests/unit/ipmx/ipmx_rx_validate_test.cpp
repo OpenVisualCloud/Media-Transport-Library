@@ -101,6 +101,21 @@ TEST_F(IpmxRxValidateTest, InterlacedRejected) {
   EXPECT_EQ(ut20_rx_ops_check(&ops), -ENOTSUP);
 }
 
+TEST_F(IpmxRxValidateTest, NonRfc4175FormatsRejected) {
+  struct st20_rx_ops ops = RxOps();
+  ops.fmt = ST20_FMT_V210;
+  EXPECT_EQ(ut20_rx_ops_check(&ops), -ENOTSUP);
+  ops.fmt = ST20_FMT_YUV_422_PLANAR10LE;
+  EXPECT_EQ(ut20_rx_ops_check(&ops), -ENOTSUP);
+}
+
+TEST_F(IpmxRxValidateTest, FlagOffNonRfc4175FormatAccepted) {
+  struct st20_rx_ops ops = RxOps();
+  ops.flags = 0;
+  ops.fmt = ST20_FMT_V210;
+  EXPECT_EQ(ut20_rx_ops_check(&ops), 0);
+}
+
 TEST_F(IpmxRxValidateTest, NonD6ProgressiveRateAccepted) {
   struct st20_rx_ops ops = RxOps();
   ops.fps = ST_FPS_P29_97;

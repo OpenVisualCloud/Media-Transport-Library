@@ -7,11 +7,13 @@
 #include "../mt_util.h"
 #include "../st2110/st_tx_video_session.h"
 
-#define IPMX_SR_POOL_DATA_SIZE (128)
+#define IPMX_SR_POOL_DATA_SIZE (320)
 #define IPMX_RTCP_PT_SR (200)
 #define IPMX_RTCP_PT_SDES (202)
 #define IPMX_RTCP_SDES_CNAME (1)
 #define IPMX_RTCP_SR_LEN (28)
+#define IPMX_RTCP_SR_IPMX_LEN (IPMX_RTCP_SR_LEN + IPMX_INFO_BLOCK_LEN)
+#define IPMX_RTCP_SDES_MAX_LEN (8 + RTE_ALIGN_CEIL(2 + IPMX_SR_CNAME_MAX, 4))
 #define IPMX_RTP_HDR_LEN (12)
 
 static inline void ipmx_put_be16(uint8_t* p, uint16_t v) {
@@ -24,16 +26,17 @@ static inline void ipmx_put_be32(uint8_t* p, uint32_t v) {
   memcpy(p, &v, sizeof(v));
 }
 
-/* SR, then SDES with the CNAME item null terminated to the word end (RFC 3550 6.5) */
+/* SR with the IPMX Info Block, then SDES with the CNAME item null terminated to the word
+ * end (RFC 3550 6.5) */
 static uint16_t ipmx_sr_tx_build(const struct ipmx_sr_tx* sr, uint8_t* rtcp,
                                  uint64_t tai_ns, uint32_t rtp_ts) {
   uint16_t sdes_len = 8 + RTE_ALIGN_CEIL(2 + sr->cname_len + 1, 4);
-  uint8_t* sdes = rtcp + IPMX_RTCP_SR_LEN;
+  uint8_t* sdes = rtcp + IPMX_RTCP_SR_IPMX_LEN;
   uint32_t ssrc = ntohl(sr->media_hdr->rtp.base.ssrc);
 
   rtcp[0] = 2 << 6; /* V=2, P=0, RC=0 */
   rtcp[1] = IPMX_RTCP_PT_SR;
-  ipmx_put_be16(&rtcp[2], IPMX_RTCP_SR_LEN / 4 - 1);
+  ipmx_put_be16(&rtcp[2], IPMX_RTCP_SR_IPMX_LEN / 4 - 1);
   ipmx_put_be32(&rtcp[4], ssrc);
   /* TR-10-1 section 8.7: PTP truncated timestamp, not the RFC 3550 NTP format */
   ipmx_put_be32(&rtcp[8], (uint32_t)(tai_ns / NS_PER_S));
@@ -41,6 +44,7 @@ static uint16_t ipmx_sr_tx_build(const struct ipmx_sr_tx* sr, uint8_t* rtcp,
   ipmx_put_be32(&rtcp[16], rtp_ts);
   ipmx_put_be32(&rtcp[20], sr->pkt_count);
   ipmx_put_be32(&rtcp[24], sr->octet_count);
+  memcpy(&rtcp[IPMX_RTCP_SR_LEN], sr->info_block, IPMX_INFO_BLOCK_LEN);
 
   memset(sdes, 0, sdes_len);
   sdes[0] = (2 << 6) | 1; /* V=2, P=0, SC=1 */
@@ -51,7 +55,7 @@ static uint16_t ipmx_sr_tx_build(const struct ipmx_sr_tx* sr, uint8_t* rtcp,
   sdes[9] = sr->cname_len;
   memcpy(&sdes[10], sr->cname, sr->cname_len);
 
-  return IPMX_RTCP_SR_LEN + sdes_len;
+  return IPMX_RTCP_SR_IPMX_LEN + sdes_len;
 }
 
 static struct rte_mbuf* ipmx_sr_tx_pkt(struct ipmx_sr_tx* sr, uint64_t tai_ns,
@@ -152,9 +156,17 @@ static unsigned int ipmx_sr_pool_n(struct mtl_main_impl* impl,
 int ipmx_sr_tx_init(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
   const uint8_t* sip = (const uint8_t*)&s->s_hdr[MTL_SESSION_PORT_P].ipv4.src_addr;
+  struct ipmx_video_info vinfo;
   struct ipmx_sr_tx* sr;
   char pool_name[32];
   unsigned int n;
+  int ret;
+
+  RTE_BUILD_BUG_ON(sizeof(struct mt_udp_hdr) + IPMX_RTCP_SR_IPMX_LEN +
+                       IPMX_RTCP_SDES_MAX_LEN >
+                   IPMX_SR_POOL_DATA_SIZE);
+  ret = ipmx_video_info_from_session(impl, s, &vinfo);
+  if (ret < 0) return ret;
 
   sr = mt_rte_zmalloc_socket(sizeof(*sr), mt_socket_id(impl, port));
   if (!sr) return -ENOMEM;
@@ -172,6 +184,7 @@ int ipmx_sr_tx_init(struct mtl_main_impl* impl, struct st_tx_video_session_impl*
   sr->media_hdr = &s->s_hdr[MTL_SESSION_PORT_P];
   sr->ipv4_cksum_offload = s->eth_ipv4_cksum_offload[MTL_SESSION_PORT_P];
   sr->sampling_rate = s->fps_tm.sampling_clock_rate;
+  ipmx_info_block_build(&vinfo, sr->info_block);
   /* TR-10-9 section 8 asks for a CNAME, RFC 3550 section 6.5.1 allows the numeric host */
   sr->cname_len = snprintf(sr->cname, sizeof(sr->cname), "%u.%u.%u.%u", sip[0], sip[1],
                            sip[2], sip[3]);
@@ -184,8 +197,8 @@ int ipmx_sr_tx_init(struct mtl_main_impl* impl, struct st_tx_video_session_impl*
   }
 
   s->ipmx_sr = sr;
-  info("%s(%d), cname %s, %u pkts %u octets per frame\n", __func__, s->idx, sr->cname,
-       sr->frame_pkts, sr->frame_octets);
+  info("%s(%d), cname %s, %s, %u pkts %u octets per frame\n", __func__, s->idx, sr->cname,
+       vinfo.ts_refclk, sr->frame_pkts, sr->frame_octets);
   return 0;
 }
 

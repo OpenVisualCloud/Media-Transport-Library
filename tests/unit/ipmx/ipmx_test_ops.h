@@ -100,7 +100,7 @@ struct IpmxFormat {
   enum st20_packing packing;
 };
 
-/* progressive frame and slice level, BPM / GPM / GPM_SL; no format is restricted */
+/* progressive frame and slice level, BPM / GPM / GPM_SL */
 const IpmxFormat kIpmxFormats[] = {
     {"Yuv422p10_1080p5994_Frame_Bpm", 1920, 1080, ST_FPS_P59_94, ST20_FMT_YUV_422_10BIT,
      ST20_TYPE_FRAME_LEVEL, ST20_PACKING_BPM},
