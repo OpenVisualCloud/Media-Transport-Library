@@ -84,6 +84,8 @@ struct ut20p_ctx {
   struct st20p_rx_frame* framebuffs;
   int framebuff_cnt;
   bool blocking;
+  struct st_frame_converter converter;
+  uint8_t* frames_mem;
 };
 
 #include "pipeline/st20p_harness.h"
@@ -146,6 +148,8 @@ void ut20p_ctx_destroy(ut20p_ctx* ctx) {
     mt_pthread_mutex_destroy(&ctx->pipeline.block_wake_mutex);
     mt_pthread_cond_destroy(&ctx->pipeline.block_wake_cond);
   }
+  if (ctx->pipeline.nt_scratch) mt_rte_free(ctx->pipeline.nt_scratch);
+  free(ctx->frames_mem);
   free(ctx->framebuffs);
   free(ctx);
 }
@@ -208,6 +212,52 @@ static struct st_frame_converter ut20p_stub_converter = {
 void ut20p_ctx_set_internal_converter(ut20p_ctx* ctx) {
   ctx->pipeline.derive = false;
   ctx->pipeline.internal_converter = &ut20p_stub_converter;
+}
+
+int ut20p_ctx_set_converting_frames(ut20p_ctx* ctx, enum st_frame_fmt output_fmt,
+                                    uint32_t width, uint32_t height, uint32_t flags) {
+  struct st20p_rx_ctx* p = &ctx->pipeline;
+  const enum st_frame_fmt t_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  size_t src_size = RTE_ALIGN_CEIL(st_frame_size(t_fmt, width, height, false), 64);
+  size_t dst_size = RTE_ALIGN_CEIL(st_frame_size(output_fmt, width, height, false), 64);
+  int ret;
+
+  p->ops.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  p->ops.output_fmt = output_fmt;
+  p->ops.width = width;
+  p->ops.height = height;
+  p->ops.flags = flags;
+  p->derive = false;
+  ret = st_frame_get_converter(t_fmt, output_fmt, &ctx->converter);
+  if (ret < 0) return ret;
+  p->internal_converter = &ctx->converter;
+
+  ctx->frames_mem = aligned_alloc(64, (src_size + dst_size) * ctx->framebuff_cnt);
+  if (!ctx->frames_mem) return -ENOMEM;
+  memset(ctx->frames_mem, 0, (src_size + dst_size) * ctx->framebuff_cnt);
+  for (int i = 0; i < ctx->framebuff_cnt; i++) {
+    struct st20p_rx_frame* fb = &ctx->framebuffs[i];
+    uint8_t* mem = ctx->frames_mem + (src_size + dst_size) * i;
+    fb->src.fmt = t_fmt;
+    fb->dst.fmt = output_fmt;
+    fb->src.width = fb->dst.width = width;
+    fb->src.height = fb->dst.height = height;
+    st_frame_init_plane_single_src(&fb->src, mem, 0);
+    st_frame_init_plane_single_src(&fb->dst, mem + src_size, 0);
+  }
+  return rx_st20p_init_nt_scratch(p, &p->ops);
+}
+
+size_t ut20p_nt_scratch_size(const ut20p_ctx* ctx) {
+  return ctx->pipeline.nt_scratch ? ctx->pipeline.nt_scratch_size : 0;
+}
+
+void* ut20p_nt_scratch(ut20p_ctx* ctx) {
+  return ctx->pipeline.nt_scratch;
+}
+
+bool ut20p_nt_scratch_held(const ut20p_ctx* ctx) {
+  return atomic_load(&ctx->pipeline.nt_scratch_busy) != 0;
 }
 
 /* ── inject one frame via rx_st20p_frame_ready ────────────────────────── */
