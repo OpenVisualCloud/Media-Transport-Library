@@ -2753,7 +2753,7 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
   }
   if (st20_is_frame_type(type)) {
     /* for traffic > 40g, two lcore used  */
-    if ((bps / (1000 * 1000)) > (40 * 1000)) {
+    if ((bps / (1000 * 1000)) > ST_RX_VIDEO_PKT_LCORE_MBPS) {
       if (!s->dma_dev) pkt_handle_lcore = true;
     }
 

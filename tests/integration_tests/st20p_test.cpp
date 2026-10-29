@@ -1534,24 +1534,28 @@ TEST(St20p, rx_ext_digest_1080p_convert_s2) {
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
 
-TEST(St20p, rx_ext_digest_1080p_packet_convert_s2) {
-  enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  int width[2] = {1920, 1920};
-  int height[2] = {1080, 1080};
-  enum st_frame_fmt tx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
-  enum st20_fmt t_fmt[2] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT};
-  enum st_frame_fmt rx_fmt[2] = {ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210};
+/* Packet convert writes each packet into the dst frame as it arrives, but a
+ * dynamic ext frame can only be lent once its frame is known to be delivered. */
+TEST(St20p, rx_create_expect_fail_packet_convert_ext_frame) {
+  auto ctx = st_test_ctx();
+  struct st20p_rx_ops ops;
+  auto test_ctx = new tests_context();
+  ASSERT_TRUE(test_ctx != NULL);
 
-  struct st20p_rx_digest_test_para para;
-  test_st20p_init_rx_digest_para(&para);
-  para.sessions = 2;
-  para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
-  para.rx_ext = true;
-  para.check_fps = false;
-  para.pkt_convert = true;
-  para.level = ST_TEST_LEVEL_ALL;
+  test_ctx->idx = 0;
+  test_ctx->ctx = ctx;
+  test_ctx->fb_cnt = 2;
+  test_ctx->fb_idx = 0;
+  st20p_rx_ops_init(test_ctx, &ops);
+  ops.flags |= ST20P_RX_FLAG_PKT_CONVERT | ST20P_RX_FLAG_EXT_FRAME;
+  ops.query_ext_frame = test_st20p_rx_query_ext_frame;
 
-  st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
+  st20p_rx_handle handle = st20p_rx_create(ctx->handle, &ops);
+  EXPECT_TRUE(handle == NULL);
+  if (handle) {
+    EXPECT_GE(st20p_rx_free(handle), 0);
+  }
+  delete test_ctx;
 }
 
 TEST(St20p, ext_digest_1080p_no_convert_s2) {

@@ -91,6 +91,39 @@ static struct st20p_rx_frame* rx_st20p_claim_available(
   return NULL;
 }
 
+/* scan, since redundant ports or RTCP can interleave the packets of two frames */
+static struct st20p_rx_frame* rx_st20p_converting_framebuff(struct st20p_rx_ctx* ctx,
+                                                            uint64_t timestamp) {
+  uint16_t idx = ctx->framebuff_producer_idx;
+
+  for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
+    struct st20p_rx_frame* framebuff = &ctx->framebuffs[idx];
+    if (atomic_load_explicit(&framebuff->stat, memory_order_acquire) ==
+            ST20P_RX_FRAME_IN_CONVERTING &&
+        framebuff->dst.timestamp == timestamp)
+      return framebuff;
+    idx = rx_st20p_next_idx(ctx, idx);
+  }
+
+  return NULL;
+}
+
+static int rx_st20p_pkt_cvt_refused_idx(struct st20p_rx_ctx* ctx, uint64_t timestamp) {
+  for (int i = 0; i < ST_VIDEO_RX_REC_NUM_OFO; i++) {
+    if (ctx->pkt_cvt_refused[i].active && ctx->pkt_cvt_refused[i].timestamp == timestamp)
+      return i;
+  }
+  return -1;
+}
+
+static void rx_st20p_pkt_cvt_refuse(struct st20p_rx_ctx* ctx, uint64_t timestamp) {
+  int i = 0;
+
+  while (i < ST_VIDEO_RX_REC_NUM_OFO - 1 && ctx->pkt_cvt_refused[i].active) i++;
+  ctx->pkt_cvt_refused[i].timestamp = timestamp;
+  ctx->pkt_cvt_refused[i].active = true;
+}
+
 static int rx_st20p_packet_convert(void* priv, void* frame,
                                    struct st20_rx_uframe_pg_meta* meta) {
   struct st20p_rx_ctx* ctx = priv;
@@ -99,35 +132,20 @@ static int rx_st20p_packet_convert(void* priv, void* frame,
   struct st20_rfc4175_422_10_pg2_be* src = meta->payload;
   MTL_MAY_UNUSED(frame);
 
-  if (meta->row_number == 0 && meta->row_offset == 0) {
-    /* first packet of frame */
-    framebuff =
-        rx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_RX_FRAME_FREE);
-    if (framebuff) {
-      atomic_store_explicit(&framebuff->stat, ST20P_RX_FRAME_IN_CONVERTING,
-                            memory_order_release);
-      framebuff->dst.timestamp = meta->timestamp;
-    }
-  } else {
-    framebuff = rx_st20p_next_available(ctx, ctx->framebuff_producer_idx,
-                                        ST20P_RX_FRAME_IN_CONVERTING);
-    if (framebuff && framebuff->dst.timestamp != meta->timestamp) {
-      dbg("%s(%d), not this frame, find next one\n", __func__, ctx->idx);
-      framebuff =
-          rx_st20p_next_available(ctx, framebuff->idx, ST20P_RX_FRAME_IN_CONVERTING);
-      if (framebuff && framebuff->dst.timestamp != meta->timestamp) {
-        /* should never happen */
-        err_once("%s(%d), wrong frame timestamp\n", __func__, ctx->idx);
-        return -EIO;
-      }
-    }
-  }
+  framebuff = rx_st20p_converting_framebuff(ctx, meta->timestamp);
   if (!framebuff) {
-    rte_atomic32_inc(&ctx->stat_busy);
-    /* relaxed atomic: written from tasklet, read from any thread via
-     * st20p_rx_get_session_stats(); no ordering vs other state required. */
-    atomic_fetch_add_explicit(&ctx->stat_frames_dropped, 1, memory_order_relaxed);
-    return -EBUSY;
+    /* a frame is converted whole or refused whole, frame_ready counts the drop */
+    if (rx_st20p_pkt_cvt_refused_idx(ctx, meta->timestamp) >= 0) return -EBUSY;
+    if (ctx->ready)
+      framebuff =
+          rx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_RX_FRAME_FREE);
+    if (!framebuff) {
+      rx_st20p_pkt_cvt_refuse(ctx, meta->timestamp);
+      return -EBUSY;
+    }
+    framebuff->dst.timestamp = meta->timestamp;
+    atomic_store_explicit(&framebuff->stat, ST20P_RX_FRAME_IN_CONVERTING,
+                          memory_order_release);
   }
   if (ctx->ops.output_fmt == ST_FRAME_FMT_YUV422PLANAR10LE) {
     uint8_t* y = (uint8_t*)framebuff->dst.addr[0] +
@@ -147,24 +165,54 @@ static int rx_st20p_packet_convert(void* priv, void* frame,
                    framebuff->dst.linesize[0] * meta->row_number + meta->row_offset * 2;
     ret = st20_rfc4175_422be10_to_422le8(src, (struct st20_rfc4175_422_8_pg2_le*)dst,
                                          meta->pg_cnt, 2);
-  } else if (ctx->ops.output_fmt == ST_FRAME_FMT_YUV422PLANAR8) {
+  } else if (ctx->ops.output_fmt == ST_FRAME_FMT_YUV422PLANAR16LE) {
     uint8_t* y = (uint8_t*)framebuff->dst.addr[0] +
                  framebuff->dst.linesize[0] * meta->row_number + meta->row_offset * 2;
     uint8_t* b = (uint8_t*)framebuff->dst.addr[1] +
                  framebuff->dst.linesize[1] * meta->row_number + meta->row_offset;
     uint8_t* r = (uint8_t*)framebuff->dst.addr[2] +
                  framebuff->dst.linesize[2] * meta->row_number + meta->row_offset;
-    ret = st20_rfc4175_422be10_to_yuv422p8(src, y, b, r, meta->pg_cnt, 2);
-  } else if (ctx->ops.output_fmt == ST_FRAME_FMT_YUV420PLANAR8) {
-    uint8_t* y = (uint8_t*)framebuff->dst.addr[0] +
-                 framebuff->dst.linesize[0] * meta->row_number + meta->row_offset * 2;
-    uint8_t* b = (uint8_t*)framebuff->dst.addr[1] +
-                 framebuff->dst.linesize[1] * meta->row_number + meta->row_offset;
-    uint8_t* r = (uint8_t*)framebuff->dst.addr[2] +
-                 framebuff->dst.linesize[2] * meta->row_number + meta->row_offset;
-    ret = st20_rfc4175_422be10_to_yuv420p8(src, y, b, r, meta->pg_cnt, 2);
+    ret = st20_rfc4175_422be10_to_yuv422p16le(src, (uint16_t*)y, (uint16_t*)b,
+                                              (uint16_t*)r, meta->pg_cnt, 2);
   }
 
+  return ret;
+}
+
+/* ctx->transport is set only once st20_rx_create() returns */
+static void rx_st20p_park_frame(struct st20p_rx_ctx* ctx, void* frame) {
+  for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
+    if (!atomic_load_explicit(&ctx->parked_frames[i], memory_order_relaxed)) {
+      atomic_store_explicit(&ctx->parked_frames[i], frame, memory_order_release);
+      return;
+    }
+  }
+  err("%s(%d), no slot to park frame %p\n", __func__, ctx->idx, frame);
+}
+
+/* create and frame_ready both flush; the exchange puts each parked frame back once */
+static void rx_st20p_put_parked_frames(struct st20p_rx_ctx* ctx) {
+  for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
+    void* frame =
+        atomic_exchange_explicit(&ctx->parked_frames[i], NULL, memory_order_acq_rel);
+    if (frame) st20_rx_put_framebuff(ctx->transport, frame);
+  }
+}
+
+static void rx_st20p_set_ready(struct st20p_rx_ctx* ctx) {
+  atomic_store_explicit(&ctx->ready, true, memory_order_release);
+  rx_st20p_put_parked_frames(ctx);
+}
+
+/* the session puts back a refused complete frame, but an incomplete one is ours */
+static int rx_st20p_refuse_frame(struct st20p_rx_ctx* ctx, void* frame,
+                                 struct st20_rx_frame_meta* meta, int ret) {
+  if (st_is_frame_complete(meta->status)) return ret;
+
+  if (atomic_load_explicit(&ctx->ready, memory_order_acquire))
+    st20_rx_put_framebuff(ctx->transport, frame);
+  else
+    rx_st20p_park_frame(ctx, frame);
   return ret;
 }
 
@@ -173,20 +221,26 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
   struct st20p_rx_ctx* ctx = priv;
   struct st20p_rx_frame* framebuff;
 
-  if (!ctx->ready) return -EBUSY; /* not ready */
+  if (ctx->ops.flags & ST20P_RX_FLAG_PKT_CONVERT) {
+    int refused = rx_st20p_pkt_cvt_refused_idx(ctx, meta->timestamp);
+    if (refused >= 0) ctx->pkt_cvt_refused[refused].active = false;
+  }
+
+  if (!atomic_load_explicit(&ctx->ready, memory_order_acquire))
+    return rx_st20p_refuse_frame(ctx, frame, meta, -EBUSY);
+  /* a frame parked as create set ready may have missed create's flush */
+  if (!ctx->parked_frames_flushed) {
+    rx_st20p_put_parked_frames(ctx);
+    ctx->parked_frames_flushed = true;
+  }
 
   if (ctx->ops.flags & ST20P_RX_FLAG_PKT_CONVERT) {
-    framebuff = rx_st20p_next_available(ctx, ctx->framebuff_producer_idx,
-                                        ST20P_RX_FRAME_IN_CONVERTING);
-    if (framebuff && framebuff->dst.timestamp != meta->timestamp) {
-      dbg("%s(%d), not this frame, find next one\n", __func__, ctx->idx);
-      framebuff =
-          rx_st20p_next_available(ctx, framebuff->idx, ST20P_RX_FRAME_IN_CONVERTING);
-      if (framebuff && framebuff->dst.timestamp != meta->timestamp) {
-        /* should never happen */
-        err_once("%s(%d), wrong frame timestamp\n", __func__, ctx->idx);
-        return 0; /* surpress the error */
-      }
+    framebuff = rx_st20p_converting_framebuff(ctx, meta->timestamp);
+    /* incomplete frames the app did not ask for come here only to be released */
+    if (framebuff && !st_is_frame_complete(meta->status) &&
+        !(ctx->ops.flags & ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME)) {
+      atomic_store_explicit(&framebuff->stat, ST20P_RX_FRAME_FREE, memory_order_release);
+      return rx_st20p_refuse_frame(ctx, frame, meta, -EIO);
     }
   } else {
     framebuff =
@@ -197,7 +251,7 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
   if (!framebuff) {
     rte_atomic32_inc(&ctx->stat_busy);
     atomic_fetch_add_explicit(&ctx->stat_frames_dropped, 1, memory_order_relaxed);
-    return -EBUSY;
+    return rx_st20p_refuse_frame(ctx, frame, meta, -EBUSY);
   }
 
   MT_USDT_ST20P_RX_FRAME_AVAILABLE(ctx->idx, framebuff->idx, frame, meta->rtp_timestamp,
@@ -211,7 +265,7 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
     if (ret < 0) {
       err("%s(%d), query_ext_frame for frame %u fail %d\n", __func__, ctx->idx,
           framebuff->idx, ret);
-      return ret;
+      return rx_st20p_refuse_frame(ctx, frame, meta, ret);
     }
 
     uint8_t planes = st_frame_fmt_planes(framebuff->dst.fmt);
@@ -227,7 +281,7 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
     if (ret < 0) {
       err("%s(%d), ext_frame check frame %u fail %d\n", __func__, ctx->idx,
           framebuff->idx, ret);
-      return ret;
+      return rx_st20p_refuse_frame(ctx, frame, meta, ret);
     }
   }
 
@@ -534,8 +588,27 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
           st_frame_fmt_name(ops->output_fmt));
       return -EIO;
     }
+    if (ops->flags & ST20P_RX_FLAG_EXT_FRAME) {
+      err("%s(%d), packet convert not supported with ST20P_RX_FLAG_EXT_FRAME\n", __func__,
+          idx);
+      return -EINVAL;
+    }
+    /* the uframe callback is not safe on the session's pkt lcore and tasklet at once,
+     * and detected dims could add a pkt lcore */
+    uint64_t bps = 0;
+    st20_get_bandwidth_bps(ops->width, ops->height, ops->transport_fmt, ops->fps,
+                           ops->interlaced, &bps);
+    if ((ops->flags & (ST20P_RX_FLAG_USE_MULTI_THREADS | ST20P_RX_FLAG_AUTO_DETECT)) ||
+        bps / (1000 * 1000) > ST_RX_VIDEO_PKT_LCORE_MBPS) {
+      err("%s(%d), packet convert not supported with multi threads, auto detect or above "
+          "%d Mb/s\n",
+          __func__, idx, ST_RX_VIDEO_PKT_LCORE_MBPS);
+      return -EINVAL;
+    }
     ops_rx.uframe_pg_callback = rx_st20p_packet_convert;
     ops_rx.uframe_size = st20_frame_size(ops->transport_fmt, ops->width, ops->height);
+    /* frame_ready frees the framebuff of a frame dropped incomplete */
+    ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
   }
   if (ops->flags & ST20P_RX_FLAG_ENABLE_RTCP) {
     ops_rx.flags |= ST20_RX_FLAG_ENABLE_RTCP;
@@ -651,6 +724,10 @@ static int rx_st20p_uinit_dst_fbs(struct st20p_rx_ctx* ctx) {
     mt_rte_free(ctx->framebuffs);
     ctx->framebuffs = NULL;
   }
+  if (ctx->parked_frames) {
+    mt_rte_free(ctx->parked_frames);
+    ctx->parked_frames = NULL;
+  }
 
   return 0;
 }
@@ -675,6 +752,13 @@ static int rx_st20p_init_dst_fbs(struct mtl_main_impl* impl, struct st20p_rx_ctx
     return -ENOMEM;
   }
   ctx->framebuffs = frames;
+  ctx->parked_frames =
+      mt_rte_zmalloc_socket(sizeof(*ctx->parked_frames) * ctx->framebuff_cnt, soc_id);
+  if (!ctx->parked_frames) {
+    err("%s(%d), parked frames malloc fail\n", __func__, idx);
+    rx_st20p_uinit_dst_fbs(ctx);
+    return -ENOMEM;
+  }
 
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
     atomic_store_explicit(&frames[i].stat, ST20P_RX_FRAME_FREE, memory_order_relaxed);
@@ -1161,7 +1245,7 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
   }
 
   /* all ready now */
-  ctx->ready = true;
+  rx_st20p_set_ready(ctx);
   notice("%s(%d), transport fmt %s, output fmt %s, flags 0x%x\n", __func__, idx,
          st20_fmt_name(ops->transport_fmt), st_frame_fmt_name(ops->output_fmt),
          ops->flags);

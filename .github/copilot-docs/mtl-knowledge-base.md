@@ -1014,6 +1014,22 @@ Late frame handling: if IN_USER when epoch arrives → skip. If older READY exis
 ```text
 FREE → READY (transport delivers) → IN_CONVERTING (optional) → CONVERTED → IN_USER (app reads) → FREE
 ```
+With `ST20P_RX_FLAG_PKT_CONVERT` the uframe callback converts each packet as it arrives: the first
+packet of an RTP timestamp takes a FREE framebuff into IN_CONVERTING, later ones find it by timestamp
+(two at once with redundant ports or RTCP), and frame_ready moves it to CONVERTED. A frame whose
+first packet finds no framebuff, or comes before the pipeline is ready, is refused whole, so the
+session sees no wire loss; if its frame_ready comes after ready it counts as one drop
+(`stat_busy` and `stat_frames_dropped`). A lossy frame the app did not ask for counts so only when it
+was refused; one that had a framebuff is released silently, as the session drops it in other modes.
+The pipeline always sets `ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME` on the transport, so a frame dropped
+incomplete still reaches frame_ready. In every mode where incomplete frames reach frame_ready, one it
+does not deliver it puts back itself with `st20_rx_put_framebuff()`; before ready `ctx->transport` may
+still be unset, so such a frame is parked (a slot per transport frame) and put back by create once
+ready, or by the next frame_ready if it missed that.
+Create refuses PKT_CONVERT with `ST20P_RX_FLAG_EXT_FRAME` (a queried ext frame would arrive only at frame_ready)
+and wherever the session could add a pkt lcore (`ST20P_RX_FLAG_USE_MULTI_THREADS`,
+`ST20P_RX_FLAG_AUTO_DETECT`, or above `ST_RX_VIDEO_PKT_LCORE_MBPS`): the uframe callback is not safe on
+the pkt lcore and tasklet at once.
 
 **Session-Level TX** (`st21_tx_frame_status`):
 ```text
@@ -1076,6 +1092,12 @@ mt_bitmap_test_and_set(bitmap, pkt_idx) → atomic, skip if already set
 3. No pending mbuf borrows
 
 Complete → `rv_slot_full_frame()` → `ST_FRAME_STATUS_COMPLETE`. Incomplete/evicted → `ST_FRAME_STATUS_CORRUPTED`, recycled rather than delivered unless the app set `ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME` (`rv_frame_notify()`).
+Frame ownership at `notify_frame_ready`: a complete frame it refuses (< 0) the session puts back itself,
+but an incomplete one belongs to the receiver whatever it returns; in-tree receivers put it back and
+return -1. The `uframe_pg_callback` return is ignored, so a refused payload still counts toward `recv_size`.
+Known follow-up: `rv_st22_frame_notify()` hands incomplete frames over the same way, and
+`rx_st22p_frame_ready()` does not put back one it refuses (not ready, no framebuff), which leaks a
+transport frame per refusal with `ST22P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME`.
 
 ### Inflight Pattern (Cooperative Non-Blocking Retry)
 - **Builder inflight**: ring full → save packets to `s->inflight[port][]` → return → retry next iteration
