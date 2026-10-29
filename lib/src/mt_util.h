@@ -337,6 +337,9 @@ bool mt_file_exists(const char* filename);
 
 int mt_sysfs_write_uint32(const char* path, uint32_t value);
 
+/* bytes of the unified L3 shared by exactly the cpus of NUMA socket, else 0 */
+uint64_t mt_l3_size(int socket);
+
 uint32_t mt_softrss(uint32_t* input_tuple, uint32_t input_len);
 
 static inline void mt_stat_u64_init(struct mt_stat_u64* stat) {

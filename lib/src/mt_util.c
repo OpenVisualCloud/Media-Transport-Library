@@ -1183,6 +1183,51 @@ int mt_sysfs_write_uint32(const char* path, uint32_t value) {
   return ret;
 }
 
+#ifndef WINDOWSENV
+static int util_sysfs_read(const char* dir, const char* attr, char* buf, int len) {
+  char path[128];
+  snprintf(path, sizeof(path), "%s/%s", dir, attr);
+  FILE* file = fopen(path, "r");
+  if (!file) return -EIO;
+  char* line = fgets(buf, len, file);
+  fclose(file);
+  return line ? 0 : -EIO;
+}
+#endif
+
+uint64_t mt_l3_size(int socket) {
+#ifdef WINDOWSENV
+  MTL_MAY_UNUSED(socket);
+  return 0;
+#else
+  char dir[96];
+  char node_cpus[4096]; /* a sysfs file is at most a page */
+  char buf[4096];
+  int cpu, level;
+  uint64_t size;
+
+  snprintf(dir, sizeof(dir), "/sys/devices/system/node/node%d", socket);
+  if (util_sysfs_read(dir, "cpulist", node_cpus, sizeof(node_cpus)) < 0 ||
+      sscanf(node_cpus, "%d", &cpu) != 1)
+    return 0;
+  for (int idx = 0;; idx++) {
+    snprintf(dir, sizeof(dir), "/sys/devices/system/cpu/cpu%d/cache/index%d", cpu, idx);
+    if (util_sysfs_read(dir, "level", buf, sizeof(buf)) < 0) return 0;
+    if (sscanf(buf, "%d", &level) != 1 || level != 3) continue;
+    if (util_sysfs_read(dir, "type", buf, sizeof(buf)) < 0 || strncmp(buf, "Unified", 7))
+      continue;
+    /* an L3 per AMD CCD or Intel SNC cluster is not the node's */
+    if (util_sysfs_read(dir, "shared_cpu_list", buf, sizeof(buf)) < 0 ||
+        strcmp(buf, node_cpus))
+      return 0;
+    if (util_sysfs_read(dir, "size", buf, sizeof(buf)) < 0 ||
+        sscanf(buf, "%" SCNu64 "K", &size) != 1)
+      return 0;
+    return size << 10;
+  }
+#endif
+}
+
 #define MT_HASH_KEY_LENGTH (40)
 // clang-format off
 static uint8_t mt_rss_hash_key[MT_HASH_KEY_LENGTH] = {
