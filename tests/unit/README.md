@@ -2,7 +2,7 @@
 
 > **In-process tests for the Media Transport Library that find real bugs without requiring a NIC, hugepages, root, or PTP hardware.**
 
-[![ASan](https://img.shields.io/badge/ASan-libmtl%20only-blue)](#quick-start)
+[![ASan + UBSan](https://img.shields.io/badge/ASan%20%2B%20UBSan-every%20compiled%20object-blue)](#quick-start)
 [![No hardware](https://img.shields.io/badge/hardware-not%20required-success)](#what-makes-this-different)
 
 ---
@@ -33,7 +33,7 @@ the MtlManager IPC send (`main/mt_instance_harness.c`).
 | ------------------- | ----------------------------------------------------------- |
 | Hardware required   | **None** — no NIC, no PTP clock, no hugepages               |
 | Privileges required | **None** — runs as a regular user                           |
-| Memory checking     | **Partial** — `libmtl.so` only, not this binary; see below  |
+| Memory checking     | **Every compiled object**, via `./build.sh unit sanitize`   |
 | Code under test     | The **production `.c` files** (not a separate test build)   |
 | Determinism         | Synthetic input; some cases spawn threads                   |
 | Isolation           | One `ut_eal_init()` per process; per-test ring/state reset  |
@@ -62,14 +62,22 @@ the exception reaches no other case. There are no flaky network-timing tests in 
 This configures `build_unit/` with `-Denable_unit_tests=true`, builds it, and
 runs `tests/unit/UnitTest`.
 
-AddressSanitizer covers this tier only in part. `./build.sh debug unit` and
+`./build.sh unit sanitize` configures `build_unit_san/` at gcc `-O0` with
+`-Db_sanitize=address,undefined`, builds it, and runs the suite. ASan and UBSan then check every
+compiled object of `UnitTest` and `libmtl.so`, including the production `.c` files the harnesses
+`#include`, and the first finding fails the run. CI runs it on every PR.
+
+ASan sees stack, globals and libc heap; memory from `rte_malloc` and DPDK mempools is invisible
+to it, as DPDK is not sanitized, so an overrun or double free there goes unreported.
+
+The legacy `enable_asan` path covers this tier only in part. `./build.sh debug unit` and
 `MTL_BUILD_ENABLE_ASAN=true ./build.sh unit` set `-Denable_asan=true`, which `lib/meson.build`
 adds to the `libmtl.so` compile arguments only. Both commands build and run the whole suite.
 
-Coverage also splits: no `UnitTest` object gets `-fsanitize=address`, so the production `.c`
-files this suite `#include`s into harness `.c` files are unchecked. Any `libmtl.so` symbol that
-`UnitTest` also defines, whether from an included `.c` or a harness stub, resolves to that
-uninstrumented copy.
+Coverage also splits: with `enable_asan` no `UnitTest` object gets `-fsanitize=address`, so the
+production `.c` files this suite `#include`s into harness `.c` files are unchecked. Any
+`libmtl.so` symbol that `UnitTest` also defines, whether from an included `.c` or a harness stub,
+resolves to that uninstrumented copy.
 
 `libmtl.so` *is* instrumented, so the symbols `UnitTest` resolves from it are checked —
 that covers any file no harness includes, such as `st2110/st_ancillary.c`. `build.sh` preloads
@@ -91,8 +99,8 @@ sanitizer flag, and `lib/src/mt_mem.h` keys on it to switch `mt_rte_zmalloc_sock
 siblings from `static inline` DPDK wrappers to extern tracked allocators. The harness copies
 never see the macro, so they compile the `static inline` branch, which emits no global symbol —
 the two implementations name one set of allocators but never collide at link time, and no linker
-flag is involved. For ASan over library code, use
-[`tests/integration_tests/`](../integration_tests/).
+flag is involved. The tracked allocators only count allocations for the leak check, so neither
+path sees an overrun in `rte_malloc` or mempool memory.
 
 To configure/build/run manually, or to filter tests (see below):
 

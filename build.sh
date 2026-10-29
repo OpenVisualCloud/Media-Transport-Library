@@ -8,7 +8,7 @@ set -e
 user=$(whoami)
 
 function usage() {
-	echo "Usage: $0 [debug|debugonly|debugoptimized|plain|release] [enable_fuzzing] [unit]"
+	echo "Usage: $0 [debug|debugonly|debugoptimized|plain|release] [enable_fuzzing] [unit [sanitize]]"
 	exit 0
 }
 
@@ -18,6 +18,7 @@ enable_tap=false
 enable_usdt=true
 enable_fuzzing=false
 build_unit=false
+sanitize=false
 
 : "${MTL_BUILD_ENABLE_ASAN:=false}"
 : "${MTL_BUILD_ENABLE_TAP:=false}"
@@ -71,6 +72,9 @@ while [ $# -gt 0 ]; do
 	"unit")
 		build_unit=true
 		;;
+	"sanitize")
+		sanitize=true
+		;;
 	*)
 		usage
 		;;
@@ -87,9 +91,17 @@ LD_PRELOAD_BUILD_DIR=${WORKSPACE}/build/ld_preload
 MANAGER_BUILD_DIR=${WORKSPACE}/build/manager
 RXTXAPP_BUILD_DIR=${WORKSPACE}/tests/tools/RxTxApp/build
 UNIT_BUILD_DIR=${WORKSPACE}/build_unit
+UNIT_SAN_BUILD_DIR=${WORKSPACE}/build_unit_san
 
 # build and run the unit gtest suite (tests/unit), then exit
 if [ "$build_unit" == "true" ]; then
+	if [ "$sanitize" == "true" ]; then
+		# gcc -O0: clang can't build the suite, and gcc -O2 with sanitizers trips -Werror false positives
+		meson setup "${UNIT_SAN_BUILD_DIR}" -Dbuildtype=debug -Denable_unit_tests=true -Db_sanitize=address,undefined \
+			-Dc_args=-fno-sanitize-recover=all -Dcpp_args=-fno-sanitize-recover=all
+		ninja -C "${UNIT_SAN_BUILD_DIR}"
+		exec "${UNIT_SAN_BUILD_DIR}/tests/unit/UnitTest"
+	fi
 	meson setup "${UNIT_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan" -Denable_unit_tests=true
 	ninja -C "${UNIT_BUILD_DIR}"
 
@@ -101,6 +113,8 @@ if [ "$build_unit" == "true" ]; then
 		"${UNIT_BUILD_DIR}/tests/unit/UnitTest"
 	fi
 	exit 0
+elif [ "$sanitize" == "true" ]; then
+	usage
 fi
 
 if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
