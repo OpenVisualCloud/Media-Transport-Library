@@ -29,6 +29,8 @@ constexpr int kRxPortP = 1;
 constexpr int kTxPortR = 2;
 constexpr int kRxPortR = 3;
 constexpr int kSessions = 8;
+/* 10 1080p59 bandwidths a scheduler: 5 redundant sessions, whatever the default. */
+constexpr uint64_t kSchQuota1080p = 10;
 constexpr uint16_t kUdpPortBase = 20000;
 /* The 2 s tail keeps the TX stop out of the window. */
 constexpr int kTestDurationS = kSt20pVrxWarmupS + kSt20pVrxWindowS + 2;
@@ -146,7 +148,10 @@ void expectEqualVrxMargin(const std::vector<St20pVrxRecorder*>& rx,
  *            vrx_min on raw NIC timestamps. 8 sessions 1080p59.94 YUV 4:2:2 10-bit
  *            BPM, RFC 4175 frames (no conversion), 3 buffers, UDP kUdpPortBase + 2i;
  *            TX kTxPortP + kTxPortR -> RX kRxPortP + kRxPortR (ST 2022-7); default RL
- *            pacing and scheduler quota; TX and RX BLOCK_GET, RX TIMING_PARSER_META.
+ *            pacing; scheduler quota kSchQuota1080p 1080p59 bandwidths, so TX packs
+ *            5 + 3. A user quota charges RX its bandwidth alone too, so RX also packs
+ *            5 + 3, 10 streams a core, on schedulers of its own
+ *            (RX_SEPARATE_VIDEO_LCORE); TX and RX BLOCK_GET, RX TIMING_PARSER_META.
  *            Every TX session is created before any RX one, so RX cannot take a TX
  *            scheduler.
  * Plan:      default pacing for kTestDurationS = 52 s.
@@ -180,6 +185,8 @@ TEST_F(NoCtxTest, st20p_redundant_1080p59_s8_equal_vrx_margin) {
     requireStrictTopology(why);
     if (IsSkipped() || HasFatalFailure()) return;
   }
+  ctx->para.data_quota_mbs_per_sch =
+      kSchQuota1080p * st20_1080p59_yuv422_10bit_bandwidth_mps();
   PhcFollowingClock ptp;
   const std::string ptp_error = ptp.open(ctx->para.port[kRxPortP], kPtpMinusPhcNs);
   ASSERT_TRUE(ptp_error.empty()) << ptp_error;

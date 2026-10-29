@@ -395,6 +395,11 @@ static int ut_txv_rxq_put(struct mt_rxq_entry* entry) {
   return 0;
 }
 
+/* Records a create's quota and gives no scheduler, so the create stops there. */
+static struct mtl_sch_impl* ut_txv_sch_get_by_socket(struct mtl_main_impl* impl,
+                                                     int quota_mbs, enum mt_sch_type type,
+                                                     mt_sch_mask_t mask, int socket);
+
 /* Seams: these calls in st_tx_video_session.c hit the mocks. */
 #define mt_rtcp_tx_create ut_txv_rtcp_tx_create
 #define mt_rtcp_tx_free ut_txv_rtcp_tx_free
@@ -414,7 +419,9 @@ static int ut_txv_rxq_put(struct mt_rxq_entry* entry) {
 #define mt_txq_put ut_txv_txq_put
 #define mt_txq_set_tx_bps ut_txv_txq_set_tx_bps
 #define mt_mempool_create_by_socket ut_txv_mempool_create_by_socket
+#define mt_sch_get_by_socket ut_txv_sch_get_by_socket
 #include "st2110/st_tx_video_session.c"
+#undef mt_sch_get_by_socket
 #undef mt_mempool_create_by_socket
 #undef mt_txq_set_tx_bps
 #undef mt_txq_put
@@ -3053,4 +3060,126 @@ int ut_txv_recovery_set_last_pkt_unsent(ut_txv_ctx* ctx) {
 
 int ut_txv_done_at_flush(const ut_txv_ctx* ctx, int leg) {
   return ctx->flush_seen[leg] ? ctx->done_at_flush[leg] : -1;
+}
+
+static int ut_txv_sch_quota_mbs;
+
+static struct mtl_sch_impl* ut_txv_sch_get_by_socket(struct mtl_main_impl* impl,
+                                                     int quota_mbs, enum mt_sch_type type,
+                                                     mt_sch_mask_t mask, int socket) {
+  (void)impl;
+  (void)type;
+  (void)mask;
+  (void)socket;
+  ut_txv_sch_quota_mbs = quota_mbs;
+  return NULL;
+}
+
+/* framebuff_max_size of the quota checks' ST22 sessions: a 1080p 4:2:2 10-bit frame */
+#define UT_TXV_ST22_QUOTA_FRAME_SIZE (1920 * 1080 * 5 / 2)
+/* the RTP fields of the quota checks' RTP sessions: a 1080p frame in 1200-byte pkts */
+#define UT_TXV_QUOTA_RTP_PKTS (4320)
+#define UT_TXV_QUOTA_RTP_PKT_SIZE (1200)
+
+static struct mtl_main_impl* ut_txv_quota_impl(bool user_quota) {
+  struct mtl_main_impl* impl = calloc(1, sizeof(*impl));
+  if (!impl) return NULL;
+  impl->type = MT_HANDLE_MAIN;
+  impl->user_para.num_ports = 1;
+  snprintf(impl->user_para.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "ut_txv");
+  if (user_quota) impl->user_para.data_quota_mbs_per_sch = 100000;
+  return impl;
+}
+
+static int ut_txv_quota_next_frame(void* priv, uint16_t* next_frame_idx,
+                                   struct st20_tx_frame_meta* meta) {
+  (void)priv;
+  (void)next_frame_idx;
+  (void)meta;
+  return -EIO;
+}
+
+static int ut_txv_quota_lines_ready(void* priv, uint16_t frame_idx,
+                                    struct st20_tx_slice_meta* meta) {
+  (void)priv;
+  (void)frame_idx;
+  (void)meta;
+  return -EIO;
+}
+
+static int ut_txv_quota_st22_next_frame(void* priv, uint16_t* next_frame_idx,
+                                        struct st22_tx_frame_meta* meta) {
+  (void)priv;
+  (void)next_frame_idx;
+  (void)meta;
+  return -EIO;
+}
+
+static int ut_txv_quota_rtp_done(void* priv) {
+  (void)priv;
+  return 0;
+}
+
+int ut_txv_st20_tx_quota_mbs(enum st20_type type, bool user_quota) {
+  struct mtl_main_impl* impl = ut_txv_quota_impl(user_quota);
+  if (!impl) return -ENOMEM;
+
+  struct st20_tx_ops ops;
+  memset(&ops, 0, sizeof(ops));
+  ops.name = "ut_txv_quota";
+  ops.type = type;
+  ops.num_port = 1;
+  snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut_txv");
+  ops.dip_addr[MTL_SESSION_PORT_P][0] = 239;
+  ops.dip_addr[MTL_SESSION_PORT_P][3] = 1;
+  ops.udp_port[MTL_SESSION_PORT_P] = 20000;
+  ops.width = 1920;
+  ops.height = 1080;
+  ops.fps = ST_FPS_P59_94;
+  ops.fmt = ST20_FMT_YUV_422_10BIT;
+  ops.payload_type = 112;
+  ops.framebuff_cnt = 2;
+  ops.get_next_frame = ut_txv_quota_next_frame;
+  ops.query_frame_lines_ready = ut_txv_quota_lines_ready;
+  ops.rtp_ring_size = 1024;
+  ops.rtp_frame_total_pkts = UT_TXV_QUOTA_RTP_PKTS;
+  ops.rtp_pkt_size = UT_TXV_QUOTA_RTP_PKT_SIZE;
+  ops.notify_rtp_done = ut_txv_quota_rtp_done;
+
+  ut_txv_sch_quota_mbs = -EINVAL;
+  st20_tx_handle handle = st20_tx_create(impl, &ops);
+  free(impl);
+  return handle ? -EEXIST : ut_txv_sch_quota_mbs;
+}
+
+int ut_txv_st22_tx_quota_mbs(enum st22_type type, bool user_quota) {
+  struct mtl_main_impl* impl = ut_txv_quota_impl(user_quota);
+  if (!impl) return -ENOMEM;
+
+  struct st22_tx_ops ops;
+  memset(&ops, 0, sizeof(ops));
+  ops.name = "ut_txv_quota";
+  ops.type = type;
+  ops.num_port = 1;
+  snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut_txv");
+  ops.dip_addr[MTL_SESSION_PORT_P][0] = 239;
+  ops.dip_addr[MTL_SESSION_PORT_P][3] = 1;
+  ops.udp_port[MTL_SESSION_PORT_P] = 20000;
+  ops.width = 1920;
+  ops.height = 1080;
+  ops.fps = ST_FPS_P59_94;
+  ops.payload_type = 112;
+  ops.pack_type = ST22_PACK_CODESTREAM;
+  ops.framebuff_cnt = 2;
+  ops.framebuff_max_size = UT_TXV_ST22_QUOTA_FRAME_SIZE;
+  ops.get_next_frame = ut_txv_quota_st22_next_frame;
+  ops.rtp_ring_size = 1024;
+  ops.rtp_frame_total_pkts = UT_TXV_QUOTA_RTP_PKTS;
+  ops.rtp_pkt_size = UT_TXV_QUOTA_RTP_PKT_SIZE;
+  ops.notify_rtp_done = ut_txv_quota_rtp_done;
+
+  ut_txv_sch_quota_mbs = -EINVAL;
+  st22_tx_handle handle = st22_tx_create(impl, &ops);
+  free(impl);
+  return handle ? -EEXIST : ut_txv_sch_quota_mbs;
 }

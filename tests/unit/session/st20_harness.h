@@ -24,6 +24,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "st20_api.h"
 #include "st_api.h"
 
 #ifdef __cplusplus
@@ -371,6 +372,10 @@ void ut20_session_detach(ut20_test_ctx* ctx);
  * `src`. */
 int ut20_ops_check_source(const struct st_rx_source_info* src);
 int ut20_st22_ops_check_source(const struct st_rx_source_info* src);
+
+/* The quota (Mb/s) st22_rx_create() asks a scheduler for, for a single-port 1080p59.94
+ * session of type, with or without a user data_quota_mbs_per_sch; < 0 on error. */
+int ut20_st22_rx_quota_mbs(enum st22_type type, bool user_quota);
 
 #ifdef __cplusplus
 }

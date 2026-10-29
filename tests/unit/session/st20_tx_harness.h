@@ -634,6 +634,14 @@ int ut_txv_recovery_set_last_pkt_unsent(ut_txv_ctx* ctx);
  * started, -1 for none */
 int ut_txv_done_at_flush(const ut_txv_ctx* ctx, int leg);
 
+/* The quota (Mb/s) st20_tx_create() asks a scheduler for, for a single-port 1080p59.94
+ * 4:2:2 10-bit session of type, with or without a user data_quota_mbs_per_sch; < 0 on
+ * error. */
+int ut_txv_st20_tx_quota_mbs(enum st20_type type, bool user_quota);
+/* The same from st22_tx_create(), its frame sessions of a 1080p 4:2:2 10-bit frame's size
+ * and its RTP ones of 4320 1200-byte pkts a frame. */
+int ut_txv_st22_tx_quota_mbs(enum st22_type type, bool user_quota);
+
 #ifdef __cplusplus
 }
 #endif
