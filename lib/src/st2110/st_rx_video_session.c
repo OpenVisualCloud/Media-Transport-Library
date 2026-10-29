@@ -972,8 +972,11 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     s->port_user_stats.stat_frames_incomplete++;
 
     /* record the miss pkts */
-    float pd_sz_per_pkt = (float)meta->frame_recv_size / slot->pkts_received;
-    int miss_pkts = (s->st20_frame_size - meta->frame_recv_size) / pd_sz_per_pkt;
+    int miss_pkts = 0;
+    if (meta->frame_recv_size) {
+      float pd_sz_per_pkt = (float)meta->frame_recv_size / slot->pkts_received;
+      miss_pkts = (s->st20_frame_size - meta->frame_recv_size) / pd_sz_per_pkt;
+    }
     if (miss_pkts > 0) s->port_user_stats.common.stat_pkts_unrecovered += miss_pkts;
     rv_slot_account_per_port_loss(
         s, slot, slot->pkts_received + (miss_pkts > 0 ? (uint32_t)miss_pkts : 0));
