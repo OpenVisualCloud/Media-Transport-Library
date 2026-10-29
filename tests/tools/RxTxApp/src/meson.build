@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2022 Intel Corporation
 
-sources = files('rxtx_app.c', 'args.c', 'parse_json.c', 'fmt.c',
+sources = files('rxtx_app.c', 'args.c', 'parse_json.c', 'fmt.c', 'app_cores.c',
 				'tx_st20p_app.c', 'rx_st20p_app.c',
 			'tx_st22p_app.c', 'rx_st22p_app.c',
 			'tx_ancillary_app.c', 'rx_ancillary_app.c',

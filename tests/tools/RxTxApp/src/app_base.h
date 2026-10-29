@@ -549,6 +549,15 @@ struct st_app_tx_st20p_session {
   int st20p_source_fd;
   bool st20p_frames_copied;
 
+  /* fused: the source is converted block by block into the frame */
+  bool fused;
+  bool render;                     /* fused from rendered blocks instead of the file */
+  struct st_frame st20p_src_block; /* fmt, width and linesize[] of a source block */
+  size_t st20p_src_plane_offset[ST_MAX_PLANES]; /* in a file frame or the render block */
+  uint8_t* st20p_render_block;
+  uint32_t render_frame_cnt;
+  bool st20p_convert_failed;
+
   struct st_display* display;
   double expect_fps;
 
@@ -651,6 +660,39 @@ struct st_app_rx_st30p_session {
   bool st30p_app_thread_stop;
 };
 
+struct st_app_core_thread {
+  pthread_t thread;
+  bool tracked; /* measured and pinned: counted on its core */
+  bool fixed;   /* a bind failed: it stays on its core, never moved */
+  int core;     /* index in st_app_cores.lcores it is pinned to, -1: none */
+  uint64_t cpu_ns;
+  double load; /* of one core, in the last tick */
+};
+
+/* the lcores the st20p session threads are pinned to, sized by their load */
+struct st_app_cores {
+  int requested; /* <0: auto, 0: unpinned, >0: that many, not resized */
+  unsigned int* lcores;
+  int cnt;
+  int fixed_cores; /* lcores[0, fixed_cores) hold the fixed threads */
+  struct st_app_core_thread* threads;
+  int thread_cnt;
+  /* scratch of the balancer */
+  double* core_load;
+  int* core_threads;
+  int* plan;
+  int* order;
+
+  uint64_t last_ns;
+  int ticks;
+  int shrink_ticks;
+  bool lcores_exhausted; /* until a shrink gives some back */
+  bool lcores_warned;
+  bool bind_warned;
+  double load; /* of all threads, in cores */
+  double max_core_load;
+};
+
 struct st_app_var_params {
   /* force sleep time(us) for sch tasklet sleep */
   uint64_t sch_force_sleep_us;
@@ -671,6 +713,7 @@ struct st_app_context {
 
   int lcore[ST_APP_MAX_LCORES];
   int rtp_lcore[ST_APP_MAX_LCORES];
+  struct st_app_cores st20p_cores;
   FILE* mtl_log_stream;
   uint64_t last_stat_time_ns;
 
@@ -736,6 +779,9 @@ struct st_app_context {
   char tx_st20p_url[ST_APP_URL_MAX_LEN]; /* send st20p content url*/
   struct st_app_tx_st20p_session* tx_st20p_sessions;
   int tx_st20p_session_cnt;
+  bool tx_st20p_fused;
+  bool tx_st20p_render;
+  int tx_video_fb_cnt;
 
   struct st_app_tx_st30p_session* tx_st30p_sessions;
   int tx_st30p_session_cnt;
@@ -765,6 +811,7 @@ struct st_app_context {
   char rx_st20p_url[ST_APP_URL_MAX_LEN]; /* save st20p content url*/
   struct st_app_rx_st20p_session* rx_st20p_sessions;
   int rx_st20p_session_cnt;
+  bool rx_pkt_convert;
 
   struct st_app_rx_st30p_session* rx_st30p_sessions;
   int rx_st30p_session_cnt;
