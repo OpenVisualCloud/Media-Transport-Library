@@ -10,6 +10,13 @@
 /* default desc nb for tx and rx */
 #define MT_DEV_RX_DESC (4096 / 2)
 #define MT_DEV_TX_DESC (4096 / 8)
+/* ice/iavf RX ring floors: 512 needs 32+ rx queues on the port, like a dense 1080p one
+ * (256 lost pkts there); fewer provisioned queues may be idle, so they get 1024 */
+#define MT_DEV_RX_DESC_DENSE_QUEUES (32)
+#define MT_DEV_RX_DESC_DENSE_MIN (4096 / 8)
+#define MT_DEV_RX_DESC_MIN (4096 / 4)
+/* L3 share the ice/iavf RX rings of a socket may fill, calibrated to 3 RX loads (KB) */
+#define MT_DEV_RX_L3_PERCENT (75)
 /* tx of a shaped port that frees sent mbufs each burst: 1024 chained video pkts, ~3.8 ms
  * at 1080p59.94, ride out a lost scheduler slice */
 #define MT_DEV_TX_DESC_DEEP (4096 / 2)
