@@ -2,6 +2,8 @@
 # Copyright(c) 2026 Intel Corporation
 
 import pytest
+import requests
+from compliance import compliance_client
 from compliance.compliance_client import PcapComplianceClient
 from create_pcap_file.netsniff import NetsniffRecorder
 from mtl_engine.application_base import Application
@@ -208,3 +210,94 @@ def test_netsniff_restores_promisc_after_a_second_start():
     recorder._enable_promisc(recorder.host.connection)
     recorder._restore_promisc()
     assert recorder.host.connection.cmds[-1] == "sudo ip link set dev eth0 promisc off"
+
+
+class _FakeClock:
+    """Time that only moves when the code under test sleeps."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
+class _FakeResponse:
+    def __init__(self, status_code, report=None):
+        self.status_code = status_code
+        self._report = report
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"HTTP {self.status_code}")
+
+    def json(self):
+        return self._report
+
+
+class _FakeEbuList:
+    """A LIST report endpoint that answers 404, then not-analyzed, then the report
+    once *ready_after* seconds have passed; *errors_first* calls raise first."""
+
+    def __init__(self, clock, ready_after, errors_first=0):
+        self.clock = clock
+        self.ready_after = ready_after
+        self.errors_first = errors_first
+        self.calls = 0
+
+    def get(self, url, **kwargs):
+        assert 0 < kwargs["timeout"] <= 10  # a hung LIST cannot outlast the wait
+        self.calls += 1
+        if self.calls <= self.errors_first:
+            raise requests.ConnectionError("connection reset")
+        if self.clock.now < self.ready_after / 2:
+            return _FakeResponse(404)
+        if self.clock.now < self.ready_after:
+            return _FakeResponse(200, {"analyzed": False})
+        return _FakeResponse(200, {"analyzed": True, "streams": [{}]})
+
+
+def _report_client(monkeypatch, ebu_list, clock):
+    monkeypatch.setattr(compliance_client.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(compliance_client.time, "sleep", clock.sleep)
+    client = object.__new__(PcapComplianceClient)
+    client.ebu_ip = "list"
+    client.pcap_id = "uuid"
+    client.token = "t"
+    client.proxies = {}
+    client.session = ebu_list
+    return client
+
+
+def test_ebu_report_waits_out_a_backlogged_analyser(monkeypatch):
+    clock = _FakeClock()
+    client = _report_client(monkeypatch, _FakeEbuList(clock, ready_after=30), clock)
+
+    report = client.download_report()
+
+    assert report and report["analyzed"]
+
+
+def test_ebu_report_gives_up_on_an_analyser_that_never_answers(monkeypatch):
+    clock = _FakeClock()
+    ebu_list = _FakeEbuList(clock, ready_after=float("inf"))
+    client = _report_client(monkeypatch, ebu_list, clock)
+
+    report = client.download_report()
+
+    assert report is False
+    assert compliance_client.REPORT_WAIT_S - 10 <= clock.now
+    assert clock.now <= compliance_client.REPORT_WAIT_S
+    assert ebu_list.calls < 30  # backs off instead of polling every second
+
+
+def test_ebu_report_survives_a_dropped_connection(monkeypatch):
+    clock = _FakeClock()
+    client = _report_client(monkeypatch, _FakeEbuList(clock, 2, errors_first=2), clock)
+
+    report = client.download_report()
+
+    assert report and report["analyzed"]

@@ -1044,13 +1044,16 @@ def media_file(media_ramdisk, request, hosts, test_config, output_files):
         # Per-host media_path from topology extra_info, fall back to test_config
         media_path = get_host_media_path(host, default=default_media_path)
         src_media_file_path = os.path.join(media_path, media_file_info["filename"])
-        # Probe source existence first so missing assets become SKIPPED rather
-        # than ERROR — they are environment/data issues, not test logic bugs.
+        # A missing asset fails the case's setup (ERROR), never skips it: a skip
+        # goes unnoticed, and hid 105 nightly cases for weeks.
         probe = host.connection.execute_command(
             f"test -f {src_media_file_path}", expected_return_codes=None
         )
         if probe.return_code != 0:
-            pytest.skip(f"Media file not present on {host}: {src_media_file_path}")
+            pytest.fail(
+                f"Media file not present on {host}: {src_media_file_path}",
+                pytrace=False,
+            )
         cmd = f"sudo cp {src_media_file_path} {ramdisk_media_file_path}"
         try:
             host.connection.execute_command(cmd)

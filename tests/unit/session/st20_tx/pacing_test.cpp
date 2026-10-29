@@ -932,19 +932,12 @@ class St20TxRlPlanTest : public ::testing::Test {
   void TearDown() override {
     ut_txv_destroy(ctx_);
   }
-  /* The NORMAL pad's: training drains a frame of 1200-byte pkts of 2.5-byte pixels, a
-   * pkt crossing or ending a line EXTRA and 6 bytes longer, then NORMAL ones to a
-   * multiple of 32, so its mean pad is longer. */
-  long double Drain(long double pad_interval, uint32_t width = 1920,
-                    uint32_t height = 1080) {
-    const uint64_t line = width * 5 / 2, frame = line * height;
-    const uint64_t pkts = (frame + 1199) / 1200;
-    uint64_t extra = 0;
-    for (uint64_t i = 0; i < pkts; i++)
-      if ((i * 1200 + 1200) >= (i * 1200 / line + 1) * line) extra++;
-    const long double pads = pkts + 32 - pkts % 32;
-    const long double share = kNormalPadSize * pads / (kNormalPadSize * pads + 6 * extra);
-    return ut_txv_pacing_trs(ctx_) * pad_interval / (pad_interval + 1) * share;
+  /* The NORMAL pad's: training drains a frame of 1200-byte pkts of 2.5-byte pixels, and
+   * a 1920-pixel line splits into whole pkts, so every training pad is NORMAL. */
+  long double Drain(long double pad_interval) {
+    EXPECT_EQ(ut_txv_normal_pkts(ctx_), (uint32_t)ut_txv_pipe_total_pkts(ctx_))
+        << "this raster trains on pads other than NORMAL";
+    return ut_txv_pacing_trs(ctx_) * pad_interval / (pad_interval + 1);
   }
   /* the shaper time of one token timeslot at most, the plan's aim past the target */
   static long double Aim(long double drain) {
@@ -1165,7 +1158,7 @@ TEST_F(St20TxRlPlanTest, PlanNeedsTheTrimPadsInItsWindow) {
   constexpr int64_t kTrimPads = 1262 / 64 + 64 / 8;
   ut_txv_set_rl_format(ctx_, 1920, 576, false, ST_FPS_P119_88);
   ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
-  const long double drain = Drain(164, 1920, 576);
+  const long double drain = Drain(164);
   const long double edge_ns =
       (kTrimPads - 1) * drain - 8 * ut_txv_pacing_trs(ctx_) - Aim(drain);
   const uint64_t edge_bps = (uint64_t)(kVfBurstSize * 1e9L / edge_ns);
@@ -1223,7 +1216,7 @@ TEST_F(St20TxRlPlanTest, TwoMicrosecondsBoundTheTimeslot) {
   ut_txv_set_rl_format(ctx_, 1920, kHeight, false, ST_FPS_P25);
   ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
   /* the drain as pad_interval grows */
-  const long double full = Drain(1e30L, 1920, kHeight);
+  const long double full = Drain(1e30L);
 
   for (long double drain : {kEdgeDrain - 0.05L, kEdgeDrain + 0.05L}) {
     SCOPED_TRACE((double)drain);

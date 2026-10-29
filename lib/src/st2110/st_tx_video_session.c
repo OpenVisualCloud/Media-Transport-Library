@@ -346,19 +346,30 @@ static int uint64_t_cmp(const void* a, const void* b) {
   return 0;
 }
 
+/* a BPM or GPM pkt carries a second row header when it crosses a line end, unless it
+ * holds the rest of the frame */
+static inline bool tv_pkt_has_extra_hdr(struct st_tx_video_session_impl* s,
+                                        uint32_t offset) {
+  uint32_t end = offset + s->st20_pkt_len;
+  return (end > (offset / s->st20_bytes_in_line + 1) * s->st20_bytes_in_line) &&
+         (end < s->st20_frame_size);
+}
+
 /* the pad tv_train_pacing() sends for pkt i of a frame */
 static enum st20_packet_type tv_train_pad_type(struct st_tx_video_session_impl* s,
                                                int i) {
-  if ((s->ops.type == ST20_TYPE_RTP_LEVEL) || (s->s_type == MT_ST22_HANDLE_TX_VIDEO) ||
-      (s->ops.packing == ST20_PACKING_GPM_SL))
+  if ((s->ops.type == ST20_TYPE_RTP_LEVEL) || (s->s_type == MT_ST22_HANDLE_TX_VIDEO))
     return ST20_PKT_TYPE_NORMAL;
-  /* frame type */
+  /* a GPM_SL line ends in a shorter pkt unless its bytes split evenly */
+  if (s->ops.packing == ST20_PACKING_GPM_SL)
+    return (s->st20_pkt_info[ST20_PKT_TYPE_LINE_TAIL].number &&
+            i % s->st20_pkts_in_line == s->st20_pkts_in_line - 1)
+               ? ST20_PKT_TYPE_LINE_TAIL
+               : ST20_PKT_TYPE_NORMAL;
+  /* frame type, as tv_build_st20() packs it: the last pkt holds the rest of the frame */
   uint32_t offset = s->st20_pkt_len * i;
-  uint16_t line1_number = offset / s->st20_bytes_in_line;
-  /* last pkt should be treated as normal pkt also */
-  if ((offset + s->st20_pkt_len) < (line1_number + 1) * s->st20_bytes_in_line)
-    return ST20_PKT_TYPE_NORMAL;
-  return ST20_PKT_TYPE_EXTRA;
+  if (offset + s->st20_pkt_len > s->st20_frame_size) return ST20_PKT_TYPE_FRAME_TAIL;
+  return tv_pkt_has_extra_hdr(s, offset) ? ST20_PKT_TYPE_EXTRA : ST20_PKT_TYPE_NORMAL;
 }
 
 /* the pads of a frame tv_train_pacing() sends, the remain NORMAL ones included */
@@ -1263,8 +1274,7 @@ static int tv_build_st20(struct st_tx_video_session_impl* s, struct rte_mbuf* pk
     line1_number = offset / s->st20_bytes_in_line;
     line1_offset =
         (offset % s->st20_bytes_in_line) * s->st20_pg.coverage / s->st20_pg.size;
-    if ((offset + s->st20_pkt_len > (line1_number + 1) * s->st20_bytes_in_line) &&
-        (offset + s->st20_pkt_len < s->st20_frame_size))
+    if (tv_pkt_has_extra_hdr(s, offset))
       e_rtp =
           rte_pktmbuf_mtod_offset(pkt, struct st20_rfc4175_extra_rtp_hdr*, sizeof(*hdr));
   }
@@ -1368,8 +1378,7 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
     line1_number = offset / s->st20_bytes_in_line;
     line1_offset =
         (offset % s->st20_bytes_in_line) * s->st20_pg.coverage / s->st20_pg.size;
-    if ((offset + s->st20_pkt_len > (line1_number + 1) * s->st20_bytes_in_line) &&
-        (offset + s->st20_pkt_len < s->st20_frame_size))
+    if (tv_pkt_has_extra_hdr(s, offset))
       e_rtp =
           rte_pktmbuf_mtod_offset(pkt, struct st20_rfc4175_extra_rtp_hdr*, sizeof(*hdr));
   }

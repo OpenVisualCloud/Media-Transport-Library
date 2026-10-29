@@ -67,7 +67,7 @@ def calculate_yuv_frame_size(width: int, height: int, file_format: str) -> int:
         case "YUV444PLANAR12LE" | "GBRPLANAR12LE" | "yuv444p12le" | "gbrp12le":
             # 3 planes (Y/U/V or G/B/R), 12-bit samples padded to 2 bytes each
             pixel_size = 6
-        case "yuv420p":
+        case "YUV420CUSTOM8" | "yuv420p":
             # I420: full Y plane + quarter-size U + quarter-size V
             pixel_size = 1.5
         case "UYVY" | "uyvy422":

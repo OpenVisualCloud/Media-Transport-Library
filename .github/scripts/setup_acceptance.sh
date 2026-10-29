@@ -327,7 +327,7 @@ nfs_assert_has_media() {
 	local f=ParkJoy_1920x1080_10bit_50Hz_P422_yuv422p10be_To_yuv422YCBCR10be.yuv
 	if [[ ! -f "/mnt/media/$f" ]]; then
 		warn "nfs: /mnt/media is mounted but expected file '$f' is absent."
-		warn "     Pytests will SKIP with 'Media file not present'."
+		warn "     Pytests will ERROR with 'Media file not present'."
 		warn "     Confirm that NFS_SOURCE points to the mtl_assets/media tree."
 	else
 		log "nfs: verified canonical media present (/mnt/media/$f)"
@@ -353,7 +353,7 @@ stage_nfs() {
 
   /mnt/media must contain the SMPTE reference YUV / WAV / PCM media used by
   almost every test under tests/acceptance/tests/single/. Without it nearly
-  all tests SKIP with "Media file not present".
+  all tests ERROR with "Media file not present".
 
   Re-run with NFS_SOURCE=<host>:<export>, e.g.
 
