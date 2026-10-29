@@ -218,6 +218,12 @@ If `rte_eth_tx_burst()` returns fewer than requested:
 | Socket TX/RX (×4 each) | Kernel socket backend | Only with `kernel:` backend |
 | SRSS (×1) | Shared RSS polling | Only for NICs without flow director |
 
+### App Threads Stay Off Scheduler Cores
+- A scheduler busy-polls its CPU: an app thread the kernel places there preempts it and breaks TX pacing, polling or blocking. In an isolated cpuset partition (no load balancing) unpinned threads stack on the CPU they start on instead.
+- Pin app threads with `mtl_get_lcore()` (an EAL lcore marked used, preferably of the primary port's NUMA node, through the MtlManager when connected, never one a scheduler holds), `mtl_bind_to_lcore()` and `mtl_put_lcore()`. Take them after `mtl_start()`, when the schedulers already hold theirs.
+- App lcores compete with what MTL takes at runtime: a scheduler started for video migration, and the RX packet lcore `rv_init_pkt_lcore()` takes once a session's detection ends (`st_rx_video_session.c`). Take only what the load needs.
+- Size the app cores by measured thread load, not by session count: per-thread CPU time, about 65 % busy per shared core is the safe bound. RxTxApp's st20p threads do this in `app_cores.c` (`--st20p_app_cores`, [doc/run.md](../../doc/run.md)).
+
 ---
 
 ## §3 Memory Management

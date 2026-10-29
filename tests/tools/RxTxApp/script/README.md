@@ -45,6 +45,14 @@ Run below cmd for the software timing parser test with loop mode.
 ./loop_TP_test.sh
 ```
 
+Run below cmd to check the fused st20p TX end to end: each TX hashes plane 0 of its source frame, which the RX converts back to the same format and compares. It needs yuv422p10le_1080p.yuv and v210_1080p.yuv.
+
+```bash
+../../build/app/RxTxApp --test_time 20 --video_sha_check --config_file loop_json/st20p_2v_fused.json
+```
+
+perf_json/1080p_144v_st20p_fused_tx_4port.json is a fused st20p TX sample at density: 144 1080p59 sessions over one VF on each of 4 ports, from yuv422p10le_1080p.yuv.
+
 ## 3. AFXDP loop test
 
 AFXDP loop test with all JSON files under afxdp_json directory.

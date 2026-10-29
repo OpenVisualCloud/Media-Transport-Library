@@ -4,6 +4,9 @@
 
 #include "tx_st20p_app.h"
 
+/* source lines per st20p_tx_convert_block(), so a block and its output stay in L2 */
+#define ST_APP_ST20P_BLOCK_LINES (8)
+
 static void app_tx_st20p_display_frame(struct st_app_tx_st20p_session* s,
                                        struct st_frame* frame) {
   struct st_display* d = s->display;
@@ -41,11 +44,69 @@ static int app_tx_st20p_notify_event(void* priv, enum st_event event, void* args
   return 0;
 }
 
+/* a legal-range luma ramp down the picture, scrolling each frame, on grey chroma */
+static void app_tx_st20p_render_block(struct st_app_tx_st20p_session* s,
+                                      struct st_frame* block, uint32_t line) {
+  const uint32_t black = 64, white = 940, grey = 512;
+
+  for (uint32_t l = 0; l < block->height; l++) {
+    uint32_t y = black + (line + l + s->render_frame_cnt * 2) % (white - black + 1);
+
+    if (block->fmt == ST_FRAME_FMT_V210) {
+      uint32_t* w = (uint32_t*)((uint8_t*)block->addr[0] + block->linesize[0] * l);
+      /* v210 words: Cb Y Cr, Y Cb Y, Cr Y Cb, Y Cr Y */
+      uint32_t words[2] = {grey | y << 10 | grey << 20, y | grey << 10 | y << 20};
+
+      for (size_t i = 0; i < block->linesize[0] / sizeof(*w); i++) w[i] = words[i & 1];
+    } else {
+      uint16_t* luma = (uint16_t*)((uint8_t*)block->addr[0] + block->linesize[0] * l);
+      uint16_t* cb = (uint16_t*)((uint8_t*)block->addr[1] + block->linesize[1] * l);
+      uint16_t* cr = (uint16_t*)((uint8_t*)block->addr[2] + block->linesize[2] * l);
+
+      for (uint32_t x = 0; x < block->width; x++) luma[x] = y;
+      for (uint32_t x = 0; x < block->width / 2; x++) cb[x] = cr[x] = grey;
+    }
+  }
+}
+
+/* convert the frame block by block from the source frame src, or from rendered blocks */
+static void app_tx_st20p_fused_frame(struct st_app_tx_st20p_session* s,
+                                     struct st_frame* frame, uint8_t* src) {
+  struct st_frame block = s->st20p_src_block;
+  uint8_t* base = src ? src : s->st20p_render_block;
+  uint32_t height = s->height;
+  int ret;
+
+  for (uint32_t line = 0; line < height; line += ST_APP_ST20P_BLOCK_LINES) {
+    block.height = ST_MIN(height - line, ST_APP_ST20P_BLOCK_LINES);
+    for (uint8_t plane = 0; plane < st_frame_fmt_planes(block.fmt); plane++)
+      block.addr[plane] = base + s->st20p_src_plane_offset[plane] +
+                          (src ? block.linesize[plane] * line : 0);
+    if (!src) app_tx_st20p_render_block(s, &block, line);
+    ret = st20p_tx_convert_block(s->handle, frame, &block, line, block.height);
+    if (ret < 0) {
+      if (!s->st20p_convert_failed)
+        err("%s(%d), convert block at line %u fail %d\n", __func__, s->idx, line, ret);
+      s->st20p_convert_failed = true;
+      return;
+    }
+  }
+}
+
 static void app_tx_st20p_build_frame(struct st_app_tx_st20p_session* s,
                                      struct st_frame* frame, size_t frame_size) {
   uint8_t* src = s->st20p_frame_cursor;
 
-  if (!s->ctx->tx_copy_once || !s->st20p_frames_copied) {
+  if (s->render) {
+    app_tx_st20p_fused_frame(s, frame, NULL);
+    s->render_frame_cnt++;
+    app_tx_st20p_display_frame(s, frame);
+    return;
+  }
+
+  if (s->fused) {
+    app_tx_st20p_fused_frame(s, frame, src);
+  } else if (!s->ctx->tx_copy_once || !s->st20p_frames_copied) {
     mtl_memcpy(frame->addr[0], src, frame_size);
   }
   /* point to next frame */
@@ -68,6 +129,7 @@ static void* app_tx_st20p_frame_thread(void* arg) {
   st20p_tx_handle handle = s->handle;
   int idx = s->idx;
   struct st_frame* frame;
+  uint8_t* src;
   uint8_t shas[SHA256_DIGEST_LENGTH];
   double frame_time;
 
@@ -86,9 +148,13 @@ static void* app_tx_st20p_frame_thread(void* arg) {
       warn("%s(%d), get frame time out\n", __func__, s->idx);
       continue;
     }
+    src = s->st20p_frame_cursor;
     app_tx_st20p_build_frame(s, frame, s->st20p_frame_size);
     if (s->sha_check) {
-      st_sha256((unsigned char*)frame->addr[0], st_frame_plane_size(frame, 0), shas);
+      if (s->fused) /* the source, as a receiver converting back to its format sees it */
+        st_sha256(src, s->st20p_src_block.linesize[0] * s->height, shas);
+      else
+        st_sha256((unsigned char*)frame->addr[0], st_frame_plane_size(frame, 0), shas);
       frame->user_meta = shas;
       frame->user_meta_size = sizeof(shas);
     }
@@ -112,6 +178,20 @@ static void* app_tx_st20p_frame_thread(void* arg) {
 static int app_tx_st20p_open_source(struct st_app_tx_st20p_session* s) {
   int fd;
   struct stat i;
+
+  if (s->render) {
+    size_t size = 0;
+
+    for (uint8_t plane = 0; plane < st_frame_fmt_planes(s->st20p_src_block.fmt); plane++)
+      size += s->st20p_src_block.linesize[plane] * ST_APP_ST20P_BLOCK_LINES;
+    s->st20p_render_block = mtl_hp_zmalloc(s->st, size, MTL_PORT_P);
+    if (!s->st20p_render_block) {
+      err("%s(%d), no hugepage memory for a %" PRIu64 " bytes render block\n", __func__,
+          s->idx, (uint64_t)size);
+      return -ENOMEM;
+    }
+    return 0;
+  }
 
   fd = st_open(s->st20p_source_url, O_RDONLY);
   if (fd < 0) {
@@ -184,6 +264,10 @@ static void app_tx_st20p_stop_source(struct st_app_tx_st20p_session* s) {
 }
 
 static int app_tx_st20p_close_source(struct st_app_tx_st20p_session* s) {
+  if (s->st20p_render_block) {
+    mtl_hp_free(s->st, s->st20p_render_block);
+    s->st20p_render_block = NULL;
+  }
   if (s->st20p_source_fd < 0 && s->st20p_source_begin) {
     mtl_hp_free(s->st, s->st20p_source_begin);
     s->st20p_source_begin = NULL;
@@ -247,6 +331,42 @@ static int app_tx_st20p_io_stat(struct st_app_tx_st20p_session* s) {
   return 0;
 }
 
+/* the source block geometry, checked once against the st20p_tx_convert_block() rules */
+static int app_tx_st20p_init_fused(struct st_app_tx_st20p_session* s,
+                                   struct st20p_tx_ops* ops) {
+  struct st_frame* block = &s->st20p_src_block;
+  enum st_frame_fmt fmt = ops->input_fmt;
+  uint32_t width_align = fmt == ST_FRAME_FMT_V210 ? 48 : 2;
+  uint32_t lines = s->render ? ST_APP_ST20P_BLOCK_LINES : s->height;
+  size_t offset = 0;
+
+  if (ops->transport_fmt != ST20_FMT_YUV_422_10BIT) {
+    err("%s(%d), fused needs the YUV_422_10bit transport format\n", __func__, s->idx);
+    return -EINVAL;
+  }
+  if ((fmt != ST_FRAME_FMT_YUV422PLANAR10LE && fmt != ST_FRAME_FMT_V210) ||
+      ops->width % width_align) {
+    err("%s(%d), no fused input %s at width %u\n", __func__, s->idx,
+        st_frame_fmt_name(fmt), ops->width);
+    return -EINVAL;
+  }
+
+  memset(block, 0, sizeof(*block));
+  block->fmt = fmt;
+  block->width = ops->width;
+  for (uint8_t plane = 0; plane < st_frame_fmt_planes(fmt); plane++) {
+    block->linesize[plane] = st_frame_least_linesize(fmt, ops->width, plane);
+    if (!block->linesize[plane]) {
+      err("%s(%d), no line size for %s at width %u\n", __func__, s->idx,
+          st_frame_fmt_name(fmt), ops->width);
+      return -EINVAL;
+    }
+    s->st20p_src_plane_offset[plane] = offset;
+    offset += block->linesize[plane] * lines;
+  }
+  return 0;
+}
+
 static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t* st20p,
                              struct st_app_tx_st20p_session* s) {
   int idx = s->idx, ret;
@@ -304,7 +424,7 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   ops.transport_packing = st20p ? st20p->info.transport_packing : ST20_PACKING_BPM;
   ops.transport_fmt = st20p ? st20p->info.transport_format : ST20_FMT_YUV_422_10BIT;
   ops.device = st20p ? st20p->info.device : ST_PLUGIN_DEVICE_AUTO;
-  ops.framebuff_cnt = 2;
+  ops.framebuff_cnt = ctx->tx_video_fb_cnt > 0 ? ctx->tx_video_fb_cnt : 2;
   ops.flags |= ST20P_TX_FLAG_BLOCK_GET;
   ops.start_vrx = ctx->tx_start_vrx;
   ops.pad_interval = ctx->tx_pad_interval;
@@ -355,6 +475,22 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   s->framebuff_cnt = ops.framebuff_cnt;
   s->st20p_source_fd = -1;
 
+  s->render = ctx->tx_st20p_render || (st20p && st20p->render);
+  s->fused = s->render || ctx->tx_st20p_fused || (st20p && st20p->fused);
+  if (!s->render && !s->st20p_source_url[0]) {
+    err("%s(%d), no st20p_url\n", __func__, idx);
+    return -EINVAL;
+  }
+  if (s->fused) {
+    ret = app_tx_st20p_init_fused(s, &ops);
+    if (ret < 0) return ret;
+    ops.input_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10; /* MTL converts nothing */
+  }
+  if (s->render && s->sha_check) {
+    warn("%s(%d), no sha check for a rendered source\n", __func__, idx);
+    s->sha_check = false;
+  }
+
   handle = st20p_tx_create(ctx->st, &ops);
   if (!handle) {
     err("%s(%d), st20p_tx_create fail\n", __func__, idx);
@@ -362,7 +498,11 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
     return -EIO;
   }
   s->handle = handle;
-  s->st20p_frame_size = st20p_tx_frame_size(handle);
+  if (s->fused)
+    s->st20p_frame_size =
+        st_frame_size(s->st20p_src_block.fmt, ops.width, ops.height, ops.interlaced);
+  else
+    s->st20p_frame_size = st20p_tx_frame_size(handle);
 
   ret = app_tx_st20p_open_source(s);
   if (ret < 0) {
