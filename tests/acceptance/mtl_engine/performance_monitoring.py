@@ -18,9 +18,68 @@ FPS_TOLERANCE_PCT = 0.99  # 99% of requested FPS required for pass
 # so 4 samples needs a run of roughly 70 s or more.
 FPS_MIN_STEADY_SAMPLES = 4  # Refuse to judge a run on fewer stat dumps than this
 
+# What RxTxApp prints, once, when a session's source no longer fits in
+# hugepages and it reads through mmap() instead (tx_st20p_app.c).
+HUGEPAGE_FALLBACK_MARKER = "source malloc on hugepage fail"
+
 # Shared timestamp regex (compiled once)
 _TS_RE = re.compile(r"MTL:\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}),?")
 _TS_FMT = "%Y-%m-%d %H:%M:%S"
+
+
+def wire_balance(tx_host, tx_vfs, rx_host, rx_vfs) -> list[int] | None:
+    """Return, per leg, the packets the TX port sent minus those the RX port got.
+
+    Both are the MAC's own unicast counters on the PF behind each VF, and a
+    clean path delivers every packet, so the change across an iteration is
+    what the network lost on that leg.  None if a counter cannot be read (a NIC
+    without ice's .nic statistics, or the host not answering).
+    """
+    counts = []
+    for host, vfs, counter in (
+        (tx_host, tx_vfs, "tx_unicast.nic"),
+        (rx_host, rx_vfs, "rx_unicast.nic"),
+    ):
+        try:
+            result = host.connection.execute_command(
+                "; ".join(
+                    f"ethtool -S $(ls /sys/bus/pci/devices/{vf}/physfn/net) | "
+                    f"awk '$1 == \"{counter}:\" {{print $2}}'"
+                    for vf in vfs
+                ),
+                shell=True,
+                timeout=20,
+                expected_return_codes=None,
+            )
+            values = (result.stdout or "").split()
+        except Exception as e:
+            logger.warning(f"{host.name}: cannot read {counter}: {e}")
+            return None
+        if len(values) != len(vfs) or not all(v.isdigit() for v in values):
+            logger.warning(f"{host.name}: no {counter} for {vfs}: {values}")
+            return None
+        counts.append([int(v) for v in values])
+
+    sent, received = counts
+    return [s - r for s, r in zip(sent, received)]
+
+
+def parse_cpus(text: str) -> list[int]:
+    cpus = []
+    for part in filter(None, text.strip().split(",")):
+        lo, _, hi = part.partition("-")
+        cpus.extend(range(int(lo), int(hi or lo) + 1))
+    return cpus
+
+
+def format_cpus(cpus) -> str:
+    ranges: list[list[int]] = []
+    for c in sorted(cpus):
+        if ranges and c == ranges[-1][1] + 1:
+            ranges[-1][1] = c
+        else:
+            ranges.append([c, c])
+    return ",".join(str(a) if a == b else f"{a}-{b}" for a, b in ranges)
 
 
 # ── FPS Monitoring ──────────────────────────────────────────────────────

@@ -124,3 +124,7 @@ uint64_t ut_clock_tick(void) {
 uint64_t ut_clock_ns(void) {
   return g_clock_ns;
 }
+
+void ut_clock_advance(uint64_t ns) {
+  g_clock_ns += ns;
+}

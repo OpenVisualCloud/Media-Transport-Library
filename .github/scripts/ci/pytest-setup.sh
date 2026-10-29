@@ -58,7 +58,7 @@ count_pci_functions() {
 # port 1". Ask the card how many ports it has rather than asking the lab file to
 # name each one, so the fleet's existing lab files keep working.
 perf_card_ports() {
-	local declared=$1 vendor_device ports
+	local declared=$1 max=${2:-2} vendor_device ports list i
 	# Already a list: whoever wrote it meant it.
 	if [[ ${declared} == *,* ]]; then
 		printf '%s\n' "${declared}"
@@ -88,14 +88,15 @@ perf_card_ports() {
 		lspci -Dnn -d '::0200' >&2 || true
 		return 1
 	fi
-	# Capped at two for the reason resolve_nic caps it, and because ST2022-7 has
-	# two legs: a third entry would only make VFs on a port nothing binds.
+	# Capped at two by default, for the reason resolve_nic caps it and because
+	# ST2022-7 has two legs: a third entry would only make VFs on a port nothing
+	# binds. perf-compare asks for four, both ports of two cards.
 	echo "Resolved perf card ${vendor_device} (${ports} ports)" >&2
-	if [[ ${ports} -ge 2 ]]; then
-		printf '%s,%s\n' "${vendor_device}" "${vendor_device}"
-	else
-		printf '%s\n' "${vendor_device}"
-	fi
+	list=${vendor_device}
+	for ((i = 1; i < ports && i < max; i++)); do
+		list+=",${vendor_device}"
+	done
+	printf '%s\n' "${list}"
 }
 
 # How the tests attach to a card, given how many of its ports this host has.
@@ -464,7 +465,7 @@ pci-env)
 	# Assigned rather than substituted straight into printf: set -e only aborts
 	# on a failing command substitution when it is the whole assignment, and a
 	# card the host does not have has to stop the job, not export an empty list.
-	pci_device=$(perf_card_ports "${PCI_DEVICE:-${PERF_PCI_DEVICE:-8086:12d2}}")
+	pci_device=$(perf_card_ports "${PCI_DEVICE:-${PERF_PCI_DEVICE:-8086:12d2}}" "${PERF_PORTS:-2}")
 	printf 'PCI_DEVICE=%s\n' "$pci_device" >>"${GITHUB_ENV:?GITHUB_ENV is required}"
 	;;
 config-single)

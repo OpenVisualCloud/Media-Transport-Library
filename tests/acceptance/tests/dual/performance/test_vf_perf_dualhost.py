@@ -23,8 +23,10 @@ from mtl_engine.execute import kill_stale_processes, read_remote_log, run
 from mtl_engine.integrity import calculate_yuv_frame_size
 from mtl_engine.media_files import yuv_files_422rfc10
 from mtl_engine.performance_monitoring import (
+    HUGEPAGE_FALLBACK_MARKER,
     CpuCoreMonitor,
     display_session_results,
+    format_cpus,
     log_cpu_core_results,
     monitor_dev_rate,
     monitor_rx_fps,
@@ -33,6 +35,8 @@ from mtl_engine.performance_monitoring import (
     monitor_tx_fps,
     monitor_tx_frames,
     monitor_tx_throughput,
+    parse_cpus,
+    wire_balance,
 )
 from mtl_engine.rxtxapp import RxTxApp
 
@@ -131,10 +135,6 @@ MAX_SESSIONS = {
 # shrink.
 PERF_SOURCE_FRAMES = 24
 
-# What RxTxApp prints, once, when a session's source no longer fits in
-# hugepages and it reads through mmap() instead (tx_st20p_app.c).
-HUGEPAGE_FALLBACK_MARKER = "source malloc on hugepage fail"
-
 CRASH_RECOVERY_WAIT = 30  # Seconds to wait after VF reset for link recovery
 
 
@@ -210,43 +210,6 @@ def _has_hugepage_source_fallback(tx_lines) -> bool:
     return any(HUGEPAGE_FALLBACK_MARKER in line for line in tx_lines)
 
 
-def _wire_balance(tx_host, tx_vfs, rx_host, rx_vfs) -> list[int] | None:
-    """Return, per leg, the packets the TX port sent minus those the RX port got.
-
-    Both are the MAC's own unicast counters on the PF behind each VF, and a
-    clean path delivers every packet, so the change across an iteration is
-    what the network lost on that leg.  None if a counter cannot be read (a NIC
-    without ice's .nic statistics, or the host not answering).
-    """
-    counts = []
-    for host, vfs, counter in (
-        (tx_host, tx_vfs, "tx_unicast.nic"),
-        (rx_host, rx_vfs, "rx_unicast.nic"),
-    ):
-        try:
-            result = host.connection.execute_command(
-                "; ".join(
-                    f"ethtool -S $(ls /sys/bus/pci/devices/{vf}/physfn/net) | "
-                    f"awk '$1 == \"{counter}:\" {{print $2}}'"
-                    for vf in vfs
-                ),
-                shell=True,
-                timeout=20,
-                expected_return_codes=None,
-            )
-            values = (result.stdout or "").split()
-        except Exception as e:
-            logger.warning(f"{host.name}: cannot read {counter}: {e}")
-            return None
-        if len(values) != len(vfs) or not all(v.isdigit() for v in values):
-            logger.warning(f"{host.name}: no {counter} for {vfs}: {values}")
-            return None
-        counts.append([int(v) for v in values])
-
-    sent, received = counts
-    return [s - r for s, r in zip(sent, received)]
-
-
 def _apply_side_kwargs(
     kwargs,
     side,
@@ -270,21 +233,29 @@ def _apply_side_kwargs(
         kwargs["nic_port"] = vf
 
 
-def _get_isolcpus(host) -> str | None:
-    """Return the isolcpus= range from the remote host's kernel cmdline.
+def _get_isolcpus(host, port: str) -> str | None:
+    """Return the isolated CPUs of *port*'s NUMA node on *host*, one per core.
 
-    Parses /proc/cmdline on *host* and returns the value of the isolcpus=
-    boot parameter (e.g. "4-20,34-50,132-148,162-178"), or None if the
-    host was not booted with isolcpus.
+    E.g. "4-20" of isolated "4-20,68-84,132-148,196-212" for a port on node 0, or
+    None if that node has none. Only the first hardware thread of each core is
+    kept, so no two schedulers share a core; the CPUs of other nodes would only
+    add idle EAL threads there, and keep their cores online in
+    optimize_cpu_cores_for_turbo().
     """
     try:
-        result = host.connection.execute_command("cat /proc/cmdline", shell=True)
-        cmdline = (result.stdout or "").strip()
-        for token in cmdline.split():
-            if token.startswith("isolcpus="):
-                value = token.split("=", 1)[1]
-                logger.info(f"Host {host.name}: isolcpus={value}")
-                return value
+        result = host.connection.execute_command(
+            f"n=$(cat /sys/bus/pci/devices/{port}/numa_node); [ $n -ge 0 ] || n=0; "
+            "cat /sys/devices/system/cpu/isolated /sys/devices/system/node/node$n/cpulist "
+            "/sys/devices/system/cpu/cpu[0-9]*/topology/thread_siblings_list",
+            shell=True,
+        )
+        isolated, node, *siblings = (result.stdout or "").split("\n")
+        cores = {min(parse_cpus(line)) for line in siblings if line.strip()}
+        value = format_cpus(set(parse_cpus(isolated)) & set(parse_cpus(node)) & cores)
+        logger.info(
+            f"Host {host.name}: isolated CPUs of {port}'s node: {value or None}"
+        )
+        return value or None
     except Exception as e:
         logger.warning(f"Host {host.name}: could not read isolcpus: {e}")
     return None
@@ -476,7 +447,7 @@ def _run_iteration(
             )
 
     # Pin DPDK lcores to isolated CPUs (shields from OS timer ticks/RCU).
-    isolcpus = _get_isolcpus(measured_host)
+    isolcpus = _get_isolcpus(measured_host, tx_vf if is_tx else rx_vf)
     if isolcpus:
         sut_extra_kwargs["lcores"] = isolcpus
 
@@ -491,7 +462,7 @@ def _run_iteration(
     # every iteration of the sweep.
     companion_extra_kwargs["disable_migrate"] = True
 
-    companion_isolcpus = _get_isolcpus(companion_host)
+    companion_isolcpus = _get_isolcpus(companion_host, rx_vf if is_tx else tx_vf)
     if companion_isolcpus:
         companion_extra_kwargs["lcores"] = companion_isolcpus
 
@@ -578,7 +549,7 @@ def _run_iteration(
     # A TX verdict is taken at the sender, so only RX depends on delivery.
     tx_vfs = [tx_vf] + ([tx_vf_r] if redundant else [])
     rx_vfs = [rx_vf] + ([rx_vf_r] if redundant else [])
-    balance = None if is_tx else _wire_balance(tx_host, tx_vfs, rx_host, rx_vfs)
+    balance = None if is_tx else wire_balance(tx_host, tx_vfs, rx_host, rx_vfs)
 
     companion_process = companion_host.connection.start_process(
         f"mkdir -p $(dirname {companion_log}) && "
@@ -702,7 +673,7 @@ def _run_iteration(
         if balance is not None:
             # Stopped first: reads taken while packets are in flight disagree.
             companion_app.stop_process()
-            after = _wire_balance(tx_host, tx_vfs, rx_host, rx_vfs)
+            after = wire_balance(tx_host, tx_vfs, rx_host, rx_vfs)
             if after is not None:
                 losses = [a - b for a, b in zip(after, balance)]
 
@@ -950,7 +921,7 @@ def _run_session_sweep(
     original_online_cpus: str | None = None
     measured_host = tx_host if is_tx else rx_host
     if is_tx and single_core:
-        isolcpus = _get_isolcpus(measured_host)
+        isolcpus = _get_isolcpus(measured_host, tx_vf)
         original_online_cpus = optimize_cpu_cores_for_turbo(measured_host, isolcpus)
 
     def _is_infra_failure(detail: str) -> bool:

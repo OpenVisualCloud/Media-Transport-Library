@@ -30,6 +30,23 @@ performance)
 	[[ -n ${SUT_APP_ARGS:-} ]] && args+=("--sut_app_args=$SUT_APP_ARGS")
 	(cd "$acceptance_dir" && "${pytest[@]}" "${args[@]}" ./tests/dual/performance)
 	;;
+perf-compare)
+	video=${VIDEO:-1080p59}
+	# a nics or pixel_format choice of the workflow reads "<word>: what it does"
+	nics=${NICS:-single} pixel_format=${PIXEL_FORMAT:-none}
+	args=(-k "${video%p*}p and ${video##*p}fps" --template=html/index.html
+		--report="${acceptance_dir}/report.html"
+		--perf_compare_slots="${PERF_COMPARE_SLOTS:?PERF_COMPARE_SLOTS is required}"
+		--perf_compare_labels="${PERF_COMPARE_LABELS:-A,B}"
+		--perf_compare_args_a="${ARGS_A:-}" --perf_compare_args_b="${ARGS_B:-}"
+		--perf_compare_dma="${DMA:-none}" --perf_compare_nics="${nics%%:*}"
+		--perf_compare_single_core="${SINGLE_CORE:-none}"
+		--perf_compare_pixel_format="${pixel_format%%:*}")
+	[[ -n ${SESSIONS:-} ]] && args+=(--perf_compare_sessions "$SESSIONS")
+	[[ -n ${ROUNDS:-} ]] && args+=(--perf_compare_rounds "$ROUNDS")
+	[[ -n ${CORES:-} ]] && args+=(--perf_compare_cores "$CORES")
+	(cd "$acceptance_dir" && "${pytest[@]}" "${args[@]}" ./tests/dual/performance/test_perf_compare.py)
+	;;
 nightly)
 	(cd "$acceptance_dir" && "${pytest[@]}" -m nightly --template=html/index.html \
 		--report=report.html "./tests/single/${TEST_PATH:?TEST_PATH is required}")
@@ -58,7 +75,7 @@ smoke | smoke-low-bandwidth)
 	(cd "$acceptance_dir" && "${pytest[@]}" "${args[@]}" ./tests)
 	;;
 *)
-	echo "Usage: $0 {custom|performance|nightly|smoke|smoke-low-bandwidth}" >&2
+	echo "Usage: $0 {custom|performance|perf-compare|nightly|smoke|smoke-low-bandwidth}" >&2
 	exit 2
 	;;
 esac
