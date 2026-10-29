@@ -657,6 +657,13 @@ struct mtl_init_params {
   /**
    * Optional. Number of receive descriptors for each NIC RX queue, 0 means determined by
    * lib. It will affect the memory usage and the performance.
+   * The lib default on ice/iavf ports is the largest power of 2 up to 2048 at which the
+   * RX mbufs of this process's RX queues on the port's NUMA socket fit in 3/4 of its L3,
+   * but at least 1024, or 512 on a port with 32 or more RX queues. It is 2048 on other
+   * drivers, with MTL_FLAG_TASKLET_THREAD, or when the L3 size is unknown or the L3 is
+   * not shared by exactly the node's CPUs. Audio and ancillary sessions count as RX
+   * queues, so on ports mixing high-rate video with many of them set nb_rx_desc (2048
+   * for 2160p).
    */
   uint16_t nb_rx_desc;
 

@@ -952,6 +952,88 @@ static bool dev_tx_deep(struct mt_interface* inf) {
          !mt_get_user_params(inf->parent)->nb_tx_desc;
 }
 
+static uint16_t dev_rx_data_room(struct mtl_main_impl* impl, struct mt_interface* inf) {
+  if (impl->rx_pool_data_size) return impl->rx_pool_data_size; /* user suggested */
+  /* to avoid igc/ixgbe nic split mbuf */
+  if (inf->drv_info.drv_type == MT_DRV_IGC || inf->drv_info.drv_type == MT_DRV_IXGBE)
+    return MT_MBUF_DEFAULT_DATA_SIZE;
+  return ST_PKT_MAX_ETHER_BYTES;
+}
+
+static uint16_t dev_sys_rx_queues(struct mtl_main_impl* impl) {
+  if (mt_user_no_system_rxq(impl)) return 0;
+  uint16_t queues = 1; /* cni rx */
+  if (mt_user_ptp_service(impl)) queues++;
+#ifdef MTL_HAS_TAP
+  queues++;
+#endif
+  return queues;
+}
+
+/* bytes a mbuf takes in an ice/iavf session queue's pool: its own or the mono one */
+static uint32_t dev_rx_elem_size(struct mtl_main_impl* impl, struct mt_interface* inf) {
+  uint32_t data_room = mt_user_rx_mono_pool(impl) ? MT_MBUF_DEFAULT_DATA_SIZE
+                                                  : dev_rx_data_room(impl, inf);
+
+  data_room = RTE_ALIGN_CEIL(data_room, MT_MBUF_CACHE_SIZE) + MT_MBUF_HEADROOM_SIZE;
+  return rte_mempool_calc_obj_size(
+      sizeof(struct rte_mbuf) + sizeof(struct mt_muf_priv_data) + data_room, 0, NULL);
+}
+
+/* rx queues mt_dev_if_init() gives port; max_rx_queues is 0 until it reads dev_info */
+static uint32_t dev_port_rx_queues(struct mtl_main_impl* impl, enum mtl_port port) {
+  struct mtl_init_params* p = mt_get_user_params(impl);
+  uint16_t max_rx_queues = mt_if(impl, port)->dev_info.max_rx_queues;
+  uint32_t nb_rx_q = p->rx_queues_cnt[port];
+
+  if (mt_pmd_is_dpdk_af_packet(impl, port)) return 1;
+  if (mt_pmd_is_dpdk_user(impl, port)) {
+    if (p->rx_sessions_cnt_max) nb_rx_q = p->rx_sessions_cnt_max;
+    nb_rx_q += dev_sys_rx_queues(impl);
+  }
+  if (max_rx_queues) nb_rx_q = RTE_MIN(nb_rx_q, max_rx_queues);
+  return nb_rx_q;
+}
+
+static uint32_t dev_socket_rx_queues(struct mtl_main_impl* impl, int socket) {
+  uint32_t nb_rx_q = 0;
+
+  for (int i = 0; i < mt_num_ports(impl); i++)
+    if (mt_socket_id(impl, i) == socket) nb_rx_q += dev_port_rx_queues(impl, i);
+  return nb_rx_q;
+}
+
+/* deepest pow2 ring to 2048 whose mbufs on all nb_rx_q queues fit the L3 share, at least
+ * the floor of a port with port_rx_q queues */
+static uint16_t dev_rx_desc_by_l3(uint64_t l3_size, uint32_t nb_rx_q, uint32_t port_rx_q,
+                                  uint32_t elem_size) {
+  if (!l3_size || !nb_rx_q) return MT_DEV_RX_DESC;
+  uint32_t min_desc = port_rx_q >= MT_DEV_RX_DESC_DENSE_QUEUES ? MT_DEV_RX_DESC_DENSE_MIN
+                                                               : MT_DEV_RX_DESC_MIN;
+  uint64_t fit = l3_size * MT_DEV_RX_L3_PERCENT / 100 / ((uint64_t)nb_rx_q * elem_size);
+  return RTE_MAX(rte_align32prevpow2(RTE_MIN(fit, MT_DEV_RX_DESC)), min_desc);
+}
+
+static uint16_t dev_rx_desc_default(struct mt_interface* inf) {
+  struct mtl_main_impl* impl = inf->parent;
+  enum mt_driver_type drv = inf->drv_info.drv_type;
+
+  /* measured on ice/iavf only; shared cpus may stall longer than a 512 ring lasts */
+  if ((drv != MT_DRV_ICE && drv != MT_DRV_IAVF) || mt_user_tasklet_thread(impl))
+    return MT_DEV_RX_DESC;
+  uint32_t elem_size = dev_rx_elem_size(impl, inf);
+  uint32_t nb_rx_q = dev_socket_rx_queues(impl, inf->socket_id);
+  uint32_t port_rx_q = dev_port_rx_queues(impl, inf->port);
+  uint64_t l3_size = mt_l3_size(inf->socket_id);
+  uint16_t nb_rx_desc = dev_rx_desc_by_l3(l3_size, nb_rx_q, port_rx_q, elem_size);
+
+  info("%s(%d), nb_rx_desc %u for l3 %" PRIu64
+       " over %u rx queues of socket %d, %u of the port, mbuf %u\n",
+       __func__, inf->port, nb_rx_desc, l3_size, nb_rx_q, inf->socket_id, port_rx_q,
+       elem_size);
+  return nb_rx_desc;
+}
+
 static int dev_config_port(struct mt_interface* inf) {
   struct mtl_main_impl* impl = inf->parent;
   uint16_t port_id = inf->port_id;
@@ -1042,7 +1124,7 @@ static int dev_config_port(struct mt_interface* inf) {
 
   /* apply if user has rx_tx_desc config */
   if (p->nb_tx_desc) nb_tx_desc = p->nb_tx_desc;
-  if (p->nb_rx_desc) nb_rx_desc = p->nb_rx_desc;
+  nb_rx_desc = p->nb_rx_desc ? p->nb_rx_desc : dev_rx_desc_default(inf);
 
   ret = rte_eth_dev_adjust_nb_rx_tx_desc(port_id, &nb_rx_desc, &nb_tx_desc);
   if (ret < 0) {
@@ -1420,16 +1502,9 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
         if (q < inf->system_rx_queues_end)
           mbuf_pool = mt_mempool_create_common(impl, inf->port, pool_name, mbuf_elements);
         else {
-          uint16_t data_room_sz = ST_PKT_MAX_ETHER_BYTES;
-          /* to avoid igc/igxbe nic split mbuf */
-          if (inf->drv_info.drv_type == MT_DRV_IGC ||
-              inf->drv_info.drv_type == MT_DRV_IXGBE)
-            data_room_sz = MT_MBUF_DEFAULT_DATA_SIZE;
-          if (impl->rx_pool_data_size) /* user suggested data room size */
-            data_room_sz = impl->rx_pool_data_size;
-          mbuf_pool = mt_mempool_create(impl, inf->port, pool_name, mbuf_elements,
-                                        MT_MBUF_CACHE_SIZE,
-                                        sizeof(struct mt_muf_priv_data), data_room_sz);
+          mbuf_pool = mt_mempool_create(
+              impl, inf->port, pool_name, mbuf_elements, MT_MBUF_CACHE_SIZE,
+              sizeof(struct mt_muf_priv_data), dev_rx_data_room(impl, inf));
         }
       }
       if (!mbuf_pool) {
@@ -2557,18 +2632,8 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
 
       inf->nb_rx_q =
           p->rx_sessions_cnt_max ? p->rx_sessions_cnt_max : p->rx_queues_cnt[i];
-      if (!mt_user_no_system_rxq(impl)) {
-        inf->nb_rx_q++;
-        inf->system_rx_queues_end = 1; /* cni rx */
-        if (mt_user_ptp_service(impl)) {
-          inf->nb_rx_q++;
-          inf->system_rx_queues_end++;
-        }
-#ifdef MTL_HAS_TAP
-        inf->nb_rx_q++;
-        inf->system_rx_queues_end++;
-#endif
-      }
+      inf->system_rx_queues_end = dev_sys_rx_queues(impl);
+      inf->nb_rx_q += inf->system_rx_queues_end;
       inf->hdr_split_rx_queues_end =
           inf->system_rx_queues_end + p->nb_rx_hdr_split_queues;
     }

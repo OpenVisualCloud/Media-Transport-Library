@@ -58,6 +58,8 @@ struct ut_dev_ctx {
   int fail_tm_queue_node_add_error;
   int fail_tm_commit_error;
   struct rte_mempool* sys_tx_pool;
+  int l3_socket;
+  uint64_t l3_size;
 };
 
 static struct ut_dev_ctx* ut_active_ctx;
@@ -104,6 +106,7 @@ static int ut_rte_tm_shaper_profile_add(uint16_t port_id, uint32_t shaper_profil
 static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
                                       struct rte_tm_error* error);
 static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
+static uint64_t ut_mt_l3_size(int socket);
 
 #define rte_eth_rx_queue_setup ut_rte_eth_rx_queue_setup
 #define rte_eth_tx_queue_setup ut_rte_eth_tx_queue_setup
@@ -127,10 +130,12 @@ static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
 #define rte_eth_tx_burst ut_eth_tx_burst
 #define rte_eth_tx_done_cleanup ut_eth_tx_done_cleanup
 #define mt_get_tsc ut_dev_tsc
+#define mt_l3_size ut_mt_l3_size
 #define MT_DEV_TX_CLEANUP_FREES (ut_dev_tx_cleanup_frees)
 /* The pacing tests cover the iavf queue rate clear, which needs DPDK 26.07.91_mtl_. */
 #define MT_DEV_HAS_IAVF_TM_QOS_CHECK
 #include "dev/mt_dev.c"
+#undef mt_l3_size
 #undef mt_get_tsc
 #undef rte_eth_tx_done_cleanup
 #undef rte_eth_tx_burst
@@ -372,6 +377,18 @@ static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
   return ret;
 }
 
+static uint64_t ut_mt_l3_size(int socket) {
+  ut_dev_ctx* ctx = ut_active_ctx;
+  return ctx && socket == ctx->l3_socket ? ctx->l3_size : 0;
+}
+
+/* the real reader: mt_util.h, included under the #define, declared ut_mt_l3_size() */
+uint64_t mt_l3_size(int socket);
+
+uint64_t ut_dev_host_l3_size(int socket) {
+  return mt_l3_size(socket);
+}
+
 ut_dev_ctx* ut_dev_create_ctx(void) {
   ut_dev_ctx* ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
@@ -503,6 +520,94 @@ int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,
   ut_active_ctx = ctx;
   ret = dev_config_port(inf);
   return ret < 0 ? ret : inf->nb_rx_desc;
+}
+
+uint16_t ut_dev_rx_desc_by_l3(uint64_t l3_size, uint32_t nb_rx_q, uint32_t port_rx_q,
+                              uint32_t elem_size) {
+  return dev_rx_desc_by_l3(l3_size, nb_rx_q, port_rx_q, elem_size);
+}
+
+void ut_dev_set_l3_size(ut_dev_ctx* ctx, int socket, uint64_t l3_size) {
+  ctx->l3_socket = socket;
+  ctx->l3_size = l3_size;
+}
+
+void ut_dev_set_rx_port(ut_dev_ctx* ctx, enum mtl_port port, int socket,
+                        uint16_t rx_queues_cnt) {
+  ctx->impl.inf[port].socket_id = socket;
+  ctx->impl.user_para.rx_queues_cnt[port] = rx_queues_cnt;
+}
+
+void ut_dev_set_pmd(ut_dev_ctx* ctx, enum mtl_port port, enum mtl_pmd_type pmd) {
+  ctx->impl.user_para.pmd[port] = pmd;
+}
+
+void ut_dev_set_max_rx_queues(ut_dev_ctx* ctx, enum mtl_port port,
+                              uint16_t max_rx_queues) {
+  ctx->impl.inf[port].dev_info.max_rx_queues = max_rx_queues;
+}
+
+void ut_dev_set_rx_sessions_cnt_max(ut_dev_ctx* ctx, uint16_t cnt) {
+  ctx->impl.user_para.rx_sessions_cnt_max = cnt;
+}
+
+void ut_dev_set_rx_mono_pool(ut_dev_ctx* ctx) {
+  ctx->impl.user_para.flags |= MTL_FLAG_RX_MONO_POOL;
+}
+
+void ut_dev_set_rx_pool_data_size(ut_dev_ctx* ctx, uint16_t size) {
+  ctx->impl.rx_pool_data_size = size;
+}
+
+uint32_t ut_dev_socket_rx_queues(ut_dev_ctx* ctx, int socket) {
+  return dev_socket_rx_queues(&ctx->impl, socket);
+}
+
+int ut_dev_config_port_driver_nb_rx_desc(ut_dev_ctx* ctx, const char* driver_name) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+  int ret;
+
+  parse_driver_info(driver_name, &inf->drv_info);
+  inf->dev_info.rx_desc_lim.nb_max = 4096;
+  ctx->impl.user_para.nb_rx_desc = 0;
+  ut_active_ctx = ctx;
+  ret = dev_config_port(inf);
+  return ret < 0 ? ret : inf->nb_rx_desc;
+}
+
+void ut_dev_set_tasklet_thread(ut_dev_ctx* ctx) {
+  ctx->impl.user_para.flags |= MTL_FLAG_TASKLET_THREAD;
+}
+
+uint32_t ut_dev_rx_elem_size(ut_dev_ctx* ctx) {
+  return dev_rx_elem_size(&ctx->impl, &ctx->impl.inf[MTL_PORT_P]);
+}
+
+uint32_t ut_dev_rx_pool_obj_size(ut_dev_ctx* ctx) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+  uint16_t system_rx_queues_end = inf->system_rx_queues_end;
+  uint32_t size = 0;
+
+  if (ut_eal_init() < 0) return 0;
+  if (mt_user_rx_mono_pool(&ctx->impl)) {
+    struct rte_mempool* mono =
+        mt_mempool_create_common(&ctx->impl, MTL_PORT_P, "ut_mono", 1024);
+    if (!mono) return 0;
+    size = mt_mempool_obj_size(mono);
+    mt_mempool_free(mono);
+    return size;
+  }
+  inf->nb_rx_q = 2;
+  inf->system_rx_queues_end = 1;
+  inf->rx_queues = NULL;
+  if (dev_if_init_rx_queues(&ctx->impl, inf) >= 0) {
+    size = mt_mempool_obj_size(inf->rx_queues[1].mbuf_pool);
+    dev_if_uinit_rx_queues(inf);
+  }
+  inf->rx_queues = &ctx->rx_queue;
+  inf->nb_rx_q = 1;
+  inf->system_rx_queues_end = system_rx_queues_end;
+  return size;
 }
 
 void ut_dev_set_tx_pacing(ut_dev_ctx* ctx, enum st21_tx_pacing_way pacing) {
