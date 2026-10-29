@@ -42,14 +42,34 @@ Some setups need more components. Add each component to `install_dependencies.sh
 Install the AF_XDP components before you run `./build.sh`: MTL finds libxdp and libbpf when it is configured, and without them builds no AF_XDP backend.
 Build MTL with `./build.sh` before you build a plugin or the Python binding.
 
-### Install into a local prefix
+### Install into a predefined directory
 
-`MTL_INSTALL_PREFIX` makes `build.sh`, `build_dpdk.sh`, `build_drivers.sh`,
-`build_jpegxs.sh`, `build_ffmpeg_plugin.sh` and `build_gstreamer_plugin.sh`
-install into a tree of their own instead of the system, as the CI does with
-`.local_install/`. `build_st22_avcodec_plugin.sh` reads `MTL_PLUGIN_PREFIX`
-instead. `build_ebpf_xdp.sh`, `build_python.sh` and `build_obs_plugin.sh` always
-install into the system:
+This section is optional. It is not the default setup. If you did the steps of
+the [quick start](#quick-start-with-the-setup-scripts) above, MTL and its
+components are already built and installed into the system. You can skip this
+section.
+
+By default, each build script installs what it builds into `/usr/local`, with
+`sudo`. Use this section only when you want to keep the build out of the system.
+Set `MTL_INSTALL_PREFIX` to the directory for MTL, and the scripts install into
+that directory instead. The scripts stay in `script/`. Only the libraries,
+programs and plugins that they build go into the directory.
+
+The other components go into directories beside `MTL_INSTALL_PREFIX`, in the
+same parent directory. The CI uses `MTL_INSTALL_PREFIX=$PWD/.local_install/mtl`,
+which gives these directories:
+
+| Script | Installs into |
+| --- | --- |
+| `build.sh` | `.local_install/mtl` |
+| `script/build_dpdk.sh` | `.local_install/dpdk` |
+| `script/build_jpegxs.sh` | `.local_install/jpegxs` |
+| `script/build_ffmpeg_plugin.sh` | `.local_install/ffmpeg` |
+| `script/build_gstreamer_plugin.sh` | `.local_install/gstreamer/gstreamer-1.0` |
+| `script/build_drivers.sh` | `.local_install/ice/<kernel release>/<architecture>`. The script only builds the `.ko` file. It does not install or load the driver, because the kernel cannot load a module from this directory. |
+| `script/build_st22_avcodec_plugin.sh` | The directory in `MTL_PLUGIN_PREFIX`, not in `MTL_INSTALL_PREFIX`, for example `.local_install/plugins` |
+
+For example, to install DPDK, MTL and the two ST 2110-22 plugins into `.local_install`:
 
 ```bash
 export MTL_INSTALL_PREFIX=$PWD/.local_install/mtl
@@ -59,13 +79,27 @@ export MTL_INSTALL_PREFIX=$PWD/.local_install/mtl
 MTL_PLUGIN_PREFIX=$PWD/.local_install/plugins ./script/build_st22_avcodec_plugin.sh
 ```
 
-Such a tree needs no root, no `ldconfig` and no `LD_LIBRARY_PATH`: every program
-and library records where its siblings are relative to itself, and every `.pc`
-file points at its own location, so the whole tree can be moved and still runs.
+This directory needs no root, no `ldconfig` and no `LD_LIBRARY_PATH`. Each program
+and library records the location of the other libraries relative to itself, and
+each `.pc` file points at its own location. So you can move the whole directory,
+and it still runs.
 `.local_install/mtl/bin/nicctl.sh` is part of it and uses the `dpdk-devbind.py`
-of `.local_install/dpdk`. The plugin registry is `.local_install/conf/kahawai.json`:
-set `KAHAWAI_CFG_PATH` to it, see [plugin.md](./plugin.md). It holds absolute paths, the one
-part of the tree that does not move with it.
+of `.local_install/dpdk`. The plugin registry is `.local_install/conf/kahawai.json`.
+Set `KAHAWAI_CFG_PATH` to it, see [plugin.md](./plugin.md). The registry holds absolute
+paths, so it is the one part of the directory that does not move with it.
+
+These three scripts do not read `MTL_INSTALL_PREFIX` yet. They always install
+into the system with `sudo`:
+
+| Script | Installs into | Why it cannot use the directory |
+| --- | --- | --- |
+| `script/build_ebpf_xdp.sh` | `/usr/local`, and it links `libxdp.pc` and `libbpf.pc` into the `pkg-config` directory of the system | `build.sh` finds libxdp and libbpf only in the `pkg-config` search path of the system. |
+| `script/build_python.sh` | The `site-packages` directory of the system `python3` | The script reads the MTL headers from `/usr/local/include`, so it also needs MTL in the system. |
+| `script/build_obs_plugin.sh` | The `obs-plugins` directory of the system libobs | The script has no option to select a different directory. |
+
+MTL does not need these three scripts. They add only the AF_XDP data path, the
+Python binding and the OBS plugin. If you do not want them in your system, do
+not run them. Without them, `build.sh` builds MTL without the AF_XDP backend.
 
 ### Set up the host with one command
 
