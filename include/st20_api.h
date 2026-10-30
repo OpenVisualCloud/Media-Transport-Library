@@ -116,9 +116,10 @@ extern "C" {
  * odd or <= 1024 udp_port, ST21_PACING_LINEAR, ST20_TYPE_RTP_LEVEL, interlaced,
  * ST20_TX_FLAG_ENABLE_RTCP, ST20_FMT_V210 or ST20_FMT_YUV_422_PLANAR10LE.
  * st20_tx_update_destination() rejects a udp_port that breaks the same port rule.
- * The primary port sends an RTCP Sender Report with the IPMX Info Block to udp_port + 1
- * right before each frame. Its mediaclk is direct=0, so with ST20_TX_FLAG_USER_TIMESTAMP
- * the timestamps must follow the PTP (TAI) time the library runs on.
+ * Each port, so both ST 2022-7 legs, sends an RTCP Sender Report with the IPMX Info
+ * Block to its own destination, udp_port + 1, right before each frame. Its mediaclk is
+ * direct=0, so with ST20_TX_FLAG_USER_TIMESTAMP the timestamps must follow the PTP (TAI)
+ * time the library runs on.
  */
 #define ST20_TX_FLAG_IPMX (MTL_BIT32(12))
 

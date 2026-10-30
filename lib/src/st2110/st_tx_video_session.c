@@ -3889,7 +3889,7 @@ struct tv_stat_dump {
   uint32_t max_notify_frame_us;
 #ifdef MTL_HAS_IPMX
   bool ipmx_sr_on;
-  struct ipmx_sr_stat ipmx_sr;
+  struct ipmx_sr_stats ipmx_sr;
 #endif
 };
 
@@ -3940,10 +3940,7 @@ static void tv_stat_collect(struct st_tx_video_sessions_mgr* mgr,
   s->stat_max_notify_frame_us = 0;
 #ifdef MTL_HAS_IPMX
   d->ipmx_sr_on = s->ipmx_sr != NULL;
-  if (s->ipmx_sr) {
-    d->ipmx_sr = s->ipmx_sr->stat;
-    memset(&s->ipmx_sr->stat, 0, sizeof(s->ipmx_sr->stat));
-  }
+  if (s->ipmx_sr) ipmx_sr_stat_take(s->ipmx_sr, &d->ipmx_sr);
 #endif
 }
 

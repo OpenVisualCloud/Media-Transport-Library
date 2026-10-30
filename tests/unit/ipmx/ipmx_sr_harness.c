@@ -10,6 +10,7 @@
 #define ipmx_sr_tx_send_pending ut_sr_tx_send_pending
 #define ipmx_sr_tx_rl_lead_ns ut_sr_tx_rl_lead_ns
 #define ipmx_sr_stat_log ut_sr_stat_log
+#define ipmx_sr_stat_take ut_sr_stat_take
 #define ipmx_sr_tx_set_block_version ut_sr_tx_set_block_version
 #define ipmx_sr_tx_get_info ut_sr_tx_get_info
 #define ipmx_sr_tx_set_ts_refclk ut_sr_tx_set_ts_refclk
@@ -34,7 +35,7 @@ struct ut_sr_ctx {
   int queue_tag[MTL_SESSION_PORT_MAX]; /* s->queue[] identity for the burst mock */
   struct rte_mempool* pkt_pool;
   uint64_t now;
-  bool refuse[UT_SR_WIRE_PKT + 1];
+  bool refuse[MTL_SESSION_PORT_MAX][UT_SR_WIRE_PKT + 1];
   bool hold;
   struct rte_mbuf* held[UT_SR_HELD_MAX];
   int held_num;
@@ -42,30 +43,49 @@ struct ut_sr_ctx {
   int wire_num;
   uint8_t last_sr[UT_SR_PKT_MAX];
   uint16_t last_sr_len;
-  char pool_name[RTE_MEMPOOL_NAMESIZE];
+  uint8_t last_port_sr[MTL_SESSION_PORT_MAX][UT_SR_PKT_MAX];
+  uint16_t last_port_sr_len[MTL_SESSION_PORT_MAX];
+  char pool_name[MTL_SESSION_PORT_MAX][RTE_MEMPOOL_NAMESIZE];
   struct mt_ptp_impl ptp;
+  struct rte_mempool* blocker;
 };
 
 /* mt_txq_burst() and mt_get_tsc() have no private context argument */
 static struct ut_sr_ctx* ut_sr_active_ctx;
 
+static struct rte_mempool* ut_sr_leg_pool(const struct ipmx_sr_tx* sr, int s_port) {
+  return sr->leg[s_port].pool;
+}
+
+static const struct ipmx_sr_stat* ut_sr_leg_stat(const struct ipmx_sr_tx* sr,
+                                                 int s_port) {
+  return &sr->leg[s_port].stat;
+}
+
+static bool ut_sr_is_sr(const struct st_tx_video_session_impl* s, struct rte_mbuf* m) {
+  if (!s->ipmx_sr) return false;
+  for (int i = 0; i < s->ops.num_port; i++)
+    if (m->pool == ut_sr_leg_pool(s->ipmx_sr, i)) return true;
+  return false;
+}
+
 static uint16_t ut_sr_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
                                 uint16_t nb_pkts) {
   struct ut_sr_ctx* ctx = ut_sr_active_ctx;
   struct st_tx_video_session_impl* s = &ctx->session;
-  struct mt_interface* inf = mt_if(&ctx->impl, MTL_PORT_P);
   int port = entry == (struct mt_txq_entry*)&ctx->queue_tag[MTL_SESSION_PORT_R]
                  ? MTL_SESSION_PORT_R
                  : MTL_SESSION_PORT_P;
+  struct mt_interface* inf = mt_if(&ctx->impl, s->port_maps[port]);
 
   for (uint16_t i = 0; i < nb_pkts; i++) {
     struct rte_mbuf* m = tx_pkts[i];
     struct ut_sr_wire* w = &ctx->wire[ctx->wire_num % UT_SR_WIRE_MAX];
-    bool sr = s->ipmx_sr && m->pool == s->ipmx_sr->pool;
+    bool sr = ut_sr_is_sr(s, m);
     enum ut_sr_wire_kind kind =
         sr ? UT_SR_WIRE_SR : (m->pool == ctx->pkt_pool ? UT_SR_WIRE_PKT : UT_SR_WIRE_PAD);
 
-    if (ctx->refuse[kind]) return i;
+    if (ctx->refuse[port][kind]) return i;
 
     ctx->wire_num++;
     memset(w, 0, sizeof(*w));
@@ -79,6 +99,8 @@ static uint16_t ut_sr_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx
     if (sr) {
       ctx->last_sr_len = RTE_MIN(m->pkt_len, UT_SR_PKT_MAX);
       memcpy(ctx->last_sr, rte_pktmbuf_mtod(m, uint8_t*), ctx->last_sr_len);
+      ctx->last_port_sr_len[port] = ctx->last_sr_len;
+      memcpy(ctx->last_port_sr[port], ctx->last_sr, ctx->last_sr_len);
       if (ctx->hold && ctx->held_num < UT_SR_HELD_MAX) {
         ctx->held[ctx->held_num++] = m;
         continue;
@@ -217,13 +239,64 @@ void ut_sr_destroy(ut_sr_ctx* ctx) {
   ut_sr_free_pads(s);
   ut_sr_flush(ctx);
   ut_sr_detach(ctx);
-  /* a pool ipmx_sr_tx_uinit() had to leave behind */
-  if (ctx->pool_name[0]) {
-    struct rte_mempool* pool = rte_mempool_lookup(ctx->pool_name);
+  /* the pools ipmx_sr_tx_uinit() had to leave behind */
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    struct rte_mempool* pool;
+
+    if (!ctx->pool_name[i][0]) continue;
+    pool = rte_mempool_lookup(ctx->pool_name[i]);
     if (pool) rte_mempool_free(pool);
   }
+  if (ctx->blocker) rte_mempool_free(ctx->blocker);
   if (ctx->pkt_pool) rte_mempool_free(ctx->pkt_pool);
   free(ctx);
+}
+
+void ut_sr_set_redundant(ut_sr_ctx* ctx, const uint8_t sip[4], const uint8_t dip[4],
+                         uint16_t media_dst_port) {
+  static const uint8_t smac[RTE_ETHER_ADDR_LEN] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x02};
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st_rfc4175_video_hdr* hdr = &s->s_hdr[MTL_SESSION_PORT_R];
+
+  ctx->impl.inf[MTL_PORT_R].socket_id = rte_socket_id();
+  ctx->impl.inf[MTL_PORT_R].nb_tx_desc = 64;
+  ctx->impl.inf[MTL_PORT_R].drv_info.flags = MT_DRV_F_NOT_DPDK_PMD;
+  memcpy(ctx->impl.inf[MTL_PORT_R].k_mac_addr.addr_bytes, smac, sizeof(smac));
+  s->ops.num_port = 2;
+  s->port_maps[MTL_SESSION_PORT_R] = MTL_PORT_R;
+  s->eth_ipv4_cksum_offload[MTL_SESSION_PORT_R] = false;
+  memcpy(hdr, &s->s_hdr[MTL_SESSION_PORT_P], sizeof(*hdr));
+  memcpy(mt_eth_s_addr(&hdr->eth)->addr_bytes, smac, sizeof(smac));
+  memcpy(&hdr->ipv4.src_addr, sip, MTL_IP_ADDR_LEN);
+  ut_sr_set_dest(ctx, MTL_SESSION_PORT_R, dip, media_dst_port);
+}
+
+void ut_sr_set_dest(ut_sr_ctx* ctx, int s_port, const uint8_t dip[4],
+                    uint16_t media_dst_port) {
+  struct st_rfc4175_video_hdr* hdr = &ctx->session.s_hdr[s_port];
+
+  memcpy(&hdr->ipv4.dst_addr, dip, MTL_IP_ADDR_LEN);
+  hdr->udp.src_port = htons(media_dst_port);
+  hdr->udp.dst_port = htons(media_dst_port);
+}
+
+void ut_sr_set_recovery_idx(ut_sr_ctx* ctx, int recovery_idx) {
+  ctx->session.recovery_idx = recovery_idx;
+}
+
+int ut_sr_block_pool(ut_sr_ctx* ctx, int s_port) {
+  int mempool_idx = ctx->impl.mempool_idx;
+  char name[RTE_MEMPOOL_NAMESIZE];
+  int ret = ut_sr_attach(ctx);
+
+  /* a trial attach learns the name; the rewound mempool_idx makes attach reuse it */
+  if (ret) return ret;
+  snprintf(name, sizeof(name), "%s", ctx->pool_name[s_port]);
+  ut_sr_detach(ctx);
+  memset(ctx->pool_name, 0, sizeof(ctx->pool_name));
+  ctx->impl.mempool_idx = mempool_idx;
+  ctx->blocker = rte_pktmbuf_pool_create(name, 1, 0, 0, 64, rte_socket_id());
+  return ctx->blocker ? 0 : -ENOMEM;
 }
 
 void ut_sr_set_frame_pkts(ut_sr_ctx* ctx, uint32_t total_pkts) {
@@ -330,10 +403,11 @@ void ut_sr_set_ptp_source(ut_sr_ctx* ctx, bool tsc, bool user_fn) {
 
 int ut_sr_attach(ut_sr_ctx* ctx) {
   int ret = ut_sr_tx_init(&ctx->impl, &ctx->session);
-  if (!ret)
-    snprintf(ctx->pool_name, sizeof(ctx->pool_name), "%s",
-             ctx->session.ipmx_sr->pool->name);
-  return ret;
+  if (ret) return ret;
+  for (int i = 0; i < ctx->session.ops.num_port; i++)
+    snprintf(ctx->pool_name[i], sizeof(ctx->pool_name[i]), "%s",
+             ut_sr_leg_pool(ctx->session.ipmx_sr, i)->name);
+  return 0;
 }
 
 void ut_sr_detach(ut_sr_ctx* ctx) {
@@ -345,35 +419,43 @@ bool ut_sr_attached(const ut_sr_ctx* ctx) {
 }
 
 uint16_t ut_sr_build(ut_sr_ctx* ctx, uint8_t* rtcp, uint64_t tai_ns, uint32_t rtp_ts) {
-  return ipmx_sr_tx_build(ctx->session.ipmx_sr, rtcp, tai_ns, rtp_ts);
+  struct ipmx_sr_tx* sr = ctx->session.ipmx_sr;
+
+  return ipmx_sr_tx_build(sr, &sr->leg[MTL_SESSION_PORT_P], rtcp, tai_ns, rtp_ts);
 }
 
-static struct rte_mbuf* ut_sr_pkt(ut_sr_ctx* ctx, uint32_t pkt_idx, uint32_t rtp_ts,
-                                  uint64_t target) {
+static struct rte_mbuf* ut_sr_pkt(ut_sr_ctx* ctx, int s_port, uint32_t pkt_idx,
+                                  uint32_t rtp_ts, uint64_t target) {
   struct rte_mbuf* m = rte_pktmbuf_alloc(ctx->pkt_pool);
+  struct mt_interface* inf;
   struct st_rfc4175_video_hdr* hdr;
 
   if (!m) return NULL;
   hdr = (struct st_rfc4175_video_hdr*)rte_pktmbuf_append(m, sizeof(*hdr));
-  memcpy(hdr, &ctx->session.s_hdr[MTL_SESSION_PORT_P], sizeof(*hdr));
+  memcpy(hdr, &ctx->session.s_hdr[s_port], sizeof(*hdr));
   hdr->rtp.base.tmstamp = htonl(rtp_ts);
   st_tx_mbuf_set_idx(m, pkt_idx);
   st_tx_mbuf_set_tsc(m, target);
   st_tx_mbuf_set_ptp(m, target);
   st_tx_mbuf_set_priv(m, NULL);
+  inf = mt_if(&ctx->impl, ctx->session.port_maps[s_port]);
+  if (inf->tx_launch_time_flag) {
+    m->ol_flags |= inf->tx_launch_time_flag;
+    *RTE_MBUF_DYNFIELD(m, inf->tx_dynfield_offset, uint64_t*) = target;
+  }
   return m;
 }
 
 void ut_sr_dequeue(ut_sr_ctx* ctx, int s_port, uint64_t ptp_ns, uint32_t rtp_ts,
                    bool late) {
-  struct rte_mbuf* pkt0 = ut_sr_pkt(ctx, 0, rtp_ts, ptp_ns);
+  struct rte_mbuf* pkt0 = ut_sr_pkt(ctx, s_port, 0, rtp_ts, ptp_ns);
   if (!pkt0) return;
   ut_sr_tx_frame_start(ctx->session.ipmx_sr, s_port, pkt0, late);
   rte_pktmbuf_free(pkt0);
 }
 
 int ut_sr_burst_pkt0(ut_sr_ctx* ctx, int s_port, uint64_t ptp_ns, uint32_t rtp_ts) {
-  struct rte_mbuf* pkt0 = ut_sr_pkt(ctx, 0, rtp_ts, ptp_ns);
+  struct rte_mbuf* pkt0 = ut_sr_pkt(ctx, s_port, 0, rtp_ts, ptp_ns);
   uint16_t tx;
   if (!pkt0) return -ENOMEM;
 
@@ -385,7 +467,7 @@ int ut_sr_burst_pkt0(ut_sr_ctx* ctx, int s_port, uint64_t ptp_ns, uint32_t rtp_t
 }
 
 int ut_sr_burst_empty(ut_sr_ctx* ctx, uint64_t ptp_ns, uint32_t rtp_ts) {
-  struct rte_mbuf* pkt0 = ut_sr_pkt(ctx, 0, rtp_ts, ptp_ns);
+  struct rte_mbuf* pkt0 = ut_sr_pkt(ctx, MTL_SESSION_PORT_P, 0, rtp_ts, ptp_ns);
   uint16_t tx;
   if (!pkt0) return -ENOMEM;
 
@@ -403,7 +485,20 @@ void ut_sr_frame(ut_sr_ctx* ctx, int s_port, uint64_t ptp_ns, uint32_t rtp_ts,
 }
 
 void ut_sr_set_refuse(ut_sr_ctx* ctx, enum ut_sr_wire_kind kind, bool refuse) {
-  ctx->refuse[kind] = refuse;
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) ctx->refuse[i][kind] = refuse;
+}
+
+void ut_sr_set_refuse_port(ut_sr_ctx* ctx, int s_port, enum ut_sr_wire_kind kind,
+                           bool refuse) {
+  ctx->refuse[s_port][kind] = refuse;
+}
+
+void ut_sr_drain_pool(ut_sr_ctx* ctx, int s_port) {
+  struct rte_mempool* pool = ut_sr_leg_pool(ctx->session.ipmx_sr, s_port);
+  struct rte_mbuf* m;
+
+  while (ctx->held_num < UT_SR_HELD_MAX && (m = rte_pktmbuf_alloc(pool)))
+    ctx->held[ctx->held_num++] = m;
 }
 
 void ut_sr_set_hold(ut_sr_ctx* ctx, bool hold) {
@@ -428,8 +523,14 @@ uint16_t ut_sr_last_sr(const ut_sr_ctx* ctx, uint8_t pkt[UT_SR_PKT_MAX]) {
   return ctx->last_sr_len;
 }
 
-void ut_sr_counts(const ut_sr_ctx* ctx, struct ut_sr_counts* counts) {
-  const struct ipmx_sr_stat* stat = &ctx->session.ipmx_sr->stat;
+uint16_t ut_sr_last_sr_port(const ut_sr_ctx* ctx, int s_port,
+                            uint8_t pkt[UT_SR_PKT_MAX]) {
+  memcpy(pkt, ctx->last_port_sr[s_port], ctx->last_port_sr_len[s_port]);
+  return ctx->last_port_sr_len[s_port];
+}
+
+void ut_sr_counts(const ut_sr_ctx* ctx, int s_port, struct ut_sr_counts* counts) {
+  const struct ipmx_sr_stat* stat = ut_sr_leg_stat(ctx->session.ipmx_sr, s_port);
 
   counts->sent = stat->sent;
   counts->late = stat->late;
@@ -439,15 +540,25 @@ void ut_sr_counts(const ut_sr_ctx* ctx, struct ut_sr_counts* counts) {
 }
 
 unsigned int ut_sr_pool_n(ut_sr_ctx* ctx) {
-  return ipmx_sr_pool_n(&ctx->impl, &ctx->session);
+  return ipmx_sr_pool_n(&ctx->impl, &ctx->session, MTL_SESSION_PORT_P);
 }
 
-unsigned int ut_sr_pool_in_use(const ut_sr_ctx* ctx) {
-  return rte_mempool_in_use_count(ctx->session.ipmx_sr->pool);
+unsigned int ut_sr_pool_in_use(const ut_sr_ctx* ctx, int s_port) {
+  return rte_mempool_in_use_count(ut_sr_leg_pool(ctx->session.ipmx_sr, s_port));
 }
 
-const char* ut_sr_pool_name(const ut_sr_ctx* ctx) {
-  return ctx->pool_name;
+const char* ut_sr_pool_name(const ut_sr_ctx* ctx, int s_port) {
+  return ctx->pool_name[s_port];
+}
+
+uint64_t ut_sr_rl_lead_ns(ut_sr_ctx* ctx, int s_port, uint64_t pad_ns,
+                          uint32_t pad_size) {
+  struct st_tx_video_rl_plan plan;
+
+  memset(&plan, 0, sizeof(plan));
+  plan.pad_ns = pad_ns;
+  plan.pad_size = pad_size;
+  return ut_sr_tx_rl_lead_ns(ctx->session.ipmx_sr, s_port, &plan);
 }
 
 void ut_sr_trs_setup(ut_sr_ctx* ctx, unsigned int bulk, long double trs_ns,
@@ -484,7 +595,7 @@ int ut_sr_trs_arm(ut_sr_ctx* ctx, long double pad_ns, long double credit_ns) {
 
 int ut_sr_trs_enqueue(ut_sr_ctx* ctx, uint32_t pkt_idx, uint32_t rtp_ts,
                       uint64_t target) {
-  void* m = ut_sr_pkt(ctx, pkt_idx, rtp_ts, target);
+  void* m = ut_sr_pkt(ctx, MTL_SESSION_PORT_P, pkt_idx, rtp_ts, target);
   if (!m) return -ENOMEM;
   if (rte_ring_sp_enqueue(ctx->session.ring[MTL_SESSION_PORT_P], m) < 0) {
     rte_pktmbuf_free(m);
@@ -514,19 +625,25 @@ int ut_sr_call_ptp(ut_sr_ctx* ctx) {
   return ut_sr_call(ctx, video_trs_ptp_tasklet);
 }
 
-int ut_sr_call_launch_time(ut_sr_ctx* ctx) {
+int ut_sr_set_launch_time(ut_sr_ctx* ctx, int s_port) {
   static const struct rte_mbuf_dynfield desc = {
       .name = "ut_sr_launch_time",
       .size = sizeof(uint64_t),
       .align = __alignof__(uint64_t),
   };
   static const struct rte_mbuf_dynflag flag = {.name = "ut_sr_launch_time_flag"};
-  struct mt_interface* inf = mt_if(&ctx->impl, MTL_PORT_P);
+  struct mt_interface* inf = mt_if(&ctx->impl, ctx->session.port_maps[s_port]);
   int offset = rte_mbuf_dynfield_register(&desc);
   int bit = rte_mbuf_dynflag_register(&flag);
 
   if (offset < 0 || bit < 0) return -EIO;
   inf->tx_dynfield_offset = offset;
   inf->tx_launch_time_flag = RTE_BIT64(bit);
+  return 0;
+}
+
+int ut_sr_call_launch_time(ut_sr_ctx* ctx) {
+  int ret = ut_sr_set_launch_time(ctx, MTL_SESSION_PORT_P);
+  if (ret) return ret;
   return ut_sr_call(ctx, video_trs_launch_time_tasklet);
 }

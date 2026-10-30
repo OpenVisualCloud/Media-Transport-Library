@@ -510,7 +510,7 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
       A timeslot passes those tokens at the true rate, which drains at least S per `pad_ns`, so this holds whatever the NIC clock (`St20TxRlModelTest.TokensCoverEveryIceTimeslot` checks it against a copy of ice's encode on all four psm_clks).
 - With a plan, `video_trs_rl_pre_arm()` queues pads that a shaper with a `bucket_ns` bucket would finish at the target; the real one, an aim smaller, finishes them at target + aim. Packet 0 follows them to the NIC in the same pass, so the shaper, not the tasklet, sets its launch.
   With `ST20_TX_FLAG_IPMX` the frame's RTCP Sender Report sits between the pads and packet 0 on the same queue, and the pre-arm target leads by the SR's shaper time (`ipmx_sr_tx_rl_lead_ns()`).
-  That SR is 204 B of RTCP (SR 28 + IPMX Info Block 176, built once at create by `lib/src/ipmx/ipmx_info.c`) plus the SDES CNAME, about 270 B on the wire.
+  That SR is 204 B of RTCP (SR 28 + IPMX Info Block 176, built at create by `lib/src/ipmx/ipmx_info.c`, ts-refclk and block version refreshed per frame, one block shared by both 2022-7 legs) plus the SDES CNAME, about 270 B on the wire.
   Every drain end the pre-arm counts, its idle clamp included, is the shaper's less the aim (`St20TxRlFastClockTest.FluidShaperLaunchesOneAimPastTheTarget`).
 - The pads cover `(target − now) + bucket_ns`: `ceil()` NORMAL
   pads, the last burst holding the ≤ S/64 + 8 pads that take the surplus as cuts of 64 or 8 bytes

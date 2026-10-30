@@ -27,15 +27,28 @@ struct ipmx_sr_stat {
   uint64_t dropped; /* freed as their packet 0 never went out, a queue recovery */
 };
 
-/* The TR-10-1 section 8.8.2 Sender Report of one st20 TX session, primary port only */
-struct ipmx_sr_tx {
-  struct mtl_main_impl* impl;
+/* One ST 2022-7 leg's SR, to that leg's destination on that leg's queue */
+struct ipmx_sr_leg {
   enum mtl_port port;
   /* the media header template, read per SR so destination updates carry over */
   const struct st_rfc4175_video_hdr* media_hdr;
   bool ipv4_cksum_offload;
-  uint32_t sampling_rate;
   struct rte_mempool* pool;
+  char cname[IPMX_SR_CNAME_MAX];
+  uint8_t cname_len;
+  uint32_t info_gen; /* the info_block generation this leg sent last */
+  uint32_t pkt_count;
+  uint32_t octet_count;
+  uint32_t last_rtp_ts; /* of the pending SR, matched against the burst's packet 0 */
+  /* built when packet 0 is dequeued, sent on its queue right before it */
+  struct rte_mbuf* pending;
+  struct ipmx_sr_stat stat;
+};
+
+/* The TR-10-1 section 8.8.2 Sender Report of one st20 TX session, a leg per port */
+struct ipmx_sr_tx {
+  struct mtl_main_impl* impl;
+  uint32_t sampling_rate;
   /* version unused: block_version is the one on the wire; ts_refclk under info_seq */
   struct ipmx_video_info info;
   _Atomic uint8_t block_version;
@@ -51,27 +64,30 @@ struct ipmx_sr_tx {
   struct ipmx_refclk refclk;
   bool refclk_known; /* false: refclk is not the one on the wire */
   bool sr_built;
+  /* info_block refreshes once a frame, at the RTP timestamp of that frame */
+  uint32_t info_gen;
+  uint32_t info_rtp_ts;
   uint8_t info_block[IPMX_INFO_BLOCK_LEN];
-  char cname[IPMX_SR_CNAME_MAX];
-  uint8_t cname_len;
   uint32_t frame_pkts;
   uint32_t frame_octets; /* RTP payload octets, RFC 3550 section 6.4.1 */
-  uint32_t pkt_count;
-  uint32_t octet_count;
-  uint32_t last_rtp_ts; /* of the pending SR, matched against the burst's packet 0 */
-  /* built when packet 0 is dequeued, sent on its queue right before it */
-  struct rte_mbuf* pending;
-  struct ipmx_sr_stat stat;
+  uint8_t num_port;
+  struct ipmx_sr_leg leg[MTL_SESSION_PORT_MAX];
+};
+
+/* the per-leg stats of one session dump */
+struct ipmx_sr_stats {
+  uint8_t num_port;
+  struct ipmx_sr_stat leg[MTL_SESSION_PORT_MAX];
 };
 
 struct st_tx_video_session_impl;
-/** Create s->ipmx_sr for the session's primary port, after the header templates. */
+/** Create s->ipmx_sr for every session port, after the header templates. */
 int ipmx_sr_tx_init(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s);
 /** Free s->ipmx_sr; only after the session queues are flushed, they hold its mbufs. */
 void ipmx_sr_tx_uinit(struct st_tx_video_session_impl* s);
 /**
- * Build the SR + SDES CNAME compound of the frame pkt0 starts, once per RTP timestamp,
- * primary port only; late is true when pkt0 is already due. Tasklet safe.
+ * Build the s_port SR + SDES CNAME compound of the frame pkt0 starts; late is true when
+ * pkt0 is already due. Tasklet safe.
  */
 void ipmx_sr_tx_frame_start(struct ipmx_sr_tx* sr, enum mtl_session_port s_port,
                             struct rte_mbuf* pkt0, bool late);
@@ -86,7 +102,7 @@ static inline bool ipmx_sr_tx_before_burst(struct ipmx_sr_tx* sr,
                                            enum mtl_session_port s_port,
                                            struct mt_txq_entry* queue,
                                            struct rte_mbuf* pkt0) {
-  if (likely(!sr->pending)) return true;
+  if (likely(!sr->leg[s_port].pending)) return true;
   return ipmx_sr_tx_send_pending(sr, s_port, queue, pkt0);
 }
 /**
@@ -102,7 +118,9 @@ int ipmx_sr_tx_set_block_version(struct st_tx_video_session_impl* s, uint8_t ver
 int ipmx_sr_tx_set_ts_refclk(struct st_tx_video_session_impl* s, const char* ts_refclk);
 /** -EIO without s->ipmx_sr, -EINVAL on NULL info. */
 int ipmx_sr_tx_get_info(struct st_tx_video_session_impl* s, struct ipmx_video_info* info);
-void ipmx_sr_stat_log(const struct ipmx_sr_stat* stat, int m_idx, int idx);
+/** Copy and reset the per-leg stats, under the session lock the transmitter try_gets. */
+void ipmx_sr_stat_take(struct ipmx_sr_tx* sr, struct ipmx_sr_stats* stats);
+void ipmx_sr_stat_log(const struct ipmx_sr_stats* stats, int m_idx, int idx);
 
 #ifdef __cplusplus
 }

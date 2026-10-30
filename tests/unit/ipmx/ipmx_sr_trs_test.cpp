@@ -22,6 +22,7 @@ namespace {
 constexpr uint8_t kSip[4] = {192, 168, 1, 10};
 constexpr uint32_t kSsrc = 0x12345678;
 constexpr uint16_t kMediaPort = 20000;
+constexpr int kPortP = 0;
 constexpr uint32_t kRtpTs = 0xa1b2c3d4;
 constexpr uint64_t kEarly = 1000000;
 constexpr uint64_t kTarget = 1050000;
@@ -59,7 +60,7 @@ class IpmxSrTrsTest : public ::testing::Test {
   }
   uint64_t Late() {
     struct ut_sr_counts c;
-    ut_sr_counts(ctx_, &c);
+    ut_sr_counts(ctx_, kPortP, &c);
     return c.late;
   }
   ut_sr_ctx* ctx_ = nullptr;

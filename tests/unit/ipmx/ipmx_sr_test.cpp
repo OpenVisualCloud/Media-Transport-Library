@@ -3,7 +3,8 @@
 /*
  * The IPMX video Sender Report (TR-10-1 sections 8.7, 8.8.2): an RTCP SR with the IPMX
  * Info Block followed by an SDES CNAME (TR-10-9 section 8), once per frame, to the media
- * port + 1 on the session's own queue right before packet 0.
+ * port + 1 on the session's own queue right before packet 0. With ST 2022-7 each leg is
+ * its own RTP stream to its own destination, so each leg sends its own SR.
  *
  * Run: ./build_unit/tests/unit/UnitTest --gtest_filter='IpmxSr*'
  */
@@ -14,6 +15,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "common/ut_common.h"
@@ -79,7 +81,7 @@ class IpmxSrTest : public ::testing::Test {
   }
   struct ut_sr_counts Counts() {
     struct ut_sr_counts c;
-    ut_sr_counts(ctx_, &c);
+    ut_sr_counts(ctx_, kPortP, &c);
     return c;
   }
   int SrsOnWire() {
@@ -257,6 +259,19 @@ TEST_F(IpmxSrTest, OneSrPerFrameEvenWithARepeatedRtpTimestamp) {
   EXPECT_EQ(Counts().sent, 3u);
 }
 
+/* a single-port session takes a ts-refclk change at every frame start, also when the
+ * application repeats an RTP timestamp */
+TEST_F(IpmxSrTest, TsRefclkChangeAppliesOnARepeatedRtpTimestamp) {
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  ut_sr_frame(ctx_, kPortP, kTaiNs, kRtpTs, false);
+  ASSERT_EQ(ut_sr_set_ts_refclk(ctx_, "ptp=traceable"), 0);
+  ut_sr_frame(ctx_, kPortP, kTaiNs, kRtpTs, false);
+  std::vector<uint8_t> rtcp = LastRtcp();
+  ASSERT_GE(rtcp.size(), 28u + IPMX_INFO_BLOCK_LEN);
+  EXPECT_EQ(std::string(reinterpret_cast<const char*>(&rtcp[28 + IPMX_TS_REFCLK_OFFSET])),
+            "ptp=traceable");
+}
+
 TEST_F(IpmxSrTest, EmptyBurstSendsNoSr) {
   ASSERT_NO_FATAL_FAILURE(Attach());
   ut_sr_dequeue(ctx_, kPortP, kTaiNs, kRtpTs, false);
@@ -311,22 +326,6 @@ TEST_F(IpmxSrTest, RefusedPacket0RetryDoesNotRepeatSr) {
   EXPECT_EQ(Counts().sent, 1u);
 }
 
-TEST_F(IpmxSrTest, RedundantPortSendsNone) {
-  ASSERT_NO_FATAL_FAILURE(Attach());
-  ut_sr_frame(ctx_, kPortR, kTaiNs, kRtpTs, false);
-  EXPECT_EQ(SrsOnWire(), 0);
-}
-
-TEST_F(IpmxSrTest, RedundantPacket0DoesNotTakePrimarySr) {
-  ASSERT_NO_FATAL_FAILURE(Attach());
-  ut_sr_dequeue(ctx_, kPortP, kTaiNs, kRtpTs, false);
-  ut_sr_burst_pkt0(ctx_, kPortR, kTaiNs, kRtpTs);
-  ut_sr_burst_pkt0(ctx_, kPortP, kTaiNs, kRtpTs);
-  ASSERT_EQ(ut_sr_wire_count(ctx_), 3);
-  EXPECT_EQ(ut_sr_wire_at(ctx_, 1).kind, UT_SR_WIRE_SR);
-  EXPECT_EQ(ut_sr_wire_at(ctx_, 1).port, kPortP);
-}
-
 TEST_F(IpmxSrTest, StaleSrOfUnsentFrameIsNotSentBeforeNextFrame) {
   ASSERT_NO_FATAL_FAILURE(Attach());
   ut_sr_dequeue(ctx_, kPortP, kTaiNs, kRtpTs, false);
@@ -335,7 +334,7 @@ TEST_F(IpmxSrTest, StaleSrOfUnsentFrameIsNotSentBeforeNextFrame) {
   ut_sr_frame(ctx_, kPortP, kTaiNs, kRtpTs + 3003, false);
   EXPECT_EQ(SrsOnWire(), 1);
   EXPECT_EQ(Be32(&LastRtcp()[16]), kRtpTs + 3003);
-  EXPECT_EQ(ut_sr_pool_in_use(ctx_), 0u);
+  EXPECT_EQ(ut_sr_pool_in_use(ctx_, kPortP), 0u);
   EXPECT_EQ(Counts().dropped, 1u);
 }
 
@@ -357,7 +356,7 @@ TEST_F(IpmxSrTest, PoolHoldsAnSrForEveryFrameTheTxRingFitsAndOnePending) {
   ut_sr_dequeue(ctx_, kPortP, kTaiNs, kRtpTs + kFrames, false);
   EXPECT_EQ(Counts().alloc_fail, 0u);
   EXPECT_EQ(SrsOnWire(), (int)kFrames);
-  EXPECT_EQ(ut_sr_pool_in_use(ctx_), kFrames + 1);
+  EXPECT_EQ(ut_sr_pool_in_use(ctx_, kPortP), kFrames + 1);
 }
 
 TEST_F(IpmxSrTest, QueuedSrReturnedByFlushThenDetachFreesPool) {
@@ -365,8 +364,8 @@ TEST_F(IpmxSrTest, QueuedSrReturnedByFlushThenDetachFreesPool) {
   ASSERT_NO_FATAL_FAILURE(Attach());
   ut_sr_set_hold(ctx_, true);
   ut_sr_frame(ctx_, kPortP, kTaiNs, kRtpTs, false);
-  ASSERT_EQ(ut_sr_pool_in_use(ctx_), 1u);
-  std::string name = ut_sr_pool_name(ctx_);
+  ASSERT_EQ(ut_sr_pool_in_use(ctx_, kPortP), 1u);
+  std::string name = ut_sr_pool_name(ctx_, kPortP);
   ut_sr_flush(ctx_);
   ut_sr_detach(ctx_);
   EXPECT_EQ(rte_mempool_lookup(name.c_str()), nullptr);
@@ -377,7 +376,7 @@ TEST_F(IpmxSrTest, DetachLeavesPoolWhileQueueStillHoldsSr) {
   ASSERT_NO_FATAL_FAILURE(Attach());
   ut_sr_set_hold(ctx_, true);
   ut_sr_frame(ctx_, kPortP, kTaiNs, kRtpTs, false);
-  std::string name = ut_sr_pool_name(ctx_);
+  std::string name = ut_sr_pool_name(ctx_, kPortP);
   ut_sr_detach(ctx_);
   EXPECT_FALSE(ut_sr_attached(ctx_));
   EXPECT_NE(rte_mempool_lookup(name.c_str()), nullptr);
@@ -388,9 +387,362 @@ TEST_F(IpmxSrTest, DetachFreesPendingSr) {
   uint64_t before = ut_rte_alloc_count();
   ASSERT_NO_FATAL_FAILURE(Attach());
   ut_sr_dequeue(ctx_, kPortP, kTaiNs, kRtpTs, false);
-  std::string name = ut_sr_pool_name(ctx_);
+  std::string name = ut_sr_pool_name(ctx_, kPortP);
   ut_sr_detach(ctx_);
   EXPECT_EQ(rte_mempool_lookup(name.c_str()), nullptr);
+  EXPECT_EQ(ut_rte_alloc_count(), before);
+}
+
+/*
+ * ST 2022-7: the R leg sends its own SR to its own destination, on its own queue right
+ * before its own packet 0, with its own pool, counters and CNAME; the two SRs of a frame
+ * carry the same SSRC, timestamps and Info Block (TR-10-1 section 8.7, RFC 3550 6.4.1).
+ */
+constexpr uint8_t kSipR[4] = {192, 168, 2, 20};
+constexpr uint8_t kDipR[4] = {239, 0, 0, 2};
+constexpr uint16_t kMediaPortR = 20002;
+constexpr uint32_t kSrPktLenR = UT_SR_UDP_HDR_LEN + kSdesOffset + 24; /* "192.168.2.20" */
+
+class IpmxSrRedundantTest : public IpmxSrTest {
+ protected:
+  void SetUp() override {
+    ASSERT_NO_FATAL_FAILURE(IpmxSrTest::SetUp());
+    ut_sr_set_redundant(ctx_, kSipR, kDipR, kMediaPortR);
+  }
+  struct ut_sr_counts CountsOf(int port) {
+    struct ut_sr_counts c;
+    ut_sr_counts(ctx_, port, &c);
+    return c;
+  }
+  std::vector<uint8_t> LastPkt(int port) {
+    uint8_t pkt[UT_SR_PKT_MAX];
+    uint16_t len = ut_sr_last_sr_port(ctx_, port, pkt);
+    return std::vector<uint8_t>(pkt, pkt + len);
+  }
+  /* the RTCP SR and Info Block, the part both legs share */
+  std::vector<uint8_t> SharedPart(int port) {
+    std::vector<uint8_t> pkt = LastPkt(port);
+    if (pkt.size() < UT_SR_UDP_HDR_LEN + kSdesOffset) return {};
+    std::vector<uint8_t> rtcp(pkt.begin() + UT_SR_UDP_HDR_LEN,
+                              pkt.begin() + UT_SR_UDP_HDR_LEN + kSdesOffset);
+    return rtcp;
+  }
+  std::string Cname(int port) {
+    std::vector<uint8_t> pkt = LastPkt(port);
+    const size_t item = UT_SR_UDP_HDR_LEN + kSdesOffset + 8;
+    if (pkt.size() < item + 2 || pkt.size() < item + 2 + pkt[item + 1]) return "";
+    return std::string(reinterpret_cast<const char*>(&pkt[item + 2]), pkt[item + 1]);
+  }
+  /* the wire order of SRs and packets 0 as (kind, port) */
+  std::vector<std::pair<int, int>> Wire() {
+    std::vector<std::pair<int, int>> w;
+    for (int i = 0; i < ut_sr_wire_count(ctx_); i++)
+      w.emplace_back(ut_sr_wire_at(ctx_, i).kind, ut_sr_wire_at(ctx_, i).port);
+    return w;
+  }
+};
+
+/* TR-10-1 section 8.8.2 per leg: one SR a frame, right before that leg's packet 0 */
+TEST_F(IpmxSrRedundantTest, EachLegSendsOneSrRightBeforeItsPacket0) {
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  for (uint32_t i = 0; i < 2; i++) {
+    ut_sr_frame(ctx_, kPortP, kTaiNs, kRtpTs + i, false);
+    ut_sr_frame(ctx_, kPortR, kTaiNs, kRtpTs + i, false);
+  }
+  const std::vector<std::pair<int, int>> one_frame = {{UT_SR_WIRE_SR, kPortP},
+                                                      {UT_SR_WIRE_PKT, kPortP},
+                                                      {UT_SR_WIRE_SR, kPortR},
+                                                      {UT_SR_WIRE_PKT, kPortR}};
+  std::vector<std::pair<int, int>> two_frames = one_frame;
+  two_frames.insert(two_frames.end(), one_frame.begin(), one_frame.end());
+  EXPECT_EQ(Wire(), two_frames);
+  EXPECT_EQ(CountsOf(kPortP).sent, 2u);
+  EXPECT_EQ(CountsOf(kPortR).sent, 2u);
+}
+
+/* with both packets 0 dequeued before either burst, each leg's SR still goes out on its
+ * own queue right before that leg's packet 0, R leg first here */
+TEST_F(IpmxSrRedundantTest, BothDequeuedThenRBurstFirstKeepsEachSrOnItsLeg) {
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  ut_sr_dequeue(ctx_, kPortP, kTaiNs, kRtpTs, false);
+  ut_sr_dequeue(ctx_, kPortR, kTaiNs, kRtpTs, false);
+  ut_sr_burst_pkt0(ctx_, kPortR, kTaiNs, kRtpTs);
+  ut_sr_burst_pkt0(ctx_, kPortP, kTaiNs, kRtpTs);
+  EXPECT_EQ(Wire(), (std::vector<std::pair<int, int>>{{UT_SR_WIRE_SR, kPortR},
+                                                      {UT_SR_WIRE_PKT, kPortR},
+                                                      {UT_SR_WIRE_SR, kPortP},
+                                                      {UT_SR_WIRE_PKT, kPortP}}));
+}
+
+/* RFC 3550 section 6.4.1, TR-10-1 section 8.7: the R leg SR goes to the R destination IP
+ * and the R media port + 1, from the R source, with a valid IPv4 header; the P leg SR
+ * keeps the P addresses */
+TEST_F(IpmxSrRedundantTest, RLegSrGoesToRDestinationPortPlusOne) {
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  ut_sr_frame(ctx_, kPortP, kTaiNs, kRtpTs, false);
+  ut_sr_frame(ctx_, kPortR, kTaiNs, kRtpTs, false);
+
+  std::vector<uint8_t> r = LastPkt(kPortR);
+  ASSERT_EQ(r.size(), kSrPktLenR);
+  const uint8_t* ip = &r[14];
+  EXPECT_EQ(0, memcmp(ip + 12, kSipR, 4));
+  EXPECT_EQ(0, memcmp(ip + 16, kDipR, 4));
+  EXPECT_EQ(Be16(ip + 2), r.size() - 14);
+  EXPECT_EQ(OnesComplementSum(ip, 20), 0xffff);
+  EXPECT_EQ(Be16(&r[34 + 2]), kMediaPortR + 1);
+
+  std::vector<uint8_t> p = LastPkt(kPortP);
+  ASSERT_EQ(p.size(), kSrPktLen);
+  const uint8_t dip_p[4] = {239, 0, 0, 1};
+  EXPECT_EQ(0, memcmp(&p[14 + 12], kSip, 4));
+  EXPECT_EQ(0, memcmp(&p[14 + 16], dip_p, 4));
+  EXPECT_EQ(Be16(&p[34 + 2]), kMediaPort + 1);
+}
+
+/* the R leg SR takes the launch time of the R packet 0 from the R interface's flag and
+ * dynfield; the P interface here has no launch-time flag at all */
+TEST_F(IpmxSrRedundantTest, RLegSrTakesRPacket0LaunchTime) {
+  ASSERT_EQ(ut_sr_set_launch_time(ctx_, kPortR), 0);
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  ut_sr_frame(ctx_, kPortR, kTaiNs, kRtpTs, false);
+  ASSERT_EQ(Wire(), (std::vector<std::pair<int, int>>{{UT_SR_WIRE_SR, kPortR},
+                                                      {UT_SR_WIRE_PKT, kPortR}}));
+  struct ut_sr_wire sr = ut_sr_wire_at(ctx_, 0);
+  struct ut_sr_wire pkt0 = ut_sr_wire_at(ctx_, 1);
+  EXPECT_TRUE(pkt0.launch);
+  EXPECT_TRUE(sr.launch);
+  EXPECT_EQ(sr.launch_time, pkt0.launch_time);
+  EXPECT_EQ(sr.launch_time, kTaiNs);
+}
+
+/* RFC 3550 section 6.5.1 numeric host form: the CNAME of each leg is its source IPv4 */
+TEST_F(IpmxSrRedundantTest, CnameOfEachLegIsItsSourceIp) {
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  ut_sr_frame(ctx_, kPortP, kTaiNs, kRtpTs, false);
+  ut_sr_frame(ctx_, kPortR, kTaiNs, kRtpTs, false);
+  EXPECT_EQ(Cname(kPortP), "192.168.1.10");
+  EXPECT_EQ(Cname(kPortR), "192.168.2.20");
+}
+
+/* one stream on two legs: SSRC, NTP and RTP timestamps, packet and octet counts and the
+ * whole Info Block are the same on both legs, frame after frame */
+TEST_F(IpmxSrRedundantTest, BothLegsShareSsrcTimestampsCountsAndInfoBlock) {
+  ut_sr_set_pkt_info(ctx_, kPktTypeNormal, kSt20HdrLen + 1200, 10);
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  for (uint32_t i = 0; i < 3; i++) {
+    ut_sr_frame(ctx_, kPortP, kTaiNs + i * 16683333ull, kRtpTs + i * 1501, false);
+    ut_sr_frame(ctx_, kPortR, kTaiNs + i * 16683333ull + 1000, kRtpTs + i * 1501, false);
+    std::vector<uint8_t> p = SharedPart(kPortP);
+    ASSERT_EQ(p.size(), kSdesOffset);
+    EXPECT_EQ(p, SharedPart(kPortR)) << "frame " << i;
+    EXPECT_EQ(Be32(&p[4]), kSsrc);
+    EXPECT_EQ(Be32(&p[20]), i * 10);
+  }
+}
+
+/*
+ * A ts-refclk or block version change lands on both legs in the same frame, whichever
+ * leg dequeues packet 0 first, so a receiver on either leg sees the same Info Block for
+ * every frame (TR-10-1 section 8.7, one stream).
+ */
+class IpmxSrRedundantChangeTest : public IpmxSrRedundantTest,
+                                  public ::testing::WithParamInterface<bool> {
+ protected:
+  int First() const {
+    return GetParam() ? kPortR : kPortP;
+  }
+  int Second() const {
+    return GetParam() ? kPortP : kPortR;
+  }
+  void Frame(int port, uint32_t i) {
+    ut_sr_frame(ctx_, port, kTaiNs + i * 16683333ull, kRtpTs + i * 1501, false);
+  }
+  std::vector<uint8_t> InfoBlock(int port) {
+    std::vector<uint8_t> shared = SharedPart(port);
+    if (shared.size() < kSdesOffset) return {};
+    return std::vector<uint8_t>(shared.begin() + 28, shared.end());
+  }
+  std::string TsRefclk(int port) {
+    std::vector<uint8_t> block = InfoBlock(port);
+    if (block.size() < IPMX_INFO_BLOCK_LEN) return "";
+    return std::string(reinterpret_cast<const char*>(&block[IPMX_TS_REFCLK_OFFSET]));
+  }
+  uint8_t Version(int port) {
+    std::vector<uint8_t> block = InfoBlock(port);
+    return block.size() < IPMX_INFO_BLOCK_LEN ? 0xff
+                                              : block[IPMX_INFO_BLOCK_VERSION_OFFSET];
+  }
+};
+
+/* the ts-refclk set after the first leg built its SR waits for the next frame on both */
+TEST_P(IpmxSrRedundantChangeTest, TsRefclkSetBetweenLegsAppliesToBothNextFrame) {
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  Frame(First(), 0);
+  Frame(Second(), 0);
+  const std::string before = TsRefclk(First());
+  Frame(First(), 1);
+  ASSERT_EQ(ut_sr_set_ts_refclk(ctx_, "ptp=traceable"), 0);
+  Frame(Second(), 1);
+  EXPECT_EQ(TsRefclk(First()), before);
+  EXPECT_EQ(TsRefclk(Second()), before);
+  EXPECT_EQ(Version(First()), Version(Second()));
+  Frame(First(), 2);
+  Frame(Second(), 2);
+  EXPECT_EQ(TsRefclk(First()), "ptp=traceable");
+  EXPECT_EQ(TsRefclk(Second()), "ptp=traceable");
+  EXPECT_EQ(Version(First()), 1);
+  EXPECT_EQ(Version(Second()), 1);
+}
+
+/* the block version set after the first leg built its SR waits for the next frame */
+TEST_P(IpmxSrRedundantChangeTest, BlockVersionSetBetweenLegsAppliesToBothNextFrame) {
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  Frame(First(), 0);
+  ASSERT_EQ(ut_sr_set_block_version(ctx_, 7), 0);
+  Frame(Second(), 0);
+  EXPECT_EQ(Version(First()), 0);
+  EXPECT_EQ(Version(Second()), 0);
+  Frame(First(), 1);
+  Frame(Second(), 1);
+  EXPECT_EQ(Version(First()), 7);
+  EXPECT_EQ(Version(Second()), 7);
+}
+
+/* a queue recovery can flush one leg's packet 0 after the other leg already dequeued
+ * it, so per-leg frame counts are not a frame identity: a ts-refclk change still lands
+ * on both legs in the same frame after such a flush */
+TEST_P(IpmxSrRedundantChangeTest, TsRefclkLandsOnBothLegsAfterALegDroppedAFrameStart) {
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  Frame(First(), 0);
+  Frame(Second(), 0);
+  ut_sr_dequeue(ctx_, Second(), kTaiNs + 16683333ull, kRtpTs + 1501, false);
+  ASSERT_EQ(ut_sr_set_ts_refclk(ctx_, "ptp=traceable"), 0);
+  Frame(First(), 2);
+  Frame(Second(), 2);
+  EXPECT_EQ(TsRefclk(First()), "ptp=traceable");
+  EXPECT_EQ(TsRefclk(Second()), "ptp=traceable");
+  EXPECT_EQ(Version(First()), Version(Second()));
+}
+
+/* with a repeated user RTP timestamp the leg that went second can lead the next frame;
+ * a ts-refclk change in between still lands on both legs of that frame */
+TEST_P(IpmxSrRedundantChangeTest, TsRefclkLandsOnBothLegsWhenLeadSwapsOnRepeatedTs) {
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  ut_sr_frame(ctx_, First(), kTaiNs, kRtpTs, false);
+  ut_sr_frame(ctx_, Second(), kTaiNs, kRtpTs, false);
+  ASSERT_EQ(ut_sr_set_ts_refclk(ctx_, "ptp=traceable"), 0);
+  ut_sr_frame(ctx_, Second(), kTaiNs, kRtpTs, false);
+  ut_sr_frame(ctx_, First(), kTaiNs, kRtpTs, false);
+  EXPECT_EQ(TsRefclk(First()), "ptp=traceable");
+  EXPECT_EQ(TsRefclk(Second()), "ptp=traceable");
+  EXPECT_EQ(Version(First()), Version(Second()));
+}
+
+INSTANTIATE_TEST_SUITE_P(PFirstOrRFirst, IpmxSrRedundantChangeTest,
+                         ::testing::Values(false, true),
+                         [](const ::testing::TestParamInfo<bool>& info) {
+                           return info.param ? "RFirst" : "PFirst";
+                         });
+
+/* a destination update of the R leg moves its SR and leaves P's */
+TEST_F(IpmxSrRedundantTest, RLegSrFollowsItsDestinationUpdate) {
+  const uint8_t dip[4] = {239, 0, 0, 9};
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  ut_sr_set_dest(ctx_, kPortR, dip, 30000);
+  ut_sr_frame(ctx_, kPortP, kTaiNs, kRtpTs, false);
+  ut_sr_frame(ctx_, kPortR, kTaiNs, kRtpTs, false);
+  std::vector<uint8_t> r = LastPkt(kPortR);
+  ASSERT_EQ(r.size(), kSrPktLenR);
+  EXPECT_EQ(0, memcmp(&r[14 + 16], dip, 4));
+  EXPECT_EQ(Be16(&r[34 + 2]), 30001);
+  EXPECT_EQ(Be16(&LastPkt(kPortP)[34 + 2]), kMediaPort + 1);
+}
+
+/* a queue refusing the R leg SR holds R's packet 0 only; P is untouched and R's retry
+ * sends its SR then packet 0 */
+TEST_F(IpmxSrRedundantTest, RefusedSrOnRLegDoesNotAffectPLeg) {
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  ut_sr_set_refuse_port(ctx_, kPortR, UT_SR_WIRE_SR, true);
+  ut_sr_frame(ctx_, kPortP, kTaiNs, kRtpTs, false);
+  ut_sr_dequeue(ctx_, kPortR, kTaiNs, kRtpTs, false);
+  EXPECT_EQ(ut_sr_burst_pkt0(ctx_, kPortR, kTaiNs, kRtpTs), 0);
+  ut_sr_set_refuse_port(ctx_, kPortR, UT_SR_WIRE_SR, false);
+  EXPECT_EQ(ut_sr_burst_pkt0(ctx_, kPortR, kTaiNs, kRtpTs), 1);
+  EXPECT_EQ(Wire(), (std::vector<std::pair<int, int>>{{UT_SR_WIRE_SR, kPortP},
+                                                      {UT_SR_WIRE_PKT, kPortP},
+                                                      {UT_SR_WIRE_SR, kPortR},
+                                                      {UT_SR_WIRE_PKT, kPortR}}));
+  EXPECT_EQ(CountsOf(kPortP).burst_fail, 0u);
+  EXPECT_EQ(CountsOf(kPortP).sent, 1u);
+  EXPECT_EQ(CountsOf(kPortR).burst_fail, 1u);
+  EXPECT_EQ(CountsOf(kPortR).sent, 1u);
+}
+
+/* an empty R leg pool skips R's SR only; P still sends its own */
+TEST_F(IpmxSrRedundantTest, AllocFailOnRLegDoesNotAffectPLeg) {
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  ut_sr_drain_pool(ctx_, kPortR);
+  ut_sr_frame(ctx_, kPortP, kTaiNs, kRtpTs, false);
+  ut_sr_frame(ctx_, kPortR, kTaiNs, kRtpTs, false);
+  EXPECT_EQ(Wire(), (std::vector<std::pair<int, int>>{{UT_SR_WIRE_SR, kPortP},
+                                                      {UT_SR_WIRE_PKT, kPortP},
+                                                      {UT_SR_WIRE_PKT, kPortR}}));
+  EXPECT_EQ(CountsOf(kPortP).alloc_fail, 0u);
+  EXPECT_EQ(CountsOf(kPortP).sent, 1u);
+  EXPECT_EQ(CountsOf(kPortR).alloc_fail, 1u);
+  ut_sr_flush(ctx_);
+}
+
+/* an R leg late packet 0 counts late on R only */
+TEST_F(IpmxSrRedundantTest, LateCountsPerLeg) {
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  ut_sr_frame(ctx_, kPortP, kTaiNs, kRtpTs, false);
+  ut_sr_frame(ctx_, kPortR, kTaiNs, kRtpTs, true);
+  EXPECT_EQ(CountsOf(kPortP).late, 0u);
+  EXPECT_EQ(CountsOf(kPortR).late, 1u);
+}
+
+/* the RL lead is the shaper time of that leg's own pending SR */
+TEST_F(IpmxSrRedundantTest, RlLeadIsPerLeg) {
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  ut_sr_dequeue(ctx_, kPortP, kTaiNs, kRtpTs, false);
+  EXPECT_EQ(ut_sr_rl_lead_ns(ctx_, kPortP, 1000, 1000), kSrPktLen);
+  EXPECT_EQ(ut_sr_rl_lead_ns(ctx_, kPortR, 1000, 1000), 0u);
+  ut_sr_dequeue(ctx_, kPortR, kTaiNs, kRtpTs, false);
+  EXPECT_EQ(ut_sr_rl_lead_ns(ctx_, kPortR, 1000, 1000), kSrPktLenR);
+}
+
+/* each leg has its own pool, named with its port and the recovery_idx */
+TEST_F(IpmxSrRedundantTest, EachLegHasItsOwnPoolNamedWithPortAndRecoveryIdx) {
+  ut_sr_set_recovery_idx(ctx_, 3);
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  const std::string p = ut_sr_pool_name(ctx_, kPortP);
+  const std::string r = ut_sr_pool_name(ctx_, kPortR);
+  EXPECT_NE(p, r);
+  EXPECT_NE(p.find("_SR0_3_"), std::string::npos) << p;
+  EXPECT_NE(r.find("_SR1_3_"), std::string::npos) << r;
+}
+
+/* an R leg pool that cannot be created fails the attach and frees the P leg, no leak */
+TEST_F(IpmxSrRedundantTest, RLegPoolFailureFailsAttachWithoutLeak) {
+  ASSERT_EQ(ut_sr_block_pool(ctx_, kPortR), 0);
+  uint64_t before = ut_rte_alloc_count();
+  EXPECT_LT(ut_sr_attach(ctx_), 0);
+  EXPECT_FALSE(ut_sr_attached(ctx_));
+  EXPECT_EQ(ut_rte_alloc_count(), before);
+}
+
+/* detach frees both pools and both pending SRs, no leak */
+TEST_F(IpmxSrRedundantTest, DetachFreesBothLegPoolsAndPendingSrs) {
+  uint64_t before = ut_rte_alloc_count();
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  ut_sr_dequeue(ctx_, kPortP, kTaiNs, kRtpTs, false);
+  ut_sr_dequeue(ctx_, kPortR, kTaiNs, kRtpTs, false);
+  const std::string p = ut_sr_pool_name(ctx_, kPortP);
+  const std::string r = ut_sr_pool_name(ctx_, kPortR);
+  ut_sr_detach(ctx_);
+  EXPECT_EQ(rte_mempool_lookup(p.c_str()), nullptr);
+  EXPECT_EQ(rte_mempool_lookup(r.c_str()), nullptr);
   EXPECT_EQ(ut_rte_alloc_count(), before);
 }
 

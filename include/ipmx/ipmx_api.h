@@ -208,9 +208,13 @@ int ipmx_st20p_tx_set_ts_refclk(st20p_tx_handle handle, const char* ts_refclk);
  * primary port has a master it exchanged delays with, in domain 0 to 127, whose last
  * Announce is younger than 3 announce intervals, else "localmac=<primary port MAC>", or
  * the string of ipmx_st20_tx_set_ts_refclk(). The transmitter checks it at each frame
- * start, so it changes without an application call. TR-10 TP-1 sections 13.2 and 13.3
- * compare the Sender Report ts-refclk with the SDP: poll this function and republish
- * the SDP whenever the version changes, also after ipmx_st20_tx_set_ts_refclk().
+ * start, so it changes without an application call. The Info Block follows the P port
+ * PTP only, the R port PTP is not read, and both ST 2022-7 legs send it. A change shows
+ * on both legs in the same frame unless one leg trails by a whole frame. In the localmac
+ * form it is the P port MAC; advertise it in the SDP media sections of both legs. TR-10
+ * TP-1 sections 13.2 and 13.3 compare the Sender Report ts-refclk with the SDP: poll this
+ * function and republish the SDP whenever the version changes, also after
+ * ipmx_st20_tx_set_ts_refclk().
  *
  * @param handle
  *   The handle to the tx st2110-20(video) session.
