@@ -101,6 +101,28 @@ uint64_t ut_txv_pacing_required_tai(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfm
 int ut_txv_run_frame_tasklet(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
                              uint64_t timestamp, uint64_t* packet_tsc,
                              uint64_t* packet_ptp);
+enum { UT_TXV_STAMP_PKTS = 8 };
+/* what a pkt the builder did not stamp carries */
+#define UT_TXV_NO_STAMP UINT64_MAX
+/* the TSC/PTP stamp of each pkt of each session port, in ring order */
+struct ut_txv_stamps {
+  uint64_t tsc[MTL_SESSION_PORT_MAX][UT_TXV_STAMP_PKTS];
+  uint64_t ptp[MTL_SESSION_PORT_MAX][UT_TXV_STAMP_PKTS];
+};
+/* Drives tv_tasklet_frame() over one copy-mode frame of total_pkts pkts, bulk pkts a
+ * build, on num_port session ports. ways[] holds the pacing way of all
+ * MTL_SESSION_PORT_MAX ports, used or not. The cursors start where tv_sync_pacing()
+ * puts them for the mocked clocks; the mock TSC then advances build_ns after each
+ * build. Returns the pkts each port got, dummies included, < 0 on failure. */
+int ut_txv_run_frame_stamps(ut_txv_ctx* ctx, const enum st21_tx_pacing_way* ways,
+                            int num_port, unsigned int bulk, int total_pkts,
+                            uint64_t build_ns, struct ut_txv_stamps* stamps);
+enum { UT_TXV_IOVA_PAGES_MAX = 2, UT_TXV_IOVA_PAGE_LEN = 64 };
+/* tv_frame_get_offset_iova() of a frame at iova or, with pages > 0, of one whose page
+ * table maps page i of UT_TXV_IOVA_PAGE_LEN bytes at page_iova[i] */
+mtl_iova_t ut_txv_frame_offset_iova(ut_txv_ctx* ctx, mtl_iova_t iova,
+                                    const mtl_iova_t* page_iova, uint16_t pages,
+                                    size_t offset);
 /* Drives tv_tasklet_rtp() with one app packet whose st20_rfc4175_rtp_hdr row
  * number carries the given field parity, so the production builders' F-bit
  * extraction is what tv_sync_pacing() is told. tx_no_chain selects tv_build_rtp()
@@ -140,6 +162,48 @@ int ut_txv_run_tasklet_slots(ut_txv_ctx* ctx, enum ut_txv_work work,
                              const enum ut_txv_slot* slots, int nb_slots);
 /* get_next_frame calls the peers of the last ut_txv_run_tasklet_slots() received. */
 int ut_txv_peer_get_next_frame_calls(const ut_txv_ctx* ctx);
+
+enum ut_txv_tasklet {
+  UT_TXV_TASKLET_BUILDER,     /* tvs_tasklet_handler() */
+  UT_TXV_TASKLET_TRANSMITTER, /* video_trs_tasklet_handler() */
+};
+/* One pass of a TX video tasklet over a session in slot 0, its lock held by the control
+ * plane or not. Returns how often the tasklet ran the session; *locked_in_run is whether
+ * the lock was held while it did, *locked_after whether it is held after the pass. */
+int ut_txv_run_tasklet_lock_probe(ut_txv_ctx* ctx, enum ut_txv_tasklet tasklet,
+                                  bool hold_lock, bool* locked_in_run,
+                                  bool* locked_after);
+enum ut_txv_control {
+  UT_TXV_GET,         /* tx_video_session_get() */
+  UT_TXV_GET_TIMEOUT, /* tx_video_session_get_timeout() */
+  UT_TXV_GET_EMPTY,   /* tx_video_session_get_empty(), of an empty slot */
+  UT_TXV_STATS_GET,   /* st20_tx_get_session_stats() */
+  UT_TXV_STATS_RESET, /* st20_tx_reset_session_stats() */
+  UT_TXV_UPDATE_DST,  /* st20_tx_update_destination() */
+  UT_TXV_FREE,        /* st20_tx_free() */
+};
+/* Runs a control-plane call on the session while a thread acting as its scheduler, in a
+ * pass, ends the pass on each quiescent wait. Returns how many waits the call began, < 0
+ * if it failed; *locked_at_wait is whether the session lock was held at each. */
+int ut_txv_run_control(ut_txv_ctx* ctx, enum ut_txv_control call, bool* locked_at_wait);
+/* The same once the session migrated to another slot of another scheduler, which then
+ * acts as the one in a pass. */
+int ut_txv_run_control_after_migration(ut_txv_ctx* ctx, enum ut_txv_control call,
+                                       bool* locked_at_wait);
+/* The call while the session migrates to another scheduler during the call's wait on the
+ * old slot's scheduler, so the slot no longer holds it once waited. Returns the result.
+ */
+int ut_txv_run_control_racing_migration(ut_txv_ctx* ctx, enum ut_txv_control call);
+/* The call while a migration holds the old slot, as tx_video_migrate_to() does: the call
+ * blocks on it and finds it empty once locked. Returns the call's result. */
+int ut_txv_run_control_blocked_by_migration(ut_txv_ctx* ctx, enum ut_txv_control call);
+/* The call from the scheduler's own thread, as from a callback, while (held) a writer
+ * holds the session lock and waits for the pass in flight. Returns the call's result. */
+int ut_txv_run_control_in_callback(ut_txv_ctx* ctx, enum ut_txv_control call, bool held);
+/* tx_video_session_get_timeout() while the scheduler is in a pass that never ends.
+ * Returns whether it got the session; *locked_after whether the lock stayed held. */
+bool ut_txv_get_timeout_on_endless_pass(ut_txv_ctx* ctx, int timeout_us,
+                                        bool* locked_after);
 
 /* A frame-level session of UT_TXV_ZC_FRAMES one-pkt frames, run by tvs_tasklet_handler()
  * against an app that hands over a chosen frame, or is busy, with reclaim.enabled or not.
@@ -462,6 +526,7 @@ struct ut_txv_pipe_case {
   unsigned int hold;
   /* the app set nb_tx_desc: no port is deep; else MT_DEV_TX_DESC_DEEP is */
   bool user_nb_tx_desc;
+  bool iavf; /* the ports are iavf VFs, else of the default driver */
 };
 int ut_txv_pipe_setup(ut_txv_ctx* ctx, const struct ut_txv_pipe_case* c);
 /* the leg's ring completes no descriptor posted from now on */
@@ -491,6 +556,83 @@ void ut_txv_pipe_geometry(const ut_txv_ctx* ctx, uint32_t* pkt_len, uint32_t* li
                           uint32_t* frame_size, int* total_pkts);
 uint64_t ut_txv_pipe_frames_asked(const ut_txv_ctx* ctx);
 int ut_txv_pipe_total_pkts(const ut_txv_ctx* ctx);
+
+/* ── direct chain: payloads point into the frame, its last pkt holds it ─── */
+enum ut_txv_drv {
+  UT_TXV_DRV_IAVF, /* the default */
+  UT_TXV_DRV_ICE,
+  UT_TXV_DRV_IGC,
+  UT_TXV_DRV_I40E,
+  UT_TXV_DRV_MLX5,
+  UT_TXV_DRV_DEFAULT, /* the entry of a driver MTL does not know */
+};
+/* what tv_tx_direct_chain() rules on; all zero is a direct frame-level session */
+struct ut_txv_direct_chain_case {
+  bool no_chain;
+  bool slice_level;
+  bool rtp_level;
+  bool rtcp;
+  bool mono_pool;
+  bool iova_pa;
+  bool shared_txq;
+  enum ut_txv_drv drv[2]; /* of port P and R */
+};
+/* tv_tx_direct_chain() of a session on two ports */
+bool ut_txv_tx_direct_chain(ut_txv_ctx* ctx, const struct ut_txv_direct_chain_case* c);
+/* tv_attach() of a 1080p BPM frame session on an iavf VF, with MTL_FLAG_TX_MONO_POOL or
+ * not, up to its TX queue request, which fails. Outputs the s->tx_direct_chain it set */
+int ut_txv_attach_direct_chain(ut_txv_ctx* ctx, bool mono_pool, bool* direct);
+/* tv_attach() of a 1920-wide 59.94 BPM session on iavf ports, its pacing way the
+ * port's, up to its TX queue request, which fails. Returns the bulk it chose */
+struct ut_txv_bulk_case {
+  bool slice_level;
+  bool rtp_level;
+  bool st22;
+  int num_port;
+  enum st21_tx_pacing_way way[MTL_SESSION_PORT_MAX];
+  bool disable_bulk;
+  bool deep;       /* MT_DEV_TX_DESC_DEEP ports */
+  uint32_t height; /* 1080 when 0 */
+};
+unsigned int ut_txv_attach_bulk(ut_txv_ctx* ctx, const struct ut_txv_bulk_case* c);
+/* the n the first pool tv_mempool_init() made was asked for: port P's header pool */
+unsigned int ut_txv_first_pool_n(const ut_txv_ctx* ctx);
+/* ut_txv_init_rl_pacing() of a one-port 1080p59.94 frame-level session tv_attach() gave
+ * bulk, pre-trained, or with its training failing when train_fails */
+int ut_txv_init_rl_pacing_at_bulk(ut_txv_ctx* ctx, unsigned int bulk, bool train_fails);
+unsigned int ut_txv_bulk(const ut_txv_ctx* ctx);
+uint32_t ut_txv_pacing_vrx(const ut_txv_ctx* ctx);
+enum st21_tx_pacing_way ut_txv_pacing_way(const ut_txv_ctx* ctx, int port);
+/* the payload segment of a pkt the pipe session built, against frame 0 */
+struct ut_txv_payload {
+  bool extbuf; /* attached to the frame's sh_info */
+  bool copy;   /* from the copy pool of a padded frame */
+  uint64_t addr_off;
+  uint64_t iova_off;
+  uint32_t len;
+};
+enum { UT_TXV_PIPE_BUILT_MAX = 64 };
+/* the builder alone builds frame 0 until leg P kept pkts of it or it is built; every leg
+ * keeps its pkts in build order, dummies freed. Returns the pkts leg P kept, < 0 past
+ * UT_TXV_PIPE_BUILT_MAX */
+int ut_txv_pipe_build(ut_txv_ctx* ctx, int pkts);
+void ut_txv_pipe_payload(const ut_txv_ctx* ctx, int idx, struct ut_txv_payload* payload);
+/* frees the next n pkts the leg kept, in build order */
+void ut_txv_pipe_free_built(ut_txv_ctx* ctx, int leg, int n);
+/* frees the last pkt the leg kept, ahead of the others */
+void ut_txv_pipe_free_last_built(ut_txv_ctx* ctx, int leg);
+/* what mt_txq_flush() of the leg returns; below 0 its queue keeps what it holds */
+void ut_txv_pipe_set_flush_ret(ut_txv_ctx* ctx, int leg, int ret);
+/* tv_uinit() with the kept pkts in their leg's TX queue, but each leg's last back in its
+ * builder ring unsent; mt_txq_flush() frees what a queue holds */
+int ut_txv_pipe_stop_last_pkt_unsent(ut_txv_ctx* ctx);
+/* the recovery session as a direct chain on iavf legs with pools of its own, whose
+ * frame's last pkt failed to burst on every leg, its payload the frame's only extbuf ref;
+ * the earlier pkts are in the queues */
+int ut_txv_recovery_set_last_pkt_unsent(ut_txv_ctx* ctx);
+/* notify_frame_done calls when the leg's first mt_txq_flush() or mt_txq_recovery_flush()
+ * started, -1 for none */
+int ut_txv_done_at_flush(const ut_txv_ctx* ctx, int leg);
 
 #ifdef __cplusplus
 }
