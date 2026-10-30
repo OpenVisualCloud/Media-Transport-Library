@@ -57,7 +57,6 @@ jobs:
       # Nothing installs MTL here; setup_environment.sh takes the dirname of this
       # to place DPDK under a workspace-local path instead of system-wide.
       MTL_INSTALL_PREFIX: ${{ github.workspace }}/.local_install/mtl
-      PKG_CONFIG_PATH: ${{ github.workspace }}/.local_install/dpdk/lib/x86_64-linux-gnu/pkgconfig
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
