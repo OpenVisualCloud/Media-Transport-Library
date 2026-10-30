@@ -1,6 +1,7 @@
 # Changelog
 
 * st40: carry SMPTE ST 2110-41 Fast Metadata as an opt-in ST40 mode (`ST40_TX_FLAG_FAST_METADATA`/`ST40_RX_FLAG_FAST_METADATA`); add ABI fields `fmd_dit`/`fmd_k_bit` to `st40_tx_ops`; remove RxTxApp `"fastmetadata"` groups and `--*fmd*` options; share one 180-session scheduler limit between ANC and Fast Metadata (previously 180 each)
+* lcore: an lcore ID is the CPU ID again, so processes on different CPUs no longer claim the same lcore: drop `--remap-lcore-ids`, build DPDK with `max_lcores` = build host CPUs (at least 256) or `DPDK_MAX_LCORES` (26.07.92_mtl_), size the lcore shm table and MtlManager for 1024 CPUs; do not run MTL 26.09 or earlier on the same host
 
 ## Changelog for 26.09
 

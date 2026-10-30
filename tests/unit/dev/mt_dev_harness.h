@@ -92,6 +92,8 @@ void ut_dev_set_eal_pmd_paths(ut_dev_ctx* ctx, const char* compiled_dir,
                               const char* eal_lib_path);
 /** Runs dev_eal_init(); returns its ret, always negative because the stub fails. */
 int ut_dev_eal_init(ut_dev_ctx* ctx);
+/** As ut_dev_eal_init(), with the warnings and errors it logs copied into logs. */
+int ut_dev_eal_init_logs(ut_dev_ctx* ctx, char* logs, size_t sz);
 int ut_dev_eal_argc(const ut_dev_ctx* ctx);
 const char* ut_dev_eal_argv(const ut_dev_ctx* ctx, int index);
 /** Times rte_eal_init() was reached, telling a rejected argv from a completed one. */
@@ -101,6 +103,8 @@ void ut_dev_set_num_ports(ut_dev_ctx* ctx, int num_ports);
 void ut_dev_set_dma_dev_ports(ut_dev_ctx* ctx, uint8_t num);
 /** Copies lcores, so the caller need not keep it alive. */
 void ut_dev_set_lcores(ut_dev_ctx* ctx, uint32_t main_lcore, const char* lcores);
+/** The CPU affinity dev_eal_init() sees instead of the host's; {0} by default. */
+void ut_dev_set_affinity(ut_dev_ctx* ctx, const unsigned int* cpus, int num);
 void ut_dev_set_iova_mode(ut_dev_ctx* ctx, enum mtl_iova_mode mode);
 void ut_dev_set_log_level(ut_dev_ctx* ctx, enum mtl_log_level level);
 void ut_dev_enable_rxtx_simd_512(ut_dev_ctx* ctx);

@@ -4,6 +4,8 @@
 
 #include "mt_dev.h"
 
+#include <ctype.h>
+
 #include "../mt_flow.h"
 #include "../mt_log.h"
 #include "../mt_sch.h"
@@ -378,6 +380,69 @@ static int dev_eal_loaded_pmd_dir(char* out, size_t len) {
 }
 #endif
 
+#ifndef WINDOWSENV
+#define MT_DEV_REBUILD_DPDK \
+  "rebuild DPDK with DPDK_MAX_LCORES=%d ./script/build_dpdk.sh -f, then rebuild MTL"
+
+/* the RTE_MAX_LCORE that numbers both CPU last and every CPU of this host, up to 1024 */
+static int dev_eal_max_lcores_for(int last) {
+  return RTE_MIN(RTE_MAX(last + 1, (int)sysconf(_SC_NPROCESSORS_CONF)), CPU_SETSIZE);
+}
+
+/* EAL stops at or fails on a CPU >= RTE_MAX_LCORE; with '@' or '()' any CPU is valid */
+static void dev_eal_check_corelist(const char* lcores) {
+  int last = -1;
+
+  if (strpbrk(lcores, "@(")) return;
+  for (const char* c = lcores; *c; c++) {
+    if (isdigit((unsigned char)*c) && (c == lcores || !isdigit((unsigned char)c[-1])))
+      last = RTE_MAX(last, (int)RTE_MIN(strtol(c, NULL, 10), (long)CPU_SETSIZE - 1));
+  }
+  if (last < RTE_MAX_LCORE) return;
+  warn("%s, CPU %d of lcores is >= RTE_MAX_LCORE %d of this DPDK, " MT_DEV_REBUILD_DPDK
+       "\n",
+       __func__, last, RTE_MAX_LCORE, dev_eal_max_lcores_for(last));
+}
+
+/* EAL init fails on an affinity CPU >= RTE_MAX_LCORE, so list only the CPUs below it */
+static int dev_eal_affinity_lcores(char* lcores, size_t sz) {
+  cpu_set_t set;
+  int len = 0;
+
+  if (pthread_getaffinity_np(pthread_self(), sizeof(set), &set)) return 0;
+  for (int cpu = 0; cpu < RTE_MAX_LCORE; cpu++) {
+    if (!CPU_ISSET(cpu, &set)) continue;
+    len += snprintf(lcores + len, sz - len, "%s%d", len ? "," : "", cpu);
+    CPU_CLR(cpu, &set);
+  }
+  if (!CPU_COUNT(&set)) return 0;
+
+  int last = CPU_SETSIZE - 1;
+  while (!CPU_ISSET(last, &set)) last--;
+  if (!len) {
+    err("%s, every affinity CPU is >= RTE_MAX_LCORE %d of this DPDK, " MT_DEV_REBUILD_DPDK
+        "\n",
+        __func__, RTE_MAX_LCORE, dev_eal_max_lcores_for(last));
+    return -EINVAL;
+  }
+  warn(
+      "%s, %d affinity CPUs, up to CPU %d, are >= RTE_MAX_LCORE %d of this DPDK and stay "
+      "unused, to use them " MT_DEV_REBUILD_DPDK "\n",
+      __func__, CPU_COUNT(&set), last, RTE_MAX_LCORE, dev_eal_max_lcores_for(last));
+  return len;
+}
+#else
+static void dev_eal_check_corelist(const char* lcores) {
+  MTL_MAY_UNUSED(lcores);
+}
+
+static int dev_eal_affinity_lcores(char* lcores, size_t sz) {
+  MTL_MAY_UNUSED(lcores);
+  MTL_MAY_UNUSED(sz);
+  return 0;
+}
+#endif
+
 static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_info) {
   char* argv[MT_EAL_MAX_ARGS];
   int argc, ret;
@@ -497,14 +562,19 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
       err("%s, lcores list too long: %s\n", __func__, p->lcores);
       return -EINVAL;
     }
+    dev_eal_check_corelist(lcores);
     argv[argc] = lcores;
     argc++;
+  } else {
+    ret = dev_eal_affinity_lcores(lcores, sizeof(lcores));
+    if (ret < 0) return ret;
+    if (ret > 0) {
+      argv[argc] = "-l";
+      argc++;
+      argv[argc] = lcores;
+      argc++;
+    }
   }
-
-#if RTE_VERSION >= RTE_VERSION_NUM(25, 11, 0, 0)
-  argv[argc] = "--remap-lcore-ids"; /* --remap-lcore-ids */
-  argc++;
-#endif
 
   if (!pci_ports) {
     argv[argc] = "--no-pci";

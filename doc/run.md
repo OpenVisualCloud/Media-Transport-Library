@@ -600,6 +600,9 @@ sudo ldconfig
 ### 8.15. Fail to Init lcore
 
 This might happen after commit `4f46e49`, because the lcore_shm structure is [changed](https://github.com/OpenVisualCloud/Media-Transport-Library/commit/4f46e493b79451c7ca564d82e1be56c7916b0722#diff-7ff8a138885ebda032ff57250ff81174b30722cc168a26fe39d9a4ff501d48d0L710).
+A release after 26.09 replaces an older structure of MTL 23.12 or later that no process uses any more; it reports an older layout as `not a lcore table of this MTL layout`, remove that one as below.
+While an older MTL process uses it, the newer one reports `the lcore table is in use by an older MTL (26.09 or earlier)` instead.
+Stop the older processes then: the two releases must not run together (see the [lcore Guide](shm_lcore.md)).
 
 ```text
 MT: 2023-11-24 15:06:27, Error: sch_lcore_shm_init, can not get shared memory for lcore, Invalid argument

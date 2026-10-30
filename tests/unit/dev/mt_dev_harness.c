@@ -5,6 +5,7 @@
 #define _GNU_SOURCE /* as mt_main.h, before any system header */
 #include <dlfcn.h>
 #include <pthread.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,6 +36,7 @@ struct ut_dev_ctx {
   int eal_init_calls;
   int eal_argc;
   char* eal_argv[UT_DEV_EAL_ARGV_MAX];
+  cpu_set_t affinity;
   enum ut_dev_event events[16];
   int event_count;
   int timesync_enable_calls;
@@ -110,12 +112,14 @@ static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
 static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
 
 static int ut_dladdr(const void* addr, Dl_info* info);
+static int ut_pthread_getaffinity_np(pthread_t thread, size_t size, cpu_set_t* set);
 static const char* ut_dev_compiled_pmd_dir(void);
 static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 
 #undef RTE_EAL_PMD_PATH
 #define RTE_EAL_PMD_PATH ut_dev_compiled_pmd_dir()
 #define dladdr ut_dladdr
+#define pthread_getaffinity_np ut_pthread_getaffinity_np
 #define rte_eth_rx_queue_setup ut_rte_eth_rx_queue_setup
 #define rte_eth_tx_queue_setup ut_rte_eth_tx_queue_setup
 #define rte_eth_add_tx_callback ut_rte_eth_add_tx_callback
@@ -142,6 +146,7 @@ static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 /* The pacing tests cover the iavf queue rate clear, which needs DPDK 26.07.91_mtl_. */
 #define MT_DEV_HAS_IAVF_TM_QOS_CHECK
 #include "dev/mt_dev.c"
+#undef pthread_getaffinity_np
 #undef mt_get_tsc
 #undef rte_eth_tx_done_cleanup
 #undef rte_eth_tx_burst
@@ -257,6 +262,12 @@ static int ut_rte_eth_stats_reset(uint16_t port_id) {
 
 static int ut_rte_eth_promiscuous_enable(uint16_t port_id) {
   (void)port_id;
+  return 0;
+}
+
+static int ut_pthread_getaffinity_np(pthread_t thread, size_t size, cpu_set_t* set) {
+  (void)thread;
+  memcpy(set, &ut_active_ctx->affinity, RTE_MIN(size, sizeof(*set)));
   return 0;
 }
 
@@ -417,6 +428,7 @@ ut_dev_ctx* ut_dev_create_ctx(void) {
   inf->tx_queues = &ctx->tx_queues[0];
   for (int q = 0; q < UT_DEV_TX_QUEUES; q++) ctx->tx_queues[q].rl_shapers_mapping = -1;
   inf->rx_mbuf_pool = (struct rte_mempool*)(uintptr_t)1;
+  CPU_SET(0, &ctx->affinity);
   ut_dev_tx_cleanup_frees = RTE_VERSION >= RTE_VERSION_NUM(26, 7, 0, 0);
   ut_active_ctx = ctx;
   return ctx;
@@ -616,6 +628,34 @@ int ut_dev_eal_init(ut_dev_ctx* ctx) {
   return ret;
 }
 
+static char* ut_dev_logs;
+static size_t ut_dev_logs_sz;
+
+static void ut_dev_log_printer(enum mtl_log_level level, const char* format, ...) {
+  va_list args;
+  size_t len = strlen(ut_dev_logs);
+
+  if (level < MTL_LOG_LEVEL_WARNING) return;
+  va_start(args, format);
+  vsnprintf(ut_dev_logs + len, ut_dev_logs_sz - len, format, args);
+  va_end(args);
+}
+
+int ut_dev_eal_init_logs(ut_dev_ctx* ctx, char* logs, size_t sz) {
+  enum mtl_log_level level = mt_get_log_global_level();
+  mtl_log_printer_t printer = mt_get_log_printer();
+
+  logs[0] = '\0';
+  ut_dev_logs = logs;
+  ut_dev_logs_sz = sz;
+  mt_set_log_global_level(MTL_LOG_LEVEL_WARNING);
+  mtl_set_log_printer(ut_dev_log_printer);
+  int ret = ut_dev_eal_init(ctx);
+  mtl_set_log_printer(printer);
+  mt_set_log_global_level(level);
+  return ret;
+}
+
 int ut_dev_eal_argc(const ut_dev_ctx* ctx) {
   return ctx->eal_argc;
 }
@@ -639,6 +679,11 @@ void ut_dev_set_dma_dev_ports(ut_dev_ctx* ctx, uint8_t num) {
   p->num_dma_dev_port = num;
   for (uint8_t i = 0; i < num && i < MTL_DMA_DEV_MAX; i++)
     snprintf(p->dma_dev_port[i], MTL_PORT_MAX_LEN, "0000:00:01.%u", i);
+}
+
+void ut_dev_set_affinity(ut_dev_ctx* ctx, const unsigned int* cpus, int num) {
+  CPU_ZERO(&ctx->affinity);
+  for (int i = 0; i < num; i++) CPU_SET(cpus[i], &ctx->affinity);
 }
 
 void ut_dev_set_lcores(ut_dev_ctx* ctx, uint32_t main_lcore, const char* lcores) {

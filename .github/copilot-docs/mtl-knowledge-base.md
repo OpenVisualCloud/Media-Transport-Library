@@ -1108,7 +1108,13 @@ Only with `MTL_FLAG_ENABLE_HW_TIMESTAMP` on iavf VFs.
 Hierarchy: port → shapers (max 128, `MT_MAX_RL_ITEMS`). Each shaper = one session's rate limit.
 
 ### Multi-Process
-Not supported: `dev_eal_init()` always passes `--in-memory`, so no DPDK runtime files exist for a `--proc-type=secondary` process to attach to. Independent MTL processes (one EAL each, e.g. on separate VFs) coordinate lcore use through MtlManager instead.
+Not supported: `dev_eal_init()` always passes `--in-memory`, so no DPDK runtime files exist for a `--proc-type=secondary` process to attach to.
+Independent MTL processes (one EAL each, e.g. on separate VFs) coordinate lcore use through MtlManager instead, or without it through the SysV shm table in `mt_sch.c`.
+Both key an lcore by its ID, and the ID is the CPU ID.
+`dev_eal_init()` does not pass `--remap-lcore-ids`: with it every process numbers its CPUs 0, 1, 2, ... and claims the same IDs.
+`script/build_dpdk.sh` sets `max_lcores` to the build host's CPU count, at least 256, or `DPDK_MAX_LCORES`, so `RTE_MAX_LCORE` covers every CPU; on a DPDK where it does not, `dev_eal_init()` passes only the affinity CPUs below it and logs the `DPDK_MAX_LCORES` to rebuild with.
+The shm table has `MT_MAX_CPUS` (1024) entries, independent of `RTE_MAX_LCORE`.
+MTL 26.01-26.09 keep remapped IDs in a 128-entry table: `sch_lcore_shm_init()` on the init path (`clear_on_first`, under the file lock) replaces such a table when no process holds it and fails with `-EBUSY` while one does, and an older process started later is not detected, so the versions must not run together (also not with an older MtlManager, which refuses IDs >= 128).
 
 ### Backend Support
 

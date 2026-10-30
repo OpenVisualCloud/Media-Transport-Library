@@ -10,6 +10,7 @@
 #define TESTS_UNIT_SCH_MT_SCH_HARNESS_H
 
 #include <mtl_api.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,6 +48,27 @@ int ut_sch_lcore_entry_mempolicy(int* mode, int* exit_mode);
 /* Creates the lcore lock file through sch_filelock_lock() under umask 0, in a fresh
  * temporary directory; *mode is its permission bits. Returns 0 on success. */
 int ut_sch_filelock_create_mode(unsigned int* mode);
+
+/* Keys the lcore shm table on a private file instead of the host's /dev/null, so a test
+ * neither sees nor disturbs the table of running MTL processes. Returns 0 on success. */
+int ut_sch_shm_private_begin(void);
+/* Detaches whatever the helpers below attached, removes the private table and goes back
+ * to the host's key. */
+void ut_sch_shm_private_end(void);
+/* The byte size of a table with `entries` lcore entries. */
+long ut_sch_shm_table_size(unsigned int entries);
+/* The byte size of the segment on the private key, or a negative errno. */
+long ut_sch_shm_size(void);
+/* Creates a segment of `bytes` on the private key, as an older MTL or another program
+ * would; with `attached` its creator stays attached, like a running process. Returns 0
+ * on success. */
+int ut_sch_shm_create(long bytes, bool attached);
+/* Marks the entry of `lcore` active for `pid`, as another process's claim. Returns 0, or
+ * -ERANGE if the table has no entry for `lcore`. */
+int ut_sch_shm_mark_active(unsigned int lcore, int pid);
+/* Attaches the way mtl_init() does, as the first user when `first_user`, and stays
+ * attached; returns the size of the table it attached, or a negative errno. */
+long ut_sch_shm_join(bool first_user);
 
 #ifdef __cplusplus
 }

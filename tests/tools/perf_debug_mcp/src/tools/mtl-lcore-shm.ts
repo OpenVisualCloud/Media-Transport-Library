@@ -62,8 +62,11 @@ else:
         import re
         m = re.search(r"nattch\\s*=\\s*(\\d+)", info_out)
         nattch = int(m.group(1)) if m else -1
+        m = re.search(r"bytes\\s*=\\s*(\\d+)", info_out)
+        segsz = int(m.group(1)) if m else 0
     except Exception:
         nattch = -1
+        segsz = 0
 
     addr = libc.shmat(shmid, None, SHM_RDONLY)
     if addr == ctypes.c_void_p(-1).value:
@@ -73,11 +76,12 @@ else:
         used = struct.unpack_from("<i", (ctypes.c_char * 4).from_address(addr), 0)[0]
         
         ENTRY_SIZE = 176
-        RTE_MAX_LCORE = 128
         HEADER_SIZE = 4
+        # 1024 entries after 26.09, 128 before: the segment size tells which
+        num_entries = (segsz - HEADER_SIZE) // ENTRY_SIZE if segsz > HEADER_SIZE else 128
         
         entries = []
-        for i in range(RTE_MAX_LCORE):
+        for i in range(num_entries):
             offset = HEADER_SIZE + i * ENTRY_SIZE
             raw = (ctypes.c_char * ENTRY_SIZE).from_address(addr + offset)
             data = bytes(raw)

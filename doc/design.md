@@ -112,6 +112,15 @@ For instructions on how to isolate CPU cores using the `isolcpus` kernel boot pa
 
 For user convenience, the built-in RxTxApp also offers a command-line option `--lcores <lcore list>` to enable users to customize their logical cores list.
 
+An lcore ID is the CPU ID it runs on, in the list, in the logs, in MtlManager and in `LcoreMgr --info`: lcore 130 is CPU 130.
+Processes that list different CPUs never share an lcore.
+The DPDK of `script/build_dpdk.sh` numbers every CPU of the host (see the build guide, section 2).
+A DPDK built with a smaller `RTE_MAX_LCORE` uses at most `RTE_MAX_LCORE` CPUs of a list and rejects one that names a CPU at or above it after fewer; without a list MTL uses only the CPUs of the process affinity below it.
+For a plain list (no `@` or `()`) and without a list, MTL logs the `DPDK_MAX_LCORES` to build DPDK with.
+MTL 26.09 and earlier number lcores differently: do not run them on the same host (see the [lcore Guide](shm_lcore.md)).
+
+The DPDK `@` syntax, for example `1@130`, sets an lcore ID that is not the CPU ID. MTL claims lcores by ID, so give each process IDs that no other process uses.
+
 ### 2.8. CPU Core Isolation
 
 For timing-sensitive workloads and improved performance predictability, isolating CPU cores from the general scheduler can significantly reduce context switches and jitter. This is particularly beneficial when running MTL with dedicated cores.

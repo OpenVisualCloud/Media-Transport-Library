@@ -231,7 +231,8 @@ The `patches/mtl_disable_remap_lcore_ids.patch` disables DPDK's
 MtlManager table when multiple MTL processes run with disjoint CPU sets.
 Apply it against MTL commit
 [`c02b9f6e`](https://github.com/OpenVisualCloud/Media-Transport-Library/commit/c02b9f6e3169d213bc2130f5459b6c1176e5e2e7)
-before building MTL:
+before building MTL. MTL releases after 26.09 do not pass `--remap-lcore-ids` and need no
+such patch.
 
 ```bash
 cd /path/to/Media-Transport-Library

@@ -630,8 +630,10 @@ struct mtl_init_params {
   /** Optional. log level control */
   enum mtl_log_level log_level;
   /**
-   * Optional. The logical cores list can be used in the MTL, e.g. "28,29,30,31".
-   * If not assigned, the core usage will be determined by MTL itself.
+   * Optional. The logical cores list can be used in the MTL, e.g. "28,29,30,31", in the
+   * syntax of the DPDK -l option. An lcore id is the CPU id, and must be below the
+   * RTE_MAX_LCORE of the DPDK build. If not assigned, MTL uses the CPUs of the process
+   * affinity.
    */
   char* lcores;
 
@@ -738,7 +740,7 @@ struct mtl_init_params {
   /** Optional, all future port params should be placed into this struct */
   struct mtl_port_init_params port_params[MTL_PORT_MAX];
 
-  /* The Core ID designated for the DPDK main thread. If set to 0, the DPDK default core
+  /* The CPU id designated for the DPDK main thread. If set to 0, the DPDK default core
    * is used. */
   uint32_t main_lcore;
 
