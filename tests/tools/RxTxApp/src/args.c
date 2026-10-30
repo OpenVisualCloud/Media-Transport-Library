@@ -139,6 +139,7 @@ enum st_args_cmd {
   ST_ARG_TX_NO_BURST_CHECK,
   ST_ARG_DHCP,
   ST_ARG_IOVA_MODE,
+  ST_ARG_RX_VIDEO_COPY,
   ST_ARG_SHARED_TX_QUEUES,
   ST_ARG_SHARED_RX_QUEUES,
   ST_ARG_RX_USE_CNI,
@@ -289,6 +290,7 @@ static struct option st_app_args_options[] = {
     {"tx_no_burst_check", no_argument, 0, ST_ARG_TX_NO_BURST_CHECK},
     {"dhcp", no_argument, 0, ST_ARG_DHCP},
     {"iova_mode", required_argument, 0, ST_ARG_IOVA_MODE},
+    {"rx_video_copy", required_argument, 0, ST_ARG_RX_VIDEO_COPY},
     {"shared_tx_queues", no_argument, 0, ST_ARG_SHARED_TX_QUEUES},
     {"shared_rx_queues", no_argument, 0, ST_ARG_SHARED_RX_QUEUES},
     {"rx_use_cni", no_argument, 0, ST_ARG_RX_USE_CNI},
@@ -893,6 +895,16 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
           p->iova_mode = MTL_IOVA_MODE_PA;
         else
           err("%s, unknow iova mode %s\n", __func__, optarg);
+        break;
+      case ST_ARG_RX_VIDEO_COPY:
+        if (!strcmp(optarg, "auto"))
+          p->rx_video_copy = MTL_RX_VIDEO_COPY_AUTO;
+        else if (!strcmp(optarg, "stream"))
+          p->rx_video_copy = MTL_RX_VIDEO_COPY_STREAM;
+        else if (!strcmp(optarg, "cached"))
+          p->rx_video_copy = MTL_RX_VIDEO_COPY_CACHED;
+        else
+          err("%s, unknown rx video copy %s\n", __func__, optarg);
         break;
       case ST_ARG_SHARED_TX_QUEUES:
         p->flags |= MTL_FLAG_SHARED_TX_QUEUE;

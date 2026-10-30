@@ -98,9 +98,28 @@ Two cases never reach the streaming path, so the option does not move them. A se
 
 What keeps the copy relevant under DSA is `mt_dma_full()` backpressure, line-crossing packets, and st22, which has no DMA branch at all.
 
-### 5.1. Build option
+### 5.1. Selection at runtime
 
-`enable_rx_video_nt_store` controls it, `true` by default. The streaming path is compiled only when the target has SSE2, so on a non-x86 build the option is already a no-op.
+The effect on the RX sessions per core depends on the CPU. With 1080p59 sessions on one scheduler core:
+
+CPU | family / model | cached copy | streaming copy
+--- | --- | --- | ---
+Xeon 6767P (Granite Rapids SP) | 6 / 0xad | 0 fps at 24 | 59.9 fps at 24, 45.7 fps at 32
+Xeon Gold 6348 (Ice Lake SP) | 6 / 0x6a | 59.87 fps at 14 | 33 fps at 14
+
+At a low load the streaming copy makes the scheduler loop longer on both CPUs. The gain on Granite Rapids comes under load: the streaming stores keep the RX mbufs and descriptors in the cache, so the mbuf free and the RX burst take half the time. A short measurement at session create does not show this, so the library selects the copy by the CPU model.
+
+`mtl_init_params.rx_video_copy` selects the copy:
+
+- `MTL_RX_VIDEO_COPY_AUTO` (zero, the default): the streaming copy on the CPUs of `mt_rx_video_copy_stream_auto()` (`lib/src/mt_main.h`), today only Granite Rapids SP/AP; the cached copy on every other CPU.
+- `MTL_RX_VIDEO_COPY_STREAM`: the streaming copy.
+- `MTL_RX_VIDEO_COPY_CACHED`: `mt_memcpy()`.
+
+`mtl_init()` logs the result, for example `mt_rx_video_copy_init, stream copy, auto, cpu intel family 6 model 0xad`. RxTxApp sets it with `--rx_video_copy auto|stream|cached`. To add a CPU to the AUTO table, measure the RX sessions per core with both copies and add the model when one of them holds more sessions.
+
+### 5.2. Build option
+
+`enable_rx_video_nt_store` builds the streaming path, `true` by default. The streaming path is compiled only when the target has SSE2, so on a non-x86 build the option is already a no-op.
 
 ```bash
 # turn it off in the existing library build directory
@@ -112,4 +131,5 @@ meson setup build_no_nt -Denable_rx_video_nt_store=false
 ninja -C build_no_nt
 ```
 
-With the option off every RX video frame copy goes through `mt_memcpy()` and the three store fences that publish a frame to the application are compiled out with it. Build both ways and compare `incomplete frames` at a fixed session count to tell a copy-bound RX regression apart from a pacing or scheduling one.
+With the option off every RX video frame copy goes through `mt_memcpy()`, `MTL_RX_VIDEO_COPY_STREAM` logs a warning and falls back to it, and the three store fences that publish a frame to the application are compiled out.
+To tell a copy-bound RX regression apart from a pacing or scheduling one, run with `--rx_video_copy stream` and `--rx_video_copy cached` and compare `incomplete frames` at a fixed session count.
