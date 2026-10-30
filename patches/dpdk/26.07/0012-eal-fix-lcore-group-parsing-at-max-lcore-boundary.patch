@@ -1,0 +1,58 @@
+From nobody Mon Sep 17 00:00:00 2001
+From: Marek Kasiewicz <marek.kasiewicz@intel.com>
+Date: Fri, 30 Oct 2026 12:00:00 +0100
+Subject: [PATCH] eal: fix lcore group parsing at max lcore boundary
+
+Inside a '()' group of --lcores (or of -l with '@'), eal_parse_set()
+marks "no range start seen yet" with min = RTE_MAX_LCORE. Since cpu ids
+may go up to CPU_SETSIZE - 1, a range that starts exactly at cpu
+RTE_MAX_LCORE looks like a single number, and only its last cpu is set.
+With RTE_MAX_LCORE 128:
+
+  --lcores '0,(1-3)@(128-191)'   lcores 1-3 run on cpu 191 only
+  --lcores '0,(1-3)@(128,129-191)' lcores 1-3 run on cpus 128-191
+
+Use CPU_SETSIZE as the marker: strtoul() values >= CPU_SETSIZE are
+already rejected, so it can never be a range start.
+
+Fixes: 8674b203f127 ("eal: remove limitation on cpuset with --lcores")
+Cc: stable@dpdk.org
+---
+ lib/eal/common/eal_common_options.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/lib/eal/common/eal_common_options.c b/lib/eal/common/eal_common_options.c
+--- a/lib/eal/common/eal_common_options.c
++++ b/lib/eal/common/eal_common_options.c
+@@ -1286,7 +1286,7 @@
+ 	if (*str == '\0')
+ 		return -1;
+ 
+-	min = RTE_MAX_LCORE;
++	min = CPU_SETSIZE;
+ 	do {
+ 
+ 		/* go ahead to the first digit */
+@@ -1305,19 +1305,19 @@
+ 		while (isblank(*end))
+ 			end++;
+ 		if (*end == '-') {
+-			if (min == RTE_MAX_LCORE)
++			if (min == CPU_SETSIZE)
+ 				min = idx;
+ 			else /* avoid continuous '-' */
+ 				return -1;
+ 		} else if ((*end == ',') || (*end == ')')) {
+ 			max = idx;
+-			if (min == RTE_MAX_LCORE)
++			if (min == CPU_SETSIZE)
+ 				min = idx;
+ 			for (idx = RTE_MIN(min, max);
+ 			     idx <= RTE_MAX(min, max); idx++)
+ 				CPU_SET(idx, set);
+ 
+-			min = RTE_MAX_LCORE;
++			min = CPU_SETSIZE;
+ 		} else
+ 			return -1;
+ 

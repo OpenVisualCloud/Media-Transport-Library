@@ -28,6 +28,8 @@ OPTIONS:
 ENVIRONMENT:
 	MTL_INSTALL_PREFIX	The MTL prefix: install into the dpdk sibling of its parent
 				(.local_install/dpdk beside .local_install/mtl) instead of the system
+	DPDK_MAX_LCORES		RTE_MAX_LCORE, the highest CPU ID + 1 MTL can use (default: the
+				CPU count of this host, at least 256; at most 1024, as MTL)
 
 EXAMPLES:
 	${script_name}			# Build the default DPDK version
@@ -85,7 +87,7 @@ check_build_packages() {
 }
 
 main() {
-	local opt dpdk_folder archive_name patch_file python_path="$PATH" dpdk_prefix
+	local opt dpdk_folder archive_name patch_file python_path="$PATH" dpdk_prefix max_lcores
 
 	FORCE=0
 	while getopts "fhv:-:" opt; do
@@ -166,7 +168,16 @@ main() {
 		cd "$dpdk_folder"
 	fi
 
-	log_info "Build and install DPDK now"
+	# An MTL lcore id is the CPU id, so DPDK must number every CPU of the host.
+	max_lcores=$(nproc --all)
+	# An image built on a small host still runs on 256 CPUs: ~1 MiB more per mempool.
+	[ "$max_lcores" -lt 256 ] && max_lcores=256
+	max_lcores=${DPDK_MAX_LCORES:-$max_lcores}
+	if [ "$max_lcores" -gt 1024 ]; then
+		log_warning "max_lcores ${max_lcores} is above 1024, the most CPUs MTL supports. Using 1024."
+		max_lcores=1024
+	fi
+	log_info "Build and install DPDK now, max_lcores ${max_lcores}"
 	[ -n "${DPDK_PYTHON}" ] && python_path="$(dirname "$DPDK_PYTHON"):$PATH"
 	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 		# A prefix install is self-contained and can be moved: each library
@@ -177,13 +188,13 @@ main() {
 		# DPDK's dependencies without LD_LIBRARY_PATH.
 		dpdk_prefix="$(dirname "${MTL_INSTALL_PREFIX}")/dpdk"
 		# shellcheck disable=SC2016 # $ORIGIN is for the loader
-		PATH="$python_path" meson setup build --prefix "${dpdk_prefix}" \
+		PATH="$python_path" meson setup build --prefix "${dpdk_prefix}" -Dmax_lcores="${max_lcores}" \
 			'-Dc_link_args=-Wl,--disable-new-dtags,-rpath,$ORIGIN,-rpath,$ORIGIN/../..'
 		ninja -C build
 		ninja -C build install
 		relocate_pkgconfig "${dpdk_prefix}"
 	else
-		PATH="$python_path" meson setup build
+		PATH="$python_path" meson setup build -Dmax_lcores="${max_lcores}"
 		ninja -C build
 		as_root ninja -C build install
 		command_exists ldconfig && as_root ldconfig
