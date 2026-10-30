@@ -1,0 +1,56 @@
+From 66927db3725a66c63b22bc47a3ea606785dc9e43 Mon Sep 17 00:00:00 2001
+From: Dawid Wesierski <dawid.wesierski@intel.com>
+Date: Thu, 17 Sep 2026 14:20:00 +0200
+Subject: [PATCH] net/iavf: fix bandwidth config of unshaped queues
+
+When configuring queue bandwidth via virtchnl in iavf_hierarchy_commit(),
+an entry in the bandwidth configuration array is allocated for each queue
+node. However, the driver only populated queue_id and tc for nodes that
+had an active shaper profile.
+
+Because the configuration buffer is zero-initialized with calloc(), any
+unshaped queue node left its entry with queue_id 0, tc 0, and zero rate
+limits. Consequently, the PF interpreted each unshaped queue entry as a
+request to reset queue 0 to default bandwidth, leaving the actual target
+queue untouched on the PF. Any previously configured rate limit on that
+queue remained active, even across subsequent queue enables or process
+restarts.
+
+Fix this by setting queue_id and tc for every queue node, ensuring
+unshaped queues properly send zeroed shaper rates for their own queue ID
+so the PF restores their default bandwidth.
+
+Fixes: 5779a8894d15 ("net/iavf: support queue rate limit configuration")
+Cc: stable@dpdk.org
+
+Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
+Acked-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ drivers/net/intel/iavf/iavf_tm.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/intel/iavf/iavf_tm.c b/drivers/net/intel/iavf/iavf_tm.c
+index faa2d4b8a0..944b6a2c1d 100644
+--- a/drivers/net/intel/iavf/iavf_tm.c
++++ b/drivers/net/intel/iavf/iavf_tm.c
+@@ -867,15 +867,15 @@ static int iavf_hierarchy_commit(struct rte_eth_dev *dev,
+ 		}
+ 		q_tc_mapping->tc[tm_node->tc].req.queue_count++;
+ 
++		q_bw->cfg[node_committed].queue_id = tm_node->id;
++		q_bw->cfg[node_committed].tc = tm_node->tc;
+ 		if (tm_node->shaper_profile) {
+-			q_bw->cfg[node_committed].queue_id = tm_node->id;
+ 			q_bw->cfg[node_committed].shaper.peak =
+ 			tm_node->shaper_profile->profile.peak.rate /
+ 			1000 * IAVF_BITS_PER_BYTE;
+ 			q_bw->cfg[node_committed].shaper.committed =
+ 			tm_node->shaper_profile->profile.committed.rate /
+ 			1000 * IAVF_BITS_PER_BYTE;
+-			q_bw->cfg[node_committed].tc = tm_node->tc;
+ 		}
+ 
+ 		node_committed++;
+-- 
+2.43.0
+

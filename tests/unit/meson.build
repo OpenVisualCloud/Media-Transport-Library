@@ -212,6 +212,8 @@ unit_sources = [
   'main/mtl_init_params_test.cpp',
   'main/mt_instance_harness.c',
   'main/mt_instance_test.cpp',
+  'main/mt_pcap_harness.c',
+  'main/mt_pcap_test.cpp',
   'dma/mt_map_harness.c',
   'dma/mt_map_test.cpp',
   'dma/mt_dma_auto_harness.c',
