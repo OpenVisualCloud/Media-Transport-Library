@@ -150,7 +150,7 @@ static void st20_fuzz_reset_context(void) {
   memset(&g_session, 0, sizeof(g_session));
 
   g_impl.type = MT_HANDLE_MAIN;
-  g_impl.tsc_hz = rte_get_tsc_hz();
+  mt_set_tsc_hz(&g_impl, rte_get_tsc_hz());
   g_impl.inf[MTL_PORT_P].parent = &g_impl;
   g_impl.inf[MTL_PORT_P].port = MTL_PORT_P;
   g_impl.inf[MTL_PORT_P].ptp_get_time_fn = st20_fuzz_ptp_time;

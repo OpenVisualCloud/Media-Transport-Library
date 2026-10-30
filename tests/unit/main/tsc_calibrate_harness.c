@@ -81,6 +81,21 @@ int ut_tsc_calibrate_mtl_uninit(mtl_handle mt);
 #undef rte_get_tsc_cycles
 #undef mt_get_monotonic_time
 
+uint64_t ut_tsc_to_ns(uint64_t tsc_hz, uint64_t* lo_ns, uint64_t* hi_ns) {
+  struct mtl_main_impl* impl = calloc(1, sizeof(*impl));
+  uint64_t lo, hi, ns;
+
+  if (!impl) return 0;
+  mt_set_tsc_hz(impl, tsc_hz);
+  lo = rte_get_tsc_cycles();
+  ns = mt_get_tsc(impl);
+  hi = rte_get_tsc_cycles();
+  free(impl);
+  *lo_ns = tsc_hz ? (unsigned __int128)lo * NS_PER_S / tsc_hz : 0;
+  *hi_ns = tsc_hz ? (unsigned __int128)hi * NS_PER_S / tsc_hz : 0;
+  return ns;
+}
+
 uint64_t ut_tsc_calibrate(uint64_t tsc_hz, uint64_t read_ns, uint64_t cold_read_ns) {
   struct mtl_main_impl* impl = calloc(1, sizeof(*impl));
   uint64_t calibrated;
