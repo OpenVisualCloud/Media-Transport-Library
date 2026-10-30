@@ -47,6 +47,7 @@
 #define MT_MBUF_DEFAULT_DATA_SIZE (RTE_MBUF_DEFAULT_DATAROOM) /* 2048 */
 
 #define MT_MAX_SCH_NUM (18) /* max 18 scheduler lcore */
+#define MT_MAX_CPUS (1024)  /* CPU_SETSIZE, every CPU id an lcore id can be */
 
 /* max RL items */
 #define MT_MAX_RL_ITEMS (128)
@@ -791,8 +792,8 @@ struct mt_lcore_shm_entry {
 struct mt_lcore_shm {
   /* number of used lcores */
   int used;
-  /* lcores map info */
-  struct mt_lcore_shm_entry lcores_info[RTE_MAX_LCORE];
+  /* indexed by lcore id, which is the CPU id */
+  struct mt_lcore_shm_entry lcores_info[MT_MAX_CPUS];
 };
 
 typedef int (*mt_dma_drop_mbuf_cb)(void* priv, struct rte_mbuf* mbuf);

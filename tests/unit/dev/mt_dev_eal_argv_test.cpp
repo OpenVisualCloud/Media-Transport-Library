@@ -50,6 +50,18 @@ class MtDevEalArgvTest : public testing::Test {
     return pmd_dir;
   }
 
+  void SetAffinity(std::vector<unsigned int> cpus) {
+    ut_dev_set_affinity(ctx_, cpus.data(), static_cast<int>(cpus.size()));
+  }
+
+  std::string Logs() {
+    char logs[4096];
+    ut_dev_eal_init_logs(ctx_, logs, sizeof(logs));
+    return logs;
+  }
+
+  static constexpr const char* kRebuildAdvice = "./script/build_dpdk.sh -f";
+
   bool HasOption(const std::string& option) {
     std::vector<std::string> argv = Argv();
     return std::find(argv.begin(), argv.end(), option) != argv.end();
@@ -147,6 +159,80 @@ TEST_F(MtDevEalArgvTest, TwoPortsWithEightDmaDevicesFitTheArgvVector) {
   EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 1);
   EXPECT_GT(ut_dev_eal_argc(ctx_), 32);
   EXPECT_LE(ut_dev_eal_argc(ctx_), ut_dev_eal_max_args());
+}
+
+/* An lcore id is the CPU id: EAL must not renumber the CPUs the user lists. */
+TEST_F(MtDevEalArgvTest, CorelistIsNotRemapped) {
+  ut_dev_set_lcores(ctx_, 0, "60,61");
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 1);
+  EXPECT_FALSE(HasOption("--remap-lcore-ids"));
+}
+
+/* Without a corelist EAL takes every affinity CPU, numbered by its CPU id. */
+TEST_F(MtDevEalArgvTest, AutomaticAssignmentLeavesTheAffinityToEal) {
+  SetAffinity({1, 2});
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 1);
+  EXPECT_FALSE(HasOption("-l"));
+  EXPECT_FALSE(HasOption("--remap-lcore-ids"));
+}
+
+/* An affinity CPU at or past RTE_MAX_LCORE fails EAL init, so pass only the CPUs below.
+ */
+TEST_F(MtDevEalArgvTest, AutomaticAssignmentDropsCpusPastRteMaxLcore) {
+  if (RTE_MAX_LCORE + 3 >= CPU_SETSIZE) GTEST_SKIP() << "no CPU id above RTE_MAX_LCORE";
+  SetAffinity({1, 2, RTE_MAX_LCORE, RTE_MAX_LCORE + 3});
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 1);
+  EXPECT_EQ(ValueAfter("-l"), "1,2");
+}
+
+TEST_F(MtDevEalArgvTest, AutomaticAssignmentWithoutACpuBelowRteMaxLcoreIsRejected) {
+  if (RTE_MAX_LCORE + 3 >= CPU_SETSIZE) GTEST_SKIP() << "no CPU id above RTE_MAX_LCORE";
+  SetAffinity({RTE_MAX_LCORE});
+
+  EXPECT_EQ(ut_dev_eal_init(ctx_), -EINVAL);
+  EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 0);
+}
+
+/* A DPDK too small for the CPUs asked for: the log names the rebuild that fixes it. */
+TEST_F(MtDevEalArgvTest, AutomaticAssignmentPastRteMaxLcoreNamesTheDpdkToBuild) {
+  if (RTE_MAX_LCORE + 3 >= CPU_SETSIZE) GTEST_SKIP() << "no CPU id above RTE_MAX_LCORE";
+  SetAffinity({1, RTE_MAX_LCORE});
+
+  EXPECT_NE(Logs().find(kRebuildAdvice), std::string::npos) << Logs();
+}
+
+TEST_F(MtDevEalArgvTest, CorelistPastRteMaxLcoreNamesTheDpdkToBuild) {
+  ut_dev_set_lcores(ctx_, 0, ("1," + std::to_string(RTE_MAX_LCORE)).c_str());
+
+  EXPECT_NE(Logs().find(kRebuildAdvice), std::string::npos) << Logs();
+}
+
+TEST_F(MtDevEalArgvTest, CorelistRangePastRteMaxLcoreNamesTheDpdkToBuild) {
+  ut_dev_set_lcores(ctx_, 0, ("1-" + std::to_string(RTE_MAX_LCORE)).c_str());
+
+  EXPECT_NE(Logs().find(kRebuildAdvice), std::string::npos) << Logs();
+}
+
+TEST_F(MtDevEalArgvTest, CorelistWithAnOverflowingCpuIdNamesTheDpdkToBuild) {
+  ut_dev_set_lcores(ctx_, 0, "1,99999999999999999999999");
+
+  EXPECT_NE(Logs().find("DPDK_MAX_LCORES=1024 "), std::string::npos) << Logs();
+}
+
+/* With '@' a CPU at or past RTE_MAX_LCORE is valid: only the lcore id must be below. */
+TEST_F(MtDevEalArgvTest, MappedCorelistPastRteMaxLcoreIsNotWarned) {
+  ut_dev_set_lcores(ctx_, 0, ("1@" + std::to_string(RTE_MAX_LCORE)).c_str());
+
+  EXPECT_EQ(Logs().find(kRebuildAdvice), std::string::npos) << Logs();
 }
 
 /* main_lcore is prepended to the user corelist, an otherwise undocumented contract. */

@@ -6,6 +6,7 @@
  * libmtl's for the whole UnitTest binary.
  */
 
+#define _GNU_SOURCE /* CPU_SETSIZE needs it before any libc header */
 #include "sch/mt_sch_harness.h"
 
 #include <limits.h>
@@ -23,7 +24,10 @@
 static const char* ut_sch_flock_path = MT_FLOCK_PATH;
 #undef MT_FLOCK_PATH
 #define MT_FLOCK_PATH ut_sch_flock_path
+static const char* ut_sch_shm_path = "/dev/null";
+#define ftok(path, id) ftok(ut_sch_shm_path, id)
 #include "mt_sch.c"
+#undef ftok
 
 int ut_sch_init(void) {
   return ut_eal_init();
@@ -182,4 +186,88 @@ int ut_sch_filelock_create_mode(unsigned int* mode) {
   free(mgr);
   rmdir(dir);
   return ret;
+}
+
+static char ut_sch_shm_file[PATH_MAX];
+static void* ut_sch_shm_creator;
+static struct mt_lcore_mgr ut_sch_shm_mgr = {.lcore_shm_id = -1};
+
+/* A key that is not the host's and has no segment yet, so teardown removes only ours. */
+int ut_sch_shm_private_begin(void) {
+  key_t host_key = ftok("/dev/null", 21);
+
+  for (int try = 0; try < 16; try++) {
+    snprintf(ut_sch_shm_file, sizeof(ut_sch_shm_file), "/tmp/ut_sch_shm_XXXXXX");
+    int fd = mkstemp(ut_sch_shm_file);
+    if (fd < 0) return -errno;
+    close(fd);
+    key_t key = ftok(ut_sch_shm_file, 21);
+    if (key != -1 && key != host_key && shmget(key, 0, 0) < 0 && errno == ENOENT) {
+      ut_sch_shm_path = ut_sch_shm_file;
+      return 0;
+    }
+    unlink(ut_sch_shm_file);
+  }
+  return -EEXIST;
+}
+
+void ut_sch_shm_private_end(void) {
+  if (ut_sch_shm_mgr.lcore_shm) sch_lcore_shm_uinit(&ut_sch_shm_mgr);
+  if (ut_sch_shm_creator) shmdt(ut_sch_shm_creator);
+  ut_sch_shm_creator = NULL;
+  if (ut_sch_shm_path == ut_sch_shm_file) {
+    int id = shmget(ftok(ut_sch_shm_path, 21), 0, 0666);
+    if (id >= 0) shmctl(id, IPC_RMID, NULL);
+    unlink(ut_sch_shm_file);
+  }
+  ut_sch_shm_path = "/dev/null";
+}
+
+long ut_sch_shm_table_size(unsigned int entries) {
+  return (long)(offsetof(struct mt_lcore_shm, lcores_info) +
+                entries * sizeof(struct mt_lcore_shm_entry));
+}
+
+long ut_sch_shm_size(void) {
+  int id = shmget(ftok(ut_sch_shm_path, 21), 0, 0666);
+  if (id < 0) return -errno;
+  struct shmid_ds stat;
+  if (shmctl(id, IPC_STAT, &stat) < 0) return -errno;
+  return (long)stat.shm_segsz;
+}
+
+int ut_sch_shm_create(long bytes, bool attached) {
+  int id = shmget(ftok(ut_sch_shm_path, 21), bytes, 0666 | IPC_CREAT | IPC_EXCL);
+  if (id < 0) return -errno;
+  void* shm = shmat(id, NULL, 0);
+  if (shm == (void*)-1) return -errno;
+  memset(shm, 0, bytes);
+  if (attached)
+    ut_sch_shm_creator = shm;
+  else
+    shmdt(shm);
+  return 0;
+}
+
+int ut_sch_shm_mark_active(unsigned int lcore, int pid) {
+  int id = shmget(ftok(ut_sch_shm_path, 21), 0, 0666);
+  if (id < 0) return -errno;
+  struct shmid_ds stat;
+  if (shmctl(id, IPC_STAT, &stat) < 0) return -errno;
+  if ((long)stat.shm_segsz < ut_sch_shm_table_size(lcore + 1)) return -ERANGE;
+  struct mt_lcore_shm* shm = shmat(id, NULL, 0);
+  if (shm == (void*)-1) return -errno;
+  shm->lcores_info[lcore].active = true;
+  shm->lcores_info[lcore].pid = pid;
+  shm->used++;
+  shmdt(shm);
+  return 0;
+}
+
+long ut_sch_shm_join(bool first_user) {
+  int ret = sch_lcore_shm_init(&ut_sch_shm_mgr, first_user);
+  if (ret < 0) return ret;
+  struct shmid_ds stat;
+  if (shmctl(ut_sch_shm_mgr.lcore_shm_id, IPC_STAT, &stat) < 0) return -errno;
+  return (long)stat.shm_segsz;
 }

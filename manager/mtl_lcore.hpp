@@ -5,10 +5,13 @@
 #ifndef __MTL_LCORE_HPP__
 #define __MTL_LCORE_HPP__
 
+#include <sched.h>
+
 #include <bitset>
 #include <mutex>
 
-#define MTL_MAX_LCORE 128
+/* an lcore id is the CPU id */
+#define MTL_MAX_LCORE CPU_SETSIZE
 
 class mtl_lcore {
  private:

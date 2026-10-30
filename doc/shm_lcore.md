@@ -12,6 +12,11 @@ It minimizes the impact of OS scheduler decisions, reduces cache-related issues,
 
 MTL supports multi-process deployment based on SR-IOV VF isolation. To manage the dispatching of lcores among multiple processes, it introduces shared memory mapping to maintain the status of lcore usage. Each process searches the mapping and allocates a new lcore slot from it, freeing the slot when it is no longer in use.
 The last user attached to the shared memory will reset the mapping to an initial status during the `shmdt` operation as part of the release routine.
+The mapping has one entry for each CPU ID from 0 to 1023, as an lcore ID is the CPU ID.
+MTL 26.09 and earlier made a mapping of 128 entries, and MTL 26.01 to 26.09 number lcores differently, so their entries are not CPU IDs.
+Do not run MTL 26.09 or earlier on the same host as this version, in either start order, with or without the Manager service.
+A newer process refuses to start while an older one holds the 128-entry mapping, but an older process that starts later uses the new mapping without noticing.
+A 128-entry mapping that no process holds any more is replaced when the next MTL process starts; `LcoreMgr` only reports it. An older MtlManager refuses CPUs 128 and above.
 
 MTL also provides a tool which can be find from `./build/app/LcoreMgr` for manually cleaning up lcore entries. This tool is typically used when a process fails to release lcores due to panic issues or other failures that prevent the regular free routine from running. Below is the usage information:
 

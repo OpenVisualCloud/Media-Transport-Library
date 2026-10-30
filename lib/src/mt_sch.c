@@ -539,10 +539,23 @@ static int sch_filelock_unlock(struct mt_sch_mgr* mgr) {
   return 0;
 }
 
+/* entries of a table of segsz bytes, 0 if the segment is not an MTL lcore table */
+static size_t sch_lcore_shm_entries(size_t segsz) {
+  size_t head = offsetof(struct mt_lcore_shm, lcores_info);
+  size_t entry = sizeof(struct mt_lcore_shm_entry);
+
+  if (segsz < head + entry || (segsz - head) % entry) return 0;
+  return (segsz - head) / entry;
+}
+
 static int sch_lcore_shm_init(struct mt_lcore_mgr* mgr, bool clear_on_first) {
   struct mt_lcore_shm* lcore_shm = NULL;
   int ret;
 
+  RTE_BUILD_BUG_ON(RTE_MAX_LCORE > MT_MAX_CPUS);
+#ifndef WINDOWSENV
+  RTE_BUILD_BUG_ON(MT_MAX_CPUS != CPU_SETSIZE);
+#endif
   mgr->lcore_shm_id = -1;
 
   key_t key = ftok("/dev/null", 21);
@@ -551,6 +564,8 @@ static int sch_lcore_shm_init(struct mt_lcore_mgr* mgr, bool clear_on_first) {
     return -EIO;
   }
   int shm_id = shmget(key, sizeof(*lcore_shm), 0666 | IPC_CREAT);
+  if (shm_id < 0 && errno == EINVAL) /* a smaller segment, checked below */
+    shm_id = shmget(key, 0, 0666);
   if (shm_id < 0) {
     err("%s, can not get shared memory for lcore, %s\n", __func__, strerror(errno));
     return -EIO;
@@ -569,6 +584,35 @@ static int sch_lcore_shm_init(struct mt_lcore_mgr* mgr, bool clear_on_first) {
     err("%s, shmctl fail\n", __func__);
     shmdt(lcore_shm);
     return ret;
+  }
+
+  size_t entries = sch_lcore_shm_entries(stat.shm_segsz);
+  if (entries < MT_MAX_CPUS) {
+    shmdt(lcore_shm);
+    mgr->lcore_shm_id = -1;
+    /* only init, under the file lock, may replace a table */
+    if (!clear_on_first || !entries) {
+      err("%s, shm key 0x%x holds %" PRIu64
+          " bytes, not a lcore table of this MTL "
+          "layout, remove it with ipcrm -M 0x%x once no older MTL runs\n",
+          __func__, (int)key, (uint64_t)stat.shm_segsz, (int)key);
+      return -EIO;
+    }
+    if (stat.shm_nattch > 1) {
+      err("%s, the lcore table is in use by an older MTL (26.09 or earlier), which "
+          "numbers lcores differently. Stop all older MTL processes, then start this "
+          "one\n",
+          __func__);
+      return -EBUSY;
+    }
+    /* left by an older MTL that has exited */
+    if (shmctl(shm_id, IPC_RMID, NULL) < 0) {
+      err("%s, can not remove the lcore table of an older MTL, %s, "
+          "remove it with ipcrm -M 0x%x\n",
+          __func__, strerror(errno), (int)key);
+      return -EIO;
+    }
+    return sch_lcore_shm_init(mgr, clear_on_first);
   }
 
   if (clear_on_first && (stat.shm_nattch == 1)) {
@@ -1237,10 +1281,10 @@ int mtl_lcore_shm_print(void) {
   struct mt_lcore_shm* lcore_shm = lcore_mgr.lcore_shm;
   info("%s, MTL used lcores %d\n", __func__, lcore_shm->used);
 
-  int cpu_ids[RTE_MAX_LCORE];
+  int cpu_ids[MT_MAX_CPUS];
   int found = 0;
 
-  for (int i = 0; i < RTE_MAX_LCORE; i++) {
+  for (int i = 0; i < MT_MAX_CPUS; i++) {
     shm_entry = &lcore_shm->lcores_info[i];
 
     if (!shm_entry->active) continue;
@@ -1298,7 +1342,7 @@ static int lcore_shm_clean_auto_pid(struct mt_lcore_mgr* lcore_mgr) {
 
   struct mt_lcore_shm* lcore_shm = lcore_mgr->lcore_shm;
   struct mt_lcore_shm_entry* shm_entry;
-  for (int i = 0; i < RTE_MAX_LCORE; i++) {
+  for (int i = 0; i < MT_MAX_CPUS; i++) {
     shm_entry = &lcore_shm->lcores_info[i];
 
     if (!shm_entry->active) continue;
@@ -1330,7 +1374,7 @@ static int lcore_shm_clean_id(struct mt_lcore_mgr* lcore_mgr, void* args,
     return -EINVAL;
   }
   uint32_t lcore = info->lcore;
-  if (lcore >= RTE_MAX_LCORE) {
+  if (lcore >= MT_MAX_CPUS) {
     err("%s, invalid lcore %u\n", __func__, lcore);
     return -EINVAL;
   }
