@@ -12,9 +12,10 @@
  *   - stat_frames_corrupted bumps in st20p_rx_get_frame() iff the delivered
  *     frame's status is ST_FRAME_STATUS_CORRUPTED.
  *
- * Drives rx_st20p_frame_ready() directly with synthetic meta — no transport
- * session is stitched in. Pipeline counters are about producer/consumer
- * accounting; transport realism is not required to exercise them.
+ * Drives rx_st20p_frame_ready() directly with synthetic meta. For
+ * ST20P_RX_FLAG_PKT_CONVERT a test stitches in a session harness instead: it
+ * feeds that session the ops from ut20p_ctx_enable_pkt_convert() and routes
+ * st20_rx_put_framebuff() back to it with ut20p_set_put_framebuff().
  */
 
 #ifndef _ST20P_PIPELINE_HARNESS_H_
@@ -59,6 +60,23 @@ void ut20p_begin_destroy(ut20p_ctx* ctx);
  */
 void ut20p_ctx_set_internal_converter(ut20p_ctx* ctx);
 
+/**
+ * Make the ctx a converting session as st20p_rx_create() does: the internal converter
+ * from the 4:2:2 10-bit transport to output_fmt, zeroed width x height frames on both
+ * sides, ops.flags = flags, then the NT scratch. Returns the scratch setup result.
+ */
+int ut20p_ctx_set_converting_frames(ut20p_ctx* ctx, enum st_frame_fmt output_fmt,
+                                    uint32_t width, uint32_t height, uint32_t flags);
+
+/** Bytes of the session's NT scratch, 0 when it has none. */
+size_t ut20p_nt_scratch_size(const ut20p_ctx* ctx);
+
+/** The session's NT scratch, ut20p_nt_scratch_size() bytes. */
+void* ut20p_nt_scratch(ut20p_ctx* ctx);
+
+/** Whether the NT scratch is held. */
+bool ut20p_nt_scratch_held(const ut20p_ctx* ctx);
+
 /** Call hook(arg) inside the internal converter's convert_func, i.e. after
  *  get_frame claimed the frame and before it returns. NULL clears. */
 void ut20p_set_convert_hook(void (*hook)(void* arg), void* arg);
@@ -75,6 +93,26 @@ void ut20p_unlock_block_mutex(ut20p_ctx* ctx);
  *  Returns 0 on accept, -EBUSY when no free framebuf (drives the
  *  stat_frames_dropped path). */
 int ut20p_inject_frame(ut20p_ctx* ctx, enum st_frame_status status, uint32_t timestamp);
+
+/**
+ * Configure ST20P_RX_FLAG_PKT_CONVERT | flags from a width x height 422 10bit
+ * transport to output_fmt and run the production rx_st20p_create_transport()
+ * with st20_rx_create() stubbed. On success *ops_rx holds the ops it passed to
+ * st20_rx_create() and each framebuffer has a zeroed dst buffer.
+ */
+int ut20p_ctx_enable_pkt_convert(ut20p_ctx* ctx, enum st_frame_fmt output_fmt,
+                                 uint32_t width, uint32_t height, enum st_fps fps,
+                                 uint32_t flags, struct st20_rx_ops* ops_rx);
+
+/** Route st20_rx_put_framebuff() to put(arg, frame); NULL makes it a no-op again. */
+void ut20p_set_put_framebuff(int (*put)(void* arg, void* frame), void* arg);
+
+/** Clear ctx->ready, or set it as st20p_rx_create() does once the transport exists. */
+void ut20p_set_ready(ut20p_ctx* ctx, bool ready);
+
+/** Set ctx->ready as if create's flush of parked frames had already run, so a frame
+ *  parked before is left to the next frame_ready. */
+void ut20p_set_ready_past_flush(ut20p_ctx* ctx);
 
 /** Wraps st20p_rx_get_frame(). */
 struct st_frame* ut20p_get_frame(ut20p_ctx* ctx);

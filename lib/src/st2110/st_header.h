@@ -19,24 +19,38 @@
 
 #define ST_PLUGIN_MAX_PATH_LEN (128)
 
-/* max 12 1080p tx session per sch lcore */
-#define ST_QUOTA_TX1080P_PER_SCH (12)
+/* max 24 1080p st20 tx frame session per sch lcore */
+#define ST_QUOTA_TX1080P_PER_SCH (24)
 /* max 8 1080p rtp tx session per sch lcore */
 #define ST_QUOTA_TX1080P_RTP_PER_SCH (8)
+/* max 12 1080p st20 tx slice session per sch lcore */
+#define ST_QUOTA_TX1080P_SLICE_PER_SCH (12)
+/* max 12 1080p st22 tx frame session per sch lcore */
+#define ST_QUOTA_TX1080P_ST22_FRAME_PER_SCH (12)
 /* max 12 1080p rx session per sch lcore */
 #define ST_QUOTA_RX1080P_PER_SCH (12)
 /* max 12 1080p rtp rx session per sch lcore, rtp unpack run on other threads */
 #define ST_QUOTA_RX1080P_RTP_PER_SCH (12)
-/* max 8 1080p rx(without DMA) session per sch lcore */
-#define ST_QUOTA_RX1080P_NO_DMA_PER_SCH (8)
+/* max 12 1080p st22 rx session per sch lcore, frame or rtp */
+#define ST_QUOTA_RX1080P_ST22_PER_SCH (12)
+/* max 11 1080p rx(without DMA) frame session per sch lcore */
+#define ST_QUOTA_RX1080P_NO_DMA_PER_SCH (11)
+/* max 8 1080p rx(without DMA) slice session per sch lcore */
+#define ST_QUOTA_RX1080P_NO_DMA_SLICE_PER_SCH (8)
 
 #define ST_SCH_MAX_TX_VIDEO_SESSIONS (60) /* max video tx sessions per sch lcore */
 #define ST_SCH_MAX_RX_VIDEO_SESSIONS (60) /* max video rx sessions per sch lcore */
 #define ST_SESSION_MAX_BULK (4)
+/* the bulk of an all-RL ST20 frame-level TX session */
+#define ST_TX_VIDEO_RL_BULK (16)
+#define ST_TX_VIDEO_MAX_BULK \
+  (ST_TX_VIDEO_RL_BULK > ST_SESSION_MAX_BULK ? ST_TX_VIDEO_RL_BULK : ST_SESSION_MAX_BULK)
 #define ST_TX_VIDEO_SESSIONS_RING_SIZE (512)
 
 /* number of tmstamp it will tracked for out of order pkts */
 #define ST_VIDEO_RX_REC_NUM_OFO (2)
+/* an RX video frame session above this rate gets a pkt lcore, unless it has a DMA dev */
+#define ST_RX_VIDEO_PKT_LCORE_MBPS ((uint64_t)40 * 1000)
 /* number of slices it will tracked as out of order pkts */
 #define ST_VIDEO_RX_SLICE_NUM (32)
 /* sync to atomic if reach this threshold */
@@ -95,8 +109,8 @@ enum st40_tx_frame_status {
 };
 
 struct st_tx_muf_priv_data {
-  uint64_t tsc_time_stamp; /* tsc time stamp of current mbuf */
-  uint64_t ptp_time_stamp; /* ptp time stamp of current mbuf */
+  uint64_t tsc_time_stamp; /* tsc pacing target; all-RL st20 frames: pkt 0 only */
+  uint64_t ptp_time_stamp; /* ptp pacing target; all-RL st20 frames: pkt 0 only */
   void* priv;              /* private data to current frame */
   uint32_t idx;            /* index of packet in current frame */
 };
@@ -282,6 +296,8 @@ struct st_tx_video_session_impl {
   bool tx_mono_pool;   /* if reuse tx mono pool */
   bool tx_no_chain;    /* if tx not use chain mbuf */
   bool multi_src_port; /* if tx use multiple src port */
+  /* only a frame's last payload mbuf holds its extbuf */
+  bool tx_direct_chain;
   /* if the eth dev support chain buff */
   bool eth_has_chain[MTL_SESSION_PORT_MAX];
   /* if the eth dev support ipv4 checksum offload */
@@ -316,17 +332,18 @@ struct st_tx_video_session_impl {
   enum mt_handle_type s_type; /* st22 or st20 */
 
   unsigned int bulk; /* Enqueue bulk objects on the ring */
-  struct rte_mbuf* inflight[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
+  struct rte_mbuf* inflight[MTL_SESSION_PORT_MAX][ST_TX_VIDEO_MAX_BULK];
   int inflight_cnt[MTL_SESSION_PORT_MAX]; /* for stats */
 
   /* info for transmitter */
   uint64_t trs_target_tsc[MTL_SESSION_PORT_MAX];
-  struct rte_mbuf* trs_inflight[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
+  struct rte_mbuf* trs_inflight[MTL_SESSION_PORT_MAX][ST_TX_VIDEO_MAX_BULK];
   unsigned int trs_inflight_num[MTL_SESSION_PORT_MAX];
   unsigned int trs_inflight_idx[MTL_SESSION_PORT_MAX];
+  bool trs_inflight_new_slice[MTL_SESSION_PORT_MAX]; /* RL: starts an untried pad slice */
   unsigned int trs_pad_inflight_num[MTL_SESSION_PORT_MAX]; /* inflight padding */
   int trs_inflight_cnt[MTL_SESSION_PORT_MAX];              /* for stats */
-  struct rte_mbuf* trs_inflight2[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
+  struct rte_mbuf* trs_inflight2[MTL_SESSION_PORT_MAX][ST_TX_VIDEO_MAX_BULK];
   unsigned int trs_inflight_num2[MTL_SESSION_PORT_MAX];
   unsigned int trs_inflight_idx2[MTL_SESSION_PORT_MAX];
   int trs_inflight_cnt2[MTL_SESSION_PORT_MAX]; /* for stats */
@@ -405,7 +422,7 @@ struct st_tx_video_sessions_mgr {
   struct mt_sch_tasklet_impl* tasklet;
 
   struct st_tx_video_session_impl* sessions[ST_SCH_MAX_TX_VIDEO_SESSIONS];
-  /* protect session, spin(fast) lock as it call from tasklet aslo */
+  /* control plane only, the tasklets skip a session while it is held */
   rte_spinlock_t mutex[ST_SCH_MAX_TX_VIDEO_SESSIONS];
 };
 

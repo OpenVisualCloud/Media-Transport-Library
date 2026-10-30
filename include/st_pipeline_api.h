@@ -523,6 +523,14 @@ enum st20p_tx_flag {
    * immediately after notify_frame_done).
    */
   ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE = (MTL_BIT32(13)),
+  /**
+   * Convert with ordinary stores. By default the internal converter, for
+   * ST_FRAME_FMT_YUV422PLANAR10LE input or ST_FRAME_FMT_V210 input at a width that is a
+   * multiple of 48, and st20p_tx_convert_block convert a few lines at a time into a
+   * per-session scratch and stream them to the frame with non-temporal stores, so the
+   * frame neither is read for ownership nor fills the cache.
+   */
+  ST20P_TX_FLAG_DISABLE_NT_CONVERT = (MTL_BIT32(14)),
   /** Enable the st20p_tx_get_frame block behavior to wait until a frame becomes
      available or (default: 1s, use st20p_tx_set_block_timeout to customize) */
   ST20P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
@@ -590,8 +598,12 @@ enum st20p_rx_flag {
   ST20P_RX_FLAG_EXT_FRAME = (MTL_BIT32(2)),
   /**
    * Only used for internal convert mode and limited formats:
-   * ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210, ST_FRAME_FMT_UYVY
+   * ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210, ST_FRAME_FMT_UYVY,
+   * ST_FRAME_FMT_YUV422PLANAR16LE
    * Perform the color format conversion on each packet.
+   * Not supported with ST20P_RX_FLAG_EXT_FRAME, ST20P_RX_FLAG_USE_MULTI_THREADS or
+   * ST20P_RX_FLAG_AUTO_DETECT, nor above 40 Gb/s per session, where the transport
+   * would add a packet lcore.
    */
   ST20P_RX_FLAG_PKT_CONVERT = (MTL_BIT32(3)),
   /**
@@ -654,6 +666,15 @@ enum st20p_rx_flag {
    * Use gpu_direct vram for framebuffers
    */
   ST20P_RX_FLAG_USE_GPU_DIRECT_FRAMEBUFFERS = (MTL_BIT32(24)),
+  /**
+   * Convert with ordinary stores. By default the internal converter, for
+   * ST_FRAME_FMT_YUV422PLANAR10LE output or ST_FRAME_FMT_V210 output at a width that is a
+   * multiple of 48, converts a few lines at a time into a per-session scratch and streams
+   * them to the frame with non-temporal stores, so the frame neither is read for
+   * ownership nor fills the cache, and comes back cold in cache. A session with
+   * ST20P_RX_FLAG_AUTO_DETECT always converts with ordinary stores.
+   */
+  ST20P_RX_FLAG_DISABLE_NT_CONVERT = (MTL_BIT32(25)),
 };
 
 /** Bit define for flag_resp of struct st22_decoder_create_req. */
@@ -1486,10 +1507,13 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops);
 /**
  * Free the tx st2110-22 pipeline session.
  *
+ * @note Do not call it from any callback.
  * @param handle
  *   The handle to the tx st2110-22 pipeline session.
  * @return
  *   - 0: Success, tx st2110-22 pipeline session freed.
+ *   - -EBUSY: Called on the session's scheduler thread (in a callback), or another
+ *     free of this handle is in progress; the session is not freed.
  *   - <0: Error code of the tx st2110-22 pipeline session free.
  */
 int st22p_tx_free(st22p_tx_handle handle);
@@ -1578,12 +1602,15 @@ size_t st22p_tx_frame_size(st22p_tx_handle handle);
 /**
  * Online update the destination info for the tx st2110-22(pipeline) session.
  *
+ * @note Do not call it from any callback. It takes the per-session spinlock, waits for
+ * the session's scheduler to end its tasklet pass in flight, and may wait for ARP.
  * @param handle
  *   The handle to the tx st2110-22(pipeline) session.
  * @param dst
  *   The pointer to the tx st2110-22(pipeline) destination info.
  * @return
  *   - 0: Success.
+ *   - -EBUSY: Called on the session's scheduler thread (in a callback).
  *   - <0: Error code.
  */
 int st22p_tx_update_destination(st22p_tx_handle handle, struct st_tx_dest_info* dst);
@@ -1786,10 +1813,13 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops);
 /**
  * Free the tx st2110-20 pipeline session.
  *
+ * @note Do not call it from any callback.
  * @param handle
  *   The handle to the tx st2110-20 pipeline session.
  * @return
  *   - 0: Success, tx st2110-20 pipeline session freed.
+ *   - -EBUSY: Called on the session's scheduler thread (in a callback), or another
+ *     free of this handle is in progress; the session is not freed.
  *   - <0: Error code of the tx st2110-20 pipeline session free.
  */
 int st20p_tx_free(st20p_tx_handle handle);
@@ -1851,6 +1881,44 @@ int st20p_tx_put_frame_abort(st20p_tx_handle handle, struct st_frame* frame);
  */
 int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
                            struct st_ext_frame* ext_frame);
+
+/**
+ * Convert source lines into lines of a frame got by st20p_tx_get_frame, for an app that
+ * builds a frame block by block, e.g. from a stored picture, with no copy before it.
+ * Only for a session whose input_fmt is the transport format, so MTL converts nothing,
+ * and without ST20P_TX_FLAG_EXT_FRAME. The lines go through the session's scratch and
+ * reach the frame with non-temporal stores, fenced before return, unless
+ * ST20P_TX_FLAG_DISABLE_NT_CONVERT is set, the frame lines are not cache line aligned, or
+ * another thread converts on the session at the same time.
+ * The frame is ready for st20p_tx_put_frame once all its lines are converted. On an
+ * interlaced session dst_line and nb_lines count lines of the field.
+ * Call it from one thread at a time per session, from the app thread, never from a
+ * callback.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20 pipeline session.
+ * @param frame
+ *   The frame pointer by st20p_tx_get_frame of this session.
+ * @param src_block
+ *   The source lines: fmt ST_FRAME_FMT_YUV422PLANAR10LE, or ST_FRAME_FMT_V210 at a width
+ *   that is a multiple of 48; width that of the frame; addr[] and linesize[] of each
+ *   plane at the first line, linesize[] no less than st_frame_least_linesize.
+ * @param dst_line
+ *   The first frame line to write.
+ * @param nb_lines
+ *   The number of lines to convert, written to frame lines
+ *   [dst_line, dst_line + nb_lines).
+ * @return
+ *   - 0 if successful.
+ *   - -EINVAL: Bad argument, or a frame of another session.
+ *   - -EIO: A session that converts or uses ST20P_TX_FLAG_EXT_FRAME, a frame not got or
+ *     already put, or a session being freed.
+ *   - -ENOTSUP: Source format or width not supported, or a transport format other than
+ *     ST20_FMT_YUV_422_10BIT.
+ */
+int st20p_tx_convert_block(st20p_tx_handle handle, struct st_frame* frame,
+                           const struct st_frame* src_block, uint32_t dst_line,
+                           uint32_t nb_lines);
 
 /**
  * Notify the tx st2110-20 pipeline session that the application has finished
@@ -1929,8 +1997,10 @@ int st20p_tx_get_pacing_params(st20p_tx_handle handle, double* tr_offset_ns,
 /**
  * Retrieve the general statistics(I/O) for one tx st2110-20(pipeline) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
- * this session's callbacks: they may run with that spinlock held, so it deadlocks.
+ * @note Thread-safe. Takes the per-session spinlock, then waits for the session's
+ * scheduler to end its tasklet pass in flight; the session skips up to two passes, so do
+ * not call it in a tight loop. From a callback, only for the session that callback
+ * belongs to; it may return -EBUSY there.
  * @param handle
  *   The handle to the tx st2110-20(pipeline) session.
  * @param stats
@@ -1944,8 +2014,10 @@ int st20p_tx_get_session_stats(st20p_tx_handle handle, struct st20_tx_user_stats
 /**
  * Reset the general statistics(I/O) for one tx st2110-20(pipeline) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
- * this session's callbacks: they may run with that spinlock held, so it deadlocks.
+ * @note Thread-safe. Takes the per-session spinlock, then waits for the session's
+ * scheduler to end its tasklet pass in flight; the session skips up to two passes, so do
+ * not call it in a tight loop. From a callback, only for the session that callback
+ * belongs to; it may return -EBUSY there.
  * @param handle
  *   The handle to the tx st2110-20(pipeline) session.
  * @return
@@ -1957,12 +2029,15 @@ int st20p_tx_reset_session_stats(st20p_tx_handle handle);
 /**
  * Online update the destination info for the tx st2110-20(pipeline) session.
  *
+ * @note Do not call it from any callback. It takes the per-session spinlock, waits for
+ * the session's scheduler to end its tasklet pass in flight, and may wait for ARP.
  * @param handle
  *   The handle to the tx st2110-20(pipeline) session.
  * @param dst
  *   The pointer to the tx st2110-20(pipeline) destination info.
  * @return
  *   - 0: Success.
+ *   - -EBUSY: Called on the session's scheduler thread (in a callback).
  *   - <0: Error code.
  */
 int st20p_tx_update_destination(st20p_tx_handle handle, struct st_tx_dest_info* dst);

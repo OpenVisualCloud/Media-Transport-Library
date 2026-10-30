@@ -8,6 +8,7 @@
 #include <sys/types.h>
 
 #include "app_base.h"
+#include "app_cores.h"
 #include "args.h"
 #include "experimental/rx_st20r_app.h"
 #include "legacy/rx_audio_app.h"
@@ -92,6 +93,7 @@ static void app_stat(void* priv) {
   st_app_rx_st20r_sessions_stat(ctx);
   st_app_rx_audio_sessions_stat(ctx);
   st_app_rx_st30p_sessions_stat(ctx);
+  st_app_cores_stat(ctx);
 
   if (ctx->ptp_systime_sync) {
     app_dump_ptp_sync_stat(ctx);
@@ -222,6 +224,8 @@ static void st_app_ctx_init(struct st_app_context* ctx) {
   ctx->force_tx_audio_numa = -1;
   ctx->force_rx_audio_numa = -1;
 
+  ctx->st20p_cores.requested = -1;
+
   ctx->last_stat_time_ns = st_app_get_monotonic_time();
 }
 
@@ -297,6 +301,7 @@ static void st_app_ctx_free(struct st_app_context* ctx) {
   }
 
   if (ctx->st) {
+    st_app_cores_free(ctx);
     for (int i = 0; i < ST_APP_MAX_LCORES; i++) {
       if (ctx->lcore[i] >= 0) {
         mtl_put_lcore(ctx->st, ctx->lcore[i]);
@@ -603,6 +608,13 @@ int main(int argc, char** argv) {
     }
   }
 
+  ret = st_app_cores_start(ctx);
+  if (ret < 0) {
+    err("%s, st_app_cores_start fail %d\n", __func__, ret);
+    st_app_ctx_free(ctx);
+    return -EIO;
+  }
+
   test_time_s = ctx->test_time_s;
   mtl_thread_setname(pthread_self(), "RxTxApp_main");
   info("%s, app lunch succ, test time %ds\n", __func__, test_time_s);
@@ -610,6 +622,7 @@ int main(int argc, char** argv) {
     sleep(1);
     run_time_s++;
     if (test_time_s && (run_time_s > test_time_s)) break;
+    st_app_cores_tick(ctx);
     if (ctx->pcapng_max_pkts && (run_time_s == 10)) { /* trigger pcap dump if */
       st_app_pcap(ctx);
     }

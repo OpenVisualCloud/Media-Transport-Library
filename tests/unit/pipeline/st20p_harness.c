@@ -4,10 +4,8 @@
  * C harness for ST20p (video) pipeline-layer unit tests.
  *
  * Drives rx_st20p_frame_ready() directly with a synthetic
- * st20_rx_frame_meta — bypasses the transport session entirely.
- * The pipeline counters under test (stat_frames_received / _dropped /
- * _corrupted) are about producer/consumer flow, not packet semantics,
- * so transport realism is not required.
+ * st20_rx_frame_meta, or, after ut20p_ctx_enable_pkt_convert(), takes the
+ * packets of a session harness through the ops it hands to st20_rx_create().
  *
  * By default the pipeline is configured with derive=true so that the
  * converter path is bypassed and frame_ready takes the simple branch:
@@ -35,6 +33,7 @@
 #define st20_rx_put_framebuff ut20p_stub_put_framebuff
 #define st20_rx_get_session_stats ut20p_stub_get_session_stats
 #define st20_rx_reset_session_stats ut20p_stub_reset_session_stats
+#define st20_rx_create ut20p_stub_rx_create
 #undef MTL_HAS_USDT
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
@@ -43,6 +42,7 @@
 #undef st20_rx_put_framebuff
 #undef st20_rx_get_session_stats
 #undef st20_rx_reset_session_stats
+#undef st20_rx_create
 
 #undef st20_rx_get_session_stats
 #undef st20_rx_put_framebuff
@@ -56,10 +56,22 @@
  * and wired in via the #define redirection above.
  */
 
+static int (*ut20p_put_framebuff)(void* arg, void* frame);
+static void* ut20p_put_framebuff_arg;
+
 int ut20p_stub_put_framebuff(st20_rx_handle handle, void* frame) {
   (void)handle;
-  (void)frame; /* transport-side framebuf release is a no-op for the harness */
+  /* a no-op unless a test routes the release to a transport session */
+  if (ut20p_put_framebuff) return ut20p_put_framebuff(ut20p_put_framebuff_arg, frame);
   return 0;
+}
+
+static struct st20_rx_ops ut20p_created_rx_ops;
+
+st20_rx_handle ut20p_stub_rx_create(mtl_handle mt, struct st20_rx_ops* ops) {
+  (void)mt;
+  ut20p_created_rx_ops = *ops;
+  return (st20_rx_handle)(uintptr_t)0x1;
 }
 
 int ut20p_stub_get_session_stats(st20_rx_handle handle,
@@ -84,6 +96,9 @@ struct ut20p_ctx {
   struct st20p_rx_frame* framebuffs;
   int framebuff_cnt;
   bool blocking;
+  struct st_frame_converter converter;
+  uint8_t* frames_mem;
+  uint8_t* dst_storage;
 };
 
 #include "pipeline/st20p_harness.h"
@@ -129,6 +144,12 @@ ut20p_ctx* ut20p_ctx_create(int framebuff_cnt) {
   p->type = MT_ST20_HANDLE_PIPELINE_RX;
   p->framebuff_cnt = framebuff_cnt;
   p->framebuffs = ctx->framebuffs;
+  p->parked_frames = calloc(framebuff_cnt, sizeof(*p->parked_frames));
+  if (!p->parked_frames) {
+    free(ctx->framebuffs);
+    free(ctx);
+    return NULL;
+  }
   /* derive=true: skip converter; frame_ready stores src and marks
    * ST20P_RX_FRAME_CONVERTED, which get_frame() consumes directly. */
   p->derive = true;
@@ -146,8 +167,63 @@ void ut20p_ctx_destroy(ut20p_ctx* ctx) {
     mt_pthread_mutex_destroy(&ctx->pipeline.block_wake_mutex);
     mt_pthread_cond_destroy(&ctx->pipeline.block_wake_cond);
   }
+  if (ctx->pipeline.nt_scratch) mt_rte_free(ctx->pipeline.nt_scratch);
+  free(ctx->frames_mem);
+  ut20p_set_put_framebuff(NULL, NULL);
+  free(ctx->pipeline.parked_frames);
+  free(ctx->dst_storage);
   free(ctx->framebuffs);
   free(ctx);
+}
+
+int ut20p_ctx_enable_pkt_convert(ut20p_ctx* ctx, enum st_frame_fmt output_fmt,
+                                 uint32_t width, uint32_t height, enum st_fps fps,
+                                 uint32_t flags, struct st20_rx_ops* ops_rx) {
+  struct st20p_rx_ctx* p = &ctx->pipeline;
+  struct st20p_rx_ops* ops = &p->ops;
+
+  ops->flags = ST20P_RX_FLAG_PKT_CONVERT | flags;
+  ops->transport_fmt = ST20_FMT_YUV_422_10BIT;
+  ops->output_fmt = output_fmt;
+  ops->width = width;
+  ops->height = height;
+  ops->fps = fps;
+  ops->framebuff_cnt = ctx->framebuff_cnt;
+  p->derive = false;
+
+  int ret = rx_st20p_create_transport(&ctx->impl, p, ops);
+  if (ret < 0) return ret;
+  *ops_rx = ut20p_created_rx_ops;
+
+  size_t dst_size = st_frame_size(output_fmt, width, height, false);
+  free(ctx->dst_storage);
+  ctx->dst_storage = calloc(ctx->framebuff_cnt, dst_size);
+  if (!ctx->dst_storage) return -ENOMEM;
+  for (int i = 0; i < ctx->framebuff_cnt; i++) {
+    struct st_frame* dst = &ctx->framebuffs[i].dst;
+    dst->fmt = output_fmt;
+    dst->width = width;
+    dst->height = height;
+    dst->buffer_size = dst->data_size = dst_size;
+    st_frame_init_plane_single_src(dst, ctx->dst_storage + dst_size * i, 0);
+  }
+  return 0;
+}
+
+void ut20p_set_put_framebuff(int (*put)(void* arg, void* frame), void* arg) {
+  ut20p_put_framebuff_arg = arg;
+  ut20p_put_framebuff = put;
+}
+
+void ut20p_set_ready(ut20p_ctx* ctx, bool ready) {
+  if (ready)
+    rx_st20p_set_ready(&ctx->pipeline);
+  else
+    ctx->pipeline.ready = false;
+}
+
+void ut20p_set_ready_past_flush(ut20p_ctx* ctx) {
+  atomic_store_explicit(&ctx->pipeline.ready, true, memory_order_release);
 }
 
 void ut20p_ctx_enable_blocking(ut20p_ctx* ctx, uint64_t timeout_ns) {
@@ -208,6 +284,52 @@ static struct st_frame_converter ut20p_stub_converter = {
 void ut20p_ctx_set_internal_converter(ut20p_ctx* ctx) {
   ctx->pipeline.derive = false;
   ctx->pipeline.internal_converter = &ut20p_stub_converter;
+}
+
+int ut20p_ctx_set_converting_frames(ut20p_ctx* ctx, enum st_frame_fmt output_fmt,
+                                    uint32_t width, uint32_t height, uint32_t flags) {
+  struct st20p_rx_ctx* p = &ctx->pipeline;
+  const enum st_frame_fmt t_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  size_t src_size = RTE_ALIGN_CEIL(st_frame_size(t_fmt, width, height, false), 64);
+  size_t dst_size = RTE_ALIGN_CEIL(st_frame_size(output_fmt, width, height, false), 64);
+  int ret;
+
+  p->ops.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  p->ops.output_fmt = output_fmt;
+  p->ops.width = width;
+  p->ops.height = height;
+  p->ops.flags = flags;
+  p->derive = false;
+  ret = st_frame_get_converter(t_fmt, output_fmt, &ctx->converter);
+  if (ret < 0) return ret;
+  p->internal_converter = &ctx->converter;
+
+  ctx->frames_mem = aligned_alloc(64, (src_size + dst_size) * ctx->framebuff_cnt);
+  if (!ctx->frames_mem) return -ENOMEM;
+  memset(ctx->frames_mem, 0, (src_size + dst_size) * ctx->framebuff_cnt);
+  for (int i = 0; i < ctx->framebuff_cnt; i++) {
+    struct st20p_rx_frame* fb = &ctx->framebuffs[i];
+    uint8_t* mem = ctx->frames_mem + (src_size + dst_size) * i;
+    fb->src.fmt = t_fmt;
+    fb->dst.fmt = output_fmt;
+    fb->src.width = fb->dst.width = width;
+    fb->src.height = fb->dst.height = height;
+    st_frame_init_plane_single_src(&fb->src, mem, 0);
+    st_frame_init_plane_single_src(&fb->dst, mem + src_size, 0);
+  }
+  return rx_st20p_init_nt_scratch(p, &p->ops);
+}
+
+size_t ut20p_nt_scratch_size(const ut20p_ctx* ctx) {
+  return ctx->pipeline.nt_scratch ? ctx->pipeline.nt_scratch_size : 0;
+}
+
+void* ut20p_nt_scratch(ut20p_ctx* ctx) {
+  return ctx->pipeline.nt_scratch;
+}
+
+bool ut20p_nt_scratch_held(const ut20p_ctx* ctx) {
+  return atomic_load(&ctx->pipeline.nt_scratch_busy) != 0;
 }
 
 /* ── inject one frame via rx_st20p_frame_ready ────────────────────────── */

@@ -19,6 +19,14 @@
 #include "st_avx512_vbmi.h"
 #endif
 
+#ifdef __SSE2__
+#define ST_CONVERT_NT_STORE
+#include <emmintrin.h>
+#endif
+
+/* a block of source lines and its staged output stay in L2 */
+#define ST_CONVERT_NT_LINES (8)
+
 static bool has_lines_padding(struct st_frame* src, struct st_frame* dst) {
   int planes = 0;
 
@@ -601,7 +609,7 @@ int st20_rfc4175_422be10_to_yuv422p16le_simd(struct st20_rfc4175_422_10_pg2_be* 
   MTL_MAY_UNUSED(level);
 
 #ifdef MTL_HAS_AVX512
-  if ((level >= MTL_SIMD_LEVEL_AVX512) /*&& (cpu_level >= MTL_SIMD_LEVEL_AVX512)*/) {
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_rfc4175_422be10_to_yuv422p16le_avx512(pg, y, b, r, w, h);
     if (ret == 0) return 0;
@@ -669,6 +677,7 @@ static const struct st_frame_converter converters[] = {
         .src_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10,
         .dst_fmt = ST_FRAME_FMT_YUV422PLANAR10LE,
         .convert_func = convert_rfc4175_422be10_to_yuv422p10le,
+        .nt_width_align = 2,
     },
     {
         .src_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10,
@@ -689,6 +698,7 @@ static const struct st_frame_converter converters[] = {
         .src_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10,
         .dst_fmt = ST_FRAME_FMT_V210,
         .convert_func = convert_rfc4175_422be10_to_v210,
+        .nt_width_align = 48, /* whole 12 pg avx512_vbmi batches, 64-byte be10 blocks */
     },
     {
         .src_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10,
@@ -724,11 +734,13 @@ static const struct st_frame_converter converters[] = {
         .src_fmt = ST_FRAME_FMT_YUV422PLANAR10LE,
         .dst_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10,
         .convert_func = convert_yuv422p10le_to_rfc4175_422be10,
+        .nt_width_align = 2,
     },
     {
         .src_fmt = ST_FRAME_FMT_V210,
         .dst_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10,
         .convert_func = convert_v210_to_rfc4175_422be10,
+        .nt_width_align = 48, /* whole 12 pg avx512_vbmi batches, 64-byte be10 blocks */
     },
     {
         .src_fmt = ST_FRAME_FMT_Y210,
@@ -887,6 +899,96 @@ int st_frame_get_converter(enum st_frame_fmt src_fmt, enum st_frame_fmt dst_fmt,
   err("%s, format not supported, source: %s, dest: %s\n", __func__,
       st_frame_fmt_name(src_fmt), st_frame_fmt_name(dst_fmt));
   return -EINVAL;
+}
+
+bool st_frame_nt_supported(const struct st_frame_converter* converter, uint32_t width) {
+  return converter->nt_width_align && !(width % converter->nt_width_align);
+}
+
+size_t st_frame_nt_scratch_size(enum st_frame_fmt fmt, uint32_t width) {
+  size_t size = 0;
+
+  for (uint8_t plane = 0; plane < st_frame_fmt_planes(fmt); plane++)
+    size +=
+        RTE_ALIGN_CEIL(st_frame_least_linesize(fmt, width, plane) * ST_CONVERT_NT_LINES,
+                       RTE_CACHE_LINE_SIZE);
+  return size;
+}
+
+#ifdef ST_CONVERT_NT_STORE
+static void convert_nt_stream(uint8_t* dst, const uint8_t* src, size_t n) {
+  size_t nt = n & ~(size_t)(RTE_CACHE_LINE_SIZE - 1);
+
+  for (size_t i = 0; i < nt; i += 16)
+    _mm_stream_si128((__m128i*)(dst + i), _mm_load_si128((const __m128i*)(src + i)));
+  /* a partial write-combining flush costs a read-modify-write at the memory controller */
+  if (nt < n) mt_memcpy(dst + nt, src + nt, n - nt);
+}
+
+/* kernel-sized lines, and each dst block contiguous and on a cache line */
+static bool convert_nt_fits(const struct st_frame_converter* converter,
+                            struct st_frame* src, struct st_frame* dst,
+                            size_t scratch_size) {
+  if (!st_frame_nt_supported(converter, dst->width)) return false;
+  for (uint8_t plane = 0; plane < st_frame_fmt_planes(src->fmt); plane++)
+    if (!st_frame_least_linesize(src->fmt, src->width, plane)) return false;
+  if (st_frame_nt_scratch_size(dst->fmt, dst->width) > scratch_size) return false;
+
+  for (uint8_t plane = 0; plane < st_frame_fmt_planes(dst->fmt); plane++) {
+    size_t linesize = st_frame_least_linesize(dst->fmt, dst->width, plane);
+    if (!linesize || dst->linesize[plane] != linesize) return false;
+    if ((uintptr_t)dst->addr[plane] % RTE_CACHE_LINE_SIZE) return false;
+    if (linesize * ST_CONVERT_NT_LINES % RTE_CACHE_LINE_SIZE) return false;
+  }
+  return true;
+}
+
+static int convert_nt_blocks(const struct st_frame_converter* converter,
+                             struct st_frame* src, struct st_frame* dst,
+                             uint8_t* scratch) {
+  struct st_frame src_blk = *src;
+  struct st_frame dst_blk = *dst;
+  uint8_t src_planes = st_frame_fmt_planes(src->fmt);
+  uint8_t dst_planes = st_frame_fmt_planes(dst->fmt);
+  uint32_t h = st_frame_data_height(dst);
+  int ret = 0;
+
+  src_blk.interlaced = dst_blk.interlaced = false;
+  for (uint8_t plane = 0; plane < dst_planes; plane++) {
+    dst_blk.addr[plane] = scratch;
+    scratch +=
+        RTE_ALIGN_CEIL(dst->linesize[plane] * ST_CONVERT_NT_LINES, RTE_CACHE_LINE_SIZE);
+  }
+
+  for (uint32_t line = 0; line < h; line += ST_CONVERT_NT_LINES) {
+    uint32_t lines = RTE_MIN(h - line, (uint32_t)ST_CONVERT_NT_LINES);
+
+    for (uint8_t plane = 0; plane < src_planes; plane++)
+      src_blk.addr[plane] = (uint8_t*)src->addr[plane] + src->linesize[plane] * line;
+    src_blk.height = dst_blk.height = lines;
+    ret = converter->convert_func(&src_blk, &dst_blk);
+    if (ret < 0) break;
+    for (uint8_t plane = 0; plane < dst_planes; plane++)
+      convert_nt_stream((uint8_t*)dst->addr[plane] + dst->linesize[plane] * line,
+                        dst_blk.addr[plane], dst->linesize[plane] * lines);
+  }
+
+  /* the streaming stores have to be visible before the frame is handed over */
+  _mm_sfence();
+  return ret;
+}
+#endif
+
+int st_frame_convert_nt(const struct st_frame_converter* converter, struct st_frame* src,
+                        struct st_frame* dst, void* scratch, size_t scratch_size) {
+#ifdef ST_CONVERT_NT_STORE
+  if (scratch && convert_nt_fits(converter, src, dst, scratch_size))
+    return convert_nt_blocks(converter, src, dst, scratch);
+#else
+  MTL_MAY_UNUSED(scratch);
+  MTL_MAY_UNUSED(scratch_size);
+#endif
+  return converter->convert_func(src, dst);
 }
 
 static int downsample_rfc4175_wh_half(struct st_frame* old_frame,

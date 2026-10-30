@@ -342,7 +342,7 @@ If it failed to run the sample, please help to collect the system setup status b
 --p_tx_dst_mac <mac>                 : debug option, destination MAC address for primary port.
 --r_tx_dst_mac <mac>                 : debug option, destination MAC address for redundant port.
 --nb_tx_desc <count>                 : debug option, number of transmit descriptors for each NIC TX queue, affect the memory usage and the performance.
---nb_rx_desc <count>                 : debug option, number of receive descriptors for each NIC RX queue, affect the memory usage and the performance.
+--nb_rx_desc <count>                 : debug option, number of receive descriptors for each NIC RX queue, affect the memory usage and the performance. Default on ice/iavf: the largest power of 2 up to 2048 at which the RX mbufs of the NUMA socket's queues fit in 3/4 of its L3, at least 1024 (512 on a 32+ queue port, audio/anc sessions included); else 2048.
 --tasklet_time                       : debug option, enable stat info for tasklet running time.
 --tsc                                : debug option, force to use tsc pacing.
 --pacing_way <way>                   : debug option, set pacing way, available value: "auto", "rl", "tsc", "tsc_narrow", "ptp", "tsn".
@@ -373,6 +373,17 @@ packet egresses from the sender.
 --bind_numa                          : debug option, all MTL threads bind to same numa of NIC
 --not_bind_numa                      : debug option, MTL threads runs without NIC numa aware
 --force_numa <id>                    : debug option, force the NIC port numa id instead of reading from PCIE topology
+--st20p_app_cores <n>                : the lcores the st20p TX and RX session threads are pinned to, taken with mtl_get_lcore() after mtl_start(), preferably from the NUMA node of the primary port,
+                                       off the CPUs the schedulers hold. They compete for free lcores with what MTL takes at runtime: schedulers started for video migration, and the RX packet lcore a session adds once
+                                       detection ends. Absent: auto, ceil(threads / 12) cores at start, then sized once a second to the measured per-thread CPU time, about 50% per core: more cores when a shared core is over
+                                       65% busy. The time measured on a saturated core is what the threads got, not what they needed, so each second at most doubles the cores, and a heavy start can run hot for a few
+                                       seconds; set --st20p_app_cores n to avoid it. Fewer cores only after a 5 s warm-up and then 5 s of spare cores, about 10 s at the earliest.
+                                       n > 0: n cores, at most one per st20p thread, balanced by load but never resized. 0: the threads are not pinned, as before. Without free lcores the threads stay unpinned or share
+                                       the cores taken, with one warning. Where the thread CPU time cannot be read (Windows), auto leaves the threads unpinned and n > 0 pins them round-robin.
+--tx_st20p_fused                     : st20p TX converts each frame of the YUV422PLANAR10LE (even width) or V210 (width a multiple of 48) file in 8-line blocks straight into the YUV_422_10bit wire frame, with no copy. Same as "fused": true in a JSON st20p TX session.
+--tx_st20p_render                    : st20p TX renders a moving test pattern in 8-line blocks of the input format instead of reading a file, so st20p_url may be left out; implies --tx_st20p_fused. Do not combine it with --video_sha_check, a rendered source has no sha to check; --auto_stop never ends it since there is no file to complete. Same as "render": true in a JSON st20p TX session.
+--tx_video_fb_cnt <n>                : the frame buffer count of st20p TX sessions only, 2 to 8, default 2.
+--rx_pkt_convert                     : every st20p RX session converts each packet to its output format instead of each frame. It needs the YUV_422_10bit transport and a YUV422PLANAR10LE, Y210, UYVY or YUV422PLANAR16LE output; any other session fails to create.
 ```
 
 

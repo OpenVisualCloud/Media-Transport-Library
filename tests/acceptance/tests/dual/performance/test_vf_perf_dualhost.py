@@ -82,7 +82,7 @@ SCH_SESSION_QUOTA_SINGLE_CORE = 99
 
 # Phase 1 binary search (multi-core) must find the session ceiling of the *NIC*,
 # so it packs thinly enough that no core is the limit -- 12 units, the library's
-# own ST_QUOTA_TX1080P_PER_SCH.  Leaving this to the per-mode quota below let
+# former default ST_QUOTA_TX1080P_PER_SCH.  Leaving this to the per-mode quota below let
 # packing density cap the sweep: at quota 18 the +DMA sweep put 36 sessions on
 # 2 schedulers, failed, and settled at 33, while no-DMA spread the same 36 over
 # 3 schedulers at quota 16 and passed.  Phase 2 then re-packs for fewer cores.

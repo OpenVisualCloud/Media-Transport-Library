@@ -972,8 +972,12 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     s->port_user_stats.stat_frames_incomplete++;
 
     /* record the miss pkts */
-    float pd_sz_per_pkt = (float)meta->frame_recv_size / slot->pkts_received;
-    int miss_pkts = (s->st20_frame_size - meta->frame_recv_size) / pd_sz_per_pkt;
+    int miss_pkts = 0;
+    if (meta->frame_recv_size) {
+      float pd_sz_per_pkt = (float)meta->frame_recv_size / (float)slot->pkts_received;
+      miss_pkts =
+          (int)((float)(s->st20_frame_size - meta->frame_recv_size) / pd_sz_per_pkt);
+    }
     if (miss_pkts > 0) s->port_user_stats.common.stat_pkts_unrecovered += miss_pkts;
     rv_slot_account_per_port_loss(
         s, slot, slot->pkts_received + (miss_pkts > 0 ? (uint32_t)miss_pkts : 0));
@@ -2750,7 +2754,7 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
   }
   if (st20_is_frame_type(type)) {
     /* for traffic > 40g, two lcore used  */
-    if ((bps / (1000 * 1000)) > (40 * 1000)) {
+    if ((bps / ((uint64_t)1000 * 1000)) > ST_RX_VIDEO_PKT_LCORE_MBPS) {
       if (!s->dma_dev) pkt_handle_lcore = true;
     }
 
@@ -4617,8 +4621,10 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
     if (ST20_TYPE_RTP_LEVEL == ops->type) {
       quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_RX1080P_RTP_PER_SCH;
     } else {
-      quota_mbs_wo_dma =
-          quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_RX1080P_NO_DMA_PER_SCH;
+      int no_dma_per_sch = ST20_TYPE_SLICE_LEVEL == ops->type
+                               ? ST_QUOTA_RX1080P_NO_DMA_SLICE_PER_SCH
+                               : ST_QUOTA_RX1080P_NO_DMA_PER_SCH;
+      quota_mbs_wo_dma = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / no_dma_per_sch;
       quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_RX1080P_PER_SCH;
     }
   }
@@ -5022,6 +5028,9 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
     }
     quota_mbs = bps / (1000 * 1000);
     quota_mbs *= ops->num_port;
+  }
+  if (!mt_user_quota_active(impl)) {
+    quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_RX1080P_ST22_PER_SCH;
   }
 
   enum mtl_port port = mt_port_by_name(impl, ops->port[MTL_SESSION_PORT_P]);

@@ -186,7 +186,7 @@ block. Violating this is the single most common way to break pacing.
 loop; a tasklet returns positive for "had work", 0 for "idle", and must never block — one
 blocked tasklet starves every other tasklet on that scheduler. Lcore mode (CPU-pinned) is
 default; `MTL_FLAG_TASKLET_THREAD` switches to pthreads for containers. Sessions are assigned
-to schedulers by weight in 1080p-equivalents; `MT_MAX_SCH_NUM = 18`.
+to schedulers by weight in 1080p-equivalents; `MT_MAX_SCH_NUM = 48`.
 
 **Three API layers.** Pipeline (`st20p_tx_get_frame`/`put_frame` — most apps; handles
 conversion and frame lifecycle) wraps Session (`st20_tx_create` + callbacks — direct

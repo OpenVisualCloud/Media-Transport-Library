@@ -55,6 +55,14 @@ struct st20p_rx_ctx {
   uint16_t framebuff_consumer_idx;
   struct st20p_rx_frame* framebuffs;
   int usdt_frame_cnt;
+  /* PKT_CONVERT, tasklet only: frames refused whole at their first packet */
+  struct {
+    uint64_t timestamp;
+    bool active;
+  } pkt_cvt_refused[ST_VIDEO_RX_REC_NUM_OFO];
+  /* incomplete transport frames handed over before ready, a slot per transport frame */
+  _Atomic(void*)* parked_frames;
+  bool parked_frames_flushed;
 
   /* for ST20P_RX_FLAG_BLOCK_GET */
   bool block_get;
@@ -66,7 +74,11 @@ struct st20p_rx_ctx {
 
   struct st20_convert_session_impl* convert_impl;
   struct st_frame_converter* internal_converter;
-  bool ready;
+  void* nt_scratch; /* for st_frame_convert_nt(), NULL when NT convert is off */
+  size_t nt_scratch_size;
+  _Atomic uint32_t nt_scratch_busy; /* one app thread at a time uses the scratch */
+  /* release-stored once ctx->transport is set */
+  _Atomic bool ready;
   bool derive;
   bool dynamic_ext_frame;
 

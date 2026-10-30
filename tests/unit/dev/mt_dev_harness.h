@@ -74,6 +74,37 @@ int ut_dev_config_rss_reta(ut_dev_ctx* ctx, uint16_t nb_rx_q, uint16_t reta_size
  * timestamp offload on or off and rx_desc_lim.nb_max. Returns the RX ring size chosen. */
 int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,
                                   uint16_t nb_rx_desc, uint16_t nb_max);
+/** dev_rx_desc_by_l3(): the default RX ring size of a port with port_rx_q queues, of
+ * nb_rx_q queues of elem_size mbufs sharing l3_size bytes of L3, 0 for unknown. */
+uint16_t ut_dev_rx_desc_by_l3(uint64_t l3_size, uint32_t nb_rx_q, uint32_t port_rx_q,
+                              uint32_t elem_size);
+/** The L3 size mt_l3_size() reports for socket; every other socket reports 0. */
+void ut_dev_set_l3_size(ut_dev_ctx* ctx, int socket, uint64_t l3_size);
+/** The real mt_l3_size() of this host. */
+uint64_t ut_dev_host_l3_size(int socket);
+/** Puts port on socket with mtl_init_params.rx_queues_cnt[port] queues. */
+void ut_dev_set_rx_port(ut_dev_ctx* ctx, enum mtl_port port, int socket,
+                        uint16_t rx_queues_cnt);
+void ut_dev_set_pmd(ut_dev_ctx* ctx, enum mtl_port port, enum mtl_pmd_type pmd);
+/** dev_info.max_rx_queues of port, as mt_dev_if_init() reads it; 0 before. */
+void ut_dev_set_max_rx_queues(ut_dev_ctx* ctx, enum mtl_port port,
+                              uint16_t max_rx_queues);
+/** The deprecated mtl_init_params.rx_sessions_cnt_max. */
+void ut_dev_set_rx_sessions_cnt_max(ut_dev_ctx* ctx, uint16_t cnt);
+void ut_dev_set_rx_mono_pool(ut_dev_ctx* ctx);
+/** rx_pool_data_size as mtl_init() accepts it from mtl_init_params. */
+void ut_dev_set_rx_pool_data_size(ut_dev_ctx* ctx, uint16_t size);
+/** dev_socket_rx_queues(): the RX queues the rings of socket's ports will have. */
+uint32_t ut_dev_socket_rx_queues(ut_dev_ctx* ctx, int socket);
+/** dev_config_port() of port P with the drv info a port of this ethdev driver gets, no
+ * user nb_rx_desc and rx_desc_lim.nb_max 4096: the RX ring size chosen, or its error. */
+int ut_dev_config_port_driver_nb_rx_desc(ut_dev_ctx* ctx, const char* driver_name);
+void ut_dev_set_tasklet_thread(ut_dev_ctx* ctx);
+/** Bytes a mbuf of port P's session RX pool takes, as dev_config_port() derives them. */
+uint32_t ut_dev_rx_elem_size(ut_dev_ctx* ctx);
+/** Creates port P's session RX pool as mt_dev_if_init() does, the mono pool with
+ * MTL_FLAG_RX_MONO_POOL: its object size, 0 on failure. */
+uint32_t ut_dev_rx_pool_obj_size(ut_dev_ctx* ctx);
 
 /* EAL argv builder. rte_eal_init() is stubbed out and fails, which keeps dev_eal_init()'s
  * one-shot guard unlatched, so these may be called repeatedly in one process. */
@@ -178,6 +209,8 @@ unsigned int ut_dev_tx_sys_pool_elements(ut_dev_ctx* ctx, uint16_t nb_tx_q,
 /** The mbufs mt_mempool_create_by_ops() gives a pool asked for elements, of no data
  * room. */
 unsigned int ut_dev_mempool_size(ut_dev_ctx* ctx, unsigned int elements);
+/** The data quota (Mb/s) dev_sch_init() gives each scheduler, or a negative error. */
+int ut_dev_sch_init_quota(ut_dev_ctx* ctx);
 
 #ifdef __cplusplus
 }

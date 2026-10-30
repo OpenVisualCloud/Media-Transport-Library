@@ -58,6 +58,9 @@ struct ut_dev_ctx {
   int fail_tm_queue_node_add_error;
   int fail_tm_commit_error;
   struct rte_mempool* sys_tx_pool;
+  int l3_socket;
+  uint64_t l3_size;
+  int sch_quota_mbs;
 };
 
 static struct ut_dev_ctx* ut_active_ctx;
@@ -103,7 +106,13 @@ static int ut_rte_tm_shaper_profile_add(uint16_t port_id, uint32_t shaper_profil
                                         struct rte_tm_error* error);
 static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
                                       struct rte_tm_error* error);
+static int ut_mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit);
+static int ut_mt_sch_mrg_uinit(struct mtl_main_impl* impl);
+static struct mtl_sch_impl* ut_mt_sch_get_by_socket(struct mtl_main_impl* impl,
+                                                    int quota_mbs, enum mt_sch_type type,
+                                                    mt_sch_mask_t mask, int socket);
 static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
+static uint64_t ut_mt_l3_size(int socket);
 
 #define rte_eth_rx_queue_setup ut_rte_eth_rx_queue_setup
 #define rte_eth_tx_queue_setup ut_rte_eth_tx_queue_setup
@@ -123,18 +132,26 @@ static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
 #define rte_tm_node_delete ut_rte_tm_node_delete
 #define rte_tm_shaper_profile_add ut_rte_tm_shaper_profile_add
 #define rte_tm_hierarchy_commit ut_rte_tm_hierarchy_commit
+#define mt_sch_mrg_init ut_mt_sch_mrg_init
+#define mt_sch_mrg_uinit ut_mt_sch_mrg_uinit
+#define mt_sch_get_by_socket ut_mt_sch_get_by_socket
 #define rte_spinlock_unlock ut_rte_spinlock_unlock
 #define rte_eth_tx_burst ut_eth_tx_burst
 #define rte_eth_tx_done_cleanup ut_eth_tx_done_cleanup
 #define mt_get_tsc ut_dev_tsc
+#define mt_l3_size ut_mt_l3_size
 #define MT_DEV_TX_CLEANUP_FREES (ut_dev_tx_cleanup_frees)
 /* The pacing tests cover the iavf queue rate clear, which needs DPDK 26.07.91_mtl_. */
 #define MT_DEV_HAS_IAVF_TM_QOS_CHECK
 #include "dev/mt_dev.c"
+#undef mt_l3_size
 #undef mt_get_tsc
 #undef rte_eth_tx_done_cleanup
 #undef rte_eth_tx_burst
 #undef rte_spinlock_unlock
+#undef mt_sch_get_by_socket
+#undef mt_sch_mrg_uinit
+#undef mt_sch_mrg_init
 #undef rte_tm_hierarchy_commit
 #undef rte_tm_shaper_profile_add
 #undef rte_tm_node_delete
@@ -372,6 +389,39 @@ static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
   return ret;
 }
 
+static int ut_mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
+  (void)impl;
+  if (ut_active_ctx) ut_active_ctx->sch_quota_mbs = data_quota_mbs_limit;
+  return 0;
+}
+
+static int ut_mt_sch_mrg_uinit(struct mtl_main_impl* impl) {
+  (void)impl;
+  return 0;
+}
+
+static uint64_t ut_mt_l3_size(int socket) {
+  ut_dev_ctx* ctx = ut_active_ctx;
+  return ctx && socket == ctx->l3_socket ? ctx->l3_size : 0;
+}
+
+/* the real reader: mt_util.h, included under the #define, declared ut_mt_l3_size() */
+uint64_t mt_l3_size(int socket);
+
+uint64_t ut_dev_host_l3_size(int socket) {
+  return mt_l3_size(socket);
+}
+
+static struct mtl_sch_impl* ut_mt_sch_get_by_socket(struct mtl_main_impl* impl,
+                                                    int quota_mbs, enum mt_sch_type type,
+                                                    mt_sch_mask_t mask, int socket) {
+  (void)quota_mbs;
+  (void)type;
+  (void)mask;
+  (void)socket;
+  return mt_sch_instance(impl, 0);
+}
+
 ut_dev_ctx* ut_dev_create_ctx(void) {
   ut_dev_ctx* ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
@@ -503,6 +553,94 @@ int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,
   ut_active_ctx = ctx;
   ret = dev_config_port(inf);
   return ret < 0 ? ret : inf->nb_rx_desc;
+}
+
+uint16_t ut_dev_rx_desc_by_l3(uint64_t l3_size, uint32_t nb_rx_q, uint32_t port_rx_q,
+                              uint32_t elem_size) {
+  return dev_rx_desc_by_l3(l3_size, nb_rx_q, port_rx_q, elem_size);
+}
+
+void ut_dev_set_l3_size(ut_dev_ctx* ctx, int socket, uint64_t l3_size) {
+  ctx->l3_socket = socket;
+  ctx->l3_size = l3_size;
+}
+
+void ut_dev_set_rx_port(ut_dev_ctx* ctx, enum mtl_port port, int socket,
+                        uint16_t rx_queues_cnt) {
+  ctx->impl.inf[port].socket_id = socket;
+  ctx->impl.user_para.rx_queues_cnt[port] = rx_queues_cnt;
+}
+
+void ut_dev_set_pmd(ut_dev_ctx* ctx, enum mtl_port port, enum mtl_pmd_type pmd) {
+  ctx->impl.user_para.pmd[port] = pmd;
+}
+
+void ut_dev_set_max_rx_queues(ut_dev_ctx* ctx, enum mtl_port port,
+                              uint16_t max_rx_queues) {
+  ctx->impl.inf[port].dev_info.max_rx_queues = max_rx_queues;
+}
+
+void ut_dev_set_rx_sessions_cnt_max(ut_dev_ctx* ctx, uint16_t cnt) {
+  ctx->impl.user_para.rx_sessions_cnt_max = cnt;
+}
+
+void ut_dev_set_rx_mono_pool(ut_dev_ctx* ctx) {
+  ctx->impl.user_para.flags |= MTL_FLAG_RX_MONO_POOL;
+}
+
+void ut_dev_set_rx_pool_data_size(ut_dev_ctx* ctx, uint16_t size) {
+  ctx->impl.rx_pool_data_size = size;
+}
+
+uint32_t ut_dev_socket_rx_queues(ut_dev_ctx* ctx, int socket) {
+  return dev_socket_rx_queues(&ctx->impl, socket);
+}
+
+int ut_dev_config_port_driver_nb_rx_desc(ut_dev_ctx* ctx, const char* driver_name) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+  int ret;
+
+  parse_driver_info(driver_name, &inf->drv_info);
+  inf->dev_info.rx_desc_lim.nb_max = 4096;
+  ctx->impl.user_para.nb_rx_desc = 0;
+  ut_active_ctx = ctx;
+  ret = dev_config_port(inf);
+  return ret < 0 ? ret : inf->nb_rx_desc;
+}
+
+void ut_dev_set_tasklet_thread(ut_dev_ctx* ctx) {
+  ctx->impl.user_para.flags |= MTL_FLAG_TASKLET_THREAD;
+}
+
+uint32_t ut_dev_rx_elem_size(ut_dev_ctx* ctx) {
+  return dev_rx_elem_size(&ctx->impl, &ctx->impl.inf[MTL_PORT_P]);
+}
+
+uint32_t ut_dev_rx_pool_obj_size(ut_dev_ctx* ctx) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+  uint16_t system_rx_queues_end = inf->system_rx_queues_end;
+  uint32_t size = 0;
+
+  if (ut_eal_init() < 0) return 0;
+  if (mt_user_rx_mono_pool(&ctx->impl)) {
+    struct rte_mempool* mono =
+        mt_mempool_create_common(&ctx->impl, MTL_PORT_P, "ut_mono", 1024);
+    if (!mono) return 0;
+    size = mt_mempool_obj_size(mono);
+    mt_mempool_free(mono);
+    return size;
+  }
+  inf->nb_rx_q = 2;
+  inf->system_rx_queues_end = 1;
+  inf->rx_queues = NULL;
+  if (dev_if_init_rx_queues(&ctx->impl, inf) >= 0) {
+    size = mt_mempool_obj_size(inf->rx_queues[1].mbuf_pool);
+    dev_if_uinit_rx_queues(inf);
+  }
+  inf->rx_queues = &ctx->rx_queue;
+  inf->nb_rx_q = 1;
+  inf->system_rx_queues_end = system_rx_queues_end;
+  return size;
 }
 
 void ut_dev_set_tx_pacing(ut_dev_ctx* ctx, enum st21_tx_pacing_way pacing) {
@@ -836,6 +974,7 @@ int ut_dev_tx_done_cleanup(ut_dev_ctx* ctx, uint16_t queue) {
 
 unsigned int ut_dev_tx_sys_pool_elements(ut_dev_ctx* ctx, uint16_t nb_tx_q,
                                          uint16_t nb_tx_desc, bool mono) {
+  if (ut_eal_init() < 0) return 0;
   struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
 
   inf->nb_tx_q = nb_tx_q;
@@ -856,4 +995,10 @@ unsigned int ut_dev_mempool_size(ut_dev_ctx* ctx, unsigned int elements) {
 
   if (mp) mt_mempool_free(mp);
   return size;
+}
+
+int ut_dev_sch_init_quota(ut_dev_ctx* ctx) {
+  ut_active_ctx = ctx;
+  int ret = dev_sch_init(&ctx->impl);
+  return ret < 0 ? ret : ctx->sch_quota_mbs;
 }

@@ -152,6 +152,11 @@ enum st_args_cmd {
   ST_ARG_TX_USER_CLOCK_OFFSET,
   ST_ARG_AUTO_STOP,
   ST_ARG_RX_MAX_FILE_SIZE,
+  ST_ARG_ST20P_APP_CORES,
+  ST_ARG_TX_ST20P_FUSED,
+  ST_ARG_TX_ST20P_RENDER,
+  ST_ARG_TX_VIDEO_FB_CNT,
+  ST_ARG_RX_PKT_CONVERT,
   ST_ARG_MAX,
 };
 
@@ -301,6 +306,11 @@ static struct option st_app_args_options[] = {
     {"timestamp_epoch", no_argument, 0, ST_ARG_TIMESTAMP_EPOCH},
     {"auto_stop", no_argument, 0, ST_ARG_AUTO_STOP},
     {"rx_max_file_size", required_argument, 0, ST_ARG_RX_MAX_FILE_SIZE},
+    {"st20p_app_cores", required_argument, 0, ST_ARG_ST20P_APP_CORES},
+    {"tx_st20p_fused", no_argument, 0, ST_ARG_TX_ST20P_FUSED},
+    {"tx_st20p_render", no_argument, 0, ST_ARG_TX_ST20P_RENDER},
+    {"tx_video_fb_cnt", required_argument, 0, ST_ARG_TX_VIDEO_FB_CNT},
+    {"rx_pkt_convert", no_argument, 0, ST_ARG_RX_PKT_CONVERT},
 
     {0, 0, 0, 0}};
 
@@ -427,6 +437,18 @@ static void log_user_printer(enum mtl_log_level level, const char* format, ...) 
   vprintf(format, args);
   /* End variadic argument list */
   va_end(args);
+}
+
+/* the whole of str, a number in [min, max] */
+static int app_args_parse_int(const char* str, long min, long max, int* value) {
+  char* end;
+  long v;
+
+  errno = 0;
+  v = strtol(str, &end, 10);
+  if (errno == ERANGE || end == str || *end || v < min || v > max) return -EINVAL;
+  *value = (int)v;
+  return 0;
 }
 
 static int app_args_parse_port(struct st_app_context* ctx, struct mtl_init_params* p,
@@ -929,6 +951,28 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_RX_MAX_FILE_SIZE:
         ctx->rx_max_file_size = strtoul(optarg, NULL, 0);
+        break;
+      case ST_ARG_ST20P_APP_CORES:
+        if (app_args_parse_int(optarg, 0, INT32_MAX, &ctx->st20p_cores.requested) < 0) {
+          err("%s, invalid st20p_app_cores %s\n", __func__, optarg);
+          return -EINVAL;
+        }
+        break;
+      case ST_ARG_TX_ST20P_FUSED:
+        ctx->tx_st20p_fused = true;
+        break;
+      case ST_ARG_TX_ST20P_RENDER:
+        ctx->tx_st20p_render = true;
+        break;
+      case ST_ARG_TX_VIDEO_FB_CNT:
+        if (app_args_parse_int(optarg, 2, ST20_FB_MAX_COUNT, &ctx->tx_video_fb_cnt) < 0) {
+          err("%s, invalid tx_video_fb_cnt %s, st20p tx takes 2 to %d\n", __func__,
+              optarg, ST20_FB_MAX_COUNT);
+          return -EINVAL;
+        }
+        break;
+      case ST_ARG_RX_PKT_CONVERT:
+        ctx->rx_pkt_convert = true;
         break;
       case '?':
         break;
