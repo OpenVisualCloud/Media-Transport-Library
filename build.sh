@@ -103,6 +103,16 @@ meson_setup() {
 	fi
 }
 
+# The DPDK of build_dpdk.sh sits beside the prefix. Find it before the unit
+# build, so that nobody has to export PKG_CONFIG_PATH for a local install.
+if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
+	_dpdk_pc=$(find "$(dirname "${MTL_INSTALL_PREFIX}")/dpdk" -name libdpdk.pc -print -quit 2>/dev/null || true)
+	if [ -n "${_dpdk_pc}" ]; then
+		PKG_CONFIG_PATH="$(dirname "${_dpdk_pc}")${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
+		export PKG_CONFIG_PATH
+	fi
+fi
+
 # build and run the unit gtest suite (tests/unit), then exit
 if [ "$build_unit" == "true" ]; then
 	meson_setup "${UNIT_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan" -Denable_unit_tests=true
@@ -120,13 +130,6 @@ fi
 
 if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 	MTL_PREFIX_ARGS="--prefix=$MTL_INSTALL_PREFIX"
-	# The DPDK of build_dpdk.sh sits beside the prefix. Find it there, so that
-	# nobody has to export PKG_CONFIG_PATH for a local install.
-	_dpdk_pc=$(find "$(dirname "${MTL_INSTALL_PREFIX}")/dpdk" -name libdpdk.pc -print -quit 2>/dev/null || true)
-	if [ -n "${_dpdk_pc}" ]; then
-		PKG_CONFIG_PATH="$(dirname "${_dpdk_pc}")${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
-		export PKG_CONFIG_PATH
-	fi
 elif [ -z "${MTL_PREFIX_ARGS}" ] && [ "${OS:-}" != "Windows_NT" ]; then
 	MTL_PREFIX_ARGS="--prefix=/usr/local"
 fi
