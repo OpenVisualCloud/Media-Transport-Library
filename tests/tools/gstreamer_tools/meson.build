@@ -6,16 +6,38 @@ project('gstreamer_mtl_tools', 'c',
 
 cc = meson.get_compiler('c')
 
+# Compiler hardening, see doc/build.md
+add_project_arguments(cc.get_supported_arguments(['-fstack-protector-strong',
+  '-fstack-clash-protection', '-fcf-protection=full']),
+  '-Wformat', '-Wformat-security', '-Werror=format-security', language : 'c')
+# keep the level a compiler (Ubuntu 24.04 gcc: 3) or CFLAGS already set, asking the
+# compiler itself: meson >= 1.11 runs its checks with -U_FORTIFY_SOURCE
+fortify = run_command(cc.cmd_array(), get_option('c_args'), '-O2', '-dM', '-E', '-x', 'c', '/dev/null',
+  check: true).stdout()
+if get_option('optimization') not in ['0', 'plain'] and not fortify.contains('_FORTIFY_SOURCE')
+  # 3 where the compiler and glibc support it (gcc 12+, clang 9+, glibc 2.34+)
+  level = run_command(cc.cmd_array(), get_option('c_args'), '-O2', '-D_FORTIFY_SOURCE=3', '-dM', '-E',
+    '-include', 'string.h', '-x', 'c', '/dev/null', check: true).stdout()
+  add_project_arguments(level.contains('__USE_FORTIFY_LEVEL 3') ? '-D_FORTIFY_SOURCE=3' : '-D_FORTIFY_SOURCE=2',
+    language : 'c')
+endif
+add_project_link_arguments('-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack', language : 'c')
+
 plugins_install_dir = join_paths(get_option('libdir'), 'gstreamer-1.0')
 
-plugin_c_args = [
+plugin_c_args = cc.get_supported_arguments([
   '-Wno-redundant-decls',
   '-Wno-discarded-qualifiers',
   '-Wno-declaration-after-statement',
   '-Wno-missing-prototypes',
   '-Wno-missing-declarations',
   '-Wno-stringop-truncation'
-]
+])
+
+# enable warning as error for non debug build
+if get_option('buildtype') != 'debug'
+  plugin_c_args += ['-Werror']
+endif
 
 gst_dep = dependency('gstreamer-1.0', version : '>=1.19', required : true)
 gstbase_dep = dependency('gstreamer-base-1.0', version : '>=1.19', required : true)

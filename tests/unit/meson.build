@@ -8,6 +8,25 @@ unit_c_args = ['-Wall', '-Werror']
 # #define rename, so a real duplicate must fail the link.
 unit_link_args = []
 
+# Compiler hardening, see doc/build.md. The C sources get it from lib/meson.build, which
+# covers C only; the C++ ones and the C++ link need it here, as add_project_arguments()
+# can't follow a target.
+if not is_windows
+  unit_cpp = meson.get_compiler('cpp')
+  unit_cpp_args += unit_cpp.get_supported_arguments(['-fstack-protector-strong',
+    '-fstack-clash-protection', '-fcf-protection=full'])
+  unit_cpp_args += ['-Wformat', '-Wformat-security', '-Werror=format-security']
+  unit_fortify = run_command(unit_cpp.cmd_array(), get_option('cpp_args'), '-O2', '-dM', '-E', '-x', 'c++',
+    '/dev/null', check: true).stdout()
+  if get_option('optimization') not in ['0', 'plain'] and not unit_fortify.contains('_FORTIFY_SOURCE')
+    # 3 where the compiler and glibc support it (gcc 12+, clang 9+, glibc 2.34+)
+    unit_level = run_command(unit_cpp.cmd_array(), get_option('cpp_args'), '-O2', '-D_FORTIFY_SOURCE=3', '-dM',
+      '-E', '-include', 'string.h', '-x', 'c++', '/dev/null', check: true).stdout()
+    unit_cpp_args += unit_level.contains('__USE_FORTIFY_LEVEL 3') ? '-D_FORTIFY_SOURCE=3' : '-D_FORTIFY_SOURCE=2'
+  endif
+  unit_link_args += ['-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack']
+endif
+
 # rte_eal_init() dlopens every driver in RTE_EAL_PMD_PATH and those drivers request the bus
 # libraries by soname, so a second DPDK on the host ld.so path loads one bus library twice and
 # its RTE_REGISTER_TAILQ constructor panics. Pin the process to the DPDK this binary compiled
