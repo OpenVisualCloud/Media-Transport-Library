@@ -84,6 +84,11 @@ jobs:
       - name: Update the runtime linker cache
         run: sudo ldconfig
 
+      # They build against the MTL that Build Release installed. sudo: that
+      # step made script/build, the parent of their build directory, as root.
+      - name: Run the FFmpeg plugin unit tests
+        run: sudo -E script/build_ffmpeg_plugin.sh unit
+
       - name: Build the Rust no_std example
         run: task ci:rust-no-std
 

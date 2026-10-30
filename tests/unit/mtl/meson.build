@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2026 Intel Corporation
 
-# The ecosystem sources that a unit harness compiles in place -- the FFmpeg
-# plugin is the first -- ask for the public API as <mtl/*.h>, the path of an
-# installed MTL. The unit tier installs nothing and CI gives it a host with no
+# The plugin sources that a unit harness compiles in place -- st22_avcodec of
+# plugins/ -- ask for the public API as <mtl/*.h>, the path of an installed
+# MTL. The unit tier installs nothing and CI gives it a host with no
 # MTL on the compiler's system path, so this directory makes the same view
 # inside the build directory: tests/unit is already an include directory of
 # UnitTest, so a copy of each public header here answers <mtl/...> with the

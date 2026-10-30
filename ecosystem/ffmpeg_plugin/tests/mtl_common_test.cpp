@@ -9,9 +9,9 @@
 #include <cstring>
 #include <thread>
 
-#include "ffmpeg/mtl_common_harness.h"
+#include "mtl_common_harness.h"
 #define MTL_FFMPEG_UNIT_TEST
-#include "../../../ecosystem/ffmpeg_plugin/mtl_common.h"
+#include "../mtl_common.h"
 
 static timespec g_clock_time;
 static clockid_t g_clock_id;

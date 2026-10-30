@@ -12,7 +12,7 @@ script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 show_help() {
 	cat <<EOF
-Usage: ${script_name} [OPTIONS]
+Usage: ${script_name} [OPTIONS] [unit]
 
 Build FFmpeg with the MTL input and output devices of ecosystem/ffmpeg_plugin,
 and install it. The script downloads the FFmpeg release in versions.env into
@@ -25,8 +25,14 @@ The install replaces an FFmpeg that is already in the prefix, with no question.
 To keep the FFmpeg of the system or of the user, install into another
 directory with -p, for example -p /opt/mtl-ffmpeg.
 
+With unit, as with build.sh unit, the script builds the unit tests of
+ecosystem/ffmpeg_plugin/tests against the installed MTL, runs them, and stops:
+it downloads and builds no FFmpeg. The build directory is
+script/build/ffmpeg_plugin_unit.
+
 REQUIRED PACKAGES (Debian/Ubuntu):
 	gcc make nasm patch patchelf pkg-config unzip wget, or ./install_dependencies.sh ffmpeg
+	unit: g++ meson ninja-build pkg-config libgtest-dev
 	MTL and DPDK development files must already be installed.
 
 OPTIONS:
@@ -46,6 +52,7 @@ ENVIRONMENT:
 EXAMPLES:
 	${script_name}
 	${script_name} --jpegxs --jobs 8
+	${script_name} unit
 	MTL_INSTALL_PREFIX=\$PWD/.local_install/mtl ${script_name}	# into .local_install/ffmpeg
 EOF
 }
@@ -79,6 +86,18 @@ build_openh264() {
 	fi
 }
 
+# Builds the unit tests of ecosystem/ffmpeg_plugin/tests against the MTL that
+# pkg-config finds, and runs them.
+run_unit_tests() {
+	local jobs=$1 build_dir="${script_folder}/build/ffmpeg_plugin_unit"
+
+	rm -rf "${build_dir}"
+	meson setup "${build_dir}" "${REPO_DIR}/ecosystem/ffmpeg_plugin/tests"
+	ninja -C "${build_dir}" -j "${jobs}"
+	"${build_dir}/FfmpegPluginUnitTest"
+	log_success "The FFmpeg plugin unit tests pass"
+}
+
 # Puts the SVT-JPEG-XS codecs and their FFmpeg patches into the source tree.
 add_svt_jpeg_xs() {
 	local ffmpeg_dir=$1 repo="${SVT_JPEG_XS_REPO:-${script_folder}/SVT-JPEG-XS}" archive patch_dir patch_file
@@ -102,7 +121,7 @@ add_svt_jpeg_xs() {
 }
 
 main() {
-	local prefix="" jobs="${NPROC}" force=0 gpu_direct=0 jpegxs=0 option
+	local prefix="" jobs="${NPROC}" force=0 gpu_direct=0 jpegxs=0 unit=0 option
 	local local_base="" ffmpeg_dir archive patch_file plugin_dir="${REPO_DIR}/ecosystem/ffmpeg_plugin"
 	local mtl_pc dpdk_pc jpeg_pc pc_dirs=() libdirs=() file
 	# The libraries FFmpeg installs, without the lib prefix.
@@ -142,6 +161,7 @@ main() {
 			shift
 			;;
 		-f | --force) force=1 ;;
+		unit) unit=1 ;;
 		-h | --help)
 			show_help
 			exit 0
@@ -173,8 +193,13 @@ main() {
 		fi
 	fi
 
-	require_commands "${CC:-cc}:gcc" make:make nasm:nasm patch:patch pkg-config:pkg-config \
-		unzip:unzip tar:tar realpath:coreutils patchelf:patchelf readelf:binutils || exit 1
+	if [ "${unit}" -eq 1 ]; then
+		require_commands "${CC:-cc}:gcc" "${CXX:-c++}:g++" meson:meson ninja:ninja-build \
+			pkg-config:pkg-config || exit 1
+	else
+		require_commands "${CC:-cc}:gcc" make:make nasm:nasm patch:patch pkg-config:pkg-config \
+			unzip:unzip tar:tar realpath:coreutils patchelf:patchelf readelf:binutils || exit 1
+	fi
 	# A local install keeps MTL and DPDK beside the prefix; the system install
 	# takes them from the pkg-config path.
 	if [ -n "${local_base}" ]; then
@@ -199,6 +224,10 @@ main() {
 	export PKG_CONFIG_PATH
 	PKG_CONFIG_PATH="$(printf '%s:' "${pc_dirs[@]}")${PKG_CONFIG_PATH:-}"
 	require_pkg_config "mtl:MTL (build and install it with build.sh)" "libdpdk:DPDK (build_dpdk.sh)" || exit 1
+	if [ "${unit}" -eq 1 ]; then
+		run_unit_tests "${jobs}"
+		return 0
+	fi
 	[ "${jpegxs}" -eq 0 ] || require_pkg_config "SvtJpegxs:SVT-JPEG-XS (build_jpegxs.sh)" || exit 1
 	if [ "${gpu_direct}" -eq 1 ]; then
 		require_pkg_config "mtl_gpu_direct:MTL GPU direct (gpu_direct/, see doc/gpu.md)" || exit 1
