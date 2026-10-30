@@ -164,8 +164,10 @@ main() {
 	trap "${cleanup}" EXIT
 	rm -rf "${source_dir}/Build/mtl" "${source_dir}/mtl-plugin/build-mtl"
 	# CMAKE_INSTALL_LIBDIR: GNUInstallDirs picks lib64 on Rocky and RHEL.
+	# CMAKE_INSTALL_RPATH: the sample programs in bin find libSvtJpegxs in lib.
 	cmake -S "${source_dir}" -B "${source_dir}/Build/mtl" -DCMAKE_BUILD_TYPE=Release \
-		-DCMAKE_INSTALL_PREFIX="${stage}" -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=ON
+		-DCMAKE_INSTALL_PREFIX="${stage}" -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_INSTALL_RPATH="\$ORIGIN/../lib"
 	cmake --build "${source_dir}/Build/mtl" --parallel "${jobs}"
 	cmake --install "${source_dir}/Build/mtl"
 
