@@ -78,6 +78,20 @@ sudo ldconfig
 
 In order to build the FFmpeg in a non-default path, use `--prefix="<path>"` within the `./configure` command to point to an empty installation folder.
 
+### 1.3. Unit tests
+
+The unit tests in `ecosystem/ffmpeg_plugin/tests` are a meson project of their
+own. They compile `mtl_common.c` with FFmpeg and `mtl_init()` stubbed, against
+the installed MTL, and need no NIC and no root:
+
+```bash
+./script/build_ffmpeg_plugin.sh unit      # build and run them, then stop
+```
+
+Only `FfmpegMtlCommonTest.ConcurrentGetsCreateOneSharedHandle` has a wall-clock
+budget: one second for each of its two threads to start. A failure of it that
+does not reproduce on an idle host is load; any other failure is a defect.
+
 ## 2. ST20P raw video run guide
 
 The MTL ST20P plugin is implemented as an FFmpeg input/output device, enabling direct reading from or sending raw video via the ST 2110-20 stream.
@@ -214,7 +228,7 @@ ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv420p -i yuv
 
 ### 3.5. St22p support
 
-Another option involves utilizing the MTL built-in ST22 codec plugin, where FFmpeg can directly send or retrieve the YUV raw frame to/from the MTL ST22P plugin. MTL will then internally decode or encode the codec stream.
+Another option involves utilizing the MTL built-in ST22 codec plugin, where FFmpeg can directly send or retrieve the YUV raw frame to/from the MTL ST22P plugin. MTL will then internally decode or encode the codec stream. On the TX side, `-st22_quality speed|quality` selects the encoder quality mode (default `speed`).
 
 Reading a ST 2110-22 pipeline jpegxs codestream on 239.168.85.20:20000 with payload_type 98:
 

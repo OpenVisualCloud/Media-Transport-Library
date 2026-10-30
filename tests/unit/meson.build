@@ -22,7 +22,7 @@ unit_include_dirs = [
   include_directories('.'),
 ]
 
-# Answers the <mtl/*.h> of the ecosystem sources the harnesses compile in place.
+# Answers the <mtl/*.h> of the plugin sources the harnesses compile in place.
 # It writes into the build side of include_directories('.') above, so it must run
 # before the executable that reads it.
 subdir('mtl')
@@ -44,8 +44,7 @@ unit_sources = [
   'common/ut_tx_ring_test.cpp',
   'common/mt_bitmap_harness.c',
   'common/mt_bitmap_test.cpp',
-  'ffmpeg/mtl_common_harness.c',
-  'ffmpeg/mtl_common_test.cpp',
+  'avcodec/st22_avcodec_encode_test.cpp',
   'dev/mt_dev_harness.c',
   'dev/mt_dev_igc_test.cpp',
   'dev/mt_dev_rx_desc_test.cpp',
@@ -197,6 +196,8 @@ unit_sources = [
   'pipeline/tx_wake_block_test.cpp',
   'pipeline/stale_handle_stats_test.cpp',
   'pipeline/tx_frame_done_notify_test.cpp',
+  'pipeline/st_plugin_harness.c',
+  'pipeline/st_plugin_session_test.cpp',
   'sch/mt_sch_harness.c',
   'sch/mtl_sch_api_test.cpp',
   'sch/mt_sch_mempolicy_test.cpp',
@@ -219,10 +220,18 @@ unit_sources = [
   'main.cpp',
 ]
 
+# A library of its own keeps the FFmpeg stub headers off every other unit source's path.
+ut_avcodec_harness_lib = static_library('ut_avcodec_harness', 'avcodec/st22_avcodec_harness.c',
+  c_args : unit_c_args,
+  include_directories : unit_include_dirs + include_directories('avcodec/ffmpeg_stub'),
+  dependencies : [mtl_internal_dep],
+  install : false)
+
 executable('UnitTest', unit_sources,
   c_args : unit_c_args,
   cpp_args : unit_cpp_args,
   link_args : unit_link_args,
+  link_with : ut_avcodec_harness_lib,
   build_rpath : unit_build_rpath,
   include_directories : unit_include_dirs,
   dependencies : [mtl_internal_dep, dpdk_dep, libm_dep, libnuma_dep, gtest_dep, gmock_dep,

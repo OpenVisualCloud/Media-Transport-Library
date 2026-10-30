@@ -2,7 +2,7 @@
  * Copyright(c) 2026 Intel Corporation
  */
 
-#include "ffmpeg/mtl_common_harness.h"
+#include "mtl_common_harness.h"
 
 #include <stdarg.h>
 #include <string.h>
@@ -13,11 +13,9 @@ static int ut_ffmpeg_lifecycle_mutex_lock(pthread_mutex_t* mutex);
 #define MTL_FFMPEG_UNIT_TEST
 #define pthread_mutex_lock ut_ffmpeg_lifecycle_mutex_lock
 #define clock_gettime ut_ffmpeg_clock_gettime
-#include "../../../ecosystem/ffmpeg_plugin/mtl_common.c"
+#include "../mtl_common.c"
 #undef clock_gettime
 #undef pthread_mutex_lock
-
-#include "mt_platform.h"
 
 static struct mtl_init_params ut_init_params;
 static int ut_init_calls;
@@ -29,9 +27,15 @@ static pthread_cond_t ut_init_cond;
 static bool ut_block_init;
 static bool ut_release_init;
 
-/* Once, before any harness thread: re-initializing a live condvar is undefined. */
+/* Once, before any harness thread: re-initializing a live condvar is undefined.
+ * The timed waits below take their deadline from CLOCK_MONOTONIC. */
 __attribute__((constructor)) static void ut_ffmpeg_cond_init(void) {
-  mt_pthread_cond_wait_init(&ut_init_cond);
+  pthread_condattr_t attr;
+
+  pthread_condattr_init(&attr);
+  pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+  pthread_cond_init(&ut_init_cond, &attr);
+  pthread_condattr_destroy(&attr);
 }
 
 static int ut_ffmpeg_lifecycle_mutex_lock(pthread_mutex_t* mutex) {
@@ -105,6 +109,10 @@ int ut_ffmpeg_parse_tx_port(const struct StDevArgs* dev_args,
   return mtl_parse_tx_port(NULL, dev_args, args, port);
 }
 
+int ut_ffmpeg_parse_st22_quality(const char* value, enum st22_quality_mode* quality) {
+  return mtl_parse_st22_quality(NULL, value, quality);
+}
+
 void ut_ffmpeg_block_first_init(void) {
   pthread_mutex_lock(&ut_init_mutex);
   ut_block_init = true;
@@ -115,7 +123,7 @@ bool ut_ffmpeg_wait_for_init_calls(int count) {
   struct timespec timeout;
   bool reached;
 
-  clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &timeout);
+  clock_gettime(CLOCK_MONOTONIC, &timeout);
   timeout.tv_sec++;
   pthread_mutex_lock(&ut_init_mutex);
   while ((ut_init_calls < count) && !ut_release_init) {
@@ -131,7 +139,7 @@ bool ut_ffmpeg_wait_for_lifecycle_lock_calls(int count) {
   struct timespec timeout;
   bool reached;
 
-  clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &timeout);
+  clock_gettime(CLOCK_MONOTONIC, &timeout);
   timeout.tv_sec++;
   pthread_mutex_lock(&ut_init_mutex);
   while (ut_lifecycle_lock_calls < count) {

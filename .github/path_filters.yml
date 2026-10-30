@@ -134,11 +134,13 @@ libmtl: &libmtl
   - 'include/**'
   - 'lib/**'
 
-# The unit suite. tests/unit/ffmpeg compiles these two plugin files.
+# The unit suite, and the plugin files that tests/unit/avcodec compiles.
 unit_sources: &unit_sources
   - 'tests/unit/**'
-  - ecosystem/ffmpeg_plugin/mtl_common.c
-  - ecosystem/ffmpeg_plugin/mtl_common.h
+  - plugins/log.h
+  - plugins/plugin_platform.h
+  - plugins/st22_avcodec/st22_avcodec_plugin.c
+  - plugins/st22_avcodec/st22_avcodec_plugin.h
 
 # What a bare-metal test job runs besides the artifacts: the gate, the host
 # setup actions, the ci:* tasks and the scripts that they call: the cache
@@ -263,7 +265,8 @@ fuzz_tests:
 # base_build.yml: release, eBPF/XDP, and release with fuzzing (clang).
 # setup_environment.sh builds DPDK, MTL, GPU Direct, the FFmpeg, GStreamer and
 # OBS plugins, the Python and Rust bindings, and the tools. It does not build
-# JPEG XS or st22 avcodec.
+# JPEG XS or st22 avcodec. ubuntu-build then runs the unit tests of
+# ecosystem/ffmpeg_plugin/tests, which hash_ffmpeg covers.
 base_build:
   - .github/path_filters.yml
   - .github/workflows/base_build.yml

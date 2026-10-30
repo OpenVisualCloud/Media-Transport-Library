@@ -17,6 +17,8 @@ The hard part of testing MTL is **picking the right tier** and **asserting the r
 | **pytest single-host** — `tests/acceptance/tests/single/` | RxTxApp / FFmpeg / GStreamer driven through pytest | Full host: VFs, MtlManager, NFS media, plugins, venv, SSH-to-localhost | End-to-end app behavior on one host: CLI flags, config files, real media bytes, PTP convergence |
 | **pytest dual-host** — `tests/acceptance/tests/dual/` | same apps, two hosts | Two hosts wired together | Real two-machine traffic: cross-host pacing, real switch behavior, no loopback shortcuts |
 
+Unit tests of an `ecosystem/` plugin are not in `UnitTest`: they live in the plugin's own `tests/` folder, a meson project of its own, like `ecosystem/ffmpeg_plugin/tests/`, which `script/build_ffmpeg_plugin.sh unit` builds and runs.
+
 Per-tier docs you must read before authoring: [tests/unit/README.md](../../../tests/unit/README.md), [tests/integration_tests/noctx/README.md](../../../tests/integration_tests/noctx/README.md), [tests/acceptance/README.md](../../../tests/acceptance/README.md).
 
 ## 2. Picking the tier — disjoint rules, stop at the first **yes**
