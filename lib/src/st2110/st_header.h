@@ -95,8 +95,8 @@ enum st40_tx_frame_status {
 };
 
 struct st_tx_muf_priv_data {
-  uint64_t tsc_time_stamp; /* tsc time stamp of current mbuf */
-  uint64_t ptp_time_stamp; /* ptp time stamp of current mbuf */
+  uint64_t tsc_time_stamp; /* tsc pacing target; all-RL st20 frames: pkt 0 only */
+  uint64_t ptp_time_stamp; /* ptp pacing target; all-RL st20 frames: pkt 0 only */
   void* priv;              /* private data to current frame */
   uint32_t idx;            /* index of packet in current frame */
 };
@@ -282,6 +282,8 @@ struct st_tx_video_session_impl {
   bool tx_mono_pool;   /* if reuse tx mono pool */
   bool tx_no_chain;    /* if tx not use chain mbuf */
   bool multi_src_port; /* if tx use multiple src port */
+  /* only a frame's last payload mbuf holds its extbuf */
+  bool tx_direct_chain;
   /* if the eth dev support chain buff */
   bool eth_has_chain[MTL_SESSION_PORT_MAX];
   /* if the eth dev support ipv4 checksum offload */
@@ -405,7 +407,7 @@ struct st_tx_video_sessions_mgr {
   struct mt_sch_tasklet_impl* tasklet;
 
   struct st_tx_video_session_impl* sessions[ST_SCH_MAX_TX_VIDEO_SESSIONS];
-  /* protect session, spin(fast) lock as it call from tasklet aslo */
+  /* control plane only, the tasklets skip a session while it is held */
   rte_spinlock_t mutex[ST_SCH_MAX_TX_VIDEO_SESSIONS];
 };
 

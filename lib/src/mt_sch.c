@@ -150,6 +150,50 @@ static void sch_restore_default_mempolicy(bool local) {
 #endif
 }
 
+/* The sfence drains weakly-ordered stores (WC doorbells) before a writer takes over. */
+static inline void sch_qs_offline(struct mtl_sch_impl* sch) {
+  rte_wmb();
+  atomic_store_explicit(&sch->qs_seen, UINT64_MAX, memory_order_release);
+}
+
+/* The fence keeps the pass's loads after the store a writer checks for "offline". */
+static inline void sch_qs_online(struct mtl_sch_impl* sch) {
+  uint64_t token = atomic_load_explicit(&sch->qs_token, memory_order_acquire);
+  atomic_store_explicit(&sch->qs_seen, token, memory_order_relaxed);
+  atomic_thread_fence(memory_order_seq_cst);
+}
+
+/* Loads the writers' token, not a pass count: the next pass's loads stay after it. */
+static inline void sch_qs_pass_end(struct mtl_sch_impl* sch) {
+  uint64_t token = atomic_load_explicit(&sch->qs_token, memory_order_acquire);
+  if (token == atomic_load_explicit(&sch->qs_seen, memory_order_relaxed)) return;
+  rte_wmb(); /* as in sch_qs_offline() */
+  atomic_store_explicit(&sch->qs_seen, token, memory_order_release);
+}
+
+int mt_sch_quiescent_wait(struct mtl_sch_impl* sch, int timeout_us) {
+  if (mt_sch_on_own_thread(sch)) return 0;
+
+  uint64_t token = atomic_fetch_add_explicit(&sch->qs_token, 1, memory_order_seq_cst) + 1;
+  /* with the fence in sch_qs_online(): orders the caller's lock store before the loads */
+  atomic_thread_fence(memory_order_seq_cst);
+  uint64_t start_ns = timeout_us ? mt_get_tsc(sch->parent) : 0;
+  int polls = 0;
+
+  while (atomic_load_explicit(&sch->qs_seen, memory_order_acquire) < token) {
+    if (timeout_us &&
+        mt_get_tsc(sch->parent) - start_ns > (uint64_t)timeout_us * NS_PER_US)
+      return -ETIMEDOUT;
+    if (polls < MT_SPIN_POLLS_BEFORE_SLEEP) {
+      polls++;
+      rte_pause();
+    } else {
+      mt_sleep_us(1);
+    }
+  }
+  return 0;
+}
+
 static int sch_tasklet_func(struct mtl_sch_impl* sch) {
   struct mtl_main_impl* impl = sch->parent;
   int idx = sch->idx;
@@ -178,6 +222,7 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
 
   sch->sleep_ratio_start_ns = mt_get_tsc(impl);
   loop_cal_start_ns = mt_get_tsc(impl);
+  sch_qs_online(sch);
 
   while (rte_atomic32_read(&sch->request_stop) == 0) {
     int pending = MTL_TASKLET_ALL_DONE;
@@ -206,8 +251,11 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
         mt_stat_u64_update(&tasklet->stat_time, delta_ns);
       }
     }
+    sch_qs_pass_end(sch);
     if (sch->allow_sleep && (pending == MTL_TASKLET_ALL_DONE)) {
+      sch_qs_offline(sch);
       sch_tasklet_sleep(impl, sch);
+      sch_qs_online(sch);
     }
 
     loop_cnt++;
@@ -224,6 +272,8 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
       mt_stat_u64_update(&sch->stat_time, delta_ns);
     }
   }
+  sch_qs_offline(sch);
+  sch->t_pid = 0; /* a later thread of the same tid is not this scheduler */
 
   num_tasklet = sch->max_tasklet_idx;
   for (i = 0; i < num_tasklet; i++) {
@@ -985,6 +1035,7 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
     rte_atomic32_set(&sch->started, 0);
     rte_atomic32_set(&sch->ref_cnt, 0);
     rte_atomic32_set(&sch->active, 0);
+    sch_qs_offline(sch);
     sch->max_tasklet_idx = 0;
     sch->data_quota_mbs_total = 0;
     sch->data_quota_mbs_limit = data_quota_mbs_limit;

@@ -48,6 +48,30 @@ int ut_sch_lcore_entry_mempolicy(int* mode, int* exit_mode);
  * temporary directory; *mode is its permission bits. Returns 0 on success. */
 int ut_sch_filelock_create_mode(unsigned int* mode);
 
+/* mt_sch_quiescent_wait() once a tasklet-thread scheduler ran and stopped; *polls is how
+ * often the wait polled. Returns 0 on success. */
+int ut_sch_qs_wait_after_stop(int* polls);
+/* The same, called by a tasklet of the running scheduler it waits on. */
+int ut_sch_qs_wait_on_sch_thread(int* polls);
+
+enum ut_sch_qs_pass_end {
+  UT_SCH_QS_END_OF_PASS, /* the pass in flight ends */
+  UT_SCH_QS_GO_OFFLINE,  /* the scheduler goes to sleep */
+};
+/* The caller acts as a scheduler in a pass while another thread waits on it, then ends
+ * the pass by end. *returned_in_pass is whether the wait returned before that,
+ * *returned_after_end whether it did promptly after. Returns 0 on success. */
+int ut_sch_qs_wait_across_pass(enum ut_sch_qs_pass_end end, bool* returned_in_pass,
+                               bool* returned_after_end);
+
+/* Runs an idle tasklet-thread scheduler that may sleep until it slept a few times;
+ * *online_sleeps is how many of its *sleeps began while it still read as in a pass. */
+int ut_sch_qs_sleeps_offline(int* sleeps, int* online_sleeps);
+
+/* Holds a pass of a running tasklet-thread scheduler until a wait on it began; *published
+ * is whether the end of that pass satisfied the wait, checked in the next pass. */
+int ut_sch_qs_pass_end_publishes(bool* published);
+
 #ifdef __cplusplus
 }
 #endif
