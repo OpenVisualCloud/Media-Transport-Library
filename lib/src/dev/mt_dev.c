@@ -2197,8 +2197,10 @@ int mt_dev_create(struct mtl_main_impl* impl) {
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
     /* DPDK 21.11 supports timesync before rte_eth_dev_start. */
     /* IGC timesync is deferred until RX queues are configured. */
+    /* ixgbe dev_start does a MAC reset that clears timesync, so it is deferred too. */
     if ((mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl)) &&
-        (port_type == MT_PORT_PF) && !dev_igc_timesync_required(inf)) {
+        (port_type == MT_PORT_PF) && !dev_igc_timesync_required(inf) &&
+        inf->drv_info.drv_type != MT_DRV_IXGBE) {
       ret = dev_start_timesync(inf);
       if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
     }
