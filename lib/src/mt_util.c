@@ -1186,11 +1186,11 @@ int mt_sysfs_write_uint32(const char* path, uint32_t value) {
 #ifndef WINDOWSENV
 static int util_sysfs_read(const char* dir, const char* attr, char* buf, int len) {
   char path[128];
-  snprintf(path, sizeof(path), "%s/%s", dir, attr);
+  (void)snprintf(path, sizeof(path), "%s/%s", dir, attr);
   FILE* file = fopen(path, "r");
   if (!file) return -EIO;
   char* line = fgets(buf, len, file);
-  fclose(file);
+  (void)fclose(file);
   return line ? 0 : -EIO;
 }
 #endif
@@ -1206,12 +1206,13 @@ uint64_t mt_l3_size(int socket) {
   int cpu, level;
   uint64_t size;
 
-  snprintf(dir, sizeof(dir), "/sys/devices/system/node/node%d", socket);
+  (void)snprintf(dir, sizeof(dir), "/sys/devices/system/node/node%d", socket);
   if (util_sysfs_read(dir, "cpulist", node_cpus, sizeof(node_cpus)) < 0 ||
       sscanf(node_cpus, "%d", &cpu) != 1)
     return 0;
   for (int idx = 0;; idx++) {
-    snprintf(dir, sizeof(dir), "/sys/devices/system/cpu/cpu%d/cache/index%d", cpu, idx);
+    (void)snprintf(dir, sizeof(dir), "/sys/devices/system/cpu/cpu%d/cache/index%d", cpu,
+                   idx);
     if (util_sysfs_read(dir, "level", buf, sizeof(buf)) < 0) return 0;
     if (sscanf(buf, "%d", &level) != 1 || level != 3) continue;
     if (util_sysfs_read(dir, "type", buf, sizeof(buf)) < 0 || strncmp(buf, "Unified", 7))

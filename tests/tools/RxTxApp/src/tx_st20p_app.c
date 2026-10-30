@@ -500,9 +500,9 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   s->handle = handle;
   if (s->fused)
     s->st20p_frame_size =
-        st_frame_size(s->st20p_src_block.fmt, ops.width, ops.height, ops.interlaced);
+        (int)st_frame_size(s->st20p_src_block.fmt, ops.width, ops.height, ops.interlaced);
   else
-    s->st20p_frame_size = st20p_tx_frame_size(handle);
+    s->st20p_frame_size = (int)st20p_tx_frame_size(handle);
 
   ret = app_tx_st20p_open_source(s);
   if (ret < 0) {

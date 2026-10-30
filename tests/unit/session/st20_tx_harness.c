@@ -3086,7 +3086,7 @@ static struct mtl_main_impl* ut_txv_quota_impl(bool user_quota) {
   if (!impl) return NULL;
   impl->type = MT_HANDLE_MAIN;
   impl->user_para.num_ports = 1;
-  snprintf(impl->user_para.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "ut_txv");
+  (void)snprintf(impl->user_para.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "ut_txv");
   if (user_quota) impl->user_para.data_quota_mbs_per_sch = 100000;
   return impl;
 }
@@ -3094,7 +3094,7 @@ static struct mtl_main_impl* ut_txv_quota_impl(bool user_quota) {
 static int ut_txv_quota_next_frame(void* priv, uint16_t* next_frame_idx,
                                    struct st20_tx_frame_meta* meta) {
   (void)priv;
-  (void)next_frame_idx;
+  *next_frame_idx = 0;
   (void)meta;
   return -EIO;
 }
@@ -3110,7 +3110,7 @@ static int ut_txv_quota_lines_ready(void* priv, uint16_t frame_idx,
 static int ut_txv_quota_st22_next_frame(void* priv, uint16_t* next_frame_idx,
                                         struct st22_tx_frame_meta* meta) {
   (void)priv;
-  (void)next_frame_idx;
+  *next_frame_idx = 0;
   (void)meta;
   return -EIO;
 }
@@ -3129,7 +3129,7 @@ int ut_txv_st20_tx_quota_mbs(enum st20_type type, bool user_quota) {
   ops.name = "ut_txv_quota";
   ops.type = type;
   ops.num_port = 1;
-  snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut_txv");
+  (void)snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut_txv");
   ops.dip_addr[MTL_SESSION_PORT_P][0] = 239;
   ops.dip_addr[MTL_SESSION_PORT_P][3] = 1;
   ops.udp_port[MTL_SESSION_PORT_P] = 20000;
@@ -3161,7 +3161,7 @@ int ut_txv_st22_tx_quota_mbs(enum st22_type type, bool user_quota) {
   ops.name = "ut_txv_quota";
   ops.type = type;
   ops.num_port = 1;
-  snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut_txv");
+  (void)snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut_txv");
   ops.dip_addr[MTL_SESSION_PORT_P][0] = 239;
   ops.dip_addr[MTL_SESSION_PORT_P][3] = 1;
   ops.udp_port[MTL_SESSION_PORT_P] = 20000;

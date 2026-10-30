@@ -596,12 +596,12 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
     /* the uframe callback is not safe on the session's pkt lcore and tasklet at once,
      * and detected dims could add a pkt lcore */
     uint64_t bps = 0;
-    st20_get_bandwidth_bps(ops->width, ops->height, ops->transport_fmt, ops->fps,
-                           ops->interlaced, &bps);
+    st20_get_bandwidth_bps((int)ops->width, (int)ops->height, ops->transport_fmt,
+                           ops->fps, ops->interlaced, &bps);
     if ((ops->flags & (ST20P_RX_FLAG_USE_MULTI_THREADS | ST20P_RX_FLAG_AUTO_DETECT)) ||
-        bps / (1000 * 1000) > ST_RX_VIDEO_PKT_LCORE_MBPS) {
+        bps / ((uint64_t)1000 * 1000) > ST_RX_VIDEO_PKT_LCORE_MBPS) {
       err("%s(%d), packet convert not supported with multi threads, auto detect or above "
-          "%d Mb/s\n",
+          "%" PRIu64 " Mb/s\n",
           __func__, idx, ST_RX_VIDEO_PKT_LCORE_MBPS);
       return -EINVAL;
     }

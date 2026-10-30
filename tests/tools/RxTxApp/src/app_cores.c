@@ -289,7 +289,7 @@ void st_app_cores_tick(struct st_app_context* ctx) {
     }
     c->plan[i] = t->core;
     if (!t->tracked) continue;
-    t->load = (double)(cpu_ns - t->cpu_ns) / (now - c->last_ns);
+    t->load = (double)(cpu_ns - t->cpu_ns) / (double)(now - c->last_ns);
     t->cpu_ns = cpu_ns;
     if (t->core >= 0) c->load += t->load;
   }
