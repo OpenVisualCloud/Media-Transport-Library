@@ -182,6 +182,22 @@ If you see below log from `sudo ninja install -C build`, it seems you're encount
 sudo: ninja: command not found
 ```
 
+#### 2.3.1. DPDK build for built-in PTP on Intel E610
+
+The steps in section 2.3 build DPDK with default arguments, which is the right build for all NICs.
+For Intel E610 (ixgbe PMD) with the built-in PTP (`--ptp` / `MTL_FLAG_PTP_ENABLE`), build DPDK with `RTE_LIBRTE_IEEE1588` instead.
+Without it, the ixgbe PMD does not request a hardware TX timestamp for PTP packets, the log shows `PTP(0): t3 tx timestamp timeout`, and the built-in PTP never syncs.
+
+```bash
+meson setup build -Dc_args=-DRTE_LIBRTE_IEEE1588
+ninja -C build
+sudo ninja install -C build
+cd ..
+```
+
+For an existing build directory, use `meson configure build -Dc_args=-DRTE_LIBRTE_IEEE1588` and rebuild.
+Confirm the flag is applied with `grep -c RTE_LIBRTE_IEEE1588 build/compile_commands.json` (non-zero).
+
 ## 3. Build Media Transport Library and app
 
 ```bash
