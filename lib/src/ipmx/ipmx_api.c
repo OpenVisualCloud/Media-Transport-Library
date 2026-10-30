@@ -6,6 +6,7 @@
 #include "../mt_handle_guard.h"
 #include "../mt_log.h"
 #include "ipmx_sr.h"
+#include "ipmx_sr_rx.h"
 
 int ipmx_vrx_stat_get(struct st_rx_video_session_impl* s, enum mtl_session_port port,
                       struct ipmx_rx_tp_stat* stat) {
@@ -46,6 +47,28 @@ int ipmx_st20p_rx_get_tp_stat(st20p_rx_handle handle, enum mtl_session_port port
 
   MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, -EIO);
   ret = ipmx_st20_rx_get_tp_stat(ctx->transport, port, stat);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
+}
+
+int ipmx_st20_rx_get_sr_info(st20_rx_handle handle, enum mtl_session_port port,
+                             struct ipmx_rx_sr_info* info) {
+  struct st_rx_video_session_handle_impl* s_impl = handle;
+  int ret;
+
+  MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_VIDEO, -EIO);
+  ret = ipmx_sr_rx_get_info(s_impl->impl, port, info);
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
+}
+
+int ipmx_st20p_rx_get_sr_info(st20p_rx_handle handle, enum mtl_session_port port,
+                              struct ipmx_rx_sr_info* info) {
+  struct st20p_rx_ctx* ctx = handle;
+  int ret;
+
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, -EIO);
+  ret = ipmx_st20_rx_get_sr_info(ctx->transport, port, info);
   MT_HANDLE_RELEASE(ctx);
   return ret;
 }

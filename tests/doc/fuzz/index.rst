@@ -4,7 +4,13 @@ Fuzz Tests
 
 The ``tests/fuzz`` directory holds libFuzzer harnesses. Each harness sends each
 input to one parser of the library: the ST 2110-20, -22, -30 and -40 RX packet
-paths, the ST 2110-40 helper functions, and the RTCP NACK parser of the TX side.
+paths, the ST 2110-40 helper functions, the RTCP NACK parser of the TX side,
+and the IPMX Sender Report parser of the ST 2110-20 RX side.
+
+``ipmx_sr_parse_fuzz`` is built only with ``-Denable_ipmx=true``. The CI build
+(``.github/scripts/ci/fuzz.sh``) does not set it, so the CI fuzz job does not
+build or run this target; add ``-Denable_ipmx=true`` to the ``meson setup`` line
+to fuzz it.
 
 Build Requirements
 ==================
@@ -41,7 +47,7 @@ compile.
 Symbol Preemption
 -----------------
 
-Five of the six harnesses ``#include`` a production ``.c`` file, so that its
+Six of the seven harnesses ``#include`` a production ``.c`` file, so that its
 static functions become visible. Such a harness defines the same non-static
 symbols as ``libmtl`` and needs no linker flag. ``libmtl`` is a shared library,
 and a definition in the executable preempts it. Preemption is global, so a call
@@ -84,7 +90,8 @@ Logs
 The RX harnesses set the MTL and the DPDK log level to ``DEBUG``, and send each
 log line to ``stderr``. The log shows the ``MTL:`` lines for the payload type
 and SSRC mismatches, the redundant packets and the enqueue failures.
-``mt_rtcp_tx_parse_fuzz`` sets the MTL log level to ``CRIT``.
+``mt_rtcp_tx_parse_fuzz`` and ``ipmx_sr_parse_fuzz`` set the MTL log level to
+``CRIT``.
 ``st40_ancillary_helpers_fuzz`` writes no log.
 
 CI

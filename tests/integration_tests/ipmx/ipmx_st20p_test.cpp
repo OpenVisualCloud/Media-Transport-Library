@@ -3,8 +3,9 @@
 /* st20p TX to RX with the IPMX flag on both sides: RGB 4:4:4 8-bit and 10-bit at the D6
  * rates, the TR-10-1 section 8.1 CMAX / VRX result of the RX timing parser, and the
  * session life cycle with the per-frame Sender Report on: a destination update, several
- * sessions, ST 2022-7, soaks, the block version, the ts-refclk. The noipmx_ cases are the
- * same streams without the flag, for wire comparison. Create/free cycles are
+ * sessions, ST 2022-7, soaks, the block version, the ts-refclk, and the Sender Reports
+ * as the RX reads them back (the sr_ cases). The noipmx_ cases are the same streams
+ * without the flag, for wire comparison. Create/free cycles are
  * NoCtxTest.st20p_*ipmx_create_free_cycles, which need an instance without
  * MTL_FLAG_RANDOM_SRC_PORT. */
 
@@ -243,22 +244,9 @@ static void ipmx_st20p_check_rx_after_update(st20p_rx_handle handle) {
   ADD_FAILURE() << "rx session was not updated";
 }
 
-TEST(Ipmx_st20p, rgb8_digest_1080p60_update_destination) {
-  struct st20p_rx_digest_test_para para;
-  test_st20p_init_rx_digest_para(&para);
-  para.ipmx = true;
-  para.check_fps = false; /* the frames lost in the switch */
-  para.mid_stream = ipmx_st20p_update_destination;
-  para.rx_check = ipmx_st20p_check_rx_after_update;
-  memset(ipmx_rx_updated, 0, sizeof(ipmx_rx_updated));
-  ipmx_st20p_digest_para(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P60, 1920, 1080,
-                         &para);
-}
-
 #define IPMX_TEST_BLOCK_VERSION (5)
 
-/* API plumbing only: the version on the wire is pinned by tests/unit/ipmx until RX parses
- * the SR (task 11) */
+/* API plumbing only, rgb8_digest_1080p60_sr_block_version reads the version back on RX */
 static void ipmx_st20p_set_block_version(st20p_tx_handle handle) {
   struct ipmx_video_info info;
 
@@ -338,6 +326,166 @@ TEST(Ipmx_st20p, rgb8_digest_1080p59_94_ts_refclk) {
   para.mid_stream = ipmx_st20p_change_ts_refclk;
   para.tx_check = ipmx_st20p_check_ts_refclk_changed;
   ipmx_st20p_digest_para(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P59_94, 1920, 1080,
+                         &para);
+}
+
+/* ---- the RX side of the Sender Report, ipmx_st20p_rx_get_sr_info() ---- */
+
+static struct ipmx_video_info ipmx_sr_tx_info;
+static bool ipmx_sr_tx_info_valid;
+static uint8_t ipmx_sr_expect_version_changes;
+
+static void ipmx_st20p_sr_save_tx_info(st20p_tx_handle handle) {
+  ipmx_sr_tx_info_valid = ipmx_st20p_tx_get_info(handle, &ipmx_sr_tx_info) == 0;
+  EXPECT_TRUE(ipmx_sr_tx_info_valid);
+}
+
+/* the last SR of one port against the TX info: Info Block, SSRC check, RTP and PTP
+ * timestamps of the same frame (TR-10-1 section 8.7); counts are plumbing only */
+static void ipmx_st20p_sr_check_port(st20p_rx_handle handle, enum mtl_session_port port,
+                                     uint64_t frames_per_sr_max = 2) {
+  struct ipmx_rx_sr_info sr;
+  struct st20_rx_user_stats stats;
+
+  ASSERT_EQ(ipmx_st20p_rx_get_sr_info(handle, port, &sr), 0) << port;
+  ASSERT_EQ(st20p_rx_get_session_stats(handle, &stats), 0);
+  info("%s(%d), received %" PRIu64 " malformed %" PRIu64 " no info %" PRIu64
+       " ssrc mismatch %" PRIu64 " version changes %" PRIu64 " frames %" PRIu64
+       ", ssrc %u rtp %u ptp %u.%09u cname %s version %u\n",
+       __func__, port, sr.received, sr.malformed, sr.no_info_block, sr.ssrc_mismatch,
+       sr.version_changes, stats.common.stat_frames_received, sr.ssrc, sr.rtp_timestamp,
+       sr.ptp_sec, sr.ptp_ns, sr.cname, sr.info.version);
+  EXPECT_GT(sr.received * frames_per_sr_max, stats.common.stat_frames_received);
+  EXPECT_EQ(sr.malformed, 0u);
+  EXPECT_EQ(sr.info_malformed, 0u);
+  EXPECT_EQ(sr.no_info_block, 0u);
+  EXPECT_EQ(sr.ssrc_mismatch, 0u);
+  EXPECT_EQ(sr.unknown_mib, 0u);
+  EXPECT_EQ(sr.version_changes, ipmx_sr_expect_version_changes);
+  EXPECT_GT(sr.pkt_count, 0u);
+  EXPECT_GT(sr.octet_count, 0u);
+  EXPECT_GT(sr.arrival_ns, 0u);
+  EXPECT_GT(strlen(sr.cname), 0u);
+  uint64_t ptp_ns = (uint64_t)sr.ptp_sec * NS_PER_S + sr.ptp_ns;
+  EXPECT_EQ((uint32_t)((__uint128_t)ptp_ns * 90000 / NS_PER_S), sr.rtp_timestamp);
+
+  ASSERT_TRUE(sr.has_info);
+  ASSERT_TRUE(sr.has_video_mib);
+  ASSERT_TRUE(ipmx_sr_tx_info_valid);
+  const struct ipmx_video_info* tx = &ipmx_sr_tx_info;
+  EXPECT_EQ(sr.info.version, tx->version);
+  EXPECT_EQ(0, memcmp(sr.info.ts_refclk, tx->ts_refclk, sizeof(tx->ts_refclk)));
+  EXPECT_EQ(0, memcmp(sr.info.mediaclk, tx->mediaclk, sizeof(tx->mediaclk)));
+  EXPECT_EQ(0, memcmp(sr.info.sampling, tx->sampling, sizeof(tx->sampling)));
+  EXPECT_EQ(sr.info.depth, tx->depth);
+  EXPECT_EQ(sr.info.gpm, tx->gpm);
+  EXPECT_EQ(sr.info.interlaced, tx->interlaced);
+  EXPECT_EQ(0, memcmp(sr.info.range, tx->range, sizeof(tx->range)));
+  EXPECT_EQ(0, memcmp(sr.info.colorimetry, tx->colorimetry, sizeof(tx->colorimetry)));
+  EXPECT_EQ(0, memcmp(sr.info.tcs, tx->tcs, sizeof(tx->tcs)));
+  EXPECT_EQ(sr.info.width, tx->width);
+  EXPECT_EQ(sr.info.height, tx->height);
+  EXPECT_EQ(sr.info.rate_num, tx->rate_num);
+  EXPECT_EQ(sr.info.rate_den, tx->rate_den);
+  EXPECT_EQ(sr.info.pixclk, tx->pixclk);
+  EXPECT_EQ(sr.info.htotal, tx->htotal);
+  EXPECT_EQ(sr.info.vtotal, tx->vtotal);
+}
+
+static void ipmx_st20p_sr_check(st20p_rx_handle handle) {
+  ipmx_st20p_sr_check_port(handle, MTL_SESSION_PORT_P);
+}
+
+static void ipmx_st20p_sr_check_redundant(st20p_rx_handle handle) {
+  ipmx_st20p_sr_check_port(handle, MTL_SESSION_PORT_P);
+  ipmx_st20p_sr_check_port(handle, MTL_SESSION_PORT_R);
+}
+
+static void ipmx_st20p_sr_para(struct st20p_rx_digest_test_para* para) {
+  test_st20p_init_rx_digest_para(para);
+  para->ipmx = true;
+  para->tx_check = ipmx_st20p_sr_save_tx_info;
+  para->rx_check = ipmx_st20p_sr_check;
+  ipmx_sr_tx_info_valid = false;
+  ipmx_sr_expect_version_changes = 0;
+}
+
+/* TX to RX: the SR the RX reads back carries what the TX reports */
+TEST(Ipmx_st20p, rgb8_digest_1080p60_sr) {
+  struct st20p_rx_digest_test_para para;
+  ipmx_st20p_sr_para(&para);
+  ipmx_st20p_digest_para(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P60, 1920, 1080,
+                         &para);
+}
+
+static void ipmx_st20p_check_rx_and_sr_after_update(st20p_rx_handle handle) {
+  ipmx_st20p_check_rx_after_update(handle);
+  /* the source update halfway restarts the SR counters */
+  ipmx_st20p_sr_check_port(handle, MTL_SESSION_PORT_P, 4);
+}
+
+/* both ends move to another group and port; the RX re-creates its SR queue and reads the
+ * SRs of the new destination */
+TEST(Ipmx_st20p, rgb8_digest_1080p60_update_destination) {
+  struct st20p_rx_digest_test_para para;
+  ipmx_st20p_sr_para(&para);
+  para.check_fps = false; /* the frames lost in the switch */
+  para.mid_stream = ipmx_st20p_update_destination;
+  para.rx_check = ipmx_st20p_check_rx_and_sr_after_update;
+  memset(ipmx_rx_updated, 0, sizeof(ipmx_rx_updated));
+  ipmx_st20p_digest_para(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P60, 1920, 1080,
+                         &para);
+}
+
+static void ipmx_st20p_bump_block_version(st20p_tx_handle* tx, st20p_rx_handle*,
+                                          int sessions) {
+  for (int i = 0; i < sessions; i++)
+    EXPECT_EQ(ipmx_st20p_tx_set_block_version(tx[i], IPMX_TEST_BLOCK_VERSION + 1), 0);
+}
+
+/* a block version set mid stream reaches the RX, which counts the change */
+TEST(Ipmx_st20p, rgb8_digest_1080p60_sr_block_version) {
+  struct st20p_rx_digest_test_para para;
+  ipmx_st20p_sr_para(&para);
+  para.tx_created = ipmx_st20p_set_block_version;
+  para.mid_stream = ipmx_st20p_bump_block_version;
+  ipmx_sr_expect_version_changes = 1;
+  ipmx_st20p_digest_para(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P60, 1920, 1080,
+                         &para);
+}
+
+static void ipmx_st20p_sr_none(st20p_rx_handle handle) {
+  struct ipmx_rx_sr_info sr;
+
+  memset(&sr, 0xee, sizeof(sr));
+
+  EXPECT_EQ(ipmx_st20p_rx_get_sr_info(handle, MTL_SESSION_PORT_P, &sr), -EBUSY);
+  EXPECT_EQ(sr.received, 0u);
+  EXPECT_EQ(sr.malformed, 0u);
+}
+
+/* TP-1 section 14.3.3: an IPMX receiver takes a plain ST 2110 sender, without SRs; the
+ * digest test checks the frames */
+TEST(Ipmx_st20p, noipmx_tx_rgb8_digest_1080p60_sr_none) {
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.ipmx_rx_only = true;
+  para.rx_check = ipmx_st20p_sr_none;
+  ipmx_st20p_digest_para(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P60, 1920, 1080,
+                         &para);
+}
+
+/* ST 2022-7: each RX leg reads the SRs of its own TX leg */
+TEST(Ipmx_st20p, rgb8_digest_1080p60_sr_redundant) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  if (ctx->para.num_ports < 4)
+    GTEST_SKIP() << "ST 2022-7 needs 4 ports, have " << ctx->para.num_ports;
+
+  struct st20p_rx_digest_test_para para;
+  ipmx_st20p_sr_para(&para);
+  para.redundant = true;
+  para.rx_check = ipmx_st20p_sr_check_redundant;
+  ipmx_st20p_digest_para(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P60, 1920, 1080,
                          &para);
 }
 

@@ -75,5 +75,12 @@ int ipmx_rx_ops_check(const struct st20_rx_ops* ops) {
   ret = ipmx_udp_ports_check(name, ops->udp_port, ops->num_port);
   if (ret < 0) return ret;
 
+  if (ops->flags & ST20_RX_FLAG_ENABLE_RTCP) {
+    err("%s(%s), ST20_RX_FLAG_ENABLE_RTCP not supported, its NACK port is media port + "
+        "1, which TR-10-1 section 8.7 reserves for the sender report\n",
+        __func__, name);
+    return -ENOTSUP;
+  }
+
   return ipmx_video_check(name, ops->type, ops->fmt, ops->interlaced);
 }

@@ -53,6 +53,10 @@ fuzz_targets = [
   ['mt_rtcp_tx_parse_fuzz', 'rtcp/mt_rtcp_tx_parse_fuzz.c'],
 ]
 
+if get_option('enable_ipmx')
+  fuzz_targets += [['ipmx_sr_parse_fuzz', 'ipmx/ipmx_sr_parse_fuzz.c']]
+endif
+
 if host_machine.cpu_family() == 'x86' or host_machine.cpu_family() == 'x86_64'
   # DPDK memcpy helpers rely on SSSE3 intrinsics; explicitly enable them for clang builds
   fuzz_c_args += ['-mssse3']

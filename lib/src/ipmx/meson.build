@@ -4,6 +4,7 @@ sources += files(
   'ipmx_api.c',
   'ipmx_info.c',
   'ipmx_sr.c',
+  'ipmx_sr_rx.c',
   'ipmx_validate.c',
   'ipmx_vrx.c',
 )

@@ -6,11 +6,6 @@
 #include "../mt_util.h"
 #include "../st2110/st_tx_video_session.h"
 
-#define IPMX_INFO_TAG (0x5831)
-#define IPMX_MEDIA_INFO_VIDEO (0x0001)
-#define IPMX_INFO_HDR_LEN (84)
-#define IPMX_MEDIA_INFO_VIDEO_LEN (92)
-
 struct ipmx_info_sampling {
   const char* sampling;
   uint8_t depth;
@@ -105,7 +100,7 @@ uint16_t ipmx_info_block_build(const struct ipmx_video_info* info, uint8_t* buf)
   buf[IPMX_INFO_BLOCK_VERSION_OFFSET] = info->version;
   memset(&buf[IPMX_INFO_BLOCK_VERSION_OFFSET + 1], 0, 3);
   memcpy(&buf[IPMX_TS_REFCLK_OFFSET], info->ts_refclk, sizeof(info->ts_refclk));
-  memcpy(&buf[72], info->mediaclk, sizeof(info->mediaclk));
+  memcpy(&buf[IPMX_MEDIACLK_OFFSET], info->mediaclk, sizeof(info->mediaclk));
 
   ipmx_info_put_be16(&mib[0], IPMX_MEDIA_INFO_VIDEO);
   ipmx_info_put_be16(&mib[2], IPMX_MEDIA_INFO_VIDEO_LEN / 4 - 1);

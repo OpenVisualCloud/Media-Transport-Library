@@ -89,6 +89,20 @@ TEST_F(IpmxRxValidateTest, TwoPortsFrom1025To5000WarnOncePerPort) {
   EXPECT_EQ(ut_ipmx::CountOf(log, ut_ipmx::kPortWarning), 2) << log;
 }
 
+/* the NACK flow of the RX RTCP uses media port + 1, the port of the Sender Reports */
+TEST_F(IpmxRxValidateTest, EnableRtcpRejected) {
+  struct st20_rx_ops ops = RxOps();
+  ops.flags |= ST20_RX_FLAG_ENABLE_RTCP;
+  EXPECT_EQ(ut20_rx_ops_check(&ops), -ENOTSUP);
+}
+
+/* data path only stays allowed, the session just gets no Sender Report */
+TEST_F(IpmxRxValidateTest, DataPathOnlyAccepted) {
+  struct st20_rx_ops ops = RxOps();
+  ops.flags |= ST20_RX_FLAG_DATA_PATH_ONLY;
+  EXPECT_EQ(ut20_rx_ops_check(&ops), 0);
+}
+
 TEST_F(IpmxRxValidateTest, RtpLevelRejected) {
   struct st20_rx_ops ops = RxOps();
   ops.type = ST20_TYPE_RTP_LEVEL;

@@ -34,6 +34,8 @@ struct st20p_rx_digest_test_para {
   bool rx_auto_detect;
   bool zero_payload_type;
   bool ipmx;
+  /* the IPMX flag on RX only: a plain ST 2110 sender into an IPMX receiver */
+  bool ipmx_rx_only;
   /* TX on ports P and R, RX on ports 2 and 3, all multicast; needs 4 ports */
   bool redundant;
   /* streaming time, 0 for 10 s */

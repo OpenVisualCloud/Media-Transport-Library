@@ -13,10 +13,15 @@ extern "C" {
 #endif
 
 /* TR-10-2 section 10: the IPMX Info Block with one uncompressed video Media Info Block */
+#define IPMX_INFO_TAG (0x5831)
 #define IPMX_INFO_BLOCK_LEN (176)
+#define IPMX_INFO_HDR_LEN (84)
 #define IPMX_INFO_BLOCK_VERSION_OFFSET (4)
 #define IPMX_TS_REFCLK_OFFSET (8)
 #define IPMX_TS_REFCLK_LEN (64)
+#define IPMX_MEDIACLK_OFFSET (72)
+#define IPMX_MEDIA_INFO_VIDEO (0x0001)
+#define IPMX_MEDIA_INFO_VIDEO_LEN (92)
 
 struct mtl_main_impl;
 struct st_tx_video_session_impl;

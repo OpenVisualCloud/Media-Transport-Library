@@ -677,6 +677,9 @@ struct st_rx_video_session_impl {
   rte_atomic32_t cbs_incomplete_frame_cnt;
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
+#ifdef MTL_HAS_IPMX
+  struct ipmx_sr_rx* ipmx_sr; /* NULL without ST20_RX_FLAG_IPMX or with DATA_PATH_ONLY */
+#endif
   uint16_t burst_loss_max;
   float sim_loss_rate;
   uint16_t burst_loss_cnt;

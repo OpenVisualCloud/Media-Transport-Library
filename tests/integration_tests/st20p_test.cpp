@@ -1142,7 +1142,7 @@ void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       }
     }
     if (para->vsync) ops_rx.flags |= ST20P_RX_FLAG_ENABLE_VSYNC;
-    if (para->ipmx) ops_rx.flags |= ST20P_RX_FLAG_IPMX;
+    if (para->ipmx || para->ipmx_rx_only) ops_rx.flags |= ST20P_RX_FLAG_IPMX;
     if (para->pkt_convert) ops_rx.flags |= ST20P_RX_FLAG_PKT_CONVERT;
     if (para->rx_auto_detect) ops_rx.flags |= ST20P_RX_FLAG_AUTO_DETECT;
 

@@ -14,6 +14,9 @@
 
 #include "../datapath/mt_queue.h"
 #include "../ipmx/ipmx.h"
+#ifdef MTL_HAS_IPMX
+#include "../ipmx/ipmx_sr_rx.h"
+#endif
 #include "../mt_handle_guard.h"
 #include "../mt_log.h"
 #include "../mt_pcap.h"
@@ -3119,6 +3122,9 @@ static int rv_pkt_rx_tasklet(struct st_rx_video_session_impl* s) {
         dbg("%s(%d,%d), handle mbuf fail %d\n", __func__, s->idx, s_port,
             check_err_status);
       }
+#ifdef MTL_HAS_IPMX
+      if (s->ipmx_sr) ipmx_sr_rx_media(s->ipmx_sr, s_port, mbuf[rv - 1]);
+#endif
 
       rte_pktmbuf_free_bulk(&mbuf[0], rv);
 
@@ -3126,6 +3132,9 @@ static int rv_pkt_rx_tasklet(struct st_rx_video_session_impl* s) {
     } else {
       s->in_continuous_burst[s_port] = false;
     }
+#ifdef MTL_HAS_IPMX
+    if (s->ipmx_sr && ipmx_sr_rx_poll(s, s_port)) done = false;
+#endif
   }
 
   /* submit if any */
@@ -3137,6 +3146,9 @@ static int rv_pkt_rx_tasklet(struct st_rx_video_session_impl* s) {
 static int rv_uinit_hw(struct st_rx_video_session_impl* s) {
   int num_port = s->ops.num_port;
 
+#ifdef MTL_HAS_IPMX
+  if (s->ipmx_sr) ipmx_sr_rx_queue_put(s);
+#endif
   for (int i = 0; i < num_port; i++) {
     if (s->rxq[i]) {
       mt_rxq_put(s->rxq[i]);
@@ -3199,6 +3211,12 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
     }
     info("%s(%d), port(l:%d,p:%d), queue %d udp %d\n", __func__, idx, i, port,
          rv_queue_id(s, i), flow.dst_port);
+#ifdef MTL_HAS_IPMX
+    if (s->ipmx_sr && ipmx_sr_rx_queue_get(s, i, port, &flow) < 0) {
+      rv_uinit_hw(s);
+      return -EIO;
+    }
+#endif
   }
 
   return 0;
@@ -3363,6 +3381,9 @@ static int rv_uinit(struct mtl_main_impl* impl, struct st_rx_video_session_impl*
   rv_uinit_rtcp(s);
   rv_uinit_sw(impl, s);
   rv_uinit_hw(s);
+#ifdef MTL_HAS_IPMX
+  ipmx_sr_rx_uinit(s);
+#endif
   return 0;
 }
 
@@ -3557,6 +3578,10 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
     s->enable_timing_parser_meta = true;
   }
 
+#ifdef MTL_HAS_IPMX
+  ret = ipmx_sr_rx_init(impl, s);
+  if (ret < 0) return ret;
+#endif
   ret = rv_init_hw(impl, s);
   if (ret < 0) {
     err("%s(%d), rv_init_hw fail %d\n", __func__, idx, ret);
@@ -3578,6 +3603,9 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
     if (ret < 0) {
       err("%s(%d), rv_init_sw fail %d\n", __func__, idx, ret);
       rv_uinit_hw(s);
+#ifdef MTL_HAS_IPMX
+      ipmx_sr_rx_uinit(s);
+#endif
       return ret;
     }
   }
@@ -4022,6 +4050,9 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
     tp->stat_untrusted_pkts = 0;
   }
   if (s->enable_timing_parser_stat) rv_tp_stat(s);
+#ifdef MTL_HAS_IPMX
+  if (s->ipmx_sr) ipmx_sr_rx_stat_log(s, m_idx);
+#endif
 
   struct mt_stat_u64* stat_time = &s->stat_time;
   if (stat_time->cnt) {

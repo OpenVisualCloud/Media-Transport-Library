@@ -18,8 +18,10 @@ extern "C" {
 #endif
 
 /**
- * The IPMX Info Block content of an st20 TX stream, TR-10-1 section 8.7 and TR-10-2
- * section 10. The strings are zero padded to their field size, not always terminated.
+ * The IPMX Info Block content of an st20 stream, TR-10-1 section 8.7 and TR-10-2 section
+ * 10. The strings are fixed size and zero padded as on the wire: a string that fills its
+ * field has no terminating NUL, so read them with strnlen() or the field size. From an
+ * RX they are what the sender sent.
  */
 struct ipmx_video_info {
   /** block version, see ipmx_st20_tx_set_block_version() */
@@ -131,6 +133,100 @@ int ipmx_st20_rx_get_tp_stat(st20_rx_handle handle, enum mtl_session_port port,
  */
 int ipmx_st20p_rx_get_tp_stat(st20p_rx_handle handle, enum mtl_session_port port,
                               struct ipmx_rx_tp_stat* stat);
+
+/** The longest SDES CNAME, RFC 3550 section 6.5 */
+#define IPMX_RX_SR_CNAME_MAX (255)
+
+/**
+ * The IPMX RTCP Sender Reports (VSF TR-10-1 section 8.7) one RX session port got on
+ * udp_port + 1: counters since the session or its last st20_rx_update_source(), and the
+ * last Sender Report accepted. The Sender Report fields are raw, the NTP timestamp field
+ * is the PTP truncated timestamp of the sender, not converted.
+ */
+struct ipmx_rx_sr_info {
+  /** Sender Reports accepted, with or without an IPMX Info Block */
+  uint64_t received;
+  /** RTCP packets dropped: not RTCP version 2, or a length, count or padding past the
+   * packet */
+  uint64_t malformed;
+  /** accepted Sender Reports with a defective IPMX Info Block: a block or Media Info
+   * Block length past its container, a block shorter than its 84 octet header or a
+   * 0x0001 Media Info Block shorter than 92 octets */
+  uint64_t info_malformed;
+  /** accepted Sender Reports without an IPMX Info Block (no profile extension tagged
+   * 0x5831) */
+  uint64_t no_info_block;
+  /** Sender Reports dropped as their SSRC is not the one of the media on the port */
+  uint64_t ssrc_mismatch;
+  /** Media Info Blocks of a type other than 0x0001 (uncompressed video), skipped */
+  uint64_t unknown_mib;
+  /** accepted IPMX Info Blocks with a block version other than the one before */
+  uint64_t version_changes;
+  /** SSRC of the last Sender Report */
+  uint32_t ssrc;
+  /** NTP timestamp most significant word, the PTP seconds */
+  uint32_t ptp_sec;
+  /** NTP timestamp least significant word, the PTP nanoseconds */
+  uint32_t ptp_ns;
+  /** RTP timestamp of the last Sender Report */
+  uint32_t rtp_timestamp;
+  /** sender's packet count */
+  uint32_t pkt_count;
+  /** sender's octet count */
+  uint32_t octet_count;
+  /** the receiver PTP time in ns of the last Sender Report, see arrival_hw */
+  uint64_t arrival_ns;
+  /** arrival_ns is the NIC RX timestamp of the packet; false: the PTP time when the RX
+   * tasklet read it */
+  bool arrival_hw;
+  /** the SDES CNAME of the same SSRC in the same RTCP packet, empty if none */
+  char cname[IPMX_RX_SR_CNAME_MAX + 1];
+  /** the last Sender Report carries an IPMX Info Block with a valid header: info has
+   * the block version, ts_refclk and mediaclk */
+  bool has_info;
+  /** the Info Block holds a 0x0001 Media Info Block: the other info fields are set. A
+   * defect counted in info_malformed stops the Media Info Block walk, so false can also
+   * mean a broken one */
+  bool has_video_mib;
+  /** the Info Block content; all zero without has_info, the Media Info Block fields
+   * zero without has_video_mib */
+  struct ipmx_video_info info;
+};
+
+/**
+ * Get the IPMX Sender Reports one port of an st20 RX session created with
+ * ST20_RX_FLAG_IPMX received. The fields are of one consistent state. A Sender Report
+ * is accepted only if its SSRC is the ssrc of the ops when that is set, else the SSRC of
+ * the media last seen on the port; before any media every SSRC is accepted. Sender
+ * Reports never change the media RX: a stream without them, from a plain ST 2110 sender,
+ * is received as without the flag. The library does no timing recovery from them. There
+ * is no callback: poll version_changes and read the new Info Block when it grows. They
+ * come through the CNI queue with MTL_FLAG_RX_USE_CNI, or when the port has one and CNI
+ * runs as a tasklet (MTL_FLAG_CNI_TASKLET, or the PTP service without
+ * MTL_FLAG_CNI_THREAD); otherwise each port takes one more RX queue.
+ *
+ * @param handle
+ *   The handle to the rx st2110-20(video) session.
+ * @param port
+ *   The session port, each ST 2022-7 leg has its own Sender Reports.
+ * @param info
+ *   The pointer to save the info.
+ * @return
+ *   - 0: Success.
+ *   - -EBUSY: no Sender Report accepted yet, only the counters in info are set.
+ *   - -EIO: invalid handle, or IPMX not enabled on the session.
+ *   - -EINVAL: port not used by the session, or NULL info.
+ *   - -ENOTSUP: the session has ST20_RX_FLAG_DATA_PATH_ONLY, it gets no Sender Report.
+ */
+int ipmx_st20_rx_get_sr_info(st20_rx_handle handle, enum mtl_session_port port,
+                             struct ipmx_rx_sr_info* info);
+
+/**
+ * ipmx_st20_rx_get_sr_info() of the transport session of an st20p RX pipeline created
+ * with ST20P_RX_FLAG_IPMX.
+ */
+int ipmx_st20p_rx_get_sr_info(st20p_rx_handle handle, enum mtl_session_port port,
+                              struct ipmx_rx_sr_info* info);
 
 /**
  * Set the IPMX Info Block block version of an st20 TX session created with

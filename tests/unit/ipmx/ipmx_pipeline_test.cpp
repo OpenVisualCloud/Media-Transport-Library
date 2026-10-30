@@ -154,6 +154,13 @@ TEST_F(IpmxPipelineRxTest, InterlacedRejected) {
   EXPECT_EQ(CaptureAndCheck(&transport), -ENOTSUP);
 }
 
+/* ST20P_RX_FLAG_ENABLE_RTCP maps to the session flag the IPMX RX rejects */
+TEST_F(IpmxPipelineRxTest, EnableRtcpRejected) {
+  ut20p_ops(ctx_)->flags |= ST20P_RX_FLAG_ENABLE_RTCP;
+  struct st20_rx_ops transport;
+  EXPECT_EQ(CaptureAndCheck(&transport), -ENOTSUP);
+}
+
 TEST_F(IpmxPipelineRxTest, NonRfc4175TransportFormatsRejected) {
   for (enum st20_fmt fmt : {ST20_FMT_V210, ST20_FMT_YUV_422_PLANAR10LE}) {
     ut20p_ops(ctx_)->transport_fmt = fmt;
