@@ -1204,7 +1204,7 @@ int ut20_st22_rx_quota_mbs(enum st22_type type, bool user_quota) {
   if (!impl) return -ENOMEM;
   impl->type = MT_HANDLE_MAIN;
   impl->user_para.num_ports = 1;
-  snprintf(impl->user_para.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "ut20");
+  (void)snprintf(impl->user_para.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "ut20");
   if (user_quota) impl->user_para.data_quota_mbs_per_sch = 100000;
 
   struct st22_rx_ops ops;
@@ -1212,7 +1212,7 @@ int ut20_st22_rx_quota_mbs(enum st22_type type, bool user_quota) {
   ops.name = "ut20_quota";
   ops.type = type;
   ops.num_port = 1;
-  snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut20");
+  (void)snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut20");
   ops.ip_addr[MTL_SESSION_PORT_P][0] = 239;
   ops.ip_addr[MTL_SESSION_PORT_P][3] = 1;
   ops.udp_port[MTL_SESSION_PORT_P] = 20000;

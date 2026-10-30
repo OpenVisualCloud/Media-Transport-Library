@@ -974,8 +974,9 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     /* record the miss pkts */
     int miss_pkts = 0;
     if (meta->frame_recv_size) {
-      float pd_sz_per_pkt = (float)meta->frame_recv_size / slot->pkts_received;
-      miss_pkts = (s->st20_frame_size - meta->frame_recv_size) / pd_sz_per_pkt;
+      float pd_sz_per_pkt = (float)meta->frame_recv_size / (float)slot->pkts_received;
+      miss_pkts =
+          (int)((float)(s->st20_frame_size - meta->frame_recv_size) / pd_sz_per_pkt);
     }
     if (miss_pkts > 0) s->port_user_stats.common.stat_pkts_unrecovered += miss_pkts;
     rv_slot_account_per_port_loss(
@@ -2753,7 +2754,7 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
   }
   if (st20_is_frame_type(type)) {
     /* for traffic > 40g, two lcore used  */
-    if ((bps / (1000 * 1000)) > ST_RX_VIDEO_PKT_LCORE_MBPS) {
+    if ((bps / ((uint64_t)1000 * 1000)) > ST_RX_VIDEO_PKT_LCORE_MBPS) {
       if (!s->dma_dev) pkt_handle_lcore = true;
     }
 

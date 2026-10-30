@@ -272,12 +272,12 @@ mtl_handle ut_sch_create_lcore_main(unsigned int nb_lcores) {
   struct ut_sch_lcore_main* m = calloc(1, sizeof(*m));
   if (!m) return NULL;
 
-  snprintf(m->dir, sizeof(m->dir), "/tmp/ut_sch_lcore_XXXXXX");
+  (void)snprintf(m->dir, sizeof(m->dir), "/tmp/ut_sch_lcore_XXXXXX");
   if (!mkdtemp(m->dir)) {
     free(m);
     return NULL;
   }
-  snprintf(m->path, sizeof(m->path), "%s/lock", m->dir);
+  (void)snprintf(m->path, sizeof(m->path), "%s/lock", m->dir);
 
   struct mtl_main_impl* impl = &m->impl;
   struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);

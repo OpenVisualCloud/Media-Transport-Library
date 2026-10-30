@@ -13,13 +13,13 @@
  *          --gtest_filter='*St20p*NtConvert*:*St20pTxConvertBlock*:*St20p*NtScratch*'
  */
 
-#include <errno.h>
 #include <gtest/gtest.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include <algorithm>
+#include <cerrno>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 #include <tuple>
 
@@ -187,7 +187,7 @@ size_t BlockScratchSize(struct st_frame* dst) {
 
 /* the converter calls of the NT path: one per block of 8 lines */
 int BlockCalls(struct st_frame* dst) {
-  return (st_frame_data_height(dst) + 7) / 8;
+  return (int)((st_frame_data_height(dst) + 7) / 8);
 }
 
 /* The NT path also needs every dst plane on a cache line; back to back, the Cr plane of

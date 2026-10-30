@@ -50,7 +50,7 @@
 /* number of tmstamp it will tracked for out of order pkts */
 #define ST_VIDEO_RX_REC_NUM_OFO (2)
 /* an RX video frame session above this rate gets a pkt lcore, unless it has a DMA dev */
-#define ST_RX_VIDEO_PKT_LCORE_MBPS (40 * 1000)
+#define ST_RX_VIDEO_PKT_LCORE_MBPS ((uint64_t)40 * 1000)
 /* number of slices it will tracked as out of order pkts */
 #define ST_VIDEO_RX_SLICE_NUM (32)
 /* sync to atomic if reach this threshold */

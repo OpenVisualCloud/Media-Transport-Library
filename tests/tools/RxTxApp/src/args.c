@@ -447,7 +447,7 @@ static int app_args_parse_int(const char* str, long min, long max, int* value) {
   errno = 0;
   v = strtol(str, &end, 10);
   if (errno == ERANGE || end == str || *end || v < min || v > max) return -EINVAL;
-  *value = v;
+  *value = (int)v;
   return 0;
 }
 

@@ -106,7 +106,7 @@ static void st20_rx_no_dma_sch_pack_test(enum st20_type type, int per_sch) {
   int sch_cnt = st_test_sch_cnt(ctx);
 
   auto test_ctx = new tests_context();
-  ASSERT_TRUE(test_ctx != NULL);
+  ASSERT_TRUE(test_ctx != nullptr);
   test_ctx->ctx = ctx;
   test_ctx->fb_cnt = 2;
   struct st20_rx_ops ops;
@@ -124,7 +124,8 @@ static void st20_rx_no_dma_sch_pack_test(enum st20_type type, int per_sch) {
   for (int i = 0; i <= per_sch; i++) {
     int port = i % num_ports;
     memcpy(ops.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[port], MTL_IP_ADDR_LEN);
-    snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s", ctx->para.port[port]);
+    (void)snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+                   ctx->para.port[port]);
     ops.udp_port[MTL_SESSION_PORT_P] = udp_port_for_idx(i);
     st20_rx_handle handle = st20_rx_create(m_handle, &ops);
     if (!handle) break;

@@ -1540,7 +1540,7 @@ TEST(St20p, rx_create_expect_fail_packet_convert_ext_frame) {
   auto ctx = st_test_ctx();
   struct st20p_rx_ops ops;
   auto test_ctx = new tests_context();
-  ASSERT_TRUE(test_ctx != NULL);
+  ASSERT_TRUE(test_ctx != nullptr);
 
   test_ctx->idx = 0;
   test_ctx->ctx = ctx;
@@ -1551,7 +1551,7 @@ TEST(St20p, rx_create_expect_fail_packet_convert_ext_frame) {
   ops.query_ext_frame = test_st20p_rx_query_ext_frame;
 
   st20p_rx_handle handle = st20p_rx_create(ctx->handle, &ops);
-  EXPECT_TRUE(handle == NULL);
+  EXPECT_TRUE(handle == nullptr);
   if (handle) {
     EXPECT_GE(st20p_rx_free(handle), 0);
   }
