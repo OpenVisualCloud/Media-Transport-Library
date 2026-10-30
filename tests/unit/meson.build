@@ -15,7 +15,8 @@ if not is_windows
   unit_cpp = meson.get_compiler('cpp')
   unit_cpp_args += unit_cpp.get_supported_arguments(['-fstack-protector-strong',
     '-fstack-clash-protection', '-fcf-protection=full'])
-  unit_cpp_args += ['-Wformat', '-Wformat-security', '-Werror=format-security']
+  unit_cpp_args += ['-Wformat', '-Wformat-security', '-Werror=format-security', '-Wimplicit-fallthrough',
+    '-D_GLIBCXX_ASSERTIONS']
   unit_fortify = run_command(unit_cpp.cmd_array(), get_option('cpp_args'), '-O2', '-dM', '-E', '-x', 'c++',
     '/dev/null', check: true).stdout()
   if get_option('optimization') not in ['0', 'plain'] and not unit_fortify.contains('_FORTIFY_SOURCE')
