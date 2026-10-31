@@ -6,12 +6,12 @@
 # .github/linters/ owns rule content for every other linter. See
 # doc/coding_standard.md section 7.
 #
-# These mechanical rules mirror the mtl-commit skill and section 7: the fixed,
-# capitalized type set, a 72-char subject, a blank line before the body, and the
-# Signed-off-by trailer that `git commit -s` adds. Everything the skill asks for
-# that a regex cannot judge -- imperative mood, "why not how", body-line
-# wrapping, no chat leakage -- stays a reviewer's call, in the same bucket as the
-# two-world rule and the prefixes in mtl-c-coding.instructions.md.
+# These mechanical rules mirror section 7: the fixed, capitalized type set, a
+# 72-char subject, a blank line before the body, and the Signed-off-by trailer
+# that `git commit -s` adds. Everything section 7 asks for that a regex cannot
+# judge -- imperative mood, "why not how", body-line wrapping, no chat leakage
+# -- stays a reviewer's call, in the same bucket as the two-world rule and the
+# prefixes of section 3.
 
 [general]
 # MTL's format is Conventional Commits with the type capitalized and no scope or
@@ -20,7 +20,7 @@
 # the real format instead.
 #
 # contrib-body-requires-signed-off-by makes the Signed-off-by trailer mandatory,
-# matching the mtl-commit skill's `git commit -s` rule.
+# matching the `git commit -s` rule of section 7.
 contrib=contrib-body-requires-signed-off-by
 
 # Three body rules are switched off on purpose:
@@ -38,7 +38,7 @@ ignore-squash-commits=true
 ignore-revert-commits=true
 
 [title-max-length]
-# 72 hard, per the mtl-commit skill (50 ideal is advice a linter cannot judge).
+# 72 hard, per section 7 (50 ideal is advice a linter cannot judge).
 line-length=72
 
 [title-match-regex]

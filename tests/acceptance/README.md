@@ -6,12 +6,11 @@ backends — plus performance sweeps and EBU LIST compliance verdicts.
 
 ## Getting started
 
-```bash
-# From the repository root: one-command host setup
-./.github/scripts/acceptance_setup.sh status   # read-only probe
-./.github/scripts/acceptance_setup.sh setup    # interactive setup
+Prepare the host first: see the setup of
+[acceptance_quickstart.md](../../doc/acceptance_quickstart.md#setup).
 
-# Then, from this directory:
+```bash
+# From this directory:
 sudo -E ./venv/bin/python3 -m pytest \
     --topology_config=configs/topology_config.yaml \
     --test_config=configs/test_config.yaml \

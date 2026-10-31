@@ -9,7 +9,7 @@
 # from .pre-commit-config.yaml, which is the single source of truth for which
 # tool, which version and which arguments. Neither script contains a rule.
 #
-# The name is kept because a dozen documents, skills and agent prompts invoke it.
+# The name is kept because a dozen documents invoke it.
 #
 #   ./format-coding.sh                  apply every fix
 #   ./format-coding.sh --all            the same thing, said explicitly

@@ -152,10 +152,10 @@ jobs:
   # This is an allow-list: super-linter runs *only* the validators set true here,
   # and it refuses to start if true and false values are mixed, so no
   # VALIDATE_*: false line may be added below. That is also what now keeps
-  # ansible-lint off: it walks into the tracked skill symlinks and then fails on
-  # super-linter v6's own bundled .ansible-lint.yml, which its ansible-lint
-  # rejects for the unexpected 'parseable' key. There is no Ansible here to
-  # check, so it simply never appears in this list -- the explicit
+  # ansible-lint off: it walked into the skill symlinks that the tree held
+  # then, and failed on super-linter v6's own bundled .ansible-lint.yml, which
+  # its ansible-lint rejects for the unexpected 'parseable' key. There is no
+  # Ansible here to check, so it simply never appears in this list -- the explicit
   # VALIDATE_ANSIBLE: false the deny-list needed would now stop the job starting.
   residual-linters:
     name: Lint checks not yet in checkpatch

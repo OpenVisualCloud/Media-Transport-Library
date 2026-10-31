@@ -188,10 +188,22 @@ implements, so they sit inside a `/* clang-format off */` region. That is a pin 
 the layout, not an exemption from review: reformatting them cost 480 lines and all
 of their readability.
 
-Rules the language tools cannot express -- the two-world rule, prefixes, lock
-order, error-return conventions -- are in
-[`.github/instructions/mtl-c-coding.instructions.md`](../.github/instructions/mtl-c-coding.instructions.md)
-and enforced by review, not by a linter.
+Rules the language tools cannot express are enforced by review, not by a
+linter:
+
+* The two-world rule: the data plane (tasklets, hugepage memory, lock-free
+  rings) never calls `malloc`, `pthread_mutex`, `sleep`, or an INFO-level log.
+* The prefixes: `mt_` for core internals, `mtl_` for the public core API,
+  `st_`/`st20_`/`st22_`/`st30_`/`st40_` for the media APIs, and
+  `st20p_`/`st22p_`/`st30p_`/`st40p_` for the pipeline APIs.
+* The lock order: the manager mutex, then the session spinlock, never the
+  reverse. Session migration takes the target manager mutex, then the source
+  manager mutex.
+* The error returns: 0 on success, a negative value on error, and resources
+  freed in the reverse order of allocation.
+
+The Copilot review instructions (`.github/copilot-instructions.md`) state the
+same rules.
 
 ### 3.1. Deliberate omissions
 
@@ -395,11 +407,14 @@ rule, which wants a lowercase `feat:` with scopes -- the opposite of MTL's
 format. Body-line wrapping is left off because a valid `Fixes:` or
 `Signed-off-by` footer legitimately runs past 72 and would false-positive.
 
-Everything the [mtl-commit skill](../.github/skills/mtl-commit/SKILL.md) asks
-for that a regular expression cannot judge -- imperative mood, "explain why, not how", no
-chat-or-process leakage, body wrapping -- stays a reviewer's call, in the same
-bucket as the two-world rule and the prefixes in
-[`.github/instructions/mtl-c-coding.instructions.md`](../.github/instructions/mtl-c-coding.instructions.md).
+The subject is 50 characters or less where possible, and never more than 72.
+Wrap the body at 72 columns; a footer such as `Fixes:` or `Signed-off-by:` can
+be longer.
+
+Everything in a commit message that a regular expression cannot judge --
+imperative mood, "explain why, not how", no chat-or-process leakage, body
+wrapping -- stays a reviewer's call, in the same bucket as the two-world rule
+and the prefixes of [section 3](#3-what-is-checked).
 
 ## 8. Diagram colors
 

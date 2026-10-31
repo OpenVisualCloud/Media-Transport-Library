@@ -6,12 +6,11 @@ test. This page describes the contract between those hosts and the workflows.
 ## Who configures what
 
 Three layers configure a test host, and each setting belongs to one of them.
-The full table is in
-[`mtl-scripts.instructions.md`](../.github/instructions/mtl-scripts.instructions.md#who-configures-what).
+The [full table](#each-setting-and-its-layer) is below.
 
 | Layer | When | Who does it | Examples |
 | --- | --- | --- | --- |
-| Host | Once, and again after each boot | Not CI: the fleet watchdog, or a person with `setup_environment.sh` and `acceptance_setup.sh` | packages, kernel command-line, hugepages, CPU governor, `vfio` access, `net.core.rmem_max`, `/mnt/media`, SSH self-login, `/etc/mtl-ci/runner.env` |
+| Host | Once, and again after each boot | Not CI: the fleet watchdog, or a person with `setup_environment.sh` and the [acceptance setup](acceptance_quickstart.md#setup) | packages, kernel command-line, hugepages, CPU governor, `vfio` access, `net.core.rmem_max`, `/mnt/media`, SSH self-login, `/etc/mtl-ci/runner.env` |
 | Test cycle | Start of each CI job | the `validate-host` action and the `ci:pytest-setup` steps | stop stale processes, restore the builds, load the ICE module under test, bind the DMA devices, the acceptance virtualenv |
 | Test | One test or suite, undone after it | `gtest.sh`, the pytest fixtures | VFs on a PF, PF driver, `/dev/vfio` owner, C-states, cores offline, NoCtx CPU isolation |
 
@@ -27,8 +26,55 @@ of the runner user, and `task ci:pytest-setup -- ensure` builds it again when
 takes an `flock`. It lives outside the workspace (`~/.cache/mtl-ci`, or
 `MTL_CI_VENV`), because the clean of `actions/checkout` deletes the gitignored
 `tests/acceptance/.venv`. An existing `tests/acceptance/.venv` or the
-`tests/acceptance/venv` that `setup_acceptance.sh` writes is used when it is
-present.
+`tests/acceptance/venv` of the [manual setup](acceptance_quickstart.md#python-environment)
+is used when it is present.
+
+### Each setting and its layer
+
+| Setting | Layer | Where |
+| --- | --- | --- |
+| Packages, build tools, `python3-venv` | Host | watchdog, `setup_environment.sh`, `script/install_dependencies.sh` |
+| Kernel release and headers | Host | watchdog |
+| Kernel command line: `intel_iommu=on iommu=pt`, hugepage size | Host | watchdog, GRUB |
+| CPU isolation on the command-line (`isolcpus`, `nohz_full`, `rcu_nocbs`), when a host needs it | Host | GRUB |
+| Hugepage reservation per NUMA node, the `/dev/hugepages` mount | Host | watchdog, the acceptance setup |
+| CPU governor `performance` | Host | watchdog, the acceptance setup |
+| Turbo | Host | BIOS; the performance fixture warns when it is off |
+| `vfio` and `vfio-pci` loaded at boot, `/dev/vfio` udev rule, memlock limit | Host | watchdog |
+| `net.core.rmem_max` for the kernel socket datapath | Host | watchdog, the acceptance setup |
+| NFS media at `/mnt/media` | Host | watchdog, the acceptance setup |
+| SSH key and the login of the suite to the host itself | Host | watchdog, the acceptance setup |
+| `/etc/mtl-ci/runner.env`, `/etc/mtl-ci/shadow-host` | Host | watchdog |
+| TAI offset, PTP, EBU LIST server | Host | watchdog |
+| DSA or CBDMA enabled | Host | BIOS |
+| Stop the processes and release the CPUs that an earlier job left | Test cycle | `task cleanup` |
+| Restore and check the DPDK, MTL, plugin and ICE builds of this commit | Test cycle | `validate-host` |
+| Unload the ICE driver, load the ICE module under test (this removes all VFs) | Test cycle | `ci:activate-ice` |
+| Bind the DMA devices to `vfio-pci`, because the DPDK under test can change | Test cycle | `script/dma_setup.sh reset` |
+| Job environment: `PATH`, `PKG_CONFIG_PATH`, `GST_PLUGIN_PATH`, `KAHAWAI_CFG_PATH` | Test cycle | `ci:configure-host -- environment` |
+| Acceptance virtualenv cache, free disk space, generated test configuration | Test cycle | `ci:pytest-setup` steps of the test job |
+| Same tree, ICE module and DMA binding on the shadow host | Test cycle | `ci:configure-host -- shadow-*` |
+| Number of VFs on a PF, and their bind to `vfio-pci` | Test | `gtest.sh` `create_vfs`, `Nicctl.create_vfs` |
+| A PF on `vfio-pci` for a PF test, or on its kernel driver for a kernel socket test | Test | pytest fixtures, `script/nicctl.sh` |
+| Owner of the `/dev/vfio` nodes for the test account | Test | `Nicctl.grant_vfio_access` |
+| C-state limit (`/dev/cpu_dma_latency`), for a test that needs it | Test | the fixture of that test (no test needs it yet) |
+| Cores offline, for the turbo of a performance test | Test | `optimize_cpu_cores_for_turbo`, `restore_cpu_cores` |
+| CPU isolation for NoCtx | Test | `tests/tools/isolate/isolate.sh` |
+| MtlManager, `ptp4l`/`phc2sys`, interface addresses, packet capture | Test | pytest fixtures |
+
+Rules that follow from the table:
+
+* CI and the tests never set a host setting. When a missing host setting
+  gives a misleading error (no hugepages: `Cannot get hugepage information`),
+  check it and fail with one line that names the setting. Do not fix it.
+* Do not add a workflow that installs onto a runner or changes its boot
+  configuration. Fleet provisioning is outside this repository.
+* A test-cycle step runs on each job. It must be safe to run again, and it
+  must not depend on what the job before it did.
+* A test step undoes its change when the test ends, also when the test fails:
+  remove the VFs that it made, restore the CPUs, stop the daemons.
+* Before you add a host change, find its row in the table. If it has no row,
+  add one here in the same change.
 
 ## Host configuration instead of repository secrets
 

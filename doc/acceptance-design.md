@@ -112,8 +112,7 @@ and the adapter. A test that pokes at NIC state, sleeps to wait for a
 process, or removes its own files is doing framework work in the wrong
 place.
 
-Authoring rules are enforced by
-[mtl-acceptance-authoring.instructions.md](../.github/instructions/mtl-acceptance-authoring.instructions.md).
+Review enforces these authoring rules.
 
 ## 4. Inputs: configuration, fixtures, and media
 
@@ -366,6 +365,5 @@ the wrapper leaks a clock owner into later NIC reconfiguration.
 | FFmpeg/GStreamer builds   | Required only by their tests                                             |
 | PTP grandmaster           | Only for a real network-PTP claim                                        |
 
-`.github/scripts/acceptance_setup.sh` discovers (`status`) and prepares
-(`setup`) this contract end-to-end — see
-[acceptance_quickstart.md](acceptance_quickstart.md#recommended-automated-setup).
+[acceptance_quickstart.md](acceptance_quickstart.md#setup) prepares this
+contract stage by stage.

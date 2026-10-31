@@ -36,40 +36,46 @@ gtest runs fine.
 - FFmpeg/GStreamer only if you run the integration suites — they are built
   into `.local_install`, not taken from the system packages.
 
-## Recommended: automated setup
+## Setup
 
-`.github/scripts/acceptance_setup.sh` is the single entry point. It composes
-`acceptance_setup_base.sh` (apt, ICE driver, DPDK, MTL + plugins into
-`.local_install`, hugepages, CPU governor) and `setup_acceptance.sh` (NFS
-media, localhost root SSH, venv, generated configs). No agent or MCP client
-is required.
+Prepare a host in two parts: the host setup here, then the stages of the
+[manual setup](#manual-setup). Each block of this page starts at the
+repository root.
 
-```bash
-./.github/scripts/acceptance_setup.sh status   # read-only probe, changes nothing
-./.github/scripts/acceptance_setup.sh setup    # interactive: asks PF, NFS source, EBU
-```
-
-Non-interactive, e.g. for CI:
+Install the dependencies, the ICE driver, and DPDK and MTL with the FFmpeg and
+GStreamer plugins into `.local_install`. The plugins are optional: leave out
+`ffmpeg`, `gstreamer` and their `ECOSYSTEM_*` flags when you do not run their
+suites. `MTL_INSTALL_PREFIX=` on the ICE line is necessary: with a prefix set
+(as [build.md](build.md) exports it), `build_drivers.sh` only packages the
+module into that tree, and the stock `ice` driver stays loaded.
 
 ```bash
-./.github/scripts/acceptance_setup.sh setup --auto \
-    --pf-bdf=0000:c9:00.0 \
-    --nfs-source=10.0.0.5:/mnt/NFS/mtl_assets/media
+./script/install_dependencies.sh ice ffmpeg gstreamer
+MTL_INSTALL_PREFIX= SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=1 bash .github/scripts/setup_environment.sh
+MTL_INSTALL_PREFIX=$PWD/.local_install/mtl SETUP_BUILD_AND_INSTALL_DPDK=1 \
+    MTL_BUILD_AND_INSTALL=1 ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN=1 \
+    ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN=1 \
+    bash .github/scripts/setup_environment.sh
 ```
 
-It prints a ready-to-run pytest command when it finishes. `-h` lists all
-flags (`--base-only`, `--pytest-only`, `--check-only`, `--ffmpeg`/
-`--no-ffmpeg`, `--gstreamer`/`--no-gstreamer`, `--ebu-ip`/`--ebu-user` for
-compliance capture, `--nr-hugepages`, `--build-mode`). Both phases are
-idempotent — re-running on a prepared host is safe and takes seconds.
+Then set at least 2048 hugepages of 2 MiB, the `performance` CPU governor, and
+a socket buffer of at least 4 MiB for the kernel socket tests. The hugepage
+and `rmem_max` commands only raise a value that is lower:
 
-Cold setup takes roughly 7–10 minutes. Do not interrupt and retry during the
-first run.
+```bash
+hp=/sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+[ "$(cat $hp)" -ge 2048 ] || echo 2048 | sudo tee $hp
+for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+    echo performance | sudo tee "$g" >/dev/null
+done
+[ "$(sysctl -n net.core.rmem_max)" -ge 4194304 ] || sudo sysctl -w net.core.rmem_max=4194304
+```
+
+The first build takes about 7 to 10 minutes.
 
 ## Manual setup
 
-Only needed to debug or customise one stage; the script above automates all
-of it.
+Each block starts at the repository root.
 
 ### Python environment
 
@@ -81,9 +87,34 @@ pip install -r requirements.txt
 pip install -r common/integrity/requirements.txt
 ```
 
+### Root SSH to this host
+
+The framework logs in as `root@127.0.0.1` with your key:
+
+```bash
+[ -f ~/.ssh/id_ed25519 ] || ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_ed25519
+sudo mkdir -p /root/.ssh && sudo chmod 700 /root/.ssh
+sudo grep -qF "$(cat ~/.ssh/id_ed25519.pub)" /root/.ssh/authorized_keys 2>/dev/null ||
+    cat ~/.ssh/id_ed25519.pub | sudo tee -a /root/.ssh/authorized_keys >/dev/null
+sudo chmod 600 /root/.ssh/authorized_keys
+```
+
+Give the same key as `key_path` in `configs/topology_config.yaml`.
+
 ### Configuration
 
-`configs/gen_config.py` generates both files; hand-edit only to adjust.
+`configs/gen_config.py` generates both files; hand-edit only to adjust. For
+one host, with the PF of the test NIC and the key of the SSH step above:
+
+```bash
+cd tests/acceptance/configs
+../venv/bin/python3 gen_config.py --session_id 0 --mtl_path "$(git rev-parse --show-toplevel)" \
+    --pci_device 0000:c9:00.0 --ip_address 127.0.0.1 --username root \
+    --key_path ~/.ssh/id_ed25519 --no_capture --media_path /mnt/media --test_time 30
+```
+
+`gen_config.py` takes the bus address of the PF and writes its vendor:device
+ID into the topology file.
 
 `configs/topology_config.yaml` — hosts, connections, and NICs:
 
@@ -102,7 +133,7 @@ hosts:
           port: 22
           username: root         # must be root
           password: ''           # required key even when using a key file
-          key_path: /home/<you>/.ssh/id_rsa
+          key_path: /home/<you>/.ssh/id_ed25519
 ```
 
 `pci_device` takes the **vendor:device** ID (`lspci -nn | grep Ethernet`), not
@@ -137,8 +168,17 @@ verdict is simply skipped.
 
 ### Test media
 
-Production hosts mount an NFS share at `media_path`. Tests **skip** rather
-than fail when an asset is missing. To generate a local set instead:
+Production hosts mount an NFS share at `media_path` (`/mnt/media`). Mount it
+read-only with NFSv3, which needs no lock daemon:
+
+```bash
+sudo apt-get install -y nfs-common
+sudo mkdir -p /mnt/media
+sudo mount -t nfs -o ro,vers=3,nolock,soft,timeo=50,retrans=2 <server>:<export> /mnt/media
+```
+
+Tests **skip** rather than fail when an asset is missing. To generate a local
+set instead:
 
 ```bash
 cd tests/acceptance/common
@@ -241,19 +281,28 @@ A performance report across timestamped log directories:
 
 ## Troubleshooting
 
-Start with `./.github/scripts/acceptance_setup.sh status` — it checks kernel,
-hugepages, governor, ICE driver, NIC PFs, `.local_install` build state, NFS,
-venv, and configs in one read-only pass, and usually names the broken stage
-directly. Re-run `setup --base-only` or `setup --pytest-only` to repair it.
+Each block starts at the repository root.
+
+Check the stages of [Setup](#setup) and the [manual setup](#manual-setup)
+first. The broken stage is usually the cause. These checks change nothing:
+
+```bash
+modinfo -n ice                                  # the patched ice is under .../updates/
+grep -E 'HugePages_(Total|Free)' /proc/meminfo
+cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor | sort | uniq -c
+ls .local_install/mtl/bin/RxTxApp .local_install/mtl/bin/MtlManager
+mountpoint /mnt/media && ls /mnt/media | head
+ls tests/acceptance/venv/bin/python3 tests/acceptance/configs/*.yaml
+```
 
 | Symptom | Cause and fix |
 |---|---|
 | `No module named pytest` | Used `sudo python3`. Use `sudo -E ./venv/bin/python3`. |
 | `unrecognized arguments: --topology_config` | Not in `tests/acceptance/`. |
-| `Failed to start MtlManager on host` | `.local_install` tree missing — re-run setup. A system-wide `build/` install does not count. |
+| `Failed to start MtlManager on host` | `.local_install` tree missing — run the build of [Setup](#setup) again. A system-wide `build/` install does not count. |
 | `RxTxApp: command not found` | Same cause: build into `.local_install`, not `tests/tools/RxTxApp/build/`. |
 | `error while loading shared libraries: librte_*.so` | Stale linker cache. `sudo ldconfig`, then check `ldd .local_install/mtl/bin/RxTxApp`. |
-| `Media file not present ...` (ERROR) | NFS unmounted or empty. Re-run setup with the NFS source. |
+| `Media file not present ...` (ERROR) | NFS unmounted or empty. Mount the NFS share at `media_path` (see [Test media](#test-media)). |
 | `Incorrect format ... PCIDevice` / `sniff_pci_device ... not found` | A BDF was used where `vendor:device` is required. |
 | `SSHConnection.__init__() missing ... 'password'` | Add `password: ''` to the topology connection. |
 | `Permission denied (publickey)` for `root@127.0.0.1` | Public key not in `/root/.ssh/authorized_keys`. |
@@ -261,15 +310,12 @@ directly. Re-run `setup --base-only` or `setup --pytest-only` to repair it.
 | `netsniff-ng: command not found` | `sudo apt install -y netsniff-ng`. |
 | `EBU server configuration not found`, test still PASSED | Data path passed, compliance skipped. Configure `ebu_server` + `capture_cfg`. |
 | Test hangs past `--time` + ~30 s | Stale process: `sudo pkill -9 RxTxApp MtlManager ffmpeg gst-launch-1.0`. |
-| EAL hugepage or VF binding errors | Hugepages exhausted, or VFs not bound to `vfio-pci`. Re-run setup. |
-| `RxTxApp` segfault in `iavf_tm_node_add` | In-tree `ice` loaded instead of the out-of-tree build. Re-run setup. |
+| EAL hugepage or VF binding errors | Hugepages exhausted, or VFs not bound to `vfio-pci`. Set the hugepages of [Setup](#setup) again. |
+| `RxTxApp` segfault in `iavf_tm_node_add` | In-tree `ice` loaded instead of the out-of-tree build. Run the ICE step of [Setup](#setup) again. |
 
 A segfault anywhere *other* than `iavf_tm_node_add` is a real MTL/DPDK bug —
 capture a backtrace (`coredumpctl gdb RxTxApp`) and report it rather than
 working around it.
-
-The exhaustive symptom table, kept in sync with the engine source, is in
-[mtl-acceptance-tests.instructions.md](../.github/instructions/mtl-acceptance-tests.instructions.md).
 
 ## Verified test criteria
 
@@ -290,9 +336,4 @@ test may carry it only when all three hold:
 
 - [acceptance-design.md](acceptance-design.md) — architecture: modules,
   adapters, fixtures, oracles, clock model
-- Agent instructions for changing the framework:
-  [running tests](../.github/instructions/mtl-acceptance-tests.instructions.md),
-  [authoring tests](../.github/instructions/mtl-acceptance-authoring.instructions.md),
-  [engine](../.github/instructions/mtl-acceptance-engine.instructions.md),
-  [harness](../.github/instructions/mtl-acceptance-harness.instructions.md)
 - [build.md](build.md), [run.md](run.md), [configuration_guide.md](configuration_guide.md)

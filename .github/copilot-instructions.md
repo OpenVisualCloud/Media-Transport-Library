@@ -1,77 +1,51 @@
-# Media Transport Library (MTL) - Copilot Instructions
+# Media Transport Library (MTL): review instructions
+
+These instructions are for Copilot code review of MTL pull requests.
 
 ## Overview
 
-MTL implements SMPTE ST 2110 for professional media transport over IP. DPDK-based with HW pacing (Intel E810/E830). Supports ST2110-20 (video), ST2110-22 (compressed video), ST2110-30 (audio), ST2110-40 (ancillary), ST2110-41 (fast metadata, an ST2110-40 opt-in).
+MTL implements SMPTE ST 2110 for professional media transport over IP. It is
+DPDK-based, with hardware pacing on Intel E810/E830. It supports ST 2110-20
+(video), -22 (compressed video), -30 (audio), -40 (ancillary data) and -41
+(fast metadata, an opt-in mode of the -40 sessions).
 
-## Production-Quality Bar
+## Production-quality bar
 
-This is a **client-visible, production repository**. Every change goes through rigorous review.
+MTL is a production repository that clients see.
 
-- **Performance and maintainability above all** — design the simplest architecture that is fast and easy to understand. Never patch around a problem; find the right solution.
-- **Design before code** — understand the problem, study existing patterns, plan the approach, then implement. Do not start writing code until you can explain why this design is the right one.
-- **Minimal diffs only** — do not add speculative code, convenience wrappers, or refactors beyond what was explicitly requested.
-- **No dead code** — never commit commented-out code, unused helpers, or placeholder stubs.
-- **No gratuitous changes** — do not touch formatting, comments, or variable names in lines you are not modifying for functional reasons.
-- **Each patch must be self-contained** — buildable, testable, and small enough to review in one sitting.
+- Performance and maintainability first: the simplest design that is fast and
+  easy to understand. No patch around a problem.
+- Minimal diffs: no speculative code, convenience wrappers, or refactors that
+  the change does not need.
+- No dead code: no commented-out code, unused helpers, or placeholder stubs.
+- No unrelated changes to formatting, comments, or names.
+- Each patch is self-contained: it builds, it is tested, and it is small
+  enough to review at one time.
 
-## Always-On Coding Conventions
+## Rules to check
 
-- **C99** in library core (`lib/`), plus C11 `<stdatomic.h>` atomics. C++ allowed only in tests (gtest).
-- **Naming prefixes**: `mt_` (core internals), `mtl_` (public core API), `st_`/`st20_`/`st22_`/`st30_`/`st40_` (media APIs), `st20p_`/`st22p_`/`st30p_`/`st40p_` (pipeline APIs).
-- **Error returns**: 0 = success, negative = error. Free resources in reverse allocation order on failure.
-- **Never block in tasklets** — no malloc, no mutex, no sleep, no INFO-level logging in data-plane paths.
-- **Formatting**: `clang-format-14` enforced by CI. Always run `./format-coding.sh` before committing.
-- **Build verification**: Always run `./build.sh` after changes to verify compilation.
-- **Logging**: Use `dbg()`/`info()`/`warn()`/`err()`. Never use `printf`.
-- **Comments**: Short and descriptive. Do not comment obvious code.
-- **Scripts**: user scripts in `script/` use `common.sh`, `show_help()` and `main()`; CI scripts, workflows and `ci:` tasks stay as simple as possible. Which layer (host, test cycle, test) owns which host setting: [mtl-scripts.instructions.md](instructions/mtl-scripts.instructions.md).
-
-## Available Tooling
-
-- **MCP Server** (`mtl-system-setup`): 32 tools for host setup — hugepages, VFs, ICE driver, MtlManager, running gtests. Use these instead of raw shell commands for system administration.
-- **Agents**: "MTL Planner" (routes multi-subsystem work), "MTL Developer (TDD)" (writes code + tests in one context window, enforces the six-gate TDD loop), "MTL Reviewer" (adversarial code review — enforced exit gate), "MTL System Admin" (host setup + KahawaiTest via MCP — enforced exit gate for data-plane changes), "Explore" (read-only Q&A).
-  Pytest-environment prep (`tests/acceptance/`) has no dedicated agent — call `.github/scripts/acceptance_setup.sh` (interactive or `--auto`) or the `mtl-acceptance-setup` MCP tools directly; the interactive script already prompts for NFS/PF/EBU choices at zero token cost.
-- **Skills**: `/mtl-build` (build + format + verify workflow); `/mtl-write-test` (author a new unit/integration/pytest test — tier picker + golden templates); `/mtl-commit` (stage + commit as atomic, well-formed commits — user-triggered, never automatic).
-- **Knowledge Base**: `.github/copilot-docs/mtl-knowledge-base.md` — architecture, session API lifecycle, pacing, data-plane internals. Consult before non-trivial library changes.
-
-## Agent Routing Matrix
-
-Use this table to pick the right subagent. Resolve ambiguity in order:
-**(1) file-path match → (2) binary/tool match → (3) read-only? use Explore → (4) multi-agent? use Planner.**
-
-| Task | Agent | Why |
-|---|---|---|
-| Multi-step work crossing 2+ subsystems (code + host + manager + plugins…) | **MTL Planner** | Decomposes and routes; no execution |
-| Edit any of `lib/`, `include/`, `app/`, `plugins/`, `ecosystem/`, `tests/unit/`, `tests/integration_tests/` | **MTL Developer (TDD)** | Owns code + tests + the six-gate TDD loop in one context window |
-| Build (`./build.sh`, `ninja -C build`, `./format-coding.sh`) | **MTL Developer (TDD)** | Build is Gate 4 of its loop |
-| Run `./build.sh unit` (unit gtest, no NIC) | **MTL Developer (TDD)** | Test runs are Gate 2 (fail) and Gate 4 (pass) |
-| Run `KahawaiTest` (integration gtest, real VFs) | **MTL System Admin** | Only one with `run_gtest` MCP tool; enforced Gate 6 for data-plane changes |
-| Host setup (hugepages, VFs, drivers, MtlManager) | **MTL System Admin** | MCP-only, no shell |
-| Adversarial review of a saved diff | **MTL Reviewer** | Read-only; enforced Gate 5; refuses if diff empty |
-| Prepare or fix pytest under `tests/acceptance/` (apt, NFS, configs, hugepages, governor) | *main agent*, call `.github/scripts/acceptance_setup.sh status`/`setup` or the `mtl-acceptance-setup` MCP tools directly | No dedicated agent — interactive script guides setup (NFS/PF/EBU) at zero token cost |
-| Run pytest under `tests/acceptance/` | *main agent* per `.github/instructions/mtl-acceptance-tests.instructions.md` | — |
-| Read-only Q&A, code archaeology, "where is X defined?" | **Explore** | Cheap, parallelizable |
-
-**Capability boundaries** — every agent declares CAN/CANNOT in its body's "Capability contract" section. If a tool the agent needs is unavailable (e.g. shell `execute` disabled), the agent refuses at Gate 0 rather than producing degraded work. When refused, either enable the missing tool or pick a different agent from the matrix.
-
-## Default workflow for any code change — the six-gate TDD loop
-
-Every behavior-changing edit walks these gates in order. They live inside **MTL Developer (TDD)**; the Planner uses them as the default plan shape for multi-subsystem work.
-
-0. **Tools present** — `execute` (shell) + `build/` exist, else refuse.
-1. **Knowledge** — written "context I established" block: subsystem, files, KB section, invariants. Delegate to **Explore** if the agent cannot fill it.
-2. **Failing test** — a gtest at the right tier ([`/mtl-write-test`](skills/mtl-write-test/SKILL.md)) exists and **fails** before any production-code edit. Pure-refactor / docs / build-system changes may skip with a stated exemption.
-3. **Implement** — minimal diff to pass the Gate 2 test.
-4. **Green test + clean build** — same test passes; `./format-coding.sh` + `./build.sh` clean.
-5. **Review** — **MTL Reviewer** verdict, no unaddressed BLOCKERs. **Mandatory, no exemption.**
-6. **Integration** — **MTL System Admin** runs the matching `KahawaiTest` filter on real VFs. Mandatory for data-plane / session-lifecycle / pacing / DMA / RSS / kernel-socket / AF_XDP / virtio-user changes; may be skipped with a stated exemption for pure control-plane code.
-
-The agent walks Gates 0–4 inside its own body — it must report evidence for each
-before firing Gate 5. Gates 5 and 6 are **handoffs to sibling agents**; the Develop
-agent's reply terminates before they respond. The user (or orchestrator) owns the
-decision to commit once Reviewer returns. If Reviewer raises BLOCKERs the user
-re-invokes the Develop agent with them, and Gates 2–4 run again for the fix. This is
-why Gates 5 and 6 are the only truly enforceable checks — they involve independent
-agents producing independent evidence; Gates 0–4 rely on the Develop agent following
-its own checklist.
+- C99 in `lib/`, plus C11 `<stdatomic.h>` atomics. C++ only in tests.
+- Prefixes: `mt_` core internals, `mtl_` public core API,
+  `st_`/`st20_`/`st22_`/`st30_`/`st40_` media APIs,
+  `st20p_`/`st22p_`/`st30p_`/`st40p_` pipeline APIs.
+- Two-world rule: the data plane (tasklets, hugepage memory, lock-free rings)
+  never calls `malloc`, `pthread_mutex`, `sleep`, or an INFO-level log. A
+  tasklet never blocks.
+- Lock order: the manager mutex, then the session spinlock, never the reverse.
+  Session migration: the target manager mutex, then the source manager mutex.
+- Errors: 0 on success, a negative value on error; free resources in the
+  reverse order of allocation.
+- DPDK memory: `mt_rte_zmalloc_socket(sz, mt_socket_id(impl, port))`; the
+  control-plane heap uses `mt_zmalloc()`.
+- TX rings: `rte_ring_sp_enqueue_bulk()` (all or nothing). A short
+  `rte_eth_tx_burst()` keeps the rest in `inflight[]`: never discard, never
+  retry in a loop.
+- Logs: `dbg()`, `info()`, `warn()`, `err()`. Never `printf`.
+- Format: `./format-coding.sh`, with the tool versions of
+  `.pre-commit-config.yaml`.
+- Scripts: the user scripts in `script/` source `common.sh` and have
+  `show_help()` and `main()`. CI scripts, workflows and `ci:` tasks stay
+  simple, and a CI job never sets a host setting (`doc/ci_runner_setup.md`).
+- Commit messages: section 7 of `doc/coding_standard.md`.
+- A change of behavior comes with a test at the cheapest tier that can find
+  the fault: unit, integration (`KahawaiTest`), or pytest.
