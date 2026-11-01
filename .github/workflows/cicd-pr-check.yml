@@ -196,11 +196,6 @@ jobs:
           # deny-list workflow ran it by default; keeping it explicit here is
           # what stops the allow-list conversion from dropping it silently.
           VALIDATE_GITLEAKS: true
-          # eslint over 135 *.ts. Cannot move into checkpatch until
-          # tests/tools/perf_debug_mcp/package.json is tracked -- .gitignore's
-          # blanket `*.json` currently excludes it, so the project has no
-          # buildable or lintable configuration from a clean clone.
-          VALIDATE_TYPESCRIPT_ES: true
           # rustfmt and clippy. All three edition validators were active before
           # this split and stay active; narrowing them to 2021, which is what
           # every Cargo.toml declares, would be a rule change.
