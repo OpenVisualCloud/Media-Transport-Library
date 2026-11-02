@@ -1515,6 +1515,26 @@ def test_the_report_names_the_builds_whose_launches_had_dma_and_their_dsa():
     assert "Single core" not in page
 
 
+def test_the_builds_list_every_input_of_the_run_in_the_report_and_the_summary():
+    rounds = [_round(_rounds((1, 1))[0])]
+    platforms = [("s (RX)", {}), ("c (TX)", {})]
+    inputs = [("video", "1080p59"), ("sessions", 37), ("nics", "span: a<b")]
+    rows = (
+        "<td>Extra RxTxApp arguments</td>",
+        "<th>Input</th>\n<th>Selected</th>",
+        "<td>video</td><td>1080p59</td>",
+        "<td>sessions</td><td>37</td>",
+        "<td>nics</td><td>span: a&lt;b</td>",
+        "<h2>Rounds</h2>",
+    )
+    for page in (
+        pc.report_html(LABELS, ARGS, [], SLOTS, rounds, platforms, inputs=inputs),
+        pc.summary_html(LABELS, ARGS, SLOTS, rounds, inputs=inputs),
+    ):
+        assert sorted(rows, key=page.index) == list(rows)  # in the builds, in order
+    assert "<th>Input</th>" not in pc.summary_html(LABELS, ARGS, SLOTS, rounds)
+
+
 def test_the_report_says_when_each_instance_ran_on_one_scheduler():
     rounds = [_round(_rounds((1, 1))[0])]
     platforms = [("s (RX)", {}), ("c (TX)", {})]

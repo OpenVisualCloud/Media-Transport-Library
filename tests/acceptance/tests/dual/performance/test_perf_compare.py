@@ -283,7 +283,9 @@ def _platform(out_dir, host) -> dict:
         return {}
 
 
-def _write_report(out_dir, opts, details, hostnames, sides, pfs, rounds) -> None:
+def _write_report(
+    out_dir, opts, details, inputs, hostnames, sides, pfs, rounds
+) -> None:
     slots = [
         {
             "host": hostnames[s.role],
@@ -310,9 +312,19 @@ def _write_report(out_dir, opts, details, hostnames, sides, pfs, rounds) -> None
     ]
     nics, single = opts["nics"], opts["single_core"]
     report = pc.report_html(
-        opts["labels"], opts["args"], details, slots, rounds, platforms, nics, single
+        opts["labels"],
+        opts["args"],
+        details,
+        slots,
+        rounds,
+        platforms,
+        nics,
+        single,
+        inputs,
     )
-    summary = pc.summary_html(opts["labels"], opts["args"], slots, rounds, nics, single)
+    summary = pc.summary_html(
+        opts["labels"], opts["args"], slots, rounds, nics, single, inputs
+    )
     os.makedirs(out_dir, exist_ok=True)
     for name, page in (("perf_compare", report), ("perf_compare_summary", summary)):
         with open(os.path.join(out_dir, f"{name}.html"), "w") as f:
@@ -366,21 +378,35 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
     windows_s = test_time + 3 * (traced_s + 2 * pc.DUMP_PERIOD_S) + pc.DUMP_PERIOD_S
     app_time = pc.steady_timeout(queues) + pc.WARMUP_S + windows_s + 100
     app_cmd = _app_cmd(opts, media_config, media_path, fps, app_time, shares)
+    # a build's sessions, an instance's with pairs and pooled, and their ports
+    spread = {"pairs": " and NIC", "pooled": " and NIC"}.get(opts["nics"], "") + (
+        f", {shares[0]} on its first port and {shares[1]} on its second"
+        if opts["nics"] in FILLED
+        else ""
+    )
+    # every input of the run, as perf-compare.yml names it, under the builds
+    get = request.config.getoption
+    inputs = [
+        ("ref_a", opts["labels"]["A"]),
+        ("ref_b", opts["labels"]["B"]),
+        ("args_a", opts["args"]["A"] or "-"),
+        ("args_b", opts["args"]["B"] or "-"),
+        ("video", video),
+        ("pixel_format", opts["pixel_format"]),
+        ("sessions", f"{sessions} per build{spread}"),
+        ("nics", f"{opts['nics']}: {NICS[opts['nics']]}"),
+        ("dma", get("--perf_compare_dma")),
+        ("single_core", get("--perf_compare_single_core")),
+        ("cores", opts["cores"]),
+        ("test_time", test_time),
+        ("rounds", opts["rounds"]),
+    ]
     details = [
         ("pytest", shlex.join(["pytest", *request.config.invocation_params.args])),
         (
             "Workload",
-            f"{sessions} st20p sessions per build"
-            + {
-                "redundant": ", ST 2022-7 on two ports",
-                "pairs": " and NIC",
-                "pooled": " and NIC",
-            }.get(opts["nics"], "")
-            + (
-                f", {shares[0]} on its first port and {shares[1]} on its second"
-                if opts["nics"] in FILLED
-                else ""
-            )
+            f"{sessions} st20p sessions per build{spread}"
+            + (", ST 2022-7 on two ports" if opts["nics"] == "redundant" else "")
             + ", RxTxApp, unicast",
         ),
         (
@@ -483,7 +509,7 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
                 }
             )
             # after each round: a job that times out keeps what it measured
-            _write_report(out_dir, opts, details, hostnames, sides, pfs, rounds)
+            _write_report(out_dir, opts, details, inputs, hostnames, sides, pfs, rounds)
             if failed:
                 break
     finally:

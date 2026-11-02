@@ -1661,11 +1661,14 @@ def _pool(metrics: dict, nic: int) -> dict:
     }
 
 
-def _results(labels, args, slots, rounds, styled, nics, single_core) -> list[str]:
+def _results(
+    labels, args, slots, rounds, styled, nics, single_core, inputs=()
+) -> list[str]:
     """The builds, the rounds, the summary and the tables of each role; *styled* for a
     page with the report's style. *nics* is how the builds use the NICs: single, span,
-    split, redundant, pairs or pooled; *single_core* the roles whose instances had one
-    scheduler.
+    split, redundant, whole, pairs or pooled; *single_core* the roles whose instances
+    had one scheduler; *inputs* the (input, value) rows of every input of the run, as
+    the workflow names them, under the builds.
     """
     valid = [r["metrics"] for r in rounds if not r["problems"]]
     if nics == "pooled":  # each NIC's pair of each round is a sample
@@ -1706,6 +1709,7 @@ def _results(labels, args, slots, rounds, styled, nics, single_core) -> list[str
     p = [
         '<div class="sec"><h2>Builds</h2>',
         _text_table(["", "Baseline", "Candidate"], builds, "mx cmp"),
+        *([_text_table(["Input", "Selected"], inputs, "kv")] if inputs else []),
         "</div>",
         '<div class="sec"><h2>Rounds</h2>',
         _text_table(["Round", *slot_heads, "Result"], runs),
@@ -1721,20 +1725,30 @@ def _results(labels, args, slots, rounds, styled, nics, single_core) -> list[str
     return p
 
 
-def summary_html(labels, args, slots, rounds, nics="single", single_core=()) -> str:
-    """The report as the job summary shows it, which keeps no style: the builds, the
-    rounds, the summary and the tables of each role; the workflow links the full report,
-    with the setup and the instances, after it."""
+def summary_html(
+    labels, args, slots, rounds, nics="single", single_core=(), inputs=()
+) -> str:
+    """The report as the job summary shows it, which keeps no style: the builds and the
+    inputs, the rounds, the summary and the tables of each role; the workflow links the
+    full report, with the setup and the instances, after it."""
     title = html.escape(f"MTL perf-compare: {labels['B']} against {labels['A']}")
     page = [
         f"<h2>{title}</h2>",
-        *_results(labels, args, slots, rounds, False, nics, single_core),
+        *_results(labels, args, slots, rounds, False, nics, single_core, inputs),
     ]
     return "\n".join(page)
 
 
 def report_html(
-    labels, args, details, slots, rounds, platforms, nics="single", single_core=()
+    labels,
+    args,
+    details,
+    slots,
+    rounds,
+    platforms,
+    nics="single",
+    single_core=(),
+    inputs=(),
 ) -> str:
     """The report of a case: its builds, its rounds, how B differs from A, then its
     setup and its instances as they ran.
@@ -1744,13 +1758,14 @@ def report_html(
     a build uses DMA; nic and pfs when the builds use both NICs), *rounds* the rounds
     as the case keeps them, with the launches of run_round(), *platforms* the
     (label, platform_config.json) of the SUT and the companion, *nics* how the
-    builds use the NICs: single, span, split, redundant, pairs or pooled, and *single_core* the roles
-    whose instances had one scheduler.
+    builds use the NICs: single, span, split, redundant, whole, pairs or pooled,
+    *single_core* the roles whose instances had one scheduler, and *inputs* the
+    (input, value) rows of every input of the run.
     """
     title = f"MTL perf-compare: {labels['B']} against {labels['A']}"
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     p = [html_head(html.escape(title), now, STYLE)]
-    p += _results(labels, args, slots, rounds, True, nics, single_core)
+    p += _results(labels, args, slots, rounds, True, nics, single_core, inputs)
     info = _text_table(["Parameter", "Value"], details, "kv")
     p.append(_details("Test Information", [info], opened=True))
     yes = {True: "yes", False: "no"}
