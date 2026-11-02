@@ -9,7 +9,7 @@
 #   5. Places .bpf.o files alongside the binary for runtime discovery
 #
 # Prerequisites (installed by setup.sh):
-#   - Node.js ≥18, npm
+#   - Node.js ^22.23.4, ^24.22.1 or >=26.12.1, npm
 #   - Rust toolchain (cargo)
 #   - clang, libbpf-dev, libelf-dev, zlib1g-dev
 #   - bpftool (from linux-tools-common, for vmlinux.h generation)
