@@ -447,6 +447,9 @@ class FFmpeg(Application):
         pix_fmt = self._ff_params.get("pix_fmt", "yuv422p10le")
         st22_codec = self._ff_params.get("st22_codec", "jpegxs")
         bpp = self._ff_params.get("bpp", 3.0)
+        quality = self.params.get("quality", "speed")
+        # Non-default only: FFmpeg builds without -st22_quality reject the option.
+        quality_token = f"-st22_quality {quality} " if quality != "speed" else ""
         input_file = self.params.get("input_file") or self.params.get("video_url")
         udp_port = 20000
 
@@ -469,7 +472,7 @@ class FFmpeg(Application):
             f"-p_port {nic_port_list[1]} -p_sip {ip_pools.tx[0]} "
             f"-p_tx_ip {ip_pools.rx_multicast[0]} "
             f"-udp_port {udp_port} -payload_type 112 "
-            f"-st22_codec {st22_codec} -bpp {bpp} "
+            f"-st22_codec {st22_codec} {quality_token}-bpp {bpp} "
             f"-f mtl_st22p -"
         ]
 
