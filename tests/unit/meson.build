@@ -175,6 +175,8 @@ unit_sources = [
   'pipeline/st20p_tx_ext_frame_release_test.cpp',
   'pipeline/st20p_concurrency_test.cpp',
   'pipeline/st20p_concurrency_stress_test.cpp',
+  'pipeline/st_convert_harness.c',
+  'pipeline/st20p_nt_convert_test.cpp',
   'pipeline/st30p_harness.c',
   'pipeline/st30p_test.cpp',
   'pipeline/st30p_tx_harness.c',
