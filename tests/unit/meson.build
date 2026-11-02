@@ -69,6 +69,7 @@ unit_sources = [
   'datapath/mt_queue_harness.c',
   'datapath/mt_queue_test.cpp',
   'fmt/st_fmt_test.cpp',
+  'fmt/st_gbrp8_test.cpp',
   'session/st40_harness.c',
   'session/st40_tx_test_harness.c',
   'session/st40/redundancy_test.cpp',

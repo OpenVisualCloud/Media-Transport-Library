@@ -1585,6 +1585,8 @@ static int parse_st22p_format(json_object* st22p_obj, st_json_st22p_session_t* s
     st22p->info.format = ST_FRAME_FMT_GBRPLANAR12LE;
   } else if (strcmp(format, "RGBRFC4175PG2BE12") == 0) {
     st22p->info.format = ST_FRAME_FMT_RGBRFC4175PG2BE12;
+  } else if (strcmp(format, "GBRPLANAR8") == 0) {
+    st22p->info.format = ST_FRAME_FMT_GBRPLANAR8;
   } else if (strcmp(format, "JPEGXS_CODESTREAM") == 0) {
     st22p->info.format = ST_FRAME_FMT_JPEGXS_CODESTREAM;
   } else if (strcmp(format, "H264_CBR_CODESTREAM") == 0) {

@@ -175,6 +175,8 @@ enum st_frame_fmt {
    * two RGB 12 bit pixel groups on 9 bytes, big endian
    */
   ST_FRAME_FMT_RGBRFC4175PG2BE12 = 38,
+  /** GBR planar 8bit */
+  ST_FRAME_FMT_GBRPLANAR8 = 39,
   /** End of rgb format list, new rgb should be inserted before this */
   ST_FRAME_FMT_RGB_END,
 

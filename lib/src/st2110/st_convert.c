@@ -570,6 +570,42 @@ static int convert_yuv422p16le_to_rfc4175_422be10(struct st_frame* src,
   return ret;
 }
 
+static int convert_rgb8_to_gbrp8(struct st_frame* src, struct st_frame* dst) {
+  uint32_t w = dst->width;
+  uint32_t h = st_frame_data_height(dst);
+
+  for (uint32_t line = 0; line < h; line++) {
+    const uint8_t* rgb = src->addr[0] + src->linesize[0] * line;
+    uint8_t* g = dst->addr[0] + dst->linesize[0] * line;
+    uint8_t* b = dst->addr[1] + dst->linesize[1] * line;
+    uint8_t* r = dst->addr[2] + dst->linesize[2] * line;
+    for (uint32_t x = 0; x < w; x++) {
+      *r++ = *rgb++;
+      *g++ = *rgb++;
+      *b++ = *rgb++;
+    }
+  }
+  return 0;
+}
+
+static int convert_gbrp8_to_rgb8(struct st_frame* src, struct st_frame* dst) {
+  uint32_t w = dst->width;
+  uint32_t h = st_frame_data_height(dst);
+
+  for (uint32_t line = 0; line < h; line++) {
+    const uint8_t* g = src->addr[0] + src->linesize[0] * line;
+    const uint8_t* b = src->addr[1] + src->linesize[1] * line;
+    const uint8_t* r = src->addr[2] + src->linesize[2] * line;
+    uint8_t* rgb = dst->addr[0] + dst->linesize[0] * line;
+    for (uint32_t x = 0; x < w; x++) {
+      *rgb++ = *r++;
+      *rgb++ = *g++;
+      *rgb++ = *b++;
+    }
+  }
+  return 0;
+}
+
 int st20_rfc4175_422be10_to_yuv422p16le_scalar(struct st20_rfc4175_422_10_pg2_be* pg,
                                                uint16_t* y, uint16_t* b, uint16_t* r,
                                                uint32_t w, uint32_t h) {
@@ -769,6 +805,16 @@ static const struct st_frame_converter converters[] = {
         .src_fmt = ST_FRAME_FMT_YUV422PLANAR16LE,
         .dst_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10,
         .convert_func = convert_yuv422p16le_to_rfc4175_422be10,
+    },
+    {
+        .src_fmt = ST_FRAME_FMT_RGB8,
+        .dst_fmt = ST_FRAME_FMT_GBRPLANAR8,
+        .convert_func = convert_rgb8_to_gbrp8,
+    },
+    {
+        .src_fmt = ST_FRAME_FMT_GBRPLANAR8,
+        .dst_fmt = ST_FRAME_FMT_RGB8,
+        .convert_func = convert_gbrp8_to_rgb8,
     },
 };
 
