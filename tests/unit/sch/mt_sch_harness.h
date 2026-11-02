@@ -22,6 +22,15 @@ int ut_sch_init(void);
 mtl_handle ut_sch_create_main(void);
 void ut_sch_destroy_main(mtl_handle mt);
 
+/* A main handle without MtlManager whose lcore get/put walk lcores 1..nb_lcores over a
+ * private shm table and lock file, and log errors only. One at a time; caller frees with
+ * ut_sch_destroy_lcore_main. */
+mtl_handle ut_sch_create_lcore_main(unsigned int nb_lcores);
+void ut_sch_destroy_lcore_main(mtl_handle mt);
+/* The lcores its shm table counts as used, and its own lcore count. */
+int ut_sch_lcore_shm_used(mtl_handle mt);
+int ut_sch_lcore_cnt(mtl_handle mt);
+
 /* RTE_MAX_LCORE, the first lcore id mt_sch_lcore_valid() must reject. */
 unsigned int ut_sch_max_lcore(void);
 

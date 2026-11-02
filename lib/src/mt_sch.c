@@ -696,8 +696,8 @@ static void lcore_shm_check_and_clean(struct mt_lcore_shm_entry* shm_entry,
 #endif
 }
 
-int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
-                     enum mt_lcore_type type, int socket) {
+static int sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
+                         enum mt_lcore_type type, int socket) {
   unsigned int cur_lcore;
   int ret;
   bool skip_numa_check = false;
@@ -788,7 +788,17 @@ again:
   return -EIO;
 }
 
-int mt_sch_put_lcore(struct mtl_main_impl* impl, unsigned int lcore) {
+int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
+                     enum mt_lcore_type type, int socket) {
+  struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
+
+  mt_pthread_mutex_lock(&mgr->lcore_mutex);
+  int ret = sch_get_lcore(impl, lcore, type, socket);
+  mt_pthread_mutex_unlock(&mgr->lcore_mutex);
+  return ret;
+}
+
+static int sch_put_lcore(struct mtl_main_impl* impl, unsigned int lcore) {
   int ret;
   struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
 
@@ -846,6 +856,15 @@ int mt_sch_put_lcore(struct mtl_main_impl* impl, unsigned int lcore) {
   err_unlock:
     sch_filelock_unlock(mgr);
   }
+  return ret;
+}
+
+int mt_sch_put_lcore(struct mtl_main_impl* impl, unsigned int lcore) {
+  struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
+
+  mt_pthread_mutex_lock(&mgr->lcore_mutex);
+  int ret = sch_put_lcore(impl, lcore);
+  mt_pthread_mutex_unlock(&mgr->lcore_mutex);
   return ret;
 }
 
@@ -969,6 +988,7 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
   int ret;
 
   mt_pthread_mutex_init(&mgr->mgr_mutex, NULL);
+  mt_pthread_mutex_init(&mgr->lcore_mutex, NULL);
 
   mgr->lcore_lock_fd = -1;
 
@@ -1045,6 +1065,7 @@ int mt_sch_mrg_uinit(struct mtl_main_impl* impl) {
     mt_pthread_mutex_destroy(&sch->mutex);
   }
 
+  mt_pthread_mutex_destroy(&mgr->lcore_mutex);
   mt_pthread_mutex_destroy(&mgr->mgr_mutex);
   return 0;
 };
