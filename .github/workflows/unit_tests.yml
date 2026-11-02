@@ -75,6 +75,9 @@ jobs:
       - name: Build and run the unit suite
         run: ./build.sh unit
 
+      - name: Build and run the FFmpeg plugin unit tests
+        run: script/build_ffmpeg_plugin.sh unit
+
   # The scripts of script/ and setup_environment.sh share one structure.
   # test-scripts.sh checks it, and runs the scripts that need no NIC and no root.
   script-tests:

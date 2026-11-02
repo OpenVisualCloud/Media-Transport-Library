@@ -3,9 +3,10 @@
 # Copyright 2026 Intel Corporation
 
 # Writes compile_commands.json for clang-tidy: libmtl with its unit and fuzz
-# targets, and the meson projects that build on it. DPDK comes from the Build
-# workflow's cache in .local_install; the projects find MTL through the
-# mtl-uninstalled.pc that meson setup writes, so MTL is never built.
+# targets, and the meson projects that build on it or on its headers. DPDK
+# comes from the Build workflow's cache in .local_install; the projects find
+# MTL through the mtl-uninstalled.pc that meson setup writes, so MTL is never
+# built.
 set -euo pipefail
 
 # The components add the GStreamer and OBS headers the meson setups below need.
@@ -28,4 +29,6 @@ for project in app tests plugins ld_preload manager tests/tools/RxTxApp ecosyste
 	tests/tools/gstreamer_tools ecosystem/obs_mtl/linux-mtl tools/set_tai_offset; do
 	meson setup "build/$(basename "$project")" "$project"
 done
+# Its basename, tests, is the build directory of the tests project above.
+meson setup build/ffmpeg_plugin_tests ecosystem/ffmpeg_plugin/tests
 jq -s add build/compile_commands.json build/*/compile_commands.json >compile_commands.json

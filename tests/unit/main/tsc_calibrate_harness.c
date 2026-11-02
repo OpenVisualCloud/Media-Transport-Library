@@ -3,7 +3,7 @@
  *
  * Includes the production mt_main.c so the static mt_calibrate_tsc() is visible, with
  * its clock reads and sleep renamed onto a simulated clock. mtl_init() and mtl_uninit()
- * are renamed too, as the ffmpeg harness defines its own.
+ * are renamed too, so that their simulated-clock copies do not take libmtl's place.
  */
 
 /* mt_main.c needs pthread_setaffinity_np(), but ut_common.h pulls system headers first */

@@ -2,8 +2,8 @@
  * Copyright(c) 2026 Intel Corporation
  */
 
-#ifndef TESTS_UNIT_FFMPEG_MTL_COMMON_HARNESS_H
-#define TESTS_UNIT_FFMPEG_MTL_COMMON_HARNESS_H
+#ifndef ECOSYSTEM_FFMPEG_PLUGIN_TESTS_MTL_COMMON_HARNESS_H
+#define ECOSYSTEM_FFMPEG_PLUGIN_TESTS_MTL_COMMON_HARNESS_H
 
 #include <errno.h>
 #include <mtl/mtl_api.h>
