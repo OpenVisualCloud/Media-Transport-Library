@@ -53,6 +53,7 @@ struct st20p_tx_ctx {
 
   struct st20_convert_session_impl* convert_impl;
   struct st_frame_converter* internal_converter;
+  struct st_frame_nt_scratch nt_scratch; /* for st_frame_convert_nt() */
   bool ready;
   bool derive; /* input_fmt == transport_fmt */
 

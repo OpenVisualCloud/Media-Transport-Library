@@ -658,6 +658,13 @@ static int tx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_tx_ct
   return 0;
 }
 
+static int tx_st20p_init_nt_scratch(struct st20p_tx_ctx* ctx, struct st20p_tx_ops* ops) {
+  if (ops->flags & ST20P_TX_FLAG_DISABLE_NT_CONVERT) return 0;
+  return st_frame_nt_scratch_init(&ctx->nt_scratch, ctx->internal_converter,
+                                  st_frame_fmt_from_transport(ops->transport_fmt),
+                                  ops->width, ctx->socket_id);
+}
+
 static int tx_st20p_stat(void* priv) {
   struct st20p_tx_ctx* ctx = priv;
   struct st20p_tx_frame* framebuff = ctx->framebuffs;
@@ -875,7 +882,8 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
   }
 
   if (ctx->internal_converter) { /* convert internal */
-    ctx->internal_converter->convert_func(&framebuff->src, &framebuff->dst);
+    st_frame_convert_nt(ctx->internal_converter, &ctx->nt_scratch, &framebuff->src,
+                        &framebuff->dst);
     atomic_store_explicit(&framebuff->stat, ST20P_TX_FRAME_CONVERTED,
                           memory_order_release);
   } else if (ctx->derive) {
@@ -998,7 +1006,8 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
       goto out;
     }
     if (ctx->internal_converter) { /* convert internal */
-      ctx->internal_converter->convert_func(&framebuff->src, &framebuff->dst);
+      st_frame_convert_nt(ctx->internal_converter, &ctx->nt_scratch, &framebuff->src,
+                          &framebuff->dst);
       atomic_store_explicit(&framebuff->stat, ST20P_TX_FRAME_CONVERTED,
                             memory_order_release);
       if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
@@ -1163,6 +1172,13 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
     }
   }
 
+  ret = tx_st20p_init_nt_scratch(ctx, ops);
+  if (ret < 0) {
+    err("%s(%d), init nt scratch fail %d\n", __func__, idx, ret);
+    st20p_tx_free(ctx);
+    return NULL;
+  }
+
   /* init fbs */
   ret = tx_st20p_init_src_fbs(impl, ctx, ops);
   if (ret < 0) {
@@ -1226,6 +1242,8 @@ int st20p_tx_free(st20p_tx_handle handle) {
     mt_rte_free(ctx->internal_converter);
     ctx->internal_converter = NULL;
   }
+
+  st_frame_nt_scratch_uinit(&ctx->nt_scratch);
 
   if (ctx->transport) {
     st20_tx_free(ctx->transport);

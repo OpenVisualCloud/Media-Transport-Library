@@ -523,6 +523,14 @@ enum st20p_tx_flag {
    * immediately after notify_frame_done).
    */
   ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE = (MTL_BIT32(13)),
+  /**
+   * Convert with ordinary stores. By default the internal converter, for
+   * ST_FRAME_FMT_YUV422PLANAR10LE input or ST_FRAME_FMT_V210 input at a width that is a
+   * multiple of 48, converts a few lines at a time into a per-session scratch and streams
+   * them to the frame with non-temporal stores, so the frame neither is read for
+   * ownership nor fills the cache.
+   */
+  ST20P_TX_FLAG_DISABLE_NT_CONVERT = (MTL_BIT32(14)),
   /** Enable the st20p_tx_get_frame block behavior to wait until a frame becomes
      available or (default: 1s, use st20p_tx_set_block_timeout to customize) */
   ST20P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
@@ -654,6 +662,15 @@ enum st20p_rx_flag {
    * Use gpu_direct vram for framebuffers
    */
   ST20P_RX_FLAG_USE_GPU_DIRECT_FRAMEBUFFERS = (MTL_BIT32(24)),
+  /**
+   * Convert with ordinary stores. By default the internal converter, for
+   * ST_FRAME_FMT_YUV422PLANAR10LE output or ST_FRAME_FMT_V210 output at a width that is a
+   * multiple of 48, converts a few lines at a time into a per-session scratch and streams
+   * them to the frame with non-temporal stores, so the frame neither is read for
+   * ownership nor fills the cache, and comes back cold in cache. A session with
+   * ST20P_RX_FLAG_AUTO_DETECT always converts with ordinary stores.
+   */
+  ST20P_RX_FLAG_DISABLE_NT_CONVERT = (MTL_BIT32(25)),
 };
 
 /** Bit define for flag_resp of struct st22_decoder_create_req. */

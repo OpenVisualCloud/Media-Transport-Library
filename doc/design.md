@@ -385,6 +385,9 @@ The Get/Put API is straightforward to use; consider the following example:
 
 Sample application code can be find in [tx_st20_pipeline_sample.c](../app/sample/tx_st20_pipeline_sample.c) and [rx_st20_pipeline_sample.c](../app/sample/rx_st20_pipeline_sample.c)
 
+For `yuv422p10le`, and `v210` at a width that is a multiple of 48, to or from the 4:2:2 10-bit transport, the internal converter converts 8 lines at a time into a per-session scratch and streams each block to the frame with non-temporal stores, so the frame neither is read for ownership nor fills the cache.
+An RX frame converted this way comes back cold in cache: an application that reads it right after `st20p_rx_get_frame` reads it from DRAM. `ST20P_TX_FLAG_DISABLE_NT_CONVERT` and `ST20P_RX_FLAG_DISABLE_NT_CONVERT` switch a session back to ordinary stores.
+
 By default, the `st20p_tx_get_frame` and `st20p_rx_get_frame` functions operate in non-blocking mode, which means the function call will immediately return `NULL` if no frame is available.
 To switch to blocking mode, where the call will wait until a frame is ready for application use or one second timeout occurs, you must enable the `ST20P_TX_FLAG_BLOCK_GET` or `ST20P_RX_FLAG_BLOCK_GET` flag respectively during the session creation stage, and application can use `st20p_tx_wake_block`/`st20p_rx_wake_block` to wake up the waiting directly.
 
@@ -398,7 +401,8 @@ Each pipeline framebuffer carries a single `_Atomic` status field, and every sta
   corruption and double-claim between the application thread and the data-plane thread, but it does **not** make these
   calls re-entrant or safe to invoke concurrently from multiple application threads. The producer/consumer cursor hints
   (`framebuff_producer_idx`/`framebuff_consumer_idx`) and the get→process→put handoff assume this single-threaded,
-  sequential usage.
+  sequential usage. The st20p conversion scratch is guarded only so that an application that breaks this rule cannot
+  corrupt it: a conversion that finds the scratch in use converts with ordinary stores.
 - **Synchronous lower-layer callbacks.** The transport-layer callbacks driven from the data-plane tasklet — for example
   `frame_ready`, `packet_convert`, `frame_done`, and `query_ext_frame` — are assumed to run synchronously and to
   completion within their single owning tasklet thread. Under this assumption each pipeline stage has exactly one
