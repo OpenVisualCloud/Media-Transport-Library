@@ -35,14 +35,34 @@ enum st_tx_video_rl_trim {
 #define ST_TX_VIDEO_RL_TOKENS_MAX (257)
 /* ICE_PSM_CLK_367MHZ_IN_HZ, the slowest psm_clk ice reads */
 #define ST_TX_VIDEO_RL_PSM_CLK_MIN (367647059)
-/* The longest token timeslot, bounded by aim, a plan accepts: packet 0 then leaves up to
- * 2 * aim later than on the hold path, and a drain below ~128.5 MB/s holds. */
-#define ST_TX_VIDEO_RL_TIMESLOT_MAX_NS (2 * NS_PER_US)
+/* the most packet 0 may leave past its target: the grid's aim and timeslot and a cut,
+ * the TX side's share of the 0..+10 us launch bound */
+#define ST_TX_VIDEO_RL_GRID_LATE_MAX_NS (4 * NS_PER_US)
 
 /* the most bytes ice adds per token timeslot on a queue programmed at bps bytes/s */
 static inline long double st_tx_video_rl_tokens(uint64_t bps) {
   return RTE_MAX((long double)ST_TX_VIDEO_RL_TOKENS_MAX,
                  (long double)bps / (ST_TX_VIDEO_RL_PSM_CLK_MIN / 32.0L) + 0.5L);
+}
+
+/* the bytes of the longest timeslot ice_sched_bw_to_rl_profile() programs, on any psm_clk
+ * ice reads, for a queue of bps bytes/s, which iavf or the PMD truncates to kbps */
+static inline uint64_t st_tx_video_rl_timeslot_tokens(uint64_t bps) {
+  static const uint64_t psm_hz[] = {ST_TX_VIDEO_RL_PSM_CLK_MIN, 390625000, 416666667,
+                                    446428571};
+  uint64_t bytes = bps / 1000 * 1000;
+  uint64_t most = 0;
+
+  for (unsigned int i = 0; i < RTE_DIM(psm_hz); i++) {
+    for (uint64_t ts_rate = psm_hz[i] / 32; ts_rate; ts_rate /= 2) {
+      uint64_t tokens = (bytes * 10000 / ts_rate + 5000) / 10000;
+      if (tokens > 128) {
+        most = RTE_MAX(most, tokens);
+        break;
+      }
+    }
+  }
+  return most;
 }
 
 /* the RL pre-arm plan of a port, set by tv_rl_plan_init() */

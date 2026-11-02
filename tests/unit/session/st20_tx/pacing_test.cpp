@@ -23,7 +23,9 @@
 
 #include <string>
 
+#include "session/st20_tx/rl_vrx_model.h"
 #include "session/st20_tx_harness.h"
+#include "session/stderr_capture.h"
 
 namespace {
 constexpr uint64_t kNanosecondsPerMillisecond = 1000 * 1000;
@@ -920,7 +922,8 @@ class St20TxRlPlanTest : public ::testing::Test {
   static constexpr uint64_t kUhdRlBps = 1307134465;
   /* the most tokens ice adds a timeslot below 1.47 GB/s, st_tx_video_rl_tokens() */
   static constexpr long double kQuantumBytes = 257;
-  static constexpr long double kTimeslotMaxNs = 2000; /* ST_TX_VIDEO_RL_TIMESLOT_MAX_NS */
+  /* ST_TX_VIDEO_RL_GRID_LATE_MAX_NS */
+  static constexpr long double kGridLateMaxNs = 4000;
   static constexpr double kTolNs = 1e-6;
   const float kTrained[2] = {164, 170};
 
@@ -1177,10 +1180,10 @@ TEST_F(St20TxRlPlanTest, PlanNeedsTheTrimPadsInItsWindow) {
   }
 }
 
-/* A plan lands packet 0 up to 2 * aim later than the hold path, so it is kept only up to
- * an aim of 2 us, 257 B of NORMAL pad drain: a pad of at most 9.8 us, a drain of at least
- * ~128.5 MB/s. 720p50 is just over (aim ~2.02 us here); SD holds on its window first. */
-TEST_F(St20TxRlPlanTest, TimeslotPastTwoMicrosecondsHolds) {
+/* The timeslot grid lands packet 0 up to aim plus the longest timeslot ice programs past
+ * its target, so a plan is kept only up to 4 us of it: 720p50, aim ~2.03 us and a ~1.33
+ * us timeslot, arms; 720p25 does not. */
+TEST_F(St20TxRlPlanTest, GridLatenessPastFourMicrosecondsHolds) {
   const struct {
     uint32_t width, height;
     bool interlaced;
@@ -1190,7 +1193,7 @@ TEST_F(St20TxRlPlanTest, TimeslotPastTwoMicrosecondsHolds) {
       {3840, 2160, false, ST_FPS_P59_94, true}, {1920, 1080, false, ST_FPS_P59_94, true},
       {1920, 1080, false, ST_FPS_P50, true},    {1920, 1080, false, ST_FPS_P29_97, true},
       {1920, 1080, false, ST_FPS_P25, true},    {1920, 1080, true, ST_FPS_P59_94, true},
-      {1280, 720, false, ST_FPS_P59_94, true},  {1280, 720, false, ST_FPS_P50, false},
+      {1280, 720, false, ST_FPS_P59_94, true},  {1280, 720, false, ST_FPS_P50, true},
       {1280, 720, false, ST_FPS_P25, false},
   };
 
@@ -1208,27 +1211,38 @@ TEST_F(St20TxRlPlanTest, TimeslotPastTwoMicrosecondsHolds) {
   }
 }
 
-/* armed up to a NORMAL pad drain of 2000 * 1262 / 257 = 9821.0 ns. 972 lines at 25 fps
- * have a 9876 ns trs, the pad interval sets the drain around it. */
-TEST_F(St20TxRlPlanTest, TwoMicrosecondsBoundTheTimeslot) {
-  constexpr uint32_t kHeight = 972;
-  constexpr long double kEdgeDrain = kTimeslotMaxNs * kNormalPadSize / kQuantumBytes;
-  ut_txv_set_rl_format(ctx_, 1920, kHeight, false, ST_FPS_P25);
+/* 720p50 drains a ~9.9 us pad here, aim ~2.0 us. On a queue just slower than where ice's
+ * 446 MHz psm_clk takes encode 4, that clock's timeslot is 257 B, ~2.0 us, and the plan
+ * holds; just faster, the longest is 367 MHz's 156 B, ~1.2 us, and it arms. */
+TEST_F(St20TxRlPlanTest, FourMicrosecondsBoundTheGridLateness) {
+  constexpr int64_t kPsm446Hz = 446428571;
+  ut_txv_set_rl_format(ctx_, 1280, 720, false, ST_FPS_P50);
   ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 1, 0, false, kTrained, false), 0);
-  /* the drain as pad_interval grows */
-  const long double full = Drain(1e30L);
+  ASSERT_TRUE(ut_txv_rl_armed(ctx_, kPortP));
+  const long double drain = ut_txv_rl_drain(ctx_, kPortP);
+  int64_t lo = 800000, hi = 1000000; /* kbps */
+  while (lo < hi) {
+    const int64_t mid = lo + (hi - lo) / 2;
+    if (ut_ice_encode(kPsm446Hz, mid) <= 4)
+      hi = mid;
+    else
+      lo = mid + 1;
+  }
+  const uint64_t edge_bps = (uint64_t)(lo + 7) / 8 * 1000;
 
-  for (long double drain : {kEdgeDrain - 0.05L, kEdgeDrain + 0.05L}) {
-    SCOPED_TRACE((double)drain);
-    const float pad_interval[1] = {(float)(drain / (full - drain))};
-    ASSERT_GT(pad_interval[0], 32);
+  for (uint64_t bps : {edge_bps - 1000, edge_bps}) {
+    SCOPED_TRACE(bps);
+    const long double late =
+        (kQuantumBytes + ut_ice_timeslot_tokens(bps)) * drain / kNormalPadSize;
     ut_txv_ctx* ctx = ut_txv_create();
     ASSERT_NE(ctx, nullptr);
-    ut_txv_set_rl_format(ctx, 1920, kHeight, false, ST_FPS_P25);
+    ut_txv_set_rl_format(ctx, 1280, 720, false, ST_FPS_P50);
+    ut_txv_set_rl_queue_bps(ctx, kPortP, bps);
 
-    ASSERT_EQ(ut_txv_init_rl_pacing(ctx, 1, 0, false, pad_interval, false), 0);
+    ASSERT_EQ(ut_txv_init_rl_pacing(ctx, 1, 0, false, kTrained, false), 0);
 
-    EXPECT_EQ(ut_txv_rl_armed(ctx, kPortP), drain < kEdgeDrain);
+    EXPECT_EQ(ut_txv_rl_armed(ctx, kPortP), bps == edge_bps) << (double)late;
+    EXPECT_EQ(ut_txv_rl_armed(ctx, kPortP), late <= kGridLateMaxNs) << (double)late;
     ut_txv_destroy(ctx);
   }
 }
@@ -1238,4 +1252,66 @@ TEST_F(St20TxRlPlanTest, WidePacingHolds) {
 
   ASSERT_EQ(ut_txv_pacing_warm_pkts(ctx_), 0u);
   ExpectHold(kPortP);
+}
+
+/* every ST 2110-21 format an RL port carries arms its pre-arm plan, in each packing, on
+ * a 512 or a deep TX ring, alone or with a 2022-7 leg. SD cannot: at ~30 MB/s each ice
+ * timeslot is over 4.2 us, so the grid alone spreads packet 0 past the launch budget,
+ * and the session warns that it holds packet 0. */
+TEST(St20TxRlPlanArming, EveryRlFormatArmsItsPlanOrWarns) {
+  const struct {
+    uint32_t width, height;
+    bool interlaced;
+    enum st_fps fps;
+    enum st20_fmt fmt;
+    bool armed;
+  } formats[] = {
+      {720, 480, true, ST_FPS_P59_94, ST20_FMT_YUV_422_10BIT, false},
+      {720, 576, true, ST_FPS_P50, ST20_FMT_YUV_422_10BIT, false},
+      {1280, 720, false, ST_FPS_P50, ST20_FMT_YUV_422_10BIT, true},
+      {1280, 720, false, ST_FPS_P59_94, ST20_FMT_YUV_422_10BIT, true},
+      {1920, 1080, true, ST_FPS_P50, ST20_FMT_YUV_422_10BIT, true},
+      {1920, 1080, true, ST_FPS_P59_94, ST20_FMT_YUV_422_10BIT, true},
+      {1920, 1080, false, ST_FPS_P25, ST20_FMT_YUV_422_10BIT, true},
+      {1920, 1080, false, ST_FPS_P29_97, ST20_FMT_YUV_422_10BIT, true},
+      {1920, 1080, false, ST_FPS_P50, ST20_FMT_YUV_422_10BIT, true},
+      {1920, 1080, false, ST_FPS_P59_94, ST20_FMT_YUV_422_10BIT, true},
+      {1920, 1080, false, ST_FPS_P119_88, ST20_FMT_YUV_422_10BIT, true},
+      {3840, 2160, false, ST_FPS_P50, ST20_FMT_YUV_422_10BIT, true},
+      {3840, 2160, false, ST_FPS_P59_94, ST20_FMT_YUV_422_10BIT, true},
+      {3840, 2160, false, ST_FPS_P59_94, ST20_FMT_YUV_444_12BIT, true},
+      {3840, 2160, false, ST_FPS_P119_88, ST20_FMT_YUV_422_10BIT, true},
+      {7680, 4320, false, ST_FPS_P59_94, ST20_FMT_YUV_422_10BIT, true},
+  };
+  const float trained[2] = {164, 164};
+  ASSERT_EQ(ut_txv_init(), 0);
+
+  for (const auto& f : formats)
+    for (enum st20_packing packing :
+         {ST20_PACKING_BPM, ST20_PACKING_GPM, ST20_PACKING_GPM_SL})
+      for (uint16_t nb_tx_desc : {512, 2048})
+        for (int num_port : {1, 2}) {
+          const std::string cell =
+              std::to_string(f.height) + (f.interlaced ? "i" : "p") + " fps " +
+              std::to_string(f.fps) + " fmt " + std::to_string(f.fmt) + " packing " +
+              std::to_string(packing) + " ring " + std::to_string(nb_tx_desc) + " x" +
+              std::to_string(num_port);
+          SCOPED_TRACE(cell);
+          ut_txv_ctx* ctx = ut_txv_create();
+          ASSERT_NE(ctx, nullptr);
+          ut_txv_set_rl_format(ctx, f.width, f.height, f.interlaced, f.fps);
+          ut_txv_set_rl_layout(ctx, packing, f.fmt, nb_tx_desc);
+          int ret = -1;
+          const std::string log = ut_session::capture_stderr([&] {
+            ret = ut_txv_init_rl_pacing(ctx, num_port, 0, false, trained, false);
+          });
+          ASSERT_EQ(ret, 0);
+          for (int port = 0; port < num_port; port++) {
+            const std::string warn = "Warn: tv_rl_plan_init[00], port " +
+                                     std::to_string(port) + " no rl plan, holds packet 0";
+            EXPECT_EQ(ut_txv_rl_armed(ctx, port), f.armed) << "port " << port;
+            EXPECT_EQ(log.find(warn) != std::string::npos, !f.armed) << "port " << port;
+          }
+          ut_txv_destroy(ctx);
+        }
 }
