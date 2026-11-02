@@ -12,7 +12,7 @@ script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 show_help() {
 	cat <<EOF
-Usage: ${script_name} [OPTIONS] [BUILD_TYPE]
+Usage: ${script_name} [OPTIONS] [BUILD_TYPE | unit]
 
 Build the ST 2110-22 avcodec plugin in plugins/st22_avcodec with meson and
 ninja, and install it. The build directory is script/build/st22_avcodec_plugin.
@@ -23,8 +23,12 @@ BUILD_TYPE is one of:
 	plain		Build without extra compiler flags
 	release		Release build (default)
 
+With unit, the script only builds and runs the tests of plugins/st22_avcodec/tests,
+against the same MTL and FFmpeg.
+
 REQUIRED PACKAGES (Debian/Ubuntu):
 	gcc meson ninja-build pkg-config libavcodec-dev libavutil-dev
+	unit also needs g++ and libgtest-dev.
 	MTL (build and install it with build.sh)
 
 OPTIONS:
@@ -50,7 +54,8 @@ check_build_packages() {
 }
 
 main() {
-	local opt buildtype=release plugin_build_dir plugin_libdir libdirs=() local_base pc
+	local opt buildtype=release unit=0 plugin_build_dir plugin_libdir libdirs=() local_base pc
+	local unit_dir="${script_folder}/build/st22_avcodec_plugin_unit"
 	local -a link_args=()
 
 	while getopts ":h-:" opt; do
@@ -78,6 +83,7 @@ main() {
 	debug) buildtype=debug ;;
 	plain) buildtype=plain ;;
 	release) buildtype=release ;;
+	unit) unit=1 ;;
 	*)
 		log_error "Unknown build type: $1"
 		show_help
@@ -102,6 +108,14 @@ main() {
 		export PKG_CONFIG_PATH
 	fi
 	check_build_packages || exit 1
+	if [ "${unit}" -eq 1 ]; then
+		require_commands c++:g++ || exit 1
+		rm -rf "${unit_dir}"
+		meson setup "${unit_dir}" "${REPO_DIR}/plugins/st22_avcodec/tests"
+		ninja -C "${unit_dir}"
+		"${unit_dir}/St22AvcodecTest"
+		return 0
+	fi
 
 	plugin_build_dir="${script_folder}/build/st22_avcodec_plugin"
 	log_info "Build the st22 avcodec plugin: buildtype=${buildtype}"
