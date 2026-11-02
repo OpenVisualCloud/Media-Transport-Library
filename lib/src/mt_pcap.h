@@ -10,10 +10,11 @@
 #include "mt_log.h"
 #include "mt_main.h"
 
-/* MTL patch "pcapng: add user timestamp support" supplies MTL_DPDK_HAS_PCAPNG_TS and
- * rte_pcapng_copy_ts(). Upstream accepted a different shape: a uint64_t timestamp
- * parameter on rte_pcapng_copy() plus rte_pcapng_tsc_to_ns(). */
-#ifdef MTL_DPDK_HAS_PCAPNG_TS
+/* mt_pcap_dump() needs rte_pcapng_copy_ts(), which takes the time of the packet. The
+ * MTL patch "pcapng: add user timestamp support" supplies it and MTL_DPDK_HAS_PCAPNG_TS.
+ * DPDK 26.11 has the same function upstream, and lib/meson.build then defines
+ * MTL_HAS_PCAPNG_COPY_TS. */
+#if defined(MTL_DPDK_HAS_PCAPNG_TS) || defined(MTL_HAS_PCAPNG_COPY_TS)
 
 #define MT_HAS_PCAPNG_TS
 

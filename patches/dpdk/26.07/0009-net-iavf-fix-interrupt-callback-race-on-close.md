@@ -38,6 +38,18 @@ The one MTL-side workaround was tried and rejected: close iavf ports from an EAL
 
 **Drop when** the DPDK release MTL pins ships the fix.
 
+**Upstream status.** Sent to `dev@dpdk.org` on 2026-10-14 as
+`[PATCH] net/iavf: fix interrupt callback race on close`, with `Cc: stable@dpdk.org`:
+[patchwork](https://patches.dpdk.org/project/dpdk/patch/20261014122427.631805-1-dawid.wesierski@intel.com/),
+[mail archive](https://mails.dpdk.org/archives/dev/2026-October/348570.html).
+The MTL copy is the upstream text, regenerated on the v26.07 tag. The two TM
+fixes went out the same day as
+`[PATCH 2/3] net/iavf: fix bandwidth config of unshaped queues` (MTL 0010,
+[patchwork](https://patches.dpdk.org/project/dpdk/patch/20261014122419.631288-3-dawid.wesierski@intel.com/))
+and `[PATCH 3/3] net/iavf: fix crash in TM ops without QoS capability` (MTL 0011,
+[patchwork](https://patches.dpdk.org/project/dpdk/patch/20261014122419.631288-4-dawid.wesierski@intel.com/)).
+Jira: SDBQ-3944.
+
 ## Evidence
 
 All on E830 VFs (ice PF), DPDK 26.07 with the MTL patch set.

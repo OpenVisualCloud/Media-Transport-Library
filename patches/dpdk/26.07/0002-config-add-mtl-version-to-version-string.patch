@@ -4,11 +4,11 @@ Date: Wed, 29 Apr 2026 03:15:36 -0400
 Subject: [PATCH] config: add mtl version to version string
 
 Embed the '_mtl_' tag in the DPDK version string so that
-pkg-config --modversion libdpdk reports e.g. 26.07.91_mtl_ instead of
+pkg-config --modversion libdpdk reports e.g. 26.07.92_mtl_ instead of
 plain 26.07.0. This allows the MTL build script to detect whether the
 installed DPDK already has the expected patch set applied.
 
-The VERSION file is updated to 26.07.91_mtl_ and config/meson.build
+The VERSION file is updated to 26.07.92_mtl_ and config/meson.build
 gains an elif branch (similar to the existing -rc handling) that parses
 the suffix and sets RTE_VER_SUFFIX / RTE_VER_RELEASE accordingly.
 
@@ -23,12 +23,12 @@ Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
  2 files changed, 6 insertions(+), 1 deletion(-)
 
 diff --git a/VERSION b/VERSION
-index 403cc28f7a..59818ef627 100644
+index 403cc28f7a..3a17dfc217 100644
 --- a/VERSION
 +++ b/VERSION
 @@ -1 +1 @@
 -26.07.0
-+26.07.91_mtl_
++26.07.92_mtl_
 diff --git a/config/meson.build b/config/meson.build
 index d7f5e55c18..7e00c87bed 100644
 --- a/config/meson.build

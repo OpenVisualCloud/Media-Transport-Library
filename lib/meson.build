@@ -18,6 +18,14 @@ if not is_windows
 endif
 jsonc_dep = dependency('json-c', required : true)
 
+# rte_pcapng_copy_ts() writes the time of the packet: from the MTL patch "pcapng: add
+# user timestamp support", or from DPDK 26.11, which has it upstream
+if not is_windows and cc.has_header_symbol('rte_pcapng.h', 'rte_pcapng_copy_ts',
+                                           dependencies : dpdk_dep,
+                                           args : '-DALLOW_EXPERIMENTAL_API')
+  add_global_arguments('-DMTL_HAS_PCAPNG_COPY_TS', language : 'c')
+endif
+
 # add gpu direct
 gpu_direct_dep = dependency('mtl_gpu_direct', required: false)
 if gpu_direct_dep.found()
