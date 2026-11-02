@@ -70,6 +70,7 @@ SHELL ["/bin/bash", "-ex", "-o", "pipefail", "-c"]
 WORKDIR /home/imtl/
 RUN apt-get clean -y && rm -rf /var/lib/apt/lists/* && \
     apt-get update -y && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends ca-certificates sudo curl unzip && \
     apt-get install -y --no-install-recommends libnuma1 libjson-c5 libpcap0.8 libsdl2-2.0-0 libsdl2-ttf-2.0-0 libssl3 libatomic1 pciutils && \
     apt-get autoremove -y && \

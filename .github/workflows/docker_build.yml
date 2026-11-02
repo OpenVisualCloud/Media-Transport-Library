@@ -108,6 +108,9 @@ jobs:
           # Main only: the layers of a pull request push the caches of main out
           # of the 10 GB of the repository.
           cache-to: "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('type=gha,scope={0}-{1},mode=max', env.DOCKER_IMAGE_NAME, matrix.name) || '' }}"
+          # The final stage is what ships: rebuild it every time, so it installs
+          # the packages the archive serves today, not those of a cached layer.
+          no-cache-filters: final
 
   manager-docker-build:
     needs: changes
@@ -161,6 +164,9 @@ jobs:
           # Main only: the layers of a pull request push the caches of main out
           # of the 10 GB of the repository.
           cache-to: "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('type=gha,scope={0},mode=max', env.DOCKER_IMAGE_NAME) || '' }}"
+          # The final stage is what ships: rebuild it every time, so it installs
+          # the packages the archive serves today, not those of a cached layer.
+          no-cache-filters: final
           build-args: VERSION=${{ steps.version.outputs.VERSION }}
 
   compose-validate:

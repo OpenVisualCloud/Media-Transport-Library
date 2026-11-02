@@ -77,6 +77,7 @@ SHELL ["/bin/bash", "-ex", "-o", "pipefail", "-c"]
 # Install runtime dependencies
 WORKDIR /home/imtl/
 RUN dnf install -y epel-release && \
+    dnf update -y && \
     dnf install -y --allowerasing \
         ca-certificates sudo curl unzip \
         numactl-libs json-c libpcap SDL2 SDL2_ttf openssl-libs zlib elfutils-libelf libcap-ng libatomic pciutils && \
