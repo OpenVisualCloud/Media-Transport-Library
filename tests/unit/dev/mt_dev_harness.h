@@ -101,6 +101,8 @@ void ut_dev_set_num_ports(ut_dev_ctx* ctx, int num_ports);
 void ut_dev_set_dma_dev_ports(ut_dev_ctx* ctx, uint8_t num);
 /** Copies lcores, so the caller need not keep it alive. */
 void ut_dev_set_lcores(ut_dev_ctx* ctx, uint32_t main_lcore, const char* lcores);
+/** The CPU count of the host dev_eal_init() sees; RTE_MAX_LCORE by default. */
+void ut_dev_set_cpus(ut_dev_ctx* ctx, long cpus);
 void ut_dev_set_iova_mode(ut_dev_ctx* ctx, enum mtl_iova_mode mode);
 void ut_dev_set_log_level(ut_dev_ctx* ctx, enum mtl_log_level level);
 void ut_dev_enable_rxtx_simd_512(ut_dev_ctx* ctx);

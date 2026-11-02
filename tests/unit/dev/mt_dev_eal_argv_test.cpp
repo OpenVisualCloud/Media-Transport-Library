@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 #include <mtl_api.h>
 #include <rte_lcore.h>
+#include <rte_version.h>
 
 #include <algorithm>
 #include <cerrno>
@@ -147,6 +148,36 @@ TEST_F(MtDevEalArgvTest, TwoPortsWithEightDmaDevicesFitTheArgvVector) {
   EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 1);
   EXPECT_GT(ut_dev_eal_argc(ctx_), 32);
   EXPECT_LE(ut_dev_eal_argc(ctx_), ut_dev_eal_max_args());
+}
+
+/* An lcore id is the CPU id: EAL must not renumber the CPUs the user lists. */
+TEST_F(MtDevEalArgvTest, CorelistIsNotRemapped) {
+  ut_dev_set_lcores(ctx_, 0, "60,61");
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 1);
+  EXPECT_FALSE(HasOption("--remap-lcore-ids"));
+}
+
+/* Without a corelist EAL takes the affinity CPUs, numbered by their CPU id. */
+TEST_F(MtDevEalArgvTest, AutomaticAssignmentIsNotRemapped) {
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 1);
+  EXPECT_FALSE(HasOption("-l"));
+  EXPECT_FALSE(HasOption("--remap-lcore-ids"));
+}
+
+/* A DPDK that can not number every CPU of the host keeps the remapped lcore ids. */
+TEST_F(MtDevEalArgvTest, CpusPastRteMaxLcoreAreRemapped) {
+  ut_dev_set_cpus(ctx_, RTE_MAX_LCORE + 1);
+  ut_dev_set_lcores(ctx_, 0, "60,61");
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 1);
+  EXPECT_EQ(HasOption("--remap-lcore-ids"), RTE_VERSION >= RTE_VERSION_NUM(25, 11, 0, 0));
 }
 
 /* main_lcore is prepended to the user corelist, an otherwise undocumented contract. */
