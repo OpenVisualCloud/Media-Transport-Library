@@ -60,14 +60,14 @@ on:
       # sessions, cores, test_time and rounds are strings, not numbers: a number
       # input reaches a step's env as 120.0.
       sessions:
-        description: 'Sessions of each build on each port it uses (span: on each of its 2), at most what a 100G port carries: 36 x 1080p59, 9 x 2160p59, 2 x 4320p59'
+        description: 'Sessions of each build (pairs and pooled: of each of its two instances). A 100G port carries 36 x 1080p59, 9 x 2160p59, 2 x 4320p59; nics span puts a build on two ports, the first filled before the second, so 37 run as 36 and 1, and 72 x 1080p59 fit'
         required: false
         type: string
         default: '36'
       # Where and how the instances run
       # Each choice says what it does; the case takes its word before the colon.
       nics:
-        description: 'Where A and B run on the two E830 NICs (two ports each) of each host. The places below are those of the first round; A and B swap them every round. sessions is the number of streams on each port'
+        description: 'Where A and B run on the two E830 NICs (two ports each) of each host. The places below are those of the first round; A and B swap them every round. A build on one port takes up to 36 x 1080p59 sessions, on two (span) up to 72'
         required: false
         type: choice
         options:
@@ -157,6 +157,7 @@ jobs:
           CORES: ${{ inputs.cores }}
           SINGLE_CORE: ${{ inputs.single_core }}
           VIDEO: ${{ inputs.video }}
+          NICS: ${{ inputs.nics }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: task ci:workflow -- perf-compare-refs

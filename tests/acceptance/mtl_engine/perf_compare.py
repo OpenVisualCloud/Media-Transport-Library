@@ -39,6 +39,9 @@ logger = logging.getLogger(__name__)
 UNIT_PREFIX = "mtl-perf-"
 RUN_DIR = "/tmp/mtl-perf-compare"
 WARMUP_S = 30
+# The link of each port of the perf pair; the refs job of perf-compare.yml fills its
+# ports by it too.
+PORT_BPS = 100e9
 RESCTRL = "/sys/fs/resctrl"
 RDT_PREFIX = "mtl_perf_"
 RDT_SAVE = "/run/mtl-perf-compare.schemata"
@@ -385,8 +388,11 @@ def cpu_layout(host, pf: str, cores: int, count: int = 2) -> list[Slot]:
     ]
 
 
-def add_port(config: dict, role: str, vf: str, tx_ip: str, rx_ip: str) -> None:
-    """Add *vf* to the RxTxApp configuration of one port, with as many sessions."""
+def add_port(
+    config: dict, role: str, vf: str, tx_ip: str, rx_ip: str, sessions: int
+) -> None:
+    """Add *vf* to the RxTxApp configuration of one port, with *sessions* of the
+    first port's st20p sessions."""
     iface = {
         **config["interfaces"][0],
         "name": vf,
@@ -396,6 +402,7 @@ def add_port(config: dict, role: str, vf: str, tx_ip: str, rx_ip: str) -> None:
     group = copy.deepcopy(config[f"{role}_sessions"][0])
     group["dip" if role == "tx" else "ip"] = [rx_ip if role == "tx" else tx_ip]
     group["interface"] = [len(config["interfaces"]) - 1]
+    group["st20p"][0]["replicas"] = sessions
     config[f"{role}_sessions"].append(group)
 
 
@@ -437,6 +444,19 @@ def stream_bps(width: int, height: int, fps: float) -> float:
     """The wire rate of a 4:2:2 10-bit stream: 20 bits a pixel, paced over 1125 of 1080
     lines, in MTL's packets of 1320 bytes of pixels that take 1406 on the wire."""
     return width * height * 20 * fps * 1125 / 1080 * 1406 / 1320
+
+
+def port_sessions(sessions: int, ports: int, bps: float) -> list[int]:
+    """The *sessions* of an instance on each of its *ports*, each port but the last
+    filled with as many streams of *bps* as 100 Gb/s carry before the next: 37 x
+    1080p59 on two ports are 36 and 1, and 20 are 20 and 0. The last port takes the
+    rest, which its link may not carry."""
+    most = int(PORT_BPS // bps)
+    shares = []
+    for _ in range(ports - 1):
+        shares.append(min(sessions, most))
+        sessions -= shares[-1]
+    return shares + [sessions]
 
 
 def two_cards(pfs: list[str]) -> bool:

@@ -380,7 +380,7 @@ def test_a_port_carries_the_streams_its_link_speed_allows():
     assert 9 * uhd < 100e9 < 10 * uhd and 2 * fuhd < 100e9 < 3 * fuhd
 
 
-def test_add_port_gives_the_second_port_as_many_sessions():
+def test_add_port_gives_the_second_port_its_own_sessions():
     for role, peer in (("tx", "dip"), ("rx", "ip")):
         config = {
             "interfaces": [{"name": "vf0", "ip": "own", "rx_queues_cnt": 64}],
@@ -388,7 +388,7 @@ def test_add_port_gives_the_second_port_as_many_sessions():
                 {peer: ["peer"], "interface": [0], "st20p": [{"replicas": 3}]}
             ],
         }
-        pc.add_port(config, role, "vf2", "tx2", "rx2")
+        pc.add_port(config, role, "vf2", "tx2", "rx2", 1)
         own, other = ("tx2", "rx2") if role == "tx" else ("rx2", "tx2")
         assert config["interfaces"][1] == {
             "name": "vf2",
@@ -398,9 +398,23 @@ def test_add_port_gives_the_second_port_as_many_sessions():
         assert config[f"{role}_sessions"][1] == {
             peer: [other],
             "interface": [1],
+            "st20p": [{"replicas": 1}],
+        }
+        assert config[f"{role}_sessions"][0] == {  # a copy, not the same
+            peer: ["peer"],
+            "interface": [0],
             "st20p": [{"replicas": 3}],
         }
-        assert config[f"{role}_sessions"][0][peer] == ["peer"]  # a copy, not the same
+
+
+def test_port_sessions_fill_the_first_port_before_the_second():
+    hd, uhd = (pc.stream_bps(w, h, FPS) for w, h in ((1920, 1080), (3840, 2160)))
+    assert pc.port_sessions(37, 2, hd) == [36, 1]
+    assert pc.port_sessions(72, 2, hd) == [36, 36]
+    assert pc.port_sessions(20, 2, hd) == [20, 0]
+    assert pc.port_sessions(10, 2, uhd) == [9, 1]
+    assert pc.port_sessions(73, 2, hd) == [36, 37]  # the last takes what is left
+    assert pc.port_sessions(37, 1, hd) == [37]
 
 
 def test_rdt_setup_only_monitors_slots_that_share_no_l3(monkeypatch):

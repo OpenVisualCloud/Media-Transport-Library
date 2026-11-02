@@ -70,6 +70,8 @@ PIXEL_FORMATS = {
 }
 # --perf_compare_nics, doc/perf_compare.md; with a NIC, and so a socket, a build
 APART = ("split", "redundant")
+# an instance's sessions on two ports, the first filled before the second
+FILLED = ("span",)
 NICS = {
     "single": "NIC 0 only, A on port 0 and B on port 1",
     "split": "A on NIC 0 and B on NIC 1, port 0 each, so each build has a CPU socket to itself",
@@ -141,11 +143,6 @@ def _options(request) -> dict:
         pytest.fail(f"--perf_compare_pixel_format is one of {', '.join(PIXEL_FORMATS)}")
     if opts["sessions"] < 1 or opts["rounds"] < 1:
         pytest.fail("--perf_compare_sessions and --perf_compare_rounds start at 1")
-    if opts["single_core"] and opts["sessions"] > SCH_MAX_SESSIONS:
-        pytest.fail(
-            f"--perf_compare_single_core takes up to {SCH_MAX_SESSIONS} sessions a "
-            "port, as many as an MTL scheduler"
-        )
     given = [n for n in SCHEDULING if _given(options, n)]
     if opts["single_core"] and given:
         pytest.fail(f"--{given[0]} would give a single core instance more schedulers")
@@ -166,8 +163,9 @@ def _subnet(ip: str, by: int) -> str:
     return f"{a}.{b}.{int(c) + by}.{d}"
 
 
-def _app_cmd(opts, media_config, media_path, fps, test_time):
-    """Return app_cmd(side, slot, label) for pc.run_round: the RxTxApp of one instance.
+def _app_cmd(opts, media_config, media_path, fps, test_time, shares):
+    """Return app_cmd(side, slot, label) for pc.run_round: the RxTxApp of one instance,
+    with *shares* of its sessions on each port of its slot.
 
     It returns the command and the RxTxApp configuration it runs with.
     """
@@ -219,7 +217,7 @@ def _app_cmd(opts, media_config, media_path, fps, test_time):
             payload_type=96,
             pacing="narrow",
             packing="GPM",
-            replicas=opts["sessions"],
+            replicas=shares[0],
             nic_port=side.vfs[first],
             lcores=pc.format_cpus(side.slots[slot].cpus[1:]),  # see pc.Slot
             disable_migrate=True,
@@ -228,9 +226,10 @@ def _app_cmd(opts, media_config, media_path, fps, test_time):
             destination_ip=rx_ip,
             **extra,
         )
-        if not redundant:
-            for port in more:  # span: the slot's port on NIC 1
-                pc.add_port(app.config, side.role, side.vfs[port], *pools[port])
+        if not redundant:  # span: the port on NIC 1, unless the first took all
+            for port, n in zip(more, shares[1:]):
+                if n:
+                    pc.add_port(app.config, side.role, side.vfs[port], *pools[port], n)
         app.prepare_execution(build=side.mtl_path, host=side.host)
         return f"{app.command} {opts['args'][label]}".strip(), app.config
 
@@ -342,24 +341,42 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
     media_config, media_path = media_file
     video = f"{media_config['height']}p{fps}"
     out_dir = os.path.join(os.environ.get("MTL_LOG_FOLDER", LOG_FOLDER), "latest")
-    # span: an instance has the sessions of each of its two ports
-    sessions = opts["sessions"] * (2 if opts["nics"] == "span" else 1)
+    sessions = opts["sessions"]
     # a TX queue a port of each session: redundant sessions take two
-    queues = opts["sessions"] * (2 if opts["nics"] in ("span", "redundant") else 1)
+    queues = sessions * (2 if opts["nics"] == "redundant" else 1)
     rate = pc.stream_bps(media_config["width"], media_config["height"], FPS[fps])
+    # the sessions on each port of a slot: redundant sends each on both
+    if opts["nics"] in FILLED:
+        shares = pc.port_sessions(sessions, 2, rate)
+    else:
+        shares = [sessions] * (2 if opts["nics"] == "redundant" else 1)
+    # span has a scheduler on each NIC's node, the others one for all their sessions
+    busiest = max(shares) if opts["nics"] == "span" else sessions
+    if opts["single_core"] and busiest > SCH_MAX_SESSIONS:
+        pytest.fail(
+            f"--perf_compare_single_core takes up to {SCH_MAX_SESSIONS} sessions a "
+            f"scheduler, as many as MTL's, and one would have {busiest}"
+        )
     traced_s = test_time // 2
     # the traced, the timed and the sessions window each take a dump period more at
     # both ends, and the last a period for the dump that closes it
     windows_s = test_time + 3 * (traced_s + 2 * pc.DUMP_PERIOD_S) + pc.DUMP_PERIOD_S
     app_time = pc.steady_timeout(queues) + pc.WARMUP_S + windows_s + 100
-    app_cmd = _app_cmd(opts, media_config, media_path, fps, app_time)
+    app_cmd = _app_cmd(opts, media_config, media_path, fps, app_time, shares)
     details = [
         ("pytest", shlex.join(["pytest", *request.config.invocation_params.args])),
         (
             "Workload",
-            f"{opts['sessions']} st20p sessions per build"
-            + {"single": "", "redundant": ", ST 2022-7 on two ports"}.get(
-                opts["nics"], " and port"
+            f"{sessions} st20p sessions per build"
+            + {
+                "redundant": ", ST 2022-7 on two ports",
+                "pairs": " and NIC",
+                "pooled": " and NIC",
+            }.get(opts["nics"], "")
+            + (
+                f", {shares[0]} on its first port and {shares[1]} on its second"
+                if opts["nics"] in FILLED
+                else ""
             )
             + ", RxTxApp, unicast",
         ),
@@ -402,15 +419,16 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
             pfs[role], vfs = _ports(host, opts["nics"])
             links = pc.nic_links(host, pfs[role])
             slots = _slots(host, vfs, opts["nics"], opts["cores"])
-            used = sorted({p for slot in slots for p in slot.ports})  # split: 2 of 4
-            used_pfs = [pfs[role][p] for p in used]
-            used_links = [links[p] for p in used]
-            if slow := pc.slow_ports(used_pfs, used_links, opts["sessions"] * rate):
-                pytest.fail(
-                    f"{host.name}: {opts['sessions']} x {video} on a port take "
-                    f"{opts['sessions'] * rate / 1e9:.1f} Gb/s, and {', '.join(slow)} "
-                    "(--perf_compare_sessions counts per port, with one NIC or two)"
-                )
+            # the ports with sessions: split uses 2 of 4, span may leave one
+            loads = {p: n for s in slots for p, n in zip(s.ports, shares) if n}
+            for p, n in sorted(loads.items()):
+                if slow := pc.slow_ports([pfs[role][p]], [links[p]], n * rate):
+                    pytest.fail(
+                        f"{host.name}: {n} x {video} on a port take "
+                        f"{n * rate / 1e9:.1f} Gb/s, and {slow[0]} "
+                        "(--perf_compare_sessions counts a build's, which span puts "
+                        "on two ports, the first filled first)"
+                    )
             if opts["nics"] == "pooled":
                 if unlike := pc.unlike_nics(links, slots):
                     pytest.fail(f"{host.name}: pooled takes alike NICs, but {unlike}")

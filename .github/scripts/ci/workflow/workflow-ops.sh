@@ -72,20 +72,30 @@ perf-compare-refs)
 		echo "::error::cores must be at least ${floor}: ${CORES}" >&2
 		exit 1
 	fi
-	# An MTL scheduler takes 60 video sessions at most.
-	if [[ ${SINGLE_CORE:-none} != none ]] && ((${SESSIONS:-36} > 60)); then
-		echo "::error::single_core takes up to 60 sessions a port: ${SESSIONS}" >&2
+	# The sessions of a build, which span puts on two ports, filling the first
+	# before the second (pc.port_sessions()). A port carries at most 100G: the
+	# rate of pc.stream_bps(), keep in step, 20-bit pixels paced over 1125 of 1080
+	# lines, 1406 bytes for 1320 of pixels. A nics choice reads "<word>: what it does".
+	video=${VIDEO:-1080p59} sessions=${SESSIONS:-36} nics=${NICS:-single}
+	most=$(awk -v h="${video%p*}" -v f="${video#*p}" 'BEGIN {
+		fps[25] = 25; fps[29] = 30000 / 1001; fps[50] = 50; fps[59] = 60000 / 1001
+		print int(100e9 / (h * h * 16 / 9 * 20 * fps[f] * 1125 / 1080 * 1406 / 1320))
+	}')
+	if [[ ${nics%%:*} == span ]]; then
+		if ((sessions > 2 * most)); then
+			echo "::error::${sessions} x ${video} take more than two 100G ports carry, $((2 * most))" >&2
+			exit 1
+		fi
+	elif ((sessions > most)); then
+		echo "::error::${sessions} x ${video} take more than a 100G port carries, ${most}; nics span puts a build on two, up to $((2 * most))" >&2
 		exit 1
 	fi
-	# What a port of the case carries, at most 100G: the rate of pc.stream_bps(),
-	# keep in step, 20-bit pixels paced over 1125 of 1080 lines, 1406 bytes for 1320
-	# of pixels.
-	video=${VIDEO:-1080p59}
-	if ! awk -v n="${SESSIONS:-36}" -v h="${video%p*}" -v f="${video#*p}" 'BEGIN {
-		fps[25] = 25; fps[29] = 30000 / 1001; fps[50] = 50; fps[59] = 60000 / 1001
-		exit n * h * h * 16 / 9 * 20 * fps[f] * 1125 / 1080 * 1406 / 1320 > 100e9
-	}'; then
-		echo "::error::${SESSIONS:-36} x ${video} take more than a 100G port carries" >&2
+	# An MTL scheduler takes 60 video sessions at most; span has one on each NIC's
+	# node, the other modes one for all.
+	busiest=$sessions
+	[[ ${nics%%:*} != span ]] || ((busiest = sessions < most ? sessions : most))
+	if [[ ${SINGLE_CORE:-none} != none ]] && ((busiest > 60)); then
+		echo "::error::single_core takes up to 60 sessions a scheduler, and one would have ${busiest}" >&2
 		exit 1
 	fi
 	if [[ ${GITHUB_EVENT_NAME:-} == schedule ]]; then
