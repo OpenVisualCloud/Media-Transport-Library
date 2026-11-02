@@ -67,3 +67,7 @@ updates:
       interval: "monthly"
     commit-message:
       prefix: "Ci: "
+    # Digest updates only: each image stays on the release its Dockerfile names.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
