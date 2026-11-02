@@ -258,6 +258,21 @@ cd $mtl_source_code
 ./script/build_dpdk.sh
 ```
 
+`build_dpdk.sh` builds DPDK for the CPU count of the build host, at least the DPDK default of 128 (`max_lcores`, `RTE_MAX_LCORE`): an MTL lcore ID is the CPU ID, so every CPU MTL uses must be below it.
+It uses at most 1024, also for a larger `DPDK_MAX_LCORES`: MTL supports CPU IDs 0-1023.
+For a Docker or CI image that runs on a host with more CPUs than the build machine, set the count of that host:
+
+```bash
+DPDK_MAX_LCORES=512 ./script/build_dpdk.sh -f
+```
+
+`build_dpdk.sh` does nothing when the same DPDK version is installed already, so a changed `DPDK_MAX_LCORES` needs `-f`.
+Build MTL again after DPDK.
+
+Each lcore ID costs 8256 bytes of hugepage memory in every MTL mempool, as each one has a per-lcore cache: a mempool takes 1.0 MiB with the DPDK default of 128, 2.0 MiB with 256, 4.0 MiB with 512 and 8.1 MiB with 1024.
+MTL creates a few mempools per port and per session, for example about 160 for 2 redundant ports with 32 TX and 32 RX sessions.
+If the host has more CPUs than `RTE_MAX_LCORE` of the installed DPDK, MTL passes `--remap-lcore-ids`, as releases up to 26.09 did, and logs the `DPDK_MAX_LCORES` to rebuild DPDK with: each process then numbers its CPUs from 0, so MTL processes on different CPUs can claim the same lcore.
+
 ### 2.1. Get the DPDK source code
 
 `versions.env` in the Media Transport Library source tree holds the DPDK version to use. Read the file to set `DPDK_VER`, then check out that version.
@@ -289,8 +304,12 @@ git am $mtl_source_code/patches/dpdk/${DPDK_VER}/*.patch
 
 ### 2.3. Build and install DPDK library
 
+An MTL lcore ID is the CPU ID, so DPDK must be built with `max_lcores` (`RTE_MAX_LCORE`) above the highest CPU ID of the host where MTL runs.
+Use the CPU count of that host, at least the DPDK default of 128 and at most 1024, the most MTL supports; section 2 lists the hugepage memory it costs.
+Build MTL again after DPDK.
+
 ```bash
-meson setup build
+meson setup build -Dmax_lcores=256 # the CPU count of the host, at least 128
 ninja -C build
 sudo ninja install -C build
 cd ..

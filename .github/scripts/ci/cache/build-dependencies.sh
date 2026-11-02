@@ -9,6 +9,8 @@ local_install="${root_dir}/.local_install"
 
 export MTL_INSTALL_PREFIX="${local_install}/mtl"
 export SETUP_BUILD_AND_INSTALL_DPDK=${CI_BUILD_DPDK:-1}
+# The cached DPDK must not depend on the runner's CPU count; this file is in its key.
+export DPDK_MAX_LCORES=256
 export SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=${CI_BUILD_ICE:-1}
 export MTL_BUILD_AND_INSTALL=${CI_BUILD_MTL:-1}
 export ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN=${CI_BUILD_FFMPEG:-1}
