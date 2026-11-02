@@ -49,6 +49,16 @@ TEST_F(St20TxQueueRecoveryTest, FlushedOtherLegLetsTheFramesBack) {
   EXPECT_EQ(ut_txv_recovery_frame_refcnt(ctx_), 0);
 }
 
+/* a pre-arm that kept its last burst back for packet 0 leaves nothing to the new queue */
+TEST_F(St20TxQueueRecoveryTest, RecoveryDropsTheKeptBackTail) {
+  ut_txv_set_rl_tail(ctx_, kP, true, kStartNs);
+  ASSERT_EQ(ut_txv_recover(ctx_, kP), 0);
+
+  long double drained = -1;
+  EXPECT_FALSE(ut_txv_rl_tail(ctx_, kP, &drained));
+  EXPECT_EQ(drained, 0);
+}
+
 TEST_F(St20TxQueueRecoveryTest, LegItsOtherLegFlushedRunsItsOwnDoneCleanup) {
   ASSERT_EQ(ut_txv_recover(ctx_, kP), 0);
   ASSERT_EQ(ut_txv_recovery_flushes(ctx_, kR), 1);
