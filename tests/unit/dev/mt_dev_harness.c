@@ -35,6 +35,7 @@ struct ut_dev_ctx {
   int eal_init_calls;
   int eal_argc;
   char* eal_argv[UT_DEV_EAL_ARGV_MAX];
+  long cpus;
   enum ut_dev_event events[16];
   int event_count;
   int timesync_enable_calls;
@@ -110,12 +111,15 @@ static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
 static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
 
 static int ut_dladdr(const void* addr, Dl_info* info);
+/* unused with a DPDK before 25.11: dev_eal_init() calls sysconf() only from 25.11 */
+static __attribute__((unused)) long ut_sysconf(int name);
 static const char* ut_dev_compiled_pmd_dir(void);
 static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 
 #undef RTE_EAL_PMD_PATH
 #define RTE_EAL_PMD_PATH ut_dev_compiled_pmd_dir()
 #define dladdr ut_dladdr
+#define sysconf ut_sysconf
 #define rte_eth_rx_queue_setup ut_rte_eth_rx_queue_setup
 #define rte_eth_tx_queue_setup ut_rte_eth_tx_queue_setup
 #define rte_eth_add_tx_callback ut_rte_eth_add_tx_callback
@@ -164,6 +168,7 @@ static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 #undef rte_eth_add_tx_callback
 #undef rte_eth_tx_queue_setup
 #undef rte_eth_rx_queue_setup
+#undef sysconf
 #undef dladdr
 
 static int ut_dladdr(const void* addr, Dl_info* info) {
@@ -171,6 +176,11 @@ static int ut_dladdr(const void* addr, Dl_info* info) {
   memset(info, 0, sizeof(*info));
   info->dli_fname = ut_active_ctx->eal_lib_path;
   return 1;
+}
+
+static long ut_sysconf(int name) {
+  if (name == _SC_NPROCESSORS_CONF && ut_active_ctx) return ut_active_ctx->cpus;
+  return sysconf(name);
 }
 
 static const char* ut_dev_compiled_pmd_dir(void) {
@@ -417,6 +427,7 @@ ut_dev_ctx* ut_dev_create_ctx(void) {
   inf->tx_queues = &ctx->tx_queues[0];
   for (int q = 0; q < UT_DEV_TX_QUEUES; q++) ctx->tx_queues[q].rl_shapers_mapping = -1;
   inf->rx_mbuf_pool = (struct rte_mempool*)(uintptr_t)1;
+  ctx->cpus = RTE_MAX_LCORE;
   ut_dev_tx_cleanup_frees = RTE_VERSION >= RTE_VERSION_NUM(26, 7, 0, 0);
   ut_active_ctx = ctx;
   return ctx;
@@ -648,6 +659,10 @@ void ut_dev_set_lcores(ut_dev_ctx* ctx, uint32_t main_lcore, const char* lcores)
   free(ctx->lcores);
   ctx->lcores = lcores ? strdup(lcores) : NULL;
   p->lcores = ctx->lcores;
+}
+
+void ut_dev_set_cpus(ut_dev_ctx* ctx, long cpus) {
+  ctx->cpus = cpus;
 }
 
 void ut_dev_set_iova_mode(ut_dev_ctx* ctx, enum mtl_iova_mode mode) {

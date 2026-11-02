@@ -502,8 +502,16 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
   }
 
 #if RTE_VERSION >= RTE_VERSION_NUM(25, 11, 0, 0)
-  argv[argc] = "--remap-lcore-ids"; /* --remap-lcore-ids */
-  argc++;
+  /* the lcore id is the CPU id only if this DPDK numbers every CPU of the host */
+  long cpus = sysconf(_SC_NPROCESSORS_CONF);
+  if (cpus > RTE_MAX_LCORE) {
+    warn("%s, %ld CPUs > RTE_MAX_LCORE %d, remap lcore ids: processes can share lcores\n",
+         __func__, cpus, RTE_MAX_LCORE);
+    warn("%s, rebuild DPDK with DPDK_MAX_LCORES=%ld ./script/build_dpdk.sh -f\n",
+         __func__, cpus);
+    argv[argc] = "--remap-lcore-ids";
+    argc++;
+  }
 #endif
 
   if (!pci_ports) {

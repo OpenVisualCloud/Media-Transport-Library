@@ -1109,7 +1109,13 @@ Only with `MTL_FLAG_ENABLE_HW_TIMESTAMP` on iavf VFs.
 Hierarchy: port → shapers (max 128, `MT_MAX_RL_ITEMS`). Each shaper = one session's rate limit.
 
 ### Multi-Process
-Not supported: `dev_eal_init()` always passes `--in-memory`, so no DPDK runtime files exist for a `--proc-type=secondary` process to attach to. Independent MTL processes (one EAL each, e.g. on separate VFs) coordinate lcore use through MtlManager instead.
+Not supported: `dev_eal_init()` always passes `--in-memory`, so no DPDK runtime files exist for a `--proc-type=secondary` process to attach to.
+Independent MTL processes (one EAL each, e.g. on separate VFs) coordinate lcore use through MtlManager instead, or without it through the SysV shm table in `mt_sch.c`.
+Both key an lcore by its ID, and the ID is the CPU ID.
+`dev_eal_init()` passes `--remap-lcore-ids` only when the host has more CPUs (`_SC_NPROCESSORS_CONF`) than `RTE_MAX_LCORE`, and warns: with it every process numbers its CPUs 0, 1, 2, ... and claims the same IDs.
+`script/build_dpdk.sh` sets `max_lcores` to the build host's CPU count, at least 128, or `DPDK_MAX_LCORES`, so `RTE_MAX_LCORE` covers every CPU of the build host.
+The shm table has `RTE_MAX_LCORE` entries, so its size follows the DPDK build: `shmget()` fails with `EINVAL` in a process whose table is larger than the segment that exists (`doc/run.md` §8.15).
+MTL 26.01-26.09 keep remapped IDs in a 128-entry table: a newer process fails to start while that segment exists, but an older process started later attaches to the larger one without noticing, so the versions must not run together (also not with an older MtlManager, which refuses IDs >= 128).
 
 ### Backend Support
 

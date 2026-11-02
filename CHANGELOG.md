@@ -4,6 +4,7 @@
 * nicctl.sh: give each VF of an ice PF a 512-entry RSS LUT, so that it can have more than 16 queue pairs; `vf_rss_lut` does so for existing VFs
 * dev: warn when a port gets fewer queues than it asks for
 * st40: carry SMPTE ST 2110-41 Fast Metadata as an opt-in ST40 mode (`ST40_TX_FLAG_FAST_METADATA`/`ST40_RX_FLAG_FAST_METADATA`); add ABI fields `fmd_dit`/`fmd_k_bit` to `st40_tx_ops`; remove RxTxApp `"fastmetadata"` groups and `--*fmd*` options; share one 180-session scheduler limit between ANC and Fast Metadata (previously 180 each)
+* lcore: an lcore ID is the CPU ID again, so processes on different CPUs no longer claim the same lcore: build DPDK with `max_lcores` = build host CPUs (at least 128, at most 1024) or `DPDK_MAX_LCORES` (26.07.92_mtl_) and pass `--remap-lcore-ids` only on a host with more CPUs than `RTE_MAX_LCORE`, MtlManager hands out CPUs up to 1023; do not run MTL 26.09 or earlier on the same host
 
 ## Changelog for 26.09
 
