@@ -25,17 +25,20 @@ constexpr uint16_t kUtRlRsThresh = 32;
 constexpr uint64_t kUtRlColdBatchFreeNs = 1350;
 constexpr uint64_t kUtRlHotBatchFreeNs = 650;
 
-/* the most the 90 kHz snap moves a target, epoch + tr_offset - vrx trs, later at mul/den
- * fps: 59.94 epochs take two phases on the tick grid, 50 one */
+/* how much later the 90 kHz snap moves epoch k's target, epoch + tr_offset - vrx trs */
+inline long double ut_rl_snap(uint32_t mul, uint32_t den, long double tr_offset,
+                              uint32_t vrx, long double trs, uint64_t k) {
+  const uint64_t start = (uint64_t)(st_epoch_to_tai(k, mul, den) + tr_offset - vrx * trs);
+  return (long double)st_tai_round_to_media_clk_ns(start, kUtRlRate90k) - start;
+}
+
+/* the most the snap moves a target later at mul/den fps: 59.94 epochs take two phases on
+ * the tick grid, 50 one */
 inline long double ut_rl_snap_loss(uint32_t mul, uint32_t den, long double tr_offset,
                                    uint32_t vrx, long double trs) {
   long double loss = 0;
-  for (uint64_t k = 2; k < 4; k++) {
-    const uint64_t start =
-        (uint64_t)(st_epoch_to_tai(k, mul, den) + tr_offset - vrx * trs);
-    loss = std::max(
-        loss, (long double)st_tai_round_to_media_clk_ns(start, kUtRlRate90k) - start);
-  }
+  for (uint64_t k = 2; k < 4; k++)
+    loss = std::max(loss, ut_rl_snap(mul, den, tr_offset, vrx, trs, k));
   return loss;
 }
 

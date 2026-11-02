@@ -28,6 +28,10 @@ void ut_trs_set_drain(ut_trs_ctx* ctx, int port, long double drain_ns);
 void ut_trs_set_credit(ut_trs_ctx* ctx, int port, long double credit_ns);
 /* the plan's absorb_ns, 0 by default: every counted stall then holds */
 void ut_trs_set_absorb(ut_trs_ctx* ctx, int port, long double absorb_ns);
+/* the plan's VRX budget and real bucket, as tv_rl_plan_init() derives them; budget 0
+ * judges no pkt */
+void ut_trs_set_vrx_detect(ut_trs_ctx* ctx, int port, int64_t budget_ns,
+                           long double refill_ns);
 /* the bucket of the modeled shaper, in ns, when it differs from the plan's credit */
 void ut_trs_set_shaper_bucket(ut_trs_ctx* ctx, int port, long double bucket_ns);
 /* The modeled shaper adds its tokens every slot_ns, the last time phase_ns (< slot_ns)
@@ -63,6 +67,11 @@ uint64_t ut_trs_last_tsc(const ut_trs_ctx* ctx);
 uint64_t ut_trs_get_mock_tsc(ut_trs_ctx* ctx);
 uint64_t ut_trs_stat_troffset_mismatch(const ut_trs_ctx* ctx);
 uint64_t ut_trs_stat_recalculate_warmup(const ut_trs_ctx* ctx);
+
+struct ut_trs_rl_stat {
+  uint64_t vrx_frames, vrx_pkt0, vrx_late_max_ns;
+};
+struct ut_trs_rl_stat ut_trs_get_rl_stat(const ut_trs_ctx* ctx);
 
 void ut_trs_set_burst_force_fail(ut_trs_ctx* ctx, bool fail);
 /* burst calls number call (from 1) to call + calls - 1 accept nothing, as from a full
@@ -172,6 +181,8 @@ uint64_t ut_trs_port_bytes(const ut_trs_ctx* ctx);
 uint64_t ut_trs_port_packets(const ut_trs_ctx* ctx);
 
 void ut_trs_enqueue_ring_pkt(ut_trs_ctx* ctx);
+/* a pkt after packet 0 */
+void ut_trs_enqueue_mid_pkt(ut_trs_ctx* ctx);
 /* the port paces by RL, as the transmitter tasklet sees it */
 void ut_trs_set_rl_port(ut_trs_ctx* ctx, int port);
 /* ops.num_port of the session */
@@ -188,6 +199,13 @@ uint16_t ut_trs_deep_nb_tx_desc(void);
  * until the shaper finishes it, one pkt per trs. */
 int ut_trs_setup_stream(ut_trs_ctx* ctx, long double trs_ns, uint16_t nic_desc,
                         uint16_t segs_per_pkt);
+/* stamps stream pkt idx with target_tsc + idx trs, as the builder does */
+void ut_trs_set_stream_target(ut_trs_ctx* ctx, uint64_t target_tsc);
+/* how far the latest stamped pkt left the wire past its stamp */
+long double ut_trs_stream_max_late_vs_target_ns(const ut_trs_ctx* ctx);
+/* the builder adds at most pkts to the ring a call, as one bulk a scheduler round; 0
+ * keeps it full */
+void ut_trs_set_stream_build(ut_trs_ctx* ctx, uint32_t pkts);
 /* calls the tasklet every call_ns for duration_ns, the ring kept full */
 void ut_trs_stream(ut_trs_ctx* ctx, uint64_t duration_ns, uint64_t call_ns);
 /* mt_sch_schedule_ns(), 0 by default */

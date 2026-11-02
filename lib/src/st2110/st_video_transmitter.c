@@ -52,6 +52,23 @@ static inline void video_trs_burst_succ(struct mtl_main_impl* impl,
   s->last_burst_succ_time_tsc[s_port] = mt_get_tsc(impl);
 }
 
+/* Moves trs_rl_pads_end past the tx pads just sent. The shaper starts them at the burst's
+ * return less refill_ns, or after the pads before, and drains them in pad_ns (trs
+ * without a plan) per NORMAL pad of their bytes. */
+static inline void video_trs_pads_end(struct st_tx_video_session_impl* s,
+                                      enum mtl_session_port s_port,
+                                      struct rte_mbuf** pads, uint16_t tx) {
+  const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
+  long double pad_ns = plan->armed ? plan->pad_ns : s->pacing.trs;
+  long double start = (long double)s->last_burst_succ_time_tsc[s_port] - plan->refill_ns;
+  uint32_t bytes = 0;
+
+  for (uint16_t i = 0; i < tx; i++) bytes += pads[i]->pkt_len;
+  s->trs_rl_pads_end[s_port] =
+      RTE_MAX(s->trs_rl_pads_end[s_port], start) +
+      pad_ns * bytes / s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+}
+
 static uint16_t video_trs_burst_pad(struct mtl_main_impl* impl,
                                     struct st_tx_video_session_impl* s,
                                     enum mtl_session_port s_port,
@@ -59,11 +76,16 @@ static uint16_t video_trs_burst_pad(struct mtl_main_impl* impl,
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
   if (!tx) return video_trs_burst_fail(impl, s, s_port);
   video_trs_burst_succ(impl, s, s_port, tx);
+  video_trs_pads_end(s, s_port, tx_pkts, tx);
   return tx;
 }
 
-/* the pkts of a burst, read before it: packet 0's frame and the bytes of them all */
+/* What a burst needs of its pkts, read before the NIC owns them: the first pkt's index,
+ * target and VRX room, packet 0's frame, and the bytes of all of them */
 struct video_trs_pkts {
+  uint32_t idx;
+  int32_t vrx_room_ns;
+  uint64_t target_tsc;
   struct st_frame_trans* frame;
   uint64_t bytes;
 };
@@ -74,10 +96,36 @@ static inline void video_trs_pkts_prepare(struct st_tx_video_session_impl* s,
                                           enum mtl_session_port s_port,
                                           struct rte_mbuf** pkts, uint16_t nb_pkts,
                                           struct video_trs_pkts* p) {
-  p->frame = st_tx_mbuf_get_idx(pkts[0]) ? NULL : st_tx_mbuf_get_priv(pkts[0]);
+  p->idx = st_tx_mbuf_get_idx(pkts[0]);
+  p->vrx_room_ns = st_tx_mbuf_get_vrx_room(pkts[0]);
+  p->target_tsc = st_tx_mbuf_get_tsc(pkts[0]);
+  p->frame = p->idx ? NULL : st_tx_mbuf_get_priv(pkts[0]);
   p->bytes = 0;
   for (uint16_t i = 0; i < nb_pkts; i++) p->bytes += pkts[i]->pkt_len;
   if (s->rtcp_tx[s_port]) mt_mbuf_refcnt_inc_bulk(pkts, nb_pkts);
+}
+
+/* Flags the frame when the first pkt of a burst may reach the receiver past its drain
+ * slot. It left by the burst's return, unless behind pkts on time; packet 0 also by the
+ * end of the pads ahead of it, a timeslot late. */
+static inline void video_trs_vrx_check(struct st_tx_video_session_impl* s,
+                                       enum mtl_session_port s_port,
+                                       const struct video_trs_pkts* p) {
+  const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
+  if (!plan->vrx_budget_ns) return;
+
+  int64_t late = (int64_t)(s->last_burst_succ_time_tsc[s_port] - p->target_tsc);
+  if (!p->idx)
+    late = RTE_MAX(late, (int64_t)(s->trs_rl_pads_end[s_port] + plan->bucket_ns -
+                                   plan->refill_ns - p->target_tsc));
+  if (late <= plan->vrx_budget_ns + p->vrx_room_ns) return;
+  if ((uint64_t)late > s->stat_rl.vrx_late_max_ns) s->stat_rl.vrx_late_max_ns = late;
+  if (s->trs_vrx_late[s_port]) return;
+
+  s->trs_vrx_late[s_port] = true;
+  s->stat_rl.vrx_frames++;
+  if (!p->idx) s->stat_rl.vrx_pkt0++;
+  MT_USDT_ST20_TX_RL_EVENT(s->mgr->idx, s->idx, ST_TX_VIDEO_RL_CAUSE_VRX, late, p->idx);
 }
 
 /* After the NIC took the first tx pkts: RTCP buffers them, packet 0 starts its frame and
@@ -87,6 +135,7 @@ static inline void video_trs_pkts_sent(struct mtl_main_impl* impl,
                                        enum mtl_session_port s_port,
                                        struct rte_mbuf** pkts, uint16_t nb_pkts,
                                        uint16_t tx, const struct video_trs_pkts* p) {
+  if (tx) video_trs_vrx_check(s, s_port, p);
   if (s->rtcp_tx[s_port]) {
     if (tx) mt_rtcp_tx_buffer_rtp_packets(s->rtcp_tx[s_port], pkts, tx);
     rte_pktmbuf_free_bulk(pkts, nb_pkts);
@@ -444,6 +493,7 @@ static uint16_t video_trs_rl_tail_burst(struct mtl_main_impl* impl,
   }
   s->trs_pad_inflight_num[s_port] += b.n - *pads_tx;
   video_trs_burst_succ(impl, s, s_port, tx);
+  video_trs_pads_end(s, s_port, tx_pkts, *pads_tx);
   /* a stall before the doorbell, as video_trs_rl_pre_arm() counts one */
   long double latest = s->last_burst_succ_time_tsc[s_port] - plan->bucket_ns;
   if (*pads_tx && drained + ST_TX_VIDEO_RL_STALL_NS < latest)
@@ -690,6 +740,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     uint64_t target_tsc = st_tx_mbuf_get_tsc(pkts[valid_bulk]);
     dbg("%s(%d), first pkt, ts cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
         cur_tsc, target_tsc);
+    s->trs_rl_pads_end[s_port] = 0;
+    s->trs_vrx_late[s_port] = false;
     if (likely(cur_tsc < target_tsc || s->trs_inflight_num2[s_port])) {
       unsigned int i;
       /* Keep an already-overdue frame pending. */

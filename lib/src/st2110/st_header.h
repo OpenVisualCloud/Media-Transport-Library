@@ -101,6 +101,7 @@ struct st_tx_muf_priv_data {
   uint64_t ptp_time_stamp; /* ptp time stamp of current mbuf */
   void* priv;              /* private data to current frame */
   uint32_t idx;            /* index of packet in current frame */
+  int32_t vrx_room_ns;     /* st20: pacing.vrx_room_ns of its frame */
 };
 
 struct st_rx_muf_priv_data {
@@ -169,6 +170,10 @@ struct st_tx_video_pacing {
   long double frame_idle_time;
   long double reactive;
   float pad_interval; /* padding pkt interval(pkts level) for RL pacing */
+  /* in ns, the worst snap, tv_snap_loss_ns() truncated for the per-frame room */
+  int32_t snap_loss_ns;
+  /* in ns, how much less than snap_loss_ns the current frame's snap took */
+  int32_t vrx_room_ns;
 
   uint64_t cur_epochs; /* epoch of current frame */
   /* timestamp for rtp header */
@@ -271,6 +276,22 @@ struct st_tx_video_reclaim {
   uint64_t wait_tsc; /* 0 while no frame is waited for */
 };
 
+/* the RL events of the tx_rl_event probe, numbered as mt_usdt_provider.d lists them */
+enum st_tx_video_rl_cause {
+  ST_TX_VIDEO_RL_CAUSE_VRX = 0,
+  ST_TX_VIDEO_RL_CAUSE_START_LATE = 1,
+};
+
+/* Per session, summed over its ports since the last stats dump */
+struct st_tx_video_rl_stat {
+  /* frames a pkt of which may have reached the receiver past its drain slot */
+  uint64_t vrx_frames;
+  uint64_t vrx_pkt0;        /* of them, those flagged at packet 0 */
+  uint64_t vrx_late_max_ns; /* such a pkt, the latest past its own target */
+  uint64_t start_late;      /* frames started past their target by over the budget */
+  uint64_t start_late_max_ns;
+};
+
 struct st_tx_video_session_impl {
   struct mtl_main_impl* impl;
   struct st_tx_video_sessions_mgr* mgr;
@@ -355,6 +376,7 @@ struct st_tx_video_session_impl {
   enum st21_tx_frame_status st20_frame_stat;
   struct st_tx_video_reclaim reclaim;
   uint16_t st20_frame_lines_ready;
+  bool st20_frame_lines_waited; /* this frame waited for the app's lines */
 
   struct st20_pgroup st20_pg;
   struct st_fps_timing fps_tm;
@@ -389,6 +411,7 @@ struct st_tx_video_session_impl {
   /* stat – port_user_stats is the single source for API-visible counters (monotonic) */
   struct st20_tx_user_stats port_user_stats;
   struct st20_tx_user_stats stat_snapshot; /* for delta computation in stat dump */
+  struct st_tx_video_rl_stat stat_rl;      /* since the last stats dump */
   /* internal-only stats (not in public API, reset per period) */
   int stat_pkts_burst;
   int stat_pkts_burst_dummy;
@@ -400,12 +423,18 @@ struct st_tx_video_session_impl {
   uint32_t stat_max_notify_frame_us;
   double stat_cpu_busy_score;
   struct mt_stat_u64 stat_time;
+  /* how far the next pkt to build is ahead of the wire at a builder visit: the shortest
+   * since the stats took it, INT64_MAX for none */
+  int64_t lead_min_ns;
 
   /* cold, read once a frame, so it sits last, off the hot cache lines */
   struct st_tx_video_rl_plan rl_plan[MTL_SESSION_PORT_MAX];
   /* RL transmitter state of packet 0 and the idle reclaim, off the hot lines */
   uint64_t trs_reclaim_tsc[MTL_SESSION_PORT_MAX]; /* no RL reclaim before this tsc */
   long double trs_rl_drained[MTL_SESSION_PORT_MAX];
+  /* the latest the shaper finishes the pads queued since packet 0 was dequeued */
+  long double trs_rl_pads_end[MTL_SESSION_PORT_MAX];
+  bool trs_vrx_late[MTL_SESSION_PORT_MAX]; /* the frame is counted in vrx_frames */
 };
 
 struct st_tx_video_sessions_mgr {
