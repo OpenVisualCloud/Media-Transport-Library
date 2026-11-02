@@ -188,7 +188,7 @@ static int avcodec_encoder_init_session(struct st22_avcodec_encoder_session* ses
   }
   session->pix_fmt = c->pix_fmt;
 
-  av_opt_set(c->priv_data, "fast", "preset", 0);
+  av_opt_set(c->priv_data, "preset", "fast", 0);
   av_opt_set(c->priv_data, "tune", "zerolatency", 0);
   av_opt_set(c->priv_data, "nal-hrd", "cbr", 0);
 
