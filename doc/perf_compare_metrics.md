@@ -77,7 +77,7 @@ All of it lives in `tests/acceptance/mtl_engine/perf_compare.py`.
 | --- | --- | --- | --- |
 | **MTL stats dump** | One block of lines per instance every 10 s (`MT_STAT_INTERVAL_S_DEFAULT`, `lib/src/mt_stat.c`), framed by `M T    D E V   S T A T E` and `E N D    S T A T E` | USDT probe `sys:log_msg`, which fires for every log line **at any log level**, so `v26.01` and `main` are read the same way | Loop times 1 ns, call times 0.01 us (the printf formats) |
 | **Tasklet counters** | Per scheduler and tasklet: calls, their ns, the calls that did work and their ns, **cumulative** since the tasklet registered | USDT probe `sys:tasklet_stat`, fired once per tasklet per dump | 1 ns |
-| **`/proc`** | Per thread: user + system CPU ticks (`/proc/<pid>/task/<tid>/stat`), involuntary context switches (`status`); the host's CLOCK_MONOTONIC (`/proc/timer_list`) | Read twice, at the start and the end of the untraced window | 1 tick (`CLK_TCK`, 100/s) |
+| **`/proc`** | Per thread: user + system CPU ticks and the CPU it last ran on (`/proc/<pid>/task/<tid>/stat`), its time on a CPU (`schedstat`), involuntary context switches (`status`); the host's CLOCK_MONOTONIC (`/proc/timer_list`) | Read twice, at the start and the end of the untraced window | 1 tick (`CLK_TCK`, 100/s); `schedstat` 1 ns |
 | **RDT (resctrl)** | Memory traffic (MBM `mbm_total_bytes`) and L3 occupancy (CMT `llc_occupancy`) of the instance's own resctrl group | Read with `/proc`, at both ends | bytes |
 | **`perf stat`** | `task-clock`, `cycles`, `instructions`, `cache-references`, `cache-misses` of the instance's process | `perf stat -x, -p <pid>`, counting over the untraced window | exact counts |
 | **NIC MAC counters** | Unicast frames each PF sent or received | `ethtool -S` before and after the round | exact counts (notes only) |
@@ -201,17 +201,17 @@ rows tell scheduler threads from the others.
 ### 4.3 CPU
 
 The report shows the first rows as **CPU by stage**, right after Delivery: one table of a
-row per kind of thread, which add up to all threads, and below it a bar of each build,
-the cores of each kind on the CPUs of its slot. The other rows follow the loops as **CPU**.
+row per kind of thread, with its CPUs, their utilization and its CPU per frame. The other
+rows follow the loops as **CPU**.
 
 | Metric | Source | Calculation | Unit | Better |
 | --- | --- | --- | --- | --- |
-| `schedulers (CPUs)` | the `SCH(N:...)` lines | the schedulers in the dumps of the window; each polls a CPU of its own, so the CPUs MTL takes for the sessions, of the slot's `--lcores` (Test Information gives the slot's CPUs) | CPUs | ↓ |
-| `scheduler threads (cores)` | `/proc/<pid>/task/<tid>/stat`, the threads named by `t_pid` | Δ(utime + stime) of the scheduler threads ÷ `CLK_TCK` ÷ Δt | cores | ↓ |
-| `application threads (cores)` | the same, the threads whose `comm` is `tx_st20p_N` or `rx_st20p_N` | the same, of RxTxApp's frame threads, a thread a session | cores | ↓ |
-| `other threads (cores)` | the same | all threads minus the two rows above | cores | ↓ |
-| `all threads (cores)` | the same | Δ(utime + stime) of the threads present at both reads ÷ `CLK_TCK` ÷ Δt | cores | ↓ |
-| `<kind> threads per frame (ms)` | the cores above, `fps` | the cores of the kind × 1000 ÷ the frames per second of all the instance's sessions, the sum of their medians | ms of CPU | ⊘ |
+| `scheduler threads (CPUs)` | `/proc/<pid>/task/<tid>/stat`: `processor`, and `schedstat`, of the threads named by `t_pid` | the CPUs the threads last ran on at the second read, of the threads present at both that ran between them (their `schedstat` time on a CPU grew); each scheduler polls one of the slot's `--lcores` (Test Information gives the slot's CPUs) | CPUs | ↓ |
+| `application threads (CPUs)` | the same, of the threads whose `comm` is `tx_st20p_N` or `rx_st20p_N` | the same, of RxTxApp's frame threads, a thread a session | CPUs | ⊘ |
+| `other threads (CPUs)` | the same, of the other threads | the same | CPUs | ⊘ |
+| `all threads (CPUs)` | the same, of all threads | the same; a CPU that two kinds share counts once | CPUs | ⊘ |
+| `<kind> threads utilization (%)` | the same, `utime` and `stime` | 100 × Δ(utime + stime) of the kind's threads ÷ `CLK_TCK` ÷ Δt ÷ its CPUs; n/a for a kind none of whose threads ran | % | ⊘ |
+| `<kind> threads per frame (ms)` | the same, `fps` | Δ(utime + stime) of the kind's threads ÷ `CLK_TCK` ÷ Δt × 1000 ÷ the frames per second of all the instance's sessions, the sum of their medians | ms of CPU | ↓ |
 | `video cpu busy (%)` | `..._VIDEO_SESSION(m,s): throughput X Mb/s, cpu busy Y` | per dump, the mean over the instance's sessions; then the median of dumps | score, % | ↓ |
 | `sch preemptions (/s)` | `/proc/<pid>/task/<tid>/status`: `nonvoluntary_ctxt_switches` | Δ of the scheduler threads ÷ Δt | /s | ↓ |
 | `IPC` | `perf stat`: `instructions`, `cycles` | instructions ÷ cycles | ratio | ⊘ |
@@ -226,17 +226,26 @@ the cores of each kind on the CPUs of its slot. The other rows follow the loops 
 > scheduler share its loop, so the row follows the loop rows; it is a key row because it
 > is what MTL itself migrates sessions by (above 95).
 
-- **The cores** count what the kernel charged each thread, so a scheduler that polls
-  all the time reads about 1 core, one that sleeps when idle less. A build that needs
-  more schedulers for the same sessions reads more. A scheduler sends or receives the
-  packets of its sessions; its load shows in its loop and tasklet rows, not its cores.
+- **The CPUs** are whole: the case pins each thread to one CPU before the warm-up
+  ([perf_compare.md §3.1](perf_compare.md#31-cpu)), so the CPU it last ran on is its
+  own. A thread counts once it ran in the window, for however short: `schedstat`
+  counts a run of 0.2 ms that the ticks miss. EAL's thread of each lcore that no
+  scheduler takes sleeps throughout and holds none. The schedulers' are MTL's, one
+  each, and a build that needs more schedulers for the same sessions reads more. The
+  case spreads the other threads over the CPUs the schedulers leave, so theirs follow
+  the schedulers' and are not scored, and those kinds share CPUs.
+- **The utilization** is what the kernel charged the threads of a kind over its CPUs, so
+  a scheduler that polls all the time reads about 100%, one that sleeps when idle less.
+  A scheduler sends or receives the packets of its sessions; its load shows in its loop
+  and tasklet rows, not its utilization. It is not scored: the CPU per frame scores its
+  CPU time, and over fewer CPUs, as one more scheduler leaves the other kinds, the same
+  time reads as a higher utilization.
 - **The application threads** fill the frames on TX and read them on RX, and with a
   `pixel_format` MTL converts each frame on them, in `st20p_tx_put_frame()` and
-  `st20p_rx_get_frame()`. They wait when they have no frame, so their cores are the
+  `st20p_rx_get_frame()`. They wait when they have no frame, so their CPU time is the
   work of the frame path, and per frame its cost, which a faster converter lowers.
-- **Per frame** is shown, not scored: every valid round holds the frame rate, so it
-  follows its cores row, which scores it. A scheduler's is the CPU it polls per frame,
-  not its work.
+- **Per frame** is the CPU time of a kind for each frame the instance's sessions carry.
+  A scheduler's is the CPU it polls per frame, not its work.
 - **The other threads** are MTL's control threads, such as `mtl_stat` and `mtl_admin`,
   EAL's threads and RxTxApp's main thread.
 - **The preemptions** are a measure of isolation: a scheduler that keeps its CPU is
@@ -358,8 +367,8 @@ flowchart LR
 
 **The verdict** of the summary counts the regressions and improvements of the **key
 rows** that both builds have: each scheduler's `avg loop`, `video cpu busy`,
-`scheduler threads`, `memory bandwidth`, `LLC misses` and `RX work (ns/pkt)`, plus the
-loss and late-frame rows once a build counted any. It names the largest regression and
+`scheduler threads per frame`, `memory bandwidth`, `LLC misses` and `RX work (ns/pkt)`,
+plus the loss and late-frame rows once a build counted any. It names the largest regression and
 improvement, the losses, and the rule and the rounds behind it, with a warning under 4
 rounds. The key rows are not independent (`video cpu busy` follows its loop), so the
 counts are a summary, not votes.

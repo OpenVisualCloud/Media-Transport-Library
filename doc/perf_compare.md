@@ -280,9 +280,8 @@ MTL, how MTL and the case compute it, and why the numbers hold.
 | --- | --- | --- |
 | **Untraced window** | | **The production view, the primary signals** |
 | `sch_N avg loop (ns)` | `SCH(N:...): ... avg loop X ns` | One pass over the tasklets of scheduler N; more work per packet lengthens it at the same load |
-| `schedulers (CPUs)` | `SCH(N:...)` lines | The CPUs MTL's schedulers poll, one each, of the slot's `--lcores`; Test Information gives the slot's size |
 | `video cpu busy (%)` | `RX/TX_VIDEO_SESSION(...): ... cpu busy X` | MTL's load score of a session: its scheduler's avg loop over 3 packet intervals (RX) or a TX bulk of them, refreshed every 6 s ([perf_compare_metrics.md](perf_compare_metrics.md#43-cpu)) |
-| `scheduler`, `application`, `other` and `all threads (cores)`, `per frame (ms)` | `/proc/<pid>/task/*/stat` | CPU by stage, in cores: the schedulers (the `t_pid` of each `SCH` line) send or receive the packets, the application threads (`tx_st20p_N`, `rx_st20p_N`) fill or read the frames and convert them; per frame, the cores over the frames per second of all sessions, shown only |
+| `scheduler`, `application`, `other` and `all threads (CPUs)`, `utilization (%)`, `per frame (ms)` | `/proc/<pid>/task/*/stat`, `schedstat` | CPU by stage: the schedulers (the `t_pid` of each `SCH` line) send or receive the packets, the application threads (`tx_st20p_N`, `rx_st20p_N`) fill or read the frames and convert them: the CPUs a kind ran on, its CPU time over them, and per frame |
 | `sch preemptions (/s)` | `nonvoluntary_ctxt_switches` of the scheduler threads | Isolation quality; what the swap leaves is a cost of the build |
 | `memory bandwidth (MB/s)`, `LLC occupancy (MB)` | `mon_data` of the RDT group | Memory traffic over the window, and the cache footprint at its end |
 | `IPC`, `core clock (GHz)` | `perf stat`: `instructions`, `cycles`, `task-clock` | Instructions per cycle, and the clock while the threads run; a clock that differs moves every time row |
@@ -331,7 +330,7 @@ is how many noises it spans. What each row counts as better:
 | --- | --- |
 | Higher | `fps (worst session)` |
 | Lower | Every other scored row, a cost: loop and call times (a call is also a wait for the tasklets after it), CPU, preemptions, memory traffic, L3 misses, loss and late frames |
-| No direction | `core clock`; `IPC`, which idle polls raise as much as speed does; LLC occupancy, hits and miss ratio; the port rates, which carry pads and other traffic; the re-plans, which releases count differently; the CPU per frame, which follows its cores row |
+| No direction | `core clock`; `IPC`, which idle polls raise as much as speed does; LLC occupancy, hits and miss ratio; the port rates, which carry pads and other traffic; the re-plans, which releases count differently; the utilization, whose CPU time the CPU per frame scores; the CPUs of every kind of thread but the schedulers, which follow the CPUs the schedulers take |
 
 A change of a row with a better direction is a regression (❌) or an improvement (✅) of
 the candidate, of any other row it only differs (➖); the mark, the word and the bold
@@ -410,8 +409,8 @@ rate); 2160p59 fits 9, 4320p59 2.
 With a `pixel_format` other than `none` the applications work in that format, as an
 application in that format does: MTL converts a frame to the format on the wire in `st20p_tx_put_frame()` and back in
 `st20p_rx_get_frame()`, both on the application threads and with its own SIMD
-converters, as no converter plugin is registered. Their CPU shows in `application
-threads (cores)` and per frame in CPU by stage, apart from the schedulers. The TX source stays the perf media in the format
+converters, as no converter plugin is registered. Their CPU shows in the application
+threads' utilization and CPU per frame in CPU by stage, apart from the schedulers. The TX source stays the perf media in the format
 on the wire, read as frames of the chosen one: a conversion does the same work whatever
 the pixels hold, and nothing checks them.
 

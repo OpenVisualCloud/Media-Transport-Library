@@ -122,17 +122,21 @@ def test_proc_reads_a_process_whose_threads_come_and_go(monkeypatch):
 @pytest.mark.skipif(
     os.geteuid() != 0, reason="proc() reads /proc/timer_list, root only"
 )
-def test_proc_reads_the_cpu_ticks_and_the_name_of_each_thread(monkeypatch):
+@pytest.mark.skipif(len(os.sched_getaffinity(0)) < 2, reason="needs 2 CPUs")
+def test_proc_reads_the_cpu_ticks_the_name_and_the_cpu_of_each_thread(monkeypatch):
     monkeypatch.setattr(pc, "sh", _bash)
+    cpus = sorted(os.sched_getaffinity(0))
+    pins = {"tx_st20p_0": cpus[-1], "a_b)_c": cpus[0]}  # two CPUs, as proc() names
     spin = (
         "import ctypes, os, threading, time\n"
-        "def spin(name):\n"
+        "def spin(name, cpu):\n"
         "    ctypes.CDLL(None).prctl(15, name.encode(), 0, 0, 0)  # PR_SET_NAME\n"
+        "    os.sched_setaffinity(0, {cpu})\n"
         "    end = time.monotonic() + 30\n"
         "    while time.monotonic() < end:\n"
         "        os.stat('/')  # some system time too\n"
-        "for name in ('tx_st20p_0', 'a b) c'):\n"
-        "    threading.Thread(target=spin, args=(name,), daemon=True).start()\n"
+        f"for name, cpu in (('tx_st20p_0', {cpus[-1]}), ('a b) c', {cpus[0]})):\n"
+        "    threading.Thread(target=spin, args=(name, cpu), daemon=True).start()\n"
         "time.sleep(30)\n"
     )
     proc = subprocess.Popen([sys.executable, "-c", spin])
@@ -153,9 +157,14 @@ def test_proc_reads_the_cpu_ticks_and_the_name_of_each_thread(monkeypatch):
         (tid,) = (t for t in os.listdir(task) if "tx_st" in comm(t))
         with open(f"{task}/{tid}/stat") as f:  # fields 14 and 15 from field 3 on
             utime, stime = map(int, f.read().rsplit(")", 1)[1].split()[11:13])
-        threads = {name: ticks for ticks, _, name in inst.proc()[1].values()}
-        assert {"tx_st20p_0", "a_b)_c"} <= threads.keys()  # a space reads as _
-        assert stime > 0 and threads["tx_st20p_0"] >= utime + stime  # both count
+        with open(f"{task}/{tid}/schedstat") as f:
+            run = int(f.read().split()[0])
+        threads = {t[2]: t for t in inst.proc()[1].values()}
+        assert pins.keys() <= threads.keys()  # a space reads as _
+        ticks, _, _, _, run_ns = threads["tx_st20p_0"]
+        assert stime > 0 and ticks >= utime + stime  # both count
+        assert run > 0 and run_ns >= run  # its time on a CPU since, in ns
+        assert {name: threads[name][3] for name in pins} == pins
     finally:
         proc.kill()
         proc.wait()
@@ -516,18 +525,28 @@ def _dump(
 
 
 LAST = 190  # the dump that windows() drops, as the application was stopping
-# 101 the scheduler, 102 a frame thread, 104 MTL's stats thread; 103 starts late
+# 101 the scheduler on CPU 5, 102 a frame thread on CPU 6, 104 MTL's stats thread,
+# which moves from CPU 7 to 102's, 105 the EAL thread of an idle lcore on CPU 4, 106
+# the main thread on CPU 9, which runs less than a tick; 103 starts late
 PROC0 = (
     10 * S,
-    {101: (0, 0, "mtl_sch_1"), 102: (0, 0, "rx_st20p_0"), 104: (0, 0, "mtl_stat")},
+    {
+        101: (0, 0, "mtl_sch_1", 5, 0),
+        102: (0, 0, "rx_st20p_0", 6, 0),
+        104: (0, 0, "mtl_stat", 7, 0),
+        105: (0, 0, "dpdk-worker5", 4, 700),
+        106: (0, 0, "RxTxApp_main", 9, 700),
+    },
 )
 PROC1 = (
     60 * S,
     {
-        101: (500, 10, "mtl_sch_1"),
-        102: (50, 5, "rx_st20p_0"),
-        103: (99, 0, "rx_st20p_1"),
-        104: (25, 0, "mtl_stat"),
+        101: (500, 10, "mtl_sch_1", 5, 5 * S),
+        102: (50, 5, "rx_st20p_0", 6, S // 2),
+        103: (99, 0, "rx_st20p_1", 8, S),
+        104: (25, 0, "mtl_stat", 6, S // 4),
+        105: (0, 0, "dpdk-worker5", 4, 700),
+        106: (0, 0, "RxTxApp_main", 9, 900),
     },
 )
 RDT = (0, 0), (5 * 10**9, 7e6)
@@ -634,23 +653,23 @@ def test_metrics_of_an_instance():
     del untraced[2].fps[("RX", "1", "0")]  # one lost line counts as 0 fps there
     m = _metrics(dumps, rdt=RDT)
     assert m["sch_1 avg loop (ns)"] == 500
-    assert m["schedulers (CPUs)"] == 1
-    assert m["scheduler threads (cores)"] == pytest.approx(0.1)  # tid 101 only
-    assert m["application threads (cores)"] == pytest.approx(0.01)  # 103 not in both
-    assert m["other threads (cores)"] == pytest.approx(0.005)  # 104
-    # the cores of each stage over the frames of both sessions, each at its median
-    frames = 2 * FPS
-    assert m["all threads (cores)"] == pytest.approx(0.115)  # the stages add up
+    # the CPUs that the threads of a stage ran on: not 103's, which is not in both
+    # reads, nor idle 105's, but 106's, which ran under a tick, and 104's at the second
+    # read, which all threads count once, as 102 shares it; the cores of the stage over
+    # its CPUs and over the frames of both sessions, each at its median
     stages = (
-        ("scheduler", 0.1),
-        ("application", 0.01),
-        ("other", 0.005),
-        ("all", 0.115),
+        ("scheduler", 1, 0.1),
+        ("application", 1, 0.01),
+        ("other", 2, 0.005),
+        ("all", 3, 0.115),
     )
-    for stage, cores in stages:
-        assert m[f"{stage} threads per frame (ms)"] == pytest.approx(
-            cores * 1e3 / frames
-        )
+    frames = 2 * FPS
+    for stage, cpus, cores in stages:
+        assert m[f"{stage} threads (CPUs)"] == cpus, stage
+        utilization = m[f"{stage} threads utilization (%)"]
+        assert utilization == pytest.approx(100 * cores / cpus), stage
+        per_frame = m[f"{stage} threads per frame (ms)"]
+        assert per_frame == pytest.approx(cores * 1e3 / frames), stage
     assert m["sch preemptions (/s)"] == pytest.approx(0.2)  # of the schedulers only
     assert m["memory bandwidth (MB/s)"] == pytest.approx(100)
     assert m["LLC occupancy (MB)"] == pytest.approx(7)
@@ -667,7 +686,11 @@ def test_metrics_of_an_instance():
     m = _metrics(dumps)  # and no RDT
     assert m["fps (worst session)"] == 0.0 and "memory bandwidth (MB/s)" not in m
     untraced[1].sch[2] = (600, 102)  # a second scheduler in any dump counts
-    assert _metrics(dumps)["schedulers (CPUs)"] == 2
+    m = _metrics(dumps)
+    assert m["scheduler threads (CPUs)"] == 2
+    # no frame thread is left: no CPUs, and no utilization of them
+    assert m["application threads (CPUs)"] == 0
+    assert m["application threads utilization (%)"] is None
 
 
 def test_metrics_give_each_port_of_an_instance_on_two_its_rate_then_the_sum():
@@ -886,10 +909,16 @@ def test_a_change_is_2_percent_and_twice_the_noise_of_the_candidate():
     fps = "fps (worst session)"
     assert outcome((59.94, 50), (59.94, 50), metric=fps) == "regression"
     assert outcome((0, 50), (0, 50), metric=fps) == "improvement"
-    rates = ("TX rate (Gb/s)", "RX rate, port 1 (Gb/s)", "all threads per frame (ms)")
-    for metric in ("IPC", "core clock (GHz)", *rates, "LLC miss ratio (%)"):
-        assert outcome((1.0, 1.2), (1.0, 1.2), metric=metric) == "differs"
+    rates = ("TX rate (Gb/s)", "RX rate, port 1 (Gb/s)")
+    # nor for the utilization, or the CPUs that the case spreads all threads but the
+    # schedulers over; the CPUs of the schedulers and the CPU per frame are costs
+    cpus = [f"{s} threads (CPUs)" for s in ("application", "other", "all")]
+    cpus += ["scheduler threads utilization (%)", "all threads utilization (%)"]
+    for metric in ("IPC", "core clock (GHz)", *rates, *cpus, "LLC miss ratio (%)"):
+        assert outcome((1.0, 1.2), (1.0, 1.2), metric=metric) == "differs", metric
         assert outcome((1.0, 1.01), (1.0, 1.01), metric=metric) == "unchanged"
+    for metric in ("scheduler threads (CPUs)", "other threads per frame (ms)"):
+        assert outcome((3, 4), (3, 4), metric=metric) == "regression", metric
     for stat in ("avg", "min", "max"):
         assert outcome((1, 2), (1, 2), metric=f"sch_1 t {stat}, timed (us)") == (
             "regression"
@@ -984,14 +1013,16 @@ def test_the_key_rows_are_the_costs_of_a_role():
     for m in (
         "sch_12 avg loop (ns)",
         "video cpu busy (%)",
-        "scheduler threads (cores)",
+        "scheduler threads per frame (ms)",
         "memory bandwidth (MB/s)",
         "LLC misses (M/s)",
         "RX work (ns/pkt)",
     ):
         assert pc.KEY_ROWS.fullmatch(m), m
-    # application threads only shown: their noise at pixel_format none is unmeasured
-    not_key = ("application threads (cores)", "other threads (cores)", "LLC hits (M/s)")
+    # the threads but the schedulers scored outside the verdict: the noise of the
+    # application threads at pixel_format none is unmeasured; nor the scheduler CPUs
+    not_key = [f"{s} threads per frame (ms)" for s in ("application", "other", "all")]
+    not_key += ["scheduler threads (CPUs)", "LLC hits (M/s)"]
     for m in ("sch_1 avg loop, traced (ns)", "RX rate (Gb/s)", *not_key):
         assert not pc.KEY_ROWS.fullmatch(m), m
     stats = ("avg", "p90", "p95", "p99", "min", "max")
@@ -1083,7 +1114,7 @@ def test_the_summary_leads_with_the_verdict_and_the_largest_changes():
         "One valid round gives no noise estimate, so no change is scored.",
     )
     # shorter loops on more schedulers, as of a lower --sch_session_quota
-    threads = "scheduler threads (cores)"
+    threads = "scheduler threads per frame (ms)"
     assert _verdict({loop: (100, 80), threads: (3, 5)})[1] == (
         "❌ branch regresses 1 of the 2 key metrics and improves 1."
     )
@@ -1257,53 +1288,44 @@ def test_the_job_summary_holds_the_verdict_and_every_row():
     assert _Tags(page).open == []
 
 
-def test_the_report_shows_the_delivery_whole_and_the_cpu_of_each_stage_with_bars():
+def test_the_report_shows_every_row_and_the_cpus_and_utilization_of_each_stage():
     rows = {
         "fps (worst session)": (59.94, 59.94),
-        "RX rate (Gb/s)": (27.6, 27.6),
-        "incomplete frames": (0, 0),
         "sch_1 avg loop (ns)": (100, 100),
         "sch_2 avg loop (ns)": (100, 120),
-        "schedulers (CPUs)": (1, 1),
-        "scheduler threads (cores)": (1.0, 1.0),
-        "application threads (cores)": (2.0, 2.4),  # +20%: a regression
-        "other threads (cores)": (0.2, 0.2),
-        "all threads (cores)": (3.2, 3.6),
+        "scheduler threads (CPUs)": (1, 2),  # one more: a regression
+        "scheduler threads utilization (%)": (100, 100),
+        "application threads (CPUs)": (3, 2),  # what the schedulers leave: no direction
+        "application threads utilization (%)": (40, 60),
         "application threads per frame (ms)": (0.2, 0.24),
     }
-    rounds = [_round(m, o) for o, m in zip((("A", "B"), ("B", "A")), _valid(rows))]
+    same = {x: {"rx": {k: v[i] for k, v in rows.items()}} for i, x in enumerate("AB")}
+    rounds = [_round(same, ("A", "B")), _round(same, ("B", "A"))]
     page = pc.report_html(LABELS, ARGS, [], SLOTS, rounds, [("s (RX)", {}), ("c", {})])
     section = page[page.index("<h2>RX (s&lt;t)</h2>") :]
-    delivery = section[section.index("<h3>Delivery</h3>") : section.index("<h3>CPU by")]
-    assert "<td>RX rate (Gb/s)</td>" in delivery and "fold" not in delivery  # unchanged
+    section = section[: section.index('<div class="sec">')]
     # a group's unchanged row in the table of its changes, none folded
     loops = section[section.index("<h3>Scheduler loops</h3>") :]
     loops = loops[: loops.index("</table>")]
     assert '<tr class="r"><td>sch_2 avg loop (ns) ↓</td>' in loops
     assert "<tr><td>sch_1 avg loop (ns) ↓</td>" in loops
+    assert "<details" not in section
+    # a row per stage, in order, of its CPUs, their utilization and its CPU per frame
     stages = section[section.index('<table class="mx tm stg">') :]
-    texts = [pc.STAGE_TEXT[s][1] for s in pc.STAGES]
-    assert sorted(texts, key=stages.index) == texts  # the kinds in order, all last
-    application = stages[stages.index(texts[1]) : stages.index(texts[2])]
-    assert application.count('<td class="r"') == 1  # its cores; per frame, shown
-    assert application.count('<td class="d"') == 1  # follows them: no direction
-    assert application.count("<td></td>") == 1  # the CPUs of the schedulers only
-    scheduler = stages[stages.index(texts[0]) : stages.index(texts[1])]
-    assert scheduler.endswith('<td class="u">n/a</td></tr>\n<tr><td>')  # no row
-    assert '<td class="u">4</td>' in stages  # all threads: the 4 CPUs of the slot
-    # a bar of each build on the slot's 4 CPUs, of the mean of its rounds, 1.005 x
-    bars = [b.split("</div>")[0] for b in stages.split('<div class="cpu">')[1:]]
-    assert [b[: b.index("</span>")] for b in bars] == ["<span>main", "<span>a&lt;b"]
-    widths = re.findall(r'<i class="(\w+)" style="width:([\d.]+)%">', bars[1])
-    assert widths == [("scheduler", "25.1"), ("application", "60.3"), ("other", "5.0")]
-    assert "= 3.62 of 4 CPUs" in bars[1] and "application 2.41" in bars[1]
-    # a slot smaller than the threads' cores scales the bar to them
-    small = [{**SLOTS[0], "cpus": "4-5"}]
-    page = pc.report_html(LABELS, ARGS, [], small, rounds, [("s (RX)", {}), ("c", {})])
-    assert 'class="scheduler" style="width:27.8%"' in page  # 1 of 3.6 cores
-    # the job summary keeps no style: no bars, no slot size
+    stages = stages[: stages.index("</table>")]
+    head = "<th>Threads</th>\n<th>CPUs</th>\n<th>utilization (%)</th>\n"
+    assert head + "<th>CPU per frame (ms) ↓</th>" in stages
+    trs = stages.split("<tr><td>")[1:]
+    assert [t[: t.index("</td>")] for t in trs] == [pc.STAGE_TEXT[s] for s in pc.STAGES]
+    by = dict(zip(pc.STAGES, trs))
+    assert re.findall(r'<td class="(\w+)"', by["scheduler"]) == ["r", "u", "u"]
+    assert "<b>1</b> → 2<small>❌ +100.0% ±0.0%</small>" in by["scheduler"]
+    assert ">100 → 100<small>~ (+0.0%) ±0.0%</small>" in by["scheduler"]
+    assert re.findall(r'<td class="(\w+)"', by["application"]) == ["d", "d", "r"]
+    assert ">3 → 2<small>➖ -33.3% ±0.0%</small>" in by["application"]
+    assert ">40 → 60<small>➖ +50.0% ±0.0%</small>" in by["application"]
+    assert by["other"].count('<td class="u">n/a</td>') == 3
     summary = pc.summary_html(LABELS, ARGS, SLOTS, rounds)
-    assert '<div class="cpu">' not in summary and '<td class="u">4</td>' not in summary
     assert _Tags(page).open == [] and _Tags(summary).open == []
 
 

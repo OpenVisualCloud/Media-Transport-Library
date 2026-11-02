@@ -123,13 +123,15 @@ RE_PERF = re.compile(r"^([\d.]+),[^,]*,([^,]+)", re.M)
 # The rows with no better direction, which the report does not score: the clock; IPC,
 # which a polling loop raises with idle polls as much as with speed; the cache
 # footprint, hits and miss ratio; the port rates, which carry pads and other traffic;
-# the re-plans, which releases count differently; and the CPU per frame, the cores of
-# its row over the frame rate that every valid round holds, which that row scores. The
-# frame rate is better higher, and every other row is a cost, better lower, as the
-# time of a call, which is also a wait for the tasklets after it on its scheduler.
+# the re-plans, which releases count differently; the utilization, whose CPU time the
+# CPU per frame row scores; and the CPUs of every kind of thread but the schedulers,
+# which follow the CPUs the schedulers take. The frame rate is better higher, and every
+# other row is a cost, better lower, as the time of a call, which is also a wait for
+# the tasklets after it on its scheduler.
 UNSCORED = re.compile(
     r"core clock \(GHz\)|IPC|LLC occupancy \(MB\)|LLC hits \(M/s\)|LLC miss ratio \(%\)"
-    rf"|(RX|TX) rate(, port \d+)? \(Gb/s\)|{TX_REPLAN} \(/s\)|\w+ threads per frame \(ms\)"
+    rf"|(RX|TX) rate(, port \d+)? \(Gb/s\)|{TX_REPLAN} \(/s\)"
+    r"|\w+ threads utilization \(%\)|(application|other|all) threads \(CPUs\)"
 )
 HIGHER = ("fps (worst session)",)
 # A difference is a change from MIN_CHANGE_PCT and NOISE_FACTOR times the noise, else
@@ -159,7 +161,7 @@ PRINT_STEPS = (
 # The cost rows of a role that the summary's verdict scores, and the loss and late
 # frame rows, 0 when healthy.
 KEY_ROWS = re.compile(
-    r"sch_\d+ avg loop \(ns\)|video cpu busy \(%\)|scheduler threads \(cores\)"
+    r"sch_\d+ avg loop \(ns\)|video cpu busy \(%\)|scheduler threads per frame \(ms\)"
     r"|memory bandwidth \(MB/s\)|LLC misses \(M/s\)|RX work \(ns/pkt\)"
 )
 RX_LOSS = ("incomplete frames", "hw dropped pkts")
@@ -171,18 +173,16 @@ TASKLET_ROWS = re.compile(r"sch_\d+ .+ (avg|p99), timed \(us\)")
 # call times of the last two each read as one table of _cell()s.
 DELIVERY = "Delivery"
 CPU_STAGES = "CPU by stage"
-# The threads of an instance by what they do, the rows of CPU_STAGES, which add up to
-# all threads, and its columns after the CPUs of the schedulers.
+# The threads of an instance by what they do, the rows of CPU_STAGES, and its columns:
+# the CPUs the threads of a kind ran on, which kinds can share, their CPU time over
+# those CPUs, and per frame.
 STAGES = ("scheduler", "application", "other", "all")
-STAGE_COLS = ("(cores)", "per frame (ms)")
+STAGE_COLS = ("(CPUs)", "utilization (%)", "per frame (ms)")
 STAGE_TEXT = {
-    "scheduler": ("schedulers", "Schedulers: send or receive the packets"),
-    "application": (
-        "application",
-        "Application threads: fill or read the frames, and convert them",
-    ),
-    "other": ("other", "Other: MTL's control threads, EAL, the main thread"),
-    "all": ("all", "All threads"),
+    "scheduler": "Schedulers: send or receive the packets",
+    "application": "Application threads: fill or read the frames, and convert them",
+    "other": "Other: MTL's control threads, EAL, the main thread",
+    "all": "All threads, a CPU that kinds share counted once",
 }
 SAMPLED = "Tasklets, 1 loop in 64 timed"
 TIMED = "Tasklet call times, every call timed"
@@ -199,8 +199,7 @@ GROUPS = (
     (
         CPU_STAGES,
         re.compile(
-            rf"schedulers \(CPUs\)|({'|'.join(STAGES)}) threads "
-            rf"({'|'.join(map(re.escape, STAGE_COLS))})"
+            rf"({'|'.join(STAGES)}) threads ({'|'.join(map(re.escape, STAGE_COLS))})"
         ),
     ),
     ("Scheduler loops", re.compile(r"sch_\d+ avg loop \(ns\)")),
@@ -227,8 +226,8 @@ RE_TIMED_ROW = re.compile(r"sch_(\d+) (.+) (\w+), (?:session )?timed \(us\)")
 # in the page's ink. A table of class cmp has the baseline in column 2 and the
 # candidate in column 3, one of class scored also the change, the noise, the rounds
 # and the outcome, at the same widths in every group; class tm is a table of _cell()s,
-# of call times or, also of class stg, of CPU by stage, under which a div of class cpu
-# is a build's bar. The heads of both stay in view while their rows scroll past.
+# of call times or, also of class stg, of CPU by stage. The heads of both stay in view
+# while their rows scroll past.
 STYLE = """
 :root{--i:#229954;--i-tint:#cbecd9;--r:#e74c3c;--r-tint:#f9d4d0;--d-tint:#efefef}
 .sw::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;
@@ -282,15 +281,6 @@ table.scored td{overflow-wrap:anywhere}
 table.stg th:nth-child(1){width:34%}
 table.stg th:nth-child(2),table.stg td:nth-child(2){width:12%;text-align:right}
 table.stg tr:last-child td{border-top:2px solid var(--border)}
-.cpu{display:grid;grid-template-columns:22% 1fr 40%;gap:12px;align-items:center;
-  margin:8px 0;font-size:.84em;color:var(--text-muted)}
-.cpu b{display:flex;height:12px;border-radius:4px;overflow:hidden;background:#e8ecf1}
-.cpu i{border-right:2px solid #fff}
-.k::before{content:"";display:inline-block;width:9px;height:9px;border-radius:2px;
-  margin:0 4px 0 8px}
-.cpu i.scheduler,.k.scheduler::before{background:#2a78d6}
-.cpu i.application,.k.application::before{background:#eb6834}
-.cpu i.other,.k.other::before{background:#1baf7a}
 """
 
 
@@ -843,23 +833,34 @@ class Instance:
         )
         return ""
 
-    def proc(self) -> tuple[int, dict[int, tuple[int, int, str]]]:
-        """(CLOCK_MONOTONIC ns, {tid: (cpu ticks, involuntary switches, name)}).
+    def proc(self) -> tuple[int, dict[int, tuple[int, int, str, int, int]]]:
+        """(CLOCK_MONOTONIC ns, {tid: (cpu ticks, involuntary switches, name, cpu,
+        run ns)}), cpu the CPU the thread last ran on, run ns its time on a CPU from
+        schedstat, which counts a run shorter than a tick.
 
         CLOCK_MONOTONIC is the clock of the bpftrace timestamps.
         """
         out = sh(
             self.host,
             f"grep -m1 'now at' /proc/timer_list; for t in /proc/{self.pid}/task/*; do "
-            "s=$(cat $t/stat) && n=$(grep ^nonvoluntary_ctxt_switches $t/status) && "
+            "s=$(cat $t/stat) && r=$(cat $t/schedstat) && "
+            "n=$(grep ^nonvoluntary_ctxt_switches $t/status) && "
             "c=${s#*(} && c=${c%)*} && c=${c//[[:space:]]/_} && "
-            'echo "${t##*/} ${c:-_} ${s##*) } ${n##*[[:space:]]}" || :; done 2>/dev/null',
+            'echo "${t##*/} ${c:-_} ${s##*) } ${r%% *} ${n##*[[:space:]]}" || :; '
+            "done 2>/dev/null",
         ).split("\n")
         threads = {}
         for line in filter(None, out[1:]):
             f = line.split()
-            # f[2] is field 3 of /proc/<pid>/stat, so utime and stime are f[13] and f[14].
-            threads[int(f[0])] = (int(f[13]) + int(f[14]), int(f[-1]), f[1])
+            # f[2] is field 3 of /proc/<pid>/stat, so utime and stime are f[13] and f[14],
+            # processor f[38].
+            threads[int(f[0])] = (
+                int(f[13]) + int(f[14]),
+                int(f[-1]),
+                f[1],
+                int(f[38]),
+                int(f[-2]),
+            )
         return int(out[0].split()[2]), threads
 
     def save(self, out_dir: str) -> None:
@@ -1020,8 +1021,6 @@ def metrics(direction, dumps, proc0, proc1, clk_tck, rdt0, rdt1, pmu=None) -> di
         m[f"sch_{idx} avg loop (ns)"] = _median(
             d.sch[idx][0] for d in untraced if idx in d.sch
         )
-    # each scheduler polls a CPU of its own: the CPUs MTL takes for the sessions
-    m["schedulers (CPUs)"] = len({i for d in untraced for i in d.sch})
     m["video cpu busy (%)"] = _median(
         statistics.mean(v for k, v in d.busy.items() if k[0] == direction)
         for d in untraced
@@ -1032,12 +1031,20 @@ def metrics(direction, dumps, proc0, proc1, clk_tck, rdt0, rdt1, pmu=None) -> di
     both = proc0[1].keys() & proc1[1].keys()
     ticks = {t: proc1[1][t][0] - proc0[1][t][0] for t in both}
     app_tids = {t for t in both if APP_THREAD.fullmatch(proc1[1][t][2])} - sch_tids
-    # each kind of thread from its own ticks, so a kind that ran none reads 0
+    # A thread that slept through the window, as EAL's of an lcore that no scheduler
+    # takes, holds no CPU; one that ran, for however short, last ran on its own CPU.
+    ran = {t for t in both if proc1[1][t][4] > proc0[1][t][4]}
+    # each kind of thread from its own threads, so a kind without any reads 0 CPUs
+    cores = {}
     for stage, tids in zip(
-        STAGES, (both & sch_tids, app_tids, both - sch_tids - app_tids)
+        STAGES, (both & sch_tids, app_tids, both - sch_tids - app_tids, both)
     ):
-        m[f"{stage} threads (cores)"] = sum(ticks[t] for t in tids) / clk_tck / dt
-    m["all threads (cores)"] = sum(m[f"{s} threads (cores)"] for s in STAGES[:3])
+        cores[stage] = sum(ticks[t] for t in tids) / clk_tck / dt
+        cpus = len({proc1[1][t][3] for t in tids & ran})
+        m[f"{stage} threads (CPUs)"] = cpus
+        m[f"{stage} threads utilization (%)"] = (
+            100 * cores[stage] / cpus if cpus else None
+        )
     m["sch preemptions (/s)"] = (
         sum(proc1[1][t][1] - proc0[1][t][1] for t in both & sch_tids) / dt
     )
@@ -1059,10 +1066,8 @@ def metrics(direction, dumps, proc0, proc1, clk_tck, rdt0, rdt1, pmu=None) -> di
     fps = [_median(d.fps.get(k, 0.0) for d in untraced) for k in sessions]
     m["fps (worst session)"] = min(fps)
     if frames := sum(fps):
-        for stage in STAGES:
-            m[f"{stage} threads per frame (ms)"] = (
-                m[f"{stage} threads (cores)"] * 1e3 / frames
-            )
+        for stage, c in cores.items():
+            m[f"{stage} threads per frame (ms)"] = c * 1e3 / frames
     # the rate of each port when the instance has two, then of the instance
     rate = 1 if direction == "RX" else 0
     ports = sorted({p for d in untraced for p in d.ports})
@@ -1392,47 +1397,21 @@ def _matrix(rows: list[Row]) -> str:
     return _table(["Call", "Scheduler", *(f"{s} (us) ↓" for s in stats)], trs, "mx tm")
 
 
-def _stages(rows: list[Row], names: dict, cpus: int) -> str:
-    """The rows of CPU_STAGES as one table, a row per stage of _cell()s, and when the
-    slots have *cpus*, a bar of each build: the cores of each stage on them."""
+def _stages(rows: list[Row]) -> str:
+    """The rows of CPU_STAGES as one table, a row per stage of _cell()s."""
     by = {r.metric: r for r in rows}
-    first = {
-        "scheduler": _cell(by.get("schedulers (CPUs)")),
-        "all": f'<td class="u">{cpus or ""}</td>',
-    }
     trs = []
     for stage in STAGES:
         tds = "".join(_cell(by.get(f"{stage} threads {c}")) for c in STAGE_COLS)
-        cpu = first.get(stage, "<td></td>")
-        trs.append(f"<tr><td>{STAGE_TEXT[stage][1]}</td>{cpu}{tds}</tr>")
-    head = ["Threads", "CPUs ↓", "cores ↓", "CPU per frame (ms)"]
-    parts = [_table(head, trs, "mx tm stg")]
-    for x in "AB" if cpus else ():
-        used = [
-            getattr(by.get(f"{s} threads (cores)"), x.lower(), None) for s in STAGES
-        ]
-        if None in used:
-            continue
-        scale = max(cpus, used[-1])
-        segs = "".join(
-            f'<i class="{s}" style="width:{100 * v / scale:.1f}%"></i>'
-            for s, v in zip(STAGES, used[:-1])
-        )
-        keys = " ".join(
-            f'<span class="k {s}">{STAGE_TEXT[s][0]} {_fmt(v)}</span>'
-            for s, v in zip(STAGES, used[:-1])
-        )
-        parts.append(
-            f'<div class="cpu"><span>{html.escape(names[x])}</span><b>{segs}</b>'
-            f"<span>{keys} = {_fmt(used[-1])} of {cpus} CPUs</span></div>"
-        )
-    return "\n".join(parts)
+        trs.append(f"<tr><td>{STAGE_TEXT[stage]}</td>{tds}</tr>")
+    head = ["Threads", "CPUs", "utilization (%)", "CPU per frame (ms) ↓"]
+    return _table(head, trs, "mx tm stg")
 
 
-def _tables(groups: list[tuple[str, list[Row]]], names: dict, cpus: int = 0) -> str:
-    """Each of *groups* under its title: the CPU of each stage as _stages() on slots of
-    *cpus* and one of call times as a single _matrix(), the first of them after a note
-    on how their cells read, and any other as a table of all its rows."""
+def _tables(groups: list[tuple[str, list[Row]]], names: dict) -> str:
+    """Each of *groups* under its title: the CPU of each stage as _stages() and one of
+    call times as a single _matrix(), the first of them after a note on how their cells
+    read, and any other as a table of all its rows."""
     parts, noted = [], False
     for title, rows in groups:
         parts.append(f"<h3>{html.escape(title)}</h3>")
@@ -1449,9 +1428,7 @@ def _tables(groups: list[tuple[str, list[Row]]], names: dict, cpus: int = 0) -> 
                 "gives its outcome and its rounds.</div>"
             )
             noted = True
-        parts.append(
-            _stages(rows, names, cpus) if title == CPU_STAGES else _matrix(rows)
-        )
+        parts.append(_stages(rows) if title == CPU_STAGES else _matrix(rows))
     return "\n".join(parts)
 
 
@@ -1597,7 +1574,8 @@ def _summary(
         'regression</span> ❌ or an <span class="sw i">improvement</span> ✅: lower '
         "for a cost, ↓ after the metric, higher for the frame rate, ↑. ➖ marks a row "
         f"with no better direction that differs{grey}: the clock, IPC, the cache "
-        "footprint, hits and miss ratio, the port rates and the re-plans. The better "
+        "footprint, hits and miss ratio, the port rates, the re-plans, the utilization "
+        "and the CPUs of every kind of thread but the schedulers. The better "
         f"value is bold. A change is of high confidence from {high:g} times its noise, "
         f"medium from {medium:g} and low below; Rounds gives the candidate's difference "
         "in each valid round. The noise of a loop or call time is at least one step of "
@@ -1712,12 +1690,10 @@ def _results(labels, args, slots, rounds, styled, nics, single_core) -> list[str
         "</div>",
         _summary(valid, hosts, names, styled, 2 if nics == "pooled" else 1),
     ]
-    cpus = {s["role"]: len(parse_cpus(s["cpus"])) for s in slots}
     for role, host in hosts.items():
         title = f"{role.upper()} ({html.escape(host)})"
         rows = compare(valid, role)
-        size = cpus.get(role.split()[0], 0) if styled else 0
-        tables = _tables(_groups(rows), names, size)
+        tables = _tables(_groups(rows), names)
         notes = map(_note, _tasklet_notes(rows, names))
         p += [f'<div class="sec"><h2>{title}</h2>', tables, *notes, "</div>"]
     return p
