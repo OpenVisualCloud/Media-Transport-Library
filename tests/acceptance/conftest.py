@@ -1131,7 +1131,8 @@ def pytest_addoption(parser):
             "nics",
             str,
             "single",
-            "single, split, redundant, span, pairs or pooled: how they use the NICs",
+            "single, split, redundant, whole, span, pairs or pooled: how they use "
+            "the NICs",
         ),
     ):
         parser.addoption(

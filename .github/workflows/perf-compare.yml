@@ -48,7 +48,7 @@ on:
         default: 1080p59
       # Each choice says what it does; the case takes its word before the colon.
       pixel_format:
-        description: 'The pixel format of the applications. MTL converts it to the format on the wire on TX and back on RX, on the application threads, as an application that works in that format sees it. At cores 8 those carry about 20 x 1080p59 sessions in yuv422p10le, 24 in v210; split and redundant take cores up to 17 for more sessions'
+        description: 'The pixel format of the applications. MTL converts it to the format on the wire on TX and back on RX, on the application threads, as an application that works in that format sees it. At cores 8 those carry about 20 x 1080p59 sessions in yuv422p10le, 24 in v210; split, redundant and whole take cores up to 17 for more sessions'
         required: false
         type: choice
         options:
@@ -60,20 +60,21 @@ on:
       # sessions, cores, test_time and rounds are strings, not numbers: a number
       # input reaches a step's env as 120.0.
       sessions:
-        description: 'Sessions of each build (pairs and pooled: of each of its two instances). A 100G port carries 36 x 1080p59, 9 x 2160p59, 2 x 4320p59; nics span puts a build on two ports, the first filled before the second, so 37 run as 36 and 1, and 72 x 1080p59 fit'
+        description: 'Sessions of each build (pairs and pooled: of each of its two instances). A 100G port carries 36 x 1080p59, 9 x 2160p59, 2 x 4320p59; nics whole and span put a build on two ports, the first filled before the second, so 37 run as 36 and 1, and 72 x 1080p59 fit'
         required: false
         type: string
         default: '36'
       # Where and how the instances run
       # Each choice says what it does; the case takes its word before the colon.
       nics:
-        description: 'Where A and B run on the two E830 NICs (two ports each) of each host. The places below are those of the first round; A and B swap them every round. A build on one port takes up to 36 x 1080p59 sessions, on two (span) up to 72'
+        description: 'Where A and B run on the two E830 NICs (two ports each) of each host. The places below are those of the first round; A and B swap them every round. A build on one port takes up to 36 x 1080p59 sessions, on two (whole, span) up to 72'
         required: false
         type: choice
         options:
           - 'single: NIC 0 only, A on port 0 and B on port 1'
           - 'split: A on NIC 0 and B on NIC 1, port 0 each, so each build has a CPU socket to itself'
           - 'redundant: ST 2022-7, A on NIC 0 and B on NIC 1, each with its primary stream on port 0 and its redundant stream on port 1'
+          - 'whole: a whole NIC a build, A on both ports of NIC 0 and B on both of NIC 1, a CPU socket each, port 0 filled before port 1'
           - 'span: one instance a build on two ports, A on port 0 of both NICs and B on port 1 of both NICs'
           - 'pairs: two comparisons at once, A and B on the two ports of NIC 0 and again of NIC 1, each NIC reported apart'
           - 'pooled: two comparisons at once, A and B on the two ports of NIC 0 and again of NIC 1, both NICs in one result with twice the samples a round'
@@ -99,7 +100,7 @@ on:
           - both
         default: none
       cores:
-        description: 'CPUs of a slot (span: on each NIC node): 1 for the app threads, 1 for the system tasklets except in a single core role, the rest for schedulers. On the perf pair 3 to 8, or to 17 with split or redundant, which give each build a NIC node of its own; from 2 when single_core is both. MTL starts the schedulers its quota needs'
+        description: 'CPUs of a slot (span: on each NIC node): 1 for the app threads, 1 for the system tasklets except in a single core role, the rest for schedulers. On the perf pair 3 to 8, or to 17 with split, redundant or whole, which give each build a NIC node of its own; from 2 when single_core is both. MTL starts the schedulers its quota needs'
         required: false
         type: string
         default: '8'

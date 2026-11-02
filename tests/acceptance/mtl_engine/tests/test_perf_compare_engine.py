@@ -288,9 +288,9 @@ def test_rdt_setup_runs_without_cat_rather_than_take_resctrl(monkeypatch, probe)
 
 def _nics(nics):
     """The slots of *nics* from two cpu_layout()s: NIC 0's on node 0, isolated, NIC
-    1's on node 2, not, as on a host that isolates node 0's cores alone; split and
-    redundant have one slot a node, as the case asks for."""
-    count = 1 if nics in ("split", "redundant") else 2
+    1's on node 2, not, as on a host that isolates node 0's cores alone; split,
+    redundant and whole have one slot a node, as the case asks for."""
+    count = 1 if nics in ("split", "redundant", "whole") else 2
     return pc.nic_slots(
         nics,
         *(
@@ -311,11 +311,12 @@ def test_the_nics_modes_map_their_slots_to_ports_and_nodes():
         (0, [0], [0], [4], True, None),
         (1, [2], [2], [68], False, None),
     ]
-    redundant = _nics("redundant")  # both ports of a NIC, the second the 2022-7 leg
-    assert [(s.idx, s.ports, s.nodes, s.cpus, s.nic) for s in redundant] == [
-        (0, [0, 1], [0], [4], None),
-        (1, [2, 3], [2], [68], None),
-    ]
+    # both ports of a NIC: redundant's second the 2022-7 leg, whole's more sessions
+    for nics in ("redundant", "whole"):
+        assert [(s.idx, s.ports, s.nodes, s.cpus, s.nic) for s in _nics(nics)] == [
+            (0, [0, 1], [0], [4], None),
+            (1, [2, 3], [2], [68], None),
+        ]
     pairs = _nics("pairs")
     assert [(s.idx, s.ports, s.nodes, s.isolated, s.nic) for s in pairs] == [
         (0, [0], [0], True, 0),

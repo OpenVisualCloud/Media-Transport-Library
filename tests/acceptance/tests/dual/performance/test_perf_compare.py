@@ -69,14 +69,16 @@ PIXEL_FORMATS = {
     "y210": "Y210",
 }
 # --perf_compare_nics, doc/perf_compare.md; with a NIC, and so a socket, a build
-APART = ("split", "redundant")
+APART = ("split", "redundant", "whole")
 # an instance's sessions on two ports, the first filled before the second
-FILLED = ("span",)
+FILLED = ("span", "whole")
 NICS = {
     "single": "NIC 0 only, A on port 0 and B on port 1",
     "split": "A on NIC 0 and B on NIC 1, port 0 each, so each build has a CPU socket to itself",
     "redundant": "ST 2022-7, A on NIC 0 and B on NIC 1, each with its primary stream "
     "on port 0 and its redundant stream on port 1",
+    "whole": "a whole NIC a build, A on both ports of NIC 0 and B on both of NIC 1, a "
+    "CPU socket each",
     "span": "one instance a build on two ports, A on port 0 of both NICs and B on "
     "port 1 of both NICs",
     "pairs": "two comparisons at once, A and B on the two ports of NIC 0 and again of "
@@ -226,7 +228,7 @@ def _app_cmd(opts, media_config, media_path, fps, test_time, shares):
             destination_ip=rx_ip,
             **extra,
         )
-        if not redundant:  # span: the port on NIC 1, unless the first took all
+        if not redundant:  # span and whole: the second port, unless the first took all
             for port, n in zip(more, shares[1:]):
                 if n:
                     pc.add_port(app.config, side.role, side.vfs[port], *pools[port], n)
@@ -259,8 +261,9 @@ def _ports(host, nics: str) -> tuple[list[str], list[str]]:
 
 
 def _slots(host, vfs: list[str], nics: str, cores: int) -> list[pc.Slot]:
-    """cpu_layout()'s slots of NIC 0, or of both NICs as *nics* uses them: split and
-    redundant take one slot of each NIC's node, so its cores are a build's alone."""
+    """cpu_layout()'s slots of NIC 0, or of both NICs as *nics* uses them: split,
+    redundant and whole take one slot of each NIC's node, so its cores are a build's
+    alone."""
     count = 1 if nics in APART else 2
     nic0 = pc.cpu_layout(host, vfs[0], cores, count)
     if nics == "single":
@@ -419,15 +422,15 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
             pfs[role], vfs = _ports(host, opts["nics"])
             links = pc.nic_links(host, pfs[role])
             slots = _slots(host, vfs, opts["nics"], opts["cores"])
-            # the ports with sessions: split uses 2 of 4, span may leave one
+            # the ports with sessions: split uses 2 of 4, span and whole may leave one
             loads = {p: n for s in slots for p, n in zip(s.ports, shares) if n}
             for p, n in sorted(loads.items()):
                 if slow := pc.slow_ports([pfs[role][p]], [links[p]], n * rate):
                     pytest.fail(
                         f"{host.name}: {n} x {video} on a port take "
                         f"{n * rate / 1e9:.1f} Gb/s, and {slow[0]} "
-                        "(--perf_compare_sessions counts a build's, which span puts "
-                        "on two ports, the first filled first)"
+                        "(--perf_compare_sessions counts a build's, which span and "
+                        "whole put on two ports, the first filled first)"
                     )
             if opts["nics"] == "pooled":
                 if unlike := pc.unlike_nics(links, slots):

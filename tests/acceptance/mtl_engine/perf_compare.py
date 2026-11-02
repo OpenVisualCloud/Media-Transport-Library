@@ -409,8 +409,9 @@ def add_port(
 def nic_slots(nics: str, nic0: list[Slot], nic1: list[Slot]) -> list[Slot]:
     """The slots of a host from cpu_layout()'s of each NIC, as *nics* uses them: for
     span, slot p has port p of each NIC; for split, slot 0 port 0 of NIC 0 and slot 1
-    that of NIC 1, a socket each; for redundant, both ports of either NIC; for pairs
-    and pooled, NIC 0's slots 0 and 1 are followed by NIC 1's, slots 2 and 3."""
+    that of NIC 1, a socket each; for redundant and whole, both ports of either NIC;
+    for pairs and pooled, NIC 0's slots 0 and 1 are followed by NIC 1's, slots 2 and
+    3."""
     if nics == "span":
         return [
             replace(
@@ -424,7 +425,8 @@ def nic_slots(nics: str, nic0: list[Slot], nic1: list[Slot]) -> list[Slot]:
         ]
     if nics == "split":
         return [nic0[0], replace(nic1[0], idx=1, ports=[2])]
-    if nics == "redundant":  # ST 2022-7: port 0 the primary, port 1 the redundant leg
+    # redundant: ST 2022-7, port 0 the primary and port 1 the redundant leg
+    if nics in ("redundant", "whole"):
         return [replace(nic0[0], ports=[0, 1]), replace(nic1[0], idx=1, ports=[2, 3])]
     return [
         replace(s, idx=2 * nic + s.idx, ports=[2 * nic + s.idx], nic=nic)
