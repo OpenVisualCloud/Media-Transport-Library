@@ -505,7 +505,8 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
     GPM_SL its NORMAL and LINE_TAIL ones), the pre-arm NORMAL ones. Unscaled, 1080p25 BPM
     (share 0.99881 before this fix, 0.99904 now) launched packet 0 13 ns a pad
     early on E830, 1.7 µs over a 130-pad warm-up. `tv_train_pacing()`
-    keeps the whole ring full of pads for 71 frames, then sleeps until it drains (`nb_tx_desc` pads,
+    keeps the whole ring full of pads for 71 frames, 32 a burst call (one a call measured an E810
+    VF at 38.1 Gb/s, short of 4320p59.94's 41.7), then sleeps until it drains (`nb_tx_desc` pads,
     ~7.5 ms at 2048 and 1080p59.94): the pre-arm and the WAIT_TARGET hold both assume an idle queue.
     Untrained rates only. A pre-train result is keyed by the rate and the training's pad mix
     (`struct mt_pacing_pad_mix`, `tv_train_mix()`: bytes, NORMAL size, pads with the remain), so a
@@ -514,7 +515,7 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
     queue's programmed rate too (`txq->bps`): a retrain
     for another mix makes `tv_init_hw()` program the rate's later queues ≥ 0.5% faster, so a
     session of the first mix trains again there. The bps retrain result stays the rate's alone,
-    as audio uses it, and a new mix measuring slow on a retrained rate falls back to TSC.
+    as audio uses it, and a new mix measuring slow on a retrained rate falls back to TSC, with an `err()`.
     A user `ops.pad_interval` or the static table gives none;
     `pacing->pad_interval` keeps only the last port's pi.
   - The rate programmed on the queue, bps = `s->queue[i]->txq->bps`: `tv_rl_bps()`, a bps retrain result, or the cached one `tv_init_hw()` looked up. A queue without its own `txq` (shared TX queue, AF_XDP, kernel socket) has none. `st20_tx_queue_fatal_error()` gets the new queue at the old one's rate, which `pad_interval` and the plan were trained on.
