@@ -84,6 +84,11 @@ jobs:
       - name: Update the runtime linker cache
         run: sudo ldconfig
 
+      # Against the MTL and FFmpeg that Build Release installed. sudo: that step
+      # made script/build, the parent of their build directory, as root.
+      - name: Run the st22 avcodec plugin tests
+        run: sudo -E script/build_st22_avcodec_plugin.sh unit
+
       - name: Build the Rust no_std example
         run: task ci:rust-no-std
 

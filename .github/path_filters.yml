@@ -263,10 +263,11 @@ fuzz_tests:
 # base_build.yml: release, eBPF/XDP, and release with fuzzing (clang).
 # setup_environment.sh builds DPDK, MTL, GPU Direct, the FFmpeg, GStreamer and
 # OBS plugins, the Python and Rust bindings, and the tools. It does not build
-# JPEG XS or st22 avcodec.
+# JPEG XS or the st22 avcodec plugin, but ubuntu-build runs the plugin's tests.
 base_build:
   - .github/path_filters.yml
   - .github/workflows/base_build.yml
+  - *hash_plugins
   - *hash_dpdk
   - *hash_mtl
   - *hash_ffmpeg
