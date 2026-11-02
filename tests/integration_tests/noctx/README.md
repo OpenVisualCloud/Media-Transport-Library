@@ -22,7 +22,7 @@ enforce this.
 |---|---|---|---|
 | `run.sh` | `NoCtxTest.${NOCTX_FILTER}*`, excluding `*_pf_*` | `TEST_PORT_1..4`, all required | 20 s |
 | `run_pf.sh` | `NoCtxTest.${NOCTX_FILTER}*_pf_*` | `TEST_PF_PORT_1..2`, PFs bound to `vfio-pci` | 10 s |
-| MCP `run_noctx_tests` / `run_noctx_pf_tests` (`mtl-system-setup`) | `gtest_filter` / the `_pf_` cases; no `isolate.sh`, so `st30p_user_pacing` FAILs | 4 ports / 2 PFs, auto-discovered if not given | `cooldown_seconds`, default 10 s |
+| MCP `run_noctx_tests` / `run_noctx_pf_tests` (`mtl-system-setup`) | `gtest_filter` / the `_pf_` cases; no `isolate.sh`, so `st30p_user_pacing`, `st20p_rl_*` and the VRX margin case FAIL | 4 ports / 2 PFs, auto-discovered if not given | `cooldown_seconds`, default 10 s |
 
 ```bash
 sudo -E tests/integration_tests/noctx/run.sh                      # every non-PF case
@@ -36,7 +36,8 @@ with `--gtest_list_tests`, run each `KahawaiTest --auto_start_stop
 --no_ctx_tests` and write `${TMP_FOLDER:-/tmp}/noctx_<n>.xml`
 (`noctx_pf_<n>.xml` for `run_pf.sh`). `run.sh` wraps only the cases in
 `NOCTX_ISOLATE_CASES` (comma-separated, default: the strict tests listed
-under [Requirements](#requirements-and-skipfail-policy) but `st20p_redundant_1080p59_s8_equal_vrx_margin`) in `tests/tools/isolate/isolate.sh`; the others, and every `run_pf.sh` case, run directly.
+under [Requirements](#requirements-and-skipfail-policy) and `st20p_rl_staged_overload_is_loud`) in `tests/tools/isolate/isolate.sh`; the others, and every `run_pf.sh` case, run directly.
+`NOCTX_EXCLUDE` adds negative gtest patterns (`gtest.sh` runs the RL cell and the VRX margin case as their own case, `noctx_rl`).
 `EXIT_ON_FAILURE=0` continues past a failure and exits 1 at the end if any
 case failed; `TEST_P_SIP` is passed as `--p_sip`, and the multicast groups follow
 it (`gtest.sh` sets a per-host subnet); `BUILD_PATH` overrides the binary, which defaults to
@@ -63,6 +64,7 @@ redundant tests map sessions to ports by index.
 |---|---|---|
 | Strict: `st20p_default_timestamps*`, `st20p_user_pacing`, `st20p_user_pacing_offset_jitter`, `st20p_exact_user_pacing`, `st20p_user_pacing_interlaced`, `st30p_user_pacing`, and the next row | TX, RX on **different physical ports**; RX-port **PHC** read to ±1 µs; NIC RX timestamp on frame 0 | SKIP (topology), FAIL with `NOCTX_REQUIRE_STRICT=1`. SW RX time after frame 0: FAIL |
 | `st20p_redundant_1080p59_s8_equal_vrx_margin` | 4 ports; strict topology on `TEST_PORT_1` -> `_2` (leg P) and `_3` -> `_4` (leg R); RX ports on one PHC; NIC RX timestamps ([oracle](#equal-vrx-margin-oracle)); ≥ 50 Gb/s links (e.g. 100 GbE E810/E830): the TX PF link carries 16 streams, ~42.5 Gb/s, so a 25 GbE pair fails | < 4 ports: FAIL. Topology: as the strict row. A software RX time: FAIL |
+| `st20p_rl_*` | As the strict row, a TX link that carries the load (the staged cell sizes its load to it), and an exclusive CPU partition | Topology: as the strict row. No partition, a slow link, a software RX time, lost packets or a late TX app: FAIL `RL_INVALID` |
 | `st30p_user_pacing` | An exclusive CPU partition: its own cgroup's `cpuset.cpus.partition` reads `isolated`. Checked after the strict topology, which may SKIP or FAIL the case first | FAIL, never SKIP |
 | `st20p_redundant_latency_drops_even_odd`, `st30p_redundant_latency*` | 4 ports | The case errors (`std::runtime_error`) |
 | `st20p_redundant_latency_drops_even_odd` | `MTL_SIMULATE_PACKET_DROPS` build (`./build.sh debug` / `debugonly`) | SKIP |
@@ -87,8 +89,9 @@ instead of skipping, and `MTL_ISOLATE=require`, so the cases `run.sh` wraps
 
 **Policy.** A SKIP means the host cannot measure wire timing, never that pacing
 passed; the message gives the reason. No NoCtx test skips because of CPU
-isolation: `st30p_user_pacing` FAILs without an exclusive partition, and the
-other strict tests run at any isolation level and may fail their timing checks.
+isolation: `st30p_user_pacing`, `st20p_rl_*` and the VRX margin case FAIL without an
+exclusive partition, and the other strict tests run at any isolation level and may
+fail their timing checks.
 
 `initStrictPacingContext()` adds `MTL_FLAG_ENABLE_HW_TIMESTAMP` to the default
 context, as NIC RX timestamps are the pacing oracle. It also clears
@@ -100,8 +103,12 @@ off its scheduler.
 
 `run.sh` runs each case in `NOCTX_ISOLATE_CASES` under
 `tests/tools/isolate/isolate.sh` with `MTL_ISOLATE=try` (override it from the
-environment) and `MTL_ISOLATE_PORTS` = `TEST_PORT_1..4`. The default cases are
-the strict tests but the VRX margin case. The wrapper, its requirements and limits:
+environment), `MTL_ISOLATE_PORTS` = the TX ports `TEST_PORT_1,3` and
+`MTL_ISOLATE_MEM_PORTS` = the RX ports `TEST_PORT_2,4`: the partition's CPUs are on
+the TX nodes, and an RX port on another node (E810 TX, E830 RX) adds only its
+memory, as `initStrictPacingContext()` lets RX lcores cross NUMA
+(`MTL_FLAG_ALLOW_ACROSS_NUMA_CORE`). The default cases are the strict tests and
+`st20p_rl_staged_overload_is_loud`. The wrapper, its requirements and limits:
 [tests/tools/isolate/README.md](../../tools/isolate/README.md).
 
 ## Timing model
@@ -236,6 +243,38 @@ rtp_timestamp`; the user-paced tests request `t_user(n) = start + n·T`, with
 | `st20_tx_tasklet_sleep_idle_peer` | With `MTL_FLAG_TASKLET_SLEEP`, an idle TX video session after a busy one on the same scheduler does not let it sleep while the busy one has packets to build | Scheduler iterations, counted by the idle session's `get_next_frame`, per user-paced frame 100 ms ahead: in the first 10 ms (TX ring prefill) and from 20 to 60 ms (nothing to do) | ≥ 64; ≤ 200 |
 | Other NoCtx tests | ST20 2022-7 even/odd loss recovery, epoch recovery after a PTP step, TSN packet spread and epoch recovery (`_pf_`), ST20p TX multithread stability (default 1800 s), ST40 interlace/split/auto-detect, 32–128 and asymmetric queue init | Stats, counts, frame content | See each file |
 
+### RL wire oracle
+
+`st20p_rl_staged_overload_is_loud` and the VRX margin case run one load through `runRlMix()`
+(`st20p_vrx_margin_tests.cpp`): st20p video TX, with MTL's PTP time on the RX PHC
+(`PhcFollowingClock`) and `dump_period_s` = 1. Each received leg is an `RlWireCheck`,
+from 20 s after its first frame until the runner closes the window (30 s after the last
+staged create). The VRX margin case is the compliant load, which must raise no RL line:
+
+- every NIC-timed frame has `vrx_min` ≥ 0, and packet 0 is judged as EBU LIST does
+  from its NIC time: `fpt` ≥ `TR_offset + trs` is VRX < 0 at packet 0, which the
+  parser's truncation reads as 0; a frame off its RTP's epoch is negative too; no
+  frame between the window's first and last is missing;
+- packet 0 is never before its launch target, beyond the PHC follower's largest lag
+  (not in the staged cell: each create commits the VF's RL hierarchy, which can
+  release the queues already streaming up to ~0.7 µs early);
+- `RlLogTap` (`mtl_set_log_printer`) counts `frames may break VRX` (per session, named
+  `rl_tx_<i>`) and `frames fall behind` (per scheduler) lines; in a stats period that
+  began in the window, a compliant cell allows none, and the window must hold a parsed
+  dump each second but 2;
+- the window is `RL_INVALID`, which fails, when `MTL_CPU_ISOLATION` is not
+  `exclusive`, the PHC follower is unhealthy, a frame is software timed, RX lost
+  packets or buffers, the TX app had no frame ready (`stat_user_busy`), or the TX link
+  is slower than the load or unknown (both legs count on one PF). The VRX margin case fails
+  those as hard checks, without the `RL_INVALID` tag.
+
+Each case prints one `RL_TREND {json}` line (worst `vrx_min`, sessions per scheduler);
+the staged case's most sessions on one scheduler is the capacity it fell behind at.
+
+| Case | Load | Expect |
+|---|---|---|
+| `st20p_rl_staged_overload_is_loud` | 1080p59.94 on one quota: 2 up front and received, then one a second into the streaming scheduler until a received frame is negative (at most what TX carries), then 30 s | Each negative frame's period: its session's `frames may break VRX` and `frames fall behind`; before it, ≥ 1 period with no `fall behind` lead, none of those with a received session's line |
+
 ### Equal VRX margin oracle
 
 `st20p_redundant_1080p59_s8_equal_vrx_margin` runs 8 ST 2022-7 1080p59.94
@@ -245,11 +284,12 @@ first 20 s after each session's first frame, measures for 30 s, NIC timed (see
 [Timing model](#timing-model)), and checks:
 
 - per port, each session's `vrx_min` mean less its lowest 1 % ≥ the best
-  session's − 1 packet, over ≥ 80 % of the window's frames per session and port;
+  session's − 1 packet;
+- every frame of the window per session and port, NIC timed or off the K shift;
 - ≤ 1 % of those frames with that leg finishing > 4 packets behind the other;
-- median PTP now − `receive_timestamp` in (K, K + 2T), no leg's `rtp_offset`
-  unshifted by K, and ≤ 1 % + 61 frames per leg (about 1 s, as the RTP wrap
-  every ~13.25 h is not handled) with it off the K shift by ≥ T/2;
+- no frame with its `rtp_offset` unshifted by K (a software RX time), and ≤ 1 % + 61
+  frames per leg (about 1 s, as the RTP wrap every ~13.25 h is not handled) with it
+  off the K shift by ≥ T/2;
 - the PHC follower: no read lagging by more than 5 µs, no gap of more than
   100 ms between reads, and ≥ 90 % of the 10 ms slots read.
 
@@ -260,10 +300,10 @@ them it was 1.14–1.29 packets, the sessions on the busy TX scheduler failing
 the margin check. Without them leg R also finished more than 4 packets behind
 on 1799/1799 frames, as the redundant leg looked up the wrong trained rate.
 
-With them, the case needs no CPU isolation: on shared CPUs (E830 VF TX/RX) it
-passed 18 of 18 runs, spread 0.17–0.40 packets. A shared CPU can still underflow
-every session of one TX scheduler at once (up to 8 of 1799 frames seen, with and
-without the pre-arm plan); the lowest 1 % that the margin check drops covers it.
+On shared CPUs (E830 VF TX/RX) the margin check passed 18 of 18 runs, spread
+0.17–0.40 packets, but a shared CPU can underflow every session of one TX scheduler
+at once (up to 8 of 1799 frames seen). The case also runs the RL wire oracle on both
+legs, so it needs an exclusive partition.
 
 ## Failure signatures
 
@@ -275,7 +315,7 @@ without the pre-arm plan); the lowest 1 % that the margin check drops covers it.
 | `st30p_user_pacing ... needs an exclusive CPU partition` | Not run under `tests/tools/isolate/isolate.sh` with an exclusive partition (check `NOCTX_ISOLATE_CASES`); see the wrapper's `WARNING` |
 | `st30p_redundant_latency*` RX buffers short of TX; message shows `stat_slot_get_frame_fail` | Back-pressure: the RX consumer did not return buffers and the session refused packets |
 | Error of about `T` from some frame on | A frame was lost or a slot skipped, so `idx_rx` no longer matches the TX index. Check `stat_epoch_drop` and RX loss |
-| `median PTP now - receive_timestamp … is not in (K, +2T)`, or `frames timed with software RX times` | Below K: the RX port delivers no NIC RX timestamps and the parser used software times (`MTL_FLAG_ENABLE_HW_TIMESTAMP` is dropped silently when the port lacks the offload). Otherwise `PhcFollowingClock` lost the RX PHC |
+| `frames timed with software RX times` | The RX port delivers no NIC RX timestamps and the parser used software times (`MTL_FLAG_ENABLE_HW_TIMESTAMP` is dropped silently when the port lacks the offload) |
 | `MTL's PTP time did not follow the RX PHC` | Something (ptp4l, phc2sys) stepped the RX PF's PHC or steers it > 100 ppm off, the PHC reads failed or left gaps (E810 reads that miss ±1 µs), or the follower thread was starved of its CPU |
 | `this leg finished more than 4 packets … behind the other` | TX paces the two 2022-7 legs of a session apart (for example one leg's queue on the wrong rate), the leg lost packets, or the RX tasklet stalled at the frame tail; the lagging leg's tail is not timed |
 | `TX sessions per scheduler: … the check needs one scheduler with >= 3 sessions` | The scheduler quota or lcore count changed, so the 8 sessions no longer share TX schedulers and the VRX check would compare nothing |
