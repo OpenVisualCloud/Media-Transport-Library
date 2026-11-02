@@ -313,20 +313,22 @@ else
 	if command -v cargo &>/dev/null; then
 		ok "Rust toolchain already installed: $(cargo --version)"
 	else
+		# rustup 1.29.2: rustup-init.sh by commit, and the rustup-init that it
+		# fetches by RUSTUP_VERSION. The toolchain follows the stable channel.
 		info "Installing Rust toolchain via rustup..."
 		# Install as the real user if running under sudo, otherwise as root
 		REAL_USER="${SUDO_USER:-root}"
 		REAL_HOME=$(eval echo "~$REAL_USER")
 
 		if [[ "$REAL_USER" != "root" ]]; then
-			su - "$REAL_USER" -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable' || {
+			su - "$REAL_USER" -c 'curl --proto "=https" --tlsv1.2 -sSf https://raw.githubusercontent.com/rust-lang/rustup/d8c92c6765f85625b20482e165066bf1e98e7297/rustup-init.sh | env RUSTUP_VERSION=1.29.2 sh -s -- -y --default-toolchain stable' || {
 				warn "rustup install as $REAL_USER failed — trying as root"
-				curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+				curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/rust-lang/rustup/d8c92c6765f85625b20482e165066bf1e98e7297/rustup-init.sh | env RUSTUP_VERSION=1.29.2 sh -s -- -y --default-toolchain stable
 			}
 			# Source the env for this session
 			export PATH="$REAL_HOME/.cargo/bin:$PATH"
 		else
-			curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+			curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/rust-lang/rustup/d8c92c6765f85625b20482e165066bf1e98e7297/rustup-init.sh | env RUSTUP_VERSION=1.29.2 sh -s -- -y --default-toolchain stable
 			export PATH="/root/.cargo/bin:$PATH"
 		fi
 		ok "Rust $(cargo --version 2>/dev/null || echo '(just installed)') installed"
