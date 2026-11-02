@@ -346,11 +346,11 @@ candidate that cannot carry the load, the failure is the result. A round that ra
 ends the rounds; the report keeps the earlier ones and names the error.
 
 `perf_compare.html` gives the builds, the rounds, the summary, and each role's rows in
-groups: Delivery whole, CPU by stage and the call times as tables of cells, and the
-others with the rows that changed shown and the rest folded. The setup follows, open,
-then each instance's command and RxTxApp configuration, folded. The job summary keeps no
-style, so it gets `perf_compare_summary.html`: the same without the setup and the
-instances, the role tables folded.
+groups, every row shown: CPU by stage and the call times as tables of cells, the others
+as tables of rows, the summary's key rows by the size of their change. The setup
+follows, open, then each instance's command and RxTxApp configuration, folded. The job
+summary keeps no style, so it gets `perf_compare_summary.html`: the same without the
+setup and the instances.
 
 ### 4.5. Layout effects
 

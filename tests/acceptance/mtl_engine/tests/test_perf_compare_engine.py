@@ -1099,11 +1099,13 @@ def test_the_summary_leads_with_the_verdict_and_the_largest_changes():
     rule = "2 valid rounds, the slots swapped each round. A change is at least 2% "
     rule += "and 2 times the noise, twice the standard error of a build&#x27;s mean"
     assert rule in page and "Under 4 rounds the noise is a rough estimate" in page
-    labels = ["LLC misses (M/s)", threads, loop, bw]
+    # every key row in one table, none folded: the unchanged one after the changes
+    labels = ["LLC misses (M/s)", threads, loop, bw, "video cpu busy (%)"]
     order = [page.index(f"<td>RX · {m} ↓</td>") for m in labels]
     assert order == sorted(order)
-    fold = '<details class="fold"><summary>1 unchanged</summary>'
-    assert fold in page and page.index(fold) < page.index("<td>RX · video cpu busy")
+    keys = page[page.index("<h3>Key metrics</h3>") :]
+    assert keys[: keys.index("</table>")].count("<tr") == 1 + len(labels)
+    assert "<details" not in page
     assert "regresses 2 of the 5 key metrics and improves 2." in page
     page = _summary(rows, 4)
     assert "4 valid rounds" in page and "Under 4 rounds" not in page
@@ -1132,9 +1134,11 @@ def test_the_summary_leads_with_the_verdict_and_the_largest_changes():
     tasklets = "<h3>Tasklet call times, avg and p99, outside the verdict</h3>"
     page = _summary({loop: (100, 90), p99: (None, 5)})
     assert "improves 1 of the 1 key metrics" in page and tasklets not in page
-    page = _summary({loop: (100, 90), p99: (5, 6)})
+    page = _summary({loop: (100, 90), p99: (5, 6), "sch_1 t avg, timed (us)": (5, 5)})
     assert "improves 1 of the 1 key metrics" in page and tasklets in page
     assert '<tr class="r"><td>RX · t on sch_1, p99 (us) ↓</td>' in page
+    assert "<tr><td>RX · t on sch_1, avg (us) ↓</td>" in page  # unchanged, shown
+    assert "<details" not in page
     # the key rows only, after their role; every row in the count
     rows = {loop: (100, 90), "IPC": (1.0, 2.0), "x": (100, 110), "y": (1, None)}
     rows["RX work (ns/pkt)"] = (None, 5)  # a key row that A lacks
@@ -1226,7 +1230,7 @@ class _Tags(HTMLParser):
             assert self.open.pop() == tag
 
 
-def test_the_job_summary_holds_the_verdict_and_folds_the_rest():
+def test_the_job_summary_holds_the_verdict_and_every_row():
     rows = {"sch_1 avg loop (ns)": (100, 120), "sch_1 t avg, timed (us)": (1.0, 1.0)}
     rounds = [_round(m, o) for o, m in zip((("A", "B"), ("B", "A")), _valid(rows))]
     invalid = _rounds((1, 99999), metric="zz")[0]  # a row of its own in the tables
@@ -1240,10 +1244,11 @@ def test_the_job_summary_holds_the_verdict_and_folds_the_rest():
         "<tr><td>2</td><td>a&lt;b</td><td>main</td><td>valid</td></tr>",
         "<b>❌ a&lt;b regresses 1 of the 1 key metrics and improves none.</b>",
         '<tr class="r"><td>RX · sch_1 avg loop (ns) ↓</td><td><b>',
-        "<details><summary><b>RX (s&lt;t): every row</b></summary>",
+        "<h2>RX (s&lt;t)</h2>",
         "<h3>Tasklet call times, every call timed</h3>",
     )
     assert sorted(order, key=page.index) == list(order)
+    assert "<details" not in page  # each role's tables open, as in the report
     assert "Test Information" not in page and "Instance Details" not in page
     assert "99,999" not in page and "<td>rx0 (B): late</td>" in page  # left out, named
     # a legend of what shows without style: no grey, no bars
@@ -1257,6 +1262,8 @@ def test_the_report_shows_the_delivery_whole_and_the_cpu_of_each_stage_with_bars
         "fps (worst session)": (59.94, 59.94),
         "RX rate (Gb/s)": (27.6, 27.6),
         "incomplete frames": (0, 0),
+        "sch_1 avg loop (ns)": (100, 100),
+        "sch_2 avg loop (ns)": (100, 120),
         "schedulers (CPUs)": (1, 1),
         "scheduler threads (cores)": (1.0, 1.0),
         "application threads (cores)": (2.0, 2.4),  # +20%: a regression
@@ -1269,6 +1276,11 @@ def test_the_report_shows_the_delivery_whole_and_the_cpu_of_each_stage_with_bars
     section = page[page.index("<h2>RX (s&lt;t)</h2>") :]
     delivery = section[section.index("<h3>Delivery</h3>") : section.index("<h3>CPU by")]
     assert "<td>RX rate (Gb/s)</td>" in delivery and "fold" not in delivery  # unchanged
+    # a group's unchanged row in the table of its changes, none folded
+    loops = section[section.index("<h3>Scheduler loops</h3>") :]
+    loops = loops[: loops.index("</table>")]
+    assert '<tr class="r"><td>sch_2 avg loop (ns) ↓</td>' in loops
+    assert "<tr><td>sch_1 avg loop (ns) ↓</td>" in loops
     stages = section[section.index('<table class="mx tm stg">') :]
     texts = [pc.STAGE_TEXT[s][1] for s in pc.STAGES]
     assert sorted(texts, key=stages.index) == texts  # the kinds in order, all last
@@ -1380,8 +1392,6 @@ def test_report_html_opens_the_setup_folds_the_instances_and_escapes_every_text(
         "text-transform:none;border-bottom:2px solid var(--border);position:sticky;"
         "top:0;z-index:1}",
         ".verdict.r{border-left-color:var(--r);background:var(--r-tint)}",
-        "details.fold{border:0;box-shadow:none;background:none;margin:4px 0 0;"
-        "overflow:visible}",
         ".sec h3{color:var(--brand);background:#f1f2f4;border-left-color:var(--brand)}",
     ):
         assert css(rule) in style, rule

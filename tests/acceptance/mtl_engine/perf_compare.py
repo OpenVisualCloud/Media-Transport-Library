@@ -274,10 +274,6 @@ tr.r .bar i{background:var(--r)}
 tr.d .bar i{background:var(--text-muted)}
 .sec h3{color:var(--brand);background:#f1f2f4;border-left-color:var(--brand)}
 table.scored td{overflow-wrap:anywhere}
-details.fold{border:0;box-shadow:none;background:none;margin:4px 0 0;overflow:visible}
-details.fold>summary{padding:4px 2px;color:var(--text-muted);font-size:.84em;
-  background:none;border:0}
-details.fold[open]>summary{border-bottom:0}
 .verdict{padding:12px 16px;margin-bottom:14px;border-radius:6px;line-height:1.8;
   background:#f8f9fb;border-left:4px solid var(--border)}
 .verdict.i{border-left-color:var(--i);background:var(--i-tint)}
@@ -1347,21 +1343,6 @@ def _cmp_table(items: list[tuple[str, Row]], names: dict) -> str:
     return _table(head, rows, "mx cmp scored")
 
 
-def _changes(items: list[tuple[str, Row]], names: dict) -> str:
-    """The *items* that changed in a table, the others folded under how many they are."""
-    changed = [(label, r) for label, r in items if outcome(r) in CHANGES]
-    rest = [(label, r) for label, r in items if outcome(r) not in CHANGES]
-    parts = [_cmp_table(changed, names)] if changed else []
-    if rest:
-        count = Counter(outcome(r) for _, r in rest)
-        what = " and ".join(f"{count[o]} {o}" for o in ("unchanged", "n/a") if count[o])
-        parts.append(
-            f'<details class="fold"><summary>{what}</summary>'
-            f"{_cmp_table(rest, names)}</details>"
-        )
-    return "\n".join(parts)
-
-
 def _by_size(items: list[tuple[str, Row]]) -> list[tuple[str, Row]]:
     """*items*, (label, row), regressions first, then improvements and differences, each
     by its size; the others after them in their order."""
@@ -1449,20 +1430,17 @@ def _stages(rows: list[Row], names: dict, cpus: int) -> str:
 
 
 def _tables(groups: list[tuple[str, list[Row]]], names: dict, cpus: int = 0) -> str:
-    """Each of *groups* under its title: the delivery as all its rows, the CPU of each
-    stage as _stages() on slots of *cpus*, one of call times as a single _matrix(), the
-    first table of cells after a note on how they read, another as its changes."""
+    """Each of *groups* under its title: the CPU of each stage as _stages() on slots of
+    *cpus* and one of call times as a single _matrix(), the first of them after a note
+    on how their cells read, and any other as a table of all its rows."""
     parts, noted = [], False
     for title, rows in groups:
         parts.append(f"<h3>{html.escape(title)}</h3>")
-        if title == DELIVERY:
-            parts.append(_cmp_table([(r.metric, r) for r in rows], names))
-            continue
         grid = title == CPU_STAGES or all(
             RE_TIMED_ROW.fullmatch(r.metric) for r in rows
         )
         if not grid:
-            parts.append(_changes([(r.metric, r) for r in rows], names))
+            parts.append(_cmp_table([(r.metric, r) for r in rows], names))
             continue
         if not noted:
             parts.append(
@@ -1603,10 +1581,10 @@ def _summary(
     p.append(_note(f"All {every.total()} rows: {tally}"))
     if keys:
         p.append("<h3>Key metrics</h3>")
-        p.append(_changes(_by_size(keys), names))
+        p.append(_cmp_table(_by_size(keys), names))
     if tasklets:
         p.append("<h3>Tasklet call times, avg and p99, outside the verdict</h3>")
-        p.append(_changes(_by_size(tasklets), names))
+        p.append(_cmp_table(_by_size(tasklets), names))
     notes = dict.fromkeys(
         n for role in hosts for n in _tasklet_notes(rows[role], names)
     )
@@ -1684,9 +1662,10 @@ def _pool(metrics: dict, nic: int) -> dict:
 
 
 def _results(labels, args, slots, rounds, styled, nics, single_core) -> list[str]:
-    """The builds, the rounds, the summary and the tables of each role; the tables
-    folded unless *styled*. *nics* is how the builds use the NICs: single, span, split,
-    redundant, pairs or pooled; *single_core* the roles whose instances had one scheduler.
+    """The builds, the rounds, the summary and the tables of each role; *styled* for a
+    page with the report's style. *nics* is how the builds use the NICs: single, span,
+    split, redundant, pairs or pooled; *single_core* the roles whose instances had one
+    scheduler.
     """
     valid = [r["metrics"] for r in rounds if not r["problems"]]
     if nics == "pooled":  # each NIC's pair of each round is a sample
@@ -1739,9 +1718,6 @@ def _results(labels, args, slots, rounds, styled, nics, single_core) -> list[str
         rows = compare(valid, role)
         size = cpus.get(role.split()[0], 0) if styled else 0
         tables = _tables(_groups(rows), names, size)
-        if not styled:
-            p.append(_details(f"{title}: every row", [tables]))
-            continue
         notes = map(_note, _tasklet_notes(rows, names))
         p += [f'<div class="sec"><h2>{title}</h2>', tables, *notes, "</div>"]
     return p
@@ -1749,8 +1725,8 @@ def _results(labels, args, slots, rounds, styled, nics, single_core) -> list[str
 
 def summary_html(labels, args, slots, rounds, nics="single", single_core=()) -> str:
     """The report as the job summary shows it, which keeps no style: the builds, the
-    rounds and the summary, and the tables of each role folded; the workflow links the
-    full report, with the setup and the instances, after it."""
+    rounds, the summary and the tables of each role; the workflow links the full report,
+    with the setup and the instances, after it."""
     title = html.escape(f"MTL perf-compare: {labels['B']} against {labels['A']}")
     page = [
         f"<h2>{title}</h2>",
