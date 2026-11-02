@@ -39,8 +39,9 @@ enum st_tx_video_rl_trim {
 #define ST_TX_VIDEO_RL_PSM_CLK_390MHZ (390625000)
 #define ST_TX_VIDEO_RL_PSM_CLK_416MHZ (416666667)
 #define ST_TX_VIDEO_RL_PSM_CLK_446MHZ (446428571)
-/* the most packet 0 may leave past its target: the grid's aim and timeslot and a cut,
- * the TX side's share of the 0..+10 us launch bound */
+/* The latest packet 0 may leave past its target, the TX side's share of the 0..+10 us
+ * launch bound. It covers the timeslot grid's aim and timeslot, a trim cut and an
+ * absorbed stall. */
 #define ST_TX_VIDEO_RL_GRID_LATE_MAX_NS (4 * NS_PER_US)
 
 /* the most bytes ice adds per token timeslot on a queue programmed at bps bytes/s */
@@ -74,6 +75,7 @@ static inline uint64_t st_tx_video_rl_timeslot_tokens(uint64_t bps) {
 struct st_tx_video_rl_plan {
   long double pad_ns;    /* shaper time of one NORMAL pad, 0 without a plan */
   long double bucket_ns; /* shaper time of a full bucket plus the timeslot aim */
+  long double absorb_ns; /* the longest stall packet 0 absorbs, <= 0 for none */
   int64_t trim_pads;     /* st_tx_video_rl_trim_pads() of pad_size */
   uint16_t pad_size;     /* bytes of the NORMAL pad */
   bool armed;            /* false: packet 0 is held until its target */
@@ -123,6 +125,18 @@ static inline struct st_tx_video_rl_burst st_tx_video_rl_next_burst(long double 
                 n - b.coarse);
   }
   return b;
+}
+
+/* the number of bursts st_tx_video_rl_next_burst() plans from drained to launch */
+static inline int64_t st_tx_video_rl_bursts(long double drain, int64_t trim_pads,
+                                            long double launch, long double drained) {
+  int64_t needed = (int64_t)ceill((launch - drained) / drain);
+
+  if (needed <= 0) return 0;
+  if (needed <= trim_pads) return 1;
+  return (needed - trim_pads + ST_TX_VIDEO_RL_MAX_PADS_PER_BURST - 1) /
+             ST_TX_VIDEO_RL_MAX_PADS_PER_BURST +
+         1;
 }
 
 /* the shaper time a burst adds: a cut pad drains by its bytes */

@@ -874,6 +874,17 @@ INSTANTIATE_TEST_SUITE_P(AllSoftwareWaitPaths, St20TxTransmitterBoundaryTest,
                          ::testing::Values(UT_TXV_PACING_TSC, UT_TXV_PACING_PTP,
                                            UT_TXV_PACING_RL));
 
+/* BE pacing frees a dummy pkt it bursts none of, and reads it no more */
+TEST(St20TxBePacing, ADummyPktItFreedIsNotReadAgain) {
+  ASSERT_EQ(ut_txv_init(), 0);
+  ut_txv_ctx* ctx = ut_txv_create();
+  ASSERT_NE(ctx, nullptr);
+  uint32_t reads = UINT32_MAX;
+  ASSERT_EQ(ut_txv_run_be_dummy(ctx, &reads), 0);
+  EXPECT_EQ(reads, 0u);
+  ut_txv_destroy(ctx);
+}
+
 /* Launch-time pacing leaves the wait to the NIC: the transmitter hands the packet over at
  * once, with its PTP target in the tx timestamp field and the flag the driver keys on. */
 TEST_F(St20TxSyncPacingTest, LaunchTimeHandsThePacketOverWithItsPtpTarget) {
@@ -1311,6 +1322,9 @@ TEST(St20TxRlPlanArming, EveryRlFormatArmsItsPlanOrWarns) {
                                      std::to_string(port) + " no rl plan, holds packet 0";
             EXPECT_EQ(ut_txv_rl_armed(ctx, port), f.armed) << "port " << port;
             EXPECT_EQ(log.find(warn) != std::string::npos, !f.armed) << "port " << port;
+            if (f.armed) {
+              EXPECT_GT((double)ut_txv_rl_absorb(ctx, port), 0.0) << "port " << port;
+            }
           }
           ut_txv_destroy(ctx);
         }

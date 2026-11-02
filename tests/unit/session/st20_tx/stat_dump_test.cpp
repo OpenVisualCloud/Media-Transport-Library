@@ -84,4 +84,12 @@ TEST_F(St20TxStatDumpTest, StatsResetAcrossAMigrateTakesTheNewSchedulersLock) {
   EXPECT_FALSE(ut_txv_session_slots_locked(ctx_));
 }
 
+/* The old scheduler's transmitter released the session in its calls, which the new
+ * one's count from 1 may reach: a migrated session starts released in none of them. */
+TEST_F(St20TxStatDumpTest, AMigratedSessionWasReleasedInNoCallOfTheNewScheduler) {
+  ut_txv_set_trs_released(ctx_, 0, 1);
+  ut_txv_run_migrate(ctx_);
+  EXPECT_EQ(0u, ut_txv_trs_released(ctx_, 0));
+}
+
 }  // namespace

@@ -48,6 +48,8 @@ void ut_txv_set_max_onward_epochs(ut_txv_ctx* ctx, uint32_t max_onward_epochs);
 void ut_txv_set_cur_epochs(ut_txv_ctx* ctx, uint64_t cur_epochs);
 void ut_txv_set_tr_offset(ut_txv_ctx* ctx, long double tr_offset_ns);
 void ut_txv_set_vrx(ut_txv_ctx* ctx, uint32_t vrx);
+/* ops.start_vrx, the user's vrx tv_init_pacing() takes */
+void ut_txv_set_start_vrx(ut_txv_ctx* ctx, uint16_t start_vrx);
 void ut_txv_set_trs(ut_txv_ctx* ctx, long double trs_ns);
 void ut_txv_set_warm_pkts(ut_txv_ctx* ctx, uint32_t warm_pkts);
 /* ops.interlaced: selects the ST 2110-21 6.2 field/frame-grid schedule. */
@@ -172,6 +174,10 @@ uint64_t ut_txv_reclaim_interval_ns(void);
 int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
                                     uint64_t delta_ns, int* bursts_before_target,
                                     int* bursts_at_target);
+/* Runs the BE transmitter once over a dummy pkt, which it frees and bursts none of.
+ * Sets *freed_reads to its reads of a freed pkt's index. Returns 0, < 0 if it freed
+ * none or on setup failure. */
+int ut_txv_run_be_dummy(ut_txv_ctx* ctx, uint32_t* freed_reads);
 /* Runs the launch-time (TSN) transmitter once over one packet whose PTP target is
  * target_ptp, with the tx timestamp dynfield and flag registered as mt_dev.c does.
  * Sets *launch_time to the packet's timestamp dynfield and *launch_flag to whether it
@@ -299,6 +305,8 @@ uint32_t ut_txv_pacing_warm_pkts(const ut_txv_ctx* ctx);
 /* the rl_plan[] pad_ns / bucket_ns of a session port, in ns */
 long double ut_txv_rl_drain(const ut_txv_ctx* ctx, int port);
 long double ut_txv_rl_credit(const ut_txv_ctx* ctx, int port);
+long double ut_txv_rl_absorb(const ut_txv_ctx* ctx, int port);
+uint32_t ut_txv_pacing_vrx(const ut_txv_ctx* ctx);
 /* the rest of the rl_plan[] the transmitter's pre-arm reads */
 bool ut_txv_rl_armed(const ut_txv_ctx* ctx, int port);
 uint16_t ut_txv_rl_pad_size(const ut_txv_ctx* ctx, int port);
@@ -389,6 +397,9 @@ uint32_t ut_txv_rtp_time_stamp(const ut_txv_ctx* ctx);
  * printer. Returns the number of log lines emitted; *locked_lines receives how
  * many of them were emitted while the session spinlock was held. */
 int ut_txv_run_sessions_stat(ut_txv_ctx* ctx, int* locked_lines);
+/* s->trs_released[port], the transmitter call that last released the port */
+void ut_txv_set_trs_released(ut_txv_ctx* ctx, int port, uint64_t visit);
+uint64_t ut_txv_trs_released(const ut_txv_ctx* ctx, int port);
 /* st_tx_video_session_migrate() of the session from scheduler 0's mgr to the next slot of
  * scheduler 1's, as tx_video_migrate_to() does */
 void ut_txv_run_migrate(ut_txv_ctx* ctx);
@@ -446,6 +457,9 @@ uint64_t ut_txv_txq_get_bps(const ut_txv_ctx* ctx);
 void ut_txv_recovery_set_flush_ret(ut_txv_ctx* ctx, int leg, int ret);
 /* st20_tx_queue_fatal_error() of leg */
 int ut_txv_recover(ut_txv_ctx* ctx, int leg);
+/* the pre-arm's kept-back last burst of leg, and the drain end of its pads */
+void ut_txv_set_rl_tail(ut_txv_ctx* ctx, int leg, bool tail, long double drained);
+bool ut_txv_rl_tail(const ut_txv_ctx* ctx, int leg, long double* drained);
 /* warnings the recoveries logged */
 int ut_txv_recovery_warns(const ut_txv_ctx* ctx);
 /* mt_txq_recovery_flush() calls on the queues of leg */

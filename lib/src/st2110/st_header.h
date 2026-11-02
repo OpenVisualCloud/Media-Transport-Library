@@ -323,6 +323,11 @@ struct st_tx_video_session_impl {
 
   /* info for transmitter */
   uint64_t trs_target_tsc[MTL_SESSION_PORT_MAX];
+  /* the pre-arm kept its last burst back, to send it with packet 0 */
+  bool trs_rl_tail[MTL_SESSION_PORT_MAX];
+  /* when the shaper finishes the pkts sent so far, one trs each from packet 0's target */
+  uint64_t trs_wire_tsc[MTL_SESSION_PORT_MAX];
+  uint64_t trs_released[MTL_SESSION_PORT_MAX]; /* trs->visit of its last release */
   struct rte_mbuf* trs_inflight[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
   unsigned int trs_inflight_num[MTL_SESSION_PORT_MAX];
   unsigned int trs_inflight_idx[MTL_SESSION_PORT_MAX];
@@ -398,6 +403,9 @@ struct st_tx_video_session_impl {
 
   /* cold, read once a frame, so it sits last, off the hot cache lines */
   struct st_tx_video_rl_plan rl_plan[MTL_SESSION_PORT_MAX];
+  /* RL transmitter state of packet 0 and the idle reclaim, off the hot lines */
+  uint64_t trs_reclaim_tsc[MTL_SESSION_PORT_MAX]; /* no RL reclaim before this tsc */
+  long double trs_rl_drained[MTL_SESSION_PORT_MAX];
 };
 
 struct st_tx_video_sessions_mgr {
@@ -416,6 +424,13 @@ struct st_video_transmitter_impl {
   struct st_tx_video_sessions_mgr* mgr;
   struct mt_sch_tasklet_impl* tasklet;
   int idx; /* index for current transmitter */
+  /* the earliest RL packet 0 target held or deferred, 0 if none */
+  uint64_t pkt0_tsc;
+  /* the earliest target behind the refused port of session refused_sidx, scanned again
+   * after that session's visit */
+  uint64_t blocked_tsc;
+  int refused_sidx;
+  uint64_t visit; /* the video_trs_tasklet_handler() calls so far */
 };
 
 struct st_rx_video_slot_slice {

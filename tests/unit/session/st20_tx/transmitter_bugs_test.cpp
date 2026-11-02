@@ -185,4 +185,24 @@ TEST_F(St20TxTransmitterBugsTest, PartialBurstBeforeBoundaryRetriesBeforeNewFram
   EXPECT_EQ(0u, ut_trs_inflight_num(ctx_));
 }
 
+/* a burst the NIC took part of counts only the pkts it took, a refused one none */
+TEST_F(St20TxTransmitterBugsTest, ShortBurstCountsOnlyTheSentPkts) {
+  constexpr uint16_t kLen = 1262;
+  ut_trs_set_first_pkt_frame(ctx_, nullptr, kLen);
+  ut_trs_set_inflight_num(ctx_, 4);
+  ut_trs_set_burst_accept_limit(ctx_, 3);
+  ut_trs_set_burst_refuse(ctx_, 2, 1);
+
+  ut_trs_call_rl_tasklet(ctx_);
+  ASSERT_EQ(2u, ut_trs_burst_call_count(ctx_));
+  EXPECT_EQ(1u, ut_trs_inflight_num(ctx_));
+  EXPECT_EQ(3u, ut_trs_port_packets(ctx_));
+  EXPECT_EQ(3u * kLen, ut_trs_port_bytes(ctx_));
+
+  ut_trs_call_rl_tasklet(ctx_);
+  EXPECT_EQ(0u, ut_trs_inflight_num(ctx_));
+  EXPECT_EQ(4u, ut_trs_port_packets(ctx_));
+  EXPECT_EQ(4u * kLen, ut_trs_port_bytes(ctx_));
+}
+
 }  // namespace
