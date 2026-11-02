@@ -146,14 +146,25 @@ ok "Core packages installed"
 #═══════════════════════════════════════════════════════════════════════════════
 section "2/8 — Node.js ${NODE_MAJOR}.x"
 
-if command -v node &>/dev/null; then
-	CURRENT_NODE=$(node -v | sed 's/^v//' | cut -d. -f1)
-	if [[ "$CURRENT_NODE" -ge 18 ]]; then
-		ok "Node.js $(node -v) already installed (meets >=18 requirement)"
-	else
-		warn "Node.js $(node -v) is too old — installing v${NODE_MAJOR}"
-		INSTALL_NODE=true
-	fi
+# Node.js has the fix for CVE-2026-111497 (Brotli decoder) from
+# ^22.23.4 || ^24.22.1 || >=26.12.1; the lines past their end of life have none.
+node_is_patched() {
+	local version fixed
+	version=$(node -v 2>/dev/null) || return 1
+	version=${version#v}
+	case "${version%%.*}" in
+	22) fixed=22.23.4 ;;
+	24) fixed=24.22.1 ;;
+	*) fixed=26.12.1 ;;
+	esac
+	[[ "$(printf '%s\n' "$fixed" "$version" | sort -V | head -n1)" == "$fixed" ]]
+}
+
+if node_is_patched; then
+	ok "Node.js $(node -v) already installed"
+elif command -v node &>/dev/null; then
+	warn "Node.js $(node -v) lacks the fix for CVE-2026-111497 — installing v${NODE_MAJOR}"
+	INSTALL_NODE=true
 else
 	INSTALL_NODE=true
 fi
@@ -171,6 +182,10 @@ if [[ "${INSTALL_NODE:-false}" == "true" ]]; then
 
 	apt-get update -qq
 	apt-get install -y -qq nodejs
+	if ! node_is_patched; then
+		err "Node.js $(node -v 2>/dev/null) from NodeSource still lacks the fix for CVE-2026-111497"
+		exit 1
+	fi
 	ok "Node.js $(node -v) installed"
 fi
 
