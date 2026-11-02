@@ -14,6 +14,8 @@
 #define ipmx_sr_tx_set_block_version ut_sr_tx_set_block_version
 #define ipmx_sr_tx_get_info ut_sr_tx_get_info
 #define ipmx_sr_tx_set_ts_refclk ut_sr_tx_set_ts_refclk
+#define ipmx_sdp_build ut_sdp_build
+#define ipmx_sdp_tx_get ut_sdp_tx_get
 
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
@@ -22,6 +24,7 @@
 #include "ipmx/ipmx_sr.h"
 #include "ipmx/ipmx_sr_harness.h"
 #include "mt_main.h"
+#include "st2110/pipeline/st20_pipeline_tx.h"
 #include "st2110/st_tx_video_session.h"
 
 #define UT_SR_WIRE_MAX (512)
@@ -32,6 +35,8 @@ struct ut_sr_ctx {
   struct mtl_main_impl impl;
   struct st_tx_video_sessions_mgr mgr;
   struct st_tx_video_session_impl session;
+  struct st_tx_video_session_handle_impl handle;
+  struct st20p_tx_ctx pipeline;
   int queue_tag[MTL_SESSION_PORT_MAX]; /* s->queue[] identity for the burst mock */
   struct rte_mempool* pkt_pool;
   uint64_t now;
@@ -127,6 +132,7 @@ static uint64_t ut_sr_ptp(struct mtl_main_impl* impl, enum mtl_port port) {
 #define mt_txq_burst ut_sr_txq_burst
 #define mt_get_tsc ut_sr_tsc
 #define mt_get_ptp_time ut_sr_ptp
+#include "ipmx/ipmx_sdp.c"
 #include "ipmx/ipmx_sr.c"
 #include "st2110/st_video_transmitter.c"
 #undef mt_get_ptp_time
@@ -187,6 +193,10 @@ ut_sr_ctx* ut_sr_create(const uint8_t sip[4], uint32_t ssrc, uint16_t media_dst_
 
   s->impl = &ctx->impl;
   s->mgr = &ctx->mgr;
+  ctx->handle.type = MT_HANDLE_TX_VIDEO;
+  ctx->handle.impl = s;
+  ctx->pipeline.type = MT_ST20_HANDLE_PIPELINE_TX;
+  ctx->pipeline.transport = &ctx->handle;
   s->socket_id = rte_socket_id();
   s->ops.num_port = 1;
   s->ops.flags = ST20_TX_FLAG_IPMX;
@@ -351,6 +361,39 @@ void ut_sr_set_ts_refclk_end(ut_sr_ctx* ctx) {
 
 int ut_sr_get_info(ut_sr_ctx* ctx, struct ipmx_video_info* info) {
   return ut_sr_tx_get_info(&ctx->session, info);
+}
+
+int ut_sr_get_sdp(ut_sr_ctx* ctx, char* buf, size_t len) {
+  return ut_sdp_tx_get(&ctx->session, buf, len);
+}
+
+int ut_sr_api_get_sdp(ut_sr_ctx* ctx, bool pipeline, bool valid_handle, char* buf,
+                      size_t len) {
+  int ret;
+
+  if (pipeline) {
+    ctx->pipeline.type =
+        valid_handle ? MT_ST20_HANDLE_PIPELINE_TX : MT_ST20_HANDLE_PIPELINE_RX;
+    ret = ipmx_st20p_tx_get_sdp(&ctx->pipeline, buf, len);
+    ctx->pipeline.type = MT_ST20_HANDLE_PIPELINE_TX;
+  } else {
+    ctx->handle.type = valid_handle ? MT_HANDLE_TX_VIDEO : MT_HANDLE_RX_VIDEO;
+    ret = ipmx_st20_tx_get_sdp(&ctx->handle, buf, len);
+    ctx->handle.type = MT_HANDLE_TX_VIDEO;
+  }
+  return ret;
+}
+
+void ut_sr_set_name(ut_sr_ctx* ctx, const char* name) {
+  snprintf(ctx->session.ops_name, sizeof(ctx->session.ops_name), "%s", name);
+}
+
+void ut_sr_set_pacing(ut_sr_ctx* ctx, enum st21_pacing pacing) {
+  ctx->session.ops.pacing = pacing;
+}
+
+void ut_sr_set_payload_type(ut_sr_ctx* ctx, int s_port, uint8_t payload_type) {
+  ctx->session.s_hdr[s_port].rtp.base.payload_type = payload_type;
 }
 
 void ut_sr_set_ptp(ut_sr_ctx* ctx, const struct ut_sr_ptp* state) {

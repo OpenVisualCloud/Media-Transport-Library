@@ -10,6 +10,7 @@
 
 #include "../mt_main.h"
 #include "ipmx_info.h"
+#include "ipmx_sdp.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -72,6 +73,11 @@ struct ipmx_sr_tx {
   uint32_t frame_octets; /* RTP payload octets, RFC 3550 section 6.4.1 */
   uint8_t num_port;
   struct ipmx_sr_leg leg[MTL_SESSION_PORT_MAX];
+  /* ipmx_sdp_tx_get() only, under the session lock */
+  uint64_t sdp_sess_id;
+  uint64_t sdp_sess_version;
+  bool sdp_taken;
+  struct ipmx_sdp_media sdp_last;
 };
 
 /* the per-leg stats of one session dump */

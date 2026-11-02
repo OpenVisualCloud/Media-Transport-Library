@@ -510,11 +510,12 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
       A timeslot passes those tokens at the true rate, which drains at least S per `pad_ns`, so this holds whatever the NIC clock (`St20TxRlModelTest.TokensCoverEveryIceTimeslot` checks it against a copy of ice's encode on all four psm_clks).
 - With a plan, `video_trs_rl_pre_arm()` queues pads that a shaper with a `bucket_ns` bucket would finish at the target; the real one, an aim smaller, finishes them at target + aim. Packet 0 follows them to the NIC in the same pass, so the shaper, not the tasklet, sets its launch.
   With `ST20_TX_FLAG_IPMX` the frame's RTCP Sender Report sits between the pads and packet 0 on the same queue, and the pre-arm target leads by the SR's shaper time (`ipmx_sr_tx_rl_lead_ns()`).
-  That SR is 204 B of RTCP (SR 28 + IPMX Info Block 176, built at create by `lib/src/ipmx/ipmx_info.c`, ts-refclk and block version refreshed per frame, one block shared by both 2022-7 legs) plus the SDES CNAME, about 270 B on the wire.
+  Every drain end the pre-arm counts, its idle clamp included, is the shaper's less the aim (`St20TxRlFastClockTest.FluidShaperLaunchesOneAimPastTheTarget`).
+- IPMX Sender Report, its RX and the SDP (`lib/src/ipmx/`). The TX SR is 204 B of RTCP (SR 28 + IPMX Info Block 176, built at create by `lib/src/ipmx/ipmx_info.c`, ts-refclk and block version refreshed per frame, one block shared by both 2022-7 legs) plus the SDES CNAME, about 270 B on the wire.
   RX side (`lib/src/ipmx/ipmx_sr_rx.c`): with `ST20_RX_FLAG_IPMX` each port has an rxq on the media flow with UDP port + 1, taken in `rv_init_hw()` and polled by the RX video tasklet; read with `ipmx_st20[p]_rx_get_sr_info()` (seqcount snapshot).
   It is a CNI ring when the media flow is (`MTL_FLAG_RX_USE_CNI`) or the port has CNI running as a tasklet, else a dedicated NIC queue: the first csq sets the CNI thread sleep to 0 for good, so a ring in CNI thread mode would busy-poll a core.
   The poll burst must be ≥ 8: iavf/ice AVX2 vector RX floors `nb_pkts` to 8 descriptors, so `rte_eth_rx_burst(…, 4)` on a dedicated queue always returns 0 (`IPMX_SR_RX_BURST` is 32).
-  Every drain end the pre-arm counts, its idle clamp included, is the shaper's less the aim (`St20TxRlFastClockTest.FluidShaperLaunchesOneAimPastTheTarget`).
+  SDP (`lib/src/ipmx/ipmx_sdp.c`): `ipmx_st20[p]_tx_get_sdp()` builds it from the `ipmx_sr_tx_get_info()` snapshot and the `s_hdr[]` addressing, both read under the session spinlock (so a higher sess-version never carries older content), and SDP and SR cannot disagree; `ipmx_sdp_build()` is pure (unit-tested without a NIC).
 - The pads cover `(target − now) + bucket_ns`: `ceil()` NORMAL
   pads, the last burst holding the ≤ S/64 + 8 pads that take the surplus as cuts of 64 or 8 bytes
   (cut rounded down). `st_tx_video_rl_next_burst()` in `st_tx_video_rl.h` plans each burst, pure

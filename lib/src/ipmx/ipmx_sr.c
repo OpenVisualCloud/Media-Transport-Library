@@ -312,6 +312,9 @@ int ipmx_sr_tx_init(struct mtl_main_impl* impl, struct st_tx_video_session_impl*
 
   sr->impl = impl;
   sr->sampling_rate = s->fps_tm.sampling_clock_rate;
+  /* the VSF SDP parser rejects a zero id, which an app ptp_get_time_fn can give */
+  sr->sdp_sess_id = RTE_MAX(mt_get_ptp_time(impl, port), (uint64_t)1);
+  sr->sdp_sess_version = 1;
   rte_seqcount_init(&sr->info_seq);
   rte_seqcount_init(&sr->app_seq);
   memcpy(sr->localmac, sr->info.ts_refclk, sizeof(sr->localmac));

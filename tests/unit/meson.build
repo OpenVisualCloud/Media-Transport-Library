@@ -236,6 +236,7 @@ if get_option('enable_ipmx')
     'ipmx/ipmx_refclk_test.cpp',
     'ipmx/ipmx_sr_rx_harness.c',
     'ipmx/ipmx_sr_rx_test.cpp',
+    'ipmx/ipmx_sdp_test.cpp',
   ]
 endif
 

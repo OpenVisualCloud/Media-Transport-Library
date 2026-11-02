@@ -4,6 +4,7 @@
 #define _IPMX_SR_HARNESS_H_
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "st20_api.h"
@@ -81,6 +82,15 @@ void ut_sr_set_ts_refclk_begin(ut_sr_ctx* ctx, const char* ts_refclk);
 void ut_sr_set_ts_refclk_end(ut_sr_ctx* ctx);
 /* ipmx_sr_tx_get_info() of the session */
 int ut_sr_get_info(ut_sr_ctx* ctx, struct ipmx_video_info* info);
+/* ipmx_sdp_tx_get() of the session */
+int ut_sr_get_sdp(ut_sr_ctx* ctx, char* buf, size_t len);
+/* the public ipmx_st20[p]_tx_get_sdp(), of a handle of the right or a wrong type */
+int ut_sr_api_get_sdp(ut_sr_ctx* ctx, bool pipeline, bool valid_handle, char* buf,
+                      size_t len);
+/* the session's ops_name, ops.pacing and the payload type of its s_port header */
+void ut_sr_set_name(ut_sr_ctx* ctx, const char* name);
+void ut_sr_set_pacing(ut_sr_ctx* ctx, enum st21_pacing pacing);
+void ut_sr_set_payload_type(ut_sr_ctx* ctx, int s_port, uint8_t payload_type);
 /* The built-in PTP state of port P, as mt_ptp.c leaves it */
 struct ut_sr_ptp {
   bool ptp_service; /* MTL_FLAG_PTP_ENABLE */

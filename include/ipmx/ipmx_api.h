@@ -309,8 +309,8 @@ int ipmx_st20p_tx_set_ts_refclk(st20p_tx_handle handle, const char* ts_refclk);
  * on both legs in the same frame unless one leg trails by a whole frame. In the localmac
  * form it is the P port MAC; advertise it in the SDP media sections of both legs. TR-10
  * TP-1 sections 13.2 and 13.3 compare the Sender Report ts-refclk with the SDP: poll this
- * function and republish the SDP whenever the version changes, also after
- * ipmx_st20_tx_set_ts_refclk().
+ * function and republish the SDP of ipmx_st20_tx_get_sdp() whenever the version changes,
+ * also after ipmx_st20_tx_set_ts_refclk().
  *
  * @param handle
  *   The handle to the tx st2110-20(video) session.
@@ -328,6 +328,46 @@ int ipmx_st20_tx_get_info(st20_tx_handle handle, struct ipmx_video_info* info);
  * ST20P_TX_FLAG_IPMX.
  */
 int ipmx_st20p_tx_get_info(st20p_tx_handle handle, struct ipmx_video_info* info);
+
+/** A buffer of this size holds any SDP ipmx_st20_tx_get_sdp() builds, NUL included */
+#define IPMX_SDP_MAX (2048)
+
+/**
+ * Get the IPMX SDP (VSF TR-10-1 section 10, TR-10-2 section 7) of an st20 TX session
+ * created with ST20_TX_FLAG_IPMX, for the application to publish; the library writes no
+ * file. Lines end with CRLF. The a=fmtp, a=ts-refclk and a=mediaclk values come from the
+ * same state as ipmx_st20_tx_get_info() and the Sender Reports, so they cannot disagree;
+ * the addresses, UDP port and payload type are the ones on the wire, the source address
+ * that of the session port. With ST 2022-7 it is one SDP with a=group:DUP and a media
+ * section per leg (a=mid:primary, a=mid:secondary), both with the same ts-refclk.
+ *
+ * The o= session id is the PTP time in ns at create. The session version starts at 1 and
+ * goes up by 1 when a call finds the content changed since the call before: the block
+ * version, the ts-refclk (see ipmx_st20_tx_get_info()) or st20_tx_update_destination().
+ * There is no callback: poll this function, or the version of ipmx_st20_tx_get_info(),
+ * and republish the SDP when the session version changes.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(video) session.
+ * @param buf
+ *   The buffer to write the NUL terminated SDP to, IPMX_SDP_MAX is always enough.
+ * @param len
+ *   The size of buf.
+ * @return
+ *   - >0: the SDP length, without the NUL.
+ *   - -ENOSPC: buf too short, it holds an empty string.
+ *   - -EIO: invalid handle, or IPMX not enabled on the session.
+ *   - -EINVAL: NULL buf or zero len.
+ *   - -ENOTSUP: interlaced, segmented or non-square PAR, which no session takes today;
+ *     buf is left untouched.
+ */
+int ipmx_st20_tx_get_sdp(st20_tx_handle handle, char* buf, size_t len);
+
+/**
+ * ipmx_st20_tx_get_sdp() of the transport session of an st20p TX pipeline created with
+ * ST20P_TX_FLAG_IPMX.
+ */
+int ipmx_st20p_tx_get_sdp(st20p_tx_handle handle, char* buf, size_t len);
 
 #if defined(__cplusplus)
 }

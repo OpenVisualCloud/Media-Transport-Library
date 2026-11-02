@@ -4,18 +4,74 @@
  * rates, the TR-10-1 section 8.1 CMAX / VRX result of the RX timing parser, and the
  * session life cycle with the per-frame Sender Report on: a destination update, several
  * sessions, ST 2022-7, soaks, the block version, the ts-refclk, and the Sender Reports
- * as the RX reads them back (the sr_ cases). The noipmx_ cases are the same streams
- * without the flag, for wire comparison. Create/free cycles are
- * NoCtxTest.st20p_*ipmx_create_free_cycles, which need an instance without
- * MTL_FLAG_RANDOM_SRC_PORT. */
+ * as the RX reads them back (the sr_ cases), and the SDP against them and across
+ * mid-stream changes (the sdp cases). With IPMX_SDP_DUMP_DIR set, every case with an IPMX
+ * TX session writes its SDP to <dir>/<test name>.sdp for the VSF SDP scripts.
+ * The noipmx_ cases are the same streams without the flag, for wire comparison.
+ * Create/free cycles are NoCtxTest.st20p_*ipmx_create_free_cycles, which need an
+ * instance without MTL_FLAG_RANDOM_SRC_PORT. */
 
 #ifdef MTL_HAS_IPMX
+
+#include <chrono>
+#include <cstdio>
+#include <map>
+#include <string>
+#include <thread>
+#include <vector>
 
 #include "ipmx/ipmx_api.h"
 #include "log.h"
 #include "st20p_test.h"
 
 #define IPMX_TEST_SESSIONS_MAX (4)
+
+/* ---- SDP files for the Gate 6 VSF scripts: only with IPMX_SDP_DUMP_DIR set ---- */
+
+/* write the session's SDP to $IPMX_SDP_DUMP_DIR/<test name><tag>.sdp */
+static void ipmx_sdp_dump(const std::string& sdp, const std::string& tag) {
+  const char* dir = getenv("IPMX_SDP_DUMP_DIR");
+  if (!dir || !dir[0]) return;
+
+  std::string path = std::string(dir) + "/" +
+                     ::testing::UnitTest::GetInstance()->current_test_info()->name() +
+                     tag + ".sdp";
+  FILE* f = fopen(path.c_str(), "w");
+  ASSERT_NE(f, nullptr) << path;
+  EXPECT_EQ(fwrite(sdp.data(), 1, sdp.size(), f), sdp.size()) << path;
+  fclose(f);
+}
+
+static std::string ipmx_st20p_sdp(st20p_tx_handle handle) {
+  char buf[IPMX_SDP_MAX];
+  int len = ipmx_st20p_tx_get_sdp(handle, buf, sizeof(buf));
+  EXPECT_GT(len, 0);
+  return len > 0 ? std::string(buf, len) : "";
+}
+
+static void (*ipmx_tx_check_next)(st20p_tx_handle handle);
+static int ipmx_tx_checked;
+static int ipmx_tx_sessions;
+
+/* the case's own tx_check, then the dump of the SDP after the stream, so it reflects
+ * every Sender Report sent; _s<i> per session when there are several */
+static void ipmx_st20p_tx_check_dump(st20p_tx_handle handle) {
+  int i = ipmx_tx_checked++;
+
+  if (ipmx_tx_check_next) ipmx_tx_check_next(handle);
+  if (!getenv("IPMX_SDP_DUMP_DIR")) return;
+  ipmx_sdp_dump(ipmx_st20p_sdp(handle),
+                ipmx_tx_sessions > 1 ? "_s" + std::to_string(i) : "");
+}
+
+/* chain the dump into every case with an IPMX TX session */
+static void ipmx_st20p_dump_hook(struct st20p_rx_digest_test_para* para) {
+  if (!para->ipmx) return;
+  ipmx_tx_check_next = para->tx_check;
+  ipmx_tx_checked = 0;
+  ipmx_tx_sessions = para->sessions;
+  para->tx_check = ipmx_st20p_tx_check_dump;
+}
 
 static void ipmx_st20p_digest_para(enum st_frame_fmt fmt, enum st20_fmt transport_fmt,
                                    enum st_fps fps, int width, int height,
@@ -34,6 +90,7 @@ static void ipmx_st20p_digest_para(enum st_frame_fmt fmt, enum st20_fmt transpor
     t_fmt[i] = transport_fmt;
   }
   para->device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+  ipmx_st20p_dump_hook(para);
   st20p_rx_digest_test(fps_arr, width_arr, height_arr, tx_fmt, t_fmt, tx_fmt, para);
 }
 
@@ -83,6 +140,7 @@ static void ipmx_st20p_tp(enum st_frame_fmt fmt, enum st20_fmt transport_fmt,
   para.rx_timing_parser = true;
   para.rx_check = ipmx_st20p_check_tp;
   ipmx_tp_expect_cmax = cmax;
+  ipmx_st20p_dump_hook(&para);
 
   st20p_rx_digest_test(fps_arr, width_arr, height_arr, tx_fmt, t_fmt, rx_fmt, &para);
 }
@@ -486,6 +544,186 @@ TEST(Ipmx_st20p, rgb8_digest_1080p60_sr_redundant) {
   para.redundant = true;
   para.rx_check = ipmx_st20p_sr_check_redundant;
   ipmx_st20p_digest_para(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P60, 1920, 1080,
+                         &para);
+}
+
+/* ---- the SDP, ipmx_st20p_tx_get_sdp(), against the Sender Report the RX read ---- */
+
+static std::string ipmx_sdp_tx;
+
+static void ipmx_st20p_sdp_save(st20p_tx_handle handle) {
+  ipmx_st20p_sr_save_tx_info(handle);
+  ipmx_sdp_tx = ipmx_st20p_sdp(handle);
+  info("%s, sdp:\n%s", __func__, ipmx_sdp_tx.c_str());
+}
+
+/* the value of the first "<prefix>..." line of the SDP, "" if none */
+static std::string ipmx_sdp_value(const std::string& prefix) {
+  size_t pos = ipmx_sdp_tx.find("\r\n" + prefix);
+  if (pos == std::string::npos) return "";
+  pos += 2 + prefix.size();
+  return ipmx_sdp_tx.substr(pos, ipmx_sdp_tx.find("\r\n", pos) - pos);
+}
+
+/* the fmtp parameters, a flag maps to "" */
+static std::map<std::string, std::string> ipmx_sdp_fmtp() {
+  std::map<std::string, std::string> params;
+  std::string fmtp = ipmx_sdp_value("a=fmtp:");
+  size_t pos = fmtp.find(' ');
+
+  while (pos != std::string::npos) {
+    size_t end = fmtp.find("; ", pos + 1);
+    std::string p = fmtp.substr(pos + 1, end == std::string::npos ? end : end - pos - 1);
+    size_t eq = p.find('=');
+    params[p.substr(0, eq)] = eq == std::string::npos ? "" : p.substr(eq + 1);
+    pos = end == std::string::npos ? end : end + 1;
+  }
+  return params;
+}
+
+static std::string ipmx_sdp_str(const char* field, size_t size) {
+  return std::string(field, strnlen(field, size));
+}
+
+/* TP-1 sections 13.2 and 13.3: the SDP and the Sender Report on the wire agree */
+static void ipmx_st20p_sdp_check(st20p_rx_handle handle) {
+  struct ipmx_rx_sr_info sr;
+
+  ipmx_st20p_sr_check(handle);
+  ASSERT_EQ(ipmx_st20p_rx_get_sr_info(handle, MTL_SESSION_PORT_P, &sr), 0);
+  ASSERT_TRUE(sr.has_video_mib);
+  ASSERT_FALSE(ipmx_sdp_tx.empty());
+  const struct ipmx_video_info* in = &sr.info;
+  auto fmtp = ipmx_sdp_fmtp();
+  std::string rate = in->rate_den == 1 ? std::to_string(in->rate_num)
+                                       : std::to_string(in->rate_num) + "/" +
+                                             std::to_string(in->rate_den);
+
+  EXPECT_EQ(fmtp["sampling"], ipmx_sdp_str(in->sampling, sizeof(in->sampling)));
+  EXPECT_EQ(fmtp["depth"], std::to_string(in->depth));
+  EXPECT_EQ(fmtp["width"], std::to_string(in->width));
+  EXPECT_EQ(fmtp["height"], std::to_string(in->height));
+  EXPECT_EQ(fmtp["exactframerate"], rate);
+  EXPECT_EQ(fmtp["TCS"], ipmx_sdp_str(in->tcs, sizeof(in->tcs)));
+  EXPECT_EQ(fmtp["colorimetry"], ipmx_sdp_str(in->colorimetry, sizeof(in->colorimetry)));
+  EXPECT_EQ(fmtp["RANGE"], ipmx_sdp_str(in->range, sizeof(in->range)));
+  EXPECT_EQ(fmtp["PM"], in->gpm ? "2110GPM" : "2110BPM");
+  EXPECT_EQ(fmtp["measuredpixclk"], std::to_string(in->pixclk));
+  EXPECT_EQ(fmtp["vtotal"], std::to_string(in->vtotal));
+  EXPECT_EQ(fmtp["htotal"], std::to_string(in->htotal));
+  EXPECT_EQ(fmtp.count("IPMX"), 1u);
+  EXPECT_EQ(ipmx_sdp_value("a=ts-refclk:"),
+            ipmx_sdp_str(in->ts_refclk, sizeof(in->ts_refclk)));
+  EXPECT_EQ(ipmx_sdp_value("a=mediaclk:"),
+            ipmx_sdp_str(in->mediaclk, sizeof(in->mediaclk)));
+}
+
+/* the TX SDP says what the RX read in the Sender Reports of the stream */
+TEST(Ipmx_st20p, rgb8_digest_1080p59_94_sdp) {
+  struct st20p_rx_digest_test_para para;
+  ipmx_st20p_sr_para(&para);
+  para.tx_check = ipmx_st20p_sdp_save;
+  para.rx_check = ipmx_st20p_sdp_check;
+  ipmx_sdp_tx.clear();
+  ipmx_st20p_digest_para(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P59_94, 1920, 1080,
+                         &para);
+}
+
+/* ---- the SDP across mid-stream changes: RFC 8866 section 5.2 sess-version ---- */
+
+static std::vector<std::string> ipmx_sdp_lines(const std::string& sdp) {
+  std::vector<std::string> lines;
+  size_t pos = 0, end;
+
+  while ((end = sdp.find("\r\n", pos)) != std::string::npos) {
+    lines.push_back(sdp.substr(pos, end - pos));
+    pos = end + 2;
+  }
+  return lines;
+}
+
+static uint64_t ipmx_sdp_sess_version(const std::string& sdp) {
+  unsigned long long id = 0, version = 0;
+  for (const std::string& l : ipmx_sdp_lines(sdp))
+    if (sscanf(l.c_str(), "o=- %llu %llu ", &id, &version) == 2) return version;
+  ADD_FAILURE() << "no o= line";
+  return 0;
+}
+
+static bool ipmx_sdp_line_in(const std::string& line,
+                             const std::vector<std::string>& prefixes) {
+  for (const std::string& p : prefixes)
+    if (!line.compare(0, p.size(), p)) return true;
+  return false;
+}
+
+/* after has a higher sess-version, every line starting with a changed prefix differs and
+ * every other line but o= is the same */
+static void ipmx_sdp_expect_change(const std::string& before, const std::string& after,
+                                   const std::vector<std::string>& changed) {
+  std::vector<std::string> b = ipmx_sdp_lines(before), a = ipmx_sdp_lines(after);
+
+  EXPECT_GT(ipmx_sdp_sess_version(after), ipmx_sdp_sess_version(before));
+  ASSERT_EQ(a.size(), b.size());
+  for (size_t i = 0; i < a.size(); i++) {
+    if (!b[i].compare(0, 2, "o=")) continue;
+    if (ipmx_sdp_line_in(b[i], changed))
+      EXPECT_NE(a[i], b[i]) << "line " << i;
+    else
+      EXPECT_EQ(a[i], b[i]) << "line " << i;
+  }
+}
+
+/* wait for the next Sender Report to carry ts_refclk, at most 1 s */
+static void ipmx_st20p_wait_ts_refclk(st20p_tx_handle handle, const char* ts_refclk) {
+  struct ipmx_video_info info;
+
+  for (int i = 0; i < 100; i++) {
+    ASSERT_EQ(ipmx_st20p_tx_get_info(handle, &info), 0);
+    if (!strcmp(info.ts_refclk, ts_refclk)) return;
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ADD_FAILURE() << "ts-refclk " << ts_refclk << " not on the wire";
+}
+
+/* a ts-refclk change once on the wire, then a destination update: each gives an SDP
+ * with a higher sess-version and only the changed lines differ */
+static void ipmx_st20p_sdp_changes(st20p_tx_handle* tx, st20p_rx_handle* rx,
+                                   int sessions) {
+  std::vector<std::string> before(sessions), refclk(sessions);
+
+  for (int i = 0; i < sessions; i++) {
+    before[i] = ipmx_st20p_sdp(tx[i]);
+    EXPECT_EQ(ipmx_st20p_tx_set_ts_refclk(tx[i], ipmx_ts_refclk_domain0), 0);
+  }
+  for (int i = 0; i < sessions; i++) {
+    ipmx_st20p_wait_ts_refclk(tx[i], ipmx_ts_refclk_domain0);
+    refclk[i] = ipmx_st20p_sdp(tx[i]);
+    ipmx_sdp_expect_change(before[i], refclk[i], {"a=ts-refclk:"});
+  }
+  ipmx_st20p_update_destination(tx, rx, sessions);
+  for (int i = 0; i < sessions; i++) {
+    std::string dest = ipmx_st20p_sdp(tx[i]);
+    ipmx_sdp_expect_change(refclk[i], dest, {"m=", "c=", "a=source-filter:"});
+    std::string tag = sessions > 1 ? "_s" + std::to_string(i) : "";
+    ipmx_sdp_dump(before[i], tag + "_before_ts_refclk");
+    ipmx_sdp_dump(refclk[i], tag + "_after_ts_refclk");
+    ipmx_sdp_dump(dest, tag + "_after_destination");
+  }
+}
+
+/* mid-stream ts-refclk and destination changes as the SDP shows them, with RX following
+ * the destination */
+TEST(Ipmx_st20p, rgb8_digest_1080p59_94_sdp_changes) {
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.ipmx = true;
+  para.check_fps = false; /* the frames lost in the switch */
+  para.tx_created = ipmx_st20p_set_ts_refclk;
+  para.mid_stream = ipmx_st20p_sdp_changes;
+  para.rx_check = ipmx_st20p_check_rx_after_update;
+  memset(ipmx_rx_updated, 0, sizeof(ipmx_rx_updated));
+  ipmx_st20p_digest_para(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT, ST_FPS_P59_94, 1920, 1080,
                          &para);
 }
 
