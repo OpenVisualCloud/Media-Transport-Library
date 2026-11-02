@@ -22,7 +22,7 @@ RUN apt-get update -y && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
         ca-certificates sudo curl unzip wget \
-        apt-transport-https apt-utils python3-dev \
+        apt-transport-https apt-utils python3-dev python3-pip \
         git build-essential python3-pyelftools pkg-config \
         libnuma-dev libjson-c-dev libpcap-dev libgtest-dev \
         libsdl2-dev libsdl2-ttf-dev libssl-dev systemtap-sdt-dev \
@@ -30,7 +30,6 @@ RUN apt-get update -y && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
-    curl -fsSL https://bootstrap.pypa.io/get-pip.py | python3 && \
     python3 -m pip --no-cache-dir install --upgrade pip setuptools meson ninja
 
 COPY . "${MTL_REPO}"
