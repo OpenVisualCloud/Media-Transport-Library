@@ -51,6 +51,14 @@ updates:
     commit-message:
       prefix: "Ci: "
 
+  # What the nightly report scripts import
+  - package-ecosystem: pip
+    directory: /.github/scripts/ci/report
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "Ci: "
+
   - package-ecosystem: cargo
     directory: /rust
     schedule:

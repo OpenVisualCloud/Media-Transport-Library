@@ -47,10 +47,7 @@ performance)
 flatten-pytest) flatten_reports "${REPORT_DIR:-python-reports}" 'nightly-test-report-*' report.html html ;;
 flatten-gtest) flatten_reports "${REPORT_DIR:-gtest-reports}" 'nightly-gtest-report-*' gtest.log log ;;
 list-system-info) ls -lah system-info-reports || echo "No system info reports found (this is optional)" ;;
-install-dependencies)
-	python3 -m pip install --upgrade pip
-	python3 -m pip install pandas beautifulsoup4 openpyxl ${REPORT_REQUIRE_LXML:+lxml}
-	;;
+install-dependencies) python3 -m pip install --require-hashes --only-binary :all: -r .github/scripts/ci/report/requirements.txt ;;
 combine-pytest)
 	output_path="$PWD/python-reports/nightly_pytest_report_$(date -u +%Y%m%d_%H%M%S).html"
 	temporary_dir=$(mktemp -d)
