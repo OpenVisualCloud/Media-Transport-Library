@@ -78,6 +78,13 @@ sudo ldconfig
 
 In order to build the FFmpeg in a non-default path, use `--prefix="<path>"` within the `./configure` command to point to an empty installation folder.
 
+### 1.3. Unit tests
+
+`./script/build_ffmpeg_plugin.sh unit` builds and runs the unit tests in `tests/`.
+MTL and FFmpeg are stubbed, so they need neither installed, nor a NIC or root.
+`FfmpegMtlCommonTest.ConcurrentGetsCreateOneSharedHandle` waits up to one second
+for each of its two threads, so a heavily loaded host can fail it.
+
 ## 2. ST20P raw video run guide
 
 The MTL ST20P plugin is implemented as an FFmpeg input/output device, enabling direct reading from or sending raw video via the ST 2110-20 stream.

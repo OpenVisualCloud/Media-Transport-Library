@@ -12,7 +12,7 @@ script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 show_help() {
 	cat <<EOF
-Usage: ${script_name} [OPTIONS]
+Usage: ${script_name} [OPTIONS] [unit]
 
 Build FFmpeg with the MTL input and output devices of ecosystem/ffmpeg_plugin,
 and install it. The script downloads the FFmpeg release in versions.env into
@@ -24,6 +24,9 @@ the script checks that before it finishes.
 The install replaces an FFmpeg that is already in the prefix, with no question.
 To keep the FFmpeg of the system or of the user, install into another
 directory with -p, for example -p /opt/mtl-ffmpeg.
+
+With unit, the script only builds and runs the unit tests of
+ecosystem/ffmpeg_plugin/tests, which need neither MTL nor FFmpeg installed.
 
 REQUIRED PACKAGES (Debian/Ubuntu):
 	gcc make nasm patch patchelf pkg-config unzip wget, or ./install_dependencies.sh ffmpeg
@@ -102,7 +105,8 @@ add_svt_jpeg_xs() {
 }
 
 main() {
-	local prefix="" jobs="${NPROC}" force=0 gpu_direct=0 jpegxs=0 option
+	local prefix="" jobs="${NPROC}" force=0 gpu_direct=0 jpegxs=0 unit=0 option
+	local unit_dir="${script_folder}/build/ffmpeg_plugin_unit"
 	local local_base="" ffmpeg_dir archive patch_file plugin_dir="${REPO_DIR}/ecosystem/ffmpeg_plugin"
 	local mtl_pc dpdk_pc jpeg_pc pc_dirs=() libdirs=() file
 	# The libraries FFmpeg installs, without the lib prefix.
@@ -142,6 +146,7 @@ main() {
 			shift
 			;;
 		-f | --force) force=1 ;;
+		unit) unit=1 ;;
 		-h | --help)
 			show_help
 			exit 0
@@ -159,6 +164,14 @@ main() {
 		exit 1
 		;;
 	esac
+	if [ "${unit}" -eq 1 ]; then
+		require_commands "${CC:-cc}:gcc" "${CXX:-c++}:g++" meson:meson ninja:ninja-build || exit 1
+		rm -rf "${unit_dir}"
+		meson setup "${unit_dir}" "${plugin_dir}/tests"
+		ninja -C "${unit_dir}" -j "${jobs}"
+		"${unit_dir}/FfmpegPluginUnitTest"
+		return 0
+	fi
 	[ -d "${plugin_dir}/${FFMPEG_VERSION}" ] || {
 		log_error "No MTL patches for FFmpeg ${FFMPEG_VERSION}: see ${plugin_dir}"
 		exit 1

@@ -49,9 +49,8 @@ eight `*Concurrency*` suites, `St20PipelineTxBlocking`, `WaitSites/St20PipelineR
 `*DestroyEndsEveryBlockedGet` cases of `St22PipelineRxBlocking` / `St30PipelineRxBlocking` / `St40PipelineRxBlocking` /
 `St22PipelineTxBlocking` / `St22PipelineTxEncodeBlocking` / `St30PipelineTxBlocking` / `St40PipelineTxBlocking`, `PipelineTxWakeBlock`,
 `St20PipelineRxBlockingConvert`, `St22PipelineRxBlocking.WakeBlockEndsTheBlockedGetDespiteAFastPathGet`,
-`St30PipelineRxBlocking.WakeBlockForABlockedGetIsNotSpentByAnotherFastPathGet`,
-`St40PipelineRxBlocking.FastPathGetDoesNotStealTheWakeOfABlockedGet`, and
-`FfmpegMtlCommonTest.ConcurrentGetsCreateOneSharedHandle` carry a budget;
+`St30PipelineRxBlocking.WakeBlockForABlockedGetIsNotSpentByAnotherFastPathGet`, and
+`St40PipelineRxBlocking.FastPathGetDoesNotStealTheWakeOfABlockedGet` carry a budget;
 the exception reaches no other case. There are no flaky network-timing tests in this binary.
 
 ## Quick start
