@@ -1,0 +1,4 @@
+# The pre-commit release that the checkpatch and commit-messages jobs of
+# cicd-pr-check.yml install, from requirements.txt, which pip-compile locks with
+# the hash of every package.
+pre-commit==4.7.0

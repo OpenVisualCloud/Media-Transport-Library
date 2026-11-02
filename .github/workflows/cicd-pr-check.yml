@@ -33,7 +33,6 @@ env:
   # A workspace-relative cache location is the one path that works identically
   # on Linux, macOS and Windows runners.
   PRE_COMMIT_HOME: ${{ github.workspace }}/.pre-commit-cache
-  PRE_COMMIT_VERSION: 4.7.0
 
 jobs:
   # ── Which jobs the change can affect ──
@@ -144,7 +143,7 @@ jobs:
           key: pre-commit-${{ matrix.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Install pre-commit
-        run: python -m pip install "pre-commit==${PRE_COMMIT_VERSION}"
+        run: python -m pip install --require-hashes --only-binary ':all:' -r .github/linters/requirements.txt
 
       - name: Run checkpatch
         run: ./checkpatch.sh
@@ -287,7 +286,7 @@ jobs:
           key: pre-commit-commit-msg-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Install pre-commit
-        run: python -m pip install "pre-commit==${PRE_COMMIT_VERSION}"
+        run: python -m pip install --require-hashes --only-binary ':all:' -r .github/linters/requirements.txt
 
       - name: Lint pull-request commit messages
         env:
@@ -690,7 +689,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install Bandit
-        run: python -m pip install -r .github/code-scan/requirements.txt
+        run: python -m pip install --require-hashes --only-binary ':all:' -r .github/code-scan/requirements.txt
 
       - name: Install Task
         uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0

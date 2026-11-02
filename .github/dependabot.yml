@@ -43,6 +43,14 @@ updates:
     commit-message:
       prefix: "Ci: "
 
+  # The pre-commit release of the Linter workflow
+  - package-ecosystem: pip
+    directory: /.github/linters
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "Ci: "
+
   - package-ecosystem: cargo
     directory: /rust
     schedule:
