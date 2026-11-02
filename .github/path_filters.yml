@@ -196,6 +196,28 @@ gtest: &gtest
   - '.github/actions/run-gtest/**'
   - .github/scripts/gtest.sh
 
+# cicd-pr-check.yml, run-noctx-rl: the RL pacing paths and the NoCtx RL wire cells
+# (gtest.sh case noctx_rl).
+rl_pacing: &rl_pacing
+  - lib/src/dev/mt_dev.c
+  - lib/src/mt_sch.c
+  - lib/src/mt_sch.h
+  - lib/src/st2110/pipeline/st20_pipeline_tx.c
+  - lib/src/st2110/st_header.h
+  - lib/src/st2110/st_tx_video_rl.h
+  - lib/src/st2110/st_tx_video_session.c
+  - lib/src/st2110/st_tx_video_session.h
+  - lib/src/st2110/st_video_transmitter.c
+  - lib/src/st2110/st_video_transmitter.h
+  - tests/integration_tests/noctx/core/test_fixture.cpp
+  - tests/integration_tests/noctx/run.sh
+  - tests/integration_tests/noctx/strategies/st20p_strategies.cpp
+  - tests/integration_tests/noctx/strategies/st20p_strategies.hpp
+  - tests/integration_tests/noctx/testcases/st20p_vrx_margin_tests.cpp
+  - tests/tools/isolate/isolate.sh
+  - .github/workflows/cicd-pr-check.yml
+  - .github/scripts/gtest.sh
+
 # cicd-pr-check.yml, run-smoke-tests. The job restores all artifacts and fails
 # if one is missing. pytest collects all of tests/acceptance, and the markers
 # are in the test files, so the whole tree applies.
@@ -235,6 +257,7 @@ clang_tidy: &clang_tidy
 build_workflow:
   - *hash_sources
   - *gtest
+  - *rl_pacing
   - *smoke_tests
   - *clang_tidy
 
