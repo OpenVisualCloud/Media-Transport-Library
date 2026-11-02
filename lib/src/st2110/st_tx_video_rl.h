@@ -73,6 +73,10 @@ struct st_tx_video_rl_plan {
   int64_t trim_pads;     /* st_tx_video_rl_trim_pads() of pad_size */
   uint16_t pad_size;     /* bytes of the NORMAL pad */
   bool armed;            /* false: packet 0 is held until its target */
+  /* shaper time of the full bucket the NIC has */
+  long double refill_ns;
+  /* a pkt that leaves up to this past its target keeps VRX >= 0; 0: not judged */
+  int64_t vrx_budget_ns;
 };
 
 /* a pre-arm burst of n NORMAL pads, the first coarse of them TRIM_COARSE bytes short and

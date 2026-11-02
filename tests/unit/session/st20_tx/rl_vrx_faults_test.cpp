@@ -28,7 +28,8 @@
  * pre-arm on those of the pads drained since; it frees one a burst while its free
  * threshold lets it. Packet 0 is never early and no case goes below VRX 0 where the hold
  * does not. Where it does, the frame may go deeper only by the information limit: the
- * absorbed gap, at most absorb_ns, plus a tail burst sent with packet 0. */
+ * absorbed gap, at most absorb_ns, plus a tail burst sent with packet 0. Every session
+ * below VRX 0 is flagged in stat_rl.vrx_frames, on either transmitter. */
 namespace {
 
 constexpr int kPortP = 0;
@@ -56,15 +57,17 @@ struct Stall {
   uint64_t at, ns;
 };
 
-/* a frame's worst VRX over its sessions */
+/* a frame's worst VRX over its sessions, and the sessions below 0 or flagged */
 struct Verdict {
   int worst = 1 << 30;
+  int negative = 0, missed = 0;
 };
 
 /* the plan of a format */
 struct Plan {
   long double p = 0, credit = 0, absorb = 0, trs = 0, bucket = 0, tpr0 = 0;
-  long double pad_interval = 0;
+  long double pad_interval = 0, refill = 0;
+  int64_t budget = 0;
   uint32_t warm_pkts = 0;
   uint64_t window = 0;
 };
@@ -108,6 +111,8 @@ class St20TxRlVrxFaults : public ::testing::TestWithParam<Fmt> {
     plan->p = ut_txv_rl_drain(txv, kPortP);
     plan->credit = ut_txv_rl_credit(txv, kPortP);
     plan->absorb = ut_txv_rl_absorb(txv, kPortP);
+    plan->budget = ut_txv_rl_vrx_budget(txv, kPortP);
+    plan->refill = ut_txv_rl_refill(txv, kPortP);
     plan->trs = ut_txv_pacing_trs(txv);
     plan->warm_pkts = ut_txv_pacing_warm_pkts(txv);
     plan->pad_interval = ut_txv_pad_interval(txv);
@@ -157,6 +162,7 @@ class St20TxRlVrxFaults : public ::testing::TestWithParam<Fmt> {
       ut_trs_set_drain(ctx[i], kPortP, q.p);
       ut_trs_set_credit(ctx[i], kPortP, q.credit);
       ut_trs_set_absorb(ctx[i], kPortP, absorb ? q.absorb : 0);
+      ut_trs_set_vrx_detect(ctx[i], kPortP, q.budget, q.refill);
       ut_trs_set_shaper_bucket(ctx[i], kPortP, q.bucket);
       ut_trs_set_mock_tsc_script(ctx[i], &now, 1);
       std::vector<uint64_t> d(64), g(64);
@@ -238,7 +244,10 @@ class St20TxRlVrxFaults : public ::testing::TestWithParam<Fmt> {
       const long double launch = ut_trs_modeled_launch_tsc(ctx[i], kPortP);
       EXPECT_GE(launch, kTargetTsc);
       const int vrx = ut_rl_vrx(launch, q.tpr0, q.trs, q.p, q.pad_interval, kSlots);
+      const bool flagged = ut_trs_get_rl_stat(ctx[i]).vrx_frames > 0;
       v.worst = std::min(v.worst, vrx);
+      v.negative += vrx < 0;
+      v.missed += vrx < 0 && !flagged;
       ut_trs_destroy(ctx[i]);
     }
     return v;
@@ -269,6 +278,10 @@ class St20TxRlVrxFaults : public ::testing::TestWithParam<Fmt> {
     EXPECT_FALSE(held >= 0 && vrx < 0) << what << ": VRX " << vrx << ", held " << held;
     EXPECT_FALSE(held < 0 && vrx < held - limit)
         << what << ": VRX " << vrx << ", held " << held << ", limit " << limit;
+    EXPECT_EQ(0, v.missed) << what << ": " << v.missed << " of " << v.negative
+                           << " sessions below VRX 0 not flagged";
+    EXPECT_EQ(0, h.missed) << what << " held: " << h.missed << " of " << h.negative
+                           << " sessions below VRX 0 not flagged";
   }
 
   Case Base(int sessions) const {
