@@ -16,6 +16,7 @@
 #include <rte_mempool.h>
 #include <rte_ring.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -47,6 +48,12 @@ uint64_t ut_hw_rx_timestamp_flag(void);
 /** Stamp mbuf's HW RX-timestamp dynfield with a raw nanosecond value. */
 void ut_mbuf_set_hw_timestamp(struct rte_mbuf* mbuf, int dynfield_offset,
                               uint64_t raw_ns);
+
+/** Copy len bytes, at most a page, so that the last one is the last byte before a
+ *  PROT_NONE page and a read past them faults; abort() on failure. Free the copy
+ *  with ut_guarded_free(). */
+uint8_t* ut_guarded_copy(const void* bytes, size_t len);
+void ut_guarded_free(uint8_t* copy, size_t len);
 
 /** Number of live rte_malloc allocations, summed over all sockets. */
 uint64_t ut_rte_alloc_count(void);
