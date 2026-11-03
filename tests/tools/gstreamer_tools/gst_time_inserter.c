@@ -105,6 +105,7 @@ static void gst_time_inserter_finalize(GObject* object) {
 
 static void gst_time_inserter_set_property(GObject* object, guint prop_id,
                                            const GValue* value, GParamSpec* pspec) {
+  (void)value;
   GstTimeInserter* filter = GST_TIME_INSERTER(object);
   g_return_if_fail(GST_IS_TIME_INSERTER(filter));
 
@@ -120,6 +121,7 @@ static void gst_time_inserter_set_property(GObject* object, guint prop_id,
 
 static void gst_time_inserter_get_property(GObject* object, guint prop_id, GValue* value,
                                            GParamSpec* pspec) {
+  (void)value;
   GstTimeInserter* filter = GST_TIME_INSERTER(object);
   g_return_if_fail(GST_IS_TIME_INSERTER(filter));
 
@@ -191,6 +193,7 @@ static gboolean gst_time_inserter_src_query(GstPad* pad, GstObject* parent,
 
 static GstFlowReturn gst_time_inserter_chain(GstPad* pad, GstObject* parent,
                                              GstBuffer* buffer) {
+  (void)pad;
   GstTimeInserter* filter = GST_TIME_INSERTER(parent);
   struct timespec ts;
   guint64 pts_time = GST_BUFFER_PTS(buffer);

@@ -564,6 +564,8 @@ static gboolean gst_mtl_st40p_rx_start(GstBaseSrc* basesrc) {
 
 static GstFlowReturn gst_mtl_st40p_rx_create(GstBaseSrc* basesrc, guint64 offset,
                                              guint length, GstBuffer** buffer) {
+  MTL_MAY_UNUSED(offset);
+  MTL_MAY_UNUSED(length);
   Gst_Mtl_St40p_Rx* src = GST_MTL_ST40P_RX(basesrc);
   struct st40_frame_info* frame_info = NULL;
   GstMapInfo dest_info;

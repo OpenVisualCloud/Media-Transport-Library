@@ -2,7 +2,7 @@
 # Copyright 2022 Intel Corporation
 
 project('set_tai_offset', 'c',
-  default_options: ['buildtype=release', 'b_pie=true'],
+  default_options: ['buildtype=release', 'warning_level=2', 'b_pie=true'],
 )
 
 cc = meson.get_compiler('c')
