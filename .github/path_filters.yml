@@ -300,8 +300,8 @@ base_build:
 # root less .dockerignore, which drops .github/ except check-hardening.sh, so the
 # hash_<name> filters do not apply: they hold .github/scripts/setup_environment.sh.
 # Each image builds DPDK and the eBPF/XDP libraries with the scripts named below,
-# and runs build.sh and the unit suite, whose meson projects run
-# hardening_flags.py (in libmtl); the rocky9 one then runs check-hardening.sh.
+# and runs build.sh and the unit suite. The scripts and the meson projects run
+# hardening_flags.py (in libmtl); the rocky9 image then runs check-hardening.sh.
 # The image also holds a copy of script/, but the job runs no other script, so a
 # change to one does not run the job.
 docker_build:
