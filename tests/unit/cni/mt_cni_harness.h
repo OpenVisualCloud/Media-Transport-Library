@@ -8,6 +8,7 @@
 #ifndef TESTS_UNIT_CNI_MT_CNI_HARNESS_H
 #define TESTS_UNIT_CNI_MT_CNI_HARNESS_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -22,6 +23,12 @@ void ut_cni_destroy(ut_cni_ctx* ctx);
 
 /* Hand len bytes of an Ethernet frame to the CNI RX handler; its return value. */
 int ut_cni_rx(ut_cni_ctx* ctx, const uint8_t* frame, size_t len);
+
+/* The port's address, and the peer whose ARP reply its table waits for. */
+#define UT_CNI_SIP_ADDR {192, 168, 0, 2}
+#define UT_CNI_ARP_PEER_ADDR {192, 168, 0, 1}
+
+bool ut_cni_arp_resolved(ut_cni_ctx* ctx);
 
 /* The DHCP client of the port starts out discovering, in this transaction. */
 #define UT_CNI_DHCP_XID 0x4d544c31u

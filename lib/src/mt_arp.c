@@ -247,8 +247,13 @@ static int arp_start_arp_timer(struct mt_arp_impl* arp_impl) {
   return ret;
 }
 
-int mt_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr,
+int mt_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr, size_t len,
                  enum mtl_port port) {
+  if (len < sizeof(*hdr)) {
+    dbg("%s(%d), arp too short: %zu\n", __func__, port, len);
+    return -EINVAL;
+  }
+
   switch (ntohs(hdr->arp_opcode)) {
     case RTE_ARP_OP_REQUEST:
       return arp_receive_request(impl, hdr, port);
