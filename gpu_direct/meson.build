@@ -65,9 +65,16 @@ if get_option('enable_tests')
     'tests/gpu_tests.cpp'
   ]  
 
+  # The C project arguments above don't reach this C++ executable.
+  gtest_hardening = run_command(files('../script/hardening_flags.py'), 'c++', get_option('optimization'),
+    get_option('b_sanitize'), meson.get_compiler('cpp').cmd_array(), get_option('cpp_args'),
+    check : true).stdout().split('\n')
+
   gtest_e = executable(
     'gtest-all',
     tests_src,
+    cpp_args : gtest_hardening[0].split(),
+    link_args : gtest_hardening[1].split(),
     dependencies : [
       gtest_dep,
       gtest_main_dep,
