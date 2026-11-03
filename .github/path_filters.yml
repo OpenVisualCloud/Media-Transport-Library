@@ -138,9 +138,11 @@ libmtl: &libmtl
   - 'include/**'
   - 'lib/**'
 
-# The unit suite.
+# The unit suite, and the MtlManager headers that it compiles.
 unit_sources: &unit_sources
   - 'tests/unit/**'
+  - 'manager/*.hpp'
+  - manager/mtl_mproto.h
 
 # What a bare-metal test job runs besides the artifacts: the workflow, the build
 # and host setup actions, the ci:* tasks and the scripts that they call: the
