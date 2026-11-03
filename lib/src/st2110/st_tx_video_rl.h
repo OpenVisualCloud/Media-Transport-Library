@@ -82,7 +82,7 @@ static inline struct st_tx_video_rl_burst st_tx_video_rl_next_burst(long double 
                                                                     int64_t trim_pads,
                                                                     long double launch,
                                                                     long double drained) {
-  struct st_tx_video_rl_burst b = {0};
+  struct st_tx_video_rl_burst b = {0, 0, 0, false};
   int64_t needed = (int64_t)ceill((launch - drained) / drain);
   unsigned int n;
 

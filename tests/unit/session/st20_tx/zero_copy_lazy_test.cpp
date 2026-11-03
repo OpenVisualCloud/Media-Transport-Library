@@ -29,7 +29,7 @@ struct LazyCase {
   uint32_t height;
   uint16_t frames;
   uint16_t nb_tx_desc;
-  bool known_bug;
+  bool known_bug = false;
 };
 
 class St20TxZeroCopyLazyTest

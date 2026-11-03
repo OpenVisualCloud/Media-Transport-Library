@@ -77,7 +77,7 @@ TEST_F(St20TxZeroCopyTest, NotDeepRtcpRingSpanningEverySpareBufferCopies) {
 /* the builder reclaims the session's own queues: not shared ones, other schedulers burst
  * on them, and not with RTCP, whose ring keeps the frames */
 TEST_F(St20TxZeroCopyTest, TxReclaimNeedsReclaimingDedicatedQueuesAndNoRtcp) {
-  const ut_txv_reclaim_case reclaims = {{32, 32}, 1, false, false, false, 823, 2};
+  const ut_txv_reclaim_case reclaims = {{32, 32}, 1, false, false, false, 823, 2, false};
   ut_txv_reclaim_case c = reclaims;
   EXPECT_TRUE(ut_txv_tx_reclaims(ctx_, &c));
   c.num_port = 2;
@@ -108,18 +108,18 @@ TEST_F(St20TxZeroCopyTest, TxReclaimNeedsReclaimingDedicatedQueuesAndNoRtcp) {
 TEST_F(St20TxZeroCopyTest, TxReclaimNeedsFramesOfTheRsThreshOfEveryPort) {
   for (uint16_t rs : {32, 64}) {
     SCOPED_TRACE(rs);
-    ut_txv_reclaim_case c = {{rs, rs}, 2, false, false, false, rs, 2};
+    ut_txv_reclaim_case c = {{rs, rs}, 2, false, false, false, rs, 2, false};
     EXPECT_TRUE(ut_txv_tx_reclaims(ctx_, &c));
     c.total_pkts = rs - 1;
     EXPECT_FALSE(ut_txv_tx_reclaims(ctx_, &c));
   }
-  ut_txv_reclaim_case r_leg = {{32, 64}, 2, false, false, false, 63, 2};
+  ut_txv_reclaim_case r_leg = {{32, 64}, 2, false, false, false, 63, 2, false};
   EXPECT_FALSE(ut_txv_tx_reclaims(ctx_, &r_leg));
 }
 
 /* tv_attach() decides it before the bound, which it lifts */
 TEST_F(St20TxZeroCopyTest, AttachKeepsSdZeroCopyWhereItReclaims) {
-  ut_txv_reclaim_case c = {{32, 32}, 1, false, false, false, 823, 2};
+  ut_txv_reclaim_case c = {{32, 32}, 1, false, false, false, 823, 2, false};
   bool zero_copy, reclaim;
   ut_txv_init_tx_chain(ctx_, &c, kNbTxDesc, &zero_copy, &reclaim);
   EXPECT_TRUE(zero_copy);

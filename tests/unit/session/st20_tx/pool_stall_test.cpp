@@ -39,7 +39,7 @@ struct StallCase {
   uint16_t nb_tx_desc[2];
   int hung_leg;
   bool lazy; /* drain on a ring that frees on reuse, then hang */
-  uint32_t linesize_pad;
+  uint32_t linesize_pad = 0;
 };
 
 class St20TxPoolStallTest : public ::testing::TestWithParam<StallCase> {
