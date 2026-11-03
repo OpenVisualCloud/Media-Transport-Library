@@ -2,10 +2,14 @@ name: Clang Tidy
 description: >-
   clang-tidy on the C and C++ lines that a pull request changes, and the Clang
   Static Analyzer with cross-TU analysis over libmtl. It configures MTL against
-  the cached DPDK of this commit, so the cache must exist: call it in a job that
-  needs the build job, or that a lookup found the cache for.
+  the DPDK of this commit: from the build artifact of the run in a job that
+  needs the build job, else from a cache that a lookup found.
 
 inputs:
+  build_artifact:
+    description: Take the DPDK from the artifact mtl-build of the run, not from the cache.
+    required: false
+    default: 'false'
   changed_lines:
     description: Run clang-tidy on the changed lines. Only a pull request has them.
     required: false
@@ -16,10 +20,12 @@ runs:
   steps:
     - name: Compute source checksums
       id: sums
+      if: inputs.build_artifact != 'true'
       uses: ./.github/actions/source-checksums
 
     - name: Compute exact cache keys
       id: keys
+      if: inputs.build_artifact != 'true'
       shell: bash
       env:
         HASH_DPDK: ${{ steps.sums.outputs.dpdk }}
@@ -32,11 +38,29 @@ runs:
       run: task ci:cache-keys
 
     - name: 'stash: Restore DPDK cache'
+      if: inputs.build_artifact != 'true'
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         key: ${{ steps.keys.outputs.dpdk_key }}
         path: .local_install/dpdk
         fail-on-cache-miss: true
+
+    - name: Download the build of this run
+      if: inputs.build_artifact == 'true'
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: mtl-build
+
+    - name: Install Task
+      if: inputs.build_artifact == 'true'
+      uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+      with:
+        repo-token: ${{ github.token }}
+
+    - name: Unpack the build
+      if: inputs.build_artifact == 'true'
+      shell: bash
+      run: task ci:unpack-build
 
     - name: Write compile_commands.json
       shell: bash

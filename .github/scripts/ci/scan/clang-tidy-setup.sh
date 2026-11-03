@@ -4,7 +4,8 @@
 
 # Writes compile_commands.json for clang-tidy: libmtl with its unit and fuzz
 # targets, and the meson projects that build on it or on its headers. DPDK
-# comes from the Build workflow's cache in .local_install; the projects find
+# comes from a cache of main or the build artifact in .local_install; the
+# projects find
 # MTL through the mtl-uninstalled.pc that meson setup writes, so MTL is never
 # built.
 set -euo pipefail

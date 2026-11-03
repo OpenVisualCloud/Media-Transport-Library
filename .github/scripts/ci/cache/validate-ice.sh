@@ -6,14 +6,15 @@ set -euo pipefail
 
 root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 release=$(uname -r)
-ko="${1:-${root_dir}/.local_install/ice}/${release}/$(uname -m)/ice.ko"
+bundle=${1:-${root_dir}/.local_install/ice}
+ko="${bundle}/${release}/$(uname -m)/ice.ko"
 
 die() {
 	echo "$*" >&2
 	exit 1
 }
 
-test -s "$ko" || die "ice.ko is missing: ${ko}"
+test -s "$ko" || die "no ice.ko for kernel ${release} in ${bundle}, which holds: $(find "$bundle" -mindepth 1 -maxdepth 1 -printf '%f ' 2>/dev/null)"
 vermagic=$(modinfo -F vermagic "$ko")
 [[ "${vermagic} " == "${release} "* ]] || die "ice.ko is built for '${vermagic}', not ${release}"
 symbols=$(nm "$ko") || die "nm cannot read ${ko}"

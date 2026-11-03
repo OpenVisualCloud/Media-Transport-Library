@@ -1,7 +1,9 @@
 name: Validate Host
 description: >-
-  Restore and validate every dependency -- the host's own prerequisites and the
-  cached artifacts -- then idempotently align the host.
+  Download the build of this run, validate every dependency -- the host's own
+  prerequisites and the install trees of the build -- then idempotently align
+  the host. The job must need the build job of the run, which uploads the
+  artifact mtl-build.
 
 inputs:
   shadow_host:
@@ -12,15 +14,15 @@ inputs:
     description: >-
       NIC label of the runner this job landed on, i.e. runs-on. It decides
       whether the host needs the out-of-tree ICE driver: only the E8xx family is
-      served by ice, so an i225/i226 runner neither restores that artifact nor
-      aligns the module. Empty means "assume it is needed", which is what an
+      served by ice, so an i225/i226 runner neither validates nor activates
+      the module. Empty means "assume it is needed", which is what an
       unlabeled runner such as the performance rig gets.
     required: false
     default: ''
   build_outputs:
     description: >-
       toJSON(needs.build.outputs) of the build job that this job tests. When
-      set, the job fails before restoring anything unless this checkout's
+      set, the job fails before it downloads anything unless this checkout's
       source checksums are the ones that build hashed and built. Empty skips
       the check.
     required: false
@@ -49,10 +51,11 @@ runs:
 
     - name: Compute local source checksums
       id: local-checksums
+      if: inputs.build_outputs != ''
       uses: ./.github/actions/source-checksums
 
-    # Other checksums than the build's either miss the cache below or restore
-    # another tree's artifacts, so the job tests code that was not built.
+    # Other checksums than the build's mean that the scripts and tests of this
+    # checkout are not the ones of the code that the build job built.
     - name: Check this checkout is the code the build job built
       if: inputs.build_outputs != ''
       shell: bash
@@ -61,63 +64,16 @@ runs:
         CHECKSUMS: ${{ toJSON(steps.local-checksums.outputs) }}
       run: task ci:workflow -- check-built-sources
 
-    - name: Compute exact cache keys
-      id: keys
+    # The build job of this run uploads it. A cache would do, but GitHub evicts
+    # an entry while a leg waits hours for a fleet runner.
+    - name: Download the build of this run
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: mtl-build
+
+    - name: Unpack the build
       shell: bash
-      env:
-        HASH_DPDK: ${{ steps.local-checksums.outputs.dpdk }}
-        HASH_MTL: ${{ steps.local-checksums.outputs.mtl }}
-        HASH_JPEGXS: ${{ steps.local-checksums.outputs.jpegxs }}
-        HASH_ICE: ${{ steps.local-checksums.outputs.ice }}
-        HASH_FFMPEG: ${{ steps.local-checksums.outputs.ffmpeg }}
-        HASH_GSTREAMER: ${{ steps.local-checksums.outputs.gstreamer }}
-        HASH_PLUGINS: ${{ steps.local-checksums.outputs.plugins }}
-      run: task ci:cache-keys
-
-    - name: 'cache: Restore DPDK'
-      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        key: ${{ steps.keys.outputs.dpdk_key }}
-        path: .local_install/dpdk
-        fail-on-cache-miss: true
-
-    - name: 'cache: Restore MTL'
-      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        key: ${{ steps.keys.outputs.mtl_key }}
-        # The plugin registry build.sh writes beside the MTL prefix.
-        path: |
-          .local_install/mtl
-          .local_install/conf
-        fail-on-cache-miss: true
-
-    - name: 'cache: Restore JPEG XS'
-      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        key: ${{ steps.keys.outputs.jpegxs_key }}
-        path: .local_install/jpegxs
-        fail-on-cache-miss: true
-
-    - name: 'cache: Restore FFmpeg'
-      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        key: ${{ steps.keys.outputs.ffmpeg_key }}
-        path: .local_install/ffmpeg
-        fail-on-cache-miss: true
-
-    - name: 'cache: Restore GStreamer'
-      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        key: ${{ steps.keys.outputs.gstreamer_key }}
-        path: .local_install/gstreamer
-        fail-on-cache-miss: true
-
-    - name: 'cache: Restore plugins'
-      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        key: ${{ steps.keys.outputs.plugins_key }}
-        path: .local_install/plugins
-        fail-on-cache-miss: true
+      run: task ci:unpack-build
 
     - name: 'ice: Decide whether this host needs the ICE driver'
       id: ice
@@ -126,21 +82,13 @@ runs:
         NIC: ${{ inputs.nic }}
       run: task ci:ice-required
 
-    - name: 'cache: Restore ICE'
-      if: steps.ice.outputs.required == 'true'
-      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        key: ${{ steps.keys.outputs.ice_key }}
-        path: .local_install/ice
-        fail-on-cache-miss: true
-
-    - name: Validate restored dependencies
+    - name: Validate the downloaded dependencies
       shell: bash
       env:
         NIC: ${{ inputs.nic }}
       run: task ci:validate-dependencies
 
-    - name: Make cached artifacts executable
+    - name: Make the downloaded binaries executable
       shell: bash
       run: task ci:configure-host -- make-executable
 

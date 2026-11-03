@@ -66,8 +66,6 @@ jobs:
       ffmpeg_hash: ${{ steps.build.outputs.ffmpeg_hash }}
       gstreamer_hash: ${{ steps.build.outputs.gstreamer_hash }}
       plugins_hash: ${{ steps.build.outputs.plugins_hash }}
-      jpegxs_cache_key: ${{ steps.build.outputs.jpegxs_cache_key }}
-      ice_cache_key: ${{ steps.build.outputs.ice_cache_key }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -513,8 +511,8 @@ jobs:
         uses: ./.github/actions/unit-tests
 
   # The Clang Static Analyzer results of main, which code scanning compares the
-  # alerts of a pull request with. It configures MTL against the DPDK cache
-  # that the build job saved, so it runs on the workflow commit only.
+  # alerts of a pull request with. It configures MTL against the DPDK of the
+  # build artifact, and runs on the workflow commit only.
   clang-analyzer:
     needs: build
     if: ${{ github.event_name == 'schedule' || (inputs.code_scan && inputs.branch == '') }}
@@ -533,3 +531,5 @@ jobs:
 
       - name: The Clang Static Analyzer
         uses: ./.github/actions/clang-tidy
+        with:
+          build_artifact: 'true'
