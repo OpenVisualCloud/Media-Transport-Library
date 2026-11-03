@@ -24,14 +24,11 @@ Build
 Build the harnesses with AddressSanitizer in a separate build directory::
 
     CC=clang CXX=clang++ meson setup build_fuzz -Denable_fuzzing=true \
-      -Db_sanitize=address -Db_lundef=false \
-      -Dc_args=-Wno-error=unused-but-set-variable
+      -Db_sanitize=address -Db_lundef=false
     ninja -C build_fuzz
 
 With clang, use ``-Db_sanitize=address``, not ``-Denable_asan=true``:
 ``lib/meson.build`` looks for the gcc ``libasan``, and clang does not supply it.
-The ``-Wno-error`` flag stops the clang warning about the unused ``sent`` counter
-in ``st_video_transmitter.c`` from failing the build.
 
 ``CC=clang CXX=clang++ ./build.sh release enable_fuzzing`` (or
 ``MTL_BUILD_ENABLE_FUZZING=true``) also adds the harnesses to ``build/``, with no
