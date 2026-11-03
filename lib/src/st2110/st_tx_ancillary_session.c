@@ -256,7 +256,7 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
     rtp->base.payload_type = ST_RFMDRTP_PAYLOAD_TYPE_FASTMETADATA;
   else
     rtp->base.payload_type = ST_RANCRTP_PAYLOAD_TYPE_ANCILLARY;
-  uint32_t ssrc = ops->ssrc ? ops->ssrc : s->idx + 0x323450;
+  uint32_t ssrc = ops->ssrc ? ops->ssrc : (uint32_t)s->idx + 0x323450;
   rtp->base.ssrc = htonl(ssrc);
   s->st40_seq_id = 0;
   s->st40_ext_seq_id = 0;
@@ -804,7 +804,7 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
   mt_memcpy(ipv4, &s->hdr[MTL_SESSION_PORT_P].ipv4, sizeof(hdr->ipv4));
   mt_memcpy(udp, &s->hdr[MTL_SESSION_PORT_P].udp, sizeof(hdr->udp));
 
-  if (rtp->tmstamp != s->st40_rtp_time) {
+  if (rtp->tmstamp != (uint32_t)s->st40_rtp_time) {
     /* start of a new frame */
     s->st40_pkt_idx = 0;
     s->st40_anc_idx = 0;
@@ -872,7 +872,7 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
     if (ops->type == ST40_TYPE_RTP_LEVEL) {
       struct st40_rfc8331_rtp_hdr* rtp =
           rte_pktmbuf_mtod(pkt_rtp, struct st40_rfc8331_rtp_hdr*);
-      if (rtp->base.tmstamp != s->st40_rtp_time) {
+      if (rtp->base.tmstamp != (uint32_t)s->st40_rtp_time) {
         /* start of a new frame */
         s->st40_pkt_idx = 0;
         s->st40_anc_idx = 0;
@@ -1039,7 +1039,8 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     struct st40_frame* src = (struct st40_frame*)frame->addr;
     bool fmd = tx_ancillary_session_is_fmd(s);
     if (!fmd) {
-      for (int i = 0; i < src->meta_num; i++) total_udw += src->meta[i].udw_size;
+      for (int i = 0; (uint32_t)i < src->meta_num; i++)
+        total_udw += src->meta[i].udw_size;
     }
     int total_size = total_udw * 10 / 8;
     s->st40_pkt_idx = 0;
