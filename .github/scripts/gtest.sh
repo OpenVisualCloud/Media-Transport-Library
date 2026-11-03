@@ -341,6 +341,8 @@ generate_test_cases() {
 		done
 	done
 	dpdk_case st2110_20p 'St20p*'
+	# More queues than an ice VF gets with its default RSS LUT, see nicctl.sh.
+	dpdk_case st2110_20_tx_queue_cnt 'St20_tx.create_queue_cnt' --queue_cnt 24
 	dpdk_case st2110_22_rx 'St22_rx*'
 	dpdk_case st2110_22_tx 'St22_tx*'
 	dpdk_case st2110_22p 'St22p*'
