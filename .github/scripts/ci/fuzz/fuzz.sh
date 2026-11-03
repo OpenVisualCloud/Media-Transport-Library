@@ -16,7 +16,7 @@ build)
 	[[ -d $build_dir ]] && reconfigure=(--reconfigure)
 	CC=clang CXX=clang++ meson setup "${reconfigure[@]}" "$build_dir" . \
 		-Denable_fuzzing=true -Db_sanitize=address,undefined -Db_lundef=false \
-		"-Dc_args=-Wno-error=unused-but-set-variable -fno-sanitize-recover=all"
+		-Dc_args=-fno-sanitize-recover=all
 	ninja -C "$build_dir"
 	;;
 run)

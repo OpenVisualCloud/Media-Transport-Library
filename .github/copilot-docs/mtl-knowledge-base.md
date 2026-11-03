@@ -1207,7 +1207,7 @@ Build with clang (gcc lacks `-fsanitize=fuzzer-no-link`); `-Denable_asan=true` f
 
 ```bash
 CC=clang CXX=clang++ meson setup build_fuzz -Denable_fuzzing=true \
-  -Db_sanitize=address -Db_lundef=false -Dc_args=-Wno-error=unused-but-set-variable
+  -Db_sanitize=address -Db_lundef=false
 ninja -C build_fuzz
 ./build_fuzz/tests/fuzz/st20_rx_frame_fuzz corpus/st20
 ```
