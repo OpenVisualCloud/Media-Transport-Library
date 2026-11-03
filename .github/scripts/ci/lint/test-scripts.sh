@@ -228,11 +228,11 @@ test_dependency_hardening_flags() {
 test_dependency_hardening_flags
 
 # check-hardening.sh passes a hardened program, names each mark of an unhardened
-# one and of one with IBT only, and fails a path that holds no ELF file.
+# one and of one with a single CET mark, and fails a path without an ELF file.
 test_check_hardening() {
 	local gate=.github/scripts/ci/scan/check-hardening.sh work out rc=0
 	work=$(mktemp -d)
-	mkdir "${work}/good" "${work}/bad" "${work}/ibt" "${work}/empty"
+	mkdir "${work}/good" "${work}/bad" "${work}/ibt" "${work}/shstk" "${work}/empty"
 	printf '#include <string.h>\nint main(int c, char **v) { char b[64]; strcpy(b, v[0]); return b[c]; }\n' >"${work}/t.c"
 	gcc -O2 -fstack-protector-strong -fcf-protection=full -fPIE -pie -Wl,-z,relro,-z,now,-z,noexecstack \
 		"${work}/t.c" -o "${work}/good/t"
@@ -240,15 +240,20 @@ test_check_hardening() {
 		"${work}/t.c" -o "${work}/bad/t" 2>/dev/null || fail "${gate}" "cannot link the unhardened program"
 	gcc -O2 -fstack-protector-strong -fcf-protection=branch -fPIE -pie -Wl,-z,relro,-z,now,-z,noexecstack \
 		"${work}/t.c" -o "${work}/ibt/t"
+	gcc -O2 -fstack-protector-strong -fcf-protection=return -fPIE -pie -Wl,-z,relro,-z,now,-z,noexecstack \
+		"${work}/t.c" -o "${work}/shstk/t"
 	bash "${gate}" "${work}/good" >/dev/null 2>&1 || fail "${gate}" "fails a hardened program"
 	out=$(bash "${gate}" "${work}/bad" 2>&1) || rc=$?
 	if [ "${rc}" -eq 0 ] ||
-		! grep -qxF "::error::${work}/bad/t is not hardened: no RELRO BIND_NOW NX PIE IBT/SHSTK SSP" <<<"${out}"; then
+		! grep -qxF "::error::${work}/bad/t is not hardened: no RELRO BIND_NOW NX PIE IBT SHSTK SSP" <<<"${out}"; then
 		fail "${gate}" "does not name each mark an unhardened program lacks: ${out}"
 	fi
 	out=$(bash "${gate}" "${work}/ibt" 2>&1) || true
-	grep -qxF "::error::${work}/ibt/t is not hardened: no IBT/SHSTK" <<<"${out}" ||
+	grep -qxF "::error::${work}/ibt/t is not hardened: no SHSTK" <<<"${out}" ||
 		fail "${gate}" "passes a program with IBT but no SHSTK: ${out}"
+	out=$(bash "${gate}" "${work}/shstk" 2>&1) || true
+	grep -qxF "::error::${work}/shstk/t is not hardened: no IBT" <<<"${out}" ||
+		fail "${gate}" "passes a program with SHSTK but no IBT: ${out}"
 	if bash "${gate}" "${work}/empty" >/dev/null 2>&1; then
 		fail "${gate}" "passes a path without an ELF file"
 	fi
