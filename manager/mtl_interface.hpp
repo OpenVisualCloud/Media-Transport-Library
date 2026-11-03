@@ -135,6 +135,8 @@ int mtl_interface::update_udp_dp_filter(uint16_t dst_port, bool add) {
 
   return 0;
 #else
+  (void)dst_port;
+  (void)add;
   log(log_level::WARNING,
       "update_udp_dp_filter() called but XDP backend is not enabled.");
   return -1;

@@ -670,7 +670,7 @@ static void test_internal_st20p_rx_frame_thread(void* args) {
 }
 
 static int test_st20p_rx_query_ext_frame(void* priv, st_ext_frame* ext_frame,
-                                         struct st20_rx_frame_meta* meta) {
+                                         struct st20_rx_frame_meta* /*meta*/) {
   tests_context* s = (tests_context*)priv;
   int i = s->ext_idx;
 
