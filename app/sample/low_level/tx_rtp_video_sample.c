@@ -9,7 +9,7 @@ struct tv_rtp_sample_ctx {
   st20_tx_handle handle;
   bool stop;
   int packet_size;
-  int total_packet_in_frame;
+  uint32_t total_packet_in_frame;
   uint8_t payload_type;
   uint32_t rtp_tmstamp;
   uint32_t seq_id;
@@ -119,7 +119,7 @@ int main(int argc, char** argv) {
   struct tv_rtp_sample_ctx* app[session_num];
 
   // create and register tx session
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     app[i] = (struct tv_rtp_sample_ctx*)malloc(sizeof(struct tv_rtp_sample_ctx));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
@@ -183,7 +183,7 @@ int main(int argc, char** argv) {
   }
 
   // stop app thread
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     app[i]->stop = true;
     st_pthread_mutex_lock(&app[i]->wake_mutex);
     st_pthread_cond_signal(&app[i]->wake_cond);
@@ -193,7 +193,7 @@ int main(int argc, char** argv) {
   }
 
   // check result
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     if (app[i]->fb_send <= 0) {
       err("%s(%d), error, no sent frames %d\n", __func__, i, app[i]->fb_send);
       ret = -EIO;
@@ -202,7 +202,7 @@ int main(int argc, char** argv) {
 
 error:
   // release session
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     if (!app[i]) continue;
     if (app[i]->handle) st20_tx_free(app[i]->handle);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
