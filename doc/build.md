@@ -471,7 +471,7 @@ The Linux build compiles the MTL meson projects with the hardening options below
 | `-fstack-protector-strong` | Stack buffer overflow canary |
 | `-fstack-clash-protection` | Stack clash |
 | `-fcf-protection=full` | Intel CET shadow stack (SHSTK) and indirect branch tracking (IBT) |
-| `-D_FORTIFY_SOURCE=2` | Buffer overflow checks in libc calls. Not added when the compiler or `c_args`/`cpp_args` set a level (Ubuntu gcc does), with the meson option `optimization` at `0` or `plain` (buildtypes `debug`, `plain`), or with `b_sanitize`, which the sanitizers don't support |
+| `-D_FORTIFY_SOURCE=3` | Buffer overflow checks in libc calls. Level 3 needs gcc 12 or clang 9 and glibc 2.34, so gcc 11 (Ubuntu 22.04, RHEL 9) gets 2. Not added when the compiler or `c_args`/`cpp_args` set a level (Ubuntu gcc does), with the meson option `optimization` at `0` or `plain` (buildtypes `debug`, `plain`), or with `b_sanitize`, which the sanitizers don't support |
 | `-Wformat -Wformat-security -Werror=format-security` | Format string attacks |
 | `-Wl,-z,relro -Wl,-z,now` | Full RELRO, a read-only GOT |
 | `-Wl,-z,noexecstack` | Non-executable stack |
