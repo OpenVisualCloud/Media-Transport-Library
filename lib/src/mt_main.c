@@ -387,6 +387,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
 
   /* place holder to let bpf trace can attach to runtime point */
   MT_SYS_TASKLET_TIME_MEASURE();
+  MT_SYS_TASKLET_TIME_SAMPLE();
   MT_SYS_SESSIONS_TIME_MEASURE();
 
   ret = mt_user_params_check(p);

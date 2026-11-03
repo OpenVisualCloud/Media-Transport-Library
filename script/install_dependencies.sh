@@ -90,7 +90,7 @@ main() {
 	as_root apt-get update
 	install_packages git gcc meson ninja-build python3 python3-pip python3-pyelftools python3-venv pkg-config \
 		libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libgmock-dev libssl-dev systemtap-sdt-dev \
-		llvm clang libsdl2-dev libsdl2-ttf-dev cmake linuxptp ethtool make patch unzip wget
+		llvm clang libsdl2-dev libsdl2-ttf-dev cmake linuxptp ethtool bpftrace make patch unzip wget
 	# netsniff-ng recommends ntpsec, and apt then removes systemd-timesyncd.
 	install_packages --no-install-recommends netsniff-ng
 

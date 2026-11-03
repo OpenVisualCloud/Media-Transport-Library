@@ -194,6 +194,7 @@ unit_sources = [
   'pipeline/st_plugin_session_test.cpp',
   'sch/mt_sch_harness.c',
   'sch/mtl_sch_api_test.cpp',
+  'sch/mt_sch_stats_test.cpp',
   'sch/mt_sch_mempolicy_test.cpp',
   'sch/mt_sch_filelock_test.cpp',
   'ptp/ptp_harness.c',

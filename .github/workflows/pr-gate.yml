@@ -77,6 +77,10 @@ jobs:
         uses: ./.github/actions/wait-for-workflow
         with:
           check_name: build
+          # The build check exists only once build.yml's wait-for-linter ends, and
+          # that may take its 20-minute timeout-minutes while a checkpatch runner
+          # queues: the default 600 s failed this gate on builds that then passed.
+          timeout: '1500'
           # Five minutes inside this job's timeout-minutes, so the wait ends with
           # "no runner ever picked the build up" instead of a bare job timeout.
           queue_timeout: '4200'
