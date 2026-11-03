@@ -3,7 +3,7 @@
 
 # The FFmpeg plugin's unit tests, with MTL and FFmpeg stubbed.
 # script/build_ffmpeg_plugin.sh unit builds and runs them.
-project('mtl_ffmpeg_plugin_unit_tests', 'c', 'cpp', default_options : ['buildtype=release', 'b_pie=true'])
+project('mtl_ffmpeg_plugin_unit_tests', 'c', 'cpp', default_options : ['buildtype=release', 'warning_level=2', 'b_pie=true'])
 
 # Compiler hardening, see doc/build.md
 hardening_c = run_command(files('../../../script/hardening_flags.py'), 'c', get_option('optimization'),
