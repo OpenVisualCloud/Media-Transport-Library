@@ -14,6 +14,7 @@
 #define DHCP_HLEN_ETHERNET (6)
 #define DHCP_MAGIC_COOKIE (0x63825363)
 
+#define DHCP_OPTION_PAD (0)
 #define DHCP_OPTION_END (255)
 #define DHCP_OPTION_SUBNET_MASK (1)
 #define DHCP_OPTION_ROUTER (3)
@@ -239,6 +240,10 @@ static int dhcp_recv_offer(struct mtl_main_impl* impl, struct mt_dhcp_hdr* offer
        inet_ntoa(*(struct in_addr*)dhcp_impl->ip));
   uint8_t* options = offer->options;
   while (*options != DHCP_OPTION_END) {
+    if (*options == DHCP_OPTION_PAD) {
+      options++;
+      continue;
+    }
     if (*options == DHCP_OPTION_SUBNET_MASK)
       dbg("%s(%d), subnet mask: %s\n", __func__, port,
           inet_ntoa(*(struct in_addr*)(options + 2)));
@@ -301,6 +306,10 @@ static int dhcp_recv_ack(struct mtl_main_impl* impl, struct mt_dhcp_hdr* ack,
   mt_pthread_mutex_lock(&dhcp_impl->mutex);
   mt_memcpy(dhcp_impl->ip, &ack->yiaddr, MTL_IP_ADDR_LEN);
   while (*options != DHCP_OPTION_END) {
+    if (*options == DHCP_OPTION_PAD) {
+      options++;
+      continue;
+    }
     if (*options == DHCP_OPTION_SUBNET_MASK)
       mt_memcpy(dhcp_impl->netmask, &options[2], MTL_IP_ADDR_LEN);
     if (*options == DHCP_OPTION_ROUTER)
@@ -436,9 +445,43 @@ static int dhcp_send_release(struct mtl_main_impl* impl, enum mtl_port port) {
   return 0;
 }
 
-int mt_dhcp_parse(struct mtl_main_impl* impl, struct mt_dhcp_hdr* hdr,
+/* the options reach END inside len, and each option holds the bytes read of it */
+static bool dhcp_options_valid(const uint8_t* options, size_t len) {
+  size_t i = 0;
+
+  while (i < len && options[i] != DHCP_OPTION_END) {
+    if (options[i] == DHCP_OPTION_PAD) {
+      i++;
+      continue;
+    }
+    if (len - i < 2) return false;
+    switch (options[i]) {
+      case DHCP_OPTION_MESSAGE_TYPE:
+        if (options[i + 1] < 1) return false;
+        break;
+      case DHCP_OPTION_SUBNET_MASK:
+      case DHCP_OPTION_ROUTER:
+      case DHCP_OPTION_LEASE_TIME:
+      case DHCP_OPTION_SERVER_IDENTIFIER:
+        if (options[i + 1] < sizeof(uint32_t)) return false;
+        break;
+      default:
+        break;
+    }
+    i += options[i + 1] + 2;
+  }
+  return i < len;
+}
+
+int mt_dhcp_parse(struct mtl_main_impl* impl, struct mt_dhcp_hdr* hdr, size_t len,
                   enum mtl_port port) {
   struct mt_dhcp_impl* dhcp_impl = mt_get_dhcp(impl, port);
+
+  if (len < sizeof(*hdr)) {
+    dbg("%s(%d), dhcp too short: %zu\n", __func__, port, len);
+    return -EINVAL;
+  }
+
   if (rte_be_to_cpu_32(hdr->magic_cookie) != DHCP_MAGIC_COOKIE) {
     err("%s(%d), invalid magic cookie 0x%" PRIx32 "\n", __func__, port,
         rte_be_to_cpu_32(hdr->magic_cookie));
@@ -453,6 +496,11 @@ int mt_dhcp_parse(struct mtl_main_impl* impl, struct mt_dhcp_hdr* hdr,
   if (rte_be_to_cpu_32(hdr->xid) != dhcp_impl->xid) {
     err("%s(%d), xid mismatch 0x%" PRIx32 " : 0x%" PRIx32 "\n", __func__, port,
         rte_be_to_cpu_32(hdr->xid), dhcp_impl->xid);
+    return -EINVAL;
+  }
+
+  if (!dhcp_options_valid(hdr->options, len - sizeof(*hdr))) {
+    dbg("%s(%d), invalid dhcp options\n", __func__, port);
     return -EINVAL;
   }
 

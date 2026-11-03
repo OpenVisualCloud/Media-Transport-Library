@@ -263,7 +263,7 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
                        (struct mt_ipv4_udp*)ipv4_hdr);
         } else if (dhcp && src_port == MT_DHCP_UDP_SERVER_PORT) { /* dhcp pkt */
           dhcp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_dhcp_hdr*, hdr_offset);
-          mt_dhcp_parse(impl, dhcp_hdr, port);
+          mt_dhcp_parse(impl, dhcp_hdr, m->data_len - hdr_offset, port);
         } else {
           cni_udp_handle(cni, m);
         }

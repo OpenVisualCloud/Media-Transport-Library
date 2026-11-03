@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2026 Intel Corporation
  *
- * Includes the production mt_cni.c so the static cni_rx_handle() is callable.
+ * Includes the production mt_cni.c so the static cni_rx_handle() is callable, and
+ * mt_dhcp.c so the lease timers an ACK starts can be cancelled.
  */
 
 #include "cni/mt_cni_harness.h"
@@ -12,10 +13,17 @@
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
 #include "mt_cni.c"
+#include "mt_dhcp.c"
+
+_Static_assert(UT_CNI_DHCP_DISCOVERING == MT_DHCP_STATUS_DISCOVERING, "dhcp status");
+_Static_assert(UT_CNI_DHCP_REQUESTING == MT_DHCP_STATUS_REQUESTING, "dhcp status");
+_Static_assert(UT_CNI_DHCP_BOUND == MT_DHCP_STATUS_BOUND, "dhcp status");
 
 struct ut_cni_ctx {
   struct mtl_main_impl impl;
   struct mt_cni_entry cni;
+  struct mt_dp_impl dp;
+  struct mt_dhcp_impl dhcp;
 };
 
 ut_cni_ctx* ut_cni_create(void) {
@@ -28,10 +36,26 @@ ut_cni_ctx* ut_cni_create(void) {
   MT_TAILQ_INIT(&ctx->cni.csq_queues);
   rte_spinlock_init(&ctx->cni.csq_lock);
   MT_TAILQ_INIT(&ctx->cni.udp_detect);
+
+  /* the request the client answers an offer with finds no TX queue */
+  ctx->impl.inf[MTL_PORT_P].tx_mbuf_pool = ut_pool();
+  rte_spinlock_init(&ctx->dp.txq_sys_entry_lock);
+  ctx->impl.dp[MTL_PORT_P] = &ctx->dp;
+
+  mt_pthread_mutex_init(&ctx->dhcp.mutex, NULL);
+  ctx->dhcp.status = MT_DHCP_STATUS_DISCOVERING;
+  ctx->dhcp.xid = UT_CNI_DHCP_XID;
+  ctx->dhcp.port = MTL_PORT_P;
+  ctx->dhcp.parent = &ctx->impl;
+  ctx->impl.dhcp[MTL_PORT_P] = &ctx->dhcp;
   return ctx;
 }
 
 void ut_cni_destroy(ut_cni_ctx* ctx) {
+  rte_eal_alarm_cancel(dhcp_renew_handler, &ctx->dhcp);
+  rte_eal_alarm_cancel(dhcp_rebind_handler, &ctx->dhcp);
+  rte_eal_alarm_cancel(dhcp_lease_handler, &ctx->dhcp);
+  mt_pthread_mutex_destroy(&ctx->dhcp.mutex);
   free(ctx);
 }
 
@@ -46,4 +70,16 @@ int ut_cni_rx(ut_cni_ctx* ctx, const uint8_t* frame, size_t len) {
   int ret = cni_rx_handle(&ctx->cni, &m);
   ut_guarded_free(data, len);
   return ret;
+}
+
+int ut_cni_dhcp_status(ut_cni_ctx* ctx) {
+  return ctx->dhcp.status;
+}
+
+const uint8_t* ut_cni_dhcp_server_ip(ut_cni_ctx* ctx) {
+  return ctx->dhcp.server_ip;
+}
+
+const uint8_t* ut_cni_dhcp_netmask(ut_cni_ctx* ctx) {
+  return ctx->dhcp.netmask;
 }
