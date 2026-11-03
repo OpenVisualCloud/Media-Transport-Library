@@ -24,6 +24,7 @@ env:
   ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN: 1
   TOOLS_BUILD_AND_INSTALL_MTL_READPCAP: 1
   TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR: 1
+  TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET: 1
 
 # A superseded run of this workflow builds a commit nobody is looking at any
 # more, and its four legs each spend most of an hour installing the same
@@ -88,6 +89,11 @@ jobs:
       # made script/build, the parent of their build directory, as root.
       - name: Run the st22 avcodec plugin tests
         run: sudo -E script/build_st22_avcodec_plugin.sh unit
+
+      # Build Release builds them as debug, with no -Werror. sudo: it made
+      # script/build, where the build directories go, as root.
+      - name: Build the GStreamer plugins as release
+        run: sudo -E script/build_gstreamer_plugin.sh release --test-tools --prefix "${RUNNER_TEMP}/gstreamer-release"
 
       - name: Build the Rust no_std example
         run: task ci:rust-no-std
