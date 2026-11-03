@@ -17,7 +17,7 @@ static int test_st30p_tx_frame_available(void* priv) {
   return 0;
 }
 
-static int test_st30p_tx_frame_done(void* priv, struct st30_frame* frame) {
+static int test_st30p_tx_frame_done(void* priv, struct st30_frame* /*frame*/) {
   tests_context* s = (tests_context*)priv;
 
   if (!s->handle) return -EIO; /* not ready */
