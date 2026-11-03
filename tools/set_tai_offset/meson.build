@@ -13,6 +13,13 @@ hardening = run_command(files('../../script/hardening_flags.py'), 'c', get_optio
 add_project_arguments(hardening[0].split(), language : 'c')
 add_project_link_arguments(hardening[1].split(), language : 'c')
 
+set_tai_offset_c_args = []
+# enable warning as error for non debug build
+if get_option('buildtype') != 'debug'
+  set_tai_offset_c_args += ['-Werror']
+endif
+
 executable('set_tai_offset', 'set_tai_offset.c',
+  c_args: set_tai_offset_c_args,
   install: false,
 )
