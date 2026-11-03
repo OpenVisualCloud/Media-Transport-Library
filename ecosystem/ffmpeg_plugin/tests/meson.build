@@ -3,7 +3,8 @@
 
 # The FFmpeg plugin's unit tests, with MTL and FFmpeg stubbed.
 # script/build_ffmpeg_plugin.sh unit builds and runs them.
-project('mtl_ffmpeg_plugin_unit_tests', 'c', 'cpp', default_options : ['buildtype=release'])
+project('mtl_ffmpeg_plugin_unit_tests', 'c', 'cpp', default_options : ['buildtype=release', 'b_pie=true'])
+add_project_link_arguments(hardening_cpp[1].split(), language : 'cpp')
 
 subdir('mtl')
 
