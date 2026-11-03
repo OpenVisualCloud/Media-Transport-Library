@@ -17,6 +17,40 @@ TEST(St20_tx, create_free_mix) {
 TEST(St20_tx, create_free_max) {
   create_free_max(st20_tx, TEST_CREATE_FREE_MAX);
 }
+TEST(St20_tx, create_queue_cnt) {
+  auto ctx = st_test_ctx();
+  if (ctx->para.pmd[MTL_PORT_P] != MTL_PMD_DPDK_USER ||
+      (ctx->para.flags & MTL_FLAG_SHARED_TX_QUEUE))
+    GTEST_SKIP() << "needs one dedicated DPDK tx queue per session";
+
+  /* the port holds queue_cnt session queues plus the system queue */
+  const int want = ctx->para.tx_queues_cnt[MTL_PORT_P];
+  auto sch_cnt = st_test_sch_cnt(ctx);
+  auto test_ctx = new tests_context();
+  ASSERT_TRUE(test_ctx != nullptr);
+  test_ctx->idx = 0;
+  test_ctx->ctx = ctx;
+  test_ctx->fb_cnt = 2;
+  test_ctx->fb_idx = 0;
+  struct st20_tx_ops ops;
+  st20_tx_ops_init(test_ctx, &ops);
+
+  std::vector<st20_tx_handle> handles;
+  for (int i = 0; i < want; i++) {
+    st20_tx_handle h = st20_tx_create(ctx->handle, &ops);
+    if (!h) break;
+    handles.push_back(h);
+    ops.udp_port[MTL_SESSION_PORT_P]++;
+    ops.udp_port[MTL_SESSION_PORT_R]++;
+  }
+  const int created = static_cast<int>(handles.size());
+  for (auto h : handles) EXPECT_GE(st20_tx_free(h), 0);
+  EXPECT_EQ(sch_cnt, st_test_sch_cnt(ctx));
+  delete test_ctx;
+
+  EXPECT_EQ(created, want) << "a port with fewer tx queues than --queue_cnt is the "
+                              "usual cause, see the MTL log";
+}
 TEST(St20_tx, create_expect_fail) {
   expect_fail_test(st20_tx);
 }
