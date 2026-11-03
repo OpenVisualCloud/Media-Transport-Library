@@ -17,7 +17,7 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames, int pkt_size) 
   size_t fb_size = w * h * 5 / 2;            /* rfc4175_422be10 */
   fb_size = (fb_size / pkt_size) * pkt_size; /* align to pkt_size */
   float fb_size_m = (float)fb_size / 1024 / 1024;
-  int fb_dst_iova_off = 0, fb_src_iova_off = 0;
+  size_t fb_dst_iova_off = 0, fb_src_iova_off = 0;
 
   /* create user dma dev */
   dma = mtl_udma_create(st, nb_desc, MTL_PORT_P);
