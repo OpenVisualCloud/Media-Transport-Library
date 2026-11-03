@@ -213,9 +213,13 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
 
   // mt_mbuf_dump_hdr(port, 0, "cni_rx", m);
 
+  cni->eth_rx_bytes += m->pkt_len;
+  if (m->data_len < hdr_offset) return -EINVAL;
+
   /* vlan check */
   ether_type = ntohs(eth_hdr->ether_type);
   if (ether_type == RTE_ETHER_TYPE_VLAN) {
+    if (m->data_len < hdr_offset + sizeof(*vlan_header)) return -EINVAL;
     vlan_header =
         (struct rte_vlan_hdr*)((uint8_t*)eth_hdr + sizeof(struct rte_ether_hdr));
     ether_type = ntohs(vlan_header->eth_proto);
@@ -241,9 +245,13 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
       }
       break;
     case RTE_ETHER_TYPE_IPV4:
+      if (m->data_len < hdr_offset + sizeof(*ipv4_hdr)) return -EINVAL;
       ipv4_hdr = rte_pktmbuf_mtod_offset(m, struct rte_ipv4_hdr*, hdr_offset);
+      if (ipv4_hdr->ihl < sizeof(*ipv4_hdr) / 4) return -EINVAL;
       hdr_offset += ipv4_hdr->ihl * 4; /* may have ip option field */
+      if (m->data_len < hdr_offset) return -EINVAL;
       if (ipv4_hdr->next_proto_id == IPPROTO_UDP) {
+        if (m->data_len < hdr_offset + sizeof(*udp_hdr)) return -EINVAL;
         udp_hdr = rte_pktmbuf_mtod_offset(m, struct rte_udp_hdr*, hdr_offset);
         hdr_offset += sizeof(struct rte_udp_hdr);
         src_port = ntohs(udp_hdr->src_port);
@@ -274,7 +282,6 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
       cni_burst_to_kernel(cni, m);
       break;
   }
-  cni->eth_rx_bytes += m->pkt_len;
 
   return 0;
 }

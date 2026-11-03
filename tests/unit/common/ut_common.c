@@ -10,6 +10,8 @@
 #include <rte_mbuf_dyn.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 /* ── globals ──────────────────────────────────────────────────────────── */
 
@@ -46,6 +48,24 @@ int ut_eal_init(void) {
 
 struct rte_mempool* ut_pool(void) {
   return g_pool;
+}
+
+/* ── guard page ───────────────────────────────────────────────────────── */
+
+uint8_t* ut_guarded_copy(const void* bytes, size_t len) {
+  size_t page = (size_t)sysconf(_SC_PAGESIZE);
+  if (len > page) abort();
+  uint8_t* map =
+      mmap(NULL, 2 * page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (map == MAP_FAILED || mprotect(map + page, page, PROT_NONE) < 0) abort();
+  uint8_t* copy = map + page - len;
+  if (len) memcpy(copy, bytes, len);
+  return copy;
+}
+
+void ut_guarded_free(uint8_t* copy, size_t len) {
+  size_t page = (size_t)sysconf(_SC_PAGESIZE);
+  munmap(copy + len - page, 2 * page);
 }
 
 /* ── ring factory ─────────────────────────────────────────────────────── */
