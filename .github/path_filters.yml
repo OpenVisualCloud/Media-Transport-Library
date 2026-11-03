@@ -296,17 +296,19 @@ base_build:
   - 'tools/sch_smi_emulate/**'
 
 # docker_build.yml, ubuntu-docker-build. The build context is the repository
-# root less .dockerignore, which drops .github/, so the hash_<name> filters do
-# not apply: they hold .github/scripts/setup_environment.sh. Each image builds
-# DPDK and the eBPF/XDP libraries with the scripts named below, and runs
-# build.sh and the unit suite, whose meson projects run hardening_flags.py (in
-# libmtl). The image also holds a copy of script/, but the job runs no other
-# script, so a change to one does not run the job.
+# root less .dockerignore, which drops .github/ except check-hardening.sh, so the
+# hash_<name> filters do not apply: they hold .github/scripts/setup_environment.sh.
+# Each image builds DPDK and the eBPF/XDP libraries with the scripts named below,
+# and runs build.sh and the unit suite, whose meson projects run
+# hardening_flags.py (in libmtl); the rocky9 one then runs check-hardening.sh.
+# The image also holds a copy of script/, but the job runs no other script, so a
+# change to one does not run the job.
 docker_build:
   - .github/path_filters.yml
   - .github/workflows/docker_build.yml
   - 'docker/*.dockerfile'
   - .dockerignore
+  - .github/scripts/ci/scan/check-hardening.sh
   - script/common.sh
   - script/build_dpdk.sh
   - script/build_ebpf_xdp.sh
@@ -335,6 +337,7 @@ scripts:
   - .github/scripts/ci/lint/test-scripts.sh
   - .github/scripts/setup_environment.sh
   - script/hardening_flags.py
+  - .github/scripts/ci/scan/check-hardening.sh
   - versions.env
   - 'patches/dpdk/**'
   - script/build_app.sh
