@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 798" width="960" height="798">
+<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1f1f1f"/></marker><marker id="arrred" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b5122b"/></marker><marker id="arrgreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3a9a2e"/></marker><pattern id="hatchO" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="#fbe3b0"/><line x1="0" y1="0" x2="0" y2="6" stroke="#e39400" stroke-width="2.5"/></pattern><pattern id="hatchK" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(-45)"><rect width="6" height="6" fill="#ffffff"/><line x1="0" y1="0" x2="0" y2="6" stroke="#454545" stroke-width="1"/></pattern><pattern id="hatchR" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f6d3d8"/><line x1="0" y1="0" x2="0" y2="6" stroke="#b5122b" stroke-width="1.2"/></pattern><pattern id="hatchG" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="#ffffff"/><line x1="0" y1="0" x2="0" y2="6" stroke="#8a8a8a" stroke-width="1.5"/></pattern></defs>
+<rect width="960" height="798" fill="#ffffff"/>
+<text x="20.0" y="32.0" font-size="20" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" font-weight="bold">Two log checks: frames that may break VRX, and a scheduler that falls behind</text>
+<text x="20.0" y="56.0" font-size="14" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545">1080p59.94, with illustrative values. VRX is the ST 2110-21 receiver's buffer level, which must stay ≥ 0;</text>
+<text x="20.0" y="75.0" font-size="14" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545">a packet's target is the time MTL schedules it to leave.</text>
+<text x="20.0" y="111.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" font-weight="bold">Colour code:</text>
+<rect x="124.0" y="100.0" width="16.0" height="14.0" rx="2" fill="#d6edd2" stroke="#3a9a2e" stroke-width="2"/>
+<text x="146.0" y="111.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">in time: not reported</text>
+<rect x="298.0" y="100.0" width="16.0" height="14.0" rx="2" fill="url(#hatchR)" stroke="#b5122b" stroke-width="2" stroke-dasharray="4 2"/>
+<text x="320.0" y="111.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">reported, VRX can still be ≥ 0</text>
+<rect x="583.0" y="100.0" width="16.0" height="14.0" rx="2" fill="#f6d3d8" stroke="#b5122b" stroke-width="2"/>
+<text x="605.0" y="111.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">reported, VRX &lt; 0</text>
+<!-- check 1, per session: lateness of a packet against the VRX budget -->
+<g id="check-1">
+<text x="20.0" y="164.0" font-size="15" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" font-weight="bold">Check 1, per session: did a packet leave later than its VRX budget allows?</text>
+<rect x="140.0" y="256.0" width="249.8" height="30.0" rx="0" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<text x="264.9" y="276.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">within the budget</text>
+<rect x="389.8" y="256.0" width="182.3" height="30.0" rx="0" fill="url(#hatchR)" stroke="#b5122b" stroke-width="1.2" stroke-dasharray="4 2"/>
+<rect x="572.0" y="256.0" width="308.0" height="30.0" rx="0" fill="#f6d3d8" stroke="#b5122b" stroke-width="1.5"/>
+<text x="580.0" y="276.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">VRX &lt; 0</text>
+<rect x="414.4" y="265.8" width="133.0" height="14.4" rx="3" fill="#ffffff"/>
+<text x="480.9" y="276.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">VRX can still be ≥ 0</text>
+<line x1="140.0" y1="296.0" x2="880.0" y2="296.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<line x1="140.0" y1="296.0" x2="140.0" y2="301.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="140.0" y="316.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">its target</text>
+<line x1="232.5" y1="296.0" x2="232.5" y2="301.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="232.5" y="316.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">+5</text>
+<line x1="325.0" y1="296.0" x2="325.0" y2="301.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="325.0" y="316.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">+10</text>
+<line x1="417.5" y1="296.0" x2="417.5" y2="301.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="417.5" y="316.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">+15</text>
+<line x1="510.0" y1="296.0" x2="510.0" y2="301.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="510.0" y="316.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">+20</text>
+<line x1="602.5" y1="296.0" x2="602.5" y2="301.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="602.5" y="316.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">+25</text>
+<line x1="695.0" y1="296.0" x2="695.0" y2="301.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="695.0" y="316.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">+30</text>
+<line x1="787.5" y1="296.0" x2="787.5" y2="301.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="787.5" y="316.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">+35</text>
+<line x1="880.0" y1="296.0" x2="880.0" y2="301.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="880.0" y="316.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">+40</text>
+<text x="880.0" y="334.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="end">how late the packet left: µs after its target</text>
+<text x="20.0" y="188.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545">The budget is the lateness that keeps VRX ≥ 0 (23.3 µs here), less margins for timestamp rounding and pads.</text>
+<line x1="389.8" y1="252.0" x2="389.8" y2="238.0" stroke="#454545" stroke-width="1"/>
+<text x="389.8" y="234.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="end">VRX budget 13.5 µs</text>
+<line x1="572.0" y1="252.0" x2="572.0" y2="238.0" stroke="#454545" stroke-width="1"/>
+<text x="572.0" y="234.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="end">VRX goes below 0 at 23.3 µs</text>
+<circle cx="685.8" cy="271.0" r="7" fill="#b5122b" stroke="#ffffff" stroke-width="1.5"/>
+<line x1="685.8" y1="263.0" x2="685.8" y2="238.0" stroke="#b5122b" stroke-width="1.2"/>
+<text x="685.8" y="234.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">example: packet 0 at +29.5 µs</text>
+<rect x="20.0" y="346.0" width="920.0" height="48.0" rx="4" fill="#f6f6f6" stroke="#c8c8c8" stroke-width="1"/>
+<text x="30.0" y="364.0" font-size="12" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" fill="#1f1f1f">TX_VIDEO_SESSION(0,3): 1 frames may break VRX &gt;= 0, a pkt up to 29.5us past its</text>
+<text x="30.0" y="382.0" font-size="12" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" fill="#1f1f1f">target over the 13.5us budget: packet 0 1 mid-frame 0; 0 frames started up to 0.0us late</text>
+<text x="20.0" y="416.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">Logged at most once per stats period (10 s by default) for each session, here session 3 on scheduler 0.</text>
+<text x="20.0" y="434.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">"packet 0 1 mid-frame 0": in 1 flagged frame the late packet was packet 0, in 0 frames a later one.</text>
+<text x="20.0" y="452.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">"0 frames started up to 0.0us late": no frame began its sending past the budget.</text>
+</g>
+<!-- check 2, per scheduler: the builder's lead -->
+<g id="check-2">
+<text x="20.0" y="512.0" font-size="15" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" font-weight="bold">Check 2, per scheduler: was the next packet already due when the CPU came to build it?</text>
+<text x="20.0" y="534.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545">lead = the next packet's due time − now, at each visit of the session's packet builder</text>
+<line x1="140.0" y1="582.0" x2="590.0" y2="582.0" stroke="#454545" stroke-width="1.2"/>
+<line x1="154.0" y1="579.0" x2="154.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<line x1="176.0" y1="579.0" x2="176.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<line x1="198.0" y1="579.0" x2="198.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<line x1="220.0" y1="579.0" x2="220.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<text x="220.0" y="600.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">−5</text>
+<line x1="242.0" y1="579.0" x2="242.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<line x1="264.0" y1="579.0" x2="264.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<line x1="286.0" y1="579.0" x2="286.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<line x1="308.0" y1="579.0" x2="308.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<line x1="330.0" y1="579.0" x2="330.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<line x1="352.0" y1="579.0" x2="352.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<line x1="374.0" y1="579.0" x2="374.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<line x1="396.0" y1="579.0" x2="396.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<line x1="418.0" y1="579.0" x2="418.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<line x1="440.0" y1="579.0" x2="440.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<text x="440.0" y="600.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">+5</text>
+<line x1="462.0" y1="579.0" x2="462.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<line x1="484.0" y1="579.0" x2="484.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<line x1="506.0" y1="579.0" x2="506.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<line x1="528.0" y1="579.0" x2="528.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<line x1="550.0" y1="579.0" x2="550.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<text x="550.0" y="600.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">+10</text>
+<line x1="572.0" y1="579.0" x2="572.0" y2="585.0" stroke="#454545" stroke-width="1"/>
+<line x1="330.0" y1="568.0" x2="330.0" y2="596.0" stroke="#1f1f1f" stroke-width="2.5"/>
+<text x="330.0" y="612.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">now (the visit)</text>
+<rect x="330.0" y="577.0" width="176.0" height="10.0" rx="0" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1"/>
+<circle cx="506.0" cy="582.0" r="7" fill="#3a9a2e" stroke="#ffffff" stroke-width="1.5"/>
+<text x="506.0" y="566.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">next packet due</text>
+<text x="605.0" y="587.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">lead +8 µs: in time</text>
+<line x1="140.0" y1="648.0" x2="590.0" y2="648.0" stroke="#454545" stroke-width="1.2"/>
+<line x1="154.0" y1="645.0" x2="154.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<line x1="176.0" y1="645.0" x2="176.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<line x1="198.0" y1="645.0" x2="198.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<line x1="220.0" y1="645.0" x2="220.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<text x="220.0" y="666.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">−5</text>
+<line x1="242.0" y1="645.0" x2="242.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<line x1="264.0" y1="645.0" x2="264.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<line x1="286.0" y1="645.0" x2="286.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<line x1="308.0" y1="645.0" x2="308.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<line x1="330.0" y1="645.0" x2="330.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<line x1="352.0" y1="645.0" x2="352.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<line x1="374.0" y1="645.0" x2="374.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<line x1="396.0" y1="645.0" x2="396.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<line x1="418.0" y1="645.0" x2="418.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<line x1="440.0" y1="645.0" x2="440.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<text x="440.0" y="666.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">+5</text>
+<line x1="462.0" y1="645.0" x2="462.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<line x1="484.0" y1="645.0" x2="484.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<line x1="506.0" y1="645.0" x2="506.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<line x1="528.0" y1="645.0" x2="528.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<line x1="550.0" y1="645.0" x2="550.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<text x="550.0" y="666.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">+10</text>
+<line x1="572.0" y1="645.0" x2="572.0" y2="651.0" stroke="#454545" stroke-width="1"/>
+<line x1="330.0" y1="634.0" x2="330.0" y2="662.0" stroke="#1f1f1f" stroke-width="2.5"/>
+<text x="330.0" y="678.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">now (the visit)</text>
+<rect x="264.0" y="643.0" width="66.0" height="10.0" rx="0" fill="url(#hatchR)" stroke="#b5122b" stroke-width="1" stroke-dasharray="4 2"/>
+<circle cx="264.0" cy="648.0" r="7" fill="#b5122b" stroke="#ffffff" stroke-width="1.5"/>
+<text x="264.0" y="632.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">next packet due</text>
+<text x="605.0" y="653.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">lead −3 µs: the packet was late, reported</text>
+<text x="590.0" y="682.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="end">µs from now, a tick every µs</text>
+<rect x="20.0" y="690.0" width="920.0" height="28.0" rx="4" fill="#f6f6f6" stroke="#c8c8c8" stroke-width="1"/>
+<text x="30.0" y="708.0" font-size="12" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" fill="#1f1f1f">TX_VIDEO_SESSION(0): lead -3.0us, frames fall behind: move sessions off this scheduler</text>
+<text x="20.0" y="742.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">Logged at most once per stats period for each scheduler, here scheduler 0, and when a session leaves it.</text>
+<text x="20.0" y="760.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">A late packet here may or may not have taken VRX below 0; check 1 reports the frames where it may have.</text>
+<text x="20.0" y="778.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">It also fires when the average round exceeds the round budget, but not on a sleeping scheduler.</text>
+</g>
+</svg>
