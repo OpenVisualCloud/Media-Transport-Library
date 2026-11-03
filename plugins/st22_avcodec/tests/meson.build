@@ -3,7 +3,8 @@
 
 # The plugin's tests, against the installed MTL and FFmpeg the plugin is built against.
 # script/build_st22_avcodec_plugin.sh unit builds and runs them.
-project('st22_avcodec_plugin_tests', 'c', 'cpp', default_options : ['buildtype=release'])
+project('st22_avcodec_plugin_tests', 'c', 'cpp', default_options : ['buildtype=release', 'b_pie=true'])
+add_project_link_arguments(hardening_cpp[1].split(), language : 'cpp')
 
 # The flags of the plugin build, as the harness compiles the plugin in place.
 add_global_arguments('-DALLOW_EXPERIMENTAL_API', language : 'c')
