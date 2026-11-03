@@ -15,8 +15,20 @@
 #include <cerrno>
 #include <cstring>
 #include <memory>
+#include <vector>
 
 #include "../../../manager/mtl_instance.hpp"
+
+static mtl_message_t register_message(uint16_t num_if) {
+  mtl_message_t msg = {};
+  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
+  msg.header.type = (mtl_message_type_t)htonl(MTL_MSG_TYPE_REGISTER);
+  msg.header.body_len = htonl(sizeof(mtl_register_message_t));
+  /* the manager logs all 64 bytes, and a NUL makes the saved log binary */
+  memset(msg.body.register_msg.hostname, 'u', sizeof(msg.body.register_msg.hostname));
+  msg.body.register_msg.num_if = htons(num_if);
+  return msg;
+}
 
 class MtlManagerRegisterTest : public ::testing::Test {
  protected:
@@ -32,16 +44,13 @@ class MtlManagerRegisterTest : public ::testing::Test {
     close(client_fd_);
   }
 
+  void feed(const mtl_message_t& msg) {
+    instance_->handle_message(reinterpret_cast<const char*>(&msg), sizeof(msg));
+  }
+
   /* The one response to a register message naming num_if interfaces. */
   int register_response(uint16_t num_if) {
-    mtl_message_t msg = {};
-    msg.header.magic = htonl(MTL_MANAGER_MAGIC);
-    msg.header.type = (mtl_message_type_t)htonl(MTL_MSG_TYPE_REGISTER);
-    msg.header.body_len = htonl(sizeof(mtl_register_message_t));
-    /* the manager logs all 64 bytes, and a NUL makes the saved log binary */
-    memset(msg.body.register_msg.hostname, 'u', sizeof(msg.body.register_msg.hostname));
-    msg.body.register_msg.num_if = htons(num_if);
-    instance_->handle_message(reinterpret_cast<const char*>(&msg), sizeof(msg));
+    feed(register_message(num_if));
 
     mtl_message_t resp = {}, more;
     EXPECT_EQ(recv(client_fd_, &resp, sizeof(resp), MSG_DONTWAIT), (ssize_t)sizeof(resp));
@@ -65,4 +74,18 @@ TEST_F(MtlManagerRegisterTest, NumIfOfTheWholeArrayReachesTheLookup) {
 
 TEST_F(MtlManagerRegisterTest, NoInterfaceRegisters) {
   EXPECT_EQ(register_response(0), 0);
+}
+
+TEST_F(MtlManagerRegisterTest, ReplyIsZeroPastTheResponse) {
+  mtl_message_t want = {}, got;
+  want.header.magic = htonl(MTL_MANAGER_MAGIC);
+  want.header.type = (mtl_message_type_t)htonl(MTL_MSG_TYPE_RESPONSE);
+  want.header.body_len = htonl(sizeof(mtl_response_message_t));
+
+  feed(register_message(0));
+  ASSERT_EQ(recv(client_fd_, &got, sizeof(got), MSG_DONTWAIT), (ssize_t)sizeof(got));
+  const auto* g = reinterpret_cast<const uint8_t*>(&got);
+  const auto* w = reinterpret_cast<const uint8_t*>(&want);
+  EXPECT_EQ(std::vector<uint8_t>(g, g + sizeof(got)),
+            std::vector<uint8_t>(w, w + sizeof(want)));
 }

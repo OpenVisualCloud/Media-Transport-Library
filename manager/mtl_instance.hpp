@@ -51,7 +51,7 @@ class mtl_instance {
   void handle_message_if_del_flow(mtl_if_message_t* if_msg);
 
   int send_response(int response, mtl_message_type_t type = MTL_MSG_TYPE_RESPONSE) {
-    mtl_message_t msg;
+    mtl_message_t msg = {};
     msg.header.magic = htonl(MTL_MANAGER_MAGIC);
     msg.header.type = (mtl_message_type_t)htonl(type);
     msg.header.body_len = htonl(sizeof(mtl_response_message_t));
