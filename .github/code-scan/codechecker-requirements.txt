@@ -1,4 +1,4 @@
-# The CodeChecker release that the clang-tidy job of code-scan.yml installs
+# The CodeChecker release that the clang-tidy action (.github/actions/clang-tidy) installs
 # for the Clang Static Analyzer. PyPI has only the sdist, so pip builds it
 # with the runner's gcc; the analyzer itself is the runner's clang 18.
 # Dependabot proposes each new release in its own pull request.

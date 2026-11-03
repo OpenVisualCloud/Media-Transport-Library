@@ -9,7 +9,7 @@
 
 [![Base build](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/base_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/base_build.yml)
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/30596/badge.svg)](https://scan.coverity.com/projects/media-transport-library)
-[![Linter Scan Status](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/linter.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/linter.yml)
+[![PR check Status](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/cicd-pr-check.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/cicd-pr-check.yml)
 [![Trivy Scan Status](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/trivy.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/trivy.yml)
 [![Dependency Review](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/dependency-review.yml)
 

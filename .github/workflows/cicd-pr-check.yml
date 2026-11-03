@@ -1,0 +1,749 @@
+name: cicd-pr-check
+
+# Every check of a pull request, in one workflow, so that each job waits for
+# the jobs it depends on through needs: lint, then the build of the cached
+# artifacts, then the jobs that restore them. No job polls for the check of
+# another workflow. The *-result jobs are the check names that branch
+# protection requires: each one fails when its tests were wanted and did not
+# pass, also when a job before them failed and they did not run.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'maint-**'
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
+
+# One run per pull request at a time. The build job runs on the single shared
+# dpdk host and the test legs on the NIC fleet, so a superseded run would sit in
+# front of the newest commit in the queue. Outside a pull request each run is
+# its own intent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # A workspace-relative cache location is the one path that works identically
+  # on Linux, macOS and Windows runners.
+  PRE_COMMIT_HOME: ${{ github.workspace }}/.pre-commit-cache
+  PRE_COMMIT_VERSION: 4.7.0
+
+jobs:
+  # ── Which jobs the change can affect ──
+  # Each output is true when its job must run: always on a manual run, else when
+  # the change matches the filter of .github/path_filters.yml with the same
+  # name. The outputs of the jobs on the build host and the fleet are false
+  # outside the upstream repository, which has them.
+  changes:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      build: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && (github.event_name == 'workflow_dispatch' || steps.filter.outputs.build_workflow == 'true') }}
+      gtest: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && (github.event_name == 'workflow_dispatch' || steps.filter.outputs.gtest == 'true') }}
+      smoke_tests: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && (github.event_name == 'workflow_dispatch' || steps.filter.outputs.smoke_tests == 'true') }}
+      unit_tests: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.unit_tests == 'true' }}
+      scripts: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.scripts == 'true' }}
+      # A push to main gets the long fuzz run from the nightly workflow.
+      fuzz_tests: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && steps.filter.outputs.fuzz_tests == 'true') }}
+      # A push has no changed lines to check, and main gets its analyzer run
+      # from the nightly workflow.
+      clang_tidy: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && steps.filter.outputs.clang_tidy == 'true')) }}
+      cargo_audit: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.cargo_audit == 'true' }}
+      bandit: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.bandit == 'true' }}
+      # clang-tidy needs the DPDK of this commit. When a cache has it, clang-tidy
+      # starts at once; when not, it needs the build job that saves it.
+      dpdk_cached: ${{ steps.dpdk.outputs.cache-hit == 'true' }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        with:
+          filters: .github/path_filters.yml
+
+      - name: Compute source checksums
+        id: sums
+        uses: ./.github/actions/source-checksums
+
+      - name: Compute exact cache keys
+        id: keys
+        env:
+          HASH_DPDK: ${{ steps.sums.outputs.dpdk }}
+          HASH_MTL: ${{ steps.sums.outputs.mtl }}
+          HASH_JPEGXS: ${{ steps.sums.outputs.jpegxs }}
+          HASH_ICE: ${{ steps.sums.outputs.ice }}
+          HASH_FFMPEG: ${{ steps.sums.outputs.ffmpeg }}
+          HASH_GSTREAMER: ${{ steps.sums.outputs.gstreamer }}
+          HASH_PLUGINS: ${{ steps.sums.outputs.plugins }}
+        run: task ci:cache-keys
+
+      - name: 'stash: Look up the DPDK cache'
+        id: dpdk
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ steps.keys.outputs.dpdk_key }}
+          path: .local_install/dpdk
+          lookup-only: true
+
+  # ── Lint, on a pull request only ──
+  # Every style and lint rule this repository enforces lives in
+  # .pre-commit-config.yaml, and this job runs it through the same entry point
+  # developers and the git hooks use. This workflow must stay orchestration-only:
+  # if you find yourself adding a rule or a config path here, it belongs in
+  # .pre-commit-config.yaml instead. See doc/coding_standard.md.
+  checkpatch:
+    name: checkpatch (${{ matrix.os }})
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read # for actions/checkout to fetch code
+    strategy:
+      fail-fast: false
+      matrix:
+        # Three OSes because the toolchain claims to be cross-platform; a claim
+        # nobody runs is a claim that is already broken.
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Cache pre-commit environments
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.PRE_COMMIT_HOME }}
+          key: pre-commit-${{ matrix.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Install pre-commit
+        run: python -m pip install "pre-commit==${PRE_COMMIT_VERSION}"
+
+      - name: Run checkpatch
+        run: ./checkpatch.sh
+
+  # Checks that checkpatch does not reproduce yet, kept as an explicitly named
+  # job rather than dropped quietly. Each one has a recorded reason and a
+  # migration path in the parity table in doc/coding_standard.md.
+  #
+  # This is an allow-list: super-linter runs *only* the validators set true here,
+  # and it refuses to start if true and false values are mixed, so no
+  # VALIDATE_*: false line may be added below. That is also what now keeps
+  # ansible-lint off: it walks into the tracked skill symlinks and then fails on
+  # super-linter v6's own bundled .ansible-lint.yml, which its ansible-lint
+  # rejects for the unexpected 'parseable' key. There is no Ansible here to
+  # check, so it simply never appears in this list -- the explicit
+  # VALIDATE_ANSIBLE: false the deny-list needed would now stop the job starting.
+  residual-linters:
+    name: Lint checks not yet in checkpatch
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # for actions/checkout to fetch code
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full git history is needed to get a proper
+          # list of changed files within `super-linter`
+          fetch-depth: 0
+
+      - name: Lint Code Base
+        uses: super-linter/super-linter/slim@2da136927bd4a73596db63044b504547c62cb854 # v9.0.0
+        env:
+          DEFAULT_BRANCH: main
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LOG_LEVEL: WARN
+          # On by default since super-linter 8.4.0; this job's token can only read.
+          ENABLE_GITHUB_PULL_REQUEST_SUMMARY_COMMENT: false
+          # .sh files must keep their executable bit. Trivial to check but there
+          # is no upstream pre-commit hook with these exact semantics -- the
+          # nearest one, check-shebang-scripts-are-executable, is broader and
+          # fails 17 pre-existing files.
+          VALIDATE_BASH_EXEC: true
+          # Secret scanning. The pre-commit gitleaks hook runs
+          # `gitleaks protect --staged`, which scans the staged diff and is a
+          # no-op for --all-files, so checkpatch cannot replace this. The old
+          # deny-list workflow ran it by default; keeping it explicit here is
+          # what stops the allow-list conversion from dropping it silently.
+          VALIDATE_GITLEAKS: true
+          # eslint over 135 *.ts. Cannot move into checkpatch until
+          # tests/tools/perf_debug_mcp/package.json is tracked -- .gitignore's
+          # blanket `*.json` currently excludes it, so the project has no
+          # buildable or lintable configuration from a clean clone.
+          VALIDATE_TYPESCRIPT_ES: true
+          # rustfmt and clippy. All three edition validators were active before
+          # this split and stay active; narrowing them to 2021, which is what
+          # every Cargo.toml declares, would be a rule change.
+          VALIDATE_RUST_2015: true
+          VALIDATE_RUST_2018: true
+          VALIDATE_RUST_2021: true
+          VALIDATE_RUST_CLIPPY: true
+
+  lint-result:
+    name: Lint Code Base
+    needs: [checkpatch, residual-linters]
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
+
+      - name: Require successful file linters
+        env:
+          CHECKPATCH_RESULT: ${{ needs.checkpatch.result }}
+          RESIDUAL_RESULT: ${{ needs.residual-linters.result }}
+        run: task ci:require-file-linters
+
+  # Commit-message style -- the one check that is neither a file linter nor part
+  # of the super-linter allow-list, because gitlint reads a commit message and no
+  # whole-tree file scan has one. It runs the exact commit-msg hook from
+  # .pre-commit-config.yaml (same pinned gitlint, same .github/linters/.gitlint
+  # rules) against every commit the pull request adds, so this job cannot enforce
+  # anything the local git hook does not. This stays orchestration-only: the
+  # rules are in the config, never here.
+  #
+  # The build job does not need it: a message-style miss fails the pull
+  # request, it does not skip a DPDK compile.
+  commit-messages:
+    name: Commit message style
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # for actions/checkout to fetch code
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Need the base commit and every commit in the PR to walk the range.
+          fetch-depth: 0
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Cache pre-commit environments
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.PRE_COMMIT_HOME }}
+          key: pre-commit-commit-msg-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Install pre-commit
+        run: python -m pip install "pre-commit==${PRE_COMMIT_VERSION}"
+
+      - name: Lint pull-request commit messages
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: task ci:lint-commit-messages
+
+  # ── Build the cached artifacts the bare-metal jobs restore ──
+  # After lint, so that a change that fails lint does not take the build host.
+  # A push has no lint jobs: they are skipped, and the build runs.
+  build:
+    needs: [changes, checkpatch, residual-linters]
+    if: ${{ !cancelled() && needs.changes.outputs.build == 'true' && (needs.checkpatch.result == 'success' || needs.checkpatch.result == 'skipped') && (needs.residual-linters.result == 'success' || needs.residual-linters.result == 'skipped') }}
+    runs-on: dpdk
+    timeout-minutes: 60
+    outputs:
+      mtl_commit: ${{ steps.build.outputs.mtl_commit }}
+      mtl_hash: ${{ steps.build.outputs.mtl_hash }}
+      jpegxs_hash: ${{ steps.build.outputs.jpegxs_hash }}
+      ice_hash: ${{ steps.build.outputs.ice_hash }}
+      ffmpeg_hash: ${{ steps.build.outputs.ffmpeg_hash }}
+      gstreamer_hash: ${{ steps.build.outputs.gstreamer_hash }}
+      plugins_hash: ${{ steps.build.outputs.plugins_hash }}
+      jpegxs_cache_key: ${{ steps.build.outputs.jpegxs_cache_key }}
+      ice_cache_key: ${{ steps.build.outputs.ice_cache_key }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout MTL
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@497c4107ae027a4f9d6da088d027639df40064e3
+
+      - name: Build the artifacts
+        id: build
+        uses: ./.github/actions/build-artifacts
+
+  build-result:
+    name: build-result
+    needs: [changes, checkpatch, residual-linters, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All build jobs ok
+        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && (needs.changes.outputs.build != 'true' || needs.build.result == 'success') }}
+        run: exit 0
+      - name: Some build jobs failed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || (needs.changes.outputs.build == 'true' && needs.build.result != 'success') }}
+        run: exit 1
+
+  # ── Unit tier and scripts: no NIC, no root, no build artifacts ──
+  unit-tests:
+    needs: changes
+    if: ${{ needs.changes.outputs.unit_tests == 'true' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build and run the unit suite
+        uses: ./.github/actions/unit-tests
+
+  # The scripts of script/ and setup_environment.sh share one structure.
+  # test-scripts.sh checks it, and runs the scripts that need no NIC and no root.
+  script-tests:
+    needs: changes
+    if: ${{ needs.changes.outputs.scripts == 'true' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check and run the scripts
+        run: bash .github/scripts/ci/lint/test-scripts.sh
+
+  unit-tests-result:
+    name: unit-tests-result
+    needs: [changes, unit-tests, script-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All unit tests ok
+        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+        run: exit 0
+      - name: Some unit tests failed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
+
+  # ── Fuzz: a short run per target; the nightly workflow runs the long one ──
+  fuzz-tests:
+    needs: changes
+    if: ${{ needs.changes.outputs.fuzz_tests == 'true' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build and run the fuzz targets
+        uses: ./.github/actions/fuzz-tests
+        with:
+          fuzz_time: '60'
+
+  fuzz-tests-result:
+    name: fuzz-tests-result
+    needs: [changes, fuzz-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All fuzz targets ok
+        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+        run: exit 0
+      - name: A fuzz target failed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
+
+  # ── gtest on each NIC of the fleet, on the artifacts of the build job ──
+  run-gtest-tests:
+    needs: [changes, build]
+    # Gate the job, not its steps: a leg with nothing to test must not take a
+    # fleet NIC host. gtest-result below is the check to require. !cancelled():
+    # on a push the lint jobs before the build skip, and without a status
+    # function a skipped ancestor skips this job too.
+    if: ${{ !cancelled() && needs.changes.outputs.gtest == 'true' && needs.build.result == 'success' }}
+    strategy:
+      matrix:
+        nic:
+          - e810
+          - e830
+          - e835
+      fail-fast: false
+    runs-on: ${{ matrix.nic }}
+    # Healthy legs finish in under 20 minutes. Without a bound, one wedged ICE
+    # driver load holds a fleet runner for GitHub's 360-minute default and the
+    # always() cleanup step never releases the NIC.
+    timeout-minutes: 45
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout MTL
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@497c4107ae027a4f9d6da088d027639df40064e3
+        with:
+          ref: ${{ needs.build.outputs.mtl_commit }}
+
+      - name: Validate host and download artifacts
+        uses: ./.github/actions/validate-host
+        with:
+          nic: ${{ matrix.nic }}
+          build_outputs: ${{ toJSON(needs.build.outputs) }}
+
+      - name: Run gtest bare metal
+        uses: ./.github/actions/run-gtest
+        with:
+          nic: ${{ matrix.nic }}
+
+  gtest-result:
+    name: gtest-result
+    needs: [changes, build, run-gtest-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All gtest legs ok
+        if: ${{ needs.changes.result == 'success' && (needs.changes.outputs.gtest != 'true' || needs.run-gtest-tests.result == 'success') }}
+        run: exit 0
+      - name: Some gtest legs failed or did not run
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.gtest == 'true' && needs.run-gtest-tests.result != 'success') }}
+        run: exit 1
+
+  # ── Smoke pytest on each NIC of the fleet, on the artifacts of the build job ──
+  run-smoke-tests:
+    name: run-smoke-tests (${{ matrix.nic }})
+    needs: [changes, build]
+    # Gate the job, not its steps: a leg with nothing to test must not take a
+    # fleet NIC host. smoke-tests-result below is the check to require.
+    # !cancelled(), as for run-gtest-tests.
+    if: ${{ !cancelled() && needs.changes.outputs.smoke_tests == 'true' && needs.build.result == 'success' }}
+    concurrency:
+      group: smoke-${{ github.workflow }}-${{ github.ref }}-${{ matrix.nic }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      # One leg per NIC label the fleet advertises, all running side by side.
+      #
+      # The i225 is a 2.5 GbE card: an uncompressed 1080p59 ST 2110-20 session
+      # does not fit its link, so it carries the low_bandwidth subset (ST
+      # 2110-22, low-rate ST 2110-20, ST 2110-30, ST 2110-40). It has no third
+      # port to sniff with either, hence no capture and no compliance verdict.
+      # 10 of its 15 cases run (the other five skip on capabilities the plugins
+      # do not have), at 60 s of traffic each, which is about 13 minutes for the
+      # leg. It stays non-blocking while the platform is being brought up.
+      matrix:
+        include:
+          - nic: e810
+            suite: smoke
+            job_timeout: 90
+            run_timeout: 60
+            test_time: ''
+            no_capture: '0'
+            optional: false
+          - nic: e830
+            suite: smoke
+            job_timeout: 90
+            run_timeout: 60
+            test_time: ''
+            no_capture: '0'
+            optional: false
+          - nic: e835
+            suite: smoke
+            job_timeout: 90
+            run_timeout: 60
+            test_time: ''
+            no_capture: '0'
+            optional: false
+          - nic: i225
+            suite: smoke-low-bandwidth
+            job_timeout: 45
+            run_timeout: 35
+            test_time: '60'
+            no_capture: '1'
+            optional: true
+    runs-on: ${{ matrix.nic }}
+    timeout-minutes: ${{ matrix.job_timeout }}
+    continue-on-error: ${{ matrix.optional }}
+    steps:
+      - name: 'preparation: Harden Runner'
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: 'preparation: Checkout MTL'
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@497c4107ae027a4f9d6da088d027639df40064e3
+        with:
+          ref: ${{ needs.build.outputs.mtl_commit }}
+
+      - name: 'preparation: Validate host and download artifacts'
+        uses: ./.github/actions/validate-host
+        with:
+          nic: ${{ matrix.nic }}
+          build_outputs: ${{ toJSON(needs.build.outputs) }}
+
+      - name: 'preparation: Set up the acceptance suite'
+        uses: ./.github/actions/pytest-setup
+        with:
+          nic: ${{ matrix.nic }}
+          smoke: 'true'
+          no_capture: ${{ matrix.no_capture }}
+          test_time: ${{ matrix.test_time }}
+
+      # In the job, not in an action: an action step has no timeout-minutes,
+      # and the report steps below need the rest of the job timeout.
+      - name: 'execution: Run the ${{ matrix.suite }} suite'
+        timeout-minutes: ${{ matrix.run_timeout }}
+        run: task ci:pytest-run -- ${{ matrix.suite }}
+
+      - name: 'collect: Report and cleanup'
+        if: always()
+        uses: ./.github/actions/pytest-collect
+        with:
+          report_name: smoke-test-report-${{ matrix.nic }}
+          report_path: |
+            report.html
+            report.json
+          summary: 'true'
+
+  smoke-tests-result:
+    name: smoke-tests-result
+    needs: [changes, build, run-smoke-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All smoke tests ok
+        if: ${{ needs.changes.result == 'success' && (needs.changes.outputs.smoke_tests != 'true' || needs.run-smoke-tests.result == 'success') }}
+        run: exit 0
+      - name: Some smoke tests failed or did not run
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.smoke_tests == 'true' && needs.run-smoke-tests.result != 'success') }}
+        run: exit 1
+
+  # ── Code scan ──
+  # clang-tidy on the changed C and C++ lines and the Clang Static Analyzer.
+  # They configure MTL against the DPDK cache of this commit: the first job
+  # runs when a cache already has it, the second after the build job saves it.
+  clang-tidy:
+    needs: changes
+    if: ${{ needs.changes.outputs.clang_tidy == 'true' && needs.changes.outputs.dpdk_cached == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+      security-events: write # for github/codeql-action/upload-sarif
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: clang-tidy and the Clang Static Analyzer
+        uses: ./.github/actions/clang-tidy
+        with:
+          changed_lines: ${{ github.event_name == 'pull_request' }}
+
+  clang-tidy-after-build:
+    needs: [changes, build]
+    # !cancelled(), as for run-gtest-tests.
+    if: ${{ !cancelled() && needs.changes.outputs.clang_tidy == 'true' && needs.changes.outputs.dpdk_cached != 'true' && needs.build.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+      security-events: write # for github/codeql-action/upload-sarif
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: clang-tidy and the Clang Static Analyzer
+        uses: ./.github/actions/clang-tidy
+        with:
+          changed_lines: ${{ github.event_name == 'pull_request' }}
+
+  cargo-audit:
+    needs: changes
+    if: ${{ needs.changes.outputs.cargo_audit == 'true' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-audit@0.22.2
+
+      - name: cargo-audit
+        run: task ci:cargo-audit
+
+      - name: Upload the cargo-audit reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cargo-audit
+          path: cargo-audit/
+
+  # Bandit on every tracked Python file, with the required test set in
+  # .github/code-scan/bandit.config. Any finding fails the job: fix the code,
+  # or review it and mark the line `# nosec <ID> # <what the review found>`.
+  bandit:
+    needs: changes
+    if: ${{ needs.changes.outputs.bandit == 'true' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read # for actions/checkout to fetch code
+      security-events: write # for github/codeql-action/upload-sarif
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install Bandit
+        run: python -m pip install -r .github/code-scan/requirements.txt
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
+
+      # The reports come before the scan, so that they exist when it fails.
+      - name: Write Bandit reports
+        run: task ci:bandit-reports
+
+      - name: Summarize Bandit results
+        run: task ci:bandit-summary
+
+      # Both uploads only report: a failed upload must not decide the check or
+      # stop the scan below from running.
+      - name: Upload Bandit reports
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        continue-on-error: true
+        with:
+          name: bandit-report
+          path: |
+            bandit.html
+            bandit.json
+            bandit.sarif
+
+      # A pull request from a fork gets a read-only token, so it cannot upload.
+      # Dependabot's token is raised by the job permissions above.
+      - name: Upload Bandit results to code scanning
+        if: >-
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        continue-on-error: true
+        with:
+          sarif_file: bandit.sarif
+          category: bandit
+
+      # The console report, and the step that fails on any finding. Run the
+      # same task locally.
+      - name: Run Bandit
+        run: task ci:bandit
+
+      - name: Check that Bandit scanned every file
+        run: task ci:bandit-skipped
+
+  code-scan-result:
+    name: code-scan-result
+    needs: [changes, clang-tidy, clang-tidy-after-build, cargo-audit, bandit]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All scans ok
+        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && (needs.changes.outputs.clang_tidy != 'true' || needs.clang-tidy.result == 'success' || needs.clang-tidy-after-build.result == 'success') }}
+        run: exit 0
+      - name: A scan failed or did not run
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || (needs.changes.outputs.clang_tidy == 'true' && needs.clang-tidy.result != 'success' && needs.clang-tidy-after-build.result != 'success') }}
+        run: exit 1

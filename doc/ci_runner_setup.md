@@ -35,7 +35,7 @@ present.
 Lab facts live on the runner, in `/etc/mtl-ci/runner.env`, not in GitHub
 secrets.
 
-The shadow/SUT host pair used by `perf-pytest.yml` and the optional shadow sync
+The shadow/SUT host pair used by `performance.yml` and the optional shadow sync
 in `custom-pytest.yml` reads `/etc/mtl-ci/shadow-host`, a file defining `IP` and
 `USER`.
 
@@ -138,7 +138,7 @@ to a different port.
 
 #### The ST 2022-7 leg needs both ports cabled too
 
-The performance rig carries no NIC label, so `perf-pytest.yml` resolves its card
+The performance rig carries no NIC label, so `performance.yml` resolves its card
 from `PERF_PCI_DEVICE` in the lab file (`task ci:pytest-setup -- pci-env`) rather
 than from a label. One entry there is enough: the step asks `lspci` how many
 ports the named card has and declares two of them, because a redundant session
@@ -501,19 +501,20 @@ Three prerequisites are easy to miss:
   the share would otherwise report a green leg that transmitted nothing.
   `MEDIA_ASSET_SET=perf` selects the sources of the performance sweep.
 
-## A red gate that means the fleet was busy
+## A test leg that waits for the fleet
 
-The bare-metal test workflows do not build their own artifacts: `pr-gate` waits
-for the `build` check on the same commit, and the smoke and gtest legs only start
-once it is green. That wait is deliberately patient, because the queue in front
-of the build host is routinely longer than the build itself.
+The bare-metal test jobs do not build their own artifacts: in each of
+`cicd-pr-check.yml`, `nightly.yml` and `performance.yml`, the smoke, gtest and
+pytest legs need the `build` job of the same run, and start only when it is
+green. No job polls for another workflow. While the build host is busy, the
+`build` job and the legs after it stay queued; the queue in front of the build
+host is often longer than the build itself.
 
-It is not infinite, and the two ways it can end read differently on purpose. A
-build that ran and failed fails the gate with its conclusion. A build that never
-left the queue fails it with the number of minutes it sat there and the sentence
-that this is fleet availability rather than a result — no runner online for the
-build host, and a commit that was therefore never tested. Re-run the gate once a
-runner is back; there is nothing to fix in the change.
+A build that ran and failed skips the legs, and the `*-result` check fails
+with the reason "failed or did not run". A build that never left the queue
+fails at its own `timeout-minutes`, or stays queued until GitHub cancels it.
+Either way the commit was never tested: re-run the workflow once a runner is
+back; there is nothing to fix in the change.
 
 Worth knowing when reading such a run: a queued job holds no runner, so the leg
 that never started is invisible in the Actions UI beyond its own spinner, and

@@ -90,7 +90,7 @@ and SSRC mismatches, the redundant packets and the enqueue failures.
 CI
 ==
 
-The ``fuzz-tests`` job of ``.github/workflows/fuzz_tests.yml`` runs on a
+The ``fuzz-tests`` job of ``.github/workflows/cicd-pr-check.yml`` runs on a
 GitHub-hosted ``ubuntu-22.04`` runner. It builds the harnesses with clang and
 AddressSanitizer, and runs each target for ``FUZZ_TIME`` seconds, one after the
 other. The job fails when a target exits with a code that is not zero, or
@@ -104,8 +104,9 @@ The workflow runs in three cases:
   ``include/``, ``tests/fuzz/``, the DPDK inputs, the root meson files or the
   workflow files. Each harness links ``libmtl``, so each file of ``lib/`` can
   change a target. For a different change, the job does not run.
-* A schedule, each night on ``main``, with 600 s for each target.
-* A manual run (``workflow_dispatch``), with 600 s for each target.
+* The ``fuzz-tests`` job of ``.github/workflows/nightly.yml``, each workday
+  night on ``main`` and on a manual run, with 600 s for each target.
+* A manual run of ``cicd-pr-check.yml``, with 60 s for each target.
 
 The ``fuzz-tests-result`` job always runs, also when the filter skips the fuzz
 job. It fails only when the fuzz job fails or is cancelled, so it is the check

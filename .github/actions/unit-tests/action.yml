@@ -1,0 +1,32 @@
+name: Unit Tests
+description: >-
+  Build DPDK into the workspace, then build and run the unit suite and the
+  unit tests of the FFmpeg plugin. The unit
+  tier needs no NIC and no root; it still needs the DPDK headers and libraries
+  to compile.
+
+runs:
+  using: composite
+  steps:
+    # Nothing installs MTL here; setup_environment.sh takes the dirname of
+    # MTL_INSTALL_PREFIX to place DPDK under a workspace-local path.
+    - name: Install build dependencies and DPDK
+      shell: bash
+      env:
+        SETUP_ENVIRONMENT: '1'
+        CICD_BUILD: '1'
+        SETUP_BUILD_AND_INSTALL_DPDK: '1'
+        MTL_INSTALL_PREFIX: ${{ github.workspace }}/.local_install/mtl
+      run: bash .github/scripts/setup_environment.sh
+
+    - name: Build and run the unit suite
+      shell: bash
+      env:
+        MTL_INSTALL_PREFIX: ${{ github.workspace }}/.local_install/mtl
+      run: ./build.sh unit
+
+    - name: Build and run the FFmpeg plugin unit tests
+      shell: bash
+      env:
+        MTL_INSTALL_PREFIX: ${{ github.workspace }}/.local_install/mtl
+      run: script/build_ffmpeg_plugin.sh unit

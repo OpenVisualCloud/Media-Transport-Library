@@ -19,7 +19,7 @@ inputs:
     default: ''
   build_outputs:
     description: >-
-      toJSON(needs.build.outputs) of the build.yml call this job tests. When
+      toJSON(needs.build.outputs) of the build job that this job tests. When
       set, the job fails before restoring anything unless this checkout's
       source checksums are the ones that build hashed and built. Empty skips
       the check.
@@ -152,7 +152,7 @@ runs:
       shell: bash
       run: echo "TASK_BIN=$(command -v task)" >> "$GITHUB_ENV"
 
-    # env -u BASH_XTRACEFD for the same reason as gtest-bare-metal.yml: the
+    # env -u BASH_XTRACEFD for the same reason as the run-gtest action: the
     # descriptor the variable names does not exist in the privileged shell.
     - name: Activate ICE if required
       if: steps.ice.outputs.required == 'true'

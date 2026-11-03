@@ -1,0 +1,57 @@
+name: Pytest Collect
+description: >-
+  Upload the report of an acceptance suite run, then stop the test processes.
+  Call it with if: always(), so that a failed or timed-out run still reports.
+
+inputs:
+  report_name:
+    description: Artifact name of the report.
+    required: true
+  report_path:
+    description: Report files, one per line.
+    required: true
+  summary:
+    description: Add the smoke report to the job summary.
+    required: false
+    default: 'false'
+  status_name:
+    description: Collect and upload the system status under this name (empty = no status).
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: 'collect: System status report'
+      if: always() && inputs.status_name != ''
+      shell: bash
+      env:
+        STATUS_NAME: ${{ inputs.status_name }}
+      run: task ci:report -- status
+
+    - name: Upload the report
+      if: always()
+      id: upload-report
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ inputs.report_name }}
+        path: ${{ inputs.report_path }}
+
+    - name: Add the report to the summary
+      if: always() && inputs.summary == 'true'
+      shell: bash
+      env:
+        ARTIFACT_ID: ${{ steps.upload-report.outputs.artifact-id }}
+      run: task ci:report -- smoke-summary
+
+    - name: 'cleanup: Kill test processes'
+      if: always()
+      shell: bash
+      run: task cleanup
+
+    - name: Upload the system info
+      if: always() && inputs.status_name != ''
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ inputs.status_name }}
+        path: ${{ inputs.status_name }}/
