@@ -109,6 +109,7 @@ ut_ptp_ctx* ut_ptp_create(void) {
 }
 
 void ut_ptp_destroy(ut_ptp_ctx* ctx) {
+  rte_eal_alarm_cancel(ptp_delay_req_handler, &ctx->ptp);
   free(ctx);
 }
 
@@ -218,6 +219,45 @@ void ut_ptp_try_complete_result(ut_ptp_ctx* ctx) {
   ptp_try_complete_result(&ctx->ptp);
 }
 
+int ut_ptp_parse(ut_ptp_ctx* ctx, const uint8_t* msg, size_t len) {
+  uint8_t* hdr = ut_guarded_copy(msg, len);
+  ctx->ptp.active = true;
+  int ret =
+      mt_ptp_parse(&ctx->ptp, (struct mt_ptp_header*)hdr, len, false, MT_PTP_L2, 0, NULL);
+  ut_guarded_free(hdr, len);
+  return ret;
+}
+
+int ut_ptp_rxq_handle(ut_ptp_ctx* ctx, const uint8_t* frame, size_t len) {
+  uint8_t* data = ut_guarded_copy(frame, len);
+  struct rte_mbuf m;
+  memset(&m, 0, sizeof(m));
+  m.buf_addr = data;
+  m.data_len = len;
+  m.pkt_len = len;
+  m.nb_segs = 1;
+  ctx->ptp.active = true;
+  int ret = ptp_rxq_mbuf_handle(&ctx->ptp, &m);
+  ut_guarded_free(data, len);
+  return ret;
+}
+
+void ut_ptp_set_master_initialized(ut_ptp_ctx* ctx, bool initialized) {
+  ctx->ptp.master_initialized = initialized;
+}
+
+void ut_ptp_set_t2_sequence_id(ut_ptp_ctx* ctx, uint16_t seq) {
+  ctx->ptp.t2_sequence_id = htons(seq);
+}
+
+void ut_ptp_set_our_port_id(ut_ptp_ctx* ctx, const uint8_t id[10]) {
+  memcpy(&ctx->ptp.our_port_id, id, sizeof(ctx->ptp.our_port_id));
+}
+
+bool ut_ptp_master_initialized(const ut_ptp_ctx* ctx) {
+  return ctx->ptp.master_initialized;
+}
+
 double ut_pi_sample(ut_ptp_ctx* ctx, double offset, double local_ts, int* out_state) {
   enum servo_state state = UNLOCKED;
   double ppb = pi_sample(&ctx->ptp.servo, offset, local_ts, &state);
@@ -266,8 +306,14 @@ int ut_ptp_servo_count(const ut_ptp_ctx* ctx) {
 double ut_ptp_servo_drift(const ut_ptp_ctx* ctx) {
   return ctx->ptp.servo.drift;
 }
+uint64_t ut_ptp_t1(const ut_ptp_ctx* ctx) {
+  return ctx->ptp.t1;
+}
 uint64_t ut_ptp_t3(const ut_ptp_ctx* ctx) {
   return ctx->ptp.t3;
+}
+uint64_t ut_ptp_t4(const ut_ptp_ctx* ctx) {
+  return ctx->ptp.t4;
 }
 bool ut_ptp_t3_pending(const ut_ptp_ctx* ctx) {
   return ctx->ptp.t3_pending;

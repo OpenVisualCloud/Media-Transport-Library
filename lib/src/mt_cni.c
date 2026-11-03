@@ -232,7 +232,8 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
   switch (ether_type) {
     case RTE_ETHER_TYPE_1588:
       ptp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ptp_header*, hdr_offset);
-      mt_ptp_parse(ptp, ptp_hdr, vlan, MT_PTP_L2, m->timesync, NULL);
+      mt_ptp_parse(ptp, ptp_hdr, m->data_len - hdr_offset, vlan, MT_PTP_L2, m->timesync,
+                   NULL);
       break;
     case RTE_ETHER_TYPE_ARP:
       if (mt_has_virtio_user(impl, port)) {
@@ -259,8 +260,8 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
                     src_port == MT_PTP_UDP_GEN_PORT)) { /* ptp pkt*/
           dbg("%s(%d), ptp msg src_port %u\n", __func__, port, src_port);
           ptp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ptp_header*, hdr_offset);
-          mt_ptp_parse(ptp, ptp_hdr, vlan, MT_PTP_L4, m->timesync,
-                       (struct mt_ipv4_udp*)ipv4_hdr);
+          mt_ptp_parse(ptp, ptp_hdr, m->data_len - hdr_offset, vlan, MT_PTP_L4,
+                       m->timesync, (struct mt_ipv4_udp*)ipv4_hdr);
         } else if (dhcp && src_port == MT_DHCP_UDP_SERVER_PORT) { /* dhcp pkt */
           dhcp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_dhcp_hdr*, hdr_offset);
           mt_dhcp_parse(impl, dhcp_hdr, m->data_len - hdr_offset, port);

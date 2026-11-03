@@ -25,6 +25,7 @@ struct ut_cni_ctx {
   struct mt_dp_impl dp;
   struct mt_arp_impl arp;
   struct mt_mcast_impl mcast;
+  struct mt_ptp_impl ptp;
   struct mt_dhcp_impl dhcp;
 };
 
@@ -51,6 +52,11 @@ ut_cni_ctx* ut_cni_create(void) {
   mt_pthread_mutex_init(&ctx->mcast.group_mutex, NULL);
   TAILQ_INIT(&ctx->mcast.group_list);
   ctx->impl.mcast[MTL_PORT_P] = &ctx->mcast;
+
+  ctx->ptp.impl = &ctx->impl;
+  ctx->ptp.port = MTL_PORT_P;
+  ctx->ptp.active = true;
+  ctx->impl.ptp[MTL_PORT_P] = &ctx->ptp;
 
   /* the request the client answers an offer with finds no TX queue */
   ctx->impl.inf[MTL_PORT_P].tx_mbuf_pool = ut_pool();
@@ -95,6 +101,10 @@ bool ut_cni_arp_resolved(ut_cni_ctx* ctx) {
 
 bool ut_cni_igmp_query_seen(ut_cni_ctx* ctx) {
   return ctx->mcast.has_external_query;
+}
+
+bool ut_cni_ptp_master_set(ut_cni_ctx* ctx) {
+  return ctx->ptp.master_initialized;
 }
 
 int ut_cni_dhcp_status(ut_cni_ctx* ctx) {

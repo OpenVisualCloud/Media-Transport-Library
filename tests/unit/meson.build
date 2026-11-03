@@ -223,6 +223,7 @@ unit_sources = [
   'ptp/user_sync_test.cpp',
   'ptp/delta_math_test.cpp',
   'ptp/t3_test.cpp',
+  'ptp/parse_bounds_test.cpp',
   'main/tsc_calibrate_harness.c',
   'main/tsc_calibrate_test.cpp',
   'main/mtl_init_params_test.cpp',
