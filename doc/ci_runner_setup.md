@@ -41,7 +41,7 @@ in `custom-pytest.yml` reads `/etc/mtl-ci/shadow-host`, a file defining `IP` and
 
 The validate-host action syncs the SUT's `.local_install`, `script/`, `tests/`
 and its cache and host scripts to the shadow, at the same path, and then runs
-the SUT's ICE activation there: the shadow loads the same Kahawai ice module.
+the SUT's ICE activation there: the shadow loads the same out-of-tree ice module.
 The shadow therefore runs the SUT's kernel release, and `SHADOW_USER` has
 passwordless sudo; with another kernel the bundle has no module for it, and
 the step fails. The VFs need no kernel module: DPDK's iavf driver is part of the
@@ -85,7 +85,7 @@ chosen for a card with two ports. The resolved value is exported as
 
 ### The label also decides whether ICE is needed
 
-Only the E8xx family is served by the Kahawai ICE driver. `task ci:ice-required`
+Only the E8xx family is served by the out-of-tree ICE driver. `task ci:ice-required`
 answers for the label in `NIC`, and `.github/actions/validate-host` skips both
 the ICE cache restore and the driver alignment when the answer is `false` — an
 i225 runner neither needs a kernel module built for a card it does not have, nor
@@ -93,12 +93,12 @@ should fail because that artifact was built for a different kernel. An unlabeled
 runner (the performance rig) is assumed to need it, which is what every job did
 before this existed.
 
-#### On an E8xx host the Kahawai driver is not optional
+#### On an E8xx host the out-of-tree ICE driver is not optional
 
 The in-tree `ice` of a distribution kernel loads, brings the link up and carries
-traffic, so a host that never had the Kahawai module aligned looks healthy. It
+traffic, so a host that never had the out-of-tree module aligned looks healthy. It
 is not: the VF rate limiter MTL paces with is a capability the PF grants, and
-only the Kahawai build offers it. Under the in-tree driver the VF negotiates no
+only the out-of-tree build offers it. Under the in-tree driver the VF negotiates no
 QoS capability, `vf->qos_cap` in DPDK's iavf PMD stays NULL, and MTL's TM pacing
 path — `dev_if_init_pacing` selecting `ST21_TX_PACING_WAY_RL`, then
 `dev_rl_init_nonleaf_nodes` calling `rte_tm_node_add` — dereferences it. The

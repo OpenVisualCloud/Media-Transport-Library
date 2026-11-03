@@ -12,7 +12,7 @@ outputs:
     description: 'Hash for JPEG XS bundle sources (includes MTL hash)'
     value: ${{ steps.compute.outputs.jpegxs }}
   ice:
-    description: 'Hash for patched ICE driver sources'
+    description: 'Hash for ICE driver sources'
     value: ${{ steps.compute.outputs.ice }}
   ffmpeg:
     description: 'Hash for FFmpeg plugin sources (includes MTL hash)'

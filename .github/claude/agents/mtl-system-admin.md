@@ -56,7 +56,7 @@ unreachable, return one line and stop:
 
 For the full tool inventory, decision trees (reboot, crash, build failure), and key facts, read
 `.github/instructions/mtl-system-setup.instructions.md`. For gtest filters, suite durations, and
-failure signatures (e.g. a SEGFAULT in `iavf_tm_node_add` means the stock ICE driver is loaded),
+failure signatures (e.g. a SEGFAULT in `iavf_tm_node_add` means the in-tree ICE driver is loaded),
 read `.github/instructions/mtl-gtest.instructions.md`.
 
 ## Handoff

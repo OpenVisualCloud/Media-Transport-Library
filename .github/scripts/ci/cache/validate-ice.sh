@@ -16,7 +16,12 @@ die() {
 test -s "$ko" || die "ice.ko is missing: ${ko}"
 vermagic=$(modinfo -F vermagic "$ko")
 [[ "${vermagic} " == "${release} "* ]] || die "ice.ko is built for '${vermagic}', not ${release}"
-# Not grep -q: closing the pipe early makes pipefail report nm's SIGPIPE.
-nm "$ko" | grep '[[:space:]]ice_vc_cfg_q_bw$' >/dev/null ||
-	die "ice.ko is not the Kahawai build: ice_vc_cfg_q_bw is missing"
+symbols=$(nm "$ko") || die "nm cannot read ${ko}"
+# A compiler can keep the function only as a suffixed copy, such as .isra.0.
+grep -Eq '[[:space:]]ice_vc_cfg_q_bw(\.|$)' <<<"$symbols" ||
+	die "ice.ko is not the out-of-tree build: ice_vc_cfg_q_bw is missing"
+want=$(awk -F= '/^ICE_VER=/ {print $2; exit}' "${root_dir}/versions.env")
+version=$(modinfo -F version "$ko")
+bash -c '. "$1/script/common.sh" && ice_driver_version_ok "$2" "$3"' _ "$root_dir" "$version" "$want" ||
+	die "ice.ko is version '${version}', not the build of ICE ${want}"
 echo "ICE bundle: valid (${release})"

@@ -30,7 +30,7 @@ Some setups need more components. Add each component to `install_dependencies.sh
 
 | Component | Packages | Build and install |
 | --- | --- | --- |
-| Intel E810/E830 driver with the MTL patches | `./script/install_dependencies.sh ice` | `./script/build_drivers.sh --driver ice`, see the [E800 Series Driver Guide](e800_series_drivers.md) |
+| Intel E810/E830 out-of-tree driver | `./script/install_dependencies.sh ice` | `./script/build_drivers.sh --driver ice`, see the [E800 Series Driver Guide](e800_series_drivers.md) |
 | AF_XDP data path (xdp-tools and libbpf) | `./script/install_dependencies.sh ebpf_xdp` | `./script/build_ebpf_xdp.sh`, see the [XDP guide](xdp.md) |
 | SVT JPEG XS ST 2110-22 plugin | `./script/install_dependencies.sh jpegxs` | `./script/build_jpegxs.sh`, see the [Plugin Guide](plugin.md) |
 | ST 2110-22 avcodec plugin | `./script/install_dependencies.sh avcodec` | `./script/build_st22_avcodec_plugin.sh`, see the [avcodec plugin guide](../plugins/st22_avcodec/README.md) |

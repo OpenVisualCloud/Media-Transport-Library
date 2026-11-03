@@ -61,13 +61,19 @@ mh_ice_oot_ko_path() {
 	echo "/lib/modules/$(uname -r)/updates/drivers/net/ethernet/intel/ice/ice.ko"
 }
 
-# True (rc 0) when the loaded ice driver is the out-of-tree, version-matching
-# build MTL's rate-limit pacing requires.
+# True (rc 0) when driver version $1 is the build MTL makes of ICE version $2.
+# script/common.sh holds the rule; a subshell keeps its globals out of here.
+mh_ice_version_matches() {
+	bash -c '. "$1/script/common.sh" && ice_driver_version_ok "$2" "$3"' _ "$MH_REPO_ROOT" "$1" "$2"
+}
+
+# True (rc 0) when the loaded ice driver is the out-of-tree build of the
+# version versions.env pins, which MTL's rate-limit pacing requires.
 mh_ice_driver_ok() {
 	local live_path
 	live_path=$(mh_ice_live_path)
 	[[ "$live_path" == *"/updates/"* ]] || return 1
-	[[ "$(mh_ice_live_version)" == *"$(mh_ice_required_version)"* ]]
+	mh_ice_version_matches "$(mh_ice_live_version)" "$(mh_ice_required_version)"
 }
 
 # Markdown status report — matches the historical `ice_driver_status` MCP
@@ -87,7 +93,7 @@ mh_ice_driver_status_report() {
 	is_oot=0
 	[[ "$live_path" == *"/updates/"* ]] && is_oot=1
 	matches=0
-	[[ "$live" != "not loaded" && "$live" == *"$want"* ]] && matches=1
+	mh_ice_version_matches "$live" "$want" && matches=1
 	status="ACTION NEEDED"
 	[[ "$is_oot" == "1" && "$matches" == "1" ]] && status="OK"
 
@@ -101,13 +107,13 @@ mh_ice_driver_status_report() {
 	if [[ "$status" != "OK" ]]; then
 		echo
 		echo "### Issue"
-		echo "MTL requires the patched out-of-tree ICE driver for rate-limit pacing."
-		echo "Stock kernel ice does not support the iavf TM virtchnl messages."
+		echo "MTL requires the out-of-tree ICE driver of version $want for rate-limit pacing."
+		echo "The in-tree ice does not support the iavf TM virtchnl messages."
 		echo 'Rebuild it with: SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=1 bash .github/scripts/setup_environment.sh'
 	fi
 }
 
-# Build + install the patched out-of-tree ICE driver, then reload it.
+# Build + install the out-of-tree ICE driver, then reload it.
 # NOTE: reloading ice destroys any existing VFs on every PF.
 # MTL_INSTALL_PREFIX is cleared on purpose: with a prefix set, build_drivers.sh
 # packages the .ko into that tree instead of installing it into this kernel.

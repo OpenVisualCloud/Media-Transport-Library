@@ -22,7 +22,7 @@ sudo yum groupinstall "Virtualization Host"
 sudo yum install virt-manager
 ```
 
-### 1.4. Install latest ICE driver with patches
+### 1.4. Install the ICE driver
 
 Please refer to the driver update section in [Intel® E800 Series Ethernet Adapters driver guide](e800_series_drivers.md).
 
@@ -33,7 +33,11 @@ You can also refer to [Run Guide](run.md).
 ```bash
 # root
 echo <num> > /sys/class/net/<interface>/device/sriov_numvfs
+# A 512-entry RSS LUT lets a VF have more than 16 queue pairs
+for vf in /sys/class/net/<interface>/device/virtfn*; do echo 512 > "$vf/rss_lut_vf_attr"; done
 ```
+
+Set the RSS LUT before the VM starts: the driver in the VM takes it when it resets the VF at start. A VF created again starts with the 64-entry LUT and at most 16 queue pairs.
 
 ### 1.6. Create a VM
 

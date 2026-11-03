@@ -25,7 +25,7 @@ content-addressed outputs:
 
 1. Build SVT-JPEG-XS and its MTL bridge plugin in `build.yml`, installed under
   `.local_install/jpegxs` without writing to `/usr/local`.
-2. Build one patched ICE module in `build.yml`. The dedicated `e810`, `e830`,
+2. Build one ICE module in `build.yml`. The dedicated `e810`, `e830`,
   and `e835` hardware validation hosts are maintained on the same kernel ABI,
   so every validation job consumes the same artifact.
 3. Store each successful output under a deterministic SHA-256 cache key.

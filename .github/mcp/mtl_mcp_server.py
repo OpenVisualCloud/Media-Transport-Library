@@ -627,7 +627,7 @@ def setup_after_reboot_auto(
     Steps:
     1. Check the ICE driver; if the stock kernel driver is loaded or the
        version doesn't match (e.g. after a kernel upgrade), rebuild the
-       patched out-of-tree driver automatically. This destroys any existing
+       out-of-tree driver automatically. This destroys any existing
        VFs, which step 6 below re-creates, so it must run first.
     2. Ensure hugepages
     3. Set CPU scaling governor to performance and confirm
@@ -653,7 +653,7 @@ def setup_after_reboot_auto(
     # pass and a second round-trip through this tool.
     ice = ice_driver_status()
     if "ACTION NEEDED" in ice:
-        results.append("## ICE Driver: rebuilding patched out-of-tree module")
+        results.append("## ICE Driver: rebuilding out-of-tree module")
         results.append(ice_driver_rebuild())
 
     results.append(hugepages_set(nr_hugepages))
@@ -732,7 +732,7 @@ def vfio_setup() -> str:
 def ice_driver_status() -> str:
     """
     Check the ICE driver status: loaded version vs required version,
-    module path, and whether it's the patched out-of-tree build.
+    module path, and whether it's the out-of-tree build.
     """
     return _ice_driver_status_impl()
 
@@ -740,10 +740,10 @@ def ice_driver_status() -> str:
 @mcp.tool()
 def ice_driver_rebuild() -> str:
     """
-    Build and install the patched out-of-tree ICE driver.
+    Build and install the out-of-tree ICE driver.
 
-    Downloads the correct ICE version from versions.env, applies MTL patches,
-    builds, and installs. Reloads the module afterwards.
+    Downloads the ICE version from versions.env, applies the MTL patches of a
+    version before 2.7.6, builds, and installs. Reloads the module afterwards.
 
     WARNING: This will briefly disconnect NICs using the ice driver.
     """

@@ -14,8 +14,8 @@
  * well within it, a timer tick costs 2-10 us */
 #define ST_TX_VIDEO_RL_STALL_NS (2 * NS_PER_US)
 #define ST_TX_VIDEO_RL_MAX_PADS_PER_BURST (32)
-/* bytes, ICE_SCHED_DFLT_BURST_SIZE of the MTL-patched kernel ice (patches/ice_drv) that
- * RL requires; the stock 15 KB bucket would launch packet 0 ~10 pkts early */
+/* bytes, ICE_SCHED_DFLT_BURST_SIZE of the out-of-tree ice that RL requires; the 15 KB
+ * bucket of an unpatched ice before 2.7.6 would launch packet 0 ~10 pkts early */
 #define ST_TX_VIDEO_RL_VF_BURST_SIZE (2048)
 /* the last pre-arm pads are cut by up to TRIM_COARSE bytes each, in TRIM_FINE steps, as
  * the shaper drains a pad that short by its bytes */

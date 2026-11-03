@@ -66,17 +66,23 @@ shadow-credentials)
 shadow-sync)
 	# The tree the SUT validated, and the scripts that validate and activate its
 	# ICE bundle, at the same path: the shadow runs exactly what the SUT runs.
-	# script/common.sh reads versions.env, so script/ needs it beside it.
+	# script/common.sh reads versions.env and patches/ice_drv for the ICE version
+	# check of validate-ice.sh.
 	remote="${SHADOW_HOST_USER}@${SHADOW_HOST_IP}"
 	# shellcheck disable=SC2029
 	ssh "${shadow_ssh_options[@]}" "$remote" "mkdir -p '${root_dir}'"
-	rsync -azR --delete -e "ssh ${shadow_ssh_options[*]}" "${root_dir}/./.local_install" \
-		"${root_dir}/./script" "${root_dir}/./tests" "${root_dir}/./.github/scripts/ci/cache" \
-		"${root_dir}/./.github/scripts/ci/host" "${root_dir}/./versions.env" "${remote}:${root_dir}/"
+	rsync -azR --delete -e "ssh ${shadow_ssh_options[*]}" \
+		"${root_dir}/./.local_install" \
+		"${root_dir}/./script" \
+		"${root_dir}/./patches/ice_drv" \
+		"${root_dir}/./tests" \
+		"${root_dir}/./.github/scripts/ci/cache" \
+		"${root_dir}/./.github/scripts/ci/host" \
+		"${root_dir}/./versions.env" "${remote}:${root_dir}/"
 	;;
 shadow-activate-ice)
 	# The activation of the SUT, on the shadow, from the synced copy: it loads
-	# the same Kahawai ice module, and fails when the bundle has no module for
+	# the same out-of-tree ice module, and fails when the bundle has no module for
 	# the shadow's kernel rather than leaving the in-tree ice in place.
 	remote="${SHADOW_HOST_USER}@${SHADOW_HOST_IP}"
 	# shellcheck disable=SC2029

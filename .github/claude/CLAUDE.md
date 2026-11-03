@@ -172,9 +172,11 @@ sudo sysctl -w vm.nr_hugepages=2048              # lost on reboot
 sudo MtlManager                                  # lcore/queue arbitration daemon
 ```
 
-`script/build_drivers.sh` builds the patched ICE module required for hardware rate-limit
-pacing (`--driver ice` for ICE only). A SEGFAULT in `iavf_tm_node_add` means the stock ICE
-driver is loaded.
+`script/build_drivers.sh` builds the out-of-tree ICE module required for hardware rate-limit
+pacing (`--driver ice` for ICE only): the 2.7.6 that `versions.env` pins as released, an earlier
+version with its `patches/ice_drv/<version>` (it then reports `Kahawai_<version>`). A SEGFAULT in
+`iavf_tm_node_add` means the in-tree ICE driver is loaded. `nicctl.sh create_vf` gives each VF a
+512-entry RSS LUT; without it a VF gets at most 16 queue pairs.
 
 ## Architecture essentials
 
