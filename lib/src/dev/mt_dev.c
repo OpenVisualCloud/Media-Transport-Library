@@ -2646,6 +2646,14 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
         dev_info->max_tx_queues);
     if (!(inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD)) {
       /* max tx/rx queues don't exceed dev limit */
+      if (inf->nb_tx_q > dev_info->max_tx_queues ||
+          inf->nb_rx_q > dev_info->max_rx_queues) {
+        warn(
+            "%s(%d), queues tx %u rx %u (system queues included) cut to the device max "
+            "tx %u rx %u\n",
+            __func__, i, inf->nb_tx_q, inf->nb_rx_q, dev_info->max_tx_queues,
+            dev_info->max_rx_queues);
+      }
       inf->nb_tx_q = RTE_MIN(inf->nb_tx_q, dev_info->max_tx_queues);
       inf->nb_rx_q = RTE_MIN(inf->nb_rx_q, dev_info->max_rx_queues);
     }
