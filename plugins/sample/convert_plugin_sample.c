@@ -172,6 +172,10 @@ int st_plugin_free(st_plugin_priv handle) {
       free(ctx->converter_sessions[i]);
     }
   }
+  if (ctx->converter_dev_handle) {
+    st20_converter_unregister(ctx->converter_dev_handle);
+    ctx->converter_dev_handle = NULL;
+  }
 
   free(ctx);
 
