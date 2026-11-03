@@ -20,6 +20,7 @@ namespace {
 using Frame = std::vector<uint8_t>;
 
 constexpr uint16_t kEtherIpv4 = 0x0800;
+constexpr uint16_t kEtherArp = 0x0806;
 constexpr uint16_t kEtherVlan = 0x8100;
 constexpr uint8_t kProtoIgmp = 2;
 constexpr uint8_t kProtoUdp = 17;
@@ -155,6 +156,27 @@ TEST_F(CniRxBounds, TruncatedUdpHeaderIsRejected) {
 
 TEST_F(CniRxBounds, UdpFrameIsHandled) {
   EXPECT_EQ(Rx(Udp(5, 1000, 1000)), 0);
+}
+
+/* A reply from the peer the ARP table waits for, to the port's address. */
+Frame ArpReply() {
+  Frame f = Eth(kEtherArp);
+  const Frame head = {0, 1, 0x08, 0, 6, 4, 0, 2, 0x02, 0, 0, 0, 0, 0x09};
+  const Frame peer = UT_CNI_ARP_PEER_ADDR, tha(6, 0), sip = UT_CNI_SIP_ADDR;
+  return f + head + peer + tha + sip;
+}
+
+class CniArpBounds : public CniRxTest {};
+
+TEST_F(CniArpBounds, ReplyIsParsed) {
+  Rx(ArpReply());
+  EXPECT_TRUE(ut_cni_arp_resolved(ctx_));
+}
+
+TEST_F(CniArpBounds, TruncatedReplyIsRejected) {
+  Frame f = ArpReply();
+  Rx(f, f.size() - 1);
+  EXPECT_FALSE(ut_cni_arp_resolved(ctx_));
 }
 
 class CniDhcpBounds : public CniRxTest {};

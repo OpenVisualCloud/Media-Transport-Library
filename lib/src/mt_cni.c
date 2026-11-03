@@ -241,7 +241,7 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
       } else {
         /* use internal implementation */
         arp_hdr = rte_pktmbuf_mtod_offset(m, struct rte_arp_hdr*, hdr_offset);
-        mt_arp_parse(impl, arp_hdr, port);
+        mt_arp_parse(impl, arp_hdr, m->data_len - hdr_offset, port);
       }
       break;
     case RTE_ETHER_TYPE_IPV4:

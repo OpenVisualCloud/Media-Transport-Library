@@ -23,6 +23,7 @@ struct ut_cni_ctx {
   struct mtl_main_impl impl;
   struct mt_cni_entry cni;
   struct mt_dp_impl dp;
+  struct mt_arp_impl arp;
   struct mt_dhcp_impl dhcp;
 };
 
@@ -36,6 +37,15 @@ ut_cni_ctx* ut_cni_create(void) {
   MT_TAILQ_INIT(&ctx->cni.csq_queues);
   rte_spinlock_init(&ctx->cni.csq_lock);
   MT_TAILQ_INIT(&ctx->cni.udp_detect);
+
+  const uint8_t sip[MTL_IP_ADDR_LEN] = UT_CNI_SIP_ADDR;
+  const uint8_t peer[MTL_IP_ADDR_LEN] = UT_CNI_ARP_PEER_ADDR;
+  memcpy(ctx->impl.user_para.sip_addr[MTL_PORT_P], sip, sizeof(sip));
+  mt_pthread_mutex_init(&ctx->arp.mutex, NULL);
+  memcpy(&ctx->arp.entries[0].ip, peer, sizeof(peer));
+  ctx->arp.port = MTL_PORT_P;
+  ctx->arp.parent = &ctx->impl;
+  ctx->impl.arp[MTL_PORT_P] = &ctx->arp;
 
   /* the request the client answers an offer with finds no TX queue */
   ctx->impl.inf[MTL_PORT_P].tx_mbuf_pool = ut_pool();
@@ -56,6 +66,7 @@ void ut_cni_destroy(ut_cni_ctx* ctx) {
   rte_eal_alarm_cancel(dhcp_rebind_handler, &ctx->dhcp);
   rte_eal_alarm_cancel(dhcp_lease_handler, &ctx->dhcp);
   mt_pthread_mutex_destroy(&ctx->dhcp.mutex);
+  mt_pthread_mutex_destroy(&ctx->arp.mutex);
   free(ctx);
 }
 
@@ -70,6 +81,10 @@ int ut_cni_rx(ut_cni_ctx* ctx, const uint8_t* frame, size_t len) {
   int ret = cni_rx_handle(&ctx->cni, &m);
   ut_guarded_free(data, len);
   return ret;
+}
+
+bool ut_cni_arp_resolved(ut_cni_ctx* ctx) {
+  return rte_atomic32_read(&ctx->arp.entries[0].mac_ready);
 }
 
 int ut_cni_dhcp_status(ut_cni_ctx* ctx) {
