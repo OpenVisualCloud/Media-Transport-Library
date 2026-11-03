@@ -24,6 +24,7 @@ env:
   ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN: 1
   TOOLS_BUILD_AND_INSTALL_MTL_READPCAP: 1
   TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR: 1
+  TOOLS_BUILD_AND_INSTALL_SET_TAI_OFFSET: 1
 
 # A superseded run of this workflow builds a commit nobody is looking at any
 # more, and its four legs each spend most of an hour installing the same
@@ -78,8 +79,12 @@ jobs:
         with:
           repo-token: ${{ github.token }}
 
+      # The GStreamer plugins as release, the one build of them with -Werror:
+      # the other jobs build them as debug.
       - name: Build Release
         run: sudo -E .github/scripts/setup_environment.sh
+        env:
+          ECOSYSTEM_BUILD_GSTREAMER_PLUGIN_RELEASE: 1
 
       # DPDK, MTL, openh264, and FFmpeg go to /usr/local. The install scripts
       # do not run ldconfig, so the workflow does.
