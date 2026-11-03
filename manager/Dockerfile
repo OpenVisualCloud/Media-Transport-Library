@@ -31,7 +31,9 @@ WORKDIR /xdp-tools/lib/libbpf/src
 RUN make install && \
     DESTDIR=/install make install
 
-COPY . /manager
+# The context is the repository root: meson.build reads the hardening flags from script/.
+COPY manager /manager
+COPY script/hardening_flags.py /script/
 RUN \
     if [ -z "${VERSION}" ]; then \
         VERSION="0.0.1.DOCKER"; \

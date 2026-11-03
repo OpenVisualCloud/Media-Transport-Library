@@ -6,6 +6,12 @@ project('gstreamer_mtl_tools', 'c',
 
 cc = meson.get_compiler('c')
 
+# Compiler hardening, see doc/build.md
+hardening = run_command(files('../../../script/hardening_flags.py'), 'c', get_option('optimization'),
+  get_option('b_sanitize'), cc.cmd_array(), get_option('c_args'), check : true).stdout().split('\n')
+add_project_arguments(hardening[0].split(), language : 'c')
+add_project_link_arguments(hardening[1].split(), language : 'c')
+
 plugins_install_dir = join_paths(get_option('libdir'), 'gstreamer-1.0')
 
 plugin_c_args = [

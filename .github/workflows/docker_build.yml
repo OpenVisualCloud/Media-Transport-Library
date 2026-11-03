@@ -157,7 +157,7 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           push: "${{ env.DOCKER_REGISTRY_LOGIN == 'true' && steps.dockerLoginStep.outcome == 'SUCCESS' && github.ref == 'refs/heads/main' }}"
-          context: "${{ github.workspace }}/manager"
+          context: "${{ github.workspace }}"
           file: "${{ github.workspace }}/manager/Dockerfile"
           tags: "${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REGISTRY_PREFIX }}/${{ env.DOCKER_IMAGE_NAME }}:${{ env.DOCKER_IMAGE_TAG }}"
           cache-from: "type=gha,scope=${{ env.DOCKER_IMAGE_NAME }}"
