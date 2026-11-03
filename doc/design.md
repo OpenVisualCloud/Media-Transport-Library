@@ -242,13 +242,15 @@ MTL addresses this challenge by leveraging the NIC's rate-limiting features alon
 The default NIC TX queue depth (`nb_tx_desc`) is 2048 descriptors on a rate-limited (RL, TSN, or AUTO with the iavf/ice TM) port whose iavf or ice driver frees the sent packets every burst, DPDK 26.07 or later, without a shared TX queue or a user `nb_tx_desc`.
 Only such a port has the library free the sent packets as each burst leaves and size its TX pools from what that queue keeps.
 Every other port keeps 512, and its queue holds what it sent until the slots are reused, as in earlier releases. MTL always keeps the queue full from the tasklet engine. While the scheduler thread is off its CPU, the NIC keeps sending only what is queued, so the queue depth in time is the jitter MTL tolerates within a frame.
-A zero-copy video packet takes 2 descriptors (header and payload), so the 2048-descriptor queue holds 1024 packets: ~3.8 ms at 1080p59.94, more than the time slice a busy CPU gives another runnable task (~3 ms). Longer stalls leave a gap on the wire and the receiver's VRX underflows.
-For a 4K 60fps session one packet time is ~1 µs, so 2048 descriptors cover ~1 ms. If you observe packet timing jitter, raise `nb_tx_desc`, up to the driver maximum (8160 for iavf).
+A zero-copy video packet takes 2 descriptors (header and payload), so the 2048-descriptor queue holds 1024 packets: ~4.0 ms at 1080p59.94, more than the time slice a busy CPU gives another runnable task (~3 ms). Longer stalls leave a gap on the wire and the receiver's VRX underflows.
+For a 4K 60fps session one packet time is ~1 µs, so 2048 descriptors cover ~1 ms. If you observe packet timing jitter, raise `nb_tx_desc`, up to the driver maximum (8160 for iavf); on an RL port a user `nb_tx_desc` turns off the reclaim of [RL Pacing](rl_pacing.md#15-reclaim-and-catch-up).
 A deeper queue does not move the packets on the wire, but each frame is queued, and taken from the application, that much earlier.
 It also takes more hugepage memory for the TX mbuf pools, and where packets are freed only a queue later (see [4.3.1](#431-zero-copy-packet-build)) a format with few packets per frame and few frame buffers falls back from zero copy to copy mode.
 
 The start of each frame has its own, shorter tolerance. With the rate limiter, the library starts sending padding packets a short time before a frame's scheduled first-packet time, so that the NIC shaper releases the first packet on time (see [8.2](#82-rtp-timestamps-of-paced-video)).
-That time is 80% of the ST 2110-21 TR_OFFSET, but at most 128 packet times. If the scheduler reaches the frame later than that, the first packet leaves late by how far past its scheduled time the scheduler reaches it.
+That time is 80% of the ST 2110-21 TR_OFFSET, but at most 128 packet times.
+If the scheduler reaches the frame after the window opens but before the first packet's time, the library still pre-arms it, sends it as a short tail (late by at most the shorter of one padding packet and the absorb limit), or holds it so that the CPU sends it at the first release scan after the scheduled time ([RL Pacing 5](rl_pacing.md#5-staying-on-time-through-cpu-stalls)).
+Only a scheduler that reaches the frame past its scheduled time leaves the first packet late by how far past it reaches.
 The frame-start tolerance below applies when the port has a pad plan (see [8.2](#82-rtp-timestamps-of-paced-video)); without one, the library holds the first packet until its scheduled time, so any scheduler delay at the frame start makes it late.
 
 | Format | One packet time | Frame-start tolerance | Frame tolerance at 2048 descriptors |
@@ -264,6 +266,8 @@ MTL sends every ST 2110-20 stream with the gapped schedule. `ST21_PACING_LINEAR`
 > **Tip:** Isolating CPU cores significantly reduces scheduler jitter, lowering the need for large queue depths. See the [CPU Isolation Guide](isolation.md) for setup instructions.
 
 In the case that the rate-limiting feature is unavailable, TSC (Timestamp Counter) based software pacing is provided as a fallback option.
+
+How MTL uses the E810/E830 rate limiter to pace the packets, and to launch each frame's first packet on time, is described in [RL Pacing](rl_pacing.md).
 
 ![TX Pacing](png/tx_pacing.svg)
 
@@ -719,13 +723,18 @@ This is fixed in kernel 6.19 by the following patch: [sched/fair: Fix imbalance 
 By default the RTP timestamp of a video frame is the scheduled transmission time of its first packet, `epoch + TR_OFFSET - VRX × TRS` (`transmission_start_time()` in `st_tx_video_session.c`), rounded to the media clock.
 It is the scheduled time, not a measured wire time; no separate latency compensation is applied to the RTP timestamp.
 With the rate limiter, if the library knows the port's shaper, it has the NIC start the first packet at that time: shortly before it, the library queues padding the NIC shaper finishes draining at the scheduled time, then queues the first packet behind it.
-It knows the shaper when it measured (trained) the port's pad interval and knows its burst bucket: 2 KB for a VF on the out-of-tree ice driver MTL requires for rate limiting, or the `rl_burst_size` set for a DPDK-driven ice PF, and when its packets are at least 128 bytes, so it can cut 64 bytes from a padding packet.
+It knows the shaper when it measured (trained) the port's pad interval and knows its burst bucket: 2 KB for a VF on the out-of-tree ice driver MTL requires for rate limiting, or the `rl_burst_size` set for a DPDK-driven ice PF, and when its packets are at least 124 bytes, so it can cut 64 bytes from a padding packet and keep a 60-byte frame.
+The window must also fit half the TX ring and hold the last-burst padding, and the aim plus the ice timeslot must stay within 4 µs. SD formats, 720p up to 30 fps and 8-bit 720p50 and 8-bit 1080p23.98 to 25 have no such plan ([RL Pacing 4](rl_pacing.md#4-when-a-port-has-a-plan)).
 The first packet then is not sent before the scheduled time, provided the padding is queued before it, so the load of the TX scheduler does not move it.
-The model puts the first packet at the scheduled time, or within one 8-byte step after it: the library cuts up to 64 bytes from each of the last padding packets, in 8-byte steps, so the padding drains within one step of it, never before. Measured on E830 VF against the scheduled time, the first packet arrives 1.4 to 6.1 µs late at 1080p25/50/60/59.94, 720p59.94 and 2160p59.94, never early.
+The model puts the first packet one aim after the scheduled time (0.75 µs at 1080p59.94, so that the shaper's token grid never sends it early), within one 8-byte step: the library cuts 64 bytes from some of the last padding packets and 8 bytes from the next ones, so the padding drains within one 8-byte step of it, never before.
+Measured on E830 VF against the scheduled time, the first packet arrives 1.4 to 6.1 µs late at 1080p25/50/60/59.94, 720p59.94 and 2160p59.94, never early: later than the model by what it leaves out, the CPU gaps under 2 µs, the NIC's descriptor fetch, the wire and the arbitration between queues ([RL pacing](rl_pacing.md#101-never-early-and-the-shaper-model-it-rests-on)).
 A tasklet stall between two padding bursts that ends before the scheduled time only shrinks the rest of the padding.
 A stall inside a burst (an interrupt or a preemption) can delay its doorbell by an unknown time.
-If the padding already queued does not cover it and the burst returns more than 2 µs late, the library plans the rest from the latest time the doorbell can have rung and holds the first packet until the scheduled time, as without a known shaper. A shorter stall can delay the first packet by up to its length.
-After a stall past it the first packet leaves when the tasklet returns. The NIC and the clocks add the rest.
+If the padding already queued does not cover it and the burst returns more than 2 µs late, the library keeps the plan while the stall stays within the port's absorb limit, so the first packet still leaves behind the padding, one aim plus at most the stall after its scheduled time.
+Past that limit it plans the rest from the latest time the doorbell can have rung and holds the first packet until the scheduled time, as without a known shaper. A shorter stall can delay the first packet by up to its length.
+A held first packet leaves at the first release scan after its scheduled time: a short check the transmitter runs before every session visit and once after the last, so the packet waits only for the visit or tasklet in progress, not for its session's next visit a round later. A scan waits behind a port whose padding the full ring refused ([RL Pacing 3.1](rl_pacing.md#31-hold-and-the-release-scan)).
+A scheduler that reaches the frame with too few padding packets left to trim (a late entry) sends the padding that fits and the first packet in one call, a tail, when the pad is within the absorb limit, or when the port's window was already too short when the transmitter call began and the cut falls short by no more than the limit.
+This is how the first frame of a stream stays NIC-timed. Otherwise the first packet is held. A tail that finds its cut short by more than the limit holds the first packet before the scheduled time, and sends it alone after it ([RL Pacing 13](rl_pacing.md#13-defer-the-tail-burst-and-late-entry)). The NIC and the clocks add the rest.
 
 ```mermaid
 sequenceDiagram
@@ -740,7 +749,11 @@ sequenceDiagram
     alt every burst returns in time
         T->>N: first packet, behind the padding
         N->>W: first packet, as the padding ends: at the scheduled time
-    else a burst returns more than 2 µs late (interrupt, preemption)
+    else a burst returns more than 2 µs late, within the absorb limit
+        Note over T: keeps the plan, counts stat_trans_recalculate_warmup
+        T->>N: first packet, behind the padding, queued by the release scan after the last visit
+        N->>W: first packet, late by the aim plus at most the stall
+    else a burst returns later than the absorb limit (interrupt, preemption)
         Note over T: holds the first packet, counts stat_trans_recalculate_warmup
         T->>N: first packet, once the TSC reaches the scheduled time
         N->>W: first packet
