@@ -8,6 +8,16 @@ unit_c_args = ['-Wall', '-Werror']
 # #define rename, so a real duplicate must fail the link.
 unit_link_args = []
 
+# Compiler hardening, see doc/build.md. lib/meson.build sets it for the C sources; the C++
+# sources and the C++ link of UnitTest take it as target arguments.
+if not is_windows
+  unit_hardening = run_command(files('../../script/hardening_flags.py'), 'c++', get_option('optimization'),
+    get_option('b_sanitize'), meson.get_compiler('cpp').cmd_array(), get_option('cpp_args'),
+    check : true).stdout().split('\n')
+  unit_cpp_args += unit_hardening[0].split()
+  unit_link_args += unit_hardening[1].split()
+endif
+
 # rte_eal_init() dlopens every driver in RTE_EAL_PMD_PATH and those drivers request the bus
 # libraries by soname, so a second DPDK on the host ld.so path loads one bus library twice and
 # its RTE_REGISTER_TAILQ constructor panics. Pin the process to the DPDK this binary compiled
