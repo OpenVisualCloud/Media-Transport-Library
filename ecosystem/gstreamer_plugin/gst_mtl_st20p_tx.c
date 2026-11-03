@@ -490,6 +490,7 @@ static gboolean gst_mtl_st20p_tx_sink_event(GstPad* pad, GstObject* parent,
  */
 static GstFlowReturn gst_mtl_st20p_tx_chain(GstPad* pad, GstObject* parent,
                                             GstBuffer* buf) {
+  MTL_MAY_UNUSED(pad);
   Gst_Mtl_St20p_Tx* sink = GST_MTL_ST20P_TX(parent);
 
   if (sink->async_session_create) {
@@ -653,7 +654,7 @@ static GstFlowReturn gst_mtl_st20p_tx_zero_copy(Gst_Mtl_St20p_Tx* sink, GstBuffe
 
     video_meta = gst_buffer_get_video_meta(buf);
     if (video_meta) {
-      for (int i = 0; i < video_meta->n_planes; i++) {
+      for (guint i = 0; i < video_meta->n_planes; i++) {
         ext_frame.addr[i] = child->map_info.data + video_meta->offset[i];
         ext_frame.linesize[i] = video_meta->stride[i];
         ext_frame.iova[i] = 0;
