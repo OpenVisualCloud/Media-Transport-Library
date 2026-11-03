@@ -85,7 +85,7 @@ mtl_interface::mtl_interface(unsigned int ifindex)
   if (parse_combined_info() < 0)
     throw std::runtime_error("Failed to parse combined info.");
   queues.resize(combined_count, false);
-  queues[0] = true; /* Reserve queue 0 for system. */
+  if (!queues.empty()) queues[0] = true; /* Reserve queue 0 for system. */
 
   log(log_level::INFO, "Added interface.");
 }
