@@ -44,6 +44,19 @@ for path; do
 		grep -q 'x86 feature: .*IBT' <<<"$elf" || missing+=(IBT)
 		grep -q 'x86 feature: .*SHSTK' <<<"$elf" || missing+=(SHSTK)
 		grep -q ' UND __stack_chk_fail@' <<<"$elf" || missing+=(SSP)
+		# What a dependency lacks, by file name, see doc/build.md
+		case ${file##*/} in
+		# No function that the stack protector covers
+		librte_kvargs.so.* | librte_meter.so.* | librte_jobstats.so.* | librte_common_cpt.so.*) accepted=(SSP) ;;
+		# The assembly has no CET mark
+		libopenh264.so.*) accepted=(IBT SHSTK) ;;
+		# The assembly is marked SHSTK only
+		libavcodec.so.* | libavfilter.so.* | libavutil.so.* | libswresample.so.* | libswscale.so.*) accepted=(IBT) ;;
+		*) accepted=() ;;
+		esac
+		for i in "${!missing[@]}"; do
+			[[ " ${accepted[*]} " != *" ${missing[i]} "* ]] || unset 'missing[i]'
+		done
 		if ((${#missing[@]})); then
 			echo "::error::${file} is not hardened: no ${missing[*]}" >&2
 			failed=$((failed + 1))

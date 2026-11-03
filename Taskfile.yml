@@ -99,6 +99,11 @@ tasks:
     cmds:
       - bash {{.CI_SCRIPTS}}/cache/validate-cache.sh {{.COMPONENT}}
 
+  ci:hardening-scan:
+    desc: Check the compiler hardening of the Build caches
+    cmds:
+      - bash {{.CI_SCRIPTS}}/scan/check-hardening.sh .local_install/dpdk .local_install/mtl .local_install/ffmpeg .local_install/gstreamer .local_install/plugins
+
   ci:activate-ice:
     desc: Reload the ICE driver from the cached module
     cmds:

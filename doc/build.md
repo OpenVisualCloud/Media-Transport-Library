@@ -481,7 +481,10 @@ In the dependency builds the last `-O` of `CFLAGS`, then `CPPFLAGS`, sets the le
 | `-Wl,-z,noexecstack` | Non-executable stack |
 | `b_pie=true`, and meson's `-fPIC` for shared objects; FFmpeg's `--enable-pic` and `-pie` | Position independent code for ASLR |
 
-The gcc of Rocky Linux and RHEL enables none of the compiler options by default. So the Rocky Linux 9 image build runs `.github/scripts/ci/scan/check-hardening.sh` on what `build.sh` builds there: libmtl, UnitTest, the samples, the sample plugins, MtlManager, KahawaiTest and RxTxApp. It fails on a binary without full RELRO, a non-executable stack, PIE, CET or the stack protector.
+The build job of the pull request and nightly workflows (`.github/actions/build-artifacts`) runs `.github/scripts/ci/scan/check-hardening.sh` on the Build caches of DPDK, MTL, FFmpeg, GStreamer and the st22 avcodec plugin (`task ci:hardening-scan`), before it saves and packs them, except in a run for another branch.
+It fails on a binary without full RELRO, a non-executable stack, PIE, CET or the stack protector.
+Its table, keyed on the name of each file, accepts what a dependency doesn't apply: the stack protector in librte_kvargs, librte_meter, librte_jobstats and librte_common_cpt, which have no function it covers, CET in libopenh264, and IBT in libavcodec, libavfilter, libavutil, libswresample and libswscale.
+The check skips the JPEG XS cache: SVT-JPEG-XS builds its MTL plugin without the options.
 
 `_FORTIFY_SOURCE` and `_GLIBCXX_ASSERTIONS` leave no reliable mark in a binary, so `.github/scripts/ci/lint/test-scripts.sh` tests the rule that sets them instead.
 

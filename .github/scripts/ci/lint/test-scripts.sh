@@ -296,6 +296,32 @@ test_check_hardening() {
 	if bash "${gate}" "${work}/empty" >/dev/null 2>&1; then
 		fail "${gate}" "passes a path without an ELF file"
 	fi
+	# Its table accepts SSP missing in a DPDK library without a protected
+	# function, not in EAL.
+	mkdir "${work}/dpdk"
+	gcc -O2 -fno-stack-protector -fcf-protection=full -fPIC -shared -Wl,-z,relro,-z,now,-z,noexecstack \
+		"${work}/t.c" -o "${work}/dpdk/librte_kvargs.so.26"
+	cp "${work}/dpdk/librte_kvargs.so.26" "${work}/dpdk/librte_eal.so.26"
+	out=$(bash "${gate}" "${work}/dpdk" 2>&1) || true
+	if grep -qF "librte_kvargs.so.26 is not hardened" <<<"${out}" ||
+		! grep -qxF "::error::${work}/dpdk/librte_eal.so.26 is not hardened: no SSP" <<<"${out}"; then
+		fail "${gate}" "does not accept SSP missing in librte_kvargs only: ${out}"
+	fi
+	# And IBT missing in an FFmpeg library with assembly, both CET marks in
+	# libopenh264, but not IBT in libavformat, nor SHSTK in libswscale.
+	mkdir "${work}/ffmpeg"
+	gcc -O2 -fstack-protector-strong -fcf-protection=return -fPIC -shared -Wl,-z,relro,-z,now,-z,noexecstack \
+		"${work}/t.c" -o "${work}/ffmpeg/libavcodec.so.61"
+	cp "${work}/ffmpeg/libavcodec.so.61" "${work}/ffmpeg/libavformat.so.61"
+	gcc -O2 -fstack-protector-strong -fcf-protection=none -fPIC -shared -Wl,-z,relro,-z,now,-z,noexecstack \
+		"${work}/t.c" -o "${work}/ffmpeg/libopenh264.so.8"
+	cp "${work}/ffmpeg/libopenh264.so.8" "${work}/ffmpeg/libswscale.so.8"
+	out=$(bash "${gate}" "${work}/ffmpeg" 2>&1) || true
+	if grep -qE 'lib(avcodec|openh264)\.so\.[0-9]+ is not hardened' <<<"${out}" ||
+		! grep -qxF "::error::${work}/ffmpeg/libavformat.so.61 is not hardened: no IBT" <<<"${out}" ||
+		! grep -qxF "::error::${work}/ffmpeg/libswscale.so.8 is not hardened: no SHSTK" <<<"${out}"; then
+		fail "${gate}" "does not accept the CET marks missing in libavcodec and libopenh264 only: ${out}"
+	fi
 	rm -rf "${work:?}"
 }
 

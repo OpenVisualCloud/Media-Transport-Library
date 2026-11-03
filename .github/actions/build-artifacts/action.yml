@@ -142,6 +142,13 @@ runs:
       shell: bash
       run: task ci:validate-dependencies
 
+    # Before the caches are saved and packed, on a hit as on a miss. A run for
+    # another branch builds them from another commit than the table of the check.
+    - name: Check the hardening of the Build caches
+      if: ${{ !github.event.inputs.branch }}
+      shell: bash
+      run: task ci:hardening-scan
+
     # Main only. A pull request reads the caches of main, and its own entries
     # would push those out of the 10 GB of the repository.
     - name: 'stash: Save DPDK cache'

@@ -2,7 +2,6 @@
 .git/
 .gitignore
 .github/
-!.github/scripts/ci/scan/check-hardening.sh
 .clang-format
 .claude/
 .ci-local/
