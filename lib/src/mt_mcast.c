@@ -780,7 +780,12 @@ int mt_mcast_restore(struct mtl_main_impl* impl, enum mtl_port port) {
 }
 
 int mt_mcast_parse(struct mtl_main_impl* impl, struct mcast_mb_query_v3* query,
-                   enum mtl_port port) {
+                   size_t len, enum mtl_port port) {
+  if (len < sizeof(*query)) {
+    dbg("%s(%d), igmp query too short: %zu\n", __func__, port, len);
+    return -EIO;
+  }
+
   if (query->type != MEMBERSHIP_QUERY) {
     err("%s(%d), invalid type %u, only allow igmp query packet\n", __func__, port,
         query->type);
