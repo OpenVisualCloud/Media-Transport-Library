@@ -10,6 +10,10 @@
  * avcodec_encode_frame() itself. */
 static int ut_no_thread(pthread_t* thread, const pthread_attr_t* attr,
                         void* (*start)(void*), void* arg) {
+  (void)thread;
+  (void)attr;
+  (void)start;
+  (void)arg;
   return 0;
 }
 
