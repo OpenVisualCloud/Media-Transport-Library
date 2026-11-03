@@ -89,12 +89,12 @@ on:
       # Unchecked, MTL starts as many schedulers as its quota needs on the cores of the
       # slot: the isolated cores of its NIC's node, half of them with nics single.
       single_core_rx:
-        description: 'Single core RX: each RX instance on one scheduler with the system tasklets, as perf-pytest single core. A core carries about 28 x 1080p59, 36 with DMA, 60 sessions at most; takes nics split, redundant or whole, as two instances on a socket fall short of that'
+        description: 'Single core RX: each RX instance on one scheduler with the system tasklets, as perf-pytest single core. A core carries about 28 x 1080p59, 36 with DMA, 60 sessions at most; with nics single both builds share a socket, which falls short of that, and split gives each its own'
         required: false
         type: boolean
         default: false
       single_core_tx:
-        description: 'Single core TX: each TX instance on one scheduler with the system tasklets. A core carries about 35 x 1080p59, 60 sessions at most; takes nics split, redundant or whole'
+        description: 'Single core TX: each TX instance on one scheduler with the system tasklets. A core carries about 35 x 1080p59, 60 sessions at most; at that load use nics split, as for RX'
         required: false
         type: boolean
         default: false

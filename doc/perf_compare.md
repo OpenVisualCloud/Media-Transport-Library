@@ -227,7 +227,8 @@ limit of a core shows. Measured on the perf pair with perf-compare's units at 36
 `split` gives each build what the lone instance had, a socket of its own, and carries
 that load: in CI from 2026-10-27 to 2026-11-03, 36 x 1080p59 single core RX with a DSA
 failed all 5 runs with `single`, every session of both builds near 0 fps, and passed its
-2 runs with `split`. So single core takes `split`, `redundant` or `whole`.
+2 runs with `split`. So a single core comparison at a core's limit takes `split`,
+`redundant` or `whole`; below it `single` keeps both builds on one NIC.
 
 `dma` gives the RX instances of A, B or both `--dma_dev`: a DSA of the slot's node, the
 i-th slot of a node its i-th DSA, bound to vfio-pci, so the DSA follows the
@@ -389,7 +390,7 @@ anything is built or started:
 | --- | --- | --- |
 | `sessions`, `video`, `nics` | A port carries at most 100 Gb/s of sessions, a build on two ports twice that (below) | refs job; the case against each port's own link |
 | `sessions`, `single_core_rx`, `single_core_tx` | An MTL scheduler takes 60 video sessions at most | refs job and case |
-| `nics`, `single_core_rx`, `single_core_tx` | At a core's limit two instances on one socket fall short of it: single core takes `split`, `redundant` or `whole`, a socket a build (§3.5) | refs job and case |
+| `nics`, `single_core_rx`, `single_core_tx` | At a core's limit two instances on one socket fall short of it, both builds alike: `split`, `redundant` and `whole` give a build a socket (§3.5) | none needed |
 | `pixel_format`, `sessions`, `nics` | The conversion runs on the application threads, on the slot's first CPU and the lcores the schedulers leave: in the 8 CPUs of a slot of `single` about 20 x 1080p59 sessions in yuv422p10le and 24 in v210 hold their rate; `split`, `redundant` and `whole` give a slot 17 (below) | none needed |
 | `args`, `nics` | With `redundant`, a build's `--sch_session_quota` replaces the quota the case gives (§3.5) | none needed |
 | `args`, `single_core_rx`, `single_core_tx` | `--sch_session_quota`, `--sch_data_quota`, `--dedicated_sys_lcore` and `--rx_separate_lcore` would give a single core instance more schedulers | case |
@@ -532,7 +533,7 @@ notes, which do not.
 | Placement `CAT` no | No L3 allocation, or other resctrl groups | Remove the groups, or accept a shared L3 |
 | `N x <video> on a port take N Gb/s, and <PF> links at N Gb/s` or `<PF> has no link` | The sessions of a port do not fit its link, or the port has none: `sessions` counts a build's, port 0 of `whole` filled first | Fewer `sessions`, or the cable and the link of that port |
 | `--perf_compare_nics <mode> takes two ports of each of two NICs`, `both NICs are on NUMA node N` | The topology declares fewer than four ports (`PERF_PORTS`), or they are not two ports of each of two cards on two nodes | The second card of both hosts, cabled port to port |
-| `single core takes a socket a build ...`, `single core takes up to 60 sessions ...` | A single core role with `nics: single`, or with more sessions than an MTL scheduler takes; the refs job refuses both before the build | `split`, `redundant` or `whole`; up to 60 `sessions` |
+| `single core takes up to 60 sessions ...` | A single core role with more sessions than an MTL scheduler takes; the refs job refuses it before the build | Up to 60 `sessions` |
 | `NUMA node N has N isolated free cores and N others, not N of either` | A NIC's node has fewer than 3 cores a slot of either, after its first two: two slots a node with `single`, one with `split`, `redundant` and `whole` (§3.1) | `split`, `redundant` or `whole`, or a host with more cores |
 | `vfio-pci still refuses DSA`, `NUMA node N has N DSA, its slots need N`, `DSA <BDF> is not on vfio-pci` | vfio-pci kept its denylist, a node has fewer DSA than slots, or a DSA would not bind | `doc/dma.md`; DSA enabled in the BIOS on every node in use |
 | `N of M sessions copied by DMA` | MTL gave a session of a DMA instance no DMA device, or it copied nothing | Its log: `rv_init_dma` and the DMA lines of its dumps |

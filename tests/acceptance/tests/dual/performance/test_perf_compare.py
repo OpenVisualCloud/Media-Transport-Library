@@ -135,11 +135,6 @@ def _options(request) -> dict:
     given = [n for n in SCHEDULING if _given(options, n)]
     if opts["single_core"] and given:
         pytest.fail(f"--{given[0]} would give a single core instance more schedulers")
-    if opts["single_core"] and opts["nics"] == "single":
-        pytest.fail(
-            "single core takes a socket a build, --perf_compare_nics split, redundant "
-            "or whole: at a core's limit two instances on one socket fall short of it"
-        )
     if opts["single_core"] and opts["sessions"] > SCH_MAX_SESSIONS:
         pytest.fail(
             f"single core takes up to {SCH_MAX_SESSIONS} sessions, as many as an MTL "

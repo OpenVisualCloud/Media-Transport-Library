@@ -82,18 +82,11 @@ perf-compare-refs)
 		echo "::error::${sessions} x ${video} take more than a 100G port carries, ${most}; nics whole puts a build on two, up to $((2 * most))" >&2
 		exit 1
 	fi
-	# Booleans: "true" or "false", or empty in a run without inputs.
-	if [[ ${SINGLE_CORE_RX:-} == true || ${SINGLE_CORE_TX:-} == true ]]; then
-		# At a core's limit two instances on one socket fall short of it.
-		if [[ ${nics%%:*} == single ]]; then
-			echo "::error::single core takes a socket a build: nics split, redundant or whole" >&2
-			exit 1
-		fi
-		# An MTL scheduler takes 60 video sessions at most.
-		if ((sessions > 60)); then
-			echo "::error::single core takes up to 60 sessions, as many as an MTL scheduler: ${sessions}" >&2
-			exit 1
-		fi
+	# An MTL scheduler takes 60 video sessions at most. Booleans: "true" or "false",
+	# or empty in a run without inputs.
+	if [[ ${SINGLE_CORE_RX:-} == true || ${SINGLE_CORE_TX:-} == true ]] && ((sessions > 60)); then
+		echo "::error::single core takes up to 60 sessions, as many as an MTL scheduler: ${sessions}" >&2
+		exit 1
 	fi
 	if [[ ${GITHUB_EVENT_NAME:-} == schedule ]]; then
 		# GitHub starts each night hours late, by a different amount, so a window
