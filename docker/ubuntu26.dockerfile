@@ -46,8 +46,7 @@ RUN ./build_dpdk.sh -f
 
 # Run the unit suite, then build MTL
 WORKDIR "${MTL_REPO}"
-RUN export CFLAGS="-Wno-error=format-truncation" && \
-    ./build.sh unit && \
+RUN ./build.sh unit && \
     ./build.sh && \
     ninja -C build install && \
     DESTDIR=/install ninja -C build install && \
