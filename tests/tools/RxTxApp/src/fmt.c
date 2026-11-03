@@ -7,7 +7,7 @@
 #include "log.h"
 
 int user_get_pgroup(enum user_pg_fmt fmt, struct user_pgroup* pg) {
-  int i;
+  size_t i;
 
   for (i = 0; i < ARRAY_SIZE(user_pgroups); i++) {
     if (fmt == user_pgroups[i].fmt) {

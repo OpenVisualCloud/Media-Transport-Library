@@ -52,7 +52,7 @@ static int tx_st20p_open_source(struct tx_st20p_sample_ctx* s, char* file) {
     close(fd);
     return -EIO;
   }
-  if (i.st_size < s->frame_size) {
+  if ((size_t)i.st_size < s->frame_size) {
     err("%s, %s file size small then a frame %" PRIu64 "\n", __func__, file,
         s->frame_size);
     close(fd);
@@ -163,7 +163,7 @@ int main(int argc, char** argv) {
   struct tx_st20p_sample_ctx* app[session_num];
 
   // create and register tx session
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     app[i] = malloc(sizeof(struct tx_st20p_sample_ctx));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
@@ -243,7 +243,7 @@ int main(int argc, char** argv) {
   }
 
   // stop app thread
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     app[i]->stop = true;
     if (app[i]->handle) st20p_tx_wake_block(app[i]->handle);
     pthread_join(app[i]->frame_thread, NULL);
@@ -254,7 +254,7 @@ int main(int argc, char** argv) {
   }
 
   // check result
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     if (app[i]->fb_send <= 0) {
       err("%s(%d), error, no sent frames %d\n", __func__, i, app[i]->fb_send);
       ret = -EIO;
@@ -262,7 +262,7 @@ int main(int argc, char** argv) {
   }
 
 error:
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     if (app[i]) {
       if (app[i]->handle) st20p_tx_free(app[i]->handle);
       free(app[i]);

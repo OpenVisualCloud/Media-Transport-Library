@@ -127,7 +127,7 @@ int main(int argc, char** argv) {
   struct rx_st22p_sample_ctx* app[session_num];
 
   // create and register rx session
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     app[i] = malloc(sizeof(struct rx_st22p_sample_ctx));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
@@ -197,7 +197,7 @@ int main(int argc, char** argv) {
   }
 
   // stop app thread
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     app[i]->stop = true;
     if (app[i]->handle) st22p_rx_wake_block(app[i]->handle);
     pthread_join(app[i]->frame_thread, NULL);
@@ -207,7 +207,7 @@ int main(int argc, char** argv) {
   }
 
   // check result
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     if (app[i]->fb_recv <= 0) {
       err("%s(%d), error, no received frames %d\n", __func__, i, app[i]->fb_recv);
       ret = -EIO;
@@ -215,7 +215,7 @@ int main(int argc, char** argv) {
   }
 
 error:
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     if (app[i]) {
       if (app[i]->handle) st22p_rx_free(app[i]->handle);
       free(app[i]);
