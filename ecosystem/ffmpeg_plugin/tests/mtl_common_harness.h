@@ -73,6 +73,15 @@ const struct mtl_init_params* ut_ffmpeg_last_init_params(void);
 int ut_ffmpeg_init_calls(void);
 int ut_ffmpeg_uninit_calls(void);
 
+/* The plugin's option tables, built in C as the plugin builds them: C++ does not allow
+ * their mix of positional and designated initializers */
+#define UT_FFMPEG_ENC_FLAG 1
+#define UT_FFMPEG_DEC_FLAG 2
+extern const AVOption ut_ffmpeg_tx_options[];
+extern const size_t ut_ffmpeg_tx_options_cnt;
+extern const AVOption ut_ffmpeg_rx_options[];
+extern const size_t ut_ffmpeg_rx_options_cnt;
+
 #ifdef __cplusplus
 }
 #endif

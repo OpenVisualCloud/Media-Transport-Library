@@ -17,6 +17,23 @@ static int ut_ffmpeg_lifecycle_mutex_lock(pthread_mutex_t* mutex);
 #undef clock_gettime
 #undef pthread_mutex_lock
 
+/* The layout of the test's FfmpegOptionContext */
+struct FfmpegOptionContext {
+  StDevArgs devArgs;
+};
+
+/* As in the plugin, each table sees only its own direction flag */
+#define OFFSET(field) offsetof(struct FfmpegOptionContext, field)
+#define ENC UT_FFMPEG_ENC_FLAG
+const AVOption ut_ffmpeg_tx_options[] = {MTL_TX_DEV_ARGS};
+const size_t ut_ffmpeg_tx_options_cnt = MTL_ARRAY_SIZE(ut_ffmpeg_tx_options);
+#undef ENC
+#define DEC UT_FFMPEG_DEC_FLAG
+const AVOption ut_ffmpeg_rx_options[] = {MTL_RX_DEV_ARGS};
+const size_t ut_ffmpeg_rx_options_cnt = MTL_ARRAY_SIZE(ut_ffmpeg_rx_options);
+#undef DEC
+#undef OFFSET
+
 static struct mtl_init_params ut_init_params;
 static int ut_init_calls;
 static int ut_uninit_calls;
