@@ -56,7 +56,7 @@ class mtl_instance {
     msg.header.type = (mtl_message_type_t)htonl(type);
     msg.header.body_len = htonl(sizeof(mtl_response_message_t));
     msg.body.response_msg.response = htonl(response);
-    return send(conn_fd, &msg, sizeof(mtl_message_t), 0);
+    return send(conn_fd, &msg, sizeof(mtl_message_t), MSG_NOSIGNAL);
   }
   std::shared_ptr<mtl_interface> get_interface(const unsigned int ifindex);
 
@@ -273,7 +273,8 @@ void mtl_instance::handle_message_if_xsk_map_fd(mtl_if_message_t* if_msg) {
   cmsg->cmsg_len = CMSG_LEN(sizeof(int));
   *((int*)CMSG_DATA(cmsg)) = fd;
 
-  if (sendmsg(conn_fd, &msg, 0) < 0) log(log_level::ERROR, "Failed to send xsk map fd");
+  if (sendmsg(conn_fd, &msg, MSG_NOSIGNAL) < 0)
+    log(log_level::ERROR, "Failed to send xsk map fd");
 }
 
 void mtl_instance::handle_message_udp_dp_filter(

@@ -5,7 +5,7 @@
  * socketpair. This build has no XDP backend and ifindex 0 never exists, so every lookup
  * answers -1.
  *
- * Run: ./build_unit/tests/unit/UnitTest --gtest_filter='MtlManagerRegisterTest.*'
+ * Run: ./build_unit/tests/unit/UnitTest --gtest_filter='MtlManagerRegister*'
  */
 
 #include <arpa/inet.h>
@@ -13,6 +13,7 @@
 #include <sys/socket.h>
 
 #include <cerrno>
+#include <csignal>
 #include <cstring>
 #include <memory>
 #include <vector>
@@ -88,4 +89,47 @@ TEST_F(MtlManagerRegisterTest, ReplyIsZeroPastTheResponse) {
   const auto* w = reinterpret_cast<const uint8_t*>(&want);
   EXPECT_EQ(std::vector<uint8_t>(g, g + sizeof(got)),
             std::vector<uint8_t>(w, w + sizeof(want)));
+}
+
+namespace {
+
+volatile sig_atomic_t g_sigpipe_cnt;
+
+void count_sigpipe(int) {
+  g_sigpipe_cnt = g_sigpipe_cnt + 1;
+}
+
+}  // namespace
+
+/* SIGPIPE is unblocked and caught, so a raised one is counted, not hidden or fatal. */
+class MtlManagerRegisterSigpipeTest : public MtlManagerRegisterTest {
+ protected:
+  void SetUp() override {
+    MtlManagerRegisterTest::SetUp();
+    sigset_t sigpipe;
+    sigemptyset(&sigpipe);
+    sigaddset(&sigpipe, SIGPIPE);
+    ASSERT_EQ(pthread_sigmask(SIG_UNBLOCK, &sigpipe, &old_mask_), 0);
+    struct sigaction sa = {};
+    sa.sa_handler = count_sigpipe;
+    sigemptyset(&sa.sa_mask);
+    ASSERT_EQ(sigaction(SIGPIPE, &sa, &old_sa_), 0);
+    g_sigpipe_cnt = 0;
+  }
+
+  void TearDown() override {
+    sigaction(SIGPIPE, &old_sa_, nullptr);
+    pthread_sigmask(SIG_SETMASK, &old_mask_, nullptr);
+    MtlManagerRegisterTest::TearDown();
+  }
+
+  sigset_t old_mask_ = {};
+  struct sigaction old_sa_ = {};
+};
+
+TEST_F(MtlManagerRegisterSigpipeTest, AnswerToAClosedClientRaisesNone) {
+  close(client_fd_);
+  client_fd_ = -1;
+  feed(register_message(0));
+  EXPECT_EQ(g_sigpipe_cnt, 0);
 }
