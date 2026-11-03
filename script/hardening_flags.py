@@ -43,7 +43,12 @@ with tempfile.TemporaryDirectory() as tmp:
         )
         if run(flag, *probe, source="int main(void) { return 0; }").returncode == 0
     ]
-flags += ["-Wformat", "-Wformat-security", "-Werror=format-security"]
+flags += [
+    "-Wformat",
+    "-Wformat-security",
+    "-Werror=format-security",
+    "-Wimplicit-fallthrough",
+]
 # glibc needs optimization for it, and the sanitizers don't support it. A level
 # the compiler (Ubuntu gcc) or ARG sets is kept. meson's own checks can't see
 # it: they don't optimize, and meson 1.11 and later add -U_FORTIFY_SOURCE.

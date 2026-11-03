@@ -180,7 +180,7 @@ fortify_level() {
 test_hardening_flags() {
 	local helper=script/hardening_flags.py out opts compiler cc lang want max level flags=()
 	local probed='-fstack-protector-strong -fstack-clash-protection -fcf-protection=full'
-	local always='-Wformat -Wformat-security -Werror=format-security'
+	local always='-Wformat -Wformat-security -Werror=format-security -Wimplicit-fallthrough'
 	local link='-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack'
 
 	out=$(python3 "${helper}" c 2 none true)
