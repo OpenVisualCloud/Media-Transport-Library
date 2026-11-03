@@ -112,15 +112,17 @@ flowchart TD
 
 ## The stash, as implemented today
 
-`BUILD` and the `GITHUB STASH` above are `.github/workflows/build.yml`. The
+`BUILD` and the `GITHUB STASH` above are the `build` job of
+`.github/workflows/cicd-pr-check.yml`, `nightly.yml`, `performance.yml` and
+`custom-pytest.yml`: each one runs `.github/actions/build-artifacts`. The
 artifact store is `actions/cache`, keyed on a checksum of the sources that
 produce each artifact, so a run only pays for the components a pull request
 actually touched.
 
 | stage in the diagram      | implementation                                       |
 | ------------------------- | ---------------------------------------------------- |
-| `LINTER` / `WAITS`        | `wait-for-linter` job                                |
-| `COMPUTES SOURCE SHA-256` | `checksums` job, `script/hash_sources.sh`            |
+| `LINTER` / `WAITS`        | `needs:` of the `build` job on the lint jobs         |
+| `COMPUTES SOURCE SHA-256` | `build` job, `script/hash_sources.sh`                |
 | `GITHUB STASH`            | `actions/cache`, keys `stash-<component>-<checksum>` |
 | `BUILD`                   | `build` job on the self-hosted `e835` fleet runner   |
 
@@ -141,27 +143,23 @@ The path lists that feed each hash live in `script/hash_sources_*.env`.
 
 ## Testing other MTL sources with the current tests
 
-On a manual run, `nightly-pytest` and `custom-pytest` take an optional
+On a manual run, `nightly`, `custom-pytest` and `performance` take an optional
 `branch` input. The run builds and tests the MTL sources of that ref, while
 the workflow, the CI scripts and the acceptance tests stay at the workflow
 commit, the commit of the branch picked in "Use workflow from". It is the
-overlay `perf-pytest` already uses (`task ci:workflow -- overlay-tests`), and
+overlay that each of them uses (`task ci:workflow -- overlay-tests`), and
 its typical use is running today's tests against older code to tell a
 regression from a test change. Left empty, nothing is overlaid.
 
 - `branch` takes a branch, a tag or a **full 40-character commit SHA**. A
-  shorter SHA is read as a branch or tag name and fails the `checksums` job.
+  shorter SHA is read as a branch or tag name and fails the `build` job.
 - The ref must contain the script rework (#1836) up to `MTL_FLAG_DMA_AUTO`.
   The current CI and tests call its interfaces: `hash_sources.sh` sources the
   new `common.sh`, the setup calls the new build scripts, and the tests pass
   `--dma_auto` to RxTxApp and the plugins. `overlay-tests` refuses an older ref
-  in the `checksums` job, before any hardware runner is taken.
+  in the `build` job, before any hardware runner is taken.
 - The overlay adds and replaces files but deletes none: a file removed under
   the overlaid paths after the `branch` commit is still there.
-- `Build` takes the same input on a manual run, so a ref can be built on its
-  own, without a test job. Use it to fill the stash before `perf-pytest`,
-  which restores caches with `fail-on-cache-miss` but builds nothing itself.
-  It still queues on the shared `dpdk` build runner.
 
 | Part                                                                 | Comes from      |
 | -------------------------------------------------------------------- | --------------- |
@@ -177,11 +175,11 @@ regression from a test change. Left empty, nothing is overlaid.
 | The first `overlay-tests` pass                                       | `branch`        |
 | The second `overlay-tests` pass                                      | workflow commit |
 
-`build.yml` resolves `branch` to a commit once, in the `checksums` job, and
-exports it as `mtl_commit`. The `build` job and the test jobs check out that
-commit and apply the same overlay. They have to: the source hashes include
-`.github/` files, so a job that hashed any other tree would miss the stash the
-build saved, or restore the stash of another tree.
+The `build` job resolves `branch` to a commit once and exports it as
+`mtl_commit`. The test jobs check out that commit and apply the same overlay.
+They have to: the source hashes include `.github/` files, so a job that hashed
+any other tree would miss the stash the build saved, or restore the stash of
+another tree.
 
 The hash script and its lists come from the workflow commit too, so every
 `branch` keys its stash on the CI files the current build uses; older lists
@@ -223,8 +221,8 @@ Kernel release and architecture are part of the cache key. `validate-host`
 rejects incompatible modules before touching the NIC and uses SHA-256, not
 MD5, for identity.
 
-There is one ICE producer in `build.yml`, running on the `e835` fleet runner so
-the artifact is built against the validation kernel ABI. The dedicated `e810`,
+There is one ICE producer, the `build` job, running on the `e835` fleet runner
+so the artifact is built against the validation kernel ABI. The dedicated `e810`,
 `e830`, and `e835` hardware validation hosts share that ABI, so all validation
 jobs restore the same ICE cache entry. NIC type is not part of the key and does
 not require separate producer jobs. A kernel mismatch indicates runner drift

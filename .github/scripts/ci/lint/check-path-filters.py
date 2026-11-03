@@ -88,22 +88,30 @@ for workflow in sorted(workflows.glob("*.yml")) + sorted(workflows.glob("*.yaml"
     for name in re.findall(r"steps\.filter\.outputs\.([A-Za-z0-9_]+)", text):
         if name not in filters:
             faults.append(f"{workflow.name}: reads filter {name}, not defined")
-    for job in (yaml.safe_load(text).get("jobs") or {}).values():
+    jobs = yaml.safe_load(text).get("jobs") or {}
+    for job in jobs.values():
         for step in job.get("steps") or []:
             uses = step.get("uses") or ""
             if uses.startswith("dorny/paths-filter") and step.get("id") != "filter":
                 faults.append(
                     f"{workflow.name}: a dorny/paths-filter step has no id 'filter'"
                 )
-        if job.get("uses") == "./.github/workflows/pr-gate.yml":
-            name = (job.get("with") or {}).get("filter")
-            if name in filters:
-                gated.add(name)
-            else:
-                faults.append(f"{workflow.name}: pr-gate filter {name}, not defined")
+    # A job that needs the build job runs only when the build job runs, so the
+    # filters of its changes output must be in build_workflow.
+    outputs = (jobs.get("changes") or {}).get("outputs") or {}
+    for job in jobs.values():
+        needs = job.get("needs") or []
+        if "build" not in ([needs] if isinstance(needs, str) else needs):
+            continue
+        for output in re.findall(r"needs\.changes\.outputs\.(\w+)", str(job.get("if"))):
+            gated |= set(
+                re.findall(r"steps\.filter\.outputs\.(\w+)", str(outputs.get(output)))
+            )
 
 for name in sorted(gated):
-    for pattern in sorted(set(filters[name]) - set(filters.get("build_workflow", []))):
+    for pattern in sorted(
+        set(filters.get(name, [])) - set(filters.get("build_workflow", []))
+    ):
         faults.append(f"build_workflow: no '{pattern}' of {name}")
 
 for fault in faults:

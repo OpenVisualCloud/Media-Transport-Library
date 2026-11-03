@@ -160,6 +160,13 @@ tasks:
     cmds:
       - bash {{.CI_SCRIPTS}}/scan/clang-tidy-setup.sh
 
+  ci:codechecker-install:
+    desc: Install clang-tools-18 and the pinned CodeChecker for ci:clang-analyzer
+    cmds:
+      - sudo apt-get update -q
+      - sudo apt-get install -y --no-install-recommends clang-tools-18
+      - python -m pip install -r .github/code-scan/codechecker-requirements.txt
+
   ci:clang-analyzer:
     desc: Run the Clang Static Analyzer with cross-TU analysis over libmtl and write csa.sarif; fails if a file fails to analyze
     summary: |

@@ -38,11 +38,8 @@ check-built-sources)
 	done
 	exit "$status"
 	;;
-both-workflows)
-	both=false
-	[[ -n ${GTEST_RUN_ID:-} && -n ${PYTEST_RUN_ID:-} ]] && both=true
-	echo "both_completed=${both}" >>"$GITHUB_OUTPUT"
-	[[ $both == true ]] || { echo 'Waiting for both workflows to complete...' && exit 1; }
+commit)
+	echo "commit=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
 	;;
 docs-dependencies)
 	sudo apt-get update -y
@@ -62,7 +59,7 @@ coverity-dpdk)
 	cd script && ./build_dpdk.sh
 	;;
 *)
-	echo "Usage: $0 {overlay-tests|check-built-sources|both-workflows|docs-dependencies|coverity-dependencies|coverity-dpdk}" >&2
+	echo "Usage: $0 {overlay-tests|check-built-sources|commit|docs-dependencies|coverity-dependencies|coverity-dpdk}" >&2
 	exit 2
 	;;
 esac

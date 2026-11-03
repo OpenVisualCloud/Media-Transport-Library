@@ -37,7 +37,7 @@ change the result:
                                   |
              +--------------------+--------------------+
              |                    |                    |
-      ./checkpatch.sh      git pre-commit hook   .github/workflows/linter.yml
+      ./checkpatch.sh      git pre-commit hook   .github/workflows/cicd-pr-check.yml
              |                    |                    |
        ./format-coding.sh    (same hooks)       (same hooks, 3 OSes)
 ```
@@ -53,7 +53,7 @@ contains a rule, a version, a file filter or a tool invocation of its own:
 | `.gitattributes` | line-ending normalization on checkout and check-in | anything else |
 | `checkpatch.sh` | which files to feed the engine, how to report | any rule |
 | `format-coding.sh` | thin write-mode wrapper over `checkpatch.sh` | any rule |
-| `.github/workflows/linter.yml` | orchestration: OS matrix, caching, Python setup | any rule or config path |
+| `.github/workflows/cicd-pr-check.yml` (lint jobs) | orchestration: OS matrix, caching, Python setup | any rule or config path |
 | this document | prose rationale and the parity table | rules that are not in the config |
 
 **Adding or changing a lint rule** means editing `.pre-commit-config.yaml` (and
@@ -229,7 +229,7 @@ Not every available check is enabled. These were considered and rejected, so tha
 
 The three must agree. Anything CI enforces that `checkpatch.sh` cannot reproduce
 is listed here explicitly, and runs in the `residual-linters` job of
-`.github/workflows/linter.yml`.
+`.github/workflows/cicd-pr-check.yml`.
 
 | CI check | Status | Why |
 |---|---|---|
@@ -241,8 +241,8 @@ is listed here explicitly, and runs in the `residual-linters` job of
 | `VALIDATE_RUST_*`, `VALIDATE_RUST_CLIPPY` | residual | rustfmt and clippy need a Rust toolchain per environment. Carried over unchanged rather than narrowed, since narrowing the edition list would be a rule change |
 | `VALIDATE_EDITORCONFIG` | **dropped** | it was default-on before, and enforced nothing: no `.editorconfig` existed. The one that exists now declares only `charset`, `end_of_line` and shfmt's shell indent, all of which the hooks or `.gitattributes` already cover |
 | commit-message style (gitlint) | own `commit-messages` job | a message is not a file, so `checkpatch.sh` cannot reach it. The job runs the same `commit-msg` hook over each PR commit that the git `commit-msg` hook runs locally, so version and rules stay in one place. Not in `residual-linters`: that is the super-linter allow-list, and MTL's capitalized, scope-free format is not one |
-| Bandit | `bandit` job of `code-scan.yml` | a security scan with a mandated test set, not a style rule. The test set is `.github/code-scan/bandit.config`, apart from the linter configs in `.github/linters/`. `task ci:bandit` reproduces the scan locally, with the Bandit release pinned in `.github/code-scan/requirements.txt`, which Dependabot updates |
-| clang-tidy, on the C and C++ lines a pull request changes | own `clang-tidy` job in `code-scan.yml` | it needs the compile commands of configured builds, which `checkpatch.sh` has no part in. The checks are `.clang-tidy`'s, run by `cpp-linter/cpp-linter-action`; the report is the `clang-tidy-report` artifact. After `./build.sh`, `clang-tidy-20 -p build <file>` runs them on one file locally |
+| Bandit | `bandit` job of `cicd-pr-check.yml` | a security scan with a mandated test set, not a style rule. The test set is `.github/code-scan/bandit.config`, apart from the linter configs in `.github/linters/`. `task ci:bandit` reproduces the scan locally, with the Bandit release pinned in `.github/code-scan/requirements.txt`, which Dependabot updates |
+| clang-tidy, on the C and C++ lines a pull request changes | own `clang-tidy` job in `cicd-pr-check.yml` | it needs the compile commands of configured builds, which `checkpatch.sh` has no part in. The checks are `.clang-tidy`'s, run by `cpp-linter/cpp-linter-action`; the report is the `clang-tidy-report` artifact. After `./build.sh`, `clang-tidy-20 -p build <file>` runs them on one file locally |
 
 That job was a deny-list of nine `VALIDATE_*: false` keys and is now an
 **allow-list**, so anything not named above is no longer enforced -- the two real
@@ -251,20 +251,17 @@ cases are in the table, and a file type census found no tracked `*.js`, `*.css`,
 super-linter aborts if `true` and `false` are mixed, so no `VALIDATE_*: false`
 line may be added back.
 
-### 4.1. The build gate depends on these names
+### 4.1. The build waits for the file linters
 
-`.github/workflows/build.yml` will not build until the file linters have passed.
-The `Lint Code Base` job aggregates the three `checkpatch` matrix jobs and
-`Lint checks not yet in checkpatch`; the build's `wait-for-linter` job polls that
-one stable check-run name. A lint failure therefore skips the build rather than
-wasting a DPDK compile on it. Commit-message style remains an independent pull
-request check and does not block the compile.
+The `build` job of `.github/workflows/cicd-pr-check.yml` needs the `checkpatch`
+matrix jobs and `residual-linters` (`Lint checks not yet in checkpatch`). A lint
+failure therefore skips the build rather than wasting a DPDK compile on it, and
+`build-result` fails. The `Lint Code Base` job aggregates the file linters into
+one check. Commit-message style remains an independent pull request check and
+does not block the compile.
 
-The workflow coupling is by the aggregate job's `name:`. Renaming `Lint Code
-Base` without updating `build.yml` makes the gate wait for a check that never
-arrives and report a timeout, which looks like infrastructure failure instead of
-a configuration error. The aggregate keeps the matrix details visible without
-requiring consumers to duplicate every platform-specific check name.
+The coupling is by job ID in `needs:`, in one workflow, so GitHub refuses a
+rename of a lint job that does not also change the `build` job.
 
 ## 5. Git hooks
 
@@ -382,7 +379,7 @@ for `feat` plus `build(deps)` for dependency bumps.
 
 The mechanical half of that format *is* automated, by gitlint. The
 `commit-msg` git hook runs it on every `git commit` locally, and the
-`commit-messages` job in `.github/workflows/linter.yml` runs the same hook over
+`commit-messages` job in `.github/workflows/cicd-pr-check.yml` runs the same hook over
 each commit a pull request adds. `checkpatch.sh` itself still checks only
 *files* -- it has no message to read -- so message linting rides the commit-msg
 stage, not a `checkpatch.sh` run. The rules are in `.github/linters/.gitlint`,

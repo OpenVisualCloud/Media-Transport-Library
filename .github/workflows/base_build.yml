@@ -27,7 +27,7 @@ env:
 
 # A superseded run of this workflow builds a commit nobody is looking at any
 # more, and its four legs each spend most of an hour installing the same
-# toolchain. Cancel it, like build.yml and the bare-metal workflows do, so the
+# toolchain. Cancel it, like cicd-pr-check.yml does, so the
 # checks a pull request shows belong to its newest commit.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}

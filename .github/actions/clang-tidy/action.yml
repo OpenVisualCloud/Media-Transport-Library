@@ -1,0 +1,115 @@
+name: Clang Tidy
+description: >-
+  clang-tidy on the C and C++ lines that a pull request changes, and the Clang
+  Static Analyzer with cross-TU analysis over libmtl. It configures MTL against
+  the cached DPDK of this commit, so the cache must exist: call it in a job that
+  needs the build job, or that a lookup found the cache for.
+
+inputs:
+  changed_lines:
+    description: Run clang-tidy on the changed lines. Only a pull request has them.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Compute source checksums
+      id: sums
+      uses: ./.github/actions/source-checksums
+
+    - name: Compute exact cache keys
+      id: keys
+      shell: bash
+      env:
+        HASH_DPDK: ${{ steps.sums.outputs.dpdk }}
+        HASH_MTL: ${{ steps.sums.outputs.mtl }}
+        HASH_JPEGXS: ${{ steps.sums.outputs.jpegxs }}
+        HASH_ICE: ${{ steps.sums.outputs.ice }}
+        HASH_FFMPEG: ${{ steps.sums.outputs.ffmpeg }}
+        HASH_GSTREAMER: ${{ steps.sums.outputs.gstreamer }}
+        HASH_PLUGINS: ${{ steps.sums.outputs.plugins }}
+      run: task ci:cache-keys
+
+    - name: 'stash: Restore DPDK cache'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        key: ${{ steps.keys.outputs.dpdk_key }}
+        path: .local_install/dpdk
+        fail-on-cache-miss: true
+
+    - name: Write compile_commands.json
+      shell: bash
+      run: task ci:clang-tidy-setup
+
+    # The checks of .clang-tidy, on the lines that the pull request changes.
+    # The findings go to the log as annotations, to the job summary, and to
+    # the clang-tidy-report artifact.
+    - name: clang-tidy
+      id: lint
+      if: inputs.changed_lines == 'true'
+      uses: cpp-linter/cpp-linter-action@8120e05c7fbd25fa09fa93424ec49f55f7b304ab # v2.23.1
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      with:
+        # The newest clang-tidy in the Ubuntu 24.04 archive. For a version
+        # that the archive does not have, the action runs the apt.llvm.org
+        # install script with sudo.
+        version: 20
+        # The sources only. compile_commands.json has no entry for a header,
+        # so clang-tidy cannot check a header on its own.
+        extensions: c,cpp,cc,cxx
+        style: ''
+        tidy-checks: ''
+        database: .
+        lines-changed-only: true
+        extra-args: -Wno-error
+        step-summary: true
+        summary-output-file: clang-tidy-summary.md
+
+    # compile_commands.json holds the flags each file was checked with.
+    - name: Upload the clang-tidy report
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: clang-tidy-report
+        path: |
+          clang-tidy-summary.md
+          compile_commands.json
+
+    # Any finding fails the job: fix it, or review it and mark the line above it
+    # `// codechecker_suppress [<checker>] <what the review found>`.
+    # Ubuntu 24.04's python is externally managed, so pip needs setup-python.
+    - name: Set up Python for CodeChecker
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: '3.12'
+
+    - name: Install CodeChecker
+      shell: bash
+      run: task ci:codechecker-install
+
+    - name: Clang Static Analyzer
+      shell: bash
+      run: task ci:clang-analyzer
+
+    # The findings on the changed lines become review comments of the pull
+    # request, with their bug paths. The upload only reports: a failed upload
+    # must not decide the check.
+    - name: Upload the Clang Static Analyzer results to code scanning
+      if: ${{ !cancelled() }}
+      uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+      continue-on-error: true
+      with:
+        sarif_file: csa.sarif
+        category: clang-analyzer
+
+    - name: Fail on a clang-tidy finding
+      if: inputs.changed_lines == 'true' && steps.lint.outputs.checks-failed > 0
+      shell: bash
+      run: exit 1
+
+    - name: Clang Static Analyzer check
+      if: ${{ !cancelled() }}
+      shell: bash
+      run: task ci:clang-analyzer-check
