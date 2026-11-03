@@ -41,7 +41,8 @@ for path; do
 		grep -qE '\(FLAGS\) .*BIND_NOW|\(FLAGS_1\) .*Flags:.* NOW' <<<"$elf" || missing+=(BIND_NOW)
 		grep -qE ' GNU_STACK .* RW ' <<<"$elf" || missing+=(NX)
 		grep -qE 'Type: *DYN ' <<<"$elf" || missing+=(PIE)
-		grep -q 'x86 feature: IBT, SHSTK' <<<"$elf" || missing+=(IBT/SHSTK)
+		grep -q 'x86 feature: .*IBT' <<<"$elf" || missing+=(IBT)
+		grep -q 'x86 feature: .*SHSTK' <<<"$elf" || missing+=(SHSTK)
 		grep -q ' UND __stack_chk_fail@' <<<"$elf" || missing+=(SSP)
 		if ((${#missing[@]})); then
 			echo "::error::${file} is not hardened: no ${missing[*]}" >&2
