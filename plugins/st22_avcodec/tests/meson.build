@@ -3,7 +3,7 @@
 
 # The plugin's tests, against the installed MTL and FFmpeg the plugin is built against.
 # script/build_st22_avcodec_plugin.sh unit builds and runs them.
-project('st22_avcodec_plugin_tests', 'c', 'cpp', default_options : ['buildtype=release', 'b_pie=true'])
+project('st22_avcodec_plugin_tests', 'c', 'cpp', default_options : ['buildtype=release', 'warning_level=2', 'b_pie=true'])
 
 # Compiler hardening, see doc/build.md
 add_project_arguments('-fstack-protector-strong', '-fstack-clash-protection', '-fcf-protection=full',
