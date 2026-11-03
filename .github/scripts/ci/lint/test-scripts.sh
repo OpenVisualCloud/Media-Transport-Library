@@ -224,6 +224,48 @@ test_hardening_flags() {
 
 test_hardening_flags
 
+# Prints the flags that hardening_flags of the common.sh of repository $1 sets
+# for CC $2, CFLAGS $3 and CPPFLAGS $4.
+dependency_flags() {
+	CC=$2 CFLAGS=$3 CPPFLAGS=$4 bash -c '. "$0/script/common.sh" && hardening_flags 2 && echo "${HARDENING_CFLAGS}|${HARDENING_LDFLAGS}"' "$1" 2>&1
+}
+
+# The stand-in compiler takes each flag and predefines a level for
+# -DMTL_FORTIFY; the stand-in helper prints the options to filter.
+test_dependency_hardening_flags() {
+	local work out
+	local compile='-fstack-protector-strong -fstack-clash-protection -fcf-protection=full'
+	local link='-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack'
+	work=$(mktemp -d)
+	printf '#!/bin/sh\ncase " $* " in *" -DMTL_FORTIFY "*) echo "#define _FORTIFY_SOURCE 2" ;; esac\n' >"${work}/cc"
+	chmod +x "${work}/cc"
+	out=$(dependency_flags . "${work}/cc -m64" "" "") || true
+	[ "${out}" = "${compile} -D_FORTIFY_SOURCE=2|${link}" ] ||
+		fail script/common.sh "hardening_flags with a CC of two words: ${out}"
+	out=$(dependency_flags . "${work}/cc" "-O2 -DMTL_FORTIFY" "") || true
+	[ "${out}" = "${compile}|${link}" ] || fail script/common.sh "hardening_flags adds a level CFLAGS sets: ${out}"
+	out=$(dependency_flags . "${work}/cc" "-O2" "-DMTL_FORTIFY") || true
+	[ "${out}" = "${compile}|${link}" ] || fail script/common.sh "hardening_flags adds a level CPPFLAGS sets: ${out}"
+	out=$(dependency_flags . "${work}/cc" "-O2 -g -O0" "") || true
+	[ "${out}" = "${compile}|${link}" ] || fail script/common.sh "hardening_flags adds a level to an -O0 build: ${out}"
+	out=$(dependency_flags . "${work}/cc" "-O0" "-Os") || true
+	[ "${out}" = "${compile} -D_FORTIFY_SOURCE=2|${link}" ] ||
+		fail script/common.sh "hardening_flags takes no -O of CPPFLAGS after CFLAGS: ${out}"
+	if dependency_flags . "${work}/missing" "" "" >/dev/null; then
+		fail script/common.sh "hardening_flags passes without a compiler"
+	fi
+	mkdir -p "${work}/repo/script"
+	cp script/common.sh "${work}/repo/script/"
+	cp versions.env "${work}/repo/"
+	printf 'print("-Wformat -Wp,-DX -Wa,--noexecstack -Wl,-z,now -fPIC")\nprint("-Wl,-z,relro")\n' >"${work}/repo/script/hardening_flags.py"
+	out=$(dependency_flags "${work}/repo" true "" "") || true
+	[ "${out}" = "-Wp,-DX -Wa,--noexecstack -Wl,-z,now -fPIC|-Wl,-z,relro" ] ||
+		fail script/common.sh "hardening_flags drops what is not a warning option: ${out}"
+	rm -rf "${work:?}"
+}
+
+test_dependency_hardening_flags
+
 # check-hardening.sh passes a hardened program, names each mark of an unhardened
 # one and of one with IBT only, and fails a path that holds no ELF file.
 test_check_hardening() {

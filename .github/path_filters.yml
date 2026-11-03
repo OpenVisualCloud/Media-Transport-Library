@@ -38,6 +38,7 @@ hash_dpdk: &hash_dpdk
   - versions.env
   - script/build_dpdk.sh
   - script/common.sh
+  - script/hardening_flags.py
 
 hash_mtl: &hash_mtl
   - .github/scripts/setup_environment.sh

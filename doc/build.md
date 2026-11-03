@@ -464,7 +464,8 @@ For older kernel version on Red Hat, the issue is that Red Hat uses vault repos.
 
 ### 4.5. Compiler hardening
 
-The Linux build compiles the MTL meson projects with the hardening options below. `script/hardening_flags.py` prints them for a compiler, and the `meson.build` of each project applies them.
+The Linux build compiles the MTL meson projects with the hardening options below, and DPDK with the options for C, less the warning options. `script/hardening_flags.py` prints them for a compiler, the `meson.build` of each project applies them, and `script/build_dpdk.sh` passes them to DPDK.
+In the dependency builds the last `-O` of `CFLAGS`, then `CPPFLAGS`, sets the level: `-O0` leaves out `_FORTIFY_SOURCE`, as the meson option `optimization` at `0` does for the MTL projects.
 
 | Option | Protection |
 | --- | --- |
