@@ -178,7 +178,7 @@ fortify_level() {
 # The stand-in compilers: true accepts each flag, and the sh ones reject -Werror,
 # as for a flag the compiler only warns about, or print one predefined macro.
 test_hardening_flags() {
-	local helper=script/hardening_flags.py out opts compiler cc lang want level flags=()
+	local helper=script/hardening_flags.py out opts compiler cc lang want max level flags=()
 	local probed='-fstack-protector-strong -fstack-clash-protection -fcf-protection=full'
 	local always='-Wformat -Wformat-security -Werror=format-security'
 	local link='-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack'
@@ -188,6 +188,10 @@ test_hardening_flags() {
 		fail "${helper}" "with a compiler that takes each flag: ${out}"
 	out=$(python3 "${helper}" c 2 none sh -c 'case " $* " in *" -Werror "*) exit 1 ;; esac' sh)
 	[ "${out%%$'\n'*}" = "${always} -D_FORTIFY_SOURCE=2" ] || fail "${helper}" "keeps a flag the compiler warns about: ${out}"
+	out=$(python3 "${helper}" c 2 none sh -c 'echo "#define __USE_FORTIFY_LEVEL 3"' sh)
+	[ "${out%%$'\n'*}" = "${probed} ${always} -D_FORTIFY_SOURCE=3" ] || fail "${helper}" "does not take level 3: ${out}"
+	out=$(python3 "${helper}" c 2 none sh -c 'echo "#define __USE_FORTIFY_LEVEL 2"' sh)
+	[ "${out%%$'\n'*}" = "${probed} ${always} -D_FORTIFY_SOURCE=2" ] || fail "${helper}" "takes level 3 where 2 applies: ${out}"
 	# Ubuntu gcc predefines a level only when it optimizes.
 	out=$(python3 "${helper}" c 2 none sh -c 'case " $* " in *" -O2 "*) echo "#define _FORTIFY_SOURCE 2" ;; esac' sh)
 	[ "${out%%$'\n'*}" = "${probed} ${always}" ] || fail "${helper}" "replaces the level the compiler sets: ${out}"
@@ -197,15 +201,18 @@ test_hardening_flags() {
 		[ "${out%%$'\n'*}" = "${probed} ${always}" ] || fail "${helper}" "adds _FORTIFY_SOURCE for '${opts}': ${out}"
 	done
 
-	# With no predefined level, the real toolchain applies the level the helper adds.
+	# With no predefined level, the helper asks for the highest level the real
+	# toolchain applies (glibc can take 3 and apply 2), and the build gets it.
 	for compiler in "gcc c" "clang c" "g++ c++"; do
 		read -r cc lang <<<"${compiler}"
 		command -v "${cc}" >/dev/null || continue
 		out=$(python3 "${helper}" "${lang}" 2 none "${cc}" -U_FORTIFY_SOURCE)
 		read -ra flags <<<"${out%%$'\n'*}"
 		want=$(printf '%s\n' "${flags[@]}" | sed -n 's/^-D_FORTIFY_SOURCE=//p')
+		max=$(fortify_level "${cc}" "${lang}" -D_FORTIFY_SOURCE=3)
 		level=$(fortify_level "${cc}" "${lang}" "${flags[@]}")
-		[[ "${want}" == 2 && "${level}" == 2 ]] || fail "${helper}" "${cc} asks for level '${want}' and gets '${level}'"
+		[[ "${want}" == "${max}" && "${level}" == "${want}" ]] ||
+			fail "${helper}" "${cc} asks for level '${want}' and gets '${level}', of up to '${max}'"
 	done
 }
 

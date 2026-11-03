@@ -49,6 +49,9 @@ flags += ["-Wformat", "-Wformat-security", "-Werror=format-security"]
 # it: they don't optimize, and meson 1.11 and later add -U_FORTIFY_SOURCE.
 if optimization not in ("0", "plain") and sanitize == "none":
     if "#define _FORTIFY_SOURCE " not in run("-O2", "-dM", "-E").stdout:
-        flags.append("-D_FORTIFY_SOURCE=2")
+        # 3 where the compiler and glibc support it (gcc 12+, clang 9+, glibc 2.34+)
+        level = run("-O2", "-D_FORTIFY_SOURCE=3", "-include", "string.h", "-dM", "-E")
+        level3 = "#define __USE_FORTIFY_LEVEL 3" in level.stdout
+        flags.append("-D_FORTIFY_SOURCE=3" if level3 else "-D_FORTIFY_SOURCE=2")
 print(" ".join(flags))
 print("-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack")
