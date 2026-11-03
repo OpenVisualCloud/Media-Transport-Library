@@ -1,9 +1,11 @@
 name: Build Artifacts
 description: >-
   Hash the sources of the checked-out commit, restore each cached build, build
-  only the missing ones, validate all of them, and save the new ones. The test
-  jobs of the same workflow restore the caches with the keys that this action
-  gives.
+  only the missing ones, validate all of them, and upload the install trees as
+  the artifact mtl-build. The test jobs of the same run download that artifact.
+  The cache only spares a rebuild, and only main saves it: GitHub evicts the
+  entries that no job read for a while once the repository holds more than
+  10 GB, and a pull request can read the caches of main.
 
 outputs:
   mtl_commit:
@@ -27,12 +29,6 @@ outputs:
   plugins_hash:
     description: st22 avcodec plugin source checksum
     value: ${{ steps.sums.outputs.plugins }}
-  jpegxs_cache_key:
-    description: Exact JPEG XS cache key produced by the build runner
-    value: ${{ steps.keys.outputs.jpegxs_key }}
-  ice_cache_key:
-    description: Exact kernel-specific ICE cache key produced by the build runner
-    value: ${{ steps.keys.outputs.ice_key }}
 
 runs:
   using: composite
@@ -146,15 +142,17 @@ runs:
       shell: bash
       run: task ci:validate-dependencies
 
+    # Main only. A pull request reads the caches of main, and its own entries
+    # would push those out of the 10 GB of the repository.
     - name: 'stash: Save DPDK cache'
-      if: success() && steps.cache-state.outputs.dpdk_miss == '1'
+      if: success() && github.ref == 'refs/heads/main' && steps.cache-state.outputs.dpdk_miss == '1'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         key: ${{ steps.keys.outputs.dpdk_key }}
         path: .local_install/dpdk
 
     - name: 'stash: Save MTL cache'
-      if: success() && steps.cache-state.outputs.mtl_miss == '1'
+      if: success() && github.ref == 'refs/heads/main' && steps.cache-state.outputs.mtl_miss == '1'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         key: ${{ steps.keys.outputs.mtl_key }}
@@ -164,36 +162,53 @@ runs:
           .local_install/conf
 
     - name: 'stash: Save JPEG XS cache'
-      if: success() && steps.cache-state.outputs.jpegxs_miss == '1'
+      if: success() && github.ref == 'refs/heads/main' && steps.cache-state.outputs.jpegxs_miss == '1'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         key: ${{ steps.keys.outputs.jpegxs_key }}
         path: .local_install/jpegxs
 
     - name: 'stash: Save FFmpeg cache'
-      if: success() && steps.cache-state.outputs.ffmpeg_miss == '1'
+      if: success() && github.ref == 'refs/heads/main' && steps.cache-state.outputs.ffmpeg_miss == '1'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         key: ${{ steps.keys.outputs.ffmpeg_key }}
         path: .local_install/ffmpeg
 
     - name: 'stash: Save GStreamer cache'
-      if: success() && steps.cache-state.outputs.gstreamer_miss == '1'
+      if: success() && github.ref == 'refs/heads/main' && steps.cache-state.outputs.gstreamer_miss == '1'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         key: ${{ steps.keys.outputs.gstreamer_key }}
         path: .local_install/gstreamer
 
     - name: 'stash: Save plugins cache'
-      if: success() && steps.cache-state.outputs.plugins_miss == '1'
+      if: success() && github.ref == 'refs/heads/main' && steps.cache-state.outputs.plugins_miss == '1'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         key: ${{ steps.keys.outputs.plugins_key }}
         path: .local_install/plugins
 
     - name: 'stash: Save ICE cache'
-      if: success() && steps.cache-state.outputs.ice_miss == '1'
+      if: success() && github.ref == 'refs/heads/main' && steps.cache-state.outputs.ice_miss == '1'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         key: ${{ steps.keys.outputs.ice_key }}
         path: .local_install/ice
+
+    - name: Pack the install trees
+      shell: bash
+      run: task ci:pack-build
+
+    - name: Upload the build for the test jobs of this run
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: mtl-build
+        path: mtl-build.tar.gz
+        if-no-files-found: error
+        # A re-run of a failed leg reuses the build of the first attempt, and a
+        # leg can wait up to a day in the queue for a fleet runner.
+        retention-days: 7
+        # The file is gzip already.
+        compression-level: 0
+        overwrite: true

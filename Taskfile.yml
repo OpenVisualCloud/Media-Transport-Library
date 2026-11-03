@@ -14,6 +14,8 @@ vars:
   EBPF_SCRIPT: '{{.TASKFILE_DIR}}/script/build_ebpf_xdp.sh'
   CI_SCRIPTS: '{{.TASKFILE_DIR}}/.github/scripts/ci'
   BANDIT_CONFIG: '{{.TASKFILE_DIR}}/.github/code-scan/bandit.config'
+  # The install trees that the build job hands to the test jobs of its run.
+  BUILD_TREES: .local_install/dpdk .local_install/mtl .local_install/conf .local_install/jpegxs .local_install/ffmpeg .local_install/gstreamer .local_install/plugins .local_install/ice
 
 tasks:
   default:
@@ -124,6 +126,19 @@ tasks:
         task: ci:validate-cache
         vars: {COMPONENT: '{{.ITEM}}'}
       - '[ "$({{.TASK_EXE}} --silent ci:ice-required)" != true ] || {{.TASK_EXE}} ci:validate-cache COMPONENT=ice'
+
+  # One tar, because an artifact keeps neither the symlinks nor the file modes.
+  ci:pack-build:
+    desc: Pack the install trees of the build job into mtl-build.tar.gz for the test jobs of the run
+    cmds:
+      - tar -czf mtl-build.tar.gz {{.BUILD_TREES}}
+
+  ci:unpack-build:
+    desc: Replace the install trees with the ones of mtl-build.tar.gz
+    cmds:
+      - rm -rf {{.BUILD_TREES}}
+      - tar -xzf mtl-build.tar.gz
+      - rm -f mtl-build.tar.gz
 
   ci:pytest-setup:
     desc: Prepare acceptance-test dependencies, session, NIC, or configuration

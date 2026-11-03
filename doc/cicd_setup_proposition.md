@@ -114,17 +114,29 @@ flowchart TD
 
 `BUILD` and the `GITHUB STASH` above are the `build` job of
 `.github/workflows/cicd-pr-check.yml`, `nightly.yml`, `performance.yml` and
-`custom-pytest.yml`: each one runs `.github/actions/build-artifacts`. The
-artifact store is `actions/cache`, keyed on a checksum of the sources that
-produce each artifact, so a run only pays for the components a pull request
-actually touched.
+`custom-pytest.yml`: each one runs `.github/actions/build-artifacts`. Two
+stores hold the artifacts:
 
-| stage in the diagram      | implementation                                       |
-| ------------------------- | ---------------------------------------------------- |
-| `LINTER` / `WAITS`        | `needs:` of the `build` job on the lint jobs         |
-| `COMPUTES SOURCE SHA-256` | `build` job, `script/hash_sources.sh`                |
-| `GITHUB STASH`            | `actions/cache`, keys `stash-<component>-<checksum>` |
-| `BUILD`                   | `build` job on the self-hosted `e835` fleet runner   |
+- `actions/cache`, keyed on a checksum of the sources that produce each
+  artifact, so a run only builds the components a pull request touched. Only
+  `main` saves it. A pull request reads the caches of `main` and saves none,
+  because GitHub evicts the entries that no job read for a while once the
+  repository holds more than 10 GB. A `maint-**` branch saves none either, so
+  it builds each component that differs from `main` on each run.
+- The workflow artifact `mtl-build` (`task ci:pack-build`, one day of
+  retention). The build job uploads all install trees, and the `validate-host`
+  action of each test job of the same run downloads them
+  (`task ci:unpack-build`). A test job that waits hours for a fleet runner
+  still gets the build, because GitHub does not evict an artifact. It stays 7
+  days, so a re-run of a failed leg, which reuses the build of the first
+  attempt, finds it.
+
+| stage in the diagram      | implementation                                        |
+| ------------------------- | ----------------------------------------------------- |
+| `LINTER` / `WAITS`        | `needs:` of the `build` job on the lint jobs          |
+| `COMPUTES SOURCE SHA-256` | `build` job, `script/hash_sources.sh`                 |
+| `GITHUB STASH`            | `actions/cache` of `main`, keys `stash-v3-<component>-<checksum>`, and the artifact `mtl-build` of the run |
+| `BUILD`                   | `build` job on the self-hosted `dpdk` runner          |
 
 The checksums waterfall, so that rebuilding a component invalidates everything
 downstream of it:
@@ -178,8 +190,7 @@ regression from a test change. Left empty, nothing is overlaid.
 The `build` job resolves `branch` to a commit once and exports it as
 `mtl_commit`. The test jobs check out that commit and apply the same overlay.
 They have to: the source hashes include `.github/` files, so a job that hashed
-any other tree would miss the stash the build saved, or restore the stash of
-another tree.
+any other tree would test other code than the build built.
 
 The hash script and its lists come from the workflow commit too, so every
 `branch` keys its stash on the CI files the current build uses; older lists
@@ -190,7 +201,7 @@ commit's; the second pass runs it.
 The test jobs check this, with or without `branch`. They pass
 `build_outputs: ${{ toJSON(needs.build.outputs) }}` to `validate-host`, which
 logs the built commit, the checked-out commit and each checksum. If any
-checksum differs from the build's, it fails before restoring a cache.
+checksum differs from the build's, it fails before it downloads the build.
 
 ## Proposed host dependency outputs
 
@@ -221,10 +232,10 @@ Kernel release and architecture are part of the cache key. `validate-host`
 rejects incompatible modules before touching the NIC and uses SHA-256, not
 MD5, for identity.
 
-There is one ICE producer, the `build` job, running on the `e835` fleet runner
-so the artifact is built against the validation kernel ABI. The dedicated `e810`,
-`e830`, and `e835` hardware validation hosts share that ABI, so all validation
-jobs restore the same ICE cache entry. NIC type is not part of the key and does
+There is one ICE producer, the `build` job on the `dpdk` runner, whose kernel
+must be the kernel of the validation hosts. The dedicated `e810`, `e830`, and
+`e835` hardware validation hosts share that ABI, so all validation jobs use the
+same ICE bundle of the `mtl-build` artifact. NIC type is not part of the key and does
 not require separate producer jobs. A kernel mismatch indicates runner drift
 and fails validation instead of triggering a host-side build.
 

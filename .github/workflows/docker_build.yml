@@ -105,7 +105,9 @@ jobs:
           file: "${{ github.workspace }}/${{ matrix.dockerfile }}"
           tags: "${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REGISTRY_PREFIX }}/${{ env.DOCKER_IMAGE_NAME }}${{ matrix.image_suffix }}:${{ env.DOCKER_IMAGE_TAG }}"
           cache-from: "type=gha,scope=${{ env.DOCKER_IMAGE_NAME }}-${{ matrix.name }}"
-          cache-to: "type=gha,scope=${{ env.DOCKER_IMAGE_NAME }}-${{ matrix.name }},mode=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'max' || 'min' }}"
+          # Main only: the layers of a pull request push the caches of main out
+          # of the 10 GB of the repository.
+          cache-to: "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('type=gha,scope={0}-{1},mode=max', env.DOCKER_IMAGE_NAME, matrix.name) || '' }}"
 
   manager-docker-build:
     needs: changes
@@ -156,7 +158,9 @@ jobs:
           file: "${{ github.workspace }}/manager/Dockerfile"
           tags: "${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REGISTRY_PREFIX }}/${{ env.DOCKER_IMAGE_NAME }}:${{ env.DOCKER_IMAGE_TAG }}"
           cache-from: "type=gha,scope=${{ env.DOCKER_IMAGE_NAME }}"
-          cache-to: "type=gha,scope=${{ env.DOCKER_IMAGE_NAME }},mode=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'max' || 'min' }}"
+          # Main only: the layers of a pull request push the caches of main out
+          # of the 10 GB of the repository.
+          cache-to: "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('type=gha,scope={0},mode=max', env.DOCKER_IMAGE_NAME) || '' }}"
           build-args: VERSION=${{ steps.version.outputs.VERSION }}
 
   compose-validate:

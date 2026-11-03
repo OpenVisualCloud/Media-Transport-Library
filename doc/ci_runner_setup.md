@@ -87,7 +87,7 @@ chosen for a card with two ports. The resolved value is exported as
 
 Only the E8xx family is served by the out-of-tree ICE driver. `task ci:ice-required`
 answers for the label in `NIC`, and `.github/actions/validate-host` skips both
-the ICE cache restore and the driver alignment when the answer is `false` — an
+the ICE validation and the driver alignment when the answer is `false` — an
 i225 runner neither needs a kernel module built for a card it does not have, nor
 should fail because that artifact was built for a different kernel. An unlabeled
 runner (the performance rig) is assumed to need it, which is what every job did
@@ -504,10 +504,11 @@ Three prerequisites are easy to miss:
 ## A test leg that waits for the fleet
 
 The bare-metal test jobs do not build their own artifacts: in each of
-`cicd-pr-check.yml`, `nightly.yml` and `performance.yml`, the smoke, gtest and
-pytest legs need the `build` job of the same run, and start only when it is
-green. No job polls for another workflow. While the build host is busy, the
-`build` job and the legs after it stay queued; the queue in front of the build
+`cicd-pr-check.yml`, `nightly.yml`, `performance.yml` and `custom-pytest.yml`,
+the smoke, gtest and pytest legs need the `build` job of the same run, start
+only when it is green, and download its install trees as the artifact
+`mtl-build`. No job polls for another workflow. While the build host is busy,
+the `build` job and the legs after it stay queued; the queue in front of the build
 host is often longer than the build itself.
 
 A build that ran and failed skips the legs, and the `*-result` check fails

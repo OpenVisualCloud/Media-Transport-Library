@@ -59,8 +59,9 @@ jobs:
       clang_tidy: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && steps.filter.outputs.clang_tidy == 'true')) }}
       cargo_audit: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.cargo_audit == 'true' }}
       bandit: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.bandit == 'true' }}
-      # clang-tidy needs the DPDK of this commit. When a cache has it, clang-tidy
-      # starts at once; when not, it needs the build job that saves it.
+      # clang-tidy needs the DPDK of this commit. When a cache of main has it,
+      # clang-tidy starts at once; when not, it needs the build job and its
+      # artifact.
       dpdk_cached: ${{ steps.dpdk.outputs.cache-hit == 'true' }}
     steps:
       - name: Harden Runner
@@ -310,8 +311,6 @@ jobs:
       ffmpeg_hash: ${{ steps.build.outputs.ffmpeg_hash }}
       gstreamer_hash: ${{ steps.build.outputs.gstreamer_hash }}
       plugins_hash: ${{ steps.build.outputs.plugins_hash }}
-      jpegxs_cache_key: ${{ steps.build.outputs.jpegxs_cache_key }}
-      ice_cache_key: ${{ steps.build.outputs.ice_cache_key }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -584,8 +583,9 @@ jobs:
 
   # ── Code scan ──
   # clang-tidy on the changed C and C++ lines and the Clang Static Analyzer.
-  # They configure MTL against the DPDK cache of this commit: the first job
-  # runs when a cache already has it, the second after the build job saves it.
+  # They configure MTL against the DPDK of this commit: the first job runs when
+  # a cache of main already has it, the second takes it from the build
+  # artifact of the run.
   clang-tidy:
     needs: changes
     if: ${{ needs.changes.outputs.clang_tidy == 'true' && needs.changes.outputs.dpdk_cached == 'true' }}
@@ -630,6 +630,7 @@ jobs:
         uses: ./.github/actions/clang-tidy
         with:
           changed_lines: ${{ github.event_name == 'pull_request' }}
+          build_artifact: 'true'
 
   cargo-audit:
     needs: changes
