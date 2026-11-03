@@ -2152,7 +2152,7 @@ int ut_txv_pipe_setup(ut_txv_ctx* ctx, const struct ut_txv_pipe_case* c) {
   s->bulk = RTE_MIN(4, ST_SESSION_MAX_BULK);
   s->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
   s->ring_count = ST_TX_VIDEO_SESSIONS_RING_SIZE;
-  while (s->ring_count > s->st20_total_pkts) s->ring_count /= 2;
+  while (s->ring_count > (unsigned int)s->st20_total_pkts) s->ring_count /= 2;
   s->tx_no_chain = c->copy;
   s->socket_id = (int)rte_socket_id();
   s->tx_hang_detect_time_thresh = UINT64_MAX;
@@ -2227,7 +2227,7 @@ int ut_txv_pipe_teardown(ut_txv_ctx* ctx) {
     }
     if (s->inflight[i][0]) rte_pktmbuf_free_bulk(s->inflight[i], s->bulk);
     s->inflight[i][0] = NULL;
-    for (int j = 0; j < s->trs_inflight_num[i]; j++)
+    for (unsigned int j = 0; j < s->trs_inflight_num[i]; j++)
       rte_pktmbuf_free(s->trs_inflight[i][s->trs_inflight_idx[i] + j]);
     s->trs_inflight_num[i] = 0;
     ut_txr_destroy(ctx->pipe_ring[i]);

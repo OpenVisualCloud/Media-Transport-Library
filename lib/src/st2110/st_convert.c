@@ -877,7 +877,7 @@ int st_field_split(const struct st_frame* frame, struct st_frame* first,
 
 int st_frame_get_converter(enum st_frame_fmt src_fmt, enum st_frame_fmt dst_fmt,
                            struct st_frame_converter* converter) {
-  for (int i = 0; i < MTL_ARRAY_SIZE(converters); i++) {
+  for (size_t i = 0; i < MTL_ARRAY_SIZE(converters); i++) {
     if (src_fmt == converters[i].src_fmt && dst_fmt == converters[i].dst_fmt) {
       *converter = converters[i];
       return 0;
@@ -938,10 +938,10 @@ static int downsample_rfc4175_wh_half(struct st_frame* old_frame,
 #endif
 
   /* scalar fallback */
-  for (int line = 0; line < height; line++) {
+  for (uint32_t line = 0; line < height; line++) {
     uint8_t* src = src_start + src_linesize * line * 2;
     uint8_t* dst = dst_start + dst_linesize * line;
-    for (int pg = 0; pg < width / st20_pg.coverage; pg++) {
+    for (uint32_t pg = 0; pg < width / st20_pg.coverage; pg++) {
       mt_memcpy(dst, src, st20_pg.size);
       src += 2 * st20_pg.size;
       dst += st20_pg.size;
@@ -1107,7 +1107,7 @@ static int st20_rfc4175_422be10_to_yuv422p10le_scalar_2way(
     uint16_t* b_decimated, uint16_t* r_decimated, int decimator) {
   uint32_t pg_per_line = w / 2; /* two pgs in one convert */
   uint16_t cb, y0, cr, y1;
-  int stride = decimator - 1;
+  uint32_t stride = decimator - 1;
 
   for (uint32_t line = 0; line < h; line++) {
     for (uint32_t p = 0; p < pg_per_line; p++) {
@@ -1837,7 +1837,7 @@ int st20_rfc4175_422be10_to_v210_scalar_2way(uint8_t* pg_be, uint8_t* pg_v210_fu
   uint32_t line_pg_count = w / 2;
 
   uint32_t line_batch = line_pg_count / 3;
-  int stride = decimator - 1;
+  uint32_t stride = decimator - 1;
   for (uint32_t line = 0; line < h; line++) {
     for (uint32_t i = 0; i < line_batch; i++) {
       pg_v210_full[0] = pg_be[0] << 2 | pg_be[1] >> 6;

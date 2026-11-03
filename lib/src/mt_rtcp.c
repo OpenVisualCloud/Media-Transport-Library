@@ -28,7 +28,7 @@ static int rtp_seq_num_cmp(uint16_t seq0, uint16_t seq1) {
 int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs,
                                   unsigned int bulk) {
   if (!tx->active) return 0;
-  if (mt_u64_fifo_free_count(tx->mbuf_ring) < bulk) {
+  if ((unsigned int)mt_u64_fifo_free_count(tx->mbuf_ring) < bulk) {
     struct rte_mbuf* clean_mbufs[bulk];
     if (mt_u64_fifo_get_bulk(tx->mbuf_ring, (uint64_t*)clean_mbufs, bulk) < 0) {
       err("%s(%s), failed to dequeue mbuf from ring\n", __func__, tx->name);
