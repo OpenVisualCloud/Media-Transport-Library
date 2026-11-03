@@ -2,13 +2,13 @@
 
 NIC setup steps for Intel® E810 and E830 Series Ethernet Adapters
 
-## 1. Update Driver Version with Media Transport Library Patches
+## 1. Update Driver Version
 
-The Media Transport Library needs rate limit patches that the E810/E830 driver does not include. Apply these patches to the driver, then rebuild it.
+From driver version 2.7.6 on, the Media Transport Library runs on the E810/E830 driver as Intel releases it. An earlier version needs the rate limit patches of the Media Transport Library: apply them to the driver, then rebuild it.
 
 > **Note:** After a reboot, Ubuntu can upgrade to a new kernel version. If the kernel changes, rebuild the driver for the new kernel.
 
-`./script/build_drivers.sh --driver ice` does Sections 1.1 to 1.4 in one command. It downloads the driver version in `versions.env`, applies the patches, then builds, installs, and reloads the driver. It needs the headers of the running kernel, which `./script/install_dependencies.sh ice` installs on Ubuntu.
+`./script/build_drivers.sh --driver ice` does Sections 1.1 to 1.4 in one command. It downloads the driver version in `versions.env`, applies the patches of that version if it has any, then builds, installs, and reloads the driver. It needs the headers of the running kernel, which `./script/install_dependencies.sh ice` installs on Ubuntu.
 Run the commands from the top of the Media Transport Library source tree.
 
 ```bash
@@ -16,7 +16,7 @@ Run the commands from the top of the Media Transport Library source tree.
 ./script/build_drivers.sh --driver ice
 ```
 
-The script does nothing if the patched driver of that version is already installed for the running kernel. Use `--force` to rebuild it anyway.
+The script does nothing if the driver of that version is already installed for the running kernel. Use `--force` to rebuild it anyway.
 The driver reload removes the VFs of each E800-series PF, so create them again after the script finishes.
 Then continue with [Section 1.5](#15-verify-both-the-driver-and-ddp-version) to verify the driver.
 
@@ -46,7 +46,8 @@ cd ice-${ICE_VER}
 
 ### 1.3. Patch the Driver with Rate Limit Patches
 
-The [ice_drv patch folder](../patches/ice_drv/) holds one folder per driver version. `ICE_VER` selects the correct one.
+Driver version 2.7.6 and later need no patches, so skip this section for them.
+The [ice_drv patch folder](../patches/ice_drv/) holds one folder per earlier driver version. `ICE_VER` selects the correct one.
 
 ```bash
 git init
@@ -55,7 +56,7 @@ git commit -m "init version ${ICE_VER}"
 git am $mtl_source_code/patches/ice_drv/${ICE_VER}/*.patch
 ```
 
-Use `git log` to check that the latest commit updates the driver version. Every patch folder ends with this commit. For driver version 2.6.6 its subject is `version: update to Kahawai_2.6.6`, but some older driver versions use a different format.
+Use `git log` to check that the latest commit updates the driver version. Every patch folder ends with this commit. Its subject is `version: update to Kahawai_<ICE_VER>`, but some older driver versions use a different format.
 
 ### 1.4. Build and Install the Driver
 
@@ -100,8 +101,10 @@ sudo dmesg | grep "Intel(R) Ethernet Connection E800 Series Linux Driver" | tail
 ```
 
 ```text
-ice: Intel(R) Ethernet Connection E800 Series Linux Driver - version Kahawai_<ICE_VER>
+ice: Intel(R) Ethernet Connection E800 Series Linux Driver - version <ICE_VER>
 ```
+
+A patched driver version before 2.7.6 shows `Kahawai_<ICE_VER>` as its version.
 
 Use similar steps to verify the DDP version.
 
@@ -198,6 +201,15 @@ The reload does not restore the VFs, so create them again on every PF you disabl
 For a two-port card, run `sudo $mtl_source_code/script/nicctl.sh create_vf 0000:af:00.0` and then the same command for `0000:af:00.1`.
 [The MTL Run Guide](run.md#3-dpdk-pmd-setup) shows this step.
 `create_vf` makes 6 VFs, so give the count as a last argument if you had a different number.
+The `create_vf`, `create_tvf` and `create_kvf` commands also give each VF a 512-entry RSS LUT.
+A VF with the default 64-entry LUT gets at most 16 queue pairs, so a port has no TX queue for its 16th video session and the session fails with `fail to find free tx queue`.
+For VFs made another way, for example with `sriov_numvfs`, run `sudo $mtl_source_code/script/nicctl.sh vf_rss_lut <PF BDF>`, or write the size before the application starts:
+
+```bash
+echo 512 | sudo tee /sys/bus/pci/devices/<VF BDF>/rss_lut_vf_attr
+```
+
+> **Note:** A VF takes the new LUT at its next reset. DPDK resets the VF when it starts, but a kernel driver does so only at its probe.
 The Media Transport Library does not use `irdma`, so leave it unloaded.
 If something else on this host needs RDMA, run `sudo modprobe irdma`.
 
@@ -247,7 +259,7 @@ A correct setup shows output similar to the following:
 
 ```text
 driver: ice
-version: Kahawai_<ICE_VER>
+version: <ICE_VER>
 # For E810:
 firmware-version: 4.91 0x800214af 1.3909.0
 # For E830:

@@ -401,6 +401,29 @@ function require_root() {
 	return 1
 }
 
+# From ICE_RELEASE_MIN_VER on, MTL runs on the ICE release unpatched. An earlier
+# version needs patches/ice_drv/<version>, whose last patch renames the driver
+# Kahawai_<version>, some with a date suffix.
+ICE_RELEASE_MIN_VER=2.7.6
+
+# True when ICE version $1 is ICE_RELEASE_MIN_VER or later.
+function ice_version_is_release() {
+	[ -n "$1" ] && [ "$(printf '%s\n%s\n' "${ICE_RELEASE_MIN_VER}" "$1" | sort -V | head -n 1)" = "${ICE_RELEASE_MIN_VER}" ]
+}
+
+# True when $1, the version an ice module reports, is what MTL builds of ICE
+# version $2: Kahawai_<version>* for an earlier version or one with a patch
+# folder, else exactly <version>. An empty $2 matches nothing.
+function ice_driver_version_ok() {
+	if [ -z "$2" ]; then
+		return 1
+	elif ! ice_version_is_release "$2" || [ -d "${REPO_DIR}/patches/ice_drv/$2" ]; then
+		[[ "$1" == "Kahawai_$2"* ]]
+	else
+		[ "$1" = "$2" ]
+	fi
+}
+
 function github_api_call() {
 	url=$1
 	shift

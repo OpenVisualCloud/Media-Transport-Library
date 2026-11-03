@@ -32,11 +32,15 @@ Commands:
 	create_kvf <bdf> [n]		Create VFs and bind to kernel driver
 	create_tvf <bdf> [n]		Create trusted VFs, bind to VFIO, and bring PF UP
 	disable_vf <bdf>		Disable VF
+	vf_rss_lut <bdf>		Give the idle VFs of a PF a 512-entry RSS LUT
 	list all			List all NIC devices and the brief
 	list up				List all NIC devices and the brief with UP status
 	list <bdf>			List VFs of the specified PF
 
-	The default VF count [n] is 6.
+	The default VF count [n] is 6. On an ice PF, the create commands give each
+	VF a 512-entry RSS LUT (rss_lut_vf_attr), so it can have more than 16 queue
+	pairs. vf_rss_lut does so for VFs made another way that are on vfio-pci and
+	that no process holds open.
 
 ENVIRONMENT:
 	MTL_INSTALL_PREFIX	The MTL prefix: find dpdk-devbind.py in its dpdk
@@ -87,6 +91,39 @@ disable_vf() {
 	echo 0 >/sys/bus/pci/devices/"$bdf"/sriov_numvfs
 }
 
+# True when VF $1 has rss_lut_vf_attr (out-of-tree ice only) with fewer than 512
+# entries. With the default 64 a VF gets at most 16 queue pairs; with 512 the PF
+# grants it more, from the next reset of the VF on.
+vf_rss_lut_small() {
+	local attr="/sys/bus/pci/devices/$1/rss_lut_vf_attr"
+	[ -e "$attr" ] && [ "$(cat "$attr" 2>/dev/null)" != 512 ]
+}
+
+set_vf_rss_lut() {
+	if vf_rss_lut_small "$1" && ! { echo 512 >"/sys/bus/pci/devices/$1/rss_lut_vf_attr"; } 2>/dev/null; then
+		log_warning "$1 keeps its small RSS LUT and at most 16 queue pairs"
+	fi
+}
+
+# set_vf_rss_lut for each VF of the PF on vfio-pci that no process holds open,
+# as the LUT of a VF in use would change under its driver.
+vf_rss_lut() {
+	local vfpath vf group held
+	for vfpath in /sys/bus/pci/devices/"$bdf"/virtfn*; do
+		vf=$(basename "$(readlink -f "$vfpath")")
+		vf_rss_lut_small "$vf" || continue
+		group=$(basename "$(readlink -f "$vfpath/iommu_group")")
+		# find fails when a process exits under it, so only its output counts.
+		held=$(find /proc/[0-9]*/fd \( -lname "/dev/vfio/$group" -o -lname "/dev/vfio/noiommu-$group" \) \
+			-print -quit 2>/dev/null || true)
+		if [ "$(basename "$(readlink -f "$vfpath/driver")")" != vfio-pci ] || [ -n "$held" ]; then
+			log_warning "$vf is in use or not on vfio-pci; create the VFs again to give it a 512-entry RSS LUT"
+			continue
+		fi
+		set_vf_rss_lut "$vf"
+	done
+}
+
 create_vf() {
 	local numvfs=$1 trusted="${2:-}" bifurcated_driver=0 kernel_drv i vfpath vfport vfif
 
@@ -116,6 +153,7 @@ create_vf() {
 			if dpdk-devbind.py -b vfio-pci "$vfport"; then
 				log_success "Bind $vfport($vfif) to vfio-pci success"
 			fi
+			set_vf_rss_lut "$vfport"
 		else
 			log_info "PMD uses bifurcated driver, No need to bind the $vfport($vfif) to vfio-pci"
 		fi
@@ -123,15 +161,39 @@ create_vf() {
 }
 
 create_kvf() {
-	local numvfs=$1 i vfpath vfport vfif
-	# Enable VFs
+	local numvfs=$1 autoprobe="/sys/bus/pci/devices/$bdf/sriov_drivers_autoprobe"
+	local autoprobe_was vfports=() vfpath vfport vfif
+	if [ ! -e "$autoprobe" ]; then
+		log_error "$bdf has no SR-IOV: $autoprobe does not exist"
+		exit 1
+	fi
+	# iavf asks for its queue pairs when it probes a VF, so the VFs get their RSS
+	# LUT before the probe: autoprobe off to create them, on to probe them (also
+	# drivers_probe needs it), then back to what it was, also if a step fails.
+	autoprobe_was=$(<"$autoprobe")
+	# shellcheck disable=SC2064
+	trap "echo '$autoprobe_was' >'$autoprobe'" EXIT
+	echo 0 >"$autoprobe"
 	echo "$numvfs" >/sys/bus/pci/devices/"$bdf"/sriov_numvfs
-	for ((i = 0; i < numvfs; i++)); do
-		vfpath="/sys/bus/pci/devices/$bdf/virtfn$i"
-		vfport=$({ readlink "$vfpath" | awk -F/ '{print $NF;}'; } || true)
+	for vfpath in /sys/bus/pci/devices/"$bdf"/virtfn*; do
+		[ -e "$vfpath" ] || continue
+		vfports+=("$(basename "$(readlink -f "$vfpath")")")
+	done
+	for vfport in "${vfports[@]}"; do
+		set_vf_rss_lut "$vfport"
+	done
+	echo 1 >"$autoprobe"
+	for vfport in "${vfports[@]}"; do
+		echo "$vfport" >/sys/bus/pci/drivers_probe
+		if [ ! -e "/sys/bus/pci/devices/$vfport/driver" ]; then
+			log_warning "No kernel driver took $vfport"
+			continue
+		fi
 		vfif=$(devbind_field "$vfport" if)
 		log_success "Bind $vfport($vfif) to kernel success"
 	done
+	echo "$autoprobe_was" >"$autoprobe"
+	trap - EXIT
 }
 
 # Data on stdout: one VF BDF a line, or "No VFs found for <bdf>".
@@ -227,7 +289,7 @@ main() {
 	fi
 
 	case "$cmd" in
-	bind_kernel | create_vf | create_kvf | create_tvf | disable_vf | bind_pmd | list) ;;
+	bind_kernel | create_vf | create_kvf | create_tvf | disable_vf | bind_pmd | vf_rss_lut | list) ;;
 	*)
 		log_error "Command $1 not found"
 		show_help >&2
@@ -265,6 +327,12 @@ main() {
 		exit 1
 	fi
 	log_info "$bdf_stat"
+
+	if [ "$cmd" == "vf_rss_lut" ]; then
+		vf_rss_lut
+		log_success "RSS LUT of the VFs of $bdf done"
+		exit 0
+	fi
 
 	inf=$(devbind_field "$bdf" if)
 	if [ "$cmd" == "bind_kernel" ]; then

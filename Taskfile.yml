@@ -103,7 +103,7 @@ tasks:
       - bash {{.CI_SCRIPTS}}/host/activate-ice.sh
 
   ci:ice-required:
-    desc: Report whether this job's NIC needs the Kahawai ICE driver
+    desc: Report whether this job's NIC needs the out-of-tree ICE driver
     cmds:
       - |
         nic="{{.CLI_ARGS}}"

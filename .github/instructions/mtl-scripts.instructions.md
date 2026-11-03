@@ -116,7 +116,7 @@ another layer.
 | Job environment: `PATH`, `PKG_CONFIG_PATH`, `GST_PLUGIN_PATH`, `KAHAWAI_CFG_PATH` | Test cycle | `ci:configure-host -- environment` |
 | Acceptance virtualenv cache, free disk space, generated test configuration | Test cycle | `ci:pytest-setup` steps of the test job |
 | Same tree, ICE module and DMA binding on the shadow host | Test cycle | `ci:configure-host -- shadow-*` |
-| Number of VFs on a PF, and their bind to `vfio-pci` | Test | `gtest.sh` `create_vfs`, `Nicctl.create_vfs` |
+| Number of VFs on a PF, their bind to `vfio-pci`, and their 512-entry RSS LUT | Test | `gtest.sh` `create_vfs`, `Nicctl.create_vfs` (`nicctl.sh vf_rss_lut` for VFs they reuse) |
 | A PF on `vfio-pci` for a PF test, or on its kernel driver for a kernel socket test | Test | pytest fixtures, `script/nicctl.sh` |
 | Owner of the `/dev/vfio` nodes for the test account | Test | `Nicctl.grant_vfio_access` |
 | C-state limit (`/dev/cpu_dma_latency`), for a test that needs it | Test | the fixture of that test (no test needs it yet) |

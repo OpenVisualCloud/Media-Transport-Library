@@ -138,6 +138,36 @@ PY
 
 test_jpegxs_helpers
 
+# The ICE version rule that build_drivers.sh, mtl_host_common.sh and
+# validate-ice.sh share: "<driver version> <ICE version> <accepted: yes or no>".
+test_ice_version_rule() {
+	local driver ver want got refusal
+	while read -r driver ver want; do
+		got=no
+		if bash -c '. script/common.sh; ice_driver_version_ok "$1" "$2"' _ "${driver}" "${ver}"; then
+			got=yes
+		fi
+		[ "${got}" = "${want}" ] ||
+			fail script/common.sh "ice_driver_version_ok '${driver}' '${ver}' is ${got}, not ${want}"
+	done <<'CASES'
+2.7.6 2.7.6 yes
+Kahawai_2.7.6 2.7.6 no
+2.10.1 2.10.1 yes
+Kahawai_2.6.7 2.6.7 yes
+Kahawai_1.13.7_20240220 1.13.7 yes
+2.6.7 2.6.7 no
+Kahawai_2.6.6 2.6.7 no
+Kahawai_2.6.8 2.6.8 yes
+2.6.8 2.6.8 no
+CASES
+	# The message, not any failure: a host without kernel headers fails as well.
+	refusal=$(bash script/build_drivers.sh --driver ice --build-only --ice-version 2.6.8 2>&1 || true)
+	grep -q 'No ICE patches for version 2.6.8' <<<"${refusal}" ||
+		fail script/build_drivers.sh "did not refuse ICE 2.6.8, which is before 2.7.6 and has no patch folder"
+}
+
+test_ice_version_rule
+
 bash script/check_dpdk_patches.sh || fail script/check_dpdk_patches.sh "the DPDK patches do not apply clean"
 bash script/build_ebpf_xdp.sh --check build || echo "build_ebpf_xdp.sh --check build: the host does not have each package"
 

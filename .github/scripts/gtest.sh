@@ -265,7 +265,7 @@ create_vfs() {
 
 # What the suite runs on: four ports of one PF.
 discover_ports() {
-	local listing="${TMP_FOLDER}/ports.listing" ports=() free_pages
+	local listing="${TMP_FOLDER}/ports.listing" ports=() free_pages physfn
 
 	nicctl_list "${listing}" all || true
 	mapfile -t ports < <(ports_of_one_pf "${listing}")
@@ -293,6 +293,13 @@ discover_ports() {
 	export TEST_PORT_1="${ports[0]}" TEST_PORT_2="${ports[1]}"
 	export TEST_PORT_3="${ports[2]}" TEST_PORT_4="${ports[3]}"
 	mapfile -t noctx_port < <(noctx_ports "${listing}" "${ports[@]:0:4}")
+	# VFs that the host kept from an earlier nicctl.sh may have the 64-entry RSS
+	# LUT and 16 queue pairs: fix them on the PF of the suite and, as noctx_port
+	# alternates the two, the PF of noctx_port[1].
+	for physfn in "/sys/bus/pci/devices/${ports[0]}/physfn" "/sys/bus/pci/devices/${noctx_port[1]:-}/physfn"; do
+		[ -e "${physfn}" ] || continue
+		nicctl_vf vf_rss_lut "$(basename "$(readlink -f "${physfn}")")" || echo "✗ nicctl.sh vf_rss_lut failed"
+	done
 	# The library probes the DMA devices on vfio-pci on the NUMA node of the
 	# ports itself. A host with none runs the DMA cases as skipped.
 	export TEST_DMA_ARG="--dma_auto"

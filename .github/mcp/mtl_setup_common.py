@@ -204,7 +204,7 @@ def ice_driver_status() -> str:
 
 
 def ice_driver_rebuild() -> str:
-    """Build and install the patched out-of-tree ICE driver, then reload it."""
+    """Build and install the out-of-tree ICE driver, then reload it."""
     rc, out = _call_host_lib("mh_ice_driver_rebuild", timeout=600)
 
     return (

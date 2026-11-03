@@ -18,7 +18,8 @@ Build drivers used by Media Transport Library.
 By default, all driver flows are built.
 
 REQUIRED PACKAGES (Debian/Ubuntu):
-	gcc make patch tar gzip wget linux-headers-\$(uname -r)
+	gcc make tar gzip wget linux-headers-\$(uname -r)
+	patch, for an ICE version with a folder in patches/ice_drv/
 
 OPTIONS:
 	--driver <ice|igc>		Build only the selected driver flow
@@ -48,24 +49,33 @@ EXAMPLES:
 EOF
 }
 
-build_ice() {
-	local archive_name="ice-${ICE_VER}.tar.gz"
+# Refuse a version before ICE_RELEASE_MIN_VER that has no patch folder, ahead of
+# the installed-driver check, so that an installed build of it is not taken either.
+check_ice_version() {
 	local patch_root="${REPO_DIR}/patches/ice_drv"
-	local patch_dir="${patch_root}/${ICE_VER}"
-	local github_archive=0
-	local patch_file module
-	local tools=(make:make "${CC:-cc}:gcc" patch:patch tar:tar gzip:gzip)
-
-	if [[ ! -d "${patch_dir}" ]]; then
-		log_error "No ICE patches for version ${ICE_VER}."
-		log_error "Directory does not exist: ${patch_dir}"
-		log_error "Available ICE versions: $(find -L "${patch_root}" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort -V | paste -sd' ')"
+	if [[ ! -d "${patch_root}/${ICE_VER}" ]] && ! ice_version_is_release "${ICE_VER}"; then
+		log_error "No ICE patches for version ${ICE_VER}, which a version before ${ICE_RELEASE_MIN_VER} needs."
+		log_error "Available ICE versions: $(find -L "${patch_root}" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort -V | paste -sd' '), ${ICE_RELEASE_MIN_VER} and later"
 		exit 1
 	fi
+}
 
+build_ice() {
+	local archive_name="ice-${ICE_VER}.tar.gz"
+	local patch_dir="${REPO_DIR}/patches/ice_drv/${ICE_VER}"
+	local github_archive=0
+	local patch_file module installed
+	local tools=(make:make "${CC:-cc}:gcc" tar:tar gzip:gzip)
+
+	if [[ -d "${patch_dir}" ]]; then
+		tools+=(patch:patch)
+	fi
+
+	installed=$(modinfo -F version ice 2>/dev/null || true)
 	if [[ "${BUILD_ONLY}" == "false" && "${FORCE}" == "false" ]] &&
-		modinfo ice 2>/dev/null | grep -Ei "^version:[[:space:]]*Kahawai_${ICE_VER}" >/dev/null; then
-		log_success "ICE driver version ${ICE_VER} (Kahawai) is already installed. Skipping rebuild."
+		[[ "$(modinfo -n ice 2>/dev/null)" == *"/updates/"* ]] &&
+		ice_driver_version_ok "${installed}" "${ICE_VER}"; then
+		log_success "ICE driver version ${installed} is already installed. Skipping rebuild."
 		return
 	fi
 
@@ -116,14 +126,16 @@ build_ice() {
 	}
 
 	pushd "ice-${ICE_VER}" >/dev/null
-	for patch_file in "${patch_dir}"/*.patch; do
-		# --batch: a patch that does not fit this release must fail the build, not
-		# stop on "File to patch:" and wait for a terminal nobody is watching.
-		patch -p1 --batch --no-backup-if-mismatch -i "${patch_file}" || {
-			log_error "Failed to apply $(basename "${patch_file}") to ice-${ICE_VER}."
-			exit 1
-		}
-	done
+	if [[ -d "${patch_dir}" ]]; then
+		for patch_file in "${patch_dir}"/*.patch; do
+			# --batch: a patch that does not fit this release must fail the build, not
+			# stop on "File to patch:" and wait for a terminal nobody is watching.
+			patch -p1 --batch --no-backup-if-mismatch -i "${patch_file}" || {
+				log_error "Failed to apply $(basename "${patch_file}") to ice-${ICE_VER}."
+				exit 1
+			}
+		done
+	fi
 	make -C src -j"${NPROC}" CC="${CC:-cc}"
 	if [[ "${BUILD_ONLY}" == "false" ]]; then
 		as_root make -C src install
@@ -268,6 +280,7 @@ main() {
 	# Before the download: an out-of-tree module needs the headers of the kernel it is
 	# built for, and make reports that as a missing target deep in the driver tree.
 	if [[ "${BUILD_ICE}" == "true" ]]; then
+		check_ice_version
 		test -d "/lib/modules/$(uname -r)/build" || {
 			log_error "kernel headers are missing for $(uname -r): install linux-headers-$(uname -r)"
 			exit 1

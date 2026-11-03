@@ -11,7 +11,7 @@ inputs:
   nic:
     description: >-
       NIC label of the runner this job landed on, i.e. runs-on. It decides
-      whether the host needs the Kahawai ICE driver: only the E8xx family is
+      whether the host needs the out-of-tree ICE driver: only the E8xx family is
       served by ice, so an i225/i226 runner neither restores that artifact nor
       aligns the module. Empty means "assume it is needed", which is what an
       unlabeled runner such as the performance rig gets.

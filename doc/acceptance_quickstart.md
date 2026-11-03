@@ -262,7 +262,7 @@ directly. Re-run `setup --base-only` or `setup --pytest-only` to repair it.
 | `EBU server configuration not found`, test still PASSED | Data path passed, compliance skipped. Configure `ebu_server` + `capture_cfg`. |
 | Test hangs past `--time` + ~30 s | Stale process: `sudo pkill -9 RxTxApp MtlManager ffmpeg gst-launch-1.0`. |
 | EAL hugepage or VF binding errors | Hugepages exhausted, or VFs not bound to `vfio-pci`. Re-run setup. |
-| `RxTxApp` segfault in `iavf_tm_node_add` | Stock kernel `ice` loaded instead of the patched out-of-tree build. Re-run setup. |
+| `RxTxApp` segfault in `iavf_tm_node_add` | In-tree `ice` loaded instead of the out-of-tree build. Re-run setup. |
 
 A segfault anywhere *other* than `iavf_tm_node_add` is a real MTL/DPDK bug —
 capture a backtrace (`coredumpctl gdb RxTxApp`) and report it rather than
