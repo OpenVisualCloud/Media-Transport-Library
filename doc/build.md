@@ -477,5 +477,9 @@ The Linux build compiles the MTL meson projects with the hardening options below
 | `-Wl,-z,noexecstack` | Non-executable stack |
 | `b_pie=true`, and meson's `-fPIC` for shared objects | Position independent code for ASLR |
 
+The gcc of Rocky Linux and RHEL enables none of the compiler options by default. So the Rocky Linux 9 image build runs `.github/scripts/ci/scan/check-hardening.sh` on what `build.sh` builds there: libmtl, UnitTest, the samples, the sample plugins, MtlManager, KahawaiTest and RxTxApp. It fails on a binary without full RELRO, a non-executable stack, PIE, CET or the stack protector.
+
+`_FORTIFY_SOURCE` leaves no reliable mark in a binary, so `.github/scripts/ci/lint/test-scripts.sh` tests the rule that sets it instead.
+
 ## Next Steps
 Proceed to [Running MTL](./run.md) for further instructions.
