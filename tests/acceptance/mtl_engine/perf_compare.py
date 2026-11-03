@@ -143,7 +143,9 @@ UNSCORED = re.compile(
     rf"|(RX|TX) rate(, port \d+)? \(Gb/s\)|{TX_REPLAN} \(/s\)"
     r"|\w+ threads utilization \(%\)|(application|other|all) threads \(CPUs\)"
 )
-HIGHER = ("fps (worst session)",)
+# The frames an instance delivers, a session's share.
+MEAN_FPS = "fps (mean of sessions)"
+HIGHER = ("fps (worst session)", MEAN_FPS)
 # A difference is a change from MIN_CHANGE_PCT and NOISE_FACTOR times the noise, else
 # none: the factor keeps a rough noise estimate, as of few rounds, from making a change.
 # A change of high or medium confidence is that many times its noise.
@@ -174,6 +176,17 @@ KEY_ROWS = re.compile(
     r"sch_\d+ avg loop \(ns\)|video cpu busy \(%\)|scheduler threads per frame \(ms\)"
     r"|memory bandwidth \(MB/s\)|LLC misses \(M/s\)|RX work \(ns/pkt\)"
 )
+# What the verdict scores instead for a role whose builds delivered different frame
+# rates, as overloaded builds do: the frame rates and the costs of a frame or a packet,
+# as the other costs grow with the frames delivered.
+OVERLOAD_KEY_ROWS = re.compile(
+    r"fps \((worst session|mean of sessions)\)|scheduler threads per frame \(ms\)"
+    r"|RX work \(ns/pkt\)"
+)
+# A session under this share of its frames has collapsed or gets no flow, which says
+# nothing of its build: perf-compare's collapses measured 0 to 0.1 fps a session at
+# 59.94, the worst sessions of its overloads 32 fps and more.
+COLLAPSE_SHARE = 0.1
 RX_LOSS = ("incomplete frames", "hw dropped pkts")
 LOSS_ROWS = (*RX_LOSS, *TX_LATE)
 # The tasklet rows that the summary scores outside its verdict: the timed window runs
@@ -202,7 +215,7 @@ GROUPS = (
     (
         DELIVERY,
         re.compile(
-            r"fps \(worst session\)|(RX|TX) rate(, port \d+)? \(Gb/s\)"
+            r"fps \((worst session|mean of sessions)\)|(RX|TX) rate(, port \d+)? \(Gb/s\)"
             rf"|{'|'.join(LOSS_ROWS)}|{TX_REPLAN} \(/s\)"
         ),
     ),
@@ -1049,6 +1062,7 @@ def metrics(direction, dumps, proc0, proc1, clk_tck, rdt0, rdt1, pmu=None) -> di
     # the round; the loss counters below report it.
     fps = [_median(d.fps.get(k, 0.0) for d in untraced) for k in sessions]
     m["fps (worst session)"] = min(fps)
+    m[MEAN_FPS] = sum(fps) / len(fps)
     if frames := sum(fps):
         for stage, c in cores.items():
             m[f"{stage} threads per frame (ms)"] = c * 1e3 / frames
@@ -1429,9 +1443,12 @@ def _note(text: str) -> str:
     return f'<div class="note">{html.escape(text)}</div>'
 
 
-def _is_key_row(r: Row) -> bool:
+def _is_key_row(r: Row, overloaded: bool = False) -> bool:
     """Whether the summary's verdict scores *r*: a key row that both builds have, or a
-    loss row once a build counted any."""
+    loss row once a build counted any; of an *overloaded* role, whose builds delivered
+    different frame rates, an OVERLOAD_KEY_ROWS row that both builds have."""
+    if overloaded:
+        return bool(OVERLOAD_KEY_ROWS.fullmatch(r.metric)) and None not in (r.a, r.b)
     if r.metric in LOSS_ROWS:
         return bool(r.a or r.b)
     return bool(KEY_ROWS.fullmatch(r.metric)) and None not in (r.a, r.b)
@@ -1443,9 +1460,12 @@ def _call(metric: str) -> str:
     return f"{m[2]} on sch_{m[1]}, {m[3]} (us)" if m else metric
 
 
-def _verdict(valid: list[dict], rows: dict, keys: list, names: dict) -> str:
+def _verdict(
+    valid: list[dict], rows: dict, keys: list, names: dict, overloaded=()
+) -> str:
     """The verdict box: what the candidate does to the key rows *keys*, (label, row),
-    its largest regression and improvement, the losses, and the rule of a change."""
+    its largest regression and improvement, which *overloaded* roles it scores on their
+    frames, the losses, and the rule of a change."""
     count = Counter(outcome(r) for _, r in keys)
     reg, imp, n = count["regression"], count["improvement"], len(keys)
     lines, cls = [], ""
@@ -1472,6 +1492,13 @@ def _verdict(valid: list[dict], rows: dict, keys: list, names: dict) -> str:
                 extremes.append(f"{word}: {label} {r.diff:+.1f}% ({confidence(r)}).")
         if extremes:
             lines.append(" ".join(extremes))
+    if overloaded:
+        lines.append(
+            f"{' and '.join(r.upper() for r in overloaded)}: the builds delivered "
+            "different frame rates, as under overload, so the verdict scores those, an "
+            "RX's what its TX sends, and the costs of a frame or a packet; the tables "
+            "still mark the costs of a second, which grow with the frames."
+        )
     every = [(role.upper(), r) for role, role_rows in rows.items() for r in role_rows]
     lost = [
         f"{role} {r.metric} {_fmt(r.a)} → {_fmt(r.b)}"
@@ -1514,20 +1541,25 @@ def _summary(valid: list[dict], hosts: dict, names: dict, styled: bool = True) -
         )
         return "\n".join(p + ["</div>"])
     rows = {role: compare(valid, role) for role in hosts}
+    overloaded = [
+        role
+        for role in hosts
+        if any(r.metric == MEAN_FPS and outcome(r) in CHANGES for r in rows[role])
+    ]
 
     def items(keep):
         return [
             (f"{role.upper()} · {_call(r.metric)}", r)
             for role in hosts
             for r in sorted(rows[role], key=lambda r: _group(r.metric)[0])
-            if keep(r)
+            if keep(r, role)
         ]
 
-    keys = items(_is_key_row)
+    keys = items(lambda r, role: _is_key_row(r, role in overloaded))
     tasklets = items(
-        lambda r: TASKLET_ROWS.fullmatch(r.metric) and None not in (r.a, r.b)
+        lambda r, role: TASKLET_ROWS.fullmatch(r.metric) and None not in (r.a, r.b)
     )
-    p.append(_verdict(valid, rows, keys, names))
+    p.append(_verdict(valid, rows, keys, names, overloaded))
     every = Counter(outcome(r) for role in hosts for r in rows[role])
     tally = " · ".join(f"{OUTCOMES[o][1]} {o}: {every[o]}".strip() for o in OUTCOMES)
     p.append(_note(f"All {every.total()} rows: {tally}"))
@@ -1747,9 +1779,11 @@ def _exited(insts) -> list[str]:
     return [u for i in insts for u in inactive(i.host, i.units)]
 
 
-def _wait_steady(insts, sessions, fps, queues=None) -> list[str]:
+def _wait_steady(insts, sessions, fps, queues=None) -> tuple[list[str], list[str]]:
     """Wait until the last dump of every instance shows all its sessions at speed, for
-    as long as their TX *queues* take, a queue a session unless given.
+    as long as their TX *queues* take, a queue a session unless given, and return the
+    problems and the notes: an instance with all its sessions, but not at speed then,
+    is overloaded, which the round measures, or collapsed, which run_round() refuses.
 
     The application threads of an instance leave its scheduler CPUs once a dump shows
     all its sessions, so that they exist: on isolated CPUs they could not reach speed
@@ -1772,17 +1806,19 @@ def _wait_steady(insts, sessions, fps, queues=None) -> list[str]:
 
     while True:
         if dead := _exited(insts):
-            return [f"exited before steady state: {', '.join(dead)}"]
+            return [f"exited before steady state: {', '.join(dead)}"], []
         last = {i.name: parse_dumps(i.records(tail=TAIL_LINES))[-1:] for i in insts}
         for i in insts:  # every session, at any rate
             if steady(i, last, 0) and i.name not in moved and not i.pin_app_threads():
                 moved.add(i.name)
         waiting = [i for i in insts if not steady(i, last, fps)]
         if not waiting:
-            return []
+            return [], []
         if time.monotonic() > deadline:
             behind = ", ".join(short(i, last) for i in waiting)
-            return [f"not steady after {timeout} s: {behind}"]
+            if all(steady(i, last, 0) for i in waiting):
+                return [], [f"under the rate after {timeout} s: {behind}"]
+            return [f"not steady after {timeout} s: {behind}"], []
         time.sleep(POLL_S)
 
 
@@ -1856,7 +1892,9 @@ def run_round(
                     }
                 )
                 inst.collect("log", LOG_SCRIPT)
-        problems += _wait_steady(insts, sessions, fps, queues)
+        waited, overloaded = _wait_steady(insts, sessions, fps, queues)
+        problems += waited
+        notes += overloaded
         if not problems:
             for i in insts:
                 if why := i.pin_app_threads():
@@ -1940,6 +1978,13 @@ def run_round(
         if named != sessions:
             problems.append(f"{who(i)}: {named} of {sessions} sessions")
             continue
+        m = metrics(direction, w, p0, p1, clk[id(i.host)], r0, r1, pmu[i.name])
+        worst = m["fps (worst session)"]
+        if worst < COLLAPSE_SHARE * fps:
+            problems.append(
+                f"{who(i)}: a session at {worst:.2f} fps, collapsed or no flow"
+            )
+            continue
         schedulers = len({s for d in untraced for s in d.sch})
         if i.role in single_core and schedulers > 1:
             problems.append(f"{who(i)}: {schedulers} schedulers, single core runs one")
@@ -1953,14 +1998,12 @@ def run_round(
         if i.role == "tx" and sh(i.host, found, check=False):
             problems.append(f"{who(i)}: its source is not in hugepages")
             continue
-        m = metrics(direction, w, p0, p1, clk[id(i.host)], r0, r1, pmu[i.name])
         if i.perf and "IPC" not in m:
             notes.append(f"{who(i)}: perf stat did not count every event")
         if i.traced and i.role == "rx" and "RX work (ns/pkt)" not in m:
             problems.append(f"{who(i)}: no {WORK_TASKLET} work in sys:tasklet_stat")
-        worst = m["fps (worst session)"]
-        if worst < FPS_TOLERANCE_PCT * fps:
-            problems.append(f"{who(i)}: a session fell to {worst:.2f} fps")
+        if worst < FPS_TOLERANCE_PCT * fps:  # overloaded: the frame rates score it
+            notes.append(f"{who(i)}: a session fell to {worst:.2f} fps")
         for loss in LOSS_ROWS:
             if m.get(loss):
                 notes.append(f"{who(i)}: {m[loss]} {loss}")

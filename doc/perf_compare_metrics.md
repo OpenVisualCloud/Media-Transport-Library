@@ -92,7 +92,8 @@ All of it lives in `tests/acceptance/mtl_engine/perf_compare.py`.
 
 ## 3. The windows of a round
 
-A round runs both builds at once. Once every session of every instance is steady, the
+A round runs both builds at once. Once every session of every instance is steady, or
+the wait ends with every session running and some under the rate (overloaded), the
 round measures in four windows, one after the other:
 
 ```text
@@ -142,6 +143,7 @@ Notation used below:
 | Metric | Source (MTL line) | Calculation | Unit | Better |
 | --- | --- | --- | --- | --- |
 | `fps (worst session)` | `RX/TX_VIDEO_SESSION(m,s:name): fps X frames N` | per session, the **median of dumps** (a dump missing the session counts 0); then the **lowest** session | frames/s | ↑ |
+| `fps (mean of sessions)` | the same lines | the mean of those medians: the frames an instance delivers, a session's share | frames/s | ↑ |
 | `RX rate, port N (Gb/s)` / `TX rate, port N (Gb/s)` | `DEV(N): Avr rate, tx: X Mb/s, rx: Y Mb/s` | of an instance on two ports (`redundant`, `whole`), per port N of the instance, with `redundant` 0 the primary and 1 the redundant one: the median of dumps | Gb/s | ⊘ |
 | `RX rate (Gb/s)` / `TX rate (Gb/s)` | the same lines | per dump, the sum over the instance's ports; then the median of dumps | Gb/s | ⊘ |
 | `incomplete frames` (RX) | `RX_VIDEO_SESSION(m,s): incomplete frames N` | the **sum** over the untraced dumps | frames | ↓ |
@@ -371,7 +373,10 @@ rows** that both builds have: each scheduler's `avg loop`, `video cpu busy`,
 plus the loss and late-frame rows once a build counted any. It names the largest regression and
 improvement, the losses, and the rule and the rounds behind it, with a warning under 4
 rounds. The key rows are not independent (`video cpu busy` follows its loop), so the
-counts are a summary, not votes.
+counts are a summary, not votes. For a role whose builds delivered different frame
+rates (`fps (mean of sessions)` a change), as under overload, the verdict scores both
+`fps` rows, `scheduler threads per frame` and `RX work (ns/pkt)` instead, and says so:
+the other costs grow with the frames delivered.
 
 ---
 
@@ -383,18 +388,19 @@ fails, so a bad round can never move a mean.
 
 | Gate | Rule |
 | --- | --- |
-| Steady | every session of every instance at **99%** of its frame rate in one dump, within `120 + 3 × TX queues` s, a queue a session and port; then 30 s of warm-up |
+| Steady | every session of every instance in one dump within `120 + 3 × TX queues` s, a queue a session and port, at **99%** of its frame rate or else noted as overloaded; then 30 s of warm-up |
 | Alive | no application or collector exited during the measurement |
 | Whole windows | at least two whole dumps in each window (the traced one only for a build that has it) |
 | Every session | every session reported in the untraced window |
-| Frame rate | the worst session's median fps at 99% of the nominal rate or more |
 | Source in hugepages | no TX read its source through `mmap()` |
 | Work counters | a traced RX instance has `rvs_pkt_rx` work |
 | DMA engaged | with `dma`, every session of a DMA instance copied packets by DMA |
 | One scheduler | with `single_core_rx` or `single_core_tx`, every instance of that role ran one scheduler |
+| Not collapsed | every session of every instance at a tenth of its frame rate or more |
 | Ports | before the rounds: each port's link carries its sessions |
 
 **Notes** don't invalidate a round, but they put a fact beside it:
+- `under the rate after N s` and `a session fell to N fps`: more load than a build carries, which the `fps` rows score;
 - `N incomplete frames`, `N hw dropped pkts` and the late-frame counts;
 - `packets lost between the hosts`, from the PFs' MAC counters, so the wire is told apart from the receiver;
 - `a CI job ran on <host>`, since the companion also serves other repositories;

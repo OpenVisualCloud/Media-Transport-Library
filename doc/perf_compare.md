@@ -83,7 +83,7 @@ sessions_time_measure                                                           
 | Phase | What runs besides the `sys:log_msg` collectors, and why | Its dumps, and what they give |
 | --- | --- | --- |
 | Start | Both RX applications, then both TX ones (a unicast TX session waits for the ARP reply of its RX), each a transient systemd unit (§3) | |
-| Steady, warm-up | Once a dump shows an instance's sessions and started schedulers, its app threads leave the scheduler CPUs (§3.1). Every session of every instance must then reach 99% of its frame rate within `120 + 3 × TX queues` s, a queue a session and port; then 30 s of warm-up | |
+| Steady, warm-up | Once a dump shows an instance's sessions and started schedulers, its app threads leave the scheduler CPUs (§3.1). Every session of every instance must then reach 99% of its frame rate within `120 + 3 × TX queues` s, a queue a session and port, or the round is overloaded: measured, and noted so, unless a session collapsed (§4.4); then 30 s of warm-up | |
 | Untraced, `test_time` | `perf stat`, with `/proc`, RDT and CLOCK_MONOTONIC read at both ends. Nothing is timed: the production view | Those whose whole period lies between the two `/proc` reads: the primary rows |
 | Traced, `test_time / 2` | `sys:tasklet_time_sample` and `sys:tasklet_stat`, where the build has them: each scheduler times 1 loop in 64, a cost the primary rows must not carry | Those with `sys:tasklet_stat` records; the first, partly untraced, is only the base of the counters. The time and work of each tasklet |
 | Timed, `test_time / 2` | `sys:tasklet_time_measure`, which every release has: every call is timed, which costs 10-45% of the loop and would add to the traced counters | Those with call times but the first, which started untimed: the time of every tasklet call |
@@ -285,7 +285,7 @@ MTL, how MTL and the case compute it, and why the numbers hold.
 | `memory bandwidth (MB/s)`, `LLC occupancy (MB)` | `mon_data` of the RDT group | Memory traffic over the window, and the cache footprint at its end |
 | `IPC`, `core clock (GHz)` | `perf stat`: `instructions`, `cycles`, `task-clock` | Instructions per cycle, and the clock while the threads run; a clock that differs moves every time row |
 | `LLC hits (M/s)`, `LLC misses (M/s)`, `LLC miss ratio (%)` | `perf stat`: `cache-references`, `cache-misses` | L3 requests of the instance's cores that hit or went to memory; a packet read while still in the DDIO ways is a hit |
-| `fps (worst session)`, `RX/TX rate (Gb/s)`, `RX/TX rate, port N (Gb/s)` | `RX/TX_VIDEO_SESSION(...): fps`, `DEV(N): Avr rate` | The workload: the lowest median frame rate of a session, and the rate of the instance and, on two ports, of each |
+| `fps (worst session)`, `fps (mean of sessions)`, `RX/TX rate (Gb/s)`, `RX/TX rate, port N (Gb/s)` | `RX/TX_VIDEO_SESSION(...): fps`, `DEV(N): Avr rate` | The workload: the lowest median frame rate of a session and the mean of them, and the rate of the instance and, on two ports, of each |
 | `incomplete frames`, `hw dropped pkts` | `incomplete frames`, `Status: rx_hw_dropped_packets` | Loss in the receiver |
 | `build timeout frames`, `epoch drop`, `transmitter mismatch troffset` | `TX_VIDEO_SESSION(...)` lines, printed when they moved | TX frames sent late, summed over the window: built after their time, periods without their frame, a first packet the rate limiter sent late. A session can hold its rate and still count them (§5.1) |
 | `transmitter recalculate warmup (/s)` | the same lines | Rate limiter re-plans of the pads before a frame as the clock outran the plan: a pad burst stalled 2 µs or more, or the shaper went idle. It can differ by slot, which the swap cancels. Up to `v26.09` MTL counts only the warm-up re-plan |
@@ -327,7 +327,7 @@ is how many noises it spans. What each row counts as better:
 
 | Better | Rows |
 | --- | --- |
-| Higher | `fps (worst session)` |
+| Higher | `fps (worst session)`, `fps (mean of sessions)` |
 | Lower | Every other scored row, a cost: loop and call times (a call is also a wait for the tasklets after it), CPU, preemptions, memory traffic, L3 misses, loss and late frames |
 | No direction | `core clock`; `IPC`, which idle polls raise as much as speed does; LLC occupancy, hits and miss ratio; the port rates, which carry pads and other traffic; the re-plans, which releases count differently; the utilization, whose CPU time the CPU per frame scores; the CPUs of every kind of thread but the schedulers, which follow the CPUs the schedulers take |
 
@@ -339,8 +339,16 @@ outside it: the timed window runs slower than production, and a tasklet on sever
 schedulers would count several times. The rough noise of a few rounds lets an A/A run
 change a row now and then.
 
-The case passes or fails on the validity of its rounds (§6), never on a score: for a
-candidate that cannot carry the load, the failure is the result. A round that raises
+The case passes or fails on the validity of its rounds (§6), never on a score. A load
+the builds cannot carry is a valid round, an overloaded one. For a role whose builds
+delivered different frame rates, `fps (mean of sessions)` a change by the rule above,
+the verdict scores the frame rates and the costs of a frame or a packet (`scheduler
+threads per frame`, `RX work (ns/pkt)`) and says so, as the costs of a second grow with
+the frames a build delivers; an RX receives what its TX sends, and the tables still mark
+the costs of a second. At equal frames those compare, so a session that dips under the
+rate changes nothing. A session under a tenth of its rate has collapsed or gets no
+flow, which invalidates its round: perf-compare's collapses measured 0 to 0.1 fps a
+session, the worst sessions of its overloads 32 fps and more. A round that raises
 ends the rounds; the report keeps the earlier ones and names the error.
 
 `perf_compare.html` gives the builds with every input of the run as the form names it
@@ -517,7 +525,9 @@ notes, which do not.
 
 | Problem, or (note) | Cause | What to do |
 | --- | --- | --- |
-| `not steady after N s: <instance> (N fps at worst, N of N sessions)` or `(no session yet)`, `a session fell to N fps` | A session stayed under 99% of its rate, in the last dump. The CPUs of a slot, or the companion's hugepages, which hold every TX source, can limit the sessions before the link | Fewer `sessions`; for a candidate that cannot carry the load the failure is the result |
+| `not steady after N s: <instance> (N fps at worst, N of M sessions)` or `(no session yet)` | An instance did not run all its sessions in its last dump | Its application output: the sessions it created |
+| `under the rate after N s`, `a session fell to N fps` (notes) | A session stayed under 99% of its rate. The CPUs of a slot, two instances on a socket at a core's limit (§3.5), or the companion's hugepages can limit the sessions before the link | The frame rate rows score it; fewer `sessions` for a comparison at the rate |
+| `a session at N fps, collapsed or no flow` | A session delivered under a tenth of its frames: no flow to it, or two instances on a socket at a core's limit (§3.5) | The application output and the wire; `split` for single core at the limit |
 | `N schedulers, single core runs one` | A single core instance had more than one scheduler, which none of the options the case allows asks for | Its application output: the `sch_start` lines and the scheduler of each session |
 | `exited before steady state`, `exited during the measurement` | An application or a collector stopped | The application's output and its `.log` and `.trace` records in `perf_compare/round<N>/`; a timed or sessions collector's output only stays in `/tmp/mtl-perf-compare/` on its host, until the next round |
 | `N untraced, N traced, N timed and N session timed dumps`, `N of M sessions` | A window held fewer than two whole dumps, or not every session reported | A `test_time` of 30 or more; the application and collector logs |

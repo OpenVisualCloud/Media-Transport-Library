@@ -656,6 +656,7 @@ def test_metrics_of_an_instance():
     assert m["memory bandwidth (MB/s)"] == pytest.approx(100)
     assert m["LLC occupancy (MB)"] == pytest.approx(7)
     assert m["fps (worst session)"] == pytest.approx(FPS)
+    assert m["fps (mean of sessions)"] == pytest.approx(FPS)
     assert m["RX rate (Gb/s)"] == 41.0 and "RX rate, port 0 (Gb/s)" not in m
     # traced: 70 s is the base, 80-100 s add 3 × the per-dump increments
     assert m["sch_1 avg loop, traced (ns)"] == 500
@@ -667,6 +668,7 @@ def test_metrics_of_an_instance():
         d.fps.pop(("RX", "1", "0"), None)
     m = _metrics(dumps)  # and no RDT
     assert m["fps (worst session)"] == 0.0 and "memory bandwidth (MB/s)" not in m
+    assert m["fps (mean of sessions)"] == pytest.approx(FPS / 2)
     untraced[1].sch[2] = (600, 102)  # a second scheduler in any dump counts
     m = _metrics(dumps)
     assert m["scheduler threads (CPUs)"] == 2
@@ -1168,6 +1170,47 @@ def test_the_summary_leads_with_the_verdict_and_the_largest_changes():
     assert "No sampled tasklet counters from main: they" in page
 
 
+def test_the_verdict_of_an_overloaded_role_scores_the_frames_and_their_cost():
+    # the candidate delivers 24% more frames: its costs of a second grow with them,
+    # those of a frame fall
+    worst, mean = "fps (worst session)", pc.MEAN_FPS
+    threads, busy = "scheduler threads per frame (ms)", "video cpu busy (%)"
+    rows = {worst: (33, 41), mean: (34, 42), threads: (4, 3.5), busy: (50, 62)}
+    rows["sch_1 avg loop (ns)"] = (1000, 1240)
+    assert _verdict(rows) == (
+        "verdict i",
+        "✅ branch improves 3 of the 3 key metrics and regresses none.",
+    )
+    page = _summary(rows)
+    assert "RX: the builds delivered different frame rates, as under overload" in page
+    keys = page[page.index("<h3>Key metrics</h3>") :]
+    assert busy not in keys[: keys.index("</table>")]
+    assert _verdict({worst: (41, 33), mean: (42, 34)})[1].startswith(
+        "❌ branch regresses 2 of the 2"
+    )
+    # a dip of one session under the rate delivers the same frames: the costs of a
+    # second compare, and the busier build regresses
+    rows.update({worst: (59.94, 55), mean: (59.94, 59.9), threads: (4, 4.4)})
+    assert _verdict(rows)[0] == "verdict r"
+    assert "as under overload" not in _summary(rows)
+    assert "regresses 3 of the 3 key metrics" in _summary(rows)
+    # each role on its own: TX at equal frames keeps its costs of a second
+    tx = {mean: (59.94, 59.94), busy: (50, 55)}
+    valid = [
+        {
+            x: {"rx": _valid(rows)[r][x]["rx"], "tx": _valid(tx)[r][x]["rx"]}
+            for x in "AB"
+        }
+        for r in (0, 1)
+    ]
+    valid[0]["A"]["rx"][mean] = valid[1]["A"]["rx"][mean] = 34  # RX overloaded
+    page = pc._summary(valid, {"rx": "s", "tx": "c"}, NAMES)
+    assert "RX: the builds delivered" in page and "TX: the builds" not in page
+    keys = page[page.index("<h3>Key metrics</h3>") :]
+    keys = keys[: keys.index("</table>")]
+    assert "TX · video cpu busy (%) ↓" in keys and "RX · video cpu busy" not in keys
+
+
 def test_a_bar_reads_the_difference_from_the_middle_to_25_percent():
     def bar(diff):
         return pc._bar(pc.Row("x", 1, 1, diff, 0.0))
@@ -1539,7 +1582,7 @@ class _Fake:
             "stop_units": lambda host: None,
             "wire_balance": lambda *a: next(self.wires),
             "runner_busy": lambda host: self.busy,
-            "_wait_steady": lambda *a: [],
+            "_wait_steady": lambda *a: ([], []),
             "inactive": lambda host, names: [n for n in names if n in self.dead],
             "rdt_counters": lambda host, group: None,
         }.items():
@@ -1740,11 +1783,36 @@ def test_run_round_rejects_a_session_that_went_silent(fake):
     assert fake.round()[1] == ["mtl-perf-rx1 (dev): 1 of 2 sessions"]
 
 
-def test_run_round_rejects_a_session_below_the_frame_rate(fake):
+def test_run_round_measures_an_overloaded_round(fake, monkeypatch):
     fake.runs["mtl-perf-rx0"] = _records(fps=FPS * 0.95)
-    assert fake.round()[1] == [
-        f"mtl-perf-rx0 (main): a session fell to {FPS * 0.95:.2f} fps"
+    results, problems, notes = fake.round()
+    assert problems == []
+    assert notes == [f"mtl-perf-rx0 (main): a session fell to {FPS * 0.95:.2f} fps"]
+    assert results["A"]["rx"]["fps (worst session)"] == pytest.approx(FPS * 0.95)
+    # the note of a wait that every instance ended under the rate, before the round's
+    under = (
+        "under the rate after 126 s: mtl-perf-rx0 (56.9 fps at worst, 2 of 2 sessions)"
+    )
+    monkeypatch.setattr(pc, "_wait_steady", lambda *a: ([], [under]))
+    assert fake.round()[1:] == ([], [under, notes[0]])
+
+
+def test_run_round_rejects_a_session_that_collapsed_or_has_no_flow(fake):
+    # under a tenth of the rate: before the DMA gate, as a session that receives
+    # nothing copies nothing
+    fake.dma = "A"
+    fake.runs["mtl-perf-rx0"] = _records(fps=FPS * 0.09)
+    collapsed = f"a session at {FPS * 0.09:.2f} fps, collapsed or no flow"
+    assert fake.round()[1] == [f"mtl-perf-rx0 (main): {collapsed}"]
+    fake.runs["mtl-perf-rx0"] = _records(fps=FPS * 0.11, dma=(5, 5))
+    assert fake.round()[1] == []
+    # one session of the instance without a flow, the other at the rate
+    one = [
+        r.replace(f"(1,1:app_1): fps {FPS}", "(1,1:app_1): fps 0") for r in _records()
     ]
+    fake.dma, fake.runs["mtl-perf-rx0"] = "", one
+    no_flow = "mtl-perf-rx0 (main): a session at 0.00 fps, collapsed or no flow"
+    assert fake.round()[1] == [no_flow]
 
 
 def test_run_round_counts_the_losses_of_both_ports_of_a_slot(fake):
@@ -1825,7 +1893,7 @@ def test_run_round_rejects_an_instance_that_exits_during_the_measurement(fake):
 
 def test_run_round_waits_as_long_as_the_tx_queues_take(fake, monkeypatch):
     waits = []
-    monkeypatch.setattr(pc, "_wait_steady", lambda *a: waits.append(a[1:]) or [])
+    monkeypatch.setattr(pc, "_wait_steady", lambda *a: waits.append(a[1:]) or ([], []))
     fake.queues = 4  # redundant: two queues a session
     fake.round()
     assert waits == [(2, FPS, 4)]
@@ -1955,18 +2023,27 @@ def _steady_insts(monkeypatch, records, dead=(), pinned=None, pin=""):
 def test_wait_steady_waits_for_the_last_dump_of_every_instance(monkeypatch):
     steady, short = _dump(S), _dump(S, sessions=1)
     insts = _steady_insts(monkeypatch, [steady, short + steady])
-    assert pc._wait_steady(insts, 2, FPS) == []
+    assert pc._wait_steady(insts, 2, FPS) == ([], [])
     insts = _steady_insts(monkeypatch, [steady, steady + short])
     timeout = pc.steady_timeout(2)
     behind = "rx1 (59.9 fps at worst, 1 of 2 sessions)"  # how far it was
-    assert pc._wait_steady(insts, 2, FPS) == [f"not steady after {timeout} s: {behind}"]
+    not_steady = ([f"not steady after {timeout} s: {behind}"], [])
+    assert pc._wait_steady(insts, 2, FPS) == not_steady
     timeout = pc.steady_timeout(4)
-    assert pc._wait_steady(insts, 2, FPS, 4) == [
-        f"not steady after {timeout} s: {behind}"
-    ]
+    assert pc._wait_steady(insts, 2, FPS, 4) == (
+        [f"not steady after {timeout} s: {behind}"],
+        [],
+    )
     insts = _steady_insts(monkeypatch, [_dump(S, fps=40.0), []])
-    assert pc._wait_steady(insts, 2, FPS)[0].endswith(
+    assert pc._wait_steady(insts, 2, FPS)[0][0].endswith(
         ": rx0 (40.0 fps at worst, 2 of 2 sessions), rx1 (no session yet)"
+    )
+    # every session there, some under the rate: overloaded, which the round measures
+    insts = _steady_insts(monkeypatch, [_dump(S, fps=40.0), steady])
+    timeout = pc.steady_timeout(2)
+    assert pc._wait_steady(insts, 2, FPS) == (
+        [],
+        [f"under the rate after {timeout} s: rx0 (40.0 fps at worst, 2 of 2 sessions)"],
     )
 
 
@@ -1983,7 +2060,7 @@ def test_wait_steady_moves_the_app_threads_once_a_dump_shows_all_sessions(
         sleep(s)
 
     monkeypatch.setattr(pc.time, "sleep", second_session_of_rx1)
-    assert pc._wait_steady(insts, 2, FPS) == []
+    assert pc._wait_steady(insts, 2, FPS) == ([], [])
     # each once all its sessions exist
     assert pinned == [("rx0", 0), ("rx1", pc.POLL_S)]
     # a move that failed is tried at every poll
@@ -1997,4 +2074,4 @@ def test_wait_steady_moves_the_app_threads_once_a_dump_shows_all_sessions(
 
 def test_wait_steady_stops_at_an_instance_that_exited(monkeypatch):
     insts = _steady_insts(monkeypatch, [_dump(S), _dump(S)], dead={"rx0"})
-    assert pc._wait_steady(insts, 2, FPS) == ["exited before steady state: rx0"]
+    assert pc._wait_steady(insts, 2, FPS) == (["exited before steady state: rx0"], [])
