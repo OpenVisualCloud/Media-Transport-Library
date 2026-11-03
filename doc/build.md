@@ -464,7 +464,8 @@ For older kernel version on Red Hat, the issue is that Red Hat uses vault repos.
 
 ### 4.5. Compiler hardening
 
-The Linux build compiles the MTL meson projects with the hardening options below, and DPDK, libbpf and libxdp with the options for C, less the warning options. `script/hardening_flags.py` prints them for a compiler, the `meson.build` of each project applies them, and `script/build_dpdk.sh` and `script/build_ebpf_xdp.sh` pass them to DPDK, libbpf and libxdp.
+The Linux build compiles the MTL meson projects with the hardening options below, and DPDK, libbpf, libxdp, openh264 and FFmpeg with the options for C, less the warning options: openh264 is C++, but gets no `-D_GLIBCXX_ASSERTIONS`.
+`script/hardening_flags.py` prints them for a compiler, the `meson.build` of each project applies them, and `script/build_dpdk.sh`, `script/build_ebpf_xdp.sh` and `script/build_ffmpeg_plugin.sh` pass them to the dependencies they build.
 In the dependency builds the last `-O` of `CFLAGS`, then `CPPFLAGS`, sets the level: `-O0` leaves out `_FORTIFY_SOURCE`, as the meson option `optimization` at `0` does for the MTL projects.
 
 | Option | Protection |
@@ -478,7 +479,7 @@ In the dependency builds the last `-O` of `CFLAGS`, then `CPPFLAGS`, sets the le
 | `-D_GLIBCXX_ASSERTIONS` | Bounds and precondition checks in libstdc++, for the C++ programs: MtlManager, KahawaiTest, UnitTest, the gpu_direct gtest and the st22 avcodec and FFmpeg plugin tests |
 | `-Wl,-z,relro -Wl,-z,now` | Full RELRO, a read-only GOT |
 | `-Wl,-z,noexecstack` | Non-executable stack |
-| `b_pie=true`, and meson's `-fPIC` for shared objects | Position independent code for ASLR |
+| `b_pie=true`, and meson's `-fPIC` for shared objects; FFmpeg's `--enable-pic` and `-pie` | Position independent code for ASLR |
 
 The gcc of Rocky Linux and RHEL enables none of the compiler options by default. So the Rocky Linux 9 image build runs `.github/scripts/ci/scan/check-hardening.sh` on what `build.sh` builds there: libmtl, UnitTest, the samples, the sample plugins, MtlManager, KahawaiTest and RxTxApp. It fails on a binary without full RELRO, a non-executable stack, PIE, CET or the stack protector.
 
