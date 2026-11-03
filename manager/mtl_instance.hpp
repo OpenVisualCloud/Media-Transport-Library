@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <memory>
 #include <unordered_map>
@@ -193,6 +194,12 @@ void mtl_instance::handle_message_register(mtl_register_message_t* register_msg)
   uid = ntohl(register_msg->uid);
   hostname = std::string(register_msg->hostname, 64);
   uint16_t num_if = ntohs(register_msg->num_if);
+  if (num_if > sizeof(register_msg->ifindex) / sizeof(register_msg->ifindex[0])) {
+    log(log_level::ERROR, "Invalid interface count " + std::to_string(num_if));
+    if (send_response(-EINVAL) < 0)
+      log(log_level::ERROR, "Failed to send response for register");
+    return;
+  }
   for (int i = 0; i < num_if; i++) {
     unsigned int ifindex = ntohl(register_msg->ifindex[i]);
     auto interface = get_interface(ifindex);
