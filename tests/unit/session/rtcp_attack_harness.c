@@ -121,8 +121,8 @@ int ut_rtk_txq_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad) {
   return 0;
 }
 
-__attribute__((noinline, noclone)) int ut_rtk_fifo_read_front(struct mt_u64_fifo* fifo,
-                                                              uint64_t* item) {
+__attribute__((noinline)) int ut_rtk_fifo_read_front(struct mt_u64_fifo* fifo,
+                                                     uint64_t* item) {
   uintptr_t here = (uintptr_t)__builtin_frame_address(0);
   size_t depth = ut_rtk_stack_top > here ? ut_rtk_stack_top - here : 0;
   if (depth > ut_rtk_stack_depth) ut_rtk_stack_depth = depth;

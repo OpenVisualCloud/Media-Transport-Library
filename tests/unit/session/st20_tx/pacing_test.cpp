@@ -41,8 +41,6 @@ constexpr uint64_t kPastTai = kCurrentTai - kFramePeriodNs / 2;
 constexpr uint64_t kTrOffsetNs = kNanosecondsPerMillisecond / 1000;
 constexpr uint64_t kPacketIntervalNs = kTrOffsetNs / 10;
 constexpr uint32_t kVirtualReceiverBufferPackets = 2;
-constexpr uint64_t kReceiverScheduleOffsetNs =
-    kTrOffsetNs - kVirtualReceiverBufferPackets * kPacketIntervalNs;
 constexpr uint64_t kInvalidMediaClockTimestamp = 10 * ST10_VIDEO_SAMPLING_RATE_90K;
 }  // namespace
 
@@ -79,7 +77,7 @@ TEST_F(St20TxSyncPacingTest, NormalCursorDerivation) {
   ASSERT_EQ(ut_txv_sync_pacing(ctx_, 0), 0);
 
   EXPECT_EQ(ut_txv_cur_epochs(ctx_), kCurrentEpoch);
-  /* kReceiverScheduleOffsetNs (800ns) is less than half a 90kHz tick (~5555ns),
+  /* tr_offset - vrx * trs (800ns) is less than half a 90kHz tick (~5555ns),
    * so tv_sync_pacing()'s media-clock snap rounds it back down to kCurrentTai. */
   EXPECT_EQ(ut_txv_ptp_time_cursor(ctx_), kCurrentTai);
   EXPECT_EQ(ut_txv_tsc_time_cursor(ctx_), kCurrentTsc);
@@ -129,7 +127,7 @@ TEST_F(St20TxSyncPacingTest, UserPacingAlignsTimestampToReceiverSchedule) {
   ASSERT_EQ(ut_txv_sync_pacing(ctx_, required_tai), 0);
 
   EXPECT_EQ(ut_txv_cur_epochs(ctx_), kAlignedTargetTai / kFramePeriodNs);
-  /* Same sub-tick snap as NormalCursorDerivation: kReceiverScheduleOffsetNs
+  /* Same sub-tick snap as NormalCursorDerivation: tr_offset - vrx * trs
    * rounds back down to kAlignedTargetTai. */
   EXPECT_EQ(ut_txv_ptp_time_cursor(ctx_), kAlignedTargetTai);
   EXPECT_EQ(ut_txv_tsc_time_cursor(ctx_), kCurrentTsc + kAlignedTargetTai - kCurrentTai);
