@@ -19,7 +19,7 @@
 #define ST40_TEST_FMD_MAX_GAP_NS (500 * (uint64_t)NS_PER_MS)
 
 static int tx_anc_next_frame(void* priv, uint16_t* next_frame_idx,
-                             struct st40_tx_frame_meta* meta) {
+                             struct st40_tx_frame_meta* /*meta*/) {
   auto ctx = (tests_context*)priv;
 
   if (ctx->stop) return -EIO;
@@ -721,8 +721,8 @@ TEST(St40_tx, fmd_create_expect_fail_payload_type) {
   EXPECT_TRUE(st40_fmd_tx_ops_accepted(0, ST40_TEST_FMD_DIT, 0, 127));
 }
 
-static int rx_frame_ready_unused(void* priv, void* frame,
-                                 struct st40_rx_frame_meta* meta) {
+static int rx_frame_ready_unused(void* /*priv*/, void* /*frame*/,
+                                 struct st40_rx_frame_meta* /*meta*/) {
   return 0;
 }
 
@@ -1239,7 +1239,7 @@ TEST(St40_rx, fmd_trailing_gap) {
 }
 
 static int tx_fmd_frame_done(void* priv, uint16_t frame_idx,
-                             struct st40_tx_frame_meta* meta) {
+                             struct st40_tx_frame_meta* /*meta*/) {
   auto ctx = (tests_context*)priv;
   ((std::atomic<int>*)ctx->priv)[frame_idx]++;
   return 0;

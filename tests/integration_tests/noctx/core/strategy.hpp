@@ -17,9 +17,9 @@ class FrameTestStrategy {
                     bool enable_rx_modifier = false);
   virtual ~FrameTestStrategy();
 
-  virtual void txTestFrameModifier(void* frame, size_t frame_size) {
+  virtual void txTestFrameModifier(void* /*frame*/, size_t /*frame_size*/) {
   }
-  virtual void rxTestFrameModifier(void* frame, size_t frame_size) {
+  virtual void rxTestFrameModifier(void* /*frame*/, size_t /*frame_size*/) {
   }
 
   Handlers* parent;

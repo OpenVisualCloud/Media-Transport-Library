@@ -5,7 +5,7 @@
 #include "st20_common.h"
 
 static int rx_query_ext_frame(void* priv, st20_ext_frame* ext_frame,
-                              struct st20_rx_frame_meta* meta) {
+                              struct st20_rx_frame_meta* /*meta*/) {
   auto ctx = (tests_context*)priv;
   if (!ctx->handle) return -EIO; /* not ready */
   int i = ctx->ext_idx;
