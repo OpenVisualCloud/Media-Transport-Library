@@ -15,6 +15,8 @@ extern "C" {
 /* TR-10-2 section 10: the IPMX Info Block with one uncompressed video Media Info Block */
 #define IPMX_INFO_TAG (0x5831)
 #define IPMX_INFO_BLOCK_LEN (176)
+/* TR-10-11 section 12 and TR-10-15 Part 1 section 9: 0x0003 then the JPEG XS 0x0008 */
+#define IPMX_INFO_BLOCK_JXS_LEN (IPMX_INFO_BLOCK_LEN + IPMX_MEDIA_INFO_JXS_LEN)
 #define IPMX_INFO_HDR_LEN (84)
 #define IPMX_INFO_BLOCK_VERSION_OFFSET (4)
 #define IPMX_TS_REFCLK_OFFSET (8)
@@ -22,6 +24,17 @@ extern "C" {
 #define IPMX_MEDIACLK_OFFSET (72)
 #define IPMX_MEDIA_INFO_VIDEO (0x0001)
 #define IPMX_MEDIA_INFO_VIDEO_LEN (92)
+#define IPMX_MEDIA_INFO_CBR_VIDEO (0x0003)
+#define IPMX_MEDIA_INFO_JXS (0x0008)
+#define IPMX_MEDIA_INFO_JXS_LEN (12)
+
+/* The TR-10-15 Part 1 section 9 fields of Media Info Block 0x0008 */
+struct ipmx_jxs_info {
+  bool transmode;  /* RFC 9134 T */
+  bool packetmode; /* RFC 9134 K */
+  uint16_t ppih;
+  uint16_t plev;
+};
 
 struct mtl_main_impl;
 struct st_tx_video_session_impl;
@@ -31,6 +44,9 @@ int ipmx_video_info_from_session(struct mtl_main_impl* impl,
                                  struct ipmx_video_info* info);
 /** Write the IPMX Info Block of info to buf, returns IPMX_INFO_BLOCK_LEN. */
 uint16_t ipmx_info_block_build(const struct ipmx_video_info* info, uint8_t* buf);
+/** Write the st22 Info Block, 0x0003 of info then 0x0008 of jxs; its length. */
+uint16_t ipmx_info_block_jxs_build(const struct ipmx_video_info* info,
+                                   const struct ipmx_jxs_info* jxs, uint8_t* buf);
 
 /* The built-in PTP state of one port, as the ts-refclk decision reads it */
 struct ipmx_ptp_snap {

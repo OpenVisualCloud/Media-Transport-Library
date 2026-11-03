@@ -68,10 +68,16 @@ int ipmx_video_info_from_session(struct mtl_main_impl* impl,
            "localmac=%02X-%02X-%02X-%02X-%02X-%02X", m[0], m[1], m[2], m[3], m[4], m[5]);
   /* TR-10-1 section 10.5: the RTP clock derives from the Internal Clock */
   snprintf(info->mediaclk, sizeof(info->mediaclk), "direct=0");
-  snprintf(info->sampling, sizeof(info->sampling), "%s",
-           ipmx_info_samplings[ops->fmt].sampling);
-  info->depth = ipmx_info_samplings[ops->fmt].depth;
-  info->gpm = ops->packing != ST20_PACKING_BPM;
+  if (s->st22_info) {
+    /* D11 RGB 4:4:4 8-bit; ops->fmt is a placeholder, M is ST 2110-20 only */
+    snprintf(info->sampling, sizeof(info->sampling), "RGB");
+    info->depth = 8;
+  } else {
+    snprintf(info->sampling, sizeof(info->sampling), "%s",
+             ipmx_info_samplings[ops->fmt].sampling);
+    info->depth = ipmx_info_samplings[ops->fmt].depth;
+    info->gpm = ops->packing != ST20_PACKING_BPM;
+  }
   /* TR-10-2 section 10 and TR-10-9 section 20 defaults, no ops to signal others */
   info->par_w = 1;
   info->par_h = 1;
@@ -121,6 +127,22 @@ uint16_t ipmx_info_block_build(const struct ipmx_video_info* info, uint8_t* buf)
   ipmx_info_put_be16(&mib[88], info->htotal);
   ipmx_info_put_be16(&mib[90], info->vtotal);
   return IPMX_INFO_BLOCK_LEN;
+}
+
+uint16_t ipmx_info_block_jxs_build(const struct ipmx_video_info* info,
+                                   const struct ipmx_jxs_info* jxs, uint8_t* buf) {
+  uint8_t* mib = buf + IPMX_INFO_BLOCK_LEN;
+
+  ipmx_info_block_build(info, buf);
+  ipmx_info_put_be16(&buf[2], IPMX_INFO_BLOCK_JXS_LEN / 4 - 1);
+  ipmx_info_put_be16(&buf[IPMX_INFO_HDR_LEN], IPMX_MEDIA_INFO_CBR_VIDEO);
+
+  ipmx_info_put_be16(&mib[0], IPMX_MEDIA_INFO_JXS);
+  ipmx_info_put_be16(&mib[2], IPMX_MEDIA_INFO_JXS_LEN / 4 - 1);
+  ipmx_info_put_be32(&mib[4], (uint32_t)jxs->transmode << 31 |
+                                  (uint32_t)jxs->packetmode << 30 | jxs->ppih);
+  ipmx_info_put_be32(&mib[8], (uint32_t)jxs->plev << 16);
+  return IPMX_INFO_BLOCK_JXS_LEN;
 }
 
 struct ipmx_refclk ipmx_refclk_from_ptp(const struct ipmx_ptp_snap* snap,

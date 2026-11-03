@@ -14,6 +14,11 @@
  *   tx_rx_1080p         the test codec, which writes a synthetic header
  *                       (ipmx_jxs_test_header.cpp) with the SHA after it; RX checks
  *                       every SHA
+ *   tx_rx_1080p_redundant  the same over ST 2022-7, TX on ports P and R, RX on ports
+ *                       2 and 3: with IPMX SRs on both legs, both legs still deliver
+ *                       every frame with its SHA; skipped with fewer than 4 ports. No
+ *                       st22 SR receive yet, the SR content is pinned by the unit
+ *                       cases tests/unit/ipmx/ipmx_st22_sr_test.cpp
  *   tx_rx_svt_1080p_*   the real SVT-JPEG-XS plugin at 3 and 4 bpp; lossy, no SHA.
  *                       Skipped unless the plugin is loaded (KAHAWAI_CFG_PATH) and
  *                       SVT_JXS_MTL_PLUGIN_CONFIG names an IPMX config whose
@@ -120,6 +125,28 @@ TEST(Ipmx_st22p, tx_rx_1080p) {
   struct st22p_rx_digest_test_para para;
   test_st22p_init_rx_digest_para(&para);
   para.ipmx = true;
+
+  st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
+}
+
+/* tx_rx_1080p over ST 2022-7: with IPMX SRs on both legs, both legs still deliver every
+ * frame, RX merges them and checks every SHA; the SR content is in the unit cases */
+TEST(Ipmx_st22p, tx_rx_1080p_redundant) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  if (ctx->para.num_ports < 4)
+    GTEST_SKIP() << "ST 2022-7 needs 4 ports, have " << ctx->para.num_ports;
+
+  enum st_fps fps[1] = {ST_FPS_P59_94};
+  int width[1] = {1920};
+  int height[1] = {1080};
+  enum st_frame_fmt fmt[1] = {ST_FRAME_FMT_GBRPLANAR8};
+  enum st22_codec codec[1] = {ST22_CODEC_JPEGXS};
+  int compress_ratio[1] = {10};
+
+  struct st22p_rx_digest_test_para para;
+  test_st22p_init_rx_digest_para(&para);
+  para.ipmx = true;
+  para.redundant = true;
 
   st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
 }

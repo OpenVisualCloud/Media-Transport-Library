@@ -13,9 +13,10 @@
 #define IPMX_RTCP_PT_SDES (202)
 #define IPMX_RTCP_SDES_CNAME (1)
 #define IPMX_RTCP_SR_LEN (28)
-#define IPMX_RTCP_SR_IPMX_LEN (IPMX_RTCP_SR_LEN + IPMX_INFO_BLOCK_LEN)
+#define IPMX_RTCP_SR_IPMX_MAX_LEN (IPMX_RTCP_SR_LEN + IPMX_INFO_BLOCK_JXS_LEN)
 #define IPMX_RTCP_SDES_MAX_LEN (8 + RTE_ALIGN_CEIL(2 + IPMX_SR_CNAME_MAX, 4))
 #define IPMX_RTP_HDR_LEN (12)
+#define IPMX_RFC9134_HDR_LEN (sizeof(struct st22_rfc9134_rtp_hdr) - IPMX_RTP_HDR_LEN)
 
 static inline void ipmx_put_be16(uint8_t* p, uint16_t v) {
   v = htons(v);
@@ -32,13 +33,14 @@ static inline void ipmx_put_be32(uint8_t* p, uint32_t v) {
 static uint16_t ipmx_sr_tx_build(const struct ipmx_sr_tx* sr,
                                  const struct ipmx_sr_leg* leg, uint8_t* rtcp,
                                  uint64_t tai_ns, uint32_t rtp_ts) {
+  uint16_t sr_len = IPMX_RTCP_SR_LEN + sr->info_block_len;
   uint16_t sdes_len = 8 + RTE_ALIGN_CEIL(2 + leg->cname_len + 1, 4);
-  uint8_t* sdes = rtcp + IPMX_RTCP_SR_IPMX_LEN;
+  uint8_t* sdes = rtcp + sr_len;
   uint32_t ssrc = ntohl(leg->media_hdr->rtp.base.ssrc);
 
   rtcp[0] = 2 << 6; /* V=2, P=0, RC=0 */
   rtcp[1] = IPMX_RTCP_PT_SR;
-  ipmx_put_be16(&rtcp[2], IPMX_RTCP_SR_IPMX_LEN / 4 - 1);
+  ipmx_put_be16(&rtcp[2], sr_len / 4 - 1);
   ipmx_put_be32(&rtcp[4], ssrc);
   /* TR-10-1 section 8.7: PTP truncated timestamp, not the RFC 3550 NTP format */
   ipmx_put_be32(&rtcp[8], (uint32_t)(tai_ns / NS_PER_S));
@@ -46,7 +48,7 @@ static uint16_t ipmx_sr_tx_build(const struct ipmx_sr_tx* sr,
   ipmx_put_be32(&rtcp[16], rtp_ts);
   ipmx_put_be32(&rtcp[20], leg->pkt_count);
   ipmx_put_be32(&rtcp[24], leg->octet_count);
-  memcpy(&rtcp[IPMX_RTCP_SR_LEN], sr->info_block, IPMX_INFO_BLOCK_LEN);
+  memcpy(&rtcp[IPMX_RTCP_SR_LEN], sr->info_block, sr->info_block_len);
 
   memset(sdes, 0, sdes_len);
   sdes[0] = (2 << 6) | 1; /* V=2, P=0, SC=1 */
@@ -57,7 +59,7 @@ static uint16_t ipmx_sr_tx_build(const struct ipmx_sr_tx* sr,
   sdes[9] = leg->cname_len;
   memcpy(&sdes[10], leg->cname, leg->cname_len);
 
-  return IPMX_RTCP_SR_IPMX_LEN + sdes_len;
+  return sr_len + sdes_len;
 }
 
 static struct rte_mbuf* ipmx_sr_tx_pkt(const struct ipmx_sr_tx* sr,
@@ -169,6 +171,10 @@ static void ipmx_sr_refclk_update(struct ipmx_sr_tx* sr) {
   dbg("%s, ts-refclk %s\n", __func__, ts_refclk);
 }
 
+static inline uint32_t ipmx_sr_tx_frame_size(struct rte_mbuf* pkt0) {
+  return ((struct mt_muf_priv_data*)rte_mbuf_to_priv(pkt0))->tx_priv.ipmx_frame_size;
+}
+
 static inline uint32_t ipmx_sr_pkt_rtp_ts(struct rte_mbuf* pkt) {
   return ntohl(rte_pktmbuf_mtod(pkt, struct st_rfc4175_video_hdr*)->rtp.base.tmstamp);
 }
@@ -208,8 +214,16 @@ void ipmx_sr_tx_frame_start(struct ipmx_sr_tx* sr, enum mtl_session_port s_port,
     sr->sr_built = true;
   else
     leg->stat.alloc_fail++;
-  leg->pkt_count += sr->frame_pkts;
-  leg->octet_count += sr->frame_octets;
+  if (sr->st22_pkt_len) {
+    uint32_t size = ipmx_sr_tx_frame_size(pkt0);
+    uint32_t pkts = (size + sr->st22_pkt_len - 1) / sr->st22_pkt_len;
+
+    leg->pkt_count += pkts;
+    leg->octet_count += size + pkts * IPMX_RFC9134_HDR_LEN;
+  } else {
+    leg->pkt_count += sr->frame_pkts;
+    leg->octet_count += sr->frame_octets;
+  }
 }
 
 bool ipmx_sr_tx_send_pending(struct ipmx_sr_tx* sr, enum mtl_session_port s_port,
@@ -244,13 +258,15 @@ uint64_t ipmx_sr_tx_rl_lead_ns(const struct ipmx_sr_tx* sr, enum mtl_session_por
   return plan->pad_ns * pending->pkt_len / plan->pad_size;
 }
 
-/* one SR a frame: the frames the TX ring can hold, the pending one and slack */
+/* one SR a frame: the frames the TX ring can hold, the pending one and slack; an st22
+ * frame can shrink to one packet and its SR */
 static unsigned int ipmx_sr_pool_n(struct mtl_main_impl* impl,
                                    struct st_tx_video_session_impl* s,
                                    enum mtl_session_port s_port) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  int desc_per_frame = s->st22_info ? 2 : RTE_MAX(s->st20_total_pkts, 1);
 
-  return mt_if_nb_tx_desc(impl, port) / RTE_MAX(s->st20_total_pkts, 1) + 4;
+  return mt_if_nb_tx_desc(impl, port) / desc_per_frame + 4;
 }
 
 static void ipmx_sr_tx_free(struct ipmx_sr_tx* sr) {
@@ -291,12 +307,9 @@ int ipmx_sr_tx_init(struct mtl_main_impl* impl, struct st_tx_video_session_impl*
   struct ipmx_sr_tx* sr;
   int ret;
 
-  RTE_BUILD_BUG_ON(sizeof(struct mt_udp_hdr) + IPMX_RTCP_SR_IPMX_LEN +
+  RTE_BUILD_BUG_ON(sizeof(struct mt_udp_hdr) + IPMX_RTCP_SR_IPMX_MAX_LEN +
                        IPMX_RTCP_SDES_MAX_LEN >
                    IPMX_SR_POOL_DATA_SIZE);
-  /* st22 needs Media Info Block 0x0003 (TR-10-11 section 12) then 0x0008 (TR-10-15
-   * Part 1 section 9), not built yet */
-  if (s->s_type == MT_ST22_HANDLE_TX_VIDEO) return 0;
   sr = mt_rte_zmalloc_socket(sizeof(*sr), mt_socket_id(impl, port));
   if (!sr) return -ENOMEM;
   ret = ipmx_video_info_from_session(impl, s, &sr->info);
@@ -324,18 +337,36 @@ int ipmx_sr_tx_init(struct mtl_main_impl* impl, struct st_tx_video_session_impl*
   while (!ipmx_sr_refclk_now(sr, &sr->refclk)) rte_pause();
   sr->refclk_known = true;
   ipmx_refclk_print(&sr->refclk, sr->localmac, sr->info.ts_refclk);
-  ipmx_info_block_build(&sr->info, sr->info_block);
-  for (int i = 0; i < ST20_PKT_TYPE_MAX; i++) {
-    const struct st20_packet_group_info* info = &s->st20_pkt_info[i];
+  if (s->st22_info) {
+    const struct st22_rfc9134_rtp_hdr* rtp = &s->st22_info->rtp_hdr[MTL_SESSION_PORT_P];
+    const struct st22_jxpl* jxpl = &s->st22_info->st22_boxes.jpvs.jxpl;
+    struct ipmx_jxs_info jxs = {
+        .transmode = rtp->trans_order,
+        .packetmode = rtp->kmode,
+        .ppih = ntohs(jxpl->ppih),
+        .plev = ntohs(jxpl->plev),
+    };
 
-    sr->frame_pkts += info->number;
-    sr->frame_octets +=
-        info->number * (info->size - sizeof(struct mt_udp_hdr) - IPMX_RTP_HDR_LEN);
+    sr->info_block_len = ipmx_info_block_jxs_build(&sr->info, &jxs, sr->info_block);
+    sr->st22_pkt_len = s->st20_pkt_len;
+  } else {
+    sr->info_block_len = ipmx_info_block_build(&sr->info, sr->info_block);
+    for (int i = 0; i < ST20_PKT_TYPE_MAX; i++) {
+      const struct st20_packet_group_info* info = &s->st20_pkt_info[i];
+
+      sr->frame_pkts += info->number;
+      sr->frame_octets +=
+          info->number * (info->size - sizeof(struct mt_udp_hdr) - IPMX_RTP_HDR_LEN);
+    }
   }
 
   s->ipmx_sr = sr;
-  info("%s(%d), %s, %u pkts %u octets per frame\n", __func__, s->idx, sr->info.ts_refclk,
-       sr->frame_pkts, sr->frame_octets);
+  if (sr->st22_pkt_len)
+    info("%s(%d), %s, st22 %u payload octets per packet\n", __func__, s->idx,
+         sr->info.ts_refclk, sr->st22_pkt_len);
+  else
+    info("%s(%d), %s, %u pkts %u octets per frame\n", __func__, s->idx,
+         sr->info.ts_refclk, sr->frame_pkts, sr->frame_octets);
   return 0;
 }
 

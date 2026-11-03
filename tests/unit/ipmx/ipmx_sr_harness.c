@@ -25,6 +25,7 @@
 #include "ipmx/ipmx_sr_harness.h"
 #include "mt_main.h"
 #include "st2110/pipeline/st20_pipeline_tx.h"
+#include "st2110/pipeline/st22_pipeline_tx.h"
 #include "st2110/st_tx_video_session.h"
 
 #define UT_SR_WIRE_MAX (512)
@@ -37,6 +38,10 @@ struct ut_sr_ctx {
   struct st_tx_video_session_impl session;
   struct st_tx_video_session_handle_impl handle;
   struct st20p_tx_ctx pipeline;
+  struct st22_tx_video_session_handle_impl st22_handle;
+  struct st22p_tx_ctx st22p;
+  struct st22_tx_video_info st22_info;
+  uint32_t frame_size[MTL_SESSION_PORT_MAX];
   int queue_tag[MTL_SESSION_PORT_MAX]; /* s->queue[] identity for the burst mock */
   struct rte_mempool* pkt_pool;
   uint64_t now;
@@ -290,8 +295,79 @@ void ut_sr_set_dest(ut_sr_ctx* ctx, int s_port, const uint8_t dip[4],
   hdr->udp.dst_port = htons(media_dst_port);
 }
 
-void ut_sr_set_st22(ut_sr_ctx* ctx) {
-  ctx->session.s_type = MT_ST22_HANDLE_TX_VIDEO;
+int ut_sr_set_st22(ut_sr_ctx* ctx, size_t codestream_max, uint32_t pkt_len) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  uint32_t frame_max = sizeof(struct st22_boxes) + codestream_max;
+
+  s->s_type = MT_ST22_HANDLE_TX_VIDEO;
+  s->st22_info = &ctx->st22_info;
+  s->st22_box_hdr_length = sizeof(struct st22_boxes);
+  s->st22_codestream_size = codestream_max;
+  s->st20_pkt_len = pkt_len;
+  s->st20_total_pkts = (frame_max + pkt_len - 1) / pkt_len;
+  ut_sr_set_st22_tk(ctx, true, false);
+  ctx->st22_handle.type = MT_ST22_HANDLE_TX_VIDEO;
+  ctx->st22_handle.impl = s;
+  ctx->st22p.type = MT_ST22_HANDLE_PIPELINE_TX;
+  ctx->st22p.transport = &ctx->st22_handle;
+  return ipmx_jxs_boxes_fill(&ctx->st22_info.st22_boxes, s->ops.width, s->ops.height,
+                             s->ops.fps, codestream_max);
+}
+
+void ut_sr_set_st22_tk(ut_sr_ctx* ctx, bool t, bool k) {
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    ctx->st22_info.rtp_hdr[i].trans_order = t;
+    ctx->st22_info.rtp_hdr[i].kmode = k;
+  }
+}
+
+uint16_t ut_sr_st22_box_plev(const ut_sr_ctx* ctx) {
+  return ntohs(ctx->st22_info.st22_boxes.jpvs.jxpl.plev);
+}
+
+void ut_sr_set_frame_size(ut_sr_ctx* ctx, int s_port, uint32_t size) {
+  ctx->frame_size[s_port] = size;
+}
+
+/* a wrong type on the handle the call takes, the pipeline or its transport */
+static void ut_sr_st22_handle_types(ut_sr_ctx* ctx, bool pipeline, bool valid_handle) {
+  ctx->st22_handle.type =
+      valid_handle || pipeline ? MT_ST22_HANDLE_TX_VIDEO : MT_HANDLE_TX_VIDEO;
+  ctx->st22p.type =
+      valid_handle || !pipeline ? MT_ST22_HANDLE_PIPELINE_TX : MT_ST20_HANDLE_PIPELINE_TX;
+}
+
+int ut_sr_api_st22_set_block_version(ut_sr_ctx* ctx, bool pipeline, bool valid_handle,
+                                     uint8_t version) {
+  int ret;
+
+  ut_sr_st22_handle_types(ctx, pipeline, valid_handle);
+  ret = pipeline ? ipmx_st22p_tx_set_block_version(&ctx->st22p, version)
+                 : ipmx_st22_tx_set_block_version(&ctx->st22_handle, version);
+  ut_sr_st22_handle_types(ctx, pipeline, true);
+  return ret;
+}
+
+int ut_sr_api_st22_set_ts_refclk(ut_sr_ctx* ctx, bool pipeline, bool valid_handle,
+                                 const char* ts_refclk) {
+  int ret;
+
+  ut_sr_st22_handle_types(ctx, pipeline, valid_handle);
+  ret = pipeline ? ipmx_st22p_tx_set_ts_refclk(&ctx->st22p, ts_refclk)
+                 : ipmx_st22_tx_set_ts_refclk(&ctx->st22_handle, ts_refclk);
+  ut_sr_st22_handle_types(ctx, pipeline, true);
+  return ret;
+}
+
+int ut_sr_api_st22_get_info(ut_sr_ctx* ctx, bool pipeline, bool valid_handle,
+                            struct ipmx_video_info* info) {
+  int ret;
+
+  ut_sr_st22_handle_types(ctx, pipeline, valid_handle);
+  ret = pipeline ? ipmx_st22p_tx_get_info(&ctx->st22p, info)
+                 : ipmx_st22_tx_get_info(&ctx->st22_handle, info);
+  ut_sr_st22_handle_types(ctx, pipeline, true);
+  return ret;
 }
 
 void ut_sr_set_recovery_idx(ut_sr_ctx* ctx, int recovery_idx) {
@@ -485,6 +561,7 @@ static struct rte_mbuf* ut_sr_pkt(ut_sr_ctx* ctx, int s_port, uint32_t pkt_idx,
   st_tx_mbuf_set_tsc(m, target);
   st_tx_mbuf_set_ptp(m, target);
   st_tx_mbuf_set_priv(m, NULL);
+  if (!pkt_idx) ipmx_sr_tx_set_frame_size(m, ctx->frame_size[s_port]);
   inf = mt_if(&ctx->impl, ctx->session.port_maps[s_port]);
   if (inf->tx_launch_time_flag) {
     m->ol_flags |= inf->tx_launch_time_flag;

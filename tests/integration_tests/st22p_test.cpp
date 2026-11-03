@@ -819,6 +819,10 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     info("%s, dual port should be enabled, one for tx and one for rx\n", __func__);
     throw std::runtime_error("Dual port not enabled");
   }
+  if (para->redundant && ctx->para.num_ports < 4) {
+    info("%s, need 4 ports for redundant test, skipping\n", __func__);
+    return;
+  }
 
   /* return if level lower than global */
   if (para->level < ctx->level) return;
@@ -889,6 +893,16 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_P]);
     ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + i * 2;
+    if (para->redundant) {
+      ops_tx.port.num_port = 2;
+      memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+             MTL_IP_ADDR_LEN);
+      memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
+             MTL_IP_ADDR_LEN);
+      snprintf(ops_tx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+               ctx->para.port[MTL_PORT_R]);
+      ops_tx.port.udp_port[MTL_SESSION_PORT_R] = ST22P_TEST_UDP_PORT + i * 2;
+    }
     ops_tx.port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
     ops_tx.port.ssrc = para->ssrc;
     ops_tx.width = width[i];
@@ -1082,6 +1096,16 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
     ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + i * 2;
+    if (para->redundant) {
+      ops_rx.port.num_port = 2;
+      for (int p = 0; p < 2; p++) {
+        memcpy(ops_rx.port.ip_addr[p], ctx->mcast_ip_addr[MTL_PORT_P + p],
+               MTL_IP_ADDR_LEN);
+        snprintf(ops_rx.port.port[p], MTL_PORT_MAX_LEN, "%s",
+                 ctx->para.port[MTL_PORT_2 + p]);
+        ops_rx.port.udp_port[p] = ST22P_TEST_UDP_PORT + i * 2;
+      }
+    }
     ops_rx.port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
     ops_rx.port.ssrc = para->ssrc;
     ops_rx.width = width[i];

@@ -2490,4 +2490,80 @@ out:
   free(fb);
   return ret;
 }
+
+int ut_txv_run_st22_pkt0(ut_txv_ctx* ctx, size_t codestream_size, uint32_t pkt_len,
+                         int num_port, unsigned int bulk, bool ipmx_sr,
+                         struct ut_txv_st22_pkt0* result) {
+  static unsigned int run_idx;
+  static struct ipmx_sr_tx sr; /* zeroed, the builder only tests s->ipmx_sr for NULL */
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st_frame_trans frame = {0};
+  size_t frame_size = sizeof(struct st22_boxes) + codestream_size;
+  uint8_t* fb = calloc(1, frame_size);
+  char name[RTE_MEMPOOL_NAMESIZE];
+  int ret = -1;
+
+  memset(result, 0, sizeof(*result));
+  if (!fb) return -ENOMEM;
+  if (!bulk || bulk > UT_TXV_ST22_BULK_MAX) goto out;
+  if (ut_txv_st22_frame_setup(ctx, &frame, ST10_TIMESTAMP_FMT_TAI, 0) < 0) goto out;
+  ctx->st22_info.notify_frame_done = ut_txv_st22_notify_frame_done;
+  frame.addr = fb;
+  s->st20_pkt_len = pkt_len;
+  s->st22_box_hdr_length = sizeof(struct st22_boxes);
+  s->st22_codestream_size = codestream_size;
+  s->ops.num_port = num_port;
+  s->bulk = bulk;
+  s->tx_no_chain = true;
+  s->st20_pkt_idx = 0;
+  s->ipmx_sr = ipmx_sr ? &sr : NULL;
+  for (int i = 0; i < num_port; i++) {
+    snprintf(name, sizeof(name), "ut_txv_st22_p0_%u_%d", run_idx, i);
+    s->mbuf_mempool_hdr[i] =
+        rte_pktmbuf_pool_create(name, 32, 0, sizeof(struct mt_muf_priv_data),
+                                RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+    if (!s->mbuf_mempool_hdr[i]) goto out;
+    if (i) {
+      snprintf(name, sizeof(name), "ut_txv_st22_r_%u", run_idx);
+      s->ring[i] = ut_ring_create(name, 32);
+      if (!s->ring[i]) goto out;
+    }
+  }
+  run_idx++;
+
+  tvs_tasklet_handler(&ctx->mgr); /* takes the frame */
+  s->pacing.tsc_time_frame_start = 0;
+  tvs_tasklet_handler(&ctx->mgr); /* builds its first bulk */
+  for (int i = 0; i < num_port; i++) {
+    for (unsigned int j = 0; j < bulk; j++) {
+      struct rte_mbuf* m = NULL;
+      struct mt_muf_priv_data* priv;
+
+      if (rte_ring_sc_dequeue(s->ring[i], (void**)&m) < 0) goto out;
+      priv = rte_mbuf_to_priv(m);
+      result->pkt_idx[i][j] = priv->tx_priv.idx;
+      result->frame_size[i][j] = priv->tx_priv.ipmx_frame_size;
+      rte_pktmbuf_free(m);
+    }
+  }
+  ret = 0;
+
+out:
+  s->ipmx_sr = NULL;
+  s->st20_pkt_idx = 0;
+  for (int i = MTL_SESSION_PORT_R; i < num_port; i++) {
+    if (!s->ring[i]) continue;
+    ut_ring_drain(s->ring[i]);
+    rte_ring_free(s->ring[i]);
+    s->ring[i] = NULL;
+  }
+  ut_txv_st22_frame_teardown(ctx);
+  for (int i = 0; i < num_port; i++) {
+    rte_mempool_free(s->mbuf_mempool_hdr[i]);
+    s->mbuf_mempool_hdr[i] = NULL;
+  }
+  s->ops.num_port = 1;
+  free(fb);
+  return ret;
+}
 #endif

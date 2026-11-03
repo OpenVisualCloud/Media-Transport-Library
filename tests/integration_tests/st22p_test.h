@@ -27,6 +27,7 @@ struct st22p_rx_digest_test_para {
   bool codec_block_get;
   bool derive;
   bool ipmx;
+  bool redundant; /* ST 2022-7: TX on ports P and R, RX on ports 2 and 3 */
   enum st_plugin_device device;
   bool no_digest; /* a real, lossy codec: RX checks no SHA */
 };

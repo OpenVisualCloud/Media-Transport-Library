@@ -19,9 +19,10 @@ extern "C" {
 
 /**
  * The IPMX Info Block content of an st20 stream, TR-10-1 section 8.7 and TR-10-2 section
- * 10. The strings are fixed size and zero padded as on the wire: a string that fills its
- * field has no terminating NUL, so read them with strnlen() or the field size. From an
- * RX they are what the sender sent.
+ * 10, or the Media Info Block 0x0003 of an st22 stream (TR-10-11 section 12). The strings
+ * are fixed size and zero padded as on the wire: a string that fills its field has no
+ * terminating NUL, so read them with strnlen() or the field size. From an RX they are
+ * what the sender sent.
  */
 struct ipmx_video_info {
   /** block version, see ipmx_st20_tx_set_block_version() */
@@ -328,6 +329,70 @@ int ipmx_st20_tx_get_info(st20_tx_handle handle, struct ipmx_video_info* info);
  * ST20P_TX_FLAG_IPMX.
  */
 int ipmx_st20p_tx_get_info(st20p_tx_handle handle, struct ipmx_video_info* info);
+
+/**
+ * ipmx_st20_tx_set_block_version() of an st22 TX session created with ST22_TX_FLAG_IPMX.
+ *
+ * @param handle
+ *   The handle to the tx st2110-22(compressed video) session.
+ * @param version
+ *   The block version.
+ * @return
+ *   - 0: Success.
+ *   - -EIO: invalid handle, or IPMX not enabled on the session.
+ */
+int ipmx_st22_tx_set_block_version(st22_tx_handle handle, uint8_t version);
+
+/**
+ * ipmx_st22_tx_set_block_version() of the transport session of an st22p TX pipeline
+ * created with ST22P_TX_FLAG_IPMX; on re-create, set it before the first
+ * st22p_tx_put_frame().
+ */
+int ipmx_st22p_tx_set_block_version(st22p_tx_handle handle, uint8_t version);
+
+/**
+ * ipmx_st20_tx_set_ts_refclk() of an st22 TX session created with ST22_TX_FLAG_IPMX.
+ *
+ * @param handle
+ *   The handle to the tx st2110-22(compressed video) session.
+ * @param ts_refclk
+ *   As ipmx_st20_tx_set_ts_refclk(); NULL goes back to the string the library derives.
+ * @return
+ *   - 0: Success.
+ *   - -EIO: invalid handle, or IPMX not enabled on the session.
+ *   - -EINVAL: malformed ts_refclk.
+ */
+int ipmx_st22_tx_set_ts_refclk(st22_tx_handle handle, const char* ts_refclk);
+
+/**
+ * ipmx_st22_tx_set_ts_refclk() of the transport session of an st22p TX pipeline created
+ * with ST22P_TX_FLAG_IPMX.
+ */
+int ipmx_st22p_tx_set_ts_refclk(st22p_tx_handle handle, const char* ts_refclk);
+
+/**
+ * ipmx_st20_tx_get_info() of an st22 TX session created with ST22_TX_FLAG_IPMX: the
+ * values of the Sender Report Media Info Block 0x0003 (TR-10-11 section 12), RGB 4:4:4
+ * 8-bit (TR-10-15 Part 1 section 8, TR-08 section 8.1.1), gpm false. The JPEG XS Media
+ * Info Block 0x0008 that follows it carries T 1, K 0, Ppih High444.12 and the Plev of the
+ * session's jxpl box (TR-10-15 Part 1 section 9).
+ *
+ * @param handle
+ *   The handle to the tx st2110-22(compressed video) session.
+ * @param info
+ *   The pointer to save the info.
+ * @return
+ *   - 0: Success.
+ *   - -EIO: invalid handle, or IPMX not enabled on the session.
+ *   - -EINVAL: NULL info.
+ */
+int ipmx_st22_tx_get_info(st22_tx_handle handle, struct ipmx_video_info* info);
+
+/**
+ * ipmx_st22_tx_get_info() of the transport session of an st22p TX pipeline created with
+ * ST22P_TX_FLAG_IPMX.
+ */
+int ipmx_st22p_tx_get_info(st22p_tx_handle handle, struct ipmx_video_info* info);
 
 /** A buffer of this size holds any SDP ipmx_st20_tx_get_sdp() builds, NUL included */
 #define IPMX_SDP_MAX (2048)

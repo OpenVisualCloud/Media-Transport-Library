@@ -2,6 +2,7 @@
 
 #include "../st2110/pipeline/st20_pipeline_rx.h"
 #include "../st2110/pipeline/st20_pipeline_tx.h"
+#include "../st2110/pipeline/st22_pipeline_tx.h"
 /* first, mt_handle_guard.h needs the DPDK types it pulls in */
 #include "../mt_handle_guard.h"
 #include "../mt_log.h"
@@ -129,6 +130,66 @@ int ipmx_st20p_tx_get_info(st20p_tx_handle handle, struct ipmx_video_info* info)
 
   MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
   ret = ipmx_st20_tx_get_info(ctx->transport, info);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
+}
+
+int ipmx_st22_tx_set_block_version(st22_tx_handle handle, uint8_t version) {
+  struct st22_tx_video_session_handle_impl* s_impl = handle;
+  int ret;
+
+  MT_HANDLE_GUARD(s_impl, MT_ST22_HANDLE_TX_VIDEO, -EIO);
+  ret = ipmx_sr_tx_set_block_version(s_impl->impl, version);
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
+}
+
+int ipmx_st22p_tx_set_block_version(st22p_tx_handle handle, uint8_t version) {
+  struct st22p_tx_ctx* ctx = handle;
+  int ret;
+
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, -EIO);
+  ret = ipmx_st22_tx_set_block_version(ctx->transport, version);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
+}
+
+int ipmx_st22_tx_set_ts_refclk(st22_tx_handle handle, const char* ts_refclk) {
+  struct st22_tx_video_session_handle_impl* s_impl = handle;
+  int ret;
+
+  MT_HANDLE_GUARD(s_impl, MT_ST22_HANDLE_TX_VIDEO, -EIO);
+  ret = ipmx_sr_tx_set_ts_refclk(s_impl->impl, ts_refclk);
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
+}
+
+int ipmx_st22p_tx_set_ts_refclk(st22p_tx_handle handle, const char* ts_refclk) {
+  struct st22p_tx_ctx* ctx = handle;
+  int ret;
+
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, -EIO);
+  ret = ipmx_st22_tx_set_ts_refclk(ctx->transport, ts_refclk);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
+}
+
+int ipmx_st22_tx_get_info(st22_tx_handle handle, struct ipmx_video_info* info) {
+  struct st22_tx_video_session_handle_impl* s_impl = handle;
+  int ret;
+
+  MT_HANDLE_GUARD(s_impl, MT_ST22_HANDLE_TX_VIDEO, -EIO);
+  ret = ipmx_sr_tx_get_info(s_impl->impl, info);
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
+}
+
+int ipmx_st22p_tx_get_info(st22p_tx_handle handle, struct ipmx_video_info* info) {
+  struct st22p_tx_ctx* ctx = handle;
+  int ret;
+
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, -EIO);
+  ret = ipmx_st22_tx_get_info(ctx->transport, info);
   MT_HANDLE_RELEASE(ctx);
   return ret;
 }

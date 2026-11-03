@@ -103,6 +103,9 @@ struct st_tx_muf_priv_data {
   uint64_t ptp_time_stamp; /* ptp time stamp of current mbuf */
   void* priv;              /* private data to current frame */
   uint32_t idx;            /* index of packet in current frame */
+#ifdef MTL_HAS_IPMX
+  uint32_t ipmx_frame_size; /* st22 packet 0 only, for the IPMX SR counts */
+#endif
 };
 
 struct st_rx_muf_priv_data {
@@ -383,7 +386,7 @@ struct st_tx_video_session_impl {
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rtcp_q[MTL_SESSION_PORT_MAX];
 #ifdef MTL_HAS_IPMX
-  struct ipmx_sr_tx* ipmx_sr; /* NULL without ST20_TX_FLAG_IPMX or for st22 */
+  struct ipmx_sr_tx* ipmx_sr; /* NULL without ST20_TX_FLAG_IPMX */
 #endif
 
   /* stat – port_user_stats is the single source for API-visible counters (monotonic) */

@@ -21,7 +21,9 @@ extern "C" {
 
 struct ipmx_sr_stat {
   uint64_t sent;
-  uint64_t late; /* packet 0 of the frame was already due when dequeued */
+  /* packet 0 was already due when dequeued; st22 sets it on every frame, its builder
+   * releases packet 0 at its target */
+  uint64_t late;
   uint64_t alloc_fail;
   uint64_t
       burst_fail;   /* refused attempts, each retried ahead of packet 0, not lost SRs */
@@ -46,7 +48,7 @@ struct ipmx_sr_leg {
   struct ipmx_sr_stat stat;
 };
 
-/* The TR-10-1 section 8.8.2 Sender Report of one st20 TX session, a leg per port */
+/* The TR-10-1 section 8.8.2 Sender Report of one video TX session, a leg per port */
 struct ipmx_sr_tx {
   struct mtl_main_impl* impl;
   uint32_t sampling_rate;
@@ -68,9 +70,12 @@ struct ipmx_sr_tx {
   /* info_block refreshes once a frame, at the RTP timestamp of that frame */
   uint32_t info_gen;
   uint32_t info_rtp_ts;
-  uint8_t info_block[IPMX_INFO_BLOCK_LEN];
+  uint8_t info_block[IPMX_INFO_BLOCK_JXS_LEN];
+  uint16_t info_block_len;
   uint32_t frame_pkts;
   uint32_t frame_octets; /* RTP payload octets, RFC 3550 section 6.4.1 */
+  /* st22: frame counts come from the packet 0 frame size, 0 for st20 */
+  uint32_t st22_pkt_len;
   uint8_t num_port;
   struct ipmx_sr_leg leg[MTL_SESSION_PORT_MAX];
   /* ipmx_sdp_tx_get() only, under the session lock */
@@ -87,7 +92,7 @@ struct ipmx_sr_stats {
 };
 
 struct st_tx_video_session_impl;
-/** Create s->ipmx_sr for every port, after the header templates; none for st22. */
+/** Create s->ipmx_sr for every port, after the header templates and the st22 boxes. */
 int ipmx_sr_tx_init(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s);
 /** Free s->ipmx_sr; only after the session queues are flushed, they hold its mbufs. */
 void ipmx_sr_tx_uinit(struct st_tx_video_session_impl* s);
@@ -97,6 +102,12 @@ void ipmx_sr_tx_uinit(struct st_tx_video_session_impl* s);
  */
 void ipmx_sr_tx_frame_start(struct ipmx_sr_tx* sr, enum mtl_session_port s_port,
                             struct rte_mbuf* pkt0, bool late);
+/** The st22 builder stamps packet 0 with its frame's box + codestream bytes. */
+static inline void ipmx_sr_tx_set_frame_size(struct rte_mbuf* pkt0, uint32_t size) {
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(pkt0);
+
+  priv->tx_priv.ipmx_frame_size = size;
+}
 bool ipmx_sr_tx_send_pending(struct ipmx_sr_tx* sr, enum mtl_session_port s_port,
                              struct mt_txq_entry* queue, struct rte_mbuf* pkt0);
 /**

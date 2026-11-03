@@ -2813,6 +2813,12 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
         return MTL_TASKLET_ALL_DONE;
       }
     }
+#ifdef MTL_HAS_IPMX
+    if (s->ipmx_sr && !s->st20_pkt_idx) {
+      ipmx_sr_tx_set_frame_size(pkts[0], st22_info->cur_frame_size);
+      if (send_r) ipmx_sr_tx_set_frame_size(pkts_r[0], st22_info->cur_frame_size);
+    }
+#endif
 
     for (unsigned int i = 0; i < bulk; i++) {
       if (s->st20_pkt_idx >= st22_info->st22_total_pkts) {

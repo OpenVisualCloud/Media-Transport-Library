@@ -93,14 +93,6 @@ class IpmxSrTest : public ::testing::Test {
   ut_sr_ctx* ctx_ = nullptr;
 };
 
-/* st22_tx_create() maps ST22_TX_FLAG_IPMX to ST20_TX_FLAG_IPMX, but the st22 SR needs
- * its own IPMX Info Block (TR-10-11 section 12), so an st22 session sends none yet */
-TEST_F(IpmxSrTest, St22SessionCreatesNoSr) {
-  ut_sr_set_st22(ctx_);
-  EXPECT_EQ(ut_sr_attach(ctx_), 0);
-  EXPECT_FALSE(ut_sr_attached(ctx_));
-}
-
 TEST_F(IpmxSrTest, BuildsSrThenInfoBlockThenSdesCnameGolden) {
   ASSERT_NO_FATAL_FAILURE(Attach());
   const uint8_t sr_golden[] = {

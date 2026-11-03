@@ -20,6 +20,7 @@ extern "C" {
  * IPv4 checksum offload.
  */
 typedef struct ut_sr_ctx ut_sr_ctx;
+struct ipmx_video_info;
 
 #define UT_SR_PKT_MAX (320)
 #define UT_SR_UDP_HDR_LEN (42) /* Ethernet, IPv4, UDP */
@@ -56,8 +57,25 @@ void ut_sr_set_redundant(ut_sr_ctx* ctx, const uint8_t sip[4], const uint8_t dip
 /* a destination update of the s_port header template, as st20_tx_update_destination() */
 void ut_sr_set_dest(ut_sr_ctx* ctx, int s_port, const uint8_t dip[4],
                     uint16_t media_dst_port);
-/* make the session an st22 one, as st22_tx_create() does */
-void ut_sr_set_st22(ut_sr_ctx* ctx);
+/* make the session an st22 one of codestream_max bytes in pkt_len payload packets, as
+ * st22_tx_create() does with ST22_TX_FLAG_IPMX: the jxpl Plev of ipmx_jxs_boxes_fill()
+ * for the ut_sr_set_video() size and rate, T 1 and K 0 in the RTP headers; before attach
+ */
+int ut_sr_set_st22(ut_sr_ctx* ctx, size_t codestream_max, uint32_t pkt_len);
+/* the T and K bits of every port's st22 RTP header template */
+void ut_sr_set_st22_tk(ut_sr_ctx* ctx, bool t, bool k);
+/* the Plev of the session's jxpl box, host order */
+uint16_t ut_sr_st22_box_plev(const ut_sr_ctx* ctx);
+/* the box + codestream bytes the s_port packet 0s the harness makes carry, as the st22
+ * builder stamps them */
+void ut_sr_set_frame_size(ut_sr_ctx* ctx, int s_port, uint32_t size);
+/* the public ipmx_st22[p]_tx_*() of a handle of the right or a wrong type */
+int ut_sr_api_st22_set_block_version(ut_sr_ctx* ctx, bool pipeline, bool valid_handle,
+                                     uint8_t version);
+int ut_sr_api_st22_set_ts_refclk(ut_sr_ctx* ctx, bool pipeline, bool valid_handle,
+                                 const char* ts_refclk);
+int ut_sr_api_st22_get_info(ut_sr_ctx* ctx, bool pipeline, bool valid_handle,
+                            struct ipmx_video_info* info);
 /* the session's recovery_idx, read by ipmx_sr_tx_init() */
 void ut_sr_set_recovery_idx(ut_sr_ctx* ctx, int recovery_idx);
 /* takes the name the s_port SR pool would get, so its creation fails; before attach */

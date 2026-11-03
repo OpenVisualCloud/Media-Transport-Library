@@ -535,6 +535,18 @@ struct ut_txv_st22_frame_result {
 int ut_txv_run_st22_ipmx_frame(ut_txv_ctx* ctx, uint32_t width, uint32_t height,
                                uint16_t plev, const uint8_t* codestream, size_t size,
                                struct ut_txv_st22_frame_result* result);
+/* The first bulk of 1 to UT_TXV_ST22_BULK_MAX packets tv_tasklet_st22() builds of a frame
+ * of codestream_size bytes in pkt_len payload packets, on num_port ports, with
+ * s->ipmx_sr set or NULL: the packet index and the IPMX frame size stamp of each packet
+ * of that bulk on each port. */
+#define UT_TXV_ST22_BULK_MAX (4)
+struct ut_txv_st22_pkt0 {
+  uint32_t pkt_idx[MTL_SESSION_PORT_MAX][UT_TXV_ST22_BULK_MAX];
+  uint32_t frame_size[MTL_SESSION_PORT_MAX][UT_TXV_ST22_BULK_MAX];
+};
+int ut_txv_run_st22_pkt0(ut_txv_ctx* ctx, size_t codestream_size, uint32_t pkt_len,
+                         int num_port, unsigned int bulk, bool ipmx_sr,
+                         struct ut_txv_st22_pkt0* result);
 #endif
 
 #ifdef __cplusplus
