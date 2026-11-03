@@ -17,6 +17,13 @@ if get_option('optimization') not in ['0', 'plain'] and get_option('b_sanitize')
 endif
 add_project_link_arguments('-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack', language : 'c')
 
+set_tai_offset_c_args = []
+# enable warning as error for non debug build
+if get_option('buildtype') != 'debug'
+  set_tai_offset_c_args += ['-Werror']
+endif
+
 executable('set_tai_offset', 'set_tai_offset.c',
+  c_args: set_tai_offset_c_args,
   install: false,
 )
