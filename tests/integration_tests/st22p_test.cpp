@@ -9,6 +9,9 @@
 #include <thread>
 
 #include "log.h"
+#ifdef MTL_HAS_IPMX
+#include "ipmx/ipmx_jxs_test_header.h"
+#endif
 
 #define ST22P_TEST_PAYLOAD_TYPE (114)
 #define ST22P_TEST_UDP_PORT (16000)
@@ -26,8 +29,14 @@ static int test_encode_frame(struct test_st22_encoder_session* s,
   if (frame->src->fmt != req->input_fmt) return -EIO;
   if (frame->dst->fmt != req->output_fmt) return -EIO;
 
+  uint8_t* sha_dst = (uint8_t*)frame->dst->addr[0];
+#ifdef MTL_HAS_IPMX
+  /* a GBRPLANAR8 codestream gets a High444.12 header, which IPMX TX checks per frame */
+  if (req->input_fmt == ST_FRAME_FMT_GBRPLANAR8)
+    sha_dst += ipmx_test_jxs_header(sha_dst, frame->dst->buffer_size, req);
+#endif
   /* copy src sha to the start of encode frame */
-  memcpy(frame->dst->addr[0],
+  memcpy(sha_dst,
          (uint8_t*)frame->src->addr[0] + frame->src->data_size - SHA256_DIGEST_LENGTH,
          SHA256_DIGEST_LENGTH);
   st_usleep(s->sleep_time_us);
@@ -187,9 +196,13 @@ static int test_decode_frame(struct test_st22_decoder_session* s,
   if (frame->dst->fmt != req->output_fmt) return -EIO;
   if (frame->src->data_size > frame->src->buffer_size) return -EIO;
 
+  const uint8_t* sha_src = (const uint8_t*)frame->src->addr[0];
+#ifdef MTL_HAS_IPMX
+  if (req->output_fmt == ST_FRAME_FMT_GBRPLANAR8) sha_src += IPMX_TEST_JXS_HDR_LEN;
+#endif
   /* copy sha to the end of decode frame */
   memcpy((uint8_t*)frame->dst->addr[0] + frame->dst->data_size - SHA256_DIGEST_LENGTH,
-         frame->src->addr[0], SHA256_DIGEST_LENGTH);
+         sha_src, SHA256_DIGEST_LENGTH);
   st_usleep(s->sleep_time_us);
 
   s->frame_cnt++;
@@ -351,6 +364,9 @@ int st_test_st22_plugin_register(struct st_tests_context* ctx) {
   d_dev.target_device = ST_PLUGIN_DEVICE_TEST;
   d_dev.input_fmt_caps = ST_FMT_CAP_JPEGXS_CODESTREAM | ST_FMT_CAP_H264_CBR_CODESTREAM;
   d_dev.output_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_YUV422PLANAR8;
+#ifdef MTL_HAS_IPMX
+  d_dev.output_fmt_caps |= MTL_BIT64(ST_FRAME_FMT_GBRPLANAR8);
+#endif
   d_dev.create_session = test_decoder_create_session;
   d_dev.free_session = test_decoder_free_session;
   d_dev.notify_frame_available = test_decoder_frame_available;
@@ -366,6 +382,9 @@ int st_test_st22_plugin_register(struct st_tests_context* ctx) {
   e_dev.priv = ctx;
   e_dev.target_device = ST_PLUGIN_DEVICE_TEST;
   e_dev.input_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_YUV422PLANAR8;
+#ifdef MTL_HAS_IPMX
+  e_dev.input_fmt_caps |= MTL_BIT64(ST_FRAME_FMT_GBRPLANAR8);
+#endif
   e_dev.output_fmt_caps = ST_FMT_CAP_JPEGXS_CODESTREAM | ST_FMT_CAP_H264_CBR_CODESTREAM;
   e_dev.create_session = test_encoder_create_session;
   e_dev.free_session = test_encoder_free_session;
@@ -737,16 +756,18 @@ static void test_st22p_rx_frame_thread(void* args) {
       s->pre_timestamp = (uint32_t)frame->timestamp;
     }
 
-    unsigned char* sha =
-        (unsigned char*)frame->addr[0] + frame->data_size - SHA256_DIGEST_LENGTH;
-    int i = 0;
-    for (i = 0; i < ST22_TEST_SHA_HIST_NUM; i++) {
-      unsigned char* target_sha = s->shas[i];
-      if (!memcmp(sha, target_sha, SHA256_DIGEST_LENGTH)) break;
-    }
-    if (i >= ST22_TEST_SHA_HIST_NUM) {
-      test_sha_dump("st22p_rx_error_sha", sha);
-      s->sha_fail_cnt++;
+    if (!s->no_digest) {
+      unsigned char* sha =
+          (unsigned char*)frame->addr[0] + frame->data_size - SHA256_DIGEST_LENGTH;
+      int i = 0;
+      for (i = 0; i < ST22_TEST_SHA_HIST_NUM; i++) {
+        unsigned char* target_sha = s->shas[i];
+        if (!memcmp(sha, target_sha, SHA256_DIGEST_LENGTH)) break;
+      }
+      if (i >= ST22_TEST_SHA_HIST_NUM) {
+        test_sha_dump("st22p_rx_error_sha", sha);
+        s->sha_fail_cnt++;
+      }
     }
     /* directly put */
     st22p_rx_put_frame((st22p_rx_handle)handle, frame);
@@ -775,6 +796,7 @@ void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para) {
   para->ssrc = 0;
   para->block_get = false;
   para->codec_block_get = false;
+  para->device = ST_PLUGIN_DEVICE_TEST;
 }
 
 void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -876,7 +898,7 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.input_fmt = fmt[i];
     ops_tx.pack_type = ST22_PACK_CODESTREAM;
     ops_tx.codec = codec[i];
-    ops_tx.device = ST_PLUGIN_DEVICE_TEST;
+    ops_tx.device = para->device;
     ops_tx.quality = ST22_QUALITY_MODE_QUALITY;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     if (para->block_get)
@@ -1000,6 +1022,7 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_rx[i]->fmt = fmt[i];
     test_ctx_rx[i]->user_timestamp = para->user_timestamp;
     test_ctx_rx[i]->block_get = para->block_get;
+    test_ctx_rx[i]->no_digest = para->no_digest;
     /* copy sha */
     memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
            ST22_TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
@@ -1068,7 +1091,7 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.output_fmt = fmt[i];
     ops_rx.pack_type = ST22_PACK_CODESTREAM;
     ops_rx.codec = codec[i];
-    ops_rx.device = ST_PLUGIN_DEVICE_TEST;
+    ops_rx.device = para->device;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     if (para->block_get)
       ops_rx.flags |= ST22P_RX_FLAG_BLOCK_GET;
@@ -1159,7 +1182,11 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     rx_thread[i].join();
   }
 
+  std::vector<int> fb_send(sessions);
+  std::vector<int> tx_fb_cnt(sessions);
   for (int i = 0; i < sessions; i++) {
+    fb_send[i] = test_ctx_tx[i]->fb_send;
+    tx_fb_cnt[i] = test_ctx_tx[i]->fb_cnt;
     ret = st22p_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
     info("%s, session %d fb_send %d framerate %f:%f\n", __func__, i,
@@ -1182,6 +1209,14 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_frame_cnt, 0);
     EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
+    /* IPMX TX drops a frame that fails its header check. At stop, frames the app put
+     * may still sit in the TX pipeline (encode, send: up to its framebuffers) and
+     * frames already decoded in the RX pipeline (up to its framebuffers), plus the one
+     * on the wire */
+    if (para->ipmx) {
+      EXPECT_NEAR(test_ctx_rx[i]->fb_rec, fb_send[i],
+                  tx_fb_cnt[i] + test_ctx_rx[i]->fb_cnt + 1);
+    }
     if (para->check_fps) {
       if (para->fail_interval || para->timeout_interval) {
         EXPECT_NEAR(framerate_rx[i], expect_framerate_rx[i],

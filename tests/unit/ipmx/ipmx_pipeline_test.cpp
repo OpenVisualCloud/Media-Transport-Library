@@ -240,6 +240,28 @@ TEST_F(IpmxSt22PipelineTxTest, NonJpegxsCodecRejected) {
   EXPECT_EQ(log.find("get encoder"), std::string::npos) << log;
 }
 
+/* D11 / TR-10-15 Part 1 section 8: the IPMX JPEG XS sender is RGB 4:4:4 8-bit, so
+ * st22p_tx_create() rejects any other input format before it looks up an encoder */
+TEST_F(IpmxSt22PipelineTxTest, NonGbrplanar8InputRejected) {
+  ops_.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  st22p_tx_handle handle = nullptr;
+  std::string log = ut_session::capture_stderr([&] { handle = ut22p_tx_create(&ops_); });
+  EXPECT_EQ(handle, nullptr);
+  EXPECT_NE(log.find("GBRPLANAR8 only"), std::string::npos) << log;
+  EXPECT_EQ(log.find("get encoder"), std::string::npos) << log;
+}
+
+/* GBRPLANAR8 passes the IPMX check; the harness has no encoder, so the create still
+ * fails at the encoder lookup */
+TEST_F(IpmxSt22PipelineTxTest, Gbrplanar8InputPassesIpmxCheck) {
+  ops_.input_fmt = ST_FRAME_FMT_GBRPLANAR8;
+  st22p_tx_handle handle = nullptr;
+  std::string log = ut_session::capture_stderr([&] { handle = ut22p_tx_create(&ops_); });
+  EXPECT_EQ(handle, nullptr);
+  EXPECT_EQ(log.find("GBRPLANAR8 only"), std::string::npos) << log;
+  EXPECT_NE(log.find("get encoder"), std::string::npos) << log;
+}
+
 /* st22p RX: the transport ops st22p_rx_create() passes to st22_rx_create() */
 class IpmxSt22PipelineRxTest : public ::testing::Test {
  protected:

@@ -1035,6 +1035,9 @@ static int tv_init_st22_boxes(struct st_tx_video_session_impl* s) {
   colr->methdat[5] = 0x01;
   colr->methdat[6] = 0x80;
 
+  if (s->ops.flags & ST20_TX_FLAG_IPMX)
+    return ipmx_jxs_boxes_fill(&st22_info->st22_boxes, s->ops.width, s->ops.height,
+                               s->ops.fps, s->st22_codestream_size);
   return 0;
 }
 
@@ -2686,6 +2689,15 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
         s->stat_build_ret_code = -STI_ST22_APP_GET_FRAME_ERR_SIZE;
         return MTL_TASKLET_ALL_DONE;
       }
+      if ((ops->flags & ST20_TX_FLAG_IPMX) &&
+          ipmx_jxs_frame_check(s->ops_name, idx, &st22_info->st22_boxes,
+                               (uint8_t*)frame->addr + s->st22_box_hdr_length,
+                               codestream_size, ops->width, ops->height,
+                               &s->stat_ipmx_pih_fail) < 0) {
+        tv_notify_frame_done(s, next_frame_idx);
+        s->stat_build_ret_code = -STI_ST22_APP_GET_FRAME_ERR_PIH;
+        return MTL_TASKLET_ALL_DONE;
+      }
 
       s->stat_user_busy_first = true;
       /* all check fine */
@@ -3447,7 +3459,12 @@ static int tv_init_sw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
       tv_uinit_sw(s);
       return -EIO;
     }
-    tv_init_st22_boxes(s);
+    ret = tv_init_st22_boxes(s);
+    if (ret < 0) {
+      err("%s(%d), tv_init_st22_boxes fail %d\n", __func__, idx, ret);
+      tv_uinit_sw(s);
+      return ret;
+    }
   }
 
   /* free the pool if any in previous session */
@@ -3888,6 +3905,7 @@ struct tv_stat_dump {
   uint32_t max_next_frame_us;
   uint32_t max_notify_frame_us;
 #ifdef MTL_HAS_IPMX
+  uint32_t ipmx_pih_fail;
   bool ipmx_sr_on;
   struct ipmx_sr_stats ipmx_sr;
 #endif
@@ -3939,6 +3957,8 @@ static void tv_stat_collect(struct st_tx_video_sessions_mgr* mgr,
   s->stat_max_next_frame_us = 0;
   s->stat_max_notify_frame_us = 0;
 #ifdef MTL_HAS_IPMX
+  d->ipmx_pih_fail = s->stat_ipmx_pih_fail;
+  s->stat_ipmx_pih_fail = 0;
   d->ipmx_sr_on = s->ipmx_sr != NULL;
   if (s->ipmx_sr) ipmx_sr_stat_take(s->ipmx_sr, &d->ipmx_sr);
 #endif
@@ -4078,6 +4098,10 @@ static void tv_stat_log(const struct tv_stat_dump* dump) {
            m_idx, idx, dump->max_next_frame_us, dump->max_notify_frame_us);
   }
 #ifdef MTL_HAS_IPMX
+  if (dump->ipmx_pih_fail) {
+    notice("TX_VIDEO_SESSION(%d,%d): ipmx jpeg xs header check dropped frames %u\n",
+           m_idx, idx, dump->ipmx_pih_fail);
+  }
   if (dump->ipmx_sr_on) ipmx_sr_stat_log(&dump->ipmx_sr, m_idx, idx);
 #endif
 }

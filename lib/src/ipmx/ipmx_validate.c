@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: LicenseRef-IPMX-TBD */
 
 #include "ipmx.h"
+#include "ipmx_jxs.h"
 
 /* TR-10-2/TR-10-11 section 7: the port shall be even and above 1024, should be above 5000
  */
@@ -131,6 +132,15 @@ int ipmx_st22_tx_ops_check(const struct st22_tx_ops* ops) {
     return -ENOTSUP;
   }
 
+  uint16_t plev;
+  if (ipmx_jxs_plev(ops->width, ops->height, ops->fps, ops->framebuff_max_size, &plev) <
+      0) {
+    err("%s(%s), %ux%u fps %d framebuff_max_size %zu not supported, IPMX sends up to "
+        "4 bpp at a TR-08 section 8.1.1 level\n",
+        __func__, name, ops->width, ops->height, ops->fps, ops->framebuff_max_size);
+    return -ENOTSUP;
+  }
+
   return 0;
 }
 
@@ -174,6 +184,19 @@ int ipmx_st22p_codec_check(const char* name, enum st22_codec codec) {
   if (codec != ST22_CODEC_JPEGXS) {
     err("%s(%s), codec %d not allowed, IPMX st22p supports JPEG XS only\n", __func__,
         name ? name : "", codec);
+    return -ENOTSUP;
+  }
+  return 0;
+}
+
+int ipmx_st22p_tx_ops_check(const struct st22p_tx_ops* ops) {
+  int ret = ipmx_st22p_codec_check(ops->name, ops->codec);
+  if (ret < 0) return ret;
+
+  if (ops->input_fmt != ST_FRAME_FMT_GBRPLANAR8) {
+    err("%s(%s), input_fmt %s not allowed, the IPMX MVP st22p is GBRPLANAR8 only, "
+        "RGB 4:4:4 8-bit\n",
+        __func__, ops->name ? ops->name : "", st_frame_fmt_name(ops->input_fmt));
     return -ENOTSUP;
   }
   return 0;

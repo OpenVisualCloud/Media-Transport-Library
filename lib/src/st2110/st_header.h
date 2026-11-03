@@ -398,6 +398,7 @@ struct st_tx_video_session_impl {
   bool stat_user_busy_first;
   uint32_t stat_max_next_frame_us;
   uint32_t stat_max_notify_frame_us;
+  uint32_t stat_ipmx_pih_fail; /* st22 frames the IPMX PIH check dropped this period */
   double stat_cpu_busy_score;
   struct mt_stat_u64 stat_time;
 

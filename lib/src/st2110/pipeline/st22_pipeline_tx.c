@@ -1014,8 +1014,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
     err("%s(%d), unknow codec %d\n", __func__, idx, ops->codec);
     return NULL;
   }
-  if ((ops->flags & ST22P_TX_FLAG_IPMX) && ipmx_st22p_codec_check(ops->name, ops->codec))
-    return NULL;
+  if ((ops->flags & ST22P_TX_FLAG_IPMX) && ipmx_st22p_tx_ops_check(ops)) return NULL;
 
   uint64_t frame_period_ns;
   ret = st_frame_period_ns(ops->fps, &frame_period_ns);
