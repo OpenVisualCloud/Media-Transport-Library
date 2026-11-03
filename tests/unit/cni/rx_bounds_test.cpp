@@ -179,6 +179,55 @@ TEST_F(CniArpBounds, TruncatedReplyIsRejected) {
   EXPECT_FALSE(ut_cni_arp_resolved(ctx_));
 }
 
+/* An IGMP query of the given bytes, its checksum set over them. */
+Frame IgmpQuery(Frame q) {
+  uint32_t sum = 0;
+  for (size_t i = 0; i < q.size(); i += 2) sum += q[i] << 8 | q[i + 1];
+  while (sum >> 16) sum = (sum & 0xffff) + (sum >> 16);
+  q[2] = ~sum >> 8;
+  q[3] = ~sum & 0xff;
+  return q;
+}
+
+const Frame kIgmpV3Query = IgmpQuery({0x11, 100, 0, 0, 0, 0, 0, 0, 0, 125, 0, 0});
+const Frame kIgmpV2Query = IgmpQuery({0x11, 100, 0, 0, 0, 0, 0, 0});
+
+/* An IPv4 header with the Router Alert option that IGMP carries, of total length len. */
+Frame Ipv4RouterAlert(uint16_t len) {
+  Frame f = Ipv4(6, kProtoIgmp);
+  f[16] = len >> 8;
+  f[17] = len & 0xff;
+  f[34] = 0x94;
+  f[35] = 4;
+  return f;
+}
+
+class CniIgmpBounds : public CniRxTest {};
+
+TEST_F(CniIgmpBounds, QueryIsParsed) {
+  Rx(Ipv4(5, kProtoIgmp) + kIgmpV3Query);
+  EXPECT_TRUE(ut_cni_igmp_query_seen(ctx_));
+}
+
+TEST_F(CniIgmpBounds, TruncatedQueryIsRejected) {
+  Frame f = Ipv4(5, kProtoIgmp) + kIgmpV3Query;
+  Rx(f, f.size() - 1);
+  EXPECT_FALSE(ut_cni_igmp_query_seen(ctx_));
+}
+
+TEST_F(CniIgmpBounds, QueryWithRouterAlertIsParsed) {
+  Rx(Ipv4RouterAlert(24 + kIgmpV3Query.size()) + kIgmpV3Query);
+  EXPECT_TRUE(ut_cni_igmp_query_seen(ctx_));
+}
+
+/* An 8-byte IGMPv2 query is padded to the 60-byte minimum frame, which holds 12 bytes. */
+TEST_F(CniIgmpBounds, V2QueryInPaddedFrameIsParsed) {
+  Frame f = Ipv4RouterAlert(24 + kIgmpV2Query.size()) + kIgmpV2Query;
+  f.resize(60, 0);
+  Rx(f);
+  EXPECT_TRUE(ut_cni_igmp_query_seen(ctx_));
+}
+
 class CniDhcpBounds : public CniRxTest {};
 
 TEST_F(CniDhcpBounds, OfferIsParsed) {

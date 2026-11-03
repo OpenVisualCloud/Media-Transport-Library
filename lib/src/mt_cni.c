@@ -270,7 +270,7 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
       } else if (ipv4_hdr->next_proto_id == IPPROTO_IGMP) {
         struct mcast_mb_query_v3* mb_query =
             rte_pktmbuf_mtod_offset(m, struct mcast_mb_query_v3*, hdr_offset);
-        mt_mcast_parse(impl, mb_query, port);
+        mt_mcast_parse(impl, mb_query, m->data_len - hdr_offset, port);
       } else {
         /* ipv4 packets other than UDP/IGMP fallback to kernel */
         cni_burst_to_kernel(cni, m);
