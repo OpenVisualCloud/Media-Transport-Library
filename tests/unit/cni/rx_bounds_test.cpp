@@ -21,6 +21,8 @@ using Frame = std::vector<uint8_t>;
 
 constexpr uint16_t kEtherIpv4 = 0x0800;
 constexpr uint16_t kEtherArp = 0x0806;
+constexpr uint16_t kEther1588 = 0x88f7;
+constexpr uint16_t kPtpGeneralPort = 320;
 constexpr uint16_t kEtherVlan = 0x8100;
 constexpr uint8_t kProtoIgmp = 2;
 constexpr uint8_t kProtoUdp = 17;
@@ -226,6 +228,59 @@ TEST_F(CniIgmpBounds, V2QueryInPaddedFrameIsParsed) {
   f.resize(60, 0);
   Rx(f);
   EXPECT_TRUE(ut_cni_igmp_query_seen(ctx_));
+}
+
+/* A 64-byte PTPv2 announce, the last byte its time source. */
+Frame PtpAnnounce() {
+  Frame a(64, 0);
+  a[0] = 0x0b;
+  a[1] = 2;
+  a[3] = 64;
+  a[63] = 0xa0;
+  return a;
+}
+
+/* An Ethernet header with a VLAN 5 tag. */
+Frame VlanEth(uint16_t ether_type) {
+  Frame f = Eth(kEtherVlan);
+  Put16(f, 5);
+  Put16(f, ether_type);
+  return f;
+}
+
+class CniPtpBounds : public CniRxTest {};
+
+TEST_F(CniPtpBounds, L2AnnounceIsParsed) {
+  Rx(Eth(kEther1588) + PtpAnnounce());
+  EXPECT_TRUE(ut_cni_ptp_master_set(ctx_));
+}
+
+TEST_F(CniPtpBounds, TruncatedL2AnnounceIsRejected) {
+  Frame f = Eth(kEther1588) + PtpAnnounce();
+  Rx(f, f.size() - 1);
+  EXPECT_FALSE(ut_cni_ptp_master_set(ctx_));
+}
+
+TEST_F(CniPtpBounds, VlanL2AnnounceIsParsed) {
+  Rx(VlanEth(kEther1588) + PtpAnnounce());
+  EXPECT_TRUE(ut_cni_ptp_master_set(ctx_));
+}
+
+TEST_F(CniPtpBounds, TruncatedVlanL2AnnounceIsRejected) {
+  Frame f = VlanEth(kEther1588) + PtpAnnounce();
+  Rx(f, f.size() - 1);
+  EXPECT_FALSE(ut_cni_ptp_master_set(ctx_));
+}
+
+TEST_F(CniPtpBounds, L4AnnounceIsParsed) {
+  Rx(Udp(5, kPtpGeneralPort, kPtpGeneralPort) + PtpAnnounce());
+  EXPECT_TRUE(ut_cni_ptp_master_set(ctx_));
+}
+
+TEST_F(CniPtpBounds, TruncatedL4AnnounceIsRejected) {
+  Frame f = Udp(5, kPtpGeneralPort, kPtpGeneralPort) + PtpAnnounce();
+  Rx(f, f.size() - 1);
+  EXPECT_FALSE(ut_cni_ptp_master_set(ctx_));
 }
 
 class CniDhcpBounds : public CniRxTest {};
