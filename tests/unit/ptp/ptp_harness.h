@@ -20,6 +20,7 @@
 #define _UT_PTP_HARNESS_H_
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -82,6 +83,18 @@ void ut_ptp_run_t3_handler(ut_ptp_ctx* ctx);
 /* Run the static single-owner completion attempt for the current cycle. */
 void ut_ptp_try_complete_result(ut_ptp_ctx* ctx);
 
+/* Parse len bytes of an L2 PTP message whose last byte is the last before a PROT_NONE
+ * page; mt_ptp_parse()'s return value. */
+int ut_ptp_parse(ut_ptp_ctx* ctx, const uint8_t* msg, size_t len);
+/* Hand a frame placed likewise to the static PTP RX queue handler; its return value. */
+int ut_ptp_rxq_handle(ut_ptp_ctx* ctx, const uint8_t* frame, size_t len);
+void ut_ptp_set_master_initialized(ut_ptp_ctx* ctx, bool initialized);
+/* The sequence id of the last sync, which a follow_up must carry. */
+void ut_ptp_set_t2_sequence_id(ut_ptp_ctx* ctx, uint16_t seq);
+/* The port id a delay_resp must name, clock identity then port number as on the wire. */
+void ut_ptp_set_our_port_id(ut_ptp_ctx* ctx, const uint8_t id[10]);
+bool ut_ptp_master_initialized(const ut_ptp_ctx* ctx);
+
 /* Direct wrapper over the static `pi_sample`. Operates on the context's
  * own servo. Returns ppb; writes the resulting servo state ordinal to
  * `*out_state` when non-NULL. */
@@ -103,7 +116,9 @@ bool ut_ptp_locked(const ut_ptp_ctx* ctx);
 uint16_t ut_ptp_stat_sync_keep(const ut_ptp_ctx* ctx);
 int ut_ptp_servo_count(const ut_ptp_ctx* ctx);
 double ut_ptp_servo_drift(const ut_ptp_ctx* ctx);
+uint64_t ut_ptp_t1(const ut_ptp_ctx* ctx);
 uint64_t ut_ptp_t3(const ut_ptp_ctx* ctx);
+uint64_t ut_ptp_t4(const ut_ptp_ctx* ctx);
 bool ut_ptp_t3_pending(const ut_ptp_ctx* ctx);
 int32_t ut_ptp_stat_t3_timeout(const ut_ptp_ctx* ctx);
 int32_t ut_ptp_result_claimed(const ut_ptp_ctx* ctx);
