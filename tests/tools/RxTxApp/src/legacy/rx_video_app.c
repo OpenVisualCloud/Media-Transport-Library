@@ -173,7 +173,7 @@ static int app_rx_video_handle_rtp(struct st_app_rx_video_session* s,
   /* copy the payload to target frame */
   uint32_t offset =
       (row_number * s->width + row_offset) / s->st20_pg.coverage * s->st20_pg.size;
-  if ((offset + row_length) > s->st20_frame_size) {
+  if ((offset + row_length) > (uint32_t)s->st20_frame_size) {
     err("%s(%d: invalid offset %u frame size %d\n", __func__, idx, offset,
         s->st20_frame_size);
     return -EIO;
@@ -191,7 +191,7 @@ static int app_rx_video_handle_rtp(struct st_app_rx_video_session* s,
     dbg("%s(%d), row: %d %d %d\n", __func__, idx, row2_number, row2_offset, row2_length);
     uint32_t offset2 =
         (row2_number * s->width + row2_offset) / s->st20_pg.coverage * s->st20_pg.size;
-    if ((offset2 + row2_length) > s->st20_frame_size) {
+    if ((offset2 + row2_length) > (uint32_t)s->st20_frame_size) {
       err("%s(%d: invalid offset %u frame size %d for extra hdr\n", __func__, idx,
           offset2, s->st20_frame_size);
       return -EIO;
