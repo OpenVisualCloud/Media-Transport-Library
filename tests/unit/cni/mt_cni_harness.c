@@ -24,6 +24,7 @@ struct ut_cni_ctx {
   struct mt_cni_entry cni;
   struct mt_dp_impl dp;
   struct mt_arp_impl arp;
+  struct mt_mcast_impl mcast;
   struct mt_dhcp_impl dhcp;
 };
 
@@ -47,6 +48,10 @@ ut_cni_ctx* ut_cni_create(void) {
   ctx->arp.parent = &ctx->impl;
   ctx->impl.arp[MTL_PORT_P] = &ctx->arp;
 
+  mt_pthread_mutex_init(&ctx->mcast.group_mutex, NULL);
+  TAILQ_INIT(&ctx->mcast.group_list);
+  ctx->impl.mcast[MTL_PORT_P] = &ctx->mcast;
+
   /* the request the client answers an offer with finds no TX queue */
   ctx->impl.inf[MTL_PORT_P].tx_mbuf_pool = ut_pool();
   rte_spinlock_init(&ctx->dp.txq_sys_entry_lock);
@@ -66,6 +71,7 @@ void ut_cni_destroy(ut_cni_ctx* ctx) {
   rte_eal_alarm_cancel(dhcp_rebind_handler, &ctx->dhcp);
   rte_eal_alarm_cancel(dhcp_lease_handler, &ctx->dhcp);
   mt_pthread_mutex_destroy(&ctx->dhcp.mutex);
+  mt_pthread_mutex_destroy(&ctx->mcast.group_mutex);
   mt_pthread_mutex_destroy(&ctx->arp.mutex);
   free(ctx);
 }
@@ -85,6 +91,10 @@ int ut_cni_rx(ut_cni_ctx* ctx, const uint8_t* frame, size_t len) {
 
 bool ut_cni_arp_resolved(ut_cni_ctx* ctx) {
   return rte_atomic32_read(&ctx->arp.entries[0].mac_ready);
+}
+
+bool ut_cni_igmp_query_seen(ut_cni_ctx* ctx) {
+  return ctx->mcast.has_external_query;
 }
 
 int ut_cni_dhcp_status(ut_cni_ctx* ctx) {

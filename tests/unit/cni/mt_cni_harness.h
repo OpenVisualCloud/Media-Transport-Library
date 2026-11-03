@@ -30,6 +30,9 @@ int ut_cni_rx(ut_cni_ctx* ctx, const uint8_t* frame, size_t len);
 
 bool ut_cni_arp_resolved(ut_cni_ctx* ctx);
 
+/* The port has seen an IGMP membership query. */
+bool ut_cni_igmp_query_seen(ut_cni_ctx* ctx);
+
 /* The DHCP client of the port starts out discovering, in this transaction. */
 #define UT_CNI_DHCP_XID 0x4d544c31u
 /* Mirror of enum mt_dhcp_status; the harness asserts they match. */
