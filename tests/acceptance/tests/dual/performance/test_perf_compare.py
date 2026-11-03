@@ -27,9 +27,9 @@ from mtl_engine.rxtxapp import RxTxApp
 logger = logging.getLogger(__name__)
 
 FPS = {25: 25.0, 29: 30000 / 1001, 50: 50.0, 59: 60000 / 1001}
-# --perf_compare_single_core: the roles whose instances run on one scheduler on each
-# NUMA node of their slot, with the largest quota RxTxApp takes, perf-pytest's too
-SINGLE_CORE = {"none": (), "RX": ("rx",), "TX": ("tx",), "both": ("rx", "tx")}
+ROLES = ("rx", "tx")
+# --perf_compare_single_core_<role>: its instances on one scheduler, with the largest
+# quota RxTxApp takes, perf-pytest's too
 SINGLE_CORE_QUOTA = 99
 # The most video sessions of one direction an MTL scheduler takes.
 SCH_MAX_SESSIONS = 60
@@ -54,9 +54,8 @@ SCHEDULING = (
     "rx_separate_lcore",
 )
 # --perf_compare_nics redundant: perf-pytest's quotas of its redundant multi-core
-# cases. MTL charges a redundant session on both ports, so at its default 36 RX
-# sessions would take 9 schedulers, more than a slot of 8 has; TX and DMA RX take
-# perf-pytest's too, so that the mode measures what perf-pytest does
+# cases, as MTL charges a redundant session on both ports, so that the mode measures
+# what perf-pytest does
 REDUNDANT_QUOTA = {"tx": 36, "rx": 21, "rx dma": 18}
 # --perf_compare_dma: the builds whose RX instances copy with a DSA
 DMA = {"none": "", "A": "A", "B": "B", "both": "AB"}
@@ -68,10 +67,8 @@ PIXEL_FORMATS = {
     "v210": "V210",
     "y210": "Y210",
 }
-# --perf_compare_nics, doc/perf_compare.md; with a NIC, and so a socket, a build
-APART = ("split", "redundant", "whole")
-# an instance's sessions on two ports, the first filled before the second
-FILLED = ("span", "whole")
+# --perf_compare_nics, doc/perf_compare.md: all but single give each build a NIC, and
+# so a socket, of its own
 NICS = {
     "single": "NIC 0 only, A on port 0 and B on port 1",
     "split": "A on NIC 0 and B on NIC 1, port 0 each, so each build has a CPU socket to itself",
@@ -79,12 +76,6 @@ NICS = {
     "on port 0 and its redundant stream on port 1",
     "whole": "a whole NIC a build, A on both ports of NIC 0 and B on both of NIC 1, a "
     "CPU socket each",
-    "span": "one instance a build on two ports, A on port 0 of both NICs and B on "
-    "port 1 of both NICs",
-    "pairs": "two comparisons at once, A and B on the two ports of NIC 0 and again of "
-    "NIC 1, each NIC reported apart",
-    "pooled": "two comparisons at once, A and B on the two ports of NIC 0 and again "
-    "of NIC 1, both NICs in one result with twice the samples a round",
 }
 
 
@@ -112,8 +103,9 @@ def _options(request) -> dict:
         "args": {"A": get("--perf_compare_args_a"), "B": get("--perf_compare_args_b")},
         "sessions": get("--perf_compare_sessions"),
         "rounds": get("--perf_compare_rounds"),
-        "cores": get("--perf_compare_cores"),
-        "single_core": SINGLE_CORE.get(get("--perf_compare_single_core")),
+        "single_core": tuple(
+            r for r in ROLES if get(f"--perf_compare_single_core_{r}")
+        ),
         "dma": DMA.get(get("--perf_compare_dma")),
         "nics": get("--perf_compare_nics"),
         "pixel_format": get("--perf_compare_pixel_format"),
@@ -131,14 +123,9 @@ def _options(request) -> dict:
             "gives each RX instance its own"
         )
     if _given(options, "lcores"):
-        pytest.fail(
-            "--lcores would replace the slot's CPUs; --perf_compare_cores sets how "
-            "many each slot has"
-        )
+        pytest.fail("--lcores would replace the CPUs of the slot, which the case gives")
     if opts["dma"] is None:
         pytest.fail(f"--perf_compare_dma is one of {', '.join(DMA)}")
-    if opts["single_core"] is None:
-        pytest.fail(f"--perf_compare_single_core is one of {', '.join(SINGLE_CORE)}")
     if opts["nics"] not in NICS:
         pytest.fail(f"--perf_compare_nics is one of {', '.join(NICS)}")
     if opts["pixel_format"] not in PIXEL_FORMATS:
@@ -148,12 +135,15 @@ def _options(request) -> dict:
     given = [n for n in SCHEDULING if _given(options, n)]
     if opts["single_core"] and given:
         pytest.fail(f"--{given[0]} would give a single core instance more schedulers")
-    floor = 2 if opts["single_core"] == SINGLE_CORE["both"] else 3
-    if opts["cores"] < floor:
+    if opts["single_core"] and opts["nics"] == "single":
         pytest.fail(
-            f"--perf_compare_cores starts at {floor}: one for the application threads "
-            "and one for a scheduler, and one for MTL's system tasklets "
-            "(dedicated_sys_lcore) unless both roles are single core"
+            "single core takes a socket a build, --perf_compare_nics split, redundant "
+            "or whole: at a core's limit two instances on one socket fall short of it"
+        )
+    if opts["single_core"] and opts["sessions"] > SCH_MAX_SESSIONS:
+        pytest.fail(
+            f"single core takes up to {SCH_MAX_SESSIONS} sessions, as many as an MTL "
+            "scheduler"
         )
     return opts
 
@@ -228,7 +218,7 @@ def _app_cmd(opts, media_config, media_path, fps, test_time, shares):
             destination_ip=rx_ip,
             **extra,
         )
-        if not redundant:  # span and whole: the second port, unless the first took all
+        if not redundant:  # whole: the second port, unless the first took all
             for port, n in zip(more, shares[1:]):
                 if n:
                     pc.add_port(app.config, side.role, side.vfs[port], *pools[port], n)
@@ -260,17 +250,14 @@ def _ports(host, nics: str) -> tuple[list[str], list[str]]:
     return pfs, vfs
 
 
-def _slots(host, vfs: list[str], nics: str, cores: int) -> list[pc.Slot]:
-    """cpu_layout()'s slots of NIC 0, or of both NICs as *nics* uses them: split,
-    redundant and whole take one slot of each NIC's node, so its cores are a build's
-    alone."""
-    count = 1 if nics in APART else 2
-    nic0 = pc.cpu_layout(host, vfs[0], cores, count)
+def _slots(host, vfs: list[str], nics: str) -> list[pc.Slot]:
+    """cpu_layout()'s two slots of NIC 0's node, or with both NICs one slot of each
+    NIC's node, so its cores are a build's alone."""
     if nics == "single":
-        return nic0
-    nic1 = pc.cpu_layout(host, vfs[2], cores, count)
-    if nic0[0].nodes == nic1[0].nodes:
-        pytest.fail(f"{host.name}: both NICs are on NUMA node {nic0[0].nodes[0]}")
+        return pc.cpu_layout(host, vfs[0])
+    (nic0,), (nic1,) = (pc.cpu_layout(host, vf, 1) for vf in (vfs[0], vfs[2]))
+    if nic0.node == nic1.node:
+        pytest.fail(f"{host.name}: both NICs are on NUMA node {nic0.node}")
     return pc.nic_slots(nics, nic0, nic1)
 
 
@@ -293,10 +280,9 @@ def _write_report(
             "slot": slot.idx,
             "cpus": pc.format_cpus(slot.cpus),
             "isolated": slot.isolated,
-            "cat": bool(s.rdt) and opts["nics"] not in APART,  # else RDT only monitors
+            "cat": bool(s.rdt) and opts["nics"] == "single",  # else RDT only monitors
             "perf": bool(s.perf),
             **({"dsa": s.dma[slot.idx]} if s.dma else {}),
-            **({"nic": slot.nic} if slot.nic is not None else {}),
             **(
                 {"pfs": ", ".join(pfs[s.role][p] for p in slot.ports)}
                 if opts["nics"] != "single"
@@ -310,20 +296,12 @@ def _write_report(
         (f"{hostnames[s.role]} ({s.role.upper()})", _platform(out_dir, s.host))
         for s in sides
     ]
-    nics, single = opts["nics"], opts["single_core"]
+    single = opts["single_core"]
     report = pc.report_html(
-        opts["labels"],
-        opts["args"],
-        details,
-        slots,
-        rounds,
-        platforms,
-        nics,
-        single,
-        inputs,
+        opts["labels"], opts["args"], details, slots, rounds, platforms, single, inputs
     )
     summary = pc.summary_html(
-        opts["labels"], opts["args"], slots, rounds, nics, single, inputs
+        opts["labels"], opts["args"], slots, rounds, single, inputs
     )
     os.makedirs(out_dir, exist_ok=True)
     for name, page in (("perf_compare", report), ("perf_compare_summary", summary)):
@@ -360,28 +338,22 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
     # a TX queue a port of each session: redundant sessions take two
     queues = sessions * (2 if opts["nics"] == "redundant" else 1)
     rate = pc.stream_bps(media_config["width"], media_config["height"], FPS[fps])
-    # the sessions on each port of a slot: redundant sends each on both
-    if opts["nics"] in FILLED:
+    # the sessions on each port of a slot: whole fills the first before the second,
+    # redundant sends each on both
+    if opts["nics"] == "whole":
         shares = pc.port_sessions(sessions, 2, rate)
     else:
         shares = [sessions] * (2 if opts["nics"] == "redundant" else 1)
-    # span has a scheduler on each NIC's node, the others one for all their sessions
-    busiest = max(shares) if opts["nics"] == "span" else sessions
-    if opts["single_core"] and busiest > SCH_MAX_SESSIONS:
-        pytest.fail(
-            f"--perf_compare_single_core takes up to {SCH_MAX_SESSIONS} sessions a "
-            f"scheduler, as many as MTL's, and one would have {busiest}"
-        )
     traced_s = test_time // 2
     # the traced, the timed and the sessions window each take a dump period more at
     # both ends, and the last a period for the dump that closes it
     windows_s = test_time + 3 * (traced_s + 2 * pc.DUMP_PERIOD_S) + pc.DUMP_PERIOD_S
     app_time = pc.steady_timeout(queues) + pc.WARMUP_S + windows_s + 100
     app_cmd = _app_cmd(opts, media_config, media_path, fps, app_time, shares)
-    # a build's sessions, an instance's with pairs and pooled, and their ports
-    spread = {"pairs": " and NIC", "pooled": " and NIC"}.get(opts["nics"], "") + (
+    # a build's sessions and their ports
+    spread = (
         f", {shares[0]} on its first port and {shares[1]} on its second"
-        if opts["nics"] in FILLED
+        if opts["nics"] == "whole"
         else ""
     )
     # every input of the run, as perf-compare.yml names it, under the builds
@@ -396,8 +368,10 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
         ("sessions", f"{sessions} per build{spread}"),
         ("nics", f"{opts['nics']}: {NICS[opts['nics']]}"),
         ("dma", get("--perf_compare_dma")),
-        ("single_core", get("--perf_compare_single_core")),
-        ("cores", opts["cores"]),
+        *(
+            (f"single_core_{r}", "yes" if r in opts["single_core"] else "no")
+            for r in ROLES
+        ),
         ("test_time", test_time),
         ("rounds", opts["rounds"]),
     ]
@@ -423,11 +397,10 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
         *([("NICs", NICS[opts["nics"]])] if opts["nics"] != "single" else []),
         (
             "CPUs",
-            f"{opts['cores']} a slot"
-            f"{' on each NIC node' if opts['nics'] == 'span' else ''}: MTL's schedulers "
-            f"poll one each of the other {opts['cores'] - 1}, its --lcores; the "
-            "application threads, which convert and copy the frames, and MTL's other "
-            "threads share the first and the lcores the schedulers leave (CPU by stage)",
+            "a slot's, as many as its node allows (Placement): MTL's schedulers poll "
+            "one each of its --lcores, all but its first CPU; the application threads, "
+            "which convert and copy the frames, and MTL's other threads share the "
+            "first and the lcores the schedulers leave (CPU by stage)",
         ),
         ("Rounds", f"{opts['rounds']}; the builds swap slots every round"),
         ("Warm-up", f"{pc.WARMUP_S} s after every session is steady"),
@@ -447,33 +420,30 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
         for role, host in (("rx", rx_host), ("tx", tx_host)):
             pfs[role], vfs = _ports(host, opts["nics"])
             links = pc.nic_links(host, pfs[role])
-            slots = _slots(host, vfs, opts["nics"], opts["cores"])
-            # the ports with sessions: split uses 2 of 4, span and whole may leave one
+            slots = _slots(host, vfs, opts["nics"])
+            # the ports with sessions: split uses 2 of 4, whole may leave one
             loads = {p: n for s in slots for p, n in zip(s.ports, shares) if n}
             for p, n in sorted(loads.items()):
                 if slow := pc.slow_ports([pfs[role][p]], [links[p]], n * rate):
                     pytest.fail(
                         f"{host.name}: {n} x {video} on a port take "
                         f"{n * rate / 1e9:.1f} Gb/s, and {slow[0]} "
-                        "(--perf_compare_sessions counts a build's, which span and "
-                        "whole put on two ports, the first filled first)"
+                        "(--perf_compare_sessions counts a build's, which whole puts "
+                        "on two ports, the first filled first)"
                     )
-            if opts["nics"] == "pooled":
-                if unlike := pc.unlike_nics(links, slots):
-                    pytest.fail(f"{host.name}: pooled takes alike NICs, but {unlike}")
-            if opts["nics"] in APART and slots[0].isolated != slots[1].isolated:
+            if opts["nics"] != "single" and slots[0].isolated != slots[1].isolated:
                 pytest.fail(
                     f"{host.name}: {opts['nics']} takes the cores of both NICs' nodes "
                     "isolated alike, as each round puts a build in each slot"
                 )
             sides.append(pc.Side(host, role, get_host_mtl_path(host), vfs, slots, []))
-            sides[-1].rdt = pc.rdt_setup(host, len(slots), opts["nics"] not in APART)
+            sides[-1].rdt = pc.rdt_setup(host, opts["nics"] == "single")
             sides[-1].perf = pc.perf_tool(host)
             if role == "rx" and opts["dma"]:  # MTL has no TX DMA
                 sides[-1].dma = pc.dsa_layout(host, slots)
         hostnames = {s.role: pc.sh(s.host, "hostname").strip() for s in sides}
         for n in range(opts["rounds"]):
-            order = pc.round_order(n, len(sides[0].slots))
+            order = pc.round_order(n)
             launches, failed = [], False
             try:
                 results, problems, notes = pc.run_round(

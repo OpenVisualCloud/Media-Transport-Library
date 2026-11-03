@@ -53,7 +53,7 @@ perf-compare-refs)
 	}
 	# The numbers are string inputs (perf-compare.yml says why), so the form
 	# takes any text: stop a typo here, before the build.
-	for v in SESSIONS TEST_TIME ROUNDS CORES; do
+	for v in SESSIONS TEST_TIME ROUNDS; do
 		[[ -z ${!v:-} || ${!v} =~ ^[1-9][0-9]*$ ]] || {
 			echo "::error::${v,,} must be a positive number: ${!v@Q}" >&2
 			exit 1
@@ -64,15 +64,7 @@ perf-compare-refs)
 		echo "::error::test_time must be at least 30: ${TEST_TIME}" >&2
 		exit 1
 	fi
-	# A slot's CPU for the application threads, one for a scheduler and one for
-	# the system tasklets, unless both roles are single core.
-	floor=3
-	[[ ${SINGLE_CORE:-none} != both ]] || floor=2
-	if ((${CORES:-3} < floor)); then
-		echo "::error::cores must be at least ${floor}: ${CORES}" >&2
-		exit 1
-	fi
-	# The sessions of a build, which span and whole put on two ports, filling the
+	# The sessions of a build, which whole puts on two ports, filling the
 	# first before the second (pc.port_sessions()). A port carries at most 100G: the
 	# rate of pc.stream_bps(), keep in step, 20-bit pixels paced over 1125 of 1080
 	# lines, 1406 bytes for 1320 of pixels. A nics choice reads "<word>: what it does".
@@ -81,22 +73,27 @@ perf-compare-refs)
 		fps[25] = 25; fps[29] = 30000 / 1001; fps[50] = 50; fps[59] = 60000 / 1001
 		print int(100e9 / (h * h * 16 / 9 * 20 * fps[f] * 1125 / 1080 * 1406 / 1320))
 	}')
-	if [[ ${nics%%:*} =~ ^(span|whole)$ ]]; then
+	if [[ ${nics%%:*} == whole ]]; then
 		if ((sessions > 2 * most)); then
 			echo "::error::${sessions} x ${video} take more than two 100G ports carry, $((2 * most))" >&2
 			exit 1
 		fi
 	elif ((sessions > most)); then
-		echo "::error::${sessions} x ${video} take more than a 100G port carries, ${most}; nics whole or span put a build on two, up to $((2 * most))" >&2
+		echo "::error::${sessions} x ${video} take more than a 100G port carries, ${most}; nics whole puts a build on two, up to $((2 * most))" >&2
 		exit 1
 	fi
-	# An MTL scheduler takes 60 video sessions at most; span has one on each NIC's
-	# node, the other modes one for all.
-	busiest=$sessions
-	[[ ${nics%%:*} != span ]] || ((busiest = sessions < most ? sessions : most))
-	if [[ ${SINGLE_CORE:-none} != none ]] && ((busiest > 60)); then
-		echo "::error::single_core takes up to 60 sessions a scheduler, and one would have ${busiest}" >&2
-		exit 1
+	# Booleans: "true" or "false", or empty in a run without inputs.
+	if [[ ${SINGLE_CORE_RX:-} == true || ${SINGLE_CORE_TX:-} == true ]]; then
+		# At a core's limit two instances on one socket fall short of it.
+		if [[ ${nics%%:*} == single ]]; then
+			echo "::error::single core takes a socket a build: nics split, redundant or whole" >&2
+			exit 1
+		fi
+		# An MTL scheduler takes 60 video sessions at most.
+		if ((sessions > 60)); then
+			echo "::error::single core takes up to 60 sessions, as many as an MTL scheduler: ${sessions}" >&2
+			exit 1
+		fi
 	fi
 	if [[ ${GITHUB_EVENT_NAME:-} == schedule ]]; then
 		# GitHub starts each night hours late, by a different amount, so a window

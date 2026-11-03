@@ -49,6 +49,13 @@ RDT_SAVE = "/run/mtl-perf-compare.schemata"
 COLLECTOR_CPU = 1
 # MTL gives EAL "-l 0,<lcores>", so the other OS core is every instance's main lcore.
 MAIN_LCORE = 0
+# The fewest CPUs of a slot: the application threads', one for MTL's system tasklets
+# and one for a scheduler.
+SLOT_CPUS = 3
+# A slot of isolated cores worth taking over a larger one of cores that are not: 36 x
+# 1080p59 RX without DMA run 5 schedulers beside the application threads' and the
+# system tasklets' CPUs.
+ISOLATED_SLOT_CPUS = 8
 
 # An explicit newline: BPFTRACE_STRLEN cuts a long message before its own.
 LOG_SCRIPT = 'usdt::sys:log_msg { printf("%llu L %s\\n", nsecs, str(arg1)); }'
@@ -330,26 +337,25 @@ class Slot:
 
     The first CPU is its instance's application and EAL control threads', the
     others its --lcores: the schedulers take some, and the application threads
-    also the ones they leave. A slot on two NUMA nodes has the CPUs of its first
-    node first, as many as of the second.
+    also the ones they leave.
     """
 
     idx: int
-    nodes: list[int]
+    node: int
     cpus: list[int]
     isolated: bool
     ports: list[int] = field(default_factory=list)  # its VFs, indices into Side.vfs
-    nic: int | None = None  # its NIC when each NIC has a pair of slots
     main_node: int = 0  # the NUMA node of MAIN_LCORE
 
 
-def cpu_layout(host, pf: str, cores: int, count: int = 2) -> list[Slot]:
-    """Split the physical cores of *pf*'s NUMA node into *count* equal slots.
+def cpu_layout(host, pf: str, count: int = 2) -> list[Slot]:
+    """Split the physical cores of *pf*'s NUMA node into *count* equal slots, of
+    isolated cores where they give each ISOLATED_SLOT_CPUS, else as large as it allows.
 
     One hardware thread per core, so no slot owns an SMT sibling of another's
-    cores; the node's first two cores stay with the OS. Isolated cores
-    (isolcpus) are used when the node has enough of them, else only cores that
-    are not isolated, so all slots are alike.
+    cores; the node's first two cores stay with the OS. The slots take the isolated
+    cores (isolcpus) when they give each ISOLATED_SLOT_CPUS or are at least as many
+    as the others, else only cores that are not isolated, so all slots are alike.
     """
     lines = sh(
         host,
@@ -367,18 +373,19 @@ def cpu_layout(host, pf: str, cores: int, count: int = 2) -> list[Slot]:
     first_threads = {min(parse_cpus(line)) for line in lines[3:] if line.strip()}
     pool = sorted(c for c in node_cpus if c in first_threads)[2:]
     iso = [c for c in pool if c in isolated]
-    need = count * cores
-    picked = iso if len(iso) >= need else [c for c in pool if c not in isolated]
-    picked = picked[:need]
-    if len(picked) < need:
+    others = [c for c in pool if c not in isolated]
+    enough = min(count * ISOLATED_SLOT_CPUS, len(others))
+    picked = iso if len(iso) >= enough else others
+    cores = len(picked) // count
+    if cores < SLOT_CPUS:
         raise RuntimeError(
             f"{host.name}: NUMA node {node} has {len(iso)} isolated free cores and "
-            f"{len(pool) - len(iso)} others, not {need} of either"
+            f"{len(others)} others, not {count * SLOT_CPUS} of either"
         )
     return [
         Slot(
             i,
-            [node],
+            node,
             picked[i * cores : (i + 1) * cores],
             set(picked) <= isolated,
             [i],
@@ -406,40 +413,22 @@ def add_port(
     config[f"{role}_sessions"].append(group)
 
 
-def nic_slots(nics: str, nic0: list[Slot], nic1: list[Slot]) -> list[Slot]:
-    """The slots of a host from cpu_layout()'s of each NIC, as *nics* uses them: for
-    span, slot p has port p of each NIC; for split, slot 0 port 0 of NIC 0 and slot 1
-    that of NIC 1, a socket each; for redundant and whole, both ports of either NIC;
-    for pairs and pooled, NIC 0's slots 0 and 1 are followed by NIC 1's, slots 2 and
-    3."""
-    if nics == "span":
-        return [
-            replace(
-                a,
-                nodes=a.nodes + b.nodes,
-                cpus=a.cpus + b.cpus,
-                isolated=a.isolated and b.isolated,
-                ports=[p, p + 2],
-            )
-            for p, (a, b) in enumerate(zip(nic0, nic1))
-        ]
-    if nics == "split":
-        return [nic0[0], replace(nic1[0], idx=1, ports=[2])]
+def nic_slots(nics: str, nic0: Slot, nic1: Slot) -> list[Slot]:
+    """The slots of a host from cpu_layout()'s slot of each NIC's node, a socket each,
+    both of as many CPUs as the smaller has: for split, slot 0 has port 0 of NIC 0
+    and slot 1 that of NIC 1; for redundant and whole, both ports of either NIC."""
+    cores = min(len(nic0.cpus), len(nic1.cpus))
     # redundant: ST 2022-7, port 0 the primary and port 1 the redundant leg
-    if nics in ("redundant", "whole"):
-        return [replace(nic0[0], ports=[0, 1]), replace(nic1[0], idx=1, ports=[2, 3])]
+    ports = ([0], [2]) if nics == "split" else ([0, 1], [2, 3])
     return [
-        replace(s, idx=2 * nic + s.idx, ports=[2 * nic + s.idx], nic=nic)
-        for nic, layout in enumerate((nic0, nic1))
-        for s in layout
+        replace(s, idx=i, cpus=s.cpus[:cores], ports=p)
+        for i, (s, p) in enumerate(zip((nic0, nic1), ports))
     ]
 
 
-def round_order(n: int, slots: int) -> tuple:
-    """The label of each slot in round *n*: the builds swap slots every round, and NIC
-    1's pair runs the other way round, so every round has each build on both NICs."""
-    order = ("A", "B") if n % 2 == 0 else ("B", "A")
-    return order + order[::-1] if slots == 4 else order
+def round_order(n: int) -> tuple:
+    """The label of each slot in round *n*: the builds swap slots every round."""
+    return ("A", "B") if n % 2 == 0 else ("B", "A")
 
 
 def stream_bps(width: int, height: int, fps: float) -> float:
@@ -499,20 +488,6 @@ def slow_ports(pfs: list[str], links: list[tuple[int, str]], bps: float) -> list
     ]
 
 
-def unlike_nics(links: list[tuple[int, str]], slots: list[Slot]) -> str:
-    """How NIC 0 and NIC 1 of a pair on each NIC differ, by port 0 and slot 0 of
-    each: speed, firmware or isolated cores; "" when they are alike."""
-    return "; ".join(
-        f"{what} {a} on NIC 0, {b} on NIC 1"
-        for what, a, b in (
-            ("Mb/s", links[0][0], links[2][0]),
-            ("firmware", links[0][1], links[2][1]),
-            ("isolated cores", slots[0].isolated, slots[2].isolated),
-        )
-        if a != b
-    )
-
-
 def stop_units(host) -> None:
     sh(
         host,
@@ -558,13 +533,12 @@ def rdt_teardown(host) -> None:
     )
 
 
-def rdt_setup(host, count: int = 2, partition: bool = True) -> list[str]:
-    """Give each of *count* slots an equal, exclusive share of the L3 ways, or all of
+def rdt_setup(host, partition: bool = True) -> list[str]:
+    """Give each of the two slots an equal, exclusive share of the L3 ways, or all of
     them without *partition*, for slots that share no L3: their groups only monitor.
 
     Returns a group path per slot, or [] when the host has no L3 allocation or
-    another user owns resctrl. Slot i has the ways of slot i % 2 in every L3,
-    so a pair of slots on each of two sockets keeps the two pairs apart.
+    another user owns resctrl.
     """
     rdt_teardown(host)
     out = sh(
@@ -587,7 +561,7 @@ def rdt_setup(host, count: int = 2, partition: bool = True) -> list[str]:
         return []
     full, min_bits, shared = int(out[0], 16), int(out[1]), int(out[2], 16)
     domains = [d.split("=")[0] for d in out[3].split(":", 1)[1].split(";")]
-    paths = [f"{RESCTRL}/{RDT_PREFIX}{i}" for i in range(count)]
+    paths = [f"{RESCTRL}/{RDT_PREFIX}{i}" for i in (0, 1)]
     if not partition:
         line = "L3:" + ";".join(f"{d}={full:x}" for d in domains)
         sh(
@@ -609,14 +583,13 @@ def rdt_setup(host, count: int = 2, partition: bool = True) -> list[str]:
     slot0 = ((1 << share) - 1) << ends[0]
     masks = [full & ~(slot0 | slot0 << share), slot0, slot0 << share]
     lines = ["L3:" + ";".join(f"{d}={m:x}" for d in domains) for m in masks]
-    slot_lines = [lines[1 + i % 2] for i in range(count)]
     sh(
         host,
         f"grep '^ *L3:' {RESCTRL}/schemata > {RDT_SAVE} && "
         f"echo '{lines[0]}' > {RESCTRL}/schemata && "
         + " && ".join(
             f"mkdir {p} && echo '{line}' > {p}/schemata"
-            for p, line in zip(paths, slot_lines)
+            for p, line in zip(paths, lines[1:])
         ),
     )
     logger.info(f"{host.name}: CAT {share} of {ways} L3 ways per slot")
@@ -646,19 +619,16 @@ def dsa_layout(host, slots: list[Slot]) -> list[str]:
         by_node.setdefault(int(node), []).append(bdf)
     picked = []
     for slot in slots:
-        mine = []
-        for node in slot.nodes:
-            nth = [s.idx for s in slots if node in s.nodes].index(slot.idx)
-            dsa = by_node.get(node, [])
-            if nth >= len(dsa):
-                raise RuntimeError(
-                    f"{host.name}: NUMA node {node} has {len(dsa)} DSA, its slots need "
-                    f"{nth + 1}"
-                )
-            if not bind_dma_to_vfio(host, dsa[nth]):
-                raise RuntimeError(f"{host.name}: DSA {dsa[nth]} is not on vfio-pci")
-            mine.append(dsa[nth])
-        picked.append(",".join(mine))
+        nth = [s.idx for s in slots if s.node == slot.node].index(slot.idx)
+        dsa = by_node.get(slot.node, [])
+        if nth >= len(dsa):
+            raise RuntimeError(
+                f"{host.name}: NUMA node {slot.node} has {len(dsa)} DSA, its slots "
+                f"need {nth + 1}"
+            )
+        if not bind_dma_to_vfio(host, dsa[nth]):
+            raise RuntimeError(f"{host.name}: DSA {dsa[nth]} is not on vfio-pci")
+        picked.append(dsa[nth])
     return picked
 
 
@@ -714,13 +684,6 @@ class Instance:
     dma: bool = False  # its command gives it a DMA device
 
     @property
-    def key(self) -> str:
-        """Its results' key: its role, and the NIC of its slot if each NIC has a pair."""
-        return (
-            self.role if self.slot.nic is None else f"{self.role} NIC {self.slot.nic}"
-        )
-
-    @property
     def units(self) -> list[str]:
         window = [f"{self.name}-{self.window}"] if self.window else []
         return [self.name, f"{self.name}-log", *window]
@@ -746,8 +709,7 @@ class Instance:
             f"unshare --mount --ipc --propagation private sh {self.log}.sh",
             [
                 f"AllowedCPUs={format_cpus({MAIN_LCORE, *self.slot.cpus})}",
-                "AllowedMemoryNodes="
-                f"{format_cpus({self.slot.main_node, *self.slot.nodes})}",
+                f"AllowedMemoryNodes={format_cpus({self.slot.main_node, self.slot.node})}",
                 "Nice=-20",
             ],
             self.log,
@@ -1481,9 +1443,7 @@ def _call(metric: str) -> str:
     return f"{m[2]} on sch_{m[1]}, {m[3]} (us)" if m else metric
 
 
-def _verdict(
-    valid: list[dict], rows: dict, keys: list, names: dict, samples: int = 1
-) -> str:
+def _verdict(valid: list[dict], rows: dict, keys: list, names: dict) -> str:
     """The verdict box: what the candidate does to the key rows *keys*, (label, row),
     its largest regression and improvement, the losses, and the rule of a change."""
     count = Counter(outcome(r) for _, r in keys)
@@ -1528,18 +1488,14 @@ def _verdict(
         )
         at = f"; the worst session at {fps} fps" if fps else ""
         lines.append(f"No loss or late frames{at}.")
-    rounds = len(valid) // samples
-    on = f" on each of {samples} NICs" if samples > 1 else ""
+    rounds = len(valid)
     rule = (
-        f"{rounds} valid round{'s' * (rounds > 1)}{on}, the slots swapped each round. "
+        f"{rounds} valid round{'s' * (rounds > 1)}, the slots swapped each round. "
         f"A change is at least {MIN_CHANGE_PCT:g}% and {NOISE_FACTOR:g} times the "
         "noise, twice the standard error of a build's mean over its rounds."
     )
-    if 1 < len(valid) < 4:  # of a pooled run, each NIC of a round is a sample
-        rule += (
-            f" Under 4 {'samples' if samples > 1 else 'rounds'} the noise is a rough "
-        )
-        rule += "estimate: a change of low "
+    if 1 < rounds < 4:
+        rule += " Under 4 rounds the noise is a rough estimate: a change of low "
         rule += "confidence is a hint."
     lines.append(rule)
     head, *rest = map(html.escape, lines)
@@ -1547,13 +1503,10 @@ def _verdict(
     return f'<div class="{attr}"><b>{head}</b><br>{"<br>".join(rest)}</div>'
 
 
-def _summary(
-    valid: list[dict], hosts: dict, names: dict, styled: bool = True, samples: int = 1
-) -> str:
+def _summary(valid: list[dict], hosts: dict, names: dict, styled: bool = True) -> str:
     """The verdict on the key rows of the roles, those rows, the regressions first, the
     tasklet call times outside the verdict, and which build lacks tasklet rows; its
-    legend tells of the colors and the bars only when *styled*. *valid* has *samples*
-    of each round."""
+    legend tells of the colors and the bars only when *styled*."""
     p = ['<div class="sec"><h2>Summary</h2>']
     if not valid:
         p.append(
@@ -1574,7 +1527,7 @@ def _summary(
     tasklets = items(
         lambda r: TASKLET_ROWS.fullmatch(r.metric) and None not in (r.a, r.b)
     )
-    p.append(_verdict(valid, rows, keys, names, samples))
+    p.append(_verdict(valid, rows, keys, names))
     every = Counter(outcome(r) for role in hosts for r in rows[role])
     tally = " · ".join(f"{OUTCOMES[o][1]} {o}: {every[o]}".strip() for o in OUTCOMES)
     p.append(_note(f"All {every.total()} rows: {tally}"))
@@ -1652,31 +1605,14 @@ def _platform_text(plat: dict) -> dict:
     return text
 
 
-def _pool(metrics: dict, nic: int) -> dict:
-    """The rows of the pair on *nic* of a round of a pair on each NIC, by role."""
-    end = f" NIC {nic}"
-    return {
-        x: {k.removesuffix(end): m for k, m in metrics[x].items() if k.endswith(end)}
-        for x in "AB"
-    }
-
-
-def _results(
-    labels, args, slots, rounds, styled, nics, single_core, inputs=()
-) -> list[str]:
+def _results(labels, args, slots, rounds, styled, single_core, inputs=()) -> list[str]:
     """The builds, the rounds, the summary and the tables of each role; *styled* for a
-    page with the report's style. *nics* is how the builds use the NICs: single, span,
-    split, redundant, whole, pairs or pooled; *single_core* the roles whose instances
-    had one scheduler; *inputs* the (input, value) rows of every input of the run, as
-    the workflow names them, under the builds.
+    page with the report's style. *single_core* is the roles whose instances had one
+    scheduler; *inputs* the (input, value) rows of every input of the run, as the
+    workflow names them, under the builds.
     """
     valid = [r["metrics"] for r in rounds if not r["problems"]]
-    if nics == "pooled":  # each NIC's pair of each round is a sample
-        valid = [_pool(v, nic) for v in valid for nic in (0, 1)]
-    hosts = {
-        f"{s['role']} NIC {s['nic']}" if nics == "pairs" else s["role"]: s["host"]
-        for s in slots
-    }
+    hosts = {s["role"]: s["host"] for s in slots}
     names = build_names(labels)
     builds = [
         ["Build", labels["A"], labels["B"]],
@@ -1704,17 +1640,15 @@ def _results(
         ]
         for n, r in enumerate(rounds, 1)
     ]
-    width = len(rounds[0]["order"]) if rounds else 2
-    slot_heads = [f"Slot {i}" for i in range(width)]
     p = [
         '<div class="sec"><h2>Builds</h2>',
         _text_table(["", "Baseline", "Candidate"], builds, "mx cmp"),
         *([_text_table(["Input", "Selected"], inputs, "kv")] if inputs else []),
         "</div>",
         '<div class="sec"><h2>Rounds</h2>',
-        _text_table(["Round", *slot_heads, "Result"], runs),
+        _text_table(["Round", "Slot 0", "Slot 1", "Result"], runs),
         "</div>",
-        _summary(valid, hosts, names, styled, 2 if nics == "pooled" else 1),
+        _summary(valid, hosts, names, styled),
     ]
     for role, host in hosts.items():
         title = f"{role.upper()} ({html.escape(host)})"
@@ -1725,16 +1659,14 @@ def _results(
     return p
 
 
-def summary_html(
-    labels, args, slots, rounds, nics="single", single_core=(), inputs=()
-) -> str:
+def summary_html(labels, args, slots, rounds, single_core=(), inputs=()) -> str:
     """The report as the job summary shows it, which keeps no style: the builds and the
     inputs, the rounds, the summary and the tables of each role; the workflow links the
     full report, with the setup and the instances, after it."""
     title = html.escape(f"MTL perf-compare: {labels['B']} against {labels['A']}")
     page = [
         f"<h2>{title}</h2>",
-        *_results(labels, args, slots, rounds, False, nics, single_core, inputs),
+        *_results(labels, args, slots, rounds, False, single_core, inputs),
     ]
     return "\n".join(page)
 
@@ -1746,7 +1678,6 @@ def report_html(
     slots,
     rounds,
     platforms,
-    nics="single",
     single_core=(),
     inputs=(),
 ) -> str:
@@ -1755,17 +1686,16 @@ def report_html(
 
     *details* are the rows of its test information, *slots* one dict per slot of
     each host (host, role, slot, cpus, isolated, cat, perf; dsa of an RX slot when
-    a build uses DMA; nic and pfs when the builds use both NICs), *rounds* the rounds
-    as the case keeps them, with the launches of run_round(), *platforms* the
-    (label, platform_config.json) of the SUT and the companion, *nics* how the
-    builds use the NICs: single, span, split, redundant, whole, pairs or pooled,
-    *single_core* the roles whose instances had one scheduler, and *inputs* the
-    (input, value) rows of every input of the run.
+    a build uses DMA; pfs when the builds use both NICs), *rounds* the rounds as the
+    case keeps them, with the launches of run_round(), *platforms* the (label,
+    platform_config.json) of the SUT and the companion, *single_core* the roles whose
+    instances had one scheduler, and *inputs* the (input, value) rows of every input
+    of the run.
     """
     title = f"MTL perf-compare: {labels['B']} against {labels['A']}"
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     p = [html_head(html.escape(title), now, STYLE)]
-    p += _results(labels, args, slots, rounds, True, nics, single_core, inputs)
+    p += _results(labels, args, slots, rounds, True, single_core, inputs)
     info = _text_table(["Parameter", "Value"], details, "kv")
     p.append(_details("Test Information", [info], opened=True))
     yes = {True: "yes", False: "no"}
@@ -1879,9 +1809,9 @@ def run_round(
     it. The logs and records of the round are copied to *out_dir*, and *launches*
     gets what each instance ran, its label, role, slot, script and configuration,
     also when the round raises. The problems and notes name the builds by *names*;
-    an instance of a role in *single_core* with more schedulers than the NUMA nodes
-    of its slot is one. *queues* are the TX queues of an instance, see _wait_steady().
-    Returns ({label: {Instance.key: metrics}}, problems, notes).
+    an instance of a role in *single_core* with more than one scheduler is one.
+    *queues* are the TX queues of an instance, see _wait_steady().
+    Returns ({label: {role: metrics}}, problems, notes).
     """
     rx, tx = sides
     problems, notes, insts = [], [], []
@@ -1978,17 +1908,14 @@ def run_round(
         notes.append(f"a CI job ran on {tx.host.name} during the round")
     # Without the rate limiter a build re-plans nothing: say so, or its -100% reads as
     # a gain. MTL logs the way at info level; a log without it compares nothing.
-    paced: dict = {}  # NIC of a pair: {label: the pacing ways of its TX sessions}
+    paced = {}  # label: the pacing ways of its TX sessions
     for i in insts:
         if i.role == "tx":
             log = sh(i.host, f"grep -ho 'pacing way: [a-z_]*' {i.log}", check=False)
-            ways = " and ".join(sorted(set(re.findall(r"way: (\w+)", log))))
-            paced.setdefault(i.slot.nic, {})[i.label] = ways
-    for nic, by_label in paced.items():
-        if all(by_label.values()) and len(set(by_label.values())) > 1:
-            ways = "; ".join(f"{names[x]} {way}" for x, way in sorted(by_label.items()))
-            on = "" if nic is None else f" on NIC {nic}"
-            notes.append(f"the builds pace TX differently{on}: {ways}")
+            paced[i.label] = " and ".join(sorted(set(re.findall(r"way: (\w+)", log))))
+    if all(paced.values()) and len(set(paced.values())) > 1:
+        ways = "; ".join(f"{names[x]} {way}" for x, way in sorted(paced.items()))
+        notes.append(f"the builds pace TX differently: {ways}")
 
     results: dict = {label: {} for label in order}
     if problems:
@@ -2014,10 +1941,8 @@ def run_round(
             problems.append(f"{who(i)}: {named} of {sessions} sessions")
             continue
         schedulers = len({s for d in untraced for s in d.sch})
-        if i.role in single_core and schedulers > len(i.slot.nodes):
-            problems.append(
-                f"{who(i)}: {schedulers} schedulers, single core runs one a NUMA node"
-            )
+        if i.role in single_core and schedulers > 1:
+            problems.append(f"{who(i)}: {schedulers} schedulers, single core runs one")
             continue
         # MTL falls back to the CPU copy, silently, for a session it gives no DMA
         copied = len({k for d in untraced for k, n in d.dma.items() if n})
@@ -2039,5 +1964,5 @@ def run_round(
         for loss in LOSS_ROWS:
             if m.get(loss):
                 notes.append(f"{who(i)}: {m[loss]} {loss}")
-        results[i.label][i.key] = m
+        results[i.label][i.role] = m
     return results, problems, notes

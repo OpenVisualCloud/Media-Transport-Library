@@ -22,8 +22,9 @@ An A/A run, of one build twice, measures the noise floor of the rig.
 | How do two builds that expect the same path run side by side? | A private mount namespace binds each tree over `<mtl>/.local_install` (§3.2) | DPDK bakes `RTE_EAL_PMD_PATH` into `librte_eal` as an absolute path with no override, so a moved tree loads the wrong drivers or none; `v26.01` pins DPDK 25.11 and `main` 26.07. |
 | How are the CPUs isolated? | A transient systemd unit per instance whose cgroup v2 cpuset is the slot and CPU 0, the main lcore MTL gives EAL; the slot's CPUs but its first are its `--lcores` (§3.1) | `taskset` isolates nothing: `numa_bind()` in `mtl_init()` widened a `[2,3]` mask to `0-31`. `isolate.sh` holds one host-wide lock for its one partition. |
 | How is the L3 shared? | Intel RDT CAT: equal, exclusive ways per slot; none with `split`, `redundant` or `whole`, whose slots share no L3 (§3.3) | Otherwise the larger footprint evicts the other, and the swap does not cancel that: it follows the instance, not the slot. |
-| One NUMA node for both slots, or one each? | Both on the node of their NIC; with both NICs, each NIC's slots on its own node, with `split`, `redundant` and `whole` a socket each (§3.5) | A slot on the other node would reach its NIC and hugepages across the socket link, which no production MTL does (DPDK's control data aside, §3.1); the swap cancels that in the mean but not in the spread. |
-| How do the builds use a second NIC? | As `nics` says: `span`, an instance on a port of each NIC; `split`, `redundant`, `whole`, a build on each; `pairs`, `pooled`, a pair of slots on each, rows apart or pooled (§3.5) | `span` loads an instance with two NICs; `pairs` and `pooled` repeat the comparison on the other socket; the other three give each build a socket, the swap cancelling it. |
+| One NUMA node for both slots, or one each? | Both on the node of their NIC; with `split`, `redundant` and `whole` one on each NIC's node, a socket each (§3.5) | A slot on the other node would reach its NIC and hugepages across the socket link, which no production MTL does (DPDK's control data aside, §3.1); the swap cancels that in the mean but not in the spread. |
+| How many CPUs has a slot? | All its node gives: on the perf pair half its isolated cores for each slot of `single`, all of them with `split`, `redundant` and `whole` (§3.1) | MTL starts as many schedulers as its quota needs, so more CPUs leave them as they are and give the application threads room; a smaller count only starved those. |
+| How do the builds use a second NIC? | As `nics` says: `split`, `redundant` and `whole` give each build a NIC and its socket (§3.5) | At a core's limit two instances on one socket fall short of it; the swap cancels the difference between the sockets. |
 | Does an instance copy with DMA? | Per build (`dma`): its RX instances, each with a DSA of its own on its port's node (§3.5) | MTL has no TX DMA, gives a session only a DMA device on its port's node, and a vfio device belongs to one process. |
 | What is measured? | The stats dump through `sys:log_msg`, the tasklet counters through `sys:tasklet_stat`, `/proc`, RDT and `perf stat` (§4) | `sys:log_msg` fires at any log level and exists in every release since 2024, so `v26.01` is measured the same way as `main`. |
 | Which application? | RxTxApp | FFmpeg and GStreamer measure their own frame copies more than MTL. |
@@ -118,16 +119,20 @@ mtl-perf-rx0-pmu                         perf stat -p <pid>, the untraced window
 
 ### 3.1. CPU
 
-`cpu_layout()` gives each slot `cores` (8) physical cores of the VF's NUMA node, one
-hardware thread each so no slot holds an SMT sibling of another's, after two cores for
-the OS and the collectors. A node has two slots, or one with `split`, `redundant` and `whole`,
-which give each build a node of its own. The slots are isolated cores when the node
-isolates as many as they take, else none is. `isolcpus=4-20,68-84` (and the same
-`nohz_full` and `rcu_nocbs`) isolates 17 cores on the node of each NIC of the perf
-hosts: two slots are then 4-11 and 12-19 on NIC 0's node 0 and 68-75 and 76-83 on NIC
-1's node 2, and `cores` takes at most 8; the one slot of `split`, `redundant` and `whole` takes
-up to all 17, 4-20 and 68-84. With node 0's alone, NIC 1's slots are cores that are not
-isolated.
+`cpu_layout()` splits the physical cores of the VF's NUMA node into equal slots, one
+hardware thread each so no slot holds an SMT sibling of another's, after the node's
+first two cores, on node 0 the OS's and the collectors'. A node has two slots, or one with `split`, `redundant` and
+`whole`, which give each build a node of its own; their two slots take as many cores as
+the smaller of the two has. The slots are the node's isolated cores when they give each
+8 (`ISOLATED_SLOT_CPUS`, the slot of the measurements below; 36 x 1080p59 RX without DMA
+take 7) or are at least as many as its other cores, else those other cores, so a slot is
+isolated where that gives it 8 and otherwise as large as the node allows. A slot needs 3
+of one kind (`SLOT_CPUS`: the application threads', the system tasklets' and a
+scheduler's). `isolcpus=4-20,68-84` (and the same `nohz_full`
+and `rcu_nocbs`) isolates 17 cores on the node of each NIC of the perf hosts: the two
+slots of `single` are then 4-11 and 12-19 on NIC 0's node 0, and the one slot of
+`split`, `redundant` and `whole` all 17: 4-20 on node 0, 68-84 on NIC 1's node 2. With
+node 0's alone, NIC 1's slots are cores that are not isolated, which those modes refuse.
 
 The slot's CPUs but its first are the instance's `--lcores`, as perf-pytest gives MTL
 the isolated CPUs of its NIC's node, and the cpuset keeps the instance in the slot and
@@ -166,8 +171,7 @@ we are the first user"). DPDK's `--in-memory` shares no hugepage file.
 ### 3.3. Cache and memory bandwidth
 
 When resctrl offers L3 allocation and holds no other groups, the groups `mtl_perf_0` and
-`mtl_perf_1` get `ways / 3` L3 ways each (with a pair on each NIC, `mtl_perf_2` and
-`mtl_perf_3` the same ways in the other socket's L3), at the end of the mask away from the
+`mtl_perf_1` get `ways / 3` L3 ways each, at the end of the mask away from the
 `shareable_bits`. Those are the ways the NIC writes into (DDIO), which both instances
 use and neither may own, so the default group keeps them with the rest: with 12 ways and
 `shareable_bits` `c00`, the slots get `00f` and `0f0` and the default group `f00`. Each
@@ -194,7 +198,6 @@ after an aborted job `perf-compare.sh clean` (§6).
 | Shared memory controller, DDIO ways, socket power budget | Common mode; an A/A run measures what is left. The nightly is one when `main` did not move, and equal refs run the same binaries |
 | Another job on the companion, which serves other repositories too | The round notes a `Runner.Worker` on the companion at its start or end |
 | Host tasks and IRQs on the SMT siblings of slot cores, IRQs on the slot cores | Not prevented: the cpuset bounds the instance, not the host. A task on a slot core shows as `sch preemptions (/s)`, the rest as a longer loop and a wider spread |
-| NIC 0 and NIC 1, and their sockets | `span`: both slots have a port of each. `pairs`: each NIC's rows apart. `pooled`: refused unless both NICs link at one speed, run one firmware and are alike isolated |
 
 ### 3.5. Two NICs and DMA
 
@@ -205,16 +208,13 @@ node 0 and NIC 1 on node 2. The topology then declares all four ports
 | `nics` | Slots of a host | Results |
 | --- | --- | --- |
 | `single` | 0 and 1: port 0 and 1 of NIC 0 | As above |
-| `span` | 0 and 1: port 0 or 1 of each NIC, the cores and memory of both nodes, port 0's filled before port 1's (below) | One instance a build drives both NICs; `mtl_init()` binds its application threads to port 0's node, and the case spreads them over the free CPUs of the slot |
-| `split` | 0: port 0 of NIC 0, 1: port 0 of NIC 1, each the one slot of its NIC's node, so `cores` goes up to the node's 17 isolated cores (§3.1) | One table per role, as `single`; each build has a socket, its L3, memory and NIC, to itself, which a load at the limit of a core needs (below). The swap cancels the difference between the NICs in the mean, not in the noise |
+| `split` | 0: port 0 of NIC 0, 1: port 0 of NIC 1, each the one slot of its NIC's node, with all its 17 isolated cores (§3.1) | As `single`; each build has a socket, its L3, memory and NIC, to itself, which a load at the limit of a core needs (below). The swap cancels the difference between the NICs in the mean, not in the noise |
 | `redundant` | As `split`, with port 1 of the NIC beside port 0: ST 2022-7, each session sent and received on both | As `split`; the port rate, `hw dropped pkts` and `RX work` rows hold both legs. A redundant session is charged on both ports, so multi-core instances take perf-pytest's redundant quotas: 18 1080p59 sessions a TX scheduler, 10 an RX one, 9 with a DSA, unless `args` give one |
-| `whole` | As `redundant`, but each port with sessions of its own, port 0's filled before port 1's (below) | As `split`; one build loads a whole NIC, up to 72 x 1080p59. At that load MTL's quota of 12 sessions a scheduler, or 8 for RX without DMA, gives an instance 6 schedulers, or 9, so `cores` takes more than 8 |
-| `pairs` | 0 and 1 on NIC 0, 2 and 3 on NIC 1, each on its NIC's node; NIC 1's pair runs the other way round, so every round has each build on both NICs | A section and rows of their own per NIC, all key rows in the one verdict |
-| `pooled` | As `pairs` | One table per role, each NIC of each round a sample, so one round already gives a noise estimate: more samples, but the noise holds the NIC difference too |
+| `whole` | As `redundant`, but each port with sessions of its own, port 0's filled before port 1's (below) | As `split`; one build loads a whole NIC, up to 72 x 1080p59. At that load MTL's quota of 12 sessions a scheduler, or 8 for RX without DMA, gives an instance 6 schedulers, or 9, which with the system tasklets' CPU and the slot's first take 8 and 11 of its 17 |
 
 Two instances on one socket take some of each other's capacity, which a load at the
 limit of a core shows. Measured on the perf pair with perf-compare's units at 36 x
-1080p59 RX with a DSA on one core (`single_core: RX`), perf-pytest's single core limit:
+1080p59 RX with a DSA on one core (`single_core_rx`), perf-pytest's single core limit:
 
 | Instances on node 0 | L3 of a slot | Result |
 | --- | --- | --- |
@@ -224,16 +224,13 @@ limit of a core shows. Measured on the perf pair with perf-compare's units at 36
 | Two | 7 of 16 ways | 53 and 55 fps, up to millions of drops a dump |
 | Two, three times | All 16, no CAT | Once both at rate; twice one or both just under 99% |
 
-`split` gives each build what the lone instance had, a socket of its own; it is expected
-to carry that load, which its first run at it shows.
+`split` gives each build what the lone instance had, a socket of its own, and carries
+that load: in CI from 2026-10-27 to 2026-11-03, 36 x 1080p59 single core RX with a DSA
+failed all 5 runs with `single`, every session of both builds near 0 fps, and passed its
+2 runs with `split`. So single core takes `split`, `redundant` or `whole`.
 
-RxTxApp allocates a TX source on the node of its instance's first port, so in `span`
-NIC 1's TX sessions read theirs across the socket link, and node 0 holds the sources
-of both TX instances: about 18 GB at 72 x 1080p59 a build, of its 24 1 GB hugepages. A
-TX that runs out reads its source through `mmap()`, which fails the round (§6).
-
-`dma` gives the RX instances of A, B or both `--dma_dev`: the slot's DSA on each of its
-nodes, the i-th slot of a node its i-th DSA, bound to vfio-pci, so the DSA follows the
+`dma` gives the RX instances of A, B or both `--dma_dev`: a DSA of the slot's node, the
+i-th slot of a node its i-th DSA, bound to vfio-pci, so the DSA follows the
 slot when the builds swap. vfio-pci must already allow DSA (`disable_denylist`, set by
 the session's `host_dma_devices`): lifting it in the case would reload the module and
 unbind the VFs. MTL falls back to the CPU copy for a session it gives no DMA, so a
@@ -377,11 +374,10 @@ options of a run by hand (§5.4):
 | `args_a`, `args_b` | `--perf_compare_args_a`, `--perf_compare_args_b` | empty | Extra RxTxApp options of each build: letters, digits, spaces and `_./:=,+-`. RxTxApp ignores an option it does not know |
 | `video` | `-k "1080p and 59fps"` | `1080p59` | 1080p, 2160p or 4320p at 59, 50, 29 or 25 fps, from the perf media set |
 | `pixel_format` | `--perf_compare_pixel_format` | `none` | `none`, `yuv422p10le`, `v210` or `y210`: the pixel format of the applications, which MTL converts to the format on the wire on TX and back on RX (below) |
-| `sessions` | `--perf_compare_sessions` | `36` | Video sessions of each build, of each of its two instances with `pairs` and `pooled`. `whole` and `span` put a build on two ports and fill the first before the second: 37 x 1080p59 run as 36 and 1, 20 as 20 and none (below) |
-| `nics` | `--perf_compare_nics` | `single` | `single`, `split`, `redundant`, `whole`, `span`, `pairs` or `pooled` (§3.5); each choice of the form says what it does, and the case takes the word before its colon |
+| `sessions` | `--perf_compare_sessions` | `36` | Video sessions of each build. `whole` puts a build on two ports and fills the first before the second: 37 x 1080p59 run as 36 and 1, 20 as 20 and none (below) |
+| `nics` | `--perf_compare_nics` | `single` | `single`, `split`, `redundant` or `whole` (§3.5); each choice of the form says what it does, and the case takes the word before its colon |
 | `dma` | `--perf_compare_dma` | `none` | `none`, `A`, `B` or `both`: the builds whose RX instances copy with a DSA (§3.5) |
-| `single_core` | `--perf_compare_single_core` | `none` | `none`, `RX`, `TX` or `both`: the roles whose instances run as perf-pytest's single core, `--sch_session_quota 99` without `--dedicated_sys_lcore`: a scheduler on each NIC node of the slot, the first NIC's with MTL's system tasklets. Alone, a core carries 28 RX, 36 with DMA, or 35 TX 1080p59 (perf-pytest); at that limit run `split` |
-| `cores` | `--perf_compare_cores` | `8` | CPUs of a slot on each NIC node it uses: on the perf pair at most 8, or 17 with `split`, `redundant` and `whole` (§3.1). The first takes the application threads, the rest are its `--lcores`: one for MTL's system tasklets except in a single core role, the others for as many schedulers as MTL's quota needs |
+| `single_core_rx`, `single_core_tx` | `--perf_compare_single_core_rx`, `--perf_compare_single_core_tx` | unchecked | The RX or TX instances run as perf-pytest's single core: `--sch_session_quota 99` without `--dedicated_sys_lcore`, one scheduler with the system tasklets. A core carries 28 RX, 36 with DMA, or 35 TX 1080p59. Unchecked, MTL starts the schedulers its quota needs |
 | `test_time` | `test_time` of `test_config.yaml` | `120` | Seconds of the untraced window; at least 30, for two whole stats dumps. The three later windows add half of it each |
 | `rounds` | `--perf_compare_rounds` | `4` | Rounds; A and B swap places each round, so keep it even. Fewer than 4 give a rough noise estimate |
 
@@ -392,22 +388,20 @@ anything is built or started:
 | Inputs | How they interact | Checked by |
 | --- | --- | --- |
 | `sessions`, `video`, `nics` | A port carries at most 100 Gb/s of sessions, a build on two ports twice that (below) | refs job; the case against each port's own link |
-| `sessions`, `single_core`, `nics` | An MTL scheduler takes 60 video sessions at most: those of a build, or with `span` those of a port | refs job and case |
-| `cores`, `single_core` | At least 3 CPUs, or 2 when both roles are single core | refs job and case |
-| `pixel_format`, `sessions`, `cores` | The conversion runs on the application threads, on the slot's first CPU and the lcores the schedulers leave: at `cores` 8 about 20 x 1080p59 sessions in yuv422p10le and 24 in v210 hold their rate; `split`, `redundant` and `whole` take up to 17 (below) | none needed |
+| `sessions`, `single_core_rx`, `single_core_tx` | An MTL scheduler takes 60 video sessions at most | refs job and case |
+| `nics`, `single_core_rx`, `single_core_tx` | At a core's limit two instances on one socket fall short of it: single core takes `split`, `redundant` or `whole`, a socket a build (§3.5) | refs job and case |
+| `pixel_format`, `sessions`, `nics` | The conversion runs on the application threads, on the slot's first CPU and the lcores the schedulers leave: in the 8 CPUs of a slot of `single` about 20 x 1080p59 sessions in yuv422p10le and 24 in v210 hold their rate; `split`, `redundant` and `whole` give a slot 17 (below) | none needed |
 | `args`, `nics` | With `redundant`, a build's `--sch_session_quota` replaces the quota the case gives (§3.5) | none needed |
-| `args`, `single_core` | `--sch_session_quota`, `--sch_data_quota`, `--dedicated_sys_lcore` and `--rx_separate_lcore` would give a single core instance more schedulers | case |
-| `args`, `dma` / `cores` / `test_time` | `--dma_dev`, `--lcores` and `--tasklet_time` are the case's own; by any prefix RxTxApp takes | case |
-| `nics`, `single_core` | `span` gets a scheduler on each NIC's node, as MTL schedules a session on its port's node; at a core's limit two instances on a socket fall short of it, `split` gives each build a socket (§3.5) | none needed |
-| `nics`, `cores` | `cores` is a slot's on each node, so a `span` instance has twice as many; a node has two slots, or one with `split`, `redundant` and `whole`, and the isolated cores of the perf pair give 8 a slot, or 17 (§3.1) | case |
-| `nics`, hardware | `pooled` takes NICs alike in speed, firmware and isolation | case |
+| `args`, `single_core_rx`, `single_core_tx` | `--sch_session_quota`, `--sch_data_quota`, `--dedicated_sys_lcore` and `--rx_separate_lcore` would give a single core instance more schedulers | case |
+| `args`, `dma`, `test_time`, the slots | `--dma_dev`, `--tasklet_time` and `--lcores` are the case's own; by any prefix RxTxApp takes | case |
+| `nics`, hardware | A NIC's node needs 3 cores of one kind a slot, isolated or not, after its first two: two slots with `single`, one with `split`, `redundant` and `whole` (§3.1); `split`, `redundant` and `whole` take two ports of each of two NICs on two nodes, whose cores are isolated alike | case |
 
 A 59 fps session takes 2.76 Gb/s on the wire at 1080p, 11.0 at 2160p and 44.1 at 4320p
 (20 bits a pixel, paced over 1125 of 1080 lines, in MTL's packets of 1320 bytes of
 pixels, 1406 on the wire); 50, 29 and 25 fps take 0.83, 0.5 and 0.42 of that. 36 x
 1080p59, 99.3 Gb/s, is the most a 100G port carries (at 37 no session reached its
-rate); 2160p59 fits 9, 4320p59 2. `whole` and `span` give a build two ports: they fill
-port 0 with as many sessions as 100G carries and put the rest on port 1, so 37 x
+rate); 2160p59 fits 9, 4320p59 2. `whole` gives a build two ports: it fills port 0
+with as many sessions as 100G carries and puts the rest on port 1, so 37 x
 1080p59 run as 36 and 1, and 72 fill both; with no sessions left port 1 is not used.
 
 With a `pixel_format` other than `none` the applications work in that format, as an
@@ -418,8 +412,8 @@ threads' utilization and CPU per frame in CPU by stage, apart from the scheduler
 on the wire, read as frames of the chosen one: a conversion does the same work whatever
 the pixels hold, and nothing checks them.
 
-The conversion costs the application threads several CPUs. At `cores`
-8, two instances a host as in `single`, 36 x 1080p59 sessions held 33 fps in yuv422p10le
+The conversion costs the application threads several CPUs. In slots of 8 CPUs, two
+instances a host as in `single`, 36 x 1080p59 sessions held 33 fps in yuv422p10le
 and 43 in v210, the TX application threads using every CPU the schedulers left. These
 held their rate:
 
@@ -429,9 +423,9 @@ held their rate:
 | `v210` | 24 | 4.1 | 2.5 |
 
 By hand, one instance a host on a slot of 16 CPUs carried 36 x 1080p59 TX sessions in
-yuv422p10le at 59.94 fps, their application threads using 8.6 cores. `split` at `cores`
-16 has that slot, with the other build on the other socket; RX at that load is not
-measured yet.
+yuv422p10le at 59.94 fps, their application threads using 8.6 cores. `split` gives a
+slot of 17, with the other build on the other socket; RX at that load is not measured
+yet.
 
 `y210` was not measured; its frames are as large as yuv422p10le's. The pipelines add frames of that format on the
 node of the session, 2 a TX session and 3 an RX one: at 36 x 1080p, 0.6 and 0.9 GB an
@@ -522,8 +516,8 @@ notes, which do not.
 
 | Problem, or (note) | Cause | What to do |
 | --- | --- | --- |
-| `not steady after N s: <instance> (N fps at worst, N of N sessions)` or `(no session yet)`, `a session fell to N fps` | A session stayed under 99% of its rate, in the last dump. The `cores` of a slot, or the companion's hugepages, which hold every TX source, can limit the sessions before the link | Fewer `sessions`; for a candidate that cannot carry the load the failure is the result |
-| `N schedulers, single core runs one a NUMA node` | An instance of a `single_core` role had more schedulers than its slot has NUMA nodes, which none of the options the case allows asks for | Its application output: the `sch_start` lines and the scheduler of each session |
+| `not steady after N s: <instance> (N fps at worst, N of N sessions)` or `(no session yet)`, `a session fell to N fps` | A session stayed under 99% of its rate, in the last dump. The CPUs of a slot, or the companion's hugepages, which hold every TX source, can limit the sessions before the link | Fewer `sessions`; for a candidate that cannot carry the load the failure is the result |
+| `N schedulers, single core runs one` | A single core instance had more than one scheduler, which none of the options the case allows asks for | Its application output: the `sch_start` lines and the scheduler of each session |
 | `exited before steady state`, `exited during the measurement` | An application or a collector stopped | The application's output and its `.log` and `.trace` records in `perf_compare/round<N>/`; a timed or sessions collector's output only stays in `/tmp/mtl-perf-compare/` on its host, until the next round |
 | `N untraced, N traced, N timed and N session timed dumps`, `N of M sessions` | A window held fewer than two whole dumps, or not every session reported | A `test_time` of 30 or more; the application and collector logs |
 | `its source is not in hugepages` | A TX read its source through `mmap()` | More hugepages on the companion, or fewer sessions |
@@ -536,10 +530,10 @@ notes, which do not.
 | `perf stat did not count every event` (note) | The host's perf left an event of the instance uncounted, so it has no PMU rows | Its `.pmu` record in `perf_compare/round<N>/` |
 | Placement `perf` no | No perf on the host counts every event: no PMU rows at all | A `linux-tools-<version>` package of a 6.8 kernel |
 | Placement `CAT` no | No L3 allocation, or other resctrl groups | Remove the groups, or accept a shared L3 |
-| `N x <video> on a port take N Gb/s, and <PF> links at N Gb/s` or `<PF> has no link` | The sessions of a port do not fit its link, or the port has none: `sessions` counts a build's, port 0 of `whole` and `span` filled first | Fewer `sessions`, or the cable and the link of that port |
+| `N x <video> on a port take N Gb/s, and <PF> links at N Gb/s` or `<PF> has no link` | The sessions of a port do not fit its link, or the port has none: `sessions` counts a build's, port 0 of `whole` filled first | Fewer `sessions`, or the cable and the link of that port |
 | `--perf_compare_nics <mode> takes two ports of each of two NICs`, `both NICs are on NUMA node N` | The topology declares fewer than four ports (`PERF_PORTS`), or they are not two ports of each of two cards on two nodes | The second card of both hosts, cabled port to port |
-| `pooled takes alike NICs, but ...` | The NICs differ in speed, firmware or isolated cores | Make them alike, or run `pairs` |
-| `NUMA node N has N isolated free cores and N others, not N of either` | The slots of a NIC's node need more cores than it has of either: `cores` a slot, two slots a node or one with `split`, `redundant` and `whole`; 8 or 17 on the perf pair (§3.1) | A smaller `cores`, or `split` |
+| `single core takes a socket a build ...`, `single core takes up to 60 sessions ...` | A single core role with `nics: single`, or with more sessions than an MTL scheduler takes; the refs job refuses both before the build | `split`, `redundant` or `whole`; up to 60 `sessions` |
+| `NUMA node N has N isolated free cores and N others, not N of either` | A NIC's node has fewer than 3 cores a slot of either, after its first two: two slots a node with `single`, one with `split`, `redundant` and `whole` (§3.1) | `split`, `redundant` or `whole`, or a host with more cores |
 | `vfio-pci still refuses DSA`, `NUMA node N has N DSA, its slots need N`, `DSA <BDF> is not on vfio-pci` | vfio-pci kept its denylist, a node has fewer DSA than slots, or a DSA would not bind | `doc/dma.md`; DSA enabled in the BIOS on every node in use |
 | `N of M sessions copied by DMA` | MTL gave a session of a DMA instance no DMA device, or it copied nothing | Its log: `rv_init_dma` and the DMA lines of its dumps |
 | A change in an A/A run | The rough noise estimate of a few rounds | More rounds; a low confidence change is a hint |

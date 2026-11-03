@@ -9,7 +9,6 @@ import subprocess  # nosec B404 # runs bash on proc()'s own script and a fixed c
 import sys
 import time
 from collections import Counter
-from dataclasses import replace
 from html.parser import HTMLParser
 from types import SimpleNamespace
 
@@ -44,30 +43,47 @@ def test_cpu_lists_round_trip():
     assert pc.format_cpus([11, 10, 8, 3, 2, 1, 0]) == "0-3,8,10-11"
 
 
-def _layout(monkeypatch, node_cpus, isolated, cores):
+def _layout(monkeypatch, node_cpus, isolated, cores, count=2):
     """cpu_layout on sysfs reads where core c has the SMT sibling c + cores."""
     siblings = [f"{c},{c + cores}" for c in range(cores)] * 2
     nodes = "0 /sys/devices/system/cpu/cpu0/node0"  # the VF's and MAIN_LCORE's
     _sh(monkeypatch, lambda script: "\n".join([nodes, node_cpus, isolated, *siblings]))
-    return pc.cpu_layout(HOST, "0000:15:00.0", 4)
+    return pc.cpu_layout(HOST, "0000:15:00.0", count)
 
 
 def test_cpu_layout_takes_isolated_first_threads_after_the_os_cores(monkeypatch):
     slots = _layout(monkeypatch, "0-31", "4-20", 16)
-    assert [s.cpus for s in slots] == [[4, 5, 6, 7], [8, 9, 10, 11]]
-    assert all(s.isolated and s.nodes == [0] for s in slots)
+    assert [s.cpus for s in slots] == [[4, 5, 6, 7, 8, 9], [10, 11, 12, 13, 14, 15]]
+    assert all(s.isolated and s.node == 0 for s in slots)
     assert [s.ports for s in slots] == [[0], [1]]
 
 
-def test_cpu_layout_keeps_both_slots_off_isolated_cores_when_too_few(monkeypatch):
-    slots = _layout(monkeypatch, "0-39", "4-9", 20)
-    assert [s.cpus for s in slots] == [[2, 3, 10, 11], [12, 13, 14, 15]]
+def test_cpu_layout_takes_isolated_cores_for_8_a_slot_or_as_many_as_the_others(
+    monkeypatch,
+):
+    # 18 cores after the OS's: 9 isolated are as many as the others, 8 fewer
+    slots = _layout(monkeypatch, "0-39", "4-12", 20)
+    assert [s.cpus for s in slots] == [[4, 5, 6, 7], [8, 9, 10, 11]]
+    assert all(s.isolated for s in slots)
+    slots = _layout(monkeypatch, "0-39", "4-11", 20)
+    assert [s.cpus for s in slots] == [[2, 3, 12, 13, 14], [15, 16, 17, 18, 19]]
     assert not any(s.isolated for s in slots)
+    # 38 cores after the OS's: 16 isolated give 8 a slot, though 22 are not isolated
+    slots = _layout(monkeypatch, "0-79", "4-19", 40)
+    assert [s.cpus for s in slots] == [list(range(4, 12)), list(range(12, 20))]
+    assert [s.cpus for s in _layout(monkeypatch, "0-79", "4-11", 40, 1)] == [
+        list(range(4, 12))
+    ]
+    (slot,) = _layout(monkeypatch, "0-79", "4-10", 40, 1)  # 7: the 31 others
+    assert slot.cpus == [2, 3, *range(11, 40)] and not slot.isolated
 
 
-def test_cpu_layout_refuses_a_node_without_enough_cores(monkeypatch):
-    with pytest.raises(RuntimeError, match="0 isolated free cores and 4 others, not 8"):
+def test_cpu_layout_takes_3_cores_a_slot_at_least(monkeypatch):
+    with pytest.raises(RuntimeError, match="0 isolated free cores and 4 others, not 6"):
         _layout(monkeypatch, "0-11", "", 6)
+    assert [s.cpus for s in _layout(monkeypatch, "0-9", "", 5, 1)] == [[2, 3, 4]]
+    with pytest.raises(RuntimeError, match="0 isolated free cores and 2 others, not 3"):
+        _layout(monkeypatch, "0-7", "", 4, 1)
 
 
 def test_cpu_layout_takes_the_isolated_cores_of_nic_1_and_the_main_lcore_node(
@@ -76,10 +92,10 @@ def test_cpu_layout_takes_the_isolated_cores_of_nic_1_and_the_main_lcore_node(
     siblings = [f"{c},{c + 128}" for c in range(64, 96)]
     sysfs = ["2 /sys/devices/system/cpu/cpu0/node1", "64-95", "4-20,68-84", *siblings]
     scripts = _sh(monkeypatch, lambda script: "\n".join(sysfs))
-    slots = pc.cpu_layout(HOST, "0000:c9:00.0", 8)
-    assert [(s.nodes, s.cpus, s.isolated, s.main_node) for s in slots] == [
-        ([2], list(range(68, 76)), True, 1),
-        ([2], list(range(76, 84)), True, 1),
+    slots = pc.cpu_layout(HOST, "0000:c9:00.0")
+    assert [(s.node, s.cpus, s.isolated, s.main_node) for s in slots] == [
+        (2, list(range(68, 76)), True, 1),
+        (2, list(range(76, 84)), True, 1),
     ]
     assert "echo $n /sys/devices/system/cpu/cpu0/node*; " in scripts[0]
 
@@ -88,12 +104,10 @@ def test_cpu_layout_gives_one_slot_all_the_isolated_cores_of_the_node(monkeypatc
     siblings = [f"{c},{c + 128}" for c in range(32)]
     sysfs = ["0 /sys/devices/system/cpu/cpu0/node0", "0-31,128-159", "4-20,68-84"]
     _sh(monkeypatch, lambda script: "\n".join(sysfs + siblings))
-    slots = pc.cpu_layout(HOST, "0000:15:00.0", 17, 1)  # split and redundant
+    slots = pc.cpu_layout(HOST, "0000:15:00.0", 1)  # split, redundant and whole
     assert [(s.idx, s.cpus, s.isolated, s.ports) for s in slots] == [
         (0, list(range(4, 21)), True, [0])
     ]
-    with pytest.raises(RuntimeError, match="17 isolated free cores and 13 others"):
-        pc.cpu_layout(HOST, "0000:15:00.0", 18, 1)
 
 
 @pytest.mark.skipif(
@@ -237,20 +251,6 @@ def test_pin_app_threads_waits_for_the_schedulers_and_skips_one_that_left(
     assert not any("taskset" in script for script in scripts)
 
 
-def test_pin_app_threads_spreads_the_threads_over_the_free_cpus_of_both_nodes(
-    monkeypatch,
-):
-    slot = pc.Slot(0, [0, 2], [4, 5, 68, 69], True, [0, 2])
-    inst = pc.Instance(None, "tx0", "tx", "A", slot, "/t", "/l")
-    inst.pid = 9
-    monkeypatch.setattr(inst, "records", lambda tail=0: _dump(S, tid=101))
-    scripts = _sh(
-        monkeypatch, lambda script: "5\n" if "for t in 101;" in script else ""
-    )
-    assert inst.pin_app_threads() == ""
-    assert scripts[-1].startswith("cpus=(4 68 69); ")
-
-
 @pytest.mark.parametrize(
     "probe, masks",
     [
@@ -286,48 +286,37 @@ def test_rdt_setup_runs_without_cat_rather_than_take_resctrl(monkeypatch, probe)
     assert not any("mkdir" in s for s in scripts)
 
 
-def _nics(nics):
-    """The slots of *nics* from two cpu_layout()s: NIC 0's on node 0, isolated, NIC
-    1's on node 2, not, as on a host that isolates node 0's cores alone; split,
-    redundant and whole have one slot a node, as the case asks for."""
-    count = 1 if nics in ("split", "redundant", "whole") else 2
-    return pc.nic_slots(
-        nics,
-        *(
-            [pc.Slot(i, [n], [n * 32 + 4 + i], n == 0, [i]) for i in range(count)]
-            for n in (0, 2)
-        ),
+def _nics(nics, cores=(1, 1)):
+    """The slots of *nics* from cpu_layout()'s one slot of each NIC's node, of *cores*
+    CPUs: NIC 0's on node 0, isolated, NIC 1's on node 2, not, so each keeps its own."""
+    nic0, nic1 = (
+        pc.Slot(0, n, list(range(n * 32 + 4, n * 32 + 4 + k)), n == 0, [0])
+        for n, k in zip((0, 2), cores)
     )
+    return pc.nic_slots(nics, nic0, nic1)
 
 
 def test_the_nics_modes_map_their_slots_to_ports_and_nodes():
-    span = _nics("span")
-    assert [(s.idx, s.ports, s.nodes, s.cpus, s.isolated, s.nic) for s in span] == [
-        (0, [0, 2], [0, 2], [4, 68], False, None),  # isolated only if both nodes are
-        (1, [1, 3], [0, 2], [5, 69], False, None),
-    ]
-    split = _nics("split")  # a socket each, the rows of one table
-    assert [(s.idx, s.ports, s.nodes, s.cpus, s.isolated, s.nic) for s in split] == [
-        (0, [0], [0], [4], True, None),
-        (1, [2], [2], [68], False, None),
+    split = _nics("split")  # a socket each
+    assert [(s.idx, s.ports, s.node, s.cpus, s.isolated) for s in split] == [
+        (0, [0], 0, [4], True),
+        (1, [2], 2, [68], False),
     ]
     # both ports of a NIC: redundant's second the 2022-7 leg, whole's more sessions
     for nics in ("redundant", "whole"):
-        assert [(s.idx, s.ports, s.nodes, s.cpus, s.nic) for s in _nics(nics)] == [
-            (0, [0, 1], [0], [4], None),
-            (1, [2, 3], [2], [68], None),
+        assert [(s.idx, s.ports, s.node, s.cpus) for s in _nics(nics)] == [
+            (0, [0, 1], 0, [4]),
+            (1, [2, 3], 2, [68]),
         ]
-    pairs = _nics("pairs")
-    assert [(s.idx, s.ports, s.nodes, s.isolated, s.nic) for s in pairs] == [
-        (0, [0], [0], True, 0),
-        (1, [1], [0], True, 0),
-        (2, [2], [2], False, 1),
-        (3, [3], [2], False, 1),
-    ]
-    # each round A and B on each port of each NIC, slots swapped every round
-    assert pc.round_order(0, 2) == ("A", "B") and pc.round_order(1, 2) == ("B", "A")
-    assert pc.round_order(0, 4) == ("A", "B", "B", "A")
-    assert pc.round_order(1, 4) == ("B", "A", "A", "B")
+    # each build as many CPUs as the smaller node has, as it runs in both slots
+    for cores in ((17, 15), (15, 17)):
+        assert [s.cpus for s in _nics("split", cores)] == [
+            list(range(4, 19)),
+            list(range(68, 83)),
+        ]
+    # the slots swapped every round
+    assert pc.round_order(0) == ("A", "B") and pc.round_order(1) == ("B", "A")
+    assert pc.round_order(2) == ("A", "B")
 
 
 def test_the_ports_of_a_run_on_both_nics_are_two_of_each_of_two_cards():
@@ -353,7 +342,7 @@ def test_nic_links_reads_the_speed_and_firmware_of_each_port(monkeypatch):
         (0, ""),
     ]
     assert scripts[0].startswith("for pf in 0000:15:00.0 0000:c9:00.0 0000:c9:00.1; do")
-    # a port must carry its sessions, and a pooled run two alike NICs
+    # a port must carry its sessions
     links = [(100000, "2.10"), (100000, "2.10"), (40000, "1.00"), (40000, "1.00")]
     pfs = ["p0", "p1", "p2", "p3"]
     assert pc.slow_ports(pfs, links, 39e9) == []
@@ -362,13 +351,6 @@ def test_nic_links_reads_the_speed_and_firmware_of_each_port(monkeypatch):
         "p3 links at 40 Gb/s",
     ]
     assert pc.slow_ports(["p4"], [(0, "")], 1e9) == ["p4 has no link"]
-    pairs = _nics("pairs")
-    assert pc.unlike_nics(links, pairs) == (
-        "Mb/s 100000 on NIC 0, 40000 on NIC 1; firmware 2.10 on NIC 0, 1.00 on NIC 1; "
-        "isolated cores True on NIC 0, False on NIC 1"
-    )
-    alike = [replace(s, isolated=True) for s in pairs]
-    assert pc.unlike_nics([(100000, "2.10")] * 4, alike) == ""
 
 
 def test_a_port_carries_the_streams_its_link_speed_allows():
@@ -421,7 +403,7 @@ def test_port_sessions_fill_the_first_port_before_the_second():
 def test_rdt_setup_only_monitors_slots_that_share_no_l3(monkeypatch):
     probe = "fff\n1\nc00\n    L3:0=fff;1=fff\ninfo\nmon_groups\n"
     scripts = _sh(monkeypatch, lambda script: probe if "cbm_mask" in script else "")
-    paths = pc.rdt_setup(HOST, 2, partition=False)
+    paths = pc.rdt_setup(HOST, partition=False)
     assert paths == [f"{pc.RESCTRL}/{pc.RDT_PREFIX}{n}" for n in (0, 1)]
     for path in paths:
         assert f"mkdir {path} && echo 'L3:0=fff;1=fff' > {path}/schemata" in scripts[-1]
@@ -430,37 +412,22 @@ def test_rdt_setup_only_monitors_slots_that_share_no_l3(monkeypatch):
     )
 
 
-def test_rdt_setup_gives_the_pair_of_each_nic_the_ways_of_the_first(monkeypatch):
-    probe = "fff\n1\nc00\n    L3:0=fff;1=fff\ninfo\nmon_groups\n"
-    scripts = _sh(monkeypatch, lambda script: probe if "cbm_mask" in script else "")
-    paths = pc.rdt_setup(HOST, 4)
-    assert paths == [f"{pc.RESCTRL}/{pc.RDT_PREFIX}{n}" for n in range(4)]
-    for path, mask in zip(paths, ("f;1=f", "f0;1=f0") * 2):
-        assert f"mkdir {path} && echo 'L3:0={mask}' > {path}/schemata" in scripts[-1]
-
-
 def test_dsa_layout_gives_each_slot_of_a_node_a_dsa_of_its_own(monkeypatch):
     listing = "Y\n0000:05:01.0 0\n0000:00:01.0 0\n0000:80:01.0 2\n"
     _sh(monkeypatch, lambda script: listing)
     bound = []
     monkeypatch.setattr(pc, "bind_dma_to_vfio", lambda h, bdf: bound.append(bdf) or 1)
-    slots = [pc.Slot(0, [0], [4], True), pc.Slot(1, [0], [8], True)]
+    slots = [pc.Slot(0, 0, [4], True), pc.Slot(1, 0, [8], True)]
     assert pc.dsa_layout(HOST, slots) == ["0000:00:01.0", "0000:05:01.0"] == bound
-    node2 = [pc.Slot(0, [2], [66], False), pc.Slot(1, [2], [74], False)]
+    # a slot of each node, split, takes the first DSA of its node
+    apart = [pc.Slot(0, 0, [4], True), pc.Slot(1, 2, [68], True)]
+    assert pc.dsa_layout(HOST, apart) == ["0000:00:01.0", "0000:80:01.0"]
+    node2 = [pc.Slot(0, 2, [66], False), pc.Slot(1, 2, [74], False)]
     with pytest.raises(RuntimeError, match="node 2 has 1 DSA, its slots need 2"):
         pc.dsa_layout(HOST, node2)
     monkeypatch.setattr(pc, "bind_dma_to_vfio", lambda h, bdf: False)
     with pytest.raises(RuntimeError, match="DSA 0000:00:01.0 is not on vfio-pci"):
         pc.dsa_layout(HOST, slots)
-    # a slot on two nodes takes a DSA of each
-    listing += "0000:85:01.0 2\n"
-    _sh(monkeypatch, lambda script: listing)
-    monkeypatch.setattr(pc, "bind_dma_to_vfio", lambda h, bdf: True)
-    span = [pc.Slot(p, [0, 2], [4 + p, 68 + p], True, [p, p + 2]) for p in (0, 1)]
-    assert pc.dsa_layout(HOST, span) == [
-        "0000:00:01.0,0000:80:01.0",
-        "0000:05:01.0,0000:85:01.0",
-    ]
     # lifting the denylist would reload vfio-pci, which unbinds every VF
     _sh(monkeypatch, lambda script: listing.replace("Y", "N", 1))
     with pytest.raises(RuntimeError, match="vfio-pci still refuses DSA"):
@@ -1155,6 +1122,8 @@ def test_the_summary_leads_with_the_verdict_and_the_largest_changes():
     assert "regresses 2 of the 5 key metrics and improves 2." in page
     page = _summary(rows, 4)
     assert "4 valid rounds" in page and "Under 4 rounds" not in page
+    page = _summary(rows, 1)
+    assert "1 valid round, the slots" in page and "Under 4" not in page
     assert "<br>No loss or late frames.<br>" in _summary({bw: (100, 100)})
     assert _verdict({"x": (1, 2)}) == ("verdict", "The builds share no key metric.")
     assert "Key metrics" not in _summary({"x": (1, 2)})
@@ -1458,6 +1427,7 @@ def test_report_html_opens_the_setup_folds_the_instances_and_escapes_every_text(
     assert page.index(t) < page.index(sessions) < page.index(s)
     assert page.count("In each cell") == 1  # under the role, before its first matrix
     assert "differs, in grey:" in page and "The bar of a change ends at -25%" in page
+    assert "<th>Round</th>\n<th>Slot 0</th>\n<th>Slot 1</th>\n<th>Result</th>" in page
     assert "<tr><td>1</td><td>main</td><td>a&lt;b</td>" in page  # the rounds
     assert "No p90, p95 or p99 from main: no release" in page
     traced = "No sampled tasklet counters from main and a&lt;b: they"
@@ -1518,13 +1488,13 @@ def test_the_report_names_the_builds_whose_launches_had_dma_and_their_dsa():
 def test_the_builds_list_every_input_of_the_run_in_the_report_and_the_summary():
     rounds = [_round(_rounds((1, 1))[0])]
     platforms = [("s (RX)", {}), ("c (TX)", {})]
-    inputs = [("video", "1080p59"), ("sessions", 37), ("nics", "span: a<b")]
+    inputs = [("video", "1080p59"), ("sessions", 37), ("nics", "split: a<b")]
     rows = (
         "<td>Extra RxTxApp arguments</td>",
         "<th>Input</th>\n<th>Selected</th>",
         "<td>video</td><td>1080p59</td>",
         "<td>sessions</td><td>37</td>",
-        "<td>nics</td><td>span: a&lt;b</td>",
+        "<td>nics</td><td>split: a&lt;b</td>",
         "<h2>Rounds</h2>",
     )
     for page in (
@@ -1540,39 +1510,9 @@ def test_the_report_says_when_each_instance_ran_on_one_scheduler():
     platforms = [("s (RX)", {}), ("c (TX)", {})]
     for roles, shown in ((("rx",), "RX"), (("rx", "tx"), "RX and TX")):
         row = f"<td>Single core</td><td>{shown}</td><td>{shown}</td>"
-        page = pc.report_html(
-            LABELS, ARGS, [], SLOTS, rounds, platforms, "single", roles
-        )
+        page = pc.report_html(LABELS, ARGS, [], SLOTS, rounds, platforms, roles)
         assert row in page
-        assert row in pc.summary_html(LABELS, ARGS, SLOTS, rounds, "single", roles)
-
-
-def test_the_report_keeps_the_pair_of_each_nic_apart_or_pools_them():
-    slots = [{**SLOTS[0], "slot": n, "nic": n // 2, "pfs": f"pf{n}"} for n in range(4)]
-    loop = "sch_1 avg loop (ns)"
-    metrics = [_rounds((100, 110 + nic), metric=loop)[0] for nic in (0, 1)]
-    both = {
-        x: {f"rx NIC {nic}": m[x]["rx"] for nic, m in enumerate(metrics)} for x in "AB"
-    }
-    rounds = [_round(both, pc.round_order(n, 4)) for n in range(2)]
-    platforms = [("s (RX)", {}), ("c (TX)", {})]
-    page = pc.report_html(LABELS, ARGS, [], slots, rounds, platforms, nics="pairs")
-    for nic in (0, 1):
-        assert f"<h2>RX NIC {nic} (s&lt;t)</h2>" in page
-    assert "<td>RX NIC 1 · sch_1 avg loop (ns) ↓</td>" in page  # the verdict's
-    assert "<th>Slot 3</th>\n<th>Result</th>" in page
-    assert (
-        "<td>main</td><td>a&lt;b</td><td>a&lt;b</td><td>main</td><td>valid</td>" in page
-    )
-    assert "<th>perf</th>\n<th>PFs</th>" in page and "<td>pf3</td>" in page
-    assert "2 valid rounds, the slots swapped each round." in page
-    page = pc.report_html(LABELS, ARGS, [], slots, rounds, platforms, nics="pooled")
-    assert "<h2>RX (s&lt;t)</h2>" in page and "NIC 1 (s" not in page
-    assert "2 valid rounds on each of 2 NICs, the slots swapped each round." in page
-    assert "Under 4" not in page  # 4 samples
-    one = pc.report_html(LABELS, ARGS, [], slots, rounds[:1], platforms, nics="pooled")
-    assert "1 valid round on each of 2 NICs" in one and "Under 4 samples the" in one
-    assert "<td>+10% / +11% / +10% / +11%</td>" in page  # a sample per NIC and round
+        assert row in pc.summary_html(LABELS, ARGS, SLOTS, rounds, roles)
 
 
 class _Fake:
@@ -1588,9 +1528,9 @@ class _Fake:
         self.busy = False
         self.pin = ""  # what pin_app_threads() returns
         self.dma = ""  # the labels whose RX instances are given --dma_dev
-        self.single_core = ()  # the roles on one scheduler a NUMA node
+        self.single_core = ()  # the roles on one scheduler
         self.queues = None
-        self.slots = [pc.Slot(i, [0], [4 + 4 * i], True, [i]) for i in (0, 1)]
+        self.slots = [pc.Slot(i, 0, [4 + 4 * i], True, [i]) for i in (0, 1)]
         self.wire = ([0, 0], [0, 0])  # what each slot's two reads of the wire count
         self.pmu = {}  # the perf stat counts of an instance, PMU without
         self.paced = {}  # the pacing way lines of an instance's log
@@ -1666,7 +1606,7 @@ class _Fake:
         return pc.run_round(
             sides,
             {"A": "/a", "B": "/b"},
-            pc.round_order(0, len(self.slots)),
+            pc.round_order(0),
             lambda side, slot, label: (
                 f"app {label}"
                 + " --dma_dev d" * (side.role == "rx" and label in self.dma),
@@ -1739,7 +1679,7 @@ def test_start_keeps_the_script_its_unit_runs(monkeypatch):
     monkeypatch.setattr(
         pc, "_start_unit", lambda h, n, c, p, *a, **k: props.extend(p) or 7
     )
-    slot = pc.Slot(0, [0], [4, 5, 6, 7], True)
+    slot = pc.Slot(0, 0, [4, 5, 6, 7], True)
     rdt = "/sys/fs/resctrl/mtl_perf_0"
     inst = pc.Instance(None, "rx0", "rx", "A", slot, "/t/a", "/run/A_rx0", rdt)
     inst.start("/mtl", "RxTxApp --x")
@@ -1749,14 +1689,10 @@ def test_start_keeps_the_script_its_unit_runs(monkeypatch):
     assert join in inst.script and inst.script.endswith(" RxTxApp --x")
     # MTL makes CPU 0 the main lcore of every instance
     assert props == ["AllowedCPUs=0,4-7", "AllowedMemoryNodes=0", "Nice=-20"]
-    props.clear()
-    inst.slot = pc.Slot(0, [0, 2], [4, 5, 68, 69], True)  # span: both nodes
-    inst.start("/mtl", "RxTxApp --x")
-    assert props == ["AllowedCPUs=0,4-5,68-69", "AllowedMemoryNodes=0,2", "Nice=-20"]
     # a slot off the main lcore's node: DPDK puts the dmadev data on that node
     for main_node, mems in ((0, "0,2"), (1, "1-2")):
         props.clear()
-        inst.slot = pc.Slot(2, [2], [68, 69], True, [2], 1, main_node=main_node)
+        inst.slot = pc.Slot(2, 2, [68, 69], True, [2], main_node=main_node)
         inst.start("/mtl", "RxTxApp --x")
         assert props == [
             "AllowedCPUs=0,68-69",
@@ -1811,28 +1747,12 @@ def test_run_round_rejects_a_session_below_the_frame_rate(fake):
     ]
 
 
-def test_run_round_runs_a_pair_on_each_nic_and_keeps_their_rows_apart(fake):
-    fake.slots = _nics("pairs")
-    fake.wire = ([0, 0, 0, 0], [0, 0, 5, 0])
-    fake.paced = {f"{x}_tx{n}": "pacing way: ratelimit\n" for n, x in enumerate("ABB")}
-    fake.paced["A_tx3"] = "pacing way: tsc\n"
-    results, problems, notes = fake.round()
-    assert problems == []
-    ran = [(x["label"], x["role"], x["slot"]) for x in fake.launches]
-    assert ran == [(x, r, n) for r in ("rx", "tx") for n, x in enumerate("ABBA")]
-    keys = ["rx NIC 0", "rx NIC 1", "tx NIC 0", "tx NIC 1"]
-    assert sorted(results["A"]) == sorted(results["B"]) == keys
-    assert "slot 2: 5 packets lost between the hosts" in notes
-    paced = [n for n in notes if "pace" in n]
-    assert paced == ["the builds pace TX differently on NIC 1: main tsc; dev ratelimit"]
-
-
-def test_run_round_counts_the_losses_of_both_ports_of_a_slot_of_two_nics(fake):
-    fake.slots = _nics("span")
-    fake.wire = ([0, 0, 0, 0], [0, 0, 5, 0])  # port 2: NIC 1's of slot 0
+def test_run_round_counts_the_losses_of_both_ports_of_a_slot(fake):
+    fake.slots = _nics("whole")
+    fake.wire = ([0, 0, 0, 0], [0, 0, 0, 5])  # port 3: slot 1's second
     results, problems, notes = fake.round()
     assert problems == [] and sorted(results["A"]) == ["rx", "tx"]
-    assert "slot 0: 5 packets lost between the hosts" in notes
+    assert "slot 1: 5 packets lost between the hosts" in notes
 
 
 def test_run_round_rejects_an_rx_session_of_a_dma_build_that_dma_did_not_copy(fake):
@@ -1858,14 +1778,10 @@ def test_run_round_rejects_a_second_scheduler_of_a_single_core_instance(fake):
     assert fake.round()[1] == []  # multi core: as many as the quota needs
     fake.single_core = ("tx",)
     assert fake.round()[1] == []
-    fake.single_core = ("rx",)
-    one = "single core runs one a NUMA node"
-    assert fake.round()[1] == [f"mtl-perf-rx1 (dev): 2 schedulers, {one}"]
-    # span: a scheduler on each NUMA node of the slot
-    fake.slots = [replace(s, nodes=[0, 2]) for s in fake.slots]
-    assert fake.round()[1] == []
-    fake.runs["mtl-perf-rx1"] = more(records, 3)
-    assert fake.round()[1] == [f"mtl-perf-rx1 (dev): 3 schedulers, {one}"]
+    one = "mtl-perf-rx1 (dev): 2 schedulers, single core runs one"
+    for roles in (("rx",), ("rx", "tx")):
+        fake.single_core = roles
+        assert fake.round()[1] == [one]
 
 
 def test_run_round_rejects_tasklet_stat_records_without_the_work_tasklets(fake):

@@ -142,7 +142,7 @@ Notation used below:
 | Metric | Source (MTL line) | Calculation | Unit | Better |
 | --- | --- | --- | --- | --- |
 | `fps (worst session)` | `RX/TX_VIDEO_SESSION(m,s:name): fps X frames N` | per session, the **median of dumps** (a dump missing the session counts 0); then the **lowest** session | frames/s | ↑ |
-| `RX rate, port N (Gb/s)` / `TX rate, port N (Gb/s)` | `DEV(N): Avr rate, tx: X Mb/s, rx: Y Mb/s` | of an instance on two ports (`redundant`, `span`), per port N of the instance, 0 the primary and 1 the redundant one, or with `span` the port on NIC 0 and NIC 1: the median of dumps | Gb/s | ⊘ |
+| `RX rate, port N (Gb/s)` / `TX rate, port N (Gb/s)` | `DEV(N): Avr rate, tx: X Mb/s, rx: Y Mb/s` | of an instance on two ports (`redundant`, `whole`), per port N of the instance, with `redundant` 0 the primary and 1 the redundant one: the median of dumps | Gb/s | ⊘ |
 | `RX rate (Gb/s)` / `TX rate (Gb/s)` | the same lines | per dump, the sum over the instance's ports; then the median of dumps | Gb/s | ⊘ |
 | `incomplete frames` (RX) | `RX_VIDEO_SESSION(m,s): incomplete frames N` | the **sum** over the untraced dumps | frames | ↓ |
 | `hw dropped pkts` (RX) | `DEV(N): Status: rx_hw_dropped_packets N` | the sum over the untraced dumps | packets | ↓ |
@@ -373,10 +373,6 @@ improvement, the losses, and the rule and the rounds behind it, with a warning u
 rounds. The key rows are not independent (`video cpu busy` follows its loop), so the
 counts are a summary, not votes.
 
-> [!NOTE]
-> With `nics: pooled`, each NIC's pair of each round is one sample: the means, the noise
-> and the Rounds column count samples, and a single round already gives two.
-
 ---
 
 ## 6. When a round counts at all
@@ -395,7 +391,8 @@ fails, so a bad round can never move a mean.
 | Source in hugepages | no TX read its source through `mmap()` |
 | Work counters | a traced RX instance has `rvs_pkt_rx` work |
 | DMA engaged | with `dma`, every session of a DMA instance copied packets by DMA |
-| Ports | before the rounds: each port's link carries its sessions; `pooled` takes two alike NICs |
+| One scheduler | with `single_core_rx` or `single_core_tx`, every instance of that role ran one scheduler |
+| Ports | before the rounds: each port's link carries its sessions |
 
 **Notes** don't invalidate a round, but they put a fact beside it:
 - `N incomplete frames`, `N hw dropped pkts` and the late-frame counts;

@@ -1113,13 +1113,6 @@ def pytest_addoption(parser):
         ("args_b", str, "", "extra RxTxApp arguments of instance B"),
         ("sessions", int, 36, "sessions per instance"),
         ("rounds", int, 4, "rounds; A and B swap slots every round"),
-        ("cores", int, 8, "CPUs of each slot on a NIC's node, all but one --lcores"),
-        (
-            "single_core",
-            str,
-            "none",
-            "none, RX, TX or both: the roles on one scheduler",
-        ),
         (
             "pixel_format",
             str,
@@ -1131,12 +1124,17 @@ def pytest_addoption(parser):
             "nics",
             str,
             "single",
-            "single, split, redundant, whole, span, pairs or pooled: how they use "
-            "the NICs",
+            "single, split, redundant or whole: how they use the NICs",
         ),
     ):
         parser.addoption(
             f"--perf_compare_{name}", type=kind, default=default, help=text
+        )
+    for role in ("rx", "tx"):
+        parser.addoption(
+            f"--perf_compare_single_core_{role}",
+            action="store_true",
+            help=f"run the {role.upper()} instances on one scheduler each",
         )
     parser.addoption(
         "--num_sessions",
