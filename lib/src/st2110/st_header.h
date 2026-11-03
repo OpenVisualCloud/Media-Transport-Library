@@ -5,6 +5,8 @@
 #ifndef _MT_LIB_ST_HEAD_H_
 #define _MT_LIB_ST_HEAD_H_
 
+#include <limits.h>
+
 #include "../mt_header.h"
 #include "st20_api.h"
 #include "st30_api.h"
@@ -17,7 +19,7 @@
 
 #define ST_MAX_NAME_LEN (32)
 
-#define ST_PLUGIN_MAX_PATH_LEN (128)
+#define ST_PLUGIN_MAX_PATH_LEN (PATH_MAX)
 
 /* max 12 1080p tx session per sch lcore */
 #define ST_QUOTA_TX1080P_PER_SCH (12)

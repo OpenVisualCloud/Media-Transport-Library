@@ -829,7 +829,7 @@ static struct st_dl_plugin_impl* st_plugin_by_path(struct mtl_main_impl* impl,
   for (int i = 0; i < ST_MAX_DL_PLUGINS; i++) {
     plugin = mgr->plugins[i];
     if (plugin) {
-      if (!strncmp(plugin->path, path, ST_PLUGIN_MAX_PATH_LEN - 1)) {
+      if (!strcmp(plugin->path, path)) {
         dbg("%s, %s registered\n", __func__, path);
         mt_pthread_mutex_unlock(&mgr->plugins_lock);
         return plugin;
@@ -863,6 +863,11 @@ int st_plugin_register(mtl_handle mt, const char* path) {
   st_plugin_priv pl_handle;
   struct st_plugin_meta meta;
   int ret;
+
+  if (strnlen(path, ST_PLUGIN_MAX_PATH_LEN) >= ST_PLUGIN_MAX_PATH_LEN) {
+    err("%s, path longer than %d chars\n", __func__, ST_PLUGIN_MAX_PATH_LEN - 1);
+    return -ENAMETOOLONG;
+  }
 
   if (st_plugin_by_path(impl, path)) {
     err("%s, %s already registered\n", __func__, path);
@@ -938,7 +943,7 @@ int st_plugin_register(mtl_handle mt, const char* path) {
       return -ENOMEM;
     }
     plugin->idx = i;
-    snprintf(plugin->path, ST_PLUGIN_MAX_PATH_LEN - 1, "%s", path);
+    (void)snprintf(plugin->path, sizeof(plugin->path), "%s", path);
     plugin->dl_handle = dl_handle;
     plugin->create = create_fn;
     plugin->free = free_fn;
@@ -966,7 +971,7 @@ int st_plugin_unregister(mtl_handle mt, const char* path) {
   for (int i = 0; i < ST_MAX_DL_PLUGINS; i++) {
     plugin = mgr->plugins[i];
     if (plugin) {
-      if (!strncmp(plugin->path, path, ST_PLUGIN_MAX_PATH_LEN - 1)) {
+      if (!strcmp(plugin->path, path)) {
         info("%s, unregister %s at %d\n", __func__, path, i);
         st_plugin_free(plugin);
         mgr->plugins[i] = NULL;

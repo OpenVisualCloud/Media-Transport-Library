@@ -5,7 +5,34 @@
 #undef MTL_HAS_USDT
 #include "pipeline/st_plugin_harness.h"
 
+#include <dlfcn.h>
+
+#include "common/ut_common.h"
+
+static int ut_dlopen_calls;
+static int ut_dl_lib;
+
+static void* ut_dlopen(const char* file, int mode) {
+  (void)file;
+  (void)mode;
+  ut_dlopen_calls++;
+  return &ut_dl_lib;
+}
+
+static void* ut_dlsym(void* handle, const char* symbol);
+
+static int ut_dlclose(void* handle) {
+  (void)handle;
+  return 0;
+}
+
+#define dlopen ut_dlopen
+#define dlsym ut_dlsym
+#define dlclose ut_dlclose
 #include "st2110/pipeline/st_plugin.c"
+#undef dlclose
+#undef dlsym
+#undef dlopen
 
 static struct st22_encode_dev_impl ut_encoder;
 static struct st22_decode_dev_impl ut_decoder;
@@ -122,4 +149,54 @@ unsigned int ut_plugin_resp_flag(enum ut_plugin_kind kind, void* session) {
   if (kind == UT_PLUGIN_ENCODER)
     return ((struct st22_encode_session_impl*)session)->req.req.resp_flag;
   return ((struct st22_decode_session_impl*)session)->req.req.resp_flag;
+}
+
+static int ut_dl_get_meta(struct st_plugin_meta* meta) {
+  meta->version = ST_PLUGIN_VERSION_V1;
+  meta->magic = ST_PLUGIN_VERSION_V1_MAGIC;
+  return 0;
+}
+
+static st_plugin_priv ut_dl_create(mtl_handle mt) {
+  (void)mt;
+  return &ut_dl_lib;
+}
+
+static int ut_dl_free(st_plugin_priv handle) {
+  (void)handle;
+  return 0;
+}
+
+static void* ut_dlsym(void* handle, const char* symbol) {
+  (void)handle;
+  if (!strcmp(symbol, ST_PLUGIN_GET_META_API)) return (void*)ut_dl_get_meta;
+  if (!strcmp(symbol, ST_PLUGIN_CREATE_API)) return (void*)ut_dl_create;
+  if (!strcmp(symbol, ST_PLUGIN_FREE_API)) return (void*)ut_dl_free;
+  return NULL;
+}
+
+static struct mtl_main_impl ut_dl_impl;
+
+mtl_handle ut_plugin_dl_reset(void) {
+  struct st_plugin_mgr* mgr = st_get_plugins_mgr(&ut_dl_impl);
+  static bool locks_ready;
+
+  if (ut_eal_init() < 0) return NULL;
+  if (!locks_ready) {
+    mt_pthread_mutex_init(&mgr->plugins_lock, NULL);
+    locks_ready = true;
+  }
+  for (int i = 0; i < ST_MAX_DL_PLUGINS; i++) {
+    if (mgr->plugins[i]) st_plugin_free(mgr->plugins[i]);
+    mgr->plugins[i] = NULL;
+  }
+  mgr->plugins_nb = 0;
+  ut_dl_impl.type = MT_HANDLE_MAIN;
+  ut_dl_impl.inf[MTL_PORT_P].socket_id = (int)rte_socket_id();
+  ut_dlopen_calls = 0;
+  return &ut_dl_impl;
+}
+
+int ut_plugin_dlopen_calls(void) {
+  return ut_dlopen_calls;
 }
