@@ -426,8 +426,9 @@ int mtl_interface::load_xdp() {
       return -1;
     }
     xdp_mode = XDP_MODE_SKB;
+  } else {
+    xdp_mode = XDP_MODE_NATIVE;
   }
-  xdp_mode = XDP_MODE_NATIVE;
 
   if (xsk_setup_xdp_prog(ifindex, &xsks_map_fd) < 0 || xsks_map_fd < 0) {
     log(log_level::ERROR, "Failed to setup AF_XDP socket.");
