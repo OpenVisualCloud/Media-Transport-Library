@@ -18,17 +18,21 @@ add_project_link_arguments('-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack', l
 
 plugins_install_dir = join_paths(get_option('libdir'), 'gstreamer-1.0')
 
-plugin_c_args = [
+plugin_c_args = cc.get_supported_arguments([
   '-Wno-redundant-decls',
   '-Wno-discarded-qualifiers',
+  '-Wno-incompatible-pointer-types-discards-qualifiers',
   '-Wno-declaration-after-statement',
   '-Wno-missing-prototypes',
   '-Wno-missing-declarations',
   '-Wno-stringop-truncation'
-]
+])
 
-# Test-only TX mutation helpers are available only in debug builds.
-if get_option('buildtype') == 'debug'
+# enable warning as error for non debug build
+if get_option('buildtype') != 'debug'
+  plugin_c_args += ['-Werror']
+else
+  # Test-only TX mutation helpers are available only in debug builds.
   plugin_c_args += ['-DMTL_SIMULATE_PACKET_DROPS']
 endif
 
