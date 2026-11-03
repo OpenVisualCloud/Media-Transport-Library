@@ -56,6 +56,7 @@ fi
 # After MTL build
 : "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN:=0}"
 : "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN:=0}"
+: "${ECOSYSTEM_BUILD_GSTREAMER_PLUGIN_RELEASE:=0}"
 : "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN:=0}"
 
 : "${PLUGIN_BUILD_AND_INSTALL_SAMPLE:=0}"
@@ -93,6 +94,7 @@ setup_flags=(
 	"MTL_BUILD_AND_INSTALL_DOCKER_MANAGER:MTL manager Docker image"
 	"ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN:FFmpeg plugin"
 	"ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN:GStreamer plugin"
+	"ECOSYSTEM_BUILD_GSTREAMER_PLUGIN_RELEASE:GStreamer plugin as release, not debug"
 	"ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN:OBS plugin"
 	"PLUGIN_BUILD_AND_INSTALL_SAMPLE:Sample plugin"
 	"PLUGIN_BUILD_AND_INSTALL_AVCODEC:AVCodec plugin"
@@ -323,8 +325,13 @@ main() {
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
 		log_info "$STEP Ecosystem GStreamer plugin build and install"
 		# The test plugins of tests/tools/gstreamer_tools go beside the MTL ones.
-		# A debug plugin has tx-test-mode, which the anc_format tests use.
-		bash "${root_folder}/script/build_gstreamer_plugin.sh" debug --test-tools
+		if [ "${ECOSYSTEM_BUILD_GSTREAMER_PLUGIN_RELEASE}" == "1" ]; then
+			# Only a non-debug build has -Werror.
+			bash "${root_folder}/script/build_gstreamer_plugin.sh" release --test-tools
+		else
+			# A debug plugin has tx-test-mode, which the anc_format tests use.
+			bash "${root_folder}/script/build_gstreamer_plugin.sh" debug --test-tools
+		fi
 		STEP=$((STEP + 1))
 	fi
 
