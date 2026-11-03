@@ -168,6 +168,49 @@ CASES
 
 test_ice_version_rule
 
+# Prints the _FORTIFY_SOURCE level glibc applies with compiler $1, language $2
+# and the arguments that follow.
+fortify_level() {
+	"$1" -O2 -U_FORTIFY_SOURCE "${@:3}" -include string.h -dM -E -x "$2" - <<<'' |
+		sed -n 's/^#define __USE_FORTIFY_LEVEL //p' || true
+}
+
+# The stand-in compilers: true accepts each flag, and the sh ones reject -Werror,
+# as for a flag the compiler only warns about, or print one predefined macro.
+test_hardening_flags() {
+	local helper=script/hardening_flags.py out opts compiler cc lang want level flags=()
+	local probed='-fstack-protector-strong -fstack-clash-protection -fcf-protection=full'
+	local always='-Wformat -Wformat-security -Werror=format-security'
+	local link='-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack'
+
+	out=$(python3 "${helper}" c 2 none true)
+	[ "${out}" = "${probed} ${always} -D_FORTIFY_SOURCE=2"$'\n'"${link}" ] ||
+		fail "${helper}" "with a compiler that takes each flag: ${out}"
+	out=$(python3 "${helper}" c 2 none sh -c 'case " $* " in *" -Werror "*) exit 1 ;; esac' sh)
+	[ "${out%%$'\n'*}" = "${always} -D_FORTIFY_SOURCE=2" ] || fail "${helper}" "keeps a flag the compiler warns about: ${out}"
+	# Ubuntu gcc predefines a level only when it optimizes.
+	out=$(python3 "${helper}" c 2 none sh -c 'case " $* " in *" -O2 "*) echo "#define _FORTIFY_SOURCE 2" ;; esac' sh)
+	[ "${out%%$'\n'*}" = "${probed} ${always}" ] || fail "${helper}" "replaces the level the compiler sets: ${out}"
+	for opts in "0 none" "plain none" "2 address" "3 address,undefined"; do
+		# shellcheck disable=SC2086 # the two options
+		out=$(python3 "${helper}" c ${opts} true)
+		[ "${out%%$'\n'*}" = "${probed} ${always}" ] || fail "${helper}" "adds _FORTIFY_SOURCE for '${opts}': ${out}"
+	done
+
+	# With no predefined level, the real toolchain applies the level the helper adds.
+	for compiler in "gcc c" "clang c" "g++ c++"; do
+		read -r cc lang <<<"${compiler}"
+		command -v "${cc}" >/dev/null || continue
+		out=$(python3 "${helper}" "${lang}" 2 none "${cc}" -U_FORTIFY_SOURCE)
+		read -ra flags <<<"${out%%$'\n'*}"
+		want=$(printf '%s\n' "${flags[@]}" | sed -n 's/^-D_FORTIFY_SOURCE=//p')
+		level=$(fortify_level "${cc}" "${lang}" "${flags[@]}")
+		[[ "${want}" == 2 && "${level}" == 2 ]] || fail "${helper}" "${cc} asks for level '${want}' and gets '${level}'"
+	done
+}
+
+test_hardening_flags
+
 bash script/check_dpdk_patches.sh || fail script/check_dpdk_patches.sh "the DPDK patches do not apply clean"
 bash script/build_ebpf_xdp.sh --check build || echo "build_ebpf_xdp.sh --check build: the host does not have each package"
 

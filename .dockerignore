@@ -37,6 +37,7 @@ logs_*
 html/
 /test.*
 build/
+manager/build/
 *.a
 *.app
 *.cmd

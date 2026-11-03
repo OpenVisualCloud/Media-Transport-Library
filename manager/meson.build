@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2023 Intel Corporation
 
-project('mtl_manager', 'cpp', default_options: ['buildtype=release', 'cpp_std=c++17'],
+project('mtl_manager', 'cpp', default_options: ['buildtype=release', 'cpp_std=c++17', 'b_pie=true'],
   version: run_command(find_program('cat'), files('../VERSION'), check: true).stdout().strip(),
 )
 
@@ -16,6 +16,12 @@ endif
 message('BUILD Environment: ' + exec_env)
 
 cpp_c = meson.get_compiler('cpp')
+
+# Compiler hardening, see doc/build.md
+hardening = run_command(files('../script/hardening_flags.py'), 'c++', get_option('optimization'),
+  get_option('b_sanitize'), cpp_c.cmd_array(), get_option('cpp_args'), check : true).stdout().split('\n')
+add_project_arguments(hardening[0].split(), language : 'cpp')
+add_project_link_arguments(hardening[1].split(), language : 'cpp')
 
 sources = ['mtl_manager.cpp']
 

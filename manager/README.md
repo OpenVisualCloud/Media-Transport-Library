@@ -68,8 +68,8 @@ Please note that the Dockerfile provided is intended for development use only. I
 Build the Docker image:
 
 ```bash
-docker build --build-arg VERSION=$(cat ../VERSION) -t mtl-manager:latest .
-# docker build --build-arg VERSION=$(cat ../VERSION) -t mtl-manager:latest --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy .
+docker build --build-arg VERSION=$(cat ../VERSION) -t mtl-manager:latest -f Dockerfile ..
+# docker build --build-arg VERSION=$(cat ../VERSION) -t mtl-manager:latest --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy -f Dockerfile ..
 ```
 
 The container runs the manager as uid 1001, which must be able to create its socket in the host's `/var/run/imtl`. Give that uid the directory, for example with the systemd-tmpfiles line `d /run/imtl 0755 1001 - -`, as `/run` is emptied at boot. Do not make the directory writable by every user: any user could then replace the socket, and a manager that runs as root removes that write bit.

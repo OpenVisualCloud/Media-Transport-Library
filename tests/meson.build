@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2022 Intel Corporation
 
-project('mtl_test', 'cpp', default_options: ['buildtype=release'],
+project('mtl_test', 'cpp', default_options: ['buildtype=release', 'b_pie=true'],
         version: run_command(find_program('cat'), files('../VERSION'), check: true).stdout().strip(),)
 
 exec_env = host_machine.system()
@@ -9,6 +9,14 @@ set_variable('is_windows', exec_env == 'windows')
 message('BUILD Environment: ' + exec_env)
 
 cpp_c = meson.get_compiler('cpp')
+
+# Compiler hardening, see doc/build.md
+if not is_windows
+  hardening = run_command(files('../script/hardening_flags.py'), 'c++', get_option('optimization'),
+    get_option('b_sanitize'), cpp_c.cmd_array(), get_option('cpp_args'), check : true).stdout().split('\n')
+  add_project_arguments(hardening[0].split(), language : 'cpp')
+  add_project_link_arguments(hardening[1].split(), language : 'cpp')
+endif
 
 # allow experimental api
 add_global_arguments('-DALLOW_EXPERIMENTAL_API', language : 'c')
