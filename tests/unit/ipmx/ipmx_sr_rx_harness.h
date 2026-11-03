@@ -36,6 +36,8 @@ void ut_srrx_destroy(ut_srrx_ctx* ctx);
 /* ipmx_sr_rx_init() and, if it made the state, ipmx_sr_rx_queue_get() on every port with
  * a media flow on dst port 20000 with header split */
 int ut_srrx_attach(ut_srrx_ctx* ctx);
+/* make the session an st22 one created with st22_flags, as rv_attach() does */
+void ut_srrx_set_st22_flags(ut_srrx_ctx* ctx, uint32_t st22_flags);
 bool ut_srrx_has_state(const ut_srrx_ctx* ctx);
 void ut_srrx_detach(ut_srrx_ctx* ctx);
 /* the queue put and get of a source update */

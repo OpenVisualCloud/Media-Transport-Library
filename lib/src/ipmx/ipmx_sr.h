@@ -87,7 +87,7 @@ struct ipmx_sr_stats {
 };
 
 struct st_tx_video_session_impl;
-/** Create s->ipmx_sr for every session port, after the header templates. */
+/** Create s->ipmx_sr for every port, after the header templates; none for st22. */
 int ipmx_sr_tx_init(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s);
 /** Free s->ipmx_sr; only after the session queues are flushed, they hold its mbufs. */
 void ipmx_sr_tx_uinit(struct st_tx_video_session_impl* s);

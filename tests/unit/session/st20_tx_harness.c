@@ -2309,6 +2309,10 @@ int ut_txv_ops_check(struct st20_tx_ops* ops) {
   return tv_ops_check(ops);
 }
 
+int ut_txv_st22_ops_check(struct st22_tx_ops* ops) {
+  return tv_st22_ops_check(ops);
+}
+
 void ut_txv_add_flags(ut_txv_ctx* ctx, uint32_t flags) {
   ctx->session.ops.flags |= flags;
 }
@@ -2365,6 +2369,41 @@ out:
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) rte_pktmbuf_free(pkts[i]);
   ut_txv_tx_path_uinit(ctx);
   s->st20_frames = NULL;
+  return ret;
+}
+
+int ut_txv_build_st22_ipv4_hdr(ut_txv_ctx* ctx, uint8_t ipv4_hdr[UT_TXV_IPV4_HDR_LEN]) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st_frame_trans frame = {0};
+  uint8_t frame_data[UT_TXV_FRAME_SIZE] = {0};
+  struct rte_mbuf* pkt = NULL;
+  enum mt_handle_type s_type = s->s_type;
+  int ret = -1;
+
+  memset(&ctx->st22_info, 0, sizeof(ctx->st22_info));
+  s->s_type = MT_ST22_HANDLE_TX_VIDEO;
+  s->st22_info = &ctx->st22_info;
+  if (ut_txv_init_hdrs(ctx, 1) < 0) goto out;
+  if (ut_txv_tx_path_init(ctx) < 0) goto out;
+  ut_txv_frame_setup(ctx, &frame, frame_data, 1);
+  ctx->st22_info.st22_total_pkts = 1;
+  ctx->st22_info.cur_frame_size = UT_TXV_FRAME_SIZE;
+  s->st20_pkt_idx = 0;
+  s->st20_frame_idx = 0;
+  s->eth_ipv4_cksum_offload[MTL_SESSION_PORT_P] = false;
+  pkt = rte_pktmbuf_alloc(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
+  if (!pkt) goto out;
+  if (tv_build_st22(s, pkt) < 0) goto out;
+  memcpy(ipv4_hdr, &rte_pktmbuf_mtod(pkt, struct st22_rfc9134_video_hdr*)->ipv4,
+         UT_TXV_IPV4_HDR_LEN);
+  ret = 0;
+
+out:
+  rte_pktmbuf_free(pkt);
+  ut_txv_tx_path_uinit(ctx);
+  s->st20_frames = NULL;
+  s->st22_info = NULL;
+  s->s_type = s_type;
   return ret;
 }
 

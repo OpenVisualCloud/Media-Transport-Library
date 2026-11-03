@@ -15,3 +15,15 @@ int ut_ipmx_stub_tx_ops_check(const struct st20_tx_ops* ops) {
 int ut_ipmx_stub_rx_ops_check(const struct st20_rx_ops* ops) {
   return ipmx_rx_ops_check(ops);
 }
+
+int ut_ipmx_stub_st22_tx_ops_check(const struct st22_tx_ops* ops) {
+  return ipmx_st22_tx_ops_check(ops);
+}
+
+int ut_ipmx_stub_st22_rx_ops_check(const struct st22_rx_ops* ops) {
+  return ipmx_st22_rx_ops_check(ops);
+}
+
+int ut_ipmx_stub_st22p_codec_check(enum st22_codec codec) {
+  return ipmx_st22p_codec_check("ut", codec);
+}

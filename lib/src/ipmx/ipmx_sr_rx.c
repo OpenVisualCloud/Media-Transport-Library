@@ -189,6 +189,8 @@ int ipmx_sr_rx_init(struct mtl_main_impl* impl, struct st_rx_video_session_impl*
   struct ipmx_sr_rx* sr;
 
   if (!(s->ops.flags & ST20_RX_FLAG_IPMX)) return 0;
+  /* no st22 SR parse yet, TR-10-11 section 12 */
+  if (s->st22_ops_flags & ST22_RX_FLAG_IPMX) return 0;
   if (s->ops.flags & ST20_RX_FLAG_DATA_PATH_ONLY) {
     info("%s(%d), no sender report queue as data path only\n", __func__, s->idx);
     return 0;

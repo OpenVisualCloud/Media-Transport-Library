@@ -124,6 +124,13 @@ int ut22p_tx_frame_stat(const ut22p_tx_ctx* ctx, int i);
 int ut22p_tx_transport_report_late(ut22p_tx_ctx* ctx, uint64_t epoch_skipped);
 
 /**
+ * Run create_transport with ops against a stub transport create, which fails, and
+ * return the st22 ops it was given in *transport. Returns create_transport's -EIO.
+ */
+int ut22p_tx_capture_transport_ops(ut22p_tx_ctx* ctx, struct st22p_tx_ops* ops,
+                                   struct st22_tx_ops* transport);
+
+/**
  * Call st22p_tx_create() on a bare instance with one port, named in
  * ops->port.port[0] by this call. For create paths that fail before any
  * transport or encoder is needed.

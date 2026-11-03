@@ -497,6 +497,8 @@ uint64_t ut_txv_pipe_frames_asked(const ut_txv_ctx* ctx);
 int ut_txv_pipe_total_pkts(const ut_txv_ctx* ctx);
 /* tv_ops_check(): the st20_tx_create() ops validation, 0 or negative errno */
 int ut_txv_ops_check(struct st20_tx_ops* ops);
+/* tv_st22_ops_check(): the st22_tx_create() ops validation, 0 or negative errno */
+int ut_txv_st22_ops_check(struct st22_tx_ops* ops);
 /* OR flags into the session's ops.flags */
 void ut_txv_add_flags(ut_txv_ctx* ctx, uint32_t flags);
 /* the UDP destination port in the session's packet header template, host order */
@@ -510,6 +512,9 @@ uint8_t ut_txv_hdr_tos(const ut_txv_ctx* ctx, enum mtl_session_port port);
  * tv_build_st20() for port P, tv_build_st20_redundant() of that packet for port R. */
 int ut_txv_build_ipv4_hdr(ut_txv_ctx* ctx, enum mtl_session_port port,
                           uint8_t ipv4_hdr[UT_TXV_IPV4_HDR_LEN]);
+/* As ut_txv_build_ipv4_hdr() for port P, on an st22 frame mode session: tv_init_hdr()
+ * then tv_build_st22(). */
+int ut_txv_build_st22_ipv4_hdr(ut_txv_ctx* ctx, uint8_t ipv4_hdr[UT_TXV_IPV4_HDR_LEN]);
 #ifdef MTL_HAS_IPMX
 /* tv_init_pkt()'s packets per frame of a progressive BPM frame level session */
 int ut_txv_frame_total_pkts(ut_txv_ctx* ctx, uint32_t width, uint32_t height,

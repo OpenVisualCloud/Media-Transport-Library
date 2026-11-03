@@ -47,7 +47,7 @@ struct ipmx_sr_rx {
 int ipmx_sr_rx_parse(const uint8_t* rtcp, size_t len, struct ipmx_rx_sr_info* sr);
 
 struct st_rx_video_session_impl;
-/** Create s->ipmx_sr with ST20_RX_FLAG_IPMX and without ST20_RX_FLAG_DATA_PATH_ONLY. */
+/** Create s->ipmx_sr with ST20_RX_FLAG_IPMX, unless DATA_PATH_ONLY or an st22 session. */
 int ipmx_sr_rx_init(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s);
 void ipmx_sr_rx_uinit(struct st_rx_video_session_impl* s);
 /**

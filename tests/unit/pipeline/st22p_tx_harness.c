@@ -246,6 +246,15 @@ int ut22p_tx_transport_report_late(ut22p_tx_ctx* ctx, uint64_t epoch_skipped) {
                                                   epoch_skipped);
 }
 
+int ut22p_tx_capture_transport_ops(ut22p_tx_ctx* ctx, struct st22p_tx_ops* ops,
+                                   struct st22_tx_ops* transport) {
+  memset(&ut22p_tx_transport_ops, 0, sizeof(ut22p_tx_transport_ops));
+  if (!ctx->pipeline.src_size) ctx->pipeline.src_size = ops->width * ops->height / 4;
+  int ret = tx_st22p_create_transport(&ctx->impl, &ctx->pipeline, ops);
+  *transport = ut22p_tx_transport_ops;
+  return ret;
+}
+
 static struct mtl_main_impl ut22p_tx_create_impl;
 
 st22p_tx_handle ut22p_tx_create(struct st22p_tx_ops* ops) {

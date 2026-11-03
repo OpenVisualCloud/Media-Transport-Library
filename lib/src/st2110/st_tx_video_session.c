@@ -4580,6 +4580,8 @@ static int tv_st22_ops_check(struct st22_tx_ops* ops) {
     return -EINVAL;
   }
 
+  if (ops->flags & ST22_TX_FLAG_IPMX) return ipmx_st22_tx_ops_check(ops);
+
   return 0;
 }
 
@@ -5337,6 +5339,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
     st20_ops.rtcp = ops->rtcp;
   }
   if (ops->flags & ST22_TX_FLAG_DISABLE_BULK) st20_ops.flags |= ST20_TX_FLAG_DISABLE_BULK;
+  if (ops->flags & ST22_TX_FLAG_IPMX) st20_ops.flags |= ST20_TX_FLAG_IPMX;
   st20_ops.pacing = ops->pacing;
   if (ST22_TYPE_RTP_LEVEL == ops->type)
     st20_ops.type = ST20_TYPE_RTP_LEVEL;

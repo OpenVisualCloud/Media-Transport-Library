@@ -180,6 +180,16 @@ extern "C" {
  * Force the numa of the created session, both CPU and memory.
  */
 #define ST22_TX_FLAG_FORCE_NUMA (MTL_BIT32(8))
+/**
+ * Flag bit in flags of struct st22_tx_ops.
+ * Enable IPMX (VSF TR-10-11) mode. st22_tx_create() fails (returns NULL) and logs the
+ * reason if the library is built without enable_ipmx, or if the ops break an IPMX rule:
+ * odd or <= 1024 udp_port, ST21_PACING_LINEAR, ST22_TYPE_RTP_LEVEL, interlaced,
+ * ST22_TX_FLAG_ENABLE_RTCP or ST22_TX_FLAG_DISABLE_BOXES.
+ * st22_tx_update_destination() rejects a udp_port that breaks the same port rule.
+ * The packets carry DSCP AF42. No RTCP Sender Report is sent yet.
+ */
+#define ST22_TX_FLAG_IPMX (MTL_BIT32(9))
 
 /**
  * Flag bit in flags of struct st20_rx_ops, for non MTL_PMD_DPDK_USER.
@@ -303,6 +313,16 @@ extern "C" {
  * Force the numa of the created session, both CPU and memory.
  */
 #define ST22_RX_FLAG_FORCE_NUMA (MTL_BIT32(5))
+/**
+ * Flag bit in flags of struct st22_rx_ops.
+ * Enable IPMX (VSF TR-10-11) mode. st22_rx_create() fails (returns NULL) and logs the
+ * reason if the library is built without enable_ipmx, or if the ops break an IPMX rule:
+ * odd or <= 1024 udp_port, ST22_TYPE_RTP_LEVEL, interlaced, ST22_RX_FLAG_ENABLE_RTCP or
+ * ST22_RX_FLAG_DISABLE_BOXES.
+ * st22_rx_update_source() rejects a udp_port that breaks the same port rule.
+ * No RTCP Sender Report is received yet.
+ */
+#define ST22_RX_FLAG_IPMX (MTL_BIT32(6))
 
 /**
  * Flag bit in flags of struct st22_rx_ops.

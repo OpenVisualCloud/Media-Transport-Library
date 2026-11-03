@@ -4618,6 +4618,8 @@ static int rv_st22_ops_check(struct st22_rx_ops* ops) {
     return -EINVAL;
   }
 
+  if (ops->flags & ST22_RX_FLAG_IPMX) return ipmx_st22_rx_ops_check(ops);
+
   return 0;
 }
 
@@ -5126,6 +5128,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   }
   if (ops->flags & ST22_RX_FLAG_SIMULATE_PKT_LOSS)
     st20_ops.flags |= ST20_RX_FLAG_SIMULATE_PKT_LOSS;
+  if (ops->flags & ST22_RX_FLAG_IPMX) st20_ops.flags |= ST20_RX_FLAG_IPMX;
   st20_ops.pacing = ops->pacing;
   if (ops->type == ST22_TYPE_RTP_LEVEL)
     st20_ops.type = ST20_TYPE_RTP_LEVEL;

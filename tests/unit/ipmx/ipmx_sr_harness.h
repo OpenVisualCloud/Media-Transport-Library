@@ -56,6 +56,8 @@ void ut_sr_set_redundant(ut_sr_ctx* ctx, const uint8_t sip[4], const uint8_t dip
 /* a destination update of the s_port header template, as st20_tx_update_destination() */
 void ut_sr_set_dest(ut_sr_ctx* ctx, int s_port, const uint8_t dip[4],
                     uint16_t media_dst_port);
+/* make the session an st22 one, as st22_tx_create() does */
+void ut_sr_set_st22(ut_sr_ctx* ctx);
 /* the session's recovery_idx, read by ipmx_sr_tx_init() */
 void ut_sr_set_recovery_idx(ut_sr_ctx* ctx, int recovery_idx);
 /* takes the name the s_port SR pool would get, so its creation fails; before attach */

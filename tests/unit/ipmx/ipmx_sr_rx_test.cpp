@@ -619,6 +619,18 @@ TEST_F(IpmxSrRxSessionTest, FlagOffCreatesNothing) {
   EXPECT_EQ(ut_srrx_get(ctx_, kPortP, &info), -EIO);
 }
 
+/* st22_rx_create() maps ST22_RX_FLAG_IPMX to ST20_RX_FLAG_IPMX, but the st22 SR parse
+ * is not there yet, so an st22 session takes no SR queue and the getter has no state */
+TEST_F(IpmxSrRxSessionTest, St22SessionCreatesNothing) {
+  ASSERT_NO_FATAL_FAILURE(Create());
+  ut_srrx_set_st22_flags(ctx_, ST22_RX_FLAG_IPMX);
+  ASSERT_EQ(ut_srrx_attach(ctx_), 0);
+  EXPECT_FALSE(ut_srrx_has_state(ctx_));
+  EXPECT_EQ(ut_srrx_rxq_gets(ctx_), 0);
+  struct ipmx_rx_sr_info info;
+  EXPECT_EQ(ut_srrx_get(ctx_, kPortP, &info), -ENOTSUP);
+}
+
 /* data path only: the app owns the flows, so no SR queue and the getter says so */
 TEST_F(IpmxSrRxSessionTest, DataPathOnlyHasNoQueue) {
   ASSERT_NO_FATAL_FAILURE(Create(1, ST20_RX_FLAG_IPMX | ST20_RX_FLAG_DATA_PATH_ONLY));

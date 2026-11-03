@@ -17,12 +17,14 @@
  * distinctly named local stub at compile time so the two objects cannot both define it
  * as a global symbol. */
 #define st22_rx_put_framebuff ut22p_stub_put_framebuff
+#define st22_rx_create ut22p_rx_capture_create
 #undef MTL_HAS_USDT
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #include "st2110/pipeline/st22_pipeline_rx.c"
 #pragma GCC diagnostic pop
 #undef st22_rx_put_framebuff
+#undef st22_rx_create
 
 #include "common/ut_common.h"
 
@@ -210,6 +212,24 @@ st22p_rx_handle ut22p_handle(ut22p_ctx* ctx) {
 
 void ut22p_force_destroying(ut22p_ctx* ctx) {
   atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
+}
+
+static struct st22_rx_ops ut22p_rx_transport_ops;
+
+st22_rx_handle ut22p_rx_capture_create(mtl_handle mt, struct st22_rx_ops* ops) {
+  (void)mt;
+  ut22p_rx_transport_ops = *ops;
+  return NULL;
+}
+
+int ut22p_rx_capture_transport_ops(ut22p_ctx* ctx, struct st22p_rx_ops* ops,
+                                   struct st22_rx_ops* transport) {
+  memset(&ut22p_rx_transport_ops, 0, sizeof(ut22p_rx_transport_ops));
+  if (!ctx->pipeline.max_codestream_size)
+    ctx->pipeline.max_codestream_size = ops->width * ops->height / 4;
+  int ret = rx_st22p_create_transport(&ctx->impl, &ctx->pipeline, ops);
+  *transport = ut22p_rx_transport_ops;
+  return ret;
 }
 
 static struct mtl_main_impl ut22p_rx_create_impl;

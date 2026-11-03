@@ -369,6 +369,8 @@ void ut20_session_detach(ut20_test_ctx* ctx);
 
 /* rv_ops_check(): the st20_rx_create() ops validation, 0 or negative errno */
 int ut20_rx_ops_check(struct st20_rx_ops* ops);
+/* rv_st22_ops_check(): the st22_rx_create() ops validation, 0 or negative errno */
+int ut20_rx_st22_ops_check(struct st22_rx_ops* ops);
 
 /* OR flags into the session's ops.flags */
 void ut20_ctx_add_flags(ut20_test_ctx* ctx, uint32_t flags);

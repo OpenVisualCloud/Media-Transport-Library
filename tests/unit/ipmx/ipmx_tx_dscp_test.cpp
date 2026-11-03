@@ -2,7 +2,9 @@
 
 /*
  * IPMX video packets carry DSCP AF42 (36), IPv4 TOS 0x90 with ECN 0
- * (TR-10-9 section 16); without the flag the TOS stays 0.
+ * (TR-10-9 section 16); without the flag the TOS stays 0. The St22* cases set the
+ * internal ST20_TX_FLAG_IPMX directly and check the tv_build_st22() packet; the
+ * st22_tx_create() flag mapping is not reachable here.
  *
  * Run: ./build_unit/tests/unit/UnitTest --gtest_filter='IpmxTxDscp*'
  */
@@ -86,6 +88,22 @@ TEST_F(IpmxTxDscpTest, SoftwareChecksumValidOnRedundantPacket) {
   ASSERT_EQ(ut_txv_build_ipv4_hdr(ctx_, MTL_SESSION_PORT_R, hdr), 0);
   EXPECT_EQ(hdr[kTosOffset], kAf42Tos);
   EXPECT_EQ(OnesComplementSum(hdr, UT_TXV_IPV4_HDR_LEN), 0xffff);
+}
+
+/* TR-10-9 section 16 for JPEG XS: the st22 codestream packet carries AF42 */
+TEST_F(IpmxTxDscpTest, St22PacketTosIsAf42) {
+  ut_txv_add_flags(ctx_, ST20_TX_FLAG_IPMX);
+  uint8_t hdr[UT_TXV_IPV4_HDR_LEN];
+  ASSERT_EQ(ut_txv_build_st22_ipv4_hdr(ctx_, hdr), 0);
+  EXPECT_EQ(hdr[kTosOffset], kAf42Tos);
+  EXPECT_EQ(OnesComplementSum(hdr, UT_TXV_IPV4_HDR_LEN), 0xffff);
+}
+
+/* without the flag the st22 packet TOS stays 0, current MTL behaviour */
+TEST_F(IpmxTxDscpTest, St22FlagOffPacketTosIsZero) {
+  uint8_t hdr[UT_TXV_IPV4_HDR_LEN];
+  ASSERT_EQ(ut_txv_build_st22_ipv4_hdr(ctx_, hdr), 0);
+  EXPECT_EQ(hdr[kTosOffset], 0);
 }
 
 }  // namespace

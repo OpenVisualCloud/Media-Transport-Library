@@ -290,6 +290,10 @@ void ut_sr_set_dest(ut_sr_ctx* ctx, int s_port, const uint8_t dip[4],
   hdr->udp.dst_port = htons(media_dst_port);
 }
 
+void ut_sr_set_st22(ut_sr_ctx* ctx) {
+  ctx->session.s_type = MT_ST22_HANDLE_TX_VIDEO;
+}
+
 void ut_sr_set_recovery_idx(ut_sr_ctx* ctx, int recovery_idx) {
   ctx->session.recovery_idx = recovery_idx;
 }
@@ -446,7 +450,7 @@ void ut_sr_set_ptp_source(ut_sr_ctx* ctx, bool tsc, bool user_fn) {
 
 int ut_sr_attach(ut_sr_ctx* ctx) {
   int ret = ut_sr_tx_init(&ctx->impl, &ctx->session);
-  if (ret) return ret;
+  if (ret || !ctx->session.ipmx_sr) return ret;
   for (int i = 0; i < ctx->session.ops.num_port; i++)
     snprintf(ctx->pool_name[i], sizeof(ctx->pool_name[i]), "%s",
              ut_sr_leg_pool(ctx->session.ipmx_sr, i)->name);

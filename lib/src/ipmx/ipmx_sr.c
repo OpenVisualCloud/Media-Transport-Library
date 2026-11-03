@@ -294,6 +294,9 @@ int ipmx_sr_tx_init(struct mtl_main_impl* impl, struct st_tx_video_session_impl*
   RTE_BUILD_BUG_ON(sizeof(struct mt_udp_hdr) + IPMX_RTCP_SR_IPMX_LEN +
                        IPMX_RTCP_SDES_MAX_LEN >
                    IPMX_SR_POOL_DATA_SIZE);
+  /* st22 needs Media Info Block 0x0003 (TR-10-11 section 12) then 0x0008 (TR-10-15
+   * Part 1 section 9), not built yet */
+  if (s->s_type == MT_ST22_HANDLE_TX_VIDEO) return 0;
   sr = mt_rte_zmalloc_socket(sizeof(*sr), mt_socket_id(impl, port));
   if (!sr) return -ENOMEM;
   ret = ipmx_video_info_from_session(impl, s, &sr->info);

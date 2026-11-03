@@ -212,6 +212,10 @@ int ut_srrx_attach(ut_srrx_ctx* ctx) {
   return ut_srrx_queue_get(ctx);
 }
 
+void ut_srrx_set_st22_flags(ut_srrx_ctx* ctx, uint32_t st22_flags) {
+  ctx->session.st22_ops_flags = st22_flags;
+}
+
 bool ut_srrx_has_state(const ut_srrx_ctx* ctx) {
   return ctx->session.ipmx_sr != NULL;
 }

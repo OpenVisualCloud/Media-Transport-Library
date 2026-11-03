@@ -1109,6 +1109,10 @@ int ut20_rx_ops_check(struct st20_rx_ops* ops) {
   return rv_ops_check(ops);
 }
 
+int ut20_rx_st22_ops_check(struct st22_rx_ops* ops) {
+  return rv_st22_ops_check(ops);
+}
+
 void ut20_ctx_add_flags(ut20_test_ctx* ctx, uint32_t flags) {
   ctx->session.ops.flags |= flags;
 }

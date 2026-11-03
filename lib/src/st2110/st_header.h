@@ -383,7 +383,7 @@ struct st_tx_video_session_impl {
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rtcp_q[MTL_SESSION_PORT_MAX];
 #ifdef MTL_HAS_IPMX
-  struct ipmx_sr_tx* ipmx_sr; /* NULL without ST20_TX_FLAG_IPMX */
+  struct ipmx_sr_tx* ipmx_sr; /* NULL without ST20_TX_FLAG_IPMX or for st22 */
 #endif
 
   /* stat – port_user_stats is the single source for API-visible counters (monotonic) */
@@ -678,7 +678,7 @@ struct st_rx_video_session_impl {
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 #ifdef MTL_HAS_IPMX
-  struct ipmx_sr_rx* ipmx_sr; /* NULL without ST20_RX_FLAG_IPMX or with DATA_PATH_ONLY */
+  struct ipmx_sr_rx* ipmx_sr; /* NULL without ST20_RX_FLAG_IPMX, DATA_PATH_ONLY or st22 */
 #endif
   uint16_t burst_loss_max;
   float sim_loss_rate;

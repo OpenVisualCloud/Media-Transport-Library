@@ -90,6 +90,69 @@ inline struct st20_rx_ops RxOps(int num_port = 1) {
   return ops;
 }
 
+inline int St22TxNextFrame(void*, uint16_t*, struct st22_tx_frame_meta*) {
+  return -EBUSY;
+}
+inline int St22RxFrameReady(void*, void*, struct st22_rx_frame_meta*) {
+  return 0;
+}
+
+/* 1080p59.94 JPEG XS codestream frame level, one port, IPMX on, passes
+ * tv_st22_ops_check() */
+inline struct st22_tx_ops St22TxOps(int num_port = 1) {
+  struct st22_tx_ops ops;
+  memset(&ops, 0, sizeof(ops));
+  ops.name = "ipmx_st22_tx";
+  ops.num_port = num_port;
+  for (int i = 0; i < num_port; i++) {
+    uint8_t ip[MTL_IP_ADDR_LEN] = {239, 0, 0, static_cast<uint8_t>(1 + i)};
+    memcpy(ops.dip_addr[i], ip, sizeof(ip));
+    ops.udp_port[i] = kIpmxPort;
+  }
+  ops.flags = ST22_TX_FLAG_IPMX;
+  ops.pacing = ST21_PACING_NARROW;
+  ops.type = ST22_TYPE_FRAME_LEVEL;
+  ops.pack_type = ST22_PACK_CODESTREAM;
+  ops.width = 1920;
+  ops.height = 1080;
+  ops.fps = ST_FPS_P59_94;
+  ops.payload_type = 112;
+  ops.framebuff_cnt = 2;
+  ops.framebuff_max_size = 1920 * 1080 / 4;
+  ops.get_next_frame = St22TxNextFrame;
+  ops.rtp_ring_size = 1024;
+  ops.rtp_pkt_size = 1200;
+  ops.notify_rtp_done = TxRtpDone;
+  return ops;
+}
+
+/* RX counterpart of St22TxOps(), passes rv_st22_ops_check() */
+inline struct st22_rx_ops St22RxOps(int num_port = 1) {
+  struct st22_rx_ops ops;
+  memset(&ops, 0, sizeof(ops));
+  ops.name = "ipmx_st22_rx";
+  ops.num_port = num_port;
+  for (int i = 0; i < num_port; i++) {
+    uint8_t ip[MTL_IP_ADDR_LEN] = {239, 0, 0, static_cast<uint8_t>(1 + i)};
+    memcpy(ops.ip_addr[i], ip, sizeof(ip));
+    ops.udp_port[i] = kIpmxPort;
+  }
+  ops.flags = ST22_RX_FLAG_IPMX;
+  ops.pacing = ST21_PACING_NARROW;
+  ops.type = ST22_TYPE_FRAME_LEVEL;
+  ops.pack_type = ST22_PACK_CODESTREAM;
+  ops.width = 1920;
+  ops.height = 1080;
+  ops.fps = ST_FPS_P59_94;
+  ops.payload_type = 112;
+  ops.framebuff_cnt = 2;
+  ops.framebuff_max_size = 1920 * 1080 / 4;
+  ops.notify_frame_ready = St22RxFrameReady;
+  ops.rtp_ring_size = 1024;
+  ops.notify_rtp_ready = RxRtpReady;
+  return ops;
+}
+
 struct IpmxFormat {
   const char* name;
   uint32_t width;

@@ -2,12 +2,13 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
+#include "st22p_test.h"
+
 #include <atomic>
 #include <chrono>
 #include <thread>
 
 #include "log.h"
-#include "tests.hpp"
 
 #define ST22P_TEST_PAYLOAD_TYPE (114)
 #define ST22P_TEST_UDP_PORT (16000)
@@ -755,27 +756,7 @@ static void test_st22p_rx_frame_thread(void* args) {
   dbg("%s(%d), stop\n", __func__, s->idx);
 }
 
-struct st22p_rx_digest_test_para {
-  int sessions;
-  int fail_interval;
-  int timeout_interval;
-  int timeout_ms;
-  int rand_ratio;
-  bool check_fps;
-  enum st_test_level level;
-  bool user_timestamp;
-  bool vsync;
-  bool rtcp;
-  bool tx_ext;
-  bool rx_ext;
-  bool interlace;
-  uint32_t ssrc;
-  bool block_get;
-  bool codec_block_get;
-  bool derive;
-};
-
-static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para) {
+void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para) {
   memset(para, 0, sizeof(*para));
 
   para->sessions = 1;
@@ -796,10 +777,9 @@ static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* par
   para->codec_block_get = false;
 }
 
-static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
-                                 enum st_frame_fmt fmt[], enum st22_codec codec[],
-                                 int compress_ratio[],
-                                 struct st22p_rx_digest_test_para* para) {
+void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
+                          enum st_frame_fmt fmt[], enum st22_codec codec[],
+                          int compress_ratio[], struct st22p_rx_digest_test_para* para) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto st = ctx->handle;
   int ret;
@@ -907,6 +887,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.notify_frame_done = test_st22p_tx_frame_done;
     if (para->user_timestamp) ops_tx.flags |= ST22P_TX_FLAG_USER_TIMESTAMP;
     if (para->vsync) ops_tx.flags |= ST22P_TX_FLAG_ENABLE_VSYNC;
+    if (para->ipmx) ops_tx.flags |= ST22P_TX_FLAG_IPMX;
     if (para->tx_ext) {
       ops_tx.flags |= ST22P_TX_FLAG_EXT_FRAME;
     }
@@ -1095,6 +1076,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ops_rx.notify_frame_available = test_st22p_rx_frame_available;
     ops_rx.notify_event = test_ctx_notify_event;
     if (para->vsync) ops_rx.flags |= ST22P_RX_FLAG_ENABLE_VSYNC;
+    if (para->ipmx) ops_rx.flags |= ST22P_RX_FLAG_IPMX;
     if (para->rx_ext) {
       ops_rx.flags |= ST22P_RX_FLAG_EXT_FRAME;
       ops_rx.query_ext_frame = test_st22p_rx_query_ext_frame;

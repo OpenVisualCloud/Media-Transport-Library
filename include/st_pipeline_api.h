@@ -432,6 +432,11 @@ enum st22p_tx_flag {
   ST22P_TX_FLAG_EXT_FRAME = (MTL_BIT32(8)),
   /** Force the numa of the created session, both CPU and memory */
   ST22P_TX_FLAG_FORCE_NUMA = (MTL_BIT32(9)),
+  /**
+   * Enable IPMX (VSF TR-10-11) mode on the transport session, see ST22_TX_FLAG_IPMX.
+   * JPEG XS only: st22p_tx_create() fails for any other codec.
+   */
+  ST22P_TX_FLAG_IPMX = (MTL_BIT32(10)),
   /** Enable the st22p_tx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st22p_tx_set_block_timeout to customize) */
   ST22P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15))
@@ -563,6 +568,11 @@ enum st22p_rx_flag {
    * Disable ST22 boxes
    */
   ST22P_RX_FLAG_DISABLE_BOXES = MTL_BIT32(6),
+  /**
+   * Enable IPMX (VSF TR-10-11) mode on the transport session, see ST22_RX_FLAG_IPMX.
+   * JPEG XS only: st22p_rx_create() fails for any other codec.
+   */
+  ST22P_RX_FLAG_IPMX = (MTL_BIT32(7)),
 
   /** Enable the st22p_rx_get_frame block behavior to wait until a frame becomes
      available or timeout(default: 1s, use st22p_rx_set_block_timeout to customize) */

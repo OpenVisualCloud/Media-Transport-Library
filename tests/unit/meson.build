@@ -225,6 +225,7 @@ if get_option('enable_ipmx')
     'ipmx/ipmx_disabled_test.cpp',
     'ipmx/ipmx_tx_validate_test.cpp',
     'ipmx/ipmx_rx_validate_test.cpp',
+    'ipmx/ipmx_st22_validate_test.cpp',
     'ipmx/ipmx_pipeline_test.cpp',
     'ipmx/ipmx_tx_dscp_test.cpp',
     'ipmx/ipmx_vrx_test.cpp',
