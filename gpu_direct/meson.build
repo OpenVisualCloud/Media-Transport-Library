@@ -4,7 +4,7 @@
 project(
     'mtl_gpu_direct',
     'c',
-    default_options: ['buildtype=release', 'b_pie=true'],
+    default_options: ['buildtype=release', 'warning_level=2', 'b_pie=true'],
     version: run_command(find_program('cat'), files('../VERSION'), check: true).stdout().strip(),
 )
 
