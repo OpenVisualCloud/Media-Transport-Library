@@ -49,6 +49,9 @@ flags += [
     "-Werror=format-security",
     "-Wimplicit-fallthrough",
 ]
+# Bounds and precondition checks in libstdc++ (libc++ ignores it).
+if language == "c++":
+    flags.append("-D_GLIBCXX_ASSERTIONS")
 # glibc needs optimization for it, and the sanitizers don't support it. A level
 # the compiler (Ubuntu gcc) or ARG sets is kept. meson's own checks can't see
 # it: they don't optimize, and meson 1.11 and later add -U_FORTIFY_SOURCE.
