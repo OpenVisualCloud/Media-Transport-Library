@@ -247,7 +247,7 @@ void mtl_instance::handle_message_if_xsk_map_fd(mtl_if_message_t* if_msg) {
   auto interface = get_interface(ifindex);
   if (interface != nullptr) fd = interface->get_xsks_map_fd();
 
-  struct msghdr msg = {0};
+  struct msghdr msg = {};
   struct iovec iov[1];
   char control[CMSG_SPACE(sizeof(int))] = {0};
   char data[1] = {' '};
