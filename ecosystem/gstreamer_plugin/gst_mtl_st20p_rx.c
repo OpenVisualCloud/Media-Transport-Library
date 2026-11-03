@@ -526,6 +526,8 @@ static GstFlowReturn gst_mtl_st20p_rx_get_internal_frame(Gst_Mtl_St20p_Rx* src,
 
 static GstFlowReturn gst_mtl_st20p_rx_chain(GstBaseSrc* basesrc, guint64 offset,
                                             guint length, GstBuffer** buffer) {
+  MTL_MAY_UNUSED(offset);
+  MTL_MAY_UNUSED(length);
   Gst_Mtl_St20p_Rx* src = GST_MTL_ST20P_RX(basesrc);
   gint ret = GST_FLOW_OK;
 
@@ -568,6 +570,7 @@ GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, mtl_st20p_rx,
 
 static int gst_mtl_st20p_rx_query_ext_frame(void* priv, struct st_ext_frame* ext_frame,
                                             struct st20_rx_frame_meta* meta) {
+  MTL_MAY_UNUSED(meta);
   GstVideoMeta* video_meta;
   guint8 planes;
   Gst_Mtl_St20p_Rx* s = (Gst_Mtl_St20p_Rx*)priv;

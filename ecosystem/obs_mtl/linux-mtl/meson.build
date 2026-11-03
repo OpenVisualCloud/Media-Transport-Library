@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2022 Intel Corporation
 
-project('linux-mtl', 'c', default_options: ['buildtype=release'],
+project('linux-mtl', 'c', default_options: ['buildtype=release', 'warning_level=2'],
         version: run_command(find_program('cat'), files('../../../VERSION'), check: true).stdout().strip(),)
 
 cc = meson.get_compiler('c')
