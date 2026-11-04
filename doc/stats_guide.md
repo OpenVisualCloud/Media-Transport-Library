@@ -102,7 +102,9 @@ or `reset_session_stats` from a callback of the same session: it deadlocks.
  │       port P was short             ──► st20_rx_user_stats                   │
  │                                          .frames_partial[P]++               │
  │       (same for port R)                                                     │
- │       gap → estimated missing pkts ──► stat_pkts_unrecovered += est         │
+ │       missing pkts ──► stat_pkts_unrecovered += missing                     │
+ │         missing = last complete frame's pkts − received,                    │
+ │         estimated from bytes until a frame completes                        │
  │       per-port deficit (deferred)  ──► port[i].lost_packets += deficit      │
  │         deficit = max(0, span − recv_on_port[i])                            │
  │         span = pkts_received + this-frame all-port holes                    │
