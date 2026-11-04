@@ -1177,6 +1177,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
   st_tx_mbuf_set_idx(pkt, s->st40_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
   s->port_user_stats.common.port[MTL_SESSION_PORT_P].build++;
+  mgr->build_cnt++;
   s->port_user_stats.common.port[MTL_SESSION_PORT_P].packets++;
   s->port_user_stats.common.port[MTL_SESSION_PORT_P].bytes += pkt->pkt_len;
   if (send_r) {
@@ -1345,6 +1346,7 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
   st_tx_mbuf_set_idx(pkt, s->st40_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
   s->port_user_stats.common.port[MTL_SESSION_PORT_P].build++;
+  mgr->build_cnt++;
   s->port_user_stats.common.port[MTL_SESSION_PORT_P].packets++;
   s->port_user_stats.common.port[MTL_SESSION_PORT_P].bytes += pkt->pkt_len;
 
@@ -1390,6 +1392,11 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
   return done ? MTL_TASKLET_ALL_DONE : MTL_TASKLET_HAS_PENDING;
 }
 
+/* Lip-synced sessions all send at the same instant. One call builds packets for at
+ * most this many sessions, so the other tasklets of the scheduler run between the parts
+ * of the burst. Only a built packet counts, not the frame fetch or the pacing sync */
+#define ST_TX_ANC_BUSY_SESSIONS_PER_CALL (4)
+
 static int tx_ancillary_sessions_tasklet_handler(void* priv) {
   struct st_tx_ancillary_sessions_mgr* mgr = priv;
   struct mtl_main_impl* impl = mgr->parent;
@@ -1397,24 +1404,39 @@ static int tx_ancillary_sessions_tasklet_handler(void* priv) {
   int pending = MTL_TASKLET_ALL_DONE;
   uint64_t tsc_s = 0;
   bool time_measure = mt_sessions_time_measure(impl);
+  int max_idx = mgr->max_idx;
+  int busy = 0;
 
-  for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
+  if (mgr->next_sidx >= max_idx) mgr->next_sidx = 0;
+  for (int i = 0; i < max_idx; i++) {
+    int sidx = mgr->next_sidx + i;
+    if (sidx >= max_idx) sidx -= max_idx;
     s = tx_ancillary_session_try_get(mgr, sidx);
     if (!s) continue;
     if (time_measure) tsc_s = mt_get_tsc(impl);
 
+    /* the return value does not show a build: frame level gives HAS_PENDING also when
+     * the frame is due soon, rtp level gives ALL_DONE after a build */
+    uint32_t built = mgr->build_cnt;
     s->stat_build_ret_code = 0;
     if (s->ops.type == ST40_TYPE_FRAME_LEVEL)
       pending += tx_ancillary_session_tasklet_frame(impl, mgr, s);
     else
       pending += tx_ancillary_session_tasklet_rtp(impl, mgr, s);
+    built = mgr->build_cnt - built;
 
     if (time_measure) {
       uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
       mt_stat_u64_update(&s->stat_time, delta_ns);
     }
     tx_ancillary_session_put(mgr, sidx);
+    if (built && ++busy >= ST_TX_ANC_BUSY_SESSIONS_PER_CALL && i + 1 < max_idx) {
+      mgr->next_sidx = sidx + 1;
+      return MTL_TASKLET_HAS_PENDING;
+    }
   }
+  /* all sessions seen: the next burst starts at session 0, each stream keeps its slot */
+  mgr->next_sidx = 0;
 
   return pending;
 }

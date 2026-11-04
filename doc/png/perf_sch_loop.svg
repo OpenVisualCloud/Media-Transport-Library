@@ -1,0 +1,39 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 760 340' width='760' height='340' font-family='Helvetica, Arial, sans-serif'>
+<title>Scheduler 0 loop time, full mix, default layout</title>
+<rect width='760' height='340' fill='#fcfcfb'/>
+<text x='64' y='26' font-size='16' font-weight='bold' fill='#0b0b0b'>Scheduler 0 loop time, full mix, default layout</text>
+<text x='64' y='45' font-size='12' fill='#52514e'>Mean of two 60 s runs per build, MTL_FLAG_TASKLET_TIME_MEASURE off. Lower is better.</text>
+<line x1='64' x2='740' y1='270.0' y2='270.0' stroke='#e4e3df' stroke-width='1'/>
+<text x='56' y='274.0' font-size='11' fill='#52514e' text-anchor='end'>0</text>
+<line x1='64' x2='740' y1='228.8' y2='228.8' stroke='#e4e3df' stroke-width='1'/>
+<text x='56' y='232.8' font-size='11' fill='#52514e' text-anchor='end'>1</text>
+<line x1='64' x2='740' y1='187.6' y2='187.6' stroke='#e4e3df' stroke-width='1'/>
+<text x='56' y='191.6' font-size='11' fill='#52514e' text-anchor='end'>2</text>
+<line x1='64' x2='740' y1='146.4' y2='146.4' stroke='#e4e3df' stroke-width='1'/>
+<text x='56' y='150.4' font-size='11' fill='#52514e' text-anchor='end'>3</text>
+<line x1='64' x2='740' y1='105.2' y2='105.2' stroke='#e4e3df' stroke-width='1'/>
+<text x='56' y='109.2' font-size='11' fill='#52514e' text-anchor='end'>4</text>
+<line x1='64' x2='740' y1='64.0' y2='64.0' stroke='#e4e3df' stroke-width='1'/>
+<text x='56' y='68.0' font-size='11' fill='#52514e' text-anchor='end'>5</text>
+<text x='14' y='167' font-size='11' fill='#52514e' transform='rotate(-90 14 167)' text-anchor='middle'>us</text>
+<line x1='64' x2='740' y1='270' y2='270' stroke='#52514e' stroke-width='1'/>
+<path d='M114.6,270 V109.6 Q114.6,105.6 118.6,105.6 H144.6 Q148.6,105.6 148.6,109.6 V270Z' fill='#2a78d6'><title>main, loop: 3.99 us</title></path>
+<text x='131.6' y='100.6' font-size='11' fill='#0b0b0b' text-anchor='middle'>3.99</text>
+<text x='131.6' y='288' font-size='11' fill='#0b0b0b' text-anchor='middle'>main</text>
+<path d='M249.8,270 V114.1 Q249.8,110.1 253.8,110.1 H279.8 Q283.8,110.1 283.8,114.1 V270Z' fill='#2a78d6'><title>+ 7.1 integer TSC, loop: 3.88 us</title></path>
+<text x='266.8' y='105.1' font-size='11' fill='#0b0b0b' text-anchor='middle'>3.88</text>
+<text x='266.8' y='288' font-size='11' fill='#0b0b0b' text-anchor='middle'>+ 7.1 integer</text>
+<text x='266.8' y='302' font-size='11' fill='#0b0b0b' text-anchor='middle'>TSC</text>
+<path d='M385.0,270 V108.4 Q385.0,104.4 389.0,104.4 H415.0 Q419.0,104.4 419.0,108.4 V270Z' fill='#2a78d6'><title>+ 7.2 bounded ANC call, loop: 4.02 us</title></path>
+<text x='402.0' y='99.4' font-size='11' fill='#0b0b0b' text-anchor='middle'>4.02</text>
+<text x='402.0' y='288' font-size='11' fill='#0b0b0b' text-anchor='middle'>+ 7.2 bounded</text>
+<text x='402.0' y='302' font-size='11' fill='#0b0b0b' text-anchor='middle'>ANC call</text>
+<path d='M520.2,270 V168.9 Q520.2,164.9 524.2,164.9 H550.2 Q554.2,164.9 554.2,168.9 V270Z' fill='#2a78d6'><title>+ 7.3 manager RX queue, loop: 2.55 us</title></path>
+<text x='537.2' y='159.9' font-size='11' fill='#0b0b0b' text-anchor='middle'>2.55</text>
+<text x='537.2' y='288' font-size='11' fill='#0b0b0b' text-anchor='middle'>+ 7.3 manager</text>
+<text x='537.2' y='302' font-size='11' fill='#0b0b0b' text-anchor='middle'>RX queue</text>
+<path d='M655.4,270 V168.5 Q655.4,164.5 659.4,164.5 H685.4 Q689.4,164.5 689.4,168.5 V270Z' fill='#2a78d6'><title>+ 7.4 late video bulks, loop: 2.56 us</title></path>
+<text x='672.4' y='159.5' font-size='11' fill='#0b0b0b' text-anchor='middle'>2.56</text>
+<text x='672.4' y='288' font-size='11' fill='#0b0b0b' text-anchor='middle'>+ 7.4 late</text>
+<text x='672.4' y='302' font-size='11' fill='#0b0b0b' text-anchor='middle'>video bulks</text>
+</svg>

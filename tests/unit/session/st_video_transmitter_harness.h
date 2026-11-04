@@ -130,6 +130,15 @@ void ut_trs_stall_stream(ut_trs_ctx* ctx, uint64_t stall_ns);
 /* how far the latest pkt left behind its slot in a stream that never pauses */
 long double ut_trs_stream_max_late_ns(const ut_trs_ctx* ctx);
 uint32_t ut_trs_stream_nic_desc_used(const ut_trs_ctx* ctx);
+/* Stream mode: put pkts mid-frame pkts in the ring, pkt i due at first_tsc + i * step_ns,
+ * and move the clock to now_ns. */
+int ut_trs_fill_stream(ut_trs_ctx* ctx, uint32_t pkts, uint64_t first_tsc,
+                       uint64_t step_ns, uint64_t now_ns);
+/* the pkts the NIC took in stream mode */
+uint64_t ut_trs_stream_nic_pkts(const ut_trs_ctx* ctx);
+/* ST_TX_VIDEO_LATE_BULKS_MAX and ST_SESSION_MAX_BULK */
+int ut_trs_bulks_per_call(void);
+int ut_trs_max_bulk(void);
 
 #ifdef __cplusplus
 }

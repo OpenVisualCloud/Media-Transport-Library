@@ -95,7 +95,7 @@ ut_ptp_ctx* ut_ptp_create(void) {
   ut_g_raw_time_ns = 0;
 
   ctx->impl.type = MT_HANDLE_MAIN;
-  ctx->impl.tsc_hz = rte_get_tsc_hz();
+  mt_set_tsc_hz(&ctx->impl, rte_get_tsc_hz());
 
   ctx->ptp.impl = &ctx->impl;
   ctx->ptp.port = MTL_PORT_P;

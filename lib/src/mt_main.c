@@ -113,7 +113,8 @@ static void* mt_calibrate_tsc(void* arg) {
   mt_tsc_mono_pair(&start, &start_tsc);
   mt_sleep_ms(MS_PER_S);
   mt_tsc_mono_pair(&end, &end_tsc);
-  impl->tsc_hz = (double)NS_PER_S * (end_tsc - start_tsc) / (end - start);
+  mt_set_tsc_hz(impl, (uint64_t)((double)NS_PER_S * (double)(end_tsc - start_tsc) /
+                                 (double)(end - start)));
   mt_dev_tsc_done_action(impl);
 
   info("%s, tscHz %" PRIu64 "\n", __func__, impl->tsc_hz);
@@ -571,7 +572,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   else
     impl->arp_timeout_ms = 60 * MS_PER_S;
 
-  impl->tsc_hz = rte_get_tsc_hz();
+  mt_set_tsc_hz(impl, rte_get_tsc_hz());
 
   impl->iova_mode = rte_eal_iova_mode();
 #ifdef WINDOWSENV /* todo, fix for Win */

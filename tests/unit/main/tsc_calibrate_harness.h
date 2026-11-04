@@ -21,6 +21,10 @@ extern "C" {
  * tsc_hz it calibrated. */
 uint64_t ut_tsc_calibrate(uint64_t tsc_hz, uint64_t read_ns, uint64_t cold_read_ns);
 
+/* Run mt_get_tsc() after mt_set_tsc_hz(tsc_hz) on the real TSC. lo_ns and hi_ns get the
+ * exact conversion of a TSC read just before and just after it. */
+uint64_t ut_tsc_to_ns(uint64_t tsc_hz, uint64_t* lo_ns, uint64_t* hi_ns);
+
 /* Run mtl_init() with num_ports ports and otherwise zeroed parameters. Returns true if
  * it fails. */
 bool ut_mtl_init_fails_with_num_ports(int num_ports);

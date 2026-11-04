@@ -104,7 +104,7 @@ static struct ut_sch_mempolicy_ctx* ut_sch_mempolicy_ctx_create(int* mode) {
   ctx->tasklet.ops.handler = ut_sch_idle_handler;
   ctx->tasklet.ops.priv = mode;
   ctx->tasklets[0] = &ctx->tasklet;
-  ctx->impl.tsc_hz = rte_get_tsc_hz();
+  mt_set_tsc_hz(&ctx->impl, rte_get_tsc_hz());
   ctx->sch.parent = &ctx->impl;
   ctx->sch.tasklet = ctx->tasklets;
   ctx->sch.max_tasklet_idx = 1;

@@ -15,10 +15,9 @@ class PtpUserSyncTest : public ::testing::Test {
  protected:
   void SetUp() override {
     /* EAL first: ut_ptp_create() seeds impl.tsc_hz from rte_get_tsc_hz(), which
-     * is 0 before rte_eal_init(). mt_get_tsc() would then divide by zero and
-     * every "local clock" reading below would be garbage rather than a real
-     * TSC value -- the no_timesync preconditions would pass for the wrong
-     * reason. */
+     * is 0 before rte_eal_init(). mt_get_tsc() would then return 0 and every
+     * "local clock" reading below would be 0 rather than a real TSC value --
+     * the no_timesync preconditions would pass for the wrong reason. */
     ASSERT_EQ(ut_ptp_init(), 0);
     ctx_ = ut_ptp_create();
     ASSERT_NE(ctx_, nullptr);

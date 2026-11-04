@@ -134,7 +134,7 @@ static void st40_fuzz_reset_context(void) {
   mt_stat_u64_init(&g_session.stat_time);
 
   g_impl.type = MT_HANDLE_MAIN;
-  g_impl.tsc_hz = rte_get_tsc_hz();
+  mt_set_tsc_hz(&g_impl, rte_get_tsc_hz());
 
   g_mgr.parent = &g_impl;
   g_mgr.idx = 0;

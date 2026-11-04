@@ -195,6 +195,15 @@ void ut30_reattach_frames(ut30_test_ctx* ctx, void* frames);
  * path bumps this; the harness does not yet drive packets through it). */
 void ut30_bump_slot_get_frame_fail(ut30_test_ctx* ctx, uint64_t n);
 
+/* rx_audio_queue_id() of port P while the session is on a fake queue of the manager
+ * with queue id 9 and has no rx queue of its own. */
+uint16_t ut30_mq_queue_id(ut30_test_ctx* ctx);
+/* One packet through rx_audio_sessions_queue_dispatch(): session 2, session port R on
+ * phy port R, group 239.1.1.1, udp 30000. The packet goes to phy port phy, to
+ * 239.1.1.<ip_last>, with key; locked holds the slot lock of session 2. */
+int ut30_mq_dispatch(ut30_test_ctx* ctx, enum mtl_port phy, uint32_t key, uint8_t ip_last,
+                     bool locked);
+
 #ifdef __cplusplus
 }
 #endif

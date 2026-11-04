@@ -10,6 +10,7 @@
 #include "../mt_stat.h"
 #include "st_ancillary_transmitter.h"
 #include "st_rx_common.h"
+#include "st_rx_mgr_queue.h"
 
 #ifdef MTL_ENABLE_FUZZING_ST40
 #define ST40_FUZZ_LOG(...) info(__VA_ARGS__)
@@ -66,7 +67,20 @@ static inline void rx_ancillary_session_put(struct st_rx_ancillary_sessions_mgr*
 
 static inline uint16_t rx_ancillary_queue_id(struct st_rx_ancillary_session_impl* s,
                                              enum mtl_session_port s_port) {
-  return mt_rxq_queue_id(s->rxq[s_port]);
+  struct mt_rxq_entry* rxq = s->rxq[s_port];
+
+  /* a session port on the queue of the manager has no queue of its own */
+  if (!rxq && s->mq_flow[s_port])
+    rxq = s->mgr->mq.rxq[mt_port_logic2phy(s->port_maps, s_port)];
+  return rxq ? mt_rxq_queue_id(rxq) : 0;
+}
+
+/* frame level only: an RTP level app keeps the mbufs in its ring, and they would take
+ * the pool of the queue that all sessions of the manager share */
+static inline bool rx_ancillary_session_mq_usable(
+    struct st_rx_ancillary_session_impl* s) {
+  return s->ops.type == ST40_TYPE_FRAME_LEVEL &&
+         !(s->ops.flags & ST40_RX_FLAG_DATA_PATH_ONLY);
 }
 
 static int rx_ancillary_session_init(struct st_rx_ancillary_sessions_mgr* mgr,
@@ -776,6 +790,46 @@ static int rx_ancillary_session_tasklet(struct st_rx_ancillary_session_impl* s) 
   return done ? MTL_TASKLET_ALL_DONE : MTL_TASKLET_HAS_PENDING;
 }
 
+/* Lip-synced sessions all receive at the same instant. One call handles at most this
+ * many sessions with packets, so the other tasklets of the scheduler run between the
+ * parts of the burst */
+#define ST_RX_ANC_BUSY_SESSIONS_PER_CALL (4)
+/* the bound for the queue of the manager, in packets: the smallest burst that a vector
+ * rx path reads */
+#define ST_RX_ANC_MGR_QUEUE_BURST (8)
+
+/* a packet of the manager queue to its session, key = session idx << 1 | session port */
+static int rx_ancillary_sessions_queue_dispatch(void* priv, enum mtl_port port,
+                                                uint32_t key, struct rte_mbuf* pkt) {
+  struct st_rx_ancillary_sessions_mgr* mgr = priv;
+  int sidx = (int)(key >> 1), s_port = (int)(key & 1);
+  struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
+  struct st_rx_ancillary_session_impl* s;
+  int ret = -ENOENT;
+
+  /* attach, update_src and the stat thread hold the lock: the packet waits */
+  if (!rte_spinlock_trylock(&mgr->mutex[sidx])) return -EBUSY;
+  s = mgr->sessions[sidx];
+  /* the map can be old: check under the session lock, as mt_udp_matched() does */
+  if (s && s->mq_flow[s_port] && mt_port_logic2phy(s->port_maps, s_port) == port &&
+      s->st40_dst_port[s_port] == ntohs(hdr->udp.dst_port)) {
+    uint8_t* ip = s->ops.ip_addr[s_port];
+    uint32_t pkt_ip = mt_is_multicast_ip(ip) ? hdr->ipv4.dst_addr : hdr->ipv4.src_addr;
+
+    if (!memcmp(&pkt_ip, ip, MTL_IP_ADDR_LEN)) {
+      bool time_measure = mt_sessions_time_measure(mgr->parent);
+      uint64_t tsc_s = time_measure ? mt_get_tsc(mgr->parent) : 0;
+
+      rx_ancillary_session_handle_mbuf(&s->priv[s_port], &pkt, 1);
+      if (time_measure)
+        mt_stat_u64_update(&s->stat_time, mt_get_tsc(mgr->parent) - tsc_s);
+      ret = 0;
+    }
+  }
+  rte_spinlock_unlock(&mgr->mutex[sidx]);
+  return ret;
+}
+
 static int rx_ancillary_sessions_tasklet_handler(void* priv) {
   struct st_rx_ancillary_sessions_mgr* mgr = priv;
   struct mtl_main_impl* impl = mgr->parent;
@@ -783,31 +837,60 @@ static int rx_ancillary_sessions_tasklet_handler(void* priv) {
   int pending = MTL_TASKLET_ALL_DONE;
   uint64_t tsc_s = 0;
   bool time_measure = mt_sessions_time_measure(impl);
+  int max_idx = mgr->max_idx;
+  int busy = 0;
 
-  for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
+  for (int port = 0; port < MTL_PORT_MAX; port++) {
+    if (!mgr->mq.rxq[port]) continue;
+    pending += st_rx_mgr_queue_tasklet(&mgr->mq, port, ST_RX_ANC_MGR_QUEUE_BURST,
+                                       rx_ancillary_sessions_queue_dispatch, mgr);
+  }
+  /* the sessions with an rx queue of their own */
+  if (!atomic_load_explicit(&mgr->mq.own_rxq_cnt, memory_order_relaxed)) return pending;
+
+  if (mgr->next_sidx >= max_idx) mgr->next_sidx = 0;
+  for (int i = 0; i < max_idx; i++) {
+    int sidx = mgr->next_sidx + i;
+    if (sidx >= max_idx) sidx -= max_idx;
     s = rx_ancillary_session_try_get(mgr, sidx);
     if (!s) continue;
     if (time_measure) tsc_s = mt_get_tsc(impl);
 
-    pending += rx_ancillary_session_tasklet(s);
+    int ret = rx_ancillary_session_tasklet(s);
+    pending += ret;
 
     if (time_measure) {
       uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
       mt_stat_u64_update(&s->stat_time, delta_ns);
     }
     rx_ancillary_session_put(mgr, sidx);
+    if (ret == MTL_TASKLET_HAS_PENDING && ++busy >= ST_RX_ANC_BUSY_SESSIONS_PER_CALL &&
+        i + 1 < max_idx) {
+      mgr->next_sidx = sidx + 1;
+      return MTL_TASKLET_HAS_PENDING;
+    }
   }
+  /* all sessions seen: the next burst starts at session 0, each stream keeps its slot */
+  mgr->next_sidx = 0;
 
   return pending;
 }
 
 static int rx_ancillary_session_uinit_hw(struct st_rx_ancillary_session_impl* s) {
   int num_port = s->ops.num_port;
+  struct st_rx_ancillary_sessions_mgr* mgr = s->mgr;
 
   for (int i = 0; i < num_port; i++) {
+    if (s->mq_flow[i]) {
+      st_rx_mgr_queue_del(mgr->parent, &mgr->mq, mt_port_logic2phy(s->port_maps, i),
+                          s->st40_dst_port[i], (uint32_t)s->idx << 1 | (uint32_t)i,
+                          s->mq_flow[i]);
+      s->mq_flow[i] = NULL;
+    }
     if (s->rxq[i]) {
       mt_rxq_put(s->rxq[i]);
       s->rxq[i] = NULL;
+      atomic_fetch_sub_explicit(&mgr->mq.own_rxq_cnt, 1, memory_order_relaxed);
     }
   }
 
@@ -836,6 +919,14 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
     flow.dst_port = s->st40_dst_port[i];
     if (mt_has_cni_rx(impl, port)) flow.flags |= MT_RXQ_FLOW_F_FORCE_CNI;
 
+    if (rx_ancillary_session_mq_usable(s) &&
+        !st_rx_mgr_queue_add(impl, &s->mgr->mq, port, &flow,
+                             (uint32_t)idx << 1 | (uint32_t)i, &s->mq_flow[i])) {
+      info("%s(%d), port(l:%d,p:%d), manager queue %u udp %d\n", __func__, idx, i, port,
+           rx_ancillary_queue_id(s, i), flow.dst_port);
+      continue;
+    }
+
     /* no flow for data path only */
     if (s->ops.flags & ST40_RX_FLAG_DATA_PATH_ONLY) {
       info("%s(%d), rxq get without flow for port %d as data path only\n", __func__,
@@ -848,6 +939,7 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
       rx_ancillary_session_uinit_hw(s);
       return -EIO;
     }
+    atomic_fetch_add_explicit(&s->mgr->mq.own_rxq_cnt, 1, memory_order_relaxed);
 
     info("%s(%d), port(l:%d,p:%d), queue %d udp %d\n", __func__, idx, i, port,
          rx_ancillary_queue_id(s, i), flow.dst_port);
@@ -1013,6 +1105,13 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
   }
 
   rx_ancillary_session_reset(s, true);
+
+  /* the queue of the manager, created here under the manager mutex; a port without it
+   * gives the session an rx queue of its own in init_hw */
+  if (rx_ancillary_session_mq_usable(s)) {
+    for (int i = 0; i < num_port; i++)
+      st_rx_mgr_queue_prepare(impl, &mgr->mq, mt_port_logic2phy(s->port_maps, i));
+  }
 
   ret = rx_ancillary_session_init_hw(impl, s);
   if (ret < 0) {
@@ -1289,6 +1388,11 @@ static int st_rx_ancillary_sessions_stat(void* priv) {
     rx_ancillary_session_stat(s);
     rx_ancillary_session_put(mgr, j);
   }
+  uint64_t defer_drop =
+      atomic_exchange_explicit(&mgr->mq.stat_defer_drop, 0, memory_order_relaxed);
+  if (defer_drop)
+    warn("%s(%d), %" PRIu64 " packets dropped on a locked session\n", __func__, mgr->idx,
+         defer_drop);
 
   return 0;
 }
@@ -1307,6 +1411,8 @@ static int rx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
 
   mgr->parent = impl;
   mgr->idx = idx;
+  /* the key of the manager queue holds the session port in one bit */
+  RTE_BUILD_BUG_ON(MTL_SESSION_PORT_MAX > 2);
 
   for (int i = 0; i < ST_MAX_RX_ANC_SESSIONS; i++) {
     rte_spinlock_init(&mgr->mutex[i]);
@@ -1424,6 +1530,7 @@ static int rx_ancillary_sessions_mgr_uinit(struct st_rx_ancillary_sessions_mgr* 
     rx_ancillary_sessions_mgr_detach(mgr, s);
     rx_ancillary_session_put(mgr, i);
   }
+  st_rx_mgr_queue_uinit(&mgr->mq);
 
   info("%s(%d), succ\n", __func__, m_idx);
   return 0;
