@@ -600,19 +600,20 @@ sudo ldconfig
 ### 8.15. Fail to Init lcore
 
 This might happen after commit `4f46e49`, because the lcore_shm structure is [changed](https://github.com/OpenVisualCloud/Media-Transport-Library/commit/4f46e493b79451c7ca564d82e1be56c7916b0722#diff-7ff8a138885ebda032ff57250ff81174b30722cc168a26fe39d9a4ff501d48d0L710).
-It also happens when the structure of the starting process is larger than the one in the system: its size follows `RTE_MAX_LCORE` of the DPDK build, so after a rebuild of DPDK with a larger `DPDK_MAX_LCORES`, or while an MTL 26.09 or earlier runs or after one crashed.
+It also happens when the structure of the starting process is larger than the one in the system: its size follows `RTE_MAX_LCORE` of the DPDK build, so it happens while a process of a DPDK with a smaller `RTE_MAX_LCORE`, or an MTL 26.09 or earlier, runs.
 Stop the older processes first: MTL 26.09 and earlier must not run together with a later release (see the [lcore Guide](shm_lcore.md)).
+`mtl_init` replaces a smaller structure that no process uses, such as one left by a killed or crashed process, if it runs as root or as the user that created it.
 
 ```text
-MT: 2023-11-24 15:06:27, Error: sch_lcore_shm_init, can not get shared memory for lcore, Invalid argument
-MT: 2023-11-24 15:06:27, Error: sch_init_lcores, lcore init fail -5
-MT: 2023-11-24 15:06:27, Error: mt_dev_create, sch mgr init fail -5
-MT: 2023-11-24 15:06:27, dev_stop_port(0), succ
-MT: 2023-11-24 15:06:27, Error: mt_main_create, mt_dev_create fail -5
-MT: 2023-11-24 15:06:27, Error: mtl_init, st main create fail -5
+MTL: 2026-11-04 12:11:09, Error: sch_lcore_shm_remove_unused, shared memory for lcore of 22532 bytes in use, nattch 1
+MTL: 2026-11-04 12:11:09, Error: sch_init_lcores, lcore init fail -5
+MTL: 2026-11-04 12:11:09, Error: dev_sch_init, sch mgr init fail -5
+MTL: 2026-11-04 12:11:09, Error: mt_dev_create, dev_sch_init fail -5
+MTL: 2026-11-04 12:11:09, Error: mt_main_create, mt_dev_create fail -5
+MTL: 2026-11-04 12:11:09, Error: mtl_init, st main create fail -5
 ```
 
-Follow the below steps to clear the old shared memory in the system:
+Follow the below steps to clear the old shared memory that `mtl_init` can not remove, once `ipcs -m` shows `nattch` 0 for it:
 
 ```bash
 # find the shmid of the old shm

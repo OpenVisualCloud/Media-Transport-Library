@@ -1115,7 +1115,9 @@ Both key an lcore by its ID, and the ID is the CPU ID.
 `dev_eal_init()` passes `--remap-lcore-ids` only when the host has more CPUs (`_SC_NPROCESSORS_CONF`) than `RTE_MAX_LCORE`, and warns: with it every process numbers its CPUs 0, 1, 2, ... and claims the same IDs.
 `script/build_dpdk.sh` sets `max_lcores` to the build host's CPU count, at least 128, or `DPDK_MAX_LCORES`, so `RTE_MAX_LCORE` covers every CPU of the build host.
 The shm table has `RTE_MAX_LCORE` entries, so its size follows the DPDK build: `shmget()` fails with `EINVAL` in a process whose table is larger than the segment that exists (`doc/run.md` §8.15).
-MTL 26.01-26.09 keep remapped IDs in a 128-entry table: a newer process fails to start while that segment exists, but an older process started later attaches to the larger one without noticing, so the versions must not run together (also not with an older MtlManager, which refuses IDs >= 128).
+`mtl_init()` then removes the segment if no process is attached, as after a SIGKILL, and creates its own: `sch_init_lcores()` holds the lockfile for it, and `IPC_RMID` needs root or the owner.
+An attached segment fails the init; LcoreMgr (`mtl_lcore_shm_print()`/`mtl_lcore_shm_clean()`, no lock) never removes one.
+MTL 26.01-26.09 keep remapped IDs in a 128-entry table: a newer process with a larger table fails to start while one runs, but an older process started later attaches to the larger one without noticing, so the versions must not run together (also not with an older MtlManager, which refuses IDs >= 128).
 
 ### Backend Support
 

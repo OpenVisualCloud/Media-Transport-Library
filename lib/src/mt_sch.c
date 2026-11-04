@@ -539,6 +539,32 @@ static int sch_filelock_unlock(struct mt_sch_mgr* mgr) {
   return 0;
 }
 
+/*
+ * A smaller segment is the table of a DPDK with a lower RTE_MAX_LCORE. With no process
+ * attached, its last user died without sch_lcore_shm_uinit(), e.g. by SIGKILL.
+ */
+static int sch_lcore_shm_remove_unused(key_t key) {
+  struct shmid_ds stat;
+  int shm_id = shmget(key, 0, 0);
+
+  if (shm_id < 0 || shmctl(shm_id, IPC_STAT, &stat) < 0) {
+    err("%s, can not stat shared memory for lcore, %s\n", __func__, strerror(errno));
+    return -EIO;
+  }
+  if (stat.shm_nattch) {
+    err("%s, shared memory for lcore of %" PRIu64 " bytes in use, nattch %d\n", __func__,
+        (uint64_t)stat.shm_segsz, (int)stat.shm_nattch);
+    return -EIO;
+  }
+  if (shmctl(shm_id, IPC_RMID, NULL) < 0) {
+    err("%s, can not remove shared memory for lcore, %s\n", __func__, strerror(errno));
+    return -EIO;
+  }
+  notice("%s, removed unused shared memory for lcore of %" PRIu64 " bytes\n", __func__,
+         (uint64_t)stat.shm_segsz);
+  return 0;
+}
+
 static int sch_lcore_shm_init(struct mt_lcore_mgr* mgr, bool clear_on_first) {
   struct mt_lcore_shm* lcore_shm = NULL;
   int ret;
@@ -551,6 +577,12 @@ static int sch_lcore_shm_init(struct mt_lcore_mgr* mgr, bool clear_on_first) {
     return -EIO;
   }
   int shm_id = shmget(key, sizeof(*lcore_shm), 0666 | IPC_CREAT);
+  /* only mtl_init(), which holds the lock file, replaces a smaller segment */
+  if (shm_id < 0 && errno == EINVAL && clear_on_first) {
+    ret = sch_lcore_shm_remove_unused(key);
+    if (ret < 0) return ret;
+    shm_id = shmget(key, sizeof(*lcore_shm), 0666 | IPC_CREAT);
+  }
   if (shm_id < 0) {
     err("%s, can not get shared memory for lcore, %s\n", __func__, strerror(errno));
     return -EIO;
