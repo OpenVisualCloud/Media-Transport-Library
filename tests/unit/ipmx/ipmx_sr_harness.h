@@ -76,6 +76,8 @@ int ut_sr_api_st22_set_ts_refclk(ut_sr_ctx* ctx, bool pipeline, bool valid_handl
                                  const char* ts_refclk);
 int ut_sr_api_st22_get_info(ut_sr_ctx* ctx, bool pipeline, bool valid_handle,
                             struct ipmx_video_info* info);
+int ut_sr_api_st22_get_sdp(ut_sr_ctx* ctx, bool pipeline, bool valid_handle, char* buf,
+                           size_t len);
 /* the session's recovery_idx, read by ipmx_sr_tx_init() */
 void ut_sr_set_recovery_idx(ut_sr_ctx* ctx, int recovery_idx);
 /* takes the name the s_port SR pool would get, so its creation fails; before attach */

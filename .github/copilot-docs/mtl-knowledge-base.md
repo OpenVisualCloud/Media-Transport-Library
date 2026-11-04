@@ -518,7 +518,9 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
   The parser takes the session's video MIB type (`struct ipmx_sr_rx.video_mib`): st20 decodes 0x0001, st22 0x0003 plus the JPEG XS 0x0008 into `jxs`; the other types count in `unknown_mib`.
   It is a CNI ring when the media flow is (`MTL_FLAG_RX_USE_CNI`) or the port has CNI running as a tasklet, else a dedicated NIC queue: the first csq sets the CNI thread sleep to 0 for good, so a ring in CNI thread mode would busy-poll a core.
   The poll burst must be ≥ 8: iavf/ice AVX2 vector RX floors `nb_pkts` to 8 descriptors, so `rte_eth_rx_burst(…, 4)` on a dedicated queue always returns 0 (`IPMX_SR_RX_BURST` is 32).
-  SDP (`lib/src/ipmx/ipmx_sdp.c`): `ipmx_st20[p]_tx_get_sdp()` builds it from the `ipmx_sr_tx_get_info()` snapshot and the `s_hdr[]` addressing, both read under the session spinlock (so a higher sess-version never carries older content), and SDP and SR cannot disagree; `ipmx_sdp_build()` is pure (unit-tested without a NIC).
+  SDP (`lib/src/ipmx/ipmx_sdp.c`): `ipmx_st20[p]_tx_get_sdp()` (video/raw) and `ipmx_st22[p]_tx_get_sdp()`
+  (video/jxsv: `b=AS` and the T/K/Ppih/Plev fmtp from `jxs` / `jxsv_kbps` in `struct ipmx_sr_tx`, the same copy the MIB 0x0008 is built from)
+  build it from the `ipmx_sr_tx_get_info()` snapshot and the `s_hdr[]` addressing, both read under the session spinlock (so a higher sess-version never carries older content), and SDP and SR cannot disagree; `ipmx_sdp_build()` is pure (unit-tested without a NIC).
 - The pads cover `(target − now) + bucket_ns`: `ceil()` NORMAL
   pads, the last burst holding the ≤ S/64 + 8 pads that take the surplus as cuts of 64 or 8 bytes
   (cut rounded down). `st_tx_video_rl_next_burst()` in `st_tx_video_rl.h` plans each burst, pure

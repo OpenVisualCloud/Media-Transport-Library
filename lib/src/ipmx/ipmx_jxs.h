@@ -14,6 +14,16 @@ extern "C" {
 
 /* TR-08 section 8.1.1 Table 1: High444.12 for RGB 4:4:4 */
 #define IPMX_JXS_PPIH (0x4a40)
+/* ISO/IEC 21122-2 Plev high byte of the levels TR-08 section 8.1.1 allows */
+#define IPMX_JXS_LEVEL_1K_1 (0x04)
+#define IPMX_JXS_LEVEL_2K_1 (0x10)
+#define IPMX_JXS_LEVEL_4K_2 (0x24)
+#define IPMX_JXS_LEVEL_8K_2 (0x34)
+/* TR-08 section 8.1.1 Sublev3bpp / Sublev4bpp; 0x06 is reserved in ISO/IEC
+ * 21122-2:2022 Table A.16, the code is the VSF ipmx_jxsv_validate_pcap.py
+ * SDP_SUBLEVEL_TO_PLEV_LO one */
+#define IPMX_JXS_SUBLEV_3BPP (0x04)
+#define IPMX_JXS_SUBLEV_4BPP (0x06)
 
 /* why ipmx_jxs_pih_check() refused a codestream, returned negated */
 enum ipmx_jxs_pih_err {

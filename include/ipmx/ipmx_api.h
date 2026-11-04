@@ -404,7 +404,8 @@ int ipmx_st22_tx_set_block_version(st22_tx_handle handle, uint8_t version);
 int ipmx_st22p_tx_set_block_version(st22p_tx_handle handle, uint8_t version);
 
 /**
- * ipmx_st20_tx_set_ts_refclk() of an st22 TX session created with ST22_TX_FLAG_IPMX.
+ * ipmx_st20_tx_set_ts_refclk() of an st22 TX session created with ST22_TX_FLAG_IPMX;
+ * ipmx_st22_tx_get_sdp() shows it once a Sender Report carries it.
  *
  * @param handle
  *   The handle to the tx st2110-22(compressed video) session.
@@ -428,7 +429,8 @@ int ipmx_st22p_tx_set_ts_refclk(st22p_tx_handle handle, const char* ts_refclk);
  * values of the Sender Report Media Info Block 0x0003 (TR-10-11 section 12), RGB 4:4:4
  * 8-bit (TR-10-15 Part 1 section 8, TR-08 section 8.1.1), gpm false. The JPEG XS Media
  * Info Block 0x0008 that follows it carries T 1, K 0, Ppih High444.12 and the Plev of the
- * session's jxpl box (TR-10-15 Part 1 section 9).
+ * session's jxpl box (TR-10-15 Part 1 section 9). Republish the SDP of
+ * ipmx_st22_tx_get_sdp() whenever the version changes.
  *
  * @param handle
  *   The handle to the tx st2110-22(compressed video) session.
@@ -447,7 +449,8 @@ int ipmx_st22_tx_get_info(st22_tx_handle handle, struct ipmx_video_info* info);
  */
 int ipmx_st22p_tx_get_info(st22p_tx_handle handle, struct ipmx_video_info* info);
 
-/** A buffer of this size holds any SDP ipmx_st20_tx_get_sdp() builds, NUL included */
+/** A buffer of this size holds any SDP ipmx_st20_tx_get_sdp() or ipmx_st22_tx_get_sdp()
+ * builds, NUL included */
 #define IPMX_SDP_MAX (2048)
 
 /**
@@ -486,6 +489,44 @@ int ipmx_st20_tx_get_sdp(st20_tx_handle handle, char* buf, size_t len);
  * ST20P_TX_FLAG_IPMX.
  */
 int ipmx_st20p_tx_get_sdp(st20p_tx_handle handle, char* buf, size_t len);
+
+/**
+ * ipmx_st20_tx_get_sdp() of an st22 TX session created with ST22_TX_FLAG_IPMX: the
+ * video/jxsv SDP (VSF TR-10-11 section 10, ST 2110-22 section 7, RFC 9134 section 7,
+ * TR-10-1 section 10). Each media section has a=rtpmap:<pt> jxsv/90000 and, after c=,
+ * b=AS: the maximum IP-layer rate in kbit/s, rounded up, of a frame of the boxes and
+ * framebuff_max_size in packets of the session payload size, each with its IPv4, UDP,
+ * RTP and RFC 9134 headers; fixed at create. The a=fmtp carries packetmode and
+ * transmode (the RFC 9134 K and T bits), profile, level and sublevel (the Ppih and Plev
+ * of the Media Info Block 0x0008, see ipmx_st22_tx_get_info()), the Media Info Block
+ * 0x0003 values, SSN=ST2110-22:2022, TP=2110TPW (TR-08 section 9: IPMX senders are type
+ * W, whatever the pacing), IPMX, measuredpixclk, vtotal and htotal; no PM, fbblevel or
+ * interlace. Addressing, ts-refclk, mediaclk, ST 2022-7 and the o= line follow
+ * ipmx_st20_tx_get_sdp(), the session version also goes up on
+ * st22_tx_update_destination().
+ *
+ * @param handle
+ *   The handle to the tx st2110-22(compressed video) session.
+ * @param buf
+ *   The buffer to write the NUL terminated SDP to, IPMX_SDP_MAX is always enough.
+ * @param len
+ *   The size of buf.
+ * @return
+ *   - >0: the SDP length, without the NUL.
+ *   - -ENOSPC: buf too short, it holds an empty string.
+ *   - -EIO: invalid handle, or IPMX not enabled on the session.
+ *   - -EINVAL: NULL buf or zero len.
+ *   - -ENOTSUP: interlaced, segmented or non-square PAR, or a profile, level or
+ *     sublevel without an SDP name, which no IPMX session takes today; buf is left
+ *     untouched.
+ */
+int ipmx_st22_tx_get_sdp(st22_tx_handle handle, char* buf, size_t len);
+
+/**
+ * ipmx_st22_tx_get_sdp() of the transport session of an st22p TX pipeline created with
+ * ST22P_TX_FLAG_IPMX.
+ */
+int ipmx_st22p_tx_get_sdp(st22p_tx_handle handle, char* buf, size_t len);
 
 #if defined(__cplusplus)
 }

@@ -32,6 +32,8 @@ struct st22p_rx_digest_test_para {
   bool redundant; /* ST 2022-7: TX on ports P and R, RX on ports 2 and 3 */
   enum st_plugin_device device;
   bool no_digest; /* a real, lossy codec: RX checks no SHA */
+  /* called halfway through the 10 s stream with every TX and RX session */
+  void (*mid_stream)(st22p_tx_handle* tx, st22p_rx_handle* rx, int sessions);
   /* called on each TX session after mtl_stop(), before st22p_tx_free() */
   void (*tx_check)(st22p_tx_handle handle);
   /* called on each RX session after mtl_stop(), before st22p_rx_free() */

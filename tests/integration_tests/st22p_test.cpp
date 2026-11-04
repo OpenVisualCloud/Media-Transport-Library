@@ -1030,6 +1030,10 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_rx[i]->idx = i;
     test_ctx_rx[i]->ctx = ctx;
     test_ctx_rx[i]->fb_cnt = ST22_TEST_SHA_HIST_NUM;
+    /* an ST 2022-7 RX keeps 2 frames open (ST_RX_VIDEO_REDUNDANT_SLOT_NUM) out of the
+     * same framebuffers: one more, so a slow decode does not empty the pool and skip a
+     * frame under the IPMX frame count check */
+    if (para->ipmx && para->redundant) test_ctx_rx[i]->fb_cnt++;
     test_ctx_rx[i]->fb_idx = 0;
     test_ctx_rx[i]->width = width[i];
     test_ctx_rx[i]->height = height[i];
@@ -1165,7 +1169,13 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
   ret = mtl_start(st);
   EXPECT_GE(ret, 0);
-  sleep(10);
+  if (para->mid_stream) {
+    sleep(5);
+    para->mid_stream(tx_handle.data(), rx_handle.data(), sessions);
+    sleep(5);
+  } else {
+    sleep(10);
+  }
   ret = mtl_stop(st);
   EXPECT_GE(ret, 0);
 
@@ -1237,11 +1247,14 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     /* IPMX TX drops a frame that fails its header check. At stop, frames the app put
      * may still sit in the TX pipeline (encode, send: up to its framebuffers) and
-     * frames already decoded in the RX pipeline (up to its framebuffers), plus the one
-     * on the wire */
+     * frames already decoded in the RX pipeline (up to its framebuffers, the extra
+     * ST 2022-7 one above included), plus the one on the wire. With ST 2022-7 the RX
+     * also keeps a second frame open (ST_RX_VIDEO_REDUNDANT_SLOT_NUM), and the first
+     * frame, joined mid-frame, is lost too: a single-leg run has margin for it, an
+     * ST 2022-7 one does not */
     if (para->ipmx) {
       EXPECT_NEAR(test_ctx_rx[i]->fb_rec, fb_send[i],
-                  tx_fb_cnt[i] + test_ctx_rx[i]->fb_cnt + 1);
+                  tx_fb_cnt[i] + test_ctx_rx[i]->fb_cnt + 1 + (para->redundant ? 2 : 0));
     }
     if (para->check_fps) {
       if (para->fail_interval || para->timeout_interval) {

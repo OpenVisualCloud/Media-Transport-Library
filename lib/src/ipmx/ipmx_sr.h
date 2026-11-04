@@ -76,6 +76,9 @@ struct ipmx_sr_tx {
   uint32_t frame_octets; /* RTP payload octets, RFC 3550 section 6.4.1 */
   /* st22: frame counts come from the packet 0 frame size, 0 for st20 */
   uint32_t st22_pkt_len;
+  /* st22: the Media Info Block 0x0008 and the SDP read these, fixed at create */
+  struct ipmx_jxs_info jxs;
+  uint32_t jxsv_kbps;
   uint8_t num_port;
   struct ipmx_sr_leg leg[MTL_SESSION_PORT_MAX];
   /* ipmx_sdp_tx_get() only, under the session lock */

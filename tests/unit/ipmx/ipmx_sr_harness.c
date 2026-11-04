@@ -16,6 +16,7 @@
 #define ipmx_sr_tx_set_ts_refclk ut_sr_tx_set_ts_refclk
 #define ipmx_sdp_build ut_sdp_build
 #define ipmx_sdp_tx_get ut_sdp_tx_get
+#define ipmx_sdp_jxsv_kbps ut_sdp_jxsv_kbps
 
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
@@ -366,6 +367,17 @@ int ut_sr_api_st22_get_info(ut_sr_ctx* ctx, bool pipeline, bool valid_handle,
   ut_sr_st22_handle_types(ctx, pipeline, valid_handle);
   ret = pipeline ? ipmx_st22p_tx_get_info(&ctx->st22p, info)
                  : ipmx_st22_tx_get_info(&ctx->st22_handle, info);
+  ut_sr_st22_handle_types(ctx, pipeline, true);
+  return ret;
+}
+
+int ut_sr_api_st22_get_sdp(ut_sr_ctx* ctx, bool pipeline, bool valid_handle, char* buf,
+                           size_t len) {
+  int ret;
+
+  ut_sr_st22_handle_types(ctx, pipeline, valid_handle);
+  ret = pipeline ? ipmx_st22p_tx_get_sdp(&ctx->st22p, buf, len)
+                 : ipmx_st22_tx_get_sdp(&ctx->st22_handle, buf, len);
   ut_sr_st22_handle_types(ctx, pipeline, true);
   return ret;
 }

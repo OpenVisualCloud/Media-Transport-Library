@@ -31,14 +31,26 @@ struct ipmx_sdp_media {
   uint8_t num_port;
   struct ipmx_sdp_leg leg[MTL_SESSION_PORT_MAX];
   struct ipmx_video_info info;
+  bool jxsv; /* st22: the jxs and bitrate_kbps fields are set */
+  struct ipmx_jxs_info jxs;
+  uint32_t bitrate_kbps;
 };
 
 /**
- * Write the video/raw IPMX SDP of m to buf: its length, -ENOSPC with buf empty, or
- * -ENOTSUP for interlaced, segmented or non-square PAR info.
+ * Write the IPMX SDP of m to buf, video/jxsv with m->jxsv, else video/raw: its length,
+ * -ENOSPC with buf empty, or -ENOTSUP for interlaced, segmented or non-square PAR info,
+ * or a jxsv profile, level or sublevel without an SDP name here.
  */
 int ipmx_sdp_build(const struct ipmx_sdp_media* m, uint64_t sess_id,
                    uint64_t sess_version, char* buf, size_t len);
+
+/**
+ * The b=AS of an st22 stream, ceil kbit/s clamped to UINT32_MAX: the packets of a
+ * frame_max byte frame, each pkt_len payload bytes with its IPv4, UDP, RTP and RFC 9134
+ * headers, rate_num / rate_den times a second.
+ */
+uint32_t ipmx_sdp_jxsv_kbps(uint64_t frame_max, uint32_t pkt_len, uint32_t rate_num,
+                            uint32_t rate_den);
 
 struct st_tx_video_session_impl;
 /** The SDP of s, see ipmx_st20_tx_get_sdp(). */

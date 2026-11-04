@@ -340,15 +340,16 @@ int ipmx_sr_tx_init(struct mtl_main_impl* impl, struct st_tx_video_session_impl*
   if (s->st22_info) {
     const struct st22_rfc9134_rtp_hdr* rtp = &s->st22_info->rtp_hdr[MTL_SESSION_PORT_P];
     const struct st22_jxpl* jxpl = &s->st22_info->st22_boxes.jpvs.jxpl;
-    struct ipmx_jxs_info jxs = {
-        .transmode = rtp->trans_order,
-        .packetmode = rtp->kmode,
-        .ppih = ntohs(jxpl->ppih),
-        .plev = ntohs(jxpl->plev),
-    };
 
-    sr->info_block_len = ipmx_info_block_jxs_build(&sr->info, &jxs, sr->info_block);
+    sr->jxs.transmode = rtp->trans_order;
+    sr->jxs.packetmode = rtp->kmode;
+    sr->jxs.ppih = ntohs(jxpl->ppih);
+    sr->jxs.plev = ntohs(jxpl->plev);
+    sr->info_block_len = ipmx_info_block_jxs_build(&sr->info, &sr->jxs, sr->info_block);
     sr->st22_pkt_len = s->st20_pkt_len;
+    sr->jxsv_kbps =
+        ipmx_sdp_jxsv_kbps((uint64_t)s->st22_box_hdr_length + s->st22_codestream_size,
+                           s->st20_pkt_len, sr->info.rate_num, sr->info.rate_den);
   } else {
     sr->info_block_len = ipmx_info_block_build(&sr->info, sr->info_block);
     for (int i = 0; i < ST20_PKT_TYPE_MAX; i++) {

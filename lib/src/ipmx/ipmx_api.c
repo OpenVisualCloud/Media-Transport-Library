@@ -236,3 +236,23 @@ int ipmx_st20p_tx_get_sdp(st20p_tx_handle handle, char* buf, size_t len) {
   MT_HANDLE_RELEASE(ctx);
   return ret;
 }
+
+int ipmx_st22_tx_get_sdp(st22_tx_handle handle, char* buf, size_t len) {
+  struct st22_tx_video_session_handle_impl* s_impl = handle;
+  int ret;
+
+  MT_HANDLE_GUARD(s_impl, MT_ST22_HANDLE_TX_VIDEO, -EIO);
+  ret = ipmx_sdp_tx_get(s_impl->impl, buf, len);
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
+}
+
+int ipmx_st22p_tx_get_sdp(st22p_tx_handle handle, char* buf, size_t len) {
+  struct st22p_tx_ctx* ctx = handle;
+  int ret;
+
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_TX, -EIO);
+  ret = ipmx_st22_tx_get_sdp(ctx->transport, buf, len);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
+}

@@ -34,17 +34,11 @@ static const struct ipmx_jxs_level {
   uint64_t l_max;
   uint64_t rs_max; /* samples per second */
 } ipmx_jxs_levels[] = {
-    {0x04, 1280, 5120, 2621440, 83558400},        /* 1k-1 */
-    {0x10, 2048, 8192, 4194304, 133693440},       /* 2k-1 */
-    {0x24, 4096, 16384, 16777216, 534773760},     /* 4k-2 */
-    {0x34, 8192, 32768, 67108864, 2139095040ULL}, /* 8k-2 */
+    {IPMX_JXS_LEVEL_1K_1, 1280, 5120, 2621440, 83558400},        /* 1k-1 */
+    {IPMX_JXS_LEVEL_2K_1, 2048, 8192, 4194304, 133693440},       /* 2k-1 */
+    {IPMX_JXS_LEVEL_4K_2, 4096, 16384, 16777216, 534773760},     /* 4k-2 */
+    {IPMX_JXS_LEVEL_8K_2, 8192, 32768, 67108864, 2139095040ULL}, /* 8k-2 */
 };
-
-/* TR-08 section 8.1.1 Sublev3bpp / Sublev4bpp; 0x06 is reserved in ISO/IEC
- * 21122-2:2022 Table A.16, the code is the VSF ipmx_jxsv_validate_pcap.py
- * SDP_SUBLEVEL_TO_PLEV_LO one */
-#define IPMX_JXS_SUBLEV_3BPP (0x04)
-#define IPMX_JXS_SUBLEV_4BPP (0x06)
 
 int ipmx_jxs_plev(uint32_t width, uint32_t height, enum st_fps fps, size_t codestream_max,
                   uint16_t* plev) {
