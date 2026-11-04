@@ -86,6 +86,15 @@ int ut_sch_qs_sleeps_offline(int* sleeps, int* online_sleeps);
  * is whether the end of that pass satisfied the wait, checked in the next pass. */
 int ut_sch_qs_pass_end_publishes(bool* published);
 
+/* sizeof(struct mt_lcore_shm), the lcore table of this build. */
+size_t ut_sch_lcore_shm_size(void);
+
+/* Leaves a segment of half the lcore table at a fresh key, attached by this process or
+ * not, then runs sch_lcore_shm_init() on that key as mtl_init() (clear_on_first) or
+ * LcoreMgr does. Returns its result; *size is the size of the segment at the key
+ * afterwards, 0 if none. */
+int ut_sch_lcore_shm_init_over_smaller(bool attached, bool clear_on_first, size_t* size);
+
 #ifdef __cplusplus
 }
 #endif
