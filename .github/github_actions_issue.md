@@ -4,7 +4,7 @@
 
 MTL host setup currently has two phases:
 
-1. [The build workflow](./workflows/build.yml) runs once on the `dpdk` fleet runner,
+1. [The build job](./actions/build-artifacts/action.yml) runs once on the `dpdk` fleet runner,
   computes source hashes, builds the required components, and stores them in
   the GitHub Actions cache.
 2. The `validate-host` action runs on each bare-metal runner. It should restore
@@ -23,9 +23,9 @@ See [the CI/CD architecture proposal](../doc/cicd_setup_proposition.md) and the
 Build expensive dependencies once and make host jobs consumers of immutable,
 content-addressed outputs:
 
-1. Build SVT-JPEG-XS and its MTL bridge plugin in `build.yml`, installed under
+1. Build SVT-JPEG-XS and its MTL bridge plugin in the build job, installed under
   `.local_install/jpegxs` without writing to `/usr/local`.
-2. Build one patched ICE module in `build.yml`. The dedicated `e810`, `e830`,
+2. Build one ICE module in the build job. The dedicated `e810`, `e830`,
   and `e835` hardware validation hosts are maintained on the same kernel ABI,
   so every validation job consumes the same artifact.
 3. Store each successful output under a deterministic SHA-256 cache key.
@@ -101,10 +101,12 @@ human-runnable script when shell logic is required. The same command must work
 locally and in CI, for example:
 
 ```sh
-task ci:validate-ice
-task ci:build-jpegxs
-task ci:validate-jpegxs
+task ci:validate-cache COMPONENT=ice
+sudo -E "$(command -v task)" ci:activate-ice
+task ci:validate-cache COMPONENT=jpegxs
 ```
+
+`ci:activate-ice` reloads the ICE module and removes the VFs of each PF.
 
 This keeps logs grouped by operation, makes failures reproducible without a
 runner, and avoids maintaining separate local and CI implementations.

@@ -22,11 +22,6 @@ unit_include_dirs = [
   include_directories('.'),
 ]
 
-# Answers the <mtl/*.h> of the ecosystem sources the harnesses compile in place.
-# It writes into the build side of include_directories('.') above, so it must run
-# before the executable that reads it.
-subdir('mtl')
-
 gtest_dep = dependency('gtest', required : true)
 gmock_dep = dependency('gmock', required : true)
 libpthread_dep = meson.get_compiler('c').find_library('pthread', required : true)
@@ -44,8 +39,6 @@ unit_sources = [
   'common/ut_tx_ring_test.cpp',
   'common/mt_bitmap_harness.c',
   'common/mt_bitmap_test.cpp',
-  'ffmpeg/mtl_common_harness.c',
-  'ffmpeg/mtl_common_test.cpp',
   'dev/mt_dev_harness.c',
   'dev/mt_dev_igc_test.cpp',
   'dev/mt_dev_rx_desc_test.cpp',
@@ -57,6 +50,7 @@ unit_sources = [
   'dev/mt_dev_rss_reta_test.cpp',
   'dev/mt_dev_devargs_test.cpp',
   'dev/mt_dev_eal_argv_test.cpp',
+  'dev/mt_dev_eal_pmd_dir_test.cpp',
   'dev/iavf_intr_unregister_test.cpp',
   'dev/mt_dev_port_stats_test.cpp',
   'dev/mt_dev_pacing_test.cpp',
@@ -197,6 +191,8 @@ unit_sources = [
   'pipeline/tx_wake_block_test.cpp',
   'pipeline/stale_handle_stats_test.cpp',
   'pipeline/tx_frame_done_notify_test.cpp',
+  'pipeline/st_plugin_harness.c',
+  'pipeline/st_plugin_session_test.cpp',
   'sch/mt_sch_harness.c',
   'sch/mtl_sch_api_test.cpp',
   'sch/mt_sch_mempolicy_test.cpp',
@@ -215,6 +211,8 @@ unit_sources = [
   'main/mt_instance_test.cpp',
   'dma/mt_map_harness.c',
   'dma/mt_map_test.cpp',
+  'dma/mt_dma_auto_harness.c',
+  'dma/mt_dma_auto_test.cpp',
   'main.cpp',
 ]
 

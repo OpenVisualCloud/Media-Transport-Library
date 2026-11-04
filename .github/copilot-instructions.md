@@ -25,6 +25,7 @@ This is a **client-visible, production repository**. Every change goes through r
 - **Build verification**: Always run `./build.sh` after changes to verify compilation.
 - **Logging**: Use `dbg()`/`info()`/`warn()`/`err()`. Never use `printf`.
 - **Comments**: Short and descriptive. Do not comment obvious code.
+- **Scripts**: user scripts in `script/` use `common.sh`, `show_help()` and `main()`; CI scripts, workflows and `ci:` tasks stay as simple as possible. Which layer (host, test cycle, test) owns which host setting: [mtl-scripts.instructions.md](instructions/mtl-scripts.instructions.md).
 
 ## Available Tooling
 

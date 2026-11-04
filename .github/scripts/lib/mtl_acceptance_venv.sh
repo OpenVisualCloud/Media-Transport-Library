@@ -5,14 +5,10 @@
 # Where the acceptance-test virtualenv lives, for every script that runs
 # pytest or a helper out of it.
 #
-# The virtualenv is a host prerequisite: a job verifies it and never installs
-# it, the way it treats the media share and the apt packages. That contract
-# cannot hold inside the workspace. Every hardware job starts with
-# actions/checkout, whose default clean is `git clean -ffdx`, and
-# tests/acceptance/.venv is gitignored -- so `-x` deletes it before the step
-# that verifies it runs, and "provision it on the runner once" is provisioned
-# for exactly one job. The fleet legs failed with `Missing acceptance
-# virtualenv ... Provision it on the runner once` on hosts where it had been.
+# The virtualenv is a cache of the test cycle: `task ci:pytest-setup -- ensure`
+# builds it when requirements.txt changes. It cannot live inside the
+# workspace: every hardware job starts with actions/checkout, whose default
+# clean is `git clean -ffdx`, and tests/acceptance/.venv is gitignored.
 #
 # So the default lives under the runner user's cache directory, outside
 # anything git touches. Resolution order:
@@ -22,12 +18,8 @@
 #   tests/acceptance/.venv    an in-workspace virtualenv that already exists;
 #   tests/acceptance/venv     a developer's own `python3 -m venv` keeps working,
 #                             and a local run does not have to provision a
-#                             second copy. Both names are accepted because the
-#                             repository provisions both: setup_acceptance.sh
-#                             writes `venv`, this script's install case used to
-#                             write `.venv`, and `verify` only ever looked for
-#                             the latter -- so a host set up with the former had
-#                             a working virtualenv the job called missing.
+#                             second copy. setup_acceptance.sh writes `venv`;
+#                             `.venv` is the common name of a hand-made one.
 #   $XDG_CACHE_HOME or ~/.cache, then mtl-ci/acceptance-venv
 #                             the fleet default, which survives checkout
 #

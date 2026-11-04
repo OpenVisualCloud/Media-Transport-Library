@@ -528,6 +528,8 @@ int mt_dma_init(struct mtl_main_impl* impl) {
 
   mt_pthread_mutex_init(&mgr->mutex, NULL);
 
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_DMA_AUTO) mt_dma_auto_probe(impl);
+
   /* init idx */
   for (idx = 0; idx < MTL_DMA_DEV_MAX; idx++) {
     dev = &mgr->devs[idx];

@@ -226,8 +226,9 @@ def _extract_nic_category_from_filename(filename):
     if match:
         return f"{match.group(1)}-{match.group(2)}".upper(), match.group(3)
 
-    # Fallback to simple pattern: nightly-test-report-{nic}-{category}.html
-    match = re.match(r"nightly-test-report-([^-]+)-(.+)", filename)
+    # Fallback to simple pattern: nightly-test-report-{nic}-{category}.html,
+    # or nightly-test-report-{nic}-{category}-{shard}.html for a shard
+    match = re.match(r"nightly-test-report-([^-]+)-(.+?)(?:-\d+)?$", filename)
     if match:
         return match.group(1).upper(), match.group(2)
 

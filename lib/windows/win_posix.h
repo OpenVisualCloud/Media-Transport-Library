@@ -153,6 +153,12 @@ int clock_gettime(int clk_id, struct timespec* tp); /* use precise time for wind
 static inline pid_t getpid() {
   return GetCurrentProcessId();
 }
+
+#define _SC_NPROCESSORS_CONF 1 /* the only sysconf name the lib uses on windows */
+static inline long sysconf(int name) {
+  if (name != _SC_NPROCESSORS_CONF) return -1;
+  return (long)GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+}
 #endif
 
 #endif

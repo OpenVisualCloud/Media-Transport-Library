@@ -1,0 +1,68 @@
+name: Fuzz Tests
+description: >-
+  Build DPDK and the libFuzzer targets with clang, ASan and UBSan, then run each
+  target for fuzz_time seconds from the corpus of the last run. The fuzz targets
+  need no NIC and no hugepages: run this on a GitHub-hosted ubuntu-22.04 runner.
+  Clang 14 of Ubuntu 22.04 builds them; clang 18 of Ubuntu 24.04 does not (T-115).
+
+inputs:
+  fuzz_time:
+    description: Seconds to run each fuzz target.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install Task
+      uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+      with:
+        repo-token: ${{ github.token }}
+
+    - name: Install the dependencies and DPDK
+      shell: bash
+      env:
+        SETUP_ENVIRONMENT: 1
+        SETUP_BUILD_AND_INSTALL_DPDK: 1
+        CICD_BUILD: 1
+      run: sudo -E .github/scripts/setup_environment.sh
+
+    # The install scripts do not run ldconfig. Without it, EAL cannot dlopen
+    # the DPDK drivers in /usr/local and each fuzz target aborts at init.
+    - name: Update the runtime linker cache
+      shell: bash
+      run: sudo ldconfig
+
+    # Each run starts from the corpus of the last run of main. Only main saves
+    # it: a pull request can read the cache of main, and its own entries would
+    # push those out of the 10 GB of the repository.
+    - name: Restore the fuzz corpus
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: fuzz-corpus
+        key: fuzz-corpus-${{ github.run_id }}
+        restore-keys: fuzz-corpus-
+
+    - name: Build the fuzz targets with clang, ASan and UBSan
+      shell: bash
+      run: task ci:fuzz -- build
+
+    - name: Run each fuzz target for FUZZ_TIME seconds
+      shell: bash
+      env:
+        FUZZ_TIME: ${{ inputs.fuzz_time }}
+      run: task ci:fuzz -- run
+
+    - name: Save the fuzz corpus
+      if: success() && github.ref == 'refs/heads/main'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: fuzz-corpus
+        key: fuzz-corpus-${{ github.run_id }}
+
+    - name: Upload the fuzz report
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: fuzz-report
+        path: fuzz-report/
+        if-no-files-found: ignore

@@ -108,34 +108,11 @@ def _exclude_noctx_tests(gtest_filter: str) -> str:
 
 
 def _test_runtime_env() -> dict[str, str]:
-    """Prefer the libraries this checkout just built, then any it installed.
-
-    build/lib comes first deliberately. Every test tool below runs
-    REPO_ROOT/build/tests/KahawaiTest, but `build_mtl` installs to /usr/local and
-    never refreshes .local_install/mtl -- so putting .local_install first made a run
-    silently validate whatever library happened to be there, reporting green for code
-    it never executed. .local_install stays as a fallback for CI checkouts that only
-    populate that tree.
-    """
-    install_root = REPO_ROOT / ".local_install"
-    library_dirs: list[Path] = []
-    build_lib = REPO_ROOT / "build" / "lib"
-    if build_lib.is_dir():
-        library_dirs.append(build_lib)
-    for component in ("mtl", "dpdk"):
-        lib_root = install_root / component / "lib"
-        multiarch_dirs = sorted(
-            path for path in lib_root.glob("*-linux-gnu") if path.is_dir()
-        )
-        library_dirs.extend(multiarch_dirs)
-        if not multiarch_dirs and lib_root.is_dir():
-            library_dirs.append(lib_root)
-
-    existing = os.environ.get("LD_LIBRARY_PATH", "")
-    entries = [str(path) for path in library_dirs]
-    if existing:
-        entries.append(existing)
-    return {"LD_LIBRARY_PATH": os.pathsep.join(entries)}
+    """No library path: a build tree carries meson's build rpath, and a prefix
+    install records its libraries relative to itself ($ORIGIN). An inherited
+    LD_LIBRARY_PATH would make a run validate whatever library it points at,
+    so clear it; the loader ignores an empty value."""
+    return {"LD_LIBRARY_PATH": ""}
 
 
 def _noctx_failure_excerpt(out: str) -> str:
@@ -650,7 +627,7 @@ def setup_after_reboot_auto(
     Steps:
     1. Check the ICE driver; if the stock kernel driver is loaded or the
        version doesn't match (e.g. after a kernel upgrade), rebuild the
-       patched out-of-tree driver automatically. This destroys any existing
+       out-of-tree driver automatically. This destroys any existing
        VFs, which step 6 below re-creates, so it must run first.
     2. Ensure hugepages
     3. Set CPU scaling governor to performance and confirm
@@ -676,7 +653,7 @@ def setup_after_reboot_auto(
     # pass and a second round-trip through this tool.
     ice = ice_driver_status()
     if "ACTION NEEDED" in ice:
-        results.append("## ICE Driver: rebuilding patched out-of-tree module")
+        results.append("## ICE Driver: rebuilding out-of-tree module")
         results.append(ice_driver_rebuild())
 
     results.append(hugepages_set(nr_hugepages))
@@ -755,7 +732,7 @@ def vfio_setup() -> str:
 def ice_driver_status() -> str:
     """
     Check the ICE driver status: loaded version vs required version,
-    module path, and whether it's the patched out-of-tree build.
+    module path, and whether it's the out-of-tree build.
     """
     return _ice_driver_status_impl()
 
@@ -763,10 +740,10 @@ def ice_driver_status() -> str:
 @mcp.tool()
 def ice_driver_rebuild() -> str:
     """
-    Build and install the patched out-of-tree ICE driver.
+    Build and install the out-of-tree ICE driver.
 
-    Downloads the correct ICE version from versions.env, applies MTL patches,
-    builds, and installs. Reloads the module afterwards.
+    Downloads the ICE version from versions.env, applies the MTL patches of a
+    version before 2.7.6, builds, and installs. Reloads the module afterwards.
 
     WARNING: This will briefly disconnect NICs using the ice driver.
     """

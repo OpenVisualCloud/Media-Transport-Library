@@ -174,6 +174,11 @@ WARNING when isolated, BLOCKER when pervasive (the diff is unreviewable for the 
 rule, data-plane/control-plane boundary, tasklet blocking, ring semantics, NUMA awareness,
 mempool naming, logging, error-return convention. Cite the specific rule violated.
 
+For a shell script, workflow, composite action or `Taskfile.yml` change, the checklist is
+`.github/instructions/mtl-scripts.instructions.md`: the `common.sh` structure of a user script in
+`script/`, no help or argument checks in a CI script, and the layer table — a CI step or a test
+that sets a host setting (hugepages, governor, packages, IOMMU) is a BLOCKER.
+
 ### 3. Correctness
 
 - **Missing error checks** — especially `mt_rte_zmalloc()`, `rte_ring_create()`,

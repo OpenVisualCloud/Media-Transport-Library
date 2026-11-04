@@ -323,6 +323,7 @@ If it failed to run the sample, please help to collect the system setup status b
 --lcores <lcore list>                : the DPDK lcore list for this run, e.g. --lcores 28,29,30,31. If not assigned, lib will allocate lcore from system socket cores.
 --test_time <seconds>                : the run duration, unit: seconds
 --dma_dev <DMA1,DMA2,DMA3...>        : DMA dev list to offload the packet memory copy for RX video frame session.
+--dma_auto                           : Use each Intel DMA device on vfio-pci on the NUMA node of a port, without a --dma_dev list.
 --log_level <level>                  : set log level. e.g. debug, info, notice, warning, error.
 --log_file <file path>               : set log file for mtl log. If you're initiating multiple RxTxApp processes simultaneously, please ensure each process has a unique filename path. Default the log is writing to stderr.
 
@@ -599,6 +600,8 @@ sudo ldconfig
 ### 8.15. Fail to Init lcore
 
 This might happen after commit `4f46e49`, because the lcore_shm structure is [changed](https://github.com/OpenVisualCloud/Media-Transport-Library/commit/4f46e493b79451c7ca564d82e1be56c7916b0722#diff-7ff8a138885ebda032ff57250ff81174b30722cc168a26fe39d9a4ff501d48d0L710).
+It also happens when the structure of the starting process is larger than the one in the system: its size follows `RTE_MAX_LCORE` of the DPDK build, so after a rebuild of DPDK with a larger `DPDK_MAX_LCORES`, or while an MTL 26.09 or earlier runs or after one crashed.
+Stop the older processes first: MTL 26.09 and earlier must not run together with a later release (see the [lcore Guide](shm_lcore.md)).
 
 ```text
 MT: 2023-11-24 15:06:27, Error: sch_lcore_shm_init, can not get shared memory for lcore, Invalid argument

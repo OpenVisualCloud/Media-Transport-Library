@@ -6,13 +6,24 @@ FFmpeg is an open source project licensed under LGPL and GPL. See <https://www.f
 
 ## 1. Build
 
-You can use the ./build.sh that will build the script for you automatically,
+`script/build_ffmpeg_plugin.sh` does the whole build: it downloads the FFmpeg
+release in `versions.env`, adds the MTL devices and the patches of this
+directory, builds openh264 when the system has none, and installs into
+`/usr/local`. Run it from the top of the source tree, as your own user, after
+MTL is installed:
 
-``` bash
-apt-get install wget patch unzip
-# in the  ecosystem/ffmpeg_plugin/ folder
-./build.sh
+```bash
+./script/install_dependencies.sh ffmpeg   # the build packages, Ubuntu only
+./script/build_ffmpeg_plugin.sh           # add --jpegxs for the SVT-JPEG-XS codecs
+./script/build_ffmpeg_plugin.sh -h        # all options
 ```
+
+With `MTL_INSTALL_PREFIX` set, as `build.sh` and `build_dpdk.sh` take it, FFmpeg
+goes into the `ffmpeg` sibling of that prefix (`.local_install/ffmpeg` beside
+`.local_install/mtl`). The installed `ffmpeg` then records the paths of the MTL,
+DPDK and SVT-JPEG-XS libraries it was built against, so it runs without
+`LD_LIBRARY_PATH` and cannot pick up another copy; the script checks that with
+`ldd` before it finishes. The paths are relative, so the tree can be moved.
 
 The manual way of building is described below
 
@@ -67,6 +78,13 @@ sudo ldconfig
 
 In order to build the FFmpeg in a non-default path, use `--prefix="<path>"` within the `./configure` command to point to an empty installation folder.
 
+### 1.3. Unit tests
+
+`./script/build_ffmpeg_plugin.sh unit` builds and runs the unit tests in `tests/`.
+MTL and FFmpeg are stubbed, so they need neither installed, nor a NIC or root.
+`FfmpegMtlCommonTest.ConcurrentGetsCreateOneSharedHandle` waits up to one second
+for each of its two threads, so a heavily loaded host can fail it.
+
 ## 2. ST20P raw video run guide
 
 The MTL ST20P plugin is implemented as an FFmpeg input/output device, enabling direct reading from or sending raw video via the ST 2110-20 stream.
@@ -102,6 +120,12 @@ Reading a ST 2110-20 10-bit YUV422 stream on 239.168.85.20:20000 with payload_ty
 ```bash
 ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 20000 -payload_type 96 -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -f mtl_st20p -i "k" -c:v libopenh264 out.264 -y
 ```
+
+The st20p input copies the payload with DMA if it has a DMA device. Give the
+devices with `-dma_dev 0000:80:04.0,0000:80:04.1`, or give `-dma_auto 1` to use
+the DMA devices on `vfio-pci` on the NUMA node of the port (see
+[DMA setup](../../doc/dma.md)). Give the same DMA option to each input of one
+process.
 
 ### 2.2. St20p output
 
@@ -197,7 +221,7 @@ ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv420p -i yuv
 
 ### 3.5. St22p support
 
-Another option involves utilizing the MTL built-in ST22 codec plugin, where FFmpeg can directly send or retrieve the YUV raw frame to/from the MTL ST22P plugin. MTL will then internally decode or encode the codec stream.
+Another option involves utilizing the MTL built-in ST22 codec plugin, where FFmpeg can directly send or retrieve the YUV raw frame to/from the MTL ST22P plugin. MTL will then internally decode or encode the codec stream. On the TX side, `-st22_quality speed|quality` selects the encoder quality mode (default `speed`).
 
 Reading a ST 2110-22 pipeline jpegxs codestream on 239.168.85.20:20000 with payload_type 98:
 

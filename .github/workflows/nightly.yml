@@ -1,0 +1,535 @@
+name: nightly
+
+# Every nightly test of MTL in one workflow: one build of the cached artifacts,
+# then gtest and pytest on each NIC of the fleet, the long fuzz run, the unit
+# suite and the Clang Static Analyzer of main, then the combined report. Each
+# job waits for the jobs it depends on through needs; no job polls for another
+# workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'MTL branch, tag or full 40-char SHA to build and test; CI and tests stay from the workflow branch (empty = workflow branch)'
+        required: false
+        type: string
+      gtest:
+        description: 'Run gtest on each NIC'
+        type: boolean
+        default: true
+      gtest_cases:
+        description: 'Regex of the gtest.sh case names to run, for example ^Dma (empty = all)'
+        required: false
+        type: string
+      pytest:
+        description: 'Run pytest on each NIC'
+        type: boolean
+        default: true
+      pytest_dir:
+        description: 'Only this directory of tests/single, for example st20p (empty = all)'
+        required: false
+        type: string
+      pytest_filter:
+        description: 'pytest -k expression for each directory (empty = all nightly tests)'
+        required: false
+        type: string
+      fuzz:
+        description: 'Run each fuzz target for 600 seconds'
+        type: boolean
+        default: true
+      unit:
+        description: 'Run the unit suite'
+        type: boolean
+        default: true
+      code_scan:
+        description: 'Run the Clang Static Analyzer (only when branch is empty)'
+        type: boolean
+        default: true
+  # A schedule runs on the default branch only, so this is the nightly run of main.
+  schedule:
+    - cron: '7 18 * * 1-5' # Monday to Friday at 18:07 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  # ── One build of the artifacts that the gtest and pytest legs restore ──
+  build:
+    if: ${{ github.event_name == 'schedule' || inputs.gtest || inputs.pytest || (inputs.code_scan && inputs.branch == '') }}
+    runs-on: dpdk
+    timeout-minutes: 60
+    outputs:
+      mtl_commit: ${{ steps.build.outputs.mtl_commit }}
+      mtl_hash: ${{ steps.build.outputs.mtl_hash }}
+      jpegxs_hash: ${{ steps.build.outputs.jpegxs_hash }}
+      ice_hash: ${{ steps.build.outputs.ice_hash }}
+      ffmpeg_hash: ${{ steps.build.outputs.ffmpeg_hash }}
+      gstreamer_hash: ${{ steps.build.outputs.gstreamer_hash }}
+      plugins_hash: ${{ steps.build.outputs.plugins_hash }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      # The branch is resolved to a commit here, once. The test jobs check out
+      # that commit, never the branch again.
+      - name: Checkout MTL
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@497c4107ae027a4f9d6da088d027639df40064e3
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: ${{ inputs.branch && '0' || '1' }}
+
+      - name: Install Task
+        if: inputs.branch != ''
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+
+      # Before the first local action: GitHub loads it from this checkout, and
+      # the ref may have none, or an older one. Twice: the ref's own
+      # overlay-tests may be older than the workflow commit's. The first run
+      # checks out the workflow commit's copy, the second runs it.
+      - name: Overlay CI and tests from the workflow commit
+        if: inputs.branch != ''
+        env:
+          MTL_SOURCE: ${{ inputs.branch }}
+          TEST_SHA: ${{ github.sha }}
+          TEST_REF: ${{ github.ref_name }}
+        run: task ci:workflow -- overlay-tests && task ci:workflow -- overlay-tests
+
+      - name: Build the artifacts
+        id: build
+        uses: ./.github/actions/build-artifacts
+
+  # ── gtest on each NIC ──
+  run-gtest:
+    needs: build
+    if: ${{ github.event_name == 'schedule' || inputs.gtest }}
+    concurrency:
+      group: gtest-${{ github.workflow }}-${{ github.ref }}-${{ matrix.nic }}
+      cancel-in-progress: true
+    strategy:
+      matrix:
+        nic:
+          - e810
+          - e830
+          - e835
+      fail-fast: false
+    runs-on: ${{ matrix.nic }}
+    timeout-minutes: 300
+    steps:
+      - name: 'preparation: Harden Runner'
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: 'preparation: Checkout MTL'
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@497c4107ae027a4f9d6da088d027639df40064e3
+        with:
+          ref: ${{ needs.build.outputs.mtl_commit }}
+          fetch-depth: ${{ inputs.branch && '0' || '1' }}
+
+      - name: 'preparation: Install Task'
+        if: inputs.branch != ''
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+
+      # Twice: the branch's own overlay-tests may be older than the workflow
+      # commit's. The first run checks out the workflow commit's copy, the
+      # second runs it.
+      - name: 'preparation: Overlay CI and tests from the workflow commit'
+        if: inputs.branch != ''
+        env:
+          MTL_SOURCE: ${{ inputs.branch }}
+          TEST_SHA: ${{ github.sha }}
+          TEST_REF: ${{ github.ref_name }}
+        run: task ci:workflow -- overlay-tests && task ci:workflow -- overlay-tests
+
+      - name: 'preparation: Validate host and download artifacts'
+        uses: ./.github/actions/validate-host
+        with:
+          nic: ${{ matrix.nic }}
+          build_outputs: ${{ toJSON(needs.build.outputs) }}
+
+      - name: 'execution: Run the nightly gtest'
+        uses: ./.github/actions/run-gtest
+        with:
+          nic: ${{ matrix.nic }}
+          nightly: 'true'
+          gtest_cases: ${{ inputs.gtest_cases }}
+
+  # ── pytest on each NIC and each directory of tests/single ──
+  run-pytest:
+    needs: build
+    if: ${{ github.event_name == 'schedule' || inputs.pytest }}
+    strategy:
+      matrix:
+        nic:
+          - e810
+          - e830
+          - e835
+        # st20p takes about 6 h on one runner, so 4 shards spread it over the
+        # runners of the NIC. A dispatch with pytest_dir runs only that one
+        # directory.
+        suite: >-
+          ${{ fromJSON(inputs.pytest_dir && format('[{{"dir": {0}}}]', toJSON(inputs.pytest_dir)) || '[
+          {"dir": "cross_app"}, {"dir": "st40p"}, {"dir": "gstreamer"},
+          {"dir": "kernel_socket"}, {"dir": "rss_mode"}, {"dir": "rx_timing"},
+          {"dir": "st20p", "shard": 1, "shards": 4},
+          {"dir": "st20p", "shard": 2, "shards": 4},
+          {"dir": "st20p", "shard": 3, "shards": 4},
+          {"dir": "st20p", "shard": 4, "shards": 4},
+          {"dir": "st22p"}, {"dir": "st30p"}, {"dir": "xdp"}]') }}
+      fail-fast: false
+    runs-on: ${{ matrix.nic }}
+    timeout-minutes: 720
+    env:
+      # Names the artifacts: <dir>, or <dir>-<shard>, which the report parser
+      # files under <dir>, the category the baseline run has.
+      SUITE: ${{ matrix.suite.dir }}${{ matrix.suite.shard && format('-{0}', matrix.suite.shard) }}
+    steps:
+      - name: 'preparation: Harden Runner'
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: 'preparation: Checkout MTL'
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@497c4107ae027a4f9d6da088d027639df40064e3
+        with:
+          ref: ${{ needs.build.outputs.mtl_commit }}
+          fetch-depth: ${{ inputs.branch && '0' || '1' }}
+
+      - name: 'preparation: Install Task'
+        if: inputs.branch != ''
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+
+      # Twice: the branch's own overlay-tests may be older than the workflow
+      # commit's. The first run checks out the workflow commit's copy, the
+      # second runs it.
+      - name: 'preparation: Overlay CI and tests from the workflow commit'
+        if: inputs.branch != ''
+        env:
+          MTL_SOURCE: ${{ inputs.branch }}
+          TEST_SHA: ${{ github.sha }}
+          TEST_REF: ${{ github.ref_name }}
+        run: task ci:workflow -- overlay-tests && task ci:workflow -- overlay-tests
+
+      - name: 'preparation: Validate host and download artifacts'
+        uses: ./.github/actions/validate-host
+        with:
+          build_outputs: ${{ toJSON(needs.build.outputs) }}
+
+      - name: 'preparation: Set up the acceptance suite'
+        uses: ./.github/actions/pytest-setup
+        with:
+          nic: ${{ matrix.nic }}
+
+      - name: 'execution: Run the nightly tests of ${{ env.SUITE }}'
+        env:
+          TEST_PATH: ${{ matrix.suite.dir }}
+          PYTEST_SHARD: ${{ matrix.suite.shard && format('{0}/{1}', matrix.suite.shard, matrix.suite.shards) }}
+          PYTEST_FILTER: ${{ inputs.pytest_filter }}
+        run: task ci:pytest-run -- nightly
+
+      - name: 'collect: Report and cleanup'
+        if: always()
+        uses: ./.github/actions/pytest-collect
+        with:
+          report_name: nightly-test-report-${{ matrix.nic }}-${{ env.SUITE }}
+          report_path: ./tests/acceptance/report.html
+          status_name: system-info-${{ matrix.nic }}-${{ env.SUITE }}
+
+  aggregate-python-reports:
+    needs: run-pytest
+    if: ${{ always() && (github.event_name == 'schedule' || inputs.pytest) }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: 'preparation: Checkout MTL'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+
+      - name: Download python report artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: nightly-test-report-*
+          path: python-reports
+          merge-multiple: false
+
+      - name: Flatten report directory structure
+        run: task ci:report -- flatten-pytest
+
+      - name: Install report dependencies
+        run: task ci:report -- install-dependencies
+
+      - name: Combine python reports
+        id: combine
+        run: task ci:report -- combine-pytest
+
+      - name: Upload combined python report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nightly-pytest-combined-report
+          path: ${{ steps.combine.outputs.report_path }}
+
+  # ── The combined gtest and pytest report of this run ──
+  # The baseline is the last scheduled run of main before this one that kept
+  # its reports.
+  combined-report:
+    needs: [build, run-gtest, run-pytest]
+    if: ${{ !cancelled() && needs.build.result == 'success' && (github.event_name == 'schedule' || (inputs.gtest && inputs.pytest)) }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: 'preparation: Harden Runner'
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: 'preparation: Checkout MTL'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+
+      - name: Find the baseline runs
+        id: baseline
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: return require(`${{ github.workspace }}/.github/scripts/ci/report/find-nightly-runs.js`)({ github, context, core })
+
+      - name: Get the run metadata
+        id: metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+        run: task ci:run-metadata
+
+      - name: Download pytest artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: nightly-test-report-*
+          path: pytest-reports
+          merge-multiple: false
+
+      - name: Download gtest artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: nightly-gtest-report-*
+          path: gtest-reports
+          merge-multiple: false
+
+      - name: Flatten pytest report structure
+        env:
+          REPORT_DIR: pytest-reports
+        run: task ci:report -- flatten-pytest
+
+      - name: Flatten gtest report structure
+        run: task ci:report -- flatten-gtest
+
+      - name: Download system info artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          pattern: system-info-*
+          path: system-info-reports
+          merge-multiple: false
+
+      - name: List downloaded system info
+        run: task ci:report -- list-system-info
+
+      - name: Download baseline pytest artifacts
+        if: steps.baseline.outputs.baseline_pytest_run_id != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          pattern: nightly-test-report-*
+          path: baseline-pytest-reports
+          merge-multiple: false
+          run-id: ${{ steps.baseline.outputs.baseline_pytest_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Download baseline gtest artifacts
+        if: steps.baseline.outputs.baseline_gtest_run_id != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          pattern: nightly-gtest-report-*
+          path: baseline-gtest-reports
+          merge-multiple: false
+          run-id: ${{ steps.baseline.outputs.baseline_gtest_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Flatten baseline pytest report structure
+        if: steps.baseline.outputs.baseline_pytest_run_id != ''
+        env:
+          REPORT_DIR: baseline-pytest-reports
+        run: task ci:flatten-pytest-if-present
+
+      - name: Flatten baseline gtest report structure
+        if: steps.baseline.outputs.baseline_gtest_run_id != ''
+        env:
+          REPORT_DIR: baseline-gtest-reports
+        run: task ci:flatten-gtest-if-present
+
+      - name: Get baseline pytest run metadata
+        id: baseline-pytest-metadata
+        if: steps.baseline.outputs.baseline_pytest_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.baseline.outputs.baseline_pytest_run_id }}
+        run: task ci:run-metadata
+
+      - name: Get baseline gtest run metadata
+        id: baseline-gtest-metadata
+        if: steps.baseline.outputs.baseline_gtest_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.baseline.outputs.baseline_gtest_run_id }}
+        run: task ci:run-metadata
+
+      - name: Install dependencies
+        env:
+          REPORT_REQUIRE_LXML: '1'
+        run: task ci:report -- install-dependencies
+
+      - name: Generate combined reports
+        id: combine
+        env:
+          PYTEST_RUN_ID: ${{ steps.metadata.outputs.run_id }}
+          PYTEST_RUN_DATE: ${{ steps.metadata.outputs.run_date }}
+          PYTEST_RUN_NUMBER: ${{ steps.metadata.outputs.run_number }}
+          PYTEST_BRANCH: ${{ steps.metadata.outputs.branch }}
+          PYTEST_RUN_URL: ${{ steps.metadata.outputs.run_url }}
+          GTEST_RUN_ID: ${{ steps.metadata.outputs.run_id }}
+          GTEST_RUN_DATE: ${{ steps.metadata.outputs.run_date }}
+          GTEST_RUN_NUMBER: ${{ steps.metadata.outputs.run_number }}
+          GTEST_BRANCH: ${{ steps.metadata.outputs.branch }}
+          GTEST_RUN_URL: ${{ steps.metadata.outputs.run_url }}
+          BASELINE_PYTEST_RUN_ID: ${{ steps.baseline-pytest-metadata.outputs.run_id }}
+          BASELINE_PYTEST_RUN_DATE: ${{ steps.baseline-pytest-metadata.outputs.run_date }}
+          BASELINE_PYTEST_RUN_NUMBER: ${{ steps.baseline-pytest-metadata.outputs.run_number }}
+          BASELINE_PYTEST_BRANCH: ${{ steps.baseline-pytest-metadata.outputs.branch }}
+          BASELINE_PYTEST_RUN_URL: ${{ steps.baseline-pytest-metadata.outputs.run_url }}
+          BASELINE_GTEST_RUN_ID: ${{ steps.baseline-gtest-metadata.outputs.run_id }}
+          BASELINE_GTEST_RUN_DATE: ${{ steps.baseline-gtest-metadata.outputs.run_date }}
+          BASELINE_GTEST_RUN_NUMBER: ${{ steps.baseline-gtest-metadata.outputs.run_number }}
+          BASELINE_GTEST_BRANCH: ${{ steps.baseline-gtest-metadata.outputs.branch }}
+          BASELINE_GTEST_RUN_URL: ${{ steps.baseline-gtest-metadata.outputs.run_url }}
+        run: task ci:report -- combine-all
+
+      - name: Upload combined Excel report
+        if: steps.combine.outputs.reports_generated == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nightly-combined-report-excel
+          path: combined_nightly_report.xlsx
+
+      - name: Upload combined HTML report
+        if: steps.combine.outputs.reports_generated == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nightly-combined-report-html
+          path: combined_nightly_report.html
+
+  # ── No NIC, no build artifacts ──
+  fuzz-tests:
+    if: ${{ github.event_name == 'schedule' || inputs.fuzz }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: ${{ inputs.branch && '0' || '1' }}
+
+      - name: Install Task
+        if: inputs.branch != ''
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+
+      # Before the first local action: GitHub loads it from this checkout, and
+      # the ref may have none, or an older one. Twice: the ref's own
+      # overlay-tests may be older than the workflow commit's. The first run
+      # checks out the workflow commit's copy, the second runs it.
+      - name: Overlay CI and tests from the workflow commit
+        if: inputs.branch != ''
+        env:
+          MTL_SOURCE: ${{ inputs.branch }}
+          TEST_SHA: ${{ github.sha }}
+          TEST_REF: ${{ github.ref_name }}
+        run: task ci:workflow -- overlay-tests && task ci:workflow -- overlay-tests
+
+      - name: Build and run the fuzz targets
+        uses: ./.github/actions/fuzz-tests
+        with:
+          fuzz_time: '600'
+
+  unit-tests:
+    if: ${{ github.event_name == 'schedule' || inputs.unit }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: ${{ inputs.branch && '0' || '1' }}
+
+      - name: Install Task
+        if: inputs.branch != ''
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+
+      # Before the first local action: GitHub loads it from this checkout, and
+      # the ref may have none, or an older one. Twice: the ref's own
+      # overlay-tests may be older than the workflow commit's. The first run
+      # checks out the workflow commit's copy, the second runs it.
+      - name: Overlay CI and tests from the workflow commit
+        if: inputs.branch != ''
+        env:
+          MTL_SOURCE: ${{ inputs.branch }}
+          TEST_SHA: ${{ github.sha }}
+          TEST_REF: ${{ github.ref_name }}
+        run: task ci:workflow -- overlay-tests && task ci:workflow -- overlay-tests
+
+      - name: Build and run the unit suite
+        uses: ./.github/actions/unit-tests
+
+  # The Clang Static Analyzer results of main, which code scanning compares the
+  # alerts of a pull request with. It configures MTL against the DPDK of the
+  # build artifact, and runs on the workflow commit only.
+  clang-analyzer:
+    needs: build
+    if: ${{ github.event_name == 'schedule' || (inputs.code_scan && inputs.branch == '') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write # for github/codeql-action/upload-sarif
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: The Clang Static Analyzer
+        uses: ./.github/actions/clang-tidy
+        with:
+          build_artifact: 'true'

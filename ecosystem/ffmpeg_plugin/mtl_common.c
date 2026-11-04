@@ -125,6 +125,8 @@ static int mtl_dev_build_params(AVFormatContext* ctx, const struct StDevArgs* ar
     p->ptp_get_time_fn = mtl_get_tai_time;
   }
 
+  if (args->dma_auto) p->flags |= MTL_FLAG_DMA_AUTO;
+
   if (args->dma_dev) {
     char devs[128] = {0};
     char* next_dev;
@@ -328,4 +330,27 @@ int mtl_parse_st30_sample_rate(enum st30_sampling* sample_rate, int value) {
     default:
       return AVERROR(EINVAL);
   }
+}
+
+int mtl_parse_st22_quality(AVFormatContext* ctx, const char* value,
+                           enum st22_quality_mode* quality) {
+  static const struct {
+    const char* name;
+    enum st22_quality_mode quality;
+  } quality_modes[] = {
+      {"speed", ST22_QUALITY_MODE_SPEED},
+      {"quality", ST22_QUALITY_MODE_QUALITY},
+  };
+
+  if (!value) return 0;
+
+  for (size_t i = 0; i < sizeof(quality_modes) / sizeof(quality_modes[0]); i++) {
+    if (!strcmp(value, quality_modes[i].name)) {
+      *quality = quality_modes[i].quality;
+      return 0;
+    }
+  }
+
+  err(ctx, "%s, invalid st22 quality: %s\n", __func__, value);
+  return AVERROR(EINVAL);
 }

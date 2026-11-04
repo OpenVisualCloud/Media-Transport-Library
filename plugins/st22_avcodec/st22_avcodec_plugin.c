@@ -60,6 +60,10 @@ static int avcodec_encode_frame(struct st22_avcodec_encoder_session* s,
       err("%s(%d), receive packet fail %s on frame %d\n", __func__, idx, av_err2str(ret),
           f_idx);
     }
+  } else if ((size_t)p->size > frame->dst->buffer_size) {
+    err("%s(%d), packet size %d exceeds codestream buffer %" PRIu64 " on frame %d\n",
+        __func__, idx, p->size, frame->dst->buffer_size, f_idx);
+    av_packet_unref(p);
   } else {
     dbg("%s, receive packet %" PRId64 " size %d on frame %d\n", __func__, p->pts, p->size,
         f_idx);

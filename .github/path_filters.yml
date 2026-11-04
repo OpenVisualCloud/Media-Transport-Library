@@ -6,16 +6,24 @@
 # dorny ignores a '!' pattern with the default predicate, so do not exclude
 # paths: list the paths to include.
 #
-# .github/scripts/ci/check-path-filters.py (a checkpatch hook) enforces the
+# .github/scripts/ci/lint/check-path-filters.py (a checkpatch hook) enforces the
 # rules below. Run it after each change to this file.
 #
 #   - hash_<name> holds the paths of script/hash_sources_<name>.env, one to one
 #     (a directory "dir/" becomes 'dir/**'). A change to one of these paths
-#     gives the Build workflow a new artifact.
+#     gives the build job a new artifact.
 #   - Each filter that a workflow reads exists, and each pattern matches a
 #     tracked file.
-#   - build_workflow holds each filter that pr-gate.yml gets, because the tests
-#     wait for the Build workflow. If Build skips, the wait times out.
+#   - build_workflow holds the filter of each job that needs the build job,
+#     because a job does not run when the build job that it needs skips.
+#   - A filter names each file of script/ that its job runs. A glob such as
+#     'script/**' runs the job for a change to a script that it never calls.
+#   - scripts holds each script/*.sh and .github/scripts/setup_environment.sh,
+#     because test-scripts.sh checks each of them.
+#   - .github/scripts/ci/ is one folder per job family (cache, host, pytest,
+#     report, scan, fuzz, lint, workflow). A filter names a folder, as
+#     '.github/scripts/ci/host/**', never the whole tree: a change to the fuzz
+#     script must not run the bare-metal jobs.
 
 # ---------------------------------------------------------------- Artifacts
 # script/hash_sources.sh chains the hashes: dpdk -> mtl -> jpegxs -> ffmpeg,
@@ -23,7 +31,8 @@
 
 hash_dpdk: &hash_dpdk
   - .github/scripts/setup_environment.sh
-  - .github/scripts/ci/build-dependencies.sh
+  - script/install_dependencies.sh
+  - .github/scripts/ci/cache/build-dependencies.sh
   - script/hash_sources_dpdk.env
   - 'patches/dpdk/**'
   - versions.env
@@ -32,6 +41,11 @@ hash_dpdk: &hash_dpdk
 
 hash_mtl: &hash_mtl
   - .github/scripts/setup_environment.sh
+  - script/install_dependencies.sh
+  - script/nicctl.sh
+  - script/common.sh
+  - script/build_jpegxs.sh
+  - script/build_st22_avcodec_plugin.sh
   - build.sh
   - script/hash_sources_mtl.env
   - meson.build
@@ -54,18 +68,19 @@ hash_mtl: &hash_mtl
   - tests/meson_options.txt
 
 hash_jpegxs: &hash_jpegxs
-  - .github/scripts/ci/build-jpegxs.sh
-  - .github/scripts/ci/jpegxs-source.sh
-  - .github/scripts/ci/validate-jpegxs.sh
   - .github/scripts/setup_environment.sh
-  - ecosystem/ffmpeg_plugin/build.sh
+  - script/build_jpegxs.sh
+  - script/install_dependencies.sh
+  - script/build_ffmpeg_plugin.sh
+  - script/common.sh
   - script/hash_sources_jpegxs.env
   - versions.env
 
 hash_ice: &hash_ice
-  - .github/scripts/ci/build-dependencies.sh
-  - .github/scripts/ci/validate-ice.sh
+  - .github/scripts/ci/cache/build-dependencies.sh
+  - .github/scripts/ci/cache/validate-ice.sh
   - .github/scripts/setup_environment.sh
+  - script/install_dependencies.sh
   - 'patches/ice_drv/**'
   - script/build_drivers.sh
   - script/common.sh
@@ -74,20 +89,28 @@ hash_ice: &hash_ice
 
 hash_ffmpeg: &hash_ffmpeg
   - .github/scripts/setup_environment.sh
+  - script/install_dependencies.sh
+  - script/build_ffmpeg_plugin.sh
+  - script/common.sh
   - script/hash_sources_ffmpeg.env
   - 'ecosystem/ffmpeg_plugin/**'
   - versions.env
 
 hash_gstreamer: &hash_gstreamer
   - .github/scripts/setup_environment.sh
+  - script/install_dependencies.sh
+  - script/build_gstreamer_plugin.sh
+  - script/common.sh
   - script/hash_sources_gstreamer.env
   - 'ecosystem/gstreamer_plugin/**'
   - 'tests/tools/gstreamer_tools/**'
 
 hash_plugins: &hash_plugins
   - .github/scripts/setup_environment.sh
+  - script/install_dependencies.sh
   - script/hash_sources_plugins.env
   - script/build_st22_avcodec_plugin.sh
+  - script/common.sh
   - 'plugins/st22_avcodec/**'
   - VERSION
 
@@ -111,41 +134,48 @@ libmtl: &libmtl
   - 'include/**'
   - 'lib/**'
 
-# The unit suite. tests/unit/ffmpeg compiles these two plugin files.
+# The unit suite.
 unit_sources: &unit_sources
   - 'tests/unit/**'
-  - ecosystem/ffmpeg_plugin/mtl_common.c
-  - ecosystem/ffmpeg_plugin/mtl_common.h
 
-# What a bare-metal test job runs besides the artifacts: the gate, the host
-# setup actions, the ci:* tasks and the scripts that they call. checkout-clean
-# is not here: the workflows use it at a pinned commit, not from this tree.
-# .github/path_filters.yml is not here: check-path-filters.py checks it, and a
-# run on the NIC hosts does not.
+# What a bare-metal test job runs besides the artifacts: the workflow, the build
+# and host setup actions, the ci:* tasks and the scripts that they call: the
+# cache validation, the host setup and the workflow glue, not the pytest, fuzz,
+# scan or lint scripts. checkout-clean is not here: the workflows use it at a
+# pinned commit, not from this tree. .github/path_filters.yml is not here:
+# check-path-filters.py checks it, and a run on the NIC hosts does not. Each
+# file of script/ is named: gtest.sh and tests/acceptance call nicctl.sh. The
+# validate-host action calls dma_setup.sh, the validate-host action and
+# ci:validate-dependencies call build_ebpf_xdp.sh, and source-checksums calls
+# hash_sources.sh.
 bare_metal_ci: &bare_metal_ci
-  - .github/workflows/pr-gate.yml
-  - .github/workflows/build.yml
-  - .github/workflows/kahawai_template.json
+  - .github/workflows/cicd-pr-check.yml
+  - '.github/actions/build-artifacts/**'
   - '.github/actions/validate-host/**'
-  - '.github/actions/cleanup/**'
   - '.github/actions/source-checksums/**'
-  - '.github/actions/wait-for-workflow/**'
-  - '.github/scripts/ci/**'
+  - '.github/scripts/ci/cache/**'
+  - '.github/scripts/ci/host/**'
+  - '.github/scripts/ci/workflow/**'
   - Taskfile.yml
-  - 'script/**'
+  - script/common.sh
+  - script/nicctl.sh
+  - script/dma_setup.sh
+  - script/build_ebpf_xdp.sh
+  - script/hash_sources.sh
 
 # ------------------------------------------------------------ Filters (jobs)
 
-# gtest-bare-metal.yml. KahawaiTest loads the sample, JPEG XS and st22 avcodec
-# plugins through the plugin registry, and the host loads the cached ICE
-# module. It does not use MtlManager, RxTxApp, ld_preload or the GStreamer
-# plugin. The st22 avcodec plugin links the FFmpeg cache, but gtest.sh does not
-# put .local_install/ffmpeg on the library path of KahawaiTest, so a change to
-# FFmpeg does not reach it.
+# cicd-pr-check.yml, run-gtest-tests. KahawaiTest loads the sample, JPEG XS and
+# st22 avcodec plugins through the plugin registry, and the host loads the
+# cached ICE module. It does not use MtlManager, RxTxApp, ld_preload or the
+# GStreamer plugin. The st22 avcodec plugin links the FFmpeg cache, but gtest.sh
+# does not put .local_install/ffmpeg on the library path of KahawaiTest, so a
+# change to FFmpeg does not reach it.
 gtest: &gtest
   - *hash_dpdk
   - *libmtl
   - .github/scripts/setup_environment.sh
+  - script/install_dependencies.sh
   - versions.env
   - plugins/meson.build
   - plugins/meson_options.txt
@@ -159,23 +189,25 @@ gtest: &gtest
   - *hash_jpegxs
   - *hash_plugins
   - *bare_metal_ci
-  - .github/workflows/gtest-bare-metal.yml
+  - '.github/actions/run-gtest/**'
   - .github/scripts/gtest.sh
 
-# smoke-tests.yml. The job restores all artifacts and fails if one is missing.
-# pytest collects all of tests/acceptance, and the markers are in the test
-# files, so the whole tree applies.
+# cicd-pr-check.yml, run-smoke-tests. The job restores all artifacts and fails
+# if one is missing. pytest collects all of tests/acceptance, and the markers
+# are in the test files, so the whole tree applies.
 smoke_tests: &smoke_tests
   - *hash_sources
   - *bare_metal_ci
-  - .github/workflows/smoke-tests.yml
+  - '.github/actions/pytest-setup/**'
+  - '.github/actions/pytest-collect/**'
+  - '.github/scripts/ci/pytest/**'
   - .github/scripts/lib/mtl_acceptance_venv.sh
   - 'tests/acceptance/**'
 
-# code-scan.yml, clang-tidy: the C and C++ files whose changed lines it checks,
-# the checks, and the files its steps run, the Clang Static Analyzer's
-# included. Its DPDK comes from the Build workflow's cache, and on a miss it
-# waits for Build, so build_workflow holds it.
+# cicd-pr-check.yml, clang-tidy: the C and C++ files whose changed lines it
+# checks, the checks, and the files its steps run, the Clang Static Analyzer's
+# included. Its DPDK comes from the cache of the build job, and on a miss it
+# needs the build job, so build_workflow holds it.
 clang_tidy: &clang_tidy
   - '**/*.c'
   - '**/*.cpp'
@@ -183,41 +215,49 @@ clang_tidy: &clang_tidy
   - '**/*.hpp'
   - .clang-tidy
   - .github/path_filters.yml
-  - .github/workflows/code-scan.yml
-  - .github/scripts/ci/clang-tidy-setup.sh
-  - .github/scripts/ci/clang-analyzer.sh
+  - .github/workflows/cicd-pr-check.yml
+  - '.github/actions/clang-tidy/**'
+  - .github/scripts/ci/scan/clang-tidy-setup.sh
+  - .github/scripts/ci/scan/clang-analyzer.sh
   - .github/code-scan/codechecker.skip
   - .github/code-scan/codechecker-requirements.txt
   - Taskfile.yml
   - .github/scripts/setup_environment.sh
 
-# build.yml: the artifacts, and each filter that waits for them. A test-only
-# change also runs Build: all of its caches hit, and it restores a cache that
-# GitHub evicted, which a skipped build cannot do.
+# cicd-pr-check.yml, build: the artifacts, and each filter of a job that needs
+# them. A test-only change also runs the build job: all of its caches hit, and
+# it restores a cache that GitHub evicted, which a skipped build cannot do.
 build_workflow:
   - *hash_sources
   - *gtest
   - *smoke_tests
   - *clang_tidy
 
-# unit_tests.yml. It builds DPDK, then runs ./build.sh unit, which builds only
-# the root meson project.
+# cicd-pr-check.yml, unit-tests. It builds DPDK, then runs ./build.sh unit,
+# which builds only the root meson project, and build_ffmpeg_plugin.sh unit,
+# which builds the FFmpeg plugin's unit tests and the plugin files that they
+# compile.
 unit_tests:
   - .github/path_filters.yml
-  - .github/workflows/unit_tests.yml
-  - .github/scripts/ci/unit-test-dependencies.sh
+  - .github/workflows/cicd-pr-check.yml
+  - '.github/actions/unit-tests/**'
   - *hash_dpdk
   - *libmtl
   - *unit_sources
+  - 'ecosystem/ffmpeg_plugin/tests/**'
+  - ecosystem/ffmpeg_plugin/mtl_common.c
+  - ecosystem/ffmpeg_plugin/mtl_common.h
+  - script/build_ffmpeg_plugin.sh
 
-# fuzz_tests.yml. It builds DPDK, then fuzz.sh builds the root meson project
-# with the fuzz targets; fuzz.sh calls meson, not build.sh. Each harness
-# includes a production .c file and links libmtl, and that file calls other
-# files of libmtl, so each file of libmtl can change a target.
+# cicd-pr-check.yml, fuzz-tests. It builds DPDK, then fuzz.sh builds the root
+# meson project with the fuzz targets; fuzz.sh calls meson, not build.sh. Each
+# harness includes a production .c file and links libmtl, and that file calls
+# other files of libmtl, so each file of libmtl can change a target.
 fuzz_tests:
   - .github/path_filters.yml
-  - .github/workflows/fuzz_tests.yml
-  - .github/scripts/ci/fuzz.sh
+  - .github/workflows/cicd-pr-check.yml
+  - '.github/actions/fuzz-tests/**'
+  - .github/scripts/ci/fuzz/fuzz.sh
   - Taskfile.yml
   - *hash_dpdk
   - meson.build
@@ -230,11 +270,11 @@ fuzz_tests:
 # base_build.yml: release, eBPF/XDP, and release with fuzzing (clang).
 # setup_environment.sh builds DPDK, MTL, GPU Direct, the FFmpeg, GStreamer and
 # OBS plugins, the Python and Rust bindings, and the tools. It does not build
-# JPEG XS or st22 avcodec.
+# JPEG XS or the st22 avcodec plugin, but ubuntu-build runs the plugin's tests.
 base_build:
   - .github/path_filters.yml
   - .github/workflows/base_build.yml
-  - .github/scripts/ci/build-rust-example.sh
+  - *hash_plugins
   - *hash_dpdk
   - *hash_mtl
   - *hash_ffmpeg
@@ -252,13 +292,17 @@ base_build:
 # docker_build.yml, ubuntu-docker-build. The build context is the repository
 # root less .dockerignore, which drops .github/, so the hash_<name> filters do
 # not apply: they hold .github/scripts/setup_environment.sh. Each image builds
-# DPDK, runs build.sh and the unit suite, and copies script/ into the image.
+# DPDK and the eBPF/XDP libraries with the scripts named below, and runs
+# build.sh and the unit suite. The image also holds a copy of script/, but the
+# job runs no other script, so a change to one does not run the job.
 docker_build:
   - .github/path_filters.yml
   - .github/workflows/docker_build.yml
   - 'docker/*.dockerfile'
   - .dockerignore
-  - 'script/**'
+  - script/common.sh
+  - script/build_dpdk.sh
+  - script/build_ebpf_xdp.sh
   - 'patches/dpdk/**'
   - versions.env
   - *libmtl
@@ -276,6 +320,52 @@ docker_build:
   - 'tests/tools/RxTxApp/**'
   - *unit_sources
 
+# cicd-pr-check.yml, script-tests. test-scripts.sh checks the common structure
+# of each script, and runs the scripts that need no NIC and no root.
+scripts:
+  - .github/path_filters.yml
+  - .github/workflows/cicd-pr-check.yml
+  - .github/scripts/ci/lint/test-scripts.sh
+  - .github/scripts/setup_environment.sh
+  - versions.env
+  - 'patches/dpdk/**'
+  - script/build_app.sh
+  - script/build_dpdk.sh
+  - script/build_drivers.sh
+  - script/build_ebpf_xdp.sh
+  - script/build_ffmpeg_plugin.sh
+  - script/build_gstreamer_plugin.sh
+  - script/build_jpegxs.sh
+  - script/build_obs_plugin.sh
+  - script/build_python.sh
+  - script/build_st22_avcodec_plugin.sh
+  - script/check_dpdk_patches.sh
+  - script/common.sh
+  - script/dma_setup.sh
+  - script/dos2unix.sh
+  - script/hash_sources.sh
+  - script/if_filter_delete.sh
+  - script/install_dependencies.sh
+  - script/isolation_monitor.sh
+  - script/isolation_report.sh
+  - script/lcore_stat_dump.sh
+  - script/nicctl.sh
+  - script/status_report.sh
+
+# github_pages_update.yml, buildDocumentation. Sphinx renders doc/ and the
+# Markdown and reStructuredText files that index.rst pulls in from the whole
+# tree, conf.py reads VERSION, and the job installs its packages with
+# task ci:workflow -- docs-dependencies.
+docs:
+  - .github/path_filters.yml
+  - .github/workflows/github_pages_update.yml
+  - .github/scripts/ci/workflow/workflow-ops.sh
+  - Taskfile.yml
+  - '**/*.md'
+  - '**/*.rst'
+  - 'doc/**'
+  - VERSION
+
 # docker_build.yml, manager-docker-build. The build context is manager/.
 manager_build:
   - .github/path_filters.yml
@@ -290,21 +380,21 @@ docker_compose:
   - docker/docker-compose.yml
   - docker/docker-compose.xdp.yml
 
-# code-scan.yml, bandit: every tracked Python file, the test set, the workflow
-# and the tasks it runs.
+# cicd-pr-check.yml, bandit: every tracked Python file, the test set, the
+# workflow and the tasks it runs.
 bandit:
   - '**/*.py'
   - .github/code-scan/bandit.config
   - .github/code-scan/requirements.txt
-  - .github/workflows/code-scan.yml
+  - .github/workflows/cicd-pr-check.yml
   - .github/path_filters.yml
   - Taskfile.yml
 
-# code-scan.yml, cargo-audit. It audits the Rust lock files, and the
+# cicd-pr-check.yml, cargo-audit. It audits the Rust lock files, and the
 # manifests of rust/, which commits none.
 cargo_audit:
   - .github/path_filters.yml
-  - .github/workflows/code-scan.yml
+  - .github/workflows/cicd-pr-check.yml
   - rust/Cargo.toml
   - rust/imtl-sys/Cargo.toml
   - tests/tools/perf_debug_mcp/native/Cargo.toml

@@ -3,8 +3,8 @@
 
 """Host readiness helpers — hugepages, CPU governor, isolation, PF link state.
 
-These run once per host during session setup to ensure the system is
-configured for DPDK / ST 2110 workloads.
+The check_* helpers only read a host setting; the host owns it. The other
+helpers change the host for one test or session.
 """
 
 import logging
@@ -13,129 +13,50 @@ import time
 logger = logging.getLogger(__name__)
 
 
-def ensure_hugepage_access(host) -> None:
-    """Ensure 1GB hugepages are allocated, mounted correctly, and writable.
+def check_hugepages(host) -> None:
+    """Fail when the host has no free 2 MB or 1 GB hugepages.
 
-    DPDK requires 1GB hugepages mapped via hugetlbfs.  On systems that
-    allocate hugepages post-boot via sysfs (e.g. GNR/Granite Rapids where
-    boot-time allocation via kernel cmdline hangs at EFI stub), this
-    helper allocates 24 x 1GB per NUMA node if fewer than 24 exist per
-    node, remounts /dev/hugepages with pagesize=1G if needed, and fixes
-    permissions.
+    Hugepages are a host setting: the host reserves and mounts them. Without
+    them each DPDK process stops in EAL with "Cannot get hugepage information".
     """
-    try:
-        result = host.connection.execute_command(
-            "cat /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages"
-            " 2>/dev/null || echo 0",
-            shell=True,
+    result = host.connection.execute_command(
+        "cat /sys/kernel/mm/hugepages/hugepages-2048kB/free_hugepages"
+        " /sys/kernel/mm/hugepages/hugepages-1048576kB/free_hugepages"
+        " 2>/dev/null | awk '{sum += $1} END {print sum + 0}'",
+        shell=True,
+    )
+    if int((result.stdout or "0").strip() or 0) == 0:
+        raise RuntimeError(
+            f"Host {host.name}: no free 2 MB or 1 GB hugepages; reserve them on the host"
         )
-        nr_1g = int((result.stdout or "0").strip())
-
-        numa_result = host.connection.execute_command(
-            "ls -d /sys/devices/system/node/node* 2>/dev/null | wc -l",
-            shell=True,
-        )
-        numa_count = max(1, int((numa_result.stdout or "1").strip()))
-        target_per_node = 24
-        target_total = target_per_node * numa_count
-
-        if nr_1g < target_total:
-            host.connection.execute_command(
-                "for n in $(ls -d /sys/devices/system/node/node*"
-                " 2>/dev/null | grep -o '[0-9]*$'); do "
-                "sudo sh -c 'echo "
-                f"{target_per_node}"
-                " > /sys/devices/system/node/"
-                "node$n/hugepages/"
-                "hugepages-1048576kB/nr_hugepages'; "
-                "done",
-                shell=True,
-            )
-            logger.info(
-                f"Host {host.name}: allocated 1GB hugepages"
-                f" ({target_per_node} per node, {target_total} total)"
-            )
-
-        # Ensure /dev/hugepages is mounted with 1GB pagesize
-        result = host.connection.execute_command(
-            "mount | grep '/dev/hugepages'"
-            " | grep -q 'pagesize=1024M' && echo ok || echo remount",
-            shell=True,
-        )
-        if "remount" in (result.stdout or ""):
-            host.connection.execute_command(
-                "sudo umount /dev/hugepages 2>/dev/null; "
-                "sudo mount -t hugetlbfs -o pagesize=1G nodev /dev/hugepages",
-                shell=True,
-            )
-            logger.info(f"Host {host.name}: remounted /dev/hugepages with pagesize=1G")
-
-        host.connection.execute_command(
-            "sudo chmod 1777 /dev/hugepages 2>/dev/null || true",
-            shell=True,
-        )
-    except Exception as e:
-        logger.warning(f"Host {host.name}: could not ensure hugepage access: {e}")
 
 
-def ensure_turbo_boost_enabled(host) -> None:
-    """Enable turbo boost if it is currently disabled."""
-    try:
-        result = host.connection.execute_command(
-            "cat /sys/devices/system/cpu/intel_pstate/no_turbo 2>/dev/null",
-            shell=True,
-        )
-        val = (result.stdout or "").strip()
-        if val == "1":
-            host.connection.execute_command(
-                "echo 0 | sudo tee"
-                " /sys/devices/system/cpu/intel_pstate/no_turbo >/dev/null",
-                shell=True,
-            )
-            logger.info(f"Host {host.name}: turbo boost enabled (intel_pstate)")
-            return
-        if val == "0":
-            return
-
-        result = host.connection.execute_command(
-            "cat /sys/devices/system/cpu/cpufreq/boost 2>/dev/null",
-            shell=True,
-        )
-        val = (result.stdout or "").strip()
-        if val == "0":
-            host.connection.execute_command(
-                "echo 1 | sudo tee" " /sys/devices/system/cpu/cpufreq/boost >/dev/null",
-                shell=True,
-            )
-            logger.info(f"Host {host.name}: turbo boost enabled (cpufreq)")
-            return
-    except Exception as e:
-        logger.warning(f"Host {host.name}: could not enable turbo boost: {e}")
+def check_turbo_boost_enabled(host) -> None:
+    """Warn if turbo boost is disabled."""
+    result = host.connection.execute_command(
+        "{ grep -qx 1 /sys/devices/system/cpu/intel_pstate/no_turbo"
+        " || grep -qx 0 /sys/devices/system/cpu/cpufreq/boost; } 2>/dev/null"
+        " && echo disabled",
+        shell=True,
+        expected_return_codes=None,
+    )
+    if (result.stdout or "").strip() == "disabled":
+        logger.warning(f"Host {host.name}: turbo boost is disabled")
 
 
-def ensure_cpu_performance_governor(host) -> None:
-    """Set the CPU frequency scaling governor to 'performance' on all cores."""
-    try:
-        result = host.connection.execute_command(
-            "cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor" " 2>/dev/null",
-            shell=True,
+def check_cpu_performance_governor(host) -> None:
+    """Warn if a core does not use the 'performance' governor."""
+    result = host.connection.execute_command(
+        "cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null"
+        " | sort -u",
+        shell=True,
+    )
+    governors = (result.stdout or "").split()
+    if governors and governors != ["performance"]:
+        logger.warning(
+            f"Host {host.name}: CPU governor is {', '.join(governors)},"
+            " not 'performance'"
         )
-        current = (result.stdout or "").strip()
-        if current == "performance":
-            return
-        host.connection.execute_command(
-            "command -v cpupower >/dev/null 2>&1 "
-            "&& sudo cpupower frequency-set -g performance "
-            "|| echo performance | sudo tee"
-            " /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor"
-            " >/dev/null",
-            shell=True,
-        )
-        logger.info(
-            f"Host {host.name}: CPU governor set to 'performance'" f" (was '{current}')"
-        )
-    except Exception as e:
-        logger.warning(f"Host {host.name}: could not set CPU performance governor: {e}")
 
 
 def check_cpu_isolation(host) -> None:
@@ -202,14 +123,6 @@ def optimize_cpu_cores_for_turbo(host, isolcpus: str | None = None) -> str | Non
             f"echo 0 > /sys/devices/system/cpu/cpu$c/online 2>/dev/null; done",
             shell=True,
         )
-        # Ensure performance governor on remaining cores
-        host.connection.execute_command(
-            f"for c in $(seq 0 {max_cpu}); do "
-            "echo performance > /sys/devices/system/cpu/cpu$c/cpufreq/"
-            "scaling_governor 2>/dev/null; done",
-            shell=True,
-        )
-
         result = host.connection.execute_command(
             "cat /sys/devices/system/cpu/online", shell=True
         )
@@ -240,10 +153,12 @@ def restore_cpu_cores(host, original_online: str) -> None:
             f"echo 1 > /sys/devices/system/cpu/cpu$c/online 2>/dev/null; done",
             shell=True,
         )
-        # Restore performance governor on all cores
+        # A core that comes back online gets the default governor of the
+        # driver; give it the one of cpu0, which stayed online.
         host.connection.execute_command(
-            f"for c in $(seq 0 {max_cpu}); do "
-            "echo performance > /sys/devices/system/cpu/cpu$c/cpufreq/"
+            "g=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor); "
+            f"for c in $(seq 1 {max_cpu}); do "
+            "echo $g > /sys/devices/system/cpu/cpu$c/cpufreq/"
             "scaling_governor 2>/dev/null; done",
             shell=True,
         )

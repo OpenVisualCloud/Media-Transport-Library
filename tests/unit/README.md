@@ -24,7 +24,8 @@ lookup (`session/st20_tx_harness.c`), the ST 2110-40 packet builders, including
 the fast metadata mode (`session/st40_tx_harness.c`), the kernel-socket TX send path over
 loopback (`datapath/mt_dp_socket_harness.c`), RX queue selection without a
 flow (`datapath/mt_queue_harness.c`), the DMA map table
-(`dma/mt_map_harness.c`), port stats locking (`dev/mt_dev_harness.c`) and
+(`dma/mt_map_harness.c`), the `MTL_FLAG_DMA_AUTO` probe over a fake PCI device
+tree (`dma/mt_dma_auto_harness.c`), port stats locking (`dev/mt_dev_harness.c`) and
 the MtlManager IPC send (`main/mt_instance_harness.c`).
 
 ## What makes this different
@@ -48,9 +49,8 @@ eight `*Concurrency*` suites, `St20PipelineTxBlocking`, `WaitSites/St20PipelineR
 `*DestroyEndsEveryBlockedGet` cases of `St22PipelineRxBlocking` / `St30PipelineRxBlocking` / `St40PipelineRxBlocking` /
 `St22PipelineTxBlocking` / `St22PipelineTxEncodeBlocking` / `St30PipelineTxBlocking` / `St40PipelineTxBlocking`, `PipelineTxWakeBlock`,
 `St20PipelineRxBlockingConvert`, `St22PipelineRxBlocking.WakeBlockEndsTheBlockedGetDespiteAFastPathGet`,
-`St30PipelineRxBlocking.WakeBlockForABlockedGetIsNotSpentByAnotherFastPathGet`,
-`St40PipelineRxBlocking.FastPathGetDoesNotStealTheWakeOfABlockedGet`, and
-`FfmpegMtlCommonTest.ConcurrentGetsCreateOneSharedHandle` carry a budget;
+`St30PipelineRxBlocking.WakeBlockForABlockedGetIsNotSpentByAnotherFastPathGet`, and
+`St40PipelineRxBlocking.FastPathGetDoesNotStealTheWakeOfABlockedGet` carry a budget;
 the exception reaches no other case. There are no flaky network-timing tests in this binary.
 
 ## Quick start

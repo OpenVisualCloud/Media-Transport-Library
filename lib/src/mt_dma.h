@@ -12,6 +12,18 @@
 int mt_dma_init(struct mtl_main_impl* impl);
 int mt_dma_uinit(struct mtl_main_impl* impl);
 
+#ifndef WINDOWSENV
+/* probe the DMA devices for MTL_FLAG_DMA_AUTO, a device of another process fails */
+void mt_dma_auto_probe(struct mtl_main_impl* impl);
+#else
+#include "mt_log.h"
+
+static inline void mt_dma_auto_probe(struct mtl_main_impl* impl) {
+  MTL_MAY_UNUSED(impl);
+  warn("%s, MTL_FLAG_DMA_AUTO is Linux only, use dma_dev_port\n", __func__);
+}
+#endif
+
 struct mt_dma_request_req {
   uint16_t nb_desc;
   uint16_t max_shared;

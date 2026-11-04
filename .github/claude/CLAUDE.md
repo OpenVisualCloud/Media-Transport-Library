@@ -72,10 +72,11 @@ and relative links inside a skill body resolve against `.github/skills/<name>/`.
 deferred: call `ToolSearch` before invoking `mcp__mtl-system-setup__*` etc. The wrapper scripts
 create and populate `.github/mcp/.venv` on first launch.
 
-**Path-scoped context** — `lib/`, `tests/unit/`, `tests/integration_tests/`, and
-`tests/acceptance/` each carry a small `CLAUDE.md` that imports the matching
-`.github/instructions/*.md`. That reproduces the Copilot `applyTo:` auto-attach, so the C rules
-or the gtest/pytest instructions load when you actually work in those trees.
+**Path-scoped context** — `lib/`, `tests/unit/`, `tests/integration_tests/`,
+`tests/acceptance/`, `script/`, `.github/scripts/`, `.github/workflows/` and `.github/actions/`
+each carry a small `CLAUDE.md` that imports the matching `.github/instructions/*.md`. That
+reproduces the Copilot `applyTo:` auto-attach, so the C rules, the gtest/pytest instructions or
+the script rules load when you actually work in those trees.
 
 One difference from the Copilot version worth knowing: `mtl-system-admin`'s "MCP tools only, never
 a shell" rule is enforced by its prompt rather than by withholding the Bash tool, because MCP
@@ -90,7 +91,7 @@ that's a bug in the agent's behavior, not permission to allow it.
 ./build.sh debugonly        # debug, no ASan
 ./build.sh unit             # configure build_unit/, build and RUN the unit gtest suite, then exit
 ./build.sh enable_fuzzing   # add libFuzzer harnesses
-MTL_INSTALL_PREFIX=$PWD/.local_install ./build.sh   # local prefix install
+MTL_INSTALL_PREFIX=$PWD/.local_install/mtl ./build.sh   # local prefix install
 ```
 
 `build.sh` is a sequence of `meson setup` + `ninja` + `ninja install` per component; each
@@ -160,8 +161,8 @@ test pass — fix the environment or config.
 
 **Fuzz (`tests/fuzz/`)** — single-packet libFuzzer harnesses over RX parsers; see
 `tests/doc/fuzz/index.rst`. `task ci:fuzz -- build` then `task ci:fuzz -- run` is what
-the `fuzz-tests` job of `fuzz_tests.yml` does (on a PR that changes `lib/`, `include/`
-or `tests/fuzz/`, and each night on main).
+the `fuzz-tests` job of `cicd-pr-check.yml` does on a PR that changes `lib/`,
+`include/` or `tests/fuzz/`, and of `nightly.yml` each workday night on main.
 
 ## Runtime setup (needed for anything beyond unit tests)
 
@@ -171,9 +172,11 @@ sudo sysctl -w vm.nr_hugepages=2048              # lost on reboot
 sudo MtlManager                                  # lcore/queue arbitration daemon
 ```
 
-`script/build_drivers.sh` builds the patched ICE module required for hardware rate-limit
-pacing (`--driver ice` for ICE only). A SEGFAULT in `iavf_tm_node_add` means the stock ICE
-driver is loaded.
+`script/build_drivers.sh` builds the out-of-tree ICE module required for hardware rate-limit
+pacing (`--driver ice` for ICE only): the 2.7.6 that `versions.env` pins as released, an earlier
+version with its `patches/ice_drv/<version>` (it then reports `Kahawai_<version>`). A SEGFAULT in
+`iavf_tm_node_add` means the in-tree ICE driver is loaded. `nicctl.sh create_vf` gives each VF a
+512-entry RSS LUT; without it a VF gets at most 16 queue pairs.
 
 ## Architecture essentials
 
@@ -239,3 +242,11 @@ simpler media types.
 Minimal diffs; no speculative helpers, no commented-out code, no reformatting lines you
 aren't functionally changing. `./format-coding.sh` then `./build.sh` before proposing a
 change; add or extend a test at the cheapest tier that can catch the bug.
+
+Scripts follow `.github/instructions/mtl-scripts.instructions.md`. The user scripts in
+`script/` source `script/common.sh`, use its helpers, provide `show_help()` and `main()`, and use
+the standard sourced guard. The CI scripts in `.github/scripts/ci/`, the workflows and the
+`ci:` tasks stay as simple as possible: no help, no argument checks, no fixture variables. Host
+settings (packages, hugepages, governor, IOMMU, NFS) are not CI's job; CI does what each test
+cycle needs (load the ICE module under test, bind DMA), and the test harness does what one test
+needs (VFs, C-states) and undoes it. The table in that file says which layer owns which setting.

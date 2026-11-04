@@ -112,6 +112,14 @@ For instructions on how to isolate CPU cores using the `isolcpus` kernel boot pa
 
 For user convenience, the built-in RxTxApp also offers a command-line option `--lcores <lcore list>` to enable users to customize their logical cores list.
 
+An lcore ID is the CPU ID it runs on, in the list, in the logs, in MtlManager and in `LcoreMgr --info`: lcore 130 is CPU 130.
+Processes that list different CPUs never share an lcore.
+The DPDK of `script/build_dpdk.sh` numbers every CPU of the host (see the build guide, section 2).
+If the host has more CPUs than `RTE_MAX_LCORE` of the DPDK, MTL passes `--remap-lcore-ids` and logs a warning: each process then numbers its CPUs from 0, so processes on different CPUs can claim the same lcore; rebuild DPDK with a larger `DPDK_MAX_LCORES`.
+MTL 26.09 and earlier number lcores differently: do not run them on the same host (see the [lcore Guide](shm_lcore.md)).
+
+The DPDK `@` syntax, for example `1@130`, sets an lcore ID that is not the CPU ID. MTL claims lcores by ID, so give each process IDs that no other process uses.
+
 ### 2.8. CPU Core Isolation
 
 For timing-sensitive workloads and improved performance predictability, isolating CPU cores from the general scheduler can significantly reduce context switches and jitter. This is particularly beneficial when running MTL with dedicated cores.
@@ -707,7 +715,7 @@ This is fixed in kernel 6.19 by the following patch: [sched/fair: Fix imbalance 
 By default the RTP timestamp of a video frame is the scheduled transmission time of its first packet, `epoch + TR_OFFSET - VRX × TRS` (`transmission_start_time()` in `st_tx_video_session.c`), rounded to the media clock.
 It is the scheduled time, not a measured wire time; no separate latency compensation is applied to the RTP timestamp.
 With the rate limiter, if the library knows the port's shaper, it has the NIC start the first packet at that time: shortly before it, the library queues padding the NIC shaper finishes draining at the scheduled time, then queues the first packet behind it.
-It knows the shaper when it measured (trained) the port's pad interval and knows its burst bucket: 2 KB for a VF on the patched kernel ice driver MTL requires for rate limiting, or the `rl_burst_size` set for a DPDK-driven ice PF, and when its packets are at least 128 bytes, so it can cut 64 bytes from a padding packet.
+It knows the shaper when it measured (trained) the port's pad interval and knows its burst bucket: 2 KB for a VF on the out-of-tree ice driver MTL requires for rate limiting, or the `rl_burst_size` set for a DPDK-driven ice PF, and when its packets are at least 128 bytes, so it can cut 64 bytes from a padding packet.
 The first packet then is not sent before the scheduled time, provided the padding is queued before it, so the load of the TX scheduler does not move it.
 The model puts the first packet at the scheduled time, or within one 8-byte step after it: the library cuts up to 64 bytes from each of the last padding packets, in 8-byte steps, so the padding drains within one step of it, never before. Measured on E830 VF against the scheduled time, the first packet arrives 1.4 to 6.1 µs late at 1080p25/50/60/59.94, 720p59.94 and 2160p59.94, never early.
 A tasklet stall between two padding bursts that ends before the scheduled time only shrinks the rest of the padding.

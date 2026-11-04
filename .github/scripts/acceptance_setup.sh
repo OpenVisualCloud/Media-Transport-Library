@@ -60,7 +60,8 @@ Flags for 'setup' (all optional; interactive mode prompts for anything unset):
                               separated list of DUT PF candidates.
   --nfs-source=HOST:/EXPORT  Media NFS export, e.g. 10.0.0.5:/mnt/NFS/mtl_assets/media
   --nfs-persist              Add an /etc/fstab entry so the NFS mount survives reboot.
-  --nr-hugepages=N           Number of 2MB hugepages (default 2048).
+  --nr-hugepages=N           Number of 2MB hugepages (default 2048). A higher
+                              current value stays.
   --build-mode=MODE          release|debug|debugonly (default release).
   --ffmpeg / --no-ffmpeg     Build the FFmpeg plugin into .local_install (default: on).
   --gstreamer / --no-gstreamer  Build the GStreamer plugin (default: off).
@@ -73,7 +74,8 @@ Flags for 'setup' (all optional; interactive mode prompts for anything unset):
                               netsniff-ng packet capture; required for compliance.
   --check-only               Probe-only for the pytest-specific stages; makes no
                               changes (passed through as CHECK_ONLY to
-                              setup_acceptance.sh).
+                              setup_acceptance.sh). Exit 2 when a stage
+                              would install.
   -h, --help                 Show this help.
 
 Examples:
@@ -250,7 +252,7 @@ if [[ "$BASE_ONLY" != "1" ]]; then
 					PF_BDF="$reply"
 				fi
 			else
-				err "multiple PF candidates found and --pf-bdf not given in --auto mode:"
+				err "multiple PF candidates found and --pf-bdf not given (no prompt: --auto, or stdin is not a terminal):"
 				vd_report_pfs >&2
 				exit 1
 			fi
@@ -265,7 +267,7 @@ if [[ "$BASE_ONLY" != "1" ]]; then
 				read -rp "NFS media source (host:/export), REQUIRED: " NFS_SOURCE
 			done
 		else
-			err "/mnt/media has no media and --nfs-source not given in --auto mode"
+			err "/mnt/media has no media and --nfs-source not given (no prompt: --auto, or stdin is not a terminal)"
 			exit 1
 		fi
 	fi
@@ -325,9 +327,15 @@ if [[ "$BASE_ONLY" != "1" ]]; then
 	)
 	[[ -n "$NFS_SOURCE" ]] && env_args+=(NFS_SOURCE="$NFS_SOURCE")
 	[[ -n "$PF_BDF" ]] && env_args+=(PCI_DEVICE_BDF="$PF_BDF")
-	[[ -n "$EBU_IP" ]] && env_args+=(EBU_IP="$EBU_IP" EBU_USER="$EBU_USER" EBU_PASSWORD="$EBU_PASSWORD")
+	# Exported, not on the env(1) command line, where ps shows it.
+	export EBU_PASSWORD
+	[[ -n "$EBU_IP" ]] && env_args+=(EBU_IP="$EBU_IP" EBU_USER="$EBU_USER")
 	[[ -n "$CAPTURE_PCI_DEVICE" ]] && env_args+=(CAPTURE_PCI_DEVICE="$CAPTURE_PCI_DEVICE")
 	env "${env_args[@]}" bash "$repo_root/.github/scripts/setup_acceptance.sh" || rc=$?
+	if [[ "$CHECK_ONLY" == "1" && "$rc" == "2" ]]; then
+		warn "check only: one or more pytest-specific stages would install"
+		exit 2
+	fi
 	if [[ "$rc" != "0" ]]; then
 		err "pytest-specific setup failed (exit $rc)"
 		exit "$rc"

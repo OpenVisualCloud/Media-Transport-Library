@@ -85,6 +85,24 @@ class Nicctl:
                 pci_id,
                 num_of_vfs,
             )
+            # VFs made before nicctl.sh set the RSS LUT have 16 queue pairs.
+            # Not fatal: a VF left at 16 fails only the cases that need more,
+            # with "fail to find free tx queue".
+            try:
+                res = self.connection.execute_command(
+                    f"sudo {self.nicctl} vf_rss_lut {pci_id}",
+                    shell=True,
+                    timeout=_NICCTL_TIMEOUT,
+                    expected_return_codes=None,
+                )
+                if res.return_code != 0:
+                    logger.warning(
+                        "nicctl.sh vf_rss_lut %s failed: %s",
+                        pci_id,
+                        (res.stderr or "").strip(),
+                    )
+            except RemoteProcessTimeoutExpired as e:
+                logger.warning("nicctl.sh vf_rss_lut %s timed out (%s)", pci_id, e)
             self.grant_vfio_access(existing)
             return existing
         cmd = "create_tvf" if trusted else "create_vf"

@@ -3,7 +3,7 @@
 
 import pytest
 from common.nicctl import InterfaceSetup
-from mtl_engine.media_files import yuv_files_interlace
+from mtl_engine.media_files import yuv_files_interlace_422p10le
 
 
 @pytest.mark.nightly
@@ -25,9 +25,9 @@ from mtl_engine.media_files import yuv_files_interlace
 )
 @pytest.mark.parametrize(
     "media_file",
-    list(yuv_files_interlace.values()),
+    list(yuv_files_interlace_422p10le.values()),
     indirect=["media_file"],
-    ids=list(yuv_files_interlace.keys()),
+    ids=list(yuv_files_interlace_422p10le.keys()),
 )
 def test_st22p_interlace(
     application,
@@ -49,7 +49,6 @@ def test_st22p_interlace(
     test_time = max(test_time, 90)
 
     app = app_factory(application)
-    app.require_encoder(host, "libsvt_jpegxs", use_mtl_plugin=True)
     app.create_command(
         session_type="st22p",
         test_mode="multicast",

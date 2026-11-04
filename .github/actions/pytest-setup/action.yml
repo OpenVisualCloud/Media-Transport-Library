@@ -1,0 +1,83 @@
+name: Pytest Setup
+description: >-
+  Prepare the single-host acceptance suite on a host that validate-host
+  prepared: the virtualenv, the login of the suite, the session, the PCI device
+  and the test configuration. The smoke mode also checks the disk space, the
+  media and the compliance analyser.
+
+inputs:
+  nic:
+    description: NIC label of the runner, the runs-on of the job.
+    required: true
+  smoke:
+    description: Also check the disk space, the media and the compliance analyser.
+    required: false
+    default: 'false'
+  no_capture:
+    description: '1 makes the suite record no pcap and ask for no compliance verdict.'
+    required: false
+    default: '0'
+  test_time:
+    description: Seconds of traffic per case (empty = the suite default).
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Ensure the acceptance virtualenv
+      shell: bash
+      run: task ci:pytest-setup -- ensure
+
+    # The suite reaches the DUT over SSH even when the DUT is this runner, so a
+    # key it cannot log in with fails every case at fixture setup -- and
+    # paramiko reports it as the password being refused, which it is not.
+    - name: Verify the login the suite makes
+      shell: bash
+      run: task ci:pytest-setup -- connection
+
+    - name: Create session ID
+      shell: bash
+      env:
+        RUNNER_NAME: ${{ runner.name }}
+      run: task ci:pytest-setup -- session
+
+    - name: Set PCI device env variable
+      shell: bash
+      env:
+        NIC: ${{ inputs.nic }}
+      run: task ci:pytest-setup -- pci
+
+    - name: Generate test framework config files
+      shell: bash
+      env:
+        NO_CAPTURE: ${{ inputs.no_capture }}
+        TEST_TIME: ${{ inputs.test_time }}
+      run: task ci:pytest-setup -- config-single
+
+    - name: Export workflow tag for PCAP naming
+      shell: bash
+      env:
+        WORKFLOW_TAG: ${{ github.workflow }}:${{ inputs.nic }}
+      run: task ci:pytest-setup -- tag
+
+    - name: Make room for the raw video the suite records
+      if: inputs.smoke == 'true'
+      shell: bash
+      env:
+        TEST_TIME: ${{ inputs.test_time }}
+      run: task ci:pytest-setup -- workspace
+
+    # A case whose media file is absent skips, by design, so a host that lost
+    # its asset share reports a green leg having transmitted nothing.
+    - name: Verify the media the suite reads
+      if: inputs.smoke == 'true'
+      shell: bash
+      run: task ci:media-assets -- verify
+
+    # A capture leg is only a compliance leg while the analyser answers.
+    # Without it the fixture fails every case that records a pcap.
+    - name: Verify the compliance analyser
+      if: inputs.smoke == 'true' && inputs.no_capture != '1'
+      shell: bash
+      run: task ci:ebu-list -- verify

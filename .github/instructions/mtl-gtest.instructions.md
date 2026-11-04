@@ -70,7 +70,7 @@ sudo ./build/tests/KahawaiTest \
 - Retries failed tests (MAX_RETRIES=2, RETRY_DELAY=20s)
 - TEST_CASE_TIMEOUT=1800s per test case; NOCTX_CASE_TIMEOUT=4200s for the noctx case (all NoCtx tests in one run)
 
-Key env vars: `TEST_PORT_1..4`, `TEST_DMA_PORT_P`, `TEST_DMA_PORT_R`, `NIGHTLY=1`
+Key env vars: `TEST_PORT_1..4`, `NIGHTLY=1`
 
 ## Noctx Tests
 
@@ -108,14 +108,14 @@ tolerances: [tests/integration_tests/noctx/README.md](../../tests/integration_te
 - `Error: DEV: Status: rx_hw_dropped_packets N` — NIC hardware drops, normal at high rates
 
 ### Actual failures
-- **SEGFAULT in `iavf_tm_node_add`** → Stock kernel ICE driver. Fix: `ice_driver_rebuild` + re-create VFs.
+- **SEGFAULT in `iavf_tm_node_add`** → In-tree ICE driver. Fix: `ice_driver_rebuild` + re-create VFs.
 - **`librte_*.so not found`** → Run `sudo ldconfig` or rebuild DPDK.
 - **Permission denied on CMakeCache.txt** → `mtl_clean_rebuild`.
 - **Test timeout** → Check if MtlManager is running. Check NUMA locality.
 
 ### Pacing modes
-- **`auto`** (default): Uses hardware rate limiter (RL) on E810/E830 with patched ICE. Best accuracy.
-- **`tsc`**: Software TSC-based pacing. Works without patched ICE. Use to isolate pacing bugs.
+- **`auto`** (default): Uses hardware rate limiter (RL) on E810/E830 with the out-of-tree ICE. Best accuracy.
+- **`tsc`**: Software TSC-based pacing. Works with the in-tree ICE. Use to isolate pacing bugs.
 - If tests pass with `tsc` but fail with `auto` → ICE driver or NIC firmware issue.
 
 ## 4-Port / Redundancy Tests

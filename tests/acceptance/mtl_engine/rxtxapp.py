@@ -11,7 +11,7 @@ import re
 from mfd_connect import SSHConnection
 
 from . import ip_pools
-from .application_base import MTL_ENCODER_PLUGIN_MAP, Application, mtl_plugin_check_cmd
+from .application_base import Application, st22_codec_devices_ok
 from .config.mappings import APP_NAME_MAP, RXTXAPP_CMDLINE_PARAM_MAP
 from .config.universal_params import UNIVERSAL_PARAMS
 from .const import ISOLATE_SH
@@ -422,80 +422,6 @@ def check_rx_converter_output(
     return False
 
 
-def check_codec_loaded(
-    output: list,
-    session_type: str,
-    fail_on_error: bool = False,
-) -> bool:
-    """Check if codec/plugin was loaded successfully for ST22P sessions.
-
-    For ST22P sessions, the encoder/decoder must be registered before the session
-    can work. This function checks the log output for registration messages.
-
-    Log patterns to look for:
-    - "st22_encoder_register(...), ... registered, device ..."
-    - "st22_decoder_register(...), ... registered, device ..."
-    - "st_plugin_register(...), ... registered, version ..."
-    - "encoder use block get mode" (indicates encoder is active)
-    - "decoder use block get mode" (indicates decoder is active)
-
-    Args:
-        output: List of output lines from RxTxApp
-        session_type: Session type (should be "st22p" for codec checks)
-        fail_on_error: Whether to call log_fail on validation failure
-
-    Returns:
-        True if codec was loaded, False otherwise
-    """
-    if session_type != "st22p":
-        # Codec check only applies to st22p
-        return True
-
-    logger.info("Checking if ST22P codec/encoder/decoder was loaded")
-
-    # Patterns indicating successful codec loading
-    codec_patterns = [
-        r"st22_encoder_register\(\d+\),.*registered",
-        r"st22_decoder_register\(\d+\),.*registered",
-        r"st_plugin_register\(\d+\),.*registered",
-        r"encoder use block get mode",
-        r"decoder use block get mode",
-    ]
-
-    found_encoder = False
-    found_decoder = False
-
-    for line in output:
-        for pattern in codec_patterns:
-            if re.search(pattern, line, re.IGNORECASE):
-                logger.info(f"Found codec registration: {line.strip()}")
-                if "encoder" in line.lower():
-                    found_encoder = True
-                if "decoder" in line.lower():
-                    found_decoder = True
-
-    # Both encoder and decoder should be loaded for a proper st22p session
-    if found_encoder and found_decoder:
-        logger.info("ST22P codec check PASSED: encoder and decoder loaded")
-        return True
-
-    if found_encoder or found_decoder:
-        logger.warning(
-            f"ST22P codec partially loaded: encoder={found_encoder}, decoder={found_decoder}"
-        )
-        # Partial load may still work in some configurations
-        return True
-
-    # No codec found
-    msg = "ST22P codec check FAILED: no encoder/decoder registration found in logs"
-    if fail_on_error:
-        log_fail(msg)
-    else:
-        logger.warning(msg)
-
-    return False
-
-
 class RxTxApp(Application):
     """RxTxApp framework implementation (unified model)."""
 
@@ -504,20 +430,6 @@ class RxTxApp(Application):
 
     def get_executable_name(self) -> str:
         return APP_NAME_MAP["rxtxapp"]
-
-    def require_encoder(self, host, encoder: str, use_mtl_plugin: bool = False) -> None:
-        """Raise EnvironmentError if the MTL codec plugin for *encoder* is not installed."""
-        plugin_so = MTL_ENCODER_PLUGIN_MAP.get(encoder)
-        if not plugin_so:
-            return  # Unknown encoder — skip check, let runtime fail if needed
-        res = host.connection.execute_command(
-            mtl_plugin_check_cmd(plugin_so), shell=True, expected_return_codes=None
-        )
-        if res.return_code != 0:
-            raise EnvironmentError(
-                f"MTL codec plugin {plugin_so} (for {encoder}) not found; "
-                f"install the codec library and rebuild MTL plugins"
-            )
 
     # Per-session-type (default UDP port, default payload type). Mirrors the
     # legacy ``add_*_sessions`` helpers; without it every type ends up on
@@ -1169,7 +1081,7 @@ class RxTxApp(Application):
             for entry in self.config.get(direction) or []
         )
         if has_st22p:
-            self.command = self.with_local_kahawai(self.command, build, remote_conn)
+            self.command = self.with_local_kahawai(self.command, build)
 
     def validate_results(self, fail_on_error: bool = True) -> bool:  # type: ignore[override]
         """
@@ -1275,11 +1187,14 @@ class RxTxApp(Application):
         if session_type in ("st22p", "st30p", "st40p", "ancillary"):
             rx_session_type = "anc" if session_type == "ancillary" else session_type
             ok = check_rx_output(self.config, output_lines, rx_session_type, False)
-            if session_type == "st22p" and not check_codec_loaded(
-                output_lines, session_type, False
-            ):
-                logger.warning(
-                    "ST22P codec loading check failed - encoder/decoder may not be registered"
+            if session_type == "st22p":
+                ok = (
+                    st22_codec_devices_ok(
+                        "\n".join(output_lines),
+                        self.params.get("codec", "JPEG-XS"),
+                        ("encoder", "decoder"),
+                    )
+                    and ok
                 )
             return ok
         # video / audio / unknown -> TX + RX

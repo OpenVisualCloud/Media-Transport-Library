@@ -317,6 +317,67 @@ static void dev_build_pci_devarg(const struct mtl_init_params* p, enum mtl_port 
     snprintf(out, len, "%s", p->port[port]);
 }
 
+#ifndef WINDOWSENV
+#include <dlfcn.h>
+#include <sys/stat.h>
+
+static bool dev_is_dir(const char* path) {
+  struct stat st;
+  return !stat(path, &st) && S_ISDIR(st.st_mode);
+}
+
+/* a dangling compiled-in PMD dir's tail after the eal_dir name, put beside eal_dir */
+static int dev_eal_pmd_dir(const char* compiled_dir, const char* eal_dir, char* out,
+                           size_t len) {
+  const char* eal_name = strrchr(eal_dir, '/');
+  size_t name_len;
+  const char* tail = NULL;
+  int ret;
+
+  if (!compiled_dir[0] || dev_is_dir(compiled_dir)) return -EEXIST;
+  eal_name = eal_name ? eal_name + 1 : eal_dir;
+  name_len = strlen(eal_name);
+  for (const char* c = strchr(compiled_dir, '/'); name_len && c; c = strchr(c + 1, '/')) {
+    if (!strncmp(c + 1, eal_name, name_len) && c[1 + name_len] == '/')
+      tail = c + 2 + name_len;
+  }
+  if (!tail) {
+    tail = compiled_dir + strlen(compiled_dir);
+    for (int slashes = 0; tail > compiled_dir; tail--) {
+      if (*(tail - 1) == '/' && ++slashes == 2) break;
+    }
+  }
+  ret = snprintf(out, len, "%s/%s", eal_dir, tail);
+  if (ret < 0 || (size_t)ret >= len) return -ENAMETOOLONG;
+  if (!dev_is_dir(out)) return -ENOENT;
+  return 0;
+}
+
+static int dev_eal_loaded_pmd_dir(char* out, size_t len) {
+  Dl_info dl_info;
+  char eal_dir[PATH_MAX];
+  int ret;
+
+  if (!dladdr((void*)rte_eal_init, &dl_info) || !dl_info.dli_fname) return -ENOENT;
+  /* a static DPDK is linked into the caller, its drivers too */
+  const char* eal_name = strrchr(dl_info.dli_fname, '/');
+  eal_name = eal_name ? eal_name + 1 : dl_info.dli_fname;
+  if (strncmp(eal_name, "librte_eal", strlen("librte_eal"))) return -ENOENT;
+  ret = snprintf(eal_dir, sizeof(eal_dir), "%s", dl_info.dli_fname);
+  if (ret < 0 || (size_t)ret >= sizeof(eal_dir)) return -ENAMETOOLONG;
+  char* slash = strrchr(eal_dir, '/');
+  if (!slash) return -ENOENT;
+  *slash = '\0';
+  return dev_eal_pmd_dir(RTE_EAL_PMD_PATH, eal_dir, out, len);
+}
+#else
+static int dev_eal_loaded_pmd_dir(char* out, size_t len) {
+  MTL_MAY_UNUSED(out);
+  MTL_MAY_UNUSED(len);
+  return -ENOTSUP;
+}
+#endif
+
 static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_info) {
   char* argv[MT_EAL_MAX_ARGS];
   int argc, ret;
@@ -441,8 +502,16 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
   }
 
 #if RTE_VERSION >= RTE_VERSION_NUM(25, 11, 0, 0)
-  argv[argc] = "--remap-lcore-ids"; /* --remap-lcore-ids */
-  argc++;
+  /* the lcore id is the CPU id only if this DPDK numbers every CPU of the host */
+  long cpus = sysconf(_SC_NPROCESSORS_CONF);
+  if (cpus > RTE_MAX_LCORE) {
+    warn("%s, %ld CPUs > RTE_MAX_LCORE %d, remap lcore ids: processes can share lcores\n",
+         __func__, cpus, RTE_MAX_LCORE);
+    warn("%s, rebuild DPDK with DPDK_MAX_LCORES=%ld ./script/build_dpdk.sh -f\n",
+         __func__, cpus);
+    argv[argc] = "--remap-lcore-ids";
+    argc++;
+  }
 #endif
 
   if (!pci_ports) {
@@ -490,6 +559,15 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
 
   if (p->flags & MTL_FLAG_RXTX_SIMD_512) {
     argv[argc] = "--force-max-simd-bitwidth=512";
+    argc++;
+  }
+
+  char pmd_dir[PATH_MAX];
+  if (!dev_eal_loaded_pmd_dir(pmd_dir, sizeof(pmd_dir))) {
+    info("%s, pmd dir: %s\n", __func__, pmd_dir);
+    argv[argc] = "-d";
+    argc++;
+    argv[argc] = pmd_dir;
     argc++;
   }
 
@@ -2576,6 +2654,14 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
         dev_info->max_tx_queues);
     if (!(inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD)) {
       /* max tx/rx queues don't exceed dev limit */
+      if (inf->nb_tx_q > dev_info->max_tx_queues ||
+          inf->nb_rx_q > dev_info->max_rx_queues) {
+        warn(
+            "%s(%d), queues tx %u rx %u (system queues included) cut to the device max "
+            "tx %u rx %u\n",
+            __func__, i, inf->nb_tx_q, inf->nb_rx_q, dev_info->max_tx_queues,
+            dev_info->max_rx_queues);
+      }
       inf->nb_tx_q = RTE_MIN(inf->nb_tx_q, dev_info->max_tx_queues);
       inf->nb_rx_q = RTE_MIN(inf->nb_rx_q, dev_info->max_rx_queues);
     }

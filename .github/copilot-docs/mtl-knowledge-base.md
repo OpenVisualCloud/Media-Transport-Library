@@ -504,7 +504,7 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
   - The rate programmed on the queue, bps = `s->queue[i]->txq->bps`: `tv_rl_bps()`, a bps retrain result, or the cached one `tv_init_hw()` looked up. A queue without its own `txq` (shared TX queue, AF_XDP, kernel socket) has none. `st20_tx_queue_fatal_error()` gets the new queue at the old one's rate, which `pad_interval` and the plan were trained on.
   - `bucket_ns` = B/bps + aim.
     - B/bps: the shaper fills the full burst bucket B at the programmed rate. On E830 its clock runs ~11.7% ahead of the 446.43 MHz psm_clk ice computes the profile with, so training measures a faster drain; the bucket measured 2048 B/bps (80.0 µs at 720x288p50), not `pad_ns`·B/S (71.6 µs), which launched packet 0 early. Where the clocks agree (E810) the two match within ~0.3%.
-    - `tv_rl_burst_size()`: iavf VF 2048 (the patched kernel ice, already required for RL); DPDK ice PF only an explicit `rl_burst_size`, as `ice_cfg_rl_burst_size()` programs it (DPDK's own default is 15 KB); any other driver, native AF_XDP included, unknown.
+    - `tv_rl_burst_size()`: iavf VF 2048 (`ICE_SCHED_DFLT_BURST_SIZE` of the out-of-tree ice, already required for RL: 2 KB as released since 2.7.6, through `patches/ice_drv` before); DPDK ice PF only an explicit `rl_burst_size`, as `ice_cfg_rl_burst_size()` programs it (DPDK's own default is 15 KB); any other driver, native AF_XDP included, unknown.
     - aim = `st_tx_video_rl_tokens(bps)`·`pad_ns`/S, the longest token timeslot ice can program at that rate, as the shaper drains it. `ice_sched_bw_to_rl_profile()` picks the shortest timeslot (32 << encode psm_clk cycles) that adds more than 128 B, so at most 257 B.
       Above ~1.47 GB/s even the shortest, encode 0, adds more; 257 B still bounds it up to ~2.95 GB/s, where the bound becomes the tokens of 32 cycles of the slowest psm_clk, 367 MHz.
       A timeslot passes those tokens at the true rate, which drains at least S per `pad_ns`, so this holds whatever the NIC clock (`St20TxRlModelTest.TokensCoverEveryIceTimeslot` checks it against a copy of ice's encode on all four psm_clks).
@@ -999,6 +999,7 @@ Registration: `dlopen` → resolve 3 symbols (`st_plugin_get_meta`, `st_plugin_c
 Binding: search by capability bitmask (`input_fmt_caps`, `output_fmt_caps`). First match wins.
 
 - Plugins own their threads (not called from tasklets)
+- The session handle is live as soon as `create_session` is entered: its `*_get_frame` returns NULL until the pipeline is ready, and the plugin's writes to the create request land in the session's copy
 - Max 8 plugins per MTL instance (`ST_MAX_DL_PLUGINS = 8`)
 - Loaded during `mtl_init()` from JSON config
 
@@ -1116,7 +1117,13 @@ Only with `MTL_FLAG_ENABLE_HW_TIMESTAMP` on iavf VFs.
 Hierarchy: port → shapers (max 128, `MT_MAX_RL_ITEMS`). Each shaper = one session's rate limit.
 
 ### Multi-Process
-Not supported: `dev_eal_init()` always passes `--in-memory`, so no DPDK runtime files exist for a `--proc-type=secondary` process to attach to. Independent MTL processes (one EAL each, e.g. on separate VFs) coordinate lcore use through MtlManager instead.
+Not supported: `dev_eal_init()` always passes `--in-memory`, so no DPDK runtime files exist for a `--proc-type=secondary` process to attach to.
+Independent MTL processes (one EAL each, e.g. on separate VFs) coordinate lcore use through MtlManager instead, or without it through the SysV shm table in `mt_sch.c`.
+Both key an lcore by its ID, and the ID is the CPU ID.
+`dev_eal_init()` passes `--remap-lcore-ids` only when the host has more CPUs (`_SC_NPROCESSORS_CONF`) than `RTE_MAX_LCORE`, and warns: with it every process numbers its CPUs 0, 1, 2, ... and claims the same IDs.
+`script/build_dpdk.sh` sets `max_lcores` to the build host's CPU count, at least 128, or `DPDK_MAX_LCORES`, so `RTE_MAX_LCORE` covers every CPU of the build host.
+The shm table has `RTE_MAX_LCORE` entries, so its size follows the DPDK build: `shmget()` fails with `EINVAL` in a process whose table is larger than the segment that exists (`doc/run.md` §8.15).
+MTL 26.01-26.09 keep remapped IDs in a 128-entry table: a newer process fails to start while that segment exists, but an older process started later attaches to the larger one without noticing, so the versions must not run together (also not with an older MtlManager, which refuses IDs >= 128).
 
 ### Backend Support
 
@@ -1215,7 +1222,7 @@ ninja -C build_fuzz
 ```
 
 The guide is `tests/doc/fuzz/index.rst`.
-The `fuzz-tests` job of `fuzz_tests.yml` runs `.github/scripts/ci/fuzz.sh` (`task ci:fuzz -- build|run`) on `ubuntu-22.04` (clang 14) and uploads `fuzz-report`: 60 s per target on a pull request that matches the `fuzz_tests` path filter, 600 s per target on the nightly schedule of `main` and on a manual run.
+The `fuzz-tests` job of `cicd-pr-check.yml` and of `nightly.yml` runs `.github/scripts/ci/fuzz/fuzz.sh` (`task ci:fuzz -- build|run`) on `ubuntu-22.04` (clang 14) and uploads `fuzz-report`: 60 s per target on a pull request that matches the `fuzz_tests` path filter, 600 s per target in `nightly.yml` (Monday to Friday on `main`, and on a manual run).
 The harnesses link `libmtl`, so the filter holds all of `lib/**` and `include/**`. `fuzz-tests-result` always runs and is the check to require.
 
 ### Acceptance Tests (`tests/acceptance/`)

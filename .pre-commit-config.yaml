@@ -7,7 +7,7 @@
 # Three callers, one rule set, no caller may define a rule of its own:
 #   ./checkpatch.sh                      verify   (humans, git hooks, CI)
 #   ./format-coding.sh                   apply fixes
-#   .github/workflows/linter.yml         CI, orchestration only
+#   .github/workflows/cicd-pr-check.yml  CI, orchestration only
 #
 # This file decides *which tool, which version, which arguments, which files*.
 # Rule *content* lives in .github/linters/. See doc/coding_standard.md for the
@@ -232,13 +232,13 @@ repos:
       # .github/path_filters.yml decides which CI jobs run. The script checks
       # that each hash_<name> filter equals script/hash_sources_<name>.env,
       # that each pattern matches a tracked file, that each filter a workflow
-      # reads exists, and that build_workflow holds each pr-gate filter. It
+      # reads exists, and that build_workflow holds the filter of each job that needs the build job. It
       # always runs, because a deleted or renamed file can kill a pattern.
       - id: check-path-filters
         name: check-path-filters (CI path filters)
         language: python
         additional_dependencies: [pyyaml==6.0.3]
-        entry: python .github/scripts/ci/check-path-filters.py
+        entry: python .github/scripts/ci/lint/check-path-filters.py
         always_run: true
         pass_filenames: false
       # The nightly report's unit tests, on a change to its generators.
@@ -277,7 +277,7 @@ repos:
       # stage, not over files, so `./checkpatch.sh` never triggers it -- that
       # script lints files and has no message to read. The git commit-msg hook
       # (installed via default_install_hook_types above) fires it locally on
-      # every `git commit`; linter.yml runs this same hook over each commit a
+      # every `git commit`; cicd-pr-check.yml runs this same hook over each commit a
       # pull request adds, so local and CI cannot diverge and the version is
       # pinned in exactly one place. Rules live in .github/linters/.gitlint;
       # gitlint's own lowercase conventional-commit rule does not fit MTL's

@@ -83,6 +83,13 @@ int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,
 int ut_dev_eal_max_args(void);
 /** MT_EAL_LCORES_MAX_LEN, the width of the "-l" argument dev_eal_init() builds. */
 int ut_dev_eal_lcores_max_len(void);
+/** Derives the "-d" PMD dir beside eal_dir for a missing compiled_dir; 0 if found. */
+int ut_dev_eal_pmd_dir(const char* compiled_dir, const char* eal_dir, char* out,
+                       size_t len);
+/** Has dev_eal_init() see compiled_dir as RTE_EAL_PMD_PATH and librte_eal at
+ * eal_lib_path; NULL keeps the real value of either. Copies both. */
+void ut_dev_set_eal_pmd_paths(ut_dev_ctx* ctx, const char* compiled_dir,
+                              const char* eal_lib_path);
 /** Runs dev_eal_init(); returns its ret, always negative because the stub fails. */
 int ut_dev_eal_init(ut_dev_ctx* ctx);
 int ut_dev_eal_argc(const ut_dev_ctx* ctx);
@@ -94,6 +101,8 @@ void ut_dev_set_num_ports(ut_dev_ctx* ctx, int num_ports);
 void ut_dev_set_dma_dev_ports(ut_dev_ctx* ctx, uint8_t num);
 /** Copies lcores, so the caller need not keep it alive. */
 void ut_dev_set_lcores(ut_dev_ctx* ctx, uint32_t main_lcore, const char* lcores);
+/** The CPU count of the host dev_eal_init() sees; RTE_MAX_LCORE by default. */
+void ut_dev_set_cpus(ut_dev_ctx* ctx, long cpus);
 void ut_dev_set_iova_mode(ut_dev_ctx* ctx, enum mtl_iova_mode mode);
 void ut_dev_set_log_level(ut_dev_ctx* ctx, enum mtl_log_level level);
 void ut_dev_enable_rxtx_simd_512(ut_dev_ctx* ctx);

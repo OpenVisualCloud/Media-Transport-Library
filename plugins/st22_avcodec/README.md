@@ -24,6 +24,13 @@ Follow the guide in ffmpeg site.
 ./script/build_st22_avcodec_plugin.sh
 ```
 
+The tests in `tests/` compile the plugin against the same installed MTL and
+FFmpeg and run its encoder, with no NIC:
+
+```bash
+./script/build_st22_avcodec_plugin.sh unit
+```
+
 ## 3. Test
 
 ### 3.1. Prepare a yuv420p file

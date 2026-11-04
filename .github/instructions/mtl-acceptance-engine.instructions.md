@@ -28,7 +28,7 @@ Architecture: [doc/acceptance-design.md](../../doc/acceptance-design.md) §2, §
 
 A new adapter subclasses `Application` and implements exactly four methods:
 `get_app_name`, `get_executable_name`, `_create_command_and_config`,
-`validate_results`. Optional hooks: `require_encoder`, `prepare_execution`,
+`validate_results`. Optional hooks: `prepare_execution`,
 `_resolve_capture_dst_ip`, `set_params` (to strip adapter-only kwargs).
 
 - **Adapters never import each other.** `RxTxApp` and `FFmpeg` are siblings;

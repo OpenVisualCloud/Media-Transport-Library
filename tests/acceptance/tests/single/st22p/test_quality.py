@@ -11,12 +11,7 @@ from mtl_engine.media_files import yuv_files_422p10le
     "application",
     [
         "rxtxapp",
-        pytest.param(
-            "ffmpeg",
-            marks=pytest.mark.skip(
-                reason="FFmpeg does not expose JPEG-XS encoder quality parameter"
-            ),
-        ),
+        "ffmpeg",
         pytest.param(
             "gstreamer",
             marks=pytest.mark.skip(reason="GStreamer does not support st22p pipeline"),
@@ -42,6 +37,8 @@ def test_st22p_quality(
     media_file,
 ):
     """Test st22p JPEG-XS encoder quality settings."""
+    if application == "ffmpeg" and quality == "speed":
+        pytest.skip("FFmpeg speed is the default: test_st22p_codec runs it")
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
@@ -51,7 +48,6 @@ def test_st22p_quality(
     test_time = max(test_time, 90)
 
     app = app_factory(application)
-    app.require_encoder(host, "libsvt_jpegxs", use_mtl_plugin=True)
     app.create_command(
         session_type="st22p",
         test_mode="multicast",

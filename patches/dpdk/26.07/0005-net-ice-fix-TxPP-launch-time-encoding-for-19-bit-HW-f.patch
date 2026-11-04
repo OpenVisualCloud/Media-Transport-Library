@@ -37,7 +37,7 @@ diff --git a/drivers/net/intel/ice/ice_rxtx.c b/drivers/net/intel/ice/ice_rxtx.c
 index 4c9bf43348..683de7c1fe 100644
 --- a/drivers/net/intel/ice/ice_rxtx.c
 +++ b/drivers/net/intel/ice/ice_rxtx.c
-@@ -3081,7 +3081,13 @@ ice_write_ts_desc(struct ci_tx_queue *txq,
+@@ -3084,7 +3084,13 @@ ice_write_ts_desc(struct ci_tx_queue *txq,
  		  uint16_t ts_id)
  {
  	uint64_t txtime = *RTE_MBUF_DYNFIELD(tx_pkt, txq->tsq->ts_offset, uint64_t *);

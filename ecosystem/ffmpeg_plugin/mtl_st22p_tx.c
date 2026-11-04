@@ -29,6 +29,7 @@ typedef struct mtlSt22pMuxerContext {
   StTxSessionPortArgs portArgs;
   /* arguments for session */
   char* codec_str;
+  char* quality_str;
   int fb_cnt;
   float bpp;
   int codec_thread_cnt;
@@ -119,6 +120,9 @@ static int mtl_st22p_write_header(AVFormatContext* ctx) {
       err(ctx, "%s, unsupported pixel format: %d\n", __func__, s->pixel_format);
       return AVERROR(EINVAL);
   }
+
+  ret = mtl_parse_st22_quality(ctx, s->quality_str, &ops_tx.quality);
+  if (ret < 0) return ret;
 
   ops_tx.name = "st22p_ffmpeg";
   ops_tx.priv = s;  // Handle of priv_data registered to lib
@@ -316,6 +320,12 @@ static const AVOption mtl_st22p_tx_options[] = {
     {"st22_codec",
      "st22 codec",
      OFFSET(codec_str),
+     AV_OPT_TYPE_STRING,
+     {.str = NULL},
+     .flags = ENC},
+    {"st22_quality",
+     "st22 encoder quality mode: speed or quality",
+     OFFSET(quality_str),
      AV_OPT_TYPE_STRING,
      {.str = NULL},
      .flags = ENC},

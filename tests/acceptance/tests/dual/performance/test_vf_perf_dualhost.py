@@ -25,6 +25,7 @@ from mtl_engine.media_files import yuv_files_422rfc10
 from mtl_engine.performance_monitoring import (
     CpuCoreMonitor,
     display_session_results,
+    format_cpus,
     log_cpu_core_results,
     monitor_dev_rate,
     monitor_rx_fps,
@@ -33,6 +34,7 @@ from mtl_engine.performance_monitoring import (
     monitor_tx_fps,
     monitor_tx_frames,
     monitor_tx_throughput,
+    parse_cpus,
 )
 from mtl_engine.rxtxapp import RxTxApp
 
@@ -270,21 +272,29 @@ def _apply_side_kwargs(
         kwargs["nic_port"] = vf
 
 
-def _get_isolcpus(host) -> str | None:
-    """Return the isolcpus= range from the remote host's kernel cmdline.
+def _get_isolcpus(host, port: str) -> str | None:
+    """Return the isolated CPUs of *port*'s NUMA node on *host*, one per core.
 
-    Parses /proc/cmdline on *host* and returns the value of the isolcpus=
-    boot parameter (e.g. "4-20,34-50,132-148,162-178"), or None if the
-    host was not booted with isolcpus.
+    E.g. "4-20" of isolated "4-20,68-84,132-148,196-212" for a port on node 0, or
+    None if that node has none. Only the first hardware thread of each core is
+    kept, so no two schedulers share a core; the CPUs of other nodes would only
+    add idle EAL threads there, and keep their cores online in
+    optimize_cpu_cores_for_turbo().
     """
     try:
-        result = host.connection.execute_command("cat /proc/cmdline", shell=True)
-        cmdline = (result.stdout or "").strip()
-        for token in cmdline.split():
-            if token.startswith("isolcpus="):
-                value = token.split("=", 1)[1]
-                logger.info(f"Host {host.name}: isolcpus={value}")
-                return value
+        result = host.connection.execute_command(
+            f"n=$(cat /sys/bus/pci/devices/{port}/numa_node); [ $n -ge 0 ] || n=0; "
+            "cat /sys/devices/system/cpu/isolated /sys/devices/system/node/node$n/cpulist "
+            "/sys/devices/system/cpu/cpu[0-9]*/topology/thread_siblings_list",
+            shell=True,
+        )
+        isolated, node, *siblings = (result.stdout or "").split("\n")
+        cores = {min(parse_cpus(line)) for line in siblings if line.strip()}
+        value = format_cpus(set(parse_cpus(isolated)) & set(parse_cpus(node)) & cores)
+        logger.info(
+            f"Host {host.name}: isolated CPUs of {port}'s node: {value or None}"
+        )
+        return value or None
     except Exception as e:
         logger.warning(f"Host {host.name}: could not read isolcpus: {e}")
     return None
@@ -476,7 +486,7 @@ def _run_iteration(
             )
 
     # Pin DPDK lcores to isolated CPUs (shields from OS timer ticks/RCU).
-    isolcpus = _get_isolcpus(measured_host)
+    isolcpus = _get_isolcpus(measured_host, tx_vf if is_tx else rx_vf)
     if isolcpus:
         sut_extra_kwargs["lcores"] = isolcpus
 
@@ -491,7 +501,7 @@ def _run_iteration(
     # every iteration of the sweep.
     companion_extra_kwargs["disable_migrate"] = True
 
-    companion_isolcpus = _get_isolcpus(companion_host)
+    companion_isolcpus = _get_isolcpus(companion_host, rx_vf if is_tx else tx_vf)
     if companion_isolcpus:
         companion_extra_kwargs["lcores"] = companion_isolcpus
 
@@ -950,7 +960,7 @@ def _run_session_sweep(
     original_online_cpus: str | None = None
     measured_host = tx_host if is_tx else rx_host
     if is_tx and single_core:
-        isolcpus = _get_isolcpus(measured_host)
+        isolcpus = _get_isolcpus(measured_host, tx_vf)
         original_online_cpus = optimize_cpu_cores_for_turbo(measured_host, isolcpus)
 
     def _is_infra_failure(detail: str) -> bool:

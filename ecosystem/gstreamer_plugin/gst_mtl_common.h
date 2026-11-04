@@ -51,6 +51,7 @@ enum {
   PROP_GENERAL_ENABLE_ONBOARD_PTP,
   PROP_GENERAL_ENABLE_DMA_OFFLOAD,
   PROP_GENERAL_DEV_ARGS_ALLOW_DOWN,
+  PROP_GENERAL_DEV_ARGS_DMA_AUTO,
   PROP_GENERAL_MAX
 };
 
@@ -70,6 +71,7 @@ typedef struct GeneralArgs {
   gboolean enable_onboard_ptp;
   gboolean enable_dma_offload;
   gboolean allow_down_ports;
+  gboolean dma_auto;
 } GeneralArgs;
 
 typedef struct SessionPortArgs {

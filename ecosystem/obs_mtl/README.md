@@ -14,10 +14,18 @@ refer to: <https://obsproject.com/wiki/build-instructions-for-linux>
 
 ### build linux-mtl
 
+Build and install the plugin with the script, from the top of the MTL source tree:
+
+```bash
+./script/build_obs_plugin.sh
+```
+
+Or build it step by step:
+
 ```bash
 cd linux-mtl
 meson setup build
-meson complile -C build
+meson compile -C build
 sudo meson install -C build
 ```
 

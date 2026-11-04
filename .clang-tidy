@@ -1,5 +1,5 @@
 # clang-tidy checks for MTL's C and C++, the ones the secure coding rules map
-# to; the clang-tidy job of code-scan.yml runs them on the lines a pull request
+# to; the clang-tidy job of cicd-pr-check.yml runs them on the lines a pull request
 # changes. Each check also applies to the C++ code: the C++-only ones
 # (modernize-*) never fire on C.
 Checks: >

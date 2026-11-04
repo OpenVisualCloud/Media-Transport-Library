@@ -365,10 +365,10 @@ def setup_acceptance_tests_full(
 
 @mcp.tool()
 def build_ffmpeg_plugin() -> str:
-    """Build the MTL FFmpeg plugin (ecosystem/ffmpeg_plugin) into .local_install."""
-    build_sh = REPO_ROOT / "ecosystem/ffmpeg_plugin/build.sh"
+    """Build FFmpeg with the MTL devices (script/build_ffmpeg_plugin.sh) into .local_install."""
+    build_sh = REPO_ROOT / "script/build_ffmpeg_plugin.sh"
     if not build_sh.is_file():
-        return "Error: ecosystem/ffmpeg_plugin/build.sh not found"
+        return "Error: script/build_ffmpeg_plugin.sh not found"
 
     # Without MTL_INSTALL_PREFIX, setup_environment.sh falls back to
     # `sudo make install` (system-wide), leaving .local_install/ffmpeg --
@@ -389,10 +389,10 @@ def build_ffmpeg_plugin() -> str:
 
 @mcp.tool()
 def build_gstreamer_plugin() -> str:
-    """Build the MTL GStreamer plugin (ecosystem/gstreamer_plugin) into .local_install."""
-    build_sh = REPO_ROOT / "ecosystem/gstreamer_plugin/build.sh"
+    """Build the MTL GStreamer plugins (script/build_gstreamer_plugin.sh) into .local_install."""
+    build_sh = REPO_ROOT / "script/build_gstreamer_plugin.sh"
     if not build_sh.is_file():
-        return "Error: ecosystem/gstreamer_plugin/build.sh not found"
+        return "Error: script/build_gstreamer_plugin.sh not found"
 
     # See build_ffmpeg_plugin() above -- same MTL_INSTALL_PREFIX requirement.
     local_prefix = REPO_ROOT / ".local_install" / "mtl"

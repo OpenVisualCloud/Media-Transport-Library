@@ -22,6 +22,10 @@ sources = files(
   'mt_pcap.c',
 )
 
+if not is_windows
+  sources += files('mt_dma_auto.c')
+endif
+
 if is_windows
 if get_option('enable_tap') == true
   sources += files('mt_tap.c')

@@ -7,6 +7,11 @@
 
 %include <stdint.i>
 
+// SWIG 4.2 cannot evaluate the <stdint.h> macros in the MTL_BIT32/MTL_BIT64
+// enum values, and fails on each one.
+#define UINT32_C(c) c##U
+#define UINT64_C(c) c##ULL
+
 %begin %{
 #define SWIG_PYTHON_CAST_MODE
 #define __MTL_PYTHON_BUILD__

@@ -4,6 +4,122 @@ Building the Media Transport Library requires three parts: building the DPDK lib
 
 Please note that the DPDK dependency remains necessary when utilizing the XDP/kernel socket data path backend. We leverage numerous DPDK APIs, including those for CPU, memory, queues, and mbufs, to construct a highly efficient network processing implementation.
 
+You can do the setup in two ways:
+
+* With the setup scripts in the `script/` folder. On Ubuntu, they do sections 1 to 3 for you. See [Quick Start with the Setup Scripts](#quick-start-with-the-setup-scripts).
+* Step by step, with the commands in sections 1 to 3. Use this way on other operating systems, or when you want to control each step.
+
+## Quick Start with the Setup Scripts
+
+Run the scripts as your own user, from the top of the source tree. They use `sudo` when they install to the system.
+Each script prints its options with `-h`.
+
+```bash
+sudo apt-get install -y git         # a fresh Ubuntu may not have it yet
+git clone https://github.com/OpenVisualCloud/Media-Transport-Library.git
+cd Media-Transport-Library
+./script/install_dependencies.sh    # the build packages of section 1.1.1, Ubuntu only
+./script/build_dpdk.sh              # section 2: download, patch, build and install DPDK
+./build.sh                          # section 3: build and install MTL and the sample apps
+sudo ldconfig                       # section 3: let the loader find the new libraries
+```
+
+`build_dpdk.sh` builds the DPDK version in `versions.env`. It does nothing if that version is already installed. Use `-f` to rebuild it.
+
+Some setups need more components. Add each component to `install_dependencies.sh`, which then installs its build packages too:
+
+| Component | Packages | Build and install |
+| --- | --- | --- |
+| Intel E810/E830 out-of-tree driver | `./script/install_dependencies.sh ice` | `./script/build_drivers.sh --driver ice`, see the [E800 Series Driver Guide](e800_series_drivers.md) |
+| AF_XDP data path (xdp-tools and libbpf) | `./script/install_dependencies.sh ebpf_xdp` | `./script/build_ebpf_xdp.sh`, see the [XDP guide](xdp.md) |
+| SVT JPEG XS ST 2110-22 plugin | `./script/install_dependencies.sh jpegxs` | `./script/build_jpegxs.sh`, see the [Plugin Guide](plugin.md) |
+| ST 2110-22 avcodec plugin | `./script/install_dependencies.sh avcodec` | `./script/build_st22_avcodec_plugin.sh`, see the [avcodec plugin guide](../plugins/st22_avcodec/README.md) |
+| FFmpeg with the MTL devices | `./script/install_dependencies.sh ffmpeg` | `./script/build_ffmpeg_plugin.sh`, see the [FFmpeg plugin guide](../ecosystem/ffmpeg_plugin/README.md) |
+| GStreamer plugins | `./script/install_dependencies.sh gstreamer` | `./script/build_gstreamer_plugin.sh`, see the [GStreamer plugin guide](../ecosystem/gstreamer_plugin/README.md) |
+| Python binding | `./script/install_dependencies.sh python` | `./script/build_python.sh`, see the [Python guide](../python/README.md) |
+| OBS Studio plugin | `./script/install_dependencies.sh obs` | `./script/build_obs_plugin.sh`, see the [OBS plugin guide](../ecosystem/obs_mtl/README.md) |
+
+Install the AF_XDP components before you run `./build.sh`: MTL finds libxdp and libbpf when it is configured, and without them builds no AF_XDP backend.
+Build MTL with `./build.sh` before you build a plugin or the Python binding.
+
+### Install into a predefined directory
+
+This section is optional. It is not the default setup. If you did the steps of
+the [quick start](#quick-start-with-the-setup-scripts) above, MTL and its
+components are already built and installed into the system. You can skip this
+section.
+
+By default, each build script installs what it builds into `/usr/local`, with
+`sudo`. Use this section only when you want to keep the build out of the system.
+Set `MTL_INSTALL_PREFIX` to the directory for MTL, and the scripts install into
+that directory instead. The scripts stay in `script/`. Only the libraries,
+programs and plugins that they build go into the directory.
+
+The other components go into directories beside `MTL_INSTALL_PREFIX`, in the
+same parent directory. The CI uses `MTL_INSTALL_PREFIX=$PWD/.local_install/mtl`,
+which gives these directories:
+
+| Script | Installs into |
+| --- | --- |
+| `build.sh` | `.local_install/mtl` |
+| `script/build_dpdk.sh` | `.local_install/dpdk` |
+| `script/build_jpegxs.sh` | `.local_install/jpegxs` |
+| `script/build_ffmpeg_plugin.sh` | `.local_install/ffmpeg` |
+| `script/build_gstreamer_plugin.sh` | `.local_install/gstreamer/gstreamer-1.0` |
+| `script/build_drivers.sh` | `.local_install/ice/<kernel release>/<architecture>`. The script only builds the `.ko` file. It does not install or load the driver, because the kernel cannot load a module from this directory. |
+| `script/build_st22_avcodec_plugin.sh` | The directory in `MTL_PLUGIN_PREFIX`, not in `MTL_INSTALL_PREFIX`, for example `.local_install/plugins` |
+
+For example, to install DPDK, MTL and the two ST 2110-22 plugins into `.local_install`:
+
+```bash
+export MTL_INSTALL_PREFIX=$PWD/.local_install/mtl
+./script/build_dpdk.sh         # into .local_install/dpdk
+./build.sh                     # into .local_install/mtl
+./script/build_jpegxs.sh       # into .local_install/jpegxs, beside them
+MTL_PLUGIN_PREFIX=$PWD/.local_install/plugins ./script/build_st22_avcodec_plugin.sh
+```
+
+This directory needs no root, no `ldconfig` and no `LD_LIBRARY_PATH`. Each program
+and library records the location of the other libraries relative to itself, and
+each `.pc` file points at its own location. So you can move the whole directory,
+and it still runs.
+`.local_install/mtl/bin/nicctl.sh` is part of it and uses the `dpdk-devbind.py`
+of `.local_install/dpdk`. The plugin registry is `.local_install/conf/kahawai.json`.
+Set `KAHAWAI_CFG_PATH` to it, see [plugin.md](./plugin.md). The registry holds absolute
+paths, so it is the one part of the directory that does not move with it.
+
+These three scripts do not read `MTL_INSTALL_PREFIX` yet. They always install
+into the system with `sudo`:
+
+| Script | Installs into | Why it cannot use the directory |
+| --- | --- | --- |
+| `script/build_ebpf_xdp.sh` | `/usr/local`, and it links `libxdp.pc` and `libbpf.pc` into the `pkg-config` directory of the system | `build.sh` finds libxdp and libbpf only in the `pkg-config` search path of the system. |
+| `script/build_python.sh` | The `site-packages` directory of the system `python3` | The script reads the MTL headers from `/usr/local/include`, so it also needs MTL in the system. |
+| `script/build_obs_plugin.sh` | The `obs-plugins` directory of the system libobs | The script has no option to select a different directory. |
+
+MTL does not need these three scripts. They add only the AF_XDP data path, the
+Python binding and the OBS plugin. If you do not want them in your system, do
+not run them. Without them, `build.sh` builds MTL without the AF_XDP backend.
+
+### Set up the host with one command
+
+`.github/scripts/setup_environment.sh` runs the scripts above in the correct order. Environment variables select the steps. Each variable is `0` (the default) or `1`. The command below installs the packages, the patched E810/E830 driver, DPDK, and MTL:
+
+```bash
+SETUP_ENVIRONMENT=1 \
+  SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=1 \
+  SETUP_BUILD_AND_INSTALL_DPDK=1 \
+  MTL_BUILD_AND_INSTALL=1 \
+  ./.github/scripts/setup_environment.sh
+sudo ldconfig
+```
+
+Leave out `SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=1` if your setup has no E810/E830 NIC.
+`SETUP_BUILD_AND_INSTALL_DPDK=1` rebuilds DPDK on each run, also when the version is already installed.
+Run `./.github/scripts/setup_environment.sh -h` for the list of all variables, for example `SETUP_BUILD_AND_INSTALL_EBPF_XDP`, `PLUGIN_BUILD_AND_INSTALL_JPEGXS`, or `ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN`.
+
+The scripts do not set up the runtime: hugepages, VFs, and MtlManager. For that, refer to [Running MTL](./run.md).
+
 ## 1. Prerequisites
 
 ### 1.1. Install the build dependency from OS software store
@@ -18,6 +134,9 @@ sudo apt-get install git gcc meson ninja-build python3 python3-pyelftools pkg-co
 Newer Ubuntu and Debian releases enable Python's externally managed environment
 protection (PEP 668), so prefer the distribution packages above instead of
 installing `pyelftools` or `ninja` with `pip`.
+
+On Ubuntu, `./script/install_dependencies.sh` installs these packages from the distribution, and the SDL2 packages below.
+It leaves out `flex` and `byacc`, which only [section 1.2](#12-build-dependency-from-source-code) needs.
 
 Install below SDL2 packages if you want the display support for RxTxApp.
 
@@ -132,6 +251,28 @@ export mtl_source_code=${PWD}/Media-Transport-Library
 
 ## 2. DPDK build and install
 
+`./script/build_dpdk.sh` does the steps 2.1 to 2.3 in one command. It downloads the DPDK version in `versions.env`, applies the patches, then builds and installs DPDK.
+
+```bash
+cd $mtl_source_code
+./script/build_dpdk.sh
+```
+
+`build_dpdk.sh` builds DPDK for the CPU count of the build host, at least the DPDK default of 128 (`max_lcores`, `RTE_MAX_LCORE`): an MTL lcore ID is the CPU ID, so every CPU MTL uses must be below it.
+It uses at most 1024, also for a larger `DPDK_MAX_LCORES`: MTL supports CPU IDs 0-1023.
+For a Docker or CI image that runs on a host with more CPUs than the build machine, set the count of that host:
+
+```bash
+DPDK_MAX_LCORES=512 ./script/build_dpdk.sh -f
+```
+
+`build_dpdk.sh` does nothing when the same DPDK version is installed already, so a changed `DPDK_MAX_LCORES` needs `-f`.
+Build MTL again after DPDK.
+
+Each lcore ID costs 8256 bytes of hugepage memory in every MTL mempool, as each one has a per-lcore cache: a mempool takes 1.0 MiB with the DPDK default of 128, 2.0 MiB with 256, 4.0 MiB with 512 and 8.1 MiB with 1024.
+MTL creates a few mempools per port and per session, for example about 160 for 2 redundant ports with 32 TX and 32 RX sessions.
+If the host has more CPUs than `RTE_MAX_LCORE` of the installed DPDK, MTL passes `--remap-lcore-ids`, as releases up to 26.09 did, and logs the `DPDK_MAX_LCORES` to rebuild DPDK with: each process then numbers its CPUs from 0, so MTL processes on different CPUs can claim the same lcore.
+
 ### 2.1. Get the DPDK source code
 
 `versions.env` in the Media Transport Library source tree holds the DPDK version to use. Read the file to set `DPDK_VER`, then check out that version.
@@ -163,8 +304,12 @@ git am $mtl_source_code/patches/dpdk/${DPDK_VER}/*.patch
 
 ### 2.3. Build and install DPDK library
 
+An MTL lcore ID is the CPU ID, so DPDK must be built with `max_lcores` (`RTE_MAX_LCORE`) above the highest CPU ID of the host where MTL runs.
+Use the CPU count of that host, at least the DPDK default of 128 and at most 1024, the most MTL supports; section 2 lists the hugepage memory it costs.
+Build MTL again after DPDK.
+
 ```bash
-meson setup build
+meson setup build -Dmax_lcores=256 # the CPU count of the host, at least 128
 ninja -C build
 sudo ninja install -C build
 cd ..
@@ -187,7 +332,10 @@ sudo: ninja: command not found
 ```bash
 cd $mtl_source_code
 ./build.sh
+sudo ldconfig
 ```
+
+`sudo ldconfig` updates the cache of the runtime linker, so it finds the DPDK and MTL libraries in `/usr/local`. meson 0.62 and later do not run it after an install. Without it, an app fails to start with an error such as `libmtl.so: cannot open shared object file`.
 
 ### 3.1. Build flow for Intel I226-V (igc)
 

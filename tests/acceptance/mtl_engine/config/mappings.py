@@ -22,6 +22,7 @@ RXTXAPP_CMDLINE_PARAM_MAP = {
     "lcores": "--lcores",
     "test_time": "--test_time",
     "dma_dev": "--dma_dev",
+    "dma_auto": "--dma_auto",
     "log_level": "--log_level",
     "log_file": "--log_file",
     "arp_timeout_s": "--arp_timeout_s",
