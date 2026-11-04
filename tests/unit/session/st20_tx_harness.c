@@ -40,6 +40,7 @@
 struct ut_txv_ctx {
   struct mtl_main_impl impl;
   struct st_tx_video_sessions_mgr mgr;
+  struct st_tx_video_sessions_mgr other_mgr; /* of scheduler 1, ut_txv_run_migrate() */
   struct st_tx_video_session_impl session;
   uint64_t mock_ptp_ns;
   uint64_t mock_tsc_ns;
@@ -355,6 +356,20 @@ static int ut_txv_rxq_put(struct mt_rxq_entry* entry) {
   return 0;
 }
 
+/* the session lock the stats API takes: ut_txv_migrate_at_next_lock() migrates the
+ * session first, as if between the API's read of its slot and its lock */
+static ut_txv_ctx* ut_txv_lock_migrates;
+static rte_spinlock_t* ut_txv_last_lock;
+
+static void ut_txv_spinlock_lock(rte_spinlock_t* sl) {
+  ut_txv_ctx* ctx = ut_txv_lock_migrates;
+
+  ut_txv_lock_migrates = NULL;
+  if (ctx) ut_txv_run_migrate(ctx);
+  ut_txv_last_lock = sl;
+  rte_spinlock_lock(sl);
+}
+
 /* Seams: these calls in st_tx_video_session.c hit the mocks. */
 #define mt_rtcp_tx_create ut_txv_rtcp_tx_create
 #define mt_rtcp_tx_free ut_txv_rtcp_tx_free
@@ -373,7 +388,9 @@ static int ut_txv_rxq_put(struct mt_rxq_entry* entry) {
 #define mt_txq_fatal_error ut_txv_txq_fatal_error
 #define mt_txq_put ut_txv_txq_put
 #define mt_txq_set_tx_bps ut_txv_txq_set_tx_bps
+#define rte_spinlock_lock ut_txv_spinlock_lock
 #include "st2110/st_tx_video_session.c"
+#undef rte_spinlock_lock
 #undef mt_txq_set_tx_bps
 #undef mt_txq_put
 #undef mt_txq_fatal_error
@@ -455,6 +472,7 @@ ut_txv_ctx* ut_txv_create(void) {
 
 void ut_txv_destroy(ut_txv_ctx* ctx) {
   if (!ctx) return;
+  if (ut_txv_lock_migrates == ctx) ut_txv_lock_migrates = NULL;
 
   if (ctx->ext_frame_ready) {
     ut_txv_tx_path_uinit(ctx);
@@ -1907,6 +1925,65 @@ int ut_txv_run_sessions_stat(ut_txv_ctx* ctx, int* locked_lines) {
   ut_txv_stat_ctx = NULL;
   *locked_lines = ut_txv_stat_locked_lines;
   return ut_txv_stat_lines;
+}
+
+void ut_txv_run_migrate(ut_txv_ctx* ctx) {
+  struct st_tx_video_sessions_mgr* to = &ctx->other_mgr;
+  int idx = ctx->session.idx;
+
+  to->parent = &ctx->impl;
+  to->idx = 1;
+  /* tx_video_migrate_to()'s order, into another slot */
+  ctx->mgr.sessions[idx] = NULL;
+  st_tx_video_session_migrate(to, &ctx->session, idx + 1);
+  to->sessions[idx + 1] = &ctx->session;
+}
+
+int ut_txv_get_session_stats(ut_txv_ctx* ctx, struct st20_tx_user_stats* stats) {
+  ctx->handle.type = MT_HANDLE_TX_VIDEO;
+  ctx->handle.impl = &ctx->session;
+  return st20_tx_get_session_stats(&ctx->handle, stats);
+}
+
+int ut_txv_reset_session_stats(ut_txv_ctx* ctx) {
+  ctx->handle.type = MT_HANDLE_TX_VIDEO;
+  ctx->handle.impl = &ctx->session;
+  return st20_tx_reset_session_stats(&ctx->handle);
+}
+
+static struct st_tx_video_sessions_mgr* ut_txv_linked_mgr(const ut_txv_ctx* ctx) {
+  int idx = ctx->session.idx;
+
+  return ctx->other_mgr.sessions[idx] == &ctx->session
+             ? (struct st_tx_video_sessions_mgr*)&ctx->other_mgr
+             : (struct st_tx_video_sessions_mgr*)&ctx->mgr;
+}
+
+void ut_txv_lock_linked_session(ut_txv_ctx* ctx, bool lock) {
+  rte_spinlock_t* sl = &ut_txv_linked_mgr(ctx)->mutex[ctx->session.idx];
+
+  if (lock)
+    rte_spinlock_lock(sl);
+  else
+    rte_spinlock_unlock(sl);
+}
+
+void ut_txv_migrate_at_next_lock(ut_txv_ctx* ctx) {
+  ut_txv_lock_migrates = ctx;
+  ut_txv_last_lock = NULL;
+}
+
+bool ut_txv_last_lock_linked(const ut_txv_ctx* ctx) {
+  return ut_txv_last_lock == &ut_txv_linked_mgr(ctx)->mutex[ctx->session.idx];
+}
+
+bool ut_txv_session_slots_locked(const ut_txv_ctx* ctx) {
+  for (int i = 0; i < ST_SCH_MAX_TX_VIDEO_SESSIONS; i++) {
+    if (rte_spinlock_is_locked((rte_spinlock_t*)&ctx->mgr.mutex[i]) ||
+        rte_spinlock_is_locked((rte_spinlock_t*)&ctx->other_mgr.mutex[i]))
+      return true;
+  }
+  return false;
 }
 
 const char* ut_txv_stat_first_log_line(void) {

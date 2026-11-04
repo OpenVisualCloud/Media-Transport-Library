@@ -4311,7 +4311,7 @@ int st_tx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mtl_sch_im
 
 int st_tx_video_session_migrate(struct st_tx_video_sessions_mgr* mgr,
                                 struct st_tx_video_session_impl* s, int idx) {
-  MTL_MAY_UNUSED(mgr);
+  s->mgr = mgr;
   tv_init(s, idx);
   return 0;
 }
@@ -5081,6 +5081,23 @@ int st20_tx_get_pacing_params(st20_tx_handle handle, double* tr_offset_ns, doubl
   return 0;
 }
 
+/* Locks the session's slot in the mgr that runs it, as its tasklets do, and returns that
+ * mgr; a migrate can move the session while this waits on the old slot. */
+static struct st_tx_video_sessions_mgr* tv_session_lock(
+    struct st_tx_video_session_impl* s, int* idx) {
+  while (true) {
+    struct st_tx_video_sessions_mgr* mgr = s->mgr;
+    int i = s->idx;
+
+    rte_spinlock_lock(&mgr->mutex[i]);
+    if (mgr->sessions[i] == s) {
+      *idx = i;
+      return mgr;
+    }
+    rte_spinlock_unlock(&mgr->mutex[i]);
+  }
+}
+
 int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* stats) {
   struct st_tx_video_session_handle_impl* s_impl = handle;
 
@@ -5092,9 +5109,11 @@ int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* 
   MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, -EINVAL);
   struct st_tx_video_session_impl* s = s_impl->impl;
 
-  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
+  int idx;
+  struct st_tx_video_sessions_mgr* mgr = tv_session_lock(s, &idx);
+
   memcpy(stats, &s->port_user_stats, sizeof(*stats));
-  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
+  rte_spinlock_unlock(&mgr->mutex[idx]);
   MT_HANDLE_RELEASE(s_impl);
   return 0;
 }
@@ -5110,10 +5129,12 @@ int st20_tx_reset_session_stats(st20_tx_handle handle) {
   MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, -EINVAL);
   struct st_tx_video_session_impl* s = s_impl->impl;
 
-  rte_spinlock_lock(&s->mgr->mutex[s->idx]);
+  int idx;
+  struct st_tx_video_sessions_mgr* mgr = tv_session_lock(s, &idx);
+
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
   memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
-  rte_spinlock_unlock(&s->mgr->mutex[s->idx]);
+  rte_spinlock_unlock(&mgr->mutex[idx]);
   MT_HANDLE_RELEASE(s_impl);
   return 0;
 }
