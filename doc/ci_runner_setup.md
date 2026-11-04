@@ -467,7 +467,7 @@ build consumes: the `libelf` and `zlib` that `libdpdk.pc` names in
 DPDK, MTL and the plugins and never builds xdp-tools — held to the full set it
 failed on `cap-ng.h`, a header nothing it compiles includes.
 
-Three prerequisites are easy to miss:
+These prerequisites are easy to miss:
 
 - `libelf-dev`. `.local_install/dpdk`'s `libdpdk.pc` lists `libelf` in
   `Requires.private`, so `pkg-config --exists libdpdk` — and therefore every
@@ -499,6 +499,12 @@ Three prerequisites are easy to miss:
   `BadAuthenticationType: allowed types: ['publickey']` — a password problem on a
   host that has no password. `task ci:pytest-setup -- connection` is one second of
   `ssh` instead, in its own step, and prints what `ssh` said.
+- perl with the modules Getopt::Long, Pod::Usage, IPC::Open3, Term::ANSIColor and
+  IO::Select, and `objdump`, for the `hardening-check` of the build job, and HTTPS
+  to `salsa.debian.org` and `release-assets.githubusercontent.com`, from which the
+  job of a pull request or a push fetches `hardening-check` and `checksec` when
+  its cache of them misses.
+  `task ci:hardening-tools` stops on a missing module or on a missing `objdump`.
 - the media assets. The tests read ST 2110 source files from `media_path`
   (`/mnt/media` by default), normally the lab's NFS share. `task ci:media-assets
   -- verify` lists each file a suite reads and fails when one is missing. The test

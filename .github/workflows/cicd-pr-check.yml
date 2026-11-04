@@ -324,8 +324,23 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The pinned scanners that test-scripts.sh fetches. Only main saves a cache.
+      - name: 'stash: Restore the hardening scanners'
+        id: tools-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: hardening-tools-${{ hashFiles('.github/scripts/ci/scan/tools.env', '.github/scripts/ci/scan/hardening-tools.sh') }}
+          path: ~/.cache/mtl-hardening-tools
+
       - name: Check and run the scripts
         run: bash .github/scripts/ci/lint/test-scripts.sh
+
+      - name: 'stash: Save the hardening scanners'
+        if: success() && github.ref == 'refs/heads/main' && steps.tools-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: hardening-tools-${{ hashFiles('.github/scripts/ci/scan/tools.env', '.github/scripts/ci/scan/hardening-tools.sh') }}
+          path: ~/.cache/mtl-hardening-tools
 
   # ── Fuzz: a short run per target; the nightly workflow runs the long one ──
   fuzz-tests:

@@ -203,6 +203,30 @@ runs:
         key: ${{ steps.keys.outputs.ice_key }}
         path: .local_install/ice
 
+    # After the saves, which an outage of the downloads can't stop then. Not in
+    # the nightly and custom runs, where it would hold back their tests.
+    - name: 'stash: Restore the hardening scanners'
+      id: tools-cache
+      if: github.event_name == 'pull_request' || github.event_name == 'push'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        key: hardening-tools-${{ hashFiles('.github/scripts/ci/scan/tools.env', '.github/scripts/ci/scan/hardening-tools.sh') }}
+        path: ${{ runner.temp }}/hardening-tools
+
+    - name: Check the hardening again with hardening-check and checksec
+      if: github.event_name == 'pull_request' || github.event_name == 'push'
+      shell: bash
+      env:
+        HARDENING_TOOLS_DIR: ${{ runner.temp }}/hardening-tools
+      run: task ci:hardening-tools
+
+    - name: 'stash: Save the hardening scanners'
+      if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push' && steps.tools-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        key: hardening-tools-${{ hashFiles('.github/scripts/ci/scan/tools.env', '.github/scripts/ci/scan/hardening-tools.sh') }}
+        path: ${{ runner.temp }}/hardening-tools
+
     - name: Pack the install trees
       shell: bash
       run: task ci:pack-build

@@ -485,6 +485,8 @@ The build job of the pull request and nightly workflows (`.github/actions/build-
 It fails on a binary without full RELRO, a non-executable stack, PIE, CET or the stack protector.
 Its table, keyed on the name of each file, accepts what a dependency doesn't apply: the stack protector in librte_kvargs, librte_meter, librte_jobstats and librte_common_cpt, which have no function it covers, and CET in libopenh264.
 The check skips the JPEG XS cache: SVT-JPEG-XS builds its MTL plugin without the options.
+After the caches are saved, two binary-hardening scanners of their own check the same files with the same table: `hardening-check` of devscripts and `checksec`, at the versions that `.github/scripts/ci/scan/tools.env` pins (`task ci:hardening-tools`, with `HARDENING_TOOLS_DIR` set to where they go).
+Both check IBT and SHSTK as one mark, so they skip CET in a library that the table exempts from either. Only a pull request or a push runs the scanners: the nightly and custom runs build with the same action before their test jobs, which an outage of the downloads would skip.
 
 The FFmpeg 7.0 assembly is marked SHSTK only, so the build applies `ecosystem/ffmpeg_plugin/7.0/0002-x86-add-Intel-CET-IBT-support.patch`, which makes it IBT-correct and marks it IBT and SHSTK.
 

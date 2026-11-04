@@ -326,6 +326,66 @@ test_check_hardening() {
 
 test_check_hardening
 
+# With HARDENING_TOOLS_DIR, both scanners pass what readelf and the table pass,
+# and fail each control file.
+test_hardening_tools() {
+	local gate=.github/scripts/ci/scan/check-hardening.sh tools=.github/scripts/ci/scan/hardening-tools.sh
+	local work out control tool
+	local -a cc=(gcc -O2 -fstack-protector-strong -fstack-clash-protection -fcf-protection=full)
+	local now='-Wl,-z,relro,-z,now,-z,noexecstack'
+	work=$(mktemp -d)
+	mkdir "${work}/hardened" "${work}/table" "${work}/lazy" "${work}/shstk" "${work}/nopie" "${work}/nocanary" \
+		"${work}/execstack" "${work}/pin"
+	printf '#include <string.h>\nint f(const char *s) { char b[64]; strcpy(b, s); return b[1]; }\nint main(int c, char **v) { return f(v[c - 1]); }\n' >"${work}/t.c"
+	"${cc[@]}" -fPIE -pie "${now}" "${work}/t.c" -o "${work}/hardened/t"
+	"${cc[@]}" -fPIC -shared "${now}" "${work}/t.c" -o "${work}/hardened/libt.so"
+	"${cc[@]}" -fno-stack-protector -fPIC -shared "${now}" "${work}/t.c" -o "${work}/table/librte_kvargs.so.26"
+	"${cc[@]}" -fcf-protection=none -fPIC -shared "${now}" "${work}/t.c" -o "${work}/table/libopenh264.so.8"
+	"${cc[@]}" -fPIC -shared -Wl,-z,relro,-z,lazy,-z,noexecstack "${work}/t.c" -o "${work}/lazy/libt.so"
+	"${cc[@]}" -fcf-protection=return -fPIC -shared "${now}" "${work}/t.c" -o "${work}/shstk/libt.so"
+	"${cc[@]}" -fno-PIE -no-pie "${now}" "${work}/t.c" -o "${work}/nopie/t"
+	"${cc[@]}" -fno-stack-protector -fPIE -pie "${now}" "${work}/t.c" -o "${work}/nocanary/t"
+	"${cc[@]}" -fPIE -pie -Wl,-z,relro,-z,now,-z,execstack "${work}/t.c" -o "${work}/execstack/t"
+	# Into the cache of the script-tests job: only the last two cases download.
+	HARDENING_TOOLS_DIR=${HOME}/.cache/mtl-hardening-tools bash "${tools}" || fail "${tools}" "cannot fetch the scanners"
+	[ "$(stat -c %u "${HOME}/.cache/mtl-hardening-tools/checksec")" = "$(id -u)" ] ||
+		fail "${tools}" "keeps the owner that checksec has in its archive"
+	cp -a "${HOME}/.cache/mtl-hardening-tools" "${work}/tools"
+	out=$(HARDENING_TOOLS_DIR=${work}/tools bash "${gate}" "${work}/hardened" "${work}/table" 2>&1) ||
+		fail "${gate}" "a scanner fails a hardened file, or one the table accepts: ${out}"
+	for control in lazy/libt.so shstk/libt.so nopie/t nocanary/t execstack/t; do
+		out=$(HARDENING_TOOLS_DIR=${work}/tools bash "${gate}" "${work}/${control%/*}" 2>&1) && fail "${gate}" "passes ${control}"
+		for tool in hardening-check checksec; do
+			# hardening-check has no check for the stack
+			[ "${tool}/${control}" != hardening-check/execstack/t ] || continue
+			grep -qF "::error::${tool}: ${work}/${control}:" <<<"${out}" || fail "${gate}" "${tool} passes ${control}: ${out}"
+		done
+	done
+	# A scanner that fails fails the check, also where readelf finds no fault.
+	mkdir "${work}/broken"
+	cp "${work}/tools/hardening-check.pl" "${work}/broken/"
+	printf '#!/bin/sh\nexit 1\n' >"${work}/broken/checksec"
+	chmod +x "${work}/broken/checksec"
+	if HARDENING_TOOLS_DIR=${work}/broken bash "${gate}" "${work}/hardened" >/dev/null 2>&1; then
+		fail "${gate}" "passes when a scanner fails"
+	fi
+	# A cached copy that doesn't match its pin is fetched again, and a download
+	# that doesn't match is not kept.
+	echo >>"${work}/tools/hardening-check.pl"
+	HARDENING_TOOLS_DIR=${work}/tools bash "${tools}" || fail "${tools}" "does not fetch a changed copy again"
+	sha256sum --status -c <<<"$(sed -n 's/^HARDENING_CHECK_SHA256=//p' "${tools%/*}/tools.env")  ${work}/tools/hardening-check.pl" ||
+		fail "${tools}" "keeps a cached copy that doesn't match its pin"
+	cp "${tools}" "${work}/pin/"
+	sed 's/^HARDENING_CHECK_SHA256=.*/HARDENING_CHECK_SHA256=0/' "${tools%/*}/tools.env" >"${work}/pin/tools.env"
+	out=$(HARDENING_TOOLS_DIR=${work}/tools bash "${work}/pin/${tools##*/}" 2>&1) && fail "${tools}" "takes a download that doesn't match its pin"
+	if ! grep -q '^::error::.*/hardening-check.pl does not match tools.env$' <<<"${out}" || [ -e "${work}/tools/hardening-check.pl" ]; then
+		fail "${tools}" "keeps a download that doesn't match its pin: ${out}"
+	fi
+	rm -rf "${work:?}"
+}
+
+test_hardening_tools
+
 bash script/check_dpdk_patches.sh || fail script/check_dpdk_patches.sh "the DPDK patches do not apply clean"
 bash script/build_ebpf_xdp.sh --check build || echo "build_ebpf_xdp.sh --check build: the host does not have each package"
 

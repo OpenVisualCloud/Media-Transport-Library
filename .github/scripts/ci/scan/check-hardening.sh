@@ -23,6 +23,7 @@ set -euo pipefail
 
 checked=0
 failed=0
+declare -A groups=()
 for path; do
 	before=$checked
 	while IFS= read -r -d '' file; do
@@ -59,6 +60,15 @@ for path; do
 			echo "::error::${file} is not hardened: no ${missing[*]}" >&2
 			failed=$((failed + 1))
 		fi
+		# For the scanners, by the checks that apply. checksec has no PIE for a
+		# library, and both check IBT and SHSTK as one.
+		if [[ -n ${HARDENING_TOOLS_DIR:-} ]]; then
+			hc="-B --nofortify" keys="relro,nx,canary,cfi"
+			grep -q ' INTERP ' <<<"$elf" && keys+=",pie"
+			[[ " ${accepted[*]} " != *" SSP "* ]] || hc+=" -s" keys=${keys/,canary/}
+			[[ " ${accepted[*]} " != *" IBT "* && " ${accepted[*]} " != *" SHSTK "* ]] || hc+=" -x" keys=${keys/,cfi/}
+			groups["${hc}|${keys}"]+="${file}"$'\n'
+		fi
 	done < <(find "$path" -name meson-private -prune -o -type f -print0)
 	((checked > before)) || {
 		echo "::error::no x86-64 ELF file found under $path" >&2
@@ -66,5 +76,26 @@ for path; do
 	}
 done
 
-echo "hardening: ${checked} ELF files checked under $*, ${failed} failed"
-((failed == 0))
+# Without -B and --nofortify, hardening-check also wants AArch64 branch
+# protection, and fails a file with a libc call of a size it doesn't know.
+tools=ok
+for group in "${!groups[@]}"; do
+	read -ra hc <<<"${group%|*}"
+	if ! out=$(printf '%s' "${groups[$group]}" | tr '\n' '\0' |
+		xargs -0 -n 1 -P "$(nproc)" perl "${HARDENING_TOOLS_DIR}/hardening-check.pl" --quiet "${hc[@]}" 2>&1); then
+		tools=failed
+		awk '/^[^ ].*:$/ { file = substr($0, 1, length($0) - 1); next }
+			/\(ignored\)$/ { next }
+			/^ .*: no/ { sub(/^ +/, ""); sub(/:.*/, ""); print "::error::hardening-check: " file ": " $0; next }
+			{ print "::error::hardening-check: " $0 }' <<<"${out}" >&2
+	fi
+	if ! out=$(printf '%s' "${groups[$group]}" |
+		"${HARDENING_TOOLS_DIR}/checksec" listfile - --no-banner --color never --fail-if "${group#*|}" 2>&1 >/dev/null); then
+		tools=failed
+		sed -nE 's/^  (.*): ([a-z_]+ = .*)$/::error::checksec: \1: \2/p' <<<"${out}" >&2
+		grep -q '^  .*: [a-z_]* = ' <<<"${out}" || echo "::error::checksec: ${out}" >&2
+	fi
+done
+
+echo "hardening: ${checked} ELF files checked under $*, ${failed} failed${HARDENING_TOOLS_DIR:+, hardening-check and checksec ${tools}}"
+((failed == 0)) && [[ ${tools} == ok ]]
