@@ -121,6 +121,9 @@ int ut40_ring_dequeue_rtp(ut_test_ctx* ctx, uint8_t* out, uint16_t cap);
 /* rx_ancillary_ops_check() on single-port ops of `type` with every callback set. */
 int ut40_ops_check(enum st40_type type, uint32_t flags);
 
+/* rx_ancillary_ops_check() on valid two-port RTP-level ops with the IPs of `src`. */
+int ut40_ops_check_source(const struct st_rx_source_info* src);
+
 /* Enable the HW RX-timestamp offload path on `port`: registers the DPDK
  * dynfield, installs an identity-mapped PTP correction, and sets
  * MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP so mt_mbuf_time_stamp() reads the
