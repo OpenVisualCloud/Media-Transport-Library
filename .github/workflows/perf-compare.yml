@@ -1,10 +1,28 @@
 name: perf-compare
 # Runs builds A and B at once on the perf pair and reports how B differs from A
 # (doc/perf_compare.md). The tests and CI scripts come from "Use workflow from".
+# The name gives the NICs, then each other input that is not its default, by its key.
 run-name: >-
   ${{ github.event_name == 'schedule' && 'perf-compare: nightly' ||
-  format('perf-compare: {0} against {1}, {2} x {3}', inputs.ref_b || 'main',
-  inputs.ref_a || 'main', inputs.sessions || '36', inputs.video || '1080p59') }}
+  format('perf-compare: {0} against {1}, {2} x {3}{4}, nics {5}{6}{7}{8}{9}{10}',
+  inputs.ref_b || 'main', inputs.ref_a || 'main', inputs.sessions || '36',
+  inputs.video || '1080p59',
+  startsWith(inputs.pixel_format, 'yuv422p10le') && ' yuv422p10le' ||
+  startsWith(inputs.pixel_format, 'v210') && ' v210' ||
+  startsWith(inputs.pixel_format, 'y210') && ' y210' || '',
+  startsWith(inputs.nics, 'split') && 'split' ||
+  startsWith(inputs.nics, 'redundant') && 'redundant' ||
+  startsWith(inputs.nics, 'whole') && 'whole' || 'single',
+  inputs.dma && inputs.dma != 'none' && format(', dma {0}', inputs.dma) || '',
+  inputs.single_core_rx && inputs.single_core_tx && ', single-core RX and TX' ||
+  inputs.single_core_rx && ', single-core RX' ||
+  inputs.single_core_tx && ', single-core TX' || '',
+  inputs.args_a && inputs.args_b && ', args A and B' ||
+  inputs.args_a && ', args A' || inputs.args_b && ', args B' || '',
+  inputs.test_time && inputs.test_time != '120' &&
+  format(', {0} s', inputs.test_time) || '',
+  inputs.rounds && inputs.rounds != '4' &&
+  format(', {0} rounds', inputs.rounds) || '') }}
 on:
   workflow_dispatch:
     inputs:
