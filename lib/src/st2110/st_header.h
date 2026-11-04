@@ -601,6 +601,7 @@ struct st_rx_video_session_impl {
   size_t st20_linesize;          /* line size including padding bytes */
   size_t st20_bytes_in_line;     /* bytes per line not including padding */
   size_t st20_frame_bitmap_size; /* bitmap size per frame */
+  uint32_t st20_frame_pkts;      /* pkts of the last complete frame, 0 until one */
   int st20_frames_cnt;           /* numbers of frames requested */
   struct st_frame_trans* st20_frames;
   struct st20_pgroup st20_pg;
