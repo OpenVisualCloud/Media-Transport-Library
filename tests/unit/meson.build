@@ -237,6 +237,7 @@ unit_sources = [
   'sch/mt_sch_loop_avg_test.cpp',
   'sch/mt_sch_filelock_test.cpp',
   'sch/mt_sch_lcore_test.cpp',
+  'sch/mt_sch_lcore_shm_test.cpp',
   'sch/mt_sch_quiescent_test.cpp',
   'ptp/ptp_harness.c',
   'ptp/servo_test.cpp',
