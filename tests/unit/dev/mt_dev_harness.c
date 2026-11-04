@@ -36,6 +36,8 @@ struct ut_dev_ctx {
   int eal_argc;
   char* eal_argv[UT_DEV_EAL_ARGV_MAX];
   long cpus;
+  int affinity[64];
+  int affinity_count;
   enum ut_dev_event events[16];
   int event_count;
   int timesync_enable_calls;
@@ -113,6 +115,8 @@ static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
 static int ut_dladdr(const void* addr, Dl_info* info);
 /* unused with a DPDK before 25.11: dev_eal_init() calls sysconf() only from 25.11 */
 static __attribute__((unused)) long ut_sysconf(int name);
+static __attribute__((unused)) int ut_sched_getaffinity(pid_t pid, size_t size,
+                                                        cpu_set_t* set);
 static const char* ut_dev_compiled_pmd_dir(void);
 static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 
@@ -120,6 +124,7 @@ static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 #define RTE_EAL_PMD_PATH ut_dev_compiled_pmd_dir()
 #define dladdr ut_dladdr
 #define sysconf ut_sysconf
+#define sched_getaffinity ut_sched_getaffinity
 #define rte_eth_rx_queue_setup ut_rte_eth_rx_queue_setup
 #define rte_eth_tx_queue_setup ut_rte_eth_tx_queue_setup
 #define rte_eth_add_tx_callback ut_rte_eth_add_tx_callback
@@ -168,6 +173,7 @@ static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 #undef rte_eth_add_tx_callback
 #undef rte_eth_tx_queue_setup
 #undef rte_eth_rx_queue_setup
+#undef sched_getaffinity
 #undef sysconf
 #undef dladdr
 
@@ -181,6 +187,15 @@ static int ut_dladdr(const void* addr, Dl_info* info) {
 static long ut_sysconf(int name) {
   if (name == _SC_NPROCESSORS_CONF && ut_active_ctx) return ut_active_ctx->cpus;
   return sysconf(name);
+}
+
+static int ut_sched_getaffinity(pid_t pid, size_t size, cpu_set_t* set) {
+  if (!ut_active_ctx) return sched_getaffinity(pid, size, set);
+  if (ut_active_ctx->affinity_count < 0) return -1;
+  CPU_ZERO(set);
+  for (int cpu = 0; cpu < ut_active_ctx->affinity_count; cpu++)
+    CPU_SET(ut_active_ctx->affinity[cpu], set);
+  return 0;
 }
 
 static const char* ut_dev_compiled_pmd_dir(void) {
@@ -659,6 +674,11 @@ void ut_dev_set_lcores(ut_dev_ctx* ctx, uint32_t main_lcore, const char* lcores)
   free(ctx->lcores);
   ctx->lcores = lcores ? strdup(lcores) : NULL;
   p->lcores = ctx->lcores;
+}
+
+void ut_dev_set_affinity(ut_dev_ctx* ctx, const int* cpus, int count) {
+  ctx->affinity_count = count;
+  if (count > 0) memcpy(ctx->affinity, cpus, count * sizeof(*cpus));
 }
 
 void ut_dev_set_cpus(ut_dev_ctx* ctx, long cpus) {

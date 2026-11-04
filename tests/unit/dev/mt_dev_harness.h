@@ -101,6 +101,9 @@ void ut_dev_set_num_ports(ut_dev_ctx* ctx, int num_ports);
 void ut_dev_set_dma_dev_ports(ut_dev_ctx* ctx, uint8_t num);
 /** Copies lcores, so the caller need not keep it alive. */
 void ut_dev_set_lcores(ut_dev_ctx* ctx, uint32_t main_lcore, const char* lcores);
+/** The CPUs of the process affinity, as dev_eal_init() reads them; none by default;
+ * a negative count makes reading it fail. */
+void ut_dev_set_affinity(ut_dev_ctx* ctx, const int* cpus, int count);
 /** The CPU count of the host dev_eal_init() sees; RTE_MAX_LCORE by default. */
 void ut_dev_set_cpus(ut_dev_ctx* ctx, long cpus);
 void ut_dev_set_iova_mode(ut_dev_ctx* ctx, enum mtl_iova_mode mode);

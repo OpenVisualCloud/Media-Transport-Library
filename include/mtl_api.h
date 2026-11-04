@@ -739,8 +739,9 @@ struct mtl_init_params {
   /** Optional, all future port params should be placed into this struct */
   struct mtl_port_init_params port_params[MTL_PORT_MAX];
 
-  /* The CPU id designated for the DPDK main thread. If set to 0, the DPDK default core
-   * is used. */
+  /* The CPU id the DPDK main thread runs on, whether or not lcore ids are remapped; it
+   * need not be in lcores and is not used by the schedulers. If set to 0, the DPDK
+   * default core is used (CPU 0 when lcores is set). */
   uint32_t main_lcore;
 
   /**

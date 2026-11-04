@@ -204,6 +204,175 @@ TEST_F(MtDevEalArgvTest, CorelistNamingEveryLcoreIsNotTruncated) {
   EXPECT_EQ(ValueAfter("-l"), "0," + lcores);
 }
 
+/* main_lcore is a CPU id: the corelist gets it once and EAL's main thread runs on it. */
+TEST_F(MtDevEalArgvTest, MainLcoreIsTheMainCpuOutsideTheCorelist) {
+  ut_dev_set_lcores(ctx_, 3, "52,53");
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ValueAfter("-l"), "3,52,53");
+  EXPECT_EQ(ValueAfter("--main-lcore"), "3");
+  EXPECT_FALSE(HasOption("--remap-lcore-ids"));
+}
+
+/* EAL accepts a main lcore that is also listed; it must not be listed twice. */
+TEST_F(MtDevEalArgvTest, MainLcoreInTheCorelistIsNotListedTwice) {
+  ut_dev_set_lcores(ctx_, 52, "52-54");
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ValueAfter("-l"), "52-54");
+  EXPECT_EQ(ValueAfter("--main-lcore"), "52");
+}
+
+TEST_F(MtDevEalArgvTest, MainLcoreAloneLeavesTheCorelistToEal) {
+  ut_dev_set_lcores(ctx_, 3, nullptr);
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_FALSE(HasOption("-l"));
+  EXPECT_EQ(ValueAfter("--main-lcore"), "3");
+}
+
+TEST_F(MtDevEalArgvTest, CorelistAloneKeepsTheDefaultMainLcore) {
+  ut_dev_set_lcores(ctx_, 0, "52,53");
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ValueAfter("-l"), "0,52,53");
+  EXPECT_FALSE(HasOption("--main-lcore"));
+}
+
+TEST_F(MtDevEalArgvTest, NoLcoresAndNoMainLcoreLeaveBothToEal) {
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_FALSE(HasOption("-l"));
+  EXPECT_FALSE(HasOption("--main-lcore"));
+}
+
+/* With --remap-lcore-ids, --main-lcore names the remapped id, which is the CPU's rank. */
+class MtDevEalArgvRemapTest : public MtDevEalArgvTest {
+ protected:
+  void SetUp() override {
+    MtDevEalArgvTest::SetUp();
+    if (RTE_VERSION < RTE_VERSION_NUM(25, 11, 0, 0))
+      GTEST_SKIP() << "no remap before 25.11";
+    ut_dev_set_cpus(ctx_, RTE_MAX_LCORE + 1);
+  }
+};
+
+TEST_F(MtDevEalArgvRemapTest, MainLcoreBelowTheListIsRankZero) {
+  ut_dev_set_lcores(ctx_, 60, "62,63");
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_TRUE(HasOption("--remap-lcore-ids"));
+  EXPECT_EQ(ValueAfter("-l"), "60,62,63");
+  EXPECT_EQ(ValueAfter("--main-lcore"), "0");
+}
+
+TEST_F(MtDevEalArgvRemapTest, MainLcoreAboveTheListIsRankedAfterIt) {
+  ut_dev_set_lcores(ctx_, 63, "60,62");
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ValueAfter("-l"), "63,60,62");
+  EXPECT_EQ(ValueAfter("--main-lcore"), "2");
+}
+
+TEST_F(MtDevEalArgvRemapTest, MainLcoreInTheCorelistIsRankedInIt) {
+  ut_dev_set_lcores(ctx_, 62, "60-62,70");
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ValueAfter("-l"), "60-62,70");
+  EXPECT_EQ(ValueAfter("--main-lcore"), "2");
+}
+
+TEST_F(MtDevEalArgvRemapTest, MainLcoreAloneIsRankedInTheAffinity) {
+  const int affinity[] = {60, 61, 62, 63};
+  ut_dev_set_affinity(ctx_, affinity, 4);
+  ut_dev_set_lcores(ctx_, 62, nullptr);
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_FALSE(HasOption("-l"));
+  EXPECT_TRUE(HasOption("--remap-lcore-ids"));
+  EXPECT_EQ(ValueAfter("--main-lcore"), "2");
+}
+
+TEST_F(MtDevEalArgvRemapTest, MainLcoreOutsideTheAffinityIsRejected) {
+  const int affinity[] = {60, 61};
+  ut_dev_set_affinity(ctx_, affinity, 2);
+  ut_dev_set_lcores(ctx_, 62, nullptr);
+
+  EXPECT_EQ(ut_dev_eal_init(ctx_), -EINVAL);
+  EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 0);
+}
+
+/* EAL refuses '@' groupings when remapping; say so before EAL does. */
+TEST_F(MtDevEalArgvRemapTest, CorelistEalCannotRemapIsRejectedWithMainLcore) {
+  ut_dev_set_lcores(ctx_, 60, "1@62");
+
+  EXPECT_EQ(ut_dev_eal_init(ctx_), -EINVAL);
+  EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 0);
+}
+
+/* rte_argparse skips blanks before a number and takes a range from high to low. */
+TEST_F(MtDevEalArgvRemapTest, CorelistWithBlanksAndReversedRangeIsRanked) {
+  ut_dev_set_lcores(ctx_, 42, "40, 41,45-43");
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ValueAfter("-l"), "42,40, 41,45-43");
+  EXPECT_EQ(ValueAfter("--main-lcore"), "2");
+}
+
+TEST_F(MtDevEalArgvRemapTest, BlankSeparatedCorelistWithoutMainLcoreIsLeftToEal) {
+  ut_dev_set_lcores(ctx_, 0, "40, 41");
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 1);
+  EXPECT_EQ(ValueAfter("-l"), "0,40, 41");
+}
+
+TEST_F(MtDevEalArgvRemapTest, ReversedRangeWithoutMainLcoreIsLeftToEal) {
+  ut_dev_set_lcores(ctx_, 0, "43-40");
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 1);
+  EXPECT_EQ(ValueAfter("-l"), "0,43-40");
+}
+
+TEST_F(MtDevEalArgvRemapTest, UnreadableAffinityIsRejected) {
+  ut_dev_set_affinity(ctx_, nullptr, -1);
+  ut_dev_set_lcores(ctx_, 62, nullptr);
+
+  EXPECT_EQ(ut_dev_eal_init(ctx_), -EINVAL);
+  EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 0);
+}
+
+/* EAL would reject the rank opaquely. */
+TEST_F(MtDevEalArgvRemapTest, MainLcoreRankedPastRteMaxLcoreIsRejected) {
+  if (RTE_MAX_LCORE >= 1024) GTEST_SKIP() << "every CPU id is below RTE_MAX_LCORE";
+  ut_dev_set_lcores(ctx_, RTE_MAX_LCORE,
+                    ("0-" + std::to_string(RTE_MAX_LCORE - 1)).c_str());
+
+  EXPECT_EQ(ut_dev_eal_init(ctx_), -EINVAL);
+  EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 0);
+}
+
+TEST_F(MtDevEalArgvRemapTest, CorelistAloneKeepsTheDefaultMainLcore) {
+  ut_dev_set_lcores(ctx_, 0, "62,63");
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ValueAfter("-l"), "0,62,63");
+  EXPECT_FALSE(HasOption("--main-lcore"));
+}
+
 /* The "0," main_lcore prefix costs 2 of the buffer's bytes, leaving len - 3 for the user
  * list before the NUL. That last accepted byte and the first rejected one are what tell a
  * correct bound from an off by one. */

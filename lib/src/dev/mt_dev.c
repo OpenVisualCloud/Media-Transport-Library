@@ -4,6 +4,11 @@
 
 #include "mt_dev.h"
 
+#include <ctype.h>
+#ifndef WINDOWSENV
+#include <sched.h>
+#endif
+
 #include "../mt_flow.h"
 #include "../mt_log.h"
 #include "../mt_sch.h"
@@ -378,6 +383,104 @@ static int dev_eal_loaded_pmd_dir(char* out, size_t len) {
 }
 #endif
 
+/* The CPU ids a DPDK corelist names, parsed as rte_argparse does: "1, 4-6", "6-4". */
+static int dev_eal_parse_cpus(const char* list, bool* cpus) {
+  const char* c = list;
+
+  while (*c) {
+    char* end;
+    while (isblank((unsigned char)*c)) c++;
+    if (!isdigit((unsigned char)*c)) return -EINVAL;
+    unsigned long lo = strtoul(c, &end, 10);
+    unsigned long hi = lo;
+    if (*end == '-') {
+      c = end + 1;
+      while (isblank((unsigned char)*c)) c++;
+      if (!isdigit((unsigned char)*c)) return -EINVAL;
+      hi = strtoul(c, &end, 10);
+    }
+    if (hi < lo) {
+      unsigned long swap = lo;
+      lo = hi;
+      hi = swap;
+    }
+    if (hi >= MT_EAL_CPU_MAX) return -EINVAL;
+    for (unsigned long cpu = lo; cpu <= hi; cpu++) cpus[cpu] = true;
+    if (*end == ',') {
+      end++;
+      if (!*end) return -EINVAL;
+    } else if (*end) {
+      return -EINVAL;
+    }
+    c = end;
+  }
+  return 0;
+}
+
+/*
+ * Builds the EAL "-l" and "--main-lcore" values; an empty string omits the option.
+ * With remap EAL numbers the listed CPUs 0..n-1 in CPU order: main_lcore is passed as its
+ * rank.
+ */
+static int dev_eal_lcore_args(const struct mtl_init_params* p, bool remap,
+                              const bool* affinity, char* list, size_t list_len,
+                              char* main, size_t main_len) {
+  bool cpus[MT_EAL_CPU_MAX] = {false};
+  bool parsed = false;
+  uint32_t main_cpu = p->main_lcore;
+
+  list[0] = '\0';
+  main[0] = '\0';
+  if (main_cpu >= MT_EAL_CPU_MAX) {
+    err("%s, main_lcore %u is not a CPU id\n", __func__, main_cpu);
+    return -EINVAL;
+  }
+
+  if (p->lcores) {
+    parsed = !dev_eal_parse_cpus(p->lcores, cpus);
+    bool has_main = parsed && main_cpu && cpus[main_cpu];
+    int len = has_main ? snprintf(list, list_len, "%s", p->lcores)
+                       : snprintf(list, list_len, "%u,%s", main_cpu, p->lcores);
+    if (len < 0 || len >= (int)list_len) {
+      err("%s, lcores list too long: %s\n", __func__, p->lcores);
+      return -EINVAL;
+    }
+  }
+  if (!main_cpu) return 0;
+
+  if (!remap) {
+    snprintf(main, main_len, "%u", main_cpu);
+    return 0;
+  }
+  if (p->lcores) {
+    if (!parsed) {
+      err("%s, can not rank main_lcore in the lcores list: %s\n", __func__, p->lcores);
+      return -EINVAL;
+    }
+  } else {
+    if (!affinity) {
+      err("%s, the CPU affinity is unavailable to remap main_lcore %u\n", __func__,
+          main_cpu);
+      return -EINVAL;
+    }
+    if (!affinity[main_cpu]) {
+      err("%s, main_lcore %u is not a CPU of this process\n", __func__, main_cpu);
+      return -EINVAL;
+    }
+    memcpy(cpus, affinity, sizeof(cpus));
+  }
+  cpus[main_cpu] = true;
+  uint32_t rank = 0;
+  for (uint32_t cpu = 0; cpu < main_cpu; cpu++) rank += cpus[cpu];
+  if (rank >= RTE_MAX_LCORE) {
+    err("%s, main_lcore %u would be remapped to lcore %u >= RTE_MAX_LCORE %d\n", __func__,
+        main_cpu, rank, RTE_MAX_LCORE);
+    return -EINVAL;
+  }
+  snprintf(main, main_len, "%u", rank);
+  return 0;
+}
+
 static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_info) {
   char* argv[MT_EAL_MAX_ARGS];
   int argc, ret;
@@ -474,33 +577,7 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     argc++;
   }
 
-  /* --main-lcore */
-  char main_lcore[64];
-
-  if (p->main_lcore) {
-    argv[argc] = "--main-lcore";
-    argc++;
-
-    info("%s, main_lcore: %u\n", __func__, p->main_lcore);
-    snprintf(main_lcore, sizeof(main_lcore), "%u", p->main_lcore);
-    argv[argc] = main_lcore;
-    argc++;
-  }
-
-  char lcores[MT_EAL_LCORES_MAX_LEN];
-  if (p->lcores) {
-    argv[argc] = "-l";
-    argc++;
-    info("%s, lcores: %s\n", __func__, p->lcores);
-    int len = snprintf(lcores, sizeof(lcores), "%u,%s", p->main_lcore, p->lcores);
-    if (len < 0 || len >= (int)sizeof(lcores)) {
-      err("%s, lcores list too long: %s\n", __func__, p->lcores);
-      return -EINVAL;
-    }
-    argv[argc] = lcores;
-    argc++;
-  }
-
+  bool remap = false;
 #if RTE_VERSION >= RTE_VERSION_NUM(25, 11, 0, 0)
   /* the lcore id is the CPU id only if this DPDK numbers every CPU of the host */
   long cpus = sysconf(_SC_NPROCESSORS_CONF);
@@ -509,10 +586,45 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
          __func__, cpus, RTE_MAX_LCORE);
     warn("%s, rebuild DPDK with DPDK_MAX_LCORES=%ld ./script/build_dpdk.sh -f\n",
          __func__, cpus);
+    remap = true;
+  }
+#endif
+
+  bool affinity[MT_EAL_CPU_MAX];
+  bool* affinity_p = NULL;
+#ifndef WINDOWSENV
+  cpu_set_t cpu_set;
+  if (remap && p->main_lcore && !p->lcores &&
+      !sched_getaffinity(0, sizeof(cpu_set), &cpu_set)) {
+    for (int cpu = 0; cpu < MT_EAL_CPU_MAX; cpu++)
+      affinity[cpu] = CPU_ISSET(cpu, &cpu_set);
+    affinity_p = affinity;
+  }
+#endif
+
+  char lcores[MT_EAL_LCORES_MAX_LEN];
+  char main_lcore[16];
+  ret = dev_eal_lcore_args(p, remap, affinity_p, lcores, sizeof(lcores), main_lcore,
+                           sizeof(main_lcore));
+  if (ret < 0) return ret;
+  if (main_lcore[0]) {
+    info("%s, main_lcore: %u as %s\n", __func__, p->main_lcore, main_lcore);
+    argv[argc] = "--main-lcore";
+    argc++;
+    argv[argc] = main_lcore;
+    argc++;
+  }
+  if (lcores[0]) {
+    info("%s, lcores: %s\n", __func__, p->lcores);
+    argv[argc] = "-l";
+    argc++;
+    argv[argc] = lcores;
+    argc++;
+  }
+  if (remap) {
     argv[argc] = "--remap-lcore-ids";
     argc++;
   }
-#endif
 
   if (!pci_ports) {
     argv[argc] = "--no-pci";

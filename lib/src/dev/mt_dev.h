@@ -46,6 +46,9 @@
  */
 #define MT_EAL_MAX_ARGS (19 + 2 * MTL_PORT_MAX + 2 * MTL_DMA_DEV_MAX)
 
+/** CPU ids dev_eal_init() accepts in main_lcore and lcores, like CPU_SETSIZE. */
+#define MT_EAL_CPU_MAX 1024
+
 /**
  * Width of the "-l" corelist dev_eal_init() builds: main_lcore plus every lcore named
  * individually, at most 10 digits and a separator each, plus the NUL.
