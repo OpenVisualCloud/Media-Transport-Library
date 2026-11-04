@@ -552,7 +552,16 @@ static int sch_lcore_shm_init(struct mt_lcore_mgr* mgr, bool clear_on_first) {
   }
   int shm_id = shmget(key, sizeof(*lcore_shm), 0666 | IPC_CREAT);
   if (shm_id < 0) {
-    err("%s, can not get shared memory for lcore, %s\n", __func__, strerror(errno));
+    int shm_errno = errno;
+    struct shmid_ds ds;
+    int old_id = shmget(key, 0, 0);
+
+    err("%s, can not get shared memory for lcore, %s\n", __func__, strerror(shm_errno));
+    if (shm_errno == EINVAL && old_id >= 0 && !shmctl(old_id, IPC_STAT, &ds) &&
+        (size_t)ds.shm_segsz < sizeof(*lcore_shm))
+      err("%s, lcore shm %d is %zu bytes, this build needs %zu: stop the older "
+          "MTL/MtlManager, then 'ipcrm -m %d' or reboot\n",
+          __func__, old_id, (size_t)ds.shm_segsz, sizeof(*lcore_shm), old_id);
     return -EIO;
   }
   mgr->lcore_shm_id = shm_id;
