@@ -183,3 +183,23 @@ int ut_sch_filelock_create_mode(unsigned int* mode) {
   rmdir(dir);
   return ret;
 }
+
+int ut_sch_lcore_shm_get(size_t old_size, int attached, size_t new_size, size_t* size) {
+  char path[] = "/tmp/ut_sch_shm_XXXXXX";
+  int fd = mkstemp(path);
+  if (fd < 0) return -1;
+  close(fd);
+  key_t key = ftok(path, 1);
+  int old_id = key < 0 ? -1 : shmget(key, old_size, 0600 | IPC_CREAT | IPC_EXCL);
+  void* addr = (attached && old_id >= 0) ? shmat(old_id, NULL, 0) : (void*)-1;
+
+  int id = old_id < 0 ? -1 : sch_lcore_shm_get(key, new_size);
+  struct shmid_ds ds;
+  if (id >= 0 && shmctl(id, IPC_STAT, &ds) == 0) *size = ds.shm_segsz;
+
+  if (addr != (void*)-1) shmdt(addr);
+  if (old_id >= 0) shmctl(old_id, IPC_RMID, NULL);
+  if (id >= 0 && id != old_id) shmctl(id, IPC_RMID, NULL);
+  unlink(path);
+  return id;
+}

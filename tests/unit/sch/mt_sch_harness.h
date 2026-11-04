@@ -10,6 +10,7 @@
 #define TESTS_UNIT_SCH_MT_SCH_HARNESS_H
 
 #include <mtl_api.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,6 +48,11 @@ int ut_sch_lcore_entry_mempolicy(int* mode, int* exit_mode);
 /* Creates the lcore lock file through sch_filelock_lock() under umask 0, in a fresh
  * temporary directory; *mode is its permission bits. Returns 0 on success. */
 int ut_sch_filelock_create_mode(unsigned int* mode);
+
+/* sch_lcore_shm_get() on a private key whose segment already exists with old_size bytes
+ * and, if attached is set, a process attached to it, asking for new_size. Returns the shm
+ * id (*size is its resulting size) or -1. The segment is removed before returning. */
+int ut_sch_lcore_shm_get(size_t old_size, int attached, size_t new_size, size_t* size);
 
 #ifdef __cplusplus
 }

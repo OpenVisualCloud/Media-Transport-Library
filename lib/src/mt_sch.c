@@ -539,6 +539,43 @@ static int sch_filelock_unlock(struct mt_sch_mgr* mgr) {
   return 0;
 }
 
+/* A segment at least as large as the table is used as is: entries sit at fixed offsets,
+ * so a larger table from a newer layout is read as a prefix. A smaller one makes shmget()
+ * fail with EINVAL, and is recreated at the new size once nobody is attached to it. */
+static int sch_lcore_shm_get(key_t key, size_t size) {
+  int shm_id = shmget(key, size, 0666 | IPC_CREAT);
+  if (shm_id >= 0) return shm_id;
+  if (errno != EINVAL) {
+    err("%s, can not get shared memory for lcore, %s\n", __func__, strerror(errno));
+    return -1;
+  }
+
+  struct shmid_ds shmds;
+  int old_id = shmget(key, 0, 0);
+  if (old_id < 0 || shmctl(old_id, IPC_STAT, &shmds) < 0) {
+    err("%s, can not stat the old lcore shared memory, %s\n", __func__, strerror(errno));
+    return -1;
+  }
+  if (shmds.shm_nattch != 0) {
+    err("%s, lcore shared memory %d is %zu bytes, need %zu, and %d process(es) are "
+        "attached; stop the old MTL/MtlManager or run 'ipcrm -m %d'\n",
+        __func__, old_id, (size_t)shmds.shm_segsz, size, (int)shmds.shm_nattch, old_id);
+    return -1;
+  }
+  if (shmctl(old_id, IPC_RMID, NULL) < 0) {
+    err("%s, can not remove the old lcore shared memory %d, %s\n", __func__, old_id,
+        strerror(errno));
+    return -1;
+  }
+  warn("%s, recreate lcore shared memory %d from %zu to %zu bytes\n", __func__, old_id,
+       (size_t)shmds.shm_segsz, size);
+
+  shm_id = shmget(key, size, 0666 | IPC_CREAT);
+  if (shm_id < 0)
+    err("%s, can not create shared memory for lcore, %s\n", __func__, strerror(errno));
+  return shm_id;
+}
+
 static int sch_lcore_shm_init(struct mt_lcore_mgr* mgr, bool clear_on_first) {
   struct mt_lcore_shm* lcore_shm = NULL;
   int ret;
@@ -550,11 +587,8 @@ static int sch_lcore_shm_init(struct mt_lcore_mgr* mgr, bool clear_on_first) {
     err("%s, ftok error: %s\n", __func__, strerror(errno));
     return -EIO;
   }
-  int shm_id = shmget(key, sizeof(*lcore_shm), 0666 | IPC_CREAT);
-  if (shm_id < 0) {
-    err("%s, can not get shared memory for lcore, %s\n", __func__, strerror(errno));
-    return -EIO;
-  }
+  int shm_id = sch_lcore_shm_get(key, sizeof(*lcore_shm));
+  if (shm_id < 0) return -EIO;
   mgr->lcore_shm_id = shm_id;
 
   lcore_shm = shmat(shm_id, NULL, 0);

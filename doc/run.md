@@ -601,7 +601,7 @@ sudo ldconfig
 
 This might happen after commit `4f46e49`, because the lcore_shm structure is [changed](https://github.com/OpenVisualCloud/Media-Transport-Library/commit/4f46e493b79451c7ca564d82e1be56c7916b0722#diff-7ff8a138885ebda032ff57250ff81174b30722cc168a26fe39d9a4ff501d48d0L710).
 It also happens when the structure of the starting process is larger than the one in the system: its size follows `RTE_MAX_LCORE` of the DPDK build, so after a rebuild of DPDK with a larger `DPDK_MAX_LCORES`, or while an MTL 26.09 or earlier runs or after one crashed.
-Stop the older processes first: MTL 26.09 and earlier must not run together with a later release (see the [lcore Guide](shm_lcore.md)).
+A segment nobody is attached to is recreated at the larger size automatically; the error remains only while an older process is attached. Stop the older processes first: MTL 26.09 and earlier must not run together with a later release (see the [lcore Guide](shm_lcore.md)).
 
 ```text
 MT: 2023-11-24 15:06:27, Error: sch_lcore_shm_init, can not get shared memory for lcore, Invalid argument
