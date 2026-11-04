@@ -682,7 +682,7 @@ struct st_rx_video_session_impl {
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 #ifdef MTL_HAS_IPMX
-  struct ipmx_sr_rx* ipmx_sr; /* NULL without ST20_RX_FLAG_IPMX, DATA_PATH_ONLY or st22 */
+  struct ipmx_sr_rx* ipmx_sr; /* NULL without ST20_RX_FLAG_IPMX or with DATA_PATH_ONLY */
 #endif
   uint16_t burst_loss_max;
   float sim_loss_rate;

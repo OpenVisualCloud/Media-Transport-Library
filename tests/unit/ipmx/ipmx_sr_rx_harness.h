@@ -27,8 +27,10 @@ struct ut_srrx_flow {
 };
 
 int ut_srrx_init(void);
-/* ipmx_sr_rx_parse() and the poll burst size of lib/src/ipmx/ipmx_sr_rx.c */
-int ut_srrx_parse(const uint8_t* rtcp, size_t len, struct ipmx_rx_sr_info* sr);
+/* ipmx_sr_rx_parse() with the session's video Media Info Block type (0x0001 st20,
+ * 0x0003 st22) and the poll burst size of lib/src/ipmx/ipmx_sr_rx.c */
+int ut_srrx_parse(const uint8_t* rtcp, size_t len, uint16_t video_mib,
+                  struct ipmx_rx_sr_info* sr);
 int ut_srrx_burst_size(void);
 ut_srrx_ctx* ut_srrx_create(int num_port, uint32_t flags);
 void ut_srrx_destroy(ut_srrx_ctx* ctx);
@@ -78,6 +80,11 @@ int ut_srrx_api_get(ut_srrx_ctx* ctx, int s_port, struct ipmx_rx_sr_info* info,
                     bool valid_handle);
 int ut_srrx_api_get_pipeline(ut_srrx_ctx* ctx, int s_port, struct ipmx_rx_sr_info* info,
                              bool valid_handle);
+/* the public st22 / st22p getters, of a handle of the right or a wrong type */
+int ut_srrx_api_get_st22(ut_srrx_ctx* ctx, int s_port, struct ipmx_rx_sr_info* info,
+                         bool valid_handle);
+int ut_srrx_api_get_st22p(ut_srrx_ctx* ctx, int s_port, struct ipmx_rx_sr_info* info,
+                          bool valid_handle);
 
 #ifdef __cplusplus
 }

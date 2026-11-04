@@ -51,12 +51,22 @@ static void ipmx_sr_rx_video_mib(const uint8_t* mib, struct ipmx_video_info* inf
   info->vtotal = ipmx_get_be16(&mib[90]);
 }
 
+/* TR-10-15 Part 1 section 9, the reserved bits dropped */
+static void ipmx_sr_rx_jxs_mib(const uint8_t* mib, struct ipmx_jxs_info* jxs) {
+  uint32_t word1 = ipmx_get_be32(&mib[4]);
+
+  jxs->transmode = word1 >> 31;
+  jxs->packetmode = (word1 >> 30) & 1;
+  jxs->ppih = word1 & 0xffff;
+  jxs->plev = ipmx_get_be16(&mib[8]);
+}
+
 /*
  * TR-10-1 section 8.7: the profile extension, an IPMX Info Block if tagged so. A defect
  * keeps the SR: in the block header it drops the block, in a Media Info Block it ends the
  * walk with the header and the MIBs before it kept; both count in info_malformed.
  */
-static void ipmx_sr_rx_info_block(const uint8_t* ext, size_t len,
+static void ipmx_sr_rx_info_block(const uint8_t* ext, size_t len, uint16_t video_mib,
                                   struct ipmx_rx_sr_info* sr) {
   size_t block_len, mib_len;
 
@@ -73,27 +83,36 @@ static void ipmx_sr_rx_info_block(const uint8_t* ext, size_t len,
   memcpy(sr->info.mediaclk, &ext[IPMX_MEDIACLK_OFFSET], sizeof(sr->info.mediaclk));
   for (size_t off = IPMX_INFO_HDR_LEN; off < block_len; off += mib_len) {
     const uint8_t* mib = &ext[off];
+    uint16_t type;
 
     mib_len = ((size_t)ipmx_get_be16(&mib[2]) + 1) * 4;
     if (mib_len > block_len - off) {
       sr->info_malformed = 1;
       return;
     }
-    if (ipmx_get_be16(mib) != IPMX_MEDIA_INFO_VIDEO) {
+    type = ipmx_get_be16(mib);
+    if (type == video_mib) {
+      if (mib_len < IPMX_MEDIA_INFO_VIDEO_LEN) {
+        sr->info_malformed = 1;
+        return;
+      }
+      if (!sr->has_video_mib) ipmx_sr_rx_video_mib(mib, &sr->info);
+      sr->has_video_mib = true;
+    } else if (type == IPMX_MEDIA_INFO_JXS && video_mib == IPMX_MEDIA_INFO_CBR_VIDEO) {
+      if (mib_len < IPMX_MEDIA_INFO_JXS_LEN) {
+        sr->info_malformed = 1;
+        return;
+      }
+      if (!sr->has_jxs_mib) ipmx_sr_rx_jxs_mib(mib, &sr->jxs);
+      sr->has_jxs_mib = true;
+    } else {
       sr->unknown_mib++;
-      continue;
     }
-    if (mib_len < IPMX_MEDIA_INFO_VIDEO_LEN) {
-      sr->info_malformed = 1;
-      return;
-    }
-    if (!sr->has_video_mib) ipmx_sr_rx_video_mib(mib, &sr->info);
-    sr->has_video_mib = true;
   }
 }
 
 /* an SR of len content octets with rc report blocks; only checked if sr is NULL */
-static int ipmx_sr_rx_sr(const uint8_t* pkt, size_t len, uint8_t rc,
+static int ipmx_sr_rx_sr(const uint8_t* pkt, size_t len, uint8_t rc, uint16_t video_mib,
                          struct ipmx_rx_sr_info* sr) {
   size_t ext = IPMX_RTCP_SR_LEN + (size_t)rc * IPMX_RTCP_REPORT_BLOCK_LEN;
 
@@ -105,7 +124,7 @@ static int ipmx_sr_rx_sr(const uint8_t* pkt, size_t len, uint8_t rc,
   sr->rtp_timestamp = ipmx_get_be32(&pkt[16]);
   sr->pkt_count = ipmx_get_be32(&pkt[20]);
   sr->octet_count = ipmx_get_be32(&pkt[24]);
-  ipmx_sr_rx_info_block(&pkt[ext], len - ext, sr);
+  ipmx_sr_rx_info_block(&pkt[ext], len - ext, video_mib, sr);
   return 0;
 }
 
@@ -138,7 +157,8 @@ static int ipmx_sr_rx_sdes(const uint8_t* pkt, size_t len, uint8_t sc, bool want
   return 0;
 }
 
-int ipmx_sr_rx_parse(const uint8_t* rtcp, size_t len, struct ipmx_rx_sr_info* sr) {
+int ipmx_sr_rx_parse(const uint8_t* rtcp, size_t len, uint16_t video_mib,
+                     struct ipmx_rx_sr_info* sr) {
   bool found = false;
   int ret;
 
@@ -164,7 +184,7 @@ int ipmx_sr_rx_parse(const uint8_t* rtcp, size_t len, struct ipmx_rx_sr_info* sr
     count = pkt[0] & IPMX_RTCP_COUNT_MASK;
 
     if (pkt[1] == IPMX_RTCP_PT_SR) {
-      ret = ipmx_sr_rx_sr(pkt, content, count, found ? NULL : sr);
+      ret = ipmx_sr_rx_sr(pkt, content, count, video_mib, found ? NULL : sr);
       if (ret < 0) return ret;
       found = true;
     } else if (pkt[1] == IPMX_RTCP_PT_SDES) {
@@ -189,8 +209,6 @@ int ipmx_sr_rx_init(struct mtl_main_impl* impl, struct st_rx_video_session_impl*
   struct ipmx_sr_rx* sr;
 
   if (!(s->ops.flags & ST20_RX_FLAG_IPMX)) return 0;
-  /* no st22 SR parse yet, TR-10-11 section 12 */
-  if (s->st22_ops_flags & ST22_RX_FLAG_IPMX) return 0;
   if (s->ops.flags & ST20_RX_FLAG_DATA_PATH_ONLY) {
     info("%s(%d), no sender report queue as data path only\n", __func__, s->idx);
     return 0;
@@ -202,6 +220,9 @@ int ipmx_sr_rx_init(struct mtl_main_impl* impl, struct st_rx_video_session_impl*
   }
   sr->impl = impl;
   sr->ops_ssrc = s->ops.ssrc;
+  /* TR-10-11 section 12 */
+  sr->video_mib = (s->st22_ops_flags & ST22_RX_FLAG_IPMX) ? IPMX_MEDIA_INFO_CBR_VIDEO
+                                                          : IPMX_MEDIA_INFO_VIDEO;
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) rte_seqcount_init(&sr->port[i].seq);
   s->ipmx_sr = sr;
   return 0;
@@ -254,7 +275,8 @@ void ipmx_sr_rx_queue_put(struct st_rx_video_session_impl* s) {
 
 /* the RTCP payload of one frame: as tv_tasklet_rtcp(), the bytes both the UDP header
  * declares and the mbuf holds, after an IPv4 header without options */
-static int ipmx_sr_rx_parse_pkt(struct rte_mbuf* pkt, struct ipmx_rx_sr_info* rep) {
+static int ipmx_sr_rx_parse_pkt(struct rte_mbuf* pkt, uint16_t video_mib,
+                                struct ipmx_rx_sr_info* rep) {
   const struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, const struct mt_udp_hdr*);
   uint16_t data_len = rte_pktmbuf_data_len(pkt);
   uint16_t dgram_len;
@@ -266,7 +288,7 @@ static int ipmx_sr_rx_parse_pkt(struct rte_mbuf* pkt, struct ipmx_rx_sr_info* re
   return ipmx_sr_rx_parse(
       (const uint8_t*)&hdr[1],
       RTE_MIN((size_t)(data_len - sizeof(*hdr)), (size_t)(dgram_len - sizeof(hdr->udp))),
-      rep);
+      video_mib, rep);
 }
 
 static void ipmx_sr_rx_pkt(struct st_rx_video_session_impl* s, struct ipmx_sr_rx_port* p,
@@ -275,7 +297,7 @@ static void ipmx_sr_rx_pkt(struct st_rx_video_session_impl* s, struct ipmx_sr_rx
   struct ipmx_rx_sr_info rep;
   struct ipmx_rx_sr_info* last = &p->info;
   bool mismatch, changed = false;
-  int ret = ipmx_sr_rx_parse_pkt(pkt, &rep);
+  int ret = ipmx_sr_rx_parse_pkt(pkt, sr->video_mib, &rep);
 
   if (ret == -ENOENT) return;
   mismatch = !ret && p->media_seen && rep.ssrc != p->media_ssrc;

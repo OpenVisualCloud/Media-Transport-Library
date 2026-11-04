@@ -31,10 +31,11 @@ struct ipmx_sr_rx_port {
   struct ipmx_rx_sr_info info;
 };
 
-/* The Sender Reports of one st20 RX session, a queue on udp_port + 1 per port */
+/* The Sender Reports of one st20 or st22 RX session, a queue on udp_port + 1 per port */
 struct ipmx_sr_rx {
   struct mtl_main_impl* impl;
-  uint32_t ops_ssrc; /* the SSRC the media RX filters on, 0 for any */
+  uint32_t ops_ssrc;  /* the SSRC the media RX filters on, 0 for any */
+  uint16_t video_mib; /* IPMX_MEDIA_INFO_VIDEO, or IPMX_MEDIA_INFO_CBR_VIDEO for st22 */
   struct ipmx_sr_rx_port port[MTL_SESSION_PORT_MAX];
 };
 
@@ -42,12 +43,15 @@ struct ipmx_sr_rx {
  * Parse one compound RTCP packet of len bytes, never reading past it. On 0 sr holds the
  * first Sender Report, its Info Block and CNAME, unknown_mib the Media Info Blocks of
  * unknown type in it and info_malformed 1 for an Info Block defect; the other counters
- * are 0. -ENOENT: no Sender Report, -EINVAL: malformed.
+ * are 0. video_mib is the session's video Media Info Block type; with
+ * IPMX_MEDIA_INFO_CBR_VIDEO the JPEG XS one is decoded too, else it is unknown.
+ * -ENOENT: no Sender Report, -EINVAL: malformed.
  */
-int ipmx_sr_rx_parse(const uint8_t* rtcp, size_t len, struct ipmx_rx_sr_info* sr);
+int ipmx_sr_rx_parse(const uint8_t* rtcp, size_t len, uint16_t video_mib,
+                     struct ipmx_rx_sr_info* sr);
 
 struct st_rx_video_session_impl;
-/** Create s->ipmx_sr with ST20_RX_FLAG_IPMX, unless DATA_PATH_ONLY or an st22 session. */
+/** Create s->ipmx_sr with ST20_RX_FLAG_IPMX, unless DATA_PATH_ONLY. */
 int ipmx_sr_rx_init(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s);
 void ipmx_sr_rx_uinit(struct st_rx_video_session_impl* s);
 /**

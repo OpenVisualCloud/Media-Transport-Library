@@ -514,7 +514,8 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
 - IPMX Sender Report, its RX and the SDP (`lib/src/ipmx/`). The TX SR is 204 B of RTCP (SR 28 + IPMX Info Block 176, built at create by `lib/src/ipmx/ipmx_info.c`, ts-refclk and block version refreshed per frame, one block shared by both 2022-7 legs) plus the SDES CNAME, about 270 B on the wire.
   An st22 (JPEG XS) SR has a 188 B Info Block (MIB 0x0003 then 0x0008) and counts each frame from the box + codestream size the st22 builder stamps in packet 0's mbuf priv (`ipmx_frame_size`); st22 uses TSC, never RL (`st_tx_video_session.c:3780`), so the SR is burst right before packet 0 once packet 0's target is reached;
   the PTP path does the same and with TSN the SR takes packet 0's launch time. The st22 builder releases packet 0 only at its target, so the per-leg SR `late` stat counts every st22 frame (`late == sent`), by design.
-  RX side (`lib/src/ipmx/ipmx_sr_rx.c`): with `ST20_RX_FLAG_IPMX` each port has an rxq on the media flow with UDP port + 1, taken in `rv_init_hw()` and polled by the RX video tasklet; read with `ipmx_st20[p]_rx_get_sr_info()` (seqcount snapshot).
+  RX side (`lib/src/ipmx/ipmx_sr_rx.c`): with `ST20_RX_FLAG_IPMX` (st22 maps `ST22_RX_FLAG_IPMX` to it) each port has an rxq on the media flow with UDP port + 1, taken in `rv_init_hw()` and polled by the RX video tasklet; read with `ipmx_st20[p]_rx_get_sr_info()` / `ipmx_st22[p]_rx_get_sr_info()` (seqcount snapshot).
+  The parser takes the session's video MIB type (`struct ipmx_sr_rx.video_mib`): st20 decodes 0x0001, st22 0x0003 plus the JPEG XS 0x0008 into `jxs`; the other types count in `unknown_mib`.
   It is a CNI ring when the media flow is (`MTL_FLAG_RX_USE_CNI`) or the port has CNI running as a tasklet, else a dedicated NIC queue: the first csq sets the CNI thread sleep to 0 for good, so a ring in CNI thread mode would busy-poll a core.
   The poll burst must be ≥ 8: iavf/ice AVX2 vector RX floors `nb_pkts` to 8 descriptors, so `rte_eth_rx_burst(…, 4)` on a dedicated queue always returns 0 (`IPMX_SR_RX_BURST` is 32).
   SDP (`lib/src/ipmx/ipmx_sdp.c`): `ipmx_st20[p]_tx_get_sdp()` builds it from the `ipmx_sr_tx_get_info()` snapshot and the `s_hdr[]` addressing, both read under the session spinlock (so a higher sess-version never carries older content), and SDP and SR cannot disagree; `ipmx_sdp_build()` is pure (unit-tested without a NIC).
@@ -1204,7 +1205,7 @@ between processes, `run_pf.sh` and the MCP tools 10 s. What each case proves:
 | ST2110-40 ancillary RX | `st40/st40_rx_rtp_fuzz.c` | Ancillary parsing |
 | ST40 helpers | `st40/st40_ancillary_helpers_fuzz.c` | UDW, checksum, parity |
 | RTCP TX | `rtcp/mt_rtcp_tx_parse_fuzz.c` | RTCP NACK parsing |
-| IPMX SR RX | `ipmx/ipmx_sr_parse_fuzz.c` | IPMX Sender Report compound parsing; only with `-Denable_ipmx=true`, which `fuzz.sh` (CI) does not set |
+| IPMX SR RX | `ipmx/ipmx_sr_parse_fuzz.c` | IPMX Sender Report compound parsing, st20 or st22 by the first input byte; only with `-Denable_ipmx=true`, which `fuzz.sh` (CI) does not set |
 
 Architecture: minimal DPDK EAL (no hugepages, no PCI) → full session context reset per input → call internal handler.
 

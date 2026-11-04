@@ -135,6 +135,22 @@ int ipmx_st20_rx_get_tp_stat(st20_rx_handle handle, enum mtl_session_port port,
 int ipmx_st20p_rx_get_tp_stat(st20p_rx_handle handle, enum mtl_session_port port,
                               struct ipmx_rx_tp_stat* stat);
 
+/**
+ * The JPEG XS Media Info Block 0x0008 of an st22 stream, TR-10-15 Part 1 section 9: the
+ * RFC 9134 packetization and the JPEG XS profile and level of the codestream.
+ */
+struct ipmx_jxs_info {
+  /** RFC 9134 T, true for sequential transmission order */
+  bool transmode;
+  /** RFC 9134 K, true for slice packetization mode, false for codestream mode */
+  bool packetmode;
+  /** JPEG XS Ppih, the profile of the codestream (ISO/IEC 21122-2) */
+  uint16_t ppih;
+  /** JPEG XS Plev, the level, sublevel and fbblevel of the codestream (ISO/IEC
+   * 21122-2) */
+  uint16_t plev;
+};
+
 /** The longest SDES CNAME, RFC 3550 section 6.5 */
 #define IPMX_RX_SR_CNAME_MAX (255)
 
@@ -151,15 +167,17 @@ struct ipmx_rx_sr_info {
    * packet */
   uint64_t malformed;
   /** accepted Sender Reports with a defective IPMX Info Block: a block or Media Info
-   * Block length past its container, a block shorter than its 84 octet header or a
-   * 0x0001 Media Info Block shorter than 92 octets */
+   * Block length past its container, a block shorter than its 84 octet header, a video
+   * Media Info Block shorter than 92 octets or, on st22, a 0x0008 one shorter than 12 */
   uint64_t info_malformed;
   /** accepted Sender Reports without an IPMX Info Block (no profile extension tagged
    * 0x5831) */
   uint64_t no_info_block;
   /** Sender Reports dropped as their SSRC is not the one of the media on the port */
   uint64_t ssrc_mismatch;
-  /** Media Info Blocks of a type other than 0x0001 (uncompressed video), skipped */
+  /** Media Info Blocks skipped: of a type other than the session's video one (0x0001
+   * uncompressed on st20, 0x0003 constant size compressed on st22) or, on st20, the
+   * JPEG XS 0x0008 */
   uint64_t unknown_mib;
   /** accepted IPMX Info Blocks with a block version other than the one before */
   uint64_t version_changes;
@@ -185,13 +203,19 @@ struct ipmx_rx_sr_info {
   /** the last Sender Report carries an IPMX Info Block with a valid header: info has
    * the block version, ts_refclk and mediaclk */
   bool has_info;
-  /** the Info Block holds a 0x0001 Media Info Block: the other info fields are set. A
-   * defect counted in info_malformed stops the Media Info Block walk, so false can also
-   * mean a broken one */
+  /** the Info Block holds the session's video Media Info Block (0x0001 on st20, 0x0003
+   * on st22, the first one if several): the other info fields are set. A defect counted
+   * in info_malformed stops the Media Info Block walk, so false can also mean a broken
+   * one */
   bool has_video_mib;
+  /** st22 only: the Info Block holds a JPEG XS Media Info Block 0x0008, the first one if
+   * several, jxs is set; the same info_malformed rule as has_video_mib */
+  bool has_jxs_mib;
   /** the Info Block content; all zero without has_info, the Media Info Block fields
    * zero without has_video_mib */
   struct ipmx_video_info info;
+  /** the 0x0008 fields with their reserved bits dropped, all zero without has_jxs_mib */
+  struct ipmx_jxs_info jxs;
 };
 
 /**
@@ -227,6 +251,35 @@ int ipmx_st20_rx_get_sr_info(st20_rx_handle handle, enum mtl_session_port port,
  * with ST20P_RX_FLAG_IPMX.
  */
 int ipmx_st20p_rx_get_sr_info(st20p_rx_handle handle, enum mtl_session_port port,
+                              struct ipmx_rx_sr_info* info);
+
+/**
+ * ipmx_st20_rx_get_sr_info() of an st22 RX session created with ST22_RX_FLAG_IPMX: the
+ * video Media Info Block is the constant size compressed video 0x0003 (TR-10-11 section
+ * 12), the JPEG XS 0x0008 that follows it goes to jxs. The st22 media RX never depends on
+ * the Sender Reports.
+ *
+ * @param handle
+ *   The handle to the rx st2110-22(compressed video) session.
+ * @param port
+ *   The session port, each ST 2022-7 leg has its own Sender Reports.
+ * @param info
+ *   The pointer to save the info.
+ * @return
+ *   - 0: Success.
+ *   - -EBUSY: no Sender Report accepted yet, only the counters in info are set.
+ *   - -EIO: invalid handle, or IPMX not enabled on the session.
+ *   - -EINVAL: port not used by the session, or NULL info.
+ *   - -ENOTSUP: the session has ST22_RX_FLAG_DATA_PATH_ONLY, it gets no Sender Report.
+ */
+int ipmx_st22_rx_get_sr_info(st22_rx_handle handle, enum mtl_session_port port,
+                             struct ipmx_rx_sr_info* info);
+
+/**
+ * ipmx_st22_rx_get_sr_info() of the transport session of an st22p RX pipeline created
+ * with ST22P_RX_FLAG_IPMX.
+ */
+int ipmx_st22p_rx_get_sr_info(st22p_rx_handle handle, enum mtl_session_port port,
                               struct ipmx_rx_sr_info* info);
 
 /**

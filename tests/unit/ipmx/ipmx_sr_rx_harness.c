@@ -27,6 +27,7 @@
 #include "ipmx/ipmx_sr_rx_harness.h"
 #include "mt_main.h"
 #include "st2110/pipeline/st20_pipeline_rx.h"
+#include "st2110/pipeline/st22_pipeline_rx.h"
 #include "st2110/st_rx_video_session.h"
 
 #define UT_SRRX_QUEUED_MAX (64)
@@ -47,6 +48,8 @@ struct ut_srrx_ctx {
   struct st_rx_video_session_impl session;
   struct st_rx_video_session_handle_impl handle;
   struct st20p_rx_ctx pipeline;
+  struct st22_rx_video_session_handle_impl st22_handle;
+  struct st22p_rx_ctx st22_pipeline;
   struct rte_mempool* pool;
   struct ut_srrx_port port[MTL_SESSION_PORT_MAX];
   bool fail_next_get;
@@ -155,8 +158,9 @@ int ut_srrx_init(void) {
   return ut_eal_init();
 }
 
-int ut_srrx_parse(const uint8_t* rtcp, size_t len, struct ipmx_rx_sr_info* sr) {
-  return ut_srrx_lib_parse(rtcp, len, sr);
+int ut_srrx_parse(const uint8_t* rtcp, size_t len, uint16_t video_mib,
+                  struct ipmx_rx_sr_info* sr) {
+  return ut_srrx_lib_parse(rtcp, len, video_mib, sr);
 }
 
 int ut_srrx_burst_size(void) {
@@ -190,6 +194,10 @@ ut_srrx_ctx* ut_srrx_create(int num_port, uint32_t flags) {
   ctx->handle.impl = s;
   ctx->pipeline.type = MT_ST20_HANDLE_PIPELINE_RX;
   ctx->pipeline.transport = &ctx->handle;
+  ctx->st22_handle.type = MT_ST22_HANDLE_RX_VIDEO;
+  ctx->st22_handle.impl = s;
+  ctx->st22_pipeline.type = MT_ST22_HANDLE_PIPELINE_RX;
+  ctx->st22_pipeline.transport = &ctx->st22_handle;
   ut_srrx_active = ctx;
   return ctx;
 }
@@ -353,6 +361,23 @@ int ut_srrx_api_get_pipeline(ut_srrx_ctx* ctx, int s_port, struct ipmx_rx_sr_inf
       valid_handle ? MT_ST20_HANDLE_PIPELINE_RX : MT_ST20_HANDLE_PIPELINE_TX;
   int ret = ipmx_st20p_rx_get_sr_info(&ctx->pipeline, s_port, info);
   ctx->pipeline.type = MT_ST20_HANDLE_PIPELINE_RX;
+  return ret;
+}
+
+int ut_srrx_api_get_st22(ut_srrx_ctx* ctx, int s_port, struct ipmx_rx_sr_info* info,
+                         bool valid_handle) {
+  ctx->st22_handle.type = valid_handle ? MT_ST22_HANDLE_RX_VIDEO : MT_HANDLE_RX_VIDEO;
+  int ret = ipmx_st22_rx_get_sr_info(&ctx->st22_handle, s_port, info);
+  ctx->st22_handle.type = MT_ST22_HANDLE_RX_VIDEO;
+  return ret;
+}
+
+int ut_srrx_api_get_st22p(ut_srrx_ctx* ctx, int s_port, struct ipmx_rx_sr_info* info,
+                          bool valid_handle) {
+  ctx->st22_pipeline.type =
+      valid_handle ? MT_ST22_HANDLE_PIPELINE_RX : MT_ST20_HANDLE_PIPELINE_RX;
+  int ret = ipmx_st22p_rx_get_sr_info(&ctx->st22_pipeline, s_port, info);
+  ctx->st22_pipeline.type = MT_ST22_HANDLE_PIPELINE_RX;
   return ret;
 }
 

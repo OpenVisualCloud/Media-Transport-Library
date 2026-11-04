@@ -2,15 +2,21 @@
 
 /*
  * The IPMX receiver side of the RTCP Sender Report (TR-10-1 section 8.7, TR-10-2 section
- * 10): an st20 RX session with the IPMX flag reads the compound RTCP packets on media
- * port + 1 of each port and keeps the last Sender Report, its Info Block and CNAME for
- * ipmx_st20_rx_get_sr_info(). TR-10-1 section 8.7 says receivers shall tolerate the other
- * RFC 3550 RTCP packets, and a sender is not trusted: a malformed packet is counted and
- * dropped, never read past its end.
+ * 10): an st20 or st22 RX session with the IPMX flag reads the compound RTCP packets on
+ * media port + 1 of each port and keeps the last Sender Report, its Info Block and CNAME
+ * for ipmx_st20[p]_rx_get_sr_info() / ipmx_st22[p]_rx_get_sr_info(). TR-10-1 section 8.7
+ * says receivers shall tolerate the other RFC 3550 RTCP packets, and a sender is not
+ * trusted: a malformed packet is counted and dropped, never read past its end. An st20
+ * session decodes the uncompressed video Media Info Block 0x0001, an st22 one the
+ * constant size compressed video 0x0003 (TR-10-11 section 12) and the JPEG XS 0x0008
+ * after it (TR-10-15 Part 1 section 9); each counts the other types as unknown.
  *
- * - IpmxSrRxParseTest: ipmx_sr_rx_parse() over golden, compound and malformed packets.
+ * - IpmxSrRxParseTest: ipmx_sr_rx_parse() of an st20 session over golden, compound and
+ *   malformed packets.
+ * - IpmxSrRxSt22ParseTest: ipmx_sr_rx_parse() of an st22 session: VSF and TR-10-15
+ *   golden bytes, the MTL TX builder, 0x0008 limits and the expected type swaps.
  * - IpmxSrRxSessionTest: the per-port queue, the poll from the RX tasklet, the SSRC
- *   check, the counters and the getter return codes, on fake rxqs.
+ *   check, the counters and the getter return codes, on fake rxqs, st20 and st22.
  *
  * Run: ./build_unit/tests/unit/UnitTest --gtest_filter='*IpmxSrRx*'
  */
@@ -29,6 +35,7 @@
 #include "ipmx/ipmx_sr_harness.h"
 #include "ipmx/ipmx_sr_rx_harness.h"
 #include "ipmx/ipmx_tr10_2_example.h"
+#include "ipmx/ipmx_vsf_jxsv_sr.h"
 #include "session/stderr_capture.h"
 
 namespace {
@@ -210,9 +217,10 @@ std::string Str(const char (&field)[N]) {
   return std::string(field, strnlen(field, N));
 }
 
-int Parse(const Bytes& pkt, struct ipmx_rx_sr_info* sr) {
+int Parse(const Bytes& pkt, struct ipmx_rx_sr_info* sr,
+          uint16_t video_mib = IPMX_MEDIA_INFO_VIDEO) {
   memset(sr, 0xee, sizeof(*sr)); /* nothing kept from before */
-  return ut_srrx_parse(pkt.data(), pkt.size(), sr);
+  return ut_srrx_parse(pkt.data(), pkt.size(), video_mib, sr);
 }
 
 /* a well formed IPMX SR + SDES CNAME, as an IPMX sender sends it */
@@ -465,7 +473,9 @@ TEST_P(IpmxSrRxMalformedTest, Rejected) {
   struct ipmx_rx_sr_info sr;
   const Bytes& pkt = GetParam().pkt;
   /* reads past the packet are caught by the ipmx_sr_parse_fuzz ASan target, not here */
-  EXPECT_EQ(ut_srrx_parse(pkt.empty() ? nullptr : pkt.data(), pkt.size(), &sr), -EINVAL);
+  EXPECT_EQ(ut_srrx_parse(pkt.empty() ? nullptr : pkt.data(), pkt.size(),
+                          IPMX_MEDIA_INFO_VIDEO, &sr),
+            -EINVAL);
 }
 
 INSTANTIATE_TEST_SUITE_P(Cases, IpmxSrRxMalformedTest,
@@ -532,6 +542,246 @@ INSTANTIATE_TEST_SUITE_P(Cases, IpmxSrRxInfoDefectTest,
                          [](const ::testing::TestParamInfo<InfoDefectCase>& info) {
                            return std::string(info.param.name);
                          });
+
+/* ---- ipmx_sr_rx_parse() of an st22 session: 0x0003 then 0x0008 ---- */
+
+constexpr uint16_t kSt22Mib = IPMX_MEDIA_INFO_CBR_VIDEO;
+
+/* the VSF ipmx_sender_report.py --media jxsv SR, its video MIB type made 0x0003 if cbr */
+Bytes VsfJxsv(bool cbr) {
+  Bytes b(kVsfJxsvSr, kVsfJxsvSr + sizeof(kVsfJxsvSr));
+  if (cbr) b[kVsfJxsvCbrMibTypeOffset] = IPMX_MEDIA_INFO_CBR_VIDEO;
+  return b;
+}
+
+/* the uncompressed video MIB of VideoInfo() relabelled 0x0003, the layout TX sends */
+Bytes CbrMib() {
+  Bytes b = VideoMib();
+  b[1] = IPMX_MEDIA_INFO_CBR_VIDEO;
+  return b;
+}
+
+/* a 0x0008 MIB of words 32-bit words in all, its two TR-10-15 words first */
+Bytes JxsMib(uint32_t word1, uint32_t word2, int words = 3) {
+  Bytes b;
+  Put16(b, IPMX_MEDIA_INFO_JXS);
+  Put16(b, words - 1);
+  if (words > 1) Put32(b, word1);
+  if (words > 2) Put32(b, word2);
+  for (int i = 3; i < words; i++) Put32(b, 0x5a5a5a5a);
+  return b;
+}
+
+Bytes JxsInfoBlock(const struct ipmx_video_info& info, const struct ipmx_jxs_info& jxs) {
+  Bytes b(IPMX_INFO_BLOCK_JXS_LEN);
+  EXPECT_EQ(ipmx_info_block_jxs_build(&info, &jxs, b.data()), IPMX_INFO_BLOCK_JXS_LEN);
+  return b;
+}
+
+void ExpectJxs(const struct ipmx_jxs_info& j, bool t, bool k, uint16_t ppih,
+               uint16_t plev) {
+  EXPECT_EQ(j.transmode, t);
+  EXPECT_EQ(j.packetmode, k);
+  EXPECT_EQ(j.ppih, ppih);
+  EXPECT_EQ(j.plev, plev);
+}
+
+void ExpectJxsZero(const struct ipmx_jxs_info& j) {
+  struct ipmx_jxs_info zero;
+  memset(&zero, 0, sizeof(zero));
+  EXPECT_EQ(0, memcmp(&j, &zero, sizeof(zero)));
+}
+
+class IpmxSrRxSt22ParseTest : public ::testing::Test {};
+
+/* the VSF tool's own jxsv SR: its video MIB is 0x0005 (TR-10-7), not the 0x0003 that
+ * TR-10-11 section 12 gives a CBR st22 stream, so it counts unknown; the 0x0008 after
+ * it is decoded with the script's values */
+TEST_F(IpmxSrRxSt22ParseTest, VsfJxsvGolden) {
+  struct ipmx_rx_sr_info sr;
+  ASSERT_EQ(Parse(VsfJxsv(false), &sr, kSt22Mib), 0);
+  EXPECT_EQ(sr.ssrc, 3254u);
+  EXPECT_EQ(sr.ptp_sec, 1665165600u);
+  EXPECT_EQ(sr.ptp_ns, 262167158u);
+  EXPECT_EQ(sr.rtp_timestamp, 610164507u);
+  EXPECT_EQ(sr.info_malformed, 0u);
+  ASSERT_TRUE(sr.has_info);
+  EXPECT_EQ(sr.info.version, 1);
+  EXPECT_EQ(Str(sr.info.ts_refclk), "localmac=00-20-FC-32-2F-40");
+  EXPECT_EQ(Str(sr.info.mediaclk), "sender");
+  EXPECT_FALSE(sr.has_video_mib);
+  EXPECT_EQ(sr.unknown_mib, 1u);
+  EXPECT_EQ(sr.info.width, 0);
+  ASSERT_TRUE(sr.has_jxs_mib);
+  ExpectJxs(sr.jxs, true, false, 0x1500, 0x2040);
+}
+
+/* the same VSF SR with 0x0003, what the script writes for a config of media_info_type
+ * 3: the video fields read as the script's TR-10-2 values, the 0x0008 as above */
+TEST_F(IpmxSrRxSt22ParseTest, VsfJxsvCbrGolden) {
+  struct ipmx_rx_sr_info sr;
+  ASSERT_EQ(Parse(VsfJxsv(true), &sr, kSt22Mib), 0);
+  EXPECT_EQ(sr.info_malformed, 0u);
+  EXPECT_EQ(sr.unknown_mib, 0u);
+  ASSERT_TRUE(sr.has_info);
+  ASSERT_TRUE(sr.has_video_mib);
+  EXPECT_EQ(Str(sr.info.sampling), "YCbCr-4:2:2");
+  EXPECT_FALSE(sr.info.floating);
+  EXPECT_EQ(sr.info.depth, 10);
+  EXPECT_TRUE(sr.info.gpm);
+  EXPECT_EQ(sr.info.par_w, 1);
+  EXPECT_EQ(sr.info.par_h, 1);
+  EXPECT_EQ(Str(sr.info.range), "NARROW");
+  EXPECT_EQ(Str(sr.info.colorimetry), "BT709");
+  EXPECT_EQ(Str(sr.info.tcs), "SDR");
+  EXPECT_EQ(sr.info.width, 1920);
+  EXPECT_EQ(sr.info.height, 1080);
+  EXPECT_EQ(sr.info.rate_num, 60000u);
+  EXPECT_EQ(sr.info.rate_den, 1001u);
+  EXPECT_EQ(sr.info.pixclk, 148550104u);
+  EXPECT_EQ(sr.info.htotal, 2200);
+  EXPECT_EQ(sr.info.vtotal, 1125);
+  ASSERT_TRUE(sr.has_jxs_mib);
+  ExpectJxs(sr.jxs, true, false, 0x1500, 0x2040);
+}
+
+/* the TR-10-15 Part 1 section 9.1 example payload 0x8000 4a40 1004 0000: T 1, K 0,
+ * Ppih 0x4a40 (High 4:4:4.12), Plev 0x1004 */
+TEST_F(IpmxSrRxSt22ParseTest, Tr10_15ExampleDecodes) {
+  struct ipmx_rx_sr_info sr;
+  Bytes block = InfoBlockWith({CbrMib(), JxsMib(0x80004a40, 0x10040000)});
+  ASSERT_EQ(Parse(Sr(kSsrc, 1, block), &sr, kSt22Mib), 0);
+  EXPECT_EQ(sr.info_malformed, 0u);
+  EXPECT_TRUE(sr.has_video_mib);
+  ASSERT_TRUE(sr.has_jxs_mib);
+  ExpectJxs(sr.jxs, true, false, 0x4a40, 0x1004);
+}
+
+/* the Info Block the MTL st22 transmitter builds reads back as its input, every field
+ * and both T / K values */
+TEST_F(IpmxSrRxSt22ParseTest, TxJxsBuilderRoundTrips) {
+  const struct ipmx_jxs_info cases[] = {{true, false, 0x4a40, 0x2040},
+                                        {false, true, 0xffff, 0xffff}};
+  for (const struct ipmx_jxs_info& jxs : cases) {
+    struct ipmx_rx_sr_info sr;
+    ASSERT_EQ(Parse(Cat({Sr(kSsrc, 1, JxsInfoBlock(VideoInfo(), jxs)), Sdes(kSsrc, "j")}),
+                    &sr, kSt22Mib),
+              0);
+    EXPECT_EQ(sr.info_malformed, 0u);
+    EXPECT_EQ(sr.unknown_mib, 0u);
+    EXPECT_STREQ(sr.cname, "j");
+    ASSERT_TRUE(sr.has_info);
+    ASSERT_TRUE(sr.has_video_mib);
+    ExpectInfoEq(sr.info, VideoInfo());
+    ASSERT_TRUE(sr.has_jxs_mib);
+    ExpectJxs(sr.jxs, jxs.transmode, jxs.packetmode, jxs.ppih, jxs.plev);
+  }
+}
+
+/* TR-10-15 Part 1 section 9: a JPEG XS receiver ignores the reserved bits */
+TEST_F(IpmxSrRxSt22ParseTest, ReservedBitsIgnored) {
+  struct ipmx_rx_sr_info sr;
+  Bytes block = InfoBlockWith({CbrMib(), JxsMib(0xbfff4a40, 0x1004ffff)});
+  ASSERT_EQ(Parse(Sr(kSsrc, 1, block), &sr, kSt22Mib), 0);
+  ASSERT_TRUE(sr.has_jxs_mib);
+  ExpectJxs(sr.jxs, true, false, 0x4a40, 0x1004);
+}
+
+/* a 0x0008 longer than its two words is read, the octets after them skipped, and the
+ * walk goes on to the next MIB */
+TEST_F(IpmxSrRxSt22ParseTest, LongerJxsMibAccepted) {
+  struct ipmx_rx_sr_info sr;
+  Bytes block =
+      InfoBlockWith({CbrMib(), JxsMib(0x80004a40, 0x10040000, 5), UnknownMib(9, 1)});
+  ASSERT_EQ(Parse(Sr(kSsrc, 1, block), &sr, kSt22Mib), 0);
+  EXPECT_EQ(sr.info_malformed, 0u);
+  EXPECT_EQ(sr.unknown_mib, 1u);
+  ASSERT_TRUE(sr.has_jxs_mib);
+  ExpectJxs(sr.jxs, true, false, 0x4a40, 0x1004);
+}
+
+/* a 0x0008 under 12 octets is an Info Block defect, as a short video MIB: the header
+ * and the 0x0003 before it are kept, the walk ends there */
+TEST_F(IpmxSrRxSt22ParseTest, ShortJxsMibMalformed) {
+  for (int words : {1, 2}) {
+    struct ipmx_rx_sr_info sr;
+    Bytes block =
+        InfoBlockWith({CbrMib(), JxsMib(0x80004a40, 0, words), UnknownMib(9, 1)}, 4);
+    ASSERT_EQ(Parse(Sr(kSsrc, 1, block), &sr, kSt22Mib), 0) << words;
+    EXPECT_EQ(sr.info_malformed, 1u) << words;
+    EXPECT_TRUE(sr.has_info) << words;
+    EXPECT_EQ(sr.info.version, 4) << words;
+    EXPECT_TRUE(sr.has_video_mib) << words;
+    EXPECT_EQ(sr.info.width, 3840) << words;
+    EXPECT_FALSE(sr.has_jxs_mib) << words;
+    EXPECT_EQ(sr.unknown_mib, 0u) << words;
+    ExpectJxsZero(sr.jxs);
+  }
+}
+
+/* only the first 0x0008 of a block is reported, as only the first video MIB is */
+TEST_F(IpmxSrRxSt22ParseTest, FirstJxsMibWins) {
+  struct ipmx_rx_sr_info sr;
+  Bytes block = InfoBlockWith(
+      {CbrMib(), JxsMib(0x80004a40, 0x10040000), JxsMib(0x40001500, 0x20400000)});
+  ASSERT_EQ(Parse(Sr(kSsrc, 1, block), &sr, kSt22Mib), 0);
+  EXPECT_EQ(sr.unknown_mib, 0u);
+  ASSERT_TRUE(sr.has_jxs_mib);
+  ExpectJxs(sr.jxs, true, false, 0x4a40, 0x1004);
+}
+
+/* a 0x0003 under 92 octets is a defect on st22, the same rule as 0x0001 on st20 */
+TEST_F(IpmxSrRxSt22ParseTest, ShortCbrMibMalformed) {
+  struct ipmx_rx_sr_info sr;
+  Bytes short_mib = CbrMib();
+  short_mib.resize(88);
+  short_mib[3] = 88 / 4 - 1;
+  Bytes block = InfoBlockWith({short_mib, JxsMib(0x80004a40, 0x10040000)});
+  ASSERT_EQ(Parse(Sr(kSsrc, 1, block), &sr, kSt22Mib), 0);
+  EXPECT_EQ(sr.info_malformed, 1u);
+  EXPECT_TRUE(sr.has_info);
+  EXPECT_FALSE(sr.has_video_mib);
+  EXPECT_FALSE(sr.has_jxs_mib);
+}
+
+/* an st22 session takes only 0x0003 as its video MIB: a 0x0001 counts unknown, so an
+ * app never reads uncompressed video values as the ones of its JPEG XS stream */
+TEST_F(IpmxSrRxSt22ParseTest, UncompressedMibUnknown) {
+  struct ipmx_rx_sr_info sr;
+  ASSERT_EQ(Parse(IpmxSr(), &sr, kSt22Mib), 0);
+  ASSERT_TRUE(sr.has_info);
+  EXPECT_FALSE(sr.has_video_mib);
+  EXPECT_FALSE(sr.has_jxs_mib);
+  EXPECT_EQ(sr.unknown_mib, 1u);
+  EXPECT_EQ(sr.info.width, 0);
+}
+
+/* an st20 session is unchanged: the st22 0x0003 and 0x0008 both count unknown and jxs
+ * stays zero */
+TEST_F(IpmxSrRxSt22ParseTest, St20TreatsJxsMibsAsUnknown) {
+  struct ipmx_rx_sr_info sr;
+  const struct ipmx_jxs_info jxs = {true, false, 0x4a40, 0x2040};
+  ASSERT_EQ(Parse(Sr(kSsrc, 1, JxsInfoBlock(VideoInfo(), jxs)), &sr), 0);
+  ASSERT_TRUE(sr.has_info);
+  EXPECT_FALSE(sr.has_video_mib);
+  EXPECT_FALSE(sr.has_jxs_mib);
+  EXPECT_EQ(sr.unknown_mib, 2u);
+  EXPECT_EQ(sr.info_malformed, 0u);
+  ExpectJxsZero(sr.jxs);
+  ASSERT_EQ(Parse(VsfJxsv(true), &sr), 0);
+  EXPECT_FALSE(sr.has_jxs_mib);
+  EXPECT_EQ(sr.unknown_mib, 2u);
+}
+
+/* a short 0x0008 on st20 is just a short unknown MIB, not a defect */
+TEST_F(IpmxSrRxSt22ParseTest, St20IgnoresShortJxsMib) {
+  struct ipmx_rx_sr_info sr;
+  Bytes block = InfoBlockWith({VideoMib(), JxsMib(0, 0, 1)});
+  ASSERT_EQ(Parse(Sr(kSsrc, 1, block), &sr), 0);
+  EXPECT_EQ(sr.info_malformed, 0u);
+  EXPECT_EQ(sr.unknown_mib, 1u);
+  EXPECT_TRUE(sr.has_video_mib);
+}
 
 /* ---- the session: queue, poll, counters, getter ---- */
 
@@ -619,16 +869,106 @@ TEST_F(IpmxSrRxSessionTest, FlagOffCreatesNothing) {
   EXPECT_EQ(ut_srrx_get(ctx_, kPortP, &info), -EIO);
 }
 
-/* st22_rx_create() maps ST22_RX_FLAG_IPMX to ST20_RX_FLAG_IPMX, but the st22 SR parse
- * is not there yet, so an st22 session takes no SR queue and the getter has no state */
-TEST_F(IpmxSrRxSessionTest, St22SessionCreatesNothing) {
+/* st22_rx_create() maps ST22_RX_FLAG_IPMX to ST20_RX_FLAG_IPMX: the session takes the
+ * same port + 1 queue and decodes the st22 MIBs, 0x0003 and 0x0008 */
+TEST_F(IpmxSrRxSessionTest, St22SessionReadsJxsSr) {
   ASSERT_NO_FATAL_FAILURE(Create());
   ut_srrx_set_st22_flags(ctx_, ST22_RX_FLAG_IPMX);
+  ASSERT_EQ(ut_srrx_attach(ctx_), 0);
+  ASSERT_TRUE(ut_srrx_has_state(ctx_));
+  EXPECT_EQ(ut_srrx_rxq_gets(ctx_), 1);
+  struct ut_srrx_flow flow;
+  ut_srrx_flow(ctx_, kPortP, &flow);
+  EXPECT_EQ(flow.dst_port, 20001);
+  EXPECT_FALSE(flow.hdr_split);
+  Receive(VsfJxsv(true));
+  struct ipmx_rx_sr_info info = Get();
+  EXPECT_EQ(info.received, 1u);
+  EXPECT_EQ(info.unknown_mib, 0u);
+  EXPECT_TRUE(info.has_video_mib);
+  EXPECT_EQ(info.info.width, 1920);
+  ASSERT_TRUE(info.has_jxs_mib);
+  ExpectJxs(info.jxs, true, false, 0x1500, 0x2040);
+  Receive(IpmxSr()); /* an uncompressed video MIB is not the st22 one */
+  info = Get();
+  EXPECT_EQ(info.unknown_mib, 1u);
+  EXPECT_FALSE(info.has_video_mib);
+  EXPECT_FALSE(info.has_jxs_mib);
+}
+
+/* the same SR on an st20 session decodes no st22 MIB, st20 RX is unchanged */
+TEST_F(IpmxSrRxSessionTest, St20SessionSkipsJxsSr) {
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  Receive(VsfJxsv(true));
+  struct ipmx_rx_sr_info info = Get();
+  EXPECT_EQ(info.unknown_mib, 2u);
+  EXPECT_FALSE(info.has_video_mib);
+  EXPECT_FALSE(info.has_jxs_mib);
+}
+
+/* st22 data path only: no SR queue, the st22 getter says -ENOTSUP */
+TEST_F(IpmxSrRxSessionTest, St22DataPathOnlyHasNoQueue) {
+  ASSERT_NO_FATAL_FAILURE(Create(1, ST20_RX_FLAG_IPMX | ST20_RX_FLAG_DATA_PATH_ONLY));
+  ut_srrx_set_st22_flags(ctx_, ST22_RX_FLAG_IPMX | ST22_RX_FLAG_DATA_PATH_ONLY);
   ASSERT_EQ(ut_srrx_attach(ctx_), 0);
   EXPECT_FALSE(ut_srrx_has_state(ctx_));
   EXPECT_EQ(ut_srrx_rxq_gets(ctx_), 0);
   struct ipmx_rx_sr_info info;
-  EXPECT_EQ(ut_srrx_get(ctx_, kPortP, &info), -ENOTSUP);
+  EXPECT_EQ(ut_srrx_api_get_st22(ctx_, kPortP, &info, true), -ENOTSUP);
+  EXPECT_EQ(ut_srrx_api_get_st22p(ctx_, kPortP, &info, true), -ENOTSUP);
+}
+
+/* the public st22 / st22p getters: the st22 handle types only, then the st20 return
+ * codes (-EBUSY before an SR, -EINVAL for a bad port or NULL, -EIO without IPMX) */
+TEST_F(IpmxSrRxSessionTest, St22PublicGetters) {
+  ASSERT_NO_FATAL_FAILURE(Create());
+  ut_srrx_set_st22_flags(ctx_, ST22_RX_FLAG_IPMX);
+  ASSERT_EQ(ut_srrx_attach(ctx_), 0);
+  struct ipmx_rx_sr_info info;
+  EXPECT_EQ(ut_srrx_api_get_st22(ctx_, kPortP, &info, false), -EIO);
+  EXPECT_EQ(ut_srrx_api_get_st22p(ctx_, kPortP, &info, false), -EIO);
+  EXPECT_EQ(ut_srrx_api_get_st22(ctx_, kPortP, &info, true), -EBUSY);
+  EXPECT_EQ(ut_srrx_api_get_st22p(ctx_, kPortP, &info, true), -EBUSY);
+  EXPECT_EQ(ut_srrx_api_get_st22(ctx_, kPortR, &info, true), -EINVAL);
+  EXPECT_EQ(ut_srrx_api_get_st22p(ctx_, kPortP, nullptr, true), -EINVAL);
+  Receive(VsfJxsv(true));
+  memset(&info, 0, sizeof(info));
+  EXPECT_EQ(ut_srrx_api_get_st22(ctx_, kPortP, &info, true), 0);
+  EXPECT_TRUE(info.has_jxs_mib);
+  memset(&info, 0, sizeof(info));
+  EXPECT_EQ(ut_srrx_api_get_st22p(ctx_, kPortP, &info, true), 0);
+  EXPECT_TRUE(info.has_jxs_mib);
+  EXPECT_EQ(info.jxs.ppih, 0x1500);
+}
+
+/* an st22 session without the IPMX flag has no SR state, the st22 getter says -EIO */
+TEST_F(IpmxSrRxSessionTest, St22FlagOffIsEio) {
+  ASSERT_NO_FATAL_FAILURE(Create(1, 0));
+  ut_srrx_set_st22_flags(ctx_, 0);
+  ASSERT_EQ(ut_srrx_attach(ctx_), 0);
+  EXPECT_FALSE(ut_srrx_has_state(ctx_));
+  EXPECT_EQ(ut_srrx_rxq_gets(ctx_), 0);
+  struct ipmx_rx_sr_info info;
+  EXPECT_EQ(ut_srrx_api_get_st22(ctx_, kPortP, &info, true), -EIO);
+  EXPECT_EQ(ut_srrx_api_get_st22p(ctx_, kPortP, &info, true), -EIO);
+}
+
+/* st22_rx_update_source() puts and gets the queues as st20 does: the port starts over
+ * and the next SR is still decoded as st22 */
+TEST_F(IpmxSrRxSessionTest, St22SourceUpdateRestarts) {
+  ASSERT_NO_FATAL_FAILURE(Create());
+  ut_srrx_set_st22_flags(ctx_, ST22_RX_FLAG_IPMX);
+  ASSERT_EQ(ut_srrx_attach(ctx_), 0);
+  Receive(VsfJxsv(true));
+  ut_srrx_queue_put(ctx_);
+  ASSERT_EQ(ut_srrx_queue_get(ctx_), 0);
+  struct ipmx_rx_sr_info info = Get(kPortP, -EBUSY);
+  EXPECT_EQ(info.received, 0u);
+  EXPECT_FALSE(info.has_jxs_mib);
+  Receive(VsfJxsv(true));
+  info = Get();
+  EXPECT_EQ(info.received, 1u);
+  EXPECT_TRUE(info.has_jxs_mib);
 }
 
 /* data path only: the app owns the flows, so no SR queue and the getter says so */

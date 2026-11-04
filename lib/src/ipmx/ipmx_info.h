@@ -28,14 +28,6 @@ extern "C" {
 #define IPMX_MEDIA_INFO_JXS (0x0008)
 #define IPMX_MEDIA_INFO_JXS_LEN (12)
 
-/* The TR-10-15 Part 1 section 9 fields of Media Info Block 0x0008 */
-struct ipmx_jxs_info {
-  bool transmode;  /* RFC 9134 T */
-  bool packetmode; /* RFC 9134 K */
-  uint16_t ppih;
-  uint16_t plev;
-};
-
 struct mtl_main_impl;
 struct st_tx_video_session_impl;
 /** Fill info from the session ops and its primary port MAC, 0 or negative errno. */

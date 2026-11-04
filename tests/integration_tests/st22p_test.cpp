@@ -1123,7 +1123,7 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ops_rx.notify_frame_available = test_st22p_rx_frame_available;
     ops_rx.notify_event = test_ctx_notify_event;
     if (para->vsync) ops_rx.flags |= ST22P_RX_FLAG_ENABLE_VSYNC;
-    if (para->ipmx) ops_rx.flags |= ST22P_RX_FLAG_IPMX;
+    if (para->ipmx || para->ipmx_rx_only) ops_rx.flags |= ST22P_RX_FLAG_IPMX;
     if (para->rx_ext) {
       ops_rx.flags |= ST22P_RX_FLAG_EXT_FRAME;
       ops_rx.query_ext_frame = test_st22p_rx_query_ext_frame;
@@ -1211,6 +1211,7 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
   for (int i = 0; i < sessions; i++) {
     fb_send[i] = test_ctx_tx[i]->fb_send;
     tx_fb_cnt[i] = test_ctx_tx[i]->fb_cnt;
+    if (para->tx_check) para->tx_check(tx_handle[i]);
     ret = st22p_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
     info("%s, session %d fb_send %d framerate %f:%f\n", __func__, i,
@@ -1226,6 +1227,7 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     delete test_ctx_tx[i];
   }
   for (int i = 0; i < sessions; i++) {
+    if (para->rx_check) para->rx_check(rx_handle[i]);
     ret = st22p_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
     info("%s, session %d fb_rec %d framerate %f:%f\n", __func__, i,

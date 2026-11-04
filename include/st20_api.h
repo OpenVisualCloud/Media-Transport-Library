@@ -187,7 +187,8 @@ extern "C" {
  * odd or <= 1024 udp_port, ST21_PACING_LINEAR, ST22_TYPE_RTP_LEVEL, interlaced,
  * ST22_TX_FLAG_ENABLE_RTCP or ST22_TX_FLAG_DISABLE_BOXES.
  * st22_tx_update_destination() rejects a udp_port that breaks the same port rule.
- * The packets carry DSCP AF42. No RTCP Sender Report is sent yet.
+ * The packets carry DSCP AF42. Each frame also sends an RTCP Sender Report on
+ * udp_port + 1, see ipmx_st22_tx_get_info().
  */
 #define ST22_TX_FLAG_IPMX (MTL_BIT32(9))
 
@@ -320,7 +321,8 @@ extern "C" {
  * odd or <= 1024 udp_port, ST22_TYPE_RTP_LEVEL, interlaced, ST22_RX_FLAG_ENABLE_RTCP or
  * ST22_RX_FLAG_DISABLE_BOXES.
  * st22_rx_update_source() rejects a udp_port that breaks the same port rule.
- * No RTCP Sender Report is received yet.
+ * Each port also receives the RTCP Sender Reports on udp_port + 1, unless
+ * ST22_RX_FLAG_DATA_PATH_ONLY; read them with ipmx_st22_rx_get_sr_info().
  */
 #define ST22_RX_FLAG_IPMX (MTL_BIT32(6))
 

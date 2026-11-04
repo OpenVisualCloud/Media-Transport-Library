@@ -5,9 +5,11 @@ Fuzz Tests
 The ``tests/fuzz`` directory holds libFuzzer harnesses. Each harness sends each
 input to one parser of the library: the ST 2110-20, -22, -30 and -40 RX packet
 paths, the ST 2110-40 helper functions, the RTCP NACK parser of the TX side,
-and the IPMX Sender Report parser of the ST 2110-20 RX side.
+and the IPMX Sender Report parser of the ST 2110-20 and -22 RX side.
 
-``ipmx_sr_parse_fuzz`` is built only with ``-Denable_ipmx=true``. The CI build
+``ipmx_sr_parse_fuzz`` takes the low bit of the first input byte as the session
+type (0 ST 2110-20, 1 ST 2110-22) and the rest as the packet. It is built only
+with ``-Denable_ipmx=true``. The CI build
 (``.github/scripts/ci/fuzz.sh``) does not set it, so the CI fuzz job does not
 build or run this target; add ``-Denable_ipmx=true`` to the ``meson setup`` line
 to fuzz it.

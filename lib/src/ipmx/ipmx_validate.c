@@ -166,9 +166,7 @@ int ipmx_st22_rx_ops_check(const struct st22_rx_ops* ops) {
   }
 
   if (ops->type == ST22_TYPE_RTP_LEVEL) {
-    err("%s(%s), ST22_TYPE_RTP_LEVEL not supported, kept out for the planned st22 sender "
-        "report receive\n",
-        __func__, name);
+    err("%s(%s), ST22_TYPE_RTP_LEVEL not supported by the IPMX MVP\n", __func__, name);
     return -ENOTSUP;
   }
 

@@ -34,7 +34,8 @@ class IpmxSt22TxValidateTest : public ::testing::Test {
   /* the check result, with the log required to contain rule */
   void ExpectRejected(struct st22_tx_ops* ops, int expect, const char* rule) {
     int ret = 0;
-    std::string log = ut_session::capture_stderr([&] { ret = ut_txv_st22_ops_check(ops); });
+    std::string log =
+        ut_session::capture_stderr([&] { ret = ut_txv_st22_ops_check(ops); });
     EXPECT_EQ(ret, expect);
     EXPECT_NE(log.find(rule), std::string::npos) << "no '" << rule << "' in: " << log;
   }
@@ -181,7 +182,7 @@ TEST_F(IpmxSt22RxValidateTest, PortAtOrBelow1024Rejected) {
   ExpectRejected(&ops, -EINVAL, "<= 1024");
 }
 
-/* RTP level RX is kept out for the planned st22 sender report receive */
+/* RTP level RX is out of the IPMX MVP scope */
 TEST_F(IpmxSt22RxValidateTest, RtpLevelRejected) {
   struct st22_rx_ops ops = St22RxOps();
   ops.type = ST22_TYPE_RTP_LEVEL;

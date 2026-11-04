@@ -2,6 +2,7 @@
 
 #include "../st2110/pipeline/st20_pipeline_rx.h"
 #include "../st2110/pipeline/st20_pipeline_tx.h"
+#include "../st2110/pipeline/st22_pipeline_rx.h"
 #include "../st2110/pipeline/st22_pipeline_tx.h"
 /* first, mt_handle_guard.h needs the DPDK types it pulls in */
 #include "../mt_handle_guard.h"
@@ -70,6 +71,28 @@ int ipmx_st20p_rx_get_sr_info(st20p_rx_handle handle, enum mtl_session_port port
 
   MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, -EIO);
   ret = ipmx_st20_rx_get_sr_info(ctx->transport, port, info);
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
+}
+
+int ipmx_st22_rx_get_sr_info(st22_rx_handle handle, enum mtl_session_port port,
+                             struct ipmx_rx_sr_info* info) {
+  struct st22_rx_video_session_handle_impl* s_impl = handle;
+  int ret;
+
+  MT_HANDLE_GUARD(s_impl, MT_ST22_HANDLE_RX_VIDEO, -EIO);
+  ret = ipmx_sr_rx_get_info(s_impl->impl, port, info);
+  MT_HANDLE_RELEASE(s_impl);
+  return ret;
+}
+
+int ipmx_st22p_rx_get_sr_info(st22p_rx_handle handle, enum mtl_session_port port,
+                              struct ipmx_rx_sr_info* info) {
+  struct st22p_rx_ctx* ctx = handle;
+  int ret;
+
+  MT_HANDLE_GUARD(ctx, MT_ST22_HANDLE_PIPELINE_RX, -EIO);
+  ret = ipmx_st22_rx_get_sr_info(ctx->transport, port, info);
   MT_HANDLE_RELEASE(ctx);
   return ret;
 }

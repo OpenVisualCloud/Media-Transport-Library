@@ -27,9 +27,15 @@ struct st22p_rx_digest_test_para {
   bool codec_block_get;
   bool derive;
   bool ipmx;
+  /* the IPMX flag on RX only: a plain ST 2110 sender into an IPMX receiver */
+  bool ipmx_rx_only;
   bool redundant; /* ST 2022-7: TX on ports P and R, RX on ports 2 and 3 */
   enum st_plugin_device device;
   bool no_digest; /* a real, lossy codec: RX checks no SHA */
+  /* called on each TX session after mtl_stop(), before st22p_tx_free() */
+  void (*tx_check)(st22p_tx_handle handle);
+  /* called on each RX session after mtl_stop(), before st22p_rx_free() */
+  void (*rx_check)(st22p_rx_handle handle);
 };
 
 void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para);
