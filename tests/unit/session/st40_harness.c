@@ -793,3 +793,13 @@ int ut40_ops_check(enum st40_type type, uint32_t flags) {
 
   return rx_ancillary_ops_check(&ops);
 }
+
+int ut40_ops_check_source(const struct st_rx_source_info* src) {
+  struct st40_rx_ops ops;
+
+  ut40_rx_ops_with_rtp_callback(&ops);
+  ops.type = ST40_TYPE_RTP_LEVEL;
+  ops.num_port = 2;
+  memcpy(ops.ip_addr, src->ip_addr, sizeof(ops.ip_addr));
+  return rx_ancillary_ops_check(&ops);
+}

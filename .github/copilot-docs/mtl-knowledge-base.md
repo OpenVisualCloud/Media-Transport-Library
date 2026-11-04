@@ -997,7 +997,7 @@ Binding: search by capability bitmask (`input_fmt_caps`, `output_fmt_caps`). Fir
 
 ### Validation Checklist (`*_ops_check()`)
 - `num_port`: 1-2, `payload_type`: 0-127, `framebuff_cnt`: 2-8 (video)
-- IP: not all zeros, multicast = 224.x-239.x, redundant ports must differ
+- IP: not all zeros, multicast = 224.x-239.x, redundant ports must differ, except that both RX ports may join one multicast group (the NIC does not filter by source, see Flow Rules)
 - Required callbacks checked based on `type` field
 
 ---

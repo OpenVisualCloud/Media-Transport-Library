@@ -367,6 +367,11 @@ bool ut20_bitmap_guard_intact(const ut20_test_ctx* ctx);
  * production `rv_detach` runs before its final stat dump. */
 void ut20_session_detach(ut20_test_ctx* ctx);
 
+/* rv_ops_check() / rv_st22_ops_check() on valid two-port RTP-level ops with the IPs of
+ * `src`. */
+int ut20_ops_check_source(const struct st_rx_source_info* src);
+int ut20_st22_ops_check_source(const struct st_rx_source_info* src);
+
 #ifdef __cplusplus
 }
 #endif
