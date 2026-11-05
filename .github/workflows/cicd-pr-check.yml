@@ -41,6 +41,7 @@ jobs:
   # outside the upstream repository, which has them.
   changes:
     runs-on: ubuntu-22.04
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read
@@ -68,6 +69,7 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
 
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
@@ -109,6 +111,7 @@ jobs:
     name: checkpatch (${{ matrix.os }})
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     permissions:
       contents: read # for actions/checkout to fetch code
     strategy:
@@ -127,6 +130,7 @@ jobs:
 
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
 
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -161,6 +165,7 @@ jobs:
     name: Lint checks not yet in checkpatch
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read # for actions/checkout to fetch code
 
@@ -172,6 +177,7 @@ jobs:
 
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 5
         with:
           # Full git history is needed to get a proper
           # list of changed files within `super-linter`
@@ -223,6 +229,7 @@ jobs:
     name: Commit message style
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read # for actions/checkout to fetch code
 
@@ -234,6 +241,7 @@ jobs:
 
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 5
         with:
           # Need the base commit and every commit in the PR to walk the range.
           fetch-depth: 0
@@ -297,7 +305,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.unit_tests == 'true' }}
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 25
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -305,6 +313,7 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
 
       - name: Build and run the unit suite
         uses: ./.github/actions/unit-tests
@@ -315,7 +324,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.scripts == 'true' }}
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 5
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -323,6 +332,7 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
 
       - name: Check and run the scripts
         run: bash .github/scripts/ci/lint/test-scripts.sh
@@ -332,7 +342,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.fuzz_tests == 'true' }}
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    timeout-minutes: 30
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -340,6 +350,7 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
 
       - name: Build and run the fuzz targets
         uses: ./.github/actions/fuzz-tests
@@ -491,7 +502,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.clang_tidy == 'true' && needs.changes.outputs.dpdk_cached == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 25
     permissions:
       contents: read
       pull-requests: read
@@ -503,6 +514,7 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
 
       - name: clang-tidy and the Clang Static Analyzer
         uses: ./.github/actions/clang-tidy
@@ -514,7 +526,7 @@ jobs:
     # !cancelled(), as for run-gtest-tests.
     if: ${{ !cancelled() && needs.changes.outputs.clang_tidy == 'true' && needs.changes.outputs.dpdk_cached != 'true' && needs.build.result == 'success' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 25
     permissions:
       contents: read
       pull-requests: read
@@ -526,6 +538,7 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
 
       - name: clang-tidy and the Clang Static Analyzer
         uses: ./.github/actions/clang-tidy
@@ -537,7 +550,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.cargo_audit == 'true' }}
     runs-on: ubuntu-22.04
-    timeout-minutes: 15
+    timeout-minutes: 8
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -545,6 +558,7 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
 
       - name: Install Task
         uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
@@ -573,6 +587,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.bandit == 'true' }}
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     permissions:
       contents: read # for actions/checkout to fetch code
       security-events: write # for github/codeql-action/upload-sarif
@@ -584,6 +599,7 @@ jobs:
 
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
 
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -656,6 +672,7 @@ jobs:
       - bandit
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: All requested CI jobs succeeded
         if: >-
