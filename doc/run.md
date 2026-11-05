@@ -374,6 +374,8 @@ packet egresses from the sender.
 --bind_numa                          : debug option, all MTL threads bind to same numa of NIC
 --not_bind_numa                      : debug option, MTL threads runs without NIC numa aware
 --force_numa <id>                    : debug option, force the NIC port numa id instead of reading from PCIE topology
+--ipmx_sdp_dir <dir>                 : the directory for the SDP files of IPMX TX sessions, default the current directory, see doc/ipmx.md.
+--ipmx_ts_refclk <str>               : override the ts-refclk of every IPMX TX session, e.g. for a host with ptp4l; the SDP file is then written once the Sender Reports carry it, see doc/ipmx.md.
 ```
 
 

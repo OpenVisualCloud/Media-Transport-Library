@@ -4,6 +4,8 @@
 
 #include "tx_st20p_app.h"
 
+#include "app_ipmx_hook.h"
+
 static void app_tx_st20p_display_frame(struct st_app_tx_st20p_session* s,
                                        struct st_frame* frame) {
   struct st_display* d = s->display;
@@ -214,6 +216,7 @@ static int app_tx_st20p_uinit(struct st_app_tx_st20p_session* s) {
   app_tx_st20p_stop_source(s);
   app_tx_st20p_handle_free(s);
   app_tx_st20p_close_source(s);
+  app_ipmx_tx_uinit(&s->ipmx);
 
   st_app_uinit_display(s->display);
   if (s->display) {
@@ -312,6 +315,7 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   ops.notify_event = app_tx_st20p_notify_event;
   if (ctx->tx_static_pad) ops.flags |= ST20P_TX_FLAG_ENABLE_STATIC_PAD_P;
   if (st20p && st20p->enable_rtcp) ops.flags |= ST20P_TX_FLAG_ENABLE_RTCP;
+  if (st20p && st20p->ipmx) ops.flags |= ST20P_TX_FLAG_IPMX;
 
   if (st20p && (st20p->user_timestamp || st20p->user_pacing)) {
     if (st20p->user_pacing) {
@@ -357,12 +361,19 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
 
   handle = st20p_tx_create(ctx->st, &ops);
   if (!handle) {
-    err("%s(%d), st20p_tx_create fail\n", __func__, idx);
+    err("%s(%s), st20p_tx_create fail\n", __func__, name);
     app_tx_st20p_uinit(s);
     return -EIO;
   }
   s->handle = handle;
   s->st20p_frame_size = st20p_tx_frame_size(handle);
+
+  ret = app_ipmx_tx_st20p_init(ctx, st20p, s, name);
+  if (ret < 0) {
+    err("%s(%d), app_ipmx_tx_st20p_init fail %d\n", __func__, idx, ret);
+    app_tx_st20p_uinit(s);
+    return ret;
+  }
 
   ret = app_tx_st20p_open_source(s);
   if (ret < 0) {

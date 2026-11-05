@@ -8,6 +8,7 @@
 #include <sys/types.h>
 
 #include "app_base.h"
+#include "app_ipmx_hook.h"
 #include "args.h"
 #include "experimental/rx_st20r_app.h"
 #include "legacy/rx_audio_app.h"
@@ -419,7 +420,8 @@ int main(int argc, char** argv) {
         ctx->para.rx_queues_cnt[i] =
             st_rx_sessions_queue_cnt(ctx->json_ctx->interfaces[i].rx_video_sessions_cnt,
                                      ctx->json_ctx->interfaces[i].rx_audio_sessions_cnt,
-                                     ctx->json_ctx->interfaces[i].rx_anc_sessions_cnt);
+                                     ctx->json_ctx->interfaces[i].rx_anc_sessions_cnt) +
+            ctx->json_ctx->interfaces[i].rx_ipmx_sessions_cnt;
       } else {
         ctx->para.rx_queues_cnt[i] = st_rx_sessions_queue_cnt(
             rx_st20_sessions, ctx->rx_audio_session_cnt, ctx->rx_anc_session_cnt);
@@ -609,6 +611,7 @@ int main(int argc, char** argv) {
   while (!ctx->stop) {
     sleep(1);
     run_time_s++;
+    app_ipmx_tx_poll(ctx);
     if (test_time_s && (run_time_s > test_time_s)) break;
     if (ctx->pcapng_max_pkts && (run_time_s == 10)) { /* trigger pcap dump if */
       st_app_pcap(ctx);
@@ -623,6 +626,7 @@ int main(int argc, char** argv) {
       }
     }
   }
+  app_ipmx_tx_poll(ctx);
 
   if (!ctx->runtime_session) {
     /* stop st first */

@@ -9,6 +9,8 @@
 #include "app_base.h"
 #define DEBUG
 #include "log.h"
+/* after log.h: the IPMX-off stubs include it too */
+#include "app_ipmx_hook.h"
 
 enum st_args_cmd {
   ST_ARG_UNKNOWN = 0,
@@ -153,6 +155,8 @@ enum st_args_cmd {
   ST_ARG_AUTO_STOP,
   ST_ARG_RX_MAX_FILE_SIZE,
   ST_ARG_DMA_AUTO,
+  ST_ARG_IPMX_SDP_DIR,
+  ST_ARG_IPMX_TS_REFCLK,
   ST_ARG_MAX,
 };
 
@@ -303,6 +307,8 @@ static struct option st_app_args_options[] = {
     {"timestamp_epoch", no_argument, 0, ST_ARG_TIMESTAMP_EPOCH},
     {"auto_stop", no_argument, 0, ST_ARG_AUTO_STOP},
     {"rx_max_file_size", required_argument, 0, ST_ARG_RX_MAX_FILE_SIZE},
+    {"ipmx_sdp_dir", required_argument, 0, ST_ARG_IPMX_SDP_DIR},
+    {"ipmx_ts_refclk", required_argument, 0, ST_ARG_IPMX_TS_REFCLK},
 
     {0, 0, 0, 0}};
 
@@ -453,7 +459,7 @@ static int app_args_parse_port(struct st_app_context* ctx, struct mtl_init_param
 int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int argc,
                       char** argv) {
   int cmd = -1, optIdx = 0;
-  int nb;
+  int nb, ret;
 
   while (1) {
     cmd = getopt_long_only(argc, argv, "hv", st_app_args_options, &optIdx);
@@ -934,6 +940,14 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_RX_MAX_FILE_SIZE:
         ctx->rx_max_file_size = strtoul(optarg, NULL, 0);
+        break;
+      case ST_ARG_IPMX_SDP_DIR:
+        ret = app_ipmx_set_sdp_dir(ctx, optarg);
+        if (ret < 0) return ret;
+        break;
+      case ST_ARG_IPMX_TS_REFCLK:
+        ret = app_ipmx_set_ts_refclk(ctx, optarg);
+        if (ret < 0) return ret;
         break;
       case '?':
         break;

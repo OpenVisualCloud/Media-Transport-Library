@@ -1604,6 +1604,16 @@ static int parse_st22p_format(json_object* st22p_obj, st_json_st22p_session_t* s
   return ST_JSON_SUCCESS;
 }
 
+static int parse_ipmx_block_version(json_object* obj, uint8_t* version) {
+  int value = json_object_get_int(st_json_object_object_get(obj, "ipmx_block_version"));
+  if (value < 0 || value > UINT8_MAX) {
+    err("%s, invalid ipmx_block_version %d\n", __func__, value);
+    return -ST_JSON_NOT_VALID;
+  }
+  *version = value;
+  return ST_JSON_SUCCESS;
+}
+
 static int st_json_parse_tx_st22p(int idx, json_object* st22p_obj,
                                   st_json_st22p_session_t* st22p) {
   if (st22p_obj == NULL || st22p == NULL) {
@@ -1674,6 +1684,10 @@ static int st_json_parse_tx_st22p(int idx, json_object* st22p_obj,
   /* parse enable rtcp */
   st22p->enable_rtcp =
       json_object_get_boolean(st_json_object_object_get(st22p_obj, "enable_rtcp"));
+
+  st22p->ipmx = json_object_get_boolean(st_json_object_object_get(st22p_obj, "ipmx"));
+  ret = parse_ipmx_block_version(st22p_obj, &st22p->ipmx_block_version);
+  if (ret < 0) return ret;
 
   return ST_JSON_SUCCESS;
 }
@@ -1748,6 +1762,8 @@ static int st_json_parse_rx_st22p(int idx, json_object* st22p_obj,
   /* parse enable rtcp */
   st22p->enable_rtcp =
       json_object_get_boolean(st_json_object_object_get(st22p_obj, "enable_rtcp"));
+
+  st22p->ipmx = json_object_get_boolean(st_json_object_object_get(st22p_obj, "ipmx"));
 
   return ST_JSON_SUCCESS;
 }
@@ -2057,6 +2073,10 @@ static int st_json_parse_tx_st20p(int idx, json_object* st20p_obj,
   st20p->drop_when_late =
       json_object_get_boolean(st_json_object_object_get(st20p_obj, "drop_when_late"));
 
+  st20p->ipmx = json_object_get_boolean(st_json_object_object_get(st20p_obj, "ipmx"));
+  ret = parse_ipmx_block_version(st20p_obj, &st20p->ipmx_block_version);
+  if (ret < 0) return ret;
+
   return ST_JSON_SUCCESS;
 }
 
@@ -2132,6 +2152,8 @@ static int st_json_parse_rx_st20p(int idx, json_object* st20p_obj,
   /* parse enable rtcp */
   st20p->enable_rtcp =
       json_object_get_boolean(st_json_object_object_get(st20p_obj, "enable_rtcp"));
+
+  st20p->ipmx = json_object_get_boolean(st_json_object_object_get(st20p_obj, "ipmx"));
 
   return ST_JSON_SUCCESS;
 }
@@ -3082,6 +3104,10 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             ret = st_json_parse_rx_st22p(k, st22p_session,
                                          &ctx->rx_st22p_sessions[num_st22p]);
             if (ret) goto error;
+            if (ctx->rx_st22p_sessions[num_st22p].ipmx) {
+              ctx->interfaces[inf_p].rx_ipmx_sessions_cnt++;
+              if (num_inf == 2) ctx->interfaces[inf_r].rx_ipmx_sessions_cnt++;
+            }
             if (ctx->rx_st22p_sessions[num_st22p].display) ctx->has_display = true;
             num_st22p++;
           }
@@ -3124,6 +3150,10 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             ret = st_json_parse_rx_st20p(k, st20p_session,
                                          &ctx->rx_st20p_sessions[num_st20p]);
             if (ret) goto error;
+            if (ctx->rx_st20p_sessions[num_st20p].ipmx) {
+              ctx->interfaces[inf_p].rx_ipmx_sessions_cnt++;
+              if (num_inf == 2) ctx->interfaces[inf_r].rx_ipmx_sessions_cnt++;
+            }
             if (replicas > 1) {
               ret =
                   parse_replica_url(ctx->rx_st20p_sessions[num_st20p].info.st20p_url, k);

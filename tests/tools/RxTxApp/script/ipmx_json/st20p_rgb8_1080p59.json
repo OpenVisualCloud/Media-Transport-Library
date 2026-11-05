@@ -1,0 +1,65 @@
+{
+    "interfaces": [
+        {
+            "name": "0000:af:01.0",
+            "ip": "192.168.17.101"
+        },
+        {
+            "name": "0000:af:01.1",
+            "ip": "192.168.17.102"
+        }
+    ],
+    "tx_sessions": [
+        {
+            "dip": [
+                "239.168.85.20"
+            ],
+            "interface": [
+                0
+            ],
+            "st20p": [
+                {
+                    "replicas": 1,
+                    "start_port": 20000,
+                    "payload_type": 112,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "pacing": "narrow",
+                    "device": "AUTO",
+                    "input_format": "RGB8",
+                    "transport_format": "RGB_8bit",
+                    "st20p_url": "./test_rgb8.rgb",
+                    "ipmx": true,
+                    "ipmx_block_version": 0
+                }
+            ]
+        }
+    ],
+    "rx_sessions": [
+        {
+            "ip": [
+                "239.168.85.20"
+            ],
+            "interface": [
+                1
+            ],
+            "st20p": [
+                {
+                    "replicas": 1,
+                    "start_port": 20000,
+                    "payload_type": 112,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "device": "AUTO",
+                    "output_format": "RGB8",
+                    "transport_format": "RGB_8bit",
+                    "display": false,
+                    "measure_latency": false,
+                    "ipmx": true
+                }
+            ]
+        }
+    ]
+}

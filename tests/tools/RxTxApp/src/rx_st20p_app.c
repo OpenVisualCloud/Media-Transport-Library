@@ -4,6 +4,8 @@
 
 #include "rx_st20p_app.h"
 
+#include "app_ipmx_hook.h"
+
 static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
                                        struct st_frame* frame) {
   struct st_display* d = s->display;
@@ -280,6 +282,8 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   /* always try to enable DMA offload */
   ops.flags |= ST20P_RX_FLAG_DMA_OFFLOAD;
   if (st20p && st20p->enable_rtcp) ops.flags |= ST20P_RX_FLAG_ENABLE_RTCP;
+  s->ipmx = st20p && st20p->ipmx;
+  if (s->ipmx) ops.flags |= ST20P_RX_FLAG_IPMX;
   if (ctx->enable_timing_parser) ops.flags |= ST20P_RX_FLAG_TIMING_PARSER_STAT;
   if (ctx->rx_video_multi_thread) ops.flags |= ST20P_RX_FLAG_USE_MULTI_THREADS;
   if (ctx->enable_hdr_split) ops.flags |= ST20P_RX_FLAG_HDR_SPLIT;
@@ -313,7 +317,7 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
 
   handle = st20p_rx_create(ctx->st, &ops);
   if (!handle) {
-    err("%s(%d), st20_rx_create fail\n", __func__, idx);
+    err("%s(%s), st20p_rx_create fail\n", __func__, name);
     app_rx_st20p_uinit(s);
     return -EIO;
   }
@@ -485,6 +489,7 @@ int st_app_rx_st20p_sessions_result(struct st_app_context* ctx) {
   for (i = 0; i < ctx->rx_st20p_session_cnt; i++) {
     s = &ctx->rx_st20p_sessions[i];
     ret += app_rx_st20p_result(s);
+    app_ipmx_rx_st20p_result(s);
   }
 
   return ret;

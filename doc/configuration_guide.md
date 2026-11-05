@@ -174,6 +174,12 @@ Items in each element of the "ancillary" array
 
 ​ **fastmetadata_k_bit (int):** `0~1` 1 bit K-bit value, used with `fast_metadata`
 
+#### st20p and st22p IPMX items
+
+​ **ipmx (bool):** `true, false` create the session as an IPMX sender and write its SDP file, needs an IPMX enabled MTL, see `doc/ipmx.md`
+
+​ **ipmx_block_version (int):** `0~255` IPMX Info Block version, default 0, used with `ipmx`, see `doc/ipmx.md`
+
 ### RX Sessions (array of rx session groups)
 
 Common settings for following sessions in the group:
@@ -246,6 +252,10 @@ Items in each element of the "ancillary" array
 ​ **fastmetadata_k_bit (int):** `0~1` 1 bit K-bit value - reference value (for testing the flow) - Optional setting, used with `fast_metadata`
 
 ​ **ancillary_url (string):** fast metadata reference file (for testing the flow) - Optional setting, used with `fast_metadata`
+
+#### st20p and st22p IPMX items for RX
+
+​ **ipmx (bool):** `true, false` create the session as an IPMX receiver and print its Sender Report result, needs an IPMX enabled MTL; each port takes one more RX queue for the Sender Reports, count it in `rx_queues_cnt` when that is set; see `doc/ipmx.md`
 
 ### Others
 
