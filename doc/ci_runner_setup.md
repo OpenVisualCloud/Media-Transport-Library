@@ -111,6 +111,11 @@ instructions.
 The validation action aligns the driver on the fleet. It runs `ci:activate-ice`
 on the test host and on a configured shadow host.
 
+`ci:activate-ice` stops before it changes the host when the kernel had an oops
+since boot: bit 7 (`D`) of `/proc/sys/kernel/tainted` is set. After an oops, a
+driver can hold a lock for ever, and a write to `sriov_numvfs` then blocks the
+job until its timeout. Read the oops in the kernel log, then reboot the host.
+
 After driver activation, verify that each expected PF has a kernel netdev and
 that the capture PF exposes a PHC and hardware RX timestamping (`ethtool -T`).
 A loaded module alone does not establish capture readiness.
