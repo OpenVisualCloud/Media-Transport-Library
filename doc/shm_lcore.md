@@ -15,7 +15,7 @@ The last user attached to the shared memory will reset the mapping to an initial
 The mapping is indexed by the lcore ID, which is the CPU ID, and has `RTE_MAX_LCORE` entries of the DPDK that MTL is built with.
 MTL 26.01 to 26.09 number lcores differently, so their entries are not CPU IDs; so does this version on a host with more CPUs than `RTE_MAX_LCORE` of its DPDK.
 Do not run MTL 26.09 or earlier on the same host as this version, in either start order, with or without the Manager service.
-A process whose mapping is larger than the one in the system fails to start (see section 8.15 of the [run guide](run.md)), but an older process that starts later uses the larger mapping without noticing.
+A process whose mapping is larger than the one of a running process fails to start (see section 8.15 of the [run guide](run.md)), but an older process that starts later uses the larger mapping without noticing.
 An older MtlManager refuses CPUs 128 and above.
 
 MTL also provides a tool which can be find from `./build/app/LcoreMgr` for manually cleaning up lcore entries. This tool is typically used when a process fails to release lcores due to panic issues or other failures that prevent the regular free routine from running. Below is the usage information:

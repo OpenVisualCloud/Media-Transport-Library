@@ -48,6 +48,15 @@ int ut_sch_lcore_entry_mempolicy(int* mode, int* exit_mode);
  * temporary directory; *mode is its permission bits. Returns 0 on success. */
 int ut_sch_filelock_create_mode(unsigned int* mode);
 
+/* sizeof(struct mt_lcore_shm), the lcore table of this build. */
+size_t ut_sch_lcore_shm_size(void);
+
+/* Leaves a segment of half the lcore table at a fresh key, attached by this process or
+ * not, then runs sch_lcore_shm_init() on that key as mtl_init() (clear_on_first) or
+ * LcoreMgr does. Returns its result; *size is the size of the segment at the key
+ * afterwards, 0 if none. */
+int ut_sch_lcore_shm_init_over_smaller(bool attached, bool clear_on_first, size_t* size);
+
 #ifdef __cplusplus
 }
 #endif
