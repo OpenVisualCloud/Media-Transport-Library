@@ -1529,13 +1529,13 @@ def _note(text: str) -> str:
 
 
 def _is_key_row(r: Row, overloaded: bool = False) -> bool:
-    """Whether the summary's verdict scores *r*: a key row that both builds have, or a
-    loss row once a build counted any; of an *overloaded* role, whose builds delivered
-    different frame rates, an OVERLOAD_KEY_ROWS row that both builds have."""
-    if overloaded:
-        return bool(OVERLOAD_KEY_ROWS.fullmatch(r.metric)) and None not in (r.a, r.b)
+    """Whether the summary's verdict scores *r*: a loss row once a build counted any,
+    or a key row that both builds have, OVERLOAD_KEY_ROWS for an *overloaded* role,
+    one whose builds delivered different frame rates."""
     if r.metric in LOSS_ROWS:
         return bool(r.a or r.b)
+    if overloaded:
+        return bool(OVERLOAD_KEY_ROWS.fullmatch(r.metric)) and None not in (r.a, r.b)
     return bool(KEY_ROWS.fullmatch(r.metric)) and None not in (r.a, r.b)
 
 
@@ -1580,9 +1580,10 @@ def _verdict(
     if overloaded:
         lines.append(
             f"{' and '.join(r.upper() for r in overloaded)}: the builds delivered "
-            "different frame rates, as under overload, so the verdict scores those, an "
-            "RX's what its TX sends, and the costs of a frame or a packet; the tables "
-            "still mark the costs of a second, which grow with the frames."
+            "different frame rates, as under overload, so the verdict scores those, the "
+            "costs of a frame or a packet and the losses and late frames, but not again "
+            "an RX at the rate of its TX; the tables still mark the costs of a second, "
+            "which grow with the frames."
         )
     every = [(role.upper(), r) for role, role_rows in rows.items() for r in role_rows]
     lost = [
@@ -1640,7 +1641,21 @@ def _summary(valid: list[dict], hosts: dict, names: dict, styled: bool = True) -
             if keep(r, role)
         ]
 
-    keys = items(lambda r, role: _is_key_row(r, role in overloaded))
+    def follows(r):  # an RX frame rate at its TX's, in both builds
+        tx = next((t for t in rows.get("tx", ()) if t.metric == r.metric), None)
+        return tx is not None and all(
+            None not in (got, sent)
+            and abs(got - sent) <= (1 - FPS_TOLERANCE_PCT) * sent
+            for got, sent in ((r.a, tx.a), (r.b, tx.b))
+        )
+
+    def key(r, role):
+        # the frame rates of an RX that gets what its overloaded TX sends restate it
+        if role == "rx" and "tx" in overloaded and r.metric in HIGHER and follows(r):
+            return False
+        return _is_key_row(r, role in overloaded)
+
+    keys = items(key)
     tasklets = items(
         lambda r, role: TASKLET_ROWS.fullmatch(r.metric) and None not in (r.a, r.b)
     )

@@ -1211,6 +1211,59 @@ def test_the_verdict_of_an_overloaded_role_scores_the_frames_and_their_cost():
     assert "TX · video cpu busy (%) ↓" in keys and "RX · video cpu busy" not in keys
 
 
+def test_the_verdict_of_an_overloaded_role_scores_its_late_frames():
+    # more frames, but three times as many sent late: not "regresses none"
+    worst, mean = "fps (worst session)", pc.MEAN_FPS
+    rows = {
+        worst: (33, 41),
+        mean: (34, 42),
+        "transmitter mismatch troffset": (1e3, 3e3),
+    }
+    assert _verdict(rows) == (
+        "verdict r",
+        "❌ branch regresses 1 of the 3 key metrics and improves 2.",
+    )
+
+
+def test_the_verdict_counts_the_frames_of_an_rx_that_its_tx_overloads_once():
+    worst, mean = "fps (worst session)", pc.MEAN_FPS
+    both = [
+        {x: {role: dict(v[x]["rx"]) for role in ("rx", "tx")} for x in "AB"}
+        for v in _valid({worst: (33, 41), mean: (34, 42)})
+    ]
+    page = pc._summary(both, {"rx": "s", "tx": "c"}, NAMES)
+    assert "improves 2 of the 2 key metrics" in page  # TX's, not RX's again
+    # an RX short of what its TX sends, as when it skips frames, counts on its own,
+    # a worst session of its own too
+    for v in both:
+        v["B"]["rx"] = {worst: 36, mean: 37}
+    page = pc._summary(both, {"rx": "s", "tx": "c"}, NAMES)
+    assert "improves 4 of the 4 key metrics" in page
+    for v in both:
+        v["B"]["rx"] = {worst: 30, mean: v["B"]["tx"][mean]}
+    page = pc._summary(both, {"rx": "s", "tx": "c"}, NAMES)
+    keys = page[page.index("Key metrics") :]
+    assert "RX · fps (worst session) ↑" in keys and "RX · fps (mean" not in keys
+    # an RX frame rate change with its TX's unchanged, each within 1%, is scored, as
+    # the TX's is not: +1.7% TX, +2.4% RX
+    for v in both:
+        v["A"]["tx"], v["B"]["tx"] = {worst: 46.0, mean: 46.0}, {
+            worst: 46.8,
+            mean: 46.8,
+        }
+        v["A"]["rx"], v["B"]["rx"] = {worst: 45.6, mean: 45.6}, {
+            worst: 46.7,
+            mean: 46.7,
+        }
+    page = pc._summary(both, {"rx": "s", "tx": "c"}, NAMES)
+    assert "improves 2 of the 2 key metrics" in page
+    # an RX limit of its own, with its TX at the rate
+    for v in both:
+        v["A"]["tx"] = v["B"]["tx"] = {worst: 59.94, mean: 59.94}
+    page = pc._summary(both, {"rx": "s", "tx": "c"}, NAMES)
+    assert "improves 2 of the 2 key metrics" in page and "RX: the builds" in page
+
+
 def test_a_bar_reads_the_difference_from_the_middle_to_25_percent():
     def bar(diff):
         return pc._bar(pc.Row("x", 1, 1, diff, 0.0))

@@ -374,8 +374,9 @@ improvement, the losses, and the rule and the rounds behind it, with a warning u
 rounds. The key rows are not independent (`video cpu busy` follows its loop), so the
 counts are a summary, not votes. For a role whose builds delivered different frame
 rates (`fps (mean of sessions)` a change), as under overload, the verdict scores both
-`fps` rows, `scheduler threads per frame` and `RX work (ns/pkt)` instead, and says so:
-the other costs grow with the frames delivered.
+`fps` rows, `scheduler threads per frame`, `RX work (ns/pkt)` and the loss and late rows
+instead, and says so: the other costs grow with the frames delivered. An RX at the frame
+rate of its overloaded TX, in both builds, leaves its `fps` rows out.
 
 ---
 

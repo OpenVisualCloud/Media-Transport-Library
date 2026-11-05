@@ -367,10 +367,11 @@ change a row now and then.
 The case passes or fails on the validity of its rounds (§6), never on a score. A load
 the builds cannot carry is a valid round, an overloaded one. For a role whose builds
 delivered different frame rates, `fps (mean of sessions)` a change by the rule above,
-the verdict scores the frame rates and the costs of a frame or a packet (`scheduler
-threads per frame`, `RX work (ns/pkt)`) and says so, as the costs of a second grow with
-the frames a build delivers; an RX receives what its TX sends, and the tables still mark
-the costs of a second. At equal frames those compare, so a session that dips under the
+the verdict scores the frame rates, the costs of a frame or a packet (`scheduler
+threads per frame`, `RX work (ns/pkt)`) and the loss and late rows, and says so, as the
+costs of a second grow with the frames a build delivers; the tables still mark those.
+An RX at the frame rate of its overloaded TX, in both builds, restates it, so its frame
+rates are left out. At equal frames those compare, so a session that dips under the
 rate changes nothing. A session under a tenth of its rate has collapsed or gets no
 flow, which invalidates its round: perf-compare's collapses measured 0 to 0.1 fps a
 session, the worst sessions of its overloads 32 fps and more. A round that raises
