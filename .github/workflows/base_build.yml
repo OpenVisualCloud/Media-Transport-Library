@@ -38,6 +38,7 @@ permissions:
 jobs:
   changes:
     runs-on: ubuntu-22.04
+    timeout-minutes: 5
     permissions:
       pull-requests: read
     outputs:
@@ -51,6 +52,7 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
 
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
@@ -152,6 +154,7 @@ jobs:
     needs: [changes, ubuntu-build, ubuntu-ebpf-xdp-build, ubuntu-debug]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: All base builds ok
         if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
