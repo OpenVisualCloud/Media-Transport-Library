@@ -1215,7 +1215,7 @@ ninja -C build_fuzz
 
 The guide is `tests/doc/fuzz/index.rst`.
 The `fuzz-tests` job of `cicd-pr-check.yml` and of `nightly.yml` runs `.github/scripts/ci/fuzz/fuzz.sh` (`task ci:fuzz -- build|run`) on `ubuntu-22.04` (clang 14) and uploads `fuzz-report`: 60 s per target on a pull request that matches the `fuzz_tests` path filter, 600 s per target in `nightly.yml` (Monday to Friday on `main`, and on a manual run).
-The harnesses link `libmtl`, so the filter holds all of `lib/**` and `include/**`. `fuzz-tests-result` always runs and is the check to require.
+The harnesses link `libmtl`, so the filter holds all of `lib/**` and `include/**`. `ci-result` always runs and is the workflow's branch-protection check.
 
 ### Acceptance Tests (`tests/acceptance/`)
 E2E framework launching real MTL apps over SSH. Tests do NOT call MTL C API.

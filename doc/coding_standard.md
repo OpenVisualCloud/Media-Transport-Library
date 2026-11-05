@@ -256,9 +256,9 @@ line may be added back.
 The `build` job of `.github/workflows/cicd-pr-check.yml` needs the `checkpatch`
 matrix jobs and `residual-linters` (`Lint checks not yet in checkpatch`). A lint
 failure therefore skips the build rather than wasting a DPDK compile on it, and
-`build-result` fails. The `Lint Code Base` job aggregates the file linters into
-one check. Commit-message style remains an independent pull request check and
-does not block the compile.
+`ci-result` fails. The `ci-result` job is the one branch-protection check for
+the workflow. It requires the file linters and commit-message check on pull
+requests. Commit-message style does not block the compile.
 
 The coupling is by job ID in `needs:`, in one workflow, so GitHub refuses a
 rename of a lint job that does not also change the `build` job.
