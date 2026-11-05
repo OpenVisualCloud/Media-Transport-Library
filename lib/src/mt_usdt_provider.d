@@ -24,6 +24,10 @@ provider st20 {
   /* tx */
   probe tx_frame_next(int m_idx, int s_idx, int f_idx, void* va, uint32_t tmstamp);
   probe tx_frame_done(int m_idx, int s_idx, int f_idx, uint32_t tmstamp);
+  /* RL event, cause is enum st_tx_video_rl_cause, once a frame: 0 vrx, a0 = ns a pkt left past its own
+   * target (over the VRX budget), a1 = its pkt index in the frame; 1 start late, a0 = ns the builder
+   * started the frame past its target (over the VRX budget) */
+  probe tx_rl_event(int m_idx, int s_idx, int cause, int64_t a0, int64_t a1);
   /* attach to enable the frame dump at runtime */
   probe tx_frame_dump(int m_idx, int s_idx, char* dump_file, void* va, uint32_t data_size);
   /* rx */
