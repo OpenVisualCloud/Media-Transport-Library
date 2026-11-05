@@ -9,6 +9,11 @@ kernel_release=$(uname -r)
 ko="${root_dir}/.local_install/ice/${kernel_release}/$(uname -m)/ice.ko"
 pfs=/sys/bus/pci/drivers/ice
 
+if (($(</proc/sys/kernel/tainted) & 128)); then
+	echo "The kernel had an oops since boot: bit 7 (TAINT_DIE) of /proc/sys/kernel/tainted is set" >&2
+	exit 1
+fi
+
 bash "${root_dir}/.github/scripts/ci/cache/validate-ice.sh"
 hash ethtool
 
