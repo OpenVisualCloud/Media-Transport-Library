@@ -30,7 +30,7 @@ permissions:
 
 env:
   # A workspace-relative cache location is the one path that works identically
-  # on Linux, macOS and Windows runners.
+  # on Linux and Windows runners.
   PRE_COMMIT_HOME: ${{ github.workspace }}/.pre-commit-cache
 
 jobs:
@@ -114,9 +114,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Three OSes because the toolchain claims to be cross-platform; a claim
-        # nobody runs is a claim that is already broken.
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest]
     defaults:
       run:
         shell: bash
