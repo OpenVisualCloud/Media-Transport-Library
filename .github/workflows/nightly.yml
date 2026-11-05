@@ -5,6 +5,16 @@ name: nightly
 # suite and the Clang Static Analyzer of main, then the combined report. Each
 # job waits for the jobs it depends on through needs; no job polls for another
 # workflow.
+#
+# A dispatch starts the nightly of main, since a cron run starts hours late. Only
+# a run with all default inputs gets the title 'nightly main', the baseline key.
+
+run-name: >-
+  ${{ (inputs.branch == '' && inputs.gtest && inputs.pytest && inputs.fuzz &&
+  inputs.unit && inputs.code_scan && inputs.gtest_cases == '' &&
+  inputs.pytest_dir == '' && inputs.pytest_filter == '') &&
+  format('nightly {0}', github.ref_name) ||
+  format('nightly {0} (custom inputs)', inputs.branch || github.ref_name) }}
 
 on:
   workflow_dispatch:
@@ -45,9 +55,6 @@ on:
         description: 'Run the Clang Static Analyzer (only when branch is empty)'
         type: boolean
         default: true
-  # A schedule runs on the default branch only, so this is the nightly run of main.
-  schedule:
-    - cron: '7 18 * * 1-5' # Monday to Friday at 18:07 UTC
 
 permissions:
   contents: read
@@ -55,7 +62,7 @@ permissions:
 jobs:
   # ── One build of the artifacts that the gtest and pytest legs restore ──
   build:
-    if: ${{ github.event_name == 'schedule' || inputs.gtest || inputs.pytest || (inputs.code_scan && inputs.branch == '') }}
+    if: ${{ inputs.gtest || inputs.pytest || (inputs.code_scan && inputs.branch == '') }}
     runs-on: dpdk
     timeout-minutes: 60
     outputs:
@@ -103,7 +110,7 @@ jobs:
   # ── gtest on each NIC ──
   run-gtest:
     needs: build
-    if: ${{ github.event_name == 'schedule' || inputs.gtest }}
+    if: ${{ inputs.gtest }}
     concurrency:
       group: gtest-${{ github.workflow }}-${{ github.ref }}-${{ matrix.nic }}
       cancel-in-progress: true
@@ -159,7 +166,7 @@ jobs:
   # ── pytest on each NIC and each directory of tests/single ──
   run-pytest:
     needs: build
-    if: ${{ github.event_name == 'schedule' || inputs.pytest }}
+    if: ${{ inputs.pytest }}
     strategy:
       matrix:
         nic:
@@ -239,7 +246,7 @@ jobs:
 
   aggregate-python-reports:
     needs: run-pytest
-    if: ${{ always() && (github.event_name == 'schedule' || inputs.pytest) }}
+    if: ${{ always() && inputs.pytest }}
     runs-on: ubuntu-22.04
     steps:
       - name: Harden Runner
@@ -283,11 +290,11 @@ jobs:
           path: ${{ steps.combine.outputs.report_path }}
 
   # ── The combined gtest and pytest report of this run ──
-  # The baseline is the last scheduled run of main before this one that kept
-  # its reports.
+  # The baseline is the last nightly of main before this one that kept its
+  # reports (find-nightly-runs.js).
   combined-report:
     needs: [build, run-gtest, run-pytest]
-    if: ${{ !cancelled() && needs.build.result == 'success' && (github.event_name == 'schedule' || (inputs.gtest && inputs.pytest)) }}
+    if: ${{ !cancelled() && needs.build.result == 'success' && inputs.gtest && inputs.pytest }}
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -449,7 +456,7 @@ jobs:
 
   # ── No NIC, no build artifacts ──
   fuzz-tests:
-    if: ${{ github.event_name == 'schedule' || inputs.fuzz }}
+    if: ${{ inputs.fuzz }}
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     steps:
@@ -485,7 +492,7 @@ jobs:
           fuzz_time: '600'
 
   unit-tests:
-    if: ${{ github.event_name == 'schedule' || inputs.unit }}
+    if: ${{ inputs.unit }}
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -523,7 +530,7 @@ jobs:
   # build artifact, and runs on the workflow commit only.
   clang-analyzer:
     needs: build
-    if: ${{ github.event_name == 'schedule' || (inputs.code_scan && inputs.branch == '') }}
+    if: ${{ inputs.code_scan && inputs.branch == '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
