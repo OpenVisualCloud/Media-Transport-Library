@@ -182,3 +182,39 @@ tx:
 ```bash
 python3 python/example/st20p_tx.py --p_port 0000:af:00.0 --ptp --width 3840 --height 2160 --pipeline_fmt YUV422RFC4175PG2BE10 --tx_url test_4k.yuv --nb_tx_desc 4096 --udp_port 20000 --payload_type 112 --lcores 91,92
 ```
+
+## 4. IPMX
+
+`pymtl` exports the IPMX session flags of the C headers: `ST20_TX_FLAG_IPMX`, `ST20_RX_FLAG_IPMX`, `ST22_TX_FLAG_IPMX`, `ST22_RX_FLAG_IPMX` and the pipeline flags `ST20P_TX_FLAG_IPMX`, `ST20P_RX_FLAG_IPMX`, `ST22P_TX_FLAG_IPMX`, `ST22P_RX_FLAG_IPMX`. They are there with any MTL; with an MTL built without `enable_ipmx` a create with one of them fails, as in C.
+
+The functions and structs of `ipmx_api.h` are in a separate module, `pyipmx` (`python/swig/ipmx`). `./script/build_python.sh` builds and installs it when `pkg-config --variable=ipmx mtl` is `true`, that is MTL built with `enable_ipmx`; otherwise it logs that it skips it. By hand:
+
+```bash
+cd $mtl_source_code/python/swig/ipmx/
+swig -python -I/usr/local/include -o pyipmx_wrap.c pyipmx.i
+python3 setup.py build_ext --inplace
+sudo python3 setup.py install
+```
+
+The handles of `pymtl` pass into `pyipmx`. `ipmx_st20_tx_get_sdp()`, `ipmx_st20p_tx_get_sdp()`, `ipmx_st22_tx_get_sdp()` and `ipmx_st22p_tx_get_sdp()` take only the handle and return `[ret, sdp]`: `ret` is the C return value and `sdp` the SDP string, empty on error.
+
+```python
+import pyipmx
+import pymtl as mtl
+
+tx_para.flags |= mtl.ST20P_TX_FLAG_IPMX
+st20p_tx = mtl.st20p_tx_create(mtl_handle, tx_para)
+ret, sdp = pyipmx.ipmx_st20p_tx_get_sdp(st20p_tx)  # poll it, republish when it changes
+```
+
+When the application re-creates a session with stream parameters that change the Info Block content, it sets the block version of the new session to that of the old one + 1, before the first `st20p_tx_put_frame()`:
+
+```python
+info = pyipmx.ipmx_video_info()
+ret = pyipmx.ipmx_st20p_tx_get_info(old_st20p_tx, info)
+# ... free old_st20p_tx, create st20p_tx ...
+if ret == 0:
+    pyipmx.ipmx_st20p_tx_set_block_version(st20p_tx, (info.version + 1) % 256)
+```
+
+As in C, a `None` handle crashes the process: check the handle a create returns before you pass it on.

@@ -19,17 +19,20 @@ Usage: ${script_name} [OPTIONS]
 
 Build the SWIG Python binding of MTL in python/swig, and install it into the
 system Python. swig reads the MTL headers from ${MTL_INCLUDE_DIR}/mtl.
-Install MTL before you run this script.
+Install MTL before you run this script. When pkg-config reports the MTL
+variable ipmx=true (MTL built with enable_ipmx), also build and install the
+pyipmx module of python/swig/ipmx.
 
 REQUIRED PACKAGES (Debian/Ubuntu):
 	gcc swig python3 python3-dev python3-setuptools
+	pkg-config (pyipmx only)
 	MTL (build and install it with build.sh)
 
 OPTIONS:
 	-h, --help	Show this help message
 
 EXAMPLES:
-	${script_name}		# Build and install the pymtl module
+	${script_name}		# Build and install the pymtl (and pyipmx) module
 EOF
 }
 
@@ -94,6 +97,31 @@ main() {
 	log_info "Install the Python extension"
 	as_root "${PYTHON}" setup.py install
 	log_success "Python binding installed"
+
+	if ! command_exists pkg-config; then
+		log_warning "pkg-config not found, skip the pyipmx module"
+		return 0
+	fi
+	if ! pkg-config --exists mtl; then
+		log_warning "mtl.pc not found, skip the pyipmx module"
+		return 0
+	fi
+	if [ "$(pkg-config --variable=ipmx mtl)" != true ]; then
+		log_info "MTL is built without enable_ipmx, skip the pyipmx module"
+		return 0
+	fi
+	if [ ! -f "${MTL_INCLUDE_DIR}/mtl/ipmx/ipmx_api.h" ]; then
+		log_warning "ipmx_api.h not found in ${MTL_INCLUDE_DIR}, skip the pyipmx module"
+		return 0
+	fi
+	cd "${REPO_DIR}/python/swig/ipmx"
+	log_info "Generate the SWIG wrapper of pyipmx"
+	swig -python -I"${MTL_INCLUDE_DIR}" -o pyipmx_wrap.c pyipmx.i
+	log_info "Build the pyipmx extension"
+	"${PYTHON}" setup.py build_ext --inplace
+	log_info "Install the pyipmx extension"
+	as_root "${PYTHON}" setup.py install
+	log_success "pyipmx binding installed"
 }
 
 (return 0 2>/dev/null) && sourced=1 || sourced=0

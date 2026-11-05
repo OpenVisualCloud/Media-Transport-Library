@@ -292,11 +292,11 @@ int ipmx_st22p_rx_get_sr_info(st22p_rx_handle handle, enum mtl_session_port port
  * new ts-refclk (see ipmx_st20_tx_get_info()), not before the first Sender Report. A set
  * racing that bump can undo it, so set the version before the first frame.
  *
- * The library keeps no state across sessions. When the application
- * re-creates a session with new parameters it sets the version to the one
- * ipmx_st20_tx_get_info() reported for the old session + 1, wrapping from 255 to 0,
- * before the get_next_frame callback returns the first frame, so every Sender Report of
- * the new stream carries it.
+ * The library keeps no state across sessions. When the application re-creates a
+ * session with stream parameters that change the Info Block content it sets the version
+ * to the one ipmx_st20_tx_get_info() reported for the old session + 1, wrapping from 255
+ * to 0, before the get_next_frame callback returns the first frame, so every Sender
+ * Report of the new stream carries it.
  *
  * @param handle
  *   The handle to the tx st2110-20(video) session.
