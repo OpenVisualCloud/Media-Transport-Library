@@ -66,7 +66,7 @@ on:
         default: 1080p59
       # Each choice says what it does; the case takes its word before the colon.
       pixel_format:
-        description: 'The pixel format of the applications. MTL converts it to the format on the wire on TX and back on RX, on the application threads, as an application that works in that format sees it. With nics single those carry about 20 x 1080p59 sessions in yuv422p10le, 24 in v210; split, redundant and whole give a slot 17 CPUs, not 8'
+        description: 'The pixel format of the applications. MTL converts it to the format on the wire on TX and back on RX, on the application threads, as an application that works in that format sees it. It moves each frame through the memory of the node of the slot several times: 36 x 1080p59 in yuv422p10le hold their rate with split or whole, not with single, where both builds share that memory'
         required: false
         type: choice
         options:
