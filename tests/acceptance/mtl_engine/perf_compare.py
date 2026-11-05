@@ -17,6 +17,7 @@ import math
 import os
 import re
 import shlex
+import socket
 import statistics
 import time
 from collections import Counter
@@ -31,7 +32,6 @@ from mtl_engine.performance_monitoring import (
     HUGEPAGE_FALLBACK_MARKER,
     format_cpus,
     parse_cpus,
-    wire_balance,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,6 +88,33 @@ WORK_TASKLET = "rvs_pkt_rx"
 APP_THREAD = re.compile(r"(tx|rx)_st20p_\d+")
 DUMP_PERIOD_S = 10  # MT_STAT_INTERVAL_S_DEFAULT
 POLL_S = 5
+# An RX VF sends nothing but its ARP replies at its start, so the perf pair's switch
+# forgets it 300 to 600 s later, as 802.1D aging sweeps, and floods its streams over the
+# VLAN (doc/perf_compare.md §3.6). An ARP probe for it from the companion's PF of the
+# matching port, this often, has it reply, also soon after the switch lost its MAC.
+ARP_PERIOD_S = 10
+ARP_UNIT = f"{UNIT_PREFIX}arp"
+# Sends each hex frame of its arguments out of the interface before it, every period,
+# until SIGINT; a frame that a link down refuses waits for the next.
+ARP_SCRIPT = f"""\
+import socket, sys, time
+frames = []
+for iface, frame in zip(sys.argv[1::2], sys.argv[2::2]):
+    s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
+    s.bind((iface, 0))
+    frames.append((iface, s, bytes.fromhex(frame)))
+    print(iface, frame, flush=True)
+try:
+    while True:
+        for iface, s, frame in frames:
+            try:
+                s.send(frame)
+            except OSError as e:
+                print(iface, e, flush=True)
+        time.sleep({ARP_PERIOD_S})
+except KeyboardInterrupt:
+    pass
+"""
 # Enough lines of a collector log to hold the last complete dump of 64 sessions.
 TAIL_LINES = 3000
 # Prints the Cpus_allowed_list of the /proc status file it is given.
@@ -104,7 +131,7 @@ RE_BUSY = re.compile(
     r"(RX|TX)_VIDEO_SESSION\((\d+),(\d+)\): throughput .*cpu busy ([\d.]+)"
 )
 RE_DEV = re.compile(
-    r"DEV\((\d+)\): Avr rate, tx: ([\d.]+) Mb/s, rx: ([\d.]+) Mb/s, pkts, tx: \d+, rx: (\d+)"
+    r"DEV\((\d+)\): Avr rate, tx: ([\d.]+) Mb/s, rx: ([\d.]+) Mb/s, pkts, tx: (\d+), rx: (\d+)"
 )
 RE_INCOMPLETE = re.compile(r"RX_VIDEO_SESSION\(\d+,\d+\): incomplete frames (\d+)")
 RE_HW_DROP = re.compile(r"DEV\(\d+\): Status: rx_hw_dropped_packets (\d+)")
@@ -187,6 +214,11 @@ OVERLOAD_KEY_ROWS = re.compile(
 # nothing of its build: perf-compare's collapses measured 0 to 0.1 fps a session at
 # 59.94, the worst sessions of its overloads 32 fps and more.
 COLLAPSE_SHARE = 0.1
+# The least share of what a TX instance sends that its RX gets or drops at its NIC, in
+# each window: clean windows of the perf pair got 1.0000 to 1.0002, the switch's floods
+# 0.26 to 0.96.
+DELIVERED_SHARE = 0.99
+WINDOWS = ("untraced", "traced", "timed", "sessions")
 RX_LOSS = ("incomplete frames", "hw dropped pkts")
 LOSS_ROWS = (*RX_LOSS, *TX_LATE)
 # The tasklet rows that the summary scores outside its verdict: the timed window runs
@@ -908,7 +940,7 @@ class Dump:
     tasklets: dict = field(default_factory=dict)  # (sch, name): [cnt, sum, wcnt, wsum]
     fps: dict = field(default_factory=dict)  # (dir, m, s): fps
     busy: dict = field(default_factory=dict)  # (dir, m, s): cpu busy
-    dev: list = field(default_factory=list)  # [tx Mb/s, rx Mb/s, rx pkts] of all ports
+    dev: list = field(default_factory=list)  # [tx, rx Mb/s, rx, tx pkts] of all ports
     ports: dict = field(default_factory=dict)  # port: (tx Mb/s, rx Mb/s)
     counts: Counter = field(default_factory=Counter)  # LOSS_ROWS or TX_REPLAN: sum
     tasklet_times: dict = field(default_factory=dict)  # (sch, name): {stat: us}
@@ -943,7 +975,7 @@ def parse_dumps(records: list[str]) -> list[Dump]:
         elif m := RE_BUSY.search(msg):
             cur.busy[(m[1], m[2], m[3])] = float(m[4])
         elif m := RE_DEV.search(msg):
-            vals = [float(m[2]), float(m[3]), int(m[4])]
+            vals = [float(m[2]), float(m[3]), int(m[5]), int(m[4])]
             cur.ports[int(m[1])] = tuple(vals[:2])
             cur.dev = [a + b for a, b in zip(cur.dev, vals)] if cur.dev else vals
         elif m := RE_INCOMPLETE.search(msg):
@@ -989,6 +1021,59 @@ def windows(dumps: list[Dump], t0: int, t1: int) -> tuple[list, list, list, list
     timed = [d for d in dumps if d.tasklet_times][1:]
     sessions = [d for d in dumps if d.session_times][1:]
     return untraced, traced, timed, sessions
+
+
+def delivered(rx: list[Dump], tx: list[Dump], trim: bool = False) -> float | None:
+    """The share of what a dump of *tx* sent that a dump of *rx* got or dropped at its
+    NIC, as the means of a window's dumps; None for a window without dumps, or whose TX
+    sent nothing.
+
+    With *trim*, a window of more than two dumps leaves its first and last out: the
+    hosts start and end a window that a probe starts seconds apart, and print their
+    dumps at their own times, so a rate that steps at its edge would read as a loss.
+    """
+    if trim and len(rx) > 2 and len(tx) > 2:
+        rx, tx = rx[1:-1], tx[1:-1]
+    sent = [d.dev[3] for d in tx if d.dev]
+    got = [d.dev[2] + d.counts["hw dropped pkts"] for d in rx if d.dev]
+    if not sent or not got or not statistics.mean(sent):
+        return None
+    return statistics.mean(got) / statistics.mean(sent)
+
+
+def arp_probe(mac: str, ip: str) -> bytes:
+    """A broadcast ARP probe (RFC 5227) from *mac* asking for *ip*: its sender IP is 0,
+    so no host caches it."""
+    sha = bytes.fromhex(mac.replace(":", ""))
+    arp = bytes.fromhex("0001080006040001") + sha + bytes(10) + socket.inet_aton(ip)
+    return b"\xff" * 6 + sha + b"\x08\x06" + arp
+
+
+def keep_learned(host, pairs: list[tuple[str, str]]) -> None:
+    """Probe for each (VF, IP) of *pairs* from the PF of the VF every ARP_PERIOD_S, in
+    the unit ARP_UNIT until stop_units()."""
+    out = sh(
+        host,
+        "; ".join(
+            f"n=$(ls /sys/bus/pci/devices/{vf}/physfn/net) && "
+            "echo $n $(cat /sys/class/net/$n/address)"
+            for vf, _ in pairs
+        ),
+    ).split()
+    if len(out) != 2 * len(pairs):
+        raise RuntimeError(f"{host.name}: no PF and MAC of each VF of {pairs}: {out}")
+    args = [
+        f"{pf} {arp_probe(mac, ip).hex()}"
+        for (pf, mac), (_, ip) in zip(zip(out[::2], out[1::2]), pairs)
+    ]
+    write_file(host, f"{RUN_DIR}/arp.py", ARP_SCRIPT)
+    _start_unit(
+        host,
+        ARP_UNIT,
+        f"python3 -I {RUN_DIR}/arp.py {' '.join(args)}",
+        [f"AllowedCPUs={COLLECTOR_CPU}"],
+        f"{RUN_DIR}/arp.log",
+    )
 
 
 def _median(values):
@@ -1860,7 +1945,6 @@ def run_round(
         stop_units(s.host)
         # Its scripts run as root: no one else may write there, or own it first.
         sh(s.host, f"rm -rf {RUN_DIR} && mkdir -m 700 {RUN_DIR}")
-    wire0 = wire_balance(tx.host, tx.vfs, rx.host, rx.vfs)
     busy = runner_busy(tx.host)
     try:
         # RX first: a unicast TX session waits for the ARP reply of the RX port.
@@ -1892,6 +1976,18 @@ def run_round(
                     }
                 )
                 inst.collect("log", LOG_SCRIPT)
+        # each port of each RX instance, by its VF on the companion and its own IP
+        keep_learned(
+            tx.host,
+            [
+                (tx.vfs[p], iface["ip"])
+                for x in launches
+                if x["role"] == "rx"
+                for p, iface in zip(
+                    rx.slots[x["slot"]].ports, x["config"]["interfaces"]
+                )
+            ],
+        )
         waited, overloaded = _wait_steady(insts, sessions, fps, queues)
         problems += waited
         notes += overloaded
@@ -1935,13 +2031,16 @@ def run_round(
                 i.save(out_dir)
             except Exception as e:  # keep the error that got here, if any
                 logger.error(f"{i.name}: saving its logs failed: {e}")
+        try:  # the keepalive's errors, as the next round empties RUN_DIR
+            log = stream(
+                tx.host, f"[ ! -f {RUN_DIR}/arp.log ] || cat {RUN_DIR}/arp.log"
+            )
+            os.makedirs(out_dir, exist_ok=True)
+            with open(os.path.join(out_dir, "arp.log"), "w") as f:
+                f.write(log)
+        except Exception as e:
+            logger.error(f"{ARP_UNIT}: saving its log failed: {e}")
 
-    wire1 = wire_balance(tx.host, tx.vfs, rx.host, rx.vfs)
-    if wire0 and wire1:
-        for slot in rx.slots:
-            lost = sum(wire1[p] - wire0[p] for p in slot.ports)
-            if lost > 0:
-                notes.append(f"slot {slot.idx}: {lost} packets lost between the hosts")
     if busy or runner_busy(tx.host):
         notes.append(f"a CI job ran on {tx.host.name} during the round")
     # Without the rate limiter a build re-plans nothing: say so, or its -100% reads as
@@ -1958,10 +2057,16 @@ def run_round(
     results: dict = {label: {} for label in order}
     if problems:
         return results, problems, notes
+    wins = {
+        i.name: windows(
+            parse_dumps(i.records()), snap0[i.name][0][0], snap1[i.name][0][0]
+        )
+        for i in insts
+    }
     for i in insts:
         direction = i.role.upper()
         (p0, r0), (p1, r1) = snap0[i.name], snap1[i.name]
-        w = windows(parse_dumps(i.records()), p0[0], p1[0])
+        w = wins[i.name]
         untraced, traced, timed, session_timed = w
         if (
             len(untraced) < 2
@@ -1974,6 +2079,25 @@ def run_round(
                 f"{len(timed)} timed and {len(session_timed)} session timed dumps"
             )
             continue
+        if i.role == "rx":
+            t = next(t for t in insts if t.role == "tx" and t.slot.idx == i.slot.idx)
+            # the windows it got or dropped less of than its TX sent; the untraced lies
+            # between each host's /proc reads, with no step in it
+            shares = [
+                (k, delivered(r, x, k != "untraced"))
+                for k, r, x in zip(WINDOWS, w, wins[t.name])
+            ]
+            short = [
+                f"{100 * x:.0f}% in the {k}"
+                for k, x in shares
+                if x is not None and x < DELIVERED_SHARE
+            ]
+            if short:
+                problems.append(
+                    f"{who(i)}: got {', '.join(short)} window of what its TX sent, and "
+                    "counted no drop of the rest: lost between the hosts or in its NIC"
+                )
+                continue
         named = len({k for d in untraced for k in d.fps if k[0] == direction})
         if named != sessions:
             problems.append(f"{who(i)}: {named} of {sessions} sessions")

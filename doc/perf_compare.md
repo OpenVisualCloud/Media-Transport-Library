@@ -82,7 +82,7 @@ sessions_time_measure                                                           
 
 | Phase | What runs besides the `sys:log_msg` collectors, and why | Its dumps, and what they give |
 | --- | --- | --- |
-| Start | Both RX applications, then both TX ones (a unicast TX session waits for the ARP reply of its RX), each a transient systemd unit (§3) | |
+| Start | Both RX applications, then both TX ones (a unicast TX session waits for the ARP reply of its RX), each a transient systemd unit (§3), and the companion's ARP keepalive (§3.6) | |
 | Steady, warm-up | Once a dump shows an instance's sessions and started schedulers, its app threads leave the scheduler CPUs (§3.1). Every session of every instance must then reach 99% of its frame rate within `120 + 3 × TX queues` s, a queue a session and port, or the round is overloaded: measured, and noted so, unless a session collapsed (§4.4); then 30 s of warm-up | |
 | Untraced, `test_time` | `perf stat`, with `/proc`, RDT and CLOCK_MONOTONIC read at both ends. Nothing is timed: the production view | Those whose whole period lies between the two `/proc` reads: the primary rows |
 | Traced, `test_time / 2` | `sys:tasklet_time_sample` and `sys:tasklet_stat`, where the build has them: each scheduler times 1 loop in 64, a cost the primary rows must not carry | Those with `sys:tasklet_stat` records; the first, partly untraced, is only the base of the counters. The time and work of each tasklet |
@@ -95,10 +95,9 @@ gets a dump period more at each end. The dumps are placed by each host's own
 CLOCK_MONOTONIC (`/proc/timer_list`, the clock of bpftrace), so the four processes share
 one span without a clock common to the hosts.
 
-Each round swaps the slots, 4 rounds by default. `wire_balance()`, shared with
-perf-pytest, reads the unicast MAC counters of each PF around each round, so a loss
-between the hosts is noted apart from one in the receiver; see why [the perf pair needs
-a link of its own](ci_runner_setup.md#the-perf-pair-needs-a-link-of-its-own).
+Each round swaps the slots, 4 rounds by default. Through each round the companion keeps
+the switch learning the RX ports, and each window counts what every RX got against
+what the TX of its slot sent (§3.6).
 
 ## 3. Isolation
 
@@ -115,6 +114,7 @@ systemd-run --unit mtl-perf-rx0          AllowedCPUs=0,4-11 AllowedMemoryNodes=0
                                        schedulers on 5-11, application and EAL control threads on 4 (§3.1)
 mtl-perf-rx0-{log,trace,timed,sessions}  bpftrace -p <pid>, the probes of each window, on CPU 1
 mtl-perf-rx0-pmu                         perf stat -p <pid>, the untraced window, on CPU 1
+mtl-perf-arp (companion)                 an ARP probe for each RX port every 10 s, on CPU 1 (§3.6)
 ```
 
 ### 3.1. CPU
@@ -238,6 +238,31 @@ unbind the VFs. MTL falls back to the CPU copy for a session it gives no DMA, so
 round in which a session of a DMA instance copied nothing by DMA is invalid. DMA also
 changes MTL's scheduler quota (12 rather than 8 1080p sessions a scheduler), so its
 scheduler rows move with it.
+
+### 3.6. The network
+
+The eight perf ports are access ports of a VLAN of their own on the switch the fleet
+shares, since 2026-11-05; before that of the fleet's VLAN. An RX VF sends nothing but
+its ARP replies at its start, so the switch's MAC aging forgets it 300 to 600 s later and
+floods the unicast to it over the VLAN. Each flooded stream then keeps its share of a
+port's 100G, 25 Gb/s of four in `whole`, while the RX drops nothing: in November 2026
+that hit every round longer than 600 s and some shorter ones.
+
+So through each round the companion's keepalive, `mtl-perf-arp`, sends an ARP probe
+(RFC 5227: sender IP 0, so no host caches it) for the IP of each RX port every 10 s,
+from its PF of the same port (`keep_learned()`; the round keeps its `arp.log`). MTL
+answers any ARP request for its IP, `v26.01` too, and its reply teaches the switch the
+RX VF's MAC again.
+
+Each window then counts what every RX instance got, plus what its NIC dropped, against
+what the TX of its slot sent, from both instances' stats dumps (`delivered()`). Clean
+windows got 1.0000 to 1.0002 of it, the floods 0.26 to 0.96; under 0.99 the round is
+invalid. The later windows, which the two hosts start seconds apart, leave their first
+and last dump out. The PFs' MAC counters cannot tell it: a flooded port counts the other
+streams too.
+
+A switch that forgets nothing on these ports, or a cable from host to host, makes the
+keepalive moot; see [the perf pair needs a link of its own](ci_runner_setup.md#the-perf-pair-needs-a-link-of-its-own).
 
 ## 4. Measurement
 
@@ -535,7 +560,7 @@ notes, which do not.
 | `no rvs_pkt_rx work in sys:tasklet_stat` | A traced RX instance gave no work counters | Its `.trace` record |
 | `failed: <error>` | The round raised, such as when an application died between two `/proc` reads; the rounds stop | The pytest log |
 | Incomplete frames, dropped packets, late TX frames (note) | Loss in the receiver, or TX frames sent late | Their rows count them |
-| `packets lost between the hosts` (note) | Loss on the wire | [The perf pair needs a link of its own](ci_runner_setup.md#the-perf-pair-needs-a-link-of-its-own) |
+| `got N% in the <window> window of what its TX sent ...: lost between the hosts or in its NIC` | The RX got under 99% of what its TX sent and counted no drop of the rest (§3.6) | The round's `arp.log`; [a link of its own](ci_runner_setup.md#the-perf-pair-needs-a-link-of-its-own) |
 | `a CI job ran on <host>` (note) | Another job on the companion at the round's start or end | Rerun if the round stands out |
 | `the builds pace TX differently` (note) | A build's TX fell back from the rate limiter (`pacing way:`, info level) | Read its re-plan row as that, not as a gain |
 | `perf stat did not count every event` (note) | The host's perf left an event of the instance uncounted, so it has no PMU rows | Its `.pmu` record in `perf_compare/round<N>/` |

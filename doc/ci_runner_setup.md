@@ -170,12 +170,18 @@ port as well, and once the two together exceed it the switch drops packets on th
 way to the SUT: the iteration reads `0/N` while the SUT dropped nothing, and the
 night's maximum drops by up to half. The sweep compares the MAC counters of the two
 ports and re-runs an RX iteration that failed only because packets were lost
-between them, failing the case after three such attempts, so a shared link costs
-time and failed runs rather than wrong numbers. Only a link of its own gives a
-result every night: put the four perf ports in a VLAN of their own, or cable the
-two hosts back to back. To check, run this twice on the SUT, for the netdev of
-its perf port, while other runners are busy; it must advance by no more than the
-few packets a second of PTP and STP:
+between them, failing the case after three such attempts, so a multicast flood
+costs time and failed runs rather than wrong numbers. A unicast flood hides from
+that check: the switch forgets a SUT port that only receives, 300 to 600 s after
+its last frame, and floods the unicast to it over the VLAN, where a flooded port's
+MAC counters count the other streams too. perf-compare's rounds run longer than
+that, so it keeps the switch learning with an ARP probe every 10 s
+([perf_compare.md](perf_compare.md#36-the-network)). Since 2026-11-05 the eight
+perf ports have a VLAN of their own, with IGMP snooping and a querier, so the
+fleet's floods stay off them and any perf port still reaches any other. To check
+for a multicast flood, run this twice on the SUT, for the netdev of its perf port,
+while other runners are busy; it must advance by no more than the few packets a
+second of PTP and STP:
 
 ```bash
 ethtool -S <perf-port-netdev> | grep rx_multicast.nic

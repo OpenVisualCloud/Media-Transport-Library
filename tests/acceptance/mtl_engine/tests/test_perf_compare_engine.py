@@ -585,7 +585,7 @@ def test_parse_dumps_reads_one_dump_and_ignores_what_lies_outside():
     assert d.ts == 10 * S and d.sch == {1: (500, 101)}
     assert d.fps == {("RX", "1", "0"): FPS, ("RX", "1", "1"): FPS}
     assert d.busy == {("RX", "1", "0"): 3.5, ("RX", "1", "1"): 3.5}
-    assert d.dev == [11.0, 41001.0, 50002]  # both ports
+    assert d.dev == [11.0, 41001.0, 50002, 101]  # both ports
     assert d.ports == {0: (10.0, 41000.0), 1: (1.0, 1.0)}
     assert d.counts == {"incomplete frames": 3, "hw dropped pkts": 7}
     assert d.tasklets == {(1, "rvs_pkt_rx"): [5, 50, 3, 30]}
@@ -1574,17 +1574,16 @@ class _Fake:
         self.single_core = ()  # the roles on one scheduler
         self.queues = None
         self.slots = [pc.Slot(i, 0, [4 + 4 * i], True, [i]) for i in (0, 1)]
-        self.wire = ([0, 0], [0, 0])  # what each slot's two reads of the wire count
         self.pmu = {}  # the perf stat counts of an instance, PMU without
         self.paced = {}  # the pacing way lines of an instance's log
         self.scripts = _sh(monkeypatch, self.sh)
         for name, value in {
             "stop_units": lambda host: None,
-            "wire_balance": lambda *a: next(self.wires),
             "runner_busy": lambda host: self.busy,
             "_wait_steady": lambda *a: ([], []),
             "inactive": lambda host, names: [n for n in names if n in self.dead],
             "rdt_counters": lambda host, group: None,
+            "stream": lambda host, script: f"what {script} read",
         }.items():
             monkeypatch.setattr(pc, name, value)
         monkeypatch.setattr(
@@ -1622,6 +1621,9 @@ class _Fake:
     def sh(self, script):
         if script == "getconf CLK_TCK":
             return "100"
+        if "/physfn/net)" in script:  # keep_learned(): the PF and MAC of each VF
+            vfs = re.findall(r"devices/(\w+)/physfn", script)
+            return " ".join(f"pf-{vf} 02:00:00:00:00:0{vf[-1]}" for vf in vfs)
         if script.startswith("grep -qsF"):
             log = script.split()[-4]
             return "found\n" if log.rsplit("/", 1)[-1] in self.fallback else ""
@@ -1640,12 +1642,12 @@ class _Fake:
 
     def round(self):
         host = SimpleNamespace(name="h")
-        vfs = [f"vf{p}" for s in self.slots for p in s.ports]
+        vfs = [f"vf{p}" for p in range(1 + max(p for s in self.slots for p in s.ports))]
         sides = [
             pc.Side(host, r, "/mtl", vfs, self.slots, None, self.perf)
             for r in ("rx", "tx")
         ]
-        self.launches, self.reads, self.wires = [], {}, iter(self.wire)
+        self.launches, self.reads = [], {}
         return pc.run_round(
             sides,
             {"A": "/a", "B": "/b"},
@@ -1653,7 +1655,13 @@ class _Fake:
             lambda side, slot, label: (
                 f"app {label}"
                 + " --dma_dev d" * (side.role == "rx" and label in self.dma),
-                {"slot": slot},
+                {
+                    "slot": slot,
+                    "interfaces": [
+                        {"ip": f"10.0.{int(side.role == 'tx')}.{p}"}
+                        for p in side.slots[slot].ports
+                    ],
+                },
             ),
             str(self.tmp_path),
             2,
@@ -1706,7 +1714,10 @@ def test_run_round_measures_a_valid_round(fake):
             "role": role,
             "slot": slot,
             "script": f"script of app {label}",
-            "config": {"slot": slot},
+            "config": {
+                "slot": slot,
+                "interfaces": [{"ip": f"10.0.{int(role == 'tx')}.{slot}"}],
+            },
         }
         for role in ("rx", "tx")
         for slot, label in enumerate("AB")
@@ -1815,12 +1826,153 @@ def test_run_round_rejects_a_session_that_collapsed_or_has_no_flow(fake):
     assert fake.round()[1] == [no_flow]
 
 
-def test_run_round_counts_the_losses_of_both_ports_of_a_slot(fake):
-    fake.slots = _nics("whole")
-    fake.wire = ([0, 0, 0, 0], [0, 0, 0, 5])  # port 3: slot 1's second
-    results, problems, notes = fake.round()
-    assert problems == [] and sorted(results["A"]) == ["rx", "tx"]
-    assert "slot 1: 5 packets lost between the hosts" in notes
+def test_run_round_keeps_the_switch_learning_each_rx_port(fake):
+    fake.slots = _nics("whole")  # two ports a slot
+    fake.round()
+    (unit,) = [c for c in fake.scripts if "--unit=mtl-perf-arp" in c]
+    # each RX port asked for from the companion's PF of that port, by its own IP
+    frames = re.findall(r"(pf-vf\d) ([0-9a-f]+)", unit)
+    assert [pf for pf, _ in frames] == ["pf-vf0", "pf-vf1", "pf-vf2", "pf-vf3"]
+    probes = [pc.arp_probe(f"02:00:00:00:00:0{p}", f"10.0.0.{p}") for p in range(4)]
+    assert [bytes.fromhex(f) for _, f in frames] == probes
+    assert f"-p AllowedCPUs={pc.COLLECTOR_CPU}" in unit
+    assert f"python3 -I {pc.RUN_DIR}/arp.py pf-vf0 " in unit
+    # its log kept, as the next round empties RUN_DIR
+    log = (fake.tmp_path / "arp.log").read_text()
+    assert log == f"what [ ! -f {pc.RUN_DIR}/arp.log ] || cat {pc.RUN_DIR}/arp.log read"
+
+
+def test_keep_learned_refuses_a_vf_whose_pf_it_cannot_find(monkeypatch):
+    _sh(monkeypatch, lambda script: "pf0 02:00:00:00:00:00\n")  # the second VF none
+    with pytest.raises(RuntimeError, match="no PF and MAC of each VF"):
+        pc.keep_learned(HOST, [("vf0", "10.0.0.1"), ("vf1", "10.0.0.2")])
+
+
+def test_an_arp_probe_asks_for_an_ip_from_a_mac_with_no_sender_ip():
+    probe = pc.arp_probe("02:aa:bb:cc:dd:ee", "192.168.7.1")
+    mac = bytes.fromhex("02aabbccddee")
+    assert len(probe) == 42 and probe[:14] == b"\xff" * 6 + mac + b"\x08\x06"
+    # Ethernet/IPv4, request, sender MAC and IP 0, target MAC 0 and IP
+    assert probe[14:22] == bytes.fromhex("0001080006040001")
+    assert probe[22:42] == mac + bytes(4) + bytes(6) + bytes([192, 168, 7, 1])
+
+
+def test_the_arp_script_sends_each_frame_out_of_its_interface_every_period(
+    monkeypatch, capsys
+):
+    sent = []
+
+    class Sock:
+        def __init__(self, family, kind):
+            assert (family, kind) == ("packet", "raw")
+
+        def bind(self, addr):
+            self.iface = addr[0]
+
+        def send(self, frame):
+            if self.iface == "down" and not sent:
+                raise OSError("Network is down")
+            sent.append((self.iface, frame))
+
+    class Done(Exception):
+        pass
+
+    def sleep(s):
+        assert s == pc.ARP_PERIOD_S
+        if len(sent) > 2:
+            raise Done
+
+    fake_socket = SimpleNamespace(AF_PACKET="packet", SOCK_RAW="raw", socket=Sock)
+    monkeypatch.setitem(sys.modules, "socket", fake_socket)
+    monkeypatch.setitem(sys.modules, "time", SimpleNamespace(sleep=sleep))
+    monkeypatch.setattr(sys, "argv", ["arp.py", "pf0", "0a0b", "pf1", "0c"])
+    with pytest.raises(Done):
+        exec(pc.ARP_SCRIPT, {})
+    assert sent == [("pf0", b"\x0a\x0b"), ("pf1", b"\x0c")] * 2
+    assert capsys.readouterr().out.splitlines() == ["pf0 0a0b", "pf1 0c"]
+    # a link down refuses one frame, said with its interface, and the script goes on
+    sent.clear()
+    monkeypatch.setattr(sys, "argv", ["arp.py", "down", "0a", "pf1", "0c"])
+    with pytest.raises(Done):
+        exec(pc.ARP_SCRIPT, {})
+    assert sent == [("pf1", b"\x0c"), ("down", b"\x0a"), ("pf1", b"\x0c")]
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["down 0a", "pf1 0c", "down Network is down"]
+    # SIGINT, as systemd stops it, ends it quietly
+
+    def interrupt(s):
+        raise KeyboardInterrupt
+
+    monkeypatch.setitem(sys.modules, "time", SimpleNamespace(sleep=interrupt))
+    exec(pc.ARP_SCRIPT, {})
+
+
+def _sent(records, rx=None, tx=None, since=0, until=LAST):
+    """*records* with the DEV(0) line of every dump from *since* to *until* s receiving
+    *rx* and sending *tx* packets."""
+    out = []
+    for r in records:
+        if (
+            " DEV(0): Avr rate" in r
+            and since * S <= int(r.split(" ", 1)[0]) <= until * S
+        ):
+            got, sent = re.search(r"pkts, tx: (\d+), rx: (\d+)", r).groups()[::-1]
+            new_tx, new_rx = (sent if tx is None else tx), (got if rx is None else rx)
+            r = r.replace(
+                f"pkts, tx: {sent}, rx: {got}", f"pkts, tx: {new_tx}, rx: {new_rx}"
+            )
+        out.append(r)
+    return out
+
+
+def test_run_round_rejects_a_window_whose_packets_the_network_lost(fake):
+    # a TX receives next to nothing, and is not held to it
+    tx = {f"mtl-perf-tx{s}": _sent(_records(tx=True), 0, 50000) for s in (0, 1)}
+    fake.runs = dict(tx)
+    assert fake.round()[1] == []  # every packet arrived
+    # from 110 s, the timed and the sessions windows, both RX get a third: the wire
+    flooded = _sent(_records(), rx=16000, since=110)
+    fake.runs.update({"mtl-perf-rx0": flooded, "mtl-perf-rx1": flooded})
+    lost = "got 32% in the timed, 32% in the sessions window of what its TX sent, and"
+    lost += " counted no drop of the rest: lost between the hosts or in its NIC"
+    assert fake.round()[1] == [
+        f"mtl-perf-rx0 (main): {lost}",
+        f"mtl-perf-rx1 (dev): {lost}",
+    ]
+    # however few frames that leaves, it is not a collapse
+    zero = [r.replace(f"fps {FPS}", "fps 0") for r in flooded]
+    fake.runs.update({"mtl-perf-rx0": zero, "mtl-perf-rx1": zero})
+    assert fake.round()[1] == [
+        f"mtl-perf-rx0 (main): {lost}",
+        f"mtl-perf-rx1 (dev): {lost}",
+    ]
+    # each RX against the TX of its own slot
+    halved = {"mtl-perf-tx1": _sent(_records(tx=True), 0, 25000)}
+    fake.runs = {**tx, **halved, "mtl-perf-rx1": _sent(_records(), rx=25000)}
+    assert fake.round()[1] == []
+    fake.runs = {**tx, "mtl-perf-rx1": flooded}
+    assert fake.round()[1] == [f"mtl-perf-rx1 (dev): {lost}"]
+    # a flood in one dump at the edge of the untraced window, which /proc bounds on both
+    # hosts alike, counts
+    edge = _sent(_records(), rx=16000, since=60, until=60)
+    fake.runs = {**tx, "mtl-perf-rx0": edge, "mtl-perf-rx1": edge}
+    assert [re.search(r"in the (\w+) window", p)[1] for p in fake.round()[1]] == [
+        "untraced"
+    ] * 2
+    # a step in the last dump of a later window only, the sessions window's 180 s: one
+    # dump of each end is left out, as the hosts start it seconds apart; one more counts
+    for since, short in ((180, []), (170, ["sessions"] * 2)):
+        edge = _sent(_records(), rx=16000, since=since)
+        fake.runs = {**tx, "mtl-perf-rx0": edge, "mtl-perf-rx1": edge}
+        problems = fake.round()[1]
+        assert [re.search(r"in the (\w+) window", p)[1] for p in problems] == short
+    # what its NIC dropped is the receiver's own, which the loss rows score
+    dropped = [
+        r.replace("rx_hw_dropped_packets 1", "rx_hw_dropped_packets 34000")
+        for r in _sent(_records(lost=1), rx=16000, since=110)
+    ]
+    fake.runs = {**tx, "mtl-perf-rx0": dropped}
+    assert fake.round()[1] == []
 
 
 def test_run_round_rejects_an_rx_session_of_a_dma_build_that_dma_did_not_copy(fake):
@@ -1911,7 +2063,6 @@ def test_run_round_keeps_what_ran_when_it_raises(fake, monkeypatch):
 
 def test_run_round_notes_losses_and_what_ran_beside_it(fake):
     fake.runs["mtl-perf-rx0"] = _records(lost=3)
-    fake.wire = ([10, 20], [15, 20])
     fake.busy = True
     fake.pin = "no scheduler thread"
     _, problems, notes = fake.round()
@@ -1921,7 +2072,6 @@ def test_run_round_notes_losses_and_what_ran_beside_it(fake):
             f"mtl-perf-{n}: app threads not moved, no scheduler thread"
             for n in ("rx0 (main)", "rx1 (dev)", "tx0 (main)", "tx1 (dev)")
         ),
-        "slot 0: 5 packets lost between the hosts",
         "a CI job ran on h during the round",
         "mtl-perf-rx0 (main): 15 incomplete frames",
         "mtl-perf-rx0 (main): 15 hw dropped pkts",

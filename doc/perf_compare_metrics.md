@@ -80,7 +80,6 @@ All of it lives in `tests/acceptance/mtl_engine/perf_compare.py`.
 | **`/proc`** | Per thread: user + system CPU ticks and the CPU it last ran on (`/proc/<pid>/task/<tid>/stat`), its time on a CPU (`schedstat`), involuntary context switches (`status`); the host's CLOCK_MONOTONIC (`/proc/timer_list`) | Read twice, at the start and the end of the untraced window | 1 tick (`CLK_TCK`, 100/s); `schedstat` 1 ns |
 | **RDT (resctrl)** | Memory traffic (MBM `mbm_total_bytes`) and L3 occupancy (CMT `llc_occupancy`) of the instance's own resctrl group | Read with `/proc`, at both ends | bytes |
 | **`perf stat`** | `task-clock`, `cycles`, `instructions`, `cache-references`, `cache-misses` of the instance's process | `perf stat -x, -p <pid>`, counting over the untraced window | exact counts |
-| **NIC MAC counters** | Unicast frames each PF sent or received | `ethtool -S` before and after the round | exact counts (notes only) |
 
 > [!NOTE]
 > The `/proc` reads and the bpftrace timestamps use the same clock, the host's
@@ -391,6 +390,7 @@ fails, so a bad round can never move a mean.
 | Steady | every session of every instance in one dump within `120 + 3 × TX queues` s, a queue a session and port, at **99%** of its frame rate or else noted as overloaded; then 30 s of warm-up |
 | Alive | no application or collector exited during the measurement |
 | Whole windows | at least two whole dumps in each window (the traced one only for a build that has it) |
+| Delivered | in every window, each RX instance got, or dropped at its NIC, 99% or more of what the TX of its slot sent, from their stats dumps (`perf_compare.md` §3.6) |
 | Every session | every session reported in the untraced window |
 | Source in hugepages | no TX read its source through `mmap()` |
 | Work counters | a traced RX instance has `rvs_pkt_rx` work |
@@ -402,7 +402,6 @@ fails, so a bad round can never move a mean.
 **Notes** don't invalidate a round, but they put a fact beside it:
 - `under the rate after N s` and `a session fell to N fps`: more load than a build carries, which the `fps` rows score;
 - `N incomplete frames`, `N hw dropped pkts` and the late-frame counts;
-- `packets lost between the hosts`, from the PFs' MAC counters, so the wire is told apart from the receiver;
 - `a CI job ran on <host>`, since the companion also serves other repositories;
 - `the builds pace TX differently`, since a build whose TX fell back from the rate limiter re-plans nothing;
 - `app threads not moved`;
