@@ -125,7 +125,7 @@ vf_rss_lut() {
 }
 
 create_vf() {
-	local numvfs=$1 trusted="${2:-}" bifurcated_driver=0 kernel_drv i vfpath vfport vfif
+	local numvfs=$1 trusted="${2:-}" bifurcated_driver=0 kernel_drv i vfpath vfport vfif vfports=()
 
 	# Enable VFs
 	echo "$numvfs" >/sys/bus/pci/devices/"$bdf"/sriov_numvfs
@@ -153,10 +153,22 @@ create_vf() {
 			if dpdk-devbind.py -b vfio-pci "$vfport"; then
 				log_success "Bind $vfport($vfif) to vfio-pci success"
 			fi
-			set_vf_rss_lut "$vfport"
+			vfports+=("$vfport")
 		else
 			log_info "PMD uses bifurcated driver, No need to bind the $vfport($vfif) to vfio-pci"
 		fi
+	done
+
+	# The iavf unbind makes the PF reset the VF about 150 ms later, and in ice 2.7.6 an
+	# rss_lut_vf_attr write takes no lock that the reset takes: wait for it.
+	for vfport in "${vfports[@]}"; do
+		if vf_rss_lut_small "$vfport"; then
+			sleep 2
+			break
+		fi
+	done
+	for vfport in "${vfports[@]}"; do
+		set_vf_rss_lut "$vfport"
 	done
 }
 
