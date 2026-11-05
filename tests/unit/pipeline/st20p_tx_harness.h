@@ -149,6 +149,12 @@ int ut20p_tx_transport_report_late(ut20p_tx_ctx* ctx, uint64_t epoch_skipped);
 /** The pipeline handle, for calling the public st*p API directly. */
 st20p_tx_handle ut20p_tx_handle(ut20p_tx_ctx* ctx);
 
+/**
+ * st20p_tx_free() from the transport session's scheduler thread, as from a callback.
+ * Returns its result; *destroying is whether it began tearing the ctx down.
+ */
+int ut20p_tx_free_in_callback(ut20p_tx_ctx* ctx, bool* destroying);
+
 #ifdef __cplusplus
 }
 #endif

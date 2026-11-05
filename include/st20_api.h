@@ -1836,6 +1836,7 @@ struct st20_rx_user_stats {
 /**
  * Create one tx st2110-20(video) session.
  *
+ * @note Do not call it from any callback.
  * @param mt
  *   The handle to the media transport device context.
  * @param ops
@@ -1849,10 +1850,13 @@ st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops* ops);
 /**
  * Free the tx st2110-20(video) session.
  *
+ * @note Do not call it from any callback.
  * @param handle
  *   The handle to the tx st2110-20(video) session.
  * @return
  *   - 0: Success, tx st2110-20(video) session freed.
+ *   - -EBUSY: Called on the session's scheduler thread (in a callback), or another
+ *     free of this handle is in progress; the session is not freed.
  *   - <0: Error code of the tx st2110-20(video) session free.
  */
 int st20_tx_free(st20_tx_handle handle);
@@ -1860,12 +1864,15 @@ int st20_tx_free(st20_tx_handle handle);
 /**
  * Online update the destination info for the tx st2110-20(video) session.
  *
+ * @note Do not call it from any callback. It takes the per-session spinlock, waits for
+ * the session's scheduler to end its tasklet pass in flight, and may wait for ARP.
  * @param handle
  *   The handle to the tx st2110-20(video) session.
  * @param dst
  *   The pointer to the tx st2110-20(video) destination info.
  * @return
  *   - 0: Success, tx st2110-20(video) session destination update succ.
+ *   - -EBUSY: Called on the session's scheduler thread (in a callback).
  *   - <0: Error code of the rx st2110-20(video) session destination update.
  */
 int st20_tx_update_destination(st20_tx_handle handle, struct st_tx_dest_info* dst);
@@ -1984,8 +1991,10 @@ int st20_tx_get_pacing_params(st20_tx_handle handle, double* tr_offset_ns, doubl
 /**
  * Retrieve the general statistics(I/O) for one tx st2110-20(video) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
- * this session's callbacks: they may run with that spinlock held, so it deadlocks.
+ * @note Thread-safe. Takes the per-session spinlock, then waits for the session's
+ * scheduler to end its tasklet pass in flight; the session skips up to two passes, so do
+ * not call it in a tight loop. From a callback, only for the session that callback
+ * belongs to; it may return -EBUSY there.
  * @param handle
  *   The handle to the tx st2110-20(video) session.
  * @param stats
@@ -1999,8 +2008,10 @@ int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one tx st2110-20(video) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
- * this session's callbacks: they may run with that spinlock held, so it deadlocks.
+ * @note Thread-safe. Takes the per-session spinlock, then waits for the session's
+ * scheduler to end its tasklet pass in flight; the session skips up to two passes, so do
+ * not call it in a tight loop. From a callback, only for the session that callback
+ * belongs to; it may return -EBUSY there.
  * @param handle
  *   The handle to the tx st2110-20(video) session.
  * @return
@@ -2072,6 +2083,7 @@ static inline uint64_t st20_1080p59_yuv422_10bit_bandwidth_mps(void) {
 /**
  * Create one tx st2110-22(compressed video) session.
  *
+ * @note Do not call it from any callback.
  * @param mt
  *   The handle to the media transport device context.
  * @param ops
@@ -2086,12 +2098,15 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops);
 /**
  * Online update the destination info for the tx st2110-22(compressed video) session.
  *
+ * @note Do not call it from any callback. It takes the per-session spinlock, waits for
+ * the session's scheduler to end its tasklet pass in flight, and may wait for ARP.
  * @param handle
  *   The handle to the tx st2110-22(compressed video) session.
  * @param dst
  *   The pointer to the tx st2110-22(compressed video) destination info.
  * @return
  *   - 0: Success, tx st2110-22(compressed video) session destination update succ.
+ *   - -EBUSY: Called on the session's scheduler thread (in a callback).
  *   - <0: Error code of the rx st2110-22(compressed video) session destination update.
  */
 int st22_tx_update_destination(st22_tx_handle handle, struct st_tx_dest_info* dst);
@@ -2099,10 +2114,13 @@ int st22_tx_update_destination(st22_tx_handle handle, struct st_tx_dest_info* ds
 /**
  * Free the tx st2110-22(compressed video) session.
  *
+ * @note Do not call it from any callback.
  * @param handle
  *   The handle to the tx st2110-22(compressed video) session.
  * @return
  *   - 0: Success, tx st2110-22(compressed video) session freed.
+ *   - -EBUSY: Called on the session's scheduler thread (in a callback), or another
+ *     free of this handle is in progress; the session is not freed.
  *   - <0: Error code of the tx st2110-22(compressed video) session free.
  */
 int st22_tx_free(st22_tx_handle handle);
