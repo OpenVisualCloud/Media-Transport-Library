@@ -311,11 +311,11 @@ int ut_txv_init_frame(ut_txv_ctx* ctx, enum st20_packing packing, enum st20_fmt 
 /* Pkts of that session's frame, as tv_build_st20() builds them, whose training pad
  * differs from them in bytes. */
 int ut_txv_mis_sized_pads(ut_txv_ctx* ctx);
-/* tv_train_pacing() of the ut_txv_init_frame() GPM_SL session of fmt, against the same
- * RL queue mock as ut_txv_train_rl_pacing(): a NORMAL pad drains in pad_trs of a trs,
- * any other pad by its bytes. */
+/* tv_train_pacing() of the ut_txv_init_frame() GPM_SL session of fmt at fps, against the
+ * same RL queue mock as ut_txv_train_rl_pacing(): a NORMAL pad drains in pad_trs of a
+ * trs, any other pad by its bytes. */
 int ut_txv_train_rl_gpm_sl(ut_txv_ctx* ctx, enum st20_fmt fmt, uint32_t width,
-                           uint32_t height, long double pad_trs);
+                           uint32_t height, enum st_fps fps, long double pad_trs);
 /* Shaper time of one frame of that session at the trained pad_interval: every line's
  * pkts by their bytes, from the line geometry, plus the NORMAL pads between them. */
 long double ut_txv_gpm_sl_frame_ns(const ut_txv_ctx* ctx);
@@ -375,6 +375,10 @@ void ut_txv_set_rl_format(ut_txv_ctx* ctx, uint32_t width, uint32_t height,
 /* The bytes/s on the RL queue of session port port at ut_txv_init_rl_pacing(), as a
  * retrain left it; unset, what tv_init_hw() asks mt_txq_get() for. */
 void ut_txv_set_rl_queue_bps(ut_txv_ctx* ctx, int port, uint64_t bps);
+/* Each burst call of the next RL training costs the CPU that many trs, 0 unset */
+void ut_txv_set_train_burst_trs(ut_txv_ctx* ctx, long double trs);
+/* mt_ptp_wait_stable()'s return to tv_train_pacing(), 0 again at ut_txv_create() */
+void ut_txv_set_ptp_wait_ret(int ret);
 /* Physical port is a DPDK-driven ice PF with this mtl_port_init_params.rl_burst_size
  * (0 = the PMD default). Call before ut_txv_init_rl_pacing(). */
 void ut_txv_set_ice_pf(ut_txv_ctx* ctx, int port, uint32_t rl_burst_size);

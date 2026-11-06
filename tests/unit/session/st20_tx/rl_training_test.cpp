@@ -17,6 +17,7 @@
 #include <tuple>
 
 #include "session/st20_tx_harness.h"
+#include "session/stderr_capture.h"
 
 namespace {
 /* shaper time of one pad: the 1080p59.94 GPM_SL trs, ~3707 ns, a pad interval of ~440
@@ -69,6 +70,41 @@ TEST_P(St20TxRlTrainingTest, TaiScalePtpTimeKeepsTheDrainExact) {
 }
 
 INSTANTIATE_TEST_SUITE_P(NbTxDesc, St20TxRlTrainingTest, ::testing::Values(512, 2048));
+
+/* 4320p59.94 needs ~5.2 GB/s, whose square is past 2^64; an E810 VF queue set to it
+ * drains 8.6% short, so the retrain must program a faster queue */
+TEST_F(St20TxRlTrainingTest, RetrainAbove4GBpsSpeedsTheQueueUp) {
+  ASSERT_EQ(0, ut_txv_train_rl_gpm_sl(ctx_, ST20_FMT_YUV_422_10BIT, 7680, 4320,
+                                      ST_FPS_P59_94, 1.094L));
+
+  EXPECT_GT(ut_txv_pad_interval(ctx_), 32);
+  EXPECT_LT(ut_txv_rl_drain(ctx_, 0), ut_txv_pacing_trs(ctx_));
+}
+
+/* an E810 VF measured 4320p59.94 8.6% short at a 41.7 and a 45.9 Gb/s shaper alike, as
+ * one pad a burst call is CPU bound: training must measure the shaper, not the CPU */
+TEST_F(St20TxRlTrainingTest, TrainingOutpacesASlowBurstCall) {
+  ut_txv_set_train_burst_trs(ctx_, 1.094L);
+
+  ASSERT_EQ(0, ut_txv_train_rl_gpm_sl(ctx_, ST20_FMT_YUV_422_10BIT, 7680, 4320,
+                                      ST_FPS_P59_94, 0.997L));
+
+  EXPECT_GT(ut_txv_pad_interval(ctx_), 32);
+  EXPECT_NEAR(ut_txv_rl_drain(ctx_, 0), ut_txv_pacing_trs(ctx_) * 0.997L, 0.001L);
+}
+
+TEST_F(St20TxRlTrainingTest, FailedTrainingSaysTheSessionFallsBackToTsc) {
+  ut_txv_set_ptp_wait_ret(-ETIMEDOUT);
+  int ret = -1;
+
+  const std::string log = ut_session::capture_stderr(
+      [&] { ret = ut_txv_init_rl_pacing(ctx_, 1, 0, false, nullptr, false); });
+
+  ASSERT_EQ(0, ret);
+  EXPECT_EQ(0u, ut_txv_pacing_warm_pkts(ctx_)); /* RL warms up, TSC does not */
+  EXPECT_NE(std::string::npos, log.find("rl training fail -110, fallback to tsc pacing"))
+      << log;
+}
 
 /* a pre-trained pad_interval is the mean of the training pads of one mix: a session of
  * another mix at the same rate trains its own */
@@ -184,7 +220,8 @@ class St20TxRlTrainLineTailTest : public ::testing::TestWithParam<LineTailCase> 
 /* the queue drains a NORMAL pad 0.3% faster than trs, which the pads fill */
 TEST_P(St20TxRlTrainLineTailTest, FrameFillsItsActiveTime) {
   const LineTailCase& c = GetParam();
-  ASSERT_EQ(0, ut_txv_train_rl_gpm_sl(ctx_, c.fmt, c.width, c.height, 0.997L));
+  ASSERT_EQ(0,
+            ut_txv_train_rl_gpm_sl(ctx_, c.fmt, c.width, c.height, ST_FPS_P25, 0.997L));
   ASSERT_EQ(ut_txv_line_tail_pkts(ctx_), c.line_tail_pkts);
   ASSERT_GT(ut_txv_pad_interval(ctx_), 32);
   const long double trs = ut_txv_pacing_trs(ctx_);
