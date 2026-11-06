@@ -479,6 +479,7 @@ static long double tv_rl_sawtooth_ns(struct st_tx_video_session_impl* s,
  * are final. A port without a plan holds packet 0 until its target. */
 static void tv_rl_plan_init(struct mtl_main_impl* impl,
                             struct st_tx_video_session_impl* s) {
+  s->trs_drain_model = getenv("MT_RL_DRAIN_MODEL_OFF") == NULL;
   struct st_tx_video_pacing* pacing = &s->pacing;
   uint16_t pad_size = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
   int idx = s->idx;
@@ -4201,6 +4202,16 @@ static void tv_stat_log(const struct tv_stat_dump* dump) {
         (double)dump->vrx_budget_ns / NS_PER_US, rl->vrx_pkt0,
         rl->vrx_frames - rl->vrx_pkt0, rl->start_late,
         (double)rl->start_late_max_ns / NS_PER_US);
+  }
+  if (rl->backlog_frames) {
+    notice("TX_VIDEO_SESSION(%d,%d): %" PRIu64
+           " frames started behind a queue backlog, up to %.1fus\n",
+           m_idx, idx, rl->backlog_frames, (double)rl->backlog_max_ns / NS_PER_US);
+  }
+  if (rl->pads_skipped) {
+    notice("TX_VIDEO_SESSION(%d,%d): %" PRIu64
+           " in-frame pads skipped behind the schedule\n",
+           m_idx, idx, rl->pads_skipped);
   }
   d = us->common.stat_epoch_drop - snap->common.stat_epoch_drop;
   if (d) {

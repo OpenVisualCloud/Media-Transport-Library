@@ -297,6 +297,10 @@ struct st_tx_video_rl_stat {
   uint64_t vrx_late_max_ns; /* such a pkt, the latest past its own target */
   uint64_t start_late;      /* frames started past their target by over the budget */
   uint64_t start_late_max_ns;
+  /* frames whose warm-up found the frame before still queued, and the longest wait */
+  uint64_t backlog_frames;
+  uint64_t backlog_max_ns;
+  uint64_t pads_skipped; /* in-frame pads left out behind the schedule */
 };
 
 struct st_tx_video_session_impl {
@@ -364,6 +368,11 @@ struct st_tx_video_session_impl {
   uint64_t trs_frame_tsc[MTL_SESSION_PORT_MAX];
   /* when the shaper ends the pkts sent so far, at trs each from packet 0's target */
   uint64_t trs_wire_tsc[MTL_SESSION_PORT_MAX];
+  /* unless MT_RL_DRAIN_MODEL_OFF: when the NIC ends what is queued, a lower bound, and
+   * whether the last burst found the ring full */
+  uint64_t trs_drain_tsc[MTL_SESSION_PORT_MAX];
+  bool trs_ring_full[MTL_SESSION_PORT_MAX];
+  bool trs_drain_model;
   uint64_t trs_released[MTL_SESSION_PORT_MAX]; /* the transmitter visit releasing it */
   struct rte_mbuf* trs_inflight[MTL_SESSION_PORT_MAX][ST_TX_VIDEO_MAX_BULK];
   unsigned int trs_inflight_num[MTL_SESSION_PORT_MAX];
