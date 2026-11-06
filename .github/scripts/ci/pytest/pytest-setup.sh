@@ -197,15 +197,20 @@ config-single)
 	;;
 config-perf)
 	load_runner_env
-	cd "${acceptance_dir}/configs"
-	"${venv_python}" gen_config.py \
-		--session_id "${SESSION_ID:?SESSION_ID is required}" \
-		--mtl_path "${root_dir}" "${root_dir}" \
-		--pci_device "${PCI_DEVICE:?PCI_DEVICE is required}" "${PCI_DEVICE}" \
-		--ip_address "${SHADOW_IP:?SHADOW_IP is required}" "${SUT_IP:?SUT_IP is required}" \
-		--username "${SHADOW_USER:?SHADOW_USER is required}" \
-		--key_path "${key}" \
+	args=(
+		--session_id "${SESSION_ID:?SESSION_ID is required}"
+		--mtl_path "${root_dir}" "${root_dir}"
+		--pci_device "${PCI_DEVICE:?PCI_DEVICE is required}" "${PCI_DEVICE}"
+		--ip_address "${SHADOW_IP:?SHADOW_IP is required}" "${SUT_IP:?SUT_IP is required}"
+		--username "${SHADOW_USER:?SHADOW_USER is required}"
+		--key_path "${key}"
 		--test_time "${TEST_TIME:-120}" --no_capture
+	)
+	# The perf rig captures nothing itself; perf-compare's compliance pass uploads to
+	# the server, which stays unused otherwise. gen_config.py reads EBU_PASSWORD.
+	[[ -z ${EBU_IP:-} ]] || args+=(--ebu_ip "${EBU_IP}" --ebu_user "${EBU_USER:-}")
+	cd "${acceptance_dir}/configs"
+	"${venv_python}" gen_config.py "${args[@]}"
 	;;
 tag)
 	printf 'MTL_GITHUB_WORKFLOW=%s\n' "${WORKFLOW_TAG:?WORKFLOW_TAG is required}" >>"${GITHUB_ENV:?GITHUB_ENV is required}"

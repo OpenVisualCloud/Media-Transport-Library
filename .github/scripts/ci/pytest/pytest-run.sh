@@ -40,6 +40,7 @@ perf-compare)
 	# booleans: "true" or "false", or empty in a run without inputs
 	[[ ${SINGLE_CORE_RX:-} == true ]] && args+=(--perf_compare_single_core_rx)
 	[[ ${SINGLE_CORE_TX:-} == true ]] && args+=(--perf_compare_single_core_tx)
+	[[ ${COMPLIANCE:-} == true ]] && args+=(--perf_compare_compliance)
 	;;
 nightly)
 	args=("./tests/single/${TEST_PATH:?TEST_PATH is required}" -m nightly)

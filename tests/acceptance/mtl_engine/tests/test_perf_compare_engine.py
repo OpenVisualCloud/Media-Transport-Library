@@ -3,8 +3,13 @@
 
 """mtl_engine/perf_compare.py without hosts: python -m pytest --noconftest <this file>."""
 
+import html
+import io
+import json
 import os
 import re
+import socket
+import struct
 import subprocess  # nosec B404 # runs bash on proc()'s own script and a fixed child, via argv
 import sys
 import time
@@ -13,6 +18,7 @@ from html.parser import HTMLParser
 from types import SimpleNamespace
 
 import pytest
+import requests
 from mtl_engine import perf_compare as pc
 
 FPS = 60000 / 1001
@@ -2278,3 +2284,594 @@ def test_wait_steady_moves_the_app_threads_once_a_dump_shows_all_sessions(
 def test_wait_steady_stops_at_an_instance_that_exited(monkeypatch):
     insts = _steady_insts(monkeypatch, [_dump(S), _dump(S)], dead={"rx0"})
     assert pc._wait_steady(insts, 2, FPS) == (["exited before steady state: rx0"], [])
+
+
+def _tx_config(*entries):
+    """A TX RxTxApp configuration of st20p session entries, (dips, sessions) each."""
+    return {
+        "tx_sessions": [
+            {
+                "dip": list(dips),
+                "interface": [0],
+                "st20p": [{"replicas": n, "start_port": 5004}],
+            }
+            for dips, n in entries
+        ]
+    }
+
+
+def test_multicast_groups_put_a_few_sessions_to_a_group_of_each_leg():
+    # whole: an entry a port, 10 sessions on the first and 3 on the second
+    tx = _tx_config((["10.0.1.1"], 10), (["10.0.2.1"], 3))
+    rx = {
+        "rx_sessions": [
+            {"ip": [ip], "st20p": [{"replicas": n, "start_port": 5004}]}
+            for ip, n in (("10.0.0.1", 10), ("10.0.0.2", 3))
+        ]
+    }
+    pc.multicast_groups(tx, "tx", 4)
+    pc.multicast_groups(rx, "rx", 4)
+    groups = [(e["dip"], e["st20p"][0]["replicas"]) for e in tx["tx_sessions"]]
+    assert groups == [
+        (["239.168.0.1"], 4),
+        (["239.168.0.2"], 4),
+        (["239.168.0.3"], 2),
+        (["239.168.2.1"], 3),
+    ]
+    # the RX receives the groups its TX sends, and the rest of an entry stays
+    assert [e["ip"] for e in rx["rx_sessions"]] == [g for g, _ in groups]
+    assert all(e["interface"] == [0] for e in tx["tx_sessions"])
+    assert pc.stream_groups(tx)[2] == (
+        "239.168.0.3",
+        ["239.168.0.3:5004", "239.168.0.3:5006"],
+    )
+    assert sum(len(streams) for _, streams in pc.stream_groups(tx)) == 13
+    # redundant: each leg of an entry has groups of its own, captured apart
+    red = _tx_config((["10.0.1.1", "10.0.3.1"], 5))
+    pc.multicast_groups(red, "tx", 4)
+    assert [e["dip"] for e in red["tx_sessions"]] == [
+        ["239.168.0.1", "239.168.1.1"],
+        ["239.168.0.2", "239.168.1.2"],
+    ]
+    assert [g for g, _ in pc.stream_groups(red)] == [
+        "239.168.0.1",
+        "239.168.1.1",
+        "239.168.0.2",
+        "239.168.1.2",
+    ]
+
+
+def _stream(port, compliance="narrow", failed=(), media="video"):
+    """A stream of an EBU LIST report, as LIST 2.2 writes it."""
+    return {
+        "media_type": media,
+        "network_information": {
+            "destination_address": "239.168.0.1",
+            "destination_port": port,
+        },
+        "global_video_analysis": {
+            "compliance": compliance,
+            "cinst": {"histogram": [[0, 90.0], [1, 9.0], [2, 1.0]]},
+            "vrx": {"histogram": [[1, 5.0], [5, 95.0]]},
+        },
+        "media_specific": {"min_tro_ns": 621033, "max_tro_ns": 629242},
+        "analyses": {
+            check: {"result": "not_compliant" if check in failed else "compliant"}
+            for check in ("rtp_sequence", "2110_21_vrx")
+        },
+    }
+
+
+def test_list_verdicts_take_each_video_stream_by_its_timing_and_every_check():
+    report = {
+        "streams": [
+            _stream(5004),
+            _stream(5006, failed=("rtp_sequence",)),
+            _stream(5008, "wide"),
+            _stream(5010, "narrow_linear"),
+            _stream(5012, media="audio"),
+        ]
+    }
+    verdicts = pc.list_verdicts(report)
+    assert verdicts["239.168.0.1:5004"] == {
+        "class": "narrow",
+        "failed": [],
+        "cinst": 2,
+        "vrx": [1, 5],
+        "tro_us": [621.0, 629.2],
+    }
+    assert verdicts["239.168.0.1:5006"]["failed"] == ["rtp_sequence"]
+    # narrow by its timing is not enough: a stream fails with any check of LIST
+    ok = [pc.compliant(verdicts[f"239.168.0.1:{p}"]) for p in (5004, 5006, 5008, 5010)]
+    assert ok == [True, False, False, True] and len(verdicts) == 4
+    assert not pc.compliant({"why": "not captured whole"})
+    # what another LIST version leaves out is no verdict, and no error
+    (bare,) = pc.list_verdicts({"streams": [{"media_type": "video"}]}).values()
+    assert not pc.compliant(bare) and bare["cinst"] is None
+    assert pc.list_verdicts({"streams": None}) == {}
+
+
+def _pcap(path, packets):
+    """Write a ns pcap of UDP/RTP *packets*, (address, port, sequence, marker) each."""
+    with open(path, "wb") as f:
+        f.write(struct.pack("<IHHiIII", 0xA1B23C4D, 2, 4, 0, 0, 128, 1))
+        for n, (address, port, seq, marker) in enumerate(packets):
+            ip = bytes([0x45, 0, 0, 0, 0, 0, 0, 0, 64, 17, 0, 0, 10, 0, 0, 1])
+            udp = struct.pack(">HHHH", 5000, port, 0, 0)
+            rtp = bytes([0x80, 96 | marker << 7]) + struct.pack(">H", seq) + bytes(8)
+            frame = bytes(12) + b"\x08\x00" + ip + socket.inet_aton(address) + udp + rtp
+            f.write(struct.pack("<IIII", 1, n, len(frame), len(frame)) + frame)
+
+
+def _sequences(path):
+    with open(path, "rb") as f:
+        f.read(24)
+        out = []
+        while len(h := f.read(16)) == 16:
+            frame = f.read(struct.unpack("<IIII", h)[2])
+            out.append(struct.unpack(">HxxxxxxH", frame[36:46]))  # port, sequence
+        return out
+
+
+def _capture_script(monkeypatch, tmp_path, packets, filters="", tcpdump=0):
+    """Run CAPTURE_SCRIPT on fakes of tc, tcpdump and the socket: tcpdump captures
+    *packets*, and the PF has *filters* of another. Returns (its JSON, its calls)."""
+    calls = []
+    group = "239.168.0.1"
+
+    def run(cmd, capture_output, text):
+        calls.append(" ".join(cmd))
+        if cmd[0] == "timeout":
+            _pcap(cmd[cmd.index("-w") + 1], packets)
+            error = "tcpdump: ice1: down" if tcpdump else ""
+            return SimpleNamespace(returncode=tcpdump, stderr=error, stdout="")
+        shown = filters if cmd[:3] == ("tc", "filter", "show") else ""
+        return SimpleNamespace(returncode=0, stderr="", stdout=shown)
+
+    class Sock:
+        def __init__(self, family, kind):
+            assert (family, kind) == (socket.AF_INET, socket.SOCK_DGRAM)
+
+        def setsockopt(self, level, option, value):
+            calls.append(("join", option, value))
+
+        def close(self):
+            calls.append("leave")
+
+    real = {k: getattr(socket, k) for k in ("AF_INET", "SOCK_DGRAM", "IPPROTO_IP")}
+    fake_socket = SimpleNamespace(
+        **real,
+        IP_ADD_MEMBERSHIP=socket.IP_ADD_MEMBERSHIP,
+        inet_aton=socket.inet_aton,
+        inet_ntoa=socket.inet_ntoa,
+        if_nametoindex=lambda name: {"pf1": 7}[name],
+        socket=Sock,
+    )
+    monkeypatch.setitem(sys.modules, "socket", fake_socket)
+    monkeypatch.setitem(sys.modules, "subprocess", SimpleNamespace(run=run))
+    monkeypatch.setitem(sys.modules, "time", SimpleNamespace(sleep=lambda s: None))
+    raw, out = tmp_path / "g.raw", tmp_path / "g.pcap"
+    argv = ["capture.py", "pf1", group, str(len(packets)), str(raw), str(out)]
+    monkeypatch.setattr(sys, "argv", argv)
+    printed = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", printed)
+    exec(pc.CAPTURE_SCRIPT, {"__name__": "__main__"})
+    monkeypatch.undo()
+    return json.loads(printed.getvalue()), calls
+
+
+def test_the_capture_script_keeps_each_streams_whole_frames_of_a_group(
+    monkeypatch, tmp_path
+):
+    g = "239.168.0.1"
+    packets = [
+        (g, 5004, 1, 0),
+        (g, 5004, 2, 1),  # the end of the frame the capture began in
+        (g, 5006, 7, 1),
+        (g, 5004, 3, 0),
+        (g, 5006, 9, 0),  # 8 lost in the first frame, as libpcap loses them
+        (g, 5004, 4, 1),
+        (g, 5006, 10, 1),
+        (g, 5010, 1, 1),
+        (g, 5004, 5, 0),
+        (g, 5006, 11, 0),
+        (g, 5010, 2, 1),
+        (g, 5004, 6, 1),
+        (g, 5006, 12, 1),
+        (g, 5010, 3, 0),
+        (g, 5010, 5, 0),  # 4 lost in a frame kept
+        (g, 5010, 6, 1),
+        (g, 5004, 7, 0),  # the frame the capture ended in
+        (g, 5008, 1, 1),
+        (g, 5008, 2, 1),  # no whole frame after its first
+        (g, 5012, 1, 1),
+        (g, 5012, 2, 1),
+        (g, 5012, 4, 0),  # 3 lost right after the second marker
+        (g, 5012, 5, 1),
+    ]
+    result, calls = _capture_script(monkeypatch, tmp_path, packets)
+    gaps = {f"{g}:5004": 0, f"{g}:5006": 0, f"{g}:5010": 1, f"{g}:5012": 1}
+    assert result == {"rc": 0, "error": "", "gaps": gaps}
+    kept = [(5004, 5), (5006, 11), (5004, 6), (5006, 12)]
+    kept += [(5010, 3), (5010, 5), (5010, 6), (5012, 4), (5012, 5)]
+    assert _sequences(tmp_path / "g.pcap") == kept
+    drop = "dev pf1 ingress pref 2110"
+    join = socket.inet_aton(g) + bytes(4) + struct.pack("@i", 7)
+    assert calls == [
+        "tc qdisc add dev pf1 clsact",
+        f"tc filter del {drop}",
+        f"tc filter add {drop} protocol ip flower skip_hw dst_ip {g} action drop",
+        ("join", socket.IP_ADD_MEMBERSHIP, join),
+        # not promiscuous, which stalls the TX of the PF's VFs; NIC times in ns
+        "timeout 30 tcpdump -p -q -i pf1 -j adapter_unsynced "
+        "--time-stamp-precision=nano -s 128 -B 1000000 -c 23 "
+        f"-w {tmp_path / 'g.raw'} udp and dst host {g}",
+        "leave",
+        f"tc filter del {drop}",
+        "tc filter show dev pf1 ingress",
+        "tc filter show dev pf1 egress",
+        "tc qdisc del dev pf1 clsact",
+    ]
+    # a qdisc with filters of another stays; a capture that failed keeps nothing
+    result, calls = _capture_script(
+        monkeypatch, tmp_path, packets, filters="filter protocol all", tcpdump=1
+    )
+    assert result == {"rc": 1, "error": "tcpdump: ice1: down", "gaps": {}}
+    assert calls[-1] == "tc filter show dev pf1 ingress"
+
+
+def test_a_capture_is_judged_only_whole():
+    streams = ["g:5004", "g:5006"]
+    # another group's gaps are not this one's
+    whole = {"rc": 0, "error": "", "gaps": {"g:5004": 0, "g:5006": 0, "g:5008": 4}}
+    assert pc._captured(whole, streams) == ""
+    for change, why in (
+        ({"rc": 124, "error": "timed out"}, "tcpdump exited 124: timed out"),
+        ({"gaps": {"g:5004": 0}}, "no whole frame of g:5006"),
+        ({"gaps": {"g:5004": 2, "g:5006": 1}}, "3 gaps in the RTP sequence"),
+    ):
+        assert pc._captured({**whole, **change}, streams) == why
+
+
+EBU = {"ebu_ip": "10.1.1.1", "user": "u", "password": "secret", "proxy": False}
+
+
+def test_list_report_sends_the_password_on_stdin_and_deletes_the_pcap_there(
+    monkeypatch,
+):
+    commands, deleted, reports = [], [], []
+    upload = SimpleNamespace(stdout="uploaded\n>>>UUID: id1\n")
+
+    def execute_command(cmd, **kw):
+        commands.append((cmd, kw["input_data"]))
+        return upload
+
+    host = SimpleNamespace(connection=SimpleNamespace(execute_command=execute_command))
+
+    class Client:
+        def __init__(self, ip, user, password, pcap_id):
+            assert (ip, user, password, pcap_id) == ("10.1.1.1", "u", "secret", "id1")
+
+        def download_report(self):
+            return reports.pop(0)
+
+        def reanalyze(self, previous):
+            assert previous["streams"] == []
+            return reports.pop(0)
+
+        def delete_pcap(self):
+            deleted.append(1)
+
+    monkeypatch.setattr(pc, "PcapComplianceClient", Client)
+
+    def report():
+        return pc.list_report(host, "/mtl", EBU, "/r/g.pcap")
+
+    reports[:] = [{"streams": [1]}]
+    assert report() == ({"streams": [1]}, "")
+    assert commands == [
+        (
+            "sudo -n timeout 300 python3 /mtl/tests/acceptance/compliance/"
+            "upload_pcap.py --ip 10.1.1.1 --user u --password-stdin --pcap /r/g.pcap",
+            "secret\n",
+        )
+    ]
+    # a dropped ingest, analysed twice more, as pcap_compliance.py does
+    reports[:] = [{"streams": []}, {"streams": []}, {"streams": [2]}]
+    assert report() == ({"streams": [2]}, "")
+    reports[:] = [{"streams": []}] * 4
+    assert report() == ({"streams": []}, "") and len(reports) == 1
+    reports[:] = [False]
+    assert report() == (None, "LIST did not analyse it in time")
+
+    def unreachable(self):
+        raise requests.ConnectionError("down")
+
+    monkeypatch.setattr(Client, "download_report", unreachable)
+    with pytest.raises(requests.ConnectionError):  # the capture's to report
+        report()
+    assert len(deleted) == 5  # every pcap that reached LIST
+    upload.stdout = "Error: 401 Unauthorized"
+    assert report() == (None, "the upload failed: Error: 401 Unauthorized")
+    assert len(deleted) == 5
+
+
+class _Comply:
+    """compliance_round on fake hosts, 6 sessions of build B, 4 to a group."""
+
+    def __init__(self, monkeypatch, tmp_path):
+        self.tmp_path = tmp_path
+        self.calls = []
+        # phc2sys's samples, (offset ns, servo state); *during* join them at a capture
+        self.samples = [(90000, 0), (900, 2), (100, 2), (-50, 2), (30, 2)]
+        self.during = [(10, 2), (-20, 2)]
+        self.tai = ["37", "37"]
+        self.dead = set()
+        self.steady = ([], [])
+        self.waited = []
+        g1, g2 = "239.168.0.1", "239.168.0.2"
+        self.caps = {
+            g: {
+                "rc": 0,
+                "error": "",
+                "gaps": {f"{g}:{5004 + 2 * k}": 0 for k in range(n)},
+            }
+            for g, n in ((g1, 4), (g2, 2))
+        }
+        self.reports = {
+            f"{pc.RUN_DIR}/{g1}.pcap": (
+                {"streams": [_stream(5004), _stream(5006, "wide"), _stream(5008)]},
+                "",
+            ),
+            f"{pc.RUN_DIR}/{g2}.pcap": ({"streams": []}, ""),
+        }
+        _sh(monkeypatch, self.sh)
+        fake = self
+
+        def wait_steady(insts, *a):
+            fake.waited.append([i.name for i in insts])
+            return fake.steady
+
+        def list_report(host, mtl, ebu, pcap):
+            if isinstance(fake.reports[pcap], Exception):
+                raise fake.reports[pcap]
+            return fake.reports[pcap]
+
+        for name, value in {
+            "stop_units": lambda host: fake.calls.append(f"stop_units {host.name}"),
+            "runner_busy": lambda host: False,
+            "_wait_steady": wait_steady,
+            "inactive": lambda host, names: [n for n in names if n in fake.dead],
+            "stream": lambda host, script: "the phc2sys log\n",
+            "list_report": list_report,
+        }.items():
+            monkeypatch.setattr(pc, name, value)
+        clock = iter(range(0, 10**6, 10))
+        monkeypatch.setattr(pc.time, "monotonic", lambda: next(clock))
+        monkeypatch.setattr(pc.time, "sleep", lambda s: fake.calls.append(f"sleep {s}"))
+        for name, value in {
+            "start": lambda inst, mtl, cmd: fake.calls.append(
+                f"start {inst.name} {cmd}"
+            ),
+            "collect": lambda inst, kind, script: None,
+            "pin_app_threads": lambda inst: fake.calls.append(f"pin {inst.name}") or "",
+            "save": lambda inst, out_dir: fake.calls.append(f"save {inst.name}"),
+        }.items():
+            monkeypatch.setattr(pc.Instance, name, value)
+
+    def sh(self, script):
+        self.calls.append(script)
+        if "/physfn/net" in script:
+            return "pf1\n"
+        if "CLOCK_TAI" in script:
+            return self.tai.pop(0)
+        if script.startswith("cat ") and script.endswith("/phc2sys.log"):
+            line = "phc2sys[1.0]: pf1 sys offset {:9} s{} freq 1 delay 0\n"
+            return "".join(line.format(*sample) for sample in self.samples)
+        if script.startswith("systemctl show -p MainPID"):
+            return "2\n"
+        if "/capture.py " in script:
+            self.samples += self.during
+            self.during = []
+            group = script.split()[4]
+            if group not in self.caps:
+                raise RuntimeError(f"companion: rc 1 from {script!r}: Traceback")
+            return "a warning\n" + json.dumps(self.caps[group])
+        return ""
+
+    def round(self):
+        hosts = SimpleNamespace(name="sut"), SimpleNamespace(name="companion")
+        slots = [pc.Slot(i, 0, [4 + 4 * i], True, [i]) for i in (0, 1)]
+        sides = [
+            pc.Side(host, role, "/mtl", ["vf0", "vf1"], slots, [])
+            for host, role in zip(hosts, ("rx", "tx"))
+        ]
+
+        def app_cmd(side, slot, label):
+            config = _tx_config((["10.0.0.1"], 6))
+            pc.multicast_groups(config, "tx", 4)
+            return f"app {side.role}{slot} {label}", config
+
+        trees = {"A": "/a", "B": "/b"}
+        out = str(self.tmp_path)
+        return pc.compliance_round(sides, trees, "B", app_cmd, out, 6, FPS, 1000, EBU)
+
+
+@pytest.fixture
+def comply(monkeypatch, tmp_path):
+    return _Comply(monkeypatch, tmp_path)
+
+
+def test_compliance_round_has_list_judge_every_stream_of_a_build_alone(comply):
+    verdicts, problems, notes = comply.round()
+    assert problems == [] and notes == []
+    g1, g2 = "239.168.0.1", "239.168.0.2"
+    assert sorted(verdicts) == [f"{g1}:{p}" for p in (5004, 5006, 5008, 5010)] + [
+        f"{g2}:{p}" for p in (5004, 5006)
+    ]
+    ok = [pc.compliant(verdicts[f"{g1}:{p}"]) for p in (5004, 5006, 5008)]
+    assert ok == [True, False, True]
+    # what LIST did not report, it did not judge
+    none = {"why": "LIST found no video stream there"}
+    assert verdicts[f"{g1}:5010"] == verdicts[f"{g2}:5004"] == none
+    calls = comply.calls
+    # the build alone in slot 0, RX first; the capture on the companion's PF of slot 1
+    starts = [c for c in calls if c.startswith("start ")]
+    assert starts == ["start mtl-perf-rx0 app rx0 B", "start mtl-perf-tx0 app tx0 B"]
+    assert "ls /sys/bus/pci/devices/vf1/physfn/net" in calls
+    # only the TX, which LIST judges, has to be steady, and its app threads off the
+    # scheduler CPUs, as a TX starved of them sends late
+    assert comply.waited == [["mtl-perf-tx0"]] and "pin mtl-perf-tx0" in calls
+    (phc,) = [c for c in calls if "--unit=mtl-perf-phc2sys" in c]
+    assert "phc2sys -s CLOCK_REALTIME -c pf1 -O 37 -S 0.001 -m" in phc
+    assert calls.index(phc) < calls.index(starts[0])  # locked by the time it is steady
+    captures = [c for c in calls if "/capture.py " in c]
+    run = f"python3 -I {pc.RUN_DIR}/capture.py pf1"
+    assert captures == [
+        f"{run} {g1} 4000 {pc.RUN_DIR}/{g1}.pcap.raw {pc.RUN_DIR}/{g1}.pcap",
+        f"{run} {g2} 2000 {pc.RUN_DIR}/{g2}.pcap.raw {pc.RUN_DIR}/{g2}.pcap",
+    ]
+    assert calls.index(f"sleep {pc.WARMUP_S}") < calls.index(captures[0])
+    assert f"rm -f {pc.RUN_DIR}/{g2}.pcap.raw {pc.RUN_DIR}/{g2}.pcap" in calls
+    # what each capture kept and LIST's report of it, and the clock's log
+    with open(comply.tmp_path / f"{g1}.json") as f:
+        kept = json.load(f)
+    assert kept["capture"] == comply.caps[g1] and kept["list"]["streams"]
+    assert (comply.tmp_path / "phc2sys.log").read_text() == "the phc2sys log\n"
+    # and each instance's command and multicast configuration
+    with open(comply.tmp_path / "mtl-perf-tx0.json") as f:
+        launch = json.load(f)
+    assert launch["command"] == "app tx0 B"
+    assert launch["config"]["tx_sessions"][0]["dip"] == [g1]
+    # every unit stopped, phc2sys with the companion's, before the logs are copied
+    assert calls[-6:] == [
+        "systemctl stop mtl-perf-tx0",
+        "stop_units companion",
+        "systemctl stop mtl-perf-rx0",
+        "stop_units sut",
+        "save mtl-perf-rx0",
+        "save mtl-perf-tx0",
+    ]
+
+
+def test_compliance_round_judges_no_stream_of_a_group_it_did_not_capture_whole(
+    comply,
+):
+    g1, g2 = "239.168.0.1", "239.168.0.2"
+    comply.caps[g2]["gaps"][f"{g2}:5006"] = 12
+    del comply.reports[f"{pc.RUN_DIR}/{g2}.pcap"]  # LIST never sees it
+    verdicts, problems, _ = comply.round()
+    assert problems == [] and verdicts[f"{g2}:5006"] == {
+        "why": "12 gaps in the RTP sequence"
+    }
+    # a group that fails on the host or at LIST is its own streams', not the pass's
+    del comply.caps[g1]
+    comply.caps[g2]["gaps"][f"{g2}:5006"] = 0
+    comply.reports[f"{pc.RUN_DIR}/{g2}.pcap"] = requests.ConnectionError("LIST down")
+    comply.calls.clear()
+    comply.tai = ["37", "37"]
+    verdicts, problems, _ = comply.round()
+    assert problems == []
+    assert verdicts[f"{g1}:5004"]["why"].startswith("failed: companion: rc 1 from ")
+    assert verdicts[f"{g2}:5004"] == {"why": "failed: LIST down"}
+    assert f"rm -f {pc.RUN_DIR}/{g1}.pcap.raw {pc.RUN_DIR}/{g1}.pcap" in comply.calls
+
+
+@pytest.mark.parametrize(
+    "change, problem, captures",
+    [
+        (
+            {"samples": [(9000, 2), (100, 2), (9000, 2), (100, 2)]},
+            "phc2sys held pf1 within 2000 ns of CLOCK_TAI in no three samples in a "
+            "row in 30 s",
+            0,
+        ),
+        # during the captures: beyond the bound, or past the step threshold, where the
+        # servo leaves s2 and comes back
+        (
+            {"during": [(10, 2), (2500, 2)]},
+            "phc2sys held pf1 not locked within 2000 ns of CLOCK_TAI during the "
+            "captures, 2500 ns at worst",
+            2,
+        ),
+        (
+            {"during": [(1500000, 0), (40, 1), (10, 2)]},
+            "phc2sys held pf1 not locked within 2000 ns of CLOCK_TAI during the "
+            "captures, 1500000 ns at worst",
+            2,
+        ),
+        (
+            {"during": [(10, 2), (40, 1), (10, 2)]},
+            "phc2sys held pf1 not locked within 2000 ns of CLOCK_TAI during the "
+            "captures, 40 ns at worst",
+            2,
+        ),
+        ({"tai": ["37", "0"]}, "the TAI-UTC offset of companion changed", 2),
+        # found after the capture it died in, the last one too
+        ({"dead": {"mtl-perf-tx0"}}, "exited during the captures: mtl-perf-tx0", 1),
+        (
+            {"dead": {"mtl-perf-phc2sys"}},
+            "exited during the captures: mtl-perf-phc2sys",
+            1,
+        ),
+        (
+            {"dead": {"mtl-perf-phc2sys"}, "samples": [(90000, 0)]},
+            "exited before steady state: mtl-perf-phc2sys",
+            0,
+        ),
+        (
+            {"steady": (["not steady after 1 s: tx0"], [])},
+            "not steady after 1 s: tx0",
+            0,
+        ),
+    ],
+)
+def test_compliance_round_says_why_a_pass_is_not_valid(
+    comply, change, problem, captures
+):
+    for k, v in change.items():
+        setattr(comply, k, v)
+    verdicts, problems, _ = comply.round()
+    assert problems == [problem]
+    assert sum("/capture.py " in c for c in comply.calls) == captures
+    assert bool(verdicts) == bool(captures)
+
+
+PLATFORMS = [("s (RX)", {}), ("c (TX)", {})]
+
+
+def test_the_report_shows_what_list_found_of_each_build():
+    good = pc.list_verdicts({"streams": [_stream(5004)]})
+    wide = pc.list_verdicts({"streams": [_stream(5006, "wide", ("2110_21_vrx",))]})
+    passes = [
+        {
+            "label": "A",
+            "verdicts": {
+                **good,
+                "239.168.0.10:5004": {"why": "a later group"},
+                "239.168.0.1:5008": {"why": "2 gaps in the RTP sequence"},
+            },
+            "problems": [],
+            "notes": [],
+        },
+        {"label": "B", "verdicts": wide, "problems": [], "notes": ["a note"]},
+    ]
+    rounds = [_round(_rounds((1, 1))[0])]
+    names = pc.build_names(LABELS)
+    a, b = names["A"], html.escape(names["B"])
+    for page in (
+        pc.report_html(LABELS, ARGS, [], SLOTS, rounds, PLATFORMS, compliance=passes),
+        pc.summary_html(LABELS, ARGS, SLOTS, rounds, compliance=passes),
+    ):
+        rows = (
+            "<h2>Compliance</h2>",
+            f"<td>{a}</td><td>3</td><td>1</td><td>0</td><td>2</td><td>valid</td>",
+            f"<td>{b}</td><td>1</td><td>0</td><td>1</td><td>0</td><td>a note</td>",
+            f"<td>{a}</td><td>239.168.0.1:5008</td><td>not judged</td>"
+            "<td></td><td></td><td></td><td></td><td>2 gaps in the RTP sequence</td>",
+            f"<td>{a}</td><td>239.168.0.10:5004</td>",  # after .1, as numbers
+            f"<td>{b}</td><td>239.168.0.1:5006</td><td>wide</td>"
+            "<td>2110_21_vrx</td><td>2</td><td>1 to 5</td><td>621.0 to 629.2</td>",
+        )
+        assert sorted(rows, key=page.index) == list(rows)
+    assert "Compliance" not in pc.summary_html(LABELS, ARGS, SLOTS, rounds)

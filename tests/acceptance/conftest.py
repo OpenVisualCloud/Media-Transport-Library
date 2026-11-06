@@ -1137,6 +1137,11 @@ def pytest_addoption(parser):
             help=f"run the {role.upper()} instances on one scheduler each",
         )
     parser.addoption(
+        "--perf_compare_compliance",
+        action="store_true",
+        help="after the rounds, have EBU LIST judge every stream of each build",
+    )
+    parser.addoption(
         "--num_sessions",
         type=int,
         default=None,

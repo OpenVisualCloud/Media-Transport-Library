@@ -4,7 +4,7 @@ name: perf-compare
 # The name gives the NICs, then each other input that is not its default, by its key.
 run-name: >-
   ${{ github.event_name == 'schedule' && 'perf-compare: nightly' ||
-  format('perf-compare: {0} against {1}, {2} x {3}{4}, nics {5}{6}{7}{8}{9}{10}',
+  format('perf-compare: {0} against {1}, {2} x {3}{4}, nics {5}{6}{7}{8}{9}{10}{11}',
   inputs.ref_b || 'main', inputs.ref_a || 'main', inputs.sessions || '36',
   inputs.video || '1080p59',
   startsWith(inputs.pixel_format, 'yuv422p10le') && ' yuv422p10le' ||
@@ -22,7 +22,8 @@ run-name: >-
   inputs.test_time && inputs.test_time != '120' &&
   format(', {0} s', inputs.test_time) || '',
   inputs.rounds && inputs.rounds != '4' &&
-  format(', {0} rounds', inputs.rounds) || '') }}
+  format(', {0} rounds', inputs.rounds) || '',
+  inputs.compliance && ', compliance' || '') }}
 on:
   workflow_dispatch:
     inputs:
@@ -127,6 +128,11 @@ on:
         required: false
         type: string
         default: '4'
+      compliance:
+        description: 'After the rounds, EBU LIST judges every stream of each build, alone in slot 0, its sessions multicast, captured a few at a time for 1 s each on the companion: not for 4320p, which LIST cannot judge. About 25 s every 4 x 1080p59, twice that with nics redundant; reported, not scored'
+        required: false
+        type: boolean
+        default: false
   # The nightly compares the main of the last passed night with main.
   schedule:
     - cron: '0 16 * * *'
@@ -171,6 +177,7 @@ jobs:
           SINGLE_CORE_TX: ${{ inputs.single_core_tx }}
           VIDEO: ${{ inputs.video }}
           NICS: ${{ inputs.nics }}
+          COMPLIANCE: ${{ inputs.compliance }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: task ci:workflow -- perf-compare-refs
@@ -260,6 +267,7 @@ jobs:
           SINGLE_CORE_RX: ${{ inputs.single_core_rx }}
           SINGLE_CORE_TX: ${{ inputs.single_core_tx }}
           PIXEL_FORMAT: ${{ inputs.pixel_format }}
+          COMPLIANCE: ${{ inputs.compliance }}
         run: task ci:pytest-run -- perf-compare
       - name: Summarize the comparison
         if: always()

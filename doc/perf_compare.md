@@ -397,6 +397,42 @@ scheduler only, compare the reference with itself padded to the candidate's stru
 before blaming the code, over enough rounds to see the slow state that `main` reaches on
 its own in about 1 round in 10.
 
+### 4.6. Compliance
+
+With `compliance`, after the rounds, unless one of them failed, EBU LIST judges every
+stream of each build: the CI's server, `ebu_server` of `test_config.yaml`. Each build runs alone, its TX and RX in
+slot 0, its sessions multicast and a few to a group: as many as a kernel capture takes
+with no drop, 950,000 packets a second, which four 1080p59 streams are; a 2160p59
+stream, as many packets on one flow, is one a group, which no run has proven. On the
+companion, the PF of slot 1's first port, which then sends nothing, joins one group at
+a time, and `tcpdump -p` captures a second of it: the NIC's timestamps in nanoseconds,
+the first 128 bytes of each packet. Each stream keeps its whole frames, from its second
+RTP marker to its last, as libpcap loses packets of the first while it sets the
+filter, and LIST gets the pcap. The RX runs only so that the switch keeps every group
+registered (IGMP snooping); only the TX has to be steady.
+
+The capture needs no clock common to the hosts. phc2sys holds the clock of the
+capturing NIC within 2 µs of the companion's CLOCK_TAI, which RxTxApp's TX paces on,
+as the capture fixture of the acceptance tests does on one host. A stream is compliant
+when LIST finds it within ST 2110-21 type N, as MTL signals it, and every other check of
+LIST's report passes too, from the RTP timestamps and sequence to the multicast
+addresses. A group with a gap in a stream's sequence, which is what a packet the
+kernel or the NIC dropped leaves, is not judged and says why, as is a group the capture
+or LIST failed. A pass whose clock left the 2 µs during the captures, whose TAI-UTC
+offset changed, or that judged no stream, fails the case. The verdicts are reported per
+build, not scored.
+
+What the pass is not: the scored rounds run unicast with both builds at once, the pass
+multicast with one build alone in slot 0, so both are judged on the same NIC and CPUs.
+In `single`, where both builds share node 0 in the scored rounds, a build alone has
+more of its memory bandwidth. A capture on the PF of a port that sends would disturb
+that TX, if promiscuous, or record the wrong timing, so the pass never captures on
+one. 4320p is refused, as LIST does not judge 8K. A capture takes about 25 s: 9
+captures for 36 x 1080p59 a build, 18 for 72, or for 36 in `redundant`, whose legs are
+groups of their own. On the perf pair, main had 33 to 35 of 36 x 1080p59 compliant in
+four passes, the others under the VRX's floor by 1 to 4 packets, when its TX counted no
+late frame (2026-11-06).
+
 ## 5. Running it
 
 ### 5.1. Inputs
@@ -417,6 +453,7 @@ options of a run by hand (§5.4):
 | `single_core_rx`, `single_core_tx` | `--perf_compare_single_core_rx`, `--perf_compare_single_core_tx` | unchecked | The RX or TX instances run as perf-pytest's single core: `--sch_session_quota 99` without `--dedicated_sys_lcore`, one scheduler with the system tasklets. A core carries 28 RX, 36 with DMA, or 35 TX 1080p59. Unchecked, MTL starts the schedulers its quota needs |
 | `test_time` | `test_time` of `test_config.yaml` | `120` | Seconds of the untraced window; at least 30, for two whole stats dumps. The three later windows add half of it each |
 | `rounds` | `--perf_compare_rounds` | `4` | Rounds; A and B swap places each round, so keep it even. Fewer than 4 give a rough noise estimate |
+| `compliance` | `--perf_compare_compliance` | unchecked | After the rounds, EBU LIST judges every stream of each build (§4.6); needs `ebu_server` in `test_config.yaml`, which `config-perf` writes from the runner's `runner.env` |
 
 Where two inputs depend on each other, one input limits the other, and the refs job,
 or the case for what only the case knows, refuses a pair that cannot run before
@@ -426,6 +463,7 @@ anything is built or started:
 | --- | --- | --- |
 | `sessions`, `video`, `nics` | A port carries at most 100 Gb/s of sessions, a build on two ports twice that (below) | refs job; the case against each port's own link |
 | `sessions`, `single_core_rx`, `single_core_tx` | An MTL scheduler takes 60 video sessions at most | refs job and case |
+| `compliance`, `video` | LIST does not judge 8K | refs job and case |
 | `nics`, `single_core_rx`, `single_core_tx` | At a core's limit two instances on one socket fall short of it, both builds alike: `split`, `redundant` and `whole` give a build a socket (§3.5) | none needed |
 | `pixel_format`, `sessions`, `nics` | The conversion runs on the application threads, on the slot's first CPU and the lcores the schedulers leave: it moves each frame through the memory of the slot's node several times, which binds first: 36 x 1080p59 in yuv422p10le hold their rate in `split` and `whole`, not in `single`, where both builds share node 0 (below) | none needed |
 | `args`, `nics` | With `redundant`, a build's `--sch_session_quota` replaces the quota the case gives (§3.5) | none needed |
@@ -569,6 +607,10 @@ notes, which do not.
 | `got N% in the <window> window of what its TX sent ...: lost between the hosts or in its NIC` | The RX got under 99% of what its TX sent and counted no drop of the rest (§3.6) | The round's `arp.log`; [a link of its own](ci_runner_setup.md#the-perf-pair-needs-a-link-of-its-own) |
 | `a CI job ran on <host>` (note) | Another job on the companion at the round's start or end | Rerun if the round stands out |
 | `the builds pace TX differently` (note) | A build's TX fell back from the rate limiter (`pacing way:`, info level) | Read its re-plan row as that, not as a gain |
+| `compliance of <build>: LIST judged no stream` | No capture of the pass was whole, or LIST reported none of its streams | `perf_compare/compliance_A/` or `compliance_B/`, `<group>.json`: each capture's gaps and LIST's report; `mtl-perf-tx0.json`: the command and the multicast configuration |
+| `compliance of <build>: phc2sys held <PF> within 2000 ns ...`, `phc2sys held <PF> not locked within 2000 ns ...` | The capturing NIC's clock did not follow the companion's CLOCK_TAI | `phc2sys.log` of `perf_compare/compliance_A/` or `compliance_B/`; another phc2sys or ptp4l on that NIC |
+| `compliance of <build>: the TAI-UTC offset of <host> changed` | The kernel's offset changed during the pass | [TAI and capture clock requirements](ci_runner_setup.md#tai-and-capture-clock-requirements) |
+| Not judged (Compliance) | A gap in a stream's sequence, as a packet the kernel or the NIC dropped leaves, a stream with no whole frame, or a capture or LIST that failed, as the row says | The capture's `<group>.json` |
 | `perf stat did not count every event` (note) | The host's perf left an event of the instance uncounted, so it has no PMU rows | Its `.pmu` record in `perf_compare/round<N>/` |
 | Placement `perf` no | No perf on the host counts every event: no PMU rows at all | A `linux-tools-<version>` package of a 6.8 kernel |
 | Placement `CAT` no | No L3 allocation, or other resctrl groups | Remove the groups, or accept a shared L3 |

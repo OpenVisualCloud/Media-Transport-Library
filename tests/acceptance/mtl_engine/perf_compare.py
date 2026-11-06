@@ -25,6 +25,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 
 from common.generate_report import html_head, platform_html
+from compliance.compliance_client import PcapComplianceClient
 from mtl_engine.const import LD_LIB_PATH_REL
 from mtl_engine.dma import bind_dma_to_vfio
 from mtl_engine.performance_monitoring import (
@@ -114,6 +115,96 @@ try:
         time.sleep({ARP_PERIOD_S})
 except KeyboardInterrupt:
     pass
+"""
+# The compliance pass (doc/perf_compare.md §4.6): EBU LIST judges every stream of a
+# build, captured on the companion, whose TX paces on its CLOCK_TAI, to which phc2sys
+# holds the clock of the capturing NIC: no clock common to the hosts is needed.
+PHC_UNIT = f"{UNIT_PREFIX}phc2sys"
+PHC_LOCK_NS = 2000  # the capture fixture's (conftest.py); E830 held 32 ns under load
+PHC_WAIT_S = 30
+RE_PHC = re.compile(r" sys offset +(-?\d+) s(\d) ")  # its servo locked at s2
+# A capture takes the streams of one multicast group, as many as a kernel capture took
+# with no drop, four 1080p59, for a second of each, RP 2110-25's window.
+CAPTURE_PPS = 950_000
+CAPTURE_S = 1
+# The address of a group: of the session entry and leg, then the group's number.
+GROUP = "239.168.{}.{}"
+# What LIST calls a stream within the type N model, which MTL signals.
+COMPLIANT = ("narrow", "narrow_linear")
+# Captures COUNT packets of GROUP on PF into RAW, keeps each stream's whole frames in
+# OUT, and prints the gaps in each stream's RTP sequence that it kept, as JSON. It
+# drops the group after the tap, as NetsniffRecorder does, so the IP stack does not
+# hold up the queue. A stream starts at its second RTP marker, as libpcap loses
+# packets of the first frame while it sets the filter, and ends at its last. Without
+# -p tcpdump would turn the PF promiscuous, which stalls the TX of its VFs.
+CAPTURE_SCRIPT = """\
+import json, socket, struct, subprocess, sys, time
+
+pf, group, count, raw, out = sys.argv[1:6]
+
+
+def run(*cmd):
+    return subprocess.run(cmd, capture_output=True, text=True)
+
+
+def records(f):
+    while len(h := f.read(16)) == 16:
+        yield h, f.read(struct.unpack("<4I", h)[2])
+
+
+def rtp(frame):  # its address:port, RTP marker and sequence number
+    udp = 14 + (frame[14] & 15) * 4
+    port, _, _, _, pt, seq = struct.unpack(">HHHBBH", frame[udp + 2 : udp + 12])
+    return f"{socket.inet_ntoa(frame[30:34])}:{port}", pt >> 7, seq
+
+
+def whole_frames():
+    markers = {}
+    with open(raw, "rb") as f:
+        f.read(24)
+        for n, (_, frame) in enumerate(records(f)):
+            key, marker, _ = rtp(frame)
+            if marker:
+                markers.setdefault(key, []).append(n)
+    gaps, seqs = {}, {}
+    with open(raw, "rb") as f, open(out, "wb") as o:
+        o.write(f.read(24))
+        for n, (h, frame) in enumerate(records(f)):
+            key, _, seq = rtp(frame)
+            m = markers.get(key, [])
+            if len(m) < 3 or not m[1] <= n <= m[-1]:
+                continue
+            if n > m[1]:  # the second marker's packet only starts the sequence
+                o.write(h + frame)
+                gaps[key] = gaps.get(key, 0) + (seq != (seqs[key] + 1) & 0xFFFF)
+            seqs[key] = seq
+    return gaps
+
+
+drop = ["dev", pf, "ingress", "pref", "2110"]
+run("tc", "qdisc", "add", "dev", pf, "clsact")
+run("tc", "filter", "del", *drop)
+try:
+    run("tc", "filter", "add", *drop, "protocol", "ip", "flower", "skip_hw",
+        "dst_ip", group, "action", "drop")
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, socket.inet_aton(group)
+                 + bytes(4) + struct.pack("@i", socket.if_nametoindex(pf)))
+    time.sleep(1)  # for the switch to send the group here
+    cap = run("timeout", "30", "tcpdump", "-p", "-q", "-i", pf, "-j", "adapter_unsynced",
+              "--time-stamp-precision=nano", "-s", "128", "-B", "1000000", "-c", count,
+              "-w", raw, f"udp and dst host {group}")
+    s.close()
+finally:
+    run("tc", "filter", "del", *drop)
+    # an empty clsact goes, as a run that died left it too
+    if not any(run("tc", "filter", "show", "dev", pf, d).stdout for d in ("ingress", "egress")):
+        run("tc", "qdisc", "del", "dev", pf, "clsact")
+print(json.dumps({
+    "rc": cap.returncode,
+    "error": cap.stderr.strip()[-200:] if cap.returncode else "",
+    "gaps": whole_frames() if cap.returncode == 0 else {},
+}))
 """
 # Enough lines of a collector log to hold the last complete dump of 64 sessions.
 TAIL_LINES = 3000
@@ -458,6 +549,35 @@ def add_port(
     config[f"{role}_sessions"].append(group)
 
 
+def multicast_groups(config: dict, role: str, per_group: int) -> None:
+    """Send or receive the st20p sessions of *config* as multicast, *per_group* to a
+    group of their own, so that a capture can take a group at a time: each leg of each
+    session entry, a port's, has groups of its own."""
+    key = "dip" if role == "tx" else "ip"
+    entries = []
+    for e, entry in enumerate(config[f"{role}_sessions"]):
+        n = entry["st20p"][0]["replicas"]
+        for g, first in enumerate(range(0, n, per_group), 1):
+            group = copy.deepcopy(entry)
+            group[key] = [
+                GROUP.format(2 * e + leg, g) for leg in range(len(entry[key]))
+            ]
+            group["st20p"][0]["replicas"] = min(per_group, n - first)
+            entries.append(group)
+    config[f"{role}_sessions"] = entries
+
+
+def stream_groups(config: dict) -> list[tuple[str, list[str]]]:
+    """Each group of the TX *config* of multicast_groups(), and its streams, address
+    and port, as RxTxApp numbers the ports of a session's replicas (parse_json.c)."""
+    return [
+        (dip, [f"{dip}:{s['start_port'] + 2 * k}" for k in range(s["replicas"])])
+        for entry in config["tx_sessions"]
+        for s in entry["st20p"]
+        for dip in entry["dip"]
+    ]
+
+
 def nic_slots(nics: str, nic0: Slot, nic1: Slot) -> list[Slot]:
     """The slots of a host from cpu_layout()'s slot of each NIC's node, a socket each,
     both of as many CPUs as the smaller has: for split, slot 0 has port 0 of NIC 0
@@ -480,6 +600,11 @@ def stream_bps(width: int, height: int, fps: float) -> float:
     """The wire rate of a 4:2:2 10-bit stream: 20 bits a pixel, paced over 1125 of 1080
     lines, in MTL's packets of 1320 bytes of pixels that take 1406 on the wire."""
     return width * height * 20 * fps * 1125 / 1080 * 1406 / 1320
+
+
+def frame_packets(width: int, height: int) -> int:
+    """The packets of a 4:2:2 10-bit frame, of 1320 bytes of pixels: 3928 at 1080p."""
+    return math.ceil(width * height * 20 / 8 / 1320)
 
 
 def port_sessions(sessions: int, ports: int, bps: float) -> list[int]:
@@ -1074,6 +1199,86 @@ def keep_learned(host, pairs: list[tuple[str, str]]) -> None:
         [f"AllowedCPUs={COLLECTOR_CPU}"],
         f"{RUN_DIR}/arp.log",
     )
+
+
+def list_verdicts(report: dict) -> dict[str, dict]:
+    """Each video stream of an EBU LIST *report* by its address:port: LIST's ST 2110-21
+    class, the checks it failed, its largest Cinst and its VRX and TRO (us) ranges."""
+    verdicts = {}
+    for s in report.get("streams") or []:
+        if s.get("media_type") != "video":
+            continue
+        net = s.get("network_information", {})
+        timing = s.get("global_video_analysis", {})
+        media = s.get("media_specific", {})
+        cinst = [b for b, _ in timing.get("cinst", {}).get("histogram", [])]
+        vrx = [b for b, _ in timing.get("vrx", {}).get("histogram", [])]
+        stream = f"{net.get('destination_address')}:{net.get('destination_port')}"
+        verdicts[stream] = {
+            "class": timing.get("compliance"),
+            "failed": sorted(
+                k
+                for k, a in (s.get("analyses") or {}).items()
+                if a.get("result") != "compliant"
+            ),
+            "cinst": max(cinst, default=None),
+            "vrx": [min(vrx, default=None), max(vrx, default=None)],
+            "tro_us": [
+                round(media[k] / 1e3, 1) if k in media else None
+                for k in ("min_tro_ns", "max_tro_ns")
+            ],
+        }
+    return verdicts
+
+
+def compliant(verdict: dict) -> bool:
+    """Whether LIST found a stream of list_verdicts() of type N and failed no check."""
+    return verdict.get("class") in COMPLIANT and not verdict.get("failed")
+
+
+def list_report(host, mtl_path: str, ebu: dict, pcap: str) -> tuple[dict | None, str]:
+    """Upload *pcap* of *host* to *ebu*, test_config's ebu_server, and return LIST's
+    report of it, or None and why, then delete it there; LIST's errors raise.
+
+    The password goes over stdin, as mfd_connect logs every command line, and an
+    empty report is analysed twice more, as pcap_compliance.py does.
+    """
+    res = host.connection.execute_command(
+        f"sudo -n timeout 300 python3 {mtl_path}/tests/acceptance/compliance/"
+        f"upload_pcap.py --ip {ebu['ebu_ip']} --user {ebu['user']} --password-stdin "
+        f"--pcap {pcap}",
+        shell=True,
+        stderr_to_stdout=True,
+        expected_return_codes=None,
+        input_data=f"{ebu['password']}\n",
+    )
+    uuid = re.search(r">>>UUID: (\S+)", res.stdout or "")
+    if not uuid:
+        return None, f"the upload failed: {(res.stdout or '').strip()[-200:]}"
+    client = PcapComplianceClient(
+        ebu["ebu_ip"], ebu["user"], ebu["password"], pcap_id=uuid[1]
+    )
+    try:
+        report = client.download_report()
+        for _ in range(2):  # a dropped ingest
+            if not report or report.get("streams"):
+                break
+            report = client.reanalyze(report)
+    finally:
+        client.delete_pcap()
+    return (report, "") if report else (None, "LIST did not analyse it in time")
+
+
+def _captured(cap: dict, streams: list[str]) -> str:
+    """Why the capture *cap* of CAPTURE_SCRIPT does not hold *streams* whole, or "": a
+    packet the kernel or the NIC dropped in a frame kept is a gap in its sequence."""
+    if cap["rc"]:
+        return f"tcpdump exited {cap['rc']}: {cap['error']}"
+    if missing := [s for s in streams if s not in cap["gaps"]]:
+        return f"no whole frame of {', '.join(missing)}"
+    if gaps := sum(cap["gaps"][s] for s in streams):
+        return f"{gaps} gaps in the RTP sequence"
+    return ""
 
 
 def _median(values):
@@ -1737,11 +1942,60 @@ def _platform_text(plat: dict) -> dict:
     return text
 
 
-def _results(labels, args, slots, rounds, styled, single_core, inputs=()) -> list[str]:
-    """The builds, the rounds, the summary and the tables of each role; *styled* for a
-    page with the report's style. *single_core* is the roles whose instances had one
-    scheduler; *inputs* the (input, value) rows of every input of the run, as the
-    workflow names them, under the builds.
+def _numbers(stream: str) -> list[int]:
+    return [int(n) for n in re.split(r"[.:]", stream)]
+
+
+def _compliance(passes: list[dict], names: dict) -> str:
+    """The compliance pass of each build: how many of its streams LIST found compliant,
+    and each that it did not or could not judge."""
+    counts, rows = [], []
+    for p in passes:
+        name, verdicts = names[p["label"]], p["verdicts"]
+        good = sum(map(compliant, verdicts.values()))
+        unjudged = sum("why" in v for v in verdicts.values())
+        result = "; ".join(p["problems"] + p["notes"]) or "valid"
+        bad = len(verdicts) - good - unjudged
+        counts.append([name, len(verdicts), good, bad, unjudged, result])
+        # by address and port as numbers
+        for stream, v in sorted(verdicts.items(), key=lambda x: _numbers(x[0])):
+            if "why" in v:
+                rows.append([name, stream, "not judged", "", "", "", "", v["why"]])
+            elif not compliant(v):
+                checks = ", ".join(v["failed"]) or "-"
+                vrx, tro = (" to ".join(map(str, v[k])) for k in ("vrx", "tro_us"))
+                rows.append(
+                    [name, stream, v["class"], checks, v["cinst"], vrx, tro, ""]
+                )
+    p = [
+        '<div class="sec"><h2>Compliance</h2>',
+        _text_table(
+            ["Build", "Streams", "Compliant", "Not compliant", "Not judged", "Result"],
+            counts,
+        ),
+    ]
+    if rows:
+        head = ["Build", "Stream", "LIST", "Failed checks", "Cinst max", "VRX"]
+        p.append(_text_table([*head, "TRO (us)", "Not judged as"], rows))
+    p += [
+        _note(
+            f"EBU LIST on every stream, each build alone in slot 0, captured {CAPTURE_S} s "
+            "a stream on the companion: compliant is within ST 2110-21 type N, as MTL "
+            "signals, and every check of LIST (doc/perf_compare.md §4.6)."
+        ),
+        "</div>",
+    ]
+    return "\n".join(p)
+
+
+def _results(
+    labels, args, slots, rounds, styled, single_core, inputs=(), compliance=()
+) -> list[str]:
+    """The builds, the rounds, the summary, the compliance passes and the tables of each
+    role; *styled* for a page with the report's style. *single_core* is the roles whose
+    instances had one scheduler; *inputs* the (input, value) rows of every input of the
+    run, as the workflow names them, under the builds; *compliance* the passes of
+    compliance_round(), each its label, verdicts, problems and notes.
     """
     valid = [r["metrics"] for r in rounds if not r["problems"]]
     hosts = {s["role"]: s["host"] for s in slots}
@@ -1781,6 +2035,7 @@ def _results(labels, args, slots, rounds, styled, single_core, inputs=()) -> lis
         _text_table(["Round", "Slot 0", "Slot 1", "Result"], runs),
         "</div>",
         _summary(valid, hosts, names, styled),
+        *([_compliance(compliance, names)] if compliance else []),
     ]
     for role, host in hosts.items():
         title = f"{role.upper()} ({html.escape(host)})"
@@ -1791,14 +2046,16 @@ def _results(labels, args, slots, rounds, styled, single_core, inputs=()) -> lis
     return p
 
 
-def summary_html(labels, args, slots, rounds, single_core=(), inputs=()) -> str:
+def summary_html(
+    labels, args, slots, rounds, single_core=(), inputs=(), compliance=()
+) -> str:
     """The report as the job summary shows it, which keeps no style: the builds and the
-    inputs, the rounds, the summary and the tables of each role; the workflow links the
-    full report, with the setup and the instances, after it."""
+    inputs, the rounds, the summary, the compliance passes and the tables of each role;
+    the workflow links the full report, with the setup and the instances, after it."""
     title = html.escape(f"MTL perf-compare: {labels['B']} against {labels['A']}")
     page = [
         f"<h2>{title}</h2>",
-        *_results(labels, args, slots, rounds, False, single_core, inputs),
+        *_results(labels, args, slots, rounds, False, single_core, inputs, compliance),
     ]
     return "\n".join(page)
 
@@ -1812,6 +2069,7 @@ def report_html(
     platforms,
     single_core=(),
     inputs=(),
+    compliance=(),
 ) -> str:
     """The report of a case: its builds, its rounds, how B differs from A, then its
     setup and its instances as they ran.
@@ -1821,13 +2079,13 @@ def report_html(
     a build uses DMA; pfs when the builds use both NICs), *rounds* the rounds as the
     case keeps them, with the launches of run_round(), *platforms* the (label,
     platform_config.json) of the SUT and the companion, *single_core* the roles whose
-    instances had one scheduler, and *inputs* the (input, value) rows of every input
-    of the run.
+    instances had one scheduler, *inputs* the (input, value) rows of every input of
+    the run, and *compliance* the passes of compliance_round().
     """
     title = f"MTL perf-compare: {labels['B']} against {labels['A']}"
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     p = [html_head(html.escape(title), now, STYLE)]
-    p += _results(labels, args, slots, rounds, True, single_core, inputs)
+    p += _results(labels, args, slots, rounds, True, single_core, inputs, compliance)
     info = _text_table(["Parameter", "Value"], details, "kv")
     p.append(_details("Test Information", [info], opened=True))
     yes = {True: "yes", False: "no"}
@@ -2148,3 +2406,164 @@ def run_round(
                 notes.append(f"{who(i)}: {m[loss]} {loss}")
         results[i.label][i.role] = m
     return results, problems, notes
+
+
+def tai_utc(host) -> int:
+    """The TAI-UTC offset of *host*'s kernel, in s: CLOCK_TAI, which RxTxApp paces on,
+    less CLOCK_REALTIME."""
+    return int(
+        sh(
+            host,
+            "python3 -c 'import time; "
+            "print(round(time.clock_gettime(time.CLOCK_TAI) - time.time()))'",
+        )
+    )
+
+
+def phc_samples(host) -> list[tuple[int, int]]:
+    """The samples PHC_UNIT has logged: its offset in ns and its servo state."""
+    log = sh(host, f"cat {RUN_DIR}/phc2sys.log", check=False)
+    return [(int(o), int(state)) for o, state in RE_PHC.findall(log)]
+
+
+def _held(samples) -> list[int]:
+    """The offsets of *samples* that are not locked within PHC_LOCK_NS."""
+    return [o for o, state in samples if state != 2 or abs(o) > PHC_LOCK_NS]
+
+
+def _phc_lock(host) -> bool:
+    """Whether the last three samples are locked within PHC_LOCK_NS, waited for up to
+    PHC_WAIT_S."""
+    deadline = time.monotonic() + PHC_WAIT_S
+    while True:
+        last = phc_samples(host)[-3:]
+        if len(last) == 3 and not _held(last):
+            return True
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(POLL_S)
+
+
+def _capture(tx, pf, address, streams, pps, ebu, out_dir) -> dict:
+    """LIST's verdict on each of *streams*, the group *address*'s, from a capture of
+    CAPTURE_SCRIPT for CAPTURE_S on *pf*; each of *pps* packets a second. A failure
+    leaves the group's streams not judged, and the pass going."""
+    pcap = f"{RUN_DIR}/{address}.pcap"
+    count = math.ceil(len(streams) * pps * CAPTURE_S)
+    cap = report = None
+    try:
+        out = sh(
+            tx.host,
+            f"python3 -I {RUN_DIR}/capture.py {pf} {address} {count} {pcap}.raw {pcap}",
+        )
+        cap = json.loads(out.splitlines()[-1])
+        why = _captured(cap, streams)
+        if not why:
+            report, why = list_report(tx.host, tx.mtl_path, ebu, pcap)
+    except Exception as e:
+        why = f"failed: {(str(e) or repr(e)).splitlines()[0]}"
+    finally:
+        sh(tx.host, f"rm -f {pcap}.raw {pcap}", check=False)
+    with open(os.path.join(out_dir, f"{address}.json"), "w") as f:
+        json.dump({"capture": cap, "list": report}, f)
+    got = list_verdicts(report) if report else {}
+    why = why or "LIST found no video stream there"
+    return {s: got.get(s) or {"why": why} for s in streams}
+
+
+def compliance_round(
+    sides, trees, label, app_cmd, out_dir, sessions, fps, pps, ebu, queues=None
+):
+    """Run build *label* alone in slot 0 and have EBU LIST judge each of its streams.
+
+    *app_cmd* is run_round()'s, its sessions multicast by multicast_groups(). Each
+    group in turn is captured for CAPTURE_S on the companion's PF of slot 1, which
+    sends nothing then, by the clock of its NIC, which phc2sys holds to the CLOCK_TAI
+    the TX paces on. The RX runs so that the switch keeps every group registered
+    (IGMP snooping), as the captures were proven with; only the TX has to be steady.
+    *pps* are the packets a second of a stream, *ebu* test_config's ebu_server. The
+    logs and each capture's summary and LIST report go to *out_dir*.
+    Returns ({stream: list_verdicts()'s verdict, or {"why": ...} for one not judged},
+    problems, notes).
+    """
+    tx = sides[1]
+    insts, verdicts = [], {}
+    for s in sides:
+        stop_units(s.host)
+        sh(s.host, f"rm -rf {RUN_DIR} && mkdir -m 700 {RUN_DIR}")
+    vf = tx.vfs[tx.slots[1].ports[0]]
+    pf = sh(tx.host, f"ls /sys/bus/pci/devices/{vf}/physfn/net").strip()
+    tai = tai_utc(tx.host)
+    write_file(tx.host, f"{RUN_DIR}/capture.py", CAPTURE_SCRIPT)
+    busy = runner_busy(tx.host)
+    os.makedirs(out_dir, exist_ok=True)
+    try:
+        _start_unit(
+            tx.host,
+            PHC_UNIT,
+            f"phc2sys -s CLOCK_REALTIME -c {pf} -O {tai} -S 0.001 -m",
+            [f"AllowedCPUs={COLLECTOR_CPU}"],
+            f"{RUN_DIR}/phc2sys.log",
+        )
+        for s in sides:  # RX first, as in run_round()
+            inst = Instance(
+                s.host,
+                f"{UNIT_PREFIX}{s.role}0",
+                s.role,
+                label,
+                s.slots[0],
+                trees[label],
+                f"{RUN_DIR}/{label}_{s.role}0",
+                s.rdt[0] if s.rdt else None,
+            )
+            insts.append(inst)
+            cmd, config = app_cmd(s, 0, label)
+            with open(os.path.join(out_dir, f"{inst.name}.json"), "w") as f:
+                json.dump({"command": cmd, "config": config}, f, indent=1)
+            inst.start(s.mtl_path, cmd)
+            inst.collect("log", LOG_SCRIPT)
+        problems, notes = _wait_steady(insts[1:], sessions, fps, queues)
+        if not problems and not _phc_lock(tx.host):
+            problems.append(
+                f"exited before steady state: {PHC_UNIT}"
+                if inactive(tx.host, [PHC_UNIT])
+                else f"phc2sys held {pf} within {PHC_LOCK_NS} ns of CLOCK_TAI in no "
+                f"three samples in a row in {PHC_WAIT_S} s"
+            )
+        if not problems:
+            if why := insts[1].pin_app_threads():
+                notes.append(f"{insts[1].name}: app threads not moved, {why}")
+            time.sleep(WARMUP_S)
+            start = len(phc_samples(tx.host))  # the clock of the captures from here
+            for address, streams in stream_groups(config):  # the TX's, started last
+                verdicts.update(_capture(tx, pf, address, streams, pps, ebu, out_dir))
+                if dead := _exited(insts) + inactive(tx.host, [PHC_UNIT]):
+                    problems.append(f"exited during the captures: {', '.join(dead)}")
+                    break
+            if held := _held(phc_samples(tx.host)[start:]):
+                problems.append(
+                    f"phc2sys held {pf} not locked within {PHC_LOCK_NS} ns of "
+                    f"CLOCK_TAI during the captures, {max(map(abs, held))} ns at worst"
+                )
+            if tai_utc(tx.host) != tai:
+                problems.append(f"the TAI-UTC offset of {tx.host.name} changed")
+    finally:
+        for s in reversed(sides):
+            units = " ".join(i.name for i in insts if i.host is s.host)
+            sh(s.host, f"systemctl stop {units}", check=False)
+            stop_units(s.host)  # and PHC_UNIT
+        for i in insts:
+            try:
+                i.save(out_dir)
+            except Exception as e:  # keep the error that got here, if any
+                logger.error(f"{i.name}: saving its logs failed: {e}")
+        try:
+            path = f"{RUN_DIR}/phc2sys.log"
+            log = stream(tx.host, f"[ ! -f {path} ] || cat {path}")
+            with open(os.path.join(out_dir, "phc2sys.log"), "w") as f:
+                f.write(log)
+        except Exception as e:
+            logger.error(f"{PHC_UNIT}: saving its log failed: {e}")
+    if busy or runner_busy(tx.host):
+        notes.append(f"a CI job ran on {tx.host.name} during the pass")
+    return verdicts, problems, notes

@@ -22,6 +22,7 @@ from mtl_engine import ip_pools
 from mtl_engine import perf_compare as pc
 from mtl_engine.const import LOG_FOLDER, RXTXAPP_PATH
 from mtl_engine.media_files import yuv_files_422rfc10
+from mtl_engine.pcap_compliance import UNPARSABLE_HEIGHT
 from mtl_engine.rxtxapp import RxTxApp
 
 logger = logging.getLogger(__name__)
@@ -109,6 +110,7 @@ def _options(request) -> dict:
         "dma": DMA.get(get("--perf_compare_dma")),
         "nics": get("--perf_compare_nics"),
         "pixel_format": get("--perf_compare_pixel_format"),
+        "compliance": get("--perf_compare_compliance"),
     }
     if not all(ARGS.fullmatch(a) for a in opts["args"].values()):
         pytest.fail("--perf_compare_args_a/b take letters, digits, spaces and _./:=,+-")
@@ -150,9 +152,10 @@ def _subnet(ip: str, by: int) -> str:
     return f"{a}.{b}.{int(c) + by}.{d}"
 
 
-def _app_cmd(opts, media_config, media_path, fps, test_time, shares):
+def _app_cmd(opts, media_config, media_path, fps, test_time, shares, per_group=0):
     """Return app_cmd(side, slot, label) for pc.run_round: the RxTxApp of one instance,
-    with *shares* of its sessions on each port of its slot.
+    with *shares* of its sessions on each port of its slot, and with *per_group* its
+    sessions multicast, that many to a group, for pc.compliance_round.
 
     It returns the command and the RxTxApp configuration it runs with.
     """
@@ -217,6 +220,8 @@ def _app_cmd(opts, media_config, media_path, fps, test_time, shares):
             for port, n in zip(more, shares[1:]):
                 if n:
                     pc.add_port(app.config, side.role, side.vfs[port], *pools[port], n)
+        if per_group:
+            pc.multicast_groups(app.config, side.role, per_group)
         app.prepare_execution(build=side.mtl_path, host=side.host)
         return f"{app.command} {opts['args'][label]}".strip(), app.config
 
@@ -266,7 +271,7 @@ def _platform(out_dir, host) -> dict:
 
 
 def _write_report(
-    out_dir, opts, details, inputs, hostnames, sides, pfs, rounds
+    out_dir, opts, details, inputs, hostnames, sides, pfs, rounds, passes
 ) -> None:
     slots = [
         {
@@ -292,12 +297,11 @@ def _write_report(
         for s in sides
     ]
     single = opts["single_core"]
+    labels, args = opts["labels"], opts["args"]
     report = pc.report_html(
-        opts["labels"], opts["args"], details, slots, rounds, platforms, single, inputs
+        labels, args, details, slots, rounds, platforms, single, inputs, passes
     )
-    summary = pc.summary_html(
-        opts["labels"], opts["args"], slots, rounds, single, inputs
-    )
+    summary = pc.summary_html(labels, args, slots, rounds, single, inputs, passes)
     os.makedirs(out_dir, exist_ok=True)
     for name, page in (("perf_compare", report), ("perf_compare_summary", summary)):
         with open(os.path.join(out_dir, f"{name}.html"), "w") as f:
@@ -319,8 +323,11 @@ def _write_report(
 @pytest.mark.parametrize(
     "fps", [25, 29, 50, 59], ids=["25fps", "29fps", "50fps", "59fps"]
 )
-def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request):
-    """Run build A and build B at once, each a TX and an RX instance, and compare them."""
+def test_perf_compare(
+    hosts, test_time, test_config, nic_port_list, media_file, fps, request
+):
+    """Run build A and build B at once, each a TX and an RX instance, and compare them;
+    with --perf_compare_compliance, have EBU LIST judge every stream of each after."""
     opts = _options(request)
     rx_host = next((h for h in hosts.values() if is_host_sut(h)), None)
     tx_host = next((h for h in hosts.values() if h is not rx_host), None)
@@ -328,6 +335,14 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
         pytest.fail("perf-compare needs a SUT and a second host")
     media_config, media_path = media_file
     video = f"{media_config['height']}p{fps}"
+    ebu = test_config.get("ebu_server") or {}
+    if opts["compliance"]:
+        if not all(ebu.get(k) for k in ("ebu_ip", "user", "password")):
+            pytest.fail("--perf_compare_compliance needs ebu_server in test_config")
+        if media_config["height"] >= UNPARSABLE_HEIGHT:
+            pytest.fail(
+                "EBU LIST cannot judge 8K: --perf_compare_compliance refuses it"
+            )
     out_dir = os.path.join(os.environ.get("MTL_LOG_FOLDER", LOG_FOLDER), "latest")
     sessions = opts["sessions"]
     # a TX queue a port of each session: redundant sessions take two
@@ -345,6 +360,15 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
     windows_s = test_time + 3 * (traced_s + 2 * pc.DUMP_PERIOD_S) + pc.DUMP_PERIOD_S
     app_time = pc.steady_timeout(queues) + pc.WARMUP_S + windows_s + 100
     app_cmd = _app_cmd(opts, media_config, media_path, fps, app_time, shares)
+    # the compliance pass: a group of streams a capture, as many as a capture takes
+    pps = pc.frame_packets(media_config["width"], media_config["height"]) * FPS[fps]
+    per_group = max(1, int(pc.CAPTURE_PPS // pps))
+    groups = sum(-(-n // per_group) for n in shares)  # redundant: a leg each share
+    # a capture and its analysis take about 25 s; LIST may wait a minute for a report
+    comply_time = pc.steady_timeout(queues) + pc.WARMUP_S + 120 * groups + 100
+    comply_cmd = _app_cmd(
+        opts, media_config, media_path, fps, comply_time, shares, per_group
+    )
     # a build's sessions and their ports
     spread = (
         f", {shares[0]} on its first port and {shares[1]} on its second"
@@ -369,6 +393,7 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
         ),
         ("test_time", test_time),
         ("rounds", opts["rounds"]),
+        ("compliance", "yes" if opts["compliance"] else "no"),
     ]
     details = [
         ("pytest", shlex.join(["pytest", *request.config.invocation_params.args])),
@@ -409,8 +434,20 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
             "Sessions window",
             f"{traced_s} s: the video session call times, every session timed",
         ),
+        *(
+            [
+                (
+                    "Compliance",
+                    f"after the rounds, each build alone in slot 0, its sessions "
+                    f"multicast, {per_group} to a group: EBU LIST judges each, captured "
+                    f"{pc.CAPTURE_S} s a group on the companion's PF of slot 1",
+                )
+            ]
+            if opts["compliance"]
+            else []
+        ),
     ]
-    sides, rounds, pfs = [], [], {}
+    sides, rounds, pfs, passes = [], [], {}, []
     try:
         for role, host in (("rx", rx_host), ("tx", tx_host)):
             pfs[role], vfs = _ports(host, opts["nics"])
@@ -474,14 +511,51 @@ def test_perf_compare(hosts, test_time, nic_port_list, media_file, fps, request)
                 }
             )
             # after each round: a job that times out keeps what it measured
-            _write_report(out_dir, opts, details, inputs, hostnames, sides, pfs, rounds)
+            _write_report(
+                out_dir, opts, details, inputs, hostnames, sides, pfs, rounds, passes
+            )
             if failed:
                 break
+        for label in "AB" if opts["compliance"] and not failed else ():
+            try:
+                verdicts, problems, notes = pc.compliance_round(
+                    sides,
+                    opts["trees"],
+                    label,
+                    comply_cmd,
+                    os.path.join(out_dir, "perf_compare", f"compliance_{label}"),
+                    sessions,
+                    FPS[fps],
+                    pps,
+                    ebu,
+                    queues,
+                )
+            except Exception as e:  # the passes so far stay in the report
+                logger.exception(f"The compliance pass of {label} failed")
+                verdicts, notes = {}, []
+                problems = [f"failed: {(str(e) or repr(e)).splitlines()[0]}"]
+            if not problems and all("why" in v for v in verdicts.values()):
+                problems = ["LIST judged no stream"]
+            passes.append(
+                {
+                    "label": label,
+                    "verdicts": verdicts,
+                    "problems": problems,
+                    "notes": notes,
+                }
+            )
+            _write_report(
+                out_dir, opts, details, inputs, hostnames, sides, pfs, rounds, passes
+            )
     finally:
         for s in sides:
             pc.stop_units(s.host)
             pc.rdt_teardown(s.host)
 
     problems = [p for r in rounds for p in r["problems"]]
+    names = pc.build_names(opts["labels"])
+    problems += [
+        f"compliance of {names[p['label']]}: {q}" for p in passes for q in p["problems"]
+    ]
     if problems:
         pytest.fail("; ".join(problems))

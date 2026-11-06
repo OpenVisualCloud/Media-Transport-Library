@@ -88,6 +88,10 @@ perf-compare-refs)
 		echo "::error::single core takes up to 60 sessions, as many as an MTL scheduler: ${sessions}" >&2
 		exit 1
 	fi
+	if [[ ${COMPLIANCE:-} == true && ${video%p*} == 4320 ]]; then
+		echo "::error::compliance: EBU LIST cannot judge ${video}" >&2
+		exit 1
+	fi
 	if [[ ${GITHUB_EVENT_NAME:-} == schedule ]]; then
 		# GitHub starts each night hours late, by a different amount, so a window
 		# counted back from the start would leave commits to no night. Without a
