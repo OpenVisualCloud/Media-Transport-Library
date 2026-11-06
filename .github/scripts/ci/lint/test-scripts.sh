@@ -180,12 +180,18 @@ fortify_level() {
 test_hardening_flags() {
 	local helper=script/hardening_flags.py out opts compiler cc lang want max level flags=()
 	local probed='-fstack-protector-strong -fstack-clash-protection -fcf-protection=full'
-	local always='-Wformat -Wformat-security -Werror=format-security'
+	local always='-Wformat -Wformat-security -Werror=format-security -Wimplicit-fallthrough'
 	local link='-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack'
 
 	out=$(python3 "${helper}" c 2 none true)
 	[ "${out}" = "${probed} ${always} -D_FORTIFY_SOURCE=2"$'\n'"${link}" ] ||
 		fail "${helper}" "with a compiler that takes each flag: ${out}"
+	out=$(python3 "${helper}" c++ 2 none true)
+	[ "${out%%$'\n'*}" = "${probed} ${always} -D_GLIBCXX_ASSERTIONS -D_FORTIFY_SOURCE=2" ] ||
+		fail "${helper}" "C++ without _GLIBCXX_ASSERTIONS: ${out}"
+	out=$(python3 "${helper}" c++ 0 none true)
+	[ "${out%%$'\n'*}" = "${probed} ${always} -D_GLIBCXX_ASSERTIONS" ] ||
+		fail "${helper}" "C++ without _GLIBCXX_ASSERTIONS where no level applies: ${out}"
 	out=$(python3 "${helper}" c 2 none sh -c 'case " $* " in *" -Werror "*) exit 1 ;; esac' sh)
 	[ "${out%%$'\n'*}" = "${always} -D_FORTIFY_SOURCE=2" ] || fail "${helper}" "keeps a flag the compiler warns about: ${out}"
 	out=$(python3 "${helper}" c 2 none sh -c 'echo "#define __USE_FORTIFY_LEVEL 3"' sh)

@@ -3,6 +3,10 @@
 # Copyright 2026 Intel Corporation
 """Print the compiler hardening flags of the MTL meson projects, see doc/build.md.
 
+Every MTL meson project runs it at meson setup. meson has a built-in option for
+PIE only (b_pie), and separate meson projects can't share meson code, so the
+flags and the probe of the _FORTIFY_SOURCE level a toolchain takes are here once.
+
 Usage: hardening_flags.py LANGUAGE OPTIMIZATION SANITIZE COMPILER [ARG...]
 
 LANGUAGE is c or c++, OPTIMIZATION and SANITIZE are the meson options
@@ -43,7 +47,15 @@ with tempfile.TemporaryDirectory() as tmp:
         )
         if run(flag, *probe, source="int main(void) { return 0; }").returncode == 0
     ]
-flags += ["-Wformat", "-Wformat-security", "-Werror=format-security"]
+flags += [
+    "-Wformat",
+    "-Wformat-security",
+    "-Werror=format-security",
+    "-Wimplicit-fallthrough",
+]
+# Bounds and precondition checks in libstdc++ (libc++ ignores it).
+if language == "c++":
+    flags.append("-D_GLIBCXX_ASSERTIONS")
 # glibc needs optimization for it, and the sanitizers don't support it. A level
 # the compiler (Ubuntu gcc) or ARG sets is kept. meson's own checks can't see
 # it: they don't optimize, and meson 1.11 and later add -U_FORTIFY_SOURCE.

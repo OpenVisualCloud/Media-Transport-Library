@@ -473,13 +473,15 @@ The Linux build compiles the MTL meson projects with the hardening options below
 | `-fcf-protection=full` | Intel CET shadow stack (SHSTK) and indirect branch tracking (IBT) |
 | `-D_FORTIFY_SOURCE=3` | Buffer overflow checks in libc calls. Level 3 needs gcc 12 or clang 9 and glibc 2.34, so gcc 11 (Ubuntu 22.04, RHEL 9) gets 2. Not added when the compiler or `c_args`/`cpp_args` set a level (Ubuntu gcc does), with the meson option `optimization` at `0` or `plain` (buildtypes `debug`, `plain`), or with `b_sanitize`, which the sanitizers don't support |
 | `-Wformat -Wformat-security -Werror=format-security` | Format string attacks |
+| `-Wimplicit-fallthrough` | A `switch` case that falls through unmarked. Mark an intended one with `__attribute__((fallthrough));`, as clang ignores a `/* fallthrough */` comment. DPDK's headers, which use the comment, are included as system headers |
+| `-D_GLIBCXX_ASSERTIONS` | Bounds and precondition checks in libstdc++, for the C++ programs: MtlManager, KahawaiTest, UnitTest, the gpu_direct gtest and the st22 avcodec and FFmpeg plugin tests |
 | `-Wl,-z,relro -Wl,-z,now` | Full RELRO, a read-only GOT |
 | `-Wl,-z,noexecstack` | Non-executable stack |
 | `b_pie=true`, and meson's `-fPIC` for shared objects | Position independent code for ASLR |
 
 The gcc of Rocky Linux and RHEL enables none of the compiler options by default. So the Rocky Linux 9 image build runs `.github/scripts/ci/scan/check-hardening.sh` on what `build.sh` builds there: libmtl, UnitTest, the samples, the sample plugins, MtlManager, KahawaiTest and RxTxApp. It fails on a binary without full RELRO, a non-executable stack, PIE, CET or the stack protector.
 
-`_FORTIFY_SOURCE` leaves no reliable mark in a binary, so `.github/scripts/ci/lint/test-scripts.sh` tests the rule that sets it instead.
+`_FORTIFY_SOURCE` and `_GLIBCXX_ASSERTIONS` leave no reliable mark in a binary, so `.github/scripts/ci/lint/test-scripts.sh` tests the rule that sets them instead.
 
 ## Next Steps
 Proceed to [Running MTL](./run.md) for further instructions.
