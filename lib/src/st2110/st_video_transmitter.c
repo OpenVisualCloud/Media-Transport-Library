@@ -355,10 +355,19 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
     dbg("%s(%d), late entry with gap %" PRId64 "\n", __func__, s->idx, gap);
     /* Refused pads, of its other port or of another session, are retried first: one
      * call more than the hold makes would delay that retry. */
-    if (drain > plan->absorb_ns ||
-        (s->ops.num_port > 1 && video_trs_rl_refused(s, !s_port)) ||
+    if ((s->ops.num_port > 1 && video_trs_rl_refused(s, !s_port)) ||
         video_trs_rl_any_refused(s->mgr))
       return false;
+    /* with a pad past absorb_ns, only a port late already when the transmitter call
+     * began goes as a tail */
+    if (drain > plan->absorb_ns) {
+      if (ceill((target_tsc - s->mgr->visit_tsc + credit) / drain) >= trim_pads)
+        return false;
+      b = st_tx_video_rl_next_burst(drain, pad_size, trim_pads, target_tsc, drained);
+      if (st_tx_video_rl_cut_short(&b, drain, pad_size, target_tsc, drained) >
+          plan->absorb_ns)
+        return false;
+    }
     tail = true;
   }
 
@@ -387,7 +396,7 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
      * absorb_ns, else hold */
     if (b.last && !hold) {
       long double cut_short =
-          st_tx_video_rl_burst_ns(&b, drain, pad_size) - (target_tsc - drained);
+          st_tx_video_rl_cut_short(&b, drain, pad_size, target_tsc, drained);
       if (cut_short >= drain * ST_TX_VIDEO_RL_TRIM_FINE / pad_size) {
         hold = cut_short > plan->absorb_ns;
         tail = !hold;
@@ -1220,6 +1229,7 @@ static int video_trs_tasklet_handler(void* priv) {
   uint64_t near_tsc = UINT64_MAX;
 
   trs->visit++;
+  mgr->visit_tsc = mt_get_tsc(impl);
   for (sidx = 0; sidx < mgr->max_idx; sidx++) {
     pending += video_trs_rl_release(impl, trs, sidx, false);
     s = tx_video_session_try_get(mgr, sidx);

@@ -71,6 +71,8 @@ struct ut_trs_ctx {
   uint64_t cpu_stall_ns[UT_TRS_MAX_CPU_STALLS];
   int cpu_stalls, cpu_stall_next;
   bool cost_stamp_pending;
+  /* the next tsc read begins a transmitter call: it sets mgr.visit_tsc */
+  bool visit_pending;
   uint32_t refcnt_since_tsc;
   uint32_t max_refcnt_before_burst;
   /* the PMD of a reclaiming port: done rs batches it has not freed yet */
@@ -140,7 +142,16 @@ static uint64_t ut_trs_tsc_time_fn(struct mtl_main_impl* impl) {
     ctx->last_tsc = ctx->tsc_script[len - 1] + step * (pos - len + 1) + ctx->tsc_skew;
   }
   ut_trs_cpu_stalls(ctx, from);
+  if (ctx->visit_pending) {
+    ctx->visit_pending = false;
+    ctx->mgr.visit_tsc = ctx->last_tsc;
+  }
   return ctx->last_tsc;
+}
+
+/* outside a scheduler, each call of ctx is a transmitter call of its own */
+static void ut_trs_visit_alone(struct ut_trs_ctx* ctx) {
+  ctx->visit_pending = ctx->session.mgr == &ctx->mgr;
 }
 
 static uint64_t ut_trs_ptp_time_fn(struct mtl_main_impl* impl, enum mtl_port port) {
@@ -616,6 +627,7 @@ bool ut_trs_pre_arm(ut_trs_ctx* ctx) {
 
 bool ut_trs_pre_arm_port(ut_trs_ctx* ctx, int port) {
   ut_trs_active_ctx = ctx;
+  ut_trs_visit_alone(ctx);
   bool defer = false;
   bool armed = video_trs_rl_pre_arm(&ctx->impl, &ctx->session, port, &defer);
   ut_trs_active_ctx = NULL;
@@ -966,6 +978,7 @@ uint16_t ut_trs_call_burst_pad(ut_trs_ctx* ctx) {
 
 int ut_trs_call_rl_tasklet(ut_trs_ctx* ctx) {
   ut_trs_active_ctx = ctx;
+  ut_trs_visit_alone(ctx);
   int ret = video_trs_rl_tasklet(&ctx->impl, &ctx->session, MTL_SESSION_PORT_P);
   ut_trs_active_ctx = NULL;
   /* the return to the scheduler takes the g of the last burst */
@@ -1099,6 +1112,7 @@ void ut_trs_stream(ut_trs_ctx* ctx, uint64_t duration_ns, uint64_t call_ns) {
       rte_ring_sp_enqueue(ring, m);
     }
     ctx->last_tsc += call_ns;
+    ut_trs_visit_alone(ctx);
     video_trs_rl_tasklet(&ctx->impl, &ctx->session, MTL_SESSION_PORT_P);
   }
   ut_trs_active_ctx = NULL;

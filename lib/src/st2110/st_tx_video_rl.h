@@ -153,4 +153,12 @@ static inline long double st_tx_video_rl_burst_ns(const struct st_tx_video_rl_bu
   return n * drain - cut * drain / pad_size;
 }
 
+/* how late past its target packet 0 starts behind burst b, planned from drained */
+static inline long double st_tx_video_rl_cut_short(const struct st_tx_video_rl_burst* b,
+                                                   long double drain, uint16_t pad_size,
+                                                   long double target,
+                                                   long double drained) {
+  return st_tx_video_rl_burst_ns(b, drain, pad_size) - (target - drained);
+}
+
 #endif

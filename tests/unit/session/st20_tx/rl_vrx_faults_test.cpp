@@ -70,6 +70,7 @@ struct Plan {
   int64_t budget = 0;
   uint32_t warm_pkts = 0;
   uint64_t window = 0;
+  uint16_t pad_size = 0;
 };
 
 struct Case {
@@ -113,6 +114,7 @@ class St20TxRlVrxFaults : public ::testing::TestWithParam<Fmt> {
     plan->absorb = ut_txv_rl_absorb(txv, kPortP);
     plan->budget = ut_txv_rl_vrx_budget(txv, kPortP);
     plan->refill = ut_txv_rl_refill(txv, kPortP);
+    plan->pad_size = ut_txv_rl_pad_size(txv, kPortP);
     plan->trs = ut_txv_pacing_trs(txv);
     plan->warm_pkts = ut_txv_pacing_warm_pkts(txv);
     plan->pad_interval = ut_txv_pad_interval(txv);
@@ -329,6 +331,55 @@ class St20TxRlVrxFaults : public ::testing::TestWithParam<Fmt> {
         }
   }
 
+  /* F8 the first frame of a stream: the first frames of the sessions sharing the
+   * scheduler hold it past the warm-up open, so the first visit finds fewer than
+   * trim_pads pads to the target, enough coarse cuts for any cut of a pad, and a long
+   * tasklet sits at the target. Packet 0 goes behind those pads, so it keeps VRX >= 0
+   * whatever runs at the target. */
+  void F8() {
+    const long double coarse =
+        ceill((long double)plan_.pad_size / ST_TX_VIDEO_RL_TRIM_COARSE);
+    const int64_t trim_pads = st_tx_video_rl_trim_pads(plan_.pad_size);
+    /* the gaps from the visit to the target where that many pads, and fewer than
+     * trim_pads, fit */
+    const int64_t lo = (int64_t)ceill(coarse * plan_.p - plan_.credit);
+    const int64_t hi = (int64_t)((trim_pads - 1) * plan_.p - plan_.credit);
+    for (int n : {1, 8})
+      for (int64_t gap = lo + 1000; gap < hi; gap += 5000)
+        for (uint64_t len : {50000, 100000})
+          for (int64_t t : {-10000, -5000, 0}) {
+            Case c = Base(n);
+            /* the first visit dequeues packet 0, the one a round later pre-arms */
+            c.entry_ns = plan_.window - gap - kOthersNs;
+            c.tasklets.push_back({(uint64_t)((int64_t)kTargetTsc + t), len});
+            Check("F8", len / 1000.0L, c, t / 1000.0L, true);
+          }
+  }
+
+  /* F9 a thread stall in the pre-arm call of 8 sessions delays its later visits to an
+   * entry as late as F8's, and another comes at every instant of what they then send.
+   * Late by the call alone, the round left them in time: packet 0 holds, no tail, so no
+   * stall in a tail call takes it below VRX 0 where the hold is not. A format whose pad
+   * is within absorb_ns sends every late entry not behind refused pads as a tail. */
+  void F9() {
+    if (plan_.p <= plan_.absorb) return;
+    const int64_t trim_pads = st_tx_video_rl_trim_pads(plan_.pad_size);
+    /* fewer than trim_pads pads to the target, and enough coarse cuts */
+    const uint64_t gap = (uint64_t)((trim_pads - 2) * plan_.p - plan_.credit);
+    /* 15 us into the round after the dequeue at the warm-up open: in the pre-arm call
+     * for any entry up to 11 us past the open */
+    const uint64_t in_call = kTargetTsc - plan_.window + kOthersNs + 15000;
+    for (uint64_t at = 0; at < 5000; at += 250) {
+      Case c = Base(8);
+      c.stalls.push_back({in_call, kTargetTsc - gap - in_call});
+      c.stalls.push_back({kTargetTsc - gap + at, 50000});
+      Check("F9", 50, c, at / 1000.0L);
+      bool tail = false;
+      Frame(c, true, true, &tail);
+      EXPECT_FALSE(tail) << GetParam().name << " F9 at " << at;
+    }
+  }
+
   static constexpr int kSlots = 512; /* the drain slots judged, from packet 0 */
   Plan plan_;
 };
@@ -388,6 +439,14 @@ TEST_P(St20TxRlVrxFaults, F5ScaledCosts) {
 
 TEST_P(St20TxRlVrxFaults, F6RefusedBursts) {
   F6();
+}
+
+TEST_P(St20TxRlVrxFaults, F8StreamStart) {
+  F8();
+}
+
+TEST_P(St20TxRlVrxFaults, F9StallInThePreArmCall) {
+  F9();
 }
 
 /* F7 a full NIC ring refuses every burst for a while from each instant of the window, the

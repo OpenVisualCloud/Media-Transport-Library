@@ -442,6 +442,7 @@ struct st_tx_video_sessions_mgr {
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
   struct mt_sch_tasklet_impl* tasklet;
+  uint64_t visit_tsc; /* the tsc at the start of the current transmitter call */
 
   struct st_tx_video_session_impl* sessions[ST_SCH_MAX_TX_VIDEO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
