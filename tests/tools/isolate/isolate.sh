@@ -16,6 +16,7 @@
 #   MTL_ISOLATE        off (default) | try | require
 #   MTL_ISOLATE_PORTS  comma-separated PCI BDFs, the MTL primary port first; each
 #                      port's NUMA node adds CPUs to the partition and to cpuset.mems
+#   MTL_ISOLATE_MEM_PORTS  comma-separated PCI BDFs whose NUMA nodes add only to cpuset.mems
 
 CG_ROOT=/sys/fs/cgroup
 CG_PREFIX=mtl-isolate-
@@ -195,8 +196,8 @@ sweep_stale() {
 
 # Takes LOCK and creates the exclusive partition cg, or sets why and fails.
 setup() {
-	local cpus="" mems="" node bdf state pick first_cpu="" first_node
-	local -a ports
+	local cpus="" mems="" cpu_nodes node bdf state pick first_cpu="" first_node
+	local -a ports mem_ports
 	if ! grep -qw cpuset "$CG_ROOT/cgroup.subtree_control" 2>/dev/null; then
 		# systemd hands cpuset to the root's children only once a unit asks for it
 		grep -qw cpuset "$CG_ROOT/cgroup.controllers" 2>/dev/null ||
@@ -213,7 +214,14 @@ setup() {
 			{ why="cannot resolve the NUMA node of port '$bdf' (MTL_ISOLATE_PORTS)" && return 1; }
 		[[ ",$mems," == *",$node,"* ]] || mems=${mems:+$mems,}$node
 	done
-	for node in ${mems//,/ }; do
+	cpu_nodes=$mems
+	IFS=, read -ra mem_ports <<<"${MTL_ISOLATE_MEM_PORTS:-}"
+	for bdf in "${mem_ports[@]}"; do
+		node=$(port_node "$bdf") ||
+			{ why="cannot resolve the NUMA node of port '$bdf' (MTL_ISOLATE_MEM_PORTS)" && return 1; }
+		[[ ",$mems," == *",$node,"* ]] || mems=$mems,$node
+	done
+	for node in ${cpu_nodes//,/ }; do
 		pick=$(auto_cpus "$node") || { why="fewer than $((HOUSEKEEPING_CORES + CORES)) cores on NUMA node $node" && return 1; }
 		cpus=${cpus:+$cpus,}$pick
 		if [ -z "$first_cpu" ] || [ "${pick%%[,-]*}" -lt "$first_cpu" ]; then

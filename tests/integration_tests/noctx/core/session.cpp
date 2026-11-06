@@ -32,6 +32,8 @@ bool Session::isRunning() const {
 }
 
 void Session::stop() {
+  /* never started or already stopped: ~Session() stops again, skip the 500 ms wait */
+  if (threads_.empty()) return;
   stopFlagTx.store(true);
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
   stopFlagRx.store(true);
