@@ -483,8 +483,10 @@ In the dependency builds the last `-O` of `CFLAGS`, then `CPPFLAGS`, sets the le
 
 The build job of the pull request and nightly workflows (`.github/actions/build-artifacts`) runs `.github/scripts/ci/scan/check-hardening.sh` on the Build caches of DPDK, MTL, FFmpeg, GStreamer and the st22 avcodec plugin (`task ci:hardening-scan`), before it saves and packs them, except in a run for another branch.
 It fails on a binary without full RELRO, a non-executable stack, PIE, CET or the stack protector.
-Its table, keyed on the name of each file, accepts what a dependency doesn't apply: the stack protector in librte_kvargs, librte_meter, librte_jobstats and librte_common_cpt, which have no function it covers, CET in libopenh264, and IBT in libavcodec, libavfilter, libavutil, libswresample and libswscale.
+Its table, keyed on the name of each file, accepts what a dependency doesn't apply: the stack protector in librte_kvargs, librte_meter, librte_jobstats and librte_common_cpt, which have no function it covers, and CET in libopenh264.
 The check skips the JPEG XS cache: SVT-JPEG-XS builds its MTL plugin without the options.
+
+The FFmpeg 7.0 assembly is marked SHSTK only, so the build applies `ecosystem/ffmpeg_plugin/7.0/0002-x86-add-Intel-CET-IBT-support.patch`, which makes it IBT-correct and marks it IBT and SHSTK.
 
 `_FORTIFY_SOURCE` and `_GLIBCXX_ASSERTIONS` leave no reliable mark in a binary, so `.github/scripts/ci/lint/test-scripts.sh` tests the rule that sets them instead.
 
