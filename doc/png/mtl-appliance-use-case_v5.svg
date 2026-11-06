@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="842" viewBox="0 0 1320 842" role="img" aria-labelledby="t d">
+<title id="t">Synchronous playback through an Intel SDM appliance</title>
+<desc id="d">The HDMI output of laptop A goes into the sending device, an Intel NUC with i225 Ethernet at IP 192.168.100.32/24, through an HDMI-to-USB video capture card. The NUC streams the desktop to multicast 239.168.85.20. A 2.5GbE link connects it to a 10GbE switch, and a 2.5GbE link connects the switch to the receiving device, an Intel SDM based PC with i225 Ethernet at IP 192.168.100.30/24.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect width="1320" height="842" fill="#ffffff"/>
+<text x="429.5" y="38.0" font-size="24" font-weight="700" fill="#1F271B" text-anchor="middle">Sending Device</text>
+<text x="1170.5" y="38.0" font-size="24" font-weight="700" fill="#1F271B" text-anchor="middle">Receiving Device</text>
+<path d="M569.0 68.0 L1005.0 68.0 L1005.0 52.0 L1033.0 100.0 L1005.0 148.0 L1005.0 132.0 L569.0 132.0 Z" fill="#CBB9A8" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<text x="787.0" y="91.1" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Desktop streaming</text>
+<text x="787.0" y="119.7" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">to multicast 239.168.85.20</text>
+<path d="M160 185 H310" stroke="#1F271B" stroke-width="5"/>
+<path d="M549 215 H730.0" stroke="#1F271B" stroke-width="5"/>
+<path d="M870.0 215 H1051" stroke="#1F271B" stroke-width="5"/>
+<rect x="24.0" y="140" width="136" height="100" rx="9" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<rect x="36.0" y="152" width="112" height="76" rx="4" fill="#145C9E"/>
+<path d="M24.0 240 H160.0 L178.0 266 H6.0 Z" fill="#DCC7BE" stroke="#1F271B" stroke-width="3" stroke-linejoin="round"/>
+<rect x="495" y="78" width="54" height="196" rx="6" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="509" y="100" width="28" height="7" rx="2" fill="#1F271B"/>
+<rect x="509" y="116" width="28" height="7" rx="2" fill="#1F271B"/>
+<circle cx="522.0" cy="248" r="7" fill="none" stroke="#1F271B" stroke-width="3"/>
+<rect x="310" y="100" width="175" height="150" rx="10" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<rect x="323" y="113" width="149" height="124" rx="4" fill="#145C9E"/>
+<rect x="385.5" y="250" width="24" height="20" fill="#1F271B"/>
+<rect x="347.5" y="268" width="100" height="9" rx="4" fill="#1F271B"/>
+<rect x="300" y="286" width="195" height="36" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<rect x="314" y="294" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="339" y="294" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="364" y="294" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="389" y="294" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="414" y="294" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="439" y="294" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="464" y="294" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="314" y="306" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="339" y="306" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="364" y="306" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="389" y="306" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="414" y="306" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="439" y="306" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="464" y="306" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="1236" y="78" width="54" height="196" rx="6" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="1250" y="100" width="28" height="7" rx="2" fill="#1F271B"/>
+<rect x="1250" y="116" width="28" height="7" rx="2" fill="#1F271B"/>
+<circle cx="1263.0" cy="248" r="7" fill="none" stroke="#1F271B" stroke-width="3"/>
+<rect x="1051" y="100" width="175" height="150" rx="10" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<rect x="1064" y="113" width="149" height="124" rx="4" fill="#145C9E"/>
+<rect x="1126.5" y="250" width="24" height="20" fill="#1F271B"/>
+<rect x="1088.5" y="268" width="100" height="9" rx="4" fill="#1F271B"/>
+<rect x="1041" y="286" width="195" height="36" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<rect x="1055" y="294" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="1080" y="294" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="1105" y="294" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="1130" y="294" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="1155" y="294" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="1180" y="294" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="1205" y="294" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="1055" y="306" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="1080" y="306" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="1105" y="306" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="1130" y="306" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="1155" y="306" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="1180" y="306" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="1205" y="306" width="18" height="7" rx="2" fill="#1F271B"/>
+<rect x="730.0" y="165.0" width="140" height="100" rx="16" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<path d="M752.0 195.0 L830.0 195.0" fill="none" stroke="#ffffff" stroke-width="8" stroke-linejoin="round"/>
+<path d="M852.0 195.0 L828.0 208.2 L828.0 181.8 Z" fill="#ffffff"/>
+<path d="M848.0 235.0 L770.0 235.0" fill="none" stroke="#ffffff" stroke-width="8" stroke-linejoin="round"/>
+<path d="M748.0 235.0 L772.0 221.8 L772.0 248.2 Z" fill="#ffffff"/>
+<rect x="183.7" y="166" width="102.6" height="38" rx="19" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<text x="235.0" y="191.5" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">HDMI-In</text>
+<text x="235.0" y="231.9" font-size="20" fill="#1F271B" text-anchor="middle">HDMI-to-USB</text>
+<text x="235.0" y="257.9" font-size="20" fill="#1F271B" text-anchor="middle">capture card</text>
+<rect x="564.5" y="196" width="150.0" height="38" rx="19" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<text x="639.5" y="221.5" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">2.5GbE link</text>
+<rect x="885.5" y="196" width="150.0" height="38" rx="19" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<text x="960.5" y="221.5" font-size="18" font-weight="700" fill="#1F271B" text-anchor="middle">2.5GbE link</text>
+<text x="800.0" y="301.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">10GbE Switch</text>
+<text x="92.0" y="314.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Laptop</text>
+<text x="92.0" y="343.0" font-size="20" fill="#1F271B" text-anchor="middle">(A)</text>
+<text x="397.5" y="366.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Intel® NUC</text>
+<text x="397.5" y="395.0" font-size="20" fill="#1F271B" text-anchor="middle">(with i225 ethernet)</text>
+<text x="397.5" y="421.0" font-size="20" fill="#1F271B" text-anchor="middle">IP: 192.168.100.32/24</text>
+<text x="397.5" y="447.0" font-size="20" fill="#1F271B" text-anchor="middle">(B)</text>
+<text x="1138.5" y="366.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Intel® SDM based PC</text>
+<text x="1138.5" y="395.0" font-size="20" fill="#1F271B" text-anchor="middle">(with i225 ethernet)</text>
+<text x="1138.5" y="421.0" font-size="20" fill="#1F271B" text-anchor="middle">IP: 192.168.100.30/24</text>
+<rect x="34.0" y="500" width="298.0" height="214" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M34.0 550 V508 Q34.0 500 42.0 500 H324.0 Q332.0 500 332.0 508 V550 Z" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="52.0" y="534.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="start">Source</text>
+<circle cx="56.0" cy="578.7" r="5" fill="#1F271B"/>
+<text x="72.0" y="586.0" font-size="22" fill="#1F271B" text-anchor="start">Laptop (A)</text>
+<circle cx="56.0" cy="613.9" r="5" fill="#1F271B"/>
+<text x="72.0" y="621.2" font-size="22" fill="#1F271B" text-anchor="start">HDMI-to-USB video</text>
+<text x="72.0" y="649.8" font-size="22" fill="#1F271B" text-anchor="start">capture device</text>
+<text x="72.0" y="678.4" font-size="22" fill="#1F271B" text-anchor="start">into the NUC</text>
+<rect x="352.0" y="500" width="298.0" height="214" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M352.0 550 V508 Q352.0 500 360.0 500 H642.0 Q650.0 500 650.0 508 V550 Z" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="370.0" y="534.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="start">Sender (B)</text>
+<circle cx="374.0" cy="578.7" r="5" fill="#1F271B"/>
+<text x="390.0" y="586.0" font-size="22" fill="#1F271B" text-anchor="start">Intel NUC11TNKi5</text>
+<circle cx="374.0" cy="613.9" r="5" fill="#1F271B"/>
+<text x="390.0" y="621.2" font-size="22" fill="#1F271B" text-anchor="start">NIC: i225-LM</text>
+<rect x="670.0" y="500" width="298.0" height="214" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M670.0 550 V508 Q670.0 500 678.0 500 H960.0 Q968.0 500 968.0 508 V550 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<text x="688.0" y="534.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="start">Network</text>
+<circle cx="692.0" cy="578.7" r="5" fill="#1F271B"/>
+<text x="708.0" y="586.0" font-size="22" fill="#1F271B" text-anchor="start">10GbE switch</text>
+<circle cx="692.0" cy="613.9" r="5" fill="#1F271B"/>
+<text x="708.0" y="621.2" font-size="22" fill="#1F271B" text-anchor="start">Cat6/7 cables</text>
+<circle cx="692.0" cy="649.1" r="5" fill="#1F271B"/>
+<text x="708.0" y="656.4" font-size="22" fill="#1F271B" text-anchor="start">2.5GbE links</text>
+<rect x="988.0" y="500" width="298.0" height="214" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M988.0 550 V508 Q988.0 500 996.0 500 H1278.0 Q1286.0 500 1286.0 508 V550 Z" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="1006.0" y="534.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="start">Receiver</text>
+<circle cx="1010.0" cy="578.7" r="5" fill="#1F271B"/>
+<text x="1026.0" y="586.0" font-size="22" fill="#1F271B" text-anchor="start">Intel SDM devkit</text>
+<circle cx="1010.0" cy="613.9" r="5" fill="#1F271B"/>
+<text x="1026.0" y="621.2" font-size="22" fill="#1F271B" text-anchor="start">NIC: i225-LMvP</text>
+<rect x="34" y="738" width="1252" height="64" rx="8" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<text x="660.0" y="775.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">Stream: 1280x720, 30 fps, rgb24, UDP port 20000</text>
+</g>
+</svg>

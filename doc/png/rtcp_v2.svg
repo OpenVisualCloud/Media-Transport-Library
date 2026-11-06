@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1166" viewBox="0 0 1400 1166" role="img" aria-labelledby="t d">
+<title id="t">RTCP retransmission</title>
+<desc id="d">TX sends RTP packets 0 to 3 to RX and keeps a copy of each in the RTP packets buffer. Packet 3 is lost. RX marks each sequence number in a bitmap and finds the gap. RX sends an RTCP NACK packet to TX. TX sends packet 3 again from the buffer, between packets 101 and 102. TX drops the oldest packets from the buffer.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect width="1400" height="1166" fill="#ffffff"/>
+<path d="M330 100 V800" stroke="#1F271B" stroke-width="3" stroke-dasharray="12 8"/>
+<rect x="230" y="30" width="200" height="70" rx="10" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="330.0" y="72.3" font-size="30" font-weight="700" fill="#ffffff" text-anchor="middle">TX</text>
+<path d="M900 100 V800" stroke="#1F271B" stroke-width="3" stroke-dasharray="12 8"/>
+<rect x="800" y="30" width="200" height="70" rx="10" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="900.0" y="72.3" font-size="30" font-weight="700" fill="#ffffff" text-anchor="middle">RX</text>
+<text x="645.0" y="168.0" font-size="24" font-weight="700" fill="#1F271B" text-anchor="middle">RTP packets</text>
+<path d="M330.0 190.0 L884.0 190.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M900.0 190.0 L882.0 199.9 L882.0 180.1 Z" fill="#1F271B"/>
+<rect x="370.5" y="173" width="35.0" height="34" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="388.0" y="197.0" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">0</text>
+<path d="M330.0 234.0 L884.0 234.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M900.0 234.0 L882.0 243.9 L882.0 224.1 Z" fill="#1F271B"/>
+<rect x="370.5" y="217" width="35.0" height="34" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="388.0" y="241.0" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">1</text>
+<path d="M330.0 278.0 L884.0 278.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M900.0 278.0 L882.0 287.9 L882.0 268.1 Z" fill="#1F271B"/>
+<rect x="370.5" y="261" width="35.0" height="34" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="388.0" y="285.0" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">2</text>
+<path d="M330.0 322.0 L726.0 322.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M726 302 L766 342 M766 302 L726 342" stroke="#1F271B" stroke-width="7" stroke-linecap="round" fill="none"/>
+<text x="776.0" y="330.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="start">lost</text>
+<rect x="370.5" y="305" width="35.0" height="34" rx="8" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="388.0" y="329.0" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+<circle cx="525.0" cy="356" r="4" fill="#1F271B"/>
+<circle cx="525.0" cy="368" r="4" fill="#1F271B"/>
+<circle cx="525.0" cy="380" r="4" fill="#1F271B"/>
+<text x="645.0" y="394.0" font-size="24" font-weight="700" fill="#1F271B" text-anchor="middle">RTCP packet</text>
+<path d="M330.0 410.0 L884.0 410.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M900.0 410.0 L882.0 419.9 L882.0 400.1 Z" fill="#1F271B"/>
+<text x="645.0" y="484.0" font-size="24" font-weight="700" fill="#1F271B" text-anchor="middle">RTCP NACK packet</text>
+<path d="M900.0 500.0 L348.0 500.0" fill="none" stroke="#0B4F6C" stroke-width="5" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M330.0 500.0 L350.0 489.0 L350.0 511.0 Z" fill="#0B4F6C"/>
+<text x="645.0" y="558.0" font-size="24" font-weight="700" fill="#1F271B" text-anchor="middle">RTP packets</text>
+<path d="M330.0 580.0 L884.0 580.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M900.0 580.0 L882.0 589.9 L882.0 570.1 Z" fill="#1F271B"/>
+<rect x="363.5" y="563" width="61.0" height="34" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="394.0" y="587.0" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">100</text>
+<path d="M330.0 624.0 L884.0 624.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M900.0 624.0 L882.0 633.9 L882.0 614.1 Z" fill="#1F271B"/>
+<rect x="363.5" y="607" width="61.0" height="34" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="394.0" y="631.0" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">101</text>
+<path d="M330.0 668.0 L880.0 668.0" fill="none" stroke="#145C9E" stroke-width="6" stroke-linejoin="round"/>
+<path d="M900.0 668.0 L878.0 680.1 L878.0 655.9 Z" fill="#145C9E"/>
+<rect x="590.6" y="649" width="188.8" height="38" rx="19" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="685.0" y="675.2" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">retransmit pkt</text>
+<rect x="370.5" y="651" width="35.0" height="34" rx="8" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="388.0" y="675.0" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+<path d="M330.0 712.0 L884.0 712.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M900.0 712.0 L882.0 721.9 L882.0 702.1 Z" fill="#1F271B"/>
+<rect x="363.5" y="695" width="61.0" height="34" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="394.0" y="719.0" font-size="20" font-weight="700" fill="#1F271B" text-anchor="middle">102</text>
+<circle cx="525.0" cy="746" r="4" fill="#1F271B"/>
+<circle cx="525.0" cy="758" r="4" fill="#1F271B"/>
+<circle cx="525.0" cy="770" r="4" fill="#1F271B"/>
+<path d="M324.0 256.0 L231.2 361.7" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M219.4 375.2 L224.3 352.9 L240.8 367.5 Z" fill="#1F271B"/>
+<path d="M214.9 528.7 L314.8 653.9" fill="none" stroke="#145C9E" stroke-width="5" stroke-linejoin="round"/>
+<path d="M326.0 668.0 L304.9 659.2 L322.1 645.5 Z" fill="#145C9E"/>
+<circle cx="150" cy="450" r="100" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<circle cx="150" cy="450" r="74" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="150.0" y="426.8" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">RTP</text>
+<text x="150.0" y="455.4" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">packets</text>
+<text x="150.0" y="484.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">buffer</text>
+<path d="M150.0 552.0 L150.0 594.0" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M150.0 612.0 L139.0 592.0 L161.0 592.0 Z" fill="#1F271B"/>
+<path d="M138 630 V622 H162 V630" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M120 632 H180" stroke="#1F271B" stroke-width="5" stroke-linecap="round"/>
+<path d="M125.0 638 L130.0 696 H170.0 L175.0 638 Z" fill="#DCC7BE" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<path d="M138 648 V686" stroke="#1F271B" stroke-width="4" stroke-linecap="round"/>
+<path d="M150 648 V686" stroke="#1F271B" stroke-width="4" stroke-linecap="round"/>
+<path d="M162 648 V686" stroke="#1F271B" stroke-width="4" stroke-linecap="round"/>
+<rect x="950" y="420" width="420" height="56" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="974" y="420" width="28" height="56" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<circle cx="1028" cy="448.0" r="4" fill="#1F271B"/>
+<circle cx="1042" cy="448.0" r="4" fill="#1F271B"/>
+<circle cx="1056" cy="448.0" r="4" fill="#1F271B"/>
+<rect x="1082" y="420" width="28" height="56" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<rect x="1110" y="420" width="28" height="56" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M1115.0 439.0 L1133.0 457.0 M1133.0 439.0 L1115.0 457.0" stroke="#1F271B" stroke-width="5" stroke-linecap="round" fill="none"/>
+<rect x="1138" y="420" width="28" height="56" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<rect x="1166" y="420" width="28" height="56" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<rect x="1194" y="420" width="28" height="56" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<rect x="1222" y="420" width="28" height="56" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<rect x="1250" y="420" width="28" height="56" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M1255.0 439.0 L1273.0 457.0 M1273.0 439.0 L1255.0 457.0" stroke="#1F271B" stroke-width="5" stroke-linecap="round" fill="none"/>
+<rect x="1278" y="420" width="28" height="56" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<rect x="1306" y="420" width="28" height="56" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<path d="M974 416 V404 H1334 V416" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<text x="1154.0" y="388.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">window size: 128</text>
+<path d="M1194 480 V492 H1334 V480" fill="none" stroke="#1F271B" stroke-width="4" stroke-linejoin="round"/>
+<text x="1264.0" y="528.0" font-size="22" font-weight="700" fill="#1F271B" text-anchor="middle">skip window: 10</text>
+<rect x="30" y="840" width="655" height="296" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M30 890 V848 Q30 840 38 840 H677 Q685 840 685 848 V890 Z" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="48.0" y="874.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="start">How RTCP retransmission works</text>
+<circle cx="52" cy="919.4" r="5" fill="#1F271B"/>
+<text x="68.0" y="926.0" font-size="20" fill="#1F271B" text-anchor="start">TX sends RTP packets and keeps a copy</text>
+<text x="68.0" y="952.0" font-size="20" fill="#1F271B" text-anchor="start">of each one in the buffer.</text>
+<circle cx="52" cy="977.4" r="5" fill="#1F271B"/>
+<text x="68.0" y="984.0" font-size="20" fill="#1F271B" text-anchor="start">RX marks each sequence number in a bitmap.</text>
+<circle cx="52" cy="1009.4" r="5" fill="#1F271B"/>
+<text x="68.0" y="1016.0" font-size="20" fill="#1F271B" text-anchor="start">A gap older than the skip window is a loss.</text>
+<circle cx="52" cy="1041.4" r="5" fill="#1F271B"/>
+<text x="68.0" y="1048.0" font-size="20" fill="#1F271B" text-anchor="start">Each NACK interval, RX sends a NACK.</text>
+<circle cx="52" cy="1073.4" r="5" fill="#1F271B"/>
+<text x="68.0" y="1080.0" font-size="20" fill="#1F271B" text-anchor="start">TX sends the lost packet again.</text>
+<circle cx="52" cy="1105.4" r="5" fill="#1F271B"/>
+<text x="68.0" y="1112.0" font-size="20" fill="#1F271B" text-anchor="start">When the buffer is full, TX drops the oldest.</text>
+<rect x="715" y="840" width="655" height="296" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M715 890 V848 Q715 840 723 840 H1362 Q1370 840 1370 848 V890 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<text x="733.0" y="874.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="start">Configuration (ops.rtcp)</text>
+<circle cx="737" cy="919.4" r="5" fill="#1F271B"/>
+<text x="753.0" y="926.0" font-size="20" fill="#1F271B" text-anchor="start">TX buffer_size: packets kept to send again</text>
+<text x="753.0" y="952.0" font-size="20" fill="#1F271B" text-anchor="start">(not less than the TX descriptor count)</text>
+<circle cx="737" cy="977.4" r="5" fill="#1F271B"/>
+<text x="753.0" y="984.0" font-size="20" fill="#1F271B" text-anchor="start">RX nack_interval_us: how often RX checks</text>
+<text x="753.0" y="1010.0" font-size="20" fill="#1F271B" text-anchor="start">for loss and sends a NACK</text>
+<circle cx="737" cy="1035.4" r="5" fill="#1F271B"/>
+<text x="753.0" y="1042.0" font-size="20" fill="#1F271B" text-anchor="start">RX seq_bitmap_size: tracks size x 8 packets</text>
+<circle cx="737" cy="1067.4" r="5" fill="#1F271B"/>
+<text x="753.0" y="1074.0" font-size="20" fill="#1F271B" text-anchor="start">RX seq_skip_window: out-of-order range</text>
+<text x="753.0" y="1100.0" font-size="20" fill="#1F271B" text-anchor="start">that gives no NACK</text>
+</g>
+</svg>
