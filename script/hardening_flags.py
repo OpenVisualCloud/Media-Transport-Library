@@ -3,6 +3,10 @@
 # Copyright 2026 Intel Corporation
 """Print the compiler hardening flags of the MTL meson projects, see doc/build.md.
 
+Every MTL meson project runs it at meson setup. meson has a built-in option for
+PIE only (b_pie), and separate meson projects can't share meson code, so the
+flags and the probe of the _FORTIFY_SOURCE level a toolchain takes are here once.
+
 Usage: hardening_flags.py LANGUAGE OPTIMIZATION SANITIZE COMPILER [ARG...]
 
 LANGUAGE is c or c++, OPTIMIZATION and SANITIZE are the meson options

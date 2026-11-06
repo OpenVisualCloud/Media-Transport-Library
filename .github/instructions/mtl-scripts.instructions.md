@@ -13,6 +13,12 @@ mix them.
 
 A person runs these scripts by hand, so each one explains itself.
 
+`script/` also holds the files that the scripts and the builds share, which
+nobody runs by hand: `common.sh`, which each script sources, the
+`hash_sources_*.env` and `isolation_*.env` lists, and `hardening_flags.py`,
+which every meson project runs at `meson setup`. They are not user scripts, and
+the rules below do not apply to them.
+
 - Start with `#!/bin/bash`, the SPDX line, and `set -euo pipefail`.
 - Set `script_name` and `script_folder`, then source `common.sh`.
 - Use the `common.sh` helpers. Do not write a local copy of one:
