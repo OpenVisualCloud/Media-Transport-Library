@@ -858,6 +858,15 @@ class Instance:
         window = [f"{self.name}-{self.window}"] if self.window else []
         return [self.name, f"{self.name}-log", *window]
 
+    def memory_nodes(self, app_cmd: str) -> set[int]:
+        """The slot's node and the main lcore's; with --tx_st20p_source_sibling_node
+        also the node SNC2 pairs with the slot's, where RxTxApp binds its st20p sources.
+        """
+        nodes = {self.slot.main_node, self.slot.node}
+        if "--tx_st20p_source_sibling_node" in app_cmd.split():
+            nodes.add(self.slot.node ^ 1)
+        return nodes
+
     def start(self, mtl_path: str, app_cmd: str) -> None:
         """Start *app_cmd* in its slot's cpuset, with its own tree at <mtl>/.local_install.
 
@@ -879,7 +888,7 @@ class Instance:
             f"unshare --mount --ipc --propagation private sh {self.log}.sh",
             [
                 f"AllowedCPUs={format_cpus({MAIN_LCORE, *self.slot.cpus})}",
-                f"AllowedMemoryNodes={format_cpus({self.slot.main_node, self.slot.node})}",
+                f"AllowedMemoryNodes={format_cpus(self.memory_nodes(app_cmd))}",
                 "Nice=-20",
             ],
             self.log,
