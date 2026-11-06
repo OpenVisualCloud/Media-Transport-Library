@@ -108,6 +108,9 @@ struct ut_trs_ctx {
   long double nic_first_done;
   uint64_t nic_pkts;
   long double nic_max_late;
+  long double nic_max_late_vs_target;
+  uint64_t stream_target_tsc; /* 0: stream pkts are not stamped */
+  uint32_t stream_build;      /* pkts the builder adds a call, 0: fills the ring */
   uint16_t stream_segs;
   uint32_t stream_idx;
   struct rte_mempool* stream_pool;
@@ -222,6 +225,9 @@ static uint16_t ut_trs_nic_burst(struct ut_trs_ctx* ctx, struct rte_mbuf** tx_pk
     /* the slot of the nic_pkts-th pkt of a stream that never pauses */
     long double late = done - (ctx->nic_first_done + ctx->nic_pkts * trs);
     ctx->nic_max_late = RTE_MAX(ctx->nic_max_late, late);
+    if (ctx->stream_target_tsc)
+      ctx->nic_max_late_vs_target =
+          RTE_MAX(ctx->nic_max_late_vs_target, done - trs - st_tx_mbuf_get_tsc(m));
     ctx->nic_last_done = done;
     ctx->nic_pkts++;
     ctx->nic_done[ctx->nic_tail % UT_TRS_NIC_FIFO] = done;
@@ -609,6 +615,12 @@ void ut_trs_set_absorb(ut_trs_ctx* ctx, int port, long double absorb_ns) {
   ctx->session.rl_plan[port].absorb_ns = absorb_ns;
 }
 
+void ut_trs_set_vrx_detect(ut_trs_ctx* ctx, int port, int64_t budget_ns,
+                           long double refill_ns) {
+  ctx->session.rl_plan[port].vrx_budget_ns = budget_ns;
+  ctx->session.rl_plan[port].refill_ns = refill_ns;
+}
+
 void ut_trs_set_shaper_bucket(ut_trs_ctx* ctx, int port, long double bucket_ns) {
   ctx->shaper_bucket_ns[port] = bucket_ns;
 }
@@ -698,6 +710,16 @@ uint64_t ut_trs_stat_recalculate_warmup(const ut_trs_ctx* ctx) {
 
 void ut_trs_set_burst_force_fail(ut_trs_ctx* ctx, bool fail) {
   ctx->burst_force_fail = fail;
+}
+
+struct ut_trs_rl_stat ut_trs_get_rl_stat(const ut_trs_ctx* ctx) {
+  const struct st_tx_video_rl_stat* rl = &ctx->session.stat_rl;
+  struct ut_trs_rl_stat st = {
+      .vrx_frames = rl->vrx_frames,
+      .vrx_pkt0 = rl->vrx_pkt0,
+      .vrx_late_max_ns = rl->vrx_late_max_ns,
+  };
+  return st;
 }
 
 void ut_trs_set_burst_refuse_window(ut_trs_ctx* ctx, uint64_t from, uint64_t to) {
@@ -1025,6 +1047,11 @@ void ut_trs_enqueue_ring_pkt(ut_trs_ctx* ctx) {
   rte_ring_sp_enqueue_bulk(ctx->session.ring[MTL_SESSION_PORT_P], &obj, 1, NULL);
 }
 
+void ut_trs_enqueue_mid_pkt(ut_trs_ctx* ctx) {
+  st_tx_mbuf_set_idx(ctx->inflight_mbuf, 1);
+  ut_trs_enqueue_ring_pkt(ctx);
+}
+
 void ut_trs_set_rl_port(ut_trs_ctx* ctx, int port) {
   ctx->session.pacing_way[port] = ST21_TX_PACING_WAY_RL;
 }
@@ -1087,11 +1114,19 @@ void ut_trs_stream(ut_trs_ctx* ctx, uint64_t duration_ns, uint64_t call_ns) {
 
   ut_trs_active_ctx = ctx;
   while (ctx->last_tsc < end) {
-    /* the builder keeps the ring full of mid-frame pkts */
-    while (rte_ring_free_count(ring)) {
+    /* the builder keeps the ring full of mid-frame pkts, or adds stream_build a call */
+    for (uint32_t built = 0;
+         rte_ring_free_count(ring) && (!ctx->stream_build || built < ctx->stream_build);
+         built++) {
       struct rte_mbuf* m = rte_pktmbuf_alloc(ctx->stream_pool);
       if (!m) break;
-      st_tx_mbuf_set_idx(m, ctx->stream_idx++);
+      st_tx_mbuf_set_idx(m, ctx->stream_idx);
+      st_tx_mbuf_set_tsc(m,
+                         ctx->stream_target_tsc
+                             ? ctx->stream_target_tsc +
+                                   (uint64_t)(ctx->stream_idx * ctx->session.pacing.trs)
+                             : 0);
+      ctx->stream_idx++;
       rte_ring_sp_enqueue(ring, m);
     }
     ctx->last_tsc += call_ns;
@@ -1154,6 +1189,19 @@ void ut_trs_stall_stream(ut_trs_ctx* ctx, uint64_t stall_ns) {
   ctx->last_tsc += stall_ns;
 }
 
+void ut_trs_set_stream_build(ut_trs_ctx* ctx, uint32_t pkts) {
+  ctx->stream_build = pkts;
+}
+
+void ut_trs_set_stream_target(ut_trs_ctx* ctx, uint64_t target_tsc) {
+  ctx->stream_target_tsc = target_tsc;
+  ctx->session.trs_frame_tsc[MTL_SESSION_PORT_P] = target_tsc;
+}
+
+long double ut_trs_stream_max_late_vs_target_ns(const ut_trs_ctx* ctx) {
+  return ctx->nic_max_late_vs_target;
+}
+
 long double ut_trs_stream_max_late_ns(const ut_trs_ctx* ctx) {
   return ctx->nic_max_late;
 }
@@ -1178,6 +1226,7 @@ static int ut_trs_feed_bulk(ut_trs_ctx* ctx, const struct ut_trs_frames_case* c)
     st_tx_mbuf_set_priv(pkts[i], NULL);
     st_tx_mbuf_set_idx(pkts[i],
                        idx < c->total_pkts ? (uint32_t)idx : ST_TX_DUMMY_PKT_IDX);
+    st_tx_mbuf_set_tsc(pkts[i], 0); /* what an unstamped pkt carries is arbitrary */
     if (!ctx->feed_next) {
       int f = ctx->feed_frame;
       ctx->frame_target[f] = c->hold_ns ? ctx->last_tsc + c->hold_ns : 1;
@@ -1238,6 +1287,7 @@ int ut_trs_run_frames(ut_trs_ctx* ctx, const struct ut_trs_frames_case* c) {
     ut_trs_set_absorb(ctx, MTL_SESSION_PORT_P, c->absorb_ns);
   }
   ctx->mixed_accept = c->mixed_accept;
+  ut_trs_set_vrx_detect(ctx, MTL_SESSION_PORT_P, c->vrx_budget_ns, 0);
   ctx->burst_accept_limit = c->accept_limit;
   ctx->burst_fail_every = c->fail_every;
   ctx->tsc_script_len = 0;

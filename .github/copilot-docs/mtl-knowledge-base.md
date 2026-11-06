@@ -160,6 +160,10 @@ and frame-level ST22 TX and ST22 RX (frame or RTP) are scaled by 24 / 12, each b
 With a user `data_quota_mbs_per_sch` none of these constants applies: a session charges the bandwidth its create computes, times its ports (ST22 RTP RX still takes a quarter of the 4:2:2 10-bit rate, doubled), and RX without DMA no extra.
 Audio takes the limit / `tx/rx_audio_sessions_max_per_sch`, ancillary none.
 
+TX video sessions are placed by quota alone; the round is judged at runtime (`doc/rl_pacing.md` 6.2):
+- `lead_min_ns` (`tv_lead_visit()`) is plain `int64_t`, every access under the session lock; the stats dump takes and resets it.
+- The stats dump `err()`s `frames fall behind` once a period per scheduler iff a lead went below 0 or the round averaged past the tightest budget (`St20TxRoundLoads.ALoadErrsIffItFallsBehind`, `St20TxRoundBudget`). A sleeping scheduler's round is not judged, its leads are.
+
 **If adding a new session type**: define its quota correctly or schedulers get overloaded.
 
 ### Sleep/Wake Design
@@ -680,6 +684,11 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
     - No visit makes more burst calls than the hold on the stall it absorbs, nor runs longer but by a TSC read (`St20TxRlTail.AbsorbedStallVisitIsNoLongerThanTheHold`).
     - The call that sends packet 0 frees no more done batches than the hold's release call (`St20TxRlTail.TailVisitFreesNoMoreThanTheRelease`).
     - A queue recovery drops a kept-back tail burst (`tv_transmitter_port_state_init()`).
+  - VRX detector (no silent non-compliance, `doc/rl_pacing.md` 6.1): `plan->vrx_budget_ns` is how far past its own target a pkt may leave and still fill its drain slot; 0 judges nothing.
+    - A frame past it counts once in `stat_rl.vrx_frames`, in `vrx_pkt0` too if at packet 0, and fires `tx_rl_event` cause 0; a frame started later than the budget counts in `start_late`, cause 1.
+    - The all-RL builder stamps packet 0 only, so pkt idx's target is `trs_frame_tsc` + idx·`trs`, packet 0's stamp kept at its dequeue (`St20TxRlVrxDetectFrames`).
+    - Every session below VRX 0 is flagged, with and without absorb (`St20TxRlVrxFaults`, `St20TxRlVrxDetect*`).
+    - Not judged: TSC/PTP pacing, a shaper drifting slower than `pad_ns`, the frame before's tail ahead of packet 0.
   - The 2 µs is absolute because a burst's CPU cost does not scale with the format, while a pad does (~0.97 µs at 2160p59.94, ~8.7 µs at 720p60).
   - It is expected to be above a healthy 32-pad burst (not measured on hardware yet: a healthy run should keep `stat_trans_recalculate_warmup` at ~0) and at or below most timer ticks (2–10 µs). A shorter stall before the doorbell is not detected and delays packet 0 by up to its length.
   - Behind the first burst ~32 pads are queued: a later burst's stall leaves the shaper no gap unless it outlasts them.

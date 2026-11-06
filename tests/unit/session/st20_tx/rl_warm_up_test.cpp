@@ -389,6 +389,8 @@ class St20TxRlFastClockTest : public St20TxRlWarmUpTest {
     trs_ = ut_txv_pacing_trs(txv);
     warm_pkts_ = ut_txv_pacing_warm_pkts(txv);
     bucket_ = 2048 * 1e9L / programmed_bps;
+    budget_ = ut_txv_rl_vrx_budget(txv, kPortP);
+    refill_ = ut_txv_rl_refill(txv, kPortP);
     ut_txv_destroy(txv);
     Apply();
   }
@@ -473,6 +475,8 @@ class St20TxRlFastClockTest : public St20TxRlWarmUpTest {
   }
 
   long double drain_ = 0, credit_ = 0, absorb_ = 0, trs_ = 0, bucket_ = 0;
+  long double refill_ = 0;
+  int64_t budget_ = 0;
   uint32_t warm_pkts_ = 0;
   std::vector<long double> phases_ = {0};
 };
@@ -561,6 +565,84 @@ TEST_F(St20TxRlFastClockTest, LateEntryShortOfTheTrimPadsLandsWithinAPad) {
     EXPECT_GE(late, 0) << "gap " << gap;
     EXPECT_LT(late, drain_ + Aim()) << "gap " << gap;
     if (HasFailure()) return;
+  }
+}
+
+/* A late entry that sends packet 0 behind the tail pads is judged on the late entry path:
+ * unflagged within a pad, flagged once its tail call stalls past the budget. */
+TEST_F(St20TxRlFastClockTest, LateEntryBehindTailPadsIsJudgedAsALateEntry) {
+  ASSERT_NO_FATAL_FAILURE(PlanUhd());
+  ASSERT_LE(drain_, absorb_);
+  ASSERT_GT(budget_, drain_ + Aim());
+
+  for (uint64_t gap : Gaps(false)) {
+    uint32_t tail_call = 0;
+    for (bool stalled : {false, true}) {
+      const uint64_t entry[] = {kTargetTsc - gap};
+      ut_trs_destroy(ctx_);
+      ctx_ = ut_trs_create();
+      ASSERT_NE(nullptr, ctx_);
+      Apply();
+      ut_trs_set_absorb(ctx_, kPortP, absorb_);
+      ut_trs_set_vrx_detect(ctx_, kPortP, budget_, refill_);
+      if (stalled)
+        ut_trs_set_burst_stall(ctx_, tail_call, gap + budget_ + (uint64_t)drain_, false);
+      ut_trs_set_mock_tsc_script(ctx_, entry, 1);
+      ut_trs_enqueue_first_pkt(ctx_, kTargetTsc);
+      ut_trs_call_rl_tasklet(ctx_);
+      ut_trs_call_rl_tasklet(ctx_);
+      tail_call = ut_trs_burst_call_count(ctx_);
+
+      const ut_trs_rl_stat st = ut_trs_get_rl_stat(ctx_);
+      const std::string what = "gap " + std::to_string(gap) + (stalled ? " stalled" : "");
+      ASSERT_EQ(1u, ut_trs_real_send_count(ctx_)) << what;
+      ASSERT_EQ(1u, ut_trs_mixed_calls(ctx_)) << what;
+      EXPECT_EQ(stalled ? 1u : 0u, st.vrx_frames) << what;
+      EXPECT_EQ(st.vrx_frames, st.vrx_pkt0) << what;
+      if (HasFailure()) return;
+    }
+  }
+}
+
+/* At 2160p a late entry whose tail call stalls 10 us still lands packet 0 and the pkt
+ * behind it within the budget. */
+TEST_F(St20TxRlFastClockTest, StalledTailCallWithinTheBudgetFlagsNoFrame) {
+  constexpr uint64_t kStallNs = 10000;
+  const float trained[1] = {164};
+  ut_txv_ctx* txv = ut_txv_create();
+  ASSERT_NE(nullptr, txv);
+  ut_txv_set_rl_format(txv, 3840, 2160, false, ST_FPS_P59_94);
+  ASSERT_EQ(0, ut_txv_init_rl_pacing(txv, 1, 0, false, trained, false));
+  const uint64_t bps = ut_txv_rl_queue_bps(txv, kPortP);
+  ut_txv_destroy(txv);
+  ASSERT_NO_FATAL_FAILURE(Plan(3840, 2160, ST_FPS_P59_94, bps));
+  const uint64_t gap = Gaps(false).front();
+  ASSERT_GT(budget_, gap + kStallNs + drain_ + Aim());
+
+  uint32_t tail_call = 0;
+  for (bool stalled : {false, true}) {
+    const uint64_t entry[] = {kTargetTsc - gap};
+    ut_trs_destroy(ctx_);
+    ctx_ = ut_trs_create();
+    ASSERT_NE(nullptr, ctx_);
+    Apply();
+    ut_trs_set_absorb(ctx_, kPortP, absorb_);
+    ut_trs_set_vrx_detect(ctx_, kPortP, budget_, refill_);
+    ut_trs_set_rl_port(ctx_, kPortP);
+    if (stalled) ut_trs_set_burst_stall(ctx_, tail_call, kStallNs, false);
+    ut_trs_set_mock_tsc_script(ctx_, entry, 1);
+    ut_trs_enqueue_first_pkt(ctx_, kTargetTsc);
+    ut_trs_call_rl_tasklet(ctx_);
+    ut_trs_call_rl_tasklet(ctx_);
+    tail_call = ut_trs_burst_call_count(ctx_);
+    ASSERT_EQ(1u, ut_trs_real_send_count(ctx_));
+    ASSERT_EQ(1u, ut_trs_mixed_calls(ctx_));
+    ut_trs_enqueue_mid_pkt(ctx_);
+    ut_trs_call_rl_tasklet(ctx_);
+    ASSERT_EQ(2u, ut_trs_real_send_count(ctx_));
+
+    const ut_trs_rl_stat st = ut_trs_get_rl_stat(ctx_);
+    EXPECT_EQ(0u, st.vrx_frames) << stalled;
   }
 }
 

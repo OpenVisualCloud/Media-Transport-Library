@@ -1254,6 +1254,81 @@ TEST_F(St20TxRlPlanTest, WidePacingHolds) {
   ExpectHold(kPortP);
 }
 
+/* A port paced other than by RL runs none of the RL machinery: no pre-arm plan or VRX
+ * budget, no start_late, no wire end; its packet leaves at its target. */
+class St20TxNonRlUntouched : public ::testing::TestWithParam<enum ut_txv_pacing_way> {
+ protected:
+  void SetUp() override {
+    ASSERT_EQ(ut_txv_init(), 0);
+    ctx_ = ut_txv_create();
+    ASSERT_NE(ctx_, nullptr);
+  }
+  void TearDown() override {
+    ut_txv_destroy(ctx_);
+  }
+  ut_txv_ctx* ctx_ = nullptr;
+};
+
+TEST_P(St20TxNonRlUntouched, InitPlansNoPreArmAndNoVrxBudget) {
+  const float trained[2] = {164, 164};
+  ut_txv_set_init_pacing_way(ctx_, GetParam());
+  ASSERT_EQ(ut_txv_init_rl_pacing(ctx_, 2, 0, false, trained, false), 0);
+
+  for (int port : {0, 1}) {
+    SCOPED_TRACE(port);
+    EXPECT_FALSE(ut_txv_rl_armed(ctx_, port));
+    EXPECT_EQ((double)ut_txv_rl_drain(ctx_, port), 0.0);
+    EXPECT_EQ((double)ut_txv_rl_absorb(ctx_, port), 0.0);
+    EXPECT_EQ(ut_txv_rl_vrx_budget(ctx_, port), 0);
+  }
+}
+
+/* a late frame is the app's: even with a VRX budget set, only an RL port judges it */
+TEST_P(St20TxNonRlUntouched, ALateFrameIsNotAVrxEvent) {
+  constexpr uint64_t kFrameNs = 1000000, kTai = 10 * kFrameNs;
+  int locked = 0;
+  ut_txv_set_frame_time(ctx_, kFrameNs);
+  ut_txv_set_max_onward_epochs(ctx_, 3);
+  ut_txv_set_cur_epochs(ctx_, kTai / kFrameNs - 1);
+  ut_txv_set_tr_offset(ctx_, kFrameNs / 1000);
+  ut_txv_set_vrx(ctx_, 2);
+  ut_txv_set_trs(ctx_, kFrameNs / 10000);
+  ut_txv_set_mock_tsc_time(ctx_, kFrameNs / 2);
+  ut_txv_set_port_pacing(ctx_, GetParam(), kFrameNs / 100);
+  ut_txv_set_mock_ptp_time(ctx_, kTai + kFrameNs / 4);
+
+  ASSERT_EQ(ut_txv_sync_pacing(ctx_, 0), 0);
+  EXPECT_EQ(ut_txv_rl_start_late(ctx_), 0u);
+  ut_txv_run_sessions_stat(ctx_, &locked);
+  EXPECT_EQ(ut_txv_stat_err_lines(), 0) << ut_txv_stat_error_log_line();
+}
+
+TEST_P(St20TxNonRlUntouched, ThePacketLeavesAtItsTargetWithoutAWireEnd) {
+  int bursts_before_target = -1, bursts_at_target = -1;
+  if (GetParam() == UT_TXV_PACING_TSN) {
+    uint64_t launch_time = 0;
+    bool launch_flag = false;
+    ut_txv_set_trs(ctx_, kPacketIntervalNs);
+    ut_txv_set_mock_tsc_time(ctx_, kCurrentTsc);
+    ASSERT_EQ(ut_txv_run_launch_time(ctx_, kTargetTai, &launch_time, &launch_flag), 0);
+    EXPECT_EQ(launch_time, kTargetTai);
+    EXPECT_TRUE(launch_flag);
+  } else {
+    ASSERT_EQ(ut_txv_run_transmitter_boundary(ctx_, GetParam(), kTrOffsetNs,
+                                              &bursts_before_target, &bursts_at_target),
+              0);
+    EXPECT_EQ(bursts_before_target, 0);
+    EXPECT_EQ(bursts_at_target, 1);
+  }
+  EXPECT_EQ(ut_txv_trs_wire_tsc(ctx_, 0), 0u);
+  EXPECT_EQ(ut_txv_rl_vrx_frames(ctx_), 0u);
+}
+
+INSTANTIATE_TEST_SUITE_P(Ways, St20TxNonRlUntouched,
+                         ::testing::Values(UT_TXV_PACING_TSC, UT_TXV_PACING_TSC_NARROW,
+                                           UT_TXV_PACING_TSN, UT_TXV_PACING_PTP,
+                                           UT_TXV_PACING_BE));
+
 /* every ST 2110-21 format an RL port carries arms its pre-arm plan, in each packing, on
  * a 512 or a deep TX ring, alone or with a 2022-7 leg. SD cannot: at ~30 MB/s each ice
  * timeslot is over 4.2 us, so the grid alone spreads packet 0 past the launch budget,
@@ -1311,6 +1386,7 @@ TEST(St20TxRlPlanArming, EveryRlFormatArmsItsPlanOrWarns) {
                                      std::to_string(port) + " no rl plan, holds packet 0";
             EXPECT_EQ(ut_txv_rl_armed(ctx, port), f.armed) << "port " << port;
             EXPECT_EQ(log.find(warn) != std::string::npos, !f.armed) << "port " << port;
+            EXPECT_GT(ut_txv_rl_vrx_budget(ctx, port), 0) << "port " << port;
             if (f.armed) {
               EXPECT_GT((double)ut_txv_rl_absorb(ctx, port), 0.0) << "port " << port;
             }

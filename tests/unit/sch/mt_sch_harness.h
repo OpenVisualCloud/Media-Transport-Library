@@ -53,6 +53,11 @@ int ut_sch_thread_mode_mempolicy(int* mode);
  * thread's mode once the entry returns. */
 int ut_sch_lcore_entry_mempolicy(int* mode, int* exit_mode);
 
+/* Runs a tasklet-thread scheduler on a clock only its one tasklet advances, loop_ns a
+ * call, until it measured a loop avg, *avg_ns; restarted, *restart_avg_ns is the avg at
+ * its first tasklet call. Returns 0 on success. */
+int ut_sch_loop_avg_restart(uint64_t loop_ns, uint64_t* avg_ns, uint64_t* restart_avg_ns);
+
 /* Creates the lcore lock file through sch_filelock_lock() under umask 0, in a fresh
  * temporary directory; *mode is its permission bits. Returns 0 on success. */
 int ut_sch_filelock_create_mode(unsigned int* mode);

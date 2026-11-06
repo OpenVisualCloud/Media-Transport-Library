@@ -100,13 +100,15 @@ struct ut_txv_ctx {
   bool rl_layout; /* ut_txv_set_rl_layout() */
   enum st20_packing rl_packing;
   enum st20_fmt rl_fmt;
-  uint16_t rl_nb_tx_desc; /* 0 for 512 */
+  uint16_t rl_nb_tx_desc;          /* 0 for 512 */
+  enum ut_txv_pacing_way init_way; /* 0 for RL */
   struct mt_txq_entry rl_queue[MTL_SESSION_PORT_MAX];
   struct mt_tx_queue rl_txq[MTL_SESSION_PORT_MAX];
   bool rl_bps_set[MTL_SESSION_PORT_MAX];
   uint64_t rl_bps[MTL_SESSION_PORT_MAX];
   int trim_pad_tag;
   long double train_drain_end_ns;
+  int visit_slice_lines; /* ut_txv_set_visit_slice_lines(), -1 for frame level */
   uint64_t slept_ns;
   /* st20_tx_queue_fatal_error(): each leg's queue [0] and its replacement [1] */
   struct mt_txq_entry recovery_queue[MTL_SESSION_PORT_MAX][2];
@@ -503,6 +505,7 @@ ut_txv_ctx* ut_txv_create(void) {
   if (!ctx) return NULL;
 
   ut_txv_ptp_wait_ret = 0;
+  ctx->visit_slice_lines = -1;
   ctx->impl.type = MT_HANDLE_MAIN;
   ctx->impl.tsc_hz = rte_get_tsc_hz();
   ctx->impl.inf[MTL_PORT_P].ptp_get_time_fn = ut_txv_ptp_time_fn;
@@ -516,7 +519,7 @@ ut_txv_ctx* ut_txv_create(void) {
   struct st_tx_video_session_impl* s = &ctx->session;
   s->impl = &ctx->impl;
   s->mgr = &ctx->mgr;
-  s->idx = 0;
+  tv_init(s, 0);
   s->active = true;
   ut_txv_set_frame_time(ctx, NS_PER_MS); /* round number for simple math */
   s->pacing.max_onward_epochs = 3;
@@ -836,6 +839,40 @@ mtl_iova_t ut_txv_frame_offset_iova(ut_txv_ctx* ctx, mtl_iova_t iova,
     page_table[i].len = UT_TXV_IOVA_PAGE_LEN;
   }
   return tv_frame_get_offset_iova(&ctx->session, &frame, offset);
+}
+
+static int ut_txv_visit_lines_ready(void* priv, uint16_t frame_idx,
+                                    struct st20_tx_slice_meta* meta) {
+  struct ut_txv_ctx* ctx = priv;
+  (void)frame_idx;
+  meta->lines_ready = ctx->visit_slice_lines;
+  return 0;
+}
+
+void ut_txv_set_visit_slice_lines(ut_txv_ctx* ctx, int lines) {
+  ctx->visit_slice_lines = lines;
+}
+
+int64_t ut_txv_run_frame_visit(ut_txv_ctx* ctx, int pkt_idx, int64_t ahead_ns) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st_frame_trans frame = {0};
+  uint8_t frame_data[UT_TXV_FRAME_SIZE] = {0};
+
+  if (ut_txv_tx_path_init(ctx) < 0) return 0;
+  ut_txv_frame_setup(ctx, &frame, frame_data, 2);
+  if (ctx->visit_slice_lines >= 0) {
+    s->ops.type = ST20_TYPE_SLICE_LEVEL;
+    s->ops.query_frame_lines_ready = ut_txv_visit_lines_ready;
+    s->st20_frame_lines_ready = 0;
+  }
+  rte_atomic32_set(&frame.refcnt, 1);
+  s->st20_frame_stat = ST21_TX_STAT_SENDING_PKTS;
+  s->st20_pkt_idx = pkt_idx;
+  s->pacing.tsc_time_cursor = ctx->mock_tsc_ns + ahead_ns;
+  tvs_tasklet_handler(&ctx->mgr);
+  ut_txv_tx_path_uinit(ctx);
+  s->st20_frames = NULL;
+  return s->lead_min_ns;
 }
 
 /* Queues one app packet for tv_tasklet_rtp() on a one-packet RTP-level frame. */
@@ -1809,7 +1846,8 @@ laid_out:
     if (inf->drv_info.drv_type != MT_DRV_ICE) inf->drv_info.drv_type = MT_DRV_IAVF;
     inf->nb_tx_desc = ctx->rl_nb_tx_desc ? ctx->rl_nb_tx_desc : 512;
     s->port_maps[i] = (enum mtl_port)i;
-    s->pacing_way[i] = ST21_TX_PACING_WAY_RL;
+    s->pacing_way[i] =
+        ctx->init_way ? (enum st21_tx_pacing_way)ctx->init_way : ST21_TX_PACING_WAY_RL;
     /* a pre-train result keeps tv_train_pacing() off the NIC */
     if (trained_pad_interval) {
       struct mt_pacing_pad_mix mix;
@@ -2192,6 +2230,39 @@ long double ut_txv_rl_absorb(const ut_txv_ctx* ctx, int port) {
   return ctx->session.rl_plan[port].absorb_ns;
 }
 
+int64_t ut_txv_rl_vrx_budget(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.rl_plan[port].vrx_budget_ns;
+}
+
+long double ut_txv_rl_refill(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.rl_plan[port].refill_ns;
+}
+
+void ut_txv_set_port_pacing(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
+                            int64_t vrx_budget_ns) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  s->ops.num_port = 1;
+  s->pacing_way[MTL_SESSION_PORT_P] = (enum st21_tx_pacing_way)way;
+  s->rl_plan[MTL_SESSION_PORT_P].vrx_budget_ns = vrx_budget_ns;
+}
+
+void ut_txv_set_init_pacing_way(ut_txv_ctx* ctx, enum ut_txv_pacing_way way) {
+  ctx->init_way = way;
+}
+
+uint64_t ut_txv_trs_wire_tsc(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.trs_wire_tsc[port];
+}
+
+uint64_t ut_txv_rl_vrx_frames(const ut_txv_ctx* ctx) {
+  return ctx->session.stat_rl.vrx_frames;
+}
+
+uint64_t ut_txv_rl_start_late(const ut_txv_ctx* ctx) {
+  return ctx->session.stat_rl.start_late;
+}
+
 bool ut_txv_rl_armed(const ut_txv_ctx* ctx, int port) {
   return ctx->session.rl_plan[port].armed;
 }
@@ -2471,33 +2542,56 @@ static struct ut_txv_ctx* ut_txv_stat_ctx;
 static int ut_txv_stat_lines;
 static int ut_txv_stat_locked_lines;
 static char ut_txv_stat_first_line[256];
+static char ut_txv_stat_error_line[512];
+static int ut_txv_stat_errs;
 
 static void ut_txv_stat_log_printer(enum mtl_log_level level, const char* format, ...) {
   va_list args;
 
-  (void)level;
   if (rte_spinlock_is_locked(&ut_txv_stat_ctx->mgr.mutex[0])) ut_txv_stat_locked_lines++;
   if (!ut_txv_stat_lines++) {
     va_start(args, format);
     vsnprintf(ut_txv_stat_first_line, sizeof(ut_txv_stat_first_line), format, args);
     va_end(args);
   }
+  if (level == MTL_LOG_LEVEL_ERR && !ut_txv_stat_errs++) {
+    va_start(args, format);
+    (void)vsnprintf(ut_txv_stat_error_line, sizeof(ut_txv_stat_error_line), format, args);
+    va_end(args);
+  }
 }
 
-int ut_txv_run_sessions_stat(ut_txv_ctx* ctx, int* locked_lines) {
+static void ut_txv_stat_capture(ut_txv_ctx* ctx) {
   ut_txv_stat_ctx = ctx;
   ut_txv_stat_lines = 0;
   ut_txv_stat_locked_lines = 0;
   ut_txv_stat_first_line[0] = '\0';
+  ut_txv_stat_error_line[0] = '\0';
+  ut_txv_stat_errs = 0;
   mtl_set_log_printer(ut_txv_stat_log_printer);
-  tv_sessions_stat(&ctx->mgr);
+}
+
+static void ut_txv_stat_release(void) {
   mtl_set_log_printer(NULL);
   ut_txv_stat_ctx = NULL;
+}
+
+int ut_txv_run_sessions_stat(ut_txv_ctx* ctx, int* locked_lines) {
+  ut_txv_stat_capture(ctx);
+  tv_sessions_stat(&ctx->mgr);
+  ut_txv_stat_release();
   *locked_lines = ut_txv_stat_locked_lines;
   return ut_txv_stat_lines;
 }
 
-void ut_txv_run_migrate(ut_txv_ctx* ctx) {
+int ut_txv_run_detach(ut_txv_ctx* ctx) {
+  ut_txv_stat_capture(ctx);
+  tv_detach(&ctx->mgr, &ctx->session);
+  ut_txv_stat_release();
+  return ut_txv_stat_errs;
+}
+
+int ut_txv_run_migrate(ut_txv_ctx* ctx) {
   struct st_tx_video_sessions_mgr* to = &ctx->other_mgr;
   struct mtl_sch_impl* sch = mt_sch_instance(&ctx->impl, 1);
   int idx = ctx->session.idx;
@@ -2506,10 +2600,13 @@ void ut_txv_run_migrate(ut_txv_ctx* ctx) {
   sch->qs_seen = UINT64_MAX; /* offline: the stats API's wait on it returns */
   to->parent = &ctx->impl;
   to->idx = 1;
+  ut_txv_stat_capture(ctx);
   /* tx_video_migrate_to()'s order, into another slot */
   ctx->mgr.sessions[idx] = NULL;
   st_tx_video_session_migrate(to, &ctx->session, idx + 1);
   to->sessions[idx + 1] = &ctx->session;
+  ut_txv_stat_release();
+  return ut_txv_stat_errs;
 }
 
 int ut_txv_get_session_stats(ut_txv_ctx* ctx, struct st20_tx_user_stats* stats) {
@@ -2561,6 +2658,53 @@ bool ut_txv_session_slots_locked(const ut_txv_ctx* ctx) {
 
 const char* ut_txv_stat_first_log_line(void) {
   return ut_txv_stat_first_line;
+}
+
+const char* ut_txv_stat_error_log_line(void) {
+  return ut_txv_stat_error_line;
+}
+
+void ut_txv_set_rl_vrx(ut_txv_ctx* ctx, uint64_t frames, uint64_t pkt0,
+                       uint64_t late_ns) {
+  struct st_tx_video_rl_stat* rl = &ctx->session.stat_rl;
+
+  rl->vrx_frames += frames;
+  rl->vrx_pkt0 += pkt0;
+  rl->vrx_late_max_ns = RTE_MAX(rl->vrx_late_max_ns, late_ns);
+}
+
+int ut_txv_stat_err_lines(void) {
+  return ut_txv_stat_errs;
+}
+
+void ut_txv_set_sch_avg_loop_ns(ut_txv_ctx* ctx, uint64_t ns) {
+  mt_sch_instance(&ctx->impl, ctx->mgr.idx)->avg_ns_per_loop = ns;
+}
+
+void ut_txv_set_lead_ns(ut_txv_ctx* ctx, int64_t lead_ns) {
+  ctx->session.lead_min_ns = lead_ns;
+}
+
+int64_t ut_txv_lead_ns(ut_txv_ctx* ctx) {
+  return ctx->session.lead_min_ns;
+}
+
+long double ut_txv_pacing_frame_time(const ut_txv_ctx* ctx) {
+  return ctx->session.pacing.frame_time;
+}
+
+int ut_txv_total_pkts(const ut_txv_ctx* ctx) {
+  return ctx->session.st20_total_pkts;
+}
+
+void ut_txv_set_sch_allow_sleep(ut_txv_ctx* ctx, bool allow_sleep) {
+  mt_sch_instance(&ctx->impl, ctx->mgr.idx)->allow_sleep = allow_sleep;
+}
+
+void ut_txv_set_mgr_neighbour(ut_txv_ctx* ctx, ut_txv_ctx* other) {
+  rte_spinlock_init(&ctx->mgr.mutex[1]);
+  ctx->mgr.sessions[1] = other ? &other->session : NULL;
+  ctx->mgr.max_idx = other ? 2 : 1;
 }
 
 void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames) {
