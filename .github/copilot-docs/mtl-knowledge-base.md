@@ -956,6 +956,7 @@ Custom format (RTCP type 204, name "IMTL"):
 - Leave: IGMPv3 Leave on session destroy
 - Well-known group `224.0.0.1` always joined (accept IGMP Query from routers)
 - Switch without IGMP snooping → multicast floods all ports (doesn't break MTL, wastes bandwidth)
+- RX `mcast_sip_addr` is only the source of the IGMPv3 source-specific join: DPDK PMD and AF_XDP flow rules match dst IP + UDP port, so other sources still arrive; only the kernel socket backend (`IP_ADD_SOURCE_MEMBERSHIP`) drops them. Local filter = `ssrc`
 
 ### Audio/Ancillary/Fast-Metadata Sessions
 Same lifecycle pattern as video, simplified:
