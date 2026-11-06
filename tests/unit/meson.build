@@ -65,6 +65,7 @@ unit_sources = [
   'dev/mt_dev_port_stats_test.cpp',
   'dev/mt_dev_pacing_test.cpp',
   'dev/mt_dev_set_tx_bps_test.cpp',
+  'dev/mt_dev_tx_queue_rate_test.cpp',
   'dev/mt_flow_harness.c',
   'dev/mt_flow_retry_test.cpp',
   'datapath/mt_dp_socket_harness.c',
