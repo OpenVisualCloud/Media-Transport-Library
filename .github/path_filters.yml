@@ -411,6 +411,4 @@ cargo_audit:
   - .github/workflows/cicd-pr-check.yml
   - rust/Cargo.toml
   - rust/imtl-sys/Cargo.toml
-  - tests/tools/perf_debug_mcp/native/Cargo.toml
-  - tests/tools/perf_debug_mcp/native/Cargo.lock
   - Taskfile.yml

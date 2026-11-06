@@ -18,7 +18,7 @@
 #   tests/acceptance/.venv    an in-workspace virtualenv that already exists;
 #   tests/acceptance/venv     a developer's own `python3 -m venv` keeps working,
 #                             and a local run does not have to provision a
-#                             second copy. setup_acceptance.sh writes `venv`;
+#                             second copy. The manual setup writes `venv`;
 #                             `.venv` is the common name of a hand-made one.
 #   $XDG_CACHE_HOME or ~/.cache, then mtl-ci/acceptance-venv
 #                             the fleet default, which survives checkout

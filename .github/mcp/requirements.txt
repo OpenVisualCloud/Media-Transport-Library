@@ -1,2 +1,0 @@
-# mcp 2.0 removed mcp.server.fastmcp, which both servers import
-mcp[cli]>=1.30.0,<2

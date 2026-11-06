@@ -214,9 +214,7 @@ tasks:
       - mkdir -p cargo-audit
       - cd rust && cargo generate-lockfile
       # The JSON reports are the job's artifact; the table runs are the gate, and the log.
-      - cargo audit -f tests/tools/perf_debug_mcp/native/Cargo.lock --json > cargo-audit/perf_debug_mcp.json || true
       - cargo audit -f rust/Cargo.lock --json > cargo-audit/rust.json || true
-      - cargo audit -f tests/tools/perf_debug_mcp/native/Cargo.lock
       - cargo audit -f rust/Cargo.lock
 
   ci:gtest-nightly:

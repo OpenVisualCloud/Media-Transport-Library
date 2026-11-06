@@ -138,8 +138,7 @@ PY
 
 test_jpegxs_helpers
 
-# The ICE version rule that build_drivers.sh, mtl_host_common.sh and
-# validate-ice.sh share: "<driver version> <ICE version> <accepted: yes or no>".
+# The ICE version rule that build_drivers.sh and validate-ice.sh share: "<driver version> <ICE version> <accepted: yes or no>".
 test_ice_version_rule() {
 	local driver ver want got refusal
 	while read -r driver ver want; do

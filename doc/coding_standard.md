@@ -188,10 +188,22 @@ implements, so they sit inside a `/* clang-format off */` region. That is a pin 
 the layout, not an exemption from review: reformatting them cost 480 lines and all
 of their readability.
 
-Rules the language tools cannot express -- the two-world rule, prefixes, lock
-order, error-return conventions -- are in
-[`.github/instructions/mtl-c-coding.instructions.md`](../.github/instructions/mtl-c-coding.instructions.md)
-and enforced by review, not by a linter.
+Rules the language tools cannot express are enforced by review, not by a
+linter:
+
+* The two-world rule: the data plane (tasklets, hugepage memory, lock-free
+  rings) never calls `malloc`, `pthread_mutex`, `sleep`, or an INFO-level log.
+* The prefixes: `mt_` for core internals, `mtl_` for the public core API,
+  `st_`/`st20_`/`st22_`/`st30_`/`st40_` for the media APIs, and
+  `st20p_`/`st22p_`/`st30p_`/`st40p_` for the pipeline APIs.
+* The lock order: the manager mutex, then the session spinlock, never the
+  reverse. Session migration takes the target manager mutex, then the source
+  manager mutex.
+* The error returns: 0 on success, a negative value on error, and resources
+  freed in the reverse order of allocation.
+
+The Copilot review instructions (`.github/copilot-instructions.md`) state the
+same rules.
 
 ### 3.1. Deliberate omissions
 
@@ -237,7 +249,7 @@ is listed here explicitly, and runs in the `residual-linters` job of
 | `VALIDATE_GITLEAKS` | residual | the hook scans the *staged diff*, so it cannot scan a whole tree or a pull request. Both run the same scanner at different scopes. `detect-private-key` covers the whole tree, but only for PEM blocks |
 | `VALIDATE_BASH_EXEC` | residual | `*.sh` must keep its executable bit. No upstream hook has these exact semantics; the nearest one is broader and fails 17 files |
 | `VALIDATE_ENV` (dotenv-linter) | **dropped** | the slim image had no dotenv-linter before super-linter 6.8.0, so it never ran. From there on it fails all 11 tracked `*.env`, most of them path manifests rather than dotenv files |
-| `VALIDATE_TYPESCRIPT_ES` | residual | 135 `*.ts` files with no lintable project configuration from a clean clone: `.gitignore`'s blanket `*.json` leaves `tests/tools/perf_debug_mcp/package.json` untracked. `.github/linters/eslint.config.mjs` keeps it the parse check super-linter v6 ran |
+| `VALIDATE_TYPESCRIPT_ES` | **dropped** | the repository holds no `*.ts` file since `tests/tools/perf_debug_mcp/` was removed |
 | `VALIDATE_RUST_*`, `VALIDATE_RUST_CLIPPY` | residual | rustfmt and clippy need a Rust toolchain per environment. Carried over unchanged rather than narrowed, since narrowing the edition list would be a rule change |
 | `VALIDATE_EDITORCONFIG` | **dropped** | it was default-on before, and enforced nothing: no `.editorconfig` existed. The one that exists now declares only `charset`, `end_of_line` and shfmt's shell indent, all of which the hooks or `.gitattributes` already cover |
 | commit-message style (gitlint) | own `commit-messages` job | a message is not a file, so `checkpatch.sh` cannot reach it. The job runs the same `commit-msg` hook over each PR commit that the git `commit-msg` hook runs locally, so version and rules stay in one place. Not in `residual-linters`: that is the super-linter allow-list, and MTL's capitalized, scope-free format is not one |
@@ -395,11 +407,14 @@ rule, which wants a lowercase `feat:` with scopes -- the opposite of MTL's
 format. Body-line wrapping is left off because a valid `Fixes:` or
 `Signed-off-by` footer legitimately runs past 72 and would false-positive.
 
-Everything the [mtl-commit skill](../.github/skills/mtl-commit/SKILL.md) asks
-for that a regular expression cannot judge -- imperative mood, "explain why, not how", no
-chat-or-process leakage, body wrapping -- stays a reviewer's call, in the same
-bucket as the two-world rule and the prefixes in
-[`.github/instructions/mtl-c-coding.instructions.md`](../.github/instructions/mtl-c-coding.instructions.md).
+The subject is 50 characters or less where possible, and never more than 72.
+Wrap the body at 72 columns; a footer such as `Fixes:` or `Signed-off-by:` can
+be longer.
+
+Everything in a commit message that a regular expression cannot judge --
+imperative mood, "explain why, not how", no chat-or-process leakage, body
+wrapping -- stays a reviewer's call, in the same bucket as the two-world rule
+and the prefixes of [section 3](#3-what-is-checked).
 
 ## 8. Diagram colors
 

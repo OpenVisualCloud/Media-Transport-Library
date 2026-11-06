@@ -65,8 +65,7 @@ repos:
       # file: a Windows checkout without symlink support materializes a symlink
       # as a text file, clang-format then finds no configuration and falls back
       # to plain LLVM style -- a whole-tree reformat waiting to happen. This is
-      # the only mechanical check for it, and it also covers the three tracked
-      # agent-tooling symlinks that are knowingly exempt from that rule.
+      # the only mechanical check for it.
       - id: destroyed-symlinks
 
       # Not hypothetical. `patches/dpdk/26.03/0012-net-ice-e830:-use-direct-\

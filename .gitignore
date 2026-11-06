@@ -70,10 +70,8 @@ dkms.conf
 !.pre-commit-config.yaml
 !.vscode/
 .vscode/*
-!.vscode/mcp.json
-!.claude
-!.mcp.json
-.github/claude/settings.local.json
+# Left behind in a checkout that used the removed AI agent files.
+.github/claude/
 *.log
 *.log_*
 logs_*
@@ -140,7 +138,7 @@ level-zero-*
 
 venv*
 .venv-docs/
-.github/mcp/.venv/
+.github/mcp/
 
 # Local CI reproduction (.github/ci-local)
 .ci-local/
@@ -159,9 +157,6 @@ tests/acceptance/report.json
 # force-added above, so on any host that has built the dependency caches that
 # tree is reported as untracked. It is a download, not a source file.
 .github/scripts/SVT-JPEG-XS-*
-
-# Claude Code personal settings
-.claude/settings.local.json
 
 # Acceptance install trees. .local_install is a symlink to one of the other two
 # during an A/B run. See tasks.md, "Acceptance A/B with two install trees".

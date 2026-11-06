@@ -79,6 +79,6 @@ Open `http://<your-ip-addr>:8080/` or `http://127.0.0.1:8080/` in a web browser.
 4. To link to a source file or a directory, use a relative path. On the site,
    the link goes to the same path on GitHub.
 
-[conf.py](conf.py) excludes the files that are not user documentation: the AI
-agent files (`.claude/`, `.github/`, `CLAUDE.md`), `tests/`, `patches/`, and the
-parts in `doc/chunks/` that other pages include.
+[conf.py](conf.py) excludes the files that are not user documentation:
+`.github/`, local AI agent files (`.claude/`, `CLAUDE.md`), `tests/`,
+`patches/`, and the parts in `doc/chunks/` that other pages include.
