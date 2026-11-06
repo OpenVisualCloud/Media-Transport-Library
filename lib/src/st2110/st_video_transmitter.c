@@ -79,12 +79,12 @@ static uint16_t video_trs_burst_pad(struct mtl_main_impl* impl,
   return tx;
 }
 
-/* the pkts of a burst, read before it: the first one's index, packet 0's frame and each
- * pkt's bytes */
+/* the pkts of a burst, read before it: the first one's index, packet 0's frame and the
+ * bytes of them all */
 struct video_trs_pkts {
   uint32_t idx;
   struct st_frame_trans* frame;
-  uint32_t bytes[ST_TX_VIDEO_MAX_BULK];
+  uint64_t bytes;
 };
 
 /* before a burst of pkts (at most ST_TX_VIDEO_MAX_BULK): read them, and keep them for
@@ -92,9 +92,12 @@ struct video_trs_pkts {
 static void video_trs_pkts_prepare(struct st_tx_video_session_impl* s,
                                    enum mtl_session_port s_port, struct rte_mbuf** pkts,
                                    uint16_t nb_pkts, struct video_trs_pkts* p) {
+  uint64_t bytes = 0;
+
   p->idx = st_tx_mbuf_get_idx(pkts[0]);
   p->frame = p->idx ? NULL : st_tx_mbuf_get_priv(pkts[0]);
-  for (uint16_t i = 0; i < nb_pkts; i++) p->bytes[i] = pkts[i]->pkt_len;
+  for (uint16_t i = 0; i < nb_pkts; i++) bytes += pkts[i]->pkt_len;
+  p->bytes = bytes;
   if (s->rtcp_tx[s_port]) mt_mbuf_refcnt_inc_bulk(pkts, nb_pkts);
 }
 
@@ -130,16 +133,19 @@ static void video_trs_pkts_sent(struct mtl_main_impl* impl,
                                 enum mtl_session_port s_port, struct rte_mbuf** pkts,
                                 uint16_t nb_pkts, uint16_t tx,
                                 const struct video_trs_pkts* p) {
+  uint16_t sent = RTE_MIN(tx, nb_pkts);
+  uint64_t bytes = p->bytes;
+
   if (tx) video_trs_vrx_check(s, s_port, p);
+  /* the pkts the NIC refused are still the caller's */
+  for (uint16_t i = sent; i < nb_pkts; i++) bytes -= pkts[i]->pkt_len;
   if (s->rtcp_tx[s_port]) {
     if (tx) mt_rtcp_tx_buffer_rtp_packets(s->rtcp_tx[s_port], pkts, tx);
     rte_pktmbuf_free_bulk(pkts, nb_pkts);
   }
   if (tx && p->frame) st20_frame_tx_start(impl, s, s_port, p->frame);
-  for (uint16_t i = 0; i < RTE_MIN(tx, nb_pkts); i++) {
-    s->port_user_stats.common.port[s_port].bytes += p->bytes[i];
-    s->port_user_stats.common.port[s_port].packets++;
-  }
+  s->port_user_stats.common.port[s_port].bytes += bytes;
+  s->port_user_stats.common.port[s_port].packets += sent;
 }
 
 /* for normal pkts, pad should call the video_trs_burst_pad */
@@ -566,9 +572,15 @@ static inline void video_trs_rl_reclaim(struct mtl_main_impl* impl,
   uint64_t now = mt_get_tsc(impl);
   uint64_t next = s->trs_reclaim_tsc[s_port];
   if (now < next) return;
-  mt_txq_reclaim(s->queue[s_port]);
   const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
   uint64_t batch_ns = (uint64_t)(rs / 2 * (plan->armed ? plan->pad_ns : s->pacing.trs));
+  /* a burst within a batch time freed what a reclaim would */
+  uint64_t burst_tsc = s->last_burst_succ_time_tsc[s_port];
+  if (now < burst_tsc + batch_ns) {
+    s->trs_reclaim_tsc[s_port] = burst_tsc + batch_ns;
+    return;
+  }
+  mt_txq_reclaim(s->queue[s_port]);
   uint64_t behind = (uint64_t)mt_if_nb_tx_desc(impl, port) / rs * batch_ns;
   s->trs_reclaim_tsc[s_port] = RTE_MAX(next, now > behind ? now - behind : 0) + batch_ns;
 }
