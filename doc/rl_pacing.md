@@ -304,7 +304,9 @@ In the figure, s1's stalled pad burst is part of s1's own visit. In A, packet 0 
 ### 15. Reclaim and catch-up
 
 **Reclaim.** A first pad burst that must free a batch of the previous frame's sent packets is a common stall. So a visit to a port that waits for its window, or that finds the builder ring empty, frees done descriptors ahead of time with a zero-length `tx_burst`, which the iavf and ice scalar paths use to free one done batch.
-It frees at most one batch per batch time (the shaper time of the `rs_thresh / 2` packets in a batch), catching up one batch per call after a gap. It runs only on the 2048-descriptor queues (Section 7).
+It frees at most one batch per batch time (the shaper time of the `rs_thresh / 2` packets in a batch). After a gap it catches up one call a visit, from the batch times before the queue's estimated wire end (`trs_wire_tsc`), never past now.
+With chained packets it never runs ahead of the wire: right after a frame's last burst the queue is full of packets still to be sent, and it makes no calls for their batches. Copied packets (`tx_no_chain`) take one descriptor each, so about half its calls before the wire end free nothing. On the iavf/ice scalar TX paths each call still writes the tail register.
+It runs only on the 2048-descriptor queues (Section 7).
 
 **Catch-up.** After the visits and the final scan, MTL tops up the RL ports mid-frame whose queue holds less than 200 µs of packets (the scheduler's schedule time, by the last burst's return plus the packets sent times Trs), one bulk per short port per pass, until none is short or a NIC or builder ring stops it.
 It is skipped while a packet 0 of a visited port is due within two warm-up windows, so it never delays a release.

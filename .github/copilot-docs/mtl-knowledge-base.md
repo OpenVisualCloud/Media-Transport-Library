@@ -369,9 +369,11 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
       - RL transmitter: a visit that waits for the warm-up window or finds the builder ring
         empty bursts none (`video_trs_rl_reclaim()`), at most once a batch time
         (rs_thresh / 2 NORMAL pkts of shaper time, `trs_reclaim_tsc`), catching up one call a
-        visit. The frame before leaves the ring full of done batches. A warm-up pad burst
-        frees one before its doorbell, ~1.4 µs at 720p59.94, which takes the first burst past
-        `ST_TX_VIDEO_RL_STALL_NS` (`St20TxRlReclaim`).
+        visit from the ring's batch times before `trs_wire_tsc`, never past now: chained pkts
+        make no call ahead of the wire; with copied ones (1 descriptor each) about half the
+        calls before it free nothing. The frame before leaves the ring full of done batches.
+        A warm-up pad burst frees one before its doorbell, ~1.4 µs at 720p59.94, which takes
+        the first burst past `ST_TX_VIDEO_RL_STALL_NS` (`St20TxRlReclaim`).
       - Hang: a hung queue holds the frames too, and with nothing to send the transmitter sees no
         burst fail. A wait past `tx_hang_detect_time_thresh` (at least 2 frame times) flags the
         recovery of every leg idle as long (`tv_frames_out_hang()`); a reclaim gap past half of

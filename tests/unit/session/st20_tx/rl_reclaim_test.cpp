@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
 
 #include "session/st20_tx/rl_vrx_model.h"
 #include "session/st20_tx_harness.h"
@@ -24,6 +25,7 @@ constexpr uint16_t kSegsPerPkt = 2; /* a zero-copy chained video pkt */
 /* hardware, 720p59.94 on an E810 VF: a first pad burst that frees no batch (p99) */
 constexpr uint64_t kFirstBurstNs = 880;
 constexpr uint64_t kBatchFreeNs = kUtRlColdBatchFreeNs;
+constexpr uint64_t kCallNs = 2000; /* a visit each round of a busy scheduler */
 
 class St20TxRlReclaim : public ::testing::Test {
  protected:
@@ -74,6 +76,23 @@ class St20TxRlReclaim : public ::testing::Test {
       now = at + kOthersNs;
     }
     return ctx;
+  }
+
+  /* A frame of segs-descriptor pkts fills the NIC TX queue; its last pkts leave it full
+   * of pkts the shaper has yet to send. Returns at the first visit with none to send. */
+  ut_trs_ctx* FrameOnTheWire(uint16_t segs) {
+    ut_trs_ctx* ctx = ut_trs_create();
+    if (ut_trs_setup_stream(ctx, trs_, ut_trs_deep_nb_tx_desc(), segs) < 0) return ctx;
+    ut_trs_set_rl_port(ctx, kPortP);
+    ut_trs_set_pmd_done_batches(ctx, kRsThresh, 0, kBatchFreeNs);
+    ut_trs_stream(ctx, (uint64_t)(ut_trs_deep_nb_tx_desc() / segs * trs_), kCallNs);
+    for (int i = 0; i < kRoundCap && !ut_trs_reclaim_calls(ctx); i++) Visit(ctx);
+    return ctx;
+  }
+
+  void Visit(ut_trs_ctx* ctx) {
+    ut_trs_advance_mock_tsc(ctx, kCallNs);
+    ut_trs_call_rl_tasklet(ctx);
   }
 
   uint64_t bps_ = 0;
@@ -154,6 +173,44 @@ TEST_F(St20TxRlReclaim, IdleSt22SessionReclaimsNothing) {
   }
   EXPECT_EQ(0u, ut_trs_reclaim_calls(ctx));
   ut_trs_destroy(ctx);
+}
+
+/* The frame before still on the wire, its oldest rs batch done only once the shaper sent
+ * it: from the visit after its last pkts, an empty burst at most once a batch time, and
+ * none ahead for the batches the queue has yet to send. */
+TEST_F(St20TxRlReclaim, NoEmptyBurstAheadOfTheWire) {
+  ut_trs_ctx* ctx = FrameOnTheWire(kSegsPerPkt);
+  ASSERT_GE(ut_trs_stream_nic_desc_used(ctx), ut_trs_deep_nb_tx_desc() - kSegsPerPkt);
+  const long double ahead = ut_trs_stream_ahead_ns(ctx);
+  const uint64_t end = ut_trs_last_tsc(ctx) + (uint64_t)ahead;
+  while (ut_trs_last_tsc(ctx) < end) Visit(ctx);
+  const long double batch_ns = kRsThresh / 2 * trs_;
+  EXPECT_LE(ut_trs_reclaim_calls(ctx), 1 + ahead / batch_ns + 1);
+  ut_trs_destroy(ctx);
+}
+
+/* The same with the PMD, of chained or copied pkts: each rs batch is done once the shaper
+ * sent its last pkt. Two batch times after the wire the visits have freed them down to
+ * those the PMD keeps, so the next warm-up's first pad burst frees none. */
+TEST_F(St20TxRlReclaim, VisitsFreeTheBatchesAsTheWireSendsThem) {
+  for (uint16_t segs : {kSegsPerPkt, (uint16_t)1}) {
+    ut_trs_ctx* ctx = FrameOnTheWire(segs);
+    const uint32_t batches = ut_trs_deep_nb_tx_desc() / kRsThresh;
+    const long double batch_ns = kRsThresh / segs * trs_;
+    const long double wire = ut_trs_last_tsc(ctx) + ut_trs_stream_ahead_ns(ctx);
+    uint32_t done = 0;
+    while (ut_trs_last_tsc(ctx) < wire + 2 * batch_ns) {
+      /* the batches the shaper sent by now, oldest first */
+      const long double left = std::max(wire - ut_trs_last_tsc(ctx), 0.0L);
+      const uint32_t sent = batches - std::min(batches, (uint32_t)ceill(left / batch_ns));
+      if (sent > done) ut_trs_add_pmd_done_batches(ctx, sent - done, kBatchFreeNs);
+      done = std::max(done, sent);
+      Visit(ctx);
+    }
+    ASSERT_EQ(batches, done) << segs;
+    EXPECT_LE(done - ut_trs_pmd_frees(ctx), ut_trs_rl_kept_batches()) << segs;
+    ut_trs_destroy(ctx);
+  }
 }
 
 /* a thread stall at an instant inside a batch free delays the burst's doorbell by its

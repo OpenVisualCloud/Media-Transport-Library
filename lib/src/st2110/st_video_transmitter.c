@@ -586,7 +586,8 @@ static inline void video_trs_rl_set_idle(struct st_tx_video_session_impl* s,
 /* Frees one done rs batch of the frame before, so the warm-up pad bursts need not. A
  * batch holds at least rs_thresh / 2 pkts, each a NORMAL pkt's shaper time but the one
  * FRAME_TAIL, so a call frees at most one a batch time; behind by up to the ring's
- * batches, it catches up one a call. */
+ * batches, it catches up one a call, from the ring's batch times before trs_wire_tsc:
+ * of chained pkts, the batches the wire has sent. */
 static inline void video_trs_rl_reclaim(struct mtl_main_impl* impl,
                                         struct st_tx_video_session_impl* s,
                                         enum mtl_session_port s_port) {
@@ -601,7 +602,9 @@ static inline void video_trs_rl_reclaim(struct mtl_main_impl* impl,
   const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
   uint64_t batch_ns = (uint64_t)(rs / 2 * (plan->armed ? plan->pad_ns : s->pacing.trs));
   uint64_t behind = (uint64_t)mt_if_nb_tx_desc(impl, port) / rs * batch_ns;
-  s->trs_reclaim_tsc[s_port] = RTE_MAX(next, now > behind ? now - behind : 0) + batch_ns;
+  uint64_t wire = RTE_MAX(now, s->trs_wire_tsc[s_port]);
+  uint64_t from = RTE_MIN(now, wire > behind ? wire - behind : 0);
+  s->trs_reclaim_tsc[s_port] = RTE_MAX(next, from) + batch_ns;
 }
 
 /* The state a port goes to once the warm-up window of packet 0 opens. Without a plan it
