@@ -1311,6 +1311,9 @@ TEST(St20TxRlPlanArming, EveryRlFormatArmsItsPlanOrWarns) {
                                      std::to_string(port) + " no rl plan, holds packet 0";
             EXPECT_EQ(ut_txv_rl_armed(ctx, port), f.armed) << "port " << port;
             EXPECT_EQ(log.find(warn) != std::string::npos, !f.armed) << "port " << port;
+            if (f.armed) {
+              EXPECT_GT((double)ut_txv_rl_absorb(ctx, port), 0.0) << "port " << port;
+            }
           }
           ut_txv_destroy(ctx);
         }

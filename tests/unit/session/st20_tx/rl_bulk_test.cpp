@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 #include <vector>
 
 #include "session/st_video_transmitter_harness.h"
@@ -169,6 +170,41 @@ TEST_P(St20TxRlBulkWireTest, Bulk16WireMatchesBulk4) {
 INSTANTIATE_TEST_SUITE_P(Frames, St20TxRlBulkWireTest, ::testing::ValuesIn(kWireCases),
                          [](const ::testing::TestParamInfo<WireCase>& info) {
                            return std::string(info.param.name);
+                         });
+
+/* An armed plan entered late: packet 0's first slice leaves behind the last pre-arm pads
+ * in one call, mixed_accept short of them or not. */
+class St20TxRlBulkTailTest : public St20TxRlBulkTest,
+                             public ::testing::WithParamInterface<uint16_t> {
+ protected:
+  ut_trs_frames_case Case(unsigned int bulk) {
+    ut_trs_frames_case c = {};
+    c.bulk = bulk;
+    c.total_pkts = 70;
+    c.frames = 2;
+    c.pad_interval = 5.0f;
+    c.hold_ns = kHoldNs;
+    c.drain_ns = 1000; /* a trs */
+    c.credit_ns = 1500;
+    c.absorb_ns = 2000;
+    c.warm_pkts = 2;
+    c.mixed_accept = GetParam();
+    return c;
+  }
+};
+
+TEST_P(St20TxRlBulkTailTest, Bulk16WireMatchesBulk4) {
+  std::vector<uint32_t> bulk4 = Run(Case(4));
+  ASSERT_FALSE(bulk4.empty());
+  ASSERT_EQ(2u, ut_trs_mixed_calls(Last()));
+  EXPECT_EQ(bulk4, Run(Case(16)));
+  EXPECT_EQ(2u, ut_trs_mixed_calls(Last()));
+}
+
+INSTANTIATE_TEST_SUITE_P(MixedAccept, St20TxRlBulkTailTest,
+                         ::testing::Values(0, 1, 4, 5, 7, 8),
+                         [](const ::testing::TestParamInfo<uint16_t>& info) {
+                           return "Accept" + std::to_string(info.param);
                          });
 
 TEST_F(St20TxRlBulkTest, SmallPadIntervalSendsTwoPadsInOneBulk) {

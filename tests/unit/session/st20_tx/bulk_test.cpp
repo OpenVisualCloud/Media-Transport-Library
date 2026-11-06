@@ -111,11 +111,34 @@ TEST_F(St20TxBulkTest, TrainedRlKeepsTheRlBulk) {
 
 /* TSC spends bulk - 1 of the narrow vrx 8: 3 at the TSC bulk */
 TEST_F(St20TxBulkTest, RlFallingBackToTscTakesTheTscBulk) {
+  ut_txv_ctx* tsc_bulk = ut_txv_create();
+  ASSERT_NE(nullptr, tsc_bulk);
+  ASSERT_EQ(0, ut_txv_init_rl_pacing_at_bulk(tsc_bulk, 4, true));
   ASSERT_EQ(0, ut_txv_init_rl_pacing_at_bulk(ctx_, 16, true));
 
   EXPECT_EQ(ST21_TX_PACING_WAY_TSC, ut_txv_pacing_way(ctx_, 0));
   EXPECT_EQ(4u, ut_txv_bulk(ctx_));
-  EXPECT_EQ(5u, ut_txv_pacing_vrx(ctx_));
+  /* the vrx compensates the bulk TSC sends, not the one the pools were sized for */
+  EXPECT_EQ(ut_txv_pacing_vrx(tsc_bulk), ut_txv_pacing_vrx(ctx_));
+  ut_txv_destroy(tsc_bulk);
+}
+
+/* bulk 16 pads each of its 4-pkt slices where bulk 4 pads, so its wire has bulk 4's pad
+ * sawtooth; a vrx of 2 and no 90 kHz snap leave the absorb to the lead */
+TEST_F(St20TxBulkTest, RlBulkAbsorbsAsBulk4Does) {
+  ut_txv_ctx* bulk4 = ut_txv_create();
+  ASSERT_NE(nullptr, bulk4);
+  for (ut_txv_ctx* c : {bulk4, ctx_}) {
+    ut_txv_set_user_timestamp(c, true);
+    ut_txv_set_start_vrx(c, 2);
+  }
+  ASSERT_EQ(0, ut_txv_init_rl_pacing_at_bulk(bulk4, 4, false));
+  ASSERT_EQ(0, ut_txv_init_rl_pacing_at_bulk(ctx_, 16, false));
+
+  ASSERT_TRUE(ut_txv_rl_armed(ctx_, 0));
+  EXPECT_GT(ut_txv_rl_absorb(bulk4, 0), 0);
+  EXPECT_EQ(ut_txv_rl_absorb(bulk4, 0), ut_txv_rl_absorb(ctx_, 0));
+  ut_txv_destroy(bulk4);
 }
 
 }  // namespace
