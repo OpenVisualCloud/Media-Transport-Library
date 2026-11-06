@@ -112,16 +112,17 @@ class St20TxRlRelease : public ::testing::Test {
     return true;
   }
 
-  /* At 1080p59.94, a counted stall within absorb_ns and a pad past it: a session
-   * pre-arms packet 0 for kTargetTsc entry past the warm-up open, its first pad burst
-   * stalling within absorb_ns. The scheduler is then away until kTargetTsc + away.
-   * tail_: that visit deferred packet 0 behind a tail. */
-  void DeferTail(uint64_t entry, int64_t away) {
+  /* At 1080p59.94, a counted stall within absorb_ns and a pad past it: the last session,
+   * after one whose target is far, pre-arms packet 0 for kTargetTsc entry past the
+   * warm-up open, its first pad burst stalling within absorb_ns. The scheduler is then
+   * away until kTargetTsc + away. tail_: that visit deferred packet 0 behind a tail. */
+  void DeferTail(bool far_first, uint64_t entry, int64_t away) {
     ASSERT_GT(p_, absorb_);
     constexpr uint64_t kFirstNs = 2300;
     ASSERT_GT(kFirstNs, ut_trs_rl_stall_ns());
     ASSERT_LT(kFirstNs, absorb_);
     now_ = kTargetTsc - window_ - 12000;
+    if (far_first) ctx_.push_back(Session(kTargetTsc + 900000, absorb_, 750));
     ctx_.push_back(Session(kTargetTsc, absorb_, kFirstNs));
     sch_ = ut_trs_sch_create(ctx_.data(), (int)ctx_.size(), &now_);
     ASSERT_NE(nullptr, sch_);
@@ -180,7 +181,7 @@ TEST_F(St20TxRlRelease, DeferredTailPastItsTargetLeavesInTheRelease) {
 
   for (uint64_t entry = 25000; entry < 30000; entry += 97)
     for (int64_t away = 0; away < credit_; away += 250) {
-      ASSERT_NO_FATAL_FAILURE(DeferTail(entry, away));
+      ASSERT_NO_FATAL_FAILURE(DeferTail(false, entry, away));
       const std::string what =
           "entry " + std::to_string(entry) + " away " + std::to_string(away);
       if (tail_) {
@@ -192,6 +193,43 @@ TEST_F(St20TxRlRelease, DeferredTailPastItsTargetLeavesInTheRelease) {
       if (HasFailure()) return;
     }
   EXPECT_GT(tails, 0);
+}
+
+/* Session P's deferred tail, held in the release after the visits to its target: the
+ * scheduler then comes back past that target, and P leaves before session A's visit,
+ * which takes long, not behind it. */
+TEST_F(St20TxRlRelease, TailHeldInTheReleaseLeavesBeforeTheNextVisit) {
+  ASSERT_NO_FATAL_FAILURE(Plan(1920, 1080, ST_FPS_P59_94));
+  struct Seen {
+    ut_trs_ctx* p;
+    uint64_t* now;
+    int64_t sent = -1; /* P's sends at A's first visit */
+  };
+  auto before = [](int i, void* arg) {
+    Seen* seen = static_cast<Seen*>(arg);
+    if (!i && seen->sent < 0) {
+      seen->sent = ut_trs_real_send_count(seen->p);
+      *seen->now += 50000;
+    }
+    return true;
+  };
+  int held = 0;
+
+  for (uint64_t entry = 25000; entry < 30000; entry += 97)
+    for (int64_t away = -3000; away < 0; away += 50) {
+      ASSERT_NO_FATAL_FAILURE(DeferTail(true, entry, away));
+      if (tail_ && ut_trs_rl_state(ctx_[1]) == kWaitTarget) {
+        held++;
+        Seen seen = {ctx_[1], &now_};
+        now_ = kTargetTsc + 20000;
+        ut_trs_sch_set_visit(sch_, before, nullptr, &seen);
+        ut_trs_sch_call(sch_);
+        EXPECT_EQ(1, seen.sent) << "entry " << entry << " away " << away;
+      }
+      EndTail();
+      if (HasFailure()) return;
+    }
+  EXPECT_GT(held, 0);
 }
 
 /* held, its target passed in session 1's visit: it leaves before session 2's visit, not

@@ -1171,6 +1171,9 @@ static int video_trs_rl_release(struct mtl_main_impl* impl,
                !s->tx_queue_recovery_pending[s_port]) {
         s->trs_released[s_port] = trs->visit;
         pending += s->pacing_tasklet_func[s_port](impl, s, s_port);
+        /* a deferred packet 0 held back to its target waits for a later scan */
+        uint64_t held = video_trs_rl_pkt0_tsc(s, s_port);
+        if (held > now) next = video_trs_rl_pkt0_first(next, held);
         /* the scan's own sends may carry it past the targets of the ports after */
         now = mt_get_tsc(impl);
       }
