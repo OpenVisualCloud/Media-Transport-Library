@@ -321,6 +321,7 @@ int ut_sch_lcore_shm_used(mtl_handle mt) {
 
 int ut_sch_lcore_cnt(mtl_handle mt) {
   return rte_atomic32_read(&((struct mtl_main_impl*)mt)->lcore_cnt);
+}
 
 static struct ut_sch_mempolicy_ctx* ut_sch_qs_ctx_create(int (*handler)(void* priv),
                                                          void* priv) {
