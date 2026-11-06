@@ -1,4 +1,6 @@
-/* SPDX-License-Identifier: LicenseRef-IPMX-TBD */
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2026 Intel Corporation
+ */
 
 /*
  * The IPMX receiver side of the RTCP Sender Report (TR-10-1 section 8.7, TR-10-2 section

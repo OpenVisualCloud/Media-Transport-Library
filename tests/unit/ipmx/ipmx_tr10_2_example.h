@@ -1,4 +1,6 @@
-/* SPDX-License-Identifier: LicenseRef-IPMX-TBD */
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2026 Intel Corporation
+ */
 
 /* The TR-10-2 section 11 example Sender Report, golden bytes for the builder and parser
  */

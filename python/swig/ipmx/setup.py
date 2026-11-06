@@ -1,4 +1,5 @@
-# SPDX-License-Identifier: LicenseRef-IPMX-TBD
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2026 Intel Corporation
 
 """Module of MTL IPMX python binding setup."""
 

@@ -1,4 +1,6 @@
-/* SPDX-License-Identifier: LicenseRef-IPMX-TBD */
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2026 Intel Corporation
+ */
 
 /*
  * ST20P_TX_FLAG_IPMX / ST20P_RX_FLAG_IPMX reach the transport ops the st20p

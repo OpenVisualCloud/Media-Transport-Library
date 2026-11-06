@@ -1,4 +1,6 @@
-/* SPDX-License-Identifier: LicenseRef-IPMX-TBD */
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2026 Intel Corporation
+ */
 
 /* st22p (JPEG XS, TR-10-11) with the IPMX flag on real ports.
  *

@@ -1,4 +1,6 @@
-/* SPDX-License-Identifier: LicenseRef-IPMX-TBD */
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2026 Intel Corporation
+ */
 
 #ifndef _APP_IPMX_HEAD_H_
 #define _APP_IPMX_HEAD_H_

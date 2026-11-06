@@ -1,4 +1,6 @@
-/* SPDX-License-Identifier: LicenseRef-IPMX-TBD */
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2026 Intel Corporation
+ */
 
 /*
  * The video/jxsv IPMX SDP of an st22 (JPEG XS) TX session: VSF TR-10-11 section 10,

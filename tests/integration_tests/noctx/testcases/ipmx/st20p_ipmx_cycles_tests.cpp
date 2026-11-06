@@ -1,4 +1,6 @@
-/* SPDX-License-Identifier: LicenseRef-IPMX-TBD */
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2026 Intel Corporation
+ */
 
 /* IPMX session teardown gives back all it took: 30 create / stream / free cycles of an
  * st20p pair leave the DPDK heap where the first cycle left it. The instance runs

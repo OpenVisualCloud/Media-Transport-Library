@@ -1,4 +1,6 @@
-/* SPDX-License-Identifier: LicenseRef-IPMX-TBD */
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2026 Intel Corporation
+ */
 
 /* A synthetic JPEG XS header the Kahawai test codec writes for IPMX GBRPLANAR8 sessions,
  * so the library's per-frame TR-08 picture header check passes without a real encoder. */

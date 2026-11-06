@@ -1,4 +1,5 @@
-// SPDX-License-Identifier: LicenseRef-IPMX-TBD
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright 2026 Intel Corporation
 
 //! IPMX (VSF TR-10) session flags; the `ipmx_api.h` functions and structs come with the
 //! generated bindings. Needs an MTL built with enable_ipmx.

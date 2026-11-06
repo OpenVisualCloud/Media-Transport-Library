@@ -1,4 +1,6 @@
-/* SPDX-License-Identifier: LicenseRef-IPMX-TBD */
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2026 Intel Corporation
+ */
 
 /* IPMX sender timing, TR-10-1 section 8.1: an IPMX st20p TX paced by default RL keeps
  * every frame within CMAX and the IPMX VRX, as the library's RX timing parser measures
