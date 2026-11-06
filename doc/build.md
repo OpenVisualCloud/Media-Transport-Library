@@ -464,7 +464,9 @@ For older kernel version on Red Hat, the issue is that Red Hat uses vault repos.
 
 ### 4.5. Compiler hardening
 
-The Linux build compiles the MTL meson projects with the hardening options below. `script/hardening_flags.py` prints them for a compiler, and the `meson.build` of each project applies them.
+The Linux build compiles the MTL meson projects with the hardening options below, and DPDK, libbpf, libxdp, openh264 and FFmpeg with the options for C, less the warning options: openh264 is C++, but gets no `-D_GLIBCXX_ASSERTIONS`.
+`script/hardening_flags.py` prints them for a compiler, the `meson.build` of each project applies them, and `script/build_dpdk.sh`, `script/build_ebpf_xdp.sh` and `script/build_ffmpeg_plugin.sh` pass them to the dependencies they build.
+In the dependency builds the last `-O` of `CFLAGS`, then `CPPFLAGS`, sets the level: `-O0` leaves out `_FORTIFY_SOURCE`, as the meson option `optimization` at `0` does for the MTL projects.
 
 | Option | Protection |
 | --- | --- |
@@ -477,9 +479,12 @@ The Linux build compiles the MTL meson projects with the hardening options below
 | `-D_GLIBCXX_ASSERTIONS` | Bounds and precondition checks in libstdc++, for the C++ programs: MtlManager, KahawaiTest, UnitTest, the gpu_direct gtest and the st22 avcodec and FFmpeg plugin tests |
 | `-Wl,-z,relro -Wl,-z,now` | Full RELRO, a read-only GOT |
 | `-Wl,-z,noexecstack` | Non-executable stack |
-| `b_pie=true`, and meson's `-fPIC` for shared objects | Position independent code for ASLR |
+| `b_pie=true`, and meson's `-fPIC` for shared objects; FFmpeg's `--enable-pic` and `-pie` | Position independent code for ASLR |
 
-The gcc of Rocky Linux and RHEL enables none of the compiler options by default. So the Rocky Linux 9 image build runs `.github/scripts/ci/scan/check-hardening.sh` on what `build.sh` builds there: libmtl, UnitTest, the samples, the sample plugins, MtlManager, KahawaiTest and RxTxApp. It fails on a binary without full RELRO, a non-executable stack, PIE, CET or the stack protector.
+The build job of the pull request and nightly workflows (`.github/actions/build-artifacts`) runs `.github/scripts/ci/scan/check-hardening.sh` on the Build caches of DPDK, MTL, FFmpeg, GStreamer and the st22 avcodec plugin (`task ci:hardening-scan`), before it saves and packs them, except in a run for another branch.
+It fails on a binary without full RELRO, a non-executable stack, PIE, CET or the stack protector.
+Its table, keyed on the name of each file, accepts what a dependency doesn't apply: the stack protector in librte_kvargs, librte_meter, librte_jobstats and librte_common_cpt, which have no function it covers, CET in libopenh264, and IBT in libavcodec, libavfilter, libavutil, libswresample and libswscale.
+The check skips the JPEG XS cache: SVT-JPEG-XS builds its MTL plugin without the options.
 
 `_FORTIFY_SOURCE` and `_GLIBCXX_ASSERTIONS` leave no reliable mark in a binary, so `.github/scripts/ci/lint/test-scripts.sh` tests the rule that sets them instead.
 

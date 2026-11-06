@@ -30,6 +30,9 @@ ENVIRONMENT:
 				(.local_install/dpdk beside .local_install/mtl) instead of the system
 	DPDK_MAX_LCORES		RTE_MAX_LCORE, the highest CPU ID + 1 MTL can use (default: the
 				CPU count of this host, at least 128; at most 1024, as MTL)
+	CC, CFLAGS, CPPFLAGS, LDFLAGS
+				The compiler and flags of the DPDK build; the script adds the
+				hardening flags of doc/build.md to them
 
 EXAMPLES:
 	${script_name}			# Build the default DPDK version
@@ -87,7 +90,8 @@ check_build_packages() {
 }
 
 main() {
-	local opt dpdk_folder archive_name patch_file python_path="$PATH" dpdk_prefix max_lcores
+	local opt dpdk_folder archive_name patch_file python_path="$PATH" dpdk_prefix max_lcores link_args
+	local -a hardening_args
 
 	FORCE=0
 	while getopts "fhv:-:" opt; do
@@ -178,6 +182,12 @@ main() {
 	fi
 	log_info "Build and install DPDK now, max_lcores ${max_lcores}"
 	[ -n "${DPDK_PYTHON}" ] && python_path="$(dirname "$DPDK_PYTHON"):$PATH"
+	# The compiler hardening of doc/build.md, for the release buildtype of
+	# DPDK. -Dc_args and -Dc_link_args replace the CFLAGS, CPPFLAGS and LDFLAGS
+	# meson reads otherwise, so they take them in, in meson's order.
+	hardening_flags 3 || exit 1
+	hardening_args=(-Db_pie=true "-Dc_args=${CFLAGS:+${CFLAGS} }${CPPFLAGS:+${CPPFLAGS} }${HARDENING_CFLAGS}")
+	link_args="${LDFLAGS:+${LDFLAGS} }${CFLAGS:+${CFLAGS} }${CPPFLAGS:+${CPPFLAGS} }${HARDENING_LDFLAGS}"
 	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 		# A prefix install is self-contained and can be moved: each library
 		# records its own directory, and each driver in dpdk/pmds-<ABI> the
@@ -187,13 +197,13 @@ main() {
 		# DPDK's dependencies without LD_LIBRARY_PATH.
 		dpdk_prefix="$(dirname "${MTL_INSTALL_PREFIX}")/dpdk"
 		# shellcheck disable=SC2016 # $ORIGIN is for the loader
-		PATH="$python_path" meson setup build --prefix "${dpdk_prefix}" -Dmax_lcores="${max_lcores}" \
-			'-Dc_link_args=-Wl,--disable-new-dtags,-rpath,$ORIGIN,-rpath,$ORIGIN/../..'
+		PATH="$python_path" meson setup build --prefix "${dpdk_prefix}" -Dmax_lcores="${max_lcores}" "${hardening_args[@]}" \
+			"-Dc_link_args=${link_args} "'-Wl,--disable-new-dtags,-rpath,$ORIGIN,-rpath,$ORIGIN/../..'
 		ninja -C build
 		ninja -C build install
 		relocate_pkgconfig "${dpdk_prefix}"
 	else
-		PATH="$python_path" meson setup build -Dmax_lcores="${max_lcores}"
+		PATH="$python_path" meson setup build -Dmax_lcores="${max_lcores}" "${hardening_args[@]}" "-Dc_link_args=${link_args}"
 		ninja -C build
 		as_root ninja -C build install
 		command_exists ldconfig && as_root ldconfig

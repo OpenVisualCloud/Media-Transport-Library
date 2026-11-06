@@ -330,6 +330,32 @@ function origin_rpath_args() {
 	echo "${args}"
 }
 
+# Usage: hardening_flags <default optimization>
+# Sets HARDENING_CFLAGS and HARDENING_LDFLAGS for a dependency, see doc/build.md.
+function hardening_flags() {
+	local output flag level=$1
+	local -a compiler args flags compile=()
+
+	read -ra compiler <<<"${CC:-cc}"
+	read -ra args <<<"${CFLAGS:-} ${CPPFLAGS:-}"
+	for flag in "${args[@]}"; do
+		case ${flag} in
+		-O0) level=0 ;;
+		-O*) level=2 ;;
+		esac
+	done
+	output=$(python3 "${REPO_DIR}/script/hardening_flags.py" c "${level}" none "${compiler[@]}" "${args[@]}") || {
+		log_error "script/hardening_flags.py fails with the compiler ${CC:-cc}"
+		return 1
+	}
+	read -ra flags <<<"${output%%$'\n'*}"
+	for flag in "${flags[@]}"; do
+		[[ ${flag} == -W* && ${flag} != -W[apl],* ]] || compile+=("${flag}")
+	done
+	# shellcheck disable=SC2034 # the scripts that source this file read them
+	HARDENING_CFLAGS="${compile[*]}" HARDENING_LDFLAGS="${output#*$'\n'}"
+}
+
 # Usage: download_file <url> <file>
 # Fetches with curl, or wget when there is no curl, retrying a few times.
 function download_file() {

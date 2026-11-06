@@ -224,12 +224,54 @@ test_hardening_flags() {
 
 test_hardening_flags
 
+# Prints the flags that hardening_flags of the common.sh of repository $1 sets
+# for CC $2, CFLAGS $3 and CPPFLAGS $4.
+dependency_flags() {
+	CC=$2 CFLAGS=$3 CPPFLAGS=$4 bash -c '. "$0/script/common.sh" && hardening_flags 2 && echo "${HARDENING_CFLAGS}|${HARDENING_LDFLAGS}"' "$1" 2>&1
+}
+
+# The stand-in compiler takes each flag and predefines a level for
+# -DMTL_FORTIFY; the stand-in helper prints the options to filter.
+test_dependency_hardening_flags() {
+	local work out
+	local compile='-fstack-protector-strong -fstack-clash-protection -fcf-protection=full'
+	local link='-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack'
+	work=$(mktemp -d)
+	printf '#!/bin/sh\ncase " $* " in *" -DMTL_FORTIFY "*) echo "#define _FORTIFY_SOURCE 2" ;; esac\n' >"${work}/cc"
+	chmod +x "${work}/cc"
+	out=$(dependency_flags . "${work}/cc -m64" "" "") || true
+	[ "${out}" = "${compile} -D_FORTIFY_SOURCE=2|${link}" ] ||
+		fail script/common.sh "hardening_flags with a CC of two words: ${out}"
+	out=$(dependency_flags . "${work}/cc" "-O2 -DMTL_FORTIFY" "") || true
+	[ "${out}" = "${compile}|${link}" ] || fail script/common.sh "hardening_flags adds a level CFLAGS sets: ${out}"
+	out=$(dependency_flags . "${work}/cc" "-O2" "-DMTL_FORTIFY") || true
+	[ "${out}" = "${compile}|${link}" ] || fail script/common.sh "hardening_flags adds a level CPPFLAGS sets: ${out}"
+	out=$(dependency_flags . "${work}/cc" "-O2 -g -O0" "") || true
+	[ "${out}" = "${compile}|${link}" ] || fail script/common.sh "hardening_flags adds a level to an -O0 build: ${out}"
+	out=$(dependency_flags . "${work}/cc" "-O0" "-Os") || true
+	[ "${out}" = "${compile} -D_FORTIFY_SOURCE=2|${link}" ] ||
+		fail script/common.sh "hardening_flags takes no -O of CPPFLAGS after CFLAGS: ${out}"
+	if dependency_flags . "${work}/missing" "" "" >/dev/null; then
+		fail script/common.sh "hardening_flags passes without a compiler"
+	fi
+	mkdir -p "${work}/repo/script"
+	cp script/common.sh "${work}/repo/script/"
+	cp versions.env "${work}/repo/"
+	printf 'print("-Wformat -Wp,-DX -Wa,--noexecstack -Wl,-z,now -fPIC")\nprint("-Wl,-z,relro")\n' >"${work}/repo/script/hardening_flags.py"
+	out=$(dependency_flags "${work}/repo" true "" "") || true
+	[ "${out}" = "-Wp,-DX -Wa,--noexecstack -Wl,-z,now -fPIC|-Wl,-z,relro" ] ||
+		fail script/common.sh "hardening_flags drops what is not a warning option: ${out}"
+	rm -rf "${work:?}"
+}
+
+test_dependency_hardening_flags
+
 # check-hardening.sh passes a hardened program, names each mark of an unhardened
-# one and of one with IBT only, and fails a path that holds no ELF file.
+# one and of one with a single CET mark, and fails a path without an ELF file.
 test_check_hardening() {
 	local gate=.github/scripts/ci/scan/check-hardening.sh work out rc=0
 	work=$(mktemp -d)
-	mkdir "${work}/good" "${work}/bad" "${work}/ibt" "${work}/empty"
+	mkdir "${work}/good" "${work}/bad" "${work}/ibt" "${work}/shstk" "${work}/empty"
 	printf '#include <string.h>\nint main(int c, char **v) { char b[64]; strcpy(b, v[0]); return b[c]; }\n' >"${work}/t.c"
 	gcc -O2 -fstack-protector-strong -fcf-protection=full -fPIE -pie -Wl,-z,relro,-z,now,-z,noexecstack \
 		"${work}/t.c" -o "${work}/good/t"
@@ -237,17 +279,48 @@ test_check_hardening() {
 		"${work}/t.c" -o "${work}/bad/t" 2>/dev/null || fail "${gate}" "cannot link the unhardened program"
 	gcc -O2 -fstack-protector-strong -fcf-protection=branch -fPIE -pie -Wl,-z,relro,-z,now,-z,noexecstack \
 		"${work}/t.c" -o "${work}/ibt/t"
+	gcc -O2 -fstack-protector-strong -fcf-protection=return -fPIE -pie -Wl,-z,relro,-z,now,-z,noexecstack \
+		"${work}/t.c" -o "${work}/shstk/t"
 	bash "${gate}" "${work}/good" >/dev/null 2>&1 || fail "${gate}" "fails a hardened program"
 	out=$(bash "${gate}" "${work}/bad" 2>&1) || rc=$?
 	if [ "${rc}" -eq 0 ] ||
-		! grep -qxF "::error::${work}/bad/t is not hardened: no RELRO BIND_NOW NX PIE IBT/SHSTK SSP" <<<"${out}"; then
+		! grep -qxF "::error::${work}/bad/t is not hardened: no RELRO BIND_NOW NX PIE IBT SHSTK SSP" <<<"${out}"; then
 		fail "${gate}" "does not name each mark an unhardened program lacks: ${out}"
 	fi
 	out=$(bash "${gate}" "${work}/ibt" 2>&1) || true
-	grep -qxF "::error::${work}/ibt/t is not hardened: no IBT/SHSTK" <<<"${out}" ||
+	grep -qxF "::error::${work}/ibt/t is not hardened: no SHSTK" <<<"${out}" ||
 		fail "${gate}" "passes a program with IBT but no SHSTK: ${out}"
+	out=$(bash "${gate}" "${work}/shstk" 2>&1) || true
+	grep -qxF "::error::${work}/shstk/t is not hardened: no IBT" <<<"${out}" ||
+		fail "${gate}" "passes a program with SHSTK but no IBT: ${out}"
 	if bash "${gate}" "${work}/empty" >/dev/null 2>&1; then
 		fail "${gate}" "passes a path without an ELF file"
+	fi
+	# Its table accepts SSP missing in a DPDK library without a protected
+	# function, not in EAL.
+	mkdir "${work}/dpdk"
+	gcc -O2 -fno-stack-protector -fcf-protection=full -fPIC -shared -Wl,-z,relro,-z,now,-z,noexecstack \
+		"${work}/t.c" -o "${work}/dpdk/librte_kvargs.so.26"
+	cp "${work}/dpdk/librte_kvargs.so.26" "${work}/dpdk/librte_eal.so.26"
+	out=$(bash "${gate}" "${work}/dpdk" 2>&1) || true
+	if grep -qF "librte_kvargs.so.26 is not hardened" <<<"${out}" ||
+		! grep -qxF "::error::${work}/dpdk/librte_eal.so.26 is not hardened: no SSP" <<<"${out}"; then
+		fail "${gate}" "does not accept SSP missing in librte_kvargs only: ${out}"
+	fi
+	# And IBT missing in an FFmpeg library with assembly, both CET marks in
+	# libopenh264, but not IBT in libavformat, nor SHSTK in libswscale.
+	mkdir "${work}/ffmpeg"
+	gcc -O2 -fstack-protector-strong -fcf-protection=return -fPIC -shared -Wl,-z,relro,-z,now,-z,noexecstack \
+		"${work}/t.c" -o "${work}/ffmpeg/libavcodec.so.61"
+	cp "${work}/ffmpeg/libavcodec.so.61" "${work}/ffmpeg/libavformat.so.61"
+	gcc -O2 -fstack-protector-strong -fcf-protection=none -fPIC -shared -Wl,-z,relro,-z,now,-z,noexecstack \
+		"${work}/t.c" -o "${work}/ffmpeg/libopenh264.so.8"
+	cp "${work}/ffmpeg/libopenh264.so.8" "${work}/ffmpeg/libswscale.so.8"
+	out=$(bash "${gate}" "${work}/ffmpeg" 2>&1) || true
+	if grep -qE 'lib(avcodec|openh264)\.so\.[0-9]+ is not hardened' <<<"${out}" ||
+		! grep -qxF "::error::${work}/ffmpeg/libavformat.so.61 is not hardened: no IBT" <<<"${out}" ||
+		! grep -qxF "::error::${work}/ffmpeg/libswscale.so.8 is not hardened: no SHSTK" <<<"${out}"; then
+		fail "${gate}" "does not accept the CET marks missing in libavcodec and libopenh264 only: ${out}"
 	fi
 	rm -rf "${work:?}"
 }
