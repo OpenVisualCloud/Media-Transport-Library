@@ -48,6 +48,8 @@ jobs:
     outputs:
       build: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && (github.event_name == 'workflow_dispatch' || steps.filter.outputs.build_workflow == 'true') }}
       gtest: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && (github.event_name == 'workflow_dispatch' || steps.filter.outputs.gtest == 'true') }}
+      # The NoCtx RL wire cells, on a pull request that touches the RL pacing paths.
+      rl_pacing: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && github.event_name == 'pull_request' && steps.filter.outputs.rl_pacing == 'true' }}
       smoke_tests: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && (github.event_name == 'workflow_dispatch' || steps.filter.outputs.smoke_tests == 'true') }}
       unit_tests: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.unit_tests == 'true' }}
       scripts: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.scripts == 'true' }}
@@ -458,17 +460,55 @@ jobs:
         with:
           nic: ${{ matrix.nic }}
 
+  # The NoCtx RL wire cells on an E810 pair (gtest.sh case noctx_rl, a
+  # nightly case), only for a change to the RL pacing paths.
+  run-noctx-rl:
+    needs: [changes, build]
+    # !cancelled(), as for run-gtest-tests.
+    if: ${{ !cancelled() && needs.changes.outputs.rl_pacing == 'true' && needs.build.result == 'success' }}
+    runs-on: e810
+    timeout-minutes: 45
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - name: Checkout MTL
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@497c4107ae027a4f9d6da088d027639df40064e3
+        with:
+          ref: ${{ needs.build.outputs.mtl_commit }}
+
+      - name: Validate host and download artifacts
+        uses: ./.github/actions/validate-host
+        with:
+          nic: e810
+          build_outputs: ${{ toJSON(needs.build.outputs) }}
+
+      # env -u BASH_XTRACEFD: the descriptor the variable names does not exist in
+      # the privileged shell.
+      - name: Run the NoCtx RL wire cells
+        env:
+          NIGHTLY: 1
+          GTEST_CASES: '^noctx_rl$'
+          EXIT_ON_FAILURE: 1
+        run: sudo -E env -u BASH_XTRACEFD "${GITHUB_WORKSPACE}/.github/scripts/gtest.sh"
+
+      - name: 'cleanup: Kill test processes'
+        if: always()
+        run: task cleanup
+
   gtest-result:
     name: gtest-result
-    needs: [changes, build, run-gtest-tests]
+    needs: [changes, build, run-gtest-tests, run-noctx-rl]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: All gtest legs ok
-        if: ${{ needs.changes.result == 'success' && (needs.changes.outputs.gtest != 'true' || needs.run-gtest-tests.result == 'success') }}
+        if: ${{ needs.changes.result == 'success' && (needs.changes.outputs.gtest != 'true' || needs.run-gtest-tests.result == 'success') && (needs.changes.outputs.rl_pacing != 'true' || needs.run-noctx-rl.result == 'success') }}
         run: exit 0
       - name: Some gtest legs failed or did not run
-        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.gtest == 'true' && needs.run-gtest-tests.result != 'success') }}
+        if: ${{ needs.changes.result != 'success' || (needs.changes.outputs.gtest == 'true' && needs.run-gtest-tests.result != 'success') || (needs.changes.outputs.rl_pacing == 'true' && needs.run-noctx-rl.result != 'success') }}
         run: exit 1
 
   # ── Smoke pytest on each NIC of the fleet, on the artifacts of the build job ──
