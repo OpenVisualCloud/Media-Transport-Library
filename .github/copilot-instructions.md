@@ -43,9 +43,17 @@ MTL is a production repository that clients see.
 - Logs: `dbg()`, `info()`, `warn()`, `err()`. Never `printf`.
 - Format: `./format-coding.sh`, with the tool versions of
   `.pre-commit-config.yaml`.
-- Scripts: the user scripts in `script/` source `common.sh` and have
-  `show_help()` and `main()`. CI scripts, workflows and `ci:` tasks stay
+- Scripts: `script/` holds only the user tools. Each script there sources
+  `common.sh` and has `show_help()` and `main()`; a file that cannot follow
+  that format does not go in `script/`. CI scripts, workflows and `ci:` tasks stay
   simple, and a CI job never sets a host setting (`doc/ci_runner_setup.md`).
 - Commit messages: section 7 of `doc/coding_standard.md`.
 - A change of behavior comes with a test at the cheapest tier that can find
   the fault: unit, integration (`KahawaiTest`), or pytest.
+- TX pacing gets a strict review: the `*pacing*`, `*_rl_*` and epoch code of
+  `lib/src/st2110/st_tx_video_session.c`, `st_video_transmitter.c`,
+  `st_tx_audio_session.c` and `st_tx_ancillary_session.c`, and the rate limit
+  of `lib/src/dev/mt_dev.c`. The change comes with a unit test in
+  `tests/unit/`, and the packets stay inside the timing of SMPTE ST 2110-21
+  §6 and §7.1 for the sender type (ST 2110-40 §6 for ancillary data). A
+  missing test, or a timing that the review cannot confirm, is a blocker.
