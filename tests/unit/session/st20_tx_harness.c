@@ -91,8 +91,9 @@ struct ut_txv_ctx {
    * train_pad_ns per NORMAL pad of train_normal_len bytes, by their bytes */
   long double train_pad_ns;
   uint16_t train_normal_len;
-  bool no_trim_pads; /* ut_txv_init_rl_pacing() leaves s->trim_pad empty */
-  uint32_t rl_width; /* ut_txv_set_rl_format(), 0 for 1920x1080 */
+  long double train_burst_trs; /* the CPU time of one burst call, in trs */
+  bool no_trim_pads;           /* ut_txv_init_rl_pacing() leaves s->trim_pad empty */
+  uint32_t rl_width;           /* ut_txv_set_rl_format(), 0 for 1920x1080 */
   uint32_t rl_height;
   bool rl_interlaced;
   enum st_fps rl_fps;
@@ -137,7 +138,6 @@ struct ut_txv_ctx {
   bool recovery_owns_pools;
   uint8_t recovery_data[UT_TXV_FRAME_SIZE];
   unsigned int first_pool_n; /* of the first pool tv_mempool_init() made */
-  bool ptp_unstable;         /* mt_ptp_wait_stable() times out */
 };
 
 /* ── mocked time sources ──────────────────────────────────────────────── */
@@ -320,6 +320,7 @@ static uint16_t ut_txv_txq_burst_busy(struct mt_txq_entry* entry,
   (void)entry;
   (void)timeout_ms;
 
+  ut_txv_advance(ctx, (uint64_t)ceill(ctx->train_burst_trs * ctx->session.pacing.trs));
   for (uint16_t i = 0; i < nb_pkts; i++) {
     /* the busy burst spins until the shaper frees a descriptor */
     long double full = ctx->train_drain_end_ns - (nb_desc - 1) * ctx->train_pad_ns;
@@ -347,12 +348,13 @@ static void ut_txv_sleep_us(unsigned int us) {
   ut_txv_train_ctx->slept_ns += (uint64_t)us * NS_PER_US;
 }
 
+static int ut_txv_ptp_wait_ret;
 static int ut_txv_ptp_wait_stable(struct mtl_main_impl* impl, enum mtl_port port,
                                   int timeout_ms) {
-  struct ut_txv_ctx* ctx = (struct ut_txv_ctx*)impl;
+  (void)impl;
   (void)port;
   (void)timeout_ms;
-  return ctx->ptp_unstable ? -ETIMEDOUT : 0;
+  return ut_txv_ptp_wait_ret;
 }
 
 static struct rte_mempool* ut_txv_mempool_create_by_socket(
@@ -496,6 +498,7 @@ ut_txv_ctx* ut_txv_create(void) {
   ut_txv_ctx* ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
 
+  ut_txv_ptp_wait_ret = 0;
   ctx->impl.type = MT_HANDLE_MAIN;
   ctx->impl.tsc_hz = rte_get_tsc_hz();
   ctx->impl.inf[MTL_PORT_P].ptp_get_time_fn = ut_txv_ptp_time_fn;
@@ -1816,7 +1819,7 @@ int ut_txv_init_rl_pacing_at_bulk(ut_txv_ctx* ctx, unsigned int bulk, bool train
   s->s_type = MT_HANDLE_TX_VIDEO;
   s->ops.type = ST20_TYPE_FRAME_LEVEL;
   s->ring_count = ST_TX_VIDEO_SESSIONS_RING_SIZE;
-  ctx->ptp_unstable = train_fails;
+  ut_txv_ptp_wait_ret = train_fails ? -ETIMEDOUT : 0;
   int ret = ut_txv_setup_rl_pacing(ctx, 1, 0, false, train_fails ? NULL : trained, false);
   if (ret < 0) return ret;
   s->bulk = bulk;
@@ -1922,14 +1925,15 @@ int ut_txv_train_rl_pacing(ut_txv_ctx* ctx, uint16_t nb_tx_desc, long double pad
   return ut_txv_train_rl(ctx, nb_tx_desc, pad_ns);
 }
 
-int ut_txv_init_frame(ut_txv_ctx* ctx, enum st20_packing packing, enum st20_fmt fmt,
-                      uint32_t width, uint32_t height, bool interlaced) {
+static int ut_txv_init_frame_at(ut_txv_ctx* ctx, enum st20_packing packing,
+                                enum st20_fmt fmt, uint32_t width, uint32_t height,
+                                bool interlaced, enum st_fps fps) {
   struct st_tx_video_session_impl* s = &ctx->session;
   struct st20_tx_ops* ops = &s->ops;
   uint32_t lines = interlaced ? height >> 1 : height;
   int ret;
 
-  if (st_get_fps_timing(ST_FPS_P25, &s->fps_tm) < 0) return -EINVAL;
+  if (st_get_fps_timing(fps, &s->fps_tm) < 0) return -EINVAL;
   s->s_type = MT_HANDLE_TX_VIDEO;
   ops->type = ST20_TYPE_FRAME_LEVEL;
   ops->packing = packing;
@@ -1937,7 +1941,7 @@ int ut_txv_init_frame(ut_txv_ctx* ctx, enum st20_packing packing, enum st20_fmt 
   ops->width = width;
   ops->height = height;
   ops->interlaced = interlaced;
-  ops->fps = ST_FPS_P25;
+  ops->fps = fps;
   ops->num_port = 1;
   if (st20_get_pgroup(fmt, &s->st20_pg) < 0) return -EINVAL;
   /* as mtl_init() and tv_attach() set them, a field's lines when interlaced */
@@ -1950,6 +1954,11 @@ int ut_txv_init_frame(ut_txv_ctx* ctx, enum st20_packing packing, enum st20_fmt 
   s->pacing.trs = (long double)s->fps_tm.den * NS_PER_S / s->fps_tm.mul * 1080 / 1125 /
                   s->st20_total_pkts;
   return 0;
+}
+
+int ut_txv_init_frame(ut_txv_ctx* ctx, enum st20_packing packing, enum st20_fmt fmt,
+                      uint32_t width, uint32_t height, bool interlaced) {
+  return ut_txv_init_frame_at(ctx, packing, fmt, width, height, interlaced, ST_FPS_P25);
 }
 
 int ut_txv_mis_sized_pads(ut_txv_ctx* ctx) {
@@ -1976,8 +1985,9 @@ int ut_txv_mis_sized_pads(ut_txv_ctx* ctx) {
 }
 
 int ut_txv_train_rl_gpm_sl(ut_txv_ctx* ctx, enum st20_fmt fmt, uint32_t width,
-                           uint32_t height, long double pad_trs) {
-  int ret = ut_txv_init_frame(ctx, ST20_PACKING_GPM_SL, fmt, width, height, false);
+                           uint32_t height, enum st_fps fps, long double pad_trs) {
+  int ret =
+      ut_txv_init_frame_at(ctx, ST20_PACKING_GPM_SL, fmt, width, height, false, fps);
   if (ret < 0) return ret;
   return ut_txv_train_rl(ctx, 512, ctx->session.pacing.trs * pad_trs);
 }
@@ -2120,6 +2130,14 @@ void ut_txv_set_rl_format(ut_txv_ctx* ctx, uint32_t width, uint32_t height,
 void ut_txv_set_rl_queue_bps(ut_txv_ctx* ctx, int port, uint64_t bps) {
   ctx->rl_bps_set[port] = true;
   ctx->rl_bps[port] = bps;
+}
+
+void ut_txv_set_train_burst_trs(ut_txv_ctx* ctx, long double trs) {
+  ctx->train_burst_trs = trs;
+}
+
+void ut_txv_set_ptp_wait_ret(int ret) {
+  ut_txv_ptp_wait_ret = ret;
 }
 
 void ut_txv_set_ice_pf(ut_txv_ctx* ctx, int port, uint32_t rl_burst_size) {

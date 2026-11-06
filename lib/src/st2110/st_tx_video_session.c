@@ -374,11 +374,15 @@ static enum st20_packet_type tv_train_pad_type(struct st_tx_video_session_impl* 
   return tv_pkt_has_extra_hdr(s, offset) ? ST20_PKT_TYPE_EXTRA : ST20_PKT_TYPE_NORMAL;
 }
 
+/* the pads a tv_train_pacing() burst sends, as one pad a call is CPU bound above ~38
+ * Gb/s */
+#define TV_TRAIN_BURST (32)
+
 /* the pads of a frame tv_train_pacing() sends, the remain NORMAL ones included */
 static void tv_train_mix(struct st_tx_video_session_impl* s,
                          struct mt_pacing_pad_mix* mix) {
   int total = s->st20_total_pkts;
-  int remain = 32 - (total % 32);
+  int remain = TV_TRAIN_BURST - (total % TV_TRAIN_BURST);
 
   mix->normal = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
   mix->pkts = total + remain;
@@ -539,20 +543,20 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   }
 
   int total = s->st20_total_pkts;
-  int remain = 32 - (total % 32);
+  int remain = TV_TRAIN_BURST - (total % TV_TRAIN_BURST);
+  struct rte_mbuf* pads[TV_TRAIN_BURST];
 
   /* training stage */
   for (int loop = 0; loop < loop_frame; loop++) {
     uint64_t start = mt_get_ptp_time(impl, MTL_PORT_P);
-    for (int i = 0; i < total; i++) {
-      pad = s->pad[s_port][tv_train_pad_type(s, i)];
-      rte_mbuf_refcnt_update(pad, 1);
-      mt_txq_burst_busy(queue, &pad, 1, 10);
-    }
-    pad = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
-    for (int i = 0; i < remain; i++) {
-      rte_mbuf_refcnt_update(pad, 1);
-      mt_txq_burst_busy(queue, &pad, 1, 10);
+    for (int i = 0; i < total + remain; i += TV_TRAIN_BURST) {
+      for (int j = 0; j < TV_TRAIN_BURST; j++) {
+        enum st20_packet_type type =
+            i + j < total ? tv_train_pad_type(s, i + j) : ST20_PKT_TYPE_NORMAL;
+        pads[j] = s->pad[s_port][type];
+        rte_mbuf_refcnt_update(pads[j], 1);
+      }
+      mt_txq_burst_busy(queue, pads, TV_TRAIN_BURST, 10);
     }
     uint64_t end = mt_get_ptp_time(impl, MTL_PORT_P);
     double time = (double)(end - start) * total / (total + remain);
@@ -621,7 +625,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
  * meets or exceeds the required rate
  */
 #define INCREASE_BPS_FACTOR 1.005
-  bps_to_set = INCREASE_BPS_FACTOR * (rl_bps * rl_bps) / measured_bps;
+  bps_to_set = INCREASE_BPS_FACTOR * (double)rl_bps * (double)rl_bps / measured_bps;
   info("%s(%d), Retrain pacing with bps changed to %" PRIu64 "\n", __func__, idx,
        bps_to_set);
   mt_pacing_train_bps_result_add(impl, port, rl_bps, bps_to_set);
@@ -688,7 +692,8 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     if (s->pacing_way[i] == ST21_TX_PACING_WAY_RL) {
       ret = tv_train_pacing(impl, s, i);
       if (ret < 0) {
-        /* fallback to tsc pacing */
+        err("%s(%d), port %d rl training fail %d, fallback to tsc pacing\n", __func__,
+            idx, i, ret);
         s->pacing_way[i] = ST21_TX_PACING_WAY_TSC;
       }
     }
