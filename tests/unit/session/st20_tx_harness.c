@@ -573,6 +573,10 @@ void ut_txv_set_vrx(ut_txv_ctx* ctx, uint32_t vrx) {
   ctx->session.pacing.vrx = vrx;
 }
 
+void ut_txv_set_start_vrx(ut_txv_ctx* ctx, uint16_t start_vrx) {
+  ctx->session.ops.start_vrx = start_vrx;
+}
+
 void ut_txv_set_trs(ut_txv_ctx* ctx, long double trs_ns) {
   ctx->session.pacing.trs = trs_ns;
 }
@@ -1758,6 +1762,7 @@ static int ut_txv_setup_rl_pacing(ut_txv_ctx* ctx, int num_port,
   s->ops.num_port = num_port;
   s->ops.pad_interval = user_pad_interval;
   if (static_pad) s->ops.flags |= ST20_TX_FLAG_ENABLE_STATIC_PAD_P;
+  s->bulk = RTE_MIN(4, ST_SESSION_MAX_BULK); /* tv_attach()'s */
   s->ops.pacing = wide ? ST21_PACING_WIDE : ST21_PACING_NARROW;
   if (ctx->rl_layout) {
     if (st20_get_pgroup(s->ops.fmt, &s->st20_pg) < 0) return -EINVAL;
@@ -1788,7 +1793,9 @@ static int ut_txv_setup_rl_pacing(ut_txv_ctx* ctx, int num_port,
   s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].number =
       s->st20_total_pkts - extra - tail->number;
 laid_out:
-  s->st21_vrx_narrow = 8;
+  /* tv_attach()'s */
+  s->st21_vrx_narrow =
+      RTE_MAX(8, s->st20_total_pkts / (27000 * ((double)s->fps_tm.den / s->fps_tm.mul)));
   s->st21_vrx_wide = 720;
   /* before the tags below, which the failed tv_init_hw() would free */
   for (int i = 0; i < num_port; i++)
@@ -2179,6 +2186,10 @@ long double ut_txv_rl_drain(const ut_txv_ctx* ctx, int port) {
 
 long double ut_txv_rl_credit(const ut_txv_ctx* ctx, int port) {
   return ctx->session.rl_plan[port].bucket_ns;
+}
+
+long double ut_txv_rl_absorb(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.rl_plan[port].absorb_ns;
 }
 
 bool ut_txv_rl_armed(const ut_txv_ctx* ctx, int port) {
@@ -2685,6 +2696,16 @@ static void ut_txv_count_recovery_warns(enum mtl_log_level level, const char* fo
                                         ...) {
   (void)format;
   if (level == MTL_LOG_LEVEL_WARNING) ut_txv_recovery_ctx->recovery_warns++;
+}
+
+void ut_txv_set_rl_tail(ut_txv_ctx* ctx, int leg, bool tail, long double drained) {
+  ctx->session.trs_rl_tail[leg] = tail;
+  ctx->session.trs_rl_drained[leg] = drained;
+}
+
+bool ut_txv_rl_tail(const ut_txv_ctx* ctx, int leg, long double* drained) {
+  if (drained) *drained = ctx->session.trs_rl_drained[leg];
+  return ctx->session.trs_rl_tail[leg];
 }
 
 int ut_txv_recover(ut_txv_ctx* ctx, int leg) {

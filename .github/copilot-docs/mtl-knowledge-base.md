@@ -397,6 +397,12 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
         dedicated queues, no RTCP. `tv_frames_out()` asks the app for a frame only once every
         frame but the last one built is back, reclaiming every `ST_TX_VIDEO_RECLAIM_NS` while
         it waits (`tv_reclaim_poll()`, `STI_FRAME_RECLAIM_WAIT`): any 2 buffers keep zero copy. Before 26.07 it could wait for good.
+      - RL transmitter: a visit that waits for the warm-up window or finds the builder ring
+        empty bursts none (`video_trs_rl_reclaim()`), at most once a batch time
+        (rs_thresh / 2 NORMAL pkts of shaper time, `trs_reclaim_tsc`), catching up one call a
+        visit. The frame before leaves the ring full of done batches. A warm-up pad burst
+        frees one before its doorbell, ~1.4 µs at 720p59.94, which takes the first burst past
+        `ST_TX_VIDEO_RL_STALL_NS` (`St20TxRlReclaim`).
       - Hang: a hung queue holds the frames too, and with nothing to send the transmitter sees no
         burst fail. A wait past `tx_hang_detect_time_thresh` (at least 2 frame times) flags the
         recovery of every leg idle as long (`tv_frames_out_hang()`); a reclaim gap past half of
@@ -553,6 +559,8 @@ pacing->vrx -= 2; /* leave VRX space for deviation */
 - A short burst stashes the rest in `trs_inflight` and pads the slice it stopped in at once, or counts the pad in `trs_pad_inflight_num`, as that slice's bulk-4 burst would; the retry skips that slice's pad and walks the next ones.
 - A refused pad stops the bulk too, so no pkt passes it: the rest then starts at an untried slice (`trs_inflight_new_slice`), whose pad the retry checks.
 - A held frame's first bulk (`trs_inflight` until the target) sends no pad after its first slice, as bulk 4 never did; its later slices pad as usual.
+- The RL tail call (`video_trs_rl_tail_burst()`) carries only packet 0's slice behind its pads; the rest of a bulk of 16 then walks its slices from an untried one (`St20TxRlBulkTailTest`).
+- So `tv_rl_sawtooth_ns()`, which `absorb_ns` leaves out of the VRX lead, counts that slice, `min(bulk, 4)`, not the bulk (`St20TxBulkTest.RlBulkAbsorbsAsBulk4Does`).
 - So under backpressure each pad leaves after 0..k pkts of its slice, as at bulk 4, though the split points differ (`St20TxRlBulkShortBurstTest`).
 - Bulks of 4 or less keep the plain `trs_inflight` retry: RTP-level bulks need not be 4-aligned, as `st20_pkt_idx` restarts at an RTP timestamp change mid-bulk (`St20TxRlBulkOffsetTest`).
 - The user-meta pkt (`st20_frame_tx_start()` after a burst from pkt 0) goes out on the session queue on `MT_DRV_F_NO_SYS_TX_QUEUE` drivers, so it follows up to 16 pkts instead of 4.
@@ -665,11 +673,16 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
   - Between bursts: every queued pad reached the NIC before it. If the queue drained and the bucket refilled (the drain end fell behind TSC − `bucket_ns`), the drain end resets to TSC − `bucket_ns` and the rest shrinks. While `trim_pads` still fit it, the cuts land packet 0 on the plan;
     with fewer the pre-arm stops and WAIT_TARGET holds packet 0 behind the pads already queued, which drain before the target (`St20TxRlFastClockTest.PreemptedBetweenBurstsShortOfTheTrimPadsHolds`, `IdleShaperKeepsThePlanWhileTheTrimPadsFit`).
   - Inside a burst: its doorbell rang at some time up to the return, `last_burst_succ_time_tsc` (read by `video_trs_burst_succ()`, no extra TSC read).
-  - If the return is more than `ST_TX_VIDEO_RL_STALL_NS` (2 µs) past the burst's planned drain start, the doorbell may have found the shaper idle: the drain end restarts from the return (never overfills), and `video_trs_rl_pre_arm()` returns false, so WAIT_TARGET holds packet 0.
-  - The doorbell time is unknown, so releasing packet 0 behind the pads would make it late (stall before the doorbell) or early (after it).
+  - If the return is more than `ST_TX_VIDEO_RL_STALL_NS` (2 µs) past the burst's planned drain start, the doorbell may have found the shaper idle; the stall is counted.
+    Within the plan's `absorb_ns` the pre-arm keeps its plan and defers packet 0 behind its pads, or sends its last burst with packet 0 (the tail); past it the drain end restarts from the return (never overfills) and WAIT_TARGET holds packet 0.
+    Mechanisms and the `absorb_ns` formula: `doc/rl_pacing.md` 5.2–5.3. Invariants:
+    - Packet 0 is never early (`St20TxRlAbsorb`, `St20TxRlVrxFaults`).
+    - No visit makes more burst calls than the hold on the stall it absorbs, nor runs longer but by a TSC read (`St20TxRlTail.AbsorbedStallVisitIsNoLongerThanTheHold`).
+    - The call that sends packet 0 frees no more done batches than the hold's release call (`St20TxRlTail.TailVisitFreesNoMoreThanTheRelease`).
+    - A queue recovery drops a kept-back tail burst (`tv_transmitter_port_state_init()`).
   - The 2 µs is absolute because a burst's CPU cost does not scale with the format, while a pad does (~0.97 µs at 2160p59.94, ~8.7 µs at 720p60).
   - It is expected to be above a healthy 32-pad burst (not measured on hardware yet: a healthy run should keep `stat_trans_recalculate_warmup` at ~0) and at or below most timer ticks (2–10 µs). A shorter stall before the doorbell is not detected and delays packet 0 by up to its length.
-  - Behind the first burst the shaper is busy ~32 pads, so only a longer stall in a later burst holds.
+  - Behind the first burst ~32 pads are queued: a later burst's stall leaves the shaper no gap unless it outlasts them.
   - Tests: `St20TxRlWarmUpTest.Packet0LeavesOnTargetAfterAStallInAPadBurst` and `StallTheQueuedPadsCoverKeepsThePreArm`; `ut_trs_set_burst_stall()` stalls a burst before or after its doorbell.
   - Hardware, before the hold: E830 VF, 2× 720p60 st20p, wire timestamps from an E810 capture port whose PHC follows `CLOCK_REALTIME`, bpftrace for context switches and ≥ 1 µs interrupts on the scheduler CPU.
     - The 1 ms tick inside the pre-arm call moved packet 0 by 7.4 µs median (2.0 → 9.4 µs, max 4.0 → 15.4 µs).
@@ -678,6 +691,11 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
     - One 139 µs stall had no context switch, traced interrupt or SMI: unexplained.
 - Refused pads count as queued and retry, batched the same way, via `trs_pad_inflight_num` ahead of packet 0, which can only delay it. They retry as NORMAL pads: a refused cut pad hands its reference to the NORMAL one, so packet 0 is later, never early. Ports without a plan keep one pad per burst and per retry.
 - Without a plan, `video_trs_rl_warm_up()` queues `ceil((target − now) / trs)` single-pad bursts and `ST_TX_VIDEO_RL_STATE_WAIT_TARGET` holds packet 0 until the TSC reaches target, so a late tasklet launches it late. A planned port whose target is more than `warm_pkts`·`trs` away holds too, without pads. Target already past: no pads, packet 0 goes at once.
+- `video_trs_tasklet_handler()` runs the release scan before each session's visit and after the last (`video_trs_rl_release()`, `doc/rl_pacing.md` 5.4): a held packet 0 leaves at the first scan past its target, not a round later (`St20TxRlRelease`), and a port at most once a handler call (`trs_released`).
+  The scan reads the clock again after each release, so a target its own sends pass leaves in it if its port comes after the releaser in scan order (`St20TxRlReleaseScan`).
+  Behind a port whose pads the ring refused (`video_trs_rl_refused()`), the scans and the catch-up serve no later port, so a release can wait up to a round, bounded by hang detection (`tx_hang_detect_ms`, 1 s by default) (`F7RefusedRingWindow`).
+  A late entry found at the window entry holds while its other port or another session waits on refused pads (`St20TxRlRelease.LateEntryHoldsBehindARefusalOfTheCallBefore`, `LateEntryHoldsBehindItsOtherPortsRefusal`); one the sizing read finds is not checked. A tail call the ring refuses whole drops its pads and holds packet 0 to its target.
+- The mid-frame catch-up (`video_trs_rl_catch_up()`, `doc/rl_pacing.md` 5.5) is skipped while a visited RL packet 0 is due within 2 of its warm-up windows (`St20TxRlQueueAhead`).
 - `tv_init_pacing()` sets `warm_pkts` to 80% of `pkts_in_tr_offset`, capped at 128, or 8 at height ≤ 576; 0 without RL, for wide pacing and for ST22.
 - `stat_trans_troffset_mismatch`: target about two `trs` or more past, or more than `warm_pkts` pads (`warm_pkts`·`trs` with a plan) needed; no pads are sent.
 
@@ -691,16 +709,19 @@ Progressive, height ≥ 1080; T = frame time. Interlaced, 720p and SD use their 
   - Pads queued behind an unfinished frame would make packet 0 late, so the window cannot grow past that idle gap. The 80% is margin, not a tuning knob.
 - **Ring bound on a plan.** `tv_rl_plan_init()` keeps a plan only if (`warm_pkts`·`trs` + `bucket_ns`)/`pad_ns` + 1 ≤ `nb_tx_desc`/2, the aim inside `bucket_ns`. With the deep `MT_DEV_TX_DESC_DEEP` 2048, that must fit in 1023 pad drains (1024 less the `ceil()` pad), so the `warm_pkts` cap of 128 binds first; an RL port that frees lazily keeps 512, 255 drains, which the cap still fits.
 - **Trim pads in the window.** The last burst keeps `trim_pads` pads, enough to cut up to a pad (a cut under 1262 B takes at most 24 of its 27: 19 coarse, 5 fine; the slack absorbs the one-pad drop to a fresh TSC). With fewer, packet 0 would launch late by what they cannot cut (seen +14..+24 µs at SD). `tv_rl_plan_init()` holds a port whose full window has at most `trim_pads` − 1 pads:
-  `warm_pkts` 8 at height ≤ 576 gives ~10. Each frame, `video_trs_rl_pre_arm()` checks the pads left the same way, at its entry before any burst and after an idle shaper between bursts, and holds packet 0 when too few are left: WAIT_TARGET then sends it at the target, sooner than those pads would have (`St20TxRlFastClockTest.LateEntryShortOfTheTrimPadsHoldsPacket0ToItsTarget`).
+  `warm_pkts` 8 at height ≤ 576 gives ~10. Each frame, `video_trs_rl_pre_arm()` checks the pads left the same way, at its entry before any burst and after an idle shaper between bursts. After an idle shaper with too few left, it holds packet 0: WAIT_TARGET sends it at the target.
+  At the entry, a plan whose `absorb_ns` takes a pad sends the pads that fit with packet 0 in one tail call, as a held release would go, so packet 0 lands under a pad late whenever the tasklet next runs (`St20TxRlFastClockTest.LateEntryShortOfTheTrimPadsLandsWithinAPad`).
+  Without that, it holds (`LateEntryShortOfTheTrimPadsHoldsPacket0ToItsTarget`).
+  A last burst whose own sizing read leaves too few pads to cut, as when the tasklet is preempted between the entry check and that read, is judged on what they cannot cut: within `absorb_ns` it goes with packet 0 in one tail call, else packet 0 is held (`LateEntryTheSizingReadFindsIsJudgedAsOne`).
 - **Where the 128 cap binds.** Only UHD and above: 2160p is 524 → 128, a 4× shorter window. At 1080p it is 130 → 128, which makes no difference.
 
 **Tolerance at each point** (scheduler lateness, or a tasklet stall):
 
 | Point | With a plan | Without a plan |
 |---|---|---|
-| Reaching WAIT_WARMUP's pre-arm | While `trim_pads` pads still fit: packet 0 still lands at target + aim, within an 8 B cut after it. Later: no pads, WAIT_TARGET holds packet 0, so it leaves at the tasklet's poll at the target. At or past target: no pads, packet 0 late by the lateness. | ~0: WAIT_TARGET holds packet 0, so its launch is the tasklet's poll time. |
+| Reaching WAIT_WARMUP's pre-arm | While `trim_pads` pads fit: packet 0 lands at target + aim, within an 8 B cut after it. Later: if `pad_ns` ≤ `absorb_ns`, the pads that fit go with packet 0, under a pad late; else WAIT_TARGET holds it to the poll at the target. At or past target: no pads, packet 0 late by the lateness. | ~0: WAIT_TARGET holds packet 0, so its launch is the tasklet's poll time. |
 | Between pad bursts | A stall that ends before target shrinks the remaining pads (`stat_trans_recalculate_warmup`). If fewer than `trim_pads` are left, WAIT_TARGET holds packet 0, which leaves at the tasklet's poll at the target. | — |
-| Inside a pad burst | Covered by the pads already queued: no change. Otherwise, up to 2 µs: packet 0 late by up to the stall. Longer: WAIT_TARGET holds packet 0, so it leaves at the later of the tasklet's poll and the drain end of the pads already in the NIC (`stat_trans_recalculate_warmup`). | — |
+| Inside a pad burst | Covered by the pads already queued: no change. Otherwise, a largest gap up to the larger of `ST_TX_VIDEO_RL_STALL_NS` (2 µs) and `absorb_ns`: packet 0 late by up to that gap. Longer: WAIT_TARGET holds packet 0, so it leaves at the later of the tasklet's poll and the drain end of the pads already in the NIC (`stat_trans_recalculate_warmup`). | — |
 | Frame body | The transmitter keeps the NIC ring full, so a stall up to `nb_tx_desc`/2·`trs` (2 descriptors per chained pkt; `nb_tx_desc`·`trs` in copy mode) drains on time. Longer gives a wire gap, VRX underflow at RX, then a burst. | Same |
 
 | Format | `trs` | `tr_offset` | `warm_pkts` | Window | Default ring body (1024 pkts) | Ring-capped window: 512 / 2048 |

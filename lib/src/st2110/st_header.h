@@ -337,6 +337,13 @@ struct st_tx_video_session_impl {
 
   /* info for transmitter */
   uint64_t trs_target_tsc[MTL_SESSION_PORT_MAX];
+  uint64_t trs_reclaim_tsc[MTL_SESSION_PORT_MAX]; /* the next RL reclaim, not before */
+  /* the pre-arm left its last burst to go with packet 0, after pads ending at drained */
+  bool trs_rl_tail[MTL_SESSION_PORT_MAX];
+  long double trs_rl_drained[MTL_SESSION_PORT_MAX];
+  /* when the shaper ends the pkts sent so far, at trs each from packet 0's target */
+  uint64_t trs_wire_tsc[MTL_SESSION_PORT_MAX];
+  uint64_t trs_released[MTL_SESSION_PORT_MAX]; /* the transmitter visit releasing it */
   struct rte_mbuf* trs_inflight[MTL_SESSION_PORT_MAX][ST_TX_VIDEO_MAX_BULK];
   unsigned int trs_inflight_num[MTL_SESSION_PORT_MAX];
   unsigned int trs_inflight_idx[MTL_SESSION_PORT_MAX];
@@ -431,6 +438,9 @@ struct st_video_transmitter_impl {
   struct st_tx_video_sessions_mgr* mgr;
   struct mt_sch_tasklet_impl* tasklet;
   int idx; /* index for current transmitter */
+  /* the earliest RL packet 0 target held or deferred, 0 if none */
+  uint64_t pkt0_tsc;
+  uint64_t visit; /* video_trs_tasklet_handler() calls */
 };
 
 struct st_rx_video_slot_slice {
