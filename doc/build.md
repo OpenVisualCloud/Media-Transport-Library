@@ -464,22 +464,22 @@ For older kernel version on Red Hat, the issue is that Red Hat uses vault repos.
 
 ### 4.5. Compiler hardening
 
-The Linux build compiles the MTL meson projects with the hardening options below. `script/hardening_flags.py` prints them for a compiler, and the `meson.build` of each project applies them.
+The Linux build compiles the MTL meson projects with the hardening options below. The `meson.build` of each project adds them with `add_project_arguments()` and `add_project_link_arguments()`.
 
 | Option | Protection |
 | --- | --- |
 | `-fstack-protector-strong` | Stack buffer overflow canary |
 | `-fstack-clash-protection` | Stack clash |
 | `-fcf-protection=full` | Intel CET shadow stack (SHSTK) and indirect branch tracking (IBT) |
-| `-D_FORTIFY_SOURCE=3` | Buffer overflow checks in libc calls. Level 3 needs gcc 12 or clang 9 and glibc 2.34, so gcc 11 (Ubuntu 22.04, RHEL 9) gets 2. Not added when the compiler or `c_args`/`cpp_args` set a level (Ubuntu gcc does), with the meson option `optimization` at `0` or `plain` (buildtypes `debug`, `plain`), or with `b_sanitize`, which the sanitizers don't support |
+| `-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3`, or `=2` | Buffer overflow checks in libc calls. Level 3 needs gcc 12 or clang 9 and glibc 2.34, so gcc 11 (Ubuntu 22.04, RHEL 9) gets 2. Not added when `c_args` or `cpp_args` set a level, with the meson option `optimization` at `0` or `plain` (buildtypes `debug`, `plain`), or with `b_sanitize`, which the sanitizers don't support |
 | `-Wformat -Wformat-security -Werror=format-security` | Format string attacks |
 | `-Wl,-z,relro -Wl,-z,now` | Full RELRO, a read-only GOT |
 | `-Wl,-z,noexecstack` | Non-executable stack |
 | `b_pie=true`, and meson's `-fPIC` for shared objects | Position independent code for ASLR |
 
-The gcc of Rocky Linux and RHEL enables none of the compiler options by default. So the Rocky Linux 9 image build runs `.github/scripts/ci/scan/check-hardening.sh` on what `build.sh` builds there: libmtl, UnitTest, the samples, the sample plugins, MtlManager, KahawaiTest and RxTxApp. It fails on a binary without full RELRO, a non-executable stack, PIE, CET or the stack protector.
+The `-U_FORTIFY_SOURCE` removes the level that Ubuntu gcc sets by itself, so `-Werror` does not stop the build on a redefinition, and the level that the toolchain applies takes its place: 3 with gcc 12 and later and with clang, 2 with gcc 11 (Ubuntu 22.04, RHEL 9, Rocky Linux 9), which cannot apply 3. A level that `c_args` or `cpp_args` already set, also through `CFLAGS` or `CPPFLAGS`, is kept.
 
-`_FORTIFY_SOURCE` leaves no reliable mark in a binary, so `.github/scripts/ci/lint/test-scripts.sh` tests the rule that sets it instead.
+The gcc of Rocky Linux and RHEL enables none of the compiler options by default. So the Rocky Linux 9 image build runs `.github/scripts/ci/scan/check-hardening.sh` on what `build.sh` builds there: libmtl, UnitTest, the samples, the sample plugins, MtlManager, KahawaiTest and RxTxApp. It fails on a binary without full RELRO, a non-executable stack, PIE, CET or the stack protector.
 
 ## Next Steps
 Proceed to [Running MTL](./run.md) for further instructions.

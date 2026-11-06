@@ -24,10 +24,14 @@ plugins_ld_args = []
 
 # Compiler hardening, see doc/build.md
 if not is_windows
-  hardening = run_command(files('../script/hardening_flags.py'), 'c', get_option('optimization'),
-    get_option('b_sanitize'), cc.cmd_array(), get_option('c_args'), check : true).stdout().split('\n')
-  add_project_arguments(hardening[0].split(), language : 'c')
-  add_project_link_arguments(hardening[1].split(), language : 'c')
+  add_project_arguments('-fstack-protector-strong', '-fstack-clash-protection', '-fcf-protection=full',
+    '-Wformat', '-Wformat-security', '-Werror=format-security', language : 'c')
+  if get_option('optimization') not in ['0', 'plain'] and get_option('b_sanitize') == 'none' and not ' '.join(get_option('c_args')).contains('_FORTIFY_SOURCE')
+    fortify = cc.get_define('__USE_FORTIFY_LEVEL', prefix : '#include <string.h>',
+      args : ['-O2', '-U_FORTIFY_SOURCE', '-D_FORTIFY_SOURCE=3']) == '3' ? '3' : '2'
+    add_project_arguments('-U_FORTIFY_SOURCE', '-D_FORTIFY_SOURCE=' + fortify, language : 'c')
+  endif
+  add_project_link_arguments('-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack', language : 'c')
 endif
 
 # enable warning as error for non debug build

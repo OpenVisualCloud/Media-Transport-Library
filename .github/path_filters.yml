@@ -47,7 +47,6 @@ hash_mtl: &hash_mtl
   - script/build_jpegxs.sh
   - script/build_st22_avcodec_plugin.sh
   - build.sh
-  - script/hardening_flags.py
   - script/hash_sources_mtl.env
   - meson.build
   - meson_options.txt
@@ -105,7 +104,6 @@ hash_gstreamer: &hash_gstreamer
   - script/hash_sources_gstreamer.env
   - 'ecosystem/gstreamer_plugin/**'
   - 'tests/tools/gstreamer_tools/**'
-  - script/hardening_flags.py
 
 hash_plugins: &hash_plugins
   - .github/scripts/setup_environment.sh
@@ -114,7 +112,6 @@ hash_plugins: &hash_plugins
   - script/build_st22_avcodec_plugin.sh
   - script/common.sh
   - 'plugins/st22_avcodec/**'
-  - script/hardening_flags.py
   - VERSION
 
 hash_sources: &hash_sources
@@ -132,7 +129,6 @@ hash_sources: &hash_sources
 libmtl: &libmtl
   - build.sh
   - meson.build
-  - script/hardening_flags.py
   - meson_options.txt
   - VERSION
   - 'include/**'
@@ -223,7 +219,6 @@ clang_tidy: &clang_tidy
   - '.github/actions/clang-tidy/**'
   - .github/scripts/ci/scan/clang-tidy-setup.sh
   - .github/scripts/ci/scan/clang-analyzer.sh
-  - script/hardening_flags.py
   - .github/code-scan/codechecker.skip
   - .github/code-scan/codechecker-requirements.txt
   - Taskfile.yml
@@ -266,7 +261,6 @@ fuzz_tests:
   - Taskfile.yml
   - *hash_dpdk
   - meson.build
-  - script/hardening_flags.py
   - meson_options.txt
   - VERSION
   - 'include/**'
@@ -299,8 +293,8 @@ base_build:
 # root less .dockerignore, which drops .github/ except check-hardening.sh, so the
 # hash_<name> filters do not apply: they hold .github/scripts/setup_environment.sh.
 # Each image builds DPDK and the eBPF/XDP libraries with the scripts named below,
-# and runs build.sh and the unit suite, whose meson projects run
-# hardening_flags.py (in libmtl); the rocky9 one then runs check-hardening.sh.
+# and runs build.sh and the unit suite; the rocky9 one then runs
+# check-hardening.sh.
 # The image also holds a copy of script/, but the job runs no other script, so a
 # change to one does not run the job.
 docker_build:
@@ -336,7 +330,6 @@ scripts:
   - .github/workflows/cicd-pr-check.yml
   - .github/scripts/ci/lint/test-scripts.sh
   - .github/scripts/setup_environment.sh
-  - script/hardening_flags.py
   - .github/scripts/ci/scan/check-hardening.sh
   - versions.env
   - 'patches/dpdk/**'
@@ -378,13 +371,12 @@ docs:
   - VERSION
 
 # docker_build.yml, manager-docker-build. The build context is the repository
-# root less .dockerignore, and the image copies manager/ and script/hardening_flags.py.
+# root less .dockerignore, and the image copies manager/.
 manager_build:
   - .github/path_filters.yml
   - .github/workflows/docker_build.yml
   - .dockerignore
   - 'manager/**'
-  - script/hardening_flags.py
   - VERSION
 
 # docker_build.yml, compose-validate. It parses the compose files only.

@@ -6,15 +6,16 @@
 project('mtl_ffmpeg_plugin_unit_tests', 'c', 'cpp', default_options : ['buildtype=release', 'b_pie=true'])
 
 # Compiler hardening, see doc/build.md
-hardening_c = run_command(files('../../../script/hardening_flags.py'), 'c', get_option('optimization'),
-  get_option('b_sanitize'), meson.get_compiler('c').cmd_array(), get_option('c_args'),
-  check : true).stdout().split('\n')
-hardening_cpp = run_command(files('../../../script/hardening_flags.py'), 'c++', get_option('optimization'),
-  get_option('b_sanitize'), meson.get_compiler('cpp').cmd_array(), get_option('cpp_args'),
-  check : true).stdout().split('\n')
-add_project_arguments(hardening_c[0].split(), language : 'c')
-add_project_arguments(hardening_cpp[0].split(), language : 'cpp')
-add_project_link_arguments(hardening_cpp[1].split(), language : 'cpp')
+add_project_arguments('-fstack-protector-strong', '-fstack-clash-protection', '-fcf-protection=full',
+  '-Wformat', '-Wformat-security', '-Werror=format-security', language : ['c', 'cpp'])
+foreach lang : ['c', 'cpp']
+  if get_option('optimization') not in ['0', 'plain'] and get_option('b_sanitize') == 'none' and not ' '.join(get_option(lang + '_args')).contains('_FORTIFY_SOURCE')
+    fortify = meson.get_compiler(lang).get_define('__USE_FORTIFY_LEVEL', prefix : '#include <string.h>',
+      args : ['-O2', '-U_FORTIFY_SOURCE', '-D_FORTIFY_SOURCE=3']) == '3' ? '3' : '2'
+    add_project_arguments('-U_FORTIFY_SOURCE', '-D_FORTIFY_SOURCE=' + fortify, language : lang)
+  endif
+endforeach
+add_project_link_arguments('-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack', language : 'cpp')
 
 subdir('mtl')
 

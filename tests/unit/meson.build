@@ -11,11 +11,14 @@ unit_link_args = []
 # Compiler hardening, see doc/build.md. lib/meson.build sets it for the C sources; the C++
 # sources and the C++ link of UnitTest take it as target arguments.
 if not is_windows
-  unit_hardening = run_command(files('../../script/hardening_flags.py'), 'c++', get_option('optimization'),
-    get_option('b_sanitize'), meson.get_compiler('cpp').cmd_array(), get_option('cpp_args'),
-    check : true).stdout().split('\n')
-  unit_cpp_args += unit_hardening[0].split()
-  unit_link_args += unit_hardening[1].split()
+  unit_cpp_args += ['-fstack-protector-strong', '-fstack-clash-protection', '-fcf-protection=full',
+    '-Wformat', '-Wformat-security', '-Werror=format-security']
+  if get_option('optimization') not in ['0', 'plain'] and get_option('b_sanitize') == 'none' and not ' '.join(get_option('cpp_args')).contains('_FORTIFY_SOURCE')
+    fortify = meson.get_compiler('cpp').get_define('__USE_FORTIFY_LEVEL', prefix : '#include <string.h>',
+      args : ['-O2', '-U_FORTIFY_SOURCE', '-D_FORTIFY_SOURCE=3']) == '3' ? '3' : '2'
+    unit_cpp_args += ['-U_FORTIFY_SOURCE', '-D_FORTIFY_SOURCE=' + fortify]
+  endif
+  unit_link_args += ['-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack']
 endif
 
 # rte_eal_init() dlopens every driver in RTE_EAL_PMD_PATH and those drivers request the bus
