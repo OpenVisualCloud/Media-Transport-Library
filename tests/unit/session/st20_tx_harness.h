@@ -25,10 +25,14 @@ extern "C" {
 
 typedef struct ut_txv_ctx ut_txv_ctx;
 
+/* enum st21_tx_pacing_way */
 enum ut_txv_pacing_way {
   UT_TXV_PACING_RL = 1,
   UT_TXV_PACING_TSC = 2,
+  UT_TXV_PACING_TSN = 3,
   UT_TXV_PACING_PTP = 4,
+  UT_TXV_PACING_BE = 5,
+  UT_TXV_PACING_TSC_NARROW = 6,
 };
 
 /* Initialise the shared DPDK EAL. Idempotent — safe to call once per gtest
@@ -125,6 +129,12 @@ enum { UT_TXV_IOVA_PAGES_MAX = 2, UT_TXV_IOVA_PAGE_LEN = 64 };
 mtl_iova_t ut_txv_frame_offset_iova(ut_txv_ctx* ctx, mtl_iova_t iova,
                                     const mtl_iova_t* page_iova, uint16_t pages,
                                     size_t offset);
+/* Drives tv_tasklet_frame() one visit at pkt_idx of a 2-pkt frame, its next pkt due
+ * ahead_ns past the tsc. Returns the shortest lead the builder measured. */
+int64_t ut_txv_run_frame_visit(ut_txv_ctx* ctx, int pkt_idx, int64_t ahead_ns);
+/* The next ut_txv_run_frame_visit() is slice level, the app reporting lines ready; -1,
+ * the default, keeps it frame level. */
+void ut_txv_set_visit_slice_lines(ut_txv_ctx* ctx, int lines);
 /* Drives tv_tasklet_rtp() with one app packet whose st20_rfc4175_rtp_hdr row
  * number carries the given field parity, so the production builders' F-bit
  * extraction is what tv_sync_pacing() is told. tx_no_chain selects tv_build_rtp()
@@ -394,6 +404,18 @@ uint32_t ut_txv_pacing_warm_pkts(const ut_txv_ctx* ctx);
 long double ut_txv_rl_drain(const ut_txv_ctx* ctx, int port);
 long double ut_txv_rl_credit(const ut_txv_ctx* ctx, int port);
 long double ut_txv_rl_absorb(const ut_txv_ctx* ctx, int port);
+int64_t ut_txv_rl_vrx_budget(const ut_txv_ctx* ctx, int port);
+long double ut_txv_rl_refill(const ut_txv_ctx* ctx, int port);
+/* the pacing way of every port of the next ut_txv_init_rl_pacing(), RL unless set */
+void ut_txv_set_init_pacing_way(ut_txv_ctx* ctx, enum ut_txv_pacing_way way);
+/* s->trs_wire_tsc[port], the wire end only an RL port keeps */
+uint64_t ut_txv_trs_wire_tsc(const ut_txv_ctx* ctx, int port);
+uint64_t ut_txv_rl_vrx_frames(const ut_txv_ctx* ctx);
+/* one port paced way, its RL plan's vrx_budget_ns (0: judges no pkt) */
+void ut_txv_set_port_pacing(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
+                            int64_t vrx_budget_ns);
+/* stat_rl.start_late, the frames tv_sync_pacing() started past their target */
+uint64_t ut_txv_rl_start_late(const ut_txv_ctx* ctx);
 uint32_t ut_txv_pacing_vrx(const ut_txv_ctx* ctx);
 /* the rest of the rl_plan[] the transmitter's pre-arm reads */
 bool ut_txv_rl_armed(const ut_txv_ctx* ctx, int port);
@@ -485,9 +507,33 @@ uint32_t ut_txv_rtp_time_stamp(const ut_txv_ctx* ctx);
  * printer. Returns the number of log lines emitted; *locked_lines receives how
  * many of them were emitted while the session spinlock was held. */
 int ut_txv_run_sessions_stat(ut_txv_ctx* ctx, int* locked_lines);
+/* tv_detach() of the session, as st20_tx_free() does; its ERR lines */
+int ut_txv_run_detach(ut_txv_ctx* ctx);
+/* st_tx_video_session_migrate() of the session to scheduler 1, as tx_video_migrate_to()
+ * does, then relinks it on scheduler 0; its ERR lines */
+int ut_txv_run_migrate(ut_txv_ctx* ctx);
 /* First log line captured by the last ut_txv_run_sessions_stat() call. */
 const char* ut_txv_stat_first_log_line(void);
+/* its first error line, "" without one */
+const char* ut_txv_stat_error_log_line(void);
+/* stat_rl as the tasklet leaves it after frames flagged, pkt0 of them at packet 0, the
+ * latest late_ns past its target */
+void ut_txv_set_rl_vrx(ut_txv_ctx* ctx, uint64_t frames, uint64_t pkt0, uint64_t late_ns);
 void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames);
+/* sch->allow_sleep of the session's mgr's scheduler */
+void ut_txv_set_sch_allow_sleep(ut_txv_ctx* ctx, bool allow_sleep);
+/* other's session in slot 1 of ctx's mgr, so the stats dump judges both; NULL removes it
+ */
+void ut_txv_set_mgr_neighbour(ut_txv_ctx* ctx, ut_txv_ctx* other);
+/* ERR lines of the last ut_txv_run_sessions_stat() call */
+int ut_txv_stat_err_lines(void);
+/* the avg_ns_per_loop of the session's mgr's scheduler */
+void ut_txv_set_sch_avg_loop_ns(ut_txv_ctx* ctx, uint64_t ns);
+/* the shortest lead the session's builder measured since the stats took it */
+void ut_txv_set_lead_ns(ut_txv_ctx* ctx, int64_t lead_ns);
+int64_t ut_txv_lead_ns(ut_txv_ctx* ctx);
+long double ut_txv_pacing_frame_time(const ut_txv_ctx* ctx);
+int ut_txv_total_pkts(const ut_txv_ctx* ctx);
 uint64_t ut_txv_stat_snapshot_port_frames(const ut_txv_ctx* ctx);
 
 /* tv_pkts_capable_chain() of a one-port frame-level session, with RTCP or not: whether
