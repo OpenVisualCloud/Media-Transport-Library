@@ -5,8 +5,8 @@
  * arithmetic video_trs_rl_pre_arm() did inline before it moved there, a guard that the
  * move changed nothing: over a grid of shaper drains, pad sizes, trim pad counts and
  * launch gaps every burst and drain end must be identical. A change to the plan on
- * purpose updates the frozen copy with it. Also pins st_tx_video_rl_tokens() against a
- * copy of ice's RL profile encode.
+ * purpose updates the frozen copy with it. Also pins st_tx_video_rl_tokens() and
+ * st_tx_video_rl_timeslot_tokens() against a copy of ice's RL profile encode.
  *
  * Run: ./build_unit/tests/unit/UnitTest --gtest_filter='St20TxRlModelTest.*'
  */
@@ -14,6 +14,8 @@
 #include <gtest/gtest.h>
 
 #include <vector>
+
+#include "session/st20_tx/rl_vrx_model.h"
 
 extern "C" {
 #include "st2110/st_tx_video_rl.h"
@@ -182,19 +184,21 @@ TEST(St20TxRlModelTest, APlanEndsWithinAFineTrimPastLaunch) {
   }
 }
 
-/* ice_sched_bw_to_rl_profile(): the tokens of a timeslot of 32 << encode psm_clk cycles,
- * and the encode it takes, for a rate in kbps */
-static int64_t IceTokens(int64_t psm_hz, int64_t kbps, int encode) {
-  int64_t bytes_per_sec = kbps * 1000 / 8;
-  int64_t ts_rate = psm_hz / ((int64_t)1 << encode) / 32;
-  if (ts_rate <= 0) return 0;
-  return (bytes_per_sec * 10000 / ts_rate + 5000) / 10000;
-}
+/* the timeslot tv_rl_plan_init() gates on is the longest ice programs at the rate, on
+ * every psm_clk it reads, at each encode edge and across the whole range */
+TEST(St20TxRlModelTest, TimeslotTokensAreTheLongestIcePrograms) {
+  std::vector<uint64_t> rates;
+  for (uint64_t bps = 62500; bps < 12500000000ull; bps += bps / 997 + 1)
+    rates.push_back(bps);
+  for (int64_t psm : kUtIcePsmHz)
+    for (int encode = 0; encode < 20; encode++) {
+      const uint64_t edge = (uint64_t)((128.5L * psm / 32 / (1 << encode)) / 1000) * 1000;
+      for (uint64_t bps : {edge - 1000, edge, edge + 1000}) rates.push_back(bps);
+    }
 
-static int IceEncode(int64_t psm_hz, int64_t kbps) {
-  for (int i = 0; i < 64; i++)
-    if (IceTokens(psm_hz, kbps, i) > 128) return i;
-  return -1;
+  for (uint64_t bps : rates)
+    ASSERT_EQ(st_tx_video_rl_timeslot_tokens(bps), (uint64_t)ut_ice_timeslot_tokens(bps))
+        << "bps " << bps;
 }
 
 /* The shaper releases a packet on its timeslot grid. Whatever the NIC clock, a timeslot
@@ -202,24 +206,23 @@ static int IceEncode(int64_t psm_hz, int64_t kbps) {
  * timeslot of every rate ice takes, on every psm_clk it reads. A rate is no faster than
  * the bytes/s MTL programs, which iavf or the PMD truncates to kbps. */
 TEST(St20TxRlModelTest, TokensCoverEveryIceTimeslot) {
-  const int64_t kPsmHz[] = {367647059, 390625000, 416666667, 446428571};
   constexpr int64_t kMinKbps = 500, kMaxKbps = 100000000; /* ICE_SCHED_MIN/MAX_BW */
 
-  for (int64_t psm : kPsmHz) {
+  for (int64_t psm : kUtIcePsmHz) {
     /* a faster rate takes a shorter timeslot; an encode has most tokens at its top */
-    for (int encode = IceEncode(psm, kMaxKbps); encode <= IceEncode(psm, kMinKbps);
-         encode++) {
+    for (int encode = ut_ice_encode(psm, kMaxKbps);
+         encode <= ut_ice_encode(psm, kMinKbps); encode++) {
       int64_t lo = kMinKbps, hi = kMaxKbps;
       while (lo < hi) {
         int64_t mid = lo + (hi - lo + 1) / 2;
-        if (IceEncode(psm, mid) >= encode)
+        if (ut_ice_encode(psm, mid) >= encode)
           lo = mid;
         else
           hi = mid - 1;
       }
       for (int64_t kbps : {lo, kMaxKbps}) {
-        if (IceEncode(psm, kbps) != encode) continue;
-        EXPECT_LE((double)IceTokens(psm, kbps, encode),
+        if (ut_ice_encode(psm, kbps) != encode) continue;
+        EXPECT_LE((double)ut_ice_tokens(psm, kbps, encode),
                   (double)st_tx_video_rl_tokens((uint64_t)kbps * 1000 / 8))
             << "psm " << psm << " encode " << encode << " kbps " << kbps;
       }

@@ -628,14 +628,18 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
   [target, target + 2·aim]: the aim makes it never early and adds at most 2·aim of lateness the
   plan cannot see (`St20TxRlFastClockTest.TimeslotGridNeverReleasesPacket0EarlyBehindTheAim`,
   `ut_trs_set_shaper_timeslot()`).
-  - `tv_rl_plan_init()` keeps a plan only while aim ≤ `ST_TX_VIDEO_RL_TIMESLOT_MAX_NS` (2 µs),
-    comparing aim, T's upper bound, as T itself is unknown. On E830 a ~4 µs timeslot (720p25)
-    reached +10.8 µs, ones up to ~2 µs (720p50 at 2.03, 1080p25 at 1.80) stayed within
-    +8.1 µs, and the hold path was as accurate at those rates (+3.6..+5.1 µs).
-  - It is a rate threshold: 257 B over 2 µs, so a drain below ~128.5 MB/s holds, 8-bit 1080p25
-    too. That arms 2160p59.94, 1080p59.94/50/29.97/25, 1080i59.94 and 720p59.94 (aim
-    0.19–1.80 µs) and holds 720p25 (4.05 µs); SD holds on its window first. 720p50 is ~1.5%
-    over the edge, so its trained `pad_ns` decides: it held on hardware, on time both ways.
+  - `tv_rl_plan_init()` keeps a plan only while aim + T ≤ `ST_TX_VIDEO_RL_GRID_LATE_MAX_NS`
+    (4 µs), the TX side's share of the 0..+10 µs launch bound, calibrated on E830, not an
+    ice or DPDK TM limit. T is
+    `st_tx_video_rl_timeslot_tokens(bps)`·`pad_ns`/S: the longest timeslot
+    `ice_sched_bw_to_rl_profile()` programs at the kbps iavf or the PMD truncates bps to, over
+    the four psm_clks ice reads (`St20TxRlModelTest.TimeslotTokensAreTheLongestIcePrograms`).
+    That model gives 720x288p50's measured ~8.2 µs timeslot (446 MHz, encode 7, 235 B, on a
+    clock ~11.7% fast).
+  - On E830, 720p25 (aim 4.05 + T ~2.2 µs) reached +10.8 µs, 720p50 (2.03 + ~1.1 µs) stayed
+    within +8.1 µs, and the hold path measured +3.6..+5.1 µs at those rates.
+  - SD holds: at ~30 MB/s every timeslot is over 128 B, > 4.2 µs, so 2·T alone exceeds the
+    0..+10 µs launch budget whatever the aim.
   - The ~2 µs release grid once inferred on the early side came from frame-to-frame step sizes
     and is unconfirmed. Measured directly on the shaper at 720x288p50 (~25.6 MB/s programmed,
     ~8.2 µs timeslot; forced leads, credit sweeps), the launch minus the plan stayed within
@@ -654,12 +658,10 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
   | 480p59.94 | ~4.7 µs | −4.2 / −0.8 / +7.7 µs | hold (trim pads) | hold |
   | 576p50 | ~4.2 µs | −2.5 / +3.0 / +14.1 µs | — | hold |
   | 720p25 | 4.05 µs | −0.6 / +1.1 / +5.0 µs | +5.6..+9.3 µs, one frame +10.76 µs | hold |
-  | 720p50 | 2.03 µs | +0.7 / +2.0 / +5.2 µs | +5.4..+8.1 µs | hold |
+  | 720p50 | 2.03 µs | +0.7 / +2.0 / +5.2 µs | +5.4..+8.1 µs | armed |
   | 1080p25 | 1.80 µs | — | +4.8..+7.5 µs | armed |
   | 1080p59.94 | 0.75 µs | +3.0 / +4.3 / +5.7 µs | +4.3 / +5.8 / +7.5 µs | armed |
   | 1080p59.94 ×8, VRX margin | 0.75 µs | — | pass | armed |
-
-  Now (min / avg / max): held 480p59.94 +3.73 / +4.15 / +4.98 µs, 576p50 +3.74 / +4.16 / +5.03 µs, 720p25 +3.71 / +4.25 / +5.10 µs, 720p50 +3.61 / +4.11 / +5.07 µs; armed 720p59.94 +4.50 / +6.15 / +7.50 µs, 1080p25 +5.26 / +6.43 / +7.54 µs, 1080p59.94 +4.02 / +5.43 / +7.00 µs, 1080p60 +4.43 / +5.88 / +7.31 µs, 2160p59.94 +3.26 / +3.67 / +4.50 µs; 1080p59.94 ×8 VRX margin passes.
 
   The bucket alone without the aim (720p25: +1.9..+6.0 µs over 4 runs) leaves the early group a timeslot before the plan, which the model says can go early.
 - Target is MTL's PTP time turned into TSC once per frame in `tv_sync_pacing()`, so on the wire the launch also carries that clock's error. It is independent of how many sessions share the scheduler only while every warm-up starts before its target and has a plan.
@@ -728,14 +730,14 @@ Progressive, height ≥ 1080; T = frame time. Interlaced, 720p and SD use their 
   All runs were compliant narrow, with 0 VRX failures. A 4× longer train moved packet 0 by less than one pad, so shaper drift over the train is not what limits `warm_pkts`.
 - **Concurrent sessions.** Each planned session's packet 0 is set by its own queue's shaper, as long as the scheduler loop reaches its pre-arm inside the window. Every other tasklet on that scheduler adds its pass time. A pre-arm pass costs ⌈n/32⌉ `tx_burst` calls.
 - **Non-isolated cores.** The tolerances above are the whole margin. A preemption, softirq or SMT sibling on a shared core can exceed them, so this is best effort (`doc/isolation.md`, `tests/tools/isolate/isolate.sh`). A larger `nb_tx_desc` raises only the frame-body row, unless the cap is ring-derived.
-- **No plan, so the #1622 behavior.** This happens with:
+- **No plan, so the #1622 behavior.** `tv_rl_plan_init()` warns once a port at session create. This happens with:
   - a user `ops.pad_interval` or the static pad table;
   - a DPDK ice PF without the `rl_burst_size` devarg, or with one that cannot refill in the idle gap before the window;
   - drivers other than iavf and ice;
   - no programmed rate on the queue: a shared TX queue, AF_XDP, the kernel socket path;
   - a window that fails the half-ring check, for example with a small `nb_tx_desc`;
   - a window of at most `trim_pads` − 1 pads: every format of height ≤ 576;
-  - an aim past `ST_TX_VIDEO_RL_TIMESLOT_MAX_NS`: a drain below ~128.5 MB/s, such as 720p25, 720p50 by a ~1.5% margin, and 8-bit 1080p25.
+  - aim + T past `ST_TX_VIDEO_RL_GRID_LATE_MAX_NS`: SD, 720p25 and 8-bit 1080p25.
 - **Linear.** `ST21_PACING_LINEAR` is declared in `st20_api.h`, but nothing in `lib/src` reads it on TX, so every TX schedule is gapped.
   - Linear has no idle gap, so there is no window for warm-up or pre-arm, and RL alone has no launch time to re-anchor each frame.
   - It would need closed-loop rate correction on RL, or TSN launch time (§4.3.3 in `doc/design.md`, E830 PF), which stamps every packet.

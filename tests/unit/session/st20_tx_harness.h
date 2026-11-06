@@ -372,6 +372,10 @@ int ut_txv_init_rl_pacing(ut_txv_ctx* ctx, int num_port, uint16_t user_pad_inter
  * set; fps is the field rate when interlaced. */
 void ut_txv_set_rl_format(ut_txv_ctx* ctx, uint32_t width, uint32_t height,
                           bool interlaced, enum st_fps fps);
+/* The next ut_txv_init_rl_pacing() lays the frame out in packing and fmt by the real
+ * tv_init_pkt(), on RL queues of nb_tx_desc descriptors. */
+void ut_txv_set_rl_layout(ut_txv_ctx* ctx, enum st20_packing packing, enum st20_fmt fmt,
+                          uint16_t nb_tx_desc);
 /* The bytes/s on the RL queue of session port port at ut_txv_init_rl_pacing(), as a
  * retrain left it; unset, what tv_init_hw() asks mt_txq_get() for. */
 void ut_txv_set_rl_queue_bps(ut_txv_ctx* ctx, int port, uint64_t bps);

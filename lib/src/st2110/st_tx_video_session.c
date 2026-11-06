@@ -451,6 +451,8 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
     if (armed) {
       /* the timeslot grid releases packet 0 up to a timeslot early: aim one late */
       long double aim = st_tx_video_rl_tokens(bps) * plan->pad_ns / pad_size;
+      long double timeslot =
+          st_tx_video_rl_timeslot_tokens(bps) * plan->pad_ns / pad_size;
       /* the bucket fills at the programmed rate, not the trained one */
       long double refill = (long double)burst_size * NS_PER_S / bps;
       plan->bucket_ns = refill + aim;
@@ -464,15 +466,16 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
               window > (st_tx_video_rl_trim_pads(pad_size) - 1) * plan->pad_ns &&
               /* the bucket refills before the window opens */
               refill <= idle &&
-              /* aim, the bound of the unknown timeslot, is short enough */
-              aim <= ST_TX_VIDEO_RL_TIMESLOT_MAX_NS;
+              /* the grid releases packet 0 within a timeslot of target + aim */
+              aim + timeslot <= ST_TX_VIDEO_RL_GRID_LATE_MAX_NS;
     }
     if (!armed) {
       plan->pad_ns = 0;
       plan->bucket_ns = 0;
       plan->armed = false;
       if (s->pacing_way[i] == ST21_TX_PACING_WAY_RL)
-        info("%s[%02d], port %d no rl plan, holds packet 0\n", __func__, idx, i);
+        warn("%s[%02d], port %d no rl plan, holds packet 0, VRX at risk if late\n",
+             __func__, idx, i);
       continue;
     }
     plan->pad_size = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;

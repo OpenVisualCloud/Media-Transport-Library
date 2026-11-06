@@ -100,6 +100,10 @@ struct ut_txv_ctx {
   uint32_t rl_height;
   bool rl_interlaced;
   enum st_fps rl_fps;
+  bool rl_layout; /* ut_txv_set_rl_layout() */
+  enum st20_packing rl_packing;
+  enum st20_fmt rl_fmt;
+  uint16_t rl_nb_tx_desc; /* 0 for 512 */
   struct mt_txq_entry rl_queue[MTL_SESSION_PORT_MAX];
   struct mt_tx_queue rl_txq[MTL_SESSION_PORT_MAX];
   bool rl_bps_set[MTL_SESSION_PORT_MAX];
@@ -2169,16 +2173,23 @@ static int ut_txv_setup_rl_pacing(ut_txv_ctx* ctx, int num_port,
   uint32_t extra = 0;
 
   if (st_get_fps_timing(ctx->rl_fps, &s->fps_tm) < 0) return -EINVAL;
-  s->ops.fmt = ST20_FMT_YUV_422_10BIT;
+  s->ops.fmt = ctx->rl_layout ? ctx->rl_fmt : ST20_FMT_YUV_422_10BIT;
   s->ops.width = width;
   s->ops.height = height;
   s->ops.fps = ctx->rl_fps;
-  s->ops.packing = ST20_PACKING_GPM;
+  s->ops.packing = ctx->rl_layout ? ctx->rl_packing : ST20_PACKING_GPM;
   s->ops.interlaced = ctx->rl_interlaced;
   s->ops.num_port = num_port;
   s->ops.pad_interval = user_pad_interval;
   if (static_pad) s->ops.flags |= ST20_TX_FLAG_ENABLE_STATIC_PAD_P;
   s->ops.pacing = wide ? ST21_PACING_WIDE : ST21_PACING_NARROW;
+  if (ctx->rl_layout) {
+    if (st20_get_pgroup(s->ops.fmt, &s->st20_pg) < 0) return -EINVAL;
+    ctx->impl.pkt_udp_suggest_max_size = MTL_PKT_MAX_RTP_BYTES;
+    s->st20_frame_size = (size_t)width * lines * s->st20_pg.size / s->st20_pg.coverage;
+    if (tv_init_pkt(&ctx->impl, s, &s->ops, NULL) < 0) return -EINVAL;
+    goto laid_out;
+  }
   /* tv_init_pkt()'s GPM: 480 pixels a 1200-byte pkt, a field's lines when interlaced */
   s->st20_total_pkts = (int)((width * lines + 479) / 480);
   s->st20_pkt_len = 1200;
@@ -2200,6 +2211,7 @@ static int ut_txv_setup_rl_pacing(ut_txv_ctx* ctx, int num_port,
   s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size = s->st20_pkt_size;
   s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].number =
       s->st20_total_pkts - extra - tail->number;
+laid_out:
   s->st21_vrx_narrow = 8;
   s->st21_vrx_wide = 720;
   /* before the tags below, which the failed tv_init_hw() would free */
@@ -2212,7 +2224,7 @@ static int ut_txv_setup_rl_pacing(ut_txv_ctx* ctx, int num_port,
     for (int j = 0; j < ST_TX_VIDEO_RL_TRIM_PAD_MAX && !ctx->no_trim_pads; j++)
       s->trim_pad[i][j] = (struct rte_mbuf*)&ctx->trim_pad_tag;
     if (inf->drv_info.drv_type != MT_DRV_ICE) inf->drv_info.drv_type = MT_DRV_IAVF;
-    inf->nb_tx_desc = 512;
+    inf->nb_tx_desc = ctx->rl_nb_tx_desc ? ctx->rl_nb_tx_desc : 512;
     s->port_maps[i] = (enum mtl_port)i;
     s->pacing_way[i] = ST21_TX_PACING_WAY_RL;
     /* a pre-train result keeps tv_train_pacing() off the NIC */
@@ -2549,6 +2561,14 @@ void ut_txv_set_rl_format(ut_txv_ctx* ctx, uint32_t width, uint32_t height,
   ctx->rl_height = height;
   ctx->rl_interlaced = interlaced;
   ctx->rl_fps = fps;
+}
+
+void ut_txv_set_rl_layout(ut_txv_ctx* ctx, enum st20_packing packing, enum st20_fmt fmt,
+                          uint16_t nb_tx_desc) {
+  ctx->rl_layout = true;
+  ctx->rl_packing = packing;
+  ctx->rl_fmt = fmt;
+  ctx->rl_nb_tx_desc = nb_tx_desc;
 }
 
 void ut_txv_set_rl_queue_bps(ut_txv_ctx* ctx, int port, uint64_t bps) {
