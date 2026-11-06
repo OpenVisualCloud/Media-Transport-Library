@@ -484,3 +484,16 @@ void ut30_feed_full_frame(ut30_test_ctx* ctx, uint16_t seq_start, uint32_t ts_st
 void ut30_invoke_rx_audio_session_stat(ut30_test_ctx* ctx) {
   rx_audio_session_stat(&ctx->mgr, &ctx->session);
 }
+
+int ut30_ops_check_source(const struct st_rx_source_info* src) {
+  struct st30_rx_ops ops;
+
+  memset(&ops, 0, sizeof(ops));
+  ops.num_port = 2;
+  memcpy(ops.ip_addr, src->ip_addr, sizeof(ops.ip_addr));
+  ops.type = ST30_TYPE_FRAME_LEVEL;
+  ops.framebuff_cnt = 2;
+  ops.framebuff_size = 1024;
+  ops.notify_frame_ready = ut30_notify_frame_ready;
+  return rx_audio_ops_check(&ops);
+}

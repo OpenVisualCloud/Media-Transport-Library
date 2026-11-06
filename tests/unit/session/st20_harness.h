@@ -395,6 +395,11 @@ int ut20_ipmx_tp_limit(ut20_test_ctx* ctx, int pkt_per_frame, enum st_fps fps,
                        struct ipmx_vrx_limit* limit);
 #endif
 
+/* rv_ops_check() / rv_st22_ops_check() on valid two-port RTP-level ops with the IPs of
+ * `src`. */
+int ut20_ops_check_source(const struct st_rx_source_info* src);
+int ut20_st22_ops_check_source(const struct st_rx_source_info* src);
+
 #ifdef __cplusplus
 }
 #endif

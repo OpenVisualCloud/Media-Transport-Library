@@ -4,8 +4,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Rocky Linux 9 with eBPF/XDP support
-ARG IMAGE_CACHE_REGISTRY=docker.io
-FROM "${IMAGE_CACHE_REGISTRY}/rockylinux/rockylinux:9" AS builder
+FROM rockylinux/rockylinux:9@sha256:8101994123cf3d0a8fee517bee7f39e555c7d92bd2d9eb3303cc988a0eeed00f AS builder
 
 LABEL maintainer="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 
@@ -49,16 +48,18 @@ RUN ./build_ebpf_xdp.sh
 WORKDIR "${MTL_REPO}/script"
 RUN ./build_dpdk.sh -f
 
-# Run the unit suite, then build MTL
+# Run the unit suite, then build MTL. The gcc of Rocky Linux enables no
+# compiler hardening by default, so check what MTL builds, see doc/build.md.
 WORKDIR "${MTL_REPO}"
 RUN ./build.sh unit && \
     ./build.sh && \
     ninja -C build install && \
     DESTDIR=/install ninja -C build install && \
-    setcap 'cap_net_raw+ep' tests/tools/RxTxApp/build/RxTxApp
+    setcap 'cap_net_raw+ep' tests/tools/RxTxApp/build/RxTxApp && \
+    .github/scripts/ci/scan/check-hardening.sh build build_unit tests/tools/RxTxApp/build /install
 
 # Rocky Linux 9, runtime/final stage
-FROM "${IMAGE_CACHE_REGISTRY}/rockylinux/rockylinux:9" AS final
+FROM rockylinux/rockylinux:9@sha256:8101994123cf3d0a8fee517bee7f39e555c7d92bd2d9eb3303cc988a0eeed00f AS final
 
 LABEL org.opencontainers.image.authors="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 LABEL org.opencontainers.image.url="https://github.com/OpenVisualCloud/Media-Transport-Library"
@@ -77,6 +78,7 @@ SHELL ["/bin/bash", "-ex", "-o", "pipefail", "-c"]
 # Install runtime dependencies
 WORKDIR /home/imtl/
 RUN dnf install -y epel-release && \
+    dnf update -y && \
     dnf install -y --allowerasing \
         ca-certificates sudo curl unzip \
         numactl-libs json-c libpcap SDL2 SDL2_ttf openssl-libs zlib elfutils-libelf libcap-ng libatomic pciutils && \

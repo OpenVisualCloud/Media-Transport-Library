@@ -4,8 +4,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Ubuntu 24.04 with eBPF/XDP support
-ARG IMAGE_CACHE_REGISTRY=docker.io
-FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:24.04" AS builder
+FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852 AS builder
 
 LABEL maintainer="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 
@@ -52,7 +51,7 @@ RUN ./build.sh unit && \
     setcap 'cap_net_raw+ep' tests/tools/RxTxApp/build/RxTxApp
 
 # Ubuntu 24.04, runtime/final stage
-FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:24.04" AS final
+FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852 AS final
 
 LABEL org.opencontainers.image.authors="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 LABEL org.opencontainers.image.url="https://github.com/OpenVisualCloud/Media-Transport-Library"
@@ -73,6 +72,7 @@ SHELL ["/bin/bash", "-ex", "-o", "pipefail", "-c"]
 WORKDIR /home/imtl/
 RUN apt-get clean -y && rm -rf /var/lib/apt/lists/* && \
     apt-get update -y && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends ca-certificates sudo curl unzip && \
     apt-get install -y --no-install-recommends libnuma1 libjson-c5 libpcap0.8t64 libsdl2-2.0-0 libsdl2-ttf-2.0-0 libssl3t64 zlib1g libelf1t64 libcap-ng0 libatomic1 pciutils && \
     apt-get autoremove -y && \

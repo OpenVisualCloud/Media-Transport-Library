@@ -417,6 +417,7 @@ it is held. Copy the counters under the lock, `put`, then log the copy (TX video
 ### Lock Ordering
 - Manager mutex → session spinlock (never reverse)
 - Migration: target manager mutex → source manager mutex
+- `lcore_mutex` serialises lcore get/put per instance and is a leaf, taken under `mgr_mutex`, a scheduler's `mutex` and the RX video slot spinlocks; only the lcore flock and the manager round trip run inside it. Other `instance_fd` messages (flow, UDP filter, queue, xsk map) are not serialised with it. RX auto-detect takes it on a tasklet to add a pkt lcore, where flock / IPC already blocked
 
 ### Atomics Usage
 - Frame refcnt (`rte_atomic32_t`) — TX extbuf lifecycle
@@ -1008,7 +1009,7 @@ Binding: search by capability bitmask (`input_fmt_caps`, `output_fmt_caps`). Fir
 
 ### Validation Checklist (`*_ops_check()`)
 - `num_port`: 1-2, `payload_type`: 0-127, `framebuff_cnt`: 2-8 (video)
-- IP: not all zeros, multicast = 224.x-239.x, redundant ports must differ
+- IP: not all zeros, multicast = 224.x-239.x, redundant ports must differ, except that both RX ports may join one multicast group (the NIC does not filter by source, see Flow Rules)
 - Required callbacks checked based on `type` field
 
 ---

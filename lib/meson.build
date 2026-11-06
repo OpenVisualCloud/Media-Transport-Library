@@ -49,6 +49,14 @@ if get_option('enable_ipmx') == true
   add_global_arguments('-DMTL_HAS_IPMX', language : 'c')
 endif
 
+# Compiler hardening, see doc/build.md
+if not is_windows
+  hardening = run_command(files('../script/hardening_flags.py'), 'c', get_option('optimization'),
+    get_option('b_sanitize'), cc.cmd_array(), get_option('c_args'), check : true).stdout().split('\n')
+  add_project_arguments(hardening[0].split(), language : 'c')
+  add_project_link_arguments(hardening[1].split(), language : 'c')
+endif
+
 # usdt check
 mtl_has_usdt = false
 
@@ -74,10 +82,14 @@ if mtl_has_usdt
     output: 'mt_usdt_provider.h',
     command: [dtrace, '-C', '-h', '-s', '@INPUT@', '-o', '@OUTPUT@'],
   )
+  # dtrace compiles the object with CFLAGS from the environment only. Without
+  # -fcf-protection=full it has no .note.gnu.property, and ld drops IBT and SHSTK
+  # from libmtl.so.
   usdt_provider_object = custom_target('usdt_provider_object',
     input: usdt_provider,
     output: 'mt_usdt_provider.o',
     command: [dtrace, '-C', '-G', '-s', '@INPUT@', '-o', '@OUTPUT@'],
+    env: {'CFLAGS': hardening[0]},
     depends: usdt_provider_header,
   )
 endif
@@ -95,10 +107,6 @@ endif
 
 mtl_c_args = []
 mtl_link_c_args = []
-
-if not is_windows
-  mtl_link_c_args += ['-Wl,-z,now', '-Wl,-z,relro']
-endif
 
 # enable warning as error for non debug build
 if get_option('buildtype') != 'debug'

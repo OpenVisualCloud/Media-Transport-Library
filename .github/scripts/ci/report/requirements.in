@@ -1,0 +1,5 @@
+# What the nightly report scripts import, for `reports.sh install-dependencies`.
+# requirements.txt is the pip-compile lock, with the hash of every package,
+# built under the Python 3.12 that the report jobs set up.
+beautifulsoup4==4.15.0
+openpyxl==3.1.5

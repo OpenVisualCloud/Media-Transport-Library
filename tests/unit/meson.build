@@ -8,6 +8,16 @@ unit_c_args = ['-Wall', '-Werror']
 # #define rename, so a real duplicate must fail the link.
 unit_link_args = []
 
+# Compiler hardening, see doc/build.md. lib/meson.build sets it for the C sources; the C++
+# sources and the C++ link of UnitTest take it as target arguments.
+if not is_windows
+  unit_hardening = run_command(files('../../script/hardening_flags.py'), 'c++', get_option('optimization'),
+    get_option('b_sanitize'), meson.get_compiler('cpp').cmd_array(), get_option('cpp_args'),
+    check : true).stdout().split('\n')
+  unit_cpp_args += unit_hardening[0].split()
+  unit_link_args += unit_hardening[1].split()
+endif
+
 # rte_eal_init() dlopens every driver in RTE_EAL_PMD_PATH and those drivers request the bus
 # libraries by soname, so a second DPDK on the host ld.so path loads one bus library twice and
 # its RTE_REGISTER_TAILQ constructor panics. Pin the process to the DPDK this binary compiled
@@ -110,6 +120,7 @@ unit_sources = [
   'session/st20/header_validation_test.cpp',
   'session/st20/reorder_test.cpp',
   'session/st20/stats_test.cpp',
+  'session/st20/loss_estimate_test.cpp',
   'session/st20/err_packets_test.cpp',
   'session/st20/timestamp_source_test.cpp',
   'session/st20/tp_burst_test.cpp',
@@ -149,6 +160,7 @@ unit_sources = [
   'session/st20_tx/init_hw_test.cpp',
   'session/st20_tx/update_destination_test.cpp',
   'session/multi_essence_sync_test.cpp',
+  'session/rx_redundant_ip_test.cpp',
   'session/rtcp_tx_harness.c',
   'session/rtcp/parse_nack_bounds_test.cpp',
   'session/rtcp_attack_harness.c',
@@ -197,6 +209,7 @@ unit_sources = [
   'sch/mtl_sch_api_test.cpp',
   'sch/mt_sch_mempolicy_test.cpp',
   'sch/mt_sch_filelock_test.cpp',
+  'sch/mt_sch_lcore_test.cpp',
   'ptp/ptp_harness.c',
   'ptp/servo_test.cpp',
   'ptp/adjust_delta_test.cpp',

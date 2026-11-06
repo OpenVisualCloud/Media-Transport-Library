@@ -285,9 +285,9 @@ main() {
 		pushd "${root_folder}/manager" >/dev/null || exit 1
 
 		if [ -n "${http_proxy:-}" ] && [ -n "${https_proxy:-}" ]; then
-			docker build --build-arg VERSION="$(cat ../VERSION)" -t mtl-manager:latest --build-arg HTTP_PROXY="${http_proxy:-}" --build-arg HTTPS_PROXY="${https_proxy:-}" .
+			docker build --build-arg VERSION="$(cat ../VERSION)" -t mtl-manager:latest --build-arg HTTP_PROXY="${http_proxy:-}" --build-arg HTTPS_PROXY="${https_proxy:-}" -f Dockerfile ..
 		else
-			docker build --build-arg VERSION="$(cat ../VERSION)" -t mtl-manager:latest .
+			docker build --build-arg VERSION="$(cat ../VERSION)" -t mtl-manager:latest -f Dockerfile ..
 		fi
 
 		popd >/dev/null

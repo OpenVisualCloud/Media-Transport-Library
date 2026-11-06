@@ -4,8 +4,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Ubuntu 22.04 — no eBPF/XDP (unsupported with DPDK >= 26.03 on Ubuntu 22)
-ARG IMAGE_CACHE_REGISTRY=docker.io
-FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956" AS builder
+FROM ubuntu:22.04@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11 AS builder
 
 LABEL maintainer="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 
@@ -23,7 +22,7 @@ RUN apt-get update -y && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
         ca-certificates sudo curl unzip wget \
-        apt-transport-https apt-utils python3-dev \
+        apt-transport-https apt-utils python3-dev python3-pip \
         git build-essential python3-pyelftools pkg-config \
         libnuma-dev libjson-c-dev libpcap-dev libgtest-dev \
         libsdl2-dev libsdl2-ttf-dev libssl-dev systemtap-sdt-dev \
@@ -31,7 +30,6 @@ RUN apt-get update -y && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
-    curl -fsSL https://bootstrap.pypa.io/get-pip.py | python3 && \
     python3 -m pip --no-cache-dir install --upgrade pip setuptools meson ninja
 
 COPY . "${MTL_REPO}"
@@ -49,7 +47,7 @@ RUN ./build.sh unit && \
     setcap 'cap_net_raw+ep' tests/tools/RxTxApp/build/RxTxApp
 
 # Ubuntu 22.04, runtime/final stage
-FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956" AS final
+FROM ubuntu:22.04@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11 AS final
 
 LABEL org.opencontainers.image.authors="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 LABEL org.opencontainers.image.url="https://github.com/OpenVisualCloud/Media-Transport-Library"
@@ -70,6 +68,7 @@ SHELL ["/bin/bash", "-ex", "-o", "pipefail", "-c"]
 WORKDIR /home/imtl/
 RUN apt-get clean -y && rm -rf /var/lib/apt/lists/* && \
     apt-get update -y && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends ca-certificates sudo curl unzip && \
     apt-get install -y --no-install-recommends libnuma1 libjson-c5 libpcap0.8 libsdl2-2.0-0 libsdl2-ttf-2.0-0 libssl3 libatomic1 pciutils && \
     apt-get autoremove -y && \

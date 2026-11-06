@@ -462,5 +462,24 @@ For older kernel version on Red Hat, the issue is that Red Hat uses vault repos.
 
 [The exemplary location for the kernel-devel package for Rocky Linux 9.3](https://dl.rockylinux.org/vault/rocky/9.3/BaseOS/x86_64/os/Packages/k/)
 
+### 4.5. Compiler hardening
+
+The Linux build compiles the MTL meson projects with the hardening options below. `script/hardening_flags.py` prints them for a compiler, and the `meson.build` of each project applies them.
+
+| Option | Protection |
+| --- | --- |
+| `-fstack-protector-strong` | Stack buffer overflow canary |
+| `-fstack-clash-protection` | Stack clash |
+| `-fcf-protection=full` | Intel CET shadow stack (SHSTK) and indirect branch tracking (IBT) |
+| `-D_FORTIFY_SOURCE=3` | Buffer overflow checks in libc calls. Level 3 needs gcc 12 or clang 9 and glibc 2.34, so gcc 11 (Ubuntu 22.04, RHEL 9) gets 2. Not added when the compiler or `c_args`/`cpp_args` set a level (Ubuntu gcc does), with the meson option `optimization` at `0` or `plain` (buildtypes `debug`, `plain`), or with `b_sanitize`, which the sanitizers don't support |
+| `-Wformat -Wformat-security -Werror=format-security` | Format string attacks |
+| `-Wl,-z,relro -Wl,-z,now` | Full RELRO, a read-only GOT |
+| `-Wl,-z,noexecstack` | Non-executable stack |
+| `b_pie=true`, and meson's `-fPIC` for shared objects | Position independent code for ASLR |
+
+The gcc of Rocky Linux and RHEL enables none of the compiler options by default. So the Rocky Linux 9 image build runs `.github/scripts/ci/scan/check-hardening.sh` on what `build.sh` builds there: libmtl, UnitTest, the samples, the sample plugins, MtlManager, KahawaiTest and RxTxApp. It fails on a binary without full RELRO, a non-executable stack, PIE, CET or the stack protector.
+
+`_FORTIFY_SOURCE` leaves no reliable mark in a binary, so `.github/scripts/ci/lint/test-scripts.sh` tests the rule that sets it instead.
+
 ## Next Steps
 Proceed to [Running MTL](./run.md) for further instructions.

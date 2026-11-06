@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2022 Intel Corporation
 
-project('mtl', 'c', default_options: ['buildtype=release'],
+project('mtl', 'c', default_options: ['buildtype=release', 'b_pie=true'],
   version: run_command(find_program('cat'), files('VERSION'), check: true).stdout().strip(),
 )
 

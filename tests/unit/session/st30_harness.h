@@ -24,6 +24,7 @@
 #include <stdint.h>
 
 #include "mtl_api.h"
+#include "st_api.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -194,6 +195,9 @@ void ut30_reattach_frames(ut30_test_ctx* ctx, void* frames);
 /* Directly bump the slot-get-frame-fail counter (the RTP rtps_ring-full
  * path bumps this; the harness does not yet drive packets through it). */
 void ut30_bump_slot_get_frame_fail(ut30_test_ctx* ctx, uint64_t n);
+
+/* rx_audio_ops_check() on valid two-port frame-level ops with the IPs of `src`. */
+int ut30_ops_check_source(const struct st_rx_source_info* src);
 
 #ifdef __cplusplus
 }

@@ -28,16 +28,25 @@ updates:
       tests:
         patterns: ["*"]
 
+  # The Bandit and CodeChecker releases of the Code scan workflow
   - package-ecosystem: pip
-    directory: /python
+    directory: /.github/code-scan
     schedule:
       interval: "monthly"
     commit-message:
       prefix: "Ci: "
 
-  # The Bandit and CodeChecker releases of the Code scan workflow
+  # The pre-commit release of the Linter workflow
   - package-ecosystem: pip
-    directory: /.github/code-scan
+    directory: /.github/linters
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "Ci: "
+
+  # What the nightly report scripts import
+  - package-ecosystem: pip
+    directory: /.github/scripts/ci/report
     schedule:
       interval: "monthly"
     commit-message:
@@ -67,3 +76,7 @@ updates:
       interval: "monthly"
     commit-message:
       prefix: "Ci: "
+    # Digest updates only: each image stays on the release its Dockerfile names.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]

@@ -1171,3 +1171,27 @@ int ut20_ipmx_tp_limit(ut20_test_ctx* ctx, int pkt_per_frame, enum st_fps fps,
   return 0;
 }
 #endif
+
+int ut20_ops_check_source(const struct st_rx_source_info* src) {
+  struct st20_rx_ops ops;
+
+  memset(&ops, 0, sizeof(ops));
+  ops.num_port = 2;
+  memcpy(ops.ip_addr, src->ip_addr, sizeof(ops.ip_addr));
+  ops.type = ST20_TYPE_RTP_LEVEL;
+  ops.rtp_ring_size = UT_RING_SIZE;
+  ops.notify_rtp_ready = ut20_notify_rtp_ready;
+  return rv_ops_check(&ops);
+}
+
+int ut20_st22_ops_check_source(const struct st_rx_source_info* src) {
+  struct st22_rx_ops ops;
+
+  memset(&ops, 0, sizeof(ops));
+  ops.num_port = 2;
+  memcpy(ops.ip_addr, src->ip_addr, sizeof(ops.ip_addr));
+  ops.type = ST22_TYPE_RTP_LEVEL;
+  ops.rtp_ring_size = UT_RING_SIZE;
+  ops.notify_rtp_ready = ut20_notify_rtp_ready;
+  return rv_st22_ops_check(&ops);
+}

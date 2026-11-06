@@ -1537,7 +1537,7 @@ static int rx_audio_ops_check(struct st30_rx_ops* ops) {
     }
   }
 
-  if (num_ports > 1) {
+  if (num_ports > 1 && !mt_is_multicast_ip(ops->ip_addr[0])) {
     if (0 == memcmp(ops->ip_addr[0], ops->ip_addr[1], MTL_IP_ADDR_LEN)) {
       err("%s, same %d.%d.%d.%d for both ip\n", __func__, ip[0], ip[1], ip[2], ip[3]);
       return -EINVAL;

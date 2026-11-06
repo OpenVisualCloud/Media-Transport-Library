@@ -874,7 +874,7 @@ int st_rx_source_info_check(struct st_rx_source_info* src, int num_ports) {
     }
   }
 
-  if (num_ports > 1) {
+  if (num_ports > 1 && !mt_is_multicast_ip(src->ip_addr[0])) {
     if (0 == memcmp(src->ip_addr[0], src->ip_addr[1], MTL_IP_ADDR_LEN)) {
       err("%s, same %d.%d.%d.%d for both ip\n", __func__, ip[0], ip[1], ip[2], ip[3]);
       return -EINVAL;

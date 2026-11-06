@@ -973,6 +973,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     /* update trs */
     double reactive = 1080.0 / 1125.0;
     s->trs = s->frame_time * reactive / meta->pkts_total;
+    s->st20_frame_pkts = meta->pkts_total;
   } else {
     dbg("%s(%d): frame_recv_size %" PRIu64 ", frame_total_size %" PRIu64
         ", tmstamp %ld\n",
@@ -982,16 +983,23 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     meta->status = ST_FRAME_STATUS_CORRUPTED;
     s->port_user_stats.stat_frames_incomplete++;
 
-    /* record the miss pkts */
-    float pd_sz_per_pkt = (float)meta->frame_recv_size / slot->pkts_received;
-    int miss_pkts = (s->st20_frame_size - meta->frame_recv_size) / pd_sz_per_pkt;
+    /* record the miss pkts: counted against the last complete frame, or estimated
+     * from the payload per received pkt until one completes */
+    int miss_pkts = 0;
+    if (s->st20_frame_pkts > slot->pkts_received) {
+      miss_pkts = (int)(s->st20_frame_pkts - slot->pkts_received);
+    } else if (meta->frame_recv_size) {
+      float bytes_per_pkt = (float)meta->frame_recv_size / (float)slot->pkts_received;
+      miss_pkts =
+          (int)((float)(s->st20_frame_size - meta->frame_recv_size) / bytes_per_pkt);
+    }
     if (miss_pkts > 0) s->port_user_stats.common.stat_pkts_unrecovered += miss_pkts;
     rv_slot_account_per_port_loss(
         s, slot, slot->pkts_received + (miss_pkts > 0 ? (uint32_t)miss_pkts : 0));
     dbg("%s(%d), miss pkts %d for current frame\n", __func__, s->idx, miss_pkts);
 
 #if 0 /* for miss pkt detail */
-    int total_pkts = s->st20_frame_size / pd_sz_per_pkt;
+    int total_pkts = s->st20_frame_pkts;
     dbg("%s(%d), total_pkts %d\n", __func__, s->idx, total_pkts);
     for (int i = 0; i < total_pkts; i++) {
       if (!mt_bitmap_test(slot->frame_bitmap, s->st20_frame_bitmap_size, i))
@@ -1085,18 +1093,19 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
   } else {
     s->port_user_stats.stat_frames_incomplete++;
     /* record the miss pkts */
-    float pd_sz_per_pkt = (float)s->st22_expect_size_per_frame / slot->pkts_received;
+    float bytes_per_pkt =
+        (float)s->st22_expect_size_per_frame / (float)slot->pkts_received;
     int miss_pkts = 0;
     /* no expected size yet or a bigger frame: the quotient does not fit an int */
     if (s->st22_expect_size_per_frame > meta->frame_total_size)
       miss_pkts = (int)((float)(s->st22_expect_size_per_frame - meta->frame_total_size) /
-                        pd_sz_per_pkt);
+                        bytes_per_pkt);
     if (miss_pkts < 0) miss_pkts = 0;
     dbg("%s(%d), miss pkts %d for current frame\n", __func__, s->idx, miss_pkts);
     if (miss_pkts > 0) s->port_user_stats.common.stat_pkts_unrecovered += miss_pkts;
     rv_slot_account_per_port_loss(s, slot, slot->pkts_received + (uint32_t)miss_pkts);
 #if 0 /* for miss pkt detail */
-    int total_pkts = s->st22_expect_size_per_frame / pd_sz_per_pkt;
+    int total_pkts = s->st22_expect_size_per_frame / bytes_per_pkt;
     dbg("%s(%d), total_pkts %d\n", __func__, s->idx, total_pkts);
     for (int i = 0; i < total_pkts; i++) {
       if (!mt_bitmap_test(slot->frame_bitmap, s->st20_frame_bitmap_size, i))
@@ -3428,6 +3437,7 @@ static void rv_session_reset(struct st_rx_video_session_impl* s,
   s->dma_flush_fail_tmstamp = 0;
   s->st22_expect_frame_size = 0;
   s->st22_expect_size_per_frame = 0;
+  s->st20_frame_pkts = 0;
   s->usdt_frame_cnt = 0;
   s->burst_loss_cnt = 0;
   s->stat_last_time = init_stat_time_now ? mt_get_monotonic_time() : 0;
@@ -4435,7 +4445,7 @@ static int rv_ops_check(struct st20_rx_ops* ops) {
     }
   }
 
-  if (num_ports > 1) {
+  if (num_ports > 1 && !mt_is_multicast_ip(ops->ip_addr[0])) {
     if (0 == memcmp(ops->ip_addr[0], ops->ip_addr[1], MTL_IP_ADDR_LEN)) {
       err("%s, same %d.%d.%d.%d for both ip\n", __func__, ip[0], ip[1], ip[2], ip[3]);
       return -EINVAL;
@@ -4574,7 +4584,7 @@ static int rv_st22_ops_check(struct st22_rx_ops* ops) {
     }
   }
 
-  if (num_ports > 1) {
+  if (num_ports > 1 && !mt_is_multicast_ip(ops->ip_addr[0])) {
     if (0 == memcmp(ops->ip_addr[0], ops->ip_addr[1], MTL_IP_ADDR_LEN)) {
       err("%s, same %d.%d.%d.%d for both ip\n", __func__, ip[0], ip[1], ip[2], ip[3]);
       return -EINVAL;

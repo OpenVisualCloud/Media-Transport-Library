@@ -5,6 +5,16 @@ name: nightly
 # suite and the Clang Static Analyzer of main, then the combined report. Each
 # job waits for the jobs it depends on through needs; no job polls for another
 # workflow.
+#
+# A dispatch starts the nightly of main, since a cron run starts hours late. Only
+# a run with all default inputs gets the title 'nightly main', the baseline key.
+
+run-name: >-
+  ${{ (inputs.branch == '' && inputs.gtest && inputs.pytest && inputs.fuzz &&
+  inputs.unit && inputs.code_scan && inputs.gtest_cases == '' &&
+  inputs.pytest_dir == '' && inputs.pytest_filter == '') &&
+  format('nightly {0}', github.ref_name) ||
+  format('nightly {0} (custom inputs)', inputs.branch || github.ref_name) }}
 
 on:
   workflow_dispatch:
@@ -45,9 +55,6 @@ on:
         description: 'Run the Clang Static Analyzer (only when branch is empty)'
         type: boolean
         default: true
-  # A schedule runs on the default branch only, so this is the nightly run of main.
-  schedule:
-    - cron: '7 18 * * 1-5' # Monday to Friday at 18:07 UTC
 
 permissions:
   contents: read
@@ -55,7 +62,7 @@ permissions:
 jobs:
   # ── One build of the artifacts that the gtest and pytest legs restore ──
   build:
-    if: ${{ github.event_name == 'schedule' || inputs.gtest || inputs.pytest || (inputs.code_scan && inputs.branch == '') }}
+    if: ${{ inputs.gtest || inputs.pytest || (inputs.code_scan && inputs.branch == '') }}
     runs-on: dpdk
     timeout-minutes: 60
     outputs:
@@ -68,7 +75,7 @@ jobs:
       plugins_hash: ${{ steps.build.outputs.plugins_hash }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
 
@@ -103,7 +110,7 @@ jobs:
   # ── gtest on each NIC ──
   run-gtest:
     needs: build
-    if: ${{ github.event_name == 'schedule' || inputs.gtest }}
+    if: ${{ inputs.gtest }}
     concurrency:
       group: gtest-${{ github.workflow }}-${{ github.ref }}-${{ matrix.nic }}
       cancel-in-progress: true
@@ -118,7 +125,7 @@ jobs:
     timeout-minutes: 300
     steps:
       - name: 'preparation: Harden Runner'
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
 
@@ -159,7 +166,7 @@ jobs:
   # ── pytest on each NIC and each directory of tests/single ──
   run-pytest:
     needs: build
-    if: ${{ github.event_name == 'schedule' || inputs.pytest }}
+    if: ${{ inputs.pytest }}
     strategy:
       matrix:
         nic:
@@ -187,7 +194,7 @@ jobs:
       SUITE: ${{ matrix.suite.dir }}${{ matrix.suite.shard && format('-{0}', matrix.suite.shard) }}
     steps:
       - name: 'preparation: Harden Runner'
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
 
@@ -239,11 +246,11 @@ jobs:
 
   aggregate-python-reports:
     needs: run-pytest
-    if: ${{ always() && (github.event_name == 'schedule' || inputs.pytest) }}
+    if: ${{ always() && inputs.pytest }}
     runs-on: ubuntu-22.04
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
 
@@ -263,6 +270,11 @@ jobs:
       - name: Flatten report directory structure
         run: task ci:report -- flatten-pytest
 
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
       - name: Install report dependencies
         run: task ci:report -- install-dependencies
 
@@ -278,18 +290,18 @@ jobs:
           path: ${{ steps.combine.outputs.report_path }}
 
   # ── The combined gtest and pytest report of this run ──
-  # The baseline is the last scheduled run of main before this one that kept
-  # its reports.
+  # The baseline is the last nightly of main before this one that kept its
+  # reports (find-nightly-runs.js).
   combined-report:
     needs: [build, run-gtest, run-pytest]
-    if: ${{ !cancelled() && needs.build.result == 'success' && (github.event_name == 'schedule' || (inputs.gtest && inputs.pytest)) }}
+    if: ${{ !cancelled() && needs.build.result == 'success' && inputs.gtest && inputs.pytest }}
     runs-on: ubuntu-22.04
     permissions:
       contents: read
       actions: read
     steps:
       - name: 'preparation: Harden Runner'
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
 
@@ -395,9 +407,12 @@ jobs:
           RUN_ID: ${{ steps.baseline.outputs.baseline_gtest_run_id }}
         run: task ci:run-metadata
 
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
       - name: Install dependencies
-        env:
-          REPORT_REQUIRE_LXML: '1'
         run: task ci:report -- install-dependencies
 
       - name: Generate combined reports
@@ -441,12 +456,12 @@ jobs:
 
   # ── No NIC, no build artifacts ──
   fuzz-tests:
-    if: ${{ github.event_name == 'schedule' || inputs.fuzz }}
+    if: ${{ inputs.fuzz }}
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
 
@@ -477,12 +492,12 @@ jobs:
           fuzz_time: '600'
 
   unit-tests:
-    if: ${{ github.event_name == 'schedule' || inputs.unit }}
+    if: ${{ inputs.unit }}
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
 
@@ -515,7 +530,7 @@ jobs:
   # build artifact, and runs on the workflow commit only.
   clang-analyzer:
     needs: build
-    if: ${{ github.event_name == 'schedule' || (inputs.code_scan && inputs.branch == '') }}
+    if: ${{ inputs.code_scan && inputs.branch == '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -523,7 +538,7 @@ jobs:
       security-events: write # for github/codeql-action/upload-sarif
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
 

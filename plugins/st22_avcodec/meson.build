@@ -14,6 +14,12 @@ libpthread_dep = cc.find_library('pthread', required : true)
 avcodec_dep = dependency('libavcodec', required : true)
 avutil_dep = dependency('libavutil', required : true)
 
+# Compiler hardening, see doc/build.md
+hardening = run_command(files('../../script/hardening_flags.py'), 'c', get_option('optimization'),
+  get_option('b_sanitize'), cc.cmd_array(), get_option('c_args'), check : true).stdout().split('\n')
+add_project_arguments(hardening[0].split(), language : 'c')
+add_project_link_arguments(hardening[1].split(), language : 'c')
+
 st22_avcodec_plugin_c_args = []
 # enable warning as error for non debug build
 if get_option('buildtype') != 'debug'

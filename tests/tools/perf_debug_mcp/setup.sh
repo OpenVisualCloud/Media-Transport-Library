@@ -146,14 +146,25 @@ ok "Core packages installed"
 #═══════════════════════════════════════════════════════════════════════════════
 section "2/8 — Node.js ${NODE_MAJOR}.x"
 
-if command -v node &>/dev/null; then
-	CURRENT_NODE=$(node -v | sed 's/^v//' | cut -d. -f1)
-	if [[ "$CURRENT_NODE" -ge 18 ]]; then
-		ok "Node.js $(node -v) already installed (meets >=18 requirement)"
-	else
-		warn "Node.js $(node -v) is too old — installing v${NODE_MAJOR}"
-		INSTALL_NODE=true
-	fi
+# Node.js has the fix for CVE-2026-111497 (Brotli decoder) from
+# ^22.23.4 || ^24.22.1 || >=26.12.1; the lines past their end of life have none.
+node_is_patched() {
+	local version fixed
+	version=$(node -v 2>/dev/null) || return 1
+	version=${version#v}
+	case "${version%%.*}" in
+	22) fixed=22.23.4 ;;
+	24) fixed=24.22.1 ;;
+	*) fixed=26.12.1 ;;
+	esac
+	[[ "$(printf '%s\n' "$fixed" "$version" | sort -V | head -n1)" == "$fixed" ]]
+}
+
+if node_is_patched; then
+	ok "Node.js $(node -v) already installed"
+elif command -v node &>/dev/null; then
+	warn "Node.js $(node -v) lacks the fix for CVE-2026-111497 — installing v${NODE_MAJOR}"
+	INSTALL_NODE=true
 else
 	INSTALL_NODE=true
 fi
@@ -171,6 +182,10 @@ if [[ "${INSTALL_NODE:-false}" == "true" ]]; then
 
 	apt-get update -qq
 	apt-get install -y -qq nodejs
+	if ! node_is_patched; then
+		err "Node.js $(node -v 2>/dev/null) from NodeSource still lacks the fix for CVE-2026-111497"
+		exit 1
+	fi
 	ok "Node.js $(node -v) installed"
 fi
 
@@ -313,20 +328,22 @@ else
 	if command -v cargo &>/dev/null; then
 		ok "Rust toolchain already installed: $(cargo --version)"
 	else
+		# rustup 1.29.2: rustup-init.sh by commit, and the rustup-init that it
+		# fetches by RUSTUP_VERSION. The toolchain follows the stable channel.
 		info "Installing Rust toolchain via rustup..."
 		# Install as the real user if running under sudo, otherwise as root
 		REAL_USER="${SUDO_USER:-root}"
 		REAL_HOME=$(eval echo "~$REAL_USER")
 
 		if [[ "$REAL_USER" != "root" ]]; then
-			su - "$REAL_USER" -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable' || {
+			su - "$REAL_USER" -c 'curl --proto "=https" --tlsv1.2 -sSf https://raw.githubusercontent.com/rust-lang/rustup/d8c92c6765f85625b20482e165066bf1e98e7297/rustup-init.sh | env RUSTUP_VERSION=1.29.2 sh -s -- -y --default-toolchain stable' || {
 				warn "rustup install as $REAL_USER failed — trying as root"
-				curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+				curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/rust-lang/rustup/d8c92c6765f85625b20482e165066bf1e98e7297/rustup-init.sh | env RUSTUP_VERSION=1.29.2 sh -s -- -y --default-toolchain stable
 			}
 			# Source the env for this session
 			export PATH="$REAL_HOME/.cargo/bin:$PATH"
 		else
-			curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+			curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/rust-lang/rustup/d8c92c6765f85625b20482e165066bf1e98e7297/rustup-init.sh | env RUSTUP_VERSION=1.29.2 sh -s -- -y --default-toolchain stable
 			export PATH="/root/.cargo/bin:$PATH"
 		fi
 		ok "Rust $(cargo --version 2>/dev/null || echo '(just installed)') installed"
