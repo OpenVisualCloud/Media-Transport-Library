@@ -72,6 +72,10 @@ class St20TxRlTail : public ::testing::Test {
     ut_trs_set_mixed_stall(ctx_, tail_stall_ns);
     ut_trs_set_rtcp(ctx_, rtcp);
     ut_trs_set_first_pkt_frame(ctx_, &frame_, kPktLen);
+    if (drain_model_) {
+      ut_trs_set_pmd_done_batches(ctx_, kRsThresh, 0, 0);
+      ASSERT_TRUE(ut_trs_set_drain_model(ctx_, true));
+    }
     ut_trs_enqueue_first_pkt(ctx_, kTargetTsc);
     bool pre_armed = false;
     max_visit_calls_ = 0;
@@ -143,6 +147,7 @@ class St20TxRlTail : public ::testing::Test {
 
   ut_trs_ctx* ctx_ = nullptr;
   bool absorb_held_ = false;     /* absorb_ns 0: the hold on every counted stall */
+  bool drain_model_ = false;     /* the drain model on, on a deep queue */
   uint64_t entry_ns_ = 0;        /* Frame()'s window entry past the warm-up open */
   uint64_t pre_arm_end_tsc_ = 0; /* the end of Frame()'s pre-arm visit */
   int mixed_ret_ = -1, mixed_status_ = 0;
@@ -163,6 +168,15 @@ TEST_F(St20TxRlTail, Packet0BehindTailPadsStartsItsFrameOnce) {
   const uint64_t first = TailFirstNs();
   ASSERT_NE(0u, first);
   ExpectPacket0Once();
+}
+
+/* The drain bound after the call with pads and packet 0 ends no later than packet 0 on
+ * the modeled wire: it counts the cut pads by their bytes, as the plan does. */
+TEST_F(St20TxRlTail, DrainBoundEndsNoLaterThanPacket0) {
+  drain_model_ = true;
+  ASSERT_NE(0u, TailFirstNs());
+  EXPECT_LE(ut_trs_drain_tsc(ctx_, kPortP),
+            (uint64_t)(ut_trs_modeled_launch_tsc(ctx_, kPortP) + p_));
 }
 
 /* the NIC takes one pad of the call: the refused pads go ahead of packet 0, never early

@@ -430,6 +430,7 @@ static inline struct st_tx_video_session_impl* ut_trs_session_dp_get(
 #define st_video_resolve_pacing_tasklet ut_trs_resolve_pacing_tasklet
 #define st_video_transmitter_init ut_trs_transmitter_init
 #define st_video_transmitter_uinit ut_trs_transmitter_uinit
+#define st_video_trs_rl_drain_init ut_trs_rl_drain_init
 #define mt_get_tsc ut_trs_tsc_time_fn
 #define mt_get_ptp_time ut_trs_ptp_time_fn
 #define mt_txq_burst ut_trs_txq_burst_mock
@@ -449,6 +450,7 @@ static inline struct st_tx_video_session_impl* ut_trs_session_dp_get(
 #undef st_video_resolve_pacing_tasklet
 #undef st_video_transmitter_init
 #undef st_video_transmitter_uinit
+#undef st_video_trs_rl_drain_init
 
 int ut_trs_init(void) {
   return ut_eal_init();
@@ -1077,6 +1079,84 @@ void ut_trs_enqueue_frame_boundary(ut_trs_ctx* ctx, uint64_t target_tsc) {
   rte_ring_sp_enqueue_bulk(s->ring[MTL_SESSION_PORT_P], pkts, 2, NULL);
 }
 
+bool ut_trs_drain_init(ut_trs_ctx* ctx, int port) {
+  ut_trs_rl_drain_init(&ctx->impl, &ctx->session, port);
+  return ctx->session.trs_drain_model[port];
+}
+
+bool ut_trs_set_drain_model(ut_trs_ctx* ctx, bool on) {
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    ut_trs_drain_init(ctx, i);
+    if (!on) ctx->session.trs_drain_model[i] = false;
+  }
+  return ctx->session.trs_drain_model[MTL_SESSION_PORT_P];
+}
+
+void ut_trs_set_drain_tsc(ut_trs_ctx* ctx, int port, uint64_t tsc) {
+  ctx->session.trs_drain_tsc[port] = tsc;
+}
+
+uint64_t ut_trs_drain_tsc(const ut_trs_ctx* ctx, int port) {
+  return ctx->session.trs_drain_tsc[port];
+}
+
+double ut_trs_drain_pkt_ns(const ut_trs_ctx* ctx, int port) {
+  return ctx->session.trs_drain_pkt_ns[port];
+}
+
+uint64_t ut_trs_drain_ring_ns(const ut_trs_ctx* ctx, int port) {
+  return ctx->session.trs_drain_ring_ns[port];
+}
+
+void ut_trs_set_pad_interval(ut_trs_ctx* ctx, float pad_interval) {
+  ctx->session.pacing.pad_interval = pad_interval;
+}
+
+uint16_t ut_trs_pad_size(void) {
+  return UT_TRS_PAD_SIZE;
+}
+
+void ut_trs_set_line_tails(ut_trs_ctx* ctx, uint32_t normal, uint32_t tails,
+                           uint32_t tail_size) {
+  ctx->session.st20_pkt_info[ST20_PKT_TYPE_NORMAL].number = normal;
+  ctx->session.st20_pkt_info[ST20_PKT_TYPE_LINE_TAIL].number = tails;
+  ctx->session.st20_pkt_info[ST20_PKT_TYPE_LINE_TAIL].size = tail_size;
+}
+
+void ut_trs_drain_after_burst(ut_trs_ctx* ctx, int port, uint16_t tx, bool ring_full) {
+  ut_trs_active_ctx = ctx;
+  ctx->session.trs_ring_full[port] = ring_full;
+  if (tx)
+    video_trs_burst_succ(&ctx->impl, &ctx->session, port, tx);
+  else
+    video_trs_burst_fail(&ctx->impl, &ctx->session, port);
+  ut_trs_active_ctx = NULL;
+}
+
+uint64_t ut_trs_pads_skipped(const ut_trs_ctx* ctx) {
+  return ctx->session.stat_rl.pads_skipped;
+}
+
+uint32_t ut_trs_rl_slice(ut_trs_ctx* ctx, uint32_t pkt_idx, unsigned int n) {
+  struct rte_mbuf* pkts[ST_SESSION_MAX_BULK];
+  uint32_t pads = ctx->pad_send_count;
+  bool new_slice = true;
+
+  if (!n || n > ST_SESSION_MAX_BULK ||
+      rte_pktmbuf_alloc_bulk(ut_trs_priv_pool(), pkts, n) < 0)
+    return UINT32_MAX;
+  for (unsigned int i = 0; i < n; i++) {
+    st_tx_mbuf_set_idx(pkts[i], pkt_idx + i);
+    st_tx_mbuf_set_priv(pkts[i], NULL);
+    st_tx_mbuf_set_tsc(pkts[i], 0);
+  }
+  ut_trs_active_ctx = ctx;
+  video_trs_rl_burst(&ctx->impl, &ctx->session, MTL_SESSION_PORT_P, pkts, n, &new_slice);
+  ut_trs_active_ctx = NULL;
+  rte_pktmbuf_free_bulk(pkts, n);
+  return ctx->pad_send_count - pads;
+}
+
 uint16_t ut_trs_deep_nb_tx_desc(void) {
   return MT_DEV_TX_DESC_DEEP;
 }
@@ -1286,6 +1366,7 @@ int ut_trs_run_frames(ut_trs_ctx* ctx, const struct ut_trs_frames_case* c) {
     ut_trs_set_credit(ctx, MTL_SESSION_PORT_P, c->credit_ns);
     ut_trs_set_absorb(ctx, MTL_SESSION_PORT_P, c->absorb_ns);
   }
+  if (c->drain_model && !ut_trs_set_drain_model(ctx, true)) return -EINVAL;
   ctx->mixed_accept = c->mixed_accept;
   ut_trs_set_vrx_detect(ctx, MTL_SESSION_PORT_P, c->vrx_budget_ns, 0);
   ctx->burst_accept_limit = c->accept_limit;

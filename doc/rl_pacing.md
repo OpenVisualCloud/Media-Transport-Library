@@ -348,6 +348,45 @@ back gets one more bulk, in turn with the other such ports. "May run dry" is an 
 return plus the packets sent times Trs. The catch-up is skipped while a packet 0 that a visited port has dequeued is
 due within two warm-up windows, so it never delays a release.
 
+### 5.6. A queue behind its schedule
+
+Pre-arm times packet 0 by the pads it queues, as if the shaper had nothing else to send. With every frame ready, MTL
+keeps the queue full, a whole ring ahead of the wire. A NIC that drains it slower than the stream, as under DRAM load on
+its NUMA node, leaves the frame before still queued when the next one's window opens: the pads go behind it and packet
+0 leaves late. The queue rate leaves no slack, so that lateness carries over from frame to frame, up to the ring: about
+4 ms at 2048 descriptors.
+
+So each port with a plan and a deep queue keeps a lower bound of when the NIC ends what is queued. A shallow queue's
+driver frees as it sends, which leaves the time of a full ring unknown, so those ports go without. Each burst counts
+from its call's return, just after its doorbell:
+
+- A burst the NIC refused pkts of found the ring full. The ring then ends a full ring later: `nb_tx_desc` less three
+  rs batches the driver may hold done, two descriptors a pkt. The driver frees only whole batches, so the ring it
+  reports full has drained up to a batch more, which leaves the bound short of the queue's end by a batch or more.
+  The NIC frees a slot a pkt time apart, also when it drains slower than the shaper, so the time of the last push
+  carries its lateness.
+- An accepted burst adds its pkts' shaper time, after the bucket an idle shaper sends at once.
+- A pkt counts a NORMAL pkt's time scaled to the frame's mean pkt size, as the shaper drains line and frame tails by
+  their bytes, and at most the trained frame mean.
+- Pre-arm, and the call that sends packet 0 behind its last pads, leave their plan's end if that is earlier, as the
+  plan counts cut pads by their bytes. They keep a full ring's end.
+
+Pre-arm starts the pads at that end. Fewer pads still end on the target; when too few fit to trim packet 0, it is
+held for its target (Section 5.4), and behind a queue that ends past the target it takes no pads at all. Within a
+frame, a due pad is left out while the end is more than a trs past the next pkt's target, giving its time, 1 in
+`pad_interval`, to the pkts.
+
+Timing a burst from before its call is a stricter bound, as a call can stall past its doorbell, but under DRAM load
+the call that finds the ring full spends microseconds freeing a done batch first. On 36 x 1080p59.94 with a 122 GB/s
+memory hog, that took late packet 0s from 13 to 56. The bound so holds unless the call stalls between its doorbell
+and its return, on a preemption, an interrupt or an SMI, which lifts the end by the stall. On a full ring, the
+batches the driver keeps absorb up to about 2 rs pkts of it, about 115 µs at 1080p59.94 and 29 µs at 2160p59.94. On a
+queue the model holds idle, such as packet 0 sent at its target after a hold, nothing absorbs it outside pre-arm and
+the call that sends packet 0 behind its last pads: the frame's later pads past the stall less a trs are left out, and
+an excess past the vertical blank would start the next frame up to its warm-up early. The bound does not make a NIC
+faster: one that cannot keep up within a frame still dips VRX there (Section 8). The stats dump notes `N frames
+started behind a queue backlog, up to X us` and `N in-frame pads skipped behind the schedule`.
+
 ## 6. Observability
 
 ### 6.1. Check 1: frames that may break VRX, per session
@@ -453,6 +492,8 @@ quota, measures while it streams, and reports a frame that may break VRX and a s
 - **The VRX check is a lower bound with a conservative budget.** It can miss late frames and flag compliant ones, and
   it cannot see early packets, wire jitter, a shaper slower than `pad_ns`, or non-RL pacing.
 - **An overloaded core is reported, not prevented.**
+- **A NIC slower than the stream within a frame** dips VRX there. The drain bound (Section 5.6) keeps the lateness from
+  carrying over to the next frames, not from building up inside one.
 
 ## 9. Code map
 
@@ -468,6 +509,7 @@ quota, measures while it streams, and reports a frame that may break VRX and a s
 | No-plan warm-up, hold | `video_trs_rl_warm_up()`, `_video_trs_rl_tasklet()` |
 | Release scans, catch-up | `video_trs_rl_release()`, `video_trs_rl_catch_up()`, `video_trs_rl_short()`, `video_trs_tasklet_handler()` |
 | Reclaim | `video_trs_rl_reclaim()`; `mt_txq_reclaim()` |
+| Queue drain bound, skipped in-frame pads | `st_video_trs_rl_drain_init()`, `video_trs_txq_burst()`, `video_trs_burst_succ()`, `video_trs_rl_drain_full()`, `video_trs_rl_burst()`, `video_trs_rl_tail_burst()`; `St20TxRlDrainModel`, `St20TxRlDrainFrames` |
 | Check 1 | `video_trs_vrx_check()`; the late start in `tv_sync_pacing()`; the line in `tv_stat_log()` |
 | Check 2 | `tv_lead_visit()`, the round budget in `tv_stat_collect()`, `tv_behind_err()` |
 | USDT probe | `lib/src/mt_usdt_provider.d` |

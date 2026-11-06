@@ -1,5 +1,6 @@
 # Changelog
 
+* st20 RL: keep a queue that drains behind its schedule from carrying the lateness over: pre-arm starts its pads at a lower bound of the queue's end, and in-frame pads are left out while it is behind; count a real burst as the reclaim
 * ice: default to driver version 2.7.6, built as released with no MTL patches; versions before 2.7.6 keep their `patches/ice_drv` series
 * nicctl.sh: give each VF of an ice PF a 512-entry RSS LUT, so that it can have more than 16 queue pairs; `vf_rss_lut` does so for existing VFs
 * dev: warn when a port gets fewer queues than it asks for

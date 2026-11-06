@@ -560,6 +560,9 @@ int ut_txv_recover(ut_txv_ctx* ctx, int leg);
 /* the pre-arm's kept-back last burst of leg, and the drain end of its pads */
 void ut_txv_set_rl_tail(ut_txv_ctx* ctx, int leg, bool tail, long double drained);
 bool ut_txv_rl_tail(const ut_txv_ctx* ctx, int leg, long double* drained);
+/* the drain model's queue end and full ring flag of a leg */
+void ut_txv_set_drain(ut_txv_ctx* ctx, int leg, uint64_t drain_tsc, bool ring_full);
+uint64_t ut_txv_drain(const ut_txv_ctx* ctx, int leg, bool* ring_full);
 /* warnings the recoveries logged */
 int ut_txv_recovery_warns(const ut_txv_ctx* ctx);
 /* mt_txq_recovery_flush() calls on the queues of leg */

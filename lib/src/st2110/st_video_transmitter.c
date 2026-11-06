@@ -29,11 +29,50 @@ static int video_trs_tasklet_stop(void* priv) {
   return 0;
 }
 
+/* A full ring holds nb_tx_desc less three rs batches the PMD may keep done, two
+ * descriptors a pkt. A pkt counts pad_ns scaled to the frame's mean size, at most the
+ * trained frame mean trs pi / (pi + 1). */
+void st_video_trs_rl_drain_init(struct mtl_main_impl* impl,
+                                struct st_tx_video_session_impl* s,
+                                enum mtl_session_port s_port) {
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  const struct st_tx_video_pacing* pacing = &s->pacing;
+  const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
+  uint16_t rs = mt_if_tx_reclaim_rs_thresh(impl, port);
+  int descs = mt_if_nb_tx_desc(impl, port) - 3 * rs;
+  double pkt_ns = plan->pad_ns;
+  uint64_t bytes = 0, pkts = 0;
+
+  for (int i = 0; i < ST20_PKT_TYPE_MAX; i++) {
+    bytes += (uint64_t)s->st20_pkt_info[i].number * s->st20_pkt_info[i].size;
+    pkts += s->st20_pkt_info[i].number;
+  }
+  if (bytes < pkts * plan->pad_size) pkt_ns = pkt_ns * bytes / (pkts * plan->pad_size);
+  if (pacing->pad_interval > 0)
+    pkt_ns = RTE_MIN(
+        pkt_ns, (double)pacing->trs * pacing->pad_interval / (pacing->pad_interval + 1));
+  s->trs_drain_pkt_ns[s_port] = pkt_ns;
+  s->trs_drain_ring_ns[s_port] = descs > 0 ? (uint64_t)((descs / 2) * pkt_ns) : 0;
+  s->trs_drain_model[s_port] = plan->armed && rs && descs > 0;
+  s->trs_drain_tsc[s_port] = 0;
+  s->trs_ring_full[s_port] = false;
+}
+
+/* A ring the NIC refused pkts on holds a whole ring: it ends ring_ns from now, as the
+ * NIC frees a slot a pkt time apart, also while slower than the shaper. */
+static inline void video_trs_rl_drain_full(struct st_tx_video_session_impl* s,
+                                           enum mtl_session_port s_port, uint64_t now) {
+  uint64_t full = now + s->trs_drain_ring_ns[s_port];
+  if (full > s->trs_drain_tsc[s_port]) s->trs_drain_tsc[s_port] = full;
+}
+
 static uint16_t video_trs_burst_fail(struct mtl_main_impl* impl,
                                      struct st_tx_video_session_impl* s,
                                      enum mtl_session_port s_port) {
   uint64_t cur_tsc = mt_get_tsc(impl);
   uint64_t fail_duration = cur_tsc - s->last_burst_succ_time_tsc[s_port];
+
+  if (s->trs_drain_model[s_port]) video_trs_rl_drain_full(s, s_port, cur_tsc);
 
   if (fail_duration > s->tx_hang_detect_time_thresh) {
     err("%s(%d,%d), hang duration %" PRIu64 " ms\n", __func__, s->idx, s_port,
@@ -45,11 +84,29 @@ static uint16_t video_trs_burst_fail(struct mtl_main_impl* impl,
   return 0;
 }
 
+static inline uint16_t video_trs_txq_burst(struct st_tx_video_session_impl* s,
+                                           enum mtl_session_port s_port,
+                                           struct rte_mbuf** pkts, uint16_t nb) {
+  uint16_t tx = mt_txq_burst(s->queue[s_port], pkts, nb);
+  s->trs_ring_full[s_port] = tx < nb;
+  return tx;
+}
+
 static inline void video_trs_burst_succ(struct mtl_main_impl* impl,
                                         struct st_tx_video_session_impl* s,
                                         enum mtl_session_port s_port, uint16_t tx) {
+  uint64_t now = mt_get_tsc(impl);
   s->stat_pkts_burst += tx;
-  s->last_burst_succ_time_tsc[s_port] = mt_get_tsc(impl);
+  s->last_burst_succ_time_tsc[s_port] = now;
+  if (!s->trs_drain_model[s_port]) return;
+  if (s->trs_ring_full[s_port]) {
+    video_trs_rl_drain_full(s, s_port, now);
+  } else {
+    /* an idle shaper sends its bucket at once, as pre-arm plans the pads */
+    uint64_t credit = (uint64_t)s->rl_plan[s_port].bucket_ns;
+    uint64_t start = RTE_MAX(s->trs_drain_tsc[s_port], now > credit ? now - credit : 0);
+    s->trs_drain_tsc[s_port] = start + (uint64_t)(tx * s->trs_drain_pkt_ns[s_port]);
+  }
 }
 
 /* The shaper starts tx pads by their burst's return less refill_ns, or after the pads
@@ -72,7 +129,7 @@ static uint16_t video_trs_burst_pad(struct mtl_main_impl* impl,
                                     struct st_tx_video_session_impl* s,
                                     enum mtl_session_port s_port,
                                     struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
-  uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
+  uint16_t tx = video_trs_txq_burst(s, s_port, tx_pkts, nb_pkts);
   if (!tx) return video_trs_burst_fail(impl, s, s_port);
   video_trs_burst_succ(impl, s, s_port, tx);
   video_trs_pads_end(s, s_port, tx_pkts, tx);
@@ -138,7 +195,10 @@ static void video_trs_pkts_sent(struct mtl_main_impl* impl,
 
   if (tx) video_trs_vrx_check(s, s_port, p);
   /* the pkts the NIC refused are still the caller's */
-  for (uint16_t i = sent; i < nb_pkts; i++) bytes -= pkts[i]->pkt_len;
+  if (!sent)
+    bytes = 0;
+  else
+    for (uint16_t i = sent; i < nb_pkts; i++) bytes -= pkts[i]->pkt_len;
   if (s->rtcp_tx[s_port]) {
     if (tx) mt_rtcp_tx_buffer_rtp_packets(s->rtcp_tx[s_port], pkts, tx);
     rte_pktmbuf_free_bulk(pkts, nb_pkts);
@@ -156,7 +216,7 @@ static uint16_t video_trs_burst(struct mtl_main_impl* impl,
   struct video_trs_pkts p;
 
   video_trs_pkts_prepare(s, s_port, tx_pkts, nb_pkts, &p);
-  uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
+  uint16_t tx = video_trs_txq_burst(s, s_port, tx_pkts, nb_pkts);
   if (!tx) {
     video_trs_pkts_sent(impl, s, s_port, tx_pkts, nb_pkts, 0, &p);
     return video_trs_burst_fail(impl, s, s_port);
@@ -311,6 +371,15 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
   /* when the shaper finishes what is queued: an idle one sends the plan's bucket, credit
    * ns, at once */
   drained = target_tsc - gap - credit;
+  /* a queue still sending the frame before drains only past its backlog */
+  uint64_t now_tsc = target_tsc - gap;
+  uint64_t backlog_ns =
+      s->trs_drain_tsc[s_port] > now_tsc ? s->trs_drain_tsc[s_port] - now_tsc : 0;
+  if (s->trs_drain_model[s_port] && backlog_ns) {
+    s->stat_rl.backlog_frames++;
+    if (backlog_ns > s->stat_rl.backlog_max_ns) s->stat_rl.backlog_max_ns = backlog_ns;
+    drained = RTE_MAX(drained, (long double)(target_tsc - gap + backlog_ns));
+  }
   /* Late entry: too few pads fit to trim packet 0 onto its target. Within absorb_ns it
    * goes behind the last pads in one call, up to a pad late; else hold. */
   if (ceill((target_tsc - drained) / drain) < trim_pads) {
@@ -402,6 +471,10 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
   *defer = !hold && stall_gap > 0 && s->last_burst_succ_time_tsc[s_port] < target_tsc;
   s->trs_rl_tail[s_port] = tail && !hold;
   s->trs_rl_drained[s_port] = drained;
+  /* unless a pad was refused: the plan counts cut pads by their bytes, the model whole */
+  if (s->trs_drain_model[s_port] && !s->trs_pad_inflight_num[s_port] &&
+      drained < s->trs_drain_tsc[s_port])
+    s->trs_drain_tsc[s_port] = (uint64_t)drained;
   return !hold;
 }
 
@@ -429,6 +502,15 @@ static unsigned int video_trs_rl_burst(struct mtl_main_impl* impl,
       unsigned int tx = video_trs_burst(impl, s, s_port, &pkts[sent], nb);
       sent += tx;
       if (sent < q) return sent;
+      /* behind its schedule the NIC leaves the pad's time to the pkts queued */
+      if (s->trs_drain_model[s_port] &&
+          s->trs_drain_tsc[s_port] >
+              s->trs_frame_tsc[s_port] +
+                  (uint64_t)((double)(idx + k + 1) * (double)pacing->trs)) {
+        s->stat_rl.pads_skipped++;
+        if (tx < nb) return sent;
+        continue;
+      }
       rte_mbuf_refcnt_update(*pad, 1);
       bool padded = video_trs_burst_pad(impl, s, s_port, pad, 1);
       if (!padded) s->trs_pad_inflight_num[s_port]++;
@@ -473,7 +555,7 @@ static uint16_t video_trs_rl_tail_burst(struct mtl_main_impl* impl,
   for (uint16_t i = 0; i < nb_pkts; i++) tx_pkts[b.n + i] = pkts[i];
   video_trs_pkts_prepare(s, s_port, pkts, nb_pkts, &p);
 
-  uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, b.n + nb_pkts);
+  uint16_t tx = video_trs_txq_burst(s, s_port, tx_pkts, b.n + nb_pkts);
   *pads_tx = RTE_MIN(tx, b.n);
   uint16_t pkts_tx = tx - *pads_tx;
   if (*pads_tx < b.coarse + b.fine) {
@@ -493,6 +575,13 @@ static uint16_t video_trs_rl_tail_burst(struct mtl_main_impl* impl,
   }
   s->trs_pad_inflight_num[s_port] += b.n - *pads_tx;
   video_trs_burst_succ(impl, s, s_port, tx);
+  /* as in pre-arm, unless the ring was full: the plan counts cut pads by their bytes */
+  long double planned = drained +
+                        st_tx_video_rl_burst_ns(&b, plan->pad_ns, plan->pad_size) +
+                        pkts_tx * s->trs_drain_pkt_ns[s_port];
+  if (s->trs_drain_model[s_port] && !s->trs_ring_full[s_port] &&
+      planned < s->trs_drain_tsc[s_port])
+    s->trs_drain_tsc[s_port] = (uint64_t)planned;
   video_trs_pads_end(s, s_port, tx_pkts, *pads_tx);
   /* a stall before the doorbell, as video_trs_rl_pre_arm() counts one */
   long double latest = s->last_burst_succ_time_tsc[s_port] - plan->bucket_ns;
