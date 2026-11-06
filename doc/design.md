@@ -298,6 +298,10 @@ Address Resolution Protocol is a communication protocol used for discovering the
 
 The internet Group Management Protocol is a communication protocol used by hosts and adjacent routers on IPv4 networks to establish multicast group memberships. IGMP is used for managing the membership of internet Protocol multicast groups and is an integral part of the IP multicast specification. MTL support the IGMPv3 version. The code can be found in [mt_mcast.c](../lib/src/mt_mcast.c)
 
+The `mcast_sip_addr` field of the RX session ops sets the source of a source-specific multicast join. The IGMPv3 report, sent by MTL or by the kernel depending on the backend, asks the network for that source only, so only an IGMPv3-aware switch or router filters by it.
+The RX flow rules match only the destination IP and UDP port, so packets from other sources that reach the NIC are still received: a direct cable or a switch that floods multicast delivers them all.
+The kernel socket backend is the exception: it joins with `IP_ADD_SOURCE_MEMBERSHIP`, so there the Linux kernel itself drops packets from other sources. To filter in MTL itself, set the RX session `ssrc`.
+
 ### 5.3. DHCP
 
 Dynamic Host Configuration Protocol is a network management protocol used on IP networks whereby a DHCP server dynamically assigns an IP address and other network configuration parameters to each device on a network, so they can communicate with other IP networks.

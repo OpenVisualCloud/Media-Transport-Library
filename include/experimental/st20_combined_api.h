@@ -97,7 +97,9 @@ struct st20rc_rx_ops {
   /** Optional. Synchronization source defined in RFC3550, RX session will check the
    * incoming RTP packets match the ssrc. Leave to zero to disable the ssrc check */
   uint32_t ssrc;
-  /** Optional. source filter IP address of multicast */
+  /** Optional. Source of a source-specific multicast join, 0.0.0.0 for any source. Only
+   * the network filters by it; other sources are dropped locally only on the kernel
+   * socket backend. To filter in MTL itself, use the RX session ssrc. */
   uint8_t mcast_sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
 
   /** flags, value in ST20RC_RX_FLAG_* */
