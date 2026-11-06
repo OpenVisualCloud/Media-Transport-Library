@@ -57,12 +57,14 @@ static void stat_dump(struct mt_stat_mgr* mgr) {
     dbg("%s, start stat_dump_cb_fn\n", __func__);
     p->stat_dump_cb_fn(p->priv);
   }
+  mt_dbg_dump(impl); /* debug, drop before merge */
   notice("* *    E N D    S T A T E   * * \n\n");
 }
 
 static void* stat_thread(void* arg) {
   struct mt_stat_mgr* mgr = arg;
 
+  mgr->t_pid = rte_sys_gettid(); /* debug, drop before merge */
   info("%s, start\n", __func__);
   while (rte_atomic32_read(&mgr->stat_stop) == 0) {
     mt_pthread_mutex_lock(&mgr->stat_wake_mutex);
@@ -159,6 +161,7 @@ int mt_stat_init(struct mtl_main_impl* impl) {
     return ret;
   }
   mtl_thread_setname(mgr->stat_tid, "mtl_stat");
+  mt_thread_set_ctrl_affinity(impl, mgr->stat_tid);
 
   if (!p->dump_period_s) p->dump_period_s = MT_STAT_INTERVAL_S_DEFAULT;
   mgr->dump_period_us = (uint64_t)p->dump_period_s * US_PER_S;

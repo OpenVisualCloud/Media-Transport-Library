@@ -195,10 +195,16 @@ int ut20_feed_frame_pkt_via_wrapper(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts
  * with more than one packet in the array. The array is sized to exactly `nb`. */
 int ut20_feed_frame_burst_via_wrapper(ut20_test_ctx* ctx, const int* pkt_idx, int nb,
                                       uint32_t ts, enum mtl_session_port port);
-/* rv_frame_memcpy() of the ctx session; `pkt_lcore` makes it a session whose
- * frames a pkt lcore and the tasklet both write. */
-void* ut20_frame_memcpy(ut20_test_ctx* ctx, bool pkt_lcore, void* dst, const void* src,
+/* rv_frame_memcpy() of the ctx session, with the streaming copy when `nt_store`. */
+void* ut20_frame_memcpy(ut20_test_ctx* ctx, bool nt_store, void* dst, const void* src,
                         size_t n);
+/* rv_use_nt_store() for a library that selected the streaming copy (`lib_nt_store`) and
+ * a session with or without a pkt lcore. */
+bool ut20_use_nt_store(ut20_test_ctx* ctx, bool lib_nt_store, bool pkt_lcore);
+/* if this build has the streaming path (enable_rx_video_nt_store on an SSE2 target) */
+bool ut20_nt_store_built(void);
+/* mt_rx_video_copy_stream_auto(): the cpus that take the streaming copy by default */
+bool ut20_rx_video_copy_stream_auto(bool intel, uint32_t family, uint32_t model);
 
 /* Per-port counter accessors (live inside `port_user_stats.common.port[]`). */
 uint64_t ut20_stat_port_err_packets(const ut20_test_ctx* ctx, enum mtl_session_port port);

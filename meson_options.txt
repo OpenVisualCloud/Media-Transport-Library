@@ -10,7 +10,7 @@ option('enable_unit_tests', type: 'boolean', value: false,
 option('enable_rx_video_pkt_prefetch', type: 'boolean', value: true,
 	description: 'enable/disable prefetch of the next RX video packet in the burst')
 option('enable_rx_video_nt_store', type: 'boolean', value: true,
-	description: 'enable/disable non-temporal stores for RX video frame copies')
+	description: 'build the non-temporal RX video frame copy; mtl_init_params.rx_video_copy selects it at run time')
 
 option('enable_tap', type: 'boolean', value: false, description: 'enable/disable Windows TAP')
 option('dpdk_root_dir', type: 'string', value: '..\dpdk', description: 'dpdk source code root dir, for Windows')

@@ -178,6 +178,7 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
 
   sch->sleep_ratio_start_ns = mt_get_tsc(impl);
   loop_cal_start_ns = mt_get_tsc(impl);
+  sch->dbg_loop_tsc = 0; /* debug, drop before merge */
 
   while (rte_atomic32_read(&sch->request_stop) == 0) {
     int pending = MTL_TASKLET_ALL_DONE;
@@ -211,8 +212,15 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
     }
 
     loop_cnt++;
+    uint64_t loop_tsc = mt_get_tsc(impl);
+    /* debug, drop before merge: the longest loop of the stat period */
+    if (!sch->allow_sleep && sch->dbg_loop_tsc) {
+      uint64_t loop_ns = loop_tsc - sch->dbg_loop_tsc;
+      if (loop_ns > sch->dbg_loop_max_ns) sch->dbg_loop_max_ns = loop_ns;
+    }
+    sch->dbg_loop_tsc = loop_tsc;
     /* cal avg_ns_per_loop per two second */
-    uint64_t delta_loop_ns = mt_get_tsc(impl) - loop_cal_start_ns;
+    uint64_t delta_loop_ns = loop_tsc - loop_cal_start_ns;
     if (delta_loop_ns > ((uint64_t)NS_PER_S * 2)) {
       sch->avg_ns_per_loop = delta_loop_ns / loop_cnt;
       loop_cnt = 0;
@@ -496,6 +504,21 @@ static int sch_stat(void* priv) {
   if (!mt_sch_started(sch)) {
     notice("SCH(%d): active but still not started\n", idx);
   }
+
+  /* debug, drop before merge: the longest loop and the minor faults (NUMA balancing
+   * hinting faults among them) of the period */
+  uint64_t max_ns = sch->dbg_loop_max_ns;
+  sch->dbg_loop_max_ns = 0;
+  int cpu = -1;
+  uint64_t minflt = 0;
+  if (sch->t_pid > 0 && !mt_dbg_task_stat(sch->t_pid, &cpu, &minflt)) {
+    notice("DBG SCH(%d): cpu %d, max loop %.1fus, minor faults +%" PRIu64 "\n", idx, cpu,
+           (double)max_ns / NS_PER_US, minflt - sch->dbg_minflt);
+    sch->dbg_minflt = minflt;
+  }
+  if (max_ns > NS_PER_MS)
+    warn("DBG SCH(%d): a loop took %.1fus in this period\n", idx,
+         (double)max_ns / NS_PER_US);
 
   return 0;
 }
