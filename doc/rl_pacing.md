@@ -340,6 +340,8 @@ If the target passes while other tasklets run, the first scan of the next call s
 doorbell is a common stall. So a port that waits for its window frees done descriptors ahead of time, at most once per
 batch time. It does so with a zero-length `tx_burst`, which the iavf and ice scalar transmit paths use to free one
 done batch. This runs only on the 2048-descriptor queues of [ST2110-21 pacing](design.md#432-st2110-21-pacing).
+A real burst within a batch time has already freed one, so it counts as that reclaim: the second tasklet call of a
+visit, which mostly finds the builder ring empty, sends no empty burst while the queue is busy.
 
 **Catch-up.** After the visits, an RL port in the middle of a frame whose queue may run dry before the scheduler comes
 back gets one more bulk, in turn with the other such ports. "May run dry" is an estimate on the CPU: the last burst's
