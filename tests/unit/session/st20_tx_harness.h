@@ -445,6 +445,21 @@ uint32_t ut_txv_rtp_time_stamp(const ut_txv_ctx* ctx);
  * printer. Returns the number of log lines emitted; *locked_lines receives how
  * many of them were emitted while the session spinlock was held. */
 int ut_txv_run_sessions_stat(ut_txv_ctx* ctx, int* locked_lines);
+/* st_tx_video_session_migrate() of the session from scheduler 0's mgr to the next slot of
+ * scheduler 1's, as tx_video_migrate_to() does */
+void ut_txv_run_migrate(ut_txv_ctx* ctx);
+/* st20_tx_get_session_stats() on the session's handle */
+int ut_txv_get_session_stats(ut_txv_ctx* ctx, struct st20_tx_user_stats* stats);
+/* st20_tx_reset_session_stats() on the session's handle */
+int ut_txv_reset_session_stats(ut_txv_ctx* ctx);
+/* locks or unlocks the session's slot in the mgr that links it, as a control call does */
+void ut_txv_lock_linked_session(ut_txv_ctx* ctx, bool lock);
+/* the next session lock of the stats API migrates the session just before it locks */
+void ut_txv_migrate_at_next_lock(ut_txv_ctx* ctx);
+/* the stats API's last lock was the slot of the mgr that links the session */
+bool ut_txv_last_lock_linked(const ut_txv_ctx* ctx);
+/* a slot of scheduler 0's mgr or scheduler 1's is locked */
+bool ut_txv_session_slots_locked(const ut_txv_ctx* ctx);
 /* First log line captured by the last ut_txv_run_sessions_stat() call. */
 const char* ut_txv_stat_first_log_line(void);
 void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames);
