@@ -265,6 +265,8 @@ MTL sends every ST 2110-20 stream with the gapped schedule. `ST21_PACING_LINEAR`
 
 In the case that the rate-limiting feature is unavailable, TSC (Timestamp Counter) based software pacing is provided as a fallback option.
 
+How MTL uses the E810/E830 rate limiter to pace the packets, and to launch each frame's first packet on time, is described in [RL Pacing](rl_pacing.md).
+
 ![TX Pacing](png/tx_pacing.svg)
 
 #### 4.3.3. TSN launch-time pacing
@@ -725,8 +727,9 @@ The first packet then is not sent before the scheduled time, provided the paddin
 The model puts the first packet at the scheduled time, or within one 8-byte step after it: the library cuts up to 64 bytes from each of the last padding packets, in 8-byte steps, so the padding drains within one step of it, never before. Measured on E830 VF against the scheduled time, the first packet arrives 1.4 to 6.1 µs late at 1080p25/50/60/59.94, 720p59.94 and 2160p59.94, never early.
 A tasklet stall between two padding bursts that ends before the scheduled time only shrinks the rest of the padding.
 A stall inside a burst (an interrupt or a preemption) can delay its doorbell by an unknown time.
-If the padding already queued does not cover it and the burst returns more than 2 µs late, the library plans the rest from the latest time the doorbell can have rung and holds the first packet until the scheduled time, as without a known shaper. A shorter stall can delay the first packet by up to its length.
-After a stall past it the first packet leaves when the tasklet returns. The NIC and the clocks add the rest.
+If the padding already queued does not cover it and the burst returns more than 2 µs late, the library keeps the plan while the stall stays within the port's absorb limit, so the first packet still leaves behind the padding, late by at most the stall.
+Past that limit it plans the rest from the latest time the doorbell can have rung and holds the first packet until the scheduled time, as without a known shaper. A shorter stall can delay the first packet by up to its length.
+A held first packet leaves at the transmitter's next release scan, which runs before every session visit ([RL Pacing 5.4](rl_pacing.md#54-hold-and-the-release-scans)). The NIC and the clocks add the rest.
 
 ```mermaid
 sequenceDiagram
@@ -741,7 +744,11 @@ sequenceDiagram
     alt every burst returns in time
         T->>N: first packet, behind the padding
         N->>W: first packet, as the padding ends: at the scheduled time
-    else a burst returns more than 2 µs late (interrupt, preemption)
+    else a burst returns more than 2 µs late, within the absorb limit
+        Note over T: keeps the plan, counts stat_trans_recalculate_warmup
+        T->>N: first packet, behind the padding
+        N->>W: first packet, late by at most the stall
+    else a burst returns later than the absorb limit (interrupt, preemption)
         Note over T: holds the first packet, counts stat_trans_recalculate_warmup
         T->>N: first packet, once the TSC reaches the scheduled time
         N->>W: first packet
