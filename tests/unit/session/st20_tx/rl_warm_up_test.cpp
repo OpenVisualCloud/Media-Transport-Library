@@ -539,6 +539,73 @@ TEST_F(St20TxRlFastClockTest, LateEntryShortOfTheTrimPadsHoldsPacket0ToItsTarget
   }
 }
 
+/* A late entry's tail plans its pads at the tail call, from a later read than the
+ * entry's: a stall between the two can leave them short of cutting packet 0 onto its
+ * target within absorb_ns. Packet 0 then holds to its target, else lands within absorb_ns
+ * past target + aim. 720p59.94 with its absorb_ns, a stall of half a pad at each read of
+ * the visit. */
+TEST_F(St20TxRlFastClockTest, LateEntryTailCutsFromItsOwnReadElseHolds) {
+  ASSERT_NO_FATAL_FAILURE(Plan(1280, 720, ST_FPS_P59_94, 136159840));
+  ASSERT_GT(drain_, absorb_);
+  const uint64_t stall_ns[] = {(uint64_t)(drain_ / 2)};
+  int landed = 0, held = 0;
+
+  for (uint64_t gap : Gaps(false))
+    for (uint64_t read = 1; read <= 16; read++) {
+      const uint64_t entry[] = {kTargetTsc - gap};
+      const uint64_t at_target[] = {kTargetTsc};
+      const uint64_t stall_at[] = {kTargetTsc - gap + read};
+      const std::string what =
+          "gap " + std::to_string(gap) + " read " + std::to_string(read);
+      ut_trs_destroy(ctx_);
+      ctx_ = ut_trs_create();
+      ASSERT_NE(nullptr, ctx_);
+      Apply();
+      ut_trs_set_absorb(ctx_, kPortP, absorb_);
+      ut_trs_set_mock_tsc_script(ctx_, entry, 1);
+      ut_trs_enqueue_first_pkt(ctx_, kTargetTsc);
+      ut_trs_call_rl_tasklet(ctx_);
+      ut_trs_set_cpu_stalls(ctx_, stall_at, stall_ns, 1);
+      ut_trs_call_rl_tasklet(ctx_);
+      ut_trs_set_mock_tsc_script(ctx_, at_target, 1);
+      ut_trs_call_rl_tasklet(ctx_);
+
+      long double late = ut_trs_modeled_launch_tsc(ctx_, kPortP) - kTargetTsc;
+      EXPECT_GE(late, 0) << what;
+      if (ut_trs_pad_send_count(ctx_)) {
+        EXPECT_LE(late - Aim(), absorb_) << what << " late " << late;
+        landed++;
+      } else {
+        held++;
+      }
+      if (HasFailure()) return;
+    }
+  EXPECT_GT(landed, 0);
+  EXPECT_GT(held, 0);
+}
+
+/* A tail is the last pre-arm burst. Called with more than a burst of pads still to
+ * plan, it would send packet 0 behind too few of them, early: it holds packet 0 to its
+ * target instead. */
+TEST_F(St20TxRlFastClockTest, TailShortOfTheLastBurstHoldsPacket0) {
+  const uint64_t gap = (uint64_t)(3 * 32 * drain_);
+  const uint64_t entry[] = {kTargetTsc - gap};
+  const uint64_t at_target[] = {kTargetTsc};
+  ut_trs_set_absorb(ctx_, kPortP, absorb_);
+  ut_trs_set_mock_tsc_script(ctx_, entry, 1);
+  ut_trs_enqueue_first_pkt(ctx_, kTargetTsc);
+  ut_trs_call_rl_tasklet(ctx_);
+  ASSERT_EQ(1u, ut_trs_inflight_num(ctx_));
+  ut_trs_set_rl_state_port(ctx_, kPortP, 0);
+  ut_trs_set_rl_tail(ctx_, kTargetTsc - gap - credit_);
+  ut_trs_call_rl_tasklet(ctx_);
+  ut_trs_set_mock_tsc_script(ctx_, at_target, 1);
+  ut_trs_call_rl_tasklet(ctx_);
+
+  ASSERT_EQ(1u, ut_trs_real_send_count(ctx_));
+  EXPECT_GE(ut_trs_modeled_launch_tsc(ctx_, kPortP), kTargetTsc);
+}
+
 /* With a pad within absorb_ns, a late entry still pre-arms: behind the pads that fit,
  * packet 0 lands less than the uncut part of a pad past target + aim, whenever the
  * tasklet comes back. */

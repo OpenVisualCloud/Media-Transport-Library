@@ -454,8 +454,10 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
 }
 
 /* The last pre-arm burst, sized now from the drain end the pre-arm left, and the
- * inflight pkts of packet 0 behind it, in one call. Returns the pkts sent and sets
- * *pads_tx; refused pads retry ahead of the pkts. */
+ * inflight pkts of packet 0 behind it, in one call. Pads that would leave packet 0 past
+ * absorb_ns are not sent: it holds to its target, returning 0, or once that has passed
+ * goes alone. Returns the pkts sent and sets *pads_tx; refused pads retry ahead of the
+ * pkts. */
 static uint16_t video_trs_rl_tail_burst(struct mtl_main_impl* impl,
                                         struct st_tx_video_session_impl* s,
                                         enum mtl_session_port s_port, uint64_t target_tsc,
@@ -468,12 +470,23 @@ static uint16_t video_trs_rl_tail_burst(struct mtl_main_impl* impl,
   struct video_trs_pkts p;
 
   s->trs_rl_tail[s_port] = false;
-  long double start = (long double)mt_get_tsc(impl) - plan->bucket_ns;
-  long double drained = RTE_MAX(s->trs_rl_drained[s_port], start);
+  uint64_t now = mt_get_tsc(impl);
+  long double drained = RTE_MAX(s->trs_rl_drained[s_port], now - plan->bucket_ns);
 
-  if (target_tsc > drained)
+  if (target_tsc > drained) {
     b = st_tx_video_rl_next_burst(plan->pad_ns, plan->pad_size, plan->trim_pads,
                                   target_tsc, drained);
+    /* behind pads short of the last burst packet 0 would be early, or past absorb_ns:
+     * hold to the target, or after it go alone */
+    if (!b.last || st_tx_video_rl_cut_short(&b, plan->pad_ns, plan->pad_size, target_tsc,
+                                            drained) > plan->absorb_ns) {
+      if (now < target_tsc) {
+        s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
+        return 0;
+      }
+      b = (struct st_tx_video_rl_burst){0};
+    }
+  }
   for (unsigned int i = 0; i < b.n; i++)
     tx_pkts[i] = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
   video_trs_rl_trim(s, s_port, tx_pkts, &b);

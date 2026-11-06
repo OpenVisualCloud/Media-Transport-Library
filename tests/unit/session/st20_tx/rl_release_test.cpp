@@ -27,10 +27,14 @@ class St20TxRlRelease : public ::testing::Test {
  protected:
   void SetUp() override {
     ASSERT_EQ(0, ut_trs_init());
+    ASSERT_NO_FATAL_FAILURE(Plan(3840, 2160, ST_FPS_P59_94));
+  }
+
+  void Plan(uint32_t width, uint32_t height, enum st_fps fps) {
     const float trained[1] = {164};
     ut_txv_ctx* txv = ut_txv_create();
     ASSERT_NE(nullptr, txv);
-    ut_txv_set_rl_format(txv, 3840, 2160, false, ST_FPS_P59_94);
+    ut_txv_set_rl_format(txv, width, height, false, fps);
     ASSERT_EQ(0, ut_txv_init_rl_pacing(txv, 1, 0, false, trained, false));
     ASSERT_TRUE(ut_txv_rl_armed(txv, kPortP));
     p_ = ut_txv_rl_drain(txv, kPortP);
@@ -98,6 +102,50 @@ class St20TxRlRelease : public ::testing::Test {
     return launch;
   }
 
+  static bool AfterTail(int i, void* arg) {
+    St20TxRlRelease* t = static_cast<St20TxRlRelease*>(arg);
+    ut_trs_ctx* p = t->ctx_.back();
+    if (i == (int)t->ctx_.size() - 1 && !t->visits_++) {
+      t->tail_ = !ut_trs_rl_state(p) && ut_trs_rl_tail(p) && !ut_trs_real_send_count(p);
+      t->now_ = (uint64_t)((int64_t)kTargetTsc + t->away_);
+    }
+    return true;
+  }
+
+  /* At 1080p59.94, a counted stall within absorb_ns and a pad past it: a session
+   * pre-arms packet 0 for kTargetTsc entry past the warm-up open, its first pad burst
+   * stalling within absorb_ns. The scheduler is then away until kTargetTsc + away.
+   * tail_: that visit deferred packet 0 behind a tail. */
+  void DeferTail(uint64_t entry, int64_t away) {
+    ASSERT_GT(p_, absorb_);
+    constexpr uint64_t kFirstNs = 2300;
+    ASSERT_GT(kFirstNs, ut_trs_rl_stall_ns());
+    ASSERT_LT(kFirstNs, absorb_);
+    now_ = kTargetTsc - window_ - 12000;
+    ctx_.push_back(Session(kTargetTsc, absorb_, kFirstNs));
+    sch_ = ut_trs_sch_create(ctx_.data(), (int)ctx_.size(), &now_);
+    ASSERT_NE(nullptr, sch_);
+    ut_trs_sch_call(sch_);
+    now_ = kTargetTsc - window_ + entry;
+    visits_ = 0;
+    tail_ = false;
+    away_ = away;
+    ut_trs_sch_set_visit(sch_, nullptr, AfterTail, this);
+    ut_trs_sch_call(sch_);
+  }
+
+  void EndTail() {
+    ut_trs_sch_destroy(sch_);
+    sch_ = nullptr;
+    for (ut_trs_ctx* c : ctx_) ut_trs_destroy(c);
+    ctx_.clear();
+  }
+
+  std::vector<ut_trs_ctx*> ctx_;
+  ut_trs_sch* sch_ = nullptr;
+  int visits_ = 0;
+  int64_t away_ = 0;
+  bool tail_ = false;
   uint64_t now_ = 0, passed_ = 0, window_ = 0;
   long double p_ = 0, credit_ = 0, absorb_ = 0, trs_ = 0, end_ = 0;
   uint32_t warm_pkts_ = 0;
@@ -121,6 +169,29 @@ TEST_F(St20TxRlRelease, DeferredPacket0LeavesAfterTheVisitPastItsTarget) {
   const long double slow = Launch(false, target1, 0, 150000, 60000);
   EXPECT_EQ(fast, slow) << "packet 0 waited for the round";
   EXPECT_LT(fast, end + 12000) << "end of the visit past the target " << end;
+}
+
+/* Deferred behind its pads, packet 0 goes with the last of them in the release after the
+ * visits, which the scheduler's absence after its visit carries past the target: with
+ * no target left to hold it to, it leaves there. */
+TEST_F(St20TxRlRelease, DeferredTailPastItsTargetLeavesInTheRelease) {
+  ASSERT_NO_FATAL_FAILURE(Plan(1920, 1080, ST_FPS_P59_94));
+  int tails = 0;
+
+  for (uint64_t entry = 25000; entry < 30000; entry += 97)
+    for (int64_t away = 0; away < credit_; away += 250) {
+      ASSERT_NO_FATAL_FAILURE(DeferTail(entry, away));
+      const std::string what =
+          "entry " + std::to_string(entry) + " away " + std::to_string(away);
+      if (tail_) {
+        tails++;
+        EXPECT_EQ(1u, ut_trs_real_send_count(ctx_[0])) << what;
+        EXPECT_GE(ut_trs_modeled_launch_tsc(ctx_[0], kPortP), kTargetTsc) << what;
+      }
+      EndTail();
+      if (HasFailure()) return;
+    }
+  EXPECT_GT(tails, 0);
 }
 
 /* held, its target passed in session 1's visit: it leaves before session 2's visit, not

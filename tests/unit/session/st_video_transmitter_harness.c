@@ -800,6 +800,15 @@ int ut_trs_rl_state(const ut_trs_ctx* ctx) {
   return ctx->session.rl_state[MTL_SESSION_PORT_P];
 }
 
+bool ut_trs_rl_tail(const ut_trs_ctx* ctx) {
+  return ctx->session.trs_rl_tail[MTL_SESSION_PORT_P];
+}
+
+void ut_trs_set_rl_tail(ut_trs_ctx* ctx, long double drained_tsc) {
+  ctx->session.trs_rl_tail[MTL_SESSION_PORT_P] = true;
+  ctx->session.trs_rl_drained[MTL_SESSION_PORT_P] = drained_tsc;
+}
+
 bool ut_trs_recovery_pending(const ut_trs_ctx* ctx) {
   return ctx->session.tx_queue_recovery_pending[MTL_SESSION_PORT_P];
 }
