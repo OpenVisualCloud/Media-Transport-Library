@@ -156,6 +156,7 @@ unit_sources = [
   'session/st20_tx/direct_chain_test.cpp',
   'session/st20_tx/bulk_test.cpp',
   'session/st20_tx/queue_recovery_test.cpp',
+  'session/st20_tx/rl_drain_model_test.cpp',
   'session/st20_tx/rl_training_test.cpp',
   'session/st20_tx/round_oracle_test.cpp',
   'session/st20_tx/rtcp_pool_test.cpp',

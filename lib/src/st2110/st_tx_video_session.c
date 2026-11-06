@@ -542,6 +542,7 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
       if (s->pacing_way[i] == ST21_TX_PACING_WAY_RL)
         warn("%s[%02d], port %d no rl plan, holds packet 0, VRX at risk if late\n",
              __func__, idx, i);
+      st_video_trs_rl_drain_init(impl, s, i);
       continue;
     }
     plan->pad_size = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
@@ -550,6 +551,7 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
     info("%s[%02d], port %d rl plan, pad_ns %Lf bucket_ns %Lf burst size %u bps %" PRIu64
          "\n",
          __func__, idx, i, plan->pad_ns, plan->bucket_ns, burst_size, bps);
+    st_video_trs_rl_drain_init(impl, s, i);
   }
 }
 
@@ -3537,6 +3539,8 @@ static void tv_transmitter_port_state_init(struct st_tx_video_session_impl* s, i
   s->trs_rl_tail[i] = false;
   s->trs_rl_drained[i] = 0;
   s->trs_wire_tsc[i] = 0;
+  s->trs_drain_tsc[i] = 0;
+  s->trs_ring_full[i] = false;
 }
 
 static void tv_transmitter_state_init(struct st_tx_video_session_impl* s) {
@@ -4202,6 +4206,16 @@ static void tv_stat_log(const struct tv_stat_dump* dump) {
         (double)dump->vrx_budget_ns / NS_PER_US, rl->vrx_pkt0,
         rl->vrx_frames - rl->vrx_pkt0, rl->start_late,
         (double)rl->start_late_max_ns / NS_PER_US);
+  }
+  if (rl->backlog_frames) {
+    notice("TX_VIDEO_SESSION(%d,%d): %" PRIu64
+           " frames started behind a queue backlog, up to %.1fus\n",
+           m_idx, idx, rl->backlog_frames, (double)rl->backlog_max_ns / NS_PER_US);
+  }
+  if (rl->pads_skipped) {
+    notice("TX_VIDEO_SESSION(%d,%d): %" PRIu64
+           " in-frame pads skipped behind the schedule\n",
+           m_idx, idx, rl->pads_skipped);
   }
   d = us->common.stat_epoch_drop - snap->common.stat_epoch_drop;
   if (d) {

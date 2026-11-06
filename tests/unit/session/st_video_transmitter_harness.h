@@ -190,6 +190,33 @@ void ut_trs_set_num_port(ut_trs_ctx* ctx, int num_port);
 void ut_trs_enqueue_first_pkt(ut_trs_ctx* ctx, uint64_t target_tsc);
 void ut_trs_enqueue_frame_boundary(ut_trs_ctx* ctx, uint64_t target_tsc);
 
+/* The drain model: when the NIC ends what the port's queue holds. The harness starts
+ * with it off, as tv_rl_plan_init() has not run. ut_trs_drain_init() runs
+ * st_video_trs_rl_drain_init() on the port as set and returns whether the model is on;
+ * ut_trs_set_drain_model() runs it on every port, off turns it off again, and returns
+ * whether port P's is on. */
+bool ut_trs_drain_init(ut_trs_ctx* ctx, int port);
+bool ut_trs_set_drain_model(ut_trs_ctx* ctx, bool on);
+void ut_trs_set_drain_tsc(ut_trs_ctx* ctx, int port, uint64_t tsc);
+uint64_t ut_trs_drain_tsc(const ut_trs_ctx* ctx, int port);
+/* the shaper time of a pkt and of a full ring of the port, as the model counts them */
+double ut_trs_drain_pkt_ns(const ut_trs_ctx* ctx, int port);
+uint64_t ut_trs_drain_ring_ns(const ut_trs_ctx* ctx, int port);
+void ut_trs_set_pad_interval(ut_trs_ctx* ctx, float pad_interval);
+/* the NORMAL pad's bytes */
+uint16_t ut_trs_pad_size(void);
+/* a frame of normal NORMAL pkts, the pad's size, and tails line tails of tail_size */
+void ut_trs_set_line_tails(ut_trs_ctx* ctx, uint32_t normal, uint32_t tails,
+                           uint32_t tail_size);
+/* a burst of tx pkts returning at the mock tsc, 0 for one the NIC took none of,
+ * ring_full if it refused some */
+void ut_trs_drain_after_burst(ut_trs_ctx* ctx, int port, uint16_t tx, bool ring_full);
+/* in-frame pads left out behind the schedule */
+uint64_t ut_trs_pads_skipped(const ut_trs_ctx* ctx);
+/* n mid-frame pkts from pkt_idx, a new slice, through the RL in-frame burst; the pads
+ * it sent, UINT32_MAX if it could not run */
+uint32_t ut_trs_rl_slice(ut_trs_ctx* ctx, uint32_t pkt_idx, unsigned int n);
+
 /* MT_DEV_TX_DESC_DEEP, the TX ring of a deep port */
 uint16_t ut_trs_deep_nb_tx_desc(void);
 /* Stream mode: the RL tasklet runs mid-frame against a NIC TX queue of nic_desc
@@ -247,6 +274,7 @@ struct ut_trs_frames_case {
   uint32_t warm_pkts;
   uint16_t mixed_accept; /* ut_trs_set_mixed_accept() */
   int64_t vrx_budget_ns; /* ut_trs_set_vrx_detect(), 0 off */
+  bool drain_model;      /* ut_trs_set_drain_model() on the case's pacing */
 };
 /* runs the RL tasklet until every frame is out; < 0 if it stops short */
 int ut_trs_run_frames(ut_trs_ctx* ctx, const struct ut_trs_frames_case* c);

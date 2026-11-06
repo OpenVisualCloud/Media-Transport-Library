@@ -3222,6 +3222,16 @@ bool ut_txv_rl_tail(const ut_txv_ctx* ctx, int leg, long double* drained) {
   return ctx->session.trs_rl_tail[leg];
 }
 
+void ut_txv_set_drain(ut_txv_ctx* ctx, int leg, uint64_t drain_tsc, bool ring_full) {
+  ctx->session.trs_drain_tsc[leg] = drain_tsc;
+  ctx->session.trs_ring_full[leg] = ring_full;
+}
+
+uint64_t ut_txv_drain(const ut_txv_ctx* ctx, int leg, bool* ring_full) {
+  if (ring_full) *ring_full = ctx->session.trs_ring_full[leg];
+  return ctx->session.trs_drain_tsc[leg];
+}
+
 int ut_txv_recover(ut_txv_ctx* ctx, int leg) {
   enum mtl_log_level level = mt_get_log_global_level();
 

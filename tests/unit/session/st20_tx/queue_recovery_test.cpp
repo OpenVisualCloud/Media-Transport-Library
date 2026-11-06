@@ -59,6 +59,16 @@ TEST_F(St20TxQueueRecoveryTest, RecoveryDropsTheKeptBackTail) {
   EXPECT_EQ(drained, 0);
 }
 
+/* the new queue is empty: the old one's drain end and full ring would hold its pads */
+TEST_F(St20TxQueueRecoveryTest, RecoveryClearsTheQueueDrainEnd) {
+  ut_txv_set_drain(ctx_, kP, kStartNs + 4000000, true);
+  ASSERT_EQ(ut_txv_recover(ctx_, kP), 0);
+
+  bool ring_full = true;
+  EXPECT_EQ(ut_txv_drain(ctx_, kP, &ring_full), 0u);
+  EXPECT_FALSE(ring_full);
+}
+
 TEST_F(St20TxQueueRecoveryTest, LegItsOtherLegFlushedRunsItsOwnDoneCleanup) {
   ASSERT_EQ(ut_txv_recover(ctx_, kP), 0);
   ASSERT_EQ(ut_txv_recovery_flushes(ctx_, kR), 1);
