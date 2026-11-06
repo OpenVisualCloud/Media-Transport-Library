@@ -4,6 +4,11 @@
 
 #include "tx_st20p_app.h"
 
+#ifndef WINDOWSENV
+#include <linux/mempolicy.h>
+#include <sys/syscall.h>
+#endif
+
 /* source lines per st20p_tx_convert_block(), so a block and its output stay in L2 */
 #define ST_APP_ST20P_BLOCK_LINES (8)
 
@@ -175,6 +180,30 @@ static void* app_tx_st20p_frame_thread(void* arg) {
   return NULL;
 }
 
+/* Size bytes of anonymous memory that prefers NUMA node node, so a short node falls back
+ * to the others; NULL if the node is not ours. */
+static uint8_t* app_tx_st20p_node_malloc(size_t size, int node) {
+#ifdef WINDOWSENV
+  MTL_MAY_UNUSED(size);
+  MTL_MAY_UNUSED(node);
+  return NULL;
+#else
+  const int long_bits = (int)(sizeof(unsigned long) * 8);
+  unsigned long mask[256 / (sizeof(unsigned long) * 8)] = {0}; /* nodes 0 to 255 */
+  if (node < 0 || node >= (int)(sizeof(mask) * 8)) return NULL;
+  void* p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (MAP_FAILED == p) return NULL;
+  mask[node / long_bits] = 1UL << (node % long_bits);
+  madvise(p, size, MADV_HUGEPAGE);
+  /* the kernel reads maxnode - 1 bits */
+  if (syscall(SYS_mbind, p, size, MPOL_PREFERRED, mask, sizeof(mask) * 8 + 1, 0)) {
+    munmap(p, size);
+    return NULL;
+  }
+  return p;
+#endif
+}
+
 static int app_tx_st20p_open_source(struct st_app_tx_st20p_session* s) {
   int fd;
   struct stat i;
@@ -218,7 +247,19 @@ static int app_tx_st20p_open_source(struct st_app_tx_st20p_session* s) {
     return -EIO;
   }
 
-  s->st20p_source_begin = mtl_hp_malloc(s->st, i.st_size, MTL_PORT_P);
+  s->st20p_source_begin = NULL;
+  if (s->st20p_source_node >= 0) {
+    s->st20p_source_begin = app_tx_st20p_node_malloc(i.st_size, s->st20p_source_node);
+    if (s->st20p_source_begin) {
+      info("%s(%d), source prefers node %d\n", __func__, s->idx, s->st20p_source_node);
+    } else {
+      warn("%s(%d), source on node %d fail, on hugepages\n", __func__, s->idx,
+           s->st20p_source_node);
+      s->st20p_source_node = -1;
+    }
+  }
+  if (!s->st20p_source_begin)
+    s->st20p_source_begin = mtl_hp_malloc(s->st, i.st_size, MTL_PORT_P);
   if (!s->st20p_source_begin) {
     warn("%s, source malloc on hugepage fail\n", __func__);
     s->st20p_source_begin = m;
@@ -269,7 +310,10 @@ static int app_tx_st20p_close_source(struct st_app_tx_st20p_session* s) {
     s->st20p_render_block = NULL;
   }
   if (s->st20p_source_fd < 0 && s->st20p_source_begin) {
-    mtl_hp_free(s->st, s->st20p_source_begin);
+    if (s->st20p_source_node >= 0)
+      munmap(s->st20p_source_begin, s->st20p_source_end - s->st20p_source_begin);
+    else
+      mtl_hp_free(s->st, s->st20p_source_begin);
     s->st20p_source_begin = NULL;
   }
   if (s->st20p_source_fd >= 0) {
@@ -474,6 +518,8 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
 
   s->framebuff_cnt = ops.framebuff_cnt;
   s->st20p_source_fd = -1;
+  s->st20p_source_node =
+      ctx->tx_st20p_source_sibling_node ? mtl_get_numa_id(ctx->st, MTL_PORT_P) ^ 1 : -1;
 
   s->render = ctx->tx_st20p_render || (st20p && st20p->render);
   s->fused = s->render || ctx->tx_st20p_fused || (st20p && st20p->fused);

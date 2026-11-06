@@ -155,6 +155,7 @@ enum st_args_cmd {
   ST_ARG_DMA_AUTO,
   ST_ARG_ST20P_APP_CORES,
   ST_ARG_TX_ST20P_FUSED,
+  ST_ARG_TX_ST20P_SOURCE_SIBLING_NODE,
   ST_ARG_TX_ST20P_RENDER,
   ST_ARG_TX_VIDEO_FB_CNT,
   ST_ARG_RX_PKT_CONVERT,
@@ -310,6 +311,7 @@ static struct option st_app_args_options[] = {
     {"rx_max_file_size", required_argument, 0, ST_ARG_RX_MAX_FILE_SIZE},
     {"st20p_app_cores", required_argument, 0, ST_ARG_ST20P_APP_CORES},
     {"tx_st20p_fused", no_argument, 0, ST_ARG_TX_ST20P_FUSED},
+    {"tx_st20p_source_sibling_node", no_argument, 0, ST_ARG_TX_ST20P_SOURCE_SIBLING_NODE},
     {"tx_st20p_render", no_argument, 0, ST_ARG_TX_ST20P_RENDER},
     {"tx_video_fb_cnt", required_argument, 0, ST_ARG_TX_VIDEO_FB_CNT},
     {"rx_pkt_convert", no_argument, 0, ST_ARG_RX_PKT_CONVERT},
@@ -965,6 +967,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_TX_ST20P_FUSED:
         ctx->tx_st20p_fused = true;
+        break;
+      case ST_ARG_TX_ST20P_SOURCE_SIBLING_NODE:
+        ctx->tx_st20p_source_sibling_node = true;
         break;
       case ST_ARG_TX_ST20P_RENDER:
         ctx->tx_st20p_render = true;

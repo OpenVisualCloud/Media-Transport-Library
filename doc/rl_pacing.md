@@ -480,6 +480,11 @@ quota, measures while it streams, and reports a frame that may break VRX and a s
   - `MTL_FLAG_DEDICATED_SYS_LCORE` moves the system tasks to their own core (`--dedicated_sys_lcore`).
 - **Isolation.** Isolate the scheduler cores and stop the timer tick on them; a tick or a preemption inside a pad
   burst is the common stall. See the [CPU Isolation Guide](isolation.md).
+- **Memory traffic on the NIC's node.** The NIC fetches every payload from the node's memory. Heavy application
+  traffic there, such as converting frames, slows both the scheduler cores and those fetches. Keep it on another node:
+  RxTxApp's `--tx_st20p_source_sibling_node` reads the sources of a fused st20p TX from the node SNC2 pairs with the
+  NIC's, node number xor 1, which without SNC is usually the other socket's. On 72 x 1080p59.94 YUV422PLANAR10LE over
+  two E830 ports, EBU LIST then judged 72 of 72 streams compliant instead of 7.
 
 ## 8. Limits
 
