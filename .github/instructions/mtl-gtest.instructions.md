@@ -16,6 +16,8 @@ applyTo: "tests/integration_tests/**,.github/scripts/gtest.sh"
 ```text
 --p_port <BDF>          Primary (producer) port
 --r_port <BDF>          Receiver port
+--port_list <BDF>,...   2..8 ports instead of --p_port/--r_port (4 for *redundant* cases)
+--log_level <level>     debug | info | notice | warning | error (info logs each port's sip)
 --auto_start_stop       Auto start/stop sessions (always use)
 --pacing_way <mode>     auto (default, uses RL) | tsc (software fallback)
 --dma_dev <p>,<r>       DMA devices for DMA-accelerated tests
@@ -54,6 +56,8 @@ applyTo: "tests/integration_tests/**,.github/scripts/gtest.sh"
 # Via MCP tool — handles port discovery and structured output:
 run_gtest(gtest_filter="St20p*")
 run_gtest(gtest_filter="St30*")
+run_gtest(gtest_filter="*redundant_stats", session_id=12, log_level="info",
+          port_list="0000:c9:01.0,0000:c9:01.1,0000:c9:01.2,0000:c9:01.3")
 
 # Via terminal (supports extra flags like --pacing_way tsc):
 sudo ./build/tests/KahawaiTest \
