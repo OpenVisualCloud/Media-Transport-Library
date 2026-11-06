@@ -547,6 +547,7 @@ struct st_app_tx_st20p_session {
   uint8_t* st20p_source_end;
   uint8_t* st20p_frame_cursor;
   int st20p_source_fd;
+  int st20p_source_node; /* >= 0: the source in anonymous memory preferring this node */
   bool st20p_frames_copied;
 
   /* fused: the source is converted block by block into the frame */
@@ -780,6 +781,8 @@ struct st_app_context {
   struct st_app_tx_st20p_session* tx_st20p_sessions;
   int tx_st20p_session_cnt;
   bool tx_st20p_fused;
+  /* the st20p TX sources on the NUMA node paired with port P's, as SNC2 numbers them */
+  bool tx_st20p_source_sibling_node;
   bool tx_st20p_render;
   int tx_video_fb_cnt;
 
