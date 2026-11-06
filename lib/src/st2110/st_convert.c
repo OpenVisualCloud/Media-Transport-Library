@@ -660,7 +660,7 @@ int st20_yuv422p16le_to_rfc4175_422be10_simd(uint16_t* y, uint16_t* b, uint16_t*
   MTL_MAY_UNUSED(ret);
 
 #ifdef MTL_HAS_AVX512
-  if ((level >= MTL_SIMD_LEVEL_AVX512) /*&& (cpu_level >= MTL_SIMD_LEVEL_AVX512)*/) {
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
     ret = st20_yuv422p16le_to_rfc4175_422be10_avx512(y, b, r, pg, w, h);
     if (ret == 0) return 0;
