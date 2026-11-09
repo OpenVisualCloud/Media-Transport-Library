@@ -253,6 +253,8 @@ hardening: &hardening
   - 'patches/dpdk/**'
   - 'ecosystem/ffmpeg_plugin/*/*.patch'
   - .github/scripts/ci/scan/check-hardening.sh
+  - .github/scripts/ci/scan/hardening-tools.sh
+  - .github/scripts/ci/scan/tools.env
 
 # cicd-pr-check.yml, build: the artifacts, and each filter of a job that needs
 # them. A test-only change also runs the build job: all of its caches hit, and
