@@ -989,11 +989,7 @@ int st_frame_nt_scratch_init(struct st_frame_nt_scratch* s,
   size = st_frame_nt_scratch_size(dst_fmt, width);
   if (!size) return 0;
   s->buf = mt_rte_zmalloc_socket(size, socket_id);
-  if (!s->buf) {
-    err("%s, %" PRIu64 " bytes for %s malloc fail\n", __func__, size,
-        st_frame_fmt_name(dst_fmt));
-    return -ENOMEM;
-  }
+  if (!s->buf) return -ENOMEM; /* the caller decides whether that fails create */
   s->size = size;
   return 0;
 }
