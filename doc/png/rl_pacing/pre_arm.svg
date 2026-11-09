@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 500" width="960" height="500">
+<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1f1f1f"/></marker><marker id="arrred" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b5122b"/></marker><marker id="arrgreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3a9a2e"/></marker><pattern id="hatchO" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="#fbe3b0"/><line x1="0" y1="0" x2="0" y2="6" stroke="#e39400" stroke-width="2.5"/></pattern><pattern id="hatchK" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(-45)"><rect width="6" height="6" fill="#ffffff"/><line x1="0" y1="0" x2="0" y2="6" stroke="#454545" stroke-width="1"/></pattern><pattern id="hatchR" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f6d3d8"/><line x1="0" y1="0" x2="0" y2="6" stroke="#b5122b" stroke-width="1.2"/></pattern><pattern id="hatchG" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="#ffffff"/><line x1="0" y1="0" x2="0" y2="6" stroke="#8a8a8a" stroke-width="1.5"/></pattern></defs>
+<rect width="960" height="500" fill="#ffffff"/>
+<text x="20.0" y="32.0" font-size="20" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" font-weight="bold">The pre-arm: pads queued ahead of packet 0 let the NIC send it on time</text>
+<text x="20.0" y="56.0" font-size="14" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545">1080p59.94. Sessions s1 to s8 share one CPU core, which visits each in turn; this is session 1's frame start.</text>
+<text x="20.0" y="75.0" font-size="14" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545">Pads are padding packets that the NIC sends at the stream's rate. Visit durations are illustrative.</text>
+<text x="20.0" y="111.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" font-weight="bold">Colour code:</text>
+<rect x="124.0" y="100.0" width="16.0" height="14.0" rx="2" fill="#d6edd2" stroke="#3a9a2e" stroke-width="2"/>
+<text x="146.0" y="111.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">session 1: its visit, its pads, its frame packets</text>
+<rect x="462.0" y="100.0" width="16.0" height="14.0" rx="2" fill="#3a9a2e" stroke="#3a9a2e" stroke-width="2"/>
+<text x="484.0" y="111.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">packet 0, the frame's first packet</text>
+<rect x="719.0" y="100.0" width="16.0" height="14.0" rx="2" fill="#d3ddef" stroke="#2f5597" stroke-width="2"/>
+<text x="741.0" y="111.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">visits of sessions s2 to s8</text>
+<rect x="124.0" y="122.0" width="16.0" height="14.0" rx="2" fill="#e8e8e8" stroke="#8a8a8a" stroke-width="2"/>
+<text x="146.0" y="133.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">other work on the core</text>
+<text x="20.0" y="248.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" font-weight="bold">CPU core</text>
+<text x="20.0" y="264.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545">what it runs</text>
+<text x="20.0" y="338.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" font-weight="bold">NIC, session 1</text>
+<text x="20.0" y="354.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545">what it sends</text>
+<line x1="198.2" y1="228.0" x2="198.2" y2="360.0" stroke="#454545" stroke-width="1.5" stroke-dasharray="5 3"/>
+<text x="198.2" y="206.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">warm-up window opens</text>
+<text x="198.2" y="221.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">0.5 ms before the target</text>
+<line x1="654.0" y1="228.0" x2="654.0" y2="360.0" stroke="#1f1f1f" stroke-width="1.5" stroke-dasharray="5 3"/>
+<text x="654.0" y="221.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">packet 0's target</text>
+<!-- CPU lane: the visit at the window open, and the round at the target -->
+<g id="cpu-lane">
+<rect x="198.2" y="236.0" width="40.0" height="30.0" rx="0" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<text x="218.2" y="255.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">s1</text>
+<rect x="238.2" y="236.0" width="20.0" height="30.0" rx="0" fill="#d3ddef" stroke="#2f5597" stroke-width="1.2"/>
+<text x="248.2" y="255.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">s2</text>
+<rect x="258.2" y="236.0" width="20.0" height="30.0" rx="0" fill="#d3ddef" stroke="#2f5597" stroke-width="1.2"/>
+<text x="268.2" y="255.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">s3</text>
+<rect x="278.2" y="236.0" width="20.0" height="30.0" rx="0" fill="#d3ddef" stroke="#2f5597" stroke-width="1.2"/>
+<text x="288.2" y="255.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">s4</text>
+<rect x="298.2" y="236.0" width="20.0" height="30.0" rx="0" fill="#d3ddef" stroke="#2f5597" stroke-width="1.2"/>
+<text x="308.2" y="255.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">s5</text>
+<rect x="318.2" y="236.0" width="20.0" height="30.0" rx="0" fill="#d3ddef" stroke="#2f5597" stroke-width="1.2"/>
+<text x="328.2" y="255.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">s6</text>
+<rect x="338.2" y="236.0" width="20.0" height="30.0" rx="0" fill="#d3ddef" stroke="#2f5597" stroke-width="1.2"/>
+<text x="348.2" y="255.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">s7</text>
+<rect x="358.2" y="236.0" width="20.0" height="30.0" rx="0" fill="#d3ddef" stroke="#2f5597" stroke-width="1.2"/>
+<text x="368.2" y="255.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">s8</text>
+<rect x="378.2" y="236.0" width="181.8" height="30.0" rx="0" fill="#e8e8e8" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="469.1" y="255.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">other work</text>
+<rect x="604.0" y="236.0" width="20.0" height="30.0" rx="0" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<text x="614.0" y="255.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">s1</text>
+<rect x="624.0" y="236.0" width="20.0" height="30.0" rx="0" fill="#d3ddef" stroke="#2f5597" stroke-width="1.2"/>
+<text x="634.0" y="255.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">s2</text>
+<rect x="644.0" y="236.0" width="20.0" height="30.0" rx="0" fill="#d3ddef" stroke="#2f5597" stroke-width="1.2"/>
+<text x="654.0" y="255.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">s3</text>
+<rect x="664.0" y="236.0" width="20.0" height="30.0" rx="0" fill="#d3ddef" stroke="#2f5597" stroke-width="1.2"/>
+<text x="674.0" y="255.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">s4</text>
+<rect x="684.0" y="236.0" width="20.0" height="30.0" rx="0" fill="#d3ddef" stroke="#2f5597" stroke-width="1.2"/>
+<text x="694.0" y="255.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">s5</text>
+<rect x="704.0" y="236.0" width="20.0" height="30.0" rx="0" fill="#d3ddef" stroke="#2f5597" stroke-width="1.2"/>
+<text x="714.0" y="255.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">s6</text>
+<rect x="724.0" y="236.0" width="20.0" height="30.0" rx="0" fill="#d3ddef" stroke="#2f5597" stroke-width="1.2"/>
+<text x="734.0" y="255.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">s7</text>
+<rect x="744.0" y="236.0" width="20.0" height="30.0" rx="0" fill="#d3ddef" stroke="#2f5597" stroke-width="1.2"/>
+<text x="754.0" y="255.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">s8</text>
+<rect x="764.0" y="236.0" width="150.0" height="30.0" rx="0" fill="#e8e8e8" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="839.0" y="255.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">other work</text>
+<line x1="566.0" y1="270.0" x2="574.0" y2="232.0" stroke="#454545" stroke-width="1.3"/>
+<line x1="576.0" y1="270.0" x2="584.0" y2="232.0" stroke="#454545" stroke-width="1.3"/>
+<text x="754.0" y="186.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">≈0.5 ms later: the round at packet 0's target</text>
+</g>
+<!-- NIC lane: the pads, packet 0, the frame -->
+<g id="nic-lane">
+<rect x="203.2" y="326.0" width="356.8" height="30.0" rx="0" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<text x="381.6" y="338.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">≈131 pads (the 0.5 ms window plus the bucket),</text>
+<text x="381.6" y="352.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">sent one after another</text>
+<line x1="566.0" y1="360.0" x2="574.0" y2="322.0" stroke="#454545" stroke-width="1.3"/>
+<line x1="576.0" y1="360.0" x2="584.0" y2="322.0" stroke="#454545" stroke-width="1.3"/>
+<rect x="594.0" y="326.0" width="67.5" height="30.0" rx="0" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<text x="627.8" y="345.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">last pads</text>
+<rect x="700.5" y="326.0" width="38.9" height="30.0" rx="0" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<rect x="739.4" y="326.0" width="38.9" height="30.0" rx="0" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<rect x="778.3" y="326.0" width="38.9" height="30.0" rx="0" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<rect x="817.2" y="326.0" width="38.9" height="30.0" rx="0" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<rect x="856.1" y="326.0" width="38.9" height="30.0" rx="0" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<rect x="895.0" y="326.0" width="19.0" height="30.0" rx="0" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<rect x="661.5" y="326.0" width="38.9" height="30.0" rx="0" fill="#3a9a2e" stroke="#3a9a2e" stroke-width="1.2"/>
+<rect x="725.0" y="327.5" width="164.0" height="27.0" rx="3" fill="#d6edd2"/>
+<text x="807.0" y="338.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">the rest of the frame,</text>
+<text x="807.0" y="350.5" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">one packet every 3.89 µs</text>
+</g>
+<!-- what happens -->
+<g id="notes">
+<line x1="218.2" y1="268.0" x2="218.2" y2="323.0" stroke="#1f1f1f" stroke-width="1.4" marker-end="url(#arr)"/>
+<rect x="222.2" y="285.8" width="353.0" height="14.4" rx="3" fill="#ffffff"/>
+<text x="226.2" y="296.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">s1's visit queues ≈131 pads, then packet 0 behind them</text>
+<text x="180.0" y="186.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545">the round of the core when the window opens</text>
+<rect x="650.5" y="309.8" width="61.0" height="14.4" rx="3" fill="#ffffff"/>
+<text x="681.0" y="320.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">packet 0</text>
+<text x="595.0" y="373" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">the last pad ends and packet 0 leaves</text>
+<text x="595.0" y="386" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">0.75 µs after its target (the aim):</text>
+<text x="595.0" y="399" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">never early while the NIC keeps the 2048-byte</text>
+<text x="595.0" y="412" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">bucket and the trained rate (Sec. 10.1)</text>
+<rect x="715.0" y="285.8" width="235.0" height="14.4" rx="3" fill="#ffffff"/>
+<text x="719.0" y="296.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">the CPU is busy with s3 at the target;</text>
+<rect x="715.0" y="300.8" width="172.0" height="14.4" rx="3" fill="#ffffff"/>
+<text x="719.0" y="311.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">packet 0 is already queued</text>
+</g>
+<line x1="180.0" y1="410.0" x2="560.0" y2="410.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<line x1="594.0" y1="425.0" x2="914.0" y2="425.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<line x1="566.0" y1="431.0" x2="574.0" y2="419.0" stroke="#1f1f1f" stroke-width="1.3"/>
+<line x1="576.0" y1="431.0" x2="584.0" y2="419.0" stroke="#1f1f1f" stroke-width="1.3"/>
+<line x1="180.0" y1="425.0" x2="180.0" y2="430.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="180.0" y="444.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">−500</text>
+<line x1="280.0" y1="425.0" x2="280.0" y2="430.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="280.0" y="444.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">−490</text>
+<line x1="380.0" y1="425.0" x2="380.0" y2="430.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="380.0" y="444.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">−480</text>
+<line x1="480.0" y1="425.0" x2="480.0" y2="430.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="480.0" y="444.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">−470</text>
+<line x1="654.0" y1="425.0" x2="654.0" y2="430.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="654.0" y="444.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">0</text>
+<line x1="754.0" y1="425.0" x2="754.0" y2="430.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="754.0" y="444.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">+10</text>
+<line x1="854.0" y1="425.0" x2="854.0" y2="430.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="854.0" y="444.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">+20</text>
+<text x="180.0" y="463.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545">µs from packet 0's target. The axis is cut at //, where the pads drain for most of the 0.5 ms.</text>
+</svg>

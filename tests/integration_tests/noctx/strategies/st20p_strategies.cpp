@@ -745,8 +745,11 @@ void St20pInterlacedUserPacingOracle::rxTestFrameModifier(void* frame,
   St20pUserPacingOracle::rxTestFrameModifier(frame, frame_size);
 }
 
-St20pVrxRecorder::St20pVrxRecorder(St20pHandler* parentHandler, int64_t ptp_minus_phc)
-    : FrameTestStrategy(parentHandler, false, true), ptp_minus_phc_ns(ptp_minus_phc) {
+St20pVrxRecorder::St20pVrxRecorder(St20pHandler* parentHandler, int64_t ptp_minus_phc,
+                                   int window)
+    : FrameTestStrategy(parentHandler, false, true),
+      window_s(window),
+      ptp_minus_phc_ns(ptp_minus_phc) {
 }
 
 void St20pVrxRecorder::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
@@ -755,7 +758,7 @@ void St20pVrxRecorder::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
   if (!first_rx_ns) first_rx_ns = f->receive_timestamp;
   const uint64_t t = f->receive_timestamp - first_rx_ns;
   if (t < (uint64_t)kSt20pVrxWarmupS * NS_PER_S ||
-      t >= (uint64_t)(kSt20pVrxWarmupS + kSt20pVrxWindowS) * NS_PER_S)
+      t >= (uint64_t)(kSt20pVrxWarmupS + window_s) * NS_PER_S)
     return;
   delivery_ns.push_back(static_cast<int64_t>(mtl_ptp_read_time(handler->ctx->handle) -
                                              f->receive_timestamp));
@@ -780,5 +783,60 @@ void St20pVrxRecorder::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
         f->pkts_total > tp->pkts_cnt ? f->pkts_total - tp->pkts_cnt : 0;
     max_missing_pkts[port] = std::max(max_missing_pkts[port], missing);
     if (missing > kSt20pVrxMaxLegLagPkts) partial_frames[port]++;
+  }
+}
+
+void RlWireCheck::rxTestFrameModifier(void* frame, size_t frame_size) {
+  if (closed.load(std::memory_order_acquire)) return;
+  auto* f = static_cast<st_frame*>(frame);
+  auto* handler = static_cast<St20pHandler*>(parent);
+  size_t recorded[MTL_SESSION_PORT_MAX];
+  uint64_t off_band[MTL_SESSION_PORT_MAX];
+  for (int port = 0; port < MTL_SESSION_PORT_MAX; port++) {
+    recorded[port] = vrx_min[port].size();
+    off_band[port] = off_band_frames[port];
+  }
+  const size_t in_window = delivery_ns.size();
+  St20pVrxRecorder::rxTestFrameModifier(frame, frame_size);
+  if (delivery_ns.size() == in_window) return;
+
+  const uint64_t pkt0_ptp_ns = f->receive_timestamp + ptp_minus_phc_ns;
+  if (!window_from_ptp_ns) {
+    ASSERT_EQ(st20p_tx_get_pacing_params(handler->sessionsHandleTx, &tr_offset_ns,
+                                         &trs_ns, &vrx_pkts),
+              0);
+    window_from_ptp_ns = pkt0_ptp_ns;
+  }
+  window_to_ptp_ns = pkt0_ptp_ns;
+
+  const St20pFrameRate rate = st20pFrameRate(handler->sessionsOpsTx.fps);
+  const uint64_t epoch = (uint64_t)((unsigned __int128)pkt0_ptp_ns * rate.mul /
+                                    ((unsigned __int128)NS_PER_S * rate.den));
+  const int64_t launch_ns =
+      (int64_t)(st20pRoundedLaunchNs(rate, epoch, tr_offset_ns, trs_ns, vrx_pkts) -
+                st20pEpochTaiNs(rate, epoch));
+  const double shift_ticks = (double)ptp_minus_phc_ns * VIDEO_CLOCK_HZ / NS_PER_S;
+  bool negative = false;
+  for (int port = 0; port < MTL_SESSION_PORT_MAX; port++) {
+    const st20_rx_tp_meta* tp = f->tp[port];
+    if (off_band_frames[port] != off_band[port] &&
+        std::fabs(tp->rtp_offset - shift_ticks) < shift_ticks) {
+      epoch_off_frames[port]++;
+      negative_frames[port]++;
+      negative = true;
+    }
+    if (vrx_min[port].size() == recorded[port]) continue;
+    const int64_t margin = (int64_t)(tr_offset_ns + trs_ns) - tp->fpt;
+    pkt0_margin_min_ns[port] = std::min(pkt0_margin_min_ns[port], margin);
+    pkt0_early_max_ns[port] = std::max(pkt0_early_max_ns[port], launch_ns - tp->fpt);
+    if (margin <= 0) pkt0_late_frames[port]++;
+    if (margin <= 0 || tp->vrx_min < 0) {
+      negative_frames[port]++;
+      negative = true;
+    }
+  }
+  if (negative) {
+    negative_ptp_ns.push_back(pkt0_ptp_ns);
+    any_negative.store(true, std::memory_order_release);
   }
 }

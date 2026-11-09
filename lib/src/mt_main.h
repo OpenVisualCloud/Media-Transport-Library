@@ -1921,6 +1921,16 @@ static inline uint64_t st_tx_mbuf_get_ptp(struct rte_mbuf* mbuf) {
   return priv->tx_priv.ptp_time_stamp;
 }
 
+static inline void st_tx_mbuf_set_vrx_room(struct rte_mbuf* mbuf, int32_t room_ns) {
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  priv->tx_priv.vrx_room_ns = room_ns;
+}
+
+static inline int32_t st_tx_mbuf_get_vrx_room(struct rte_mbuf* mbuf) {
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  return priv->tx_priv.vrx_room_ns;
+}
+
 static inline void st_tx_mbuf_set_idx(struct rte_mbuf* mbuf, uint32_t idx) {
   struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
   priv->tx_priv.idx = idx;

@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" width="960" height="520">
+<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1f1f1f"/></marker><marker id="arrred" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b5122b"/></marker><marker id="arrgreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3a9a2e"/></marker><pattern id="hatchO" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="#fbe3b0"/><line x1="0" y1="0" x2="0" y2="6" stroke="#e39400" stroke-width="2.5"/></pattern><pattern id="hatchK" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(-45)"><rect width="6" height="6" fill="#ffffff"/><line x1="0" y1="0" x2="0" y2="6" stroke="#454545" stroke-width="1"/></pattern><pattern id="hatchR" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f6d3d8"/><line x1="0" y1="0" x2="0" y2="6" stroke="#b5122b" stroke-width="1.2"/></pattern><pattern id="hatchG" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="#ffffff"/><line x1="0" y1="0" x2="0" y2="6" stroke="#8a8a8a" stroke-width="1.5"/></pattern></defs>
+<rect width="960" height="520" fill="#ffffff"/>
+<text x="20.0" y="32.0" font-size="20" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" font-weight="bold">Absorbing a stall works only where a format's absorb limit is above 2 µs</text>
+<text x="20.0" y="56.0" font-size="14" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545">Before a frame's first packet (packet 0), MTL queues padding packets in bursts so that the NIC sends packet 0</text>
+<text x="20.0" y="75.0" font-size="14" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545">on time. Each bar maps how long one such burst stalled on the CPU to what then happens to packet 0. The</text>
+<text x="20.0" y="94.0" font-size="14" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545">absorb limit is the most lateness a stall may add to packet 0, worked out in Sec. 12, listed per format in Sec. 5 (4:2:2 10-bit, E810 VF).</text>
+<text x="20.0" y="131.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" font-weight="bold">Colour code:</text>
+<rect x="124.0" y="120.0" width="16.0" height="14.0" rx="2" fill="#e8e8e8" stroke="#8a8a8a" stroke-width="2"/>
+<text x="146.0" y="131.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">under 2 µs: not counted as a stall, plan kept</text>
+<rect x="449.0" y="120.0" width="16.0" height="14.0" rx="2" fill="#d6edd2" stroke="#3a9a2e" stroke-width="2"/>
+<text x="471.0" y="131.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">absorbed: the NIC still sends packet 0, late by the aim plus the stall</text>
+<rect x="124.0" y="142.0" width="16.0" height="14.0" rx="2" fill="#ffffff" stroke="#454545" stroke-width="2" stroke-dasharray="5 3"/>
+<text x="146.0" y="153.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">held: the CPU sends packet 0 as soon as it sees its target passed</text>
+<rect x="587.0" y="142.0" width="16.0" height="14.0" rx="2" fill="#1f1f1f" stroke="#1f1f1f" stroke-width="2"/>
+<text x="609.0" y="153.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f">thick black tick: the format's absorb limit</text>
+<!-- one bar per format -->
+<g id="bars">
+<text x="206.0" y="218.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" font-weight="bold" text-anchor="end">720p59.94</text>
+<text x="206.0" y="234.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="end">absorb limit 0.9 µs</text>
+<rect x="220.0" y="206.0" width="280.0" height="28.0" rx="0" fill="#e8e8e8" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="360.0" y="225.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">not a stall</text>
+<rect x="500.0" y="206.0" width="420.0" height="28.0" rx="0" fill="#ffffff" stroke="#454545" stroke-width="1.2" stroke-dasharray="5 3"/>
+<text x="710.0" y="225.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">held: every stall, as the limit is under 2 µs</text>
+<text x="206.0" y="276.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" font-weight="bold" text-anchor="end">1080p25</text>
+<text x="206.0" y="292.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="end">absorb limit 0.8 µs</text>
+<rect x="220.0" y="264.0" width="280.0" height="28.0" rx="0" fill="#e8e8e8" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="360.0" y="283.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">not a stall</text>
+<rect x="500.0" y="264.0" width="420.0" height="28.0" rx="0" fill="#ffffff" stroke="#454545" stroke-width="1.2" stroke-dasharray="5 3"/>
+<text x="710.0" y="283.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">held: every stall, as the limit is under 2 µs</text>
+<text x="206.0" y="334.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" font-weight="bold" text-anchor="end">1080p59.94</text>
+<text x="206.0" y="350.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="end">absorb limit 2.6 µs</text>
+<rect x="220.0" y="322.0" width="280.0" height="28.0" rx="0" fill="#e8e8e8" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="360.0" y="341.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">not a stall</text>
+<rect x="500.0" y="322.0" width="84.0" height="28.0" rx="0" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.5"/>
+<rect x="584.0" y="322.0" width="336.0" height="28.0" rx="0" fill="#ffffff" stroke="#454545" stroke-width="1.2" stroke-dasharray="5 3"/>
+<line x1="584.0" y1="317.0" x2="584.0" y2="355.0" stroke="#1f1f1f" stroke-width="2.5"/>
+<text x="542.0" y="341.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">absorbed</text>
+<text x="752.0" y="341.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">held</text>
+<text x="206.0" y="392.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" font-weight="bold" text-anchor="end">2160p59.94</text>
+<text x="206.0" y="408.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="end">absorb limit 3.6 µs</text>
+<rect x="220.0" y="380.0" width="280.0" height="28.0" rx="0" fill="#e8e8e8" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="360.0" y="399.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">not a stall</text>
+<rect x="500.0" y="380.0" width="224.0" height="28.0" rx="0" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.5"/>
+<rect x="724.0" y="380.0" width="196.0" height="28.0" rx="0" fill="#ffffff" stroke="#454545" stroke-width="1.2" stroke-dasharray="5 3"/>
+<line x1="724.0" y1="375.0" x2="724.0" y2="413.0" stroke="#1f1f1f" stroke-width="2.5"/>
+<text x="612.0" y="399.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">absorbed</text>
+<text x="822.0" y="399.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">held</text>
+</g>
+<line x1="220.0" y1="442.0" x2="920.0" y2="442.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<line x1="220.0" y1="442.0" x2="220.0" y2="447.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="220.0" y="462.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">0</text>
+<line x1="360.0" y1="442.0" x2="360.0" y2="447.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="360.0" y="462.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">1</text>
+<line x1="500.0" y1="442.0" x2="500.0" y2="447.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="500.0" y="462.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">2</text>
+<line x1="640.0" y1="442.0" x2="640.0" y2="447.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="640.0" y="462.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">3</text>
+<line x1="780.0" y1="442.0" x2="780.0" y2="447.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="780.0" y="462.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">4</text>
+<line x1="920.0" y1="442.0" x2="920.0" y2="447.0" stroke="#1f1f1f" stroke-width="1"/>
+<text x="920.0" y="462.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="middle">5</text>
+<text x="920.0" y="480.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545" text-anchor="end">stall: how long the pad burst ran past its plan (µs); the outcome goes on past 5 µs</text>
+<line x1="500.0" y1="184.0" x2="500.0" y2="442.0" stroke="#1f1f1f" stroke-width="1.5" stroke-dasharray="5 3"/>
+<text x="500.0" y="180.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">2 µs: the stall threshold</text>
+<text x="20.0" y="510.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#454545">Stalls only. The limit also bounds late-entry tails and the tail re-check, in the rows under 2 µs too.</text>
+</svg>

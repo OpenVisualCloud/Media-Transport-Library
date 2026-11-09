@@ -27,6 +27,7 @@ Contents
    :caption: Contents:
 
    doc/design.md
+   doc/rl_pacing.md
    MTL Manager <manager/README.md>
    doc/build.md
    Build Guide on Windows <doc/build_WIN.md>
