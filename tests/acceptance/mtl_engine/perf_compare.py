@@ -619,6 +619,14 @@ def stream_bps(width: int, height: int, fps: float) -> float:
     return width * height * 20 * fps * 1125 / 1080 * 1406 / 1320
 
 
+def codestream_bps(width: int, height: int, fps: float) -> float:
+    """The wire rate of an st22p stream as RxTxApp codes it: 3 bits a pixel
+    (tx_st22p_app.c) and MTL's 60 bytes of JPEG XS boxes, paced over 1125 of 1080
+    lines, in MTL's packets of 1280 bytes of codestream that take 1362 on the wire."""
+    packets = math.ceil((width * height * 3 // 8 + 60) / 1280)
+    return packets * 1362 * 8 * fps * 1125 / 1080
+
+
 def frame_packets(width: int, height: int) -> int:
     """The packets of a 4:2:2 10-bit frame, of 1320 bytes of pixels: 3928 at 1080p."""
     return math.ceil(width * height * 20 / 8 / 1320)

@@ -367,6 +367,11 @@ def test_a_port_carries_the_streams_its_link_speed_allows():
     assert hd == pytest.approx(1920 * 1080 * 20 * FPS * 1125 / 1080 * 1406 / 1320)
     assert 36 * hd < 100e9 < 37 * hd and 14 * hd < 40e9 < 15 * hd
     assert 9 * uhd < 100e9 < 10 * uhd and 2 * fuhd < 100e9 < 3 * fuhd
+    # st22p: a 1080p codestream of 3 bits a pixel and its boxes in 608 packets of 1280
+    # bytes, which take 1362 on the wire
+    st22 = pc.codestream_bps(1920, 1080, FPS)
+    assert st22 == pytest.approx(608 * 1362 * 8 * FPS * 1125 / 1080)
+    assert 60 * st22 < 25e9 < 61 * st22 and 24 * st22 < 10e9 < 25 * st22
 
 
 def test_add_port_gives_the_second_port_its_own_sessions():

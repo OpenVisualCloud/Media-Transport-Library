@@ -102,6 +102,24 @@ build_slot() {
 		MTL_INSTALL_PREFIX="${prefix}/mtl" bash "${src}/script/build_jpegxs.sh" \
 			-v "$(sed -n 's/^SVT_JPEG_XS_VER=//p' "${root_dir}/versions.env")" \
 			-p "${prefix}/jpegxs" -s "${slots}/svt" --config "${prefix}/conf/kahawai.json"
+		# The plugin codes 8 sessions a direction each time MTL registers it, and MTL
+		# registers 8 plugins, by their paths: the plugin under 7 more paths, links
+		# beside it, gives a slot 64, of which MTL's one TX scheduler takes 60.
+		python3 - "${prefix}/conf/kahawai.json" <<'PY'
+import json, os, sys
+
+registry = sys.argv[1]
+with open(registry) as f:
+    config = json.load(f)
+plugin = config["plugins"][0]["path"]
+stem, ext = os.path.splitext(plugin)
+for i in range(1, 8):
+    link = f"{stem}_{i}{ext}"
+    os.symlink(os.path.basename(plugin), link)
+    config["plugins"].append({"enabled": 1, "name": f"st22_svt_jpegxs_{i}", "path": link})
+with open(registry, "w") as f:
+    json.dump(config, f, indent=4)
+PY
 	fi
 	rm -rf "$src"
 }

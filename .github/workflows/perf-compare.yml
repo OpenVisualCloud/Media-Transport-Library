@@ -79,7 +79,7 @@ on:
         default: 'none: the applications use the format on the wire, nothing is converted'
       # Each choice says what it does; the case takes its word before the colon.
       codec:
-        description: 'The video of every session. jpegxs runs 1080p, up to 8 sessions (set sessions), as the plugin encodes or decodes an instance, without dma, pixel_format, nics whole or compliance; each build gets the SVT-JPEG-XS plugin of this commit''s versions.env, built against its libmtl, of MTL 26.09 or later'
+        description: 'The video of every session. jpegxs runs 1080p, up to 60 sessions, as many as the one scheduler MTL gives a TX instance''s st22 sessions takes, without dma, pixel_format, nics whole or compliance; each build gets the SVT-JPEG-XS plugin of this commit''s versions.env, built against its libmtl, of MTL 26.09 or later'
         required: false
         type: choice
         options:

@@ -472,14 +472,31 @@ What changes in the measurement:
   registry that also named another, as the sample plugin that claims JPEG XS and only
   copies the frames, would give it sessions.
 
-A build takes up to 8 sessions, as many as the plugin encodes or decodes an instance, of
-about 0.4 Gb/s each at 1080p59: the plugin and the codec's CPU bound it, not the link or
-MTL's 60 sessions a scheduler, so an st22p run measures the compressed pipeline
-end-to-end, not the density of MTL's st22 transport. Only 1080p has a planar clip short
-enough for each TX session's hugepages. DMA (MTL's st22 RX has none), a pixel format
-(the encoder takes the clip as it is), `whole` (one port carries the sessions) and
-`compliance` (LIST takes a -22 stream's media type from its SDP, and judges it by other
-rules) are refused.
+A build takes up to 60 sessions, of about 0.4 Gb/s each at 1080p59:
+
+- The plugin codes 8 sessions a direction each time MTL registers it, and MTL registers
+  8 plugins, which it tells apart by their paths: a slot's registry names the plugin and
+  7 links to it, so 64 sessions find a codec.
+- MTL puts all st22 sessions of a TX instance on one scheduler, whose table takes 60.
+  Their quota, `st22_frame_bandwidth_bps()`, counts the codestream's bytes where st20's
+  counts bits, so a scheduler's quota would take about 640 of them, and MTL picks a
+  scheduler by its quota alone: the 61st session fails in `tv_mgr_attach()`. RX's quota
+  counts the decoded frame, as RxTxApp sets no `max_codestream_size`: 60 a scheduler at
+  1080p59, 52 with `redundant`, whose RX then takes a second. perf-compare measures MTL
+  as it is.
+- MTL tries each full copy before the next, so a healthy log has `all session slot are
+  used` and `fail to create one session at 8` lines.
+- Within those 60, the codec's CPU and the companion's hugepages bound a build, which a
+  run measures and reports rather than refuses: an overloaded build is a result. A TX
+  session holds about 0.27 GB of hugepages, by estimate the clip and its frames, and with
+  `single` both builds' TX instances share one node of the companion, 24 GB on the perf
+  pair: about 40 sessions a build, beyond which a round would fail, its source not in
+  hugepages or a session not created.
+
+Only 1080p has a planar clip short enough for each TX session's hugepages. DMA (MTL's
+st22 RX has none), a pixel format (the encoder takes the clip as it is), `whole` (one
+port carries the sessions) and `compliance` (LIST takes a -22 stream's media type from
+its SDP, and judges it by other rules) are refused.
 
 ## 5. Running it
 
@@ -513,7 +530,7 @@ anything is built or started:
 | `sessions`, `video`, `nics` | A port carries at most 100 Gb/s of sessions, a build on two ports twice that (below) | refs job; the case against each port's own link |
 | `sessions`, `single_core_rx`, `single_core_tx` | An MTL scheduler takes 60 video sessions at most | refs job and case |
 | `compliance`, `video` | LIST does not judge 8K | refs job and case |
-| `codec` and `sessions`, `video`, `nics`, `dma`, `pixel_format`, `compliance` | `jpegxs` takes up to 8 sessions, 1080p, and no `whole`, DMA, pixel format or compliance (§4.7) | refs job and case |
+| `codec` and `sessions`, `video`, `nics`, `dma`, `pixel_format`, `compliance` | `jpegxs` takes up to 60 sessions, 1080p, and no `whole`, DMA, pixel format or compliance (§4.7) | refs job and case |
 | `codec`, `ref_a`, `ref_b` | `jpegxs` takes builds whose `VERSION` is 26.09 or later, as the SVT plugin asks (§4.7) | refs job |
 | `nics`, `single_core_rx`, `single_core_tx` | At a core's limit two instances on one socket fall short of it, both builds alike: `split`, `redundant` and `whole` give a build a socket (§3.5) | none needed |
 | `pixel_format`, `sessions`, `nics` | The conversion runs on the application threads, on the slot's first CPU and the lcores the schedulers leave: it moves each frame through the memory of the slot's node several times, which binds first: 36 x 1080p59 in yuv422p10le hold their rate in `split` and `whole`, not in `single`, where both builds share node 0 (below) | none needed |
@@ -637,7 +654,9 @@ A run takes one case, selected with `-k`, as each writes the run's one report; w
 `<mtl>/.local_install` and copied to the same path on both hosts; `perf-compare.sh
 build` with `SHA_A` and `SHA_B` set to full SHAs builds both in `../perf-compare/{a,b}`,
 and with `CODEC=jpegxs` the plugin and registry that `--perf_compare_codec jpegxs`
-needs. `<mtl>/.local_install` twice is an A/A run of the current build. The report is
+needs: its registry names the plugin 8 times, where a local install's names it once,
+which takes 8 sessions a build. `<mtl>/.local_install` twice is an A/A run of the
+current build. The report is
 `logs/performance/latest/perf_compare.html`, each round's logs and records in
 `perf_compare/round<N>/` next to it.
 
@@ -655,6 +674,7 @@ notes, which do not.
 | `exited before steady state`, `exited during the measurement` | An application or a collector stopped | The application's output and its `.log` and `.trace` records in `perf_compare/round<N>/`; a timed or sessions collector's output only stays in `/tmp/mtl-perf-compare/` on its host, until the next round |
 | `N untraced, N traced, N timed and N session timed dumps`, `N of M sessions` | A window held fewer than two whole dumps, or not every session reported | A `test_time` of 30 or more; the application and collector logs |
 | `its source is not in hugepages` | A TX read its source through `mmap()` | More hugepages on the companion, or fewer sessions |
+| `exited before steady state`, and `all session slot are used` then `st22p_tx_create fail` in an st22p instance's output | Its registry names the plugin too few times for its sessions, 8 sessions a name: a local install's names it once | Slots that `perf-compare.sh build` built with `CODEC=jpegxs`, or 8 sessions at most |
 | `N of M sessions on st22_svt_jpeg_xs_plugin*` | An st22p instance's log names fewer of its sessions on the plugin under test: another plugin coded them, or the log does not say, as with `args` that log above info or to a file | Its application output: the `st_plugin_register` and `get one session` lines, and the slot's `conf/kahawai.json` |
 | `codec jpegxs takes ...` (refs job), `--perf_compare_codec jpegxs takes ...` or `runs 1080p` | An input that st22p with JPEG XS cannot run with (§4.7) | The input the message names |
 | `no rvs_pkt_rx work in sys:tasklet_stat` | A traced RX instance gave no work counters | Its `.trace` record |

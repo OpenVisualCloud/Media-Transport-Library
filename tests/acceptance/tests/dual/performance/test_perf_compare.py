@@ -71,9 +71,6 @@ PIXEL_FORMATS = {
 # --perf_compare_codec: the codec of the st22p sessions, as RxTxApp names it; none runs
 # st20p, uncompressed
 CODECS = {"none": None, "jpegxs": "JPEG-XS"}
-# The sessions of a direction the SVT-JPEG-XS plugin takes an instance
-# (MAX_ST22_ENCODER_SESSIONS, MAX_ST22_DECODER_SESSIONS)
-CODEC_SESSIONS = 8
 # The clip of each resolution: as on the wire, RFC 4175; with a codec the planar one its
 # encoder takes, short, as RxTxApp copies the whole file into hugepages for each TX
 # session: only 1080p has one, the 4K Penguin is 6 GB.
@@ -165,9 +162,9 @@ def _options(request) -> dict:
     if CODECS[opts["codec"]]:  # st22p: what its plugin, MTL's st22 or its clip refuse
         refused = (
             (
-                opts["sessions"] > CODEC_SESSIONS,
-                f"up to {CODEC_SESSIONS} sessions, as many as the SVT-JPEG-XS plugin "
-                "encodes or decodes an instance",
+                opts["sessions"] > SCH_MAX_SESSIONS,
+                f"up to {SCH_MAX_SESSIONS} sessions: MTL puts a TX instance's st22 "
+                "sessions on one scheduler, as their quota counts bytes, not bits",
             ),
             (opts["dma"], "no DMA: MTL's st22 RX copies with none"),
             (
@@ -403,7 +400,8 @@ def test_perf_compare(
     sessions = opts["sessions"]
     # a TX queue a port of each session: redundant sessions take two
     queues = sessions * (2 if opts["nics"] == "redundant" else 1)
-    rate = pc.stream_bps(media_config["width"], media_config["height"], FPS[fps])
+    bps = pc.codestream_bps if codec else pc.stream_bps
+    rate = bps(media_config["width"], media_config["height"], FPS[fps])
     # the sessions on each port of a slot: whole fills the first before the second,
     # redundant sends each on both
     if opts["nics"] == "whole":
@@ -518,12 +516,8 @@ def test_perf_compare(
             pfs[role], vfs = _ports(host, opts["nics"])
             links = pc.nic_links(host, pfs[role])
             slots = _slots(host, vfs, opts["nics"])
-            # the ports with sessions: split uses 2 of 4, whole may leave one; and none
-            # of st22p, whose rate is not stream_bps()'s, and whose 8 streams at most,
-            # of 0.4 Gb/s at 1080p59, any port carries
-            loads = {
-                p: n for s in slots for p, n in zip(s.ports, shares) if n and not codec
-            }
+            # the ports with sessions: split uses 2 of 4, whole may leave one
+            loads = {p: n for s in slots for p, n in zip(s.ports, shares) if n}
             for p, n in sorted(loads.items()):
                 if slow := pc.slow_ports([pfs[role][p]], [links[p]], n * rate):
                     pytest.fail(

@@ -69,25 +69,26 @@ perf-compare-refs)
 	# rate of pc.stream_bps(), keep in step, 20-bit pixels paced over 1125 of 1080
 	# lines, 1406 bytes for 1320 of pixels. A nics choice reads "<word>: what it does".
 	video=${VIDEO:-1080p59} sessions=${SESSIONS:-36} nics=${NICS:-single}
-	# st22p with JPEG XS, which test_perf_compare.py refuses alike, and says why
+	most=$(awk -v h="${video%p*}" -v f="${video#*p}" 'BEGIN {
+		fps[25] = 25; fps[29] = 30000 / 1001; fps[50] = 50; fps[59] = 60000 / 1001
+		print int(100e9 / (h * h * 16 / 9 * 20 * fps[f] * 1125 / 1080 * 1406 / 1320))
+	}')
+	# st22p with JPEG XS, which test_perf_compare.py refuses alike, and says why; its
+	# 60 streams at most, 25 Gb/s at 1080p59, a 100G port carries, unlike st20's rate,
+	# and the case checks each port's own link
 	codec=${CODEC:-none}
 	refuse() {
 		echo "::error::codec jpegxs takes $1" >&2
 		exit 1
 	}
 	if [[ ${codec%%:*} == jpegxs ]]; then
-		((sessions <= 8)) || refuse "up to 8 sessions, as many as the SVT-JPEG-XS plugin encodes or decodes an instance: ${sessions}"
+		((sessions <= 60)) || refuse "up to 60 sessions, as MTL puts a TX instance's st22 sessions on one scheduler, which takes 60: ${sessions}"
 		[[ ${video%p*} == 1080 ]] || refuse "1080p: no other resolution has a planar clip short enough for each TX session's hugepages"
 		[[ ${nics%%:*} != whole ]] || refuse "no nics whole: one port carries its sessions, so split"
 		[[ ${DMA:-none} == none ]] || refuse "no dma: MTL's st22 RX copies with none"
 		[[ ${PIXEL_FORMAT:-none} == none* ]] || refuse "no pixel_format: its encoder takes the planar clip as it is"
 		[[ ${COMPLIANCE:-} != true ]] || refuse "no compliance: EBU LIST takes a -22 stream's media type from its SDP"
-	fi
-	most=$(awk -v h="${video%p*}" -v f="${video#*p}" 'BEGIN {
-		fps[25] = 25; fps[29] = 30000 / 1001; fps[50] = 50; fps[59] = 60000 / 1001
-		print int(100e9 / (h * h * 16 / 9 * 20 * fps[f] * 1125 / 1080 * 1406 / 1320))
-	}')
-	if [[ ${nics%%:*} == whole ]]; then
+	elif [[ ${nics%%:*} == whole ]]; then
 		if ((sessions > 2 * most)); then
 			echo "::error::${sessions} x ${video} take more than two 100G ports carry, $((2 * most))" >&2
 			exit 1
