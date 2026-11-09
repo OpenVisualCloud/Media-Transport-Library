@@ -257,6 +257,41 @@ test_check_hardening() {
 	if bash "${gate}" "${work}/empty" >/dev/null 2>&1; then
 		fail "${gate}" "passes a path without an ELF file"
 	fi
+	# Its table accepts SSP missing in a DPDK library without a protected
+	# function, not in EAL, and both CET marks in libopenh264, not in libswscale.
+	mkdir "${work}/dpdk" "${work}/ffmpeg" "${work}/broken"
+	gcc -O2 -fno-stack-protector -fcf-protection=full -fPIC -shared -Wl,-z,relro,-z,now,-z,noexecstack \
+		"${work}/t.c" -o "${work}/dpdk/librte_kvargs.so.26"
+	cp "${work}/dpdk/librte_kvargs.so.26" "${work}/dpdk/librte_eal.so.26"
+	out=$(bash "${gate}" "${work}/dpdk" 2>&1) || true
+	if grep -qF "librte_kvargs.so.26 is not hardened" <<<"${out}" ||
+		! grep -qxF "::error::${work}/dpdk/librte_eal.so.26 is not hardened: no SSP" <<<"${out}"; then
+		fail "${gate}" "does not accept SSP missing in librte_kvargs only: ${out}"
+	fi
+	gcc -O2 -fstack-protector-strong -fcf-protection=none -fPIC -shared -Wl,-z,relro,-z,now,-z,noexecstack \
+		"${work}/t.c" -o "${work}/ffmpeg/libopenh264.so.8"
+	cp "${work}/ffmpeg/libopenh264.so.8" "${work}/ffmpeg/libswscale.so.8"
+	out=$(bash "${gate}" "${work}/ffmpeg" 2>&1) || true
+	if grep -qF "libopenh264.so.8 is not hardened" <<<"${out}" ||
+		! grep -qxF "::error::${work}/ffmpeg/libswscale.so.8 is not hardened: no IBT SHSTK" <<<"${out}"; then
+		fail "${gate}" "does not accept CET missing in libopenh264 only: ${out}"
+	fi
+	# The report: the totals, a row with the marks of each file, the failing
+	# ones first, an ELF file that readelf can't read among them, a path without
+	# an ELF file, and the same text on the summary page.
+	printf '\177ELF' >"${work}/broken/libt.so"
+	HARDENING_REPORT=${work}/report.md GITHUB_STEP_SUMMARY=${work}/summary.md \
+		bash "${gate}" "${work}/good" "${work}/dpdk" "${work}/broken" "${work}/empty" >/dev/null 2>&1 || true
+	out=$(grep '^| `' "${work}/report.md" 2>&1) || true
+	if [ "${out}" != "| \`${work}/broken/libt.so\` | readelf can't read it | | | | | | |
+| \`${work}/dpdk/librte_eal.so.26\` | yes | yes | yes | yes | yes | yes | no |
+| \`${work}/dpdk/librte_kvargs.so.26\` | yes | yes | yes | yes | yes | yes | accepted |
+| \`${work}/good/t\` | yes | yes | yes | yes | yes | yes | yes |" ] ||
+		! grep -qxF "| 4 | 2 | \`${work}/good ${work}/dpdk ${work}/broken ${work}/empty\` |" "${work}/report.md" ||
+		! grep -qxF "No x86-64 ELF file found under \`${work}/empty\`." "${work}/report.md" ||
+		! cmp -s "${work}/report.md" "${work}/summary.md"; then
+		fail "${gate}" "reports another table: $(cat "${work}/report.md" 2>&1)"
+	fi
 	rm -rf "${work:?}"
 }
 
