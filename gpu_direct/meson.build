@@ -21,7 +21,7 @@ endif
 
 # Compiler hardening, see doc/build.md. The gtest executable below takes the same flags.
 hardening_args = ['-fstack-protector-strong', '-fstack-clash-protection', '-fcf-protection=full',
-  '-Wformat', '-Wformat-security', '-Werror=format-security']
+  '-Wformat', '-Wformat-security', '-Werror=format-security', '-Wimplicit-fallthrough']
 if get_option('optimization') not in ['0', 'plain'] and get_option('b_sanitize') == 'none' and not ' '.join(get_option('c_args')).contains('_FORTIFY_SOURCE')
   fortify = cc.get_define('__USE_FORTIFY_LEVEL', prefix : '#include <string.h>',
     args : ['-O2', '-U_FORTIFY_SOURCE', '-D_FORTIFY_SOURCE=3']) == '3' ? '3' : '2'

@@ -7,7 +7,7 @@ project('mtl_ffmpeg_plugin_unit_tests', 'c', 'cpp', default_options : ['buildtyp
 
 # Compiler hardening, see doc/build.md
 add_project_arguments('-fstack-protector-strong', '-fstack-clash-protection', '-fcf-protection=full',
-  '-Wformat', '-Wformat-security', '-Werror=format-security', language : ['c', 'cpp'])
+  '-Wformat', '-Wformat-security', '-Werror=format-security', '-Wimplicit-fallthrough', language : ['c', 'cpp'])
 foreach lang : ['c', 'cpp']
   if get_option('optimization') not in ['0', 'plain'] and get_option('b_sanitize') == 'none' and not ' '.join(get_option(lang + '_args')).contains('_FORTIFY_SOURCE')
     fortify = meson.get_compiler(lang).get_define('__USE_FORTIFY_LEVEL', prefix : '#include <string.h>',
