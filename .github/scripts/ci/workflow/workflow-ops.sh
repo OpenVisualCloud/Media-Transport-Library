@@ -69,6 +69,20 @@ perf-compare-refs)
 	# rate of pc.stream_bps(), keep in step, 20-bit pixels paced over 1125 of 1080
 	# lines, 1406 bytes for 1320 of pixels. A nics choice reads "<word>: what it does".
 	video=${VIDEO:-1080p59} sessions=${SESSIONS:-36} nics=${NICS:-single}
+	# st22p with JPEG XS, which test_perf_compare.py refuses alike, and says why
+	codec=${CODEC:-none}
+	refuse() {
+		echo "::error::codec jpegxs takes $1" >&2
+		exit 1
+	}
+	if [[ ${codec%%:*} == jpegxs ]]; then
+		((sessions <= 8)) || refuse "up to 8 sessions, as many as the SVT-JPEG-XS plugin encodes or decodes an instance: ${sessions}"
+		[[ ${video%p*} == 1080 ]] || refuse "1080p: no other resolution has a planar clip short enough for each TX session's hugepages"
+		[[ ${nics%%:*} != whole ]] || refuse "no nics whole: one port carries its sessions, so split"
+		[[ ${DMA:-none} == none ]] || refuse "no dma: MTL's st22 RX copies with none"
+		[[ ${PIXEL_FORMAT:-none} == none* ]] || refuse "no pixel_format: its encoder takes the planar clip as it is"
+		[[ ${COMPLIANCE:-} != true ]] || refuse "no compliance: EBU LIST takes a -22 stream's media type from its SDP"
+	fi
 	most=$(awk -v h="${video%p*}" -v f="${video#*p}" 'BEGIN {
 		fps[25] = 25; fps[29] = 30000 / 1001; fps[50] = 50; fps[59] = 60000 / 1001
 		print int(100e9 / (h * h * 16 / 9 * 20 * fps[f] * 1125 / 1080 * 1406 / 1320))
@@ -109,6 +123,16 @@ perf-compare-refs)
 	else
 		sha_a=$(resolve "${REF_A:?REF_A is required}") name_a=$REF_A
 		sha_b=$(resolve "${REF_B:?REF_B is required}") name_b=$REF_B
+	fi
+	# The SVT-JPEG-XS plugin of versions.env asks for MTL 26.09 or later (its
+	# mtl-plugin/meson.build), which meson reads from VERSION: keep in step.
+	if [[ ${codec%%:*} == jpegxs ]]; then
+		for sha in "$sha_a" "$sha_b"; do
+			version=$(git show "${sha}:VERSION" 2>/dev/null) || version=0.0
+			IFS=. read -r major minor _ <<<"$version"
+			((10#$major * 100 + 10#$minor >= 2609)) ||
+				refuse "builds of MTL 26.09 or later, as its SVT-JPEG-XS plugin asks: ${sha:0:9} is ${version}"
+		done
 	fi
 	{
 		echo "sha_a=${sha_a}"

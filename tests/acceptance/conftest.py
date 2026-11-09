@@ -1120,6 +1120,7 @@ def pytest_addoption(parser):
             "none, yuv422p10le, v210 or y210: the applications' frames, converted by MTL",
         ),
         ("dma", str, "none", "none, A, B or both: the builds whose RX uses a DSA"),
+        ("codec", str, "none", "none (st20p) or jpegxs (st22p with JPEG XS)"),
         (
             "nics",
             str,

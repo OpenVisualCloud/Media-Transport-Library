@@ -313,7 +313,8 @@ different one.
 The same watchdog deletes `/usr/local/bin/ffmpeg` and `ffprobe` unless they lead
 to the runner workspace's `.local_install/ffmpeg/bin`, a job running or not, and
 reports the runner as not clean. A job that moves `.local_install` must leave
-`ffmpeg` in place: `perf-compare.sh build` moves only the DPDK and MTL it rebuilds.
+`ffmpeg` in place: `perf-compare.sh build` moves only the DPDK and MTL it rebuilds, and
+with `CODEC` `jpegxs` its JPEG XS and plugin registry.
 
 CI activation retries a PF that reports no hardware RX timestamps or PHC once,
 after every PF has probed and before VFs are created, because a PF probed ahead

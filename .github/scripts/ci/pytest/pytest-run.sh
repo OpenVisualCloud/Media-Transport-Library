@@ -27,14 +27,15 @@ performance)
 	;;
 perf-compare)
 	video=${VIDEO:-1080p59}
-	# a nics or pixel_format choice of the workflow reads "<word>: what it does"
-	nics=${NICS:-single} pixel_format=${PIXEL_FORMAT:-none}
+	# a nics, pixel_format or codec choice of the workflow reads "<word>: what it does"
+	nics=${NICS:-single} pixel_format=${PIXEL_FORMAT:-none} codec=${CODEC:-none}
 	args=(./tests/dual/performance/test_perf_compare.py -k "${video%p*}p and ${video##*p}fps"
 		--perf_compare_slots="${PERF_COMPARE_SLOTS:?PERF_COMPARE_SLOTS is required}"
 		--perf_compare_labels="${PERF_COMPARE_LABELS:-A,B}"
 		--perf_compare_args_a="${ARGS_A:-}" --perf_compare_args_b="${ARGS_B:-}"
 		--perf_compare_dma="${DMA:-none}" --perf_compare_nics="${nics%%:*}"
-		--perf_compare_pixel_format="${pixel_format%%:*}")
+		--perf_compare_pixel_format="${pixel_format%%:*}"
+		--perf_compare_codec="${codec%%:*}")
 	[[ -n ${SESSIONS:-} ]] && args+=(--perf_compare_sessions "$SESSIONS")
 	[[ -n ${ROUNDS:-} ]] && args+=(--perf_compare_rounds "$ROUNDS")
 	# booleans: "true" or "false", or empty in a run without inputs

@@ -21,7 +21,7 @@ from conftest import get_host_mtl_path, is_host_sut
 from mtl_engine import ip_pools
 from mtl_engine import perf_compare as pc
 from mtl_engine.const import LOG_FOLDER, RXTXAPP_PATH
-from mtl_engine.media_files import yuv_files_422rfc10
+from mtl_engine.media_files import yuv_files_422rfc10, yuv_files_input_formats
 from mtl_engine.pcap_compliance import UNPARSABLE_HEIGHT
 from mtl_engine.rxtxapp import RxTxApp
 
@@ -68,6 +68,23 @@ PIXEL_FORMATS = {
     "v210": "V210",
     "y210": "Y210",
 }
+# --perf_compare_codec: the codec of the st22p sessions, as RxTxApp names it; none runs
+# st20p, uncompressed
+CODECS = {"none": None, "jpegxs": "JPEG-XS"}
+# The sessions of a direction the SVT-JPEG-XS plugin takes an instance
+# (MAX_ST22_ENCODER_SESSIONS, MAX_ST22_DECODER_SESSIONS)
+CODEC_SESSIONS = 8
+# The clip of each resolution: as on the wire, RFC 4175; with a codec the planar one its
+# encoder takes, short, as RxTxApp copies the whole file into hugepages for each TX
+# session: only 1080p has one, the 4K Penguin is 6 GB.
+MEDIA = {
+    "1080p": (
+        yuv_files_422rfc10["ParkJoy_1080p_24frames"],
+        yuv_files_input_formats["yuv422p10le"],
+    ),
+    "2160p": (yuv_files_422rfc10["ParkJoy_4K_24frames"], None),
+    "4320p": (yuv_files_422rfc10["Penguin_8K_24frames"], None),
+}
 # --perf_compare_nics, doc/perf_compare.md: all but single give each build a NIC, and
 # so a socket, of its own
 NICS = {
@@ -110,6 +127,7 @@ def _options(request) -> dict:
         "dma": DMA.get(get("--perf_compare_dma")),
         "nics": get("--perf_compare_nics"),
         "pixel_format": get("--perf_compare_pixel_format"),
+        "codec": get("--perf_compare_codec"),
         "compliance": get("--perf_compare_compliance"),
     }
     if not all(ARGS.fullmatch(a) for a in opts["args"].values()):
@@ -132,6 +150,8 @@ def _options(request) -> dict:
         pytest.fail(f"--perf_compare_nics is one of {', '.join(NICS)}")
     if opts["pixel_format"] not in PIXEL_FORMATS:
         pytest.fail(f"--perf_compare_pixel_format is one of {', '.join(PIXEL_FORMATS)}")
+    if opts["codec"] not in CODECS:
+        pytest.fail(f"--perf_compare_codec is one of {', '.join(CODECS)}")
     if opts["sessions"] < 1 or opts["rounds"] < 1:
         pytest.fail("--perf_compare_sessions and --perf_compare_rounds start at 1")
     given = [n for n in SCHEDULING if _given(options, n)]
@@ -142,6 +162,32 @@ def _options(request) -> dict:
             f"single core takes up to {SCH_MAX_SESSIONS} sessions, as many as an MTL "
             "scheduler"
         )
+    if CODECS[opts["codec"]]:  # st22p: what its plugin, MTL's st22 or its clip refuse
+        refused = (
+            (
+                opts["sessions"] > CODEC_SESSIONS,
+                f"up to {CODEC_SESSIONS} sessions, as many as the SVT-JPEG-XS plugin "
+                "encodes or decodes an instance",
+            ),
+            (opts["dma"], "no DMA: MTL's st22 RX copies with none"),
+            (
+                opts["pixel_format"] != "none",
+                "no pixel format: its encoder takes the planar clip as it is",
+            ),
+            (
+                opts["nics"] == "whole",
+                "no nics whole: one port carries its sessions and the second would idle, "
+                "so split",
+            ),
+            (
+                opts["compliance"],
+                "no compliance: EBU LIST takes a -22 stream's media type from its SDP, and "
+                "judges its timing by other rules",
+            ),
+        )
+        for bad, why in refused:
+            if bad:
+                pytest.fail(f"--perf_compare_codec {opts['codec']} takes {why}")
     return opts
 
 
@@ -178,6 +224,8 @@ def _app_cmd(opts, media_config, media_path, fps, test_time, shares, per_group=0
         )
         if side.dma and label in opts["dma"]:  # the RX side's DSA of the slot
             extra["dma_dev"] = side.dma[slot]
+        if codec := CODECS[opts["codec"]]:
+            extra["codec"] = codec
         if side.role in opts["single_core"]:  # the system tasklets on it too
             extra["sch_session_quota"] = SINGLE_CORE_QUOTA
         else:
@@ -194,7 +242,7 @@ def _app_cmd(opts, media_config, media_path, fps, test_time, shares, per_group=0
                 destination_ip_r=rx_r,
             )
         app.create_command(
-            session_type="st20p",
+            session_type="st22p" if codec else "st20p",
             direction=side.role,
             test_mode="unicast",
             transport_format=media_config["format"],
@@ -308,18 +356,20 @@ def _write_report(
             f.write(page)
 
 
+def pytest_generate_tests(metafunc):
+    """Give media_file the clip of each resolution that MEDIA has for the codec."""
+    if "media_file" in metafunc.fixturenames:
+        coded = CODECS.get(metafunc.config.getoption("--perf_compare_codec"))
+        metafunc.parametrize(
+            "media_file",
+            [planar if coded else raw for raw, planar in MEDIA.values()],
+            indirect=True,
+            ids=list(MEDIA),
+        )
+
+
 @pytest.mark.dual
 @pytest.mark.perf_compare
-@pytest.mark.parametrize(
-    "media_file",
-    [
-        yuv_files_422rfc10["ParkJoy_1080p_24frames"],
-        yuv_files_422rfc10["ParkJoy_4K_24frames"],
-        yuv_files_422rfc10["Penguin_8K_24frames"],
-    ],
-    indirect=["media_file"],
-    ids=["1080p", "2160p", "4320p"],
-)
 @pytest.mark.parametrize(
     "fps", [25, 29, 50, 59], ids=["25fps", "29fps", "50fps", "59fps"]
 )
@@ -334,6 +384,12 @@ def test_perf_compare(
     if not rx_host or not tx_host:
         pytest.fail("perf-compare needs a SUT and a second host")
     media_config, media_path = media_file
+    codec = CODECS[opts["codec"]]
+    if not media_config:
+        pytest.fail(
+            f"--perf_compare_codec {opts['codec']} runs 1080p: no other resolution has "
+            "a planar clip short enough for each TX session's hugepages"
+        )
     video = f"{media_config['height']}p{fps}"
     ebu = test_config.get("ebu_server") or {}
     if opts["compliance"]:
@@ -384,6 +440,7 @@ def test_perf_compare(
         ("args_b", opts["args"]["B"] or "-"),
         ("video", video),
         ("pixel_format", opts["pixel_format"]),
+        ("codec", opts["codec"]),
         ("sessions", f"{sessions} per build{spread}"),
         ("nics", f"{opts['nics']}: {NICS[opts['nics']]}"),
         ("dma", get("--perf_compare_dma")),
@@ -399,19 +456,27 @@ def test_perf_compare(
         ("pytest", shlex.join(["pytest", *request.config.invocation_params.args])),
         (
             "Workload",
-            f"{sessions} st20p sessions per build{spread}"
+            f"{sessions} {'st22p' if codec else 'st20p'} sessions per build{spread}"
             + (", ST 2022-7 on two ports" if opts["nics"] == "redundant" else "")
             + ", RxTxApp, unicast",
         ),
         (
             "Video",
-            f"{video}: {media_config['width']}x{media_config['height']} "
-            f"{media_config['format']}, GPM, narrow pacing"
-            + (
-                f"; the applications' frames {PIXEL_FORMATS[opts['pixel_format']]}, "
-                "which MTL converts from on TX and to on RX"
-                if PIXEL_FORMATS[opts["pixel_format"]]
-                else ""
+            (
+                f"{video}: {media_config['width']}x{media_config['height']} {codec} by "
+                f"each build's SVT-JPEG-XS plugin, of the {media_config['file_format']} "
+                "clip, 3 bits a pixel as RxTxApp codes it, its threads Other in CPU by "
+                "stage, with no realtime policy; RFC 9134 codestream packets, which MTL "
+                "paces in software (TSC)"
+                if codec
+                else f"{video}: {media_config['width']}x{media_config['height']} "
+                f"{media_config['format']}, GPM, narrow pacing"
+                + (
+                    f"; the applications' frames {PIXEL_FORMATS[opts['pixel_format']]}, "
+                    "which MTL converts from on TX and to on RX"
+                    if PIXEL_FORMATS[opts["pixel_format"]]
+                    else ""
+                )
             ),
         ),
         *([("NICs", NICS[opts["nics"]])] if opts["nics"] != "single" else []),
@@ -453,8 +518,12 @@ def test_perf_compare(
             pfs[role], vfs = _ports(host, opts["nics"])
             links = pc.nic_links(host, pfs[role])
             slots = _slots(host, vfs, opts["nics"])
-            # the ports with sessions: split uses 2 of 4, whole may leave one
-            loads = {p: n for s in slots for p, n in zip(s.ports, shares) if n}
+            # the ports with sessions: split uses 2 of 4, whole may leave one; and none
+            # of st22p, whose rate is not stream_bps()'s, and whose 8 streams at most,
+            # of 0.4 Gb/s at 1080p59, any port carries
+            loads = {
+                p: n for s in slots for p, n in zip(s.ports, shares) if n and not codec
+            }
             for p, n in sorted(loads.items()):
                 if slow := pc.slow_ports([pfs[role][p]], [links[p]], n * rate):
                     pytest.fail(

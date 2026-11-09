@@ -1635,6 +1635,8 @@ class _Fake:
         self.slots = [pc.Slot(i, 0, [4 + 4 * i], True, [i]) for i in (0, 1)]
         self.pmu = {}  # the perf stat counts of an instance, PMU without
         self.paced = {}  # the pacing way lines of an instance's log
+        self.session = "st20p"  # the session type of every instance
+        self.coded = {}  # the sessions on the codec plugin of an st22p instance's log
         self.scripts = _sh(monkeypatch, self.sh)
         for name, value in {
             "stop_units": lambda host: None,
@@ -1688,6 +1690,8 @@ class _Fake:
             return "found\n" if log.rsplit("/", 1)[-1] in self.fallback else ""
         if script.startswith("grep -ho 'pacing way: [a-z_]*' "):
             return self.paced.get(script.rsplit("/", 1)[-1], "")
+        if script.startswith("grep -cs 'get one session at [0-9]* on dev "):
+            return f"{self.coded.get(script.rsplit('/', 1)[-1], 2)}\n"
         if script.startswith("systemctl show -p MainPID"):
             return "2\n"
         if script.startswith("cat ") and any(
@@ -1720,6 +1724,7 @@ class _Fake:
                         {"ip": f"10.0.{int(side.role == 'tx')}.{p}"}
                         for p in side.slots[slot].ports
                     ],
+                    f"{side.role}_sessions": [{self.session: [{"replicas": 2}]}],
                 },
             ),
             str(self.tmp_path),
@@ -1776,6 +1781,7 @@ def test_run_round_measures_a_valid_round(fake):
             "config": {
                 "slot": slot,
                 "interfaces": [{"ip": f"10.0.{int(role == 'tx')}.{slot}"}],
+                f"{role}_sessions": [{"st20p": [{"replicas": 2}]}],
             },
         }
         for role in ("rx", "tx")
@@ -2206,7 +2212,7 @@ def test_time_attaches_each_window_in_place_of_the_one_before(monkeypatch):
     assert inst.window == "sessions"
 
 
-def _steady_insts(monkeypatch, records, dead=(), pinned=None, pin=""):
+def _steady_insts(monkeypatch, records, dead=(), pinned=None, pin="", st22p=False):
     """Two RX instances for _wait_steady, a fake clock that each poll advances; each
     pin_app_threads() call goes into *pinned* with the time and returns *pin*."""
     pinned = [] if pinned is None else pinned
@@ -2221,6 +2227,7 @@ def _steady_insts(monkeypatch, records, dead=(), pinned=None, pin=""):
             host=None,
             name=f"rx{i}",
             role="rx",
+            st22p=st22p,
             units=[f"rx{i}"],
             records=lambda tail=0, i=i: records[i],
             pin_app_threads=lambda i=i: pinned.append((f"rx{i}", clock[0])) or pin,
@@ -2875,3 +2882,150 @@ def test_the_report_shows_what_list_found_of_each_build():
         )
         assert sorted(rows, key=page.index) == list(rows)
     assert "Compliance" not in pc.summary_html(LABELS, ARGS, SLOTS, rounds)
+
+
+# --perf_compare_codec: st22p sessions, a codec plugin's
+
+
+def _st22p_rx_dump(ts, succ, sessions=2, drops=()):
+    """A dump of an st22p RX instance: its session lines read 0 fps, as st22 RX counts
+    no frames, and its pipeline gives the frames of each since its last line, *succ*;
+    *drops* holds (counter, value) lines of session 0's pipeline."""
+    t = int(ts)
+    lines = [f"{t} L {pc.DUMP_START}"]
+    for s in range(sessions):
+        name = f"app_rx_st22p_{s}"
+        lines += [
+            f"{t} L RX_VIDEO_SESSION(1,{s}:{name}): fps 0.000000 frames 0 pkts 364440",
+            f"{t} L RX_ST22P({name}), p(1:ready) d(2:decoding) c(0:free)",
+            f"{t} L RX_ST22P({name}), frame get try {succ + 3} succ {succ}, put {succ}",
+            # the RX pipeline's decoder line, under a TX prefix (st22_pipeline_rx.c)
+            f"{t} L TX_ST22P({name}), decoder get try {succ} succ {succ}, put {succ}",
+        ]
+    lines += [f"{t} L RX_ST22P(app_rx_st22p_0), {n} {v}" for n, v in drops]
+    return lines + [f"{t} L {pc.DUMP_END}"]
+
+
+def test_parse_dumps_rates_an_st22p_rx_session_by_the_frames_its_pipeline_gave():
+    drops = [("decode fail", 2), ("busy drop frame", 3)]
+    records = [
+        *_st22p_rx_dump(10 * S, 599),
+        *_st22p_rx_dump(20 * S, 599),
+        f"{30 * S} L {pc.DUMP_START}",  # a dump that skipped its items (mt_stat.c)
+        f"{30 * S} L {pc.DUMP_END}",
+        *_st22p_rx_dump(40 * S, 1198, drops=drops),
+    ]
+    first, second, skipped, fourth = pc.parse_dumps(records)
+    key = ("RX", "app_rx_st22p_0", pc.ST22P)
+    # no rate before a session's second line, and none from its session line's 0
+    assert first.fps == {} and skipped.fps == {}
+    assert second.fps == {
+        key: pytest.approx(59.9),
+        ("RX", "app_rx_st22p_1", pc.ST22P): pytest.approx(59.9),
+    }
+    assert fourth.fps[key] == pytest.approx(59.9)  # its frames since 20 s
+    assert fourth.counts == {"decode fail": 2, "busy drop frame": 3}
+    assert pc.is_steady(second, "RX", 2, FPS) and not pc.is_steady(first, "RX", 2, 0)
+    # a TX st22 session counts the frames it sends, its pipeline's are no RX rate
+    tx = [
+        line
+        for t in (1, 2)
+        for line in (
+            f"{t * 10 * S} L {pc.DUMP_START}",
+            f"{t * 10 * S} L TX_VIDEO_SESSION(1,0:app_tx_st22p_0): fps 59.94 frames 599",
+            f"{t * 10 * S} L TX_ST22P(app_tx_st22p_0), encode fail {t}",
+            f"{t * 10 * S} L TX_ST22P(app_tx_st22p_0), frame get try 600 succ 599, put 599",
+            f"{t * 10 * S} L {pc.DUMP_END}",
+        )
+    ]
+    for t, d in enumerate(pc.parse_dumps(tx), 1):
+        assert d.fps == {("TX", "1", "0"): 59.94} and d.counts == {"encode fail": t}
+
+
+def test_the_threads_of_an_st22p_session_are_application_threads():
+    for name in ("tx_st20p_0", "rx_st20p_12", "tx_st22p_3", "rx_st22p_7"):
+        assert pc.APP_THREAD.fullmatch(name), name
+    # the codec's threads have no name of their own: other
+    assert not pc.APP_THREAD.fullmatch("RxTxApp")
+
+
+def test_metrics_of_an_st22p_instance_count_its_codec_drops():
+    dumps = _windows()
+    dumps[0][1].counts.update({"decode fail": 2, "encode fail": 5})
+    assert (
+        not {"decode fail", "busy drop frame", "encode fail"} & _metrics(dumps).keys()
+    )
+    m = pc.metrics("RX", dumps, PROC0, PROC1, 100, None, None, None, True)
+    assert (m["decode fail"], m["busy drop frame"]) == (2, 0)
+    assert "encode fail" not in m
+    tx = _windows(tx=True)
+    tx[0][1].counts.update({"encode fail": 5})
+    m = pc.metrics("TX", tx, PROC0, PROC1, 100, None, None, None, True)
+    assert m["encode fail"] == 5 and "decode fail" not in m
+    assert {"decode fail", "busy drop frame", "encode fail"} <= set(pc.LOSS_ROWS)
+
+
+def test_wait_steady_moves_an_st22p_rx_s_app_threads_once_every_session_got_frames(
+    monkeypatch,
+):
+    # its decoder starts its threads at its first frame
+    idle = _st22p_rx_dump(S, 0) + _st22p_rx_dump(2 * S, 0)
+    flowing = idle + _st22p_rx_dump(3 * S, 599)
+    for st22p, moved in ((True, pc.POLL_S), (False, 0)):
+        pinned, records = [], [idle, idle]
+        insts = _steady_insts(monkeypatch, records, pinned=pinned, st22p=st22p)
+        sleep = pc.time.sleep
+
+        def frames(s, records=records, sleep=sleep):  # a poll later
+            records[:] = [flowing, flowing]
+            sleep(s)
+
+        monkeypatch.setattr(pc.time, "sleep", frames)
+        assert pc._wait_steady(insts, 2, FPS) == ([], [])
+        assert pinned == [("rx0", moved), ("rx1", moved)], st22p
+
+
+def test_start_gives_an_st22p_instance_no_realtime_policy(monkeypatch):
+    monkeypatch.setattr(pc, "write_file", lambda *a: None)
+    props = []
+    monkeypatch.setattr(
+        pc, "_start_unit", lambda h, n, c, p, *a, **k: props.extend(p) or 7
+    )
+    inst = pc.Instance(None, "rx0", "rx", "A", pc.Slot(0, 0, [4, 5], True), "/t", "/r")
+    inst.st22p = True
+    inst.start("/mtl", "env KAHAWAI_CFG_PATH=/c RxTxApp --x")
+    assert props[-1] == "RestrictRealtime=yes"
+
+
+def test_run_round_takes_an_st22p_instance_whose_sessions_the_plugin_coded(fake):
+    fake.session = "st22p"
+    results, problems, notes = fake.round()
+    assert problems == [] and notes == []
+    assert results["A"]["rx"]["decode fail"] == 0
+    assert results["B"]["tx"]["encode fail"] == 0
+    greps = [c for c in fake.scripts if c.startswith("grep -cs 'get one session")]
+    assert len(greps) == 4
+    # what the command counts in a log as st_plugin.c writes it: the SVT plugin's
+    # encoder and decoder sessions, not the sample plugin's
+    log = fake.tmp_path / "log"
+    log.write_text(
+        "MTL: st22_get_encoder_session(0), get one session at 0 on dev "
+        "st22_svt_jpeg_xs_plugin_encoder, max codestream size 777600\n"
+        "MTL: st22_get_decoder_session(1), get one session at 1 on dev "
+        "st22_svt_jpeg_xs_plugin_decoder\n"
+        "MTL: st22_get_encoder_session(2), get one session at 0 on dev "
+        "st22_encoder_sample, max codestream size 777600\n"
+    )
+    assert _bash(None, f"{greps[0].rsplit(' ', 1)[0]} {log}", check=False) == "2\n"
+    # one session on another plugin, the sample's, or a log without the lines
+    fake.coded = {"A_rx0": 1, "B_tx1": 0}
+    results, problems, _ = fake.round()
+    assert problems == [
+        f"mtl-perf-rx0 (main): 1 of 2 sessions on {pc.CODEC_DEV}*",
+        f"mtl-perf-tx1 (dev): 0 of 2 sessions on {pc.CODEC_DEV}*",
+    ]
+    assert "rx" not in results["A"] and "tx" not in results["B"]
+    # st20p: no plugin to look for
+    fake.session, fake.scripts[:] = "st20p", []
+    assert fake.round()[1] == []
+    assert not [c for c in fake.scripts if "get one session" in c]

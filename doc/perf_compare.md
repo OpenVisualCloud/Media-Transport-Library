@@ -307,13 +307,14 @@ MTL, how MTL and the case compute it, and why the numbers hold.
 | **Untraced window** | | **The production view, the primary signals** |
 | `sch_N avg loop (ns)` | `SCH(N:...): ... avg loop X ns` | One pass over the tasklets of scheduler N; more work per packet lengthens it at the same load |
 | `video cpu busy (%)` | `RX/TX_VIDEO_SESSION(...): ... cpu busy X` | MTL's load score of a session: its scheduler's avg loop over 3 packet intervals (RX) or a TX bulk of them, refreshed every 6 s ([perf_compare_metrics.md](perf_compare_metrics.md#43-cpu)) |
-| `scheduler`, `application`, `other` and `all threads (CPUs)`, `utilization (%)`, `per frame (ms)` | `/proc/<pid>/task/*/stat`, `schedstat` | CPU by stage: the schedulers (the `t_pid` of each `SCH` line) send or receive the packets, the application threads (`tx_st20p_N`, `rx_st20p_N`) fill or read the frames and convert them: the CPUs a kind ran on, its CPU time over them, and per frame |
+| `scheduler`, `application`, `other` and `all threads (CPUs)`, `utilization (%)`, `per frame (ms)` | `/proc/<pid>/task/*/stat`, `schedstat` | CPU by stage: the schedulers (the `t_pid` of each `SCH` line) send or receive the packets, the application threads (`tx_st2[02]p_N`, `rx_st2[02]p_N`) fill or read the frames and convert them: the CPUs a kind ran on, its CPU time over them, and per frame |
 | `sch preemptions (/s)` | `nonvoluntary_ctxt_switches` of the scheduler threads | Isolation quality; what the swap leaves is a cost of the build |
 | `memory bandwidth (MB/s)`, `LLC occupancy (MB)` | `mon_data` of the RDT group | Memory traffic over the window, and the cache footprint at its end |
 | `IPC`, `core clock (GHz)` | `perf stat`: `instructions`, `cycles`, `task-clock` | Instructions per cycle, and the clock while the threads run; a clock that differs moves every time row |
 | `LLC hits (M/s)`, `LLC misses (M/s)`, `LLC miss ratio (%)` | `perf stat`: `cache-references`, `cache-misses` | L3 requests of the instance's cores that hit or went to memory; a packet read while still in the DDIO ways is a hit |
-| `fps (worst session)`, `fps (mean of sessions)`, `RX/TX rate (Gb/s)`, `RX/TX rate, port N (Gb/s)` | `RX/TX_VIDEO_SESSION(...): fps`, `DEV(N): Avr rate` | The workload: the lowest median frame rate of a session and the mean of them, and the rate of the instance and, on two ports, of each |
+| `fps (worst session)`, `fps (mean of sessions)`, `RX/TX rate (Gb/s)`, `RX/TX rate, port N (Gb/s)` | `RX/TX_VIDEO_SESSION(...): fps`, for st22p RX `RX_ST22P(...), frame get try ... succ` (§4.7), `DEV(N): Avr rate` | The workload: the lowest median frame rate of a session and the mean of them, and the rate of the instance and, on two ports, of each |
 | `incomplete frames`, `hw dropped pkts` | `incomplete frames`, `Status: rx_hw_dropped_packets` | Loss in the receiver |
+| `encode fail`, `decode fail`, `busy drop frame` | `TX_ST22P(...)`, `RX_ST22P(...)` lines, printed when they moved | st22p only: frames the codec failed, or that the RX pipeline had no free frame for (§4.7) |
 | `build timeout frames`, `epoch drop`, `transmitter mismatch troffset` | `TX_VIDEO_SESSION(...)` lines, printed when they moved | TX frames sent late, summed over the window: built after their time, periods without their frame, a first packet the rate limiter sent late. A session can hold its rate and still count them (§5.1) |
 | `transmitter recalculate warmup (/s)` | the same lines | Rate limiter re-plans of the pads before a frame as the clock outran the plan: a pad burst stalled 2 µs or more, or the shaper went idle. It can differ by slot, which the swap cancels. Up to `v26.09` MTL counts only the warm-up re-plan |
 | **Traced window** | | **The cost of each tasklet** |
@@ -433,6 +434,53 @@ groups of their own. On the perf pair, main had 33 to 35 of 36 x 1080p59 complia
 four passes, the others under the VRX's floor by 1 to 4 packets, when its TX counted no
 late frame (2026-11-06).
 
+### 4.7. Compressed video
+
+With `codec` `jpegxs` every session is st22p, ST 2110-22: JPEG XS by the SVT-JPEG-XS
+plugin, from the planar 4:2:2 10-bit Penguin clip at 3 bits a pixel, the size RxTxApp
+gives a codestream, in RFC 9134 packets that MTL paces in software (TSC), as it paces
+every st22 stream. Each slot builds its own plugin against its own libmtl (§5.2), from
+the SVT-JPEG-XS of the workflow commit's `versions.env`, so both builds run the same
+codec, each compiled against its own headers; MTL checks no more of a plugin than its
+API version. The SVT plugin asks for MTL 26.09 or later, which the refs job checks by
+the ref's `VERSION`: MTL 26.01 has the same st22p API, and the plugin compiles against
+it, but meson refuses it.
+
+What changes in the measurement:
+
+- An st22 RX session counts no frames in its own dump line, whose fps reads 0: its
+  frame rate is that of the frames its pipeline gave the application,
+  `RX_ST22P(<name>), frame get try N succ M` over the time since that session's last
+  such line. The TX rate is its session's, which counts a frame when its builder
+  finished it.
+- `encode fail` and `decode fail` count the frames the codec failed, `busy drop frame`
+  those the RX pipeline had no free frame for, as its decoder or application lagged;
+  they are loss rows (§4.4).
+- The codec's threads have no name of their own, so they are `other` threads, which in
+  an st20p run take about 0.2 % of 4 CPUs: in an st22p run `other` is the codec's CPU.
+- SVT-JPEG-XS gives its threads SCHED_FIFO 99 as root, so they would starve the
+  application threads on the CPUs they share, which CFS schedules: an st22p instance
+  runs with `RestrictRealtime=yes`, which refuses it, and SVT then only warns. That is a
+  seccomp filter, which before Linux 5.16, by default, also forces the speculative store
+  bypass mitigation on the whole instance; the perf pair runs 6.8, whose
+  `spec_store_bypass` reads "disabled via prctl" (2026-11-06).
+- An st22p RX moves its application threads (§3.1) once every session got frames, as
+  its decoder starts its own threads at its first frame, which would otherwise be born
+  on one CPU and stay there.
+- Each instance's log must name a session on `st22_svt_jpeg_xs_plugin*` for each of
+  its sessions. MTL gives a session the first device that takes its formats, so a
+  registry that also named another, as the sample plugin that claims JPEG XS and only
+  copies the frames, would give it sessions.
+
+A build takes up to 8 sessions, as many as the plugin encodes or decodes an instance, of
+about 0.4 Gb/s each at 1080p59: the plugin and the codec's CPU bound it, not the link or
+MTL's 60 sessions a scheduler, so an st22p run measures the compressed pipeline
+end-to-end, not the density of MTL's st22 transport. Only 1080p has a planar clip short
+enough for each TX session's hugepages. DMA (MTL's st22 RX has none), a pixel format
+(the encoder takes the clip as it is), `whole` (one port carries the sessions) and
+`compliance` (LIST takes a -22 stream's media type from its SDP, and judges it by other
+rules) are refused.
+
 ## 5. Running it
 
 ### 5.1. Inputs
@@ -447,6 +495,7 @@ options of a run by hand (§5.4):
 | `args_a`, `args_b` | `--perf_compare_args_a`, `--perf_compare_args_b` | empty | Extra RxTxApp options of each build: letters, digits, spaces and `_./:=,+-`. RxTxApp ignores an option it does not know |
 | `video` | `-k "1080p and 59fps"` | `1080p59` | 1080p, 2160p or 4320p at 59, 50, 29 or 25 fps, from the perf media set |
 | `pixel_format` | `--perf_compare_pixel_format` | `none` | `none`, `yuv422p10le`, `v210` or `y210`: the pixel format of the applications, which MTL converts to the format on the wire on TX and back on RX (below) |
+| `codec` | `--perf_compare_codec` | `none` | `none`, st20p, uncompressed, or `jpegxs`, st22p with JPEG XS (§4.7) |
 | `sessions` | `--perf_compare_sessions` | `36` | Video sessions of each build. `whole` puts a build on two ports and fills the first before the second: 37 x 1080p59 run as 36 and 1, 20 as 20 and none (below) |
 | `nics` | `--perf_compare_nics` | `single` | `single`, `split`, `redundant` or `whole` (§3.5); each choice of the form says what it does, and the case takes the word before its colon |
 | `dma` | `--perf_compare_dma` | `none` | `none`, `A`, `B` or `both`: the builds whose RX instances copy with a DSA (§3.5) |
@@ -464,6 +513,8 @@ anything is built or started:
 | `sessions`, `video`, `nics` | A port carries at most 100 Gb/s of sessions, a build on two ports twice that (below) | refs job; the case against each port's own link |
 | `sessions`, `single_core_rx`, `single_core_tx` | An MTL scheduler takes 60 video sessions at most | refs job and case |
 | `compliance`, `video` | LIST does not judge 8K | refs job and case |
+| `codec` and `sessions`, `video`, `nics`, `dma`, `pixel_format`, `compliance` | `jpegxs` takes up to 8 sessions, 1080p, and no `whole`, DMA, pixel format or compliance (§4.7) | refs job and case |
+| `codec`, `ref_a`, `ref_b` | `jpegxs` takes builds whose `VERSION` is 26.09 or later, as the SVT plugin asks (§4.7) | refs job |
 | `nics`, `single_core_rx`, `single_core_tx` | At a core's limit two instances on one socket fall short of it, both builds alike: `split`, `redundant` and `whole` give a build a socket (§3.5) | none needed |
 | `pixel_format`, `sessions`, `nics` | The conversion runs on the application threads, on the slot's first CPU and the lcores the schedulers leave: it moves each frame through the memory of the slot's node several times, which binds first: 36 x 1080p59 in yuv422p10le hold their rate in `split` and `whole`, not in `single`, where both builds share node 0 (below) | none needed |
 | `args`, `nics` | With `redundant`, a build's `--sch_session_quota` replaces the quota the case gives (§3.5) | none needed |
@@ -537,9 +588,11 @@ it starts an instance, as they reach a root shell script on both hosts.
 
 A slot, DPDK, libmtl and RxTxApp, is built from `git archive <sha>` with the workflow
 commit's `build_dpdk.sh` but the ref's own `versions.env` and DPDK patches, at the
-workspace's `.local_install`, the path DPDK bakes in, and kept in
-`<workspace>/../perf-compare/{a,b}` on both hosts. Only the workflow commit's DPDK and
-MTL step aside meanwhile, for the ffmpeg watchdog of
+workspace's `.local_install`, the path DPDK bakes in, and kept in `<workspace>/../perf-
+compare/{a,b}` on both hosts. With `codec` `jpegxs` a slot also holds the SVT-JPEG-XS
+plugin, from the workflow commit's `build_jpegxs.sh`, and the registry that names it,
+`conf/kahawai.json`. Only the workflow commit's DPDK and MTL, and with `jpegxs` its JPEG
+XS and registry, step aside meanwhile, for the ffmpeg watchdog of
 [ci_runner_setup.md](ci_runner_setup.md). The ICE driver is the workflow commit's: a
 kernel module cannot differ per process.
 
@@ -581,11 +634,12 @@ sudo -E ./venv/bin/python3 -m pytest \
 
 A run takes one case, selected with `-k`, as each writes the run's one report; without
 `--perf_compare_slots` the cases are deselected. A slot is a tree built at
-`<mtl>/.local_install` and copied to the same path on both hosts;
-`perf-compare.sh build` with `SHA_A` and `SHA_B` set to full SHAs builds both in
-`../perf-compare/{a,b}`. `<mtl>/.local_install` twice is an A/A run of the current
-build. The report is `logs/performance/latest/perf_compare.html`, each round's logs and
-records in `perf_compare/round<N>/` next to it.
+`<mtl>/.local_install` and copied to the same path on both hosts; `perf-compare.sh
+build` with `SHA_A` and `SHA_B` set to full SHAs builds both in `../perf-compare/{a,b}`,
+and with `CODEC=jpegxs` the plugin and registry that `--perf_compare_codec jpegxs`
+needs. `<mtl>/.local_install` twice is an A/A run of the current build. The report is
+`logs/performance/latest/perf_compare.html`, each round's logs and records in
+`perf_compare/round<N>/` next to it.
 
 ## 6. Troubleshooting
 
@@ -601,6 +655,8 @@ notes, which do not.
 | `exited before steady state`, `exited during the measurement` | An application or a collector stopped | The application's output and its `.log` and `.trace` records in `perf_compare/round<N>/`; a timed or sessions collector's output only stays in `/tmp/mtl-perf-compare/` on its host, until the next round |
 | `N untraced, N traced, N timed and N session timed dumps`, `N of M sessions` | A window held fewer than two whole dumps, or not every session reported | A `test_time` of 30 or more; the application and collector logs |
 | `its source is not in hugepages` | A TX read its source through `mmap()` | More hugepages on the companion, or fewer sessions |
+| `N of M sessions on st22_svt_jpeg_xs_plugin*` | An st22p instance's log names fewer of its sessions on the plugin under test: another plugin coded them, or the log does not say, as with `args` that log above info or to a file | Its application output: the `st_plugin_register` and `get one session` lines, and the slot's `conf/kahawai.json` |
+| `codec jpegxs takes ...` (refs job), `--perf_compare_codec jpegxs takes ...` or `runs 1080p` | An input that st22p with JPEG XS cannot run with (§4.7) | The input the message names |
 | `no rvs_pkt_rx work in sys:tasklet_stat` | A traced RX instance gave no work counters | Its `.trace` record |
 | `failed: <error>` | The round raised, such as when an application died between two `/proc` reads; the rounds stop | The pytest log |
 | Incomplete frames, dropped packets, late TX frames (note) | Loss in the receiver, or TX frames sent late | Their rows count them |

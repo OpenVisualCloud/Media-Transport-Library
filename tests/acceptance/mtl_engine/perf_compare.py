@@ -26,6 +26,7 @@ from datetime import datetime
 
 from common.generate_report import html_head, platform_html
 from compliance.compliance_client import PcapComplianceClient
+from mtl_engine.application_base import ST22_CODEC_DEVICES
 from mtl_engine.const import LD_LIB_PATH_REL
 from mtl_engine.dma import bind_dma_to_vfio
 from mtl_engine.performance_monitoring import (
@@ -85,8 +86,9 @@ TIME_SCRIPTS = {
 WORK_TASKLET = "rvs_pkt_rx"
 # RxTxApp's frame threads, a thread a session (tx_st20p_app.c, rx_st20p_app.c): they
 # fill or read the frames, and MTL converts a frame of another pixel format on them,
-# in st20p_tx_put_frame() and st20p_rx_get_frame().
-APP_THREAD = re.compile(r"(tx|rx)_st20p_\d+")
+# in st20p_tx_put_frame() and st20p_rx_get_frame(). st22p's (tx_st22p_app.c,
+# rx_st22p_app.c) only fill or read them: its codec's threads have no name of their own.
+APP_THREAD = re.compile(r"(tx|rx)_st2[02]p_\d+")
 DUMP_PERIOD_S = 10  # MT_STAT_INTERVAL_S_DEFAULT
 POLL_S = 5
 # An RX VF sends nothing but its ARP replies at its start, so the perf pair's switch
@@ -245,6 +247,21 @@ TX_REPLAN = "transmitter recalculate warmup"
 RE_TX_PACING = re.compile(
     rf"TX_VIDEO_SESSION\(\d+,\d+\): ({'|'.join((*TX_LATE, TX_REPLAN))}) (\d+)"
 )
+# The st22p pipeline's lines (st22_pipeline_rx.c, st22_pipeline_tx.c), by session name,
+# whose counts start again at every dump that prints them: the frames an RX application got, and the
+# frames dropped, printed when they moved: a frame the codec failed, or that found the
+# RX pipeline with no free frame (busy).
+RE_ST22P_RX = re.compile(r"RX_ST22P\(([^)]*)\), frame get try \d+ succ (\d+)")
+ST22P_DROPS = {"RX": ("decode fail", "busy drop frame"), "TX": ("encode fail",)}
+RE_ST22P_DROP = re.compile(
+    rf"_ST22P\([^)]*\), ({'|'.join(n for d in ST22P_DROPS.values() for n in d)}) (\d+)"
+)
+# The fps key of an st22p RX session: (dir, name, ST22P)
+ST22P = "st22p"
+# The devices of the SVT-JPEG-XS plugin's encoder and decoder, by the prefix the
+# acceptance checks know them by, as st_plugin.c logs a session it gets: "get one
+# session at <n> on dev <name>".
+CODEC_DEV = ST22_CODEC_DEVICES["JPEG-XS"]
 # A count of perf stat -x, "<count>,<unit>,<event>,..."; not an error or <not counted>.
 RE_PERF = re.compile(r"^([\d.]+),[^,]*,([^,]+)", re.M)
 
@@ -311,7 +328,7 @@ COLLAPSE_SHARE = 0.1
 DELIVERED_SHARE = 0.99
 WINDOWS = ("untraced", "traced", "timed", "sessions")
 RX_LOSS = ("incomplete frames", "hw dropped pkts")
-LOSS_ROWS = (*RX_LOSS, *TX_LATE)
+LOSS_ROWS = (*RX_LOSS, *TX_LATE, *ST22P_DROPS["RX"], *ST22P_DROPS["TX"])
 # The tasklet rows that the summary scores outside its verdict: the timed window runs
 # slower than production, and a tasklet on several schedulers would count several times.
 TASKLET_ROWS = re.compile(r"sch_\d+ .+ (avg|p99), timed \(us\)")
@@ -852,6 +869,7 @@ class Instance:
     window: str = ""  # the kind of the probes attached beside the log's, if any
     script: str = ""  # the command its unit ran, see start()
     dma: bool = False  # its command gives it a DMA device
+    st22p: bool = False  # its sessions are st22p, a codec plugin's
 
     @property
     def units(self) -> list[str]:
@@ -864,6 +882,11 @@ class Instance:
         MTL gives EAL MAIN_LCORE as the main lcore, so the cpuset has it and its
         node's memory too: DPDK allocates on the main lcore's node for a thread that
         is no lcore and asks for no node, and its dmadev data only there.
+
+        An st22p instance gets no realtime policy: SVT-JPEG-XS gives its threads
+        SCHED_FIFO 99 as root (SvtThreads.c), which only warns when refused, and they
+        would starve the application threads on the CPUs they share, which CFS
+        schedules. MTL takes none.
         """
         libs = ":".join(f"{mtl_path}/{p}" for p in LD_LIB_PATH_REL.split(":"))
         join_rdt = f"echo $$ > {self.rdt}/tasks && " if self.rdt else ""
@@ -881,6 +904,7 @@ class Instance:
                 f"AllowedCPUs={format_cpus({MAIN_LCORE, *self.slot.cpus})}",
                 f"AllowedMemoryNodes={format_cpus({self.slot.main_node, self.slot.node})}",
                 "Nice=-20",
+                *(["RestrictRealtime=yes"] if self.st22p else []),
             ],
             self.log,
         )
@@ -1063,7 +1087,7 @@ class Dump:
     ts: int
     sch: dict = field(default_factory=dict)  # idx: (avg loop ns, t_pid)
     tasklets: dict = field(default_factory=dict)  # (sch, name): [cnt, sum, wcnt, wsum]
-    fps: dict = field(default_factory=dict)  # (dir, m, s): fps
+    fps: dict = field(default_factory=dict)  # (dir, m, s) or (dir, name, ST22P): fps
     busy: dict = field(default_factory=dict)  # (dir, m, s): cpu busy
     dev: list = field(default_factory=list)  # [tx, rx Mb/s, rx, tx pkts] of all ports
     ports: dict = field(default_factory=dict)  # port: (tx Mb/s, rx Mb/s)
@@ -1076,6 +1100,8 @@ class Dump:
 def parse_dumps(records: list[str]) -> list[Dump]:
     dumps: list[Dump] = []
     cur = None
+    # an st22p RX session: when it last printed its frames
+    st22p_rx: dict[str, int] = {}
     for rec in records:
         ts, kind, msg = rec.split(" ", 2)
         if kind == "T":
@@ -1111,12 +1137,24 @@ def parse_dumps(records: list[str]) -> list[Dump]:
             cur.dma[(m[1], m[2])] = int(m[3])
         elif m := RE_TX_PACING.search(msg):
             cur.counts[m[1]] += int(m[2])
+        elif m := RE_ST22P_RX.search(msg):
+            # its frames since it last printed them, which a dump that skipped its
+            # items (mt_stat.c) did not
+            if m[1] in st22p_rx:
+                span = (int(ts) - st22p_rx[m[1]]) / 1e9
+                cur.fps[("RX", m[1], ST22P)] = int(m[2]) / span
+            st22p_rx[m[1]] = int(ts)
+        elif m := RE_ST22P_DROP.search(msg):
+            cur.counts[m[1]] += int(m[2])
         elif m := RE_TASKLET_TIME.search(msg):
             times = {k: float(v) for k, v in m.groupdict().items() if v is not None}
             cur.tasklet_times[(int(m[1]), m[2])] = times
         elif m := RE_SESSION_TIME.search(msg):
             times = {k: float(v) for k, v in m.groupdict().items()}
             cur.session_times[(m[1], int(m[2]), int(m[3]))] = times
+    if st22p_rx:  # an st22 RX session counts no frames: its own line reads fps 0
+        for d in dumps:
+            d.fps = {k: v for k, v in d.fps.items() if k[2] == ST22P}
     return dumps
 
 
@@ -1299,9 +1337,11 @@ def _times(rows: str, times: list[dict], stats=CALL_STATS, window="timed") -> di
     return out
 
 
-def metrics(direction, dumps, proc0, proc1, clk_tck, rdt0, rdt1, pmu=None) -> dict:
+def metrics(
+    direction, dumps, proc0, proc1, clk_tck, rdt0, rdt1, pmu=None, st22p=False
+) -> dict:
     """The metrics of one instance in one round, in report order; *dumps* as windows()
-    returns them."""
+    returns them; with *st22p*, its codec's drops too."""
     untraced, traced, timed, session_timed = dumps
     m: dict = {}
     for idx in sorted({i for d in untraced for i in d.sch}):
@@ -1369,6 +1409,8 @@ def metrics(direction, dumps, proc0, proc1, clk_tck, rdt0, rdt1, pmu=None) -> di
         m[f"{direction} rate{port} (Gb/s)"] = None if mid is None else mid / 1000
     counts = sum((d.counts for d in untraced), Counter())
     for name in RX_LOSS if direction == "RX" else TX_LATE:
+        m[name] = counts[name]
+    for name in ST22P_DROPS[direction] if st22p else ():
         m[name] = counts[name]
     if direction == "TX":
         m[f"{TX_REPLAN} (/s)"] = counts[TX_REPLAN] / (len(untraced) * DUMP_PERIOD_S)
@@ -2145,7 +2187,9 @@ def _wait_steady(insts, sessions, fps, queues=None) -> tuple[list[str], list[str
 
     The application threads of an instance leave its scheduler CPUs once a dump shows
     all its sessions, so that they exist: on isolated CPUs they could not reach speed
-    on the one CPU they started on.
+    on the one CPU they started on. Those of an st22p RX wait until every session got
+    frames: its codec starts its decoder's threads at the first, which would be born
+    on the one CPU of the thread that starts them, and stay there.
     """
     timeout = steady_timeout(queues or sessions)
     deadline = time.monotonic() + timeout
@@ -2166,8 +2210,13 @@ def _wait_steady(insts, sessions, fps, queues=None) -> tuple[list[str], list[str
         if dead := _exited(insts):
             return [f"exited before steady state: {', '.join(dead)}"], []
         last = {i.name: parse_dumps(i.records(tail=TAIL_LINES))[-1:] for i in insts}
-        for i in insts:  # every session, at any rate
-            if steady(i, last, 0) and i.name not in moved and not i.pin_app_threads():
+        for i in insts:  # every session, at any rate; an st22p RX's at 1 fps
+            least = 1 if i.st22p and i.role == "rx" else 0
+            if (
+                steady(i, last, least)
+                and i.name not in moved
+                and not i.pin_app_threads()
+            ):
                 moved.add(i.name)
         waiting = [i for i in insts if not steady(i, last, fps)]
         if not waiting:
@@ -2237,6 +2286,7 @@ def run_round(
                 )
                 insts.append(inst)
                 cmd, config = app_cmd(s, slot, label)
+                inst.st22p = any("st22p" in e for e in config[f"{s.role}_sessions"])
                 inst.start(s.mtl_path, cmd)
                 inst.dma = "--dma_dev" in cmd.split()
                 launches.append(
@@ -2375,7 +2425,7 @@ def run_round(
         if named != sessions:
             problems.append(f"{who(i)}: {named} of {sessions} sessions")
             continue
-        m = metrics(direction, w, p0, p1, clk[id(i.host)], r0, r1, pmu[i.name])
+        m = metrics(direction, w, p0, p1, clk[id(i.host)], r0, r1, pmu[i.name], i.st22p)
         worst = m["fps (worst session)"]
         if worst < COLLAPSE_SHARE * fps:
             problems.append(
@@ -2394,6 +2444,14 @@ def run_round(
         found = f"grep -qsF '{HUGEPAGE_FALLBACK_MARKER}' {i.log} && echo found"
         if i.role == "tx" and sh(i.host, found, check=False):
             problems.append(f"{who(i)}: its source is not in hugepages")
+            continue
+        # Each session on the plugin under test: MTL gives a session the first device
+        # that takes its formats (st_plugin.c), so a registry that also named another,
+        # as the sample plugin that claims JPEG XS and only copies the frames, would
+        # give it sessions.
+        got = f"grep -cs 'get one session at [0-9]* on dev {CODEC_DEV}' {i.log}"
+        if i.st22p and (n := int(sh(i.host, got, check=False) or 0)) != sessions:
+            problems.append(f"{who(i)}: {n} of {sessions} sessions on {CODEC_DEV}*")
             continue
         if i.perf and "IPC" not in m:
             notes.append(f"{who(i)}: perf stat did not count every event")

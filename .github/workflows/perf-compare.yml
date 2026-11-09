@@ -4,7 +4,7 @@ name: perf-compare
 # The name gives the NICs, then each other input that is not its default, by its key.
 run-name: >-
   ${{ github.event_name == 'schedule' && 'perf-compare: nightly' ||
-  format('perf-compare: {0} against {1}, {2} x {3}{4}, nics {5}{6}{7}{8}{9}{10}{11}',
+  format('perf-compare: {0} against {1}, {2} x {3}{4}{12}, nics {5}{6}{7}{8}{9}{10}{11}',
   inputs.ref_b || 'main', inputs.ref_a || 'main', inputs.sessions || '36',
   inputs.video || '1080p59',
   startsWith(inputs.pixel_format, 'yuv422p10le') && ' yuv422p10le' ||
@@ -23,7 +23,8 @@ run-name: >-
   format(', {0} s', inputs.test_time) || '',
   inputs.rounds && inputs.rounds != '4' &&
   format(', {0} rounds', inputs.rounds) || '',
-  inputs.compliance && ', compliance' || '') }}
+  inputs.compliance && ', compliance' || '',
+  startsWith(inputs.codec, 'jpegxs') && ' jpegxs' || '') }}
 on:
   workflow_dispatch:
     inputs:
@@ -76,6 +77,15 @@ on:
           - 'v210: packed 10-bit 4:2:2, as SDI and broadcast cards use'
           - 'y210: packed 4:2:2, 10 bits in 16-bit words, as GPU and media APIs use'
         default: 'none: the applications use the format on the wire, nothing is converted'
+      # Each choice says what it does; the case takes its word before the colon.
+      codec:
+        description: 'The video of every session. jpegxs runs 1080p, up to 8 sessions (set sessions), as the plugin encodes or decodes an instance, without dma, pixel_format, nics whole or compliance; each build gets the SVT-JPEG-XS plugin of this commit''s versions.env, built against its libmtl, of MTL 26.09 or later'
+        required: false
+        type: choice
+        options:
+          - 'none: st20p, uncompressed ST 2110-20'
+          - 'jpegxs: st22p, ST 2110-22 JPEG XS by the SVT-JPEG-XS plugin'
+        default: 'none: st20p, uncompressed ST 2110-20'
       # sessions, test_time and rounds are strings, not numbers: a number
       # input reaches a step's env as 120.0.
       sessions:
@@ -177,6 +187,9 @@ jobs:
           SINGLE_CORE_TX: ${{ inputs.single_core_tx }}
           VIDEO: ${{ inputs.video }}
           NICS: ${{ inputs.nics }}
+          DMA: ${{ inputs.dma }}
+          PIXEL_FORMAT: ${{ inputs.pixel_format }}
+          CODEC: ${{ inputs.codec }}
           COMPLIANCE: ${{ inputs.compliance }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -223,6 +236,7 @@ jobs:
         env:
           SHA_A: ${{ needs.refs.outputs.sha_a }}
           SHA_B: ${{ needs.refs.outputs.sha_b }}
+          CODEC: ${{ inputs.codec }}
         run: task ci:perf-compare -- build
       - name: Copy both builds to the companion
         env:
@@ -252,6 +266,7 @@ jobs:
       - name: Verify the perf media assets
         env:
           MEDIA_ASSET_SET: perf
+          CODEC: ${{ inputs.codec }}
         run: task ci:media-assets -- verify
 
       - name: Compare
@@ -267,6 +282,7 @@ jobs:
           SINGLE_CORE_RX: ${{ inputs.single_core_rx }}
           SINGLE_CORE_TX: ${{ inputs.single_core_tx }}
           PIXEL_FORMAT: ${{ inputs.pixel_format }}
+          CODEC: ${{ inputs.codec }}
           COMPLIANCE: ${{ inputs.compliance }}
         run: task ci:pytest-run -- perf-compare
       - name: Summarize the comparison

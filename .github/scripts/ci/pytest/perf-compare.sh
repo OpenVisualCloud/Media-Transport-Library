@@ -37,8 +37,13 @@ sweep() {
 	fi
 }
 
-# What build_slot installs at $prefix, and so what a slot holds.
+# What build_slot installs at $prefix, and so what a slot holds; with the codec jpegxs
+# (a choice of perf-compare.yml reads "<word>: what it does") also the SVT-JPEG-XS
+# plugin and the registry that names it, which an st20p build leaves to the platform.
+codec=${CODEC:-none}
+codec=${codec%%:*}
 parts=(dpdk mtl)
+[[ $codec != jpegxs ]] || parts+=(jpegxs conf)
 
 # Move the parts at $prefix into the directory $1.
 move_parts() {
@@ -87,6 +92,17 @@ build_slot() {
 	LD_LIBRARY_PATH="$libs" ninja -C "${src}/rxtx"
 	# Copied, not installed: RxTxApp has no install rule in older releases.
 	install -D -m 755 "${src}/rxtx/RxTxApp" "${prefix}/mtl/bin/RxTxApp"
+	if [[ $codec == jpegxs ]]; then
+		# Against this build's libmtl, from the SVT of the workflow commit's
+		# versions.env, so both builds run the same codec. The registry names it by
+		# its path at $prefix, which the instance's bind mount gives the slot.
+		cp "${root_dir}/script/build_jpegxs.sh" "${src}/script/"
+		mkdir -p "${prefix}/conf"
+		echo '{}' >"${prefix}/conf/kahawai.json"
+		MTL_INSTALL_PREFIX="${prefix}/mtl" bash "${src}/script/build_jpegxs.sh" \
+			-v "$(sed -n 's/^SVT_JPEG_XS_VER=//p' "${root_dir}/versions.env")" \
+			-p "${prefix}/jpegxs" -s "${slots}/svt" --config "${prefix}/conf/kahawai.json"
+	fi
 	rm -rf "$src"
 }
 

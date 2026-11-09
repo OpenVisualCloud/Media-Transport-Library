@@ -141,7 +141,7 @@ Notation used below:
 
 | Metric | Source (MTL line) | Calculation | Unit | Better |
 | --- | --- | --- | --- | --- |
-| `fps (worst session)` | `RX/TX_VIDEO_SESSION(m,s:name): fps X frames N` | per session, the **median of dumps** (a dump missing the session counts 0); then the **lowest** session | frames/s | ↑ |
+| `fps (worst session)` | `RX/TX_VIDEO_SESSION(m,s:name): fps X frames N`; for an st22p RX session, whose own line reads 0, `RX_ST22P(name), frame get try N succ M`: M over the time since that session's last such line | per session, the **median of dumps** (a dump missing the session counts 0); then the **lowest** session | frames/s | ↑ |
 | `fps (mean of sessions)` | the same lines | the mean of those medians: the frames an instance delivers, a session's share | frames/s | ↑ |
 | `RX rate, port N (Gb/s)` / `TX rate, port N (Gb/s)` | `DEV(N): Avr rate, tx: X Mb/s, rx: Y Mb/s` | of an instance on two ports (`redundant`, `whole`), per port N of the instance, with `redundant` 0 the primary and 1 the redundant one: the median of dumps | Gb/s | ⊘ |
 | `RX rate (Gb/s)` / `TX rate (Gb/s)` | the same lines | per dump, the sum over the instance's ports; then the median of dumps | Gb/s | ⊘ |
@@ -151,6 +151,7 @@ Notation used below:
 | `epoch drop` (TX) | `TX_VIDEO_SESSION(m,s): epoch drop N` | the sum over the untraced dumps | frame periods | ↓ |
 | `transmitter mismatch troffset` (TX) | `TX_VIDEO_SESSION(m,s): transmitter mismatch troffset N` | the sum over the untraced dumps | frames | ↓ |
 | `transmitter recalculate warmup (/s)` (TX) | `TX_VIDEO_SESSION(m,s): transmitter recalculate warmup N` | the sum over the untraced dumps ÷ (dumps × 10 s) | re-plans/s | ⊘ |
+| `encode fail` (TX), `decode fail` and `busy drop frame` (RX) | `TX_ST22P(name), encode fail N`, `RX_ST22P(name), decode fail N`, `busy drop frame N` | st22p only: the sum over the untraced dumps; frames the codec failed, or that the RX pipeline had no free frame for | frames | ↓ |
 
 How MTL computes them:
 
@@ -208,7 +209,7 @@ rows follow the loops as **CPU**.
 | Metric | Source | Calculation | Unit | Better |
 | --- | --- | --- | --- | --- |
 | `scheduler threads (CPUs)` | `/proc/<pid>/task/<tid>/stat`: `processor`, and `schedstat`, of the threads named by `t_pid` | the CPUs the threads last ran on at the second read, of the threads present at both that ran between them (their `schedstat` time on a CPU grew); each scheduler polls one of the slot's `--lcores` (Test Information gives the slot's CPUs) | CPUs | ↓ |
-| `application threads (CPUs)` | the same, of the threads whose `comm` is `tx_st20p_N` or `rx_st20p_N` | the same, of RxTxApp's frame threads, a thread a session | CPUs | ⊘ |
+| `application threads (CPUs)` | the same, of the threads whose `comm` is `tx_st20p_N`, `rx_st20p_N`, `tx_st22p_N` or `rx_st22p_N` | the same, of RxTxApp's frame threads, a thread a session | CPUs | ⊘ |
 | `other threads (CPUs)` | the same, of the other threads | the same | CPUs | ⊘ |
 | `all threads (CPUs)` | the same, of all threads | the same; a CPU that two kinds share counts once | CPUs | ⊘ |
 | `<kind> threads utilization (%)` | the same, `utime` and `stime` | 100 × Δ(utime + stime) of the kind's threads ÷ `CLK_TCK` ÷ Δt ÷ its CPUs; n/a for a kind none of whose threads ran | % | ⊘ |
@@ -248,7 +249,8 @@ rows follow the loops as **CPU**.
 - **Per frame** is the CPU time of a kind for each frame the instance's sessions carry.
   A scheduler's is the CPU it polls per frame, not its work.
 - **The other threads** are MTL's control threads, such as `mtl_stat` and `mtl_admin`,
-  EAL's threads and RxTxApp's main thread.
+  EAL's threads and RxTxApp's main thread, and with st22p the codec's, which have no name
+  of their own and take most of their CPU.
 - **The preemptions** are a measure of isolation: a scheduler that keeps its CPU is
   never switched out involuntarily. What the slot swap does not cancel is the build's.
 - **IPC and the clock** have no better direction: a polling loop raises IPC with idle
@@ -396,13 +398,14 @@ fails, so a bad round can never move a mean.
 | Source in hugepages | no TX read its source through `mmap()` |
 | Work counters | a traced RX instance has `rvs_pkt_rx` work |
 | DMA engaged | with `dma`, every session of a DMA instance copied packets by DMA |
+| Codec under test | with `codec` `jpegxs`, each instance's log names a session on `st22_svt_jpeg_xs_plugin*` for each of its sessions |
 | One scheduler | with `single_core_rx` or `single_core_tx`, every instance of that role ran one scheduler |
 | Not collapsed | every session of every instance at a tenth of its frame rate or more |
 | Ports | before the rounds: each port's link carries its sessions |
 
 **Notes** don't invalidate a round, but they put a fact beside it:
 - `under the rate after N s` and `a session fell to N fps`: more load than a build carries, which the `fps` rows score;
-- `N incomplete frames`, `N hw dropped pkts` and the late-frame counts;
+- `N incomplete frames`, `N hw dropped pkts`, the late-frame counts and an st22p codec's drops;
 - `a CI job ran on <host>`, since the companion also serves other repositories;
 - `the builds pace TX differently`, since a build whose TX fell back from the rate limiter re-plans nothing;
 - `app threads not moved`;
