@@ -12,7 +12,10 @@ libm_dep = cc.find_library('m', required : true)
 libpthread_dep = cc.find_library('pthread', required : true)
 libdl_dep = cc.find_library('dl', required : true)
 if not is_windows
-  dpdk_dep = dependency('libdpdk', version: '>=25.03', required: true)
+  # DPDK's headers as system headers, as a DPDK in /usr/local already is: MTL's
+  # warnings then check MTL's code, not DPDK's inline functions, whose
+  # /* fallthrough */ comments clang's -Wimplicit-fallthrough doesn't accept.
+  dpdk_dep = dependency('libdpdk', version: '>=25.03', required: true, include_type: 'system')
   libnuma_dep = cc.find_library('numa', required : true)
   ws2_32_dep = [] # add this when the code uses hton/ntoh
 endif
@@ -48,7 +51,7 @@ endif
 # Compiler hardening, see doc/build.md
 if not is_windows
   add_project_arguments('-fstack-protector-strong', '-fstack-clash-protection', '-fcf-protection=full',
-    '-Wformat', '-Wformat-security', '-Werror=format-security', language : 'c')
+    '-Wformat', '-Wformat-security', '-Werror=format-security', '-Wimplicit-fallthrough', language : 'c')
   if get_option('optimization') not in ['0', 'plain'] and get_option('b_sanitize') == 'none' and not ' '.join(get_option('c_args')).contains('_FORTIFY_SOURCE')
     fortify = cc.get_define('__USE_FORTIFY_LEVEL', prefix : '#include <string.h>',
       args : ['-O2', '-U_FORTIFY_SOURCE', '-D_FORTIFY_SOURCE=3']) == '3' ? '3' : '2'
