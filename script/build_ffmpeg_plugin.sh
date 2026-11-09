@@ -45,6 +45,9 @@ ENVIRONMENT:
 	MTL_INSTALL_PREFIX	Use its parent and install into the ffmpeg sibling
 	FFMPEG_ENABLE_SVT_JPEG_XS	1 is the same as --jpegxs
 	SVT_JPEG_XS_REPO	SVT-JPEG-XS sources (default: script/SVT-JPEG-XS)
+	CFLAGS, LDFLAGS		Flags of the openh264 and FFmpeg builds; the script adds the
+				hardening flags of doc/build.md to them
+	CPPFLAGS		Preprocessor flags of the FFmpeg build; openh264 reads none
 
 EXAMPLES:
 	${script_name}
@@ -73,7 +76,11 @@ build_openh264() {
 	fi
 	rm -rf "${source_dir}"
 	unzip -q "${archive}" -d "${script_folder}"
-	make -C "${source_dir}" -j "${jobs}" PREFIX="${prefix}"
+	# The compiler hardening of doc/build.md. The Makefile adds its own flags
+	# to the CFLAGS and LDFLAGS of the environment, and reads no CPPFLAGS.
+	CPPFLAGS='' hardening_flags || exit 1
+	CFLAGS="${CFLAGS:+${CFLAGS} }${HARDENING_CFLAGS}" LDFLAGS="${LDFLAGS:+${LDFLAGS} }${HARDENING_LDFLAGS}" \
+		make -C "${source_dir}" -j "${jobs}" PREFIX="${prefix}"
 	if prefix_writable "${prefix}"; then
 		make -C "${source_dir}" install PREFIX="${prefix}"
 		relocate_pkgconfig "${prefix}" openh264
@@ -258,6 +265,9 @@ main() {
 	libdirs=("${prefix}/lib" "$(pkg_libdir mtl)" "$(pkg_libdir libdpdk)")
 	[ "${jpegxs}" -eq 0 ] || libdirs+=("$(pkg_libdir SvtJpegxs)")
 	configure_flags+=("--extra-ldflags=-L${prefix}/lib -Wl,--disable-new-dtags")
+	# The compiler hardening of doc/build.md, for gcc: configure ignores CC.
+	CC=gcc hardening_flags || exit 1
+	configure_flags+=("--extra-cflags=${HARDENING_CFLAGS}" "--extra-ldflags=${HARDENING_LDFLAGS}" --extra-ldexeflags=-pie)
 
 	log_info "Build FFmpeg ${FFMPEG_VERSION} into ${prefix}"
 	(cd "${ffmpeg_dir}" && ./configure "${configure_flags[@]}")

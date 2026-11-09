@@ -464,7 +464,8 @@ For older kernel version on Red Hat, the issue is that Red Hat uses vault repos.
 
 ### 4.5. Compiler hardening
 
-The Linux build compiles the MTL meson projects with the hardening options below, and DPDK, libbpf and libxdp with the options for C, less the warning options. The `meson.build` of each project adds them with `add_project_arguments()` and `add_project_link_arguments()`, and `script/build_dpdk.sh` and `script/build_ebpf_xdp.sh` pass them to DPDK, libbpf and libxdp, from `hardening_flags()` in `script/common.sh`.
+The Linux build compiles the MTL meson projects with the hardening options below, and DPDK, libbpf, libxdp, openh264 and FFmpeg with the options for C, less the warning options: openh264 is C++, but gets no `-D_GLIBCXX_ASSERTIONS`.
+The `meson.build` of each project adds them with `add_project_arguments()` and `add_project_link_arguments()`, and `script/build_dpdk.sh`, `script/build_ebpf_xdp.sh` and `script/build_ffmpeg_plugin.sh` pass them to the dependencies they build, from `hardening_flags()` in `script/common.sh`.
 In the dependency builds `hardening_flags()` applies the `_FORTIFY_SOURCE` rule of the meson projects: it adds no level when `CFLAGS` or `CPPFLAGS` set one or a sanitizer (`-fsanitize=`), or when the last `-O` of `CFLAGS`, then `CPPFLAGS`, is `-O0`, as `b_sanitize` and the meson option `optimization` at `0` do for the MTL projects.
 
 | Option | Protection |
