@@ -170,7 +170,7 @@ void ut20p_ctx_destroy(ut20p_ctx* ctx) {
   st_frame_nt_scratch_uinit(&ctx->pipeline.nt_scratch);
   ut20p_set_put_framebuff(NULL, NULL);
   free(ctx->pipeline.parked_frames);
-  free(ctx->frames_mem);
+  ut_aligned_free(ctx->frames_mem);
   free(ctx->dst_storage);
   free(ctx->framebuffs);
   free(ctx);
@@ -304,7 +304,7 @@ int ut20p_ctx_set_converting_frames(ut20p_ctx* ctx, enum st_frame_fmt output_fmt
   if (ret < 0) return ret;
   p->internal_converter = &ctx->converter;
 
-  ctx->frames_mem = aligned_alloc(64, (src_size + dst_size) * ctx->framebuff_cnt);
+  ctx->frames_mem = ut_aligned_alloc(64, (src_size + dst_size) * ctx->framebuff_cnt);
   if (!ctx->frames_mem) return -ENOMEM;
   memset(ctx->frames_mem, 0, (src_size + dst_size) * ctx->framebuff_cnt);
   for (int i = 0; i < ctx->framebuff_cnt; i++) {

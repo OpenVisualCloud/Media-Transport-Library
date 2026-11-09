@@ -17,10 +17,17 @@
 #define _GNU_SOURCE
 #endif
 
-#include <arpa/inet.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef WINDOWSENV
+/* Windows has neither header. winsock2.h of win_posix.h holds ntohl and its
+ * family, and struct timex is not needed: mt_ptp.c calls clock_adjtime on Linux
+ * alone. */
+#include <win_posix.h>
+#else
+#include <arpa/inet.h>
 #include <sys/timex.h>
+#endif
 
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
@@ -199,7 +206,11 @@ uint64_t ut_ptp_mbuf_time_stamp(ut_ptp_ctx* ctx, uint64_t raw_ns) {
   struct ut_timestamp_mbuf {
     struct rte_mbuf mbuf;
     rte_mbuf_timestamp_t timestamp;
-  } timestamp_mbuf = {0};
+  } timestamp_mbuf;
+  /* memset and not = {0}: the first member of struct rte_mbuf is a marker,
+   * which is an array of length zero, so mingw-w64 GCC takes the 0 as an excess
+   * element of that array and -Werror stops the build. */
+  memset(&timestamp_mbuf, 0, sizeof(timestamp_mbuf));
 
   ctx->impl.ptp[MTL_PORT_P] = &ctx->ptp;
   ctx->impl.dynfield_offset = offsetof(struct ut_timestamp_mbuf, timestamp);
