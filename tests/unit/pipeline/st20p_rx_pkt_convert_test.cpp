@@ -11,8 +11,10 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstring>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "pipeline/st20p_harness.h"
@@ -310,23 +312,31 @@ TEST_F(St20pRxPktConvertRedundantTest, InterleavedFrameWithRowZeroLast) {
   expect_frame(2000, kSampleB);
 }
 
-/* 1080p rows split over packets at pixel offsets no cache line divides, as a 1260-byte
- * payload does: each plane matches converting the whole row at once, so the whole lines
- * streamed and the partial ones at the packet ends land where they belong. */
-class St20pRxPktConvertRowTest : public ::testing::TestWithParam<enum st_frame_fmt> {
+/* 720p, 1080p and 2160p rows split over packets of 1260-byte payloads, at pixel offsets
+ * no cache line divides: each plane matches converting the whole row at once, so the
+ * whole lines streamed and the partial ones at the packet ends land where they belong. */
+class St20pRxPktConvertRowTest
+    : public ::testing::TestWithParam<std::tuple<enum st_frame_fmt, uint32_t>> {
  protected:
-  static constexpr uint32_t kRowWidth = 1920;
   static constexpr int kRowCnt = 2;
   static constexpr uint32_t kTs = 3000;
+  static constexpr uint16_t kPktPg = 252; /* a 1260-byte payload of 5-byte pgroups */
   ut20p_ctx* pipe_ = nullptr;
+
+  enum st_frame_fmt fmt() const {
+    return std::get<0>(GetParam());
+  }
+  uint32_t width() const {
+    return std::get<1>(GetParam());
+  }
 
   void SetUp() override {
     ASSERT_EQ(ut20p_init(), 0);
     pipe_ = ut20p_ctx_create(3);
     ASSERT_NE(pipe_, nullptr);
     struct st20_rx_ops ops_rx;
-    ASSERT_EQ(ut20p_ctx_enable_pkt_convert(pipe_, GetParam(), kRowWidth, kRowCnt,
-                                           ST_FPS_P59_94, 0, &ops_rx),
+    ASSERT_EQ(ut20p_ctx_enable_pkt_convert(pipe_, fmt(), width(), kRowCnt, ST_FPS_P59_94,
+                                           0, &ops_rx),
               0);
     ut20p_set_ready(pipe_, true);
   }
@@ -335,10 +345,9 @@ class St20pRxPktConvertRowTest : public ::testing::TestWithParam<enum st_frame_f
   }
 
   /* the whole row src converted at once into plane rows dst */
-  static int convert_row(enum st_frame_fmt fmt, struct st20_rfc4175_422_10_pg2_be* src,
-                         uint8_t* const dst[3]) {
-    uint32_t pg = kRowWidth / 2;
-    switch (fmt) {
+  int convert_row(struct st20_rfc4175_422_10_pg2_be* src, uint8_t* const dst[3]) const {
+    uint32_t pg = width() / 2;
+    switch (fmt()) {
       case ST_FRAME_FMT_YUV422PLANAR10LE:
         return st20_rfc4175_422be10_to_yuv422p10le(
             src, (uint16_t*)dst[0], (uint16_t*)dst[1], (uint16_t*)dst[2], pg, 2);
@@ -355,25 +364,23 @@ class St20pRxPktConvertRowTest : public ::testing::TestWithParam<enum st_frame_f
 };
 
 TEST_P(St20pRxPktConvertRowTest, PacketsAtUnalignedOffsetsMatchTheWholeRow) {
-  const enum st_frame_fmt fmt = GetParam();
-  const uint16_t pkt_pg[] = {252, 252, 252, 204};
-  const size_t row_bytes = kRowWidth / 2 * sizeof(struct st20_rfc4175_422_10_pg2_be);
+  const uint16_t row_pg = (uint16_t)(width() / 2);
+  const size_t row_bytes = row_pg * sizeof(struct st20_rfc4175_422_10_pg2_be);
   std::vector<uint8_t> payload(row_bytes * kRowCnt);
   for (size_t i = 0; i < payload.size(); i++) payload[i] = (uint8_t)(i * 131 + 7);
 
   for (int row = 0; row < kRowCnt; row++) {
-    uint16_t pg_off = 0;
-    for (uint16_t cnt : pkt_pg) {
+    for (uint16_t pg_off = 0; pg_off < row_pg; pg_off += kPktPg) {
+      uint16_t cnt = std::min<uint16_t>(kPktPg, row_pg - pg_off);
       uint8_t* p = payload.data() + row * row_bytes +
                    pg_off * sizeof(struct st20_rfc4175_422_10_pg2_be);
       ASSERT_EQ(ut20p_pkt_convert(pipe_, p, row, pg_off * 2, cnt, kTs), 0);
-      pg_off += cnt;
     }
   }
   struct st_frame* f = ut20p_pkt_convert_dst(pipe_, kTs);
   ASSERT_NE(f, nullptr);
 
-  const int planes = st_frame_fmt_planes(fmt);
+  const int planes = st_frame_fmt_planes(fmt());
   for (int row = 0; row < kRowCnt; row++) {
     std::vector<std::vector<uint8_t>> want(3);
     uint8_t* dst[3] = {nullptr};
@@ -381,23 +388,25 @@ TEST_P(St20pRxPktConvertRowTest, PacketsAtUnalignedOffsetsMatchTheWholeRow) {
       want[p].assign(f->linesize[p], 0);
       dst[p] = want[p].data();
     }
-    ASSERT_EQ(convert_row(fmt,
-                          reinterpret_cast<struct st20_rfc4175_422_10_pg2_be*>(
+    ASSERT_EQ(convert_row(reinterpret_cast<struct st20_rfc4175_422_10_pg2_be*>(
                               payload.data() + row * row_bytes),
                           dst),
               0);
     for (int p = 0; p < planes; p++) {
-      size_t n = st_frame_least_linesize(fmt, kRowWidth, p);
+      size_t n = st_frame_least_linesize(fmt(), width(), p);
       const uint8_t* got = static_cast<const uint8_t*>(f->addr[p]) + f->linesize[p] * row;
       EXPECT_EQ(memcmp(got, want[p].data(), n), 0) << "row " << row << " plane " << p;
     }
   }
 }
 
-INSTANTIATE_TEST_SUITE_P(Fmts, St20pRxPktConvertRowTest,
-                         ::testing::Values(ST_FRAME_FMT_YUV422PLANAR10LE,
-                                           ST_FRAME_FMT_YUV422PLANAR16LE,
-                                           ST_FRAME_FMT_Y210, ST_FRAME_FMT_UYVY),
-                         [](const ::testing::TestParamInfo<enum st_frame_fmt>& info) {
-                           return std::string(st_frame_fmt_name(info.param));
-                         });
+INSTANTIATE_TEST_SUITE_P(
+    FmtsWidths, St20pRxPktConvertRowTest,
+    ::testing::Combine(::testing::Values(ST_FRAME_FMT_YUV422PLANAR10LE,
+                                         ST_FRAME_FMT_YUV422PLANAR16LE, ST_FRAME_FMT_Y210,
+                                         ST_FRAME_FMT_UYVY),
+                       ::testing::Values(1280u, 1920u, 3840u)),
+    [](const ::testing::TestParamInfo<std::tuple<enum st_frame_fmt, uint32_t>>& info) {
+      return std::string(st_frame_fmt_name(std::get<0>(info.param))) + "_" +
+             std::to_string(std::get<1>(info.param));
+    });
