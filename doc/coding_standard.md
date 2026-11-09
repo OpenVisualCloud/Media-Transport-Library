@@ -39,7 +39,7 @@ change the result:
              |                    |                    |
       ./checkpatch.sh      git pre-commit hook   .github/workflows/cicd-pr-check.yml
              |                    |                    |
-       ./format-coding.sh    (same hooks)       (same hooks, 3 OSes)
+        ./format-coding.sh    (same hooks)     (same hooks, Linux and Windows)
 ```
 
 Every caller above runs the same hook list from the same file. None of them
@@ -256,9 +256,9 @@ line may be added back.
 The `build` job of `.github/workflows/cicd-pr-check.yml` needs the `checkpatch`
 matrix jobs and `residual-linters` (`Lint checks not yet in checkpatch`). A lint
 failure therefore skips the build rather than wasting a DPDK compile on it, and
-`build-result` fails. The `Lint Code Base` job aggregates the file linters into
-one check. Commit-message style remains an independent pull request check and
-does not block the compile.
+`ci-result` fails. The `ci-result` job is the one branch-protection check for
+the workflow. It requires the file linters and commit-message check on pull
+requests. Commit-message style does not block the compile.
 
 The coupling is by job ID in `needs:`, in one workflow, so GitHub refuses a
 rename of a lint job that does not also change the `build` job.
@@ -292,11 +292,11 @@ unstaged`. Stage the config, or use `--no-verify` while you iterate on it.
 ## 6. Platforms
 
 Any Linux distribution, macOS and Windows (git-bash / MSYS2) are supported, and
-CI runs `./checkpatch.sh` on Linux, macOS and Windows so the claim cannot rot. It
-had already rotted once before that job existed: a tracked filename containing a
-colon made the tree impossible to check out on Windows (see the `patches/` note in
-[§3](#3-what-is-checked)). `check-illegal-windows-names` now fails locally on
-any path Windows cannot represent, which is a cheaper place to find out.
+CI runs `./checkpatch.sh` on Linux and Windows. The cross-platform claim had
+already rotted once before that job existed: a tracked filename containing a
+colon made the tree impossible to check out on Windows (see the `patches/` note
+in [§3](#3-what-is-checked)). `check-illegal-windows-names` now fails locally
+on any path Windows cannot represent, which is a cheaper place to find out.
 
 ### 6.1. Installing the engine
 

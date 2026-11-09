@@ -530,11 +530,19 @@ enum st20p_tx_flag {
    * immediately after notify_frame_done).
    */
   ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE = (MTL_BIT32(13)),
-  /** Enable IPMX (VSF TR-10) mode on the transport session, see ST20_TX_FLAG_IPMX */
-  ST20P_TX_FLAG_IPMX = (MTL_BIT32(14)),
+  /**
+   * Convert with ordinary stores. By default the internal converter, for
+   * ST_FRAME_FMT_YUV422PLANAR10LE input or ST_FRAME_FMT_V210 input at a width that is a
+   * multiple of 48, converts a few lines at a time into a per-session scratch and streams
+   * them to the frame with non-temporal stores, so the frame neither is read for
+   * ownership nor fills the cache.
+   */
+  ST20P_TX_FLAG_DISABLE_NT_CONVERT = (MTL_BIT32(14)),
   /** Enable the st20p_tx_get_frame block behavior to wait until a frame becomes
      available or (default: 1s, use st20p_tx_set_block_timeout to customize) */
   ST20P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
+  /** Enable IPMX (VSF TR-10) mode on the transport session, see ST20_TX_FLAG_IPMX */
+  ST20P_TX_FLAG_IPMX = (MTL_BIT32(16)),
 };
 
 /** Bit define for flags of struct st22p_rx_ops. */
@@ -604,8 +612,12 @@ enum st20p_rx_flag {
   ST20P_RX_FLAG_EXT_FRAME = (MTL_BIT32(2)),
   /**
    * Only used for internal convert mode and limited formats:
-   * ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210, ST_FRAME_FMT_UYVY
+   * ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210, ST_FRAME_FMT_UYVY,
+   * ST_FRAME_FMT_YUV422PLANAR16LE
    * Perform the color format conversion on each packet.
+   * Not supported with ST20P_RX_FLAG_EXT_FRAME, ST20P_RX_FLAG_USE_MULTI_THREADS or
+   * ST20P_RX_FLAG_AUTO_DETECT, nor above 40 Gb/s per session, where the transport
+   * would add a packet lcore.
    */
   ST20P_RX_FLAG_PKT_CONVERT = (MTL_BIT32(3)),
   /**
@@ -668,8 +680,17 @@ enum st20p_rx_flag {
    * Use gpu_direct vram for framebuffers
    */
   ST20P_RX_FLAG_USE_GPU_DIRECT_FRAMEBUFFERS = (MTL_BIT32(24)),
+  /**
+   * Convert with ordinary stores. By default the internal converter, for
+   * ST_FRAME_FMT_YUV422PLANAR10LE output or ST_FRAME_FMT_V210 output at a width that is a
+   * multiple of 48, converts a few lines at a time into a per-session scratch and streams
+   * them to the frame with non-temporal stores, so the frame neither is read for
+   * ownership nor fills the cache, and comes back cold in cache. A session with
+   * ST20P_RX_FLAG_AUTO_DETECT always converts with ordinary stores.
+   */
+  ST20P_RX_FLAG_DISABLE_NT_CONVERT = (MTL_BIT32(25)),
   /** Enable IPMX (VSF TR-10) mode on the transport session, see ST20_RX_FLAG_IPMX */
-  ST20P_RX_FLAG_IPMX = (MTL_BIT32(25)),
+  ST20P_RX_FLAG_IPMX = (MTL_BIT32(26)),
 };
 
 /** Bit define for flag_resp of struct st22_decoder_create_req. */

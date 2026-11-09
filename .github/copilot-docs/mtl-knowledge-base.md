@@ -222,8 +222,23 @@ If `rte_eth_tx_burst()` returns fewer than requested:
 ### Copy Primitive
 Every copy in `lib/` goes through `mt_memcpy()` (`mt_util.h`, `static inline`), never `rte_memcpy` and never a bare `memcpy` in new code. Its one line selects the backend for the whole library, so a change of copy primitive is a one-line change with no call-site churn.
 Today that backend is libc `memcpy`: glibc reads the CPU at load time and picks an AVX-512, AVX2 or ERMS path, `rte_memcpy` is fixed to the path DPDK was built for, and `rte_memcpy` measured slower on the RX frame write path. `mtl_memcpy()` is the public API over the same call.
-The one exception is that RX frame write path: `rv_frame_memcpy()` (`st_rx_video_session.c`) streams whole cache lines with non-temporal stores, and copies the misaligned head, the sub-line tail and short payloads through `mt_memcpy()`.
-A session with a pkt lcore keeps `mt_memcpy()` for the whole copy: two threads write its frame and either may hand it over, and a fence orders only the stores of its own core. A session that migrates mid-frame needs none: the x86 unlock of its session spinlock, released after every tasklet poll, is a locked `xchg` and drains the old core's streaming stores.
+Two paths stream whole cache lines with non-temporal stores instead: the st20p conversion (next section) and the RX frame write path, `rv_frame_memcpy()` (`st_rx_video_session.c`), which copies the misaligned head, the sub-line tail and short payloads through `mt_memcpy()`.
+On that RX frame write path a session with a pkt lcore keeps `mt_memcpy()` for the whole copy: two threads write its frame and either may hand it over, and a fence orders only the stores of its own core. A session that migrates mid-frame needs none: the x86 unlock of its session spinlock, released after every tasklet poll, is a locked `xchg` and drains the old core's streaming stores.
+
+### st20p Conversion With Non-Temporal Stores
+- `st_frame_convert_nt()` (`st_convert.c`) runs a converter whose table entry sets `nt_width_align` (rfc4175 422be10 to and from yuv422p10le and v210) 8 lines at a time into a scratch that stays in L2.
+  It streams each block to the frame with SSE2 `_mm_stream_si128` and fences once before returning, so the frame is never read for ownership and never fills L3.
+  Measured: 28–38 % less DRAM traffic per frame; RX `yuv422p10le` `st20p_rx_get_frame` 12.7 → 8.8 app cores at 375 Gb/s.
+  An RX frame converted this way comes back cold in cache: a consumer that reads it right after `st20p_rx_get_frame`, such as the `mtl_memcpy()` into the packet in `ecosystem/ffmpeg_plugin/mtl_st20p_rx.c`, reads it from DRAM, and at low session counts may prefer `ST20P_RX_FLAG_DISABLE_NT_CONVERT`.
+- Blocks need a width the kernels take a line at a time (`st_frame_nt_supported()`): any even width for yuv422p10le, a multiple of 48 for v210.
+  48 gives whole 12-pg avx512_vbmi batches on every line, and 8-line 422be10 blocks of whole cache lines (20 × width bytes) on the TX side.
+  v210 widths that are no multiple of 3 (1280, 2048, 4096) have no whole-byte lines at all: `st_frame_least_linesize()` is 0.
+- It falls back to one plain `convert_func()` call for another width, a zero least linesize, padded destination lines, a destination plane or block start off a cache line (the Cr plane of a contiguous 720x486 yuv422p10le frame), or a scratch short of one block.
+  A sub-cache-line block tail goes through `mt_memcpy()`, a short last block covers heights such as 540 and 486, and padded source lines are fine.
+- The scratch is a per-session `struct st_frame_nt_scratch` (`nt_scratch` in `st20p_tx_ctx` / `st20p_rx_ctx`): `st_frame_nt_scratch_init()` takes it from `mt_rte_zmalloc_socket()` on the session socket at create, 8 output lines (`st_frame_nt_scratch_size()`, 38,400 B for 1080p 422be10), 16-byte aligned for `_mm_load_si128`; `st_frame_nt_scratch_uinit()` frees it.
+  Its `busy` word guards it with one CAS per `st_frame_convert_nt()`: a second app thread that breaks the one-thread-per-session model converts with ordinary stores instead of corrupting it.
+  None is allocated with `ST20P_TX_FLAG_DISABLE_NT_CONVERT` / `ST20P_RX_FLAG_DISABLE_NT_CONVERT`, for a session with no internal converter or an unsupported width, or for RX `AUTO_DETECT`, whose width is unknown at create, so it always converts with ordinary stores.
+- Output is byte-identical to the stock converters, and the converter call count shows which path ran (`*St20p*NtConvert*`, `*St20p*NtScratch*` in `tests/unit/pipeline/st20p_nt_convert_test.cpp`).
 
 ### NUMA Matters
 All DPDK allocations take `socket_id` from `mt_socket_id(impl, port)`. Socket mismatch → 2× DMA latency. Fallback: if preferred socket has no hugepages, allocate from any socket (logs warning).
@@ -849,6 +864,22 @@ Late frame handling: if IN_USER when epoch arrives → skip. If older READY exis
 ```text
 FREE → READY (transport delivers) → IN_CONVERTING (optional) → CONVERTED → IN_USER (app reads) → FREE
 ```
+With `ST20P_RX_FLAG_PKT_CONVERT` the uframe callback converts each packet as it arrives: the first
+packet of an RTP timestamp takes a FREE framebuff into IN_CONVERTING, later ones find it by timestamp
+(two at once with redundant ports or RTCP), and frame_ready moves it to CONVERTED. A frame whose
+first packet finds no framebuff, or comes before the pipeline is ready, is refused whole, so the
+session sees no wire loss; if its frame_ready comes after ready it counts as one drop
+(`stat_busy` and `stat_frames_dropped`). A lossy frame the app did not ask for counts so only when it
+was refused; one that had a framebuff is released silently, as the session drops it in other modes.
+The pipeline always sets `ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME` on the transport, so a frame dropped
+incomplete still reaches frame_ready. In every mode where incomplete frames reach frame_ready, one it
+does not deliver it puts back itself with `st20_rx_put_framebuff()`; before ready `ctx->transport` may
+still be unset, so such a frame is parked (a slot per transport frame) and put back by create once
+ready, or by the next frame_ready if it missed that.
+Create refuses PKT_CONVERT with `ST20P_RX_FLAG_EXT_FRAME` (a queried ext frame would arrive only at frame_ready)
+and wherever the session could add a pkt lcore (`ST20P_RX_FLAG_USE_MULTI_THREADS`,
+`ST20P_RX_FLAG_AUTO_DETECT`, or above `ST_RX_VIDEO_PKT_LCORE_MBPS`): the uframe callback is not safe on
+the pkt lcore and tasklet at once.
 
 **Session-Level TX** (`st21_tx_frame_status`):
 ```text
@@ -911,6 +942,12 @@ mt_bitmap_test_and_set(bitmap, pkt_idx) → atomic, skip if already set
 3. No pending mbuf borrows
 
 Complete → `rv_slot_full_frame()` → `ST_FRAME_STATUS_COMPLETE`. Incomplete/evicted → `ST_FRAME_STATUS_CORRUPTED`, recycled rather than delivered unless the app set `ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME` (`rv_frame_notify()`).
+Frame ownership at `notify_frame_ready`: a complete frame it refuses (< 0) the session puts back itself,
+but an incomplete one belongs to the receiver whatever it returns; in-tree receivers put it back and
+return -1. The `uframe_pg_callback` return is ignored, so a refused payload still counts toward `recv_size`.
+Known follow-up: `rv_st22_frame_notify()` hands incomplete frames over the same way, and
+`rx_st22p_frame_ready()` does not put back one it refuses (not ready, no framebuff), which leaks a
+transport frame per refusal with `ST22P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME`.
 
 ### Inflight Pattern (Cooperative Non-Blocking Retry)
 - **Builder inflight**: ring full → save packets to `s->inflight[port][]` → return → retry next iteration
@@ -1227,7 +1264,7 @@ ninja -C build_fuzz
 
 The guide is `tests/doc/fuzz/index.rst`.
 The `fuzz-tests` job of `cicd-pr-check.yml` and of `nightly.yml` runs `.github/scripts/ci/fuzz/fuzz.sh` (`task ci:fuzz -- build|run`) on `ubuntu-22.04` (clang 14) and uploads `fuzz-report`: 60 s per target on a pull request that matches the `fuzz_tests` path filter, 600 s per target in `nightly.yml` (Monday to Friday on `main`, and on a manual run).
-The harnesses link `libmtl`, so the filter holds all of `lib/**` and `include/**`. `fuzz-tests-result` always runs and is the check to require.
+The harnesses link `libmtl`, so the filter holds all of `lib/**` and `include/**`. `ci-result` always runs and is the workflow's branch-protection check.
 
 ### Acceptance Tests (`tests/acceptance/`)
 E2E framework launching real MTL apps over SSH. Tests do NOT call MTL C API.

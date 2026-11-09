@@ -117,9 +117,9 @@ The workflow runs in three cases:
   night on ``main`` and on a manual run, with 600 s for each target.
 * A manual run of ``cicd-pr-check.yml``, with 60 s for each target.
 
-The ``fuzz-tests-result`` job always runs, also when the filter skips the fuzz
-job. It fails only when the fuzz job fails or is cancelled, so it is the check
-to require in branch protection.
+The ``ci-result`` job always runs, also when the filter skips the fuzz job. It
+is the workflow's branch-protection check and fails when a requested fuzz job
+does not succeed.
 
 The corpus stays in the Actions cache from one run to the next. A pull request
 can read the corpus of ``main``.

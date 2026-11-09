@@ -19,11 +19,17 @@ if is_windows
     error('not supported on Windows')
 endif
 
-# Compiler hardening, see doc/build.md
-hardening = run_command(files('../script/hardening_flags.py'), 'c', get_option('optimization'),
-    get_option('b_sanitize'), cc.cmd_array(), get_option('c_args'), check : true).stdout().split('\n')
-add_project_arguments(hardening[0].split(), language : 'c')
-add_project_link_arguments(hardening[1].split(), language : 'c')
+# Compiler hardening, see doc/build.md. The gtest executable below takes the same flags.
+hardening_args = ['-fstack-protector-strong', '-fstack-clash-protection', '-fcf-protection=full',
+  '-Wformat', '-Wformat-security', '-Werror=format-security']
+if get_option('optimization') not in ['0', 'plain'] and get_option('b_sanitize') == 'none' and not ' '.join(get_option('c_args')).contains('_FORTIFY_SOURCE')
+  fortify = cc.get_define('__USE_FORTIFY_LEVEL', prefix : '#include <string.h>',
+    args : ['-O2', '-U_FORTIFY_SOURCE', '-D_FORTIFY_SOURCE=3']) == '3' ? '3' : '2'
+  hardening_args += ['-U_FORTIFY_SOURCE', '-D_FORTIFY_SOURCE=' + fortify]
+endif
+hardening_link_args = ['-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack']
+add_project_arguments(hardening_args, language : 'c')
+add_project_link_arguments(hardening_link_args, language : 'c')
 
 # gpu_direct dependencies check
 mtl_gpu_direct_c_args = []
@@ -66,15 +72,11 @@ if get_option('enable_tests')
   ]  
 
   # The C project arguments above don't reach this C++ executable.
-  gtest_hardening = run_command(files('../script/hardening_flags.py'), 'c++', get_option('optimization'),
-    get_option('b_sanitize'), meson.get_compiler('cpp').cmd_array(), get_option('cpp_args'),
-    check : true).stdout().split('\n')
-
   gtest_e = executable(
     'gtest-all',
     tests_src,
-    cpp_args : gtest_hardening[0].split(),
-    link_args : gtest_hardening[1].split(),
+    cpp_args : hardening_args,
+    link_args : hardening_link_args,
     dependencies : [
       gtest_dep,
       gtest_main_dep,
