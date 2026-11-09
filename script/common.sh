@@ -332,12 +332,25 @@ function origin_rpath_args() {
 
 # Sets HARDENING_CFLAGS and HARDENING_LDFLAGS for a dependency build: the
 # hardening flags of the MTL meson projects, less the warning options, and their
-# _FORTIFY_SOURCE rule, see doc/build.md.
+# _FORTIFY_SOURCE rule, see doc/build.md. MTL_HARDENING=0 leaves both empty.
 function hardening_flags() {
 	local flag defines level optimized=1 own=0 sanitized=0
 	local -a compiler args
 	local cflags="-fstack-protector-strong -fstack-clash-protection -fcf-protection=full"
 
+	case ${MTL_HARDENING:-1} in
+	0)
+		log_warning "MTL_HARDENING=0: the dependency is built without the hardening flags"
+		# shellcheck disable=SC2034 # the scripts that source this file read them
+		HARDENING_CFLAGS='' HARDENING_LDFLAGS=''
+		return 0
+		;;
+	1) ;;
+	*)
+		log_error "MTL_HARDENING must be 0 or 1, not ${MTL_HARDENING}"
+		return 1
+		;;
+	esac
 	read -ra compiler <<<"${CC:-cc}"
 	read -ra args <<<"${CFLAGS:-} ${CPPFLAGS:-}"
 	for flag in "${args[@]}"; do
