@@ -9,7 +9,8 @@
  * tests/unit/ipmx/ipmx_st22_validate_test.cpp; these pin that the real create path
  * applies them.
  *
- * Streaming: an IPMX TX to RX pair of 1080p59.94 GBRPLANAR8 (RGB 4:4:4 8-bit, D11).
+ * Streaming: an IPMX TX to RX pair of GBRPLANAR8 (RGB 4:4:4 8-bit, D11), 1080p59.94
+ * unless named otherwise.
  * The library checks every frame's JPEG XS picture header against the TR-08 section
  * 8.1.1 values it put in the boxes and drops a frame that does not match, so RX must
  * get every frame TX put, less those still in flight at stop.
@@ -19,11 +20,19 @@
  *   tx_rx_1080p_redundant  the same over ST 2022-7, TX on ports P and R, RX on ports
  *                       2 and 3: both legs deliver every frame with its SHA; skipped
  *                       with fewer than 4 ports
- *   tx_rx_svt_1080p_*   the real SVT-JPEG-XS plugin at 3 and 4 bpp; lossy, no SHA.
- *                       Skipped unless the plugin is loaded (KAHAWAI_CFG_PATH) and
+ *   tx_rx_svt_<rate>_<3|4>bpp  the real SVT-JPEG-XS plugin over the D11 matrix,
+ *                       rate 1080p50, 1080p59_94, 1080p60, 2160p59_94, 2160p60; lossy,
+ *                       no SHA, random TX frames (colour bars in dump runs). Skipped
+ *                       unless the plugin is loaded (KAHAWAI_CFG_PATH) and
  *                       SVT_JXS_MTL_PLUGIN_CONFIG names an IPMX config whose
- *                       stream_level is the Plev of that case: one KahawaiTest run per
- *                       config.
+ *                       stream_level is the Plev of that case (0x1004, 0x1006, 0x2404,
+ *                       0x2406): one KahawaiTest run per config. A case whose config
+ *                       matches but whose encoder fails to open at its size fails.
+ *                       IPMX_ST22P_DURATION_S, IPMX_ST22P_RX_FB_CNT and
+ *                       IPMX_FRAME_DUMP_DIR set the stream length, the RX framebuffers
+ *                       and a TX / RX frame dump (see ipmx_st22p_svt())
+ *   tx_rx_svt_1080p59_94_3bpp_redundant  the SVT 1080p59.94 3 bpp point over ST 2022-7,
+ *                       ports as tx_rx_1080p_redundant; skipped with fewer than 4 ports
  * Each streaming case also reads the RX Sender Reports of every leg after the stop
  * (ipmx_st22p_rx_get_sr_info()): none malformed, the Info Block with 0x0003 equal to
  * ipmx_st22p_tx_get_info() and 0x0008 with T 1, K 0, Ppih High444.12 and the case's
@@ -49,6 +58,7 @@
 
 #ifdef MTL_HAS_IPMX
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <fstream>
@@ -349,7 +359,8 @@ static void ipmx_st22p_sr_check_port(st22p_rx_handle handle, enum mtl_session_po
        __func__, port, sr.received, sr.malformed, sr.info_malformed, sr.no_info_block,
        sr.ssrc_mismatch, sr.unknown_mib, sr.ssrc, sr.rtp_timestamp, sr.cname,
        sr.info.version, sr.jxs.ppih, sr.jxs.plev);
-  /* one SR a frame over 10 s at 59.94 fps; st22p has no RX frame count to compare */
+  /* one SR a frame over at least 10 s at 50 fps or more; st22p has no RX frame count
+   * to compare */
   EXPECT_GT(sr.received, 300u);
   EXPECT_EQ(sr.malformed, 0u);
   EXPECT_EQ(sr.info_malformed, 0u);
@@ -607,9 +618,10 @@ static unsigned long ipmx_st22p_svt_cfg_level(const char* path) {
   return 0;
 }
 
-/* why the real plugin case can't run here, empty if it can */
-static std::string ipmx_st22p_svt_skip(struct st_tests_context* ctx, uint16_t plev,
-                                       size_t codestream_size) {
+/* why the real plugin case can't run here, empty if it can: the config's level is not
+ * the case's or no CPU encoder at 1080p (no plugin); a create failure at the case's
+ * size later fails the case */
+static std::string ipmx_st22p_svt_skip(struct st_tests_context* ctx, uint16_t plev) {
   const char* cfg = getenv("SVT_JXS_MTL_PLUGIN_CONFIG");
   char msg[256];
 
@@ -626,7 +638,7 @@ static std::string ipmx_st22p_svt_skip(struct st_tests_context* ctx, uint16_t pl
   ipmx_st22p_tx_ops(ctx, &ops);
   ops.flags = 0;
   ops.device = ST_PLUGIN_DEVICE_CPU;
-  ops.codestream_size = codestream_size;
+  ops.codestream_size = 1920 * 1080 * 3 / 8;
   st22p_tx_handle handle = st22p_tx_create(ctx->handle, &ops);
   if (!handle) return "no CPU JPEG XS encoder of GBRPLANAR8, load the SVT plugin";
   st22p_tx_free(handle);
@@ -662,42 +674,214 @@ TEST(Ipmx_st22p, noipmx_tx_1080p_sr_none) {
   st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
 }
 
-/* the 1080p59.94 stream of the real SVT-JPEG-XS encoder and decoder at bpp: the
- * codestreams the plugin's IPMX config makes pass the library's per-frame header check,
- * so RX gets every frame (none dropped, rate within 10 %, none incomplete), and the SRs
- * carry plev */
-static void ipmx_st22p_svt_1080p(int bpp, uint16_t plev) {
+/* ---- real SVT-JPEG-XS over the D11 matrix ---- */
+
+/* the integer of env name, 0 when unset or not positive */
+static int ipmx_st22p_env_int(const char* name) {
+  const char* v = getenv(name);
+  return v ? std::max(atoi(v), 0) : 0;
+}
+
+/* GBRPLANAR8: the top 3/4 the 8 full colour bars (white, yellow, cyan, green, magenta,
+ * red, blue, black), the bottom 1/4 a black to white ramp. In a dump run every TX
+ * framebuffer holds it, so every RX frame is a decode of it */
+static void ipmx_st22p_svt_pattern(uint8_t* fb, uint32_t width, uint32_t height) {
+  size_t plane = (size_t)width * height;
+  uint8_t* g = fb;
+  uint8_t* b = fb + plane;
+  uint8_t* r = fb + 2 * plane;
+
+  for (uint32_t y = 0; y < height; y++) {
+    for (uint32_t x = 0; x < width; x++) {
+      size_t i = (size_t)y * width + x;
+      if (y < height * 3 / 4) {
+        uint32_t bar = x * 8 / width;
+        g[i] = bar < 4 ? 0xff : 0;
+        r[i] = bar & 2 ? 0 : 0xff;
+        b[i] = bar & 1 ? 0 : 0xff;
+      } else {
+        g[i] = b[i] = r[i] = (uint8_t)((uint64_t)x * 0xff / (width - 1));
+      }
+    }
+  }
+}
+
+/* the RX frame IPMX_FRAME_DUMP_DIR keeps: its RX index and its planes, allocated before
+ * the stream so the copy in the RX thread is a memcpy only */
+static int ipmx_st22p_dump_idx;
+static int ipmx_st22p_dump_rx_cnt;
+static std::vector<uint8_t> ipmx_st22p_dump_rx;
+static int ipmx_st22p_dump_width;
+static int ipmx_st22p_dump_height;
+
+static void ipmx_st22p_dump_rx_frame(struct st_frame* frame) {
+  if (frame->width != (uint32_t)ipmx_st22p_dump_width ||
+      frame->height != (uint32_t)ipmx_st22p_dump_height)
+    return;
+  if (ipmx_st22p_dump_rx_cnt++ != ipmx_st22p_dump_idx) return;
+
+  uint8_t* dst = ipmx_st22p_dump_rx.data();
+  for (int p = 0; p < 3; p++) {
+    for (uint32_t y = 0; y < frame->height; y++) {
+      memcpy(dst, (uint8_t*)frame->addr[p] + (size_t)y * frame->linesize[p],
+             frame->width);
+      dst += frame->width;
+    }
+  }
+  info("%s, rx frame %d timestamp %" PRIu64 " kept\n", __func__, ipmx_st22p_dump_idx,
+       frame->timestamp);
+}
+
+static void ipmx_st22p_dump_write(const std::vector<uint8_t>& data, const char* tag) {
+  std::string path = std::string(getenv("IPMX_FRAME_DUMP_DIR")) + "/" +
+                     ::testing::UnitTest::GetInstance()->current_test_info()->name() +
+                     tag + ".gbrp";
+  FILE* f = fopen(path.c_str(), "w");
+  ASSERT_NE(f, nullptr) << path;
+  EXPECT_EQ(fwrite(data.data(), 1, data.size(), f), data.size()) << path;
+  fclose(f);
+}
+
+/* the usual SR check, then the source pattern and the kept RX frame as raw GBRPLANAR8
+ * (ffmpeg gbrp) <test name>_tx.gbrp and _rx.gbrp */
+static void ipmx_st22p_dump_rx_check(st22p_rx_handle handle) {
+  ipmx_st22p_sr_check(handle);
+  ASSERT_GT(ipmx_st22p_dump_rx_cnt, ipmx_st22p_dump_idx) << "no rx frame to dump";
+  std::vector<uint8_t> tx((size_t)ipmx_st22p_dump_width * ipmx_st22p_dump_height * 3);
+  ipmx_st22p_svt_pattern(tx.data(), ipmx_st22p_dump_width, ipmx_st22p_dump_height);
+  ipmx_st22p_dump_write(tx, "_tx");
+  ipmx_st22p_dump_write(ipmx_st22p_dump_rx, "_rx");
+}
+
+/*
+ * the stream of the real SVT-JPEG-XS encoder and decoder at fps, width x height and bpp
+ * over ports legs (2 is ST 2022-7):
+ * the codestreams the plugin's IPMX config makes pass the library's per-frame header
+ * check, so RX gets every frame (none dropped, rate within 10 %, none incomplete), and
+ * the SRs carry plev. Lab knobs, all unset by default:
+ *   IPMX_ST22P_DURATION_S  streaming seconds instead of 10, at least 10 (TP-1 section
+ *                          13.4: ~60 s); the RX frame budget is a count in flight, so
+ *                          it holds for any length
+ *   IPMX_ST22P_RX_FB_CNT   RX framebuffers instead of 3, 2 to 8 (7 with ST 2022-7);
+ *                          each one more also widens the frame-count tolerance by one,
+ *                          so record the value with the results
+ *   IPMX_FRAME_DUMP_DIR    TX frames of colour bars instead of random data, and the
+ *                          source and the RX frame at mid-stream written there
+ */
+static void ipmx_st22p_svt(enum st_fps fps_, int width_, int height_, int bpp,
+                           uint16_t plev, int ports = 1) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
-  enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  enum st_fps fps[1] = {fps_};
+  int width[1] = {width_};
+  int height[1] = {height_};
   enum st_frame_fmt fmt[1] = {ST_FRAME_FMT_GBRPLANAR8};
   enum st22_codec codec[1] = {ST22_CODEC_JPEGXS};
   /* GBRPLANAR8 is 24 bits a pixel */
   int compress_ratio[1] = {24 / bpp};
+  /* the plugin's max codestream is w x h x bpp / 8 */
+  size_t codestream_max = (size_t)width_ * height_ * bpp / 8;
 
-  std::string skip =
-      ipmx_st22p_svt_skip(ctx, plev, (size_t)width[0] * height[0] * bpp / 8);
+  std::string skip = ipmx_st22p_svt_skip(ctx, plev);
   if (!skip.empty()) GTEST_SKIP() << skip;
 
   struct st22p_rx_digest_test_para para;
-  /* the plugin's max codestream is w x h x bpp / 8 */
-  ipmx_st22p_sr_para(&para, 1, plev, (size_t)width[0] * height[0] * bpp / 8);
+  ipmx_st22p_sr_para(&para, ports, plev, codestream_max);
   para.device = ST_PLUGIN_DEVICE_CPU;
   para.no_digest = true;
+  para.duration_s = ipmx_st22p_env_int("IPMX_ST22P_DURATION_S");
+  if (para.duration_s && para.duration_s < 10) {
+    info("%s, IPMX_ST22P_DURATION_S %d raised to 10\n", __func__, para.duration_s);
+    para.duration_s = 0;
+  }
+  /* the ST 2022-7 RX takes one framebuffer more, ST22_FB_MAX_COUNT in all */
+  int rx_fb_max = ports > 1 ? ST22_FB_MAX_COUNT - 1 : ST22_FB_MAX_COUNT;
+  if (getenv("IPMX_ST22P_RX_FB_CNT")) {
+    para.rx_fb_cnt = ipmx_st22p_env_int("IPMX_ST22P_RX_FB_CNT");
+    if (para.rx_fb_cnt < 2 || para.rx_fb_cnt > rx_fb_max)
+      FAIL() << "IPMX_ST22P_RX_FB_CNT " << getenv("IPMX_ST22P_RX_FB_CNT")
+             << " out of range 2 to " << rx_fb_max;
+  }
+
+  const char* dump = getenv("IPMX_FRAME_DUMP_DIR");
+  if (dump && dump[0]) {
+    int duration_s = para.duration_s ? para.duration_s : 10;
+    ipmx_st22p_dump_idx = (int)(st_frame_rate(fps_) * duration_s / 2);
+    ipmx_st22p_dump_rx_cnt = 0;
+    ipmx_st22p_dump_width = width_;
+    ipmx_st22p_dump_height = height_;
+    ipmx_st22p_dump_rx.assign((size_t)width_ * height_ * 3, 0);
+    para.tx_fill = ipmx_st22p_svt_pattern;
+    para.rx_frame = ipmx_st22p_dump_rx_frame;
+    para.rx_check = ipmx_st22p_dump_rx_check;
+  }
 
   st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
 }
 
-/* Sublev3bpp, run with SVT_JXS_MTL_PLUGIN_CONFIG=<mtl-plugin>/ipmx_1080p.json */
-TEST(Ipmx_st22p, tx_rx_svt_1080p_3bpp) {
-  ipmx_st22p_svt_1080p(3, 0x1004);
+/* The 10 D11 points (TP-1 section 19.3): TR-08 section 8.1.1 level 2k-1
+ * for 1080p and 4k-2 for 2160p, Sublev3bpp (0x..04) at 3 bpp and Sublev4bpp (0x..06,
+ * the TR-08 Appendix B RGB rate) at 4 bpp. The plugin reads its config once per process,
+ * so each case runs only under a config of its stream_level: ipmx_1080p.json (0x1004),
+ * ipmx_2160p.json (0x2404), or a copy with the low byte 06 and "bpp": 4. */
+
+/* 1080p50, 2k-1 Sublev3bpp */
+TEST(Ipmx_st22p, tx_rx_svt_1080p50_3bpp) {
+  ipmx_st22p_svt(ST_FPS_P50, 1920, 1080, 3, 0x1004);
 }
 
-/* Sublev4bpp, the TR-08 Appendix B RGB rate, run with a config of stream_level 0x1006
- * and bpp 4 */
-TEST(Ipmx_st22p, tx_rx_svt_1080p_4bpp) {
-  ipmx_st22p_svt_1080p(4, 0x1006);
+/* 1080p50, 2k-1 Sublev4bpp */
+TEST(Ipmx_st22p, tx_rx_svt_1080p50_4bpp) {
+  ipmx_st22p_svt(ST_FPS_P50, 1920, 1080, 4, 0x1006);
+}
+
+/* 1080p59.94, 2k-1 Sublev3bpp */
+TEST(Ipmx_st22p, tx_rx_svt_1080p59_94_3bpp) {
+  ipmx_st22p_svt(ST_FPS_P59_94, 1920, 1080, 3, 0x1004);
+}
+
+/* 1080p59.94, 2k-1 Sublev4bpp */
+TEST(Ipmx_st22p, tx_rx_svt_1080p59_94_4bpp) {
+  ipmx_st22p_svt(ST_FPS_P59_94, 1920, 1080, 4, 0x1006);
+}
+
+/* 1080p60, 2k-1 Sublev3bpp: the top of the 2k-1 pixel rate */
+TEST(Ipmx_st22p, tx_rx_svt_1080p60_3bpp) {
+  ipmx_st22p_svt(ST_FPS_P60, 1920, 1080, 3, 0x1004);
+}
+
+/* 1080p60, 2k-1 Sublev4bpp */
+TEST(Ipmx_st22p, tx_rx_svt_1080p60_4bpp) {
+  ipmx_st22p_svt(ST_FPS_P60, 1920, 1080, 4, 0x1006);
+}
+
+/* 2160p59.94, 4k-2 Sublev3bpp */
+TEST(Ipmx_st22p, tx_rx_svt_2160p59_94_3bpp) {
+  ipmx_st22p_svt(ST_FPS_P59_94, 3840, 2160, 3, 0x2404);
+}
+
+/* 2160p59.94, 4k-2 Sublev4bpp */
+TEST(Ipmx_st22p, tx_rx_svt_2160p59_94_4bpp) {
+  ipmx_st22p_svt(ST_FPS_P59_94, 3840, 2160, 4, 0x2406);
+}
+
+/* 2160p60, 4k-2 Sublev3bpp: the top of the matrix for encode + decode in one process */
+TEST(Ipmx_st22p, tx_rx_svt_2160p60_3bpp) {
+  ipmx_st22p_svt(ST_FPS_P60, 3840, 2160, 3, 0x2404);
+}
+
+/* 2160p60, 4k-2 Sublev4bpp */
+TEST(Ipmx_st22p, tx_rx_svt_2160p60_4bpp) {
+  ipmx_st22p_svt(ST_FPS_P60, 3840, 2160, 4, 0x2406);
+}
+
+/* 1080p59.94 Sublev3bpp over ST 2022-7: both legs deliver every SVT frame, and
+ * each leg's SRs and SDP media section carry the stream, as tx_rx_1080p_redundant */
+TEST(Ipmx_st22p, tx_rx_svt_1080p59_94_3bpp_redundant) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  if (ctx->para.num_ports < 4)
+    GTEST_SKIP() << "ST 2022-7 needs 4 ports, have " << ctx->para.num_ports;
+
+  ipmx_st22p_svt(ST_FPS_P59_94, 1920, 1080, 3, 0x1004, 2);
 }
 
 #endif

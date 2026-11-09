@@ -769,6 +769,8 @@ static void test_st22p_rx_frame_thread(void* args) {
         s->sha_fail_cnt++;
       }
     }
+    auto para = (struct st22p_rx_digest_test_para*)s->priv;
+    if (para && para->rx_frame) para->rx_frame(frame);
     /* directly put */
     st22p_rx_put_frame((st22p_rx_handle)handle, frame);
     s->fb_rec++;
@@ -1004,6 +1006,10 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       else
         fb = (uint8_t*)st22p_tx_get_fb_addr(tx_handle[i], frame);
       ASSERT_TRUE(fb != NULL);
+      if (para->tx_fill) {
+        para->tx_fill(fb, width[i], height[i]);
+        continue;
+      }
       st_test_rand_data(fb, frame_size, frame);
       unsigned char* result = test_ctx_tx[i]->shas[frame];
       SHA256((unsigned char*)fb, frame_size, result);
@@ -1029,7 +1035,7 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
     test_ctx_rx[i]->idx = i;
     test_ctx_rx[i]->ctx = ctx;
-    test_ctx_rx[i]->fb_cnt = ST22_TEST_SHA_HIST_NUM;
+    test_ctx_rx[i]->fb_cnt = para->rx_fb_cnt ? para->rx_fb_cnt : ST22_TEST_SHA_HIST_NUM;
     /* an ST 2022-7 RX keeps 2 frames open (ST_RX_VIDEO_REDUNDANT_SLOT_NUM) out of the
      * same framebuffers: one more, so a slow decode does not empty the pool and skip a
      * frame under the IPMX frame count check */
@@ -1041,6 +1047,7 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_rx[i]->user_timestamp = para->user_timestamp;
     test_ctx_rx[i]->block_get = para->block_get;
     test_ctx_rx[i]->no_digest = para->no_digest;
+    test_ctx_rx[i]->priv = para;
     /* copy sha */
     memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
            ST22_TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
@@ -1167,14 +1174,15 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_GE(ret, 0);
   }
 
+  int duration_s = para->duration_s ? para->duration_s : 10;
   ret = mtl_start(st);
   EXPECT_GE(ret, 0);
   if (para->mid_stream) {
-    sleep(5);
+    sleep(duration_s / 2);
     para->mid_stream(tx_handle.data(), rx_handle.data(), sessions);
-    sleep(5);
+    sleep(duration_s - duration_s / 2);
   } else {
-    sleep(10);
+    sleep(duration_s);
   }
   ret = mtl_stop(st);
   EXPECT_GE(ret, 0);
