@@ -548,15 +548,17 @@ jobs:
           build_artifact: 'true'
 
   # ── The compiler hardening of the build, when a change can alter it ──
-  # check-hardening.sh on the install trees of the build job, only when the
-  # change touches what sets their flags or the scan (the hardening filter). The
-  # marks of each file go to the summary page and the hardening-report artifact.
+  # check-hardening.sh on the install trees of the build job, with readelf and
+  # with the pinned hardening-check and checksec, only when the change touches
+  # what sets their flags or the scan (the hardening filter). The marks of each
+  # file and the scanners' verdict go to the summary page and the
+  # hardening-report artifact.
   hardening-scan:
     needs: [changes, build]
     # !cancelled(), as for run-gtest-tests.
     if: ${{ !cancelled() && needs.changes.outputs.hardening == 'true' && needs.build.result == 'success' }}
     runs-on: ubuntu-22.04
-    timeout-minutes: 5
+    timeout-minutes: 7
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -579,10 +581,23 @@ jobs:
       - name: Unpack the build
         run: task ci:unpack-build
 
+      # An outage of their hosts leaves readelf alone, with a warning, instead
+      # of failing the job.
+      - name: Fetch the hardening scanners
+        id: tools
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          HARDENING_TOOLS_DIR: ${{ runner.temp }}/hardening-tools
+        run: task ci:hardening-tools
+
       - name: Check the hardening of the build
         env:
           HARDENING_REPORT: ${{ runner.temp }}/hardening-report.md
-        run: task ci:hardening-scan
+          HARDENING_TOOLS_DIR: ${{ steps.tools.outcome == 'success' && format('{0}/hardening-tools', runner.temp) || '' }}
+        run: |
+          [ -n "${HARDENING_TOOLS_DIR}" ] || echo "::warning::hardening-check and checksec could not be fetched, so readelf alone checks this build"
+          task ci:hardening-scan
 
       # Also when the check fails. Only a report, as the Bandit reports: a
       # failed upload doesn't fail the job.

@@ -13,9 +13,11 @@
 # match, so a readelf that prints something else fails the file instead of
 # passing it, an ELF file that readelf can't read fails, and so does a path
 # without an x86-64 ELF file. The table below exempts a dependency, by file
-# name, from a mark that it can't carry. With HARDENING_REPORT set, the marks of
-# each file go to that file as Markdown, the failing files first, and also to
-# GITHUB_STEP_SUMMARY when that is set.
+# name, from a mark that it can't carry. With HARDENING_TOOLS_DIR set, the
+# scanners that hardening-tools.sh fetches there check the same files, with the
+# same table. With HARDENING_REPORT set, the marks of each file go to that file
+# as Markdown, the failing files first, then the verdict of the scanners, and
+# also to GITHUB_STEP_SUMMARY when that is set.
 
 set -euo pipefail
 
@@ -29,6 +31,8 @@ failed=0
 failing=()
 passing=()
 empty=()
+scanned=0
+declare -A groups=()
 for path; do
 	before=$checked
 	while IFS= read -r -d '' file; do
@@ -79,6 +83,16 @@ for path; do
 		else
 			passing+=("${row}")
 		fi
+		# For the scanners, by the checks that apply. checksec has no PIE for a
+		# library, and both check IBT and SHSTK as one.
+		if [[ -n ${HARDENING_TOOLS_DIR:-} ]]; then
+			hc="-B --nofortify" keys="relro,nx,canary,cfi"
+			grep -q ' INTERP ' <<<"$elf" && keys+=",pie"
+			[[ " ${accepted[*]} " != *" SSP "* ]] || hc+=" -s" keys=${keys/,canary/}
+			[[ " ${accepted[*]} " != *" IBT "* && " ${accepted[*]} " != *" SHSTK "* ]] || hc+=" -x" keys=${keys/,cfi/}
+			groups["${hc}|${keys}"]+="${file}"$'\n'
+			scanned=$((scanned + 1))
+		fi
 	done < <(find "$path" -name meson-private -prune -o -type f -print0)
 	((checked > before)) || {
 		echo "::error::no x86-64 ELF file found under $path" >&2
@@ -86,10 +100,36 @@ for path; do
 	}
 done
 
-echo "hardening: ${checked} ELF files checked under $*, ${failed} failed"
+# Without -B and --nofortify, hardening-check also wants AArch64 branch
+# protection, and fails a file with a libc call of a size it doesn't know.
+tools=ok
+errors=
+for group in "${!groups[@]}"; do
+	read -ra hc <<<"${group%|*}"
+	if ! out=$(printf '%s' "${groups[$group]}" | tr '\n' '\0' |
+		xargs -0 -n 1 -P "$(nproc)" perl "${HARDENING_TOOLS_DIR}/hardening-check.pl" --quiet "${hc[@]}" 2>&1); then
+		tools=failed
+		errors+=$(awk '/^[^ ].*:$/ { file = substr($0, 1, length($0) - 1); next }
+			/\(ignored\)$/ { next }
+			/^ .*: no/ { sub(/^ +/, ""); sub(/:.*/, ""); print "::error::hardening-check: " file ": " $0; next }
+			{ print "::error::hardening-check: " $0 }' <<<"${out}")$'\n'
+	fi
+	if ! out=$(printf '%s' "${groups[$group]}" |
+		"${HARDENING_TOOLS_DIR}/checksec" listfile - --no-banner --color never --fail-if "${group#*|}" 2>&1 >/dev/null); then
+		tools=failed
+		if grep -q '^  .*: [a-z_]* = ' <<<"${out}"; then
+			errors+=$(sed -nE 's/^  (.*): ([a-z_]+ = .*)$/::error::checksec: \1: \2/p' <<<"${out}")$'\n'
+		else
+			errors+="::error::checksec: ${out//$'\n'/$'\n'::error::checksec: }"$'\n'
+		fi
+	fi
+done
+printf '%s' "${errors}" >&2
+
+echo "hardening: ${checked} ELF files checked under $*, ${failed} failed${HARDENING_TOOLS_DIR:+, hardening-check and checksec ${tools}}"
 if [[ -n ${HARDENING_REPORT:-} ]]; then
 	{
-		printf '### Compiler hardening\n\n| Files checked | Failed | Under |\n|---:|---:|---|\n'
+		printf '### Compiler hardening\n\n| Files checked | Failed in readelf | Under |\n|---:|---:|---|\n'
 		printf '| %s | %s | %s |\n\n' "${checked}" "${failed}" "\`$*\`"
 		for path in "${empty[@]}"; do
 			printf "No x86-64 ELF file found under \`%s\`.\n\n" "${path}"
@@ -100,7 +140,16 @@ if [[ -n ${HARDENING_REPORT:-} ]]; then
 			printf '%s\n' "${passing[@]}" | LC_ALL=C sort
 		} | grep . || true
 		printf '\nno: missing. accepted: missing, and accepted for that dependency by the table of check-hardening.sh.\n'
+		if [[ -n ${HARDENING_TOOLS_DIR:-} ]]; then
+			printf '\n### hardening-check and checksec\n\n'
+			if [[ ${tools} == ok ]]; then
+				printf 'Both pass the %s files they checked, with the gaps the table accepts.\n' "${scanned}"
+			else
+				printf 'They fail:\n\n'
+				sed -E 's/^::error::/- /' <<<"${errors}" | grep .
+			fi
+		fi
 	} >"${HARDENING_REPORT}"
 	[[ -z ${GITHUB_STEP_SUMMARY:-} ]] || cat "${HARDENING_REPORT}" >>"${GITHUB_STEP_SUMMARY}"
 fi
-((failed == 0 && ${#empty[@]} == 0))
+((failed == 0 && ${#empty[@]} == 0)) && [[ ${tools} == ok ]]
