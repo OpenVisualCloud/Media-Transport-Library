@@ -9,9 +9,13 @@
 
 #include "log.h"
 
-/* a core this busy, shared by 2 or more threads, delays them past their frame time */
+/* A core this busy, shared by 2 or more threads, delays them past their frame time. An
+ * RX thread's frame waits in its framebuffers, and more cores converting at once cost
+ * more CPU and LLC misses a frame, so cores of RX threads only run hotter. */
 #define ST_APP_CORES_HOT_LOAD (0.65)
+#define ST_APP_CORES_RX_HOT_LOAD (0.85)
 #define ST_APP_CORES_TARGET_LOAD (0.50)
+#define ST_APP_CORES_RX_TARGET_LOAD (0.70)
 /* threads per core at start, the density measured at full fused load is 12 to 21 */
 #define ST_APP_CORES_START_THREADS (12)
 #define ST_APP_CORES_WARMUP_TICKS (5)
@@ -117,20 +121,28 @@ static bool app_cores_eval(struct st_app_cores* c, int k, const int* assign, dou
                            double* max_shared) {
   *max = 0;
   *max_shared = 0;
+  bool hot = false;
+
   for (int i = 0; i < k; i++) {
     c->core_load[i] = 0;
     c->core_threads[i] = 0;
+    c->core_tx[i] = 0;
   }
   for (int i = 0; i < c->thread_cnt; i++) {
     if (!c->threads[i].tracked || assign[i] < 0) continue;
     c->core_load[assign[i]] += c->threads[i].load;
     c->core_threads[assign[i]]++;
+    if (!c->threads[i].rx) c->core_tx[assign[i]]++;
   }
   for (int i = 0; i < k; i++) {
     *max = ST_MAX(*max, c->core_load[i]);
-    if (c->core_threads[i] > 1) *max_shared = ST_MAX(*max_shared, c->core_load[i]);
+    if (c->core_threads[i] < 2) continue;
+    *max_shared = ST_MAX(*max_shared, c->core_load[i]);
+    if (c->core_load[i] >
+        (c->core_tx[i] ? ST_APP_CORES_HOT_LOAD : ST_APP_CORES_RX_HOT_LOAD))
+      hot = true;
   }
-  return *max_shared > ST_APP_CORES_HOT_LOAD;
+  return hot;
 }
 
 /* order[]: the threads, heaviest first */
@@ -194,10 +206,12 @@ static void app_cores_apply(struct st_app_context* ctx, struct st_app_cores* c) 
   app_cores_restore_main();
 }
 
-static void app_cores_add_thread(struct st_app_cores* c, pthread_t thread) {
+static void app_cores_add_thread(struct st_app_cores* c, pthread_t thread, bool rx) {
   if (!thread) return;
   c->threads[c->thread_cnt].thread = thread;
   c->threads[c->thread_cnt].core = -1;
+  c->threads[c->thread_cnt].rx = rx;
+  if (!rx) c->rx_only = false;
   c->thread_cnt++;
 }
 
@@ -214,18 +228,20 @@ int st_app_cores_start(struct st_app_context* ctx) {
   c->lcores = st_app_zmalloc(sizeof(*c->lcores) * n);
   c->core_load = st_app_zmalloc(sizeof(*c->core_load) * n);
   c->core_threads = st_app_zmalloc(sizeof(*c->core_threads) * n);
+  c->core_tx = st_app_zmalloc(sizeof(*c->core_tx) * n);
   c->plan = st_app_zmalloc(sizeof(*c->plan) * n);
   c->order = st_app_zmalloc(sizeof(*c->order) * n);
-  if (!c->threads || !c->lcores || !c->core_load || !c->core_threads || !c->plan ||
-      !c->order) {
+  if (!c->threads || !c->lcores || !c->core_load || !c->core_threads || !c->core_tx ||
+      !c->plan || !c->order) {
     err("%s, malloc fail\n", __func__);
     st_app_cores_free(ctx);
     return -ENOMEM;
   }
+  c->rx_only = true;
   for (int i = 0; ctx->tx_st20p_sessions && i < ctx->tx_st20p_session_cnt; i++)
-    app_cores_add_thread(c, ctx->tx_st20p_sessions[i].st20p_app_thread);
+    app_cores_add_thread(c, ctx->tx_st20p_sessions[i].st20p_app_thread, false);
   for (int i = 0; ctx->rx_st20p_sessions && i < ctx->rx_st20p_session_cnt; i++)
-    app_cores_add_thread(c, ctx->rx_st20p_sessions[i].st20p_app_thread);
+    app_cores_add_thread(c, ctx->rx_st20p_sessions[i].st20p_app_thread, true);
   if (!c->thread_cnt) return 0;
 
   /* measure first: a thread that has exited is never pinned or counted */
@@ -298,7 +314,8 @@ void st_app_cores_tick(struct st_app_context* ctx) {
   app_cores_front_fixed(c);
   for (int i = 0; i < c->thread_cnt; i++) c->plan[i] = c->threads[i].core;
 
-  need = ST_MAX(1, (int)ceil(c->load / ST_APP_CORES_TARGET_LOAD));
+  need = ST_MAX(1, (int)ceil(c->load / (c->rx_only ? ST_APP_CORES_RX_TARGET_LOAD
+                                                   : ST_APP_CORES_TARGET_LOAD)));
   if (app_cores_eval(c, c->cnt, c->plan, &c->max_core_load, &max_shared)) {
     /* growth is safety, from the first tick; the current cores are tried first */
     c->shrink_ticks = 0;
@@ -367,6 +384,8 @@ void st_app_cores_free(struct st_app_context* ctx) {
   c->core_load = NULL;
   st_app_free(c->core_threads);
   c->core_threads = NULL;
+  st_app_free(c->core_tx);
+  c->core_tx = NULL;
   st_app_free(c->plan);
   c->plan = NULL;
   st_app_free(c->order);

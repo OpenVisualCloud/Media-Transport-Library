@@ -2,6 +2,7 @@
 
 * st20 RL: keep a queue that drains behind its schedule from carrying the lateness over: pre-arm starts its pads at a lower bound of the queue's end, and in-frame pads are left out while it is behind; count a real burst as the reclaim
 * RxTxApp: add `--tx_st20p_source_sibling_node`, the st20p TX sources on the node SNC2 pairs with the NIC's
+* RxTxApp: a core of st20p RX threads only is hot past 85% busy, and an all-RX process sizes its app cores for 70%, as more cores converting at once cost more CPU and LLC misses per frame
 * st20/st22 TX: the video tasklets no longer take the session spinlock; on a session's own scheduler, `*_tx_free()` and `*_tx_update_destination()` (st20, st22, st20p, st22p) return `-EBUSY` instead of deadlocking, as do the stats APIs from the session's own callbacks
 * ice: default to driver version 2.7.6, built as released with no MTL patches; versions before 2.7.6 keep their `patches/ice_drv` series
 * nicctl.sh: give each VF of an ice PF a 512-entry RSS LUT, so that it can have more than 16 queue pairs; `vf_rss_lut` does so for existing VFs

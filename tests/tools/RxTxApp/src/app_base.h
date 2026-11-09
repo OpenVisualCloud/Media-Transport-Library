@@ -666,6 +666,7 @@ struct st_app_core_thread {
   bool tracked; /* measured and pinned: counted on its core */
   bool fixed;   /* a bind failed: it stays on its core, never moved */
   int core;     /* index in st_app_cores.lcores it is pinned to, -1: none */
+  bool rx;      /* an RX thread: its frames wait in their framebuffers */
   uint64_t cpu_ns;
   double load; /* of one core, in the last tick */
 };
@@ -681,6 +682,7 @@ struct st_app_cores {
   /* scratch of the balancer */
   double* core_load;
   int* core_threads;
+  int* core_tx; /* TX threads of a core */
   int* plan;
   int* order;
 
@@ -690,7 +692,8 @@ struct st_app_cores {
   bool lcores_exhausted; /* until a shrink gives some back */
   bool lcores_warned;
   bool bind_warned;
-  double load; /* of all threads, in cores */
+  bool rx_only; /* every thread is an RX one */
+  double load;  /* of all threads, in cores */
   double max_core_load;
 };
 

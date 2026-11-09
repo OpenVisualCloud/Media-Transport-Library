@@ -377,7 +377,8 @@ packet egresses from the sender.
 --st20p_app_cores <n>                : the lcores the st20p TX and RX session threads are pinned to, taken with mtl_get_lcore() after mtl_start(), preferably from the NUMA node of the primary port,
                                        off the CPUs the schedulers hold. They compete for free lcores with what MTL takes at runtime: schedulers started for video migration, and the RX packet lcore a session adds once
                                        detection ends. Absent: auto, ceil(threads / 12) cores at start, then sized once a second to the measured per-thread CPU time, about 50% per core: more cores when a shared core is over
-                                       65% busy. The time measured on a saturated core is what the threads got, not what they needed, so each second at most doubles the cores, and a heavy start can run hot for a few
+                                       65% busy. A core holding only RX threads is hot past 85% busy, and a process with only RX threads sizes for about 70% per core: a received frame waits in its
+                                       framebuffers, and more cores converting at once cost more CPU and LLC misses a frame. The time measured on a saturated core is what the threads got, not what they needed, so each second at most doubles the cores, and a heavy start can run hot for a few
                                        seconds; set --st20p_app_cores n to avoid it. Fewer cores only after a 5 s warm-up and then 5 s of spare cores, about 10 s at the earliest.
                                        n > 0: n cores, at most one per st20p thread, balanced by load but never resized. 0: the threads are not pinned, as before. Without free lcores the threads stay unpinned or share
                                        the cores taken, with one warning. Where the thread CPU time cannot be read (Windows), auto leaves the threads unpinned and n > 0 pins them round-robin.
