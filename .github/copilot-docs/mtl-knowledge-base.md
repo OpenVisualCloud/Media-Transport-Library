@@ -240,7 +240,8 @@ If `rte_eth_tx_burst()` returns fewer than requested:
 ### Copy Primitive
 Every copy in `lib/` goes through `mt_memcpy()` (`mt_util.h`, `static inline`), never `rte_memcpy` and never a bare `memcpy` in new code. Its one line selects the backend for the whole library, so a change of copy primitive is a one-line change with no call-site churn.
 Today that backend is libc `memcpy`: glibc reads the CPU at load time and picks an AVX-512, AVX2 or ERMS path, `rte_memcpy` is fixed to the path DPDK was built for, and `rte_memcpy` measured slower on the RX frame write path. `mtl_memcpy()` is the public API over the same call.
-Two paths stream whole cache lines with non-temporal stores instead: the st20p conversion (next section) and the RX frame write path, `rv_frame_memcpy()` (`st_rx_video_session.c`), which copies the misaligned head, the sub-line tail and short payloads through `mt_memcpy()`.
+Three paths stream whole cache lines with non-temporal stores instead: the st20p conversion (next section), the RX frame write path, `rv_frame_memcpy()` (`st_rx_video_session.c`), which copies the misaligned head, the sub-line tail and short payloads through `mt_memcpy()`, and the per-packet st20p RX conversion.
+That one, `rx_st20p_pkt_stream()` (`st20_pipeline_rx.c`), converts each packet into a 4 KiB stage first and then streams it the same way.
 On that RX frame write path a session with a pkt lcore keeps `mt_memcpy()` for the whole copy: two threads write its frame and either may hand it over, and a fence orders only the stores of its own core. A session that migrates mid-frame needs none: the x86 unlock of its session spinlock, released after every tasklet poll, is a locked `xchg` and drains the old core's streaming stores.
 
 ### st20p Conversion With Non-Temporal Stores
@@ -1087,6 +1088,9 @@ incomplete still reaches frame_ready. In every mode where incomplete frames reac
 does not deliver it puts back itself with `st20_rx_put_framebuff()`; before ready `ctx->transport` may
 still be unset, so such a frame is parked (a slot per transport frame) and put back by create once
 ready, or by the next frame_ready if it missed that.
+Each packet converts into `ctx->pkt_stage`; its whole lines then stream into the framebuff, and the partial ones at its ends, which the packets next to it share, go through `mt_memcpy()`.
+Stored straight, every line cost a read-for-ownership: 106k LLC misses a 1080p frame on Xeon 6, against 4.4k streamed. Without the stage (allocation failed, warned, or no SSE2 / `enable_rx_video_nt_store`) it stores straight; `St20pRxPktConvertRowTest` pins the unaligned packet splits.
+`rx_st20p_frame_ready()` fences before it marks the frame CONVERTED, and `st20p_rx_free()` frees the stage only after `st20_rx_free()` detaches the session, whose tasklet converts into it until then.
 Create refuses PKT_CONVERT with `ST20P_RX_FLAG_EXT_FRAME` (a queried ext frame would arrive only at frame_ready)
 and wherever the session could add a pkt lcore (`ST20P_RX_FLAG_USE_MULTI_THREADS`,
 `ST20P_RX_FLAG_AUTO_DETECT`, or above `ST_RX_VIDEO_PKT_LCORE_MBPS`): the uframe callback is not safe on
