@@ -224,6 +224,36 @@ clang_tidy: &clang_tidy
   - Taskfile.yml
   - .github/scripts/setup_environment.sh
 
+# cicd-pr-check.yml, hardening-scan: what sets the compiler flags of the install
+# trees that it scans (the meson.build files of their projects, the scripts and
+# the action that build them, and the dependency builds with their versions and
+# patches), and the scan's own scripts. It needs the build job, so
+# build_workflow holds it.
+hardening: &hardening
+  - meson.build
+  - lib/meson.build
+  - tests/meson.build
+  - manager/meson.build
+  - plugins/meson.build
+  - plugins/st22_avcodec/meson.build
+  - tests/tools/RxTxApp/meson.build
+  - ecosystem/gstreamer_plugin/meson.build
+  - tests/tools/gstreamer_tools/meson.build
+  - build.sh
+  - script/common.sh
+  - script/build_dpdk.sh
+  - script/build_ffmpeg_plugin.sh
+  - script/build_gstreamer_plugin.sh
+  - script/build_jpegxs.sh
+  - script/build_st22_avcodec_plugin.sh
+  - .github/scripts/setup_environment.sh
+  - .github/scripts/ci/cache/build-dependencies.sh
+  - '.github/actions/build-artifacts/**'
+  - versions.env
+  - 'patches/dpdk/**'
+  - 'ecosystem/ffmpeg_plugin/*/*.patch'
+  - .github/scripts/ci/scan/check-hardening.sh
+
 # cicd-pr-check.yml, build: the artifacts, and each filter of a job that needs
 # them. A test-only change also runs the build job: all of its caches hit, and
 # it restores a cache that GitHub evicted, which a skipped build cannot do.
@@ -232,6 +262,7 @@ build_workflow:
   - *gtest
   - *smoke_tests
   - *clang_tidy
+  - *hardening
 
 # cicd-pr-check.yml, unit-tests. It builds DPDK, then runs ./build.sh unit,
 # which builds only the root meson project, and build_ffmpeg_plugin.sh unit,

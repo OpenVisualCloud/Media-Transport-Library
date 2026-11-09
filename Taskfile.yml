@@ -208,6 +208,11 @@ tasks:
     cmds:
       - bash {{.CI_SCRIPTS}}/scan/clang-analyzer.sh check
 
+  ci:hardening-scan:
+    desc: Check the compiler hardening of the install trees of the build; with HARDENING_REPORT, report the marks of each file
+    cmds:
+      - bash {{.CI_SCRIPTS}}/scan/check-hardening.sh .local_install/dpdk .local_install/mtl .local_install/jpegxs .local_install/ffmpeg .local_install/gstreamer .local_install/plugins
+
   ci:cargo-audit:
     desc: Audit the Rust lock files; rust/ commits none, so audit what a build resolves today
     cmds:

@@ -49,6 +49,7 @@ jobs:
       build: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && (github.event_name == 'workflow_dispatch' || steps.filter.outputs.build_workflow == 'true') }}
       gtest: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && (github.event_name == 'workflow_dispatch' || steps.filter.outputs.gtest == 'true') }}
       smoke_tests: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && (github.event_name == 'workflow_dispatch' || steps.filter.outputs.smoke_tests == 'true') }}
+      hardening: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && (github.event_name == 'workflow_dispatch' || steps.filter.outputs.hardening == 'true') }}
       unit_tests: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.unit_tests == 'true' }}
       scripts: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.scripts == 'true' }}
       # A push to main gets the long fuzz run from the nightly workflow.
@@ -546,6 +547,54 @@ jobs:
           changed_lines: ${{ github.event_name == 'pull_request' }}
           build_artifact: 'true'
 
+  # ── The compiler hardening of the build, when a change can alter it ──
+  # check-hardening.sh on the install trees of the build job, only when the
+  # change touches what sets their flags or the scan (the hardening filter). The
+  # marks of each file go to the summary page and the hardening-report artifact.
+  hardening-scan:
+    needs: [changes, build]
+    # !cancelled(), as for run-gtest-tests.
+    if: ${{ !cancelled() && needs.changes.outputs.hardening == 'true' && needs.build.result == 'success' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
+
+      - name: Download the build of this run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mtl-build
+
+      - name: Unpack the build
+        run: task ci:unpack-build
+
+      - name: Check the hardening of the build
+        env:
+          HARDENING_REPORT: ${{ runner.temp }}/hardening-report.md
+        run: task ci:hardening-scan
+
+      # Also when the check fails. Only a report, as the Bandit reports: a
+      # failed upload doesn't fail the job.
+      - name: Upload the hardening report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        continue-on-error: true
+        with:
+          name: hardening-report
+          path: ${{ runner.temp }}/hardening-report.md
+          if-no-files-found: ignore
+
   cargo-audit:
     needs: changes
     if: ${{ needs.changes.outputs.cargo_audit == 'true' }}
@@ -668,6 +717,7 @@ jobs:
       - run-smoke-tests
       - clang-tidy
       - clang-tidy-after-build
+      - hardening-scan
       - cargo-audit
       - bandit
     if: always()
@@ -689,6 +739,7 @@ jobs:
             (needs.changes.outputs.fuzz_tests != 'true' || needs.fuzz-tests.result == 'success') &&
             (needs.changes.outputs.gtest != 'true' || needs.run-gtest-tests.result == 'success') &&
             (needs.changes.outputs.smoke_tests != 'true' || needs.run-smoke-tests.result == 'success') &&
+            (needs.changes.outputs.hardening != 'true' || needs.hardening-scan.result == 'success') &&
             (needs.changes.outputs.cargo_audit != 'true' || needs.cargo-audit.result == 'success') &&
             (needs.changes.outputs.bandit != 'true' || needs.bandit.result == 'success') &&
             (needs.changes.outputs.clang_tidy != 'true' ||
@@ -711,6 +762,7 @@ jobs:
             (needs.changes.outputs.fuzz_tests == 'true' && needs.fuzz-tests.result != 'success') ||
             (needs.changes.outputs.gtest == 'true' && needs.run-gtest-tests.result != 'success') ||
             (needs.changes.outputs.smoke_tests == 'true' && needs.run-smoke-tests.result != 'success') ||
+            (needs.changes.outputs.hardening == 'true' && needs.hardening-scan.result != 'success') ||
             (needs.changes.outputs.cargo_audit == 'true' && needs.cargo-audit.result != 'success') ||
             (needs.changes.outputs.bandit == 'true' && needs.bandit.result != 'success') ||
             (needs.changes.outputs.clang_tidy == 'true' &&
