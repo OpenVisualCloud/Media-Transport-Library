@@ -77,6 +77,8 @@ struct st20p_rx_ctx {
   void* nt_scratch; /* for st_frame_convert_nt(), NULL when NT convert is off */
   size_t nt_scratch_size;
   _Atomic uint32_t nt_scratch_busy; /* one app thread at a time uses the scratch */
+  void*
+      pkt_stage; /* a packet's converted pixels, NULL: per-packet convert stores direct */
   /* release-stored once ctx->transport is set */
   _Atomic bool ready;
   bool derive;

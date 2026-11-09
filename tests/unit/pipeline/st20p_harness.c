@@ -168,6 +168,7 @@ void ut20p_ctx_destroy(ut20p_ctx* ctx) {
     mt_pthread_cond_destroy(&ctx->pipeline.block_wake_cond);
   }
   if (ctx->pipeline.nt_scratch) mt_rte_free(ctx->pipeline.nt_scratch);
+  if (ctx->pipeline.pkt_stage) mt_rte_free(ctx->pipeline.pkt_stage);
   free(ctx->frames_mem);
   ut20p_set_put_framebuff(NULL, NULL);
   free(ctx->pipeline.parked_frames);
@@ -208,6 +209,24 @@ int ut20p_ctx_enable_pkt_convert(ut20p_ctx* ctx, enum st_frame_fmt output_fmt,
     st_frame_init_plane_single_src(dst, ctx->dst_storage + dst_size * i, 0);
   }
   return 0;
+}
+
+int ut20p_pkt_convert(ut20p_ctx* ctx, void* payload, uint16_t row, uint16_t offset,
+                      uint16_t pg_cnt, uint32_t timestamp) {
+  struct st20_rx_uframe_pg_meta meta = {0};
+
+  meta.payload = payload;
+  meta.row_number = row;
+  meta.row_offset = offset;
+  meta.row_length = pg_cnt * sizeof(struct st20_rfc4175_422_10_pg2_be);
+  meta.pg_cnt = pg_cnt;
+  meta.timestamp = timestamp;
+  return rx_st20p_packet_convert(&ctx->pipeline, NULL, &meta);
+}
+
+struct st_frame* ut20p_pkt_convert_dst(ut20p_ctx* ctx, uint32_t timestamp) {
+  struct st20p_rx_frame* f = rx_st20p_converting_framebuff(&ctx->pipeline, timestamp);
+  return f ? &f->dst : NULL;
 }
 
 void ut20p_set_put_framebuff(int (*put)(void* arg, void* frame), void* arg) {

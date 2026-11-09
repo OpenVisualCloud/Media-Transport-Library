@@ -4,6 +4,14 @@
 
 #include "st20_pipeline_rx.h"
 
+/* per-packet convert streams whole cache lines, as rv_frame_memcpy() does */
+#if defined(__SSE2__) && defined(MTL_HAS_RX_VIDEO_NT_STORE)
+#define ST20P_RX_PKT_NT_STORE
+#include <emmintrin.h>
+/* a 1500 MTU payload of 5-byte pgroups at 8 bytes a pgroup (Y210) */
+#define ST20P_RX_PKT_STAGE_SIZE (4096)
+#endif
+
 #include "../../mt_handle_guard.h"
 #include "../../mt_log.h"
 #include "../../mt_stat.h"
@@ -124,12 +132,40 @@ static void rx_st20p_pkt_cvt_refuse(struct st20p_rx_ctx* ctx, uint64_t timestamp
   ctx->pkt_cvt_refused[i].active = true;
 }
 
+#ifdef ST20P_RX_PKT_NT_STORE
+/* A frame converted packet by packet is written once and read only by the app, so an
+ * ordinary store spends a read-for-ownership on each line. Stream the whole lines, and
+ * copy the partial ones at the ends, which the packets next to it share: a partial
+ * write-combining flush costs a read-modify-write. rv_frame_notify() fences first. */
+static void rx_st20p_pkt_stream(uint8_t* dst, const uint8_t* src, size_t n) {
+  size_t head = (64 - ((uintptr_t)dst & 63)) & 63;
+
+  if (n < head + 64) {
+    mt_memcpy(dst, src, n);
+    return;
+  }
+  size_t nt = (n - head) & ~(size_t)63;
+  if (head) mt_memcpy(dst, src, head);
+  for (size_t i = head; i < head + nt; i += 16)
+    _mm_stream_si128((__m128i*)(dst + i), _mm_loadu_si128((const __m128i*)(src + i)));
+  if (head + nt < n) mt_memcpy(dst + head + nt, src + head + nt, n - head - nt);
+}
+#endif
+
 static int rx_st20p_packet_convert(void* priv, void* frame,
                                    struct st20_rx_uframe_pg_meta* meta) {
   struct st20p_rx_ctx* ctx = priv;
   struct st20p_rx_frame* framebuff;
   int ret = 0;
   struct st20_rfc4175_422_10_pg2_be* src = meta->payload;
+  enum st_frame_fmt fmt = ctx->ops.output_fmt;
+  bool planar =
+      fmt == ST_FRAME_FMT_YUV422PLANAR10LE || fmt == ST_FRAME_FMT_YUV422PLANAR16LE;
+  /* the bytes of each plane of a pgroup: 2 pixels */
+  size_t pg_bytes = planar ? 4 : (fmt == ST_FRAME_FMT_Y210 ? 8 : 4);
+  uint8_t* dst[3] = {NULL};
+  uint8_t* out[3];
+  size_t n[3] = {0};
   MTL_MAY_UNUSED(frame);
 
   framebuff = rx_st20p_converting_framebuff(ctx, meta->timestamp);
@@ -147,35 +183,44 @@ static int rx_st20p_packet_convert(void* priv, void* frame,
     atomic_store_explicit(&framebuff->stat, ST20P_RX_FRAME_IN_CONVERTING,
                           memory_order_release);
   }
-  if (ctx->ops.output_fmt == ST_FRAME_FMT_YUV422PLANAR10LE) {
-    uint8_t* y = (uint8_t*)framebuff->dst.addr[0] +
-                 framebuff->dst.linesize[0] * meta->row_number + meta->row_offset * 2;
-    uint8_t* b = (uint8_t*)framebuff->dst.addr[1] +
-                 framebuff->dst.linesize[1] * meta->row_number + meta->row_offset;
-    uint8_t* r = (uint8_t*)framebuff->dst.addr[2] +
-                 framebuff->dst.linesize[2] * meta->row_number + meta->row_offset;
-    ret = st20_rfc4175_422be10_to_yuv422p10le(src, (uint16_t*)y, (uint16_t*)b,
-                                              (uint16_t*)r, meta->pg_cnt, 2);
-  } else if (ctx->ops.output_fmt == ST_FRAME_FMT_Y210) {
-    uint8_t* dst = (uint8_t*)framebuff->dst.addr[0] +
-                   framebuff->dst.linesize[0] * meta->row_number + meta->row_offset * 4;
-    ret = st20_rfc4175_422be10_to_y210(src, (uint16_t*)dst, meta->pg_cnt, 2);
-  } else if (ctx->ops.output_fmt == ST_FRAME_FMT_UYVY) {
-    uint8_t* dst = (uint8_t*)framebuff->dst.addr[0] +
-                   framebuff->dst.linesize[0] * meta->row_number + meta->row_offset * 2;
-    ret = st20_rfc4175_422be10_to_422le8(src, (struct st20_rfc4175_422_8_pg2_le*)dst,
-                                         meta->pg_cnt, 2);
-  } else if (ctx->ops.output_fmt == ST_FRAME_FMT_YUV422PLANAR16LE) {
-    uint8_t* y = (uint8_t*)framebuff->dst.addr[0] +
-                 framebuff->dst.linesize[0] * meta->row_number + meta->row_offset * 2;
-    uint8_t* b = (uint8_t*)framebuff->dst.addr[1] +
-                 framebuff->dst.linesize[1] * meta->row_number + meta->row_offset;
-    uint8_t* r = (uint8_t*)framebuff->dst.addr[2] +
-                 framebuff->dst.linesize[2] * meta->row_number + meta->row_offset;
-    ret = st20_rfc4175_422be10_to_yuv422p16le(src, (uint16_t*)y, (uint16_t*)b,
-                                              (uint16_t*)r, meta->pg_cnt, 2);
+  dst[0] = (uint8_t*)framebuff->dst.addr[0] +
+           framebuff->dst.linesize[0] * meta->row_number +
+           meta->row_offset * pg_bytes / 2;
+  n[0] = meta->pg_cnt * pg_bytes;
+  if (planar) {
+    for (int p = 1; p < 3; p++) {
+      dst[p] = (uint8_t*)framebuff->dst.addr[p] +
+               framebuff->dst.linesize[p] * meta->row_number + meta->row_offset;
+      n[p] = meta->pg_cnt * 2;
+    }
   }
+  for (int p = 0; p < 3; p++) out[p] = dst[p];
+#ifdef ST20P_RX_PKT_NT_STORE
+  bool staged = ctx->pkt_stage && n[0] + n[1] + n[2] <= ST20P_RX_PKT_STAGE_SIZE;
+  if (staged) {
+    out[0] = ctx->pkt_stage;
+    out[1] = out[0] + n[0];
+    out[2] = out[1] + n[1];
+  }
+#endif
 
+  if (fmt == ST_FRAME_FMT_YUV422PLANAR10LE)
+    ret = st20_rfc4175_422be10_to_yuv422p10le(src, (uint16_t*)out[0], (uint16_t*)out[1],
+                                              (uint16_t*)out[2], meta->pg_cnt, 2);
+  else if (fmt == ST_FRAME_FMT_Y210)
+    ret = st20_rfc4175_422be10_to_y210(src, (uint16_t*)out[0], meta->pg_cnt, 2);
+  else if (fmt == ST_FRAME_FMT_UYVY)
+    ret = st20_rfc4175_422be10_to_422le8(src, (struct st20_rfc4175_422_8_pg2_le*)out[0],
+                                         meta->pg_cnt, 2);
+  else if (fmt == ST_FRAME_FMT_YUV422PLANAR16LE)
+    ret = st20_rfc4175_422be10_to_yuv422p16le(src, (uint16_t*)out[0], (uint16_t*)out[1],
+                                              (uint16_t*)out[2], meta->pg_cnt, 2);
+
+#ifdef ST20P_RX_PKT_NT_STORE
+  if (staged && !ret)
+    for (int p = 0; p < 3; p++)
+      if (n[p]) rx_st20p_pkt_stream(dst[p], out[p], n[p]);
+#endif
   return ret;
 }
 
@@ -606,6 +651,11 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
       return -EINVAL;
     }
     ops_rx.uframe_pg_callback = rx_st20p_packet_convert;
+#ifdef ST20P_RX_PKT_NT_STORE
+    /* without it per-packet convert stores straight into the frame */
+    if (!ctx->pkt_stage)
+      ctx->pkt_stage = mt_rte_zmalloc_socket(ST20P_RX_PKT_STAGE_SIZE, ctx->socket_id);
+#endif
     ops_rx.uframe_size = st20_frame_size(ops->transport_fmt, ops->width, ops->height);
     /* frame_ready frees the framebuff of a frame dropped incomplete */
     ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
@@ -1290,6 +1340,11 @@ int st20p_rx_free(st20p_rx_handle handle) {
   if (ctx->nt_scratch) {
     mt_rte_free(ctx->nt_scratch);
     ctx->nt_scratch = NULL;
+  }
+
+  if (ctx->pkt_stage) {
+    mt_rte_free(ctx->pkt_stage);
+    ctx->pkt_stage = NULL;
   }
 
   if (ctx->transport) {
