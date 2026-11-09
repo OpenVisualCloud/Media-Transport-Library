@@ -75,7 +75,7 @@ if get_option('enable_tests')
   gtest_e = executable(
     'gtest-all',
     tests_src,
-    cpp_args : hardening_args,
+    cpp_args : hardening_args + ['-D_GLIBCXX_ASSERTIONS'],
     link_args : hardening_link_args,
     dependencies : [
       gtest_dep,

@@ -474,6 +474,7 @@ The Linux build compiles the MTL meson projects with the hardening options below
 | `-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3`, or `=2` | Buffer overflow checks in libc calls. Level 3 needs gcc 12 or clang 9 and glibc 2.34, so gcc 11 (Ubuntu 22.04, RHEL 9) gets 2. Not added when `c_args` or `cpp_args` set a level, with the meson option `optimization` at `0` or `plain` (buildtypes `debug`, `plain`), or with `b_sanitize`, which the sanitizers don't support |
 | `-Wformat -Wformat-security -Werror=format-security` | Format string attacks |
 | `-Wimplicit-fallthrough` | A `switch` case that falls through unmarked. Mark an intended one with `__attribute__((fallthrough));`, as clang ignores a `/* fallthrough */` comment. DPDK's headers, which use the comment, are included as system headers |
+| `-D_GLIBCXX_ASSERTIONS` | Bounds and precondition checks in libstdc++, for the C++ programs: MtlManager, KahawaiTest, UnitTest, the gpu_direct gtest and the st22 avcodec and FFmpeg plugin tests |
 | `-Wl,-z,relro -Wl,-z,now` | Full RELRO, a read-only GOT |
 | `-Wl,-z,noexecstack` | Non-executable stack |
 | `b_pie=true`, and meson's `-fPIC` for shared objects | Position independent code for ASLR |
