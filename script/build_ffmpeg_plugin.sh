@@ -48,6 +48,8 @@ ENVIRONMENT:
 	CFLAGS, LDFLAGS		Flags of the openh264 and FFmpeg builds; the script adds the
 				hardening flags of doc/build.md to them
 	CPPFLAGS		Preprocessor flags of the FFmpeg build; openh264 reads none
+	MTL_HARDENING		0 builds openh264 and FFmpeg without the hardening flags and
+				PIE (default: 1)
 
 EXAMPLES:
 	${script_name}
@@ -79,6 +81,7 @@ build_openh264() {
 	# The compiler hardening of doc/build.md. The Makefile adds its own flags
 	# to the CFLAGS and LDFLAGS of the environment, and reads no CPPFLAGS.
 	CPPFLAGS='' hardening_flags || exit 1
+	# shellcheck disable=SC2153 # hardening_flags() of common.sh sets both
 	CFLAGS="${CFLAGS:+${CFLAGS} }${HARDENING_CFLAGS}" LDFLAGS="${LDFLAGS:+${LDFLAGS} }${HARDENING_LDFLAGS}" \
 		make -C "${source_dir}" -j "${jobs}" PREFIX="${prefix}"
 	if prefix_writable "${prefix}"; then
@@ -267,7 +270,8 @@ main() {
 	configure_flags+=("--extra-ldflags=-L${prefix}/lib -Wl,--disable-new-dtags")
 	# The compiler hardening of doc/build.md, for gcc: configure ignores CC.
 	CC=gcc hardening_flags || exit 1
-	configure_flags+=("--extra-cflags=${HARDENING_CFLAGS}" "--extra-ldflags=${HARDENING_LDFLAGS}" --extra-ldexeflags=-pie)
+	configure_flags+=("--extra-cflags=${HARDENING_CFLAGS}" "--extra-ldflags=${HARDENING_LDFLAGS}")
+	[ -z "${HARDENING_CFLAGS}" ] || configure_flags+=(--extra-ldexeflags=-pie)
 
 	log_info "Build FFmpeg ${FFMPEG_VERSION} into ${prefix}"
 	(cd "${ffmpeg_dir}" && ./configure "${configure_flags[@]}")

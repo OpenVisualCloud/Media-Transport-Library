@@ -168,15 +168,15 @@ CASES
 
 test_ice_version_rule
 
-# Prints the flags that hardening_flags of common.sh sets for CC $1, CFLAGS $2
-# and CPPFLAGS $3.
+# Prints the flags that hardening_flags of common.sh sets for CC $1, CFLAGS $2,
+# CPPFLAGS $3 and MTL_HARDENING $4 (default: 1, whatever the caller exports).
 dependency_flags() {
-	CC=$1 CFLAGS=$2 CPPFLAGS=$3 bash -c '. script/common.sh && hardening_flags && echo "${HARDENING_CFLAGS}|${HARDENING_LDFLAGS}"' 2>&1
+	CC=$1 CFLAGS=$2 CPPFLAGS=$3 MTL_HARDENING=${4-1} bash -c '. script/common.sh && hardening_flags && echo "${HARDENING_CFLAGS}|${HARDENING_LDFLAGS}"' 2>&1
 }
 
 # The stand-in compiler takes each flag and applies level 3, or 2 with -DMTL_GCC11.
 test_dependency_hardening_flags() {
-	local work out cc max
+	local work out cc max value
 	local compile='-fstack-protector-strong -fstack-clash-protection -fcf-protection=full'
 	local link='-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack'
 	work=$(mktemp -d)
@@ -201,6 +201,18 @@ test_dependency_hardening_flags() {
 		fail script/common.sh "hardening_flags takes no -O of CPPFLAGS after CFLAGS: ${out}"
 	if dependency_flags "${work}/missing" "" "" >/dev/null; then
 		fail script/common.sh "hardening_flags passes without a compiler"
+	fi
+	out=$(dependency_flags "${work}/cc" "" "" 0) || true
+	if [ "${out##*$'\n'}" != "|" ] || [[ ${out} != *"MTL_HARDENING=0: the dependency is built without the hardening flags"* ]]; then
+		fail script/common.sh "hardening_flags sets flags, or doesn't warn, with MTL_HARDENING=0: ${out}"
+	fi
+	for value in 1 ""; do
+		out=$(dependency_flags "${work}/cc" "" "" "${value}") || true
+		[ "${out}" = "${compile} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3|${link}" ] ||
+			fail script/common.sh "hardening_flags with MTL_HARDENING='${value}': ${out}"
+	done
+	if dependency_flags "${work}/cc" "" "" 2 >/dev/null; then
+		fail script/common.sh "hardening_flags takes MTL_HARDENING=2"
 	fi
 	rm -rf "${work:?}"
 	# A real compiler gets the highest level that it applies.

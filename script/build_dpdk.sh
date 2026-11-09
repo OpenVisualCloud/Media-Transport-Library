@@ -33,6 +33,7 @@ ENVIRONMENT:
 	CC, CFLAGS, CPPFLAGS, LDFLAGS
 				The compiler and flags of the DPDK build; the script adds the
 				hardening flags of doc/build.md to them
+	MTL_HARDENING		0 builds DPDK without the hardening flags and PIE (default: 1)
 
 EXAMPLES:
 	${script_name}			# Build the default DPDK version
@@ -186,7 +187,9 @@ main() {
 	# DPDK. -Dc_args and -Dc_link_args replace the CFLAGS, CPPFLAGS and LDFLAGS
 	# meson reads otherwise, so they take them in, in meson's order.
 	hardening_flags || exit 1
-	hardening_args=(-Db_pie=true "-Dc_args=${CFLAGS:+${CFLAGS} }${CPPFLAGS:+${CPPFLAGS} }${HARDENING_CFLAGS}")
+	hardening_args=("-Dc_args=${CFLAGS:+${CFLAGS} }${CPPFLAGS:+${CPPFLAGS} }${HARDENING_CFLAGS}")
+	[ -z "${HARDENING_CFLAGS}" ] || hardening_args+=(-Db_pie=true)
+	# shellcheck disable=SC2153 # hardening_flags() of common.sh sets it
 	link_args="${LDFLAGS:+${LDFLAGS} }${CFLAGS:+${CFLAGS} }${CPPFLAGS:+${CPPFLAGS} }${HARDENING_LDFLAGS}"
 	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 		# A prefix install is self-contained and can be moved: each library
