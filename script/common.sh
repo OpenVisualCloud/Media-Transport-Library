@@ -330,6 +330,38 @@ function origin_rpath_args() {
 	echo "${args}"
 }
 
+# Sets HARDENING_CFLAGS and HARDENING_LDFLAGS for a dependency build: the
+# hardening flags of the MTL meson projects, less the warning options, and their
+# _FORTIFY_SOURCE rule, see doc/build.md.
+function hardening_flags() {
+	local flag defines level optimized=1 own=0 sanitized=0
+	local -a compiler args
+	local cflags="-fstack-protector-strong -fstack-clash-protection -fcf-protection=full"
+
+	read -ra compiler <<<"${CC:-cc}"
+	read -ra args <<<"${CFLAGS:-} ${CPPFLAGS:-}"
+	for flag in "${args[@]}"; do
+		case ${flag} in
+		-O0) optimized=0 ;;
+		-O*) optimized=1 ;;
+		*_FORTIFY_SOURCE*) own=1 ;;
+		-fsanitize=*) sanitized=1 ;;
+		esac
+	done
+	# The level that the compiler applies, as each meson.build asks for it.
+	if [ "${optimized}" -eq 1 ] && [ "${own}" -eq 0 ] && [ "${sanitized}" -eq 0 ]; then
+		defines=$("${compiler[@]}" "${args[@]}" -O2 -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -include string.h -dM -E -x c /dev/null 2>/dev/null) || {
+			log_error "hardening_flags: ${CC:-cc} cannot preprocess a C file: $("${compiler[@]}" "${args[@]}" -E -x c /dev/null 2>&1 >/dev/null | head -n 3)"
+			return 1
+		}
+		level=2
+		[[ ${defines} != *"#define __USE_FORTIFY_LEVEL 3"* ]] || level=3
+		cflags+=" -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=${level}"
+	fi
+	# shellcheck disable=SC2034 # the scripts that source this file read them
+	HARDENING_CFLAGS=${cflags} HARDENING_LDFLAGS="-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack"
+}
+
 # Usage: download_file <url> <file>
 # Fetches with curl, or wget when there is no curl, retrying a few times.
 function download_file() {
