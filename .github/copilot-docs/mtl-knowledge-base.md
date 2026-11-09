@@ -227,6 +227,7 @@ If `rte_eth_tx_burst()` returns fewer than requested:
 - Pin app threads with `mtl_get_lcore()` (an EAL lcore marked used, preferably of the primary port's NUMA node, through the MtlManager when connected, never one a scheduler holds), `mtl_bind_to_lcore()` and `mtl_put_lcore()`. Take them after `mtl_start()`, when the schedulers already hold theirs.
 - App lcores compete with what MTL takes at runtime: a scheduler started for video migration, and the RX packet lcore `rv_init_pkt_lcore()` takes once a session's detection ends (`st_rx_video_session.c`). Take only what the load needs.
 - Size the app cores by measured thread load, not by session count: per-thread CPU time, about 65 % busy per shared core is the safe bound. RxTxApp's st20p threads do this in `app_cores.c` (`--st20p_app_cores`, [doc/run.md](../../doc/run.md)).
+  - RX conversion threads get 85 % busy and a 70 % target: spreading them costs per frame. On Xeon 6 6767P with DSA, 72 x 1080p59.94 to `yuv422p10le` took 15.3k LLC misses and 9.4 M cycles a frame on 5 cores, 41.3k and 11.2 M on 20; CI's 65 % rule grew to 16-20 cores (40k misses, 4x `main`).
 
 ---
 
