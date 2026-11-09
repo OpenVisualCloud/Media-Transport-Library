@@ -603,7 +603,8 @@ enum st20p_rx_flag {
    * Only used for internal convert mode and limited formats:
    * ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210, ST_FRAME_FMT_UYVY,
    * ST_FRAME_FMT_YUV422PLANAR16LE
-   * Perform the color format conversion on each packet.
+   * Perform the color format conversion on each packet, and stream its whole cache lines
+   * to the frame with non-temporal stores unless ST20P_RX_FLAG_DISABLE_NT_CONVERT is set.
    * Not supported with ST20P_RX_FLAG_EXT_FRAME, ST20P_RX_FLAG_USE_MULTI_THREADS or
    * ST20P_RX_FLAG_AUTO_DETECT, nor above 40 Gb/s per session, where the transport
    * would add a packet lcore.
@@ -675,7 +676,9 @@ enum st20p_rx_flag {
    * multiple of 48, converts a few lines at a time into a per-session scratch and streams
    * them to the frame with non-temporal stores, so the frame neither is read for
    * ownership nor fills the cache, and comes back cold in cache. A session with
-   * ST20P_RX_FLAG_AUTO_DETECT always converts with ordinary stores.
+   * ST20P_RX_FLAG_AUTO_DETECT always converts with ordinary stores. With
+   * ST20P_RX_FLAG_PKT_CONVERT, each packet is stored straight into the frame instead of
+   * being streamed to it.
    */
   ST20P_RX_FLAG_DISABLE_NT_CONVERT = (MTL_BIT32(25)),
 };

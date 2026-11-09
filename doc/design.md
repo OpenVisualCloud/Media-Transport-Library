@@ -394,7 +394,8 @@ The Get/Put API is straightforward to use; consider the following example:
 Sample application code can be find in [tx_st20_pipeline_sample.c](../app/sample/tx_st20_pipeline_sample.c) and [rx_st20_pipeline_sample.c](../app/sample/rx_st20_pipeline_sample.c)
 
 For `yuv422p10le`, and `v210` at a width that is a multiple of 48, to or from the 4:2:2 10-bit transport, the internal converter converts 8 lines at a time into a per-session scratch and streams each block to the frame with non-temporal stores, so the frame neither is read for ownership nor fills the cache.
-An RX frame converted this way comes back cold in cache: an application that reads it right after `st20p_rx_get_frame` reads it from DRAM. `ST20P_TX_FLAG_DISABLE_NT_CONVERT` and `ST20P_RX_FLAG_DISABLE_NT_CONVERT` switch a session back to ordinary stores.
+An RX frame converted this way comes back cold in cache: an application that reads it right after `st20p_rx_get_frame` reads it from DRAM.
+`ST20P_TX_FLAG_DISABLE_NT_CONVERT` and `ST20P_RX_FLAG_DISABLE_NT_CONVERT` switch a session back to ordinary stores, the RX one also for the per-packet conversion of `ST20P_RX_FLAG_PKT_CONVERT`, which otherwise streams the whole cache lines of each packet to the frame.
 An application that builds a wire-format frame itself, for example playing a stored `yuv422p10le` or `v210` file on a session whose input format is the transport format, can call `st20p_tx_convert_block` to convert its lines the same way straight into the frame from `st20p_tx_get_frame`, instead of copying the picture into the frame and letting the library convert it.
 
 By default, the `st20p_tx_get_frame` and `st20p_rx_get_frame` functions operate in non-blocking mode, which means the function call will immediately return `NULL` if no frame is available.
