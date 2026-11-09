@@ -160,6 +160,12 @@ size_t ut20p_tx_nt_scratch_size(const ut20p_tx_ctx* ctx);
 /** The session's NT scratch, ut20p_tx_nt_scratch_size() bytes. */
 void* ut20p_tx_nt_scratch(ut20p_tx_ctx* ctx);
 
+/** Hold the NT scratch as another app thread converting would, or let it go. */
+void ut20p_tx_hold_nt_scratch(ut20p_tx_ctx* ctx, bool hold);
+
+/** Whether the NT scratch is held. */
+bool ut20p_tx_nt_scratch_held(const ut20p_tx_ctx* ctx);
+
 /** The transport-format frame of framebuffer idx. */
 struct st_frame* ut20p_tx_wire_frame(ut20p_tx_ctx* ctx, int idx);
 

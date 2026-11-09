@@ -239,7 +239,9 @@ On that RX frame write path a session with a pkt lcore keeps `mt_memcpy()` for t
 - The scratch is a per-session `struct st_frame_nt_scratch` (`nt_scratch` in `st20p_tx_ctx` / `st20p_rx_ctx`): `st_frame_nt_scratch_init()` takes it from `mt_rte_zmalloc_socket()` on the session socket at create, 8 output lines (`st_frame_nt_scratch_size()`, 38,400 B for 1080p 422be10), 16-byte aligned for `_mm_load_si128`; `st_frame_nt_scratch_uinit()` frees it.
   Its `busy` word guards it with one CAS per `st_frame_convert_nt()`: a second app thread that breaks the one-thread-per-session model converts with ordinary stores instead of corrupting it.
   None is allocated with `ST20P_TX_FLAG_DISABLE_NT_CONVERT` / `ST20P_RX_FLAG_DISABLE_NT_CONVERT`, for a session with no internal converter or an unsupported width, or for RX `AUTO_DETECT`, whose width is unknown at create, so it always converts with ordinary stores.
-- Output is byte-identical to the stock converters, and the converter call count shows which path ran (`*St20p*NtConvert*`, `*St20p*NtScratch*` in `tests/unit/pipeline/st20p_nt_convert_test.cpp`).
+- A TX derive session with a 422be10 frame gets one too, for `st20p_tx_convert_block()`: the app converts its own yuv422p10le or v210 lines straight into the wire-format frame got by `st20p_tx_get_frame()`, block by block.
+  App thread, field lines on an interlaced session; error codes in `include/st_pipeline_api.h`.
+- Output is byte-identical to the stock converters, and the converter call count shows which path ran (`*St20p*NtConvert*`, `*St20pTxConvertBlock*`, `*St20p*NtScratch*` in `tests/unit/pipeline/st20p_nt_convert_test.cpp`).
 
 ### NUMA Matters
 All DPDK allocations take `socket_id` from `mt_socket_id(impl, port)`. Socket mismatch → 2× DMA latency. Fallback: if preferred socket has no hugepages, allocate from any socket (logs warning).
