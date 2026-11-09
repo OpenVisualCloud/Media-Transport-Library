@@ -298,6 +298,22 @@ tasks:
         git am ../patches/dpdk/{{.DPDK_VERSION}}/*.patch
         git am ../patches/dpdk/{{.DPDK_VERSION}}/windows/*.patch
 
+  ci:msys-unit:
+    desc: Build and run the unit gtest suite (tests/unit) in MSYS2
+    cmds:
+      # libmtl.dll imports wpcap.dll, the runtime library of npcap, because the
+      # pcap PMD and pcapng of DPDK are inside it. ci:msys-install-npcap installs
+      # the SDK alone, and the installer of the free edition of npcap needs a
+      # window. libpcap.dll of MSYS2 holds each pcap_ function of the import
+      # table, so a copy of it under the npcap name answers the loader. No unit
+      # case calls pcap.
+      - |
+        if [[ ! -f /c/Windows/System32/wpcap.dll && ! -f $MSYSTEM_PREFIX/bin/wpcap.dll ]]; then
+          cp "$MSYSTEM_PREFIX/bin/libpcap.dll" "$MSYSTEM_PREFIX/bin/wpcap.dll"
+        fi
+      # The shell of task cannot start a script on Windows, so bash runs it.
+      - bash ./build.sh unit
+
   ci:flatten-pytest-if-present:
     desc: Flatten downloaded baseline pytest reports when their directory exists
     cmds:

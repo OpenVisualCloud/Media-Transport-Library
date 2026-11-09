@@ -83,6 +83,9 @@ runs:
         # The sources only. compile_commands.json has no entry for a header,
         # so clang-tidy cannot check a header on its own.
         extensions: c,cpp,cc,cxx
+        # MTL compiles these on Windows alone, so compile_commands.json has no
+        # entry for them, and clang-tidy stops at their Windows headers.
+        ignore: lib/src/mt_tap.c|lib/windows
         style: ''
         tidy-checks: ''
         database: .

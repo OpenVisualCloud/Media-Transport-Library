@@ -10,7 +10,11 @@
  * Run:   ./build_unit/tests/unit/UnitTest --gtest_filter='St40RxFmdTest.*'
  */
 
+#ifdef _WIN32
+#include <winsock2.h>
+#else
 #include <arpa/inet.h>
+#endif
 #include <gtest/gtest.h>
 
 #include <cstring>

@@ -88,7 +88,7 @@ void ut20p_tx_ctx_destroy(ut20p_tx_ctx* ctx) {
     mt_pthread_cond_destroy(&ctx->pipeline.block_wake_cond);
   }
   st_frame_nt_scratch_uinit(&ctx->pipeline.nt_scratch);
-  free(ctx->frames_mem);
+  ut_aligned_free(ctx->frames_mem);
   free(ctx->framebuffs);
   free(ctx);
 }
@@ -281,7 +281,7 @@ int ut20p_tx_ctx_set_wire_frames(ut20p_tx_ctx* ctx, const struct st20p_tx_ops* o
         st_frame_size(ops->input_fmt, ops->width, ops->height, ops->interlaced), 64);
   }
 
-  ctx->frames_mem = aligned_alloc(64, (size + src_size) * ctx->framebuff_cnt);
+  ctx->frames_mem = ut_aligned_alloc(64, (size + src_size) * ctx->framebuff_cnt);
   if (!ctx->frames_mem) return -ENOMEM;
   for (int i = 0; i < ctx->framebuff_cnt; i++) {
     struct st20p_tx_frame* fb = &ctx->framebuffs[i];
