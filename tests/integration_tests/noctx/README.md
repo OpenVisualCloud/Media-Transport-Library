@@ -64,7 +64,7 @@ redundant tests map sessions to ports by index.
 |---|---|---|
 | Strict: `st20p_default_timestamps*`, `st20p_user_pacing`, `st20p_user_pacing_offset_jitter`, `st20p_exact_user_pacing`, `st20p_user_pacing_interlaced`, `st30p_user_pacing`, and the next row | TX, RX on **different physical ports**; RX-port **PHC** read to ±1 µs; NIC RX timestamp on frame 0 | SKIP (topology), FAIL with `NOCTX_REQUIRE_STRICT=1`. SW RX time after frame 0: FAIL |
 | `st20p_redundant_1080p59_s8_equal_vrx_margin` | 4 ports; strict topology on `TEST_PORT_1` -> `_2` (leg P) and `_3` -> `_4` (leg R); RX ports on one PHC; NIC RX timestamps ([oracle](#equal-vrx-margin-oracle)); ≥ 50 Gb/s links (e.g. 100 GbE E810/E830): the TX PF link carries 16 streams, ~42.5 Gb/s, so a 25 GbE pair fails | < 4 ports: FAIL. Topology: as the strict row. A software RX time: FAIL |
-| `st20p_rl_*` | As the strict row, a TX link that carries the load (the staged cell sizes its load to it), and an exclusive CPU partition | Topology: as the strict row. No partition, a slow link, a software RX time, lost packets or a late TX app: FAIL `RL_INVALID` |
+| `st20p_rl_*` | As the strict row, a TX link that carries the load (the staged cell sizes its load to it), and an exclusive CPU partition | Topology: as the strict row. No partition, a slow link, a software RX time, lost packets or a late TX app: FAIL `RL_INVALID`. The staged cell's scheduler keeping up with its whole ramp: SKIP |
 | `st30p_user_pacing` | An exclusive CPU partition: its own cgroup's `cpuset.cpus.partition` reads `isolated`. Checked after the strict topology, which may SKIP or FAIL the case first | FAIL, never SKIP |
 | `st20p_redundant_latency_drops_even_odd`, `st30p_redundant_latency*` | 4 ports | The case errors (`std::runtime_error`) |
 | `st20p_redundant_latency_drops_even_odd` | `MTL_SIMULATE_PACKET_DROPS` build (`./build.sh debug` / `debugonly`) | SKIP |
@@ -88,10 +88,16 @@ instead of skipping, and `MTL_ISOLATE=require`, so the cases `run.sh` wraps
 (`NOCTX_ISOLATE_CASES`) also fail without an exclusive CPU partition.
 
 **Policy.** A SKIP means the host cannot measure wire timing, never that pacing
-passed; the message gives the reason. No NoCtx test skips because of CPU
-isolation: `st30p_user_pacing`, `st20p_rl_*` and the VRX margin case FAIL without an
-exclusive partition, and the other strict tests run at any isolation level and may
-fail their timing checks.
+passed; the message gives the reason. Another SKIP is the staged RL cell's, when its
+scheduler keeps up with the whole ramp (90 % of the TX link, at most 60 sessions):
+there is no overload to judge, though its received sessions must still stay quiet. A CI
+scheduler keeps up with a 100 GbE link, so no wire check there shows that an overloaded
+scheduler is loud; the unit tests `rl_vrx_detect_test.cpp` and `rl_vrx_faults_test.cpp`
+cover the detector.
+
+No NoCtx test skips because of CPU isolation: `st30p_user_pacing`, `st20p_rl_*` and the
+VRX margin case FAIL without an exclusive partition, and the other strict tests run at
+any isolation level and may fail their timing checks.
 
 `initStrictPacingContext()` adds `MTL_FLAG_ENABLE_HW_TIMESTAMP` to the default
 context, as NIC RX timestamps are the pacing oracle. It also clears
@@ -269,11 +275,12 @@ staged create). The VRX margin case is the compliant load, which must raise no R
   those as hard checks, without the `RL_INVALID` tag.
 
 Each case prints one `RL_TREND {json}` line (worst `vrx_min`, sessions per scheduler);
-the staged case's most sessions on one scheduler is the capacity it fell behind at.
+in a staged run that fell behind, its most sessions on one scheduler is the capacity it
+fell behind at.
 
 | Case | Load | Expect |
 |---|---|---|
-| `st20p_rl_staged_overload_is_loud` | 1080p59.94 on one quota: 2 up front and received, then one a second into the streaming scheduler until a received frame is negative (at most what the TX link carries), then 30 s | Each negative frame in a period with its session's `frames may break VRX` line, and `frames fall behind`; before the first, ≥ 1 period and no received session's line |
+| `st20p_rl_staged_overload_is_loud` | 1080p59.94 on one quota: 2 up front and received, then one a second into the streaming scheduler until a received frame is negative (≤ 90 % of the TX link), then 30 s | Each negative frame in a period with its session's `frames may break VRX` line, and `frames fall behind`; before the first, ≥ 1 period and no received session's line; no overload: SKIP |
 
 ### Equal VRX margin oracle
 
