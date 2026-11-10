@@ -5,6 +5,7 @@
 
 import html
 import io
+import itertools
 import json
 import os
 import re
@@ -17,6 +18,7 @@ from collections import Counter
 from html.parser import HTMLParser
 from types import SimpleNamespace
 
+import compliance.compliance_client as cc
 import pytest
 import requests
 from mtl_engine import perf_compare as pc
@@ -371,15 +373,19 @@ def test_a_port_carries_the_streams_its_link_speed_allows():
     # bytes, which take 1362 on the wire
     st22 = pc.codestream_bps(1920, 1080, FPS)
     assert st22 == pytest.approx(608 * 1362 * 8 * FPS * 1125 / 1080)
+    # where the boxes take a packet of their own: 3110400 bytes are 2430 packets
+    assert pc.codestream_packets(3840, 2160) == 2431
     assert 60 * st22 < 25e9 < 61 * st22 and 24 * st22 < 10e9 < 25 * st22
 
 
 def test_add_port_gives_the_second_port_its_own_sessions():
-    for role, peer in (("tx", "dip"), ("rx", "ip")):
+    for (role, peer), kind in itertools.product(
+        (("tx", "dip"), ("rx", "ip")), ("st20p", "st22p")
+    ):
         config = {
             "interfaces": [{"name": "vf0", "ip": "own", "rx_queues_cnt": 64}],
             f"{role}_sessions": [
-                {peer: ["peer"], "interface": [0], "st20p": [{"replicas": 3}]}
+                {peer: ["peer"], "interface": [0], kind: [{"replicas": 3}]}
             ],
         }
         pc.add_port(config, role, "vf2", "tx2", "rx2", 1)
@@ -392,12 +398,12 @@ def test_add_port_gives_the_second_port_its_own_sessions():
         assert config[f"{role}_sessions"][1] == {
             peer: [other],
             "interface": [1],
-            "st20p": [{"replicas": 1}],
+            kind: [{"replicas": 1}],
         }
         assert config[f"{role}_sessions"][0] == {  # a copy, not the same
             peer: ["peer"],
             "interface": [0],
-            "st20p": [{"replicas": 3}],
+            kind: [{"replicas": 3}],
         }
 
 
@@ -2351,6 +2357,16 @@ def test_multicast_groups_put_a_few_sessions_to_a_group_of_each_leg():
         "239.168.0.2",
         "239.168.1.2",
     ]
+    # st22p entries alike
+    st22 = {
+        "tx_sessions": [
+            {"dip": ["10.0.1.1"], "st22p": [{"replicas": 5, "start_port": 5004}]}
+        ]
+    }
+    pc.multicast_groups(st22, "tx", 4)
+    groups = [(e["dip"], e["st22p"][0]["replicas"]) for e in st22["tx_sessions"]]
+    assert groups == [(["239.168.0.1"], 4), (["239.168.0.2"], 1)]
+    assert pc.stream_groups(st22)[1] == ("239.168.0.2", ["239.168.0.2:5004"])
 
 
 def _stream(port, compliance="narrow", failed=(), media="video"):
@@ -2551,7 +2567,7 @@ EBU = {"ebu_ip": "10.1.1.1", "user": "u", "password": "secret", "proxy": False}
 def test_list_report_sends_the_password_on_stdin_and_deletes_the_pcap_there(
     monkeypatch,
 ):
-    commands, deleted, reports = [], [], []
+    commands, deleted, reports, sdps = [], [], [], []
     upload = SimpleNamespace(stdout="uploaded\n>>>UUID: id1\n")
 
     def execute_command(cmd, **kw):
@@ -2571,6 +2587,10 @@ def test_list_report_sends_the_password_on_stdin_and_deletes_the_pcap_there(
             assert previous["streams"] == []
             return reports.pop(0)
 
+        def reanalyze_with_sdp(self, sdp):
+            sdps.append(sdp)
+            return reports.pop(0)
+
         def delete_pcap(self):
             deleted.append(1)
 
@@ -2588,6 +2608,13 @@ def test_list_report_sends_the_password_on_stdin_and_deletes_the_pcap_there(
             "secret\n",
         )
     ]
+    # with an SDP, analysed again as it names the streams; not when LIST failed
+    reports[:] = [{"streams": [1]}, {"streams": [3]}]
+    got = pc.list_report(host, "/mtl", EBU, "/r/g.pcap", "v=0")
+    assert got == ({"streams": [3]}, "")
+    reports[:] = [False]
+    assert pc.list_report(host, "/mtl", EBU, "/r/g.pcap", "v=0")[0] is None
+    assert sdps == ["v=0"]
     # a dropped ingest, analysed twice more, as pcap_compliance.py does
     reports[:] = [{"streams": []}, {"streams": []}, {"streams": [2]}]
     assert report() == ({"streams": [2]}, "")
@@ -2602,10 +2629,10 @@ def test_list_report_sends_the_password_on_stdin_and_deletes_the_pcap_there(
     monkeypatch.setattr(Client, "download_report", unreachable)
     with pytest.raises(requests.ConnectionError):  # the capture's to report
         report()
-    assert len(deleted) == 5  # every pcap that reached LIST
+    assert len(deleted) == 7  # every pcap that reached LIST
     upload.stdout = "Error: 401 Unauthorized"
     assert report() == (None, "the upload failed: Error: 401 Unauthorized")
-    assert len(deleted) == 5
+    assert len(deleted) == 7
 
 
 class _Comply:
@@ -2621,6 +2648,9 @@ class _Comply:
         self.dead = set()
         self.steady = ([], [])
         self.waited = []
+        self.kind = "st20p"  # the session type of the build's sessions
+        self.sdps = {}  # the SDP each pcap went to LIST with
+        self.st22p = {}  # whether each instance started as st22p
         g1, g2 = "239.168.0.1", "239.168.0.2"
         self.caps = {
             g: {
@@ -2644,7 +2674,8 @@ class _Comply:
             fake.waited.append([i.name for i in insts])
             return fake.steady
 
-        def list_report(host, mtl, ebu, pcap):
+        def list_report(host, mtl, ebu, pcap, sdp=None):
+            fake.sdps[pcap] = sdp
             if isinstance(fake.reports[pcap], Exception):
                 raise fake.reports[pcap]
             return fake.reports[pcap]
@@ -2664,7 +2695,8 @@ class _Comply:
         for name, value in {
             "start": lambda inst, mtl, cmd: fake.calls.append(
                 f"start {inst.name} {cmd}"
-            ),
+            )
+            or fake.st22p.update({inst.name: inst.st22p}),
             "collect": lambda inst, kind, script: None,
             "pin_app_threads": lambda inst: fake.calls.append(f"pin {inst.name}") or "",
             "save": lambda inst, out_dir: fake.calls.append(f"save {inst.name}"),
@@ -2701,8 +2733,14 @@ class _Comply:
 
         def app_cmd(side, slot, label):
             config = _tx_config((["10.0.0.1"], 6))
+            for entry in config["tx_sessions"] if self.kind == "st22p" else ():
+                (session,) = entry.pop("st20p")
+                entry["st22p"] = [{**session, "payload_type": 96, "width": 1920}]
+                entry["st22p"][0]["height"] = 1080
             pc.multicast_groups(config, "tx", 4)
-            return f"app {side.role}{slot} {label}", config
+            # the RX receives each group its TX sends
+            rx = [{**e, "ip": e["dip"]} for e in config["tx_sessions"]]
+            return f"app {side.role}{slot} {label}", {**config, "rx_sessions": rx}
 
         trees = {"A": "/a", "B": "/b"}
         out = str(self.tmp_path)
@@ -2755,6 +2793,8 @@ def test_compliance_round_has_list_judge_every_stream_of_a_build_alone(comply):
         launch = json.load(f)
     assert launch["command"] == "app tx0 B"
     assert launch["config"]["tx_sessions"][0]["dip"] == [g1]
+    # st20p's streams LIST detects itself
+    assert set(comply.sdps.values()) == {None} and not any(comply.st22p.values())
     # every unit stopped, phc2sys with the companion's, before the logs are copied
     assert calls[-6:] == [
         "systemctl stop mtl-perf-tx0",
@@ -3034,3 +3074,85 @@ def test_run_round_takes_an_st22p_instance_whose_sessions_the_plugin_coded(fake)
     fake.session, fake.scripts[:] = "st20p", []
     assert fake.round()[1] == []
     assert not [c for c in fake.scripts if "get one session" in c]
+
+
+def test_compliance_round_gives_list_an_sdp_of_each_st22p_group(comply):
+    comply.kind = "st22p"
+    verdicts, problems, _ = comply.round()
+    assert problems == [] and len(verdicts) == 6
+    g1, g2 = (comply.sdps[f"{pc.RUN_DIR}/239.168.0.{g}.pcap"] for g in (1, 2))
+    # LIST detects no ST 2110-22 stream itself: an m= section names each
+    assert g1.count("m=video ") == 4 and g2.count("m=video ") == 2
+    for port in (5004, 5006, 5008, 5010):
+        assert f"m=video {port} RTP/AVP 96\r\nc=IN IP4 239.168.0.1/64\r\n" in g1
+    assert "a=rtpmap:96 jxsv/90000\r\na=fmtp:96 packetmode=0; " in g1
+    assert "width=1920; height=1080; exactframerate=60000/1001; TP=2110TPN" in g1
+    # both instances' codecs without a realtime policy
+    assert comply.st22p == {"mtl-perf-rx0": True, "mtl-perf-tx0": True}
+
+
+def test_list_verdicts_judge_an_st22p_stream_by_its_cinst_alone():
+    # as LIST 2.2 writes a stream an SDP names video/jxsv: no VRX, and its TRO 0
+    jxsv = {
+        **_stream(5004, "wide"),
+        "full_media_type": "video/jxsv",
+        "media_specific": {"min_tro_ns": 0, "max_tro_ns": 0, "packets_per_frame": 608},
+        "analyses": {
+            "2110_21_cinst": {"result": "not_compliant"},
+            "rtp_sequence": {"result": "compliant"},
+        },
+    }
+    del jxsv["global_video_analysis"]["vrx"]
+    (v,) = pc.list_verdicts({"streams": [jxsv]}).values()
+    assert v == {
+        "class": "wide",
+        "failed": ["2110_21_cinst"],
+        "cinst": 2,
+        "vrx": [None, None],
+        "tro_us": [None, None],
+    }
+    rounds = [_round(_rounds((1, 1))[0])]
+    verdicts = {"239.168.0.1:5004": v}
+    passes = [{"label": "A", "verdicts": verdicts, "problems": [], "notes": []}]
+    page = pc.summary_html(LABELS, ARGS, SLOTS, rounds, compliance=passes)
+    assert "<td>wide</td><td>2110_21_cinst</td><td>2</td><td>-</td><td>-</td>" in page
+
+
+def test_reanalyze_with_sdp_waits_until_list_analysed_the_streams_again(monkeypatch):
+    calls = []
+    states = [
+        [],
+        "down",
+        [{"state": "ready"}],
+        [{"state": "analyzed"}, {"state": "needs_info"}],
+    ]
+
+    class Session:
+        def patch(self, url, **kw):
+            calls.append(("PATCH", url, kw["json"]))
+            return SimpleNamespace(raise_for_status=lambda: None)
+
+        def get(self, url, **kw):
+            calls.append(("GET", url))
+            assert 1 <= kw["timeout"] <= 10  # a request that hangs ends in time
+            body = states.pop(0) if len(states) > 1 else states[0]
+            if body == "down":  # a moment LIST does not answer
+                raise requests.ConnectionError("down")
+            return SimpleNamespace(raise_for_status=lambda: None, json=lambda: body)
+
+    client = object.__new__(cc.PcapComplianceClient)
+    vars(client).update(ebu_ip="1.1.1.1", pcap_id="id", token="t", proxies={})
+    client.session = Session()
+    monkeypatch.setattr(client, "download_report", lambda: {"streams": ["fresh"]})
+    clock = iter(range(0, 10**6))
+    monkeypatch.setattr(cc.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(cc.time, "sleep", lambda s: None)
+    assert client.reanalyze_with_sdp("v=0") == {"streams": ["fresh"]}
+    url = "http://1.1.1.1/api/pcap/id"
+    # deleted, unreachable a moment, then ready, then none left to analyse: one LIST
+    # cannot place waits for nothing more
+    polls = [("GET", f"{url}/streams/")] * 4
+    assert calls == [("PATCH", url, {"sdps": ["v=0"]})] + polls
+    # a LIST that never finishes gives no report
+    states[:] = [[{"state": "on_going_analysis"}]]
+    assert client.reanalyze_with_sdp("v=0") is False

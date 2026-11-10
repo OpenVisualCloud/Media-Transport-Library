@@ -44,26 +44,32 @@ perf-compare-refs)
 	resolve() {
 		# A name, a SHA or a ~ or ^ suffix; no option, no ^{/regex} and no newline,
 		# which would add a line to GITHUB_OUTPUT.
-		[[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._/~^-]*$ ]] || {
-			echo "::error::Not a branch, tag or SHA: ${1@Q}" >&2
-			return 1
-		}
+		[[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._/~^-]*$ ]] || return 1
 		git rev-parse --verify --quiet "origin/$1^{commit}" ||
 			git rev-parse --verify "$1^{commit}"
 	}
-	# The numbers are string inputs (perf-compare.yml says why), so the form
-	# takes any text: stop a typo here, before the build.
-	for v in SESSIONS TEST_TIME ROUNDS; do
-		[[ -z ${!v:-} || ${!v} =~ ^[1-9][0-9]*$ ]] || {
-			echo "::error::${v,,} must be a positive number: ${!v@Q}" >&2
-			exit 1
-		}
-	done
-	# Each window of the case needs two whole stats dumps, 10 s apart.
-	if ((${TEST_TIME:-30} < 30)); then
-		echo "::error::test_time must be at least 30: ${TEST_TIME}" >&2
+	# Every input or pair of inputs that cannot run, said together and before the build.
+	problems=()
+	refuse() {
+		problems+=("$1")
+	}
+	report() {
+		((${#problems[@]})) || return 0
+		printf '::error::%s\n' "${problems[@]}" >&2
+		{
+			echo "perf-compare refused the inputs:"
+			printf -- '- %s\n' "${problems[@]}"
+		} >>"${GITHUB_STEP_SUMMARY:-/dev/null}"
 		exit 1
-	fi
+	}
+	# The numbers are string inputs (perf-compare.yml says why), so the form takes
+	# any text: these first, as the checks after them compute with the numbers.
+	for v in SESSIONS TEST_TIME ROUNDS; do
+		[[ -z ${!v:-} || ${!v} =~ ^[1-9][0-9]*$ ]] || refuse "${v,,} must be a positive number: ${!v@Q}"
+	done
+	report
+	# Each window of the case needs two whole stats dumps, 10 s apart.
+	((${TEST_TIME:-30} >= 30)) || refuse "test_time must be at least 30: ${TEST_TIME}"
 	# The sessions of a build, which whole puts on two ports, filling the
 	# first before the second (pc.port_sessions()). A port carries at most 100G: the
 	# rate of pc.stream_bps(), keep in step, 20-bit pixels paced over 1125 of 1080
@@ -77,35 +83,24 @@ perf-compare-refs)
 	# 60 streams at most, 25 Gb/s at 1080p59, a 100G port carries, unlike st20's rate,
 	# and the case checks each port's own link
 	codec=${CODEC:-none}
-	refuse() {
-		echo "::error::codec jpegxs takes $1" >&2
-		exit 1
-	}
 	if [[ ${codec%%:*} == jpegxs ]]; then
-		((sessions <= 60)) || refuse "up to 60 sessions, as MTL puts a TX instance's st22 sessions on one scheduler, which takes 60: ${sessions}"
-		[[ ${video%p*} == 1080 ]] || refuse "1080p: no other resolution has a planar clip short enough for each TX session's hugepages"
-		[[ ${nics%%:*} != whole ]] || refuse "no nics whole: one port carries its sessions, so split"
-		[[ ${DMA:-none} == none ]] || refuse "no dma: MTL's st22 RX copies with none"
-		[[ ${PIXEL_FORMAT:-none} == none* ]] || refuse "no pixel_format: its encoder takes the planar clip as it is"
-		[[ ${COMPLIANCE:-} != true ]] || refuse "no compliance: EBU LIST takes a -22 stream's media type from its SDP"
+		((sessions <= 60)) || refuse "codec jpegxs takes up to 60 sessions, as MTL puts a TX instance's st22 sessions on one scheduler, which takes 60: ${sessions}"
+		[[ ${video%p*} == 1080 ]] || refuse "codec jpegxs takes 1080p: no other resolution has a planar clip short enough for each TX session's hugepages"
+		[[ ${DMA:-none} == none ]] || refuse "codec jpegxs takes no dma: MTL's st22 RX copies with none"
+		[[ ${PIXEL_FORMAT:-none} == none* || ${PIXEL_FORMAT} == yuv422p10le* ]] ||
+			refuse "codec jpegxs takes pixel_format none or yuv422p10le: its encoder takes the planar clip as it is, and st22p converts nothing"
 	elif [[ ${nics%%:*} == whole ]]; then
-		if ((sessions > 2 * most)); then
-			echo "::error::${sessions} x ${video} take more than two 100G ports carry, $((2 * most))" >&2
-			exit 1
-		fi
+		((sessions <= 2 * most)) || refuse "${sessions} x ${video} take more than two 100G ports carry, $((2 * most))"
 	elif ((sessions > most)); then
-		echo "::error::${sessions} x ${video} take more than a 100G port carries, ${most}; nics whole puts a build on two, up to $((2 * most))" >&2
-		exit 1
+		refuse "${sessions} x ${video} take more than a 100G port carries, ${most}; nics whole puts a build on two, up to $((2 * most))"
 	fi
 	# An MTL scheduler takes 60 video sessions at most. Booleans: "true" or "false",
 	# or empty in a run without inputs.
 	if [[ ${SINGLE_CORE_RX:-} == true || ${SINGLE_CORE_TX:-} == true ]] && ((sessions > 60)); then
-		echo "::error::single core takes up to 60 sessions, as many as an MTL scheduler: ${sessions}" >&2
-		exit 1
+		refuse "single core takes up to 60 sessions, as many as an MTL scheduler: ${sessions}"
 	fi
 	if [[ ${COMPLIANCE:-} == true && ${video%p*} == 4320 ]]; then
-		echo "::error::compliance: EBU LIST cannot judge ${video}" >&2
-		exit 1
+		refuse "compliance: EBU LIST cannot judge ${video}"
 	fi
 	if [[ ${GITHUB_EVENT_NAME:-} == schedule ]]; then
 		# GitHub starts each night hours late, by a different amount, so a window
@@ -122,19 +117,22 @@ perf-compare-refs)
 			sha_a=$(git rev-list -1 --first-parent --before='24 hours ago' origin/main)
 		fi
 	else
-		sha_a=$(resolve "${REF_A:?REF_A is required}") name_a=$REF_A
-		sha_b=$(resolve "${REF_B:?REF_B is required}") name_b=$REF_B
+		name_a=$REF_A name_b=$REF_B
+		sha_a=$(resolve "${REF_A:?REF_A is required}") || refuse "ref_a is no branch, tag or SHA here: ${REF_A@Q}"
+		sha_b=$(resolve "${REF_B:?REF_B is required}") || refuse "ref_b is no branch, tag or SHA here: ${REF_B@Q}"
 	fi
 	# The SVT-JPEG-XS plugin of versions.env asks for MTL 26.09 or later (its
 	# mtl-plugin/meson.build), which meson reads from VERSION: keep in step.
 	if [[ ${codec%%:*} == jpegxs ]]; then
-		for sha in "$sha_a" "$sha_b"; do
+		# each build once, and none whose ref resolved to nothing
+		for sha in $(printf '%s\n' "$sha_a" "$sha_b" | sort -u); do
 			version=$(git show "${sha}:VERSION" 2>/dev/null) || version=0.0
 			IFS=. read -r major minor _ <<<"$version"
 			((10#$major * 100 + 10#$minor >= 2609)) ||
-				refuse "builds of MTL 26.09 or later, as its SVT-JPEG-XS plugin asks: ${sha:0:9} is ${version}"
+				refuse "codec jpegxs takes builds of MTL 26.09 or later, as its SVT-JPEG-XS plugin asks: ${sha:0:9} is ${version}"
 		done
 	fi
+	report
 	{
 		echo "sha_a=${sha_a}"
 		echo "sha_b=${sha_b}"

@@ -168,23 +168,13 @@ def _options(request) -> dict:
             ),
             (opts["dma"], "no DMA: MTL's st22 RX copies with none"),
             (
-                opts["pixel_format"] != "none",
-                "no pixel format: its encoder takes the planar clip as it is",
-            ),
-            (
-                opts["nics"] == "whole",
-                "no nics whole: one port carries its sessions and the second would idle, "
-                "so split",
-            ),
-            (
-                opts["compliance"],
-                "no compliance: EBU LIST takes a -22 stream's media type from its SDP, and "
-                "judges its timing by other rules",
+                opts["pixel_format"] not in ("none", "yuv422p10le"),
+                "pixel_format none or yuv422p10le: its encoder takes the planar clip as "
+                "it is, and st22p converts nothing",
             ),
         )
-        for bad, why in refused:
-            if bad:
-                pytest.fail(f"--perf_compare_codec {opts['codec']} takes {why}")
+        if why := [w for bad, w in refused if bad]:
+            pytest.fail(f"--perf_compare_codec {opts['codec']} takes {'; '.join(why)}")
     return opts
 
 
@@ -403,8 +393,11 @@ def test_perf_compare(
     bps = pc.codestream_bps if codec else pc.stream_bps
     rate = bps(media_config["width"], media_config["height"], FPS[fps])
     # the sessions on each port of a slot: whole fills the first before the second,
-    # redundant sends each on both
-    if opts["nics"] == "whole":
+    # or with st22p gives each half, as filling would leave the second idle; redundant
+    # sends each on both
+    if opts["nics"] == "whole" and codec:
+        shares = [-(-sessions // 2), sessions // 2]
+    elif opts["nics"] == "whole":
         shares = pc.port_sessions(sessions, 2, rate)
     else:
         shares = [sessions] * (2 if opts["nics"] == "redundant" else 1)
@@ -415,11 +408,14 @@ def test_perf_compare(
     app_time = pc.steady_timeout(queues) + pc.WARMUP_S + windows_s + 100
     app_cmd = _app_cmd(opts, media_config, media_path, fps, app_time, shares)
     # the compliance pass: a group of streams a capture, as many as a capture takes
-    pps = pc.frame_packets(media_config["width"], media_config["height"]) * FPS[fps]
+    packets = pc.codestream_packets if codec else pc.frame_packets
+    pps = packets(media_config["width"], media_config["height"]) * FPS[fps]
     per_group = max(1, int(pc.CAPTURE_PPS // pps))
     groups = sum(-(-n // per_group) for n in shares)  # redundant: a leg each share
-    # a capture and its analysis take about 25 s; LIST may wait a minute for a report
-    comply_time = pc.steady_timeout(queues) + pc.WARMUP_S + 120 * groups + 100
+    # a capture and its analysis take about 25 s; LIST may wait a minute for a report,
+    # and twice for st22p's, analysed again with an SDP
+    capture_s = 240 if codec else 120
+    comply_time = pc.steady_timeout(queues) + pc.WARMUP_S + capture_s * groups + 100
     comply_cmd = _app_cmd(
         opts, media_config, media_path, fps, comply_time, shares, per_group
     )
@@ -524,7 +520,8 @@ def test_perf_compare(
                         f"{host.name}: {n} x {video} on a port take "
                         f"{n * rate / 1e9:.1f} Gb/s, and {slow[0]} "
                         "(--perf_compare_sessions counts a build's, which whole puts "
-                        "on two ports, the first filled first)"
+                        "on two ports, the first filled first, or with a codec half on "
+                        "each)"
                     )
             if opts["nics"] != "single" and slots[0].isolated != slots[1].isolated:
                 pytest.fail(

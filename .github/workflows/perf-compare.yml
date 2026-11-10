@@ -79,7 +79,7 @@ on:
         default: 'none: the applications use the format on the wire, nothing is converted'
       # Each choice says what it does; the case takes its word before the colon.
       codec:
-        description: 'The video of every session. jpegxs runs 1080p, up to 60 sessions, as many as the one scheduler MTL gives a TX instance''s st22 sessions takes, without dma, pixel_format, nics whole or compliance; each build gets the SVT-JPEG-XS plugin of this commit''s versions.env, built against its libmtl, of MTL 26.09 or later'
+        description: 'The video of every session. jpegxs runs 1080p, up to 60 sessions, as many as the one scheduler MTL gives a TX instance''s st22 sessions takes, in pixel_format none or yuv422p10le, without dma; nics whole puts half on each port. Each build gets the SVT-JPEG-XS plugin of this commit''s versions.env, built against its libmtl, of MTL 26.09 or later'
         required: false
         type: choice
         options:
@@ -89,7 +89,7 @@ on:
       # sessions, test_time and rounds are strings, not numbers: a number
       # input reaches a step's env as 120.0.
       sessions:
-        description: 'Sessions of each build. A 100G port carries 36 x 1080p59, 9 x 2160p59, 2 x 4320p59; nics whole puts a build on two ports, the first filled before the second, so 37 run as 36 and 1, and 72 x 1080p59 fit'
+        description: 'Sessions of each build. A 100G port carries 36 x 1080p59, 9 x 2160p59, 2 x 4320p59; nics whole puts a build on two ports, the first filled before the second (jpegxs: half on each), so 37 run as 36 and 1, and 72 x 1080p59 fit'
         required: false
         type: string
         default: '36'
@@ -198,6 +198,8 @@ jobs:
   # The workflow commit: the CI scripts, the tests and the tree the framework itself
   # runs. The compare job builds A and B, from any ref, on one host and toolchain.
   build:
+    # after the refs job, which refuses the inputs that cannot run before any build
+    needs: refs
     uses: ./.github/workflows/build.yml
     with:
       skip_linter_check: true

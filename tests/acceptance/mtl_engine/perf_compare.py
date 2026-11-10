@@ -23,6 +23,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import datetime
+from fractions import Fraction
 
 from common.generate_report import html_head, platform_html
 from compliance.compliance_client import PcapComplianceClient
@@ -548,11 +549,16 @@ def cpu_layout(host, pf: str, count: int = 2) -> list[Slot]:
     ]
 
 
+def _sessions(entry: dict) -> list:
+    """The sessions of an RxTxApp session entry: its st22p ones, or its st20p ones."""
+    return entry.get("st22p") or entry["st20p"]
+
+
 def add_port(
     config: dict, role: str, vf: str, tx_ip: str, rx_ip: str, sessions: int
 ) -> None:
     """Add *vf* to the RxTxApp configuration of one port, with *sessions* of the
-    first port's st20p sessions."""
+    first port's sessions."""
     iface = {
         **config["interfaces"][0],
         "name": vf,
@@ -562,24 +568,24 @@ def add_port(
     group = copy.deepcopy(config[f"{role}_sessions"][0])
     group["dip" if role == "tx" else "ip"] = [rx_ip if role == "tx" else tx_ip]
     group["interface"] = [len(config["interfaces"]) - 1]
-    group["st20p"][0]["replicas"] = sessions
+    _sessions(group)[0]["replicas"] = sessions
     config[f"{role}_sessions"].append(group)
 
 
 def multicast_groups(config: dict, role: str, per_group: int) -> None:
-    """Send or receive the st20p sessions of *config* as multicast, *per_group* to a
+    """Send or receive the sessions of *config* as multicast, *per_group* to a
     group of their own, so that a capture can take a group at a time: each leg of each
     session entry, a port's, has groups of its own."""
     key = "dip" if role == "tx" else "ip"
     entries = []
     for e, entry in enumerate(config[f"{role}_sessions"]):
-        n = entry["st20p"][0]["replicas"]
+        n = _sessions(entry)[0]["replicas"]
         for g, first in enumerate(range(0, n, per_group), 1):
             group = copy.deepcopy(entry)
             group[key] = [
                 GROUP.format(2 * e + leg, g) for leg in range(len(entry[key]))
             ]
-            group["st20p"][0]["replicas"] = min(per_group, n - first)
+            _sessions(group)[0]["replicas"] = min(per_group, n - first)
             entries.append(group)
     config[f"{role}_sessions"] = entries
 
@@ -590,7 +596,7 @@ def stream_groups(config: dict) -> list[tuple[str, list[str]]]:
     return [
         (dip, [f"{dip}:{s['start_port'] + 2 * k}" for k in range(s["replicas"])])
         for entry in config["tx_sessions"]
-        for s in entry["st20p"]
+        for s in _sessions(entry)
         for dip in entry["dip"]
     ]
 
@@ -619,12 +625,32 @@ def stream_bps(width: int, height: int, fps: float) -> float:
     return width * height * 20 * fps * 1125 / 1080 * 1406 / 1320
 
 
+def codestream_packets(width: int, height: int) -> int:
+    """The packets of an st22p frame as RxTxApp codes it: 3 bits a pixel
+    (tx_st22p_app.c) and MTL's 60 bytes of JPEG XS boxes, in packets of 1280 bytes of
+    codestream: 608 at 1080p."""
+    return math.ceil((width * height * 3 // 8 + 60) / 1280)
+
+
 def codestream_bps(width: int, height: int, fps: float) -> float:
-    """The wire rate of an st22p stream as RxTxApp codes it: 3 bits a pixel
-    (tx_st22p_app.c) and MTL's 60 bytes of JPEG XS boxes, paced over 1125 of 1080
-    lines, in MTL's packets of 1280 bytes of codestream that take 1362 on the wire."""
-    packets = math.ceil((width * height * 3 // 8 + 60) / 1280)
-    return packets * 1362 * 8 * fps * 1125 / 1080
+    """The wire rate of an st22p stream: codestream_packets() a frame, which take 1362
+    bytes on the wire each, paced over 1125 of 1080 lines."""
+    return codestream_packets(width, height) * 1362 * 8 * fps * 1125 / 1080
+
+
+def jxsv_sdp(streams: list[str], session: dict, fps: float) -> str:
+    """An SDP that names each of *streams*, address:port, a JPEG XS stream (RFC 9134)
+    of the st22p *session* of an RxTxApp configuration: EBU LIST detects no ST 2110-22
+    stream by itself, and analyses one that an SDP names. It is judged as type N."""
+    pt, rate = session["payload_type"], Fraction(fps).limit_denominator(1001)
+    media = "".join(
+        f"m=video {port} RTP/AVP {pt}\r\nc=IN IP4 {address}/64\r\n"
+        f"a=rtpmap:{pt} jxsv/90000\r\na=fmtp:{pt} packetmode=0; "
+        f"width={session['width']}; height={session['height']}; "
+        f"exactframerate={rate}; TP=2110TPN; SSN=ST2110-22:2019\r\n"
+        for address, port in (s.rsplit(":", 1) for s in streams)
+    )
+    return f"v=0\r\no=- 0 0 IN IP4 0.0.0.0\r\ns=perf-compare\r\nt=0 0\r\n{media}"
 
 
 def frame_packets(width: int, height: int) -> int:
@@ -1256,7 +1282,9 @@ def list_verdicts(report: dict) -> dict[str, dict]:
             continue
         net = s.get("network_information", {})
         timing = s.get("global_video_analysis", {})
-        media = s.get("media_specific", {})
+        # ST 2110-22 has no TRO, whose fields LIST leaves 0 for it, nor VRX
+        jxsv = s.get("full_media_type") == "video/jxsv"
+        media = {} if jxsv else s.get("media_specific", {})
         cinst = [b for b, _ in timing.get("cinst", {}).get("histogram", [])]
         vrx = [b for b, _ in timing.get("vrx", {}).get("histogram", [])]
         stream = f"{net.get('destination_address')}:{net.get('destination_port')}"
@@ -1282,12 +1310,15 @@ def compliant(verdict: dict) -> bool:
     return verdict.get("class") in COMPLIANT and not verdict.get("failed")
 
 
-def list_report(host, mtl_path: str, ebu: dict, pcap: str) -> tuple[dict | None, str]:
+def list_report(
+    host, mtl_path: str, ebu: dict, pcap: str, sdp: str | None = None
+) -> tuple[dict | None, str]:
     """Upload *pcap* of *host* to *ebu*, test_config's ebu_server, and return LIST's
     report of it, or None and why, then delete it there; LIST's errors raise.
 
     The password goes over stdin, as mfd_connect logs every command line, and an
-    empty report is analysed twice more, as pcap_compliance.py does.
+    empty report is analysed twice more, as pcap_compliance.py does. With *sdp*, LIST
+    analyses it again, with the media types that it names.
     """
     res = host.connection.execute_command(
         f"sudo -n timeout 300 python3 {mtl_path}/tests/acceptance/compliance/"
@@ -1310,6 +1341,8 @@ def list_report(host, mtl_path: str, ebu: dict, pcap: str) -> tuple[dict | None,
             if not report or report.get("streams"):
                 break
             report = client.reanalyze(report)
+        if sdp and report:
+            report = client.reanalyze_with_sdp(sdp)
     finally:
         client.delete_pcap()
     return (report, "") if report else (None, "LIST did not analyse it in time")
@@ -2013,7 +2046,10 @@ def _compliance(passes: list[dict], names: dict) -> str:
                 rows.append([name, stream, "not judged", "", "", "", "", v["why"]])
             elif not compliant(v):
                 checks = ", ".join(v["failed"]) or "-"
-                vrx, tro = (" to ".join(map(str, v[k])) for k in ("vrx", "tro_us"))
+                vrx, tro = (
+                    "-" if None in v[k] else " to ".join(map(str, v[k]))
+                    for k in ("vrx", "tro_us")
+                )
                 rows.append(
                     [name, stream, v["class"], checks, v["cinst"], vrx, tro, ""]
                 )
@@ -2510,10 +2546,11 @@ def _phc_lock(host) -> bool:
         time.sleep(POLL_S)
 
 
-def _capture(tx, pf, address, streams, pps, ebu, out_dir) -> dict:
+def _capture(tx, pf, address, streams, pps, ebu, out_dir, sdp=None) -> dict:
     """LIST's verdict on each of *streams*, the group *address*'s, from a capture of
-    CAPTURE_SCRIPT for CAPTURE_S on *pf*; each of *pps* packets a second. A failure
-    leaves the group's streams not judged, and the pass going."""
+    CAPTURE_SCRIPT for CAPTURE_S on *pf*; each of *pps* packets a second, of the media
+    types *sdp* names, if any. A failure leaves the group's streams not judged, and the
+    pass going."""
     pcap = f"{RUN_DIR}/{address}.pcap"
     count = math.ceil(len(streams) * pps * CAPTURE_S)
     cap = report = None
@@ -2525,13 +2562,13 @@ def _capture(tx, pf, address, streams, pps, ebu, out_dir) -> dict:
         cap = json.loads(out.splitlines()[-1])
         why = _captured(cap, streams)
         if not why:
-            report, why = list_report(tx.host, tx.mtl_path, ebu, pcap)
+            report, why = list_report(tx.host, tx.mtl_path, ebu, pcap, sdp)
     except Exception as e:
         why = f"failed: {(str(e) or repr(e)).splitlines()[0]}"
     finally:
         sh(tx.host, f"rm -f {pcap}.raw {pcap}", check=False)
     with open(os.path.join(out_dir, f"{address}.json"), "w") as f:
-        json.dump({"capture": cap, "list": report}, f)
+        json.dump({"capture": cap, "sdp": sdp, "list": report}, f)
     got = list_verdicts(report) if report else {}
     why = why or "LIST found no video stream there"
     return {s: got.get(s) or {"why": why} for s in streams}
@@ -2586,6 +2623,7 @@ def compliance_round(
             cmd, config = app_cmd(s, 0, label)
             with open(os.path.join(out_dir, f"{inst.name}.json"), "w") as f:
                 json.dump({"command": cmd, "config": config}, f, indent=1)
+            inst.st22p = any("st22p" in e for e in config[f"{s.role}_sessions"])
             inst.start(s.mtl_path, cmd)
             inst.collect("log", LOG_SCRIPT)
         problems, notes = _wait_steady(insts[1:], sessions, fps, queues)
@@ -2601,8 +2639,12 @@ def compliance_round(
                 notes.append(f"{insts[1].name}: app threads not moved, {why}")
             time.sleep(WARMUP_S)
             start = len(phc_samples(tx.host))  # the clock of the captures from here
-            for address, streams in stream_groups(config):  # the TX's, started last
-                verdicts.update(_capture(tx, pf, address, streams, pps, ebu, out_dir))
+            session = _sessions(config["tx_sessions"][0])[0]  # the TX's, started last
+            for address, streams in stream_groups(config):
+                sdp = jxsv_sdp(streams, session, fps) if insts[1].st22p else None
+                verdicts.update(
+                    _capture(tx, pf, address, streams, pps, ebu, out_dir, sdp)
+                )
                 if dead := _exited(insts) + inactive(tx.host, [PHC_UNIT]):
                     problems.append(f"exited during the captures: {', '.join(dead)}")
                     break

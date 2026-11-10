@@ -212,7 +212,7 @@ node 0 and NIC 1 on node 2. The topology then declares all four ports
 | `single` | 0 and 1: port 0 and 1 of NIC 0 | As above |
 | `split` | 0: port 0 of NIC 0, 1: port 0 of NIC 1, each the one slot of its NIC's node, with all its 28 isolated cores (§3.1) | As `single`; each build has a socket, its L3, memory and NIC, to itself, which a load at the limit of a core needs (below). The swap cancels the difference between the NICs in the mean, not in the noise |
 | `redundant` | As `split`, with port 1 of the NIC beside port 0: ST 2022-7, each session sent and received on both | As `split`; the port rate, `hw dropped pkts` and `RX work` rows hold both legs. A redundant session is charged on both ports, so multi-core instances take perf-pytest's redundant quotas: 18 1080p59 sessions a TX scheduler, 10 an RX one, 9 with a DSA, unless `args` give one |
-| `whole` | As `redundant`, but each port with sessions of its own, port 0's filled before port 1's (below) | As `split`; one build loads a whole NIC, up to 72 x 1080p59. At that load MTL's quota of 12 sessions a scheduler, or 8 for RX without DMA, gives an instance 6 schedulers, or 9, which with the system tasklets' CPU and the slot's first take 8 and 11 of its 28 |
+| `whole` | As `redundant`, but each port with sessions of its own, port 0's filled before port 1's (below; `jpegxs` halves them) | As `split`; one build loads a whole NIC, up to 72 x 1080p59. At that load MTL's quota of 12 sessions a scheduler, or 8 for RX without DMA, gives an instance 6 schedulers, or 9, which with the system tasklets' CPU and the slot's first take 8 and 11 of its 28 |
 
 Two instances on one socket take some of each other's capacity, which a load at the
 limit of a core shows. Measured on the perf pair with perf-compare's units at 36 x
@@ -434,6 +434,17 @@ groups of their own. On the perf pair, main had 33 to 35 of 36 x 1080p59 complia
 four passes, the others under the VRX's floor by 1 to 4 packets, when its TX counted no
 late frame (2026-11-06).
 
+An st22p stream (§4.7) LIST does not detect by itself: it marks it `needs_info`. Each
+capture's pcap goes to LIST again with an SDP that names each of its streams
+`jxsv/90000`, `TP=2110TPN`, `jxsv_sdp()`, and the case waits until none is still ready
+or under analysis; the SDP is kept in the group's JSON. Such a stream has no VRX and no
+TRO, as ST 2110-22 has none: LIST judges its class by its Cinst alone, and the report
+shows `-` for the rest. A group takes as many st22p streams as 950,000 packets a second
+carry, 26 of 1080p59, so 60 a build are 3 captures in `single` or `split`, 4 in `whole`
+and 6 in `redundant`. Proven with LIST on a loopback capture of MTL's st22p TX
+(2026-11-09): it read 608 packets a frame at 60000/1001 and judged each stream; the
+timing of the perf pair's TX is the first dispatch's.
+
 ### 4.7. Compressed video
 
 With `codec` `jpegxs` every session is st22p, ST 2110-22: JPEG XS by the SVT-JPEG-XS
@@ -493,10 +504,11 @@ A build takes up to 60 sessions, of about 0.4 Gb/s each at 1080p59:
   pair: about 40 sessions a build, beyond which a round would fail, its source not in
   hugepages or a session not created.
 
-Only 1080p has a planar clip short enough for each TX session's hugepages. DMA (MTL's
-st22 RX has none), a pixel format (the encoder takes the clip as it is), `whole` (one
-port carries the sessions) and `compliance` (LIST takes a -22 stream's media type from
-its SDP, and judges it by other rules) are refused.
+Only 1080p has a planar clip short enough for each TX session's hugepages. DMA is
+refused, as MTL's st22 RX has none, and `pixel_format` takes `none` or `yuv422p10le`,
+the same: the encoder takes the planar clip as it is, and st22p converts nothing.
+`whole` puts half of a build's sessions on each port of its NIC, as filling the first
+would leave the second idle; `compliance` judges them as §4.6 says.
 
 ## 5. Running it
 
@@ -513,7 +525,7 @@ options of a run by hand (§5.4):
 | `video` | `-k "1080p and 59fps"` | `1080p59` | 1080p, 2160p or 4320p at 59, 50, 29 or 25 fps, from the perf media set |
 | `pixel_format` | `--perf_compare_pixel_format` | `none` | `none`, `yuv422p10le`, `v210` or `y210`: the pixel format of the applications, which MTL converts to the format on the wire on TX and back on RX (below) |
 | `codec` | `--perf_compare_codec` | `none` | `none`, st20p, uncompressed, or `jpegxs`, st22p with JPEG XS (§4.7) |
-| `sessions` | `--perf_compare_sessions` | `36` | Video sessions of each build. `whole` puts a build on two ports and fills the first before the second: 37 x 1080p59 run as 36 and 1, 20 as 20 and none (below) |
+| `sessions` | `--perf_compare_sessions` | `36` | Video sessions of each build. `whole` puts a build on two ports and fills the first before the second: 37 x 1080p59 run as 36 and 1, 20 as 20 and none; `jpegxs` puts half on each (below) |
 | `nics` | `--perf_compare_nics` | `single` | `single`, `split`, `redundant` or `whole` (§3.5); each choice of the form says what it does, and the case takes the word before its colon |
 | `dma` | `--perf_compare_dma` | `none` | `none`, `A`, `B` or `both`: the builds whose RX instances copy with a DSA (§3.5) |
 | `single_core_rx`, `single_core_tx` | `--perf_compare_single_core_rx`, `--perf_compare_single_core_tx` | unchecked | The RX or TX instances run as perf-pytest's single core: `--sch_session_quota 99` without `--dedicated_sys_lcore`, one scheduler with the system tasklets. A core carries 28 RX, 36 with DMA, or 35 TX 1080p59. Unchecked, MTL starts the schedulers its quota needs |
@@ -530,7 +542,8 @@ anything is built or started:
 | `sessions`, `video`, `nics` | A port carries at most 100 Gb/s of sessions, a build on two ports twice that (below) | refs job; the case against each port's own link |
 | `sessions`, `single_core_rx`, `single_core_tx` | An MTL scheduler takes 60 video sessions at most | refs job and case |
 | `compliance`, `video` | LIST does not judge 8K | refs job and case |
-| `codec` and `sessions`, `video`, `nics`, `dma`, `pixel_format`, `compliance` | `jpegxs` takes up to 60 sessions, 1080p, and no `whole`, DMA, pixel format or compliance (§4.7) | refs job and case |
+| `codec` and `sessions`, `video`, `dma`, `pixel_format` | `jpegxs` takes up to 60 sessions, 1080p, no DMA, and `pixel_format` `none` or `yuv422p10le` (§4.7) | refs job and case |
+| `codec`, `nics` | With `jpegxs`, `whole` puts half of a build's sessions on each port (§4.7) | none needed |
 | `codec`, `ref_a`, `ref_b` | `jpegxs` takes builds whose `VERSION` is 26.09 or later, as the SVT plugin asks (§4.7) | refs job |
 | `nics`, `single_core_rx`, `single_core_tx` | At a core's limit two instances on one socket fall short of it, both builds alike: `split`, `redundant` and `whole` give a build a socket (§3.5) | none needed |
 | `pixel_format`, `sessions`, `nics` | The conversion runs on the application threads, on the slot's first CPU and the lcores the schedulers leave: it moves each frame through the memory of the slot's node several times, which binds first: 36 x 1080p59 in yuv422p10le hold their rate in `split` and `whole`, not in `single`, where both builds share node 0 (below) | none needed |
@@ -583,7 +596,9 @@ companion count about 210,000 build timeout frames each a round, which the round
 instances, so an A/A run of `main` notes them every round.
 
 The refs job rejects a bad ref, a number that is not a positive integer, a `test_time`
-under 30, and the pairs of inputs it checks above, before the compare job builds anything; the
+under 30, and the pairs of inputs it checks above, said in its log and the job summary, a
+bad number first and then every other one at once, before the build job starts, which
+waits for it; the
 numbers are strings, as a number input reaches a step as `120.0`. A ref takes no option, `^{/regex}`, comma or newline:
 it reaches `git`, `GITHUB_OUTPUT` and the labels. The case rejects bad arguments before
 it starts an instance, as they reach a root shell script on both hosts.
@@ -591,7 +606,7 @@ it starts an instance, as they reach a root shell script on both hosts.
 ### 5.2. Jobs
 
 1. `refs` resolves both refs to SHAs (`task ci:workflow -- perf-compare-refs`).
-2. `build` runs `build.yml` for the workflow commit, which the framework itself runs:
+2. `build`, once `refs` passed, runs `build.yml` for the workflow commit, which the framework itself runs:
    the tests, the CI scripts, the ICE driver, MtlManager and `nicctl.sh`.
 3. `compare`, on `[self-hosted, perf, sut]`:
    1. restores that build (`validate-host`);
@@ -676,7 +691,7 @@ notes, which do not.
 | `its source is not in hugepages` | A TX read its source through `mmap()` | More hugepages on the companion, or fewer sessions |
 | `exited before steady state`, and `all session slot are used` then `st22p_tx_create fail` in an st22p instance's output | Its registry names the plugin too few times for its sessions, 8 sessions a name: a local install's names it once | Slots that `perf-compare.sh build` built with `CODEC=jpegxs`, or 8 sessions at most |
 | `N of M sessions on st22_svt_jpeg_xs_plugin*` | An st22p instance's log names fewer of its sessions on the plugin under test: another plugin coded them, or the log does not say, as with `args` that log above info or to a file | Its application output: the `st_plugin_register` and `get one session` lines, and the slot's `conf/kahawai.json` |
-| `codec jpegxs takes ...` (refs job), `--perf_compare_codec jpegxs takes ...` or `runs 1080p` | An input that st22p with JPEG XS cannot run with (§4.7) | The input the message names |
+| `codec jpegxs takes ...` (refs job, every one at once), `--perf_compare_codec jpegxs takes ...` or `runs 1080p` | An input that st22p with JPEG XS cannot run with (§4.7) | The inputs the messages name |
 | `no rvs_pkt_rx work in sys:tasklet_stat` | A traced RX instance gave no work counters | Its `.trace` record |
 | `failed: <error>` | The round raised, such as when an application died between two `/proc` reads; the rounds stop | The pytest log |
 | Incomplete frames, dropped packets, late TX frames (note) | Loss in the receiver, or TX frames sent late | Their rows count them |
@@ -690,7 +705,7 @@ notes, which do not.
 | `perf stat did not count every event` (note) | The host's perf left an event of the instance uncounted, so it has no PMU rows | Its `.pmu` record in `perf_compare/round<N>/` |
 | Placement `perf` no | No perf on the host counts every event: no PMU rows at all | A `linux-tools-<version>` package of a 6.8 kernel |
 | Placement `CAT` no | No L3 allocation, or other resctrl groups | Remove the groups, or accept a shared L3 |
-| `N x <video> on a port take N Gb/s, and <PF> links at N Gb/s` or `<PF> has no link` | The sessions of a port do not fit its link, or the port has none: `sessions` counts a build's, port 0 of `whole` filled first | Fewer `sessions`, or the cable and the link of that port |
+| `N x <video> on a port take N Gb/s, and <PF> links at N Gb/s` or `<PF> has no link` | The sessions of a port do not fit its link, or the port has none: `sessions` counts a build's, port 0 of `whole` filled first, or half on each with `jpegxs` | Fewer `sessions`, or the cable and the link of that port |
 | `--perf_compare_nics <mode> takes two ports of each of two NICs`, `both NICs are on NUMA node N` | The topology declares fewer than four ports (`PERF_PORTS`), or they are not two ports of each of two cards on two nodes | The second card of both hosts, cabled port to port |
 | `single core takes up to 60 sessions ...` | A single core role with more sessions than an MTL scheduler takes; the refs job refuses it before the build | Up to 60 `sessions` |
 | `NUMA node N has N isolated free cores and N others, not N of either` | A NIC's node has fewer than 3 cores a slot of either, after its first two: two slots a node with `single`, one with `split`, `redundant` and `whole` (§3.1) | `split`, `redundant` or `whole`, or a host with more cores |
