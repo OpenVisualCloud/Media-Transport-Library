@@ -359,6 +359,12 @@ int main(int argc, char** argv) {
   int run_time_s = 0;
   int test_time_s;
 
+#ifdef WINDOWSENV
+  /* Windows buffers stdout in full, also on a console, and _IOLBF is full
+   * buffering there too: with no buffer, each log line shows at once. */
+  (void)setvbuf(stdout, NULL, _IONBF, 0);
+#endif
+
   ctx = st_app_zmalloc(sizeof(*ctx));
   if (!ctx) {
     err("%s, ctx alloc fail\n", __func__);
