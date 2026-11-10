@@ -212,6 +212,8 @@ var
   Code: Integer;
 begin
   if CurStep <> ssPostInstall then Exit;
+  // A moving bar while the scripts run: the driver build takes a minute.
+  WizardForm.ProgressGauge.Style := npbstMarquee;
   if WizardIsTaskSelected('host') then begin
     WizardForm.StatusLabel.Caption := 'Setting up Windows for MTL...';
     // The script finds the bin folder and the Defender exclusions of {app}.
@@ -236,6 +238,7 @@ begin
       SuppressibleMsgBox('install_drivers.ps1 did not install the drivers (exit code ' + IntToStr(Code) +
         '). See ' + LogFile('install_drivers.log') + '.', mbError, MB_OK, IDOK);
   end;
+  WizardForm.ProgressGauge.Style := npbstNormal;
 end;
 
 function NeedRestart(): Boolean;
