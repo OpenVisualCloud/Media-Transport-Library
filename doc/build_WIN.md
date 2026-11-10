@@ -72,10 +72,13 @@ cd dpdk
 git am "$MTL_PATH"/patches/dpdk/"${DPDK_VER}"/*.patch
 git am "$MTL_PATH"/patches/dpdk/"${DPDK_VER}"/windows/*.patch
 
-meson setup -Dmax_lcores=256 build
+meson setup -Dplatform=generic -Dmax_lcores=256 build
 meson compile -C build
 meson install -C build
 ```
+
+`-Dplatform=generic` makes a DPDK for each x86-64 CPU, not only for the CPU of
+this machine. The installer of part 4 needs it.
 
 The MTL clone warns that `RxTxApp.py` and `rxtxapp.py` collide. NTFS does
 not tell upper case from lower case. The build does not use these files.
@@ -111,64 +114,27 @@ To run the unit tests (no NIC needed):
 ./build.sh unit
 ```
 
-## 4. Set up Windows and the drivers
+## 4. Install your build
 
-The installer does this. For a source build, do it yourself:
-
-1. Turn off Secure Boot and put the EWDK ISO in Downloads, as part 1 of the
-   [run guide](run_WIN.md) tells.
-
-1. Get the driver source, in the UCRT64 shell:
-
-    ```bash
-    cd /c/mtl && git clone https://dpdk.org/git/dpdk-kmods
-    ```
-
-1. In PowerShell as administrator, run the scripts of the MTL tree, then
-   restart Windows:
-
-    ```powershell
-    cd C:\mtl\Media-Transport-Library\windows\scripts
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\windows_setup.ps1 apply -SchedulerCpus auto
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\install_drivers.ps1 apply -Source C:\mtl\dpdk-kmods\windows
-    Restart-Computer
-    ```
-
-    For a PF, add `-HardwareIds <ID>` to `install_drivers.ps1`, with the ID of
-    part 1 of the run guide, and copy `ice.pkg` of the
-    [Linux ice driver package](https://www.intel.com/content/www/us/en/download/19630/intel-network-adapter-driver-for-800-series-devices-under-linux.html)
-    to `C:\dpdk\lib\ice.pkg`. `status` shows each item of a script, and
-    `undo` puts each item back.
-
-Then run the test of part 2 of the run guide in PowerShell as administrator:
-`windows\scripts\run_test.ps1`. `build.sh` puts `RxTxApp.exe` in
-`C:\msys64\ucrt64\bin`, which `windows_setup.ps1` puts on the PATH.
-
-## 5. Make the installer
-
-The CI job "Windows MSYS2 build" makes the installer on each run. To make it on
-your machine:
-
-1. Build DPDK for each x86-64 CPU, not only for the CPU of your machine. In
-   part 2, use `meson setup -Dplatform=generic build`, as CI does.
-   `package.sh` refuses a DPDK built with `-march=native`.
+Make the installer of your build, and install MTL with it.
 
 1. Install Inno Setup 6 from <https://jrsoftware.org/isdl.php>.
 
-1. Build MTL, then make the installer in the UCRT64 shell:
+1. Make the installer in the UCRT64 shell. It takes the release build that
+   `build.sh` installed:
 
     ```bash
-    ./build.sh release
     windows/scripts/package.sh
     ```
 
-    The installer is `build_installer/mtl-<version>-win64-setup.exe`. It holds
-    `libmtl.dll`, `RxTxApp.exe` and their DLLs, the headers and the import
-    library, the scripts of `windows/scripts`, the source of NetUIO and
-    virt2phys of dpdk-kmods, and the DDP package (`ice.pkg`) of the ice
-    driver of `versions.env`.
+1. Do the [run guide](run_WIN.md) with
+   `build_installer\mtl-<version>-win64-setup.exe`.
 
-## 6. Troubleshooting
+The installer runs the scripts of `windows/scripts`. You can also run each
+script yourself in PowerShell as administrator, with `status`, `apply` or
+`undo`. The CI job "Windows MSYS2 build" makes the same installer on each run.
+
+## 5. Troubleshooting
 
 | Symptom | Fix |
 | --- | --- |
