@@ -11,12 +11,15 @@
 # a libmtl.dll that can stop with an illegal instruction on other CPUs.
 #
 # Usage: windows/scripts/package.sh [--out <dir>] [--kmods <dpdk-kmods tree>]
-#        [--dpdk <DPDK source tree>] [--iscc <ISCC.exe>] [--stage-only]
+#        [--dpdk <DPDK source tree>] [--ice <ice tarball>] [--iscc <ISCC.exe>]
+#        [--stage-only]
 #
 #   --out         Output folder (default: build_installer).
 #   --kmods       A dpdk-kmods clone. Default: a clone of DPDK_KMODS_COMMIT
 #                 in the output folder.
 #   --dpdk        The DPDK source tree, for its licence files (default: dpdk).
+#   --ice         The ice driver package of versions.env, for its DDP package
+#                 (ice.pkg). Default: a download in the output folder.
 #   --iscc        The Inno Setup compiler. Default: iscc on the PATH, or the
 #                 Inno Setup 6 folder of Program Files.
 #   --stage-only  Make the folder of the files, but not the setup.exe.
@@ -34,6 +37,7 @@ die() {
 out=build_installer
 kmods=""
 dpdk_src=dpdk
+ice_tar=""
 iscc=""
 stage_only=0
 while [ $# -gt 0 ]; do
@@ -41,9 +45,10 @@ while [ $# -gt 0 ]; do
 	--out) out="$2" && shift ;;
 	--kmods) kmods="$2" && shift ;;
 	--dpdk) dpdk_src="$2" && shift ;;
+	--ice) ice_tar="$2" && shift ;;
 	--iscc) iscc="$2" && shift ;;
 	--stage-only) stage_only=1 ;;
-	-h | --help) sed -n '6,22p' "$0" | sed 's/^# \{0,1\}//' && exit 0 ;;
+	-h | --help) sed -n '6,25p' "$0" | sed 's/^# \{0,1\}//' && exit 0 ;;
 	*) die "unknown argument: $1 (see --help)" ;;
 	esac
 	shift
@@ -66,7 +71,7 @@ done
 
 stage="$out/stage"
 rm -rf "$stage"
-mkdir -p "$stage"/{bin,lib/pkgconfig,include,scripts,config,licenses,drivers}
+mkdir -p "$stage"/{bin,lib/pkgconfig,include,scripts,licenses,drivers,ddp}
 
 # The programs, and each DLL of MSYS2 that they load.
 cp "$prefix/bin/libmtl.dll" "$prefix/bin/RxTxApp.exe" "$stage/bin/"
@@ -85,7 +90,6 @@ sed 's|^prefix=.*|prefix=${pcfiledir}/../..|' "$prefix/lib/pkgconfig/mtl.pc" >"$
 cp -r "$prefix/include/mtl" "$stage/include/"
 
 cp windows/scripts/*.ps1 "$stage/scripts/"
-cp windows/installer/loop.json "$stage/config/"
 
 # The driver source: install_drivers.ps1 builds it on the host.
 if [ -z "$kmods" ]; then
@@ -106,6 +110,24 @@ done
 cp "$kmods/windows/README.rst" "$stage/drivers/dpdk-kmods/windows/"
 echo "dpdk-kmods $(git -C "$kmods" rev-parse HEAD 2>/dev/null || echo "$DPDK_KMODS_COMMIT"), BSD-3-Clause (SPDX header of each file)" \
 	>"$stage/drivers/dpdk-kmods/VERSION.txt"
+
+# The DDP package of the ice driver of versions.env: the ice PMD of DPDK needs
+# it for an E810 or E830 PF. Setup puts it in C:\dpdk\lib (patch 0001).
+# shellcheck source=/dev/null
+. ./versions.env
+if [ -z "$ice_tar" ]; then
+	ice_tar="$out/ice-$ICE_VER.tar.gz"
+	[ -s "$ice_tar" ] || curl -fsSL --retry 3 -o "$ice_tar" "https://downloadmirror.intel.com/$ICE_DMID/ice-$ICE_VER.tar.gz" ||
+		die "cannot download ice-$ICE_VER.tar.gz: give --ice <file>"
+fi
+rm -rf "$out/ice-ddp" && mkdir -p "$out/ice-ddp"
+tar -xzf "$ice_tar" -C "$out/ice-ddp" --wildcards '*/ddp/*' || die "no ddp folder in $ice_tar"
+pkg_file="$(find "$out/ice-ddp" -name 'ice-*.pkg' | head -1)"
+[ -n "$pkg_file" ] || die "no ice-*.pkg in $ice_tar"
+cp "$pkg_file" "$stage/ddp/ice.pkg"
+mkdir -p "$stage/licenses/ice-ddp"
+cp "$(dirname "$pkg_file")/LICENSE" "$stage/licenses/ice-ddp/LICENSE"
+echo "$(basename "$pkg_file") of ice-$ICE_VER" >"$stage/licenses/ice-ddp/VERSION.txt"
 
 # The licences: MTL, DPDK (static in libmtl.dll), and the package of each DLL.
 cp LICENSE "$stage/licenses/MTL-LICENSE.txt"

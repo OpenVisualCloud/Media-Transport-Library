@@ -30,7 +30,8 @@ packages, the virt2phys device and the certificates; Windows then gives each
 NIC its own driver again.
 
 -Ewdk: a folder (the EWDK ISO mounted, for example E:\) or the ISO file.
-With no -Ewdk, the script looks for a mounted EWDK on each drive.
+With no -Ewdk, the script looks for a mounted EWDK on each drive, then for an
+EWDK ISO (*ewdk*.iso) in the Downloads folder, which it mounts.
 
 -HardwareIds: the IDs of the last apply, or the Intel Ethernet Adaptive
 Virtual Function (the iavf VF of E810 and E830). For a PF, give its ID, for
@@ -100,19 +101,24 @@ function Save-State($state) {
     $state | ConvertTo-Json -Depth 4 | Set-Content -Path $StateFile -Encoding UTF8
 }
 
-# The root folder of the EWDK: -Ewdk, the ISO of -Ewdk (mounted here), or a
-# mounted EWDK on a drive.
+# The root folder of the EWDK: -Ewdk, a mounted EWDK on a drive, or an EWDK
+# ISO of the Downloads folder. The script mounts an ISO, and the end of the
+# script unmounts it.
 function Find-Ewdk {
-    if ($Ewdk -like '*.iso') {
-        $img = Mount-DiskImage -ImagePath (Resolve-Path $Ewdk).Path -PassThru
-        $script:Mounted = $img.ImagePath
-        return "$(($img | Get-Volume).DriveLetter):\"
+    $iso = $Ewdk
+    if ($iso -eq '') {
+        foreach ($d in Get-PSDrive -PSProvider FileSystem) {
+            if (Test-Path (Join-Path $d.Root 'BuildEnv\SetupBuildEnv.cmd')) { return $d.Root }
+        }
+        $f = Get-ChildItem (Join-Path $env:USERPROFILE 'Downloads') -Filter '*ewdk*.iso' -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($null -eq $f) { return '' }
+        $iso = $f.FullName
     }
-    if ($Ewdk -ne '') { return $Ewdk }
-    foreach ($d in Get-PSDrive -PSProvider FileSystem) {
-        if (Test-Path (Join-Path $d.Root 'BuildEnv\SetupBuildEnv.cmd')) { return $d.Root }
-    }
-    return ''
+    if ($iso -notlike '*.iso') { return $iso }
+    $img = Mount-DiskImage -ImagePath (Resolve-Path $iso).Path -PassThru
+    $script:Mounted = $img.ImagePath
+    return "$(($img | Get-Volume).DriveLetter):\"
 }
 
 function Test-Built {
@@ -182,7 +188,7 @@ function Item-Build([string]$act, $state) {
             }
             $root = Find-Ewdk
             if ($root -eq '' -or -not (Test-Path (Join-Path $root 'BuildEnv\SetupBuildEnv.cmd'))) {
-                return Result 'build' 'error' 'no EWDK: mount the EWDK ISO, or give -Ewdk <ISO file>'
+                return Result 'build' 'error' 'no EWDK: put the EWDK ISO in Downloads, or give -Ewdk <ISO file>'
             }
             $src = Join-Path $WorkDir 'src'
             if (Test-Path $src) { Remove-Item -Recurse -Force $src }
