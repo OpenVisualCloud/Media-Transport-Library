@@ -6,7 +6,7 @@ The Media Transport Library features DMA support to enhance RX video session den
 
 ## 2. DMA driver bind to PMD(vfio-pci) mode
 
-> On Windows, install the NetUIO driver for the DMA devices too. See [Install drivers](run_WIN.md#2-install-the-netuio-and-virt2phys-drivers-one-time).
+> On Windows, install the NetUIO driver for the DMA devices too. See [Install MTL](run_WIN.md#1-install-mtl).
 
 ### 2.1. Locate the available DMA port
 
