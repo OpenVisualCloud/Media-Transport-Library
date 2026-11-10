@@ -199,6 +199,16 @@ TEST_F(MtDevEalArgvTest, MainLcoreIsPrependedToTheCorelist) {
   EXPECT_EQ(ValueAfter("-l"), "0,52,53,54,55");
 }
 
+/* DPDK on Windows has no regcomp(), so only a <glob>:<level> sets a log type. */
+TEST_F(MtDevEalArgvTest, DebugLogLevelUsesAGlobNotARegex) {
+  ut_dev_set_log_level(ctx_, MTL_LOG_LEVEL_DEBUG);
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 1);
+  EXPECT_EQ(ValueAfter("--log-level"), "user*:debug");
+}
+
 TEST_F(MtDevEalArgvTest, CorelistNamingEveryLcoreIsNotTruncated) {
   std::string lcores;
   for (unsigned int lcore = 1; lcore < RTE_MAX_LCORE; lcore++) {
