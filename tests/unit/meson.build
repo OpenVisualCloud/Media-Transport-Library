@@ -12,7 +12,8 @@ unit_link_args = []
 # sources and the C++ link of UnitTest take it as target arguments.
 if not is_windows
   unit_cpp_args += ['-fstack-protector-strong', '-fstack-clash-protection', '-fcf-protection=full',
-    '-Wformat', '-Wformat-security', '-Werror=format-security']
+    '-Wformat', '-Wformat-security', '-Werror=format-security', '-Wimplicit-fallthrough',
+    '-D_GLIBCXX_ASSERTIONS']
   if get_option('optimization') not in ['0', 'plain'] and get_option('b_sanitize') == 'none' and not ' '.join(get_option('cpp_args')).contains('_FORTIFY_SOURCE')
     fortify = meson.get_compiler('cpp').get_define('__USE_FORTIFY_LEVEL', prefix : '#include <string.h>',
       args : ['-O2', '-U_FORTIFY_SOURCE', '-D_FORTIFY_SOURCE=3']) == '3' ? '3' : '2'
@@ -52,6 +53,8 @@ unit_sources = [
   'common/ut_tx_ring_test.cpp',
   'common/mt_bitmap_harness.c',
   'common/mt_bitmap_test.cpp',
+  'common/mt_mempool_harness.c',
+  'common/mt_mempool_test.cpp',
   'dev/mt_dev_harness.c',
   'dev/mt_dev_igc_test.cpp',
   'dev/mt_dev_rx_desc_test.cpp',
