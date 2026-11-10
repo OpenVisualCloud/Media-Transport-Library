@@ -98,14 +98,15 @@ $lcores = Get-Lcores
 $base = @('--config_file', $json, '--test_time', "$Seconds")
 if ($lcores -ne '') { $base += @('--lcores', $lcores) }
 
-# Run RxTxApp with its output in a file: a console window slows the RX
-# statistics. Gives the result lines and the exit code.
+# Run RxTxApp. Its log shows in the window and goes to $log. Gives the
+# result lines and the exit code.
 function Invoke-Test([string[]]$extra, [string]$log) {
     # A line of RxTxApp on its standard error must not stop the script.
     $ErrorActionPreference = 'Continue'
     Write-Host "RxTxApp $($base + $extra -join ' ')"
     Write-Host "  $Seconds s; log $log"
-    & RxTxApp.exe @base @extra *> $log
+    # "$_": a line of the standard error as text, not as an error record.
+    & RxTxApp.exe @base @extra 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $log | Write-Host
     $code = $LASTEXITCODE
     $lines = @(Select-String -Path $log -Pattern '\w+_result\(\d+\), (OK|FAILED).*' | ForEach-Object {
             [pscustomobject]@{ State = $_.Matches[0].Groups[1].Value; Text = $_.Matches[0].Value } })
