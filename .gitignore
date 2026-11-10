@@ -73,6 +73,8 @@ dkms.conf
 !.vscode/mcp.json
 !.claude
 !.mcp.json
+# The sample configuration of the Windows installer.
+!windows/installer/loop.json
 .github/claude/settings.local.json
 *.log
 *.log_*
@@ -91,6 +93,7 @@ tests/acceptance/logs
 html/
 test.*
 build/
+build_installer/
 out*
 assets/
 *.pkg
