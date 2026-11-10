@@ -66,6 +66,7 @@ if ($Ports.Count -lt 2) {
     exit 1
 }
 
+Write-Host "Making the test files in $Dir"
 $yuv = Join-Path $Dir 'test_1080p.yuv'
 $pcm = Join-Path $Dir 'test.pcm'
 $txt = Join-Path $Dir 'test.txt'
@@ -98,20 +99,63 @@ $lcores = Get-Lcores
 $base = @('--config_file', $json, '--test_time', "$Seconds")
 if ($lcores -ne '') { $base += @('--lcores', $lcores) }
 
-# Run RxTxApp. Its log shows in the window and goes to $log. Gives the
-# result lines and the exit code.
+# Run RxTxApp in the background. Its log goes to $log, and the window shows
+# each new line of it with no time stamp ($log keeps the full line), under a
+# status line that turns while RxTxApp runs. Gives the result lines and the
+# exit code.
 function Invoke-Test([string[]]$extra, [string]$log) {
-    # A line of RxTxApp on its standard error must not stop the script.
+    # A line of a program on its standard error must not stop the script.
     $ErrorActionPreference = 'Continue'
-    Write-Host "RxTxApp $($base + $extra -join ' ')"
+    $all = @($base + $extra | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } })
+    Write-Host "RxTxApp $($all -join ' ')"
     Write-Host "  $Seconds s; log $log"
-    # A line of the standard error comes as an error record: take its text.
-    # "$_" of an empty line gives "System.Management.Automation.RemoteException".
-    # The window shows each line with no time stamp; $log keeps the full line.
-    & RxTxApp.exe @base @extra 2>&1 | ForEach-Object {
-        if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.Exception.Message } else { "$_" }
-    } | Tee-Object -FilePath $log | ForEach-Object { Write-Host ($_ -replace '^MTL: \d{4}-\d\d-\d\d \d\d:\d\d:\d\d, ', 'MTL: ') }
-    $code = $LASTEXITCODE
+    Remove-Item -Path $log -ErrorAction SilentlyContinue
+    # cmd.exe writes the standard output and error of RxTxApp to one file, in order.
+    $p = Start-Process cmd.exe -ArgumentList "/d /s /c `"RxTxApp.exe $($all -join ' ') > `"$log`" 2>&1`"" -NoNewWindow -PassThru
+    $null = $p.Handle # Without the handle, PowerShell 5.1 loses the exit code.
+    # No status line when the output goes to a file or a pipe.
+    $spin = if ([Console]::IsOutputRedirected) { '' } else { '|/-\' }
+    $width = 79
+    try { $width = $Host.UI.RawUI.WindowSize.Width - 1 } catch { }
+    $t0 = Get-Date
+    $pos = 0
+    $rest = ''
+    $i = 0
+    try {
+        while ($true) {
+            $exited = $p.HasExited
+            $new = @()
+            if (Test-Path $log) {
+                $fs = [IO.File]::Open($log, 'Open', 'Read', 'ReadWrite')
+                try {
+                    if ($fs.Length -gt $pos) {
+                        $null = $fs.Seek($pos, 'Begin')
+                        $buf = New-Object byte[] ($fs.Length - $pos)
+                        $n = $fs.Read($buf, 0, $buf.Length)
+                        $pos += $n
+                        $parts = ($rest + [Text.Encoding]::UTF8.GetString($buf, 0, $n)) -split "`r?`n"
+                        $rest = $parts[-1]
+                        if ($parts.Count -gt 1) { $new = @($parts[0..($parts.Count - 2)]) }
+                    }
+                } finally { $fs.Close() }
+            }
+            if ($exited -and $rest -ne '') { $new += $rest; $rest = '' }
+            if ($new.Count -and $spin) { Write-Host -NoNewline ("`r" + ' ' * $width + "`r") }
+            foreach ($l in $new) { Write-Host ($l -replace '^MTL: \d{4}-\d\d-\d\d \d\d:\d\d:\d\d, ', 'MTL: ') }
+            if ($exited) { break }
+            if ($spin) {
+                $sec = [int]((Get-Date) - $t0).TotalSeconds
+                Write-Host -NoNewline ("`r{0} RxTxApp runs: {1} s, test time {2} s" -f $spin[$i % 4], $sec, $Seconds)
+                $i++
+            }
+            Start-Sleep -Milliseconds 200
+        }
+        if ($spin) { Write-Host -NoNewline ("`r" + ' ' * $width + "`r") }
+    } finally {
+        # Ctrl+C stops the script: stop RxTxApp too.
+        if (-not $p.HasExited) { & taskkill.exe /PID $p.Id /T /F *> $null }
+    }
+    $code = $p.ExitCode
     $lines = @(Select-String -Path $log -Pattern '\w+_result\(\d+\), (OK|FAILED).*' | ForEach-Object {
             [pscustomobject]@{ State = $_.Matches[0].Groups[1].Value; Text = $_.Matches[0].Value } })
     return [pscustomobject]@{ Code = $code; Lines = $lines }
