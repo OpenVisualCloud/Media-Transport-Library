@@ -204,6 +204,13 @@ int ut_txv_run_control_in_callback(ut_txv_ctx* ctx, enum ut_txv_control call, bo
  * Returns whether it got the session; *locked_after whether the lock stayed held. */
 bool ut_txv_get_timeout_on_endless_pass(ut_txv_ctx* ctx, int timeout_us,
                                         bool* locked_after);
+/* Runs stats on session A while holding an app mutex needed by session B's callback. */
+bool ut_txv_stats_with_peer_callback_completes(ut_txv_ctx* ctx, int timeout_ms);
+/* Runs two scheduler callbacks that query separate target sessions on each other. */
+bool ut_txv_cross_scheduler_stats_complete(ut_txv_ctx* ctx, int timeout_ms);
+/* Migrates the source while a destination callback queries that source session. */
+bool ut_txv_migration_with_destination_callback_completes(ut_txv_ctx* ctx,
+                                                          int timeout_ms);
 
 /* A frame-level session of UT_TXV_ZC_FRAMES one-pkt frames, run by tvs_tasklet_handler()
  * against an app that hands over a chosen frame, or is busy, with reclaim.enabled or not.

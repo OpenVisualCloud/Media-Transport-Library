@@ -13,6 +13,7 @@
 #include <cerrno>
 #include <string>
 
+#include "common/ut_known_bug.h"
 #include "session/st20_tx_harness.h"
 
 namespace {
@@ -105,6 +106,37 @@ TEST(St20TxSessionLockTimeoutTest, GetTimeoutGivesUpOnAPassThatNeverEnds) {
 
   EXPECT_FALSE(ut_txv_get_timeout_on_endless_pass(ctx, 100, &locked_after));
   EXPECT_FALSE(locked_after);
+  ut_txv_destroy(ctx);
+}
+
+TEST(St20TxSessionLockDeadlockTest, StatsCompletesWhilePeerCallbackNeedsAppMutex) {
+  UT_KNOWN_BUG("stats waits for a peer callback blocked on the caller's app mutex");
+  ASSERT_EQ(0, ut_txv_init());
+  ut_txv_ctx* ctx = ut_txv_create();
+  ASSERT_NE(nullptr, ctx);
+
+  EXPECT_TRUE(ut_txv_stats_with_peer_callback_completes(ctx, 100));
+  ut_txv_destroy(ctx);
+}
+
+TEST(St20TxSessionLockDeadlockTest, CrossSchedulerCallbacksQueryOppositeSessions) {
+  UT_KNOWN_BUG("cross-scheduler callbacks wait for each other's active pass");
+  ASSERT_EQ(0, ut_txv_init());
+  ut_txv_ctx* ctx = ut_txv_create();
+  ASSERT_NE(nullptr, ctx);
+
+  EXPECT_TRUE(ut_txv_cross_scheduler_stats_complete(ctx, 100));
+  ut_txv_destroy(ctx);
+}
+
+TEST(St20TxSessionLockDeadlockTest,
+     MigrationCompletesWhileDestinationCallbackQueriesSource) {
+  UT_KNOWN_BUG("migration waits for a destination callback blocked on the source slot");
+  ASSERT_EQ(0, ut_txv_init());
+  ut_txv_ctx* ctx = ut_txv_create();
+  ASSERT_NE(nullptr, ctx);
+
+  EXPECT_TRUE(ut_txv_migration_with_destination_callback_completes(ctx, 100));
   ut_txv_destroy(ctx);
 }
 
