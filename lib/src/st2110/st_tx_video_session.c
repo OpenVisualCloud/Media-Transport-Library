@@ -2933,6 +2933,7 @@ static int tvs_tasklet_handler(void* priv) {
       mt_stat_u64_update(&s->stat_time, delta_ns);
     }
   }
+  tx_video_session_dp_done(mgr);
 
   return pending;
 }
@@ -4188,7 +4189,9 @@ static int tv_api_lock(struct st_tx_video_session_impl* s,
     struct st_tx_video_sessions_mgr* m = s->mgr;
     int i = s->idx;
 
-    if (mt_sch_on_own_thread(mt_sch_instance(m->parent, m->idx))) {
+    /* in the session's own callback a holder waits for that callback, so no spinning */
+    if (mt_sch_on_own_thread(mt_sch_instance(m->parent, m->idx)) &&
+        atomic_load_explicit(&m->dp_slot.idx, memory_order_relaxed) == i) {
       if (!rte_spinlock_trylock(&m->mutex[i])) return -EBUSY;
     } else if (!tx_video_session_get(m, i)) {
       continue;
@@ -4240,6 +4243,7 @@ static int tv_mgr_init(struct mtl_main_impl* impl, struct mtl_sch_impl* sch,
   for (i = 0; i < ST_SCH_MAX_TX_VIDEO_SESSIONS; i++) {
     rte_spinlock_init(&mgr->mutex[i]);
   }
+  mt_sch_dp_slot_init(&mgr->dp_slot);
 
   memset(&ops, 0x0, sizeof(ops));
   ops.priv = mgr;

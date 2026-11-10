@@ -76,9 +76,26 @@ static inline uint64_t mt_sch_avg_ns_loop(struct mtl_sch_impl* sch) {
   return sch->avg_ns_per_loop;
 }
 
-/* 0 once no pass of sch begun before the call still runs; at once if sch is offline or
- * the caller is its thread. -ETIMEDOUT after timeout_us unless that is 0. */
-int mt_sch_quiescent_wait(struct mtl_sch_impl* sch, int timeout_us);
+/* Tasklets only: into slot idx before reading its lock, leaving the last slot. */
+static inline void mt_sch_dp_slot_enter(struct mt_sch_dp_slot* dp, int idx) {
+  atomic_store_explicit(&dp->idx, idx, memory_order_release);
+  if (dp->fence)
+    atomic_thread_fence(memory_order_seq_cst);
+  else /* the membarrier(2) in mt_sch_quiescent_wait() orders the store before the load */
+    atomic_signal_fence(memory_order_seq_cst);
+}
+
+static inline void mt_sch_dp_slot_leave(struct mt_sch_dp_slot* dp) {
+  atomic_store_explicit(&dp->idx, -1, memory_order_release);
+}
+
+void mt_sch_dp_slot_init(struct mt_sch_dp_slot* dp);
+
+/* 0 once no pass of sch begun before the call still runs, or, if that pass is long and dp
+ * is set, once its tasklets are out of slot idx of dp; at once if sch is offline or the
+ * caller is its thread. -ETIMEDOUT after timeout_us unless that is 0. */
+int mt_sch_quiescent_wait(struct mtl_sch_impl* sch, const struct mt_sch_dp_slot* dp,
+                          int idx, int timeout_us);
 
 /* Whether the caller is sch's own thread, e.g. in a callback of one of its sessions. */
 static inline bool mt_sch_on_own_thread(struct mtl_sch_impl* sch) {

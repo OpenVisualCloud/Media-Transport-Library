@@ -1602,8 +1602,8 @@ size_t st22p_tx_frame_size(st22p_tx_handle handle);
 /**
  * Online update the destination info for the tx st2110-22(pipeline) session.
  *
- * @note Do not call it from any callback. It takes the per-session spinlock, waits for
- * the session's scheduler to end its tasklet pass in flight, and may wait for ARP.
+ * @note Do not call it from any callback. It takes the per-session spinlock, waits until
+ * the session's tasklets are done with it, and may wait for ARP.
  * @param handle
  *   The handle to the tx st2110-22(pipeline) session.
  * @param dst
@@ -1959,10 +1959,10 @@ int st20p_tx_get_pacing_params(st20p_tx_handle handle, double* tr_offset_ns,
 /**
  * Retrieve the general statistics(I/O) for one tx st2110-20(pipeline) session.
  *
- * @note Thread-safe. Takes the per-session spinlock, then waits for the session's
- * scheduler to end its tasklet pass in flight; the session skips up to two passes, so do
- * not call it in a tight loop. From a callback, only for the session that callback
- * belongs to; it may return -EBUSY there.
+ * @note Thread-safe. Takes the per-session spinlock, then waits until the session's
+ * tasklets are done with it, at most for its scheduler's pass in flight; the session
+ * skips up to two passes, so do not call it in a tight loop. In this session's own
+ * callbacks it may return -EBUSY.
  * @param handle
  *   The handle to the tx st2110-20(pipeline) session.
  * @param stats
@@ -1976,10 +1976,10 @@ int st20p_tx_get_session_stats(st20p_tx_handle handle, struct st20_tx_user_stats
 /**
  * Reset the general statistics(I/O) for one tx st2110-20(pipeline) session.
  *
- * @note Thread-safe. Takes the per-session spinlock, then waits for the session's
- * scheduler to end its tasklet pass in flight; the session skips up to two passes, so do
- * not call it in a tight loop. From a callback, only for the session that callback
- * belongs to; it may return -EBUSY there.
+ * @note Thread-safe. Takes the per-session spinlock, then waits until the session's
+ * tasklets are done with it, at most for its scheduler's pass in flight; the session
+ * skips up to two passes, so do not call it in a tight loop. In this session's own
+ * callbacks it may return -EBUSY.
  * @param handle
  *   The handle to the tx st2110-20(pipeline) session.
  * @return
@@ -1991,8 +1991,8 @@ int st20p_tx_reset_session_stats(st20p_tx_handle handle);
 /**
  * Online update the destination info for the tx st2110-20(pipeline) session.
  *
- * @note Do not call it from any callback. It takes the per-session spinlock, waits for
- * the session's scheduler to end its tasklet pass in flight, and may wait for ARP.
+ * @note Do not call it from any callback. It takes the per-session spinlock, waits until
+ * the session's tasklets are done with it, and may wait for ARP.
  * @param handle
  *   The handle to the tx st2110-20(pipeline) session.
  * @param dst

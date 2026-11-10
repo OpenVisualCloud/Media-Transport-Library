@@ -12,8 +12,8 @@
 
 #include <cerrno>
 #include <string>
+#include <tuple>
 
-#include "common/ut_known_bug.h"
 #include "session/st20_tx_harness.h"
 
 namespace {
@@ -58,6 +58,18 @@ TEST_P(St20TxSessionLockTaskletTest, RunsASessionWithoutTakingItsLock) {
   EXPECT_FALSE(locked_after);
 }
 
+/* A writer that finds the pass long waits for the tasklets to leave its session only. */
+TEST_P(St20TxSessionLockTaskletTest, PublishesTheSessionItIsOn) {
+  bool locked_in_run = true, locked_after = true;
+  int in_run = -2, after = -2;
+
+  EXPECT_EQ(1, ut_txv_run_tasklet_lock_probe(ctx_, GetParam(), false, &locked_in_run,
+                                             &locked_after));
+  ut_txv_lock_probe_slots(ctx_, &in_run, &after);
+  EXPECT_EQ(0, in_run);
+  EXPECT_EQ(-1, after);
+}
+
 /* Waiting first, a tasklet could start a pass that misses the lock taken after. */
 TEST_P(St20TxSessionLockControlTest, LocksThenWaitsForTheSchedulerOnce) {
   bool locked_at_wait = false;
@@ -88,6 +100,12 @@ TEST_P(St20TxSessionLockCallbackTest, ReturnsBusyInsteadOfSpinningOnAWaitingHold
   EXPECT_EQ(-EBUSY, ut_txv_run_control_in_callback(ctx_, GetParam(), true));
 }
 
+/* That holder waits only while the tasklets are in its session, not for a peer's
+ * callback, so the call waits for it as under the old per-session lock. */
+TEST_P(St20TxSessionLockCallbackTest, WaitsForAHolderFromAPeersCallback) {
+  EXPECT_EQ(0, ut_txv_run_control_in_peer_callback(ctx_, GetParam()));
+}
+
 TEST_P(St20TxSessionLockCallbackStatsTest, WorkForTheCallbacksOwnSession) {
   EXPECT_EQ(0, ut_txv_run_control_in_callback(ctx_, GetParam(), false));
 }
@@ -110,7 +128,6 @@ TEST(St20TxSessionLockTimeoutTest, GetTimeoutGivesUpOnAPassThatNeverEnds) {
 }
 
 TEST(St20TxSessionLockDeadlockTest, StatsCompletesWhilePeerCallbackNeedsAppMutex) {
-  UT_KNOWN_BUG("stats waits for a peer callback blocked on the caller's app mutex");
   ASSERT_EQ(0, ut_txv_init());
   ut_txv_ctx* ctx = ut_txv_create();
   ASSERT_NE(nullptr, ctx);
@@ -120,7 +137,6 @@ TEST(St20TxSessionLockDeadlockTest, StatsCompletesWhilePeerCallbackNeedsAppMutex
 }
 
 TEST(St20TxSessionLockDeadlockTest, CrossSchedulerCallbacksQueryOppositeSessions) {
-  UT_KNOWN_BUG("cross-scheduler callbacks wait for each other's active pass");
   ASSERT_EQ(0, ut_txv_init());
   ut_txv_ctx* ctx = ut_txv_create();
   ASSERT_NE(nullptr, ctx);
@@ -131,7 +147,6 @@ TEST(St20TxSessionLockDeadlockTest, CrossSchedulerCallbacksQueryOppositeSessions
 
 TEST(St20TxSessionLockDeadlockTest,
      MigrationCompletesWhileDestinationCallbackQueriesSource) {
-  UT_KNOWN_BUG("migration waits for a destination callback blocked on the source slot");
   ASSERT_EQ(0, ut_txv_init());
   ut_txv_ctx* ctx = ut_txv_create();
   ASSERT_NE(nullptr, ctx);
@@ -140,20 +155,39 @@ TEST(St20TxSessionLockDeadlockTest,
   ut_txv_destroy(ctx);
 }
 
-class St20TxSessionLockAppMutexTest : public ::testing::TestWithParam<ut_txv_control> {};
+/* (call, whether the tasklets fence each slot store as without membarrier(2)) */
+using ControlFence = std::tuple<ut_txv_control, bool>;
+
+class St20TxSessionLockAppMutexTest : public ::testing::TestWithParam<ControlFence> {};
 
 TEST_P(St20TxSessionLockAppMutexTest, CompletesWhilePeerCallbackNeedsCallerMutex) {
-  UT_KNOWN_BUG("a control call waits for a peer callback blocked on the caller's mutex");
   ASSERT_EQ(0, ut_txv_init());
   ut_txv_ctx* ctx = ut_txv_create();
   ASSERT_NE(nullptr, ctx);
-  EXPECT_TRUE(ut_txv_control_with_peer_callback_completes(ctx, GetParam(), 100));
+  ut_txv_set_dp_fence(ctx, std::get<1>(GetParam()));
+  EXPECT_TRUE(
+      ut_txv_control_with_peer_callback_completes(ctx, std::get<0>(GetParam()), 100));
+  ut_txv_destroy(ctx);
+}
+
+/* As under the per-session lock the tasklets held before: none of the session's state
+ * changes under its callback. */
+class St20TxSessionLockOwnCallbackTest : public ::testing::TestWithParam<ControlFence> {};
+
+TEST_P(St20TxSessionLockOwnCallbackTest, WaitsUntilTheSessionsCallbackReturns) {
+  ASSERT_EQ(0, ut_txv_init());
+  ut_txv_ctx* ctx = ut_txv_create();
+  ASSERT_NE(nullptr, ctx);
+  ut_txv_set_dp_fence(ctx, std::get<1>(GetParam()));
+  bool done_in_callback = true;
+
+  EXPECT_EQ(0, ut_txv_control_during_own_callback(ctx, std::get<0>(GetParam()),
+                                                  &done_in_callback));
+  EXPECT_FALSE(done_in_callback);
   ut_txv_destroy(ctx);
 }
 
 TEST(St20TxSessionLockDeadlockTest, OwnSessionQueryFromAnotherSchedulerThread) {
-  UT_KNOWN_BUG(
-      "a frame-done callback on another scheduler's thread waits for its own scheduler");
   ASSERT_EQ(0, ut_txv_init());
   ut_txv_ctx* ctx = ut_txv_create();
   ASSERT_NE(nullptr, ctx);
@@ -215,10 +249,24 @@ INSTANTIATE_TEST_SUITE_P(Stats, St20TxSessionLockCallbackTest,
 
 }  // namespace
 
+std::string ControlFenceName(const ::testing::TestParamInfo<ControlFence>& info) {
+  return ControlName(::testing::TestParamInfo<ut_txv_control>(std::get<0>(info.param),
+                                                              info.index)) +
+         (std::get<1>(info.param) ? "Fence" : "Membarrier");
+}
+
 INSTANTIATE_TEST_SUITE_P(
     Calls, St20TxSessionLockAppMutexTest,
     /* free blocks in the tx_video_session_get() of tv_mgr_detach() (GET),
      * create and migration in tx_video_session_get_empty() (GET_EMPTY) */
-    ::testing::Values(UT_TXV_STATS_GET, UT_TXV_STATS_RESET, UT_TXV_UPDATE_DST, UT_TXV_GET,
-                      UT_TXV_GET_EMPTY),
-    ControlName);
+    ::testing::Combine(::testing::Values(UT_TXV_STATS_GET, UT_TXV_STATS_RESET,
+                                         UT_TXV_UPDATE_DST, UT_TXV_GET, UT_TXV_GET_EMPTY),
+                       ::testing::Bool()),
+    ControlFenceName);
+
+INSTANTIATE_TEST_SUITE_P(
+    Calls, St20TxSessionLockOwnCallbackTest,
+    ::testing::Combine(::testing::Values(UT_TXV_GET, UT_TXV_GET_TIMEOUT, UT_TXV_STATS_GET,
+                                         UT_TXV_STATS_RESET, UT_TXV_UPDATE_DST),
+                       ::testing::Bool()),
+    ControlFenceName);
