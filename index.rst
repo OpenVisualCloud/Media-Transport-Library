@@ -35,7 +35,6 @@ Contents
    doc/run_WIN.md
    doc/vm.md
    doc/vm_WIN.md
-   doc/workflow_WIN.md
    doc/aws.md
    doc/kernel_socket.md
    doc/asan.md

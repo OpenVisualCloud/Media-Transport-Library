@@ -1,82 +1,67 @@
-# Windows VM Setup Guide
+# VM guide for Windows: MTL with E810 or E830 VFs
 
-## 1. Host machine setup
+Best practices for MTL in a Windows VM on a Linux KVM host. Tested on
+Proxmox VE 9.2 with Windows 11 Pro guests and E810-C and E830-CC VFs: 1080p59
+VF to VF with rate limit pacing, with no frame loss. VMware ESXi and Hyper-V
+are not tested.
 
-We use the same CentOS 8 host setup as [vm guide](vm.md). Notice that PTP_KVM is not woking for Windows VM, MTL uses VM system time by default.
+Then build and run MTL in the VM: [build guide](build_WIN.md),
+[run guide](run_WIN.md).
 
-### 1.1. Create Windows VM
+## Host
 
-```bash
-# install if not
-sudo yum install virt-install virt-viewer
+1. **Use the out-of-tree `ice` driver** of `versions.env`
+   (`script/build_drivers.sh --driver ice`). The in-tree driver of the kernel
+   gives a VF no rate limit and no flow rules. Build it again after each new
+   host kernel. If the host has the in-tree `irdma`, block it: it does not
+   match the out-of-tree driver.
 
-# install virtio-win
-sudo yum install -y virtio-win
+1. **Make the VFs at boot, before the VMs start** (a systemd unit with
+   `Before=pve-guests.service` on Proxmox VE). Two VFs per PF, each with a
+   fixed MAC, trust on and spoof check off:
 
-sudo virt-install \
-        --name win_vm0 \
-        --vcpus 8 \
-        --cpu host-passthrough \
-        --ram 8192 \
-        --memballoon none \
-        --clock offset='localtime' \
-        --network default \
-        --disk /path_to_img/vm0.qcow2,size=20,bus=sata \
-        --cdrom /path_to_img/windows_server_2022.iso \
-        --boot cdrom,hd \
-        --hostdev pci_0000_af_01_0 \
-        --hostdev pci_0000_af_01_1 \
-        --graphics vnc,listen=0.0.0.0,port=5901 \
-        --video=qxl
-```
+    ```bash
+    echo 2 > /sys/bus/pci/devices/<pf>/sriov_numvfs
+    ip link set <pf_netdev> vf 0 mac 02:00:00:00:00:01 trust on spoofchk off
+    ip link set <pf_netdev> vf 1 mac 02:00:00:00:00:02 trust on spoofchk off
+    ```
 
-The VFs created are passed into VM by specifying `--hostdev pci_0000_xx_xx_x`.
+1. **A VF to VF stream needs no cable**: the switch of the adapter carries it.
+   But the stream also goes out of the PF port. If two senders use the same
+   multicast group on one network, each receiver gets both streams. Give each
+   sender its own group.
 
-After running `virt-install` command, the viewer will pop up and you can normally install Windows in the GUI.
+## VM
 
-### 1.2. Setup remote desktop access
+| Setting | Value | Why |
+| --- | --- | --- |
+| Machine | q35, OVMF (UEFI) | PCIe passthrough of the VFs |
+| VFs | PCIe passthrough (`hostpci0: <vf>,pcie=1`) | DPDK drives the VF |
+| CPU type | `host` | AVX2 and AVX-512 |
+| vCPUs | Pinned to host CPUs of the NUMA node of the adapter, which no other VM and no host service uses | The scheduler threads of MTL poll at 100 %. A busy host CPU makes them late. |
+| Memory | Bound to the same NUMA node, ballooning off | Passthrough pins the memory |
+| Secure Boot | Off: EFI variables with no enrolled keys | The drivers are test-signed |
 
-In virt-viewer window, logon to Windows, go to Start->Settings->System->Remote Desktop, set `Enable Remote Desktop` to `On`.
-
-If you set `--network default` above, the VM should use NAT IP address for the network. You can map the VM RDP port to host.
-
-```bash
-# get the assigned IP
-sudo virsh net-dhcp-leases default
-# enable public access
-sudo iptables -I FORWARD -m state -d 192.168.122.0/24 --state NEW,RELATED,ESTABLISHED -j ACCEPT
-# RDP(3389) port forward
-sudo iptables -t nat -I PREROUTING -p tcp --dport <public_port> -j DNAT --to $VM_IP:3389
-```
-
-On you local Windows PC, use `Remote Desktop Connection` or `Remote Desktop (Store)` to connect to [Host_IP]:<public_port>.
-
-## 2. VM setup
-
-### 2.1. Install virtio-win inside VM
-
-Attach the iso drive to VM:
+Proxmox VE example, with the adapter on NUMA node 2 and host CPUs 64-79 on that
+node:
 
 ```bash
-sudo virt-xml win_vm0 --add-device --disk /usr/share/virtio-win/virtio-win.iso,device=cdrom
+qm set <vmid> --hostpci0 <vf0>,pcie=1 --hostpci1 <vf1>,pcie=1
+qm set <vmid> --cpu host --cores 16 --numa 1 \
+    --numa0 cpus=0-15,hostnodes=2,memory=32768,policy=bind --affinity 64-79 --balloon 0
+qm set <vmid> --efidisk0 local-lvm:1,efitype=4m,pre-enrolled-keys=0
 ```
 
-In Windows VM, go to File Explorer->This PC->virtio-win, Click virtio-win-gt-x64.msi to install.
+Suspend BitLocker in the VM before you change the EFI disk.
 
-After the installation, you can detach the virtio iso and Windows iso from cdrom in virt-manager.
+## Template
 
-### 2.2. Build and run MTL
+Make a template when the build, the drivers and `windows_setup.ps1` are done.
+A new VM from it needs only its own VFs, CPU pinning and NUMA node, and a new
+computer name (`Rename-Computer`). NetUIO takes the new VFs by itself.
 
-See [Windows build guide](build_WIN.md) and [Windows run guide](run_WIN.md).
+## Limits
 
-When installing netuio driver, use below command for iavf:
-
-```bash
-devcon.exe update netuio.inf "PCI\VEN_8086&DEV_1889"
-```
-
-## Reference link
-
-You can find more detailed settings here:
-
-[Installing and managing Windows virtual machines](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/8/html/configuring_and_managing_virtualization/installing-and-managing-windows-virtual-machines-on-rhel_configuring-and-managing-virtualization)
+- The drivers are test-signed, so this setup is for a lab.
+- One MTL process for each VM.
+- A VM adds the noise of its host. Measure on bare metal for a product.
