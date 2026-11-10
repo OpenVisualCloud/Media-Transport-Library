@@ -1,6 +1,6 @@
 # Run guide for Windows
 
-Install MTL with the installer, then run RxTxApp. To build MTL from the
+Install MTL with the installer, then test it. To build MTL from the
 source, see the [build guide](build_WIN.md). For a Windows VM with VFs, see the
 [VM guide](vm_WIN.md).
 
@@ -9,15 +9,15 @@ source, see the [build guide](build_WIN.md). For a Windows VM with VFs, see the
 1. Turn off Secure Boot in the firmware: the drivers are test-signed. If
    BitLocker is on, suspend it first: `manage-bde -protectors -disable C:`.
 
-1. Mount the Enterprise WDK (EWDK) ISO, from the Microsoft page "Download the
-   Windows Driver Kit". Setup builds the drivers with it.
+1. Download the Enterprise WDK (EWDK) ISO from the Microsoft page "Download
+   the Windows Driver Kit" to your Downloads folder. Setup finds it there and
+   builds the drivers with it.
 
 1. Run `mtl-<version>-win64-setup.exe`, the `mtl-windows-installer` artifact
-   of the CI job "Windows MSYS2 build". On the "Host settings" page, give:
+   of the CI job "Windows MSYS2 build". On the "Host settings" page:
 
-    - **Scheduler CPUs**: the CPUs for MTL only, for example `8-15`. Do not
-      use CPU 0, keep two CPUs or more for Windows, and with SMT give both
-      threads of a core.
+    - **Scheduler CPUs**: keep `auto` (the last half of the cores, at most 8
+      CPUs), or give a list, for example `8-15`.
     - **NetUIO device IDs**: nothing for a VF. For a PF, its ID, for example
       `PCI\VEN_8086&DEV_1592` (E810-C for QSFP) or `PCI\VEN_8086&DEV_12D2`
       (E830-CC for QSFP). Never give the ID of the NIC that Windows uses for
@@ -25,47 +25,35 @@ source, see the [build guide](build_WIN.md). For a Windows VM with VFs, see the
 
 1. Restart Windows.
 
-1. For a PF only: copy `ice.pkg` of the
-   [Linux ice driver package](https://www.intel.com/content/www/us/en/download/19630/intel-network-adapter-driver-for-800-series-devices-under-linux.html)
-   to `C:\dpdk\lib\ice.pkg`.
-
-1. Open **Start > MTL > MTL status**. Each item must be `ok`. The `netuio`
-   line gives the PCI address of each port.
-
-Setup installs MTL in `C:\Program Files\MTL`, and writes its logs in
+Setup installs MTL in `C:\Program Files\MTL`, puts the DDP package of the
+E810 and E830 in `C:\dpdk\lib\ice.pkg`, and writes its logs in
 `C:\ProgramData\MTL\logs`. To remove MTL and put each Windows setting back,
 uninstall MTL in Settings > Apps.
 
-## 2. Run RxTxApp
+## 2. Test MTL
 
-1. In PowerShell, copy the sample configuration and make a source file of 10
-   frames:
+1. Double-click **MTL test** on the desktop, and let it make changes. It sends
+   two 1080p59 video, two audio and two ancillary streams from port 0 to port
+   1 for 30 s, and ends with `PASS` or `FAIL`. The two ports must reach each
+   other: two VFs of one PF, or two PFs on one network.
 
-    ```powershell
-    mkdir -Force C:\mtl; cd C:\mtl
-    copy 'C:\Program Files\MTL\config\loop.json' .
-    $b = New-Object byte[] (1920 * 1080 * 5 / 2 * 10); (New-Object Random).NextBytes($b)
-    [IO.File]::WriteAllBytes('C:\mtl\test_1080p.yuv', $b)
-    ```
-
-1. In `loop.json`, set the PCI addresses of your two ports. The file sends one
-   1080p59 stream from port 0 to port 1.
-
-1. Run RxTxApp on lcores of the scheduler CPUs:
+1. To run your own streams, start from the configuration of the test,
+   `C:\ProgramData\MTL\test\test.json`:
 
     ```powershell
-    RxTxApp.exe --config_file loop.json --test_time 30 --pacing_way rl --lcores 8-11
+    RxTxApp.exe --config_file my.json --test_time 30
     ```
 
-1. At the end, the log shows `app_tx_video_result(0), OK` and
-   `app_rx_video_result(0), OK`.
+**Start > MTL > MTL status** shows each Windows setting and the PCI address of
+each NetUIO port.
 
 ## 3. Troubleshooting
 
 | Symptom | Fix |
 | --- | --- |
 | Setup tells "Secure Boot is on" | Turn off Secure Boot, then run setup again. |
-| Setup shows no driver task | No EWDK is mounted. Mount it, then open **Start > MTL > MTL install drivers**. |
+| Setup shows no driver task | No EWDK found. Put the EWDK ISO in Downloads, then open **Start > MTL > MTL install drivers**. |
+| MTL test: "The test needs two NetUIO ports" | Give NetUIO the device ID of each port (run setup again), or connect the second PF. |
 | "MTL status": `build` is `error` | See `C:\ProgramData\MTL\drivers\build.log`. |
 | "MTL status": a port is not `OK` after the restart | Test signing is off (the `testsign` item), or Secure Boot is on. |
 | `RxTxApp.exe` is not found | Open a new PowerShell window after setup. |
