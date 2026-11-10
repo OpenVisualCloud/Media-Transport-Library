@@ -1,0 +1,96 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dawid Wesierski <dawid.wesierski@intel.com>
+Date: Tue, 10 Nov 2026 12:00:00 +0100
+Subject: [PATCH] net/iavf: fix init of VF left active by killed process
+
+When a process that uses an iavf VF ends without iavf_dev_close(), for
+example when it is killed, the VF does not send VIRTCHNL_OP_RESET_VF.
+The PF keeps the resources that the process negotiated, and the VF
+stays active.
+
+On Linux, vfio-pci resets the function when the next process opens the
+device, and the PF then resets its VF state. A bus driver that does no
+reset, such as NetUIO on Windows, keeps the VF active. The out-of-tree
+ice PF driver rejects OP_GET_VF_RESOURCES for an active VF, and the
+next probe fails:
+
+  iavf_wait_for_msg(): Return failure -5 for cmd 3
+  iavf_get_vf_resource(): Failed to execute command of OP_GET_VF_RESOURCE
+  iavf_init_vf(): iavf_get_vf_config failed
+  iavf_dev_init(): Init vf failed
+
+The host logs "PF failed to honor VF 0, opcode 3, error -22". Each new
+probe fails the same way. Only a reset of the VF clears the state.
+
+When OP_GET_VF_RESOURCES fails at probe, request a VF reset, wait for
+the PF to start and complete it, initialize the admin queue again, and
+do the version and resource steps once more. This is the reset sequence
+of iavf_dev_close() and iavf_init_vf() on a port reset. A successful
+init does not change. The reset recovery, which has just reset the VF,
+does not retry.
+
+Fixes: 22b123a36d07 ("net/avf: initialize PMD")
+Cc: stable@dpdk.org
+
+Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
+---
+ drivers/net/intel/iavf/iavf_ethdev.c | 36 +++++++++++++++++++++++++++-
+ 1 file changed, 35 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/intel/iavf/iavf_ethdev.c b/drivers/net/intel/iavf/iavf_ethdev.c
+index d800a3382a..2ead88447c 100644
+--- a/drivers/net/intel/iavf/iavf_ethdev.c
++++ b/drivers/net/intel/iavf/iavf_ethdev.c
+@@ -2627,6 +2627,36 @@ iavf_init_proto_xtr(struct rte_eth_dev *dev)
+ 	}
+ }
+ 
++static int
++iavf_reset_and_renegotiate(struct iavf_adapter *adapter)
++{
++	struct iavf_hw *hw = IAVF_DEV_PRIVATE_TO_HW(adapter);
++
++	PMD_INIT_LOG(WARNING, "Reset VF and retry init");
++
++	if (iavf_vf_reset(hw) != IAVF_SUCCESS || !iavf_is_reset_detected(adapter)) {
++		PMD_INIT_LOG(ERR, "VF reset not started");
++		return -1;
++	}
++	iavf_shutdown_adminq(hw);
++
++	if (iavf_check_vf_reset_done(hw) != 0) {
++		PMD_INIT_LOG(ERR, "VF is still resetting");
++		return -1;
++	}
++
++	iavf_init_adminq_parameter(hw);
++	if (iavf_init_adminq(hw) != IAVF_SUCCESS) {
++		PMD_INIT_LOG(ERR, "init_adminq failed");
++		return -1;
++	}
++
++	if (iavf_check_api_version(adapter) != 0)
++		return -1;
++
++	return iavf_get_vf_resource(adapter);
++}
++
+ static int
+ iavf_init_vf(struct rte_eth_dev *dev)
+ {
+@@ -2676,7 +2706,11 @@ iavf_init_vf(struct rte_eth_dev *dev)
+ 		goto err_api;
+ 	}
+ 
+-	if (iavf_get_vf_resource(adapter) != 0) {
++	err = iavf_get_vf_resource(adapter);
++	/* A probe can find the VF still active from a killed process: reset it once. */
++	if (err != 0 && !vf->in_reset_recovery)
++		err = iavf_reset_and_renegotiate(adapter);
++	if (err != 0) {
+ 		PMD_INIT_LOG(ERR, "iavf_get_vf_config failed");
+ 		goto err_alloc;
+ 	}
+-- 
+2.47.3
+
