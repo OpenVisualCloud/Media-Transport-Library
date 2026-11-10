@@ -1,181 +1,113 @@
 # Build guide for Windows
 
-## Requirements
+This is the default way to build MTL on Windows: MSYS2 UCRT64, the DPDK
+version of `versions.env`, and the MTL patches.
 
-- Windows Server 2025
+Tested on Windows 11 Pro (build 26300) with MinGW GCC 16.2 and DPDK 26.07.
 
-## Prepare build environment
+- To prepare Windows and run MTL, see the [run guide](run_WIN.md).
+- For a Windows VM with E810 or E830 VFs, see the [VM guide](vm_WIN.md).
 
-1. Install MSYS2
+## 1. Install MSYS2
 
-    Download the latest installer from <https://www.msys2.org/>
+1. In PowerShell:
 
-1. Install npcap
-
-    Download the latest installer from <https://npcap.com/#download>
-
-1. Run MSYS2 UCRT64
-
-    > **Note:** All the following commands should be executed in UCRT64 environment.
-
-1. Install tools
-
-    ```bash
-    pacman -S git pactoys unzip
+    ```powershell
+    $ProgressPreference = 'SilentlyContinue'
+    Invoke-WebRequest https://repo.msys2.org/distrib/msys2-x86_64-latest.sfx.exe -OutFile msys2.sfx.exe
+    .\msys2.sfx.exe -y -oC:\
     ```
 
-    ```bash
-    pacboy -S dlfcn:p gcc:p gtest:p json-c:p libpcap:p meson:p mman-win32:p
-    ```
+1. Open the UCRT64 shell (`C:\msys64\ucrt64.exe`). Do all the next steps in
+   this shell.
 
-1. Install npcap SDK
+    On the first start, MSYS2 refreshes its keys. With no direct internet
+    access this waits for minutes. Push Ctrl+C: the keys are already there.
 
-    ```bash
-    wget https://npcap.com/dist/npcap-sdk-1.16.zip
-    ```
-
-    ```bash
-    unzip -d npcap-sdk-1.16 ./npcap-sdk-1.16.zip
-    ```
+1. Behind a proxy, set it for MSYS2. MSYS2 does not use the proxy settings of
+   Windows:
 
     ```bash
-    cp -r ./npcap-sdk-1.16/lib/x64/. "${MSYSTEM_PREFIX}/lib"
+    echo 'export http_proxy=http://<proxy>:<port> https_proxy=http://<proxy>:<port>' > /etc/profile.d/proxy.sh
+    . /etc/profile.d/proxy.sh
     ```
 
-## Build DPDK
-
-1. Clone the MTL repository
+1. Update MSYS2. The first update can close the shell. Then open it again and
+   run the update again:
 
     ```bash
-    git clone https://github.com/OpenVisualCloud/Media-Transport-Library.git
+    pacman -Syuu
     ```
+
+1. Install the tools:
 
     ```bash
-    cd ./Media-Transport-Library
+    pacman -S --needed git pactoys unzip
+    pacboy -S --needed dlfcn:p gcc:p gtest:p json-c:p libpcap:p meson:p \
+        mman-win32:p ninja:p pkgconf:p python-pyelftools:p
     ```
+
+1. Install the npcap SDK:
 
     ```bash
-    MTL_PATH="$PWD"
+    curl -LO https://npcap.com/dist/npcap-sdk-1.16.zip
+    unzip -d npcap-sdk-1.16 npcap-sdk-1.16.zip
+    cp -r npcap-sdk-1.16/lib/x64/. "$MSYSTEM_PREFIX/lib"
     ```
 
-1. Clone the DPDK repository
+## 2. Build DPDK
 
-    > **Note:** The DPDK repository should be located directly in the MTL repository.
+MTL reads the DPDK source in `<MTL>/dpdk`. `git am` makes commits, so git
+needs a name and an email address.
 
-    `versions.env` in the MTL repository holds the DPDK version to use. Read the file to set `DPDK_VER`.
+```bash
+mkdir -p /c/mtl && cd /c/mtl
+git clone https://github.com/OpenVisualCloud/Media-Transport-Library.git
+cd Media-Transport-Library
+MTL_PATH="$PWD"
+. ./versions.env
+git clone -b "v${DPDK_VER}" https://github.com/DPDK/dpdk.git
 
-    ```bash
-    . "$MTL_PATH"/versions.env
-    ```
+git config --global user.name "<name>"
+git config --global user.email "<email>"
+cd dpdk
+git am "$MTL_PATH"/patches/dpdk/"${DPDK_VER}"/*.patch
+git am "$MTL_PATH"/patches/dpdk/"${DPDK_VER}"/windows/*.patch
 
-    ```bash
-    git clone -b "v${DPDK_VER}" https://github.com/DPDK/dpdk.git
-    ```
+meson setup -Dmax_lcores=256 build
+meson compile -C build
+meson install -C build
+```
 
-1. Convert the patch symlinks to files
+The MTL clone warns that `RxTxApp.py` and `rxtxapp.py` collide. NTFS does
+not tell upper case from lower case. The build does not use these files.
 
-    Run this step for the DPDK versions 22.03 to 23.11. For every other version, go to the
-    next step.
+The Windows patches of DPDK 26.07:
 
-    > **Note:** Some patch files in these versions point to a patch of an older DPDK version.
-    > Git can write such a file as a text file that holds the target path. It does this when
-    > the checkout has `core.symlinks=false`. A file system that cannot hold symlinks makes
-    > Git set this value at clone time. This is frequent on Windows. Some of these files are
-    > text in the repository itself. `git am` and `git apply` reject a text file.
+| Patch | What it does |
+| --- | --- |
+| 0001 | MinGW build and run fixes, `ice.pkg` from `C:\dpdk\lib`, the timer resolution |
+| 0002 | Builds the static libraries only. MinGW GCC 15 and later cannot share `rte_errno` between DLLs. |
+| 0003 | Does not install `sched.h` over the `sched.h` of MinGW |
+| 0004 | Fixes a crash in `rte_eal_alarm_cancel()` |
+| 0005 | Lets the iavf VF read its admin queue on Windows. Without it, each VF command times out. |
 
-    The command replaces each text file with the content of its target. A symlink can point
-    to a second symlink. The longest chain in the repository is two hops. The command makes
-    three passes, one more than the chain needs. It rewrites only a file whose first line
-    starts with `../` and ends with `.patch`, so it is safe to run twice.
+## 3. Build MTL
 
-    ```bash
-    for _ in 1 2 3; do
-        for f in "$MTL_PATH"/patches/dpdk/"${DPDK_VER}"/*.patch \
-                 "$MTL_PATH"/patches/dpdk/"${DPDK_VER}"/windows/*.patch; do
-            [ -f "$f" ] || continue
-            target=$(head -n 1 "$f")
-            case "$target" in ../*.patch) cp "$(dirname "$f")/$target" "$f" ;; esac
-        done
-    done
+```bash
+cd "$MTL_PATH"
+./build.sh release
+```
 
-    for f in "$MTL_PATH"/patches/dpdk/"${DPDK_VER}"/*.patch \
-             "$MTL_PATH"/patches/dpdk/"${DPDK_VER}"/windows/*.patch; do
-        [ -f "$f" ] || continue
-        case "$(head -n 1 "$f")" in ../*.patch) echo "not converted: $f" ;; esac
-    done
-    ```
+`libmtl.dll` needs `wpcap.dll`, the runtime of npcap. Install npcap, or, if
+you do not capture packets, copy the libpcap of MSYS2:
 
-    The command then checks each file again. A line in the output means the conversion is not
-    complete. Report such a file in a GitHub issue.
+```bash
+cp "$MSYSTEM_PREFIX/bin/libpcap.dll" "$MSYSTEM_PREFIX/bin/wpcap.dll"
+```
 
-    > **Note:** The three passes are enough only while every chain stays inside one directory
-    > depth. A chain such as `23.11/windows/A.patch -> ../../23.07/A.patch -> ../23.03/A.patch`
-    > makes the second pass compute the path `23.11/windows/../23.03/A.patch`. This path does
-    > not exist, so `cp` writes an error and the text file stays. Nothing in the repository
-    > enforces the depth rule.
+To run the unit tests (no NIC needed):
 
-    Do not commit the result. A commit of the converted tree replaces each symlink with a
-    large file. With `core.symlinks=false`, Git keeps the symlink mode and writes the patch
-    body as the link target. Such an entry is not valid. No tool in this repository and no CI
-    job finds either result.
-
-    To remove the changes, use this command. It restores from `HEAD`, not from the index, so
-    it also works after `git add`. It reverts the whole version directory:
-
-    ```bash
-    git -C "$MTL_PATH" restore --source=HEAD --staged --worktree patches/dpdk/"${DPDK_VER}"
-    ```
-
-1. Apply the MTL patches for DPDK
-
-    ```bash
-    cd "${MTL_PATH}/dpdk"
-    ```
-
-    ```bash
-    git am "$MTL_PATH"/patches/dpdk/"${DPDK_VER}"/*.patch
-    ```
-
-    ```bash
-    git apply "$MTL_PATH"/patches/dpdk/"${DPDK_VER}"/windows/*.patch
-    ```
-
-1. Build DPDK
-
-    ```bash
-    meson setup -Dmax_lcores=256 build
-    ```
-
-    ```bash
-    meson compile -C build
-    ```
-
-    Create a copy of the `sched.h` file
-
-    > **Note:** DPDK installation overwrites the `sched.h` file and cause MTL build problems
-
-    ```bash
-    cp "${MSYSTEM_PREFIX}/include/sched.h" "${MTL_PATH}/sched.h.bak"
-    ```
-
-    ```bash
-    meson install -C build
-    ```
-
-    Restore the copy
-
-    ```bash
-    cp "${MTL_PATH}/sched.h.bak" "${MSYSTEM_PREFIX}/include/sched.h"
-    ```
-
-## Build MTL
-
-1. Run the build script
-
-    ```bash
-    cd "$MTL_PATH"
-    ```
-
-    ```bash
-    ./build.sh debugonly
-    ```
+```bash
+./build.sh unit
+```
