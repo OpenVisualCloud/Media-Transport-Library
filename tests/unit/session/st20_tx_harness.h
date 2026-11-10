@@ -206,6 +206,15 @@ bool ut_txv_get_timeout_on_endless_pass(ut_txv_ctx* ctx, int timeout_us,
                                         bool* locked_after);
 /* Runs stats on session A while holding an app mutex needed by session B's callback. */
 bool ut_txv_stats_with_peer_callback_completes(ut_txv_ctx* ctx, int timeout_ms);
+/* The same cycle with the control call as the caller's: stats get or reset, update
+ * destination or free, while a peer's callback in the scheduler's pass needs the
+ * caller's mutex. */
+bool ut_txv_control_with_peer_callback_completes(ut_txv_ctx* ctx,
+                                                 enum ut_txv_control call,
+                                                 int timeout_ms);
+/* Scenario 4: S's frame-done callback, run on scheduler 1's thread under a lock that
+ * scheduler 0's pass needs, queries S. */
+bool ut_txv_own_query_from_other_scheduler_completes(ut_txv_ctx* ctx, int timeout_ms);
 /* Runs two scheduler callbacks that query separate target sessions on each other. */
 bool ut_txv_cross_scheduler_stats_complete(ut_txv_ctx* ctx, int timeout_ms);
 /* Migrates the source while a destination callback queries that source session. */
