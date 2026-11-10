@@ -18,9 +18,10 @@ the [VM guide](vm_WIN.md).
     ```
 
     The script sets test signing, "Lock pages in memory" (large pages),
-    `C:\temp`, the reserved CPUs for MTL, the interrupts on the other CPUs,
-    the power plan, Defender exclusions and VBS off. `status` shows each
-    item, and `undo` puts each item back.
+    `C:\temp`, `C:\msys64\ucrt64\bin` on the PATH, the reserved CPUs for
+    MTL, the interrupts on the other CPUs, the power plan, Defender exclusions
+    and VBS off. `status` shows each item, and `undo` puts each item back. You
+    can run `apply` again: it changes only an item that is not set.
 
     For `-SchedulerCpus`: do not use CPU 0, keep two CPUs or more for Windows,
     and with SMT reserve both threads of a core.
@@ -87,8 +88,8 @@ in one configuration file.
         ForEach-Object { (Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName DEVPKEY_Device_LocationInfo).Data }
     ```
 
-1. Make a configuration file, for example `loop.json`: one 1080p59 stream from
-   port 0 to port 1.
+1. Make a configuration file `C:\mtl\loop.json`: one 1080p59 stream from port
+   0 to port 1.
 
     ```json
     {
@@ -108,13 +109,19 @@ in one configuration file.
     }
     ```
 
-1. Make a source file and run RxTxApp in the UCRT64 shell. Give MTL lcores of
-   the reserved CPUs:
+1. Make a source file in the UCRT64 shell:
 
     ```bash
     head -c $((1920*1080*5/2*10)) /dev/urandom > /c/mtl/test_1080p.yuv
-    cd /c/mtl/Media-Transport-Library
-    ./tests/tools/RxTxApp/build/RxTxApp.exe --config_file loop.json --test_time 30 --pacing_way rl --lcores 8-11
+    ```
+
+1. Run RxTxApp. `build.sh` installs it in `C:\msys64\ucrt64\bin`, which the
+   setup script puts on the PATH, so it runs from any new shell: PowerShell or
+   UCRT64. Give MTL lcores of the reserved CPUs:
+
+    ```powershell
+    cd C:\mtl
+    RxTxApp.exe --config_file loop.json --test_time 30 --pacing_way rl --lcores 8-11
     ```
 
 1. Check the log for these lines:
@@ -137,5 +144,6 @@ in one configuration file.
 | `VIRTCHNL_OP_CONFIG_TC_MAP` fails, or `rte_flow_create fail` on a VF | The host uses the in-tree `ice` driver. Use the out-of-tree driver (VM guide), or run with `--pacing_way tsc --rss_mode l3_l4`. |
 | `arp_get_result ... timeout` | A unicast stream between two ports of one process. Use a multicast address. |
 | Millions of `pkts dropped: tmstamp outside OFO window`, but each frame arrives | A second sender uses the same multicast group and port. Give each sender its own group. |
-| `Warn: st_plugin_register, dlopen /usr/local/lib/...` | Only a warning: `kahawai.json` of the current folder lists Linux plugins. |
+| `RxTxApp.exe` is not found | Open a new shell after `windows_setup.ps1 apply`, or run `windows_setup.ps1 status` to check the `path` item. |
+| `Warn: st_plugin_register, dlopen /usr/local/lib/...` | Only a warning: RxTxApp runs in the MTL tree, and its `kahawai.json` lists Linux plugins. Run it in another folder. |
 | `failed retrieving file ... mirror.msys2.org ... local issuer certificate` | Only a warning: pacman uses the next mirror. |

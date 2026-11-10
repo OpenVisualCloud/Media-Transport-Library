@@ -13,6 +13,9 @@ The items, in order:
              Secure Boot must be off.
   lockpages  "Lock pages in memory" for -User. DPDK uses large pages.
   dirs       C:\temp (the MTL lcore lock file) and C:\dpdk\lib (ice.pkg).
+  path       -MsysBin (the MSYS2 UCRT64 programs and DLLs: libmtl.dll, DPDK)
+             at the end of the machine PATH, so RxTxApp starts from any
+             shell. At the end, it does not hide a program of Windows.
   cpusets    ReservedCpuSets = -SchedulerCpus. Windows then runs on these
              CPUs only a thread with a hard affinity to them
              (SetThreadGroupAffinity). Windows ignores a CPU Set selection
@@ -43,10 +46,11 @@ param(
     [ValidateSet('status', 'apply', 'undo')]
     [string]$Action = 'status',
     [string]$SchedulerCpus = '',
-    [ValidateSet('testsign', 'lockpages', 'dirs', 'cpusets', 'irq', 'power', 'defender', 'vbs')]
-    [string[]]$Items = @('testsign', 'lockpages', 'dirs', 'cpusets', 'irq', 'power', 'defender', 'vbs'),
+    [ValidateSet('testsign', 'lockpages', 'dirs', 'path', 'cpusets', 'irq', 'power', 'defender', 'vbs')]
+    [string[]]$Items = @('testsign', 'lockpages', 'dirs', 'path', 'cpusets', 'irq', 'power', 'defender', 'vbs'),
     [string]$User = $env:USERNAME,
     [string[]]$ExcludePaths = @('C:\mtl', 'C:\msys64', 'C:\dpdk'),
+    [string]$MsysBin = 'C:\msys64\ucrt64\bin',
     [switch]$Restart
 )
 
@@ -285,6 +289,46 @@ function Item-Dirs([string]$act, $state) {
     }
 }
 
+# The machine PATH as the registry keeps it (REG_EXPAND_SZ, with %...%).
+# [Environment]::SetEnvironmentVariable would write it back as REG_SZ, and
+# then %SystemRoot% in it does not expand.
+$EnvKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
+function Get-MachinePath { (Get-Item $EnvKey).GetValue('Path', '', 'DoNotExpandEnvironmentNames') }
+function Set-MachinePath([string]$value) {
+    Set-ItemProperty -Path $EnvKey -Name Path -Value $value -Type ExpandString
+    # Tell the running programs that the environment changed.
+    Add-Type -Namespace MtlEnv -Name Win32 -MemberDefinition @'
+[DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
+'@ -ErrorAction SilentlyContinue
+    $r = [UIntPtr]::Zero
+    [void][MtlEnv.Win32]::SendMessageTimeout([IntPtr]0xffff, 0x1a, [UIntPtr]::Zero, 'Environment', 2, 5000, [ref]$r)
+}
+
+function Item-Path([string]$act, $state) {
+    $now = Get-MachinePath
+    $parts = @($now -split ';' | Where-Object { $_ -ne '' })
+    $has = @($parts | Where-Object { $_.TrimEnd('\') -ieq $MsysBin.TrimEnd('\') }).Count -gt 0
+    switch ($act) {
+        'status' { return Result 'path' $(if ($has) { 'ok' } else { 'differs' }) "$MsysBin in the machine PATH: $has" }
+        'apply' {
+            if ($has) { return Result 'path' 'ok' "$MsysBin in the machine PATH" }
+            if (-not (Test-Path $MsysBin)) { return Result 'path' 'error' "$MsysBin is not there: install MSYS2 and the packages first" }
+            if (-not $state.PSObject.Properties['path']) { Set-StateItem $state 'path' @{ entry = $MsysBin } }
+            Set-MachinePath (($parts + $MsysBin) -join ';')
+            return Result 'path' 'set' "$MsysBin added at the end of the machine PATH (a new shell sees it)"
+        }
+        'undo' {
+            if (-not $state.PSObject.Properties['path']) { return Result 'path' 'ok' 'nothing to undo' }
+            # Remove only the entry that apply added: keep each later change.
+            $entry = if ($state.path.entry) { $state.path.entry } else { $MsysBin }
+            Set-MachinePath ((@($parts | Where-Object { $_.TrimEnd('\') -ine $entry.TrimEnd('\') })) -join ';')
+            Remove-StateItem $state 'path'
+            return Result 'path' 'set' "$entry removed from the machine PATH"
+        }
+    }
+}
+
 function Item-CpuSets([string]$act, $state) {
     $sets = Get-CpuSets
     $cpus = Get-SchedulerCpus $state
@@ -481,10 +525,10 @@ function Item-Vbs([string]$act, $state) {
 
 $state = Get-State
 $map = @{
-    testsign = 'Item-TestSign'; lockpages = 'Item-LockPages'; dirs = 'Item-Dirs'; cpusets = 'Item-CpuSets'
+    testsign = 'Item-TestSign'; lockpages = 'Item-LockPages'; dirs = 'Item-Dirs'; path = 'Item-Path'; cpusets = 'Item-CpuSets'
     irq = 'Item-Irq'; power = 'Item-Power'; defender = 'Item-Defender'; vbs = 'Item-Vbs'
 }
-$order = @('testsign', 'lockpages', 'dirs', 'cpusets', 'irq', 'power', 'defender', 'vbs')
+$order = @('testsign', 'lockpages', 'dirs', 'path', 'cpusets', 'irq', 'power', 'defender', 'vbs')
 if ($Action -eq 'undo') { [array]::Reverse($order) }
 $results = foreach ($name in ($order | Where-Object { $Items -contains $_ })) {
     try { & $map[$name] $Action $state }
