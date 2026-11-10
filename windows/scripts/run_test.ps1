@@ -105,8 +105,12 @@ function Invoke-Test([string[]]$extra, [string]$log) {
     $ErrorActionPreference = 'Continue'
     Write-Host "RxTxApp $($base + $extra -join ' ')"
     Write-Host "  $Seconds s; log $log"
-    # "$_": a line of the standard error as text, not as an error record.
-    & RxTxApp.exe @base @extra 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $log | Write-Host
+    # A line of the standard error comes as an error record: take its text.
+    # "$_" of an empty line gives "System.Management.Automation.RemoteException".
+    # The window shows each line with no time stamp; $log keeps the full line.
+    & RxTxApp.exe @base @extra 2>&1 | ForEach-Object {
+        if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.Exception.Message } else { "$_" }
+    } | Tee-Object -FilePath $log | ForEach-Object { Write-Host ($_ -replace '^MTL: \d{4}-\d\d-\d\d \d\d:\d\d:\d\d, ', 'MTL: ') }
     $code = $LASTEXITCODE
     $lines = @(Select-String -Path $log -Pattern '\w+_result\(\d+\), (OK|FAILED).*' | ForEach-Object {
             [pscustomobject]@{ State = $_.Matches[0].Groups[1].Value; Text = $_.Matches[0].Value } })
