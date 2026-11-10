@@ -13,8 +13,13 @@ source, see the [build guide](build_WIN.md). For a Windows VM with VFs, see the
    the Windows Driver Kit" to your Downloads folder. Setup finds it there and
    builds the drivers with it.
 
-1. Run `mtl-<version>-win64-setup.exe`, the `mtl-windows-installer` artifact
-   of the CI job "Windows MSYS2 build". On the "Host settings" page:
+1. Get the installer `mtl-<version>-win64-setup.exe`. On GitHub, open
+   **Actions > Windows MSYS2 build**, select the newest run of `main`, and
+   download the `mtl-windows-installer` artifact (sign in to GitHub first).
+   Or make the installer of your own build: part 4 of the
+   [build guide](build_WIN.md).
+
+1. Run the installer. On the "Host settings" page:
 
     - **Scheduler CPUs**: keep `auto` (the last half of the cores, at most 8
       CPUs), or give a list, for example `8-15`.
