@@ -38,10 +38,11 @@ uninstall MTL in Settings > Apps.
 ## 2. Test MTL
 
 1. Double-click **MTL test** on the desktop, let it make changes, and give the
-   number of sets. Each set is two 1080p59 video, two audio and two ancillary
-   streams, from port 0 to port 1 for 30 s. The test ends with `PASS` or
-   `FAIL`. The two ports must reach each other: two VFs of one PF, or two PFs
-   on one network. A VF takes 2 sets, or more with a large VF (VM guide).
+   number of sets and the test time (`30`, `20m`, `1h`). Each set is two
+   1080p59 video, two audio and two ancillary streams, from port 0 to port 1.
+   A key stops the test early. The test ends with `PASS` or `FAIL`. The two
+   ports must reach each other: two VFs of one PF, or two PFs on one network.
+   A VF takes 2 sets, or more with a large VF (VM guide).
 
 1. To run your own streams, start from the configuration of the test,
    `C:\ProgramData\MTL\test\test.json`:
