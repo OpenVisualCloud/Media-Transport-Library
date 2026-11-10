@@ -823,6 +823,7 @@ static int video_trs_tasklet_handler(void* priv) {
       pending += s->pacing_tasklet_func[s_port](impl, s, s_port);
     }
   }
+  tx_video_session_dp_done(mgr);
 
   return pending;
 }

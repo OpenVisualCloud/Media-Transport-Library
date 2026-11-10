@@ -347,7 +347,7 @@ static bool ut_sch_qs_before(uint64_t deadline) {
 static int ut_sch_qs_wait_unblocked(struct mtl_sch_impl* sch) {
   atomic_store(&ut_sch_qs_polls, 0);
   ut_sch_qs_unblock = sch;
-  mt_sch_quiescent_wait(sch, 0);
+  mt_sch_quiescent_wait(sch, NULL, -1, 0);
   ut_sch_qs_unblock = NULL;
   return atomic_load(&ut_sch_qs_polls);
 }
@@ -406,7 +406,7 @@ struct ut_sch_qs_waiter {
 static void* ut_sch_qs_waiter_thread(void* arg) {
   struct ut_sch_qs_waiter* waiter = arg;
 
-  mt_sch_quiescent_wait(waiter->sch, 0);
+  mt_sch_quiescent_wait(waiter->sch, NULL, -1, 0);
   atomic_store(&waiter->done, true);
   return NULL;
 }
@@ -515,7 +515,7 @@ int ut_sch_qs_pass_end_publishes(bool* published) {
     while (atomic_load(&pass.step) != UT_SCH_QS_HELD && ut_sch_qs_before(deadline))
       rte_pause();
     if (atomic_load(&pass.step) == UT_SCH_QS_HELD)
-      mt_sch_quiescent_wait(&ctx->sch, US_PER_S);
+      mt_sch_quiescent_wait(&ctx->sch, NULL, -1, US_PER_S);
     deadline = ut_sch_qs_deadline();
     while (atomic_load(&pass.step) != UT_SCH_QS_DONE && ut_sch_qs_before(deadline))
       rte_pause();

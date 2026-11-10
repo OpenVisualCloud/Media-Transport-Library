@@ -173,6 +173,9 @@ enum ut_txv_tasklet {
 int ut_txv_run_tasklet_lock_probe(ut_txv_ctx* ctx, enum ut_txv_tasklet tasklet,
                                   bool hold_lock, bool* locked_in_run,
                                   bool* locked_after);
+/* The slot the tasklet published in the last probe's session (0), and the one it left
+ * published after its run. */
+void ut_txv_lock_probe_slots(const ut_txv_ctx* ctx, int* in_run, int* after);
 enum ut_txv_control {
   UT_TXV_GET,         /* tx_video_session_get() */
   UT_TXV_GET_TIMEOUT, /* tx_video_session_get_timeout() */
@@ -200,6 +203,8 @@ int ut_txv_run_control_blocked_by_migration(ut_txv_ctx* ctx, enum ut_txv_control
 /* The call from the scheduler's own thread, as from a callback, while (held) a writer
  * holds the session lock and waits for the pass in flight. Returns the call's result. */
 int ut_txv_run_control_in_callback(ut_txv_ctx* ctx, enum ut_txv_control call, bool held);
+/* The same, held, from the callback of another session of that scheduler. */
+int ut_txv_run_control_in_peer_callback(ut_txv_ctx* ctx, enum ut_txv_control call);
 /* tx_video_session_get_timeout() while the scheduler is in a pass that never ends.
  * Returns whether it got the session; *locked_after whether the lock stayed held. */
 bool ut_txv_get_timeout_on_endless_pass(ut_txv_ctx* ctx, int timeout_us,
@@ -220,6 +225,13 @@ bool ut_txv_cross_scheduler_stats_complete(ut_txv_ctx* ctx, int timeout_ms);
 /* Migrates the source while a destination callback queries that source session. */
 bool ut_txv_migration_with_destination_callback_completes(ut_txv_ctx* ctx,
                                                           int timeout_ms);
+/* The tasklets fence each slot store, as without membarrier(2), or rely on it. */
+void ut_txv_set_dp_fence(ut_txv_ctx* ctx, bool fence);
+/* The call, from another thread, on a session (slot 1) whose own callback runs on its
+ * scheduler: *done_in_callback whether it returned before that callback did. Returns the
+ * call's result. */
+int ut_txv_control_during_own_callback(ut_txv_ctx* ctx, enum ut_txv_control call,
+                                       bool* done_in_callback);
 
 /* A frame-level session of UT_TXV_ZC_FRAMES one-pkt frames, run by tvs_tasklet_handler()
  * against an app that hands over a chosen frame, or is busy, with reclaim.enabled or not.

@@ -64,4 +64,10 @@ struct mt_rx_pcap {
   bool usdt_dump;
 };
 
+/* The slot the tasklets of a scheduler are in, for a writer waiting on a long pass. */
+struct mt_sch_dp_slot {
+  _Atomic int idx; /* -1 outside every slot */
+  bool fence;      /* no membarrier(2): a full fence follows every store of idx */
+};
+
 #endif

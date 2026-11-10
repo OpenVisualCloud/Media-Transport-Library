@@ -1864,8 +1864,8 @@ int st20_tx_free(st20_tx_handle handle);
 /**
  * Online update the destination info for the tx st2110-20(video) session.
  *
- * @note Do not call it from any callback. It takes the per-session spinlock, waits for
- * the session's scheduler to end its tasklet pass in flight, and may wait for ARP.
+ * @note Do not call it from any callback. It takes the per-session spinlock, waits until
+ * the session's tasklets are done with it, and may wait for ARP.
  * @param handle
  *   The handle to the tx st2110-20(video) session.
  * @param dst
@@ -1991,10 +1991,10 @@ int st20_tx_get_pacing_params(st20_tx_handle handle, double* tr_offset_ns, doubl
 /**
  * Retrieve the general statistics(I/O) for one tx st2110-20(video) session.
  *
- * @note Thread-safe. Takes the per-session spinlock, then waits for the session's
- * scheduler to end its tasklet pass in flight; the session skips up to two passes, so do
- * not call it in a tight loop. From a callback, only for the session that callback
- * belongs to; it may return -EBUSY there.
+ * @note Thread-safe. Takes the per-session spinlock, then waits until the session's
+ * tasklets are done with it, at most for its scheduler's pass in flight; the session
+ * skips up to two passes, so do not call it in a tight loop. In this session's own
+ * callbacks it may return -EBUSY.
  * @param handle
  *   The handle to the tx st2110-20(video) session.
  * @param stats
@@ -2008,10 +2008,10 @@ int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one tx st2110-20(video) session.
  *
- * @note Thread-safe. Takes the per-session spinlock, then waits for the session's
- * scheduler to end its tasklet pass in flight; the session skips up to two passes, so do
- * not call it in a tight loop. From a callback, only for the session that callback
- * belongs to; it may return -EBUSY there.
+ * @note Thread-safe. Takes the per-session spinlock, then waits until the session's
+ * tasklets are done with it, at most for its scheduler's pass in flight; the session
+ * skips up to two passes, so do not call it in a tight loop. In this session's own
+ * callbacks it may return -EBUSY.
  * @param handle
  *   The handle to the tx st2110-20(video) session.
  * @return
@@ -2098,8 +2098,8 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops);
 /**
  * Online update the destination info for the tx st2110-22(compressed video) session.
  *
- * @note Do not call it from any callback. It takes the per-session spinlock, waits for
- * the session's scheduler to end its tasklet pass in flight, and may wait for ARP.
+ * @note Do not call it from any callback. It takes the per-session spinlock, waits until
+ * the session's tasklets are done with it, and may wait for ARP.
  * @param handle
  *   The handle to the tx st2110-22(compressed video) session.
  * @param dst

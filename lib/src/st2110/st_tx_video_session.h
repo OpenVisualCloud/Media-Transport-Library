@@ -23,14 +23,21 @@ int st_tx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mtl_sch_im
 /* Tasklets only: no lock, no put; NULL while the control plane holds the lock. */
 static inline struct st_tx_video_session_impl* tx_video_session_dp_get(
     struct st_tx_video_sessions_mgr* mgr, int idx) {
+  mt_sch_dp_slot_enter(&mgr->dp_slot, idx);
   if (rte_spinlock_is_locked(&mgr->mutex[idx])) return NULL;
   return mgr->sessions[idx];
 }
 
-/* After this no tasklet pass that could have missed the lock just taken is running. */
+/* Tasklets only: at the end of the loop over the sessions. */
+static inline void tx_video_session_dp_done(struct st_tx_video_sessions_mgr* mgr) {
+  mt_sch_dp_slot_leave(&mgr->dp_slot);
+}
+
+/* After this no tasklet that could have missed the lock of idx just taken is on idx. */
 static inline int tx_video_session_wait_tasklets(struct st_tx_video_sessions_mgr* mgr,
-                                                 int timeout_us) {
-  return mt_sch_quiescent_wait(mt_sch_instance(mgr->parent, mgr->idx), timeout_us);
+                                                 int idx, int timeout_us) {
+  return mt_sch_quiescent_wait(mt_sch_instance(mgr->parent, mgr->idx), &mgr->dp_slot, idx,
+                               timeout_us);
 }
 
 /* call tx_video_session_put always if get successfully */
@@ -39,7 +46,7 @@ static inline struct st_tx_video_session_impl* tx_video_session_get(
   rte_spinlock_lock(&mgr->mutex[idx]);
   struct st_tx_video_session_impl* s = mgr->sessions[idx];
   if (s)
-    tx_video_session_wait_tasklets(mgr, 0);
+    tx_video_session_wait_tasklets(mgr, idx, 0);
   else
     rte_spinlock_unlock(&mgr->mutex[idx]);
   return s;
@@ -50,7 +57,7 @@ static inline struct st_tx_video_session_impl* tx_video_session_get_timeout(
     struct st_tx_video_sessions_mgr* mgr, int idx, int timeout_us) {
   if (!mt_spinlock_lock_timeout(mgr->parent, &mgr->mutex[idx], timeout_us)) return NULL;
   struct st_tx_video_session_impl* s = mgr->sessions[idx];
-  if (s && tx_video_session_wait_tasklets(mgr, timeout_us) < 0) s = NULL;
+  if (s && tx_video_session_wait_tasklets(mgr, idx, timeout_us) < 0) s = NULL;
   if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
   return s;
 }
@@ -64,7 +71,7 @@ static inline bool tx_video_session_get_empty(struct st_tx_video_sessions_mgr* m
     rte_spinlock_unlock(&mgr->mutex[idx]); /* not null, unlock it */
     return false;
   } else {
-    tx_video_session_wait_tasklets(mgr, 0);
+    tx_video_session_wait_tasklets(mgr, idx, 0);
     return true;
   }
 }
