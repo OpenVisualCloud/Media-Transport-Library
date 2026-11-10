@@ -1,12 +1,10 @@
 # Build guide for Windows
 
-This is the default way to build MTL on Windows: MSYS2 UCRT64, the DPDK
-version of `versions.env`, and the MTL patches.
+Build MTL from the source with MSYS2 UCRT64, the DPDK version of
+`versions.env`, and the MTL patches. To use MTL with no build, install it: see
+the [run guide](run_WIN.md).
 
 Tested on Windows 11 Pro (build 26300) with MinGW GCC 16.2 and DPDK 26.07.
-
-- To prepare Windows and run MTL, see the [run guide](run_WIN.md).
-- For a Windows VM with E810 or E830 VFs, see the [VM guide](vm_WIN.md).
 
 ## 1. Install MSYS2
 
@@ -112,3 +110,66 @@ To run the unit tests (no NIC needed):
 ```bash
 ./build.sh unit
 ```
+
+## 4. Set up Windows and the drivers
+
+The installer does this. For a source build, do it yourself:
+
+1. Turn off Secure Boot and mount the EWDK ISO, as part 1 of the
+   [run guide](run_WIN.md) tells.
+
+1. Get the driver source, in the UCRT64 shell:
+
+    ```bash
+    cd /c/mtl && git clone https://dpdk.org/git/dpdk-kmods
+    ```
+
+1. In PowerShell as administrator, run the scripts of the MTL tree, then
+   restart Windows:
+
+    ```powershell
+    cd C:\mtl\Media-Transport-Library\windows\scripts
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\windows_setup.ps1 apply -SchedulerCpus 8-15
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\install_drivers.ps1 apply -Source C:\mtl\dpdk-kmods\windows
+    Restart-Computer
+    ```
+
+    For a PF, add `-HardwareIds <ID>` to `install_drivers.ps1`, with the ID of
+    part 1 of the run guide. `status` shows each item of a script, and `undo`
+    puts each item back.
+
+Then run RxTxApp as part 2 of the run guide tells. `build.sh` puts
+`RxTxApp.exe` in `C:\msys64\ucrt64\bin`, which `windows_setup.ps1` puts on the
+PATH. The sample configuration is `windows/installer/loop.json`.
+
+## 5. Make the installer
+
+The CI job "Windows MSYS2 build" makes the installer on each run. To make it on
+your machine:
+
+1. Build DPDK for each x86-64 CPU, not only for the CPU of your machine. In
+   part 2, use `meson setup -Dplatform=generic build`, as CI does.
+   `package.sh` refuses a DPDK built with `-march=native`.
+
+1. Install Inno Setup 6 from <https://jrsoftware.org/isdl.php>.
+
+1. Build MTL, then make the installer in the UCRT64 shell:
+
+    ```bash
+    ./build.sh release
+    windows/scripts/package.sh
+    ```
+
+    The installer is `build_installer/mtl-<version>-win64-setup.exe`. It holds
+    `libmtl.dll`, `RxTxApp.exe` and their DLLs, the headers and the import
+    library, the scripts of `windows/scripts`, and the source of NetUIO and
+    virt2phys of dpdk-kmods.
+
+## 6. Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| `error while loading shared libraries: libpcap.dll` | `wpcap.dll` is missing. See part 3. |
+| `No response for cmd`, or a crash in `rte_eal_alarm_cancel()` | DPDK without the Windows patches 0004 and 0005. Build DPDK again. |
+| `Warn: st_plugin_register, dlopen /usr/local/lib/...` | Only a warning: RxTxApp runs in the MTL tree, and its `kahawai.json` lists Linux plugins. Run it in another folder. |
+| `failed retrieving file ... mirror.msys2.org ... local issuer certificate` | Only a warning: pacman uses the next mirror. |
