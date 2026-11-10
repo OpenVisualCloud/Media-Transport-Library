@@ -115,7 +115,7 @@ To run the unit tests (no NIC needed):
 
 The installer does this. For a source build, do it yourself:
 
-1. Turn off Secure Boot and mount the EWDK ISO, as part 1 of the
+1. Turn off Secure Boot and put the EWDK ISO in Downloads, as part 1 of the
    [run guide](run_WIN.md) tells.
 
 1. Get the driver source, in the UCRT64 shell:
@@ -129,18 +129,20 @@ The installer does this. For a source build, do it yourself:
 
     ```powershell
     cd C:\mtl\Media-Transport-Library\windows\scripts
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\windows_setup.ps1 apply -SchedulerCpus 8-15
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\windows_setup.ps1 apply -SchedulerCpus auto
     powershell -NoProfile -ExecutionPolicy Bypass -File .\install_drivers.ps1 apply -Source C:\mtl\dpdk-kmods\windows
     Restart-Computer
     ```
 
     For a PF, add `-HardwareIds <ID>` to `install_drivers.ps1`, with the ID of
-    part 1 of the run guide. `status` shows each item of a script, and `undo`
-    puts each item back.
+    part 1 of the run guide, and copy `ice.pkg` of the
+    [Linux ice driver package](https://www.intel.com/content/www/us/en/download/19630/intel-network-adapter-driver-for-800-series-devices-under-linux.html)
+    to `C:\dpdk\lib\ice.pkg`. `status` shows each item of a script, and
+    `undo` puts each item back.
 
-Then run RxTxApp as part 2 of the run guide tells. `build.sh` puts
-`RxTxApp.exe` in `C:\msys64\ucrt64\bin`, which `windows_setup.ps1` puts on the
-PATH. The sample configuration is `windows/installer/loop.json`.
+Then run the test of part 2 of the run guide in PowerShell as administrator:
+`windows\scripts\run_test.ps1`. `build.sh` puts `RxTxApp.exe` in
+`C:\msys64\ucrt64\bin`, which `windows_setup.ps1` puts on the PATH.
 
 ## 5. Make the installer
 
@@ -162,8 +164,9 @@ your machine:
 
     The installer is `build_installer/mtl-<version>-win64-setup.exe`. It holds
     `libmtl.dll`, `RxTxApp.exe` and their DLLs, the headers and the import
-    library, the scripts of `windows/scripts`, and the source of NetUIO and
-    virt2phys of dpdk-kmods.
+    library, the scripts of `windows/scripts`, the source of NetUIO and
+    virt2phys of dpdk-kmods, and the DDP package (`ice.pkg`) of the ice
+    driver of `versions.env`.
 
 ## 6. Troubleshooting
 
