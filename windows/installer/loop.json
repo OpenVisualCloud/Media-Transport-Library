@@ -1,0 +1,15 @@
+{
+    "interfaces": [
+        { "name": "0000:01:00.0", "ip": "192.168.96.10" },
+        { "name": "0000:02:00.0", "ip": "192.168.96.20" }
+    ],
+    "tx_sessions": [ { "dip": [ "239.96.1.1" ], "interface": [ 0 ],
+        "video": [ { "replicas": 1, "type": "frame", "pacing": "gap", "packing": "BPM",
+            "start_port": 20000, "payload_type": 112, "tr_offset": "default",
+            "video_format": "i1080p59", "pg_format": "YUV_422_10bit",
+            "video_url": "C:/mtl/test_1080p.yuv" } ] } ],
+    "rx_sessions": [ { "ip": [ "239.96.1.1" ], "interface": [ 1 ],
+        "video": [ { "replicas": 1, "type": "frame", "pacing": "gap",
+            "start_port": 20000, "payload_type": 112, "tr_offset": "default",
+            "video_format": "i1080p59", "pg_format": "YUV_422_10bit", "display": false } ] } ]
+}

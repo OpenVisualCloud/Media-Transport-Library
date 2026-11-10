@@ -291,12 +291,14 @@ base_build:
 
 # msys2_build.yml, build. MSYS2 on windows-latest builds the DPDK of
 # versions.env with patches/dpdk/<version>/ and its windows/ set, then
-# build.sh (lib, app, tests, plugins and RxTxApp), the TAP build and the unit
-# suite. The ci:msys-* tasks of Taskfile.yml run each step. No file of script/
-# runs on Windows.
+# build.sh (lib, app, tests, plugins and RxTxApp), the installer of
+# windows/scripts/package.sh, the TAP build and the unit suite. The ci:msys-*
+# tasks of Taskfile.yml run most steps. No file of script/ runs on Windows.
 msys2_build:
   - .github/path_filters.yml
   - .github/workflows/msys2_build.yml
+  - 'windows/scripts/**'
+  - 'windows/installer/**'
   - Taskfile.yml
   - versions.env
   - 'patches/dpdk/**'

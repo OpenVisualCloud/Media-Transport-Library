@@ -13,9 +13,11 @@ The items, in order:
              Secure Boot must be off.
   lockpages  "Lock pages in memory" for -User. DPDK uses large pages.
   dirs       C:\temp (the MTL lcore lock file) and C:\dpdk\lib (ice.pkg).
-  path       -MsysBin (the MSYS2 UCRT64 programs and DLLs: libmtl.dll, DPDK)
-             at the end of the machine PATH, so RxTxApp starts from any
-             shell. At the end, it does not hide a program of Windows.
+  path       -BinDir (RxTxApp.exe, libmtl.dll and the DLLs they need) at the
+             end of the machine PATH, so RxTxApp starts from any shell. At
+             the end, it does not hide a program of Windows. The default is
+             the bin folder of the installer, or C:\msys64\ucrt64\bin for a
+             source build.
   cpusets    ReservedCpuSets = -SchedulerCpus. Windows then runs on these
              CPUs only a thread with a hard affinity to them
              (SetThreadGroupAffinity). Windows ignores a CPU Set selection
@@ -25,7 +27,9 @@ The items, in order:
   power      The Ultimate Performance power plan (High performance when the
              first is not available), no core parking, minimum processor
              state 100 %.
-  defender   Microsoft Defender exclusions for -ExcludePaths.
+  defender   Microsoft Defender exclusions for -ExcludePaths. The default is
+             the folder of the installer and C:\dpdk, or C:\mtl, C:\msys64
+             and C:\dpdk for a source build.
   vbs        Virtualization-based security and Memory Integrity off.
 
 apply records the value of an item before it changes the item, in
@@ -49,12 +53,19 @@ param(
     [ValidateSet('testsign', 'lockpages', 'dirs', 'path', 'cpusets', 'irq', 'power', 'defender', 'vbs')]
     [string[]]$Items = @('testsign', 'lockpages', 'dirs', 'path', 'cpusets', 'irq', 'power', 'defender', 'vbs'),
     [string]$User = $env:USERNAME,
-    [string[]]$ExcludePaths = @('C:\mtl', 'C:\msys64', 'C:\dpdk'),
-    [string]$MsysBin = 'C:\msys64\ucrt64\bin',
+    [string[]]$ExcludePaths = @(),
+    [Alias('MsysBin')]
+    [string]$BinDir = '',
     [switch]$Restart
 )
 
 $ErrorActionPreference = 'Stop'
+# The installer puts this script in <MTL>\scripts, beside <MTL>\bin. A source
+# build puts its programs in MSYS2.
+$App = Split-Path $PSScriptRoot -Parent
+$Installed = Test-Path (Join-Path $App 'bin\libmtl.dll')
+if ($BinDir -eq '') { $BinDir = if ($Installed) { Join-Path $App 'bin' } else { 'C:\msys64\ucrt64\bin' } }
+if (-not $ExcludePaths.Count) { $ExcludePaths = if ($Installed) { @($App, 'C:\dpdk') } else { @('C:\mtl', 'C:\msys64', 'C:\dpdk') } }
 $StateFile = Join-Path $env:ProgramData 'mtl-windows-setup\state.json'
 $KernelKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\kernel'
 $DgKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard'
@@ -308,23 +319,26 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wP
 function Item-Path([string]$act, $state) {
     $now = Get-MachinePath
     $parts = @($now -split ';' | Where-Object { $_ -ne '' })
-    $has = @($parts | Where-Object { $_.TrimEnd('\') -ieq $MsysBin.TrimEnd('\') }).Count -gt 0
+    $has = @($parts | Where-Object { $_.TrimEnd('\') -ieq $BinDir.TrimEnd('\') }).Count -gt 0
     switch ($act) {
-        'status' { return Result 'path' $(if ($has) { 'ok' } else { 'differs' }) "$MsysBin in the machine PATH: $has" }
+        'status' { return Result 'path' $(if ($has) { 'ok' } else { 'differs' }) "$BinDir in the machine PATH: $has" }
         'apply' {
-            if ($has) { return Result 'path' 'ok' "$MsysBin in the machine PATH" }
-            if (-not (Test-Path $MsysBin)) { return Result 'path' 'error' "$MsysBin is not there: install MSYS2 and the packages first" }
-            if (-not $state.PSObject.Properties['path']) { Set-StateItem $state 'path' @{ entry = $MsysBin } }
-            Set-MachinePath (($parts + $MsysBin) -join ';')
-            return Result 'path' 'set' "$MsysBin added at the end of the machine PATH (a new shell sees it)"
+            if ($has) { return Result 'path' 'ok' "$BinDir in the machine PATH" }
+            if (-not (Test-Path $BinDir)) { return Result 'path' 'error' "$BinDir is not there: build and install MTL first" }
+            # A source build and the installer each add their own folder.
+            $added = @()
+            if ($state.PSObject.Properties['path']) { $added = @($state.path.entry) }
+            Set-StateItem $state 'path' @{ entry = @($added + $BinDir) }
+            Set-MachinePath (($parts + $BinDir) -join ';')
+            return Result 'path' 'set' "$BinDir added at the end of the machine PATH (a new shell sees it)"
         }
         'undo' {
             if (-not $state.PSObject.Properties['path']) { return Result 'path' 'ok' 'nothing to undo' }
-            # Remove only the entry that apply added: keep each later change.
-            $entry = if ($state.path.entry) { $state.path.entry } else { $MsysBin }
-            Set-MachinePath ((@($parts | Where-Object { $_.TrimEnd('\') -ine $entry.TrimEnd('\') })) -join ';')
+            # Remove only the entries that apply added: keep each later change.
+            $entries = @($state.path.entry | ForEach-Object { $_.TrimEnd('\') })
+            Set-MachinePath ((@($parts | Where-Object { $entries -notcontains $_.TrimEnd('\') })) -join ';')
             Remove-StateItem $state 'path'
-            return Result 'path' 'set' "$entry removed from the machine PATH"
+            return Result 'path' 'set' "$($entries -join ', ') removed from the machine PATH"
         }
     }
 }
