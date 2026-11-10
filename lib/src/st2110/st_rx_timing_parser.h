@@ -20,7 +20,8 @@ void rv_tp_slot_parse_result(struct st_rx_video_session_impl* s,
                              enum mtl_session_port s_port, struct st_rv_tp_slot* slot,
                              bool second_field);
 
-void rv_tp_stat(struct st_rx_video_session_impl* s);
+void rv_tp_stat_collect(struct st_rx_video_session_impl* s, struct st_rv_tp_stat* stat);
+void rv_tp_stat(int idx, int num_port, const struct st_rv_tp_stat* stats);
 
 int ra_tp_init(struct mtl_main_impl* impl, struct st_rx_audio_session_impl* s);
 int ra_tp_uinit(struct st_rx_audio_session_impl* s);
