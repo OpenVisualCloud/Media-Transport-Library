@@ -26,6 +26,14 @@ Then build and run MTL in the VM: [build guide](build_WIN.md),
     ip link set <pf_netdev> vf 1 mac 02:00:00:00:00:02 trust on spoofchk off
     ```
 
+1. **Give each VF a 512-entry RSS LUT** while no VM uses it:
+   `echo 512 > /sys/bus/pci/devices/<vf>/rss_lut_vf_attr` (out-of-tree `ice`
+   only; `script/nicctl.sh create_vf` does it). The VF then has more than 16
+   queue pairs. MTL gives each stream its own queue, so with 16 queues the
+   MTL test takes 2 sets; an E830 VF with the large LUT took 10 sets with no
+   lost frame. Do not write the LUT while the VF resets (just after a bind,
+   or while a VM starts or stops): the write races the reset.
+
 1. **A VF to VF stream needs no cable**: the switch of the adapter carries it.
    But the stream also goes out of the PF port. If two senders use the same
    multicast group on one network, each receiver gets both streams. Give each
