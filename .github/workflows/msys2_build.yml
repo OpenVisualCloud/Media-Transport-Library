@@ -161,6 +161,30 @@ jobs:
       - name: Build
         run: ./build.sh
 
+      # Before the debug build: the installer takes the release build that
+      # build.sh installed in the MSYS2 prefix.
+      # windows/installer/mtl.iss is for Inno Setup 6.
+      - name: Install Inno Setup
+        if: matrix.sys == 'ucrt64'
+        shell: pwsh
+        run: |
+          $f = "$env:RUNNER_TEMP\innosetup-6.7.4.exe"
+          Invoke-WebRequest https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe -OutFile $f
+          if ((Get-FileHash $f -Algorithm SHA256).Hash -ne 'A549929319F9120716677C685535CA4671E4B937B5FDC87E2585F32D8EB30E8C') { throw "bad hash: $f" }
+          Start-Process $f -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-' -Wait
+
+      - name: Make the Windows installer
+        if: matrix.sys == 'ucrt64'
+        run: windows/scripts/package.sh
+
+      - name: Upload the Windows installer
+        if: matrix.sys == 'ucrt64'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mtl-windows-installer
+          path: build_installer/*.exe
+          if-no-files-found: error
+
       - name: Build with debug
         run: |
           rm -rf build
