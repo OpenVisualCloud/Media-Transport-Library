@@ -322,7 +322,11 @@ if is_windows
       unit_windows_sources += src
     endif
   endforeach
-  unit_sources = unit_windows_sources
+  # With no MtlManager on Windows, processes share lcores through the shims of lib/windows.
+  unit_sources = unit_windows_sources + [
+    'sch/mt_sch_win_harness.c',
+    'sch/mt_sch_win_lcore_test.cpp',
+  ]
 endif
 
 executable('UnitTest', unit_sources,

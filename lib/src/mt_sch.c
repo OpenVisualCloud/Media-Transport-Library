@@ -688,26 +688,34 @@ static inline bool sch_socket_match(int cpu_socket, int dev_socket,
   return mt_socket_match(cpu_socket, dev_socket);
 }
 
+#ifdef WINDOWSENV
+static bool lcore_shm_pid_alive(pid_t pid) {
+  HANDLE process = OpenProcess(SYNCHRONIZE, FALSE, (DWORD)pid);
+  if (!process) return GetLastError() != ERROR_INVALID_PARAMETER;
+  bool alive = WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
+  CloseHandle(process);
+  return alive;
+}
+#else
+static bool lcore_shm_pid_alive(pid_t pid) {
+  return kill(pid, 0) == 0;
+}
+#endif
+
 /*
  * check if the lcore has not been properly released by previous(currently dead) process,
  * if so, clean it up
  */
 static void lcore_shm_check_and_clean(struct mt_lcore_shm_entry* shm_entry,
                                       struct mt_user_info* info) {
-#ifndef WINDOWSENV
   if (!shm_entry->active) return;
   struct mt_user_info* u_info = &shm_entry->u_info;
   if (0 != strncmp(u_info->hostname, info->hostname, sizeof(u_info->hostname))) return;
   if (0 != strncmp(u_info->user, info->user, sizeof(u_info->user))) return;
-  if (kill(shm_entry->pid, 0) != 0) {
+  if (!lcore_shm_pid_alive(shm_entry->pid)) {
     shm_entry->active = false;
-    info("%s, releasing lcore for dead process pid %d \n", __func__, shm_entry->pid);
+    info("%s, releasing lcore for dead process pid %d \n", __func__, (int)shm_entry->pid);
   }
-#else
-  MTL_MAY_UNUSED(shm_entry);
-  MTL_MAY_UNUSED(info);
-  err("%s, not supported on Windows\n", __func__);
-#endif
 }
 
 static int sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
