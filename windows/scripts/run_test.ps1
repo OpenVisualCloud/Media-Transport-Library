@@ -6,10 +6,11 @@ two audio and two ancillary streams from one port and receives them on a
 second port.
 
 .DESCRIPTION
-run_test.ps1 [-Sets <number>] [-Ports <PCI address>,<PCI address>] [-Seconds 30]
+run_test.ps1 [-Sets <number>] [-Seconds <number>] [-Ports <PCI address>,<PCI address>]
 
--Sets: the number of sets. With no -Sets, the test asks for it (the default
-is 1). Each stream of a set has its own queue on each port, so a set needs 6
+-Sets: the number of sets. -Seconds: the test time. With no -Sets or no
+-Seconds, the test asks for it (the defaults are 1 set and 30 s; the time
+can have a unit: 90s, 20m, 1h). Each stream of a set has its own queue on each port, so a set needs 6
 RX queues: a VF with 16 queues takes 2 sets. A VF with a 512-entry RSS LUT on
 a Linux host takes more (doc/vm_WIN.md).
 
@@ -30,7 +31,7 @@ no flow rule: then the test runs again with --rss_mode l3_l4.
 param(
     [int]$Sets = 0,
     [string[]]$Ports = @(),
-    [int]$Seconds = 30
+    [int]$Seconds = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,6 +49,25 @@ function Get-NetuioPorts {
         '0000:{0:x2}:{1:x2}.{2:x}' -f $bus, ($adr -shr 16), ($adr -band 0xffff)
     }
     return , @($list | Sort-Object)
+}
+
+# SetConsoleCtrlHandler(NULL, TRUE): this process ignores Ctrl+C.
+# GenerateConsoleCtrlEvent(0, 0): Ctrl+C to each process of the console.
+# A second run in one window has the type already.
+if (-not ('MtlTest.Console' -as [type])) {
+    Add-Type -Namespace MtlTest -Name Console -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("kernel32.dll")]
+public static extern bool SetConsoleCtrlHandler(System.IntPtr handler, bool add);
+[System.Runtime.InteropServices.DllImport("kernel32.dll")]
+public static extern bool GenerateConsoleCtrlEvent(uint ctrlEvent, uint processGroupId);
+'@
+}
+
+# 75 -> 01:15, 4000 -> 1:06:40
+function Format-Time([int]$s) {
+    $t = [TimeSpan]::FromSeconds($s)
+    if ($t.TotalHours -ge 1) { return '{0}:{1:D2}:{2:D2}' -f [int][math]::Floor($t.TotalHours), $t.Minutes, $t.Seconds }
+    return '{0:D2}:{1:D2}' -f $t.Minutes, $t.Seconds
 }
 
 # The CPUs that windows_setup.ps1 reserved, or '' (MTL then selects).
@@ -79,6 +99,15 @@ if ($Sets -lt 1) {
     if (-not [Console]::IsInputRedirected) {
         $a = Read-Host 'How many sets of 2 video, 2 audio and 2 ancillary streams? [1]'
         if ($a -match '^\s*\d+\s*$' -and [int]$a -ge 1) { $Sets = [int]$a }
+    }
+}
+if ($Seconds -lt 1) {
+    $Seconds = 30
+    if (-not [Console]::IsInputRedirected) {
+        $a = Read-Host 'How long: seconds, or with a unit (90s, 20m, 1h)? [30s]'
+        if ($a -match '^\s*(\d+)\s*([smh]?)\s*$' -and [int]$Matches[1] -ge 1) {
+            $Seconds = [int]$Matches[1] * @{ '' = 1; 's' = 1; 'm' = 60; 'h' = 3600 }[$Matches[2]]
+        }
     }
 }
 $yuv = Join-Path $Dir 'test_1080p.yuv'
@@ -115,8 +144,9 @@ if ($lcores -ne '') { $base += @('--lcores', $lcores) }
 
 # Run RxTxApp in the background. Its log goes to $log, and the window shows
 # each new line of it with no time stamp ($log keeps the full line), under a
-# status line that turns while RxTxApp runs. Gives the result lines and the
-# exit code.
+# status line that turns while RxTxApp runs. A key (or Ctrl+C) stops RxTxApp
+# as Ctrl+C does: it stops its sessions and gives its results. A second key
+# kills it. Gives the result lines and the exit code.
 function Invoke-Test([string[]]$extra, [string]$log) {
     # A line of a program on its standard error must not stop the script.
     $ErrorActionPreference = 'Continue'
@@ -127,6 +157,10 @@ function Invoke-Test([string[]]$extra, [string]$log) {
     # cmd.exe writes the standard output and error of RxTxApp to one file, in order.
     $p = Start-Process cmd.exe -ArgumentList "/d /s /c `"RxTxApp.exe $($all -join ' ') > `"$log`" 2>&1`"" -NoNewWindow -PassThru
     $null = $p.Handle # Without the handle, PowerShell 5.1 loses the exit code.
+    # Ctrl+C is for RxTxApp now: the script goes on and gives the results.
+    $keys = -not [Console]::IsInputRedirected
+    if ($keys) { [void][MtlTest.Console]::SetConsoleCtrlHandler([IntPtr]::Zero, $true) }
+    $stops = 0
     # No status line when the output goes to a file or a pipe.
     $spin = if ([Console]::IsOutputRedirected) { '' } else { '|/-\' }
     $width = 79
@@ -157,16 +191,30 @@ function Invoke-Test([string[]]$extra, [string]$log) {
             if ($new.Count -and $spin) { Write-Host -NoNewline ("`r" + ' ' * $width + "`r") }
             foreach ($l in $new) { Write-Host ($l -replace '^MTL: \d{4}-\d\d-\d\d \d\d:\d\d:\d\d, ', 'MTL: ') }
             if ($exited) { break }
+            if ($keys -and [Console]::KeyAvailable) {
+                $null = [Console]::ReadKey($true)
+                $stops++
+                if ($spin) { Write-Host -NoNewline ("`r" + ' ' * $width + "`r") }
+                if ($stops -eq 1) {
+                    Write-Host 'Stopping RxTxApp after a key; it gives its results. A second key kills it.' -ForegroundColor Yellow
+                    [void][MtlTest.Console]::GenerateConsoleCtrlEvent(0, 0)
+                } else {
+                    Write-Host 'Killing RxTxApp.' -ForegroundColor Yellow
+                    & taskkill.exe /PID $p.Id /T /F *> $null
+                }
+            }
             if ($spin) {
                 $sec = [int]((Get-Date) - $t0).TotalSeconds
-                Write-Host -NoNewline ("`r{0} RxTxApp runs: {1} s, test time {2} s" -f $spin[$i % 4], $sec, $Seconds)
+                $hint = if ($keys) { ' (a key stops it)' } else { '' }
+                Write-Host -NoNewline ("`r{0} RxTxApp runs: {1} of {2}{3}" -f $spin[$i % 4], (Format-Time $sec), (Format-Time $Seconds), $hint)
                 $i++
             }
             Start-Sleep -Milliseconds 200
         }
         if ($spin) { Write-Host -NoNewline ("`r" + ' ' * $width + "`r") }
     } finally {
-        # Ctrl+C stops the script: stop RxTxApp too.
+        if ($keys) { [void][MtlTest.Console]::SetConsoleCtrlHandler([IntPtr]::Zero, $false) }
+        # The script stops for another cause: stop RxTxApp too.
         if (-not $p.HasExited) { & taskkill.exe /PID $p.Id /T /F *> $null }
     }
     $code = $p.ExitCode
@@ -175,7 +223,7 @@ function Invoke-Test([string[]]$extra, [string]$log) {
     return [pscustomobject]@{ Code = $code; Lines = $lines }
 }
 
-Write-Host "Sets: $Sets ($(2 * $Sets) video, $(2 * $Sets) audio, $(2 * $Sets) ancillary)"
+Write-Host "Sets: $Sets ($(2 * $Sets) video, $(2 * $Sets) audio, $(2 * $Sets) ancillary); time $(Format-Time $Seconds)"
 Write-Host "Ports: TX $($Ports[0]), RX $($Ports[1]); group $group; lcores $(if ($lcores) { $lcores } else { 'MTL selects' })"
 $log = Join-Path $Dir 'test.log'
 $r = Invoke-Test @() $log
