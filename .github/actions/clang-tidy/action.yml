@@ -85,7 +85,7 @@ runs:
         extensions: c,cpp,cc,cxx
         # MTL compiles these on Windows alone, so compile_commands.json has no
         # entry for them, and clang-tidy stops at their Windows headers.
-        ignore: lib/src/mt_tap.c|lib/windows
+        ignore: lib/src/mt_tap.c|lib/windows|tests/unit/sch/mt_sch_win_harness.c|tests/unit/sch/mt_sch_win_lcore_test.cpp
         style: ''
         tidy-checks: ''
         database: .
