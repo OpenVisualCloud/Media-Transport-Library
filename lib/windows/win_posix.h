@@ -95,6 +95,7 @@ typedef uint32_t shmatt_t;
 struct filemap_info {
   HANDLE maphandle;
   size_t size;
+  unsigned short nattch;
 };
 
 struct shmid_ds {
@@ -111,11 +112,7 @@ struct shmid_ds {
   void* shm_unused3;
 };
 
-static inline int flock(int fd, int operation) {
-  MTL_MAY_UNUSED(fd);
-  MTL_MAY_UNUSED(operation);
-  return 0;
-}
+int flock(int fd, int operation);
 
 static inline key_t ftok(const char* path, int id) {
   MTL_MAY_UNUSED(path);
