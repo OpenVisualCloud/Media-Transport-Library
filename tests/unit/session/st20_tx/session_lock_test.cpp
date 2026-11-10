@@ -140,6 +140,27 @@ TEST(St20TxSessionLockDeadlockTest,
   ut_txv_destroy(ctx);
 }
 
+class St20TxSessionLockAppMutexTest : public ::testing::TestWithParam<ut_txv_control> {};
+
+TEST_P(St20TxSessionLockAppMutexTest, CompletesWhilePeerCallbackNeedsCallerMutex) {
+  UT_KNOWN_BUG("a control call waits for a peer callback blocked on the caller's mutex");
+  ASSERT_EQ(0, ut_txv_init());
+  ut_txv_ctx* ctx = ut_txv_create();
+  ASSERT_NE(nullptr, ctx);
+  EXPECT_TRUE(ut_txv_control_with_peer_callback_completes(ctx, GetParam(), 100));
+  ut_txv_destroy(ctx);
+}
+
+TEST(St20TxSessionLockDeadlockTest, OwnSessionQueryFromAnotherSchedulerThread) {
+  UT_KNOWN_BUG(
+      "a frame-done callback on another scheduler's thread waits for its own scheduler");
+  ASSERT_EQ(0, ut_txv_init());
+  ut_txv_ctx* ctx = ut_txv_create();
+  ASSERT_NE(nullptr, ctx);
+  EXPECT_TRUE(ut_txv_own_query_from_other_scheduler_completes(ctx, 100));
+  ut_txv_destroy(ctx);
+}
+
 std::string ControlName(const ::testing::TestParamInfo<ut_txv_control>& info) {
   switch (info.param) {
     case UT_TXV_GET:
@@ -193,3 +214,11 @@ INSTANTIATE_TEST_SUITE_P(Stats, St20TxSessionLockCallbackTest,
                          ControlName);
 
 }  // namespace
+
+INSTANTIATE_TEST_SUITE_P(
+    Calls, St20TxSessionLockAppMutexTest,
+    /* free blocks in the tx_video_session_get() of tv_mgr_detach() (GET),
+     * create and migration in tx_video_session_get_empty() (GET_EMPTY) */
+    ::testing::Values(UT_TXV_STATS_GET, UT_TXV_STATS_RESET, UT_TXV_UPDATE_DST, UT_TXV_GET,
+                      UT_TXV_GET_EMPTY),
+    ControlName);

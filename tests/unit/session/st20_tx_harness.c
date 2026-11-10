@@ -1491,7 +1491,9 @@ static void* ut_txv_app_mutex_watchdog(void* arg) {
   return NULL;
 }
 
-bool ut_txv_stats_with_peer_callback_completes(ut_txv_ctx* ctx, int timeout_ms) {
+static bool ut_txv_peer_callback_cycle_completes(ut_txv_ctx* ctx,
+                                                 enum ut_txv_control call,
+                                                 int timeout_ms) {
   struct st_tx_video_sessions_mgr* mgr = &ctx->mgr;
   struct mtl_sch_impl* sch = mt_sch_instance(&ctx->impl, 0);
   struct ut_txv_app_mutex_deadlock d = {.ctx = ctx, .timeout_ms = timeout_ms};
@@ -1508,6 +1510,7 @@ bool ut_txv_stats_with_peer_callback_completes(ut_txv_ctx* ctx, int timeout_ms) 
   peer->ops.get_next_frame = ut_txv_app_mutex_get_next_frame;
   peer->ops.priv = &d;
   rte_spinlock_init(&mgr->mutex[1]);
+  rte_spinlock_init(&mgr->mutex[2]);
   mgr->sessions[1] = peer;
   mgr->max_idx = 2;
   ctx->session.active = false;
@@ -1526,8 +1529,11 @@ bool ut_txv_stats_with_peer_callback_completes(ut_txv_ctx* ctx, int timeout_ms) 
 
   if (!ret) ret = pthread_create(&watchdog_thread, NULL, ut_txv_app_mutex_watchdog, &d);
   watchdog_started = !ret;
-  if (!ret) ret = ut_txv_control_call(ctx, mgr, 0, UT_TXV_STATS_GET);
+  /* GET_EMPTY needs an empty slot: the session is on 0, the peer on 1 */
+  if (!ret) ret = ut_txv_control_call(ctx, mgr, call == UT_TXV_GET_EMPTY ? 2 : 0, call);
   atomic_store(&d.stats_done, true);
+  if (!ret && (call == UT_TXV_GET || call == UT_TXV_GET_EMPTY))
+    tx_video_session_put(mgr, call == UT_TXV_GET_EMPTY ? 2 : 0);
   pthread_mutex_unlock(&d.app_mutex);
 
   if (watchdog_started) pthread_join(watchdog_thread, NULL);
@@ -1539,6 +1545,16 @@ bool ut_txv_stats_with_peer_callback_completes(ut_txv_ctx* ctx, int timeout_ms) 
   mgr->max_idx = 1;
   ut_txv_peer_free(peer);
   return !ret && !atomic_load(&d.watchdog_fired);
+}
+
+bool ut_txv_stats_with_peer_callback_completes(ut_txv_ctx* ctx, int timeout_ms) {
+  return ut_txv_peer_callback_cycle_completes(ctx, UT_TXV_STATS_GET, timeout_ms);
+}
+
+bool ut_txv_control_with_peer_callback_completes(ut_txv_ctx* ctx,
+                                                 enum ut_txv_control call,
+                                                 int timeout_ms) {
+  return ut_txv_peer_callback_cycle_completes(ctx, call, timeout_ms);
 }
 
 struct ut_txv_cross_scheduler_deadlock;
@@ -3109,4 +3125,138 @@ void ut_txv_pipe_geometry(const ut_txv_ctx* ctx, uint32_t* pkt_len, uint32_t* li
   *line_bytes = s->st20_bytes_in_line;
   *frame_size = s->st20_frame_size;
   *total_pkts = s->st20_total_pkts;
+}
+
+/* Scenario 4 (shared TX queue), reduced to its lock cycle: the caller acts as scheduler 1
+ * and holds a lock L, as mt_tsq_burst() holds tx_mutex across rte_eth_tx_burst(); inside
+ * it the PMD frees S's mbufs, so tv_frame_free_cb() runs S's notify_frame_done(), which
+ * queries S (on scheduler 0) as the header allows a callback to. Scheduler 0's pass is
+ * blocked on L in a peer's callback, as its transmitter would be on tx_mutex. */
+struct ut_txv_own_query_deadlock {
+  struct ut_txv_ctx* ctx;
+  pthread_mutex_t lock_l;
+  int timeout_ms;
+  int stats_ret;
+  atomic_bool callback_entered;
+  atomic_bool notify_done;
+  atomic_bool watchdog_fired;
+};
+
+static int ut_txv_own_query_peer_get_next_frame(void* priv, uint16_t* next_frame_idx,
+                                                struct st20_tx_frame_meta* meta) {
+  struct ut_txv_own_query_deadlock* d = priv;
+  (void)next_frame_idx;
+  (void)meta;
+  atomic_store(&d->callback_entered, true);
+  pthread_mutex_lock(&d->lock_l);
+  pthread_mutex_unlock(&d->lock_l);
+  return -EBUSY;
+}
+
+static int ut_txv_own_query_notify_frame_done(void* priv, uint16_t frame_idx,
+                                              struct st20_tx_frame_meta* meta) {
+  struct ut_txv_own_query_deadlock* d = priv;
+  struct st20_tx_user_stats stats;
+  (void)frame_idx;
+  (void)meta;
+  d->stats_ret = st20_tx_get_session_stats(&d->ctx->handle, &stats);
+  return 0;
+}
+
+static void* ut_txv_own_query_scheduler0(void* arg) {
+  struct ut_txv_own_query_deadlock* d = arg;
+  struct mtl_sch_impl* sch = mt_sch_instance(&d->ctx->impl, 0);
+  sch->t_pid = rte_gettid();
+  tvs_tasklet_handler(&d->ctx->mgr);
+  atomic_store(&sch->qs_seen, atomic_load(&sch->qs_token));
+  return NULL;
+}
+
+static void* ut_txv_own_query_watchdog(void* arg) {
+  struct ut_txv_own_query_deadlock* d = arg;
+  uint64_t deadline =
+      rte_get_tsc_cycles() + (uint64_t)d->timeout_ms * rte_get_tsc_hz() / 1000;
+  while (!atomic_load(&d->notify_done) && rte_get_tsc_cycles() < deadline) rte_pause();
+  if (!atomic_load(&d->notify_done)) {
+    atomic_store(&d->watchdog_fired, true);
+    atomic_store(&mt_sch_instance(&d->ctx->impl, 0)->qs_seen, UINT64_MAX);
+  }
+  return NULL;
+}
+
+bool ut_txv_own_query_from_other_scheduler_completes(ut_txv_ctx* ctx, int timeout_ms) {
+  struct st_tx_video_sessions_mgr* mgr = &ctx->mgr;
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct mtl_sch_impl* sch0 = mt_sch_instance(&ctx->impl, 0);
+  struct mtl_sch_impl* sch1 = mt_sch_instance(&ctx->impl, 1);
+  struct ut_txv_own_query_deadlock d = {
+      .ctx = ctx, .timeout_ms = timeout_ms, .stats_ret = -ECANCELED};
+  struct st_tx_video_session_impl* peer = ut_txv_peer_create(ctx, 1, true);
+  static uint8_t frame_data[64];
+  struct st_frame_trans frame = {0};
+  pthread_t sch0_thread, watchdog_thread;
+  bool sch0_started = false, watchdog_started = false;
+  bool active = s->active;
+  void* old_priv = s->ops.priv;
+  int (*old_done)(void*, uint16_t, struct st20_tx_frame_meta*) = s->ops.notify_frame_done;
+  size_t old_fb = s->st20_fb_size;
+  int ret = 0;
+
+  if (!peer || timeout_ms <= 0) {
+    ut_txv_peer_free(peer);
+    return false;
+  }
+  peer->ops.get_next_frame = ut_txv_own_query_peer_get_next_frame;
+  peer->ops.priv = &d;
+  rte_spinlock_init(&mgr->mutex[0]);
+  rte_spinlock_init(&mgr->mutex[1]);
+  mgr->sessions[1] = peer;
+  mgr->max_idx = 2;
+  s->active = false; /* its pass runs only the peer */
+  s->ops.notify_frame_done = ut_txv_own_query_notify_frame_done;
+  s->ops.priv = &d;
+  s->st20_fb_size = sizeof(frame_data);
+  frame.addr = frame_data;
+  frame.priv = s;
+  frame.idx = 0;
+  rte_atomic32_set(&frame.refcnt, 1);
+  ctx->handle.parent = &ctx->impl;
+  ctx->handle.type = MT_HANDLE_TX_VIDEO;
+  ctx->handle.impl = s;
+  ctx->handle.sch = sch0;
+  sch0->parent = &ctx->impl;
+  sch1->parent = &ctx->impl;
+  sch1->t_pid = rte_gettid(); /* this thread is scheduler 1, as in a shared-queue burst */
+  pthread_mutex_init(&d.lock_l, NULL);
+  pthread_mutex_lock(&d.lock_l); /* tx_mutex, held across the PMD's free of S's mbufs */
+  atomic_store(&sch0->qs_seen, atomic_load(&sch0->qs_token));
+
+  ret = pthread_create(&sch0_thread, NULL, ut_txv_own_query_scheduler0, &d);
+  sch0_started = !ret;
+  uint64_t deadline =
+      rte_get_tsc_cycles() + (uint64_t)timeout_ms * rte_get_tsc_hz() / 1000;
+  while (sch0_started && !atomic_load(&d.callback_entered) &&
+         rte_get_tsc_cycles() < deadline)
+    rte_pause();
+  if (!atomic_load(&d.callback_entered)) ret = ETIMEDOUT;
+  if (!ret) ret = pthread_create(&watchdog_thread, NULL, ut_txv_own_query_watchdog, &d);
+  watchdog_started = !ret;
+  if (!ret) tv_frame_free_cb(frame_data, &frame); /* S's last mbuf freed in the burst */
+  atomic_store(&d.notify_done, true);
+  pthread_mutex_unlock(&d.lock_l);
+
+  if (watchdog_started) pthread_join(watchdog_thread, NULL);
+  if (sch0_started) pthread_join(sch0_thread, NULL);
+  pthread_mutex_destroy(&d.lock_l);
+  sch0->t_pid = 0;
+  sch1->t_pid = 0;
+  atomic_store(&sch0->qs_seen, UINT64_MAX);
+  s->active = active;
+  s->ops.notify_frame_done = old_done;
+  s->ops.priv = old_priv;
+  s->st20_fb_size = old_fb;
+  mgr->sessions[1] = NULL;
+  mgr->max_idx = 1;
+  ut_txv_peer_free(peer);
+  return !ret && !atomic_load(&d.watchdog_fired) && !d.stats_ret;
 }
