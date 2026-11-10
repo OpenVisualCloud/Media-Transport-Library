@@ -532,7 +532,7 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
   argv[argc] = "--log-level";
   argc++;
   if (p->log_level == MTL_LOG_LEVEL_DEBUG) {
-    argv[argc] = "user,debug";
+    argv[argc] = "user*:debug";
   } else if (p->log_level == MTL_LOG_LEVEL_INFO) {
     if (has_afxdp && has_afpkt)
       argv[argc] = "pmd.net.af_xdp,pmd.net.af_packet,info";
