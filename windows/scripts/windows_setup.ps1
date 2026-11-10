@@ -5,7 +5,7 @@ Prepare a Windows host for MTL: the DPDK drivers, large pages, and cores
 that only the MTL scheduler threads use.
 
 .DESCRIPTION
-windows_setup.ps1 status|apply|undo [-SchedulerCpus <list>] [-Items <names>]
+windows_setup.ps1 status|apply|undo [-SchedulerCpus <list>|auto] [-Items <names>]
 
 The items, in order:
 
@@ -38,10 +38,13 @@ puts these values back. Both are safe to run again. testsign, cpusets, irq
 and vbs take effect after a restart of Windows; lockpages at the next logon.
 
 Do not reserve CPU 0, keep two CPUs or more for Windows, and reserve both
-threads of a core when SMT is on.
+threads of a core when SMT is on. -SchedulerCpus auto does this: the last
+half of the cores of processor group 0, at most 8 CPUs, each core with all
+its threads. With fewer than 4 cores, auto reserves no CPU.
 
 .EXAMPLE
 .\windows_setup.ps1 apply -SchedulerCpus 8-15
+.\windows_setup.ps1 apply -SchedulerCpus auto
 .\windows_setup.ps1 status
 .\windows_setup.ps1 undo -Items cpusets,irq
 #>
@@ -184,8 +187,17 @@ function Restore-RegValue([string]$key, [string]$name, $value, [string]$type) {
     }
 }
 
+# -SchedulerCpus auto: the last half of the cores of group 0, at most 8 CPUs.
+function Get-AutoCpus {
+    $cores = @(Get-CpuSets | Where-Object { $_.Group -eq 0 } | Group-Object Core | Sort-Object { [int]$_.Group[0].Cpu })
+    $n = [math]::Min([math]::Floor($cores.Count / 2), [math]::Floor(8 / [math]::Max(1, $cores[0].Count)))
+    if ($cores.Count -lt 4 -or $n -lt 1) { return , @() }
+    return , @($cores[($cores.Count - $n)..($cores.Count - 1)] | ForEach-Object { $_.Group.Cpu } | Sort-Object)
+}
+
 # The CPUs to reserve: -SchedulerCpus, or the CPUs of the last apply.
 function Get-SchedulerCpus($state) {
+    if ($SchedulerCpus -eq 'auto') { return , (Get-AutoCpus) }
     if ($SchedulerCpus -ne '') { return , (ConvertTo-CpuList $SchedulerCpus) }
     if ($state.PSObject.Properties['SchedulerCpus']) { return , (ConvertTo-CpuList $state.SchedulerCpus) }
     return , @()
@@ -357,6 +369,7 @@ function Item-CpuSets([string]$act, $state) {
             return Result 'cpusets' $st "ReservedCpuSets $(ConvertTo-Hex $now), want $(ConvertTo-Hex $want) (CPUs $($cpus -join ',')); allocated now: $alloc"
         }
         'apply' {
+            if (-not $cpus.Count -and $SchedulerCpus -eq 'auto') { return Result 'cpusets' 'skip' 'auto: fewer than 4 cores, no CPU reserved' }
             if (-not $cpus.Count) { return Result 'cpusets' 'error' 'give -SchedulerCpus, for example 8-15' }
             Test-SchedulerCpus $cpus $sets
             $want = ConvertTo-Mask $cpus $bytes
@@ -403,6 +416,7 @@ function Item-Irq([string]$act, $state) {
             return Result 'irq' $(if ($off.Count) { 'differs' } else { 'ok' }) "$($devs.Count - $off.Count) of $($devs.Count) devices on CPUs $($house -join ',')"
         }
         'apply' {
+            if (-not $cpus.Count -and $SchedulerCpus -eq 'auto') { return Result 'irq' 'skip' 'auto: no CPU reserved' }
             if (-not $cpus.Count) { return Result 'irq' 'error' 'give -SchedulerCpus, for example 8-15' }
             if (-not $off.Count) { return Result 'irq' 'ok' "$($devs.Count) devices on CPUs $($house -join ',')" }
             $saved = @{}

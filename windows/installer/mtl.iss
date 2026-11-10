@@ -7,7 +7,7 @@
 ;
 ; Silent install (all options are optional):
 ;   mtl-<version>-win64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-;     /TASKS="host,drivers" /SCHEDCPUS=8-15 /MTLUSER=<user>
+;     /TASKS="host,drivers,desktopicon" /SCHEDCPUS=auto /MTLUSER=<user>
 ;     /HWIDS="PCI\VEN_8086&DEV_1592" /EWDK=<EWDK folder or ISO>
 
 #ifndef MtlVersion
@@ -47,14 +47,20 @@ WizardStyle=modern
 [Tasks]
 Name: host; Description: "Set up Windows for MTL: test signing, large pages, reserved CPUs, power plan (windows_setup.ps1)"
 Name: drivers; Description: "Build and install the NetUIO and virt2phys drivers with the EWDK (install_drivers.ps1)"; Check: EwdkFound
+Name: desktopicon; Description: "Put ""MTL test"" on the desktop: 2 video, 2 audio and 2 ancillary streams, port 0 to port 1"
 
 [Files]
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; The ice PMD of DPDK reads C:\dpdk\lib\ice.pkg (DPDK patch 0001) for an E810 or
+; E830 PF. Setup keeps an ice.pkg that is already there.
+Source: "{#StageDir}\ddp\ice.pkg"; DestDir: "C:\dpdk\lib"; Flags: onlyifdoesntexist
 
 ; Each entry opens a PowerShell window as administrator (admin_shell.ps1).
 [Icons]
 Name: "{group}\MTL status"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\scripts\admin_shell.ps1"" status"; Comment: "The Windows settings and the drivers of MTL"
-Name: "{group}\MTL install drivers"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\scripts\admin_shell.ps1"" drivers"; Comment: "Build and install the NetUIO and virt2phys drivers with the mounted EWDK"
+Name: "{group}\MTL install drivers"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\scripts\admin_shell.ps1"" drivers"; Comment: "Build and install the NetUIO and virt2phys drivers with the EWDK"
+Name: "{group}\MTL test"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\scripts\admin_shell.ps1"" test"; Comment: "RxTxApp: 2 video, 2 audio and 2 ancillary streams for 30 s"
+Name: "{autodesktop}\MTL test"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\scripts\admin_shell.ps1"" test"; Comment: "RxTxApp: 2 video, 2 audio and 2 ancillary streams for 30 s"; Tasks: desktopicon
 
 [Code]
 var
@@ -108,6 +114,20 @@ begin
   Log(Script + ' exit code ' + IntToStr(Result));
 end;
 
+// An EWDK ISO of the Downloads folder, or ''. install_drivers.ps1 mounts it.
+function EwdkIso(): String;
+var
+  F: TFindRec;
+  Dir: String;
+begin
+  Result := '';
+  Dir := ExpandConstant('{%USERPROFILE}\Downloads\');
+  if FindFirst(Dir + '*ewdk*.iso', F) then begin
+    Result := Dir + F.Name;
+    FindClose(F);
+  end;
+end;
+
 // The root folder of a mounted EWDK, or ''.
 function EwdkRoot(): String;
 var
@@ -123,7 +143,7 @@ end;
 
 function EwdkFound(): Boolean;
 begin
-  Result := (ExpandConstant('{param:EWDK|}') <> '') or (EwdkRoot() <> '');
+  Result := (ExpandConstant('{param:EWDK|}') <> '') or (EwdkRoot() <> '') or (EwdkIso() <> '');
 end;
 
 function SecureBootOn(): Boolean;
@@ -138,9 +158,9 @@ procedure InitializeWizard();
 begin
   HostPage := CreateInputQueryPage(wpSelectTasks, 'Host settings',
     'The settings of windows_setup.ps1 and install_drivers.ps1.',
-    'Scheduler CPUs: the CPUs that only the MTL scheduler threads use, for example 8-15. ' +
-    'Do not use CPU 0, keep two CPUs or more for Windows, and with SMT give both threads ' +
-    'of a core. Leave it empty to reserve no CPU.' + #13#10#13#10 +
+    'Scheduler CPUs: the CPUs that only the MTL scheduler threads use. auto: the last half of ' +
+    'the cores, at most 8 CPUs. Or give a list, for example 8-15: not CPU 0, two CPUs or more ' +
+    'for Windows, and with SMT both threads of a core. Empty: no CPU reserved.' + #13#10#13#10 +
     'NetUIO device IDs: NetUIO takes each device with one of these IDs. Empty: the IDs of the ' +
     'last install, or the iavf VF of E810 and E830. For a PF, give its ID, for example ' +
     'PCI\VEN_8086&DEV_1592 (E810-C for QSFP) or PCI\VEN_8086&DEV_12D2 (E830-CC for QSFP). ' +
@@ -148,7 +168,7 @@ begin
   HostPage.Add('Scheduler CPUs:', False);
   HostPage.Add('User that runs MTL (gets "Lock pages in memory"):', False);
   HostPage.Add('NetUIO device IDs, comma-separated (empty: see above):', False);
-  HostPage.Values[0] := ExpandConstant('{param:SCHEDCPUS|}');
+  HostPage.Values[0] := ExpandConstant('{param:SCHEDCPUS|auto}');
   HostPage.Values[1] := ExpandConstant('{param:MTLUSER|' + GetUserNameString() + '}');
   HostPage.Values[2] := ExpandConstant('{param:HWIDS|}');
 end;
@@ -171,15 +191,15 @@ begin
         'and Windows loads them only with Secure Boot off. Setup goes on. Then turn off Secure ' +
         'Boot in the firmware, and run windows_setup.ps1 apply again.', mbInformation, MB_OK, IDOK);
     if not EwdkFound() then
-      SuppressibleMsgBox('No EWDK is mounted, so setup does not install the NetUIO and virt2phys ' +
-        'drivers. Mount the EWDK ISO and run install_drivers.ps1 apply later (see the run guide).',
-        mbInformation, MB_OK, IDOK);
+      SuppressibleMsgBox('No EWDK found (mounted, or an EWDK ISO in Downloads), so setup does not ' +
+        'install the NetUIO and virt2phys drivers. Put the EWDK ISO in Downloads, then open ' +
+        'Start > MTL > MTL install drivers.', mbInformation, MB_OK, IDOK);
   end;
   if CurPageID = HostPage.ID then begin
     Cpus := Trim(HostPage.Values[0]);
     for I := 1 to Length(Cpus) do
-      if Pos(Cpus[I], '0123456789,-') = 0 then begin
-        MsgBox('Scheduler CPUs: give numbers and ranges, for example 8-15 or 8-11,20-23.', mbError, MB_OK);
+      if (Cpus <> 'auto') and (Pos(Cpus[I], '0123456789,-') = 0) then begin
+        MsgBox('Scheduler CPUs: auto, or numbers and ranges, for example 8-15 or 8-11,20-23.', mbError, MB_OK);
         Result := False;
         Exit;
       end;
