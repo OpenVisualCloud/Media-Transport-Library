@@ -1,11 +1,17 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-The basic test of MTL on Windows: RxTxApp sends two 1080p59 video, two audio
-and two ancillary streams from one port and receives them on a second port.
+The basic test of MTL on Windows: RxTxApp sends sets of two 1080p59 video,
+two audio and two ancillary streams from one port and receives them on a
+second port.
 
 .DESCRIPTION
-run_test.ps1 [-Ports <PCI address>,<PCI address>] [-Seconds 30]
+run_test.ps1 [-Sets <number>] [-Ports <PCI address>,<PCI address>] [-Seconds 30]
+
+-Sets: the number of sets. With no -Sets, the test asks for it (the default
+is 1). Each stream of a set has its own queue on each port, so a set needs 6
+RX queues: a VF with 16 queues takes 2 sets. A VF with a 512-entry RSS LUT on
+a Linux host takes more (doc/vm_WIN.md).
 
 The two ports must reach each other: two VFs of one PF, or two PFs on one
 network. The default ports are the first two NetUIO ports
@@ -19,9 +25,10 @@ no flow rule: then the test runs again with --rss_mode l3_l4.
 
 .EXAMPLE
 .\run_test.ps1
-.\run_test.ps1 -Ports 0000:01:00.0,0000:02:00.0 -Seconds 60
+.\run_test.ps1 -Sets 4 -Ports 0000:01:00.0,0000:02:00.0 -Seconds 60
 #>
 param(
+    [int]$Sets = 0,
     [string[]]$Ports = @(),
     [int]$Seconds = 30
 )
@@ -67,6 +74,13 @@ if ($Ports.Count -lt 2) {
 }
 
 Write-Host "Making the test files in $Dir"
+if ($Sets -lt 1) {
+    $Sets = 1
+    if (-not [Console]::IsInputRedirected) {
+        $a = Read-Host 'How many sets of 2 video, 2 audio and 2 ancillary streams? [1]'
+        if ($a -match '^\s*\d+\s*$' -and [int]$a -ge 1) { $Sets = [int]$a }
+    }
+}
 $yuv = Join-Path $Dir 'test_1080p.yuv'
 $pcm = Join-Path $Dir 'test.pcm'
 $txt = Join-Path $Dir 'test.txt'
@@ -76,11 +90,11 @@ if (-not (Test-Path $txt)) { Set-Content -Path $txt -Value 'MTL test' -Encoding 
 
 $h = [Security.Cryptography.MD5]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($env:COMPUTERNAME))
 $group = "239.96.$(10 + $h[0] % 240).$(1 + $h[1] % 250)"
-$video = @{ replicas = 2; type = 'frame'; pacing = 'gap'; start_port = 20000; payload_type = 112
+$video = @{ replicas = 2 * $Sets; type = 'frame'; pacing = 'gap'; start_port = 20000; payload_type = 112
     tr_offset = 'default'; video_format = 'i1080p59'; pg_format = 'YUV_422_10bit' }
-$audio = @{ replicas = 2; type = 'frame'; start_port = 30000; payload_type = 111; audio_format = 'PCM16'
+$audio = @{ replicas = 2 * $Sets; type = 'frame'; start_port = 30000; payload_type = 111; audio_format = 'PCM16'
     audio_channel = @('ST'); audio_sampling = '48kHz'; audio_ptime = '1'; audio_url = $pcm.Replace('\', '/') }
-$anc = @{ replicas = 2; type = 'frame'; start_port = 40000; payload_type = 113 }
+$anc = @{ replicas = 2 * $Sets; type = 'frame'; start_port = 40000; payload_type = 113 }
 $config = [ordered]@{
     interfaces  = @(@{ name = $Ports[0]; ip = '192.168.96.10' }, @{ name = $Ports[1]; ip = '192.168.96.20' })
     tx_sessions = @(@{ dip = @($group); interface = @(0)
@@ -161,6 +175,7 @@ function Invoke-Test([string[]]$extra, [string]$log) {
     return [pscustomobject]@{ Code = $code; Lines = $lines }
 }
 
+Write-Host "Sets: $Sets ($(2 * $Sets) video, $(2 * $Sets) audio, $(2 * $Sets) ancillary)"
 Write-Host "Ports: TX $($Ports[0]), RX $($Ports[1]); group $group; lcores $(if ($lcores) { $lcores } else { 'MTL selects' })"
 $log = Join-Path $Dir 'test.log'
 $r = Invoke-Test @() $log
@@ -173,9 +188,15 @@ if ($r.Code -ne 0 -and (Select-String -Path $log -Pattern 'rte_flow_create fail|
 Write-Host ''
 foreach ($l in $r.Lines) { Write-Host "  $($l.Text)" }
 $ok = @($r.Lines | Where-Object { $_.State -eq 'OK' }).Count
-# 2 TX video, then 2 RX of each of video, audio and ancillary.
-$pass = $r.Code -eq 0 -and $ok -ge 8 -and $ok -eq $r.Lines.Count
+# Each set: 2 TX video, then 2 RX of each of video, audio and ancillary.
+$pass = $r.Code -eq 0 -and $ok -ge 8 * $Sets -and $ok -eq $r.Lines.Count
 Write-Host ''
-if ($pass) { Write-Host "PASS: $ok streams OK" -ForegroundColor Green }
-else { Write-Host "FAIL: $ok of $($r.Lines.Count) results OK, exit code $($r.Code). See $log" -ForegroundColor Red }
+if ($pass) { Write-Host "PASS: $ok streams OK ($Sets sets)" -ForegroundColor Green }
+else {
+    Write-Host "FAIL: $ok of $(8 * $Sets) results OK, exit code $($r.Code). See $log" -ForegroundColor Red
+    $cut = Select-String -Path $log -Pattern 'cut to the device max tx (\d+) rx (\d+)' | Select-Object -First 1
+    if ($cut) {
+        Write-Host "The port has $($cut.Matches[0].Groups[2].Value) RX queues, and each set needs 6: use fewer sets, or a VF with a 512-entry RSS LUT (doc/vm_WIN.md)." -ForegroundColor Yellow
+    }
+}
 if (-not $pass) { exit 1 }
