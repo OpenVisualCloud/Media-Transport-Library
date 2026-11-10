@@ -241,6 +241,18 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
 
 static int sch_tasklet_lcore(void* arg) {
   struct mtl_sch_impl* sch = arg;
+#ifdef WINDOWSENV
+  /* the patched Windows EAL does not pin the lcore threads */
+  unsigned int lcore = rte_lcore_id();
+  rte_cpuset_t cpuset = rte_lcore_cpuset(lcore);
+  unsigned int cpu = 0;
+  while (cpu < CPU_SETSIZE && !CPU_ISSET(cpu, &cpuset)) cpu++;
+  int ret = rte_thread_set_affinity_by_id(rte_thread_self(), &cpuset);
+  if (ret)
+    warn("%s(%d), pin to lcore %u cpu %u fail %d\n", __func__, sch->idx, lcore, cpu, ret);
+  else
+    info("%s(%d), pinned to lcore %u cpu %u\n", __func__, sch->idx, lcore, cpu);
+#endif
   sch->tid = pthread_self();
   sch->t_pid = rte_sys_gettid();
   sch_tasklet_func(sch);
