@@ -91,6 +91,7 @@ The Windows patches of DPDK 26.07:
 | 0003 | Does not install `sched.h` over the `sched.h` of MinGW |
 | 0004 | Fixes a crash in `rte_eal_alarm_cancel()` |
 | 0005 | Lets the iavf VF read its admin queue on Windows. Without it, each VF command times out. |
+| 0006 | Resets a VF that a killed process left active, so the next start works with no device restart |
 
 ## 3. Build MTL
 
