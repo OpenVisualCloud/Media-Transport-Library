@@ -1,0 +1,85 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dawid Wesierski <dawid.wesierski@intel.com>
+Date: Tue, 10 Nov 2026 12:00:00 +0100
+Subject: [PATCH] net/iavf: fix admin queue read with no interrupt callback
+
+Commit 12e8844f0bda ("net/iavf: check interrupt registration failure")
+reads the admin queue in the device alarm when
+rte_intr_callback_register() fails. FreeBSD needs that: nic_uio has no
+interrupts. Windows needs it too: rte_intr_callback_register() returns
+-ENOTSUP there.
+
+Commit 388f0b348065 ("net/iavf: reuse device alarm for PHC sync") arms
+the device alarm in all cases, but the alarm reads the admin queue only
+when the PF does not give WB_ON_ITR. iavf_dev_init() sets
+aq_intr_enabled in all cases, so a command does not poll the admin queue:
+it waits for the interrupt thread to read the answer of the PF. When the
+PF gives WB_ON_ITR, as the Linux ice driver does, and the callback
+registration fails, nothing reads the admin queue. Each command after
+aq_intr_enabled is set then waits for its full timeout and fails with
+"No response for cmd", iavf_dev_init() fails, and the VF cannot be used.
+
+Keep a flag for a registered callback, and read the admin queue in the
+alarm when no callback is registered. When the registration succeeds,
+nothing changes.
+
+Tested on Windows 11 with MinGW GCC 16.2 and an E810 VF (8086:1889) on
+NetUIO, with the Linux in-tree ice driver on the host: the probe, the
+queue setup and the start pass, and testpmd forwards.
+
+Fixes: 388f0b348065 ("net/iavf: reuse device alarm for PHC sync")
+Cc: stable@dpdk.org
+
+Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
+---
+ drivers/net/intel/iavf/iavf.h        | 1 +
+ drivers/net/intel/iavf/iavf_ethdev.c | 9 ++++++---
+ 2 files changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/intel/iavf/iavf.h b/drivers/net/intel/iavf/iavf.h
+index 293adaf6c9..0f04c976b1 100644
+--- a/drivers/net/intel/iavf/iavf.h
++++ b/drivers/net/intel/iavf/iavf.h
+@@ -245,6 +245,7 @@ struct iavf_info {
+ 	int cmd_retval; /* return value of the cmd response from PF */
+ 	uint8_t aq_resp[IAVF_AQ_BUF_SZ]; /* buffer to store the adminq response from PF */
+ 	bool aq_intr_enabled;
++	bool aq_intr_cb; /* an interrupt callback reads the admin queue */
+ 
+ 	/** iAVF watchdog enable */
+ 	bool watchdog_enabled;
+diff --git a/drivers/net/intel/iavf/iavf_ethdev.c b/drivers/net/intel/iavf/iavf_ethdev.c
+index 8b8e371435..d800a3382a 100644
+--- a/drivers/net/intel/iavf/iavf_ethdev.c
++++ b/drivers/net/intel/iavf/iavf_ethdev.c
+@@ -2887,7 +2887,8 @@ iavf_dev_alarm_handler(void *param)
+ 	struct iavf_hw *hw = IAVF_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+ 	uint32_t icr0;
+ 
+-	if (!(vf->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_WB_ON_ITR)) {
++	/* Read the admin queue unless an interrupt callback does it. */
++	if (!vf->aq_intr_cb) {
+ 		iavf_disable_irq0(hw);
+ 
+ 		/* read out interrupt causes */
+@@ -3074,13 +3075,15 @@ iavf_dev_init(struct rte_eth_dev *eth_dev)
+ 			&eth_dev->data->mac_addrs[0]);
+ 
+ 
++	vf->aq_intr_cb = false;
+ 	if (vf->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_WB_ON_ITR &&
+ 			/* register callback func to eal lib */
+ 			rte_intr_callback_register(pci_dev->intr_handle,
+-				   iavf_dev_interrupt_handler, (void *)eth_dev) == 0)
+-
++				   iavf_dev_interrupt_handler, (void *)eth_dev) == 0) {
++		vf->aq_intr_cb = true;
+ 		/* enable uio intr after callback register */
+ 		rte_intr_enable(pci_dev->intr_handle);
++	}
+ 
+ 	rte_eal_alarm_set(IAVF_ALARM_INTERVAL,
+ 			  iavf_dev_alarm_handler, eth_dev);
+-- 
+2.47.3
+
