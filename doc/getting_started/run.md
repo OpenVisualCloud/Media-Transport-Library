@@ -13,9 +13,9 @@ access-control policies.
 
 ## 1. IOMMU Setup
 
-### 1.1. [IOMMU Setup](chunks/_iommu_setup.md)
+### 1.1. [IOMMU Setup](../chunks/_iommu_setup.md)
 
-```{include} chunks/_iommu_setup.md
+```{include} ../chunks/_iommu_setup.md
 ```
 
 ## 2. Kernel Mode NIC Driver Setup
@@ -77,7 +77,7 @@ For the Intel® E800 Series Ethernet Adapters (E810 or E830), which supports Vir
 For other Network Interface Cards (NICs), please verify if your NIC is supported by DPDK by referring to the following link: <https://doc.dpdk.org/guides/nics/>. If it is, follow the guide provided there for further instructions.
 
 If your NIC is not supported by DPDK's native Poll Mode Driver (PMD), MTL provides an alternative in the form of kernel socket-based transport support. This enables an MTL application to send and receive UDP packets via the Kernel.
-Please refer to [kernel TX config](../tests/tools/RxTxApp/script/kernel_socket_json/tx.json) and [kernel RX config](../tests/tools/RxTxApp/script/kernel_socket_json/rx.json) for how to config the kernel transport in JSON config. However, it's important to note that this is an experimental feature intended solely for trial usage. Consequently, its performance and pacing accuracy may be limited.
+Please refer to [kernel TX config](../../tests/tools/RxTxApp/script/kernel_socket_json/tx.json) and [kernel RX config](../../tests/tools/RxTxApp/script/kernel_socket_json/rx.json) for how to config the kernel transport in JSON config. However, it's important to note that this is an experimental feature intended solely for trial usage. Consequently, its performance and pacing accuracy may be limited.
 
 #### 3.2.1. Create Intel® E800 series VFs and Bind to DPDK PMD
 
@@ -165,7 +165,7 @@ The number is dependent on the workloads you wish to execute. Consider increasin
 > processes will allocate on the same cores, leading to severe performance degradation
 > and potential system instability.
 >
-> For detailed instructions and further information, please refer to the [manager/README.md](../manager/README.md)
+> For detailed instructions and further information, please refer to the [manager/README.md](../../manager/README.md)
 
 ### 5.1. Prepare Source Files
 
@@ -190,7 +190,7 @@ Below is the command to convert yuv422p10le file to yuv422rfc4175be10 pg format(
 ```
 
 The yuv422rfc4175be10 files can be viewed by [YUV Viewer tools](https://github.com/IENT/YUView). Below is the custom layout.
-![yuview yuv422rfc4175be10 custom layout](png/yuview_yuv422rfc4175be10_layout.png)
+![yuview yuv422rfc4175be10 custom layout](../png/yuview_yuv422rfc4175be10_layout.png)
 
 #### 5.1.3. Convert yuv422rfc4175be10 Back to yuv422p10le
 
@@ -307,7 +307,7 @@ app_rx_st20p_stat(0), avrage latency 18.263382ms
 MTL: 2024-04-16 15:39:18, * *    E N D    S T A T E   * *
 ```
 
-This project also provides many loop tests (1 port as tx, 1 port as rx) config files. Please refer to [loop config](../tests/tools/RxTxApp/script/).
+This project also provides many loop tests (1 port as tx, 1 port as rx) config files. Please refer to [loop config](../../tests/tools/RxTxApp/script/).
 
 If it failed to run the sample, please help to collect the system setup status by `status_report.sh` and share the log for further analysis.
 
@@ -395,9 +395,9 @@ sudo sysctl -w vm.nr_hugepages=4096
 
 This section includes some optional guides. If you are not familiar with the details or do not require this information, you can skip this part.
 
-### 7.1. [PTP Setup](chunks/_ptp_setup.md)
+### 7.1. [PTP Setup](../chunks/_ptp_setup.md)
 
-```{include} chunks/_ptp_setup.md
+```{include} ../chunks/_ptp_setup.md
 ```
 
 ### 7.2. Disable Automatic NUMA Balancing
@@ -410,7 +410,7 @@ sudo sysctl -w kernel.numa_balancing=0
 echo "kernel.numa_balancing=0" | sudo tee /etc/sysctl.d/99-mtl-numa-balancing.conf
 ```
 
-MTL moves scheduler threads that run with the default memory policy to `MPOL_LOCAL`, which only shortens those scans. See also the [sysctl tuning list](experimental/performance_optimizations.md).
+MTL moves scheduler threads that run with the default memory policy to `MPOL_LOCAL`, which only shortens those scans. See also the [sysctl tuning list](../experimental/performance_optimizations.md).
 
 ## 8. FAQs
 
@@ -601,7 +601,7 @@ sudo ldconfig
 
 This might happen after commit `4f46e49`, because the lcore_shm structure is [changed](https://github.com/OpenVisualCloud/Media-Transport-Library/commit/4f46e493b79451c7ca564d82e1be56c7916b0722#diff-7ff8a138885ebda032ff57250ff81174b30722cc168a26fe39d9a4ff501d48d0L710).
 It also happens when the structure of the starting process is larger than the one in the system: its size follows `RTE_MAX_LCORE` of the DPDK build, so after a rebuild of DPDK with a larger `DPDK_MAX_LCORES`, or while an MTL 26.09 or earlier runs or after one crashed.
-Stop the older processes first: MTL 26.09 and earlier must not run together with a later release (see the [lcore Guide](shm_lcore.md)).
+Stop the older processes first: MTL 26.09 and earlier must not run together with a later release (see the [lcore Guide](../performance/shm_lcore.md)).
 
 ```text
 MT: 2023-11-24 15:06:27, Error: sch_lcore_shm_init, can not get shared memory for lcore, Invalid argument
@@ -621,8 +621,8 @@ ipcs -m
 sudo ipcrm -m <shmid>
 ```
 
-## 9. [Intel I226-V Runtime Flow](chunks/_run_i226.md)
+## 9. [Intel I226-V Runtime Flow](../chunks/_run_i226.md)
 
-```{include} chunks/_run_i226.md
+```{include} ../chunks/_run_i226.md
 :relative-docs: ../
 ```

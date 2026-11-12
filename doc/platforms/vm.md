@@ -24,11 +24,11 @@ sudo yum install virt-manager
 
 ### 1.4. Install the ICE driver
 
-Please refer to the driver update section in [Intel® E800 Series Ethernet Adapters driver guide](e800_series_drivers.md).
+Please refer to the driver update section in [Intel® E800 Series Ethernet Adapters driver guide](../getting_started/e800_series_drivers.md).
 
 ### 1.5. Create VFs
 
-You can also refer to [Run Guide](run.md).
+You can also refer to [Run Guide](../getting_started/run.md).
 
 ```bash
 # root

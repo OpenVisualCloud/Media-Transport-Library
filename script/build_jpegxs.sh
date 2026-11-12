@@ -39,7 +39,7 @@ ENVIRONMENT:
 	KAHAWAI_CFG_PATH	Plugin registry; overridden by --config
 	CC, CXX		Compiler selection
 	CFLAGS, LDFLAGS		Flags of the SVT-JPEG-XS and MTL plugin builds; the script
-				adds the hardening flags of doc/build.md to those of the plugin
+				adds the hardening flags of doc/getting_started/build.md to those of the plugin
 	CPPFLAGS		Preprocessor flags of the MTL plugin build
 	MTL_HARDENING		0 builds the plugin without the hardening flags (default: 1)
 
@@ -197,7 +197,7 @@ main() {
 	# Both, MTL and DPDK are recorded relative to the plugin, for the install's
 	# final place.
 	plugin_libdir="${prefix}/$(multiarch_libdir)"
-	# The compiler hardening of doc/build.md, for the plugin. -Dc_args and
+	# The compiler hardening of doc/getting_started/build.md, for the plugin. -Dc_args and
 	# -Dc_link_args replace the CFLAGS, CPPFLAGS and LDFLAGS meson reads
 	# otherwise, so they take them in, in meson's order.
 	hardening_flags || exit 1

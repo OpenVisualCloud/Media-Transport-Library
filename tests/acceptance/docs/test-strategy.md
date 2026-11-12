@@ -2,8 +2,8 @@
 
 This document defines how `tests/acceptance/` selects cases. Framework
 architecture and execution are documented in
-[`doc/acceptance-design.md`](../../../doc/acceptance-design.md) and
-[`doc/acceptance_quickstart.md`](../../../doc/acceptance_quickstart.md).
+[`doc/development/acceptance-design.md`](../../../doc/development/acceptance-design.md) and
+[`doc/development/acceptance_quickstart.md`](../../../doc/development/acceptance_quickstart.md).
 
 ## Test Behavior, Not Adapters
 

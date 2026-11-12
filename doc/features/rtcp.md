@@ -15,7 +15,7 @@ The RTCP retransmission mechanism within MTL is designed with the cloud and edge
 The workflow leverages RTCP to monitor the status of each packet, and in the event of packet loss, an RTCP NACK (Negative Acknowledgment) is promptly generated to request the retransmission of the lost packet(s).
 This real-time detection and correction process serves to maintain the continuity and quality of the media stream.
 
-![RTCP Retransmission](png/rtcp.svg)
+![RTCP Retransmission](../png/rtcp.svg)
 
 ## RTCP Configuration Code Example
 

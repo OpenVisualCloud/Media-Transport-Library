@@ -651,7 +651,7 @@ Progressive, height ≥ 1080; T = frame time. Interlaced, 720p and SD use their 
 
   All runs were compliant narrow, with 0 VRX failures. A 4× longer train moved packet 0 by less than one pad, so shaper drift over the train is not what limits `warm_pkts`.
 - **Concurrent sessions.** Each planned session's packet 0 is set by its own queue's shaper, as long as the scheduler loop reaches its pre-arm inside the window. Every other tasklet on that scheduler adds its pass time. A pre-arm pass costs ⌈n/32⌉ `tx_burst` calls.
-- **Non-isolated cores.** The tolerances above are the whole margin. A preemption, softirq or SMT sibling on a shared core can exceed them, so this is best effort (`doc/isolation.md`, `tests/tools/isolate/isolate.sh`). A larger `nb_tx_desc` raises only the frame-body row, unless the cap is ring-derived.
+- **Non-isolated cores.** The tolerances above are the whole margin. A preemption, softirq or SMT sibling on a shared core can exceed them, so this is best effort (`doc/performance/isolation.md`, `tests/tools/isolate/isolate.sh`). A larger `nb_tx_desc` raises only the frame-body row, unless the cap is ring-derived.
 - **No plan, so the #1622 behavior.** This happens with:
   - a user `ops.pad_interval` or the static pad table;
   - a DPDK ice PF without the `rl_burst_size` devarg, or with one that cannot refill in the idle gap before the window;
@@ -1161,7 +1161,7 @@ Independent MTL processes (one EAL each, e.g. on separate VFs) coordinate lcore 
 Both key an lcore by its ID, and the ID is the CPU ID.
 `dev_eal_init()` passes `--remap-lcore-ids` only when the host has more CPUs (`_SC_NPROCESSORS_CONF`) than `RTE_MAX_LCORE`, and warns: with it every process numbers its CPUs 0, 1, 2, ... and claims the same IDs.
 `script/build_dpdk.sh` sets `max_lcores` to the build host's CPU count, at least 128, or `DPDK_MAX_LCORES`, so `RTE_MAX_LCORE` covers every CPU of the build host.
-The shm table has `RTE_MAX_LCORE` entries, so its size follows the DPDK build: `shmget()` fails with `EINVAL` in a process whose table is larger than the segment that exists (`doc/run.md` §8.15).
+The shm table has `RTE_MAX_LCORE` entries, so its size follows the DPDK build: `shmget()` fails with `EINVAL` in a process whose table is larger than the segment that exists (`doc/getting_started/run.md` §8.15).
 MTL 26.01-26.09 keep remapped IDs in a 128-entry table: a newer process fails to start while that segment exists, but an older process started later attaches to the larger one without noticing, so the versions must not run together (also not with an older MtlManager, which refuses IDs >= 128).
 
 ### Backend Support

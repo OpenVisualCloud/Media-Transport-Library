@@ -283,4 +283,4 @@ without the pre-arm plan); the lowest 1 % that the margin check drops covers it.
 | After a pass: `EAL: PANIC in eal_intr_thread_main(): Error adding fd N epoll_ctl, Bad file descriptor`, or SIGSEGV during `mt_dev_if_uinit` | The iavf close vs. interrupt callback race. Check the DPDK build carries [patch 0009](../../../patches/dpdk/26.07/0009-net-iavf-fix-interrupt-callback-race-on-close.md) |
 
 For the TX statistics (`stat_epoch_drop`, `stat_epoch_onward`,
-`stat_error_user_timestamp`) see `doc/stats_guide.md` and KB §5.
+`stat_error_user_timestamp`) see `doc/debugging/stats_guide.md` and KB §5.

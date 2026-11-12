@@ -2,7 +2,7 @@
 
 MTL leverage SWIG, found at <https://github.com/swig/swig/tree/master>, to transform C APIs into a binding layer that Python can utilize.
 
-Before using the Python binding, please ensure that MTL is [built](../doc/build.md) and the NIC is [set up](../doc/run.md) correctly.
+Before using the Python binding, please ensure that MTL is [built](../doc/getting_started/build.md) and the NIC is [set up](../doc/getting_started/run.md) correctly.
 
 ## 1. Installation of SWIG Dependency
 

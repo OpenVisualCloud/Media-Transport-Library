@@ -15,7 +15,7 @@ the ICE driver and SVT-JPEG-XS, while the gtest workflow performs another ICE
 driver check. This makes validation slow, gives test jobs permission to mutate
 the host, and can produce different binaries on different runners.
 
-See [the CI/CD architecture proposal](../doc/cicd_setup_proposition.md) and the
+See [the CI/CD architecture proposal](../doc/development/cicd_setup_proposition.md) and the
 [architecture diagram](./ci_arch.svg) for the wider pipeline.
 
 ## Proposed architecture

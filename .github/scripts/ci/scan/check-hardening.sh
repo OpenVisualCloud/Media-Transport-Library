@@ -3,7 +3,7 @@
 # Copyright 2026 Intel Corporation
 #
 # Fails when an x86-64 executable or shared object under the given paths lacks
-# a mark that the compiler hardening of doc/build.md leaves: full RELRO
+# a mark that the compiler hardening of doc/getting_started/build.md leaves: full RELRO
 # (-z relro -z now), a non-executable stack, PIE, CET IBT and SHSTK
 # (-fcf-protection=full in each object linked in), and the stack protector, as
 # an import of __stack_chk_fail, which needs one protected function in the file.

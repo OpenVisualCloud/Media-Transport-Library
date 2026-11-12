@@ -7,7 +7,7 @@ test. This page describes the contract between those hosts and the workflows.
 
 Three layers configure a test host, and each setting belongs to one of them.
 The full table is in
-[`mtl-scripts.instructions.md`](../.github/instructions/mtl-scripts.instructions.md#who-configures-what).
+[`mtl-scripts.instructions.md`](../../.github/instructions/mtl-scripts.instructions.md#who-configures-what).
 
 | Layer | When | Who does it | Examples |
 | --- | --- | --- | --- |
@@ -396,7 +396,7 @@ running nothing at all.
 
 The node the channels are on is a requirement and not a preference. MTL grants a
 session a channel of the port's own socket and no other
-([`dma.md` section 3.4](dma.md#34-dma-socket)), while the suite's
+([`dma.md` section 3.4](../features/dma.md#34-dma-socket)), while the suite's
 `st_test_dma_available` only counts the channels that registered — so a channel
 from another node is worse than no channel at all: the DMA cases neither skip
 themselves nor offload, they check the offload path's expectations against a
@@ -432,7 +432,7 @@ session only check that free pages exist, and fail when there are none.
 
 A VF is bound to `vfio-pci` by root, and the `/dev/vfio/<group>` node the kernel
 creates with it is `0600 root:root` unless the host carries the udev rule from
-[`run.md` section 3.1](run.md#31-allow-current-user-to-access-devvfio-devices).
+[`run.md` section 3.1](../getting_started/run.md#31-allow-current-user-to-access-devvfio-devices).
 The acceptance suite reaches the DUT over SSH as an unprivileged account, so on a
 host without that rule every case dies in EAL with
 
@@ -477,7 +477,7 @@ Three prerequisites are easy to miss:
   manager's eBPF/XDP objects do not build without it. A host provisioned before
   the eBPF path was wired into the manager will have every other prerequisite
   and still fail `task ebpf:check` on this one; the full apt line for the XDP
-  toolchain is in [`xdp.md`](xdp.md). A host that only builds MTL does not need
+  toolchain is in [`xdp.md`](../experimental/xdp.md). A host that only builds MTL does not need
   it, which is what the build scope above is for.
 - `python3-venv`. Debian and Ubuntu keep the venv module out of `python3`, and
   `python3 -m venv` stops on "ensurepip is not available". The job builds the

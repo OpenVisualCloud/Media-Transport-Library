@@ -6,7 +6,7 @@ The Media Transport Library features DMA support to enhance RX video session den
 
 ## 2. DMA driver bind to PMD(vfio-pci) mode
 
-> On Windows, install the NetUIO driver for the DMA devices too. See [Install drivers](run_WIN.md#install-drivers).
+> On Windows, install the NetUIO driver for the DMA devices too. See [Install drivers](../platforms/run_WIN.md#install-drivers).
 
 ### 2.1. Locate the available DMA port
 
@@ -214,7 +214,7 @@ To maximize the utilization of DMA resources, the MTL architecture is designed t
 ## 4. Public DMA API for application usage
 
 Besides using the internal DMA capabilities for RX video offload, applications can also leverage DMA through the public API.
-To learn how to utilize DMA in your application, refer to the sample code in [dma_sample.c](../app/sample/dma/dma_sample.c).
+To learn how to utilize DMA in your application, refer to the sample code in [dma_sample.c](../../app/sample/dma/dma_sample.c).
 
 The major DMA APIs listed below:
 

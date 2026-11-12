@@ -20,7 +20,7 @@ sudo -E ./venv/bin/python3 -m pytest \
 
 Must run as root, from this directory, with the venv interpreter. Full
 instructions, configuration reference, and troubleshooting:
-[doc/acceptance_quickstart.md](../../doc/acceptance_quickstart.md).
+[doc/development/acceptance_quickstart.md](../../doc/development/acceptance_quickstart.md).
 
 CI uses the real-footage corpus mounted at `/mnt/media`. Media generation is
 an optional, manual diagnostic task; neither setup nor pytest invokes it, and
@@ -53,7 +53,7 @@ diagnostic run. Do not generate assets directly into the CI NFS mount.
 Suite markers: `smoke`, `nightly`, `performance`, `base_performance`, `dual`,
 `ptp`. Descriptive markers: `verified`, `refactored`, `tx_side`, `rx_side`,
 `tx_and_rx`, `allow_wide_compliance` — see
-[doc/acceptance_quickstart.md § Markers](../../doc/acceptance_quickstart.md#markers)
+[doc/development/acceptance_quickstart.md § Markers](../../doc/development/acceptance_quickstart.md#markers)
 and `pytest.ini` for the authoritative list.
 
 The two performance markers select no `tests/single/` test. Select the
@@ -69,9 +69,9 @@ interface as port P, they need passwordless `sudo -n` for the test account.
 
 ## Further reading
 
-- [Setup and run](../../doc/acceptance_quickstart.md)
-- [Architecture](../../doc/acceptance-design.md) — modules, adapters,
+- [Setup and run](../../doc/development/acceptance_quickstart.md)
+- [Architecture](../../doc/development/acceptance-design.md) — modules, adapters,
   fixtures, oracles, clock model
 - [Test strategy](docs/test-strategy.md) — matrix depth, capability policy,
   path assertions, and oracles
-- [Build guide](../../doc/build.md)
+- [Build guide](../../doc/getting_started/build.md)

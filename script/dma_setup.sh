@@ -114,7 +114,7 @@ numa_nodes() {
 }
 
 # vfio-pci does not bind Intel DSA while its denylist is on. The kernel reads
-# disable_denylist only when it loads the module (doc/dma.md).
+# disable_denylist only when it loads the module (doc/features/dma.md).
 load_vfio_pci() {
 	local kind=$1 denylist=/sys/module/vfio_pci/parameters/disable_denylist
 	if [ -d /sys/module/vfio_pci ]; then

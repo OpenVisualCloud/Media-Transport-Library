@@ -113,7 +113,7 @@ process, or removes its own files is doing framework work in the wrong
 place.
 
 Authoring rules are enforced by
-[mtl-acceptance-authoring.instructions.md](../.github/instructions/mtl-acceptance-authoring.instructions.md).
+[mtl-acceptance-authoring.instructions.md](../../.github/instructions/mtl-acceptance-authoring.instructions.md).
 
 ## 4. Inputs: configuration, fixtures, and media
 

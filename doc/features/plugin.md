@@ -29,11 +29,11 @@ typedef int (*st_plugin_free_fn)(st_plugin_priv handle);
 
 ## 3. Sample
 
-Refer to [plugins sample](../plugins/sample) for how to build and create a plugin.
+Refer to [plugins sample](../../plugins/sample) for how to build and create a plugin.
 
 ## 4. Plugin enable
 
-Refer to [kahawai.json](../kahawai.json) for how to register a plugin in the config.
+Refer to [kahawai.json](../../kahawai.json) for how to register a plugin in the config.
 
 The default JSON config file path is kahawai.json. If you want to parse from a different file, please pass the KAHAWAI_CFG_PATH environment variable to the process.
 
@@ -41,7 +41,7 @@ The default JSON config file path is kahawai.json. If you want to parse from a d
 export KAHAWAI_CFG_PATH=your_json_config_file_path
 ```
 
-A local install (`MTL_INSTALL_PREFIX=$PWD/.local_install/mtl`, see [build.md](./build.md)) has a
+A local install (`MTL_INSTALL_PREFIX=$PWD/.local_install/mtl`, see [build.md](../getting_started/build.md)) has a
 config file of its own, `.local_install/conf/kahawai.json`. `./build.sh` writes it with the absolute
 paths of the SVT JPEG XS and st22 avcodec plugins of the tree. `build_jpegxs.sh` with
 `MTL_INSTALL_PREFIX` and `build_st22_avcodec_plugin.sh` with

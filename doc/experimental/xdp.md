@@ -19,7 +19,7 @@ The socket fd needs to be updated to the xsks_map of the xsk XDP program. This a
 
 Users should allocate a memory region called UMEM in user space for sharing between the kernel and user space, even among different processes.
 
-![AF_XDP](png/af_xdp.svg)
+![AF_XDP](../png/af_xdp.svg)
 
 There are four rings for data path transferring: TX/RX rings and Fill/Completion rings.
 
@@ -31,11 +31,11 @@ The NIC driver, upon receiving packets from the network, fills the populated des
 
 ### XDP in MTL
 
-![XDP in MTL](png/xdp-mtl.svg)
+![XDP in MTL](../png/xdp-mtl.svg)
 
 With AF_XDP, MTL can send and receive packets directly with the network driver, bypassing the kernel stack. This makes deployment more efficient and convenient for cloud and edge environments compared to the DPDK backend.
 
-MTL also uses an XDP program to filter data path packets. This XDP program is built with our MTL Manager and is loaded along with the libxdp built-in xsk XDP program that is for AF_XDP. Thanks to libxdp's xdp-dispatcher, we can run multiple XDP programs on the same network interface. For the XDP code, please see [mtl.xdp.c](../manager/mtl.xdp.c).
+MTL also uses an XDP program to filter data path packets. This XDP program is built with our MTL Manager and is loaded along with the libxdp built-in xsk XDP program that is for AF_XDP. Thanks to libxdp's xdp-dispatcher, we can run multiple XDP programs on the same network interface. For the XDP code, please see [mtl.xdp.c](../../manager/mtl.xdp.c).
 
 ## Building Guide
 
@@ -77,7 +77,7 @@ sudo pacman -Syu --needed make m4 clang llvm zlib elfutils libcap-ng
 
 ### Building xdp-tools (including libxdp & libbpf)
 
-Build libxdp and libbpf from the xdp-tools repository using the versions pinned in [`Media-Transport-Library/versions.env`](../versions.env) to ensure consistency.
+Build libxdp and libbpf from the xdp-tools repository using the versions pinned in [`Media-Transport-Library/versions.env`](../../versions.env) to ensure consistency.
 
 ```bash
 ./script/build_ebpf_xdp.sh
@@ -97,7 +97,7 @@ task ebpf:check                      # same thing, via the Taskfile
 
 ### Building MTL
 
-See [Build Guide](build.md).
+See [Build Guide](../getting_started/build.md).
 
 Ensure the libbpf and libxdp dependencies are found:
 
@@ -128,7 +128,7 @@ find /usr/ -name libbpf.pc
 
 ## Running Guide
 
-Before running MTL apps, you need to start MTL Manager as a daemon, see [MTL Manager](../manager/README.md).
+Before running MTL apps, you need to start MTL Manager as a daemon, see [MTL Manager](../../manager/README.md).
 
 ### Network Interface Setup
 
@@ -160,7 +160,7 @@ sudo setcap 'cap_net_raw+ep' ./tests/tools/RxTxApp/build/RxTxApp
 
 ### Running RxTxApp
 
-Just configure the network interface in JSON file like this, then you can refer to [Run Guide](run.md) for more usage:
+Just configure the network interface in JSON file like this, then you can refer to [Run Guide](../getting_started/run.md) for more usage:
 
 ```json
     "interfaces": [

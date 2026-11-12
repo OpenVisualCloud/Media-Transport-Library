@@ -129,7 +129,7 @@ class Nicctl:
 
         A VF is bound to vfio-pci by root, and the IOMMU group node the kernel
         then creates is ``0600 root:root`` unless the host carries the udev rule
-        from ``doc/run.md`` section 3.1. The suite drives the DUT over SSH as an
+        from ``doc/getting_started/run.md`` section 3.1. The suite drives the DUT over SSH as an
         unprivileged account, so without this every case on such a host dies in
         EAL with ``Cannot open /dev/vfio/<group>: Permission denied`` -- a whole
         smoke leg lost to a file mode, which is what three hosts of the fleet
@@ -368,7 +368,7 @@ class Nicctl:
         """Bind a DMA (Intel DSA) channel on *nic_pci_id*'s own NUMA node to
         vfio-pci, so RxTxApp sessions on it can be given one via --dma_dev
         instead of silently falling back to a per-packet CPU copy
-        (rv_init_dma, doc/dma.md). Returns the channel's PCI address, or
+        (rv_init_dma, doc/features/dma.md). Returns the channel's PCI address, or
         None when this host serves none on that node.
 
         DSA only, never setup_host_dma()'s CBDMA fallback: RxTxApp given a

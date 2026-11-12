@@ -160,7 +160,7 @@ session)
 	;;
 pci)
 	read -r pci_device interface_type < <(resolve_nic "${NIC:?NIC is required}")
-	# Kernel socket RX asks SO_RCVBUF for 4 MiB, capped by rmem_max (doc/kernel_socket.md).
+	# Kernel socket RX asks SO_RCVBUF for 4 MiB, capped by rmem_max (doc/experimental/kernel_socket.md).
 	if (($(sysctl -n net.core.rmem_max) < 4194304)); then
 		echo "net.core.rmem_max is below 4194304, which the kernel socket datapath needs" >&2
 		exit 1

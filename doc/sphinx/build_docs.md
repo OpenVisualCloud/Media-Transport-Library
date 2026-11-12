@@ -71,11 +71,11 @@ Open `http://<your-ip-addr>:8080/` or `http://127.0.0.1:8080/` in a web browser.
 
 ## 4. Add a page
 
-1. Write the page in Markdown.
-2. Add the page to a `toctree` in [index.rst](https://github.com/OpenVisualCloud/Media-Transport-Library/blob/main/index.rst).
+1. Write the page in Markdown. Put it in the folder of its topic: [the Documentation Map](../README.md) tells what each folder holds.
+2. Add the page to the `toctree` section of that topic in [index.rst](https://github.com/OpenVisualCloud/Media-Transport-Library/blob/main/index.rst).
    A page that is in no `toctree` gives a warning, and the build fails.
 3. To link to another page, use a relative path to its `.md` file, for example
-   `[Run Guide](../run.md#3-dpdk-pmd-setup)`. The heading anchors are the same as on GitHub.
+   `[Run Guide](../getting_started/run.md#3-dpdk-pmd-setup)`. The heading anchors are the same as on GitHub.
 4. To link to a source file or a directory, use a relative path. On the site,
    the link goes to the same path on GitHub.
 
