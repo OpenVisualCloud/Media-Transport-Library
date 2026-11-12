@@ -58,6 +58,7 @@ unit_sources = [
   'dev/mt_dev_harness.c',
   'dev/mt_dev_igc_test.cpp',
   'dev/mt_dev_rx_desc_test.cpp',
+  'dev/mt_dev_rx_mono_pool_test.cpp',
   'dev/mt_dev_tx_desc_test.cpp',
   'dev/mt_dev_tx_pool_test.cpp',
   'dev/mt_dev_tx_reclaim_test.cpp',
