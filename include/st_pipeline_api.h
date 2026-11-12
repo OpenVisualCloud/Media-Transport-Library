@@ -1730,6 +1730,9 @@ size_t st22p_rx_frame_size(st22p_rx_handle handle);
 /**
  * Dump st2110-22 pipeline packets to pcapng file.
  *
+ * @note A packet carries its NIC RX timestamp only with MTL_FLAG_ENABLE_HW_TIMESTAMP on a
+ * port that supports it, else the time of its RX burst, no basis for ST 2110-21 timing.
+ *
  * @param handle
  *   The handle to the rx st2110-22 pipeline session.
  * @param max_dump_packets
@@ -2118,6 +2121,9 @@ size_t st20p_rx_frame_size(st20p_rx_handle handle);
 
 /**
  * Dump st2110-20 pipeline packets to pcapng file.
+ *
+ * @note A packet carries its NIC RX timestamp only with MTL_FLAG_ENABLE_HW_TIMESTAMP on a
+ * port that supports it, else the time of its RX burst, no basis for ST 2110-21 timing.
  *
  * @param handle
  *   The handle to the rx st2110-20 pipeline session.

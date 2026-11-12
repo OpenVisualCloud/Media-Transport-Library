@@ -2221,6 +2221,9 @@ int st20_rx_get_sch_idx(st20_rx_handle handle);
 /**
  * Dump st2110-20 packets to pcapng file.
  *
+ * @note A packet carries its NIC RX timestamp only with MTL_FLAG_ENABLE_HW_TIMESTAMP on a
+ * port that supports it, else the time of its RX burst, no basis for ST 2110-21 timing.
+ *
  * @param handle
  *   The handle to the rx st2110-20(video) session.
  * @param max_dump_packets
@@ -2416,6 +2419,9 @@ int st22_rx_get_sch_idx(st22_rx_handle handle);
 
 /**
  * Dump st2110-22 packets to pcapng file.
+ *
+ * @note A packet carries its NIC RX timestamp only with MTL_FLAG_ENABLE_HW_TIMESTAMP on a
+ * port that supports it, else the time of its RX burst, no basis for ST 2110-21 timing.
  *
  * @param handle
  *   The handle to the rx st2110-22(compressed video) session.

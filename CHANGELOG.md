@@ -1,5 +1,6 @@
 # Changelog
 
+* pcapng dumps: a dump on a port without NIC RX timestamps warns that its packets carry their RX burst time, no basis for ST 2110-21 timing; RxTxApp `--pcapng_dump` now sets `MTL_FLAG_ENABLE_HW_TIMESTAMP`, as `--rx_timing_parser` does
 * st20/st22 TX: the video tasklets no longer take the session spinlock; on a session's own scheduler, `*_tx_free()` and `*_tx_update_destination()` (st20, st22, st20p, st22p) return `-EBUSY` instead of deadlocking, as do the stats APIs from the session's own callbacks
 * ice: default to driver version 2.7.6, built as released with no MTL patches; versions before 2.7.6 keep their `patches/ice_drv` series
 * nicctl.sh: give each VF of an ice PF a 512-entry RSS LUT, so that it can have more than 16 queue pairs; `vf_rss_lut` does so for existing VFs
