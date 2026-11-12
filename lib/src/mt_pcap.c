@@ -68,6 +68,11 @@ struct mt_pcap* mt_pcap_open(struct mtl_main_impl* impl, enum mtl_port port, int
   }
 #endif
 
+  if (!mt_if_has_offload_timestamp(impl, port))
+    warn(
+        "%s(%d,%d), no NIC RX timestamps: packets get their RX burst time, no basis for "
+        "ST 2110-21 timing (MTL_FLAG_ENABLE_HW_TIMESTAMP)\n",
+        __func__, port, fd);
   info("%s, succ pcap %p, fd %d\n", __func__, pcap, fd);
   return pcap;
 }
