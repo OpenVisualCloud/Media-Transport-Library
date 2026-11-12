@@ -213,9 +213,13 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
 
   // mt_mbuf_dump_hdr(port, 0, "cni_rx", m);
 
+  cni->eth_rx_bytes += m->pkt_len;
+  if (m->data_len < hdr_offset) return -EINVAL;
+
   /* vlan check */
   ether_type = ntohs(eth_hdr->ether_type);
   if (ether_type == RTE_ETHER_TYPE_VLAN) {
+    if (m->data_len < hdr_offset + sizeof(*vlan_header)) return -EINVAL;
     vlan_header =
         (struct rte_vlan_hdr*)((uint8_t*)eth_hdr + sizeof(struct rte_ether_hdr));
     ether_type = ntohs(vlan_header->eth_proto);
@@ -228,7 +232,8 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
   switch (ether_type) {
     case RTE_ETHER_TYPE_1588:
       ptp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ptp_header*, hdr_offset);
-      mt_ptp_parse(ptp, ptp_hdr, vlan, MT_PTP_L2, m->timesync, NULL);
+      mt_ptp_parse(ptp, ptp_hdr, m->data_len - hdr_offset, vlan, MT_PTP_L2, m->timesync,
+                   NULL);
       break;
     case RTE_ETHER_TYPE_ARP:
       if (mt_has_virtio_user(impl, port)) {
@@ -237,13 +242,17 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
       } else {
         /* use internal implementation */
         arp_hdr = rte_pktmbuf_mtod_offset(m, struct rte_arp_hdr*, hdr_offset);
-        mt_arp_parse(impl, arp_hdr, port);
+        mt_arp_parse(impl, arp_hdr, m->data_len - hdr_offset, port);
       }
       break;
     case RTE_ETHER_TYPE_IPV4:
+      if (m->data_len < hdr_offset + sizeof(*ipv4_hdr)) return -EINVAL;
       ipv4_hdr = rte_pktmbuf_mtod_offset(m, struct rte_ipv4_hdr*, hdr_offset);
+      if (ipv4_hdr->ihl < sizeof(*ipv4_hdr) / 4) return -EINVAL;
       hdr_offset += ipv4_hdr->ihl * 4; /* may have ip option field */
+      if (m->data_len < hdr_offset) return -EINVAL;
       if (ipv4_hdr->next_proto_id == IPPROTO_UDP) {
+        if (m->data_len < hdr_offset + sizeof(*udp_hdr)) return -EINVAL;
         udp_hdr = rte_pktmbuf_mtod_offset(m, struct rte_udp_hdr*, hdr_offset);
         hdr_offset += sizeof(struct rte_udp_hdr);
         src_port = ntohs(udp_hdr->src_port);
@@ -251,18 +260,18 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
                     src_port == MT_PTP_UDP_GEN_PORT)) { /* ptp pkt*/
           dbg("%s(%d), ptp msg src_port %u\n", __func__, port, src_port);
           ptp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ptp_header*, hdr_offset);
-          mt_ptp_parse(ptp, ptp_hdr, vlan, MT_PTP_L4, m->timesync,
-                       (struct mt_ipv4_udp*)ipv4_hdr);
+          mt_ptp_parse(ptp, ptp_hdr, m->data_len - hdr_offset, vlan, MT_PTP_L4,
+                       m->timesync, (struct mt_ipv4_udp*)ipv4_hdr);
         } else if (dhcp && src_port == MT_DHCP_UDP_SERVER_PORT) { /* dhcp pkt */
           dhcp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_dhcp_hdr*, hdr_offset);
-          mt_dhcp_parse(impl, dhcp_hdr, port);
+          mt_dhcp_parse(impl, dhcp_hdr, m->data_len - hdr_offset, port);
         } else {
           cni_udp_handle(cni, m);
         }
       } else if (ipv4_hdr->next_proto_id == IPPROTO_IGMP) {
         struct mcast_mb_query_v3* mb_query =
             rte_pktmbuf_mtod_offset(m, struct mcast_mb_query_v3*, hdr_offset);
-        mt_mcast_parse(impl, mb_query, port);
+        mt_mcast_parse(impl, mb_query, m->data_len - hdr_offset, port);
       } else {
         /* ipv4 packets other than UDP/IGMP fallback to kernel */
         cni_burst_to_kernel(cni, m);
@@ -274,7 +283,6 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
       cni_burst_to_kernel(cni, m);
       break;
   }
-  cni->eth_rx_bytes += m->pkt_len;
 
   return 0;
 }

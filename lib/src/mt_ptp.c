@@ -1238,11 +1238,13 @@ static int ptp_rxq_mbuf_handle(struct mt_ptp_impl* ptp, struct rte_mbuf* m) {
   struct mt_ptp_header* hdr;
   size_t hdr_offset;
 
+  if (m->data_len < sizeof(struct mt_udp_hdr)) return -EINVAL;
   hdr_offset = sizeof(struct rte_ether_hdr);
   ipv4_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ipv4_udp*, hdr_offset);
   hdr_offset += sizeof(*ipv4_hdr);
   hdr = rte_pktmbuf_mtod_offset(m, struct mt_ptp_header*, sizeof(struct mt_udp_hdr));
-  mt_ptp_parse(ptp, hdr, false, MT_PTP_L4, m->timesync, ipv4_hdr);
+  mt_ptp_parse(ptp, hdr, m->data_len - sizeof(struct mt_udp_hdr), false, MT_PTP_L4,
+               m->timesync, ipv4_hdr);
 
   return 0;
 }
@@ -1433,12 +1435,17 @@ static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
   return 0;
 }
 
-int mt_ptp_parse(struct mt_ptp_impl* ptp, struct mt_ptp_header* hdr, bool vlan,
-                 enum mt_ptp_l_mode mode, uint16_t timesync,
+int mt_ptp_parse(struct mt_ptp_impl* ptp, struct mt_ptp_header* hdr, size_t len,
+                 bool vlan, enum mt_ptp_l_mode mode, uint16_t timesync,
                  struct mt_ipv4_udp* ipv4_hdr) {
   enum mtl_port port = ptp->port;
 
   if (!ptp->active) return 0;
+
+  if (len < sizeof(*hdr)) {
+    dbg("%s(%d), ptp msg too short: %zu\n", __func__, port, len);
+    return -EINVAL;
+  }
 
   dbg("%s(%d), message_type %d\n", __func__, port, hdr->message_type);
   // mt_ptp_print_port_id(port, &hdr->source_port_identity);
@@ -1464,12 +1471,24 @@ int mt_ptp_parse(struct mt_ptp_impl* ptp, struct mt_ptp_header* hdr, bool vlan,
       ptp_parse_sync(ptp, (struct mt_ptp_sync_msg*)hdr, vlan, mode, timesync);
       break;
     case PTP_FOLLOW_UP:
+      if (len < sizeof(struct mt_ptp_follow_up_msg)) {
+        dbg("%s(%d), follow_up too short: %zu\n", __func__, port, len);
+        return -EINVAL;
+      }
       ptp_parse_follow_up(ptp, (struct mt_ptp_follow_up_msg*)hdr);
       break;
     case PTP_DELAY_RESP:
+      if (len < sizeof(struct mt_ptp_delay_resp_msg)) {
+        dbg("%s(%d), delay_resp too short: %zu\n", __func__, port, len);
+        return -EINVAL;
+      }
       ptp_parse_delay_resp(ptp, (struct mt_ptp_delay_resp_msg*)hdr);
       break;
     case PTP_ANNOUNCE:
+      if (len < sizeof(struct mt_ptp_announce_msg)) {
+        dbg("%s(%d), announce too short: %zu\n", __func__, port, len);
+        return -EINVAL;
+      }
       ptp_parse_announce(ptp, (struct mt_ptp_announce_msg*)hdr, mode, ipv4_hdr);
       break;
     case PTP_DELAY_REQ:

@@ -41,7 +41,7 @@ int mt_dhcp_init(struct mtl_main_impl* impl);
 
 int mt_dhcp_uinit(struct mtl_main_impl* impl);
 
-int mt_dhcp_parse(struct mtl_main_impl* impl, struct mt_dhcp_hdr* hdr,
+int mt_dhcp_parse(struct mtl_main_impl* impl, struct mt_dhcp_hdr* hdr, size_t len,
                   enum mtl_port port);
 
 uint8_t* mt_dhcp_get_ip(struct mtl_main_impl* impl, enum mtl_port port);

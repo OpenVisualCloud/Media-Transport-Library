@@ -7,7 +7,8 @@
 
 #include "mt_main.h"
 
-int mt_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr, enum mtl_port port);
+int mt_arp_parse(struct mtl_main_impl* impl, struct rte_arp_hdr* hdr, size_t len,
+                 enum mtl_port port);
 
 int mt_arp_init(struct mtl_main_impl* impl);
 int mt_arp_uinit(struct mtl_main_impl* impl);
