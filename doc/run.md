@@ -334,7 +334,7 @@ If it failed to run the sample, please help to collect the system setup status b
 --rx_mix_lcore                       : debug option, if enabled, it means TX video and RX video are possible to run on the same core.
 --runtime_session                    : debug option, start instance before create video/audio/anc sessions, similar to runtime tx/rx create.
 --rx_timing_parser                   : debug option, enable timing check for video rx streams.
---pcapng_dump <n>                    : debug option, dump n packets from rx video streams to pcapng files.
+--pcapng_dump <n>                    : debug option, dump n packets from rx video streams to pcapng files, with NIC RX timestamps (MTL_FLAG_ENABLE_HW_TIMESTAMP).
 --rx_video_file_frames <n>           : debug option, dump the received video frames to a yuv file, n is dump file size in frame unit.
 --rx_video_fb_cnt<n>                 : debug option, the frame buffer count.
 --promiscuous                        : debug option, enable RX promiscuous( receive all data passing through it regardless of whether the destination address of the data) mode for NIC.
