@@ -9,7 +9,7 @@
 #
 # That entry is [*.sh]: shfmt reads EditorConfig files, so leaving indent_style
 # unset there would leave shell formatting dependent on shfmt's built-in default
-# rather than on something written down. See doc/coding_standard.md.
+# rather than on something written down. See doc/development/coding_standard.md.
 
 root = true
 

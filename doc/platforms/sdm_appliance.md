@@ -8,11 +8,11 @@ Depicted below are 2 use-case scenario:
 
 1. Synchronous playback scenario where output of a PC/Laptop is streamed via a sending device to the receiver.
 
-![MTL Appliance Use Case Image](png/mtl-appliance-use-case.svg)
+![MTL Appliance Use Case Image](../png/mtl-appliance-use-case.svg)
 
 2. Asynchronous playback - where the sending device is streaming a digital media generated (e.g framebuffer) / stored locally on the device to the receiver.
 
-![Desktop Streaming MTL Image](png/desktop-streaming-mtl.svg)
+![Desktop Streaming MTL Image](../png/desktop-streaming-mtl.svg)
 
 ## 2. Required Hardware
 
@@ -30,7 +30,7 @@ Depicted below are 2 use-case scenario:
 
 2. Media Transport Library (MTL)
 
-3. FFmpeg with [MTL encoder and decoder patches](../ecosystem/ffmpeg_plugin/README.md)
+3. FFmpeg with [MTL encoder and decoder patches](../../ecosystem/ffmpeg_plugin/README.md)
 
 ## 2. Installation and configuration
 
@@ -38,11 +38,11 @@ The demo currently works only on Linux. Follow the steps below to install all th
 
 ### Build Media Transport Library (MTL)
 
-- See [Build Guide](build.md) to build libmtl on Linux.
+- See [Build Guide](../getting_started/build.md) to build libmtl on Linux.
 
 ### Build ffmpeg (with MTL encoder and decoder)
 
-- See [dedicated README.md](../ecosystem/ffmpeg_plugin/README.md) to build ffmpeg with MTL encoder/decoder on Ubuntu.
+- See [dedicated README.md](../../ecosystem/ffmpeg_plugin/README.md) to build ffmpeg with MTL encoder/decoder on Ubuntu.
 
 - Follow instruction below (TBD)
 
@@ -74,7 +74,7 @@ An SDL2 window will pop-up at the receiver screen. Press `Ctrl-C` to terminate.
 
 **Note**:
 
-- See [readme](../ecosystem/ffmpeg_plugin/README.md) for more info on the parameters supported by the kahawai's ffmpeg plugin.
+- See [readme](../../ecosystem/ffmpeg_plugin/README.md) for more info on the parameters supported by the kahawai's ffmpeg plugin.
 
 - The example command-line above stream the session at 1280x720@30fps in rgb24 pixel format.
 

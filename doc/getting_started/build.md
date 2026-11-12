@@ -31,13 +31,13 @@ Some setups need more components. Add each component to `install_dependencies.sh
 | Component | Packages | Build and install |
 | --- | --- | --- |
 | Intel E810/E830 out-of-tree driver | `./script/install_dependencies.sh ice` | `./script/build_drivers.sh --driver ice`, see the [E800 Series Driver Guide](e800_series_drivers.md) |
-| AF_XDP data path (xdp-tools and libbpf) | `./script/install_dependencies.sh ebpf_xdp` | `./script/build_ebpf_xdp.sh`, see the [XDP guide](xdp.md) |
-| SVT JPEG XS ST 2110-22 plugin | `./script/install_dependencies.sh jpegxs` | `./script/build_jpegxs.sh`, see the [Plugin Guide](plugin.md) |
-| ST 2110-22 avcodec plugin | `./script/install_dependencies.sh avcodec` | `./script/build_st22_avcodec_plugin.sh`, see the [avcodec plugin guide](../plugins/st22_avcodec/README.md) |
-| FFmpeg with the MTL devices | `./script/install_dependencies.sh ffmpeg` | `./script/build_ffmpeg_plugin.sh`, see the [FFmpeg plugin guide](../ecosystem/ffmpeg_plugin/README.md) |
-| GStreamer plugins | `./script/install_dependencies.sh gstreamer` | `./script/build_gstreamer_plugin.sh`, see the [GStreamer plugin guide](../ecosystem/gstreamer_plugin/README.md) |
-| Python binding | `./script/install_dependencies.sh python` | `./script/build_python.sh`, see the [Python guide](../python/README.md) |
-| OBS Studio plugin | `./script/install_dependencies.sh obs` | `./script/build_obs_plugin.sh`, see the [OBS plugin guide](../ecosystem/obs_mtl/README.md) |
+| AF_XDP data path (xdp-tools and libbpf) | `./script/install_dependencies.sh ebpf_xdp` | `./script/build_ebpf_xdp.sh`, see the [XDP guide](../experimental/xdp.md) |
+| SVT JPEG XS ST 2110-22 plugin | `./script/install_dependencies.sh jpegxs` | `./script/build_jpegxs.sh`, see the [Plugin Guide](../features/plugin.md) |
+| ST 2110-22 avcodec plugin | `./script/install_dependencies.sh avcodec` | `./script/build_st22_avcodec_plugin.sh`, see the [avcodec plugin guide](../../plugins/st22_avcodec/README.md) |
+| FFmpeg with the MTL devices | `./script/install_dependencies.sh ffmpeg` | `./script/build_ffmpeg_plugin.sh`, see the [FFmpeg plugin guide](../../ecosystem/ffmpeg_plugin/README.md) |
+| GStreamer plugins | `./script/install_dependencies.sh gstreamer` | `./script/build_gstreamer_plugin.sh`, see the [GStreamer plugin guide](../../ecosystem/gstreamer_plugin/README.md) |
+| Python binding | `./script/install_dependencies.sh python` | `./script/build_python.sh`, see the [Python guide](../../python/README.md) |
+| OBS Studio plugin | `./script/install_dependencies.sh obs` | `./script/build_obs_plugin.sh`, see the [OBS plugin guide](../../ecosystem/obs_mtl/README.md) |
 
 Install the AF_XDP components before you run `./build.sh`: MTL finds libxdp and libbpf when it is configured, and without them builds no AF_XDP backend.
 Build MTL with `./build.sh` before you build a plugin or the Python binding.
@@ -85,7 +85,7 @@ each `.pc` file points at its own location. So you can move the whole directory,
 and it still runs.
 `.local_install/mtl/bin/nicctl.sh` is part of it and uses the `dpdk-devbind.py`
 of `.local_install/dpdk`. The plugin registry is `.local_install/conf/kahawai.json`.
-Set `KAHAWAI_CFG_PATH` to it, see [plugin.md](./plugin.md). The registry holds absolute
+Set `KAHAWAI_CFG_PATH` to it, see [plugin.md](../features/plugin.md). The registry holds absolute
 paths, so it is the one part of the directory that does not move with it.
 
 These three scripts do not read `MTL_INSTALL_PREFIX` yet. They always install
@@ -118,7 +118,7 @@ Leave out `SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=1` if your setup has no E810/E830
 `SETUP_BUILD_AND_INSTALL_DPDK=1` rebuilds DPDK on each run, also when the version is already installed.
 Run `./.github/scripts/setup_environment.sh -h` for the list of all variables, for example `SETUP_BUILD_AND_INSTALL_EBPF_XDP`, `PLUGIN_BUILD_AND_INSTALL_JPEGXS`, or `ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN`.
 
-The scripts do not set up the runtime: hugepages, VFs, and MtlManager. For that, refer to [Running MTL](./run.md).
+The scripts do not set up the runtime: hugepages, VFs, and MtlManager. For that, refer to [Running MTL](run.md).
 
 ## 1. Prerequisites
 
@@ -295,7 +295,7 @@ The patch folder holds one folder per DPDK version. `DPDK_VER` from step 2.1 sel
 Some patches in the DPDK versions 22.03 to 23.11 are symlinks to a patch of an older version.
 They resolve without an extra step. If your clone is on a file system that cannot hold symlinks,
 Git writes each one as a text file that holds the target path, and `git am` rejects it. To
-convert the files, use the symlink step in the [Build guide for Windows](build_WIN.md).
+convert the files, use the symlink step in the [Build guide for Windows](../platforms/build_WIN.md).
 
 ```bash
 cd dpdk
@@ -489,4 +489,4 @@ The gcc of Rocky Linux and RHEL enables none of the compiler options by default.
 The FFmpeg 7.0 assembly is marked SHSTK only, so the build applies `ecosystem/ffmpeg_plugin/7.0/0002-x86-add-Intel-CET-IBT-support.patch`, which makes it IBT-correct and marks it IBT and SHSTK.
 
 ## Next Steps
-Proceed to [Running MTL](./run.md) for further instructions.
+Proceed to [Running MTL](run.md) for further instructions.

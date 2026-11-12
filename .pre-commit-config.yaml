@@ -10,7 +10,7 @@
 #   .github/workflows/cicd-pr-check.yml  CI, orchestration only
 #
 # This file decides *which tool, which version, which arguments, which files*.
-# Rule *content* lives in .github/linters/. See doc/coding_standard.md for the
+# Rule *content* lives in .github/linters/. See doc/development/coding_standard.md for the
 # parity table recording what each check replaced and what is still enforced by
 # the residual super-linter job.
 #
@@ -61,7 +61,7 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
-      # doc/coding_standard.md §2.1 and §6.2 hinge on .clang-format being a real
+      # doc/development/coding_standard.md §2.1 and §6.2 hinge on .clang-format being a real
       # file: a Windows checkout without symlink support materializes a symlink
       # as a text file, clang-format then finds no configuration and falls back
       # to plain LLVM style -- a whole-tree reformat waiting to happen. This is
@@ -72,7 +72,7 @@ repos:
       # Not hypothetical. `patches/dpdk/26.03/0012-net-ice-e830:-use-direct-\
       # MMIO-for-PHC-update.patch` carried a colon, which is illegal on Windows,
       # so `git checkout` there died with "error: invalid path" and exit 128 --
-      # the whole repository was uncheckoutable on a platform doc/coding_standard.md
+      # the whole repository was uncheckoutable on a platform doc/development/coding_standard.md
       # §6 claims to support, and the Windows CI job could never have gone green.
       # The file is renamed in this commit. This hook is what keeps it renamed.
       - id: check-illegal-windows-names
@@ -220,7 +220,7 @@ repos:
       # staged diff and ignores the file list entirely. That is the right check
       # for a commit hook and a no-op for --all-files, where nothing is staged.
       # Whole-tree and pull-request secret scanning therefore stays in CI --
-      # VALIDATE_GITLEAKS in the residual job. See doc/coding_standard.md §4.
+      # VALIDATE_GITLEAKS in the residual job. See doc/development/coding_standard.md §4.
       #
       # This is also the one language: golang hook we accept, and only because
       # pre-commit downloads the Go toolchain itself; contrast actionlint above.
@@ -281,7 +281,7 @@ repos:
       # pull request adds, so local and CI cannot diverge and the version is
       # pinned in exactly one place. Rules live in .github/linters/.gitlint;
       # gitlint's own lowercase conventional-commit rule does not fit MTL's
-      # capitalized, scope-free format. See doc/coding_standard.md section 7.
+      # capitalized, scope-free format. See doc/development/coding_standard.md section 7.
       - id: gitlint
         name: gitlint (commit message style)
         language: python

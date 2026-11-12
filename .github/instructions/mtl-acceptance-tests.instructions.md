@@ -19,7 +19,7 @@ This covers kernel/CPU, hugepages, governor, ICE driver, NIC PFs,
 `setup --base-only` (build/driver/hugepages) or `setup --pytest-only`
 (NFS, SSH, venv, configs); both are idempotent. Rows tagged **(setup)** below
 are all fixed this way. Full reference:
-[acceptance_quickstart.md](../../doc/acceptance_quickstart.md).
+[acceptance_quickstart.md](../../doc/development/acceptance_quickstart.md).
 
 **Pytest needs `.local_install/mtl/bin/{MtlManager,RxTxApp}`, NOT `build/manager/MtlManager`
 or `tests/tools/RxTxApp/build/RxTxApp`.** `tests/acceptance/mtl_engine/const.py` hardcodes
@@ -121,6 +121,6 @@ Selector + counts (`X passed, Y failed, Z skipped`); for each FAIL/ERROR: 1-line
 ## See also
 
 Authoring new cases: [mtl-acceptance-authoring.instructions.md](mtl-acceptance-authoring.instructions.md) ·
-Architecture: [acceptance-design.md](../../doc/acceptance-design.md) ·
-Setup, configuration, troubleshooting: [acceptance_quickstart.md](../../doc/acceptance_quickstart.md) ·
+Architecture: [acceptance-design.md](../../doc/development/acceptance-design.md) ·
+Setup, configuration, troubleshooting: [acceptance_quickstart.md](../../doc/development/acceptance_quickstart.md) ·
 [tests/acceptance/README.md](../../tests/acceptance/README.md)

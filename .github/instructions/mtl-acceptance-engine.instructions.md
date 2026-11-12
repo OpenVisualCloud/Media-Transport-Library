@@ -6,7 +6,7 @@ applyTo: "tests/acceptance/mtl_engine/**"
 
 # Editing `tests/acceptance/mtl_engine/`
 
-Architecture: [doc/acceptance-design.md](../../doc/acceptance-design.md) §2, §5.
+Architecture: [doc/development/acceptance-design.md](../../doc/development/acceptance-design.md) §2, §5.
 
 ## Module ownership — put the code in the right file
 

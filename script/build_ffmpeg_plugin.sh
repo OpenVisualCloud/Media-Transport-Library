@@ -46,7 +46,7 @@ ENVIRONMENT:
 	FFMPEG_ENABLE_SVT_JPEG_XS	1 is the same as --jpegxs
 	SVT_JPEG_XS_REPO	SVT-JPEG-XS sources (default: script/SVT-JPEG-XS)
 	CFLAGS, LDFLAGS		Flags of the openh264 and FFmpeg builds; the script adds the
-				hardening flags of doc/build.md to them
+				hardening flags of doc/getting_started/build.md to them
 	CPPFLAGS		Preprocessor flags of the FFmpeg build; openh264 reads none
 	MTL_HARDENING		0 builds openh264 and FFmpeg without the hardening flags and
 				PIE (default: 1)
@@ -78,7 +78,7 @@ build_openh264() {
 	fi
 	rm -rf "${source_dir}"
 	unzip -q "${archive}" -d "${script_folder}"
-	# The compiler hardening of doc/build.md. The Makefile adds its own flags
+	# The compiler hardening of doc/getting_started/build.md. The Makefile adds its own flags
 	# to the CFLAGS and LDFLAGS of the environment, and reads no CPPFLAGS.
 	CPPFLAGS='' hardening_flags || exit 1
 	# shellcheck disable=SC2153 # hardening_flags() of common.sh sets both
@@ -224,7 +224,7 @@ main() {
 	require_pkg_config "mtl:MTL (build and install it with build.sh)" "libdpdk:DPDK (build_dpdk.sh)" || exit 1
 	[ "${jpegxs}" -eq 0 ] || require_pkg_config "SvtJpegxs:SVT-JPEG-XS (build_jpegxs.sh)" || exit 1
 	if [ "${gpu_direct}" -eq 1 ]; then
-		require_pkg_config "mtl_gpu_direct:MTL GPU direct (gpu_direct/, see doc/gpu.md)" || exit 1
+		require_pkg_config "mtl_gpu_direct:MTL GPU direct (gpu_direct/, see doc/features/gpu.md)" || exit 1
 		readelf -d "$(pkg_libdir mtl)/libmtl.so" | grep -q 'NEEDED.*libmtl_gpu_direct' || {
 			log_error "--gpu-direct needs an MTL that links mtl_gpu_direct: remove build/ and run build.sh again"
 			exit 1
@@ -268,7 +268,7 @@ main() {
 	libdirs=("${prefix}/lib" "$(pkg_libdir mtl)" "$(pkg_libdir libdpdk)")
 	[ "${jpegxs}" -eq 0 ] || libdirs+=("$(pkg_libdir SvtJpegxs)")
 	configure_flags+=("--extra-ldflags=-L${prefix}/lib -Wl,--disable-new-dtags")
-	# The compiler hardening of doc/build.md, for gcc: configure ignores CC.
+	# The compiler hardening of doc/getting_started/build.md, for gcc: configure ignores CC.
 	CC=gcc hardening_flags || exit 1
 	configure_flags+=("--extra-cflags=${HARDENING_CFLAGS}" "--extra-ldflags=${HARDENING_LDFLAGS}")
 	[ -z "${HARDENING_CFLAGS}" ] || configure_flags+=(--extra-ldexeflags=-pie)

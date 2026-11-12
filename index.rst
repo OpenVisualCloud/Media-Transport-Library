@@ -19,40 +19,71 @@ Media Transport Library
    CHANGELOG.md
    Licensing <ATTRIBUTION.md>
 
-Contents
+Getting Started
+----------------
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Getting Started:
+
+   Documentation Map <doc/README.md>
+   doc/getting_started/build.md
+   doc/getting_started/e800_series_drivers.md
+   doc/getting_started/run.md
+   MTL Manager <manager/README.md>
+   doc/design.md
+
+Platforms
+----------
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Platforms:
+
+   Build Guide on Windows <doc/platforms/build_WIN.md>
+   doc/platforms/run_WIN.md
+   doc/platforms/vm.md
+   doc/platforms/vm_WIN.md
+   doc/platforms/aws.md
+   doc/platforms/sdm_appliance.md
+
+Features
 ---------
 
 .. toctree::
    :maxdepth: 1
-   :caption: Contents:
+   :caption: Features:
 
-   doc/design.md
-   MTL Manager <manager/README.md>
-   doc/build.md
-   Build Guide on Windows <doc/build_WIN.md>
-   doc/run.md
-   doc/e800_series_drivers.md
-   doc/run_WIN.md
-   doc/vm.md
-   doc/vm_WIN.md
-   doc/aws.md
-   doc/kernel_socket.md
-   doc/asan.md
-   doc/convert.md
-   doc/dma.md
-   doc/external_frame.md
-   doc/gpu.md
+   doc/features/convert.md
+   doc/features/dma.md
+   doc/features/external_frame.md
+   doc/features/gpu.md
    gpu_direct/README.md
-   doc/isolation.md
-   doc/plugin.md
-   doc/rtcp.md
-   doc/sdm_appliance.md
-   doc/shm_lcore.md
-   doc/stats_guide.md
-   doc/usdt.md
-   doc/xdp.md
-   ST2110 Compliance Result <doc/compliance.md>
-   doc/performance.md
+   doc/features/plugin.md
+   doc/features/rtcp.md
+
+Performance
+------------
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Performance:
+
+   doc/performance/isolation.md
+   doc/performance/shm_lcore.md
+   ST2110 Compliance Result <doc/performance/compliance.md>
+   doc/performance/performance.md
+
+Debugging
+----------
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Debugging:
+
+   doc/debugging/stats_guide.md
+   doc/debugging/usdt.md
+   doc/debugging/asan.md
 
 Sample Application
 -------------------
@@ -64,7 +95,7 @@ Sample Application
    app/sample/README.md
    app/sample/msvc/README.md
    app/v4l2_to_ip/README.md
-   doc/configuration_guide.md
+   doc/getting_started/configuration_guide.md
 
 Ecosystem
 ----------
@@ -86,11 +117,11 @@ Development and Testing
    :maxdepth: 1
    :caption: Development and Testing:
 
-   doc/coding_standard.md
-   doc/acceptance_quickstart.md
-   doc/acceptance-design.md
-   doc/ci_runner_setup.md
-   doc/cicd_setup_proposition.md
+   doc/development/coding_standard.md
+   doc/development/acceptance_quickstart.md
+   doc/development/acceptance-design.md
+   doc/development/ci_runner_setup.md
+   doc/development/cicd_setup_proposition.md
 
 Doxygen
 --------
@@ -99,7 +130,7 @@ Doxygen
    :maxdepth: 1
    :caption: Doxygen:
 
-   doc/doxygen.md
+   doc/development/doxygen.md
    doc/doxygen/solution_overview.md
    doc/doxygen/main_page.md
    doc/doxygen/api.md
@@ -127,8 +158,10 @@ Experimental features
    :maxdepth: 1
    :caption: Experimental features:
 
-   doc/experimental/af_packet.md
+   doc/experimental/kernel_socket.md
+   doc/experimental/xdp.md
    doc/experimental/af_xdp.md
+   doc/experimental/af_packet.md
    doc/experimental/header_split.md
    doc/experimental/performance_optimizations.md
 

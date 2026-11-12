@@ -17,7 +17,7 @@ message('BUILD Environment: ' + exec_env)
 
 cpp_c = meson.get_compiler('cpp')
 
-# Compiler hardening, see doc/build.md
+# Compiler hardening, see doc/getting_started/build.md
 add_project_arguments('-fstack-protector-strong', '-fstack-clash-protection', '-fcf-protection=full',
   '-Wformat', '-Wformat-security', '-Werror=format-security', '-Wimplicit-fallthrough',
   '-D_GLIBCXX_ASSERTIONS', language : 'cpp')

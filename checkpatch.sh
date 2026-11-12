@@ -9,7 +9,7 @@
 # hooks declared in .pre-commit-config.yaml. That file is the single source of
 # truth for which tool, which version, which arguments and which files; this
 # script only decides *which files to feed it* and how to report. It must never
-# grow a rule of its own -- see doc/coding_standard.md.
+# grow a rule of its own -- see doc/development/coding_standard.md.
 #
 #   ./checkpatch.sh                  verify every tracked file
 #   ./checkpatch.sh --staged         verify staged files only (what the hook runs)
@@ -95,7 +95,7 @@ distro_hint() {
 	cat <<'EOF'
 
 Or install your platform's package -- dnf, pacman, apt, zypper, brew, pipx all
-carry it. Exact commands: doc/coding_standard.md section 6.1.
+carry it. Exact commands: doc/development/coding_standard.md section 6.1.
 EOF
 }
 

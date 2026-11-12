@@ -332,7 +332,7 @@ function origin_rpath_args() {
 
 # Sets HARDENING_CFLAGS and HARDENING_LDFLAGS for a dependency build: the
 # hardening flags of the MTL meson projects, less the warning options, and their
-# _FORTIFY_SOURCE rule, see doc/build.md. MTL_HARDENING=0 leaves both empty.
+# _FORTIFY_SOURCE rule, see doc/getting_started/build.md. MTL_HARDENING=0 leaves both empty.
 function hardening_flags() {
 	local flag defines level optimized=1 own=0 sanitized=0
 	local -a compiler args

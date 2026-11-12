@@ -19,7 +19,7 @@ if is_windows
     error('not supported on Windows')
 endif
 
-# Compiler hardening, see doc/build.md. The gtest executable below takes the same flags.
+# Compiler hardening, see doc/getting_started/build.md. The gtest executable below takes the same flags.
 hardening_args = ['-fstack-protector-strong', '-fstack-clash-protection', '-fcf-protection=full',
   '-Wformat', '-Wformat-security', '-Werror=format-security', '-Wimplicit-fallthrough']
 if get_option('optimization') not in ['0', 'plain'] and get_option('b_sanitize') == 'none' and not ' '.join(get_option('c_args')).contains('_FORTIFY_SOURCE')

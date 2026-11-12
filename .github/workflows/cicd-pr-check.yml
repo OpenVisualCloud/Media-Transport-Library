@@ -106,7 +106,7 @@ jobs:
   # .pre-commit-config.yaml, and this job runs it through the same entry point
   # developers and the git hooks use. This workflow must stay orchestration-only:
   # if you find yourself adding a rule or a config path here, it belongs in
-  # .pre-commit-config.yaml instead. See doc/coding_standard.md.
+  # .pre-commit-config.yaml instead. See doc/development/coding_standard.md.
   checkpatch:
     name: checkpatch (${{ matrix.os }})
     if: ${{ github.event_name == 'pull_request' }}
@@ -151,7 +151,7 @@ jobs:
 
   # Checks that checkpatch does not reproduce yet, kept as an explicitly named
   # job rather than dropped quietly. Each one has a recorded reason and a
-  # migration path in the parity table in doc/coding_standard.md.
+  # migration path in the parity table in doc/development/coding_standard.md.
   #
   # This is an allow-list: super-linter runs *only* the validators set true here,
   # and it refuses to start if true and false values are mixed, so no

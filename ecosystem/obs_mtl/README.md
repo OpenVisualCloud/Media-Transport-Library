@@ -6,7 +6,7 @@ obs source plugin for Media Transport Library
 
 ### build Media Transport Library library
 
-refer to: [build guide](../../doc/build.md)
+refer to: [build guide](../../doc/getting_started/build.md)
 
 ### build & install obs-studio
 

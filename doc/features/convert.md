@@ -10,7 +10,7 @@ The library supports SIMD flags detection at runtime.
 
 The default function `st20_<src_format>_to_<dest_format>` will attempt to use the maximum SIMD level supported on the platform. Users can also specify the maximum SIMD level by calling `st20_<src_format>_to_<dest_format>_simd`.
 
-For detailed API usage, please refer to [st_convert_api.h](../include/st_convert_api.h).
+For detailed API usage, please refer to [st_convert_api.h](../../include/st_convert_api.h).
 
 ## Supported Conversion
 

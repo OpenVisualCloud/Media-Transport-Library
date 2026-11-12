@@ -53,7 +53,7 @@ subdir('src')
 app_c_args = []
 app_ld_args = []
 
-# Compiler hardening, see doc/build.md
+# Compiler hardening, see doc/getting_started/build.md
 if not is_windows
   add_project_arguments('-fstack-protector-strong', '-fstack-clash-protection', '-fcf-protection=full',
     '-Wformat', '-Wformat-security', '-Werror=format-security', '-Wimplicit-fallthrough', language : 'c')

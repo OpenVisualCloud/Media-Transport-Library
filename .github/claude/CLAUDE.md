@@ -28,7 +28,7 @@ re-deriving things from source:
 | `.github/instructions/mtl-acceptance-*.instructions.md` | pytest E2E suite: running, authoring, engine internals, host setup. |
 | `.github/instructions/mtl-system-setup.instructions.md` | Hugepages, VFs, ICE driver, MtlManager. |
 | `.github/copilot-instructions.md` | Quality bar and the six-gate TDD loop the Copilot/subagent workflow uses. |
-| `doc/design.md`, `doc/build.md`, `doc/run.md` | Upstream user-facing design/build/run guides. |
+| `doc/design.md`, `doc/getting_started/build.md`, `doc/getting_started/run.md` | Upstream user-facing design/build/run guides. |
 
 If the knowledge base disagrees with the code, fix the knowledge base in the same change.
 

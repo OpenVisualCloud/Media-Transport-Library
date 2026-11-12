@@ -8,7 +8,7 @@ unit_c_args = ['-Wall', '-Werror']
 # #define rename, so a real duplicate must fail the link.
 unit_link_args = []
 
-# Compiler hardening, see doc/build.md. lib/meson.build sets it for the C sources; the C++
+# Compiler hardening, see doc/getting_started/build.md. lib/meson.build sets it for the C sources; the C++
 # sources and the C++ link of UnitTest take it as target arguments.
 if not is_windows
   unit_cpp_args += ['-fstack-protector-strong', '-fstack-clash-protection', '-fcf-protection=full',

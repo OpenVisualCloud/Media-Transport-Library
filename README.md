@@ -36,7 +36,7 @@ If you find value in our project, please consider giving it a star. Your support
 
 #### 1.1.1. ST2110 features
 
-* Narrow and wide pacing. Please see [compliance](doc/compliance.md) page for the ST2110 narrow report on our software solution.
+* Narrow and wide pacing. Please see [compliance](doc/performance/compliance.md) page for the ST2110 narrow report on our software solution.
 * ST2110-10, ST2110-20, ST2110-21, ST2110-30, ST2110-40, ST2022-7.
 * 1080p, 1080i, 720p, 4k, 8k and others.
 * FPS: 120, 119.88, 100, 60, 59.94, 50, 30, 29.97, 25, 24, 23.98.
@@ -103,21 +103,25 @@ Kernel updates can change this value without changing the supported operating sy
 
 ## 2. Build
 
-Please refer to [Build Guide](doc/build.md) for instructions on how to build DPDK, the library, and the sample application. Guidance for the fuzz targets lives in [tests/doc/fuzz/index.rst](tests/doc/fuzz/index.rst).
+The [Documentation Map](doc/README.md) lists every guide by topic.
 
-For Windows, please refer to the [Windows Build Guide](doc/build_WIN.md) for instructions on how to build.
+Please refer to [Build Guide](doc/getting_started/build.md) for instructions on how to build DPDK, the library, and the sample application. Guidance for the fuzz targets lives in [tests/doc/fuzz/index.rst](tests/doc/fuzz/index.rst).
+
+For Windows, please refer to the [Windows Build Guide](doc/platforms/build_WIN.md) for instructions on how to build.
 
 ## 3. Run ST2110
 
-Please refer to [Run Guide](doc/run.md) for instructions on how to set up and run the demo pipeline application based on DPDK PMD backend.
+For an Intel® E810 or E830 adapter, check and install the driver first, as the [E800 Series Driver Guide](doc/getting_started/e800_series_drivers.md) shows.
 
-For Windows, please refer to [Run Guide on Windows](doc/run_WIN.md).
+Please refer to [Run Guide](doc/getting_started/run.md) for instructions on how to set up and run the demo pipeline application based on DPDK PMD backend.
 
-Additionally, please refer to the [VM Guide](doc/vm.md) and [Windows VM Guide](doc/vm_WIN.md) for instructions on setting up Linux and Windows guest VMs based on VF passthrough.
+For Windows, please refer to [Run Guide on Windows](doc/platforms/run_WIN.md).
 
-For AWS (cloud environment), please refer to [AWS Run Guide](doc/aws.md) for instructions on how to set up and run the demo.
+Additionally, please refer to the [VM Guide](doc/platforms/vm.md) and [Windows VM Guide](doc/platforms/vm_WIN.md) for instructions on setting up Linux and Windows guest VMs based on VF passthrough.
 
-To run this library on the kernel network stack with the built-in kernel NIC driver, please follow the instructions provided in the [kernel socket guide](doc/kernel_socket.md).
+For AWS (cloud environment), please refer to [AWS Run Guide](doc/platforms/aws.md) for instructions on how to set up and run the demo.
+
+To run this library on the kernel network stack with the built-in kernel NIC driver, please follow the instructions provided in the [kernel socket guide](doc/experimental/kernel_socket.md).
 
 ## 4. ST2110 Programmers guide
 
@@ -157,7 +161,7 @@ If you do not want the main branch automatically synced to the upstream, please 
 `--bootstrap` uses pipx or `pip --user`. If your distribution marks its system
 Python as externally managed (Fedora, Arch, Debian 12+ and others), it prints the
 package to install instead; the same list is in
-[doc/coding_standard.md §6](doc/coding_standard.md#6-platforms), together with the
+[doc/development/coding_standard.md §6](doc/development/coding_standard.md#6-platforms), together with the
 Windows and macOS routes.
 
 ### 6.3. Coding style
@@ -176,7 +180,7 @@ your `PATH`. `pre-commit` installs the pinned version of each tool itself, which
 is also what stops a different locally-installed version from silently
 reformatting hundreds of unrelated files.
 
-[doc/coding_standard.md](doc/coding_standard.md) is the reference: the rules, which
+[doc/development/coding_standard.md](doc/development/coding_standard.md) is the reference: the rules, which
 check runs where, and how to change one.
 
 ### 6.4. Before you open a pull request
@@ -189,4 +193,4 @@ check runs where, and how to change one.
 3. Write the commit message as
    [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) with a
    capitalized type: `Fix: ...`, `Add: ...`, `Docs: ...`. The full list is in
-   [doc/coding_standard.md §7](doc/coding_standard.md#7-commit-messages).
+   [doc/development/coding_standard.md §7](doc/development/coding_standard.md#7-commit-messages).

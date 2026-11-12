@@ -48,7 +48,7 @@ MTL supports multi-process deployment through the use of SR-IOV. Each process op
 Each instance sends a request to the Manager service, which in return assigns a free core to the instance. The Manager service is also responsible for detecting when an instance disconnects and will subsequently release the associated resources. For more details, please consult the [Manager guide](../manager/README.md)
 
 If the background Manager service is not practical for your setup, there is a fallback method: managing the logical core (lcore) via shared memory. In this approach, all MTL instances loop through a shared memory structure to locate an unused core.
-The instructions for this deprecated method can still be accessed in the [lcore Guide](shm_lcore.md). However, we strongly advise against this method and recommend using the Manager service instead, as it has the capability to detect when any instance has been unexpectedly closed.
+The instructions for this deprecated method can still be accessed in the [lcore Guide](performance/shm_lcore.md). However, we strongly advise against this method and recommend using the Manager service instead, as it has the capability to detect when any instance has been unexpectedly closed.
 
 ### 2.5. The tasklet API for application
 
@@ -116,7 +116,7 @@ An lcore ID is the CPU ID it runs on, in the list, in the logs, in MtlManager an
 Processes that list different CPUs never share an lcore.
 The DPDK of `script/build_dpdk.sh` numbers every CPU of the host (see the build guide, section 2).
 If the host has more CPUs than `RTE_MAX_LCORE` of the DPDK, MTL passes `--remap-lcore-ids` and logs a warning: each process then numbers its CPUs from 0, so processes on different CPUs can claim the same lcore; rebuild DPDK with a larger `DPDK_MAX_LCORES`.
-MTL 26.09 and earlier number lcores differently: do not run them on the same host (see the [lcore Guide](shm_lcore.md)).
+MTL 26.09 and earlier number lcores differently: do not run them on the same host (see the [lcore Guide](performance/shm_lcore.md)).
 
 The DPDK `@` syntax, for example `1@130`, sets an lcore ID that is not the CPU ID. MTL claims lcores by ID, so give each process IDs that no other process uses.
 
@@ -124,7 +124,7 @@ The DPDK `@` syntax, for example `1@130`, sets an lcore ID that is not the CPU I
 
 For timing-sensitive workloads and improved performance predictability, isolating CPU cores from the general scheduler can significantly reduce context switches and jitter. This is particularly beneficial when running MTL with dedicated cores.
 
-To isolate CPU cores at boot time, use the `isolcpus` kernel boot parameter. For detailed instructions covering static isolation, dynamic cpuset-based isolation, kernel prerequisites, and verification steps, refer to the [CPU Isolation Guide](isolation.md). For additional background, see also the [DPDK Linux Getting Started Guide - Using Linux Core Isolation to Reduce Context Switches](https://doc.dpdk.org/guides/linux_gsg/enable_func.html#using-linux-core-isolation-to-reduce-context-switches).
+To isolate CPU cores at boot time, use the `isolcpus` kernel boot parameter. For detailed instructions covering static isolation, dynamic cpuset-based isolation, kernel prerequisites, and verification steps, refer to the [CPU Isolation Guide](performance/isolation.md). For additional background, see also the [DPDK Linux Getting Started Guide - Using Linux Core Isolation to Reduce Context Switches](https://doc.dpdk.org/guides/linux_gsg/enable_func.html#using-linux-core-isolation-to-reduce-context-switches).
 
 Once cores are isolated, you can manually assign them to MTL instances using the `lcores` parameter in `struct mtl_init_params` (see §2.7), or via the RxTxApp `--lcores` command-line option. This ensures MTL tasks run with minimal interference from other system processes.
 
@@ -165,7 +165,7 @@ The library incorporates a virtual data path backend layer, designed to abstract
 
 * DPDK Poll-Mode Drivers (PMDs): These drivers fully bypass the kernel's networking stack, utilizing the 'DPDK poll mode' driver.
 * Native Linux Kernel Network Socket Stack: This option supports the full range of kernel ecosystems. Related code can be found from [mt_dp_socket.c](../lib/src/datapath/mt_dp_socket.c)
-* AF_XDP with eBPF filter: AF_XDP represents a significant advancement in the Linux networking stack, striking a balance between raw performance and integration with the kernel's networking ecosystem. Please refer to [XDP Guide](xdp.md) for detail.
+* AF_XDP with eBPF filter: AF_XDP represents a significant advancement in the Linux networking stack, striking a balance between raw performance and integration with the kernel's networking ecosystem. Please refer to [XDP Guide](experimental/xdp.md) for detail.
 
 MTL selects the backend NIC based on input from the application. Users should specify both of the following parameters in `struct mtl_init_params`, the port name should follow the format described below, and the pmd type can be fetched using `mtl_pmd_by_port_name`.
 
@@ -261,7 +261,7 @@ The frame-start tolerance below applies when the port has a pad plan (see [8.2](
 The frame-start tolerance cannot exceed the idle time ST 2110-21 leaves between two frames: about 4% of the frame time for gapped senders.
 MTL sends every ST 2110-20 stream with the gapped schedule. `ST21_PACING_LINEAR` is not implemented for TX.
 
-> **Tip:** Isolating CPU cores significantly reduces scheduler jitter, lowering the need for large queue depths. See the [CPU Isolation Guide](isolation.md) for setup instructions.
+> **Tip:** Isolating CPU cores significantly reduces scheduler jitter, lowering the need for large queue depths. See the [CPU Isolation Guide](performance/isolation.md) for setup instructions.
 
 In the case that the rate-limiting feature is unavailable, TSC (Timestamp Counter) based software pacing is provided as a fallback option.
 
@@ -273,7 +273,7 @@ TSN launch-time pacing (`--pacing_way tsn` / `ST21_TX_PACING_WAY_TSN`) offloads 
 
 - The NIC must be an Intel® E830 Series Ethernet Adapter. E810 lacks the TxPP launch-time hardware engine, so it never advertises the `RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP` capability.
 - The port must be a PF (Physical Function). VFs do not support the hardware timesync feature, so there is no HW PHC to compare the launch time against.
-- The built-in PTP service must be enabled (`--ptp` / `MTL_FLAG_PTP_ENABLE`), and not forced to the TSC source (`MTL_FLAG_PTP_SOURCE_TSC`). The packet launch time is only meaningful if it is expressed in the same, PHC-synced clock domain the NIC compares it against. See [PTP Setup](run.md#71-ptp-setup) for how to enable it.
+- The built-in PTP service must be enabled (`--ptp` / `MTL_FLAG_PTP_ENABLE`), and not forced to the TSC source (`MTL_FLAG_PTP_SOURCE_TSC`). The packet launch time is only meaningful if it is expressed in the same, PHC-synced clock domain the NIC compares it against. See [PTP Setup](getting_started/run.md#71-ptp-setup) for how to enable it.
 
 ### 4.4. ST2110 RX
 
@@ -282,7 +282,7 @@ Once the packet is received and validated as legitimate, the RX session will cop
 
 #### 4.4.1. RX DMA offload
 
-The process of copying data between packets and frames consumes a significant amount of CPU resources. MTL can be configured to use DMA to offload this copy operation, thereby enhancing performance. For detailed usage instructions, please refer to [DMA Guide](dma.md)
+The process of copying data between packets and frames consumes a significant amount of CPU resources. MTL can be configured to use DMA to offload this copy operation, thereby enhancing performance. For detailed usage instructions, please refer to [DMA Guide](features/dma.md)
 
 ![RX DMA Offload](png/rx_dma_offload.svg)
 
@@ -488,7 +488,7 @@ Thanks to the plugin, the application can implement ST22 support using the follo
   st22p_tx_free
 ```
 
-The plugin guide can be found [here](plugin.md), the pipeline detail implementation can be find in [st22_pipeline_tx.c](../lib/src/st2110/pipeline/st22_pipeline_tx.c) and [st22_pipeline_rx.c](../lib/src/st2110/pipeline/st22_pipeline_rx.c).
+The plugin guide can be found [here](features/plugin.md), the pipeline detail implementation can be find in [st22_pipeline_tx.c](../lib/src/st2110/pipeline/st22_pipeline_tx.c) and [st22_pipeline_rx.c](../lib/src/st2110/pipeline/st22_pipeline_rx.c).
 
 Sample application code can be found in [tx_st22_pipeline_sample.c](../app/sample/tx_st22_pipeline_sample.c) and [rx_st22_pipeline_sample.c](../app/sample/rx_st22_pipeline_sample.c)
 
@@ -558,7 +558,7 @@ It's important to be mindful that the RTCP retransmission method used by MTL for
 
 It can be enabled by `ST**_TX_FLAG_ENABLE_RTCP` and `ST**_RX_FLAG_ENABLE_RTCP`, and the configuration for RTCP can be customized by `ops.rtcp` (`struct st_tx_rtcp_ops` and `struct st_rx_rtcp_ops`).
 
-For more details, please refer to [RTCP doc](rtcp.md).
+For more details, please refer to [RTCP doc](features/rtcp.md).
 
 ### 6.9. External frame
 
@@ -569,7 +569,7 @@ When enabled, after transmission completes the library parks the frame in an int
 This two-phase release prevents the library from reusing the frame slot while the application still holds references to the external memory. Without this flag, the legacy behavior is preserved and the frame slot is released immediately.
 Additionally, it's important to note that if a DPDK-based PMD backend is utilized, the external frame must provide an IOVA address, which can be conveniently obtained using the `mtl_dma_map` API, thanks to IOMMU/VFIO support.
 
-For more comprehensive information and instructions on using these converters, please refer to the [External Frame API Guide](external_frame.md).
+For more comprehensive information and instructions on using these converters, please refer to the [External Frame API Guide](features/external_frame.md).
 
 ### 6.10. VSync
 
@@ -589,7 +589,7 @@ Video and ancillary sessions round the timestamp to the nearest frame epoch and 
 ### 6.12. SIMD for color space convert
 
 MTL includes an array of built-in SIMD converters, providing high-performance data processing. The implementation details for these converters are available in the MTL library source files [st_avx512.c](../lib/src/st2110/st_avx512.c) and [st_avx512_vbmi.c](../lib/src/st2110/st_avx512_vbmi.c).
-The API for these converters is publicly documented in the header file [st_convert_api.h](../include/st_convert_api.h). For more comprehensive information and instructions on using these converters, please refer to the [Convert Guide](convert.md).
+The API for these converters is publicly documented in the header file [st_convert_api.h](../include/st_convert_api.h). For more comprehensive information and instructions on using these converters, please refer to the [Convert Guide](features/convert.md).
 
 ### 6.13. Runtime update source and destination
 
@@ -647,7 +647,7 @@ specifically for time-sensitive parsing tasks. Isolating CPUs can help ensure
 that these tasks are not preempted by other processes, thus maintaining a high
 level of reliability. For comprehensive isolation instructions — including
 static (`isolcpus`), dynamic (cpusets), kernel config verification, and
-validation steps — see the [CPU Isolation Guide](isolation.md).
+validation steps — see the [CPU Isolation Guide](performance/isolation.md).
 After isolating the CPUs, you can manually assign these dedicated cores to an MTL instance. For detailed instructions on this manual assignment process, please refer to the section [§2.7 Manual Assigned lcores](#27-manual-assigned-lcores) and [§2.8 CPU Core Isolation](#28-cpu-core-isolation) in this documentation.
 
 ### 6.17. ST40(ancillary) Interlaced support
@@ -700,11 +700,11 @@ static void log_user_printer(enum mtl_log_level level, const char* format, ...) 
 }
 ```
 
-In a production system, the `enum mtl_log_level` is set to the `MTL_LOG_LEVEL_ERR` usually, in this cast USDT probes can be used to fetching the logging, for details see [usdt](usdt.md) doc, `#### 2.1.1 log_msg USDT` part.
+In a production system, the `enum mtl_log_level` is set to the `MTL_LOG_LEVEL_ERR` usually, in this cast USDT probes can be used to fetching the logging, for details see [usdt](debugging/usdt.md) doc, `#### 2.1.1 log_msg USDT` part.
 
 ### 7.2. USDT
 
-MTL offer eBPF based User Statically-Defined Tracing (USDT) support to monitor status or issues tracking in a production system, for details see [usdt](usdt.md) doc.
+MTL offer eBPF based User Statically-Defined Tracing (USDT) support to monitor status or issues tracking in a production system, for details see [usdt](debugging/usdt.md) doc.
 
 ## 8. Known Issues
 
@@ -751,7 +751,7 @@ A stall inside a padding burst comes from the CPU of the TX scheduler:
 
 | Sign | Cause | Remedy |
 |---|---|---|
-| `stat_trans_recalculate_warmup` grows, at integer frame rates often on the same frame of a cycle | The kernel timer tick (1 ms, 2-10 µs long) runs inside a burst, at fixed phases of a whole-ms frame grid: every frame at 50p, one in 3 at 60p; at 59.94p it drifts and rarely does. | Stop the tick on the scheduler cores: `nohz_full` or `isolcpus=…,nohz` ([CPU Isolation Guide](isolation.md)) |
+| `stat_trans_recalculate_warmup` grows, at integer frame rates often on the same frame of a cycle | The kernel timer tick (1 ms, 2-10 µs long) runs inside a burst, at fixed phases of a whole-ms frame grid: every frame at 50p, one in 3 at 60p; at 59.94p it drifts and rarely does. | Stop the tick on the scheduler cores: `nohz_full` or `isolcpus=…,nohz` ([CPU Isolation Guide](performance/isolation.md)) |
 | Single frames late by tens to hundreds of µs; with ST 2022-7 on one leg only, as each leg pads on its own | The scheduler thread is preempted past the scheduled time, for example by a `kworker` | Isolate the scheduler cores |
 
 Measured on E830 VF TX at 1080p25 to 1080p120 and 2160p60, with and without redundancy, the minimum first-packet latency was 1.0 µs or more.

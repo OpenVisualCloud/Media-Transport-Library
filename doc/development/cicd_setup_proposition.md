@@ -5,7 +5,7 @@ Automated hardware validation requires GitHub self-hosted runners labelled
 outputs; bare-metal runners restore and validate those outputs before testing.
 
 The proposed ICE and JPEG XS changes are tracked in
-[GitHub Actions issue: prebuilt host dependencies](../.github/github_actions_issue.md).
+[GitHub Actions issue: prebuilt host dependencies](../../.github/github_actions_issue.md).
 
 The pipeline is organized as follows:
 
@@ -254,7 +254,7 @@ Host validation prepares each E8xx NIC before a test suite starts.
 runs the same script on a configured shadow host.
 
 The detailed artifact contracts and acceptance criteria are maintained in
-[the GitHub Actions issue](../.github/github_actions_issue.md).
+[the GitHub Actions issue](../../.github/github_actions_issue.md).
 
 ### The failure mode this design has
 
@@ -284,7 +284,7 @@ Two rules close it:
 Workflow YAML describes ordering, permissions, conditions, and runner
 selection. It must not become the implementation layer. Do not add multi-line
 `run: |` programs to workflows or composite actions. Add a named task to the
-repository [Taskfile](../Taskfile.yml), and put substantial shell logic in a
+repository [Taskfile](../../Taskfile.yml), and put substantial shell logic in a
 focused script called by that task. A developer and GitHub Actions must invoke
 the same task.
 
