@@ -8,6 +8,7 @@ import io
 import itertools
 import json
 import os
+import pathlib
 import re
 import socket
 import struct
@@ -934,6 +935,13 @@ def test_a_change_is_2_percent_and_twice_the_noise_of_the_candidate():
     assert outcome((9, 10), (9, 10), metric="sch_0 avg loop (ns)") == "unchanged"
     session = "sch_1 RX video session min, session timed (us)"
     assert outcome((0.13, 0.15), (0.13, 0.15), metric=session) == "unchanged"
+    # nor than a 0.1 ms bucket of an st22p percentile, whose exact avg has no floor
+    for stat in ("p50", "p99"):
+        decode = f"st22p decode {stat}, timed (ms)"
+        assert outcome((2.35, 2.25), (2.35, 2.25), metric=decode) == "unchanged"
+        assert outcome((2.35, 2.6), (2.35, 2.6), metric=decode) == "regression"
+    decode = "st22p decode avg, timed (ms)"
+    assert outcome((2.35, 2.25), (2.35, 2.25), metric=decode) == "improvement"
     # and no more: means of 100 and 102.5 ns, twice a step and more, differ
     loop = "sch_1 avg loop (ns)"
     assert outcome((100, 102), (100, 103), metric=loop) == "regression"
@@ -1173,6 +1181,27 @@ def test_the_summary_leads_with_the_verdict_and_the_largest_changes():
     assert '<tr class="r"><td>RX · t on sch_1, p99 (us) ↓</td>' in page
     assert "<tr><td>RX · t on sch_1, avg (us) ↓</td>" in page  # unchanged, shown
     assert "<details" not in page
+    # an st22p codec's encode and decode, avg and p99, outside the verdict, before the
+    # tasklets; not its other stages
+    codec = "<h3>Encode and decode times, avg and p99, outside the verdict</h3>"
+    assert codec not in page
+    names = [s for d in pc.ST22P_STAGES.values() for s, *_ in d]
+    stages = {
+        f"st22p {s} {t}, timed (ms)": (4.2, 4.6)
+        for s in names
+        for t in ("avg", "p50", "p99", "max")
+    }
+    page = _summary({loop: (100, 90), p99: (5, 6), **stages})
+    assert "improves 1 of the 1 key metrics" in page
+    assert page.index(codec) < page.index(tasklets)
+    table = page[page.index(codec) : page.index(tasklets)]
+    assert "encode to send" not in table  # nor the stage without a direction
+    shown = re.findall(r"<td>RX · (st22p [^<]+) ↓</td>", page)
+    assert sorted(shown) == [
+        f"st22p {s} {t}, timed (ms)"
+        for s in ("decode", "encode")
+        for t in ("avg", "p99")
+    ]
     # the key rows only, after their role; every row in the count
     rows = {loop: (100, 90), "IPC": (1.0, 2.0), "x": (100, 110), "y": (1, None)}
     rows["RX work (ns/pkt)"] = (None, 5)  # a key row that A lacks
@@ -1413,7 +1442,8 @@ def test_the_report_shows_every_row_and_the_cpus_and_utilization_of_each_stage()
     head = "<th>Threads</th>\n<th>CPUs</th>\n<th>utilization (%)</th>\n"
     assert head + "<th>CPU per frame (ms) ↓</th>" in stages
     trs = stages.split("<tr><td>")[1:]
-    assert [t[: t.index("</td>")] for t in trs] == [pc.STAGE_TEXT[s] for s in pc.STAGES]
+    shown = [s for s in pc.STAGES if s != "codec"]  # st22p's alone
+    assert [t[: t.index("</td>")] for t in trs] == [pc.STAGE_TEXT[s] for s in shown]
     by = dict(zip(pc.STAGES, trs))
     assert re.findall(r'<td class="(\w+)"', by["scheduler"]) == ["r", "u", "u"]
     assert "<b>1</b> → 2<small>❌ +100.0% ±0.0%</small>" in by["scheduler"]
@@ -1424,6 +1454,23 @@ def test_the_report_shows_every_row_and_the_cpus_and_utilization_of_each_stage()
     assert by["other"].count('<td class="u">n/a</td>') == 3
     summary = pc.summary_html(LABELS, ARGS, SLOTS, rounds)
     assert _Tags(page).open == [] and _Tags(summary).open == []
+    cpus = "the CPUs of every kind of thread but the schedulers"
+    assert f"the utilization and {cpus}. The better" in summary
+    assert "st22p" not in summary
+    # an st22p instance's codec threads: a row of their own, after the application's;
+    # its legend also names the stage without a direction
+    rows["codec threads (CPUs)"] = (20, 20)
+    rows["st22p decode avg, timed (ms)"] = (2.3, 2.3)
+    same = {x: {"rx": {k: v[i] for k, v in rows.items()}} for i, x in enumerate("AB")}
+    rounds = [_round(same, ("A", "B")), _round(same, ("B", "A"))]
+    page = pc.report_html(LABELS, ARGS, [], SLOTS, rounds, [("s (RX)", {}), ("c", {})])
+    stages = page[page.index('<table class="mx tm stg">') :]
+    trs = stages[: stages.index("</table>")].split("<tr><td>")[1:]
+    assert [t[: t.index("</td>")] for t in trs] == [pc.STAGE_TEXT[s] for s in pc.STAGES]
+    assert ">20 → 20<small>~ (+0.0%) ±0.0%</small>" in trs[2]
+    summary = pc.summary_html(LABELS, ARGS, SLOTS, rounds)
+    assert f"the utilization, {cpus} and st22p's encode to send. The" in summary
+    assert "that of an st22p p50 or p99 its 0.1 ms bucket." in summary
 
 
 def test_report_html_opens_the_setup_folds_the_instances_and_escapes_every_text():
@@ -1648,6 +1695,7 @@ class _Fake:
         self.paced = {}  # the pacing way lines of an instance's log
         self.session = "st20p"  # the session type of every instance
         self.coded = {}  # the sessions on the codec plugin of an st22p instance's log
+        self.st22p_out = ST22P_OUT  # what an st22p instance's stage collector printed
         self.scripts = _sh(monkeypatch, self.sh)
         for name, value in {
             "stop_units": lambda host: None,
@@ -1655,7 +1703,9 @@ class _Fake:
             "_wait_steady": lambda *a: ([], []),
             "inactive": lambda host, names: [n for n in names if n in self.dead],
             "rdt_counters": lambda host, group: None,
-            "stream": lambda host, script: f"what {script} read",
+            "stream": lambda host, script: (
+                self.st22p_out if script.endswith(".st22p") else f"what {script} read"
+            ),
         }.items():
             monkeypatch.setattr(pc, name, value)
         monkeypatch.setattr(
@@ -1681,7 +1731,9 @@ class _Fake:
 
         for name, value in {
             "start": start,
-            "collect": lambda inst, *a: None,
+            "collect": lambda inst, kind, script: self.scripts.append(
+                f"collect {inst.name} {kind}"
+            ),
             "trace": trace,
             "pin_app_threads": lambda inst: fake.pin,
             "proc": proc,
@@ -1863,6 +1915,17 @@ def test_save_copies_the_log_and_the_record_of_every_collector(monkeypatch, tmp_
     assert sorted(os.listdir(tmp_path)) == names
     with open(tmp_path / "A_rx0.pmu") as f:
         assert f.read() == "[ ! -f /run/A_rx0.pmu ] || cat /run/A_rx0.pmu"
+    # an st22p instance's stage times too
+    inst = pc.Instance(None, "tx0", "tx", "B", None, "/t", "/run/B_tx0")
+    inst.st22p = True
+    inst.save(str(tmp_path))
+    assert sorted(n for n in os.listdir(tmp_path) if n.startswith("B_")) == [
+        "B_tx0",
+        "B_tx0.log",
+        "B_tx0.pmu",
+        "B_tx0.st22p",
+        "B_tx0.trace",
+    ]
 
 
 def test_run_round_rejects_a_session_that_went_silent(fake):
@@ -2990,8 +3053,8 @@ def test_parse_dumps_rates_an_st22p_rx_session_by_the_frames_its_pipeline_gave()
 def test_the_threads_of_an_st22p_session_are_application_threads():
     for name in ("tx_st20p_0", "rx_st20p_12", "tx_st22p_3", "rx_st22p_7"):
         assert pc.APP_THREAD.fullmatch(name), name
-    # the codec's threads have no name of their own: other
-    assert not pc.APP_THREAD.fullmatch("RxTxApp")
+    # the codec's threads have no name of their own: codec threads, not these
+    assert not pc.APP_THREAD.fullmatch(pc.CODEC_THREAD)
 
 
 def test_metrics_of_an_st22p_instance_count_its_codec_drops():
@@ -3048,6 +3111,23 @@ def test_run_round_takes_an_st22p_instance_whose_sessions_the_plugin_coded(fake)
     assert problems == [] and notes == []
     assert results["A"]["rx"]["decode fail"] == 0
     assert results["B"]["tx"]["encode fail"] == 0
+    # the stage times of the timed window, each direction its own
+    rx, tx = results["A"]["rx"], results["B"]["tx"]
+    assert rx["st22p decode avg, timed (ms)"] == pytest.approx(2.3066, abs=1e-4)
+    assert tx["st22p encode p99, timed (ms)"] == pytest.approx(4.275829)
+    assert not [k for k in rx if "encode" in k and "st22p" in k]
+    calls = fake.scripts
+    for name in ("mtl-perf-rx0", "mtl-perf-tx0"):
+        steps = [
+            f"collect {name} timed",
+            f"collect {name} st22p",
+            f"systemctl stop {name}-st22p",
+            f"systemctl stop {name}-timed",
+            f"collect {name} sessions",
+        ]
+        assert [calls.count(s) for s in steps] == [1] * len(steps)
+        at = [calls.index(s) for s in steps]
+        assert at == sorted(at)
     greps = [c for c in fake.scripts if c.startswith("grep -cs 'get one session")]
     assert len(greps) == 4
     # what the command counts in a log as st_plugin.c writes it: the SVT plugin's
@@ -3070,6 +3150,11 @@ def test_run_round_takes_an_st22p_instance_whose_sessions_the_plugin_coded(fake)
         f"mtl-perf-tx1 (dev): 0 of 2 sessions on {pc.CODEC_DEV}*",
     ]
     assert "rx" not in results["A"] and "tx" not in results["B"]
+    # a collector that printed nothing leaves the rows out, and says so
+    fake.coded, fake.st22p_out = {}, "Attaching 7 probes...\n"
+    results, problems, notes = fake.round()
+    assert problems == [] and "st22p decode avg, timed (ms)" not in results["A"]["rx"]
+    assert "mtl-perf-rx0 (main): no st22p stage times" in notes
     # st20p: no plugin to look for
     fake.session, fake.scripts[:] = "st20p", []
     assert fake.round()[1] == []
@@ -3156,3 +3241,182 @@ def test_reanalyze_with_sdp_waits_until_list_analysed_the_streams_again(monkeypa
     # a LIST that never finishes gives no report
     states[:] = [[{"state": "on_going_analysis"}]]
     assert client.reanalyze_with_sdp("v=0") is False
+
+
+# What ST22P_SCRIPT printed as it stopped, on an RxTxApp of 4 x 1080p59 st22p TX and RX
+# over loopback on this dev host (2026-11-10), but for all its start times @t but two.
+ST22P_OUT = """Attaching 7 probes...
+
+
+@st22p[1, 169]: 1
+@st22p[3, 26]: 1
+@st22p[4, 26]: 1
+@st22p[1, 143]: 1
+@st22p[1, 104]: 1
+@st22p[3, 25]: 1
+@st22p[4, 25]: 1
+@st22p[1, 114]: 1
+@st22p[1, 136]: 1
+@st22p[1, 150]: 2
+@st22p[1, 120]: 2
+@st22p[1, 124]: 2
+@st22p[1, 137]: 3
+@st22p[1, 167]: 3
+@st22p[1, 146]: 3
+@st22p[1, 144]: 4
+@st22p[1, 173]: 4
+@st22p[1, 168]: 4
+@st22p[1, 174]: 4
+@st22p[1, 151]: 4
+@st22p[1, 166]: 4
+@st22p[1, 181]: 4
+@st22p[3, 24]: 5
+@st22p[1, 115]: 6
+@st22p[1, 121]: 6
+@st22p[1, 123]: 7
+@st22p[1, 122]: 7
+@st22p[4, 24]: 8
+@st22p[1, 152]: 9
+@st22p[1, 162]: 10
+@st22p[1, 119]: 11
+@st22p[4, 20]: 11
+@st22p[1, 163]: 12
+@st22p[1, 156]: 15
+@st22p[1, 153]: 15
+@st22p[1, 116]: 15
+@st22p[1, 165]: 16
+@st22p[3, 20]: 21
+@st22p[0, 38]: 25
+@st22p[1, 155]: 26
+@st22p[1, 118]: 27
+@st22p[1, 117]: 29
+@st22p[1, 154]: 32
+@st22p[0, 37]: 35
+@st22p[1, 164]: 38
+@st22p[3, 21]: 39
+@st22p[4, 21]: 49
+@st22p[1, 157]: 50
+@st22p[1, 161]: 95
+@st22p[4, 22]: 244
+@st22p[1, 158]: 311
+@st22p[1, 160]: 378
+@st22p[0, 41]: 427
+@st22p[3, 22]: 487
+@st22p[1, 159]: 593
+@st22p[3, 23]: 1249
+@st22p[0, 42]: 1284
+@st22p[4, 23]: 1470
+@st22p[2, 0]: 1791
+@st22p_max[2]: 22630
+@st22p_max[3]: 2644712
+@st22p_max[4]: 2655631
+@st22p_max[0]: 4276890
+@st22p_max[1]: 18188684
+@st22p_sum[2]: 14580323
+@st22p_sum[4]: 4135869739
+@st22p_sum[3]: 4158767347
+@st22p_sum[0]: 7433948124
+@st22p_sum[1]: 27544119277
+@t[1, 1, 1]: 4931341686945050
+@t[1, 0, 1]: 4931341686968593
+"""
+
+
+def test_parse_st22p_takes_each_stage_of_the_frames_of_a_direction():
+    stages = pc.parse_st22p(ST22P_OUT)
+    names = {d: [s for s, *_ in pc.ST22P_STAGES[d]] for d in ("TX", "RX")}
+    assert sorted(stages) == sorted(names["TX"] + names["RX"])
+    assert stages["encode"] == {
+        "buckets": {37: 35, 38: 25, 41: 427, 42: 1284},
+        "sum": 7433948124,
+        "max": 4276890,
+    }
+    tx = pc.st22p_stages("TX", stages)
+    assert list(tx) == [
+        f"st22p {s} {stat}, timed (ms)"
+        for s in names["TX"]
+        for stat in ("avg", "p50", "p99", "max")
+    ]
+    # the average and maximum exact
+    assert tx["st22p encode avg, timed (ms)"] == pytest.approx(7433948124 / 1771 / 1e6)
+    assert tx["st22p encode max, timed (ms)"] == pytest.approx(4.27689)
+    # a percentile linear in its bucket, the 399th of 1284 frames of 4.2 ms to the
+    # maximum, 4.277 ms, as it is the last
+    assert tx["st22p encode p50, timed (ms)"] == pytest.approx(4.223863, abs=1e-6)
+    assert tx["st22p encode to send p50, timed (ms)"] == pytest.approx(15.948567)
+    assert tx["st22p encode to send p99, timed (ms)"] == pytest.approx(16.781333)
+    rx = pc.st22p_stages("RX", stages)
+    assert list(rx) == [
+        f"st22p {s} {stat}, timed (ms)"
+        for s in names["RX"]
+        for stat in ("avg", "p50", "p99", "max")
+    ]
+    assert rx["st22p decode avg, timed (ms)"] == pytest.approx(4158767347 / 1803 / 1e6)
+    assert rx["st22p receive to app p99, timed (ms)"] == pytest.approx(2.399467)
+    assert rx["st22p receive to app max, timed (ms)"] == pytest.approx(2.655631)
+    # the last bucket ends at the maximum: decode wait's only one, 0 to 0.02263 ms
+    assert rx["st22p decode wait p50, timed (ms)"] == pytest.approx(0.011315)
+    assert rx["st22p decode wait p99, timed (ms)"] == pytest.approx(0.0224037)
+    # a stage without frames, its sum or its maximum, as of a collector cut short, or
+    # a collector that printed nothing, has no rows
+    whole = "@st22p[3, 23]: 9\n@st22p_sum[3]: 9\n@st22p_max[3]: 2\n"
+    assert pc.st22p_stages("RX", pc.parse_st22p(whole))
+    for cut in ("@st22p[3, 23]: 9\n", "@st22p_sum[3]: 9\n", "@st22p_max[3]: 2\n"):
+        assert pc.st22p_stages("RX", pc.parse_st22p(whole.replace(cut, ""))) == {}
+    assert pc.st22p_stages("TX", {}) == {}
+    # what the report makes of them: a group of their own, scored but outside the
+    # verdict, encode to send without a better direction, as it holds the slack
+    assert pc._group("st22p encode p99, timed (ms)")[1] == pc.CODEC_STAGES
+    assert pc._direction("st22p encode p99, timed (ms)") == " ↓"
+    assert pc._direction("st22p encode to send p99, timed (ms)") == ""
+    for row in ("st22p decode avg, timed (ms)", "st22p encode p99, timed (ms)"):
+        assert not pc.KEY_ROWS.fullmatch(row) and not pc.TASKLET_ROWS.fullmatch(row)
+
+
+def test_metrics_of_an_st22p_instance_keep_its_codec_threads_apart():
+    # 107 has no name of its own, as an st22p plugin's threads have none
+    codec = (300, 0, pc.CODEC_THREAD, 7, 2 * S)
+    proc0 = (PROC0[0], {**PROC0[1], 107: (0, 0, pc.CODEC_THREAD, 7, 0)})
+    proc1 = (PROC1[0], {**PROC1[1], 107: codec})
+    dumps = _windows()
+    m = pc.metrics("RX", dumps, proc0, proc1, 100, None, None, None, True)
+    assert m["codec threads (CPUs)"] == 1
+    assert m["codec threads per frame (ms)"] == pytest.approx(3 / 50 * 1e3 / (2 * FPS))
+    assert m["other threads (CPUs)"] == 2  # as without it: MTL's and EAL's
+    # an st20p instance has no codec: such a thread is other
+    m = pc.metrics("RX", dumps, proc0, proc1, 100, None, None, None, False)
+    assert "codec threads (CPUs)" not in m and m["other threads (CPUs)"] == 3
+
+
+def test_the_st22p_script_times_each_stage_between_its_own_two_probes():
+    rules = {
+        rule.split(" ", 1)[0]: rule.split(" ", 1)[1].strip()
+        for rule in pc.ST22P_SCRIPT.split("usdt::st22p:")[1:]
+    }
+    stages = [s for d in ("TX", "RX") for s in pc.ST22P_STAGES[d]]
+    assert set(rules) == {p for _, *ends in stages for p in ends}
+    # each a probe of MTL's st22p provider, whose first two arguments are the session's
+    # index and the frame buffer's
+    root = pathlib.Path(__file__).parents[4] / "lib/src"
+    block = (root / "mt_usdt_provider.d").read_text().split("provider st22p {", 1)[1]
+    usdt = (root / "mt_usdt.h").read_text()
+    for probe in rules:
+        assert f"probe {probe}(" in block.split("}", 1)[0]
+        assert re.search(rf"PROBE\d\(st22p, {probe}, idx, f_idx[,)]", usdt), probe
+    # none from a probe that fires once the frame's next thread may already have it
+    # (st22_pipeline_tx.c, st22_pipeline_rx.c), as it could end before it starts
+    assert not {start for _, start, _ in stages} & {
+        "tx_frame_put",
+        "tx_encode_put",
+        "rx_decode_put",
+    }
+    for n, (stage, start, end) in enumerate(stages):
+        # each its own start time, which its end reads once and deletes
+        stamp = f"@t[{n}, arg0, arg1]"
+        assert [p for p in rules if f"{stamp} = nsecs;" in rules[p]] == [start], stage
+        assert (
+            f"if ({stamp}) {{ $d = nsecs - {stamp}; delete({stamp}); "
+            f"@st22p[{n}, $d / 100000] = count(); @st22p_sum[{n}] = sum($d); "
+            f"@st22p_max[{n}] = max($d); }}"
+        ) in rules[end], stage
+        assert [p for p in rules if f"if ({stamp})" in rules[p]] == [end], stage

@@ -459,7 +459,7 @@ def test_perf_compare(
             (
                 f"{video}: {media_config['width']}x{media_config['height']} {codec} by "
                 f"each build's SVT-JPEG-XS plugin, of the {media_config['file_format']} "
-                "clip, 3 bits a pixel as RxTxApp codes it, its threads Other in CPU by "
+                "clip, 3 bits a pixel as RxTxApp codes it, its threads Codec in CPU by "
                 "stage, with no realtime policy; RFC 9134 codestream packets, which MTL "
                 "paces in software (TSC)"
                 if codec

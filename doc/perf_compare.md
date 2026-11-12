@@ -356,16 +356,16 @@ is how many noises it spans. What each row counts as better:
 | Better | Rows |
 | --- | --- |
 | Higher | `fps (worst session)`, `fps (mean of sessions)` |
-| Lower | Every other scored row, a cost: loop and call times (a call is also a wait for the tasklets after it), CPU, preemptions, memory traffic, L3 misses, loss and late frames |
-| No direction | `core clock`; `IPC`, which idle polls raise as much as speed does; LLC occupancy, hits and miss ratio; the port rates, which carry pads and other traffic; the re-plans, which releases count differently; the utilization, whose CPU time the CPU per frame scores; the CPUs of every kind of thread but the schedulers, which follow the CPUs the schedulers take |
+| Lower | Every other scored row, a cost: loop and call times (a call is also a wait for the tasklets after it), CPU, preemptions, memory traffic, L3 misses, loss and late frames, st22p's stage times |
+| No direction | `core clock`; `IPC`, which idle polls raise as much as speed does; LLC occupancy, hits and miss ratio; the port rates, which carry pads and other traffic; the re-plans, which releases count differently; the utilization, whose CPU time the CPU per frame scores; the CPUs of every kind of thread but the schedulers, which follow the CPUs the schedulers take; st22p's `encode to send` |
 
 A change of a row with a better direction is a regression (❌) or an improvement (✅) of
 the candidate, of any other row it only differs (➖); the mark, the word and the bold
 better value carry it for a reader who cannot tell the tints apart. The summary's
-verdict counts them on the key rows, and the avg and p99 of each tasklet's calls follow
-outside it: the timed window runs slower than production, and a tasklet on several
-schedulers would count several times. The rough noise of a few rounds lets an A/A run
-change a row now and then.
+verdict counts them on the key rows, and the avg and p99 of an st22p codec's encode and
+decode and of each tasklet's calls follow outside it: the timed window runs slower than
+production, and a tasklet on several schedulers would count several times. The rough
+noise of a few rounds lets an A/A run change a row now and then.
 
 The case passes or fails on the validity of its rounds (§6), never on a score. A load
 the builds cannot carry is a valid round, an overloaded one. For a role whose builds
@@ -467,8 +467,17 @@ What changes in the measurement:
 - `encode fail` and `decode fail` count the frames the codec failed, `busy drop frame`
   those the RX pipeline had no free frame for, as its decoder or application lagged;
   they are loss rows (§4.4).
-- The codec's threads have no name of their own, so they are `other` threads, which in
-  an st20p run take about 0.2 % of 4 CPUs: in an st22p run `other` is the codec's CPU.
+- The codec's threads, which keep RxTxApp's name as they set none, are the `codec`
+  row of CPU by stage, apart from MTL's `other` threads. MTL's CNI thread also has no
+  name of its own, so it counts there too; it polls a few control packets.
+- In the timed window a bpftrace collector on the st22p pipeline's probes times each
+  frame's stages, by session and frame buffer. On TX, `encode` and `encode to send`,
+  until the transport takes the frame, which holds the frame's slack before its slot and
+  has no better direction. On RX, `decode wait`, `decode` and `receive to app`, until
+  the application gets the frame. Each has its average and maximum, exact, and its p50
+  and p99, from 0.1 ms buckets, in `st22p stages, timed` ([metrics
+  §4.8](perf_compare_metrics.md#48-st22p-stages-timed)). The probes are the same since
+  v26.01.
 - SVT-JPEG-XS gives its threads SCHED_FIFO 99 as root, so they would starve the
   application threads on the CPUs they share, which CFS schedules: an st22p instance
   runs with `RestrictRealtime=yes`, which refuses it, and SVT then only warns. That is a

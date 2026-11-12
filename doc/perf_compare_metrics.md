@@ -25,6 +25,7 @@ benchmark itself (isolation, topology, workflow inputs) is in
    - [4.5 Tasklets, 1 loop in 64 timed](#45-tasklets-1-loop-in-64-timed)
    - [4.6 Tasklet call times, every call timed](#46-tasklet-call-times-every-call-timed)
    - [4.7 Video session call times, every session timed](#47-video-session-call-times-every-session-timed)
+   - [4.8 st22p stages, timed](#48-st22p-stages-timed)
 5. [From rounds to a verdict](#5-from-rounds-to-a-verdict)
 6. [When a round counts at all](#6-when-a-round-counts-at-all)
 7. [Why the numbers can be trusted](#7-why-the-numbers-can-be-trusted)
@@ -210,6 +211,7 @@ rows follow the loops as **CPU**.
 | --- | --- | --- | --- | --- |
 | `scheduler threads (CPUs)` | `/proc/<pid>/task/<tid>/stat`: `processor`, and `schedstat`, of the threads named by `t_pid` | the CPUs the threads last ran on at the second read, of the threads present at both that ran between them (their `schedstat` time on a CPU grew); each scheduler polls one of the slot's `--lcores` (Test Information gives the slot's CPUs) | CPUs | ↓ |
 | `application threads (CPUs)` | the same, of the threads whose `comm` is `tx_st20p_N`, `rx_st20p_N`, `tx_st22p_N` or `rx_st22p_N` | the same, of RxTxApp's frame threads, a thread a session | CPUs | ⊘ |
+| `codec threads (CPUs)` | the same, of an st22p instance's threads whose `comm` is `RxTxApp`, which its codec plugin's and MTL's CNI thread keep as they set no name | the same, of the codec's threads | CPUs | ⊘ |
 | `other threads (CPUs)` | the same, of the other threads | the same | CPUs | ⊘ |
 | `all threads (CPUs)` | the same, of all threads | the same; a CPU that two kinds share counts once | CPUs | ⊘ |
 | `<kind> threads utilization (%)` | the same, `utime` and `stime` | 100 × Δ(utime + stime) of the kind's threads ÷ `CLK_TCK` ÷ Δt ÷ its CPUs; n/a for a kind none of whose threads ran | % | ⊘ |
@@ -249,8 +251,13 @@ rows follow the loops as **CPU**.
 - **Per frame** is the CPU time of a kind for each frame the instance's sessions carry.
   A scheduler's is the CPU it polls per frame, not its work.
 - **The other threads** are MTL's control threads, such as `mtl_stat` and `mtl_admin`,
-  EAL's threads and RxTxApp's main thread, and with st22p the codec's, which have no name
-  of their own and take most of their CPU.
+  EAL's threads and RxTxApp's main thread.
+- **The codec threads** of an st22p instance are its plugin's, which encode or decode
+  the frames. They set no name, so they keep RxTxApp's, as does MTL's CNI thread
+  (`mt_cni.c`), which polls the few packets of the control plane and counts with them.
+  MTL's kernel-socket and shared-RSS threads set none either, but the perf pair's PMD
+  ports start none. An st20p instance has no such row: its CNI thread is an `other`
+  thread.
 - **The preemptions** are a measure of isolation: a scheduler that keeps its CPU is
   never switched out involuntarily. What the slot swap does not cancel is the build's.
 - **IPC and the clock** have no better direction: a polling loop raises IPC with idle
@@ -339,6 +346,47 @@ Rows `sch_N RX|TX video session avg | min | max, session timed (us)`, from
   index is its), over all its sessions and the session-timed dumps: the median of avg,
   the least min, the largest max.
 
+### 4.8 st22p stages, timed
+
+Rows `st22p <stage> avg | p50 | p99 | max, timed (ms)` of an st22p instance, from a
+bpftrace collector on the pipeline's `st22p` probes (`mt_usdt_provider.d`, alike since
+v26.01), attached with the timed window's probe and stopped before the sessions window.
+
+| Stage | From | To | Better |
+| --- | --- | --- | --- |
+| TX `encode` | `tx_encode_get`, the encoder takes the application's frame | `tx_encode_put`, the codec's put call after the frame is encoded | ↓ |
+| TX `encode to send` | `tx_encode_get` | `tx_frame_next`, the transport takes the frame, which holds its slack before its slot | ⊘ |
+| RX `decode wait` | `rx_frame_available`, received whole | `rx_decode_get`, the decoder takes it | ↓ |
+| RX `decode` | `rx_decode_get` | `rx_decode_put`, the codec's put call after the frame is decoded | ↓ |
+| RX `receive to app` | `rx_frame_available` | `rx_frame_get`, the application gets it | ↓ |
+
+- **Per frame**: a stage is timed for each frame, by its session and frame buffer
+  (each probe's first two arguments), from its first probe to its second; a frame
+  whose first probe fired before the collector attached has none.
+- **Only stages that cannot read an old time**: each stage's first probe fires before
+  the frame's state lets its second probe's thread take the frame.
+  - `tx_frame_put`, `tx_encode_put` and `rx_decode_put` fire only after the state, and
+    the next thread may already have the frame, so a stage from one of them could end
+    before it starts and read the time of the frame's last pass, a whole buffer earlier.
+    So TX has no wait for its encoder.
+  - The latter two still end `encode` and `decode`, which so also hold the delay of the
+    codec's put thread after it handed the frame on. Under load, a frame's `encode` can
+    exceed its `encode to send`.
+  - A stage's end deletes its start's time, as bpftrace detaches the probes one by one
+    as it stops.
+- **Over the window**: the count in 0.1 ms buckets, and the exact sum and maximum,
+  which bpftrace prints as it stops. The average and maximum are exact. p50 and p99 are
+  linear in their bucket, the last of which ends at the maximum, as Prometheus'
+  `histogram_quantile()` reads a histogram; so their noise is at least a bucket (§5). A
+  stage without its buckets, its sum or its maximum, as of a collector cut short, has no
+  rows.
+- **The cost**: a probe on each stage's ends, which fire once a frame, two of them on
+  the schedulers' threads: `rx_frame_available` in the RX session's packet path and
+  `tx_frame_next` in the TX builder. They run in the timed window, whose call times
+  already hold the cost of timing every call, and in both builds alike. Like the
+  tasklet call times, the rows stay outside the verdict; `encode to send` alone is not
+  scored.
+
 ---
 
 ## 5. From rounds to a verdict
@@ -361,7 +409,7 @@ flowchart LR
 | **Build value** | the mean of the build's valid rounds | every round counts once |
 | **Change** | Δ = 100 × (B̄ − Ā) ÷ Ā, the candidate's | the report answers "what does B do to A" |
 | **Noise** | twice the standard error of each build's mean, in % of it: 100 × √(4 · s² ÷ n) ÷ \|mean\|; the larger of A's and B's | for two rounds it is their difference; more rounds narrow it, where a range would widen |
-| **Print-step floor** | a loop or call time has at least one print step of noise (1 ns, 0.01 us) of the smaller value | calls of 0.13 and 0.14 us tell nothing |
+| **Print-step floor** | a loop or call time has at least one print step of noise (1 ns, 0.01 us) of the smaller value, and an st22p p50 or p99 one 0.1 ms bucket | calls of 0.13 and 0.14 us tell nothing |
 | **A change** | \|Δ\| ≥ 2% **and** \|Δ\| ≥ 2 × noise | a size and a margin over the noise, as LNT and Perfherder also ask for; the factor keeps the rough noise of few rounds from making one |
 | **Confidence** | \|Δ\| ÷ noise: high from 5, medium from 3, low below | how far from its noise a change is |
 | **From 0** | A at 0 and B above it scores as the mirror of B falling to 0 (100%) and reads `from 0` | (B − A) ÷ A has no value at A = 0 |

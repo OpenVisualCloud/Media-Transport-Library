@@ -78,6 +78,57 @@ TIME_SCRIPTS = {
     "timed": "usdt::sys:tasklet_time_measure {}",
     "sessions": "usdt::sys:sessions_time_measure {}",
 }
+# The stages of an st22p frame, each between two of the pipeline's probes
+# (mt_usdt_provider.d, provider st22p, alike since v26.01), (stage, from, to). Each
+# starts at a probe that fires before the frame's state lets the thread of its end take
+# the frame, so its end reads the time of the same pass. tx_frame_put, tx_encode_put
+# and rx_decode_put fire only after that state, so they start no stage; the latter two
+# end encode and decode, which so also hold the delay of the codec's put thread after
+# it handed the frame on, and can exceed the stage after.
+ST22P_STAGES = {
+    "TX": (
+        ("encode", "tx_encode_get", "tx_encode_put"),
+        # until the transport takes the frame, with its slack before its slot
+        ("encode to send", "tx_encode_get", "tx_frame_next"),
+    ),
+    "RX": (
+        ("decode wait", "rx_frame_available", "rx_decode_get"),
+        ("decode", "rx_decode_get", "rx_decode_put"),
+        ("receive to app", "rx_frame_available", "rx_frame_get"),
+    ),
+}
+_STAGES = [s for d in ST22P_STAGES.values() for s in d]
+ST22P_BUCKET_NS = 100_000
+# Each stage's time of each frame, by its session and buffer (arg0, arg1, as each
+# probe of ST22P_STAGES gives them), by its index in _STAGES: its count in 0.1 ms
+# buckets, its sum and its maximum, which bpftrace prints as its unit stops. A stage
+# has a start time @t of its own, which its end deletes: bpftrace detaches its probes
+# one by one as it stops, so the end of a stage whose start went first would read the
+# frame's last pass, a whole buffer earlier. No END probe, which bpftrace 0.14 cannot
+# attach with -p.
+ST22P_SCRIPT = " ".join(
+    f"usdt::st22p:{probe} {{ "
+    + "".join(
+        f"if (@t[{n}, arg0, arg1]) {{ $d = nsecs - @t[{n}, arg0, arg1]; "
+        f"delete(@t[{n}, arg0, arg1]); @st22p[{n}, $d / {ST22P_BUCKET_NS}] = count(); "
+        f"@st22p_sum[{n}] = sum($d); @st22p_max[{n}] = max($d); }} "
+        for n, (_, _, end) in enumerate(_STAGES)
+        if end == probe
+    )
+    + "".join(
+        f"@t[{n}, arg0, arg1] = nsecs; "
+        for n, (_, start, _) in enumerate(_STAGES)
+        if start == probe
+    )
+    + "}"
+    for probe in sorted({p for _, *ends in _STAGES for p in ends})
+)
+RE_ST22P_STAT = re.compile(r"^@st22p(_sum|_max)?\[(\d+)(?:, (\d+))?\]: (\d+)$", re.M)
+# The name a thread takes from RxTxApp when it sets none of its own: an st22p
+# plugin's, and MTL's CNI thread (mt_cni.c), which polls a few packets of the
+# control plane. MTL's kernel-socket and shared-RSS threads (mt_dp_socket.c,
+# mt_shared_rss.c) set none either, which the perf pair's PMD ports do not start.
+CODEC_THREAD = "RxTxApp"
 
 # The one tasklet whose calls that do not return MTL_TASKLET_ALL_DONE are its work:
 # rvs_pkt_rx, when it received packets. In a paced run the TX builder builds in calls
@@ -88,7 +139,7 @@ WORK_TASKLET = "rvs_pkt_rx"
 # RxTxApp's frame threads, a thread a session (tx_st20p_app.c, rx_st20p_app.c): they
 # fill or read the frames, and MTL converts a frame of another pixel format on them,
 # in st20p_tx_put_frame() and st20p_rx_get_frame(). st22p's (tx_st22p_app.c,
-# rx_st22p_app.c) only fill or read them: its codec's threads have no name of their own.
+# rx_st22p_app.c) only fill or read them: its codec's threads are CODEC_THREAD.
 APP_THREAD = re.compile(r"(tx|rx)_st2[02]p_\d+")
 DUMP_PERIOD_S = 10  # MT_STAT_INTERVAL_S_DEFAULT
 POLL_S = 5
@@ -270,14 +321,16 @@ RE_PERF = re.compile(r"^([\d.]+),[^,]*,([^,]+)", re.M)
 # which a polling loop raises with idle polls as much as with speed; the cache
 # footprint, hits and miss ratio; the port rates, which carry pads and other traffic;
 # the re-plans, which releases count differently; the utilization, whose CPU time the
-# CPU per frame row scores; and the CPUs of every kind of thread but the schedulers,
-# which follow the CPUs the schedulers take. The frame rate is better higher, and every
+# CPU per frame row scores; the CPUs of every kind of thread but the schedulers, which
+# follow the CPUs the schedulers take; and st22p's encode to send, which holds the
+# frame's slack before its slot. The frame rate is better higher, and every
 # other row is a cost, better lower, as the time of a call, which is also a wait for
 # the tasklets after it on its scheduler.
 UNSCORED = re.compile(
     r"core clock \(GHz\)|IPC|LLC occupancy \(MB\)|LLC hits \(M/s\)|LLC miss ratio \(%\)"
     rf"|(RX|TX) rate(, port \d+)? \(Gb/s\)|{TX_REPLAN} \(/s\)"
-    r"|\w+ threads utilization \(%\)|(application|other|all) threads \(CPUs\)"
+    r"|\w+ threads utilization \(%\)|(application|codec|other|all) threads \(CPUs\)"
+    r"|st22p encode to send \w+, timed \(ms\)"
 )
 # The frames an instance delivers, a session's share.
 MEAN_FPS = "fps (mean of sessions)"
@@ -298,13 +351,15 @@ OUTCOMES = {
 }
 CHANGES = ("regression", "improvement", "differs")
 BAR_PCT = 25  # where a difference bar ends; most changes are a few percent
-# The steps MTL prints a time in, and so the least noise of its rows: a difference
-# within one step tells nothing.
+# The steps MTL prints a time in, and the bucket of st22p's percentiles, and so the
+# least noise of their rows: a difference within one step tells nothing.
 PRINT_STEPS = (
     (" avg loop (ns)", 1),
     (" avg loop, traced (ns)", 1),
     (", timed (us)", 0.01),
     (", session timed (us)", 0.01),
+    (" p50, timed (ms)", ST22P_BUCKET_NS / 1e6),
+    (" p99, timed (ms)", ST22P_BUCKET_NS / 1e6),
 )
 # The cost rows of a role that the summary's verdict scores, and the loss and late
 # frame rows, 0 when healthy.
@@ -333,18 +388,22 @@ LOSS_ROWS = (*RX_LOSS, *TX_LATE, *ST22P_DROPS["RX"], *ST22P_DROPS["TX"])
 # The tasklet rows that the summary scores outside its verdict: the timed window runs
 # slower than production, and a tasklet on several schedulers would count several times.
 TASKLET_ROWS = re.compile(r"sch_\d+ .+ (avg|p99), timed \(us\)")
+# The st22p stage rows that the summary shows outside its verdict too: the codec's.
+CODEC_ROWS = re.compile(r"st22p (encode|decode) (avg|p99), timed \(ms\)")
 # The groups of a role's rows in report order, by name or pattern; CPU by stage and the
 # call times of the last two each read as one table of _cell()s.
 DELIVERY = "Delivery"
 CPU_STAGES = "CPU by stage"
+CODEC_STAGES = "st22p stages, timed: each frame's time between two probes"
 # The threads of an instance by what they do, the rows of CPU_STAGES, and its columns:
 # the CPUs the threads of a kind ran on, which kinds can share, their CPU time over
 # those CPUs, and per frame.
-STAGES = ("scheduler", "application", "other", "all")
+STAGES = ("scheduler", "application", "codec", "other", "all")
 STAGE_COLS = ("(CPUs)", "utilization (%)", "per frame (ms)")
 STAGE_TEXT = {
     "scheduler": "Schedulers: send or receive the packets",
     "application": "Application threads: fill or read the frames, and convert them",
+    "codec": "Codec: an st22p plugin's threads, which encode or decode the frames",
     "other": "Other: MTL's control threads, EAL, the main thread",
     "all": "All threads, a CPU that kinds share counted once",
 }
@@ -366,6 +425,7 @@ GROUPS = (
             rf"({'|'.join(STAGES)}) threads ({'|'.join(map(re.escape, STAGE_COLS))})"
         ),
     ),
+    (CODEC_STAGES, re.compile(r"st22p .+ (avg|p50|p99|max), timed \(ms\)")),
     ("Scheduler loops", re.compile(r"sch_\d+ avg loop \(ns\)")),
     (
         "CPU",
@@ -1078,7 +1138,8 @@ class Instance:
     def save(self, out_dir: str) -> None:
         """Copy the application log and the collector records to *out_dir*."""
         os.makedirs(out_dir, exist_ok=True)
-        for suffix in ("", ".log", ".trace", ".pmu"):
+        st22p = (".st22p",) if self.st22p else ()
+        for suffix in ("", ".log", ".trace", ".pmu", *st22p):
             path = f"{self.log}{suffix}"
             with open(os.path.join(out_dir, os.path.basename(path)), "w") as f:
                 f.write(stream(self.host, f"[ ! -f {path} ] || cat {path}"))
@@ -1107,6 +1168,46 @@ def perf_tool(host) -> str | None:
 def parse_perf(text: str) -> dict[str, float]:
     """{event: count} of perf stat -x, output, without what perf could not count."""
     return {event: float(count) for count, event in RE_PERF.findall(text)}
+
+
+def parse_st22p(text: str) -> dict[str, dict]:
+    """ST22P_SCRIPT's output: each stage's 0.1 ms buckets, sum and maximum (ns)."""
+    stages: dict = {}
+    for kind, index, bucket, n in RE_ST22P_STAT.findall(text):
+        stage = _STAGES[int(index)][0]
+        s = stages.setdefault(stage, {"buckets": Counter(), "sum": 0, "max": 0})
+        if kind:
+            s[kind[1:]] = int(n)
+        else:
+            s["buckets"][int(bucket)] = int(n)
+    return stages
+
+
+def st22p_stages(direction: str, stages: dict) -> dict:
+    """The rows of each st22p stage of *direction* that parse_st22p() has whole: its
+    average and maximum, and its median and 99th percentile, linear in their bucket,
+    the last of which ends at the maximum, as Prometheus' histogram_quantile() reads
+    a histogram."""
+    m = {}
+    for stage, *_ in ST22P_STAGES[direction]:
+        s = stages.get(stage)
+        if not (s and s["sum"] and s["max"] and (n := sum(s["buckets"].values()))):
+            continue  # a collector cut short prints part of its maps
+        rows = f"st22p {stage}"
+        m[f"{rows} avg, timed (ms)"] = s["sum"] / n / 1e6
+        for p in (50, 99):
+            rank, seen = n * p / 100, 0
+            for bucket, count in sorted(s["buckets"].items()):
+                if seen + count >= rank:
+                    break
+                seen += count
+            low = bucket * ST22P_BUCKET_NS
+            high = min(low + ST22P_BUCKET_NS, s["max"])
+            m[f"{rows} p{p}, timed (ms)"] = (
+                low + (high - low) * (rank - seen) / count
+            ) / 1e6
+        m[f"{rows} max, timed (ms)"] = s["max"] / 1e6
+    return m
 
 
 def runner_busy(host) -> bool:
@@ -1382,7 +1483,7 @@ def metrics(
     direction, dumps, proc0, proc1, clk_tck, rdt0, rdt1, pmu=None, st22p=False
 ) -> dict:
     """The metrics of one instance in one round, in report order; *dumps* as windows()
-    returns them; with *st22p*, its codec's drops too."""
+    returns them; with *st22p*, its codec's threads apart and its drops too."""
     untraced, traced, timed, session_timed = dumps
     m: dict = {}
     for idx in sorted({i for d in untraced for i in d.sch}):
@@ -1399,14 +1500,21 @@ def metrics(
     both = proc0[1].keys() & proc1[1].keys()
     ticks = {t: proc1[1][t][0] - proc0[1][t][0] for t in both}
     app_tids = {t for t in both if APP_THREAD.fullmatch(proc1[1][t][2])} - sch_tids
+    codec = {t for t in both if proc1[1][t][2] == CODEC_THREAD} if st22p else set()
+    codec_tids = codec - sch_tids
     # A thread that slept through the window, as EAL's of an lcore that no scheduler
     # takes, holds no CPU; one that ran, for however short, last ran on its own CPU.
     ran = {t for t in both if proc1[1][t][4] > proc0[1][t][4]}
     # each kind of thread from its own threads, so a kind without any reads 0 CPUs
     cores = {}
-    for stage, tids in zip(
-        STAGES, (both & sch_tids, app_tids, both - sch_tids - app_tids, both)
-    ):
+    kinds = {
+        "scheduler": both & sch_tids,
+        "application": app_tids,
+        **({"codec": codec_tids} if st22p else {}),
+        "other": both - sch_tids - app_tids - codec_tids,
+        "all": both,
+    }
+    for stage, tids in kinds.items():
         cores[stage] = sum(ticks[t] for t in tids) / clk_tck / dt
         cpus = len({proc1[1][t][3] for t in tids & ran})
         m[f"{stage} threads (CPUs)"] = cpus
@@ -1773,6 +1881,8 @@ def _stages(rows: list[Row]) -> str:
     by = {r.metric: r for r in rows}
     trs = []
     for stage in STAGES:
+        if stage == "codec" and not any(f"codec threads {c}" in by for c in STAGE_COLS):
+            continue  # st22p's alone
         tds = "".join(_cell(by.get(f"{stage} threads {c}")) for c in STAGE_COLS)
         trs.append(f"<tr><td>{STAGE_TEXT[stage]}</td>{tds}</tr>")
     head = ["Threads", "CPUs", "utilization (%)", "CPU per frame (ms) ↓"]
@@ -1906,8 +2016,9 @@ def _verdict(
 
 def _summary(valid: list[dict], hosts: dict, names: dict, styled: bool = True) -> str:
     """The verdict on the key rows of the roles, those rows, the regressions first, the
-    tasklet call times outside the verdict, and which build lacks tasklet rows; its
-    legend tells of the colors and the bars only when *styled*."""
+    st22p codec's times and the tasklet call times outside the verdict, and which build
+    lacks tasklet rows; its legend tells of the colors and the bars only when
+    *styled*."""
     p = ['<div class="sec"><h2>Summary</h2>']
     if not valid:
         p.append(
@@ -1944,6 +2055,9 @@ def _summary(valid: list[dict], hosts: dict, names: dict, styled: bool = True) -
         return _is_key_row(r, role in overloaded)
 
     keys = items(key)
+    codec = items(
+        lambda r, role: CODEC_ROWS.fullmatch(r.metric) and None not in (r.a, r.b)
+    )
     tasklets = items(
         lambda r, role: TASKLET_ROWS.fullmatch(r.metric) and None not in (r.a, r.b)
     )
@@ -1954,6 +2068,9 @@ def _summary(valid: list[dict], hosts: dict, names: dict, styled: bool = True) -
     if keys:
         p.append("<h3>Key metrics</h3>")
         p.append(_cmp_table(_by_size(keys), names))
+    if codec:
+        p.append("<h3>Encode and decode times, avg and p99, outside the verdict</h3>")
+        p.append(_cmp_table(_by_size(codec), names))
     if tasklets:
         p.append("<h3>Tasklet call times, avg and p99, outside the verdict</h3>")
         p.append(_cmp_table(_by_size(tasklets), names))
@@ -1964,17 +2081,22 @@ def _summary(valid: list[dict], hosts: dict, names: dict, styled: bool = True) -
     high, medium = (least for _, least in CONFIDENCE)
     grey = ", in grey" if styled else ""
     bar = f" The bar of a change ends at -{BAR_PCT}% and +{BAR_PCT}%." if styled else ""
+    cpus = "the CPUs of every kind of thread but the schedulers"
+    st22p = any(r.metric.startswith("st22p ") for role in hosts for r in rows[role])
+    unscored = f", {cpus} and st22p's encode to send" if st22p else f" and {cpus}"
+    floor = ", and that of an st22p p50 or p99 its 0.1 ms bucket" if st22p else ""
     p.append(
         '<div class="note">A change of the candidate is a <span class="sw r">'
         'regression</span> ❌ or an <span class="sw i">improvement</span> ✅: lower '
         "for a cost, ↓ after the metric, higher for the frame rate, ↑. ➖ marks a row "
         f"with no better direction that differs{grey}: the clock, IPC, the cache "
-        "footprint, hits and miss ratio, the port rates, the re-plans, the utilization "
-        "and the CPUs of every kind of thread but the schedulers. The better "
+        "footprint, hits and miss ratio, the port rates, the re-plans, the utilization"
+        f"{unscored}. The better "
         f"value is bold. A change is of high confidence from {high:g} times its noise, "
         f"medium from {medium:g} and low below; Rounds gives the candidate's difference "
         "in each valid round. The noise of a loop or call time is at least one step of "
-        f"what MTL prints.{bar} The summary leaves out a row that a build lacks.</div>"
+        f"what MTL prints{floor}.{bar} The summary leaves out a row that a build lacks."
+        "</div>"
     )
     return "\n".join(p + ["</div>"])
 
@@ -2378,7 +2500,15 @@ def run_round(
                 if dead:
                     break
                 for i in insts:
+                    # An st22p instance's stage times in the timed window alone, which
+                    # the verdict leaves, as two of their probes fire on the schedulers,
+                    # in rvs_pkt_rx and the TX builder; the collector prints them as it
+                    # stops.
+                    if i.st22p and kind != "timed":
+                        sh(i.host, f"systemctl stop {i.name}-st22p", check=False)
                     i.time(kind)
+                    if i.st22p and kind == "timed":
+                        i.collect("st22p", ST22P_SCRIPT)
                 time.sleep(traced_s + 2 * DUMP_PERIOD_S)  # as long as the traced
                 dead = _exited(insts)
             if dead:
@@ -2470,6 +2600,11 @@ def run_round(
             problems.append(f"{who(i)}: {named} of {sessions} sessions")
             continue
         m = metrics(direction, w, p0, p1, clk[id(i.host)], r0, r1, pmu[i.name], i.st22p)
+        if i.st22p:
+            out = stream(i.host, f"[ ! -f {i.log}.st22p ] || cat {i.log}.st22p")
+            if not (stages := st22p_stages(direction, parse_st22p(out))):
+                notes.append(f"{who(i)}: no st22p stage times")
+            m.update(stages)
         worst = m["fps (worst session)"]
         if worst < COLLAPSE_SHARE * fps:
             problems.append(
