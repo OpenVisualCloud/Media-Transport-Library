@@ -1477,12 +1477,15 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
     return -ENOMEM;
   }
 
+  for (uint16_t q = 0; q < inf->nb_rx_q; q++) {
+    rx_queues[q].queue_id = q;
+    rx_queues[q].port = inf->port;
+    rx_queues[q].port_id = inf->port_id;
+  }
+
+  /* with MTL_FLAG_RX_MONO_POOL every queue takes the port's rx_mbuf_pool */
   if (!mt_user_rx_mono_pool(impl)) {
     for (uint16_t q = 0; q < inf->nb_rx_q; q++) {
-      rx_queues[q].queue_id = q;
-      rx_queues[q].port = inf->port;
-      rx_queues[q].port_id = inf->port_id;
-
       /* Create mempool to hold the rx queue mbufs. */
       unsigned int mbuf_elements = inf->nb_rx_desc + 1024;
       char pool_name[ST_MAX_NAME_LEN];
