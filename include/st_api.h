@@ -166,7 +166,9 @@ struct st_rx_source_info {
   };
   /** UDP port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
-  /** Optional. source filter IP address of multicast */
+  /** Optional. Source of a source-specific multicast join, 0.0.0.0 for any source. Only
+   * the network filters by it; other sources are dropped locally only on the kernel
+   * socket backend. To filter in MTL itself, use the RX session ssrc. */
   uint8_t mcast_sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
 };
 

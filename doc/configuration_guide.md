@@ -180,7 +180,8 @@ Common settings for following sessions in the group:
 
 ​ **ip (array-string):** the transmitter's IP or the multicast group IP, at least 1 primary IP, the second is redundant IP
 
-​ **mcast_src_ip (array-string):** the source IP filter for multicast(optional), if one of the source filter set, another is allowed to be set as 0.0.0.0(any source). The primary and redundant ports may join the same multicast group; the source filter goes only into the IGMPv3 report, so the network must deliver each source to its own port
+​ **mcast_src_ip (array-string):** the source IP of a source-specific multicast join (optional), if one of the sources is set, another is allowed to be set as 0.0.0.0 (any source).
+Only the network filters by it: on every backend except the kernel socket, packets from other sources that reach the NIC are still received. The primary and redundant ports may join the same multicast group, so the network must deliver each source to its own port
 
 ​ **interfaces (array-int):** interfaces/ports used by the sessions, at least 1 primary interface, the second is redundant interface
 
