@@ -691,8 +691,8 @@ static int ra_start_pcap(struct st_rx_audio_session_impl* s, enum mtl_session_po
     return -EIO;
   }
 
-  snprintf(pcap->file_name, sizeof(pcap->file_name), "st30rx_s%dp%d_%u_XXXXXX.pcapng",
-           idx, s_port, max_dump_packets);
+  snprintf(pcap->file_name, sizeof(pcap->file_name), "st30rx_s%dp%d_XXXXXX.pcapng", idx,
+           s_port);
   int fd = mt_mkstemps(pcap->file_name, strlen(".pcapng"));
   if (fd < 0) {
     err("%s(%d,%d), failed to create pcap file %s\n", __func__, idx, s_port,
