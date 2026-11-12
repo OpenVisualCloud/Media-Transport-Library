@@ -303,8 +303,7 @@ static int cni_start_pcap(struct mt_cni_entry* cni, uint32_t max_dump_packets) {
     return -EIO;
   }
 
-  snprintf(pcap->file_name, sizeof(pcap->file_name), "cni_p%d_%u_XXXXXX.pcapng", port,
-           max_dump_packets);
+  snprintf(pcap->file_name, sizeof(pcap->file_name), "cni_p%d_XXXXXX.pcapng", port);
   int fd = mt_mkstemps(pcap->file_name, strlen(".pcapng"));
   if (fd < 0) {
     err("%s(%d), failed to create pcap file %s\n", __func__, port, pcap->file_name);
