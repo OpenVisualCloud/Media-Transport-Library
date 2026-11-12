@@ -573,6 +573,9 @@ jobs:
         with:
           repo-token: ${{ github.token }}
 
+      - name: Test check-hardening.sh
+        run: task ci:hardening-scan-test
+
       - name: Download the build of this run
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:

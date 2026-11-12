@@ -213,6 +213,11 @@ tasks:
     cmds:
       - bash {{.CI_SCRIPTS}}/scan/check-hardening.sh .local_install/dpdk .local_install/mtl .local_install/jpegxs .local_install/ffmpeg .local_install/gstreamer .local_install/plugins
 
+  ci:hardening-scan-test:
+    desc: Test check-hardening.sh with small programs that it builds
+    cmds:
+      - bash {{.CI_SCRIPTS}}/scan/test-check-hardening.sh
+
   ci:hardening-tools:
     desc: Fetch the pinned hardening-check and checksec into HARDENING_TOOLS_DIR, for ci:hardening-scan
     cmds:
