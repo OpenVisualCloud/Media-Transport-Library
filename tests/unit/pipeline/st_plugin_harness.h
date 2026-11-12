@@ -3,11 +3,15 @@
  *
  * C harness for st22_get_encoder_session(), st22_get_decoder_session() and
  * st20_get_converter_session(): one fake dev of each, whose create_session calls the
- * matching *_get_frame() on its session_p, as a worker started there may.
+ * matching *_get_frame() on its session_p, as a worker started there may; and a main
+ * instance for st_plugin_register(), with dlopen()/dlsym()/dlclose() faking a valid
+ * plugin.
  */
 
 #ifndef TESTS_UNIT_PIPELINE_ST_PLUGIN_HARNESS_H
 #define TESTS_UNIT_PIPELINE_ST_PLUGIN_HARNESS_H
+
+#include "mtl_api.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,6 +39,10 @@ void* ut_plugin_get_frame(enum ut_plugin_kind kind, void* session);
 void* ut_plugin_frame_in_create(void);
 /* The resp_flag in the encoder or decoder session's create request. */
 unsigned int ut_plugin_resp_flag(enum ut_plugin_kind kind, void* session);
+/* A main instance with no plugin registered; NULL if the EAL fails to start. */
+mtl_handle ut_plugin_dl_reset(void);
+/* How often st_plugin_register() called dlopen() since the reset. */
+int ut_plugin_dlopen_calls(void);
 
 #ifdef __cplusplus
 }

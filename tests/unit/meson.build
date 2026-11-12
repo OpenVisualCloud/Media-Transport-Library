@@ -218,6 +218,7 @@ unit_sources = [
   'pipeline/tx_frame_done_notify_test.cpp',
   'pipeline/st_plugin_harness.c',
   'pipeline/st_plugin_session_test.cpp',
+  'pipeline/st_plugin_register_test.cpp',
   'sch/mt_sch_harness.c',
   'sch/mtl_sch_api_test.cpp',
   'sch/mt_sch_mempolicy_test.cpp',
