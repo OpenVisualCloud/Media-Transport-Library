@@ -105,13 +105,13 @@ Kernel updates can change this value without changing the supported operating sy
 
 Please refer to [Build Guide](doc/build.md) for instructions on how to build DPDK, the library, and the sample application. Guidance for the fuzz targets lives in [tests/doc/fuzz/index.rst](tests/doc/fuzz/index.rst).
 
-For Windows, please refer to the [Windows Build Guide](doc/build_WIN.md) for instructions on how to build.
+For Windows, install MTL with the Windows installer: see the [Run Guide on Windows](doc/run_WIN.md). To build MTL on Windows, see the [Windows Build Guide](doc/build_WIN.md).
 
 ## 3. Run ST2110
 
 Please refer to [Run Guide](doc/run.md) for instructions on how to set up and run the demo pipeline application based on DPDK PMD backend.
 
-For Windows, please refer to [Run Guide on Windows](doc/run_WIN.md).
+For Windows, the [Run Guide on Windows](doc/run_WIN.md) installs MTL and runs a test with 2 video, 2 audio and 2 ancillary streams.
 
 Additionally, please refer to the [VM Guide](doc/vm.md) and [Windows VM Guide](doc/vm_WIN.md) for instructions on setting up Linux and Windows guest VMs based on VF passthrough.
 

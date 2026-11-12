@@ -13,7 +13,9 @@
  */
 
 #include <rte_atomic.h>
+#include <stdarg.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1029,7 +1031,60 @@ uint64_t ut20_stat_pkts_pool_empty(const ut20_test_ctx* ctx) {
 }
 
 void ut20_invoke_rv_stat(ut20_test_ctx* ctx) {
-  rv_stat(&ctx->mgr, &ctx->session);
+  struct rv_stat_dump dump;
+
+  rv_stat_collect(&ctx->mgr, &ctx->session, &dump);
+  rv_stat_log(&dump);
+}
+
+/* ── periodic stats dump ──────────────────────────────────────────────── */
+
+static struct ut20_test_ctx* ut20_stat_ctx;
+static int ut20_stat_lines;
+static int ut20_stat_locked_lines;
+static char ut20_stat_log_buf[8192];
+static size_t ut20_stat_log_len;
+
+static void ut20_stat_log_printer(enum mtl_log_level level, const char* format, ...) {
+  size_t room = sizeof(ut20_stat_log_buf) - ut20_stat_log_len;
+  va_list args;
+  int n;
+
+  (void)level;
+  if (rte_spinlock_is_locked(&ut20_stat_ctx->mgr.mutex[0])) ut20_stat_locked_lines++;
+  ut20_stat_lines++;
+  va_start(args, format);
+  n = vsnprintf(ut20_stat_log_buf + ut20_stat_log_len, room, format, args);
+  va_end(args);
+  if (n > 0) ut20_stat_log_len += RTE_MIN((size_t)n, room - 1);
+}
+
+int ut20_run_sessions_stat(ut20_test_ctx* ctx, int* locked_lines) {
+  ctx->mgr.sessions[0] = &ctx->session;
+  ctx->mgr.max_idx = 1;
+  ut20_stat_ctx = ctx;
+  ut20_stat_lines = 0;
+  ut20_stat_locked_lines = 0;
+  ut20_stat_log_len = 0;
+  ut20_stat_log_buf[0] = '\0';
+  mtl_set_log_printer(ut20_stat_log_printer);
+  rv_sessions_stat(&ctx->mgr);
+  mtl_set_log_printer(NULL);
+  ut20_stat_ctx = NULL;
+  *locked_lines = ut20_stat_locked_lines;
+  return ut20_stat_lines;
+}
+
+const char* ut20_stat_log(void) {
+  return ut20_stat_log_buf;
+}
+
+void ut20_set_stat_pkts_received(ut20_test_ctx* ctx, uint64_t pkts) {
+  ctx->session.port_user_stats.common.stat_pkts_received = pkts;
+}
+
+uint64_t ut20_stat_snapshot_pkts_received(const ut20_test_ctx* ctx) {
+  return ctx->session.stat_snapshot.common.stat_pkts_received;
 }
 
 uint64_t ut20_stat_idx_oo_bitmap(const ut20_test_ctx* ctx) {

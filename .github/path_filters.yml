@@ -289,6 +289,32 @@ base_build:
   - 'tools/readpcap/**'
   - 'tools/sch_smi_emulate/**'
 
+# msys2_build.yml, build. MSYS2 on windows-latest builds the DPDK of
+# versions.env with patches/dpdk/<version>/ and its windows/ set, then
+# build.sh (lib, app, tests, plugins and RxTxApp), the installer of
+# windows/scripts/package.sh, the TAP build and the unit suite. The ci:msys-*
+# tasks of Taskfile.yml run most steps. No file of script/ runs on Windows.
+msys2_build:
+  - .github/path_filters.yml
+  - .github/workflows/msys2_build.yml
+  - 'windows/scripts/**'
+  - 'windows/installer/**'
+  - Taskfile.yml
+  - versions.env
+  - 'patches/dpdk/**'
+  - *libmtl
+  - *unit_sources
+  - 'app/**'
+  - plugins/meson.build
+  - plugins/meson_options.txt
+  - plugins/log.h
+  - plugins/plugin_platform.h
+  - 'plugins/sample/**'
+  - tests/meson.build
+  - tests/meson_options.txt
+  - 'tests/integration_tests/**'
+  - 'tests/tools/RxTxApp/**'
+
 # docker_build.yml, ubuntu-docker-build. The build context is the repository
 # root less .dockerignore, which drops .github/ except check-hardening.sh, so the
 # hash_<name> filters do not apply: they hold .github/scripts/setup_environment.sh.

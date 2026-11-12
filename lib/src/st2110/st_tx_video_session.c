@@ -20,7 +20,7 @@
 static inline void tv_simulate_packet_loss(struct st_tx_video_session_impl* s,
                                            struct rte_ipv4_hdr* ipv4,
                                            enum mtl_session_port session_port) {
-  uint port = s->port_maps[session_port];
+  unsigned int port = s->port_maps[session_port];
   struct mtl_main_impl* impl;
 
   if (!s || !ipv4 || session_port > MTL_SESSION_PORT_MAX) return;
@@ -29,12 +29,13 @@ static inline void tv_simulate_packet_loss(struct st_tx_video_session_impl* s,
   port = s->port_maps[session_port];
   if (!mt_if_has_packet_loss_simulation(s->impl)) return;
 
-  uint num_port = impl->user_para.port_packet_loss[port].tx_stream_loss_divider
-                      ? impl->user_para.port_packet_loss[port].tx_stream_loss_divider
-                      : s->ops.num_port;
-  uint loss_id = impl->user_para.port_packet_loss[port].tx_stream_loss_id
-                     ? impl->user_para.port_packet_loss[port].tx_stream_loss_id
-                     : port;
+  unsigned int num_port =
+      impl->user_para.port_packet_loss[port].tx_stream_loss_divider
+          ? impl->user_para.port_packet_loss[port].tx_stream_loss_divider
+          : s->ops.num_port;
+  unsigned int loss_id = impl->user_para.port_packet_loss[port].tx_stream_loss_id
+                             ? impl->user_para.port_packet_loss[port].tx_stream_loss_id
+                             : port;
 
   if (!num_port || loss_id >= num_port) return;
 

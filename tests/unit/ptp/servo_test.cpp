@@ -25,6 +25,18 @@ class PiServoTest : public ::testing::Test {
   ut_ptp_ctx* ctx_ = nullptr;
 };
 
+/* pi_sample() steps the count from 3 to 4 inside "#ifndef WINDOWSENV", because
+ * Windows has no frequency adjustment: the servo keeps the JUMP state there and
+ * corrects the offset of each sample. So the LOCKED branch is dead code on
+ * Windows and a test of it has nothing to measure. */
+#ifdef _WIN32
+#define UT_NEED_LOCKED_STATE()                                           \
+  GTEST_SKIP() << "pi_sample() holds the count at 3 on Windows, so the " \
+                  "LOCKED state is not reachable."
+#else
+#define UT_NEED_LOCKED_STATE() ((void)0)
+#endif
+
 /* count 0/1 -> UNLOCKED, ppb == 0, count advances. */
 TEST_F(PiServoTest, FirstTwoSamplesUnlocked) {
   int state = -1;
@@ -58,7 +70,7 @@ TEST_F(PiServoTest, DriftFractionalSlope) {
   EXPECT_DOUBLE_EQ(ut_ptp_servo_drift(ctx_), 1.0 / 3.0);
 }
 
-/* count 3 -> JUMP, ppb == 0, count becomes 4. */
+/* count 3 -> JUMP, ppb == 0, count becomes 4 on Linux and stays 3 on Windows. */
 TEST_F(PiServoTest, ThirdSampleJump) {
   int state = -1;
   ut_pi_sample(ctx_, 0.0, 0.0, &state);
@@ -66,11 +78,16 @@ TEST_F(PiServoTest, ThirdSampleJump) {
   ut_pi_sample(ctx_, 0.0, 2.0, &state);
   EXPECT_DOUBLE_EQ(ut_pi_sample(ctx_, 0.0, 3.0, &state), 0.0);
   EXPECT_EQ(state, UT_PTP_SERVO_JUMP);
+#ifdef _WIN32
+  EXPECT_EQ(ut_ptp_servo_count(ctx_), 3);
+#else
   EXPECT_EQ(ut_ptp_servo_count(ctx_), 4);
+#endif
 }
 
 /* count 4 -> LOCKED, ppb == 0.3*offset + (drift_before + 0.7*offset). */
 TEST_F(PiServoTest, FourthSampleLocked) {
+  UT_NEED_LOCKED_STATE();
   int state = -1;
   const double o0 = 40.0, l0 = 0.0;
   const double o1 = 60.0, l1 = 8.0;
@@ -98,6 +115,7 @@ TEST_F(PiServoTest, FourthSampleLocked) {
  * Pins the continuous PI tracking of servo State 4 across multiple samples
  * (requirements doc section 6, "State 4 Continuous Lock PI Tracking"). */
 TEST_F(PiServoTest, LockedIntegralAccumulatesAcrossSamples) {
+  UT_NEED_LOCKED_STATE();
   int state = -1;
   /* reach count 4 with a flat first window so drift_before == 0 */
   ut_pi_sample(ctx_, 0.0, 0.0, &state);
@@ -125,6 +143,7 @@ TEST_F(PiServoTest, LockedIntegralAccumulatesAcrossSamples) {
  * frequency output equals the held drift -- the steady-state behaviour that
  * lets the loop hold a frequency once converged (the Ki integrator memory). */
 TEST_F(PiServoTest, LockedZeroOffsetHoldsFrequency) {
+  UT_NEED_LOCKED_STATE();
   int state = -1;
   ut_pi_sample(ctx_, 0.0, 0.0, &state);
   ut_pi_sample(ctx_, 0.0, 1.0, &state);

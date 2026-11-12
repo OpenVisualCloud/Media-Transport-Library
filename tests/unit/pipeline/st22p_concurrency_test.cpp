@@ -24,6 +24,7 @@
 #include <thread>
 #include <vector>
 
+#include "common/ut_concurrency.h"
 #include "pipeline/st22p_harness.h"    /* RX role: ut22p_* */
 #include "pipeline/st22p_tx_harness.h" /* TX role: ut22p_tx_* */
 
@@ -33,32 +34,6 @@ namespace {
  * correct lock-free design finishes in well under a second; only a genuine
  * livelock/deadlock approaches this. */
 constexpr auto kRunBudget = std::chrono::seconds(45);
-
-/* Brief on-CPU dwell that widens the ownership window so a concurrent
- * violation has time to be observed by a second actor. */
-inline void dwell() {
-  for (volatile int i = 0; i < 64; i++) {
-  }
-}
-
-/* Pin a worker to its own core so the lock-free ring is exercised, not the
- * scheduler. An unpinned busy-spin loop on a multi-socket NUMA host is migrated
- * and co-located by the scheduler, collapsing throughput by ~600x and tripping
- * the deadlock budget on a design that is in fact lock-free.
- *
- * Core 0 is skipped on purpose: ut_eal_init() starts DPDK with "-c1", which
- * pins the calling (main) thread to core 0 -- so the process affinity mask is
- * {0} after init and must NOT be used as the candidate set. We spread workers
- * across cores [1, nproc) by slot instead. Best-effort: failure leaves the
- * thread unpinned. */
-inline void pin_worker(std::thread& t, int slot) {
-  long nproc = sysconf(_SC_NPROCESSORS_ONLN);
-  if (nproc <= 1) return;
-  cpu_set_t one;
-  CPU_ZERO(&one);
-  CPU_SET(1 + (slot % (int)(nproc - 1)), &one);
-  pthread_setaffinity_np(t.native_handle(), sizeof(one), &one);
-}
 
 }  // namespace
 
@@ -94,7 +69,7 @@ TEST(St22PipelineConcurrency, TxMultiProducerSingleConsumerNoDeadlock) {
       }
       int idx = ut22p_tx_frame_idx(f);
       if (holder[idx].exchange(id) != 0) ownership_violation.store(true);
-      dwell();
+      ut_dwell();
       if (holder[idx].exchange(0) != id) ownership_violation.store(true);
       if (ut22p_tx_put_frame(ctx, f) != 0) api_error.store(true);
       produced.fetch_add(1, std::memory_order_relaxed);
@@ -107,7 +82,7 @@ TEST(St22PipelineConcurrency, TxMultiProducerSingleConsumerNoDeadlock) {
       uint16_t idx = 0;
       if (ut22p_tx_next_frame(ctx, &idx) != 0) continue; /* nothing ENCODED yet */
       if (holder[idx].exchange(-1) != 0) ownership_violation.store(true);
-      dwell();
+      ut_dwell();
       if (holder[idx].exchange(0) != -1) ownership_violation.store(true);
       if (ut22p_tx_frame_done(ctx, idx) != 0) api_error.store(true);
       consumed.fetch_add(1, std::memory_order_relaxed);
@@ -117,7 +92,7 @@ TEST(St22PipelineConcurrency, TxMultiProducerSingleConsumerNoDeadlock) {
   std::vector<std::thread> threads;
   threads.emplace_back(consumer);
   for (int p = 1; p <= kProducers; p++) threads.emplace_back(producer, p);
-  for (size_t i = 0; i < threads.size(); i++) pin_worker(threads[i], (int)i);
+  for (size_t i = 0; i < threads.size(); i++) ut_pin_worker(threads[i], (int)i);
 
   const auto start = std::chrono::steady_clock::now();
   bool timed_out = false;
@@ -189,7 +164,7 @@ TEST(St22PipelineConcurrency, RxSingleProducerMultiConsumerNoDeadlock) {
       if (!f) continue; /* nothing DECODED yet */
       int idx = ut22p_frame_idx(f);
       if (holder[idx].exchange(id) != 0) ownership_violation.store(true);
-      dwell();
+      ut_dwell();
       if (holder[idx].exchange(0) != id) ownership_violation.store(true);
       if (ut22p_put_frame(ctx, f) != 0) api_error.store(true);
       consumed.fetch_add(1, std::memory_order_relaxed);
@@ -199,7 +174,7 @@ TEST(St22PipelineConcurrency, RxSingleProducerMultiConsumerNoDeadlock) {
   std::vector<std::thread> threads;
   threads.emplace_back(producer);
   for (int c = 1; c <= kConsumers; c++) threads.emplace_back(consumer, c);
-  for (size_t i = 0; i < threads.size(); i++) pin_worker(threads[i], (int)i);
+  for (size_t i = 0; i < threads.size(); i++) ut_pin_worker(threads[i], (int)i);
 
   const auto start = std::chrono::steady_clock::now();
   bool timed_out = false;

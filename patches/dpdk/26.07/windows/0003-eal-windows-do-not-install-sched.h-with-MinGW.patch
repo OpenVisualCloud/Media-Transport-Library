@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dawid Wesierski <dawid.wesierski@intel.com>
+Date: Mon, 9 Nov 2026 11:12:46 -0500
+Subject: [PATCH] eal/windows: do not install sched.h with MinGW
+
+Since commit ad645a9317 ("eal/windows: install sched.h file"), meson
+install copies lib/eal/windows/include/sched.h into the include
+directory of the prefix. The C library of MSVC has no sched.h, so that
+is right for MSVC and clang. MinGW has a sched.h of its own, in
+winpthreads, and an install of DPDK into the MinGW prefix (for example
+/mingw64 of MSYS2) replaces it. Each later user of pthread.h of that
+toolchain then stops:
+
+  /mingw64/include/sched.h:29:35: error: 'RTE_MAX_LCORE' undeclared
+  /mingw64/include/pthread.h:218:24: error: field 'param' has
+  incomplete type
+
+Install the file only when the compiler is not GCC. A MinGW build of an
+application takes the DPDK sched.h from the DPDK source tree, as it did
+before v24.07.
+
+Fixes: ad645a9317 ("eal/windows: install sched.h file")
+
+Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
+---
+ lib/eal/windows/include/meson.build | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/lib/eal/windows/include/meson.build b/lib/eal/windows/include/meson.build
+index e985a77d58..a8ffdd5a3d 100644
+--- a/lib/eal/windows/include/meson.build
++++ b/lib/eal/windows/include/meson.build
+@@ -6,5 +6,13 @@ includes += include_directories('.')
+ headers += files(
+         'rte_os.h',
+         'rte_windows.h',
+-        'sched.h',
+ )
++
++# The C library of MSVC has no sched.h, so DPDK installs its own. MinGW has
++# one (winpthreads), and an install into the MinGW prefix replaces it: each
++# pthread.h user of that toolchain then stops with "'RTE_MAX_LCORE'
++# undeclared". A MinGW build of an application takes the DPDK sched.h from
++# the DPDK source tree, as before v24.07.
++if cc.get_id() != 'gcc'
++    headers += files('sched.h')
++endif

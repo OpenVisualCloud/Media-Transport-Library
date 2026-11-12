@@ -110,15 +110,18 @@ static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
                                       struct rte_tm_error* error);
 static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
 
-static int ut_dladdr(const void* addr, Dl_info* info);
 /* unused with a DPDK before 25.11: dev_eal_init() calls sysconf() only from 25.11 */
 static __attribute__((unused)) long ut_sysconf(int name);
+#ifndef WINDOWSENV
+/* the PMD directory of the EAL: mt_dev.c finds it with dladdr() on Linux alone */
+static int ut_dladdr(const void* addr, Dl_info* info);
 static const char* ut_dev_compiled_pmd_dir(void);
 static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 
 #undef RTE_EAL_PMD_PATH
 #define RTE_EAL_PMD_PATH ut_dev_compiled_pmd_dir()
 #define dladdr ut_dladdr
+#endif
 #define sysconf ut_sysconf
 #define rte_eth_rx_queue_setup ut_rte_eth_rx_queue_setup
 #define rte_eth_tx_queue_setup ut_rte_eth_tx_queue_setup
@@ -171,22 +174,26 @@ static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 #undef sysconf
 #undef dladdr
 
+#ifndef WINDOWSENV
 static int ut_dladdr(const void* addr, Dl_info* info) {
   if (!ut_active_ctx || !ut_active_ctx->eal_lib_path) return dladdr(addr, info);
   memset(info, 0, sizeof(*info));
   info->dli_fname = ut_active_ctx->eal_lib_path;
   return 1;
 }
+#endif
 
 static long ut_sysconf(int name) {
   if (name == _SC_NPROCESSORS_CONF && ut_active_ctx) return ut_active_ctx->cpus;
   return sysconf(name);
 }
 
+#ifndef WINDOWSENV
 static const char* ut_dev_compiled_pmd_dir(void) {
   if (!ut_active_ctx || !ut_active_ctx->compiled_pmd_dir) return ut_dev_real_pmd_dir;
   return ut_active_ctx->compiled_pmd_dir;
 }
+#endif
 
 static void ut_dev_record(enum ut_dev_event event) {
   if (ut_active_ctx && ut_active_ctx->event_count < (int)RTE_DIM(ut_active_ctx->events))
@@ -598,10 +605,12 @@ int ut_dev_eal_lcores_max_len(void) {
   return MT_EAL_LCORES_MAX_LEN;
 }
 
+#ifndef WINDOWSENV
 int ut_dev_eal_pmd_dir(const char* compiled_dir, const char* eal_dir, char* out,
                        size_t len) {
   return dev_eal_pmd_dir(compiled_dir, eal_dir, out, len);
 }
+#endif
 
 void ut_dev_set_eal_pmd_paths(ut_dev_ctx* ctx, const char* compiled_dir,
                               const char* eal_lib_path) {
@@ -690,7 +699,7 @@ static void* ut_dev_stats_writer(void* arg) {
   rte_spinlock_lock(&inf->stats_lock);
   inf->user_stats_port.rx_packets += UT_DEV_STATS_WRITER_STEP;
   rte_atomic32_set(&ctx->stats_writer_holding, 1);
-  usleep(50 * 1000);
+  mt_sleep_ms(50);
   inf->user_stats_port.tx_packets += UT_DEV_STATS_WRITER_STEP;
   rte_spinlock_unlock(&inf->stats_lock);
   return NULL;

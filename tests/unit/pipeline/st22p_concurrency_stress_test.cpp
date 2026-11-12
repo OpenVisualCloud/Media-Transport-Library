@@ -21,25 +21,12 @@
 #include <thread>
 #include <vector>
 
+#include "common/ut_concurrency.h"
 #include "pipeline/st22p_tx_harness.h"
 
 namespace {
 
 constexpr auto kRunBudget = std::chrono::seconds(45);
-
-inline void dwell() {
-  for (volatile int i = 0; i < 64; i++) {
-  }
-}
-
-inline void pin_worker(std::thread& t, int slot) {
-  long nproc = sysconf(_SC_NPROCESSORS_ONLN);
-  if (nproc <= 1) return;
-  cpu_set_t one;
-  CPU_ZERO(&one);
-  CPU_SET(1 + (slot % (int)(nproc - 1)), &one);
-  pthread_setaffinity_np(t.native_handle(), sizeof(one), &one);
-}
 
 }  // namespace
 
@@ -74,7 +61,7 @@ TEST(St22PipelineConcurrencyStress, TxConcurrentConsumersNoDoubleClaim) {
       }
       int idx = ut22p_tx_frame_idx(f);
       if (holder[idx].exchange(id) != 0) ownership_violation.store(true);
-      dwell();
+      ut_dwell();
       if (holder[idx].exchange(0) != id) ownership_violation.store(true);
       if (ut22p_tx_put_frame(ctx, f) != 0) api_error.store(true);
       produced.fetch_add(1, std::memory_order_relaxed);
@@ -88,7 +75,7 @@ TEST(St22PipelineConcurrencyStress, TxConcurrentConsumersNoDoubleClaim) {
       if (ut22p_tx_next_frame(ctx, &idx) != 0) continue; /* nothing ENCODED */
       /* If two consumers claimed the same slot, the second exchange sees -1. */
       if (holder[idx].exchange(-1) != 0) ownership_violation.store(true);
-      dwell();
+      ut_dwell();
       if (holder[idx].exchange(0) != -1) ownership_violation.store(true);
       if (ut22p_tx_frame_done(ctx, idx) != 0) api_error.store(true);
       consumed.fetch_add(1, std::memory_order_relaxed);
@@ -98,7 +85,7 @@ TEST(St22PipelineConcurrencyStress, TxConcurrentConsumersNoDoubleClaim) {
   std::vector<std::thread> threads;
   for (int c = 0; c < kConsumers; c++) threads.emplace_back(consumer);
   for (int p = 1; p <= kProducers; p++) threads.emplace_back(producer, p);
-  for (size_t i = 0; i < threads.size(); i++) pin_worker(threads[i], (int)i);
+  for (size_t i = 0; i < threads.size(); i++) ut_pin_worker(threads[i], (int)i);
 
   const auto start = std::chrono::steady_clock::now();
   bool timed_out = false;

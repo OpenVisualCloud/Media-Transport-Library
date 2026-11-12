@@ -359,6 +359,12 @@ int main(int argc, char** argv) {
   int run_time_s = 0;
   int test_time_s;
 
+#ifdef WINDOWSENV
+  /* Windows buffers stdout in full, also on a console, and _IOLBF is full
+   * buffering there too: with no buffer, each log line shows at once. */
+  (void)setvbuf(stdout, NULL, _IONBF, 0);
+#endif
+
   ctx = st_app_zmalloc(sizeof(*ctx));
   if (!ctx) {
     err("%s, ctx alloc fail\n", __func__);
@@ -657,7 +663,7 @@ uint64_t st_app_user_time(void* ctx, struct st_user_time* user_time, uint64_t fr
     user_time->base_tai_time +=
         (uint64_t)(frame_time - fmod((double)user_time->base_tai_time, frame_time));
 
-    info("%s, restart base tai time %lu\n", __func__, user_time->base_tai_time);
+    info("%s, restart base tai time %" PRIu64 "\n", __func__, user_time->base_tai_time);
     if (user_time->base_tai_time == 0) {
       err("%s, get tai time fail\n", __func__);
       pthread_mutex_unlock(&user_time->base_tai_time_mutex);

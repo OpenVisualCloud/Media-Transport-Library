@@ -633,8 +633,8 @@ void rv_slot_dump(struct st_rx_video_session_impl* s) {
 
   for (int i = 0; i < ST_VIDEO_RX_REC_NUM_OFO; i++) {
     slot = &s->slots[i];
-    info("%s(%d), tmstamp %ld recv_size %" PRIu64 " pkts_received %u\n", __func__, i,
-         slot->tmstamp, rv_slot_get_frame_size(slot), slot->pkts_received);
+    info("%s(%d), tmstamp %" PRId64 " recv_size %" PRIu64 " pkts_received %u\n", __func__,
+         i, slot->tmstamp, rv_slot_get_frame_size(slot), slot->pkts_received);
   }
 }
 
@@ -3736,19 +3736,103 @@ static int rv_migrate_dma(struct mtl_main_impl* impl,
   return 0;
 }
 
-static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
-                    struct st_rx_video_session_impl* s) {
-  int m_idx = mgr->idx;
-  int idx = s->idx;
-  uint64_t cur_time_ns = mt_get_monotonic_time();
-  double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
-  int frames_received = rte_atomic32_read(&s->stat_frames_received);
-  double framerate = frames_received / time_sec;
+struct rv_stat_dump {
+  int m_idx;
+  int idx;
+  char ops_name[ST_MAX_NAME_LEN];
+  double time_sec;
+  int frames_received;
+  struct st20_rx_user_stats us;
+  struct st20_rx_user_stats snap;
+  double cpu_busy_score;
+  int num_port;
+  bool interlaced;
+  uint64_t pkts_pool_empty;
+  uint32_t framebuff_used;
+  uint32_t framebuff_cnt;
+  char sustained[32];
+  bool dma;
+  double dma_busy_score;
+  uint64_t dma_flush_timeouts;
+  uint32_t tp_untrusted_pkts;
+  bool tp_stat;
+  struct st_rv_tp_stat tp_stats[MTL_SESSION_PORT_MAX];
+  struct mt_stat_u64 stat_time;
+  uint32_t max_notify_frame_us;
+};
 
+/* runs under the session spinlock the tasklets try_get, so copy and reset only, no log */
+static void rv_stat_collect(struct st_rx_video_sessions_mgr* mgr,
+                            struct st_rx_video_session_impl* s, struct rv_stat_dump* d) {
+  uint64_t cur_time_ns = mt_get_monotonic_time();
+
+  d->m_idx = mgr->idx;
+  d->idx = s->idx;
+  memcpy(d->ops_name, s->ops_name, sizeof(d->ops_name));
+  d->time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
+  s->stat_last_time = cur_time_ns;
+  d->frames_received = rte_atomic32_read(&s->stat_frames_received);
   rte_atomic32_set(&s->stat_frames_received, 0);
 
-  struct st20_rx_user_stats* us = &s->port_user_stats;
-  struct st20_rx_user_stats* snap = &s->stat_snapshot;
+  d->us = s->port_user_stats;
+  d->snap = s->stat_snapshot;
+  s->stat_snapshot = s->port_user_stats;
+
+  d->cpu_busy_score = s->stat_cpu_busy_score;
+  d->num_port = s->ops.num_port;
+  d->interlaced = s->ops.interlaced;
+
+  d->pkts_pool_empty = s->stat_pkts_pool_empty - s->stat_pkts_pool_empty_snap;
+  s->stat_pkts_pool_empty_snap = s->stat_pkts_pool_empty;
+  d->framebuff_used = 0;
+  d->framebuff_cnt = (uint32_t)s->st20_frames_cnt;
+  if (d->pkts_pool_empty) {
+    for (int i = 0; i < s->st20_frames_cnt; i++) {
+      if (rte_atomic32_read(&s->st20_frames[i].refcnt) > 0) d->framebuff_used++;
+    }
+    st_rx_backpressure_arm(&s->stat_consecutive_busy_intervals, d->sustained,
+                           sizeof(d->sustained));
+  } else {
+    st_rx_backpressure_reset(&s->stat_consecutive_busy_intervals);
+  }
+
+  d->dma = s->dma_dev != NULL;
+  if (d->dma) {
+    d->dma_busy_score = s->dma_busy_score;
+    d->dma_flush_timeouts = s->stat_dma_flush_timeouts - s->stat_dma_flush_timeouts_snap;
+    s->stat_dma_flush_timeouts_snap = s->stat_dma_flush_timeouts;
+  }
+
+  d->tp_untrusted_pkts = 0;
+  if (s->tp) {
+    d->tp_untrusted_pkts = s->tp->stat_untrusted_pkts;
+    s->tp->stat_untrusted_pkts = 0;
+  }
+  d->tp_stat = s->enable_timing_parser_stat && s->tp;
+  if (d->tp_stat) rv_tp_stat_collect(s, d->tp_stats);
+
+  d->stat_time = s->stat_time;
+  mt_stat_u64_init(&s->stat_time);
+  d->max_notify_frame_us = s->stat_max_notify_frame_us;
+  s->stat_max_notify_frame_us = 0;
+
+  for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
+    struct mt_rx_pcap* pcap = &s->pcap[s_port];
+    if (pcap->pcap) {
+      MT_USDT_ST20_RX_PCAP_DUMP(d->m_idx, d->idx, s_port, pcap->file_name,
+                                pcap->dumped_pkts);
+    }
+  }
+}
+
+static void rv_stat_log(const struct rv_stat_dump* dump) {
+  int m_idx = dump->m_idx;
+  int idx = dump->idx;
+  double time_sec = dump->time_sec;
+  int frames_received = dump->frames_received;
+  double framerate = frames_received / time_sec;
+  const struct st20_rx_user_stats* us = &dump->us;
+  const struct st20_rx_user_stats* snap = &dump->snap;
   uint64_t d;
 
   uint64_t pkts_received =
@@ -3772,11 +3856,10 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
     }
   }
   notice("RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %" PRIu64 "%s\n", m_idx, idx,
-         s->ops_name, framerate, frames_received, pkts_received, extra_info);
+         dump->ops_name, framerate, frames_received, pkts_received, extra_info);
 
   notice("RX_VIDEO_SESSION(%d,%d): throughput %f Mb/s, cpu busy %f\n", m_idx, idx,
-         (double)bytes_received * 8 / time_sec / MTL_STAT_M_UNIT, s->stat_cpu_busy_score);
-  s->stat_last_time = cur_time_ns;
+         (double)bytes_received * 8 / time_sec / MTL_STAT_M_UNIT, dump->cpu_busy_score);
 
   d = us->stat_frames_incomplete - snap->stat_frames_incomplete;
   uint64_t pkts_idx_dropped = us->stat_pkts_idx_dropped - snap->stat_pkts_idx_dropped;
@@ -3806,7 +3889,7 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
   uint64_t d_pkts_no_slot = us->stat_pkts_no_slot - snap->stat_pkts_no_slot;
   uint64_t d_slot_get_frame_fail =
       us->stat_slot_get_frame_fail - snap->stat_slot_get_frame_fail;
-  uint64_t d_pool_empty = s->stat_pkts_pool_empty - s->stat_pkts_pool_empty_snap;
+  uint64_t d_pool_empty = dump->pkts_pool_empty;
   bool backpressure = (d_pool_empty > 0);
   if (d_pkts_no_slot) {
     if (backpressure) {
@@ -3824,7 +3907,7 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
    * pkts).  frames_partial[] counts frames that needed the other port
    * to fill the gap.  Both incremented per side regardless of the other.
    */
-  if (s->ops.num_port > 1) {
+  if (dump->num_port > 1) {
     uint64_t port_pkts_p = us->common.port[MTL_SESSION_PORT_P].packets -
                            snap->common.port[MTL_SESSION_PORT_P].packets;
     uint64_t port_pkts_r = us->common.port[MTL_SESSION_PORT_R].packets -
@@ -3855,7 +3938,7 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
                    snap->common.port[MTL_SESSION_PORT_P].lost_packets;
     uint64_t d_r = us->common.port[MTL_SESSION_PORT_R].lost_packets -
                    snap->common.port[MTL_SESSION_PORT_R].lost_packets;
-    if (s->ops.num_port > 1) {
+    if (dump->num_port > 1) {
       double pct_p = port_pkts_p ? 100.0 * d_p / (port_pkts_p + d_p) : 0.0;
       double pct_r = port_pkts_r ? 100.0 * d_r / (port_pkts_r + d_r) : 0.0;
       double save_rate =
@@ -3899,14 +3982,11 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
     notice("RX_VIDEO_SESSION(%d,%d): lcore enqueue fallback pkts %" PRIu64 "\n", m_idx,
            idx, d);
   }
-  if (s->dma_dev) {
+  if (dump->dma) {
     d = us->stat_pkts_dma - snap->stat_pkts_dma;
-    uint64_t d_flush_timeouts =
-        s->stat_dma_flush_timeouts - s->stat_dma_flush_timeouts_snap;
     notice("RX_VIDEO_SESSION(%d,%d): pkts %" PRIu64
            " by dma copy, dma busy %f, flush timeouts %" PRIu64 "\n",
-           m_idx, idx, d, s->dma_busy_score, d_flush_timeouts);
-    s->stat_dma_flush_timeouts_snap = s->stat_dma_flush_timeouts;
+           m_idx, idx, d, dump->dma_busy_score, dump->dma_flush_timeouts);
   }
   d = us->stat_pkts_slice_fail - snap->stat_pkts_slice_fail;
   if (d) {
@@ -3957,25 +4037,17 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
     }
   }
   if (backpressure) {
-    uint32_t framebuff_used = 0;
-    for (int i = 0; i < s->st20_frames_cnt; i++) {
-      if (rte_atomic32_read(&s->st20_frames[i].refcnt) > 0) framebuff_used++;
-    }
-    uint32_t total = (uint32_t)s->st20_frames_cnt;
+    uint32_t framebuff_used = dump->framebuff_used;
+    uint32_t total = dump->framebuff_cnt;
     uint32_t free_cnt = (total > framebuff_used) ? (total - framebuff_used) : 0;
-    char sustained[32];
-    st_rx_backpressure_arm(&s->stat_consecutive_busy_intervals, sustained,
-                           sizeof(sustained));
     warn(
         "RX_VIDEO_SESSION(%d,%d): back-pressure: framebuff pool empty (%u/%u free), "
         "dropped %" PRIu64 " frames / %" PRIu64
         " pkts in interval; raise framebuff_cnt or drain via "
         "st20_rx_put_framebuff%s\n",
-        m_idx, idx, free_cnt, total, d_slot_get_frame_fail, d_pool_empty, sustained);
-  } else {
-    st_rx_backpressure_reset(&s->stat_consecutive_busy_intervals);
+        m_idx, idx, free_cnt, total, d_slot_get_frame_fail, d_pool_empty,
+        dump->sustained);
   }
-  s->stat_pkts_pool_empty_snap = s->stat_pkts_pool_empty;
   d = us->stat_slot_query_ext_fail - snap->stat_slot_query_ext_fail;
   if (d) {
     notice("RX_VIDEO_SESSION(%d,%d): slot query ext fail %" PRIu64 "\n", m_idx, idx, d);
@@ -3994,7 +4066,7 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
   if (d) {
     notice("RX_VIDEO_SESSION(%d,%d): retransmit pkts %" PRIu64 "\n", m_idx, idx, d);
   }
-  if (s->ops.interlaced) {
+  if (dump->interlaced) {
     uint64_t d_first = us->stat_interlace_first_field - snap->stat_interlace_first_field;
     uint64_t d_second =
         us->stat_interlace_second_field - snap->stat_interlace_second_field;
@@ -4015,35 +4087,22 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
            burst_max, (float)burst_sum / burst_succ);
   }
 
-  memcpy(snap, us, sizeof(*snap));
-
-  struct st_rx_video_tp* tp = s->tp;
-  if (tp && tp->stat_untrusted_pkts) {
+  if (dump->tp_untrusted_pkts) {
     info("%s(%d), untrusted %u pkts time for timing parser\n", __func__, idx,
-         tp->stat_untrusted_pkts);
-    tp->stat_untrusted_pkts = 0;
+         dump->tp_untrusted_pkts);
   }
-  if (s->enable_timing_parser_stat) rv_tp_stat(s);
+  if (dump->tp_stat) rv_tp_stat(idx, dump->num_port, dump->tp_stats);
 
-  struct mt_stat_u64* stat_time = &s->stat_time;
+  const struct mt_stat_u64* stat_time = &dump->stat_time;
   if (stat_time->cnt) {
     uint64_t avg_ns = stat_time->sum / stat_time->cnt;
     notice("RX_VIDEO_SESSION(%d,%d): tasklet time avg %.2fus max %.2fus min %.2fus\n",
            m_idx, idx, (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
            (float)stat_time->min / NS_PER_US);
-    mt_stat_u64_init(stat_time);
   }
-  if (s->stat_max_notify_frame_us > 8) {
+  if (dump->max_notify_frame_us > 8) {
     notice("RX_VIDEO_SESSION(%d,%d): notify frame max %uus\n", m_idx, idx,
-           s->stat_max_notify_frame_us);
-  }
-  s->stat_max_notify_frame_us = 0;
-
-  for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
-    struct mt_rx_pcap* pcap = &s->pcap[s_port];
-    if (pcap->pcap) {
-      MT_USDT_ST20_RX_PCAP_DUMP(m_idx, idx, s_port, pcap->file_name, pcap->dumped_pkts);
-    }
+           dump->max_notify_frame_us);
   }
 }
 
@@ -4067,10 +4126,13 @@ static int rvs_pkt_rx_tasklet_start(void* priv) {
 
 static int rv_detach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr* mgr,
                      struct st_rx_video_session_impl* s) {
+  struct rv_stat_dump dump;
+
   if (!mgr || !s) return -EINVAL;
   s->attached = false;
   rv_flush_pending_loss(s);
-  rv_stat(mgr, s);
+  rv_stat_collect(mgr, s, &dump);
+  rv_stat_log(&dump);
   rv_uinit(impl, s);
   return 0;
 }
@@ -4284,14 +4346,16 @@ static int rvs_mgr_update(struct st_rx_video_sessions_mgr* mgr) {
 static int rv_sessions_stat(void* priv) {
   struct st_rx_video_sessions_mgr* mgr = priv;
   struct st_rx_video_session_impl* s;
+  struct rv_stat_dump dump;
 
   if (!mgr) return -EINVAL;
 
   for (int j = 0; j < mgr->max_idx; j++) {
     s = rx_video_session_get_timeout(mgr, j, ST_SESSION_STAT_TIMEOUT_US);
     if (!s) continue;
-    rv_stat(mgr, s);
+    rv_stat_collect(mgr, s, &dump);
     rx_video_session_put(mgr, j);
+    rv_stat_log(&dump);
   }
 
   return 0;

@@ -1,0 +1,51 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dawid Wesierski <dawid.wesierski@intel.com>
+Date: Tue, 10 Nov 2026 12:00:00 +0100
+Subject: [PATCH] eal/windows: fix use after free in alarm cancel
+
+rte_eal_alarm_cancel() walks the alarm list with LIST_FOREACH() and
+calls alarm_remove_unsafe() on each armed entry that matches.
+alarm_remove_unsafe() frees the entry, and the next step of
+LIST_FOREACH() then reads the next pointer from freed memory. Each
+cancel that removes an entry does this, and the process can crash.
+
+The net/iavf PMD cancels alarms in normal operation: its watchdog on a
+link up event, and its device alarm on close and on the error path of
+iavf_dev_init(). On Windows, a VF that failed its init stopped the
+whole process with a segmentation fault.
+
+Use LIST_FOREACH_SAFE(), which reads the next entry first.
+
+Fixes: f4cbdbc7fbd2 ("eal/windows: implement alarm API")
+Cc: stable@dpdk.org
+
+Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
+---
+ lib/eal/windows/eal_alarm.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/lib/eal/windows/eal_alarm.c b/lib/eal/windows/eal_alarm.c
+index 0b11d331dc..ed6e7f2245 100644
+--- a/lib/eal/windows/eal_alarm.c
++++ b/lib/eal/windows/eal_alarm.c
+@@ -190,7 +190,7 @@ RTE_EXPORT_SYMBOL(rte_eal_alarm_cancel)
+ int
+ rte_eal_alarm_cancel(rte_eal_alarm_callback cb_fn, void *cb_arg)
+ {
+-	struct alarm_entry *ap;
++	struct alarm_entry *ap, *ap_next;
+ 	unsigned int state;
+ 	int removed;
+ 	bool executing;
+@@ -207,7 +207,7 @@ rte_eal_alarm_cancel(rte_eal_alarm_callback cb_fn, void *cb_arg)
+ 
+ 		rte_spinlock_lock(&alarm_lock);
+ 
+-		LIST_FOREACH(ap, &alarm_list, next) {
++		LIST_FOREACH_SAFE(ap, &alarm_list, next, ap_next) {
+ 			if (!alarm_matches(ap, cb_fn, cb_arg))
+ 				continue;
+ 
+-- 
+2.47.3
+

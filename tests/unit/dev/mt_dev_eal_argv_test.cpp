@@ -94,11 +94,16 @@ TEST_F(MtDevEalArgvTest, WorstCaseParamsFitTheArgvVector) {
   ut_dev_eal_init(ctx_);
 
   EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 1);
+#ifndef _WIN32 /* DPDK is static on Windows, so MTL adds no PMD directory there */
   EXPECT_EQ(ValueAfter("-d"), pmd_dir);
+#endif
   EXPECT_LE(ut_dev_eal_argc(ctx_), ut_dev_eal_max_args());
 }
 
 TEST_F(MtDevEalArgvTest, RelocatedDpdkAddsThePmdDirBeforeTheSeparator) {
+#ifdef _WIN32
+  GTEST_SKIP() << "DPDK is static on Windows, so MTL adds no PMD directory there";
+#endif
   std::string pmd_dir = RelocateDpdk();
 
   ut_dev_eal_init(ctx_);
@@ -146,7 +151,11 @@ TEST_F(MtDevEalArgvTest, TwoPortsWithEightDmaDevicesFitTheArgvVector) {
   ut_dev_eal_init(ctx_);
 
   EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 1);
+#ifdef _WIN32 /* no --file-prefix pair on Windows, so two entries fewer */
+  EXPECT_GT(ut_dev_eal_argc(ctx_), 32 - 2);
+#else
   EXPECT_GT(ut_dev_eal_argc(ctx_), 32);
+#endif
   EXPECT_LE(ut_dev_eal_argc(ctx_), ut_dev_eal_max_args());
 }
 
@@ -188,6 +197,16 @@ TEST_F(MtDevEalArgvTest, MainLcoreIsPrependedToTheCorelist) {
 
   EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 1);
   EXPECT_EQ(ValueAfter("-l"), "0,52,53,54,55");
+}
+
+/* DPDK on Windows has no regcomp(), so only a <glob>:<level> sets a log type. */
+TEST_F(MtDevEalArgvTest, DebugLogLevelUsesAGlobNotARegex) {
+  ut_dev_set_log_level(ctx_, MTL_LOG_LEVEL_DEBUG);
+
+  ut_dev_eal_init(ctx_);
+
+  EXPECT_EQ(ut_dev_eal_init_calls(ctx_), 1);
+  EXPECT_EQ(ValueAfter("--log-level"), "user*:debug");
 }
 
 TEST_F(MtDevEalArgvTest, CorelistNamingEveryLcoreIsNotTruncated) {

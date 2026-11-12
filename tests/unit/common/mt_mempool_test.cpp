@@ -101,7 +101,9 @@ TEST_F(MtMempoolTest, EveryMbufHasTheAskedPrivAndDataRoom) {
 
 TEST_F(MtMempoolTest, AnUnalignedPrivSizeIsRefused) {
   EXPECT_EQ(create(RTE_MBUF_PRIV_ALIGN / 2), nullptr);
+#ifndef _WIN32 /* the binary has its own rte_errno there, see ut_common.c */
   EXPECT_EQ(rte_errno, EINVAL);
+#endif
 }
 
 }  // namespace
