@@ -386,6 +386,14 @@ docker_compose:
   - docker/docker-compose.yml
   - docker/docker-compose.xdp.yml
 
+# trivy.yml, trivy. trivy config reads each config file of docker/ and the
+# Dockerfile of manager/.
+trivy:
+  - .github/path_filters.yml
+  - .github/workflows/trivy.yml
+  - 'docker/**'
+  - manager/Dockerfile
+
 # cicd-pr-check.yml, bandit: every tracked Python file, the test set, the
 # workflow and the tasks it runs.
 bandit:
