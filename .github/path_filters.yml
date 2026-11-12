@@ -253,6 +253,7 @@ hardening: &hardening
   - 'patches/dpdk/**'
   - 'ecosystem/ffmpeg_plugin/*/*.patch'
   - .github/scripts/ci/scan/check-hardening.sh
+  - .github/scripts/ci/scan/test-check-hardening.sh
   - .github/scripts/ci/scan/hardening-tools.sh
   - .github/scripts/ci/scan/tools.env
 
@@ -363,7 +364,6 @@ scripts:
   - .github/workflows/cicd-pr-check.yml
   - .github/scripts/ci/lint/test-scripts.sh
   - .github/scripts/setup_environment.sh
-  - .github/scripts/ci/scan/check-hardening.sh
   - versions.env
   - 'patches/dpdk/**'
   - script/build_app.sh
