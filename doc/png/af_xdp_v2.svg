@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1340" viewBox="0 0 1400 1340" role="img" aria-labelledby="t d">
+<title id="t">AF_XDP socket, its four rings and the UMEM</title>
+<desc id="d">The AF_XDP socket is bound to one NIC hardware queue. The TX app puts descriptors in the TX ring and takes them back from the Completion ring. The RX app takes descriptors from the RX ring and gives free frames back in the Fill ring. Each descriptor points to a frame in the UMEM.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect width="1400" height="1340" fill="#ffffff"/>
+<text x="40.0" y="56.0" font-size="32" font-weight="700" fill="#1F271B" text-anchor="start">AF_XDP: four rings share one UMEM</text>
+<rect x="280.0" y="90" width="380" height="140" rx="8" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="470.0" y="167.3" font-size="30" font-weight="700" fill="#ffffff" text-anchor="middle">AF_XDP socket</text>
+<text x="690.0" y="169.0" font-size="26" font-weight="700" fill="#1F271B" text-anchor="start">hw queue</text>
+<circle cx="190" cy="410" r="140" fill="#0B4F6C" stroke="#1F271B" stroke-width="4"/>
+<circle cx="190" cy="410" r="100.8" fill="#ffffff" stroke="#1F271B" stroke-width="4"/>
+<text x="190.0" y="400.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">TX</text>
+<text x="190.0" y="436.4" font-size="26" fill="#1F271B" text-anchor="middle">ring</text>
+<circle cx="750" cy="410" r="140" fill="#0B4F6C" stroke="#1F271B" stroke-width="4"/>
+<circle cx="750" cy="410" r="100.8" fill="#ffffff" stroke="#1F271B" stroke-width="4"/>
+<text x="750.0" y="400.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">RX</text>
+<text x="750.0" y="436.4" font-size="26" fill="#1F271B" text-anchor="middle">ring</text>
+<rect x="60.0" y="630" width="260" height="100" rx="22" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="190.0" y="686.9" font-size="28" font-weight="700" fill="#ffffff" text-anchor="middle">TX app</text>
+<rect x="620.0" y="630" width="260" height="100" rx="22" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="750.0" y="686.9" font-size="28" font-weight="700" fill="#ffffff" text-anchor="middle">RX app</text>
+<circle cx="190" cy="950" r="140" fill="#CBB9A8" stroke="#1F271B" stroke-width="4"/>
+<circle cx="190" cy="950" r="100.8" fill="#ffffff" stroke="#1F271B" stroke-width="4"/>
+<text x="190.0" y="940.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">Completion</text>
+<text x="190.0" y="976.4" font-size="26" fill="#1F271B" text-anchor="middle">ring</text>
+<circle cx="750" cy="950" r="140" fill="#CBB9A8" stroke="#1F271B" stroke-width="4"/>
+<circle cx="750" cy="950" r="100.8" fill="#ffffff" stroke="#1F271B" stroke-width="4"/>
+<text x="750.0" y="940.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">Fill</text>
+<text x="750.0" y="976.4" font-size="26" fill="#1F271B" text-anchor="middle">ring</text>
+<path d="M190.0 810.0 L190.0 752.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M190.0 730.0 L203.2 754.0 L176.8 754.0 Z" fill="#1F271B"/>
+<path d="M190.0 630.0 L190.0 572.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M190.0 550.0 L203.2 574.0 L176.8 574.0 Z" fill="#1F271B"/>
+<path d="M750.0 550.0 L750.0 608.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M750.0 630.0 L736.8 606.0 L763.2 606.0 Z" fill="#1F271B"/>
+<path d="M750.0 730.0 L750.0 788.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M750.0 810.0 L736.8 786.0 L763.2 786.0 Z" fill="#1F271B"/>
+<ellipse cx="470.0" cy="860" rx="150" ry="80" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<text x="470.0" y="850.8" font-size="26" font-weight="700" fill="#1F271B" text-anchor="middle">xdp_desc:</text>
+<text x="470.0" y="884.6" font-size="24" fill="#1F271B" text-anchor="middle">index, addr, len</text>
+<rect x="90" y="1160" width="760" height="150" rx="6" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<rect x="370.0" y="1160" width="150" height="46" rx="0" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="440.0" y="1272.0" font-size="32" font-weight="700" fill="#1F271B" text-anchor="end">UMEM</text>
+<text x="500.0" y="1272.0" font-size="30" fill="#1F271B" text-anchor="start">2048B * 2^n</text>
+<path d="M470.0 940 C420.0 970 445.0 1020 445.0 1138" fill="none" stroke="#1F271B" stroke-width="5"/>
+<path d="M445.0 1160.0 L431.8 1136.0 L458.2 1136.0 Z" fill="#1F271B"/>
+<rect x="990" y="90" width="390" height="295" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M990 140 V98 Q990 90 998 90 H1372 Q1380 90 1380 98 V140 Z" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="1008.0" y="124.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="start">Socket and UMEM</text>
+<circle cx="1012" cy="168.7" r="5" fill="#1F271B"/>
+<text x="1028.0" y="176.0" font-size="22" fill="#1F271B" text-anchor="start">Bound to one NIC</text>
+<text x="1028.0" y="204.6" font-size="22" fill="#1F271B" text-anchor="start">hw queue</text>
+<circle cx="1012" cy="232.5" r="5" fill="#1F271B"/>
+<text x="1028.0" y="239.8" font-size="22" fill="#1F271B" text-anchor="start">Socket fd goes in the</text>
+<text x="1028.0" y="268.4" font-size="22" fill="#1F271B" text-anchor="start">xsks_map of the xsk</text>
+<text x="1028.0" y="297.0" font-size="22" fill="#1F271B" text-anchor="start">XDP program</text>
+<circle cx="1012" cy="324.9" r="5" fill="#1F271B"/>
+<text x="1028.0" y="332.2" font-size="22" fill="#1F271B" text-anchor="start">UMEM: user memory</text>
+<text x="1028.0" y="360.8" font-size="22" fill="#1F271B" text-anchor="start">shared with the kernel</text>
+<rect x="990" y="413" width="390" height="266" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M990 463 V421 Q990 413 998 413 H1372 Q1380 413 1380 421 V463 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<text x="1008.0" y="447.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="start">TX side</text>
+<circle cx="1012" cy="491.7" r="5" fill="#1F271B"/>
+<text x="1028.0" y="499.0" font-size="22" fill="#1F271B" text-anchor="start">App puts descriptors</text>
+<text x="1028.0" y="527.6" font-size="22" fill="#1F271B" text-anchor="start">in the TX ring</text>
+<circle cx="1012" cy="555.5" r="5" fill="#1F271B"/>
+<text x="1028.0" y="562.8" font-size="22" fill="#1F271B" text-anchor="start">Driver sends the packets</text>
+<circle cx="1012" cy="590.7" r="5" fill="#1F271B"/>
+<text x="1028.0" y="598.0" font-size="22" fill="#1F271B" text-anchor="start">Driver puts the sent</text>
+<text x="1028.0" y="626.6" font-size="22" fill="#1F271B" text-anchor="start">descriptors in the</text>
+<text x="1028.0" y="655.2" font-size="22" fill="#1F271B" text-anchor="start">Completion ring</text>
+<rect x="990" y="707" width="390" height="266" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M990 757 V715 Q990 707 998 707 H1372 Q1380 707 1380 715 V757 Z" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="1008.0" y="741.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="start">RX side</text>
+<circle cx="1012" cy="785.7" r="5" fill="#1F271B"/>
+<text x="1028.0" y="793.0" font-size="22" fill="#1F271B" text-anchor="start">App puts descriptors</text>
+<text x="1028.0" y="821.6" font-size="22" fill="#1F271B" text-anchor="start">in the Fill ring</text>
+<circle cx="1012" cy="849.5" r="5" fill="#1F271B"/>
+<text x="1028.0" y="856.8" font-size="22" fill="#1F271B" text-anchor="start">Driver writes the packets</text>
+<text x="1028.0" y="885.4" font-size="22" fill="#1F271B" text-anchor="start">to those UMEM frames</text>
+<circle cx="1012" cy="913.3" r="5" fill="#1F271B"/>
+<text x="1028.0" y="920.6" font-size="22" fill="#1F271B" text-anchor="start">Driver puts the descriptors</text>
+<text x="1028.0" y="949.2" font-size="22" fill="#1F271B" text-anchor="start">in the RX ring</text>
+</g>
+</svg>

@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="1755.0" viewBox="0 0 1300 1755.0" role="img" aria-labelledby="t d">
+<title id="t">AF_XDP socket, its four rings and the UMEM</title>
+<desc id="d">The AF_XDP socket is bound to one NIC hardware queue. The TX app puts descriptors in the TX ring and takes them back from the Completion ring. The RX app takes descriptors from the RX ring and gives free frames back in the Fill ring. Each descriptor points to a frame in the UMEM.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect width="1300" height="1755.0" fill="#ffffff"/>
+<text x="650.0" y="56.0" font-size="32" font-weight="700" fill="#1F271B" text-anchor="middle">AF_XDP: four rings share one UMEM</text>
+<rect x="400.0" y="90" width="500" height="150" rx="8" fill="#1F271B" stroke="#1F271B" stroke-width="3"/>
+<text x="650.0" y="172.3" font-size="30" font-weight="700" fill="#ffffff" text-anchor="middle">AF_XDP socket</text>
+<circle cx="270" cy="430" r="150" fill="#0B4F6C" stroke="#1F271B" stroke-width="4"/>
+<circle cx="270" cy="430" r="108.0" fill="#ffffff" stroke="#1F271B" stroke-width="4"/>
+<text x="270.0" y="420.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">TX</text>
+<text x="270.0" y="456.4" font-size="26" fill="#1F271B" text-anchor="middle">ring</text>
+<circle cx="1030" cy="430" r="150" fill="#0B4F6C" stroke="#1F271B" stroke-width="4"/>
+<circle cx="1030" cy="430" r="108.0" fill="#ffffff" stroke="#1F271B" stroke-width="4"/>
+<text x="1030.0" y="420.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">RX</text>
+<text x="1030.0" y="456.4" font-size="26" fill="#1F271B" text-anchor="middle">ring</text>
+<rect x="120.0" y="660" width="300" height="100" rx="22" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="270.0" y="716.9" font-size="28" font-weight="700" fill="#ffffff" text-anchor="middle">TX app</text>
+<rect x="880.0" y="660" width="300" height="100" rx="22" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="1030.0" y="716.9" font-size="28" font-weight="700" fill="#ffffff" text-anchor="middle">RX app</text>
+<circle cx="270" cy="990" r="150" fill="#CBB9A8" stroke="#1F271B" stroke-width="4"/>
+<circle cx="270" cy="990" r="108.0" fill="#ffffff" stroke="#1F271B" stroke-width="4"/>
+<text x="270.0" y="980.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">Completion</text>
+<text x="270.0" y="1016.4" font-size="26" fill="#1F271B" text-anchor="middle">ring</text>
+<circle cx="1030" cy="990" r="150" fill="#CBB9A8" stroke="#1F271B" stroke-width="4"/>
+<circle cx="1030" cy="990" r="108.0" fill="#ffffff" stroke="#1F271B" stroke-width="4"/>
+<text x="1030.0" y="980.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">Fill</text>
+<text x="1030.0" y="1016.4" font-size="26" fill="#1F271B" text-anchor="middle">ring</text>
+<path d="M270.0 840.0 L270.0 782.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M270.0 760.0 L283.2 784.0 L256.8 784.0 Z" fill="#1F271B"/>
+<path d="M270.0 660.0 L270.0 602.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M270.0 580.0 L283.2 604.0 L256.8 604.0 Z" fill="#1F271B"/>
+<path d="M1030.0 580.0 L1030.0 638.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1030.0 660.0 L1016.8 636.0 L1043.2 636.0 Z" fill="#1F271B"/>
+<path d="M1030.0 760.0 L1030.0 818.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M1030.0 840.0 L1016.8 816.0 L1043.2 816.0 Z" fill="#1F271B"/>
+<ellipse cx="650.0" cy="900" rx="180" ry="80" fill="#DCC7BE" stroke="#1F271B" stroke-width="3"/>
+<text x="650.0" y="890.8" font-size="26" font-weight="700" fill="#1F271B" text-anchor="middle">xdp_desc:</text>
+<text x="650.0" y="924.6" font-size="24" fill="#1F271B" text-anchor="middle">index, addr, len</text>
+<rect x="160" y="1210" width="980" height="150" rx="6" fill="#CBB9A8" stroke="#1F271B" stroke-width="3"/>
+<rect x="195.0" y="1228" width="70" height="50" rx="0" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="265.0" y="1228" width="70" height="50" rx="0" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="335.0" y="1228" width="70" height="50" rx="0" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="405.0" y="1228" width="70" height="50" rx="0" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="475.0" y="1228" width="70" height="50" rx="0" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="545.0" y="1228" width="70" height="50" rx="0" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="615.0" y="1228" width="70" height="50" rx="0" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<rect x="685.0" y="1228" width="70" height="50" rx="0" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="755.0" y="1228" width="70" height="50" rx="0" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="825.0" y="1228" width="70" height="50" rx="0" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="895.0" y="1228" width="70" height="50" rx="0" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="965.0" y="1228" width="70" height="50" rx="0" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<rect x="1035.0" y="1228" width="70" height="50" rx="0" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<text x="650.0" y="1328.0" font-size="28" font-weight="700" fill="#1F271B" text-anchor="middle">UMEM: 2^n frames of 2048 B</text>
+<path d="M650.0 980 C600.0 1010 650.0 1088 650.0 1206" fill="none" stroke="#1F271B" stroke-width="5"/>
+<path d="M650.0 1228.0 L636.8 1204.0 L663.2 1204.0 Z" fill="#1F271B"/>
+<text x="650.0" y="214.0" font-size="22" fill="#ffffff" text-anchor="middle">bound to one NIC hw queue</text>
+<path d="M270.0 280.0 L270.0 200.0 L378.0 200.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M400.0 200.0 L376.0 213.2 L376.0 186.8 Z" fill="#1F271B"/>
+<path d="M400.0 130.0 L60.0 130.0 L60.0 990.0 L98.0 990.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M120.0 990.0 L96.0 1003.2 L96.0 976.8 Z" fill="#1F271B"/>
+<path d="M900.0 200.0 L1030.0 200.0 L1030.0 258.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M1030.0 280.0 L1016.8 256.0 L1043.2 256.0 Z" fill="#1F271B"/>
+<path d="M1180.0 990.0 L1240.0 990.0 L1240.0 130.0 L922.0 130.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M900.0 130.0 L924.0 116.8 L924.0 143.2 Z" fill="#1F271B"/>
+<circle cx="310" cy="620.0" r="22" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<text x="310.0" y="628.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+<circle cx="310" cy="244.0" r="22" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<text x="310.0" y="252.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+<circle cx="60" cy="710.0" r="22" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<text x="60.0" y="718.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+<circle cx="310" cy="800.0" r="22" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<text x="310.0" y="808.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">4</text>
+<circle cx="990" cy="800.0" r="22" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="990.0" y="808.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+<circle cx="1240" cy="710.0" r="22" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="1240.0" y="718.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+<circle cx="990" cy="244.0" r="22" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="990.0" y="252.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+<circle cx="990" cy="620.0" r="22" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="990.0" y="628.0" font-size="22" font-weight="700" fill="#ffffff" text-anchor="middle">4</text>
+<text x="690.0" y="1188.0" font-size="22" fill="#1F271B" text-anchor="start">points to one frame</text>
+<path d="M60.0 1420.0 L148.0 1420.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round"/>
+<path d="M170.0 1420.0 L146.0 1433.2 L146.0 1406.8 Z" fill="#1F271B"/>
+<text x="190.0" y="1428.0" font-size="24" font-weight="700" fill="#1F271B" text-anchor="start">App step</text>
+<path d="M340.0 1420.0 L428.0 1420.0" fill="none" stroke="#1F271B" stroke-width="5" stroke-linejoin="round" stroke-dasharray="14 9"/>
+<path d="M450.0 1420.0 L426.0 1433.2 L426.0 1406.8 Z" fill="#1F271B"/>
+<text x="470.0" y="1428.0" font-size="24" font-weight="700" fill="#1F271B" text-anchor="start">NIC driver step</text>
+<rect x="60" y="1470" width="570.0" height="255.0" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M60 1520 V1478 Q60 1470 68 1470 H622.0 Q630.0 1470 630.0 1478 V1520 Z" fill="#0B4F6C" stroke="#1F271B" stroke-width="3"/>
+<text x="78.0" y="1504.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="start">TX side</text>
+<circle cx="94" cy="1545.0" r="15" fill="#0B4F6C" stroke="#1F271B" stroke-width="2"/>
+<text x="94.0" y="1552.0" font-size="18" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+<text x="120.0" y="1553.0" font-size="22" fill="#1F271B" text-anchor="start">App puts descriptors in TX ring</text>
+<circle cx="94" cy="1578.0" r="15" fill="#0B4F6C" stroke="#1F271B" stroke-width="2"/>
+<text x="94.0" y="1585.0" font-size="18" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+<text x="120.0" y="1586.0" font-size="22" fill="#1F271B" text-anchor="start">Driver sends the packets</text>
+<circle cx="94" cy="1611.0" r="15" fill="#0B4F6C" stroke="#1F271B" stroke-width="2"/>
+<text x="94.0" y="1618.0" font-size="18" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+<text x="120.0" y="1619.0" font-size="22" fill="#1F271B" text-anchor="start">Driver puts the sent descriptors</text>
+<text x="120.0" y="1652.0" font-size="22" fill="#1F271B" text-anchor="start">in the Completion ring</text>
+<circle cx="94" cy="1677.0" r="15" fill="#0B4F6C" stroke="#1F271B" stroke-width="2"/>
+<text x="94.0" y="1684.0" font-size="18" font-weight="700" fill="#ffffff" text-anchor="middle">4</text>
+<text x="120.0" y="1685.0" font-size="22" fill="#1F271B" text-anchor="start">App takes them back</text>
+<rect x="670.0" y="1470" width="570.0" height="255.0" rx="8" fill="#ffffff" stroke="#1F271B" stroke-width="3"/>
+<path d="M670.0 1520 V1478 Q670.0 1470 678.0 1470 H1232.0 Q1240.0 1470 1240.0 1478 V1520 Z" fill="#145C9E" stroke="#1F271B" stroke-width="3"/>
+<text x="688.0" y="1504.0" font-size="24" font-weight="700" fill="#ffffff" text-anchor="start">RX side</text>
+<circle cx="704.0" cy="1545.0" r="15" fill="#145C9E" stroke="#1F271B" stroke-width="2"/>
+<text x="704.0" y="1552.0" font-size="18" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+<text x="730.0" y="1553.0" font-size="22" fill="#1F271B" text-anchor="start">App puts descriptors in Fill ring</text>
+<circle cx="704.0" cy="1578.0" r="15" fill="#145C9E" stroke="#1F271B" stroke-width="2"/>
+<text x="704.0" y="1585.0" font-size="18" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+<text x="730.0" y="1586.0" font-size="22" fill="#1F271B" text-anchor="start">Driver writes packets to the frames</text>
+<circle cx="704.0" cy="1611.0" r="15" fill="#145C9E" stroke="#1F271B" stroke-width="2"/>
+<text x="704.0" y="1618.0" font-size="18" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+<text x="730.0" y="1619.0" font-size="22" fill="#1F271B" text-anchor="start">Driver puts the descriptors</text>
+<text x="730.0" y="1652.0" font-size="22" fill="#1F271B" text-anchor="start">in the RX ring</text>
+<circle cx="704.0" cy="1677.0" r="15" fill="#145C9E" stroke="#1F271B" stroke-width="2"/>
+<text x="704.0" y="1684.0" font-size="18" font-weight="700" fill="#ffffff" text-anchor="middle">4</text>
+<text x="730.0" y="1685.0" font-size="22" fill="#1F271B" text-anchor="start">App reads the packets</text>
+</g>
+</svg>
