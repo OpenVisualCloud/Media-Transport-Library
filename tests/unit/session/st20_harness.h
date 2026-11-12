@@ -156,6 +156,9 @@ int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx, bool interlaced);
  * status. ut20_stop_pcap() closes it. */
 int ut20_start_pcap(ut20_test_ctx* ctx, uint32_t max_pkts, char* name, size_t name_len);
 void ut20_stop_pcap(ut20_test_ctx* ctx);
+/* Run the session at fps, with frame time and ticks per frame as production derives
+ * them; call before ut20_ctx_enable_timing_parser(). */
+int ut20_ctx_set_fps(ut20_test_ctx* ctx, enum st_fps fps);
 
 void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port);
 

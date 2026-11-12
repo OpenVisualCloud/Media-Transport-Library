@@ -130,6 +130,7 @@ unit_sources = [
   'session/st20/timestamp_source_test.cpp',
   'session/st20/pcap_dump_test.cpp',
   'session/st20/tp_burst_test.cpp',
+  'session/st20/tp_latency_test.cpp',
   'session/st20/tp_rtp_ts_delta_test.cpp',
   'session/st20/tp_stat_test.cpp',
   'session/st20/interlaced_tp_phase_test.cpp',
