@@ -5,7 +5,7 @@
 * st20 RX timing parser: at a frame rate with a fractional number of 90 kHz ticks per frame (59.94, 23.98, 119.88 fps), every other frame's latency no longer reads half a tick (5.6 µs at 59.94) low, which failed frames whose first packet arrives less than that after their RTP time
 * pcapng dumps (st20/st22/st30 RX, CNI): the filename no longer carries the packet count, which at 100,000 packets or more overflowed `MTL_PCAP_FILE_MAX_LEN` (32) and failed the dump; the count stays in the log
 * st20/st22 TX: the video tasklets no longer take the session spinlock; on a session's own scheduler, `*_tx_free()` and `*_tx_update_destination()` (st20, st22, st20p, st22p) return `-EBUSY` instead of deadlocking, as do the stats APIs from the session's own callbacks
-* Documentation: sort `doc/` into topic folders (`getting_started`, `platforms`, `features`, `performance`, `debugging`, `experimental`, `development`); `doc/README.md` is the start page. A link to an old `doc/<name>.md` path must change to the new folder.
+* Documentation: sort `doc/` into topic folders (`getting_started`, `platforms`, `features`, `performance`, `debugging`, `experimental`, `development`); `doc/README.md` is the start page. A link to an old `doc/<name>.md` path must change to the new folder. The E800 Series Driver Guide starts with a check of the driver and installs it with one command
 * ice: default to driver version 2.7.6, built as released with no MTL patches; versions before 2.7.6 keep their `patches/ice_drv` series
 * nicctl.sh: give each VF of an ice PF a 512-entry RSS LUT, so that it can have more than 16 queue pairs; `vf_rss_lut` does so for existing VFs
 * dev: warn when a port gets fewer queues than it asks for
