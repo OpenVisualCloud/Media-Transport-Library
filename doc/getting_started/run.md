@@ -114,6 +114,17 @@ Bind 0000:af:01.5(enp175s0f0v5) to vfio-pci success
 Create VFs on PF bdf: 0000:af:00.0 enp175s0f0 succ
 ```
 
+`create_vf` makes 6 VFs. To make a different number, give the count as a last argument.
+The `create_vf`, `create_tvf` and `create_kvf` commands also give each VF a 512-entry RSS LUT.
+A VF with the default 64-entry LUT gets at most 16 queue pairs, so a port has no TX queue for its 16th video session and the session fails with `fail to find free tx queue`.
+For VFs made another way, for example with `sriov_numvfs`, run `sudo ./script/nicctl.sh vf_rss_lut <PF BDF>`, or write the size before the application starts:
+
+```bash
+echo 512 | sudo tee /sys/bus/pci/devices/<VF BDF>/rss_lut_vf_attr
+```
+
+> **Note:** A VF takes the new LUT at its next reset. DPDK resets the VF when it starts, but a kernel driver does so only at its probe.
+
 And please verify that the newly created VFIO device is correctly assigned to the vfio group as specified by your udev rules from section [3.1 Allow current user to access /dev/vfio/* devices](#31-allow-current-user-to-access-devvfio-devices). Use the command:
 ```bash
 ls -lg /dev/vfio/*

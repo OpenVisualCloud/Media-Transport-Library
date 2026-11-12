@@ -1,6 +1,6 @@
 # Changelog
 
-* Documentation: sort `doc/` into topic folders (`getting_started`, `platforms`, `features`, `performance`, `debugging`, `experimental`, `development`); `doc/README.md` is the start page. A link to an old `doc/<name>.md` path must change to the new folder.
+* Documentation: sort `doc/` into topic folders (`getting_started`, `platforms`, `features`, `performance`, `debugging`, `experimental`, `development`); `doc/README.md` is the start page. A link to an old `doc/<name>.md` path must change to the new folder. The E800 Series Driver Guide starts with a check of the driver and installs it with one command
 * ice: default to driver version 2.7.6, built as released with no MTL patches; versions before 2.7.6 keep their `patches/ice_drv` series
 * nicctl.sh: give each VF of an ice PF a 512-entry RSS LUT, so that it can have more than 16 queue pairs; `vf_rss_lut` does so for existing VFs
 * dev: warn when a port gets fewer queues than it asks for
