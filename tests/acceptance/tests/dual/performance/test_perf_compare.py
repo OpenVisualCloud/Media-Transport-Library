@@ -413,8 +413,8 @@ def test_perf_compare(
     per_group = max(1, int(pc.CAPTURE_PPS // pps))
     groups = sum(-(-n // per_group) for n in shares)  # redundant: a leg each share
     # a capture and its analysis take about 25 s; LIST may wait a minute for a report,
-    # and twice for st22p's, analysed again with an SDP
-    capture_s = 240 if codec else 120
+    # and for st22p's three more, analysed again with an SDP
+    capture_s = 360 if codec else 120
     comply_time = pc.steady_timeout(queues) + pc.WARMUP_S + capture_s * groups + 100
     comply_cmd = _app_cmd(
         opts, media_config, media_path, fps, comply_time, shares, per_group

@@ -436,14 +436,14 @@ late frame (2026-11-06).
 
 An st22p stream (§4.7) LIST does not detect by itself: it marks it `needs_info`. Each
 capture's pcap goes to LIST again with an SDP that names each of its streams
-`jxsv/90000`, `TP=2110TPN`, `jxsv_sdp()`, and the case waits until none is still ready
-or under analysis; the SDP is kept in the group's JSON. Such a stream has no VRX and no
-TRO, as ST 2110-22 has none: LIST judges its class by its Cinst alone, and the report
-shows `-` for the rest. A group takes as many st22p streams as 950,000 packets a second
-carry, 26 of 1080p59, so 60 a build are 3 captures in `single` or `split`, 4 in `whole`
-and 6 in `redundant`. Proven with LIST on a loopback capture of MTL's st22p TX
-(2026-11-09): it read 608 packets a frame at 60000/1001 and judged each stream; the
-timing of the perf pair's TX is the first dispatch's.
+`jxsv/90000`, `TP=2110TPN`, `jxsv_sdp()`, and the case waits, 3 minutes at most, until
+none is still ready or under analysis; the SDP is kept in the group's JSON. Such a
+stream has no VRX and no TRO, as ST 2110-22 has none: LIST judges its class by its Cinst
+alone, and the report shows `-` for the rest. A group takes as many st22p streams as
+950,000 packets a second carry, 26 of 1080p59, so 60 a build are 3 captures in `single`
+or `split`, 4 in `whole` and 6 in `redundant`. Proven with LIST on a loopback capture of
+MTL's st22p TX (2026-11-09): it read 608 packets a frame at 60000/1001 and judged each
+stream; the timing of the perf pair's TX is the first dispatch's.
 
 ### 4.7. Compressed video
 

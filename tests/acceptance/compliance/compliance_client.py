@@ -9,6 +9,11 @@ logger = logging.getLogger(__name__)
 # How long to wait for LIST to analyze an uploaded PCAP.
 REPORT_WAIT_S = 60
 
+# How long to wait for LIST to analyse a PCAP again with an SDP: it re-ingests every
+# stream. A shared LIST took 14 s for 26 ST 2110-22 streams of a second, and once
+# more than 60 s for as many.
+SDP_ANALYSIS_WAIT_S = 180
+
 # How many seconds a re-analysis gets to publish a report distinct from the one
 # it replaces. Measured at 3 ms on an idle EBU LIST 2.2.2; the margin is for a
 # loaded one, and the wait ends as soon as the new report appears.
@@ -252,7 +257,7 @@ class PcapComplianceClient:
         EBU LIST detects no ST 2110-22 stream by itself and marks it needs_info; it
         analyses one that an SDP names, as video/jxsv. LIST deletes the streams and
         analyses the PCAP again, so this waits until it lists them again, none still
-        ready or under analysis, for REPORT_WAIT_S at most.
+        ready or under analysis, for SDP_ANALYSIS_WAIT_S at most.
 
         Returns the fresh report, or False when LIST took longer.
         """
@@ -267,7 +272,7 @@ class PcapComplianceClient:
             timeout=STREAM_REANALYSIS_TIMEOUT,
         )
         response.raise_for_status()
-        deadline = time.monotonic() + REPORT_WAIT_S
+        deadline = time.monotonic() + SDP_ANALYSIS_WAIT_S
         while time.monotonic() < deadline:
             try:
                 response = self.session.get(
