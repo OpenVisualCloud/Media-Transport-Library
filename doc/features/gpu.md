@@ -3,9 +3,9 @@
 ## General Info
 
 It's possible to create a memory buffer in GPU for the frames in st20 protocol.
-This is done by using [gpu direct](../gpu_direct/README.md) library.
+This is done by using [gpu direct](../../gpu_direct/README.md) library.
 
-Refer to [gpu direct s20 pipeline](../app/sample/gpu_direct) to see an example.
+Refer to [gpu direct s20 pipeline](../../app/sample/gpu_direct) to see an example.
 
 ## Build MTL GPU-Direct Library
 
@@ -25,7 +25,7 @@ pkg-config --libs mtl_gpu_direct
 
 Run TX Sample App
 
-Prepare a file (test.yuv) of 1920x1080 UYVY frames to send. You can refer to [run guide](../doc/run.md) for more details.
+Prepare a file (test.yuv) of 1920x1080 UYVY frames to send. You can refer to [run guide](../getting_started/run.md) for more details.
 
 ```bash
 ./build/app/GpuDirectVideoTxMultiSample 192.168.99.110 20000 test.yuv

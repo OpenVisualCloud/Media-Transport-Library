@@ -32,7 +32,7 @@ ENVIRONMENT:
 				CPU count of this host, at least 128; at most 1024, as MTL)
 	CC, CFLAGS, CPPFLAGS, LDFLAGS
 				The compiler and flags of the DPDK build; the script adds the
-				hardening flags of doc/build.md to them
+				hardening flags of doc/getting_started/build.md to them
 	MTL_HARDENING		0 builds DPDK without the hardening flags and PIE (default: 1)
 
 EXAMPLES:
@@ -183,7 +183,7 @@ main() {
 	fi
 	log_info "Build and install DPDK now, max_lcores ${max_lcores}"
 	[ -n "${DPDK_PYTHON}" ] && python_path="$(dirname "$DPDK_PYTHON"):$PATH"
-	# The compiler hardening of doc/build.md, for the release buildtype of
+	# The compiler hardening of doc/getting_started/build.md, for the release buildtype of
 	# DPDK. -Dc_args and -Dc_link_args replace the CFLAGS, CPPFLAGS and LDFLAGS
 	# meson reads otherwise, so they take them in, in meson's order.
 	hardening_flags || exit 1

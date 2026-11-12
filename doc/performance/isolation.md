@@ -221,7 +221,7 @@ Once CPUs are isolated (via either method), assign them to MTL using the `--lcor
 ./tests/tools/RxTxApp/build/RxTxApp --config_file config/tx_1v.json --lcores 2,3,4,5
 ```
 
-Or programmatically via the `lcores` field in `struct mtl_init_params` (see [Design Guide — §2.7 Manual Assigned lcores](design.md#27-manual-assigned-lcores)).
+Or programmatically via the `lcores` field in `struct mtl_init_params` (see [Design Guide — §2.7 Manual Assigned lcores](../design.md#27-manual-assigned-lcores)).
 
 ### 3.1. Tasklet Sleep on Non-Isolated Cores
 
@@ -243,7 +243,7 @@ When running multiple MTL instances, use the **MTL Manager** service to prevent 
 sudo MtlManager
 ```
 
-Each MTL instance requests a free core from the Manager. See the [Manager Guide](../manager/README.md) and [Run Guide — §5](run.md#5-run-the-sample-application) for details.
+Each MTL instance requests a free core from the Manager. See the [Manager Guide](../../manager/README.md) and [Run Guide — §5](../getting_started/run.md#5-run-the-sample-application) for details.
 
 ---
 

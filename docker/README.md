@@ -22,7 +22,7 @@ Each Dockerfile has two stages:
 
 ## Prepare the Host
 
-Follow the [run guide](../doc/run.md) before you start a container.
+Follow the [run guide](../doc/getting_started/run.md) before you start a container.
 
 The host must provide these resources:
 

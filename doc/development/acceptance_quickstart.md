@@ -3,7 +3,7 @@
 Everything needed to get `tests/acceptance/` pytest running, and to fix it
 when it breaks. For *how the framework is built* see
 [acceptance-design.md](acceptance-design.md); for MTL itself see
-[build.md](build.md) and [run.md](run.md).
+[build.md](../getting_started/build.md) and [run.md](../getting_started/run.md).
 
 ## The `.local_install` rule — read this first
 
@@ -269,7 +269,7 @@ capture a backtrace (`coredumpctl gdb RxTxApp`) and report it rather than
 working around it.
 
 The exhaustive symptom table, kept in sync with the engine source, is in
-[mtl-acceptance-tests.instructions.md](../.github/instructions/mtl-acceptance-tests.instructions.md).
+[mtl-acceptance-tests.instructions.md](../../.github/instructions/mtl-acceptance-tests.instructions.md).
 
 ## Verified test criteria
 
@@ -291,8 +291,8 @@ test may carry it only when all three hold:
 - [acceptance-design.md](acceptance-design.md) — architecture: modules,
   adapters, fixtures, oracles, clock model
 - Agent instructions for changing the framework:
-  [running tests](../.github/instructions/mtl-acceptance-tests.instructions.md),
-  [authoring tests](../.github/instructions/mtl-acceptance-authoring.instructions.md),
-  [engine](../.github/instructions/mtl-acceptance-engine.instructions.md),
-  [harness](../.github/instructions/mtl-acceptance-harness.instructions.md)
-- [build.md](build.md), [run.md](run.md), [configuration_guide.md](configuration_guide.md)
+  [running tests](../../.github/instructions/mtl-acceptance-tests.instructions.md),
+  [authoring tests](../../.github/instructions/mtl-acceptance-authoring.instructions.md),
+  [engine](../../.github/instructions/mtl-acceptance-engine.instructions.md),
+  [harness](../../.github/instructions/mtl-acceptance-harness.instructions.md)
+- [build.md](../getting_started/build.md), [run.md](../getting_started/run.md), [configuration_guide.md](../getting_started/configuration_guide.md)

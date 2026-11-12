@@ -39,7 +39,7 @@ OPTIONS:
 ENVIRONMENT:
 	CC, CFLAGS, CPPFLAGS, LDFLAGS
 				The compiler and flags of the xdp-tools and libbpf build; the
-				script adds the hardening flags of doc/build.md to them
+				script adds the hardening flags of doc/getting_started/build.md to them
 	MTL_HARDENING		0 builds xdp-tools and libbpf without the hardening flags
 				(default: 1)
 
@@ -223,7 +223,7 @@ build_and_install() {
 	libdir=$(install_libdir "${prefix}")
 	log_info "Installing into ${libdir}"
 
-	# The compiler hardening of doc/build.md. A CFLAGS replaces the -O2 -g of
+	# The compiler hardening of doc/getting_started/build.md. A CFLAGS replaces the -O2 -g of
 	# xdp-tools and the -g -O2 -Werror -Wall of libbpf, which xdp-tools builds
 	# itself when the host has none, so they come first, in both makes.
 	# Without the flags, both makes run with the caller's environment only.

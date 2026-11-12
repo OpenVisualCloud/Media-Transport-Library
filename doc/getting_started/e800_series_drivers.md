@@ -47,7 +47,7 @@ cd ice-${ICE_VER}
 ### 1.3. Patch the Driver with Rate Limit Patches
 
 Driver version 2.7.6 and later need no patches, so skip this section for them.
-The [ice_drv patch folder](../patches/ice_drv/) holds one folder per earlier driver version. `ICE_VER` selects the correct one.
+The [ice_drv patch folder](../../patches/ice_drv/) holds one folder per earlier driver version. `ICE_VER` selects the correct one.
 
 ```bash
 git init
@@ -60,9 +60,9 @@ Use `git log` to check that the latest commit updates the driver version. Every 
 
 ### 1.4. Build and Install the Driver
 
-Run the [build and install commands](chunks/_build_install_ice_driver.md) that follow.
+Run the [build and install commands](../chunks/_build_install_ice_driver.md) that follow.
 
-```{include} chunks/_build_install_ice_driver.md
+```{include} ../chunks/_build_install_ice_driver.md
 ```
 
 #### 1.4.1. Linux Kernel Header

@@ -3,7 +3,7 @@
 The Media Transport Library (MTL) can let the rate limiter (RL) of an Intel® E810 or E830 Series Ethernet Adapter space the packets of an ST 2110-20 video stream. This guide explains how that works, what the log tells you, and what to configure.
 
 Part 1, [Using RL pacing](#part-1-using-rl-pacing), is for users and operators, and is complete without Part 2. Part 2, [Developer details](#part-2-developer-details), is for people who change the code.
-Every number is for 1080p59.94, 4:2:2 10-bit, on an E810 VF, unless a format is named. The design guide has a shorter account in [ST2110-21 pacing](design.md#432-st2110-21-pacing) and [RTP timestamps of paced video](design.md#82-rtp-timestamps-of-paced-video).
+Every number is for 1080p59.94, 4:2:2 10-bit, on an E810 VF, unless a format is named. The design guide has a shorter account in [ST2110-21 pacing](../design.md#432-st2110-21-pacing) and [RTP timestamps of paced video](../design.md#82-rtp-timestamps-of-paced-video).
 
 ## Part 1: Using RL pacing
 
@@ -17,7 +17,7 @@ MTL gives every packet a **target**, the time at which the packet should leave t
 
 **VRX** is the number of packets that wait in the buffer ahead of an arriving packet. A packet on its target is the fifth packet in the buffer, so it finds 4. For a packet that arrives after its drain slot the count is negative, which this guide and the log call "VRX below 0". The buffer holds at most 9 packets here, so a packet must not be early either.
 
-![On time, a packet arrives a send-ahead before its drain slot and finds 4 packets waiting; a late packet 0 arrives after drains have passed, and VRX is below 0](png/rl_pacing/vrx_model.svg)
+![On time, a packet arrives a send-ahead before its drain slot and finds 4 packets waiting; a late packet 0 arrives after drains have passed, and VRX is below 0](../png/rl_pacing/vrx_model.svg)
 
 ### 2. Who times the packets
 
@@ -28,7 +28,7 @@ The **pacing way** says what spaces the packets. It is set once per MTL instance
 | `ST21_TX_PACING_WAY_AUTO` (default) | the rate limiter if the driver offers one (`net_ice` on a physical function, PF, of an E810 or E830; `net_iavf` on a virtual function, VF), otherwise the CPU |
 | `ST21_TX_PACING_WAY_RL` | the rate limiter, as this guide describes |
 | `ST21_TX_PACING_WAY_TSC`, `_TSC_NARROW`, `_PTP`, `_BE` | the CPU, which sends each packet at its time, read from its timestamp counter (TSC) or the PTP clock |
-| `ST21_TX_PACING_WAY_TSN` | the NIC launch time on an E830 PF, see [TSN launch-time pacing](design.md#433-tsn-launch-time-pacing) |
+| `ST21_TX_PACING_WAY_TSN` | the NIC launch time on an E830 PF, see [TSN launch-time pacing](../design.md#433-tsn-launch-time-pacing) |
 
 With RL pacing each session port has its own **TX queue** on the NIC. The NIC's rate limiter, called the **shaper** in this guide, sends the packets of that queue at a fixed rate.
 MTL programs and measures that rate when the session is created, so that one video packet leaves per Trs. The CPU only has to keep the queue filled, so the spacing does not depend on the CPU reaching every packet at its time.
@@ -53,7 +53,7 @@ A visit hands the NIC several packets at once. The shaper then sends them one pe
 
 **Packet 0**, the first packet of a frame, is different. Between two frames the stream pauses, and the queue runs empty. Packet 0 therefore leaves as soon as the CPU queues it. If the CPU is busy at packet 0's target, packet 0 is late, and nothing in the queue hides that.
 
-![Mid-frame the NIC queue covers a CPU gap; at the frame start the queue is empty, so packet 0 waits for the CPU](png/rl_pacing/queue_cover.svg)
+![Mid-frame the NIC queue covers a CPU gap; at the frame start the queue is empty, so packet 0 waits for the CPU](../png/rl_pacing/queue_cover.svg)
 
 ### 4. The pre-arm
 
@@ -66,7 +66,7 @@ Inside the frame MTL adds one more pad after about every 245 video packets, beca
 MTL chooses the number and the size of the pads so that the shaper finishes them just after the target. It shortens the last pads slightly to hit that time. It aims 0.75 µs after the target, not at it. This distance is the **aim**.
 It is there because the shaper works in small time steps and could otherwise release packet 0 slightly early. With the aim, the shaper releases packet 0 between 0.75 µs and 1.4 µs after its target.
 
-![The pre-arm: pads queued ahead make the NIC send packet 0 just after its target, while the CPU is elsewhere](png/rl_pacing/pre_arm.svg)
+![The pre-arm: pads queued ahead make the NIC send packet 0 just after its target, while the CPU is elsewhere](../png/rl_pacing/pre_arm.svg)
 
 ### 5. A stall in a pad burst
 
@@ -81,7 +81,7 @@ After a stall MTL knows two times, its clock read and the return of the call. It
 MTL could guess, and remove pads to make up for a late doorbell. It never does. If it assumed a late doorbell and the doorbell had in fact rung on time, packet 0 would leave early.
 A late packet 0 can use its send-ahead. An early one has nothing: it can overflow the receiver's buffer, and it arrives before the frame's RTP timestamp, which is packet 0's target. The rule that follows from this is **never early**: every decision after a stall may make packet 0 later, and none may make it earlier.
 
-![After a stalled call MTL knows the return, not the doorbell: with the pads kept, packet 0 is on time or late by the delay; with pads removed it could be early](png/rl_pacing/frame_start_ab.svg)
+![After a stalled call MTL knows the return, not the doorbell: with the pads kept, packet 0 is on time or late by the delay; with pads removed it could be early](../png/rl_pacing/frame_start_ab.svg)
 
 ### 6. The anchor
 
@@ -102,7 +102,7 @@ The anchor is the smallest number of pads that keeps the shaper busy for 12 µs 
 | 1080p59.94 | 3.87 µs | 7.0 µs worth | 5 pads | 20 µs |
 | 2160p59.94 | 0.97 µs | 1.8 µs worth | 15 pads | 15 µs |
 
-![The anchor: 20 µs after a stalled call 5 pads are gone and the bucket is full, where 32 pads need 125 µs, and the anchor still keeps the shaper busy through a 10 µs tick in the next burst](png/rl_pacing/anchor.svg)
+![The anchor: 20 µs after a stalled call 5 pads are gone and the bucket is full, where 32 pads need 125 µs, and the anchor still keeps the shaper busy through a 10 µs tick in the next burst](../png/rl_pacing/anchor.svg)
 
 ### 7. After a stall: kept, start over, hold
 
@@ -129,7 +129,7 @@ The limit differs per format, because the aim and the shaper's time step grow wi
 | 1080p60 | 1.9 µs | starts over, as at 720p59.94 |
 | 2160p59.94 | 3.6 µs | kept up to 3.6 µs, starts over above |
 
-![After a stalled anchor: kept within the limit, the pre-arm done again past it, and a hold only when the window has too little left](png/rl_pacing/after_stall.svg)
+![After a stalled anchor: kept within the limit, the pre-arm done again past it, and a hold only when the window has too little left](../png/rl_pacing/after_stall.svg)
 
 ### 8. Ports without a plan
 
@@ -152,12 +152,12 @@ MTL checks its own timing while it streams, and prints the result with the stati
 
 The VRX budget is what three things leave of the send-ahead. The frame's start is rounded to the 90 kHz RTP clock, which can move every target up to 4.0 µs later. The way from the shaper to the receiver, the **wire path**, takes about 5.5 µs. The third is the **sawtooth**, 5.9 µs, and 19.46 − 4.0 − 5.5 − 5.9 leaves about 4.1 µs.
 
-![The send-ahead of 19.46 µs is used by the rounding, the wire path and the sawtooth; the 4.1 µs left are the VRX budget, and check 1 reports a packet that leaves later than that](png/rl_pacing/vrx_budget.svg)
+![The send-ahead of 19.46 µs is used by the rounding, the wire path and the sawtooth; the 4.1 µs left are the VRX budget, and check 1 reports a packet that leaves later than that](../png/rl_pacing/vrx_budget.svg)
 
 The sawtooth comes from the pads inside the frame (chapter 4). Between two pads the shaper spends 16 ns less than Trs on each video packet, so each packet leaves 16 ns earlier relative to its target than the one before. A pad takes one packet time, 3.9 µs, and the packets behind it leave that much later.
 The departures therefore fall slowly and jump at every pad, like the teeth of a saw. A tooth is one **pad interval** long, the number of video packets from one pad to the next: 245.3 on average here, so a frame of 4115 packets has about 17 teeth.
 
-![With the CPU on time each packet leaves 16 ns earlier relative to its target than the one before, and each pad moves the packets behind it one pad, 3.9 µs, later; the teeth repeat every pad interval](png/rl_pacing/sawtooth.svg)
+![With the CPU on time each packet leaves 16 ns earlier relative to its target than the one before, and each pad moves the packets behind it one pad, 3.9 µs, later; the teeth repeat every pad interval](../png/rl_pacing/sawtooth.svg)
 
 Check 1 measures only the first packet of a burst. If that burst finds the shaper idle, a packet behind the next pad can leave up to one tooth, 3.9 µs, later relative to its target than the measured packet. The budget therefore sets 5.9 µs aside for the sawtooth; chapter 20 gives the formula.
 
@@ -169,21 +169,21 @@ Check 1 measures only the first packet of a burst. If that burst finds the shape
 | `port P no rl plan, holds packet 0, VRX at risk if late` | warn, at session create | The CPU sends every packet 0 of this port. | see chapter 8 |
 | `port P vrx V leaves no VRX budget, VRX not judged` | warn, at session create | The send-ahead of V packet times, a user `start_vrx`, leaves no VRX budget, so check 1 does not watch this port. | use a larger `start_vrx`, or none |
 | `port P vrx V leaves no stall limit, frames may be flagged` | warn, at session create | The VRX budget is so small that no stall is kept, and check 1 can report frames that are on time. | use a larger `start_vrx`, or none |
-| `port P rl training fail …, fallback to tsc pacing` | err, at session create | The session paces by TSC for its whole life. | check the ice driver ([E800 Series Driver Guide](e800_series_drivers.md)), then create the session again |
+| `port P rl training fail …, fallback to tsc pacing` | err, at session create | The session paces by TSC for its whole life. | check the ice driver ([E800 Series Driver Guide](../getting_started/e800_series_drivers.md)), then create the session again |
 | `N frames may break VRX >= 0, a pkt up to Xus past its target over the Yus budget: packet 0 A mid-frame B; K frames started up to Zus late` | err, per period | Check 1 reported N frames: A at packet 0, B mid-frame, the worst X late; Y is the VRX budget. K more came late from the application. | capture and verify; look for a busy core (A), a scheduler away too long (B), the application (K) |
 | `round Xus past the Yus budget, lead -Zus, frames fall behind: move sessions off this scheduler` | err, per period | Check 2: the round X is over the round budget Y, or a packet was built Z after its target. Either part can be missing. | put fewer sessions on that scheduler (chapter 10) |
 | `transmitter recalculate warmup N` | notice, per period | N stalls, whatever their outcome, and a few rarer events of the pre-arm. | a few per period are normal; many point to interrupts or ticks on the core (chapter 10) |
 | `transmitter mismatch troffset N` | notice, per period | N frame starts were first visited, or got packet 0 from the builder, 7.8 µs (two packet times) or more after packet 0's target. | the builder or the scheduler ran late; look at check 2 |
 
-The four periodic lines start with `TX_VIDEO_SESSION(m,s):`, or `TX_VIDEO_SESSION(m):` for check 2, where `m` is the scheduler and `s` the session. To see single events, a [USDT](usdt.md) build offers the probe `st20:tx_rl_event(m_idx, s_idx, cause, a0, a1)`.
+The four periodic lines start with `TX_VIDEO_SESSION(m,s):`, or `TX_VIDEO_SESSION(m):` for check 2, where `m` is the scheduler and `s` the session. To see single events, a [USDT](../debugging/usdt.md) build offers the probe `st20:tx_rl_event(m_idx, s_idx, cause, a0, a1)`.
 It fires for every frame in N (cause 0, `a0` ns past the target, `a1` the packet index) and in K (cause 1, `a0` ns late).
 
 ### 10. Configuration
 
 RL pacing works with the defaults of MTL. Three things are always required.
 
-- **The DPDK that MTL builds.** `./script/build_dpdk.sh` builds and installs the DPDK version of `versions.env`, 26.07, with the patches of MTL ([Build Guide](build.md#2-dpdk-build-and-install)). With an older DPDK an RL port gets a TX queue of 512 descriptors, not 2048, and MTL does not free sent packets between frames, so more pad bursts are stalls.
-- **The ice driver with rate-limiter support.** That is version 2.7.6 or later, or an earlier one with the rate-limit patches of MTL ([E800 Series Driver Guide](e800_series_drivers.md)).
+- **The DPDK that MTL builds.** `./script/build_dpdk.sh` builds and installs the DPDK version of `versions.env`, 26.07, with the patches of MTL ([Build Guide](../getting_started/build.md#2-dpdk-build-and-install)). With an older DPDK an RL port gets a TX queue of 512 descriptors, not 2048, and MTL does not free sent packets between frames, so more pad bursts are stalls.
+- **The ice driver with rate-limiter support.** That is version 2.7.6 or later, or an earlier one with the rate-limit patches of MTL ([E800 Series Driver Guide](../getting_started/e800_series_drivers.md)).
 - **Isolated scheduler cores with the timer tick stopped** ([CPU Isolation Guide](isolation.md)). A tick or a preemption inside a pad burst is the usual cause of a stall.
 
 Nothing else needs to be set. The settings below take margin away, and each shows in the log.
@@ -261,7 +261,7 @@ A burst with a gap over 2 µs (`ST_TX_VIDEO_RL_STALL_NS`) is a stall, which is c
 This is why the anchor works: it moves the drain end to 5 × 3.873 − 7.03 = 12.3 µs after its clock read. In the figure the second burst returns 7.3 µs after that clock read, with a 6 µs delay inside its call, and its gap is 7.3 − 7.03 − 12.3 = −12 µs.
 If the queue does run dry between two bursts, the loop sees an idle shaper again, counts it, and caps the next burst at the anchor size as well. At 4320p59.94 the anchor is a full burst of 32 pads and covers only 7 µs (unit-test plan), so a 10 µs tick behind it is still a stall.
 
-![Burst 1 reaches an idle shaper, so its gap is the time of its call; burst 2 lands behind burst 1's pads, so its gap is below 0 whatever the delay](png/rl_pacing/stall_gap.svg)
+![Burst 1 reaches an idle shaper, so its gap is the time of its call; burst 2 lands behind burst 1's pads, so its gap is below 0 whatever the delay](../png/rl_pacing/stall_gap.svg)
 
 ### 15. The limit
 
@@ -302,7 +302,7 @@ Past the limit, keeping would make packet 0 too late, and removing pads could ma
 | drain end (chapter 12) | the clock read before each call | the earliest the shaper can finish the pads, as no doorbell rings before its clock read | sizing the pads, so that packet 0 is never early |
 | `trs_rl_pads_end` | the return of each call: `max(pads_end, t_return − refill) + pads × pad_ns` | the latest the shaper can finish them, as every doorbell has rung by its return | knowing when the shaper is idle again, and check 1 |
 
-![One stalled call gives two ends for its pads: MTL sizes pads from the earliest, and starts over only a full bucket after the latest](png/rl_pacing/two_ends.svg)
+![One stalled call gives two ends for its pads: MTL sizes pads from the earliest, and starts over only a full bucket after the latest](../png/rl_pacing/two_ends.svg)
 
 After a stall past the limit, `video_trs_rl_pre_arm()` queues nothing more and puts the port back into the state in which it waits for its window. Each later visit therefore calls the function again, and it proceeds only when
 

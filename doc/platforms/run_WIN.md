@@ -75,7 +75,7 @@ bcdedit.exe /set testsigning on
 
 1. Prepare configuration files according to the configuration guide
 
-    <https://github.com/OpenVisualCloud/Media-Transport-Library/blob/main/doc/configuration_guide.md>
+    <https://github.com/OpenVisualCloud/Media-Transport-Library/blob/main/doc/getting_started/configuration_guide.md>
 
 1. Run RxTxApp
 

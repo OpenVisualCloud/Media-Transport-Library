@@ -92,7 +92,7 @@ The runtime log summarizes the number of metadata entries and UDW bytes received
 
 - Use `--rx_dump`/`--tx_url` first to confirm that metadata completes the round trip.
 - When `st40_total_pkts` exceeds 1, the payload overflowed the 255-byte UDW buffer; trim the input file or drop the session count on slower links.
-- For end-to-end tracing, follow the ST40P probe examples in `doc/usdt.md` §2.5.6 (they cover `usdt::st40p:*` plus `usdt::sys:log_msg` combinations) instead of keeping scripts here.
+- For end-to-end tracing, follow the ST40P probe examples in `doc/debugging/usdt.md` §2.5.6 (they cover `usdt::st40p:*` plus `usdt::sys:log_msg` combinations) instead of keeping scripts here.
 
 ## 3. Forward pipeline samples
 

@@ -157,7 +157,7 @@ else
 fi
 
 # -------------------- Step 6: kernel socket buffer --------------------
-# Kernel socket RX asks SO_RCVBUF for 4 MiB, capped by rmem_max (doc/kernel_socket.md).
+# Kernel socket RX asks SO_RCVBUF for 4 MiB, capped by rmem_max (doc/experimental/kernel_socket.md).
 log "Step 6/6: net.core.rmem_max >= 4194304"
 if (($(sysctl -n net.core.rmem_max) < 4194304)); then
 	sudo sysctl -q -w net.core.rmem_max=4194304

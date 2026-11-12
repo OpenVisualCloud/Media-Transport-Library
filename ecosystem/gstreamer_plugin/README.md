@@ -19,7 +19,7 @@ sudo apt update
 sudo apt install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-tools gstreamer1.0-libav libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
 ```
 
-> For MTL installation instructions please refer to  [Build Documentation](../../doc/build.md).
+> For MTL installation instructions please refer to  [Build Documentation](../../doc/getting_started/build.md).
 
 ### 1.2. Automated Build
 
@@ -118,7 +118,7 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 | tx-queues     | uint   | Number of TX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
 | rx-queues     | uint   | Number of RX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
 | enable-dma-offload | boolean | Request DMA offload for sessions that support it.                                                | TRUE/FALSE               |
-| dma-dev       | string | DPDK port bound for DMA engines, exported as described in `doc/dma.md`. `enable-dma-offload=true` needs this or `dma-auto`. | N/A                      |
+| dma-dev       | string | DPDK port bound for DMA engines, exported as described in `doc/features/dma.md`. `enable-dma-offload=true` needs this or `dma-auto`. | N/A                      |
 | dma-auto      | boolean | Use each Intel DMA device on vfio-pci on the NUMA node of the ports, without `dma-dev`. Sets `MTL_FLAG_DMA_AUTO`. | TRUE/FALSE               |
 | allow-down-ports | boolean | Allow MTL to initialize even if port links are down. Sets `MTL_FLAG_ALLOW_DOWN_PORTS` which enables `MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION` on every configured port. Sessions still require at least one functioning port to operate. | TRUE/FALSE |
 | payload-type  | uint   | SMPTE ST 2110 payload type.                                                                       | 0 to G_MAXUINT           |
@@ -127,7 +127,7 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 
 When `enable-dma-offload` is set to `true`, every plugin that supports DMA will request
 `ST20P_RX_FLAG_DMA_OFFLOAD` during session creation (currently `mtl_st20p_rx`). Make sure
-the `dma-dev` port is bound and exported as described in `doc/dma.md` before enabling the
+the `dma-dev` port is bound and exported as described in `doc/features/dma.md` before enabling the
 flag. With `dma-auto=true` instead of `dma-dev`, the plugin uses the DMA devices that
 `script/dma_setup.sh bind` binds on the NUMA node of the port.
 

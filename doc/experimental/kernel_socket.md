@@ -31,9 +31,9 @@ Config the `interfaces` item in the JSON file to use the kernel network interfac
     ],
 ```
 
-Also, for complete JSON configurations for ST2110-20 transmission (tx) and reception (rx), please refer to the [kernel tx config](../tests/tools/RxTxApp/script/kernel_socket_json/tx.json) and [kernel rx config](../tests/tools/RxTxApp/script/kernel_socket_json/rx.json) respectively.
+Also, for complete JSON configurations for ST2110-20 transmission (tx) and reception (rx), please refer to the [kernel tx config](../../tests/tools/RxTxApp/script/kernel_socket_json/tx.json) and [kernel rx config](../../tests/tools/RxTxApp/script/kernel_socket_json/rx.json) respectively.
 
-Refer to sections "5. Run the sample application" in the [Linux run guide](run.md) for the detail commands on how to run the sample application.
+Refer to sections "5. Run the sample application" in the [Linux run guide](../getting_started/run.md) for the detail commands on how to run the sample application.
 
 If you want to select kernel socket data path from the API level, please follow below example:
 
@@ -54,7 +54,7 @@ It asks with `SO_RCVBUFFORCE`, which needs `CAP_NET_ADMIN`; a process with `CAP_
 not `CAP_NET_ADMIN` falls back to `SO_RCVBUF`, which `net.core.rmem_max` caps — before the
 doubling, so the ceiling has to be the size of the ask rather than twice it. Raise it
 wherever the datapath runs unprivileged — see
-[net.core.rmem_max](experimental/performance_optimizations.md):
+[net.core.rmem_max](performance_optimizations.md):
 
 ```bash
 sudo sysctl -w net.core.rmem_max=4194304

@@ -190,7 +190,7 @@ of their readability.
 
 Rules the language tools cannot express -- the two-world rule, prefixes, lock
 order, error-return conventions -- are in
-[`.github/instructions/mtl-c-coding.instructions.md`](../.github/instructions/mtl-c-coding.instructions.md)
+[`.github/instructions/mtl-c-coding.instructions.md`](../../.github/instructions/mtl-c-coding.instructions.md)
 and enforced by review, not by a linter.
 
 ### 3.1. Deliberate omissions
@@ -395,11 +395,11 @@ rule, which wants a lowercase `feat:` with scopes -- the opposite of MTL's
 format. Body-line wrapping is left off because a valid `Fixes:` or
 `Signed-off-by` footer legitimately runs past 72 and would false-positive.
 
-Everything the [mtl-commit skill](../.github/skills/mtl-commit/SKILL.md) asks
+Everything the [mtl-commit skill](../../.github/skills/mtl-commit/SKILL.md) asks
 for that a regular expression cannot judge -- imperative mood, "explain why, not how", no
 chat-or-process leakage, body wrapping -- stays a reviewer's call, in the same
 bucket as the two-world rule and the prefixes in
-[`.github/instructions/mtl-c-coding.instructions.md`](../.github/instructions/mtl-c-coding.instructions.md).
+[`.github/instructions/mtl-c-coding.instructions.md`](../../.github/instructions/mtl-c-coding.instructions.md).
 
 ## 8. Diagram colors
 

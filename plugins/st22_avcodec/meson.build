@@ -14,7 +14,7 @@ libpthread_dep = cc.find_library('pthread', required : true)
 avcodec_dep = dependency('libavcodec', required : true)
 avutil_dep = dependency('libavutil', required : true)
 
-# Compiler hardening, see doc/build.md
+# Compiler hardening, see doc/getting_started/build.md
 add_project_arguments('-fstack-protector-strong', '-fstack-clash-protection', '-fcf-protection=full',
   '-Wformat', '-Wformat-security', '-Werror=format-security', '-Wimplicit-fallthrough', language : 'c')
 if get_option('optimization') not in ['0', 'plain'] and get_option('b_sanitize') == 'none' and not ' '.join(get_option('c_args')).contains('_FORTIFY_SOURCE')

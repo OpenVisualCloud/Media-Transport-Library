@@ -40,7 +40,7 @@ ENVIRONMENT:
 	NPROC		Parallel build jobs of gpu_direct (default: the CPU count)
 	CC, CXX, CFLAGS, CXXFLAGS, LDFLAGS
 			The compilers and flags of the Level Zero build of gpu_direct;
-			the script adds the hardening flags of doc/build.md to them
+			the script adds the hardening flags of doc/getting_started/build.md to them
 	MTL_HARDENING	0 builds Level Zero without the hardening flags (default: 1)
 
 EXAMPLES:
@@ -60,7 +60,7 @@ install_gpu_direct() {
 	rm -rf build
 	mkdir build
 	pushd build >/dev/null
-	# The compiler hardening of doc/build.md. The flags given here replace the
+	# The compiler hardening of doc/getting_started/build.md. The flags given here replace the
 	# CFLAGS, CXXFLAGS and LDFLAGS that cmake reads otherwise, so they take them in.
 	# cmake reads no CPPFLAGS.
 	CPPFLAGS='' hardening_flags || exit 1
@@ -96,7 +96,7 @@ main() {
 		esac
 	done
 	if [ "${ID:-}" != ubuntu ]; then
-		log_error "OS not supported: ${ID:-unknown}. Use Ubuntu, or install the packages of doc/build.md."
+		log_error "OS not supported: ${ID:-unknown}. Use Ubuntu, or install the packages of doc/getting_started/build.md."
 		exit 2
 	fi
 

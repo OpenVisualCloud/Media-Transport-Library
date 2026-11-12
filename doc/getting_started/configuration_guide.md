@@ -4,7 +4,7 @@ Media Transport Library sample app can use JSON file to configure sessions. This
 
 ## Examples
 
-Example `tx_1v_1a_1anc.json` file, find more examples config files in [example config directory](../config).
+Example `tx_1v_1a_1anc.json` file, find more examples config files in [example config directory](../../config).
 
 ```json
 {
@@ -96,7 +96,7 @@ List all interfaces that can be used by app
  **rx_queues_cnt (int):** the number of tx queues(optional). Default it will calculated based on the sessions number in this configuration.
 
 > Session group contains a group of sessions which use some common settings, there can be 0 or multiple video/audio/ancillary sessions in one group, and there can be 0 or multiple tx/rx session groups in the following parts in case you have multiple destination IP.
-> See [tx_multi_dest](../config/tx_2v2dest_1a_1anc.json) and [rx_multi_dest](../config/rx_2v2dest_1a_1anc.json) for multiple destination reference.
+> See [tx_multi_dest](../../config/tx_2v2dest_1a_1anc.json) and [rx_multi_dest](../../config/rx_2v2dest_1a_1anc.json) for multiple destination reference.
 
 ### TX Sessions (array of tx session groups)
 

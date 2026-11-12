@@ -49,7 +49,7 @@ WORKDIR "${MTL_REPO}/script"
 RUN ./build_dpdk.sh -f
 
 # Run the unit suite, then build MTL. The gcc of Rocky Linux enables no
-# compiler hardening by default, so check what MTL builds, see doc/build.md.
+# compiler hardening by default, so check what MTL builds, see doc/getting_started/build.md.
 WORKDIR "${MTL_REPO}"
 RUN ./build.sh unit && \
     ./build.sh && \

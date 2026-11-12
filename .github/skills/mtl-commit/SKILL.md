@@ -39,7 +39,7 @@ being explicitly asked to commit.
 ```
 
 - **Type** (capitalised): `Feat`, `Add`, `Fix`, `Refactor`, `Docs`, `Test`,
-  `Perf`, `Build`, `Ci`, `Style`. See [doc/coding_standard.md](../../doc/coding_standard.md).
+  `Perf`, `Build`, `Ci`, `Style`. See [doc/development/coding_standard.md](../../doc/development/coding_standard.md).
 - This project does **not** use Conventional-Commits scopes (`Fix(parser):`)
   or breaking markers (`!`). Flag a breaking API/behaviour change with a
   `BREAKING-CHANGE:` footer instead.

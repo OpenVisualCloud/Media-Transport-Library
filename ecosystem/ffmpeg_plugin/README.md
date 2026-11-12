@@ -124,7 +124,7 @@ ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port
 The st20p input copies the payload with DMA if it has a DMA device. Give the
 devices with `-dma_dev 0000:80:04.0,0000:80:04.1`, or give `-dma_auto 1` to use
 the DMA devices on `vfio-pci` on the NUMA node of the port (see
-[DMA setup](../../doc/dma.md)). Give the same DMA option to each input of one
+[DMA setup](../../doc/features/dma.md)). Give the same DMA option to each input of one
 process.
 
 ### 2.2. St20p output
@@ -310,6 +310,6 @@ Driver: 0: Device: 0: Name: Intel(R) Data Center GPU Flex 170, Type: 1, VendorID
 ```
 
 
-[GPU Documentation](../../doc/gpu.md)
+[GPU Documentation](../../doc/features/gpu.md)
 
 By following these steps, you can effectively build and utilize FFmpeg with the MTL_GPU_DIRECT feature enabled.

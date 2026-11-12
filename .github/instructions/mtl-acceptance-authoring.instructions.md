@@ -11,7 +11,7 @@ pixel format round-trips intact, latency stays bounded). It must not be written
 against one framework's mechanics. Follow this paradigm — [test_fps.py](../../tests/acceptance/tests/single/st20p/test_fps.py)
 is the reference.
 
-Architecture: [doc/acceptance-design.md](../../doc/acceptance-design.md) §3, §5.
+Architecture: [doc/development/acceptance-design.md](../../doc/development/acceptance-design.md) §3, §5.
 Running and debugging: [mtl-acceptance-tests.instructions.md](mtl-acceptance-tests.instructions.md).
 
 ## 1. Parametrize by `application`

@@ -50,7 +50,7 @@ tplist-bpfcc -l /usr/local/lib/x86_64-linux-gnu/libmtl.so -v
 
 ## 2. Tracing
 
-All USDT probes is defined in [mt_usdt_provider.d](../lib/src/mt_usdt_provider.d)
+All USDT probes is defined in [mt_usdt_provider.d](../../lib/src/mt_usdt_provider.d)
 
 ### 2.1. sys tracing
 
