@@ -25,6 +25,8 @@ enum ut_dev_event {
   UT_DEV_EVENT_TIMESYNC_READ,
   UT_DEV_EVENT_PORT_START,
   UT_DEV_EVENT_PORT_STOP,
+  UT_DEV_EVENT_TX_QUEUE_STOP,
+  UT_DEV_EVENT_TX_QUEUE_START,
 };
 
 struct ut_dev_tm_node {
@@ -134,6 +136,8 @@ uint64_t ut_dev_tx_queue_bps(const ut_dev_ctx* ctx, int queue);
 
 int ut_dev_event_count(const ut_dev_ctx* ctx);
 enum ut_dev_event ut_dev_event_at(const ut_dev_ctx* ctx, int index);
+/** The queue of a TX queue stop or start event. */
+uint16_t ut_dev_event_queue_at(const ut_dev_ctx* ctx, int index);
 bool ut_dev_port_started(const ut_dev_ctx* ctx);
 bool ut_dev_timesync_feature(const ut_dev_ctx* ctx);
 

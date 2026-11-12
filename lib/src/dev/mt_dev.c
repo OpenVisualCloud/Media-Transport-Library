@@ -843,6 +843,18 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
     info("%s(%d), q %d link to shaper id %d(%" PRIu64 ")\n", __func__, port, queue,
          shaper->shaper_profile_id, shaper->rl_bps);
   }
+  if (inf->drv_info.drv_type == MT_DRV_ICE && inf->tx_rl_committed &&
+      (inf->status & MT_IF_STAT_PORT_STARTED)) {
+    /* an ice commit restarts the port, an idle queue restart applies its own tm node */
+    ret = rte_eth_dev_tx_queue_stop(port_id, queue);
+    if (ret >= 0) ret = rte_eth_dev_tx_queue_start(port_id, queue);
+    if (ret < 0) {
+      err("%s(%d), q %d restart error %d\n", __func__, port, queue, ret);
+      return ret;
+    }
+    tx_queue->bps = bps;
+    return 0;
+  }
   rte_atomic32_set(&inf->resetting, true);
   mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
   ret = rte_tm_hierarchy_commit(port_id, 1, &error);
@@ -853,6 +865,7 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
         mt_string_safe(error.message));
     return ret;
   }
+  inf->tx_rl_committed = true;
 
   tx_queue->bps = bps;
 

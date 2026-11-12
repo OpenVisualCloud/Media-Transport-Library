@@ -744,6 +744,7 @@ struct mt_interface {
   /* tx rl info */
   struct mt_rl_shaper tx_rl_shapers[MT_MAX_RL_ITEMS];
   bool tx_rl_root_active;
+  bool tx_rl_committed;
   /* video rl pacing train result */
   struct mt_pacing_train_result pt_results[MT_MAX_RL_ITEMS];
 
