@@ -151,6 +151,11 @@ void ut20_set_port_down(ut20_test_ctx* ctx, enum mtl_session_port port, bool dow
  * interlaced. Returns rv_tp_init()'s status; read the per-frame verdict with the
  * two ut20_last_tp_* accessors below. */
 int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx, bool interlaced);
+/* Start an asynchronous pcapng dump of max_pkts packets on port P, as
+ * st20_rx_pcapng_dump() does; *name gets the file it created. Returns rv_start_pcap()'s
+ * status. ut20_stop_pcap() closes it. */
+int ut20_start_pcap(ut20_test_ctx* ctx, uint32_t max_pkts, char* name, size_t name_len);
+void ut20_stop_pcap(ut20_test_ctx* ctx);
 
 void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port);
 

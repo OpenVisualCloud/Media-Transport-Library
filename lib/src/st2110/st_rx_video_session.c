@@ -1478,8 +1478,9 @@ static int rv_start_pcap(struct st_rx_video_session_impl* s, enum mtl_session_po
     err("%s(%d,%d), pcap dump already started\n", __func__, idx, s_port);
     return -EIO;
   }
-  snprintf(pcap->file_name, sizeof(pcap->file_name), "st22rx_s%dp%d_%u_XXXXXX.pcapng",
-           idx, s_port, max_dump_packets);
+  /* the count is in the log, not the name: six digits overflow MTL_PCAP_FILE_MAX_LEN */
+  snprintf(pcap->file_name, sizeof(pcap->file_name), "st22rx_s%dp%d_XXXXXX.pcapng", idx,
+           s_port);
 
   int fd = mt_mkstemps(pcap->file_name, strlen(".pcapng"));
   if (fd < 0) {
