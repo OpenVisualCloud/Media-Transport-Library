@@ -183,7 +183,7 @@ int main(int argc, char** argv) {
   bool equal = st_frame_fmt_equal_transport(ctx.output_fmt, ctx.fmt);
 
   // create and register rx session
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     app[i] = malloc(sizeof(struct rx_st20p_sample_ctx));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
@@ -276,7 +276,7 @@ int main(int argc, char** argv) {
   }
 
   // stop app thread
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     app[i]->stop = true;
     st_pthread_mutex_lock(&app[i]->wake_mutex);
     st_pthread_cond_signal(&app[i]->wake_cond);
@@ -288,7 +288,7 @@ int main(int argc, char** argv) {
   }
 
   // check result
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     if (app[i]->fb_recv <= 0) {
       err("%s(%d), error, no received frames %d\n", __func__, i, app[i]->fb_recv);
       ret = -EIO;
@@ -296,7 +296,7 @@ int main(int argc, char** argv) {
   }
 
 error:
-  for (int i = 0; i < session_num; i++) {
+  for (uint32_t i = 0; i < session_num; i++) {
     if (app[i]) {
       if (app[i]->handle) st20p_rx_free(app[i]->handle);
       if (ctx.st && app[i]->dma_mem) mtl_dma_mem_free(ctx.st, app[i]->dma_mem);

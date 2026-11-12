@@ -21,6 +21,7 @@ static void* ut_create_session(enum ut_plugin_kind kind, void* session_p) {
 static st22_encode_priv ut_encoder_create_session(void* priv,
                                                   st22p_encode_session session_p,
                                                   struct st22_encoder_create_req* req) {
+  (void)priv;
   req->resp_flag = UT_PLUGIN_RESP_FLAG;
   return ut_create_session(UT_PLUGIN_ENCODER, session_p);
 }
@@ -28,12 +29,15 @@ static st22_encode_priv ut_encoder_create_session(void* priv,
 static st22_decode_priv ut_decoder_create_session(void* priv,
                                                   st22p_decode_session session_p,
                                                   struct st22_decoder_create_req* req) {
+  (void)priv;
   req->resp_flag = UT_PLUGIN_RESP_FLAG;
   return ut_create_session(UT_PLUGIN_DECODER, session_p);
 }
 
 static st20_convert_priv ut_converter_create_session(
     void* priv, st20p_convert_session session_p, struct st20_converter_create_req* req) {
+  (void)priv;
+  (void)req;
   return ut_create_session(UT_PLUGIN_CONVERTER, session_p);
 }
 

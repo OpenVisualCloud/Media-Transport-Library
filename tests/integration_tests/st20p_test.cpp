@@ -191,15 +191,18 @@ static void plugin_register_test(const char* so_name, bool expect_succ) {
   int ret = st_plugin_register(st, so_name);
   int new_nb = st_get_plugins_nb(st);
 
+  EXPECT_EQ(ret >= 0, expect_succ);
   if (ret < 0) {
     EXPECT_EQ(pre_nb, new_nb);
   } else {
     EXPECT_EQ(pre_nb + 1, new_nb);
+    EXPECT_GE(st_plugin_unregister(st, so_name), 0);
   }
 }
 
+/* Via KahawaiTest's DT_RPATH (build.sh prefix) or the loader's search (/usr/local) */
 TEST(St20p, plugin_register_single) {
-  plugin_register_test("/usr/local/lib/x86_64-linux-gnu/libst_plugin_sample.so", true);
+  plugin_register_test("libst_plugin_convert_sample.so", true);
 }
 TEST(St20p, plugin_register_fail) {
   plugin_register_test("/usr/local/lib/x86_64-linux-gnu/libst_plugin_sample_fail.so",
@@ -667,7 +670,7 @@ static void test_internal_st20p_rx_frame_thread(void* args) {
 }
 
 static int test_st20p_rx_query_ext_frame(void* priv, st_ext_frame* ext_frame,
-                                         struct st20_rx_frame_meta* meta) {
+                                         struct st20_rx_frame_meta* /*meta*/) {
   tests_context* s = (tests_context*)priv;
   int i = s->ext_idx;
 

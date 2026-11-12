@@ -39,7 +39,7 @@ struct StallCase {
   uint16_t nb_tx_desc[2];
   int hung_leg;
   bool lazy; /* drain on a ring that frees on reuse, then hang */
-  uint32_t linesize_pad;
+  uint32_t linesize_pad = 0;
 };
 
 class St20TxPoolStallTest : public ::testing::TestWithParam<StallCase> {
@@ -197,7 +197,7 @@ class St20TxPoolSizeTest : public ::testing::Test {
     EXPECT_EQ(ut_txv_pipe_teardown(ctx_), 0);
     ut_txv_destroy(ctx_);
   }
-  void Setup(uint16_t nb_p, uint16_t nb_r, uint32_t linesize_pad = 0) {
+  void SetUpPipe(uint16_t nb_p, uint16_t nb_r, uint32_t linesize_pad = 0) {
     ut_txv_pipe_case c = {};
     c.width = 1920;
     c.height = 1080;
@@ -220,7 +220,7 @@ TEST_F(St20TxPoolSizeTest, RedundantChainPoolCoversTheDeeperLeg) {
       ut_txv_destroy(ctx_);
       ctx_ = ut_txv_create();
     }
-    Setup(nb.first, nb.second);
+    SetUpPipe(nb.first, nb.second);
     EXPECT_EQ(ut_txv_pipe_pool_size(ctx_, UT_TXV_PIPE_CHAIN),
               std::max(ut_txv_pipe_pool_size(ctx_, MTL_SESSION_PORT_P),
                        ut_txv_pipe_pool_size(ctx_, MTL_SESSION_PORT_R)));
@@ -230,14 +230,14 @@ TEST_F(St20TxPoolSizeTest, RedundantChainPoolCoversTheDeeperLeg) {
 /* the builder ring and bulk, the transmitter's bulk, 1024 chained pkts and the cache
  * slack: 1732 */
 TEST_F(St20TxPoolSizeTest, A1080pSessionAt2048DescriptorsGets2047) {
-  Setup(2048, 0);
+  SetUpPipe(2048, 0);
   EXPECT_EQ(ut_txv_pipe_pool_size(ctx_, MTL_SESSION_PORT_P), 2047u);
   EXPECT_EQ(ut_txv_pipe_pool_size(ctx_, UT_TXV_PIPE_CHAIN), 2047u);
 }
 
 /* not deep, main's: nb_tx_desc and the builder ring, 1024 */
 TEST_F(St20TxPoolSizeTest, A1080pSessionAt512DescriptorsGets2047) {
-  Setup(512, 0);
+  SetUpPipe(512, 0);
   EXPECT_EQ(ut_txv_pipe_mempool_n(ctx_, MTL_SESSION_PORT_P), 1024u);
   EXPECT_EQ(ut_txv_pipe_pool_size(ctx_, MTL_SESSION_PORT_P), 2047u);
   EXPECT_EQ(ut_txv_pipe_pool_size(ctx_, UT_TXV_PIPE_CHAIN), 2047u);
@@ -261,7 +261,7 @@ TEST_F(St20TxPoolSizeTest, A1080pSessionOnAUserRingOf2048GetsMainsPools) {
 
 /* main's chain pool is the primary leg's alone */
 TEST_F(St20TxPoolSizeTest, ARedundantSessionOffDeepPortsGetsThePrimaryChainPool) {
-  Setup(512, 1536);
+  SetUpPipe(512, 1536);
   EXPECT_EQ(ut_txv_pipe_mempool_n(ctx_, MTL_SESSION_PORT_R), 1536u + 512);
   EXPECT_EQ(ut_txv_pipe_pool_size(ctx_, MTL_SESSION_PORT_R), 4095u);
   EXPECT_EQ(ut_txv_pipe_pool_size(ctx_, UT_TXV_PIPE_CHAIN), 2047u);
@@ -269,7 +269,7 @@ TEST_F(St20TxPoolSizeTest, ARedundantSessionOffDeepPortsGetsThePrimaryChainPool)
 
 /* an RL transmitter holds a bulk of 4 more on a deep port; main's count has no bulks */
 TEST_F(St20TxPoolSizeTest, AnRlLegHoldsATransmitterBulkMoreOnADeepPort) {
-  Setup(2048, 512);
+  SetUpPipe(2048, 512);
   EXPECT_EQ(ut_txv_pipe_rl_mempool_n(ctx_, MTL_SESSION_PORT_P),
             ut_txv_pipe_mempool_n(ctx_, MTL_SESSION_PORT_P) + 4);
   EXPECT_EQ(ut_txv_pipe_rl_mempool_n(ctx_, MTL_SESSION_PORT_R),
@@ -280,7 +280,7 @@ TEST_F(St20TxPoolSizeTest, AnRlLegHoldsATransmitterBulkMoreOnADeepPort) {
  * ring, 2560, where that is more than the deep count and a second slack */
 TEST_F(St20TxPoolSizeTest, AMigratingSessionOnADeepPortGetsMainsCount) {
   ut_txv_set_tx_video_migrate(ctx_, true);
-  Setup(2048, 0);
+  SetUpPipe(2048, 0);
   EXPECT_EQ(ut_txv_pipe_mempool_n(ctx_, MTL_SESSION_PORT_P), 2048u + 512);
 }
 
@@ -342,12 +342,12 @@ TEST_F(St20TxPoolSizeTest, A1080pRtcpSessionAt2048DescriptorsGets4095) {
 /* a padded frame copies its line-crossing pkts from a pool of its own with its own
  * cache */
 TEST_F(St20TxPoolSizeTest, APadded1080pSessionAt512DescriptorsGets511Copies) {
-  Setup(512, 0, 64);
+  SetUpPipe(512, 0, 64);
   EXPECT_EQ(ut_txv_pipe_pool_size(ctx_, UT_TXV_PIPE_COPY), 511u);
 }
 
 TEST_F(St20TxPoolSizeTest, APadded1080pSessionAt2048DescriptorsGets1023Copies) {
-  Setup(2048, 0, 64);
+  SetUpPipe(2048, 0, 64);
   EXPECT_EQ(ut_txv_pipe_pool_size(ctx_, UT_TXV_PIPE_COPY), 1023u);
 }
 

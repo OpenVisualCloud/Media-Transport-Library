@@ -288,6 +288,7 @@ base_build:
   - 'tools/ebpf/**'
   - 'tools/readpcap/**'
   - 'tools/sch_smi_emulate/**'
+  - 'tools/set_tai_offset/**'
 
 # docker_build.yml, ubuntu-docker-build. The build context is the repository
 # root less .dockerignore, which drops .github/ except check-hardening.sh, so the

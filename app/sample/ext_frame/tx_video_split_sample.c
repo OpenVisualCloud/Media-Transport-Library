@@ -157,7 +157,7 @@ int main(int argc, char** argv) {
         ret = -EIO;
         goto error;
       }
-      if (st.st_size < (app[i]->fb_size * app[i]->fb_cnt)) {
+      if ((size_t)st.st_size < (app[i]->fb_size * app[i]->fb_cnt)) {
         err("%s, %s file size too small %" PRIu64 "\n", __func__, ctx.tx_url, st.st_size);
         close(fd);
         ret = -EIO;

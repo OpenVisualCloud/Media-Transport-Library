@@ -116,7 +116,7 @@ loop_entry:
         uint8_t* dst = frame->addr[0] + rx->fb_offset;
         uint32_t src_linesize = rx_frame->linesize[0];
         uint32_t dst_linesize = frame->linesize[0];
-        for (int line = 0; line < rx_frame->height; line++) {
+        for (uint32_t line = 0; line < rx_frame->height; line++) {
           mtl_memcpy(dst, src, src_linesize);
           src += src_linesize;
           dst += dst_linesize;
