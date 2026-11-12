@@ -27,10 +27,14 @@ void rv_tp_on_packet(struct st_rx_video_session_impl* s, enum mtl_session_port s
     slot->first_pkt_time = first_pkt_time;
     slot->meta.fpt = first_pkt_time - epoch_tmstamp;
 
-    uint64_t tmstamp64 = epochs * s->frame_time_sampling;
+    /* keep the epoch's fraction of a tick (1501.5 per frame at 59.94 fps): every other
+     * epoch would otherwise start half a tick early and its latency read that low */
+    double epoch_ticks = (double)epochs * s->frame_time_sampling;
+    uint64_t tmstamp64 = (uint64_t)epoch_ticks;
     uint32_t tmstamp32 = tmstamp64;
     double diff_rtp_ts = (double)rtp_tmstamp - tmstamp32;
-    double diff_rtp_ts_ns = diff_rtp_ts * s->frame_time / s->frame_time_sampling;
+    double diff_rtp_ts_ns = (diff_rtp_ts - (epoch_ticks - (double)tmstamp64)) *
+                            s->frame_time / s->frame_time_sampling;
     slot->meta.latency = slot->meta.fpt - diff_rtp_ts_ns;
     slot->meta.rtp_offset = diff_rtp_ts;
     if (tp->pre_rtp_tmstamp[s_port]) {

@@ -151,6 +151,9 @@ void ut20_set_port_down(ut20_test_ctx* ctx, enum mtl_session_port port, bool dow
  * interlaced. Returns rv_tp_init()'s status; read the per-frame verdict with the
  * two ut20_last_tp_* accessors below. */
 int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx, bool interlaced);
+/* Run the session at fps, with frame time and ticks per frame as production derives
+ * them; call before ut20_ctx_enable_timing_parser(). */
+int ut20_ctx_set_fps(ut20_test_ctx* ctx, enum st_fps fps);
 
 void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port);
 
