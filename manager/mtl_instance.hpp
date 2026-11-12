@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <memory>
 #include <unordered_map>
@@ -50,12 +51,12 @@ class mtl_instance {
   void handle_message_if_del_flow(mtl_if_message_t* if_msg);
 
   int send_response(int response, mtl_message_type_t type = MTL_MSG_TYPE_RESPONSE) {
-    mtl_message_t msg;
+    mtl_message_t msg = {};
     msg.header.magic = htonl(MTL_MANAGER_MAGIC);
     msg.header.type = (mtl_message_type_t)htonl(type);
     msg.header.body_len = htonl(sizeof(mtl_response_message_t));
     msg.body.response_msg.response = htonl(response);
-    return send(conn_fd, &msg, sizeof(mtl_message_t), 0);
+    return send(conn_fd, &msg, sizeof(mtl_message_t), MSG_NOSIGNAL);
   }
   std::shared_ptr<mtl_interface> get_interface(const unsigned int ifindex);
 
@@ -193,6 +194,12 @@ void mtl_instance::handle_message_register(mtl_register_message_t* register_msg)
   uid = ntohl(register_msg->uid);
   hostname = std::string(register_msg->hostname, 64);
   uint16_t num_if = ntohs(register_msg->num_if);
+  if (num_if > sizeof(register_msg->ifindex) / sizeof(register_msg->ifindex[0])) {
+    log(log_level::ERROR, "Invalid interface count " + std::to_string(num_if));
+    if (send_response(-EINVAL) < 0)
+      log(log_level::ERROR, "Failed to send response for register");
+    return;
+  }
   for (int i = 0; i < num_if; i++) {
     unsigned int ifindex = ntohl(register_msg->ifindex[i]);
     auto interface = get_interface(ifindex);
@@ -266,7 +273,8 @@ void mtl_instance::handle_message_if_xsk_map_fd(mtl_if_message_t* if_msg) {
   cmsg->cmsg_len = CMSG_LEN(sizeof(int));
   *((int*)CMSG_DATA(cmsg)) = fd;
 
-  if (sendmsg(conn_fd, &msg, 0) < 0) log(log_level::ERROR, "Failed to send xsk map fd");
+  if (sendmsg(conn_fd, &msg, MSG_NOSIGNAL) < 0)
+    log(log_level::ERROR, "Failed to send xsk map fd");
 }
 
 void mtl_instance::handle_message_udp_dp_filter(

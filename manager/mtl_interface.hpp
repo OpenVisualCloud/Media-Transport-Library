@@ -78,14 +78,14 @@ mtl_interface::mtl_interface(unsigned int ifindex)
   xsks_map_fd = -1;
   udp4_dp_filter_fd = -1;
   xdp_mode = XDP_MODE_UNSPEC;
+  if (parse_combined_info() < 0)
+    throw std::runtime_error("Failed to parse combined info.");
   if (load_xdp() < 0) throw std::runtime_error("Failed to load XDP program.");
 #else
   throw std::runtime_error("No XDP support for this build");
 #endif
-  if (parse_combined_info() < 0)
-    throw std::runtime_error("Failed to parse combined info.");
   queues.resize(combined_count, false);
-  queues[0] = true; /* Reserve queue 0 for system. */
+  if (!queues.empty()) queues[0] = true; /* Reserve queue 0 for system. */
 
   log(log_level::INFO, "Added interface.");
 }
@@ -426,8 +426,9 @@ int mtl_interface::load_xdp() {
       return -1;
     }
     xdp_mode = XDP_MODE_SKB;
+  } else {
+    xdp_mode = XDP_MODE_NATIVE;
   }
-  xdp_mode = XDP_MODE_NATIVE;
 
   if (xsk_setup_xdp_prog(ifindex, &xsks_map_fd) < 0 || xsks_map_fd < 0) {
     log(log_level::ERROR, "Failed to setup AF_XDP socket.");
