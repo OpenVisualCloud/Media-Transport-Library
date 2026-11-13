@@ -1,5 +1,6 @@
 # Changelog
 
+* iavf: after a VF reset by the PF, which the iavf PMD of DPDK 26.07 recovers by itself, MTL creates its RX flows again, instead of every session of the port no longer receiving and the exit crashing in `iavf_flow_destroy()`
 * dev: with `MTL_FLAG_RX_MONO_POOL` (RxTxApp `--mono_pool` or `--rx_mono_pool`) each RX queue polls its own queue; since 22.12 every queue polled queue 0 of DPDK port 0, so the sessions' own queues overflowed and sessions on several schedulers shared one queue
 * pcapng dumps: a dump on a port without NIC RX timestamps warns that its packets carry their RX burst time, no basis for ST 2110-21 timing; RxTxApp `--pcapng_dump` now sets `MTL_FLAG_ENABLE_HW_TIMESTAMP`, as `--rx_timing_parser` does
 * ixgbe (E610): the built-in PTP syncs: MTL enables timesync after the port start, and DPDK 26.07.95_mtl_ sets the IEEE1588 TX timestamp bit with no `RTE_LIBRTE_IEEE1588` build option, so vector RX stays on

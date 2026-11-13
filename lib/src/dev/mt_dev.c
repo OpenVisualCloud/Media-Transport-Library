@@ -2348,6 +2348,7 @@ int mt_dev_create(struct mtl_main_impl* impl) {
       err("%s(%d), dev_start_port fail %d\n", __func__, i, ret);
       goto err_exit;
     }
+    if (inf->drv_info.drv_type == MT_DRV_IAVF) mt_flow_reset_cb_register(impl, i);
 
     /*
      * Post-start timesync enable for PFs that do not enable before start (and
@@ -2450,6 +2451,7 @@ int mt_dev_free(struct mtl_main_impl* impl) {
       mt_rte_free(inf->dev_stats_sw);
       inf->dev_stats_sw = NULL;
     }
+    mt_flow_reset_cb_unregister(impl, i);
     dev_stop_port(inf);
   }
 
