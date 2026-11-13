@@ -73,6 +73,7 @@ unit_sources = [
   'dev/mt_dev_set_tx_bps_test.cpp',
   'dev/mt_flow_harness.c',
   'dev/mt_flow_retry_test.cpp',
+  'dev/mt_flow_iavf_reset_test.cpp',
   'datapath/mt_dp_socket_harness.c',
   'datapath/mt_dp_socket_tx_test.cpp',
   'datapath/mt_dp_socket_rx_test.cpp',
