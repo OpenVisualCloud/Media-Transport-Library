@@ -1995,12 +1995,11 @@ int st20p_tx_get_pacing_params(st20p_tx_handle handle, double* tr_offset_ns,
                                double* trs_ns, uint32_t* vrx_pkts);
 
 /**
- * Retrieve the general statistics(I/O) for one tx st2110-20(pipeline) session.
+ * Retrieve the general statistics(I/O) for one tx st2110-20(pipeline) session: the
+ * counts since the last st20p_tx_reset_session_stats(), or since create.
  *
- * @note Thread-safe. Takes the per-session spinlock, then waits until the session's
- * tasklets are done with it, at most for its scheduler's pass in flight; the session
- * skips up to two passes, so do not call it in a tight loop. In this session's own
- * callbacks it may return -EBUSY.
+ * @note Thread-safe, lock-free and callable from any callback, as
+ * st20_tx_get_session_stats(): it never waits, and the fields are not one instant.
  * @param handle
  *   The handle to the tx st2110-20(pipeline) session.
  * @param stats
@@ -2014,10 +2013,9 @@ int st20p_tx_get_session_stats(st20p_tx_handle handle, struct st20_tx_user_stats
 /**
  * Reset the general statistics(I/O) for one tx st2110-20(pipeline) session.
  *
- * @note Thread-safe. Takes the per-session spinlock, then waits until the session's
- * tasklets are done with it, at most for its scheduler's pass in flight; the session
- * skips up to two passes, so do not call it in a tight loop. In this session's own
- * callbacks it may return -EBUSY.
+ * @note Thread-safe and callable from any callback, as st20_tx_reset_session_stats(),
+ * which may briefly wait for a concurrent reset: the transport counters get a new
+ * baseline, the pipeline frame counters are zeroed.
  * @param handle
  *   The handle to the tx st2110-20(pipeline) session.
  * @return

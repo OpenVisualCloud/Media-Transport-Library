@@ -478,14 +478,14 @@ is on in `mgr->dp_slot` (a plain store), checks `rte_spinlock_is_locked()` (an a
 and skips the session while it is held; there is no put, and `tx_video_session_dp_done()`
 publishes -1 at the end of the loop. Every control-plane
 access (`tx_video_session_get()`, `_get_timeout()`, `_get_empty()`, and
-`tv_api_lock()` for stats get/reset and `update_destination`) locks, then calls
+`tv_api_lock()` for `update_destination`) locks, then calls
 `mt_sch_quiescent_wait()` on the manager's scheduler (`mt_sch_instance(mgr->parent, mgr->idx)`).
 `st_tx_video_session_migrate()` re-points `s->mgr` / `s->idx` before the old slot is released,
 so `tv_api_lock()` that finds the old slot no longer holding `s` retries once at the new one;
 -EIO only if neither try found `s` where it read it (migrations racing both, e.g. across a
 stall of one admin period):
 - Writer: `t = fetch_add(qs_token) + 1`, a seq_cst fence, then poll until `qs_seen >= t`: `MT_SPIN_POLLS_BEFORE_SLEEP` (1000) `rte_pause()` polls, then 1 µs sleeps, since an unpinned `MTL_FLAG_TASKLET_THREAD` scheduler may need the writer's CPU; `mt_spinlock_lock_timeout()` backs off the same way. Returns at once on the scheduler's own thread
-- A pass still running after those polls may be blocked on the writer (a callback on an app mutex it holds, a callback querying a session it holds, `tx_mutex` of a shared queue).
+- A pass still running after those polls may be blocked on the writer (a callback on an app mutex it holds, an internal `tx_video_session_get()` from a callback path on a session it holds, `tx_mutex` of a shared queue).
   The writer then issues one `membarrier(MEMBARRIER_CMD_PRIVATE_EXPEDITED)` and also returns once `dp_slot.idx` is not its slot: so it waits only while the tasklets are in that session, as it did for the per-session lock they used to hold
 - Why it is sound: the IPI makes the tasklet's earlier slot stores visible to the writer and the writer's lock visible to the tasklet's later lock loads (the asymmetric fence of liburcu's urcu-memb and folly; the light side is `atomic_signal_fence()`). If the writer saw the slot change after it was its own, a second membarrier drains the tasklet's WC doorbell stores, as a pass end does
 - `mt_sch_dp_slot_init()` registers the process once. Without membarrier(2) (kernel < 4.14, a seccomp filter) `dp_slot.fence` makes each slot store a full fence instead; Windows uses `FlushProcessWriteBuffers()`
@@ -496,11 +496,16 @@ stall of one admin period):
   On runtime registration (`mtl_sch_register_tasklet()` on a started scheduler) it runs on the registering thread with the scheduler online, but the manager has no sessions yet (`max_idx == 0`), so it takes no lock and does not wait
 - Loading the writer's token, not counting passes, is what makes it sound: the next pass's loads cannot pass that acquire load. Against going online it is the store-buffering pattern: writer stores the lock, fence, loads `qs_seen`; scheduler stores `qs_seen`, fence, loads the lock
 - A get holds the lock until no pass that could have missed it runs, so the tasklets can skip that session for up to about two passes: the rest of the pass in flight, the next one, until the put. Admin CPU-busy does this to every TX video session every 6 s, the stats dump every 10 s
+- Stats get/reset take no session lock and do not wait for the tasklets. `st20_tx_get_session_stats()` is lock-free: per field it loads `stat_api_base` acquire, then the `port_user_stats` counter relaxed, and returns the difference.
+  The base is a value the counter had, so the counter it then reads is no smaller (read-read coherence) and the difference never underflows; a get racing a reset may mix fields counted from before and after it.
+  A reset release-stores the current values into the base instead of zeroing, so the counters stay monotonic and the stats dump's `stat_snapshot` deltas run across a reset. `stat_api_lock` only serializes resets, so the base never goes back: the tasklets' own code never takes it, a callback calling reset may. `s` does not move on migration, so neither call needs the slot.
+  A formal C11 data race (plain `++` / `+=` against atomic loads), relied on for aligned 64-bit counters on 64-bit targets (`RTE_BUILD_BUG_ON`s at the walk). Writer rule: after `tv_attach()` only `++` / `+=`, by the session's scheduler thread; no memset, struct assign or constant stores.
+  Why: a stats reader in a loop re-locked before each pass reached its session and kept it off every pass (`St20TxSessionLockStarvation*`)
 - Callbacks run on a scheduler thread, mid-pass, and a writer may hold a session lock while it waits for the tasklets to leave that session.
-  Stats get/reset work from any callback: on the session's own scheduler thread `tv_api_lock()` skips the wait, and only trylocks (-EBUSY) when the tasklets are on that very slot, i.e. from the session's own callback, where a holder waits for that callback to return
+  Stats get/reset work from any callback, the session's own included, as they take no session lock
 - Everything else is not for callbacks: `*_tx_free()` and `st20p/st22p_tx_free()` return -EBUSY on the session's own scheduler thread (the calling tasklet may still use the session, and the pipeline would free a ctx the transport still calls back into); `update_destination` too, as `tv_init_hdr()` may wait for ARP (`arp_timeout_ms`, 60 s by default) and stall the scheduler;
   `*_tx_create()` takes `tx_video_mgr_mutex`, which attach/detach hold across an untimed wait
-- The untimed wait lasts as long as the tasklets are in that one session, as the old lock did: two callbacks on different schedulers that each query the session of the other callback deadlock, as they did under the lock
+- The untimed wait lasts as long as the tasklets are in that one session, as the old lock did: two callback paths on different schedulers that each take the other's session with an internal `tx_video_session_get()` deadlock, as they did under the lock
 - Why: the per-session `trylock`/`unlock` is a locked `xchg` each, and the unlock after `rte_eth_tx_burst()` waits for the descriptor stores and the doorbell; it was ~19% of a saturated scheduler core. An unprotected prototype that dropped both locks went from 6.98 to 7.89 Mpps (+13%); this protocol, 28 1080p59.94 sessions at full clock:
   5.60 to 6.45 Mpps (+15%, the aliasing still present; Xeon 8480+, E810 VF, RL pacing)
 

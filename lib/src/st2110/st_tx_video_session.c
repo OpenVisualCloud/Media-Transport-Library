@@ -4012,6 +4012,8 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
 
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
   memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
+  memset(&s->stat_api_base, 0, sizeof(s->stat_api_base));
+  rte_spinlock_init(&s->stat_api_lock);
   s->stat_user_busy_first = true;
   s->stat_last_time = mt_get_monotonic_time();
   mt_stat_u64_init(&s->stat_time);
@@ -4425,9 +4427,8 @@ static int tv_update_dst(struct mtl_main_impl* impl, struct st_tx_video_session_
   return 0;
 }
 
-/* For the public APIs on s: 0 with its lock held and its slot in *mgr / *idx; -EIO if
- * neither try found s in the slot it read, i.e. migrations raced both. In a callback, on
- * the scheduler's own thread, -EBUSY rather than spin on the lock. */
+/* 0 with the lock of s held and its slot in *mgr / *idx; -EIO if neither try found s in
+ * the slot it read, i.e. migrations raced both. */
 static int tv_api_lock(struct st_tx_video_session_impl* s,
                        struct st_tx_video_sessions_mgr** mgr, int* idx) {
   /* a migration moves s before it releases the old slot, so one retry finds it */
@@ -4435,13 +4436,7 @@ static int tv_api_lock(struct st_tx_video_session_impl* s,
     struct st_tx_video_sessions_mgr* m = s->mgr;
     int i = s->idx;
 
-    /* in the session's own callback a holder waits for that callback, so no spinning */
-    if (mt_sch_on_own_thread(mt_sch_instance(m->parent, m->idx)) &&
-        atomic_load_explicit(&m->dp_slot.idx, memory_order_relaxed) == i) {
-      if (!rte_spinlock_trylock(&m->mutex[i])) return -EBUSY;
-    } else if (!tx_video_session_get(m, i)) {
-      continue;
-    }
+    if (!tx_video_session_get(m, i)) continue;
     if (m->sessions[i] == s) {
       *mgr = m;
       *idx = i;
@@ -5388,6 +5383,8 @@ int st20_tx_get_pacing_params(st20_tx_handle handle, double* tr_offset_ns, doubl
   return 0;
 }
 
+#define TV_USER_STATS_CNT (29) /* the uint64_t fields of struct st20_tx_user_stats */
+
 int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* stats) {
   struct st_tx_video_session_handle_impl* s_impl = handle;
 
@@ -5398,16 +5395,19 @@ int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* 
 
   MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, -EINVAL);
   struct st_tx_video_session_impl* s = s_impl->impl;
-  struct st_tx_video_sessions_mgr* mgr;
-  int idx;
+  const uint64_t* cur = (const uint64_t*)&s->port_user_stats;
+  const uint64_t* base = (const uint64_t*)&s->stat_api_base;
+  uint64_t* out = (uint64_t*)stats;
 
-  int ret = tv_api_lock(s, &mgr, &idx);
-  if (!ret) {
-    memcpy(stats, &s->port_user_stats, sizeof(*stats));
-    tx_video_session_put(mgr, idx);
+  RTE_BUILD_BUG_ON(sizeof(*stats) != TV_USER_STATS_CNT * sizeof(uint64_t));
+  RTE_BUILD_BUG_ON(sizeof(void*) != 8);
+  /* base[i] is a value cur[i] had, so cur[i] loaded after its acquire is no smaller */
+  for (size_t i = 0; i < TV_USER_STATS_CNT; i++) {
+    uint64_t b = __atomic_load_n(&base[i], __ATOMIC_ACQUIRE);
+    out[i] = __atomic_load_n(&cur[i], __ATOMIC_RELAXED) - b;
   }
   MT_HANDLE_RELEASE(s_impl);
-  return ret;
+  return 0;
 }
 
 int st20_tx_reset_session_stats(st20_tx_handle handle) {
@@ -5420,17 +5420,16 @@ int st20_tx_reset_session_stats(st20_tx_handle handle) {
 
   MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, -EINVAL);
   struct st_tx_video_session_impl* s = s_impl->impl;
-  struct st_tx_video_sessions_mgr* mgr;
-  int idx;
+  const uint64_t* cur = (const uint64_t*)&s->port_user_stats;
+  uint64_t* base = (uint64_t*)&s->stat_api_base;
 
-  int ret = tv_api_lock(s, &mgr, &idx);
-  if (!ret) {
-    memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
-    memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
-    tx_video_session_put(mgr, idx);
-  }
+  rte_spinlock_lock(&s->stat_api_lock);
+  for (size_t i = 0; i < TV_USER_STATS_CNT; i++)
+    __atomic_store_n(&base[i], __atomic_load_n(&cur[i], __ATOMIC_RELAXED),
+                     __ATOMIC_RELEASE);
+  rte_spinlock_unlock(&s->stat_api_lock);
   MT_HANDLE_RELEASE(s_impl);
-  return ret;
+  return 0;
 }
 
 int st20_tx_free(st20_tx_handle handle) {

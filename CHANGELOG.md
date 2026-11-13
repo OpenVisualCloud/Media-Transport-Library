@@ -4,7 +4,8 @@
 * RxTxApp: add `--tx_st20p_source_sibling_node`, the st20p TX sources on the node SNC2 pairs with the NIC's
 * RxTxApp: a core of st20p RX threads only is hot past 85% busy, and an all-RX process sizes its app cores for 70%, as more cores converting at once cost more CPU and LLC misses per frame
 * st20p: per-packet RX conversion (`ST20P_RX_FLAG_PKT_CONVERT`) streams the whole cache lines of each packet into the frame instead of storing them, cutting its LLC misses by 96%
-* st20/st22 TX: the video tasklets no longer take the session spinlock; on a session's own scheduler, `*_tx_free()` and `*_tx_update_destination()` (st20, st22, st20p, st22p) return `-EBUSY` instead of deadlocking, as do the stats APIs from the session's own callbacks
+* st20/st22 TX: the video tasklets no longer take the session spinlock; on a session's own scheduler, `*_tx_free()` and `*_tx_update_destination()` (st20, st22, st20p, st22p) return `-EBUSY` instead of deadlocking
+* st20/st20p TX: the stats get and reset take no session lock and do not wait for the tasklets, so a thread calling them in a loop no longer stops the session sending, and they work from any callback; a reset records a baseline instead of zeroing the counters, which the periodic stats dump keeps counting across
 * ice: default to driver version 2.7.6, built as released with no MTL patches; versions before 2.7.6 keep their `patches/ice_drv` series
 * nicctl.sh: give each VF of an ice PF a 512-entry RSS LUT, so that it can have more than 16 queue pairs; `vf_rss_lut` does so for existing VFs
 * dev: warn when a port gets fewer queues than it asks for

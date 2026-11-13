@@ -437,7 +437,9 @@ struct st_tx_video_session_impl {
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rtcp_q[MTL_SESSION_PORT_MAX];
 
-  /* stat – port_user_stats is the single source for API-visible counters (monotonic) */
+  /* API counters, loaded lock-free by stats get, a formal C11 race that aligned 64-bit
+   * counters on 64-bit targets survive: after tv_attach() only ++ / += by the session's
+   * scheduler thread, no memset, struct assign or constant stores */
   struct st20_tx_user_stats port_user_stats;
   struct st20_tx_user_stats stat_snapshot; /* for delta computation in stat dump */
   struct st_tx_video_rl_stat stat_rl;      /* since the last stats dump */
@@ -455,6 +457,10 @@ struct st_tx_video_session_impl {
   /* how far the next pkt to build is ahead of the wire at a builder visit: the shortest
    * since the stats took it, INT64_MAX for none */
   int64_t lead_min_ns;
+  /* port_user_stats at the last reset; stat_api_lock serializes resets: the tasklets'
+   * own code never takes it, a callback calling reset may */
+  rte_spinlock_t stat_api_lock;
+  struct st20_tx_user_stats stat_api_base;
 
   /* cold, read once a frame, so it sits last, off the hot cache lines */
   struct st_tx_video_rl_plan rl_plan[MTL_SESSION_PORT_MAX];
