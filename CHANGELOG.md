@@ -1,5 +1,6 @@
 # Changelog
 
+* st20/st22 RX: on a session's own scheduler, `*_rx_free()` and `*_rx_update_source()` (st20, st22, st20p, st22p) and `st20rc_rx_free()` return `-EBUSY` instead of deadlocking, as do the stats APIs from the session's own callbacks (and transiently from other callbacks or tasklets on that scheduler); `st20p_rx_reset_session_stats()` keeps the pipeline counters when the transport reset fails
 * dev: with `MTL_FLAG_RX_MONO_POOL` (RxTxApp `--mono_pool` or `--rx_mono_pool`) each RX queue polls its own queue; since 22.12 every queue polled queue 0 of DPDK port 0, so the sessions' own queues overflowed and sessions on several schedulers shared one queue
 * pcapng dumps: a dump on a port without NIC RX timestamps warns that its packets carry their RX burst time, no basis for ST 2110-21 timing; RxTxApp `--pcapng_dump` now sets `MTL_FLAG_ENABLE_HW_TIMESTAMP`, as `--rx_timing_parser` does
 * ixgbe (E610): the built-in PTP syncs: MTL enables timesync after the port start, and DPDK 26.07.95_mtl_ sets the IEEE1588 TX timestamp bit with no `RTE_LIBRTE_IEEE1588` build option, so vector RX stays on

@@ -6,6 +6,7 @@
 
 #include "../../mt_handle_guard.h"
 #include "../../mt_log.h"
+#include "../st_rx_video_session.h"
 
 static const char* st22p_rx_frame_stat_name[ST22P_RX_FRAME_STATUS_MAX] = {
     "free", "ready", "in_decoding", "decoded", "in_user",
@@ -880,6 +881,14 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
 int st22p_rx_free(st22p_rx_handle handle) {
   struct st22p_rx_ctx* ctx = handle;
   struct mtl_main_impl* impl = ctx->impl;
+  struct st22_rx_video_session_handle_impl* transport = ctx->transport;
+
+  /* its scheduler thread may be in a callback of the transport, under its lock */
+  if (ctx->type == MT_ST22_HANDLE_PIPELINE_RX && transport &&
+      mt_sch_on_own_thread(transport->sch)) {
+    warn("%s(%d), not from a callback of its scheduler\n", __func__, ctx->idx);
+    return -EBUSY;
+  }
 
   int _gd = mt_handle_begin_destroy(&ctx->lc_destroying, &ctx->type,
                                     MT_ST22_HANDLE_PIPELINE_RX);
@@ -896,7 +905,7 @@ int st22p_rx_free(st22p_rx_handle handle) {
   }
 
   if (ctx->transport) {
-    st22_rx_free(ctx->transport);
+    rv_st22_free(ctx->transport);
     ctx->transport = NULL;
   }
   rx_st22p_uinit_dst_fbs(ctx);
