@@ -32,9 +32,8 @@ class MtFlowIavfResetTest : public testing::Test {
   ut_flow_ctx* ctx_ = nullptr;
 };
 
-#define NEEDS_RESET_CB()                                                              \
-  if (!ut_flow_has_reset_cb()) GTEST_SKIP() << "no iavf reset callbacks before DPDK " \
-                                               "26.03"
+#define NEEDS_RESET_CB() \
+  if (!ut_flow_has_reset_cb()) GTEST_SKIP() << "iavf reset callbacks need DPDK 26.03"
 
 TEST_F(MtFlowIavfResetTest, CreateListsTheFlowAndFreeUnlistsIt) {
   int id = ut_flow_create(ctx_, 20000);
