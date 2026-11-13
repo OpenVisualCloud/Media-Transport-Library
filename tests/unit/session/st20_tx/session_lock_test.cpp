@@ -35,9 +35,7 @@ class St20TxSessionLockTest : public ::testing::TestWithParam<Param> {
 using St20TxSessionLockTaskletTest = St20TxSessionLockTest<ut_txv_tasklet>;
 using St20TxSessionLockControlTest = St20TxSessionLockTest<ut_txv_control>;
 using St20TxSessionLockMigratedTest = St20TxSessionLockTest<ut_txv_control>;
-using St20TxSessionLockCallbackTest = St20TxSessionLockTest<ut_txv_control>;
 using St20TxSessionLockRacingTest = St20TxSessionLockTest<ut_txv_control>;
-using St20TxSessionLockCallbackStatsTest = St20TxSessionLockTest<ut_txv_control>;
 using St20TxSessionLockCallbackRefusedTest = St20TxSessionLockTest<ut_txv_control>;
 
 TEST_P(St20TxSessionLockTaskletTest, SkipsASessionWhileItsLockIsHeld) {
@@ -78,7 +76,7 @@ TEST_P(St20TxSessionLockControlTest, LocksThenWaitsForTheSchedulerOnce) {
   EXPECT_TRUE(locked_at_wait);
 }
 
-/* The old manager's lock would leave the counters to the new scheduler's tasklets. */
+/* The old manager's lock would leave the headers to the new scheduler's tasklets. */
 TEST_P(St20TxSessionLockMigratedTest, LocksTheNewSlotAndWaitsForTheNewScheduler) {
   bool locked_at_wait = false;
 
@@ -93,21 +91,6 @@ TEST_P(St20TxSessionLockRacingTest, FindsASessionThatMigratedWhileItWaited) {
 
 TEST_P(St20TxSessionLockRacingTest, FindsASessionMovedByAHolderOfItsOldSlot) {
   EXPECT_EQ(0, ut_txv_run_control_blocked_by_migration(ctx_, GetParam()));
-}
-
-/* The holder waits for the very pass the callback runs in, so spinning never ends. */
-TEST_P(St20TxSessionLockCallbackTest, ReturnsBusyInsteadOfSpinningOnAWaitingHolder) {
-  EXPECT_EQ(-EBUSY, ut_txv_run_control_in_callback(ctx_, GetParam(), true));
-}
-
-/* That holder waits only while the tasklets are in its session, not for a peer's
- * callback, so the call waits for it as under the old per-session lock. */
-TEST_P(St20TxSessionLockCallbackTest, WaitsForAHolderFromAPeersCallback) {
-  EXPECT_EQ(0, ut_txv_run_control_in_peer_callback(ctx_, GetParam()));
-}
-
-TEST_P(St20TxSessionLockCallbackStatsTest, WorkForTheCallbacksOwnSession) {
-  EXPECT_EQ(0, ut_txv_run_control_in_callback(ctx_, GetParam(), false));
 }
 
 /* Free: the calling tasklet may still use the session. Update: ARP would stall it. */
@@ -127,21 +110,12 @@ TEST(St20TxSessionLockTimeoutTest, GetTimeoutGivesUpOnAPassThatNeverEnds) {
   ut_txv_destroy(ctx);
 }
 
-TEST(St20TxSessionLockDeadlockTest, StatsCompletesWhilePeerCallbackNeedsAppMutex) {
-  ASSERT_EQ(0, ut_txv_init());
-  ut_txv_ctx* ctx = ut_txv_create();
-  ASSERT_NE(nullptr, ctx);
-
-  EXPECT_TRUE(ut_txv_stats_with_peer_callback_completes(ctx, 100));
-  ut_txv_destroy(ctx);
-}
-
 TEST(St20TxSessionLockDeadlockTest, CrossSchedulerCallbacksQueryOppositeSessions) {
   ASSERT_EQ(0, ut_txv_init());
   ut_txv_ctx* ctx = ut_txv_create();
   ASSERT_NE(nullptr, ctx);
 
-  EXPECT_TRUE(ut_txv_cross_scheduler_stats_complete(ctx, 100));
+  EXPECT_TRUE(ut_txv_cross_scheduler_gets_complete(ctx, 100));
   ut_txv_destroy(ctx);
 }
 
@@ -203,10 +177,6 @@ std::string ControlName(const ::testing::TestParamInfo<ut_txv_control>& info) {
       return "GetTimeout";
     case UT_TXV_GET_EMPTY:
       return "GetEmpty";
-    case UT_TXV_STATS_GET:
-      return "StatsGet";
-    case UT_TXV_STATS_RESET:
-      return "StatsReset";
     case UT_TXV_UPDATE_DST:
       return "UpdateDst";
     default:
@@ -224,28 +194,17 @@ INSTANTIATE_TEST_SUITE_P(Tasklets, St20TxSessionLockTaskletTest,
 
 INSTANTIATE_TEST_SUITE_P(Calls, St20TxSessionLockControlTest,
                          ::testing::Values(UT_TXV_GET, UT_TXV_GET_TIMEOUT,
-                                           UT_TXV_GET_EMPTY, UT_TXV_STATS_GET,
-                                           UT_TXV_STATS_RESET, UT_TXV_UPDATE_DST),
+                                           UT_TXV_GET_EMPTY, UT_TXV_UPDATE_DST),
                          ControlName);
 
-INSTANTIATE_TEST_SUITE_P(Stats, St20TxSessionLockMigratedTest,
-                         ::testing::Values(UT_TXV_STATS_GET, UT_TXV_STATS_RESET),
-                         ControlName);
+INSTANTIATE_TEST_SUITE_P(Calls, St20TxSessionLockMigratedTest,
+                         ::testing::Values(UT_TXV_UPDATE_DST), ControlName);
 
-INSTANTIATE_TEST_SUITE_P(Stats, St20TxSessionLockRacingTest,
-                         ::testing::Values(UT_TXV_STATS_GET, UT_TXV_STATS_RESET),
-                         ControlName);
-
-INSTANTIATE_TEST_SUITE_P(Stats, St20TxSessionLockCallbackStatsTest,
-                         ::testing::Values(UT_TXV_STATS_GET, UT_TXV_STATS_RESET),
-                         ControlName);
+INSTANTIATE_TEST_SUITE_P(Calls, St20TxSessionLockRacingTest,
+                         ::testing::Values(UT_TXV_UPDATE_DST), ControlName);
 
 INSTANTIATE_TEST_SUITE_P(PublicApis, St20TxSessionLockCallbackRefusedTest,
                          ::testing::Values(UT_TXV_UPDATE_DST, UT_TXV_FREE), ControlName);
-
-INSTANTIATE_TEST_SUITE_P(Stats, St20TxSessionLockCallbackTest,
-                         ::testing::Values(UT_TXV_STATS_GET, UT_TXV_STATS_RESET),
-                         ControlName);
 
 }  // namespace
 
@@ -259,14 +218,13 @@ INSTANTIATE_TEST_SUITE_P(
     Calls, St20TxSessionLockAppMutexTest,
     /* free blocks in the tx_video_session_get() of tv_mgr_detach() (GET),
      * create and migration in tx_video_session_get_empty() (GET_EMPTY) */
-    ::testing::Combine(::testing::Values(UT_TXV_STATS_GET, UT_TXV_STATS_RESET,
-                                         UT_TXV_UPDATE_DST, UT_TXV_GET, UT_TXV_GET_EMPTY),
+    ::testing::Combine(::testing::Values(UT_TXV_UPDATE_DST, UT_TXV_GET, UT_TXV_GET_EMPTY),
                        ::testing::Bool()),
     ControlFenceName);
 
-INSTANTIATE_TEST_SUITE_P(
-    Calls, St20TxSessionLockOwnCallbackTest,
-    ::testing::Combine(::testing::Values(UT_TXV_GET, UT_TXV_GET_TIMEOUT, UT_TXV_STATS_GET,
-                                         UT_TXV_STATS_RESET, UT_TXV_UPDATE_DST),
-                       ::testing::Bool()),
-    ControlFenceName);
+INSTANTIATE_TEST_SUITE_P(Calls, St20TxSessionLockOwnCallbackTest,
+                         ::testing::Combine(::testing::Values(UT_TXV_GET,
+                                                              UT_TXV_GET_TIMEOUT,
+                                                              UT_TXV_UPDATE_DST),
+                                            ::testing::Bool()),
+                         ControlFenceName);

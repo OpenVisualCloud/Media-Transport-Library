@@ -4,10 +4,12 @@
  * Shared infrastructure for unit test harnesses.
  */
 
+#define _GNU_SOURCE /* sched_getaffinity() */
 #include "ut_common.h"
 
 #include <rte_malloc.h>
 #include <rte_mbuf_dyn.h>
+#include <sched.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -15,6 +17,7 @@
 
 static bool g_eal_ready;
 static struct rte_mempool* g_pool;
+static cpu_set_t g_cpus_allowed;
 
 /* ── EAL init ─────────────────────────────────────────────────────────── */
 
@@ -29,6 +32,8 @@ int ut_eal_init(void) {
     static char a4[] = "-n1";
     static char a5[] = "--no-pci";
     static char* args[] = {a0, a1, a2, a3, a4, a5};
+    if (sched_getaffinity(0, sizeof(g_cpus_allowed), &g_cpus_allowed))
+      CPU_ZERO(&g_cpus_allowed);
     if (rte_eal_init(RTE_DIM(args), args) < 0) return -1;
     g_eal_ready = true;
   }
@@ -40,6 +45,14 @@ int ut_eal_init(void) {
   }
 
   return 0;
+}
+
+int ut_cpus_allowed(int* cpus, int max) {
+  int n = 0;
+
+  for (int cpu = 0; cpu < CPU_SETSIZE && n < max; cpu++)
+    if (CPU_ISSET(cpu, &g_cpus_allowed)) cpus[n++] = cpu;
+  return n;
 }
 
 /* ── pool accessor ────────────────────────────────────────────────────── */

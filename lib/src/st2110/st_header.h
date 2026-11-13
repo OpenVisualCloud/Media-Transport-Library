@@ -19,20 +19,32 @@
 
 #define ST_PLUGIN_MAX_PATH_LEN (128)
 
-/* max 12 1080p tx session per sch lcore */
-#define ST_QUOTA_TX1080P_PER_SCH (12)
+/* max 24 1080p st20 tx frame session per sch lcore */
+#define ST_QUOTA_TX1080P_PER_SCH (24)
 /* max 8 1080p rtp tx session per sch lcore */
 #define ST_QUOTA_TX1080P_RTP_PER_SCH (8)
+/* max 12 1080p st20 tx slice session per sch lcore */
+#define ST_QUOTA_TX1080P_SLICE_PER_SCH (12)
+/* max 12 1080p st22 tx frame session per sch lcore */
+#define ST_QUOTA_TX1080P_ST22_FRAME_PER_SCH (12)
 /* max 12 1080p rx session per sch lcore */
 #define ST_QUOTA_RX1080P_PER_SCH (12)
 /* max 12 1080p rtp rx session per sch lcore, rtp unpack run on other threads */
 #define ST_QUOTA_RX1080P_RTP_PER_SCH (12)
-/* max 8 1080p rx(without DMA) session per sch lcore */
-#define ST_QUOTA_RX1080P_NO_DMA_PER_SCH (8)
+/* max 12 1080p st22 rx session per sch lcore, frame or rtp */
+#define ST_QUOTA_RX1080P_ST22_PER_SCH (12)
+/* max 11 1080p rx(without DMA) frame session per sch lcore */
+#define ST_QUOTA_RX1080P_NO_DMA_PER_SCH (11)
+/* max 8 1080p rx(without DMA) slice session per sch lcore */
+#define ST_QUOTA_RX1080P_NO_DMA_SLICE_PER_SCH (8)
 
 #define ST_SCH_MAX_TX_VIDEO_SESSIONS (60) /* max video tx sessions per sch lcore */
 #define ST_SCH_MAX_RX_VIDEO_SESSIONS (60) /* max video rx sessions per sch lcore */
 #define ST_SESSION_MAX_BULK (4)
+/* the bulk of an all-RL ST20 frame-level TX session */
+#define ST_TX_VIDEO_RL_BULK (16)
+#define ST_TX_VIDEO_MAX_BULK \
+  (ST_TX_VIDEO_RL_BULK > ST_SESSION_MAX_BULK ? ST_TX_VIDEO_RL_BULK : ST_SESSION_MAX_BULK)
 #define ST_TX_VIDEO_SESSIONS_RING_SIZE (512)
 
 /* number of tmstamp it will tracked for out of order pkts */
@@ -271,6 +283,26 @@ struct st_tx_video_reclaim {
   uint64_t wait_tsc; /* 0 while no frame is waited for */
 };
 
+/* the RL events of the tx_rl_event probe, numbered as mt_usdt_provider.d lists them */
+enum st_tx_video_rl_cause {
+  ST_TX_VIDEO_RL_CAUSE_VRX = 0,
+  ST_TX_VIDEO_RL_CAUSE_START_LATE = 1,
+};
+
+/* Per session, summed over its ports since the last stats dump */
+struct st_tx_video_rl_stat {
+  /* frames a pkt of which may have reached the receiver past its drain slot */
+  uint64_t vrx_frames;
+  uint64_t vrx_pkt0;        /* of them, those flagged at packet 0 */
+  uint64_t vrx_late_max_ns; /* such a pkt, the latest past its own target */
+  uint64_t start_late;      /* frames started past their target by over the budget */
+  uint64_t start_late_max_ns;
+  /* frames whose warm-up found the frame before still queued, and the longest wait */
+  uint64_t backlog_frames;
+  uint64_t backlog_max_ns;
+  uint64_t pads_skipped; /* in-frame pads left out behind the schedule */
+};
+
 struct st_tx_video_session_impl {
   struct mtl_main_impl* impl;
   struct st_tx_video_sessions_mgr* mgr;
@@ -284,6 +316,8 @@ struct st_tx_video_session_impl {
   bool tx_mono_pool;   /* if reuse tx mono pool */
   bool tx_no_chain;    /* if tx not use chain mbuf */
   bool multi_src_port; /* if tx use multiple src port */
+  /* only a frame's last payload mbuf holds its extbuf */
+  bool tx_direct_chain;
   /* if the eth dev support chain buff */
   bool eth_has_chain[MTL_SESSION_PORT_MAX];
   /* if the eth dev support ipv4 checksum offload */
@@ -318,17 +352,38 @@ struct st_tx_video_session_impl {
   enum mt_handle_type s_type; /* st22 or st20 */
 
   unsigned int bulk; /* Enqueue bulk objects on the ring */
-  struct rte_mbuf* inflight[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
+  struct rte_mbuf* inflight[MTL_SESSION_PORT_MAX][ST_TX_VIDEO_MAX_BULK];
   int inflight_cnt[MTL_SESSION_PORT_MAX]; /* for stats */
 
   /* info for transmitter */
   uint64_t trs_target_tsc[MTL_SESSION_PORT_MAX];
-  struct rte_mbuf* trs_inflight[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
+  uint64_t trs_reclaim_tsc[MTL_SESSION_PORT_MAX]; /* the next RL reclaim, not before */
+  /* the pre-arm left its last burst to go with packet 0, after pads ending at drained */
+  bool trs_rl_tail[MTL_SESSION_PORT_MAX];
+  long double trs_rl_drained[MTL_SESSION_PORT_MAX];
+  /* the latest the shaper ends the pads queued since packet 0 was dequeued */
+  long double trs_rl_pads_end[MTL_SESSION_PORT_MAX];
+  bool trs_vrx_late[MTL_SESSION_PORT_MAX]; /* the frame is counted in vrx_frames */
+  /* packet 0's target, the only stamp an all-RL frame carries */
+  uint64_t trs_frame_tsc[MTL_SESSION_PORT_MAX];
+  /* when the shaper ends the pkts sent so far, at trs each from packet 0's target */
+  uint64_t trs_wire_tsc[MTL_SESSION_PORT_MAX];
+  /* when the NIC ends what is queued, a lower bound, and whether the last burst found
+   * the ring full; st_video_trs_rl_drain_init() turns the model on for an armed RL port
+   * with a deep queue */
+  uint64_t trs_drain_tsc[MTL_SESSION_PORT_MAX];
+  bool trs_ring_full[MTL_SESSION_PORT_MAX];
+  bool trs_drain_model[MTL_SESSION_PORT_MAX];
+  double trs_drain_pkt_ns[MTL_SESSION_PORT_MAX];    /* a pkt's shaper time, or less */
+  uint64_t trs_drain_ring_ns[MTL_SESSION_PORT_MAX]; /* a full ring's, or less */
+  uint64_t trs_released[MTL_SESSION_PORT_MAX]; /* the transmitter visit releasing it */
+  struct rte_mbuf* trs_inflight[MTL_SESSION_PORT_MAX][ST_TX_VIDEO_MAX_BULK];
   unsigned int trs_inflight_num[MTL_SESSION_PORT_MAX];
   unsigned int trs_inflight_idx[MTL_SESSION_PORT_MAX];
+  bool trs_inflight_new_slice[MTL_SESSION_PORT_MAX]; /* RL: starts an untried pad slice */
   unsigned int trs_pad_inflight_num[MTL_SESSION_PORT_MAX]; /* inflight padding */
   int trs_inflight_cnt[MTL_SESSION_PORT_MAX];              /* for stats */
-  struct rte_mbuf* trs_inflight2[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
+  struct rte_mbuf* trs_inflight2[MTL_SESSION_PORT_MAX][ST_TX_VIDEO_MAX_BULK];
   unsigned int trs_inflight_num2[MTL_SESSION_PORT_MAX];
   unsigned int trs_inflight_idx2[MTL_SESSION_PORT_MAX];
   int trs_inflight_cnt2[MTL_SESSION_PORT_MAX]; /* for stats */
@@ -350,6 +405,7 @@ struct st_tx_video_session_impl {
   enum st21_tx_frame_status st20_frame_stat;
   struct st_tx_video_reclaim reclaim;
   uint16_t st20_frame_lines_ready;
+  bool st20_frame_lines_waited; /* this frame waited for the app's lines */
 
   struct st20_pgroup st20_pg;
   struct st_fps_timing fps_tm;
@@ -381,9 +437,12 @@ struct st_tx_video_session_impl {
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rtcp_q[MTL_SESSION_PORT_MAX];
 
-  /* stat – port_user_stats is the single source for API-visible counters (monotonic) */
+  /* API counters, loaded lock-free by stats get, a formal C11 race that aligned 64-bit
+   * counters on 64-bit targets survive: after tv_attach() only ++ / += by the session's
+   * scheduler thread, no memset, struct assign or constant stores */
   struct st20_tx_user_stats port_user_stats;
   struct st20_tx_user_stats stat_snapshot; /* for delta computation in stat dump */
+  struct st_tx_video_rl_stat stat_rl;      /* since the last stats dump */
   /* internal-only stats (not in public API, reset per period) */
   int stat_pkts_burst;
   int stat_pkts_burst_dummy;
@@ -395,6 +454,13 @@ struct st_tx_video_session_impl {
   uint32_t stat_max_notify_frame_us;
   double stat_cpu_busy_score;
   struct mt_stat_u64 stat_time;
+  /* how far the next pkt to build is ahead of the wire at a builder visit: the shortest
+   * since the stats took it, INT64_MAX for none */
+  int64_t lead_min_ns;
+  /* port_user_stats at the last reset; stat_api_lock serializes resets: the tasklets'
+   * own code never takes it, a callback calling reset may */
+  rte_spinlock_t stat_api_lock;
+  struct st20_tx_user_stats stat_api_base;
 
   /* cold, read once a frame, so it sits last, off the hot cache lines */
   struct st_tx_video_rl_plan rl_plan[MTL_SESSION_PORT_MAX];
@@ -410,6 +476,8 @@ struct st_tx_video_sessions_mgr {
   /* control plane only, the tasklets skip a session while it is held */
   rte_spinlock_t mutex[ST_SCH_MAX_TX_VIDEO_SESSIONS];
   struct mt_sch_dp_slot dp_slot; /* the session the tasklets are on */
+  /* transmitter only: bit sidx, a port of sessions[sidx] waits on refused pads */
+  uint64_t trs_refused;
 };
 
 struct st_video_transmitter_impl {
@@ -417,6 +485,9 @@ struct st_video_transmitter_impl {
   struct st_tx_video_sessions_mgr* mgr;
   struct mt_sch_tasklet_impl* tasklet;
   int idx; /* index for current transmitter */
+  /* the earliest RL packet 0 target held or deferred, 0 if none */
+  uint64_t pkt0_tsc;
+  uint64_t visit; /* video_trs_tasklet_handler() calls */
 };
 
 struct st_rx_video_slot_slice {

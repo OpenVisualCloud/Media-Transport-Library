@@ -28,6 +28,10 @@ extern "C" {
 /** Initialise DPDK EAL (idempotent — safe to call from multiple harnesses). */
 int ut_eal_init(void);
 
+/** The first max CPUs the process may run on, as before ut_eal_init() pinned the caller
+ * to its main lcore, in cpus. Returns how many it wrote. */
+int ut_cpus_allowed(int* cpus, int max);
+
 /** Return the shared mempool (created on first call after ut_eal_init). */
 struct rte_mempool* ut_pool(void);
 

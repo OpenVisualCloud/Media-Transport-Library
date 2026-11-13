@@ -130,6 +130,14 @@ Items in each element of the "video" array
 
 ​ **display (bool):** `true, false` display video frames with SDL, only works with YUV 422 10bit and 8bit stream
 
+#### st20p (array of st20p sessions)
+
+TX items in each element of the "st20p" array, besides the ones in the example above
+
+​ **fused (bool):** `true, false` convert each frame of the `"YUV422PLANAR10LE"` (even width) or `"V210"` (width a multiple of 48) input file in 8-line blocks straight into the `"YUV_422_10bit"` wire frame with no copy; MTL's `st20p_tx_convert_block()` converts on the app thread (optional). Default is false.
+
+​ **render (bool):** `true, false` render a moving test pattern of the input format in 8-line blocks instead of reading the file, so `st20p_url` can be left out; implies `fused` (optional). Default is false.
+
 #### audio (array of audio sessions)
 
 Items in each element of the "audio" array

@@ -28,6 +28,14 @@
 static const char* ut_sch_flock_path = MT_FLOCK_PATH;
 #undef MT_FLOCK_PATH
 #define MT_FLOCK_PATH ut_sch_flock_path
+#include "mt_main.h"
+/* ut_sch_loop_avg_restart() runs the scheduler on a clock only its tasklet advances */
+static bool ut_sch_clock_mocked;
+static uint64_t ut_sch_clock_ns;
+static uint64_t ut_sch_tsc(struct mtl_main_impl* impl) {
+  return ut_sch_clock_mocked ? ut_sch_clock_ns : mt_get_tsc(impl);
+}
+#define mt_get_tsc ut_sch_tsc
 /* Seams: the worker lcores mt_sch_get_lcore() walks, a bounded flock() so a lock left
  * held fails a get instead of hanging the binary, each poll of mt_sch_quiescent_wait(),
  * spinning or sleeping, and the scheduler's short sleeps. */
@@ -224,6 +232,51 @@ int ut_sch_lcore_entry_mempolicy(int* mode, int* exit_mode) {
   int ret = -pthread_create(&thread, NULL, ut_sch_lcore_entry, ctx);
   if (!ret) ret = -pthread_join(thread, NULL);
   *exit_mode = ctx->exit_mode;
+  ut_sch_mempolicy_ctx_destroy(ctx);
+  return ret;
+}
+
+struct ut_sch_loop_avg {
+  struct mtl_sch_impl* sch;
+  uint64_t loop_ns;
+  uint64_t avg_ns; /* at the first call of the run */
+  rte_atomic32_t calls;
+};
+
+static int ut_sch_loop_avg_handler(void* priv) {
+  struct ut_sch_loop_avg* t = priv;
+  if (rte_atomic32_read(&t->calls) == 0) t->avg_ns = mt_sch_avg_ns_loop(t->sch);
+  ut_sch_clock_ns += t->loop_ns;
+  rte_atomic32_inc(&t->calls);
+  return MTL_TASKLET_HAS_PENDING;
+}
+
+int ut_sch_loop_avg_restart(uint64_t loop_ns, uint64_t* avg_ns,
+                            uint64_t* restart_avg_ns) {
+  int mode, ret = -EIO;
+  struct ut_sch_mempolicy_ctx* ctx = ut_sch_mempolicy_ctx_create(&mode);
+  if (!ctx) return -ENOMEM;
+  struct ut_sch_loop_avg t = {&ctx->sch, loop_ns, 0, {0}};
+
+  ctx->tasklet.ops.start = NULL;
+  ctx->tasklet.ops.handler = ut_sch_loop_avg_handler;
+  ctx->tasklet.ops.priv = &t;
+  ut_sch_clock_ns = 0;
+  ut_sch_clock_mocked = true;
+  if (!sch_start(&ctx->sch)) {
+    while (!mt_sch_avg_ns_loop(&ctx->sch)) usleep(100);
+    sch_stop(&ctx->sch);
+    *avg_ns = mt_sch_avg_ns_loop(&ctx->sch);
+    t.loop_ns = 0;
+    rte_atomic32_set(&t.calls, 0);
+    if (!sch_start(&ctx->sch)) {
+      while (!rte_atomic32_read(&t.calls)) usleep(100);
+      sch_stop(&ctx->sch);
+      *restart_avg_ns = t.avg_ns;
+      ret = 0;
+    }
+  }
+  ut_sch_clock_mocked = false;
   ut_sch_mempolicy_ctx_destroy(ctx);
   return ret;
 }
