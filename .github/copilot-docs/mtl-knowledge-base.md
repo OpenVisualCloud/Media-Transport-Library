@@ -506,6 +506,8 @@ counters under the lock, `put`, then log the copy (TX video: `tv_stat_collect()`
 ### Lock Ordering
 - Manager mutex → session spinlock (never reverse)
 - Migration: target manager mutex → source manager mutex
+- RX flows: `rx_queues_mutex` → flow `mutex` (`impl->flow[port]`) → `vf_cmd_mutex` (leaf). An iavf VF reset holds the flow mutex from the pre to the post reset callback, on the `dpdk-iavf-event` thread, so `mt_rx_flow_create/free()` wait out a reset
+  - `rv_mgr_update_src()` and `st_rvs_mgr_detach()` reach the flow mutex under a session slot spinlock (`rv_uinit_hw()` → `mt_rxq_put()`), so other lockers of that slot (e.g. `admin_cal_cpu_busy()`) spin until a reset ends; no cycle
 - `lcore_mutex` serialises lcore get/put per instance and is a leaf, taken under `mgr_mutex`, a scheduler's `mutex` and the RX video slot spinlocks; only the lcore flock and the manager round trip run inside it. Other `instance_fd` messages (flow, UDP filter, queue, xsk map) are not serialised with it. RX auto-detect takes it on a tasklet to add a pkt lcore, where flock / IPC already blocked
 
 ### Atomics Usage
@@ -1266,6 +1268,20 @@ Only with `MTL_FLAG_ENABLE_HW_TIMESTAMP` on iavf VFs.
 - **Symptoms** at `mtl_uninit()`, after a passing test: SIGSEGV during `mt_dev_if_uinit`, or `EAL: PANIC in eal_intr_thread_main(): Error adding fd N epoll_ctl, Bad file descriptor` in `rte_eal_cleanup()`.
 - **Fix**: `patches/dpdk/26.07/0009-net-iavf-fix-interrupt-callback-race-on-close.patch`; root cause, evidence, reproducers and upstream status in the [.md next to it](../../patches/dpdk/26.07/0009-net-iavf-fix-interrupt-callback-race-on-close.md).
 - **Verify**: `UnitTest --gtest_filter='EalIntrCallback.*:DpdkIavfPatch.*'`; `DpdkIavfPatch.*` fails when the loaded iavf PMD lacks the patch.
+
+### iavf VF Reset Frees the RX Flows
+- **Defect (DPDK 26.07 iavf, `auto_reset` on by default, and upstream main)**: on a VF reset by the PF (`VIRTCHNL_EVENT_RESET_IMPENDING`, e.g. a PF reset, an MDD auto reset, or a LAN overflow event when PFC or link flow control is on at the PF; or a VFLR seen by the iavf watchdog) iavf recovers the port on its `dpdk-iavf-event` thread, and `iavf_flow_uninit()` frees every `rte_flow` of the port.
+- **Symptoms**: every session of the port stops receiving (0 fps, traffic on queue 0), and `mtl_uninit()` crashes in `iavf_flow_destroy()` from `mt_rx_flow_free()` on a freed handle. The kernel logs only "VF n granted request of m queues" a second time; the LAN overflow reset shows with `dyndbg 'func ice_vf_lan_overflow_event +p'`.
+- **Fix**: `mt_flow.c` keeps every `rte_flow` based `mt_rx_flow_rsp` with its request on the port's list.
+  With DPDK 26.03+ it registers iavf's reset callbacks (`rte_pmd_iavf_register_post/pre_reset_cb()`, looked up in the loaded PMD plugin) in `mt_dev_create()`: post first, since post alone holds no lock past a reset and pre alone would keep the flow mutex; unregistration in `mt_dev_free()` clears pre first.
+  iavf returns -EBUSY while a reset is in progress, which within iavf's own bounds can last minutes (two 40 s reset done waits, a 10 s close, a second `iavf_dev_reset()` with more than 16 queue pairs, then post itself).
+  Registration retries for 60 s, best effort: a failure only logs. Unregistration retries until iavf accepts, since the reset ends with post, and a callback left set would run on the state `mt_flow_uinit()` frees. Both callbacks ignore a NULL arg, since iavf sets a callback and its arg without a lock.
+  Pre takes the flow mutex, post creates each flow again into the same response and releases it, so the queues' responses stay valid and an `mt_rx_flow_free()` waits out a reset.
+  Post also tries when iavf reports a failed reset, since it does so for a failed settings restore (`iavf_post_reset_reconfig()`) on a running port; it stops at the first flow that fails. It has no WA sleep: on E810-C, 500 flows are created again in ~2 s, against ~4.5 s with `rx_flow_create()`'s 5 ms sleep, and the `dpdk-iavf-event` thread serves every iavf port.
+  - Relies on the no `RUNTIME_RX_QUEUE_SETUP` patch (26.07: 0001, 26.03: 0005): with deferred RX queue start, `iavf_start_queues()` would leave MTL's queues stopped after the reset.
+  - On 26.03, iavf has `auto_reset` off unless a devarg sets it, and MTL sets none: the callbacks only fire with `auto_reset=1`. By default the fix takes effect from 26.07.
+  - Not restored either: iavf's TX rate limit (TM) tree. `iavf_dev_close()` calls `iavf_tm_conf_uninit()` and `iavf_init_vf()` makes an empty one; whether the PF then replays the old queue rates (see below) is not checked.
+- **Verify**: `UnitTest --gtest_filter='MtFlowIavfResetTest.*'`; on hardware a VF reset logs `flow_iavf_post_reset(...), VF reset done, N RX flows created again`. `ip link set <pf> vf <n> trust on` (then `off`) makes the PF reset the VF.
 
 ### iavf Per-Queue Rate Limits Outlive the Process
 - **Defect (ice PF)**: RL pacing puts every iavf TX queue on a shaper (`ST_DEFAULT_RL_BPS`, then each session's rate). The PF saves each queue's rate and replays it whenever a later process enables the queue, until the VF is destroyed.

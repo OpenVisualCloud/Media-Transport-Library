@@ -40,6 +40,57 @@ bool ut_flow_rx_flow_create(ut_flow_ctx* ctx, bool no_ip_flow);
 int ut_flow_rx_flow_free(ut_flow_ctx* ctx);
 bool ut_flow_last_free_flow_cleared(const ut_flow_ctx* ctx);
 
+/* mt_rx_flow_create() of a multicast flow to dst_port on queue 0 (or q, of 4) of port P:
+ * the id of its response, -1 on failure. mt_rx_flow_free() of it; its rte_flow handle
+ * (NULL if none).
+ */
+int ut_flow_create(ut_flow_ctx* ctx, uint16_t dst_port);
+int ut_flow_create_q(ut_flow_ctx* ctx, uint16_t dst_port, uint16_t q);
+int ut_flow_free(ut_flow_ctx* ctx, int id);
+const void* ut_flow_handle(const ut_flow_ctx* ctx, int id);
+/* responses on port P's flow list; MT_DRV_F_RX_NO_FLOW on port P */
+int ut_flow_listed_count(const ut_flow_ctx* ctx);
+void ut_flow_set_no_flow(ut_flow_ctx* ctx, bool no_flow);
+/* take / release port P's flow mutex, as a flow call in progress */
+void ut_flow_lock(ut_flow_ctx* ctx);
+void ut_flow_unlock(ut_flow_ctx* ctx);
+/* mt_flow_init() on num_ports ports, in place of the harness's port P state; whether
+ * a port's state has its parent, port and an empty flow list. mt_flow_uinit() after.
+ */
+int ut_flow_init(ut_flow_ctx* ctx, int num_ports);
+bool ut_flow_init_port_ok(const ut_flow_ctx* ctx, int port);
+/* UDP destination port and queue of rte_flow_create() call call_index; the handle
+ * rte_flow_destroy() got last */
+uint16_t ut_flow_create_dst_port(const ut_flow_ctx* ctx, int call_index);
+uint16_t ut_flow_create_queue(const ut_flow_ctx* ctx, int call_index);
+const void* ut_flow_last_destroyed(const ut_flow_ctx* ctx);
+/* the handle rte_flow_create() returned last */
+const void* ut_flow_last_created(const ut_flow_ctx* ctx);
+
+/* whether mt_flow.c has the iavf VF reset callbacks (DPDK 26.03+); without, the calls
+ * below do nothing */
+bool ut_flow_has_reset_cb(void);
+
+/* the iavf VF reset callbacks, as the PMD's event thread calls them; both with a NULL
+ * arg, as iavf can while it sets a callback */
+void ut_flow_iavf_pre(ut_flow_ctx* ctx);
+void ut_flow_iavf_post(ut_flow_ctx* ctx, int reset_state);
+void ut_flow_iavf_null_arg(void);
+/* flow_iavf_resolve() from scratch: finds the register functions in the loaded iavf PMD
+ * plugin, in place of the harness's stubs */
+bool ut_flow_iavf_resolve(void);
+/* mt_flow_reset_cb_register() / _unregister() on port P, against register stubs that
+ * return -EBUSY for the next pre_busy / post_busy calls of each. Their log: P / p post
+ * / pre set, X / x cleared.
+ */
+void ut_flow_set_reg_busy(ut_flow_ctx* ctx, int pre_busy, int post_busy);
+void ut_flow_reset_cb_register(ut_flow_ctx* ctx);
+void ut_flow_reset_cb_unregister(ut_flow_ctx* ctx);
+const char* ut_flow_reg_log(const ut_flow_ctx* ctx);
+bool ut_flow_reset_cb_on(const ut_flow_ctx* ctx);
+/* mt_flow_uinit(); how often it has freed port P's flow state */
+int ut_flow_uinit_frees(ut_flow_ctx* ctx);
+
 #ifdef __cplusplus
 }
 #endif
