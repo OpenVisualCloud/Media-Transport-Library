@@ -83,9 +83,11 @@ int ut20p_stub_get_session_stats(st20_rx_handle handle,
   return 0;
 }
 
+static int ut20p_reset_ret;
+
 int ut20p_stub_reset_session_stats(st20_rx_handle handle) {
   (void)handle;
-  return 0;
+  return ut20p_reset_ret;
 }
 
 /* ── opaque context ───────────────────────────────────────────────────── */
@@ -434,4 +436,38 @@ st20p_rx_handle ut20p_handle(ut20p_ctx* ctx) {
 
 void ut20p_force_destroying(ut20p_ctx* ctx) {
   atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
+}
+
+void ut20p_set_transport_reset_ret(int ret) {
+  ut20p_reset_ret = ret;
+}
+
+void ut20p_set_stat_frames_received(ut20p_ctx* ctx, uint64_t frames) {
+  atomic_store(&ctx->pipeline.stat_frames_received, frames);
+}
+
+int ut20p_rx_free_in_callback(ut20p_ctx* ctx, bool* destroying) {
+  struct st20p_rx_ctx* p = &ctx->pipeline;
+  struct st_rx_video_sessions_mgr* mgr = calloc(1, sizeof(*mgr));
+  struct st_rx_video_session_impl* s = calloc(1, sizeof(*s));
+  struct st_rx_video_session_handle_impl transport = {.type = MT_HANDLE_RX_VIDEO,
+                                                      .impl = s};
+  st20_rx_handle stub = p->transport;
+  int ret = -ENOMEM;
+
+  if (mgr && s) {
+    /* its session 0 of scheduler 0, with the tasklet on it, the caller on that thread */
+    mgr->parent = &ctx->impl;
+    atomic_store(&mgr->dp_slot.idx, 0);
+    s->parent = mgr;
+    mt_sch_instance(&ctx->impl, 0)->t_pid = rte_gettid();
+    p->transport = &transport;
+    ret = st20p_rx_free(p);
+    *destroying = atomic_load(&p->lc_destroying);
+    p->transport = stub;
+    mt_sch_instance(&ctx->impl, 0)->t_pid = 0;
+  }
+  free(s);
+  free(mgr);
+  return ret;
 }

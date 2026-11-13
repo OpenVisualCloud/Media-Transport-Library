@@ -1649,9 +1649,10 @@ static inline void* rv_frame_memcpy(struct st_rx_video_session_impl* s, void* ds
    * the tasklet also copies into the frame when the pkt ring is full, and either
    * thread may hand the frame over, so keep ordinary stores there: x86 makes
    * those visible in order, which that handover relies on. A session moving to
-   * another scheduler mid-frame needs no fence: the tasklet releases the session
-   * spinlock after each poll, and that x86 unlock is a locked xchg, which drains
-   * the streaming stores of the old core. */
+   * another scheduler mid-frame needs no fence here: the migration waits for the old
+   * scheduler to end its pass or leave the session, and both drain the old core's
+   * streaming stores (rte_wmb() at a pass end; on leaving, a second membarrier(2) IPI,
+   * or without membarrier(2) the tasklet's rte_wmb() before each slot store). */
   /* Stream only whole cache lines: a partial write-combining flush costs a
    * read-modify-write at the memory controller, which is worse than the
    * read-for-ownership it was meant to avoid. Payload offsets are 16B but
@@ -3655,7 +3656,7 @@ static int rvs_pkt_rx_tasklet_handler(void* priv) {
   bool time_measure = mt_sessions_time_measure(impl);
 
   for (sidx = 0; sidx < mgr->max_idx; sidx++) {
-    s = rx_video_session_try_get(mgr, sidx);
+    s = rx_video_session_dp_get(mgr, sidx);
     if (!s) continue;
     if (time_measure) tsc_s = mt_get_tsc(impl);
 
@@ -3669,9 +3670,8 @@ static int rvs_pkt_rx_tasklet_handler(void* priv) {
       uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
       mt_stat_u64_update(&s->stat_time, delta_ns);
     }
-
-    rx_video_session_put(mgr, sidx);
   }
+  rx_video_session_dp_done(mgr);
 
   return pending;
 }
@@ -4054,7 +4054,7 @@ static int rvs_pkt_rx_tasklet_start(void* priv) {
   struct st_rx_video_session_impl* s;
 
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
-    s = rx_video_session_try_get(mgr, sidx);
+    s = rx_video_session_get(mgr, sidx);
     if (!s) continue;
     /* re-calculate the vsync */
     st_vsync_calculate(impl, &s->vsync);
@@ -4121,20 +4121,51 @@ static int rv_update_src(struct st_rx_video_sessions_mgr* mgr,
   return 0;
 }
 
-static int rv_mgr_update_src(struct st_rx_video_sessions_mgr* mgr,
-                             struct st_rx_video_session_impl* s,
-                             struct st_rx_source_info* src) {
-  int ret = -EIO, midx = mgr->idx, idx = s->idx;
+/* For the public APIs on s: 0 with its lock held and its slot in *mgr / *idx; -EIO if
+ * neither try found s in the slot it read, i.e. migrations raced both. From the session's
+ * own callback, -EBUSY rather than spin on a lock whose holder waits for that callback.
+ */
+static int rv_api_lock(struct st_rx_video_session_impl* s,
+                       struct st_rx_video_sessions_mgr** mgr, int* idx) {
+  /* a migration moves s before it releases the old slot, so one retry finds it */
+  for (int tries = 0; tries < 2; tries++) {
+    struct st_rx_video_sessions_mgr* m = s->parent;
+    int i = s->idx;
 
-  s = rx_video_session_get(mgr, idx); /* get the lock */
-  if (!s) {
-    err("%s(%d,%d), get session fail\n", __func__, midx, idx);
-    return -EIO;
+    if (rx_video_session_in_own_callback(m, i)) {
+      if (!rte_spinlock_trylock(&m->mutex[i])) return -EBUSY;
+    } else if (!rx_video_session_get(m, i)) {
+      continue;
+    }
+    if (m->sessions[i] == s) {
+      *mgr = m;
+      *idx = i;
+      return 0;
+    }
+    rx_video_session_put(m, i);
+  }
+  return -EIO;
+}
+
+static int rv_mgr_update_src(struct st_rx_video_session_impl* s,
+                             struct st_rx_source_info* src) {
+  struct st_rx_video_sessions_mgr* mgr = s->parent;
+  int idx = s->idx;
+
+  /* the calling tasklet is still on the session: its queues must not change under it */
+  if (rx_video_session_in_own_callback(mgr, idx)) {
+    warn("%s(%d,%d), not from a callback of this session\n", __func__, mgr->idx, idx);
+    return -EBUSY;
+  }
+  int ret = rv_api_lock(s, &mgr, &idx);
+  if (ret < 0) {
+    err("%s(%d), get session fail %d\n", __func__, s->idx, ret);
+    return ret;
   }
   ret = rv_update_src(mgr, s, src);
   rx_video_session_put(mgr, idx);
   if (ret < 0) {
-    err("%s(%d,%d), fail %d\n", __func__, midx, idx, ret);
+    err("%s(%d,%d), fail %d\n", __func__, mgr->idx, idx, ret);
     return ret;
   }
 
@@ -4152,6 +4183,7 @@ static int rvs_mgr_init(struct mtl_main_impl* impl, struct mtl_sch_impl* sch,
   for (int i = 0; i < ST_SCH_MAX_RX_VIDEO_SESSIONS; i++) {
     rte_spinlock_init(&mgr->mutex[i]);
   }
+  mt_sch_dp_slot_init(&mgr->dp_slot);
 
   memset(&ops, 0x0, sizeof(ops));
   ops.priv = mgr;
@@ -4288,7 +4320,7 @@ static int rv_sessions_stat(void* priv) {
   if (!mgr) return -EINVAL;
 
   for (int j = 0; j < mgr->max_idx; j++) {
-    s = rx_video_session_get_timeout(mgr, j, ST_SESSION_STAT_TIMEOUT_US);
+    s = rx_video_session_get_timeout(mgr, j, ST_RX_VIDEO_STAT_TIMEOUT_US);
     if (!s) continue;
     rv_stat(mgr, s);
     rx_video_session_put(mgr, j);
@@ -4717,7 +4749,7 @@ int st20_rx_update_source(st20_rx_handle handle, struct st_rx_source_info* src) 
   ret = st_rx_source_info_check(src, s->ops.num_port);
   if (ret < 0) goto out;
 
-  ret = rv_mgr_update_src(&s_impl->sch->rx_video_mgr, s, src);
+  ret = rv_mgr_update_src(s, src);
   if (ret < 0) {
     err("%s(%d), online update fail %d\n", __func__, idx, ret);
     goto out;
@@ -4764,12 +4796,15 @@ int st20_rx_get_session_stats(st20_rx_handle handle, struct st20_rx_user_stats* 
 
   MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_VIDEO, -EINVAL);
   struct st_rx_video_session_impl* s = s_impl->impl;
+  struct st_rx_video_sessions_mgr* mgr;
+  int idx, ret = rv_api_lock(s, &mgr, &idx);
 
-  rte_spinlock_lock(&s->parent->mutex[s->idx]);
-  memcpy(stats, &s->port_user_stats, sizeof(*stats));
-  rte_spinlock_unlock(&s->parent->mutex[s->idx]);
+  if (!ret) {
+    memcpy(stats, &s->port_user_stats, sizeof(*stats));
+    rx_video_session_put(mgr, idx);
+  }
   MT_HANDLE_RELEASE(s_impl);
-  return 0;
+  return ret;
 }
 
 int st20_rx_reset_session_stats(st20_rx_handle handle) {
@@ -4782,14 +4817,17 @@ int st20_rx_reset_session_stats(st20_rx_handle handle) {
 
   MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_VIDEO, -EINVAL);
   struct st_rx_video_session_impl* s = s_impl->impl;
+  struct st_rx_video_sessions_mgr* mgr;
+  int idx, ret = rv_api_lock(s, &mgr, &idx);
 
-  rte_spinlock_lock(&s->parent->mutex[s->idx]);
-  memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
-  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
-  rte_atomic32_set(&s->stat_frames_received, 0);
-  rte_spinlock_unlock(&s->parent->mutex[s->idx]);
+  if (!ret) {
+    memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+    memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
+    rte_atomic32_set(&s->stat_frames_received, 0);
+    rx_video_session_put(mgr, idx);
+  }
   MT_HANDLE_RELEASE(s_impl);
-  return 0;
+  return ret;
 }
 
 int st20_rx_free(st20_rx_handle handle) {
@@ -4798,6 +4836,18 @@ int st20_rx_free(st20_rx_handle handle) {
   struct st_rx_video_session_impl* s;
   struct mtl_main_impl* impl;
   int ret, sch_idx, idx;
+
+  /* in a callback of this session its tasklet is still on it; the ref keeps a racing
+   * free from freeing the session meanwhile */
+  if (!mt_handle_acquire(&s_impl->lc_destroying, &s_impl->lc_refcnt, &s_impl->type,
+                         MT_HANDLE_RX_VIDEO)) {
+    bool busy = rx_video_session_in_own_callback(s_impl->impl->parent, s_impl->impl->idx);
+    mt_handle_release(&s_impl->lc_refcnt);
+    if (busy) {
+      warn("%s, not from a callback of this session\n", __func__);
+      return -EBUSY;
+    }
+  }
 
   int _gd =
       mt_handle_begin_destroy(&s_impl->lc_destroying, &s_impl->type, MT_HANDLE_RX_VIDEO);
@@ -5141,7 +5191,7 @@ int st22_rx_update_source(st22_rx_handle handle, struct st_rx_source_info* src) 
   ret = st_rx_source_info_check(src, s->ops.num_port);
   if (ret < 0) goto out;
 
-  ret = rv_mgr_update_src(&s_impl->sch->rx_video_mgr, s, src);
+  ret = rv_mgr_update_src(s, src);
   if (ret < 0) {
     err("%s(%d), online update fail %d\n", __func__, idx, ret);
     goto out;
@@ -5184,6 +5234,18 @@ int st22_rx_free(st22_rx_handle handle) {
   struct st_rx_video_session_impl* s;
   struct mtl_main_impl* impl;
   int ret, sch_idx, idx;
+
+  /* in a callback of this session its tasklet is still on it; the ref keeps a racing
+   * free from freeing the session meanwhile */
+  if (!mt_handle_acquire(&s_impl->lc_destroying, &s_impl->lc_refcnt, &s_impl->type,
+                         MT_ST22_HANDLE_RX_VIDEO)) {
+    bool busy = rx_video_session_in_own_callback(s_impl->impl->parent, s_impl->impl->idx);
+    mt_handle_release(&s_impl->lc_refcnt);
+    if (busy) {
+      warn("%s, not from a callback of this session\n", __func__);
+      return -EBUSY;
+    }
+  }
 
   int _gd = mt_handle_begin_destroy(&s_impl->lc_destroying, &s_impl->type,
                                     MT_ST22_HANDLE_RX_VIDEO);

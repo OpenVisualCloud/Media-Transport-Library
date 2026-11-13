@@ -35,6 +35,13 @@ typedef struct ut20p_ctx ut20p_ctx;
 
 int ut20p_init(void);
 
+/** The result the transport's st20_rx_reset_session_stats() stub returns. */
+void ut20p_set_transport_reset_ret(int ret);
+void ut20p_set_stat_frames_received(ut20p_ctx* ctx, uint64_t frames);
+/** st20p_rx_free() in a callback of its transport session, on that session's scheduler:
+ *  its result, and in *destroying whether it began to destroy the ctx. */
+int ut20p_rx_free_in_callback(ut20p_ctx* ctx, bool* destroying);
+
 /** Create a pipeline test context with the given framebuffer ring depth. */
 ut20p_ctx* ut20p_ctx_create(int framebuff_cnt);
 void ut20p_ctx_destroy(ut20p_ctx* ctx);

@@ -188,7 +188,7 @@ static bool sch_membarrier_registered(void) {
     bool ok = cmds > 0 && (cmds & MEMBARRIER_CMD_PRIVATE_EXPEDITED) &&
               !syscall(__NR_membarrier, MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED, 0, 0);
     if (!ok)
-      warn("%s, no membarrier(2), the TX video tasklets fence per session\n", __func__);
+      warn("%s, no membarrier(2), the video tasklets fence per session\n", __func__);
     state = ok ? 1 : -1;
     atomic_store(&sch_membarrier_state, state);
   }
@@ -222,15 +222,14 @@ int mt_sch_quiescent_wait(struct mtl_sch_impl* sch, const struct mt_sch_dp_slot*
   atomic_thread_fence(memory_order_seq_cst);
   uint64_t start_ns = timeout_us ? mt_get_tsc(sch->parent) : 0;
   int polls = 0;
-  bool tried = false, synced = false, in_slot = false;
+  bool tried = false, synced = false;
 
   while (atomic_load_explicit(&sch->qs_seen, memory_order_acquire) < token) {
-    if (synced) {
-      if (atomic_load_explicit(&dp->idx, memory_order_acquire) != idx) {
-        if (in_slot) sch_dp_slot_sync(dp); /* drains its WC stores, as a pass end does */
-        return 0;
-      }
-      in_slot = true;
+    /* the tasklets may have been in slot idx at the first sync and stored to it since:
+     * drain their WC stores, as a pass end does */
+    if (synced && atomic_load_explicit(&dp->idx, memory_order_acquire) != idx) {
+      sch_dp_slot_sync(dp);
+      return 0;
     }
     if (timeout_us &&
         mt_get_tsc(sch->parent) - start_ns > (uint64_t)timeout_us * NS_PER_US)

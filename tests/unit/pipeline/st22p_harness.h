@@ -34,6 +34,10 @@ typedef struct ut22p_ctx ut22p_ctx;
 
 int ut22p_init(void);
 
+/** st22p_rx_free() in a callback of its transport session, on that session's scheduler:
+ *  its result, and in *destroying whether it began to destroy the ctx. */
+int ut22p_rx_free_in_callback(ut22p_ctx* ctx, bool* destroying);
+
 ut22p_ctx* ut22p_ctx_create(int framebuff_cnt);
 void ut22p_ctx_destroy(ut22p_ctx* ctx);
 

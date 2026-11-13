@@ -223,3 +223,29 @@ st22p_rx_handle ut22p_rx_create(struct st22p_rx_ops* ops) {
   snprintf(ops->port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut22p_port");
   return st22p_rx_create(impl, ops);
 }
+
+int ut22p_rx_free_in_callback(ut22p_ctx* ctx, bool* destroying) {
+  struct st22p_rx_ctx* p = &ctx->pipeline;
+  struct st_rx_video_sessions_mgr* mgr = calloc(1, sizeof(*mgr));
+  struct st_rx_video_session_impl* s = calloc(1, sizeof(*s));
+  struct st22_rx_video_session_handle_impl transport = {.type = MT_ST22_HANDLE_RX_VIDEO,
+                                                        .impl = s};
+  st22_rx_handle stub = p->transport;
+  int ret = -ENOMEM;
+
+  if (mgr && s) {
+    /* its session 0 of scheduler 0, with the tasklet on it, the caller on that thread */
+    mgr->parent = &ctx->impl;
+    atomic_store(&mgr->dp_slot.idx, 0);
+    s->parent = mgr;
+    mt_sch_instance(&ctx->impl, 0)->t_pid = rte_gettid();
+    p->transport = &transport;
+    ret = st22p_rx_free(p);
+    *destroying = atomic_load(&p->lc_destroying);
+    p->transport = stub;
+    mt_sch_instance(&ctx->impl, 0)->t_pid = 0;
+  }
+  free(s);
+  free(mgr);
+  return ret;
+}

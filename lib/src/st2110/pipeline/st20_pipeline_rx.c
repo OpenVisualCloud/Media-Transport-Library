@@ -7,6 +7,7 @@
 #include "../../mt_handle_guard.h"
 #include "../../mt_log.h"
 #include "../../mt_stat.h"
+#include "../st_rx_video_session.h"
 
 static int rx_st20p_uinit_dst_fbs(struct st20p_rx_ctx* ctx);
 
@@ -1238,6 +1239,20 @@ int st20p_rx_free(st20p_rx_handle handle) {
   struct st20p_rx_ctx* ctx = handle;
   struct mtl_main_impl* impl = ctx->impl;
 
+  /* the transport would refuse and stay attached to the ctx freed below; the ref keeps
+   * a racing free from freeing the transport meanwhile */
+  if (!mt_handle_acquire(&ctx->lc_destroying, &ctx->lc_refcnt, &ctx->type,
+                         MT_ST20_HANDLE_PIPELINE_RX)) {
+    struct st_rx_video_session_handle_impl* transport = ctx->transport;
+    bool busy = transport && rx_video_session_in_own_callback(transport->impl->parent,
+                                                              transport->impl->idx);
+    mt_handle_release(&ctx->lc_refcnt);
+    if (busy) {
+      warn("%s(%d), not from a callback of this session\n", __func__, ctx->idx);
+      return -EBUSY;
+    }
+  }
+
   int _gd = mt_handle_begin_destroy(&ctx->lc_destroying, &ctx->type,
                                     MT_ST20_HANDLE_PIPELINE_RX);
   if (_gd < 0) {
@@ -1382,10 +1397,12 @@ int st20p_rx_reset_session_stats(st20p_rx_handle handle) {
 
   MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_RX, -EIO);
 
-  atomic_store_explicit(&ctx->stat_frames_received, 0, memory_order_relaxed);
-  atomic_store_explicit(&ctx->stat_frames_dropped, 0, memory_order_relaxed);
-  atomic_store_explicit(&ctx->stat_frames_corrupted, 0, memory_order_relaxed);
   ret = st20_rx_reset_session_stats(ctx->transport);
+  if (!ret) {
+    atomic_store_explicit(&ctx->stat_frames_received, 0, memory_order_relaxed);
+    atomic_store_explicit(&ctx->stat_frames_dropped, 0, memory_order_relaxed);
+    atomic_store_explicit(&ctx->stat_frames_corrupted, 0, memory_order_relaxed);
+  }
   MT_HANDLE_RELEASE(ctx);
   return ret;
 }

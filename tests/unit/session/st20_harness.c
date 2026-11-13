@@ -36,7 +36,12 @@ static struct mtl_dma_lender_dev* ut20_dma_request_dev(struct mtl_main_impl* imp
 #include "st2110/st_rx_video_session.h"
 #undef ST_RX_VIDEO_DMA_MIN_SIZE
 #define ST_RX_VIDEO_DMA_MIN_SIZE 0
+/* The RX tasklet's queue poll, so the lock tests run rvs_pkt_rx_tasklet_handler(). */
+static uint16_t ut20_rxq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
+                               uint16_t nb_pkts);
+#define mt_rxq_burst ut20_rxq_burst
 #include "st2110/st_rx_video_session.c"
+#undef mt_rxq_burst
 #undef mt_dma_copy
 #undef mt_dma_submit
 #undef mt_dma_completed
@@ -115,6 +120,18 @@ struct ut20_test_ctx {
   struct mtl_dma_lender_dev idle_dma_dev;
   int uframe_refuse_row;
   bool refuse_incomplete;
+
+  /* session lock tests: a peer in slot 1, fake queues and what the poll saw */
+  struct st_rx_video_session_impl peer;
+  struct st_rx_video_session_impl other; /* takes slot 0 when the session moves */
+  struct st_rx_video_session_handle_impl handle;
+  struct st22_rx_video_session_handle_impl handle22;
+  char fake_rxq[2][64];
+  int bursts[2];
+  bool burst_locked;
+  int burst_slot;
+  void (*burst_hook)(struct ut20_test_ctx* ctx, int idx);
+  void* hook_priv;
 };
 
 #include "session/st20_harness.h"
@@ -1186,4 +1203,324 @@ int ut20_st22_ops_check_source(const struct st_rx_source_info* src) {
   ops.rtp_ring_size = UT_RING_SIZE;
   ops.notify_rtp_ready = ut20_notify_rtp_ready;
   return rv_st22_ops_check(&ops);
+}
+
+/* ── session lock: the RX tasklets take no session lock ───────────────── */
+
+static struct ut20_test_ctx* ut20_burst_ctx;
+
+static uint16_t ut20_rxq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
+                               uint16_t nb_pkts) {
+  struct ut20_test_ctx* ctx = ut20_burst_ctx;
+  (void)rx_pkts;
+  (void)nb_pkts;
+  if (!ctx) return 0;
+  int idx = ((char*)entry == ctx->fake_rxq[1]) ? 1 : 0;
+  ctx->bursts[idx]++;
+  ctx->burst_locked = rte_spinlock_is_locked(&ctx->mgr.mutex[idx]);
+  ctx->burst_slot = atomic_load(&ctx->mgr.dp_slot.idx);
+  if (ctx->burst_hook) ctx->burst_hook(ctx, idx);
+  return 0;
+}
+
+static void ut20_lock_session_init(struct ut20_test_ctx* ctx,
+                                   struct st_rx_video_session_impl* s, int idx) {
+  s->parent = &ctx->mgr;
+  s->idx = idx;
+  s->attached = true;
+  s->ops.num_port = 1;
+  s->rx_burst_size = 32;
+  s->rxq[MTL_SESSION_PORT_P] = (struct mt_rxq_entry*)ctx->fake_rxq[idx];
+  ctx->mgr.sessions[idx] = s;
+}
+
+void ut20_lock_setup(ut20_test_ctx* ctx, bool peer) {
+  struct mtl_sch_impl* sch = mt_sch_instance(&ctx->impl, 0);
+
+  sch->parent = &ctx->impl;
+  atomic_store(&sch->qs_seen, UINT64_MAX); /* no scheduler runs the tasklets */
+  for (int i = 0; i < 3; i++) rte_spinlock_init(&ctx->mgr.mutex[i]);
+  mt_sch_dp_slot_init(&ctx->mgr.dp_slot);
+  ut20_lock_session_init(ctx, &ctx->session, 0);
+  ctx->mgr.max_idx = 1;
+  if (peer) {
+    ut20_lock_session_init(ctx, &ctx->peer, 1);
+    ctx->mgr.max_idx = 2;
+  }
+  ctx->handle.parent = &ctx->impl;
+  ctx->handle.type = MT_HANDLE_RX_VIDEO;
+  ctx->handle.sch = sch;
+  ctx->handle.impl = &ctx->session;
+  ctx->session.st20_handle = &ctx->handle;
+  ctx->handle22.parent = &ctx->impl;
+  ctx->handle22.type = MT_ST22_HANDLE_RX_VIDEO;
+  ctx->handle22.sch = sch;
+  ctx->handle22.impl = &ctx->session;
+}
+
+bool ut20_lock_fence(const ut20_test_ctx* ctx) {
+  return ctx->mgr.dp_slot.fence;
+}
+
+void ut20_lock_set_fence(ut20_test_ctx* ctx, bool fence) {
+  ctx->mgr.dp_slot.fence = fence;
+}
+
+void ut20_lock_hold(ut20_test_ctx* ctx, int idx, bool hold) {
+  if (hold)
+    rte_spinlock_lock(&ctx->mgr.mutex[idx]);
+  else
+    rte_spinlock_unlock(&ctx->mgr.mutex[idx]);
+}
+
+int ut20_run_pkt_tasklet(ut20_test_ctx* ctx) {
+  ut20_burst_ctx = ctx;
+  int ret = rvs_pkt_rx_tasklet_handler(&ctx->mgr);
+  ut20_burst_ctx = NULL;
+  return ret;
+}
+
+int ut20_lock_bursts(const ut20_test_ctx* ctx, int idx) {
+  return ctx->bursts[idx];
+}
+
+bool ut20_lock_burst_locked(const ut20_test_ctx* ctx) {
+  return ctx->burst_locked;
+}
+
+int ut20_lock_burst_slot(const ut20_test_ctx* ctx) {
+  return ctx->burst_slot;
+}
+
+int ut20_lock_slot_now(const ut20_test_ctx* ctx) {
+  return atomic_load(&ctx->mgr.dp_slot.idx);
+}
+
+/* The call on session 0, through its public API. */
+int ut20_lock_call(ut20_test_ctx* ctx, enum ut20_lock_api call) {
+  struct st20_rx_user_stats stats;
+  struct st_rx_source_info src = {.ip_addr[MTL_SESSION_PORT_P] = {239, 0, 0, 1},
+                                  .udp_port[MTL_SESSION_PORT_P] = 20000};
+
+  switch (call) {
+    case UT20_LOCK_STATS_GET:
+      return st20_rx_get_session_stats(&ctx->handle, &stats);
+    case UT20_LOCK_STATS_RESET:
+      return st20_rx_reset_session_stats(&ctx->handle);
+    case UT20_LOCK_UPDATE_SRC:
+      return st20_rx_update_source(&ctx->handle, &src);
+    case UT20_LOCK_FREE:
+      return st20_rx_free(&ctx->handle);
+    case UT20_LOCK_ST22_UPDATE_SRC:
+      return st22_rx_update_source(&ctx->handle22, &src);
+    default:
+      return st22_rx_free(&ctx->handle22);
+  }
+}
+
+struct ut20_lock_run {
+  struct ut20_test_ctx* ctx;
+  enum ut20_lock_api call;
+  int call_ret;
+  int hook_idx;   /* the session whose poll blocks, or makes the call */
+  bool contended; /* the call in a poll finds the session's lock held */
+  pthread_mutex_t app_mutex;
+  atomic_bool entered;
+  atomic_bool release;
+  atomic_bool call_done;
+};
+
+static void ut20_lock_block_hook(struct ut20_test_ctx* ctx, int idx) {
+  struct ut20_lock_run* r = ctx->hook_priv;
+  if (idx != r->hook_idx) return;
+  atomic_store(&r->entered, true);
+  while (!atomic_load(&r->release)) usleep(100);
+}
+
+static void ut20_lock_mutex_hook(struct ut20_test_ctx* ctx, int idx) {
+  struct ut20_lock_run* r = ctx->hook_priv;
+  if (idx != r->hook_idx) return;
+  atomic_store(&r->entered, true);
+  pthread_mutex_lock(&r->app_mutex); /* the caller holds it while it calls */
+  pthread_mutex_unlock(&r->app_mutex);
+}
+
+static void ut20_lock_call_hook(struct ut20_test_ctx* ctx, int idx) {
+  struct ut20_lock_run* r = ctx->hook_priv;
+  if (idx != r->hook_idx) return;
+  if (r->contended) rte_spinlock_lock(&ctx->mgr.mutex[0]); /* session 0's lock held */
+  r->call_ret = ut20_lock_call(ctx, r->call);
+  if (r->contended) rte_spinlock_unlock(&ctx->mgr.mutex[0]);
+  atomic_store(&r->call_done, true);
+}
+
+/* A scheduler thread in one pass of the tasklet, ending the pass after it. */
+static void* ut20_lock_sch_thread(void* arg) {
+  struct ut20_lock_run* r = arg;
+  struct mtl_sch_impl* sch = mt_sch_instance(&r->ctx->impl, 0);
+
+  sch->t_pid = rte_gettid();
+  ut20_run_pkt_tasklet(r->ctx);
+  atomic_store(&sch->qs_seen, atomic_load(&sch->qs_token));
+  sch->t_pid = 0;
+  return NULL;
+}
+
+static void* ut20_lock_writer_thread(void* arg) {
+  struct ut20_lock_run* r = arg;
+  r->call_ret = ut20_lock_call(r->ctx, r->call);
+  atomic_store(&r->call_done, true);
+  return NULL;
+}
+
+static bool ut20_lock_wait(atomic_bool* flag, int timeout_ms) {
+  uint64_t end = rte_get_tsc_cycles() + rte_get_tsc_hz() * timeout_ms / 1000;
+  while (!atomic_load(flag) && rte_get_tsc_cycles() < end) usleep(100);
+  return atomic_load(flag);
+}
+
+static void ut20_lock_online(struct ut20_test_ctx* ctx) {
+  struct mtl_sch_impl* sch = mt_sch_instance(&ctx->impl, 0);
+  atomic_store(&sch->qs_seen, atomic_load(&sch->qs_token)); /* a pass begins */
+}
+
+static void ut20_lock_offline(struct ut20_test_ctx* ctx) {
+  atomic_store(&mt_sch_instance(&ctx->impl, 0)->qs_seen, UINT64_MAX);
+}
+
+/* Moves session 0 to slot 2 and another session into slot 0, as if it migrated. */
+static void ut20_lock_move(struct ut20_test_ctx* ctx, bool moved) {
+  if (moved) {
+    ut20_lock_session_init(ctx, &ctx->other, 0);
+    ctx->mgr.sessions[2] = &ctx->session;
+    ctx->session.idx = 2;
+    ctx->mgr.max_idx = 3;
+  } else {
+    ctx->mgr.sessions[0] = &ctx->session;
+    ctx->mgr.sessions[2] = NULL;
+    ctx->session.idx = 0;
+    ctx->mgr.max_idx = 2;
+  }
+}
+
+int ut20_lock_call_during_own_poll(ut20_test_ctx* ctx, enum ut20_lock_api call, bool move,
+                                   bool* done_in_poll) {
+  struct ut20_lock_run r = {.ctx = ctx, .call = call, .call_ret = -ECANCELED};
+  pthread_t sch_thread, writer;
+  int ret;
+
+  ctx->burst_hook = ut20_lock_block_hook;
+  ctx->hook_priv = &r;
+  ut20_lock_online(ctx);
+  ret = -pthread_create(&sch_thread, NULL, ut20_lock_sch_thread, &r);
+  if (!ret) {
+    if (!ut20_lock_wait(&r.entered, 1000)) ret = -ETIMEDOUT;
+    if (!ret) ret = -pthread_create(&writer, NULL, ut20_lock_writer_thread, &r);
+    if (!ret) {
+      usleep(20 * 1000); /* far past the spin of the wait */
+      *done_in_poll = atomic_load(&r.call_done);
+      if (move) ut20_lock_move(ctx, true); /* while the call holds the old slot */
+      atomic_store(&r.release, true);
+      pthread_join(writer, NULL);
+      ret = r.call_ret;
+    }
+    atomic_store(&r.release, true);
+    pthread_join(sch_thread, NULL);
+  }
+  ut20_lock_offline(ctx);
+  ctx->burst_hook = NULL;
+  if (move) ut20_lock_move(ctx, false);
+  return ret;
+}
+
+bool ut20_lock_call_with_peer_on_caller_mutex(ut20_test_ctx* ctx, enum ut20_lock_api call,
+                                              int timeout_ms) {
+  struct ut20_lock_run r = {
+      .ctx = ctx, .call = call, .call_ret = -ECANCELED, .hook_idx = 1};
+  pthread_t sch_thread;
+  bool completed = false;
+
+  pthread_mutex_init(&r.app_mutex, NULL);
+  pthread_mutex_lock(&r.app_mutex);
+  ctx->burst_hook = ut20_lock_mutex_hook;
+  ctx->hook_priv = &r;
+  ut20_lock_online(ctx);
+  if (!pthread_create(&sch_thread, NULL, ut20_lock_sch_thread, &r)) {
+    if (ut20_lock_wait(&r.entered, 1000)) {
+      pthread_t writer;
+      if (!pthread_create(&writer, NULL, ut20_lock_writer_thread, &r)) {
+        completed = ut20_lock_wait(&r.call_done, timeout_ms);
+        if (!completed) ut20_lock_offline(ctx); /* releases a wait on the pass */
+        pthread_join(writer, NULL);
+      }
+    }
+    pthread_mutex_unlock(&r.app_mutex);
+    pthread_join(sch_thread, NULL);
+  } else {
+    pthread_mutex_unlock(&r.app_mutex);
+  }
+  pthread_mutex_destroy(&r.app_mutex);
+  ut20_lock_offline(ctx);
+  ctx->burst_hook = NULL;
+  return completed && !r.call_ret;
+}
+
+int ut20_lock_call_in_poll(ut20_test_ctx* ctx, enum ut20_lock_api call, int idx,
+                           bool contended) {
+  struct ut20_lock_run r = {.ctx = ctx,
+                            .call = call,
+                            .call_ret = -ECANCELED,
+                            .hook_idx = idx,
+                            .contended = contended};
+  pthread_t sch_thread;
+
+  ctx->burst_hook = ut20_lock_call_hook;
+  ctx->hook_priv = &r;
+  ut20_lock_online(ctx);
+  if (!pthread_create(&sch_thread, NULL, ut20_lock_sch_thread, &r))
+    pthread_join(sch_thread, NULL);
+  ut20_lock_offline(ctx);
+  ctx->burst_hook = NULL;
+  return r.call_ret;
+}
+
+/* The scheduler blocked in the poll of session idx until released, the caller's get of
+ * session 0 meanwhile: what it got, and whether session 0's lock is held after. */
+static bool ut20_lock_get_during_poll(struct ut20_test_ctx* ctx, int idx, int timeout_us,
+                                      bool stat_dump, bool* locked_after) {
+  struct ut20_lock_run r = {.ctx = ctx, .hook_idx = idx};
+  pthread_t sch_thread;
+  bool got = false;
+
+  ctx->burst_hook = ut20_lock_block_hook;
+  ctx->hook_priv = &r;
+  ut20_lock_online(ctx);
+  if (!pthread_create(&sch_thread, NULL, ut20_lock_sch_thread, &r)) {
+    if (ut20_lock_wait(&r.entered, 1000)) {
+      if (stat_dump) {
+        rte_atomic32_set(&ctx->session.stat_frames_received, 5);
+        rv_sessions_stat(&ctx->mgr);
+        got = !rte_atomic32_read(&ctx->session.stat_frames_received); /* rv_stat ran */
+      } else if (rx_video_session_get_timeout(&ctx->mgr, 0, timeout_us)) {
+        got = true;
+        rx_video_session_put(&ctx->mgr, 0);
+      }
+      *locked_after = rte_spinlock_is_locked(&ctx->mgr.mutex[0]);
+    }
+    atomic_store(&r.release, true);
+    pthread_join(sch_thread, NULL);
+  }
+  ut20_lock_offline(ctx);
+  ctx->burst_hook = NULL;
+  return got;
+}
+
+bool ut20_lock_stat_dump_during_peer_poll(ut20_test_ctx* ctx) {
+  bool locked_after = true;
+  return ut20_lock_get_during_poll(ctx, 1, 0, true, &locked_after) && !locked_after;
+}
+
+bool ut20_lock_get_timeout_during_own_poll(ut20_test_ctx* ctx, int timeout_us,
+                                           bool* locked_after) {
+  return ut20_lock_get_during_poll(ctx, 0, timeout_us, false, locked_after);
 }

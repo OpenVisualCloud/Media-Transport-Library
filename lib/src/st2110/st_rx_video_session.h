@@ -26,29 +26,63 @@ int st_rx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mtl_sch_imp
 
 int st_rx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mtl_sch_impl* sch);
 
+/* a stats dump waits out the scheduler pass in flight, tens of us when busy */
+#define ST_RX_VIDEO_STAT_TIMEOUT_US (1000)
+
+/* Without membarrier(2) nothing else drains the frame copies' streaming stores before a
+ * migration sees the tasklets leave a session, so they do it themselves. */
+static inline void rx_video_session_dp_drain(struct st_rx_video_sessions_mgr* mgr) {
+  if (mgr->dp_slot.fence) rte_wmb();
+}
+
+/* Tasklets only: no lock, no put; NULL while the control plane holds the lock. */
+static inline struct st_rx_video_session_impl* rx_video_session_dp_get(
+    struct st_rx_video_sessions_mgr* mgr, int idx) {
+  rx_video_session_dp_drain(mgr);
+  mt_sch_dp_slot_enter(&mgr->dp_slot, idx);
+  if (rte_spinlock_is_locked(&mgr->mutex[idx])) return NULL;
+  return mgr->sessions[idx];
+}
+
+/* Tasklets only: at the end of the loop over the sessions. */
+static inline void rx_video_session_dp_done(struct st_rx_video_sessions_mgr* mgr) {
+  rx_video_session_dp_drain(mgr);
+  mt_sch_dp_slot_leave(&mgr->dp_slot);
+}
+
+/* After this no tasklet that could have missed the lock of idx just taken is on idx. */
+static inline int rx_video_session_wait_tasklets(struct st_rx_video_sessions_mgr* mgr,
+                                                 int idx, int timeout_us) {
+  return mt_sch_quiescent_wait(mt_sch_instance(mgr->parent, mgr->idx), &mgr->dp_slot, idx,
+                               timeout_us);
+}
+
+/* Whether the caller is a callback of session idx, on its scheduler's own thread: a
+ * holder of its lock then waits for that callback to return. */
+static inline bool rx_video_session_in_own_callback(struct st_rx_video_sessions_mgr* mgr,
+                                                    int idx) {
+  return mt_sch_on_own_thread(mt_sch_instance(mgr->parent, mgr->idx)) &&
+         atomic_load_explicit(&mgr->dp_slot.idx, memory_order_relaxed) == idx;
+}
+
 /* call rx_video_session_put always if get successfully */
 static inline struct st_rx_video_session_impl* rx_video_session_get(
     struct st_rx_video_sessions_mgr* mgr, int idx) {
   rte_spinlock_lock(&mgr->mutex[idx]);
   struct st_rx_video_session_impl* s = mgr->sessions[idx];
-  if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
+  if (s)
+    rx_video_session_wait_tasklets(mgr, idx, 0);
+  else
+    rte_spinlock_unlock(&mgr->mutex[idx]);
   return s;
 }
 
-/* call rx_video_session_put always if get successfully */
+/* call rx_video_session_put always if get successfully; timeout_us bounds both waits */
 static inline struct st_rx_video_session_impl* rx_video_session_get_timeout(
     struct st_rx_video_sessions_mgr* mgr, int idx, int timeout_us) {
   if (!mt_spinlock_lock_timeout(mgr->parent, &mgr->mutex[idx], timeout_us)) return NULL;
   struct st_rx_video_session_impl* s = mgr->sessions[idx];
-  if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
-  return s;
-}
-
-/* call rx_video_session_put always if get successfully */
-static inline struct st_rx_video_session_impl* rx_video_session_try_get(
-    struct st_rx_video_sessions_mgr* mgr, int idx) {
-  if (!rte_spinlock_trylock(&mgr->mutex[idx])) return NULL;
-  struct st_rx_video_session_impl* s = mgr->sessions[idx];
+  if (s && rx_video_session_wait_tasklets(mgr, idx, timeout_us) < 0) s = NULL;
   if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
   return s;
 }
@@ -62,6 +96,7 @@ static inline bool rx_video_session_get_empty(struct st_rx_video_sessions_mgr* m
     rte_spinlock_unlock(&mgr->mutex[idx]); /* not null, unlock it */
     return false;
   } else {
+    rx_video_session_wait_tasklets(mgr, idx, 0);
     return true;
   }
 }

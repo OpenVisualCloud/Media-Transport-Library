@@ -152,6 +152,49 @@ void ut20_set_port_down(ut20_test_ctx* ctx, enum mtl_session_port port, bool dow
  * two ut20_last_tp_* accessors below. */
 int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx, bool interlaced);
 
+/* Session lock: session 0 (and with peer, a second one in slot 1) in the manager with
+ * fake RX queues, so rvs_pkt_rx_tasklet_handler() polls them through a seam. */
+void ut20_lock_setup(ut20_test_ctx* ctx, bool peer);
+/* The tasklets fence each slot store, as without membarrier(2), or rely on it. */
+void ut20_lock_set_fence(ut20_test_ctx* ctx, bool fence);
+/* Whether the tasklets fence each slot store: membarrier(2) is unavailable. */
+bool ut20_lock_fence(const ut20_test_ctx* ctx);
+void ut20_lock_hold(ut20_test_ctx* ctx, int idx, bool hold);
+int ut20_run_pkt_tasklet(ut20_test_ctx* ctx);
+int ut20_lock_bursts(const ut20_test_ctx* ctx, int idx);
+bool ut20_lock_burst_locked(const ut20_test_ctx* ctx);
+int ut20_lock_burst_slot(const ut20_test_ctx* ctx);
+int ut20_lock_slot_now(const ut20_test_ctx* ctx);
+enum ut20_lock_api {
+  UT20_LOCK_STATS_GET,
+  UT20_LOCK_STATS_RESET,
+  UT20_LOCK_UPDATE_SRC,
+  UT20_LOCK_FREE,
+  UT20_LOCK_ST22_UPDATE_SRC,
+  UT20_LOCK_ST22_FREE,
+};
+int ut20_lock_call(ut20_test_ctx* ctx, enum ut20_lock_api call);
+/* The call from another thread while session 0's own poll runs on its scheduler:
+ * *done_in_poll whether it returned before that poll did. With move, session 0 moves to
+ * slot 2 while the call waits on slot 0. Returns the call's result. */
+int ut20_lock_call_during_own_poll(ut20_test_ctx* ctx, enum ut20_lock_api call, bool move,
+                                   bool* done_in_poll);
+/* The call from a thread that holds a mutex the peer's poll (slot 1) waits for: whether
+ * it completed within timeout_ms and returned 0. */
+bool ut20_lock_call_with_peer_on_caller_mutex(ut20_test_ctx* ctx, enum ut20_lock_api call,
+                                              int timeout_ms);
+/* The call from the poll of session idx, on the scheduler's own thread; contended: with
+ * session 0's lock held, as by a holder waiting for that poll. */
+int ut20_lock_call_in_poll(ut20_test_ctx* ctx, enum ut20_lock_api call, int idx,
+                           bool contended);
+/* The stats dump while the scheduler is blocked in the peer's poll: whether it reported
+ * session 0 and left its lock free. */
+bool ut20_lock_stat_dump_during_peer_poll(ut20_test_ctx* ctx);
+/* rx_video_session_get_timeout() of session 0 while its poll never returns: whether it
+ * got the session, and whether the lock is held after. */
+bool ut20_lock_get_timeout_during_own_poll(ut20_test_ctx* ctx, int timeout_us,
+                                           bool* locked_after);
+
 void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port);
 
 /* Enable the 10 s timing-parser stat, as ST20_RX_FLAG_TIMING_PARSER_STAT would. */

@@ -2197,12 +2197,16 @@ st20_rx_handle st20_rx_create(mtl_handle mt, struct st20_rx_ops* ops);
 /**
  * Online update the source info for the rx st2110-20(video) session.
  *
+ * @note Do not call it from any callback. It takes the per-session spinlock and waits
+ * until the session's tasklet is done with it.
  * @param handle
  *   The handle to the rx st2110-20(video) session.
  * @param src
  *   The pointer to the rx st2110-20(video) source info.
  * @return
  *   - 0: Success, rx st2110-20(video) session source update succ.
+ *   - -EBUSY: Called in a callback of this session on its scheduler; the source is
+ *     not updated.
  *   - <0: Error code of the rx st2110-20(video) session source update.
  */
 int st20_rx_update_source(st20_rx_handle handle, struct st_rx_source_info* src);
@@ -2240,10 +2244,13 @@ int st20_rx_pcapng_dump(st20_rx_handle handle, uint32_t max_dump_packets, bool s
 /**
  * Free the rx st2110-20(video) session.
  *
+ * @note Do not call it from any callback.
  * @param handle
  *   The handle to the rx st2110-20(video) session.
  * @return
  *   - 0: Success, rx st2110-20(video) session freed.
+ *   - -EBUSY: Called in a callback of this session on its scheduler, or another free
+ *     of this handle is in progress; the session is not freed.
  *   - <0: Error code of the rx st2110-20(video) session free.
  */
 int st20_rx_free(st20_rx_handle handle);
@@ -2351,8 +2358,10 @@ int st20_rx_timing_parser_critical(st20_rx_handle handle, struct st20_rx_tp_pass
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-20(video) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
- * this session's callbacks: they may run with that spinlock held, so it deadlocks.
+ * @note Thread-safe. Takes the per-session spinlock, then waits until the session's
+ * tasklet is done with it, at most for its scheduler's pass in flight; the session skips
+ * up to two passes, so do not call it in a tight loop. In this session's own callbacks it
+ * may return -EBUSY.
  * @param handle
  *   The handle to the rx st2110-20(video) session.
  * @param stats
@@ -2366,8 +2375,10 @@ int st20_rx_get_session_stats(st20_rx_handle handle, struct st20_rx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one rx st2110-20(video) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
- * this session's callbacks: they may run with that spinlock held, so it deadlocks.
+ * @note Thread-safe. Takes the per-session spinlock, then waits until the session's
+ * tasklet is done with it, at most for its scheduler's pass in flight; the session skips
+ * up to two passes, so do not call it in a tight loop. In this session's own callbacks it
+ * may return -EBUSY.
  * @param handle
  *   The handle to the rx st2110-20(video) session.
  * @return
@@ -2393,12 +2404,16 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops);
 /**
  * Online update the source info for the rx st2110-22(compressed video) session.
  *
+ * @note Do not call it from any callback. It takes the per-session spinlock and waits
+ * until the session's tasklet is done with it.
  * @param handle
  *   The handle to the rx st2110-22(compressed video) session.
  * @param src
  *   The pointer to the rx st2110-22(compressed video) source info.
  * @return
  *   - 0: Success, rx st2110-22(video) session source update succ.
+ *   - -EBUSY: Called in a callback of this session on its scheduler; the source is
+ *     not updated.
  *   - <0: Error code of the rx st2110-22(compressed video) session source update.
  */
 int st22_rx_update_source(st22_rx_handle handle, struct st_rx_source_info* src);
@@ -2436,10 +2451,13 @@ int st22_rx_pcapng_dump(st22_rx_handle handle, uint32_t max_dump_packets, bool s
 /**
  * Free the rx st2110-22(compressed video) session.
  *
+ * @note Do not call it from any callback.
  * @param handle
  *   The handle to the rx st2110-22(compressed video) session.
  * @return
  *   - 0: Success, rx st2110-22(compressed video) session freed.
+ *   - -EBUSY: Called in a callback of this session on its scheduler, or another free
+ *     of this handle is in progress; the session is not freed.
  *   - <0: Error code of the rx st2110-22(compressed video) session free.
  */
 int st22_rx_free(st22_rx_handle handle);

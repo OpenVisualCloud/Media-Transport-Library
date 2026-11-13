@@ -6,6 +6,7 @@
 
 #include "../../mt_handle_guard.h"
 #include "../../mt_log.h"
+#include "../st_rx_video_session.h"
 
 static const char* st22p_rx_frame_stat_name[ST22P_RX_FRAME_STATUS_MAX] = {
     "free", "ready", "in_decoding", "decoded", "in_user",
@@ -880,6 +881,20 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
 int st22p_rx_free(st22p_rx_handle handle) {
   struct st22p_rx_ctx* ctx = handle;
   struct mtl_main_impl* impl = ctx->impl;
+
+  /* the transport would refuse and stay attached to the ctx freed below; the ref keeps
+   * a racing free from freeing the transport meanwhile */
+  if (!mt_handle_acquire(&ctx->lc_destroying, &ctx->lc_refcnt, &ctx->type,
+                         MT_ST22_HANDLE_PIPELINE_RX)) {
+    struct st22_rx_video_session_handle_impl* transport = ctx->transport;
+    bool busy = transport && rx_video_session_in_own_callback(transport->impl->parent,
+                                                              transport->impl->idx);
+    mt_handle_release(&ctx->lc_refcnt);
+    if (busy) {
+      warn("%s(%d), not from a callback of this session\n", __func__, ctx->idx);
+      return -EBUSY;
+    }
+  }
 
   int _gd = mt_handle_begin_destroy(&ctx->lc_destroying, &ctx->type,
                                     MT_ST22_HANDLE_PIPELINE_RX);

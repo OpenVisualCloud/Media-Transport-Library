@@ -427,12 +427,12 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
 - **Control plane**: `pthread_mutex_t` — allowed to sleep, used in create/destroy
 
 ### Session Access Pattern
-Three variants (RX video; audio and ancillary alike):
-- `rx_video_session_get()` — blocking `rte_spinlock_lock`
-- `rx_video_session_try_get()` — non-blocking `rte_spinlock_trylock`, used by the tasklets
-- `rx_video_session_get_timeout()` — `mt_spinlock_lock_timeout`
+Three variants (RX audio; ancillary and TX audio alike):
+- `rx_audio_session_get()` — blocking `rte_spinlock_lock`
+- `rx_audio_session_try_get()` — non-blocking `rte_spinlock_trylock`, used by the tasklets
+- `rx_audio_session_get_timeout()` — `mt_spinlock_lock_timeout`
 
-Paired with `rx_video_session_put()` (unlock). Always get→work→put.
+Paired with `rx_audio_session_put()` (unlock). Always get→work→put.
 
 TX video (ST20/ST22) tasklets take no lock. `tx_video_session_dp_get()` publishes the slot it
 is on in `mgr->dp_slot` (a plain store), checks `rte_spinlock_is_locked()` (an acquire load)
@@ -448,7 +448,8 @@ stall of one admin period):
 - Writer: `t = fetch_add(qs_token) + 1`, a seq_cst fence, then poll until `qs_seen >= t`: `MT_SPIN_POLLS_BEFORE_SLEEP` (1000) `rte_pause()` polls, then 1 µs sleeps, since an unpinned `MTL_FLAG_TASKLET_THREAD` scheduler may need the writer's CPU; `mt_spinlock_lock_timeout()` backs off the same way. Returns at once on the scheduler's own thread
 - A pass still running after those polls may be blocked on the writer (a callback on an app mutex it holds, a callback querying a session it holds, `tx_mutex` of a shared queue).
   The writer then issues one `membarrier(MEMBARRIER_CMD_PRIVATE_EXPEDITED)` and also returns once `dp_slot.idx` is not its slot: so it waits only while the tasklets are in that session, as it did for the per-session lock they used to hold
-- Why it is sound: the IPI makes the tasklet's earlier slot stores visible to the writer and the writer's lock visible to the tasklet's later lock loads (the asymmetric fence of liburcu's urcu-memb and folly; the light side is `atomic_signal_fence()`). If the writer saw the slot change after it was its own, a second membarrier drains the tasklet's WC doorbell stores, as a pass end does
+- Why it is sound: the IPI makes the tasklet's earlier slot stores visible to the writer and the writer's lock visible to the tasklet's later lock loads (the asymmetric fence of liburcu's urcu-memb and folly; the light side is `atomic_signal_fence()`).
+  Returning on a slot change the writer issues a second membarrier, which drains the tasklet's WC stores (TX doorbells, the RX frame copy's streaming stores) as a pass end does: the tasklet may have been in that slot at the first one and stored since
 - `mt_sch_dp_slot_init()` registers the process once. Without membarrier(2) (kernel < 4.14, a seccomp filter) `dp_slot.fence` makes each slot store a full fence instead; Windows uses `FlushProcessWriteBuffers()`
 - `_get_timeout()` bounds the lock and the wait each, unlocks and returns NULL on timeout; the stats dump passes `ST_TX_VIDEO_STAT_TIMEOUT_US` (1 ms), as a busy pass takes tens of µs
 - Scheduler (`sch_tasklet_func()`): a pass ends by publishing `qs_seen = qs_token` when the token changed; asleep or stopped, `qs_seen = UINT64_MAX` (offline), so it never blocks a writer. Going online stores the token then a full fence, else the pass's first loads could pass that store
@@ -464,6 +465,18 @@ stall of one admin period):
 - The untimed wait lasts as long as the tasklets are in that one session, as the old lock did: two callbacks on different schedulers that each query the session of the other callback deadlock, as they did under the lock
 - Why: the per-session `trylock`/`unlock` is a locked `xchg` each, and the unlock after `rte_eth_tx_burst()` waits for the descriptor stores and the doorbell; it was ~19% of a saturated scheduler core. An unprotected prototype that dropped both locks went from 6.98 to 7.89 Mpps (+13%); this protocol, 28 1080p59.94 sessions at full clock:
   5.60 to 6.45 Mpps (+15%, the aliasing still present; Xeon 8480+, E810 VF, RL pacing)
+
+RX video (ST20/ST22) tasklets take no lock either, with the same protocol on the RX manager's
+`dp_slot`: `rx_video_session_dp_get()` / `_dp_done()` in `rvs_pkt_rx_tasklet_handler()`, and
+`rx_video_session_get()`, `_get_timeout()`, `_get_empty()` lock, then wait in
+`rx_video_session_wait_tasklets()`. What differs from TX:
+- The stores to drain are the frame copy's streaming stores (`rv_frame_memcpy()`), which a session migrated mid-frame must not leave on the old core. With `dp_slot.fence` (no membarrier(2) to drain them) the tasklet issues `rte_wmb()` at each slot change itself
+- The stats dump passes `ST_RX_VIDEO_STAT_TIMEOUT_US` (1 ms), as TX does: within the 10 µs of `ST_SESSION_STAT_TIMEOUT_US` the wait never gets past its spin, so a busy scheduler's sessions would drop out of the dump
+- `rv_api_lock()` (stats get/reset, `update_source`) mirrors `tv_api_lock()` on `s->parent` / `s->idx`: a call racing a migration retries once when the slot it locked no longer holds `s`
+- From the session's own callback on its scheduler (its thread, `dp_slot.idx` on its slot) stats only trylock (-EBUSY); `*_rx_update_source()` and `st20/st22/st20p/st22p_rx_free()` return -EBUSY, as the tasklet is still on the session's queues.
+  The free checks run under a handle ref, so a racing free cannot free the session under them.
+  From a peer's callback they still work as under the old lock, but block that scheduler, so the API docs say not to call them from any callback; the pkt lcore thread (`rv_pkt_lcore_func()`) is not the scheduler thread, and a free from its callbacks still waits for that thread itself
+- Why: the trylock / unlock around each session's poll is a locked `xchg` each, and the unlock waits for the frame copy's streaming stores; with the lock the loop of one scheduler (22 × 1080p59.94 at 2.0 GHz) took about twice as long
 
 Never log under a session spinlock: tasklets skip the session while it is held. Copy the
 counters under the lock, `put`, then log the copy (TX video: `tv_stat_collect()` /
