@@ -172,6 +172,13 @@ st20p_rx_handle ut20p_handle(ut20p_ctx* ctx);
 
 /** Force ctx->lc_destroying, as a *_free() in progress sets it. */
 void ut20p_force_destroying(ut20p_ctx* ctx);
+/** Whether a *_free() began to destroy ctx. */
+bool ut20p_destroying(const ut20p_ctx* ctx);
+
+/** Point the pipeline at transport instead of its stub. */
+void ut20p_set_transport(ut20p_ctx* ctx, st20_rx_handle transport);
+/** The result of the stubbed st20_rx_get/reset_session_stats(), 0 by default. */
+void ut20p_set_transport_stats_ret(int ret);
 
 #ifdef __cplusplus
 }
