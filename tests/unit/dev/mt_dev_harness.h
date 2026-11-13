@@ -74,6 +74,12 @@ int ut_dev_config_rss_reta(ut_dev_ctx* ctx, uint16_t nb_rx_q, uint16_t reta_size
  * timestamp offload on or off and rx_desc_lim.nb_max. Returns the RX ring size chosen. */
 int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,
                                   uint16_t nb_rx_desc, uint16_t nb_max);
+/* Runs dev_if_init_rx_queues() with MTL_FLAG_RX_MONO_POOL on MTL_PORT_R with nb_rx_q
+ * queues and DPDK port_id; queue_ids[q] / port_ids[q] get what each queue would burst
+ * from, ports[q] the MTL port it is put back to. */
+int ut_dev_init_mono_rx_queues(ut_dev_ctx* ctx, uint16_t nb_rx_q, uint16_t port_id,
+                               uint16_t* queue_ids, uint16_t* port_ids,
+                               enum mtl_port* ports);
 
 /* EAL argv builder. rte_eal_init() is stubbed out and fails, which keeps dev_eal_init()'s
  * one-shot guard unlatched, so these may be called repeatedly in one process. */

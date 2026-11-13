@@ -542,6 +542,38 @@ int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,
   return ret < 0 ? ret : inf->nb_rx_desc;
 }
 
+int ut_dev_init_mono_rx_queues(ut_dev_ctx* ctx, uint16_t nb_rx_q, uint16_t port_id,
+                               uint16_t* queue_ids, uint16_t* port_ids,
+                               enum mtl_port* ports) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_R];
+  enum mtl_port saved_port = inf->port;
+  uint16_t saved_port_id = inf->port_id, saved_nb_rx_q = inf->nb_rx_q;
+  struct mt_rx_queue* saved_rx_queues = inf->rx_queues;
+  uint64_t flags = ctx->impl.user_para.flags;
+  int ret;
+
+  if (ut_eal_init() < 0) return -EIO;
+  ctx->impl.user_para.flags |= MTL_FLAG_RX_MONO_POOL;
+  inf->port = MTL_PORT_R;
+  inf->port_id = port_id;
+  inf->nb_rx_q = nb_rx_q;
+  ret = dev_if_init_rx_queues(&ctx->impl, inf);
+  if (!ret) {
+    for (uint16_t q = 0; q < nb_rx_q; q++) {
+      queue_ids[q] = inf->rx_queues[q].queue_id;
+      port_ids[q] = inf->rx_queues[q].port_id;
+      ports[q] = inf->rx_queues[q].port;
+    }
+    mt_rte_free(inf->rx_queues);
+  }
+  inf->port = saved_port;
+  inf->port_id = saved_port_id;
+  inf->nb_rx_q = saved_nb_rx_q;
+  inf->rx_queues = saved_rx_queues;
+  ctx->impl.user_para.flags = flags;
+  return ret;
+}
+
 void ut_dev_set_tx_pacing(ut_dev_ctx* ctx, enum st21_tx_pacing_way pacing) {
   ctx->impl.inf[MTL_PORT_P].tx_pacing_way = pacing;
 }
