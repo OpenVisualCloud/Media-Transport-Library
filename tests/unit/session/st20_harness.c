@@ -12,10 +12,14 @@
  *   bitmap_size = 1 byte (manually set; integer division would give 0)
  */
 
+#include <errno.h>
+#include <pthread.h>
 #include <rte_atomic.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
@@ -36,7 +40,21 @@ static struct mtl_dma_lender_dev* ut20_dma_request_dev(struct mtl_main_impl* imp
 #include "st2110/st_rx_video_session.h"
 #undef ST_RX_VIDEO_DMA_MIN_SIZE
 #define ST_RX_VIDEO_DMA_MIN_SIZE 0
+/* Fake RX queues, so the own-callback tests run rvs_pkt_rx_tasklet_handler() and
+ * st20/st22_rx_update_source() without a device. */
+#include "datapath/mt_queue.h"
+static uint16_t ut20_rxq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
+                               const uint16_t nb_pkts);
+static struct mt_rxq_entry* ut20_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
+                                         struct mt_rxq_flow* flow);
+static int ut20_rxq_put(struct mt_rxq_entry* entry);
+#define mt_rxq_burst ut20_rxq_burst
+#define mt_rxq_get ut20_rxq_get
+#define mt_rxq_put ut20_rxq_put
 #include "st2110/st_rx_video_session.c"
+#undef mt_rxq_burst
+#undef mt_rxq_get
+#undef mt_rxq_put
 #undef mt_dma_copy
 #undef mt_dma_submit
 #undef mt_dma_completed
@@ -118,6 +136,7 @@ struct ut20_test_ctx {
 };
 
 #include "session/st20_harness.h"
+#include "st2110/experimental/st20_redundant_combined_rx.h"
 
 /* ── fake DMA engine ──────────────────────────────────────────────────── */
 
@@ -1186,4 +1205,336 @@ int ut20_st22_ops_check_source(const struct st_rx_source_info* src) {
   ops.rtp_ring_size = UT_RING_SIZE;
   ops.notify_rtp_ready = ut20_notify_rtp_ready;
   return rv_st22_ops_check(&ops);
+}
+
+/* ── own-callback rules: sessions polled by the RX tasklet ────────────── */
+
+#define UT20_CB_SESSIONS 2
+#define UT20_CB_TIMEOUT_MS 1000
+#define UT20_CB_UDP_PORT 20000
+#define UT20_CB_NEW_UDP_PORT 20002
+#define UT20_CB_PKTS 5
+
+struct ut20_cb_queue {
+  struct mt_rxq_entry entry; /* first: the queue seams get &entry */
+  struct ut20_cb_ctx* ctx;
+  int idx;
+  int polls;
+};
+
+struct ut20_cb_ctx {
+  struct mtl_main_impl impl; /* first: ut20_rxq_get() gets &impl */
+  struct ut20_cb_queue queues[UT20_CB_SESSIONS];
+  /* NULL once freed */
+  struct st_rx_video_session_impl* sessions[UT20_CB_SESSIONS];
+  struct st_rx_video_session_handle_impl* handle;
+  struct st22_rx_video_session_handle_impl* handle22;
+  struct st20_rx_user_stats stats; /* the last copy st20_rx_get_session_stats() made */
+  struct st20rc_rx_ctx rc;         /* its primary transport is handle */
+  struct st20rc_rx_transport rc_transport;
+
+  /* run in the poll of session hook_idx, on the scheduler thread */
+  int hook_idx;
+  int (*hook_fn)(void* arg);
+  void* hook_arg;
+  int hook_ret;
+  bool hook_blocks; /* until release */
+  enum ut20_cb_api hook_call;
+  int caller_ret;
+  atomic_bool entered;
+  atomic_bool release;
+  atomic_bool sch_done;
+  atomic_bool caller_done;
+  bool wedged; /* a thread that never returned still uses the ctx, so it is leaked */
+};
+
+static uint16_t ut20_rxq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
+                               const uint16_t nb_pkts) {
+  struct ut20_cb_queue* q = (struct ut20_cb_queue*)entry;
+  struct ut20_cb_ctx* ctx = q->ctx;
+
+  (void)rx_pkts;
+  (void)nb_pkts;
+  q->polls++;
+  if (q->idx != ctx->hook_idx) return 0;
+  if (ctx->hook_fn) ctx->hook_ret = ctx->hook_fn(ctx->hook_arg);
+  if (ctx->hook_blocks) {
+    atomic_store(&ctx->entered, true);
+    while (!atomic_load(&ctx->release)) usleep(100);
+  }
+  return 0;
+}
+
+static struct mt_rxq_entry* ut20_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
+                                         struct mt_rxq_flow* flow) {
+  (void)port;
+  (void)flow;
+  /* only session 0 updates its source */
+  return &((struct ut20_cb_ctx*)impl)->queues[0].entry;
+}
+
+static int ut20_rxq_put(struct mt_rxq_entry* entry) {
+  (void)entry;
+  return 0;
+}
+
+static struct st_rx_video_sessions_mgr* ut20_cb_mgr(struct ut20_cb_ctx* ctx) {
+  return &mt_sch_instance(&ctx->impl, 0)->rx_video_mgr;
+}
+
+ut20_cb_ctx* ut20_cb_create(void) {
+  struct ut20_cb_ctx* ctx = calloc(1, sizeof(*ctx));
+  if (!ctx) return NULL;
+  struct mtl_sch_impl* sch = mt_sch_instance(&ctx->impl, 0);
+  struct st_rx_video_sessions_mgr* mgr = &sch->rx_video_mgr;
+  const uint8_t ip[MTL_IP_ADDR_LEN] = {192, 168, 0, 1};
+  int socket = (int)rte_socket_id();
+
+  ctx->impl.type = MT_HANDLE_MAIN;
+  ctx->hook_idx = -1;
+  sch->parent = &ctx->impl;
+  rte_atomic32_set(&sch->active, 1);
+  rte_atomic32_set(&sch->ref_cnt, 2); /* the mt_sch_put() of a free must not stop it */
+  mgr->parent = &ctx->impl;
+  for (int i = 0; i < UT20_CB_SESSIONS; i++) {
+    struct st_rx_video_session_impl* s = mt_rte_zmalloc_socket(sizeof(*s), socket);
+    if (!s) {
+      ut20_cb_destroy(ctx);
+      return NULL;
+    }
+    ctx->queues[i].ctx = ctx;
+    ctx->queues[i].idx = i;
+    s->impl = &ctx->impl;
+    s->parent = mgr;
+    s->idx = i;
+    s->socket_id = socket;
+    s->attached = true;
+    s->ops.type = ST20_TYPE_FRAME_LEVEL;
+    s->ops.num_port = 1;
+    s->ops.width = 1920;
+    s->ops.height = 1080;
+    s->ops.fmt = ST20_FMT_YUV_422_10BIT;
+    s->ops.fps = ST_FPS_P59_94;
+    memcpy(s->ops.ip_addr[MTL_SESSION_PORT_P], ip, MTL_IP_ADDR_LEN);
+    s->ops.udp_port[MTL_SESSION_PORT_P] = UT20_CB_UDP_PORT;
+    s->st20_dst_port[MTL_SESSION_PORT_P] = UT20_CB_UDP_PORT;
+    s->rx_burst_size = 4;
+    s->rxq[MTL_SESSION_PORT_P] = &ctx->queues[i].entry;
+    s->port_user_stats.common.stat_pkts_received = UT20_CB_PKTS;
+    rte_spinlock_init(&mgr->mutex[i]);
+    mgr->sessions[i] = s;
+    ctx->sessions[i] = s;
+  }
+  mgr->max_idx = UT20_CB_SESSIONS;
+
+  ctx->handle = mt_rte_zmalloc_socket(sizeof(*ctx->handle), socket);
+  ctx->handle22 = mt_rte_zmalloc_socket(sizeof(*ctx->handle22), socket);
+  if (!ctx->handle || !ctx->handle22) {
+    ut20_cb_destroy(ctx);
+    return NULL;
+  }
+  ctx->handle->parent = &ctx->impl;
+  ctx->handle->type = MT_HANDLE_RX_VIDEO;
+  ctx->handle->sch = sch;
+  ctx->handle->impl = ctx->sessions[0];
+  ctx->handle22->parent = &ctx->impl;
+  ctx->handle22->type = MT_ST22_HANDLE_RX_VIDEO;
+  ctx->handle22->sch = sch;
+  ctx->handle22->impl = ctx->sessions[0];
+  ctx->rc.impl = &ctx->impl;
+  ctx->rc.type = MT_HANDLE_RX_VIDEO_R;
+  ctx->rc.ready = true;
+  ctx->rc.transport[MTL_SESSION_PORT_P] = &ctx->rc_transport;
+  ctx->rc_transport.handle = ctx->handle;
+  ctx->rc_transport.parent = &ctx->rc;
+  return ctx;
+}
+
+void ut20_cb_destroy(ut20_cb_ctx* ctx) {
+  if (!ctx || ctx->wedged) return;
+  for (int i = 0; i < UT20_CB_SESSIONS; i++) mt_rte_free(ctx->sessions[i]);
+  mt_rte_free(ctx->handle);
+  mt_rte_free(ctx->handle22);
+  free(ctx);
+}
+
+bool ut20_cb_wedged(const ut20_cb_ctx* ctx) {
+  return ctx->wedged;
+}
+
+st20_rx_handle ut20_cb_handle(ut20_cb_ctx* ctx) {
+  return ctx->handle;
+}
+
+st22_rx_handle ut20_cb_handle22(ut20_cb_ctx* ctx) {
+  return ctx->handle22;
+}
+
+struct st20rc_rx_ctx* ut20_cb_st20rc_handle(ut20_cb_ctx* ctx) {
+  return &ctx->rc;
+}
+
+bool ut20_cb_st20rc_kept(const ut20_cb_ctx* ctx) {
+  return ctx->rc.ready && ctx->rc.transport[MTL_SESSION_PORT_P] == &ctx->rc_transport;
+}
+
+int ut20_cb_call(ut20_cb_ctx* ctx, enum ut20_cb_api call) {
+  struct st_rx_source_info src = {
+      .ip_addr[MTL_SESSION_PORT_P] = {192, 168, 0, 2},
+      .udp_port[MTL_SESSION_PORT_P] = UT20_CB_NEW_UDP_PORT,
+  };
+  int ret;
+
+  switch (call) {
+    case UT20_CB_STATS_GET:
+      return st20_rx_get_session_stats(ctx->handle, &ctx->stats);
+    case UT20_CB_STATS_RESET:
+      return st20_rx_reset_session_stats(ctx->handle);
+    case UT20_CB_UPDATE_SRC:
+      return st20_rx_update_source(ctx->handle, &src);
+    case UT20_CB_ST22_UPDATE_SRC:
+      return st22_rx_update_source(ctx->handle22, &src);
+    case UT20_CB_FREE:
+      ret = st20_rx_free(ctx->handle);
+      if (!ret) {
+        ctx->handle = NULL;
+        ctx->sessions[0] = NULL;
+      }
+      return ret;
+    case UT20_CB_ST22_FREE:
+      ret = st22_rx_free(ctx->handle22);
+      if (!ret) {
+        ctx->handle22 = NULL;
+        ctx->sessions[0] = NULL;
+      }
+      return ret;
+  }
+  return -EINVAL;
+}
+
+bool ut20_cb_took_effect(ut20_cb_ctx* ctx, enum ut20_cb_api call) {
+  struct st_rx_video_session_impl* s = ctx->sessions[0];
+
+  switch (call) {
+    case UT20_CB_STATS_GET:
+      return ctx->stats.common.stat_pkts_received == UT20_CB_PKTS;
+    case UT20_CB_STATS_RESET:
+      return !s->port_user_stats.common.stat_pkts_received;
+    case UT20_CB_UPDATE_SRC:
+    case UT20_CB_ST22_UPDATE_SRC:
+      return s->ops.udp_port[MTL_SESSION_PORT_P] == UT20_CB_NEW_UDP_PORT;
+    case UT20_CB_FREE:
+    case UT20_CB_ST22_FREE:
+      return !ut20_cb_mgr(ctx)->sessions[0];
+  }
+  return false;
+}
+
+int ut20_cb_run_pass(ut20_cb_ctx* ctx) {
+  return rvs_pkt_rx_tasklet_handler(ut20_cb_mgr(ctx));
+}
+
+int ut20_cb_polls(const ut20_cb_ctx* ctx, int idx) {
+  return ctx->queues[idx].polls;
+}
+
+static bool ut20_cb_wait(atomic_bool* flag) {
+  uint64_t end = rte_get_tsc_cycles() + rte_get_tsc_hz() * UT20_CB_TIMEOUT_MS / 1000;
+
+  while (!atomic_load(flag)) {
+    if (rte_get_tsc_cycles() > end) return false;
+    usleep(100);
+  }
+  return true;
+}
+
+/* Joins thread once flag is set, else leaves it and the ctx it uses behind. */
+static bool ut20_cb_join(struct ut20_cb_ctx* ctx, pthread_t thread, atomic_bool* flag) {
+  if (!ut20_cb_wait(flag)) {
+    ctx->wedged = true;
+    pthread_detach(thread);
+    return false;
+  }
+  pthread_join(thread, NULL);
+  return true;
+}
+
+/* One tasklet pass as scheduler 0's own thread. */
+static void* ut20_cb_sch_main(void* arg) {
+  struct ut20_cb_ctx* ctx = arg;
+  struct mtl_sch_impl* sch = mt_sch_instance(&ctx->impl, 0);
+
+  sch->t_pid = rte_gettid();
+  rvs_pkt_rx_tasklet_handler(&sch->rx_video_mgr);
+  sch->t_pid = 0;
+  atomic_store(&ctx->sch_done, true);
+  return NULL;
+}
+
+static void ut20_cb_hook_reset(struct ut20_cb_ctx* ctx) {
+  ctx->hook_idx = -1;
+  ctx->hook_fn = NULL;
+  ctx->hook_blocks = false;
+  atomic_store(&ctx->entered, false);
+  atomic_store(&ctx->release, false);
+  atomic_store(&ctx->sch_done, false);
+  atomic_store(&ctx->caller_done, false);
+}
+
+int ut20_cb_run_in_poll(ut20_cb_ctx* ctx, int idx, int (*fn)(void* arg), void* arg) {
+  pthread_t sch_thread;
+
+  ut20_cb_hook_reset(ctx);
+  ctx->hook_idx = idx;
+  ctx->hook_fn = fn;
+  ctx->hook_arg = arg;
+  ctx->hook_ret = -ECANCELED;
+  if (pthread_create(&sch_thread, NULL, ut20_cb_sch_main, ctx)) return -EIO;
+  if (!ut20_cb_join(ctx, sch_thread, &ctx->sch_done)) return -ETIMEDOUT;
+  ut20_cb_hook_reset(ctx);
+  return ctx->hook_ret;
+}
+
+static int ut20_cb_call_hook(void* arg) {
+  struct ut20_cb_ctx* ctx = arg;
+  return ut20_cb_call(ctx, ctx->hook_call);
+}
+
+int ut20_cb_call_in_poll(ut20_cb_ctx* ctx, enum ut20_cb_api call, int idx) {
+  ctx->hook_call = call;
+  return ut20_cb_run_in_poll(ctx, idx, ut20_cb_call_hook, ctx);
+}
+
+static void* ut20_cb_caller_main(void* arg) {
+  struct ut20_cb_ctx* ctx = arg;
+
+  ctx->caller_ret = ut20_cb_call(ctx, ctx->hook_call);
+  atomic_store(&ctx->caller_done, true);
+  return NULL;
+}
+
+int ut20_cb_call_during_poll(ut20_cb_ctx* ctx, enum ut20_cb_api call,
+                             bool* returned_during_poll) {
+  pthread_t sch_thread, caller;
+  int ret = -ETIMEDOUT;
+
+  ut20_cb_hook_reset(ctx);
+  ctx->hook_idx = 0;
+  ctx->hook_blocks = true;
+  ctx->hook_call = call;
+  if (pthread_create(&sch_thread, NULL, ut20_cb_sch_main, ctx)) return -EIO;
+  if (ut20_cb_wait(&ctx->entered)) {
+    if (!pthread_create(&caller, NULL, ut20_cb_caller_main, ctx)) {
+      usleep(20 * 1000); /* a call that does not wait for the poll returns well within */
+      *returned_during_poll = atomic_load(&ctx->caller_done);
+      atomic_store(&ctx->release, true);
+      if (ut20_cb_join(ctx, caller, &ctx->caller_done)) ret = ctx->caller_ret;
+    } else {
+      ret = -EIO;
+    }
+  }
+  atomic_store(&ctx->release, true);
+  if (!ut20_cb_join(ctx, sch_thread, &ctx->sch_done)) return -ETIMEDOUT;
+  ut20_cb_hook_reset(ctx);
+  return ret;
 }

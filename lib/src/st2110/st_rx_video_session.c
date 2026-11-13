@@ -4126,6 +4126,8 @@ static int rv_mgr_update_src(struct st_rx_video_sessions_mgr* mgr,
                              struct st_rx_source_info* src) {
   int ret = -EIO, midx = mgr->idx, idx = s->idx;
 
+  /* in a callback the scheduler may hold the lock, and the flow setup would stall it */
+  if (mt_sch_on_own_thread(mt_sch_instance(mgr->parent, mgr->idx))) return -EBUSY;
   s = rx_video_session_get(mgr, idx); /* get the lock */
   if (!s) {
     err("%s(%d,%d), get session fail\n", __func__, midx, idx);
@@ -4718,6 +4720,10 @@ int st20_rx_update_source(st20_rx_handle handle, struct st_rx_source_info* src) 
   if (ret < 0) goto out;
 
   ret = rv_mgr_update_src(&s_impl->sch->rx_video_mgr, s, src);
+  if (ret == -EBUSY) {
+    warn("%s(%d), not from a callback of its scheduler\n", __func__, idx);
+    goto out;
+  }
   if (ret < 0) {
     err("%s(%d), online update fail %d\n", __func__, idx, ret);
     goto out;
@@ -4754,6 +4760,15 @@ int st20_rx_pcapng_dump(st20_rx_handle handle, uint32_t max_dump_packets, bool s
   return ret;
 }
 
+/* its scheduler thread holds the lock in the session's callbacks: try it only there */
+static int rv_stats_lock(struct st_rx_video_sessions_mgr* mgr, int idx) {
+  if (!mt_sch_on_own_thread(mt_sch_instance(mgr->parent, mgr->idx))) {
+    rte_spinlock_lock(&mgr->mutex[idx]);
+    return 0;
+  }
+  return rte_spinlock_trylock(&mgr->mutex[idx]) ? 0 : -EBUSY;
+}
+
 int st20_rx_get_session_stats(st20_rx_handle handle, struct st20_rx_user_stats* stats) {
   struct st_rx_video_session_handle_impl* s_impl = handle;
 
@@ -4764,12 +4779,16 @@ int st20_rx_get_session_stats(st20_rx_handle handle, struct st20_rx_user_stats* 
 
   MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_VIDEO, -EINVAL);
   struct st_rx_video_session_impl* s = s_impl->impl;
+  struct st_rx_video_sessions_mgr* mgr = s->parent;
+  int idx = s->idx;
+  int ret = rv_stats_lock(mgr, idx);
 
-  rte_spinlock_lock(&s->parent->mutex[s->idx]);
-  memcpy(stats, &s->port_user_stats, sizeof(*stats));
-  rte_spinlock_unlock(&s->parent->mutex[s->idx]);
+  if (!ret) {
+    memcpy(stats, &s->port_user_stats, sizeof(*stats));
+    rx_video_session_put(mgr, idx);
+  }
   MT_HANDLE_RELEASE(s_impl);
-  return 0;
+  return ret;
 }
 
 int st20_rx_reset_session_stats(st20_rx_handle handle) {
@@ -4782,17 +4801,21 @@ int st20_rx_reset_session_stats(st20_rx_handle handle) {
 
   MT_HANDLE_GUARD(s_impl, MT_HANDLE_RX_VIDEO, -EINVAL);
   struct st_rx_video_session_impl* s = s_impl->impl;
+  struct st_rx_video_sessions_mgr* mgr = s->parent;
+  int idx = s->idx;
+  int ret = rv_stats_lock(mgr, idx);
 
-  rte_spinlock_lock(&s->parent->mutex[s->idx]);
-  memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
-  memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
-  rte_atomic32_set(&s->stat_frames_received, 0);
-  rte_spinlock_unlock(&s->parent->mutex[s->idx]);
+  if (!ret) {
+    memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+    memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
+    rte_atomic32_set(&s->stat_frames_received, 0);
+    rx_video_session_put(mgr, idx);
+  }
   MT_HANDLE_RELEASE(s_impl);
-  return 0;
+  return ret;
 }
 
-int st20_rx_free(st20_rx_handle handle) {
+int rv_st20_free(st20_rx_handle handle) {
   struct st_rx_video_session_handle_impl* s_impl = handle;
   struct mtl_sch_impl* sch;
   struct st_rx_video_session_impl* s;
@@ -4833,6 +4856,17 @@ int st20_rx_free(st20_rx_handle handle) {
   rte_atomic32_dec(&impl->st20_rx_sessions_cnt);
   notice("%s, succ on sch %d session %d\n", __func__, sch_idx, idx);
   return 0;
+}
+
+int st20_rx_free(st20_rx_handle handle) {
+  struct st_rx_video_session_handle_impl* s_impl = handle;
+
+  /* its scheduler thread may be in a callback of this session, under its lock */
+  if (s_impl->type == MT_HANDLE_RX_VIDEO && mt_sch_on_own_thread(s_impl->sch)) {
+    warn("%s, not from a callback of its scheduler\n", __func__);
+    return -EBUSY;
+  }
+  return rv_st20_free(handle);
 }
 
 int st20_rx_put_framebuff(st20_rx_handle handle, void* framebuff) {
@@ -5142,6 +5176,10 @@ int st22_rx_update_source(st22_rx_handle handle, struct st_rx_source_info* src) 
   if (ret < 0) goto out;
 
   ret = rv_mgr_update_src(&s_impl->sch->rx_video_mgr, s, src);
+  if (ret == -EBUSY) {
+    warn("%s(%d), not from a callback of its scheduler\n", __func__, idx);
+    goto out;
+  }
   if (ret < 0) {
     err("%s(%d), online update fail %d\n", __func__, idx, ret);
     goto out;
@@ -5178,7 +5216,7 @@ int st22_rx_pcapng_dump(st22_rx_handle handle, uint32_t max_dump_packets, bool s
   return ret;
 }
 
-int st22_rx_free(st22_rx_handle handle) {
+int rv_st22_free(st22_rx_handle handle) {
   struct st22_rx_video_session_handle_impl* s_impl = handle;
   struct mtl_sch_impl* sch;
   struct st_rx_video_session_impl* s;
@@ -5218,6 +5256,17 @@ int st22_rx_free(st22_rx_handle handle) {
   rte_atomic32_dec(&impl->st22_rx_sessions_cnt);
   info("%s, succ on sch %d session %d\n", __func__, sch_idx, idx);
   return 0;
+}
+
+int st22_rx_free(st22_rx_handle handle) {
+  struct st22_rx_video_session_handle_impl* s_impl = handle;
+
+  /* its scheduler thread may be in a callback of this session, under its lock */
+  if (s_impl->type == MT_ST22_HANDLE_RX_VIDEO && mt_sch_on_own_thread(s_impl->sch)) {
+    warn("%s, not from a callback of its scheduler\n", __func__);
+    return -EBUSY;
+  }
+  return rv_st22_free(handle);
 }
 
 void* st22_rx_get_mbuf(st22_rx_handle handle, void** usrptr, uint16_t* len) {

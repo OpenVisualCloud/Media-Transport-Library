@@ -52,7 +52,7 @@ eight `*Concurrency*` suites, `St20PipelineTxBlocking`, `WaitSites/St20PipelineR
 `St30PipelineRxBlocking.WakeBlockForABlockedGetIsNotSpentByAnotherFastPathGet`,
 `St40PipelineRxBlocking.FastPathGetDoesNotStealTheWakeOfABlockedGet`,
 `St20TxSessionLockTimeoutTest.GetTimeoutGivesUpOnAPassThatNeverEnds`,
-`St20TxSessionLockCallbackTest`, and the `MtSchQuiescentTest` and `MtSchQuiescentPassTest` suites
+`St20TxSessionLockCallbackTest`, the `St20RxSessionLock*` and `*RxVideoCallbackTest` suites, and the `MtSchQuiescentTest` and `MtSchQuiescentPassTest` suites
 carry a budget;
 the exception reaches no other case. There are no flaky network-timing tests in this binary.
 

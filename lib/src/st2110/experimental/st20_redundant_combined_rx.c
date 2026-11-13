@@ -114,7 +114,7 @@ static int rx_st20rc_notify_event(void* priv, enum st_event event, void* args) {
 
 static int rx_st20rc_free_transport(struct st20rc_rx_transport* transport) {
   if (transport->handle) {
-    st20_rx_free(transport->handle);
+    rv_st20_free(transport->handle);
     transport->handle = NULL;
   }
 
@@ -203,14 +203,7 @@ static int rx_st20rc_create_transport(struct st20rc_rx_ctx* ctx,
   return 0;
 }
 
-int st20rc_rx_free(st20rc_rx_handle handle) {
-  struct st20rc_rx_ctx* ctx = handle;
-
-  if (ctx->type != MT_HANDLE_RX_VIDEO_R) {
-    err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
-    return -EIO;
-  }
-
+static void rx_st20rc_free(struct st20rc_rx_ctx* ctx) {
   ctx->ready = false;
 
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
@@ -226,7 +219,27 @@ int st20rc_rx_free(st20rc_rx_handle handle) {
     ctx->frames = NULL;
   }
   mt_rte_free(ctx);
+}
 
+int st20rc_rx_free(st20rc_rx_handle handle) {
+  struct st20rc_rx_ctx* ctx = handle;
+
+  if (ctx->type != MT_HANDLE_RX_VIDEO_R) {
+    err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
+    return -EIO;
+  }
+
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    struct st20rc_rx_transport* transport = ctx->transport[i];
+
+    /* its scheduler thread may be in a callback of the transport, under its lock */
+    if (transport && mt_sch_on_own_thread(transport->handle->sch)) {
+      warn("%s(%d), not from a callback of its scheduler\n", __func__, ctx->idx);
+      return -EBUSY;
+    }
+  }
+
+  rx_st20rc_free(ctx);
   return 0;
 }
 
@@ -289,7 +302,7 @@ st20rc_rx_handle st20rc_rx_create(mtl_handle mt, struct st20rc_rx_ops* ops) {
     ret = rx_st20rc_create_transport(ctx, ops, i);
     if (ret < 0) {
       err("%s(%d), create transport fail\n", __func__, idx);
-      st20rc_rx_free(ctx);
+      rx_st20rc_free(ctx);
       return NULL;
     }
   }

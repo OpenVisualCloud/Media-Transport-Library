@@ -1656,10 +1656,13 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops);
 /**
  * Free the rx st2110-22 pipeline session.
  *
+ * @note Do not call it from any callback.
  * @param handle
  *   The handle to the rx st2110-22 pipeline session.
  * @return
  *   - 0: Success, rx st2110-22 pipeline session freed.
+ *   - -EBUSY: Called on the session's scheduler thread (in a callback), or another
+ *     free of this handle is in progress; the session is not freed.
  *   - <0: Error code of the rx st2110-22 pipeline session free.
  */
 int st22p_rx_free(st22p_rx_handle handle);
@@ -1762,12 +1765,16 @@ int st22p_rx_get_queue_meta(st22p_rx_handle handle, struct st_queue_meta* meta);
 /**
  * Online update the source info for the rx st2110-22(pipeline) session.
  *
+ * @note Do not call it from any callback. It takes the per-session spinlock and sets up
+ * new RX queues and flows.
  * @param handle
  *   The handle to the rx st2110-22(pipeline) session.
  * @param src
  *   The pointer to the rx st2110-22(pipeline) source info.
  * @return
  *   - 0: Success.
+ *   - -EBUSY: Called on the session's scheduler thread (in a callback); the source is
+ *     not updated.
  *   - <0: Error code.
  */
 int st22p_rx_update_source(st22p_rx_handle handle, struct st_rx_source_info* src);
@@ -2045,10 +2052,13 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops);
 /**
  * Free the rx st2110-20 pipeline session.
  *
+ * @note Do not call it from any callback.
  * @param handle
  *   The handle to the rx st2110-20 pipeline session.
  * @return
  *   - 0: Success, rx st2110-20 pipeline session freed.
+ *   - -EBUSY: Called on the session's scheduler thread (in a callback), or another
+ *     free of this handle is in progress; the session is not freed.
  *   - <0: Error code of the rx st2110-20 pipeline session free.
  */
 int st20p_rx_free(st20p_rx_handle handle);
@@ -2162,14 +2172,18 @@ int st20p_rx_get_sch_idx(st20p_rx_handle handle);
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-20(pipeline) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
- * this session's callbacks: they may run with that spinlock held, so it deadlocks.
+ * @note Thread-safe. Briefly acquires the per-session spinlock; on the session's
+ * scheduler thread it only tries it, so it returns -EBUSY in this session's callbacks
+ * there, and may return a transient -EBUSY in other callbacks or tasklets on that
+ * thread, which should retry.
  * @param handle
  *   The handle to the rx st2110-20(pipeline) session.
  * @param stats
  *   A pointer to stats structure.
  * @return
  *   - >=0 succ.
+ *   - -EBUSY: Called on the session's scheduler thread while the per-session spinlock
+ *     is held.
  *   - <0: Error code.
  */
 int st20p_rx_get_session_stats(st20p_rx_handle handle, struct st20_rx_user_stats* stats);
@@ -2177,12 +2191,16 @@ int st20p_rx_get_session_stats(st20p_rx_handle handle, struct st20_rx_user_stats
 /**
  * Reset the general statistics(I/O) for one rx st2110-20(pipeline) session.
  *
- * @note Thread-safe. Briefly acquires the per-session spinlock. Do not call it from
- * this session's callbacks: they may run with that spinlock held, so it deadlocks.
+ * @note Thread-safe. Briefly acquires the per-session spinlock; on the session's
+ * scheduler thread it only tries it, so it returns -EBUSY in this session's callbacks
+ * there, and may return a transient -EBUSY in other callbacks or tasklets on that
+ * thread, which should retry.
  * @param handle
  *   The handle to the rx st2110-20(pipeline) session.
  * @return
  *   - >=0 succ.
+ *   - -EBUSY: Called on the session's scheduler thread while the per-session spinlock
+ *     is held; nothing is reset.
  *   - <0: Error code.
  */
 int st20p_rx_reset_session_stats(st20p_rx_handle handle);
@@ -2190,12 +2208,16 @@ int st20p_rx_reset_session_stats(st20p_rx_handle handle);
 /**
  * Online update the source info for the rx st2110-20(pipeline) session.
  *
+ * @note Do not call it from any callback. It takes the per-session spinlock and sets up
+ * new RX queues and flows.
  * @param handle
  *   The handle to the rx st2110-20(pipeline) session.
  * @param src
  *   The pointer to the rx st2110-20(pipeline) source info.
  * @return
  *   - 0: Success.
+ *   - -EBUSY: Called on the session's scheduler thread (in a callback); the source is
+ *     not updated.
  *   - <0: Error code.
  */
 int st20p_rx_update_source(st20p_rx_handle handle, struct st_rx_source_info* src);

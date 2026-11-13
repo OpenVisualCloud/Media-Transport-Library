@@ -145,10 +145,13 @@ st20rc_rx_handle st20rc_rx_create(mtl_handle mt, struct st20rc_rx_ops* ops);
 /**
  * Free the rx st2110-20(redundant) session.
  *
+ * @note Do not call it from any callback.
  * @param handle
  *   The handle to the rx st2110-20(redundant) session.
  * @return
  *   - 0: Success.
+ *   - -EBUSY: Called on the scheduler thread of one of its transport sessions (in a
+ *     callback); the session is not freed.
  *   - <0: Error code.
  */
 int st20rc_rx_free(st20rc_rx_handle handle);

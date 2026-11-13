@@ -108,6 +108,10 @@ st22p_rx_handle ut22p_handle(ut22p_ctx* ctx);
 
 /** Force ctx->lc_destroying, as a *_free() in progress sets it. */
 void ut22p_force_destroying(ut22p_ctx* ctx);
+/** Whether a *_free() began to destroy ctx. */
+bool ut22p_destroying(const ut22p_ctx* ctx);
+/** Point the pipeline at transport instead of its stub. */
+void ut22p_set_transport(ut22p_ctx* ctx, st22_rx_handle transport);
 
 /**
  * Call st22p_rx_create() on a bare instance with one port, named in
