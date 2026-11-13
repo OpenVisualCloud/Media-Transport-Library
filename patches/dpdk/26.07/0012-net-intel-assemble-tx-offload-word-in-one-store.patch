@@ -1,0 +1,53 @@
+From nobody Mon Sep 17 00:00:00 2001
+From: moleksy <moleksy@users.noreply.github.com>
+Date: Wed, 21 Oct 2026 14:00:00 +0000
+Subject: [PATCH] net/intel: assemble TX offload word in one store
+
+ci_xmit_pkts() fills union ci_tx_offload one bitfield at a time. Each
+assignment is a narrow read-modify-write of the stack copy, and the
+whole word is then read back: by value in ci_txd_enable_checksum()
+whenever a checksum offload is requested, and through the pointer in
+the ice, i40e and idpf get_ctx_desc callbacks. That load overlaps
+several pending narrow stores, store-to-load forwarding fails, and the
+load waits for the stores to retire, once per packet.
+
+Build the word in a register and store it once. The shifts follow the
+layout the bitfields already have (l2_len 7, l3_len 9, l4_len 8,
+tso_segsz 16, outer_l2_len 8, outer_l3_len 16 bits, from bit 0), and no
+mbuf source field is wider than its slot, so the value is unchanged.
+Re-check the shifts against union ci_tx_offload on every DPDK bump.
+
+On an E810 VF with 2-segment ST 2110-20 packets (IPv4 checksum offload)
+the stalled load was 21% of ci_xmit_pkts() cycles; one scheduler core
+went from 8.06 to 8.66 Mpps.
+
+MTL: drop once upstream DPDK fills the union with a single store.
+
+Signed-off-by: moleksy <moleksy@users.noreply.github.com>
+---
+ drivers/net/intel/common/tx_scalar.h | 13 +++++++------
+ 1 file changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/net/intel/common/tx_scalar.h b/drivers/net/intel/common/tx_scalar.h
+--- a/drivers/net/intel/common/tx_scalar.h
++++ b/drivers/net/intel/common/tx_scalar.h
+@@ -427,12 +427,13 @@
+ 		td_offset = (l2_len >> 1) << CI_TX_DESC_LEN_MACLEN_S;
+ 
+ 
+-		tx_offload.l2_len = tx_pkt->l2_len;
+-		tx_offload.l3_len = tx_pkt->l3_len;
+-		tx_offload.outer_l2_len = tx_pkt->outer_l2_len;
+-		tx_offload.outer_l3_len = tx_pkt->outer_l3_len;
+-		tx_offload.l4_len = tx_pkt->l4_len;
+-		tx_offload.tso_segsz = tx_pkt->tso_segsz;
++		/* one full-width store, so the whole-word reads below can forward from it */
++		tx_offload.data = (uint64_t)tx_pkt->l2_len |
++			((uint64_t)tx_pkt->l3_len << 7) |
++			((uint64_t)tx_pkt->l4_len << 16) |
++			((uint64_t)tx_pkt->tso_segsz << 24) |
++			((uint64_t)tx_pkt->outer_l2_len << 40) |
++			((uint64_t)tx_pkt->outer_l3_len << 48);
+ 
+ 		/* Calculate the number of context descriptors needed. */
+ 		nb_ctx = get_ctx_desc(ol_flags, tx_pkt, &tx_offload, txq, &cd_qw0, &cd_qw1);
