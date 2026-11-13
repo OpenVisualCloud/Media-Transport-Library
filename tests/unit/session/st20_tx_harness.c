@@ -3732,9 +3732,9 @@ int ut_txv_run_readers(ut_txv_ctx* ctx, const struct ut_txv_reader_load* load,
   if (!ret) pthread_join(scheduler, NULL);
   atomic_store(&v->stop, true);
 
-  struct timespec deadline;
-  clock_gettime(CLOCK_REALTIME, &deadline);
-  deadline.tv_sec += 5;
+  /* if the clock fails, the joins time out at once: hung */
+  struct timespec deadline = {0};
+  if (!clock_gettime(CLOCK_REALTIME, &deadline)) deadline.tv_sec += 5;
   for (int i = 0; i < started; i++) {
     if (pthread_timedjoin_np(reader[i], NULL, &deadline)) out->hung = true;
   }
