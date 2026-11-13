@@ -191,7 +191,7 @@ static int ut_reg_change(char set, char clear, bool has_cb) {
     return -EBUSY;
   }
   if (ctx->reg_n < (int)sizeof(ctx->reg_log) - 1)
-    ctx->reg_log[ctx->reg_n++] = has_cb ? set : clear;
+    ctx->reg_log[ctx->reg_n++] = (char)(has_cb ? set : clear);
   return 0;
 }
 
