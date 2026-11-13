@@ -465,6 +465,15 @@ stall of one admin period):
 - Why: the per-session `trylock`/`unlock` is a locked `xchg` each, and the unlock after `rte_eth_tx_burst()` waits for the descriptor stores and the doorbell; it was ~19% of a saturated scheduler core. An unprotected prototype that dropped both locks went from 6.98 to 7.89 Mpps (+13%); this protocol, 28 1080p59.94 sessions at full clock:
   5.60 to 6.45 Mpps (+15%, the aliasing still present; Xeon 8480+, E810 VF, RL pacing)
 
+RX video (ST20/ST22) tasklets keep the lock: `rvs_pkt_rx_tasklet_handler()` trylocks each
+session and runs its callbacks under it, so a blocking get from such a callback spins forever.
+On the session's scheduler thread (`mt_sch_on_own_thread()` of the handle's `sch`):
+- `*_rx_free()`, `*_rx_update_source()` (st20, st22, st20p, st22p) and `st20rc_rx_free()` return -EBUSY in any callback there, as on TX: whether the lock is held depends on other threads (admin, stat dump), and an update would run the queue, flow and mcast setup on the scheduler
+- The pipelines and `st20rc_rx_free()` check once, before they release anything, then free their transports with `rv_st20_free()` / `rv_st22_free()`, so no later check can refuse mid-teardown; `st20rc_rx_create()` cleans up a partial create with the unchecked `rx_st20rc_free()`
+- Stats get/reset (`rv_stats_lock()`) only trylock there: -EBUSY in the session's own callbacks, a transient -EBUSY in other callbacks or tasklets while another thread holds the lock; `st20p_rx_reset_session_stats()` then keeps the pipeline counters. Other threads block on the lock as before
+- Not covered: the pkt lcore thread (`rv_pkt_lcore_func()`) completes frames without the lock and is not the scheduler thread; a free from its callbacks waits for that very thread to stop.
+  Nor are two callbacks on different schedulers that each query the stats of the other callback's session: the blocking branch of `rv_stats_lock()` spins on the lock that callback holds, so they deadlock, as on TX
+
 Never log under a session spinlock: tasklets skip the session while it is held. Copy the
 counters under the lock, `put`, then log the copy (TX video: `tv_stat_collect()` /
 `tv_stat_log()`).

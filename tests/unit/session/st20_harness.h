@@ -395,6 +395,52 @@ void ut20_session_detach(ut20_test_ctx* ctx);
 int ut20_ops_check_source(const struct st_rx_source_info* src);
 int ut20_st22_ops_check_source(const struct st_rx_source_info* src);
 
+/* ── own-callback rules ───────────────────────────────────────────────── */
+
+/* Sessions 0 and 1 of scheduler 0, each on a fake RX queue that
+ * rvs_pkt_rx_tasklet_handler() polls. Handles of session 0: ut20_cb_handle() and,
+ * on the same session, ut20_cb_handle22(); ut20_cb_st20rc_handle() is a combined
+ * session with ut20_cb_handle() as its primary transport. */
+typedef struct ut20_cb_ctx ut20_cb_ctx;
+
+enum ut20_cb_api {
+  UT20_CB_STATS_GET,
+  UT20_CB_STATS_RESET,
+  UT20_CB_UPDATE_SRC,
+  UT20_CB_FREE,
+  UT20_CB_ST22_UPDATE_SRC,
+  UT20_CB_ST22_FREE,
+};
+
+ut20_cb_ctx* ut20_cb_create(void);
+/* Leaks the ctx if ut20_cb_wedged(): a thread stuck in a call still uses it. */
+void ut20_cb_destroy(ut20_cb_ctx* ctx);
+bool ut20_cb_wedged(const ut20_cb_ctx* ctx);
+st20_rx_handle ut20_cb_handle(ut20_cb_ctx* ctx);
+st22_rx_handle ut20_cb_handle22(ut20_cb_ctx* ctx);
+struct st20rc_rx_ctx* ut20_cb_st20rc_handle(ut20_cb_ctx* ctx);
+/* Whether the combined session is still ready and holds its transport. */
+bool ut20_cb_st20rc_kept(const ut20_cb_ctx* ctx);
+
+/* The call on session 0 from this thread. */
+int ut20_cb_call(ut20_cb_ctx* ctx, enum ut20_cb_api call);
+/* Whether session 0 shows the call's effect: stats copied or cleared, the new source
+ * set, the session freed. */
+bool ut20_cb_took_effect(ut20_cb_ctx* ctx, enum ut20_cb_api call);
+/* One tasklet pass on this thread; ut20_cb_polls() counts the polls of session idx. */
+int ut20_cb_run_pass(ut20_cb_ctx* ctx);
+int ut20_cb_polls(const ut20_cb_ctx* ctx, int idx);
+
+/* fn(arg) in the poll of session idx on scheduler 0's own thread, where the session's
+ * callbacks run: its result, or -ETIMEDOUT if the pass did not end within 1 s. */
+int ut20_cb_run_in_poll(ut20_cb_ctx* ctx, int idx, int (*fn)(void* arg), void* arg);
+/* The call on session 0 that way. */
+int ut20_cb_call_in_poll(ut20_cb_ctx* ctx, enum ut20_cb_api call, int idx);
+/* The call on session 0 from another thread while session 0's poll runs:
+ * *returned_during_poll whether it returned before that poll did. */
+int ut20_cb_call_during_poll(ut20_cb_ctx* ctx, enum ut20_cb_api call,
+                             bool* returned_during_poll);
+
 #ifdef __cplusplus
 }
 #endif

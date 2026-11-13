@@ -72,6 +72,9 @@ static inline void rx_video_session_put(struct st_rx_video_sessions_mgr* mgr, in
 
 st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
                                         struct st20_rx_ops* ops, mt_sch_mask_t sch_mask);
+/* st20/st22_rx_free() without its scheduler thread check, which owners make up front */
+int rv_st20_free(st20_rx_handle handle);
+int rv_st22_free(st22_rx_handle handle);
 
 void rx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
                                    struct st_rx_video_session_impl* s);

@@ -212,6 +212,14 @@ void ut22p_force_destroying(ut22p_ctx* ctx) {
   atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
 }
 
+bool ut22p_destroying(const ut22p_ctx* ctx) {
+  return atomic_load(&ctx->pipeline.lc_destroying);
+}
+
+void ut22p_set_transport(ut22p_ctx* ctx, st22_rx_handle transport) {
+  ctx->pipeline.transport = transport;
+}
+
 static struct mtl_main_impl ut22p_rx_create_impl;
 
 st22p_rx_handle ut22p_rx_create(struct st22p_rx_ops* ops) {
