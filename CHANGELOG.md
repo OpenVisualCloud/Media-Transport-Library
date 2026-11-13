@@ -1,5 +1,6 @@
 # Changelog
 
+* iavf: after a VF reset by the PF, which the iavf PMD of DPDK 26.07 recovers by itself, MTL creates its RX flows again, instead of every session of the port no longer receiving and the exit crashing in `iavf_flow_destroy()`
 * pcapng dumps (st20/st22/st30 RX, CNI): the filename no longer carries the packet count, which at 100,000 packets or more overflowed `MTL_PCAP_FILE_MAX_LEN` (32) and failed the dump; the count stays in the log
 * st20/st22 TX: the video tasklets no longer take the session spinlock; on a session's own scheduler, `*_tx_free()` and `*_tx_update_destination()` (st20, st22, st20p, st22p) return `-EBUSY` instead of deadlocking, as do the stats APIs from the session's own callbacks
 * ice: default to driver version 2.7.6, built as released with no MTL patches; versions before 2.7.6 keep their `patches/ice_drv` series

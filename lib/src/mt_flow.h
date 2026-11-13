@@ -15,4 +15,8 @@ struct mt_rx_flow_rsp* mt_rx_flow_create(struct mtl_main_impl* impl, enum mtl_po
 int mt_rx_flow_free(struct mtl_main_impl* impl, enum mtl_port port,
                     struct mt_rx_flow_rsp* rsp);
 
+/* iavf: create the port's rte_flows again after a VF reset, which frees them all */
+void mt_flow_reset_cb_register(struct mtl_main_impl* impl, enum mtl_port port);
+void mt_flow_reset_cb_unregister(struct mtl_main_impl* impl, enum mtl_port port);
+
 #endif
