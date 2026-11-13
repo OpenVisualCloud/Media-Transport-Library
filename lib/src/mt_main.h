@@ -636,6 +636,11 @@ struct mt_rx_flow_rsp {
   struct rte_flow* flow;
   uint16_t queue_id;
   uint16_t dst_port;
+  /* rte_flow based: on the port's list, with the request to create it again after an
+   * iavf VF reset, which frees every rte_flow of the port */
+  bool listed;
+  struct mt_rxq_flow req;
+  MT_TAILQ_ENTRY(mt_rx_flow_rsp) next;
 };
 
 struct mt_rx_queue {
@@ -1162,7 +1167,13 @@ struct mt_rx_xdp_entry {
 };
 
 struct mt_flow_impl {
-  pthread_mutex_t mutex; /* protect mt_rx_flow_create */
+  /* protects mt_rx_flow_create/free, rte_flows and is held during an iavf VF reset */
+  pthread_mutex_t mutex;
+  struct mtl_main_impl* parent;
+  enum mtl_port port;
+  MT_TAILQ_HEAD(mt_rx_flow_list, mt_rx_flow_rsp) rte_flows; /* listed mt_rx_flow_rsp */
+  bool reset_cb; /* iavf VF reset callbacks registered */
+  bool in_reset; /* the pre reset callback holds mutex */
 };
 
 struct mt_dp_impl {

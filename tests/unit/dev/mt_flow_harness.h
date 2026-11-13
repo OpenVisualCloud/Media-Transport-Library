@@ -40,6 +40,41 @@ bool ut_flow_rx_flow_create(ut_flow_ctx* ctx, bool no_ip_flow);
 int ut_flow_rx_flow_free(ut_flow_ctx* ctx);
 bool ut_flow_last_free_flow_cleared(const ut_flow_ctx* ctx);
 
+/* mt_rx_flow_create() of a multicast flow to dst_port on queue 0 of port P: the id of its
+ * response, -1 on failure. mt_rx_flow_free() of it; its rte_flow handle (NULL if none).
+ */
+int ut_flow_create(ut_flow_ctx* ctx, uint16_t dst_port);
+int ut_flow_free(ut_flow_ctx* ctx, int id);
+const void* ut_flow_handle(const ut_flow_ctx* ctx, int id);
+/* responses on port P's flow list; MT_DRV_F_RX_NO_FLOW on port P */
+int ut_flow_listed_count(const ut_flow_ctx* ctx);
+void ut_flow_set_no_flow(ut_flow_ctx* ctx, bool no_flow);
+/* UDP destination port and queue of rte_flow_create() call call_index; the handle
+ * rte_flow_destroy() got last */
+uint16_t ut_flow_create_dst_port(const ut_flow_ctx* ctx, int call_index);
+uint16_t ut_flow_create_queue(const ut_flow_ctx* ctx, int call_index);
+const void* ut_flow_last_destroyed(const ut_flow_ctx* ctx);
+/* the handle rte_flow_create() returned last */
+const void* ut_flow_last_created(const ut_flow_ctx* ctx);
+
+/* whether mt_flow.c has the iavf VF reset callbacks (DPDK 26.03+); without, the calls
+ * below do nothing */
+bool ut_flow_has_reset_cb(void);
+
+/* the iavf VF reset callbacks, as the PMD's event thread calls them */
+void ut_flow_iavf_pre(ut_flow_ctx* ctx);
+void ut_flow_iavf_post(ut_flow_ctx* ctx, int reset_state);
+/* mt_flow_reset_cb_register() / _unregister() on port P, against register stubs that
+ * return -EBUSY for the next busy calls. Their log: P / p post / pre set, X / x cleared.
+ */
+void ut_flow_set_reg_busy(ut_flow_ctx* ctx, int busy);
+void ut_flow_reset_cb_register(ut_flow_ctx* ctx);
+void ut_flow_reset_cb_unregister(ut_flow_ctx* ctx);
+const char* ut_flow_reg_log(const ut_flow_ctx* ctx);
+bool ut_flow_reset_cb_on(const ut_flow_ctx* ctx);
+/* mt_flow_uinit(); how often it has freed port P's flow state */
+int ut_flow_uinit_frees(ut_flow_ctx* ctx);
+
 #ifdef __cplusplus
 }
 #endif
