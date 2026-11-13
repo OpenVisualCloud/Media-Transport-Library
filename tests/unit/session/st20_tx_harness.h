@@ -201,28 +201,26 @@ int ut_txv_run_control_racing_migration(ut_txv_ctx* ctx, enum ut_txv_control cal
  * blocks on it and finds it empty once locked. Returns the call's result. */
 int ut_txv_run_control_blocked_by_migration(ut_txv_ctx* ctx, enum ut_txv_control call);
 /* The call from the scheduler's own thread, as from a callback, while (held) a writer
- * holds the session lock and waits for the pass in flight. Returns the call's result. */
+ * holds the session lock and waits for the pass in flight. Returns the call's result, or
+ * -ETIMEDOUT if the call hung until a watchdog ended that pass after 1 s. */
 int ut_txv_run_control_in_callback(ut_txv_ctx* ctx, enum ut_txv_control call, bool held);
-/* The same, held, from the callback of another session of that scheduler. */
-int ut_txv_run_control_in_peer_callback(ut_txv_ctx* ctx, enum ut_txv_control call);
 /* tx_video_session_get_timeout() while the scheduler is in a pass that never ends.
  * Returns whether it got the session; *locked_after whether the lock stayed held. */
 bool ut_txv_get_timeout_on_endless_pass(ut_txv_ctx* ctx, int timeout_us,
                                         bool* locked_after);
-/* Runs stats on session A while holding an app mutex needed by session B's callback. */
-bool ut_txv_stats_with_peer_callback_completes(ut_txv_ctx* ctx, int timeout_ms);
-/* The same cycle with the control call as the caller's: stats get or reset, update
- * destination or free, while a peer's callback in the scheduler's pass needs the
- * caller's mutex. */
+/* The control call (update destination, or a get of a slot) while a peer's callback in
+ * the scheduler's pass needs the caller's mutex. */
 bool ut_txv_control_with_peer_callback_completes(ut_txv_ctx* ctx,
                                                  enum ut_txv_control call,
                                                  int timeout_ms);
 /* Scenario 4: S's frame-done callback, run on scheduler 1's thread under a lock that
- * scheduler 0's pass needs, queries S. */
+ * scheduler 0's pass needs, takes S with tx_video_session_get(). */
 bool ut_txv_own_query_from_other_scheduler_completes(ut_txv_ctx* ctx, int timeout_ms);
-/* Runs two scheduler callbacks that query separate target sessions on each other. */
-bool ut_txv_cross_scheduler_stats_complete(ut_txv_ctx* ctx, int timeout_ms);
-/* Migrates the source while a destination callback queries that source session. */
+/* Runs two scheduler callbacks that each take a session of the other scheduler, not the
+ * one it runs, with tx_video_session_get(). */
+bool ut_txv_cross_scheduler_gets_complete(ut_txv_ctx* ctx, int timeout_ms);
+/* Migrates the source while a destination callback takes its old slot with
+ * tx_video_session_get(). */
 bool ut_txv_migration_with_destination_callback_completes(ut_txv_ctx* ctx,
                                                           int timeout_ms);
 /* The tasklets fence each slot store, as without membarrier(2), or rely on it. */
@@ -232,6 +230,55 @@ void ut_txv_set_dp_fence(ut_txv_ctx* ctx, bool fence);
  * call's result. */
 int ut_txv_control_during_own_callback(ut_txv_ctx* ctx, enum ut_txv_control call,
                                        bool* done_in_callback);
+/* What the last UT_TXV_STATS_GET control call read. */
+void ut_txv_control_stats(const ut_txv_ctx* ctx, struct st20_tx_user_stats* stats);
+
+/* Adds add to the session's counters field by field, as its tasklets count. */
+void ut_txv_add_user_stats(ut_txv_ctx* ctx, const struct st20_tx_user_stats* add);
+/* st20_tx_get_session_stats() / st20_tx_reset_session_stats() of the session */
+int ut_txv_get_stats(ut_txv_ctx* ctx, struct st20_tx_user_stats* stats);
+int ut_txv_reset_stats(ut_txv_ctx* ctx);
+/* The get while another thread is in a reset of the session, for up to 1 s. Returns the
+ * get's result; *reset_at_return whether that reset was still in flight then. */
+int ut_txv_get_stats_during_reset(ut_txv_ctx* ctx, struct st20_tx_user_stats* stats,
+                                  bool* reset_at_return);
+
+/* The CPUs the process may run on but the one the EAL pinned the caller to, for the
+ * threads of ut_txv_run_readers(): its scheduler and each reader need one. */
+int ut_txv_spare_cpus(void);
+/* Passes of a tasklet over two slots, a peer that works 5 us a pass in slot 0 and the
+ * read session in slot 1, on a thread acting as their scheduler. Each run of the read
+ * session adds one to each of its counters. Meanwhile `getters` threads call the stats
+ * get on it in a loop and `resetters` threads call the reset, pausing get_pause_us and
+ * reset_pause_us after each call. */
+struct ut_txv_reader_load {
+  enum ut_txv_tasklet tasklet;
+  int passes;
+  int getters;
+  int resetters;
+  int get_pause_us;
+  int reset_pause_us;
+};
+struct ut_txv_reader_result {
+  int ran;          /* passes that ran the read session */
+  int longest_skip; /* consecutive passes that skipped it */
+  uint64_t longest_skip_ns;
+  uint64_t passes_ns;
+  uint64_t gets;
+  uint64_t resets;
+  int call_err; /* the first failed call's result, else 0 */
+  /* gets with a field above 2^63, i.e. below the reset it is counted from */
+  uint64_t wrapped;
+  /* gets compared to their thread's last one, with no reset since, and those of them
+   * with a field below it */
+  uint64_t compared;
+  uint64_t backwards;
+  bool hung; /* a get or reset had not returned 5 s after the passes */
+};
+/* Returns 0, -ENOSPC if a thread has no spare CPU, or < 0 if the threads or sessions
+ * could not be set up. */
+int ut_txv_run_readers(ut_txv_ctx* ctx, const struct ut_txv_reader_load* load,
+                       struct ut_txv_reader_result* out);
 
 /* A frame-level session of UT_TXV_ZC_FRAMES one-pkt frames, run by tvs_tasklet_handler()
  * against an app that hands over a chosen frame, or is busy, with reclaim.enabled or not.
