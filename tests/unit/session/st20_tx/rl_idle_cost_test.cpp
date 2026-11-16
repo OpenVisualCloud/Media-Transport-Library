@@ -11,15 +11,16 @@
 #include "session/st20_tx_harness.h"
 #include "session/st_video_transmitter_harness.h"
 
-/* What a transmitter call costs when no port of its scheduler has a pkt to send: the
- * clock reads, the NIC calls and the session lookups, for 1, 13 and 60 sessions on
- * reclaiming RL ports. Counts only: the time of each is not judged. */
+/* What a transmitter call costs beyond its bursts: the clock reads, the NIC calls and the
+ * session lookups, for 1, 13 and 60 sessions on reclaiming RL ports, idle or sending the
+ * one bulk the builder added. Counts only: the time of each is not judged. */
 namespace {
 
 constexpr int kPortP = 0;
 constexpr uint64_t kTargetTsc = 100000000;
 constexpr uint64_t kCallNs = 2000;
 constexpr int kCallCap = 1000;
+constexpr uint64_t kStallNs = 1000000; /* 16 batch times */
 constexpr uint64_t kAnchorStallNs = 3000;
 constexpr int kWaitWarmup = 1; /* ST_TX_VIDEO_RL_STATE_WAIT_WARMUP */
 
@@ -151,6 +152,44 @@ TEST_P(St20TxRlIdleCost, APortBehindAFullNicQueueRetriesInOneBurst) {
   for (ut_trs_ctx* c : ctx_) EXPECT_EQ(0u, ut_trs_reclaim_calls(c));
   EXPECT_EQ(1u + ctx_.size(), ut_trs_sch_tsc_reads(sch_)) << "the call's and one a port";
   EXPECT_EQ(ctx_.size(), ut_trs_sch_dp_gets(sch_)) << "the visits' only";
+}
+
+/* A scheduler that falls behind sends each port the bulk its builder just added, and
+ * finds the ring empty behind it: the burst is stamped by one clock read, and the reclaim
+ * reads none, as no batch comes due within a tick of that stamp. */
+TEST_P(St20TxRlIdleCost, APortThatSentItsOnlyBulkReadsTheClockOnce) {
+  ASSERT_EQ(0u, IdleCall());
+  /* to the call that reclaims: the next batch is due a batch time on */
+  uint32_t reclaims = 0;
+  for (int call = 0; call < kCallCap && !reclaims; call++) {
+    const uint32_t before = NicCalls();
+    now_ += kCallNs;
+    ut_trs_sch_call(sch_);
+    reclaims = NicCalls() - before;
+  }
+  ASSERT_EQ(ctx_.size(), reclaims);
+  for (ut_trs_ctx* c : ctx_) ut_trs_enqueue_mid_pkt(c);
+  const uint32_t before = NicCalls();
+  now_ += kCallNs;
+  ut_trs_sch_call(sch_);
+  EXPECT_EQ(ctx_.size(), NicCalls() - before) << "the bursts, no empty one";
+  for (ut_trs_ctx* c : ctx_) EXPECT_EQ(1u, ut_trs_real_send_count(c));
+  EXPECT_EQ(1u + ctx_.size(), ut_trs_sch_tsc_reads(sch_)) << "the call's and one a port";
+  EXPECT_EQ(ctx_.size(), ut_trs_sch_dp_gets(sch_)) << "the visits' only";
+}
+
+/* a burst after a stall of many batch times leaves a batch due: the reclaim behind it
+ * reads the clock and makes the empty call */
+TEST_P(St20TxRlIdleCost, ABurstAfterAStallIsFollowedByAnEmptyOne) {
+  ASSERT_EQ(0u, IdleCall());
+  now_ += kStallNs;
+  for (ut_trs_ctx* c : ctx_) ut_trs_enqueue_mid_pkt(c);
+  const uint32_t before = NicCalls();
+  ut_trs_sch_call(sch_);
+  EXPECT_EQ(2 * ctx_.size(), NicCalls() - before) << "a burst and an empty one a port";
+  for (ut_trs_ctx* c : ctx_) EXPECT_EQ(1u, ut_trs_real_send_count(c));
+  EXPECT_EQ(1u + 2 * ctx_.size(), ut_trs_sch_tsc_reads(sch_))
+      << "the call's and two a port";
 }
 
 INSTANTIATE_TEST_SUITE_P(Sessions, St20TxRlIdleCost, ::testing::Values(1, 13, 60));
