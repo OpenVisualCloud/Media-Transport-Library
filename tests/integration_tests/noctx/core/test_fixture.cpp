@@ -299,6 +299,8 @@ void NoCtxTest::initStrictPacingContext(PtpTimeFn ptpTimeFn) {
   ctx->para.flags &= ~MTL_FLAG_CNI_TASKLET;
   ctx->para.flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
   ctx->para.flags |= MTL_FLAG_ENABLE_HW_TIMESTAMP;
+  /* isolate.sh gives CPUs on the TX ports' nodes only; RX is timed by its NIC. */
+  ctx->para.flags |= MTL_FLAG_ALLOW_ACROSS_NUMA_CORE;
   initDefaultContext(ptpTimeFn);
 }
 
