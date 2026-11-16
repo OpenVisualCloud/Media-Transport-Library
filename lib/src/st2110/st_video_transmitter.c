@@ -80,8 +80,10 @@ static uint16_t video_trs_burst_pad(struct mtl_main_impl* impl,
   return tx;
 }
 
-/* the pkts of a burst, read before it: packet 0's frame and the bytes of them all */
+/* What a burst needs of its pkts, read before the NIC owns them: the first pkt's index,
+ * packet 0's frame, and the bytes of all of them */
 struct video_trs_pkts {
+  uint32_t idx;
   struct st_frame_trans* frame;
   uint64_t bytes;
 };
@@ -92,10 +94,46 @@ static inline void video_trs_pkts_prepare(struct st_tx_video_session_impl* s,
                                           enum mtl_session_port s_port,
                                           struct rte_mbuf** pkts, uint16_t nb_pkts,
                                           struct video_trs_pkts* p) {
-  p->frame = st_tx_mbuf_get_idx(pkts[0]) ? NULL : st_tx_mbuf_get_priv(pkts[0]);
+  p->idx = st_tx_mbuf_get_idx(pkts[0]);
+  p->frame = p->idx ? NULL : st_tx_mbuf_get_priv(pkts[0]);
+  if (!p->idx) {
+    /* the frame before's pkts retried from inflight2 went first, judged as its own */
+    s->trs_pkt0_tsc[s_port] = st_tx_mbuf_get_tsc(pkts[0]);
+    s->trs_vrx_room_ns[s_port] = st_tx_mbuf_get_vrx_room(pkts[0]);
+    s->trs_vrx_late[s_port] = false;
+  }
   p->bytes = 0;
   for (uint16_t i = 0; i < nb_pkts; i++) p->bytes += pkts[i]->pkt_len;
   if (s->rtcp_tx[s_port]) mt_mbuf_refcnt_inc_bulk(pkts, nb_pkts);
+}
+
+/* Flags the frame when the first pkt of a burst may reach the receiver past its drain
+ * slot. It left by the burst's return, unless behind pkts on time; packet 0 also by the
+ * end of the pads ahead of it, a timeslot late. */
+static inline void video_trs_vrx_check(struct st_tx_video_session_impl* s,
+                                       enum mtl_session_port s_port,
+                                       const struct video_trs_pkts* p) {
+  const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
+  if (!plan->vrx_budget_ns) return;
+
+  /* an all-RL builder stamps packet 0 only; its cursor moves a trs a pkt */
+  uint64_t target_tsc = s->trs_pkt0_tsc[s_port] + (uint64_t)(p->idx * s->pacing.trs);
+  int64_t late = (int64_t)(s->last_burst_succ_time_tsc[s_port] - target_tsc);
+  if (!p->idx)
+    late = RTE_MAX(late, (int64_t)(s->trs_rl_pads_end[s_port] + plan->bucket_ns -
+                                   plan->refill_ns - target_tsc));
+  int32_t room = s->trs_vrx_room_ns[s_port];
+  if (room == ST_TX_VIDEO_RL_ROOM_START_LATE) return;
+  /* past the frame's own target and its room, as start_late is past its target */
+  int64_t over = late - room;
+  if (over <= plan->vrx_budget_ns) return;
+  if ((uint64_t)over > s->stat_rl.vrx_late_max_ns) s->stat_rl.vrx_late_max_ns = over;
+  if (s->trs_vrx_late[s_port]) return;
+
+  s->trs_vrx_late[s_port] = true;
+  s->stat_rl.vrx_frames++;
+  if (!p->idx) s->stat_rl.vrx_pkt0++;
+  MT_USDT_ST20_TX_RL_EVENT(s->mgr->idx, s->idx, ST_TX_VIDEO_RL_CAUSE_VRX, over, p->idx);
 }
 
 /* After the NIC took the first tx pkts: RTCP buffers them, packet 0 starts its frame and
@@ -105,6 +143,7 @@ static inline void video_trs_pkts_sent(struct mtl_main_impl* impl,
                                        enum mtl_session_port s_port,
                                        struct rte_mbuf** pkts, uint16_t nb_pkts,
                                        uint16_t tx, const struct video_trs_pkts* p) {
+  if (tx) video_trs_vrx_check(s, s_port, p);
   if (s->rtcp_tx[s_port]) {
     if (tx) mt_rtcp_tx_buffer_rtp_packets(s->rtcp_tx[s_port], pkts, tx);
     rte_pktmbuf_free_bulk(pkts, nb_pkts);

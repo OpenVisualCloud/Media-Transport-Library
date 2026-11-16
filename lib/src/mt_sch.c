@@ -375,6 +375,7 @@ static int sch_start(struct mtl_sch_impl* sch) {
   }
 
   mt_sch_set_cpu_busy(sch, false);
+  sch->avg_ns_per_loop = 0;
   rte_atomic32_set(&sch->request_stop, 0);
   rte_atomic32_set(&sch->stopped, 0);
 
