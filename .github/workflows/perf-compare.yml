@@ -1,23 +1,321 @@
 name: perf-compare
-# A placeholder: GitHub dispatches only a workflow the default branch has, so this
-# lists perf-compare in the Actions tab and the branch that brings the real one can
-# be run from "Use workflow from" before it merges. That branch replaces this file.
+# Builds A and B, runs them at once on the perf pair and reports how B differs from
+# A (doc/perf_compare.md). The tests and CI scripts come from "Use workflow from".
+run-name: >-
+  ${{ github.event_name == 'schedule' && 'perf-compare: nightly' ||
+  format('perf-compare: {0} against {1}, {2} x {3}{4}{12}, nics {5}{6}{7}{8}{9}{10}{11}',
+  inputs.ref_b || 'main', inputs.ref_a || 'main', inputs.sessions || '36',
+  inputs.video || '1080p59',
+  startsWith(inputs.pixel_format, 'yuv422p10le') && ' yuv422p10le' ||
+  startsWith(inputs.pixel_format, 'v210') && ' v210' ||
+  startsWith(inputs.pixel_format, 'y210') && ' y210' || '',
+  startsWith(inputs.nics, 'split') && 'split' ||
+  startsWith(inputs.nics, 'redundant') && 'redundant' ||
+  startsWith(inputs.nics, 'whole') && 'whole' || 'single',
+  inputs.dma && inputs.dma != 'none' && format(', dma {0}', inputs.dma) || '',
+  inputs.single_core_rx && inputs.single_core_tx && ', single-core RX and TX' ||
+  inputs.single_core_rx && ', single-core RX' ||
+  inputs.single_core_tx && ', single-core TX' || '',
+  inputs.args_a && inputs.args_b && ', args A and B' ||
+  inputs.args_a && ', args A' || inputs.args_b && ', args B' || '',
+  inputs.test_time && inputs.test_time != '120' &&
+  format(', {0} s', inputs.test_time) || '',
+  inputs.rounds && inputs.rounds != '4' &&
+  format(', {0} rounds', inputs.rounds) || '',
+  inputs.compliance && ', compliance' || '',
+  startsWith(inputs.codec, 'jpegxs') && ' jpegxs' || '') }}
 on:
   workflow_dispatch:
+    inputs:
+      # What is compared: the two builds and their own RxTxApp options
+      ref_a:
+        description: 'A, the baseline: branch, tag or commit (e.g. main, v26.01)'
+        required: false
+        type: string
+        default: main
+      ref_b:
+        description: 'B, the build under test, reported as (B - A) / A; the same as A measures the noise'
+        required: false
+        type: string
+        default: main
+      args_a:
+        description: 'Extra RxTxApp options of A, e.g. --sch_session_quota 12; not --dma_dev, --lcores or --tasklet_time, which the case sets, nor a scheduler option with single core'
+        required: false
+        type: string
+      args_b:
+        description: Extra RxTxApp options of B, as for A
+        required: false
+        type: string
+      # The load: the same for both builds
+      video:
+        description: Video format of every session
+        required: false
+        type: choice
+        options:
+          - 1080p59
+          - 1080p50
+          - 1080p29
+          - 1080p25
+          - 2160p59
+          - 2160p50
+          - 2160p29
+          - 2160p25
+          - 4320p59
+          - 4320p50
+          - 4320p29
+          - 4320p25
+        default: 1080p59
+      # Each choice says what it does; the case takes its word before the colon.
+      pixel_format:
+        description: 'The pixel format of the applications. MTL converts it to the format on the wire on TX and back on RX, on the application threads, as an application that works in that format sees it. It moves each frame through the memory of the node of the slot several times: 36 x 1080p59 in yuv422p10le hold their rate with split or whole, not with single, where both builds share that memory'
+        required: false
+        type: choice
+        options:
+          - 'none: the applications use the format on the wire, nothing is converted'
+          - 'yuv422p10le: planar 10-bit 4:2:2, as FFmpeg and most software use'
+          - 'v210: packed 10-bit 4:2:2, as SDI and broadcast cards use'
+          - 'y210: packed 4:2:2, 10 bits in 16-bit words, as GPU and media APIs use'
+        default: 'none: the applications use the format on the wire, nothing is converted'
+      # Each choice says what it does; the case takes its word before the colon.
+      codec:
+        description: 'The video of every session. jpegxs runs 1080p, up to 60 sessions, as many as the one scheduler MTL gives a TX instance''s st22 sessions takes, in pixel_format none or yuv422p10le, without dma; nics whole puts half on each port. Each build gets the SVT-JPEG-XS plugin of this commit''s versions.env, built against its libmtl, of MTL 26.09 or later'
+        required: false
+        type: choice
+        options:
+          - 'none: st20p, uncompressed ST 2110-20'
+          - 'jpegxs: st22p, ST 2110-22 JPEG XS by the SVT-JPEG-XS plugin'
+        default: 'none: st20p, uncompressed ST 2110-20'
+      # sessions, test_time and rounds are strings, not numbers: a number
+      # input reaches a step's env as 120.0.
+      sessions:
+        description: 'Sessions of each build. A 100G port carries 36 x 1080p59, 9 x 2160p59, 2 x 4320p59; nics whole puts a build on two ports, the first filled before the second (jpegxs: half on each), so 37 run as 36 and 1, and 72 x 1080p59 fit'
+        required: false
+        type: string
+        default: '36'
+      # Where and how the instances run
+      # Each choice says what it does; the case takes its word before the colon.
+      nics:
+        description: 'Where A and B run on the two E830 NICs (two ports each) of each host. The places below are those of the first round; A and B swap them every round. A build on one port takes up to 36 x 1080p59 sessions, on two (whole) up to 72'
+        required: false
+        type: choice
+        options:
+          - 'single: NIC 0 only, A on port 0 and B on port 1'
+          - 'split: A on NIC 0 and B on NIC 1, port 0 each, so each build has a CPU socket to itself'
+          - 'redundant: ST 2022-7, A on NIC 0 and B on NIC 1, each with its primary stream on port 0 and its redundant stream on port 1'
+          - 'whole: a whole NIC a build, A on both ports of NIC 0 and B on both of NIC 1, a CPU socket each, port 0 filled before port 1'
+        default: 'single: NIC 0 only, A on port 0 and B on port 1'
+      dma:
+        description: 'The builds whose RX instances copy the payload with a DSA (DMA) of their NUMA node; TX has no DMA'
+        required: false
+        type: choice
+        options:
+          - none
+          - A
+          - B
+          - both
+        default: none
+      # Unchecked, MTL starts as many schedulers as its quota needs on the cores of the
+      # slot: the isolated cores of its NIC's node, half of them with nics single.
+      single_core_rx:
+        description: 'Single core RX: each RX instance on one scheduler with the system tasklets, as perf-pytest single core. A core carries about 28 x 1080p59, 36 with DMA, 60 sessions at most; with nics single both builds share a socket, which falls short of that, and split gives each its own'
+        required: false
+        type: boolean
+        default: false
+      single_core_tx:
+        description: 'Single core TX: each TX instance on one scheduler with the system tasklets. A core carries about 35 x 1080p59, 60 sessions at most; at that load use nics split, as for RX'
+        required: false
+        type: boolean
+        default: false
+      # The measurement
+      test_time:
+        description: 'Seconds of the untraced window of each round, at least 30; three more windows add half of it each'
+        required: false
+        type: string
+        default: '120'
+      rounds:
+        description: 'Rounds; A and B swap places each round, so keep it even. Fewer than 4 give a rough noise estimate'
+        required: false
+        type: string
+        default: '4'
+      compliance:
+        description: 'After the rounds, EBU LIST judges every stream of each build, alone in slot 0, its sessions multicast, captured a few at a time for 1 s each on the companion: not for 4320p, which LIST cannot judge. About 25 s every 4 x 1080p59, twice that with nics redundant; reported, not scored'
+        required: false
+        type: boolean
+        default: false
+  # The nightly compares the main of the last passed night with main.
+  schedule:
+    - cron: '0 16 * * *'
 
 permissions:
   contents: read
 
 jobs:
-  placeholder:
+  refs:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # the nightly reads the commit its last passed run compared
+      actions: read
+    outputs:
+      sha_a: ${{ steps.refs.outputs.sha_a }}
+      sha_b: ${{ steps.refs.outputs.sha_b }}
+      label_a: ${{ steps.refs.outputs.label_a }}
+      label_b: ${{ steps.refs.outputs.label_b }}
     steps:
-      - name: Harden-Runner
+      - name: Harden Runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
-      - name: Explain the placeholder
-        run: |
-          echo '::error::Nothing to compare here: set "Use workflow from" to the branch that brings perf-compare.'
-          exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
+      - name: Resolve the two builds and refuse the inputs that cannot run
+        id: refs
+        env:
+          REF_A: ${{ inputs.ref_a || 'main' }}
+          REF_B: ${{ inputs.ref_b || 'main' }}
+          SESSIONS: ${{ inputs.sessions }}
+          TEST_TIME: ${{ inputs.test_time }}
+          ROUNDS: ${{ inputs.rounds }}
+          SINGLE_CORE_RX: ${{ inputs.single_core_rx }}
+          SINGLE_CORE_TX: ${{ inputs.single_core_tx }}
+          VIDEO: ${{ inputs.video }}
+          NICS: ${{ inputs.nics }}
+          DMA: ${{ inputs.dma }}
+          PIXEL_FORMAT: ${{ inputs.pixel_format }}
+          CODEC: ${{ inputs.codec }}
+          COMPLIANCE: ${{ inputs.compliance }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: task ci:perf-compare -- refs
+
+  # The workflow commit, which the framework runs; the compare job builds A and B.
+  build:
+    needs: refs
+    runs-on: dpdk
+    timeout-minutes: 60
+    outputs:
+      mtl_commit: ${{ steps.build.outputs.mtl_commit }}
+      mtl_hash: ${{ steps.build.outputs.mtl_hash }}
+      jpegxs_hash: ${{ steps.build.outputs.jpegxs_hash }}
+      ice_hash: ${{ steps.build.outputs.ice_hash }}
+      ffmpeg_hash: ${{ steps.build.outputs.ffmpeg_hash }}
+      gstreamer_hash: ${{ steps.build.outputs.gstreamer_hash }}
+      plugins_hash: ${{ steps.build.outputs.plugins_hash }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - name: Checkout MTL
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@497c4107ae027a4f9d6da088d027639df40064e3
+      - name: Build the artifacts
+        id: build
+        uses: ./.github/actions/build-artifacts
+
+  compare:
+    needs: [refs, build]
+    runs-on: [self-hosted, perf, sut]
+    timeout-minutes: 180
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - name: Set current date
+        run: echo "CURRENT_DATE=$(date '+%y%m%d-%H%M%S')" >> "$GITHUB_ENV"
+      - name: Check out the workflow commit
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@497c4107ae027a4f9d6da088d027639df40064e3
+        with:
+          ref: ${{ needs.build.outputs.mtl_commit }}
+          fetch-depth: '0'
+          persist-credentials: 'false'
+      - name: Validate host and restore the workflow commit's build
+        id: validate
+        uses: ./.github/actions/validate-host
+        with:
+          shadow_host: '/etc/mtl-ci/runner.env'
+          build_outputs: ${{ toJSON(needs.build.outputs) }}
+      - name: Build A and B
+        env:
+          SHA_A: ${{ needs.refs.outputs.sha_a }}
+          SHA_B: ${{ needs.refs.outputs.sha_b }}
+          CODEC: ${{ inputs.codec }}
+        run: task ci:perf-compare -- build
+      - name: Copy both builds to the companion
+        env:
+          SHADOW_HOST_IP: ${{ steps.validate.outputs.shadow_host_ip }}
+          SHADOW_HOST_USER: ${{ steps.validate.outputs.shadow_host_user }}
+        run: task ci:perf-compare -- sync
+
+      - name: Ensure the acceptance virtualenv
+        run: task ci:pytest-setup -- ensure
+      - name: Set session ID
+        env:
+          RUNNER_NAME: ${{ runner.name }}
+        run: task ci:pytest-setup -- session
+      - name: Set PCI device
+        env:
+          # both ports of two cards for the modes that use NIC 1
+          PERF_PORTS: ${{ startsWith(inputs.nics || 'single', 'single') && '2' || '4' }}
+        run: task ci:pytest-setup -- pci-env
+      - name: Generate pytest configuration files
+        env:
+          SESSION_ID: ${{ env.SESSION_ID }}
+          PCI_DEVICE: ${{ env.PCI_DEVICE }}
+          SHADOW_IP: ${{ steps.validate.outputs.shadow_host_ip }}
+          SHADOW_USER: ${{ steps.validate.outputs.shadow_host_user }}
+          TEST_TIME: ${{ inputs.test_time }}
+          COMPLIANCE: ${{ inputs.compliance }}
+        run: task ci:pytest-setup -- config-perf
+      - name: Verify the perf media assets
+        env:
+          MEDIA_ASSET_SET: perf
+          CODEC: ${{ inputs.codec }}
+        run: task ci:media-assets -- verify
+
+      - name: Compare
+        id: compare
+        env:
+          PERF_COMPARE_LABELS: ${{ needs.refs.outputs.label_a }},${{ needs.refs.outputs.label_b }}
+          ARGS_A: ${{ inputs.args_a }}
+          ARGS_B: ${{ inputs.args_b }}
+          DMA: ${{ inputs.dma }}
+          NICS: ${{ inputs.nics }}
+          SESSIONS: ${{ inputs.sessions }}
+          VIDEO: ${{ inputs.video }}
+          ROUNDS: ${{ inputs.rounds }}
+          SINGLE_CORE_RX: ${{ inputs.single_core_rx }}
+          SINGLE_CORE_TX: ${{ inputs.single_core_tx }}
+          PIXEL_FORMAT: ${{ inputs.pixel_format }}
+          CODEC: ${{ inputs.codec }}
+          COMPLIANCE: ${{ inputs.compliance }}
+        run: task ci:pytest-run -- perf-compare
+      # First: a cancelled job gives the always() steps 5 minutes.
+      - name: Remove both builds and the cache partitions
+        if: always()
+        env:
+          SHADOW_HOST_IP: ${{ steps.validate.outputs.shadow_host_ip }}
+          SHADOW_HOST_USER: ${{ steps.validate.outputs.shadow_host_user }}
+        run: task ci:perf-compare -- clean
+      - name: Summarize the comparison
+        if: always() && steps.compare.outcome != 'skipped'
+        run: task ci:report -- perf-compare
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: "perf-compare-${{ runner.name }}-${{ env.CURRENT_DATE }}"
+          path: |
+            ./tests/acceptance/perf_compare.html
+            ./tests/acceptance/report.html
+            ./tests/acceptance/perf-logs.tar.gz
+      - name: Clean up
+        if: always()
+        run: task cleanup

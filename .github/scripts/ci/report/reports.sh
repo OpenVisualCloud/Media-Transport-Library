@@ -44,6 +44,16 @@ performance)
 	# upload-artifact rejects the colons in the timestamped log directory names.
 	tar -czf perf-logs.tar.gz logs/performance || echo "::warning::Packing the performance logs failed"
 	;;
+perf-compare)
+	cd tests/acceptance
+	[[ ! -d logs/performance ]] || tar -czf perf-logs.tar.gz logs/performance || echo "::warning::Packing the performance logs failed"
+	report=logs/performance/latest/perf_compare.html
+	# pytest passes a skipped case, so without the report nothing was compared.
+	[[ -f $report ]] || { echo "::error::No perf-compare report found" >&2 && exit 1; }
+	cp "$report" perf_compare.html
+	# A summary renders HTML but no style; the case writes it with the report.
+	cat "${report%.html}_summary.html" >>"${GITHUB_STEP_SUMMARY:?GITHUB_STEP_SUMMARY is required}"
+	;;
 flatten-pytest) flatten_reports "${REPORT_DIR:-python-reports}" 'nightly-test-report-*' report.html html ;;
 flatten-gtest) flatten_reports "${REPORT_DIR:-gtest-reports}" 'nightly-gtest-report-*' gtest.log log ;;
 list-system-info) ls -lah system-info-reports || echo "No system info reports found (this is optional)" ;;

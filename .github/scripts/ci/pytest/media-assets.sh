@@ -11,7 +11,11 @@ media_dir=${2:-/mnt/media}
 
 case "${MEDIA_ASSET_SET:-smoke}" in
 smoke) assets="yuv_files_422p10le:Penguin_1080p audio_files:PCM24 anc_files:text_p59" ;;
-perf) assets="yuv_files_422rfc10:ParkJoy_1080p_24frames yuv_files_422rfc10:ParkJoy_4K_24frames yuv_files_422rfc10:Penguin_8K_24frames" ;;
+perf)
+	assets="yuv_files_422rfc10:ParkJoy_1080p_24frames yuv_files_422rfc10:ParkJoy_4K_24frames yuv_files_422rfc10:Penguin_8K_24frames"
+	# the planar clip a codec takes (test_perf_compare.py, MEDIA)
+	[[ ${CODEC:-none} == none* ]] || assets+=" yuv_files_input_formats:yuv422p10le"
+	;;
 *)
 	echo "MEDIA_ASSET_SET is ${MEDIA_ASSET_SET}; expected smoke or perf." >&2
 	exit 2
