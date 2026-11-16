@@ -681,7 +681,8 @@ static enum st_tx_video_rl_state video_trs_rl_frame_start(
 
 static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
-                                 enum mtl_session_port s_port, int* ret_status) {
+                                 enum mtl_session_port s_port, bool second,
+                                 int* ret_status) {
   unsigned int bulk = s->bulk;
   struct rte_ring* ring = s->ring[s_port];
   int idx = s->idx;
@@ -814,7 +815,10 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
   struct rte_mbuf* pkts[ST_SESSION_MAX_BULK] = {NULL};
   n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
   if (n == 0) {
-    video_trs_rl_reclaim_idle(impl, s, s_port);
+    /* behind the first call's burst, reclaim only for a batch due within a tick of it */
+    if (!second || s->trs_reclaim_tsc[s_port] <=
+                       s->last_burst_succ_time_tsc[s_port] + ST_TX_VIDEO_RL_TICK_NS)
+      video_trs_rl_reclaim_idle(impl, s, s_port);
     *ret_status = -STI_RLTRS_DEQUEUE_FAIL;
     return MTL_TASKLET_ALL_DONE;
   }
@@ -892,14 +896,14 @@ static int video_trs_rl_tasklet(struct mtl_main_impl* impl,
   int pending = MTL_TASKLET_ALL_DONE;
   int ret_status = 0;
 
-  pending += _video_trs_rl_tasklet(impl, s, s_port, &ret_status);
+  pending += _video_trs_rl_tasklet(impl, s, s_port, false, &ret_status);
   /*
    * Try to burst pkts again for the performance, in this way nic tx get double
    * bulk since tx pkt is in critical path
    */
   if (ret_status > 0) {
     ret_status = 0;
-    pending += _video_trs_rl_tasklet(impl, s, s_port, &ret_status);
+    pending += _video_trs_rl_tasklet(impl, s, s_port, true, &ret_status);
   }
   s->stat_trs_ret_code[s_port] = ret_status;
   return pending;
@@ -1313,7 +1317,7 @@ static int video_trs_rl_catch_up(struct mtl_main_impl* impl,
         if (!blocked && s->queue[s_port] && !s->tx_queue_recovery_pending[s_port] &&
             video_trs_rl_short(impl, s, s_port)) {
           int ret_status = 0;
-          pending += _video_trs_rl_tasklet(impl, s, s_port, &ret_status);
+          pending += _video_trs_rl_tasklet(impl, s, s_port, false, &ret_status);
           s->stat_trs_ret_code[s_port] = ret_status;
           if (ret_status > 0) more = true;
           if (s->trs_target_tsc[s_port])
