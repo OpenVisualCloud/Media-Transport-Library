@@ -154,6 +154,10 @@ Sessions assigned to schedulers by weight in "1080p-equivalents":
 2. If none found, allocate new scheduler (up to 18)
 3. As sessions freed, quota returned
 
+TX video sessions are placed by quota alone; the round is judged at runtime (`doc/rl_pacing.md`, "Check 2"):
+- `lead_min_ns` (`tv_lead_visit()`) is plain `int64_t`, every access under the session lock; the stats dump takes and resets it.
+- The stats dump `err()`s `frames fall behind` once a period per scheduler iff a lead went below 0 or the round averaged past the tightest budget (`St20TxRoundLoads.ALoadErrsIffItFallsBehind`, `St20TxRoundBudget`). A sleeping scheduler's round is not judged, its leads are.
+
 **If adding a new session type**: define its quota correctly or schedulers get overloaded.
 
 ### Sleep/Wake Design
@@ -647,6 +651,16 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
     - A port waiting to start over keeps its target in the release scans (`video_trs_rl_pkt0_tsc()`), so past its target it leaves as a held one, and as one it counts no `stat_trans_troffset_mismatch` on top of its stall (`St20TxRlAnchor.StartingOverPastTheTargetLeavesInTheReleaseScan`).
     - Its waiting visits call `video_trs_rl_reclaim()` as the visits before the window do, so the anchor of the pre-arm that starts over carries no batch free ahead of its doorbell (`WaitingToStartOverFreesTheDueBatch`).
     - A queue recovery drops a late entry's pending tail (`trs_rl_tail`, `tv_transmitter_port_state_init()`).
+  - VRX detector (no silent non-compliance, `doc/rl_pacing.md`, "Check 1"): `plan->vrx_budget_ns` is how far past its own target a pkt may leave and still reach the receiver by its drain slot; 0 judges nothing. At create a port warns once if its vrx leaves no budget, or, armed, no stall limit (`St20TxRlVrxDetectBudgetBelowZero`).
+    - The drain slot is `vrx` trs after the target (ST 2110-21 6.6.2); EBU LIST reads VRX 0 for one trs more.
+    - The budget is that slot less the worst 90 kHz snap, the sawtooth and `ST_TX_VIDEO_RL_WIRE_NS`, the 5.5 µs the NIC and the wire add past the shaper (E810 TX to E830 RX).
+    - `absorb_ns` is the smaller of the 4 µs share less aim, T and a fine trim, and this budget less two aims and a fine trim: check 1 takes packet 0 that late behind a kept stall, so one at the limit is not flagged (`St20TxRlAnchor.AStallAtTheLimitIsKeptUnflaggedAndPastItIsNotKept`).
+    - The second binds at 1080p60 (2.18 µs GPM_SL, 1.90 µs BPM, 1.62 µs GPM) and 1080p59.94 (2.25 µs GPM, 2.53 µs BPM).
+    - At 1080p60 BPM and GPM the limit is under the 2 µs stall test: a counted stall is never kept there, but a gap between the limit and 2 µs is not counted, so the plan goes on behind it and check 1 flags the frame (`St20TxRlAnchor.AGapBetweenTheLimitAndTheStallTestIsKeptAndFlagged`).
+    - Every armed default format's budget is above check 1's on-plan lateness, a healthy first burst plus two aims and a fine trim: 0.87 µs of room at least, at 1080p60 GPM (`St20TxRlPlanArming.EveryRlFormatArmsItsPlanOrWarns`).
+    - A frame past the budget counts once in `stat_rl.vrx_frames`, in `vrx_pkt0` too if at packet 0, and fires `tx_rl_event` cause 0; a frame started later than the budget counts in `start_late`, cause 1.
+    - Every session below VRX 0 is flagged, with and without absorb (`St20TxRlVrxDetect*`).
+    - Not judged: TSC/PTP pacing, a shaper drifting slower than `pad_ns`, the frame before's tail ahead of packet 0.
   - The 2 µs is absolute because a burst's CPU cost does not scale with the format, while a pad does (~0.97 µs at 2160p59.94, ~8.7 µs at 720p60).
   - It is above a healthy burst (a 24-32 pad one returns 0.5-1.0 µs after its sizing read on an E810 VF) and at or below most timer ticks (2–10 µs). A shorter stall before the doorbell is not detected and delays packet 0 by up to its length.
   - The anchor and the bucket cover `bucket_ns` + 12 µs from the anchor's doorbell (7.4 µs at 4320p59.94, where the anchor is capped), and the bursts after it longer: a later burst's stall leaves the shaper no gap unless it outlasts them.

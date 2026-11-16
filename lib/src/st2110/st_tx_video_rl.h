@@ -41,6 +41,9 @@ enum st_tx_video_rl_trim {
 #define ST_TX_VIDEO_RL_PSM_CLK_390MHZ (390625000)
 #define ST_TX_VIDEO_RL_PSM_CLK_416MHZ (416666667)
 #define ST_TX_VIDEO_RL_PSM_CLK_446MHZ (446428571)
+/* what the NIC and the wire add between the shaper's release and the receiver: 4.4-4.9 us
+ * measured on E810 TX to E830 RX, plus margin */
+#define ST_TX_VIDEO_RL_WIRE_NS (5500)
 /* The latest packet 0 may leave past its target, the TX side's share of the 0..+10 us
  * launch bound. It covers the timeslot grid's aim and timeslot, a trim cut and a kept
  * stall or what a late entry's tail leaves short. */
@@ -73,6 +76,10 @@ static inline uint64_t st_tx_video_rl_timeslot_tokens(uint64_t bps) {
   return most;
 }
 
+/* the vrx_room_ns of a frame started past its budget, counted in start_late: check 1
+ * does not judge it */
+#define ST_TX_VIDEO_RL_ROOM_START_LATE INT32_MIN
+
 /* the RL pre-arm plan of a port, set by tv_rl_plan_init() */
 struct st_tx_video_rl_plan {
   long double pad_ns;    /* shaper time of one NORMAL pad, 0 without a plan */
@@ -84,6 +91,8 @@ struct st_tx_video_rl_plan {
   bool armed;            /* false: packet 0 is held until its target */
   /* the shaper time of the NIC's full bucket */
   long double refill_ns;
+  /* a pkt this plus its vrx_room_ns past its target keeps VRX >= 0; 0: not judged */
+  int64_t vrx_budget_ns;
 };
 
 /* a pre-arm burst of n NORMAL pads, the first coarse of them TRIM_COARSE bytes short and
