@@ -93,6 +93,8 @@ void ut_trs_set_burst_stall(ut_trs_ctx* ctx, uint32_t call, uint64_t stall_ns,
  * of its first real pkt, or with nth 0 in the call that carries that pkt */
 void ut_trs_set_frame_burst_stall(ut_trs_ctx* ctx, uint32_t nth, uint64_t stall_ns,
                                   bool after_doorbell);
+/* the mock time the stall of a burst call ended, 0 before it */
+uint64_t ut_trs_burst_stall_end_tsc(const ut_trs_ctx* ctx);
 uint32_t ut_trs_burst_call_count(const ut_trs_ctx* ctx);
 /* The PMD holds batches done rs batches it has not freed, and frees the oldest in each
  * burst, empty ones too, taking its free_ns before the doorbell, while more than

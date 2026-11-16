@@ -647,7 +647,7 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
     Past `absorb_ns` none follow, as re-planned from the return they could end early, and the port stays in WAIT_WARMUP.
     A later visit, once `trs_rl_pads_end` + `bucket_ns` has passed (those pads drained, the bucket full again), starts the pre-arm over as on a fresh frame; packet 0 then leaves on its plan, whatever the stall was.
     If `trim_pads` no longer fit behind `trs_rl_pads_end`, WAIT_TARGET holds packet 0 at once. Invariants:
-    - Packet 0 is never early (`St20TxRlAnchor`, `St20TxRlVrxFaults`): starting over too soon finds pads queued or the bucket short, which only delays.
+    - Packet 0 is never early (`St20TxRlAnchor`, `St20TxRlStallContract`, `St20TxRlVrxFaults`): starting over too soon finds pads queued or the bucket short, which only delays.
     - A port waiting to start over keeps its target in the release scans (`video_trs_rl_pkt0_tsc()`), so past its target it leaves as a held one, and as one it counts no `stat_trans_troffset_mismatch` on top of its stall (`St20TxRlAnchor.StartingOverPastTheTargetLeavesInTheReleaseScan`).
     - Its waiting visits call `video_trs_rl_reclaim()` as the visits before the window do, so the anchor of the pre-arm that starts over carries no batch free ahead of its doorbell (`WaitingToStartOverFreesTheDueBatch`).
     - A queue recovery drops a late entry's pending tail (`trs_rl_tail`, `tv_transmitter_port_state_init()`).

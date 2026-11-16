@@ -49,6 +49,7 @@ struct ut_trs_ctx {
   bool stall_by_frame; /* ut_trs_set_frame_burst_stall() picks stall_call */
   uint32_t stall_nth;  /* its pad call, 0 for packet 0's */
   uint32_t pad_calls;  /* the calls with port P pads ahead of its first real pkt */
+  uint64_t stall_end_tsc;
 
   uint32_t pad_send_count;
   uint32_t real_send_count;
@@ -189,6 +190,7 @@ static void ut_trs_burst_stall(struct ut_trs_ctx* ctx, bool after_doorbell) {
   if (!ctx->stall_ns || ctx->burst_call_count != ctx->stall_call) return;
   if (ctx->stall_after_doorbell != after_doorbell) return;
   ut_trs_advance(ctx, ctx->stall_ns);
+  ctx->stall_end_tsc = ctx->last_tsc;
 }
 
 static void ut_trs_frame_stall_call(struct ut_trs_ctx* ctx, struct mt_txq_entry* entry,
@@ -762,6 +764,10 @@ void ut_trs_set_frame_burst_stall(ut_trs_ctx* ctx, uint32_t nth, uint64_t stall_
   ctx->stall_by_frame = true;
   ctx->stall_nth = nth;
   ctx->pad_calls = 0;
+}
+
+uint64_t ut_trs_burst_stall_end_tsc(const ut_trs_ctx* ctx) {
+  return ctx->stall_end_tsc;
 }
 
 uint32_t ut_trs_burst_call_count(const ut_trs_ctx* ctx) {
