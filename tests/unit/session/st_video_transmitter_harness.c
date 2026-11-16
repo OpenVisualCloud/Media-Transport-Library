@@ -77,7 +77,7 @@ struct ut_trs_ctx {
   uint64_t cpu_stall_ns[UT_TRS_MAX_CPU_STALLS];
   int cpu_stalls, cpu_stall_next;
   bool cost_stamp_pending;
-  /* the next tsc read begins a transmitter call: it sets mgr.visit_tsc */
+  /* the next tsc read begins a transmitter call, and stands for its read of visit_tsc */
   bool visit_pending;
   uint32_t refcnt_since_tsc;
   uint32_t max_refcnt_before_burst;
