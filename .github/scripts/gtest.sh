@@ -386,8 +386,9 @@ generate_test_cases() {
 
 # isolate.sh's verdict for the NoCtx ports, printed before the run.
 noctx_isolation_probe() {
-	local port_list="${noctx_port[0]},${noctx_port[1]},${noctx_port[2]},${noctx_port[3]}" output
-	output=$(sudo env MTL_ISOLATE=require MTL_ISOLATE_PORTS="${port_list}" "${isolate_sh}" -- true 2>&1)
+	local output
+	output=$(sudo env MTL_ISOLATE=require MTL_ISOLATE_PORTS="${noctx_port[0]},${noctx_port[2]}" \
+		MTL_ISOLATE_MEM_PORTS="${noctx_port[1]},${noctx_port[3]}" "${isolate_sh}" -- true 2>&1)
 	grep -m 1 'exclusive CPU isolation' <<<"${output}" || echo "no verdict: ${output##*$'\n'}"
 }
 
