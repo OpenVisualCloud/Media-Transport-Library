@@ -163,6 +163,8 @@
   MT_DTRACE_PROBE5(st20, tx_frame_next, m_idx, s_idx, f_idx, va, tmstamp)
 #define MT_USDT_ST20_TX_FRAME_DONE(m_idx, s_idx, f_idx, tmstamp) \
   MT_DTRACE_PROBE4(st20, tx_frame_done, m_idx, s_idx, f_idx, tmstamp)
+#define MT_USDT_ST20_TX_RL_EVENT(m_idx, s_idx, cause, a0, a1) \
+  MT_DTRACE_PROBE5(st20, tx_rl_event, m_idx, s_idx, cause, a0, a1)
 #define MT_USDT_ST20_TX_FRAME_DUMP(m_idx, s_idx, file, va, sz) \
   MT_DTRACE_PROBE5(st20, tx_frame_dump, m_idx, s_idx, file, va, sz)
 #define MT_USDT_ST20_TX_FRAME_DUMP_ENABLED() ST20_TX_FRAME_DUMP_ENABLED()

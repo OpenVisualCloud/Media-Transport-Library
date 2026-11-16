@@ -37,6 +37,9 @@ struct Fmt {
   const char* name;
   uint32_t width, height;
   enum st_fps fps = ST_FPS_P59_94;
+  bool interlaced = false;
+  enum st20_fmt fmt = ST20_FMT_YUV_422_10BIT;
+  enum st20_packing packing = ST20_PACKING_MAX; /* MAX: the harness's own layout */
 };
 
 const Fmt kFormats[] = {
@@ -54,6 +57,7 @@ struct Pkt0 {
   long double queued = 0; /* the return of its call - target: held when >= 0 */
   uint32_t pads = 0, stalls = 0;
   int vrx = 0;
+  bool flagged = false;
   bool leak = false; /* pads left to retry, or a pad reference not given back */
 };
 
@@ -67,13 +71,19 @@ class St20TxRlAnchor : public ::testing::Test {
     const float trained[1] = {164};
     ut_txv_ctx* txv = ut_txv_create();
     ASSERT_NE(nullptr, txv);
-    ut_txv_set_rl_format(txv, f.width, f.height, false, f.fps);
+    ut_txv_set_rl_format(txv, f.width, f.height, f.interlaced, f.fps);
+    if (f.fmt != ST20_FMT_YUV_422_10BIT || f.packing != ST20_PACKING_MAX)
+      ut_txv_set_rl_layout(
+          txv, f.packing == ST20_PACKING_MAX ? ST20_PACKING_GPM : f.packing, f.fmt, 512);
     ASSERT_EQ(0, ut_txv_init_rl_pacing(txv, 1, 0, false, trained, false));
     ASSERT_TRUE(ut_txv_rl_armed(txv, kPortP)) << f.name;
     p_ = ut_txv_rl_drain(txv, kPortP);
+    plan_pad_ = ut_txv_rl_pad_size(txv, kPortP);
+    bps_ = ut_txv_rl_queue_bps(txv, kPortP);
     credit_ = ut_txv_rl_credit(txv, kPortP);
     absorb_ = ut_txv_rl_absorb(txv, kPortP);
     plan_anchor_ = ut_txv_rl_anchor_pads(txv, kPortP);
+    budget_ = ut_txv_rl_vrx_budget(txv, kPortP);
     refill_ = kBurstBytes * 1e9L / ut_txv_rl_queue_bps(txv, kPortP);
     trs_ = ut_txv_pacing_trs(txv);
     warm_pkts_ = ut_txv_pacing_warm_pkts(txv);
@@ -100,6 +110,7 @@ class St20TxRlAnchor : public ::testing::Test {
     ut_trs_set_drain(ctx, kPortP, p_);
     ut_trs_set_credit(ctx, kPortP, credit_);
     ut_trs_set_absorb(ctx, kPortP, absorb_);
+    ut_trs_set_vrx_detect(ctx, kPortP, budget_, refill_);
     ut_trs_set_shaper_bucket(ctx, kPortP, refill_);
     ut_trs_set_mock_tsc_script(ctx, now, 1);
     ut_trs_set_burst_cost(ctx, kBurstD, kBurstG, 2);
@@ -115,6 +126,7 @@ class St20TxRlAnchor : public ::testing::Test {
     r.pads = ut_trs_pad_send_count(ctx);
     r.stalls = (uint32_t)ut_trs_stat_recalculate_warmup(ctx);
     r.vrx = ut_rl_vrx(launch, tpr0_, trs_, p_, pad_interval_, kSlots);
+    r.flagged = ut_trs_get_rl_stat(ctx).vrx_frames > 0;
     r.leak = ut_trs_pad_inflight_num(ctx) || ut_trs_pad_refcnt(ctx) != 1 ||
              ut_trs_trim_pad_refcnt(ctx, 0) != 1 || ut_trs_trim_pad_refcnt(ctx, 1) != 1;
     return r;
@@ -142,8 +154,9 @@ class St20TxRlAnchor : public ::testing::Test {
 
   long double p_ = 0, credit_ = 0, absorb_ = 0, trs_ = 0, refill_ = 0, aim_ = 0;
   long double fine_ = 0, tpr0_ = 0, pad_interval_ = 0;
-  int64_t trim_pads_ = 0;
-  uint64_t window_ = 0;
+  int64_t budget_ = 0, trim_pads_ = 0;
+  uint64_t window_ = 0, bps_ = 0;
+  uint16_t plan_pad_ = 0; /* the plan's NORMAL pad, kPadSize the harness's */
   uint32_t warm_pkts_ = 0, anchor_ = 0;
   uint32_t plan_anchor_ = 0; /* what tv_rl_plan_init() sized, anchor_ what it should */
 };
@@ -202,7 +215,8 @@ TEST_F(St20TxRlAnchor, ATickInTheBurstBehindTheAnchorChangesNothing) {
 /* An anchor stalled 2.5 to 30 us past absorb_ns, before or after its doorbell, with
  * rounds of 2, 12 or 26 us: the pre-arm starts over behind it, and packet 0 goes behind
  * the new pads, never early, late by no more than a frame on its plan may be (the aim, a
- * fine trim and an uncounted gap), whatever the stall. The frame keeps VRX >= 0. */
+ * fine trim and an uncounted gap), whatever the stall. The frame keeps VRX >= 0 and is
+ * not flagged. */
 TEST_F(St20TxRlAnchor, StalledAnchorStartsOverAndPacket0LeavesOnThePlan) {
   for (const Fmt& f : kFormats) {
     ASSERT_NO_FATAL_FAILURE(Plan(f));
@@ -226,6 +240,7 @@ TEST_F(St20TxRlAnchor, StalledAnchorStartsOverAndPacket0LeavesOnThePlan) {
           EXPECT_GE(r.late, 0) << what;
           EXPECT_LE(r.late, aim_ + fine_ + ut_trs_rl_stall_ns()) << what;
           EXPECT_GE(r.vrx, 0) << what;
+          EXPECT_FALSE(r.flagged) << what;
           if (HasFailure()) return;
         }
   }
@@ -249,6 +264,7 @@ TEST_F(St20TxRlAnchor, ASecondStalledAnchorStartsOverAgain) {
     EXPECT_LT(r.queued, 0) << f.name;
     EXPECT_GE(r.late, 0) << f.name;
     EXPECT_LE(r.late, aim_ + fine_ + ut_trs_rl_stall_ns()) << f.name;
+    EXPECT_FALSE(r.flagged) << f.name;
   }
 }
 
@@ -288,16 +304,18 @@ TEST_F(St20TxRlAnchor, WaitingToStartOverFreesTheDueBatch) {
 /* A stall within absorb_ns, what the TX share of the launch budget leaves a pad burst,
  * keeps the plan: packet 0 goes behind its pads in that visit, late by no more than the
  * gap, and waits for no later visit, so a scheduler then away past the target changes
- * nothing. The frame keeps VRX >= 0. */
+ * nothing. The frame keeps VRX >= 0 and is not flagged, at the limit too. */
 TEST_F(St20TxRlAnchor, StallWithinAbsorbKeepsThePlanInThatVisit) {
   int kept = 0;
   for (const Fmt& f : kFormats) {
     ASSERT_NO_FATAL_FAILURE(Plan(f));
+    /* the harness's tsc reads put the gap a few ns past the stall and the cost */
+    const uint64_t limit = (uint64_t)std::max<long double>(0, absorb_ - kBurstD[0] - 20);
     for (bool after : {false, true})
-      for (uint64_t stall : {1500, 2000, 2500, 3000}) {
+      for (uint64_t stall :
+           {(uint64_t)1500, (uint64_t)2000, (uint64_t)2500, (uint64_t)3000, limit}) {
         const long double gap = stall + kBurstD[0];
-        /* the harness's tsc reads put the gap a few ns past the stall and the cost */
-        if (gap + 20 > absorb_) continue;
+        if (gap + 20 > absorb_ || gap <= ut_trs_rl_stall_ns() + 20) continue;
         const std::string what = std::string(f.name) + " stall " + std::to_string(stall) +
                                  (after ? " after" : " before") + " the doorbell";
         const Pkt0 r = Frame(1, stall, after, window_);
@@ -306,10 +324,95 @@ TEST_F(St20TxRlAnchor, StallWithinAbsorbKeepsThePlanInThatVisit) {
         EXPECT_GE(r.late, 0) << what;
         EXPECT_LE(r.late, aim_ + fine_ + gap + 20) << what;
         EXPECT_GE(r.vrx, 0) << what;
+        EXPECT_FALSE(r.flagged) << what;
         kept++;
       }
   }
   EXPECT_GT(kept, 0);
+}
+
+/* absorb_ns is the smaller of the TX share of the launch budget and what check 1's budget
+ * leaves past the plan's aim, its own aim and a fine trim. A stall kept at it is not
+ * flagged. A counted stall past it, just past the limit or the 2 us stall test, whichever
+ * is higher, is not kept: with the scheduler away the rest of the window, packet 0 then
+ * leaves at the visit past its target. */
+TEST_F(St20TxRlAnchor, AStallAtTheLimitIsKeptUnflaggedAndPastItIsNotKept) {
+  const Fmt formats[] = {
+      {"720p50", 1280, 720, ST_FPS_P50},
+      {"720p59", 1280, 720},
+      {"1080p25", 1920, 1080, ST_FPS_P25},
+      {"1080p29", 1920, 1080, ST_FPS_P29_97},
+      {"1080i59", 1920, 1080, ST_FPS_P59_94, true},
+      {"1080p59", 1920, 1080},
+      {"1080p60", 1920, 1080, ST_FPS_P60},
+      {"1080p60_gpm", 1920, 1080, ST_FPS_P60, false, ST20_FMT_YUV_422_10BIT,
+       ST20_PACKING_GPM},
+      {"1080p60_bpm", 1920, 1080, ST_FPS_P60, false, ST20_FMT_YUV_422_10BIT,
+       ST20_PACKING_BPM},
+      {"2160p59", 3840, 2160},
+      {"2160p59_444_12bit", 3840, 2160, ST_FPS_P59_94, false, ST20_FMT_YUV_444_12BIT},
+      {"4320p59", 7680, 4320},
+  };
+  const long double counted = ut_trs_rl_stall_ns() + 20;
+  for (const Fmt& f : formats) {
+    ASSERT_NO_FATAL_FAILURE(Plan(f));
+    const long double fine = p_ * ST_TX_VIDEO_RL_TRIM_FINE / plan_pad_;
+    const long double timeslot = st_tx_video_rl_timeslot_tokens(bps_) * p_ / plan_pad_;
+    const long double limit =
+        std::min(4000 - aim_ - timeslot - fine, budget_ - 2 * aim_ - fine);
+    EXPECT_NEAR((double)limit, (double)absorb_, 1.0) << f.name;
+    for (bool after : {false, true}) {
+      const std::string what = std::string(f.name) + (after ? " after" : " before");
+      /* the harness's tsc reads put the gap up to 20 ns past the stall and the cost */
+      const uint64_t stall = (uint64_t)std::max<long double>(0, limit - kBurstD[0] - 20);
+      const Pkt0 at = Frame(1, stall, after, window_);
+      EXPECT_EQ(limit > counted ? 1u : 0u, at.stalls) << what;
+      EXPECT_LT(at.queued, 0) << what << ": not kept";
+      EXPECT_GE(at.vrx, 0) << what;
+      EXPECT_FALSE(at.flagged) << what;
+      const Pkt0 past = Frame(1, (uint64_t)(std::max(limit, counted) - kBurstD[0] + 50),
+                              after, window_);
+      EXPECT_EQ(1u, past.stalls) << what;
+      EXPECT_GE(past.queued, 0) << what << ": kept past the limit";
+    }
+  }
+}
+
+/* With the scheduler back at once, a stall just past the limit starts the pre-arm over
+ * and packet 0 leaves on its plan. */
+TEST_F(St20TxRlAnchor, AStallPastTheLimitStartsOverOnThePlan) {
+  ASSERT_NO_FATAL_FAILURE(Plan(Fmt{"1080p60", 1920, 1080, ST_FPS_P60}));
+  ASSERT_GT(absorb_, ut_trs_rl_stall_ns() + 20);
+  const Pkt0 r = Frame(1, (uint64_t)(absorb_ - kBurstD[0] + 50), false, 2000);
+  EXPECT_EQ(1u, r.stalls);
+  EXPECT_LT(r.queued, 0);
+  EXPECT_GT(r.pads, anchor_);
+  EXPECT_GE(r.late, 0);
+  EXPECT_LE(r.late, aim_ + fine_ + ut_trs_rl_stall_ns());
+  EXPECT_FALSE(r.flagged);
+}
+
+/* At 1080p60 GPM and BPM the limit is under the 2 us stall test. A first pad burst whose
+ * gap is between the two is no counted stall: the plan goes on, packet 0 is NIC-timed
+ * behind its pads in that visit, and check 1 flags the frame. A gap under the limit is
+ * kept the same way and not flagged. */
+TEST_F(St20TxRlAnchor, AGapBetweenTheLimitAndTheStallTestIsKeptAndFlagged) {
+  for (enum st20_packing packing : {ST20_PACKING_GPM, ST20_PACKING_BPM}) {
+    ASSERT_NO_FATAL_FAILURE(Plan(
+        Fmt{"1080p60", 1920, 1080, ST_FPS_P60, false, ST20_FMT_YUV_422_10BIT, packing}));
+    const long double counted = ut_trs_rl_stall_ns();
+    ASSERT_LT(absorb_ + 40, counted) << packing;
+    for (bool between : {false, true}) {
+      const std::string what =
+          std::to_string(packing) + (between ? " between" : " under the limit");
+      const long double gap = between ? (absorb_ + counted) / 2 : absorb_ - 20;
+      const Pkt0 r = Frame(1, (uint64_t)(gap - kBurstD[0]), false, window_);
+      EXPECT_EQ(0u, r.stalls) << what;
+      EXPECT_LT(r.queued, 0) << what << ": not kept";
+      EXPECT_GT(r.late, r.queued) << what << ": not NIC-timed";
+      EXPECT_EQ(between, r.flagged) << what;
+    }
+  }
 }
 
 /* The first visit comes so late that the anchor is the one pad ahead of the trim pads:
@@ -351,6 +454,7 @@ TEST_F(St20TxRlAnchor, PadsRefusedBehindADrainedAnchorStartOver) {
     EXPECT_GE(r.late, 0) << f.name;
     EXPECT_LE(r.late, aim_ + fine_ + ut_trs_rl_stall_ns()) << f.name;
     EXPECT_GE(r.vrx, 0) << f.name;
+    EXPECT_FALSE(r.flagged) << f.name;
     EXPECT_FALSE(r.leak) << f.name;
   }
 }
@@ -389,6 +493,7 @@ TEST_F(St20TxRlAnchor, StalledAnchorPartlyRefusedDropsItsRest) {
     EXPECT_LT(r.queued, 0) << f.name;
     EXPECT_GE(r.late, 0) << f.name;
     EXPECT_LE(r.late, aim_ + fine_ + ut_trs_rl_stall_ns()) << f.name;
+    EXPECT_FALSE(r.flagged) << f.name;
     EXPECT_FALSE(r.leak) << f.name;
   }
 }

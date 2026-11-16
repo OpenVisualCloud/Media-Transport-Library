@@ -68,6 +68,7 @@ static inline void pacing_set_mbuf_time_stamp(struct rte_mbuf* mbuf,
                                               struct st_tx_video_pacing* pacing) {
   st_tx_mbuf_set_tsc(mbuf, pacing->tsc_time_cursor);
   st_tx_mbuf_set_ptp(mbuf, pacing->ptp_time_cursor);
+  st_tx_mbuf_set_vrx_room(mbuf, pacing->vrx_room_ns);
 }
 
 static inline void pacing_forward_cursor(struct st_tx_video_pacing* pacing) {
@@ -482,7 +483,12 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
   uint16_t pad_size = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
   int idx = s->idx;
   long double snap_loss = tv_snap_loss_ns(s);
+  /* Packet j must reach the receiver by its drain slot, vrx trs after its place on the
+   * target grid (ST 2110-21 6.6.2). The 90 kHz snap moves that grid later by up to
+   * snap_loss, and the NIC and the wire take their share after the shaper. */
+  long double slot = pacing->vrx * pacing->trs - snap_loss - ST_TX_VIDEO_RL_WIRE_NS;
 
+  pacing->snap_loss_ns = (int32_t)snap_loss;
   for (int i = 0; i < s->ops.num_port; i++) {
     struct st_tx_video_rl_plan* plan = &s->rl_plan[i];
     enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
@@ -500,15 +506,13 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
       /* the bucket fills at the programmed rate, not the trained one */
       long double refill = (long double)burst_size * NS_PER_S / bps;
       plan->bucket_ns = refill + aim;
-      /* Packet j must reach the receiver by its drain slot, vrx trs after its place on
-       * the target grid. The 90 kHz snap moves that grid later by up to snap_loss, the
-       * timeslot releases packet 0 up to aim late and the cut leaves up to a fine trim.
-       * Behind packet 0 the pkts run late of the grid by up to the sawtooth. The rest of
-       * the lead may go to a stalled burst, or to what a late entry's tail cannot cut,
-       * within what the grid and the cut leave of the launch budget. */
+      /* Behind packet 0 the pkts run late of the grid by up to the sawtooth. Check 1
+       * takes packet 0 a fine trim and two aims late, its pads' and the timeslot's. The
+       * rest of the slot may go to a stalled burst, or to what a late entry's tail cannot
+       * cut, within what the grid and the cut leave of the launch budget. */
       long double late = tv_rl_sawtooth_ns(s, plan->pad_ns);
       long double fine = plan->pad_ns * ST_TX_VIDEO_RL_TRIM_FINE / pad_size;
-      long double lead = pacing->vrx * pacing->trs - snap_loss - aim - fine - late;
+      long double lead = slot - late - 2 * aim - fine;
       plan->absorb_ns =
           RTE_MIN(ST_TX_VIDEO_RL_GRID_LATE_MAX_NS - aim - timeslot - fine, lead);
       plan->refill_ns = refill;
@@ -530,6 +534,22 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
               refill <= idle &&
               /* the grid releases packet 0 within a timeslot of target + aim */
               aim + timeslot <= ST_TX_VIDEO_RL_GRID_LATE_MAX_NS;
+    }
+    /* A pkt that leaves the shaper up to this budget and its vrx_room_ns past its target
+     * still reaches the receiver by its slot, the sawtooth taken too; EBU LIST reads VRX
+     * 0 one trs later. Without a plan a pad drains within a trs. st22 sets its trs per
+     * frame, and a budget below 0 would flag every frame: neither is judged. A port with
+     * no budget warns, as does an armed one with no stall limit. */
+    if (s->pacing_way[i] == ST21_TX_PACING_WAY_RL && pacing->vrx &&
+        s->s_type != MT_ST22_HANDLE_TX_VIDEO) {
+      plan->vrx_budget_ns = RTE_MAX(
+          0, (int64_t)(slot - tv_rl_sawtooth_ns(s, armed ? plan->pad_ns : pacing->trs)));
+      if (!plan->vrx_budget_ns)
+        warn("%s[%02d], port %d vrx %u leaves no VRX budget, VRX not judged\n", __func__,
+             idx, i, pacing->vrx);
+      else if (armed && plan->absorb_ns <= 0)
+        warn("%s[%02d], port %d vrx %u leaves no stall limit, frames may be flagged\n",
+             __func__, idx, i, pacing->vrx);
     }
     if (!armed) {
       plan->pad_ns = 0;
@@ -901,6 +921,18 @@ static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_i
   return frame_count;
 }
 
+/* the tightest VRX budget of the RL ports that judge one, 0 for none */
+static int64_t tv_vrx_budget_ns(struct st_tx_video_session_impl* s) {
+  int64_t budget_ns = 0;
+
+  for (int i = 0; i < s->ops.num_port; i++) {
+    int64_t b = s->rl_plan[i].vrx_budget_ns;
+    if (s->pacing_way[i] == ST21_TX_PACING_WAY_RL && b && (!budget_ns || b < budget_ns))
+      budget_ns = b;
+  }
+  return budget_ns;
+}
+
 static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
                           uint64_t required_tai, bool second_field) {
   struct st_tx_video_pacing* pacing = &s->pacing;
@@ -929,13 +961,28 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   } else {
     start_time_tai = transmission_start_time(s, pacing->cur_epochs);
   }
-  /* an exact user start time is not snapped either */
+  /* an exact user start is not snapped: its drain slot keeps the snap loss */
+  pacing->vrx_room_ns = exact_user_pacing ? pacing->snap_loss_ns : 0;
   if (!exact_user_pacing && tv_start_snaps(s)) {
-    start_time_tai =
+    uint64_t snapped =
         st_tai_round_to_media_clk_ns(start_time_tai, s->fps_tm.sampling_clock_rate);
+    pacing->vrx_room_ns = pacing->snap_loss_ns - (int32_t)(snapped - start_time_tai);
+    start_time_tai = snapped;
   }
   if (start_time_tai < cur_tai) {
     time_to_tx_ns = 0;
+    uint64_t late = cur_tai - start_time_tai;
+    int64_t budget_ns = tv_vrx_budget_ns(s);
+    if (budget_ns && (int64_t)late > budget_ns + pacing->vrx_room_ns) {
+      s->stat_rl.start_late++;
+      if (late > s->stat_rl.start_late_max_ns) s->stat_rl.start_late_max_ns = late;
+      MT_USDT_ST20_TX_RL_EVENT(s->mgr->idx, s->idx, ST_TX_VIDEO_RL_CAUSE_START_LATE, late,
+                               0);
+      pacing->vrx_room_ns = ST_TX_VIDEO_RL_ROOM_START_LATE;
+    } else if (budget_ns) {
+      /* check 1 judges the re-timed pkts of each port against the rest of its budget */
+      pacing->vrx_room_ns -= (int32_t)late;
+    }
   } else {
     time_to_tx_ns = start_time_tai - cur_tai;
   }
@@ -1579,6 +1626,18 @@ static int tv_build_st20_redundant_chain(struct st_tx_video_session_impl* s,
   }
 
   return 0;
+}
+
+/* at a builder visit inside a frame, the lead of the next pkt it builds; compared as a
+ * long double, as a cursor saturated to UINT64_MAX overflows int64_t */
+static inline void tv_lead_visit(struct mtl_main_impl* impl,
+                                 struct st_tx_video_session_impl* s) {
+  uint64_t cursor = (uint64_t)s->pacing.tsc_time_cursor, now = mt_get_tsc(impl);
+  /* a saturated cursor, UINT64_MAX, is no lead below 0 */
+  int64_t lead_ns = cursor > now ? (int64_t)RTE_MIN(cursor - now, (uint64_t)INT64_MAX)
+                                 : -(int64_t)(now - cursor);
+
+  if (lead_ns < s->lead_min_ns) s->lead_min_ns = lead_ns;
 }
 
 static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
@@ -2307,12 +2366,15 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
         dbg("%s(%d), line %u not ready, ready lines %u\n", __func__, s->idx, line_number,
             s->st20_frame_lines_ready);
         s->port_user_stats.stat_lines_not_ready++;
+        s->st20_frame_lines_waited = true;
         s->stat_build_ret_code = -STI_FRAME_APP_SLICE_NOT_READY;
         return MTL_TASKLET_ALL_DONE;
       }
     }
   }
 
+  /* pkts of a frame that waited for its lines are due before they are built */
+  if (s->st20_pkt_idx && !s->st20_frame_lines_waited) tv_lead_visit(impl, s);
   struct rte_mbuf* pkts[bulk];
   struct rte_mbuf* pkts_r[bulk];
   struct rte_mbuf* pkts_chain[bulk];
@@ -2370,6 +2432,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     if (stamp) {
       st_tx_mbuf_set_tsc(pkts[i], (uint64_t)tsc_cursor);
       st_tx_mbuf_set_ptp(pkts[i], (uint64_t)ptp_cursor);
+      st_tx_mbuf_set_vrx_room(pkts[i], pacing->vrx_room_ns);
     }
 
     if (send_r) {
@@ -2387,6 +2450,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       if (stamp) {
         st_tx_mbuf_set_tsc(pkts_r[i], (uint64_t)tsc_cursor);
         st_tx_mbuf_set_ptp(pkts_r[i], (uint64_t)ptp_cursor);
+        st_tx_mbuf_set_vrx_room(pkts_r[i], pacing->vrx_room_ns);
       }
     }
 
@@ -2423,6 +2487,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     /* end of current frame */
     s->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
     s->st20_pkt_idx = 0;
+    s->st20_frame_lines_waited = false;
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (send_r) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     if (s->tx_no_chain) {
@@ -3944,6 +4009,10 @@ struct tv_stat_dump {
   double time_sec;
   struct st20_tx_user_stats us;
   struct st20_tx_user_stats snap;
+  struct st_tx_video_rl_stat rl;
+  int64_t vrx_budget_ns;
+  int64_t lead_ns; /* the shortest lead its builder measured, see tv_lead_visit() */
+  long double round_ns_max; /* its round budget, INFINITY while idle */
   int trs_inflight_cnt;
   int inflight_cnt;
   double cpu_busy_score;
@@ -3974,6 +4043,19 @@ static void tv_stat_collect(struct st_tx_video_sessions_mgr* mgr,
   d->us = s->port_user_stats;
   d->snap = s->stat_snapshot;
   s->stat_snapshot = s->port_user_stats;
+  d->rl = s->stat_rl;
+  memset(&s->stat_rl, 0, sizeof(s->stat_rl));
+  d->vrx_budget_ns = tv_vrx_budget_ns(s);
+  d->lead_ns = s->lead_min_ns;
+  s->lead_min_ns = INT64_MAX;
+  /* only a session that streamed in the period has a budget */
+  bool streamed = d->us.common.port[MTL_SESSION_PORT_P].frames !=
+                      d->snap.common.port[MTL_SESSION_PORT_P].frames ||
+                  d->lead_ns != INT64_MAX;
+  /* the frame-average round its builder keeps up with, adding a bulk a visit */
+  d->round_ns_max = INFINITY;
+  if (s->st20_total_pkts && streamed)
+    d->round_ns_max = (long double)s->bulk * s->pacing.frame_time / s->st20_total_pkts;
 
   d->trs_inflight_cnt = s->trs_inflight_cnt[0];
   d->inflight_cnt = s->inflight_cnt[0];
@@ -4059,6 +4141,17 @@ static void tv_stat_log(const struct tv_stat_dump* dump) {
     notice("TX_VIDEO_SESSION(%d,%d): transmitter recalculate warmup %" PRIu64 "\n", m_idx,
            idx, d);
   }
+  const struct st_tx_video_rl_stat* rl = &dump->rl;
+  if (rl->vrx_frames || rl->start_late) {
+    err("TX_VIDEO_SESSION(%d,%d): %" PRIu64
+        " frames may break VRX >= 0, a pkt up to %.1fus past its target over the %.1fus "
+        "budget: packet 0 %" PRIu64 " mid-frame %" PRIu64 "; %" PRIu64
+        " frames started up to %.1fus late\n",
+        m_idx, idx, rl->vrx_frames, (double)rl->vrx_late_max_ns / NS_PER_US,
+        (double)dump->vrx_budget_ns / NS_PER_US, rl->vrx_pkt0,
+        rl->vrx_frames - rl->vrx_pkt0, rl->start_late,
+        (double)rl->start_late_max_ns / NS_PER_US);
+  }
   d = us->common.stat_epoch_drop - snap->common.stat_epoch_drop;
   if (d) {
     notice("TX_VIDEO_SESSION(%d,%d): epoch drop %" PRIu64 "\n", m_idx, idx, d);
@@ -4142,12 +4235,30 @@ static void tv_stat_log(const struct tv_stat_dump* dump) {
   }
 }
 
+/* Frames fall behind once the round averages past the tightest budget or a pkt met the
+ * wire unbuilt (lead_ns < 0); round_ns 0 judges the lead only. */
+static void tv_behind_err(int m_idx, uint64_t round_ns, long double round_ns_max,
+                          int64_t lead_ns) {
+  char round[64] = "", lead[32] = "";
+
+  if (round_ns > round_ns_max)
+    (void)snprintf(round, sizeof(round), " round %.1fus past the %.1Lfus budget,",
+                   (double)round_ns / NS_PER_US, round_ns_max / NS_PER_US);
+  if (lead_ns < 0)
+    (void)snprintf(lead, sizeof(lead), " lead %.1fus,", (double)lead_ns / NS_PER_US);
+  if (round[0] || lead[0])
+    err("TX_VIDEO_SESSION(%d):%s%s frames fall behind: move sessions off this "
+        "scheduler\n",
+        m_idx, round, lead);
+}
+
 static int tv_detach(struct st_tx_video_sessions_mgr* mgr,
                      struct st_tx_video_session_impl* s) {
   struct tv_stat_dump dump;
 
   tv_stat_collect(mgr, s, &dump);
   tv_stat_log(&dump);
+  tv_behind_err(mgr->idx, 0, INFINITY, dump.lead_ns);
   atomic_store_explicit(&mgr->trs_refused[s->idx], 0, memory_order_relaxed);
   tv_uinit(s);
   return 0;
@@ -4155,6 +4266,7 @@ static int tv_detach(struct st_tx_video_sessions_mgr* mgr,
 
 static int tv_init(struct st_tx_video_session_impl* s, int idx) {
   s->idx = idx;
+  s->lead_min_ns = INT64_MAX;
   /* a call of the transmitter it leaves may match one of its new scheduler's */
   memset(s->trs_released, 0, sizeof(s->trs_released));
   return 0;
@@ -4376,8 +4488,11 @@ static int tv_mgr_update(struct st_tx_video_sessions_mgr* mgr) {
 
 static int tv_sessions_stat(void* priv) {
   struct st_tx_video_sessions_mgr* mgr = priv;
+  struct mtl_sch_impl* sch = mt_sch_instance(mgr->parent, mgr->idx);
   struct st_tx_video_session_impl* s;
   struct tv_stat_dump dump;
+  long double round_ns_max = INFINITY;
+  int64_t lead_ns = INT64_MAX;
 
   for (int j = 0; j < mgr->max_idx; j++) {
     s = tx_video_session_get_timeout(mgr, j, ST_TX_VIDEO_STAT_TIMEOUT_US);
@@ -4385,7 +4500,13 @@ static int tv_sessions_stat(void* priv) {
     tv_stat_collect(mgr, s, &dump);
     tx_video_session_put(mgr, j);
     tv_stat_log(&dump);
+    round_ns_max = RTE_MIN(round_ns_max, dump.round_ns_max);
+    lead_ns = RTE_MIN(lead_ns, dump.lead_ns);
   }
+
+  /* a sleeping scheduler's loop avg holds its sleeps */
+  tv_behind_err(mgr->idx, sch->allow_sleep ? 0 : mt_sch_avg_ns_loop(sch), round_ns_max,
+                lead_ns);
 
   return 0;
 }
@@ -4430,6 +4551,8 @@ int st_tx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mtl_sch_im
 
 int st_tx_video_session_migrate(struct st_tx_video_sessions_mgr* mgr,
                                 struct st_tx_video_session_impl* s, int idx) {
+  /* the lead it measured on the scheduler it leaves */
+  tv_behind_err(s->mgr->idx, 0, INFINITY, s->lead_min_ns);
   /* under both slots' locks: the new scheduler's late entries wait for its retry too */
   uint8_t refused =
       atomic_exchange_explicit(&s->mgr->trs_refused[s->idx], 0, memory_order_relaxed);
