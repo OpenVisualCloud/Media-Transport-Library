@@ -699,6 +699,7 @@ static void test_st22p_tx_frame_thread(void* args) {
       st22p_tx_put_frame((st22p_tx_handle)handle, frame);
     }
     s->fb_send++;
+    s->fb_send_shared = s->fb_send;
     if (!s->start_time) {
       s->start_time = st_test_get_monotonic_time();
       dbg("%s(%d), start_time %" PRIu64 "\n", __func__, s->idx, s->start_time);
@@ -724,6 +725,7 @@ static void test_st22p_rx_frame_thread(void* args) {
       }
       continue;
     }
+    if (!s->fb_rec && s->tx_peer) s->tx_fb_send_at_first_rec = s->tx_peer->fb_send_shared;
 
     if (frame->data_size != s->frame_size) s->incomplete_frame_cnt++;
     if (frame->buffer_size < s->frame_size) s->incomplete_frame_cnt++;
@@ -1048,6 +1050,7 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_rx[i]->block_get = para->block_get;
     test_ctx_rx[i]->no_digest = para->no_digest;
     test_ctx_rx[i]->priv = para;
+    if (para->ipmx) test_ctx_rx[i]->tx_peer = test_ctx_tx[i];
     /* copy sha */
     memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
            ST22_TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
@@ -1253,16 +1256,18 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_frame_cnt, 0);
     EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
-    /* IPMX TX drops a frame that fails its header check. At stop, frames the app put
-     * may still sit in the TX pipeline (encode, send: up to its framebuffers) and
-     * frames already decoded in the RX pipeline (up to its framebuffers, the extra
-     * ST 2022-7 one above included), plus the one on the wire. With ST 2022-7 the RX
-     * also keeps a second frame open (ST_RX_VIDEO_REDUNDANT_SLOT_NUM), and the first
-     * frame, joined mid-frame, is lost too: a single-leg run has margin for it, an
-     * ST 2022-7 one does not */
+    /* IPMX TX drops a frame that fails its header check, so the RX gets every frame
+     * the app put from the RX's first frame on. Frames put before the RX's first frame
+     * (start-up, the one joined mid-frame) are not counted, so start-up drops are not
+     * checked; the TX count read at the RX's first frame includes that frame, hence
+     * the + 1. The tolerance is the frames in flight at either end: in the TX pipeline
+     * (encode, send: up to its framebuffers), in the RX pipeline (up to its framebuffers,
+     * the extra ST 2022-7 one above included), plus the one on the wire, and with ST
+     * 2022-7 the second frame the RX keeps open (ST_RX_VIDEO_REDUNDANT_SLOT_NUM) */
     if (para->ipmx) {
-      EXPECT_NEAR(test_ctx_rx[i]->fb_rec, fb_send[i],
-                  tx_fb_cnt[i] + test_ctx_rx[i]->fb_cnt + 1 + (para->redundant ? 2 : 0));
+      EXPECT_NEAR(test_ctx_rx[i]->fb_rec,
+                  fb_send[i] - test_ctx_rx[i]->tx_fb_send_at_first_rec + 1,
+                  tx_fb_cnt[i] + test_ctx_rx[i]->fb_cnt + 1 + (para->redundant ? 1 : 0));
     }
     if (para->check_fps) {
       if (para->fail_interval || para->timeout_interval) {
