@@ -125,6 +125,10 @@ unsigned int ut_trs_pad_inflight_num(const ut_trs_ctx* ctx);
 unsigned int ut_trs_inflight_num(const ut_trs_ctx* ctx);
 uint64_t ut_trs_target_tsc(const ut_trs_ctx* ctx);
 int ut_trs_rl_state(const ut_trs_ctx* ctx);
+/* port P's packet 0 goes with the last pre-arm pads, in one burst */
+bool ut_trs_rl_tail(const ut_trs_ctx* ctx);
+/* port P's packet 0 goes with a tail planned from a shaper drained at drained_tsc */
+void ut_trs_set_rl_tail(ut_trs_ctx* ctx, long double drained_tsc);
 bool ut_trs_recovery_pending(const ut_trs_ctx* ctx);
 
 int ut_trs_rl_state_port(const ut_trs_ctx* ctx, int port);
@@ -168,6 +172,7 @@ void ut_trs_advance_mock_tsc(ut_trs_ctx* ctx, uint64_t ns);
  * off the CPU, ut_trs_advance_mock_tsc() passes it. */
 void ut_trs_set_cpu_stalls(ut_trs_ctx* ctx, const uint64_t* at_tsc, const uint64_t* ns,
                            int n);
+/* one visit of the RL tasklet, a transmitter call of its own */
 int ut_trs_call_rl_tasklet(ut_trs_ctx* ctx);
 /* a call carrying pads then pkts takes n of them, 0 all */
 void ut_trs_set_mixed_accept(ut_trs_ctx* ctx, uint16_t n);
