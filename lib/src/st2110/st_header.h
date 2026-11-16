@@ -445,6 +445,7 @@ struct st_tx_video_sessions_mgr {
   int idx;     /* index for current session mgr */
   int max_idx; /* max session index */
   struct mt_sch_tasklet_impl* tasklet;
+  uint64_t visit_tsc; /* the tsc at the start of the current transmitter call */
   /* the RL ports of each slot's session refused at its last transmitter run, as bits;
    * cleared as it is freed, moved with it on a migrate */
   _Atomic uint8_t trs_refused[ST_SCH_MAX_TX_VIDEO_SESSIONS];
