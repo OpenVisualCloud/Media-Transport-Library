@@ -376,11 +376,18 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
         frame but the last one built is back, reclaiming every `ST_TX_VIDEO_RECLAIM_NS` while
         it waits (`tv_reclaim_poll()`, `STI_FRAME_RECLAIM_WAIT`): any 2 buffers keep zero copy. Before 26.07 it could wait for good.
       - RL transmitter: a visit that waits for the warm-up window or finds the builder ring
-        empty bursts none (`video_trs_rl_reclaim()`), at most once a batch time
-        (rs_thresh / 2 NORMAL pkts of shaper time, `trs_reclaim_tsc`), catching up one call a
-        visit. The frame before leaves the ring full of done batches. A warm-up pad burst
-        frees one before its doorbell, ~1.4 µs at 720p59.94, which takes the first burst past
-        `ST_TX_VIDEO_RL_STALL_NS` (`St20TxRlReclaim`).
+        empty bursts none (`video_trs_rl_reclaim()`) only for a batch no call went for. The
+        PMD frees the oldest done batch in a tx_burst while more than 2 batches are in use; a
+        burst short of room may free more. Every RL transmitter burst goes through
+        `video_trs_rl_txq_burst()`, which counts it as a call for the oldest batch done, one
+        a batch time (rs_thresh / 2 NORMAL pkts of shaper time, `trs_reclaim_tsc`), at most
+        the ring's batches back; a burst refused or cut short owes none before its return.
+        So it makes none while bursts flow or the wire is stuck,
+        catches up one call a visit after a gap, and with chained pkts makes no call ahead of
+        the wire; with copied ones (1 descriptor each) about half the calls before it free
+        nothing. The frame before leaves the ring full of done batches.
+        A warm-up pad burst frees one before its doorbell, ~1.4 µs at 720p59.94, which takes
+        the first burst past `ST_TX_VIDEO_RL_STALL_NS` (`St20TxRlReclaim`).
       - Hang: a hung queue holds the frames too, and with nothing to send the transmitter sees no
         burst fail. A wait past `tx_hang_detect_time_thresh` (at least 2 frame times) flags the
         recovery of every leg idle as long (`tv_frames_out_hang()`); a reclaim gap past half of

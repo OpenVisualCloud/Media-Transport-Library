@@ -429,8 +429,10 @@ struct st_tx_video_session_impl {
 
   /* cold, read once a frame, so it sits last, off the hot cache lines */
   struct st_tx_video_rl_plan rl_plan[MTL_SESSION_PORT_MAX];
-  /* RL transmitter state of packet 0 and the idle reclaim, off the hot lines */
-  uint64_t trs_reclaim_tsc[MTL_SESSION_PORT_MAX]; /* no RL reclaim before this tsc */
+  /* RL transmitter state of packet 0 and the reclaim */
+  /* when the oldest TX batch no tx_burst has gone for is done; every RL burst reads it,
+   * a refused or short one raises it */
+  uint64_t trs_reclaim_tsc[MTL_SESSION_PORT_MAX];
   long double trs_rl_drained[MTL_SESSION_PORT_MAX];
   /* the latest the shaper finishes the pads queued since packet 0 was dequeued */
   long double trs_rl_pads_end[MTL_SESSION_PORT_MAX];
