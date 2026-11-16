@@ -2,12 +2,20 @@
  * Copyright(c) 2026 Intel Corporation
  *
  * The cumulative tasklet counters of the USDT probe sys:tasklet_stat: exact while the
- * time is measured, sampled while only the probe is attached, zero otherwise.
+ * time is measured, sampled while only the probe is attached, zero otherwise. And the
+ * percentiles of the measured times that the stats dump prints.
  */
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
+#include <random>
+#include <string>
+#include <vector>
 
 #include "sch/mt_sch_harness.h"
 
@@ -81,8 +89,9 @@ TEST_F(MtSchStatsTest, SampleCountsEveryCallToWithinAGap) {
   EXPECT_LT(c.cnt, kSampleCalls + 2 * kSamplePeriod);
   /* every call idle, so the weighted sum is exact */
   EXPECT_EQ(c.sum_ns, c.cnt * UT_SCH_IDLE_NS);
-  /* the per-dump time lines stay off */
+  /* the per-dump time lines and their histogram stay off */
   EXPECT_EQ(ut_sch_stats_measured(s_), 0u);
+  EXPECT_EQ(ut_sch_stats_hist_calls(s_, 0), 0u);
 }
 
 TEST_F(MtSchStatsTest, SampleEstimatesTheWorkShare) {
@@ -106,10 +115,16 @@ TEST_F(MtSchStatsTest, WorkIsPerCallNotPerLoop) {
 TEST_F(MtSchStatsTest, RegisterClearsOnlyTheCountersOfTheReusedSlot) {
   ASSERT_NO_FATAL_FAILURE(Run(MTL_FLAG_TASKLET_TIME_MEASURE, kWorkEvery, kCalls, true));
   ASSERT_EQ(ut_sch_stats_counters(1).cnt, kCalls);
+  ASSERT_EQ(ut_sch_stats_hist_calls(s_, 1), kCalls);
+  ut_sch_stats_dump(s_);
+  ASSERT_EQ(ut_sch_stats_hist_prev_calls(s_, 1), kCalls);
 
   ASSERT_EQ(ut_sch_stats_register_idle(s_), 0);
   EXPECT_EQ(ut_sch_stats_counters(1).cnt, 0u);
+  EXPECT_EQ(ut_sch_stats_hist_calls(s_, 1), 0u);
+  EXPECT_EQ(ut_sch_stats_hist_prev_calls(s_, 1), 0u);
   EXPECT_EQ(ut_sch_stats_counters(0).cnt, kCalls);
+  EXPECT_EQ(ut_sch_stats_hist_calls(s_, 0), kCalls);
 }
 
 TEST_F(MtSchStatsTest, ARequestedSchCountsInEverySlotUntilFreed) {
@@ -138,6 +153,78 @@ TEST(MtSchTimeSampleGap, GapsSpanOneToTwiceThePeriodAndAverageIt) {
   EXPECT_EQ(lo, 1u);
   EXPECT_EQ(hi, 2 * kSamplePeriod - 1);
   EXPECT_NEAR((double)sum / draws, (double)kSamplePeriod, 1.0);
+}
+
+std::string g_tasklet_line;
+
+void TaskletLinePrinter(enum mtl_log_level, const char* format, ...) {
+  char line[512];
+  va_list args;
+
+  va_start(args, format);
+  vsnprintf(line, sizeof(line), format, args);
+  va_end(args);
+  if (strstr(line, "tasklet ut_tasklet,")) g_tasklet_line = line;
+}
+
+TEST_F(MtSchStatsTest, TheDumpNeverWritesTheHistogramOfTheScheduler) {
+  ASSERT_NO_FATAL_FAILURE(Run(MTL_FLAG_TASKLET_TIME_MEASURE, kWorkEvery, kCalls));
+  ut_sch_stats_dump(s_);
+
+  EXPECT_EQ(ut_sch_stats_hist_calls(s_, 0), kCalls);
+}
+
+TEST_F(MtSchStatsTest, TheMeasuredLineEndsWithThePercentilesSinceTheLastDump) {
+  const unsigned int work_every = 20;
+  const uint64_t calls = 100 * work_every;
+  /* every call of the first dump works; ut_idle's stay out of ut_tasklet's */
+  ASSERT_NO_FATAL_FAILURE(Run(MTL_FLAG_TASKLET_TIME_MEASURE, 1, calls, true));
+  ut_sch_stats_dump(s_);
+  /* then 1 in 20: by rank, p90 and p95 are idle calls and p99 a working one */
+  ut_sch_stats_set_work_every(s_, work_every);
+  ASSERT_EQ(ut_sch_stats_run(s_, calls), 0);
+  g_tasklet_line.clear();
+  mtl_set_log_printer(TaskletLinePrinter);
+  ut_sch_stats_dump(s_);
+  mtl_set_log_printer(nullptr);
+
+  const char* p = strstr(g_tasklet_line.c_str(), ", p90 ");
+  double p90, p95, p99;
+  ASSERT_NE(p, nullptr) << g_tasklet_line;
+  ASSERT_EQ(sscanf(p, ", p90 %lfus p95 %lfus p99 %lfus", &p90, &p95, &p99), 3);
+  EXPECT_NEAR(p90, UT_SCH_IDLE_NS / 1e3, UT_SCH_IDLE_NS / 8e3);
+  EXPECT_NEAR(p95, UT_SCH_IDLE_NS / 1e3, UT_SCH_IDLE_NS / 8e3);
+  EXPECT_NEAR(p99, UT_SCH_WORK_NS / 1e3, UT_SCH_WORK_NS / 8e3);
+}
+
+TEST(MtSchTimeHist, BucketsAreAnEighthOfAPowerOfTwoFrom8nsTo2Pow18ns) {
+  const unsigned int nb = ut_sch_hist_nb();
+  EXPECT_EQ(ut_sch_hist_bucket_lo(1), 8u);
+  EXPECT_EQ(ut_sch_hist_bucket_lo(nb - 1), 1u << 18);
+  EXPECT_EQ(ut_sch_hist_bucket(UINT64_MAX), nb - 1);
+  for (unsigned int b = 1; b < nb; b++) {
+    uint64_t lo = ut_sch_hist_bucket_lo(b);
+    EXPECT_EQ(ut_sch_hist_bucket(lo - 1), b - 1) << lo;
+    EXPECT_EQ(ut_sch_hist_bucket(lo), b) << lo;
+    if (b + 1 < nb) {
+      EXPECT_LE(ut_sch_hist_bucket_lo(b + 1) - lo, lo / 8) << lo;
+    }
+  }
+}
+
+TEST(MtSchTimeHist, PercentilesAreWithinAnEighthOfTheExactRank) {
+  /* log-uniform over the range the buckets resolve */
+  std::mt19937_64 rng(1);
+  std::uniform_real_distribution<double> log_ns(std::log(8.0), std::log(262144.0));
+  std::vector<uint64_t> calls(10000);
+  for (uint64_t& ns : calls) ns = (uint64_t)std::exp(log_ns(rng));
+  std::sort(calls.begin(), calls.end());
+
+  for (unsigned int q : {90u, 95u, 99u}) {
+    double exact = (double)calls[(q * calls.size() + 99) / 100 - 1];
+    EXPECT_NEAR(ut_sch_hist_quantile(calls.data(), calls.size(), q), exact, exact / 8)
+        << "p" << q;
+  }
 }
 
 }  // namespace

@@ -554,6 +554,7 @@ struct ut_sch_stats {
   struct mtl_sch_impl* sch;
   struct mt_sch_tasklet_impl* tasklet; /* ut_tasklet */
   struct mt_sch_tasklet_stat slots[2]; /* one per ctx->tasklets[] */
+  uint64_t hist[4][MT_SCH_HIST_NB];    /* the slots', then copies, as sch_request() */
   mtl_tasklet_handle idle;
   unsigned int work_every;
   uint64_t calls;
@@ -651,10 +652,15 @@ int ut_sch_stats_register_idle(struct ut_sch_stats* s) {
   return s->idle ? 0 : -ENOMEM;
 }
 
+void ut_sch_stats_set_work_every(struct ut_sch_stats* s, unsigned int work_every) {
+  s->work_every = work_every;
+}
+
 int ut_sch_stats_run(struct ut_sch_stats* s, uint64_t calls) {
   struct mtl_sch_impl* sch = s->sch;
 
-  s->stop_at = calls;
+  s->stop_at = s->calls + calls;
+  rte_atomic32_set(&sch->request_stop, 0);
   ut_clock_start(0, 0);
   int ret = -pthread_create(&sch->tid, NULL, sch_tasklet_thread, sch);
   if (!ret) ret = -pthread_join(sch->tid, NULL);
@@ -685,6 +691,21 @@ uint64_t ut_sch_stats_measured(struct ut_sch_stats* s) {
   return s->tasklet->stat_time.cnt;
 }
 
+static uint64_t ut_sch_hist_calls(const uint64_t* hist) {
+  uint64_t calls = 0;
+
+  for (unsigned int b = 0; b < MT_SCH_HIST_NB; b++) calls += hist[b];
+  return calls;
+}
+
+uint64_t ut_sch_stats_hist_calls(struct ut_sch_stats* s, int slot) {
+  return ut_sch_hist_calls(sch_tasklet_hist(s->sch, slot));
+}
+
+uint64_t ut_sch_stats_hist_prev_calls(struct ut_sch_stats* s, int slot) {
+  return ut_sch_hist_calls(sch_tasklet_hist_prev(s->sch, slot));
+}
+
 uint32_t ut_sch_time_sample_period(void) {
   return MT_SCH_TIME_SAMPLE_PERIOD;
 }
@@ -695,4 +716,28 @@ uint32_t ut_sch_time_sample_seed(void) {
 
 uint32_t ut_sch_time_sample_gap(uint32_t* state) {
   return sch_time_sample_gap(state);
+}
+
+unsigned int ut_sch_hist_nb(void) {
+  return MT_SCH_HIST_NB;
+}
+
+unsigned int ut_sch_hist_bucket(uint64_t ns) {
+  return sch_hist_bucket(ns);
+}
+
+uint64_t ut_sch_hist_bucket_lo(unsigned int b) {
+  return sch_hist_bucket_lo(b);
+}
+
+double ut_sch_hist_quantile(const uint64_t* ns, size_t n, unsigned int q) {
+  uint64_t hist[MT_SCH_HIST_NB] = {0};
+  struct mt_stat_u64 stat;
+
+  mt_stat_u64_init(&stat);
+  for (size_t i = 0; i < n; i++) {
+    mt_stat_u64_update(&stat, ns[i]);
+    hist[sch_hist_bucket(ns[i])]++;
+  }
+  return sch_hist_quantile(hist, &stat, q);
 }

@@ -109,7 +109,8 @@ struct ut_sch_stats* ut_sch_stats_request(uint64_t flags, unsigned int work_ever
 int ut_sch_stats_destroy(struct ut_sch_stats* s);
 /* Registers the idle ut_idle into slot 1, unregistering the one registered before. */
 int ut_sch_stats_register_idle(struct ut_sch_stats* s);
-/* Runs the loop, once per handle, until ut_tasklet was called calls times. */
+void ut_sch_stats_set_work_every(struct ut_sch_stats* s, unsigned int work_every);
+/* Runs the loop until ut_tasklet was called calls times more. */
 int ut_sch_stats_run(struct ut_sch_stats* s, uint64_t calls);
 /* Attaches or detaches sys:tasklet_stat, through its semaphore as bpftrace does. */
 void ut_sch_stats_attach(bool on);
@@ -118,10 +119,20 @@ struct ut_sch_tasklet_stat ut_sch_stats_counters(int slot);
 struct ut_sch_tasklet_stat ut_sch_stats_dump(struct ut_sch_stats* s);
 /* The calls of ut_tasklet in the per-dump time that sch_stat() prints and resets. */
 uint64_t ut_sch_stats_measured(struct ut_sch_stats* s);
+/* The calls in the time histogram of a slot, and in the stats thread's copy of it. */
+uint64_t ut_sch_stats_hist_calls(struct ut_sch_stats* s, int slot);
+uint64_t ut_sch_stats_hist_prev_calls(struct ut_sch_stats* s, int slot);
 /* MT_SCH_TIME_SAMPLE_PERIOD, MT_SCH_TIME_SAMPLE_SEED and sch_time_sample_gap(). */
 uint32_t ut_sch_time_sample_period(void);
 uint32_t ut_sch_time_sample_seed(void);
 uint32_t ut_sch_time_sample_gap(uint32_t* state);
+
+/* The time histogram: its bucket count, the bucket of ns, the lower bound of bucket b,
+ * and the q-th percentile it gives of n call times. */
+unsigned int ut_sch_hist_nb(void);
+unsigned int ut_sch_hist_bucket(uint64_t ns);
+uint64_t ut_sch_hist_bucket_lo(unsigned int b);
+double ut_sch_hist_quantile(const uint64_t* ns, size_t n, unsigned int q);
 
 #ifdef __cplusplus
 }
