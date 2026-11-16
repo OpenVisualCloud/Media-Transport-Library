@@ -3,6 +3,7 @@
  */
 
 #include <pthread.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -318,8 +319,9 @@ static uint16_t ut_trs_txq_burst(struct ut_trs_ctx* ctx, struct mt_txq_entry* en
   ut_trs_frame_stall_call(ctx, entry, tx_pkts, nb_pkts);
   ctx->max_refcnt_before_burst =
       RTE_MAX(ctx->max_refcnt_before_burst, ctx->refcnt_since_tsc);
+  bool freed = ut_trs_pmd_free(ctx);
   if (ctx->nic_desc) return ut_trs_nic_burst(ctx, tx_pkts, nb_pkts);
-  if (ut_trs_pmd_free(ctx) && nb_pkts && tx_pkts[0]->pool != ut_trs_priv_pool())
+  if (freed && nb_pkts && tx_pkts[0]->pool != ut_trs_priv_pool())
     ctx->pmd_pad_burst_frees++;
   if (ctx->cost_n) ut_trs_burst_cost(ctx);
   ut_trs_burst_stall(ctx, false);
@@ -596,6 +598,10 @@ void ut_trs_set_trs(ut_trs_ctx* ctx, long double trs_ns) {
   ctx->session.pacing.trs = trs_ns;
 }
 
+void ut_trs_set_pad_interval(ut_trs_ctx* ctx, float pad_interval) {
+  ctx->session.pacing.pad_interval = pad_interval;
+}
+
 void ut_trs_set_warm_pkts_cap(ut_trs_ctx* ctx, uint32_t warm_pkts_cap) {
   ctx->session.pacing.warm_pkts = warm_pkts_cap;
 }
@@ -796,10 +802,23 @@ void ut_trs_set_pmd_done_batches(ut_trs_ctx* ctx, uint16_t rs_thresh, uint32_t b
 }
 
 void ut_trs_add_pmd_done_batches(ut_trs_ctx* ctx, uint32_t batches, uint64_t free_ns) {
-  if (!batches || ctx->pmd_groups == (int)RTE_DIM(ctx->pmd_done)) return;
+  if (!batches) return;
+  if (ctx->pmd_groups && ctx->pmd_done[ctx->pmd_groups - 1].free_ns == free_ns) {
+    ctx->pmd_done[ctx->pmd_groups - 1].batches += batches;
+    return;
+  }
+  if (ctx->pmd_groups == (int)RTE_DIM(ctx->pmd_done)) {
+    fprintf(stderr, "%s: more than %d groups of done batches\n", __func__,
+            (int)RTE_DIM(ctx->pmd_done));
+    abort();
+  }
   ctx->pmd_done[ctx->pmd_groups].batches = batches;
   ctx->pmd_done[ctx->pmd_groups].free_ns = free_ns;
   ctx->pmd_groups++;
+}
+
+uint64_t ut_trs_reclaim_tsc(const ut_trs_ctx* ctx) {
+  return ctx->session.trs_reclaim_tsc[MTL_SESSION_PORT_P];
 }
 
 uint32_t ut_trs_pmd_frees(const ut_trs_ctx* ctx) {
@@ -1048,6 +1067,18 @@ uint16_t ut_trs_call_burst_pad(ut_trs_ctx* ctx) {
   return tx;
 }
 
+uint16_t ut_trs_call_burst(ut_trs_ctx* ctx) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct rte_mbuf** pad = &s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL];
+
+  ut_trs_active_ctx = ctx;
+  rte_mbuf_refcnt_update(*pad, 1);
+  uint16_t tx = video_trs_burst(&ctx->impl, s, MTL_SESSION_PORT_P, pad, 1);
+  if (!tx) rte_mbuf_refcnt_update(*pad, -1);
+  ut_trs_active_ctx = NULL;
+  return tx;
+}
+
 int ut_trs_call_rl_tasklet(ut_trs_ctx* ctx) {
   ut_trs_active_ctx = ctx;
   ut_trs_visit_alone(ctx);
@@ -1261,6 +1292,13 @@ void ut_trs_stream_rounds(ut_trs_ctx* ctx, uint64_t duration_ns, uint64_t round_
 
 void ut_trs_stall_stream(ut_trs_ctx* ctx, uint64_t stall_ns) {
   ctx->last_tsc += stall_ns;
+}
+
+void ut_trs_stall_stream_wire(ut_trs_ctx* ctx, uint64_t stall_ns) {
+  for (uint32_t i = ctx->nic_head; i != ctx->nic_tail; i++)
+    if (ctx->nic_done[i % UT_TRS_NIC_FIFO] > ctx->last_tsc)
+      ctx->nic_done[i % UT_TRS_NIC_FIFO] += stall_ns;
+  if (ctx->nic_last_done > ctx->last_tsc) ctx->nic_last_done += stall_ns;
 }
 
 void ut_trs_set_stream_build(ut_trs_ctx* ctx, uint32_t pkts) {

@@ -20,6 +20,8 @@ ut_trs_ctx* ut_trs_create(void);
 void ut_trs_destroy(ut_trs_ctx* ctx);
 
 void ut_trs_set_trs(ut_trs_ctx* ctx, long double trs_ns);
+/* an in-frame pad each pad_interval pkts */
+void ut_trs_set_pad_interval(ut_trs_ctx* ctx, float pad_interval);
 void ut_trs_set_warm_pkts_cap(ut_trs_ctx* ctx, uint32_t warm_pkts_cap);
 void ut_trs_set_target_tsc(ut_trs_ctx* ctx, uint64_t target_tsc);
 void ut_trs_set_target_tsc_port(ut_trs_ctx* ctx, int port, uint64_t target_tsc);
@@ -112,6 +114,8 @@ uint32_t ut_trs_rl_kept_batches(void);
 uint32_t ut_trs_pmd_pad_burst_frees(const ut_trs_ctx* ctx);
 /* the mt_txq_reclaim() calls, empty bursts */
 uint32_t ut_trs_reclaim_calls(const ut_trs_ctx* ctx);
+/* trs_reclaim_tsc of the primary port: when the next done batch is due a call */
+uint64_t ut_trs_reclaim_tsc(const ut_trs_ctx* ctx);
 /* ST_TX_VIDEO_RL_STALL_NS */
 uint64_t ut_trs_rl_stall_ns(void);
 /* the most rte_mbuf_refcnt_update() calls between a tsc read and the burst after it */
@@ -161,6 +165,8 @@ void ut_trs_set_queue_port(ut_trs_ctx* ctx, int port, bool present);
 int ut_trs_get_stat_pkts_burst(const ut_trs_ctx* ctx);
 
 uint16_t ut_trs_call_burst_pad(ut_trs_ctx* ctx);
+/* one pad through video_trs_burst(), the TSC, TSN and PTP pacing path */
+uint16_t ut_trs_call_burst(ut_trs_ctx* ctx);
 /* Burst call i takes d_ns[i % n] of mock time before its doorbell, and the tsc read
  * after its return stamp, or the tasklet's return, g_ns[i % n] more; n 0: none. */
 void ut_trs_set_burst_cost(ut_trs_ctx* ctx, const uint64_t* d_ns, const uint64_t* g_ns,
@@ -237,6 +243,8 @@ void ut_trs_stream_frame_end(ut_trs_ctx* ctx, uint32_t pkts, uint64_t target_tsc
 void ut_trs_stream_rounds(ut_trs_ctx* ctx, uint64_t duration_ns, uint64_t round_ns);
 /* the scheduler thread loses its CPU: the clock moves, the tasklet does not run */
 void ut_trs_stall_stream(ut_trs_ctx* ctx, uint64_t stall_ns);
+/* the wire stops stall_ns from now: the queued pkts leave that much later */
+void ut_trs_stall_stream_wire(ut_trs_ctx* ctx, uint64_t stall_ns);
 /* how far the latest pkt left behind its slot in a stream that never pauses */
 long double ut_trs_stream_max_late_ns(const ut_trs_ctx* ctx);
 /* the wire time the NIC TX queue holds ahead of the tasklet's clock */

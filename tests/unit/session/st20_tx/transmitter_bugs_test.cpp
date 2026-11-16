@@ -86,6 +86,18 @@ TEST_F(St20TxTransmitterBugsTest, HangTriggerRetainsFailedPadForRecovery) {
   EXPECT_EQ(1u, ut_trs_pad_refcnt(ctx_));
 }
 
+TEST_F(St20TxTransmitterBugsTest, HangTriggerOnTheTscPathBurst) {
+  ut_trs_set_hang_detect_thresh_ns(ctx_, 1000);
+  const uint64_t script[] = {5000};
+  ut_trs_set_mock_tsc_script(ctx_, script, 1);
+
+  ut_trs_set_burst_force_fail(ctx_, true);
+
+  EXPECT_EQ(0u, ut_trs_call_burst(ctx_));
+  EXPECT_EQ(5000u, ut_trs_get_last_burst_succ_tsc(ctx_));
+  EXPECT_TRUE(ut_trs_recovery_pending(ctx_));
+}
+
 TEST_F(St20TxTransmitterBugsTest, FreshTimestampAvoidsPrematureHangTrigger) {
   ut_trs_set_hang_detect_thresh_ns(ctx_, 1000);
   ut_trs_set_last_burst_succ_tsc(ctx_, 4950);
