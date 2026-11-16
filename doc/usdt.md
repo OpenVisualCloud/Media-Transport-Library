@@ -65,6 +65,8 @@ provider sys {
   probe sessions_time_measure();
   /* attach to enable the pcap dump for cni rx queue */
   probe cni_pcap_dump(int port, char* dump_file, uint32_t pkts);
+  /* attach to sample the tasklet times; fires per tasklet at each stats dump */
+  probe tasklet_stat(int sch_idx, char* name, uint64_t cnt, uint64_t sum_ns, uint64_t work_cnt, uint64_t work_sum_ns);
 }
 ```
 
@@ -210,6 +212,26 @@ Example output like below:
 16:10:07 p1: dumped pcap file cni_p1_10000_Grf8CU.pcapng pkts 0
 16:10:17 p0: dumped pcap file cni_p0_10000_G8iOd6.pcapng pkts 206
 16:10:17 p1: dumped pcap file cni_p1_10000_Grf8CU.pcapng pkts 0
+```
+
+#### 2.1.5. tasklet_stat USDT
+
+Usage: at each stats dump `tasklet_stat` fires once per tasklet with the scheduler index, the tasklet name, `cnt` and `sum_ns` of its calls since it was registered, and `work_cnt` and `work_sum_ns` of the calls that did not return `MTL_TASKLET_ALL_DONE`.
+The scheduler index and the name together name a tasklet, but two tasklets of one scheduler can share a name, an application's or MTL's `shared_rss` of two ports, and their series then mix.
+The counters move only while the probe is attached or the time is measured (2.1.2).
+While the probe is attached, the scheduler times 1 loop in 64 on average, at random gaps, and weights its calls by the gap, so `cnt` is exact to within a gap and the others are estimates; the 2.1.2 log lines stay off.
+With the time measure on, every loop is timed and all four are exact.
+`sum_ns` and `work_sum_ns` include part of the cost of the two TSC reads around each call, tens of ns a call: it cancels when two builds are compared, not in an absolute figure.
+
+```bash
+sudo bpftrace -e 'usdt::sys:tasklet_stat { printf("%s sch %d %s: calls %llu %llu ns, work %llu %llu ns\n", strftime("%H:%M:%S", nsecs), arg0, str(arg1), arg2, arg3, arg4, arg5); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```text
+13:11:08 sch 1 rvs_pkt_rx: calls 15658343 1139064632 ns, work 107458 109238181 ns
+13:11:18 sch 1 rvs_pkt_rx: calls 95882204 6978718390 ns, work 657352 671996566 ns
 ```
 
 ### 2.2. PTP tracing

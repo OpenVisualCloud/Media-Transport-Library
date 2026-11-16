@@ -81,6 +81,48 @@ int ut_sch_qs_sleeps_offline(int* sleeps, int* online_sleeps);
  * is whether the end of that pass satisfied the wait, checked in the next pass. */
 int ut_sch_qs_pass_end_publishes(bool* published);
 
+#define UT_SCH_IDLE_NS (100)
+#define UT_SCH_WORK_NS (50000)
+/* not 0, so a counter lookup that ignores the sch index fails */
+#define UT_SCH_STATS_IDX (1)
+/* past glibc's tcache sizes, so the free of the counters checks the chunk after them */
+#define UT_SCH_REQUEST_TASKLETS (64)
+
+/* The arguments of sys:tasklet_stat, or the counters of a tasklet slot. */
+struct ut_sch_tasklet_stat {
+  int sch_idx;
+  const char* name;
+  uint64_t cnt;
+  uint64_t sum_ns;
+  uint64_t work_cnt;
+  uint64_t work_sum_ns;
+};
+
+/* Sch UT_SCH_STATS_IDX, stopped, with mtl_init_params flags and ut_tasklet in slot 0: on
+ * the fake clock its every work_every-th call (none for 0) takes UT_SCH_WORK_NS and
+ * returns MTL_TASKLET_HAS_PENDING, the others take UT_SCH_IDLE_NS and are idle. */
+struct ut_sch_stats;
+struct ut_sch_stats* ut_sch_stats_create(uint64_t flags, unsigned int work_every);
+/* The same, through sch_request() on a zeroed main: UT_SCH_REQUEST_TASKLETS slots, all
+ * registered, ut_idle in slot 1. Its destroy unregisters them and returns sch_free(). */
+struct ut_sch_stats* ut_sch_stats_request(uint64_t flags, unsigned int work_every);
+int ut_sch_stats_destroy(struct ut_sch_stats* s);
+/* Registers the idle ut_idle into slot 1, unregistering the one registered before. */
+int ut_sch_stats_register_idle(struct ut_sch_stats* s);
+/* Runs the loop, once per handle, until ut_tasklet was called calls times. */
+int ut_sch_stats_run(struct ut_sch_stats* s, uint64_t calls);
+/* Attaches or detaches sys:tasklet_stat, through its semaphore as bpftrace does. */
+void ut_sch_stats_attach(bool on);
+struct ut_sch_tasklet_stat ut_sch_stats_counters(int slot);
+/* Runs sch_stat(): the arguments of the last sys:tasklet_stat it fired. */
+struct ut_sch_tasklet_stat ut_sch_stats_dump(struct ut_sch_stats* s);
+/* The calls of ut_tasklet in the per-dump time that sch_stat() prints and resets. */
+uint64_t ut_sch_stats_measured(struct ut_sch_stats* s);
+/* MT_SCH_TIME_SAMPLE_PERIOD, MT_SCH_TIME_SAMPLE_SEED and sch_time_sample_gap(). */
+uint32_t ut_sch_time_sample_period(void);
+uint32_t ut_sch_time_sample_seed(void);
+uint32_t ut_sch_time_sample_gap(uint32_t* state);
+
 #ifdef __cplusplus
 }
 #endif

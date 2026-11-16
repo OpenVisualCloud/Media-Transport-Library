@@ -795,12 +795,15 @@ Probes in `lib/src/mt_usdt_provider.d`, compiled when `MTL_HAS_USDT`. Attach wit
 
 | Provider | Key Probes | Traces |
 |----------|-----------|--------|
-| `sys` | `log_msg`, `tasklet_time_measure` | Logging, tasklet timing |
+| `sys` | `log_msg`, `tasklet_time_measure`, `tasklet_stat` | Logging, tasklet timing, cumulative tasklet time and work |
 | `ptp` | `ptp_msg`, `ptp_result` | PTP timestamps, sync delta |
 | `st20`/`st22`/`st30` | `tx_frame_next/done`, `rx_frame_available/put` | Session frame lifecycle |
 | `st20p`/`st22p`/`st30p`/`st40p` | `tx_frame_get/put/drop`, `rx_frame_get/put` | Pipeline frame transitions |
 
 Several probes are **attach-to-enable**: zero cost until tracing tool attaches.
+
+- `tasklet_stat` (`doc/usdt.md` §2.1.5): attached, it times 1 scheduler loop in 64 at random gaps, as timing every loop reads the TSC twice per tasklet call and slows the loop it measures.
+- Keep a probe at ≤ 6 arguments: bpftrace 0.14 rejects `arg6` even for USDT.
 
 ---
 

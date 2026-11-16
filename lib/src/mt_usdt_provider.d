@@ -13,6 +13,8 @@ provider sys {
   probe sessions_time_measure();
   /* attach to enable the pcap dump for cni rx queue */
   probe cni_pcap_dump(int port, char* dump_file, uint32_t pkts);
+  /* attach to sample the tasklet times; fires per tasklet at each stats dump */
+  probe tasklet_stat(int sch_idx, char* name, uint64_t cnt, uint64_t sum_ns, uint64_t work_cnt, uint64_t work_sum_ns);
 }
 
 provider ptp {

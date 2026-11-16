@@ -58,6 +58,7 @@ void ut_clock_stop(void);
 bool ut_clock_on(void);
 uint64_t ut_clock_tick(void);
 uint64_t ut_clock_ns(void);
+void ut_clock_advance(uint64_t ns);
 
 #ifdef __cplusplus
 }
