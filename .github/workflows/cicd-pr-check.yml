@@ -47,7 +47,9 @@ jobs:
       pull-requests: read
     outputs:
       build: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && (github.event_name == 'workflow_dispatch' || steps.filter.outputs.build_workflow == 'true') }}
-      gtest: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && (github.event_name == 'workflow_dispatch' || steps.filter.outputs.gtest == 'true') }}
+      gtest: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && (github.event_name == 'workflow_dispatch' || steps.filter.outputs.gtest == 'true' || steps.filter.outputs.rl_pacing == 'true') }}
+      # The NoCtx RL wire cells in the e810 leg of run-gtest-tests, on a pull request that touches the RL pacing paths.
+      rl_pacing: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && github.event_name == 'pull_request' && steps.filter.outputs.rl_pacing == 'true' }}
       smoke_tests: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && (github.event_name == 'workflow_dispatch' || steps.filter.outputs.smoke_tests == 'true') }}
       hardening: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && (github.event_name == 'workflow_dispatch' || steps.filter.outputs.hardening == 'true') }}
       unit_tests: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.unit_tests == 'true' }}
@@ -398,6 +400,7 @@ jobs:
         uses: ./.github/actions/run-gtest
         with:
           nic: ${{ matrix.nic }}
+          noctx_rl: ${{ matrix.nic == 'e810' && needs.changes.outputs.rl_pacing == 'true' }}
 
   # ── Smoke pytest on each NIC of the fleet, on the artifacts of the build job ──
   run-smoke-tests:

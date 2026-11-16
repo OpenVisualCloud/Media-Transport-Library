@@ -16,6 +16,10 @@ inputs:
     description: Regex of the gtest.sh case names to run (empty = all). Nightly only.
     required: false
     default: ''
+  noctx_rl:
+    description: Add the NoCtx RL wire cells, gtest.sh case noctx_rl, to the quick run. Not nightly.
+    required: false
+    default: 'false'
 
 runs:
   using: composite
@@ -27,6 +31,7 @@ runs:
       shell: bash
       env:
         NIGHTLY: 0
+        GTEST_NOCTX_RL: ${{ inputs.noctx_rl == 'true' && 1 || 0 }}
         EXIT_ON_FAILURE: 1
       run: sudo -E env -u BASH_XTRACEFD "${GITHUB_WORKSPACE}/.github/scripts/gtest.sh"
 

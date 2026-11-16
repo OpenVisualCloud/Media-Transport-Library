@@ -39,6 +39,7 @@ SUDO_PREFIX="sudo -E env PATH=${PATH}"
 : "${TEST_KILL_GRACE:=30}"                              # SIGKILL delay after SIGTERM for a test case
 : "${MIN_VFIO_PORTS:=4}"                                # Ports of one PF the suite needs on vfio-pci
 : "${GTEST_CASES:=}"                                    # Regex of the case names to run (empty = every case)
+: "${GTEST_NOCTX_RL:=0}"                                # Set to 1 to add the NoCtx RL wire cells to the quick tests
 : "${HOST_FAULT_EXIT:=3}"                               # Exit code meaning "host needs recovery, not a test failure"
 : "${TEST_SIP_SEED:=$((RANDOM))}"                       # Seed for the test subnet, so two hosts rarely share one
 : "${TEST_P_SIP:="192.168.$((TEST_SIP_SEED % 256)).1"}" # Address of the primary port. Host octet stays in 1..254
@@ -349,7 +350,14 @@ generate_test_cases() {
 	dpdk_case st2110_3x 'St3*'
 	dpdk_case st2110_4x 'St4*'
 
+	# NOCTX_REQUIRE_STRICT=1: a strict pacing case fails, not skips, on a topology without NIC RX timestamps.
+	# MTL_ISOLATE=require: a NOCTX_ISOLATE_CASES case fails, not runs unconfined, without an exclusive CPU partition.
+	local noctx_env="TEST_PORT_1=${noctx_port[0]} TEST_PORT_2=${noctx_port[1]} TEST_PORT_3=${noctx_port[2]} TEST_PORT_4=${noctx_port[3]} NOCTX_REQUIRE_STRICT=1 MTL_ISOLATE=require"
+
 	if [ "${NIGHTLY}" -ne 1 ]; then
+		# The RL wire cells of noctx, which nightly runs whole.
+		[ "${GTEST_NOCTX_RL}" -ne 1 ] ||
+			test_cases[noctx_rl]="${noctx_env} NOCTX_FILTER='st20p_rl_*:NoCtxTest.st20p_redundant_1080p59_s8_equal_vrx_margin' \"${noctx_folder}/run.sh\""
 		return
 	fi
 
@@ -377,17 +385,16 @@ generate_test_cases() {
 	# EAL cannot be re-initialised in one process.
 	test_cases[redundant_stats]="${SUDO_PREFIX} \"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\" --auto_start_stop --port_list \"${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}\" ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_redundant_stats.xml --gtest_filter=St20p.redundant*:St30p.redundant*:St40p.redundant*"
 	test_cases[st20p_kernel_loopback]="\"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\" --auto_start_stop --p_port kernel:lo --r_port kernel:lo ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20p_kernel_loopback.xml --gtest_filter=St20p*"
-	# NOCTX_REQUIRE_STRICT=1: a strict pacing case fails, not skips, on a topology without NIC RX timestamps.
-	# MTL_ISOLATE=require: a NOCTX_ISOLATE_CASES case fails, not runs unconfined, without an exclusive CPU partition.
-	test_cases[noctx]="TEST_PORT_1=${noctx_port[0]} TEST_PORT_2=${noctx_port[1]} TEST_PORT_3=${noctx_port[2]} TEST_PORT_4=${noctx_port[3]} NOCTX_REQUIRE_STRICT=1 MTL_ISOLATE=require \"${noctx_folder}/run.sh\""
+	test_cases[noctx]="${noctx_env} \"${noctx_folder}/run.sh\""
 }
 
 # ── running them ────────────────────────────────────────────────────────────
 
 # isolate.sh's verdict for the NoCtx ports, printed before the run.
 noctx_isolation_probe() {
-	local port_list="${noctx_port[0]},${noctx_port[1]},${noctx_port[2]},${noctx_port[3]}" output
-	output=$(sudo env MTL_ISOLATE=require MTL_ISOLATE_PORTS="${port_list}" "${isolate_sh}" -- true 2>&1)
+	local output
+	output=$(sudo env MTL_ISOLATE=require MTL_ISOLATE_PORTS="${noctx_port[0]},${noctx_port[2]}" \
+		MTL_ISOLATE_MEM_PORTS="${noctx_port[1]},${noctx_port[3]}" "${isolate_sh}" -- true 2>&1)
 	grep -m 1 'exclusive CPU isolation' <<<"${output}" || echo "no verdict: ${output##*$'\n'}"
 }
 
@@ -455,7 +462,7 @@ run_case_bounded() {
 	sudo rm -f "${case_log}" "${sid_file}"
 	sudo install -m 0600 -o "$(id -u)" /dev/null "${case_log}"
 
-	[ "${test_name}" != noctx ] || noctx_sweep || return 1
+	[[ ${test_name} != noctx* ]] || noctx_sweep || return 1
 
 	tail -n 0 -F "${case_log}" &
 	local tail_pid=$!
@@ -476,7 +483,7 @@ run_case_bounded() {
 			sudo pkill -SIGKILL -s "${sid}" 2>/dev/null || true
 		fi
 	fi
-	if [ "${test_name}" = noctx ] && ! noctx_sweep && [ "${retval}" -eq 0 ]; then
+	if [[ ${test_name} == noctx* ]] && ! noctx_sweep && [ "${retval}" -eq 0 ]; then
 		retval=1
 	fi
 
@@ -522,7 +529,7 @@ run_test_with_retry() {
 		fi
 	done
 
-	echo "✗ Test failed after $MAX_RETRIES attempts: $test_name" | sudo tee -a "$LOG_FILE"
+	echo "✗ Test failed after $attempt attempts: $test_name" | sudo tee -a "$LOG_FILE"
 
 	if [ "$EXIT_ON_FAILURE" -eq 1 ]; then
 		echo "Exiting due to test failure."
@@ -575,7 +582,7 @@ echo "Starting MTL test suite..."
 kill_test_processes
 discover_ports
 generate_test_cases
-[ -z "${test_cases[noctx]+set}" ] || noctx_isolation=$(noctx_isolation_probe)
+[ -z "${test_cases[noctx]+set}${test_cases[noctx_rl]+set}" ] || noctx_isolation=$(noctx_isolation_probe)
 print_configuration
 
 for test_name in "${!test_cases[@]}"; do
