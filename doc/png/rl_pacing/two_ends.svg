@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 336" width="960" height="336">
+<defs><pattern id="or" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#fff1d6"/><line x1="0" y1="0" x2="0" y2="7" stroke="#f5c26b" stroke-width="4"/></pattern><pattern id="gr" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><rect width="7" height="7" fill="#f2f2f2"/><line x1="0" y1="0" x2="0" y2="7" stroke="#aaaaaa" stroke-width="3"/></pattern></defs>
+<rect width="960" height="336" fill="#ffffff"/>
+<text x="20.0" y="28.0" font-size="20" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start" font-weight="bold">One stalled call, two ends for its pads</text>
+<text x="20.0" y="49.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="start">1080p59.94: the anchor's 5 pads, in a call that returns 9 µs after its clock read. Both ends are computed, not measured.</text>
+<text x="20.0" y="80.0" font-size="14" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start" font-weight="bold">The call</text>
+<text x="170.0" y="83.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="end">CPU</text>
+<rect x="180.0" y="68.0" width="153.5" height="22" fill="#d5e3f5" stroke="#4f7fb5" stroke-width="1.2"/>
+<rect x="185.1" y="68.0" width="143.3" height="22" fill="url(#or)" stroke="#d99a2b" stroke-width="1"/>
+<text x="341.5" y="84.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start">MTL knows the clock read (0) and the return (9 µs), not the doorbell</text>
+<text x="20.0" y="126.0" font-size="14" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start" font-weight="bold">Earliest end: the doorbell rang at the clock read</text>
+<text x="170.0" y="153.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="end">NIC</text>
+<rect x="180.0" y="136.0" width="210.4" height="24" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<text x="186.0" y="153.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start">5 pads</text>
+<line x1="390.4" y1="130.0" x2="390.4" y2="166.0" stroke="#1f1f1f" stroke-width="2"/>
+<text x="398.4" y="153.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start" font-weight="bold">drain end, 12.3 µs</text>
+<text x="398.4" y="178.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="start">MTL sizes the next pads from this end, so packet 0 is never early.</text>
+<text x="20.0" y="218.0" font-size="14" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start" font-weight="bold">Latest end: the doorbell rang at the return</text>
+<text x="170.0" y="245.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="end">NIC</text>
+<rect x="180.0" y="228.0" width="153.5" height="24" fill="url(#gr)" stroke="#999999" stroke-width="1"/>
+<text x="256.8" y="245.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">idle</text>
+<rect x="333.5" y="228.0" width="223.2" height="24" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<text x="339.5" y="245.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start">5 pads</text>
+<rect x="556.7" y="228.0" width="119.9" height="24" fill="url(#gr)" stroke="#999999" stroke-width="1"/>
+<text x="616.7" y="245.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">bucket refills</text>
+<line x1="556.7" y1="222.0" x2="556.7" y2="258.0" stroke="#1f1f1f" stroke-width="2"/>
+<text x="556.7" y="272.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle" font-weight="bold">trs_rl_pads_end, 22.1 µs</text>
+<line x1="676.7" y1="222.0" x2="676.7" y2="258.0" stroke="#1f1f1f" stroke-width="2"/>
+<text x="684.7" y="241.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start">29.1 µs: certainly idle,</text>
+<text x="684.7" y="256.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start">the pre-arm may start over</text>
+<line x1="180.0" y1="290.0" x2="760.0" y2="290.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<line x1="180.0" y1="290.0" x2="180.0" y2="295.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="180.0" y="309.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">0</text>
+<line x1="265.3" y1="290.0" x2="265.3" y2="295.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="265.3" y="309.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">5</text>
+<line x1="350.6" y1="290.0" x2="350.6" y2="295.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="350.6" y="309.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">10</text>
+<line x1="435.9" y1="290.0" x2="435.9" y2="295.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="435.9" y="309.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">15</text>
+<line x1="521.2" y1="290.0" x2="521.2" y2="295.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="521.2" y="309.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">20</text>
+<line x1="606.5" y1="290.0" x2="606.5" y2="295.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="606.5" y="309.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">25</text>
+<line x1="691.8" y1="290.0" x2="691.8" y2="295.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="691.8" y="309.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">30</text>
+<text x="470.0" y="328.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="middle">µs from the call's clock read</text>
+</svg>
