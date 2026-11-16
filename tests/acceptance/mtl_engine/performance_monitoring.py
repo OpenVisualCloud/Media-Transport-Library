@@ -18,6 +18,10 @@ FPS_TOLERANCE_PCT = 0.99  # 99% of requested FPS required for pass
 # so 4 samples needs a run of roughly 70 s or more.
 FPS_MIN_STEADY_SAMPLES = 4  # Refuse to judge a run on fewer stat dumps than this
 
+# What RxTxApp prints, once, when a session's source no longer fits in
+# hugepages and it reads through mmap() instead (tx_st20p_app.c).
+HUGEPAGE_FALLBACK_MARKER = "source malloc on hugepage fail"
+
 # Shared timestamp regex (compiled once)
 _TS_RE = re.compile(r"MTL:\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}),?")
 _TS_FMT = "%Y-%m-%d %H:%M:%S"

@@ -23,6 +23,7 @@ from mtl_engine.execute import kill_stale_processes, read_remote_log, run
 from mtl_engine.integrity import calculate_yuv_frame_size
 from mtl_engine.media_files import yuv_files_422rfc10
 from mtl_engine.performance_monitoring import (
+    HUGEPAGE_FALLBACK_MARKER,
     CpuCoreMonitor,
     display_session_results,
     format_cpus,
@@ -132,10 +133,6 @@ MAX_SESSIONS = {
 # rate rises above 100 Gbps, 25 fps stops being the cheapest case, or hugepages
 # shrink.
 PERF_SOURCE_FRAMES = 24
-
-# What RxTxApp prints, once, when a session's source no longer fits in
-# hugepages and it reads through mmap() instead (tx_st20p_app.c).
-HUGEPAGE_FALLBACK_MARKER = "source malloc on hugepage fail"
 
 CRASH_RECOVERY_WAIT = 30  # Seconds to wait after VF reset for link recovery
 
