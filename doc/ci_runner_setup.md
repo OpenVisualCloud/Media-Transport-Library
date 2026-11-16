@@ -150,7 +150,11 @@ ports the named card has and declares two of them, because a redundant session
 needs a second interface to put its second leg on and `gen_config.py` numbers
 `interface_index` within a `vendor:device` group. Two is also the ceiling — index
 0 becomes `host.vfs` and index 1 `host.vfs_r`, and nothing reads a third, so a
-card with more ports still declares two. Naming a single port instead
+card with more ports still declares two. The exception is perf-compare with
+`nics` other than `single`, which asks for four (`PERF_PORTS=4`): both ports of the
+second card, so both perf hosts need that card cabled port to port like the first,
+with its node's cores isolated alike
+([perf_compare.md](perf_compare.md#34-two-nics)). Naming a single port instead
 leaves `conftest.py` no port to build `host.vfs_r` on, and every `*_redundant`
 case skips with `Redundant requires VFs on TX port 1` inside a run that reports
 success.
@@ -505,6 +509,13 @@ Three prerequisites are easy to miss:
   jobs run it, because a case whose file is absent skips, and a host that lost
   the share would otherwise report a green leg that transmitted nothing.
   `MEDIA_ASSET_SET=perf` selects the sources of the performance sweep.
+- `bpftrace` on both perf hosts. `perf-compare.yml` measures its two builds through
+  USDT, and the job fails when it copies the builds to the companion if a host lacks
+  it. Optionally a `linux-tools-<version>` package on both, for the `perf stat` rows:
+  the case takes the first perf that counts every event, `/usr/bin/perf` or else the
+  newest installed `linux-tools` one, which may be another kernel's, and measures a
+  host without one without those rows. Design and isolation:
+  [perf_compare.md](perf_compare.md).
 
 ## A test leg that waits for the fleet
 

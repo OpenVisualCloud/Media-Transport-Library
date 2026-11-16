@@ -136,6 +136,10 @@ NIC receives multicast packet (flow rule steers to session's RX queue)
 
 Max schedulers: `MT_MAX_SCH_NUM = 18` (in `mt_main.h`)
 
+Layout-sensitive (`doc/perf_compare.md` §4.5, "Layout effects"):
+- `struct mtl_sch_impl` is an array in `mtl_main_impl` (`sch_mgr.sch[]`), so a size change there moves the data of other schedulers, and one of `struct mt_sch_tasklet_impl`, allocated one by one, moves the DPDK heap; either can move one scheduler's perf with no code change
+- Prove a one-scheduler perf diff with a reference build padded to the candidate's struct sizes
+
 Both modes enter `sch_tasklet_func()`, which switches a thread still on `MPOL_DEFAULT` to `MPOL_LOCAL` until the scheduler stops; any other policy is kept:
 - Under `kernel.numa_balancing=1` the `task_numa_work` scan runs as task work on busy threads; without `MPOL_F_MOF` it rewrites no PTEs there and nothing migrates on fault, but the VMA walk still runs
 - Mitigation only: scans on other default-policy threads still mark shared PTEs, so scheduler threads still take hinting faults; `kernel.numa_balancing=0` is the fix
@@ -801,6 +805,8 @@ Probes in `lib/src/mt_usdt_provider.d`, compiled when `MTL_HAS_USDT`. Attach wit
 | `st20p`/`st22p`/`st30p`/`st40p` | `tx_frame_get/put/drop`, `rx_frame_get/put` | Pipeline frame transitions |
 
 Several probes are **attach-to-enable**: zero cost until tracing tool attaches.
+
+- `doc/perf_compare.md` measures through `log_msg`, `tasklet_time_measure`, `sessions_time_measure` and the `st22p` probes, and through `sys:tasklet_stat` in a build that has it (no release up to v26.09; it is detected per build).
 
 ---
 
