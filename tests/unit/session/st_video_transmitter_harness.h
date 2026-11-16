@@ -267,6 +267,8 @@ void ut_trs_sch_set_schedule_ns(ut_trs_sch* sch, uint32_t ns);
 int ut_trs_sch_call(ut_trs_sch* sch);
 /* the tx_video_session_dp_get() calls of the last ut_trs_sch_call() */
 uint32_t ut_trs_sch_dp_gets(const ut_trs_sch* sch);
+/* the mt_get_tsc() calls of the last ut_trs_sch_call() */
+uint32_t ut_trs_sch_tsc_reads(const ut_trs_sch* sch);
 /* the session trylocks the transmitter took in the last ut_trs_sch_call() */
 uint32_t ut_trs_sch_trylocks(const ut_trs_sch* sch);
 /* the starts and ends of pacing calls and the bursts of the last ut_trs_sch_call() on a
