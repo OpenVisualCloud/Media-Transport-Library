@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 318" width="960" height="318">
+<rect width="960" height="318" fill="#ffffff"/>
+<text x="20.0" y="28.0" font-size="20" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start" font-weight="bold">Where the send-ahead goes, and when check 1 reports</text>
+<text x="20.0" y="49.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="start">1080p59.94: a packet is sent 19.46 µs ahead of its drain slot. Three things use most of that; the rest is the VRX budget.</text>
+<text x="20.0" y="82.0" font-size="14" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start" font-weight="bold">The send-ahead</text>
+<rect x="88.1" y="92.0" width="147.9" height="30" fill="#eeeeee" stroke="#999999" stroke-width="1.2"/>
+<text x="162.0" y="112.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">rounding 4.0 µs</text>
+<text x="162.0" y="138.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="middle">of the frame start</text>
+<rect x="236.0" y="92.0" width="150.5" height="30" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<text x="311.3" y="112.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle" font-weight="bold">VRX budget 4.1 µs</text>
+<text x="311.3" y="138.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="middle">left for the sender</text>
+<rect x="386.5" y="92.0" width="202.9" height="30" fill="#eeeeee" stroke="#999999" stroke-width="1.2"/>
+<text x="488.0" y="112.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">wire path 5.5 µs</text>
+<text x="488.0" y="138.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="middle">the NIC and the wire</text>
+<rect x="589.4" y="92.0" width="216.5" height="30" fill="#eeeeee" stroke="#999999" stroke-width="1.2"/>
+<text x="697.7" y="112.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">sawtooth 5.9 µs</text>
+<text x="697.7" y="138.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="middle">the packets behind run later</text>
+<text x="20.0" y="186.0" font-size="14" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start" font-weight="bold">Check 1</text>
+<rect x="236.0" y="196.0" width="150.5" height="30" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<text x="311.3" y="216.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle" font-weight="bold">not reported</text>
+<rect x="386.5" y="196.0" width="419.4" height="30" fill="#ffffff" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="596.2" y="216.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle" font-weight="bold">reported: a packet of the frame may miss its drain slot</text>
+<rect x="805.9" y="196.0" width="94.1" height="30" fill="#f6d3d8" stroke="#b8202f" stroke-width="1.2"/>
+<text x="853.0" y="216.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#b8202f" text-anchor="middle" font-weight="bold">misses it</text>
+<line x1="236.0" y1="84.0" x2="236.0" y2="246.0" stroke="#1f1f1f" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="236.0" y="80.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle" font-weight="bold">its target</text>
+<line x1="805.9" y1="84.0" x2="805.9" y2="246.0" stroke="#1f1f1f" stroke-width="2"/>
+<text x="805.9" y="80.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle" font-weight="bold">its drain slot</text>
+<line x1="70.0" y1="250.0" x2="900.0" y2="250.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<line x1="88.4" y1="250.0" x2="88.4" y2="255.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="88.4" y="269.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">−4</text>
+<line x1="162.2" y1="250.0" x2="162.2" y2="255.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="162.2" y="269.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">−2</text>
+<line x1="236.0" y1="250.0" x2="236.0" y2="255.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="236.0" y="269.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">0</text>
+<line x1="309.8" y1="250.0" x2="309.8" y2="255.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="309.8" y="269.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">+2</text>
+<line x1="383.6" y1="250.0" x2="383.6" y2="255.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="383.6" y="269.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">+4</text>
+<line x1="457.3" y1="250.0" x2="457.3" y2="255.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="457.3" y="269.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">+6</text>
+<line x1="531.1" y1="250.0" x2="531.1" y2="255.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="531.1" y="269.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">+8</text>
+<line x1="604.9" y1="250.0" x2="604.9" y2="255.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="604.9" y="269.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">+10</text>
+<line x1="678.7" y1="250.0" x2="678.7" y2="255.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="678.7" y="269.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">+12</text>
+<line x1="752.4" y1="250.0" x2="752.4" y2="255.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="752.4" y="269.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">+14</text>
+<line x1="826.2" y1="250.0" x2="826.2" y2="255.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="826.2" y="269.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">+16</text>
+<line x1="900.0" y1="250.0" x2="900.0" y2="255.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="900.0" y="269.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">+18</text>
+<text x="485.0" y="290.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="middle">how late the packet left: µs from its target, at the latest rounding</text>
+</svg>

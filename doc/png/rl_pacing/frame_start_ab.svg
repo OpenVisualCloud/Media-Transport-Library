@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 452" width="960" height="452">
+<defs><pattern id="or" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#fff1d6"/><line x1="0" y1="0" x2="0" y2="7" stroke="#f5c26b" stroke-width="4"/></pattern><pattern id="gr" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><rect width="7" height="7" fill="#f2f2f2"/><line x1="0" y1="0" x2="0" y2="7" stroke="#aaaaaa" stroke-width="3"/></pattern></defs>
+<rect x="0.0" y="0.0" width="960.0" height="452" fill="#ffffff" stroke="none" stroke-width="1.2"/>
+<text x="20.0" y="28.0" font-size="20" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start" font-weight="bold">After a stalled call MTL knows the return, not the doorbell</text>
+<text x="20.0" y="49.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="start">1080p59.94. One pad burst returns 2.5 µs late. The NIC gets its pads at the doorbell, which rang at A, at B or in between.</text>
+<text x="20.0" y="80.0" font-size="14" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start" font-weight="bold">What MTL sees: one call</text>
+<text x="140.0" y="122.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="end">CPU</text>
+<rect x="175.0" y="106.0" width="85.0" height="22" fill="#d5e3f5" stroke="#4f7fb5" stroke-width="1.2"/>
+<rect x="180.0" y="106.0" width="75.0" height="22" fill="url(#or)" stroke="#d99a2b" stroke-width="1"/>
+<text x="175.0" y="100.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">clock read</text>
+<text x="260.0" y="100.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">return</text>
+<text x="273.0" y="115.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#6a4500" text-anchor="start">a delay of 2.5 µs inside the call</text>
+<text x="273.0" y="131.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start">MTL knows these two times only</text>
+<path d="M175.0,140 L185.0,140 L180.0,132 Z" fill="#1f1f1f"/>
+<text x="180.0" y="155.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle" font-weight="bold">A</text>
+<path d="M250.0,140 L260.0,140 L255.0,132 Z" fill="#1f1f1f"/>
+<text x="255.0" y="155.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle" font-weight="bold">B</text>
+<line x1="582.0" y1="150.0" x2="582.0" y2="402.0" stroke="#1f1f1f" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="582.0" y="144.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle" font-weight="bold">packet 0's target</text>
+<text x="20.0" y="176.0" font-size="14" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start" font-weight="bold">Doorbell at A, pads kept: the shaper started on time</text>
+<text x="140.0" y="203.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="end">NIC</text>
+<line x1="467.0" y1="183.0" x2="459.0" y2="213.0" stroke="#555555" stroke-width="1.2"/>
+<line x1="476.0" y1="183.0" x2="468.0" y2="213.0" stroke="#555555" stroke-width="1.2"/>
+<line x1="180.0" y1="181.0" x2="180.0" y2="216.0" stroke="#555555" stroke-width="1" stroke-dasharray="2 3"/>
+<line x1="255.0" y1="181.0" x2="255.0" y2="216.0" stroke="#555555" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="20.0" y="256.0" font-size="14" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start" font-weight="bold">Doorbell at B, pads kept: the shaper started 2.5 µs late</text>
+<text x="140.0" y="283.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="end">NIC</text>
+<line x1="467.0" y1="263.0" x2="459.0" y2="293.0" stroke="#555555" stroke-width="1.2"/>
+<line x1="476.0" y1="263.0" x2="468.0" y2="293.0" stroke="#555555" stroke-width="1.2"/>
+<line x1="180.0" y1="261.0" x2="180.0" y2="296.0" stroke="#555555" stroke-width="1" stroke-dasharray="2 3"/>
+<line x1="255.0" y1="261.0" x2="255.0" y2="296.0" stroke="#555555" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="20.0" y="336.0" font-size="14" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#b8202f" text-anchor="start" font-weight="bold">Never done: 2.5 µs of pads removed, as if the doorbell rang at B. If it rang at A:</text>
+<text x="140.0" y="363.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="end">NIC</text>
+<line x1="467.0" y1="343.0" x2="459.0" y2="373.0" stroke="#555555" stroke-width="1.2"/>
+<line x1="476.0" y1="343.0" x2="468.0" y2="373.0" stroke="#555555" stroke-width="1.2"/>
+<line x1="180.0" y1="341.0" x2="180.0" y2="376.0" stroke="#555555" stroke-width="1" stroke-dasharray="2 3"/>
+<line x1="255.0" y1="341.0" x2="255.0" y2="376.0" stroke="#555555" stroke-width="1" stroke-dasharray="2 3"/>
+<rect x="180.0" y="186.0" width="270.0" height="24" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<line x1="296.2" y1="186.0" x2="296.2" y2="210.0" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="412.4" y1="186.0" x2="412.4" y2="210.0" stroke="#3a9a2e" stroke-width="1"/>
+<rect x="492.0" y="186.0" width="112.5" height="24" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<rect x="604.5" y="186.0" width="116.8" height="24" fill="#3a9a2e" stroke="#3a9a2e" stroke-width="1.2"/>
+<text x="662.9" y="203.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#ffffff" text-anchor="middle" font-weight="bold">packet 0</text>
+<line x1="582.0" y1="224.0" x2="604.5" y2="224.0" stroke="#3a9a2e" stroke-width="2"/>
+<line x1="604.5" y1="219.0" x2="604.5" y2="229.0" stroke="#3a9a2e" stroke-width="2"/>
+<text x="614.5" y="229.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#3a9a2e" text-anchor="start" font-weight="bold">+0.75 µs: on time</text>
+<rect x="180.0" y="266.0" width="75.0" height="24" fill="url(#gr)" stroke="#999999" stroke-width="1"/>
+<rect x="255.0" y="266.0" width="195.0" height="24" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<line x1="371.2" y1="266.0" x2="371.2" y2="290.0" stroke="#3a9a2e" stroke-width="1"/>
+<rect x="492.0" y="266.0" width="187.5" height="24" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<line x1="563.3" y1="266.0" x2="563.3" y2="290.0" stroke="#3a9a2e" stroke-width="1"/>
+<rect x="679.5" y="266.0" width="116.8" height="24" fill="#3a9a2e" stroke="#3a9a2e" stroke-width="1.2"/>
+<text x="737.9" y="283.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#ffffff" text-anchor="middle" font-weight="bold">packet 0</text>
+<line x1="582.0" y1="304.0" x2="679.5" y2="304.0" stroke="#3a9a2e" stroke-width="2"/>
+<line x1="679.5" y1="299.0" x2="679.5" y2="309.0" stroke="#3a9a2e" stroke-width="2"/>
+<text x="689.5" y="309.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#3a9a2e" text-anchor="start" font-weight="bold">+3.25 µs: late by the delay</text>
+<rect x="180.0" y="346.0" width="270.0" height="24" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<line x1="296.2" y1="346.0" x2="296.2" y2="370.0" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="412.4" y1="346.0" x2="412.4" y2="370.0" stroke="#3a9a2e" stroke-width="1"/>
+<rect x="492.0" y="346.0" width="37.5" height="24" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<rect x="529.5" y="346.0" width="116.8" height="24" fill="#3a9a2e" stroke="#b8202f" stroke-width="2"/>
+<text x="587.9" y="363.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#ffffff" text-anchor="middle" font-weight="bold">packet 0</text>
+<line x1="582.0" y1="384.0" x2="529.5" y2="384.0" stroke="#b8202f" stroke-width="2"/>
+<line x1="529.5" y1="379.0" x2="529.5" y2="389.0" stroke="#b8202f" stroke-width="2"/>
+<text x="592.0" y="389.0" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#b8202f" text-anchor="start" font-weight="bold">1.75 µs early</text>
+<line x1="150.0" y1="402.0" x2="450.0" y2="402.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<line x1="492.0" y1="402.0" x2="822.0" y2="402.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<line x1="186.0" y1="402.0" x2="186.0" y2="407.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="186.0" y="421.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">−498</text>
+<line x1="246.0" y1="402.0" x2="246.0" y2="407.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="246.0" y="421.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">−496</text>
+<line x1="306.0" y1="402.0" x2="306.0" y2="407.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="306.0" y="421.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">−494</text>
+<line x1="366.0" y1="402.0" x2="366.0" y2="407.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="366.0" y="421.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">−492</text>
+<line x1="426.0" y1="402.0" x2="426.0" y2="407.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="426.0" y="421.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">−490</text>
+<line x1="522.0" y1="402.0" x2="522.0" y2="407.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="522.0" y="421.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">−2</text>
+<line x1="582.0" y1="402.0" x2="582.0" y2="407.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="582.0" y="421.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">0</text>
+<line x1="642.0" y1="402.0" x2="642.0" y2="407.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="642.0" y="421.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">+2</text>
+<line x1="702.0" y1="402.0" x2="702.0" y2="407.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="702.0" y="421.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">+4</text>
+<line x1="762.0" y1="402.0" x2="762.0" y2="407.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="762.0" y="421.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">+6</text>
+<line x1="822.0" y1="402.0" x2="822.0" y2="407.0" stroke="#1f1f1f" stroke-width="1.2"/>
+<text x="822.0" y="421.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">+8</text>
+<text x="468.0" y="407.0" font-size="14" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">//</text>
+<text x="486.0" y="442.0" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="middle">µs from packet 0's target (the axis is cut at //)</text>
+</svg>
