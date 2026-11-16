@@ -430,6 +430,49 @@ static uint32_t tv_rl_burst_size(struct mtl_main_impl* impl, enum mtl_port port)
   }
 }
 
+/* tv_sync_pacing() snaps the start time to the RTP tick unless USER_TIMESTAMP,
+ * RTP_TIMESTAMP_EPOCH or rtp_timestamp_delta_us decouple the RTP timestamp from it */
+static bool tv_start_snaps(struct st_tx_video_session_impl* s) {
+  return !(s->ops.flags &
+           (ST20_TX_FLAG_USER_TIMESTAMP | ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH)) &&
+         !s->ops.rtp_timestamp_delta_us;
+}
+
+/* the most tv_sync_pacing()'s 90 kHz snap moves the target past epoch + tr_offset -
+ * vrx * trs, over the phases the epochs take on the tick grid; an exact user start time
+ * is not snapped, the frames without one are */
+static long double tv_snap_loss_ns(struct st_tx_video_session_impl* s) {
+  uint32_t rate = s->fps_tm.sampling_clock_rate;
+  uint64_t a = (uint64_t)rate * s->fps_tm.den, b = s->fps_tm.mul;
+  long double loss = 0;
+
+  if (!tv_start_snaps(s) || !rate || !b) return 0;
+  while (a % b) {
+    uint64_t r = a % b;
+    a = b;
+    b = r;
+  }
+  uint64_t phases = s->fps_tm.mul / b;
+  if (phases > 64) return (long double)NS_PER_S / rate / 2;
+  for (uint64_t k = phases; k < 2 * phases; k++) {
+    uint64_t start = transmission_start_time(s, k);
+    loss = RTE_MAX(loss, (long double)st_tai_round_to_media_clk_ns(start, rate) - start);
+  }
+  return loss;
+}
+
+/* how late of the target grid a pkt behind packet 0 leaves at most: the pad sawtooth,
+ * (pad_interval / 2 + bulk) / (pad_interval + 1) trs, and one pad more where a frame's
+ * whole pads round up */
+static long double tv_rl_sawtooth_ns(struct st_tx_video_session_impl* s,
+                                     long double pad) {
+  struct st_tx_video_pacing* pacing = &s->pacing;
+
+  return (pacing->pad_interval / 2 + (float)s->bulk) / (pacing->pad_interval + 1) *
+             pacing->trs +
+         pad;
+}
+
 /* Plans the RL pre-arm of each port from the pad_ns training measured and the rate on its
  * queue. Runs after tv_init_hw() built the trim pads, once warm_pkts and the pacing ways
  * are final. A port without a plan holds packet 0 until its target. */
@@ -438,6 +481,7 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
   struct st_tx_video_pacing* pacing = &s->pacing;
   uint16_t pad_size = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
   int idx = s->idx;
+  long double snap_loss = tv_snap_loss_ns(s);
 
   for (int i = 0; i < s->ops.num_port; i++) {
     struct st_tx_video_rl_plan* plan = &s->rl_plan[i];
@@ -451,9 +495,29 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
     if (armed) {
       /* the timeslot grid releases packet 0 up to a timeslot early: aim one late */
       long double aim = st_tx_video_rl_tokens(bps) * plan->pad_ns / pad_size;
+      long double timeslot =
+          st_tx_video_rl_timeslot_tokens(bps) * plan->pad_ns / pad_size;
       /* the bucket fills at the programmed rate, not the trained one */
       long double refill = (long double)burst_size * NS_PER_S / bps;
       plan->bucket_ns = refill + aim;
+      /* Packet j must reach the receiver by its drain slot, vrx trs after its place on
+       * the target grid. The 90 kHz snap moves that grid later by up to snap_loss, the
+       * timeslot releases packet 0 up to aim late and the cut leaves up to a fine trim.
+       * Behind packet 0 the pkts run late of the grid by up to the sawtooth. The rest of
+       * the lead may go to a stalled burst, or to what a late entry's tail cannot cut,
+       * within what the grid and the cut leave of the launch budget. */
+      long double late = tv_rl_sawtooth_ns(s, plan->pad_ns);
+      long double fine = plan->pad_ns * ST_TX_VIDEO_RL_TRIM_FINE / pad_size;
+      long double lead = pacing->vrx * pacing->trs - snap_loss - aim - fine - late;
+      plan->absorb_ns =
+          RTE_MIN(ST_TX_VIDEO_RL_GRID_LATE_MAX_NS - aim - timeslot - fine, lead);
+      plan->refill_ns = refill;
+      /* the fewest pads that keep the shaper draining, past the bucket it sends at once,
+       * through a tick in the next burst and that burst's own time to its doorbell */
+      plan->anchor_pads = RTE_MIN(
+          ceill((plan->bucket_ns + ST_TX_VIDEO_RL_TICK_NS + ST_TX_VIDEO_RL_STALL_NS) /
+                plan->pad_ns),
+          ST_TX_VIDEO_RL_MAX_PADS_PER_BURST);
       long double window = pacing->warm_pkts * pacing->trs + plan->bucket_ns;
       /* from the previous frame's last pkt to the warm-up open */
       long double idle =
@@ -464,15 +528,18 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
               window > (st_tx_video_rl_trim_pads(pad_size) - 1) * plan->pad_ns &&
               /* the bucket refills before the window opens */
               refill <= idle &&
-              /* aim, the bound of the unknown timeslot, is short enough */
-              aim <= ST_TX_VIDEO_RL_TIMESLOT_MAX_NS;
+              /* the grid releases packet 0 within a timeslot of target + aim */
+              aim + timeslot <= ST_TX_VIDEO_RL_GRID_LATE_MAX_NS;
     }
     if (!armed) {
       plan->pad_ns = 0;
       plan->bucket_ns = 0;
+      plan->absorb_ns = 0;
+      plan->refill_ns = 0;
       plan->armed = false;
       if (s->pacing_way[i] == ST21_TX_PACING_WAY_RL)
-        info("%s[%02d], port %d no rl plan, holds packet 0\n", __func__, idx, i);
+        warn("%s[%02d], port %d no rl plan, holds packet 0, VRX at risk if late\n",
+             __func__, idx, i);
       continue;
     }
     plan->pad_size = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
@@ -862,14 +929,8 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   } else {
     start_time_tai = transmission_start_time(s, pacing->cur_epochs);
   }
-  /* Only the RTP timestamp derived from ptp_time_cursor with no extra offset is
-   * guaranteed to equal start_time_tai's tick; an exact user start time,
-   * USER_TIMESTAMP, RTP_TIMESTAMP_EPOCH and rtp_timestamp_delta_us all
-   * deliberately decouple the two already. */
-  if (!exact_user_pacing &&
-      !(s->ops.flags &
-        (ST20_TX_FLAG_USER_TIMESTAMP | ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH)) &&
-      !s->ops.rtp_timestamp_delta_us) {
+  /* an exact user start time is not snapped either */
+  if (!exact_user_pacing && tv_start_snaps(s)) {
     start_time_tai =
         st_tai_round_to_media_clk_ns(start_time_tai, s->fps_tm.sampling_clock_rate);
   }
@@ -3380,6 +3441,9 @@ static void tv_transmitter_port_state_init(struct st_tx_video_session_impl* s, i
   s->rl_state[i] = ST_TX_VIDEO_RL_STATE_IDLE;
   s->stat_trs_ret_code[i] = 0;
   s->last_burst_succ_time_tsc[i] = 0;
+  s->trs_rl_tail[i] = false;
+  s->trs_rl_drained[i] = 0;
+  s->trs_wire_tsc[i] = 0;
 }
 
 static void tv_transmitter_state_init(struct st_tx_video_session_impl* s) {
@@ -4084,12 +4148,15 @@ static int tv_detach(struct st_tx_video_sessions_mgr* mgr,
 
   tv_stat_collect(mgr, s, &dump);
   tv_stat_log(&dump);
+  atomic_store_explicit(&mgr->trs_refused[s->idx], 0, memory_order_relaxed);
   tv_uinit(s);
   return 0;
 }
 
 static int tv_init(struct st_tx_video_session_impl* s, int idx) {
   s->idx = idx;
+  /* a call of the transmitter it leaves may match one of its new scheduler's */
+  memset(s->trs_released, 0, sizeof(s->trs_released));
   return 0;
 }
 
@@ -4363,8 +4430,12 @@ int st_tx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mtl_sch_im
 
 int st_tx_video_session_migrate(struct st_tx_video_sessions_mgr* mgr,
                                 struct st_tx_video_session_impl* s, int idx) {
+  /* under both slots' locks: the new scheduler's late entries wait for its retry too */
+  uint8_t refused =
+      atomic_exchange_explicit(&s->mgr->trs_refused[s->idx], 0, memory_order_relaxed);
   s->mgr = mgr;
   tv_init(s, idx);
+  atomic_store_explicit(&mgr->trs_refused[idx], refused, memory_order_relaxed);
   return 0;
 }
 
