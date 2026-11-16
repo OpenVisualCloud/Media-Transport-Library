@@ -174,8 +174,10 @@ static inline void sch_qs_pass_end(struct mtl_sch_impl* sch) {
   atomic_store_explicit(&sch->qs_seen, token, memory_order_release);
 }
 
+#ifndef WINDOWSENV
 /* 0 not tried yet, 1 registered for MEMBARRIER_CMD_PRIVATE_EXPEDITED, -1 unavailable */
 static _Atomic int sch_membarrier_state;
+#endif
 
 static bool sch_membarrier_registered(void) {
 #ifdef WINDOWSENV
