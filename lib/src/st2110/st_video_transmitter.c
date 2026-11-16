@@ -59,13 +59,12 @@ static inline void video_trs_burst_succ(struct mtl_main_impl* impl,
 static inline void video_trs_rl_reclaim(struct mtl_main_impl* impl,
                                         struct st_tx_video_session_impl* s,
                                         enum mtl_session_port s_port, uint64_t idle_tsc) {
-  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
-  uint16_t rs = mt_if_tx_reclaim_rs_thresh(impl, port);
-  if (!rs || s->s_type == MT_ST22_HANDLE_TX_VIDEO) return;
-
   uint64_t now = idle_tsc ? idle_tsc : s->last_burst_succ_time_tsc[s_port];
   uint64_t next = s->trs_reclaim_tsc[s_port];
   if (now < next) return;
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  uint16_t rs = mt_if_tx_reclaim_rs_thresh(impl, port);
+  if (!rs || s->s_type == MT_ST22_HANDLE_TX_VIDEO) return;
   if (idle_tsc) mt_txq_reclaim(s->queue[s_port]);
   const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
   uint64_t batch_ns = (uint64_t)(rs / 2 * (plan->armed ? plan->pad_ns : s->pacing.trs));
