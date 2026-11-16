@@ -94,6 +94,10 @@ jobs:
       - name: Build the Rust no_std example
         run: task ci:rust-no-std
 
+      # Windows, the other build without USDT, runs only by hand.
+      - name: Build the library without USDT
+        run: task ci:build-no-usdt
+
       - name: 'upload release build artifacts'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

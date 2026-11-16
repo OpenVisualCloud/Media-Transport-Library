@@ -248,6 +248,12 @@ tasks:
         sudo -E cargo update home --precise "${RUST_HOOK_CARGO_VER:?}"
         sudo -E cargo build --example no_std
 
+  ci:build-no-usdt:
+    desc: Build the library in release without USDT, so a variable kept only for a probe fails -Werror
+    cmds:
+      - meson setup build_no_usdt -Dbuildtype=release -Denable_usdt=false
+      - ninja -C build_no_usdt
+
   ci:require-file-linters:
     desc: Fail unless both file-linter jobs succeeded
     cmds:
