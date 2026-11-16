@@ -157,6 +157,7 @@ unit_sources = [
   'session/st20_tx/rtcp_pool_test.cpp',
   'session/st_video_transmitter_harness.c',
   'session/st20_tx/rl_warm_up_test.cpp',
+  'session/st20_tx/rl_vrx_faults_test.cpp',
   'session/st20_tx/rl_reclaim_test.cpp',
   'session/st20_tx/rl_absorb_test.cpp',
   'session/st20_tx/rl_anchor_test.cpp',
