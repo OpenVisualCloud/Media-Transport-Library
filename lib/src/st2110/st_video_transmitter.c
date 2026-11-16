@@ -54,22 +54,32 @@ static inline void video_trs_burst_succ(struct mtl_main_impl* impl,
  * frees the oldest done batch in a tx_burst, an empty one too, while more than 2 batches
  * are in use. A batch holds at least rs_thresh / 2 pkts, so one is done at most each
  * batch time. A call at or after trs_reclaim_tsc goes for that batch; the next is due a
- * batch time on. With empty, an idle visit calls only for a due batch. */
+ * batch time on. A burst passes idle_tsc 0, an idle visit its time: it calls only for a
+ * due batch. */
 static inline void video_trs_rl_reclaim(struct mtl_main_impl* impl,
                                         struct st_tx_video_session_impl* s,
-                                        enum mtl_session_port s_port, bool empty) {
+                                        enum mtl_session_port s_port, uint64_t idle_tsc) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   uint16_t rs = mt_if_tx_reclaim_rs_thresh(impl, port);
   if (!rs || s->s_type == MT_ST22_HANDLE_TX_VIDEO) return;
 
-  uint64_t now = empty ? mt_get_tsc(impl) : s->last_burst_succ_time_tsc[s_port];
+  uint64_t now = idle_tsc ? idle_tsc : s->last_burst_succ_time_tsc[s_port];
   uint64_t next = s->trs_reclaim_tsc[s_port];
   if (now < next) return;
-  if (empty) mt_txq_reclaim(s->queue[s_port]);
+  if (idle_tsc) mt_txq_reclaim(s->queue[s_port]);
   const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
   uint64_t batch_ns = (uint64_t)(rs / 2 * (plan->armed ? plan->pad_ns : s->pacing.trs));
   uint64_t behind = (uint64_t)mt_if_nb_tx_desc(impl, port) / rs * batch_ns;
   s->trs_reclaim_tsc[s_port] = RTE_MAX(next, now > behind ? now - behind : 0) + batch_ns;
+}
+
+/* an idle visit's reclaim: only a port that reclaims reads the clock for it */
+static inline void video_trs_rl_reclaim_idle(struct mtl_main_impl* impl,
+                                             struct st_tx_video_session_impl* s,
+                                             enum mtl_session_port s_port) {
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  if (mt_if_tx_reclaim_rs_thresh(impl, port) && s->s_type != MT_ST22_HANDLE_TX_VIDEO)
+    video_trs_rl_reclaim(impl, s, s_port, mt_get_tsc(impl));
 }
 
 /* mt_txq_burst() of an RL port: every RL transmitter burst goes through here, so each
@@ -85,7 +95,7 @@ static inline uint16_t video_trs_rl_txq_burst(struct mtl_main_impl* impl,
   uint64_t now;
   if (tx) {
     video_trs_burst_succ(impl, s, s_port, tx);
-    video_trs_rl_reclaim(impl, s, s_port, false);
+    video_trs_rl_reclaim(impl, s, s_port, 0);
     now = s->last_burst_succ_time_tsc[s_port];
   } else {
     now = mt_get_tsc(impl);
@@ -627,9 +637,8 @@ static int video_burst_packet(struct mtl_main_impl* impl,
 
 static bool video_trs_rl_target_reached(struct mtl_main_impl* impl,
                                         struct st_tx_video_session_impl* s,
-                                        uint64_t target_tsc, int* ret_status,
-                                        int* tasklet_ret) {
-  uint64_t cur_tsc = mt_get_tsc(impl);
+                                        uint64_t cur_tsc, uint64_t target_tsc,
+                                        int* ret_status, int* tasklet_ret) {
   if (cur_tsc >= target_tsc) return true;
 
   uint64_t delta = target_tsc - cur_tsc;
@@ -716,14 +725,16 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     uint64_t warmup_ns = s->pacing.warm_pkts * s->pacing.trs;
     uint64_t warmup_tsc = target_tsc > warmup_ns ? target_tsc - warmup_ns : 0;
     int tasklet_ret;
-    if (!video_trs_rl_target_reached(impl, s, warmup_tsc, ret_status, &tasklet_ret)) {
-      video_trs_rl_reclaim(impl, s, s_port, true);
+    uint64_t now = mt_get_tsc(impl);
+    if (!video_trs_rl_target_reached(impl, s, now, warmup_tsc, ret_status,
+                                     &tasklet_ret)) {
+      video_trs_rl_reclaim(impl, s, s_port, now);
       return tasklet_ret;
     }
     bool again;
     s->rl_state[s_port] = video_trs_rl_frame_start(impl, s, s_port, &again);
     if (again) {
-      video_trs_rl_reclaim(impl, s, s_port, true);
+      video_trs_rl_reclaim_idle(impl, s, s_port);
       return MTL_TASKLET_HAS_PENDING;
     }
   }
@@ -750,7 +761,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
 
   if (s->rl_state[s_port] == ST_TX_VIDEO_RL_STATE_WAIT_TARGET) {
     int tasklet_ret;
-    if (!video_trs_rl_target_reached(impl, s, target_tsc, ret_status, &tasklet_ret))
+    if (!video_trs_rl_target_reached(impl, s, mt_get_tsc(impl), target_tsc, ret_status,
+                                     &tasklet_ret))
       return tasklet_ret;
     video_trs_rl_set_idle(s, s_port);
   }
@@ -765,7 +777,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
       if (!tx && !pads_tx && s->rl_state[s_port] == ST_TX_VIDEO_RL_STATE_IDLE) {
         int tasklet_ret;
         s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
-        if (!video_trs_rl_target_reached(impl, s, target_tsc, ret_status, &tasklet_ret))
+        if (!video_trs_rl_target_reached(impl, s, mt_get_tsc(impl), target_tsc,
+                                         ret_status, &tasklet_ret))
           return tasklet_ret;
         /* the target passed since the tail's read: packet 0 goes now, alone */
         video_trs_rl_set_idle(s, s_port);
@@ -800,7 +813,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
   struct rte_mbuf* pkts[ST_SESSION_MAX_BULK] = {NULL};
   n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
   if (n == 0) {
-    video_trs_rl_reclaim(impl, s, s_port, true);
+    video_trs_rl_reclaim_idle(impl, s, s_port);
     *ret_status = -STI_RLTRS_DEQUEUE_FAIL;
     return MTL_TASKLET_ALL_DONE;
   }
