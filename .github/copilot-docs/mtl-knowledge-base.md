@@ -388,6 +388,11 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
         nothing. The frame before leaves the ring full of done batches.
         A warm-up pad burst frees one before its doorbell, ~1.4 µs at 720p59.94, which takes
         the first burst past `ST_TX_VIDEO_RL_STALL_NS` (`St20TxRlReclaim`).
+        An idle visit reads the TSC once: the visit that waits for its window times the
+        reclaim by the read that tested the window, and a port that does not reclaim
+        (rs_thresh 0, ST22) reads none for it. The second call of a visit
+        (`video_trs_rl_tasklet()`), behind the first call's burst, reads none for the reclaim
+        unless a batch is due within `ST_TX_VIDEO_RL_TICK_NS` of that burst (`St20TxRlIdleCost`).
       - Hang: a hung queue holds the frames too, and with nothing to send the transmitter sees no
         burst fail. A wait past `tx_hang_detect_time_thresh` (at least 2 frame times) flags the
         recovery of every leg idle as long (`tv_frames_out_hang()`); a reclaim gap past half of
@@ -711,6 +716,9 @@ Progressive, height ≥ 1080; T = frame time. Interlaced, 720p and SD use their 
   Without that, it holds (`LateEntryShortOfTheTrimPadsHoldsPacket0ToItsTarget`).
   A last burst whose own sizing read leaves too few pads to cut, as when the tasklet is preempted between the entry check and that read, is judged on what they cannot cut: within `absorb_ns` it goes with packet 0 in one tail call, else packet 0 is held (`LateEntryTheSizingReadFindsIsJudgedAsOne`).
 - **Where the 128 cap binds.** Only UHD and above: 2160p is 524 → 128, a 4× shorter window. At 1080p it is 130 → 128, which makes no difference.
+- **A stream's first frame (known limit).** At a port's first frame a late entry that may not tail, or a start-over that no longer fits (`video_trs_rl_fits()`), holds packet 0, as main holds every packet 0, and the CPU sends it at the first release scan past its target (`video_trs_rl_release()`).
+  At stream start that scan waits behind the first frames of the scheduler's other tasklets, such as ANC and audio sessions, so packet 0 can leave tens of µs late; check 1 reports the frame. Later frames are not affected.
+  Packet 0 holds there because letting a first-frame late entry tail within the VRX budget would move frame 0 close to the NoCtx 0..+10 µs launch bound.
 
 **Tolerance at each point** (scheduler lateness, or a tasklet stall):
 
