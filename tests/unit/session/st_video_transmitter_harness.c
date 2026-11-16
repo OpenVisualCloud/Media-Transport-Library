@@ -125,8 +125,11 @@ struct ut_trs_ctx {
 
 static void ut_trs_cpu_stalls(struct ut_trs_ctx* ctx, uint64_t from);
 
+static uint32_t ut_trs_tsc_reads;
+
 static uint64_t ut_trs_tsc_time_fn(struct mtl_main_impl* impl) {
   struct ut_trs_ctx* ctx = (struct ut_trs_ctx*)impl; /* impl is ctx's first member */
+  ut_trs_tsc_reads++;
   if (ctx->clock) return *ctx->clock;
   int len = ctx->tsc_script_len;
   int pos = ctx->tsc_script_pos++;
@@ -1377,6 +1380,7 @@ struct ut_trs_sch {
   void* arg;
   void* burst_arg;
   uint32_t dp_gets;
+  uint32_t tsc_reads;
   uint32_t trylocks;
   uint32_t unguarded;
   pthread_t writer;
@@ -1489,10 +1493,12 @@ void ut_trs_sch_set_schedule_ns(ut_trs_sch* sch, uint32_t ns) {
 int ut_trs_sch_call(ut_trs_sch* sch) {
   ut_trs_active_sch = sch;
   ut_trs_dp_gets = 0;
+  ut_trs_tsc_reads = 0;
   ut_trs_trylocks = 0;
   sch->unguarded = 0;
   int ret = video_trs_tasklet_handler(&sch->trs);
   sch->dp_gets = ut_trs_dp_gets;
+  sch->tsc_reads = ut_trs_tsc_reads;
   sch->trylocks = ut_trs_trylocks;
   ut_trs_active_sch = NULL;
   return ret;
@@ -1500,6 +1506,10 @@ int ut_trs_sch_call(ut_trs_sch* sch) {
 
 uint32_t ut_trs_sch_dp_gets(const ut_trs_sch* sch) {
   return sch->dp_gets;
+}
+
+uint32_t ut_trs_sch_tsc_reads(const ut_trs_sch* sch) {
+  return sch->tsc_reads;
 }
 
 uint32_t ut_trs_sch_trylocks(const ut_trs_sch* sch) {
