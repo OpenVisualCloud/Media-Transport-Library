@@ -319,8 +319,8 @@ if is_windows
   # MTL builds these paths on Linux alone, or mingw-w64 lacks the call that the
   # unit needs: the kernel socket backend, the dlopen() PMD directory and the ELF
   # symbols of the iavf PMD, the sysfs DMA probe, the UNIX socket instance, the
-  # NUMA memory policy and lcore affinity of the scheduler, mprotect() and
-  # open_memstream().
+  # NUMA memory policy and lcore affinity of the scheduler (and each test of
+  # sch/mt_sch_harness.c), mprotect() and open_memstream().
   unit_posix_only = [
     'dev/mt_dev_eal_pmd_dir_test.cpp',
     'dev/iavf_intr_unregister_test.cpp',
@@ -336,6 +336,7 @@ if is_windows
     'sch/mt_sch_mempolicy_test.cpp',
     'sch/mt_sch_filelock_test.cpp',
     'sch/mt_sch_lcore_test.cpp',
+    'sch/mt_sch_quiescent_test.cpp',
     'session/rtcp_attack_harness.c',
     'session/rtcp/nack_attack_test.cpp',
     'session/rtcp/copy_pool_test.cpp',
