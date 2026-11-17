@@ -85,12 +85,23 @@ main() {
 	}
 
 	check_build_packages || exit 1
+	# The compiler hardening of doc/build.md. setuptools adds the CPPFLAGS and
+	# LDFLAGS of the environment to the compile and link commands of the Python
+	# build. From setuptools 75.7.0 on, a CFLAGS replaces the CFLAGS of the
+	# Python build, its -O2 too, so the compile flags go in CPPFLAGS. Without
+	# the flags, the build runs with the caller's environment only. The install
+	# copies the module that build_ext links.
+	hardening_flags || exit 1
+	local -a flags=()
+	# shellcheck disable=SC2153 # hardening_flags() of common.sh sets both
+	[ -z "${HARDENING_CFLAGS}" ] ||
+		flags=("CPPFLAGS=${CPPFLAGS:+${CPPFLAGS} }${HARDENING_CFLAGS}" "LDFLAGS=${LDFLAGS:+${LDFLAGS} }${HARDENING_LDFLAGS}")
 
 	cd "${REPO_DIR}/python/swig"
 	log_info "Generate the SWIG wrapper"
 	swig -python -I"${MTL_INCLUDE_DIR}" -o pymtl_wrap.c pymtl.i
 	log_info "Build the Python extension"
-	"${PYTHON}" setup.py build_ext --inplace
+	env "${flags[@]}" "${PYTHON}" setup.py build_ext --inplace
 	log_info "Install the Python extension"
 	as_root "${PYTHON}" setup.py install
 	log_success "Python binding installed"
