@@ -121,6 +121,9 @@ uint64_t ut_ptp_t3(const ut_ptp_ctx* ctx);
 uint64_t ut_ptp_t4(const ut_ptp_ctx* ctx);
 bool ut_ptp_t3_pending(const ut_ptp_ctx* ctx);
 int32_t ut_ptp_stat_t3_timeout(const ut_ptp_ctx* ctx);
+uint32_t ut_ptp_t3_timeout_in_a_row(const ut_ptp_ctx* ctx);
+bool ut_ptp_t3_no_tx_ts_reported(const ut_ptp_ctx* ctx);
+uint32_t ut_ptp_t3_no_tx_ts_limit(void);
 int32_t ut_ptp_result_claimed(const ut_ptp_ctx* ctx);
 
 #ifdef __cplusplus

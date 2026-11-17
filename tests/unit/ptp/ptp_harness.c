@@ -321,6 +321,15 @@ bool ut_ptp_t3_pending(const ut_ptp_ctx* ctx) {
 int32_t ut_ptp_stat_t3_timeout(const ut_ptp_ctx* ctx) {
   return ctx->ptp.stat_t3_timeout;
 }
+uint32_t ut_ptp_t3_timeout_in_a_row(const ut_ptp_ctx* ctx) {
+  return ctx->ptp.t3_timeout_in_a_row;
+}
+bool ut_ptp_t3_no_tx_ts_reported(const ut_ptp_ctx* ctx) {
+  return ctx->ptp.t3_no_tx_ts_reported;
+}
+uint32_t ut_ptp_t3_no_tx_ts_limit(void) {
+  return MT_PTP_T3_NO_TX_TS_LIMIT;
+}
 int32_t ut_ptp_result_claimed(const ut_ptp_ctx* ctx) {
   return rte_atomic32_read(&ctx->ptp.result_claimed);
 }
