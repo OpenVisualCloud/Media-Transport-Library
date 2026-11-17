@@ -479,8 +479,11 @@ int ipmx_st22p_tx_get_info(st22p_tx_handle handle, struct ipmx_video_info* info)
  * @return
  *   - >0: the SDP length, without the NUL.
  *   - -ENOSPC: buf too short, it holds an empty string.
- *   - -EIO: invalid handle, or IPMX not enabled on the session.
+ *   - -EIO: invalid handle, IPMX not enabled on the session, or the session moved by
+ *     two migrations racing the call.
  *   - -EINVAL: NULL buf or zero len.
+ *   - -EBUSY: called from the session's own callback while a control call holds the
+ *     session; retry outside the callback or on a later one.
  *   - -ENOTSUP: interlaced, segmented or non-square PAR, which no session takes today;
  *     buf is left untouched.
  */
@@ -518,6 +521,7 @@ int ipmx_st20p_tx_get_sdp(st20p_tx_handle handle, char* buf, size_t len);
  *   - -ENOSPC: buf too short, it holds an empty string.
  *   - -EIO: invalid handle, or IPMX not enabled on the session.
  *   - -EINVAL: NULL buf or zero len.
+ *   - -EBUSY: as ipmx_st20_tx_get_sdp().
  *   - -ENOTSUP: interlaced, segmented or non-square PAR, or a profile, level or
  *     sublevel without an SDP name, which no IPMX session takes today; buf is left
  *     untouched.

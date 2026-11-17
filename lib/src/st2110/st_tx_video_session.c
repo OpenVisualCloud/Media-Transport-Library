@@ -4243,11 +4243,8 @@ static int tv_update_dst(struct mtl_main_impl* impl, struct st_tx_video_session_
   return 0;
 }
 
-/* For the public APIs on s: 0 with its lock held and its slot in *mgr / *idx; -EIO if
- * neither try found s in the slot it read, i.e. migrations raced both. In a callback, on
- * the scheduler's own thread, -EBUSY rather than spin on the lock. */
-static int tv_api_lock(struct st_tx_video_session_impl* s,
-                       struct st_tx_video_sessions_mgr** mgr, int* idx) {
+int st_tx_video_session_api_lock(struct st_tx_video_session_impl* s,
+                                 struct st_tx_video_sessions_mgr** mgr, int* idx) {
   /* a migration moves s before it releases the old slot, so one retry finds it */
   for (int tries = 0; tries < 2; tries++) {
     struct st_tx_video_sessions_mgr* m = s->mgr;
@@ -4277,7 +4274,7 @@ static int tv_mgr_update_dst(struct st_tx_video_session_impl* s,
 
   /* in a callback the ARP lookup of the new destination would stall the scheduler */
   if (mt_sch_on_own_thread(mt_sch_instance(mgr->parent, mgr->idx))) return -EBUSY;
-  int ret = tv_api_lock(s, &mgr, &idx);
+  int ret = st_tx_video_session_api_lock(s, &mgr, &idx);
   if (ret < 0) return ret;
 
   ret = tv_update_dst(mgr->parent, s, dst);
@@ -5209,7 +5206,7 @@ int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* 
   struct st_tx_video_sessions_mgr* mgr;
   int idx;
 
-  int ret = tv_api_lock(s, &mgr, &idx);
+  int ret = st_tx_video_session_api_lock(s, &mgr, &idx);
   if (!ret) {
     memcpy(stats, &s->port_user_stats, sizeof(*stats));
     tx_video_session_put(mgr, idx);
@@ -5231,7 +5228,7 @@ int st20_tx_reset_session_stats(st20_tx_handle handle) {
   struct st_tx_video_sessions_mgr* mgr;
   int idx;
 
-  int ret = tv_api_lock(s, &mgr, &idx);
+  int ret = st_tx_video_session_api_lock(s, &mgr, &idx);
   if (!ret) {
     memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
     memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));

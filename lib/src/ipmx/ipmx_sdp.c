@@ -211,10 +211,10 @@ static void ipmx_sdp_media_of(struct st_tx_video_session_impl* s,
 
 int ipmx_sdp_tx_get(struct st_tx_video_session_impl* s, char* buf, size_t len) {
   struct ipmx_sr_tx* sr = s->ipmx_sr;
-  rte_spinlock_t* lock = &s->mgr->mutex[s->idx];
+  struct st_tx_video_sessions_mgr* mgr;
   struct ipmx_sdp_media m;
   uint64_t version;
-  int ret;
+  int idx, ret;
 
   if (!sr) {
     err("%s(%d), IPMX not enabled\n", __func__, s->idx);
@@ -227,10 +227,11 @@ int ipmx_sdp_tx_get(struct st_tx_video_session_impl* s, char* buf, size_t len) {
 
   memset(&m, 0, sizeof(m));
   /* snapshot and version under one lock, so a later version never has older content */
-  rte_spinlock_lock(lock);
+  ret = st_tx_video_session_api_lock(s, &mgr, &idx);
+  if (ret < 0) return ret;
   ret = ipmx_sr_tx_get_info(s, &m.info);
   if (ret < 0) {
-    rte_spinlock_unlock(lock);
+    tx_video_session_put(mgr, idx);
     return ret;
   }
   ipmx_sdp_media_of(s, &m);
@@ -238,7 +239,7 @@ int ipmx_sdp_tx_get(struct st_tx_video_session_impl* s, char* buf, size_t len) {
   memcpy(&sr->sdp_last, &m, sizeof(m));
   sr->sdp_taken = true;
   version = sr->sdp_sess_version;
-  rte_spinlock_unlock(lock);
+  tx_video_session_put(mgr, idx);
 
   return ipmx_sdp_build(&m, sr->sdp_sess_id, version, buf, len);
 }

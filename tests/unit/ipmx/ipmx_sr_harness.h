@@ -108,6 +108,11 @@ void ut_sr_set_ts_refclk_end(ut_sr_ctx* ctx);
 int ut_sr_get_info(ut_sr_ctx* ctx, struct ipmx_video_info* info);
 /* ipmx_sdp_tx_get() of the session */
 int ut_sr_get_sdp(ut_sr_ctx* ctx, char* buf, size_t len);
+/* The same from the session's own callback, on its scheduler thread, while (held) a
+ * writer holds the session lock and waits for that callback to return; *still_held, if
+ * not NULL, whether that lock was held when the call returned. */
+int ut_sr_get_sdp_in_callback(ut_sr_ctx* ctx, bool held, char* buf, size_t len,
+                              bool* still_held);
 /* the public ipmx_st20[p]_tx_get_sdp(), of a handle of the right or a wrong type */
 int ut_sr_api_get_sdp(ut_sr_ctx* ctx, bool pipeline, bool valid_handle, char* buf,
                       size_t len);

@@ -632,6 +632,27 @@ TEST_F(IpmxSdpSessionTest, InvalidArgs) {
   EXPECT_EQ(ut_sr_get_sdp(ctx_, buf, 0), -EINVAL);
 }
 
+/* -EBUSY from the session's own callback while a writer holds the session lock, and the
+ * writer's lock left held: that writer waits for this very callback, so spinning would
+ * deadlock the scheduler. */
+TEST_F(IpmxSdpSessionTest, OwnCallbackBusyOnAWaitingHolder) {
+  char buf[IPMX_SDP_MAX];
+  bool still_held = false;
+  ASSERT_EQ(ut_sr_attach(ctx_), 0);
+  EXPECT_EQ(ut_sr_get_sdp_in_callback(ctx_, true, buf, sizeof(buf), &still_held), -EBUSY);
+  EXPECT_TRUE(still_held);
+}
+
+/* With the lock free the callback gets the same SDP as any other thread. */
+TEST_F(IpmxSdpSessionTest, OwnCallbackGetsTheSdp) {
+  char buf[IPMX_SDP_MAX];
+  ASSERT_EQ(ut_sr_attach(ctx_), 0);
+  const std::string sdp = Sdp();
+  EXPECT_EQ(ut_sr_get_sdp_in_callback(ctx_, false, buf, sizeof(buf), nullptr),
+            (int)sdp.size());
+  EXPECT_EQ(std::string(buf), sdp);
+}
+
 /* the public getters check the handle type; st20p reaches the transport session */
 TEST_F(IpmxSdpSessionTest, PublicGetters) {
   char buf[IPMX_SDP_MAX];

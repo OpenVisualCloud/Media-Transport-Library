@@ -2,6 +2,8 @@
  * Copyright(c) 2026 Intel Corporation
  */
 
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -198,6 +200,9 @@ ut_sr_ctx* ut_sr_create(const uint8_t sip[4], uint32_t ssrc, uint16_t media_dst_
   ctx->impl.inf[MTL_PORT_P].drv_info.flags = MT_DRV_F_NOT_DPDK_PMD;
   memcpy(ctx->impl.inf[MTL_PORT_P].k_mac_addr.addr_bytes, smac, sizeof(smac));
   ctx->mgr.parent = &ctx->impl;
+  ctx->mgr.sessions[0] = s;
+  mt_sch_dp_slot_init(&ctx->mgr.dp_slot);
+  atomic_store(&mt_sch_instance(&ctx->impl, 0)->qs_seen, UINT64_MAX); /* offline */
 
   s->impl = &ctx->impl;
   s->mgr = &ctx->mgr;
@@ -459,6 +464,44 @@ int ut_sr_get_info(ut_sr_ctx* ctx, struct ipmx_video_info* info) {
 
 int ut_sr_get_sdp(ut_sr_ctx* ctx, char* buf, size_t len) {
   return ut_sdp_tx_get(&ctx->session, buf, len);
+}
+
+struct ut_sr_watchdog {
+  rte_spinlock_t* lock;
+  atomic_bool done;
+};
+
+/* Frees the lock a spinning call waits on after 1 s, so the case fails, not hangs. */
+static void* ut_sr_watchdog_thread(void* arg) {
+  struct ut_sr_watchdog* w = arg;
+  uint64_t end = rte_get_tsc_cycles() + rte_get_tsc_hz();
+
+  while (!atomic_load(&w->done) && rte_get_tsc_cycles() < end) rte_pause();
+  if (!atomic_load(&w->done)) rte_spinlock_unlock(w->lock);
+  return NULL;
+}
+
+int ut_sr_get_sdp_in_callback(ut_sr_ctx* ctx, bool held, char* buf, size_t len,
+                              bool* still_held) {
+  struct mtl_sch_impl* sch = mt_sch_instance(&ctx->impl, 0);
+  struct ut_sr_watchdog w = {.lock = &ctx->mgr.mutex[0]};
+  pthread_t watchdog;
+  int ret;
+
+  sch->t_pid = rte_gettid(); /* the caller plays the scheduler thread, mid-pass */
+  atomic_store(&ctx->mgr.dp_slot.idx, 0);
+  if (held) rte_spinlock_lock(w.lock); /* a writer waiting for this pass */
+  ret = -pthread_create(&watchdog, NULL, ut_sr_watchdog_thread, &w);
+  if (!ret) {
+    ret = ut_sdp_tx_get(&ctx->session, buf, len);
+    if (still_held) *still_held = rte_spinlock_is_locked(w.lock);
+    atomic_store(&w.done, true);
+    pthread_join(watchdog, NULL);
+  }
+  if (rte_spinlock_is_locked(w.lock)) rte_spinlock_unlock(w.lock);
+  atomic_store(&ctx->mgr.dp_slot.idx, -1);
+  sch->t_pid = 0;
+  return ret;
 }
 
 int ut_sr_api_get_sdp(ut_sr_ctx* ctx, bool pipeline, bool valid_handle, char* buf,

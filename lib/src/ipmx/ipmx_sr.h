@@ -140,7 +140,8 @@ int ipmx_sr_tx_set_block_version(struct st_tx_video_session_impl* s, uint8_t ver
 int ipmx_sr_tx_set_ts_refclk(struct st_tx_video_session_impl* s, const char* ts_refclk);
 /** -EIO without s->ipmx_sr, -EINVAL on NULL info. */
 int ipmx_sr_tx_get_info(struct st_tx_video_session_impl* s, struct ipmx_video_info* info);
-/** Copy and reset the per-leg stats, under the session lock the transmitter try_gets. */
+/** Copy and reset the per-leg stats under tx_video_session_get_timeout(), which waits out
+ * the transmitter; it skips a locked session (tx_video_session_dp_get()). */
 void ipmx_sr_stat_take(struct ipmx_sr_tx* sr, struct ipmx_sr_stats* stats);
 void ipmx_sr_stat_log(const struct ipmx_sr_stats* stats, int m_idx, int idx);
 
