@@ -139,9 +139,10 @@ above. Each frame arrived in each test.
 | The same, 5-17 min after a start of Windows (installed binaries) | 2: TX (1 scheduler) and RX | 502-515 | 2 |
 
 The [run guide](run_WIN.md#3-performance) tells how to run TX and RX in two
-processes. The cause of the lines that are left is not known yet. Windows
-takes about 530 clock interrupts each second on each CPU, 5 us or more each,
-with a timer resolution of 15.6 ms.
+processes, why Windows gives the lines that are left, and why no set-up
+removes all of them. With the host steps above, the host stops these CPUs
+much less, but Windows still takes about 530 clock interrupts each second
+on each CPU.
 
 ## Template
 

@@ -104,16 +104,46 @@ Each frame arrived. In a VM, also do the host steps of the
    min after a start of Windows had 2 stalls of 0.08 to 45 ms each; the tests
    that started 40 and 62 min after a start had none.
 
-1. **Read the log.** `TX_VIDEO_SESSION(m,s): transmitter recalculate warmup N`
-   tells that the scheduler thread came late N times in the rate limit
-   warm-up of a frame, a stall of about 2 us or more. Many of these lines
-   tell that the scheduler CPUs get interrupts or other work: check
-   **MTL status** (`cpusets`, `irq`) and, in a VM, the host steps of the
-   VM guide.
-
 These gave no change in the measurements: the Windows dynamic tick off
 (`bcdedit /set disabledynamictick yes`), and no timer resolution request of
 DPDK.
+
+### Windows and the `recalculate warmup` lines
+
+Windows is not a real-time operating system. It stops each CPU from time
+to time for its own work, also a CPU that `ReservedCpuSets` keeps for MTL:
+
+- The clock interrupt of Windows comes to each CPU, busy or idle. In the
+  tests (a VM) Windows took about 530 clock interrupts each second on each
+  CPU, and each one stopped a busy thread for 5 us or more. Windows has no
+  setting that stops the clock interrupt on a CPU, as `nohz_full` does on
+  Linux.
+- Deferred procedure calls, interrupts between the CPUs, and the work of
+  the Windows services, updates and start-up also take time on the CPUs.
+- In a VM, the hypervisor adds its own stops (see the VM guide).
+
+With the rate limit pacing, MTL sends pad packets before packet 0 of each
+frame, so that the shaper of the NIC ends them at the time of packet 0. In
+this short warm-up the scheduler thread must send each burst of pads in
+time. When Windows stops the thread for more than about 2 us during a
+burst, MTL computes the pads again from the real time and counts the event:
+`TX_VIDEO_SESSION(m,s): transmitter recalculate warmup N`, with N the events
+of the last 10 s.
+
+The line is a notice, not an error: MTL corrected the pacing of the frame.
+In the tests each frame arrived, and in the best set-up of this part no
+frame left later than its ST 2110-21 budget.
+
+No set-up removes all of these lines on Windows. They come when a stop of
+Windows falls into the warm-up of a frame, and MTL cannot stop the clock
+interrupt of Windows. The steps of this part make the stops fewer, and make
+fewer schedulers wait for them: for 10 streams of 2160p29.97 the lines fell
+from 77-146 to 43-52 per minute, for at most about 0.3 % of the frames.
+
+Look into the cause when the number of lines grows, or when the RX side
+loses packets or frames: check **MTL status** (`cpusets`, `irq`), the
+Windows updates, the time since the start of Windows and, in a VM, the host
+steps of the VM guide.
 
 ## 4. Troubleshooting
 
