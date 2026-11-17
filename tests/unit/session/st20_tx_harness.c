@@ -3405,11 +3405,12 @@ int ut_txv_control_during_own_callback(ut_txv_ctx* ctx, enum ut_txv_control call
   ret = -pthread_create(&scheduler_thread, NULL, ut_txv_own_callback_scheduler, &o);
   if (!ret) {
     uint64_t deadline = rte_get_tsc_cycles() + rte_get_tsc_hz();
-    while (!atomic_load(&o.entered) && rte_get_tsc_cycles() < deadline) usleep(100);
+    while (!atomic_load(&o.entered) && rte_get_tsc_cycles() < deadline)
+      rte_delay_us_sleep(100);
     if (!atomic_load(&o.entered)) ret = -ETIMEDOUT;
     if (!ret) ret = -pthread_create(&writer_thread, NULL, ut_txv_own_callback_writer, &o);
     if (!ret) {
-      usleep(20 * 1000); /* far past the spin of the wait */
+      rte_delay_us_sleep(20 * 1000); /* far past the spin of the wait */
       *done_in_callback = atomic_load(&o.call_done);
       atomic_store(&o.release, true);
       pthread_join(writer_thread, NULL);
