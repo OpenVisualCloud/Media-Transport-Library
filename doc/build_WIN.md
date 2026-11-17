@@ -141,4 +141,5 @@ script yourself in PowerShell as administrator, with `status`, `apply` or
 | `error while loading shared libraries: libpcap.dll` | `wpcap.dll` is missing. See part 3. |
 | `No response for cmd`, or a crash in `rte_eal_alarm_cancel()` | DPDK without the Windows patches 0004 and 0005. Build DPDK again. |
 | `Warn: st_plugin_register, dlopen /usr/local/lib/...` | Only a warning: RxTxApp runs in the MTL tree, and its `kahawai.json` lists Linux plugins. Run it in another folder. |
+| `Warn: config_parse_json, open json file kahawai.json fail` | Only a warning: there is no plugin list. Set `KAHAWAI_CFG_PATH` to a file with `{ "plugins": [] }`. The installer does this. |
 | `failed retrieving file ... mirror.msys2.org ... local issuer certificate` | Only a warning: pacman uses the next mirror. |

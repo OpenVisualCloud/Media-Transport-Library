@@ -54,7 +54,54 @@ uninstall MTL in Settings > Apps.
 **Start > MTL > MTL status** shows each Windows setting and the PCI address of
 each NetUIO port.
 
-## 3. Troubleshooting
+## 3. Performance
+
+Measured on two E810 VFs in a Windows 11 VM: 10 st20p TX and 10 st20p RX
+sessions of 2160p29.97 YUV 4:2:2 10-bit, with a format conversion on each
+side (YUV422PLANAR10LE to RFC 4175 and back), 52 Gb/s TX and 52 Gb/s RX.
+Each frame arrived. In a VM, also do the host steps of the
+[VM guide](vm_WIN.md).
+
+1. **Run TX and RX in two processes, and put all the TX video sessions on
+   one scheduler.** Each TX scheduler adds its own late visits, and in the
+   tests the long stalls came only with TX and RX in one process.
+   `--sch_session_quota N` sets the load of a scheduler in 1080p59 streams;
+   give the total of the TX video streams (a 2160p29.97 stream counts 2, so
+   10 of them need 20). Give each process its own CPUs of the reserved set,
+   and start RX first:
+
+    ```powershell
+    RxTxApp.exe --config_file rx.json --lcores 25-31 --test_time 612
+    RxTxApp.exe --config_file tx.json --lcores 24 --sch_session_quota 20 --test_time 600
+    ```
+
+    | Set-up, 10 min | `recalculate warmup` per min | Stalls of 0.4-48 ms |
+    | --- | --- | --- |
+    | One process, 2 TX schedulers | 77-146 | 1-3 |
+    | TX and RX in two processes, 1 TX scheduler | 43 | none |
+
+    The RX process runs longer than the TX process, so its fps verdict can
+    say FAILED when each frame arrived. Compare the frame counts.
+
+1. **Plan the Windows updates.** An update of the Defender security
+   intelligence stopped the VM for 22 ms during a test, and the RX port
+   dropped 333290 packets. Setup excludes the MTL folders, `C:\dpdk` and
+   `RxTxApp.exe` from the scans, but it does not stop the updates. Let them
+   run outside the times when MTL sends streams, or stop them for a test:
+   `Stop-Service wuauserv, UsoSvc`.
+
+1. **Read the log.** `TX_VIDEO_SESSION(m,s): transmitter recalculate warmup N`
+   tells that the scheduler thread came late N times in the rate limit
+   warm-up of a frame, a stall of about 2 us or more. Many of these lines
+   tell that the scheduler CPUs get interrupts or other work: check
+   **MTL status** (`cpusets`, `irq`) and, in a VM, the host steps of the
+   VM guide.
+
+These gave no change in the measurements: the Windows dynamic tick off
+(`bcdedit /set disabledynamictick yes`), and no timer resolution request of
+DPDK.
+
+## 4. Troubleshooting
 
 | Symptom | Fix |
 | --- | --- |
@@ -65,5 +112,5 @@ each NetUIO port.
 | "MTL status": a port is not `OK` after the restart | Test signing is off (the `testsign` item), or Secure Boot is on. |
 | `RxTxApp.exe` is not found | Open a new PowerShell window after setup. |
 | `VIRTCHNL_OP_CONFIG_TC_MAP` fails, or `rte_flow_create fail` on a VF | The host uses the in-tree `ice` driver. Use the out-of-tree driver (VM guide), or run with `--pacing_way tsc --rss_mode l3_l4`. |
-| `arp_get_result ... timeout` | A unicast stream between two ports of one process. Use a multicast address. |
+| `arp_get_result ... timeout` | A unicast stream between two ports of one process. Give the MAC of the RX port (`--p_tx_dst_mac <MAC>`), or use a multicast address. |
 | Millions of `pkts dropped: tmstamp outside OFO window`, but each frame arrives | A second sender uses the same multicast group and port. Give each sender its own group. |
