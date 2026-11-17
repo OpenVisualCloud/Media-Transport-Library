@@ -26,6 +26,8 @@
  *   Total max wait = MT_DEV_LINK_POLL_COUNT
  *                  * MT_DEV_LINK_POLL_INTERVAL_MS_RELAXED
  *                  = 300 × 10ms = 3 seconds
+ *
+ * An ixgbe PF first waits in dev_link_settle(), see MT_DEV_IXGBE_LINK_SETTLE_MS.
  */
 
 /** Number of outer retry attempts (strict mode only). */
@@ -39,6 +41,23 @@
 
 /** Sleep between polls in relaxed/allow_down_init mode (ms). */
 #define MT_DEV_LINK_POLL_INTERVAL_MS_RELAXED 10
+
+/* ixgbe (E610): rte_eth_dev_start() restarts the autoneg. If the link was up
+ * before the start, the PMD still reports up for about 100 ms (at most 104 ms
+ * measured), then down for about 4.7 s while the PHY trains. A TX queue that
+ * starts in that window hangs for more than the 1000 ms TX hang limit. So after
+ * the start, the link of an ixgbe port counts as up only when it stays up for
+ * MT_DEV_IXGBE_LINK_SETTLE_MS, 10 times the false up. Each ixgbe PF pays this
+ * wait at each start, also when its link does not restart.
+ */
+/** Sleep between the link reads of the settle (ms). */
+#define MT_DEV_LINK_SETTLE_POLL_MS 10
+/** Time the ixgbe link must stay up after the port start (ms). */
+#define MT_DEV_IXGBE_LINK_SETTLE_MS 1000
+/** Max wait for the ixgbe link to settle: PHY training plus the settle (ms). */
+#define MT_DEV_IXGBE_LINK_SETTLE_TIMEOUT_MS 10000
+/** Max wait when the port may stay down, as the relaxed link detect (ms). */
+#define MT_DEV_IXGBE_LINK_SETTLE_TIMEOUT_MS_RELAXED 3000
 
 /**
  * Upper bound on the EAL argv dev_eal_init() builds: 19 fixed entries plus two per port

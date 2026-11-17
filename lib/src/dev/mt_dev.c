@@ -936,6 +936,48 @@ static int dev_detect_link(struct mt_interface* inf, bool relaxed) {
   return -EIO;
 }
 
+/* Wait until the link of an ixgbe port stays up for MT_DEV_IXGBE_LINK_SETTLE_MS
+ * after the port start, see mt_dev.h. Other drivers return at once. */
+static int dev_link_settle(struct mt_interface* inf, bool relaxed) {
+  enum mtl_port port = inf->port;
+  uint64_t settle_ns = (uint64_t)MT_DEV_IXGBE_LINK_SETTLE_MS * NS_PER_MS;
+  uint64_t timeout_ns = (uint64_t)(relaxed ? MT_DEV_IXGBE_LINK_SETTLE_TIMEOUT_MS_RELAXED
+                                           : MT_DEV_IXGBE_LINK_SETTLE_TIMEOUT_MS) *
+                        NS_PER_MS;
+  uint64_t start_ns, now_ns, up_ns = 0;
+  bool up = false;
+  int down_reads = 0;
+  struct rte_eth_link eth_link;
+  int ret;
+
+  if (inf->drv_info.drv_type != MT_DRV_IXGBE) return 0;
+
+  start_ns = mt_get_monotonic_time();
+  while (true) {
+    memset(&eth_link, 0, sizeof(eth_link));
+    ret = rte_eth_link_get_nowait(inf->port_id, &eth_link);
+    if (ret < 0) {
+      err("%s(%d), link get fail %d\n", __func__, port, ret);
+      return ret;
+    }
+    now_ns = mt_get_monotonic_time();
+    if (eth_link.link_status) {
+      if (!up) up_ns = now_ns;
+      up = true;
+      if (now_ns - up_ns >= settle_ns) {
+        info("%s(%d), link stable %" PRIu64 " ms after the start, %d down reads\n",
+             __func__, port, (now_ns - start_ns) / NS_PER_MS, down_reads);
+        return 0;
+      }
+    } else {
+      up = false;
+      down_reads++;
+    }
+    if (now_ns - start_ns >= timeout_ns) return -ETIMEDOUT;
+    mt_sleep_ms(MT_DEV_LINK_SETTLE_POLL_MS);
+  }
+}
+
 static int dev_start_timesync(struct mt_interface* inf) {
   int ret, i = 0, max_retry = 100;
   uint16_t port_id = inf->port_id;
@@ -2287,6 +2329,12 @@ int mt_dev_create(struct mtl_main_impl* impl) {
       err("%s(%d), dev_start_port fail %d\n", __func__, i, ret);
       goto err_exit;
     }
+
+    /* ixgbe: do not take the link that was up before the port start */
+    ret = dev_link_settle(inf, allow_port_down);
+    if (ret == -ETIMEDOUT && !allow_port_down)
+      warn("%s(%d), link not stable %d ms after the port start\n", __func__, i,
+           MT_DEV_IXGBE_LINK_SETTLE_TIMEOUT_MS);
 
     for (int j = 0; j < MT_DEV_LINK_RETRY_COUNT; j++) {
       ret = dev_detect_link(

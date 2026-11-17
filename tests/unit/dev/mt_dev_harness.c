@@ -45,6 +45,12 @@ struct ut_dev_ctx {
   int fail_timesync_read_call;
   int fail_timesync_read_error;
   int fail_port_start_error;
+  /** link reads follow it: 'U' up, 'D' down; the last state repeats */
+  const char* link_script;
+  int link_reads;
+  /** mt_sleep_ms() only moves fake_now_ns, which mt_get_monotonic_time() returns */
+  bool fake_sleep;
+  uint64_t fake_now_ns;
   uint16_t tx_free_thresh[UT_DEV_TX_QUEUES];
   struct mtl_port_status sw_stats;
   pthread_t stats_writer;
@@ -83,6 +89,9 @@ static int ut_rte_eth_tx_queue_setup(uint16_t port_id, uint16_t tx_queue_id,
 static const struct rte_eth_rxtx_callback* ut_rte_eth_add_tx_callback(
     uint16_t port_id, uint16_t queue_id, rte_tx_callback_fn fn, void* user_param);
 static int ut_rte_eth_timesync_enable(uint16_t port_id);
+static int ut_rte_eth_link_get_nowait(uint16_t port_id, struct rte_eth_link* link);
+static void ut_dev_sleep_ms(unsigned int ms);
+static uint64_t ut_dev_monotonic_time(void);
 static int ut_rte_eth_timesync_read_time(uint16_t port_id, struct timespec* time);
 static int ut_rte_eth_dev_start(uint16_t port_id);
 static int ut_rte_eth_dev_stop(uint16_t port_id);
@@ -124,6 +133,9 @@ static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 #define rte_eth_tx_queue_setup ut_rte_eth_tx_queue_setup
 #define rte_eth_add_tx_callback ut_rte_eth_add_tx_callback
 #define rte_eth_timesync_enable ut_rte_eth_timesync_enable
+#define rte_eth_link_get_nowait ut_rte_eth_link_get_nowait
+#define mt_sleep_ms ut_dev_sleep_ms
+#define mt_get_monotonic_time ut_dev_monotonic_time
 #define rte_eth_timesync_read_time ut_rte_eth_timesync_read_time
 #define rte_eth_dev_start ut_rte_eth_dev_start
 #define rte_eth_dev_stop ut_rte_eth_dev_stop
@@ -164,6 +176,9 @@ static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 #undef rte_eth_dev_stop
 #undef rte_eth_dev_start
 #undef rte_eth_timesync_read_time
+#undef mt_get_monotonic_time
+#undef mt_sleep_ms
+#undef rte_eth_link_get_nowait
 #undef rte_eth_timesync_enable
 #undef rte_eth_add_tx_callback
 #undef rte_eth_tx_queue_setup
@@ -235,6 +250,35 @@ static int ut_rte_eth_timesync_enable(uint16_t port_id) {
   if (ut_active_ctx->timesync_enable_calls == ut_active_ctx->fail_timesync_call)
     return ut_active_ctx->fail_timesync_error;
   return 0;
+}
+
+static int ut_rte_eth_link_get_nowait(uint16_t port_id, struct rte_eth_link* link) {
+  const char* script = ut_active_ctx->link_script;
+  int i = ut_active_ctx->link_reads++;
+
+  (void)port_id;
+  memset(link, 0, sizeof(*link));
+  if (script && script[0]) {
+    size_t n = strlen(script);
+    link->link_status = script[(size_t)i < n ? (size_t)i : n - 1] == 'U';
+  } else {
+    link->link_status = 1;
+  }
+  if (link->link_status) link->link_speed = RTE_ETH_SPEED_NUM_10G;
+  return 0;
+}
+
+static void ut_dev_sleep_ms(unsigned int ms) {
+  if (ut_active_ctx && ut_active_ctx->fake_sleep) {
+    ut_active_ctx->fake_now_ns += (uint64_t)ms * NS_PER_MS;
+    return;
+  }
+  mt_sleep_ms(ms);
+}
+
+static uint64_t ut_dev_monotonic_time(void) {
+  if (ut_active_ctx && ut_active_ctx->fake_sleep) return ut_active_ctx->fake_now_ns;
+  return mt_get_monotonic_time();
 }
 
 static int ut_rte_eth_timesync_read_time(uint16_t port_id, struct timespec* time) {
@@ -910,4 +954,30 @@ unsigned int ut_dev_mempool_size(ut_dev_ctx* ctx, unsigned int elements) {
 
   if (mp) mt_mempool_free(mp);
   return size;
+}
+
+void ut_dev_set_link_script(ut_dev_ctx* ctx, const char* script) {
+  ctx->link_script = script;
+  ctx->link_reads = 0;
+  ctx->fake_sleep = true;
+  ctx->fake_now_ns = 0;
+}
+
+int ut_dev_link_reads(const ut_dev_ctx* ctx) {
+  return ctx->link_reads;
+}
+
+int ut_dev_link_settle(ut_dev_ctx* ctx, bool relaxed) {
+  ut_active_ctx = ctx;
+  return dev_link_settle(&ctx->impl.inf[MTL_PORT_P], relaxed);
+}
+
+int ut_dev_link_settle_polls(void) {
+  return MT_DEV_IXGBE_LINK_SETTLE_MS / MT_DEV_LINK_SETTLE_POLL_MS;
+}
+
+int ut_dev_link_settle_timeout_polls(bool relaxed) {
+  return (relaxed ? MT_DEV_IXGBE_LINK_SETTLE_TIMEOUT_MS_RELAXED
+                  : MT_DEV_IXGBE_LINK_SETTLE_TIMEOUT_MS) /
+         MT_DEV_LINK_SETTLE_POLL_MS;
 }

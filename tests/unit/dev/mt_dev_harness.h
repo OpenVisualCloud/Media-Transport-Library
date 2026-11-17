@@ -53,6 +53,16 @@ bool ut_dev_tx_deep(const ut_dev_ctx* ctx);
 void ut_dev_set_user_nb_tx_desc(ut_dev_ctx* ctx, uint16_t nb_tx_desc);
 /** Takes the drv info a real port with this ethdev driver name gets. */
 void ut_dev_set_driver(ut_dev_ctx* ctx, const char* driver_name);
+/** Script the link reads ('U' up, 'D' down, the last state repeats). This also turns on
+ *  a fake clock: each mt_sleep_ms() of mt_dev.c only moves it. */
+void ut_dev_set_link_script(ut_dev_ctx* ctx, const char* script);
+int ut_dev_link_reads(const ut_dev_ctx* ctx);
+/** Run dev_link_settle() on the primary port. */
+int ut_dev_link_settle(ut_dev_ctx* ctx, bool relaxed);
+/** Link reads in MT_DEV_IXGBE_LINK_SETTLE_MS. */
+int ut_dev_link_settle_polls(void);
+/** Link reads in the settle timeout. */
+int ut_dev_link_settle_timeout_polls(bool relaxed);
 void ut_dev_use_non_igc_driver(ut_dev_ctx* ctx);
 void ut_dev_set_ptp_enabled(ut_dev_ctx* ctx, bool enabled);
 void ut_dev_set_port(ut_dev_ctx* ctx, enum mtl_port port, const char* bdf,
