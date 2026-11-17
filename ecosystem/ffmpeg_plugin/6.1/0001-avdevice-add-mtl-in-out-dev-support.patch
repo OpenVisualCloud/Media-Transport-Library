@@ -6,9 +6,9 @@ Subject: [PATCH] avdevice: add mtl in/out dev support
 Signed-off-by: Frank Du <frank.du@intel.com>
 ---
  configure                | 9 +++++++++
- libavdevice/Makefile     | 6 ++++++
+ libavdevice/Makefile     | 9 +++++++++
  libavdevice/alldevices.c | 9 +++++++++
- 3 files changed, 24 insertions(+)
+ 3 files changed, 27 insertions(+)
 
 diff --git a/configure b/configure
 index ca184072b3..b7582d0f39 100755
@@ -52,10 +52,10 @@ index ca184072b3..b7582d0f39 100755
                                 { for al_extralibs in "${OPENAL_LIBS}" "-lopenal" "-lOpenAL32"; do
                                 check_lib openal 'AL/al.h' alGetError "${al_extralibs}" && break; done } ||
 diff --git a/libavdevice/Makefile b/libavdevice/Makefile
-index c30449201d..23b0e130fe 100644
+index c30449201d..a1be0b3f67 100644
 --- a/libavdevice/Makefile
 +++ b/libavdevice/Makefile
-@@ -34,6 +34,12 @@ OBJS-$(CONFIG_IEC61883_INDEV)            += iec61883.o
+@@ -34,6 +34,15 @@ OBJS-$(CONFIG_IEC61883_INDEV)            += iec61883.o
  OBJS-$(CONFIG_JACK_INDEV)                += jack.o timefilter.o
  OBJS-$(CONFIG_KMSGRAB_INDEV)             += kmsgrab.o
  OBJS-$(CONFIG_LAVFI_INDEV)               += lavfi.o
@@ -65,6 +65,9 @@ index c30449201d..23b0e130fe 100644
 +OBJS-$(CONFIG_MTL_ST22P_OUTDEV)          += mtl_common.o mtl_st22p_tx.o
 +OBJS-$(CONFIG_MTL_ST30P_INDEV)           += mtl_common.o mtl_st30p_rx.o
 +OBJS-$(CONFIG_MTL_ST30P_OUTDEV)          += mtl_common.o mtl_st30p_tx.o
++# The warning options of the MTL meson projects, for the MTL objects only. Their
++# AVOption tables leave the trailing members out, as those of FFmpeg do.
++$(SUBDIR)mtl_%.o: CFLAGS += -Wextra -Wimplicit-fallthrough -Wno-missing-field-initializers -Werror
  OBJS-$(CONFIG_OPENAL_INDEV)              += openal-dec.o
  OBJS-$(CONFIG_OPENGL_OUTDEV)             += opengl_enc.o
  OBJS-$(CONFIG_OSS_INDEV)                 += oss_dec.o oss.o

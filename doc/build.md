@@ -488,5 +488,7 @@ The gcc of Rocky Linux and RHEL enables none of the compiler options by default.
 
 The FFmpeg 7.0 assembly is marked SHSTK only, so the build applies `ecosystem/ffmpeg_plugin/7.0/0002-x86-add-Intel-CET-IBT-support.patch`, which makes it IBT-correct and marks it IBT and SHSTK.
 
+FFmpeg compiles the MTL devices of `ecosystem/ffmpeg_plugin` with its own warning options, and the `libavdevice/Makefile` part of the MTL patch of each FFmpeg version adds `-Wextra -Wimplicit-fallthrough -Werror` for those objects only.
+
 ## Next Steps
 Proceed to [Running MTL](./run.md) for further instructions.

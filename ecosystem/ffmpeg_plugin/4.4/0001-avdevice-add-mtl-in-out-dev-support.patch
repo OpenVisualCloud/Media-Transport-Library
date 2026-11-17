@@ -5,10 +5,10 @@ Subject: [PATCH] avdevice: add mtl in/out dev support
 
 Signed-off-by: Frank Du <frank.du@intel.com>
 ---
- configure                | 9 +++++++++
- libavdevice/Makefile     | 6 ++++++
- libavdevice/alldevices.c | 9 +++++++++
- 3 files changed, 24 insertions(+)
+ configure                |  9 +++++++++
+ libavdevice/Makefile     | 11 +++++++++++
+ libavdevice/alldevices.c |  9 +++++++++
+ 3 files changed, 29 insertions(+)
 
 diff --git a/configure b/configure
 index d722016613..4a6aa0fd80 100755
@@ -52,10 +52,10 @@ index d722016613..4a6aa0fd80 100755
                                 check_lib openal 'AL/al.h' alGetError "${al_extralibs}" && break; done } ||
                                 die "ERROR: openal not found"; } &&
 diff --git a/libavdevice/Makefile b/libavdevice/Makefile
-index 0dfe47a1f4..6d9e6322f6 100644
+index 0dfe47a1f4..3c96ca798d 100644
 --- a/libavdevice/Makefile
 +++ b/libavdevice/Makefile
-@@ -33,6 +33,12 @@ OBJS-$(CONFIG_IEC61883_INDEV)            += iec61883.o
+@@ -33,6 +33,17 @@ OBJS-$(CONFIG_IEC61883_INDEV)            += iec61883.o
  OBJS-$(CONFIG_JACK_INDEV)                += jack.o timefilter.o
  OBJS-$(CONFIG_KMSGRAB_INDEV)             += kmsgrab.o
  OBJS-$(CONFIG_LAVFI_INDEV)               += lavfi.o
@@ -65,6 +65,11 @@ index 0dfe47a1f4..6d9e6322f6 100644
 +OBJS-$(CONFIG_MTL_ST22P_OUTDEV)          += mtl_common.o mtl_st22p_tx.o
 +OBJS-$(CONFIG_MTL_ST30P_INDEV)           += mtl_common.o mtl_st30p_rx.o
 +OBJS-$(CONFIG_MTL_ST30P_OUTDEV)          += mtl_common.o mtl_st30p_tx.o
++# The warning options of the MTL meson projects, for the MTL objects only. Their
++# AVOption tables leave the trailing members out, as those of FFmpeg do.
++$(SUBDIR)mtl_%.o: CFLAGS += -Wextra -Wimplicit-fallthrough -Wno-missing-field-initializers -Werror
++# is_dos_path() of libavformat/os_support.h does not use its parameter
++$(SUBDIR)mtl_%.o: CFLAGS += -Wno-unused-parameter
  OBJS-$(CONFIG_OPENAL_INDEV)              += openal-dec.o
  OBJS-$(CONFIG_OPENGL_OUTDEV)             += opengl_enc.o
  OBJS-$(CONFIG_OSS_INDEV)                 += oss_dec.o oss.o

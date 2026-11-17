@@ -169,7 +169,7 @@ static int mtl_st30p_read_header(AVFormatContext* ctx) {
     st30p_rx_set_block_timeout(s->rx_handle, s->timeout_sec * (uint64_t)NS_PER_S);
 
   frame_buf_size = st30p_rx_frame_size(s->rx_handle);
-  if (frame_buf_size != ctx->packet_size) {
+  if ((unsigned int)frame_buf_size != ctx->packet_size) {
     err(ctx, "%s, frame size mismatch %d:%u\n", __func__, frame_buf_size,
         ctx->packet_size);
     mtl_st30p_read_close(ctx);

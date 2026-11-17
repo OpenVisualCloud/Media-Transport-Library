@@ -235,7 +235,7 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
     st20p_rx_set_block_timeout(s->rx_handle, s->timeout_sec * (uint64_t)NS_PER_S);
 
   img_buf_size = st20p_rx_frame_size(s->rx_handle);
-  if (img_buf_size != ctx->packet_size) {
+  if ((unsigned int)img_buf_size != ctx->packet_size) {
     err(ctx, "%s, frame size mismatch %d:%u\n", __func__, img_buf_size, ctx->packet_size);
     mtl_st20p_read_close(ctx);
     return AVERROR(EIO);

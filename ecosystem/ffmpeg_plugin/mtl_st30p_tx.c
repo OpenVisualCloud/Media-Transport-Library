@@ -161,6 +161,7 @@ static int mtl_st30p_write_header(AVFormatContext* ctx) {
 
 static struct st30_frame* mtl_st30p_fetch_frame(AVFormatContext* ctx,
                                                 mtlSt30pMuxerContext* s) {
+  MTL_MAY_UNUSED(ctx);
   if (s->last_frame) {
     return s->last_frame;
   } else {

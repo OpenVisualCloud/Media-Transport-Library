@@ -84,8 +84,8 @@ static int mtl_dev_build_params(AVFormatContext* ctx, const struct StDevArgs* ar
   if (mtl_parse_pacing_way(ctx, args->pacing_way, &p->pacing) < 0) return AVERROR(EINVAL);
 
   for (int i = 0; i < MTL_PORT_MAX; i++) {
-    if (!args->port[i]) continue;
     int port = p->num_ports;
+    if (!args->port[i]) continue;
     if (strlen(args->port[i]) >= sizeof(p->port[port])) {
       err(ctx, "%s, port name on %d is too long\n", __func__, i);
       return AVERROR(EINVAL);
