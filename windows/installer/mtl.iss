@@ -55,6 +55,11 @@ Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs c
 ; E830 PF. Setup keeps an ice.pkg that is already there.
 Source: "{#StageDir}\ddp\ice.pkg"; DestDir: "C:\dpdk\lib"; Flags: onlyifdoesntexist
 
+[Registry]
+; mtl_init() reads its plugin list from KAHAWAI_CFG_PATH, else from
+; kahawai.json of the working folder. Uninstall removes the value.
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: string; ValueName: "KAHAWAI_CFG_PATH"; ValueData: "{app}\config\kahawai.json"; Flags: uninsdeletevalue
+
 ; Each entry opens a PowerShell window as administrator (admin_shell.ps1).
 [Icons]
 Name: "{group}\MTL status"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\scripts\admin_shell.ps1"" status"; Comment: "The Windows settings and the drivers of MTL"
