@@ -75,10 +75,10 @@ Each frame arrived. In a VM, also do the host steps of the
     RxTxApp.exe --config_file tx.json --lcores 24 --sch_session_quota 20 --test_time 600
     ```
 
-    | Set-up, 10 min | `recalculate warmup` per min | Stalls of 0.08-48 ms |
-    | --- | --- | --- |
-    | One process, 2 TX schedulers | 77-146 | 1-3 |
-    | TX and RX in two processes, 1 TX scheduler | 43-52 | none from 40 min after a start of Windows; 2 before |
+    | Set-up, 10 min | `recalculate warmup` per min |
+    | --- | --- |
+    | One process, 2 TX schedulers | 881 |
+    | TX and RX in two processes, 1 TX scheduler | 357 |
 
     The RX process runs longer than the TX process, so its fps verdict can
     say FAILED when each frame arrived. Compare the frame counts.
@@ -126,19 +126,20 @@ With the rate limit pacing, MTL sends pad packets before packet 0 of each
 frame, so that the shaper of the NIC ends them at the time of packet 0. In
 this short warm-up the scheduler thread must send each burst of pads in
 time. When Windows stops the thread for more than about 2 us during a
-burst, MTL computes the pads again from the real time and counts the event:
+burst, or so long between two bursts that the NIC sent all the queued pads,
+MTL plans the rest of the pads from the real time, holds packet 0 until its
+time when the pads can no longer end at it, and counts the event:
 `TX_VIDEO_SESSION(m,s): transmitter recalculate warmup N`, with N the events
 of the last 10 s.
 
-The line is a notice, not an error: MTL corrected the pacing of the frame.
-In the tests each frame arrived, and in the best set-up of this part no
-frame left later than its ST 2110-21 budget.
+The line is a notice, not an error: MTL does not send packet 0 before its
+time, but a long stop can make it late. In the tests each frame arrived.
 
 No set-up removes all of these lines on Windows. They come when a stop of
 Windows falls into the warm-up of a frame, and MTL cannot stop the clock
 interrupt of Windows. The steps of this part make the stops fewer, and make
-fewer schedulers wait for them: for 10 streams of 2160p29.97 the lines fell
-from 77-146 to 43-52 per minute, for at most about 0.3 % of the frames.
+fewer schedulers wait for them: for 10 streams of 2160p29.97 the events fell
+from 881 to 357 per minute, for at most about 2 % of the frames.
 
 Look into the cause when the number of lines grows, or when the RX side
 loses packets or frames: check **MTL status** (`cpusets`, `irq`), the
