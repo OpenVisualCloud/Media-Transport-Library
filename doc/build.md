@@ -468,6 +468,8 @@ The Linux build compiles the MTL meson projects with the hardening options below
 The `meson.build` of each project adds them with `add_project_arguments()` and `add_project_link_arguments()`, and `script/build_dpdk.sh`, `script/build_ebpf_xdp.sh`, `script/build_ffmpeg_plugin.sh`, `script/build_jpegxs.sh` and `script/install_dependencies.sh gpu_direct` pass them to the dependencies they build, from `hardening_flags()` in `script/common.sh`.
 In the dependency builds `hardening_flags()` applies the `_FORTIFY_SOURCE` rule of the meson projects: it adds no level when `CFLAGS` or `CPPFLAGS` set one or a sanitizer (`-fsanitize=`), or when the last `-O` of `CFLAGS`, then `CPPFLAGS`, is `-O0`, as `b_sanitize` and the meson option `optimization` at `0` do for the MTL projects.
 `MTL_HARDENING=0` builds them without the flags, and DPDK and the FFmpeg programs without PIE, for a build that sets its own; the scripts say so in a warning.
+The tools that build with make, `tools/readpcap`, `tools/sch_smi_emulate` and the user-space programs of `tools/ebpf`, get the options for C and PIE from `tools/hardening.mk`, with `-O2 -Wall -Wextra -Werror`, and the same `_FORTIFY_SOURCE` rule for `CFLAGS` and `CPPFLAGS`.
+Those come after the options, so they can change any of them: with `make CFLAGS=-Wno-error` the warnings are warnings again, except `-Werror=format-security`.
 
 | Option | Protection |
 | --- | --- |

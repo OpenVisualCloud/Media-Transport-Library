@@ -134,6 +134,7 @@ static int lm_event_handler(void* pri, void* data, size_t data_sz) {
   struct lcore_monitor_ctx* ctx = pri;
   const struct lcore_tid_event* e = data;
   int ret;
+  (void)data_sz;
 
   dbg("%s: type %d, ns %" PRIu64 "\n", __func__, e->type, e->ns);
   if (e->type == LCORE_SCHED_OUT) {

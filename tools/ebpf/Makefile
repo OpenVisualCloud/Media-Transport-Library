@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2023 Intel Corporation
 
+# The BPF objects build with clang -target bpf only: the hardening options
+# are for the user-space programs.
+include ../hardening.mk
+
 .PHONY: all
 all: et lcore_monitor udp_monitor
 
@@ -18,7 +22,7 @@ fentry.bpf.o: fentry.bpf.c et.h vmlinux.h
 fentry.skel.h: fentry.bpf.o
 	bpftool gen skeleton $< > $@
 et: et.c fentry.skel.h et.h
-	gcc -Wall -o $@ $(filter %.c,$^) -lxdp -l:libbpf.a -lelf -lz
+	$(TOOLS_LINK) -o $@ $(filter %.c,$^) -lxdp -l:libbpf.a -lelf -lz
 
 # Build lcore_monitor
 lcore_monitor.bpf.o: lcore_monitor.bpf.c lcore_monitor.h vmlinux.h
@@ -27,7 +31,7 @@ lcore_monitor.bpf.o: lcore_monitor.bpf.c lcore_monitor.h vmlinux.h
 lcore_monitor.skel.h: lcore_monitor.bpf.o
 	bpftool gen skeleton $< > $@
 lcore_monitor: lcore_monitor.c lcore_monitor.skel.h lcore_monitor.h
-	gcc -Wall -o $@ $(filter %.c,$^) -l:libbpf.a -lelf -lz
+	$(TOOLS_LINK) -o $@ $(filter %.c,$^) -l:libbpf.a -lelf -lz
 
 # Build udp_monitor
 udp_monitor.bpf.o: udp_monitor.bpf.c udp_monitor.h
@@ -36,4 +40,4 @@ udp_monitor.bpf.o: udp_monitor.bpf.c udp_monitor.h
 udp_monitor.skel.h: udp_monitor.bpf.o
 	bpftool gen skeleton $< > $@
 udp_monitor: udp_monitor.c udp_monitor.skel.h udp_monitor.h
-	gcc -Wall -o $@ $(filter %.c,$^) -l:libbpf.a -lelf -lz
+	$(TOOLS_LINK) -o $@ $(filter %.c,$^) -l:libbpf.a -lelf -lz

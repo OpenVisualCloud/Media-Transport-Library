@@ -320,6 +320,7 @@ base_build:
   - 'python/swig/**'
   - 'rust/**'
   - 'tools/ebpf/**'
+  - tools/hardening.mk
   - 'tools/readpcap/**'
   - 'tools/sch_smi_emulate/**'
 

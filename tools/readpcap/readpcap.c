@@ -30,6 +30,8 @@ static int g_target_frame_idx = -2;
 
 void packetHandler(u_char* userData, const struct pcap_pkthdr* pkthdr,
                    const u_char* packet) {
+  (void)userData;
+  (void)packet;
   uint64_t tn = TimespecToNs(&pkthdr->ts);
   if (last_tn) {
     if ((tn - last_tn) > TR_OFFSET_NS) {
@@ -49,8 +51,6 @@ void packetHandler(u_char* userData, const struct pcap_pkthdr* pkthdr,
 int main(int argc, char** argv) {
   pcap_t* fp;
   char errbuf[PCAP_ERRBUF_SIZE];
-  char source[1500];
-  int i, maxCountSyn = 0, maxCountHttp = 0, maxIdxSyn = 0, maxIdxHttp = 0;
 
   if (argc < 2) {
     printf("usage: %s filename index\n", argv[0]);
