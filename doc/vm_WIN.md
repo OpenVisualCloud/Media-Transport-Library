@@ -131,11 +131,12 @@ host CPUs that nothing else uses.
 52 Gb/s TX and 52 Gb/s RX, on two E810 VFs, 10 min each, with the host steps
 above. Each frame arrived in each test.
 
-| VM CPU line | MTL processes | `recalculate warmup` per 10 min | Stalls of 0.4-48 ms |
+| VM CPU line | MTL processes | `recalculate warmup` per 10 min | Stalls of 0.08-48 ms |
 | --- | --- | --- | --- |
 | Proxmox VE default | 1 (2 TX schedulers) | 1266 | 3 |
 | No `hv_stimer`/`hv_synic`, `cpu-pm=on` | 1 (2 TX schedulers) | 769 | 1 |
 | No `hv_stimer`/`hv_synic`, `cpu-pm=on` | 2: TX (1 scheduler) and RX | 429 | none |
+| The same, 5-17 min after a start of Windows (installed binaries) | 2: TX (1 scheduler) and RX | 502-515 | 2 |
 
 The [run guide](run_WIN.md#3-performance) tells how to run TX and RX in two
 processes. The cause of the lines that are left is not known yet. Windows
@@ -151,6 +152,8 @@ computer name (`Rename-Computer`). NetUIO takes the new VFs by itself.
 ## Limits
 
 - The drivers are test-signed, so this setup is for a lab.
-- After a start of Windows, wait about 4 minutes before a test: the start-up
-  work of Windows stopped all the vCPUs at one time for up to 4 ms.
+- After a start of Windows, wait before a long test: the start-up work of
+  Windows stopped all the vCPUs at one time for up to 4 ms in the first
+  minutes, and the tests that started in the first 20 min had 2 stalls of 0.08
+  to 45 ms (see part 3 of the [run guide](run_WIN.md#3-performance)).
 - A VM adds the noise of its host. Measure on bare metal for a product.

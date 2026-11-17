@@ -75,20 +75,34 @@ Each frame arrived. In a VM, also do the host steps of the
     RxTxApp.exe --config_file tx.json --lcores 24 --sch_session_quota 20 --test_time 600
     ```
 
-    | Set-up, 10 min | `recalculate warmup` per min | Stalls of 0.4-48 ms |
+    | Set-up, 10 min | `recalculate warmup` per min | Stalls of 0.08-48 ms |
     | --- | --- | --- |
     | One process, 2 TX schedulers | 77-146 | 1-3 |
-    | TX and RX in two processes, 1 TX scheduler | 43 | none |
+    | TX and RX in two processes, 1 TX scheduler | 43-52 | none from 40 min after a start of Windows; 2 before |
 
     The RX process runs longer than the TX process, so its fps verdict can
     say FAILED when each frame arrived. Compare the frame counts.
 
 1. **Plan the Windows updates.** An update of the Defender security
    intelligence stopped the VM for 22 ms during a test, and the RX port
-   dropped 333290 packets. Setup excludes the MTL folders, `C:\dpdk` and
-   `RxTxApp.exe` from the scans, but it does not stop the updates. Let them
-   run outside the times when MTL sends streams, or stop them for a test:
-   `Stop-Service wuauserv, UsoSvc`.
+   dropped 333290 packets; a scan of Windows Update stopped it for 45 ms.
+   Setup excludes the MTL folders, `C:\dpdk` and `RxTxApp.exe` from the
+   Defender scans, but it does not stop the updates. Let them run outside
+   the times when MTL sends streams. `Stop-Service` is not sufficient: a
+   trigger starts the services again. For a test, disable them, and enable
+   them again after it:
+
+    ```powershell
+    Set-Service wuauserv, UsoSvc -StartupType Disabled; Stop-Service wuauserv, UsoSvc -Force
+    # the test
+    Set-Service wuauserv -StartupType Manual; Set-Service UsoSvc -StartupType Automatic
+    ```
+
+1. **Do not start a long test just after a start of Windows.** In the first
+   minutes the start-up work stopped all CPUs at one time for up to 4 ms.
+   With TX and RX in two processes, the 10 min tests that started 5 to 17
+   min after a start of Windows had 2 stalls of 0.08 to 45 ms each; the tests
+   that started 40 and 62 min after a start had none.
 
 1. **Read the log.** `TX_VIDEO_SESSION(m,s): transmitter recalculate warmup N`
    tells that the scheduler thread came late N times in the rate limit
