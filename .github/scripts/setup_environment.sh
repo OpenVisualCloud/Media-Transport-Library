@@ -380,11 +380,7 @@ main() {
 		make -j"${NPROC}"
 		as_root make install
 		popd >/dev/null
-		pushd "${root_folder}/python/swig" >/dev/null || exit 1
-		swig -python -I/usr/local/include -o pymtl_wrap.c pymtl.i
-		python3 setup.py build_ext --inplace
-		as_root python3 setup.py install
-		popd >/dev/null
+		bash "${root_folder}/script/build_python.sh"
 		popd >/dev/null
 		STEP=$((STEP + 1))
 	fi

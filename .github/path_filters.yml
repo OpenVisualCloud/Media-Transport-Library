@@ -314,6 +314,7 @@ base_build:
   - *hash_ffmpeg
   - *hash_gstreamer
   - script/build_ebpf_xdp.sh
+  - script/build_python.sh
   - 'tests/fuzz/**'
   - 'gpu_direct/**'
   - 'ecosystem/obs_mtl/linux-mtl/**'
