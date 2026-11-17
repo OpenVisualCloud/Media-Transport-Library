@@ -355,7 +355,7 @@ static int tx_st40p_uinit_fbs(struct st40p_tx_ctx* ctx) {
   if (!ctx->framebuffs) return 0;
 
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
-    if (ST40P_TX_FRAME_FREE != ctx->framebuffs[i].stat) {
+    if (ST40P_TX_FRAME_IN_USER == ctx->framebuffs[i].stat) {
       warn("%s(%d), frame %u is still in %s\n", __func__, ctx->idx, i,
            tx_st40p_stat_name(ctx->framebuffs[i].stat));
     }

@@ -217,3 +217,32 @@ void ut40p_tx_set_notify_frame_done(ut40p_tx_ctx* ctx,
   ctx->pipeline.ops.notify_frame_done = cb;
   ctx->pipeline.ops.priv = priv;
 }
+
+static int ut40p_tx_warns;
+
+static void ut40p_tx_count_warns(enum mtl_log_level level, const char* format, ...) {
+  MTL_MAY_UNUSED(format);
+  if (level == MTL_LOG_LEVEL_WARNING) ut40p_tx_warns++;
+}
+
+int ut40p_tx_uinit_warns(ut40p_tx_ctx* ctx) {
+  struct st40p_tx_ctx* p = &ctx->pipeline;
+  size_t size = sizeof(*ctx->framebuffs) * ctx->framebuff_cnt;
+  enum mtl_log_level level = mt_get_log_global_level();
+
+  /* the uinit rte_frees the array, the harness one is from calloc */
+  p->framebuffs = mt_rte_zmalloc_socket(size, p->socket_id);
+  if (!p->framebuffs) {
+    p->framebuffs = ctx->framebuffs;
+    return -ENOMEM;
+  }
+  memcpy(p->framebuffs, ctx->framebuffs, size);
+  ut40p_tx_warns = 0;
+  mt_set_log_global_level(MTL_LOG_LEVEL_WARNING);
+  mtl_set_log_printer(ut40p_tx_count_warns);
+  tx_st40p_uinit_fbs(p);
+  mtl_set_log_printer(NULL);
+  mt_set_log_global_level(level);
+  p->framebuffs = ctx->framebuffs;
+  return ut40p_tx_warns;
+}
