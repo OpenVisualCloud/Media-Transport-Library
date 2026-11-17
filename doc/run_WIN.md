@@ -93,7 +93,7 @@ Each frame arrived. In a VM, also do the host steps of the
    them again after it:
 
     ```powershell
-    Set-Service wuauserv, UsoSvc -StartupType Disabled; Stop-Service wuauserv, UsoSvc -Force
+    foreach ($s in 'wuauserv', 'UsoSvc') { Set-Service $s -StartupType Disabled; Stop-Service $s -Force }
     # the test
     Set-Service wuauserv -StartupType Manual; Set-Service UsoSvc -StartupType Automatic
     ```
