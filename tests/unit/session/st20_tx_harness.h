@@ -620,6 +620,16 @@ int ut_txv_recovery_flushes(const ut_txv_ctx* ctx, int leg);
 /* mt_txq_flush() calls on the leg, which may fall back to the per-pad loop */
 int ut_txv_recovery_fallback_flushes(const ut_txv_ctx* ctx, int leg);
 int ut_txv_recovery_done_cleanups(const ut_txv_ctx* ctx, int leg);
+/* After ut_txv_recovery_setup(): the session owns its header pools, as tv_mempool_init()
+ * makes them on ports of 256 TX descriptors, and the recovery has to replace them. */
+int ut_txv_recovery_own_pools(ut_txv_ctx* ctx);
+/* one mbuf of each header pool the session has now, as the dead queue keeps it */
+int ut_txv_recovery_hold_mbufs(ut_txv_ctx* ctx);
+void ut_txv_recovery_release_mbufs(ut_txv_ctx* ctx);
+/* the header pool of leg P that ut_txv_recovery_own_pools() made still exists */
+bool ut_txv_recovery_first_pool_alive(const ut_txv_ctx* ctx);
+/* the session has a header pool on leg P, and it is not the first one */
+bool ut_txv_recovery_pool_replaced(const ut_txv_ctx* ctx);
 
 /* ── builder and transmitter over modeled NIC rings ───────────────────── */
 enum {

@@ -71,6 +71,16 @@ struct ut_dev_ctx {
 
 static struct ut_dev_ctx* ut_active_ctx;
 static bool ut_dev_tx_cleanup_frees;
+static int ut_dev_tx_queue_stops;
+
+/* unused while mt_dev.c stops no TX queue: it counts a stop that comes back */
+static __attribute__((unused)) int ut_rte_eth_dev_tx_queue_stop(uint16_t port_id,
+                                                                uint16_t queue_id) {
+  (void)port_id;
+  (void)queue_id;
+  ut_dev_tx_queue_stops++;
+  return 0;
+}
 
 /* the fake clock once a test starts it */
 static uint64_t ut_dev_tsc(struct mtl_main_impl* impl) {
@@ -147,12 +157,14 @@ static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 #define rte_spinlock_unlock ut_rte_spinlock_unlock
 #define rte_eth_tx_burst ut_eth_tx_burst
 #define rte_eth_tx_done_cleanup ut_eth_tx_done_cleanup
+#define rte_eth_dev_tx_queue_stop ut_rte_eth_dev_tx_queue_stop
 #define mt_get_tsc ut_dev_tsc
 #define MT_DEV_TX_CLEANUP_FREES (ut_dev_tx_cleanup_frees)
 /* The pacing tests cover the iavf queue rate clear, which needs DPDK 26.07.91_mtl_. */
 #define MT_DEV_HAS_IAVF_TM_QOS_CHECK
 #include "dev/mt_dev.c"
 #undef mt_get_tsc
+#undef rte_eth_dev_tx_queue_stop
 #undef rte_eth_tx_done_cleanup
 #undef rte_eth_tx_burst
 #undef rte_spinlock_unlock
@@ -897,6 +909,20 @@ int ut_dev_recovery_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue) {
   ut_active_ctx = ctx;
   return mt_dpdk_flush_tx_queue(&ctx->impl, &ctx->tx_queues[queue],
                                 ctx->impl.inf[MTL_PORT_P].pad, false);
+}
+
+int ut_dev_tx_queue_fatal_error(ut_dev_ctx* ctx, uint16_t queue) {
+  ut_active_ctx = ctx;
+  ctx->tx_queues[queue].active = true;
+  return mt_dev_tx_queue_fatal_error(&ctx->impl, &ctx->tx_queues[queue]);
+}
+
+bool ut_dev_tx_queue_fatal(const ut_dev_ctx* ctx, uint16_t queue) {
+  return ctx->tx_queues[queue].fatal_error;
+}
+
+int ut_dev_tx_queue_stop_calls(void) {
+  return ut_dev_tx_queue_stops;
 }
 
 int ut_dev_tx_done_cleanup(ut_dev_ctx* ctx, uint16_t queue) {

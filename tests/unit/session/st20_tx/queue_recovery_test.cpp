@@ -120,4 +120,80 @@ TEST_F(St20TxQueueRecoveryTest, RecoveryOfAQueueWithoutARateLooksItUp) {
   EXPECT_EQ(ut_txv_txq_get_bps(ctx_), kRetrainedBps);
 }
 
+/* A hung queue completes no descriptor, so its ring still holds mbufs of the session
+ * pools when the recovery replaces them. The recovery parks such a pool and frees it
+ * once its mbufs are back; with no room left to park, the session ends. */
+class St20TxQueueRecoveryOwnedPoolTest : public St20TxQueueRecoveryTest {
+ protected:
+  void SetUp() override {
+    St20TxQueueRecoveryTest::SetUp();
+    ASSERT_EQ(ut_txv_recovery_own_pools(ctx_), 0);
+  }
+};
+
+TEST_F(St20TxQueueRecoveryOwnedPoolTest, PoolTheDeadQueueStillUsesDoesNotEndTheSession) {
+  ASSERT_EQ(ut_txv_recovery_hold_mbufs(ctx_), 0);
+
+  EXPECT_EQ(ut_txv_recover(ctx_, kP), 0);
+
+  EXPECT_FALSE(ut_txv_recovery_session_dead(ctx_));
+  EXPECT_EQ(ut_txv_recovery_recovered_events(ctx_), 1);
+  EXPECT_EQ(ut_txv_recovery_fatal_events(ctx_), 0);
+  EXPECT_TRUE(ut_txv_recovery_pool_replaced(ctx_));
+  EXPECT_TRUE(ut_txv_recovery_first_pool_alive(ctx_))
+      << "a pool with mbufs in the dead queue must not be freed";
+}
+
+TEST_F(St20TxQueueRecoveryOwnedPoolTest, ParkedPoolIsFreedOnceItsMbufsAreBack) {
+  ASSERT_EQ(ut_txv_recovery_hold_mbufs(ctx_), 0);
+  ASSERT_EQ(ut_txv_recover(ctx_, kP), 0);
+
+  ut_txv_recovery_release_mbufs(ctx_);
+  ASSERT_EQ(ut_txv_recover(ctx_, kP), 0);
+
+  EXPECT_FALSE(ut_txv_recovery_first_pool_alive(ctx_));
+}
+
+TEST_F(St20TxQueueRecoveryOwnedPoolTest, IdlePoolIsFreedAtOnce) {
+  ASSERT_EQ(ut_txv_recover(ctx_, kP), 0);
+
+  EXPECT_TRUE(ut_txv_recovery_pool_replaced(ctx_));
+  EXPECT_FALSE(ut_txv_recovery_first_pool_alive(ctx_));
+}
+
+/* the session uninit frees a parked pool whose mbufs are back */
+TEST_F(St20TxQueueRecoveryOwnedPoolTest, ParkedIdlePoolIsFreedAtUninit) {
+  ASSERT_EQ(ut_txv_recovery_hold_mbufs(ctx_), 0);
+  ASSERT_EQ(ut_txv_recover(ctx_, kP), 0);
+  ut_txv_recovery_release_mbufs(ctx_);
+
+  EXPECT_EQ(ut_txv_mempool_free(ctx_), 0);
+
+  EXPECT_FALSE(ut_txv_recovery_first_pool_alive(ctx_));
+}
+
+/* an mbuf of it can still go back, so the pool stays allocated */
+TEST_F(St20TxQueueRecoveryOwnedPoolTest, ParkedPoolInUseIsLeftAtUninit) {
+  ASSERT_EQ(ut_txv_recovery_hold_mbufs(ctx_), 0);
+  ASSERT_EQ(ut_txv_recover(ctx_, kP), 0);
+
+  EXPECT_EQ(ut_txv_mempool_free(ctx_), -EBUSY);
+
+  EXPECT_TRUE(ut_txv_recovery_first_pool_alive(ctx_));
+}
+
+/* 2 header pools a recovery: 8 recoveries fill the 16 parked places */
+TEST_F(St20TxQueueRecoveryOwnedPoolTest, NoPlaceToParkEndsTheSession) {
+  for (int i = 0; i < 8; i++) {
+    ASSERT_EQ(ut_txv_recovery_hold_mbufs(ctx_), 0);
+    ASSERT_EQ(ut_txv_recover(ctx_, kP), 0) << "recovery " << i;
+  }
+  ASSERT_EQ(ut_txv_recovery_hold_mbufs(ctx_), 0);
+
+  EXPECT_LT(ut_txv_recover(ctx_, kP), 0);
+
+  EXPECT_TRUE(ut_txv_recovery_session_dead(ctx_));
+  EXPECT_EQ(ut_txv_recovery_fatal_events(ctx_), 1);
+}
+
 }  // namespace

@@ -185,6 +185,11 @@ int ut_dev_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue);
 /** The same flush for a TX recovery, which does without the per-pad loop. */
 int ut_dev_recovery_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue);
 int ut_dev_tx_done_cleanup(ut_dev_ctx* ctx, uint16_t queue);
+/** mt_dev_tx_queue_fatal_error() of that queue of port P, which it marks active. */
+int ut_dev_tx_queue_fatal_error(ut_dev_ctx* ctx, uint16_t queue);
+bool ut_dev_tx_queue_fatal(const ut_dev_ctx* ctx, uint16_t queue);
+/** rte_eth_dev_tx_queue_stop() calls of mt_dev.c since the start of the process. */
+int ut_dev_tx_queue_stop_calls(void);
 
 /** dev_tx_sys_pool_elements() of port P with nb_tx_q queues of nb_tx_desc, deep at
  * MT_DEV_TX_DESC_DEEP, the TX mono pool on or off. */

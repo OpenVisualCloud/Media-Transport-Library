@@ -3276,10 +3276,41 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
   return 0;
 }
 
-static int tv_mempool_free_owned(struct rte_mempool** pool) {
+static bool tv_mempool_park(struct st_tx_video_session_impl* s,
+                            struct rte_mempool** pool) {
+  for (int i = 0; i < ST_TX_VIDEO_PARKED_MEMPOOLS; i++) {
+    if (s->mbuf_mempool_parked[i]) continue;
+    s->mbuf_mempool_parked[i] = *pool;
+    *pool = NULL;
+    return true;
+  }
+  return false;
+}
+
+/* frees the parked pools whose mbufs are all back; -EBUSY while one is not */
+static int tv_mempool_reap(struct st_tx_video_session_impl* s) {
+  int ret = 0;
+
+  for (int i = 0; i < ST_TX_VIDEO_PARKED_MEMPOOLS; i++) {
+    struct rte_mempool* pool = s->mbuf_mempool_parked[i];
+    if (!pool) continue;
+    if (rte_mempool_in_use_count(pool)) {
+      ret = -EBUSY;
+      continue;
+    }
+    mt_mempool_free(pool);
+    s->mbuf_mempool_parked[i] = NULL;
+  }
+  return ret;
+}
+
+static int tv_mempool_free_owned(struct st_tx_video_session_impl* s,
+                                 struct rte_mempool** pool, bool park) {
   if (!*pool) return 0;
   if (rte_mempool_in_use_count(*pool)) {
-    warn("%s, still has mbuf in mempool %s\n", __func__, (*pool)->name);
+    warn("%s, still has mbuf in mempool %s%s\n", __func__, (*pool)->name,
+         park ? ", park it" : "");
+    if (park && tv_mempool_park(s, pool)) return 0;
     return -EBUSY;
   }
 
@@ -3288,16 +3319,17 @@ static int tv_mempool_free_owned(struct rte_mempool** pool) {
   return 0;
 }
 
-static int tv_mempool_free(struct st_tx_video_session_impl* s) {
+/* park: an owned pool still in use moves to the parked list, else it stays */
+static int tv_mempool_release(struct st_tx_video_session_impl* s, bool park) {
   int ret = 0;
 
   if (s->mbuf_mempool_chain && !s->tx_mono_pool) {
-    if (tv_mempool_free_owned(&s->mbuf_mempool_chain) < 0) ret = -EBUSY;
+    if (tv_mempool_free_owned(s, &s->mbuf_mempool_chain, park) < 0) ret = -EBUSY;
   } else {
     s->mbuf_mempool_chain = NULL;
   }
   if (s->mbuf_mempool_copy_chain && !s->tx_mono_pool) {
-    if (tv_mempool_free_owned(&s->mbuf_mempool_copy_chain) < 0) ret = -EBUSY;
+    if (tv_mempool_free_owned(s, &s->mbuf_mempool_copy_chain, park) < 0) ret = -EBUSY;
   } else {
     s->mbuf_mempool_copy_chain = NULL;
   }
@@ -3305,13 +3337,23 @@ static int tv_mempool_free(struct st_tx_video_session_impl* s) {
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     if (s->mbuf_mempool_hdr[i]) {
       if (!s->mbuf_mempool_reuse_rx[i] && !s->tx_mono_pool) {
-        if (tv_mempool_free_owned(&s->mbuf_mempool_hdr[i]) < 0) ret = -EBUSY;
+        if (tv_mempool_free_owned(s, &s->mbuf_mempool_hdr[i], park) < 0) ret = -EBUSY;
       } else {
         s->mbuf_mempool_hdr[i] = NULL;
       }
     }
   }
 
+  return ret;
+}
+
+static int tv_mempool_free(struct st_tx_video_session_impl* s) {
+  int ret = tv_mempool_release(s, false);
+
+  if (tv_mempool_reap(s) < 0) {
+    warn("%s(%d), a parked mempool still in use\n", __func__, s->idx);
+    ret = -EBUSY;
+  }
   return ret;
 }
 
@@ -4932,8 +4974,9 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
 
   if (st20_is_frame_type(s->ops.type)) tv_release_frames(s);
 
-  /* reset mempool */
-  ret = tv_mempool_free(s);
+  /* the dead queue may still hold pool mbufs, those pools wait in the parked list */
+  tv_mempool_reap(s);
+  ret = tv_mempool_release(s, true);
   if (ret < 0) {
     err("%s(%d,%d), old mempool still in use\n", __func__, s_port, idx);
     s->port_user_stats.common.stat_unrecoverable_error++;

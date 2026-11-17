@@ -40,6 +40,8 @@
 
 /* ── opaque context ───────────────────────────────────────────────────── */
 
+#define UT_TXV_RECOVERY_HOLD_MAX (64)
+
 struct ut_txv_ctx {
   struct mtl_main_impl impl;
   struct st_tx_video_sessions_mgr mgr;
@@ -148,6 +150,10 @@ struct ut_txv_ctx {
   int64_t pipe_max_late_ns[MTL_SESSION_PORT_MAX];
   uint16_t pipe_stale_at_up[MTL_SESSION_PORT_MAX];
   int pipe_done_while_held;
+  bool recovery_owned_pools;
+  char recovery_first_pool[RTE_MEMPOOL_NAMESIZE];
+  struct rte_mbuf* recovery_held[UT_TXV_RECOVERY_HOLD_MAX];
+  int recovery_held_cnt;
 };
 
 /* ── mocked time sources ──────────────────────────────────────────────── */
@@ -543,6 +549,10 @@ void ut_txv_destroy(ut_txv_ctx* ctx) {
     ctx->session.st20_frames = NULL;
   }
   ut_txv_release_hdr_mbuf(ctx);
+  if (ctx->recovery_owned_pools) {
+    ut_txv_recovery_release_mbufs(ctx);
+    tv_mempool_free(&ctx->session);
+  }
   /* by name, so a pool the session only borrowed and cleared is still reclaimed */
   if (ctx->hdr_pool_name[0]) {
     struct rte_mempool* pool = rte_mempool_lookup(ctx->hdr_pool_name);
@@ -3408,6 +3418,47 @@ int ut_txv_recovery_fallback_flushes(const ut_txv_ctx* ctx, int leg) {
 
 int ut_txv_recovery_done_cleanups(const ut_txv_ctx* ctx, int leg) {
   return ctx->recovery_done_cleanups[leg];
+}
+
+int ut_txv_recovery_own_pools(ut_txv_ctx* ctx) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  s->tx_mono_pool = false;
+  s->socket_id = (int)rte_socket_id();
+  for (int p = 0; p < s->ops.num_port; p++) ctx->impl.inf[p].nb_tx_desc = 256;
+  int ret = tv_mempool_init(&ctx->impl, &ctx->mgr, s);
+  if (ret < 0) return ret;
+  ctx->recovery_owned_pools = true;
+  snprintf(ctx->recovery_first_pool, sizeof(ctx->recovery_first_pool), "%s",
+           s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]->name);
+  return 0;
+}
+
+int ut_txv_recovery_hold_mbufs(ut_txv_ctx* ctx) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  for (int p = 0; p < s->ops.num_port; p++) {
+    if (ctx->recovery_held_cnt >= UT_TXV_RECOVERY_HOLD_MAX) return -ENOSPC;
+    struct rte_mbuf* m = rte_pktmbuf_alloc(s->mbuf_mempool_hdr[p]);
+    if (!m) return -ENOMEM;
+    ctx->recovery_held[ctx->recovery_held_cnt++] = m;
+  }
+  return 0;
+}
+
+void ut_txv_recovery_release_mbufs(ut_txv_ctx* ctx) {
+  for (int i = 0; i < ctx->recovery_held_cnt; i++)
+    rte_pktmbuf_free(ctx->recovery_held[i]);
+  ctx->recovery_held_cnt = 0;
+}
+
+bool ut_txv_recovery_first_pool_alive(const ut_txv_ctx* ctx) {
+  return rte_mempool_lookup(ctx->recovery_first_pool) != NULL;
+}
+
+bool ut_txv_recovery_pool_replaced(const ut_txv_ctx* ctx) {
+  struct rte_mempool* pool = ctx->session.mbuf_mempool_hdr[MTL_SESSION_PORT_P];
+  return pool && strcmp(pool->name, ctx->recovery_first_pool);
 }
 
 /* ── builder and transmitter over modeled NIC rings ───────────────────── */

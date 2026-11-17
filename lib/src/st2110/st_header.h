@@ -34,6 +34,8 @@
 #define ST_SCH_MAX_RX_VIDEO_SESSIONS (60) /* max video rx sessions per sch lcore */
 #define ST_SESSION_MAX_BULK (4)
 #define ST_TX_VIDEO_SESSIONS_RING_SIZE (512)
+/* old pools a TX recovery could not free yet: 4 recoveries of a redundant session */
+#define ST_TX_VIDEO_PARKED_MEMPOOLS (16)
 
 /* number of tmstamp it will tracked for out of order pkts */
 #define ST_VIDEO_RX_REC_NUM_OFO (2)
@@ -311,6 +313,7 @@ struct st_tx_video_session_impl {
   bool mbuf_mempool_reuse_rx[MTL_SESSION_PORT_MAX]; /* af_xdp zero copy */
   struct rte_mempool* mbuf_mempool_chain;
   struct rte_mempool* mbuf_mempool_copy_chain;
+  struct rte_mempool* mbuf_mempool_parked[ST_TX_VIDEO_PARKED_MEMPOOLS];
   bool tx_mono_pool;   /* if reuse tx mono pool */
   bool tx_no_chain;    /* if tx not use chain mbuf */
   bool multi_src_port; /* if tx use multiple src port */

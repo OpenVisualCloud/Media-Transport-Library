@@ -64,6 +64,7 @@ unit_sources = [
   'dev/mt_dev_tx_reclaim_test.cpp',
   'dev/mt_dev_tx_flush_test.cpp',
   'dev/mt_dev_tx_done_cleanup_test.cpp',
+  'dev/mt_dev_tx_queue_fatal_test.cpp',
   'dev/mt_dev_rss_reta_test.cpp',
   'dev/mt_dev_devargs_test.cpp',
   'dev/mt_dev_eal_argv_test.cpp',
