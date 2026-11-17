@@ -342,6 +342,7 @@ if is_windows
     'sch/mt_sch_filelock_test.cpp',
     'sch/mt_sch_lcore_test.cpp',
     'sch/mt_sch_quiescent_test.cpp',
+    'sch/mt_sch_put_test.cpp',
     'session/rtcp_attack_harness.c',
     'session/rtcp/nack_attack_test.cpp',
     'session/rtcp/copy_pool_test.cpp',
