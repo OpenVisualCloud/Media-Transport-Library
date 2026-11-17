@@ -27,9 +27,11 @@ The items, in order:
   power      The Ultimate Performance power plan (High performance when the
              first is not available), no core parking, minimum processor
              state 100 %.
-  defender   Microsoft Defender exclusions for -ExcludePaths. The default is
-             the folder of the installer and C:\dpdk, or C:\mtl, C:\msys64
-             and C:\dpdk for a source build.
+  defender   Microsoft Defender exclusions for -ExcludePaths and for the
+             files that the processes of -ExcludeProcesses open. The default
+             paths are the folder of the installer and C:\dpdk, or C:\mtl,
+             C:\msys64 and C:\dpdk for a source build; the default process
+             is RxTxApp.exe.
   vbs        Virtualization-based security and Memory Integrity off.
 
 apply records the value of an item before it changes the item, in
@@ -57,6 +59,7 @@ param(
     [string[]]$Items = @('testsign', 'lockpages', 'dirs', 'path', 'cpusets', 'irq', 'power', 'defender', 'vbs'),
     [string]$User = $env:USERNAME,
     [string[]]$ExcludePaths = @(),
+    [string[]]$ExcludeProcesses = @('RxTxApp.exe'),
     [Alias('MsysBin')]
     [string]$BinDir = '',
     [switch]$Restart
@@ -500,24 +503,38 @@ function Item-Power([string]$act, $state) {
 }
 
 function Item-Defender([string]$act, $state) {
-    try { $have = @((Get-MpPreference).ExclusionPath) } catch { return Result 'defender' 'skip' "Defender is not available: $($_.Exception.Message)" }
+    try { $pref = Get-MpPreference } catch { return Result 'defender' 'skip' "Defender is not available: $($_.Exception.Message)" }
+    $have = @($pref.ExclusionPath)
+    $haveProc = @($pref.ExclusionProcess)
     $missing = @($ExcludePaths | Where-Object { $have -notcontains $_ })
+    $missingProc = @($ExcludeProcesses | Where-Object { $haveProc -notcontains $_ })
+    $all = @($ExcludePaths + $ExcludeProcesses)
     switch ($act) {
-        'status' { return Result 'defender' $(if ($missing.Count) { 'differs' } else { 'ok' }) "missing exclusions: $($missing -join ' ')" }
+        'status' { return Result 'defender' $(if ($missing.Count -or $missingProc.Count) { 'differs' } else { 'ok' }) "missing exclusions: $(@($missing + $missingProc) -join ' ')" }
         'apply' {
-            if (-not $missing.Count) { return Result 'defender' 'ok' "excluded: $($ExcludePaths -join ' ')" }
-            $added = @()
-            if ($state.PSObject.Properties['defender']) { $added = @($state.defender.added) }
-            Add-MpPreference -ExclusionPath $missing
-            Set-StateItem $state 'defender' @{ added = @($added + $missing | Sort-Object -Unique) }
-            return Result 'defender' 'set' "excluded: $($missing -join ' ')"
+            if (-not ($missing.Count -or $missingProc.Count)) { return Result 'defender' 'ok' "excluded: $($all -join ' ')" }
+            $added = @(); $addedProc = @()
+            if ($state.PSObject.Properties['defender']) {
+                $added = @($state.defender.added)
+                if ($state.defender.PSObject.Properties['processes']) { $addedProc = @($state.defender.processes) }
+            }
+            if ($missing.Count) { Add-MpPreference -ExclusionPath $missing }
+            if ($missingProc.Count) { Add-MpPreference -ExclusionProcess $missingProc }
+            Set-StateItem $state 'defender' @{
+                added     = @($added + $missing | Sort-Object -Unique)
+                processes = @($addedProc + $missingProc | Sort-Object -Unique)
+            }
+            return Result 'defender' 'set' "excluded: $(@($missing + $missingProc) -join ' ')"
         }
         'undo' {
             if (-not $state.PSObject.Properties['defender']) { return Result 'defender' 'ok' 'nothing to undo' }
             $old = @($state.defender.added)
-            Remove-MpPreference -ExclusionPath $old
+            $oldProc = @()
+            if ($state.defender.PSObject.Properties['processes']) { $oldProc = @($state.defender.processes) }
+            if ($old.Count) { Remove-MpPreference -ExclusionPath $old }
+            if ($oldProc.Count) { Remove-MpPreference -ExclusionProcess $oldProc }
             Remove-StateItem $state 'defender'
-            return Result 'defender' 'set' "removed: $($old -join ' ')"
+            return Result 'defender' 'set' "removed: $(@($old + $oldProc) -join ' ')"
         }
     }
 }
