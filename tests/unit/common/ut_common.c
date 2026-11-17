@@ -31,6 +31,9 @@ RTE_DEFINE_PER_LCORE(unsigned, _lcore_id) = 0;
 /* rte_errno for the same reason: a harness that compiles mt_main.c in place
  * reads it, so the binary keeps the copy that its own code writes and reads. */
 RTE_DEFINE_PER_LCORE(int, _rte_errno);
+/* rte_gettid() of the quiescent wait of mt_sch.c, for the same reason. -1, as
+ * in the EAL: the first call of each thread stores the id of that thread. */
+RTE_DEFINE_PER_LCORE(int, _thread_id) = -1;
 #endif
 
 /* ── globals ──────────────────────────────────────────────────────────── */
