@@ -61,7 +61,7 @@ MTL solves this by making sure the queue is not empty when packet 0's target com
 MTL then queues packet 0 behind the pads. The shaper sends the pads one after another and reaches packet 0 by itself. The CPU is no longer needed at the target.
 
 The pads are queued during the **warm-up window**, here the last 0.50 ms before packet 0's target. MTL calls the pads of one frame start the **pre-arm**. Here the pre-arm is 131 pads.
-Inside the frame MTL adds one more pad after about every 246 video packets, because the shaper is programmed slightly faster than the stream. All pads together cost about 3.6 % of the stream's rate, on the link to the first switch only.
+Inside the frame MTL adds one more pad after about every 245 video packets, because the shaper is programmed slightly faster than the stream. All pads together cost about 3.6 % of the stream's rate, on the link to the first switch only.
 
 MTL chooses the number and the size of the pads so that the shaper finishes them just after the target. It shortens the last pads slightly to hit that time. It aims 0.75 µs after the target, not at it. This distance is the **aim**.
 It is there because the shaper works in small time steps and could otherwise release packet 0 slightly early. With the aim, the shaper releases packet 0 between 0.75 µs and 1.4 µs after its target.
@@ -146,11 +146,20 @@ MTL prepares the numbers of the pre-arm when a session is created, per port. Tog
 
 ### 9. Log lines and what to do
 
-MTL checks its own timing while it streams, and prints the result with the statistics every `dump_period_s` (10 s by default). **Check 1** runs per session. After each burst of video packets it compares the return of the call with the target of the burst's first packet. It reports the frame when that packet left more than the **VRX budget** after its target: 4.1 µs here.
-The VRX budget is what three things leave of the send-ahead. The frame's start is rounded to the 90 kHz RTP clock, which can move every target up to 4.0 µs later. The way from the shaper to the receiver, the **wire path**, takes about 5.5 µs.
-The packets behind the measured one can run up to 5.9 µs later than their own targets, because of the pads between them; this is the **sawtooth**. 19.46 − 4.0 − 5.5 − 5.9 leaves about 4.1 µs.
+MTL checks its own timing while it streams, and prints the result with the statistics every `dump_period_s` (10 s by default). Two checks run: check 1 per session and check 2 per scheduler.
+
+**Check 1** looks at every burst of video packets. It compares the return of the call with the target of the burst's first packet, and it reports the frame when that packet left more than the **VRX budget** after its target: 4.1 µs here.
+
+The VRX budget is what three things leave of the send-ahead. The frame's start is rounded to the 90 kHz RTP clock, which can move every target up to 4.0 µs later. The way from the shaper to the receiver, the **wire path**, takes about 5.5 µs. The third is the **sawtooth**, 5.9 µs, and 19.46 − 4.0 − 5.5 − 5.9 leaves about 4.1 µs.
 
 ![The send-ahead of 19.46 µs is used by the rounding, the wire path and the sawtooth; the 4.1 µs left are the VRX budget, and check 1 reports a packet that leaves later than that](png/rl_pacing/vrx_budget.svg)
+
+The sawtooth comes from the pads inside the frame (chapter 4). Between two pads the shaper spends 16 ns less than Trs on each video packet, so each packet leaves 16 ns earlier relative to its target than the one before. A pad takes one packet time, 3.9 µs, and the packets behind it leave that much later.
+The departures therefore fall slowly and jump at every pad, like the teeth of a saw. A tooth is one **pad interval** long, the number of video packets from one pad to the next: 245.3 on average here, so a frame of 4115 packets has about 17 teeth.
+
+![With the CPU on time each packet leaves 16 ns earlier relative to its target than the one before, and each pad moves the packets behind it one pad, 3.9 µs, later; the teeth repeat every pad interval](png/rl_pacing/sawtooth.svg)
+
+Check 1 measures only the first packet of a burst. If that burst finds the shaper idle, a packet behind the next pad can leave up to one tooth, 3.9 µs, later relative to its target than the measured packet. The budget therefore sets 5.9 µs aside for the sawtooth; chapter 20 gives the formula.
 
 **Check 2** runs per scheduler and reports a core that cannot keep up. It has two signs. The **round** is the average time of one loop of the scheduler, and the **round budget** is the longest round in which 4 packets per visit still keep up with the stream, 16.2 µs here. The **lead** is how long before its target a packet was built, and it is negative when the packet was built after it.
 
@@ -219,7 +228,7 @@ Never early holds only as far as this model does. One exception is known: when a
 ### 13. Training and the plan
 
 At session create MTL measures ("trains") the rate of the session's queue. It programs the queue, fills it with pads, times 71 frames' worth of them at 32 per call, and averages the middle 60 frame times. If the rate is too slow for the stream, it re-programs by the measured ratio once.
-The shaper is set slightly faster than the stream. The **pad interval** is the number of video packets after which one pad makes up for that, about 246. From it follows `pad_ns` = Trs × pad interval / (pad interval + 1), scaled by the pad's size over the mean packet size. The result is cached per port, rate and packet mix.
+The shaper is set slightly faster than the stream. The **pad interval** is the number of video packets after which one pad makes up for that, about 245. From it follows `pad_ns` = Trs × pad interval / (pad interval + 1), scaled by the pad's size over the mean packet size. The result is cached per port, rate and packet mix.
 
 The warm-up window is 80 % of the time from the frame's start to the virtual receiver's first drain, and at most 128 packet times: 0.50 ms here, 0.49 ms at 720p59.94, 125 µs at 2160p59.94.
 
@@ -357,7 +366,7 @@ budget = vrx × Trs − snap − wire path − sawtooth        5 × 3.892 − 4.
 ```
 
 The **snap** is the rounding of the frame's start to the 90 kHz clock. It moves a frame's targets by up to 4.01 µs later, the **snap loss**, or by up to 1.55 µs earlier. The port's budget takes the snap loss, and a frame that was rounded less gets the difference on top, +5.56 µs on every second frame at 59.94 fps.
-The sawtooth comes from the pad after every pad interval: (pad interval / 2 + 4) / (pad interval + 1) × Trs + one pad, 5.87 µs.
+The sawtooth (`tv_rl_sawtooth_ns()`) is (pad interval / 2 + bulk) / (pad interval + 1) × Trs + one pad = 2.00 + 3.87 = 5.87 µs. The first term is half a tooth: the first pad comes half a pad interval in, so the packets behind it leave up to that late; `bulk` (4) packets of 15.8 ns cover where the pad falls in its burst. The second is a whole tooth, for a burst that finds the shaper idle.
 The return stands in for the doorbell, which rang earlier, so a preemption between the two can report a frame that was in time. The wire path is one constant (`ST_TX_VIDEO_RL_WIRE_NS`): 4.4 to 4.9 µs measured from an E810 VF to an E830, plus margin. On another path check 1 can report too early or too late, and it never sees early packets or jitter on the wire.
 
 Check 1 does not judge ports without RL, ST 2110-22, or a frame the builder started later than its budget; the last is counted as K.
@@ -395,5 +404,5 @@ Either finding prints the `frames fall behind` line. Both checks report overload
 | Hardware tests | `tests/integration_tests/noctx/`: `kNoCtxPacingLateMaxNs` in `strategies/st20p_strategies.hpp`, `testcases/st20p_vrx_margin_tests.cpp` |
 
 Terms and the chapter that defines each: aim 4, anchor 6, batch 19, bucket 6 and 12, builder 3, catch-up 19, check 1 and check 2 9, delay 5, doorbell 5, drain end 12, drain slot 1, fine trim 13, gap 14, hold 7, kept 7, late entry 17, launch bound 15, launch share 7, lead 9, limit 7 and 15, packet 0 3,
-pad 4, pad burst 5, pad interval 13, pass 17, plan 8, pre-arm 4, reclaim 19, refill time 12, release scan 7 and 18, round and round budget 9, sawtooth 9, scheduler 3, send-ahead 1, shaper 2, shortfall 17, snap and snap loss 20, stall 5, start over 7 and 16,
+pad 4, pad burst 5, pad interval 9 and 13, pass 17, plan 8, pre-arm 4, reclaim 19, refill time 12, release scan 7 and 18, round and round budget 9, sawtooth 9, scheduler 3, send-ahead 1, shaper 2, shortfall 17, snap and snap loss 20, stall 5, start over 7 and 16,
 tail 17, target 1, tasklet 3, timeslot 12, transmitter 3, trim pads 13, Trs 1, visit 3, VRX 1, VRX budget 9, warm-up window 4, wire path 9.
