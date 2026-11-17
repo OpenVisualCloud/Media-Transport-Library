@@ -70,6 +70,18 @@ size_t ut_dev_pci_devarg_size(void);
 void ut_dev_build_pci_devarg(ut_dev_ctx* ctx, enum mtl_port port, char* out, size_t len);
 int ut_dev_start_port(ut_dev_ctx* ctx);
 int ut_dev_create_ports(ut_dev_ctx* ctx);
+/** Sets or clears MTL_PORT_FLAG_MAC_LOOPBACK on port P. */
+void ut_dev_set_mac_loopback(ut_dev_ctx* ctx, bool enabled);
+/** Runs dev_config_port() on port P; returns its ret. */
+int ut_dev_config_port(ut_dev_ctx* ctx);
+/** Times dev_config_port() reached rte_eth_dev_configure(). */
+int ut_dev_configure_calls(const ut_dev_ctx* ctx);
+/** rte_eth_conf.lpbk_mode of the last rte_eth_dev_configure(). */
+uint32_t ut_dev_configured_lpbk_mode(const ut_dev_ctx* ctx);
+/** Runs strict dev_detect_link() on port P; returns its ret. */
+int ut_dev_detect_link(ut_dev_ctx* ctx);
+/** inf[MTL_PORT_P].link_speed after dev_detect_link(). */
+uint32_t ut_dev_link_speed(const ut_dev_ctx* ctx);
 /** The pacing way mtl_init_params asked of port P, as mt_dev_if_init() copies it. */
 void ut_dev_set_tx_pacing(ut_dev_ctx* ctx, enum st21_tx_pacing_way pacing);
 /** dev_config_port() of port P with a user nb_tx_desc, 0 for none: the TX ring size it

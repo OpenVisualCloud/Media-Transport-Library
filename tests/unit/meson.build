@@ -59,6 +59,7 @@ unit_sources = [
   'dev/mt_dev_igc_test.cpp',
   'dev/mt_dev_ixgbe_timesync_test.cpp',
   'dev/mt_dev_link_poll_test.cpp',
+  'dev/mt_dev_mac_loopback_test.cpp',
   'dev/mt_dev_rx_desc_test.cpp',
   'dev/mt_dev_rx_mono_pool_test.cpp',
   'dev/mt_dev_tx_desc_test.cpp',
