@@ -254,6 +254,7 @@ unit_sources = [
   'pipeline/st20p_tx_blocking_test.cpp',
   'pipeline/st20p_tx_ext_frame_release_test.cpp',
   'pipeline/st20p_tx_callback_free_test.cpp',
+  'pipeline/st20p_tx_free_warn_test.cpp',
   'pipeline/st20p_concurrency_test.cpp',
   'pipeline/st20p_concurrency_stress_test.cpp',
   'pipeline/st_convert_harness.c',

@@ -338,3 +338,32 @@ int ut20p_tx_free_in_callback(ut20p_tx_ctx* ctx, bool* destroying) {
   transport.sch->t_pid = 0;
   return ret;
 }
+
+static int ut20p_tx_warns;
+
+static void ut20p_tx_count_warns(enum mtl_log_level level, const char* format, ...) {
+  MTL_MAY_UNUSED(format);
+  if (level == MTL_LOG_LEVEL_WARNING) ut20p_tx_warns++;
+}
+
+int ut20p_tx_uinit_warns(ut20p_tx_ctx* ctx) {
+  struct st20p_tx_ctx* p = &ctx->pipeline;
+  size_t size = sizeof(*ctx->framebuffs) * ctx->framebuff_cnt;
+  enum mtl_log_level level = mt_get_log_global_level();
+
+  /* the uinit rte_frees the array, the harness one is from calloc */
+  p->framebuffs = mt_rte_zmalloc_socket(size, p->socket_id);
+  if (!p->framebuffs) {
+    p->framebuffs = ctx->framebuffs;
+    return -ENOMEM;
+  }
+  memcpy(p->framebuffs, ctx->framebuffs, size);
+  ut20p_tx_warns = 0;
+  mt_set_log_global_level(MTL_LOG_LEVEL_WARNING);
+  mtl_set_log_printer(ut20p_tx_count_warns);
+  tx_st20p_uinit_src_fbs(p);
+  mtl_set_log_printer(NULL);
+  mt_set_log_global_level(level);
+  p->framebuffs = ctx->framebuffs;
+  return ut20p_tx_warns;
+}
