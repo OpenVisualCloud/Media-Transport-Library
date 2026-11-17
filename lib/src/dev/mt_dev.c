@@ -913,6 +913,14 @@ static int dev_detect_link(struct mt_interface* inf, bool relaxed) {
     return 0;
   }
 
+  /* igc reports the link down when the PHY has no link partner, while MAC loopback still
+   * delivers every frame (seen on I226-V with the PHY powered down), so do not poll */
+  if (mt_if_mac_loopback(inf->parent, port)) {
+    inf->link_speed = RTE_ETH_SPEED_NUM_2_5G;
+    info("%s(%d), mac loopback, link taken as up at 2.5G\n", __func__, port);
+    return 0;
+  }
+
   memset(&eth_link, 0, sizeof(eth_link));
 
   for (int i = 0; i < MT_DEV_LINK_POLL_COUNT; i++) {
@@ -1041,6 +1049,16 @@ static int dev_config_port(struct mt_interface* inf) {
   struct mtl_init_params* p = mt_get_user_params(impl);
   uint16_t nb_rx_q = inf->nb_rx_q, nb_tx_q = inf->nb_tx_q;
   struct rte_eth_conf port_conf = dev_port_conf;
+
+  if (mt_if_mac_loopback(impl, port)) {
+    if (inf->drv_info.drv_type != MT_DRV_IGC) {
+      err("%s(%d), mac loopback needs the dpdk igc pmd, drv_type %d\n", __func__, port,
+          inf->drv_info.drv_type);
+      return -ENOTSUP;
+    }
+    port_conf.lpbk_mode = 1;
+    info("%s(%d), mac loopback enabled\n", __func__, port);
+  }
 
   if (inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD) {
     inf->nb_tx_desc = nb_tx_desc;

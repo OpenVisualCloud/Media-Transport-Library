@@ -127,6 +127,7 @@ typedef struct st_json_interface {
   int tx_anc_sessions_cnt;   /* st40 on interface level */
   int rx_anc_sessions_cnt;   /* st40 on interface level */
   bool allow_down_init;      /* allow port init even if link is down */
+  bool mac_loopback;         /* igc MAC loopback, TX comes back on own RX */
 } st_json_interface_t;
 
 enum st_json_ip_type {
