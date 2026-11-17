@@ -591,7 +591,7 @@ static int tx_st22p_uinit_src_fbs(struct st22p_tx_ctx* ctx) {
       }
     }
     for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
-      if (ctx->framebuffs[i].stat != ST22P_TX_FRAME_FREE) {
+      if (ctx->framebuffs[i].stat == ST22P_TX_FRAME_IN_USER) {
         warn("%s(%d), frame %u are still in %s\n", __func__, ctx->idx, i,
              tx_st22p_stat_name(ctx->framebuffs[i].stat));
       }
