@@ -135,6 +135,21 @@ TEST_F(St20TxZeroCopyReclaimTest, WaitPastTheHangThresholdRecoversTheIdleLeg) {
   EXPECT_FALSE(ut_txv_zc_take_recovery(ctx_, 0));
 }
 
+/* the NIC sends nothing with no link: the leg is not recovered, and the link is not
+ * read again while the leg has nothing to send */
+TEST_F(St20TxZeroCopyReclaimTest, WaitPastTheHangThresholdWithTheLinkDownDoesNotRecover) {
+  SetUpFrames(true);
+  ut_txv_zc_set_hang_ns(ctx_, kHangNs);
+  ut_txv_zc_set_nic_refs(ctx_, 0, 1);
+  ut_txv_set_link_down(ctx_, 0, true);
+
+  EXPECT_TRUE(ut_txv_zc_frames_out(ctx_));
+  ReclaimUntil(kStartNs + 3 * kHangNs);
+
+  EXPECT_FALSE(ut_txv_zc_take_recovery(ctx_, 0));
+  EXPECT_EQ(ut_txv_link_reads(ctx_), 1);
+}
+
 /* the legs idled through the wait before: a new wait counts from its own start */
 TEST_F(St20TxZeroCopyReclaimTest, WaitJustBegunDoesNotRecoverAnIdleLeg) {
   SetUpFrames(true);

@@ -140,6 +140,14 @@ struct ut_txv_ctx {
   uint64_t pipe_frames_asked;
   uint64_t pipe_first_alloc_fail;
   uint64_t pipe_first_burst_fail;
+  bool link_down[MTL_PORT_MAX];
+  int link_reads;
+  /* ut_txv_pipe_set_link(): bursts may fail; what each leg's ring took since the mark */
+  bool pipe_link_mode;
+  uint64_t pipe_accepted[MTL_SESSION_PORT_MAX];
+  int64_t pipe_max_late_ns[MTL_SESSION_PORT_MAX];
+  uint16_t pipe_stale_at_up[MTL_SESSION_PORT_MAX];
+  int pipe_done_while_held;
 };
 
 /* ── mocked time sources ──────────────────────────────────────────────── */
@@ -168,8 +176,16 @@ static int ut_txv_get_next_frame(void* priv, uint16_t* next_frame_idx,
   ctx->get_next_frame_calls++;
   if (ctx->app_busy) return -EBUSY;
   if (ctx->pipe_on) {
+    uint16_t cnt = ctx->session.st20_frames_cnt;
+    /* in link mode the app waits for the done of a frame, as an app does */
+    for (uint16_t i = 0; ctx->pipe_link_mode && i < cnt; i++) {
+      if (!rte_atomic32_read(&ctx->session.st20_frames[ctx->pipe_next_frame].refcnt))
+        break;
+      ctx->pipe_next_frame = (ctx->pipe_next_frame + 1) % cnt;
+      if (i == cnt - 1) return -EBUSY;
+    }
     *next_frame_idx = ctx->pipe_next_frame;
-    ctx->pipe_next_frame = (ctx->pipe_next_frame + 1) % ctx->session.st20_frames_cnt;
+    ctx->pipe_next_frame = (ctx->pipe_next_frame + 1) % cnt;
     ctx->pipe_frames_asked++;
   } else {
     *next_frame_idx = ctx->app_frame_idx;
@@ -185,6 +201,12 @@ static int ut_txv_notify_frame_done(void* priv, uint16_t frame_idx,
   ctx->notify_frame_done_calls++;
   ctx->notify_frame_done_idx = frame_idx;
   ctx->notify_frame_done_meta = *meta;
+  for (int p = 0; ctx->pipe_on && p < ctx->session.ops.num_port; p++) {
+    const struct rte_mbuf_ext_shared_info* sh =
+        ctx->session.st20_frames[frame_idx].sh_cur;
+    if (ctx->pipe_ring[p] && sh && ut_txr_holds_shinfo(ctx->pipe_ring[p], sh))
+      ctx->pipe_done_while_held++;
+  }
   return 0;
 }
 
@@ -374,7 +396,16 @@ static int ut_txv_rxq_put(struct mt_rxq_entry* entry) {
   return 0;
 }
 
+static struct ut_txv_ctx* ut_txv_active_burst_ctx;
+static bool ut_txv_link_down_mock(struct mtl_main_impl* impl, enum mtl_port port) {
+  struct ut_txv_ctx* ctx = (struct ut_txv_ctx*)impl;
+  (void)port;
+  ctx->link_reads++;
+  return ctx->link_down[port];
+}
+
 /* Seams: these calls in st_tx_video_session.c hit the mocks. */
+#define mt_dev_link_down ut_txv_link_down_mock
 #define mt_rtcp_tx_create ut_txv_rtcp_tx_create
 #define mt_rtcp_tx_free ut_txv_rtcp_tx_free
 #define mt_rxq_get ut_txv_rxq_get
@@ -410,7 +441,6 @@ static int ut_txv_rxq_put(struct mt_rxq_entry* entry) {
 #undef mt_rtcp_tx_free
 #undef mt_rtcp_tx_create
 #define mt_txq_burst ut_txv_txq_burst
-static struct ut_txv_ctx* ut_txv_active_burst_ctx;
 static uint16_t ut_txv_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
                                  uint16_t nb_pkts) {
   struct ut_txv_ctx* ctx = ut_txv_active_burst_ctx;
@@ -422,6 +452,11 @@ static uint16_t ut_txv_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** t
     uint16_t tx = ut_txr_xmit(ctx->pipe_ring[leg], tx_pkts, nb_pkts, ctx->mock_tsc_ns);
     if (tx < nb_pkts && !ctx->pipe_first_burst_fail)
       ctx->pipe_first_burst_fail = ctx->pipe_step;
+    for (uint16_t i = 0; i < tx; i++) {
+      int64_t late = (int64_t)(ctx->mock_tsc_ns - st_tx_mbuf_get_tsc(tx_pkts[i]));
+      ctx->pipe_max_late_ns[leg] = RTE_MAX(ctx->pipe_max_late_ns[leg], late);
+    }
+    ctx->pipe_accepted[leg] += tx;
     return tx;
   }
   for (uint16_t i = 0; i < nb_pkts; i++) {
@@ -451,6 +486,7 @@ static uint32_t ut_txv_mbuf_get_idx(struct rte_mbuf* mbuf) {
 #undef rte_pktmbuf_free_bulk
 #undef mt_txq_burst
 #undef mt_get_tsc
+#undef mt_dev_link_down
 #include "mt_admin.c"
 
 static void ut_txv_tx_path_uinit(struct ut_txv_ctx* ctx);
@@ -1160,6 +1196,14 @@ void ut_txv_zc_set_hang_ns(ut_txv_ctx* ctx, uint64_t hang_ns) {
 
 void ut_txv_zc_leg_burst_now(ut_txv_ctx* ctx, int leg) {
   ctx->session.last_burst_succ_time_tsc[leg] = ctx->mock_tsc_ns;
+}
+
+void ut_txv_set_link_down(ut_txv_ctx* ctx, int port, bool down) {
+  ctx->link_down[port] = down;
+}
+
+int ut_txv_link_reads(const ut_txv_ctx* ctx) {
+  return ctx->link_reads;
 }
 
 bool ut_txv_zc_take_recovery(ut_txv_ctx* ctx, int leg) {
@@ -3040,24 +3084,25 @@ uint32_t ut_txv_rtp_time_stamp(const ut_txv_ctx* ctx) {
 static struct ut_txv_ctx* ut_txv_stat_ctx;
 static int ut_txv_stat_lines;
 static int ut_txv_stat_locked_lines;
-static char ut_txv_stat_first_line[256];
+static char ut_txv_stat_first_line[512];
 static char ut_txv_stat_error_line[512];
 static int ut_txv_stat_errs;
+static const char* ut_txv_stat_needle;
+static int ut_txv_stat_needle_lines;
 
 static void ut_txv_stat_log_printer(enum mtl_log_level level, const char* format, ...) {
+  char line[512];
   va_list args;
 
   if (rte_spinlock_is_locked(&ut_txv_stat_ctx->mgr.mutex[0])) ut_txv_stat_locked_lines++;
-  if (!ut_txv_stat_lines++) {
-    va_start(args, format);
-    vsnprintf(ut_txv_stat_first_line, sizeof(ut_txv_stat_first_line), format, args);
-    va_end(args);
-  }
-  if (level == MTL_LOG_LEVEL_ERR && !ut_txv_stat_errs++) {
-    va_start(args, format);
-    (void)vsnprintf(ut_txv_stat_error_line, sizeof(ut_txv_stat_error_line), format, args);
-    va_end(args);
-  }
+  va_start(args, format);
+  (void)vsnprintf(line, sizeof(line), format, args);
+  va_end(args);
+  if (!ut_txv_stat_lines++)
+    snprintf(ut_txv_stat_first_line, sizeof(ut_txv_stat_first_line), "%s", line);
+  if (level == MTL_LOG_LEVEL_ERR && !ut_txv_stat_errs++)
+    snprintf(ut_txv_stat_error_line, sizeof(ut_txv_stat_error_line), "%s", line);
+  if (ut_txv_stat_needle && strstr(line, ut_txv_stat_needle)) ut_txv_stat_needle_lines++;
 }
 
 static void ut_txv_stat_capture(ut_txv_ctx* ctx) {
@@ -3175,6 +3220,20 @@ void ut_txv_set_mgr_neighbour(ut_txv_ctx* ctx, ut_txv_ctx* other) {
   rte_spinlock_init(&ctx->mgr.mutex[1]);
   ctx->mgr.sessions[1] = other ? &other->session : NULL;
   ctx->mgr.max_idx = other ? 2 : 1;
+}
+
+int ut_txv_stat_lines_with(ut_txv_ctx* ctx, const char* needle) {
+  int locked_lines;
+
+  ut_txv_stat_needle = needle;
+  ut_txv_stat_needle_lines = 0;
+  ut_txv_run_sessions_stat(ctx, &locked_lines);
+  ut_txv_stat_needle = NULL;
+  return ut_txv_stat_needle_lines;
+}
+
+void ut_txv_set_stat_link_down_drops(ut_txv_ctx* ctx, int pkts) {
+  ctx->session.stat_pkts_link_down_drop = pkts;
 }
 
 void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames) {
@@ -3474,7 +3533,7 @@ void ut_txv_pipe_run(ut_txv_ctx* ctx, uint64_t duration_ns, uint64_t step_ns) {
 
   ut_txv_active_burst_ctx = ctx;
   while (ctx->mock_tsc_ns < end && !ctx->pipe_first_alloc_fail &&
-         !ctx->pipe_first_burst_fail) {
+         (!ctx->pipe_first_burst_fail || ctx->pipe_link_mode)) {
     ctx->pipe_step++;
     tvs_tasklet_handler(&ctx->mgr);
     ut_txv_pipe_note(ctx);
@@ -3514,6 +3573,40 @@ int ut_txv_pipe_teardown(ut_txv_ctx* ctx) {
   ret = tv_mempool_free(s);
   ctx->pipe_on = false;
   return ret;
+}
+
+void ut_txv_pipe_set_link(ut_txv_ctx* ctx, int leg, bool up) {
+  ctx->pipe_link_mode = true;
+  ctx->link_down[leg] = !up;
+  if (up) {
+    ctx->pipe_stale_at_up[leg] = ut_txr_in_use(ctx->pipe_ring[leg]);
+    ut_txr_resume(ctx->pipe_ring[leg], 1, ctx->mock_tsc_ns);
+  } else {
+    ut_txr_set_drain_ns(ctx->pipe_ring[leg], UT_TXR_HUNG);
+  }
+}
+
+void ut_txv_pipe_mark(ut_txv_ctx* ctx) {
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    ctx->pipe_accepted[i] = 0;
+    ctx->pipe_max_late_ns[i] = INT64_MIN;
+  }
+}
+
+uint64_t ut_txv_pipe_accepted(const ut_txv_ctx* ctx, int leg) {
+  return ctx->pipe_accepted[leg];
+}
+
+int64_t ut_txv_pipe_max_late_ns(const ut_txv_ctx* ctx, int leg) {
+  return ctx->pipe_max_late_ns[leg];
+}
+
+int ut_txv_pipe_done_while_held(const ut_txv_ctx* ctx) {
+  return ctx->pipe_done_while_held;
+}
+
+uint16_t ut_txv_pipe_stale_at_up(const ut_txv_ctx* ctx, int leg) {
+  return ctx->pipe_stale_at_up[leg];
 }
 
 uint64_t ut_txv_pipe_first_frame_busy(const ut_txv_ctx* ctx) {

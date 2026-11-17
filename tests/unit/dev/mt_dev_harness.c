@@ -45,6 +45,10 @@ struct ut_dev_ctx {
   int fail_timesync_read_call;
   int fail_timesync_read_error;
   int fail_port_start_error;
+  bool link_stub;
+  bool link_up;
+  int link_get_error;
+  int link_reads;
   uint16_t tx_free_thresh[UT_DEV_TX_QUEUES];
   struct mtl_port_status sw_stats;
   pthread_t stats_writer;
@@ -84,6 +88,7 @@ static const struct rte_eth_rxtx_callback* ut_rte_eth_add_tx_callback(
     uint16_t port_id, uint16_t queue_id, rte_tx_callback_fn fn, void* user_param);
 static int ut_rte_eth_timesync_enable(uint16_t port_id);
 static int ut_rte_eth_timesync_read_time(uint16_t port_id, struct timespec* time);
+static int ut_rte_eth_link_get_nowait(uint16_t port_id, struct rte_eth_link* link);
 static int ut_rte_eth_dev_start(uint16_t port_id);
 static int ut_rte_eth_dev_stop(uint16_t port_id);
 static int ut_rte_eth_stats_reset(uint16_t port_id);
@@ -125,6 +130,7 @@ static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 #define rte_eth_add_tx_callback ut_rte_eth_add_tx_callback
 #define rte_eth_timesync_enable ut_rte_eth_timesync_enable
 #define rte_eth_timesync_read_time ut_rte_eth_timesync_read_time
+#define rte_eth_link_get_nowait ut_rte_eth_link_get_nowait
 #define rte_eth_dev_start ut_rte_eth_dev_start
 #define rte_eth_dev_stop ut_rte_eth_dev_stop
 #define rte_eth_stats_reset ut_rte_eth_stats_reset
@@ -163,6 +169,7 @@ static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 #undef rte_eth_stats_reset
 #undef rte_eth_dev_stop
 #undef rte_eth_dev_start
+#undef rte_eth_link_get_nowait
 #undef rte_eth_timesync_read_time
 #undef rte_eth_timesync_enable
 #undef rte_eth_add_tx_callback
@@ -235,6 +242,15 @@ static int ut_rte_eth_timesync_enable(uint16_t port_id) {
   if (ut_active_ctx->timesync_enable_calls == ut_active_ctx->fail_timesync_call)
     return ut_active_ctx->fail_timesync_error;
   return 0;
+}
+
+static int ut_rte_eth_link_get_nowait(uint16_t port_id, struct rte_eth_link* link) {
+  if (!ut_active_ctx || !ut_active_ctx->link_stub)
+    return rte_eth_link_get_nowait(port_id, link);
+  ut_active_ctx->link_reads++;
+  memset(link, 0, sizeof(*link));
+  link->link_status = ut_active_ctx->link_up;
+  return ut_active_ctx->link_get_error;
 }
 
 static int ut_rte_eth_timesync_read_time(uint16_t port_id, struct timespec* time) {
@@ -910,4 +926,23 @@ unsigned int ut_dev_mempool_size(ut_dev_ctx* ctx, unsigned int elements) {
 
   if (mp) mt_mempool_free(mp);
   return size;
+}
+
+void ut_dev_set_link(ut_dev_ctx* ctx, bool up, int get_error) {
+  ctx->link_stub = true;
+  ctx->link_up = up;
+  ctx->link_get_error = get_error;
+}
+
+int ut_dev_link_reads(const ut_dev_ctx* ctx) {
+  return ctx->link_reads;
+}
+
+void ut_dev_set_pmd(ut_dev_ctx* ctx, enum mtl_pmd_type pmd) {
+  ctx->impl.user_para.pmd[MTL_PORT_P] = pmd;
+}
+
+bool ut_dev_link_down(ut_dev_ctx* ctx) {
+  ut_active_ctx = ctx;
+  return mt_dev_link_down(&ctx->impl, MTL_PORT_P);
 }

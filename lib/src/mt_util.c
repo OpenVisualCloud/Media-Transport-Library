@@ -946,9 +946,12 @@ int st_frame_trans_uinit(struct st_frame_trans* frame, void* device) {
   MTL_MAY_UNUSED(device);
 
   /* check if it's still shared */
-  uint16_t sh_info_refcnt = rte_mbuf_ext_refcnt_read(&frame->sh_info);
-  if (sh_info_refcnt)
-    warn("%s(%d), sh_info still active, refcnt %d\n", __func__, idx, sh_info_refcnt);
+  for (int i = 0; i < (int)RTE_DIM(frame->sh_info); i++) {
+    uint16_t sh_info_refcnt = rte_mbuf_ext_refcnt_read(&frame->sh_info[i]);
+    if (sh_info_refcnt)
+      warn("%s(%d), sh_info %d still active, refcnt %d\n", __func__, idx, i,
+           sh_info_refcnt);
+  }
 
   int refcnt = rte_atomic32_read(&frame->refcnt);
   if (refcnt) warn("%s(%d), refcnt not zero %d\n", __func__, idx, refcnt);

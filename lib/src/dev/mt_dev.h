@@ -86,6 +86,8 @@ static inline uint16_t mt_dev_tx_queue_id(struct mt_tx_queue* queue) {
   return queue->queue_id;
 }
 int mt_dev_tx_queue_fatal_error(struct mtl_main_impl* impl, struct mt_tx_queue* queue);
+/* true only when the link of a DPDK user PMD port reads down; a read error is up */
+bool mt_dev_link_down(struct mtl_main_impl* impl, enum mtl_port port);
 int mt_dev_set_tx_bps(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
                       uint64_t bytes_per_sec);
 /* frees what the queue holds; on a reclaim port bounded, -EBUSY if it did not drain in

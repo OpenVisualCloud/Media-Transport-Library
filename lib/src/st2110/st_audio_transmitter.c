@@ -8,6 +8,7 @@
 #include "../mt_log.h"
 #include "st_err.h"
 #include "st_tx_audio_session.h"
+#include "st_tx_link.h"
 
 static int st_audio_trs_tasklet_start(void* priv) {
   struct st_audio_transmitter_impl* trs = priv;
@@ -52,6 +53,12 @@ static uint16_t st_audio_trs_burst_fail(struct mtl_main_impl* impl,
                                         enum mtl_port port) {
   uint64_t cur_tsc = mt_get_tsc(impl);
   uint64_t fail_duration = cur_tsc - mgr->last_burst_succ_time_tsc[port];
+  if (fail_duration > st_tx_link_check_ns(mgr->tx_hang_detect_time_thresh) &&
+      st_tx_link_check_down(impl, port, &mgr->tx_link[port], cur_tsc, __func__, mgr->idx,
+                            port)) {
+    mgr->last_burst_succ_time_tsc[port] = cur_tsc;
+    return 0;
+  }
   if (fail_duration > mgr->tx_hang_detect_time_thresh) {
     err("%s(%d,%d), hang duration %" PRIu64 " ms\n", __func__, mgr->idx, port,
         fail_duration / NS_PER_MS);
@@ -67,6 +74,15 @@ static uint16_t st_audio_trs_burst(struct mtl_main_impl* impl,
                                    struct st_tx_audio_sessions_mgr* mgr,
                                    enum mtl_port port, struct rte_mbuf* pkt) {
   if (!mgr->queue[port]) return 0;
+  if (unlikely(mgr->tx_link[port].down)) {
+    uint64_t now = mt_get_tsc(impl);
+    mgr->last_burst_succ_time_tsc[port] = now;
+    if (st_tx_link_drop(impl, port, &mgr->tx_link[port], now, __func__, mgr->idx, port)) {
+      rte_pktmbuf_free(pkt);
+      mgr->stat_pkts_link_down_drop++;
+      return 1;
+    }
+  }
   uint16_t tx = mt_txq_burst(mgr->queue[port], &pkt, 1);
   if (!tx) return st_audio_trs_burst_fail(impl, mgr, port);
   mgr->last_burst_succ_time_tsc[port] = mt_get_tsc(impl);

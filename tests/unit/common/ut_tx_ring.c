@@ -83,10 +83,13 @@ static bool txr_desc_done(const struct ut_txr_slot* slot, uint64_t now_ns) {
 }
 
 static void txr_free(struct ut_txr* r, struct ut_txr_slot* slot) {
-  if (slot->freed)
+  if (slot->freed) {
     r->double_frees++;
-  else
-    rte_pktmbuf_free_seg(slot->mbuf);
+    return;
+  }
+  /* before the free: an extbuf free callback may look at the ring */
+  slot->freed = true;
+  rte_pktmbuf_free_seg(slot->mbuf);
 }
 
 /* ci_tx_xmit_cleanup() */
@@ -185,6 +188,17 @@ int ut_txr_done_cleanup(struct ut_txr* r, uint32_t free_cnt, uint64_t now_ns) {
   return (int)pkt_cnt;
 }
 
+void ut_txr_resume(struct ut_txr* r, uint64_t drain_ns, uint64_t now_ns) {
+  r->drain_ns = drain_ns;
+  r->last_done_ns = now_ns;
+  for (uint16_t n = 0, i = r->tail; n < r->nb_desc; n++, i = (i + 1) % r->nb_desc) {
+    struct ut_txr_slot* slot = &r->slots[i];
+    if (!slot->written || slot->done_ns != UT_TXR_HUNG) continue;
+    r->last_done_ns += drain_ns;
+    slot->done_ns = r->last_done_ns;
+  }
+}
+
 uint64_t ut_txr_descs(const struct ut_txr* r) {
   return r->descs;
 }
@@ -201,6 +215,16 @@ uint16_t ut_txr_holds(const struct ut_txr* r, const struct rte_mbuf* m) {
   uint16_t holds = 0;
   for (uint16_t i = 0; i < r->nb_desc; i++)
     if (r->slots[i].mbuf == m && !r->slots[i].freed) holds++;
+  return holds;
+}
+
+uint16_t ut_txr_holds_shinfo(const struct ut_txr* r,
+                             const struct rte_mbuf_ext_shared_info* sh) {
+  uint16_t holds = 0;
+  for (uint16_t i = 0; i < r->nb_desc; i++) {
+    const struct rte_mbuf* m = r->slots[i].mbuf;
+    if (m && !r->slots[i].freed && RTE_MBUF_HAS_EXTBUF(m) && m->shinfo == sh) holds++;
+  }
   return holds;
 }
 

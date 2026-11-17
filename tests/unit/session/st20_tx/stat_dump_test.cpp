@@ -45,4 +45,11 @@ TEST_F(St20TxStatDumpTest, ReportsFrameDeltaAndAdvancesSnapshot) {
   EXPECT_EQ(250u, ut_txv_stat_snapshot_port_frames(ctx_));
 }
 
+TEST_F(St20TxStatDumpTest, ReportsTheLinkDownDropsOnce) {
+  ut_txv_set_stat_link_down_drops(ctx_, 7);
+
+  EXPECT_EQ(1, ut_txv_stat_lines_with(ctx_, "pkts link down drop 7"));
+  EXPECT_EQ(0, ut_txv_stat_lines_with(ctx_, "pkts link down drop"));
+}
+
 }  // namespace

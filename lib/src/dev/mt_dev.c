@@ -2154,6 +2154,15 @@ int mt_dev_tx_queue_fatal_error(struct mtl_main_impl* impl, struct mt_tx_queue* 
   return 0;
 }
 
+bool mt_dev_link_down(struct mtl_main_impl* impl, enum mtl_port port) {
+  struct rte_eth_link link;
+
+  if (!mt_pmd_is_dpdk_user(impl, port)) return false;
+  memset(&link, 0, sizeof(link));
+  if (rte_eth_link_get_nowait(mt_port_id(impl, port), &link) < 0) return false;
+  return link.link_status == RTE_ETH_LINK_DOWN;
+}
+
 int mt_dev_set_tx_bps(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
                       uint64_t bytes_per_sec) {
   enum mtl_port port = queue->port;

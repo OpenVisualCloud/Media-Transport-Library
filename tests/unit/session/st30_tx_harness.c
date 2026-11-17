@@ -65,6 +65,16 @@ struct ut_txa30_ctx {
   uint64_t pipe_step;
   uint64_t pipe_first_alloc_fail;
   uint64_t pipe_first_burst_fail;
+  bool link_down[MTL_PORT_MAX];
+  int link_reads;
+  /* ut_txa30_pipe_set_link(): bursts may fail; what each leg's ring took since the mark
+   */
+  bool pipe_link_mode;
+  uint64_t pipe_accepted[MTL_SESSION_PORT_MAX];
+  int64_t pipe_max_late_ns[MTL_SESSION_PORT_MAX];
+  uint16_t pipe_stale_at_up[MTL_SESSION_PORT_MAX];
+  uint64_t pipe_last_accept_ns[MTL_SESSION_PORT_MAX];
+  uint64_t pipe_min_gap_ns[MTL_SESSION_PORT_MAX];
 };
 
 /* ── mocked time sources ──────────────────────────────────────────────── */
@@ -140,6 +150,13 @@ static void ut_txa30_sleep_us(unsigned int us) {
 static uint16_t ut_txa30_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
                                    uint16_t nb_pkts);
 
+static bool ut_txa30_link_down_mock(struct mtl_main_impl* impl, enum mtl_port port) {
+  struct ut_txa30_ctx* ctx = (struct ut_txa30_ctx*)impl;
+  ctx->link_reads++;
+  return ctx->link_down[port];
+}
+
+#define mt_dev_link_down ut_txa30_link_down_mock
 #define mt_get_tsc ut_txa30_tsc_time_fn
 #define mt_txq_burst ut_txa30_txq_burst
 #define mt_txq_burst_busy ut_txa30_txq_burst_busy
@@ -156,6 +173,7 @@ static uint16_t ut_txa30_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf**
 #undef st_audio_transmitter_init
 #undef mt_txq_burst
 #undef mt_get_tsc
+#undef mt_dev_link_down
 
 static uint16_t ut_txa30_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
                                    uint16_t nb_pkts) {
@@ -169,6 +187,16 @@ static uint16_t ut_txa30_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf**
   uint16_t tx = ut_txr_xmit(r, tx_pkts, nb_pkts, ctx->mock_tsc_ns);
   if (tx < nb_pkts && !ctx->pipe_first_burst_fail)
     ctx->pipe_first_burst_fail = ctx->pipe_step;
+  int leg = q / ST30_TX_RL_QUEUES_USED;
+  for (uint16_t i = 0; i < tx; i++) {
+    int64_t late = (int64_t)(ctx->mock_tsc_ns - st_tx_mbuf_get_tsc(tx_pkts[i]));
+    ctx->pipe_max_late_ns[leg] = RTE_MAX(ctx->pipe_max_late_ns[leg], late);
+    if (ctx->pipe_last_accept_ns[leg])
+      ctx->pipe_min_gap_ns[leg] = RTE_MIN(
+          ctx->pipe_min_gap_ns[leg], ctx->mock_tsc_ns - ctx->pipe_last_accept_ns[leg]);
+    ctx->pipe_last_accept_ns[leg] = ctx->mock_tsc_ns;
+  }
+  ctx->pipe_accepted[leg] += tx;
   return tx;
 }
 
@@ -583,8 +611,9 @@ int ut_txa30_pipe_setup(ut_txa30_ctx* ctx, const struct ut_txa30_pipe_case* c) {
       if (ut_txa30_pipe_rl(ctx, i) < 0) return -ENOMEM;
     } else if (s->shared_queue) {
       (void)snprintf(name, sizeof(name), "ut_txa30_pipe_%u", ring_idx++);
-      mgr->ring[i] = rte_ring_create(name, ST_TX_AUDIO_SESSIONS_RING_SIZE, s->socket_id,
-                                     RING_F_MP_HTS_ENQ | RING_F_SC_DEQ);
+      mgr->ring[i] = rte_ring_create(
+          name, c->mgr_ring ? c->mgr_ring : ST_TX_AUDIO_SESSIONS_RING_SIZE, s->socket_id,
+          RING_F_MP_HTS_ENQ | RING_F_SC_DEQ);
       if (!mgr->ring[i]) return -ENOMEM;
       mgr->queue[i] = &ctx->pipe_queue[i][0];
     } else {
@@ -624,7 +653,7 @@ void ut_txa30_pipe_run(ut_txa30_ctx* ctx, uint64_t duration_ns, uint64_t step_ns
 
   ut_txa30_active_ctx = ctx;
   while (ctx->mock_tsc_ns < end && !ctx->pipe_first_alloc_fail &&
-         !ctx->pipe_first_burst_fail) {
+         (!ctx->pipe_first_burst_fail || ctx->pipe_link_mode)) {
     ctx->pipe_step++;
     tx_audio_sessions_tasklet(&ctx->mgr);
     ut_txa30_pipe_note(ctx);
@@ -679,6 +708,68 @@ int ut_txa30_pipe_teardown(ut_txa30_ctx* ctx) {
   ctx->pipe_pad_pool = NULL;
   ctx->pipe_on = false;
   return ret;
+}
+
+void ut_txa30_set_link_down(ut_txa30_ctx* ctx, bool down) {
+  for (int i = 0; i < MTL_PORT_MAX; i++) ctx->link_down[i] = down;
+}
+
+int ut_txa30_link_reads(const ut_txa30_ctx* ctx) {
+  return ctx->link_reads;
+}
+
+void ut_txa30_set_hang_ns(ut_txa30_ctx* ctx, uint64_t hang_ns) {
+  ctx->mgr.tx_hang_detect_time_thresh = hang_ns;
+}
+
+void ut_txa30_pipe_set_link(ut_txa30_ctx* ctx, int leg, bool up) {
+  struct ut_txr* r = ctx->pipe_ring[leg][0];
+
+  ctx->pipe_link_mode = true;
+  ctx->link_down[leg] = !up;
+  if (up) {
+    ctx->pipe_stale_at_up[leg] = ut_txr_in_use(r);
+    ut_txr_resume(r, 1, ctx->mock_tsc_ns);
+  } else {
+    ut_txr_set_drain_ns(r, UT_TXR_HUNG);
+  }
+}
+
+void ut_txa30_pipe_mark(ut_txa30_ctx* ctx) {
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    ctx->pipe_accepted[i] = 0;
+    ctx->pipe_max_late_ns[i] = INT64_MIN;
+    ctx->pipe_last_accept_ns[i] = 0;
+    ctx->pipe_min_gap_ns[i] = UINT64_MAX;
+  }
+}
+
+uint64_t ut_txa30_pipe_min_gap_ns(const ut_txa30_ctx* ctx, int leg) {
+  return ctx->pipe_min_gap_ns[leg];
+}
+
+uint64_t ut_txa30_pipe_accepted(const ut_txa30_ctx* ctx, int leg) {
+  return ctx->pipe_accepted[leg];
+}
+
+int64_t ut_txa30_pipe_max_late_ns(const ut_txa30_ctx* ctx, int leg) {
+  return ctx->pipe_max_late_ns[leg];
+}
+
+uint16_t ut_txa30_pipe_stale_at_up(const ut_txa30_ctx* ctx, int leg) {
+  return ctx->pipe_stale_at_up[leg];
+}
+
+uint16_t ut_txa30_trs_burst_fail(ut_txa30_ctx* ctx, int port, uint64_t thresh_ns) {
+  ctx->mgr.tx_hang_detect_time_thresh = thresh_ns;
+  ut_txa30_active_ctx = ctx;
+  uint16_t ret = st_audio_trs_burst_fail(&ctx->impl, &ctx->mgr, (enum mtl_port)port);
+  ut_txa30_active_ctx = NULL;
+  return ret;
+}
+
+uint64_t ut_txa30_last_burst_succ_tsc(const ut_txa30_ctx* ctx, int port) {
+  return ctx->mgr.last_burst_succ_time_tsc[port];
 }
 
 uint64_t ut_txa30_pipe_first_alloc_fail(const ut_txa30_ctx* ctx) {

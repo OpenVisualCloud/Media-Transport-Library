@@ -54,6 +54,12 @@ void ut_dev_set_user_nb_tx_desc(ut_dev_ctx* ctx, uint16_t nb_tx_desc);
 /** Takes the drv info a real port with this ethdev driver name gets. */
 void ut_dev_set_driver(ut_dev_ctx* ctx, const char* driver_name);
 void ut_dev_use_non_igc_driver(ut_dev_ctx* ctx);
+/** rte_eth_link_get_nowait() of the port reads up or down and returns get_error. */
+void ut_dev_set_link(ut_dev_ctx* ctx, bool up, int get_error);
+int ut_dev_link_reads(const ut_dev_ctx* ctx);
+void ut_dev_set_pmd(ut_dev_ctx* ctx, enum mtl_pmd_type pmd);
+/** mt_dev_link_down() of port P. */
+bool ut_dev_link_down(ut_dev_ctx* ctx);
 void ut_dev_set_ptp_enabled(ut_dev_ctx* ctx, bool enabled);
 void ut_dev_set_port(ut_dev_ctx* ctx, enum mtl_port port, const char* bdf,
                      uint32_t rl_burst_size);

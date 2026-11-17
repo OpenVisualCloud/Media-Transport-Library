@@ -157,6 +157,12 @@ void ut_trs_set_last_burst_succ_tsc(ut_trs_ctx* ctx, uint64_t tsc);
 uint64_t ut_trs_get_last_burst_succ_tsc(const ut_trs_ctx* ctx);
 void ut_trs_set_hang_detect_thresh_ns(ut_trs_ctx* ctx, uint64_t thresh_ns);
 
+/* what mt_dev_link_down() reads for every port; the reads it took */
+void ut_trs_set_link_down(ut_trs_ctx* ctx, bool down);
+int ut_trs_link_reads(const ut_trs_ctx* ctx);
+/* the pkts the transmitter dropped while the link was down */
+int ut_trs_link_down_drops(const ut_trs_ctx* ctx);
+
 int ut_trs_get_stat_trs_ret_code(const ut_trs_ctx* ctx);
 /* the port P status of its last tasklet call, > 0 when it sent */
 void ut_trs_set_stat_trs_ret_code(ut_trs_ctx* ctx, int ret);
