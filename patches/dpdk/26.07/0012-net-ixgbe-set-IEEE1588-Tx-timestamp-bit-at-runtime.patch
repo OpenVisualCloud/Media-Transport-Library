@@ -1,0 +1,55 @@
+From nobody Mon Sep 17 00:00:00 2001
+From: Dawid Wesierski <dawid.wesierski@intel.com>
+Date: Tue, 17 Nov 2026 10:15:21 +0000
+Subject: [PATCH] net/ixgbe: set IEEE1588 Tx timestamp bit at runtime
+
+The full-featured Tx path sets IXGBE_ADVTXD_MAC_1588 for a packet with
+RTE_MBUF_F_TX_IEEE1588_TMST only when DPDK is built with
+RTE_LIBRTE_IEEE1588. Without the macro the flag is also outside the Tx
+offload mask, so the NIC latches no Tx timestamp, and
+rte_eth_timesync_read_tx_timestamp() never returns a value although
+rte_eth_timesync_enable() succeeds. An application cannot detect the
+build option at run time.
+
+The macro is global: it also disables the vector Rx path of ixgbe and
+i40e, so enabling it to get Tx timestamps costs Rx performance on every
+port.
+
+Honor RTE_MBUF_F_TX_IEEE1588_TMST in the full-featured Tx path
+regardless of the macro. The simple and vector Tx paths do not read
+offload flags and do not change. The Rx side is not touched: the Rx
+timestamp is read from the register latch by
+rte_eth_timesync_read_rx_timestamp().
+
+Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
+---
+ drivers/net/intel/ixgbe/ixgbe_rxtx.c | 6 ------
+ 1 file changed, 6 deletions(-)
+
+diff --git a/drivers/net/intel/ixgbe/ixgbe_rxtx.c b/drivers/net/intel/ixgbe/ixgbe_rxtx.c
+index 60222693fe..f688216518 100644
+--- a/drivers/net/intel/ixgbe/ixgbe_rxtx.c
++++ b/drivers/net/intel/ixgbe/ixgbe_rxtx.c
+@@ -71,11 +71,7 @@
+ #define ixgbe_recycle_tx_mbufs_reuse_vec NULL
+ #endif
+ 
+-#ifdef RTE_LIBRTE_IEEE1588
+ #define IXGBE_TX_IEEE1588_TMST RTE_MBUF_F_TX_IEEE1588_TMST
+-#else
+-#define IXGBE_TX_IEEE1588_TMST 0
+-#endif
+ /* Bit Mask to indicate what bits required for building TX context */
+ #define IXGBE_TX_OFFLOAD_MASK (RTE_MBUF_F_TX_OUTER_IPV6 |		 \
+ 		RTE_MBUF_F_TX_OUTER_IPV4 |		 \
+@@ -806,10 +802,8 @@ ixgbe_xmit_pkts(void *tx_queue, struct rte_mbuf **tx_pkts,
+ 		cmd_type_len = IXGBE_ADVTXD_DTYP_DATA |
+ 			IXGBE_ADVTXD_DCMD_IFCS | IXGBE_ADVTXD_DCMD_DEXT;
+ 
+-#ifdef RTE_LIBRTE_IEEE1588
+ 		if (ol_flags & RTE_MBUF_F_TX_IEEE1588_TMST)
+ 			cmd_type_len |= IXGBE_ADVTXD_MAC_1588;
+-#endif
+ 
+ 		olinfo_status = 0;
+ 		if (tx_ol_req || new_ctx) {
