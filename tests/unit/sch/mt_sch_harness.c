@@ -592,7 +592,7 @@ static void ut_sch_count_warns(enum mtl_log_level level, const char* format, ...
 
   if (level != MTL_LOG_LEVEL_WARNING || ut_sch_warns++) return;
   va_start(args, format);
-  vsnprintf(ut_sch_warn_line, sizeof(ut_sch_warn_line), format, args);
+  (void)vsnprintf(ut_sch_warn_line, sizeof(ut_sch_warn_line), format, args);
   va_end(args);
 }
 
