@@ -464,7 +464,10 @@ For older kernel version on Red Hat, the issue is that Red Hat uses vault repos.
 
 ### 4.5. Compiler hardening
 
-The Linux build compiles the MTL meson projects with the hardening options below. The `meson.build` of each project adds them with `add_project_arguments()` and `add_project_link_arguments()`.
+The Linux build compiles the MTL meson projects with the hardening options below, and DPDK, libbpf, libxdp, openh264, FFmpeg, the MTL plugin of SVT-JPEG-XS and the Level Zero loader of gpu_direct with the options for C, less the warning options: openh264 and Level Zero are C++, but get no `-D_GLIBCXX_ASSERTIONS`.
+The `meson.build` of each project adds them with `add_project_arguments()` and `add_project_link_arguments()`, and `script/build_dpdk.sh`, `script/build_ebpf_xdp.sh`, `script/build_ffmpeg_plugin.sh`, `script/build_jpegxs.sh` and `script/install_dependencies.sh gpu_direct` pass them to the dependencies they build, from `hardening_flags()` in `script/common.sh`.
+In the dependency builds `hardening_flags()` applies the `_FORTIFY_SOURCE` rule of the meson projects: it adds no level when `CFLAGS` or `CPPFLAGS` set one or a sanitizer (`-fsanitize=`), or when the last `-O` of `CFLAGS`, then `CPPFLAGS`, is `-O0`, as `b_sanitize` and the meson option `optimization` at `0` do for the MTL projects.
+`MTL_HARDENING=0` builds them without the flags, and DPDK and the FFmpeg programs without PIE, for a build that sets its own; the scripts say so in a warning.
 
 | Option | Protection |
 | --- | --- |
@@ -482,6 +485,8 @@ The Linux build compiles the MTL meson projects with the hardening options below
 The `-U_FORTIFY_SOURCE` removes the level that Ubuntu gcc sets by itself, so `-Werror` does not stop the build on a redefinition, and the level that the toolchain applies takes its place: 3 with gcc 12 and later and with clang, 2 with gcc 11 (Ubuntu 22.04, RHEL 9, Rocky Linux 9), which cannot apply 3. A level that `c_args` or `cpp_args` already set, also through `CFLAGS` or `CPPFLAGS`, is kept.
 
 The gcc of Rocky Linux and RHEL enables none of the compiler options by default. So the Rocky Linux 9 image build runs `.github/scripts/ci/scan/check-hardening.sh` on what `build.sh` builds there: libmtl, UnitTest, the samples, the sample plugins, MtlManager, KahawaiTest and RxTxApp. It fails on a binary without full RELRO, a non-executable stack, PIE, CET or the stack protector.
+
+The FFmpeg 7.0 assembly is marked SHSTK only, so the build applies `ecosystem/ffmpeg_plugin/7.0/0002-x86-add-Intel-CET-IBT-support.patch`, which makes it IBT-correct and marks it IBT and SHSTK.
 
 ## Next Steps
 Proceed to [Running MTL](./run.md) for further instructions.

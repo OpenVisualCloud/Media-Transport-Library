@@ -33,6 +33,7 @@ jobs:
   triv-security-tab:
     name: sarif output scan
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     permissions:
         security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
     steps:
@@ -44,17 +45,20 @@ jobs:
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
         with:
           ref: maint-25.02 # tmp branch
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
         with:
           ref: main
 
       - name: Checkout code
         if: github.event_name != 'schedule'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
         with:
           ref: ${{ inputs.branch }}
 
@@ -83,6 +87,7 @@ jobs:
   triv-security-tab-manager:
     name: manager sarif output scan
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     permissions:
         security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
     steps:
@@ -94,17 +99,20 @@ jobs:
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
         with:
           ref: maint-25.02 # tmp branch
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
         with:
           ref: main
 
       - name: Checkout code
         if: github.event_name != 'schedule'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
         with:
           ref: ${{ inputs.branch }}
 
@@ -132,6 +140,7 @@ jobs:
   trivy-sbom:
     name: spdx sbom and vulnerability scan
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -141,17 +150,20 @@ jobs:
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
         with:
           ref: maint-25.02 # tmp branch
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
         with:
           ref: main
 
       - name: Checkout code
         if: github.event_name != 'schedule'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
         with:
           ref: ${{ inputs.branch }}
 
@@ -212,6 +224,7 @@ jobs:
   trivy-stdout:
     name: table output scan
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -221,17 +234,20 @@ jobs:
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
         with:
           ref: maint-25.02 # tmp branch
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
         with:
           ref: main
 
       - name: Checkout code
         if: github.event_name != 'schedule'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 3
         with:
           ref: ${{ inputs.branch }}
 

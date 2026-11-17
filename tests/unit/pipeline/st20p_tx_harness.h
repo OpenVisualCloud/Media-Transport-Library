@@ -176,6 +176,12 @@ struct st20p_tx_ops* ut20p_tx_ops(ut20p_tx_ctx* ctx);
  */
 int ut20p_tx_capture_transport_ops(ut20p_tx_ctx* ctx, struct st20_tx_ops* ops);
 
+/**
+ * st20p_tx_free() from the transport session's scheduler thread, as from a callback.
+ * Returns its result; *destroying is whether it began tearing the ctx down.
+ */
+int ut20p_tx_free_in_callback(ut20p_tx_ctx* ctx, bool* destroying);
+
 #ifdef __cplusplus
 }
 #endif

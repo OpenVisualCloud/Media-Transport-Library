@@ -20,6 +20,9 @@
  * `ptp_get_time_fn` field of `struct mt_interface`.
  */
 
+#define _GNU_SOURCE /* sched_getcpu(), pthread_setaffinity_np() */
+#include <pthread.h>
+#include <sched.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,6 +51,9 @@ struct ut_txv_ctx {
   int get_next_frame_calls;
   bool app_busy;
   int peer_get_next_frame_calls;
+  int lock_probe_runs;
+  bool lock_probe_locked;
+  int lock_probe_slot;
   int notify_frame_done_calls;
   uint16_t app_frame_idx;   /* the frame ut_txv_get_next_frame() hands over */
   uint32_t nic_sent_frames; /* zero copy: frames mt_txq_reclaim() frees */
@@ -414,6 +420,7 @@ static uint16_t ut_txv_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** t
 #include "st2110/st_video_transmitter.c"
 #undef mt_txq_burst
 #undef mt_get_tsc
+#include "mt_admin.c"
 
 static void ut_txv_tx_path_uinit(struct ut_txv_ctx* ctx);
 
@@ -432,9 +439,15 @@ ut_txv_ctx* ut_txv_create(void) {
   ctx->impl.type = MT_HANDLE_MAIN;
   ctx->impl.tsc_hz = rte_get_tsc_hz();
   ctx->impl.inf[MTL_PORT_P].ptp_get_time_fn = ut_txv_ptp_time_fn;
+  struct mtl_sch_impl* sch = mt_sch_instance(&ctx->impl, 0); /* the gets wait on it */
+  sch->parent = &ctx->impl;
+  sch->qs_seen = UINT64_MAX; /* no scheduler thread runs the harness tasklets */
   ctx->mgr.parent = &ctx->impl;
   ctx->mgr.max_idx = 1;
   rte_spinlock_init(&ctx->mgr.mutex[0]);
+  mt_sch_dp_slot_init(&ctx->mgr.dp_slot);
+  for (int i = 0; i < MT_MAX_SCH_NUM; i++)
+    mt_sch_dp_slot_init(&mt_sch_instance(&ctx->impl, i)->tx_video_mgr.dp_slot);
 
   struct st_tx_video_session_impl* s = &ctx->session;
   s->impl = &ctx->impl;
@@ -578,9 +591,9 @@ uint64_t ut_txv_pacing_required_tai(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfm
   return tv_pacing_required_tai(&ctx->session, tfmt, timestamp);
 }
 
-/* Header mempool and TX ring on port P, as tv_mempool_init()/tv_init_hw() would.
+/* Header mempool and TX ring on a session port, as tv_mempool_init()/tv_init_hw() would.
  * Shared by every driver below that lets the production builders run. */
-static int ut_txv_tx_path_init(struct ut_txv_ctx* ctx) {
+static int ut_txv_tx_leg_init(struct ut_txv_ctx* ctx, int port) {
   static unsigned int path_idx;
   struct st_tx_video_session_impl* s = &ctx->session;
   char pool_name[RTE_MEMPOOL_NAMESIZE];
@@ -588,24 +601,32 @@ static int ut_txv_tx_path_init(struct ut_txv_ctx* ctx) {
 
   snprintf(pool_name, sizeof(pool_name), "ut_txv_pool_%u", path_idx);
   snprintf(ring_name, sizeof(ring_name), "ut_txv_ring_%u", path_idx++);
-  s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] =
+  s->mbuf_mempool_hdr[port] =
       rte_pktmbuf_pool_create(pool_name, 32, 0, sizeof(struct mt_muf_priv_data),
                               RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
-  s->ring[MTL_SESSION_PORT_P] = ut_ring_create(ring_name, 32);
-  if (!s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] || !s->ring[MTL_SESSION_PORT_P]) return -1;
+  s->ring[port] = ut_ring_create(ring_name, 32);
+  if (!s->mbuf_mempool_hdr[port] || !s->ring[port]) return -1;
   return 0;
 }
 
-static void ut_txv_tx_path_uinit(struct ut_txv_ctx* ctx) {
+static void ut_txv_tx_leg_uinit(struct ut_txv_ctx* ctx, int port) {
   struct st_tx_video_session_impl* s = &ctx->session;
 
-  if (s->ring[MTL_SESSION_PORT_P]) {
-    ut_ring_drain(s->ring[MTL_SESSION_PORT_P]);
-    rte_ring_free(s->ring[MTL_SESSION_PORT_P]);
-    s->ring[MTL_SESSION_PORT_P] = NULL;
+  if (s->ring[port]) {
+    ut_ring_drain(s->ring[port]);
+    rte_ring_free(s->ring[port]);
+    s->ring[port] = NULL;
   }
-  rte_mempool_free(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
-  s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] = NULL;
+  rte_mempool_free(s->mbuf_mempool_hdr[port]);
+  s->mbuf_mempool_hdr[port] = NULL;
+}
+
+static int ut_txv_tx_path_init(struct ut_txv_ctx* ctx) {
+  return ut_txv_tx_leg_init(ctx, MTL_SESSION_PORT_P);
+}
+
+static void ut_txv_tx_path_uinit(struct ut_txv_ctx* ctx) {
+  ut_txv_tx_leg_uinit(ctx, MTL_SESSION_PORT_P);
 }
 
 /* One frame of total_pkts 4-byte packets, sent one per bulk, with no chain mbufs. */
@@ -667,6 +688,84 @@ out:
   ut_txv_tx_path_uinit(ctx);
   s->st20_frames = NULL;
   return ret;
+}
+
+static int ut_txv_mark_unstamped(struct rte_mempool* pool) {
+  struct rte_mbuf* mbufs[pool->size];
+
+  if (rte_pktmbuf_alloc_bulk(pool, mbufs, pool->size) < 0) return -ENOMEM;
+  for (unsigned int i = 0; i < pool->size; i++) {
+    st_tx_mbuf_set_tsc(mbufs[i], UT_TXV_NO_STAMP);
+    st_tx_mbuf_set_ptp(mbufs[i], UT_TXV_NO_STAMP);
+  }
+  rte_pktmbuf_free_bulk(mbufs, pool->size);
+  return 0;
+}
+
+int ut_txv_run_frame_stamps(ut_txv_ctx* ctx, const enum st21_tx_pacing_way* ways,
+                            int num_port, unsigned int bulk, int total_pkts,
+                            uint64_t build_ns, struct ut_txv_stamps* stamps) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st_frame_trans frame = {0};
+  uint8_t frame_data[UT_TXV_STAMP_PKTS * UT_TXV_FRAME_SIZE] = {0};
+  int builds = (total_pkts + (int)bulk - 1) / (int)bulk;
+  int pkts = builds * (int)bulk;
+  int ret = -1;
+
+  if (pkts > UT_TXV_STAMP_PKTS) return -EINVAL;
+  for (int port = 0; port < MTL_SESSION_PORT_MAX; port++)
+    s->pacing_way[port] = ways[port];
+  for (int port = 0; port < num_port; port++) {
+    if (ut_txv_tx_leg_init(ctx, port) < 0) goto out;
+    if (ut_txv_mark_unstamped(s->mbuf_mempool_hdr[port]) < 0) goto out;
+  }
+  ut_txv_frame_setup(ctx, &frame, frame_data, total_pkts);
+  s->st20_frame_size = (size_t)total_pkts * UT_TXV_FRAME_SIZE;
+  s->st20_fb_size = s->st20_frame_size;
+  s->ops.height = total_pkts;
+  s->ops.num_port = num_port;
+  s->bulk = bulk;
+  ctx->app_tfmt = ST10_TIMESTAMP_FMT_TAI;
+  ctx->app_timestamp = 0;
+
+  for (int b = 0; b < builds; b++) {
+    tvs_tasklet_handler(&ctx->mgr);
+    ctx->mock_tsc_ns += build_ns;
+  }
+  if (s->st20_frame_stat != ST21_TX_STAT_WAIT_FRAME) goto out;
+  for (int port = 0; port < num_port; port++) {
+    if (rte_ring_count(s->ring[port]) != (unsigned int)pkts) goto out;
+    for (int i = 0; i < pkts; i++) {
+      struct rte_mbuf* pkt;
+      if (rte_ring_sc_dequeue(s->ring[port], (void**)&pkt) < 0) goto out;
+      stamps->tsc[port][i] = st_tx_mbuf_get_tsc(pkt);
+      stamps->ptp[port][i] = st_tx_mbuf_get_ptp(pkt);
+      rte_pktmbuf_free(pkt);
+    }
+  }
+  ret = pkts;
+
+out:
+  for (int port = 0; port < num_port; port++) ut_txv_tx_leg_uinit(ctx, port);
+  s->st20_frames = NULL;
+  return ret;
+}
+
+mtl_iova_t ut_txv_frame_offset_iova(ut_txv_ctx* ctx, mtl_iova_t iova,
+                                    const mtl_iova_t* page_iova, uint16_t pages,
+                                    size_t offset) {
+  uint8_t va[UT_TXV_IOVA_PAGES_MAX * UT_TXV_IOVA_PAGE_LEN];
+  struct st_page_info page_table[UT_TXV_IOVA_PAGES_MAX];
+  struct st_frame_trans frame = {
+      .addr = va, .iova = iova, .page_table = page_table, .page_table_len = pages};
+
+  if (pages > UT_TXV_IOVA_PAGES_MAX) return MTL_BAD_IOVA;
+  for (uint16_t i = 0; i < pages; i++) {
+    page_table[i].iova = page_iova[i];
+    page_table[i].addr = va + (size_t)i * UT_TXV_IOVA_PAGE_LEN;
+    page_table[i].len = UT_TXV_IOVA_PAGE_LEN;
+  }
+  return tv_frame_get_offset_iova(&ctx->session, &frame, offset);
 }
 
 /* Queues one app packet for tv_tasklet_rtp() on a one-packet RTP-level frame. */
@@ -1007,6 +1106,787 @@ uint64_t ut_txv_reclaim_interval_ns(void) {
 
 int ut_txv_peer_get_next_frame_calls(const ut_txv_ctx* ctx) {
   return ctx->peer_get_next_frame_calls;
+}
+
+static void ut_txv_lock_probe_record(struct ut_txv_ctx* ctx) {
+  ctx->lock_probe_runs++;
+  ctx->lock_probe_locked = rte_spinlock_is_locked(&ctx->mgr.mutex[0]);
+  ctx->lock_probe_slot = atomic_load(&ctx->mgr.dp_slot.idx);
+}
+
+static int ut_txv_lock_probe_get_next_frame(void* priv, uint16_t* next_frame_idx,
+                                            struct st20_tx_frame_meta* meta) {
+  *next_frame_idx = 0;
+  (void)meta;
+  ut_txv_lock_probe_record(priv);
+  return -EBUSY;
+}
+
+static int ut_txv_lock_probe_pacing(struct mtl_main_impl* impl,
+                                    struct st_tx_video_session_impl* s,
+                                    enum mtl_session_port s_port) {
+  (void)impl;
+  (void)s_port;
+  ut_txv_lock_probe_record(s->ops.priv);
+  return MTL_TASKLET_ALL_DONE;
+}
+
+int ut_txv_run_tasklet_lock_probe(ut_txv_ctx* ctx, enum ut_txv_tasklet tasklet,
+                                  bool hold_lock, bool* locked_in_run,
+                                  bool* locked_after) {
+  struct st_tx_video_sessions_mgr* mgr = &ctx->mgr;
+  struct st_video_transmitter_impl trs = {.parent = &ctx->impl, .mgr = mgr};
+  struct st_tx_video_session_impl* peer = ut_txv_peer_create(ctx, 0, true);
+
+  if (!peer) return -ENOMEM;
+  peer->ops.get_next_frame = ut_txv_lock_probe_get_next_frame;
+  peer->queue[MTL_SESSION_PORT_P] = &ctx->zc_queues[MTL_SESSION_PORT_P];
+  peer->pacing_tasklet_func[MTL_SESSION_PORT_P] = ut_txv_lock_probe_pacing;
+  mgr->sessions[0] = peer;
+  ctx->lock_probe_runs = 0;
+  ctx->lock_probe_locked = false;
+  ctx->lock_probe_slot = -2;
+  if (hold_lock) rte_spinlock_lock(&mgr->mutex[0]);
+
+  if (tasklet == UT_TXV_TASKLET_BUILDER)
+    tvs_tasklet_handler(mgr);
+  else
+    video_trs_tasklet_handler(&trs);
+
+  *locked_in_run = ctx->lock_probe_locked;
+  *locked_after = rte_spinlock_is_locked(&mgr->mutex[0]);
+  if (*locked_after) rte_spinlock_unlock(&mgr->mutex[0]);
+  mgr->sessions[0] = &ctx->session;
+  ut_txv_peer_free(peer);
+  return ctx->lock_probe_runs;
+}
+
+struct ut_txv_fake_sch {
+  struct mtl_sch_impl* sch;
+  rte_spinlock_t* lock;
+  uint64_t token; /* qs_token before the call */
+  atomic_bool stop;
+  int waits;
+  int unlocked_waits; /* begun without the session lock held */
+  /* when set, the first wait finds the session migrated there meanwhile */
+  struct ut_txv_ctx* migrate_ctx;
+  struct st_tx_video_sessions_mgr* migrate_to;
+};
+
+#define UT_TXV_MIGRATED_IDX (3)
+
+/* What tx_video_migrate_to() does to the session, onto slot 3 of to. */
+static void ut_txv_migrate(struct ut_txv_ctx* ctx, struct st_tx_video_sessions_mgr* to) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  s->mgr->sessions[s->idx] = NULL;
+  st_tx_video_session_migrate(to, s, UT_TXV_MIGRATED_IDX);
+  to->sessions[UT_TXV_MIGRATED_IDX] = s;
+  to->max_idx = UT_TXV_MIGRATED_IDX + 1;
+}
+
+/* A scheduler in a pass, which ends the pass once a wait on it began. */
+static void* ut_txv_fake_sch_thread(void* arg) {
+  struct ut_txv_fake_sch* f = arg;
+  uint64_t seen = f->token;
+
+  while (!atomic_load(&f->stop)) {
+    uint64_t token = atomic_load(&f->sch->qs_token);
+    if (token == seen) {
+      rte_pause();
+      continue;
+    }
+    f->waits += (int)(token - seen);
+    if (!rte_spinlock_is_locked(f->lock)) f->unlocked_waits++;
+    if (f->migrate_to) ut_txv_migrate(f->migrate_ctx, f->migrate_to);
+    f->migrate_to = NULL;
+    seen = token;
+    atomic_store(&f->sch->qs_seen, token);
+  }
+  return NULL;
+}
+
+/* The stats, update and free calls act on s, the gets on mgr's slot idx. */
+static int ut_txv_control_call_on(struct ut_txv_ctx* ctx,
+                                  struct st_tx_video_session_impl* s,
+                                  struct st_tx_video_sessions_mgr* mgr, int idx,
+                                  enum ut_txv_control call) {
+  struct st_tx_dest_info dst = {.dip_addr[MTL_SESSION_PORT_P] = {239, 0, 0, 1}};
+  struct st20_tx_user_stats stats;
+  int ret;
+
+  ctx->handle.parent = &ctx->impl;
+  ctx->handle.type = MT_HANDLE_TX_VIDEO;
+  ctx->handle.impl = s;
+  ctx->handle.sch = mt_sch_instance(&ctx->impl, 0);
+  ctx->handle.sch->tx_video_mgr.parent =
+      &ctx->impl; /* a free past its guard updates it */
+  /* as ut_txv_update_dst(): the source MAC then comes from inf->k_mac_addr */
+  ctx->impl.inf[MTL_PORT_P].drv_info.flags |= MT_DRV_F_NOT_DPDK_PMD;
+  s->ops.num_port = 1;
+  s->ops.flags |= ST20_TX_FLAG_USER_P_MAC;
+
+  switch (call) {
+    case UT_TXV_GET:
+      ret = tx_video_session_get(mgr, idx) ? 0 : -EIO;
+      break;
+    case UT_TXV_GET_TIMEOUT:
+      ret = tx_video_session_get_timeout(mgr, idx, US_PER_S) ? 0 : -EIO;
+      break;
+    case UT_TXV_GET_EMPTY:
+      ret = tx_video_session_get_empty(mgr, idx) ? 0 : -EIO;
+      break;
+    case UT_TXV_STATS_GET:
+      return st20_tx_get_session_stats(&ctx->handle, &stats);
+    case UT_TXV_STATS_RESET:
+      return st20_tx_reset_session_stats(&ctx->handle);
+    case UT_TXV_UPDATE_DST:
+      return st20_tx_update_destination(&ctx->handle, &dst);
+    default: {
+      /* rte memory, as a free that passes its guard releases the handle */
+      struct st_tx_video_session_handle_impl* h =
+          mt_rte_zmalloc_socket(sizeof(*h), SOCKET_ID_ANY);
+      if (!h) return -ENOMEM;
+      h->parent = &ctx->impl;
+      h->type = MT_HANDLE_TX_VIDEO;
+      h->impl = s;
+      h->sch = ctx->handle.sch;
+      ret = st20_tx_free(h);
+      if (ret) mt_rte_free(h);
+      return ret;
+    }
+  }
+  if (!ret) tx_video_session_put(mgr, idx);
+  return ret;
+}
+
+static int ut_txv_control_call(struct ut_txv_ctx* ctx,
+                               struct st_tx_video_sessions_mgr* mgr, int idx,
+                               enum ut_txv_control call) {
+  return ut_txv_control_call_on(ctx, &ctx->session, mgr, idx, call);
+}
+
+static int ut_txv_run_on_fake_sch(struct ut_txv_ctx* ctx,
+                                  struct st_tx_video_sessions_mgr* mgr, int idx,
+                                  enum ut_txv_control call, bool* locked_at_wait,
+                                  struct st_tx_video_sessions_mgr* migrate_to) {
+  struct mtl_sch_impl* sch = mt_sch_instance(mgr->parent, mgr->idx);
+  struct ut_txv_fake_sch f = {
+      .sch = sch, .lock = &mgr->mutex[idx], .migrate_ctx = ctx, .migrate_to = migrate_to};
+  pthread_t thread;
+
+  f.token = atomic_load(&sch->qs_token);
+  atomic_store(&sch->qs_seen, f.token);
+  atomic_store(&mgr->dp_slot.idx, idx); /* its pass is on the slot */
+  int ret = -pthread_create(&thread, NULL, ut_txv_fake_sch_thread, &f);
+  if (!ret) {
+    ret = ut_txv_control_call(ctx, mgr, idx, call);
+    atomic_store(&f.stop, true);
+    pthread_join(thread, NULL);
+  }
+  atomic_store(&mgr->dp_slot.idx, -1);
+  atomic_store(&sch->qs_seen, UINT64_MAX);
+  *locked_at_wait = !f.unlocked_waits;
+  return ret < 0 ? ret : f.waits;
+}
+
+int ut_txv_run_control(ut_txv_ctx* ctx, enum ut_txv_control call, bool* locked_at_wait) {
+  int idx = call == UT_TXV_GET_EMPTY ? 1 : 0;
+
+  rte_spinlock_init(&ctx->mgr.mutex[idx]);
+  return ut_txv_run_on_fake_sch(ctx, &ctx->mgr, idx, call, locked_at_wait, NULL);
+}
+
+/* A manager of scheduler 1, offline, for the session to migrate into. */
+static struct st_tx_video_sessions_mgr* ut_txv_migration_target(struct ut_txv_ctx* ctx) {
+  struct st_tx_video_sessions_mgr* to = calloc(1, sizeof(*to));
+  struct mtl_sch_impl* sch = mt_sch_instance(&ctx->impl, 1);
+
+  if (!to) return NULL;
+  sch->parent = &ctx->impl;
+  sch->qs_seen = UINT64_MAX;
+  to->parent = &ctx->impl;
+  to->idx = 1;
+  mt_sch_dp_slot_init(&to->dp_slot);
+  rte_spinlock_init(&to->mutex[UT_TXV_MIGRATED_IDX]);
+  return to;
+}
+
+static void ut_txv_migration_undo(struct ut_txv_ctx* ctx,
+                                  struct st_tx_video_sessions_mgr* to) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  s->mgr = &ctx->mgr;
+  s->idx = 0;
+  ctx->mgr.sessions[0] = s;
+  free(to);
+}
+
+int ut_txv_run_control_after_migration(ut_txv_ctx* ctx, enum ut_txv_control call,
+                                       bool* locked_at_wait) {
+  struct st_tx_video_sessions_mgr* to = ut_txv_migration_target(ctx);
+  if (!to) return -ENOMEM;
+
+  ut_txv_migrate(ctx, to);
+  int ret =
+      ut_txv_run_on_fake_sch(ctx, to, UT_TXV_MIGRATED_IDX, call, locked_at_wait, NULL);
+  ut_txv_migration_undo(ctx, to);
+  return ret;
+}
+
+int ut_txv_run_control_racing_migration(ut_txv_ctx* ctx, enum ut_txv_control call) {
+  struct st_tx_video_sessions_mgr* to = ut_txv_migration_target(ctx);
+  bool locked_at_wait;
+  if (!to) return -ENOMEM;
+
+  rte_spinlock_init(&ctx->mgr.mutex[0]);
+  int ret = ut_txv_run_on_fake_sch(ctx, &ctx->mgr, 0, call, &locked_at_wait, to);
+  ut_txv_migration_undo(ctx, to);
+  return ret < 0 ? ret : 0;
+}
+
+struct ut_txv_migrator {
+  struct ut_txv_ctx* ctx;
+  struct st_tx_video_sessions_mgr* to;
+  atomic_bool locked;
+  atomic_bool reader_started;
+};
+
+/* As tx_video_migrate_to(): moves the session while it holds the old slot. */
+static void* ut_txv_migrator_thread(void* arg) {
+  struct ut_txv_migrator* m = arg;
+  rte_spinlock_t* old_lock = &m->ctx->mgr.mutex[0];
+  uint64_t deadline = rte_get_tsc_cycles() + rte_get_tsc_hz();
+
+  rte_spinlock_lock(old_lock);
+  atomic_store(&m->locked, true);
+  while (!atomic_load(&m->reader_started) && rte_get_tsc_cycles() < deadline) rte_pause();
+  /* time for the reader to block on the old slot; a later one reads the new slot */
+  rte_delay_us_block(1000);
+  ut_txv_migrate(m->ctx, m->to);
+  rte_spinlock_unlock(old_lock);
+  return NULL;
+}
+
+int ut_txv_run_control_blocked_by_migration(ut_txv_ctx* ctx, enum ut_txv_control call) {
+  struct ut_txv_migrator m = {.ctx = ctx, .to = ut_txv_migration_target(ctx)};
+  pthread_t thread;
+  if (!m.to) return -ENOMEM;
+
+  rte_spinlock_init(&ctx->mgr.mutex[0]);
+  int ret = -pthread_create(&thread, NULL, ut_txv_migrator_thread, &m);
+  if (!ret) {
+    while (!atomic_load(&m.locked)) rte_pause();
+    atomic_store(&m.reader_started, true);
+    ret = ut_txv_control_call(ctx, &ctx->mgr, 0, call);
+    pthread_join(thread, NULL);
+  }
+  ut_txv_migration_undo(ctx, m.to);
+  return ret;
+}
+
+struct ut_txv_writer {
+  struct st_tx_video_sessions_mgr* mgr;
+};
+
+static void* ut_txv_writer_thread(void* arg) {
+  struct ut_txv_writer* w = arg;
+
+  if (tx_video_session_get(w->mgr, 0)) tx_video_session_put(w->mgr, 0);
+  return NULL;
+}
+
+struct ut_txv_watchdog {
+  struct mtl_sch_impl* sch;
+  atomic_bool done;
+};
+
+/* Ends a wait that has no timeout after 1 s, so the case fails instead of hanging. */
+static void* ut_txv_watchdog_thread(void* arg) {
+  struct ut_txv_watchdog* w = arg;
+  uint64_t end = rte_get_tsc_cycles() + rte_get_tsc_hz();
+
+  while (!atomic_load(&w->done) && rte_get_tsc_cycles() < end) rte_pause();
+  if (!atomic_load(&w->done)) atomic_store(&w->sch->qs_seen, UINT64_MAX);
+  return NULL;
+}
+
+/* in the callback of the session in slot, mid-pass */
+static int ut_txv_run_control_in_slot_callback(ut_txv_ctx* ctx, enum ut_txv_control call,
+                                               bool held, int slot) {
+  struct st_tx_video_sessions_mgr* mgr = &ctx->mgr;
+  struct mtl_sch_impl* sch = mt_sch_instance(&ctx->impl, 0);
+  struct ut_txv_writer writer = {.mgr = mgr};
+  struct ut_txv_watchdog w = {.sch = sch};
+  pthread_t writer_thread, watchdog_thread;
+  int ret = 0;
+
+  sch->t_pid = rte_gettid(); /* the caller plays the scheduler thread, mid-pass */
+  uint64_t token = atomic_load(&sch->qs_token);
+  atomic_store(&sch->qs_seen, token);
+  atomic_store(&mgr->dp_slot.idx, slot);
+  if (held) {
+    ret = -pthread_create(&writer_thread, NULL, ut_txv_writer_thread, &writer);
+    if (ret) goto out;
+    /* the writer holds the lock once it waits for the pass */
+    uint64_t deadline = rte_get_tsc_cycles() + rte_get_tsc_hz();
+    while (atomic_load(&sch->qs_token) == token && rte_get_tsc_cycles() < deadline)
+      rte_pause();
+    if (atomic_load(&sch->qs_token) == token) ret = -ETIMEDOUT;
+  }
+
+  if (!ret) ret = -pthread_create(&watchdog_thread, NULL, ut_txv_watchdog_thread, &w);
+  if (!ret) {
+    ret = ut_txv_control_call(ctx, mgr, 0, call);
+    atomic_store(&w.done, true);
+    pthread_join(watchdog_thread, NULL);
+  }
+  atomic_store(&sch->qs_seen, atomic_load(&sch->qs_token)); /* the pass ends */
+  if (held) pthread_join(writer_thread, NULL);
+out:
+  sch->t_pid = 0;
+  atomic_store(&mgr->dp_slot.idx, -1);
+  atomic_store(&sch->qs_seen, UINT64_MAX);
+  return ret;
+}
+
+int ut_txv_run_control_in_callback(ut_txv_ctx* ctx, enum ut_txv_control call, bool held) {
+  return ut_txv_run_control_in_slot_callback(ctx, call, held, 0);
+}
+
+int ut_txv_run_control_in_peer_callback(ut_txv_ctx* ctx, enum ut_txv_control call) {
+  return ut_txv_run_control_in_slot_callback(ctx, call, true, 1);
+}
+
+bool ut_txv_get_timeout_on_endless_pass(ut_txv_ctx* ctx, int timeout_us,
+                                        bool* locked_after) {
+  struct st_tx_video_sessions_mgr* mgr = &ctx->mgr;
+  struct ut_txv_watchdog w = {.sch = mt_sch_instance(&ctx->impl, 0)};
+  pthread_t thread;
+  bool got = true;
+
+  atomic_store(&w.sch->qs_seen, atomic_load(&w.sch->qs_token));
+  atomic_store(&mgr->dp_slot.idx, 0); /* the endless pass is on the session */
+  if (!pthread_create(&thread, NULL, ut_txv_watchdog_thread, &w)) {
+    got = tx_video_session_get_timeout(mgr, 0, timeout_us) != NULL;
+    atomic_store(&w.done, true);
+    pthread_join(thread, NULL);
+  }
+  atomic_store(&mgr->dp_slot.idx, -1);
+  *locked_after = rte_spinlock_is_locked(&mgr->mutex[0]);
+  if (*locked_after) tx_video_session_put(mgr, 0);
+  atomic_store(&w.sch->qs_seen, UINT64_MAX);
+  return got;
+}
+
+struct ut_txv_app_mutex_deadlock {
+  struct ut_txv_ctx* ctx;
+  pthread_mutex_t app_mutex;
+  int timeout_ms;
+  atomic_bool callback_entered;
+  atomic_bool stats_done;
+  atomic_bool watchdog_fired;
+};
+
+static int ut_txv_app_mutex_get_next_frame(void* priv, uint16_t* next_frame_idx,
+                                           struct st20_tx_frame_meta* meta) {
+  struct ut_txv_app_mutex_deadlock* d = priv;
+  *next_frame_idx = 0; /* unused: the callback returns -EBUSY */
+  (void)meta;
+
+  atomic_store(&d->callback_entered, true);
+  pthread_mutex_lock(&d->app_mutex);
+  pthread_mutex_unlock(&d->app_mutex);
+  return -EBUSY;
+}
+
+static void* ut_txv_app_mutex_scheduler(void* arg) {
+  struct ut_txv_app_mutex_deadlock* d = arg;
+  struct mtl_sch_impl* sch = mt_sch_instance(&d->ctx->impl, 0);
+
+  tvs_tasklet_handler(&d->ctx->mgr);
+  atomic_store(&sch->qs_seen, atomic_load(&sch->qs_token));
+  return NULL;
+}
+
+static void* ut_txv_app_mutex_watchdog(void* arg) {
+  struct ut_txv_app_mutex_deadlock* d = arg;
+  struct mtl_sch_impl* sch = mt_sch_instance(&d->ctx->impl, 0);
+  uint64_t timeout_cycles = (uint64_t)d->timeout_ms * rte_get_tsc_hz() / 1000;
+  uint64_t deadline = rte_get_tsc_cycles() + timeout_cycles;
+
+  while (!atomic_load(&d->stats_done) && rte_get_tsc_cycles() < deadline) rte_pause();
+  if (!atomic_load(&d->stats_done)) {
+    atomic_store(&d->watchdog_fired, true);
+    atomic_store(&sch->qs_seen, UINT64_MAX);
+  }
+  return NULL;
+}
+
+static bool ut_txv_peer_callback_cycle_completes(ut_txv_ctx* ctx,
+                                                 enum ut_txv_control call,
+                                                 int timeout_ms) {
+  struct st_tx_video_sessions_mgr* mgr = &ctx->mgr;
+  struct mtl_sch_impl* sch = mt_sch_instance(&ctx->impl, 0);
+  struct ut_txv_app_mutex_deadlock d = {.ctx = ctx, .timeout_ms = timeout_ms};
+  struct st_tx_video_session_impl* peer = ut_txv_peer_create(ctx, 1, true);
+  pthread_t scheduler_thread, watchdog_thread;
+  bool scheduler_started = false, watchdog_started = false;
+  bool active = ctx->session.active;
+  int ret = 0;
+
+  if (!peer || timeout_ms <= 0) {
+    ut_txv_peer_free(peer);
+    return false;
+  }
+  peer->ops.get_next_frame = ut_txv_app_mutex_get_next_frame;
+  peer->ops.priv = &d;
+  rte_spinlock_init(&mgr->mutex[1]);
+  rte_spinlock_init(&mgr->mutex[2]);
+  mgr->sessions[1] = peer;
+  mgr->max_idx = 2;
+  ctx->session.active = false;
+  pthread_mutex_init(&d.app_mutex, NULL);
+  pthread_mutex_lock(&d.app_mutex);
+  atomic_store(&sch->qs_seen, atomic_load(&sch->qs_token));
+
+  ret = pthread_create(&scheduler_thread, NULL, ut_txv_app_mutex_scheduler, &d);
+  scheduler_started = !ret;
+  uint64_t deadline =
+      rte_get_tsc_cycles() + (uint64_t)timeout_ms * rte_get_tsc_hz() / 1000;
+  while (scheduler_started && !atomic_load(&d.callback_entered) &&
+         rte_get_tsc_cycles() < deadline)
+    rte_pause();
+  if (!atomic_load(&d.callback_entered)) ret = ETIMEDOUT;
+
+  if (!ret) ret = pthread_create(&watchdog_thread, NULL, ut_txv_app_mutex_watchdog, &d);
+  watchdog_started = !ret;
+  /* GET_EMPTY needs an empty slot: the session is on 0, the peer on 1 */
+  if (!ret) ret = ut_txv_control_call(ctx, mgr, call == UT_TXV_GET_EMPTY ? 2 : 0, call);
+  atomic_store(&d.stats_done, true);
+  pthread_mutex_unlock(&d.app_mutex);
+
+  if (watchdog_started) pthread_join(watchdog_thread, NULL);
+  if (scheduler_started) pthread_join(scheduler_thread, NULL);
+  pthread_mutex_destroy(&d.app_mutex);
+  atomic_store(&sch->qs_seen, UINT64_MAX);
+  ctx->session.active = active;
+  mgr->sessions[1] = NULL;
+  mgr->max_idx = 1;
+  ut_txv_peer_free(peer);
+  return !ret && !atomic_load(&d.watchdog_fired);
+}
+
+bool ut_txv_stats_with_peer_callback_completes(ut_txv_ctx* ctx, int timeout_ms) {
+  return ut_txv_peer_callback_cycle_completes(ctx, UT_TXV_STATS_GET, timeout_ms);
+}
+
+bool ut_txv_control_with_peer_callback_completes(ut_txv_ctx* ctx,
+                                                 enum ut_txv_control call,
+                                                 int timeout_ms) {
+  return ut_txv_peer_callback_cycle_completes(ctx, call, timeout_ms);
+}
+
+struct ut_txv_cross_scheduler_deadlock;
+
+struct ut_txv_cross_scheduler_callback {
+  struct ut_txv_cross_scheduler_deadlock* deadlock;
+  int scheduler;
+};
+
+struct ut_txv_cross_scheduler_deadlock {
+  struct ut_txv_ctx* ctx;
+  struct st_tx_video_sessions_mgr* mgr[2];
+  struct st_tx_video_session_handle_impl target_handle[2];
+  struct ut_txv_cross_scheduler_callback callback[2];
+  int timeout_ms;
+  int stats_ret[2];
+  atomic_int callbacks_entered;
+  atomic_bool abort;
+  atomic_bool scheduler_done[2];
+  atomic_bool watchdog_fired;
+};
+
+static int ut_txv_cross_scheduler_get_next_frame(void* priv, uint16_t* next_frame_idx,
+                                                 struct st20_tx_frame_meta* meta) {
+  struct ut_txv_cross_scheduler_callback* callback = priv;
+  struct ut_txv_cross_scheduler_deadlock* d = callback->deadlock;
+  int scheduler = callback->scheduler;
+  struct st20_tx_user_stats stats;
+  *next_frame_idx = 0; /* unused: the callback returns -EBUSY */
+  (void)meta;
+
+  atomic_fetch_add(&d->callbacks_entered, 1);
+  while (atomic_load(&d->callbacks_entered) < 2 && !atomic_load(&d->abort)) rte_pause();
+  if (!atomic_load(&d->abort))
+    d->stats_ret[scheduler] =
+        st20_tx_get_session_stats(&d->target_handle[1 - scheduler], &stats);
+  return -EBUSY;
+}
+
+static void* ut_txv_cross_scheduler_thread(void* arg) {
+  struct ut_txv_cross_scheduler_callback* callback = arg;
+  struct ut_txv_cross_scheduler_deadlock* d = callback->deadlock;
+  int scheduler = callback->scheduler;
+  struct mtl_sch_impl* sch = mt_sch_instance(&d->ctx->impl, scheduler);
+
+  sch->t_pid = rte_gettid();
+  tvs_tasklet_handler(d->mgr[scheduler]);
+  atomic_store(&sch->qs_seen, atomic_load(&sch->qs_token));
+  atomic_store(&d->scheduler_done[scheduler], true);
+  return NULL;
+}
+
+static void* ut_txv_cross_scheduler_watchdog(void* arg) {
+  struct ut_txv_cross_scheduler_deadlock* d = arg;
+  uint64_t timeout_cycles = (uint64_t)d->timeout_ms * rte_get_tsc_hz() / 1000;
+  uint64_t deadline = rte_get_tsc_cycles() + timeout_cycles;
+
+  while ((!atomic_load(&d->scheduler_done[0]) || !atomic_load(&d->scheduler_done[1])) &&
+         rte_get_tsc_cycles() < deadline)
+    rte_pause();
+  if (!atomic_load(&d->scheduler_done[0]) || !atomic_load(&d->scheduler_done[1])) {
+    atomic_store(&d->watchdog_fired, true);
+    atomic_store(&d->abort, true);
+    for (int i = 0; i < 2; i++)
+      atomic_store(&mt_sch_instance(&d->ctx->impl, i)->qs_seen, UINT64_MAX);
+  }
+  return NULL;
+}
+
+bool ut_txv_cross_scheduler_stats_complete(ut_txv_ctx* ctx, int timeout_ms) {
+  struct ut_txv_cross_scheduler_deadlock d = {.ctx = ctx, .timeout_ms = timeout_ms};
+  struct st_tx_video_sessions_mgr second_mgr = {.parent = &ctx->impl, .idx = 1};
+  struct st_tx_video_session_impl* sessions[2][2] = {{NULL}};
+  pthread_t scheduler_thread[2], watchdog_thread;
+  bool scheduler_started[2] = {false};
+  bool watchdog_started = false;
+  int ret = 0;
+
+  if (timeout_ms <= 0) return false;
+  mt_sch_dp_slot_init(&second_mgr.dp_slot);
+  d.mgr[0] = &ctx->mgr;
+  d.mgr[1] = &second_mgr;
+  for (int scheduler = 0; scheduler < 2; scheduler++) {
+    struct mtl_sch_impl* sch = mt_sch_instance(&ctx->impl, scheduler);
+    sch->parent = &ctx->impl;
+    atomic_store(&sch->qs_seen, atomic_load(&sch->qs_token));
+    d.callback[scheduler].deadlock = &d;
+    d.callback[scheduler].scheduler = scheduler;
+    d.stats_ret[scheduler] = -ECANCELED;
+    for (int slot = 0; slot < 2; slot++) {
+      rte_spinlock_init(&d.mgr[scheduler]->mutex[slot]);
+      sessions[scheduler][slot] = ut_txv_peer_create(ctx, slot, true);
+      if (!sessions[scheduler][slot]) ret = -ENOMEM;
+      if (ret) break;
+      sessions[scheduler][slot]->mgr = d.mgr[scheduler];
+      sessions[scheduler][slot]->idx = slot;
+      d.mgr[scheduler]->sessions[slot] = sessions[scheduler][slot];
+    }
+    d.mgr[scheduler]->max_idx = 2;
+    if (ret) break;
+    sessions[scheduler][0]->ops.get_next_frame = ut_txv_cross_scheduler_get_next_frame;
+    sessions[scheduler][0]->ops.priv = &d.callback[scheduler];
+    d.target_handle[scheduler].parent = &ctx->impl;
+    d.target_handle[scheduler].type = MT_HANDLE_TX_VIDEO;
+    d.target_handle[scheduler].impl = sessions[scheduler][1];
+    d.target_handle[scheduler].sch = sch;
+  }
+
+  ctx->mgr.sessions[0] = sessions[0][0];
+  if (!ret)
+    ret = pthread_create(&watchdog_thread, NULL, ut_txv_cross_scheduler_watchdog, &d);
+  watchdog_started = !ret;
+  for (int i = 0; i < 2 && !ret; i++) {
+    ret = pthread_create(&scheduler_thread[i], NULL, ut_txv_cross_scheduler_thread,
+                         &d.callback[i]);
+    scheduler_started[i] = !ret;
+  }
+  if (ret) atomic_store(&d.abort, true);
+
+  for (int i = 0; i < 2; i++)
+    if (scheduler_started[i]) pthread_join(scheduler_thread[i], NULL);
+  if (watchdog_started) pthread_join(watchdog_thread, NULL);
+  for (int scheduler = 0; scheduler < 2; scheduler++) {
+    struct mtl_sch_impl* sch = mt_sch_instance(&ctx->impl, scheduler);
+    sch->t_pid = 0;
+    atomic_store(&sch->qs_seen, UINT64_MAX);
+    for (int slot = 0; slot < 2; slot++) {
+      d.mgr[scheduler]->sessions[slot] = NULL;
+      ut_txv_peer_free(sessions[scheduler][slot]);
+    }
+  }
+  ctx->mgr.sessions[0] = &ctx->session;
+  ctx->mgr.max_idx = 1;
+  return !ret && !atomic_load(&d.watchdog_fired) && !d.stats_ret[0] && !d.stats_ret[1];
+}
+
+struct ut_txv_migration_deadlock {
+  struct ut_txv_ctx* ctx;
+  struct mtl_sch_impl* source_sch;
+  struct mtl_sch_impl* destination_sch;
+  struct st_tx_video_session_handle_impl* source_handle;
+  int timeout_ms;
+  int stats_ret;
+  int main_cpu;
+  atomic_bool callback_entered;
+  atomic_bool abort;
+  atomic_bool migration_done;
+  atomic_bool watchdog_fired;
+};
+
+static int ut_txv_migration_get_next_frame(void* priv, uint16_t* next_frame_idx,
+                                           struct st20_tx_frame_meta* meta) {
+  struct ut_txv_migration_deadlock* d = priv;
+  struct st20_tx_user_stats stats;
+  rte_spinlock_t* source_lock = &d->source_sch->tx_video_mgr.mutex[0];
+  *next_frame_idx = 0; /* unused: the callback returns -EBUSY */
+  (void)meta;
+
+  atomic_store(&d->callback_entered, true);
+  while (!rte_spinlock_is_locked(source_lock) && !atomic_load(&d->abort)) rte_pause();
+  if (!atomic_load(&d->abort))
+    d->stats_ret = st20_tx_get_session_stats(d->source_handle, &stats);
+  return -EBUSY;
+}
+
+/* Off the caller's CPU, which the EAL pinned every thread to: on it the callback could
+ * not run while the migration spins, holding the source slot. */
+static void ut_txv_migration_leave_cpu(int cpu) {
+  long cpus = sysconf(_SC_NPROCESSORS_ONLN);
+  cpu_set_t set;
+
+  CPU_ZERO(&set);
+  for (long c = 0; c < cpus && c < CPU_SETSIZE; c++)
+    if (c != cpu) CPU_SET(c, &set);
+  if (CPU_COUNT(&set)) pthread_setaffinity_np(pthread_self(), sizeof(set), &set);
+}
+
+static void* ut_txv_migration_destination_scheduler(void* arg) {
+  struct ut_txv_migration_deadlock* d = arg;
+  struct mtl_sch_impl* sch = d->destination_sch;
+
+  ut_txv_migration_leave_cpu(d->main_cpu);
+  sch->t_pid = rte_gettid();
+  tvs_tasklet_handler(&sch->tx_video_mgr);
+  atomic_store(&sch->qs_seen, atomic_load(&sch->qs_token));
+  return NULL;
+}
+
+static void* ut_txv_migration_watchdog(void* arg) {
+  struct ut_txv_migration_deadlock* d = arg;
+  uint64_t timeout_cycles = (uint64_t)d->timeout_ms * rte_get_tsc_hz() / 1000;
+  uint64_t deadline = rte_get_tsc_cycles() + timeout_cycles;
+
+  while (!atomic_load(&d->migration_done) && rte_get_tsc_cycles() < deadline) rte_pause();
+  if (!atomic_load(&d->migration_done)) {
+    atomic_store(&d->watchdog_fired, true);
+    atomic_store(&d->abort, true);
+    atomic_store(&d->destination_sch->qs_seen, UINT64_MAX);
+  }
+  return NULL;
+}
+
+/* 1 if it completed with the stats call in it, 0 if not, -1 if the callback missed
+ * the migration */
+static int ut_txv_migration_attempt(ut_txv_ctx* ctx, int timeout_ms) {
+  struct mtl_sch_impl* source_sch = mt_sch_instance(&ctx->impl, 0);
+  struct mtl_sch_impl* destination_sch = mt_sch_instance(&ctx->impl, 1);
+  struct st_tx_video_sessions_mgr* source_mgr = &source_sch->tx_video_mgr;
+  struct st_tx_video_sessions_mgr* destination_mgr = &destination_sch->tx_video_mgr;
+  struct st_tx_video_session_impl* callback_session = ut_txv_peer_create(ctx, 1, true);
+  struct st_tx_video_session_handle_impl* old_handle = ctx->session.st20_handle;
+  bool old_active = ctx->session.active;
+  struct ut_txv_migration_deadlock d = {
+      .ctx = ctx,
+      .source_sch = source_sch,
+      .destination_sch = destination_sch,
+      .source_handle = &ctx->handle,
+      .timeout_ms = timeout_ms,
+      .stats_ret = -ECANCELED,
+      .main_cpu = sched_getcpu(),
+  };
+  pthread_t scheduler_thread, watchdog_thread;
+  bool scheduler_started = false, watchdog_started = false;
+  int ret = 0;
+
+  if (!callback_session || timeout_ms <= 0) {
+    ut_txv_peer_free(callback_session);
+    return 0;
+  }
+  source_sch->parent = &ctx->impl;
+  destination_sch->parent = &ctx->impl;
+  source_mgr->parent = &ctx->impl;
+  source_mgr->idx = 0;
+  destination_mgr->parent = &ctx->impl;
+  destination_mgr->idx = 1;
+  mt_pthread_mutex_init(&source_sch->tx_video_mgr_mutex, NULL);
+  mt_pthread_mutex_init(&destination_sch->tx_video_mgr_mutex, NULL);
+  rte_spinlock_init(&source_mgr->mutex[0]);
+  rte_spinlock_init(&destination_mgr->mutex[0]);
+  rte_spinlock_init(&destination_mgr->mutex[1]);
+  source_mgr->sessions[0] = &ctx->session;
+  source_mgr->max_idx = 1;
+  destination_mgr->sessions[0] = NULL;
+  destination_mgr->sessions[1] = callback_session;
+  destination_mgr->max_idx = 2;
+  ctx->session.mgr = source_mgr;
+  ctx->session.idx = 0;
+  ctx->session.active = false;
+  ctx->session.st20_handle = &ctx->handle;
+  callback_session->mgr = destination_mgr;
+  callback_session->ops.get_next_frame = ut_txv_migration_get_next_frame;
+  callback_session->ops.priv = &d;
+  ctx->handle.parent = &ctx->impl;
+  ctx->handle.type = MT_HANDLE_TX_VIDEO;
+  ctx->handle.impl = &ctx->session;
+  ctx->handle.sch = source_sch;
+  atomic_store(&source_sch->qs_seen, UINT64_MAX);
+  atomic_store(&destination_sch->qs_seen, atomic_load(&destination_sch->qs_token));
+
+  ret =
+      pthread_create(&scheduler_thread, NULL, ut_txv_migration_destination_scheduler, &d);
+  scheduler_started = !ret;
+  uint64_t deadline =
+      rte_get_tsc_cycles() + (uint64_t)timeout_ms * rte_get_tsc_hz() / 1000;
+  while (scheduler_started && !atomic_load(&d.callback_entered) &&
+         rte_get_tsc_cycles() < deadline)
+    rte_pause();
+  if (!atomic_load(&d.callback_entered)) ret = ETIMEDOUT;
+  if (!ret) ret = pthread_create(&watchdog_thread, NULL, ut_txv_migration_watchdog, &d);
+  watchdog_started = !ret;
+  if (!ret) ret = tx_video_migrate_to(&ctx->session, source_sch, destination_sch);
+  atomic_store(&d.migration_done, true);
+  atomic_store(&d.abort, true);
+
+  if (watchdog_started) pthread_join(watchdog_thread, NULL);
+  if (scheduler_started) pthread_join(scheduler_thread, NULL);
+  source_sch->t_pid = 0;
+  destination_sch->t_pid = 0;
+  atomic_store(&source_sch->qs_seen, UINT64_MAX);
+  atomic_store(&destination_sch->qs_seen, UINT64_MAX);
+  source_mgr->sessions[0] = NULL;
+  destination_mgr->sessions[0] = NULL;
+  destination_mgr->sessions[1] = NULL;
+  ctx->session.mgr = &ctx->mgr;
+  ctx->session.idx = 0;
+  ctx->session.active = old_active;
+  ctx->session.st20_handle = old_handle;
+  ctx->mgr.sessions[0] = &ctx->session;
+  mt_pthread_mutex_destroy(&source_sch->tx_video_mgr_mutex);
+  mt_pthread_mutex_destroy(&destination_sch->tx_video_mgr_mutex);
+  ut_txv_peer_free(callback_session);
+  if (ret || atomic_load(&d.watchdog_fired)) return 0;
+  if (d.stats_ret == -ECANCELED) return -1;
+  return !d.stats_ret;
+}
+
+bool ut_txv_migration_with_destination_callback_completes(ut_txv_ctx* ctx,
+                                                          int timeout_ms) {
+  int ret = -1;
+
+  for (int i = 0; i < 5 && ret < 0; i++) ret = ut_txv_migration_attempt(ctx, timeout_ms);
+  return ret > 0;
 }
 
 int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
@@ -2567,3 +3447,230 @@ out:
   return ret;
 }
 #endif
+
+/* Scenario 4 (shared TX queue), reduced to its lock cycle: the caller acts as scheduler 1
+ * and holds a lock L, as mt_tsq_burst() holds tx_mutex across rte_eth_tx_burst(); inside
+ * it the PMD frees S's mbufs, so tv_frame_free_cb() runs S's notify_frame_done(), which
+ * queries S (on scheduler 0) as the header allows a callback to. Scheduler 0's pass is
+ * blocked on L in a peer's callback, as its transmitter would be on tx_mutex. */
+struct ut_txv_own_query_deadlock {
+  struct ut_txv_ctx* ctx;
+  pthread_mutex_t lock_l;
+  int timeout_ms;
+  int stats_ret;
+  atomic_bool callback_entered;
+  atomic_bool notify_done;
+  atomic_bool watchdog_fired;
+};
+
+static int ut_txv_own_query_peer_get_next_frame(void* priv, uint16_t* next_frame_idx,
+                                                struct st20_tx_frame_meta* meta) {
+  struct ut_txv_own_query_deadlock* d = priv;
+  *next_frame_idx = 0; /* unused: the callback returns -EBUSY */
+  (void)meta;
+  atomic_store(&d->callback_entered, true);
+  pthread_mutex_lock(&d->lock_l);
+  pthread_mutex_unlock(&d->lock_l);
+  return -EBUSY;
+}
+
+static int ut_txv_own_query_notify_frame_done(void* priv, uint16_t frame_idx,
+                                              struct st20_tx_frame_meta* meta) {
+  struct ut_txv_own_query_deadlock* d = priv;
+  struct st20_tx_user_stats stats;
+  (void)frame_idx;
+  (void)meta;
+  d->stats_ret = st20_tx_get_session_stats(&d->ctx->handle, &stats);
+  return 0;
+}
+
+static void* ut_txv_own_query_scheduler0(void* arg) {
+  struct ut_txv_own_query_deadlock* d = arg;
+  struct mtl_sch_impl* sch = mt_sch_instance(&d->ctx->impl, 0);
+  sch->t_pid = rte_gettid();
+  tvs_tasklet_handler(&d->ctx->mgr);
+  atomic_store(&sch->qs_seen, atomic_load(&sch->qs_token));
+  return NULL;
+}
+
+static void* ut_txv_own_query_watchdog(void* arg) {
+  struct ut_txv_own_query_deadlock* d = arg;
+  uint64_t deadline =
+      rte_get_tsc_cycles() + (uint64_t)d->timeout_ms * rte_get_tsc_hz() / 1000;
+  while (!atomic_load(&d->notify_done) && rte_get_tsc_cycles() < deadline) rte_pause();
+  if (!atomic_load(&d->notify_done)) {
+    atomic_store(&d->watchdog_fired, true);
+    atomic_store(&mt_sch_instance(&d->ctx->impl, 0)->qs_seen, UINT64_MAX);
+  }
+  return NULL;
+}
+
+bool ut_txv_own_query_from_other_scheduler_completes(ut_txv_ctx* ctx, int timeout_ms) {
+  struct st_tx_video_sessions_mgr* mgr = &ctx->mgr;
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct mtl_sch_impl* sch0 = mt_sch_instance(&ctx->impl, 0);
+  struct mtl_sch_impl* sch1 = mt_sch_instance(&ctx->impl, 1);
+  struct ut_txv_own_query_deadlock d = {
+      .ctx = ctx, .timeout_ms = timeout_ms, .stats_ret = -ECANCELED};
+  struct st_tx_video_session_impl* peer = ut_txv_peer_create(ctx, 1, true);
+  static uint8_t frame_data[64];
+  struct st_frame_trans frame = {0};
+  pthread_t sch0_thread, watchdog_thread;
+  bool sch0_started = false, watchdog_started = false;
+  bool active = s->active;
+  void* old_priv = s->ops.priv;
+  int (*old_done)(void*, uint16_t, struct st20_tx_frame_meta*) = s->ops.notify_frame_done;
+  size_t old_fb = s->st20_fb_size;
+  int ret = 0;
+
+  if (!peer || timeout_ms <= 0) {
+    ut_txv_peer_free(peer);
+    return false;
+  }
+  peer->ops.get_next_frame = ut_txv_own_query_peer_get_next_frame;
+  peer->ops.priv = &d;
+  rte_spinlock_init(&mgr->mutex[0]);
+  rte_spinlock_init(&mgr->mutex[1]);
+  mgr->sessions[1] = peer;
+  mgr->max_idx = 2;
+  s->active = false; /* its pass runs only the peer */
+  s->ops.notify_frame_done = ut_txv_own_query_notify_frame_done;
+  s->ops.priv = &d;
+  s->st20_fb_size = sizeof(frame_data);
+  frame.addr = frame_data;
+  frame.priv = s;
+  frame.idx = 0;
+  rte_atomic32_set(&frame.refcnt, 1);
+  ctx->handle.parent = &ctx->impl;
+  ctx->handle.type = MT_HANDLE_TX_VIDEO;
+  ctx->handle.impl = s;
+  ctx->handle.sch = sch0;
+  sch0->parent = &ctx->impl;
+  sch1->parent = &ctx->impl;
+  sch1->t_pid = rte_gettid(); /* this thread is scheduler 1, as in a shared-queue burst */
+  pthread_mutex_init(&d.lock_l, NULL);
+  pthread_mutex_lock(&d.lock_l); /* tx_mutex, held across the PMD's free of S's mbufs */
+  atomic_store(&sch0->qs_seen, atomic_load(&sch0->qs_token));
+
+  ret = pthread_create(&sch0_thread, NULL, ut_txv_own_query_scheduler0, &d);
+  sch0_started = !ret;
+  uint64_t deadline =
+      rte_get_tsc_cycles() + (uint64_t)timeout_ms * rte_get_tsc_hz() / 1000;
+  while (sch0_started && !atomic_load(&d.callback_entered) &&
+         rte_get_tsc_cycles() < deadline)
+    rte_pause();
+  if (!atomic_load(&d.callback_entered)) ret = ETIMEDOUT;
+  if (!ret) ret = pthread_create(&watchdog_thread, NULL, ut_txv_own_query_watchdog, &d);
+  watchdog_started = !ret;
+  if (!ret) tv_frame_free_cb(frame_data, &frame); /* S's last mbuf freed in the burst */
+  atomic_store(&d.notify_done, true);
+  pthread_mutex_unlock(&d.lock_l);
+
+  if (watchdog_started) pthread_join(watchdog_thread, NULL);
+  if (sch0_started) pthread_join(sch0_thread, NULL);
+  pthread_mutex_destroy(&d.lock_l);
+  sch0->t_pid = 0;
+  sch1->t_pid = 0;
+  atomic_store(&sch0->qs_seen, UINT64_MAX);
+  s->active = active;
+  s->ops.notify_frame_done = old_done;
+  s->ops.priv = old_priv;
+  s->st20_fb_size = old_fb;
+  mgr->sessions[1] = NULL;
+  mgr->max_idx = 1;
+  ut_txv_peer_free(peer);
+  return !ret && !atomic_load(&d.watchdog_fired) && !d.stats_ret;
+}
+
+void ut_txv_lock_probe_slots(const ut_txv_ctx* ctx, int* in_run, int* after) {
+  *in_run = ctx->lock_probe_slot;
+  *after = atomic_load(&ctx->mgr.dp_slot.idx);
+}
+
+void ut_txv_set_dp_fence(ut_txv_ctx* ctx, bool fence) {
+  ctx->mgr.dp_slot.fence = fence;
+  for (int i = 0; i < MT_MAX_SCH_NUM; i++)
+    mt_sch_instance(&ctx->impl, i)->tx_video_mgr.dp_slot.fence = fence;
+}
+
+struct ut_txv_own_callback {
+  struct ut_txv_ctx* ctx;
+  struct st_tx_video_session_impl* s;
+  enum ut_txv_control call;
+  int call_ret;
+  atomic_bool entered;
+  atomic_bool release;
+  atomic_bool call_done;
+};
+
+static int ut_txv_own_callback_get_next_frame(void* priv, uint16_t* next_frame_idx,
+                                              struct st20_tx_frame_meta* meta) {
+  struct ut_txv_own_callback* o = priv;
+  *next_frame_idx = 0; /* unused: the callback returns -EBUSY */
+  (void)meta;
+
+  atomic_store(&o->entered, true);
+  while (!atomic_load(&o->release)) usleep(100);
+  return -EBUSY;
+}
+
+static void* ut_txv_own_callback_scheduler(void* arg) {
+  struct ut_txv_own_callback* o = arg;
+  struct mtl_sch_impl* sch = mt_sch_instance(&o->ctx->impl, 0);
+
+  tvs_tasklet_handler(&o->ctx->mgr);
+  atomic_store(&sch->qs_seen, atomic_load(&sch->qs_token));
+  return NULL;
+}
+
+static void* ut_txv_own_callback_writer(void* arg) {
+  struct ut_txv_own_callback* o = arg;
+
+  o->call_ret = ut_txv_control_call_on(o->ctx, o->s, &o->ctx->mgr, 1, o->call);
+  atomic_store(&o->call_done, true);
+  return NULL;
+}
+
+int ut_txv_control_during_own_callback(ut_txv_ctx* ctx, enum ut_txv_control call,
+                                       bool* done_in_callback) {
+  struct st_tx_video_sessions_mgr* mgr = &ctx->mgr;
+  struct mtl_sch_impl* sch = mt_sch_instance(&ctx->impl, 0);
+  struct ut_txv_own_callback o = {.ctx = ctx, .call = call, .call_ret = -ECANCELED};
+  struct st_tx_video_session_impl* peer = ut_txv_peer_create(ctx, 1, true);
+  pthread_t scheduler_thread, writer_thread;
+  bool active = ctx->session.active;
+  int ret;
+
+  if (!peer) return -ENOMEM;
+  o.s = peer;
+  peer->ops.get_next_frame = ut_txv_own_callback_get_next_frame;
+  peer->ops.priv = &o;
+  rte_spinlock_init(&mgr->mutex[1]);
+  mgr->sessions[1] = peer;
+  mgr->max_idx = 2;
+  ctx->session.active = false; /* the pass runs the peer only */
+  atomic_store(&sch->qs_seen, atomic_load(&sch->qs_token));
+
+  ret = -pthread_create(&scheduler_thread, NULL, ut_txv_own_callback_scheduler, &o);
+  if (!ret) {
+    uint64_t deadline = rte_get_tsc_cycles() + rte_get_tsc_hz();
+    while (!atomic_load(&o.entered) && rte_get_tsc_cycles() < deadline) usleep(100);
+    if (!atomic_load(&o.entered)) ret = -ETIMEDOUT;
+    if (!ret) ret = -pthread_create(&writer_thread, NULL, ut_txv_own_callback_writer, &o);
+    if (!ret) {
+      usleep(20 * 1000); /* far past the spin of the wait */
+      *done_in_callback = atomic_load(&o.call_done);
+      atomic_store(&o.release, true);
+      pthread_join(writer_thread, NULL);
+      ret = o.call_ret;
+    }
+    atomic_store(&o.release, true);
+    pthread_join(scheduler_thread, NULL);
+  }
+  atomic_store(&sch->qs_seen, UINT64_MAX);
+  ctx->session.active = active;
+  mgr->sessions[1] = NULL;
+  mgr->max_idx = 1;
+  ut_txv_peer_free(peer);
+  return ret;
+}

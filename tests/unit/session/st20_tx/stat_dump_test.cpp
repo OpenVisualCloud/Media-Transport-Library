@@ -25,7 +25,7 @@ class St20TxStatDumpTest : public ::testing::Test {
   ut_txv_ctx* ctx_ = nullptr;
 };
 
-/* Tasklets try_get the same spinlock and skip the session while it is held. */
+/* Tasklets skip the session while its spinlock is held. */
 TEST_F(St20TxStatDumpTest, LogsWithoutHoldingSessionLock) {
   int locked_lines = -1;
 

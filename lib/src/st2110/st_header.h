@@ -101,8 +101,8 @@ enum st40_tx_frame_status {
 };
 
 struct st_tx_muf_priv_data {
-  uint64_t tsc_time_stamp; /* tsc time stamp of current mbuf */
-  uint64_t ptp_time_stamp; /* ptp time stamp of current mbuf */
+  uint64_t tsc_time_stamp; /* tsc pacing target; all-RL st20 frames: pkt 0 only */
+  uint64_t ptp_time_stamp; /* ptp pacing target; all-RL st20 frames: pkt 0 only */
   void* priv;              /* private data to current frame */
   uint32_t idx;            /* index of packet in current frame */
 #ifdef MTL_HAS_IPMX
@@ -418,8 +418,9 @@ struct st_tx_video_sessions_mgr {
   struct mt_sch_tasklet_impl* tasklet;
 
   struct st_tx_video_session_impl* sessions[ST_SCH_MAX_TX_VIDEO_SESSIONS];
-  /* protect session, spin(fast) lock as it call from tasklet aslo */
+  /* control plane only, the tasklets skip a session while it is held */
   rte_spinlock_t mutex[ST_SCH_MAX_TX_VIDEO_SESSIONS];
+  struct mt_sch_dp_slot dp_slot; /* the session the tasklets are on */
 };
 
 struct st_video_transmitter_impl {

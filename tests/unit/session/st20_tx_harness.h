@@ -104,6 +104,28 @@ uint64_t ut_txv_pacing_required_tai(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfm
 int ut_txv_run_frame_tasklet(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfmt,
                              uint64_t timestamp, uint64_t* packet_tsc,
                              uint64_t* packet_ptp);
+enum { UT_TXV_STAMP_PKTS = 8 };
+/* what a pkt the builder did not stamp carries */
+#define UT_TXV_NO_STAMP UINT64_MAX
+/* the TSC/PTP stamp of each pkt of each session port, in ring order */
+struct ut_txv_stamps {
+  uint64_t tsc[MTL_SESSION_PORT_MAX][UT_TXV_STAMP_PKTS];
+  uint64_t ptp[MTL_SESSION_PORT_MAX][UT_TXV_STAMP_PKTS];
+};
+/* Drives tv_tasklet_frame() over one copy-mode frame of total_pkts pkts, bulk pkts a
+ * build, on num_port session ports. ways[] holds the pacing way of all
+ * MTL_SESSION_PORT_MAX ports, used or not. The cursors start where tv_sync_pacing()
+ * puts them for the mocked clocks; the mock TSC then advances build_ns after each
+ * build. Returns the pkts each port got, dummies included, < 0 on failure. */
+int ut_txv_run_frame_stamps(ut_txv_ctx* ctx, const enum st21_tx_pacing_way* ways,
+                            int num_port, unsigned int bulk, int total_pkts,
+                            uint64_t build_ns, struct ut_txv_stamps* stamps);
+enum { UT_TXV_IOVA_PAGES_MAX = 2, UT_TXV_IOVA_PAGE_LEN = 64 };
+/* tv_frame_get_offset_iova() of a frame at iova or, with pages > 0, of one whose page
+ * table maps page i of UT_TXV_IOVA_PAGE_LEN bytes at page_iova[i] */
+mtl_iova_t ut_txv_frame_offset_iova(ut_txv_ctx* ctx, mtl_iova_t iova,
+                                    const mtl_iova_t* page_iova, uint16_t pages,
+                                    size_t offset);
 /* Drives tv_tasklet_rtp() with one app packet whose st20_rfc4175_rtp_hdr row
  * number carries the given field parity, so the production builders' F-bit
  * extraction is what tv_sync_pacing() is told. tx_no_chain selects tv_build_rtp()
@@ -143,6 +165,76 @@ int ut_txv_run_tasklet_slots(ut_txv_ctx* ctx, enum ut_txv_work work,
                              const enum ut_txv_slot* slots, int nb_slots);
 /* get_next_frame calls the peers of the last ut_txv_run_tasklet_slots() received. */
 int ut_txv_peer_get_next_frame_calls(const ut_txv_ctx* ctx);
+
+enum ut_txv_tasklet {
+  UT_TXV_TASKLET_BUILDER,     /* tvs_tasklet_handler() */
+  UT_TXV_TASKLET_TRANSMITTER, /* video_trs_tasklet_handler() */
+};
+/* One pass of a TX video tasklet over a session in slot 0, its lock held by the control
+ * plane or not. Returns how often the tasklet ran the session; *locked_in_run is whether
+ * the lock was held while it did, *locked_after whether it is held after the pass. */
+int ut_txv_run_tasklet_lock_probe(ut_txv_ctx* ctx, enum ut_txv_tasklet tasklet,
+                                  bool hold_lock, bool* locked_in_run,
+                                  bool* locked_after);
+/* The slot the tasklet published in the last probe's session (0), and the one it left
+ * published after its run. */
+void ut_txv_lock_probe_slots(const ut_txv_ctx* ctx, int* in_run, int* after);
+enum ut_txv_control {
+  UT_TXV_GET,         /* tx_video_session_get() */
+  UT_TXV_GET_TIMEOUT, /* tx_video_session_get_timeout() */
+  UT_TXV_GET_EMPTY,   /* tx_video_session_get_empty(), of an empty slot */
+  UT_TXV_STATS_GET,   /* st20_tx_get_session_stats() */
+  UT_TXV_STATS_RESET, /* st20_tx_reset_session_stats() */
+  UT_TXV_UPDATE_DST,  /* st20_tx_update_destination() */
+  UT_TXV_FREE,        /* st20_tx_free() */
+};
+/* Runs a control-plane call on the session while a thread acting as its scheduler, in a
+ * pass, ends the pass on each quiescent wait. Returns how many waits the call began, < 0
+ * if it failed; *locked_at_wait is whether the session lock was held at each. */
+int ut_txv_run_control(ut_txv_ctx* ctx, enum ut_txv_control call, bool* locked_at_wait);
+/* The same once the session migrated to another slot of another scheduler, which then
+ * acts as the one in a pass. */
+int ut_txv_run_control_after_migration(ut_txv_ctx* ctx, enum ut_txv_control call,
+                                       bool* locked_at_wait);
+/* The call while the session migrates to another scheduler during the call's wait on the
+ * old slot's scheduler, so the slot no longer holds it once waited. Returns the result.
+ */
+int ut_txv_run_control_racing_migration(ut_txv_ctx* ctx, enum ut_txv_control call);
+/* The call while a migration holds the old slot, as tx_video_migrate_to() does: the call
+ * blocks on it and finds it empty once locked. Returns the call's result. */
+int ut_txv_run_control_blocked_by_migration(ut_txv_ctx* ctx, enum ut_txv_control call);
+/* The call from the scheduler's own thread, as from a callback, while (held) a writer
+ * holds the session lock and waits for the pass in flight. Returns the call's result. */
+int ut_txv_run_control_in_callback(ut_txv_ctx* ctx, enum ut_txv_control call, bool held);
+/* The same, held, from the callback of another session of that scheduler. */
+int ut_txv_run_control_in_peer_callback(ut_txv_ctx* ctx, enum ut_txv_control call);
+/* tx_video_session_get_timeout() while the scheduler is in a pass that never ends.
+ * Returns whether it got the session; *locked_after whether the lock stayed held. */
+bool ut_txv_get_timeout_on_endless_pass(ut_txv_ctx* ctx, int timeout_us,
+                                        bool* locked_after);
+/* Runs stats on session A while holding an app mutex needed by session B's callback. */
+bool ut_txv_stats_with_peer_callback_completes(ut_txv_ctx* ctx, int timeout_ms);
+/* The same cycle with the control call as the caller's: stats get or reset, update
+ * destination or free, while a peer's callback in the scheduler's pass needs the
+ * caller's mutex. */
+bool ut_txv_control_with_peer_callback_completes(ut_txv_ctx* ctx,
+                                                 enum ut_txv_control call,
+                                                 int timeout_ms);
+/* Scenario 4: S's frame-done callback, run on scheduler 1's thread under a lock that
+ * scheduler 0's pass needs, queries S. */
+bool ut_txv_own_query_from_other_scheduler_completes(ut_txv_ctx* ctx, int timeout_ms);
+/* Runs two scheduler callbacks that query separate target sessions on each other. */
+bool ut_txv_cross_scheduler_stats_complete(ut_txv_ctx* ctx, int timeout_ms);
+/* Migrates the source while a destination callback queries that source session. */
+bool ut_txv_migration_with_destination_callback_completes(ut_txv_ctx* ctx,
+                                                          int timeout_ms);
+/* The tasklets fence each slot store, as without membarrier(2), or rely on it. */
+void ut_txv_set_dp_fence(ut_txv_ctx* ctx, bool fence);
+/* The call, from another thread, on a session (slot 1) whose own callback runs on its
+ * scheduler: *done_in_callback whether it returned before that callback did. Returns the
+ * call's result. */
+int ut_txv_control_during_own_callback(ut_txv_ctx* ctx, enum ut_txv_control call,
+                                       bool* done_in_callback);
 
 /* A frame-level session of UT_TXV_ZC_FRAMES one-pkt frames, run by tvs_tasklet_handler()
  * against an app that hands over a chosen frame, or is busy, with reclaim.enabled or not.

@@ -38,6 +38,10 @@ ENVIRONMENT:
 	JPEGXS_ROOT		Install prefix; overridden by --prefix
 	KAHAWAI_CFG_PATH	Plugin registry; overridden by --config
 	CC, CXX		Compiler selection
+	CFLAGS, LDFLAGS		Flags of the SVT-JPEG-XS and MTL plugin builds; the script
+				adds the hardening flags of doc/build.md to those of the plugin
+	CPPFLAGS		Preprocessor flags of the MTL plugin build
+	MTL_HARDENING		0 builds the plugin without the hardening flags (default: 1)
 
 EXAMPLES:
 	${script_name}
@@ -193,9 +197,15 @@ main() {
 	# Both, MTL and DPDK are recorded relative to the plugin, for the install's
 	# final place.
 	plugin_libdir="${prefix}/$(multiarch_libdir)"
+	# The compiler hardening of doc/build.md, for the plugin. -Dc_args and
+	# -Dc_link_args replace the CFLAGS, CPPFLAGS and LDFLAGS meson reads
+	# otherwise, so they take them in, in meson's order.
+	hardening_flags || exit 1
+	# shellcheck disable=SC2153 # hardening_flags() of common.sh sets both
 	meson setup "${source_dir}/mtl-plugin/build-mtl" "${source_dir}/mtl-plugin" \
 		--buildtype release --prefix "${stage}" \
-		"-Dc_link_args=$(origin_rpath_args "${plugin_libdir}" "${prefix}/lib" \
+		"-Dc_args=${CFLAGS:+${CFLAGS} }${CPPFLAGS:+${CPPFLAGS} }${HARDENING_CFLAGS}" \
+		"-Dc_link_args=${LDFLAGS:+${LDFLAGS} }${CFLAGS:+${CFLAGS} }${CPPFLAGS:+${CPPFLAGS} }${HARDENING_LDFLAGS} $(origin_rpath_args "${plugin_libdir}" "${prefix}/lib" \
 			"$(pkg-config --variable=libdir mtl)" "$(pkg-config --variable=libdir libdpdk)")"
 	meson compile -C "${source_dir}/mtl-plugin/build-mtl" -j "${jobs}"
 	meson install -C "${source_dir}/mtl-plugin/build-mtl"

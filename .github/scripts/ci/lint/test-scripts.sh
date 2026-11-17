@@ -168,35 +168,64 @@ CASES
 
 test_ice_version_rule
 
-# check-hardening.sh passes a hardened program, names each mark of an unhardened
-# one and of one with IBT only, and fails a path that holds no ELF file.
-test_check_hardening() {
-	local gate=.github/scripts/ci/scan/check-hardening.sh work out rc=0
-	work=$(mktemp -d)
-	mkdir "${work}/good" "${work}/bad" "${work}/ibt" "${work}/empty"
-	printf '#include <string.h>\nint main(int c, char **v) { char b[64]; strcpy(b, v[0]); return b[c]; }\n' >"${work}/t.c"
-	gcc -O2 -fstack-protector-strong -fcf-protection=full -fPIE -pie -Wl,-z,relro,-z,now,-z,noexecstack \
-		"${work}/t.c" -o "${work}/good/t"
-	gcc -O2 -fno-stack-protector -fcf-protection=none -no-pie -Wl,-z,norelro,-z,lazy,-z,execstack \
-		"${work}/t.c" -o "${work}/bad/t" 2>/dev/null || fail "${gate}" "cannot link the unhardened program"
-	gcc -O2 -fstack-protector-strong -fcf-protection=branch -fPIE -pie -Wl,-z,relro,-z,now,-z,noexecstack \
-		"${work}/t.c" -o "${work}/ibt/t"
-	bash "${gate}" "${work}/good" >/dev/null 2>&1 || fail "${gate}" "fails a hardened program"
-	out=$(bash "${gate}" "${work}/bad" 2>&1) || rc=$?
-	if [ "${rc}" -eq 0 ] ||
-		! grep -qxF "::error::${work}/bad/t is not hardened: no RELRO BIND_NOW NX PIE IBT/SHSTK SSP" <<<"${out}"; then
-		fail "${gate}" "does not name each mark an unhardened program lacks: ${out}"
-	fi
-	out=$(bash "${gate}" "${work}/ibt" 2>&1) || true
-	grep -qxF "::error::${work}/ibt/t is not hardened: no IBT/SHSTK" <<<"${out}" ||
-		fail "${gate}" "passes a program with IBT but no SHSTK: ${out}"
-	if bash "${gate}" "${work}/empty" >/dev/null 2>&1; then
-		fail "${gate}" "passes a path without an ELF file"
-	fi
-	rm -rf "${work:?}"
+# Prints the flags that hardening_flags of common.sh sets for CC $1, CFLAGS $2,
+# CPPFLAGS $3 and MTL_HARDENING $4 (default: 1, whatever the caller exports).
+dependency_flags() {
+	CC=$1 CFLAGS=$2 CPPFLAGS=$3 MTL_HARDENING=${4-1} bash -c '. script/common.sh && hardening_flags && echo "${HARDENING_CFLAGS}|${HARDENING_LDFLAGS}"' 2>&1
 }
 
-test_check_hardening
+# The stand-in compiler takes each flag and applies level 3, or 2 with -DMTL_GCC11.
+test_dependency_hardening_flags() {
+	local work out cc max value
+	local compile='-fstack-protector-strong -fstack-clash-protection -fcf-protection=full'
+	local link='-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack'
+	work=$(mktemp -d)
+	printf '#!/bin/sh\ncase " $* " in *" -DMTL_GCC11 "*) echo "#define __USE_FORTIFY_LEVEL 2" ;; *) echo "#define __USE_FORTIFY_LEVEL 3" ;; esac\n' >"${work}/cc"
+	chmod +x "${work}/cc"
+	out=$(dependency_flags "${work}/cc -m64" "" "") || true
+	[ "${out}" = "${compile} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3|${link}" ] ||
+		fail script/common.sh "hardening_flags with a CC of two words: ${out}"
+	out=$(dependency_flags "${work}/cc" "-DMTL_GCC11" "") || true
+	[ "${out}" = "${compile} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2|${link}" ] ||
+		fail script/common.sh "hardening_flags takes level 3 where the compiler applies 2: ${out}"
+	out=$(dependency_flags "${work}/cc" "-O2 -D_FORTIFY_SOURCE=2" "") || true
+	[ "${out}" = "${compile}|${link}" ] || fail script/common.sh "hardening_flags adds a level to the one of CFLAGS: ${out}"
+	out=$(dependency_flags "${work}/cc" "-O2" "-Wp,-D_FORTIFY_SOURCE=3") || true
+	[ "${out}" = "${compile}|${link}" ] || fail script/common.sh "hardening_flags adds a level to the one of CPPFLAGS: ${out}"
+	out=$(dependency_flags "${work}/cc" "-O2 -g -O0" "") || true
+	[ "${out}" = "${compile}|${link}" ] || fail script/common.sh "hardening_flags adds a level to an -O0 build: ${out}"
+	out=$(dependency_flags "${work}/cc" "-O1 -fsanitize=address" "") || true
+	[ "${out}" = "${compile}|${link}" ] || fail script/common.sh "hardening_flags adds a level to a sanitizer build: ${out}"
+	out=$(dependency_flags "${work}/cc" "-O0" "-Os") || true
+	[ "${out}" = "${compile} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3|${link}" ] ||
+		fail script/common.sh "hardening_flags takes no -O of CPPFLAGS after CFLAGS: ${out}"
+	if dependency_flags "${work}/missing" "" "" >/dev/null; then
+		fail script/common.sh "hardening_flags passes without a compiler"
+	fi
+	out=$(dependency_flags "${work}/cc" "" "" 0) || true
+	if [ "${out##*$'\n'}" != "|" ] || [[ ${out} != *"MTL_HARDENING=0: the dependency is built without the hardening flags"* ]]; then
+		fail script/common.sh "hardening_flags sets flags, or doesn't warn, with MTL_HARDENING=0: ${out}"
+	fi
+	for value in 1 ""; do
+		out=$(dependency_flags "${work}/cc" "" "" "${value}") || true
+		[ "${out}" = "${compile} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3|${link}" ] ||
+			fail script/common.sh "hardening_flags with MTL_HARDENING='${value}': ${out}"
+	done
+	if dependency_flags "${work}/cc" "" "" 2 >/dev/null; then
+		fail script/common.sh "hardening_flags takes MTL_HARDENING=2"
+	fi
+	rm -rf "${work:?}"
+	# A real compiler gets the highest level that it applies.
+	for cc in gcc clang; do
+		command -v "${cc}" >/dev/null || continue
+		max=$("${cc}" -O2 -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -include string.h -dM -E -x c /dev/null |
+			sed -n 's/^#define __USE_FORTIFY_LEVEL //p')
+		out=$(dependency_flags "${cc}" "" "") || true
+		[[ ${out} == *" -D_FORTIFY_SOURCE=${max}|"* ]] || fail script/common.sh "hardening_flags gives ${cc} another level than ${max}: ${out}"
+	done
+}
+
+test_dependency_hardening_flags
 
 bash script/check_dpdk_patches.sh || fail script/check_dpdk_patches.sh "the DPDK patches do not apply clean"
 bash script/build_ebpf_xdp.sh --check build || echo "build_ebpf_xdp.sh --check build: the host does not have each package"

@@ -37,7 +37,11 @@ OPTIONS:
 	-h, --help		Show this help message
 
 ENVIRONMENT:
-	CFLAGS			Compiler flags for the xdp-tools and libbpf build
+	CC, CFLAGS, CPPFLAGS, LDFLAGS
+				The compiler and flags of the xdp-tools and libbpf build; the
+				script adds the hardening flags of doc/build.md to them
+	MTL_HARDENING		0 builds xdp-tools and libbpf without the hardening flags
+				(default: 1)
 
 EXAMPLES:
 	${script_name}			# Check the host, then build and install
@@ -219,12 +223,21 @@ build_and_install() {
 	libdir=$(install_libdir "${prefix}")
 	log_info "Installing into ${libdir}"
 
+	# The compiler hardening of doc/build.md. A CFLAGS replaces the -O2 -g of
+	# xdp-tools and the -g -O2 -Werror -Wall of libbpf, which xdp-tools builds
+	# itself when the host has none, so they come first, in both makes.
+	# Without the flags, both makes run with the caller's environment only.
+	hardening_flags || exit 1
+	local -a flags=()
+	# shellcheck disable=SC2153 # hardening_flags() of common.sh sets both
+	[ -z "${HARDENING_CFLAGS}" ] ||
+		flags=("CFLAGS=-O2 -g -Werror -Wall ${CFLAGS:-} ${HARDENING_CFLAGS}" "LDFLAGS=${LDFLAGS:+${LDFLAGS} }${HARDENING_LDFLAGS}")
 	pushd "${repo_dir}" >/dev/null || exit 1
 	./configure
-	make PREFIX="${prefix}" LIBDIR="${libdir}"
+	env "${flags[@]}" make PREFIX="${prefix}" LIBDIR="${libdir}"
 	as_root make install PREFIX="${prefix}" LIBDIR="${libdir}"
 	pushd lib/libbpf/src >/dev/null || exit 1
-	make
+	env "${flags[@]}" make
 	as_root make install PREFIX="${prefix}" LIBDIR="${libdir}"
 	popd >/dev/null
 	popd >/dev/null

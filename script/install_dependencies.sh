@@ -38,6 +38,10 @@ OPTIONS:
 
 ENVIRONMENT:
 	NPROC		Parallel build jobs of gpu_direct (default: the CPU count)
+	CC, CXX, CFLAGS, CXXFLAGS, LDFLAGS
+			The compilers and flags of the Level Zero build of gpu_direct;
+			the script adds the hardening flags of doc/build.md to them
+	MTL_HARDENING	0 builds Level Zero without the hardening flags (default: 1)
 
 EXAMPLES:
 	${script_name}			# The MTL build packages only
@@ -56,7 +60,16 @@ install_gpu_direct() {
 	rm -rf build
 	mkdir build
 	pushd build >/dev/null
-	cmake .. -D CMAKE_BUILD_TYPE=Release
+	# The compiler hardening of doc/build.md. The flags given here replace the
+	# CFLAGS, CXXFLAGS and LDFLAGS that cmake reads otherwise, so they take them in.
+	# cmake reads no CPPFLAGS.
+	CPPFLAGS='' hardening_flags || exit 1
+	# shellcheck disable=SC2153 # hardening_flags() of common.sh sets both
+	cmake .. -D CMAKE_BUILD_TYPE=Release \
+		"-DCMAKE_C_FLAGS=${CFLAGS:+${CFLAGS} }${HARDENING_CFLAGS}" \
+		"-DCMAKE_CXX_FLAGS=${CXXFLAGS:+${CXXFLAGS} }${HARDENING_CFLAGS}" \
+		"-DCMAKE_SHARED_LINKER_FLAGS=${LDFLAGS:+${LDFLAGS} }${HARDENING_LDFLAGS}" \
+		"-DCMAKE_EXE_LINKER_FLAGS=${LDFLAGS:+${LDFLAGS} }${HARDENING_LDFLAGS}"
 	cmake --build . --target package -j"${NPROC}"
 	as_root cmake --build . --target install -j"${NPROC}"
 	command_exists ldconfig && as_root ldconfig
