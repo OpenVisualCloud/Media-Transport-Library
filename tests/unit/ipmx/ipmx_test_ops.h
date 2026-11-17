@@ -99,7 +99,7 @@ inline int St22RxFrameReady(void*, void*, struct st22_rx_frame_meta*) {
   return 0;
 }
 
-/* 1080p59.94 JPEG XS codestream frame level, one port, IPMX on, passes
+/* 1080p59.94 RGB 4:4:4 8-bit JPEG XS codestream frame level, one port, IPMX on, passes
  * tv_st22_ops_check() */
 inline struct st22_tx_ops St22TxOps(int num_port = 1) {
   struct st22_tx_ops ops;
@@ -118,6 +118,7 @@ inline struct st22_tx_ops St22TxOps(int num_port = 1) {
   ops.width = 1920;
   ops.height = 1080;
   ops.fps = ST_FPS_P59_94;
+  ops.fmt = ST20_FMT_RGB_8BIT;
   ops.payload_type = 112;
   ops.framebuff_cnt = 2;
   ops.framebuff_max_size = 1920 * 1080 / 4;

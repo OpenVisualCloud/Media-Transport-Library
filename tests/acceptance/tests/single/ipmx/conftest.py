@@ -169,14 +169,26 @@ def ipmx_capture(hosts, request):
 
 @pytest.fixture
 def ipmx_media(hosts):
-    """Random-content raw frames: the IPMX checks need valid packets, not a picture."""
+    """Random-content raw frames: the IPMX checks need valid packets, not a picture.
+
+    ``bits`` above 8 makes little-endian 16-bit samples of that depth (a
+    ``*PLANAR10LE`` frame), so every sample is in the range the codec takes.
+    """
     host = list(hosts.values())[0]
 
-    def make(name: str, frame_bytes: int, frames: int = 4) -> str:
+    def make(name: str, frame_bytes: int, frames: int = 4, bits: int = 8) -> str:
         path = f"/tmp/ipmx_acceptance/media/{name}"
+        clip = ""
+        if bits > 8:
+            mask = (1 << (bits - 8)) - 1
+            clip = (
+                " | python3 -c 'import sys; d = bytearray(sys.stdin.buffer.read()); "
+                f"d[1::2] = d[1::2].translate(bytes(i & {mask} for i in range(256))); "
+                "sys.stdout.buffer.write(d)'"
+            )
         host.connection.execute_command(
             f"mkdir -p {os.path.dirname(path)} && "
-            f"head -c {frame_bytes * frames} /dev/urandom > {path}",
+            f"head -c {frame_bytes * frames} /dev/urandom{clip} > {path}",
             shell=True,
         )
         return path

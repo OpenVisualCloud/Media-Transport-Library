@@ -35,7 +35,8 @@ int ut_ipmx_stub_st22p_tx_ops_check(const struct st22p_tx_ops* ops) {
 }
 
 int ut_ipmx_stub_jxs_boxes_fill(void) {
-  return ipmx_jxs_boxes_fill(NULL, 1920, 1080, ST_FPS_P59_94, 1920 * 1080 * 3 / 8);
+  return ipmx_jxs_boxes_fill(NULL, ST20_FMT_RGB_8BIT, 1920, 1080, ST_FPS_P59_94,
+                             1920 * 1080 * 3 / 8);
 }
 
 int ut_ipmx_stub_jxs_frame_check(void) {

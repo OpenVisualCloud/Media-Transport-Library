@@ -303,7 +303,8 @@ void ut_sr_set_dest(ut_sr_ctx* ctx, int s_port, const uint8_t dip[4],
   hdr->udp.dst_port = htons(media_dst_port);
 }
 
-int ut_sr_set_st22(ut_sr_ctx* ctx, size_t codestream_max, uint32_t pkt_len) {
+int ut_sr_set_st22(ut_sr_ctx* ctx, enum st20_fmt fmt, size_t codestream_max,
+                   uint32_t pkt_len) {
   struct st_tx_video_session_impl* s = &ctx->session;
   uint32_t frame_max = sizeof(struct st22_boxes) + codestream_max;
 
@@ -318,7 +319,7 @@ int ut_sr_set_st22(ut_sr_ctx* ctx, size_t codestream_max, uint32_t pkt_len) {
   ctx->st22_handle.impl = s;
   ctx->st22p.type = MT_ST22_HANDLE_PIPELINE_TX;
   ctx->st22p.transport = &ctx->st22_handle;
-  return ipmx_jxs_boxes_fill(&ctx->st22_info.st22_boxes, s->ops.width, s->ops.height,
+  return ipmx_jxs_boxes_fill(&ctx->st22_info.st22_boxes, fmt, s->ops.width, s->ops.height,
                              s->ops.fps, codestream_max);
 }
 

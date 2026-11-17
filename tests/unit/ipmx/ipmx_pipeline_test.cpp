@@ -30,6 +30,7 @@ namespace {
 
 constexpr int kFramebuffCnt = 2;
 const uint8_t kGroup[MTL_IP_ADDR_LEN] = {239, 0, 0, 1};
+constexpr const char* kInputRule = "GBRPLANAR8 or GBRPLANAR10LE";
 
 class IpmxPipelineTxTest : public ::testing::Test {
  protected:
@@ -195,6 +196,7 @@ class IpmxSt22PipelineTxTest : public ::testing::Test {
     ops_.fps = ST_FPS_P59_94;
     ops_.pack_type = ST22_PACK_CODESTREAM;
     ops_.codec = ST22_CODEC_JPEGXS;
+    ops_.input_fmt = ST_FRAME_FMT_GBRPLANAR8;
     ops_.framebuff_cnt = kFramebuffCnt;
     ops_.flags = ST22P_TX_FLAG_IPMX;
   }
@@ -242,26 +244,58 @@ TEST_F(IpmxSt22PipelineTxTest, NonJpegxsCodecRejected) {
   EXPECT_EQ(log.find("get encoder"), std::string::npos) << log;
 }
 
-/* D11 / TR-10-15 Part 1 section 8: the IPMX JPEG XS sender is RGB 4:4:4 8-bit, so
- * st22p_tx_create() rejects any other input format before it looks up an encoder */
-TEST_F(IpmxSt22PipelineTxTest, NonGbrplanar8InputRejected) {
-  ops_.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
-  st22p_tx_handle handle = nullptr;
-  std::string log = ut_session::capture_stderr([&] { handle = ut22p_tx_create(&ops_); });
-  EXPECT_EQ(handle, nullptr);
-  EXPECT_NE(log.find("GBRPLANAR8 only"), std::string::npos) << log;
-  EXPECT_EQ(log.find("get encoder"), std::string::npos) << log;
+/* TR-10-15 Part 1 section 8: the IPMX JPEG XS sender is RGB 4:4:4, 8-bit (the minimum)
+ * or 10-bit, so st22p_tx_create() rejects any other input format before it looks up an
+ * encoder, and the log names the two allowed */
+TEST_F(IpmxSt22PipelineTxTest, OtherInputRejected) {
+  const enum st_frame_fmt others[] = {ST_FRAME_FMT_YUV422PLANAR10LE,
+                                      ST_FRAME_FMT_GBRPLANAR12LE, ST_FRAME_FMT_RGB8};
+  for (enum st_frame_fmt fmt : others) {
+    SCOPED_TRACE(st_frame_fmt_name(fmt));
+    ops_.input_fmt = fmt;
+    st22p_tx_handle handle = nullptr;
+    std::string log =
+        ut_session::capture_stderr([&] { handle = ut22p_tx_create(&ops_); });
+    EXPECT_EQ(handle, nullptr);
+    EXPECT_NE(log.find(kInputRule), std::string::npos) << log;
+    EXPECT_EQ(log.find("get encoder"), std::string::npos) << log;
+  }
 }
 
-/* GBRPLANAR8 passes the IPMX check; the harness has no encoder, so the create still
- * fails at the encoder lookup */
-TEST_F(IpmxSt22PipelineTxTest, Gbrplanar8InputPassesIpmxCheck) {
+/* GBRPLANAR8 and GBRPLANAR10LE pass the IPMX check; the harness has no encoder, so the
+ * create still fails at the encoder lookup */
+TEST_F(IpmxSt22PipelineTxTest, Gbrplanar8And10leInputPassIpmxCheck) {
+  for (enum st_frame_fmt fmt : {ST_FRAME_FMT_GBRPLANAR8, ST_FRAME_FMT_GBRPLANAR10LE}) {
+    SCOPED_TRACE(st_frame_fmt_name(fmt));
+    ops_.input_fmt = fmt;
+    st22p_tx_handle handle = nullptr;
+    std::string log =
+        ut_session::capture_stderr([&] { handle = ut22p_tx_create(&ops_); });
+    EXPECT_EQ(handle, nullptr);
+    EXPECT_EQ(log.find(kInputRule), std::string::npos) << log;
+    EXPECT_NE(log.find("get encoder"), std::string::npos) << log;
+  }
+}
+
+/* the IPMX st22 session needs fmt RGB 8-bit or 10-bit, so st22p passes the one of its
+ * input: GBRPLANAR8 is ST20_FMT_RGB_8BIT, GBRPLANAR10LE ST20_FMT_RGB_10BIT */
+TEST_F(IpmxSt22PipelineTxTest, InputFmtMapsToTransportFmt) {
+  struct st22_tx_ops transport;
   ops_.input_fmt = ST_FRAME_FMT_GBRPLANAR8;
-  st22p_tx_handle handle = nullptr;
-  std::string log = ut_session::capture_stderr([&] { handle = ut22p_tx_create(&ops_); });
-  EXPECT_EQ(handle, nullptr);
-  EXPECT_EQ(log.find("GBRPLANAR8 only"), std::string::npos) << log;
-  EXPECT_NE(log.find("get encoder"), std::string::npos) << log;
+  EXPECT_EQ(CaptureAndCheck(&transport), 0);
+  EXPECT_EQ(transport.fmt, ST20_FMT_RGB_8BIT);
+  ops_.input_fmt = ST_FRAME_FMT_GBRPLANAR10LE;
+  EXPECT_EQ(CaptureAndCheck(&transport), 0);
+  EXPECT_EQ(transport.fmt, ST20_FMT_RGB_10BIT);
+}
+
+/* without the flag st22p leaves the transport fmt 0, current MTL behaviour */
+TEST_F(IpmxSt22PipelineTxTest, FlagOffTransportFmtUnset) {
+  ops_.flags = 0;
+  ops_.input_fmt = ST_FRAME_FMT_GBRPLANAR10LE;
+  struct st22_tx_ops transport;
+  EXPECT_EQ(CaptureAndCheck(&transport), 0);
+  EXPECT_EQ(transport.fmt, 0);
 }
 
 /* st22p RX: the transport ops st22p_rx_create() passes to st22_rx_create() */

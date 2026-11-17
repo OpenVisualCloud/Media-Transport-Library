@@ -9,19 +9,23 @@
  * codestream in its RFC 9134 boxes: jxpl Ppih High444.12 (0x4a40) and the Plev picked
  * at create from width, height, frame rate and maximum codestream size (ISO/IEC 21122-2
  * Table A.8 levels, TR-08 allows 1k-1, 2k-1, 4k-2, 8k-2; Sublev3bpp up to 3 bpp,
- * Sublev4bpp up to 4 bpp), schar RGB 4:4:4 8-bit and colr BT.709 / identity / narrow
- * (ISO/IEC 21122-3 A.5.3, Tables A.9, A.20, A.21), brat in Mbit/s rounded up. Every
- * frame's codestream is then checked against those values (ISO/IEC 21122-1 Annex A
- * SOC, CAP, PIH, CDT; the TR-08 section 8.1.1 coding parameters; RFC 9134 section 3.3:
- * the box level is exact, its sublevel a limit) before it is sent; a frame that fails
- * is returned to the app and counted.
+ * Sublev4bpp up to 4 bpp), schar RGB 4:4:4 at the st22_tx_ops fmt bit depth, 8 or 10
+ * (TR-10-15 Part 1 section 8), and colr BT.709 / identity / narrow (ISO/IEC 21122-3
+ * A.5.3, Tables A.9, A.10, A.20, A.21), brat in Mbit/s rounded up. Every frame's
+ * codestream is then checked against those values (ISO/IEC 21122-1 Annex A SOC, CAP,
+ * PIH, CDT with B the schar depth; the TR-08 section 8.1.1 coding parameters; RFC 9134
+ * section 3.3: the box level is exact, its sublevel a limit) before it is sent; a frame
+ * that fails is returned to the app and counted.
  *
  * Groups:
  *   IpmxJxsPlevTest     ipmx_jxs_plev() level and sublevel choice, rejects
  *   IpmxJxsOpsTest      the same rejects through tv_st22_ops_check() (st22_tx_create())
- *   IpmxJxsBoxesTest    the 60 box bytes tv_init_st22_boxes() writes, IPMX on and off
- *   IpmxJxsPihTest      ipmx_jxs_pih_check() on a real SVT-JPEG-XS header and broken ones
- *   IpmxJxsBuilderTest  tv_tasklet_st22() sends a good frame, drops and counts a bad one
+ *   IpmxJxsBoxesTest    the 60 box bytes tv_init_st22_boxes() writes, IPMX on and off,
+ *                       RGB 8-bit and 10-bit
+ *   IpmxJxsPihTest      ipmx_jxs_pih_check() on a real SVT-JPEG-XS header and broken
+ *                       ones, and the component bit depth against the session's
+ *   IpmxJxsBuilderTest  tv_tasklet_st22() sends a good frame, drops and counts a bad
+ *                       one, a codestream of the other bit depth included
  *
  * Run: ./build_unit/tests/unit/UnitTest --gtest_filter='IpmxJxs*'
  */
@@ -176,10 +180,11 @@ class IpmxJxsBoxesTest : public ::testing::Test {
   void TearDown() override {
     ut_txv_destroy(ctx_);
   }
-  Boxes Build(uint32_t w, uint32_t h, enum st_fps fps, size_t cs, bool ipmx) {
+  Boxes Build(uint32_t w, uint32_t h, enum st_fps fps, size_t cs, bool ipmx,
+              enum st20_fmt fmt = ST20_FMT_RGB_8BIT) {
     uint8_t b[UT_TXV_ST22_BOXES_LEN];
     memset(b, 0xee, sizeof(b));
-    EXPECT_EQ(ut_txv_st22_boxes(ctx_, w, h, fps, cs, ipmx, b), 0);
+    EXPECT_EQ(ut_txv_st22_boxes(ctx_, fmt, w, h, fps, cs, ipmx, b), 0);
     return Boxes(b, b + sizeof(b));
   }
   ut_txv_ctx* ctx_ = nullptr;
@@ -216,6 +221,24 @@ TEST_F(IpmxJxsBoxesTest, Golden2160p5994FourBpp) {
   EXPECT_EQ(Build(3840, 2160, ST_FPS_P59_94, Bytes(3840, 2160, 4), true), expect);
 }
 
+/* the RGB 10-bit session of Golden1080p5994ThreeBpp: only schar differs, 0x8092 is
+ * valid, Sample_Bitdepth 9 (10 - 1), Sampling_Structure 2 RGB 4:4:4 (ISO/IEC 21122-3
+ * Tables A.9, A.10); the rate is the codestream size, not the bit depth */
+TEST_F(IpmxJxsBoxesTest, Golden1080p5994ThreeBppRgb10) {
+  const Boxes expect = {
+      0x00, 0x00, 0x00, 0x2a, 'j',  'p',  'v',  's',                          /* jpvs */
+      0x00, 0x00, 0x00, 0x16, 'j',  'p',  'v',  'i',                          /* jpvi */
+      0x00, 0x00, 0x01, 0x75, 0x02, 0x00, 0x00, 0x3c, 0x80, 0x92,             /* brat */
+      0x00, 0x00, 0x00, 0x00,                                                 /* tcod */
+      0x00, 0x00, 0x00, 0x0c, 'j',  'x',  'p',  'l',  0x4a, 0x40, 0x10, 0x04, /* jxpl */
+      0x00, 0x00, 0x00, 0x12, 'c',  'o',  'l',  'r',                          /* colr */
+      0x05, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00,
+  };
+  EXPECT_EQ(
+      Build(1920, 1080, ST_FPS_P59_94, Bytes(1920, 1080, 3), true, ST20_FMT_RGB_10BIT),
+      expect);
+}
+
 /* TR-08 section 8.1.2.1: brat is the maximum rate, so the 4 bpp 1080p59.94 rate
  * 497.2 Mbit/s rounds up to 498 */
 TEST_F(IpmxJxsBoxesTest, BratRoundsUp) {
@@ -226,7 +249,7 @@ TEST_F(IpmxJxsBoxesTest, BratRoundsUp) {
 
 /* without the flag the bytes stay those MTL has always sent, as captured from a
  * 1080p59.94 4 bpp session (brat in MiB/s rounded down, Main 422.10 / 4k-1, YCbCr 4:2:2
- * 10-bit, colr MC 1 and V 0x80) */
+ * 10-bit, colr MC 1 and V 0x80), whatever the fmt */
 TEST_F(IpmxJxsBoxesTest, FlagOffBytesUnchanged) {
   const Boxes expect = {
       0x00, 0x00, 0x00, 0x2a, 'j',  'p',  'v',  's',  0x00, 0x00, 0x00, 0x16,
@@ -236,6 +259,9 @@ TEST_F(IpmxJxsBoxesTest, FlagOffBytesUnchanged) {
       'l',  'r',  0x05, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x80,
   };
   EXPECT_EQ(Build(1920, 1080, ST_FPS_P59_94, Bytes(1920, 1080, 4), false), expect);
+  EXPECT_EQ(
+      Build(1920, 1080, ST_FPS_P59_94, Bytes(1920, 1080, 4), false, ST20_FMT_RGB_10BIT),
+      expect);
 }
 
 /* ---- the picture header check ---- */
@@ -259,19 +285,31 @@ const uint8_t kSvtHeader[] = {
     0xfb, 0xff, 0xdf, 0xfd, 0xff, 0xdf,
 };
 constexpr uint16_t kSvtPlev = 0x1006;
+/* the jpvi schar of an RGB 4:4:4 8-bit and 10-bit session, ISO/IEC 21122-3 Table A.9 */
+constexpr uint16_t kSchar8 = 0x8072;
+constexpr uint16_t kSchar10 = 0x8092;
 /* byte offsets in kSvtHeader */
 constexpr size_t kCap = 2, kPih = 8, kLpih = 10, kPpih = 16, kPlev = 18, kWf = 20;
 constexpr size_t kHf = 22, kNc = 28, kCpih = 33, kNl = 34, kQpih = 35;
-constexpr size_t kCdt = 36, kLcdt = 38, kCdtB1 = 42, kCdtS2 = 45;
+constexpr size_t kCdt = 36, kLcdt = 38, kCdtB0 = 40, kCdtB1 = 42, kCdtB2 = 44;
+constexpr size_t kCdtS2 = 45;
 constexpr size_t kCdtEnd = 46;
 
 class IpmxJxsPihTest : public ::testing::Test {
  protected:
   std::vector<uint8_t> cs_{kSvtHeader, kSvtHeader + sizeof(kSvtHeader)};
   /* an exact size heap copy, so a read past size is a heap overflow */
-  int Check(size_t size, uint16_t plev = kSvtPlev, uint32_t w = 1920, uint32_t h = 1080) {
+  int Check(size_t size, uint16_t plev = kSvtPlev, uint32_t w = 1920, uint32_t h = 1080,
+            uint8_t depth = 8) {
     std::vector<uint8_t> exact(cs_.begin(), cs_.begin() + size);
-    return ipmx_jxs_pih_check(exact.data(), size, w, h, plev);
+    return ipmx_jxs_pih_check(exact.data(), size, w, h, plev, depth);
+  }
+  /* the header as the encoder writes it for a GBRPLANAR10LE frame: B 10 for R, G, B */
+  void SetDepth(uint8_t b) {
+    cs_[kCdtB0] = cs_[kCdtB1] = cs_[kCdtB2] = b;
+  }
+  int CheckDepth(uint8_t depth) {
+    return Check(cs_.size(), kSvtPlev, 1920, 1080, depth);
   }
   int Check() {
     return Check(cs_.size());
@@ -379,10 +417,36 @@ TEST_F(IpmxJxsPihTest, FourComponentsFails) {
   EXPECT_EQ(Check(), -IPMX_JXS_PIH_NC);
 }
 
-/* D11: 8-bit only, a 10-bit component fails */
+/* TR-08 section 8.1.1: B is one depth for all components; one 10-bit component in an
+ * 8-bit session fails */
 TEST_F(IpmxJxsPihTest, TenBitComponentFails) {
   cs_[kCdtB1] = 10;
   EXPECT_EQ(Check(), -IPMX_JXS_PIH_B);
+}
+
+/* the same header with B 10, as SVT-JPEG-XS writes it for GBRPLANAR10LE input (B is
+ * its input_bit_depth), passes in a 10-bit session */
+TEST_F(IpmxJxsPihTest, TenBitHeaderOnTenBitSessionPasses) {
+  SetDepth(10);
+  EXPECT_EQ(CheckDepth(10), 0);
+}
+
+/* a 10-bit codestream in an 8-bit session fails: its MIB, schar and SDP say 8 */
+TEST_F(IpmxJxsPihTest, TenBitHeaderOnEightBitSessionFails) {
+  SetDepth(10);
+  EXPECT_EQ(CheckDepth(8), -IPMX_JXS_PIH_B);
+}
+
+/* an 8-bit codestream in a 10-bit session fails: its MIB, schar and SDP say 10 */
+TEST_F(IpmxJxsPihTest, EightBitHeaderOnTenBitSessionFails) {
+  EXPECT_EQ(CheckDepth(10), -IPMX_JXS_PIH_B);
+}
+
+/* in a 10-bit session every component must be 10, one 8-bit component fails */
+TEST_F(IpmxJxsPihTest, EightBitComponentOnTenBitSessionFails) {
+  SetDepth(10);
+  cs_[kCdtB2] = 8;
+  EXPECT_EQ(CheckDepth(10), -IPMX_JXS_PIH_B);
 }
 
 /* 4:4:4 only, a horizontally subsampled component fails */
@@ -507,12 +571,18 @@ class IpmxJxsBuilderTest : public ::testing::Test {
   void TearDown() override {
     ut_txv_destroy(ctx_);
   }
-  struct ut_txv_st22_frame_result Run(const std::vector<uint8_t>& cs) {
+  struct ut_txv_st22_frame_result Run(const std::vector<uint8_t>& cs,
+                                      uint16_t schar = kSchar8) {
     struct ut_txv_st22_frame_result r = {};
-    EXPECT_EQ(
-        ut_txv_run_st22_ipmx_frame(ctx_, 1920, 1080, kSvtPlev, cs.data(), cs.size(), &r),
-        0);
+    EXPECT_EQ(ut_txv_run_st22_ipmx_frame(ctx_, 1920, 1080, schar, kSvtPlev, cs.data(),
+                                         cs.size(), &r),
+              0);
     return r;
+  }
+  std::vector<uint8_t> TenBit() const {
+    std::vector<uint8_t> cs = good_;
+    cs[kCdtB0] = cs[kCdtB1] = cs[kCdtB2] = 10;
+    return cs;
   }
   ut_txv_ctx* ctx_ = nullptr;
   std::vector<uint8_t> good_{kSvtHeader, kSvtHeader + sizeof(kSvtHeader)};
@@ -549,6 +619,37 @@ TEST_F(IpmxJxsBuilderTest, RepeatedBadFramesLogOnce) {
   });
   EXPECT_EQ(r.pih_fail, 2u);
   EXPECT_EQ(ut_ipmx::CountOf(log, "JPEG XS header check fail"), 1) << log;
+}
+
+/* a 10-bit session (schar 0x8092) sends a 10-bit codestream */
+TEST_F(IpmxJxsBuilderTest, TenBitFrameOnTenBitSessionSent) {
+  struct ut_txv_st22_frame_result r = Run(TenBit(), kSchar10);
+  EXPECT_TRUE(r.started);
+  EXPECT_EQ(r.notify_frame_done_calls, 0);
+  EXPECT_EQ(r.pih_fail, 0u);
+}
+
+/* the session depth comes from its schar: an 8-bit codestream in a 10-bit session is
+ * dropped, returned and counted, so the wire never contradicts the MIB and SDP */
+TEST_F(IpmxJxsBuilderTest, EightBitFrameOnTenBitSessionDropped) {
+  struct ut_txv_st22_frame_result r = Run(good_, kSchar10);
+  EXPECT_FALSE(r.started);
+  EXPECT_EQ(r.notify_frame_done_calls, 1);
+  EXPECT_EQ(r.pih_fail, 1u);
+}
+
+/* and a 10-bit codestream in an 8-bit session */
+TEST_F(IpmxJxsBuilderTest, TenBitFrameOnEightBitSessionDropped) {
+  struct ut_txv_st22_frame_result r = Run(TenBit(), kSchar8);
+  EXPECT_FALSE(r.started);
+  EXPECT_EQ(r.notify_frame_done_calls, 1);
+  EXPECT_EQ(r.pih_fail, 1u);
+}
+
+/* the first drop log names the session depth the codestream must match */
+TEST_F(IpmxJxsBuilderTest, DropLogNamesSessionDepth) {
+  std::string log = ut_session::capture_stderr([&] { Run(good_, kSchar10); });
+  EXPECT_NE(log.find("RGB 10-bit"), std::string::npos) << log;
 }
 
 /* the session keeps running: a good frame after a bad one is sent */

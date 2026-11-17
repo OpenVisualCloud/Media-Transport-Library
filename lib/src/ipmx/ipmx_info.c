@@ -7,6 +7,7 @@
 #include "../mt_log.h"
 #include "../mt_util.h"
 #include "../st2110/st_tx_video_session.h"
+#include "ipmx_jxs.h"
 
 struct ipmx_info_sampling {
   const char* sampling;
@@ -71,9 +72,9 @@ int ipmx_video_info_from_session(struct mtl_main_impl* impl,
   /* TR-10-1 section 10.5: the RTP clock derives from the Internal Clock */
   snprintf(info->mediaclk, sizeof(info->mediaclk), "direct=0");
   if (s->st22_info) {
-    /* D11 RGB 4:4:4 8-bit; ops->fmt is a placeholder, M is ST 2110-20 only */
+    /* the depth of the jpvi schar; s->ops.fmt is a placeholder, M is ST 2110-20 only */
     snprintf(info->sampling, sizeof(info->sampling), "RGB");
-    info->depth = 8;
+    info->depth = ipmx_jxs_schar_depth(ntohs(s->st22_info->st22_boxes.jpvs.jpvi.schar));
   } else {
     snprintf(info->sampling, sizeof(info->sampling), "%s",
              ipmx_info_samplings[ops->fmt].sampling);

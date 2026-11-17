@@ -136,6 +136,42 @@ TEST_F(IpmxSt22TxValidateTest, SlicePackingStillRejected) {
   ExpectRejected(&ops, -EINVAL, "invalid pack_type");
 }
 
+/* TR-10-15 Part 1 section 8: RGB 4:4:4 8-bit is the minimum, 10-bit an additional bit
+ * depth; fmt is what the session signals in MIB 0x0003, the jpvi schar and the SDP and
+ * checks every codestream CDT against, so both are accepted */
+TEST_F(IpmxSt22TxValidateTest, Rgb8AndRgb10FmtAccepted) {
+  struct st22_tx_ops ops = St22TxOps();
+  ops.fmt = ST20_FMT_RGB_8BIT;
+  EXPECT_EQ(ut_txv_st22_ops_check(&ops), 0);
+  ops.fmt = ST20_FMT_RGB_10BIT;
+  EXPECT_EQ(ut_txv_st22_ops_check(&ops), 0);
+}
+
+/* any other fmt has no IPMX JPEG XS signalling, so it is refused at create and the log
+ * names the two allowed values; the default 0 (YUV 4:2:2 10-bit) included, so an app
+ * that leaves fmt unset learns it at create, not from a validator */
+TEST_F(IpmxSt22TxValidateTest, OtherFmtRejected) {
+  const enum st20_fmt others[] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_8BIT,
+                                  ST20_FMT_YUV_444_10BIT, ST20_FMT_RGB_12BIT,
+                                  ST20_FMT_RGB_16BIT};
+  for (enum st20_fmt fmt : others) {
+    SCOPED_TRACE(fmt);
+    struct st22_tx_ops ops = St22TxOps();
+    ops.fmt = fmt;
+    ExpectRejected(&ops, -ENOTSUP, "ST20_FMT_RGB_8BIT or ST20_FMT_RGB_10BIT");
+  }
+}
+
+/* without the flag fmt is not checked, current MTL behaviour */
+TEST_F(IpmxSt22TxValidateTest, FlagOffAnyFmtAccepted) {
+  struct st22_tx_ops ops = St22TxOps();
+  ops.flags = 0;
+  ops.fmt = ST20_FMT_YUV_422_10BIT;
+  EXPECT_EQ(ut_txv_st22_ops_check(&ops), 0);
+  ops.fmt = ST20_FMT_RGB_12BIT;
+  EXPECT_EQ(ut_txv_st22_ops_check(&ops), 0);
+}
+
 /* RX: st22_rx_create() with ST22_RX_FLAG_IPMX */
 class IpmxSt22RxValidateTest : public ::testing::Test {
  protected:

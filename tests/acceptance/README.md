@@ -88,7 +88,8 @@ The JPEG XS cases (`test_ipmx_st22p.py`) also need:
 - The SVT-JPEG-XS MTL plugin, enabled in `.local_install/conf/kahawai.json`,
   and its `mtl-plugin/` directory as `ipmx.svt_plugin_dir`: the cases load
   its `ipmx_1080p.json` / `ipmx_2160p.json`, switched to Sublev4bpp for the
-  4 bpp points.
+  4 bpp points. The RGB 4:4:4 8-bit (`GBRPLANAR8`) and 10-bit
+  (`GBRPLANAR10LE`, IDs `rgb10_*`) points use the same files.
 - MTL scheduler CPUs that no other thread uses. The SVT encoder and decoder
   threads float over every CPU of the process; on a scheduler CPU they delay
   the TX frame start by milliseconds, which fails TR-10-9 section 11.2. Keep

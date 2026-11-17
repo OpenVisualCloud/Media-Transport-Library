@@ -612,10 +612,10 @@ int ut_txv_build_st22_ipv4_hdr(ut_txv_ctx* ctx, uint8_t ipv4_hdr[UT_TXV_IPV4_HDR
 int ut_txv_frame_total_pkts(ut_txv_ctx* ctx, uint32_t width, uint32_t height,
                             enum st20_fmt fmt);
 #define UT_TXV_ST22_BOXES_LEN (60)
-/* tv_init_st22_boxes() of a progressive st22 frame session, with or without
- * ST20_TX_FLAG_IPMX; the jpvs + colr bytes as sent before every codestream */
-int ut_txv_st22_boxes(ut_txv_ctx* ctx, uint32_t width, uint32_t height, enum st_fps fps,
-                      size_t codestream_size, bool ipmx,
+/* tv_init_st22_boxes() of a progressive st22 frame session of st22_tx_ops fmt, with or
+ * without ST20_TX_FLAG_IPMX; the jpvs + colr bytes as sent before every codestream */
+int ut_txv_st22_boxes(ut_txv_ctx* ctx, enum st20_fmt fmt, uint32_t width, uint32_t height,
+                      enum st_fps fps, size_t codestream_size, bool ipmx,
                       uint8_t boxes[UT_TXV_ST22_BOXES_LEN]);
 struct ut_txv_st22_frame_result {
   bool started; /* tv_tasklet_st22() took the frame for sending */
@@ -623,10 +623,11 @@ struct ut_txv_st22_frame_result {
   uint32_t pih_fail; /* the session's IPMX PIH check drop counter, kept across runs */
 };
 /* One tv_tasklet_st22() frame start of an ST20_TX_FLAG_IPMX session of width x height
- * whose jxpl box carries plev, with the app frame holding codestream[0, size). */
+ * whose jpvi box carries schar and jxpl box plev, with the app frame holding
+ * codestream[0, size). */
 int ut_txv_run_st22_ipmx_frame(ut_txv_ctx* ctx, uint32_t width, uint32_t height,
-                               uint16_t plev, const uint8_t* codestream, size_t size,
-                               struct ut_txv_st22_frame_result* result);
+                               uint16_t schar, uint16_t plev, const uint8_t* codestream,
+                               size_t size, struct ut_txv_st22_frame_result* result);
 /* The first bulk of 1 to UT_TXV_ST22_BULK_MAX packets tv_tasklet_st22() builds of a frame
  * of codestream_size bytes in pkt_len payload packets, on num_port ports, with
  * s->ipmx_sr set or NULL: the packet index and the IPMX frame size stamp of each packet

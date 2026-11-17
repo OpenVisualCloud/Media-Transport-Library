@@ -3305,8 +3305,8 @@ int ut_txv_frame_total_pkts(ut_txv_ctx* ctx, uint32_t width, uint32_t height,
   return s->st20_total_pkts;
 }
 
-int ut_txv_st22_boxes(ut_txv_ctx* ctx, uint32_t width, uint32_t height, enum st_fps fps,
-                      size_t codestream_size, bool ipmx,
+int ut_txv_st22_boxes(ut_txv_ctx* ctx, enum st20_fmt fmt, uint32_t width, uint32_t height,
+                      enum st_fps fps, size_t codestream_size, bool ipmx,
                       uint8_t boxes[UT_TXV_ST22_BOXES_LEN]) {
   struct st_tx_video_session_impl* s = &ctx->session;
   int ret;
@@ -3323,7 +3323,7 @@ int ut_txv_st22_boxes(ut_txv_ctx* ctx, uint32_t width, uint32_t height, enum st_
   s->st22_codestream_size = codestream_size;
   memset(&ctx->st22_info, 0, sizeof(ctx->st22_info));
   s->st22_info = &ctx->st22_info;
-  ret = tv_init_st22_boxes(s);
+  ret = tv_init_st22_boxes(s, fmt);
   memcpy(boxes, &ctx->st22_info.st22_boxes, UT_TXV_ST22_BOXES_LEN);
   s->st22_info = NULL;
   return ret;
@@ -3339,8 +3339,8 @@ static int ut_txv_st22_notify_frame_done(void* priv, uint16_t frame_idx,
 }
 
 int ut_txv_run_st22_ipmx_frame(ut_txv_ctx* ctx, uint32_t width, uint32_t height,
-                               uint16_t plev, const uint8_t* codestream, size_t size,
-                               struct ut_txv_st22_frame_result* result) {
+                               uint16_t schar, uint16_t plev, const uint8_t* codestream,
+                               size_t size, struct ut_txv_st22_frame_result* result) {
   struct st_tx_video_session_impl* s = &ctx->session;
   struct st_frame_trans frame = {0};
   uint8_t* fb = calloc(1, sizeof(struct st22_boxes) + size);
@@ -3349,6 +3349,7 @@ int ut_txv_run_st22_ipmx_frame(ut_txv_ctx* ctx, uint32_t width, uint32_t height,
   if (!fb) return -ENOMEM;
   if (ut_txv_st22_frame_setup(ctx, &frame, ST10_TIMESTAMP_FMT_TAI, 0) < 0) goto out;
   ctx->st22_info.notify_frame_done = ut_txv_st22_notify_frame_done;
+  ctx->st22_info.st22_boxes.jpvs.jpvi.schar = htons(schar);
   ctx->st22_info.st22_boxes.jpvs.jxpl.plev = htons(plev);
   s->ops.flags |= ST20_TX_FLAG_IPMX;
   s->ops.width = width;

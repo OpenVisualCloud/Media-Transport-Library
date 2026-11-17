@@ -134,6 +134,13 @@ int ipmx_st22_tx_ops_check(const struct st22_tx_ops* ops) {
     return -ENOTSUP;
   }
 
+  if (ops->fmt != ST20_FMT_RGB_8BIT && ops->fmt != ST20_FMT_RGB_10BIT) {
+    err("%s(%s), fmt %s not allowed, IPMX JPEG XS is ST20_FMT_RGB_8BIT or "
+        "ST20_FMT_RGB_10BIT, the RGB 4:4:4 bit depth of the codestream\n",
+        __func__, name, st20_fmt_name(ops->fmt));
+    return -ENOTSUP;
+  }
+
   uint16_t plev;
   if (ipmx_jxs_plev(ops->width, ops->height, ops->fps, ops->framebuff_max_size, &plev) <
       0) {
@@ -193,9 +200,10 @@ int ipmx_st22p_tx_ops_check(const struct st22p_tx_ops* ops) {
   int ret = ipmx_st22p_codec_check(ops->name, ops->codec);
   if (ret < 0) return ret;
 
-  if (ops->input_fmt != ST_FRAME_FMT_GBRPLANAR8) {
-    err("%s(%s), input_fmt %s not allowed, the IPMX MVP st22p is GBRPLANAR8 only, "
-        "RGB 4:4:4 8-bit\n",
+  if (ops->input_fmt != ST_FRAME_FMT_GBRPLANAR8 &&
+      ops->input_fmt != ST_FRAME_FMT_GBRPLANAR10LE) {
+    err("%s(%s), input_fmt %s not allowed, IPMX st22p is GBRPLANAR8 or GBRPLANAR10LE, "
+        "RGB 4:4:4 8-bit or 10-bit\n",
         __func__, ops->name ? ops->name : "", st_frame_fmt_name(ops->input_fmt));
     return -ENOTSUP;
   }

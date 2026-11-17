@@ -18,6 +18,7 @@
  *
  * Groups:
  *   IpmxSt22SrTest         create, the 0x0003 + 0x0008 bytes, Plev, T/K, the 0x0003 info
+ *   IpmxSt22SrRgb10Test    the 0x0003 depth and info of an RGB 10-bit session
  *   IpmxSt22SrPlevTest     SR Plev = jxpl box Plev, 1080p/2160p, 3/4 bpp
  *   IpmxSt22SrCountTest    counts per frame size, both ST 2022-7 legs, the SR pool
  *   IpmxSt22SrPacingTest   the SR before packet 0, pads neither sent nor counted, in the
@@ -94,13 +95,13 @@ const uint8_t kInfoBlockGolden[188] = {
 
 /* an st22 1080p59.94 session of up to codestream_max bytes, not attached */
 ut_sr_ctx* CreateSt22(size_t codestream_max, uint32_t width = 1920,
-                      uint32_t height = 1080) {
+                      uint32_t height = 1080, enum st20_fmt fmt = ST20_FMT_RGB_8BIT) {
   ut_sr_ctx* ctx = ut_sr_create(kSip, kSsrc, kMediaPort);
   if (!ctx) return nullptr;
   /* st22_tx_create() leaves its placeholder st20 fmt, YUV 4:2:2 10-bit */
   if (ut_sr_set_video(ctx, ST20_FMT_YUV_422_10BIT, width, height, ST20_PACKING_BPM,
                       ST_FPS_P59_94) < 0 ||
-      ut_sr_set_st22(ctx, codestream_max, kPktLen) < 0) {
+      ut_sr_set_st22(ctx, fmt, codestream_max, kPktLen) < 0) {
     ut_sr_destroy(ctx);
     return nullptr;
   }
@@ -221,6 +222,40 @@ TEST_F(IpmxSt22SrTest, InfoIsRgb8NotTheSt20Placeholder) {
   EXPECT_EQ(info.pixclk, 124291708u);
   EXPECT_EQ(info.htotal, 1920);
   EXPECT_EQ(info.vtotal, 1080);
+}
+
+/* an RGB 10-bit session, st22_tx_ops fmt ST20_FMT_RGB_10BIT (TR-10-15 Part 1 section 8
+ * lets a sender add bit depths) */
+class IpmxSt22SrRgb10Test : public IpmxSt22SrBase {
+ protected:
+  void SetUp() override {
+    ASSERT_EQ(ut_sr_init(), 0);
+    ctx_ = CreateSt22(Bytes(1920, 1080, 3), 1920, 1080, ST20_FMT_RGB_10BIT);
+    ASSERT_NE(ctx_, nullptr);
+  }
+};
+
+/* the VSF validator cross-checks --bit-depth against 0x0003 (TR-10-1-VP-XVAL): the Info
+ * Block is the 8-bit golden with depth 10, the 0x0008 part unchanged */
+TEST_F(IpmxSt22SrRgb10Test, InfoBlockIsTheGoldenWithDepthTen) {
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  uint8_t golden[sizeof(kInfoBlockGolden)];
+  memcpy(golden, kInfoBlockGolden, sizeof(golden));
+  golden[84 + 20] = 10; /* 0x0003 F 0, bit depth 10 */
+  uint8_t rtcp[UT_SR_PKT_MAX];
+  ASSERT_GE(ut_sr_build(ctx_, rtcp, kTaiNs, kRtpTs), kSdesOffset);
+  EXPECT_EQ(0, memcmp(rtcp + kInfoOffset, golden, sizeof(golden)));
+}
+
+/* ipmx_st22[p]_tx_get_info() returns RGB, depth 10 for both handle kinds */
+TEST_F(IpmxSt22SrRgb10Test, GetInfoIsRgbDepthTen) {
+  ASSERT_NO_FATAL_FAILURE(Attach());
+  for (bool pipeline : {false, true}) {
+    struct ipmx_video_info info;
+    ASSERT_EQ(ut_sr_api_st22_get_info(ctx_, pipeline, true, &info), 0);
+    EXPECT_STREQ(info.sampling, "RGB");
+    EXPECT_EQ(info.depth, 10);
+  }
 }
 
 struct PlevCase {

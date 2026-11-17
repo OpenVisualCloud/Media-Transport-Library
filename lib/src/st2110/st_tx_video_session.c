@@ -984,7 +984,7 @@ static int tv_init_st22_next_meta(struct st_tx_video_session_impl* s,
   return 0;
 }
 
-static int tv_init_st22_boxes(struct st_tx_video_session_impl* s) {
+static int tv_init_st22_boxes(struct st_tx_video_session_impl* s, enum st20_fmt fmt) {
   struct st22_tx_video_info* st22_info = s->st22_info;
   struct st22_jpvs* jpvs = &st22_info->st22_boxes.jpvs;
   uint32_t lbox = sizeof(*jpvs);
@@ -1042,7 +1042,7 @@ static int tv_init_st22_boxes(struct st_tx_video_session_impl* s) {
   colr->methdat[6] = 0x80;
 
   if (s->ops.flags & ST20_TX_FLAG_IPMX)
-    return ipmx_jxs_boxes_fill(&st22_info->st22_boxes, s->ops.width, s->ops.height,
+    return ipmx_jxs_boxes_fill(&st22_info->st22_boxes, fmt, s->ops.width, s->ops.height,
                                s->ops.fps, s->st22_codestream_size);
   return 0;
 }
@@ -3485,7 +3485,7 @@ static int tv_init_sw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
       tv_uinit_sw(s);
       return -EIO;
     }
-    ret = tv_init_st22_boxes(s);
+    ret = tv_init_st22_boxes(s, st22_frame_ops->fmt);
     if (ret < 0) {
       err("%s(%d), tv_init_st22_boxes fail %d\n", __func__, idx, ret);
       tv_uinit_sw(s);

@@ -31,8 +31,10 @@ static int test_encode_frame(struct test_st22_encoder_session* s,
 
   uint8_t* sha_dst = (uint8_t*)frame->dst->addr[0];
 #ifdef MTL_HAS_IPMX
-  /* a GBRPLANAR8 codestream gets a High444.12 header, which IPMX TX checks per frame */
-  if (req->input_fmt == ST_FRAME_FMT_GBRPLANAR8)
+  /* a GBRPLANAR8 or GBRPLANAR10LE codestream gets a High444.12 header, which IPMX TX
+   * checks per frame */
+  if (req->input_fmt == ST_FRAME_FMT_GBRPLANAR8 ||
+      req->input_fmt == ST_FRAME_FMT_GBRPLANAR10LE)
     sha_dst += ipmx_test_jxs_header(sha_dst, frame->dst->buffer_size, req);
 #endif
   /* copy src sha to the start of encode frame */
@@ -198,7 +200,9 @@ static int test_decode_frame(struct test_st22_decoder_session* s,
 
   const uint8_t* sha_src = (const uint8_t*)frame->src->addr[0];
 #ifdef MTL_HAS_IPMX
-  if (req->output_fmt == ST_FRAME_FMT_GBRPLANAR8) sha_src += IPMX_TEST_JXS_HDR_LEN;
+  if (req->output_fmt == ST_FRAME_FMT_GBRPLANAR8 ||
+      req->output_fmt == ST_FRAME_FMT_GBRPLANAR10LE)
+    sha_src += IPMX_TEST_JXS_HDR_LEN;
 #endif
   /* copy sha to the end of decode frame */
   memcpy((uint8_t*)frame->dst->addr[0] + frame->dst->data_size - SHA256_DIGEST_LENGTH,
@@ -365,7 +369,8 @@ int st_test_st22_plugin_register(struct st_tests_context* ctx) {
   d_dev.input_fmt_caps = ST_FMT_CAP_JPEGXS_CODESTREAM | ST_FMT_CAP_H264_CBR_CODESTREAM;
   d_dev.output_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_YUV422PLANAR8;
 #ifdef MTL_HAS_IPMX
-  d_dev.output_fmt_caps |= MTL_BIT64(ST_FRAME_FMT_GBRPLANAR8);
+  d_dev.output_fmt_caps |=
+      MTL_BIT64(ST_FRAME_FMT_GBRPLANAR8) | MTL_BIT64(ST_FRAME_FMT_GBRPLANAR10LE);
 #endif
   d_dev.create_session = test_decoder_create_session;
   d_dev.free_session = test_decoder_free_session;
@@ -383,7 +388,8 @@ int st_test_st22_plugin_register(struct st_tests_context* ctx) {
   e_dev.target_device = ST_PLUGIN_DEVICE_TEST;
   e_dev.input_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_YUV422PLANAR8;
 #ifdef MTL_HAS_IPMX
-  e_dev.input_fmt_caps |= MTL_BIT64(ST_FRAME_FMT_GBRPLANAR8);
+  e_dev.input_fmt_caps |=
+      MTL_BIT64(ST_FRAME_FMT_GBRPLANAR8) | MTL_BIT64(ST_FRAME_FMT_GBRPLANAR10LE);
 #endif
   e_dev.output_fmt_caps = ST_FMT_CAP_JPEGXS_CODESTREAM | ST_FMT_CAP_H264_CBR_CODESTREAM;
   e_dev.create_session = test_encoder_create_session;

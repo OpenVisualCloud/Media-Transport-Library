@@ -21,12 +21,11 @@
 #define IPMX_JXS_QPIH (1)
 /* TR-08 section 8.1.1 Table 1 RGB: Cpih 1 */
 #define IPMX_JXS_CPIH (1)
-/* RGB 4:4:4 8-bit: Nc 3, B 8, sx = sy = 1 */
+/* RGB 4:4:4: Nc 3, sx = sy = 1 */
 #define IPMX_JXS_NC (3)
-#define IPMX_JXS_B (8)
 #define IPMX_JXS_SXSY (0x11)
-/* ISO/IEC 21122-3 Table A.9/A.10: valid, bit depth 8, RGB 4:4:4 */
-#define IPMX_JXS_SCHAR (0x8072)
+/* ISO/IEC 21122-3 Table A.9/A.10: valid, RGB 4:4:4, Sample_Bitdepth added per session */
+#define IPMX_JXS_SCHAR_RGB (0x8002)
 
 /* ISO/IEC 21122-2 Table A.8, only the levels TR-08 section 8.1.1 allows */
 static const struct ipmx_jxs_level {
@@ -69,8 +68,8 @@ int ipmx_jxs_plev(uint32_t width, uint32_t height, enum st_fps fps, size_t codes
   return -ENOTSUP;
 }
 
-int ipmx_jxs_boxes_fill(struct st22_boxes* boxes, uint32_t width, uint32_t height,
-                        enum st_fps fps, size_t codestream_max) {
+int ipmx_jxs_boxes_fill(struct st22_boxes* boxes, enum st20_fmt fmt, uint32_t width,
+                        uint32_t height, enum st_fps fps, size_t codestream_max) {
   struct st_fps_timing fps_tm;
   uint16_t plev;
   int ret;
@@ -84,7 +83,9 @@ int ipmx_jxs_boxes_fill(struct st22_boxes* boxes, uint32_t width, uint32_t heigh
   uint64_t den = (uint64_t)fps_tm.den * 1000 * 1000;
   struct st22_jpvi* jpvi = &boxes->jpvs.jpvi;
   jpvi->brat = htonl((frame_bits * fps_tm.mul + den - 1) / den);
-  jpvi->schar = htons(IPMX_JXS_SCHAR);
+  /* ipmx_st22_tx_ops_check() refused any fmt but ST20_FMT_RGB_8BIT and RGB_10BIT */
+  uint8_t depth = fmt == ST20_FMT_RGB_10BIT ? 10 : 8;
+  jpvi->schar = htons(IPMX_JXS_SCHAR_RGB | (depth - 1) << 4);
 
   boxes->jpvs.jxpl.ppih = htons(IPMX_JXS_PPIH);
   boxes->jpvs.jxpl.plev = htons(plev);
@@ -124,10 +125,10 @@ static int ipmx_jxs_pih_body_check(const uint8_t* p, size_t size, uint32_t width
   return 0;
 }
 
-static int ipmx_jxs_cdt_check(const uint8_t* p, uint16_t len) {
+static int ipmx_jxs_cdt_check(const uint8_t* p, uint16_t len, uint8_t depth) {
   if (len != 2 * IPMX_JXS_NC + 2) return -IPMX_JXS_PIH_LCDT;
   for (int c = 0; c < IPMX_JXS_NC; c++) {
-    if (p[2 * c] != IPMX_JXS_B) return -IPMX_JXS_PIH_B;
+    if (p[2 * c] != depth) return -IPMX_JXS_PIH_B;
     if (p[2 * c + 1] != IPMX_JXS_SXSY) return -IPMX_JXS_PIH_SAMPLING;
   }
   return 0;
@@ -145,7 +146,7 @@ static int ipmx_jxs_segment(const uint8_t* cs, size_t size, size_t off, uint16_t
 }
 
 int ipmx_jxs_pih_check(const uint8_t* cs, size_t size, uint32_t width, uint32_t height,
-                       uint16_t plev) {
+                       uint16_t plev, uint8_t depth) {
   uint16_t marker, len;
   size_t off = 2;
   int ret;
@@ -176,7 +177,7 @@ int ipmx_jxs_pih_check(const uint8_t* cs, size_t size, uint32_t width, uint32_t 
     ret = ipmx_jxs_segment(cs, size, off, &marker, &len);
     if (ret < 0) return ret;
     if (marker == IPMX_JXS_CAP || marker == IPMX_JXS_PIH) return -IPMX_JXS_PIH_REPEATED;
-    if (marker == IPMX_JXS_CDT) return ipmx_jxs_cdt_check(cs + off + 4, len);
+    if (marker == IPMX_JXS_CDT) return ipmx_jxs_cdt_check(cs + off + 4, len, depth);
     off += 2 + len;
   }
 }
@@ -209,14 +210,15 @@ static const char* const ipmx_jxs_pih_err_names[] = {
 int ipmx_jxs_frame_check(const char* name, int idx, const struct st22_boxes* boxes,
                          const void* codestream, size_t size, uint32_t width,
                          uint32_t height, uint32_t* fail_cnt) {
-  int ret =
-      ipmx_jxs_pih_check(codestream, size, width, height, ntohs(boxes->jpvs.jxpl.plev));
+  uint8_t depth = ipmx_jxs_schar_depth(ntohs(boxes->jpvs.jpvi.schar));
+  int ret = ipmx_jxs_pih_check(codestream, size, width, height,
+                               ntohs(boxes->jpvs.jxpl.plev), depth);
   if (ret >= 0) return 0;
 
   if (!(*fail_cnt)++)
     err("%s(%s,%d), frame dropped, JPEG XS header check fail: %s, TR-08 section 8.1.1 "
-        "needs High444.12 RGB 8-bit matching the session\n",
-        __func__, name, idx, ipmx_jxs_pih_err_names[-ret]);
+        "needs High444.12 RGB %u-bit matching the session\n",
+        __func__, name, idx, ipmx_jxs_pih_err_names[-ret], depth);
   else
     dbg("%s(%s,%d), frame dropped, %s\n", __func__, name, idx,
         ipmx_jxs_pih_err_names[-ret]);

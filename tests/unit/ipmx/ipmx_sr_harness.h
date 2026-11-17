@@ -59,11 +59,12 @@ void ut_sr_set_redundant(ut_sr_ctx* ctx, const uint8_t sip[4], const uint8_t dip
 /* a destination update of the s_port header template, as st20_tx_update_destination() */
 void ut_sr_set_dest(ut_sr_ctx* ctx, int s_port, const uint8_t dip[4],
                     uint16_t media_dst_port);
-/* make the session an st22 one of codestream_max bytes in pkt_len payload packets, as
- * st22_tx_create() does with ST22_TX_FLAG_IPMX: the jxpl Plev of ipmx_jxs_boxes_fill()
- * for the ut_sr_set_video() size and rate, T 1 and K 0 in the RTP headers; before attach
- */
-int ut_sr_set_st22(ut_sr_ctx* ctx, size_t codestream_max, uint32_t pkt_len);
+/* make the session an st22 one of st22_tx_ops fmt and codestream_max bytes in pkt_len
+ * payload packets, as st22_tx_create() does with ST22_TX_FLAG_IPMX: the boxes of
+ * ipmx_jxs_boxes_fill() for the ut_sr_set_video() size and rate, T 1 and K 0 in the RTP
+ * headers; before attach */
+int ut_sr_set_st22(ut_sr_ctx* ctx, enum st20_fmt fmt, size_t codestream_max,
+                   uint32_t pkt_len);
 /* the T and K bits of every port's st22 RTP header template */
 void ut_sr_set_st22_tk(ut_sr_ctx* ctx, bool t, bool k);
 /* the Plev of the session's jxpl box, host order */

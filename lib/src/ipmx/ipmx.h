@@ -27,17 +27,22 @@ int ipmx_st22_tx_ops_check(const struct st22_tx_ops* ops);
 int ipmx_st22_rx_ops_check(const struct st22_rx_ops* ops);
 /** Check an st22p codec against the IPMX rules, 0 for JPEG XS else -ENOTSUP. */
 int ipmx_st22p_codec_check(const char* name, enum st22_codec codec);
-/** Check st22p TX ops against the IPMX rules: JPEG XS of GBRPLANAR8, 0 else -ENOTSUP. */
+/**
+ * Check st22p TX ops against the IPMX rules: JPEG XS of GBRPLANAR8 or GBRPLANAR10LE, 0
+ * else -ENOTSUP.
+ */
 int ipmx_st22p_tx_ops_check(const struct st22p_tx_ops* ops);
 /**
- * Write the TR-08 IPMX values of a session into its st22 boxes: brat, schar, jxpl and
- * colr. 0, or -ENOTSUP when ipmx_jxs_plev() finds no Plev.
+ * Write the TR-08 IPMX values of a session of fmt ST20_FMT_RGB_8BIT or
+ * ST20_FMT_RGB_10BIT into its st22 boxes: brat, schar, jxpl and colr. 0, or -ENOTSUP
+ * when ipmx_jxs_plev() finds no Plev.
  */
-int ipmx_jxs_boxes_fill(struct st22_boxes* boxes, uint32_t width, uint32_t height,
-                        enum st_fps fps, size_t codestream_max);
+int ipmx_jxs_boxes_fill(struct st22_boxes* boxes, enum st20_fmt fmt, uint32_t width,
+                        uint32_t height, enum st_fps fps, size_t codestream_max);
 /**
- * ipmx_jxs_pih_check() of one TX frame against the session and its boxes Plev, data
- * plane safe. A failure increments *fail_cnt and logs err() only when *fail_cnt was 0.
+ * ipmx_jxs_pih_check() of one TX frame against the session and its boxes Plev and schar
+ * bit depth, data plane safe. A failure increments *fail_cnt and logs err() only when
+ * *fail_cnt was 0.
  */
 int ipmx_jxs_frame_check(const char* name, int idx, const struct st22_boxes* boxes,
                          const void* codestream, size_t size, uint32_t width,
@@ -85,10 +90,11 @@ static inline int ipmx_st22p_tx_ops_check(const struct st22p_tx_ops* ops) {
   return -ENOTSUP;
 }
 
-static inline int ipmx_jxs_boxes_fill(struct st22_boxes* boxes, uint32_t width,
-                                      uint32_t height, enum st_fps fps,
+static inline int ipmx_jxs_boxes_fill(struct st22_boxes* boxes, enum st20_fmt fmt,
+                                      uint32_t width, uint32_t height, enum st_fps fps,
                                       size_t codestream_max) {
   MTL_MAY_UNUSED(boxes);
+  MTL_MAY_UNUSED(fmt);
   MTL_MAY_UNUSED(width);
   MTL_MAY_UNUSED(height);
   MTL_MAY_UNUSED(fps);

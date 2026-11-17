@@ -53,8 +53,13 @@ enum ipmx_jxs_pih_err {
   IPMX_JXS_PIH_SAMPLING,
 };
 
+/** The component bit depth of a host order schar, ISO/IEC 21122-3 Table A.9. */
+static inline uint8_t ipmx_jxs_schar_depth(uint16_t schar) {
+  return ((schar >> 4) & 0xf) + 1;
+}
+
 /**
- * The TR-08 section 8.1.1 Plev of an RGB 4:4:4 8-bit session whose codestream never
+ * The TR-08 section 8.1.1 Plev of an RGB 4:4:4 session whose codestream never
  * exceeds codestream_max bytes: 0 and *plev, or -ENOTSUP above 4 bpp or when no allowed
  * level fits.
  */
@@ -65,12 +70,12 @@ int ipmx_jxs_plev(uint32_t width, uint32_t height, enum st_fps fps, size_t codes
  * Check a JPEG XS codestream of size bytes against the session: SOC, CAP, then a PIH
  * with Ppih High444.12, the level of plev and Sublev3bpp or Sublev4bpp no higher than
  * its sublevel, Sublev4bpp when the size bytes are above 3 bpp,
- * Wf width, Hf height, Nc 3, Cpih 1, NL,x 5, NL,y 2, Qpih 1, and a CDT of B 8 with
+ * Wf width, Hf height, Nc 3, Cpih 1, NL,x 5, NL,y 2, Qpih 1, and a CDT of B depth with
  * sx = sy = 1 for every component. 0, or the negated enum ipmx_jxs_pih_err. Never reads
  * past size.
  */
 int ipmx_jxs_pih_check(const uint8_t* cs, size_t size, uint32_t width, uint32_t height,
-                       uint16_t plev);
+                       uint16_t plev, uint8_t depth);
 
 #ifdef __cplusplus
 }

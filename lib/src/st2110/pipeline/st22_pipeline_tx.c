@@ -529,7 +529,13 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
     ops_tx.rtcp = ops->rtcp;
   }
   if (ops->flags & ST22P_TX_FLAG_DISABLE_BULK) ops_tx.flags |= ST22_TX_FLAG_DISABLE_BULK;
-  if (ops->flags & ST22P_TX_FLAG_IPMX) ops_tx.flags |= ST22_TX_FLAG_IPMX;
+  if (ops->flags & ST22P_TX_FLAG_IPMX) {
+    ops_tx.flags |= ST22_TX_FLAG_IPMX;
+    if (ops->input_fmt == ST_FRAME_FMT_GBRPLANAR8)
+      ops_tx.fmt = ST20_FMT_RGB_8BIT;
+    else
+      ops_tx.fmt = ST20_FMT_RGB_10BIT;
+  }
   if (ops->flags & ST22P_TX_FLAG_FORCE_NUMA) {
     ops_tx.socket_id = ops->socket_id;
     ops_tx.flags |= ST22_TX_FLAG_FORCE_NUMA;

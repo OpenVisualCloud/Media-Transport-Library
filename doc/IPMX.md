@@ -35,7 +35,8 @@ tested. 2160p needs a 25 GbE or faster port.
 
 | Item | Supported |
 | --- | --- |
-| Profile | IPMX-JPEG-XS of VSF TR-10-15 Part 1 section 8: High444.12, RGB 4:4:4 8-bit, codestream packetization (K = 0), sequential transmission (T = 1), constant bit rate (TR-10-11) |
+| Profile | IPMX-JPEG-XS of VSF TR-10-15 Part 1 section 8: High444.12, RGB 4:4:4, codestream packetization (K = 0), sequential transmission (T = 1), constant bit rate (TR-10-11) |
+| Formats | RGB 4:4:4 8-bit (`GBRPLANAR8`, the TR-10-15 minimum) and 10-bit (`GBRPLANAR10LE`, an additional bit depth TR-10-15 Part 1 section 8 allows), on TX and RX |
 | Resolutions and rates | as for ST 2110-20 |
 | Bits per pixel | up to 4 bpp (Sublev3bpp, Sublev4bpp), tested at 3 and 4 bpp |
 | Codec | SVT-JPEG-XS through its MTL plugin, see section 3.3 |
@@ -144,9 +145,10 @@ rm -rf tests/tools/RxTxApp/build build/tests
 
 ### 3.3 SVT-JPEG-XS and the MTL plugin (JPEG XS only)
 
-Build MTL first: the plugin offers `GBRPLANAR8`, the only IPMX JPEG XS input format, only when
-it is built against an MTL that has `ST_FRAME_FMT_GBRPLANAR8`, which is on the `ipmx-mvp`
-branch.
+Build MTL first: the plugin offers `GBRPLANAR8`, the 8-bit IPMX JPEG XS input format, only
+when it is built against an MTL that has `ST_FRAME_FMT_GBRPLANAR8`, which is on the `ipmx-mvp`
+branch. It always offers `GBRPLANAR10LE`, the 10-bit one. The same IPMX config files serve
+both bit depths: the encoder writes the component bit depth of its input.
 
 ```bash
 cd SVT-JPEG-XS/Build/linux
@@ -281,8 +283,10 @@ ops break an IPMX rule:
 * the ST 2110 RTCP retransmission flags (`ST20_TX_FLAG_ENABLE_RTCP` and the like);
 * ST 2110-20: the `ST20_FMT_V210` and `ST20_FMT_YUV_422_PLANAR10LE` formats;
 * ST 2110-22: `ST22_TX_FLAG_DISABLE_BOXES` / `ST22_RX_FLAG_DISABLE_BOXES`, slice packing;
-  `st22p` TX also needs `ST22_CODEC_JPEGXS`, `GBRPLANAR8` input and a codestream size of at
-  most 4 bpp.
+  `st22` TX also needs `fmt` `ST20_FMT_RGB_8BIT` or `ST20_FMT_RGB_10BIT`, the bit depth of
+  its codestreams (the default 0 is refused); `st22p` TX needs `ST22_CODEC_JPEGXS`,
+  `GBRPLANAR8` or `GBRPLANAR10LE` input, and sets that `fmt` itself; both need a codestream
+  size of at most 4 bpp.
 
 ### 5.2 Sending ST 2110-20
 
@@ -348,7 +352,7 @@ memset(&ops, 0, sizeof(ops));
 ops.width = 1920;
 ops.height = 1080;
 ops.fps = ST_FPS_P59_94;
-ops.input_fmt = ST_FRAME_FMT_GBRPLANAR8; /* planes G, B, R */
+ops.input_fmt = ST_FRAME_FMT_GBRPLANAR8; /* planes G, B, R; or GBRPLANAR10LE */
 ops.pack_type = ST22_PACK_CODESTREAM;
 ops.codec = ST22_CODEC_JPEGXS;
 ops.device = ST_PLUGIN_DEVICE_AUTO;
@@ -363,8 +367,13 @@ int len = ipmx_st22p_tx_get_sdp(tx, sdp, sizeof(sdp)); /* video/jxsv */
 ```
 
 Frames in packed `RGB8` convert to `GBRPLANAR8` with `st_frame_convert()`; the st22 pipeline
-does not convert. The receiver can decode into `GBRPLANAR8` (or `YUV444PLANAR*`, which then
-holds the planes R, G, B).
+does not convert. The receiver can decode into `GBRPLANAR8` or `GBRPLANAR10LE` (or
+`YUV444PLANAR*`, which then holds the planes R, G, B).
+
+With `GBRPLANAR10LE` the stream is RGB 4:4:4 10-bit: the Sender Report, the `jpvi` box and the
+SDP (`depth=10`) say 10, and the codestream must carry B = 10. The frame-level `st22` session
+takes the same from `ops.fmt = ST20_FMT_RGB_10BIT` (`ST20_FMT_RGB_8BIT` for 8-bit); a frame
+whose JPEG XS header has the other bit depth is not sent and is counted.
 
 ### 5.5 Receiving
 
@@ -468,17 +477,22 @@ block version change, ST 2022-7 and PTP. Their setup is in
 
 Lab: Intel E835 100 GbE, VF to VF across two ports, DPDK 26.07, ICE 2.7.6, rate-limit pacing,
 SVT-JPEG-XS `2dc3564`, VSF scripts at `86668b5`. Results of 2026-11-10, with the JPEG XS points
-rerun on 2026-11-16:
+rerun on 2026-11-16 and the JPEG XS RGB 10-bit points added on 2026-11-17:
 
-* All 15 ST 2110-20 points and all 10 JPEG XS points pass the VSF scripts: every SHALL and
-  SHOULD of the pcap validator, and the SDP script with no failure or warning.
+* All 15 ST 2110-20 points and all 20 JPEG XS points (10 RGB 8-bit, 10 RGB 10-bit) pass the
+  VSF scripts: every SHALL and SHOULD of the pcap validator, and the SDP script with no
+  failure or warning. The jxsv validator checks the bit depth only in the Media Info Block
+  (TR-10-1-VP-XVAL); it does not read the `jpvi` `schar` or the codestream B.
 * The block version, ST 2022-7 (both legs) and PTP cases pass. With PTP, the lab
   grandmaster appears in the SDP and in the Sender Reports.
 
-* KahawaiTest with IPMX built-in and with it off: no failures, and no change for non-IPMX
-  sessions.
-* Performance: 4 x 1080p60 and 1 x 2160p60 JPEG XS streams per host with the MTL lcores
-  isolated.
+* KahawaiTest with IPMX built-in (235 passed) and with it off (200 passed): no failures, and
+  no change for non-IPMX sessions. `Ipmx_st22p.*` passes every 8-bit and RGB 10-bit case,
+  ST 2022-7 included.
+* Performance, both bit depths, with the MTL lcores isolated: 4 x 1080p60 and 1 x 2160p60
+  JPEG XS streams per host. RGB 10-bit at 4 x 1080p60 3 bpp and 1 x 2160p60 4 bpp runs at
+  the full rate (60 fps, 3660 frames in 60 s per stream), session 0 passes every VSF SHALL
+  and SHOULD, and its SDP says `depth=10`.
 
 ## 7. Known limitations
 
@@ -494,7 +508,7 @@ rerun on 2026-11-16:
 | Sender Reports | Without PTP, the TR-10-1 NTP-rate SHOULD of the validators can fail: the sender clock runs free. |
 | Receiver | Reads only the first Sender Report and the first video Media Info Block of an RTCP packet. A malformed non-SR part drops the RTCP packet. The video Media Info Block must be 92 octets. |
 | Receiver | The VRX check assumes height / vtotal = 1080 / 1125; a sender with other blanking can read as VRX underflow. Only frames a port fully received are judged. |
-| JPEG XS | RGB 4:4:4 8-bit only, so an MTL receiver is not a TR-10-15 receiver (that also needs YCbCr 4:2:2 10-bit). Above 3 bpp the plugin config needs the Sublev4bpp edit. Sublev4bpp (0x06) is newer than the 2022 edition of ISO/IEC 21122-2, so some receivers may reject 4 bpp. |
+| JPEG XS | RGB 4:4:4 8-bit and 10-bit only, so an MTL receiver is not a TR-10-15 receiver (that also needs YCbCr 4:2:2 10-bit). Above 3 bpp the plugin config needs the Sublev4bpp edit. Sublev4bpp (0x06) is newer than the 2022 edition of ISO/IEC 21122-2, so some receivers may reject 4 bpp. |
 | JPEG XS | At 2160p the receiver loses a few frames while the decoder starts. |
 | RxTxApp | Pipeline sessions only. A block version change needs a restart with a new config. Two processes sharing one SDP directory overwrite each other's files. |
 | Bindings | The safe Rust crate has no IPMX support; there are no binding examples. |
@@ -507,7 +521,9 @@ rerun on 2026-11-16:
 | `*_tx_create()` / `*_rx_create()` returns NULL | The log names the IPMX rule (section 5.1): usually an odd UDP port, linear pacing or a format IPMX does not take. |
 | `pkg-config --variable=ipmx mtl` is empty | MTL was built without `-Denable_ipmx=true` (section 3.2). |
 | RxTxApp: `--ipmx_sdp_dir needs RxTxApp built against an IPMX enabled MTL`, or an `"ipmx": true` session fails | RxTxApp was configured before the IPMX library was installed: remove `tests/tools/RxTxApp/build` and run `./build.sh` again. |
-| `st22p_tx_create()` fails with IPMX | The input is not `GBRPLANAR8`, the codec is not JPEG XS, or the plugin was built against an MTL without `GBRPLANAR8` (section 3.3). |
+| `st22p_tx_create()` fails with IPMX | The input is not `GBRPLANAR8` or `GBRPLANAR10LE`, the codec is not JPEG XS, or the plugin was built against an MTL without `GBRPLANAR8` (section 3.3). |
+| `st22_tx_create()` fails with IPMX, `fmt ... not allowed` | `ops.fmt` is not `ST20_FMT_RGB_8BIT` or `ST20_FMT_RGB_10BIT`: set the bit depth of the codestreams the application sends. |
+| IPMX JPEG XS TX: `frame dropped, JPEG XS header check fail: component B` | The codestream bit depth is not the session's: a 10-bit encode into an 8-bit session or the reverse. |
 | The VSF jxsv validator reports a wrong profile or level | `SVT_JXS_MTL_PLUGIN_CONFIG` is not set, or names the file of the other resolution, or a 3 bpp file for a 4 bpp stream. |
 | JPEG XS: TR-10-9 section 11.2 fails, the receiver drops frames | SVT threads run on the MTL scheduler CPUs: isolate the lcores (section 2, item 6). |
 | RX line shows `FAILED`, `received 0` | No Sender Report on `udp_port + 1`: the sender is no IPMX sender, a firewall or switch drops the port, or the RX has no queue left for the Sender Reports. |

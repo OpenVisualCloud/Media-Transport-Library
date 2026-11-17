@@ -434,7 +434,8 @@ enum st22p_tx_flag {
   ST22P_TX_FLAG_FORCE_NUMA = (MTL_BIT32(9)),
   /**
    * Enable IPMX (VSF TR-10-11) mode on the transport session, see ST22_TX_FLAG_IPMX.
-   * JPEG XS only: st22p_tx_create() fails for any other codec.
+   * JPEG XS of GBRPLANAR8 or GBRPLANAR10LE input only: st22p_tx_create() fails for any
+   * other codec or input_fmt.
    */
   ST22P_TX_FLAG_IPMX = (MTL_BIT32(10)),
   /** Enable the st22p_tx_get_frame block behavior to wait until a frame becomes

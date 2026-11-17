@@ -43,6 +43,7 @@ size_t ipmx_test_jxs_header(uint8_t* dst, size_t dst_size,
   if (dst_size < IPMX_TEST_JXS_HDR_LEN) return 0;
   uint8_t* p = dst;
   uint32_t lcod = req->max_codestream_size;
+  uint8_t depth = req->input_fmt == ST_FRAME_FMT_GBRPLANAR10LE ? 10 : 8;
 
   p = ipmx_test_put16(p, 0xff10); /* SOC */
   p = ipmx_test_put16(p, 0xff50); /* CAP, no capability bits */
@@ -66,10 +67,10 @@ size_t ipmx_test_jxs_header(uint8_t* dst, size_t dst_size,
   *p++ = 0x01;                    /* Fslc 0, Ppoc 0, Cpih 1 */
   *p++ = 0x52;                    /* NL,x 5, NL,y 2 */
   *p++ = 0x10;                    /* Qpih 1 */
-  p = ipmx_test_put16(p, 0xff13); /* CDT, B 8 and sx = sy = 1 for R, G, B */
+  p = ipmx_test_put16(p, 0xff13); /* CDT, B depth and sx = sy = 1 for R, G, B */
   p = ipmx_test_put16(p, 8);
   for (int c = 0; c < 3; c++) {
-    *p++ = 8;
+    *p++ = depth;
     *p++ = 0x11;
   }
   return p - dst;

@@ -428,11 +428,11 @@ int ipmx_st22p_tx_set_ts_refclk(st22p_tx_handle handle, const char* ts_refclk);
 
 /**
  * ipmx_st20_tx_get_info() of an st22 TX session created with ST22_TX_FLAG_IPMX: the
- * values of the Sender Report Media Info Block 0x0003 (TR-10-11 section 12), RGB 4:4:4
- * 8-bit (TR-10-15 Part 1 section 8, TR-08 section 8.1.1), gpm false. The JPEG XS Media
- * Info Block 0x0008 that follows it carries T 1, K 0, Ppih High444.12 and the Plev of the
- * session's jxpl box (TR-10-15 Part 1 section 9). Republish the SDP of
- * ipmx_st22_tx_get_sdp() whenever the version changes.
+ * values of the Sender Report Media Info Block 0x0003 (TR-10-11 section 12), RGB 4:4:4 of
+ * the st22_tx_ops fmt bit depth, 8 or 10 (TR-10-15 Part 1 section 8, TR-08 section
+ * 8.1.1), gpm false. The JPEG XS Media Info Block 0x0008 that follows it carries T 1,
+ * K 0, Ppih High444.12 and the Plev of the session's jxpl box (TR-10-15 Part 1 section
+ * 9). Republish the SDP of ipmx_st22_tx_get_sdp() whenever the version changes.
  *
  * @param handle
  *   The handle to the tx st2110-22(compressed video) session.

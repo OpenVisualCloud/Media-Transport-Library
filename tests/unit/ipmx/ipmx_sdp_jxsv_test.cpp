@@ -27,8 +27,9 @@
  *                           ipmx_jxs_plev() picks
  *   IpmxSdpJxsvBuildTest    ipmx_sdp_build() of given values: T / K, TP, the -ENOTSUP
  *                           guards, -ENOSPC, IPMX_SDP_MAX
- *   IpmxSdpJxsvSessionTest  the SDP of an st22 session: the goldens, fmtp against the
- *                           Sender Report, sess-version bumps, the public getters
+ *   IpmxSdpJxsvSessionTest  the SDP of an st22 session: the goldens (RGB 8-bit and one
+ *                           10-bit), fmtp against the Sender Report, sess-version bumps,
+ *                           the public getters
  *
  * Run: ./build_unit/tests/unit/UnitTest --gtest_filter='*IpmxSdpJxsv*'
  */
@@ -347,7 +348,8 @@ class IpmxSdpJxsvSessionTest : public ::testing::Test {
   }
   /* an st22 IPMX session as st22_tx_create() leaves it: its placeholder st20 fmt, the
    * jxpl box Plev picked for the size, rate and codestream_max, not attached */
-  void Create(uint32_t width, uint32_t height, enum st_fps fps, size_t codestream_max) {
+  void Create(uint32_t width, uint32_t height, enum st_fps fps, size_t codestream_max,
+              enum st20_fmt fmt = ST20_FMT_RGB_8BIT) {
     ctx_ = ut_sr_create(kSip, 1, kPort);
     ASSERT_NE(ctx_, nullptr);
     ut_sr_set_payload_type(ctx_, kPortP, kPt);
@@ -356,7 +358,7 @@ class IpmxSdpJxsvSessionTest : public ::testing::Test {
     ASSERT_EQ(ut_sr_set_video(ctx_, ST20_FMT_YUV_422_10BIT, width, height,
                               ST20_PACKING_BPM, fps),
               0);
-    ASSERT_EQ(ut_sr_set_st22(ctx_, codestream_max, kPktLen), 0);
+    ASSERT_EQ(ut_sr_set_st22(ctx_, fmt, codestream_max, kPktLen), 0);
   }
   void Create1080p3bpp() {
     Create(1920, 1080, ST_FPS_P59_94, Bytes(1920, 1080, 3));
@@ -417,6 +419,17 @@ TEST_F(IpmxSdpJxsvSessionTest, Golden1080p59_94_3bpp) {
   ASSERT_NO_FATAL_FAILURE(Create1080p3bpp());
   ASSERT_EQ(ut_sr_attach(ctx_), 0);
   EXPECT_EQ(Sdp(), Golden("386011", kFmtp1080p3bpp));
+}
+
+/* the RGB 10-bit session of Golden1080p59_94_3bpp (fmt ST20_FMT_RGB_10BIT): depth=10,
+ * the rest the same, as the rate is the codestream size, not the bit depth */
+TEST_F(IpmxSdpJxsvSessionTest, Golden1080p59_94_3bppRgb10) {
+  ASSERT_NO_FATAL_FAILURE(
+      Create(1920, 1080, ST_FPS_P59_94, Bytes(1920, 1080, 3), ST20_FMT_RGB_10BIT));
+  ASSERT_EQ(ut_sr_attach(ctx_), 0);
+  std::string fmtp = kFmtp1080p3bpp;
+  fmtp.replace(fmtp.find("depth=8;"), 8, "depth=10;");
+  EXPECT_EQ(Sdp(), Golden("386011", fmtp));
 }
 
 /* the same at 4 bpp (TR-08 Appendix B RGB rate): Sublev4bpp, 811 packets, 514892 */

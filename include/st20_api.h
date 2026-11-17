@@ -185,7 +185,10 @@ extern "C" {
  * Enable IPMX (VSF TR-10-11) mode. st22_tx_create() fails (returns NULL) and logs the
  * reason if the library is built without enable_ipmx, or if the ops break an IPMX rule:
  * odd or <= 1024 udp_port, ST21_PACING_LINEAR, ST22_TYPE_RTP_LEVEL, interlaced,
- * ST22_TX_FLAG_ENABLE_RTCP or ST22_TX_FLAG_DISABLE_BOXES.
+ * ST22_TX_FLAG_ENABLE_RTCP, ST22_TX_FLAG_DISABLE_BOXES, or fmt other than
+ * ST20_FMT_RGB_8BIT or ST20_FMT_RGB_10BIT. fmt is the RGB 4:4:4 bit depth of the
+ * codestreams: the boxes, Sender Report and SDP signal it, and a frame whose JPEG XS
+ * header has another one is not sent.
  * st22_tx_update_destination() rejects a udp_port that breaks the same port rule.
  * The packets carry DSCP AF42. Each frame also sends an RTCP Sender Report on
  * udp_port + 1, see ipmx_st22_tx_get_info().
@@ -1354,7 +1357,7 @@ struct st22_tx_ops {
   enum st_fps fps;
   /** Mandatory. interlaced or not */
   bool interlaced;
-  /** Mandatory. Session resolution format */
+  /** Mandatory. Session resolution format, see ST22_TX_FLAG_IPMX for the IPMX values */
   enum st20_fmt fmt;
   /** Mandatory. 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
