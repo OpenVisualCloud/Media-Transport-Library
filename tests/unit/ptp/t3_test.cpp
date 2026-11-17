@@ -108,3 +108,54 @@ TEST_F(PtpT3Test, ResultAppliedExactlyOncePerCycle) {
   EXPECT_EQ(ut_ptp_stat_delta_cnt(ctx_), 1);
   EXPECT_EQ(ut_ptp_result_claimed(ctx_), 1);
 }
+
+/* A NIC or PMD that latches no TX timestamp (for example ixgbe without the
+ * runtime IEEE1588 TX bit) makes every delay_req time out. After
+ * ut_ptp_t3_no_tx_ts_limit() timeouts in a row the handler reports it once, so
+ * the fault is not a silent loop of timeouts. */
+class PtpT3NoTxTimestampTest : public PtpT3Test {
+ protected:
+  void RunOneTimeout(uint16_t seq) {
+    ut_ptp_set_no_timesync(ctx_, false);
+    ut_ptp_set_read_tx_ret(-1);
+    ut_ptp_set_t2(ctx_, 1000);
+    ut_ptp_set_t3_sequence_id(ctx_, seq);
+    ut_ptp_set_t3_pending(ctx_, true, seq);
+    ut_ptp_set_t3_deadline_ns(ctx_, 1);
+    ut_ptp_run_t3_handler(ctx_);
+  }
+};
+
+TEST_F(PtpT3NoTxTimestampTest, TimeoutsInARowReportOnceAtTheLimit) {
+  uint32_t limit = ut_ptp_t3_no_tx_ts_limit();
+  ASSERT_GT(limit, 1u);
+
+  for (uint32_t i = 1; i < limit; i++) {
+    RunOneTimeout(i);
+    EXPECT_EQ(ut_ptp_t3_timeout_in_a_row(ctx_), i);
+    EXPECT_FALSE(ut_ptp_t3_no_tx_ts_reported(ctx_));
+  }
+  RunOneTimeout(limit);
+  EXPECT_EQ(ut_ptp_t3_timeout_in_a_row(ctx_), limit);
+  EXPECT_TRUE(ut_ptp_t3_no_tx_ts_reported(ctx_));
+
+  RunOneTimeout(limit + 1); /* stays reported, no second report */
+  EXPECT_EQ(ut_ptp_t3_timeout_in_a_row(ctx_), limit + 1);
+  EXPECT_TRUE(ut_ptp_t3_no_tx_ts_reported(ctx_));
+}
+
+TEST_F(PtpT3NoTxTimestampTest, ValidTxTimestampResetsTheCount) {
+  uint32_t limit = ut_ptp_t3_no_tx_ts_limit();
+  for (uint32_t i = 1; i <= limit; i++) RunOneTimeout(i);
+  ASSERT_TRUE(ut_ptp_t3_no_tx_ts_reported(ctx_));
+
+  ut_ptp_set_read_tx_ret(0);
+  ut_ptp_set_read_tx_ns(2000); /* after t2: a valid t3 */
+  ut_ptp_set_t3_sequence_id(ctx_, 100);
+  ut_ptp_set_t3_pending(ctx_, true, 100);
+  ut_ptp_run_t3_handler(ctx_);
+
+  EXPECT_EQ(ut_ptp_t3(ctx_), 2000u);
+  EXPECT_EQ(ut_ptp_t3_timeout_in_a_row(ctx_), 0u);
+  EXPECT_FALSE(ut_ptp_t3_no_tx_ts_reported(ctx_));
+}
