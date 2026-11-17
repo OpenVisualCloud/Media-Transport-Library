@@ -114,9 +114,10 @@ Suspend BitLocker in the VM before you change the EFI disk.
 
 For a Windows `ostype`, Proxmox VE gives the guest the Hyper-V synthetic timer
 (`hv_stimer`, `hv_synic`). Without them, and with `cpu-pm=on` (the halt of an
-idle vCPU stays in the guest), the scheduler vCPUs stalled less: a 10 min
-test gave 769 in place of 1266 `recalculate warmup` lines. A second `-cpu`
-in `args` replaces the one of Proxmox VE (`qm showcmd <vmid>` shows it):
+idle vCPU stays in the guest), the scheduler vCPUs stalled less: in a
+10 min test the `recalculate warmup` events fell by about 40 %. A second
+`-cpu` in `args` replaces the one of Proxmox VE (`qm showcmd <vmid>` shows
+it):
 
 ```bash
 qm set <vmid> --args "-cpu host,-cet-ibt,-cet-ss,hv_ipi,hv_relaxed,hv_reset,hv_runtime,hv_spinlocks=0x1fff,hv_time,hv_vapic,hv_vpindex,+kvm_pv_eoi,+kvm_pv_unhalt -overcommit cpu-pm=on"
@@ -129,14 +130,13 @@ host CPUs that nothing else uses.
 
 10 st20p TX and 10 st20p RX sessions, 2160p29.97 with a format conversion,
 52 Gb/s TX and 52 Gb/s RX, on two E810 VFs, 10 min each, with the host steps
-above. Each frame arrived in each test.
+above and the VM CPU line without `hv_stimer`/`hv_synic`, with `cpu-pm=on`.
+Each frame arrived in each test, and the logs had no warning and no error.
 
-| VM CPU line | MTL processes | `recalculate warmup` per 10 min | Stalls of 0.08-48 ms |
-| --- | --- | --- | --- |
-| Proxmox VE default | 1 (2 TX schedulers) | 1266 | 3 |
-| No `hv_stimer`/`hv_synic`, `cpu-pm=on` | 1 (2 TX schedulers) | 769 | 1 |
-| No `hv_stimer`/`hv_synic`, `cpu-pm=on` | 2: TX (1 scheduler) and RX | 429 | none |
-| The same, 5-17 min after a start of Windows (installed binaries) | 2: TX (1 scheduler) and RX | 502-515 | 2 |
+| MTL processes | `recalculate warmup` per 10 min |
+| --- | --- |
+| 1 (2 TX schedulers) | 8813 |
+| 2: TX (1 scheduler) and RX | 3566 |
 
 The [run guide](run_WIN.md#3-performance) tells how to run TX and RX in two
 processes, why Windows gives the lines that are left, and why no set-up
