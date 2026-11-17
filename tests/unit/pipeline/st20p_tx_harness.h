@@ -172,6 +172,9 @@ st20p_tx_handle ut20p_tx_handle(ut20p_tx_ctx* ctx);
  */
 int ut20p_tx_free_in_callback(ut20p_tx_ctx* ctx, bool* destroying);
 
+/** How many warnings tx_st20p_uinit_src_fbs() logs for the frame states now. */
+int ut20p_tx_uinit_warns(ut20p_tx_ctx* ctx);
+
 #ifdef __cplusplus
 }
 #endif
