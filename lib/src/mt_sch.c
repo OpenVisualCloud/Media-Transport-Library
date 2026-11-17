@@ -1240,7 +1240,7 @@ int mt_sch_put(struct mtl_sch_impl* sch, int quota_mbs) {
       err("%s(%d), still has %d data_quota_mbs_total\n", __func__, sidx,
           sch->data_quota_mbs_total);
     /* stop and free sch */
-    ret = sch_stop(sch);
+    ret = mt_sch_started(sch) ? sch_stop(sch) : 0;
     if (ret < 0) {
       err("%s(%d), sch_stop fail %d\n", __func__, sidx, ret);
     }
