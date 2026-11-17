@@ -257,3 +257,32 @@ st22p_tx_handle ut22p_tx_create(struct st22p_tx_ops* ops) {
   snprintf(ops->port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut22p_port");
   return st22p_tx_create(impl, ops);
 }
+
+static int ut22p_tx_warns;
+
+static void ut22p_tx_count_warns(enum mtl_log_level level, const char* format, ...) {
+  MTL_MAY_UNUSED(format);
+  if (level == MTL_LOG_LEVEL_WARNING) ut22p_tx_warns++;
+}
+
+int ut22p_tx_uinit_warns(ut22p_tx_ctx* ctx) {
+  struct st22p_tx_ctx* p = &ctx->pipeline;
+  size_t size = sizeof(*ctx->framebuffs) * ctx->framebuff_cnt;
+  enum mtl_log_level level = mt_get_log_global_level();
+
+  /* the uinit rte_frees the array, the harness one is from calloc */
+  p->framebuffs = mt_rte_zmalloc_socket(size, p->socket_id);
+  if (!p->framebuffs) {
+    p->framebuffs = ctx->framebuffs;
+    return -ENOMEM;
+  }
+  memcpy(p->framebuffs, ctx->framebuffs, size);
+  ut22p_tx_warns = 0;
+  mt_set_log_global_level(MTL_LOG_LEVEL_WARNING);
+  mtl_set_log_printer(ut22p_tx_count_warns);
+  tx_st22p_uinit_src_fbs(p);
+  mtl_set_log_printer(NULL);
+  mt_set_log_global_level(level);
+  p->framebuffs = ctx->framebuffs;
+  return ut22p_tx_warns;
+}
