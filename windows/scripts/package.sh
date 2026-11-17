@@ -71,7 +71,7 @@ done
 
 stage="$out/stage"
 rm -rf "$stage"
-mkdir -p "$stage"/{bin,lib/pkgconfig,include,scripts,licenses,drivers,ddp}
+mkdir -p "$stage"/{bin,lib/pkgconfig,include,scripts,licenses,drivers,ddp,config}
 
 # The programs, and each DLL of MSYS2 that they load.
 cp "$prefix/bin/libmtl.dll" "$prefix/bin/RxTxApp.exe" "$stage/bin/"
@@ -90,6 +90,10 @@ sed 's|^prefix=.*|prefix=${pcfiledir}/../..|' "$prefix/lib/pkgconfig/mtl.pc" >"$
 cp -r "$prefix/include/mtl" "$stage/include/"
 
 cp windows/scripts/*.ps1 "$stage/scripts/"
+# The plugin list of MTL (KAHAWAI_CFG_PATH of the installer). It holds no
+# plugin: the plugins of the source tree are Linux libraries. With no list,
+# mtl_init() warns that it cannot open kahawai.json.
+echo '{ "plugins": [] }' >"$stage/config/kahawai.json"
 
 # The driver source: install_drivers.ps1 builds it on the host.
 if [ -z "$kmods" ]; then
