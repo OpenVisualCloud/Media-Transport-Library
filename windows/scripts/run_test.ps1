@@ -6,7 +6,7 @@ two audio and two ancillary streams from one port and receives them on a
 second port.
 
 .DESCRIPTION
-run_test.ps1 [-Sets <number>] [-Seconds <number>] [-Ports <PCI address>,<PCI address>]
+run_test.ps1 [-Sets <number>] [-Seconds <number>] [-Ports <PCI address>,<PCI address>] [-DstMac <MAC>]
 
 -Sets: the number of sets. -Seconds: the test time. With no -Sets or no
 -Seconds, the test asks for it (the defaults are 1 set and 30 s; the time
@@ -21,20 +21,29 @@ reserved. The configuration, the source files and the log are in
 C:\ProgramData\MTL\test.
 
 The multicast group comes from the computer name, so two hosts on one network
-do not send to one group. A VF of a KVM host with the in-tree ice driver gets
+do not send to one group. A VF also sends a multicast stream out of its PF
+port, to the switch. -DstMac: the MAC of the RX port (on a KVM host,
+`ip link show <pf>`). The test then sends unicast to that MAC with no ARP,
+and the stream between two VFs of one PF stays in the adapter. A VF of a KVM host with the in-tree ice driver gets
 no flow rule: then the test runs again with --rss_mode l3_l4.
 
 .EXAMPLE
 .\run_test.ps1
 .\run_test.ps1 -Sets 4 -Ports 0000:01:00.0,0000:02:00.0 -Seconds 60
+.\run_test.ps1 -DstMac 02:00:00:00:00:02
 #>
 param(
     [int]$Sets = 0,
     [string[]]$Ports = @(),
-    [int]$Seconds = 0
+    [int]$Seconds = 0,
+    [string]$DstMac = ''
 )
 
 $ErrorActionPreference = 'Stop'
+if ($DstMac -and $DstMac -notmatch '^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$') {
+    Write-Host "-DstMac $DstMac is not a MAC address, for example 02:00:00:00:00:02."
+    exit 1
+}
 $Dir = Join-Path $env:ProgramData 'MTL\test'
 New-Item -ItemType Directory -Force -Path $Dir | Out-Null
 
@@ -119,6 +128,9 @@ if (-not (Test-Path $txt)) { Set-Content -Path $txt -Value 'MTL test' -Encoding 
 
 $h = [Security.Cryptography.MD5]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($env:COMPUTERNAME))
 $group = "239.96.$(10 + $h[0] % 240).$(1 + $h[1] % 250)"
+# Unicast to the RX port (-DstMac), else the multicast group.
+$dip = if ($DstMac) { '192.168.96.20' } else { $group }
+$sip = if ($DstMac) { '192.168.96.10' } else { $group }
 $video = @{ replicas = 2 * $Sets; type = 'frame'; pacing = 'gap'; start_port = 20000; payload_type = 112
     tr_offset = 'default'; video_format = 'i1080p59'; pg_format = 'YUV_422_10bit' }
 $audio = @{ replicas = 2 * $Sets; type = 'frame'; start_port = 30000; payload_type = 111; audio_format = 'PCM16'
@@ -126,11 +138,11 @@ $audio = @{ replicas = 2 * $Sets; type = 'frame'; start_port = 30000; payload_ty
 $anc = @{ replicas = 2 * $Sets; type = 'frame'; start_port = 40000; payload_type = 113 }
 $config = [ordered]@{
     interfaces  = @(@{ name = $Ports[0]; ip = '192.168.96.10' }, @{ name = $Ports[1]; ip = '192.168.96.20' })
-    tx_sessions = @(@{ dip = @($group); interface = @(0)
+    tx_sessions = @(@{ dip = @($dip); interface = @(0)
             video = @($video + @{ packing = 'BPM'; video_url = $yuv.Replace('\', '/') })
             audio = @($audio)
             ancillary = @($anc + @{ ancillary_format = 'closed_caption'; ancillary_url = $txt.Replace('\', '/'); ancillary_fps = 'p59' }) })
-    rx_sessions = @(@{ ip = @($group); interface = @(1)
+    rx_sessions = @(@{ ip = @($sip); interface = @(1)
             video = @($video + @{ display = $false })
             audio = @($audio)
             ancillary = @($anc) })
@@ -141,6 +153,7 @@ $config | ConvertTo-Json -Depth 8 | Set-Content -Path $json -Encoding ASCII
 $lcores = Get-Lcores
 $base = @('--config_file', $json, '--test_time', "$Seconds")
 if ($lcores -ne '') { $base += @('--lcores', $lcores) }
+if ($DstMac) { $base += @('--p_tx_dst_mac', ($DstMac -replace '-', ':')) }
 
 # Run RxTxApp in the background. Its log goes to $log, and the window shows
 # each new line of it with no time stamp ($log keeps the full line), under a
@@ -224,7 +237,7 @@ function Invoke-Test([string[]]$extra, [string]$log) {
 }
 
 Write-Host "Sets: $Sets ($(2 * $Sets) video, $(2 * $Sets) audio, $(2 * $Sets) ancillary); time $(Format-Time $Seconds)"
-Write-Host "Ports: TX $($Ports[0]), RX $($Ports[1]); group $group; lcores $(if ($lcores) { $lcores } else { 'MTL selects' })"
+Write-Host "Ports: TX $($Ports[0]), RX $($Ports[1]); $(if ($DstMac) { "unicast to $DstMac" } else { "group $group" }); lcores $(if ($lcores) { $lcores } else { 'MTL selects' })"
 $log = Join-Path $Dir 'test.log'
 $r = Invoke-Test @() $log
 if ($r.Code -ne 0 -and (Select-String -Path $log -Pattern 'rte_flow_create fail|Init FDIR .* failed' -Quiet)) {
