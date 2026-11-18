@@ -10,7 +10,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
                                 enum st20_fmt fmt[], bool check_fps,
                                 enum st_test_level level, int sessions = 1,
                                 bool out_of_order = false, bool hdr_split = false,
-                                bool enable_rtcp = false) {
+                                bool enable_rtcp = false, uint16_t rtp_pkt_size = 0) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -80,7 +80,7 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     ops_tx.get_next_frame = interlaced[i] ? tx_next_video_field : tx_next_video_frame;
     ops_tx.query_frame_lines_ready = tx_frame_lines_ready;
     if (tx_type[i] == ST20_TYPE_RTP_LEVEL) {
-      rtp_tx_specific_init(&ops_tx, test_ctx_tx[i]);
+      rtp_tx_specific_init(&ops_tx, test_ctx_tx[i], rtp_pkt_size);
     }
     if (enable_rtcp) {
       ops_tx.flags |= ST20_TX_FLAG_ENABLE_RTCP;
@@ -362,6 +362,36 @@ TEST(St20_rx, digest_rtp_1080p_fps59_94_s1) {
   enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
   st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt, true,
                       ST_TEST_LEVEL_ALL);
+}
+
+/* RTP-level TX/RX of a session sized like ST 2022-6, 1396-byte pkts (12 RTP + 8 HBRMT +
+ * 1376 payload): its largest pkt here is exactly 1396 bytes, 1438 on the wire. */
+TEST(St20_rx, digest_rtp_1080p_fps59_94_s1_pkt1396) {
+  enum st20_type type[1] = {ST20_TYPE_RTP_LEVEL};
+  enum st20_type rx_type[1] = {ST20_TYPE_RTP_LEVEL};
+  enum st20_packing packing[1] = {ST20_PACKING_BPM};
+  enum st_fps fps[1] = {ST_FPS_P59_94};
+  int width[1] = {1920};
+  int height[1] = {1080};
+  bool interlaced[1] = {false};
+  enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
+  st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt, true,
+                      ST_TEST_LEVEL_MANDATORY, 1, false, false, false, 1396);
+}
+
+/* RTP-level TX/RX of a session at the 1452-byte rtp_pkt_size limit. Whole 5-byte
+ * pgroups cap its largest pkt at 1451 bytes, the session's mbufs and rate are 1452. */
+TEST(St20_rx, digest_rtp_1080p_fps59_94_s1_pkt1452) {
+  enum st20_type type[1] = {ST20_TYPE_RTP_LEVEL};
+  enum st20_type rx_type[1] = {ST20_TYPE_RTP_LEVEL};
+  enum st20_packing packing[1] = {ST20_PACKING_BPM};
+  enum st_fps fps[1] = {ST_FPS_P59_94};
+  int width[1] = {1920};
+  int height[1] = {1080};
+  bool interlaced[1] = {false};
+  enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
+  st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt, true,
+                      ST_TEST_LEVEL_ALL, 1, false, false, false, 1452);
 }
 
 TEST(St20_rx, digest_frame_720p_fps59_94_s3) {
