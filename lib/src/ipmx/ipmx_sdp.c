@@ -173,7 +173,7 @@ int ipmx_sdp_build(const struct ipmx_sdp_media* m, uint64_t sess_id,
     if (len) buf[0] = '\0';
     return -ENOSPC;
   }
-  return o.pos;
+  return (int)o.pos;
 }
 
 uint32_t ipmx_sdp_jxsv_kbps(uint64_t frame_max, uint32_t pkt_len, uint32_t rate_num,
@@ -235,6 +235,8 @@ int ipmx_sdp_tx_get(struct st_tx_video_session_impl* s, char* buf, size_t len) {
     return ret;
   }
   ipmx_sdp_media_of(s, &m);
+  /* m is zeroed before it is filled, so its padding compares equal */
+  /* NOLINTNEXTLINE(bugprone-suspicious-memory-comparison) */
   if (sr->sdp_taken && memcmp(&m, &sr->sdp_last, sizeof(m))) sr->sdp_sess_version++;
   memcpy(&sr->sdp_last, &m, sizeof(m));
   sr->sdp_taken = true;

@@ -41,7 +41,7 @@ static void ipmx_sdp_dump(const std::string& sdp, const std::string& tag) {
   FILE* f = fopen(path.c_str(), "w");
   ASSERT_NE(f, nullptr) << path;
   EXPECT_EQ(fwrite(sdp.data(), 1, sdp.size(), f), sdp.size()) << path;
-  fclose(f);
+  (void)fclose(f);
 }
 
 static std::string ipmx_st20p_sdp(st20p_tx_handle handle) {
@@ -317,7 +317,7 @@ static void ipmx_st20p_set_block_version(st20p_tx_handle handle) {
   EXPECT_EQ(info.depth, 8);
   EXPECT_EQ(info.width, 1920);
   EXPECT_EQ(info.height, 1080);
-  EXPECT_EQ(ipmx_st20p_tx_get_info(handle, NULL), -EINVAL);
+  EXPECT_EQ(ipmx_st20p_tx_get_info(handle, nullptr), -EINVAL);
 }
 
 TEST(Ipmx_st20p, rgb8_digest_1080p60_block_version) {

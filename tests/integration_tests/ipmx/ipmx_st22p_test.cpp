@@ -86,8 +86,8 @@ static void ipmx_st22p_tx_ops(struct st_tests_context* ctx, struct st22p_tx_ops*
   ops->port.num_port = 1;
   memcpy(ops->port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  snprintf(ops->port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_P]);
+  (void)snprintf(ops->port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+                 ctx->para.port[MTL_PORT_P]);
   ops->port.udp_port[MTL_SESSION_PORT_P] = IPMX_ST22P_UDP_PORT;
   ops->port.payload_type = IPMX_ST22P_PAYLOAD_TYPE;
   ops->width = 1920;
@@ -109,8 +109,8 @@ static void ipmx_st22p_rx_ops(struct st_tests_context* ctx, struct st22p_rx_ops*
   ops->port.num_port = 1;
   memcpy(ops->port.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  snprintf(ops->port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_R]);
+  (void)snprintf(ops->port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+                 ctx->para.port[MTL_PORT_R]);
   ops->port.udp_port[MTL_SESSION_PORT_P] = IPMX_ST22P_UDP_PORT;
   ops->port.payload_type = IPMX_ST22P_PAYLOAD_TYPE;
   ops->width = 1920;
@@ -202,7 +202,7 @@ static void ipmx_st22p_sdp_dump(const std::string& sdp, const std::string& tag) 
   FILE* f = fopen(path.c_str(), "w");
   ASSERT_NE(f, nullptr) << path;
   EXPECT_EQ(fwrite(sdp.data(), 1, sdp.size(), f), sdp.size()) << path;
-  fclose(f);
+  (void)fclose(f);
 }
 
 /* the TX info and SDP after the stream, so they reflect every Sender Report sent */
@@ -342,7 +342,7 @@ static void ipmx_st22p_sdp_check_media() {
     ASSERT_LT(i + 2, lines.size());
     EXPECT_EQ(lines[i + 1].compare(0, 2, "c="), 0) << lines[i + 1];
     EXPECT_EQ(lines[i + 2].compare(0, 5, "b=AS:"), 0) << lines[i + 2];
-    EXPECT_GT(strtoul(lines[i + 2].c_str() + 5, NULL, 10), 0ul) << lines[i + 2];
+    EXPECT_GT(strtoul(lines[i + 2].c_str() + 5, nullptr, 10), 0ul) << lines[i + 2];
   }
   EXPECT_EQ(media, ipmx_st22p_sr_ports);
   EXPECT_EQ(ipmx_st22p_sdp_values(ipmx_st22p_sdp_tx, "b=").size(),
@@ -656,7 +656,7 @@ static unsigned long ipmx_st22p_svt_cfg_level(const char* path) {
     if (pos == std::string::npos) continue;
     pos = line.find('"', line.find(':', pos + key.size()));
     if (pos == std::string::npos) return 0;
-    return strtoul(line.c_str() + pos + 1, NULL, 16);
+    return strtoul(line.c_str() + pos + 1, nullptr, 16);
   }
   return 0;
 }
@@ -672,8 +672,9 @@ static std::string ipmx_st22p_svt_skip(struct st_tests_context* ctx, uint16_t pl
   if (!cfg) return "SVT_JXS_MTL_PLUGIN_CONFIG not set";
   unsigned long level = ipmx_st22p_svt_cfg_level(cfg);
   if (level != plev) {
-    snprintf(msg, sizeof(msg), "%s has stream_level 0x%04lx, this case needs 0x%04x", cfg,
-             level, plev);
+    (void)snprintf(msg, sizeof(msg),
+                   "%s has stream_level 0x%04lx, this case needs 0x%04x", cfg, level,
+                   plev);
     return msg;
   }
 
@@ -790,7 +791,7 @@ static void ipmx_st22p_dump_write(const std::vector<uint8_t>& data, const char* 
   FILE* f = fopen(path.c_str(), "w");
   ASSERT_NE(f, nullptr) << path;
   EXPECT_EQ(fwrite(data.data(), 1, data.size(), f), data.size()) << path;
-  fclose(f);
+  (void)fclose(f);
 }
 
 /* the usual SR check, then the source pattern and the kept RX frame as raw GBRPLANAR8

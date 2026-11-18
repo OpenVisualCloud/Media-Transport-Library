@@ -53,6 +53,6 @@ struct st20p_rx_digest_test_para {
 void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para);
 
 void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
-                          enum st_frame_fmt tx_fmt[], enum st20_fmt t_fmt[],
+                          enum st_frame_fmt tx_fmt[], const enum st20_fmt t_fmt[],
                           enum st_frame_fmt rx_fmt[],
                           struct st20p_rx_digest_test_para* para);

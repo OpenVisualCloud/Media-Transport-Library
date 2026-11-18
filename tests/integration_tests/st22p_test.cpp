@@ -810,8 +810,9 @@ void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para) {
 }
 
 void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
-                          enum st_frame_fmt fmt[], enum st22_codec codec[],
-                          int compress_ratio[], struct st22p_rx_digest_test_para* para) {
+                          enum st_frame_fmt fmt[], const enum st22_codec codec[],
+                          const int compress_ratio[],
+                          struct st22p_rx_digest_test_para* para) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto st = ctx->handle;
   int ret;
@@ -909,8 +910,8 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
              MTL_IP_ADDR_LEN);
       memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
              MTL_IP_ADDR_LEN);
-      snprintf(ops_tx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
-               ctx->para.port[MTL_PORT_R]);
+      (void)snprintf(ops_tx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+                     ctx->para.port[MTL_PORT_R]);
       ops_tx.port.udp_port[MTL_SESSION_PORT_R] = ST22P_TEST_UDP_PORT + i * 2;
     }
     ops_tx.port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
@@ -1121,8 +1122,8 @@ void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       for (int p = 0; p < 2; p++) {
         memcpy(ops_rx.port.ip_addr[p], ctx->mcast_ip_addr[MTL_PORT_P + p],
                MTL_IP_ADDR_LEN);
-        snprintf(ops_rx.port.port[p], MTL_PORT_MAX_LEN, "%s",
-                 ctx->para.port[MTL_PORT_2 + p]);
+        (void)snprintf(ops_rx.port.port[p], MTL_PORT_MAX_LEN, "%s",
+                       ctx->para.port[MTL_PORT_2 + p]);
         ops_rx.port.udp_port[p] = ST22P_TEST_UDP_PORT + i * 2;
       }
     }

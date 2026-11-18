@@ -257,7 +257,7 @@ uint64_t ipmx_sr_tx_rl_lead_ns(const struct ipmx_sr_tx* sr, enum mtl_session_por
   const struct rte_mbuf* pending = sr->leg[s_port].pending;
 
   if (!pending || !plan->pad_size) return 0;
-  return plan->pad_ns * pending->pkt_len / plan->pad_size;
+  return (uint64_t)(plan->pad_ns * pending->pkt_len / plan->pad_size);
 }
 
 /* one SR a frame: the frames the TX ring can hold, the pending one and slack; an st22

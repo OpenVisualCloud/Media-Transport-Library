@@ -15,9 +15,9 @@
  */
 
 #include <gtest/gtest.h>
-#include <stdint.h>
-#include <string.h>
 
+#include <cstdint>
+#include <cstring>
 #include <vector>
 
 extern "C" {
@@ -192,7 +192,8 @@ TEST_F(StGbrp8Convert, PaddedLinesRoundTripAndKeepPadding) {
 
   ASSERT_EQ(st_frame_convert(&gbrp, &back), 0);
   for (uint32_t y = 0; y < h; y++) {
-    EXPECT_EQ(memcmp(Px(&back, 0, 0, y), Px(&rgb, 0, 0, y), w * 3), 0) << "line " << y;
+    EXPECT_EQ(memcmp(Px(&back, 0, 0, y), Px(&rgb, 0, 0, y), (size_t)w * 3), 0)
+        << "line " << y;
     for (uint32_t x = w * 3; x < back.linesize[0]; x++)
       EXPECT_EQ(*Px(&back, 0, x, y), kGuard) << "line " << y;
   }

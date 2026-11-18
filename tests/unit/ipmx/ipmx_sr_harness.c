@@ -182,8 +182,9 @@ ut_sr_ctx* ut_sr_create(const uint8_t sip[4], uint32_t ssrc, uint16_t media_dst_
 
   struct st_tx_video_session_impl* s = &ctx->session;
   snprintf(name, sizeof(name), "ut_sr_pkt_%d", create_idx);
-  ctx->pkt_pool = rte_pktmbuf_pool_create(name, 64, 0, sizeof(struct mt_muf_priv_data),
-                                          RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+  ctx->pkt_pool =
+      rte_pktmbuf_pool_create(name, 64, 0, sizeof(struct mt_muf_priv_data),
+                              RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
   snprintf(name, sizeof(name), "ut_sr_ring_%d", create_idx++);
   s->ring[MTL_SESSION_PORT_P] = ut_ring_create(name, 8);
   s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL] = ut_sr_pad(UT_SR_PAD_SIZE);
@@ -194,7 +195,7 @@ ut_sr_ctx* ut_sr_create(const uint8_t sip[4], uint32_t ssrc, uint16_t media_dst_
   }
 
   ctx->impl.type = MT_HANDLE_MAIN;
-  ctx->impl.inf[MTL_PORT_P].socket_id = rte_socket_id();
+  ctx->impl.inf[MTL_PORT_P].socket_id = (int)rte_socket_id();
   ctx->impl.inf[MTL_PORT_P].nb_tx_desc = 64;
   /* mt_macaddr_get() reads k_mac_addr, no ethdev */
   ctx->impl.inf[MTL_PORT_P].drv_info.flags = MT_DRV_F_NOT_DPDK_PMD;
@@ -210,7 +211,7 @@ ut_sr_ctx* ut_sr_create(const uint8_t sip[4], uint32_t ssrc, uint16_t media_dst_
   ctx->handle.impl = s;
   ctx->pipeline.type = MT_ST20_HANDLE_PIPELINE_TX;
   ctx->pipeline.transport = &ctx->handle;
-  s->socket_id = rte_socket_id();
+  s->socket_id = (int)rte_socket_id();
   s->ops.num_port = 1;
   s->ops.flags = ST20_TX_FLAG_IPMX;
   s->port_maps[MTL_SESSION_PORT_P] = MTL_PORT_P;
@@ -281,7 +282,7 @@ void ut_sr_set_redundant(ut_sr_ctx* ctx, const uint8_t sip[4], const uint8_t dip
   struct st_tx_video_session_impl* s = &ctx->session;
   struct st_rfc4175_video_hdr* hdr = &s->s_hdr[MTL_SESSION_PORT_R];
 
-  ctx->impl.inf[MTL_PORT_R].socket_id = rte_socket_id();
+  ctx->impl.inf[MTL_PORT_R].socket_id = (int)rte_socket_id();
   ctx->impl.inf[MTL_PORT_R].nb_tx_desc = 64;
   ctx->impl.inf[MTL_PORT_R].drv_info.flags = MT_DRV_F_NOT_DPDK_PMD;
   memcpy(ctx->impl.inf[MTL_PORT_R].k_mac_addr.addr_bytes, smac, sizeof(smac));
@@ -313,7 +314,7 @@ int ut_sr_set_st22(ut_sr_ctx* ctx, enum st20_fmt fmt, size_t codestream_max,
   s->st22_box_hdr_length = sizeof(struct st22_boxes);
   s->st22_codestream_size = codestream_max;
   s->st20_pkt_len = pkt_len;
-  s->st20_total_pkts = (frame_max + pkt_len - 1) / pkt_len;
+  s->st20_total_pkts = (int)((frame_max + pkt_len - 1) / pkt_len);
   ut_sr_set_st22_tk(ctx, true, false);
   ctx->st22_handle.type = MT_ST22_HANDLE_TX_VIDEO;
   ctx->st22_handle.impl = s;
@@ -405,12 +406,12 @@ int ut_sr_block_pool(ut_sr_ctx* ctx, int s_port) {
   ut_sr_detach(ctx);
   memset(ctx->pool_name, 0, sizeof(ctx->pool_name));
   ctx->impl.mempool_idx = mempool_idx;
-  ctx->blocker = rte_pktmbuf_pool_create(name, 1, 0, 0, 64, rte_socket_id());
+  ctx->blocker = rte_pktmbuf_pool_create(name, 1, 0, 0, 64, (int)rte_socket_id());
   return ctx->blocker ? 0 : -ENOMEM;
 }
 
 void ut_sr_set_frame_pkts(ut_sr_ctx* ctx, uint32_t total_pkts) {
-  ctx->session.st20_total_pkts = total_pkts;
+  ctx->session.st20_total_pkts = (int)total_pkts;
 }
 
 void ut_sr_set_pkt_info(ut_sr_ctx* ctx, int type, uint32_t size, uint32_t number) {

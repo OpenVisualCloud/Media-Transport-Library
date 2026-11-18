@@ -89,23 +89,23 @@ struct ipmx_sdp_media Tr10_1LikeMedia() {
   struct ipmx_sdp_media m = {};
   struct ipmx_video_info* info = &m.info;
 
-  snprintf(m.name, sizeof(m.name), "IPMX video 1");
+  (void)snprintf(m.name, sizeof(m.name), "IPMX video 1");
   m.payload_type = kPt;
   m.num_port = 1;
   memcpy(m.leg[0].sip, kSip, 4);
   const uint8_t dip[4] = {239, 20, 0, 1};
   memcpy(m.leg[0].dip, dip, 4);
   m.leg[0].udp_port = kPort;
-  snprintf(info->ts_refclk, sizeof(info->ts_refclk), "localmac=02-00-00-00-00-01");
-  snprintf(info->mediaclk, sizeof(info->mediaclk), "direct=0");
-  snprintf(info->sampling, sizeof(info->sampling), "YCbCr-4:2:2");
+  (void)snprintf(info->ts_refclk, sizeof(info->ts_refclk), "localmac=02-00-00-00-00-01");
+  (void)snprintf(info->mediaclk, sizeof(info->mediaclk), "direct=0");
+  (void)snprintf(info->sampling, sizeof(info->sampling), "YCbCr-4:2:2");
   info->depth = 10;
   info->gpm = true;
   info->par_w = 1;
   info->par_h = 1;
-  snprintf(info->range, sizeof(info->range), "NARROW");
-  snprintf(info->colorimetry, sizeof(info->colorimetry), "BT709");
-  snprintf(info->tcs, sizeof(info->tcs), "SDR");
+  (void)snprintf(info->range, sizeof(info->range), "NARROW");
+  (void)snprintf(info->colorimetry, sizeof(info->colorimetry), "BT709");
+  (void)snprintf(info->tcs, sizeof(info->tcs), "SDR");
   info->width = 1920;
   info->height = 1080;
   info->rate_num = 60000;
@@ -201,16 +201,16 @@ TEST(IpmxSdpBuildTest, SessionNameEmptyOrWithControlChars) {
   struct ipmx_sdp_media m = Tr10_1LikeMedia();
   m.name[0] = '\0';
   EXPECT_EQ(With(Lines(Build(m)), "s="), std::vector<std::string>{"-"});
-  snprintf(m.name, sizeof(m.name), "a\r\nb\tc");
+  (void)snprintf(m.name, sizeof(m.name), "a\r\nb\tc");
   EXPECT_EQ(With(Lines(Build(m)), "s="), std::vector<std::string>{"a__b_c"});
 }
 
 /* the VSF parser decodes s= as UTF-8: bytes from 0x7f up become '_', no invalid text */
 TEST(IpmxSdpBuildTest, SessionNameNonAscii) {
   struct ipmx_sdp_media m = Tr10_1LikeMedia();
-  snprintf(m.name, sizeof(m.name),
-           "cam\xc3\xa9\xff\x7f"
-           "1");
+  (void)snprintf(m.name, sizeof(m.name),
+                 "cam\xc3\xa9\xff\x7f"
+                 "1");
   EXPECT_EQ(With(Lines(Build(m)), "s="), std::vector<std::string>{"cam____1"});
 }
 

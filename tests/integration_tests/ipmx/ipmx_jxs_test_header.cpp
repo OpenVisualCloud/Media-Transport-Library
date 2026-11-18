@@ -6,7 +6,7 @@
 
 #include "ipmx_jxs_test_header.h"
 
-#include <string.h>
+#include <cstring>
 
 /* ISO/IEC 21122-2 Table A.8, the TR-08 section 8.1.1 levels 1k-1, 2k-1, 4k-2, 8k-2 */
 static const struct {
@@ -21,7 +21,7 @@ static const struct {
 
 static uint16_t ipmx_test_jxs_plev(const struct st22_encoder_create_req* req) {
   double samples = (double)req->width * req->height;
-  double bpp = req->max_codestream_size * 8.0 / samples;
+  double bpp = (double)req->max_codestream_size * 8.0 / samples;
   uint8_t sublev = bpp <= 3.0 ? 0x04 : 0x06; /* Sublev3bpp, Sublev4bpp */
 
   for (const auto& l : ipmx_test_jxs_levels) {

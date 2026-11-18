@@ -50,5 +50,6 @@ struct st22p_rx_digest_test_para {
 void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para);
 
 void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
-                          enum st_frame_fmt fmt[], enum st22_codec codec[],
-                          int compress_ratio[], struct st22p_rx_digest_test_para* para);
+                          enum st_frame_fmt fmt[], const enum st22_codec codec[],
+                          const int compress_ratio[],
+                          struct st22p_rx_digest_test_para* para);

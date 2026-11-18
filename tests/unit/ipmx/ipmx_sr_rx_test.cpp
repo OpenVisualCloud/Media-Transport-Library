@@ -25,6 +25,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <cstdint>
@@ -43,6 +44,12 @@
 namespace {
 
 using Bytes = std::vector<uint8_t>;
+
+/* every byte of info, its padding too, is zero */
+bool AllZero(const struct ipmx_video_info& info) {
+  const uint8_t* b = reinterpret_cast<const uint8_t*>(&info);
+  return std::all_of(b, b + sizeof(info), [](uint8_t v) { return v == 0; });
+}
 
 constexpr uint8_t kPtSr = 200;
 constexpr uint8_t kPtRr = 201;
@@ -136,9 +143,9 @@ struct ipmx_video_info VideoInfo() {
   struct ipmx_video_info info;
   memset(&info, 0, sizeof(info));
   info.version = 7;
-  snprintf(info.ts_refclk, sizeof(info.ts_refclk), "localmac=02-00-00-00-00-01");
-  snprintf(info.mediaclk, sizeof(info.mediaclk), "direct=0");
-  snprintf(info.sampling, sizeof(info.sampling), "RGB");
+  (void)snprintf(info.ts_refclk, sizeof(info.ts_refclk), "localmac=02-00-00-00-00-01");
+  (void)snprintf(info.mediaclk, sizeof(info.mediaclk), "direct=0");
+  (void)snprintf(info.sampling, sizeof(info.sampling), "RGB");
   info.floating = true;
   info.depth = 0x7f;
   info.gpm = true;
@@ -146,9 +153,9 @@ struct ipmx_video_info VideoInfo() {
   info.segmented = true;
   info.par_w = 12;
   info.par_h = 11;
-  snprintf(info.range, sizeof(info.range), "FULL");
-  snprintf(info.colorimetry, sizeof(info.colorimetry), "BT2020");
-  snprintf(info.tcs, sizeof(info.tcs), "PQ");
+  (void)snprintf(info.range, sizeof(info.range), "FULL");
+  (void)snprintf(info.colorimetry, sizeof(info.colorimetry), "BT2020");
+  (void)snprintf(info.tcs, sizeof(info.tcs), "PQ");
   info.width = 3840;
   info.height = 2160;
   info.rate_num = 0x3fffff;
@@ -391,9 +398,7 @@ TEST_F(IpmxSrRxParseTest, SrWithoutInfoBlock) {
   EXPECT_EQ(sr.rtp_timestamp, 77u);
   EXPECT_FALSE(sr.has_info);
   EXPECT_FALSE(sr.has_video_mib);
-  struct ipmx_video_info zero;
-  memset(&zero, 0, sizeof(zero));
-  EXPECT_EQ(0, memcmp(&sr.info, &zero, sizeof(zero)));
+  EXPECT_TRUE(AllZero(sr.info));
   Bytes other = UnknownMib(0x1234, 4);
   ASSERT_EQ(Parse(Sr(kSsrc, 77, other), &sr), 0);
   EXPECT_FALSE(sr.has_info);
@@ -532,9 +537,7 @@ TEST_P(IpmxSrRxInfoDefectTest, SrKept) {
   if (c.has_info) {
     EXPECT_EQ(Str(sr.info.ts_refclk), "localmac=02-00-00-00-00-01");
   } else {
-    struct ipmx_video_info zero;
-    memset(&zero, 0, sizeof(zero));
-    EXPECT_EQ(0, memcmp(&sr.info, &zero, sizeof(zero)));
+    EXPECT_TRUE(AllZero(sr.info));
   }
   EXPECT_EQ(sr.info.width, c.has_video_mib ? 3840 : 0);
 }

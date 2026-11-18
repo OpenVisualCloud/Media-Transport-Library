@@ -207,7 +207,7 @@ TEST(IpmxRefclkPrintTest, LocalmacFormCopiedZeroPadded) {
   struct ipmx_refclk clk = {false, 0, 0};
   char localmac[IPMX_TS_REFCLK_LEN] = {0};
   char out[IPMX_TS_REFCLK_LEN];
-  snprintf(localmac, sizeof(localmac), "%s", kLocalmac);
+  (void)snprintf(localmac, sizeof(localmac), "%s", kLocalmac);
   memset(out, 0xee, sizeof(out));
   ipmx_refclk_print(&clk, localmac, out);
   EXPECT_EQ(0, memcmp(out, localmac, sizeof(out)));
@@ -510,8 +510,8 @@ TEST_F(IpmxRefclkSessionTest, GetterNeverMixesTwoStates) {
         continue;
       }
       char expect[IPMX_TS_REFCLK_LEN];
-      snprintf(expect, sizeof(expect), "ptp=IEEE1588-2008:00-00-00-00-00-00-00-%02X:127",
-               info.version);
+      (void)snprintf(expect, sizeof(expect),
+                     "ptp=IEEE1588-2008:00-00-00-00-00-00-00-%02X:127", info.version);
       if (strncmp(info.ts_refclk, expect, sizeof(expect))) torn++;
       reads++;
     }

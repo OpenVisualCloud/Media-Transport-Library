@@ -177,17 +177,18 @@ ut_srrx_ctx* ut_srrx_create(int num_port, uint32_t flags) {
 
   snprintf(name, sizeof(name), "ut_srrx_%d", create_idx++);
   ctx->pool = rte_pktmbuf_pool_create(name, 256, 0, 0, RTE_MBUF_DEFAULT_BUF_SIZE,
-                                      rte_socket_id());
+                                      (int)rte_socket_id());
   if (!ctx->pool) {
     free(ctx);
     return NULL;
   }
   ctx->impl.type = MT_HANDLE_MAIN;
-  for (int i = 0; i < MTL_PORT_MAX; i++) ctx->impl.inf[i].socket_id = rte_socket_id();
+  for (int i = 0; i < MTL_PORT_MAX; i++)
+    ctx->impl.inf[i].socket_id = (int)rte_socket_id();
 
   struct st_rx_video_session_impl* s = &ctx->session;
   s->impl = &ctx->impl;
-  s->socket_id = rte_socket_id();
+  s->socket_id = (int)rte_socket_id();
   s->ops.num_port = num_port;
   s->ops.flags = flags;
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) s->port_maps[i] = (enum mtl_port)i;

@@ -127,7 +127,7 @@ static int ipmx_jxs_pih_body_check(const uint8_t* p, size_t size, uint32_t width
 
 static int ipmx_jxs_cdt_check(const uint8_t* p, uint16_t len, uint8_t depth) {
   if (len != 2 * IPMX_JXS_NC + 2) return -IPMX_JXS_PIH_LCDT;
-  for (int c = 0; c < IPMX_JXS_NC; c++) {
+  for (size_t c = 0; c < IPMX_JXS_NC; c++) {
     if (p[2 * c] != depth) return -IPMX_JXS_PIH_B;
     if (p[2 * c + 1] != IPMX_JXS_SXSY) return -IPMX_JXS_PIH_SAMPLING;
   }

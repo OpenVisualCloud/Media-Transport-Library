@@ -301,7 +301,8 @@ class IpmxJxsPihTest : public ::testing::Test {
   /* an exact size heap copy, so a read past size is a heap overflow */
   int Check(size_t size, uint16_t plev = kSvtPlev, uint32_t w = 1920, uint32_t h = 1080,
             uint8_t depth = 8) {
-    std::vector<uint8_t> exact(cs_.begin(), cs_.begin() + size);
+    std::vector<uint8_t> exact(cs_.begin(),
+                               cs_.begin() + static_cast<std::ptrdiff_t>(size));
     return ipmx_jxs_pih_check(exact.data(), size, w, h, plev, depth);
   }
   /* the header as the encoder writes it for a GBRPLANAR10LE frame: B 10 for R, G, B */

@@ -3402,7 +3402,7 @@ int ut_txv_run_st22_pkt0(ut_txv_ctx* ctx, size_t codestream_size, uint32_t pkt_l
     snprintf(name, sizeof(name), "ut_txv_st22_p0_%u_%d", run_idx, i);
     s->mbuf_mempool_hdr[i] =
         rte_pktmbuf_pool_create(name, 32, 0, sizeof(struct mt_muf_priv_data),
-                                RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
+                                RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
     if (!s->mbuf_mempool_hdr[i]) goto out;
     if (i) {
       snprintf(name, sizeof(name), "ut_txv_st22_r_%u", run_idx);

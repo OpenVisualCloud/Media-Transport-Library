@@ -44,7 +44,7 @@ static int32_t ipmx_vrx_cinst(const struct ipmx_vrx_limit* limit,
   }
   c->last = pkt_ns;
   if (pkt_ns > c->t0) {
-    uint64_t drained = (double)(pkt_ns - c->t0) * limit->cinst_drain_per_ns;
+    uint64_t drained = (uint64_t)((double)(pkt_ns - c->t0) * limit->cinst_drain_per_ns);
 
     if (drained > c->drained) {
       uint64_t n = drained - c->drained;

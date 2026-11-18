@@ -154,7 +154,7 @@ struct ipmx_sdp_media JxsvMedia() {
   struct ipmx_sdp_media m = {};
   struct ipmx_video_info* info = &m.info;
 
-  snprintf(m.name, sizeof(m.name), "jxs1");
+  (void)snprintf(m.name, sizeof(m.name), "jxs1");
   m.payload_type = kPt;
   m.num_port = 1;
   memcpy(m.leg[0].sip, kSip, 4);
@@ -167,15 +167,15 @@ struct ipmx_sdp_media JxsvMedia() {
   m.jxs.ppih = 0x4a40;
   m.jxs.plev = 0x1004;
   m.bitrate_kbps = 386011;
-  snprintf(info->ts_refclk, sizeof(info->ts_refclk), "localmac=02-00-00-00-00-01");
-  snprintf(info->mediaclk, sizeof(info->mediaclk), "direct=0");
-  snprintf(info->sampling, sizeof(info->sampling), "RGB");
+  (void)snprintf(info->ts_refclk, sizeof(info->ts_refclk), "localmac=02-00-00-00-00-01");
+  (void)snprintf(info->mediaclk, sizeof(info->mediaclk), "direct=0");
+  (void)snprintf(info->sampling, sizeof(info->sampling), "RGB");
   info->depth = 8;
   info->par_w = 1;
   info->par_h = 1;
-  snprintf(info->range, sizeof(info->range), "NARROW");
-  snprintf(info->colorimetry, sizeof(info->colorimetry), "BT709");
-  snprintf(info->tcs, sizeof(info->tcs), "SDR");
+  (void)snprintf(info->range, sizeof(info->range), "NARROW");
+  (void)snprintf(info->colorimetry, sizeof(info->colorimetry), "BT709");
+  (void)snprintf(info->tcs, sizeof(info->tcs), "SDR");
   info->width = 1920;
   info->height = 1080;
   info->rate_num = 60000;
