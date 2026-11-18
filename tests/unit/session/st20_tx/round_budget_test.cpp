@@ -188,6 +188,18 @@ TEST(St20TxLead, TheFrameBuilderMeasuresTheLeadOfItsNextPkt) {
   ut_txv_destroy(ctx);
 }
 
+/* The lead is taken against the clock of the scheduler's last transmitter call, so a
+ * clock that call read lag ns ago states it lag ns longer. */
+TEST(St20TxLead, TheLeadIsTakenAgainstTheTransmitterCallsClock) {
+  ASSERT_EQ(0, ut_txv_init());
+  ut_txv_ctx* ctx = ut_txv_create();
+  ASSERT_NE(nullptr, ctx);
+  ut_txv_set_mock_tsc_time(ctx, 1000000);
+  ut_txv_set_visit_lag_ns(ctx, 1000);
+  EXPECT_EQ(-300 + 1000, ut_txv_run_frame_visit(ctx, 1, -300));
+  ut_txv_destroy(ctx);
+}
+
 /* Falling behind does not depend on the pacing: a TSC-paced builder measures its lead
  * too, and the stats dump errs on one below 0. */
 TEST(St20TxLead, ATscPacedSessionBehindErrs) {
