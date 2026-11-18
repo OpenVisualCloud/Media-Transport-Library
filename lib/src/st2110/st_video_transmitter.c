@@ -1345,7 +1345,9 @@ static int video_trs_tasklet_handler(void* priv) {
   trs->pkt0_tsc = video_trs_rl_pkt0_first(trs->pkt0_tsc, trs->locked_tsc);
   trs->locked_tsc = 0;
   for (sidx = 0; sidx < mgr->max_idx; sidx++) {
-    pending += video_trs_rl_release(impl, trs, sidx);
+    /* a scan with no target held or blocked returns at once: skip the call */
+    if (trs->pkt0_tsc || trs->blocked_tsc)
+      pending += video_trs_rl_release(impl, trs, sidx);
     s = tx_video_session_dp_get(mgr, sidx);
     if (!s) continue;
 
@@ -1371,7 +1373,8 @@ static int video_trs_tasklet_handler(void* priv) {
     }
     video_trs_rl_note_refused(mgr, sidx, s);
   }
-  pending += video_trs_rl_release(impl, trs, mgr->max_idx);
+  if (trs->pkt0_tsc || trs->blocked_tsc)
+    pending += video_trs_rl_release(impl, trs, mgr->max_idx);
   if (catch_up) pending += video_trs_rl_catch_up(impl, mgr, near_tsc);
   /* the scans publish the slot of each session they reach, as the visits do */
   tx_video_session_dp_done(mgr);
