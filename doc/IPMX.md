@@ -63,6 +63,28 @@ tested. 2160p needs a 25 GbE or faster port.
   from them (TR-10-9 section 11.1), which is left to the application.
 * **Bindings.** Python (`pyipmx`) and Rust (`imtl-sys` feature `ipmx`), see section 5.9.
 
+### 1.4 NICs
+
+| NIC | Port | TX pacing |
+| --- | --- | --- |
+| Intel E810, E830, E835 | VF (`iavf`), the validated setup (section 6) | NIC rate limit, which `ST21_TX_PACING_WAY_AUTO` selects |
+| Intel I226-LM, I226-IT (DPDK `net_igc`), 2.5 GbE | PF only | TSC, or TSN launch time (`ST21_TX_PACING_WAY_TSN`), see [design.md](design.md) section 4.3.3 |
+
+IPMX on the I226 is not validated yet. What applies to it:
+
+* **Bandwidth.** JPEG XS fits a 2.5 GbE link: 4 x 1080p60 or 1 x 2160p60 is about 1.6 Gbps at
+  3 bpp and 2.1 Gbps at 4 bpp, packet headers included. Of the ST 2110-20 points of section
+  1.1, only 1080p50 YUV 4:2:2 10-bit fits.
+* **Queues.** The I226 has 4 TX and 4 RX queues, which IPMX RX sessions fill fast, see section
+  5.5.
+* **RX flow rules** match the UDP port only, not the IP address: give every RX session its own
+  UDP port.
+* **TSN** sends launch-time packets on TX queue 0 only, so a port carries one TSN video session.
+  It needs the built-in PTP (`--ptp` / `MTL_FLAG_PTP_ENABLE`).
+* **DPDK igc defect.** After a run with TSN pacing, the DPDK igc PMD leaves the NIC in TSN mode,
+  and the next run on that port without TSN pacing stalls in TX until the port is reset. See
+  section 8.
+
 ## 2. Design choices and assumptions
 
 These choices shape what an application must do. They are deliberate; section 7 lists the
@@ -84,7 +106,8 @@ limitations that follow from them.
    With `ST20_TX_FLAG_USER_TIMESTAMP` the application must pass timestamps on that time base.
 5. **Rate-limit (RL) pacing.** The IPMX timing (TR-10-9 section 11.2, TR-10-1 section 8.1) was
    met and validated with the NIC rate-limit pacing of E810 / E830 NICs, which
-   `ST21_TX_PACING_WAY_AUTO` selects there. TSC pacing is not validated for IPMX.
+   `ST21_TX_PACING_WAY_AUTO` selects there. TSC pacing is not validated for IPMX. The I226
+   has no rate limiter: it paces with TSC or TSN, neither validated for IPMX yet (section 1.4).
    `ST21_PACING_LINEAR` is rejected with IPMX.
 6. **JPEG XS needs isolated MTL CPUs.** The SVT-JPEG-XS encoder and decoder threads float over
    every CPU of the process. When they run on a CPU of an MTL scheduler they delay the TX by
@@ -212,7 +235,9 @@ dependency; it fails to build against an MTL without IPMX. See
 ## 4. Run the samples with RxTxApp
 
 Set up the host as for any MTL application ([run.md](run.md)): hugepages, VFs bound to
-`vfio-pci`, MtlManager. For JPEG XS also isolate the MTL lcores (section 2, item 6).
+`vfio-pci`, MtlManager. An I226 has no VFs: bind the PF itself to `vfio-pci`, as the I226
+runtime flow in [run.md](run.md) section 9 describes. For JPEG XS also isolate the MTL lcores
+(section 2, item 6).
 
 `tests/tools/RxTxApp/script/ipmx_json/` has two configs that send one stream to a receiver in
 the same process: `st20p_rgb8_1080p59.json` and `st22p_rgb8_1080p59.json`. Edit the interface
@@ -249,6 +274,8 @@ SVT_JXS_MTL_PLUGIN_CONFIG=/path/to/SVT-JPEG-XS/mtl-plugin/ipmx_1080p.json \
   linuxptp; the SDP file is written once the Sender Reports carry it.
 * `--rx_timing_parser` adds the CINST / VRX line of the RX. With the software RX timestamps of
   RxTxApp it is not a verdict.
+* On an I226, add `--shared_tx_queues --shared_rx_queues` for 4 streams (section 5.5), and
+  `--pacing_way tsn --ptp` for TSN pacing of a single stream (section 1.4).
 
 ## 5. Writing an IPMX application
 
@@ -398,6 +425,10 @@ if (ret == 0 && sr.has_video_mib) {
 * The Sender Reports arrive on `udp_port + 1`. Each port takes one more RX queue for them,
   unless MTL runs with the CNI queue (`MTL_FLAG_RX_USE_CNI`, or a CNI tasklet). Count it when
   you set the RX queue count.
+* A port with few queues, such as an I226 (4 TX, 4 RX), runs out of them: 4 IPMX RX sessions
+  need 8 RX queues plus the system ones, and 4 TX sessions need 5 TX queues. Set
+  `MTL_FLAG_SHARED_RX_QUEUE` and `MTL_FLAG_SHARED_TX_QUEUE`. Without them MTL cuts the queue
+  count to the NIC maximum with only a warning, and the sessions that get no queue fail.
 * The library does no timing recovery from the Sender Reports. The NTP timestamp fields are
   the raw PTP time of the sender.
 * With `ST20P_RX_FLAG_TIMING_PARSER_STAT` the RX also checks the sender against the TR-10-1
@@ -527,6 +558,8 @@ rerun on 2026-11-16 and the JPEG XS RGB 10-bit points added on 2026-11-17:
 | The VSF jxsv validator reports a wrong profile or level | `SVT_JXS_MTL_PLUGIN_CONFIG` is not set, or names the file of the other resolution, or a 3 bpp file for a 4 bpp stream. |
 | JPEG XS: TR-10-9 section 11.2 fails, the receiver drops frames | SVT threads run on the MTL scheduler CPUs: isolate the lcores (section 2, item 6). |
 | RX line shows `FAILED`, `received 0` | No Sender Report on `udp_port + 1`: the sender is no IPMX sender, a firewall or switch drops the port, or the RX has no queue left for the Sender Reports. |
+| I226: a run without TSN pacing stalls in TX at once, `video_trs_burst_fail ... hang duration 1000 ms`, then `q 1 masked as fatal error` | An earlier run on the port used TSN pacing, and the DPDK igc PMD left the NIC in TSN mode (it never clears its TSN registers). Reset the port before the run: `./script/nicctl.sh bind_kernel <bdf>`, then `./script/nicctl.sh bind_pmd <bdf>`. |
+| I226: `queues tx ... rx ... cut to the device max tx 4 rx 4`, then a session create fails | More sessions than the NIC has queues: set the shared queue flags (section 5.5). With shared queues the warning is harmless. |
 | A capture misses the start of the stream | A switch with IGMP snooping forwards the group only after the receiver joins. Join the group on the capture interface before the sender starts. |
 
 ## 9. References
@@ -537,3 +570,5 @@ rerun on 2026-11-16 and the JPEG XS RGB 10-bit points added on 2026-11-17:
 * SMPTE ST 2110-10, -20, -21, -22; ST 2022-7; RFC 3550; RFC 9134; ISO/IEC 21122-2.
 * [build.md](build.md), [run.md](run.md), [configuration_guide.md](configuration_guide.md),
   [isolation.md](isolation.md), [plugin.md](plugin.md), `include/ipmx/ipmx_api.h`.
+* I226: [run.md](run.md) section 9 (runtime flow), [design.md](design.md) section 4.3.3 (TSN
+  launch-time pacing).
