@@ -705,7 +705,7 @@ Progressive, height ≥ 1080; T = frame time. Interlaced, 720p and SD use their 
   - an aim past `ST_TX_VIDEO_RL_TIMESLOT_MAX_NS`: a drain below ~128.5 MB/s, such as 720p25, 720p50 by a ~1.5% margin, and 8-bit 1080p25.
 - **Linear.** `ST21_PACING_LINEAR` is declared in `st20_api.h`, but nothing in `lib/src` reads it on TX, so every TX schedule is gapped.
   - Linear has no idle gap, so there is no window for warm-up or pre-arm, and RL alone has no launch time to re-anchor each frame.
-  - It would need closed-loop rate correction on RL, or TSN launch time (§4.3.3 in `doc/design.md`, E830 PF), which stamps every packet.
+  - It would need closed-loop rate correction on RL, or TSN launch time (§4.3.3 in `doc/design.md`, E830 or a TSN-capable I225/I226 such as the I226-LM, PF), which stamps every packet.
 
 ### PTP: The Time Reference
 - MTL implements PTP slave in software (`mt_ptp.c`)
