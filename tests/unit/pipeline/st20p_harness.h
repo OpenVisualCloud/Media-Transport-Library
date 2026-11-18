@@ -107,6 +107,13 @@ int ut20p_ctx_enable_pkt_convert(ut20p_ctx* ctx, enum st_frame_fmt output_fmt,
 /** Route st20_rx_put_framebuff() to put(arg, frame); NULL makes it a no-op again. */
 void ut20p_set_put_framebuff(int (*put)(void* arg, void* frame), void* arg);
 
+/** pg_cnt pgroups of payload through the per-packet converter, at row and pixel offset
+ * of the frame at timestamp: 0 or its error. */
+int ut20p_pkt_convert(ut20p_ctx* ctx, void* payload, uint16_t row, uint16_t offset,
+                      uint16_t pg_cnt, uint32_t timestamp);
+/** The frame converting the frame at timestamp, NULL if none. */
+struct st_frame* ut20p_pkt_convert_dst(ut20p_ctx* ctx, uint32_t timestamp);
+
 /** Clear ctx->ready, or set it as st20p_rx_create() does once the transport exists. */
 void ut20p_set_ready(ut20p_ctx* ctx, bool ready);
 

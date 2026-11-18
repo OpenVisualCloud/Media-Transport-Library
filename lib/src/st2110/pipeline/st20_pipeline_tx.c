@@ -659,10 +659,19 @@ static int tx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_tx_ct
 }
 
 static int tx_st20p_init_nt_scratch(struct st20p_tx_ctx* ctx, struct st20p_tx_ops* ops) {
+  enum st_frame_fmt t_fmt = st_frame_fmt_from_transport(ops->transport_fmt);
+  const struct st_frame_converter* converter = ctx->internal_converter;
+  struct st_frame_converter block_converter;
+
   if (ops->flags & ST20P_TX_FLAG_DISABLE_NT_CONVERT) return 0;
-  return st_frame_nt_scratch_init(&ctx->nt_scratch, ctx->internal_converter,
-                                  st_frame_fmt_from_transport(ops->transport_fmt),
-                                  ops->width, ctx->socket_id);
+  /* a derive session converts only in st20p_tx_convert_block(), into 422be10 only, and
+   * the scratch takes 8 lines of the frame fmt whichever source fmt the app has */
+  if (!converter && ctx->derive && !(ops->flags & ST20P_TX_FLAG_EXT_FRAME) &&
+      t_fmt == ST_FRAME_FMT_YUV422RFC4175PG2BE10 &&
+      st_frame_get_converter(ST_FRAME_FMT_YUV422PLANAR10LE, t_fmt, &block_converter) >= 0)
+    converter = &block_converter;
+  return st_frame_nt_scratch_init(&ctx->nt_scratch, converter, t_fmt, ops->width,
+                                  ctx->socket_id);
 }
 
 static int tx_st20p_stat(void* priv) {
@@ -1040,6 +1049,73 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, producer_idx);
   ret = 0;
+out:
+  MT_HANDLE_RELEASE(ctx);
+  return ret;
+}
+
+int st20p_tx_convert_block(st20p_tx_handle handle, struct st_frame* frame,
+                           const struct st_frame* src_block, uint32_t dst_line,
+                           uint32_t nb_lines) {
+  struct st20p_tx_ctx* ctx = handle;
+  int idx = ctx->idx;
+  struct st20p_tx_frame* framebuff;
+  struct st_frame_converter converter;
+  struct st_frame src, dst;
+  int ret;
+
+  MT_HANDLE_GUARD(ctx, MT_ST20_HANDLE_PIPELINE_TX, -EIO);
+
+  if (!ctx->derive || ctx->ops.flags & ST20P_TX_FLAG_EXT_FRAME) {
+    err("%s(%d), only for a session that converts nothing, without ext frame\n", __func__,
+        idx);
+    ret = -EIO;
+    goto out;
+  }
+  framebuff = frame ? frame->priv : NULL;
+  if (!framebuff || framebuff->idx >= ctx->framebuff_cnt ||
+      framebuff != &ctx->framebuffs[framebuff->idx]) {
+    err("%s(%d), not a frame of this session\n", __func__, idx);
+    ret = -EINVAL;
+    goto out;
+  }
+  if (!src_block || src_block->width != frame->width || !nb_lines ||
+      dst_line >= st_frame_data_height(frame) ||
+      nb_lines > st_frame_data_height(frame) - dst_line) {
+    err("%s(%d), invalid block or lines %u+%u\n", __func__, idx, dst_line, nb_lines);
+    ret = -EINVAL;
+    goto out;
+  }
+  if (ST20P_TX_FRAME_IN_USER !=
+      atomic_load_explicit(&framebuff->stat, memory_order_acquire)) {
+    err("%s(%d), frame %u not in user\n", __func__, idx, framebuff->idx);
+    ret = -EIO;
+    goto out;
+  }
+  if (st_frame_get_converter(src_block->fmt, frame->fmt, &converter) < 0 ||
+      !st_frame_nt_supported(&converter, frame->width)) {
+    err("%s(%d), source fmt %s at width %u not supported\n", __func__, idx,
+        st_frame_fmt_name(src_block->fmt), frame->width);
+    ret = -ENOTSUP;
+    goto out;
+  }
+  for (uint8_t plane = 0; plane < st_frame_fmt_planes(src_block->fmt); plane++) {
+    if (!src_block->addr[plane] ||
+        src_block->linesize[plane] <
+            st_frame_least_linesize(src_block->fmt, frame->width, plane)) {
+      err("%s(%d), invalid plane %u of the block\n", __func__, idx, plane);
+      ret = -EINVAL;
+      goto out;
+    }
+  }
+
+  src = *src_block;
+  dst = *frame;
+  src.interlaced = dst.interlaced = false;
+  src.height = dst.height = nb_lines;
+  for (uint8_t plane = 0; plane < st_frame_fmt_planes(dst.fmt); plane++)
+    dst.addr[plane] = (uint8_t*)frame->addr[plane] + frame->linesize[plane] * dst_line;
+  ret = st_frame_convert_nt(&converter, &ctx->nt_scratch, &src, &dst);
 out:
   MT_HANDLE_RELEASE(ctx);
   return ret;

@@ -265,6 +265,8 @@ MTL sends every ST 2110-20 stream with the gapped schedule. `ST21_PACING_LINEAR`
 
 In the case that the rate-limiting feature is unavailable, TSC (Timestamp Counter) based software pacing is provided as a fallback option.
 
+How MTL uses the E810/E830 rate limiter to pace the packets, and to launch each frame's first packet on time, is described in [RL Pacing](rl_pacing.md).
+
 ![TX Pacing](png/tx_pacing.svg)
 
 #### 4.3.3. TSN launch-time pacing
@@ -387,6 +389,7 @@ Sample application code can be find in [tx_st20_pipeline_sample.c](../app/sample
 
 For `yuv422p10le`, and `v210` at a width that is a multiple of 48, to or from the 4:2:2 10-bit transport, the internal converter converts 8 lines at a time into a per-session scratch and streams each block to the frame with non-temporal stores, so the frame neither is read for ownership nor fills the cache.
 An RX frame converted this way comes back cold in cache: an application that reads it right after `st20p_rx_get_frame` reads it from DRAM. `ST20P_TX_FLAG_DISABLE_NT_CONVERT` and `ST20P_RX_FLAG_DISABLE_NT_CONVERT` switch a session back to ordinary stores.
+An application that builds a wire-format frame itself, for example playing a stored `yuv422p10le` or `v210` file on a session whose input format is the transport format, can call `st20p_tx_convert_block` to convert its lines the same way straight into the frame from `st20p_tx_get_frame`, instead of copying the picture into the frame and letting the library convert it.
 
 By default, the `st20p_tx_get_frame` and `st20p_rx_get_frame` functions operate in non-blocking mode, which means the function call will immediately return `NULL` if no frame is available.
 To switch to blocking mode, where the call will wait until a frame is ready for application use or one second timeout occurs, you must enable the `ST20P_TX_FLAG_BLOCK_GET` or `ST20P_RX_FLAG_BLOCK_GET` flag respectively during the session creation stage, and application can use `st20p_tx_wake_block`/`st20p_rx_wake_block` to wake up the waiting directly.
@@ -395,14 +398,14 @@ To switch to blocking mode, where the call will wait until a frame is ready for 
 
 Each pipeline framebuffer carries a single `_Atomic` status field, and every stage transition (for example `FREE`→`IN_USER`, `READY`→`CONVERTED`, `IN_TRANSMITTING`→`FREE`) is performed with a C11 atomic load/store or compare-exchange rather than a mutex. This lock-free protocol is correct only under the following assumptions, which the get/put API contract implicitly relies on:
 
-- **One application thread per session and per direction.** For a given session, `st*p_tx_get_frame`/`st*p_tx_put_frame`
-  (and, on the receive side, `st*p_rx_get_frame`/`st*p_rx_put_frame`) must be called from the same thread, and each call
-  must be synchronous — it must return before the next get/put is issued. The atomic status field prevents state
-  corruption and double-claim between the application thread and the data-plane thread, but it does **not** make these
-  calls re-entrant or safe to invoke concurrently from multiple application threads. The producer/consumer cursor hints
-  (`framebuff_producer_idx`/`framebuff_consumer_idx`) and the get→process→put handoff assume this single-threaded,
-  sequential usage. The st20p conversion scratch is guarded only so that an application that breaks this rule cannot
-  corrupt it: a conversion that finds the scratch in use converts with ordinary stores.
+- **One application thread per session and per direction, required.** For a given session, `st*p_tx_get_frame`,
+  `st*p_tx_put_frame` and `st20p_tx_convert_block` (on the receive side `st*p_rx_get_frame`/`st*p_rx_put_frame`) must be
+  called from the same thread, and each call must return before the next one is issued. The atomic status field prevents
+  state corruption and double-claim between the application thread and the data-plane thread, but it does **not** make
+  these calls re-entrant or safe from several application threads at once: the producer/consumer cursor hints
+  (`framebuff_producer_idx`/`framebuff_consumer_idx`) and the get→process→put handoff assume single-threaded, sequential
+  use. The st20p conversion scratch is guarded only so that an application that breaks this rule cannot corrupt it: a
+  conversion that finds the scratch in use converts with ordinary stores.
 - **Synchronous lower-layer callbacks.** The transport-layer callbacks driven from the data-plane tasklet — for example
   `frame_ready`, `packet_convert`, `frame_done`, and `query_ext_frame` — are assumed to run synchronously and to
   completion within their single owning tasklet thread. Under this assumption each pipeline stage has exactly one
@@ -724,8 +727,9 @@ The first packet then is not sent before the scheduled time, provided the paddin
 The model puts the first packet at the scheduled time, or within one 8-byte step after it: the library cuts up to 64 bytes from each of the last padding packets, in 8-byte steps, so the padding drains within one step of it, never before. Measured on E830 VF against the scheduled time, the first packet arrives 1.4 to 6.1 µs late at 1080p25/50/60/59.94, 720p59.94 and 2160p59.94, never early.
 A tasklet stall between two padding bursts that ends before the scheduled time only shrinks the rest of the padding.
 A stall inside a burst (an interrupt or a preemption) can delay its doorbell by an unknown time.
-If the padding already queued does not cover it and the burst returns more than 2 µs late, the library plans the rest from the latest time the doorbell can have rung and holds the first packet until the scheduled time, as without a known shaper. A shorter stall can delay the first packet by up to its length.
-After a stall past it the first packet leaves when the tasklet returns. The NIC and the clocks add the rest.
+If the padding already queued does not cover it and the burst returns more than 2 µs late, the library keeps the plan while the stall stays within the port's absorb limit, so the first packet still leaves behind the padding, late by at most the stall.
+Past that limit it plans the rest from the latest time the doorbell can have rung and holds the first packet until the scheduled time, as without a known shaper. A shorter stall can delay the first packet by up to its length.
+A held first packet leaves at the transmitter's next release scan, which runs before every session visit ([RL Pacing 5.4](rl_pacing.md#54-hold-and-the-release-scans)). The NIC and the clocks add the rest.
 
 ```mermaid
 sequenceDiagram
@@ -740,7 +744,11 @@ sequenceDiagram
     alt every burst returns in time
         T->>N: first packet, behind the padding
         N->>W: first packet, as the padding ends: at the scheduled time
-    else a burst returns more than 2 µs late (interrupt, preemption)
+    else a burst returns more than 2 µs late, within the absorb limit
+        Note over T: keeps the plan, counts stat_trans_recalculate_warmup
+        T->>N: first packet, behind the padding
+        N->>W: first packet, late by at most the stall
+    else a burst returns later than the absorb limit (interrupt, preemption)
         Note over T: holds the first packet, counts stat_trans_recalculate_warmup
         T->>N: first packet, once the TSC reaches the scheduled time
         N->>W: first packet

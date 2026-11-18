@@ -374,11 +374,15 @@ static enum st20_packet_type tv_train_pad_type(struct st_tx_video_session_impl* 
   return tv_pkt_has_extra_hdr(s, offset) ? ST20_PKT_TYPE_EXTRA : ST20_PKT_TYPE_NORMAL;
 }
 
+/* the pads a tv_train_pacing() burst sends, as one pad a call is CPU bound above ~38
+ * Gb/s */
+#define TV_TRAIN_BURST (32)
+
 /* the pads of a frame tv_train_pacing() sends, the remain NORMAL ones included */
 static void tv_train_mix(struct st_tx_video_session_impl* s,
                          struct mt_pacing_pad_mix* mix) {
   int total = s->st20_total_pkts;
-  int remain = 32 - (total % 32);
+  int remain = TV_TRAIN_BURST - (total % TV_TRAIN_BURST);
 
   mix->normal = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
   mix->pkts = total + remain;
@@ -426,6 +430,50 @@ static uint32_t tv_rl_burst_size(struct mtl_main_impl* impl, enum mtl_port port)
   }
 }
 
+/* tv_sync_pacing() snaps the start time to the RTP tick unless USER_TIMESTAMP,
+ * RTP_TIMESTAMP_EPOCH or rtp_timestamp_delta_us decouple the RTP timestamp from it */
+static bool tv_start_snaps(struct st_tx_video_session_impl* s) {
+  return !(s->ops.flags &
+           (ST20_TX_FLAG_USER_TIMESTAMP | ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH)) &&
+         !s->ops.rtp_timestamp_delta_us;
+}
+
+/* the most tv_sync_pacing()'s 90 kHz snap moves the target past epoch + tr_offset -
+ * vrx * trs, over the phases the epochs take on the tick grid; an exact user start time
+ * is not snapped, the frames without one are */
+static long double tv_snap_loss_ns(struct st_tx_video_session_impl* s) {
+  uint32_t rate = s->fps_tm.sampling_clock_rate;
+  uint64_t a = (uint64_t)rate * s->fps_tm.den, b = s->fps_tm.mul;
+  long double loss = 0;
+
+  if (!tv_start_snaps(s) || !rate || !b) return 0;
+  while (a % b) {
+    uint64_t r = a % b;
+    a = b;
+    b = r;
+  }
+  uint64_t phases = s->fps_tm.mul / b;
+  if (phases > 64) return (long double)NS_PER_S / rate / 2;
+  for (uint64_t k = phases; k < 2 * phases; k++) {
+    uint64_t start = transmission_start_time(s, k);
+    loss = RTE_MAX(loss, (long double)st_tai_round_to_media_clk_ns(start, rate) - start);
+  }
+  return loss;
+}
+
+/* how late of the target grid a pkt behind packet 0 leaves at most: the pad sawtooth,
+ * (pad_interval / 2 + slice) / (pad_interval + 1) trs, and one pad more where a frame's
+ * whole pads round up; the RL bulk pads each ST_SESSION_MAX_BULK slice as bulk 4 does */
+static long double tv_rl_sawtooth_ns(struct st_tx_video_session_impl* s,
+                                     long double pad) {
+  struct st_tx_video_pacing* pacing = &s->pacing;
+  unsigned int slice = RTE_MIN(s->bulk, (unsigned int)ST_SESSION_MAX_BULK);
+
+  return (pacing->pad_interval / 2 + (float)slice) / (pacing->pad_interval + 1) *
+             pacing->trs +
+         pad;
+}
+
 /* Plans the RL pre-arm of each port from the pad_ns training measured and the rate on its
  * queue. Runs after tv_init_hw() built the trim pads, once warm_pkts and the pacing ways
  * are final. A port without a plan holds packet 0 until its target. */
@@ -434,6 +482,7 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
   struct st_tx_video_pacing* pacing = &s->pacing;
   uint16_t pad_size = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
   int idx = s->idx;
+  long double snap_loss = tv_snap_loss_ns(s);
 
   for (int i = 0; i < s->ops.num_port; i++) {
     struct st_tx_video_rl_plan* plan = &s->rl_plan[i];
@@ -447,9 +496,23 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
     if (armed) {
       /* the timeslot grid releases packet 0 up to a timeslot early: aim one late */
       long double aim = st_tx_video_rl_tokens(bps) * plan->pad_ns / pad_size;
+      long double timeslot =
+          st_tx_video_rl_timeslot_tokens(bps) * plan->pad_ns / pad_size;
       /* the bucket fills at the programmed rate, not the trained one */
       long double refill = (long double)burst_size * NS_PER_S / bps;
       plan->bucket_ns = refill + aim;
+      /* Packet j must reach the receiver by its drain slot, vrx trs after its place on
+       * the target grid. The 90 kHz snap moves that grid later by up to snap_loss, the
+       * timeslot releases packet 0 up to aim late and the cut leaves up to a fine trim.
+       * Behind packet 0 the pkts run late of the grid by up to the sawtooth. The rest of
+       * the lead may go to a stalled burst, within what the grid and the cut leave of
+       * the launch budget. */
+      long double late = tv_rl_sawtooth_ns(s, plan->pad_ns);
+      long double fine = plan->pad_ns * ST_TX_VIDEO_RL_TRIM_FINE / pad_size;
+      long double lead = pacing->vrx * pacing->trs - snap_loss - aim - fine - late;
+      plan->absorb_ns =
+          RTE_MIN(ST_TX_VIDEO_RL_GRID_LATE_MAX_NS - aim - timeslot - fine, lead);
+      plan->refill_ns = refill;
       long double window = pacing->warm_pkts * pacing->trs + plan->bucket_ns;
       /* from the previous frame's last pkt to the warm-up open */
       long double idle =
@@ -460,15 +523,26 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
               window > (st_tx_video_rl_trim_pads(pad_size) - 1) * plan->pad_ns &&
               /* the bucket refills before the window opens */
               refill <= idle &&
-              /* aim, the bound of the unknown timeslot, is short enough */
-              aim <= ST_TX_VIDEO_RL_TIMESLOT_MAX_NS;
+              /* the grid releases packet 0 within a timeslot of target + aim */
+              aim + timeslot <= ST_TX_VIDEO_RL_GRID_LATE_MAX_NS;
     }
+    /* a pkt fills its drain slot, (vrx + 1) trs after its target less the snap, if it
+     * left the shaper no later than this before the sawtooth; a pad without a plan
+     * drains within a trs */
+    if (s->pacing_way[i] == ST21_TX_PACING_WAY_RL && pacing->vrx)
+      plan->vrx_budget_ns =
+          (int64_t)((pacing->vrx + 1) * pacing->trs - snap_loss -
+                    tv_rl_sawtooth_ns(s, armed ? plan->pad_ns : pacing->trs));
     if (!armed) {
       plan->pad_ns = 0;
       plan->bucket_ns = 0;
+      plan->absorb_ns = 0;
+      plan->refill_ns = 0;
       plan->armed = false;
       if (s->pacing_way[i] == ST21_TX_PACING_WAY_RL)
-        info("%s[%02d], port %d no rl plan, holds packet 0\n", __func__, idx, i);
+        warn("%s[%02d], port %d no rl plan, holds packet 0, VRX at risk if late\n",
+             __func__, idx, i);
+      st_video_trs_rl_drain_init(impl, s, i);
       continue;
     }
     plan->pad_size = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
@@ -477,6 +551,7 @@ static void tv_rl_plan_init(struct mtl_main_impl* impl,
     info("%s[%02d], port %d rl plan, pad_ns %Lf bucket_ns %Lf burst size %u bps %" PRIu64
          "\n",
          __func__, idx, i, plan->pad_ns, plan->bucket_ns, burst_size, bps);
+    st_video_trs_rl_drain_init(impl, s, i);
   }
 }
 
@@ -539,20 +614,20 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   }
 
   int total = s->st20_total_pkts;
-  int remain = 32 - (total % 32);
+  int remain = TV_TRAIN_BURST - (total % TV_TRAIN_BURST);
+  struct rte_mbuf* pads[TV_TRAIN_BURST];
 
   /* training stage */
   for (int loop = 0; loop < loop_frame; loop++) {
     uint64_t start = mt_get_ptp_time(impl, MTL_PORT_P);
-    for (int i = 0; i < total; i++) {
-      pad = s->pad[s_port][tv_train_pad_type(s, i)];
-      rte_mbuf_refcnt_update(pad, 1);
-      mt_txq_burst_busy(queue, &pad, 1, 10);
-    }
-    pad = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
-    for (int i = 0; i < remain; i++) {
-      rte_mbuf_refcnt_update(pad, 1);
-      mt_txq_burst_busy(queue, &pad, 1, 10);
+    for (int i = 0; i < total + remain; i += TV_TRAIN_BURST) {
+      for (int j = 0; j < TV_TRAIN_BURST; j++) {
+        enum st20_packet_type type =
+            i + j < total ? tv_train_pad_type(s, i + j) : ST20_PKT_TYPE_NORMAL;
+        pads[j] = s->pad[s_port][type];
+        rte_mbuf_refcnt_update(pads[j], 1);
+      }
+      mt_txq_burst_busy(queue, pads, TV_TRAIN_BURST, 10);
     }
     uint64_t end = mt_get_ptp_time(impl, MTL_PORT_P);
     double time = (double)(end - start) * total / (total + remain);
@@ -621,13 +696,26 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
  * meets or exceeds the required rate
  */
 #define INCREASE_BPS_FACTOR 1.005
-  bps_to_set = INCREASE_BPS_FACTOR * (rl_bps * rl_bps) / measured_bps;
+  bps_to_set = INCREASE_BPS_FACTOR * (double)rl_bps * (double)rl_bps / measured_bps;
   info("%s(%d), Retrain pacing with bps changed to %" PRIu64 "\n", __func__, idx,
        bps_to_set);
   mt_pacing_train_bps_result_add(impl, port, rl_bps, bps_to_set);
   mt_txq_set_tx_bps(queue, bps_to_set);
   ret = tv_train_pacing(impl, s, s_port);
   return ret;
+}
+
+/* TSC spends bulk - 1 of the vrx and a slice-level bulk waits for its lines, so only
+ * all-RL frame-level sessions whose ring (ring_count - 1 deep) takes it get the RL bulk
+ */
+static unsigned int tv_bulk(struct st_tx_video_session_impl* s) {
+  if (s->ops.flags & ST20_TX_FLAG_DISABLE_BULK) return 1;
+  if (s->s_type != MT_HANDLE_TX_VIDEO || s->ops.type != ST20_TYPE_FRAME_LEVEL ||
+      s->ring_count <= ST_TX_VIDEO_RL_BULK)
+    return ST_SESSION_MAX_BULK;
+  for (int i = 0; i < s->ops.num_port; i++)
+    if (s->pacing_way[i] != ST21_TX_PACING_WAY_RL) return ST_SESSION_MAX_BULK;
+  return ST_TX_VIDEO_RL_BULK;
 }
 
 static int tv_init_pacing(struct mtl_main_impl* impl,
@@ -675,7 +763,8 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     if (s->pacing_way[i] == ST21_TX_PACING_WAY_RL) {
       ret = tv_train_pacing(impl, s, i);
       if (ret < 0) {
-        /* fallback to tsc pacing */
+        err("%s(%d), port %d rl training fail %d, fallback to tsc pacing\n", __func__,
+            idx, i, ret);
         s->pacing_way[i] = ST21_TX_PACING_WAY_TSC;
       }
     }
@@ -689,6 +778,8 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
       s->pacing_way[MTL_SESSION_PORT_R] = ST21_TX_PACING_WAY_TSC;
     }
   }
+  /* a fallback from RL shrinks the bulk the pools were sized for */
+  s->bulk = RTE_MIN(s->bulk, tv_bulk(s));
 
   uint32_t pkts_in_tr_offset = pacing->tr_offset / pacing->trs;
   /* calculate warmup pkts for rl */
@@ -829,6 +920,18 @@ static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_i
   return frame_count;
 }
 
+/* the tightest VRX budget of the RL ports that judge one, 0 for none */
+static int64_t tv_vrx_budget_ns(struct st_tx_video_session_impl* s) {
+  int64_t budget_ns = 0;
+
+  for (int i = 0; i < s->ops.num_port; i++) {
+    int64_t b = s->rl_plan[i].vrx_budget_ns;
+    if (s->pacing_way[i] == ST21_TX_PACING_WAY_RL && b && (!budget_ns || b < budget_ns))
+      budget_ns = b;
+  }
+  return budget_ns;
+}
+
 static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
                           uint64_t required_tai, bool second_field) {
   struct st_tx_video_pacing* pacing = &s->pacing;
@@ -857,19 +960,21 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   } else {
     start_time_tai = transmission_start_time(s, pacing->cur_epochs);
   }
-  /* Only the RTP timestamp derived from ptp_time_cursor with no extra offset is
-   * guaranteed to equal start_time_tai's tick; an exact user start time,
-   * USER_TIMESTAMP, RTP_TIMESTAMP_EPOCH and rtp_timestamp_delta_us all
-   * deliberately decouple the two already. */
-  if (!exact_user_pacing &&
-      !(s->ops.flags &
-        (ST20_TX_FLAG_USER_TIMESTAMP | ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH)) &&
-      !s->ops.rtp_timestamp_delta_us) {
+  /* an exact user start time is not snapped either */
+  if (!exact_user_pacing && tv_start_snaps(s)) {
     start_time_tai =
         st_tai_round_to_media_clk_ns(start_time_tai, s->fps_tm.sampling_clock_rate);
   }
   if (start_time_tai < cur_tai) {
     time_to_tx_ns = 0;
+    uint64_t late = cur_tai - start_time_tai;
+    int64_t budget_ns = tv_vrx_budget_ns(s);
+    if (budget_ns && late > (uint64_t)budget_ns) {
+      s->stat_rl.start_late++;
+      if (late > s->stat_rl.start_late_max_ns) s->stat_rl.start_late_max_ns = late;
+      MT_USDT_ST20_TX_RL_EVENT(s->mgr->idx, s->idx, ST_TX_VIDEO_RL_CAUSE_START_LATE, late,
+                               0);
+    }
   } else {
     time_to_tx_ns = start_time_tai - cur_tai;
   }
@@ -1440,6 +1545,12 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
     /* do not attach extbuf, copy to data room */
     void* payload = rte_pktmbuf_mtod(pkt_chain, void*);
     mt_memcpy(payload, frame_info->addr + offset, left_len);
+  } else if (s->tx_direct_chain && s->st20_pkt_idx < s->st20_total_pkts - 1) {
+    /* only the last pkt holds the frame: the PMD frees it after the rest completed */
+    pkt_chain->buf_addr = frame_info->addr + offset;
+    rte_mbuf_iova_set(pkt_chain, tv_frame_get_offset_iova(s, frame_info, offset));
+    pkt_chain->buf_len = left_len;
+    pkt_chain->data_off = 0;
   } else {
     /* attach payload to chainbuf */
     rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,
@@ -1513,6 +1624,14 @@ static int tv_build_st20_redundant_chain(struct st_tx_video_session_impl* s,
   }
 
   return 0;
+}
+
+/* at a builder visit inside a frame, the lead of the next pkt it builds */
+static inline void tv_lead_visit(struct mtl_main_impl* impl,
+                                 struct st_tx_video_session_impl* s) {
+  int64_t lead_ns = (int64_t)(s->pacing.tsc_time_cursor - mt_get_tsc(impl));
+
+  if (lead_ns < s->lead_min_ns) s->lead_min_ns = lead_ns;
 }
 
 static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
@@ -2071,6 +2190,18 @@ static bool tv_frames_out(struct mtl_main_impl* impl,
   return false;
 }
 
+/* deep TX queues hand header mbufs back cold and a store to a cold line stalls the store
+ * buffer: prefetch this many pkts ahead, as more overrun the L1 fill buffers */
+#define TV_PREFETCH_HDR_AHEAD (2)
+
+static inline void tv_prefetch_hdr(struct rte_mbuf* m) {
+  char* hdr = rte_pktmbuf_mtod(m, char*);
+
+  rte_prefetch0_write(hdr);
+  rte_prefetch0_write(hdr + sizeof(struct st_rfc4175_video_hdr) - 1);
+  rte_prefetch0_write(rte_mbuf_to_priv(m));
+}
+
 static int tv_tasklet_frame(struct mtl_main_impl* impl,
                             struct st_tx_video_session_impl* s) {
   unsigned int bulk = s->bulk;
@@ -2241,12 +2372,15 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
         dbg("%s(%d), line %u not ready, ready lines %u\n", __func__, s->idx, line_number,
             s->st20_frame_lines_ready);
         s->port_user_stats.stat_lines_not_ready++;
+        s->st20_frame_lines_waited = true;
         s->stat_build_ret_code = -STI_FRAME_APP_SLICE_NOT_READY;
         return MTL_TASKLET_ALL_DONE;
       }
     }
   }
 
+  /* pkts of a frame that waited for its lines are due before they are built */
+  if (s->st20_pkt_idx && !s->st20_frame_lines_waited) tv_lead_visit(impl, s);
   struct rte_mbuf* pkts[bulk];
   struct rte_mbuf* pkts_r[bulk];
   struct rte_mbuf* pkts_chain[bulk];
@@ -2279,6 +2413,11 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     }
   }
 
+  for (unsigned int i = 0; i < bulk && i < TV_PREFETCH_HDR_AHEAD; i++) {
+    tv_prefetch_hdr(pkts[i]);
+    if (send_r) tv_prefetch_hdr(pkts_r[i]);
+  }
+
   /* RL transmitters read only the stamps of a frame's first pkt */
   bool stamp_all = s->pacing_way[MTL_SESSION_PORT_P] != ST21_TX_PACING_WAY_RL ||
                    (send_r && s->pacing_way[MTL_SESSION_PORT_R] != ST21_TX_PACING_WAY_RL);
@@ -2288,6 +2427,10 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
   for (unsigned int i = 0; i < bulk; i++) {
     bool stamp = stamp_all || !s->st20_pkt_idx;
 
+    if (i + TV_PREFETCH_HDR_AHEAD < bulk) {
+      tv_prefetch_hdr(pkts[i + TV_PREFETCH_HDR_AHEAD]);
+      if (send_r) tv_prefetch_hdr(pkts_r[i + TV_PREFETCH_HDR_AHEAD]);
+    }
     st_tx_mbuf_set_priv(pkts[i], &s->st20_frames[s->st20_frame_idx]);
     if (s->st20_pkt_idx >= s->st20_total_pkts) {
       s->port_user_stats.stat_pkts_dummy++;
@@ -2357,6 +2500,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     /* end of current frame */
     s->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
     s->st20_pkt_idx = 0;
+    s->st20_frame_lines_waited = false;
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (send_r) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     if (s->tx_no_chain) {
@@ -3201,6 +3345,22 @@ static void tv_init_tx_chain(struct mtl_main_impl* impl,
   if (s->tx_no_chain) s->reclaim.enabled = false;
 }
 
+/* a recycled direct mbuf may not be written (PA cross-page copy, mono pool headers) or
+ * resent (RTCP); ice, iavf, igc free a dedicated queue's mbufs only after DD, in order */
+static bool tv_tx_direct_chain(struct mtl_main_impl* impl,
+                               struct st_tx_video_session_impl* s) {
+  if (s->tx_no_chain || !st20_is_frame_type(s->ops.type) || s->tx_mono_pool) return false;
+  if ((s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) || impl->iova_mode == RTE_IOVA_PA)
+    return false;
+  for (int i = 0; i < s->ops.num_port; i++) {
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
+    enum mt_driver_type drv = mt_if(impl, port)->drv_info.drv_type;
+    if (drv != MT_DRV_ICE && drv != MT_DRV_IAVF && drv != MT_DRV_IGC) return false;
+    if (mt_user_shared_txq(impl, port)) return false;
+  }
+  return true;
+}
+
 /* mbufs a pool needs for session port i: a descriptor each and the builder ring; deep,
  * what the session holds and the ring share. The RTCP and RTP rings come on top. */
 static unsigned int tv_mempool_n(struct mtl_main_impl* impl,
@@ -3367,6 +3527,7 @@ static void tv_transmitter_port_state_init(struct st_tx_video_session_impl* s, i
   s->trs_target_tsc[i] = 0;
   s->trs_inflight_num[i] = 0;
   s->trs_inflight_idx[i] = 0;
+  s->trs_inflight_new_slice[i] = false;
   s->trs_pad_inflight_num[i] = 0;
   s->trs_inflight_cnt[i] = 0;
   s->trs_inflight_num2[i] = 0;
@@ -3375,6 +3536,11 @@ static void tv_transmitter_port_state_init(struct st_tx_video_session_impl* s, i
   s->rl_state[i] = ST_TX_VIDEO_RL_STATE_IDLE;
   s->stat_trs_ret_code[i] = 0;
   s->last_burst_succ_time_tsc[i] = 0;
+  s->trs_rl_tail[i] = false;
+  s->trs_rl_drained[i] = 0;
+  s->trs_wire_tsc[i] = 0;
+  s->trs_drain_tsc[i] = 0;
+  s->trs_ring_full[i] = false;
 }
 
 static void tv_transmitter_state_init(struct st_tx_video_session_impl* s) {
@@ -3384,15 +3550,35 @@ static void tv_transmitter_state_init(struct st_tx_video_session_impl* s) {
   }
 }
 
+/* teardown frees software-held pkts before the queues flush the older ones */
+static void tv_frames_hold(struct st_tx_video_session_impl* s) {
+  if (!s->tx_direct_chain || !s->st20_frames) return;
+  for (uint16_t i = 0; i < s->st20_frames_cnt; i++) {
+    struct st_frame_trans* frame = &s->st20_frames[i];
+    if (rte_atomic32_read(&frame->refcnt)) rte_mbuf_ext_refcnt_update(&frame->sh_info, 1);
+  }
+}
+
+/* with no payload out no queue can still send a held frame: it is done, built or not */
+static void tv_frames_release(struct st_tx_video_session_impl* s) {
+  if (!s->tx_direct_chain || !s->st20_frames) return;
+  if (s->mbuf_mempool_chain && rte_mempool_in_use_count(s->mbuf_mempool_chain)) return;
+  for (uint16_t i = 0; i < s->st20_frames_cnt; i++) {
+    struct st_frame_trans* frame = &s->st20_frames[i];
+    if (rte_atomic32_read(&frame->refcnt) &&
+        !rte_mbuf_ext_refcnt_update(&frame->sh_info, -1))
+      tv_frame_free_cb(frame->addr, frame);
+  }
+}
+
 /* Releases every mbuf reference this port still holds in software. Must run before
  * tv_uinit_hw(), which frees and clears s->pad[]: the pad references retained by
  * failed bursts can only be given back while that pointer is still live.
  *
- * A chain mbuf may carry an extbuf reference to the frame, so freeing it drops one
- * sh_info reference and may run tv_frame_free_cb(). That is safe here because
- * sh_info counts every live chain mbuf, including the ones the NIC still owns: the
- * callback cannot fire while any packet of that frame is outstanding in a TX
- * descriptor. tv_uinit_hw() still has to precede tv_free_frames(). */
+ * A chain mbuf may carry an extbuf reference to the frame, so freeing it may run
+ * tv_frame_free_cb() while the NIC still owns earlier pkts of the frame: a direct
+ * chain's only reference is its last pkt, so tv_frames_hold() must run first.
+ * tv_uinit_hw() still has to precede tv_free_frames(). */
 static void tv_transmitter_port_state_cleanup(struct st_tx_video_session_impl* s, int i) {
   struct rte_mbuf* pad = s->pad[i][ST20_PKT_TYPE_NORMAL];
 
@@ -3630,8 +3816,10 @@ static int tv_uinit(struct st_tx_video_session_impl* s) {
   tv_uinit_rtcp(s);
   /* software mbufs, then hw, then pools and frames -- ordering rationale is on
    * tv_transmitter_port_state_cleanup() */
+  tv_frames_hold(s);
   st_tx_video_transmitter_state_cleanup(s);
   tv_uinit_hw(s);
+  tv_frames_release(s);
   tv_uinit_sw(s);
   return 0;
 }
@@ -3712,12 +3900,6 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   s->st20_seq_id = 0;
   s->st20_rtp_time = UINT32_MAX;
   s->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
-  if (ops->flags & ST20_TX_FLAG_DISABLE_BULK) {
-    s->bulk = 1;
-    info("%s(%d), bulk is disabled\n", __func__, idx);
-  } else {
-    s->bulk = RTE_MIN(4, ST_SESSION_MAX_BULK);
-  }
 
   if (ops->name) {
     snprintf(s->ops_name, sizeof(s->ops_name), "%s", ops->name);
@@ -3757,8 +3939,12 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   } else {
     tv_init_tx_chain(impl, s);
   }
+  s->tx_direct_chain = tv_tx_direct_chain(impl, s);
   if (s->tx_no_chain) {
     info("%s(%d), no chain mbuf support\n", __func__, idx);
+  } else {
+    info("%s(%d), chain mbuf, direct %s\n", __func__, idx,
+         s->tx_direct_chain ? "yes" : "no");
   }
 
   enum mtl_port port;
@@ -3771,6 +3957,8 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
       s->pacing_way[i] = ST21_TX_PACING_WAY_TSC;
     }
   }
+  /* the pools and tv_init_pacing() need it */
+  s->bulk = tv_bulk(s);
 
   ret = tv_init_sw(impl, mgr, s, st22_frame_ops);
   if (ret < 0) {
@@ -3824,6 +4012,8 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
 
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
   memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
+  memset(&s->stat_api_base, 0, sizeof(s->stat_api_base));
+  rte_spinlock_init(&s->stat_api_lock);
   s->stat_user_busy_first = true;
   s->stat_last_time = mt_get_monotonic_time();
   mt_stat_u64_init(&s->stat_time);
@@ -3838,9 +4028,10 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   info("%s(%d), len %d(%d) total %d each line %d type %d flags 0x%x, %s\n", __func__, idx,
        s->st20_pkt_len, s->st20_pkt_size, s->st20_total_pkts, s->st20_pkts_in_line,
        ops->type, ops->flags, ops->interlaced ? "interlace" : "progressive");
-  info("%s(%d), w %u h %u fmt %s packing %d pt %d, pacing way: %s\n", __func__, idx,
-       ops->width, ops->height, st20_fmt_name(ops->fmt), ops->packing, ops->payload_type,
-       st_tx_pacing_way_name(s->pacing_way[MTL_SESSION_PORT_P]));
+  info("%s(%d), w %u h %u fmt %s packing %d pt %d, pacing way: %s, bulk %u\n", __func__,
+       idx, ops->width, ops->height, st20_fmt_name(ops->fmt), ops->packing,
+       ops->payload_type, st_tx_pacing_way_name(s->pacing_way[MTL_SESSION_PORT_P]),
+       s->bulk);
   return 0;
 }
 
@@ -3875,6 +4066,10 @@ struct tv_stat_dump {
   double time_sec;
   struct st20_tx_user_stats us;
   struct st20_tx_user_stats snap;
+  struct st_tx_video_rl_stat rl;
+  int64_t vrx_budget_ns;
+  int64_t lead_ns; /* the shortest lead its builder measured, see tv_lead_visit() */
+  long double round_ns_max; /* its round budget, INFINITY while idle */
   int trs_inflight_cnt;
   int inflight_cnt;
   double cpu_busy_score;
@@ -3905,6 +4100,19 @@ static void tv_stat_collect(struct st_tx_video_sessions_mgr* mgr,
   d->us = s->port_user_stats;
   d->snap = s->stat_snapshot;
   s->stat_snapshot = s->port_user_stats;
+  d->rl = s->stat_rl;
+  memset(&s->stat_rl, 0, sizeof(s->stat_rl));
+  d->vrx_budget_ns = tv_vrx_budget_ns(s);
+  d->lead_ns = s->lead_min_ns;
+  s->lead_min_ns = INT64_MAX;
+  /* only a session that streamed in the period has a budget */
+  bool streamed = d->us.common.port[MTL_SESSION_PORT_P].frames !=
+                      d->snap.common.port[MTL_SESSION_PORT_P].frames ||
+                  d->lead_ns != INT64_MAX;
+  /* the frame-average round its builder keeps up with, adding a bulk a visit */
+  d->round_ns_max = INFINITY;
+  if (s->st20_total_pkts && streamed)
+    d->round_ns_max = (long double)s->bulk * s->pacing.frame_time / s->st20_total_pkts;
 
   d->trs_inflight_cnt = s->trs_inflight_cnt[0];
   d->inflight_cnt = s->inflight_cnt[0];
@@ -3990,6 +4198,27 @@ static void tv_stat_log(const struct tv_stat_dump* dump) {
     notice("TX_VIDEO_SESSION(%d,%d): transmitter recalculate warmup %" PRIu64 "\n", m_idx,
            idx, d);
   }
+  const struct st_tx_video_rl_stat* rl = &dump->rl;
+  if (rl->vrx_frames || rl->start_late) {
+    err("TX_VIDEO_SESSION(%d,%d): %" PRIu64
+        " frames may break VRX >= 0, a pkt up to %.1fus past its target over the %.1fus "
+        "budget: packet 0 %" PRIu64 " mid-frame %" PRIu64 "; %" PRIu64
+        " frames started up to %.1fus late\n",
+        m_idx, idx, rl->vrx_frames, (double)rl->vrx_late_max_ns / NS_PER_US,
+        (double)dump->vrx_budget_ns / NS_PER_US, rl->vrx_pkt0,
+        rl->vrx_frames - rl->vrx_pkt0, rl->start_late,
+        (double)rl->start_late_max_ns / NS_PER_US);
+  }
+  if (rl->backlog_frames) {
+    notice("TX_VIDEO_SESSION(%d,%d): %" PRIu64
+           " frames started behind a queue backlog, up to %.1fus\n",
+           m_idx, idx, rl->backlog_frames, (double)rl->backlog_max_ns / NS_PER_US);
+  }
+  if (rl->pads_skipped) {
+    notice("TX_VIDEO_SESSION(%d,%d): %" PRIu64
+           " in-frame pads skipped behind the schedule\n",
+           m_idx, idx, rl->pads_skipped);
+  }
   d = us->common.stat_epoch_drop - snap->common.stat_epoch_drop;
   if (d) {
     notice("TX_VIDEO_SESSION(%d,%d): epoch drop %" PRIu64 "\n", m_idx, idx, d);
@@ -4073,18 +4302,37 @@ static void tv_stat_log(const struct tv_stat_dump* dump) {
   }
 }
 
+/* Frames fall behind once the round averages past the tightest budget or a pkt met the
+ * wire unbuilt (lead_ns < 0); round_ns 0 judges the lead only. */
+static void tv_behind_err(int m_idx, uint64_t round_ns, long double round_ns_max,
+                          int64_t lead_ns) {
+  char round[64] = "", lead[32] = "";
+
+  if (round_ns > round_ns_max)
+    (void)snprintf(round, sizeof(round), " round %.1fus past the %.1Lfus budget,",
+                   (double)round_ns / NS_PER_US, round_ns_max / NS_PER_US);
+  if (lead_ns < 0)
+    (void)snprintf(lead, sizeof(lead), " lead %.1fus,", (double)lead_ns / NS_PER_US);
+  if (round[0] || lead[0])
+    err("TX_VIDEO_SESSION(%d):%s%s frames fall behind: move sessions off this "
+        "scheduler\n",
+        m_idx, round, lead);
+}
+
 static int tv_detach(struct st_tx_video_sessions_mgr* mgr,
                      struct st_tx_video_session_impl* s) {
   struct tv_stat_dump dump;
 
   tv_stat_collect(mgr, s, &dump);
   tv_stat_log(&dump);
+  tv_behind_err(mgr->idx, 0, INFINITY, dump.lead_ns);
   tv_uinit(s);
   return 0;
 }
 
 static int tv_init(struct st_tx_video_session_impl* s, int idx) {
   s->idx = idx;
+  s->lead_min_ns = INT64_MAX;
   return 0;
 }
 
@@ -4179,9 +4427,8 @@ static int tv_update_dst(struct mtl_main_impl* impl, struct st_tx_video_session_
   return 0;
 }
 
-/* For the public APIs on s: 0 with its lock held and its slot in *mgr / *idx; -EIO if
- * neither try found s in the slot it read, i.e. migrations raced both. In a callback, on
- * the scheduler's own thread, -EBUSY rather than spin on the lock. */
+/* 0 with the lock of s held and its slot in *mgr / *idx; -EIO if neither try found s in
+ * the slot it read, i.e. migrations raced both. */
 static int tv_api_lock(struct st_tx_video_session_impl* s,
                        struct st_tx_video_sessions_mgr** mgr, int* idx) {
   /* a migration moves s before it releases the old slot, so one retry finds it */
@@ -4189,13 +4436,7 @@ static int tv_api_lock(struct st_tx_video_session_impl* s,
     struct st_tx_video_sessions_mgr* m = s->mgr;
     int i = s->idx;
 
-    /* in the session's own callback a holder waits for that callback, so no spinning */
-    if (mt_sch_on_own_thread(mt_sch_instance(m->parent, m->idx)) &&
-        atomic_load_explicit(&m->dp_slot.idx, memory_order_relaxed) == i) {
-      if (!rte_spinlock_trylock(&m->mutex[i])) return -EBUSY;
-    } else if (!tx_video_session_get(m, i)) {
-      continue;
-    }
+    if (!tx_video_session_get(m, i)) continue;
     if (m->sessions[i] == s) {
       *mgr = m;
       *idx = i;
@@ -4304,8 +4545,11 @@ static int tv_mgr_update(struct st_tx_video_sessions_mgr* mgr) {
 
 static int tv_sessions_stat(void* priv) {
   struct st_tx_video_sessions_mgr* mgr = priv;
+  struct mtl_sch_impl* sch = mt_sch_instance(mgr->parent, mgr->idx);
   struct st_tx_video_session_impl* s;
   struct tv_stat_dump dump;
+  long double round_ns_max = INFINITY;
+  int64_t lead_ns = INT64_MAX;
 
   for (int j = 0; j < mgr->max_idx; j++) {
     s = tx_video_session_get_timeout(mgr, j, ST_TX_VIDEO_STAT_TIMEOUT_US);
@@ -4313,7 +4557,13 @@ static int tv_sessions_stat(void* priv) {
     tv_stat_collect(mgr, s, &dump);
     tx_video_session_put(mgr, j);
     tv_stat_log(&dump);
+    round_ns_max = RTE_MIN(round_ns_max, dump.round_ns_max);
+    lead_ns = RTE_MIN(lead_ns, dump.lead_ns);
   }
+
+  /* a sleeping scheduler's loop avg holds its sleeps */
+  tv_behind_err(mgr->idx, sch->allow_sleep ? 0 : mt_sch_avg_ns_loop(sch), round_ns_max,
+                lead_ns);
 
   return 0;
 }
@@ -4358,6 +4608,8 @@ int st_tx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mtl_sch_im
 
 int st_tx_video_session_migrate(struct st_tx_video_sessions_mgr* mgr,
                                 struct st_tx_video_session_impl* s, int idx) {
+  /* the lead it measured on the scheduler it leaves */
+  tv_behind_err(s->mgr->idx, 0, INFINITY, s->lead_min_ns);
   s->mgr = mgr;
   tv_init(s, idx);
   return 0;
@@ -4612,6 +4864,7 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
     return -EIO;
   }
 
+  tv_frames_hold(s); /* the frame manager cleanup below drops the holds */
   /* clear all tx ring buffer */
   if (s->packet_ring) mt_ring_dequeue_clean(s->packet_ring);
   for (uint8_t i = 0; i < s->ops.num_port; i++) {
@@ -4814,6 +5067,8 @@ st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops* ops) {
   if (!mt_user_quota_active(impl)) {
     if (ST20_TYPE_RTP_LEVEL == ops->type) {
       quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_TX1080P_RTP_PER_SCH;
+    } else if (ST20_TYPE_SLICE_LEVEL == ops->type) {
+      quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_TX1080P_SLICE_PER_SCH;
     }
   }
 
@@ -5128,6 +5383,8 @@ int st20_tx_get_pacing_params(st20_tx_handle handle, double* tr_offset_ns, doubl
   return 0;
 }
 
+#define TV_USER_STATS_CNT (29) /* the uint64_t fields of struct st20_tx_user_stats */
+
 int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* stats) {
   struct st_tx_video_session_handle_impl* s_impl = handle;
 
@@ -5138,16 +5395,19 @@ int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* 
 
   MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, -EINVAL);
   struct st_tx_video_session_impl* s = s_impl->impl;
-  struct st_tx_video_sessions_mgr* mgr;
-  int idx;
+  const uint64_t* cur = (const uint64_t*)&s->port_user_stats;
+  const uint64_t* base = (const uint64_t*)&s->stat_api_base;
+  uint64_t* out = (uint64_t*)stats;
 
-  int ret = tv_api_lock(s, &mgr, &idx);
-  if (!ret) {
-    memcpy(stats, &s->port_user_stats, sizeof(*stats));
-    tx_video_session_put(mgr, idx);
+  RTE_BUILD_BUG_ON(sizeof(*stats) != TV_USER_STATS_CNT * sizeof(uint64_t));
+  RTE_BUILD_BUG_ON(sizeof(void*) != 8);
+  /* base[i] is a value cur[i] had, so cur[i] loaded after its acquire is no smaller */
+  for (size_t i = 0; i < TV_USER_STATS_CNT; i++) {
+    uint64_t b = __atomic_load_n(&base[i], __ATOMIC_ACQUIRE);
+    out[i] = __atomic_load_n(&cur[i], __ATOMIC_RELAXED) - b;
   }
   MT_HANDLE_RELEASE(s_impl);
-  return ret;
+  return 0;
 }
 
 int st20_tx_reset_session_stats(st20_tx_handle handle) {
@@ -5160,17 +5420,16 @@ int st20_tx_reset_session_stats(st20_tx_handle handle) {
 
   MT_HANDLE_GUARD(s_impl, MT_HANDLE_TX_VIDEO, -EINVAL);
   struct st_tx_video_session_impl* s = s_impl->impl;
-  struct st_tx_video_sessions_mgr* mgr;
-  int idx;
+  const uint64_t* cur = (const uint64_t*)&s->port_user_stats;
+  uint64_t* base = (uint64_t*)&s->stat_api_base;
 
-  int ret = tv_api_lock(s, &mgr, &idx);
-  if (!ret) {
-    memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
-    memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
-    tx_video_session_put(mgr, idx);
-  }
+  rte_spinlock_lock(&s->stat_api_lock);
+  for (size_t i = 0; i < TV_USER_STATS_CNT; i++)
+    __atomic_store_n(&base[i], __atomic_load_n(&cur[i], __ATOMIC_RELAXED),
+                     __ATOMIC_RELEASE);
+  rte_spinlock_unlock(&s->stat_api_lock);
   MT_HANDLE_RELEASE(s_impl);
-  return ret;
+  return 0;
 }
 
 int st20_tx_free(st20_tx_handle handle) {
@@ -5299,6 +5558,10 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
     }
     quota_mbs = bps / (1000 * 1000);
     quota_mbs *= ops->num_port;
+    if (!mt_user_quota_active(impl)) {
+      quota_mbs =
+          quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_TX1080P_ST22_FRAME_PER_SCH;
+    }
   }
 
   enum mtl_port port = mt_port_by_name(impl, ops->port[MTL_SESSION_PORT_P]);

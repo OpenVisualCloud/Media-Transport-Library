@@ -15,6 +15,11 @@ int st_video_transmitter_uinit(struct st_video_transmitter_impl* trs);
 int st_video_resolve_pacing_tasklet(struct st_tx_video_session_impl* s,
                                     enum mtl_session_port port);
 
+/* the drain model of an RL port: on for a deep one, whose PMD frees in rs batches */
+void st_video_trs_rl_drain_init(struct mtl_main_impl* impl,
+                                struct st_tx_video_session_impl* s,
+                                enum mtl_session_port s_port);
+
 int st20_frame_tx_start(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
                         enum mtl_session_port s_port, struct st_frame_trans* frame);
 

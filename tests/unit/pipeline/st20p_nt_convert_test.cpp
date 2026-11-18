@@ -8,9 +8,11 @@
  * the kernels cannot take a line at a time. st_frame_nt_scratch_init() only allocates a
  * scratch where it can be used, and a conversion that finds it held converts without it;
  * each session picks the flags that turn it off and the format that sizes it.
+ * st20p_tx_convert_block() lets an app build a wire-format frame the same way from
+ * blocks of its own source lines.
  *
  * Run:   ./build_unit/tests/unit/UnitTest
- *          --gtest_filter='*St20p*NtConvert*:*St20p*NtScratch*'
+ *          --gtest_filter='*St20p*NtConvert*:*St20pTxConvertBlock*:*St20p*NtScratch*'
  */
 
 #include <gtest/gtest.h>
@@ -486,13 +488,17 @@ TEST(St20pNtScratchTest, ConvertWithTheScratchHeldConvertsWithoutIt) {
   EXPECT_TRUE(ut_nt_scratch_held(c.get()));
 }
 
-struct st20p_tx_ops SessionOps(enum st_frame_fmt input_fmt, uint32_t flags) {
+struct st20p_tx_ops SessionOps(enum st_frame_fmt input_fmt, uint32_t flags,
+                               uint32_t width = kWidth, uint32_t height = kHeight,
+                               bool interlaced = false,
+                               enum st20_fmt transport_fmt = ST20_FMT_YUV_422_10BIT) {
   struct st20p_tx_ops ops;
   memset(&ops, 0, sizeof(ops));
   ops.input_fmt = input_fmt;
-  ops.transport_fmt = ST20_FMT_YUV_422_10BIT;
-  ops.width = kWidth;
-  ops.height = kHeight;
+  ops.transport_fmt = transport_fmt;
+  ops.width = width;
+  ops.height = height;
+  ops.interlaced = interlaced;
   ops.flags = flags;
   return ops;
 }
@@ -511,12 +517,23 @@ size_t TxScratchSize(const struct st20p_tx_ops& ops) {
   return size;
 }
 
-TEST(St20pTxNtScratchTest, DeriveSessionGetsNone) {
-  EXPECT_EQ(TxScratchSize(SessionOps(kBe10, 0)), 0u);
+TEST(St20pTxNtScratchTest, DeriveWireFrameGetsAnOutputBlock) {
+  EXPECT_EQ(TxScratchSize(SessionOps(kBe10, 0)), kBe10BlockSize);
 }
 
 TEST(St20pTxNtScratchTest, DisableFlagGetsNone) {
+  EXPECT_EQ(TxScratchSize(SessionOps(kBe10, ST20P_TX_FLAG_DISABLE_NT_CONVERT)), 0u);
   EXPECT_EQ(TxScratchSize(SessionOps(kYuv, ST20P_TX_FLAG_DISABLE_NT_CONVERT)), 0u);
+}
+
+TEST(St20pTxNtScratchTest, ExtFrameDeriveGetsNone) {
+  EXPECT_EQ(TxScratchSize(SessionOps(kBe10, ST20P_TX_FLAG_EXT_FRAME)), 0u);
+}
+
+TEST(St20pTxNtScratchTest, DeriveOtherTransportGetsNone) {
+  EXPECT_EQ(TxScratchSize(SessionOps(ST_FRAME_FMT_YUV444RFC4175PG4BE10, 0, kWidth,
+                                     kHeight, false, ST20_FMT_YUV_444_10BIT)),
+            0u);
 }
 
 TEST(St20pTxNtScratchTest, ConvertingSessionGetsTheOutputBlockOnly) {
@@ -524,20 +541,25 @@ TEST(St20pTxNtScratchTest, ConvertingSessionGetsTheOutputBlockOnly) {
   EXPECT_EQ(TxScratchSize(SessionOps(kV210, 0)), kBe10BlockSize);
 }
 
-/* A two-framebuffer st20p TX session converting input_fmt, holding one got frame. */
+/* A two-framebuffer st20p TX session holding one got frame. */
 class Session {
  public:
   ~Session() {
     if (ctx_) ut20p_tx_ctx_destroy(ctx_);
   }
-  void Open(enum st_frame_fmt input_fmt) {
+  void Open(const struct st20p_tx_ops& ops) {
     ASSERT_EQ(ut20p_tx_init(), 0);
     ctx_ = ut20p_tx_ctx_create(2);
     ASSERT_NE(ctx_, nullptr);
-    const struct st20p_tx_ops ops = SessionOps(input_fmt, 0);
     ASSERT_EQ(ut20p_tx_ctx_set_wire_frames(ctx_, &ops), 0);
     frame_ = ut20p_tx_get_frame(ctx_);
     ASSERT_NE(frame_, nullptr);
+  }
+  void Open(enum st_frame_fmt input_fmt, uint32_t flags) {
+    Open(SessionOps(input_fmt, flags));
+  }
+  st20p_tx_handle handle() {
+    return ut20p_tx_handle(ctx_);
   }
   ut20p_tx_ctx* ctx() {
     return ctx_;
@@ -568,7 +590,7 @@ void ExpectPutFrameMatchesStock(Session& s) {
 
 TEST(St20pTxNtConvertTest, PutFrameUsesTheScratch) {
   Session s;
-  ASSERT_NO_FATAL_FAILURE(s.Open(kYuv));
+  ASSERT_NO_FATAL_FAILURE(s.Open(kYuv, 0));
   const size_t size = ut20p_tx_nt_scratch_size(s.ctx());
   ASSERT_EQ(size, kBe10BlockSize);
   uint8_t* scratch = static_cast<uint8_t*>(ut20p_tx_nt_scratch(s.ctx()));
@@ -576,6 +598,173 @@ TEST(St20pTxNtConvertTest, PutFrameUsesTheScratch) {
 
   ExpectPutFrameMatchesStock(s);
   EXPECT_LT(std::count(scratch, scratch + size, 0x77), (long)size);
+}
+
+int ConvertLines(Session& s, Frame& src, uint32_t line, uint32_t nb_lines) {
+  struct st_frame block = *src.get();
+  for (uint8_t p = 0; p < st_frame_fmt_planes(block.fmt); p++)
+    block.addr[p] = static_cast<uint8_t*>(block.addr[p]) + block.linesize[p] * line;
+  return st20p_tx_convert_block(s.handle(), s.frame(), &block, line, nb_lines);
+}
+
+/* Converts the whole frame or field in a 3-line first block, 8-line blocks and what is
+ * left, then compares it with the stock conversion. */
+void ExpectBlocksMatchStock(Session& s, Frame& src) {
+  Frame stock(kBe10, kWidth, s.frame()->height, 0, 0, s.frame()->interlaced);
+  const uint32_t h = st_frame_data_height(s.frame());
+  src.FillRandom(0x7654321);
+  stock.Fill(0x5a);
+  memset(s.frame()->addr[0], 0xa5, stock.size());
+  ASSERT_EQ(StockConvert(src.get(), stock.get()), 0);
+
+  for (uint32_t line = 0, nb_lines; line < h; line += nb_lines) {
+    nb_lines = line ? std::min(8u, h - line) : 3;
+    ASSERT_EQ(ConvertLines(s, src, line, nb_lines), 0) << "line " << line;
+  }
+  ExpectSameBytes(static_cast<uint8_t*>(s.frame()->addr[0]), stock.data(), stock.size());
+}
+
+class St20pTxConvertBlockTest
+    : public ::testing::TestWithParam<std::tuple<enum st_frame_fmt, uint32_t>> {};
+
+/* 3 + 134 * 8 + 5 = 1080 lines */
+TEST_P(St20pTxConvertBlockTest, BlockByBlockMatchesWholeFrame) {
+  Session s;
+  ASSERT_NO_FATAL_FAILURE(s.Open(kBe10, std::get<1>(GetParam())));
+  Frame src(std::get<0>(GetParam()), kWidth, kHeight);
+
+  ExpectBlocksMatchStock(s, src);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    SourceFormats, St20pTxConvertBlockTest,
+    ::testing::Combine(::testing::Values(kYuv, kV210),
+                       ::testing::Values(0u, (uint32_t)ST20P_TX_FLAG_DISABLE_NT_CONVERT)),
+    [](const ::testing::TestParamInfo<St20pTxConvertBlockTest::ParamType>& info) {
+      return std::string(std::get<0>(info.param) == kYuv ? "Yuv422p10le" : "V210") +
+             (std::get<1>(info.param) ? "_NtDisabled" : "_Nt");
+    });
+
+/* An interlaced frame is one 540-line field: 3 + 67 * 8 + 1 = 540 lines. */
+TEST(St20pTxConvertBlockFieldTest, FieldLinesBlockByBlockMatchStock) {
+  Session s;
+  ASSERT_NO_FATAL_FAILURE(s.Open(SessionOps(kBe10, 0, kWidth, kHeight, true)));
+  Frame src(kYuv, kWidth, kHeight, 0, 0, true);
+
+  ExpectBlocksMatchStock(s, src);
+}
+
+TEST(St20pTxConvertBlockFieldTest, RejectsLinesPastTheFieldWithEinval) {
+  Session s;
+  ASSERT_NO_FATAL_FAILURE(s.Open(SessionOps(kBe10, 0, kWidth, kHeight, true)));
+  Frame src(kYuv, kWidth, kHeight, 0, 0, true);
+
+  EXPECT_EQ(ConvertLines(s, src, kHeight / 2 - 4, 8), -EINVAL);
+}
+
+/* the NT path stages a block in the scratch, then gives the scratch back */
+TEST(St20pTxConvertBlockScratchTest, UsesTheScratchAndReleasesIt) {
+  Session s;
+  ASSERT_NO_FATAL_FAILURE(s.Open(kBe10, 0));
+  Frame src(kYuv, kWidth, kHeight);
+  src.FillRandom(0x2468ace);
+  const size_t size = ut20p_tx_nt_scratch_size(s.ctx());
+  ASSERT_GT(size, 0u);
+  uint8_t* scratch = static_cast<uint8_t*>(ut20p_tx_nt_scratch(s.ctx()));
+  memset(scratch, 0x77, size);
+
+  ASSERT_EQ(ConvertLines(s, src, 0, 8), 0);
+  EXPECT_LT(std::count(scratch, scratch + size, 0x77), (long)size);
+  EXPECT_FALSE(ut20p_tx_nt_scratch_held(s.ctx()));
+}
+
+/* as when another app thread converts: the scratch stays untouched and stays held */
+TEST(St20pTxConvertBlockHeldScratchTest, ConvertsWithoutTheScratchAndLeavesItHeld) {
+  Session s;
+  ASSERT_NO_FATAL_FAILURE(s.Open(kBe10, 0));
+  Frame src(kYuv, kWidth, kHeight);
+  const size_t size = ut20p_tx_nt_scratch_size(s.ctx());
+  ASSERT_GT(size, 0u);
+  uint8_t* scratch = static_cast<uint8_t*>(ut20p_tx_nt_scratch(s.ctx()));
+  memset(scratch, 0x77, size);
+  ut20p_tx_hold_nt_scratch(s.ctx(), true);
+
+  ExpectBlocksMatchStock(s, src);
+  EXPECT_TRUE(ut20p_tx_nt_scratch_held(s.ctx()));
+  EXPECT_EQ(std::count(scratch, scratch + size, 0x77), (long)size);
+}
+
+TEST(St20pTxConvertBlockErrorTest, RejectsBadArgumentsWithEinval) {
+  Session s;
+  ASSERT_NO_FATAL_FAILURE(s.Open(kBe10, 0));
+  Frame src(kYuv, kWidth, kHeight);
+  Frame narrow(kYuv, kWidth / 2, kHeight);
+  struct st_frame* f = s.frame();
+  struct st_frame no_plane = *src.get();
+  no_plane.addr[1] = nullptr;
+  struct st_frame short_lines = *src.get();
+  short_lines.linesize[2] -= 2;
+
+  EXPECT_EQ(st20p_tx_convert_block(s.handle(), nullptr, src.get(), 0, 8), -EINVAL);
+  EXPECT_EQ(st20p_tx_convert_block(s.handle(), f, nullptr, 0, 8), -EINVAL);
+  EXPECT_EQ(st20p_tx_convert_block(s.handle(), f, src.get(), 0, 0), -EINVAL);
+  EXPECT_EQ(st20p_tx_convert_block(s.handle(), f, src.get(), kHeight - 4, 8), -EINVAL);
+  EXPECT_EQ(st20p_tx_convert_block(s.handle(), f, src.get(), UINT32_MAX, 8), -EINVAL);
+  EXPECT_EQ(st20p_tx_convert_block(s.handle(), f, narrow.get(), 0, 8), -EINVAL);
+  EXPECT_EQ(st20p_tx_convert_block(s.handle(), f, &no_plane, 0, 8), -EINVAL);
+  EXPECT_EQ(st20p_tx_convert_block(s.handle(), f, &short_lines, 0, 8), -EINVAL);
+}
+
+TEST(St20pTxConvertBlockErrorTest, RejectsAFrameOfAnotherSessionWithEinval) {
+  Session s, other;
+  ASSERT_NO_FATAL_FAILURE(s.Open(kBe10, 0));
+  ASSERT_NO_FATAL_FAILURE(other.Open(kBe10, 0));
+  Frame src(kYuv, kWidth, kHeight);
+
+  EXPECT_EQ(st20p_tx_convert_block(s.handle(), other.frame(), src.get(), 0, 8), -EINVAL);
+}
+
+TEST(St20pTxConvertBlockErrorTest, RejectsAFrameAlreadyPutWithEio) {
+  Session s;
+  ASSERT_NO_FATAL_FAILURE(s.Open(kBe10, 0));
+  Frame src(kYuv, kWidth, kHeight);
+  ASSERT_EQ(ut20p_tx_put_frame(s.ctx(), s.frame()), 0);
+
+  EXPECT_EQ(st20p_tx_convert_block(s.handle(), s.frame(), src.get(), 0, 8), -EIO);
+}
+
+TEST(St20pTxConvertBlockErrorTest, RejectsASessionThatConvertsWithEio) {
+  Session s;
+  ASSERT_NO_FATAL_FAILURE(s.Open(kYuv, 0));
+  Frame src(kYuv, kWidth, kHeight);
+
+  EXPECT_EQ(st20p_tx_convert_block(s.handle(), s.frame(), src.get(), 0, 8), -EIO);
+}
+
+TEST(St20pTxConvertBlockErrorTest, RejectsAnExtFrameSessionWithEio) {
+  Session s;
+  ASSERT_NO_FATAL_FAILURE(s.Open(kBe10, ST20P_TX_FLAG_EXT_FRAME));
+  Frame src(kYuv, kWidth, kHeight);
+
+  EXPECT_EQ(st20p_tx_convert_block(s.handle(), s.frame(), src.get(), 0, 8), -EIO);
+}
+
+TEST(St20pTxConvertBlockErrorTest, RejectsAnUnsupportedSourceFormatWithEnotsup) {
+  Session s;
+  ASSERT_NO_FATAL_FAILURE(s.Open(kBe10, 0));
+  Frame y210(ST_FRAME_FMT_Y210, kWidth, kHeight);
+  Frame be10(kBe10, kWidth, kHeight);
+
+  EXPECT_EQ(st20p_tx_convert_block(s.handle(), s.frame(), y210.get(), 0, 8), -ENOTSUP);
+  EXPECT_EQ(st20p_tx_convert_block(s.handle(), s.frame(), be10.get(), 0, 8), -ENOTSUP);
+}
+
+TEST(St20pTxConvertBlockErrorTest, RejectsV210AtAWidthNotAMultipleOf48WithEnotsup) {
+  Session s;
+  ASSERT_NO_FATAL_FAILURE(s.Open(SessionOps(kBe10, 0, 1280, 720)));
+  Frame v210(kV210, 1280, 720);
+
+  EXPECT_EQ(st20p_tx_convert_block(s.handle(), s.frame(), v210.get(), 0, 8), -ENOTSUP);
 }
 
 /* A two-framebuffer st20p RX session converting the transport to output_fmt. */

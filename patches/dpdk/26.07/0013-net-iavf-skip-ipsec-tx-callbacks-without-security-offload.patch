@@ -1,0 +1,43 @@
+From nobody Mon Sep 17 00:00:00 2001
+From: moleksy <moleksy@users.noreply.github.com>
+Date: Wed, 21 Oct 2026 14:00:00 +0000
+Subject: [PATCH] net/iavf: skip IPsec TX callbacks without security offload
+
+iavf_xmit_pkts() always hands ci_xmit_pkts() its IPsec ops, so every
+packet makes a get_ipsec_desc() call and every segment a
+calc_segment_len() call, also on a queue without
+RTE_ETH_TX_OFFLOAD_SECURITY.
+
+Pass the ops only when the queue has the offload, as ixgbe already
+gates its IPsec path on the queue. For a packet without
+RTE_MBUF_F_TX_SEC_OFFLOAD the descriptors and segment lengths are
+unchanged: get_ipsec_desc() adds no descriptor and calc_segment_len()
+returns data_len, which is what ci_xmit_pkts() uses for NULL ops. A
+packet that sets the flag on a queue without the offload breaks the
+ethdev contract, which lists the offload as used by the flag, and now
+leaves without an IPsec descriptor.
+
+On an E810 VF with 2-segment ST 2110-20 packets one scheduler core went
+from 7.38 to 7.53 Mpps (core capped at 2.0 GHz).
+
+MTL: drop once upstream DPDK gates the iavf IPsec ops on the offload.
+
+Signed-off-by: moleksy <moleksy@users.noreply.github.com>
+---
+ drivers/net/intel/iavf/iavf_rxtx.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/intel/iavf/iavf_rxtx.c b/drivers/net/intel/iavf/iavf_rxtx.c
+--- a/drivers/net/intel/iavf/iavf_rxtx.c
++++ b/drivers/net/intel/iavf/iavf_rxtx.c
+@@ -2605,7 +2605,9 @@
+ 	return ci_xmit_pkts(txq, tx_pkts, nb_pkts,
+ 			    (txq->vlan_flag & IAVF_TX_FLAGS_VLAN_TAG_LOC_L2TAG1) ?
+ 				CI_VLAN_IN_L2TAG1 : CI_VLAN_IN_L2TAG2,
+-			    iavf_get_context_desc, &ipsec_ops, NULL);
++			    iavf_get_context_desc,
++			    (txq->offloads & RTE_ETH_TX_OFFLOAD_SECURITY) ? &ipsec_ops : NULL,
++			    NULL);
+ }
+ 
+ /* Check if the packet with vlan user priority is transmitted in the

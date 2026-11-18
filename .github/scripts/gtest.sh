@@ -379,15 +379,21 @@ generate_test_cases() {
 	test_cases[st20p_kernel_loopback]="\"${KAHAWAI_TEST_BINARY}\" --p_sip=\"${TEST_P_SIP}\" --auto_start_stop --p_port kernel:lo --r_port kernel:lo ${FAIL_FAST} --gtest_output=xml:${TMP_FOLDER}/gtest_st20p_kernel_loopback.xml --gtest_filter=St20p*"
 	# NOCTX_REQUIRE_STRICT=1: a strict pacing case fails, not skips, on a topology without NIC RX timestamps.
 	# MTL_ISOLATE=require: a NOCTX_ISOLATE_CASES case fails, not runs unconfined, without an exclusive CPU partition.
-	test_cases[noctx]="TEST_PORT_1=${noctx_port[0]} TEST_PORT_2=${noctx_port[1]} TEST_PORT_3=${noctx_port[2]} TEST_PORT_4=${noctx_port[3]} NOCTX_REQUIRE_STRICT=1 MTL_ISOLATE=require \"${noctx_folder}/run.sh\""
+	local noctx_env="TEST_PORT_1=${noctx_port[0]} TEST_PORT_2=${noctx_port[1]} TEST_PORT_3=${noctx_port[2]} TEST_PORT_4=${noctx_port[3]} NOCTX_REQUIRE_STRICT=1 MTL_ISOLATE=require"
+	# The RL wire cells, also the rl_pacing PR gate.
+	local rl_cases="st20p_rl_*:NoCtxTest.st20p_redundant_1080p59_s8_equal_vrx_margin"
+	test_cases[noctx]="${noctx_env} NOCTX_EXCLUDE='NoCtxTest.${rl_cases}' \"${noctx_folder}/run.sh\""
+	# run_test_with_retry retries these only after an attempt whose every failure is RL_INVALID.
+	test_cases[noctx_rl]="${noctx_env} NOCTX_FILTER='${rl_cases}' \"${noctx_folder}/run.sh\""
 }
 
 # ── running them ────────────────────────────────────────────────────────────
 
 # isolate.sh's verdict for the NoCtx ports, printed before the run.
 noctx_isolation_probe() {
-	local port_list="${noctx_port[0]},${noctx_port[1]},${noctx_port[2]},${noctx_port[3]}" output
-	output=$(sudo env MTL_ISOLATE=require MTL_ISOLATE_PORTS="${port_list}" "${isolate_sh}" -- true 2>&1)
+	local output
+	output=$(sudo env MTL_ISOLATE=require MTL_ISOLATE_PORTS="${noctx_port[0]},${noctx_port[2]}" \
+		MTL_ISOLATE_MEM_PORTS="${noctx_port[1]},${noctx_port[3]}" "${isolate_sh}" -- true 2>&1)
 	grep -m 1 'exclusive CPU isolation' <<<"${output}" || echo "no verdict: ${output##*$'\n'}"
 }
 
@@ -451,11 +457,11 @@ run_case_bounded() {
 	local sid_file="${TMP_FOLDER}/${test_name}.sid"
 	local retval=0 limit="${TEST_CASE_TIMEOUT}"
 
-	[ "${test_name}" != noctx ] || limit="${NOCTX_CASE_TIMEOUT}"
+	[[ ${test_name} != noctx* ]] || limit="${NOCTX_CASE_TIMEOUT}"
 	sudo rm -f "${case_log}" "${sid_file}"
 	sudo install -m 0600 -o "$(id -u)" /dev/null "${case_log}"
 
-	[ "${test_name}" != noctx ] || noctx_sweep || return 1
+	[[ ${test_name} != noctx* ]] || noctx_sweep || return 1
 
 	tail -n 0 -F "${case_log}" &
 	local tail_pid=$!
@@ -476,7 +482,7 @@ run_case_bounded() {
 			sudo pkill -SIGKILL -s "${sid}" 2>/dev/null || true
 		fi
 	fi
-	if [ "${test_name}" = noctx ] && ! noctx_sweep && [ "${retval}" -eq 0 ]; then
+	if [[ ${test_name} == noctx* ]] && ! noctx_sweep && [ "${retval}" -eq 0 ]; then
 		retval=1
 	fi
 
@@ -512,6 +518,14 @@ run_test_with_retry() {
 
 			kill_test_processes
 
+			# A VRX failure is a result, not a flake: only an attempt that failed on RL_INVALID
+			# windows alone gets one retry.
+			if [ "${test_name}" = noctx_rl ]; then
+				local out="${TMP_FOLDER}/${test_name}.out" failures invalid
+				failures=$(grep -c ': Failure$' "${out}" || true)
+				invalid=$(grep -c '^RL_INVALID: ' "${out}" || true)
+				[ "$attempt" -eq 1 ] && [ "${failures}" -gt 0 ] && [ "${failures}" -eq "${invalid}" ] || break
+			fi
 			if [ $attempt -lt "$MAX_RETRIES" ]; then
 				echo "Waiting $RETRY_DELAY seconds before retry..."
 				sleep "$RETRY_DELAY"
@@ -522,7 +536,7 @@ run_test_with_retry() {
 		fi
 	done
 
-	echo "✗ Test failed after $MAX_RETRIES attempts: $test_name" | sudo tee -a "$LOG_FILE"
+	echo "✗ Test failed after $attempt attempts: $test_name" | sudo tee -a "$LOG_FILE"
 
 	if [ "$EXIT_ON_FAILURE" -eq 1 ]; then
 		echo "Exiting due to test failure."

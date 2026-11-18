@@ -1729,6 +1729,7 @@ struct st22_rx_ops {
 
 /**
  * A structure used to retrieve general statistics(I/O) for a st20 tx session.
+ * Every field, common included, is a uint64_t count that only grows between resets.
  */
 struct st20_tx_user_stats {
   struct st_tx_user_stats common;
@@ -1989,12 +1990,13 @@ int st20_tx_get_pacing_params(st20_tx_handle handle, double* tr_offset_ns, doubl
                               uint32_t* vrx_pkts);
 
 /**
- * Retrieve the general statistics(I/O) for one tx st2110-20(video) session.
+ * Retrieve the general statistics(I/O) for one tx st2110-20(video) session: the counts
+ * since the last st20_tx_reset_session_stats(), or since create.
  *
- * @note Thread-safe. Takes the per-session spinlock, then waits until the session's
- * tasklets are done with it, at most for its scheduler's pass in flight; the session
- * skips up to two passes, so do not call it in a tight loop. In this session's own
- * callbacks it may return -EBUSY.
+ * @note Thread-safe, lock-free and callable from any callback, this session's own
+ * included: it never waits, so the session never skips a pass for it. The counters are
+ * read one by one while the tasklets run, so the fields are not one instant, and a get
+ * racing st20_tx_reset_session_stats() may mix fields counted from before and after it.
  * @param handle
  *   The handle to the tx st2110-20(video) session.
  * @param stats
@@ -2008,10 +2010,10 @@ int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* 
 /**
  * Reset the general statistics(I/O) for one tx st2110-20(video) session.
  *
- * @note Thread-safe. Takes the per-session spinlock, then waits until the session's
- * tasklets are done with it, at most for its scheduler's pass in flight; the session
- * skips up to two passes, so do not call it in a tight loop. In this session's own
- * callbacks it may return -EBUSY.
+ * @note Thread-safe and callable from any callback; it does not wait for the tasklets,
+ * only, briefly, for a concurrent reset of the session. It does not clear the counters
+ * the tasklets update; it records their current values as the baseline
+ * st20_tx_get_session_stats() counts from.
  * @param handle
  *   The handle to the tx st2110-20(video) session.
  * @return

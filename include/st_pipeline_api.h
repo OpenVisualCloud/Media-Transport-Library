@@ -526,9 +526,9 @@ enum st20p_tx_flag {
   /**
    * Convert with ordinary stores. By default the internal converter, for
    * ST_FRAME_FMT_YUV422PLANAR10LE input or ST_FRAME_FMT_V210 input at a width that is a
-   * multiple of 48, converts a few lines at a time into a per-session scratch and streams
-   * them to the frame with non-temporal stores, so the frame neither is read for
-   * ownership nor fills the cache.
+   * multiple of 48, and st20p_tx_convert_block convert a few lines at a time into a
+   * per-session scratch and stream them to the frame with non-temporal stores, so the
+   * frame neither is read for ownership nor fills the cache.
    */
   ST20P_TX_FLAG_DISABLE_NT_CONVERT = (MTL_BIT32(14)),
   /** Enable the st20p_tx_get_frame block behavior to wait until a frame becomes
@@ -1883,6 +1883,44 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
                            struct st_ext_frame* ext_frame);
 
 /**
+ * Convert source lines into lines of a frame got by st20p_tx_get_frame, for an app that
+ * builds a frame block by block, e.g. from a stored picture, with no copy before it.
+ * Only for a session whose input_fmt is the transport format, so MTL converts nothing,
+ * and without ST20P_TX_FLAG_EXT_FRAME. The lines go through the session's scratch and
+ * reach the frame with non-temporal stores, fenced before return, unless
+ * ST20P_TX_FLAG_DISABLE_NT_CONVERT is set, the frame lines are not cache line aligned, or
+ * another thread converts on the session at the same time.
+ * The frame is ready for st20p_tx_put_frame once all its lines are converted. On an
+ * interlaced session dst_line and nb_lines count lines of the field.
+ * Call it from one thread at a time per session, from the app thread, never from a
+ * callback.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20 pipeline session.
+ * @param frame
+ *   The frame pointer by st20p_tx_get_frame of this session.
+ * @param src_block
+ *   The source lines: fmt ST_FRAME_FMT_YUV422PLANAR10LE, or ST_FRAME_FMT_V210 at a width
+ *   that is a multiple of 48; width that of the frame; addr[] and linesize[] of each
+ *   plane at the first line, linesize[] no less than st_frame_least_linesize.
+ * @param dst_line
+ *   The first frame line to write.
+ * @param nb_lines
+ *   The number of lines to convert, written to frame lines
+ *   [dst_line, dst_line + nb_lines).
+ * @return
+ *   - 0 if successful.
+ *   - -EINVAL: Bad argument, or a frame of another session.
+ *   - -EIO: A session that converts or uses ST20P_TX_FLAG_EXT_FRAME, a frame not got or
+ *     already put, or a session being freed.
+ *   - -ENOTSUP: Source format or width not supported, or a transport format other than
+ *     ST20_FMT_YUV_422_10BIT.
+ */
+int st20p_tx_convert_block(st20p_tx_handle handle, struct st_frame* frame,
+                           const struct st_frame* src_block, uint32_t dst_line,
+                           uint32_t nb_lines);
+
+/**
  * Notify the tx st2110-20 pipeline session that the application has finished
  * processing an external frame previously signalled via notify_frame_done.
  *
@@ -1957,12 +1995,11 @@ int st20p_tx_get_pacing_params(st20p_tx_handle handle, double* tr_offset_ns,
                                double* trs_ns, uint32_t* vrx_pkts);
 
 /**
- * Retrieve the general statistics(I/O) for one tx st2110-20(pipeline) session.
+ * Retrieve the general statistics(I/O) for one tx st2110-20(pipeline) session: the
+ * counts since the last st20p_tx_reset_session_stats(), or since create.
  *
- * @note Thread-safe. Takes the per-session spinlock, then waits until the session's
- * tasklets are done with it, at most for its scheduler's pass in flight; the session
- * skips up to two passes, so do not call it in a tight loop. In this session's own
- * callbacks it may return -EBUSY.
+ * @note Thread-safe, lock-free and callable from any callback, as
+ * st20_tx_get_session_stats(): it never waits, and the fields are not one instant.
  * @param handle
  *   The handle to the tx st2110-20(pipeline) session.
  * @param stats
@@ -1976,10 +2013,9 @@ int st20p_tx_get_session_stats(st20p_tx_handle handle, struct st20_tx_user_stats
 /**
  * Reset the general statistics(I/O) for one tx st2110-20(pipeline) session.
  *
- * @note Thread-safe. Takes the per-session spinlock, then waits until the session's
- * tasklets are done with it, at most for its scheduler's pass in flight; the session
- * skips up to two passes, so do not call it in a tight loop. In this session's own
- * callbacks it may return -EBUSY.
+ * @note Thread-safe and callable from any callback, as st20_tx_reset_session_stats(),
+ * which may briefly wait for a concurrent reset: the transport counters get a new
+ * baseline, the pipeline frame counters are zeroed.
  * @param handle
  *   The handle to the tx st2110-20(pipeline) session.
  * @return

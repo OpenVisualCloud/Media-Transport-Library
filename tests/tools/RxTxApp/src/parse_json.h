@@ -267,6 +267,10 @@ typedef struct st_json_st20p_session {
   bool user_timestamp;
   bool drop_when_late;
   uint64_t user_time_offset;
+
+  /* tx only items */
+  bool fused;
+  bool render;
 } st_json_st20p_session_t;
 
 typedef struct st_json_st40p_info {

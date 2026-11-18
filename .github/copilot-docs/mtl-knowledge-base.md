@@ -134,7 +134,7 @@ NIC receives multicast packet (flow rule steers to session's RX queue)
 | **Lcore** (default) | DPDK lcores, CPU-pinned via `rte_eal_remote_launch()` | Deterministic latency |
 | **Pthread** (`MTL_FLAG_TASKLET_THREAD`) | Regular pthreads, not pinned | Containers, non-dedicated cores |
 
-Max schedulers: `MT_MAX_SCH_NUM = 18` (in `mt_main.h`)
+Max schedulers: `MT_MAX_SCH_NUM = 48` (in `mt_main.h`); at most 64, one bit each in `mt_sch_mask_t` (`RTE_BUILD_BUG_ON` in `mtl_init()`)
 
 Both modes enter `sch_tasklet_func()`, which switches a thread still on `MPOL_DEFAULT` to `MPOL_LOCAL` until the scheduler stops; any other policy is kept:
 - Under `kernel.numa_balancing=1` the `task_numa_work` scan runs as task work on busy threads; without `MPOL_F_MOF` it rewrites no PTEs there and nothing migrates on fault, but the VMA walk still runs
@@ -151,8 +151,18 @@ Both modes enter `sch_tasklet_func()`, which switches a thread still on `MPOL_DE
 ### Quota System
 Sessions assigned to schedulers by weight in "1080p-equivalents":
 1. Search existing schedulers for capacity on right NUMA node
-2. If none found, allocate new scheduler (up to 18)
+2. If none found, allocate new scheduler (up to `MT_MAX_SCH_NUM`)
 3. As sessions freed, quota returned
+
+Without a user `data_quota_mbs_per_sch`, a scheduler holds `ST_QUOTA_TX1080P_PER_SCH` (24) 1080p59 TX sessions' bandwidth (`dev_sch_init()`, `MtDevSchQuotaTest`), and only frame-level ST20 TX charges its bandwidth as is.
+The others are scaled by `ST_QUOTA_TX1080P_PER_SCH` / their own constant (`st_header.h`): a scheduler packs 8 RTP TX (ST20 and ST22), 12 slice-level ST20 TX, 12 RX with DMA or RTP, 11 frame-level RX without DMA, 8 slice-level RX without DMA (`St20_rx.no_dma_*_sessions_per_sch`),
+and frame-level ST22 TX and ST22 RX (frame or RTP) are scaled by 24 / 12, each by a constant of its own (`TxVideoSchQuotaTest`, `St22RxQuotaTest`).
+With a user `data_quota_mbs_per_sch` none of these constants applies: a session charges the bandwidth its create computes, times its ports (ST22 RTP RX still takes a quarter of the 4:2:2 10-bit rate, doubled), and RX without DMA no extra.
+Audio takes the limit / `tx/rx_audio_sessions_max_per_sch`, ancillary none.
+
+TX video sessions are placed by quota alone; the round is judged at runtime (`doc/rl_pacing.md` 6.2):
+- `lead_min_ns` (`tv_lead_visit()`) is plain `int64_t`: the builder updates it while the session lock is free, the stats dump takes and resets it holding that lock, which keeps the tasklets out of the session (§4).
+- The stats dump `err()`s `frames fall behind` once a period per scheduler iff a lead went below 0 or the round averaged past the tightest budget (`St20TxRoundLoads.ALoadErrsIffItFallsBehind`, `St20TxRoundBudget`). A sleeping scheduler's round is not judged, its leads are.
 
 **If adding a new session type**: define its quota correctly or schedulers get overloaded.
 
@@ -187,7 +197,7 @@ Ring = shock absorber. Builder can be slow; transmitter still has queued packets
 
 **Ring sizing**: Default 512 entries (`ST_TX_VIDEO_SESSIONS_RING_SIZE`, ≈ 1/9 of a 1080p frame's ~4500 packets). Halved if exceeds `st20_total_pkts`. Uses SP/SC (single-producer/single-consumer) mode — both tasklets run on the same lcore, so no atomics needed (~2-3ns vs ~20+ns for multi-producer).
 
-**Bulk enqueue semantics**: `rte_ring_sp_enqueue_bulk` (all-or-nothing) not `_burst` (best-effort). The 4 packets have sequential RTP sequence numbers and pacing timestamps (on an all-RL session only a frame's pkt 0 is stamped, the only stamp RL reads) — they must be sent as a unit. Partial enqueue would break batch integrity.
+**Bulk enqueue semantics**: `rte_ring_sp_enqueue_bulk` (all-or-nothing) not `_burst` (best-effort). A bulk's packets (4, 16 on an all-RL ST20 frame-level session) have sequential RTP sequence numbers and pacing timestamps (on an all-RL session only a frame's pkt 0 is stamped, the only stamp RL reads) — they must be sent as a unit. Partial enqueue would break batch integrity.
 
 ### Cooperative tx_burst: No Retry Loop
 If `rte_eth_tx_burst()` returns fewer than requested:
@@ -204,13 +214,20 @@ If `rte_eth_tx_burst()` returns fewer than requested:
 
 | Thread | Purpose | Detail |
 |--------|---------|--------|
-| Scheduler (×18 max) | Tasklet polling | Lcore-pinned or pthread |
+| Scheduler (×48 max) | Tasklet polling | Lcore-pinned or pthread |
 | TSC Calibration (×1) | Measures TSC frequency | Joins before sessions start transmitting (called lazily by `_mt_start()` and pacing init) |
 | Admin (×1) | Watchdog, migration | Periodic alarm-based |
 | Statistics (×1) | Stat dump | Configurable `dump_period_us` |
 | CNI (×1) | ARP/PTP/DHCP/IGMP | Tasklet or thread mode (`MTL_FLAG_CNI_THREAD`) |
 | Socket TX/RX (×4 each) | Kernel socket backend | Only with `kernel:` backend |
 | SRSS (×1) | Shared RSS polling | Only for NICs without flow director |
+
+### App Threads Stay Off Scheduler Cores
+- A scheduler busy-polls its CPU: an app thread the kernel places there preempts it and breaks TX pacing, polling or blocking. In an isolated cpuset partition (no load balancing) unpinned threads stack on the CPU they start on instead.
+- Pin app threads with `mtl_get_lcore()` (an EAL lcore marked used, preferably of the primary port's NUMA node, through the MtlManager when connected, never one a scheduler holds), `mtl_bind_to_lcore()` and `mtl_put_lcore()`. Take them after `mtl_start()`, when the schedulers already hold theirs.
+- App lcores compete with what MTL takes at runtime: a scheduler started for video migration, and the RX packet lcore `rv_init_pkt_lcore()` takes once a session's detection ends (`st_rx_video_session.c`). Take only what the load needs.
+- Size the app cores by measured thread load, not by session count: per-thread CPU time, about 65 % busy per shared core is the safe bound. RxTxApp's st20p threads do this in `app_cores.c` (`--st20p_app_cores`, [doc/run.md](../../doc/run.md)).
+  - A core holding only RX threads is hot past 85 % (also in a mixed process), and an all-RX thread set sizes for 70 %: spreading RX conversions costs per frame. On Xeon 6 6767P with DSA, 72 x 1080p59.94 to `yuv422p10le` took 15.3k LLC misses and 9.4 M cycles a frame on 5 cores, 41.3k and 11.2 M on 20; CI's 65 % rule grew to 16-20 cores (40k misses, 4x `main`).
 
 ---
 
@@ -223,7 +240,8 @@ If `rte_eth_tx_burst()` returns fewer than requested:
 ### Copy Primitive
 Every copy in `lib/` goes through `mt_memcpy()` (`mt_util.h`, `static inline`), never `rte_memcpy` and never a bare `memcpy` in new code. Its one line selects the backend for the whole library, so a change of copy primitive is a one-line change with no call-site churn.
 Today that backend is libc `memcpy`: glibc reads the CPU at load time and picks an AVX-512, AVX2 or ERMS path, `rte_memcpy` is fixed to the path DPDK was built for, and `rte_memcpy` measured slower on the RX frame write path. `mtl_memcpy()` is the public API over the same call.
-Two paths stream whole cache lines with non-temporal stores instead: the st20p conversion (next section) and the RX frame write path, `rv_frame_memcpy()` (`st_rx_video_session.c`), which copies the misaligned head, the sub-line tail and short payloads through `mt_memcpy()`.
+Three paths stream whole cache lines with non-temporal stores instead: the st20p conversion (next section), the RX frame write path, `rv_frame_memcpy()` (`st_rx_video_session.c`), which copies the misaligned head, the sub-line tail and short payloads through `mt_memcpy()`, and the per-packet st20p RX conversion.
+That one, `rx_st20p_pkt_stream()` (`st20_pipeline_rx.c`), converts each packet into a 4 KiB stage first and then streams it the same way.
 On that RX frame write path a session with a pkt lcore keeps `mt_memcpy()` for the whole copy: two threads write its frame and either may hand it over, and a fence orders only the stores of its own core. A session that migrates mid-frame needs none: the x86 unlock of its session spinlock, released after every tasklet poll, is a locked `xchg` and drains the old core's streaming stores.
 
 ### st20p Conversion With Non-Temporal Stores
@@ -239,7 +257,9 @@ On that RX frame write path a session with a pkt lcore keeps `mt_memcpy()` for t
 - The scratch is a per-session `struct st_frame_nt_scratch` (`nt_scratch` in `st20p_tx_ctx` / `st20p_rx_ctx`): `st_frame_nt_scratch_init()` takes it from `mt_rte_zmalloc_socket()` on the session socket at create, 8 output lines (`st_frame_nt_scratch_size()`, 38,400 B for 1080p 422be10), 16-byte aligned for `_mm_load_si128`; `st_frame_nt_scratch_uinit()` frees it.
   Its `busy` word guards it with one CAS per `st_frame_convert_nt()`: a second app thread that breaks the one-thread-per-session model converts with ordinary stores instead of corrupting it.
   None is allocated with `ST20P_TX_FLAG_DISABLE_NT_CONVERT` / `ST20P_RX_FLAG_DISABLE_NT_CONVERT`, for a session with no internal converter or an unsupported width, or for RX `AUTO_DETECT`, whose width is unknown at create, so it always converts with ordinary stores.
-- Output is byte-identical to the stock converters, and the converter call count shows which path ran (`*St20p*NtConvert*`, `*St20p*NtScratch*` in `tests/unit/pipeline/st20p_nt_convert_test.cpp`).
+- A TX derive session with a 422be10 frame gets one too, for `st20p_tx_convert_block()`: the app converts its own yuv422p10le or v210 lines straight into the wire-format frame got by `st20p_tx_get_frame()`, block by block.
+  App thread, field lines on an interlaced session; error codes in `include/st_pipeline_api.h`.
+- Output is byte-identical to the stock converters, and the converter call count shows which path ran (`*St20p*NtConvert*`, `*St20pTxConvertBlock*`, `*St20p*NtScratch*` in `tests/unit/pipeline/st20p_nt_convert_test.cpp`).
 
 ### NUMA Matters
 All DPDK allocations take `socket_id` from `mt_socket_id(impl, port)`. Socket mismatch → 2× DMA latency. Fallback: if preferred socket has no hugepages, allocate from any socket (logs warning).
@@ -289,6 +309,18 @@ Pool header coloring (`mt_mempool_create_by_ops()`, `MtMempoolTest`):
   - In **IOVA VA mode** (default with `--in-memory`): chain pool `data_room = 0` — chain mbufs are pure pointer containers
   - In **IOVA PA mode** (legacy): chain pool `data_room = s->st20_pkt_len` (~1200-1260B, session-calculated) — cross-page payloads copied into mbuf
 - Cross-page fallback: if payload spans hugepage boundary, memcpy into chain mbuf's data room instead of extbuf
+- **Direct chain** (`s->tx_direct_chain`, `tv_tx_direct_chain()`): every payload mbuf but the frame's last is a plain direct mbuf whose `buf_addr`/iova point into the frame; only the last attaches the extbuf and takes the frame's one `sh_info` ref, so `tv_frame_free_cb()` fires once, on its free.
+  - Saves 2 locked atomics and the detach a pkt: 4.38 → 4.60 Mpps (+5%) on main, N × 1080p59.94 RL, E810 VF, 8480+ capped at 2.0 GHz.
+  - Only where each leg's PMD frees a mbuf only after its descriptor's DD write-back, and the queue completes in order (DPDK 25.11 and 26.07):
+    - ice and iavf: the scalar xmit MULTI_SEGS forces (Intel common `ci_xmit_pkts()` in 26.07, `ice_xmit_pkts()`/`iavf_xmit_pkts()` in 25.11).
+    - igc: `igc_xmit_pkts()` frees a slot's mbuf when it reuses the slot, and its done cleanup stops at the first pkt without DD.
+    - mlx5 inlines a short pkt and frees it at burst while earlier ones wait for DMA: it, every other driver and shared TX queues (another session's burst may free the last pkt) keep a ref a pkt.
+  - A redundant pkt's shared payload (mbuf refcnt 2) frees once both legs did. Per-pkt refs complete a frame early if every pkt built so far was freed before the rest were built (`St20TxDirectChainTest`).
+  - Eligible also needs chain mode, frame/slice level, no RTCP (its ring resends older pkts), no mono pool (its pool hands chain mbufs out as headers), not IOVA PA (cross-page copy into the data room): a recycled direct mbuf's data room is the frame it last pointed into.
+    - Line padding is fine: its line-crossing pkts copy into the copy pool and the last pkt never crosses. Logged at attach: "chain mbuf, direct yes/no".
+  - Teardown frees software-held pkts before the queues flush (TX Destroy Order): `tv_frames_hold()` refs every frame in flight first.
+    - Stop drops it once the chain pool has no mbuf out (`tv_frames_release()`), so a queue that did not drain keeps its frames. It then also hands back a frame the builder took but built no pkt of, which a ref-a-pkt session never does.
+    - Recovery's frame cleanup resets it; a failed recovery keeps it (hand none back).
 - `rte_mbuf_ext_shared_info` callback (`tv_frame_free_cb`) copies the frame's meta for the callback, clears an ext frame's addr/iova (`st20_tx_get_framebuffer()` still returns the buffer during the callback), decrements frame refcnt, then calls `notify_frame_done` — so the app (or st20p) may re-arm and re-queue the frame from inside the callback
 - **Cost without zero-copy**: memcpy at 312 MB/s per 1080p60 stream, 1.2 GB/s at 4K60. A 16-stream appliance would need ~19 GB/s just for copying — most of a NUMA node's memory bandwidth
 - NIC scatter-gather DMA: segment 1 = header mbuf (~62B), segment 2 = chain extbuf (~1260B). Requires `RTE_ETH_TX_OFFLOAD_MULTI_SEGS`
@@ -341,7 +373,7 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
   - `--match-allocations`: Forces 1:1 allocation→hugepage mapping. Without it, DPDK may merge adjacent allocations and freeing one pool won't reclaim hugepages because they're merged with a live allocation
   - `--in-memory`: Disables shared memory files in `/var/run/dpdk/`. Avoids filesystem ops, permission issues, stale lockfiles after crash
 - x86 cache line: 64 bytes (`RTE_CACHE_LINE_SIZE`)
-- Default descriptors (`mt_dev.h`): RX `MT_DEV_RX_DESC` 2048; TX per port: `MT_DEV_TX_DESC_DEEP` 2048 on a deep port, else `MT_DEV_TX_DESC` 512 (`MtDevTxDescTest`). An AUTO port that falls back to TSC keeps 2048, safe as it reclaims.
+- Default descriptors (`mt_dev.h`): RX on ice/iavf ports fit to the L3, 512 or 1024 to 2048 (RX Video Frame Copy Is Cache-Bound), else `MT_DEV_RX_DESC` 2048 (`MtDevRxDescDriverTest`); TX per port: `MT_DEV_TX_DESC_DEEP` 2048 on a deep port, else `MT_DEV_TX_DESC` 512 (`MtDevTxDescTest`). An AUTO port that falls back to TSC keeps 2048, safe as it reclaims.
   - Deep (`inf->tx_deep`, `dev_tx_deep()` in `dev_config_port()`): an RL, TSN or AUTO-with-TM iavf/ice port whose cleanup frees (`MT_DEV_TX_CLEANUP_FREES`), without a shared TX queue or a user `nb_tx_desc`.
     Only a deep port reclaims, flushes bounded, skips the done cleanup, gives the port pad a ref of its own and sizes its pools from what its queue keeps; every other port keeps main's behaviour there.
   - A zero-copy (chained) video pkt takes 2 TX descriptors, so the deep TX queue holds 1024 pkts, ~3.8 ms at 1080p59.94: one lost scheduler slice (EEVDF ~3 ms). 512 holds 0.95 ms, which a shared CPU overran (`St20TxQueueStallTest`); a port that frees lazily keeps 512, as a deeper ring keeps more sent mbufs.
@@ -349,9 +381,10 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
     - Pools: every TX session pool (video, audio, anc, fmd: its ring share, see Mempool Architecture), the per-port sys
       TX pool (`nb_tx_desc` + 1024), the shared-queue pool, and
       with `MTL_FLAG_TX_MONO_POOL` main's `nb_tx_q` × 2 × `nb_tx_desc` more mbufs per port,
-      and on a deep port a cache slack for each of `MT_MAX_SCH_NUM` schedulers, as its queues
-      free into the bursting scheduler's cache (`dev_tx_sys_pool_elements()`: 131071 at 17
-      queues of 2048; 32767 at 512); RTCP rings, RTP rings, audio and anc sessions on top of
+      and on a deep port a cache slack for each of `MT_MAX_SCH_NUM` schedulers, at most one per
+      EAL lcore (`rte_lcore_count()`), as its queues free into the bursting scheduler's cache and
+      only EAL lcores have one (`dev_tx_sys_pool_elements()`: 131071 at 17 queues of 2048;
+      32767 at 512); RTCP rings, RTP rings, audio and anc sessions on top of
       that are not counted, as on main.
     - RTCP: on a deep port the retransmit ring is at least `nb_tx_desc` (`tv_rtcp_buffer_size()`), and the TX video pools count it.
       Its copy pool (`rtcp_tx_pool_n()`) holds what its queue keeps, a descriptor a copy, the 32 copies a retransmit loop makes before it bursts them, and the cache slack: 4095 at 2048, as many retransmits from a whole-ring NACK as a pool a ring larger (`RtcpCopyPoolParityTest`).
@@ -371,6 +404,12 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
         dedicated queues, no RTCP. `tv_frames_out()` asks the app for a frame only once every
         frame but the last one built is back, reclaiming every `ST_TX_VIDEO_RECLAIM_NS` while
         it waits (`tv_reclaim_poll()`, `STI_FRAME_RECLAIM_WAIT`): any 2 buffers keep zero copy. Before 26.07 it could wait for good.
+      - RL transmitter: a visit that waits for the warm-up window or finds the builder ring
+        empty bursts none (`video_trs_rl_reclaim()`), at most once a batch time
+        (rs_thresh / 2 NORMAL pkts of shaper time, `trs_reclaim_tsc`), catching up one call a
+        visit. The frame before leaves the ring full of done batches. A warm-up pad burst
+        frees one before its doorbell, ~1.4 µs at 720p59.94, which takes the first burst past
+        `ST_TX_VIDEO_RL_STALL_NS` (`St20TxRlReclaim`).
       - Hang: a hung queue holds the frames too, and with nothing to send the transmitter sees no
         burst fail. A wait past `tx_hang_detect_time_thresh` (at least 2 frame times) flags the
         recovery of every leg idle as long (`tv_frames_out_hang()`); a reclaim gap past half of
@@ -415,7 +454,7 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
     - Time: the RL training pad trains fill the ring, and the training waits for it to drain (video ~7.5 ms at 1080p59.94, audio ~170 ms at 0.33 ms ptime), and the stop-time flush waits for each queue to drain (TX Pad Flush; on a lazy port 2 × `nb_tx_desc` pads at the queue's rate, ~0.2 s per audio RL queue at 0.33 ms ptime).
     - Recovery: `st20_tx_queue_fatal_error()` flushes the other redundant leg inside the tasklet, its ring's drain if it is healthy (~4 ms at 1080p59.94, ~8 ms with 2048 descriptors queued), so the scheduler's other sessions miss that much once, after a TX hang that is already fatal (a hung one: see Zero copy, Hang).
       - On a deep port, without a sys TX mbuf for the mark it skips that flush (`mt_txq_recovery_flush()`, -ENOMEM) rather than run the lazy loop, and the session ends unrecoverable (see Zero copy, Hang).
-- RX mempool element count: `nb_rx_desc + 1024` (headroom), rounded to `2^q - 1 = 4095`
+- RX mempool element count: `nb_rx_desc + 1024` (headroom), rounded to `2^q - 1`: 4095 at 2048 descriptors, 2047 at 512
 - Mempool element size cache-aligned: e.g., 1494 → 1536 (rounded to `MT_MBUF_CACHE_SIZE = 128`)
 
 ---
@@ -439,14 +478,14 @@ is on in `mgr->dp_slot` (a plain store), checks `rte_spinlock_is_locked()` (an a
 and skips the session while it is held; there is no put, and `tx_video_session_dp_done()`
 publishes -1 at the end of the loop. Every control-plane
 access (`tx_video_session_get()`, `_get_timeout()`, `_get_empty()`, and
-`tv_api_lock()` for stats get/reset and `update_destination`) locks, then calls
+`tv_api_lock()` for `update_destination`) locks, then calls
 `mt_sch_quiescent_wait()` on the manager's scheduler (`mt_sch_instance(mgr->parent, mgr->idx)`).
 `st_tx_video_session_migrate()` re-points `s->mgr` / `s->idx` before the old slot is released,
 so `tv_api_lock()` that finds the old slot no longer holding `s` retries once at the new one;
 -EIO only if neither try found `s` where it read it (migrations racing both, e.g. across a
 stall of one admin period):
 - Writer: `t = fetch_add(qs_token) + 1`, a seq_cst fence, then poll until `qs_seen >= t`: `MT_SPIN_POLLS_BEFORE_SLEEP` (1000) `rte_pause()` polls, then 1 µs sleeps, since an unpinned `MTL_FLAG_TASKLET_THREAD` scheduler may need the writer's CPU; `mt_spinlock_lock_timeout()` backs off the same way. Returns at once on the scheduler's own thread
-- A pass still running after those polls may be blocked on the writer (a callback on an app mutex it holds, a callback querying a session it holds, `tx_mutex` of a shared queue).
+- A pass still running after those polls may be blocked on the writer (a callback on an app mutex it holds, an internal `tx_video_session_get()` from a callback path on a session it holds, `tx_mutex` of a shared queue).
   The writer then issues one `membarrier(MEMBARRIER_CMD_PRIVATE_EXPEDITED)` and also returns once `dp_slot.idx` is not its slot: so it waits only while the tasklets are in that session, as it did for the per-session lock they used to hold
 - Why it is sound: the IPI makes the tasklet's earlier slot stores visible to the writer and the writer's lock visible to the tasklet's later lock loads (the asymmetric fence of liburcu's urcu-memb and folly; the light side is `atomic_signal_fence()`). If the writer saw the slot change after it was its own, a second membarrier drains the tasklet's WC doorbell stores, as a pass end does
 - `mt_sch_dp_slot_init()` registers the process once. Without membarrier(2) (kernel < 4.14, a seccomp filter) `dp_slot.fence` makes each slot store a full fence instead; Windows uses `FlushProcessWriteBuffers()`
@@ -457,11 +496,16 @@ stall of one admin period):
   On runtime registration (`mtl_sch_register_tasklet()` on a started scheduler) it runs on the registering thread with the scheduler online, but the manager has no sessions yet (`max_idx == 0`), so it takes no lock and does not wait
 - Loading the writer's token, not counting passes, is what makes it sound: the next pass's loads cannot pass that acquire load. Against going online it is the store-buffering pattern: writer stores the lock, fence, loads `qs_seen`; scheduler stores `qs_seen`, fence, loads the lock
 - A get holds the lock until no pass that could have missed it runs, so the tasklets can skip that session for up to about two passes: the rest of the pass in flight, the next one, until the put. Admin CPU-busy does this to every TX video session every 6 s, the stats dump every 10 s
+- Stats get/reset take no session lock and do not wait for the tasklets. `st20_tx_get_session_stats()` is lock-free: per field it loads `stat_api_base` acquire, then the `port_user_stats` counter relaxed, and returns the difference.
+  The base is a value the counter had, so the counter it then reads is no smaller (read-read coherence) and the difference never underflows; a get racing a reset may mix fields counted from before and after it.
+  A reset release-stores the current values into the base instead of zeroing, so the counters stay monotonic and the stats dump's `stat_snapshot` deltas run across a reset. `stat_api_lock` only serializes resets, so the base never goes back: the tasklets' own code never takes it, a callback calling reset may. `s` does not move on migration, so neither call needs the slot.
+  A formal C11 data race (plain `++` / `+=` against atomic loads), relied on for aligned 64-bit counters on 64-bit targets (`RTE_BUILD_BUG_ON`s at the walk). Writer rule: after `tv_attach()` only `++` / `+=`, by the session's scheduler thread; no memset, struct assign or constant stores.
+  Why: a stats reader in a loop re-locked before each pass reached its session and kept it off every pass (`St20TxSessionLockStarvation*`)
 - Callbacks run on a scheduler thread, mid-pass, and a writer may hold a session lock while it waits for the tasklets to leave that session.
-  Stats get/reset work from any callback: on the session's own scheduler thread `tv_api_lock()` skips the wait, and only trylocks (-EBUSY) when the tasklets are on that very slot, i.e. from the session's own callback, where a holder waits for that callback to return
+  Stats get/reset work from any callback, the session's own included, as they take no session lock
 - Everything else is not for callbacks: `*_tx_free()` and `st20p/st22p_tx_free()` return -EBUSY on the session's own scheduler thread (the calling tasklet may still use the session, and the pipeline would free a ctx the transport still calls back into); `update_destination` too, as `tv_init_hdr()` may wait for ARP (`arp_timeout_ms`, 60 s by default) and stall the scheduler;
   `*_tx_create()` takes `tx_video_mgr_mutex`, which attach/detach hold across an untimed wait
-- The untimed wait lasts as long as the tasklets are in that one session, as the old lock did: two callbacks on different schedulers that each query the session of the other callback deadlock, as they did under the lock
+- The untimed wait lasts as long as the tasklets are in that one session, as the old lock did: two callback paths on different schedulers that each take the other's session with an internal `tx_video_session_get()` deadlock, as they did under the lock
 - Why: the per-session `trylock`/`unlock` is a locked `xchg` each, and the unlock after `rte_eth_tx_burst()` waits for the descriptor stores and the doorbell; it was ~19% of a saturated scheduler core. An unprotected prototype that dropped both locks went from 6.98 to 7.89 Mpps (+13%); this protocol, 28 1080p59.94 sessions at full clock:
   5.60 to 6.45 Mpps (+15%, the aliasing still present; Xeon 8480+, E810 VF, RL pacing)
 
@@ -511,14 +555,32 @@ When no hardware RL available:
 - Too early → return, let scheduler poll again
 - On time → transmit
 
-### Bulk Size: Why 4
-`ST_SESSION_MAX_BULK = 4` (compile-time constant in `st_header.h`). Sizes `trs_inflight[port][4]` arrays.
+### Bulk Size: 4, or 16 on RL
+`s->bulk` is the pkts a builder visit builds and enqueues and an RL/TSC transmitter dequeues and bursts. `tv_bulk()` sets it in `tv_attach()` once every port's pacing way is known and before `tv_init_sw()`, as `tv_mempool_n()` (two transmitter bulks on RL) needs it (`St20TxBulkAttachTest`, `St20TxBulkTest`):
+- `ST_TX_VIDEO_RL_BULK` 16: an ST20 frame-level session (`MT_HANDLE_TX_VIDEO`, `ST20_TYPE_FRAME_LEVEL`) whose every port is RL and whose builder ring takes a bulk (`ring_count` > 16, so frames of ≥ 32 pkts).
+  The per-visit cost (tasklet dispatch, ring ops, the `mt_txq_burst()` layers, the PMD prologue, the doorbell) then covers 16 pkts. E810 VF, core capped at 1.2 GHz: 2022-7 18 sessions 2.59 → 3.14 Mpps a leg (+21%), single-port 30 sessions 4.72 → 5.53 Mpps (+17%); a bulk of 32 gained no more.
+- `ST_SESSION_MAX_BULK` 4 (which `ST22_ENCODE_MIN_FRAME_SZ` also uses) otherwise: slice level (a bulk waits for the lines of all its pkts), RTP level, ST22, any TSC/PTP/TSN port.
+- 1 with `ST20_TX_FLAG_DISABLE_BULK`, and `tv_init_pacing()` forces 1 on TSC Narrow.
+- `tv_init_pacing()` re-runs `tv_bulk()` after an RL training fails to TSC, and keeps the smaller: TSC needs 4, and the pools stay sized for 16.
+- `ST_TX_VIDEO_MAX_BULK` sizes `inflight`, `trs_inflight`, `trs_inflight2` and the transmitters' local `pkts[]` (not zeroed: only dequeued entries are read).
 
-**RL mode**: NIC paces regardless of CPU burst size. RL transmitter sends up to 8 packets per iteration (double-call). VRX compensation is for NIC burst behavior (`max_burst_size=2048`):
+**RL mode**: NIC paces regardless of CPU burst size. The RL transmitter sends up to 2 bulks per iteration (double-call). VRX compensation is for NIC burst behavior (`max_burst_size=2048`):
 ```c
 pacing->vrx -= 2; /* VRX compensate to rl burst */
 pacing->vrx -= 2; /* leave VRX space for deviation */
 ```
+
+**RL pads stay where bulk-4 bursts put them.** A pad follows the first burst of a bulk-4 run (a dequeue's pkts up to a frame's start or end) at frame index q of k pkts when `fmodf(q + 1 + pad_interval / 2, pad_interval) < k`; its retries send none.
+- `video_trs_rl_burst()` walks a bulk of 16 in 4-pkt slices from its first pkt, bursting up to each due slice's end, then its pad. Frame-level bulks start at multiples of the bulk, so the slices are those runs.
+- When no burst comes up short the pkt and pad order is bulk 4's, a small user `pad_interval` putting several pads in one bulk (`St20TxRlBulkWireTest` checks both against a run model of bulk 4).
+- A short burst stashes the rest in `trs_inflight` and pads the slice it stopped in at once, or counts the pad in `trs_pad_inflight_num`, as that slice's bulk-4 burst would; the retry skips that slice's pad and walks the next ones.
+- A refused pad stops the bulk too, so no pkt passes it: the rest then starts at an untried slice (`trs_inflight_new_slice`), whose pad the retry checks.
+- A held frame's first bulk (`trs_inflight` until the target) sends no pad after its first slice, as bulk 4 never did; its later slices pad as usual.
+- The RL tail call (`video_trs_rl_tail_burst()`) carries only packet 0's slice behind its pads; the rest of a bulk of 16 then walks its slices from an untried one (`St20TxRlBulkTailTest`).
+- So `tv_rl_sawtooth_ns()`, which `absorb_ns` leaves out of the VRX lead, counts that slice, `min(bulk, 4)`, not the bulk (`St20TxBulkTest.RlBulkAbsorbsAsBulk4Does`).
+- So under backpressure each pad leaves after 0..k pkts of its slice, as at bulk 4, though the split points differ (`St20TxRlBulkShortBurstTest`).
+- Bulks of 4 or less keep the plain `trs_inflight` retry: RTP-level bulks need not be 4-aligned, as `st20_pkt_idx` restarts at an RTP timestamp change mid-bulk (`St20TxRlBulkOffsetTest`).
+- The user-meta pkt (`st20_frame_tx_start()` after a burst from pkt 0) goes out on the session queue on `MT_DRV_F_NO_SYS_TX_QUEUE` drivers, so it follows up to 16 pkts instead of 4.
 
 **TSC mode**: CPU controls timing. Bulk=4 → 3 packets of VRX budget consumed:
 ```c
@@ -529,8 +591,8 @@ pacing->vrx -= (s->bulk - 1); /* compensate for bulk */
 
 | Constraint | Impact |
 |-----------|--------|
-| `ST_SESSION_MAX_BULK = 4` | Array sizing, compile-time |
-| Ring efficiency | Amortizes ring atomics over 4 entries |
+| `ST_TX_VIDEO_MAX_BULK = 16` | Array sizing, compile-time |
+| Ring efficiency | Amortizes ring atomics over a bulk |
 | PCIe doorbell | ~200-500ns per `tx_burst` MMIO. Bulk=4 → ~65K doorbells/sec vs 260K at bulk=1 |
 | TSC VRX headroom | 3 of ~8 packets Narrow budget consumed |
 | `ST20_TX_FLAG_DISABLE_BULK` | App can override to bulk=1 |
@@ -545,7 +607,8 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
     GPM_SL its NORMAL and LINE_TAIL ones), the pre-arm NORMAL ones. Unscaled, 1080p25 BPM
     (share 0.99881 before this fix, 0.99904 now) launched packet 0 13 ns a pad
     early on E830, 1.7 µs over a 130-pad warm-up. `tv_train_pacing()`
-    keeps the whole ring full of pads for 71 frames, then sleeps until it drains (`nb_tx_desc` pads,
+    keeps the whole ring full of pads for 71 frames, 32 a burst call (one a call measured an E810
+    VF at 38.1 Gb/s, short of 4320p59.94's 41.7), then sleeps until it drains (`nb_tx_desc` pads,
     ~7.5 ms at 2048 and 1080p59.94): the pre-arm and the WAIT_TARGET hold both assume an idle queue.
     Untrained rates only. A pre-train result is keyed by the rate and the training's pad mix
     (`struct mt_pacing_pad_mix`, `tv_train_mix()`: bytes, NORMAL size, pads with the remain), so a
@@ -554,7 +617,7 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
     queue's programmed rate too (`txq->bps`): a retrain
     for another mix makes `tv_init_hw()` program the rate's later queues ≥ 0.5% faster, so a
     session of the first mix trains again there. The bps retrain result stays the rate's alone,
-    as audio uses it, and a new mix measuring slow on a retrained rate falls back to TSC.
+    as audio uses it, and a new mix measuring slow on a retrained rate falls back to TSC, with an `err()`.
     A user `ops.pad_interval` or the static table gives none;
     `pacing->pad_interval` keeps only the last port's pi.
   - The rate programmed on the queue, bps = `s->queue[i]->txq->bps`: `tv_rl_bps()`, a bps retrain result, or the cached one `tv_init_hw()` looked up. A queue without its own `txq` (shared TX queue, AF_XDP, kernel socket) has none. `st20_tx_queue_fatal_error()` gets the new queue at the old one's rate, which `pad_interval` and the plan were trained on.
@@ -584,14 +647,18 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
   [target, target + 2·aim]: the aim makes it never early and adds at most 2·aim of lateness the
   plan cannot see (`St20TxRlFastClockTest.TimeslotGridNeverReleasesPacket0EarlyBehindTheAim`,
   `ut_trs_set_shaper_timeslot()`).
-  - `tv_rl_plan_init()` keeps a plan only while aim ≤ `ST_TX_VIDEO_RL_TIMESLOT_MAX_NS` (2 µs),
-    comparing aim, T's upper bound, as T itself is unknown. On E830 a ~4 µs timeslot (720p25)
-    reached +10.8 µs, ones up to ~2 µs (720p50 at 2.03, 1080p25 at 1.80) stayed within
-    +8.1 µs, and the hold path was as accurate at those rates (+3.6..+5.1 µs).
-  - It is a rate threshold: 257 B over 2 µs, so a drain below ~128.5 MB/s holds, 8-bit 1080p25
-    too. That arms 2160p59.94, 1080p59.94/50/29.97/25, 1080i59.94 and 720p59.94 (aim
-    0.19–1.80 µs) and holds 720p25 (4.05 µs); SD holds on its window first. 720p50 is ~1.5%
-    over the edge, so its trained `pad_ns` decides: it held on hardware, on time both ways.
+  - `tv_rl_plan_init()` keeps a plan only while aim + T ≤ `ST_TX_VIDEO_RL_GRID_LATE_MAX_NS`
+    (4 µs), the TX side's share of the 0..+10 µs launch bound, calibrated on E830, not an
+    ice or DPDK TM limit. T is
+    `st_tx_video_rl_timeslot_tokens(bps)`·`pad_ns`/S: the longest timeslot
+    `ice_sched_bw_to_rl_profile()` programs at the kbps iavf or the PMD truncates bps to, over
+    the four psm_clks ice reads (`St20TxRlModelTest.TimeslotTokensAreTheLongestIcePrograms`).
+    That model gives 720x288p50's measured ~8.2 µs timeslot (446 MHz, encode 7, 235 B, on a
+    clock ~11.7% fast).
+  - On E830, 720p25 (aim 4.05 + T ~2.2 µs) reached +10.8 µs, 720p50 (2.03 + ~1.1 µs) stayed
+    within +8.1 µs, and the hold path measured +3.6..+5.1 µs at those rates.
+  - SD holds: at ~30 MB/s every timeslot is over 128 B, > 4.2 µs, so 2·T alone exceeds the
+    0..+10 µs launch budget whatever the aim.
   - The ~2 µs release grid once inferred on the early side came from frame-to-frame step sizes
     and is unconfirmed. Measured directly on the shaper at 720x288p50 (~25.6 MB/s programmed,
     ~8.2 µs timeslot; forced leads, credit sweeps), the launch minus the plan stayed within
@@ -610,12 +677,10 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
   | 480p59.94 | ~4.7 µs | −4.2 / −0.8 / +7.7 µs | hold (trim pads) | hold |
   | 576p50 | ~4.2 µs | −2.5 / +3.0 / +14.1 µs | — | hold |
   | 720p25 | 4.05 µs | −0.6 / +1.1 / +5.0 µs | +5.6..+9.3 µs, one frame +10.76 µs | hold |
-  | 720p50 | 2.03 µs | +0.7 / +2.0 / +5.2 µs | +5.4..+8.1 µs | hold |
+  | 720p50 | 2.03 µs | +0.7 / +2.0 / +5.2 µs | +5.4..+8.1 µs | armed |
   | 1080p25 | 1.80 µs | — | +4.8..+7.5 µs | armed |
   | 1080p59.94 | 0.75 µs | +3.0 / +4.3 / +5.7 µs | +4.3 / +5.8 / +7.5 µs | armed |
   | 1080p59.94 ×8, VRX margin | 0.75 µs | — | pass | armed |
-
-  Now (min / avg / max): held 480p59.94 +3.73 / +4.15 / +4.98 µs, 576p50 +3.74 / +4.16 / +5.03 µs, 720p25 +3.71 / +4.25 / +5.10 µs, 720p50 +3.61 / +4.11 / +5.07 µs; armed 720p59.94 +4.50 / +6.15 / +7.50 µs, 1080p25 +5.26 / +6.43 / +7.54 µs, 1080p59.94 +4.02 / +5.43 / +7.00 µs, 1080p60 +4.43 / +5.88 / +7.31 µs, 2160p59.94 +3.26 / +3.67 / +4.50 µs; 1080p59.94 ×8 VRX margin passes.
 
   The bucket alone without the aim (720p25: +1.9..+6.0 µs over 4 runs) leaves the early group a timeslot before the plan, which the model says can go early.
 - Target is MTL's PTP time turned into TSC once per frame in `tv_sync_pacing()`, so on the wire the launch also carries that clock's error. It is independent of how many sessions share the scheduler only while every warm-up starts before its target and has a plan.
@@ -625,11 +690,33 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
   - Between bursts: every queued pad reached the NIC before it. If the queue drained and the bucket refilled (the drain end fell behind TSC − `bucket_ns`), the drain end resets to TSC − `bucket_ns` and the rest shrinks. While `trim_pads` still fit it, the cuts land packet 0 on the plan;
     with fewer the pre-arm stops and WAIT_TARGET holds packet 0 behind the pads already queued, which drain before the target (`St20TxRlFastClockTest.PreemptedBetweenBurstsShortOfTheTrimPadsHolds`, `IdleShaperKeepsThePlanWhileTheTrimPadsFit`).
   - Inside a burst: its doorbell rang at some time up to the return, `last_burst_succ_time_tsc` (read by `video_trs_burst_succ()`, no extra TSC read).
-  - If the return is more than `ST_TX_VIDEO_RL_STALL_NS` (2 µs) past the burst's planned drain start, the doorbell may have found the shaper idle: the drain end restarts from the return (never overfills), and `video_trs_rl_pre_arm()` returns false, so WAIT_TARGET holds packet 0.
-  - The doorbell time is unknown, so releasing packet 0 behind the pads would make it late (stall before the doorbell) or early (after it).
+  - If the return is more than `ST_TX_VIDEO_RL_STALL_NS` (2 µs) past the burst's planned drain start, the doorbell may have found the shaper idle; the stall is counted.
+    Within the plan's `absorb_ns` the pre-arm keeps its plan and defers packet 0 behind its pads, or sends its last burst with packet 0 (the tail); past it the drain end restarts from the return (never overfills) and WAIT_TARGET holds packet 0.
+    Mechanisms and the `absorb_ns` formula: `doc/rl_pacing.md` 5.2–5.3. Invariants:
+    - Packet 0 is never early (`St20TxRlAbsorb`, `St20TxRlVrxFaults`).
+    - No visit makes more burst calls than the hold on the stall it absorbs, nor runs longer but by a TSC read (`St20TxRlTail.AbsorbedStallVisitIsNoLongerThanTheHold`).
+    - The call that sends packet 0 frees no more done batches than the hold's release call (`St20TxRlTail.TailVisitFreesNoMoreThanTheRelease`).
+    - A queue recovery drops a kept-back tail burst (`tv_transmitter_port_state_init()`).
+- Queue drain bound (`doc/rl_pacing.md` 5.6): with every frame ready the queue is a whole ring ahead of the wire, so a NIC that drains it slower than the stream (DRAM load on its node) leaves the frame before queued at the next window, and pads queued from TSC would carry the lateness over, up to the ring (4.1 ms at 2048 on CI).
+  - `trs_drain_tsc[]` is a lower bound of when the NIC ends what is queued, timed from each burst call's return: a burst the NIC refused pkts of (`trs_ring_full[]`, set by `video_trs_txq_burst()`) ends `trs_drain_ring_ns[]` later (`nb_tx_desc` less 3 rs batches, 2 descriptors a pkt, `trs_drain_pkt_ns[]` each);
+    an accepted one adds its pkts' shaper time after the bucket an idle shaper sends (`video_trs_burst_succ()`).
+    Pre-arm and `video_trs_rl_tail_burst()` lower it to their plan's end, which counts cut pads by bytes, unless a pad was refused or the ring was full.
+  - Time from the return, not from before the call: under DRAM load the call that finds the ring full frees a done batch first, for microseconds, and a pre-call stamp took NoCtx s36's late packet 0s under a 122 GB/s hog from 13 to 56 (capped at 2 µs past the start: 46-60).
+    The bound holds unless the call stalls between doorbell and return (preemption, IRQ, SMI): on a full ring the batches the PMD keeps absorb up to ~2 rs - 2 descriptors (~31 pkts: 115 us at 1080p59.94, 29 us at 2160p59.94);
+    on a queue the model holds idle (packet 0 sent at its target after a hold, a late frame's first burst) nothing does outside pre-arm and the tail call, so the frame's later pads go and an excess past the vertical blank would start the next frame up to warm_pkts trs early.
+  - `trs_drain_pkt_ns[]` is `pad_ns` scaled by the frame's mean `st20_pkt_info` size over NORMAL, at most the trained mean trs pi / (pi + 1): counting GPM_SL line tails as NORMAL pkts would put the bound past the queue on every ring-full refusal, leave pads out and send packet 0 early. The trained mean already counts tails by bytes, so it is not scaled again.
+  - The pre-arm starts its pads at that end; `video_trs_rl_burst()` leaves a due in-frame pad out (`stat_rl.pads_skipped`) while the end is more than a trs past the next pkt's target, past `trs_frame_tsc` + (idx + k + 1) trs (`St20TxRlDrainModel.InFramePadIsLeftOutOnlyPastATrsOfSlack` pins the edge). A wider dead band (trs + pkt + 2 µs + absorb) made a 10 ms stall cell's late packet 0s 18 -> 28.
+  - `st_video_trs_rl_drain_init()`, per port from `tv_rl_plan_init()`, turns the model on (`trs_drain_model[]`) only with a plan and a deep queue (`tx_reclaim_rs_thresh` set): a shallow queue's PMD frees as it sends, so a full ring's time is unknown.
+    `tv_transmitter_port_state_init()` clears `trs_drain_tsc[]` and `trs_ring_full[]` on queue recovery. The transmitter harness leaves the model off but in `St20TxRlDrainModel`, `St20TxRlDrainFrames` and `St20TxRlTail.DrainBoundEndsNoLaterThanPacket0`, on a deep port.
+  - The fix for the cause is memory placement: RxTxApp `--tx_st20p_source_sibling_node` took CI's LIST from 7/72 to 72/72 (`doc/rl_pacing.md` 7).
+  - VRX detector (no silent non-compliance, `doc/rl_pacing.md` 6.1): `plan->vrx_budget_ns` is how far past its own target a pkt may leave and still fill its drain slot; 0 judges nothing.
+    - A frame past it counts once in `stat_rl.vrx_frames`, in `vrx_pkt0` too if at packet 0, and fires `tx_rl_event` cause 0; a frame started later than the budget counts in `start_late`, cause 1.
+    - The all-RL builder stamps packet 0 only, so pkt idx's target is `trs_frame_tsc` + idx·`trs`, packet 0's stamp kept at its dequeue (`St20TxRlVrxDetectFrames`).
+    - Every session below VRX 0 is flagged, with and without absorb (`St20TxRlVrxFaults`, `St20TxRlVrxDetect*`).
+    - Not judged: TSC/PTP pacing, a shaper drifting slower than `pad_ns`, the frame before's tail ahead of packet 0.
   - The 2 µs is absolute because a burst's CPU cost does not scale with the format, while a pad does (~0.97 µs at 2160p59.94, ~8.7 µs at 720p60).
   - It is expected to be above a healthy 32-pad burst (not measured on hardware yet: a healthy run should keep `stat_trans_recalculate_warmup` at ~0) and at or below most timer ticks (2–10 µs). A shorter stall before the doorbell is not detected and delays packet 0 by up to its length.
-  - Behind the first burst the shaper is busy ~32 pads, so only a longer stall in a later burst holds.
+  - Behind the first burst ~32 pads are queued: a later burst's stall leaves the shaper no gap unless it outlasts them.
   - Tests: `St20TxRlWarmUpTest.Packet0LeavesOnTargetAfterAStallInAPadBurst` and `StallTheQueuedPadsCoverKeepsThePreArm`; `ut_trs_set_burst_stall()` stalls a burst before or after its doorbell.
   - Hardware, before the hold: E830 VF, 2× 720p60 st20p, wire timestamps from an E810 capture port whose PHC follows `CLOCK_REALTIME`, bpftrace for context switches and ≥ 1 µs interrupts on the scheduler CPU.
     - The 1 ms tick inside the pre-arm call moved packet 0 by 7.4 µs median (2.0 → 9.4 µs, max 4.0 → 15.4 µs).
@@ -638,6 +725,13 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
     - One 139 µs stall had no context switch, traced interrupt or SMI: unexplained.
 - Refused pads count as queued and retry, batched the same way, via `trs_pad_inflight_num` ahead of packet 0, which can only delay it. They retry as NORMAL pads: a refused cut pad hands its reference to the NORMAL one, so packet 0 is later, never early. Ports without a plan keep one pad per burst and per retry.
 - Without a plan, `video_trs_rl_warm_up()` queues `ceil((target − now) / trs)` single-pad bursts and `ST_TX_VIDEO_RL_STATE_WAIT_TARGET` holds packet 0 until the TSC reaches target, so a late tasklet launches it late. A planned port whose target is more than `warm_pkts`·`trs` away holds too, without pads. Target already past: no pads, packet 0 goes at once.
+- `video_trs_tasklet_handler()` runs the release scan before each session's visit and after the last (`video_trs_rl_release()`, `doc/rl_pacing.md` 5.4): a held packet 0 leaves at the first scan past its target, not a round later (`St20TxRlRelease`), and a port at most once a handler call (`trs_released`).
+  The scan reads the clock again after each release, so a target its own sends pass leaves in it if its port comes after the releaser in scan order (`St20TxRlReleaseScan`).
+  Behind a port whose pads the ring refused (`video_trs_rl_refused()`), the scans and the catch-up serve no later port, so a release can wait up to a round, bounded by hang detection (`tx_hang_detect_ms`, 1 s by default) (`F7RefusedRingWindow`).
+  A late entry found at the window entry holds while its other port or another session waits on refused pads (`St20TxRlRelease.LateEntryHoldsBehindARefusalOfTheCallBefore`, `LateEntryHoldsBehindItsOtherPortsRefusal`); one the sizing read finds is not checked.
+  The other sessions come from `mgr->trs_refused`, as reading them would take the tasklet out of the late session's slot (`LateEntrySendsFromItsOwnSlot`): a bit per session the visits, scans and catch-up update after their calls and clear for a slot they find held or empty.
+  A slot held or empty when read does not count (`LateEntrySendsPastAHeldSessionsRefusal`). A tail call the ring refuses whole drops its pads and holds packet 0 to its target.
+- The mid-frame catch-up (`video_trs_rl_catch_up()`, `doc/rl_pacing.md` 5.5) is skipped while a visited RL packet 0 is due within 2 of its warm-up windows (`St20TxRlQueueAhead`).
 - `tv_init_pacing()` sets `warm_pkts` to 80% of `pkts_in_tr_offset`, capped at 128, or 8 at height ≤ 576; 0 without RL, for wide pacing and for ST22.
 - `stat_trans_troffset_mismatch`: target about two `trs` or more past, or more than `warm_pkts` pads (`warm_pkts`·`trs` with a plan) needed; no pads are sent.
 
@@ -651,16 +745,19 @@ Progressive, height ≥ 1080; T = frame time. Interlaced, 720p and SD use their 
   - Pads queued behind an unfinished frame would make packet 0 late, so the window cannot grow past that idle gap. The 80% is margin, not a tuning knob.
 - **Ring bound on a plan.** `tv_rl_plan_init()` keeps a plan only if (`warm_pkts`·`trs` + `bucket_ns`)/`pad_ns` + 1 ≤ `nb_tx_desc`/2, the aim inside `bucket_ns`. With the deep `MT_DEV_TX_DESC_DEEP` 2048, that must fit in 1023 pad drains (1024 less the `ceil()` pad), so the `warm_pkts` cap of 128 binds first; an RL port that frees lazily keeps 512, 255 drains, which the cap still fits.
 - **Trim pads in the window.** The last burst keeps `trim_pads` pads, enough to cut up to a pad (a cut under 1262 B takes at most 24 of its 27: 19 coarse, 5 fine; the slack absorbs the one-pad drop to a fresh TSC). With fewer, packet 0 would launch late by what they cannot cut (seen +14..+24 µs at SD). `tv_rl_plan_init()` holds a port whose full window has at most `trim_pads` − 1 pads:
-  `warm_pkts` 8 at height ≤ 576 gives ~10. Each frame, `video_trs_rl_pre_arm()` checks the pads left the same way, at its entry before any burst and after an idle shaper between bursts, and holds packet 0 when too few are left: WAIT_TARGET then sends it at the target, sooner than those pads would have (`St20TxRlFastClockTest.LateEntryShortOfTheTrimPadsHoldsPacket0ToItsTarget`).
+  `warm_pkts` 8 at height ≤ 576 gives ~10. Each frame, `video_trs_rl_pre_arm()` checks the pads left the same way, at its entry before any burst and after an idle shaper between bursts. After an idle shaper with too few left, it holds packet 0: WAIT_TARGET sends it at the target.
+  At the entry, a plan whose `absorb_ns` takes a pad sends the pads that fit with packet 0 in one tail call, as a held release would go, so packet 0 lands under a pad late whenever the tasklet next runs (`St20TxRlFastClockTest.LateEntryShortOfTheTrimPadsLandsWithinAPad`).
+  Without that, it holds (`LateEntryShortOfTheTrimPadsHoldsPacket0ToItsTarget`).
+  A last burst whose own sizing read leaves too few pads to cut, as when the tasklet is preempted between the entry check and that read, is judged on what they cannot cut: within `absorb_ns` it goes with packet 0 in one tail call, else packet 0 is held (`LateEntryTheSizingReadFindsIsJudgedAsOne`).
 - **Where the 128 cap binds.** Only UHD and above: 2160p is 524 → 128, a 4× shorter window. At 1080p it is 130 → 128, which makes no difference.
 
 **Tolerance at each point** (scheduler lateness, or a tasklet stall):
 
 | Point | With a plan | Without a plan |
 |---|---|---|
-| Reaching WAIT_WARMUP's pre-arm | While `trim_pads` pads still fit: packet 0 still lands at target + aim, within an 8 B cut after it. Later: no pads, WAIT_TARGET holds packet 0, so it leaves at the tasklet's poll at the target. At or past target: no pads, packet 0 late by the lateness. | ~0: WAIT_TARGET holds packet 0, so its launch is the tasklet's poll time. |
+| Reaching WAIT_WARMUP's pre-arm | While `trim_pads` pads fit: packet 0 lands at target + aim, within an 8 B cut after it. Later: if `pad_ns` ≤ `absorb_ns`, the pads that fit go with packet 0, under a pad late; else WAIT_TARGET holds it to the poll at the target. At or past target: no pads, packet 0 late by the lateness. | ~0: WAIT_TARGET holds packet 0, so its launch is the tasklet's poll time. |
 | Between pad bursts | A stall that ends before target shrinks the remaining pads (`stat_trans_recalculate_warmup`). If fewer than `trim_pads` are left, WAIT_TARGET holds packet 0, which leaves at the tasklet's poll at the target. | — |
-| Inside a pad burst | Covered by the pads already queued: no change. Otherwise, up to 2 µs: packet 0 late by up to the stall. Longer: WAIT_TARGET holds packet 0, so it leaves at the later of the tasklet's poll and the drain end of the pads already in the NIC (`stat_trans_recalculate_warmup`). | — |
+| Inside a pad burst | Covered by the pads already queued: no change. Otherwise, a largest gap up to the larger of `ST_TX_VIDEO_RL_STALL_NS` (2 µs) and `absorb_ns`: packet 0 late by up to that gap. Longer: WAIT_TARGET holds packet 0, so it leaves at the later of the tasklet's poll and the drain end of the pads already in the NIC (`stat_trans_recalculate_warmup`). | — |
 | Frame body | The transmitter keeps the NIC ring full, so a stall up to `nb_tx_desc`/2·`trs` (2 descriptors per chained pkt; `nb_tx_desc`·`trs` in copy mode) drains on time. Longer gives a wire gap, VRX underflow at RX, then a burst. | Same |
 
 | Format | `trs` | `tr_offset` | `warm_pkts` | Window | Default ring body (1024 pkts) | Ring-capped window: 512 / 2048 |
@@ -684,14 +781,14 @@ Progressive, height ≥ 1080; T = frame time. Interlaced, 720p and SD use their 
   All runs were compliant narrow, with 0 VRX failures. A 4× longer train moved packet 0 by less than one pad, so shaper drift over the train is not what limits `warm_pkts`.
 - **Concurrent sessions.** Each planned session's packet 0 is set by its own queue's shaper, as long as the scheduler loop reaches its pre-arm inside the window. Every other tasklet on that scheduler adds its pass time. A pre-arm pass costs ⌈n/32⌉ `tx_burst` calls.
 - **Non-isolated cores.** The tolerances above are the whole margin. A preemption, softirq or SMT sibling on a shared core can exceed them, so this is best effort (`doc/isolation.md`, `tests/tools/isolate/isolate.sh`). A larger `nb_tx_desc` raises only the frame-body row, unless the cap is ring-derived.
-- **No plan, so the #1622 behavior.** This happens with:
+- **No plan, so the #1622 behavior.** `tv_rl_plan_init()` warns once a port at session create. This happens with:
   - a user `ops.pad_interval` or the static pad table;
   - a DPDK ice PF without the `rl_burst_size` devarg, or with one that cannot refill in the idle gap before the window;
   - drivers other than iavf and ice;
   - no programmed rate on the queue: a shared TX queue, AF_XDP, the kernel socket path;
   - a window that fails the half-ring check, for example with a small `nb_tx_desc`;
   - a window of at most `trim_pads` − 1 pads: every format of height ≤ 576;
-  - an aim past `ST_TX_VIDEO_RL_TIMESLOT_MAX_NS`: a drain below ~128.5 MB/s, such as 720p25, 720p50 by a ~1.5% margin, and 8-bit 1080p25.
+  - aim + T past `ST_TX_VIDEO_RL_GRID_LATE_MAX_NS`: SD, 720p25 and 8-bit 1080p25.
 - **Linear.** `ST21_PACING_LINEAR` is declared in `st20_api.h`, but nothing in `lib/src` reads it on TX, so every TX schedule is gapped.
   - Linear has no idle gap, so there is no window for warm-up or pre-arm, and RL alone has no launch time to re-anchor each frame.
   - It would need closed-loop rate correction on RL, or TSN launch time (§4.3.3 in `doc/design.md`, E830 PF), which stamps every packet.
@@ -779,6 +876,92 @@ deeper per-session backlog is a colder backlog. Benchmark on a quiet host — co
 memory traffic moves this ceiling by a whole session, so compare variants interleaved
 back-to-back, never across time.
 
+So an ice/iavf port without a user `nb_rx_desc` sizes its RX ring to the L3
+(`dev_rx_desc_default()` in `dev_config_port()`, logged at info with its inputs):
+`nb_rx_desc = clamp(pow2_floor(L3 × 3/4 / (RX queues × mbuf)), floor, 2048)`
+(`dev_rx_desc_by_l3()`, `MtDevRxDescL3Test`), at most 2048 and at least:
+- 512 on a port with 32 or more RX queues of its own, user plus system
+  (`MT_DEV_RX_DESC_DENSE_QUEUES`, `MT_DEV_RX_DESC_DENSE_MIN`), provisioned like a dense
+  1080p port;
+- 1024 on any other port (`MT_DEV_RX_DESC_MIN`). The rule counts provisioned queues, not
+  active ones: the GStreamer and FFmpeg plugins' default of 16 a port may carry one 2160p
+  2022-7 stream, which would get 1024 on a 105 MiB L3 and 512 on a 60 MiB one without the
+  floor.
+
+Every other port keeps `MT_DEV_RX_DESC` 2048 (`MtDevRxDescDefaultL3Test`):
+- Other drivers, none of them measured: igc, igb, ixgbe, i40e, mlx5, ena, DPDK AF_XDP and
+  AF_PACKET, kernel socket and native AF_XDP.
+- `MTL_FLAG_TASKLET_THREAD`: a scheduler on a shared cpu can stall longer than the ~2 ms a
+  512 ring holds at 235 kpps.
+- An unknown L3: `mt_l3_size()` reads the unified level-3 `cache/indexK` in sysfs of the
+  first cpu of the port's NUMA node. It returns 0 on Windows, without sysfs, or when that L3's
+  `shared_cpu_list` is not exactly the node's `cpulist` (an L3 per AMD CCD, Intel SNC).
+
+The inputs:
+- Budget: `MT_DEV_RX_L3_PERCENT` (75) of the L3, calibrated to the three measured cases
+  below. The full L3 gives 1024 for the first, which was marginal.
+- RX queues: `dev_socket_rx_queues()`, those of every port on that socket, the rings that
+  share its L3, as `mt_dev_if_init()` will set them: `rx_queues_cnt[]`, or
+  `rx_sessions_cnt_max`, plus on an `MTL_PMD_DPDK_USER` port the CNI, PTP and TAP queues
+  (`dev_sys_rx_queues()`), capped at `max_rx_queues` on the ports already read; 1 on an
+  AF_PACKET port. Only this process's ports: separate MTL instances do not see each other.
+  With mixed PMDs on one socket the count is approximate: an AF_XDP port counts its
+  `rx_queues_cnt[]`, not the `max(tx, rx)` of `mt_dev_if_init()`, and a kernel socket port
+  counts its queues though it has no DPDK ring.
+  `nb_rx_q` is no option, as `mt_dev_if_init()` sets it port by port; the iavf queue pairs
+  it adds stay idle.
+  - P/R asymmetry: `mt_dev_if_init()` reads a port's `dev_info` just before it configures
+    it, so P counts R uncapped, while R counts both capped. Only a request past a VF's
+    `max_rx_queues` shows it: P then sees more queues and may get the shallower ring.
+- mbuf: what a session RX pool object takes (`MtDevRxElemSizeTest`):
+  `rte_mempool_calc_obj_size()` of `rte_mbuf` + priv + headroom + data room
+  (`ST_PKT_MAX_ETHER_BYTES` aligned to 1536, 2048 with a mono pool, or `rx_pool_data_size`),
+  so with the object header and stride padding: 1984 bytes. The `mt_mempool_create_by_ops()`
+  log size counts data room and priv only (1696).
+- Spare mbufs: a queue pool holds `nb_rx_desc + 1024` rounded to `2^q - 1`, so at 512 a queue
+  keeps 1535 mbufs beyond its ring, against 2047 at 2048.
+- The iavf HW timestamp ±32 workaround still applies after it (§7).
+
+At 375 Gb/s RX on a Xeon 6 6767P (336 MiB L3), 4 × 100G VFs, with the best ring of each and
+the rule at 1984 bytes. NT converters are pixel-format converters that write their output
+with non-temporal stores.
+- 144 × 1080p59.94, 41 queues a port (164): 2048 collapses (NT converters 30–33 fps, stock
+  20 fps), MTL's RX L3 miss ratio 35% (57% at 4096, 8% at 1024, 1% at 512). 512 is clean on
+  12–14 MTL RX cores; 1024 on 14 lost 2,406 pkts in 1 of 3 NT runs; 256 lost 13,952 in 1 of
+  2. A buffer posted to a 2048 ring is filled ~8.7 ms later at 235 kpps a queue, after its
+  mbuf header has left the cache. Rule: 512.
+- 36 × 2160p59.94, 9 a port, 14 queues a port (56), ~940 kpps a queue: 512 lost 17,997 / 0
+  (NT) and 4,401 / 1,671 (wire format) pkts, as 512 descriptors last only 0.54 ms there;
+  2048 is clean. Few queues leave each ring a large L3 share. Rule: 2048.
+
+On a Xeon 8480+ (105 MiB L3), 72 × 1080p59.94 on 2 ports, about 187 Gb/s, 41 queues a port
+(82): 512 instead of 2048 lifts RX from 51.9 to 58.8–59.2 fps. Rule: 256, clamped to 512.
+
+Not validated, never measured:
+- 1024 at 2160p (or any high) rates: every port with fewer than 32 queues gets it at worst,
+  once its socket counts over 65 queues on 336 MiB or over 20 on 105 MiB. E.g. a dual-port
+  2022-7 2160p receiver, 2 × 14 queues on a 105 MiB L3 (1486, so 1024), or 2160p on 5 or
+  more ports of a 336 MiB socket. Gate 6 is to measure 2 × 14-queue 2160p at 1024 against
+  2048.
+- 512 at high rates, where 512 lost 2160p packets above: only on a port with 32 or more
+  queues, past 130 on 336 MiB or past 40 on 105 MiB, however few of them carry traffic.
+  Each audio or ancillary RX session counts as a queue (`st_rx_sessions_queue_cnt()`, as
+  `mtl_api.h` recommends for `rx_queues_cnt` and RxTxApp uses), so a port mixing 2160p
+  video with many of them gets there: a 2022-7 receiver of 4 × 2160p59.94 with 7 audio
+  sessions each, 34 queues a port, gets 512 on 105 MiB. Set `nb_rx_desc` (2048) there.
+
+### TX Builder Header Stores Miss on a Deep Queue
+
+With 2048 TX descriptors a header mbuf returns to its pool only thousands of pkts after it was sent, so its priv and header lines have left L1/L2. The first store to a cold line stalls the in-order store buffer.
+- Xeon 8480+, E810 VF, one scheduler, N × 1080p59.94 RL, CPU-bound: `resource_stalls.sb` was 8.6% of the scheduler's cycles, ~2.65 L2 RFO misses per pkt.
+- `tv_tasklet_frame()` prefetches for write (`tv_prefetch_hdr()`: header first and last byte, `rte_mbuf_to_priv()`) the header mbufs of both legs `TV_PREFETCH_HDR_AHEAD` (2) pkts ahead: the first 2 after `rte_pktmbuf_alloc_bulk()`, then pkt i + 2 as the loop builds pkt i, overlapping those misses with the build.
+- Measured, prefetching the whole bulk up front: store-buffer-full stalls 544M → 228M per 4 s, IPC 3.25 → 3.67.
+- Up front, a bulk of 16 issues 48 `prefetchw` (96 on 2022-7) back to back, more than the core's L1 fill buffers hold. Pipelined, E810 VF, core capped at 1.2 GHz, bulk 16:
+  single-port 30 sessions 6.39 Mpps up front, 6.60 at 2 ahead (+3.2%), 6.52-6.57 at 4, 6.50 at 8; 2022-7 18 sessions 3.43 Mpps a leg up front, 3.58-3.59 at 1, 2 or 4 ahead (+4.3%).
+- On top of the RL bulk of 16 (§5 Bulk Size), E810 VF, core capped at 1.2 GHz: 2022-7 18 sessions 3.14 → 3.50 Mpps a leg (+11%), single-port 30 sessions 5.53 → 6.61 Mpps (+20%); both against bulk 4 with no prefetch, 2.59 → 3.50 (+35%) and 4.72 → 6.61 (+40%).
+  At full clock 36 single-port and 18 two-leg 1080p59.94 sessions pass with zero epoch drops and troffset mismatches.
+- A layout touching fewer lines (header right after priv, `data_off` 0) did not help, so the layout stays. The RTP-level and ST22 builders are not measured and have no prefetch.
+
 ### Performance Debugging Mental Model
 
 1. **NIC bottleneck?** Check `stat_tx_burst` vs `stat_tx_bytes`
@@ -841,11 +1024,13 @@ Alternative path: `rv_detector_init()` instead of `rv_init_sw()` when auto-detec
 Dependency chain: `NIC TX descriptors → hold mbufs → hold extbuf refs → point to frame buffers`
 
 Actual sequence in `tv_uinit()`:
+0. direct chain only: `tv_frames_hold()` refs every frame in flight (see below)
 1. `st_tx_video_transmitter_state_cleanup()` — free software-held mbufs: `inflight[]`,
    `trs_inflight[]`, `trs_inflight2[]`, and one pad reference per `trs_pad_inflight_num`
 2. `tv_uinit_hw()` — drain ring (`mt_ring_dequeue_clean`), free ring, flush TX queue
    (`mt_txq_flush()` pushes pad packets to force all session mbufs out of the NIC),
    release queue (`mt_txq_put()`), then free the pad mbufs
+   - direct chain only: `tv_frames_release()` drops those refs if the chain pool has no mbuf out
 3. `tv_uinit_sw()` — free packet ring, chain + header pools (`tv_mempool_free()`),
    then frame buffers (`tv_free_frames()` → `rte_free(frame->addr)`)
 
@@ -856,9 +1041,11 @@ from the per-interface `tx_mbuf_pool` (`mt_sys_tx_mempool()`), not a session poo
 is never reclaimed for the process lifetime and never shows up in `tv_mempool_free()`.
 
 **Why this is not a use-after-free**: freeing a chain mbuf drops one `sh_info` reference and can
-run `tv_frame_free_cb()`. `sh_info` counts *every* live chain mbuf, NIC-owned ones included
-(`rte_mbuf_ext_refcnt_update(&frame_info->sh_info, 1)` per `rte_pktmbuf_attach_extbuf`), so the
-callback cannot fire while any packet of that frame is still in a TX descriptor.
+run `tv_frame_free_cb()`. With a ref a pkt, `sh_info` counts every live chain mbuf, NIC-owned ones
+included, so the callback cannot fire while a packet of that frame is still in a TX descriptor.
+A direct chain (§3) holds the frame by its last pkt alone, which step 1 or the ring drain may free
+first, so `tv_uinit()` refs every frame in flight before step 1 and drops it after step 2 once no
+payload is out; `st20_tx_queue_fatal_error()` holds them the same way.
 
 **Why HW before the pools and frames (step 2 before 3)**: after the flush the NIC holds no
 references, so the frame buffers the extbufs pointed into can finally be freed. This is the
@@ -906,6 +1093,9 @@ incomplete still reaches frame_ready. In every mode where incomplete frames reac
 does not deliver it puts back itself with `st20_rx_put_framebuff()`; before ready `ctx->transport` may
 still be unset, so such a frame is parked (a slot per transport frame) and put back by create once
 ready, or by the next frame_ready if it missed that.
+Each packet converts into `ctx->pkt_stage`; its whole lines then stream into the framebuff, and the partial ones at its ends, which the packets next to it share, go through `mt_memcpy()`.
+Stored straight, every line cost a read-for-ownership: 106k LLC misses a 1080p frame on Xeon 6, against 4.4k streamed. Without the stage (allocation failed, warned, or no SSE2 / `enable_rx_video_nt_store`) it stores straight; `St20pRxPktConvertRowTest` pins the unaligned packet splits.
+`rx_st20p_frame_ready()` fences before it marks the frame CONVERTED, and `st20p_rx_free()` frees the stage only after `st20_rx_free()` detaches the session, whose tasklet converts into it until then.
 Create refuses PKT_CONVERT with `ST20P_RX_FLAG_EXT_FRAME` (a queried ext frame would arrive only at frame_ready)
 and wherever the session could add a pkt lcore (`ST20P_RX_FLAG_USE_MULTI_THREADS`,
 `ST20P_RX_FLAG_AUTO_DETECT`, or above `ST_RX_VIDEO_PKT_LCORE_MBPS`): the uframe callback is not safe on

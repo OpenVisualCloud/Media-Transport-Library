@@ -138,6 +138,10 @@ class PhcFollowingClock {
   /* After stop(): empty if the reads met kPhcFollowMaxLagNs, kPhcFollowMaxGapNs and
    * kPhcFollowMinReadShare, else why not. */
   std::string healthError() const;
+  /* After stop(): the largest |now() - (PHC + offset)| seen at a read. */
+  uint64_t maxLagNs() const {
+    return max_lag_ns;
+  }
 
  private:
   void run();
@@ -283,9 +287,9 @@ class St20pInterlacedUserPacingOracle : public St20pUserPacingOracle {
   uint64_t expectedTransmitTimeNs(uint64_t frame_idx) const override;
 };
 
-/* For the frames received kSt20pVrxWarmupS to kSt20pVrxWarmupS + kSt20pVrxWindowS after
- * the session's first, by receive_timestamp, with MTL's PTP time = RX PHC +
- * ptp_minus_phc_ns (a whole number of frames), records PTP now - receive_timestamp and
+/* For the frames received kSt20pVrxWarmupS to kSt20pVrxWarmupS + window_s after the
+ * session's first, by receive_timestamp, with MTL's PTP time = RX PHC + ptp_minus_phc_ns
+ * (a whole number of frames), records PTP now - receive_timestamp and
  * per port with packets:
  * - sw_rx_frames: rtp_offset not shifted by ptp_minus_phc_ns, so the parser timed the
  *   port's packets in software
@@ -295,7 +299,8 @@ class St20pInterlacedUserPacingOracle : public St20pUserPacingOracle {
  *   max_missing_pkts, and partial_frames if more than kSt20pVrxMaxLegLagPkts. */
 class St20pVrxRecorder : public FrameTestStrategy {
  public:
-  St20pVrxRecorder(St20pHandler* parentHandler, int64_t ptp_minus_phc);
+  St20pVrxRecorder(St20pHandler* parentHandler, int64_t ptp_minus_phc,
+                   int window_s = kSt20pVrxWindowS);
   void rxTestFrameModifier(void* frame, size_t frame_size) override;
 
   std::vector<int64_t> delivery_ns;
@@ -304,8 +309,42 @@ class St20pVrxRecorder : public FrameTestStrategy {
   uint64_t partial_frames[MTL_SESSION_PORT_MAX] = {};
   uint64_t sw_rx_frames[MTL_SESSION_PORT_MAX] = {};
   uint64_t off_band_frames[MTL_SESSION_PORT_MAX] = {};
+  const int window_s;
+
+ protected:
+  int64_t ptp_minus_phc_ns;
 
  private:
-  int64_t ptp_minus_phc_ns;
   uint64_t first_rx_ns = 0;
+};
+
+/* St20pVrxRecorder that also judges, per recorded frame and port, packet 0 on its NIC
+ * time, as EBU LIST does: fpt (packet 0 - the epoch) >= TR_offset + trs is VRX < 0 at
+ * packet 0, which the parser's truncation reads as 0; fpt before the snapped launch
+ * target (st20pRoundedLaunchNs()) is early. An off-band frame within ptp_minus_phc_ns
+ * of the K shift is on another epoch than its RTP names. Every frame with one of these
+ * or vrx_min < 0 is negative. */
+class RlWireCheck : public St20pVrxRecorder {
+ public:
+  using St20pVrxRecorder::St20pVrxRecorder;
+  void rxTestFrameModifier(void* frame, size_t frame_size) override;
+
+  /* MTL PTP time of packet 0 of each negative frame. */
+  std::vector<uint64_t> negative_ptp_ns;
+  uint64_t negative_frames[MTL_SESSION_PORT_MAX] = {};
+  uint64_t pkt0_late_frames[MTL_SESSION_PORT_MAX] = {};
+  uint64_t epoch_off_frames[MTL_SESSION_PORT_MAX] = {};
+  /* The least TR_offset + trs - fpt, and the most launch target - fpt. */
+  int64_t pkt0_margin_min_ns[MTL_SESSION_PORT_MAX] = {INT64_MAX, INT64_MAX};
+  int64_t pkt0_early_max_ns[MTL_SESSION_PORT_MAX] = {INT64_MIN, INT64_MIN};
+  /* MTL PTP time of packet 0 of the first and the last frame in the window. */
+  uint64_t window_from_ptp_ns = 0, window_to_ptp_ns = 0;
+  /* Set to end the window before window_s. */
+  std::atomic<bool> closed{false};
+  /* Set with the first negative frame. */
+  std::atomic<bool> any_negative{false};
+
+ private:
+  double tr_offset_ns = 0, trs_ns = 0;
+  uint32_t vrx_pkts = 0;
 };

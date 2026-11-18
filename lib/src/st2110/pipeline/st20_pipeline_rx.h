@@ -75,6 +75,8 @@ struct st20p_rx_ctx {
   struct st20_convert_session_impl* convert_impl;
   struct st_frame_converter* internal_converter;
   struct st_frame_nt_scratch nt_scratch; /* for st_frame_convert_nt() */
+  /* a packet's converted pixels, NULL: per-packet convert stores direct */
+  void* pkt_stage;
   /* release-stored once ctx->transport is set */
   _Atomic bool ready;
   bool derive;

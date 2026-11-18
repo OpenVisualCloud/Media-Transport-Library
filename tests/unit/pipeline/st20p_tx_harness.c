@@ -314,6 +314,15 @@ void* ut20p_tx_nt_scratch(ut20p_tx_ctx* ctx) {
   return ctx->pipeline.nt_scratch.buf;
 }
 
+void ut20p_tx_hold_nt_scratch(ut20p_tx_ctx* ctx, bool hold) {
+  atomic_store_explicit(&ctx->pipeline.nt_scratch.busy, hold ? 1 : 0,
+                        memory_order_relaxed);
+}
+
+bool ut20p_tx_nt_scratch_held(const ut20p_tx_ctx* ctx) {
+  return atomic_load_explicit(&ctx->pipeline.nt_scratch.busy, memory_order_relaxed);
+}
+
 struct st_frame* ut20p_tx_wire_frame(ut20p_tx_ctx* ctx, int idx) {
   return &ctx->framebuffs[idx].dst;
 }
