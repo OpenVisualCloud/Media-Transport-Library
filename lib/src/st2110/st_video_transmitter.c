@@ -1285,6 +1285,10 @@ static bool video_trs_rl_short(struct mtl_main_impl* impl,
   if (s->s_type == MT_ST22_HANDLE_TX_VIDEO ||
       s->rl_state[s_port] != ST_TX_VIDEO_RL_STATE_IDLE || s->trs_target_tsc[s_port])
     return false;
+  /* with nothing to send a catch-up cannot top it up */
+  if (!s->trs_inflight_num[s_port] && !s->trs_inflight_num2[s_port] &&
+      !s->trs_pad_inflight_num[s_port] && rte_ring_empty(s->ring[s_port]))
+    return false;
   return s->trs_wire_tsc[s_port] <
          s->last_burst_succ_time_tsc[s_port] + mt_sch_schedule_ns(impl);
 }

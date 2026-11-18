@@ -192,6 +192,21 @@ TEST_P(St20TxRlIdleCost, ABurstAfterAStallIsFollowedByAnEmptyOne) {
       << "the call's and two a port";
 }
 
+/* a port that sent all its builder ring had leaves a short NIC queue and nothing more to
+ * send: the catch-up does not come back to it */
+TEST_P(St20TxRlIdleCost, APortThatSentItsWholeRingIsNotCaughtUp) {
+  ASSERT_EQ(0u, IdleCall());
+  /* the two pkts a port sends are short of it */
+  ut_trs_sch_set_schedule_ns(sch_, 200000);
+  for (ut_trs_ctx* c : ctx_) {
+    ut_trs_enqueue_mid_pkt(c);
+    ut_trs_enqueue_mid_pkt(c);
+  }
+  ut_trs_sch_call(sch_);
+  for (ut_trs_ctx* c : ctx_) EXPECT_EQ(2u, ut_trs_real_send_count(c));
+  EXPECT_EQ(ctx_.size(), ut_trs_sch_dp_gets(sch_)) << "the visits' only";
+}
+
 INSTANTIATE_TEST_SUITE_P(Sessions, St20TxRlIdleCost, ::testing::Values(1, 13, 60));
 
 } /* namespace */
