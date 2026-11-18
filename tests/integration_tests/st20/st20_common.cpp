@@ -694,7 +694,8 @@ void st20_rx_drain_bufq_put_framebuff(tests_context* ctx) {
   }
 }
 
-void rtp_tx_specific_init(struct st20_tx_ops* ops, tests_context* test_ctx) {
+void rtp_tx_specific_init(struct st20_tx_ops* ops, tests_context* test_ctx,
+                          uint16_t rtp_pkt_size) {
   int ret;
   ret = st20_get_pgroup(ops->fmt, &test_ctx->st20_pg);
   ASSERT_TRUE(ret == 0);
@@ -713,6 +714,13 @@ void rtp_tx_specific_init(struct st20_tx_ops* ops, tests_context* test_ctx) {
     test_ctx->pkts_in_line = pkts_in_line;
   } else if (ops->packing == ST20_PACKING_BPM) {
     test_ctx->pkt_data_len = 1260;
+    if (rtp_pkt_size) {
+      /* whole pgroups in what is left once both RFC 4175 headers are on */
+      size_t hdrs_len =
+          sizeof(struct st20_rfc4175_rtp_hdr) + sizeof(struct st20_rfc4175_extra_rtp_hdr);
+      test_ctx->pkt_data_len = static_cast<int>(
+          (rtp_pkt_size - hdrs_len) / test_ctx->st20_pg.size * test_ctx->st20_pg.size);
+    }
     int pixels_in_pkts =
         test_ctx->pkt_data_len * test_ctx->st20_pg.coverage / test_ctx->st20_pg.size;
     test_ctx->total_pkts_in_frame =
@@ -742,6 +750,7 @@ void rtp_tx_specific_init(struct st20_tx_ops* ops, tests_context* test_ctx) {
   ops->rtp_pkt_size = test_ctx->pkt_data_len + sizeof(struct st20_rfc4175_rtp_hdr);
   if (ops->packing != ST20_PACKING_GPM_SL) /* no extra for GPM_SL */
     ops->rtp_pkt_size += sizeof(struct st20_rfc4175_extra_rtp_hdr);
+  if (rtp_pkt_size && ops->packing == ST20_PACKING_BPM) ops->rtp_pkt_size = rtp_pkt_size;
   ops->notify_rtp_done = tx_rtp_done;
   ops->rtp_ring_size = 1024;
 }

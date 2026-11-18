@@ -75,7 +75,10 @@ void init_single_port_tx(struct st20_tx_ops& ops, tests_context* tctx, const cha
 void init_single_port_rx(struct st20_rx_ops& ops, tests_context* tctx, const char* name,
                          uint16_t udp_port);
 void st20_rx_drain_bufq_put_framebuff(tests_context* ctx);
-void rtp_tx_specific_init(struct st20_tx_ops* ops, tests_context* test_ctx);
+/* rtp_pkt_size: BPM only, size the session and its largest pkt to it; 0 for the
+ * default 1260-byte payload */
+void rtp_tx_specific_init(struct st20_tx_ops* ops, tests_context* test_ctx,
+                          uint16_t rtp_pkt_size = 0);
 
 class St20DeinitGuard {
  public:

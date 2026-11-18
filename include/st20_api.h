@@ -1263,10 +1263,11 @@ struct st20_tx_ops {
   uint32_t rtp_frame_total_pkts;
   /**
    * Mandatory for ST20_TYPE_RTP_LEVEL.
-   * Size for each rtp pkt, include both the payload data and rtp header, must small than
-   * MTL_PKT_MAX_RTP_BYTES. Used by MTL to calculate the total bandwidth of each frame.
-   * App still can customize the size of each pkt by the `len` parameter of
-   * `st20_tx_put_mbuf`
+   * Size of the largest rtp pkt, rtp header and payload, in [1:1452] bytes: what fits
+   * MTL's 1494-byte TX frame after the 42-byte Ethernet/IPv4/UDP header MTL adds, so a
+   * 1396-byte ST 2022-6 pkt fits. The bandwidth is reserved from (rtp_pkt_size + 42) *
+   * rtp_frame_total_pkts, so set it to the largest pkt the app sends. The `len` of
+   * `st20_tx_put_mbuf` can only be smaller than or equal to rtp_pkt_size.
    */
   uint16_t rtp_pkt_size;
   /**
@@ -1387,10 +1388,11 @@ struct st22_tx_ops {
   uint32_t rtp_frame_total_pkts;
   /**
    * Mandatory for ST22_TYPE_RTP_LEVEL.
-   * Size for each rtp pkt, include both the payload data and rtp header, must small than
-   * MTL_PKT_MAX_RTP_BYTES. Used by MTL to calculate the total bandwidth of each frame.
-   * App still can customize the size of each pkt by the `len` parameter of
-   * `st20_tx_put_mbuf`
+   * Size of the largest rtp pkt, rtp header and payload, in [1:1452] bytes: what fits
+   * MTL's 1494-byte TX frame after the 42-byte Ethernet/IPv4/UDP header MTL adds, so a
+   * 1396-byte ST 2022-6 pkt fits. The bandwidth is reserved from (rtp_pkt_size + 42) *
+   * rtp_frame_total_pkts, so set it to the largest pkt the app sends. The `len` of
+   * `st22_tx_put_mbuf` can only be smaller than or equal to rtp_pkt_size.
    */
   uint16_t rtp_pkt_size;
   /**
@@ -1952,7 +1954,7 @@ void* st20_tx_get_mbuf(st20_tx_handle handle, void** usrptr);
  * @param mbuf
  *   the dpdk mbuf pointer by st20_tx_get_mbuf.
  * @param len
- *   the rtp package length, include both header and payload.
+ *   the rtp pkt length, header and payload, in [1:rtp_pkt_size of the session].
  * @return
  *   - 0 if successful.
  *   - <0: Error code if put fail.
@@ -2149,7 +2151,7 @@ void* st22_tx_get_mbuf(st22_tx_handle handle, void** usrptr);
  * @param mbuf
  *   the dpdk mbuf pointer by st22_tx_get_mbuf.
  * @param len
- *   the rtp package length, include both header and payload.
+ *   the rtp pkt length, header and payload, in [1:rtp_pkt_size of the session].
  * @return
  *   - 0 if successful.
  *   - <0: Error code if put fail.

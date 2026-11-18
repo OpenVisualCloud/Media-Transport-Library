@@ -676,6 +676,15 @@ void ut_txv_pipe_geometry(const ut_txv_ctx* ctx, uint32_t* pkt_len, uint32_t* li
 uint64_t ut_txv_pipe_frames_asked(const ut_txv_ctx* ctx);
 int ut_txv_pipe_total_pkts(const ut_txv_ctx* ctx);
 
+/* tv_ops_check() / tv_st22_ops_check() on a one-port RTP-level ops that is valid but
+ * for rtp_pkt_size. */
+int ut_txv_rtp_ops_check(bool st22, uint16_t rtp_pkt_size);
+/* st20_tx_put_mbuf() / st22_tx_put_mbuf() of a len-byte packet on a no-chain RTP-level
+ * session created with rtp_pkt_size. *freed: the call gave the mbuf back to its pool.
+ * *queued_len: data_len of the mbuf it queued for the builder, 0 if none. */
+int ut_txv_put_mbuf(ut_txv_ctx* ctx, bool st22, uint16_t rtp_pkt_size, uint16_t len,
+                    bool* freed, uint16_t* queued_len);
+
 #ifdef __cplusplus
 }
 #endif

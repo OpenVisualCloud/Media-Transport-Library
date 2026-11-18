@@ -3804,3 +3804,75 @@ int ut_txv_control_during_own_callback(ut_txv_ctx* ctx, enum ut_txv_control call
   ut_txv_peer_free(peer);
   return ret;
 }
+
+int ut_txv_rtp_ops_check(bool st22, uint16_t rtp_pkt_size) {
+  uint8_t dip[MTL_IP_ADDR_LEN] = {239, 0, 0, 1};
+
+  if (st22) {
+    struct st22_tx_ops ops = {.num_port = 1,
+                              .type = ST22_TYPE_RTP_LEVEL,
+                              .rtp_ring_size = 1024,
+                              .rtp_pkt_size = rtp_pkt_size,
+                              .notify_rtp_done = ut_txv_notify_rtp_done,
+                              .payload_type = 114};
+    memcpy(ops.dip_addr[MTL_SESSION_PORT_P], dip, sizeof(dip));
+    return tv_st22_ops_check(&ops);
+  }
+  struct st20_tx_ops ops = {.num_port = 1,
+                            .type = ST20_TYPE_RTP_LEVEL,
+                            .rtp_ring_size = 1024,
+                            .rtp_frame_total_pkts = 1,
+                            .rtp_pkt_size = rtp_pkt_size,
+                            .notify_rtp_done = ut_txv_notify_rtp_done,
+                            .payload_type = 112};
+  memcpy(ops.dip_addr[MTL_SESSION_PORT_P], dip, sizeof(dip));
+  return tv_ops_check(&ops);
+}
+
+int ut_txv_put_mbuf(ut_txv_ctx* ctx, bool st22, uint16_t rtp_pkt_size, uint16_t len,
+                    bool* freed, uint16_t* queued_len) {
+  static unsigned int test_idx;
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st22_tx_video_session_handle_impl st22_handle = {0};
+  struct rte_mbuf *pkt, *queued = NULL;
+  struct rte_mempool* pool;
+  char ring_name[RTE_RING_NAMESIZE];
+  unsigned int avail;
+  int ret = -1;
+
+  *freed = false;
+  *queued_len = 0;
+  if (ut_txv_tx_path_init(ctx) < 0) goto out;
+  snprintf(ring_name, sizeof(ring_name), "ut_txv_put_ring_%u", test_idx++);
+  s->packet_ring = ut_ring_create(ring_name, 32);
+  if (!s->packet_ring) goto out;
+  s->tx_no_chain = true;
+  s->rtp_pkt_max_size = rtp_pkt_size;
+
+  pool = s->mbuf_mempool_hdr[MTL_SESSION_PORT_P];
+  avail = rte_mempool_avail_count(pool);
+  pkt = rte_pktmbuf_alloc(pool);
+  if (!pkt) goto out;
+
+  if (st22) {
+    st22_handle.parent = &ctx->impl;
+    st22_handle.type = MT_ST22_HANDLE_TX_VIDEO;
+    st22_handle.impl = s;
+    ret = st22_tx_put_mbuf(&st22_handle, pkt, len);
+  } else {
+    ctx->handle.parent = &ctx->impl;
+    ctx->handle.type = MT_HANDLE_TX_VIDEO;
+    ctx->handle.impl = s;
+    ret = st20_tx_put_mbuf(&ctx->handle, pkt, len);
+  }
+  *freed = rte_mempool_avail_count(pool) == avail;
+  if (rte_ring_sc_dequeue(s->packet_ring, (void**)&queued) == 0) {
+    *queued_len = queued->data_len;
+    rte_pktmbuf_free(queued);
+  }
+
+out:
+  ut_txv_rtp_teardown(ctx);
+  ut_txv_tx_path_uinit(ctx);
+  return ret;
+}

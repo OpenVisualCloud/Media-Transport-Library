@@ -16,6 +16,8 @@
 #include "st_fmt.h"
 #include "st_video_transmitter.h"
 
+#define TV_RTP_PKT_MAX_SIZE (ST_PKT_MAX_ETHER_BYTES - sizeof(struct mt_udp_hdr))
+
 #ifdef MTL_SIMULATE_PACKET_DROPS
 static inline void tv_simulate_packet_loss(struct st_tx_video_session_impl* s,
                                            struct rte_ipv4_hdr* ipv4,
@@ -4659,8 +4661,9 @@ static int tv_ops_check(struct st20_tx_ops* ops) {
       err("%s, invalid rtp_frame_total_pkts %d\n", __func__, ops->rtp_frame_total_pkts);
       return -EINVAL;
     }
-    if (!mt_rtp_len_valid(ops->rtp_pkt_size)) {
-      err("%s, invalid rtp_pkt_size %d\n", __func__, ops->rtp_pkt_size);
+    if (!ops->rtp_pkt_size || ops->rtp_pkt_size > TV_RTP_PKT_MAX_SIZE) {
+      err("%s, invalid rtp_pkt_size %u, allowed [1:%zu]\n", __func__, ops->rtp_pkt_size,
+          TV_RTP_PKT_MAX_SIZE);
       return -EINVAL;
     }
     if (!ops->notify_rtp_done) {
@@ -4775,8 +4778,9 @@ static int tv_st22_ops_check(struct st22_tx_ops* ops) {
       err("%s, invalid rtp_ring_size %d\n", __func__, ops->rtp_ring_size);
       return -EINVAL;
     }
-    if (!mt_rtp_len_valid(ops->rtp_pkt_size)) {
-      err("%s, invalid rtp_pkt_size %d\n", __func__, ops->rtp_pkt_size);
+    if (!ops->rtp_pkt_size || ops->rtp_pkt_size > TV_RTP_PKT_MAX_SIZE) {
+      err("%s, invalid rtp_pkt_size %u, allowed [1:%zu]\n", __func__, ops->rtp_pkt_size,
+          TV_RTP_PKT_MAX_SIZE);
       return -EINVAL;
     }
     if (!ops->notify_rtp_done) {
@@ -5250,8 +5254,7 @@ int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len) {
   struct rte_ring* packet_ring;
   int idx, ret;
 
-  if (!mt_rtp_len_valid(len)) {
-    if (len) err("%s, invalid len %d\n", __func__, len);
+  if (!len) {
     rte_pktmbuf_free(mbuf);
     return -EIO;
   }
@@ -5733,8 +5736,7 @@ int st22_tx_put_mbuf(st22_tx_handle handle, void* mbuf, uint16_t len) {
   struct rte_ring* packet_ring;
   int idx, ret;
 
-  if (!mt_rtp_len_valid(len)) {
-    if (len) err("%s, invalid len %d\n", __func__, len);
+  if (!len) {
     rte_pktmbuf_free(mbuf);
     return -EIO;
   }

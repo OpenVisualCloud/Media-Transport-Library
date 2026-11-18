@@ -369,6 +369,8 @@ Sample application code can be find in [tx_slice_video_sample.c](../app/sample/l
 
 MTL manages the processing from RTP to L2 packet and vice versa, but it is the responsibility of the application to encapsulate/decapsulate RTP with various upper-layer protocols. This approach is commonly employed to implement support for ST2022-6, given that MTL natively supports only ST2110.
 
+For video (`ST20_TYPE_RTP_LEVEL`, `ST22_TYPE_RTP_LEVEL`) an RTP packet, header and payload, can be up to 1452 bytes (`rtp_pkt_size`), so a standard 1396-byte ST2022-6 packet (12-byte RTP header, 8-byte HBRMT header, 1376-byte payload) fits a 1500-byte MTU without jumbo frames.
+
 Sample application code can be find in [tx_rtp_video_sample.c](../app/sample/low_level/tx_rtp_video_sample.c) and [rx_rtp_video_sample.c](../app/sample/low_level/rx_rtp_video_sample.c)
 
 ### 6.3. Pipeline mode
