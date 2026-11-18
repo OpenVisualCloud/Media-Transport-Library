@@ -18,6 +18,7 @@
 #include <cstring>
 #include <vector>
 
+#include "common/ut_common.h"
 #include "session/st20/st20_rx_test_base.h"
 
 namespace {
@@ -39,16 +40,16 @@ class St20RxFrameMemcpyTest : public St20RxBaseTest {
     /* 64 byte aligned, so dst_off alone sets the destination's line offset;
      * aligned_alloc() wants the size a multiple of the alignment too */
     buf_size_ = (kGuard + 64 + kMaxLen + kGuard + 63) & ~static_cast<size_t>(63);
-    dst_buf_ = static_cast<uint8_t*>(aligned_alloc(64, buf_size_));
-    src_buf_ = static_cast<uint8_t*>(aligned_alloc(64, buf_size_));
+    dst_buf_ = static_cast<uint8_t*>(ut_aligned_alloc(64, buf_size_));
+    src_buf_ = static_cast<uint8_t*>(ut_aligned_alloc(64, buf_size_));
     ASSERT_NE(dst_buf_, nullptr);
     ASSERT_NE(src_buf_, nullptr);
     for (size_t i = 0; i < buf_size_; i++) src_buf_[i] = static_cast<uint8_t>(i * 7 + 3);
   }
 
   void TearDown() override {
-    free(dst_buf_);
-    free(src_buf_);
+    ut_aligned_free(dst_buf_);
+    ut_aligned_free(src_buf_);
     St20RxBaseTest::TearDown();
   }
 

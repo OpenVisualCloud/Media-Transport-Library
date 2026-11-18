@@ -9,6 +9,7 @@
 #include "sch/mt_sch_harness.h"
 
 #include <limits.h>
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -529,4 +530,45 @@ int ut_sch_qs_pass_end_publishes(bool* published) {
   *published = pass.published;
   ut_sch_mempolicy_ctx_destroy(ctx);
   return ret;
+}
+
+static int ut_sch_warns;
+static char ut_sch_warn_line[256];
+
+static void ut_sch_count_warns(enum mtl_log_level level, const char* format, ...) {
+  va_list args;
+
+  if (level != MTL_LOG_LEVEL_WARNING || ut_sch_warns++) return;
+  va_start(args, format);
+  (void)vsnprintf(ut_sch_warn_line, sizeof(ut_sch_warn_line), format, args);
+  va_end(args);
+}
+
+int ut_sch_last_put_after_stop(int* warns) {
+  struct ut_sch_mempolicy_ctx* ctx = ut_sch_qs_ctx_create(ut_sch_idle_handler, NULL);
+  if (!ctx) return -ENOMEM;
+
+  int ret = sch_start(&ctx->sch);
+  if (!ret) ret = sch_stop(&ctx->sch);
+  if (!ret) {
+    enum mtl_log_level level = mt_get_log_global_level();
+
+    ctx->sch.tasklet = NULL; /* sch_free() must not rte_free the harness array */
+    rte_atomic32_set(&ctx->sch.active, 1);
+    rte_atomic32_set(&ctx->sch.ref_cnt, 1);
+    ut_sch_warns = 0;
+    ut_sch_warn_line[0] = '\0';
+    mt_set_log_global_level(MTL_LOG_LEVEL_WARNING);
+    mtl_set_log_printer(ut_sch_count_warns);
+    ret = mt_sch_put(&ctx->sch, 0);
+    mtl_set_log_printer(NULL);
+    mt_set_log_global_level(level);
+    *warns = ut_sch_warns;
+  }
+  ut_sch_mempolicy_ctx_destroy(ctx);
+  return ret;
+}
+
+const char* ut_sch_first_warn(void) {
+  return ut_sch_warn_line;
 }

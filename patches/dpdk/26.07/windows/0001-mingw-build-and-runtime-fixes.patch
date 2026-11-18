@@ -1,3 +1,23 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: "Wesierski, Dawid" <dawid.wesierski@intel.com>
+Date: Fri, 28 Aug 2026 00:00:00 +0000
+Subject: [PATCH] windows: fix the MinGW build and runtime of MTL
+
+The Windows build of MTL needs these changes of DPDK 26.07:
+
+* app/test: do not build test_pcapng.c, which needs a pcap library that
+  the MinGW build does not have.
+* net/ice: on Windows, read the DDP package from ./ice.pkg and from
+  c:\dpdk\lib\ice.pkg, and do not use the Linux firmware paths.
+* eal/windows: read a firmware file with rte_firmware_read(), so that
+  the ice PMD can load the DDP package.
+* eal: on Windows, do not set the affinity of a control thread, nor of
+  the main and worker threads at init.
+* eal/windows: set the timer resolution to its maximum at init.
+* eal/windows: the getopt and pthread shims build with MinGW.
+
+Signed-off-by: "Wesierski, Dawid" <dawid.wesierski@intel.com>
+---
 diff --git a/app/test/meson.build b/app/test/meson.build
 index 51abeeb732..07588c85be 100644
 --- a/app/test/meson.build

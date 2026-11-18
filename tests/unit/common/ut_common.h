@@ -17,6 +17,10 @@
 #include <rte_ring.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
+#ifdef _WIN32
+#include <malloc.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,6 +28,24 @@ extern "C" {
 
 #define UT_POOL_SIZE 2048
 #define UT_RING_SIZE 512
+
+/* C11 aligned_alloc() and its free(). mingw-w64 has no aligned_alloc(), and the
+ * memory of its _aligned_malloc() goes back with _aligned_free() alone. */
+static inline void* ut_aligned_alloc(size_t align, size_t size) {
+#ifdef _WIN32
+  return _aligned_malloc(size, align);
+#else
+  return aligned_alloc(align, size);
+#endif
+}
+
+static inline void ut_aligned_free(void* p) {
+#ifdef _WIN32
+  _aligned_free(p);
+#else
+  free(p);
+#endif
+}
 
 /** Initialise DPDK EAL (idempotent — safe to call from multiple harnesses). */
 int ut_eal_init(void);

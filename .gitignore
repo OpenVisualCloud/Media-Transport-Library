@@ -91,6 +91,7 @@ tests/acceptance/logs
 html/
 test.*
 build/
+build_installer/
 out*
 assets/
 *.pkg

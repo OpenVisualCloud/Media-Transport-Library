@@ -251,9 +251,19 @@ uint64_t ut20_stat_idx_oo_bitmap(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_frames_incomplete(const ut20_test_ctx* ctx);
 uint64_t ut20_stat_pkts_unrecovered(const ut20_test_ctx* ctx);
 
-/* Invoke the production rv_stat() against the harness session without
- * standing up an mt_stat thread. Tests assert on its real log output. */
+/* Invoke the production rv_stat_collect() and rv_stat_log() against the harness
+ * session without standing up an mt_stat thread. Tests assert on their real log
+ * output. */
 void ut20_invoke_rv_stat(ut20_test_ctx* ctx);
+
+/* Run the periodic RX video stats dump (rv_sessions_stat) with a capturing log
+ * printer. Returns the number of log lines emitted; *locked_lines receives how
+ * many of them were emitted while the session spinlock was held. */
+int ut20_run_sessions_stat(ut20_test_ctx* ctx, int* locked_lines);
+/* Log text captured by the last ut20_run_sessions_stat() call. */
+const char* ut20_stat_log(void);
+void ut20_set_stat_pkts_received(ut20_test_ctx* ctx, uint64_t pkts);
+uint64_t ut20_stat_snapshot_pkts_received(const ut20_test_ctx* ctx);
 
 /* Route payload copies through a fake DMA engine: a copy completes only after it
  * is submitted, and never while the engine is stalled. */

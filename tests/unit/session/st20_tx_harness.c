@@ -1753,6 +1753,16 @@ static int ut_txv_migration_get_next_frame(void* priv, uint16_t* next_frame_idx,
 /* Off the caller's CPU, which the EAL pinned every thread to: on it the callback could
  * not run while the migration spins, holding the source slot. */
 static void ut_txv_migration_leave_cpu(int cpu) {
+#ifdef _WIN32
+  SYSTEM_INFO si;
+  DWORD_PTR mask = 0;
+
+  GetSystemInfo(&si);
+  /* one mask holds 64 cores */
+  for (DWORD c = 0; c < si.dwNumberOfProcessors && c < 64; c++)
+    if ((int)c != cpu) mask |= (DWORD_PTR)1 << c;
+  if (mask) SetThreadAffinityMask(GetCurrentThread(), mask);
+#else
   long cpus = sysconf(_SC_NPROCESSORS_ONLN);
   cpu_set_t set;
 
@@ -1760,6 +1770,7 @@ static void ut_txv_migration_leave_cpu(int cpu) {
   for (long c = 0; c < cpus && c < CPU_SETSIZE; c++)
     if (c != cpu) CPU_SET(c, &set);
   if (CPU_COUNT(&set)) pthread_setaffinity_np(pthread_self(), sizeof(set), &set);
+#endif
 }
 
 static void* ut_txv_migration_destination_scheduler(void* arg) {
@@ -1804,7 +1815,11 @@ static int ut_txv_migration_attempt(ut_txv_ctx* ctx, int timeout_ms) {
       .source_handle = &ctx->handle,
       .timeout_ms = timeout_ms,
       .stats_ret = -ECANCELED,
+#ifdef _WIN32
+      .main_cpu = (int)GetCurrentProcessorNumber(),
+#else
       .main_cpu = sched_getcpu(),
+#endif
   };
   pthread_t scheduler_thread, watchdog_thread;
   bool scheduler_started = false, watchdog_started = false;
@@ -3346,7 +3361,7 @@ static int ut_txv_own_callback_get_next_frame(void* priv, uint16_t* next_frame_i
   (void)meta;
 
   atomic_store(&o->entered, true);
-  while (!atomic_load(&o->release)) usleep(100);
+  while (!atomic_load(&o->release)) rte_delay_us_sleep(100);
   return -EBUSY;
 }
 
@@ -3390,11 +3405,12 @@ int ut_txv_control_during_own_callback(ut_txv_ctx* ctx, enum ut_txv_control call
   ret = -pthread_create(&scheduler_thread, NULL, ut_txv_own_callback_scheduler, &o);
   if (!ret) {
     uint64_t deadline = rte_get_tsc_cycles() + rte_get_tsc_hz();
-    while (!atomic_load(&o.entered) && rte_get_tsc_cycles() < deadline) usleep(100);
+    while (!atomic_load(&o.entered) && rte_get_tsc_cycles() < deadline)
+      rte_delay_us_sleep(100);
     if (!atomic_load(&o.entered)) ret = -ETIMEDOUT;
     if (!ret) ret = -pthread_create(&writer_thread, NULL, ut_txv_own_callback_writer, &o);
     if (!ret) {
-      usleep(20 * 1000); /* far past the spin of the wait */
+      rte_delay_us_sleep(20 * 1000); /* far past the spin of the wait */
       *done_in_callback = atomic_load(&o.call_done);
       atomic_store(&o.release, true);
       pthread_join(writer_thread, NULL);

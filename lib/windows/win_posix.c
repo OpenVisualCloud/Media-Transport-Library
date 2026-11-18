@@ -6,6 +6,9 @@
 
 #ifdef WINDOWSENV
 
+#include <errno.h>
+#include <io.h>
+
 char szName[] = "STSharedMemory";
 static uint32_t numberofmapping = 0;
 static struct filemap_info map_info[1024];
@@ -17,6 +20,8 @@ int shmget(key_t key, size_t size, int shmflg) {
   HANDLE hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
                                       size >> 32, size & 0xffffffff, szName);
   if (hMapFile != NULL) {
+    /* Windows keeps no attach count: 2 means that another handle held the section */
+    map_info[numberofmapping].nattch = (GetLastError() == ERROR_ALREADY_EXISTS) ? 2 : 1;
     map_info[numberofmapping].maphandle = hMapFile;
     map_info[numberofmapping].size = size;
     id = numberofmapping;
@@ -40,13 +45,32 @@ int shmdt(const void* shmaddr) {
 }
 
 int shmctl(int shmid, int cmd, struct shmid_ds* buf) {
-  MTL_MAY_UNUSED(shmid);
-
   if (cmd == IPC_STAT) {
-    buf->shm_nattch = 1;
+    buf->shm_nattch = map_info[shmid].nattch;
     return 0;
   } else
     return (-1);
+}
+
+int flock(int fd, int operation) {
+  HANDLE file = (HANDLE)_get_osfhandle(fd);
+  OVERLAPPED ov = {0};
+  BOOL ok;
+
+  if (file == INVALID_HANDLE_VALUE) {
+    errno = EBADF;
+    return -1;
+  }
+  if (operation & LOCK_UN) {
+    ok = UnlockFileEx(file, 0, MAXDWORD, MAXDWORD, &ov);
+  } else {
+    DWORD flags = (operation & LOCK_EX) ? LOCKFILE_EXCLUSIVE_LOCK : 0;
+    if (operation & LOCK_NB) flags |= LOCKFILE_FAIL_IMMEDIATELY;
+    ok = LockFileEx(file, flags, 0, MAXDWORD, MAXDWORD, &ov);
+  }
+  if (ok) return 0;
+  errno = (GetLastError() == ERROR_LOCK_VIOLATION) ? EWOULDBLOCK : EINVAL;
+  return -1;
 }
 
 #define POW10_7 10000000

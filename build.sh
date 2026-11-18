@@ -118,6 +118,15 @@ if [ "$build_unit" == "true" ]; then
 	meson_setup "${UNIT_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan" -Denable_unit_tests=true
 	ninja -C "${UNIT_BUILD_DIR}"
 
+	# The test binary reads libmtl from the build tree. Windows has no rpath, so
+	# the loader finds libmtl.dll through PATH alone. A native program such as
+	# task starts bash with a Windows PWD (C:/...), and the colon of the drive
+	# splits a PATH entry, so cygpath gives the MSYS2 form.
+	if [ "${OS:-}" == "Windows_NT" ]; then
+		PATH="$(cygpath -u "${UNIT_BUILD_DIR}/lib"):${PATH}"
+		export PATH
+	fi
+
 	if [ "$enable_asan" == "true" ]; then
 		ASAN_LIBRARY=$(cc -print-file-name=libasan.so)
 		LD_PRELOAD="${ASAN_LIBRARY}${LD_PRELOAD:+:${LD_PRELOAD}}" \

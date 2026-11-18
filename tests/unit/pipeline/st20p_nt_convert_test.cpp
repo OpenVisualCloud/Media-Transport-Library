@@ -23,6 +23,7 @@
 #include <string>
 #include <tuple>
 
+#include "common/ut_common.h"
 #include "pipeline/st20p_harness.h"
 #include "pipeline/st20p_tx_harness.h"
 #include "pipeline/st_convert_harness.h"
@@ -55,7 +56,7 @@ class Frame {
       size_ += f_.linesize[p] * lines;
     }
     if (!size_) size_ = st_frame_size(fmt, width, lines, false);
-    mem_ = static_cast<uint8_t*>(aligned_alloc(64, (offset + size_ + 63) / 64 * 64));
+    mem_ = static_cast<uint8_t*>(ut_aligned_alloc(64, (offset + size_ + 63) / 64 * 64));
     uint8_t* addr = mem_ + offset;
     for (uint8_t p = 0; p < planes; p++) {
       f_.addr[p] = addr;
@@ -64,7 +65,7 @@ class Frame {
     f_.buffer_size = f_.data_size = size_;
   }
   ~Frame() {
-    free(mem_);
+    ut_aligned_free(mem_);
   }
   Frame(const Frame&) = delete;
   Frame& operator=(const Frame&) = delete;
@@ -110,10 +111,10 @@ class Frame {
 class Scratch {
  public:
   explicit Scratch(size_t size)
-      : addr_(size ? aligned_alloc(64, (size + 63) / 64 * 64) : nullptr) {
+      : addr_(size ? ut_aligned_alloc(64, (size + 63) / 64 * 64) : nullptr) {
   }
   ~Scratch() {
-    free(addr_);
+    ut_aligned_free(addr_);
   }
   Scratch(const Scratch&) = delete;
   Scratch& operator=(const Scratch&) = delete;
