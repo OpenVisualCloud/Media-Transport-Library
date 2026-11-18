@@ -162,6 +162,8 @@ static uint64_t ut_trs_tsc_time_fn(struct mtl_main_impl* impl) {
 /* outside a scheduler, each call of ctx is a transmitter call of its own */
 static void ut_trs_visit_alone(struct ut_trs_ctx* ctx) {
   ctx->visit_pending = ctx->session.mgr == &ctx->mgr;
+  /* until that read, the call began at the latest time known */
+  if (ctx->visit_pending) ctx->mgr.visit_tsc = ctx->clock ? *ctx->clock : ctx->last_tsc;
 }
 
 static uint64_t ut_trs_ptp_time_fn(struct mtl_main_impl* impl, enum mtl_port port) {
