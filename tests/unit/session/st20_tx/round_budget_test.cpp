@@ -188,15 +188,33 @@ TEST(St20TxLead, TheFrameBuilderMeasuresTheLeadOfItsNextPkt) {
   ut_txv_destroy(ctx);
 }
 
-/* The lead is taken against the clock of the scheduler's last transmitter call, so a
- * clock that call read lag ns ago states it lag ns longer. */
-TEST(St20TxLead, TheLeadIsTakenAgainstTheTransmitterCallsClock) {
+/* The lead is taken against the builder call's clock: a stall since the scheduler's last
+ * transmitter call does not hide a builder behind. */
+TEST(St20TxLead, AStallBeforeTheBuildShowsInTheLead) {
   ASSERT_EQ(0, ut_txv_init());
   ut_txv_ctx* ctx = ut_txv_create();
   ASSERT_NE(nullptr, ctx);
   ut_txv_set_mock_tsc_time(ctx, 1000000);
   ut_txv_set_visit_lag_ns(ctx, 1000);
-  EXPECT_EQ(-300 + 1000, ut_txv_run_frame_visit(ctx, 1, -300));
+  EXPECT_EQ(-300, ut_txv_run_frame_visit(ctx, 1, -300));
+  ut_txv_destroy(ctx);
+}
+
+/* A sleeping scheduler judges falling behind by the lead only, and it sleeps after its
+ * transmitter call: a builder behind after the sleep errs. */
+TEST(St20TxLead, ABuilderBehindAfterASchedulerSleepErrs) {
+  ASSERT_EQ(0, ut_txv_init());
+  ut_txv_ctx* ctx = ut_txv_create();
+  ASSERT_NE(nullptr, ctx);
+  ut_txv_set_sch_allow_sleep(ctx, true);
+  ut_txv_set_mock_tsc_time(ctx, 1000000);
+  ut_txv_set_visit_lag_ns(ctx, 200000);
+  EXPECT_EQ(-300, ut_txv_run_frame_visit(ctx, 1, -300));
+  int locked_lines = 0;
+  ut_txv_run_sessions_stat(ctx, &locked_lines);
+  EXPECT_EQ(1, ut_txv_stat_err_lines());
+  EXPECT_NE(nullptr, std::strstr(ut_txv_stat_error_log_line(), "fall behind"))
+      << ut_txv_stat_error_log_line();
   ut_txv_destroy(ctx);
 }
 
