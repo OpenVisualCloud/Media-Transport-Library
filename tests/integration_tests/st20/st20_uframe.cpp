@@ -4,7 +4,7 @@
 
 #include "st20_common.h"
 
-int st20_rx_uframe_pg_callback(void* priv, void* frame,
+int st20_rx_uframe_pg_callback(void* /*priv*/, void* frame,
                                struct st20_rx_uframe_pg_meta* meta) {
   uint32_t w = meta->width;
   uint32_t h = meta->height;

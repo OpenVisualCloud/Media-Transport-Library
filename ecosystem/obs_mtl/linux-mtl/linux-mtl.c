@@ -45,6 +45,7 @@ enum st_frame_fmt obs_to_mtl_format(enum video_format fmt) {
 }
 
 enum st_fps obs_to_mtl_fps(uint32_t fps_num, uint32_t fps_den) {
+  MTL_MAY_UNUSED(fps_den);
   switch (fps_num) {
     case 30000:
       return ST_FPS_P29_97;

@@ -140,7 +140,7 @@ struct st_v4l2_tx_video_session {
   st20_tx_handle handle;
   struct st20_tx_ops ops_tx;
 
-  int framebuff_size;
+  unsigned int framebuff_size;
 
   struct st20_ext_frame* ext_frames;
 
@@ -374,7 +374,7 @@ static void* display_thread_func(void* arg) {
     if (d->font) {
       char text[32];
       sprintf(text, "FPS:\t%.2f", d->fps);
-      SDL_Color Red = {255, 0, 0};
+      SDL_Color Red = {255, 0, 0, SDL_ALPHA_OPAQUE};
       SDL_Surface* surfaceMessage = TTF_RenderText_Solid(d->font, text, Red);
       SDL_Texture* Message = SDL_CreateTextureFromSurface(d->renderer, surfaceMessage);
 
@@ -1364,7 +1364,7 @@ static int tx_video_frame_done(void* priv, uint16_t frame_idx,
 static void tx_video_debug_output(void) {
   struct st_v4l2_tx_video_session* tx_video_session = g_st_v4l2_tx->tx_video_sessions;
 
-  for (int i = 0; i < tx_video_session->framebuff_ctl.cnt; i++) {
+  for (unsigned int i = 0; i < tx_video_session->framebuff_ctl.cnt; i++) {
     printf("time %ld.%06ld %ld.%06ld %ld.%06ld\n",
            tx_video_session->framebuff_ctl.buffs[i].v4l2_ts.tv_sec,
            tx_video_session->framebuff_ctl.buffs[i].v4l2_ts.tv_nsec / 1000,
@@ -1902,7 +1902,7 @@ int main(int argc, char* argv[]) {
   st_v4l2_tx->tx_video_session_cnt = session_num;
 
   // create and register tx session
-  for (int i = 0; i < session_num; i++) {
+  for (unsigned int i = 0; i < session_num; i++) {
     tx_video_session = &(st_v4l2_tx->tx_video_sessions[i]);
     tx_video_session->ctx = st_v4l2_tx;
     tx_video_session->idx = i;
@@ -1924,7 +1924,7 @@ int main(int argc, char* argv[]) {
     memset(tx_video_session->framebuff_ctl.buffs, 0,
            sizeof(struct tx_frame_buff) * nbufs);
 
-    for (int j = 0; j < nbufs; j++) {
+    for (unsigned int j = 0; j < nbufs; j++) {
       tx_video_session->framebuff_ctl.buffs[j].status = TX_FRAME_FREE;
       tx_video_session->framebuff_ctl.buffs[j].size = 0;
     }
@@ -1978,7 +1978,7 @@ int main(int argc, char* argv[]) {
         goto error;
       }
 
-      if (getpagesize() < mtl_page_size(st_v4l2_tx->st)) {
+      if ((size_t)getpagesize() < mtl_page_size(st_v4l2_tx->st)) {
         printf("%s[%d] pagesize %d < pg_sz %ld\n", __func__, i, getpagesize(),
                mtl_page_size(st_v4l2_tx->st));
         ret = -EIO;
@@ -1994,7 +1994,7 @@ int main(int argc, char* argv[]) {
       }
       memset(tx_video_session->ext_frames, 0, sizeof(struct st20_ext_frame) * nbufs);
 
-      for (int j = 0; j < nbufs; ++j) {
+      for (unsigned int j = 0; j < nbufs; ++j) {
         tx_video_session->ext_frames[j].buf_addr = st_v4l2_tx->dev.buffers[j].mem[0];
         pg_size = mtl_page_size(st_v4l2_tx->st);
         map_size = tx_video_session->framebuff_size;
@@ -2042,7 +2042,7 @@ int main(int argc, char* argv[]) {
   }
 
   /*task create*/
-  for (int i = 0; i < session_num; i++) {
+  for (unsigned int i = 0; i < session_num; i++) {
     tx_video_session = &(st_v4l2_tx->tx_video_sessions[i]);
     ret = tx_video_thread_create(tx_video_session, v4l2_thread_priority, v4l2_thread_cpu);
     if (ret < 0) {
@@ -2074,7 +2074,7 @@ error:
 
   // printf("capture/transmit %d/%d frames\n", st_v4l2_tx->dqbuf_cnt,
   // tx_video_session->st20_frame_done_cnt);
-  for (int i = 0; i < session_num; i++) {
+  for (unsigned int i = 0; i < session_num; i++) {
     tx_video_session = &(st_v4l2_tx->tx_video_sessions[i]);
 
     if (tx_video_session->st20_app_thread) {
@@ -2091,11 +2091,11 @@ error:
   }
   printf("%s st_stop.\n", __func__);
 
-  for (int i = 0; i < session_num; i++) {
+  for (unsigned int i = 0; i < session_num; i++) {
     tx_video_session = &(st_v4l2_tx->tx_video_sessions[i]);
 
     if (tx_video_session->ext_frames) {
-      for (int j = 0; j < nbufs; ++j) {
+      for (unsigned int j = 0; j < nbufs; ++j) {
         if ((tx_video_session->ext_frames[j].buf_iova != MTL_BAD_IOVA) &&
             (tx_video_session->ext_frames[j].buf_iova != 0)) {
           ret = mtl_dma_unmap(st_v4l2_tx->st, tx_video_session->ext_frames[j].buf_addr,

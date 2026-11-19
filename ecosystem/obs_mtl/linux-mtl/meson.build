@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2022 Intel Corporation
 
-project('linux-mtl', 'c', default_options: ['buildtype=release'],
+project('linux-mtl', 'c', default_options: ['buildtype=release', 'warning_level=2'],
         version: run_command(find_program('cat'), files('../../../VERSION'), check: true).stdout().strip(),)
 
 cc = meson.get_compiler('c')
@@ -34,7 +34,12 @@ add_project_link_arguments('-Wl,-z,relro', '-Wl,-z,now', '-Wl,-z,noexecstack', l
 # args
 linux_mtl_c_args = []
 linux_mtl_c_args += ['-UHAVE_OBSCONFIG_H']
-linux_mtl_c_args += ['-Wno-stringop-truncation']
+linux_mtl_c_args += cc.get_supported_arguments(['-Wno-stringop-truncation'])
+
+# enable warning as error for non debug build
+if get_option('buildtype') != 'debug'
+  linux_mtl_c_args += ['-Werror']
+endif
 
 # build library
 shared_library(meson.project_name(), sources,

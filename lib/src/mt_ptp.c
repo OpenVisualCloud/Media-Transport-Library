@@ -28,7 +28,7 @@
 #ifdef WINDOWSENV
 // clang-format off
 #define be64toh(x) \
-  ((1 == ntohl(1)) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
+  ((1 == ntohl(1)) ? (uint64_t)(x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
 // clang-format on
 
 typedef BOOL(WINAPI* PGSTAP)(PDWORD64 lpTimeAdjustment, PDWORD64 lpTimeIncrement,
@@ -290,7 +290,7 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
         break;
     }
 
-    ptp->phc2sys.stat_delta_max = RTE_MAX(labs(offset), ptp->phc2sys.stat_delta_max);
+    ptp->phc2sys.stat_delta_max = RTE_MAX(llabs(offset), ptp->phc2sys.stat_delta_max);
 
     if (!ptp->phc2sys.locked) {
       /*
@@ -526,23 +526,23 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta, bool error_
       ptp_get_raw_time(ptp));
 
   if (5 == ptp->delta_result_cnt) /* clear the first 5 results */
-    ptp->delta_result_sum = labs(delta) * ptp->delta_result_cnt;
+    ptp->delta_result_sum = llabs(delta) * ptp->delta_result_cnt;
   else
-    ptp->delta_result_sum += labs(delta);
+    ptp->delta_result_sum += llabs(delta);
 
   ptp->delta_result_cnt++;
   /* update status */
   ptp->stat_delta_min = RTE_MIN(delta, ptp->stat_delta_min);
   ptp->stat_delta_max = RTE_MAX(delta, ptp->stat_delta_max);
   ptp->stat_delta_cnt++;
-  ptp->stat_delta_sum += labs(delta);
+  ptp->stat_delta_sum += llabs(delta);
 
   if (!ptp->locked) {
     /*
      * Be considered as locked while the max delta is continuously below 100ns.
      */
-    if (labs(ptp->stat_delta_max) < 100 && labs(ptp->stat_delta_max) > 0 &&
-        labs(ptp->stat_delta_min) < 100 && labs(ptp->stat_delta_min) > 0) {
+    if (llabs(ptp->stat_delta_max) < 100 && llabs(ptp->stat_delta_max) > 0 &&
+        llabs(ptp->stat_delta_min) < 100 && llabs(ptp->stat_delta_min) > 0) {
       if (ptp->stat_sync_keep > 100)
         ptp->locked = true;
       else
@@ -686,16 +686,17 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   delta /= 2;
 
   path_delay /= 2;
-  abs_delta = labs(delta);
+  abs_delta = llabs(delta);
 
   /* cancel the monitor */
   rte_eal_alarm_cancel(ptp_sync_timeout_handler, ptp);
   rte_eal_alarm_cancel(ptp_monitor_handler, ptp);
   if (ptp->delta_result_cnt) {
-    expect_delta = abs(ptp->expect_result_avg) * (RTE_MIN(ptp->delta_result_err + 2, 5));
+    expect_delta =
+        abs(ptp->expect_result_avg) * (RTE_MIN(ptp->delta_result_err + 2, (uint64_t)5));
     if (!expect_delta) {
       expect_delta = ptp->delta_result_sum / ptp->delta_result_cnt * 2;
-      expect_delta = RTE_MAX(expect_delta, 100 * 1000); /* min 100us */
+      expect_delta = RTE_MAX(expect_delta, (uint64_t)(100 * 1000)); /* min 100us */
     }
     if (abs_delta > expect_delta) {
 #if MT_PTP_PRINT_ERR_RESULT
@@ -730,13 +731,13 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   ptp->stat_correct_delta_min = RTE_MIN(correct_delta, ptp->stat_correct_delta_min);
   ptp->stat_correct_delta_max = RTE_MAX(correct_delta, ptp->stat_correct_delta_max);
   ptp->stat_correct_delta_cnt++;
-  ptp->stat_correct_delta_sum += labs(correct_delta);
+  ptp->stat_correct_delta_sum += llabs(correct_delta);
   ptp->stat_path_delay_min = RTE_MIN(path_delay, ptp->stat_path_delay_min);
   ptp->stat_path_delay_max = RTE_MAX(path_delay, ptp->stat_path_delay_max);
   ptp->stat_path_delay_cnt++;
-  ptp->stat_path_delay_sum += labs(path_delay);
+  ptp->stat_path_delay_sum += llabs(path_delay);
 
-  if (ptp->use_pi && labs(correct_delta) < 1000) {
+  if (ptp->use_pi && llabs(correct_delta) < 1000) {
     /* fine tune coefficient */
     ptp_update_coefficient(ptp, correct_delta);
     ptp->last_sync_ts = ptp_get_raw_time(ptp) + delta; /* approximation */
@@ -760,7 +761,7 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   }
 
   if (ptp->delta_result_cnt > 10) {
-    if (labs(delta) < 30000) {
+    if (llabs(delta) < 30000) {
       ptp->expect_result_cnt++;
       if (!ptp->expect_result_start_ns)
         ptp->expect_result_start_ns = mt_get_monotonic_time();
@@ -956,7 +957,8 @@ static int ptp_parse_sync(struct mt_ptp_impl* ptp, struct mt_ptp_sync_msg* msg, 
 
   uint64_t monitor_period_us = ptp->expect_result_period_ns / 1000 / 2;
   if (monitor_period_us) {
-    monitor_period_us = RTE_MAX(monitor_period_us, 100 * 1000 * 1000); /* min 100ms */
+    monitor_period_us =
+        RTE_MAX(monitor_period_us, (uint64_t)(100 * 1000 * 1000)); /* min 100ms */
     if (ptp->t2) { /* already has a pending t2 */
       ptp_expect_result_clear(ptp);
       ptp_t_result_clear(ptp);
@@ -1141,7 +1143,7 @@ static void ptp_sync_from_user(struct mtl_main_impl* impl, struct mt_ptp_impl* p
   uint64_t target_ns = mt_get_ptp_time(impl, port);
   uint64_t raw_ns = ptp_get_raw_time(ptp);
   int64_t delta = (int64_t)target_ns - raw_ns;
-  uint64_t abs_delta = labs(delta);
+  uint64_t abs_delta = llabs(delta);
   uint64_t expect_abs_delta = abs(ptp->expect_result_avg) * 2;
 
   if (expect_abs_delta) {
@@ -1170,7 +1172,7 @@ static void ptp_sync_from_user(struct mtl_main_impl* impl, struct mt_ptp_impl* p
   ptp->stat_delta_min = RTE_MIN(delta, ptp->stat_delta_min);
   ptp->stat_delta_max = RTE_MAX(delta, ptp->stat_delta_max);
   ptp->stat_delta_cnt++;
-  ptp->stat_delta_sum += labs(delta);
+  ptp->stat_delta_sum += llabs(delta);
 }
 
 static void ptp_sync_from_user_handler(void* param) {
@@ -1226,8 +1228,10 @@ static void phc2sys_init(struct mt_ptp_impl* ptp) {
   HANDLE hDll;
 
   hDll = LoadLibrary("api-ms-win-core-sysinfo-l1-2-4.dll");
-  win_get_systime_adj = (PGSTAP)GetProcAddress(hDll, "GetSystemTimeAdjustmentPrecise");
-  win_set_systime_adj = (PSSTAP)GetProcAddress(hDll, "SetSystemTimeAdjustmentPrecise");
+  win_get_systime_adj =
+      (PGSTAP)((void*)GetProcAddress(hDll, "GetSystemTimeAdjustmentPrecise"));
+  win_set_systime_adj =
+      (PSSTAP)((void*)GetProcAddress(hDll, "SetSystemTimeAdjustmentPrecise"));
 
   if (obtain_systime_privileges()) return;
 

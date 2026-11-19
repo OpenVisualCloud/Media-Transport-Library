@@ -1714,7 +1714,7 @@ int st20_downsample_rfc4175_422be10_wh_half_avx512_vbmi(uint8_t* pg_old, uint8_t
   /* calculate batch size */
   int new_pg_per_line = w / 2;
   int batches = new_pg_per_line / new_pg_in_zmm;
-  for (int line = 0; line < h; line++) {
+  for (uint32_t line = 0; line < h; line++) {
     /* calculate offset */
     uint8_t* src = pg_old + linesize_old * line * 2;
     uint8_t* dst = pg_new + linesize_new * line;

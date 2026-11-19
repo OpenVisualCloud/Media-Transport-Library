@@ -406,6 +406,8 @@ static gboolean gst_mtl_st30p_rx_negotiate(GstBaseSrc* basesrc) {
 
 static GstFlowReturn gst_mtl_st30p_rx_create(GstBaseSrc* basesrc, guint64 offset,
                                              guint length, GstBuffer** buffer) {
+  MTL_MAY_UNUSED(offset);
+  MTL_MAY_UNUSED(length);
   GstBuffer* buf;
   Gst_Mtl_St30p_Rx* src = GST_MTL_ST30P_RX(basesrc);
   struct st30_frame* frame;
@@ -421,7 +423,7 @@ static GstFlowReturn gst_mtl_st30p_rx_create(GstBaseSrc* basesrc, guint64 offset
 
   *buffer = buf;
 
-  for (int i = 0; i < src->retry_frame; i++) {
+  for (guint i = 0; i < src->retry_frame; i++) {
     frame = st30p_rx_get_frame(src->rx_handle);
     if (frame) {
       break;

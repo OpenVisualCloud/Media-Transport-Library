@@ -28,19 +28,11 @@ struct FfmpegOptionContext {
   StDevArgs devArgs;
 };
 
-#define OFFSET(field) offsetof(FfmpegOptionContext, field)
-#define ENC 1
-static constexpr int kEncodingOptionFlag = ENC;
-static const AVOption kTxOptions[] = {MTL_TX_DEV_ARGS};
-#undef ENC
-#undef OFFSET
+static constexpr int kEncodingOptionFlag = UT_FFMPEG_ENC_FLAG;
+static const AVOption* const kTxOptions = ut_ffmpeg_tx_options;
 
-#define OFFSET(field) offsetof(FfmpegOptionContext, field)
-#define DEC 1
-static constexpr int kDecodingOptionFlag = DEC;
-static const AVOption kRxOptions[] = {MTL_RX_DEV_ARGS};
-#undef DEC
-#undef OFFSET
+static constexpr int kDecodingOptionFlag = UT_FFMPEG_DEC_FLAG;
+static const AVOption* const kRxOptions = ut_ffmpeg_rx_options;
 
 class FfmpegMtlCommonTest : public testing::Test {
  protected:
@@ -345,8 +337,8 @@ TEST_F(FfmpegMtlCommonTest, P2ThroughP7OptionsTargetMatchingSourceIndexes) {
     char option_name[32];
     const AVOption* port_option = nullptr;
     snprintf(option_name, sizeof(option_name), "p%d_port", source);
-    for (const AVOption& option : kTxOptions) {
-      if (!strcmp(option.name, option_name)) port_option = &option;
+    for (size_t i = 0; i < ut_ffmpeg_tx_options_cnt; i++) {
+      if (!strcmp(kTxOptions[i].name, option_name)) port_option = &kTxOptions[i];
     }
     ASSERT_NE(port_option, nullptr) << option_name;
     EXPECT_EQ(port_option->offset,
@@ -355,8 +347,8 @@ TEST_F(FfmpegMtlCommonTest, P2ThroughP7OptionsTargetMatchingSourceIndexes) {
 
     snprintf(option_name, sizeof(option_name), "p%d_sip", source);
     const AVOption* sip_option = nullptr;
-    for (const AVOption& option : kTxOptions) {
-      if (!strcmp(option.name, option_name)) sip_option = &option;
+    for (size_t i = 0; i < ut_ffmpeg_tx_options_cnt; i++) {
+      if (!strcmp(kTxOptions[i].name, option_name)) sip_option = &kTxOptions[i];
     }
     ASSERT_NE(sip_option, nullptr) << option_name;
     EXPECT_EQ(sip_option->offset,
@@ -365,8 +357,8 @@ TEST_F(FfmpegMtlCommonTest, P2ThroughP7OptionsTargetMatchingSourceIndexes) {
 
     snprintf(option_name, sizeof(option_name), "p%d_tx_queues", source);
     const AVOption* tx_option = nullptr;
-    for (const AVOption& option : kTxOptions) {
-      if (!strcmp(option.name, option_name)) tx_option = &option;
+    for (size_t i = 0; i < ut_ffmpeg_tx_options_cnt; i++) {
+      if (!strcmp(kTxOptions[i].name, option_name)) tx_option = &kTxOptions[i];
     }
     ASSERT_NE(tx_option, nullptr) << option_name;
     EXPECT_EQ(tx_option->offset,
@@ -375,8 +367,8 @@ TEST_F(FfmpegMtlCommonTest, P2ThroughP7OptionsTargetMatchingSourceIndexes) {
 
     snprintf(option_name, sizeof(option_name), "p%d_rx_queues", source);
     const AVOption* rx_option = nullptr;
-    for (const AVOption& option : kTxOptions) {
-      if (!strcmp(option.name, option_name)) rx_option = &option;
+    for (size_t i = 0; i < ut_ffmpeg_tx_options_cnt; i++) {
+      if (!strcmp(kTxOptions[i].name, option_name)) rx_option = &kTxOptions[i];
     }
     ASSERT_NE(rx_option, nullptr) << option_name;
     EXPECT_EQ(rx_option->offset,
@@ -507,7 +499,8 @@ TEST_F(FfmpegMtlCommonTest, InvalidPacingWayRejectsBeforeMtlInit) {
 
 TEST_F(FfmpegMtlCommonTest, PacingWayOptionTargetsBothDeviceDirections) {
   for (const AVOption* options : {kTxOptions, kRxOptions}) {
-    size_t count = options == kTxOptions ? std::size(kTxOptions) : std::size(kRxOptions);
+    size_t count =
+        options == kTxOptions ? ut_ffmpeg_tx_options_cnt : ut_ffmpeg_rx_options_cnt;
     int expected_flags =
         options == kTxOptions ? kEncodingOptionFlag : kDecodingOptionFlag;
     const AVOption* pacing_option = nullptr;
@@ -802,7 +795,8 @@ TEST_F(FfmpegMtlCommonTest, OverlongPortNameRejectsBeforePmdDetection) {
 
 TEST_F(FfmpegMtlCommonTest, QueueOptionsUseInitParameterRange) {
   for (const AVOption* options : {kTxOptions, kRxOptions}) {
-    size_t count = options == kTxOptions ? std::size(kTxOptions) : std::size(kRxOptions);
+    size_t count =
+        options == kTxOptions ? ut_ffmpeg_tx_options_cnt : ut_ffmpeg_rx_options_cnt;
     for (size_t i = 0; i < count; i++) {
       if (!strstr(options[i].name, "queues")) continue;
       EXPECT_EQ(options[i].min, 0) << options[i].name;

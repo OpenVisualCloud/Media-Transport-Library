@@ -394,8 +394,8 @@ TEST(Cvt, yuv422p10le_to_rfc4175_422be10_avx512_vbmi_dma) {
 }
 
 static void test_cvt_rfc4175_422le10_to_yuv422p10le(int w, int h,
-                                                    enum mtl_simd_level cvt_level,
-                                                    enum mtl_simd_level back_level) {
+                                                    enum mtl_simd_level /*cvt_level*/,
+                                                    enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 5 / 2;
   struct st20_rfc4175_422_10_pg2_le* pg =
@@ -441,8 +441,8 @@ TEST(Cvt, rfc4175_422le10_to_yuv422p10le_scalar) {
 }
 
 static void test_cvt_yuv422p10le_to_rfc4175_422le10(int w, int h,
-                                                    enum mtl_simd_level cvt_level,
-                                                    enum mtl_simd_level back_level) {
+                                                    enum mtl_simd_level /*cvt_level*/,
+                                                    enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 5 / 2;
   struct st20_rfc4175_422_10_pg2_le* pg =
@@ -722,7 +722,7 @@ static void test_cvt_rfc4175_422le10_to_422be10(int w, int h,
 
 static void test_cvt_rfc4175_422le10_to_422be10_2(int w, int h,
                                                   enum mtl_simd_level cvt_level,
-                                                  enum mtl_simd_level back_level) {
+                                                  enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg2_size = w * h * 5 / 2;
   struct st20_rfc4175_422_10_pg2_le* pg_le =
@@ -939,7 +939,7 @@ static int test_cvt_extend_rfc4175_422le8_to_422be10(
 
 static void test_cvt_rfc4175_422be10_to_422le8(int w, int h,
                                                enum mtl_simd_level cvt_level,
-                                               enum mtl_simd_level back_level) {
+                                               enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg2_size_10 = (size_t)w * h * 5 / 2;
   size_t fb_pg2_size_8 = (size_t)w * h * 2;
@@ -1013,7 +1013,7 @@ TEST(Cvt, rfc4175_422be10_to_422le8_avx512_vbmi) {
 
 static void test_cvt_rfc4175_422be10_to_422le8_dma(mtl_udma_handle dma, int w, int h,
                                                    enum mtl_simd_level cvt_level,
-                                                   enum mtl_simd_level back_level) {
+                                                   enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg2_size_10 = (size_t)w * h * 5 / 2;
   size_t fb_pg2_size_8 = (size_t)w * h * 2;
@@ -1245,7 +1245,7 @@ TEST(Cvt, rfc4175_422be10_to_yuv420p8) {
 }
 
 static void test_cvt_rfc4175_422le10_to_v210(int w, int h, enum mtl_simd_level cvt_level,
-                                             enum mtl_simd_level back_level) {
+                                             enum mtl_simd_level /*back_level*/) {
   int ret;
   bool fail_case = (w * h % 6); /* do not convert when pg_num is not multiple of 3 */
   size_t fb_pg2_size = w * h * 5 / 2;
@@ -1326,7 +1326,7 @@ TEST(Cvt, rfc4175_422le10_to_v210_avx512_vbmi) {
 }
 
 static void test_cvt_rfc4175_422be10_to_v210(int w, int h, enum mtl_simd_level cvt_level,
-                                             enum mtl_simd_level back_level) {
+                                             enum mtl_simd_level /*back_level*/) {
   int ret;
   bool fail_case = (w * h % 6); /* do not convert when pg_num is not multiple of 3 */
   size_t fb_pg2_size = w * h * 5 / 2;
@@ -1414,7 +1414,7 @@ TEST(Cvt, rfc4175_422be10_to_v210_avx512_vbmi) {
 
 static void test_cvt_rfc4175_422be10_to_v210_dma(mtl_udma_handle dma, int w, int h,
                                                  enum mtl_simd_level cvt_level,
-                                                 enum mtl_simd_level back_level) {
+                                                 enum mtl_simd_level /*back_level*/) {
   int ret;
   bool fail_case = (w * h % 6); /* do not convert when pg_num is not multiple of 3 */
   size_t fb_pg2_size = w * h * 5 / 2;
@@ -1871,7 +1871,7 @@ TEST(Cvt, rfc4175_422be10_to_y210_avx512) {
 
 static void test_cvt_rfc4175_422be10_to_y210_dma(mtl_udma_handle dma, int w, int h,
                                                  enum mtl_simd_level cvt_level,
-                                                 enum mtl_simd_level back_level) {
+                                                 enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 5 / 2;
   size_t fb_pg2_size_y210 = (size_t)w * h * 4;
@@ -2097,7 +2097,7 @@ TEST(Cvt, y210_to_rfc4175_422be10_avx512_dma) {
 }
 
 static void test_rotate_rfc4175_422be10_422le10_yuv422p10le(
-    int w, int h, enum mtl_simd_level cvt1_level, enum mtl_simd_level cvt2_level,
+    int w, int h, enum mtl_simd_level cvt1_level, enum mtl_simd_level /*cvt2_level*/,
     enum mtl_simd_level cvt3_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 5 / 2;
@@ -2165,8 +2165,8 @@ TEST(Cvt, rotate_rfc4175_422be10_422le10_yuv422p10le_scalar) {
 }
 
 static void test_rotate_rfc4175_422be10_yuv422p10le_422le10(
-    int w, int h, enum mtl_simd_level cvt1_level, enum mtl_simd_level cvt2_level,
-    enum mtl_simd_level cvt3_level) {
+    int w, int h, enum mtl_simd_level cvt1_level, enum mtl_simd_level /*cvt2_level*/,
+    enum mtl_simd_level /*cvt3_level*/) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 5 / 2;
   struct st20_rfc4175_422_10_pg2_be* pg_be =
@@ -2447,8 +2447,8 @@ TEST(Cvt, yuv422p12le_to_rfc4175_422be12_scalar) {
 }
 
 static void test_cvt_rfc4175_422le12_to_yuv422p12le(int w, int h,
-                                                    enum mtl_simd_level cvt_level,
-                                                    enum mtl_simd_level back_level) {
+                                                    enum mtl_simd_level /*cvt_level*/,
+                                                    enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 6 / 2;
   struct st20_rfc4175_422_12_pg2_le* pg =
@@ -2494,8 +2494,8 @@ TEST(Cvt, rfc4175_422le12_to_yuv422p12le_scalar) {
 }
 
 static void test_cvt_yuv422p12le_to_rfc4175_422le12(int w, int h,
-                                                    enum mtl_simd_level cvt_level,
-                                                    enum mtl_simd_level back_level) {
+                                                    enum mtl_simd_level /*cvt_level*/,
+                                                    enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 6 / 2;
   struct st20_rfc4175_422_12_pg2_le* pg =
@@ -2724,7 +2724,7 @@ static void test_cvt_rfc4175_422le12_to_422be12(int w, int h,
 
 static void test_cvt_rfc4175_422le12_to_422be12_2(int w, int h,
                                                   enum mtl_simd_level cvt_level,
-                                                  enum mtl_simd_level back_level) {
+                                                  enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg2_size = w * h * 6 / 2;
   struct st20_rfc4175_422_12_pg2_le* pg_le =
@@ -2769,7 +2769,7 @@ TEST(Cvt, rfc4175_422le12_to_422be12_scalar) {
 }
 
 static void test_rotate_rfc4175_422be12_422le12_yuv422p12le(
-    int w, int h, enum mtl_simd_level cvt1_level, enum mtl_simd_level cvt2_level,
+    int w, int h, enum mtl_simd_level cvt1_level, enum mtl_simd_level /*cvt2_level*/,
     enum mtl_simd_level cvt3_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 6 / 2;
@@ -2818,8 +2818,8 @@ TEST(Cvt, rotate_rfc4175_422be12_422le12_yuv422p12le_scalar) {
 }
 
 static void test_rotate_rfc4175_422be12_yuv422p12le_422le12(
-    int w, int h, enum mtl_simd_level cvt1_level, enum mtl_simd_level cvt2_level,
-    enum mtl_simd_level cvt3_level) {
+    int w, int h, enum mtl_simd_level cvt1_level, enum mtl_simd_level /*cvt2_level*/,
+    enum mtl_simd_level /*cvt3_level*/) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 6 / 2;
   struct st20_rfc4175_422_12_pg2_be* pg_be =
@@ -2962,8 +2962,8 @@ TEST(Cvt, 444p10le_to_rfc4175_444be10_scalar) {
 }
 
 static void test_cvt_rfc4175_444le10_to_yuv444p10le(int w, int h,
-                                                    enum mtl_simd_level cvt_level,
-                                                    enum mtl_simd_level back_level) {
+                                                    enum mtl_simd_level /*cvt_level*/,
+                                                    enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg4_size = (size_t)w * h * 15 / 4;
   struct st20_rfc4175_444_10_pg4_le* pg =
@@ -3009,8 +3009,8 @@ TEST(Cvt, rfc4175_444le10_to_yuv444p10le_scalar) {
 }
 
 static void test_cvt_rfc4175_444le10_to_gbrp10le(int w, int h,
-                                                 enum mtl_simd_level cvt_level,
-                                                 enum mtl_simd_level back_level) {
+                                                 enum mtl_simd_level /*cvt_level*/,
+                                                 enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg4_size = (size_t)w * h * 15 / 4;
   struct st20_rfc4175_444_10_pg4_le* pg =
@@ -3056,8 +3056,8 @@ TEST(Cvt, rfc4175_444le10_to_gbrp10le_scalar) {
 }
 
 static void test_cvt_yuv444p10le_to_rfc4175_444le10(int w, int h,
-                                                    enum mtl_simd_level cvt_level,
-                                                    enum mtl_simd_level back_level) {
+                                                    enum mtl_simd_level /*cvt_level*/,
+                                                    enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg4_size = (size_t)w * h * 15 / 4;
   struct st20_rfc4175_444_10_pg4_le* pg =
@@ -3104,8 +3104,8 @@ TEST(Cvt, yuv444p10le_to_rfc4175_444le10_scalar) {
 }
 
 static void test_cvt_gbrp10le_to_rfc4175_444le10(int w, int h,
-                                                 enum mtl_simd_level cvt_level,
-                                                 enum mtl_simd_level back_level) {
+                                                 enum mtl_simd_level /*cvt_level*/,
+                                                 enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg4_size = (size_t)w * h * 15 / 4;
   struct st20_rfc4175_444_10_pg4_le* pg =
@@ -3232,7 +3232,7 @@ static void test_cvt_rfc4175_444le10_to_444be10(int w, int h,
 
 static void test_cvt_rfc4175_444le10_to_444be10_2(int w, int h,
                                                   enum mtl_simd_level cvt_level,
-                                                  enum mtl_simd_level back_level) {
+                                                  enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg4_size = w * h * 15 / 4;
   struct st20_rfc4175_444_10_pg4_le* pg_le =
@@ -3275,10 +3275,9 @@ TEST(Cvt, rfc4175_444le10_to_444be10_scalar) {
                                       MTL_SIMD_LEVEL_NONE);
 }
 
-static void test_rotate_rfc4175_444be10_444le10_444p10le(int w, int h,
-                                                         enum mtl_simd_level cvt1_level,
-                                                         enum mtl_simd_level cvt2_level,
-                                                         enum mtl_simd_level cvt3_level) {
+static void test_rotate_rfc4175_444be10_444le10_444p10le(
+    int w, int h, enum mtl_simd_level cvt1_level, enum mtl_simd_level /*cvt2_level*/,
+    enum mtl_simd_level cvt3_level) {
   int ret;
   size_t fb_pg4_size = (size_t)w * h * 15 / 4;
   struct st20_rfc4175_444_10_pg4_be* pg_be =
@@ -3325,10 +3324,9 @@ TEST(Cvt, rotate_rfc4175_444be10_444le10_444p10le_scalar) {
                                                MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
 }
 
-static void test_rotate_rfc4175_444be10_444p10le_444le10(int w, int h,
-                                                         enum mtl_simd_level cvt1_level,
-                                                         enum mtl_simd_level cvt2_level,
-                                                         enum mtl_simd_level cvt3_level) {
+static void test_rotate_rfc4175_444be10_444p10le_444le10(
+    int w, int h, enum mtl_simd_level cvt1_level, enum mtl_simd_level /*cvt2_level*/,
+    enum mtl_simd_level /*cvt3_level*/) {
   int ret;
   size_t fb_pg4_size = (size_t)w * h * 15 / 4;
   struct st20_rfc4175_444_10_pg4_be* pg_be =
@@ -3471,8 +3469,8 @@ TEST(Cvt, 444p12le_to_rfc4175_444be12_scalar) {
 }
 
 static void test_cvt_rfc4175_444le12_to_yuv444p12le(int w, int h,
-                                                    enum mtl_simd_level cvt_level,
-                                                    enum mtl_simd_level back_level) {
+                                                    enum mtl_simd_level /*cvt_level*/,
+                                                    enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 9 / 2;
   struct st20_rfc4175_444_12_pg2_le* pg =
@@ -3518,8 +3516,8 @@ TEST(Cvt, rfc4175_444le12_to_yuv444p12le_scalar) {
 }
 
 static void test_cvt_rfc4175_444le12_to_gbrp12le(int w, int h,
-                                                 enum mtl_simd_level cvt_level,
-                                                 enum mtl_simd_level back_level) {
+                                                 enum mtl_simd_level /*cvt_level*/,
+                                                 enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 9 / 2;
   struct st20_rfc4175_444_12_pg2_le* pg =
@@ -3565,8 +3563,8 @@ TEST(Cvt, rfc4175_444le12_to_gbrp12le_scalar) {
 }
 
 static void test_cvt_yuv444p12le_to_rfc4175_444le12(int w, int h,
-                                                    enum mtl_simd_level cvt_level,
-                                                    enum mtl_simd_level back_level) {
+                                                    enum mtl_simd_level /*cvt_level*/,
+                                                    enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 9 / 2;
   struct st20_rfc4175_444_12_pg2_le* pg =
@@ -3613,8 +3611,8 @@ TEST(Cvt, yuv444p12le_to_rfc4175_444le12_scalar) {
 }
 
 static void test_cvt_gbrp12le_to_rfc4175_444le12(int w, int h,
-                                                 enum mtl_simd_level cvt_level,
-                                                 enum mtl_simd_level back_level) {
+                                                 enum mtl_simd_level /*cvt_level*/,
+                                                 enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 9 / 2;
   struct st20_rfc4175_444_12_pg2_le* pg =
@@ -3741,7 +3739,7 @@ static void test_cvt_rfc4175_444le12_to_444be12(int w, int h,
 
 static void test_cvt_rfc4175_444le12_to_444be12_2(int w, int h,
                                                   enum mtl_simd_level cvt_level,
-                                                  enum mtl_simd_level back_level) {
+                                                  enum mtl_simd_level /*back_level*/) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 9 / 2;
   struct st20_rfc4175_444_12_pg2_le* pg_le =
@@ -3784,10 +3782,9 @@ TEST(Cvt, rfc4175_444le12_to_444be12_scalar) {
                                       MTL_SIMD_LEVEL_NONE);
 }
 
-static void test_rotate_rfc4175_444be12_444le12_444p12le(int w, int h,
-                                                         enum mtl_simd_level cvt1_level,
-                                                         enum mtl_simd_level cvt2_level,
-                                                         enum mtl_simd_level cvt3_level) {
+static void test_rotate_rfc4175_444be12_444le12_444p12le(
+    int w, int h, enum mtl_simd_level cvt1_level, enum mtl_simd_level /*cvt2_level*/,
+    enum mtl_simd_level cvt3_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 9 / 2;
   struct st20_rfc4175_444_12_pg2_be* pg_be =
@@ -3834,10 +3831,9 @@ TEST(Cvt, rotate_rfc4175_444be12_444le12_444p12le_scalar) {
                                                MTL_SIMD_LEVEL_NONE, MTL_SIMD_LEVEL_NONE);
 }
 
-static void test_rotate_rfc4175_444be12_444p12le_444le12(int w, int h,
-                                                         enum mtl_simd_level cvt1_level,
-                                                         enum mtl_simd_level cvt2_level,
-                                                         enum mtl_simd_level cvt3_level) {
+static void test_rotate_rfc4175_444be12_444p12le_444le12(
+    int w, int h, enum mtl_simd_level cvt1_level, enum mtl_simd_level /*cvt2_level*/,
+    enum mtl_simd_level /*cvt3_level*/) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 9 / 2;
   struct st20_rfc4175_444_12_pg2_be* pg_be =

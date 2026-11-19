@@ -111,13 +111,13 @@ struct shmid_ds {
   void* shm_unused3;
 };
 
-static int inline flock(int fd, int operation) {
+static inline int flock(int fd, int operation) {
   MTL_MAY_UNUSED(fd);
   MTL_MAY_UNUSED(operation);
   return 0;
 }
 
-static key_t inline ftok(const char* path, int id) {
+static inline key_t ftok(const char* path, int id) {
   MTL_MAY_UNUSED(path);
   MTL_MAY_UNUSED(id);
   return 0;

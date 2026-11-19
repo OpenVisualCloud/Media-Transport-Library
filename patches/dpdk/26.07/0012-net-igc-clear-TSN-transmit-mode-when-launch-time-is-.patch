@@ -1,0 +1,89 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Grzegorz Rys <grzegorz.rys@intel.com>
+Date: Wed, 18 Nov 2026 11:15:50 +0100
+Subject: [PATCH] net/igc: clear TSN transmit mode when launch time is off
+
+igc_dev_start() turns TSN transmit mode on when the Tx timestamp
+dynamic flag is registered: it sets TRANSMIT_MODE_TSN and ENHANCED_QAV
+in TQAVCTRL, sets QUEUE_MODE_LAUNCHT in TXQCTL of every Tx queue, and
+writes the TSN values to TXPBS and DTXMXPKTSZ. Nothing clears these
+registers. The MAC reset in igc_dev_stop() does not touch them.
+
+A later start of the same port without launch time keeps its queues in
+launch-time mode, and the packets carry no launch time. The Tx queue
+accepts packets but sends next to nothing, until the port gets a full
+reset, for example a bind to the kernel igc driver.
+
+Put the registers back to their defaults when the port stops, and when
+it starts without launch time. The kernel igc driver does the same in
+igc_tsn_disable_offload().
+
+Signed-off-by: Grzegorz Rys <grzegorz.rys@intel.com>
+---
+ drivers/net/intel/e1000/base/e1000_defines.h |  1 +
+ drivers/net/intel/e1000/igc_ethdev.c         | 26 ++++++++++++++++++++
+ 2 files changed, 27 insertions(+)
+
+diff --git a/drivers/net/intel/e1000/base/e1000_defines.h b/drivers/net/intel/e1000/base/e1000_defines.h
+index ba12dde770..afb264b348 100644
+--- a/drivers/net/intel/e1000/base/e1000_defines.h
++++ b/drivers/net/intel/e1000/base/e1000_defines.h
+@@ -190,6 +190,7 @@
+ #define E1000_RCTL_SECRC	0x04000000 /* Strip Ethernet CRC */
+ 
+ #define E1000_DTXMXPKTSZ_TSN	0x19 /* 1600 bytes of max TX DMA packet size */
++#define E1000_DTXMXPKTSZ_DEFAULT	0x98 /* 9728 bytes of max TX DMA packet size */
+ #define E1000_TXPBSIZE_TSN	0x04145145 /* 5k bytes buffer for each queue */
+ 
+ /* Transmit Scheduling */
+diff --git a/drivers/net/intel/e1000/igc_ethdev.c b/drivers/net/intel/e1000/igc_ethdev.c
+index de35da2c36..ef56199398 100644
+--- a/drivers/net/intel/e1000/igc_ethdev.c
++++ b/drivers/net/intel/e1000/igc_ethdev.c
+@@ -670,6 +670,29 @@ eth_igc_rxtx_control(struct rte_eth_dev *dev, bool enable)
+ 	E1000_WRITE_FLUSH(hw);
+ }
+ 
++/*
++ * Put the TSN transmit registers back to their defaults. A MAC reset does
++ * not clear them, so a port left in TSN mode stalls the next run that does
++ * not use launch time.
++ */
++static void
++igc_tsn_disable(struct e1000_hw *hw)
++{
++	uint32_t tqavctrl;
++	int i;
++
++	E1000_WRITE_REG(hw, E1000_TXPBS, I225_TXPBSIZE_DEFAULT);
++	E1000_WRITE_REG(hw, E1000_I350_DTXMXPKTSZ, E1000_DTXMXPKTSZ_DEFAULT);
++
++	tqavctrl = E1000_READ_REG(hw, E1000_I210_TQAVCTRL);
++	tqavctrl &= ~(E1000_TQAVCTRL_TRANSMIT_MODE_TSN |
++		      E1000_TQAVCTRL_ENHANCED_QAV);
++	E1000_WRITE_REG(hw, E1000_I210_TQAVCTRL, tqavctrl);
++
++	for (i = 0; i < IGC_QUEUE_PAIRS_NUM; i++)
++		E1000_WRITE_REG(hw, E1000_TXQCTL(i), 0);
++}
++
+ /*
+  *  This routine disables all traffic on the adapter by issuing a
+  *  global reset on the MAC.
+@@ -712,6 +735,7 @@ eth_igc_stop(struct rte_eth_dev *dev)
+ 	rte_intr_disable(intr_handle);
+ 
+ 	e1000_reset_hw(hw);
++	igc_tsn_disable(hw);
+ 
+ 	/* disable all wake up */
+ 	E1000_WRITE_REG(hw, E1000_WUC, 0);
+@@ -1112,6 +1136,8 @@ eth_igc_start(struct rte_eth_dev *dev)
+ 		baset_l = adapter->base_time % NSEC_PER_SEC;
+ 		E1000_WRITE_REG(hw, E1000_BASET_H, baset_h);
+ 		E1000_WRITE_REG(hw, E1000_BASET_L, baset_l);
++	} else {
++		igc_tsn_disable(hw);
+ 	}
+ 
+ 	e1000_clear_hw_cntrs_base_generic(hw);

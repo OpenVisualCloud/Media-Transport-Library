@@ -631,7 +631,7 @@ static int parse_video_format(json_object* video_obj, st_json_video_session_t* v
   const char* video_format =
       json_object_get_string(st_json_object_object_get(video_obj, "video_format"));
   REQUIRED_ITEM(video_format);
-  int i;
+  size_t i;
   for (i = 0; i < ARRAY_SIZE(st_video_fmt_descs); i++) {
     if (strcmp(video_format, st_video_fmt_descs[i].name) == 0) {
       video->info.video_format = st_video_fmt_descs[i].fmt;
@@ -875,7 +875,7 @@ static int parse_audio_channel(json_object* audio_obj, st_json_audio_info_t* aud
     return -ST_JSON_PARSE_FAIL;
   }
   audio->audio_channel = 0; /* reset channel number*/
-  for (int i = 0; i < json_object_array_length(audio_channel_array); ++i) {
+  for (size_t i = 0; i < json_object_array_length(audio_channel_array); ++i) {
     json_object* channel_obj = json_object_array_get_idx(audio_channel_array, i);
     const char* channel = json_object_get_string(channel_obj);
     REQUIRED_ITEM(channel);
@@ -2162,7 +2162,7 @@ static int parse_session_num(json_object* group, const char* name) {
   int num = 0;
   json_object* session_array = st_json_object_object_get(group, name);
   if (session_array != NULL && json_object_get_type(session_array) == json_type_array) {
-    for (int j = 0; j < json_object_array_length(session_array); ++j) {
+    for (size_t j = 0; j < json_object_array_length(session_array); ++j) {
       json_object* session = json_object_array_get_idx(session_array, j);
       int replicas = json_object_get_int(st_json_object_object_get(session, "replicas"));
       if (replicas < 0) {
@@ -2405,7 +2405,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
   json_object* tx_group_array = st_json_object_object_get(root_object, "tx_sessions");
   if (tx_group_array != NULL && json_object_get_type(tx_group_array) == json_type_array) {
     /* parse session numbers for array allocation */
-    for (int i = 0; i < json_object_array_length(tx_group_array); ++i) {
+    for (size_t i = 0; i < json_object_array_length(tx_group_array); ++i) {
       json_object* tx_group = json_object_array_get_idx(tx_group_array, i);
       if (tx_group == NULL) {
         err("%s, can not parse tx session group\n", __func__);
@@ -2478,7 +2478,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
     int num_st20p = 0;
     int num_st30p = 0;
 
-    for (int i = 0; i < json_object_array_length(tx_group_array); ++i) {
+    for (size_t i = 0; i < json_object_array_length(tx_group_array); ++i) {
       json_object* tx_group = json_object_array_get_idx(tx_group_array, i);
       if (tx_group == NULL) {
         err("%s, can not parse tx session group\n", __func__);
@@ -2546,7 +2546,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       /* parse tx video sessions */
       json_object* video_array = st_json_object_object_get(tx_group, "video");
       if (video_array != NULL && json_object_get_type(video_array) == json_type_array) {
-        for (int j = 0; j < json_object_array_length(video_array); ++j) {
+        for (size_t j = 0; j < json_object_array_length(video_array); ++j) {
           json_object* video_session = json_object_array_get_idx(video_array, j);
           int replicas =
               json_object_get_int(st_json_object_object_get(video_session, "replicas"));
@@ -2580,7 +2580,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       /* parse tx audio sessions */
       json_object* audio_array = st_json_object_object_get(tx_group, "audio");
       if (audio_array != NULL && json_object_get_type(audio_array) == json_type_array) {
-        for (int j = 0; j < json_object_array_length(audio_array); ++j) {
+        for (size_t j = 0; j < json_object_array_length(audio_array); ++j) {
           json_object* audio_session = json_object_array_get_idx(audio_array, j);
           int replicas =
               json_object_get_int(st_json_object_object_get(audio_session, "replicas"));
@@ -2613,7 +2613,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       /* parse tx ancillary sessions */
       json_object* anc_array = st_json_object_object_get(tx_group, "ancillary");
       if (anc_array != NULL && json_object_get_type(anc_array) == json_type_array) {
-        for (int j = 0; j < json_object_array_length(anc_array); ++j) {
+        for (size_t j = 0; j < json_object_array_length(anc_array); ++j) {
           json_object* anc_session = json_object_array_get_idx(anc_array, j);
           int replicas =
               json_object_get_int(st_json_object_object_get(anc_session, "replicas"));
@@ -2644,7 +2644,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       /* parse tx st22p sessions */
       json_object* st22p_array = st_json_object_object_get(tx_group, "st22p");
       if (st22p_array != NULL && json_object_get_type(st22p_array) == json_type_array) {
-        for (int j = 0; j < json_object_array_length(st22p_array); ++j) {
+        for (size_t j = 0; j < json_object_array_length(st22p_array); ++j) {
           json_object* st22p_session = json_object_array_get_idx(st22p_array, j);
           int replicas =
               json_object_get_int(st_json_object_object_get(st22p_session, "replicas"));
@@ -2678,7 +2678,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       /* parse tx st40p sessions */
       json_object* st40p_array = st_json_object_object_get(tx_group, "st40p");
       if (st40p_array != NULL && json_object_get_type(st40p_array) == json_type_array) {
-        for (int j = 0; j < json_object_array_length(st40p_array); ++j) {
+        for (size_t j = 0; j < json_object_array_length(st40p_array); ++j) {
           json_object* st40p_session = json_object_array_get_idx(st40p_array, j);
           int replicas =
               json_object_get_int(st_json_object_object_get(st40p_session, "replicas"));
@@ -2711,7 +2711,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       /* parse tx st20p sessions */
       json_object* st20p_array = st_json_object_object_get(tx_group, "st20p");
       if (st20p_array != NULL && json_object_get_type(st20p_array) == json_type_array) {
-        for (int j = 0; j < json_object_array_length(st20p_array); ++j) {
+        for (size_t j = 0; j < json_object_array_length(st20p_array); ++j) {
           json_object* st20p_session = json_object_array_get_idx(st20p_array, j);
           int replicas =
               json_object_get_int(st_json_object_object_get(st20p_session, "replicas"));
@@ -2745,7 +2745,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       /* parse tx st30p sessions */
       json_object* st30p_array = st_json_object_object_get(tx_group, "st30p");
       if (st30p_array != NULL && json_object_get_type(st30p_array) == json_type_array) {
-        for (int j = 0; j < json_object_array_length(st30p_array); ++j) {
+        for (size_t j = 0; j < json_object_array_length(st30p_array); ++j) {
           json_object* st30p_session = json_object_array_get_idx(st30p_array, j);
           int replicas =
               json_object_get_int(st_json_object_object_get(st30p_session, "replicas"));
@@ -2788,7 +2788,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
   json_object* rx_group_array = st_json_object_object_get(root_object, "rx_sessions");
   if (rx_group_array != NULL && json_object_get_type(rx_group_array) == json_type_array) {
     /* parse session numbers for array allocation */
-    for (int i = 0; i < json_object_array_length(rx_group_array); ++i) {
+    for (size_t i = 0; i < json_object_array_length(rx_group_array); ++i) {
       json_object* rx_group = json_object_array_get_idx(rx_group_array, i);
       if (rx_group == NULL) {
         err("%s, can not parse rx session group\n", __func__);
@@ -2869,7 +2869,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
     int num_st30p = 0;
     int num_st40p = 0;
 
-    for (int i = 0; i < json_object_array_length(rx_group_array); ++i) {
+    for (size_t i = 0; i < json_object_array_length(rx_group_array); ++i) {
       json_object* rx_group = json_object_array_get_idx(rx_group_array, i);
       if (rx_group == NULL) {
         err("%s, can not parse rx session group\n", __func__);
@@ -2950,7 +2950,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       /* parse rx video sessions */
       json_object* video_array = st_json_object_object_get(rx_group, "video");
       if (video_array != NULL && json_object_get_type(video_array) == json_type_array) {
-        for (int j = 0; j < json_object_array_length(video_array); ++j) {
+        for (size_t j = 0; j < json_object_array_length(video_array); ++j) {
           json_object* video_session = json_object_array_get_idx(video_array, j);
           int replicas =
               json_object_get_int(st_json_object_object_get(video_session, "replicas"));
@@ -2992,7 +2992,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       /* parse rx audio sessions */
       json_object* audio_array = st_json_object_object_get(rx_group, "audio");
       if (audio_array != NULL && json_object_get_type(audio_array) == json_type_array) {
-        for (int j = 0; j < json_object_array_length(audio_array); ++j) {
+        for (size_t j = 0; j < json_object_array_length(audio_array); ++j) {
           json_object* audio_session = json_object_array_get_idx(audio_array, j);
           int replicas =
               json_object_get_int(st_json_object_object_get(audio_session, "replicas"));
@@ -3033,7 +3033,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       /* parse rx ancillary sessions */
       json_object* anc_array = st_json_object_object_get(rx_group, "ancillary");
       if (anc_array != NULL && json_object_get_type(anc_array) == json_type_array) {
-        for (int j = 0; j < json_object_array_length(anc_array); ++j) {
+        for (size_t j = 0; j < json_object_array_length(anc_array); ++j) {
           json_object* anc_session = json_object_array_get_idx(anc_array, j);
           int replicas =
               json_object_get_int(st_json_object_object_get(anc_session, "replicas"));
@@ -3071,7 +3071,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       /* parse rx st22p sessions */
       json_object* st22p_array = st_json_object_object_get(rx_group, "st22p");
       if (st22p_array != NULL && json_object_get_type(st22p_array) == json_type_array) {
-        for (int j = 0; j < json_object_array_length(st22p_array); ++j) {
+        for (size_t j = 0; j < json_object_array_length(st22p_array); ++j) {
           json_object* st22p_session = json_object_array_get_idx(st22p_array, j);
           int replicas =
               json_object_get_int(st_json_object_object_get(st22p_session, "replicas"));
@@ -3117,7 +3117,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       /* parse rx st20p sessions */
       json_object* st20p_array = st_json_object_object_get(rx_group, "st20p");
       if (st20p_array != NULL && json_object_get_type(st20p_array) == json_type_array) {
-        for (int j = 0; j < json_object_array_length(st20p_array); ++j) {
+        for (size_t j = 0; j < json_object_array_length(st20p_array); ++j) {
           json_object* st20p_session = json_object_array_get_idx(st20p_array, j);
           int replicas =
               json_object_get_int(st_json_object_object_get(st20p_session, "replicas"));
@@ -3168,7 +3168,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       /* parse rx st30p sessions */
       json_object* st30p_array = st_json_object_object_get(rx_group, "st30p");
       if (st30p_array != NULL && json_object_get_type(st30p_array) == json_type_array) {
-        for (int j = 0; j < json_object_array_length(st30p_array); ++j) {
+        for (size_t j = 0; j < json_object_array_length(st30p_array); ++j) {
           json_object* st30p_session = json_object_array_get_idx(st30p_array, j);
           int replicas =
               json_object_get_int(st_json_object_object_get(st30p_session, "replicas"));
@@ -3214,7 +3214,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       /* parse rx st40p sessions */
       json_object* st40p_array = st_json_object_object_get(rx_group, "st40p");
       if (st40p_array != NULL && json_object_get_type(st40p_array) == json_type_array) {
-        for (int j = 0; j < json_object_array_length(st40p_array); ++j) {
+        for (size_t j = 0; j < json_object_array_length(st40p_array); ++j) {
           json_object* st40p_session = json_object_array_get_idx(st40p_array, j);
           int replicas =
               json_object_get_int(st_json_object_object_get(st40p_session, "replicas"));
@@ -3260,7 +3260,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
           ret = -ST_JSON_NOT_VALID;
           goto error;
         }
-        for (int j = 0; j < json_object_array_length(st20r_array); ++j) {
+        for (size_t j = 0; j < json_object_array_length(st20r_array); ++j) {
           json_object* st20r_session = json_object_array_get_idx(st20r_array, j);
           int replicas =
               json_object_get_int(st_json_object_object_get(st20r_session, "replicas"));
@@ -3311,7 +3311,7 @@ error:
 }
 
 enum st_fps st_app_get_fps(enum video_format fmt) {
-  int i;
+  size_t i;
 
   for (i = 0; i < ARRAY_SIZE(st_video_fmt_descs); i++) {
     if (fmt == st_video_fmt_descs[i].fmt) {
@@ -3324,7 +3324,7 @@ enum st_fps st_app_get_fps(enum video_format fmt) {
 }
 
 uint32_t st_app_get_width(enum video_format fmt) {
-  int i;
+  size_t i;
 
   for (i = 0; i < ARRAY_SIZE(st_video_fmt_descs); i++) {
     if (fmt == st_video_fmt_descs[i].fmt) {
@@ -3337,7 +3337,7 @@ uint32_t st_app_get_width(enum video_format fmt) {
 }
 
 uint32_t st_app_get_height(enum video_format fmt) {
-  int i;
+  size_t i;
 
   for (i = 0; i < ARRAY_SIZE(st_video_fmt_descs); i++) {
     if (fmt == st_video_fmt_descs[i].fmt) {
