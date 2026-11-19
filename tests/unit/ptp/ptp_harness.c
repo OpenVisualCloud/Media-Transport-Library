@@ -181,6 +181,29 @@ void ut_ptp_set_user_time(ut_ptp_ctx* ctx, uint64_t user_ns) {
 
 /* ── code under test ──────────────────────────────────────────────────── */
 
+int ut_ptp_rx_announce(ut_ptp_ctx* ctx, const uint8_t src_clock[8], uint16_t src_port,
+                       const uint8_t gm[8], uint8_t domain, int8_t log_interval) {
+  struct mt_ptp_announce_msg msg;
+
+  memset(&msg, 0, sizeof(msg));
+  msg.hdr.message_type = PTP_ANNOUNCE;
+  msg.hdr.version = 2;
+  msg.hdr.domain_number = domain;
+  msg.hdr.log_message_interval = log_interval;
+  memcpy(msg.hdr.source_port_identity.clock_identity.id, src_clock, 8);
+  msg.hdr.source_port_identity.port_number = htons(src_port);
+  memcpy(msg.grandmaster_identity.id, gm, 8);
+  ctx->ptp.active = true;
+  return mt_ptp_parse(&ctx->ptp, &msg.hdr, false, MT_PTP_L2, 0, NULL);
+}
+
+void ut_ptp_master_announce(const ut_ptp_ctx* ctx, struct ut_ptp_master_announce* out) {
+  out->gm_id = atomic_load(&ctx->ptp.master_gm_id);
+  out->domain = atomic_load(&ctx->ptp.master_domain);
+  out->log_interval = atomic_load(&ctx->ptp.master_log_announce_interval);
+  out->tsc_ns = atomic_load(&ctx->ptp.master_announce_ns);
+}
+
 void ut_ptp_adjust_delta(ut_ptp_ctx* ctx, int64_t delta, bool error_correct) {
   ptp_adjust_delta(&ctx->ptp, delta, error_correct);
 }

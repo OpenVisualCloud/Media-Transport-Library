@@ -178,7 +178,10 @@ class tests_context {
   uint16_t fb_idx = 0;
   int fb_send = 0;
   int fb_send_done = 0;
+  std::atomic<int> fb_send_shared{0}; /* TX: fb_send, read by the RX thread */
   int fb_rec = 0;
+  tests_context* tx_peer = NULL;   /* RX: its TX, read at the first received frame */
+  int tx_fb_send_at_first_rec = 0; /* RX: tx_peer fb_send_shared at its first frame */
   int vsync_cnt = 0;
   uint64_t first_vsync_time = 0;
   int packet_rec = 0;
@@ -223,6 +226,7 @@ class tests_context {
   uint8_t* frame_buf[TEST_MAX_SHA_HIST_NUM] = {};
   uint16_t lines_ready[TEST_MAX_SHA_HIST_NUM] = {};
   bool check_sha = false;
+  bool no_digest = false;
   int sha_fail_cnt = 0; /* fail as sha check fail */
   int tx_tmstamp_delta_fail_cnt = 0;
   int rx_meta_fail_cnt = 0;

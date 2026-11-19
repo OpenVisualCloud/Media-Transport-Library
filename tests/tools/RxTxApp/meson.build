@@ -20,6 +20,10 @@ cc = meson.get_compiler('c')
 toolchain = cc.get_id()
 
 mtl = dependency('mtl', required : true)
+app_has_ipmx = mtl.get_variable(pkgconfig : 'ipmx', default_value : 'false') == 'true'
+if app_has_ipmx
+  add_global_arguments('-DAPP_HAS_IPMX', language : 'c')
+endif
 libm = cc.find_library('m', required : true)
 libpthread = cc.find_library('pthread', required : true)
 libjson_c = dependency('json-c', required : true)

@@ -1164,6 +1164,73 @@ uint64_t ut20_stat_pkts_unrecovered(const ut20_test_ctx* ctx) {
   return ctx->session.port_user_stats.common.stat_pkts_unrecovered;
 }
 
+int ut20_rx_ops_check(struct st20_rx_ops* ops) {
+  return rv_ops_check(ops);
+}
+
+int ut20_rx_st22_ops_check(struct st22_rx_ops* ops) {
+  return rv_st22_ops_check(ops);
+}
+
+void ut20_ctx_add_flags(ut20_test_ctx* ctx, uint32_t flags) {
+  ctx->session.ops.flags |= flags;
+}
+
+int ut20_update_src_rejected(ut20_test_ctx* ctx, uint16_t udp_port, bool* flow_kept) {
+  static char sentinel;
+  struct st_rx_video_session_impl* s = &ctx->session;
+  struct st_rx_source_info src;
+  memset(&src, 0, sizeof(src));
+  for (int i = 0; i < s->ops.num_port; i++) {
+    uint8_t ip[MTL_IP_ADDR_LEN] = {239, 0, 0, (uint8_t)(1 + i)};
+    memcpy(src.ip_addr[i], ip, sizeof(ip));
+    src.udp_port[i] = udp_port;
+    s->rxq[i] = (struct mt_rxq_entry*)&sentinel;
+    s->rtcp_rx[i] = (struct mt_rtcp_rx*)&sentinel;
+  }
+
+  int ret = rv_update_src(&ctx->mgr, s, &src);
+
+  *flow_kept = true;
+  for (int i = 0; i < s->ops.num_port; i++) {
+    if (s->rxq[i] != (struct mt_rxq_entry*)&sentinel) *flow_kept = false;
+    if (s->rtcp_rx[i] != (struct mt_rtcp_rx*)&sentinel) *flow_kept = false;
+    s->rxq[i] = NULL;
+    s->rtcp_rx[i] = NULL;
+  }
+  return ret;
+}
+
+uint16_t ut20_dst_port(const ut20_test_ctx* ctx, enum mtl_session_port port) {
+  return ctx->session.st20_dst_port[port];
+}
+
+#ifdef MTL_HAS_IPMX
+int ut20_ipmx_tp_stat(ut20_test_ctx* ctx, enum mtl_session_port port,
+                      struct ipmx_rx_tp_stat* stat) {
+  return ipmx_vrx_stat_get(&ctx->session, port, stat);
+}
+
+int ut20_ipmx_tp_limit(ut20_test_ctx* ctx, int pkt_per_frame, enum st_fps fps,
+                       struct ipmx_vrx_limit* limit) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  struct st_fps_timing fps_tm;
+  int ret;
+
+  if (st_get_fps_timing(fps, &fps_tm) < 0) return -EINVAL;
+  s->ops.fps = fps;
+  s->ops.flags |= ST20_RX_FLAG_IPMX;
+  s->frame_time = (double)NS_PER_S * fps_tm.den / fps_tm.mul;
+  s->frame_time_sampling = (double)fps_tm.sampling_clock_rate * fps_tm.den / fps_tm.mul;
+  s->detector.pkt_per_frame = pkt_per_frame;
+  s->enable_timing_parser = true;
+  ret = rv_tp_init(&ctx->impl, s);
+  if (ret < 0) return ret;
+  *limit = s->tp->ipmx.limit;
+  return 0;
+}
+#endif
+
 int ut20_ops_check_source(const struct st_rx_source_info* src) {
   struct st20_rx_ops ops;
 

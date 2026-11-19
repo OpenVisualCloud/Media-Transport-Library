@@ -322,6 +322,17 @@ st20p_tx_handle ut20p_tx_handle(ut20p_tx_ctx* ctx) {
   return &ctx->pipeline;
 }
 
+struct st20p_tx_ops* ut20p_tx_ops(ut20p_tx_ctx* ctx) {
+  return &ctx->pipeline.ops;
+}
+
+int ut20p_tx_capture_transport_ops(ut20p_tx_ctx* ctx, struct st20_tx_ops* ops) {
+  memset(&ut20p_tx_transport_ops, 0, sizeof(ut20p_tx_transport_ops));
+  int ret = tx_st20p_create_transport(&ctx->impl, &ctx->pipeline, &ctx->pipeline.ops);
+  *ops = ut20p_tx_transport_ops;
+  return ret;
+}
+
 int ut20p_tx_free_in_callback(ut20p_tx_ctx* ctx, bool* destroying) {
   struct st20p_tx_ctx* p = &ctx->pipeline;
   struct st_tx_video_session_handle_impl transport = {

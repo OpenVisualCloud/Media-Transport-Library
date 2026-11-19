@@ -1,0 +1,65 @@
+{
+    "interfaces": [
+        {
+            "name": "0000:af:01.0",
+            "ip": "192.168.17.101"
+        },
+        {
+            "name": "0000:af:01.1",
+            "ip": "192.168.17.102"
+        }
+    ],
+    "tx_sessions": [
+        {
+            "dip": [
+                "239.168.85.22"
+            ],
+            "interface": [
+                0
+            ],
+            "st22p": [
+                {
+                    "replicas": 1,
+                    "start_port": 50000,
+                    "payload_type": 114,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "codec": "JPEG-XS",
+                    "device": "AUTO",
+                    "pack_type": "codestream",
+                    "input_format": "GBRPLANAR8",
+                    "st22p_url": "./test_gbrp8.gbrp",
+                    "ipmx": true,
+                    "ipmx_block_version": 0
+                }
+            ]
+        }
+    ],
+    "rx_sessions": [
+        {
+            "ip": [
+                "239.168.85.22"
+            ],
+            "interface": [
+                1
+            ],
+            "st22p": [
+                {
+                    "replicas": 1,
+                    "start_port": 50000,
+                    "payload_type": 114,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "codec": "JPEG-XS",
+                    "device": "AUTO",
+                    "pack_type": "codestream",
+                    "output_format": "GBRPLANAR8",
+                    "display": false,
+                    "ipmx": true
+                }
+            ]
+        }
+    ]
+}

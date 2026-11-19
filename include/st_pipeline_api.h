@@ -175,6 +175,8 @@ enum st_frame_fmt {
    * two RGB 12 bit pixel groups on 9 bytes, big endian
    */
   ST_FRAME_FMT_RGBRFC4175PG2BE12 = 38,
+  /** GBR planar 8bit */
+  ST_FRAME_FMT_GBRPLANAR8 = 39,
   /** End of rgb format list, new rgb should be inserted before this */
   ST_FRAME_FMT_RGB_END,
 
@@ -430,6 +432,12 @@ enum st22p_tx_flag {
   ST22P_TX_FLAG_EXT_FRAME = (MTL_BIT32(8)),
   /** Force the numa of the created session, both CPU and memory */
   ST22P_TX_FLAG_FORCE_NUMA = (MTL_BIT32(9)),
+  /**
+   * Enable IPMX (VSF TR-10-11) mode on the transport session, see ST22_TX_FLAG_IPMX.
+   * JPEG XS of GBRPLANAR8 or GBRPLANAR10LE input only: st22p_tx_create() fails for any
+   * other codec or input_fmt.
+   */
+  ST22P_TX_FLAG_IPMX = (MTL_BIT32(10)),
   /** Enable the st22p_tx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st22p_tx_set_block_timeout to customize) */
   ST22P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15))
@@ -534,6 +542,8 @@ enum st20p_tx_flag {
   /** Enable the st20p_tx_get_frame block behavior to wait until a frame becomes
      available or (default: 1s, use st20p_tx_set_block_timeout to customize) */
   ST20P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
+  /** Enable IPMX (VSF TR-10) mode on the transport session, see ST20_TX_FLAG_IPMX */
+  ST20P_TX_FLAG_IPMX = (MTL_BIT32(16)),
 };
 
 /** Bit define for flags of struct st22p_rx_ops. */
@@ -567,6 +577,11 @@ enum st22p_rx_flag {
    * Disable ST22 boxes
    */
   ST22P_RX_FLAG_DISABLE_BOXES = MTL_BIT32(6),
+  /**
+   * Enable IPMX (VSF TR-10-11) mode on the transport session, see ST22_RX_FLAG_IPMX.
+   * JPEG XS only: st22p_rx_create() fails for any other codec.
+   */
+  ST22P_RX_FLAG_IPMX = (MTL_BIT32(7)),
 
   /** Enable the st22p_rx_get_frame block behavior to wait until a frame becomes
      available or timeout(default: 1s, use st22p_rx_set_block_timeout to customize) */
@@ -675,6 +690,8 @@ enum st20p_rx_flag {
    * ST20P_RX_FLAG_AUTO_DETECT always converts with ordinary stores.
    */
   ST20P_RX_FLAG_DISABLE_NT_CONVERT = (MTL_BIT32(25)),
+  /** Enable IPMX (VSF TR-10) mode on the transport session, see ST20_RX_FLAG_IPMX */
+  ST20P_RX_FLAG_IPMX = (MTL_BIT32(26)),
 };
 
 /** Bit define for flag_resp of struct st22_decoder_create_req. */

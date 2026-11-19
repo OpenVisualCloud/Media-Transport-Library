@@ -18,7 +18,7 @@ dpdk=$PWD/.local_install/dpdk/lib/x86_64-linux-gnu/pkgconfig
 sed -i '/^Requires.private:/d' "$dpdk"/*.pc
 export PKG_CONFIG_PATH=$PWD/build/meson-uninstalled:$dpdk CC=clang CXX=clang++
 
-meson setup build -Denable_unit_tests=true -Denable_fuzzing=true
+meson setup build -Denable_unit_tests=true -Denable_fuzzing=true -Denable_ipmx=true
 meson compile -C build usdt_provider_header
 # The projects include <mtl/...>, the path of an installed MTL, and MTL is not
 # installed here. mtl-uninstalled.pc gives each project -I for build, so

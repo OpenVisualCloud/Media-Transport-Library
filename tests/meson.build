@@ -56,6 +56,14 @@ if get_option('buildtype') != 'debug'
   test_cpp_args += ['-Werror']
 endif
 
+ipmx_deps = []
+if mtl.get_variable(pkgconfig : 'ipmx', default_value : 'false') == 'true'
+  test_cpp_args += ['-DMTL_HAS_IPMX']
+  # st20p_ipmx_cycles_tests.cpp includes <rte_malloc.h> and finds its symbols with dlsym()
+  ipmx_deps += dependency('libdpdk', required : true).partial_dependency(
+    compile_args : true, includes : true)
+endif
+
 test_c_args += ['-Wall']
 test_cpp_args += ['-Wall']
 
@@ -87,7 +95,8 @@ executable('KahawaiTest', sources,
   link_args: test_ld_args,
   include_directories: [test_inc],
   # asan should be always the first dep
-  dependencies: [asan_dep, mtl, gtest, libnuma, libopenssl, libpthread, ws2_32_dep],
+  dependencies: [asan_dep, mtl, gtest, libnuma, libopenssl, libpthread, ws2_32_dep,
+    ipmx_deps],
   install: true,
 )
 endif

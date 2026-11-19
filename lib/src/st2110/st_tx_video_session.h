@@ -94,6 +94,13 @@ static inline float tx_video_session_get_cpu_busy(struct st_tx_video_session_imp
   return s->cpu_busy_score;
 }
 
+/* For the public APIs on s: 0 with its lock held and its slot in *mgr / *idx, release
+ * with tx_video_session_put(); -EIO if neither try found s in the slot it read, i.e.
+ * migrations raced both. In a callback, on the scheduler's own thread, -EBUSY rather than
+ * spin on the lock. */
+int st_tx_video_session_api_lock(struct st_tx_video_session_impl* s,
+                                 struct st_tx_video_sessions_mgr** mgr, int* idx);
+
 int st_tx_video_session_migrate(struct st_tx_video_sessions_mgr* mgr,
                                 struct st_tx_video_session_impl* s, int idx);
 

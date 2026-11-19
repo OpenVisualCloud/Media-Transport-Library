@@ -4,6 +4,8 @@
 
 #include "tx_st22p_app.h"
 
+#include "app_ipmx_hook.h"
+
 static void app_tx_st22p_display_frame(struct st_app_tx_st22p_session* s,
                                        struct st_frame* frame) {
   struct st_display* d = s->display;
@@ -172,6 +174,7 @@ static int app_tx_st22p_uinit(struct st_app_tx_st22p_session* s) {
   app_tx_st22p_stop_source(s);
   app_tx_st22p_handle_free(s);
   app_tx_st22p_close_source(s);
+  app_ipmx_tx_uinit(&s->ipmx);
 
   st_app_uinit_display(s->display);
   if (s->display) {
@@ -238,6 +241,7 @@ static int app_tx_st22p_init(struct st_app_context* ctx, st_json_st22p_session_t
   ops.framebuff_cnt = 2;
   ops.flags |= ST22P_TX_FLAG_BLOCK_GET;
   if (st22p && st22p->enable_rtcp) ops.flags |= ST22P_TX_FLAG_ENABLE_RTCP;
+  if (st22p && st22p->ipmx) ops.flags |= ST22P_TX_FLAG_IPMX;
   if (ctx->tx_no_bulk) ops.flags |= ST22P_TX_FLAG_DISABLE_BULK;
   if (ctx->force_tx_video_numa >= 0) {
     ops.flags |= ST22P_TX_FLAG_FORCE_NUMA;
@@ -259,12 +263,19 @@ static int app_tx_st22p_init(struct st_app_context* ctx, st_json_st22p_session_t
 
   handle = st22p_tx_create(ctx->st, &ops);
   if (!handle) {
-    err("%s(%d), st22p_tx_create fail\n", __func__, idx);
+    err("%s(%s), st22p_tx_create fail\n", __func__, name);
     app_tx_st22p_uinit(s);
     return -EIO;
   }
   s->handle = handle;
   s->st22p_frame_size = st22p_tx_frame_size(handle);
+
+  ret = app_ipmx_tx_st22p_init(ctx, st22p, s, name);
+  if (ret < 0) {
+    err("%s(%d), app_ipmx_tx_st22p_init fail %d\n", __func__, idx, ret);
+    app_tx_st22p_uinit(s);
+    return ret;
+  }
 
   ret = app_tx_st22p_open_source(s);
   if (ret < 0) {

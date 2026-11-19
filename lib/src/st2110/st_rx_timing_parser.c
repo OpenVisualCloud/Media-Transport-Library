@@ -67,6 +67,10 @@ void rv_tp_on_packet(struct st_rx_video_session_impl* s, enum mtl_session_port s
   slot->prev_pkt_time = pkt_time;
 
   slot->meta.pkts_cnt++;
+#ifdef MTL_HAS_IPMX
+  if (s->ops.flags & ST20_RX_FLAG_IPMX)
+    ipmx_vrx_on_packet(&tp->ipmx, s_port, &slot->ipmx, pkt_idx, pkt_time);
+#endif
 }
 
 static void rv_tp_compliant_set_cause(struct st20_rx_tp_meta* meta, char* cause) {
@@ -258,6 +262,9 @@ void rv_tp_stat(struct st_rx_video_session_impl* s) {
         rv_tp_calculate_avg(stat->stat_frame_cnt, stat->stat_rtp_ts_delta_sum);
     info("%s(%d), RTP TS DELTA AVG %.2f MIN %d MAX %d!\n", __func__, idx,
          rtp_ts_delta_avg, stat->stat_rtp_ts_delta_min, stat->stat_rtp_ts_delta_max);
+#ifdef MTL_HAS_IPMX
+    if (s->ops.flags & ST20_RX_FLAG_IPMX) ipmx_vrx_stat_dump(&tp->ipmx, idx, s_port);
+#endif
   }
 
   rv_tp_stat_init(s, tp);
@@ -349,6 +356,11 @@ int rv_tp_init(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
   tp->pass.rtp_ts_delta_min = sampling;
 
   rv_tp_stat_init(s, tp);
+#ifdef MTL_HAS_IPMX
+  if (ops->flags & ST20_RX_FLAG_IPMX)
+    ipmx_vrx_init(&tp->ipmx, st20_total_pkts, frame_time, reactive,
+                  tp->pass.cinst_max_wide);
+#endif
 
   info("%s[%02d], trs %f tr offset %d sampling %f\n", __func__, idx, tp->trs,
        tp->pass.tr_offset, s->frame_time_sampling);

@@ -15,6 +15,10 @@
 #include "st_pkt.h"
 #include "st_tx_video_rl.h"
 
+#ifdef MTL_HAS_IPMX
+#include "../ipmx/ipmx_vrx.h"
+#endif
+
 #define ST_MAX_NAME_LEN (32)
 
 #define ST_PLUGIN_MAX_PATH_LEN (128)
@@ -101,6 +105,9 @@ struct st_tx_muf_priv_data {
   uint64_t ptp_time_stamp; /* ptp pacing target; all-RL st20 frames: pkt 0 only */
   void* priv;              /* private data to current frame */
   uint32_t idx;            /* index of packet in current frame */
+#ifdef MTL_HAS_IPMX
+  uint32_t ipmx_frame_size; /* st22 packet 0 only, for the IPMX SR counts */
+#endif
 };
 
 struct st_rx_muf_priv_data {
@@ -380,6 +387,9 @@ struct st_tx_video_session_impl {
 
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rtcp_q[MTL_SESSION_PORT_MAX];
+#ifdef MTL_HAS_IPMX
+  struct ipmx_sr_tx* ipmx_sr; /* NULL without ST20_TX_FLAG_IPMX */
+#endif
 
   /* stat – port_user_stats is the single source for API-visible counters (monotonic) */
   struct st20_tx_user_stats port_user_stats;
@@ -393,6 +403,7 @@ struct st_tx_video_session_impl {
   bool stat_user_busy_first;
   uint32_t stat_max_next_frame_us;
   uint32_t stat_max_notify_frame_us;
+  uint32_t stat_ipmx_pih_fail; /* st22 frames the IPMX PIH check dropped this period */
   double stat_cpu_busy_score;
   struct mt_stat_u64 stat_time;
 
@@ -526,6 +537,9 @@ struct st_rv_tp_slot {
   int64_t vrx_sum;
   /* Inter-packet time(ns), packet level check */
   int64_t ipt_sum;
+#ifdef MTL_HAS_IPMX
+  struct ipmx_vrx_frame ipmx;
+#endif
 };
 
 struct st_rv_tp_stat {
@@ -561,6 +575,9 @@ struct st_rx_video_tp {
   /* for the status */
   struct st_rv_tp_stat stat[MTL_SESSION_PORT_MAX];
   uint32_t stat_untrusted_pkts;
+#ifdef MTL_HAS_IPMX
+  struct ipmx_vrx ipmx;
+#endif
 };
 
 struct st_rx_video_session_impl {
@@ -668,6 +685,9 @@ struct st_rx_video_session_impl {
   rte_atomic32_t cbs_incomplete_frame_cnt;
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
+#ifdef MTL_HAS_IPMX
+  struct ipmx_sr_rx* ipmx_sr; /* NULL without ST20_RX_FLAG_IPMX or with DATA_PATH_ONLY */
+#endif
   uint16_t burst_loss_max;
   float sim_loss_rate;
   uint16_t burst_loss_cnt;

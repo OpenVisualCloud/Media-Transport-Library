@@ -2,12 +2,16 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
+#include "st22p_test.h"
+
 #include <atomic>
 #include <chrono>
 #include <thread>
 
 #include "log.h"
-#include "tests.hpp"
+#ifdef MTL_HAS_IPMX
+#include "ipmx/ipmx_jxs_test_header.h"
+#endif
 
 #define ST22P_TEST_PAYLOAD_TYPE (114)
 #define ST22P_TEST_UDP_PORT (16000)
@@ -25,8 +29,16 @@ static int test_encode_frame(struct test_st22_encoder_session* s,
   if (frame->src->fmt != req->input_fmt) return -EIO;
   if (frame->dst->fmt != req->output_fmt) return -EIO;
 
+  uint8_t* sha_dst = (uint8_t*)frame->dst->addr[0];
+#ifdef MTL_HAS_IPMX
+  /* a GBRPLANAR8 or GBRPLANAR10LE codestream gets a High444.12 header, which IPMX TX
+   * checks per frame */
+  if (req->input_fmt == ST_FRAME_FMT_GBRPLANAR8 ||
+      req->input_fmt == ST_FRAME_FMT_GBRPLANAR10LE)
+    sha_dst += ipmx_test_jxs_header(sha_dst, frame->dst->buffer_size, req);
+#endif
   /* copy src sha to the start of encode frame */
-  memcpy(frame->dst->addr[0],
+  memcpy(sha_dst,
          (uint8_t*)frame->src->addr[0] + frame->src->data_size - SHA256_DIGEST_LENGTH,
          SHA256_DIGEST_LENGTH);
   st_usleep(s->sleep_time_us);
@@ -186,9 +198,15 @@ static int test_decode_frame(struct test_st22_decoder_session* s,
   if (frame->dst->fmt != req->output_fmt) return -EIO;
   if (frame->src->data_size > frame->src->buffer_size) return -EIO;
 
+  const uint8_t* sha_src = (const uint8_t*)frame->src->addr[0];
+#ifdef MTL_HAS_IPMX
+  if (req->output_fmt == ST_FRAME_FMT_GBRPLANAR8 ||
+      req->output_fmt == ST_FRAME_FMT_GBRPLANAR10LE)
+    sha_src += IPMX_TEST_JXS_HDR_LEN;
+#endif
   /* copy sha to the end of decode frame */
   memcpy((uint8_t*)frame->dst->addr[0] + frame->dst->data_size - SHA256_DIGEST_LENGTH,
-         frame->src->addr[0], SHA256_DIGEST_LENGTH);
+         sha_src, SHA256_DIGEST_LENGTH);
   st_usleep(s->sleep_time_us);
 
   s->frame_cnt++;
@@ -350,6 +368,10 @@ int st_test_st22_plugin_register(struct st_tests_context* ctx) {
   d_dev.target_device = ST_PLUGIN_DEVICE_TEST;
   d_dev.input_fmt_caps = ST_FMT_CAP_JPEGXS_CODESTREAM | ST_FMT_CAP_H264_CBR_CODESTREAM;
   d_dev.output_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_YUV422PLANAR8;
+#ifdef MTL_HAS_IPMX
+  d_dev.output_fmt_caps |=
+      MTL_BIT64(ST_FRAME_FMT_GBRPLANAR8) | MTL_BIT64(ST_FRAME_FMT_GBRPLANAR10LE);
+#endif
   d_dev.create_session = test_decoder_create_session;
   d_dev.free_session = test_decoder_free_session;
   d_dev.notify_frame_available = test_decoder_frame_available;
@@ -365,6 +387,10 @@ int st_test_st22_plugin_register(struct st_tests_context* ctx) {
   e_dev.priv = ctx;
   e_dev.target_device = ST_PLUGIN_DEVICE_TEST;
   e_dev.input_fmt_caps = ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_YUV422PLANAR8;
+#ifdef MTL_HAS_IPMX
+  e_dev.input_fmt_caps |=
+      MTL_BIT64(ST_FRAME_FMT_GBRPLANAR8) | MTL_BIT64(ST_FRAME_FMT_GBRPLANAR10LE);
+#endif
   e_dev.output_fmt_caps = ST_FMT_CAP_JPEGXS_CODESTREAM | ST_FMT_CAP_H264_CBR_CODESTREAM;
   e_dev.create_session = test_encoder_create_session;
   e_dev.free_session = test_encoder_free_session;
@@ -682,6 +708,7 @@ static void test_st22p_tx_frame_thread(void* args) {
       st22p_tx_put_frame((st22p_tx_handle)handle, frame);
     }
     s->fb_send++;
+    s->fb_send_shared = s->fb_send;
     if (!s->start_time) {
       s->start_time = st_test_get_monotonic_time();
       dbg("%s(%d), start_time %" PRIu64 "\n", __func__, s->idx, s->start_time);
@@ -707,6 +734,7 @@ static void test_st22p_rx_frame_thread(void* args) {
       }
       continue;
     }
+    if (!s->fb_rec && s->tx_peer) s->tx_fb_send_at_first_rec = s->tx_peer->fb_send_shared;
 
     if (frame->data_size != s->frame_size) s->incomplete_frame_cnt++;
     if (frame->buffer_size < s->frame_size) s->incomplete_frame_cnt++;
@@ -739,17 +767,21 @@ static void test_st22p_rx_frame_thread(void* args) {
       s->pre_timestamp = (uint32_t)frame->timestamp;
     }
 
-    unsigned char* sha =
-        (unsigned char*)frame->addr[0] + frame->data_size - SHA256_DIGEST_LENGTH;
-    int i = 0;
-    for (i = 0; i < ST22_TEST_SHA_HIST_NUM; i++) {
-      unsigned char* target_sha = s->shas[i];
-      if (!memcmp(sha, target_sha, SHA256_DIGEST_LENGTH)) break;
+    if (!s->no_digest) {
+      unsigned char* sha =
+          (unsigned char*)frame->addr[0] + frame->data_size - SHA256_DIGEST_LENGTH;
+      int i = 0;
+      for (i = 0; i < ST22_TEST_SHA_HIST_NUM; i++) {
+        unsigned char* target_sha = s->shas[i];
+        if (!memcmp(sha, target_sha, SHA256_DIGEST_LENGTH)) break;
+      }
+      if (i >= ST22_TEST_SHA_HIST_NUM) {
+        test_sha_dump("st22p_rx_error_sha", sha);
+        s->sha_fail_cnt++;
+      }
     }
-    if (i >= ST22_TEST_SHA_HIST_NUM) {
-      test_sha_dump("st22p_rx_error_sha", sha);
-      s->sha_fail_cnt++;
-    }
+    auto para = (struct st22p_rx_digest_test_para*)s->priv;
+    if (para && para->rx_frame) para->rx_frame(frame);
     /* directly put */
     st22p_rx_put_frame((st22p_rx_handle)handle, frame);
     s->fb_rec++;
@@ -758,27 +790,7 @@ static void test_st22p_rx_frame_thread(void* args) {
   dbg("%s(%d), stop\n", __func__, s->idx);
 }
 
-struct st22p_rx_digest_test_para {
-  int sessions;
-  int fail_interval;
-  int timeout_interval;
-  int timeout_ms;
-  int rand_ratio;
-  bool check_fps;
-  enum st_test_level level;
-  bool user_timestamp;
-  bool vsync;
-  bool rtcp;
-  bool tx_ext;
-  bool rx_ext;
-  bool interlace;
-  uint32_t ssrc;
-  bool block_get;
-  bool codec_block_get;
-  bool derive;
-};
-
-static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para) {
+void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para) {
   memset(para, 0, sizeof(*para));
 
   para->sessions = 1;
@@ -797,12 +809,13 @@ static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* par
   para->ssrc = 0;
   para->block_get = false;
   para->codec_block_get = false;
+  para->device = ST_PLUGIN_DEVICE_TEST;
 }
 
-static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
-                                 enum st_frame_fmt fmt[], enum st22_codec codec[],
-                                 int compress_ratio[],
-                                 struct st22p_rx_digest_test_para* para) {
+void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
+                          enum st_frame_fmt fmt[], const enum st22_codec codec[],
+                          const int compress_ratio[],
+                          struct st22p_rx_digest_test_para* para) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto st = ctx->handle;
   int ret;
@@ -819,6 +832,10 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
   if (ctx->para.num_ports < 2) {
     info("%s, dual port should be enabled, one for tx and one for rx\n", __func__);
     throw std::runtime_error("Dual port not enabled");
+  }
+  if (para->redundant && ctx->para.num_ports < 4) {
+    info("%s, need 4 ports for redundant test, skipping\n", __func__);
+    return;
   }
 
   /* return if level lower than global */
@@ -890,6 +907,16 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_P]);
     ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + i * 2;
+    if (para->redundant) {
+      ops_tx.port.num_port = 2;
+      memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+             MTL_IP_ADDR_LEN);
+      memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
+             MTL_IP_ADDR_LEN);
+      (void)snprintf(ops_tx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+                     ctx->para.port[MTL_PORT_R]);
+      ops_tx.port.udp_port[MTL_SESSION_PORT_R] = ST22P_TEST_UDP_PORT + i * 2;
+    }
     ops_tx.port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
     ops_tx.port.ssrc = para->ssrc;
     ops_tx.width = width[i];
@@ -899,7 +926,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.input_fmt = fmt[i];
     ops_tx.pack_type = ST22_PACK_CODESTREAM;
     ops_tx.codec = codec[i];
-    ops_tx.device = ST_PLUGIN_DEVICE_TEST;
+    ops_tx.device = para->device;
     ops_tx.quality = ST22_QUALITY_MODE_QUALITY;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     if (para->block_get)
@@ -910,6 +937,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.notify_frame_done = test_st22p_tx_frame_done;
     if (para->user_timestamp) ops_tx.flags |= ST22P_TX_FLAG_USER_TIMESTAMP;
     if (para->vsync) ops_tx.flags |= ST22P_TX_FLAG_ENABLE_VSYNC;
+    if (para->ipmx) ops_tx.flags |= ST22P_TX_FLAG_IPMX;
     if (para->tx_ext) {
       ops_tx.flags |= ST22P_TX_FLAG_EXT_FRAME;
     }
@@ -990,6 +1018,10 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       else
         fb = (uint8_t*)st22p_tx_get_fb_addr(tx_handle[i], frame);
       ASSERT_TRUE(fb != NULL);
+      if (para->tx_fill) {
+        para->tx_fill(fb, width[i], height[i]);
+        continue;
+      }
       st_test_rand_data(fb, frame_size, frame);
       unsigned char* result = test_ctx_tx[i]->shas[frame];
       SHA256((unsigned char*)fb, frame_size, result);
@@ -1015,13 +1047,20 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
     test_ctx_rx[i]->idx = i;
     test_ctx_rx[i]->ctx = ctx;
-    test_ctx_rx[i]->fb_cnt = ST22_TEST_SHA_HIST_NUM;
+    test_ctx_rx[i]->fb_cnt = para->rx_fb_cnt ? para->rx_fb_cnt : ST22_TEST_SHA_HIST_NUM;
+    /* an ST 2022-7 RX keeps 2 frames open (ST_RX_VIDEO_REDUNDANT_SLOT_NUM) out of the
+     * same framebuffers: one more, so a slow decode does not empty the pool and skip a
+     * frame under the IPMX frame count check */
+    if (para->ipmx && para->redundant) test_ctx_rx[i]->fb_cnt++;
     test_ctx_rx[i]->fb_idx = 0;
     test_ctx_rx[i]->width = width[i];
     test_ctx_rx[i]->height = height[i];
     test_ctx_rx[i]->fmt = fmt[i];
     test_ctx_rx[i]->user_timestamp = para->user_timestamp;
     test_ctx_rx[i]->block_get = para->block_get;
+    test_ctx_rx[i]->no_digest = para->no_digest;
+    test_ctx_rx[i]->priv = para;
+    if (para->ipmx) test_ctx_rx[i]->tx_peer = test_ctx_tx[i];
     /* copy sha */
     memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
            ST22_TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
@@ -1081,6 +1120,16 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
     ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ST22P_TEST_UDP_PORT + i * 2;
+    if (para->redundant) {
+      ops_rx.port.num_port = 2;
+      for (int p = 0; p < 2; p++) {
+        memcpy(ops_rx.port.ip_addr[p], ctx->mcast_ip_addr[MTL_PORT_P + p],
+               MTL_IP_ADDR_LEN);
+        (void)snprintf(ops_rx.port.port[p], MTL_PORT_MAX_LEN, "%s",
+                       ctx->para.port[MTL_PORT_2 + p]);
+        ops_rx.port.udp_port[p] = ST22P_TEST_UDP_PORT + i * 2;
+      }
+    }
     ops_rx.port.payload_type = ST22P_TEST_PAYLOAD_TYPE;
     ops_rx.port.ssrc = para->ssrc;
     ops_rx.width = width[i];
@@ -1090,7 +1139,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.output_fmt = fmt[i];
     ops_rx.pack_type = ST22_PACK_CODESTREAM;
     ops_rx.codec = codec[i];
-    ops_rx.device = ST_PLUGIN_DEVICE_TEST;
+    ops_rx.device = para->device;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     if (para->block_get)
       ops_rx.flags |= ST22P_RX_FLAG_BLOCK_GET;
@@ -1098,6 +1147,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ops_rx.notify_frame_available = test_st22p_rx_frame_available;
     ops_rx.notify_event = test_ctx_notify_event;
     if (para->vsync) ops_rx.flags |= ST22P_RX_FLAG_ENABLE_VSYNC;
+    if (para->ipmx || para->ipmx_rx_only) ops_rx.flags |= ST22P_RX_FLAG_IPMX;
     if (para->rx_ext) {
       ops_rx.flags |= ST22P_RX_FLAG_EXT_FRAME;
       ops_rx.query_ext_frame = test_st22p_rx_query_ext_frame;
@@ -1137,9 +1187,16 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_GE(ret, 0);
   }
 
+  int duration_s = para->duration_s ? para->duration_s : 10;
   ret = mtl_start(st);
   EXPECT_GE(ret, 0);
-  sleep(10);
+  if (para->mid_stream) {
+    sleep(duration_s / 2);
+    para->mid_stream(tx_handle.data(), rx_handle.data(), sessions);
+    sleep(duration_s - duration_s / 2);
+  } else {
+    sleep(duration_s);
+  }
   ret = mtl_stop(st);
   EXPECT_GE(ret, 0);
 
@@ -1180,7 +1237,12 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     rx_thread[i].join();
   }
 
+  std::vector<int> fb_send(sessions);
+  std::vector<int> tx_fb_cnt(sessions);
   for (int i = 0; i < sessions; i++) {
+    fb_send[i] = test_ctx_tx[i]->fb_send;
+    tx_fb_cnt[i] = test_ctx_tx[i]->fb_cnt;
+    if (para->tx_check) para->tx_check(tx_handle[i]);
     ret = st22p_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
     info("%s, session %d fb_send %d framerate %f:%f\n", __func__, i,
@@ -1196,6 +1258,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     delete test_ctx_tx[i];
   }
   for (int i = 0; i < sessions; i++) {
+    if (para->rx_check) para->rx_check(rx_handle[i]);
     ret = st22p_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
     info("%s, session %d fb_rec %d framerate %f:%f\n", __func__, i,
@@ -1203,6 +1266,19 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_frame_cnt, 0);
     EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
+    /* IPMX TX drops a frame that fails its header check, so the RX gets every frame
+     * the app put from the RX's first frame on. Frames put before the RX's first frame
+     * (start-up, the one joined mid-frame) are not counted, so start-up drops are not
+     * checked; the TX count read at the RX's first frame includes that frame, hence
+     * the + 1. The tolerance is the frames in flight at either end: in the TX pipeline
+     * (encode, send: up to its framebuffers), in the RX pipeline (up to its framebuffers,
+     * the extra ST 2022-7 one above included), plus the one on the wire, and with ST
+     * 2022-7 the second frame the RX keeps open (ST_RX_VIDEO_REDUNDANT_SLOT_NUM) */
+    if (para->ipmx) {
+      EXPECT_NEAR(test_ctx_rx[i]->fb_rec,
+                  fb_send[i] - test_ctx_rx[i]->tx_fb_send_at_first_rec + 1,
+                  tx_fb_cnt[i] + test_ctx_rx[i]->fb_cnt + 1 + (para->redundant ? 1 : 0));
+    }
     if (para->check_fps) {
       if (para->fail_interval || para->timeout_interval) {
         EXPECT_NEAR(framerate_rx[i], expect_framerate_rx[i],

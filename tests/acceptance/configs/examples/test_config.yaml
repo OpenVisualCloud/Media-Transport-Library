@@ -27,3 +27,11 @@ ebu_server:
   password: password
   proxy: false
 interface_type: VF
+# Optional: IPMX cases (tests/single/ipmx/), skipped when vsf_path is unset.
+# ipmx:
+#   vsf_path: /path/to/nmos-testing-ipmx   # VSF IPMX test scripts clone
+#   vsf_python: /path/to/venv/bin/python   # default python3; scapy optional
+#   vsf_cpus: 64-127                       # taskset CPUs for the validators
+#   max_frames: 0                          # floor; cases read >= 2 s of frames
+#   svt_plugin_dir: /path/to/SVT-JPEG-XS/mtl-plugin  # ipmx_*.json; st22p cases
+#   lcores: 1-4                            # RxTxApp --lcores, isolated CPUs

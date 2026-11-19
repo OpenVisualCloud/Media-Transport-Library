@@ -67,10 +67,13 @@ int ut20p_stub_put_framebuff(st20_rx_handle handle, void* frame) {
 }
 
 static struct st20_rx_ops ut20p_created_rx_ops;
+/* set by ut20p_capture_transport_ops(): fail the create once the ops are captured */
+static bool ut20p_rx_create_fail;
 
 st20_rx_handle ut20p_stub_rx_create(mtl_handle mt, struct st20_rx_ops* ops) {
   (void)mt;
   ut20p_created_rx_ops = *ops;
+  if (ut20p_rx_create_fail) return NULL;
   return (st20_rx_handle)(uintptr_t)0x1;
 }
 
@@ -434,4 +437,17 @@ st20p_rx_handle ut20p_handle(ut20p_ctx* ctx) {
 
 void ut20p_force_destroying(ut20p_ctx* ctx) {
   atomic_store_explicit(&ctx->pipeline.lc_destroying, 1, memory_order_release);
+}
+
+struct st20p_rx_ops* ut20p_ops(ut20p_ctx* ctx) {
+  return &ctx->pipeline.ops;
+}
+
+int ut20p_capture_transport_ops(ut20p_ctx* ctx, struct st20_rx_ops* ops) {
+  memset(&ut20p_created_rx_ops, 0, sizeof(ut20p_created_rx_ops));
+  ut20p_rx_create_fail = true;
+  int ret = rx_st20p_create_transport(&ctx->impl, &ctx->pipeline, &ctx->pipeline.ops);
+  ut20p_rx_create_fail = false;
+  *ops = ut20p_created_rx_ops;
+  return ret;
 }

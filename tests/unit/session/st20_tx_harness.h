@@ -18,6 +18,9 @@
 
 #include "st20_api.h"
 #include "st_api.h"
+#ifdef MTL_HAS_IPMX
+#include "st20_api.h"
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -284,7 +287,8 @@ void ut_txv_set_random_src_port(ut_txv_ctx* ctx, bool enable);
 /* Drives tv_update_dst() on a one-port session with the given ops.udp_src_port and
  * the source port st20_tx_create() chose (created_src_port). A user-supplied
  * destination MAC keeps ARP out of it. Outputs the UDP ports now in the session's
- * packet header template, host order. Returns 0 on success. */
+ * packet header template, host order. Returns 0 on success, else tv_update_dst()'s
+ * negative errno. */
 int ut_txv_update_dst(ut_txv_ctx* ctx, uint16_t udp_src_port, uint16_t created_src_port,
                       uint16_t new_udp_port, uint16_t* hdr_src_port,
                       uint16_t* hdr_dst_port);
@@ -583,6 +587,60 @@ void ut_txv_pipe_geometry(const ut_txv_ctx* ctx, uint32_t* pkt_len, uint32_t* li
                           uint32_t* frame_size, int* total_pkts);
 uint64_t ut_txv_pipe_frames_asked(const ut_txv_ctx* ctx);
 int ut_txv_pipe_total_pkts(const ut_txv_ctx* ctx);
+/* tv_ops_check(): the st20_tx_create() ops validation, 0 or negative errno */
+int ut_txv_ops_check(struct st20_tx_ops* ops);
+/* tv_st22_ops_check(): the st22_tx_create() ops validation, 0 or negative errno */
+int ut_txv_st22_ops_check(struct st22_tx_ops* ops);
+/* OR flags into the session's ops.flags */
+void ut_txv_add_flags(ut_txv_ctx* ctx, uint32_t flags);
+/* the UDP destination port in the session's packet header template, host order */
+uint16_t ut_txv_hdr_dst_port(const ut_txv_ctx* ctx, enum mtl_session_port port);
+/* tv_init_hdr() on session ports [0, num_port) with user MACs */
+int ut_txv_init_hdrs(ut_txv_ctx* ctx, int num_port);
+/* the IPv4 TOS byte in the session's packet header template */
+uint8_t ut_txv_hdr_tos(const ut_txv_ctx* ctx, enum mtl_session_port port);
+#define UT_TXV_IPV4_HDR_LEN (20)
+/* The IPv4 header of one packet built from the template with software checksum:
+ * tv_build_st20() for port P, tv_build_st20_redundant() of that packet for port R. */
+int ut_txv_build_ipv4_hdr(ut_txv_ctx* ctx, enum mtl_session_port port,
+                          uint8_t ipv4_hdr[UT_TXV_IPV4_HDR_LEN]);
+/* As ut_txv_build_ipv4_hdr() for port P, on an st22 frame mode session: tv_init_hdr()
+ * then tv_build_st22(). */
+int ut_txv_build_st22_ipv4_hdr(ut_txv_ctx* ctx, uint8_t ipv4_hdr[UT_TXV_IPV4_HDR_LEN]);
+#ifdef MTL_HAS_IPMX
+/* tv_init_pkt()'s packets per frame of a progressive BPM frame level session */
+int ut_txv_frame_total_pkts(ut_txv_ctx* ctx, uint32_t width, uint32_t height,
+                            enum st20_fmt fmt);
+#define UT_TXV_ST22_BOXES_LEN (60)
+/* tv_init_st22_boxes() of a progressive st22 frame session of st22_tx_ops fmt, with or
+ * without ST20_TX_FLAG_IPMX; the jpvs + colr bytes as sent before every codestream */
+int ut_txv_st22_boxes(ut_txv_ctx* ctx, enum st20_fmt fmt, uint32_t width, uint32_t height,
+                      enum st_fps fps, size_t codestream_size, bool ipmx,
+                      uint8_t boxes[UT_TXV_ST22_BOXES_LEN]);
+struct ut_txv_st22_frame_result {
+  bool started; /* tv_tasklet_st22() took the frame for sending */
+  int notify_frame_done_calls;
+  uint32_t pih_fail; /* the session's IPMX PIH check drop counter, kept across runs */
+};
+/* One tv_tasklet_st22() frame start of an ST20_TX_FLAG_IPMX session of width x height
+ * whose jpvi box carries schar and jxpl box plev, with the app frame holding
+ * codestream[0, size). */
+int ut_txv_run_st22_ipmx_frame(ut_txv_ctx* ctx, uint32_t width, uint32_t height,
+                               uint16_t schar, uint16_t plev, const uint8_t* codestream,
+                               size_t size, struct ut_txv_st22_frame_result* result);
+/* The first bulk of 1 to UT_TXV_ST22_BULK_MAX packets tv_tasklet_st22() builds of a frame
+ * of codestream_size bytes in pkt_len payload packets, on num_port ports, with
+ * s->ipmx_sr set or NULL: the packet index and the IPMX frame size stamp of each packet
+ * of that bulk on each port. */
+#define UT_TXV_ST22_BULK_MAX (4)
+struct ut_txv_st22_pkt0 {
+  uint32_t pkt_idx[MTL_SESSION_PORT_MAX][UT_TXV_ST22_BULK_MAX];
+  uint32_t frame_size[MTL_SESSION_PORT_MAX][UT_TXV_ST22_BULK_MAX];
+};
+int ut_txv_run_st22_pkt0(ut_txv_ctx* ctx, size_t codestream_size, uint32_t pkt_len,
+                         int num_port, unsigned int bulk, bool ipmx_sr,
+                         struct ut_txv_st22_pkt0* result);
+#endif
 
 #ifdef __cplusplus
 }

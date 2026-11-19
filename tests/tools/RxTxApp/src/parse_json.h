@@ -126,6 +126,7 @@ typedef struct st_json_interface {
   int rx_audio_sessions_cnt; /* st30 on interface level */
   int tx_anc_sessions_cnt;   /* st40 on interface level */
   int rx_anc_sessions_cnt;   /* st40 on interface level */
+  int rx_ipmx_sessions_cnt;  /* IPMX st20p/st22p, one more RX queue each for its SRs */
   bool allow_down_init;      /* allow port init even if link is down */
 } st_json_interface_t;
 
@@ -253,6 +254,8 @@ typedef struct st_json_st22p_session {
   bool display;
   bool measure_latency;
   bool enable_rtcp;
+  bool ipmx;
+  uint8_t ipmx_block_version;
 } st_json_st22p_session_t;
 
 typedef struct st_json_st20p_session {
@@ -267,6 +270,8 @@ typedef struct st_json_st20p_session {
   bool user_timestamp;
   bool drop_when_late;
   uint64_t user_time_offset;
+  bool ipmx;
+  uint8_t ipmx_block_version;
 } st_json_st20p_session_t;
 
 typedef struct st_json_st40p_info {

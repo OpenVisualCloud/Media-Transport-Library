@@ -2,6 +2,8 @@
  * Copyright(c) 2025 Intel Corporation
  */
 
+#include "st20p_test.h"
+
 #include <set>
 #include <thread>
 
@@ -690,36 +692,7 @@ static int test_st20p_rx_query_ext_frame(void* priv, st_ext_frame* ext_frame,
   return 0;
 }
 
-struct st20p_rx_digest_test_para {
-  enum st_plugin_device device;
-  int sessions;
-  int fail_interval;
-  int timeout_interval;
-  int timeout_ms;
-  bool tx_ext;
-  bool rx_ext;
-  bool rx_dedicated_ext;
-  bool check_fps;
-  enum st_test_level level;
-  int fb_cnt;
-  bool user_timestamp;
-  bool vsync;
-  bool pkt_convert;
-  size_t line_padding_size;
-  bool send_done_check;
-  bool interlace;
-  bool user_meta;
-  bool rtcp;
-  enum st20_packing packing;
-  enum st21_pacing pacing;
-  uint32_t ssrc;
-  bool block_get;
-  bool rx_timing_parser;
-  bool rx_auto_detect;
-  bool zero_payload_type;
-};
-
-static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para) {
+void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para) {
   memset(para, 0, sizeof(*para));
 
   para->device = ST_PLUGIN_DEVICE_TEST;
@@ -748,10 +721,10 @@ static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* par
   para->zero_payload_type = false;
 }
 
-static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
-                                 enum st_frame_fmt tx_fmt[], enum st20_fmt t_fmt[],
-                                 enum st_frame_fmt rx_fmt[],
-                                 struct st20p_rx_digest_test_para* para) {
+void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
+                          enum st_frame_fmt tx_fmt[], const enum st20_fmt t_fmt[],
+                          enum st_frame_fmt rx_fmt[],
+                          struct st20p_rx_digest_test_para* para) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto st = ctx->handle;
   int ret;
@@ -766,6 +739,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
   if (ctx->para.num_ports < 2) {
     info("%s, dual port should be enabled, one for tx and one for rx\n", __func__);
     throw std::runtime_error("Dual port not enabled");
+  }
+  if (para->redundant && ctx->para.num_ports < 4) {
+    info("%s, need 4 ports for redundant test, skipping\n", __func__);
+    return;
   }
 
   /* return if level lower than global */
@@ -883,6 +860,16 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_P]);
     ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST20P_TEST_UDP_PORT + i * 2;
+    if (para->redundant) {
+      ops_tx.port.num_port = 2;
+      memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+             MTL_IP_ADDR_LEN);
+      memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
+             MTL_IP_ADDR_LEN);
+      (void)snprintf(ops_tx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+                     ctx->para.port[MTL_PORT_R]);
+      ops_tx.port.udp_port[MTL_SESSION_PORT_R] = ST20P_TEST_UDP_PORT + i * 2;
+    }
     ops_tx.port.payload_type = para->zero_payload_type ? 0 : ST20P_TEST_PAYLOAD_TYPE;
     ops_tx.port.ssrc = para->ssrc;
     ops_tx.width = width[i];
@@ -908,6 +895,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     }
     if (para->user_timestamp) ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
     if (para->vsync) ops_tx.flags |= ST20P_TX_FLAG_ENABLE_VSYNC;
+    if (para->ipmx) ops_tx.flags |= ST20P_TX_FLAG_IPMX;
 
     if (para->rtcp) {
       ops_tx.flags |= ST20P_TX_FLAG_ENABLE_RTCP;
@@ -1024,6 +1012,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     }
 
     test_ctx_tx[i]->handle = tx_handle[i];
+    if (para->tx_created) para->tx_created(tx_handle[i]);
 
     tx_thread[i] = std::thread(test_st20p_tx_frame_thread, test_ctx_tx[i]);
   }
@@ -1114,6 +1103,16 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
     ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ST20P_TEST_UDP_PORT + i * 2;
+    if (para->redundant) {
+      ops_rx.port.num_port = 2;
+      for (int p = 0; p < 2; p++) {
+        memcpy(ops_rx.port.ip_addr[p], ctx->mcast_ip_addr[MTL_PORT_P + p],
+               MTL_IP_ADDR_LEN);
+        (void)snprintf(ops_rx.port.port[p], MTL_PORT_MAX_LEN, "%s",
+                       ctx->para.port[MTL_PORT_2 + p]);
+        ops_rx.port.udp_port[p] = ST20P_TEST_UDP_PORT + i * 2;
+      }
+    }
     ops_rx.port.payload_type = para->zero_payload_type ? 0 : ST20P_TEST_PAYLOAD_TYPE;
     ops_rx.port.ssrc = para->ssrc;
     ops_rx.width = width[i];
@@ -1146,6 +1145,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       }
     }
     if (para->vsync) ops_rx.flags |= ST20P_RX_FLAG_ENABLE_VSYNC;
+    if (para->ipmx || para->ipmx_rx_only) ops_rx.flags |= ST20P_RX_FLAG_IPMX;
     if (para->pkt_convert) ops_rx.flags |= ST20P_RX_FLAG_PKT_CONVERT;
     if (para->rx_auto_detect) ops_rx.flags |= ST20P_RX_FLAG_AUTO_DETECT;
 
@@ -1185,7 +1185,14 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
   ret = mtl_start(st);
   EXPECT_GE(ret, 0);
-  sleep(10);
+  int duration_s = para->duration_s ? para->duration_s : 10;
+  if (para->mid_stream) {
+    sleep(duration_s / 2);
+    para->mid_stream(tx_handle.data(), rx_handle.data(), sessions);
+    sleep(duration_s - duration_s / 2);
+  } else {
+    sleep(duration_s);
+  }
   if (!para->send_done_check) {
     ret = mtl_stop(st);
     EXPECT_GE(ret, 0);
@@ -1244,6 +1251,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
   }
 
   for (int i = 0; i < sessions; i++) {
+    if (para->tx_check) para->tx_check(tx_handle[i]);
     ret = st20p_tx_free(tx_handle[i]);
     EXPECT_GE(ret, 0);
     info("%s, session %d fb_send %d framerate %f:%f\n", __func__, i,
@@ -1260,6 +1268,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_tx[i] = NULL;
   }
   for (int i = 0; i < sessions; i++) {
+    if (para->rx_check) para->rx_check(rx_handle[i]);
     ret = st20p_rx_free(rx_handle[i]);
     EXPECT_GE(ret, 0);
     info("%s, session %d fb_rec %d framerate %f:%f\n", __func__, i,

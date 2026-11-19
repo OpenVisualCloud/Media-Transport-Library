@@ -48,6 +48,10 @@ if get_option('enable_rx_video_nt_store') == true
   add_global_arguments('-DMTL_HAS_RX_VIDEO_NT_STORE', language : 'c')
 endif
 
+if get_option('enable_ipmx') == true
+  add_global_arguments('-DMTL_HAS_IPMX', language : 'c')
+endif
+
 # Compiler hardening, see doc/build.md
 if not is_windows
   add_project_arguments('-fstack-protector-strong', '-fstack-clash-protection', '-fcf-protection=full',

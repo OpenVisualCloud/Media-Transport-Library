@@ -4,6 +4,7 @@
 
 #include "st22_pipeline_rx.h"
 
+#include "../../ipmx/ipmx.h"
 #include "../../mt_handle_guard.h"
 #include "../../mt_log.h"
 
@@ -424,6 +425,7 @@ static int rx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_rx
   }
   if (ops->flags & ST22P_RX_FLAG_DISABLE_BOXES)
     ops_rx.flags |= ST22_RX_FLAG_DISABLE_BOXES;
+  if (ops->flags & ST22P_RX_FLAG_IPMX) ops_rx.flags |= ST22_RX_FLAG_IPMX;
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.width = ops->width;
   ops_rx.height = ops->height;
@@ -770,6 +772,8 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
     err("%s(%d), unknow codec %d\n", __func__, idx, ops->codec);
     return NULL;
   }
+  if ((ops->flags & ST22P_RX_FLAG_IPMX) && ipmx_st22p_codec_check(ops->name, ops->codec))
+    return NULL;
 
   enum mtl_port port = mt_port_by_name(impl, ops->port.port[MTL_SESSION_PORT_P]);
   if (port >= MTL_PORT_MAX) return NULL;

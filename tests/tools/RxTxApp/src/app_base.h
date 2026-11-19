@@ -444,6 +444,8 @@ struct st_app_tx_st22p_session {
 
   pthread_t st22p_app_thread;
   bool st22p_app_thread_stop;
+
+  struct app_ipmx_tx* ipmx;
 };
 
 struct st_app_tx_st40p_session {
@@ -506,6 +508,8 @@ struct st_app_rx_st22p_session {
   bool slice;
   int width;
   int height;
+  uint8_t num_port;
+  bool ipmx;
 
   /* stat */
   int stat_frame_received;
@@ -555,6 +559,8 @@ struct st_app_tx_st20p_session {
   pthread_t st20p_app_thread;
   bool st20p_app_thread_stop;
   bool tx_file_complete; /* for auto_stop: true when whole file has been sent */
+
+  struct app_ipmx_tx* ipmx;
 };
 
 struct st_app_rx_st20p_session {
@@ -569,6 +575,7 @@ struct st_app_rx_st20p_session {
   uint8_t num_port;
   uint64_t last_stat_time_ns;
   bool sha_check;
+  bool ipmx;
 
   /* stat */
   int stat_frame_received;
@@ -787,6 +794,9 @@ struct st_app_context {
   int utc_offset;
 
   struct st_user_time user_time;
+
+  char ipmx_sdp_dir[ST_APP_URL_MAX_LEN];
+  char ipmx_ts_refclk[64];
 };
 
 static inline void* st_app_malloc(size_t sz) {
