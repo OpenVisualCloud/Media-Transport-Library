@@ -4,19 +4,6 @@
 
 #include "st20_common.h"
 
-struct MtlStopGuard {
-  mtl_handle handle;
-  bool started;
-
-  explicit MtlStopGuard(mtl_handle h) : handle(h), started(false) {
-  }
-  ~MtlStopGuard() {
-    if (started && handle) {
-      mtl_stop(handle);
-    }
-  }
-};
-
 static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
                                      int width[], int height[], enum st20_fmt fmt,
                                      int sessions, int repeat, enum st_test_level level) {

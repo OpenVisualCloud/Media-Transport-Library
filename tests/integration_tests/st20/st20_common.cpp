@@ -40,9 +40,6 @@ tests_context* init_test_ctx(struct st_tests_context* global_ctx, int idx,
   return tctx;
 }
 
-int tx_video_build_rtp_packet(tests_context* s, struct st20_rfc4175_rtp_hdr* rtp,
-                              uint16_t* pkt_len);
-
 void tx_feed_packet(void* args) {
   auto ctx = (tests_context*)args;
   void* mbuf;

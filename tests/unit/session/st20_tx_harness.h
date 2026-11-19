@@ -146,6 +146,30 @@ void ut_txv_set_visit_slice_lines(ut_txv_ctx* ctx, int lines);
  * fails if no packet reached the TX ring. Returns 0 on success. */
 int ut_txv_run_rtp_tasklet(ut_txv_ctx* ctx, bool second_field, bool tx_no_chain,
                            uint64_t* epoch);
+enum { UT_TXV_RTP_PKTS_MAX = 8 };
+/* An app packet: the RTP timestamp of its header and the TAI it is put with. */
+struct ut_txv_rtp_pkt {
+  uint32_t rtp_ts;
+  uint64_t tai;
+};
+/* A built packet: its pacing stamps and RTP timestamp, and the epoch it was built on. */
+struct ut_txv_rtp_sent {
+  uint64_t ptp;
+  uint64_t tsc;
+  uint32_t rtp_ts;
+  uint64_t epoch;
+};
+/* Gets and puts all nb_pkts app packets through the public RTP-level API before the
+ * tasklet runs -- st20_tx_put_mbuf_tai(), or st22_tx_put_mbuf_tai() with
+ * ut_txv_set_st22_rtp_level(), and the plain put_mbuf for a tai of 0 -- then has
+ * tv_tasklet_rtp() build them one a call. tx_no_chain selects tv_build_rtp() over
+ * tv_build_rtp_chain(), whose app mbufs come from a pool with no private area, as in
+ * production. A non-NULL sent_r makes the session redundant and takes what the R leg
+ * built. Returns the packets built into sent[], < 0 on setup failure or if the legs
+ * built different counts. */
+int ut_txv_run_rtp_pkts(ut_txv_ctx* ctx, bool tx_no_chain,
+                        const struct ut_txv_rtp_pkt* pkts, int nb_pkts,
+                        struct ut_txv_rtp_sent* sent, struct ut_txv_rtp_sent* sent_r);
 /* Drives tv_tasklet_st22()'s frame->tx_st22_meta assignment -- the compressed-
  * video (ST22) mirror of tv_tasklet_frame()'s frame->tv_meta assignment above,
  * so both production call sites are held to the same timestamp/rtp_timestamp
