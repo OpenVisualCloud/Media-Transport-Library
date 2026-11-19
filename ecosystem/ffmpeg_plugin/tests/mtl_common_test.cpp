@@ -869,3 +869,97 @@ TEST_F(FfmpegMtlCommonTest, LastPutResetsCapabilitiesForNextHandle) {
   EXPECT_EQ(ut_ffmpeg_init_calls(), 2);
   ASSERT_EQ(ut_ffmpeg_put(handle), 0);
 }
+
+static StDevArgs TwoLoadedPorts() {
+  StDevArgs args = {};
+  args.port[MTL_PORT_P] = const_cast<char*>("0000:01:00.0");
+  args.sip[MTL_PORT_P] = const_cast<char*>("192.0.2.1");
+  args.tx_queues_cnt[MTL_PORT_P] = 16;
+  args.port[MTL_PORT_R] = const_cast<char*>("0000:02:00.0");
+  args.sip[MTL_PORT_R] = const_cast<char*>("192.0.2.2");
+  args.tx_queues_cnt[MTL_PORT_R] = 16;
+  return args;
+}
+
+TEST_F(FfmpegMtlCommonTest, SharedHandleAcceptsLaterSessionOnOneLoadedPort) {
+  StDevArgs first = TwoLoadedPorts();
+  StDevArgs second = {};
+  second.port[MTL_PORT_P] = first.port[MTL_PORT_R];
+  second.sip[MTL_PORT_P] = first.sip[MTL_PORT_R];
+  second.tx_queues_cnt[MTL_PORT_P] = 16;
+  int first_idx = -1, second_idx = -1;
+  mtl_handle handle = ut_ffmpeg_get(&first, &first_idx);
+  ASSERT_NE(handle, nullptr);
+
+  EXPECT_EQ(ut_ffmpeg_get(&second, &second_idx), handle);
+  EXPECT_EQ(second_idx, 1);
+  EXPECT_EQ(ut_ffmpeg_init_calls(), 1);
+  EXPECT_EQ(ut_ffmpeg_put(handle), 0);
+  EXPECT_EQ(ut_ffmpeg_put(handle), 0);
+  EXPECT_EQ(ut_ffmpeg_uninit_calls(), 1);
+}
+
+TEST_F(FfmpegMtlCommonTest, SharedHandleRejectsLoadedPortWithDifferentSettings) {
+  StDevArgs first = TwoLoadedPorts();
+  StDevArgs other_sip = {};
+  other_sip.port[MTL_PORT_P] = first.port[MTL_PORT_R];
+  other_sip.sip[MTL_PORT_P] = const_cast<char*>("192.0.2.9");
+  other_sip.tx_queues_cnt[MTL_PORT_P] = 16;
+  StDevArgs other_queues = other_sip;
+  other_queues.sip[MTL_PORT_P] = first.sip[MTL_PORT_R];
+  other_queues.tx_queues_cnt[MTL_PORT_P] = 8;
+  StDevArgs other_pacing = other_queues;
+  other_pacing.tx_queues_cnt[MTL_PORT_P] = 16;
+  other_pacing.pacing_way = const_cast<char*>("tsc");
+  int idx = -1;
+  mtl_handle handle = ut_ffmpeg_get(&first, &idx);
+  ASSERT_NE(handle, nullptr);
+
+  EXPECT_EQ(ut_ffmpeg_get(&other_sip, &idx), nullptr);
+  EXPECT_EQ(ut_ffmpeg_get(&other_queues, &idx), nullptr);
+  EXPECT_EQ(ut_ffmpeg_get(&other_pacing, &idx), nullptr);
+  EXPECT_EQ(ut_ffmpeg_put(handle), 0);
+  EXPECT_EQ(ut_ffmpeg_uninit_calls(), 1);
+}
+
+TEST_F(FfmpegMtlCommonTest, SharedHandleRejectsPortNotLoaded) {
+  StDevArgs first = TwoLoadedPorts();
+  StDevArgs second = first;
+  second.port[MTL_PORT_2] = const_cast<char*>("0000:03:00.0");
+  second.sip[MTL_PORT_2] = const_cast<char*>("192.0.2.3");
+  int idx = -1;
+  mtl_handle handle = ut_ffmpeg_get(&first, &idx);
+  ASSERT_NE(handle, nullptr);
+
+  EXPECT_EQ(ut_ffmpeg_get(&second, &idx), nullptr);
+  EXPECT_EQ(ut_ffmpeg_put(handle), 0);
+  EXPECT_EQ(ut_ffmpeg_uninit_calls(), 1);
+}
+
+TEST_F(FfmpegMtlCommonTest, SessionUsesLoadedSecondPortOnlyWithRedundantAddress) {
+  StDevArgs dev_args = TwoLoadedPorts();
+  StTxSessionPortArgs tx_args = {};
+  tx_args.dip[MTL_SESSION_PORT_P] = const_cast<char*>("239.1.1.1");
+  st_tx_port tx_port = {};
+  StRxSessionPortArgs rx_args = {};
+  rx_args.sip[MTL_SESSION_PORT_P] = const_cast<char*>("239.1.1.1");
+  st_rx_port rx_port = {};
+
+  ASSERT_EQ(ut_ffmpeg_parse_tx_port(&dev_args, &tx_args, &tx_port), 0);
+  ASSERT_EQ(tx_port.num_port, 1);
+  EXPECT_STREQ(tx_port.port[MTL_SESSION_PORT_P], "0000:01:00.0");
+  ASSERT_EQ(ut_ffmpeg_parse_rx_port(&dev_args, &rx_args, &rx_port), 0);
+  ASSERT_EQ(rx_port.num_port, 1);
+  EXPECT_STREQ(rx_port.port[MTL_SESSION_PORT_P], "0000:01:00.0");
+
+  tx_args.dip[MTL_SESSION_PORT_R] = const_cast<char*>("239.1.1.2");
+  tx_port = {};
+  ASSERT_EQ(ut_ffmpeg_parse_tx_port(&dev_args, &tx_args, &tx_port), 0);
+  ASSERT_EQ(tx_port.num_port, 2);
+  EXPECT_STREQ(tx_port.port[MTL_SESSION_PORT_R], "0000:02:00.0");
+  rx_args.sip[MTL_SESSION_PORT_R] = const_cast<char*>("239.1.1.2");
+  rx_port = {};
+  ASSERT_EQ(ut_ffmpeg_parse_rx_port(&dev_args, &rx_args, &rx_port), 0);
+  ASSERT_EQ(rx_port.num_port, 2);
+  EXPECT_STREQ(rx_port.port[MTL_SESSION_PORT_R], "0000:02:00.0");
+}
