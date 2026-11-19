@@ -1648,6 +1648,26 @@ static inline void tv_lead_visit(struct mtl_main_impl* impl,
   if (lead_ns < s->lead_min_ns) s->lead_min_ns = lead_ns;
 }
 
+static uint64_t tv_pacing_required_tai(struct st_tx_video_session_impl* s,
+                                       enum st10_timestamp_fmt tfmt, uint64_t timestamp);
+
+static uint64_t tv_rtp_required_tai(struct st_tx_video_session_impl* s,
+                                    struct rte_mbuf* app_pkt) {
+  if (!(s->ops.flags & ST20_TX_FLAG_USER_PACING)) return 0;
+
+  uint64_t tai = *RTE_MBUF_DYNFIELD(app_pkt, s->user_tai_offset, uint64_t*);
+  if (!tai) {
+    s->port_user_stats.common.stat_error_user_timestamp++;
+    if (!s->user_tai_missing_logged) {
+      warn("%s(%d), USER_PACING frame has no TAI, use default pacing\n", __func__,
+           s->idx);
+      s->user_tai_missing_logged = true;
+    }
+    return 0;
+  }
+  return tv_pacing_required_tai(s, ST10_TIMESTAMP_FMT_TAI, tai);
+}
+
 static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
                         struct rte_mbuf* pkt) {
   struct mt_udp_hdr* hdr;
@@ -1690,7 +1710,7 @@ static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_i
         s->port_user_stats.stat_interlace_first_field++;
       }
     }
-    tv_sync_pacing(impl, s, 0, second_field);
+    tv_sync_pacing(impl, s, tv_rtp_required_tai(s, pkt), second_field);
     if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
       s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
     } else {
@@ -1764,7 +1784,7 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
         s->port_user_stats.stat_interlace_first_field++;
       }
     }
-    tv_sync_pacing(impl, s, 0, second_field);
+    tv_sync_pacing(impl, s, tv_rtp_required_tai(s, pkt_chain), second_field);
     if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
       s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
     } else {
@@ -3501,6 +3521,21 @@ static int tv_init_packet_ring(struct st_tx_video_sessions_mgr* mgr,
   struct rte_ring* ring;
   unsigned int flags, count = s->ops.rtp_ring_size;
   int mgr_idx = mgr->idx, idx = s->idx;
+
+  if (s->ops.flags & ST20_TX_FLAG_USER_PACING) {
+    static const struct rte_mbuf_dynfield user_tai_desc = {
+        .name = "mtl_tx_video_user_tai",
+        .size = sizeof(uint64_t),
+        .align = __alignof__(uint64_t),
+    };
+    int offset = rte_mbuf_dynfield_register(&user_tai_desc);
+    if (offset < 0) {
+      err("%s(%d,%d), user tai dynfield register fail %d\n", __func__, mgr_idx, idx,
+          rte_errno);
+      return -rte_errno;
+    }
+    s->user_tai_offset = offset;
+  }
 
   snprintf(ring_name, 32, "%sM%dS%d_PKT", ST_TX_VIDEO_PREFIX, mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
@@ -5297,6 +5332,10 @@ out:
 }
 
 int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len) {
+  return st20_tx_put_mbuf_tai(handle, mbuf, len, 0);
+}
+
+int st20_tx_put_mbuf_tai(st20_tx_handle handle, void* mbuf, uint16_t len, uint64_t tai) {
   struct st_tx_video_session_handle_impl* s_impl = handle;
   struct rte_mbuf* pkt = (struct rte_mbuf*)mbuf;
   struct st_tx_video_session_impl* s;
@@ -5334,6 +5373,8 @@ int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len) {
 
   if (s->tx_no_chain) len += sizeof(struct mt_udp_hdr);
 
+  if (s->ops.flags & ST20_TX_FLAG_USER_PACING)
+    *RTE_MBUF_DYNFIELD(pkt, s->user_tai_offset, uint64_t*) = tai;
   pkt->data_len = pkt->pkt_len = len;
   ret = rte_ring_sp_enqueue(packet_ring, (void*)pkt);
   if (ret < 0) {
@@ -5779,6 +5820,10 @@ out:
 }
 
 int st22_tx_put_mbuf(st22_tx_handle handle, void* mbuf, uint16_t len) {
+  return st22_tx_put_mbuf_tai(handle, mbuf, len, 0);
+}
+
+int st22_tx_put_mbuf_tai(st22_tx_handle handle, void* mbuf, uint16_t len, uint64_t tai) {
   struct st22_tx_video_session_handle_impl* s_impl = handle;
   struct rte_mbuf* pkt = (struct rte_mbuf*)mbuf;
   struct st_tx_video_session_impl* s;
@@ -5816,6 +5861,8 @@ int st22_tx_put_mbuf(st22_tx_handle handle, void* mbuf, uint16_t len) {
 
   if (s->tx_no_chain) len += sizeof(struct mt_udp_hdr);
 
+  if (s->ops.flags & ST20_TX_FLAG_USER_PACING)
+    *RTE_MBUF_DYNFIELD(pkt, s->user_tai_offset, uint64_t*) = tai;
   pkt->data_len = pkt->pkt_len = len;
   ret = rte_ring_sp_enqueue(packet_ring, (void*)pkt);
   if (ret < 0) {

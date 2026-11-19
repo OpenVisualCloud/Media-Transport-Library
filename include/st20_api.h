@@ -51,7 +51,7 @@ extern "C" {
  * Only ST10_TIMESTAMP_FMT_TAI is honored; ST10_TIMESTAMP_FMT_MEDIA_CLK is not
  * supported for pacing and falls back to the default epoch-based pacing. Distinct
  * from ST20_TX_FLAG_USER_TIMESTAMP, which honors both formats for the reported rtp
- * timestamp.
+ * timestamp. For ST20_TYPE_RTP_LEVEL the timestamp comes from st20_tx_put_mbuf_tai().
  */
 #define ST20_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
@@ -90,6 +90,7 @@ extern "C" {
  * It changes how ST20_TX_FLAG_USER_PACING works. if enabled, it does not align the
  * transmission time to the virtual receiver read schedule. The first
  * packet of the frame will be sent exactly at the time specified by the user.
+ * For ST20_TYPE_RTP_LEVEL that time is the tai of st20_tx_put_mbuf_tai().
  */
 #define ST20_TX_FLAG_EXACT_USER_PACING (MTL_BIT32(8))
 /**
@@ -132,7 +133,7 @@ extern "C" {
  * Only ST10_TIMESTAMP_FMT_TAI is honored; ST10_TIMESTAMP_FMT_MEDIA_CLK is not
  * supported for pacing and falls back to the default epoch-based pacing. Distinct
  * from ST22_TX_FLAG_USER_TIMESTAMP, which honors both formats for the reported rtp
- * timestamp.
+ * timestamp. For ST22_TYPE_RTP_LEVEL the timestamp comes from st22_tx_put_mbuf_tai().
  */
 #define ST22_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
@@ -1964,6 +1965,41 @@ void* st20_tx_get_mbuf(st20_tx_handle handle, void** usrptr);
 int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len);
 
 /**
+ * Put back the mbuf which get by st20_tx_get_mbuf to the tx st2110-20(video) session,
+ * with the TAI time the frame it starts must be sent at. For ST20_TYPE_RTP_LEVEL, the
+ * RTP-level counterpart of st20_tx_frame_meta.timestamp.
+ *
+ * The tai is honored only when ST20_TX_FLAG_USER_PACING is set; without it any tai is
+ * ignored. It is read only on the packet that starts a new frame (its RTP timestamp
+ * differs from the previous packet's) and ignored on every other packet. It sets the
+ * send time only: the RTP timestamp stays what ST20_TX_FLAG_USER_TIMESTAMP or the
+ * default pacing gives it.
+ * ST20_TX_FLAG_EXACT_USER_PACING sends the first packet of the frame at tai; a tai in
+ * the past, more than 1s ahead or closer than the warm-up lead then falls back to the
+ * default pacing. Otherwise the frame goes on the epoch nearest to tai, even if that
+ * epoch is past or more than 1s ahead, one epoch later if an interlaced field needs
+ * the other parity. These range checks are those of st20_tx_frame_meta.timestamp:
+ * stat_error_user_timestamp counts the tai out of range with EXACT, the epoch in the
+ * past or more than 1s ahead without it. Unlike frame level, a first packet with no tai
+ * is counted too, with or without EXACT, and logged once per session; it falls back to
+ * the default pacing.
+ * st20_tx_put_mbuf() is this call with tai 0.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(video) session.
+ * @param mbuf
+ *   the dpdk mbuf pointer by st20_tx_get_mbuf.
+ * @param len
+ *   the rtp package length, include both header and payload.
+ * @param tai
+ *   the send time in ns, ST10_TIMESTAMP_FMT_TAI; 0 means not supplied.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if put fail.
+ */
+int st20_tx_put_mbuf_tai(st20_tx_handle handle, void* mbuf, uint16_t len, uint64_t tai);
+
+/**
  * Get the scheduler index for the tx st2110-20(video) session.
  *
  * @param handle
@@ -2159,6 +2195,26 @@ void* st22_tx_get_mbuf(st22_tx_handle handle, void** usrptr);
  *   - <0: Error code if put fail.
  */
 int st22_tx_put_mbuf(st22_tx_handle handle, void* mbuf, uint16_t len);
+
+/**
+ * Put back the mbuf which get by st22_tx_get_mbuf to the tx
+ * st2110-22(compressed video) session, with the TAI time the frame it starts must be
+ * sent at. For ST22_TYPE_RTP_LEVEL; needs ST22_TX_FLAG_USER_PACING. The frame goes on
+ * the epoch nearest to tai, see st20_tx_put_mbuf_tai() for the rest of the contract.
+ *
+ * @param handle
+ *   The handle to the tx st2110-22(compressed video) session.
+ * @param mbuf
+ *   the dpdk mbuf pointer by st22_tx_get_mbuf.
+ * @param len
+ *   the rtp package length, include both header and payload.
+ * @param tai
+ *   the send time in ns, ST10_TIMESTAMP_FMT_TAI; 0 means not supplied.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if put fail.
+ */
+int st22_tx_put_mbuf_tai(st22_tx_handle handle, void* mbuf, uint16_t len, uint64_t tai);
 
 /**
  * Get the scheduler index for the tx st2110-22(compressed video) session.

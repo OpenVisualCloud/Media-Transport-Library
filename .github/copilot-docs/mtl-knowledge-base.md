@@ -802,6 +802,12 @@ Frame transmission aligned to PTP epoch boundaries. For 59.94fps: frame period �
   usable timestamp, and ST22 at RTP level (`s_type == MT_ST22_HANDLE_TX_VIDEO &&
   !s->st22_info`). Do **not** add 6.3.3's `T_LINE/2` — it reaches the RTP timestamp and
   breaks ST 2110-10 7.6.1.
+- RTP-level USER_PACING: the TAI of `st20_tx_put_mbuf_tai()` / `st22_tx_put_mbuf_tai()`
+  rides on the app mbuf in the `mtl_tx_video_user_tai` dynfield (`tv_init_packet_ring()`
+  registers it), not on the session —
+  `packet_ring` holds frames ahead of the tasklet. `tv_rtp_required_tai()` reads it at the
+  new-frame branch of `tv_build_rtp()` / `tv_build_rtp_chain()`. Not the mbuf priv area: the
+  chain pool has none and the tasklet overwrites the hdr pool's.
 - The 20/525, 26/625, 22/1125 TROFFSET numerators are legacy ST 2110-21:2017 fixed values; the
   2022 Table 1 TRO_DEFAULT equation is defective for the 525/625 rows (dangling `+` in the
   published PDF). Do not "re-derive" them.

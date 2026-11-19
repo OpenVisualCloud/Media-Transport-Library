@@ -2,7 +2,11 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
+#include <cinttypes>
+#include <mutex>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "log.h"
 #include "tests.hpp"
@@ -280,8 +284,8 @@ static int st22_tx_build_rtp_packet(tests_context* s, struct st22_rfc9134_rtp_hd
   return 0;
 }
 
-static void st22_tx_feed_packet(void* args) {
-  auto ctx = (tests_context*)args;
+/* tai_of, if set, gives the TAI of the frame a first packet starts, by RTP timestamp */
+static void st22_tx_feed_packet_tai(tests_context* ctx, uint64_t (*tai_of)(uint32_t)) {
   void* mbuf;
   void* usrptr = NULL;
   uint16_t mbuf_len = 0;
@@ -302,11 +306,16 @@ static void st22_tx_feed_packet(void* args) {
       }
     }
 
+    uint64_t tai = (tai_of && !ctx->pkt_idx) ? tai_of(ctx->rtp_tmstamp) : 0;
     /* build the rtp pkt */
     st22_tx_build_rtp_packet(ctx, (struct st22_rfc9134_rtp_hdr*)usrptr, &mbuf_len);
 
-    st22_tx_put_mbuf((st22_tx_handle)ctx->handle, mbuf, mbuf_len);
+    st22_tx_put_mbuf_tai((st22_tx_handle)ctx->handle, mbuf, mbuf_len, tai);
   }
+}
+
+static void st22_tx_feed_packet(void* args) {
+  st22_tx_feed_packet_tai((tests_context*)args, nullptr);
 }
 
 static void st22_rx_handle_rtp(tests_context* s, struct st22_rfc9134_rtp_hdr* hdr,
@@ -334,8 +343,9 @@ static void st22_rx_handle_rtp(tests_context* s, struct st22_rfc9134_rtp_hdr* hd
   return;
 }
 
-static void st22_rx_get_packet(void* args) {
-  auto ctx = (tests_context*)args;
+/* on_packet, if set, sees every packet after the new frame check */
+static void st22_rx_get_packet_hook(tests_context* ctx,
+                                    void (*on_packet)(tests_context*, uint32_t, bool)) {
   void* mbuf;
   void* usrptr = NULL;
   uint16_t mbuf_len = 0;
@@ -369,8 +379,13 @@ static void st22_rx_get_packet(void* args) {
     if (ctx->check_sha) {
       st22_rx_handle_rtp(ctx, hdr, newframe, mbuf_len);
     }
+    if (on_packet) on_packet(ctx, tmstamp, newframe);
     st22_rx_put_mbuf((st22_rx_handle)ctx->handle, mbuf);
   }
+}
+
+static void st22_rx_get_packet(void* args) {
+  st22_rx_get_packet_hook((tests_context*)args, nullptr);
 }
 
 static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width[],
@@ -1638,4 +1653,164 @@ TEST(St22_tx, tx_user_pacing) {
   int pkt_data_len[1] = {1260};
   int total_pkts[1] = {602};
   st22_tx_user_pacing_test(width, height, pkt_data_len, total_pkts, ST_TEST_LEVEL_ALL, 1);
+}
+
+namespace {
+/* Frame k, RTP timestamp k + 1 so the first differs from the RX context's initial
+ * rtp_tmstamp 0, which the getter's new frame check compares with, is put with a TAI on
+ * every second epoch from base_epoch, off the grid alternately by +0.4 and -0.3 frame:
+ * only the nearest epoch, not floor, ceil, the TAI itself or the consecutive epochs of
+ * the default pacing, matches it. */
+struct St22RtpPacing {
+  uint64_t base_epoch;
+  long double frame_ns;
+  std::mutex mtx;
+  std::vector<std::pair<uint32_t, uint64_t>> arrivals; /* RTP timestamp, first pkt */
+};
+St22RtpPacing st22_rtp_pacing;
+
+uint64_t st22_rtp_pacing_epoch(uint32_t rtp_ts) {
+  return st22_rtp_pacing.base_epoch + 2 * (uint64_t)(rtp_ts - 1);
+}
+
+uint64_t st22_rtp_pacing_target(uint32_t rtp_ts) {
+  long double off = (rtp_ts % 2) ? 0.4L : -0.3L;
+  return (uint64_t)((st22_rtp_pacing_epoch(rtp_ts) + off) * st22_rtp_pacing.frame_ns);
+}
+
+void st22_rx_record_first_packet(tests_context* ctx, uint32_t tmstamp, bool newframe) {
+  if (!newframe) return;
+  uint64_t now = mtl_ptp_read_time(ctx->ctx->handle);
+  std::lock_guard<std::mutex> rec(st22_rtp_pacing.mtx);
+  st22_rtp_pacing.arrivals.emplace_back(tmstamp, now);
+}
+
+/* stops the feed threads, then mtl, then frees the sessions, whichever were set up */
+struct St22RtpPacingSessions {
+  explicit St22RtpPacingSessions(mtl_handle h) : handle(h) {
+  }
+  mtl_handle handle;
+  bool started = false;
+  tests_context tx_ctx;
+  tests_context rx_ctx;
+  st22_tx_handle tx = nullptr;
+  st22_rx_handle rx = nullptr;
+  std::thread tx_thread;
+  std::thread rx_thread;
+
+  void stop_threads() {
+    for (tests_context* c : {&tx_ctx, &rx_ctx}) {
+      std::lock_guard<std::mutex> lck(c->mtx);
+      c->stop = true;
+      c->cv.notify_all();
+    }
+    if (tx_thread.joinable()) tx_thread.join();
+    if (rx_thread.joinable()) rx_thread.join();
+  }
+  ~St22RtpPacingSessions() {
+    stop_threads();
+    if (started) mtl_stop(handle);
+    if (tx) st22_tx_free(tx);
+    if (rx) st22_rx_free(rx);
+  }
+};
+}  // namespace
+
+/* ST22 has no EXACT flag: st22_tx_put_mbuf_tai() only picks the epoch the frame goes
+ * on, the nearest to its TAI. Checked from RX by the epoch each frame arrives in. */
+static void st22_tx_rtp_user_pacing_test(enum st_test_level level) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  constexpr int kPktDataLen = 1280;
+  constexpr int kTotalPkts = 540;
+  constexpr uint64_t kLeadEpochs = 18;    /* ~300ms */
+  constexpr int64_t kEarlyNs = 1'000'000; /* RL warm-up and clock reads */
+  constexpr int64_t kLateNs = 3'000'000;  /* tr_offset and RX thread wake */
+  constexpr int kRunS = 4;                /* ~120 frames at every 2nd epoch */
+  constexpr size_t kMinFrames = 60;
+
+  if (level < ctx->level) return;
+  if (ctx->para.num_ports < 2) {
+    info("%s, dual port should be enabled, one for tx and one for rx\n", __func__);
+    throw std::runtime_error("Dual port not enabled");
+  }
+
+  St22RtpPacingSessions s(ctx->handle);
+  {
+    std::lock_guard<std::mutex> lck(st22_rtp_pacing.mtx);
+    st22_rtp_pacing.arrivals.clear();
+  }
+  ASSERT_GE(mtl_start(ctx->handle), 0);
+  s.started = true;
+
+  for (tests_context* c : {&s.tx_ctx, &s.rx_ctx}) {
+    c->ctx = ctx;
+    c->fb_cnt = 3;
+    c->pkt_data_len = kPktDataLen;
+    c->total_pkts_in_frame = kTotalPkts;
+    c->frame_size = (size_t)kPktDataLen * kTotalPkts;
+  }
+
+  /* the create/free ops, made a one-port RTP-level pair from TX port P to RX port R */
+  struct st22_tx_ops ops_tx;
+  st22_tx_ops_init(&s.tx_ctx, &ops_tx);
+  ops_tx.num_port = 1;
+  if (!ctx->mcast_only)
+    memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+  ops_tx.type = ST22_TYPE_RTP_LEVEL;
+  ops_tx.flags = ST22_TX_FLAG_USER_PACING | ST22_TX_FLAG_USER_TIMESTAMP;
+  ops_tx.rtp_pkt_size = kPktDataLen + sizeof(struct st22_rfc9134_rtp_hdr);
+  ops_tx.rtp_frame_total_pkts = kTotalPkts;
+  s.tx = st22_tx_create(ctx->handle, &ops_tx);
+  ASSERT_TRUE(s.tx != nullptr);
+
+  struct st22_rx_ops ops_rx;
+  st22_rx_ops_init(&s.rx_ctx, &ops_rx);
+  ops_rx.num_port = 1;
+  if (!ctx->mcast_only)
+    memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+  (void)snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+                 ctx->para.port[MTL_PORT_R]);
+  ops_rx.type = ST22_TYPE_RTP_LEVEL;
+  s.rx = st22_rx_create(ctx->handle, &ops_rx);
+  ASSERT_TRUE(s.rx != nullptr);
+
+  st22_rtp_pacing.frame_ns = (long double)NS_PER_S / st_frame_rate(ops_tx.fps);
+  st22_rtp_pacing.base_epoch =
+      (uint64_t)(mtl_ptp_read_time(ctx->handle) / st22_rtp_pacing.frame_ns) + kLeadEpochs;
+  s.tx_ctx.rtp_tmstamp = 1;
+  s.rx_ctx.handle = s.rx;
+  s.tx_ctx.handle = s.tx;
+  s.rx_thread =
+      std::thread(st22_rx_get_packet_hook, &s.rx_ctx, st22_rx_record_first_packet);
+  s.tx_thread = std::thread(st22_tx_feed_packet_tai, &s.tx_ctx, st22_rtp_pacing_target);
+
+  sleep(kRunS);
+  s.stop_threads();
+
+  std::vector<std::pair<uint32_t, uint64_t>> arrivals;
+  {
+    std::lock_guard<std::mutex> lck(st22_rtp_pacing.mtx);
+    arrivals = st22_rtp_pacing.arrivals;
+  }
+  size_t misses = 0;
+  for (const auto& a : arrivals) {
+    uint64_t epoch_start =
+        (uint64_t)(st22_rtp_pacing_epoch(a.first) * st22_rtp_pacing.frame_ns);
+    int64_t delta = (int64_t)(a.second - epoch_start);
+    if (delta < -kEarlyNs || delta > kLateNs) {
+      misses++;
+      info("%s, frame %u arrived %" PRId64 "ns from its nearest epoch\n", __func__,
+           a.first, delta);
+    }
+  }
+  info("%s, frames %zu misses %zu\n", __func__, arrivals.size(), misses);
+  EXPECT_GE(arrivals.size(), kMinFrames);
+  /* a frame whose first packet is lost is first seen later in its epoch */
+  EXPECT_LE(misses, arrivals.size() / 100);
+}
+
+TEST(St22_tx, rtp_user_pacing_nearest_epoch) {
+  st22_tx_rtp_user_pacing_test(ST_TEST_LEVEL_ALL);
 }
