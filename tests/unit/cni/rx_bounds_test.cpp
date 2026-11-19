@@ -3,7 +3,7 @@
  *
  * The CNI RX handler and the control-packet parsers it calls read only the received
  * bytes: every frame ends on the last byte before a PROT_NONE page, so a read past
- * its end faults.
+ * its end faults. A port without the PTP or multicast instance of a frame ignores it.
  *
  * Run: ./build_unit/tests/unit/UnitTest --gtest_filter='*Cni*'
  */
@@ -280,6 +280,18 @@ TEST_F(CniPtpBounds, TruncatedL4AnnounceIsRejected) {
   Frame f = Udp(5, kPtpGeneralPort, kPtpGeneralPort) + PtpAnnounce();
   Rx(f, f.size() - 1);
   EXPECT_FALSE(ut_cni_ptp_master_set(ctx_));
+}
+
+class CniRxNoInstance : public CniRxTest {};
+
+TEST_F(CniRxNoInstance, L2PtpFrameIsIgnored) {
+  ut_cni_drop_ptp(ctx_);
+  EXPECT_EQ(Rx(Eth(kEther1588) + PtpAnnounce()), 0);
+}
+
+TEST_F(CniRxNoInstance, IgmpQueryIsIgnored) {
+  ut_cni_drop_mcast(ctx_);
+  EXPECT_EQ(Rx(Ipv4(5, kProtoIgmp) + kIgmpV3Query), 0);
 }
 
 class CniDhcpBounds : public CniRxTest {};

@@ -231,6 +231,7 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
   dbg("%s(%d), ether_type 0x%x\n", __func__, port, ether_type);
   switch (ether_type) {
     case RTE_ETHER_TYPE_1588:
+      if (!ptp) break;
       ptp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ptp_header*, hdr_offset);
       mt_ptp_parse(ptp, ptp_hdr, m->data_len - hdr_offset, vlan, MT_PTP_L2, m->timesync,
                    NULL);
