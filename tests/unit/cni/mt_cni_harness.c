@@ -122,3 +122,11 @@ const uint8_t* ut_cni_dhcp_server_ip(ut_cni_ctx* ctx) {
 const uint8_t* ut_cni_dhcp_netmask(ut_cni_ctx* ctx) {
   return ctx->dhcp.netmask;
 }
+
+void ut_cni_drop_ptp(ut_cni_ctx* ctx) {
+  ctx->impl.ptp[MTL_PORT_P] = NULL;
+}
+
+void ut_cni_drop_mcast(ut_cni_ctx* ctx) {
+  ctx->impl.mcast[MTL_PORT_P] = NULL;
+}

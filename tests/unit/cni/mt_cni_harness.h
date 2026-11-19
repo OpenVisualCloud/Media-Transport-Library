@@ -50,6 +50,10 @@ int ut_cni_dhcp_status(ut_cni_ctx* ctx);
 const uint8_t* ut_cni_dhcp_server_ip(ut_cni_ctx* ctx);
 const uint8_t* ut_cni_dhcp_netmask(ut_cni_ctx* ctx);
 
+/* Remove the PTP or the multicast instance of the port. */
+void ut_cni_drop_ptp(ut_cni_ctx* ctx);
+void ut_cni_drop_mcast(ut_cni_ctx* ctx);
+
 #ifdef __cplusplus
 }
 #endif
