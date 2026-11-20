@@ -93,6 +93,9 @@ jobs:
     needs: build
     runs-on: [self-hosted, perf, sut]
     timeout-minutes: 720
+    permissions:
+      contents: read
+      actions: read
     steps:
       - name: Harden-Runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -156,6 +159,22 @@ jobs:
           SCH_QUOTA: ${{ inputs.sch_quota }}
           SUT_APP_ARGS: ${{ inputs.sut_app_args }}
         run: task ci:pytest-run -- performance
+      - name: Find the last nightly's session history
+        id: history
+        if: always()
+        continue-on-error: true
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: return require(`${{ github.workspace }}/.github/scripts/ci/report/find-performance-history.js`)({ github, context, core })
+      - name: Download the last nightly's session history
+        if: always() && steps.history.outputs.run_id != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          name: perf-history-${{ runner.name }}
+          path: tests/acceptance/perf-history
+          run-id: ${{ steps.history.outputs.run_id }}
+          github-token: ${{ github.token }}
       - name: Generate performance report
         if: always()
         env:
@@ -170,6 +189,14 @@ jobs:
             ./tests/acceptance/report.html
             ./tests/acceptance/performance_report.html
             ./tests/acceptance/perf-logs.tar.gz
+      - name: Upload the session history
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: perf-history-${{ runner.name }}
+          path: ./tests/acceptance/perf_history.json
+          if-no-files-found: ignore
+          overwrite: true
       - name: Clean up
         if: always()
         run: task cleanup

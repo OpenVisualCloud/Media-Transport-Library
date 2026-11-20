@@ -5,7 +5,7 @@
 
 Usage:
     python generate_report.py <log_root> [-o report.html] [--branch B]
-        [--run-id ID [--run-url URL]]
+        [--run-id ID [--run-url URL]] [--history H.json] [--history-out H.json]
 
 Scans timestamped subdirectories under <log_root> for pytest.log and per-test
 .log files, extracts sweep results, platform config, throughput and CPU cores,
@@ -70,6 +70,9 @@ class SweepTest:
     companion_dev_rx: float = 0.0
     steps: list = field(default_factory=list)  # [(sessions, passed, detail)]
     rxtxapp_config: dict = field(default_factory=dict)
+    fixed: bool = False  # a fixed session count, not a sweep's maximum
+    last: dict | None = None  # the history's entries of a sweep: the last nightly's,
+    best: dict | None = None  # and the best
 
 
 # ── Regex patterns ────────────────────────────────────────────────────
@@ -364,6 +367,7 @@ def _parse_log_file(log_path: str, dir_name: str = ""):
                     companion_dev_rx=c_rx,
                     steps=list(steps),
                     rxtxapp_config=dict(rxtxapp_config),
+                    fixed=bool(mf),
                 )
                 rd = "REDUNDANT " if st.redundant else ""
                 ds = " +DMA" if st.dma else ""
@@ -664,6 +668,38 @@ def _tput(mbps: float) -> str:
     return f"{mbps / 1000:.2f} Gb/s" if mbps >= 1000 else f"{mbps:.1f} Mb/s"
 
 
+def update_history(prev: dict, tests, url: str) -> dict:
+    """Each case's history with this nightly in it → {key: {"last": entry, "best": entry}}.
+
+    The best changes only for a higher count; a case not swept keeps its history.
+    """
+    cases = dict(prev)
+    for t in tests:
+        entry = {"sessions": t.max_sessions, "date": t.timestamp, "url": url}
+        best = prev.get(t.key, {}).get("best")
+        if not best or t.max_sessions > best["sessions"]:
+            best = entry
+        cases[t.key] = {"last": entry, "best": best}
+    return cases
+
+
+def _history_cell(entry) -> str:
+    """A session count of the history, linked to its run."""
+    if not entry:
+        return '<td class="n">\u2014</td>'
+    n = entry["sessions"]
+    if entry["url"]:
+        href = _esc(entry["url"]).replace('"', "&quot;")
+        n = f'<a href="{href}">{n}</a>'
+    return f'<td class="n" title="{_esc(entry["date"])}">{n}</td>'
+
+
+_HISTORY_NOTE = (
+    "<br><b>Last Run</b> = the sessions of the last nightly of main on this host. "
+    "<b>Best</b> = the most sessions a nightly on this host reached; a red row has fewer."
+)
+
+
 def _kv_table(title: str, rows: list[tuple[str, str]]) -> str:
     lines = [
         f'<div class="section-title">{title}</div>',
@@ -896,7 +932,8 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                 "over both primary and redundant NIC ports).<br>"
                 "<b>Throughput (per port)</b> = average rate on a single NIC interface. "
                 "<b>NIC Total</b> = aggregate throughput across both ports "
-                "(2\u00d7 per-port, since each port carries all sessions).</p>"
+                "(2\u00d7 per-port, since each port carries all sessions)."
+                f"{_HISTORY_NOTE}</p>"
             )
         else:
             p.append(
@@ -905,7 +942,8 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                 "\u2139\ufe0f <b>Network Streams</b> = UDP streams on the wire "
                 "(1\u00d7 per session for non-redundant mode).<br>"
                 "<b>Throughput (per port)</b> = measured rate on the single NIC port used. "
-                "<b>NIC Total</b> = same value (only 1 port active in non-redundant mode).</p>"
+                "<b>NIC Total</b> = same value (only 1 port active in non-redundant mode)."
+                f"{_HISTORY_NOTE}</p>"
             )
         for fps in sorted({t.fps for t in group}):
             fps_group = [t for t in group if t.fps == fps]
@@ -914,7 +952,8 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                 p.append(
                     '<table class="mx"><thead><tr>'
                     "<th>Tested Side</th><th>Resolution</th>"
-                    "<th>Sessions</th><th>Network Streams</th><th>Cores</th>"
+                    "<th>Sessions</th><th>Last Run</th><th>Best</th>"
+                    "<th>Network Streams</th><th>Cores</th>"
                     "<th>Throughput (per port)</th><th>NIC Total</th><th>Run</th>"
                     "</tr></thead><tbody>"
                 )
@@ -922,12 +961,16 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                 p.append(
                     '<table class="mx"><thead><tr>'
                     "<th>Tested Side</th><th>Resolution</th>"
-                    "<th>Max Sessions</th><th>Network Streams</th><th>Cores</th>"
+                    "<th>Max Sessions</th><th>Last Run</th><th>Best</th>"
+                    "<th>Network Streams</th><th>Cores</th>"
                     "<th>Throughput (per port)</th><th>NIC Total</th><th>Run</th>"
                     "</tr></thead><tbody>"
                 )
             for t in fps_group:
                 cl = "p" if t.max_sessions > 0 else "f"
+                if t.best and t.max_sessions < t.best["sessions"]:
+                    cl += " regr"
+                hist = _history_cell(t.last) + _history_cell(t.best)
                 meas = t.measured_dev_rx if t.tested_side == "RX" else t.measured_dev_tx
                 side = f"{t.tested_side} +DMA" if t.dma else t.tested_side
                 if redundant:
@@ -936,6 +979,7 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                     p.append(
                         f'<tr class="{cl}"><td>{side}</td><td>{t.resolution}</td>'
                         f'<td class="ms">{t.max_sessions}</td>'
+                        f"{hist}"
                         f'<td class="n">{nflows}</td>'
                         f'<td class="n">{t.cores_used}</td>'
                         f"<td>{_tput(meas)}</td>"
@@ -946,6 +990,7 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                     p.append(
                         f'<tr class="{cl}"><td>{side}</td><td>{t.resolution}</td>'
                         f'<td class="ms">{t.max_sessions}</td>'
+                        f"{hist}"
                         f'<td class="n">{t.max_sessions}</td>'
                         f'<td class="n">{t.cores_used}</td>'
                         f"<td>{_tput(meas)}</td>"
@@ -1136,6 +1181,8 @@ td.n{text-align:center;font-variant-numeric:tabular-nums}
 td.ms{text-align:center;font-variant-numeric:tabular-nums;
   font-weight:700;font-size:1em;color:var(--green)}
 tr.f td.ms{color:var(--red)}
+tr.regr td{background:#fdecea}
+tr.regr td.ms{color:var(--red)}
 
 /* ── Detail cards ── */
 details{background:var(--card);border-radius:var(--radius);margin:8px 0;
@@ -1190,6 +1237,10 @@ def main():
     ap.add_argument("--branch", help="MTL branch the tests ran on")
     ap.add_argument("--run-id", help="CI run ID")
     ap.add_argument("--run-url", help="CI run URL, links the run ID")
+    ap.add_argument(
+        "--history", help="perf_history.json of the last nightly on this host"
+    )
+    ap.add_argument("--history-out", help="Where to write the history after this run")
     args = ap.parse_args()
 
     if not os.path.isdir(args.log_root):
@@ -1211,9 +1262,33 @@ def main():
             run_id = f'<a href="{href}">{run_id}</a>'
         run_rows.append(("CI Run ID", run_id))
 
+    prev = {}
+    if args.history:
+        try:
+            with open(args.history) as f:
+                prev = json.load(f)["cases"]
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            # Else a bad file stays the last history, and kills the report, every night.
+            print(
+                f"Warning: no Last Run, {args.history} is unreadable: {e}",
+                file=sys.stderr,
+            )
+    # Only a nightly records its counts, and so counts in Best.
+    history = (
+        update_history(prev, tests, args.run_url or "") if args.history_out else prev
+    )
+
+    for t in tests:
+        if not t.fixed:
+            t.last = prev.get(t.key, {}).get("last")
+            t.best = history.get(t.key, {}).get("best")
+
     html = _generate_html(tests, per_host, hosts, run_rows)
     with open(args.output, "w") as f:
         f.write(html)
+    if args.history_out:
+        with open(args.history_out, "w") as f:
+            json.dump({"cases": history}, f, indent=1, sort_keys=True)
 
     sc = sum(1 for t in tests if t.mode == "SC")
     mc = sum(1 for t in tests if t.mode == "MC")
