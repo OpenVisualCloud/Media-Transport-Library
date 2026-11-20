@@ -1,5 +1,6 @@
 # Changelog
 
+* dev: with `MTL_FLAG_RX_MONO_POOL` (RxTxApp `--mono_pool` or `--rx_mono_pool`) each RX queue polls its own queue; since 22.12 every queue polled queue 0 of DPDK port 0, so the sessions' own queues overflowed and sessions on several schedulers shared one queue
 * st20/st22 TX: the video tasklets no longer take the session spinlock; on a session's own scheduler, `*_tx_free()` and `*_tx_update_destination()` (st20, st22, st20p, st22p) return `-EBUSY` instead of deadlocking, as do the stats APIs from the session's own callbacks
 * ice: default to driver version 2.7.6, built as released with no MTL patches; versions before 2.7.6 keep their `patches/ice_drv` series
 * nicctl.sh: give each VF of an ice PF a 512-entry RSS LUT, so that it can have more than 16 queue pairs; `vf_rss_lut` does so for existing VFs
