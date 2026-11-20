@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="930" viewBox="0 0 1320 930" role="img" aria-labelledby="t d">
+<title id="t">MTL software stack</title>
+<desc id="d">The control plane configures sessions, schedules tasklets, trains the rate limit pacing and sets up devices. The data plane moves frames from the TX app through the packet encapsulation and transmitter tasklets to the NIC, and from the NIC through the burst and decapsulation tasklets, with an optional DMA copy, to the RX app.</desc>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+<rect width="1320" height="930" fill="#e9edf2"/>
+<rect x="16" y="16" width="1288" height="898" rx="12" fill="#ffffff" stroke="#202932" stroke-width="2"/>
+<rect x="40" y="40" width="1240" height="80" rx="6" fill="#ccebf7" stroke="#126888" stroke-width="2"/>
+<rect x="110" y="54" width="220" height="52" rx="6" fill="#ffffff" stroke="#202932" stroke-width="2"/>
+<text x="220.0" y="83.7" font-size="15" font-weight="700" fill="#101820" text-anchor="middle">APP CONFIG</text>
+<rect x="490" y="54" width="220" height="52" rx="6" fill="#ffffff" stroke="#202932" stroke-width="2"/>
+<text x="600.0" y="83.7" font-size="15" font-weight="700" fill="#101820" text-anchor="middle">APP TX</text>
+<rect x="980" y="54" width="220" height="52" rx="6" fill="#ffffff" stroke="#202932" stroke-width="2"/>
+<text x="1090.0" y="83.7" font-size="15" font-weight="700" fill="#101820" text-anchor="middle">APP RX</text>
+<rect x="40" y="170" width="360" height="480" rx="6" fill="#d7e1e8" stroke="#314958" stroke-width="2"/>
+<text x="220.0" y="198.0" font-size="17" font-weight="700" fill="#101820" text-anchor="middle">Control Plane</text>
+<rect x="70" y="222" width="300" height="60" rx="6" fill="#ffffff" stroke="#202932" stroke-width="2"/>
+<text x="220.0" y="255.7" font-size="15" font-weight="700" fill="#101820" text-anchor="middle">Sessions Configuration</text>
+<rect x="70" y="302" width="300" height="60" rx="6" fill="#ffffff" stroke="#202932" stroke-width="2"/>
+<text x="220.0" y="335.7" font-size="15" font-weight="700" fill="#101820" text-anchor="middle">Schedule Tasklets</text>
+<rect x="70" y="382" width="300" height="96" rx="6" fill="#ffffff" stroke="#202932" stroke-width="2"/>
+<text x="220.0" y="415.5" font-size="15" font-weight="700" fill="#101820" text-anchor="middle">Pacing</text>
+<text x="220.0" y="435.0" font-size="14" fill="#101820" text-anchor="middle">Train and pick the</text>
+<text x="220.0" y="453.2" font-size="14" fill="#101820" text-anchor="middle">rate limit bandwidth</text>
+<rect x="70" y="498" width="300" height="60" rx="6" fill="#ffffff" stroke="#202932" stroke-width="2"/>
+<text x="220.0" y="531.7" font-size="15" font-weight="700" fill="#101820" text-anchor="middle">Setup Devices</text>
+<path d="M370.0 332.0 L408.0 332.0" fill="none" stroke="#202932" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="7 5"/>
+<path d="M418.0 332.0 L406.0 338.6 L406.0 325.4 Z" fill="#202932"/>
+<rect x="420" y="170" width="860" height="480" rx="6" fill="#d7ead5" stroke="#385f34" stroke-width="2"/>
+<text x="850.0" y="198.0" font-size="17" font-weight="700" fill="#101820" text-anchor="middle">Data Plane</text>
+<rect x="490" y="222" width="220" height="110" rx="6" fill="#ffffff" stroke="#202932" stroke-width="2"/>
+<text x="600.0" y="252.7" font-size="15" font-weight="700" fill="#101820" text-anchor="middle">TX Packet</text>
+<text x="600.0" y="272.2" font-size="15" font-weight="700" fill="#101820" text-anchor="middle">Encapsulation Tasklet</text>
+<text x="600.0" y="291.7" font-size="14" fill="#101820" text-anchor="middle"></text>
+<text x="600.0" y="309.9" font-size="14" fill="#101820" text-anchor="middle">Pacing: add padding packets</text>
+<path d="M585.0 332.0 L585.0 405.0" fill="none" stroke="#202932" stroke-width="2" stroke-linejoin="round"/>
+<path d="M585.0 412.0 L580.0 403.0 L590.0 403.0 Z" fill="#202932"/>
+<path d="M595.0 332.0 L595.0 405.0" fill="none" stroke="#202932" stroke-width="2" stroke-linejoin="round"/>
+<path d="M595.0 412.0 L590.0 403.0 L600.0 403.0 Z" fill="#202932"/>
+<path d="M605.0 332.0 L605.0 405.0" fill="none" stroke="#202932" stroke-width="2" stroke-linejoin="round"/>
+<path d="M605.0 412.0 L600.0 403.0 L610.0 403.0 Z" fill="#202932"/>
+<path d="M615.0 332.0 L615.0 405.0" fill="none" stroke="#202932" stroke-width="2" stroke-linejoin="round"/>
+<path d="M615.0 412.0 L610.0 403.0 L620.0 403.0 Z" fill="#202932"/>
+<rect x="641.4" y="358" width="65.2" height="28" rx="14" fill="#d7e1e8" stroke="#314958" stroke-width="2"/>
+<text x="674.0" y="377.5" font-size="14" font-weight="700" fill="#101820" text-anchor="middle">Mbufs</text>
+<rect x="490" y="412" width="220" height="130" rx="6" fill="#ffffff" stroke="#202932" stroke-width="2"/>
+<text x="600.0" y="443.6" font-size="15" font-weight="700" fill="#101820" text-anchor="middle">TX Transmitter</text>
+<text x="600.0" y="463.1" font-size="15" font-weight="700" fill="#101820" text-anchor="middle">Tasklet</text>
+<text x="600.0" y="482.6" font-size="14" fill="#101820" text-anchor="middle"></text>
+<text x="600.0" y="500.8" font-size="14" fill="#101820" text-anchor="middle">Warm-up algorithm</text>
+<text x="600.0" y="519.0" font-size="14" fill="#101820" text-anchor="middle">Burst to NIC</text>
+<rect x="760" y="442" width="170" height="70" rx="6" fill="#ffffff" stroke="#202932" stroke-width="2"/>
+<text x="845.0" y="470.9" font-size="15" font-weight="700" fill="#101820" text-anchor="middle">ARP / IGMP / PTP</text>
+<text x="845.0" y="490.4" font-size="15" font-weight="700" fill="#101820" text-anchor="middle">Tasklet</text>
+<rect x="980" y="262" width="220" height="70" rx="6" fill="#ffffff" stroke="#202932" stroke-width="2"/>
+<text x="1090.0" y="300.7" font-size="15" font-weight="700" fill="#101820" text-anchor="middle">RX Decap Tasklet</text>
+<rect x="800" y="275" width="130" height="44" rx="6" fill="#087ca7" stroke="#004d69" stroke-width="2"/>
+<text x="865.0" y="300.7" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">DMA Copy</text>
+<path d="M937.0 297.0 L973.0 297.0" fill="none" stroke="#202932" stroke-width="2" stroke-linejoin="round" stroke-dasharray="7 5"/>
+<path d="M980.0 297.0 L971.0 301.9 L971.0 292.1 Z" fill="#202932"/>
+<path d="M930.0 297.0 L939.0 292.1 L939.0 301.9 Z" fill="#202932"/>
+<path d="M1075.0 432.0 L1075.0 339.0" fill="none" stroke="#202932" stroke-width="2" stroke-linejoin="round"/>
+<path d="M1075.0 332.0 L1080.0 341.0 L1070.0 341.0 Z" fill="#202932"/>
+<path d="M1085.0 432.0 L1085.0 339.0" fill="none" stroke="#202932" stroke-width="2" stroke-linejoin="round"/>
+<path d="M1085.0 332.0 L1090.0 341.0 L1080.0 341.0 Z" fill="#202932"/>
+<path d="M1095.0 432.0 L1095.0 339.0" fill="none" stroke="#202932" stroke-width="2" stroke-linejoin="round"/>
+<path d="M1095.0 332.0 L1100.0 341.0 L1090.0 341.0 Z" fill="#202932"/>
+<path d="M1105.0 432.0 L1105.0 339.0" fill="none" stroke="#202932" stroke-width="2" stroke-linejoin="round"/>
+<path d="M1105.0 332.0 L1110.0 341.0 L1100.0 341.0 Z" fill="#202932"/>
+<rect x="1133.4" y="368" width="65.2" height="28" rx="14" fill="#d7e1e8" stroke="#314958" stroke-width="2"/>
+<text x="1166.0" y="387.5" font-size="14" font-weight="700" fill="#101820" text-anchor="middle">Mbufs</text>
+<rect x="980" y="432" width="220" height="80" rx="6" fill="#ffffff" stroke="#202932" stroke-width="2"/>
+<text x="1090.0" y="475.7" font-size="15" font-weight="700" fill="#101820" text-anchor="middle">Burst from NIC</text>
+<path d="M585.0 106.0 L615.0 106.0 L615.0 204.0 L625.0 204.0 L600.0 222.0 L575.0 204.0 L585.0 204.0 Z" fill="#ffd166" stroke="#715400" stroke-width="2" stroke-linejoin="round"/>
+<rect x="643.4" y="131" width="65.2" height="28" rx="14" fill="#d7e1e8" stroke="#314958" stroke-width="2"/>
+<text x="676.0" y="150.5" font-size="14" font-weight="700" fill="#101820" text-anchor="middle">Frame</text>
+<path d="M1075.0 262.0 L1105.0 262.0 L1105.0 124.0 L1115.0 124.0 L1090.0 106.0 L1065.0 124.0 L1075.0 124.0 Z" fill="#ffd166" stroke="#715400" stroke-width="2" stroke-linejoin="round"/>
+<rect x="1133.4" y="131" width="65.2" height="28" rx="14" fill="#d7e1e8" stroke="#314958" stroke-width="2"/>
+<text x="1166.0" y="150.5" font-size="14" font-weight="700" fill="#101820" text-anchor="middle">Frame</text>
+<rect x="40" y="690" width="1240" height="64" rx="6" fill="#38845b" stroke="#0e5032" stroke-width="1.5"/>
+<text x="56.0" y="717.1" font-size="17" font-weight="700" fill="#ffffff" text-anchor="start">NIC Device Backend</text>
+<text x="56.0" y="739.2" font-size="14" fill="#ffffff" text-anchor="start">DPDK PMD, AF_XDP, kernel socket</text>
+<rect x="40" y="772" width="1240" height="48" rx="6" fill="#087f3f" stroke="#004923" stroke-width="2"/>
+<text x="56.0" y="800.2" font-size="17" font-weight="700" fill="#ffffff" text-anchor="start">NIC Driver</text>
+<rect x="40" y="838" width="1240" height="56" rx="6" fill="#ffffff" stroke="#202932" stroke-width="2"/>
+<text x="56.0" y="870.2" font-size="17" font-weight="700" fill="#101820" text-anchor="start">Foundational NIC</text>
+<path d="M585.0 542.0 L585.0 831.0" fill="none" stroke="#202932" stroke-width="2" stroke-linejoin="round"/>
+<path d="M585.0 838.0 L580.0 829.0 L590.0 829.0 Z" fill="#202932"/>
+<path d="M595.0 542.0 L595.0 831.0" fill="none" stroke="#202932" stroke-width="2" stroke-linejoin="round"/>
+<path d="M595.0 838.0 L590.0 829.0 L600.0 829.0 Z" fill="#202932"/>
+<path d="M605.0 542.0 L605.0 831.0" fill="none" stroke="#202932" stroke-width="2" stroke-linejoin="round"/>
+<path d="M605.0 838.0 L600.0 829.0 L610.0 829.0 Z" fill="#202932"/>
+<path d="M615.0 542.0 L615.0 831.0" fill="none" stroke="#202932" stroke-width="2" stroke-linejoin="round"/>
+<path d="M615.0 838.0 L610.0 829.0 L620.0 829.0 Z" fill="#202932"/>
+<path d="M845.0 520.0 L845.0 830.0" fill="none" stroke="#202932" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M845.0 838.0 L839.5 828.0 L850.5 828.0 Z" fill="#202932"/>
+<path d="M845.0 512.0 L850.5 522.0 L839.5 522.0 Z" fill="#202932"/>
+<path d="M1075.0 838.0 L1075.0 519.0" fill="none" stroke="#202932" stroke-width="2" stroke-linejoin="round"/>
+<path d="M1075.0 512.0 L1080.0 521.0 L1070.0 521.0 Z" fill="#202932"/>
+<path d="M1085.0 838.0 L1085.0 519.0" fill="none" stroke="#202932" stroke-width="2" stroke-linejoin="round"/>
+<path d="M1085.0 512.0 L1090.0 521.0 L1080.0 521.0 Z" fill="#202932"/>
+<path d="M1095.0 838.0 L1095.0 519.0" fill="none" stroke="#202932" stroke-width="2" stroke-linejoin="round"/>
+<path d="M1095.0 512.0 L1100.0 521.0 L1090.0 521.0 Z" fill="#202932"/>
+<path d="M1105.0 838.0 L1105.0 519.0" fill="none" stroke="#202932" stroke-width="2" stroke-linejoin="round"/>
+<path d="M1105.0 512.0 L1110.0 521.0 L1100.0 521.0 Z" fill="#202932"/>
+<rect x="643.6" y="782" width="80.9" height="28" rx="14" fill="#d7e1e8" stroke="#314958" stroke-width="2"/>
+<text x="684.0" y="801.5" font-size="14" font-weight="700" fill="#101820" text-anchor="middle">Packets</text>
+<rect x="1133.6" y="782" width="80.9" height="28" rx="14" fill="#d7e1e8" stroke="#314958" stroke-width="2"/>
+<text x="1174.0" y="801.5" font-size="14" font-weight="700" fill="#101820" text-anchor="middle">Packets</text>
+</g>
+</svg>
