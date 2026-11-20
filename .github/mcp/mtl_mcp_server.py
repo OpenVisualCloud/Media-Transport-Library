@@ -14,6 +14,7 @@ Usage:
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import re
 import subprocess  # nosec B404 # tool args are validated before reaching a shell
@@ -1124,6 +1125,10 @@ def run_gtest(
     timeout_seconds: int = 600,
     auto_start_stop: bool = True,
     level: str = "",
+    port_list: str = "",
+    session_id: int = -1,
+    p_sip: str = "",
+    log_level: str = "",
 ) -> str:
     """
     Run MTL integration tests (KahawaiTest).
@@ -1141,6 +1146,13 @@ def run_gtest(
         level: Test level, 'all' or 'mandatory'. Binary default (mandatory-only) if empty.
             Non-mandatory cases (gated ST_TEST_LEVEL_ALL) silently no-op unless 'all' is
             passed here -- they still report PASS at 0ms, so a real run must set this.
+        port_list: Comma-separated BDFs of 2 to 8 ports, passed as --port_list instead
+            of p_port/r_port (e.g. the 4 ports the redundant cases need).
+        session_id: Session S (0..255): the ports take 192.168.S.0/24 and the
+            multicast groups 239.1.S.0/24. KahawaiTest picks a random S if -1.
+        p_sip: IPv4 address of the primary port, instead of session_id.
+        log_level: KahawaiTest log level: debug, info, notice, warning or error.
+            'info' logs the address of each port.
     """
     binary = REPO_ROOT / "build/tests/KahawaiTest"
     if not binary.is_file():
@@ -1148,8 +1160,15 @@ def run_gtest(
 
     sim_hint = "" if _build_has_simulate_drops() else _SIM_DROPS_HINT
 
-    # Auto-discover ports from VFIO-bound VFs
-    if not p_port or not r_port:
+    ports: list[str] = []
+    if port_list:
+        if p_port or r_port:
+            return "Error: pass either port_list or p_port/r_port, not both"
+        ports = [bdf.strip() for bdf in port_list.split(",")]
+        if not 2 <= len(ports) <= 8:
+            return "Error: port_list must name 2 to 8 ports"
+    elif not p_port or not r_port:
+        # Auto-discover ports from VFIO-bound VFs
         vfs = (
             _run_output(
                 "dpdk-devbind.py -s 2>/dev/null | awk '/drv=vfio-pci/{print $1}' | head -2"
@@ -1169,10 +1188,28 @@ def run_gtest(
             r_port = vfs[1].strip()
 
     # Validate BDF inputs
-    for label, bdf in [("p_port", p_port), ("r_port", r_port)]:
+    named = [(f"port_list[{i}]", bdf) for i, bdf in enumerate(ports)] or [
+        ("p_port", p_port),
+        ("r_port", r_port),
+    ]
+    for label, bdf in named:
         err = _validate_bdf(bdf)
         if err:
             return f"Error: {label} — {err}"
+
+    if session_id != -1 and not 0 <= session_id <= 255:
+        return "Error: session_id must be in 0..255, or -1 to leave it out"
+    if session_id != -1 and p_sip:
+        return "Error: pass either session_id or p_sip, not both"
+
+    if p_sip:
+        try:
+            ipaddress.IPv4Address(p_sip)
+        except ValueError:
+            return f"Error: p_sip '{p_sip}' is not an IPv4 address"
+
+    if log_level and log_level not in ("debug", "info", "notice", "warning", "error"):
+        return "Error: log_level must be debug, info, notice, warning or error"
 
     # Sanitize gtest_filter — only allow gtest filter characters
     if gtest_filter and not re.match(r"^[a-zA-Z0-9_.*:/-]+$", gtest_filter):
@@ -1192,7 +1229,16 @@ def run_gtest(
         )
 
     # Build command as list for safe execution
-    cmd_parts: list[str] = [str(binary), "--p_port", p_port, "--r_port", r_port]
+    if ports:
+        cmd_parts: list[str] = [str(binary), "--port_list", ",".join(ports)]
+    else:
+        cmd_parts = [str(binary), "--p_port", p_port, "--r_port", r_port]
+    if session_id != -1:
+        cmd_parts.extend(["--session_id", str(session_id)])
+    if p_sip:
+        cmd_parts.extend(["--p_sip", p_sip])
+    if log_level:
+        cmd_parts.extend(["--log_level", log_level])
     if auto_start_stop:
         cmd_parts.append("--auto_start_stop")
     if dma_dev:
@@ -1221,8 +1267,9 @@ def run_gtest(
                 failed = int(m.group(1))
             else:
                 failures.append(stripped)
-        elif "tests from" in stripped and "test suite" in stripped:
-            m = re.search(r"(\d+) tests? from", stripped)
+        else:
+            # gtest says "1 test from 1 test suite", in the singular
+            m = re.search(r"(\d+) tests? from \d+ test suites?", stripped)
             if m:
                 total = int(m.group(1))
 

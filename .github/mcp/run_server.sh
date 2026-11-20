@@ -13,19 +13,20 @@ VENV_DIR="$SCRIPT_DIR/.venv"
 REQUIREMENTS="$SCRIPT_DIR/requirements.txt"
 SERVER="$SCRIPT_DIR/mtl_mcp_server.py"
 
+# Stdout is the JSON-RPC channel, so the bootstrap writes to stderr.
 # Create venv if missing
 if [[ ! -x "$VENV_DIR/bin/python3" ]]; then
-	python3 -m venv "$VENV_DIR"
+	python3 -m venv "$VENV_DIR" >&2
 fi
 
 # Repair venv if pip is missing (e.g. venv created before ensurepip was available)
 if ! "$VENV_DIR/bin/python3" -m pip --version >/dev/null 2>&1; then
-	"$VENV_DIR/bin/python3" -m ensurepip --upgrade
+	"$VENV_DIR/bin/python3" -m ensurepip --upgrade >&2
 fi
 
 # Install deps if mcp module is missing
 if ! "$VENV_DIR/bin/python3" -c "import mcp" 2>/dev/null; then
-	"$VENV_DIR/bin/python3" -m pip install --quiet -r "$REQUIREMENTS"
+	"$VENV_DIR/bin/python3" -m pip install --quiet -r "$REQUIREMENTS" >&2
 fi
 
 exec "$VENV_DIR/bin/python3" "$SERVER"
