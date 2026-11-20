@@ -1347,6 +1347,14 @@ int ut_trs_link_down_drops(const ut_trs_ctx* ctx) {
   return ctx->session.stat_pkts_link_down_drop;
 }
 
+void ut_trs_hold_pkt(ut_trs_ctx* ctx) {
+  rte_mbuf_refcnt_update(ctx->inflight_mbuf, 1);
+}
+
+uint16_t ut_trs_pkt_refcnt(const ut_trs_ctx* ctx) {
+  return rte_mbuf_refcnt_read(ctx->inflight_mbuf);
+}
+
 uint32_t ut_trs_stream_nic_desc_used(const ut_trs_ctx* ctx) {
   return ctx->nic_used;
 }

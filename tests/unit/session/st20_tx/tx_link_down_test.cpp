@@ -64,6 +64,17 @@ class St20TxLinkDownTest : public ::testing::Test {
     BurstPadsAt(true, {kDownNs});
   }
 
+  /* as GoDown(), by a refused TSC burst that leaves no pad inflight; then the NIC ring
+   * has room, so only the drop keeps a pkt off it */
+  void GoDownWithNoPadInflight() {
+    ut_trs_set_link_down(ctx_, true);
+    uint64_t tsc[] = {kDownNs};
+    ut_trs_set_mock_tsc_script(ctx_, tsc, 1);
+    ut_trs_set_burst_force_fail(ctx_, true);
+    ut_session::capture_stderr([&] { ut_trs_call_burst(ctx_); });
+    ut_trs_set_burst_force_fail(ctx_, false);
+  }
+
   ut_trs_ctx* ctx_ = nullptr;
 };
 
@@ -87,6 +98,60 @@ TEST_F(St20TxLinkDownTest, BurstWhileTheLinkIsDownDropsThePkts) {
   EXPECT_EQ(bursts, ut_trs_burst_call_count(ctx_));
   EXPECT_EQ(refcnt, ut_trs_pad_refcnt(ctx_));
   EXPECT_FALSE(ut_trs_recovery_pending(ctx_));
+}
+
+TEST_F(St20TxLinkDownTest, RlPktBurstWhileTheLinkIsDownDropsThePkts) {
+  GoDownWithNoPadInflight();
+  ut_trs_set_rtcp(ctx_, true);
+  ut_trs_hold_pkt(ctx_);
+  ut_trs_enqueue_mid_pkt(ctx_);
+  uint32_t bursts = ut_trs_burst_call_count(ctx_);
+  uint64_t tsc[] = {kDownNs + kThreshNs};
+  ut_trs_set_mock_tsc_script(ctx_, tsc, 1);
+
+  ut_trs_call_rl_tasklet(ctx_);
+
+  EXPECT_EQ(1, ut_trs_link_down_drops(ctx_));
+  EXPECT_EQ(1u, ut_trs_pkt_refcnt(ctx_));
+  EXPECT_EQ(0u, ut_trs_inflight_num(ctx_));
+  EXPECT_EQ(bursts, ut_trs_burst_call_count(ctx_));
+  EXPECT_EQ(0u, ut_trs_rtcp_buffered(ctx_, nullptr));
+}
+
+/* packet 0 is due with the last pre-arm pads, which fit in absorb_ns */
+TEST_F(St20TxLinkDownTest, RlTailBurstWhileTheLinkIsDownDropsPacket0AndNoPad) {
+  constexpr int kP = 0;
+  constexpr uint64_t kTargetTsc = 1000000;
+  ut_trs_set_trs(ctx_, 1000);
+  ut_trs_set_drain(ctx_, kP, 1000);
+  ut_trs_set_credit(ctx_, kP, 2000);
+  ut_trs_set_absorb(ctx_, kP, 1000);
+  GoDownWithNoPadInflight();
+  ut_trs_set_rtcp(ctx_, true);
+  ut_trs_hold_pkt(ctx_);
+  uint64_t entry[] = {kTargetTsc - 50000};
+  ut_trs_set_mock_tsc_script(ctx_, entry, 1);
+  ut_trs_enqueue_first_pkt(ctx_, kTargetTsc);
+  ut_trs_call_rl_tasklet(ctx_);
+  ASSERT_EQ(1u, ut_trs_inflight_num(ctx_));
+  ut_trs_set_rl_state_port(ctx_, kP, 0);
+  ut_trs_set_rl_tail(ctx_, kTargetTsc - 9950); /* 10 pads to the target */
+  uint32_t bursts = ut_trs_burst_call_count(ctx_);
+  uint64_t tail[] = {kTargetTsc - 20000};
+  ut_trs_set_mock_tsc_script(ctx_, tail, 1);
+
+  ut_trs_call_rl_tasklet(ctx_);
+
+  EXPECT_EQ(1, ut_trs_link_down_drops(ctx_));
+  EXPECT_EQ(1u, ut_trs_pkt_refcnt(ctx_));
+  EXPECT_EQ(0u, ut_trs_inflight_num(ctx_));
+  EXPECT_EQ(bursts, ut_trs_burst_call_count(ctx_));
+  EXPECT_EQ(0u, ut_trs_pad_send_count(ctx_));
+  EXPECT_EQ(0u, ut_trs_pad_inflight_num(ctx_));
+  EXPECT_EQ(1u, ut_trs_pad_refcnt(ctx_));
+  EXPECT_EQ(1u, ut_trs_trim_pad_refcnt(ctx_, 0));
+  EXPECT_EQ(1u, ut_trs_trim_pad_refcnt(ctx_, 1));
+  EXPECT_EQ(0u, ut_trs_rtcp_buffered(ctx_, nullptr));
 }
 
 TEST_F(St20TxLinkDownTest, DroppedPktsAreCounted) {
