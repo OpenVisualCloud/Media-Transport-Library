@@ -748,7 +748,10 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                     "end at that bar and get ≥ 99 % of what a sender ramping up to it "
                     "sent.",
                 ),
-                ("Measurement Window", "Warmup 60 s + Steady-state + Cooldown 10 s"),
+                (
+                    "Measurement Window",
+                    "The 10 s stat dumps of steady traffic, without session start or stop",
+                ),
             ],
         )
     )
