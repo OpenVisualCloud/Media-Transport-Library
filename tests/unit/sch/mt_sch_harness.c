@@ -14,6 +14,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/file.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -28,6 +30,9 @@
 static const char* ut_sch_flock_path = MT_FLOCK_PATH;
 #undef MT_FLOCK_PATH
 #define MT_FLOCK_PATH ut_sch_flock_path
+/* Only the lcore shm helper sets this: the host table may be in use. */
+static const char* ut_sch_ftok_path;
+#define ftok(path, id) ftok(ut_sch_ftok_path ? ut_sch_ftok_path : (path), id)
 /* ut_sch_loop_avg_restart() runs the scheduler on a clock only its tasklet advances */
 static bool ut_sch_clock_mocked;
 static uint64_t ut_sch_clock_ns;
@@ -54,6 +59,7 @@ static void ut_sch_sleep_ms(unsigned int ms);
 #undef rte_pause
 #undef flock
 #undef rte_get_next_lcore
+#undef ftok
 
 static unsigned int ut_sch_nb_lcores; /* when set, lcores 1..n stand in for EAL workers */
 
@@ -580,5 +586,39 @@ int ut_sch_qs_pass_end_publishes(bool* published) {
   }
   *published = pass.published;
   ut_sch_mempolicy_ctx_destroy(ctx);
+  return ret;
+}
+
+size_t ut_sch_lcore_shm_size(void) {
+  return sizeof(struct mt_lcore_shm);
+}
+
+int ut_sch_lcore_shm_init_over_smaller(bool attached, bool clear_on_first, size_t* size) {
+  char path[] = "/tmp/ut_sch_shm_XXXXXX";
+  struct mt_lcore_mgr mgr;
+  struct shmid_ds stat;
+  void* old = NULL;
+  int shm_id = -1;
+  int ret = -EIO;
+
+  *size = 0;
+  int fd = mkstemp(path);
+  if (fd < 0) return -errno;
+  close(fd);
+  key_t key = ftok(path, 21);
+  int old_id = shmget(key, sizeof(struct mt_lcore_shm) / 2, 0666 | IPC_CREAT | IPC_EXCL);
+  if (old_id >= 0 && attached) old = shmat(old_id, NULL, 0);
+  if (old_id >= 0 && old != (void*)-1) {
+    ut_sch_ftok_path = path;
+    ret = sch_lcore_shm_init(&mgr, clear_on_first);
+    ut_sch_ftok_path = NULL;
+    shm_id = shmget(key, 0, 0);
+    if (shm_id >= 0 && shmctl(shm_id, IPC_STAT, &stat) == 0) *size = stat.shm_segsz;
+    if (!ret) sch_lcore_shm_uinit(&mgr);
+  }
+  if (old && old != (void*)-1) shmdt(old);
+  if (old_id >= 0) shmctl(old_id, IPC_RMID, NULL);
+  if (shm_id >= 0) shmctl(shm_id, IPC_RMID, NULL);
+  unlink(path);
   return ret;
 }
