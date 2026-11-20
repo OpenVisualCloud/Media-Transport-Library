@@ -36,6 +36,34 @@ performance)
 	if [[ -n ${GITHUB_RUN_ID:-} ]]; then
 		report_args+=(--run-id "$GITHUB_RUN_ID"
 			--run-url "${GITHUB_SERVER_URL:?}/${GITHUB_REPOSITORY:?}/actions/runs/${GITHUB_RUN_ID}")
+		settings="test_time=${TEST_TIME:-120}"
+		for var in NUM_SESSIONS SCH_QUOTA SUT_APP_ARGS; do
+			[[ -z ${!var:-} ]] || settings+=" ${var,,}=${!var}"
+		done
+		report_args+=(--commit "${MTL_COMMIT:-}" --settings "$settings")
+		kinds=(main)
+		[[ ${MTL_BRANCH:-main} == main ]] || kinds+=(branch)
+		for kind in "${kinds[@]}"; do
+			branch=main
+			[[ $kind == main ]] || branch=$MTL_BRANCH
+			# upload-artifact refuses these in a name, and CR and LF, which no git ref holds.
+			name=perf-history-${RUNNER_NAME:?}-${branch//[\"\/:<>|*?\\]/-}
+			# The digest keeps apart two branches that the line above makes alike, as a/b and a-b.
+			[[ $kind == main ]] || name+=-$(printf %s "$branch" | sha256sum | cut -c1-8)
+			echo "${kind}_name=$name" >>"${GITHUB_OUTPUT:?}"
+			file=perf-history/perf_history_$kind.json
+			# shellcheck disable=SC2154 # set by mtl_acceptance_venv.sh
+			if ! "$venv_python" ../../.github/scripts/ci/report/fetch-perf-history.py "$name" "$file" "$kind"; then
+				# A failed lookup or download: compare with nothing, record nothing.
+				report_args+=(--history-unavailable "$kind")
+				continue
+			fi
+			[[ ! -f $file ]] || report_args+=("--history-$kind" "$file")
+			# Main's only from main itself, as Actions compares strings case-insensitively.
+			if [[ $kind == branch || (${PERF_HISTORY_RECORD_MAIN:-} == true && ${MTL_BRANCH:-} == main) ]]; then
+				report_args+=("--history-$kind-out" "perf_history_$kind.json")
+			fi
+		done
 	fi
 	# shellcheck disable=SC2154 # set by mtl_acceptance_venv.sh
 	"$venv_python" common/generate_report.py logs/performance -o performance_report.html \
