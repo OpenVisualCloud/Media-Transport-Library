@@ -784,6 +784,28 @@ static int dev_init_ratelimit_all(struct mt_interface* inf, uint64_t bps) {
   return ret;
 }
 
+static bool dev_tx_queue_unrated(struct mt_tx_queue* tx_queue) {
+  return !tx_queue->bps || tx_queue->bps == ST_DEFAULT_RL_BPS;
+}
+
+/* A commit rewrites every queue of the port, and a queue streaming meanwhile can send its
+ * next packet 0 early. So a rate takes a free queue already at it, then one at the
+ * default rate, keeping the freed rates for later creates; -1 if none is free.
+ */
+static int dev_tx_queue_rl_pick(struct mt_interface* inf, uint64_t bytes_per_sec) {
+  int unrated = -1, any = -1;
+
+  for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
+    struct mt_tx_queue* tx_queue = &inf->tx_queues[q];
+
+    if (tx_queue->active || tx_queue->fatal_error) continue;
+    if (tx_queue->bps == bytes_per_sec) return q;
+    if (unrated < 0 && dev_tx_queue_unrated(tx_queue)) unrated = q;
+    if (any < 0) any = q;
+  }
+  return unrated >= 0 ? unrated : any;
+}
+
 static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
                                     uint64_t bytes_per_sec) {
   uint16_t port_id = inf->port_id;
@@ -814,6 +836,7 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
     }
     tx_queue->rl_shapers_mapping = -1;
     tx_queue->rl_node = false;
+    tx_queue->bps = 0;
   }
 
   if (bps) {
@@ -851,6 +874,12 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
   if (ret < 0) {
     err("%s(%d), commit error (%d)%s\n", __func__, port, ret,
         mt_string_safe(error.message));
+    /* clear_on_fail dropped every node and profile */
+    for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
+      inf->tx_queues[q].bps = 0;
+      inf->tx_queues[q].rl_node = false;
+    }
+    memset(inf->tx_rl_shapers, 0, sizeof(inf->tx_rl_shapers));
     return ret;
   }
 
@@ -1823,7 +1852,11 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
   }
 
   mt_pthread_mutex_lock(&inf->tx_queues_mutex);
+  int rl_pick = -1;
+  if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL && bytes_per_sec)
+    rl_pick = dev_tx_queue_rl_pick(inf, bytes_per_sec);
   for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
+    if (rl_pick >= 0 && q != rl_pick) continue;
     if ((ST21_TX_PACING_WAY_TSN == inf->tx_pacing_way) &&
         (MT_DRV_IGC == inf->drv_info.drv_type)) {
       /*

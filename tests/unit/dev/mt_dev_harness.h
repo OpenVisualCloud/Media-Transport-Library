@@ -173,6 +173,10 @@ unsigned int ut_dev_sys_tx_pool_in_use(const ut_dev_ctx* ctx);
 void ut_dev_set_tx_queue_bps(ut_dev_ctx* ctx, uint16_t queue, uint64_t bps);
 /** mt_dev_set_tx_bps() of that queue of port P; returns its result. */
 int ut_dev_set_tx_bps(ut_dev_ctx* ctx, uint16_t queue, uint64_t bytes_per_sec);
+/** mt_dev_get_tx_queue() of port P for a flow of bytes_per_sec; the queue id, or -1. */
+int ut_dev_get_tx_queue(ut_dev_ctx* ctx, uint64_t bytes_per_sec);
+/** mt_dev_put_tx_queue() of that queue of port P; returns its result. */
+int ut_dev_put_tx_queue(ut_dev_ctx* ctx, uint16_t queue);
 void ut_dev_set_link_speed(ut_dev_ctx* ctx, uint32_t mbps);
 /** mt_dpdk_flush_tx_queue() of that queue with the port's pad. */
 int ut_dev_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue);

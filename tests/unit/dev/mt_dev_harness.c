@@ -863,6 +863,25 @@ int ut_dev_set_tx_bps(ut_dev_ctx* ctx, uint16_t queue, uint64_t bytes_per_sec) {
   return mt_dev_set_tx_bps(&ctx->impl, &ctx->tx_queues[queue], bytes_per_sec);
 }
 
+int ut_dev_get_tx_queue(ut_dev_ctx* ctx, uint64_t bytes_per_sec) {
+  struct mt_txq_flow flow;
+
+  ut_active_ctx = ctx;
+  for (int q = 0; q < UT_DEV_TX_QUEUES; q++) {
+    ctx->tx_queues[q].port = MTL_PORT_P;
+    ctx->tx_queues[q].queue_id = q;
+  }
+  memset(&flow, 0, sizeof(flow));
+  flow.bytes_per_sec = bytes_per_sec;
+  struct mt_tx_queue* queue = mt_dev_get_tx_queue(&ctx->impl, MTL_PORT_P, &flow);
+  return queue ? queue->queue_id : -1;
+}
+
+int ut_dev_put_tx_queue(ut_dev_ctx* ctx, uint16_t queue) {
+  ut_active_ctx = ctx;
+  return mt_dev_put_tx_queue(&ctx->impl, &ctx->tx_queues[queue]);
+}
+
 void ut_dev_set_link_speed(ut_dev_ctx* ctx, uint32_t mbps) {
   ctx->impl.inf[MTL_PORT_P].link_speed = mbps;
 }
