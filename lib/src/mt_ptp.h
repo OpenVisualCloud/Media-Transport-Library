@@ -20,6 +20,8 @@
  */
 #define MT_PTP_DELAY_REQ_TX_TS_RETRY_US (200)
 #define MT_PTP_DELAY_REQ_TX_TS_DEADLINE_US (2000)
+/* delay_req timeouts in a row after which the NIC is reported to latch no tx timestamp */
+#define MT_PTP_T3_NO_TX_TS_LIMIT (8)
 #define MT_PTP_CLOCK_IDENTITY_MAGIC (0xfeff)
 
 #define MT_PTP_STAT_INTERVAL_S (10) /* 10s */

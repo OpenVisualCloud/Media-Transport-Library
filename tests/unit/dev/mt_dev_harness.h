@@ -54,6 +54,12 @@ void ut_dev_set_user_nb_tx_desc(ut_dev_ctx* ctx, uint16_t nb_tx_desc);
 /** Takes the drv info a real port with this ethdev driver name gets. */
 void ut_dev_set_driver(ut_dev_ctx* ctx, const char* driver_name);
 void ut_dev_use_non_igc_driver(ut_dev_ctx* ctx);
+/** rte_eth_link_get_nowait() of the port reads up or down and returns get_error. */
+void ut_dev_set_link(ut_dev_ctx* ctx, bool up, int get_error);
+int ut_dev_link_reads(const ut_dev_ctx* ctx);
+void ut_dev_set_pmd(ut_dev_ctx* ctx, enum mtl_pmd_type pmd);
+/** mt_dev_link_down() of port P. */
+bool ut_dev_link_down(ut_dev_ctx* ctx);
 void ut_dev_set_ptp_enabled(ut_dev_ctx* ctx, bool enabled);
 void ut_dev_set_port(ut_dev_ctx* ctx, enum mtl_port port, const char* bdf,
                      uint32_t rl_burst_size);
@@ -179,6 +185,11 @@ int ut_dev_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue);
 /** The same flush for a TX recovery, which does without the per-pad loop. */
 int ut_dev_recovery_flush_tx_queue(ut_dev_ctx* ctx, uint16_t queue);
 int ut_dev_tx_done_cleanup(ut_dev_ctx* ctx, uint16_t queue);
+/** mt_dev_tx_queue_fatal_error() of that queue of port P, which it marks active. */
+int ut_dev_tx_queue_fatal_error(ut_dev_ctx* ctx, uint16_t queue);
+bool ut_dev_tx_queue_fatal(const ut_dev_ctx* ctx, uint16_t queue);
+/** rte_eth_dev_tx_queue_stop() calls of mt_dev.c since the start of the process. */
+int ut_dev_tx_queue_stop_calls(void);
 
 /** dev_tx_sys_pool_elements() of port P with nb_tx_q queues of nb_tx_desc, deep at
  * MT_DEV_TX_DESC_DEEP, the TX mono pool on or off. */

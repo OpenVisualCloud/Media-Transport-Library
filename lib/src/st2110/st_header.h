@@ -34,6 +34,8 @@
 #define ST_SCH_MAX_RX_VIDEO_SESSIONS (60) /* max video rx sessions per sch lcore */
 #define ST_SESSION_MAX_BULK (4)
 #define ST_TX_VIDEO_SESSIONS_RING_SIZE (512)
+/* old pools a TX recovery could not free yet: 4 recoveries of a redundant session */
+#define ST_TX_VIDEO_PARKED_MEMPOOLS (16)
 
 /* number of tmstamp it will tracked for out of order pkts */
 #define ST_VIDEO_RX_REC_NUM_OFO (2)
@@ -135,8 +137,10 @@ struct st_frame_trans {
   rte_atomic32_t refcnt;           /* 0 means it's free */
   void* priv;                      /* private data for lib */
 
-  uint32_t flags;                          /* ST_FT_FLAG_* */
-  struct rte_mbuf_ext_shared_info sh_info; /* for st20 tx ext shared */
+  uint32_t flags; /* ST_FT_FLAG_* */
+  /* st20 tx zero copy: the chain mbufs of the frame count on sh_cur, one of sh_info */
+  struct rte_mbuf_ext_shared_info sh_info[2];
+  struct rte_mbuf_ext_shared_info* sh_cur;
   void* done_addr; /* st20 tx ext: the cleared addr, during notify_frame_done */
 
   void* user_meta; /* the meta data from user */
@@ -292,6 +296,13 @@ struct st_tx_video_rl_stat {
   uint64_t start_late_max_ns;
 };
 
+/* a TX port whose link is down: its pkts are dropped until the link is up */
+struct st_tx_link {
+  bool down;
+  uint64_t down_tsc;
+  uint64_t check_tsc;
+};
+
 struct st_tx_video_session_impl {
   struct mtl_main_impl* impl;
   struct st_tx_video_sessions_mgr* mgr;
@@ -302,6 +313,7 @@ struct st_tx_video_session_impl {
   bool mbuf_mempool_reuse_rx[MTL_SESSION_PORT_MAX]; /* af_xdp zero copy */
   struct rte_mempool* mbuf_mempool_chain;
   struct rte_mempool* mbuf_mempool_copy_chain;
+  struct rte_mempool* mbuf_mempool_parked[ST_TX_VIDEO_PARKED_MEMPOOLS];
   bool tx_mono_pool;   /* if reuse tx mono pool */
   bool tx_no_chain;    /* if tx not use chain mbuf */
   bool multi_src_port; /* if tx use multiple src port */
@@ -363,6 +375,8 @@ struct st_tx_video_session_impl {
   /* the last burst succ time(tsc) */
   uint64_t last_burst_succ_time_tsc[MTL_SESSION_PORT_MAX];
   bool tx_queue_recovery_pending[MTL_SESSION_PORT_MAX];
+  struct st_tx_link tx_link[MTL_SESSION_PORT_MAX];
+  bool tx_link_resync; /* a port found its link down, the builder starts over */
   uint64_t tx_hang_detect_time_thresh;
 
   /* frame info */
@@ -415,6 +429,7 @@ struct st_tx_video_session_impl {
   /* internal-only stats (not in public API, reset per period) */
   int stat_pkts_burst;
   int stat_pkts_burst_dummy;
+  int stat_pkts_link_down_drop;
   int stat_trs_ret_code[MTL_SESSION_PORT_MAX];
   int stat_build_ret_code;
   uint64_t stat_last_time;
@@ -916,6 +931,7 @@ struct st_tx_audio_sessions_mgr {
   struct mt_txq_entry* queue[MTL_PORT_MAX];
   /* the last burst succ time(tsc) */
   uint64_t last_burst_succ_time_tsc[MTL_PORT_MAX];
+  struct st_tx_link tx_link[MTL_PORT_MAX];
   uint64_t tx_hang_detect_time_thresh;
 
   struct st_tx_audio_session_impl* sessions[ST_SCH_MAX_TX_AUDIO_SESSIONS];
@@ -927,6 +943,7 @@ struct st_tx_audio_sessions_mgr {
 
   /* status */
   int stat_pkts_burst;
+  int stat_pkts_link_down_drop;
   int stat_trs_ret_code[MTL_PORT_MAX];
   uint32_t stat_unrecoverable_error;
   uint32_t stat_recoverable_error;

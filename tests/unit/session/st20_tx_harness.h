@@ -269,6 +269,9 @@ int ut_txv_zc_leg_reclaims(const ut_txv_ctx* ctx, int leg);
 void ut_txv_zc_set_hang_ns(ut_txv_ctx* ctx, uint64_t hang_ns);
 /* the transmitter of leg sent a burst at the mock time */
 void ut_txv_zc_leg_burst_now(ut_txv_ctx* ctx, int leg);
+/* what mt_dev_link_down() reads for port; the reads it took */
+void ut_txv_set_link_down(ut_txv_ctx* ctx, int port, bool down);
+int ut_txv_link_reads(const ut_txv_ctx* ctx);
 /* recovery of leg pending, cleared as the transmitter would on handling it */
 bool ut_txv_zc_take_recovery(ut_txv_ctx* ctx, int leg);
 /* packet 0 target of the frame built last, pacing.tsc_time_frame_start */
@@ -549,6 +552,9 @@ const char* ut_txv_stat_error_log_line(void);
 /* stat_rl as the tasklet leaves it after frames flagged, pkt0 of them at packet 0, the
  * latest late_ns past its target */
 void ut_txv_set_rl_vrx(ut_txv_ctx* ctx, uint64_t frames, uint64_t pkt0, uint64_t late_ns);
+/* one stats dump: the log lines that hold needle */
+int ut_txv_stat_lines_with(ut_txv_ctx* ctx, const char* needle);
+void ut_txv_set_stat_link_down_drops(ut_txv_ctx* ctx, int pkts);
 void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames);
 /* sch->allow_sleep of the session's mgr's scheduler */
 void ut_txv_set_sch_allow_sleep(ut_txv_ctx* ctx, bool allow_sleep);
@@ -614,6 +620,16 @@ int ut_txv_recovery_flushes(const ut_txv_ctx* ctx, int leg);
 /* mt_txq_flush() calls on the leg, which may fall back to the per-pad loop */
 int ut_txv_recovery_fallback_flushes(const ut_txv_ctx* ctx, int leg);
 int ut_txv_recovery_done_cleanups(const ut_txv_ctx* ctx, int leg);
+/* After ut_txv_recovery_setup(): the session owns its header pools, as tv_mempool_init()
+ * makes them on ports of 256 TX descriptors, and the recovery has to replace them. */
+int ut_txv_recovery_own_pools(ut_txv_ctx* ctx);
+/* one mbuf of each header pool the session has now, as the dead queue keeps it */
+int ut_txv_recovery_hold_mbufs(ut_txv_ctx* ctx);
+void ut_txv_recovery_release_mbufs(ut_txv_ctx* ctx);
+/* the header pool of leg P that ut_txv_recovery_own_pools() made still exists */
+bool ut_txv_recovery_first_pool_alive(const ut_txv_ctx* ctx);
+/* the session has a header pool on leg P, and it is not the first one */
+bool ut_txv_recovery_pool_replaced(const ut_txv_ctx* ctx);
 
 /* ── builder and transmitter over modeled NIC rings ───────────────────── */
 enum {
@@ -656,6 +672,18 @@ void ut_txv_pipe_run(ut_txv_ctx* ctx, uint64_t duration_ns, uint64_t step_ns);
 int ut_txv_pipe_teardown(ut_txv_ctx* ctx);
 /* the run step the app handed over a frame still referenced, a pkt alloc first failed,
  * and a NIC ring first refused a pkt; 0 for none */
+/* The link of leg goes down: its ring completes nothing posted from now on, the link
+ * reads down, and the run goes on past refused bursts. Up: the link reads up and the
+ * ring sends what it holds from the mock time, a descriptor a ns. */
+void ut_txv_pipe_set_link(ut_txv_ctx* ctx, int leg, bool up);
+/* what each leg's ring took from now: the pkts, and the most a pkt came after its tsc */
+void ut_txv_pipe_mark(ut_txv_ctx* ctx);
+uint64_t ut_txv_pipe_accepted(const ut_txv_ctx* ctx, int leg);
+int64_t ut_txv_pipe_max_late_ns(const ut_txv_ctx* ctx, int leg);
+/* the frame dones while a ring still held a pkt that counts on the frame's sh_cur */
+int ut_txv_pipe_done_while_held(const ut_txv_ctx* ctx);
+/* the descriptors the leg's ring still held when its link came up */
+uint16_t ut_txv_pipe_stale_at_up(const ut_txv_ctx* ctx, int leg);
 uint64_t ut_txv_pipe_first_frame_busy(const ut_txv_ctx* ctx);
 uint64_t ut_txv_pipe_first_alloc_fail(const ut_txv_ctx* ctx);
 uint64_t ut_txv_pipe_first_burst_fail(const ut_txv_ctx* ctx);

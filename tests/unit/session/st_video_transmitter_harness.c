@@ -119,6 +119,8 @@ struct ut_trs_ctx {
   struct rte_mempool* stream_pool;
 
   const uint64_t* clock; /* a scheduler's lcore clock: mt_get_tsc() reads only it */
+  bool link_down;
+  int link_reads;
 };
 
 #include "session/st_video_transmitter_harness.h"
@@ -421,6 +423,13 @@ static int ut_trs_rtcp_buffer_mock(struct mt_rtcp_tx* tx, struct rte_mbuf** mbuf
   return 0;
 }
 
+static bool ut_trs_link_down_mock(struct mtl_main_impl* impl, enum mtl_port port) {
+  struct ut_trs_ctx* ctx = (struct ut_trs_ctx*)impl;
+  MTL_MAY_UNUSED(port);
+  ctx->link_reads++;
+  return ctx->link_down;
+}
+
 static uint16_t ut_trs_refcnt_update_mock(struct rte_mbuf* m, int16_t value) {
   if (ut_trs_active_ctx) ut_trs_active_ctx->refcnt_since_tsc++;
   return rte_mbuf_refcnt_update(m, value);
@@ -448,6 +457,7 @@ int ut_trs_spinlock_trylock(rte_spinlock_t* sl) {
 #define st_video_resolve_pacing_tasklet ut_trs_resolve_pacing_tasklet
 #define st_video_transmitter_init ut_trs_transmitter_init
 #define st_video_transmitter_uinit ut_trs_transmitter_uinit
+#define mt_dev_link_down ut_trs_link_down_mock
 #define mt_get_tsc ut_trs_tsc_time_fn
 #define mt_get_ptp_time ut_trs_ptp_time_fn
 #define mt_txq_burst ut_trs_txq_burst_mock
@@ -468,6 +478,7 @@ int ut_trs_spinlock_trylock(rte_spinlock_t* sl) {
 #undef st_video_resolve_pacing_tasklet
 #undef st_video_transmitter_init
 #undef st_video_transmitter_uinit
+#undef mt_dev_link_down
 
 int ut_trs_init(void) {
   return ut_eal_init();
@@ -1322,6 +1333,26 @@ long double ut_trs_stream_max_late_ns(const ut_trs_ctx* ctx) {
 
 long double ut_trs_stream_ahead_ns(const ut_trs_ctx* ctx) {
   return RTE_MAX(ctx->nic_last_done - ctx->last_tsc, 0.0L);
+}
+
+void ut_trs_set_link_down(ut_trs_ctx* ctx, bool down) {
+  ctx->link_down = down;
+}
+
+int ut_trs_link_reads(const ut_trs_ctx* ctx) {
+  return ctx->link_reads;
+}
+
+int ut_trs_link_down_drops(const ut_trs_ctx* ctx) {
+  return ctx->session.stat_pkts_link_down_drop;
+}
+
+void ut_trs_hold_pkt(ut_trs_ctx* ctx) {
+  rte_mbuf_refcnt_update(ctx->inflight_mbuf, 1);
+}
+
+uint16_t ut_trs_pkt_refcnt(const ut_trs_ctx* ctx) {
+  return rte_mbuf_refcnt_read(ctx->inflight_mbuf);
 }
 
 uint32_t ut_trs_stream_nic_desc_used(const ut_trs_ctx* ctx) {

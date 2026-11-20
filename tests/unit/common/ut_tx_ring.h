@@ -43,6 +43,9 @@ void ut_txr_set_drain_ns(struct ut_txr* r, uint64_t drain_ns);
 uint16_t ut_txr_xmit(struct ut_txr* r, struct rte_mbuf** pkts, uint16_t nb_pkts,
                      uint64_t now_ns);
 int ut_txr_done_cleanup(struct ut_txr* r, uint32_t free_cnt, uint64_t now_ns);
+/** The link is back: the hung descriptors complete from now_ns, drain_ns apart, and so
+ * do the ones posted from now on. */
+void ut_txr_resume(struct ut_txr* r, uint64_t drain_ns, uint64_t now_ns);
 
 /** Descriptors xmit posted. */
 uint64_t ut_txr_descs(const struct ut_txr* r);
@@ -51,6 +54,9 @@ uint64_t ut_txr_xmits(const struct ut_txr* r);
 uint64_t ut_txr_double_frees(const struct ut_txr* r);
 /** The live slots still pointing at m. */
 uint16_t ut_txr_holds(const struct ut_txr* r, const struct rte_mbuf* m);
+/** The live slots of an extbuf mbuf on sh. */
+uint16_t ut_txr_holds_shinfo(const struct ut_txr* r,
+                             const struct rte_mbuf_ext_shared_info* sh);
 uint16_t ut_txr_in_use(const struct ut_txr* r);
 
 /** The ring rte_eth_tx_burst() and rte_eth_tx_done_cleanup() reach for that port and

@@ -14,6 +14,7 @@
 #include "../mt_util.h"
 #include "st_err.h"
 #include "st_fmt.h"
+#include "st_tx_link.h"
 #include "st_video_transmitter.h"
 
 #define TV_RTP_PKT_MAX_SIZE (ST_PKT_MAX_ETHER_BYTES - sizeof(struct mt_udp_hdr))
@@ -114,6 +115,11 @@ static void tv_notify_meta_done(struct st_tx_video_session_impl* s, uint16_t fra
 static void tv_notify_frame_done(struct st_tx_video_session_impl* s, uint16_t frame_idx) {
   struct st_frame_trans* frame = &s->st20_frames[frame_idx];
   tv_notify_meta_done(s, frame_idx, &frame->tv_meta, &frame->tx_st22_meta);
+}
+
+static void tv_frame_stale_free_cb(void* addr, void* opaque) {
+  MTL_MAY_UNUSED(addr);
+  MTL_MAY_UNUSED(opaque);
 }
 
 static void tv_frame_free_cb(void* addr, void* opaque) {
@@ -253,9 +259,12 @@ static int tv_alloc_frames(struct mtl_main_impl* impl,
   for (int i = 0; i < s->st20_frames_cnt; i++) {
     frame_info = &s->st20_frames[i];
 
-    frame_info->sh_info.free_cb = tv_frame_free_cb;
-    frame_info->sh_info.fcb_opaque = frame_info;
-    rte_mbuf_ext_refcnt_set(&frame_info->sh_info, 0);
+    for (int j = 0; j < (int)RTE_DIM(frame_info->sh_info); j++) {
+      frame_info->sh_info[j].free_cb = tv_frame_free_cb;
+      frame_info->sh_info[j].fcb_opaque = frame_info;
+      rte_mbuf_ext_refcnt_set(&frame_info->sh_info[j], 0);
+    }
+    frame_info->sh_cur = &frame_info->sh_info[0];
 
     if (s->ops.flags & ST20_TX_FLAG_EXT_FRAME) {
       frame_info->iova = 0;
@@ -1559,8 +1568,8 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
     /* attach payload to chainbuf */
     rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,
                               tv_frame_get_offset_iova(s, frame_info, offset), left_len,
-                              &frame_info->sh_info);
-    rte_mbuf_ext_refcnt_update(&frame_info->sh_info, 1);
+                              frame_info->sh_cur);
+    rte_mbuf_ext_refcnt_update(frame_info->sh_cur, 1);
   }
   pkt_chain->data_len = pkt_chain->pkt_len = left_len;
 
@@ -1982,8 +1991,8 @@ static int tv_build_st22_chain(struct st_tx_video_session_impl* s, struct rte_mb
   } else { /* attach payload */
     rte_pktmbuf_attach_extbuf(pkt_chain, frame_info->addr + offset,
                               tv_frame_get_offset_iova(s, frame_info, offset), left_len,
-                              &frame_info->sh_info);
-    rte_mbuf_ext_refcnt_update(&frame_info->sh_info, 1);
+                              frame_info->sh_cur);
+    rte_mbuf_ext_refcnt_update(frame_info->sh_cur, 1);
   }
 
   pkt_chain->data_len = pkt_chain->pkt_len = left_len;
@@ -2172,12 +2181,17 @@ static void tv_frames_out_hang(struct st_tx_video_session_impl* s, uint64_t now)
 
   if (now < start || now - start <= hang) return;
   for (int p = 0; p < s->ops.num_port; p++) {
-    if (now - s->last_burst_succ_time_tsc[p] <= hang) continue;
+    if (s->tx_link[p].down || now - s->last_burst_succ_time_tsc[p] <= hang) continue;
+    /* the builder may write these transmitter fields: both run on one scheduler thread */
+    s->last_burst_succ_time_tsc[p] = now;
+    if (st_tx_link_check_down(s->impl, mt_port_logic2phy(s->port_maps, p), &s->tx_link[p],
+                              now, __func__, s->idx, p)) {
+      s->tx_link_resync = true;
+      continue;
+    }
     err("%s(%d,%d), frames out for %" PRIu64 " ms\n", __func__, s->idx, p,
         (now - start) / (uint64_t)NS_PER_MS);
-    /* the builder may write these transmitter fields: both run on one scheduler thread */
     s->tx_queue_recovery_pending[p] = true;
-    s->last_burst_succ_time_tsc[p] = now;
   }
 }
 
@@ -3035,6 +3049,55 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
   return done ? MTL_TASKLET_ALL_DONE : MTL_TASKLET_HAS_PENDING;
 }
 
+/* Frees the pkts the session holds in software. The next frame starts at the next epoch:
+ * a frame in the current one would start after its time. */
+static void tv_drop_sw_pkts(struct mtl_main_impl* impl,
+                            struct st_tx_video_session_impl* s) {
+  if (s->packet_ring) mt_ring_dequeue_clean(s->packet_ring);
+  for (uint8_t i = 0; i < s->ops.num_port; i++) {
+    if (s->ring[i]) mt_ring_dequeue_clean(s->ring[i]);
+  }
+  /* payload pools are shared by redundant ports: every port gives its mbufs back */
+  st_tx_video_transmitter_state_cleanup(s);
+  uint64_t now = mt_get_tsc(impl);
+  for (uint8_t i = 0; i < s->ops.num_port; i++) s->last_burst_succ_time_tsc[i] = now;
+  s->st20_pkt_idx = 0;
+  s->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
+  s->pacing.cur_epochs =
+      st_tai_to_epoch(mt_get_ptp_time(impl, MTL_PORT_P), s->fps_tm.mul, s->fps_tm.den);
+}
+
+/* Hands back each frame still held. Chain mbufs that a NIC ring keeps still point at a
+ * frame: they count on its retired sh_info, so their late free does not count on the
+ * next use of the frame. With both sh_info in use the frame waits for the NIC. */
+static void tv_release_frames(struct st_tx_video_session_impl* s) {
+  for (uint16_t i = 0; s->st20_frames && i < s->st20_frames_cnt; i++) {
+    struct st_frame_trans* frame = &s->st20_frames[i];
+    struct rte_mbuf_ext_shared_info* sh = frame->sh_cur;
+
+    if (!rte_atomic32_read(&frame->refcnt)) continue;
+    if (!s->tx_no_chain && sh && rte_mbuf_ext_refcnt_read(sh)) {
+      struct rte_mbuf_ext_shared_info* next =
+          sh == &frame->sh_info[0] ? &frame->sh_info[1] : &frame->sh_info[0];
+      if (rte_mbuf_ext_refcnt_read(next)) continue;
+      sh->free_cb = tv_frame_stale_free_cb;
+      next->free_cb = tv_frame_free_cb;
+      frame->sh_cur = next;
+    }
+    tv_notify_frame_done(s, i);
+    rte_atomic32_dec(&frame->refcnt);
+  }
+}
+
+/* a port lost its link: no leg sends the pkts of the stall after their time */
+static void tv_link_resync(struct mtl_main_impl* impl,
+                           struct st_tx_video_session_impl* s) {
+  s->tx_link_resync = false;
+  tv_drop_sw_pkts(impl, s);
+  tv_release_frames(s);
+  notice("%s(%d), the next frame starts on a new epoch\n", __func__, s->idx);
+}
+
 static int tvs_tasklet_handler(void* priv) {
   struct st_tx_video_sessions_mgr* mgr = priv;
   struct mtl_main_impl* impl = mgr->parent;
@@ -3046,6 +3109,7 @@ static int tvs_tasklet_handler(void* priv) {
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = tx_video_session_dp_get(mgr, sidx);
     if (!s || !s->active) continue;
+    if (unlikely(s->tx_link_resync)) tv_link_resync(impl, s);
 
     if (time_measure) tsc_s = mt_get_tsc(impl);
 
@@ -3212,10 +3276,41 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
   return 0;
 }
 
-static int tv_mempool_free_owned(struct rte_mempool** pool) {
+static bool tv_mempool_park(struct st_tx_video_session_impl* s,
+                            struct rte_mempool** pool) {
+  for (int i = 0; i < ST_TX_VIDEO_PARKED_MEMPOOLS; i++) {
+    if (s->mbuf_mempool_parked[i]) continue;
+    s->mbuf_mempool_parked[i] = *pool;
+    *pool = NULL;
+    return true;
+  }
+  return false;
+}
+
+/* frees the parked pools whose mbufs are all back; -EBUSY while one is not */
+static int tv_mempool_reap(struct st_tx_video_session_impl* s) {
+  int ret = 0;
+
+  for (int i = 0; i < ST_TX_VIDEO_PARKED_MEMPOOLS; i++) {
+    struct rte_mempool* pool = s->mbuf_mempool_parked[i];
+    if (!pool) continue;
+    if (rte_mempool_in_use_count(pool)) {
+      ret = -EBUSY;
+      continue;
+    }
+    mt_mempool_free(pool);
+    s->mbuf_mempool_parked[i] = NULL;
+  }
+  return ret;
+}
+
+static int tv_mempool_free_owned(struct st_tx_video_session_impl* s,
+                                 struct rte_mempool** pool, bool park) {
   if (!*pool) return 0;
   if (rte_mempool_in_use_count(*pool)) {
-    warn("%s, still has mbuf in mempool %s\n", __func__, (*pool)->name);
+    warn("%s, still has mbuf in mempool %s%s\n", __func__, (*pool)->name,
+         park ? ", park it" : "");
+    if (park && tv_mempool_park(s, pool)) return 0;
     return -EBUSY;
   }
 
@@ -3224,16 +3319,17 @@ static int tv_mempool_free_owned(struct rte_mempool** pool) {
   return 0;
 }
 
-static int tv_mempool_free(struct st_tx_video_session_impl* s) {
+/* park: an owned pool still in use moves to the parked list, else it stays */
+static int tv_mempool_release(struct st_tx_video_session_impl* s, bool park) {
   int ret = 0;
 
   if (s->mbuf_mempool_chain && !s->tx_mono_pool) {
-    if (tv_mempool_free_owned(&s->mbuf_mempool_chain) < 0) ret = -EBUSY;
+    if (tv_mempool_free_owned(s, &s->mbuf_mempool_chain, park) < 0) ret = -EBUSY;
   } else {
     s->mbuf_mempool_chain = NULL;
   }
   if (s->mbuf_mempool_copy_chain && !s->tx_mono_pool) {
-    if (tv_mempool_free_owned(&s->mbuf_mempool_copy_chain) < 0) ret = -EBUSY;
+    if (tv_mempool_free_owned(s, &s->mbuf_mempool_copy_chain, park) < 0) ret = -EBUSY;
   } else {
     s->mbuf_mempool_copy_chain = NULL;
   }
@@ -3241,13 +3337,23 @@ static int tv_mempool_free(struct st_tx_video_session_impl* s) {
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     if (s->mbuf_mempool_hdr[i]) {
       if (!s->mbuf_mempool_reuse_rx[i] && !s->tx_mono_pool) {
-        if (tv_mempool_free_owned(&s->mbuf_mempool_hdr[i]) < 0) ret = -EBUSY;
+        if (tv_mempool_free_owned(s, &s->mbuf_mempool_hdr[i], park) < 0) ret = -EBUSY;
       } else {
         s->mbuf_mempool_hdr[i] = NULL;
       }
     }
   }
 
+  return ret;
+}
+
+static int tv_mempool_free(struct st_tx_video_session_impl* s) {
+  int ret = tv_mempool_release(s, false);
+
+  if (tv_mempool_reap(s) < 0) {
+    warn("%s(%d), a parked mempool still in use\n", __func__, s->idx);
+    ret = -EBUSY;
+  }
   return ret;
 }
 
@@ -4020,6 +4126,7 @@ struct tv_stat_dump {
   double cpu_busy_score;
   int pkts_burst;
   int pkts_burst_dummy;
+  int pkts_link_down_drop;
   int build_ret_code;
   int trs_ret_code[MTL_SESSION_PORT_MAX];
   bool interlaced;
@@ -4066,6 +4173,8 @@ static void tv_stat_collect(struct st_tx_video_sessions_mgr* mgr,
   d->cpu_busy_score = s->stat_cpu_busy_score;
   d->pkts_burst = s->stat_pkts_burst;
   s->stat_pkts_burst = 0;
+  d->pkts_link_down_drop = s->stat_pkts_link_down_drop;
+  s->stat_pkts_link_down_drop = 0;
   d->pkts_burst_dummy = s->stat_pkts_burst_dummy;
   if (d->us.stat_pkts_dummy != d->snap.stat_pkts_dummy) s->stat_pkts_burst_dummy = 0;
   d->build_ret_code = s->stat_build_ret_code;
@@ -4120,6 +4229,10 @@ static void tv_stat_log(const struct tv_stat_dump* dump) {
          (double)bytes_r * 8 / time_sec / MTL_STAT_M_UNIT, dump->cpu_busy_score);
   if (dump->pkts_burst > 0) {
     notice("TX_VIDEO_SESSION(%d,%d): pkts burst %d\n", m_idx, idx, dump->pkts_burst);
+  }
+  if (dump->pkts_link_down_drop > 0) {
+    notice("TX_VIDEO_SESSION(%d,%d): pkts link down drop %d\n", m_idx, idx,
+           dump->pkts_link_down_drop);
   }
 
   d = us->stat_pkts_dummy - snap->stat_pkts_dummy;
@@ -4815,17 +4928,7 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
     return -EIO;
   }
 
-  /* clear all tx ring buffer */
-  if (s->packet_ring) mt_ring_dequeue_clean(s->packet_ring);
-  for (uint8_t i = 0; i < s->ops.num_port; i++) {
-    if (s->ring[i]) mt_ring_dequeue_clean(s->ring[i]);
-  }
-  /* Payload pools are shared by redundant ports, so release all software-held
-   * mbufs before replacing them. */
-  st_tx_video_transmitter_state_cleanup(s);
-  uint64_t recovery_tsc = mt_get_tsc(impl);
-  for (uint8_t i = 0; i < s->ops.num_port; i++)
-    s->last_burst_succ_time_tsc[i] = recovery_tsc;
+  tv_drop_sw_pkts(impl, s);
   /* clean the queue done mbuf */
   mt_txq_done_cleanup(s->queue[s_port]);
 
@@ -4869,23 +4972,11 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
     }
   }
 
-  /* cleanup frame manager (only valid for frame-type sessions) */
-  if (st20_is_frame_type(s->ops.type)) {
-    struct st_frame_trans* frame;
-    for (uint16_t i = 0; i < s->st20_frames_cnt; i++) {
-      frame = &s->st20_frames[i];
-      int refcnt = rte_atomic32_read(&frame->refcnt);
-      if (refcnt) {
-        info("%s(%d,%d), stop frame %u\n", __func__, s_port, idx, i);
-        tv_notify_frame_done(s, i);
-        rte_atomic32_dec(&frame->refcnt);
-        rte_mbuf_ext_refcnt_set(&frame->sh_info, 0);
-      }
-    }
-  }
+  if (st20_is_frame_type(s->ops.type)) tv_release_frames(s);
 
-  /* reset mempool */
-  ret = tv_mempool_free(s);
+  /* the dead queue may still hold pool mbufs, those pools wait in the parked list */
+  tv_mempool_reap(s);
+  ret = tv_mempool_release(s, true);
   if (ret < 0) {
     err("%s(%d,%d), old mempool still in use\n", __func__, s_port, idx);
     s->port_user_stats.common.stat_unrecoverable_error++;
@@ -4903,9 +4994,6 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
     return ret;
   }
 
-  /* point to next frame */
-  s->st20_pkt_idx = 0;
-  s->st20_frame_stat = ST21_TX_STAT_WAIT_FRAME;
   s->port_user_stats.common.stat_recoverable_error++;
   if (s->ops.notify_event)
     s->ops.notify_event(s->ops.priv, ST_EVENT_RECOVERY_ERROR, NULL);
