@@ -25,6 +25,7 @@ from mtl_engine.integrity import calculate_yuv_frame_size
 from mtl_engine.media_files import pformat_to_exact_fps, yuv_files_422rfc10
 from mtl_engine.performance_monitoring import (
     CpuCoreMonitor,
+    companion_window,
     display_session_results,
     format_cpus,
     log_cpu_core_results,
@@ -42,7 +43,6 @@ from mtl_engine.rxtxapp import RxTxApp
 
 logger = logging.getLogger(__name__)
 
-WARMUP_SECONDS = 60  # Warmup for the informational throughput/device rates
 MAX_DROP_PCT = 0.10  # Trimmed mean: drop worst 10% of FPS samples per session
 
 # An RX failure the network explains alone (see _run_iteration) says nothing
@@ -754,15 +754,15 @@ def _run_iteration(
         rx_frames = monitor_rx_frames_simple(rx_lines, num_sessions)
         m_tp_fn = monitor_tx_throughput if is_tx else monitor_rx_throughput
         c_tp_fn = monitor_rx_throughput if is_tx else monitor_tx_throughput
-        m_throughput = m_tp_fn(
-            stdout_lines, num_sessions, warmup_seconds=WARMUP_SECONDS
-        )
-        c_throughput = c_tp_fn(
-            companion_lines, num_sessions, warmup_seconds=WARMUP_SECONDS
-        )
+        # Rates of steady traffic only: the measured app's over the dumps its FPS
+        # verdict judged, the companion's over its own steady dumps.
+        m_window = fps_details["window"]
+        c_window = companion_window(companion_lines, companion_dir)
+        m_throughput = m_tp_fn(stdout_lines, m_window)
+        c_throughput = c_tp_fn(companion_lines, c_window)
 
-        m_dev_rate = monitor_dev_rate(stdout_lines, warmup_seconds=WARMUP_SECONDS)
-        c_dev_rate = monitor_dev_rate(companion_lines, warmup_seconds=WARMUP_SECONDS)
+        m_dev_rate = monitor_dev_rate(stdout_lines, m_window)
+        c_dev_rate = monitor_dev_rate(companion_lines, c_window)
 
         # ── Display results ──
         logger.info("=" * 70)
@@ -952,7 +952,7 @@ def _run_session_sweep(
         f"  {sweep_desc}: {mode_tag}{direction.upper()} "
         f"{core_tag}{dma_tag} | {fps}fps | {resolution} | "
         f"{'sessions=' + str(num_sessions) if fixed_mode else 'range=[1, ' + str(max_sess) + ']'} "
-        f"test_time={test_time}s rate_warmup={WARMUP_SECONDS}s\n"
+        f"test_time={test_time}s\n"
         f"{'═' * 70}"
     )
 
