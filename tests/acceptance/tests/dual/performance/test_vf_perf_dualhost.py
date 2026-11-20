@@ -10,6 +10,7 @@ import logging
 import re
 import time
 import traceback
+from fractions import Fraction
 
 import pytest
 from common.host_setup import optimize_cpu_cores_for_turbo, restore_cpu_cores
@@ -21,7 +22,7 @@ from mtl_engine.const import RXTXAPP_PATH
 from mtl_engine.dma import setup_host_dma_all
 from mtl_engine.execute import kill_stale_processes, read_remote_log, run
 from mtl_engine.integrity import calculate_yuv_frame_size
-from mtl_engine.media_files import yuv_files_422rfc10
+from mtl_engine.media_files import pformat_to_exact_fps, yuv_files_422rfc10
 from mtl_engine.performance_monitoring import (
     CpuCoreMonitor,
     display_session_results,
@@ -35,6 +36,7 @@ from mtl_engine.performance_monitoring import (
     monitor_tx_frames,
     monitor_tx_throughput,
     parse_cpus,
+    sent_at_rate,
 )
 from mtl_engine.rxtxapp import RxTxApp
 
@@ -724,13 +726,26 @@ def _run_iteration(
         for line in companion_lines:
             logger.info(f"companion {companion_dir.upper()}: {line}")
 
-        monitor_fps_fn = monitor_tx_fps if is_tx else monitor_rx_fps
-        success, count, fps_details = monitor_fps_fn(
-            stdout_lines,
-            fps,
-            num_sessions,
-            max_drop_pct=MAX_DROP_PCT,
-        )
+        # The rate the sessions are paced at: p59 is 60000/1001, not 59.
+        paced_fps = float(Fraction(pformat_to_exact_fps(fps)))
+        sent = {}
+        if is_tx:
+            success, count, fps_details = monitor_tx_fps(
+                stdout_lines, paced_fps, num_sessions, max_drop_pct=MAX_DROP_PCT
+            )
+        else:
+            sent = sent_at_rate(
+                monitor_tx_fps(
+                    companion_lines, paced_fps, num_sessions, max_drop_pct=MAX_DROP_PCT
+                )[2]
+            )
+            success, count, fps_details = monitor_rx_fps(
+                stdout_lines,
+                paced_fps,
+                num_sessions,
+                max_drop_pct=MAX_DROP_PCT,
+                sent=sent,
+            )
 
         # Frame counts & throughput (TX/RX line assignment)
         tx_lines = stdout_lines if is_tx else companion_lines
@@ -764,7 +779,7 @@ def _run_iteration(
             direction.upper(),
             dma_label,
             num_sessions,
-            fps,
+            paced_fps,
             fps_details,
             tx_frames,
             rx_frames,
@@ -774,7 +789,12 @@ def _run_iteration(
             companion_dev_rate=c_dev_rate,
         )
 
-        detail = f"{count}/{num_sessions} sessions at {fps} fps"
+        detail = f"{count}/{num_sessions} sessions at {paced_fps:.2f} fps"
+        if fps_details["sender_ramp_sessions"]:
+            detail += (
+                f", {len(fps_details['sender_ramp_sessions'])} kept up with a "
+                "ramping sender"
+            )
         vetoed = False
         if _has_hugepage_source_fallback(tx_lines):
             # Part of this iteration's TX read its source through mmap() instead
@@ -796,18 +816,16 @@ def _run_iteration(
                 success, vetoed = False, True
         # A failure the network explains alone: every leg lost packets and the
         # SUT's frames missed some (2022-7 recovers what only one leg lost), the
-        # companion still sent at full rate (a full link is the sweep's ceiling,
-        # not a fault), the SUT logged no drop at its NIC or frame buffers, and
-        # nothing above vetoed the run.
+        # companion ramped every session up to the bar (a full link, which holds
+        # it below, is the sweep's ceiling, not a fault), the SUT logged no drop
+        # at its NIC or frame buffers, and nothing above vetoed the run.
         if (
             losses
             and not success
             and not vetoed
             and all(lost > 0 for lost in losses)
             and any(MISSED_PKTS.search(line) for line in stdout_lines)
-            and monitor_tx_fps(
-                companion_lines, fps, num_sessions, max_drop_pct=MAX_DROP_PCT
-            )[0]
+            and len(sent) == num_sessions
             and not any(m in line for line in stdout_lines for m in SUT_DROP_MARKERS)
         ):
             detail += f", {sum(losses)} pkts {NETWORK_LOSS_MARKER}"

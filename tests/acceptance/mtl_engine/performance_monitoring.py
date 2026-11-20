@@ -96,6 +96,7 @@ def _monitor_fps_generic(
     session_pattern,
     fps_tolerance_pct=FPS_TOLERANCE_PCT,
     max_drop_pct=0.0,
+    sent=None,
 ):
     """Parse log lines, judge the steady window, return (all_ok, count, details).
 
@@ -109,6 +110,11 @@ def _monitor_fps_generic(
     before computing the average.  This makes the metric resilient to
     short transient NIC/system events that briefly drop all sessions
     to zero without indicating a real capacity problem.
+
+    *sent* is :func:`sent_at_rate` of a receiver's sender.  A receiver gets no
+    more than its sender sent, so a session below the bar passes if its sender
+    ramped up to the bar and the receiver kept up with it: ended its window at the
+    bar too, and averaged at least the tolerance of what was sent.
     """
     fps_re = re.compile(session_pattern)
     min_required = expected_fps * fps_tolerance_pct
@@ -145,20 +151,46 @@ def _monitor_fps_generic(
         trimmed = sorted(hist)[n_drop:]  # drop lowest n_drop values
         return sum(trimmed) / len(trimmed) if trimmed else 0.0
 
-    ok_sessions = {
+    means = {sid: _trimmed_mean(hist) for sid, hist in session_fps.items() if hist}
+    ok_sessions = {sid for sid, mean in means.items() if mean >= min_required}
+    sent = sent or {}
+    ramp = {
         sid
-        for sid, hist in session_fps.items()
-        if hist and _trimmed_mean(hist) >= min_required
+        for sid, mean in means.items()
+        if sid not in ok_sessions
+        and sid in sent
+        and session_fps[sid][-1] >= min_required
+        and mean >= fps_tolerance_pct * sent[sid]
     }
+    ok_sessions |= ramp
     details = {
         "successful_count": len(ok_sessions),
         "successful_sessions": sorted(ok_sessions),
+        "sender_ramp_sessions": sorted(ramp),
         "session_fps_history": session_fps,
+        "session_fps_mean": means,
         "min_required_fps": min_required,
         "window": window,
         "window_reject_reason": reason,
     }
     return len(ok_sessions) == num_sessions, len(ok_sessions), details
+
+
+def sent_at_rate(details):
+    """The sessions a sender ramped up to the bar → {sid: mean fps}.
+
+    Such a session ends its window at the bar and never falls below the tolerance of
+    its previous dump.  A sender that a full link or a full core holds back does not
+    get there, and one that stalls on the way is no ramp.
+    """
+    bar = details["min_required_fps"]
+    return {
+        sid: details["session_fps_mean"][sid]
+        for sid, hist in details["session_fps_history"].items()
+        if hist
+        and hist[-1] >= bar
+        and all(b >= FPS_TOLERANCE_PCT * a for a, b in zip(hist, hist[1:]))
+    }
 
 
 _TX_FPS_RE = r"TX_VIDEO_SESSION\(\d+,(\d+):app_tx_st20p_(\d+)\):\s+fps\s+([\d.]+)"
@@ -189,6 +221,7 @@ def monitor_rx_fps(
     num_sessions,
     fps_tolerance_pct=FPS_TOLERANCE_PCT,
     max_drop_pct=0.0,
+    sent=None,
 ):
     """Monitor RX FPS from RxTxApp logs."""
     return _monitor_fps_generic(
@@ -198,6 +231,7 @@ def monitor_rx_fps(
         _RX_FPS_RE,
         fps_tolerance_pct,
         max_drop_pct,
+        sent,
     )
 
 
@@ -322,7 +356,7 @@ def display_session_results(
     logger.info("=" * 80)
     logger.info(
         f"{direction} Results{dma_label}: {len(ok_ids)}/{num_sessions} sessions "
-        f"at {fps} fps (min: {min_req:.1f})"
+        f"at {fps:.2f} fps (min: {min_req:.2f})"
     )
     if window:
         logger.info(
@@ -332,6 +366,13 @@ def display_session_results(
         logger.info(
             "  Steady window: none — "
             f"{fps_details.get('window_reject_reason', 'no FPS data')}"
+        )
+    ramp = fps_details.get("sender_ramp_sessions")
+    if ramp:
+        logger.info(
+            f"  Below the bar, but at it by the end and at {fps_tolerance_pct:.0%} of "
+            f"a sender that ramped up to it: {len(ramp)} sessions "
+            f"(S{', S'.join(map(str, ramp))})"
         )
     logger.info("=" * 80)
 
