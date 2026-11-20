@@ -5,7 +5,10 @@
 
 Usage:
     python generate_report.py <log_root> [-o report.html] [--branch B]
-        [--run-id ID [--run-url URL]]
+        [--run-id ID [--run-url URL]] [--commit SHA] [--settings S]
+        [--history-main H.json] [--history-main-out H.json]
+        [--history-branch H.json] [--history-branch-out H.json]
+        [--history-unavailable main|branch]
 
 Scans timestamped subdirectories under <log_root> for pytest.log and per-test
 .log files, extracts sweep results, platform config, throughput and CPU cores,
@@ -77,6 +80,11 @@ class SweepTest:
     companion_dev_rx: float = 0.0
     steps: list = field(default_factory=list)  # [(sessions, passed, detail)]
     rxtxapp_config: dict = field(default_factory=dict)
+    fixed: bool = False  # a fixed session count, not a sweep's maximum
+    # This case in the histories, {"last": entry, "best": entry}: main's, and the
+    # branch's when the branch under test is not main (None: no such history).
+    main_hist: dict | None = None
+    branch_hist: dict | None = None
 
 
 # ── Regex patterns ────────────────────────────────────────────────────
@@ -427,6 +435,7 @@ def _parse_log_file(log_path: str, dir_name: str = ""):
                     companion_dev_rx=c_rx,
                     steps=list(steps),
                     rxtxapp_config=dict(rxtxapp_config),
+                    fixed=bool(mf),
                 )
                 rd = "REDUNDANT " if st.redundant else ""
                 ds = " +DMA" if st.dma else ""
@@ -766,6 +775,105 @@ def _tput(mbps: float) -> str:
     return f"{mbps / 1000:.2f} Gb/s" if mbps >= 1000 else f"{mbps:.1f} Mb/s"
 
 
+# The version of the sweep's pass rule that a history's counts come from. Bump it when
+# the rule changes: a history of another version is not compared, and the next run
+# that records starts it over.
+HISTORY_METHOD = 1
+
+
+def _is_link(s: str) -> bool:
+    return s == "" or s.startswith("https://")
+
+
+def _valid_entry(entry) -> bool:
+    return (
+        isinstance(entry, dict)
+        and type(entry.get("sessions")) is int
+        and all(
+            isinstance(entry.get(k), str) for k in ("date", "url", "commit", "settings")
+        )
+        and _is_link(entry["url"])
+    )
+
+
+def load_history(path: str):
+    """A history file → (history, problem); history is None, and *problem* says why,
+    if the file is not a history this code can compare with.
+    """
+    try:
+        with open(path) as f:
+            history = json.load(f)
+    except (OSError, ValueError, RecursionError) as e:
+        return None, str(e)
+    if not isinstance(history, dict) or history.get("method") != HISTORY_METHOD:
+        return None, f"not a method {HISTORY_METHOD} history"
+    cases = history.get("cases")
+    if not isinstance(cases, dict) or not all(
+        isinstance(case, dict)
+        and set(case) == {"last", "best"}
+        and all(map(_valid_entry, case.values()))
+        for case in cases.values()
+    ):
+        return None, "malformed cases"
+    if not all(isinstance(history.get(k), str) for k in ("run_id", "run_url")):
+        return None, "no run named"
+    if not _is_link(history["run_url"]):
+        return None, "a run URL that is not https"
+    return history, ""
+
+
+def update_history(prev: dict, tests, run: dict) -> dict:
+    """Each case's history with this run in it → {key: {"last": entry, "best": entry}}.
+
+    The best changes only for a higher count; a case not swept, or run with a fixed
+    session count, keeps its history.
+    """
+    cases = dict(prev)
+    for t in tests:
+        if t.fixed:
+            continue
+        entry = {"sessions": t.max_sessions, "date": t.timestamp, **run}
+        best = prev.get(t.key, {}).get("best")
+        if not best or t.max_sessions > best["sessions"]:
+            best = entry
+        cases[t.key] = {"last": entry, "best": best}
+    return cases
+
+
+def _history_cell(entry) -> str:
+    """A session count of a history, linked to its run, with its date, commit and
+    settings on hover."""
+    if not entry:
+        return '<td class="n">\u2014</td>'
+    n = entry["sessions"]
+    if entry["url"]:
+        n = f'<a href="{_attr(entry["url"])}">{n}</a>'
+    about = " ".join(
+        s for s in (entry["date"], entry["commit"][:9], entry["settings"]) if s
+    )
+    return f'<td class="n" title="{_attr(about)}">{n}</td>'
+
+
+def _history_cells(case) -> str:
+    case = case or {}
+    return _history_cell(case.get("last")) + _history_cell(case.get("best"))
+
+
+def _history_note(show_branch: bool) -> str:
+    branch = (
+        "<b>Branch Last</b> and <b>Branch Best</b> = the same for the branch under "
+        "test, with any settings. "
+        if show_branch
+        else ""
+    )
+    return (
+        "<br><b>Main Last</b> = the sessions of the latest run of main on this host, "
+        "with the nightly's settings, that swept the case. <b>Main Best</b> = the most "
+        f"sessions such a run reached; a red row has fewer. {branch}Hover a count for "
+        "its run's date, commit and settings."
+    )
+
+
 def _kv_table(title: str, rows: list[tuple[str, str]]) -> str:
     lines = [
         f'<div class="section-title">{title}</div>',
@@ -982,6 +1090,11 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
     p.append("</div>")
 
     # ── Summary tables ──
+    show_branch = any(t.branch_hist is not None for t in tests)
+    hist_th = "<th>Main Last</th><th>Main Best</th>"
+    if show_branch:
+        hist_th += "<th>Branch Last</th><th>Branch Best</th>"
+    history_note = _history_note(show_branch)
     _SECTIONS = [
         ("Single Core (SC)", "SC", False),
         ("Single Core (SC) — Redundant (ST2022-7)", "SC", True),
@@ -1011,7 +1124,8 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                 "<b>ST 2110-21</b> = the streams that EBU LIST judged narrow, out of the "
                 "streams it captured at the maximum, 1 s each; for RX, the streams "
                 "its sender sent (non-redundant cases only; \u26a0 = a problem, shown "
-                "on hover).</p>"
+                "on hover)."
+                f"{history_note}</p>"
             )
         else:
             p.append(
@@ -1024,7 +1138,8 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                 "<b>ST 2110-21</b> = the streams that EBU LIST judged narrow, out of the "
                 "streams it captured at the maximum, 1 s each; for RX, the streams "
                 "its sender sent (non-redundant cases only; \u26a0 = a problem, shown "
-                "on hover).</p>"
+                "on hover)."
+                f"{history_note}</p>"
             )
         for fps in sorted({t.fps for t in group}):
             fps_group = [t for t in group if t.fps == fps]
@@ -1033,7 +1148,8 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                 p.append(
                     '<table class="mx"><thead><tr>'
                     "<th>Tested Side</th><th>Resolution</th>"
-                    "<th>Sessions</th><th>Network Streams</th><th>Cores</th>"
+                    f"<th>Sessions</th>{hist_th}"
+                    "<th>Network Streams</th><th>Cores</th>"
                     "<th>Throughput (per port)</th><th>NIC Total</th>"
                     "<th>ST 2110-21</th><th>Run</th>"
                     "</tr></thead><tbody>"
@@ -1042,13 +1158,20 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                 p.append(
                     '<table class="mx"><thead><tr>'
                     "<th>Tested Side</th><th>Resolution</th>"
-                    "<th>Max Sessions</th><th>Network Streams</th><th>Cores</th>"
+                    f"<th>Max Sessions</th>{hist_th}"
+                    "<th>Network Streams</th><th>Cores</th>"
                     "<th>Throughput (per port)</th><th>NIC Total</th>"
                     "<th>ST 2110-21</th><th>Run</th>"
                     "</tr></thead><tbody>"
                 )
             for t in fps_group:
                 cl = "p" if t.max_sessions > 0 else "f"
+                best = (t.main_hist or {}).get("best")
+                if best and t.max_sessions < best["sessions"]:
+                    cl += " regr"
+                hist = _history_cells(t.main_hist)
+                if show_branch:
+                    hist += _history_cells(t.branch_hist)
                 meas = t.measured_dev_rx if t.tested_side == "RX" else t.measured_dev_tx
                 side = f"{t.tested_side} +DMA" if t.dma else t.tested_side
                 if redundant:
@@ -1057,6 +1180,7 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                     p.append(
                         f'<tr class="{cl}"><td>{side}</td><td>{t.resolution}</td>'
                         f'<td class="ms">{t.max_sessions}</td>'
+                        f"{hist}"
                         f'<td class="n">{nflows}</td>'
                         f'<td class="n">{t.cores_used}</td>'
                         f"<td>{_tput(meas)}</td>"
@@ -1068,6 +1192,7 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                     p.append(
                         f'<tr class="{cl}"><td>{side}</td><td>{t.resolution}</td>'
                         f'<td class="ms">{t.max_sessions}</td>'
+                        f"{hist}"
                         f'<td class="n">{t.max_sessions}</td>'
                         f'<td class="n">{t.cores_used}</td>'
                         f"<td>{_tput(meas)}</td>"
@@ -1286,6 +1411,8 @@ td.n{text-align:center;font-variant-numeric:tabular-nums}
 td.ms{text-align:center;font-variant-numeric:tabular-nums;
   font-weight:700;font-size:1em;color:var(--green)}
 tr.f td.ms{color:var(--red)}
+tr.regr td{background:#fdecea}
+tr.regr td.ms{color:var(--red)}
 
 /* ── Detail cards ── */
 details{background:var(--card);border-radius:var(--radius);margin:8px 0;
@@ -1340,6 +1467,23 @@ def main():
     ap.add_argument("--branch", help="MTL branch the tests ran on")
     ap.add_argument("--run-id", help="CI run ID")
     ap.add_argument("--run-url", help="CI run URL, links the run ID")
+    ap.add_argument("--commit", default="", help="MTL commit the tests ran on")
+    ap.add_argument(
+        "--settings", default="", help="The run's settings, for its history"
+    )
+    for kind in ("main", "branch"):
+        ap.add_argument(f"--history-{kind}", help=f"The {kind} history before this run")
+        ap.add_argument(
+            f"--history-{kind}-out",
+            help=f"Where to write the {kind} history with this run",
+        )
+    ap.add_argument(
+        "--history-unavailable",
+        action="append",
+        default=[],
+        choices=("main", "branch"),
+        help="A history that could not be fetched: not compared, and not written",
+    )
     args = ap.parse_args()
 
     if not os.path.isdir(args.log_root):
@@ -1361,9 +1505,60 @@ def main():
             run_id = f'<a href="{href}">{run_id}</a>'
         run_rows.append(("CI Run ID", run_id))
 
+    # Main's history, and the branch's when the branch under test is not main.
+    kinds = ["main"]
+    if args.branch and args.branch != "main":
+        kinds.append("branch")
+    run = {"url": args.run_url or "", "commit": args.commit, "settings": args.settings}
+    # A fixed session count is neither compared with a sweep's nor recorded.
+    fixed = all(t.fixed for t in tests)
+    written = {}
+    for kind in kinds:
+        path = getattr(args, f"history_{kind}")
+        out = None if fixed else getattr(args, f"history_{kind}_out")
+        prev, source, problem = {}, "none yet", ""
+        if kind in args.history_unavailable:
+            # Not an empty history: recording now would drop every count before it.
+            problem, out = "its lookup or download failed", None
+        elif path:
+            loaded, problem = load_history(path)
+            if loaded:
+                prev = loaded["cases"]
+                href = _attr(loaded["run_url"])
+                source = f'run <a href="{href}">{_esc(loaded["run_id"])}</a>'
+        if problem:
+            print(f"Warning: no {kind} history, as {problem}", file=sys.stderr)
+            source = f"none, as {_esc(problem)}"
+        cases = update_history(prev, tests, run) if out else prev
+        for t in tests:
+            last = prev.get(t.key, {}).get("last")
+            best = cases.get(t.key, {}).get("best")
+            setattr(t, f"{kind}_hist", {} if t.fixed else {"last": last, "best": best})
+        if out:
+            written[out] = cases
+        recorded = "this run is recorded in it" if out else "this run is not recorded"
+        if fixed:
+            recorded = "a fixed session count is not compared"
+        run_rows.append((f"{kind.title()} History", f"{source}; {recorded}"))
+
     html = _generate_html(tests, per_host, hosts, run_rows)
     with open(args.output, "w") as f:
         f.write(html)
+    for out, cases in written.items():
+        # Whole or not at all: a torn file would start the history over next time.
+        with open(f"{out}.tmp", "w") as f:
+            json.dump(
+                {
+                    "method": HISTORY_METHOD,
+                    "run_id": args.run_id or "",
+                    "run_url": args.run_url or "",
+                    "cases": cases,
+                },
+                f,
+                indent=1,
+                sort_keys=True,
+            )
+        os.replace(f"{out}.tmp", out)
 
     sc = sum(1 for t in tests if t.mode == "SC")
     mc = sum(1 for t in tests if t.mode == "MC")

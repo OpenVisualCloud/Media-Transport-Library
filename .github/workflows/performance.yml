@@ -100,8 +100,18 @@ jobs:
     needs: build
     runs-on: [self-hosted, perf, sut]
     timeout-minutes: 720
+    permissions:
+      contents: read
+      actions: read
     env:
       COMPLIANCE: ${{ github.event_name == 'schedule' || inputs.compliance }}
+      MTL_BRANCH: ${{ inputs.branch || github.ref_name }}
+      # Main's history takes only main's own tests with the nightly's settings; a filter
+      # or marker only picks cases. A branch's workflow brings the branch's tests.
+      PERF_HISTORY_RECORD_MAIN: >-
+        ${{ github.ref == 'refs/heads/main' && (inputs.branch == '' || inputs.branch == 'main') &&
+        inputs.num_sessions == '' && inputs.sch_quota == '' && inputs.sut_app_args == '' &&
+        (inputs.test_time == '' || inputs.test_time == '120') }}
     steps:
       - name: Harden-Runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -168,9 +178,15 @@ jobs:
           SUT_APP_ARGS: ${{ inputs.sut_app_args }}
         run: task ci:pytest-run -- performance
       - name: Generate performance report
+        id: report
         if: always()
         env:
-          MTL_BRANCH: ${{ inputs.branch || github.ref_name }}
+          GITHUB_TOKEN: ${{ github.token }}
+          MTL_COMMIT: ${{ needs.build.outputs.mtl_commit }}
+          TEST_TIME: ${{ inputs.test_time || '120' }}
+          NUM_SESSIONS: ${{ inputs.num_sessions }}
+          SCH_QUOTA: ${{ inputs.sch_quota }}
+          SUT_APP_ARGS: ${{ inputs.sut_app_args }}
         run: task ci:report -- performance
       - name: Upload report
         if: always()
@@ -181,6 +197,25 @@ jobs:
             ./tests/acceptance/report.html
             ./tests/acceptance/performance_report.html
             ./tests/acceptance/perf-logs.tar.gz
+      # The report writes a history only for a run that records into it.
+      - name: Upload main's session history
+        if: always() && steps.report.outputs.main_name != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.report.outputs.main_name }}
+          path: ./tests/acceptance/perf_history_main.json
+          if-no-files-found: ignore
+          overwrite: true
+      - name: Upload the branch's session history
+        if: always() && steps.report.outputs.branch_name != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.report.outputs.branch_name }}
+          path: ./tests/acceptance/perf_history_branch.json
+          if-no-files-found: ignore
+          overwrite: true
       - name: Clean up
         if: always()
         run: task cleanup
