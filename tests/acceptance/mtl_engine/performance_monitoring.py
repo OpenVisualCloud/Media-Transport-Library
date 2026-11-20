@@ -322,7 +322,7 @@ def display_session_results(
     logger.info("=" * 80)
     logger.info(
         f"{direction} Results{dma_label}: {len(ok_ids)}/{num_sessions} sessions "
-        f"at {fps} fps (min: {min_req:.1f})"
+        f"at {fps:.2f} fps (min: {min_req:.2f})"
     )
     if window:
         logger.info(

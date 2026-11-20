@@ -743,7 +743,7 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                     "Acceptable Packet Loss",
                     "0 % — ST 2110 requires lossless delivery; any packet loss causes visible artifacts. "
                     "Pass criteria: every session must sustain average FPS ≥ 99 % of target "
-                    "(≥ 58.41 fps for 59.94 fps target) over the measurement window.",
+                    "(≥ 59.34 fps for 59.94 fps target) over the measurement window.",
                 ),
                 ("Measurement Window", "Warmup 60 s + Steady-state + Cooldown 10 s"),
             ],
