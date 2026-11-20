@@ -7,12 +7,10 @@ import logging
 import re
 import time
 import uuid
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 # Default FPS monitoring configuration
-FPS_WARMUP_SECONDS = 45  # Skip first N seconds (PTP sync + session ramp-up)
 FPS_TOLERANCE_PCT = 0.99  # 99% of requested FPS required for pass
 # MTL dumps stats every 10 s and the first/last dumps are discarded as partial,
 # so 4 samples needs a run of roughly 70 s or more.
@@ -20,7 +18,9 @@ FPS_MIN_STEADY_SAMPLES = 4  # Refuse to judge a run on fewer stat dumps than thi
 
 # Shared timestamp regex (compiled once)
 _TS_RE = re.compile(r"MTL:\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}),?")
-_TS_FMT = "%Y-%m-%d %H:%M:%S"
+# What stat_dump() prints around each dump (lib/src/mt_stat.c).
+DUMP_START = "M T    D E V   S T A T E"
+DUMP_END = "E N D    S T A T E"
 
 
 def parse_cpus(text: str) -> list[int]:
@@ -42,6 +42,34 @@ def format_cpus(cpus) -> str:
 
 
 # ── FPS Monitoring ──────────────────────────────────────────────────────
+
+
+def _walk_dumps(log_lines):
+    """Yield (dump, line) for each line of a stat dump, *dump* being the stamp of its
+    banner.
+
+    A line's own stamp does not name its dump, as one dump can span two seconds, and
+    the stats a session prints once more as it is freed lie outside any dump.
+    """
+    dump = None
+    for line in log_lines:
+        if DUMP_START in line:
+            dump = _TS_RE.search(line).group(1)
+        elif DUMP_END in line:
+            dump = None
+        if dump:
+            yield dump, line
+
+
+def _fps_dumps(log_lines, session_pattern):
+    """Parse per-session FPS stat lines → {dump: {session_id: fps}}, in log order."""
+    fps_re = re.compile(session_pattern)
+    dumps = {}
+    for dump, line in _walk_dumps(log_lines):
+        m = fps_re.search(line)
+        if m:
+            dumps.setdefault(dump, {})[int(m.group(2))] = float(m.group(3))
+    return dumps
 
 
 def _steady_window(dumps, num_sessions):
@@ -110,17 +138,8 @@ def _monitor_fps_generic(
     short transient NIC/system events that briefly drop all sessions
     to zero without indicating a real capacity problem.
     """
-    fps_re = re.compile(session_pattern)
     min_required = expected_fps * fps_tolerance_pct
-    dumps = {}  # {timestamp: {session_id: fps}}, in log order
-
-    for line in log_lines:
-        ts_m = _TS_RE.search(line)
-        if not ts_m:
-            continue
-        m = fps_re.search(line)
-        if m:
-            dumps.setdefault(ts_m.group(1), {})[int(m.group(2))] = float(m.group(3))
+    dumps = _fps_dumps(log_lines, session_pattern)
 
     window, reason = _steady_window(dumps, num_sessions)
     if not reason and len(window) < FPS_MIN_STEADY_SAMPLES:
@@ -201,6 +220,23 @@ def monitor_rx_fps(
     )
 
 
+def companion_window(log_lines, num_sessions, direction):
+    """The stat dumps of steady traffic in a companion's log → list of dumps.
+
+    The companion's log is read with its sessions alive after the far end stopped
+    sending, so drop its last dumps, in which no session is live. The dump the far end
+    stopped in is then the last, which _steady_window() drops.
+    """
+    dumps = _fps_dumps(log_lines, _TX_FPS_RE if direction == "tx" else _RX_FPS_RE)
+    order = list(dumps)
+    while order and not any(dumps[order[-1]].values()):
+        del dumps[order.pop()]
+    window, reason = _steady_window(dumps, num_sessions)
+    if reason:
+        logger.warning(f"Companion {direction.upper()}: {reason}, so no rate")
+    return window
+
+
 # ── Frame Count Extraction ──────────────────────────────────────────────
 
 
@@ -239,58 +275,52 @@ def monitor_rx_frames_simple(log_lines, num_sessions=0):
 # ── Throughput & Device Rate ────────────────────────────────────────────
 
 
-def _collect_after_warmup(log_lines, data_pattern, warmup_seconds):
-    """Yield regex matches for data lines past the warmup period."""
+def _collect_in_window(log_lines, data_pattern, window):
+    """Yield regex matches for data lines of the stat dumps in *window*.
+
+    A stat line reports the period since the previous dump, so only the dumps of
+    steady traffic count: a TX app frees about a session a second, and its dumps
+    meanwhile read a partial period, then zero.
+    """
     compiled = re.compile(data_pattern)
-    start_ts = None
-    for line in log_lines:
-        ts_m = _TS_RE.search(line)
-        if ts_m and start_ts is None:
-            start_ts = datetime.strptime(ts_m.group(1), _TS_FMT)
-        m = compiled.search(line)
+    window = set(window)
+    for dump, line in _walk_dumps(log_lines):
+        m = compiled.search(line) if dump in window else None
         if m:
-            if ts_m and start_ts:
-                elapsed = (
-                    datetime.strptime(ts_m.group(1), _TS_FMT) - start_ts
-                ).total_seconds()
-                if elapsed < warmup_seconds:
-                    continue
-            elif start_ts is None:
-                continue
             yield m
 
 
-def monitor_tx_throughput(log_lines, num_sessions=0, warmup_seconds=FPS_WARMUP_SECONDS):
+def monitor_tx_throughput(log_lines, window):
     """Monitor TX per-session throughput (Mb/s)."""
     hist = {}
-    for m in _collect_after_warmup(
+    for m in _collect_in_window(
         log_lines,
         r"TX_VIDEO_SESSION\(\d+,(\d+)\):\s+throughput\s+([\d.]+)\s+Mb/s",
-        warmup_seconds,
+        window,
     ):
         hist.setdefault(int(m.group(1)), []).append(float(m.group(2)))
     return {"session_throughput_history": hist}
 
 
-def monitor_rx_throughput(log_lines, num_sessions=0, warmup_seconds=FPS_WARMUP_SECONDS):
+def monitor_rx_throughput(log_lines, window):
     """Monitor RX per-session throughput (Mb/s)."""
     hist = {}
-    for m in _collect_after_warmup(
+    for m in _collect_in_window(
         log_lines,
         r"RX_VIDEO_SESSION\(\d+,(\d+)\):\s+throughput\s+([\d.]+)\s+Mb/s",
-        warmup_seconds,
+        window,
     ):
         hist.setdefault(int(m.group(1)), []).append(float(m.group(2)))
     return {"session_throughput_history": hist}
 
 
-def monitor_dev_rate(log_lines, warmup_seconds=FPS_WARMUP_SECONDS):
+def monitor_dev_rate(log_lines, window):
     """Monitor DEV average TX/RX rate (Mb/s)."""
     tx_hist, rx_hist = [], []
-    for m in _collect_after_warmup(
+    for m in _collect_in_window(
         log_lines,
         r"DEV\(\d+\):\s+Avr rate,\s+tx:\s+([\d.]+)\s+Mb/s,\s+rx:\s+([\d.]+)\s+Mb/s",
-        warmup_seconds,
+        window,
     ):
         tx_hist.append(float(m.group(1)))
         rx_hist.append(float(m.group(2)))

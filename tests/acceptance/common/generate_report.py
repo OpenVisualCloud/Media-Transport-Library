@@ -745,7 +745,10 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                     "Pass criteria: every session must sustain average FPS ≥ 99 % of target "
                     "(≥ 59.34 fps for 59.94 fps target) over the measurement window.",
                 ),
-                ("Measurement Window", "Warmup 60 s + Steady-state + Cooldown 10 s"),
+                (
+                    "Measurement Window",
+                    "The 10 s stat dumps of steady traffic, without session start or stop",
+                ),
             ],
         )
     )
