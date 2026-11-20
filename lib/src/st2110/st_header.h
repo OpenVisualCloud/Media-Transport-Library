@@ -312,6 +312,8 @@ struct st_tx_video_session_impl {
   unsigned int ring_count;
   struct rte_ring* ring[MTL_SESSION_PORT_MAX];
   struct rte_ring* packet_ring; /* rtp ring */
+  int user_tai_offset;          /* dynfield of st20_/st22_tx_put_mbuf_tai() tai */
+  bool user_tai_missing_logged;
   struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
   int idx; /* index for current tx_session */
   uint64_t advice_sleep_us;

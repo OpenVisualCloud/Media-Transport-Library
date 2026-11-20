@@ -172,6 +172,7 @@ static void* app_tx_video_rtp_thread(void* arg) {
   //feed the rtp payload and rtp headr into usrptr, return the mbuf to lib by st20_tx_put_mbuf, mbuf_len is the feed rtp buf len.
   xxxx
   st20_tx_put_mbuf(session_handle, mbuf, mbuf_len);
+  //with ST20_TX_FLAG_USER_PACING, st20_tx_put_mbuf_tai(session_handle, mbuf, mbuf_len, tai) on the first packet of a frame sets its TAI send time.
   xxxx
   xxxxx
 }

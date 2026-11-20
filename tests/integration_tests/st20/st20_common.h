@@ -43,6 +43,8 @@ std::vector<St20SessionConfig> build_sessions(int sessions, enum st20_type type[
 tests_context* init_test_ctx(struct st_tests_context* global_ctx, int idx,
                              uint16_t fb_cnt, bool check_sha = false);
 void tx_feed_packet(void* args);
+int tx_video_build_rtp_packet(tests_context* s, struct st20_rfc4175_rtp_hdr* rtp,
+                              uint16_t* pkt_len);
 int tx_next_video_frame(void* priv, uint16_t* next_frame_idx,
                         struct st20_tx_frame_meta* meta);
 int tx_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
@@ -79,6 +81,19 @@ void st20_rx_drain_bufq_put_framebuff(tests_context* ctx);
  * default 1260-byte payload */
 void rtp_tx_specific_init(struct st20_tx_ops* ops, tests_context* test_ctx,
                           uint16_t rtp_pkt_size = 0);
+
+struct MtlStopGuard {
+  mtl_handle handle;
+  bool started;
+
+  explicit MtlStopGuard(mtl_handle h) : handle(h), started(false) {
+  }
+  ~MtlStopGuard() {
+    if (started && handle) {
+      mtl_stop(handle);
+    }
+  }
+};
 
 class St20DeinitGuard {
  public:
