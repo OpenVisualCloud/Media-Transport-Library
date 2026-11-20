@@ -33,6 +33,10 @@ performance)
 		exit 0
 	fi
 	report_args=(--branch "${MTL_BRANCH:-}")
+	# Only a nightly adds its counts to the history; every run is compared with it.
+	[[ ${GITHUB_EVENT_NAME:-} != schedule ]] || report_args+=(--history-out perf_history.json)
+	# The last nightly's history on this host, which performance.yml downloads.
+	[[ ! -f perf-history/perf_history.json ]] || report_args+=(--history perf-history/perf_history.json)
 	if [[ -n ${GITHUB_RUN_ID:-} ]]; then
 		report_args+=(--run-id "$GITHUB_RUN_ID"
 			--run-url "${GITHUB_SERVER_URL:?}/${GITHUB_REPOSITORY:?}/actions/runs/${GITHUB_RUN_ID}")
