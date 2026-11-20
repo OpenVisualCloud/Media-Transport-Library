@@ -30,7 +30,7 @@ MTL_PTP_INTERNAL_TIMEOUT = 180
 # st_plugin.c logs it ("get one session at <n> on dev <name>"). Any other
 # device, the sample plugin for one, means the codec under test did not run.
 _KAHAWAI_ENV_PREFIX = "env KAHAWAI_CFG_PATH="
-_ST22_CODEC_DEVICES = {
+ST22_CODEC_DEVICES = {
     "JPEG-XS": "st22_svt_jpeg_xs_plugin",
     "H264_CBR": "st22_plugin_avcodec",
 }
@@ -86,7 +86,7 @@ _RX_TIMING_RE = re.compile(
 def st22_codec_devices_ok(output: str, codec: str, sides: Sequence[str]) -> bool:
     """Return True when each *side* ("encoder", "decoder") has st22 sessions in
     *output* and all of them run on the plugin of *codec*."""
-    prefix = _ST22_CODEC_DEVICES.get(codec)
+    prefix = ST22_CODEC_DEVICES.get(codec)
     if prefix is None:
         return True
     devices = {side: [] for side in sides}

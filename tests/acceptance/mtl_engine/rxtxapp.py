@@ -4,6 +4,7 @@
 # RxTxApp Implementation for Media Transport Library
 # Handles RxTxApp-specific command generation and configuration
 
+import copy
 import json
 import logging
 import re
@@ -104,6 +105,62 @@ def add_interfaces(
         log_fail(f"wrong test_mode {test_mode}")
 
     return config
+
+
+# The multicast group of session entry e's leg and its group g, of multicast_groups().
+MULTICAST_GROUP = "239.168.{}.{}"
+
+
+def entry_sessions(entry: dict) -> list:
+    """The sessions of an RxTxApp session entry: its st22p ones, or its st20p ones."""
+    return entry.get("st22p") or entry["st20p"]
+
+
+def add_port(
+    config: dict, role: str, vf: str, tx_ip: str, rx_ip: str, sessions: int
+) -> None:
+    """Add *vf* to the RxTxApp configuration of one port, with *sessions* of the
+    first port's sessions."""
+    iface = {
+        **config["interfaces"][0],
+        "name": vf,
+        "ip": tx_ip if role == "tx" else rx_ip,
+    }
+    config["interfaces"].append(iface)
+    group = copy.deepcopy(config[f"{role}_sessions"][0])
+    group["dip" if role == "tx" else "ip"] = [rx_ip if role == "tx" else tx_ip]
+    group["interface"] = [len(config["interfaces"]) - 1]
+    entry_sessions(group)[0]["replicas"] = sessions
+    config[f"{role}_sessions"].append(group)
+
+
+def multicast_groups(config: dict, role: str, per_group: int) -> None:
+    """Send or receive the sessions of *config* as multicast, *per_group* to a
+    group of their own, so that a capture can take a group at a time: each leg of each
+    session entry, a port's, has groups of its own."""
+    key = "dip" if role == "tx" else "ip"
+    entries = []
+    for e, entry in enumerate(config[f"{role}_sessions"]):
+        n = entry_sessions(entry)[0]["replicas"]
+        for g, first in enumerate(range(0, n, per_group), 1):
+            group = copy.deepcopy(entry)
+            group[key] = [
+                MULTICAST_GROUP.format(2 * e + leg, g) for leg in range(len(entry[key]))
+            ]
+            entry_sessions(group)[0]["replicas"] = min(per_group, n - first)
+            entries.append(group)
+    config[f"{role}_sessions"] = entries
+
+
+def stream_groups(config: dict) -> list[tuple[str, list[str]]]:
+    """Each group of the TX *config* of multicast_groups(), and its streams, address
+    and port, as RxTxApp numbers the ports of a session's replicas (parse_json.c)."""
+    return [
+        (dip, [f"{dip}:{s['start_port'] + 2 * k}" for k in range(s["replicas"])])
+        for entry in config["tx_sessions"]
+        for s in entry_sessions(entry)
+        for dip in entry["dip"]
+    ]
 
 
 def check_tx_output(

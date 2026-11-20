@@ -24,12 +24,13 @@ tasks:
     silent: true
 
   cleanup:
-    desc: Kill stale test processes and release isolated CPUs
+    desc: Kill stale test processes, release isolated CPUs and undo perf-compare's units and L3 partitions on this host
     cmds:
       - sudo killall -SIGKILL gtest.sh KahawaiTest ffmpeg gst-launch-1.0 RxTxApp RxTxApp_main || true
       - sudo killall -SIGINT pytest MtlManager phc2sys ptp4l netsniff-ng || true
       - sleep 2
       - sudo {{.TASKFILE_DIR}}/tests/tools/isolate/isolate.sh --sweep
+      - bash {{.CI_SCRIPTS}}/pytest/perf-compare.sh sweep
 
   ebpf:check:
     desc: Check this host's eBPF/XDP prerequisites; name the package for each missing one
@@ -149,6 +150,11 @@ tasks:
     desc: Run one acceptance-test workflow variant
     cmds:
       - bash {{.CI_SCRIPTS}}/pytest/pytest-run.sh {{.CLI_ARGS}}
+
+  ci:perf-compare:
+    desc: Run a step of perf-compare.yml (refs, build, sync, sweep or clean)
+    cmds:
+      - bash {{.CI_SCRIPTS}}/pytest/perf-compare.sh {{.CLI_ARGS}}
 
   ci:media-assets:
     desc: Verify the test media a suite reads (MEDIA_ASSET_SET)
