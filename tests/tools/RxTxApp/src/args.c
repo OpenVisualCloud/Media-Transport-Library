@@ -386,6 +386,8 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
     p->rx_queues_cnt[i] = ctx->json_ctx->interfaces[i].rx_queues_cnt;
     if (ctx->json_ctx->interfaces[i].allow_down_init)
       p->port_params[i].flags |= MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION;
+    if (ctx->json_ctx->interfaces[i].mac_loopback)
+      p->port_params[i].flags |= MTL_PORT_FLAG_MAC_LOOPBACK;
     p->num_ports++;
   }
   if (ctx->json_ctx->sch_quota) {
