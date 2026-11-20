@@ -740,10 +740,13 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                 ),
                 ("Frame Size (uncompressed)", "5,184,000 bytes (4.94 MB) per frame"),
                 (
-                    "Acceptable Packet Loss",
-                    "0 % — ST 2110 requires lossless delivery; any packet loss causes visible artifacts. "
-                    "Pass criteria: every session must sustain average FPS ≥ 99 % of target "
-                    "(≥ 58.41 fps for 59.94 fps target) over the measurement window.",
+                    "Pass Criteria",
+                    "Every session must sustain average FPS ≥ 99 % of target "
+                    "(≥ 59.34 fps for 59.94 fps target) over the measurement window, "
+                    "after its worst stat dumps (10 %, at least one) are dropped; or, as "
+                    "a receiver, "
+                    "end at that bar and get ≥ 99 % of what a sender ramping up to it "
+                    "sent.",
                 ),
                 ("Measurement Window", "Warmup 60 s + Steady-state + Cooldown 10 s"),
             ],
