@@ -780,6 +780,8 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_PCAPNG_DUMP:
         ctx->pcapng_max_pkts = atoi(optarg);
+        /* else a dumped packet gets the time of its RX burst */
+        p->flags |= MTL_FLAG_ENABLE_HW_TIMESTAMP;
         break;
       case ST_ARG_RUNTIME_SESSION:
         ctx->runtime_session = true;
