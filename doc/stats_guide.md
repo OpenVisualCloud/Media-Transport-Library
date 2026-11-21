@@ -13,12 +13,15 @@ st<NN>_<rx|tx>_reset_session_stats(handle);
 `<NN>` ∈ `20` video, `30` audio, `40` ancillary (fast metadata included).
 All counters are `uint64_t` and monotonic until reset. `get_session_stats` copies the
 transport counters under the per-session spinlock, which the session tasklet holds while
-updating them. Exceptions: the frame counters a pipeline overlays (`stat_frames_sent`,
-`stat_frames_dropped`, ...) are relaxed atomics read outside that lock, and RX video with a
-dedicated packet lcore updates its counters without the lock, so such a snapshot is not
-guaranteed to be consistent.
-Session callbacks may run with that spinlock held, so do not call `get_session_stats`
-or `reset_session_stats` from a callback of the same session: it deadlocks.
+updating them. Exceptions, whose snapshot is not consistent across fields: the frame
+counters a pipeline overlays (`stat_frames_sent`, `stat_frames_dropped`, ...) are relaxed
+atomics read outside that lock; RX video with a dedicated packet lcore updates its counters
+without the lock; and TX video (`st20_tx_*`, `st20p_tx_*`) takes no session lock at all:
+its get reads each counter while the tasklets run, and its reset records the current
+values as the baseline the get subtracts.
+Callbacks of the other session types may run with that spinlock held, so do not call
+`get_session_stats` or `reset_session_stats` from a callback of the same session: it
+deadlocks. TX video stats work from any callback.
 
 ## RX packet processing pipeline
 

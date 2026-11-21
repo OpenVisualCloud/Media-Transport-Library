@@ -11,6 +11,7 @@ These rules are **mandatory** for all C source in the MTL codebase. For deep arc
 ## Language
 
 - Library core (`lib/`): **C99**, plus C11 `<stdatomic.h>` atomics (`_Atomic`, `atomic_*_explicit`) already used in the handle guard and pipeline headers. Meson sets no `c_std`, so the compiler default applies. No C++ constructs.
+- GNU `__atomic_*` built-ins are allowed for atomic access to a plain field that hot code updates without atomics, e.g. the TX video stats counters: an `_Atomic` type would make each tasklet `++` a locked RMW.
 - Tests (`tests/`): C++ allowed (gtest framework).
 
 ## Naming Conventions
