@@ -912,6 +912,18 @@ void ut20_stop_pcap(ut20_test_ctx* ctx) {
   rv_stop_pcap(&ctx->session, MTL_SESSION_PORT_P);
 }
 
+int ut20_ctx_set_fps(ut20_test_ctx* ctx, enum st_fps fps) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  struct st_fps_timing fps_tm;
+  int ret = st_get_fps_timing(fps, &fps_tm);
+
+  if (ret < 0) return ret;
+  s->ops.fps = fps;
+  s->frame_time = (double)NS_PER_S * fps_tm.den / fps_tm.mul;
+  s->frame_time_sampling = (double)fps_tm.sampling_clock_rate * fps_tm.den / fps_tm.mul;
+  return 0;
+}
+
 int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx, bool interlaced) {
   struct st_rx_video_session_impl* s = &ctx->session;
 
