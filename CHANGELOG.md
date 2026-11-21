@@ -1,5 +1,6 @@
 # Changelog
 
+* st20/st22 RX: on a session's own scheduler, `*_rx_free()` and `*_rx_update_source()` (st20, st22, st20p, st22p) and `st20rc_rx_free()` return `-EBUSY` instead of deadlocking, as do the stats APIs from the session's own callbacks (and transiently from other callbacks or tasklets on that scheduler); `st20p_rx_reset_session_stats()` keeps the pipeline counters when the transport reset fails
 * pcapng dumps (st20/st22/st30 RX, CNI): the filename no longer carries the packet count, which at 100,000 packets or more overflowed `MTL_PCAP_FILE_MAX_LEN` (32) and failed the dump; the count stays in the log
 * st20/st22 TX: the video tasklets no longer take the session spinlock; on a session's own scheduler, `*_tx_free()` and `*_tx_update_destination()` (st20, st22, st20p, st22p) return `-EBUSY` instead of deadlocking, as do the stats APIs from the session's own callbacks
 * ice: default to driver version 2.7.6, built as released with no MTL patches; versions before 2.7.6 keep their `patches/ice_drv` series
