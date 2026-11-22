@@ -74,8 +74,21 @@ rm -rf "$stage"
 mkdir -p "$stage"/{bin,lib/pkgconfig,include,scripts,licenses,drivers,ddp,config}
 
 # The programs, and each DLL of MSYS2 that they load.
+msys_deps() {
+	{ ldd "$@" || true; } | awk '$3 ~ "^'"$prefix"'/bin/" { print $3 }'
+}
 cp "$prefix/bin/libmtl.dll" "$prefix/bin/RxTxApp.exe" "$stage/bin/"
-deps="$({ ldd "$prefix/bin/RxTxApp.exe" "$prefix/bin/libmtl.dll" || true; } | awk '$3 ~ "^'"$prefix"'/bin/" { print $3 }' | sort -u)"
+deps="$(msys_deps "$prefix/bin/RxTxApp.exe" "$prefix/bin/libmtl.dll" | sort -u)"
+# The SDL2 of MSYS2 is sdl2-compat: it loads SDL3.dll at run time, so ldd
+# does not give it. Without SDL3.dll, RxTxApp stops before main() in an SDL
+# message box, and a session with no desktop never shows the box.
+if grep -q '/SDL2\.dll$' <<<"$deps" && [ -f "$prefix/bin/SDL3.dll" ]; then
+	deps="$({
+		echo "$deps"
+		echo "$prefix/bin/SDL3.dll"
+		msys_deps "$prefix/bin/SDL3.dll"
+	} | sort -u)"
+fi
 for dll in $deps; do
 	[ "$(basename "$dll")" = libmtl.dll ] || cp "$dll" "$stage/bin/"
 done
