@@ -94,7 +94,8 @@ TEST_F(St20TxRlTrainingTest, TrainingOutpacesASlowBurstCall) {
 }
 
 TEST_F(St20TxRlTrainingTest, FailedTrainingSaysTheSessionFallsBackToTsc) {
-  ut_txv_set_ptp_wait_ret(-ETIMEDOUT);
+  const int wait_ret = -ETIMEDOUT;
+  ut_txv_set_ptp_wait_ret(wait_ret);
   int ret = -1;
 
   const std::string log = ut_session::capture_stderr(
@@ -102,8 +103,9 @@ TEST_F(St20TxRlTrainingTest, FailedTrainingSaysTheSessionFallsBackToTsc) {
 
   ASSERT_EQ(0, ret);
   EXPECT_EQ(0u, ut_txv_pacing_warm_pkts(ctx_)); /* RL warms up, TSC does not */
-  EXPECT_NE(std::string::npos, log.find("rl training fail -110, fallback to tsc pacing"))
-      << log;
+  const std::string want =
+      "rl training fail " + std::to_string(wait_ret) + ", fallback to tsc pacing";
+  EXPECT_NE(std::string::npos, log.find(want)) << log;
 }
 
 /* a pre-trained pad_interval is the mean of the training pads of one mix: a session of
