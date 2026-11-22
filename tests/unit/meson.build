@@ -339,6 +339,7 @@ if is_windows
     'sch/mt_sch_harness.c',
     'sch/mtl_sch_api_test.cpp',
     'sch/mt_sch_mempolicy_test.cpp',
+    'sch/mt_sch_loop_avg_test.cpp',
     'sch/mt_sch_filelock_test.cpp',
     'sch/mt_sch_lcore_test.cpp',
     'sch/mt_sch_quiescent_test.cpp',

@@ -11,8 +11,12 @@
 #include <rte_mbuf_dyn.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef WINDOWSENV
+#include <windows.h>
+#else
 #include <sys/mman.h>
 #include <unistd.h>
+#endif
 
 #ifdef WINDOWSENV
 /* rte_lcore_id() reads a thread-local variable of the EAL, and on Windows the
@@ -75,6 +79,28 @@ struct rte_mempool* ut_pool(void) {
 
 /* ── guard page ───────────────────────────────────────────────────────── */
 
+#ifdef WINDOWSENV
+static size_t ut_page_size(void) {
+  SYSTEM_INFO si;
+  GetSystemInfo(&si);
+  return si.dwPageSize;
+}
+
+uint8_t* ut_guarded_copy(const void* bytes, size_t len) {
+  size_t page = ut_page_size();
+  DWORD old_protect;
+  if (len > page) abort();
+  uint8_t* map = VirtualAlloc(NULL, 2 * page, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  if (!map || !VirtualProtect(map + page, page, PAGE_NOACCESS, &old_protect)) abort();
+  uint8_t* copy = map + page - len;
+  if (len) memcpy(copy, bytes, len);
+  return copy;
+}
+
+void ut_guarded_free(uint8_t* copy, size_t len) {
+  VirtualFree(copy + len - ut_page_size(), 0, MEM_RELEASE);
+}
+#else
 uint8_t* ut_guarded_copy(const void* bytes, size_t len) {
   size_t page = (size_t)sysconf(_SC_PAGESIZE);
   if (len > page) abort();
@@ -90,6 +116,7 @@ void ut_guarded_free(uint8_t* copy, size_t len) {
   size_t page = (size_t)sysconf(_SC_PAGESIZE);
   munmap(copy + len - page, 2 * page);
 }
+#endif
 
 /* ── ring factory ─────────────────────────────────────────────────────── */
 
