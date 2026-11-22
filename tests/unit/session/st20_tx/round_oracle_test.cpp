@@ -111,7 +111,7 @@ class St20TxRoundOracle : public ::testing::Test {
             pkt_ns != 0 ? pkt_ns : costs[f].pkt_ns,
             ut_txv_total_pkts(ctx_[f]),
             (long)ut_txv_bulk(ctx_[f]),
-            ring_,
+            (long)ring_,
             fmodl(k * stagger_ns_, frame_time)};
   }
 
