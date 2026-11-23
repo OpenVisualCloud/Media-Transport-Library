@@ -97,7 +97,14 @@ meson_setup() {
 	local dir=$1
 	shift
 	if [ -f "${dir}/meson-private/coredata.dat" ]; then
-		meson configure "${dir}" -Dpkg_config_path="${PKG_CONFIG_PATH:-[]}" "$@"
+		# A build directory of an older MTL does not know a newer option, and
+		# one of another meson version refuses to configure. Each run gives all
+		# its options, so make such a directory again from them.
+		meson configure "${dir}" -Dpkg_config_path="${PKG_CONFIG_PATH:-[]}" "$@" ||
+			{
+				echo "meson configure of ${dir} failed, so make it again with meson setup --wipe."
+				meson setup --wipe "${dir}" "$@"
+			}
 	else
 		meson setup "${dir}" "$@"
 	fi
@@ -246,6 +253,7 @@ popd
 # Absolute paths: the tree runs where it was built. Point KAHAWAI_CFG_PATH at it.
 if [ -n "${MTL_INSTALL_PREFIX:-}" ] && [ "${OS:-}" != "Windows_NT" ]; then
 	(
+		# shellcheck disable=SC1091
 		. script/mtl_common.sh
 		local_base=$(dirname "${MTL_INSTALL_PREFIX}")
 		registry="${local_base}/conf/kahawai.json"
