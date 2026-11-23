@@ -2157,6 +2157,26 @@ int mt_dev_tx_queue_fatal_error(struct mtl_main_impl* impl, struct mt_tx_queue* 
   return 0;
 }
 
+void mt_dev_link_poll(struct mtl_main_impl* impl) {
+  struct rte_eth_link link;
+
+  for (int i = 0; i < mt_num_ports(impl); i++) {
+    enum mtl_port port = i;
+    struct mt_interface* inf = mt_if(impl, port);
+
+    if (!mt_pmd_is_dpdk_user(impl, port)) continue;
+    memset(&link, 0, sizeof(link));
+    if (rte_eth_link_get_nowait(inf->port_id, &link) < 0) continue;
+    int down = link.link_status == RTE_ETH_LINK_DOWN;
+    if (down == rte_atomic32_read(&inf->link_down)) continue;
+    rte_atomic32_set(&inf->link_down, down);
+    if (down)
+      warn("%s(%d), link down\n", __func__, port);
+    else
+      notice("%s(%d), link up\n", __func__, port);
+  }
+}
+
 int mt_dev_set_tx_bps(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
                       uint64_t bytes_per_sec) {
   enum mtl_port port = queue->port;

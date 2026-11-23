@@ -4,6 +4,7 @@
 
 #include "mt_admin.h"
 
+#include "dev/mt_dev.h"
 #include "mt_log.h"
 #include "mt_sch.h"
 #include "st2110/st_rx_video_session.h"
@@ -318,6 +319,7 @@ static int admin_rx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
 
 static void admin_wakeup_thread(struct mt_admin* admin) {
   mt_pthread_mutex_lock(&admin->admin_wake_mutex);
+  admin->admin_wake = true;
   mt_pthread_cond_signal(&admin->admin_wake_cond);
   mt_pthread_mutex_unlock(&admin->admin_wake_mutex);
 }
@@ -331,6 +333,13 @@ static void admin_alarm_handler(void* param) {
 
 static int admin_func(struct mtl_main_impl* impl) {
   struct mt_admin* admin = mt_get_admin(impl);
+
+  mt_dev_link_poll(impl);
+  if (!rte_atomic32_read(&admin->admin_stop))
+    rte_eal_alarm_set(MT_ADMIN_LINK_POLL_US, admin_alarm_handler, impl);
+  admin->link_polls++;
+  if ((uint64_t)admin->link_polls * MT_ADMIN_LINK_POLL_US < admin->period_us) return 0;
+  admin->link_polls = 0;
   dbg("%s, start\n", __func__);
 
   mt_update_admin_port_stats(impl);
@@ -348,8 +357,6 @@ static int admin_func(struct mtl_main_impl* impl) {
 
   if (migrated) admin_clear_cpu_busy(impl);
 
-  rte_eal_alarm_set(admin->period_us, admin_alarm_handler, impl);
-
   mt_reset_admin_port_stats(impl);
 
   return 0;
@@ -362,8 +369,9 @@ static void* admin_thread(void* arg) {
   info("%s, start\n", __func__);
   while (rte_atomic32_read(&admin->admin_stop) == 0) {
     mt_pthread_mutex_lock(&admin->admin_wake_mutex);
-    if (!rte_atomic32_read(&admin->admin_stop))
+    while (!admin->admin_wake && !rte_atomic32_read(&admin->admin_stop))
       mt_pthread_cond_wait(&admin->admin_wake_cond, &admin->admin_wake_mutex);
+    admin->admin_wake = false;
     mt_pthread_mutex_unlock(&admin->admin_wake_mutex);
 
     if (!rte_atomic32_read(&admin->admin_stop)) admin_func(impl);
@@ -385,7 +393,7 @@ int mt_admin_init(struct mtl_main_impl* impl) {
   if (ret < 0) return ret;
   mtl_thread_setname(admin->admin_tid, "mtl_admin");
 
-  rte_eal_alarm_set(admin->period_us, admin_alarm_handler, impl);
+  rte_eal_alarm_set(MT_ADMIN_LINK_POLL_US, admin_alarm_handler, impl);
 
   return 0;
 }
@@ -399,7 +407,7 @@ int mt_admin_uinit(struct mtl_main_impl* impl) {
     pthread_join(admin->admin_tid, NULL);
     admin->admin_tid = 0;
   }
-  rte_eal_alarm_cancel(admin_alarm_handler, impl);
+  while (rte_eal_alarm_cancel(admin_alarm_handler, impl) == -EINPROGRESS) mt_sleep_ms(1);
 
   mt_pthread_mutex_destroy(&admin->admin_wake_mutex);
   mt_pthread_cond_destroy(&admin->admin_wake_cond);

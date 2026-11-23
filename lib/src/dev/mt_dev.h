@@ -86,6 +86,12 @@ static inline uint16_t mt_dev_tx_queue_id(struct mt_tx_queue* queue) {
   return queue->queue_id;
 }
 int mt_dev_tx_queue_fatal_error(struct mtl_main_impl* impl, struct mt_tx_queue* queue);
+/* reads the link of each DPDK user PMD port into its link_down flag; control path only */
+void mt_dev_link_poll(struct mtl_main_impl* impl);
+/* the flag of the last mt_dev_link_poll(): no link call, so a tasklet may read it */
+static inline bool mt_dev_link_down(struct mtl_main_impl* impl, enum mtl_port port) {
+  return rte_atomic32_read(&mt_if(impl, port)->link_down) != 0;
+}
 int mt_dev_set_tx_bps(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
                       uint64_t bytes_per_sec);
 /* frees what the queue holds; on a reclaim port bounded, -EBUSY if it did not drain in

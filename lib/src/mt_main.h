@@ -710,6 +710,8 @@ struct mt_interface {
   uint32_t status;                        /* MT_IF_STAT_* */
   /* The port is temporarily off, e.g. during rte_tm_hierarchy_commit */
   rte_atomic32_t resetting;
+  /* 1 while the link reads down, set by mt_dev_link_poll() of the admin thread */
+  rte_atomic32_t link_down;
 
   /* default tx mbuf_pool */
   struct rte_mempool* tx_mbuf_pool;
@@ -857,9 +859,11 @@ struct mtl_dma_mem {
 
 struct mt_admin {
   uint64_t period_us;
+  uint32_t link_polls; /* since the last period_us work */
   pthread_t admin_tid;
   pthread_cond_t admin_wake_cond;
   pthread_mutex_t admin_wake_mutex;
+  bool admin_wake; /* a signal the thread has not taken, under admin_wake_mutex */
   rte_atomic32_t admin_stop;
 };
 

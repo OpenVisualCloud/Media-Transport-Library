@@ -7,6 +7,7 @@
 #include <math.h>
 
 #include "../datapath/mt_queue.h"
+#include "../dev/mt_dev.h"
 #include "../mt_handle_guard.h"
 #include "../mt_log.h"
 #include "../mt_rtcp.h"
@@ -2242,11 +2243,17 @@ static void tv_frames_out_hang(struct st_tx_video_session_impl* s, uint64_t now)
   uint64_t start = RTE_MAX(s->reclaim.wait_tsc, tv_next_frame_open_tsc(s, now));
 
   if (now < start || now - start <= hang) return;
+  /* the builder may write these transmitter fields: both run on one scheduler thread */
+  for (int p = 0; p < s->ops.num_port; p++) {
+    if (!mt_dev_link_down(s->impl, mt_port_logic2phy(s->port_maps, p))) continue;
+    /* a recovery of any leg flushes the ring of a link down leg, which fails */
+    for (int i = 0; i < s->ops.num_port; i++) s->last_burst_succ_time_tsc[i] = now;
+    return;
+  }
   for (int p = 0; p < s->ops.num_port; p++) {
     if (now - s->last_burst_succ_time_tsc[p] <= hang) continue;
     err("%s(%d,%d), frames out for %" PRIu64 " ms\n", __func__, s->idx, p,
         (now - start) / (uint64_t)NS_PER_MS);
-    /* the builder may write these transmitter fields: both run on one scheduler thread */
     s->tx_queue_recovery_pending[p] = true;
     s->last_burst_succ_time_tsc[p] = now;
   }

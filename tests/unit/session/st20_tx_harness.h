@@ -293,6 +293,8 @@ int ut_txv_zc_leg_reclaims(const ut_txv_ctx* ctx, int leg);
 void ut_txv_zc_set_hang_ns(ut_txv_ctx* ctx, uint64_t hang_ns);
 /* the transmitter of leg sent a burst at the mock time */
 void ut_txv_zc_leg_burst_now(ut_txv_ctx* ctx, int leg);
+/* the link flag of port, as mt_dev_link_poll() sets it */
+void ut_txv_set_link_down(ut_txv_ctx* ctx, int port, bool down);
 /* recovery of leg pending, cleared as the transmitter would on handling it */
 bool ut_txv_zc_take_recovery(ut_txv_ctx* ctx, int leg);
 /* packet 0 target of the frame built last, pacing.tsc_time_frame_start */
@@ -765,6 +767,14 @@ int ut_txv_recovery_set_last_pkt_unsent(ut_txv_ctx* ctx);
 /* notify_frame_done calls when the leg's first mt_txq_flush() or mt_txq_recovery_flush()
  * started, -1 for none */
 int ut_txv_done_at_flush(const ut_txv_ctx* ctx, int leg);
+
+/* ── admin thread ─────────────────────────────────────────────────────── */
+/* The admin thread of a new instance, started after its wake signal came: the link polls
+ * it ran by timeout_ms. */
+int ut_admin_polls_after_early_wake(int timeout_ms);
+/* Calls mt_admin_uinit() while rte_eal_alarm_cancel() returns -EINPROGRESS for the first
+ * einprogress_count calls; returns the total cancel calls made. */
+int ut_admin_uinit_alarm_cancel_calls(int einprogress_count);
 
 #ifdef __cplusplus
 }

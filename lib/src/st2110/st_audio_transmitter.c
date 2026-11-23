@@ -5,6 +5,7 @@
 #include "st_audio_transmitter.h"
 
 #include "../datapath/mt_queue.h"
+#include "../dev/mt_dev.h"
 #include "../mt_log.h"
 #include "st_err.h"
 #include "st_tx_audio_session.h"
@@ -51,6 +52,12 @@ static uint16_t st_audio_trs_burst_fail(struct mtl_main_impl* impl,
                                         struct st_tx_audio_sessions_mgr* mgr,
                                         enum mtl_port port) {
   uint64_t cur_tsc = mt_get_tsc(impl);
+
+  /* a queue of a port with no link is not hung: the hang time starts at the link up */
+  if (mt_dev_link_down(impl, port)) {
+    mgr->last_burst_succ_time_tsc[port] = cur_tsc;
+    return 0;
+  }
   uint64_t fail_duration = cur_tsc - mgr->last_burst_succ_time_tsc[port];
   if (fail_duration > mgr->tx_hang_detect_time_thresh) {
     err("%s(%d,%d), hang duration %" PRIu64 " ms\n", __func__, mgr->idx, port,

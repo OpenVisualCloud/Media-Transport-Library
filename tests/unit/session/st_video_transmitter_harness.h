@@ -157,6 +157,11 @@ void ut_trs_set_last_burst_succ_tsc(ut_trs_ctx* ctx, uint64_t tsc);
 uint64_t ut_trs_get_last_burst_succ_tsc(const ut_trs_ctx* ctx);
 void ut_trs_set_hang_detect_thresh_ns(ut_trs_ctx* ctx, uint64_t thresh_ns);
 
+/* the link flag of every port, as mt_dev_link_poll() sets it */
+void ut_trs_set_link_down(ut_trs_ctx* ctx, bool down);
+/* rte_eth_link_get_nowait() calls of the transmitter since the process start */
+int ut_trs_link_calls(void);
+
 int ut_trs_get_stat_trs_ret_code(const ut_trs_ctx* ctx);
 /* the port P status of its last tasklet call, > 0 when it sent */
 void ut_trs_set_stat_trs_ret_code(ut_trs_ctx* ctx, int ret);
@@ -167,6 +172,8 @@ int ut_trs_get_stat_pkts_burst(const ut_trs_ctx* ctx);
 uint16_t ut_trs_call_burst_pad(ut_trs_ctx* ctx);
 /* one pad through video_trs_burst(), the TSC, TSN and PTP pacing path */
 uint16_t ut_trs_call_burst(ut_trs_ctx* ctx);
+/* packet 0 of a frame, stamped tsc, through video_trs_burst() */
+uint16_t ut_trs_call_burst_pkt0(ut_trs_ctx* ctx, uint64_t tsc);
 /* Burst call i takes d_ns[i % n] of mock time before its doorbell, and the tsc read
  * after its return stamp, or the tasklet's return, g_ns[i % n] more; n 0: none. */
 void ut_trs_set_burst_cost(ut_trs_ctx* ctx, const uint64_t* d_ns, const uint64_t* g_ns,

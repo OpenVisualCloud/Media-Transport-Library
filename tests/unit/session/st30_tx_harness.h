@@ -141,6 +141,13 @@ unsigned int ut_txa30_pipe_pool_size(const ut_txa30_ctx* ctx, int pool);
  * header pool */
 unsigned int ut_txa30_pipe_mempool_n(ut_txa30_ctx* ctx, int leg);
 
+/* the link flag of every port, as mt_dev_link_poll() sets it */
+void ut_txa30_set_link_down(ut_txa30_ctx* ctx, bool down);
+/* st_audio_trs_burst_fail() of port at the mock tsc. The manager has no queue, so a
+ * recovery stops at its start; 1 when it took the recovery. */
+uint16_t ut_txa30_trs_burst_fail(ut_txa30_ctx* ctx, int port, uint64_t thresh_ns);
+uint64_t ut_txa30_last_burst_succ_tsc(const ut_txa30_ctx* ctx, int port);
+
 /* Runs tx_audio_session_init_rl() without a port, so it sets only the per-session RL
  * values, then sends one packet through tx_audio_session_rl_tx_pkt() on a queue that
  * takes everything. Returns the pads sent after the packet, or a negative errno, and

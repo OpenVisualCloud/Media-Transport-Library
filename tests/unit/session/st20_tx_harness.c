@@ -478,7 +478,19 @@ static uint32_t ut_txv_mbuf_get_idx(struct rte_mbuf* mbuf) {
 #undef rte_pktmbuf_free_bulk
 #undef mt_txq_burst
 #undef mt_get_tsc
+static int ut_admin_cancel_einprogress;
+static int ut_admin_cancel_calls;
+static int ut_admin_alarm_cancel(rte_eal_alarm_callback cb_fn, void* cb_arg) {
+  ut_admin_cancel_calls++;
+  if (ut_admin_cancel_einprogress > 0) {
+    ut_admin_cancel_einprogress--;
+    return -EINPROGRESS;
+  }
+  return rte_eal_alarm_cancel(cb_fn, cb_arg);
+}
+#define rte_eal_alarm_cancel ut_admin_alarm_cancel
 #include "mt_admin.c"
+#undef rte_eal_alarm_cancel
 
 static void ut_txv_tx_path_uinit(struct ut_txv_ctx* ctx);
 
@@ -1223,6 +1235,7 @@ int ut_txv_zc_setup(ut_txv_ctx* ctx, bool tx_reclaim, int num_port) {
   s->ops.num_port = num_port;
   for (int p = 0; p < num_port; p++) {
     s->queue[p] = &ctx->zc_queues[p];
+    s->port_maps[p] = (enum mtl_port)p;
     s->last_burst_succ_time_tsc[p] = ctx->mock_tsc_ns;
   }
   s->tx_hang_detect_time_thresh = UINT64_MAX;
@@ -1287,6 +1300,10 @@ void ut_txv_zc_set_hang_ns(ut_txv_ctx* ctx, uint64_t hang_ns) {
 
 void ut_txv_zc_leg_burst_now(ut_txv_ctx* ctx, int leg) {
   ctx->session.last_burst_succ_time_tsc[leg] = ctx->mock_tsc_ns;
+}
+
+void ut_txv_set_link_down(ut_txv_ctx* ctx, int port, bool down) {
+  rte_atomic32_set(&ctx->impl.inf[port].link_down, down);
 }
 
 bool ut_txv_zc_take_recovery(ut_txv_ctx* ctx, int leg) {
@@ -4191,4 +4208,47 @@ int ut_txv_recovery_set_last_pkt_unsent(ut_txv_ctx* ctx) {
 
 int ut_txv_done_at_flush(const ut_txv_ctx* ctx, int leg) {
   return ctx->flush_seen[leg] ? ctx->done_at_flush[leg] : -1;
+}
+
+int ut_admin_polls_after_early_wake(int timeout_ms) {
+  ut_txv_ctx* ctx = ut_txv_create();
+  if (!ctx) return -ENOMEM;
+  struct mtl_main_impl* impl = &ctx->impl;
+  struct mt_admin* admin = mt_get_admin(impl);
+
+  admin->period_us = (uint64_t)6 * US_PER_S;
+  mt_pthread_mutex_init(&admin->admin_wake_mutex, NULL);
+  mt_pthread_cond_init(&admin->admin_wake_cond, NULL);
+  rte_atomic32_set(&admin->admin_stop, 0);
+  admin_alarm_handler(impl);
+  int ret = pthread_create(&admin->admin_tid, NULL, admin_thread, impl);
+  if (ret) {
+    ut_txv_destroy(ctx);
+    return -ret;
+  }
+  uint64_t end = rte_get_tsc_cycles() + (uint64_t)timeout_ms * rte_get_tsc_hz() / 1000;
+  while (!__atomic_load_n(&admin->link_polls, __ATOMIC_ACQUIRE) &&
+         rte_get_tsc_cycles() < end)
+    sched_yield();
+  int polls = (int)__atomic_load_n(&admin->link_polls, __ATOMIC_ACQUIRE);
+  mt_admin_uinit(impl);
+  ut_txv_destroy(ctx);
+  return polls;
+}
+
+int ut_admin_uinit_alarm_cancel_calls(int einprogress_count) {
+  ut_txv_ctx* ctx = ut_txv_create();
+  if (!ctx) return -ENOMEM;
+  struct mtl_main_impl* impl = &ctx->impl;
+  struct mt_admin* admin = mt_get_admin(impl);
+
+  mt_pthread_mutex_init(&admin->admin_wake_mutex, NULL);
+  mt_pthread_cond_init(&admin->admin_wake_cond, NULL);
+  ut_admin_cancel_einprogress = einprogress_count;
+  ut_admin_cancel_calls = 0;
+  mt_admin_uinit(impl);
+  int calls = ut_admin_cancel_calls;
+  ut_admin_cancel_einprogress = 0;
+  ut_txv_destroy(ctx);
+  return calls;
 }
