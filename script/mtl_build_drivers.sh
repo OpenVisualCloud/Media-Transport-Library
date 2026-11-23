@@ -60,6 +60,17 @@ check_ice_version() {
 	fi
 }
 
+# Load the installed ice module. On an Ubuntu kernel without its extra modules,
+# ice misses the symbols of gnss, and modprobe gives "Unknown symbol".
+load_ice() {
+	as_root modprobe ice && return 0
+	if as_root dmesg 2>/dev/null | tail -20 | grep -q 'ice: Unknown symbol gnss'; then
+		log_error "ice needs the gnss module of linux-modules-extra-$(uname -r). Run ./script/mtl_install_dependencies.sh ice, then this script again."
+	else
+		log_error "modprobe ice failed. Read 'sudo dmesg | tail' for the cause."
+	fi
+	return 1
+}
 build_ice() {
 	local archive_name="ice-${ICE_VER}.tar.gz"
 	local patch_dir="${REPO_DIR}/patches/ice_drv/${ICE_VER}"
@@ -76,6 +87,7 @@ build_ice() {
 		[[ "$(modinfo -n ice 2>/dev/null)" == *"/updates/"* ]] &&
 		ice_driver_version_ok "${installed}" "${ICE_VER}"; then
 		log_success "ICE driver version ${installed} is already installed. Skipping rebuild."
+		grep -q "^ice " /proc/modules || load_ice
 		return
 	fi
 
@@ -145,7 +157,7 @@ build_ice() {
 				as_root rmmod "${module}"
 			fi
 		done
-		as_root modprobe ice
+		load_ice
 	fi
 	popd >/dev/null
 	# A prefix takes the module, so the tree has done its job. Plain --build-only

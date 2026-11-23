@@ -18,7 +18,8 @@ Install the Ubuntu packages that the MTL build needs, then the packages of each
 COMPONENT. Run it as your own user: it uses sudo to install.
 
 COMPONENT is one of:
-	ice		Linux headers of the running kernel, for mtl_build_drivers.sh
+	ice		Linux headers and extra modules (gnss) of the running kernel,
+			for mtl_build_drivers.sh
 	ebpf_xdp	Build packages of mtl_build_ebpf_xdp.sh
 	gpu_direct	Level Zero ${ONE_API_GPU_VER}, built from source
 	ffmpeg		FFmpeg plugin build packages
@@ -110,7 +111,14 @@ main() {
 	for component in "$@"; do
 		log_info "Installing the ${component} packages"
 		case "${component}" in
-		ice) install_packages "linux-headers-$(uname -r)" ;;
+		ice)
+			install_packages "linux-headers-$(uname -r)"
+			# The ice module needs gnss, which a cloud or minimal kernel
+			# (linux-image-virtual) leaves in linux-modules-extra.
+			if apt-cache show "linux-modules-extra-$(uname -r)" >/dev/null 2>&1; then
+				install_packages "linux-modules-extra-$(uname -r)"
+			fi
+			;;
 		ebpf_xdp) install_packages make m4 zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib ;;
 		gpu_direct) install_gpu_direct ;;
 		ffmpeg) install_packages nasm unzip patch patchelf ;;
