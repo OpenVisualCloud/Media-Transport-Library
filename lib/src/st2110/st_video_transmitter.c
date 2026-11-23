@@ -1279,14 +1279,18 @@ static int video_trs_rl_release(struct mtl_main_impl* impl,
   return pending;
 }
 
-/* An RL port mid-frame whose last call sent pkts and whose NIC TX queue holds less than
- * the scheduler may be away, mt_sch_schedule_ns(). */
+/* An RL port mid-frame whose last call sent pkts, with pkts or pads left to send (a
+ * catch-up cannot top up one with none), and whose NIC TX queue holds less than the
+ * scheduler may be away, mt_sch_schedule_ns(). */
 static bool video_trs_rl_short(struct mtl_main_impl* impl,
                                struct st_tx_video_session_impl* s, int s_port) {
   if (s->pacing_way[s_port] != ST21_TX_PACING_WAY_RL || s->stat_trs_ret_code[s_port] <= 0)
     return false;
   if (s->s_type == MT_ST22_HANDLE_TX_VIDEO ||
       s->rl_state[s_port] != ST_TX_VIDEO_RL_STATE_IDLE || s->trs_target_tsc[s_port])
+    return false;
+  if (!s->trs_inflight_num[s_port] && !s->trs_inflight_num2[s_port] &&
+      !s->trs_pad_inflight_num[s_port] && rte_ring_empty(s->ring[s_port]))
     return false;
   return s->trs_wire_tsc[s_port] <
          s->last_burst_succ_time_tsc[s_port] + mt_sch_schedule_ns(impl);
