@@ -180,6 +180,8 @@ void ut_trs_set_cpu_stalls(ut_trs_ctx* ctx, const uint64_t* at_tsc, const uint64
                            int n);
 /* one visit of the RL tasklet, a transmitter call of its own */
 int ut_trs_call_rl_tasklet(ut_trs_ctx* ctx);
+/* one visit of the TSC tasklet, video_trs_tsc_tasklet() */
+int ut_trs_call_tsc_tasklet(ut_trs_ctx* ctx);
 /* a call carrying pads then pkts takes n of them, 0 all */
 void ut_trs_set_mixed_accept(ut_trs_ctx* ctx, uint16_t n);
 /* such a call stalls ns before its doorbell */

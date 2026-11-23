@@ -1096,6 +1096,19 @@ int ut_trs_call_rl_tasklet(ut_trs_ctx* ctx) {
   return ret;
 }
 
+int ut_trs_call_tsc_tasklet(ut_trs_ctx* ctx) {
+  ut_trs_active_ctx = ctx;
+  ut_trs_visit_alone(ctx);
+  int ret = video_trs_tsc_tasklet(&ctx->impl, &ctx->session, MTL_SESSION_PORT_P);
+  ut_trs_active_ctx = NULL;
+  const uint64_t from = ctx->last_tsc;
+  ut_trs_advance(ctx, ctx->cost_g_pending);
+  ut_trs_cpu_stalls(ctx, from);
+  ctx->cost_g_pending = 0;
+  ctx->cost_stamp_pending = false;
+  return ret;
+}
+
 void ut_trs_set_burst_cost(ut_trs_ctx* ctx, const uint64_t* d_ns, const uint64_t* g_ns,
                            int n) {
   if (n > UT_TRS_MAX_BURST_COST) n = UT_TRS_MAX_BURST_COST;
