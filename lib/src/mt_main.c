@@ -216,7 +216,8 @@ static int mt_main_free(struct mtl_main_impl* impl) {
   mt_ptp_uinit(impl);
   mt_dhcp_uinit(impl);
   mt_config_uinit(impl);
-  st_plugins_uinit(impl);
+  if (st_plugins_uinit(impl) == -EBUSY)
+    warn("%s, plugin sessions still open, free them before mtl_uninit\n", __func__);
   mt_admin_uinit(impl);
   mt_cni_uinit(impl);
   mt_arp_uinit(impl);

@@ -1479,6 +1479,9 @@ int st_plugin_register(mtl_handle mt, const char* path);
  *   Ex: /usr/local/lib/x86_64-linux-gnu/libst_plugin_sample.so
  * @return
  *   - 0: Success.
+ *   - -EBUSY: A session still uses a device of the plugin, which stays registered.
+ *   - -EIO: Not registered, or unregistered but the .so stays loaded as the plugin
+ *     left devices registered.
  *   - <0: Error code.
  */
 int st_plugin_unregister(mtl_handle mt, const char* path);

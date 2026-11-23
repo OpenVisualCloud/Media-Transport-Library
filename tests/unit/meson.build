@@ -245,6 +245,7 @@ unit_sources = [
   'pipeline/tx_frame_done_notify_test.cpp',
   'pipeline/st_plugin_harness.c',
   'pipeline/st_plugin_session_test.cpp',
+  'pipeline/st_plugin_unregister_test.cpp',
   'sch/mt_sch_harness.c',
   'sch/mtl_sch_api_test.cpp',
   'sch/mt_sch_mempolicy_test.cpp',
@@ -274,6 +275,22 @@ unit_sources = [
   'dma/mt_dma_auto_test.cpp',
   'main.cpp',
 ]
+
+# Each test that leaves its plugin loaded gets its own copy. They resolve the
+# st22_encoder_* they call against the copies in UnitTest.
+ut_plugin_so_args = []
+foreach so : [['', []], ['_keep_dev', ['-DUT_PLUGIN_KEEP_DEV']],
+              ['_fail_create', ['-DUT_PLUGIN_FAIL_CREATE']], ['_busy', []],
+              ['_fail_create_busy', ['-DUT_PLUGIN_FAIL_CREATE']]]
+  ut_st22_plugin = shared_module('ut_st22_plugin' + so[0], 'pipeline/ut_st22_plugin.c',
+    c_args : unit_c_args + so[1],
+    include_directories : [unit_include_dirs, mtl_include_dir],
+    dependencies : dpdk_dep,
+    install : false)
+  ut_plugin_so_args += '-DUT_PLUGIN@0@_SO="@1@"'.format(so[0].to_upper(),
+                                                        ut_st22_plugin.full_path())
+endforeach
+unit_c_args += ut_plugin_so_args
 
 executable('UnitTest', unit_sources,
   c_args : unit_c_args,
