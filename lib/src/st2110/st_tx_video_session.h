@@ -13,8 +13,23 @@
 #define ST_TX_VIDEO_RTCP_RING_SIZE (1024)
 /* the least time between two reclaims of a waiting session's sent pkts */
 #define ST_TX_VIDEO_RECLAIM_NS (20 * (uint64_t)NS_PER_US)
+/* a parked pool outlives the app calls that read it */
+#define ST_TX_VIDEO_PARK_NS ((uint64_t)NS_PER_S)
 /* a stats dump waits out the scheduler pass in flight, tens of us when busy */
 #define ST_TX_VIDEO_STAT_TIMEOUT_US (1000)
+
+/* Direct chain: pin a frame that leg s_port started while its NIC ring may hold pkts
+ * before the last one, which hold no count on sh_cur. */
+static inline void st_tx_video_frame_link_pin(struct st_frame_trans* frame,
+                                              enum mtl_session_port s_port) {
+  uint8_t pin = 1 << s_port;
+
+  if (!frame || !frame->sh_cur || !rte_atomic32_read(&frame->refcnt)) return;
+  uint8_t* pins = &frame->sh_pins[frame->sh_cur - frame->sh_info];
+  if (*pins & pin) return;
+  *pins |= pin;
+  rte_mbuf_ext_refcnt_update(frame->sh_cur, 1);
+}
 
 int st_tx_video_sessions_sch_init(struct mtl_main_impl* impl, struct mtl_sch_impl* sch);
 

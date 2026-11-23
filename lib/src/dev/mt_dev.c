@@ -1852,6 +1852,10 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
         err("%s(%d), fallback to tsc as rl fail\n", __func__, port);
         inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
       }
+    } else if (inf->tx_pacing_way == ST21_TX_PACING_WAY_TSN) {
+      /* Record stream bps so dev_flush_tx_eager() scales its drain deadline
+       * to future launch times instead of line rate. */
+      tx_queue->bps = bytes_per_sec;
     }
     tx_queue->active = true;
     mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
@@ -2012,8 +2016,9 @@ static int dev_flush_tx_eager(struct mtl_main_impl* impl, struct mt_tx_queue* qu
   uint16_t pads_left = 2 * rs;
   struct rte_mbuf* pads[32];
   uint64_t bps = queue->bps;
+  uint64_t start = mt_get_tsc(impl);
   uint64_t stall_ns = MT_DEV_TX_FLUSH_STALL_NS;
-  uint64_t deadline = mt_get_tsc(impl) + MT_DEV_TX_FLUSH_STALL_NS;
+  uint64_t deadline = start + MT_DEV_TX_FLUSH_STALL_NS;
   uint64_t last_poll = 0;
 
   if (!bps) bps = (uint64_t)inf->link_speed * 1000 * 1000 / 8;
@@ -2054,9 +2059,13 @@ static int dev_flush_tx_eager(struct mtl_main_impl* impl, struct mt_tx_queue* qu
     last_poll = now;
     mt_dpdk_tx_burst(queue, NULL, 0);
   }
-  int ret = rte_mbuf_refcnt_read(mark) > 1 ? -EBUSY : 0;
+  uint16_t mark_ref = rte_mbuf_refcnt_read(mark);
+  int ret = mark_ref > 1 ? -EBUSY : 0;
   rte_pktmbuf_free(mark);
-  if (ret < 0) warn("%s(%d), the queue did not drain in time\n", __func__, port);
+  if (ret < 0)
+    warn("%s(%d), q %u did not drain in time (bps %" PRIu64 ", deadline %" PRIu64
+         " us, mark refcnt %u)\n",
+         __func__, port, queue->queue_id, bps, (deadline - start) / NS_PER_US, mark_ref);
   return ret;
 }
 
@@ -2064,6 +2073,11 @@ int mt_dpdk_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue
                            struct rte_mbuf* pad, bool lazy_fallback) {
   enum mtl_port port = queue->port;
   uint16_t queue_id = queue->queue_id;
+
+  if (mt_dev_link_down(impl, port)) {
+    warn("%s(%d), queue %u link down, skip flush\n", __func__, port, queue_id);
+    return -EBUSY;
+  }
 
   if (mt_if_tx_reclaim_rs_thresh(impl, port)) {
     int ret = dev_flush_tx_eager(impl, queue, pad);
@@ -2074,14 +2088,24 @@ int mt_dpdk_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue
   int burst_pkts = mt_if_nb_tx_burst(impl, port) * 2;
   struct rte_mbuf* pads[1];
   pads[0] = pad;
+  int sent_total = 0;
+  uint64_t stall_start = 0;
 
   info("%s(%d), queue %u burst_pkts %d\n", __func__, port, queue_id, burst_pkts);
   for (int i = 0; i < burst_pkts; i++) {
     rte_mbuf_refcnt_update(pad, 1);
-    mt_dpdk_tx_burst_busy(impl, queue, &pads[0], 1, 1);
+    if (mt_dpdk_tx_burst_busy(impl, queue, &pads[0], 1, 1)) {
+      sent_total++;
+      stall_start = 0;
+      continue;
+    }
+    rte_mbuf_refcnt_update(pad, -1);
+    if (mt_dev_link_down(impl, port) ||
+        mt_dev_tx_flush_stalled(mt_get_tsc(impl), &stall_start))
+      return -EBUSY;
   }
   dbg("%s, end\n", __func__);
-  return 0;
+  return sent_total < burst_pkts / 2 ? -EBUSY : 0;
 }
 
 int mt_dev_tx_done_cleanup(struct mtl_main_impl* impl, struct mt_tx_queue* queue) {

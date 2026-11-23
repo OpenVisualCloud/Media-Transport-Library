@@ -191,6 +191,9 @@ struct ut_txv_rtp_resync_result {
 };
 int ut_txv_rtp_resync_mid_frame(ut_txv_ctx* ctx, bool tx_no_chain,
                                 struct ut_txv_rtp_resync_result* out);
+/* Triggers link resync with queued packets in packet_ring; returns notify_rtp_done calls
+ * emitted during the resync so blocked RTP apps wake up. */
+int ut_txv_rtp_resync_notifies_app(ut_txv_ctx* ctx);
 /* Drives tv_tasklet_st22()'s frame->tx_st22_meta assignment -- the compressed-
  * video (ST22) mirror of tv_tasklet_frame()'s frame->tv_meta assignment above,
  * so both production call sites are held to the same timestamp/rtp_timestamp
@@ -520,7 +523,7 @@ bool ut_txv_hdr_mempool_installed(const ut_txv_ctx* ctx);
 /* Whether the pool itself still exists, independent of the session's pointer. */
 bool ut_txv_hdr_mempool_alive(const ut_txv_ctx* ctx);
 
-/* ── ext-frame completion (tv_frame_free_cb) ──────────────────────────── */
+/* ── ext-frame completion (tx_video_frame_release_callback) ───────────── */
 enum { UT_TXV_FRAME_SIZE = 4 };
 /* the frames of the ut_txv_zc_*() zero-copy session */
 enum { UT_TXV_ZC_FRAMES = 2 };
@@ -529,7 +532,8 @@ enum { UT_TXV_ZC_FRAMES = 2 };
 int ut_txv_ext_frame_setup(ut_txv_ctx* ctx, void* buf);
 /* st20_tx_set_ext_frame() on the session's public handle. */
 int ut_txv_set_ext_frame(ut_txv_ctx* ctx, uint16_t idx, void* buf);
-/* Releases the ext buffer the way the last mbuf free does (tv_frame_free_cb). */
+/* Releases the ext buffer the way the last mbuf free does
+ * (tx_video_frame_release_callback). */
 void ut_txv_ext_frame_complete(ut_txv_ctx* ctx);
 /* notify_frame_done re-arms the completed frame with buf, as st20p_tx_put_ext_frame()
  * does. */
@@ -583,6 +587,8 @@ uint32_t ut_txv_rtp_time_stamp(const ut_txv_ctx* ctx);
  * printer. Returns the number of log lines emitted; *locked_lines receives how
  * many of them were emitted while the session spinlock was held. */
 int ut_txv_run_sessions_stat(ut_txv_ctx* ctx, int* locked_lines);
+/* the pool frees of the last ut_txv_run_sessions_stat() under the session lock */
+int ut_txv_stat_locked_pool_frees(void);
 /* tv_detach() of the session, as st20_tx_free() does; its ERR lines */
 int ut_txv_run_detach(ut_txv_ctx* ctx);
 /* s->trs_released[port], the transmitter call that last released the port */
@@ -671,18 +677,64 @@ int ut_txv_recovery_flushes(const ut_txv_ctx* ctx, int leg);
 /* mt_txq_flush() calls on the leg, which may fall back to the per-pad loop */
 int ut_txv_recovery_fallback_flushes(const ut_txv_ctx* ctx, int leg);
 int ut_txv_recovery_done_cleanups(const ut_txv_ctx* ctx, int leg);
+/* After ut_txv_recovery_setup(): the session owns its header pools, as tv_mempool_init()
+ * makes them on ports of 256 TX descriptors, and the recovery has to replace them. */
+int ut_txv_recovery_own_pools(ut_txv_ctx* ctx);
+/* one mbuf of each header pool the session has now, as the dead queue keeps it */
+int ut_txv_recovery_hold_mbufs(ut_txv_ctx* ctx);
+void ut_txv_recovery_release_mbufs(ut_txv_ctx* ctx);
+/* the header pool of leg P that ut_txv_recovery_own_pools() made still exists */
+bool ut_txv_recovery_first_pool_alive(const ut_txv_ctx* ctx);
+/* the session has a header pool on leg P, and it is not the first one */
+bool ut_txv_recovery_pool_replaced(const ut_txv_ctx* ctx);
+/* each leg has a header pool */
+bool ut_txv_recovery_pools_set(const ut_txv_ctx* ctx);
+/* the header pools a pool create of the recoveries saw NULL, as the app thread can */
+int ut_txv_recovery_null_pools(const ut_txv_ctx* ctx);
+/* pools freed while still published in the session's live mempool pointers */
+int ut_txv_recovery_live_pool_frees(const ut_txv_ctx* ctx);
+/* the chain mbufs of dead queues that sh_cur of the frame counts, and the other sh_info
+ * the dead queues of earlier recoveries hold, with chain mbufs */
+void ut_txv_recovery_set_sh_info(ut_txv_ctx* ctx, uint16_t cur, int others);
+/* only the last pkt of the frame counts on it (tv_tx_direct_chain()) */
+void ut_txv_recovery_set_direct_chain(ut_txv_ctx* ctx);
+/* the count of sh_cur of the frame */
+uint16_t ut_txv_recovery_sh_cur_count(const ut_txv_ctx* ctx);
+/* the frame counts its chain mbufs on another sh_info now */
+bool ut_txv_recovery_frame_retired(const ut_txv_ctx* ctx);
+/* the sh_info of a frame */
+int ut_txv_frame_sh_info_max(void);
+/* mt_txq_get() calls of the session */
+int ut_txv_recovery_txq_gets(const ut_txv_ctx* ctx);
+/* the nth pool create from now fails */
+void ut_txv_recovery_fail_create(ut_txv_ctx* ctx, int nth);
+/* marks the recovery frame ST_FT_FLAG_EXT and link_held; notify_frame_done records its
+ * refcnt, addr, done_addr, link_held and re-arms it via st20_tx_set_ext_frame() */
+void ut_txv_recovery_set_ext_frame(ut_txv_ctx* ctx, void* buf, void* rearm_buf);
+void ut_txv_recovery_set_link_held(ut_txv_ctx* ctx, uint8_t link_pins);
+void ut_txv_link_release_held(ut_txv_ctx* ctx);
+uint8_t ut_txv_recovery_link_pins(const ut_txv_ctx* ctx);
+bool ut_txv_recovery_link_held(const ut_txv_ctx* ctx);
+int ut_txv_recovery_done_refcnt(const ut_txv_ctx* ctx);
+void* ut_txv_recovery_done_addr(const ut_txv_ctx* ctx);
+void* ut_txv_recovery_done_saved_addr(const ut_txv_ctx* ctx);
+bool ut_txv_recovery_done_link_held(const ut_txv_ctx* ctx);
+/* runs video_trs_tasklet_handler() twice on the recovery session with the given pending
+ * flags and a counting pacing callback; returns pacing callback calls */
+int ut_txv_recovery_run_transmitter(ut_txv_ctx* ctx, bool pending_p, bool pending_r);
 
 /* ── builder and transmitter over modeled NIC rings ───────────────────── */
 enum {
   UT_TXV_PIPE_HOLD_MAX = 1024,
   UT_TXV_PIPE_CHAIN = MTL_SESSION_PORT_MAX,
   UT_TXV_PIPE_COPY, /* the chain copies of the line-crossing pkts of a padded frame */
+  UT_TXV_PIPE_RS_THRESH = 32,
 };
 /* A frame-level BPM 4:2:2 10-bit 59.94p session on num_port legs, leg i on port i whose
- * TX queue is a common/ut_tx_ring.h ring of nb_tx_desc[i] (rs 32, the PMD's free_thresh),
- * hung or draining a descriptor each wire_ns. The production builder
- * (tvs_tasklet_handler()) and TSC transmitter run on the mock clock; the app hands the
- * frames over in turn. */
+ * TX queue is a common/ut_tx_ring.h ring of nb_tx_desc[i] (UT_TXV_PIPE_RS_THRESH, the
+ * PMD's free_thresh), hung or draining a descriptor each wire_ns. The production builder
+ * (tvs_tasklet_handler()) and TSC or PTP transmitter run on the mock clock; the app hands
+ * the frames over in turn. */
 struct ut_txv_pipe_case {
   uint32_t width;
   uint32_t height;
@@ -705,15 +757,27 @@ struct ut_txv_pipe_case {
   /* the app set nb_tx_desc: no port is deep; else MT_DEV_TX_DESC_DEEP is */
   bool user_nb_tx_desc;
   bool iavf; /* the ports are iavf VFs, else of the default driver */
+  bool igc;  /* the ports are igc (direct chain, non-unsafe cleanup) */
   bool ext;  /* ST20_TX_FLAG_EXT_FRAME: the app gives a buffer of its own a frame */
   /* the time a ring takes for a descriptor, 1 ns when 0 */
   uint64_t wire_ns;
+  /* the app fills its frames in turn and waits for the next one, as RxTxApp; else it
+   * takes any free frame */
+  bool in_order;
   bool reclaim; /* the session reclaims its zero-copy frames (tv_frames_out()) */
+  /* the done cleanup of each ring returns -ENOTSUP, as a vector TX path */
+  bool cleanup_enotsup;
+  bool ptp;            /* the PTP transmitter, else the TSC one */
+  bool tsn;            /* the TSN launch-time transmitter */
+  bool shared_txq;     /* MTL_FLAG_SHARED_TX_QUEUE enabled on the instance */
+  bool zero_rs_thresh; /* dev_info.default_txconf.tx_rs_thresh left at 0 */
 };
 int ut_txv_pipe_setup(ut_txv_ctx* ctx, const struct ut_txv_pipe_case* c);
 /* the leg's ring completes no descriptor posted from now on */
 void ut_txv_pipe_hang(ut_txv_ctx* ctx, int leg);
-/* stops at the first frame still referenced, failed pkt alloc or refused burst */
+/* Stops at the first frame still referenced, failed pkt alloc or refused burst. The
+ * transmitter runs each pending TX queue recovery: the leg gets a new ring, and the old
+ * one keeps what it holds. */
 void ut_txv_pipe_run(ut_txv_ctx* ctx, uint64_t duration_ns, uint64_t step_ns);
 /* -EBUSY if a pool still had mbufs out once the rings and inflights were freed */
 int ut_txv_pipe_teardown(ut_txv_ctx* ctx);
@@ -721,6 +785,9 @@ int ut_txv_pipe_teardown(ut_txv_ctx* ctx);
  * goes on past refused bursts. Up: the ring sends what it holds from the mock time at
  * the wire rate. The link flag follows ut_txv_pipe_set_flag_delay() later. */
 void ut_txv_pipe_set_link(ut_txv_ctx* ctx, int leg, bool up);
+/* the link of leg is up, but its ring never completes a descriptor again, as an E610
+ * ring that held pkts when it lost the link */
+void ut_txv_pipe_set_link_up_dead(ut_txv_ctx* ctx, int leg);
 /* from the link change to the flag; 0, the default, for MT_ADMIN_LINK_POLL_US */
 void ut_txv_pipe_set_flag_delay(ut_txv_ctx* ctx, uint64_t ns);
 /* what each leg's ring took from now: the pkts, and the most a pkt left the wire after
@@ -728,10 +795,30 @@ void ut_txv_pipe_set_flag_delay(ut_txv_ctx* ctx, uint64_t ns);
 void ut_txv_pipe_mark(ut_txv_ctx* ctx);
 uint64_t ut_txv_pipe_accepted(const ut_txv_ctx* ctx, int leg);
 int64_t ut_txv_pipe_max_late_ns(const ut_txv_ctx* ctx, int leg);
+/* tv_free_frames(), as a session free does with its rings still there: true when it
+ * freed the frames array */
+bool ut_txv_pipe_free_frames(ut_txv_ctx* ctx);
+/* the frame and hw steps of tv_uinit() on a ring that fails flush with -EBUSY: returns
+ * the live ring slots pointing into frame buffers that were freed; *kept: st20_frames
+ * array stayed; *fatal_marked: mt_txq_fatal_error() was called on leg */
+int ut_txv_pipe_uinit_ring_holds_freed(ut_txv_ctx* ctx, int leg, bool* kept,
+                                       bool* fatal_marked);
+/* the TX queue recoveries the transmitter ran, and the ST_EVENT_FATAL_ERROR events */
+int ut_txv_pipe_recoveries(const ut_txv_ctx* ctx);
+int ut_txv_pipe_fatal_events(const ut_txv_ctx* ctx);
+/* mt_txq_done_cleanup() calls on leg during the pipe run */
+int ut_txv_pipe_done_cleanups(const ut_txv_ctx* ctx, int leg);
+/* tx_link_release_tsc and mock time of the pipe session */
+uint64_t ut_txv_pipe_link_release_tsc(const ut_txv_ctx* ctx);
+uint64_t ut_txv_pipe_now_ns(const ut_txv_ctx* ctx);
 /* only the last pkt of a frame holds it (tv_tx_direct_chain()) */
 bool ut_txv_pipe_direct_chain(const ut_txv_ctx* ctx);
 /* the frame dones while a ring still held a pkt whose data is in that frame */
 int ut_txv_pipe_done_while_held(const ut_txv_ctx* ctx);
+/* the ones of them while that pkt was still to leave the wire */
+int ut_txv_pipe_done_while_unsent(const ut_txv_ctx* ctx);
+/* the ones of them on a leg whose link is up */
+int ut_txv_pipe_done_while_up_unsent(const ut_txv_ctx* ctx);
 /* the dones of the frame the builder still builds, and of a frame the app had back */
 int ut_txv_pipe_done_while_built(const ut_txv_ctx* ctx);
 int ut_txv_pipe_done_twice(const ut_txv_ctx* ctx);
@@ -746,6 +833,12 @@ void ut_txv_pipe_set_app_busy(ut_txv_ctx* ctx, bool busy);
 /* ST20_TX_FLAG_USER_PACING: each next frame starts ago_ns before the app gives it; 0 for
  * no user pacing */
 void ut_txv_pipe_set_app_start_ago(ut_txv_ctx* ctx, uint64_t ago_ns);
+/* the ring of leg frees each pkt it holds, as an E610 ring a while after the link loss;
+ * the link flag stays */
+void ut_txv_pipe_free_ring(ut_txv_ctx* ctx, int leg);
+/* dead queues of earlier recoveries hold each sh_info of each frame but sh_cur, until
+ * the teardown */
+void ut_txv_pipe_hold_sh_info(ut_txv_ctx* ctx);
 /* runs the pipe step by step until the builder takes its next frame: the mock time
  * then, and pacing.tsc_time_frame_start, its packet 0 target */
 uint64_t ut_txv_pipe_run_to_next_frame(ut_txv_ctx* ctx, uint64_t step_ns,

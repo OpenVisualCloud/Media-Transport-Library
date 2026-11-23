@@ -904,6 +904,16 @@ void ut_dev_set_tx_queue_bps(ut_dev_ctx* ctx, uint16_t queue, uint64_t bps) {
   ctx->tx_queues[queue].bps = bps;
 }
 
+int ut_dev_get_tx_queue(ut_dev_ctx* ctx, uint64_t bytes_per_sec, bool launch_time) {
+  struct mt_txq_flow flow;
+  memset(&flow, 0, sizeof(flow));
+  flow.bytes_per_sec = bytes_per_sec;
+  if (launch_time) flow.flags |= MT_TXQ_FLOW_F_LAUNCH_TIME;
+  ut_active_ctx = ctx;
+  struct mt_tx_queue* q = mt_dev_get_tx_queue(&ctx->impl, MTL_PORT_P, &flow);
+  return q ? (int)q->queue_id : -1;
+}
+
 int ut_dev_set_tx_bps(ut_dev_ctx* ctx, uint16_t queue, uint64_t bytes_per_sec) {
   ut_active_ctx = ctx;
   ctx->tx_queues[queue].port = MTL_PORT_P;
@@ -913,6 +923,10 @@ int ut_dev_set_tx_bps(ut_dev_ctx* ctx, uint16_t queue, uint64_t bytes_per_sec) {
 
 void ut_dev_set_link_speed(ut_dev_ctx* ctx, uint32_t mbps) {
   ctx->impl.inf[MTL_PORT_P].link_speed = mbps;
+}
+
+void ut_dev_set_link_down(ut_dev_ctx* ctx, bool down) {
+  rte_atomic32_set(&ctx->impl.inf[MTL_PORT_P].link_down, down ? 1 : 0);
 }
 
 struct rte_mempool* ut_dev_tx_sys_pool(ut_dev_ctx* ctx) {

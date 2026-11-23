@@ -351,6 +351,19 @@ TEST_F(St20TxLinkDownTest, LinkDownLogsOnceADownPeriod) {
   EXPECT_EQ(1, Count(log, kDownLog)) << log;
 }
 
+TEST_F(St20TxLinkDownTest, RlCatchUpDoesNotDrainTheRingWhileTheLinkIsDown) {
+  ASSERT_EQ(0, ut_trs_setup_stream(ctx_, 4000.0L, 512, 1));
+  ut_trs_set_sch_schedule_ns(ctx_, 100000);
+  ut_trs_stream_fill(ctx_);
+  ut_trs_set_link_down(ctx_, true);
+
+  ut_trs_ctx* list[] = {ctx_};
+  ut_session::capture_stderr([&] { ut_trs_call_transmitter(list, 1); });
+
+  /* one RL visit does at most two bulks (8 pkts), never a catch-up loop over the ring */
+  EXPECT_LE(ut_trs_link_down_drops(ctx_), 8);
+}
+
 /* the drops send no burst, so only the up restarts the hang time */
 TEST_F(St20TxLinkDownTest, LinkUpAfterALongDownRestartsTheHangTime) {
   GoDown();

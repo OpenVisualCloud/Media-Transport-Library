@@ -559,6 +559,7 @@ ut_trs_ctx* ut_trs_create(void) {
   s->impl = &ctx->impl;
   s->mgr = &ctx->mgr;
   s->idx = 0;
+  s->active = true;
   s->bulk = 1;
   s->tx_hang_detect_time_thresh = NS_PER_S;
 

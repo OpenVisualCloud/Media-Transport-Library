@@ -7,6 +7,7 @@
 
 #include "common/ut_tx_ring.h"
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stdlib.h>
 
@@ -205,6 +206,22 @@ void ut_txr_resume(struct ut_txr* r, uint64_t drain_ns, uint64_t now_ns) {
   }
 }
 
+int ut_txr_flush(struct ut_txr* r) {
+  for (uint16_t i = 0; i < r->nb_desc; i++) {
+    if (r->slots[i].written && r->slots[i].done_ns == UT_TXR_HUNG) return -EBUSY;
+  }
+  /* the descriptors stay in use until a cleanup, which skips a slot with no mbuf */
+  for (uint16_t i = 0; i < r->nb_desc; i++) {
+    struct ut_txr_slot* slot = &r->slots[i];
+    struct rte_mbuf* m = slot->freed ? NULL : slot->mbuf;
+    /* before the free: an extbuf free callback may look at the ring */
+    slot->mbuf = NULL;
+    slot->freed = false;
+    if (m) rte_pktmbuf_free_seg(m);
+  }
+  return 0;
+}
+
 uint64_t ut_txr_descs(const struct ut_txr* r) {
   return r->descs;
 }
@@ -229,6 +246,18 @@ uint16_t ut_txr_holds_range(const struct ut_txr* r, const void* addr, size_t len
   for (uint16_t i = 0; i < r->nb_desc; i++) {
     const struct rte_mbuf* m = r->slots[i].mbuf;
     if (!m || r->slots[i].freed) continue;
+    const uint8_t* data = rte_pktmbuf_mtod(m, const uint8_t*);
+    if (data >= (const uint8_t*)addr && data < (const uint8_t*)addr + len) holds++;
+  }
+  return holds;
+}
+
+uint16_t ut_txr_unsent_range(const struct ut_txr* r, const void* addr, size_t len,
+                             uint64_t now_ns) {
+  uint16_t holds = 0;
+  for (uint16_t i = 0; i < r->nb_desc; i++) {
+    const struct rte_mbuf* m = r->slots[i].mbuf;
+    if (!m || r->slots[i].freed || r->slots[i].done_ns <= now_ns) continue;
     const uint8_t* data = rte_pktmbuf_mtod(m, const uint8_t*);
     if (data >= (const uint8_t*)addr && data < (const uint8_t*)addr + len) holds++;
   }

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2026 Intel Corporation
  *
- * Pins how tv_frame_free_cb() hands a completed ext frame back.
+ * Pins how tx_video_frame_release_callback() hands a completed ext frame back.
  * notify_frame_done is where st20p marks the slot FREE and wakes the app, so the
  * frame must already be free in the transport when it runs: the app, or the
  * builder on another lcore, may re-arm and re-queue the slot straight away.
