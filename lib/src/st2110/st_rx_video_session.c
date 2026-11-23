@@ -1478,8 +1478,9 @@ static int rv_start_pcap(struct st_rx_video_session_impl* s, enum mtl_session_po
     err("%s(%d,%d), pcap dump already started\n", __func__, idx, s_port);
     return -EIO;
   }
-  snprintf(pcap->file_name, sizeof(pcap->file_name), "st22rx_s%dp%d_%u_XXXXXX.pcapng",
-           idx, s_port, max_dump_packets);
+  /* the count is in the log, not the name: six digits overflow MTL_PCAP_FILE_MAX_LEN */
+  snprintf(pcap->file_name, sizeof(pcap->file_name), "st22rx_s%dp%d_XXXXXX.pcapng", idx,
+           s_port);
 
   int fd = mt_mkstemps(pcap->file_name, strlen(".pcapng"));
   if (fd < 0) {
@@ -3500,10 +3501,11 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
     s->st20_frame_size = st22_ops->framebuff_max_size;
     s->st20_fb_size = s->st20_frame_size;
     s->st22_ops_flags = st22_ops->flags;
-  } else
+  } else {
     s->st20_frame_size = ops->width * ops->height * s->st20_pg.size / s->st20_pg.coverage;
+    if (ops->interlaced) s->st20_frame_size = s->st20_frame_size >> 1;
+  }
   s->st20_uframe_size = ops->uframe_size;
-  if (ops->interlaced) s->st20_frame_size = s->st20_frame_size >> 1;
   /* at least 800 byte for each packet */
   s->st20_frame_bitmap_size = s->st20_frame_size / 800 / 8;
   /* one line at line 2 packets for all the format */

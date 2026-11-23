@@ -151,6 +151,14 @@ void ut20_set_port_down(ut20_test_ctx* ctx, enum mtl_session_port port, bool dow
  * interlaced. Returns rv_tp_init()'s status; read the per-frame verdict with the
  * two ut20_last_tp_* accessors below. */
 int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx, bool interlaced);
+/* Start an asynchronous pcapng dump of max_pkts packets on port P, as
+ * st20_rx_pcapng_dump() does; *name gets the file it created. Returns rv_start_pcap()'s
+ * status. ut20_stop_pcap() closes it. */
+int ut20_start_pcap(ut20_test_ctx* ctx, uint32_t max_pkts, char* name, size_t name_len);
+void ut20_stop_pcap(ut20_test_ctx* ctx);
+/* Run the session at fps, with frame time and ticks per frame as production derives
+ * them; call before ut20_ctx_enable_timing_parser(). */
+int ut20_ctx_set_fps(ut20_test_ctx* ctx, enum st_fps fps);
 
 void ut20_ctx_enable_hw_timestamp(ut20_test_ctx* ctx, enum mtl_session_port port);
 
@@ -340,12 +348,21 @@ int ut20_init_sw_dma_requests(ut20_test_ctx* ctx, bool gpu_frames);
  * st20_frame_size (40 * pkts_per_frame) is the codestream frame budget. */
 void ut20_ctx_enable_st22(ut20_test_ctx* ctx);
 
+/* Run the production rv_attach() of a single port 1080p ST 2110-22 frame session
+ * with boxes disabled, as st22_rx_create() would, over fake rx queues. The session
+ * then owns its frames and bitmaps; ut20_ctx_destroy() detaches it. With
+ * -Denable_asan=true the frames are freed by libmtl's tracking mt_rte_free(),
+ * which logs a spurious "already freed" for each, as they were not allocated
+ * through it. */
+int ut20_ctx_attach_st22(ut20_test_ctx* ctx, bool interlaced, size_t framebuff_max_size);
+
 /* Frames handed to the st22 notify_frame_ready callback. */
 uint64_t ut20_st22_frames_ready(const ut20_test_ctx* ctx);
 /* frame_total_size reported with the last delivered st22 frame. */
 size_t ut20_st22_last_frame_size(const ut20_test_ctx* ctx);
 
-/* Feed one RFC 9134 codestream packet directly to rv_handle_st22_pkt.
+/* Feed one RFC 9134 codestream packet directly to rv_handle_st22_pkt, marked
+ * as a first field pkt on an interlaced session.
  * `pkt_counter` is the combined P&Sep counter (0 selects the first-packet path
  * that parses the boxes), `payload`/`payload_length` the bytes after the rtp
  * hdr. Returns the production handler's return code. */

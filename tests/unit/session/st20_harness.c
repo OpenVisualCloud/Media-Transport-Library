@@ -33,6 +33,9 @@ struct mt_dma_request_req;
 static struct mtl_dma_lender_dev* ut20_dma_request_dev(struct mtl_main_impl* impl,
                                                        struct mt_dma_request_req* req);
 #define mt_dma_request_dev ut20_dma_request_dev
+/* rv_attach()'s rx queues are fakes, so a session attaches without a NIC. */
+#define mt_rxq_get ut20_rxq_get
+#define mt_rxq_put ut20_rxq_put
 #include "st2110/st_rx_video_session.h"
 #undef ST_RX_VIDEO_DMA_MIN_SIZE
 #define ST_RX_VIDEO_DMA_MIN_SIZE 0
@@ -44,6 +47,8 @@ static struct mtl_dma_lender_dev* ut20_dma_request_dev(struct mtl_main_impl* imp
 #undef mt_dma_drop_mbuf
 #undef mt_dma_full
 #undef mt_dma_request_dev
+#undef mt_rxq_get
+#undef mt_rxq_put
 /* Also compiled in, not just linked from libmtl: -DMTL_HAS_ASAN is scoped to the
  * lib target, so libmtl's mt_rte_zmalloc_socket() is the backtrace-tracking one
  * whose list head only mtl_init() ever initialises. Compiling rv_tp_init() here
@@ -115,6 +120,7 @@ struct ut20_test_ctx {
   struct mtl_dma_lender_dev idle_dma_dev;
   int uframe_refuse_row;
   bool refuse_incomplete;
+  bool rv_attached; /* session resources are rv_attach()'s, not the ctx storage */
 };
 
 #include "session/st20_harness.h"
@@ -173,6 +179,20 @@ bool ut20_dma_full(struct mtl_dma_lender_dev* dev) {
 }
 
 static int ut20_dma_requests;
+
+struct mt_rxq_entry* ut20_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
+                                  struct mt_rxq_flow* flow) {
+  static struct mt_rxq_entry entry;
+  (void)impl;
+  (void)port;
+  (void)flow;
+  return &entry;
+}
+
+int ut20_rxq_put(struct mt_rxq_entry* entry) {
+  (void)entry;
+  return 0;
+}
 
 static struct mtl_dma_lender_dev* ut20_dma_request_dev(struct mtl_main_impl* impl,
                                                        struct mt_dma_request_req* req) {
@@ -329,7 +349,10 @@ ut20_test_ctx* ut20_ctx_create_geom(int num_port, int pkts_per_frame) {
 void ut20_ctx_destroy(ut20_test_ctx* ctx) {
   if (!ctx) return;
   /* ASan is preloaded in this suite, so the tp allocation must be released. */
-  rv_tp_uinit(&ctx->session);
+  if (ctx->rv_attached)
+    rv_uinit(&ctx->impl, &ctx->session);
+  else
+    rv_tp_uinit(&ctx->session);
   ut20_dma_drop_mbuf(&ctx->dma.lender, ctx->dma.lender.nb_borrowed);
   /* Drain any held refcnts so destroy-while-holding is safe. */
   for (int i = 0; i < UT20_FRAME_COUNT; i++) {
@@ -703,14 +726,54 @@ void ut20_ctx_enable_st22(ut20_test_ctx* ctx) {
   s->pkt_handler = rv_handle_st22_pkt;
 }
 
+int ut20_ctx_attach_st22(ut20_test_ctx* ctx, bool interlaced, size_t framebuff_max_size) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  struct st20_rx_ops ops;
+  struct st22_rx_ops st22_ops;
+
+  ctx->impl.user_para.num_ports = 1;
+  snprintf(ctx->impl.user_para.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "ut20_port0");
+  ctx->impl.pkt_udp_suggest_max_size = MTL_PKT_MAX_RTP_BYTES;
+
+  /* the st20 ops st22_rx_create() derives */
+  memset(&ops, 0, sizeof(ops));
+  ops.name = "ut22_test";
+  ops.priv = ctx;
+  ops.num_port = 1;
+  snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut20_port0");
+  ops.type = ST20_TYPE_FRAME_LEVEL;
+  ops.width = 1920;
+  ops.height = 1080;
+  ops.fps = ST_FPS_P59_94;
+  ops.interlaced = interlaced;
+  ops.fmt = ST20_FMT_YUV_422_10BIT;
+  ops.framebuff_cnt = UT20_FRAME_COUNT;
+
+  memset(&st22_ops, 0, sizeof(st22_ops));
+  st22_ops.flags = ST22_RX_FLAG_DISABLE_BOXES;
+  st22_ops.framebuff_max_size = framebuff_max_size;
+  st22_ops.notify_frame_ready = ut20_st22_notify_frame_ready;
+
+  /* rv_attach()'s failure paths rte-free these, so none may be harness storage */
+  s->st20_frames = NULL;
+  for (int i = 0; i < ST_VIDEO_RX_REC_NUM_OFO; i++) {
+    s->slots[i].frame_bitmap = NULL;
+    s->slots[i].slice_info = NULL;
+  }
+
+  int ret = rv_attach(&ctx->impl, &ctx->mgr, s, &ops, &st22_ops);
+  if (ret == 0) ctx->rv_attached = true;
+  return ret;
+}
+
 /* Build one RFC 9134 codestream packet. `payload`/`payload_length` are the
  * bytes right after the rtp hdr (boxes first, if any). A non-zero
  * `data_len_override` is written into mbuf->data_len verbatim, so a test can
  * declare a datagram shorter than the bytes it wrote (or shorter than the hdr,
  * as the kernel socket path can deliver). */
 static struct rte_mbuf* make_st22_mbuf(uint32_t seq, uint32_t ts, uint32_t pkt_counter,
-                                       bool marker, const void* payload,
-                                       uint16_t payload_length,
+                                       bool marker, uint8_t interlaced,
+                                       const void* payload, uint16_t payload_length,
                                        uint16_t data_len_override) {
   struct rte_mbuf* m = rte_pktmbuf_alloc(ut_pool());
   if (!m) return NULL;
@@ -734,6 +797,7 @@ static struct rte_mbuf* make_st22_mbuf(uint32_t seq, uint32_t ts, uint32_t pkt_c
   rtp->base.marker = marker ? 1 : 0;
   rtp->base.seq_number = htons((uint16_t)(seq & 0xFFFF));
   rtp->base.tmstamp = htonl(ts);
+  rtp->interlaced = interlaced;
   /* P counter (11 bit) counts pkts in a sep unit, Sep counter (11 bit) the
    * sep units; the handler recombines them as p + sep * 2048 */
   uint32_t p_counter = pkt_counter % 2048;
@@ -755,8 +819,9 @@ static struct rte_mbuf* make_st22_mbuf(uint32_t seq, uint32_t ts, uint32_t pkt_c
 int ut20_feed_st22_pkt(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
                        uint32_t pkt_counter, bool marker, const void* payload,
                        uint16_t payload_length, enum mtl_session_port port) {
-  struct rte_mbuf* m =
-      make_st22_mbuf(seq, ts, pkt_counter, marker, payload, payload_length, 0);
+  uint8_t interlaced = ctx->session.ops.interlaced ? 0x2 : 0;
+  struct rte_mbuf* m = make_st22_mbuf(seq, ts, pkt_counter, marker, interlaced, payload,
+                                      payload_length, 0);
   if (!m) return -1;
   int rc = rv_handle_st22_pkt(&ctx->session, m, port, true);
   rte_pktmbuf_free(m);
@@ -767,7 +832,7 @@ int ut20_feed_st22_pkt_data_len(ut20_test_ctx* ctx, uint32_t seq, uint32_t ts,
                                 const void* payload, uint16_t payload_length,
                                 uint16_t data_len, enum mtl_session_port port) {
   struct rte_mbuf* m =
-      make_st22_mbuf(seq, ts, 0, false, payload, payload_length, data_len);
+      make_st22_mbuf(seq, ts, 0, false, 0, payload, payload_length, data_len);
   if (!m) return -1;
   int rc = rv_handle_st22_pkt(&ctx->session, m, port, true);
   rte_pktmbuf_free(m);
@@ -898,6 +963,30 @@ void ut20_set_port_down(ut20_test_ctx* ctx, enum mtl_session_port port, bool dow
     ctx->impl.inf[phy].status |= MT_IF_STAT_PORT_DOWN;
   else
     ctx->impl.inf[phy].status &= ~MT_IF_STAT_PORT_DOWN;
+}
+
+int ut20_start_pcap(ut20_test_ctx* ctx, uint32_t max_pkts, char* name, size_t name_len) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  int ret = rv_start_pcap(s, MTL_SESSION_PORT_P, max_pkts, false, NULL);
+
+  if (!ret) snprintf(name, name_len, "%s", s->pcap[MTL_SESSION_PORT_P].file_name);
+  return ret;
+}
+
+void ut20_stop_pcap(ut20_test_ctx* ctx) {
+  rv_stop_pcap(&ctx->session, MTL_SESSION_PORT_P);
+}
+
+int ut20_ctx_set_fps(ut20_test_ctx* ctx, enum st_fps fps) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  struct st_fps_timing fps_tm;
+  int ret = st_get_fps_timing(fps, &fps_tm);
+
+  if (ret < 0) return ret;
+  s->ops.fps = fps;
+  s->frame_time = (double)NS_PER_S * fps_tm.den / fps_tm.mul;
+  s->frame_time_sampling = (double)fps_tm.sampling_clock_rate * fps_tm.den / fps_tm.mul;
+  return 0;
 }
 
 int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx, bool interlaced) {

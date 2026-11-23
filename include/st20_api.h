@@ -1338,6 +1338,7 @@ struct st22_tx_ops {
    * usually ST22 use constant bitrate (CBR) mode.
    * lib will allocate all frame buffer with this size,
    * app can indicate the real codestream size later in get_next_frame query.
+   * For interlaced it is the size of each field.
    */
   size_t framebuff_max_size;
   /**
@@ -1692,6 +1693,7 @@ struct st22_rx_ops {
    * usually ST22 use constant bitrate (CBR) mode.
    * lib will allocate all frame buffer with this size,
    * app can get the real codestream size later in notify_frame_ready callback.
+   * For interlaced it is the size of each field.
    */
   size_t framebuff_max_size;
   /**
