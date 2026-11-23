@@ -1,0 +1,48 @@
+From nobody Mon Sep 17 00:00:00 2001
+From: Dawid Wesierski <dawid.wesierski@intel.com>
+Date: Mon, 23 Nov 2026 17:18:09 +0000
+Subject: [PATCH] net/ixgbe: keep E610 PHY powered at port stop
+
+ixgbe_dev_stop() puts the copper PHY in low power. On E610 the next
+ixgbe_dev_start() takes it out with an ACI Set PHY Config (0x0601), and
+the firmware restarts the autoneg. For 50 to 100 ms Get Link Status
+still reports the old link as up, then the link is down for about
+4.7 s. An application that starts to transmit at the link up of the
+start sees no packet leave for that time.
+
+Measured on an E610 10GBASE-T port, link up before the start: the
+start sent one 0x0601, the link read up for 5 ms, down 81 ms after the
+start and up again after 4.68 s, and the first packets waited 4.7 s.
+With the PHY powered on 8 s before the start, the start sent no 0x0601,
+the link stayed up, and 314 of 314 packets left from 0.147 s.
+
+The Linux ixgbe driver powers the PHY off in ixgbe_down() only for an
+interface that goes down with no wake on LAN, so a reset does not
+restart the autoneg. Keep the E610 PHY powered at the port stop, and so
+at the close. rte_eth_dev_set_link_down() still powers it off.
+
+Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
+---
+ drivers/net/intel/ixgbe/ixgbe_ethdev.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/intel/ixgbe/ixgbe_ethdev.c b/drivers/net/intel/ixgbe/ixgbe_ethdev.c
+index c5010f623c..cbcfa2d871 100644
+--- a/drivers/net/intel/ixgbe/ixgbe_ethdev.c
++++ b/drivers/net/intel/ixgbe/ixgbe_ethdev.c
+@@ -2965,8 +2965,13 @@ ixgbe_dev_stop(struct rte_eth_dev *dev)
+ 		vfinfo[vf].clear_to_send = false;
+ 
+ 	if (hw->mac.ops.get_media_type(hw) == ixgbe_media_type_copper) {
+-		/* Turn off the copper */
+-		ixgbe_set_phy_power(hw, false);
++		/*
++		 * Turn off the copper, but not on E610: the power on at the
++		 * next start restarts its autoneg. Keep it on, as Linux
++		 * ixgbe_down() does when WoL is on.
++		 */
++		if (hw->mac.type != ixgbe_mac_E610)
++			ixgbe_set_phy_power(hw, false);
+ 	} else {
+ 		/* Turn off the laser */
+ 		ixgbe_disable_tx_laser(hw);
