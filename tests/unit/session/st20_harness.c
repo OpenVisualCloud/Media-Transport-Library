@@ -1276,3 +1276,30 @@ int ut20_st22_ops_check_source(const struct st_rx_source_info* src) {
   ops.notify_rtp_ready = ut20_notify_rtp_ready;
   return rv_st22_ops_check(&ops);
 }
+
+int ut20_rx_quota_mbs_wo_dma(enum st20_type type, uint16_t nb_rx_desc_p, bool l3_fit_p,
+                             uint16_t nb_rx_desc_r, bool l3_fit_r, int quota_mbs) {
+  uint16_t nb_rx_desc[MTL_SESSION_PORT_MAX] = {nb_rx_desc_p, nb_rx_desc_r};
+  bool l3_fit[MTL_SESSION_PORT_MAX] = {l3_fit_p, l3_fit_r};
+  struct mtl_main_impl* impl = calloc(1, sizeof(*impl));
+  if (!impl) return -ENOMEM;
+
+  struct st20_rx_ops ops;
+  memset(&ops, 0, sizeof(ops));
+  ops.type = type;
+  ops.num_port = nb_rx_desc_r ? 2 : 1;
+  impl->user_para.num_ports = ops.num_port;
+  for (int i = 0; i < ops.num_port; i++) {
+    snprintf(impl->user_para.port[i], MTL_PORT_MAX_LEN, "ut20_%d", i);
+    snprintf(ops.port[i], MTL_PORT_MAX_LEN, "ut20_%d", i);
+    impl->inf[i].nb_rx_desc = nb_rx_desc[i];
+    impl->inf[i].rx_l3_fit = l3_fit[i];
+  }
+  int quota = rv_quota_mbs_wo_dma(impl, &ops, quota_mbs);
+  free(impl);
+  return quota;
+}
+
+int ut20_quota_tx1080p_per_sch(void) {
+  return ST_QUOTA_TX1080P_PER_SCH;
+}

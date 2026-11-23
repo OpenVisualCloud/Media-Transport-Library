@@ -412,6 +412,15 @@ void ut20_session_detach(ut20_test_ctx* ctx);
 int ut20_ops_check_source(const struct st_rx_source_info* src);
 int ut20_st22_ops_check_source(const struct st_rx_source_info* src);
 
+/* The quota (Mb/s) a frame or slice session of type and bandwidth quota_mbs takes
+ * without a DMA dev under the default scheduler quota, on port P with an RX ring of
+ * nb_rx_desc_p and, for a nonzero nb_rx_desc_r, port R with one of nb_rx_desc_r; l3_fit
+ * is each port's mt_if_rx_l3_fit(). */
+int ut20_rx_quota_mbs_wo_dma(enum st20_type type, uint16_t nb_rx_desc_p, bool l3_fit_p,
+                             uint16_t nb_rx_desc_r, bool l3_fit_r, int quota_mbs);
+/* ST_QUOTA_TX1080P_PER_SCH: the 1080p59 bandwidths of the default scheduler quota. */
+int ut20_quota_tx1080p_per_sch(void);
+
 #ifdef __cplusplus
 }
 #endif

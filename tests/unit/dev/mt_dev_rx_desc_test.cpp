@@ -230,6 +230,46 @@ TEST_F(MtDevRxDescDefaultL3Test, IavfTimestampWorkaroundAppliesToComputedRing) {
   EXPECT_EQ(ut_dev_config_port_nb_rx_desc(ctx_, true, true, 0, 4096), 1056);
 }
 
+/* the ports dense no-DMA ST20 RX packing trusts, whatever ring the user sets */
+TEST_F(MtDevRxDescDefaultL3Test, IceWithAUser512RingFitsTheL3) {
+  EXPECT_EQ(ut_dev_config_port_rx_l3_fit(ctx_, "net_ice", 512), 1);
+}
+
+TEST_F(MtDevRxDescDefaultL3Test, IavfWithAUser1024RingFitsTheL3) {
+  EXPECT_EQ(ut_dev_config_port_rx_l3_fit(ctx_, "net_iavf", 1024), 1);
+}
+
+TEST_F(MtDevRxDescDefaultL3Test, IgcWithAUser512RingDoesNotFitTheL3) {
+  EXPECT_EQ(ut_dev_config_port_rx_l3_fit(ctx_, "net_igc", 512), 0);
+}
+
+TEST_F(MtDevRxDescDefaultL3Test, TaskletThreadDoesNotFitTheL3) {
+  ut_dev_set_tasklet_thread(ctx_);
+  EXPECT_EQ(ut_dev_config_port_rx_l3_fit(ctx_, "net_ice", 512), 0);
+}
+
+TEST_F(MtDevRxDescDefaultL3Test, SharedRxQueueDoesNotFitTheL3) {
+  ut_dev_set_shared_rx_queue(ctx_);
+  EXPECT_EQ(ut_dev_config_port_rx_l3_fit(ctx_, "net_ice", 512), 0);
+}
+
+TEST_F(MtDevRxDescDefaultL3Test, SharedRssDoesNotFitTheL3) {
+  ut_dev_set_shared_rss(ctx_);
+  EXPECT_EQ(ut_dev_config_port_rx_l3_fit(ctx_, "net_ice", 512), 0);
+}
+
+TEST_F(MtDevRxDescDefaultL3Test, AnAfPacketPortTakesTheOthersOutOfTheL3Fit) {
+  ut_dev_set_port_pmd(ctx_, MTL_PORT_R, MTL_PMD_DPDK_AF_PACKET);
+  ut_dev_force_shared_rxq(ctx_);
+  EXPECT_EQ(ut_dev_config_port_rx_l3_fit(ctx_, "net_ice", 512), 0);
+}
+
+/* no node-wide L3 (Windows, no sysfs, an AMD CCD's or an SNC socket's L3) */
+TEST_F(MtDevRxDescDefaultL3Test, AnUnknownL3DoesNotFitTheL3) {
+  ut_dev_set_l3_size(ctx_, 0, 0);
+  EXPECT_EQ(ut_dev_config_port_rx_l3_fit(ctx_, "net_ice", 512), 0);
+}
+
 struct RxDescDriverCase {
   const char* driver;
   int expected;

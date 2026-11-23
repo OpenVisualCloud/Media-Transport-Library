@@ -668,7 +668,9 @@ struct mtl_init_params {
    * of its L3, and 1024 when less fits. It is 2048 on other drivers, with
    * MTL_FLAG_TASKLET_THREAD, with MTL_FLAG_SHARED_RX_QUEUE or a shared RSS mode, or when
    * the L3 size is unknown or the L3 is not shared by exactly the node's CPUs. Audio and
-   * ancillary sessions count as RX queues.
+   * ancillary sessions count as RX queues. The ring also sets how frame-level ST20 RX
+   * sessions without a DMA dev pack: 11 per scheduler at 1024 or fewer on an ice/iavf
+   * port whose default fits the L3, else 8.
    */
   uint16_t nb_rx_desc;
 

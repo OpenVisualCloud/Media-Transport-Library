@@ -115,6 +115,10 @@ int ut_dev_config_port_driver_nb_rx_desc(ut_dev_ctx* ctx, const char* driver_nam
 void ut_dev_set_tasklet_thread(ut_dev_ctx* ctx);
 /** dev_force_shared_rxq(), which mt_dev_if_init() runs before it configures any port. */
 void ut_dev_force_shared_rxq(ut_dev_ctx* ctx);
+/** dev_config_port() of port P with the drv info of this ethdev driver and a user
+ * nb_rx_desc: 1 if it marks the port rx_l3_fit, 0 if not, or its error. */
+int ut_dev_config_port_rx_l3_fit(ut_dev_ctx* ctx, const char* driver_name,
+                                 uint16_t nb_rx_desc);
 void ut_dev_set_shared_rx_queue(ut_dev_ctx* ctx);
 /** Port P in shared RSS mode, on a dev_info that offers its hash. */
 void ut_dev_set_shared_rss(ut_dev_ctx* ctx);

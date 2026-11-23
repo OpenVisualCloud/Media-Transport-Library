@@ -729,6 +729,8 @@ struct mt_interface {
   uint16_t nb_rx_desc;
   /* MT_DEV_TX_DESC_DEEP, reclaim and the bounded flush (dev_config_port()) */
   bool tx_deep;
+  /* ice/iavf, dedicated rx queues and cpus, a known L3: the rx ring default fits it */
+  bool rx_l3_fit;
   /* the rs batch a burst frees once 2 are in use, 0 if none (dev_start_port()) */
   uint16_t tx_reclaim_rs_thresh;
 
@@ -1741,6 +1743,10 @@ static inline uint16_t mt_if_nb_tx_desc(struct mtl_main_impl* impl, enum mtl_por
 
 static inline bool mt_if_tx_deep(struct mtl_main_impl* impl, enum mtl_port port) {
   return mt_if(impl, port)->tx_deep;
+}
+
+static inline bool mt_if_rx_l3_fit(struct mtl_main_impl* impl, enum mtl_port port) {
+  return mt_if(impl, port)->rx_l3_fit;
 }
 
 /* mbufs another lcore's pool cache keeps: DPDK flushes a cache past 1.5x its size */

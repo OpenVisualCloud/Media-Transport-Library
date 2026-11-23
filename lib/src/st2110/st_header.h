@@ -29,6 +29,9 @@
 #define ST_QUOTA_RX1080P_RTP_PER_SCH (12)
 /* max 8 1080p rx(without DMA) session per sch lcore */
 #define ST_QUOTA_RX1080P_NO_DMA_PER_SCH (8)
+/* max 11 1080p rx(without DMA) frame session per sch lcore on L3-fit rings of <= 1024 */
+#define ST_QUOTA_RX1080P_NO_DMA_FRAME_PER_SCH (11)
+#define ST_QUOTA_RX1080P_NO_DMA_FRAME_DESC_MAX (1024)
 
 #define ST_SCH_MAX_TX_VIDEO_SESSIONS (60) /* max video tx sessions per sch lcore */
 #define ST_SCH_MAX_RX_VIDEO_SESSIONS (60) /* max video rx sessions per sch lcore */

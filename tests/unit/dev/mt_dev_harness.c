@@ -676,6 +676,19 @@ void ut_dev_force_shared_rxq(ut_dev_ctx* ctx) {
   dev_force_shared_rxq(&ctx->impl);
 }
 
+int ut_dev_config_port_rx_l3_fit(ut_dev_ctx* ctx, const char* driver_name,
+                                 uint16_t nb_rx_desc) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+  int ret;
+
+  parse_driver_info(driver_name, &inf->drv_info);
+  inf->dev_info.rx_desc_lim.nb_max = 4096;
+  ctx->impl.user_para.nb_rx_desc = nb_rx_desc;
+  ut_active_ctx = ctx;
+  ret = dev_config_port(inf);
+  return ret < 0 ? ret : inf->rx_l3_fit;
+}
+
 void ut_dev_set_tasklet_thread(ut_dev_ctx* ctx) {
   ctx->impl.user_para.flags |= MTL_FLAG_TASKLET_THREAD;
 }

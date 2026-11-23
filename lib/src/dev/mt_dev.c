@@ -1090,14 +1090,20 @@ static uint16_t dev_rx_desc_by_l3(uint64_t l3_size, uint32_t nb_rx_q,
                  (uint32_t)MT_DEV_RX_DESC_MIN);
 }
 
-static uint16_t dev_rx_desc_default(struct mt_interface* inf) {
+/* measured only on ice/iavf with dedicated rx queues and cpus and an L3 of the node's */
+static bool dev_rx_l3_fit(struct mt_interface* inf) {
   struct mtl_main_impl* impl = inf->parent;
   enum mt_driver_type drv = inf->drv_info.drv_type;
 
-  /* measured only on ice/iavf with dedicated rx queues and cpus */
-  if ((drv != MT_DRV_ICE && drv != MT_DRV_IAVF) || mt_user_tasklet_thread(impl) ||
-      mt_user_shared_rxq(impl, inf->port) || mt_has_srss(impl, inf->port))
-    return MT_DEV_RX_DESC;
+  return (drv == MT_DRV_ICE || drv == MT_DRV_IAVF) && !mt_user_tasklet_thread(impl) &&
+         !mt_user_shared_rxq(impl, inf->port) && !mt_has_srss(impl, inf->port) &&
+         mt_l3_size(inf->socket_id);
+}
+
+static uint16_t dev_rx_desc_default(struct mt_interface* inf) {
+  struct mtl_main_impl* impl = inf->parent;
+
+  if (!inf->rx_l3_fit) return MT_DEV_RX_DESC;
   uint32_t elem_size = dev_rx_elem_size(impl, inf);
   uint32_t nb_rx_q = dev_socket_rx_queues(impl, inf->socket_id);
   uint64_t l3_size = mt_l3_size(inf->socket_id);
@@ -1114,6 +1120,7 @@ static int dev_config_port(struct mt_interface* inf) {
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
   inf->tx_deep = dev_tx_deep(inf);
+  inf->rx_l3_fit = dev_rx_l3_fit(inf);
   uint16_t nb_rx_desc = MT_DEV_RX_DESC;
   uint16_t nb_tx_desc = inf->tx_deep ? MT_DEV_TX_DESC_DEEP : MT_DEV_TX_DESC;
   int ret;
