@@ -727,11 +727,10 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     uint64_t warmup_tsc = target_tsc > warmup_ns ? target_tsc - warmup_ns : 0;
     int tasklet_ret;
     uint64_t now = mt_get_tsc(impl);
-    if (!video_trs_rl_target_reached(impl, s, now, warmup_tsc, ret_status,
-                                     &tasklet_ret)) {
-      video_trs_rl_reclaim(impl, s, s_port, now);
+    /* also as the window opens: a due batch goes ahead of the pre-arm's pads */
+    video_trs_rl_reclaim(impl, s, s_port, now);
+    if (!video_trs_rl_target_reached(impl, s, now, warmup_tsc, ret_status, &tasklet_ret))
       return tasklet_ret;
-    }
     bool again;
     s->rl_state[s_port] = video_trs_rl_frame_start(impl, s, s_port, &again);
     if (again) {

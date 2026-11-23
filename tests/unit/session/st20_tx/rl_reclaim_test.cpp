@@ -164,6 +164,29 @@ TEST_F(St20TxRlReclaim, WaitForTheWindowFreesTheFrameBefore) {
   ut_trs_destroy(ctx);
 }
 
+/* A batch that comes due between the last visit waiting for the window and the one that
+ * opens it is freed by that visit ahead of the pre-arm, not in its first pad burst. */
+TEST_F(St20TxRlReclaim, TheVisitThatOpensTheWindowFreesADueBatch) {
+  uint64_t now = kTargetTsc;
+  ut_trs_ctx* ctx = Idle(&now);
+  /* as in Frame(): a batch freed in the first pad burst takes it past the stall test */
+  const uint64_t d[2] = {kFirstBurstNs, 200}, g[2] = {300, 250};
+  ut_trs_set_burst_cost(ctx, d, g, 2);
+  while (ut_trs_last_tsc(ctx) + kCallNs >= ut_trs_reclaim_tsc(ctx)) Visit(ctx);
+  const uint64_t due = ut_trs_reclaim_tsc(ctx);
+  ut_trs_enqueue_first_pkt(ctx, due + window_);
+  Visit(ctx);
+  ASSERT_EQ(1, ut_trs_rl_state(ctx)) << "ST_TX_VIDEO_RL_STATE_WAIT_WARMUP";
+  ut_trs_set_pmd_done_batches(ctx, kRsThresh, ut_trs_rl_kept_batches() + 1, kBatchFreeNs);
+  const uint32_t calls = ut_trs_reclaim_calls(ctx);
+  ut_trs_advance_mock_tsc(ctx, due - ut_trs_last_tsc(ctx));
+  ut_trs_call_rl_tasklet(ctx);
+  EXPECT_EQ(calls + 1, ut_trs_reclaim_calls(ctx));
+  EXPECT_LE(ut_trs_pmd_pad_burst_frees(ctx), ut_trs_rl_kept_batches());
+  EXPECT_EQ(0u, ut_trs_stat_recalculate_warmup(ctx));
+  ut_trs_destroy(ctx);
+}
+
 /* a port that does not reclaim gets no empty bursts */
 TEST_F(St20TxRlReclaim, NoEmptyBurstWithoutReclaim) {
   ut_trs_ctx* ctx = Frame(0);
