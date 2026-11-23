@@ -68,6 +68,11 @@ configure_file(output: build_cfg, configuration: mtlm_conf)
 libxdp_dep = dependency('libxdp', required: false)
 libbpf_dep = dependency('libbpf', required: false)
 if libxdp_dep.found() and libbpf_dep.found()
+  # clang -target bpf reads gnu/stubs-32.h, a file of the 32-bit libc headers.
+  # A distro DPDK or xdp-tools package can bring libxdp without them.
+  if not cpp_c.has_header('gnu/stubs-32.h')
+    error('libxdp and libbpf are installed, so the manager builds its XDP program, which needs the 32-bit libc headers. Install gcc-multilib (Ubuntu, Debian) or glibc-devel.i686 (RHEL, Rocky Linux).')
+  endif
   add_global_arguments('-DMTL_HAS_XDP_BACKEND', language : 'cpp')
   clang = find_program('clang')
   llvm_strip = find_program('llvm-strip')
