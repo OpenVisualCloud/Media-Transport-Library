@@ -348,12 +348,21 @@ int ut20_init_sw_dma_requests(ut20_test_ctx* ctx, bool gpu_frames);
  * st20_frame_size (40 * pkts_per_frame) is the codestream frame budget. */
 void ut20_ctx_enable_st22(ut20_test_ctx* ctx);
 
+/* Run the production rv_attach() of a single port 1080p ST 2110-22 frame session
+ * with boxes disabled, as st22_rx_create() would, over fake rx queues. The session
+ * then owns its frames and bitmaps; ut20_ctx_destroy() detaches it. With
+ * -Denable_asan=true the frames are freed by libmtl's tracking mt_rte_free(),
+ * which logs a spurious "already freed" for each, as they were not allocated
+ * through it. */
+int ut20_ctx_attach_st22(ut20_test_ctx* ctx, bool interlaced, size_t framebuff_max_size);
+
 /* Frames handed to the st22 notify_frame_ready callback. */
 uint64_t ut20_st22_frames_ready(const ut20_test_ctx* ctx);
 /* frame_total_size reported with the last delivered st22 frame. */
 size_t ut20_st22_last_frame_size(const ut20_test_ctx* ctx);
 
-/* Feed one RFC 9134 codestream packet directly to rv_handle_st22_pkt.
+/* Feed one RFC 9134 codestream packet directly to rv_handle_st22_pkt, marked
+ * as a first field pkt on an interlaced session.
  * `pkt_counter` is the combined P&Sep counter (0 selects the first-packet path
  * that parses the boxes), `payload`/`payload_length` the bytes after the rtp
  * hdr. Returns the production handler's return code. */
