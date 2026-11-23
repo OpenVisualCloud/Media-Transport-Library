@@ -1292,7 +1292,9 @@ TEST_F(NoCtxTest, st20p_rl_staged_overload_is_loud) {
     std::string packing;
     for (size_t k = 0; k < tx.size(); k++) {
       (k < (size_t)mix.upfront ? loaded : control).insert(tx[k].sch);
-      packing += " " + std::to_string(tx[k].sch);
+      /* Two appends: gcc 12 -O3 gives a false -Werror=restrict for " " + std::string. */
+      packing += ' ';
+      packing += std::to_string(tx[k].sch);
     }
     ASSERT_TRUE(loaded.size() == 1 && control.size() == 1 &&
                 *loaded.begin() != *control.begin())
