@@ -79,6 +79,7 @@ struct ut_trs_ctx {
   bool cost_stamp_pending;
   /* the next tsc read begins a transmitter call, and stands for its read of visit_tsc */
   bool visit_pending;
+  uint64_t visit_lag_ns; /* ut_trs_set_visit_lag_ns(), for the next call only */
   uint32_t refcnt_since_tsc;
   uint32_t max_refcnt_before_burst;
   /* the PMD of a reclaiming port: done rs batches it has not freed yet */
@@ -162,6 +163,13 @@ static uint64_t ut_trs_tsc_time_fn(struct mtl_main_impl* impl) {
 /* outside a scheduler, each call of ctx is a transmitter call of its own */
 static void ut_trs_visit_alone(struct ut_trs_ctx* ctx) {
   ctx->visit_pending = ctx->session.mgr == &ctx->mgr;
+  /* until that read, the call began at the latest time known */
+  if (ctx->visit_pending) ctx->mgr.visit_tsc = ctx->clock ? *ctx->clock : ctx->last_tsc;
+  if (ctx->visit_pending && ctx->visit_lag_ns) {
+    ctx->mgr.visit_tsc -= ctx->visit_lag_ns;
+    ctx->visit_pending = false;
+    ctx->visit_lag_ns = 0;
+  }
 }
 
 static uint64_t ut_trs_ptp_time_fn(struct mtl_main_impl* impl, enum mtl_port port) {
@@ -1094,6 +1102,10 @@ int ut_trs_call_rl_tasklet(ut_trs_ctx* ctx) {
   ctx->cost_g_pending = 0;
   ctx->cost_stamp_pending = false;
   return ret;
+}
+
+void ut_trs_set_visit_lag_ns(ut_trs_ctx* ctx, uint64_t lag_ns) {
+  ctx->visit_lag_ns = lag_ns;
 }
 
 void ut_trs_set_burst_cost(ut_trs_ctx* ctx, const uint64_t* d_ns, const uint64_t* g_ns,

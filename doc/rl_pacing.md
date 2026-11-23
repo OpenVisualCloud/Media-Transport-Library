@@ -354,6 +354,7 @@ A scan takes no lock. It skips a session that a control-plane writer holds and k
 
 **Reclaim.** DPDK frees the buffers of sent packets inside later `tx_burst` calls, one **batch** of 32 descriptors per call. A first pad burst that must free a frame's worth of them is a common stall.
 So a visit that finds its port waiting for the window or to start over, or the builder's ring empty, makes a zero-length `tx_burst`, which frees one batch (`video_trs_rl_reclaim()`). MTL makes that call only when a batch is due by the shaper's rate. It runs only on the 2048-descriptor queues of chapter 10.
+At an empty ring the call goes only for a batch due when the transmitter call began; one due since goes in the port's next NIC call.
 
 **Catch-up.** After the last release scan, `video_trs_rl_catch_up()` tops up the mid-frame ports whose queue holds less than 200 µs of packets, the longest the scheduler may be away (`mt_sch_schedule_ns()`). It goes round those ports and gives each 4 packets per round.
 It starts no round later than two warm-up windows before the nearest target of a packet 0 that still waits, because that packet's window opens within one of them and its pre-arm must not wait for the catch-up.
@@ -388,7 +389,7 @@ Either finding prints the `frames fall behind` line. Both checks report overload
 | **No call goes ahead of the retry of refused pads.** | Each such call makes the refused port's packet 0 later (chapter 17). | `LateEntryHoldsBehind…` and `APortBlockedBehindARefusedOne…` in `rl_release_test.cpp` |
 | **No visit blocks.** Waiting is done by returning and being visited again. | The scheduler calls the next tasklet only after this one returns (chapter 3). | review; the tasklet rules in the C coding instructions |
 | **Every frame that may be late is reported.** A new path that sends packet 0 must reach check 1. | The log is the operator's only signal. | `rl_vrx_detect_test.cpp`, `rl_vrx_faults_test.cpp` |
-| **A visit with nothing to send stays cheap.** A waiting port reads the clock once. Behind its own burst in the same visit a port reads none to reclaim, unless a batch is due within a tick (10 µs). It makes a NIC call only for a due batch (chapter 19) or to retry a refused burst. | Most visits find nothing to send, so their cost sets the time of a round (chapter 9). | `rl_idle_cost_test.cpp` |
+| **A visit with nothing to send stays cheap.** A waiting port reads the clock once. A port with an empty builder ring reads it only for a batch due when the transmitter call began. It makes a NIC call only for a due batch (chapter 19) or to retry a refused burst. | Most visits find nothing to send, so their cost sets the time of a round (chapter 9). | `rl_idle_cost_test.cpp` |
 
 ### 22. Code and test map
 

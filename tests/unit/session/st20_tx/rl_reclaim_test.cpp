@@ -187,6 +187,35 @@ TEST_F(St20TxRlReclaim, TheVisitThatOpensTheWindowFreesADueBatch) {
   ut_trs_destroy(ctx);
 }
 
+/* An empty visit reclaims only for a batch due when its transmitter call began. One due
+ * since waits for the port's next NIC call, here the burst of a late packet 0, which
+ * frees it before its doorbell: one batch of the done ones, and none due behind it. */
+TEST_F(St20TxRlReclaim, ABatchDueSinceTheCallStartGoesInTheNextNicCall) {
+  uint64_t now = kTargetTsc;
+  ut_trs_ctx* ctx = Idle(&now);
+  while (ut_trs_last_tsc(ctx) + kCallNs >= ut_trs_reclaim_tsc(ctx)) Visit(ctx);
+  const uint64_t due = ut_trs_reclaim_tsc(ctx);
+  ut_trs_set_pmd_done_batches(ctx, kRsThresh, ut_trs_rl_kept_batches() + 3, kBatchFreeNs);
+  const uint32_t calls = ut_trs_reclaim_calls(ctx), frees = ut_trs_pmd_frees(ctx);
+  /* the call began before the batch came due, its visit of the port at it */
+  ut_trs_advance_mock_tsc(ctx, due - ut_trs_last_tsc(ctx));
+  ut_trs_set_visit_lag_ns(ctx, kCallNs);
+  ut_trs_call_rl_tasklet(ctx);
+  EXPECT_EQ(calls, ut_trs_reclaim_calls(ctx));
+  EXPECT_EQ(frees, ut_trs_pmd_frees(ctx));
+  /* the builder adds packet 0 past its target: it goes at once */
+  ut_trs_enqueue_first_pkt(ctx, ut_trs_last_tsc(ctx));
+  const uint32_t bursts = ut_trs_burst_call_count(ctx);
+  Visit(ctx);
+  ASSERT_EQ(1u, ut_trs_real_send_count(ctx));
+  EXPECT_EQ(bursts + 1, ut_trs_burst_call_count(ctx)) << "packet 0's burst only";
+  EXPECT_EQ(calls, ut_trs_reclaim_calls(ctx)) << "no empty burst ahead of it";
+  EXPECT_EQ(frees + 1, ut_trs_pmd_frees(ctx)) << "one batch, in packet 0's burst";
+  EXPECT_EQ(due + (uint64_t)(kRsThresh / 2 * p_), ut_trs_reclaim_tsc(ctx))
+      << "it counts for that batch, none due behind it";
+  ut_trs_destroy(ctx);
+}
+
 /* a port that does not reclaim gets no empty bursts */
 TEST_F(St20TxRlReclaim, NoEmptyBurstWithoutReclaim) {
   ut_trs_ctx* ctx = Frame(0);
