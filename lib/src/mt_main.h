@@ -238,6 +238,9 @@ struct mt_ptp_impl {
   bool t3_pending;
   uint16_t t3_pending_seq;
   uint64_t t3_deadline_ns;
+  /* delay_req with no tx timestamp since the last valid t3 */
+  uint32_t t3_timeout_in_a_row;
+  bool t3_no_tx_ts_reported;
   /* single-owner claim so t3 and t4 completing on two threads apply the
    * cycle's result exactly once; reset per cycle in ptp_parse_sync */
   rte_atomic32_t result_claimed;

@@ -825,6 +825,8 @@ static void ptp_delay_req_read_tx_time_handler(void* param) {
   if (ret >= 0 && tx_ns > ptp->t2) {
     ptp->t3 = tx_ns;
     ptp->t3_pending = false;
+    ptp->t3_timeout_in_a_row = 0;
+    ptp->t3_no_tx_ts_reported = false;
     MT_USDT_PTP_MSG(ptp->port, 3, ptp->t3);
     ptp_try_complete_result(ptp);
     return;
@@ -837,6 +839,18 @@ static void ptp_delay_req_read_tx_time_handler(void* param) {
     /* give up on this cycle and drop the partial result so the next sync is clean */
     ptp->t3_pending = false;
     ptp->stat_t3_timeout++;
+    ptp->t3_timeout_in_a_row++;
+    if (ptp->t3_timeout_in_a_row >= MT_PTP_T3_NO_TX_TS_LIMIT &&
+        !ptp->t3_no_tx_ts_reported) {
+      /* timesync is on, but the NIC or the PMD latches no tx timestamp */
+      err("%s(%d), no tx timestamp for %u delay_req in a row, PTP cannot sync\n",
+          __func__, ptp->port, ptp->t3_timeout_in_a_row);
+      if (mt_if(ptp->impl, ptp->port)->drv_info.drv_type == MT_DRV_IXGBE)
+        err("%s(%d), ixgbe latches a tx timestamp only with the MTL DPDK patch "
+            "0016-net-ixgbe-set-IEEE1588-Tx-timestamp-bit-at-runtime\n",
+            __func__, ptp->port);
+      ptp->t3_no_tx_ts_reported = true;
+    }
     ptp_t_result_clear(ptp);
     ptp_expect_result_clear(ptp);
   }
