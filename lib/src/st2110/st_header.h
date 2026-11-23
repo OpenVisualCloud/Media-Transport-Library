@@ -458,6 +458,9 @@ struct st_tx_video_sessions_mgr {
   /* control plane only, the tasklets skip a session while it is held */
   rte_spinlock_t mutex[ST_SCH_MAX_TX_VIDEO_SESSIONS];
   struct mt_sch_dp_slot dp_slot; /* the session the tasklets are on */
+  /* the tsc at the start of the current builder call; kept last: ahead of sessions[],
+   * mutex[] or dp_slot it shifts them, which slows the TX loop */
+  uint64_t build_tsc;
 };
 
 struct st_video_transmitter_impl {

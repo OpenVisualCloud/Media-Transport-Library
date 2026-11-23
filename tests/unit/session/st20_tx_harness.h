@@ -138,6 +138,10 @@ int64_t ut_txv_run_frame_visit_cursor(ut_txv_ctx* ctx, int pkt_idx,
 /* The next ut_txv_run_frame_visit() is slice level, the app reporting lines ready; -1,
  * the default, keeps it frame level. */
 void ut_txv_set_visit_slice_lines(ut_txv_ctx* ctx, int lines);
+/* a frame visit's transmitter call read the clock lag_ns before it */
+void ut_txv_set_visit_lag_ns(ut_txv_ctx* ctx, uint64_t lag_ns);
+/* a slice-level frame visit's lines-ready callback takes lines_ns */
+void ut_txv_set_visit_lines_ns(ut_txv_ctx* ctx, uint64_t lines_ns);
 /* Drives tv_tasklet_rtp() with one app packet whose st20_rfc4175_rtp_hdr row
  * number carries the given field parity, so the production builders' F-bit
  * extraction is what tv_sync_pacing() is told. tx_no_chain selects tv_build_rtp()

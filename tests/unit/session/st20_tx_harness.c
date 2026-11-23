@@ -112,6 +112,8 @@ struct ut_txv_ctx {
   int trim_pad_tag;
   long double train_drain_end_ns;
   int visit_slice_lines; /* ut_txv_set_visit_slice_lines(), -1 for frame level */
+  uint64_t visit_lag_ns; /* ut_txv_set_visit_lag_ns() */
+  uint64_t lines_ns;     /* ut_txv_set_visit_lines_ns() */
   bool stale_stamps;     /* ut_txv_set_stale_stamps() */
   int migrated_refused;  /* trs_refused[] of the last ut_txv_run_migrate()'s new slot */
   int64_t r_budget;      /* ut_txv_set_redundant_budget() */
@@ -838,11 +840,20 @@ static int ut_txv_visit_lines_ready(void* priv, uint16_t frame_idx,
   struct ut_txv_ctx* ctx = priv;
   (void)frame_idx;
   meta->lines_ready = ctx->visit_slice_lines;
+  ctx->mock_tsc_ns += ctx->lines_ns;
   return 0;
 }
 
 void ut_txv_set_visit_slice_lines(ut_txv_ctx* ctx, int lines) {
   ctx->visit_slice_lines = lines;
+}
+
+void ut_txv_set_visit_lag_ns(ut_txv_ctx* ctx, uint64_t lag_ns) {
+  ctx->visit_lag_ns = lag_ns;
+}
+
+void ut_txv_set_visit_lines_ns(ut_txv_ctx* ctx, uint64_t lines_ns) {
+  ctx->lines_ns = lines_ns;
 }
 
 int64_t ut_txv_run_frame_visit(ut_txv_ctx* ctx, int pkt_idx, int64_t ahead_ns) {
@@ -866,6 +877,7 @@ int64_t ut_txv_run_frame_visit_cursor(ut_txv_ctx* ctx, int pkt_idx,
   s->st20_frame_stat = ST21_TX_STAT_SENDING_PKTS;
   s->st20_pkt_idx = pkt_idx;
   s->pacing.tsc_time_cursor = cursor_ns;
+  ctx->mgr.visit_tsc = ctx->mock_tsc_ns - ctx->visit_lag_ns; /* the transmitter call's */
   tvs_tasklet_handler(&ctx->mgr);
   ut_txv_tx_path_uinit(ctx);
   s->st20_frames = NULL;

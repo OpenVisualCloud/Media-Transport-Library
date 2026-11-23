@@ -1636,11 +1636,10 @@ static int tv_build_st20_redundant_chain(struct st_tx_video_session_impl* s,
   return 0;
 }
 
-/* at a builder visit inside a frame, the lead of the next pkt it builds; compared as a
- * long double, as a cursor saturated to UINT64_MAX overflows int64_t */
-static inline void tv_lead_visit(struct mtl_main_impl* impl,
-                                 struct st_tx_video_session_impl* s) {
-  uint64_t cursor = (uint64_t)s->pacing.tsc_time_cursor, now = mt_get_tsc(impl);
+/* at a builder visit inside a frame, the lead of the next pkt it builds against the start
+ * of the builder call, at most that call old */
+static inline void tv_lead_visit(struct st_tx_video_session_impl* s) {
+  uint64_t cursor = (uint64_t)s->pacing.tsc_time_cursor, now = s->mgr->build_tsc;
   /* a saturated cursor, UINT64_MAX, is no lead below 0 */
   int64_t lead_ns = cursor > now ? (int64_t)RTE_MIN(cursor - now, (uint64_t)INT64_MAX)
                                  : -(int64_t)(now - cursor);
@@ -2382,7 +2381,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
   }
 
   /* pkts of a frame that waited for its lines are due before they are built */
-  if (s->st20_pkt_idx && !s->st20_frame_lines_waited) tv_lead_visit(impl, s);
+  if (s->st20_pkt_idx && !s->st20_frame_lines_waited) tv_lead_visit(s);
   struct rte_mbuf* pkts[bulk];
   struct rte_mbuf* pkts_r[bulk];
   struct rte_mbuf* pkts_chain[bulk];
@@ -3049,6 +3048,7 @@ static int tvs_tasklet_handler(void* priv) {
   uint64_t tsc_s = 0;
   bool time_measure = mt_sessions_time_measure(impl);
 
+  mgr->build_tsc = mt_get_tsc(impl);
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = tx_video_session_dp_get(mgr, sidx);
     if (!s || !s->active) continue;
