@@ -11,7 +11,8 @@
 
 /* Follows the link flag of port into link; true when it changed. While down the
  * transmitter drops its pkts at their time. What the NIC ring holds, at most nb_tx_desc
- * pkts, leaves late when the link is back: no runtime TX queue stop is safe. */
+ * pkts, leaves late when the link is back, or never on an E610: no runtime TX queue stop
+ * is safe. */
 static inline bool st_tx_link_changed(struct mtl_main_impl* impl, enum mtl_port port,
                                       struct st_tx_link* link, const char* tag, int idx,
                                       int s_port) {

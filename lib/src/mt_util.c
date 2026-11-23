@@ -943,19 +943,23 @@ int st_rx_source_info_check(struct st_rx_source_info* src, int num_ports) {
 
 int st_frame_trans_uinit(struct st_frame_trans* frame, void* device) {
   int idx = frame->idx;
+  bool sh_active = false;
   MTL_MAY_UNUSED(device);
 
   /* check if it's still shared */
   for (int i = 0; i < (int)RTE_DIM(frame->sh_info); i++) {
     uint16_t sh_info_refcnt = rte_mbuf_ext_refcnt_read(&frame->sh_info[i]);
-    if (sh_info_refcnt)
+    if (sh_info_refcnt) {
       warn("%s(%d), sh_info %d still active, refcnt %d\n", __func__, idx, i,
            sh_info_refcnt);
+      sh_active = true;
+    }
   }
 
   int refcnt = rte_atomic32_read(&frame->refcnt);
   if (refcnt) warn("%s(%d), refcnt not zero %d\n", __func__, idx, refcnt);
-  if (frame->addr) {
+  /* keep the DMA buffer while a TX queue still holds chain mbufs pointing into it */
+  if (frame->addr && !sh_active) {
     if (frame->flags & ST_FT_FLAG_RTE_MALLOC) {
       dbg("%s(%d), free rte mem\n", __func__, idx);
       mt_rte_free(frame->addr);
@@ -968,8 +972,8 @@ int st_frame_trans_uinit(struct st_frame_trans* frame, void* device) {
 #endif /* MTL_GPU_DIRECT_ENABLED */
 
     frame->addr = NULL;
+    frame->iova = 0;
   }
-  frame->iova = 0;
 
   if (frame->page_table) {
     mt_rte_free(frame->page_table);

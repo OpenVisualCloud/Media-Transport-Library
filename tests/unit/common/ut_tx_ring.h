@@ -50,6 +50,9 @@ int ut_txr_done_cleanup(struct ut_txr* r, uint32_t free_cnt, uint64_t now_ns);
 /** The link is back: the hung descriptors complete from now_ns, drain_ns apart, and so
  * do the ones posted from now on. */
 void ut_txr_resume(struct ut_txr* r, uint64_t drain_ns, uint64_t now_ns);
+/** A flush that waits for the ring to send all it holds: frees each mbuf, -EBUSY with
+ * nothing freed on a ring with a hung descriptor. */
+int ut_txr_flush(struct ut_txr* r);
 
 /** Descriptors xmit posted. */
 uint64_t ut_txr_descs(const struct ut_txr* r);
@@ -60,6 +63,9 @@ uint64_t ut_txr_double_frees(const struct ut_txr* r);
 uint16_t ut_txr_holds(const struct ut_txr* r, const struct rte_mbuf* m);
 /** The live slots whose data starts in [addr, addr + len). */
 uint16_t ut_txr_holds_range(const struct ut_txr* r, const void* addr, size_t len);
+/** ut_txr_holds_range() of the slots whose descriptor is still to leave the wire. */
+uint16_t ut_txr_unsent_range(const struct ut_txr* r, const void* addr, size_t len,
+                             uint64_t now_ns);
 uint16_t ut_txr_in_use(const struct ut_txr* r);
 
 /** The ring rte_eth_tx_burst() and rte_eth_tx_done_cleanup() reach for that port and

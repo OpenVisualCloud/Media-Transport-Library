@@ -94,6 +94,18 @@ static inline bool mt_dev_link_down(struct mtl_main_impl* impl, enum mtl_port po
 }
 int mt_dev_set_tx_bps(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
                       uint64_t bytes_per_sec);
+/* consecutive stall limit for per-pad lazy TX queue flushes (past a 32 ms audio batch) */
+#define MT_DEV_TX_FLUSH_LAZY_STALL_NS (64 * (uint64_t)NS_PER_MS)
+
+/* returns true once refused lazy-flush pads stall past MT_DEV_TX_FLUSH_LAZY_STALL_NS */
+static inline bool mt_dev_tx_flush_stalled(uint64_t now, uint64_t* stall_start) {
+  if (!*stall_start) {
+    *stall_start = now;
+    return false;
+  }
+  return now > *stall_start && now - *stall_start > MT_DEV_TX_FLUSH_LAZY_STALL_NS;
+}
+
 /* frees what the queue holds; on a reclaim port bounded, -EBUSY if it did not drain in
  * time, and with no mbuf for its mark the per-pad loop if lazy_fallback, else -ENOMEM */
 int mt_dpdk_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,

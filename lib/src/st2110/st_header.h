@@ -34,6 +34,8 @@
 #define ST_SCH_MAX_RX_VIDEO_SESSIONS (60) /* max video rx sessions per sch lcore */
 #define ST_SESSION_MAX_BULK (4)
 #define ST_TX_VIDEO_SESSIONS_RING_SIZE (512)
+/* old pools a TX recovery could not free yet: 4 recoveries of a redundant session */
+#define ST_TX_VIDEO_PARKED_MEMPOOLS (16)
 
 /* number of tmstamp it will tracked for out of order pkts */
 #define ST_VIDEO_RX_REC_NUM_OFO (2)
@@ -125,6 +127,9 @@ struct st_page_info {
   size_t len;      /* page length */
 };
 
+/* sh_info of a frame: the session survives ST_FT_SH_INFO_MAX - 1 dead TX queues */
+#define ST_FT_SH_INFO_MAX (4)
+
 /* describe the frame used in transport(both tx and rx) */
 struct st_frame_trans {
   int idx;
@@ -136,14 +141,16 @@ struct st_frame_trans {
   void* priv;                      /* private data for lib */
 
   uint32_t flags; /* ST_FT_FLAG_* */
-  /* st20 tx zero copy: the chain mbufs of the frame count on sh_cur, one of sh_info */
-  struct rte_mbuf_ext_shared_info sh_info[2];
+  /* st20 tx zero copy: the chain mbufs of the frame count on sh_cur, one of sh_info; the
+   * others count those of dead TX queues, which keep them until the port stops */
+  struct rte_mbuf_ext_shared_info sh_info[ST_FT_SH_INFO_MAX];
   struct rte_mbuf_ext_shared_info* sh_cur;
-  /* direct chain, a bit per session port: a count on sh_cur while the NIC ring of a port
+  /* direct chain, per sh_info slot, a bit per session port: a count while a NIC ring
    * that lost its link may hold pkts of the frame that hold no count */
-  uint8_t link_pins;
-  bool link_held;  /* held at a link resync, see tv_link_drain() */
-  void* done_addr; /* st20 tx ext: the cleared addr, during notify_frame_done */
+  uint8_t sh_pins[ST_FT_SH_INFO_MAX];
+  uint8_t link_stale_sh; /* sh_info bits retired for a redundant link down */
+  bool link_held;        /* held at a link resync, see tv_link_drain() */
+  void* done_addr;       /* st20 tx ext: the cleared addr, during notify_frame_done */
 
   void* user_meta; /* the meta data from user */
   size_t user_meta_buffer_size;
@@ -323,6 +330,8 @@ struct st_tx_video_session_impl {
   bool mbuf_mempool_reuse_rx[MTL_SESSION_PORT_MAX]; /* af_xdp zero copy */
   struct rte_mempool* mbuf_mempool_chain;
   struct rte_mempool* mbuf_mempool_copy_chain;
+  struct rte_mempool* mbuf_mempool_parked[ST_TX_VIDEO_PARKED_MEMPOOLS];
+  uint64_t mbuf_mempool_parked_tsc[ST_TX_VIDEO_PARKED_MEMPOOLS];
   bool tx_mono_pool;   /* if reuse tx mono pool */
   bool tx_no_chain;    /* if tx not use chain mbuf */
   bool multi_src_port; /* if tx use multiple src port */
@@ -372,7 +381,7 @@ struct st_tx_video_session_impl {
   uint64_t trs_target_tsc[MTL_SESSION_PORT_MAX];
   /* the pre-arm kept its last burst back, to send it with packet 0 */
   bool trs_rl_tail[MTL_SESSION_PORT_MAX];
-  /* when the shaper finishes the pkts sent so far, one trs each from packet 0's target */
+  /* when the shaper (RL) or launch time (TSN) finishes the pkts sent so far */
   uint64_t trs_wire_tsc[MTL_SESSION_PORT_MAX];
   /* the frame of the last packet 0 the NIC took */
   struct st_frame_trans* trs_frame_started[MTL_SESSION_PORT_MAX];
@@ -395,9 +404,16 @@ struct st_tx_video_session_impl {
   uint64_t last_burst_succ_time_tsc[MTL_SESSION_PORT_MAX];
   bool tx_queue_recovery_pending[MTL_SESSION_PORT_MAX];
   struct st_tx_link tx_link[MTL_SESSION_PORT_MAX];
-  bool tx_link_resync; /* a port found its link down, the builder starts over */
-  bool tx_link_drain;  /* frames held over a link resync, see tv_link_drain() */
+  uint8_t tx_link_resync; /* a bit per leg that found its link down */
+  bool tx_link_drain;     /* frames held over a link resync, see tv_link_drain() */
   uint64_t tx_link_drain_tsc;
+  uint64_t tx_link_up_tsc; /* the last tv_link_drain() with a leg down */
+  uint8_t tx_link_stale;   /* a bit per leg that lost its link at the resync */
+  uint8_t tx_link_live;    /* a bit per leg whose NIC freed pkts since the resync */
+  uint8_t tx_link_short;   /* a bit per stale leg short of an rs batch at the resync */
+  /* when up legs drained pre-resync rings, 0: none */
+  uint64_t tx_link_release_tsc;
+  struct rte_mempool* tx_link_stale_pool[MTL_SESSION_PORT_MAX];
   uint64_t tx_hang_detect_time_thresh;
 
   /* frame info */

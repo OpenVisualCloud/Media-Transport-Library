@@ -66,6 +66,7 @@ int mt_txq_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad);
 int mt_txq_recovery_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad);
 int mt_txq_put(struct mt_txq_entry* entry);
 int mt_txq_fatal_error(struct mt_txq_entry* entry);
+/* > 0: the pkts the PMD freed, on a port that is not deep */
 int mt_txq_done_cleanup(struct mt_txq_entry* entry);
 /* a burst of none, freeing a done rs batch on mt_if_tx_reclaim_rs_thresh() ports */
 int mt_txq_reclaim(struct mt_txq_entry* entry);

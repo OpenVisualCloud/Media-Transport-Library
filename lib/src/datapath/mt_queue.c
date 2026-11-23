@@ -223,8 +223,8 @@ int mt_txq_fatal_error(struct mt_txq_entry* entry) {
 }
 
 int mt_txq_done_cleanup(struct mt_txq_entry* entry) {
-  if (entry->txq) mt_dev_tx_done_cleanup(entry->parent, entry->txq);
-  if (entry->tsq) mt_tsq_done_cleanup(entry->tsq);
+  if (entry->txq) return mt_dev_tx_done_cleanup(entry->parent, entry->txq);
+  if (entry->tsq) return mt_tsq_done_cleanup(entry->tsq);
   return 0;
 }
 

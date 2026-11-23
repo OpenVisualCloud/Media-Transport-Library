@@ -627,10 +627,10 @@ int mt_tsq_done_cleanup(struct mt_tsq_entry* entry) {
   struct mt_tsq_queue* tsq_queue = &tsqm->tsq_queues[entry->queue_id];
 
   tsq_lock(tsq_queue);
-  rte_eth_tx_done_cleanup(tsq_queue->port_id, tsq_queue->queue_id, 0);
+  int ret = rte_eth_tx_done_cleanup(tsq_queue->port_id, tsq_queue->queue_id, 0);
   tsq_unlock(tsq_queue);
 
-  return 0;
+  return ret;
 }
 
 uint16_t mt_tsq_burst(struct mt_tsq_entry* entry, struct rte_mbuf** tx_pkts,
@@ -677,18 +677,33 @@ int mt_tsq_flush(struct mtl_main_impl* impl, struct mt_tsq_entry* entry,
   enum mtl_port port = tsqm->port;
   uint16_t queue_id = entry->queue_id;
 
+  if (mt_dev_link_down(impl, port)) {
+    warn("%s(%d), queue %u link down, skip flush\n", __func__, port, queue_id);
+    return -EBUSY;
+  }
+
   /* use double to make sure all the fifo are burst out to clean all mbufs in the pool */
   int burst_pkts = mt_if_nb_tx_burst(impl, port) * 2;
   struct rte_mbuf* pads[1];
   pads[0] = pad;
+  int sent_total = 0;
+  uint64_t stall_start = 0;
 
   info("%s(%d), queue %u burst_pkts %d\n", __func__, port, queue_id, burst_pkts);
   for (int i = 0; i < burst_pkts; i++) {
     rte_mbuf_refcnt_update(pad, 1);
-    mt_tsq_burst_busy(impl, entry, &pads[0], 1, 10);
+    if (mt_tsq_burst_busy(impl, entry, &pads[0], 1, 10)) {
+      sent_total++;
+      stall_start = 0;
+      continue;
+    }
+    rte_mbuf_refcnt_update(pad, -1);
+    if (mt_dev_link_down(impl, port) ||
+        mt_dev_tx_flush_stalled(mt_get_tsc(impl), &stall_start))
+      return -EBUSY;
   }
   dbg("%s, end\n", __func__);
-  return 0;
+  return sent_total < burst_pkts / 2 ? -EBUSY : 0;
 }
 
 int mt_tsq_init(struct mtl_main_impl* impl) {

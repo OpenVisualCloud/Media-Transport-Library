@@ -364,4 +364,58 @@ TEST_F(MtDevTxFlushTest, LazyPortRecoveryFlushSendsTwoRingsOfPads) {
   EXPECT_EQ(SessionPktsHeld(), 0u);
 }
 
+TEST_F(MtDevTxFlushTest, LazyPortLinkDownReturnsEbusy) {
+  LazyPort(128, UT_TXR_HUNG);
+  Queue(100);
+  ut_dev_set_link_down(ctx_, true);
+
+  EXPECT_EQ(Flush(), -EBUSY);
+  EXPECT_EQ(FlushDescs(), 0u);
+  ExpectPadRefsHeldByTheRingOnly();
+}
+
+TEST_F(MtDevTxFlushTest, LazyPortHungRingReturnsEbusyAndRefundsPads) {
+  LazyPort(512, UT_TXR_HUNG);
+  Queue(500);
+
+  EXPECT_EQ(Flush(), -EBUSY);
+  EXPECT_EQ(FlushDescs(), 11u);
+  EXPECT_LT(ut_clock_ns(), kStartNs + 80000000ull);
+  ExpectPadRefsHeldByTheRingOnly();
+}
+
+/* Deep ice TSN (LaunchTime) queue on 25G/100G holding ~3.8 ms of future 1080p59.94
+ * packets: mt_dev_get_tx_queue() must record flow.bytes_per_sec in queue->bps so
+ * dev_flush_tx_eager() scales its deadline to the stream rate instead of line rate
+ * (2.25 ms at 100G / 3.0 ms at 25G), which would otherwise time out with -EBUSY. */
+class MtDevTxFlushTsnTest : public MtDevTxFlushTest,
+                            public ::testing::WithParamInterface<uint32_t> {};
+
+TEST_P(MtDevTxFlushTsnTest, EagerFlushOnIceTsnDrainsFutureLaunchTimes) {
+  constexpr uint64_t kStreamBps = 312000000ull; /* 1080p59.94 */
+  constexpr uint64_t kDrainNs = 1946;           /* ~3.8 ms for 1950 descs */
+  const uint32_t link_mbps = GetParam();
+
+  ut_dev_set_driver(ctx_, "net_ice");
+  ut_dev_set_tx_cleanup_frees(ctx_, true);
+  ut_dev_set_tx_pacing(ctx_, ST21_TX_PACING_WAY_TSN);
+  ASSERT_TRUE(ut_dev_init_tx_deep(ctx_));
+  ut_dev_set_link_speed(ctx_, link_mbps);
+  ASSERT_EQ(ut_dev_set_tx_ring(ctx_, 1, 2048, kRs), 0);
+  ASSERT_EQ(ut_dev_start_port(ctx_), 0);
+  ASSERT_EQ(ut_dev_tx_reclaim_rs_thresh(ctx_), kRs);
+
+  int q = ut_dev_get_tx_queue(ctx_, kStreamBps, true);
+  ASSERT_EQ(q, 0);
+  Attach(UT_TXR_FREE_ON_CLEANUP, 2048, ut_dev_tx_free_thresh(ctx_, 0), kDrainNs, kRs);
+  Queue(1950);
+
+  EXPECT_EQ(Flush(), 0) << "link_mbps=" << link_mbps;
+  EXPECT_EQ(SessionPktsHeld(), 0u);
+  ExpectPadRefsHeldByTheRingOnly();
+}
+
+INSTANTIATE_TEST_SUITE_P(LinkSpeed, MtDevTxFlushTsnTest,
+                         ::testing::Values(25000u, 100000u));
+
 }  // namespace
