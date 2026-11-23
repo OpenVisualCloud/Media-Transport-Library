@@ -3501,10 +3501,11 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
     s->st20_frame_size = st22_ops->framebuff_max_size;
     s->st20_fb_size = s->st20_frame_size;
     s->st22_ops_flags = st22_ops->flags;
-  } else
+  } else {
     s->st20_frame_size = ops->width * ops->height * s->st20_pg.size / s->st20_pg.coverage;
+    if (ops->interlaced) s->st20_frame_size = s->st20_frame_size >> 1;
+  }
   s->st20_uframe_size = ops->uframe_size;
-  if (ops->interlaced) s->st20_frame_size = s->st20_frame_size >> 1;
   /* at least 800 byte for each packet */
   s->st20_frame_bitmap_size = s->st20_frame_size / 800 / 8;
   /* one line at line 2 packets for all the format */
