@@ -3533,6 +3533,7 @@ static void tv_transmitter_port_state_init(struct st_tx_video_session_impl* s, i
   s->trs_rl_tail[i] = false;
   s->trs_rl_drained[i] = 0;
   s->trs_wire_tsc[i] = 0;
+  s->trs_reclaim_batch_ns[i] = 0;
 }
 
 static void tv_transmitter_state_init(struct st_tx_video_session_impl* s) {

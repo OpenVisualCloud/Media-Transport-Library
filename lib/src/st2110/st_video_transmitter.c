@@ -66,9 +66,15 @@ static inline void video_trs_rl_reclaim(struct mtl_main_impl* impl,
   uint16_t rs = mt_if_tx_reclaim_rs_thresh(impl, port);
   if (!rs || s->s_type == MT_ST22_HANDLE_TX_VIDEO) return;
   if (idle_tsc) mt_txq_reclaim(s->queue[s_port]);
-  const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
-  uint64_t batch_ns = (uint64_t)(rs / 2 * (plan->armed ? plan->pad_ns : s->pacing.trs));
-  uint64_t behind = (uint64_t)mt_if_nb_tx_desc(impl, port) / rs * batch_ns;
+  uint64_t batch_ns = s->trs_reclaim_batch_ns[s_port];
+  if (!batch_ns) {
+    const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
+    batch_ns = (uint64_t)(rs / 2 * (plan->armed ? plan->pad_ns : s->pacing.trs));
+    s->trs_reclaim_batch_ns[s_port] = batch_ns;
+    s->trs_reclaim_ring_ns[s_port] =
+        (uint64_t)mt_if_nb_tx_desc(impl, port) / rs * batch_ns;
+  }
+  uint64_t behind = s->trs_reclaim_ring_ns[s_port];
   s->trs_reclaim_tsc[s_port] = RTE_MAX(next, now > behind ? now - behind : 0) + batch_ns;
 }
 

@@ -435,6 +435,9 @@ struct st_tx_video_session_impl {
   /* when the oldest TX batch no tx_burst has gone for is done; every RL burst reads it,
    * a refused or short one raises it */
   uint64_t trs_reclaim_tsc[MTL_SESSION_PORT_MAX];
+  /* its batch time and ring span, set at the first due batch after a port reset */
+  uint64_t trs_reclaim_batch_ns[MTL_SESSION_PORT_MAX];
+  uint64_t trs_reclaim_ring_ns[MTL_SESSION_PORT_MAX];
   long double trs_rl_drained[MTL_SESSION_PORT_MAX];
   /* the latest the shaper finishes the pads queued since packet 0 was dequeued */
   long double trs_rl_pads_end[MTL_SESSION_PORT_MAX];

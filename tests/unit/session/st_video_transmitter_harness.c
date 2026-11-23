@@ -605,8 +605,14 @@ void ut_trs_destroy(ut_trs_ctx* ctx) {
   free(ctx);
 }
 
+/* the inputs of the reclaim batch time changed: recompute it at the next due batch */
+static void ut_trs_reclaim_batch_reset(struct ut_trs_ctx* ctx) {
+  memset(ctx->session.trs_reclaim_batch_ns, 0, sizeof(ctx->session.trs_reclaim_batch_ns));
+}
+
 void ut_trs_set_trs(ut_trs_ctx* ctx, long double trs_ns) {
   ctx->session.pacing.trs = trs_ns;
+  ut_trs_reclaim_batch_reset(ctx);
 }
 
 void ut_trs_set_pad_interval(ut_trs_ctx* ctx, float pad_interval) {
@@ -642,6 +648,7 @@ void ut_trs_set_drain(ut_trs_ctx* ctx, int port, long double drain_ns) {
   plan->trim_pads = st_tx_video_rl_trim_pads(plan->pad_size);
   plan->armed = drain_ns != 0;
   ut_trs_plan_anchor(plan);
+  ut_trs_reclaim_batch_reset(ctx);
 }
 
 void ut_trs_set_credit(ut_trs_ctx* ctx, int port, long double credit_ns) {
@@ -808,6 +815,7 @@ void ut_trs_set_pmd_done_batches(ut_trs_ctx* ctx, uint16_t rs_thresh, uint32_t b
                                  uint64_t free_ns) {
   ctx->impl.inf[MTL_PORT_P].tx_reclaim_rs_thresh = rs_thresh;
   if (rs_thresh) ctx->impl.inf[MTL_PORT_P].nb_tx_desc = MT_DEV_TX_DESC_DEEP;
+  ut_trs_reclaim_batch_reset(ctx);
   ctx->pmd_groups = 0;
   ut_trs_add_pmd_done_batches(ctx, batches, free_ns);
 }
@@ -1200,6 +1208,7 @@ int ut_trs_setup_stream(ut_trs_ctx* ctx, long double trs_ns, uint16_t nic_desc,
 
   s->bulk = ST_SESSION_MAX_BULK;
   s->pacing.trs = trs_ns;
+  ut_trs_reclaim_batch_reset(ctx);
   /* no in-frame pads, < 1 % of the wire */
   s->pacing.pad_interval = 1e9f;
   ctx->nic_desc = nic_desc;
