@@ -39,6 +39,71 @@ static inline void sch_unlock(struct mtl_sch_impl* sch) {
   mt_pthread_mutex_unlock(&sch->mutex);
 }
 
+/* Not in the sch/tasklet structs or the DPDK heap: moving their layout cost a sch 10% */
+struct mt_sch_tasklet_stat {
+  uint64_t cnt;
+  uint64_t sum_ns;
+  uint64_t work_cnt;
+  uint64_t work_sum_ns;
+};
+static struct mt_sch_tasklet_stat* sch_tasklet_stats[MT_MAX_SCH_NUM];
+
+/* Measured times by bucket: 8 per power of two from 8 ns to 2^18 ns, 1 at each end */
+#define MT_SCH_HIST_SUB_SHIFT (3)
+#define MT_SCH_HIST_MAX_SHIFT (18)
+#define MT_SCH_HIST_NB \
+  (((MT_SCH_HIST_MAX_SHIFT - MT_SCH_HIST_SUB_SHIFT) << MT_SCH_HIST_SUB_SHIFT) + 2)
+
+/* After the counters of every slot, so that the counters stay packed. */
+static uint64_t* sch_tasklet_hist(struct mtl_sch_impl* sch, int i) {
+  uint64_t* hists = (uint64_t*)(sch_tasklet_stats[sch->idx] + sch->nb_tasklets);
+
+  return hists + (size_t)i * MT_SCH_HIST_NB;
+}
+
+/* The stats thread's copy of the histogram of slot i, at the last dump. */
+static uint64_t* sch_tasklet_hist_prev(struct mtl_sch_impl* sch, int i) {
+  return sch_tasklet_hist(sch, sch->nb_tasklets + i);
+}
+
+static unsigned int sch_hist_bucket(uint64_t ns) {
+  const unsigned int sub_mask = (1u << MT_SCH_HIST_SUB_SHIFT) - 1;
+
+  if (ns <= sub_mask) return 0;
+  if (ns >= (1ull << MT_SCH_HIST_MAX_SHIFT)) return MT_SCH_HIST_NB - 1;
+  unsigned int msb = rte_fls_u64(ns) - 1;
+  unsigned int sub = (ns >> (msb - MT_SCH_HIST_SUB_SHIFT)) & sub_mask;
+  return 1 + ((msb - MT_SCH_HIST_SUB_SHIFT) << MT_SCH_HIST_SUB_SHIFT) + sub;
+}
+
+static uint64_t sch_hist_bucket_lo(unsigned int b) {
+  if (!b) return 0;
+  unsigned int sub = (b - 1) & ((1u << MT_SCH_HIST_SUB_SHIFT) - 1);
+  return (uint64_t)((1u << MT_SCH_HIST_SUB_SHIFT) + sub)
+         << ((b - 1) >> MT_SCH_HIST_SUB_SHIFT);
+}
+
+/* Nearest rank, linear within its bucket, the last bucket ending at the max. */
+static double sch_hist_quantile(const uint64_t* hist, const struct mt_stat_u64* stat,
+                                unsigned int q) {
+  uint64_t n = 0, below = 0;
+
+  /* not stat->cnt: stat_time restarts after the histogram is read */
+  for (unsigned int b = 0; b < MT_SCH_HIST_NB; b++) n += hist[b];
+  uint64_t rank = RTE_MAX((q * n + 99) / 100, (uint64_t)1);
+  for (unsigned int b = 0; b < MT_SCH_HIST_NB; b++) {
+    if (below + hist[b] < rank) {
+      below += hist[b];
+      continue;
+    }
+    double lo = sch_hist_bucket_lo(b);
+    double hi = b + 1 < MT_SCH_HIST_NB ? sch_hist_bucket_lo(b + 1) : stat->max;
+    double ns = lo + (hi - lo) * (rank - below) / hist[b];
+    return RTE_MIN(RTE_MAX(ns, (double)stat->min), (double)stat->max);
+  }
+  return stat->max;
+}
+
 static const char* lcore_type_names[MT_LCORE_TYPE_MAX] = {
     "lib_sch", "lib_tap", "lib_rxv_ring", "app_allocated", "lib_app_sch",
 };
@@ -122,6 +187,21 @@ static bool sch_tasklet_time_measure(struct mtl_main_impl* impl) {
   bool enabled = mt_user_tasklet_time_measure(impl);
   if (MT_USDT_TASKLET_TIME_MEASURE_ENABLED()) enabled = true;
   return enabled;
+}
+
+/* Loops per sampled loop, on average, while sys:tasklet_stat is attached. */
+#define MT_SCH_TIME_SAMPLE_PERIOD (64)
+#define MT_SCH_TIME_SAMPLE_SEED (2463534242u) /* xorshift32 state, any but 0 */
+
+/* Random, as a fixed gap would fall in step with periodic work: xorshift32, never 0. */
+static uint32_t sch_time_sample_gap(uint32_t* state) {
+  uint32_t x = *state;
+
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+  *state = x;
+  return 1 + x % (2 * MT_SCH_TIME_SAMPLE_PERIOD - 1);
 }
 
 /* MPOL_LOCAL lacks the default policy's MPOL_F_MOF, so a NUMA balancing scan run on this
@@ -260,6 +340,8 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
   struct mt_sch_tasklet_impl* tasklet;
   uint64_t loop_cal_start_ns;
   uint64_t loop_cnt = 0;
+  uint32_t tm_sample_left = 0;
+  uint32_t tm_sample_rng = MT_SCH_TIME_SAMPLE_SEED;
 
   bool local_mempolicy = sch_set_local_mempolicy(sch);
 
@@ -285,8 +367,18 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
   while (rte_atomic32_read(&sch->request_stop) == 0) {
     int pending = MTL_TASKLET_ALL_DONE;
     bool time_measure = sch_tasklet_time_measure(impl);
+    /* the loops this one stands for: 1 when measured, the gap when sampled, 0 untimed */
+    uint32_t tm_weight = time_measure;
     uint64_t tm_sch_tsc_s = 0; /* for sch time_measure */
 
+    if (unlikely(!time_measure && MT_USDT_SYS_TASKLET_STAT_ENABLED())) {
+      if (tm_sample_left) {
+        tm_sample_left--;
+      } else {
+        tm_weight = sch_time_sample_gap(&tm_sample_rng);
+        tm_sample_left = tm_weight - 1;
+      }
+    }
     if (time_measure) tm_sch_tsc_s = mt_get_tsc(impl);
 
     num_tasklet = sch->max_tasklet_idx;
@@ -301,12 +393,24 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
       }
       ops = &tasklet->ops;
 
-      uint64_t tm_tasklet_tsc_s = 0; /* for tasklet time_measure */
-      if (time_measure) tm_tasklet_tsc_s = mt_get_tsc(impl);
-      pending += ops->handler(ops->priv);
-      if (time_measure) {
+      uint64_t tm_tasklet_tsc_s = 0; /* for the tasklet time, measured or sampled */
+      if (tm_weight) tm_tasklet_tsc_s = mt_get_tsc(impl);
+      int ret = ops->handler(ops->priv);
+      pending += ret;
+      if (unlikely(tm_weight)) {
         uint64_t delta_ns = mt_get_tsc(impl) - tm_tasklet_tsc_s;
-        mt_stat_u64_update(&tasklet->stat_time, delta_ns);
+        struct mt_sch_tasklet_stat* stat = &sch_tasklet_stats[idx][i];
+
+        if (time_measure) {
+          mt_stat_u64_update(&tasklet->stat_time, delta_ns);
+          sch_tasklet_hist(sch, i)[sch_hist_bucket(delta_ns)]++;
+        }
+        stat->cnt += tm_weight;
+        stat->sum_ns += delta_ns * tm_weight;
+        if (ret != MTL_TASKLET_ALL_DONE) {
+          stat->work_cnt += tm_weight;
+          stat->work_sum_ns += delta_ns * tm_weight;
+        }
       }
     }
     sch_qs_pass_end(sch);
@@ -469,6 +573,17 @@ static struct mtl_sch_impl* sch_request(struct mtl_main_impl* impl, enum mt_sch_
         sch_unlock(sch);
         return NULL;
       }
+      sch_tasklet_stats[sch_idx] = mt_zmalloc(
+          (sizeof(**sch_tasklet_stats) + 2 * sizeof(uint64_t) * MT_SCH_HIST_NB) *
+          sch->nb_tasklets);
+      if (!sch_tasklet_stats[sch_idx]) {
+        err("%s(%d), %u tasklet stats malloc fail\n", __func__, sch_idx,
+            sch->nb_tasklets);
+        mt_rte_free(sch->tasklet);
+        sch->tasklet = NULL;
+        sch_unlock(sch);
+        return NULL;
+      }
       rte_atomic32_inc(&sch->active);
       rte_atomic32_inc(&mt_sch_get_mgr(impl)->sch_cnt);
       sch_unlock(sch);
@@ -507,6 +622,8 @@ static int sch_free(struct mtl_sch_impl* sch) {
     }
     mt_rte_free(sch->tasklet);
     sch->tasklet = NULL;
+    mt_free(sch_tasklet_stats[idx]);
+    sch_tasklet_stats[idx] = NULL;
   }
   sch->nb_tasklets = 0;
   rte_atomic32_dec(&mt_sch_get_mgr(sch->parent)->sch_cnt);
@@ -581,12 +698,34 @@ static int sch_stat(void* priv) {
     if (!tasklet) continue;
 
     dbg("SCH(%d): tasklet %s at %d\n", idx, tasklet->name, i);
+    if (MT_USDT_SYS_TASKLET_STAT_ENABLED()) {
+      struct mt_sch_tasklet_stat* stat = &sch_tasklet_stats[idx][i];
+
+      MT_USDT_SYS_TASKLET_STAT(idx, tasklet->name, stat->cnt, stat->sum_ns,
+                               stat->work_cnt, stat->work_sum_ns);
+    }
     stat_time = &tasklet->stat_time;
     if (stat_time->cnt) {
       uint64_t avg_ns = stat_time->sum / stat_time->cnt;
-      notice("SCH(%d,%d): tasklet %s, avg %.2fus max %.2fus min %.2fus\n", idx, i,
-             tasklet->name, (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
-             (float)stat_time->min / NS_PER_US);
+      uint64_t* hist = sch_tasklet_hist(sch, i);
+      uint64_t* prev = sch_tasklet_hist_prev(sch, i);
+      uint64_t calls[MT_SCH_HIST_NB];
+
+      /* the calls since the last dump: only the scheduler thread writes hist */
+      for (unsigned int b = 0; b < MT_SCH_HIST_NB; b++) {
+        uint64_t now = hist[b];
+
+        calls[b] = now - prev[b];
+        prev[b] = now;
+      }
+      notice(
+          "SCH(%d,%d): tasklet %s, avg %.2fus max %.2fus min %.2fus, p90 %.2fus "
+          "p95 %.2fus p99 %.2fus\n",
+          idx, i, tasklet->name, (float)avg_ns / NS_PER_US,
+          (float)stat_time->max / NS_PER_US, (float)stat_time->min / NS_PER_US,
+          sch_hist_quantile(calls, stat_time, 90) / NS_PER_US,
+          sch_hist_quantile(calls, stat_time, 95) / NS_PER_US,
+          sch_hist_quantile(calls, stat_time, 99) / NS_PER_US);
       mt_stat_u64_init(stat_time);
     }
   }
@@ -1072,6 +1211,9 @@ mtl_tasklet_handle mtl_sch_register_tasklet(struct mtl_sch_impl* sch,
     tasklet->sch = sch;
     tasklet->idx = i;
     mt_stat_u64_init(&tasklet->stat_time);
+    sch_tasklet_stats[idx][i] = (struct mt_sch_tasklet_stat){0};
+    memset(sch_tasklet_hist(sch, i), 0, sizeof(uint64_t) * MT_SCH_HIST_NB);
+    memset(sch_tasklet_hist_prev(sch, i), 0, sizeof(uint64_t) * MT_SCH_HIST_NB);
 
     sch->tasklet[i] = tasklet;
     sch->max_tasklet_idx = RTE_MAX(sch->max_tasklet_idx, i + 1);

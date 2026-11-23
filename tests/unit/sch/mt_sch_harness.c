@@ -23,6 +23,7 @@
 #include "common/ut_common.h"
 #include "mt_main.h"
 #include "mt_platform.h"
+#include "mt_usdt.h"
 /* Only the filelock and lcore helpers swap this: the host lock may be held or keep its
  * old mode. */
 static const char* ut_sch_flock_path = MT_FLOCK_PATH;
@@ -37,18 +38,30 @@ static uint64_t ut_sch_tsc(struct mtl_main_impl* impl) {
 #define mt_get_tsc ut_sch_tsc
 /* Seams: the worker lcores mt_sch_get_lcore() walks, a bounded flock() so a lock left
  * held fails a get instead of hanging the binary, each poll of mt_sch_quiescent_wait(),
- * spinning or sleeping, and the scheduler's short sleeps. */
+ * spinning or sleeping, the scheduler's short sleeps, and the fake clock once started. */
 static unsigned int ut_sch_next_lcore(unsigned int i, int skip_main, int wrap);
 static int ut_sch_flock(int fd, int op);
 static void ut_sch_qs_pause(void);
 static void ut_sch_qs_sleep_us(unsigned int us);
 static void ut_sch_sleep_ms(unsigned int ms);
+static uint64_t ut_sch_tsc(struct mtl_main_impl* impl);
 #define rte_get_next_lcore ut_sch_next_lcore
 #define flock ut_sch_flock
 #define rte_pause ut_sch_qs_pause
 #define mt_sleep_us ut_sch_qs_sleep_us
 #define mt_sleep_ms ut_sch_sleep_ms
+#define mt_get_tsc ut_sch_tsc
+/* sys:tasklet_stat: the semaphore an attach raises, the arguments it last fired with */
+static unsigned short ut_sch_stat_semaphore;
+static struct ut_sch_tasklet_stat ut_sch_stat_probe;
+#undef MT_USDT_SYS_TASKLET_STAT_ENABLED
+#define MT_USDT_SYS_TASKLET_STAT_ENABLED() (ut_sch_stat_semaphore != 0)
+#undef MT_USDT_SYS_TASKLET_STAT
+#define MT_USDT_SYS_TASKLET_STAT(sch_idx, name, cnt, sum, work_cnt, work_sum) \
+  (ut_sch_stat_probe =                                                        \
+       (struct ut_sch_tasklet_stat){sch_idx, name, cnt, sum, work_cnt, work_sum})
 #include "mt_sch.c"
+#undef mt_get_tsc
 #undef mt_sleep_ms
 #undef mt_sleep_us
 #undef rte_pause
@@ -107,6 +120,10 @@ static void ut_sch_sleep_ms(unsigned int ms) {
   mt_sleep_ms(ms);
 }
 
+static uint64_t ut_sch_tsc(struct mtl_main_impl* impl) {
+  return ut_clock_on() ? ut_clock_tick() : mt_get_tsc(impl);
+}
+
 int ut_sch_init(void) {
   return ut_eal_init();
 }
@@ -163,7 +180,7 @@ struct ut_sch_mempolicy_ctx {
   struct mtl_main_impl impl;
   struct mtl_sch_impl sch;
   struct mt_sch_tasklet_impl tasklet;
-  struct mt_sch_tasklet_impl* tasklets[1];
+  struct mt_sch_tasklet_impl* tasklets[2];
   int exit_mode;
 };
 
@@ -581,4 +598,198 @@ int ut_sch_qs_pass_end_publishes(bool* published) {
   *published = pass.published;
   ut_sch_mempolicy_ctx_destroy(ctx);
   return ret;
+}
+
+struct ut_sch_stats {
+  struct ut_sch_mempolicy_ctx* ctx; /* or impl, for a requested sch */
+  struct mtl_main_impl* impl;
+  struct mtl_sch_impl* sch;
+  struct mt_sch_tasklet_impl* tasklet; /* ut_tasklet */
+  struct mt_sch_tasklet_stat slots[2]; /* one per ctx->tasklets[] */
+  uint64_t hist[4][MT_SCH_HIST_NB];    /* the slots', then copies, as sch_request() */
+  mtl_tasklet_handle idle;
+  unsigned int work_every;
+  uint64_t calls;
+  uint64_t stop_at;
+};
+
+static int ut_sch_stats_handler(void* priv) {
+  struct ut_sch_stats* s = priv;
+  uint64_t call = ++s->calls;
+  bool work = s->work_every && call % s->work_every == 0;
+
+  ut_clock_advance(work ? UT_SCH_WORK_NS : UT_SCH_IDLE_NS);
+  if (call == s->stop_at) rte_atomic32_set(&s->sch->request_stop, 1);
+  return work ? MTL_TASKLET_HAS_PENDING : MTL_TASKLET_ALL_DONE;
+}
+
+struct ut_sch_stats* ut_sch_stats_create(uint64_t flags, unsigned int work_every) {
+  struct ut_sch_stats* s = calloc(1, sizeof(*s));
+  if (!s) return NULL;
+
+  s->ctx = ut_sch_qs_ctx_create(ut_sch_stats_handler, s);
+  if (!s->ctx) {
+    free(s);
+    return NULL;
+  }
+  s->sch = &s->ctx->sch;
+  s->tasklet = &s->ctx->tasklet;
+  s->sch->idx = UT_SCH_STATS_IDX;
+  s->sch->nb_tasklets = RTE_DIM(s->slots);
+  sch_tasklet_stats[s->sch->idx] = s->slots;
+  rte_atomic32_set(&s->sch->active, 1);
+  s->ctx->impl.user_para.flags = flags;
+  (void)snprintf(s->tasklet->name, sizeof(s->tasklet->name), "ut_tasklet");
+  s->work_every = work_every;
+  return s;
+}
+
+struct ut_sch_stats* ut_sch_stats_request(uint64_t flags, unsigned int work_every) {
+  struct mtl_sch_ops sch_ops = {.nb_tasklets = UT_SCH_REQUEST_TASKLETS};
+  struct mtl_tasklet_ops idle = {.name = "ut_idle", .handler = ut_sch_idle_handler};
+  struct ut_sch_stats* s = calloc(1, sizeof(*s));
+  struct mtl_main_impl* impl = calloc(1, sizeof(*impl));
+  if (!s || !impl) {
+    free(impl);
+    free(s);
+    return NULL;
+  }
+
+  struct mtl_tasklet_ops ops = {
+      .name = "ut_tasklet", .priv = s, .handler = ut_sch_stats_handler};
+  impl->tsc_hz = rte_get_tsc_hz();
+  impl->user_para.flags = flags;
+  s->impl = impl;
+  s->sch = mt_sch_instance(impl, UT_SCH_STATS_IDX);
+  s->sch->parent = impl;
+  s->sch->idx = UT_SCH_STATS_IDX;
+  s->work_every = work_every;
+  bool ok = !mt_pthread_mutex_init(&s->sch->mutex, NULL) &&
+            sch_request(impl, MT_SCH_TYPE_DEFAULT, MTL_BIT64(UT_SCH_STATS_IDX), &sch_ops,
+                        0) == s->sch;
+  if (ok) s->tasklet = mtl_sch_register_tasklet(s->sch, &ops);
+  ok = ok && s->tasklet && !ut_sch_stats_register_idle(s);
+  for (int i = 2; ok && i < UT_SCH_REQUEST_TASKLETS; i++)
+    ok = mtl_sch_register_tasklet(s->sch, &idle) != NULL;
+  if (!ok) {
+    ut_sch_stats_destroy(s);
+    return NULL;
+  }
+  return s;
+}
+
+int ut_sch_stats_destroy(struct ut_sch_stats* s) {
+  int ret = 0;
+
+  if (s->ctx) {
+    if (s->idle) mtl_sch_unregister_tasklet(s->idle);
+    sch_tasklet_stats[UT_SCH_STATS_IDX] = NULL;
+    ut_sch_mempolicy_ctx_destroy(s->ctx);
+  } else {
+    for (int i = 0; s->sch->tasklet && i < s->sch->nb_tasklets; i++)
+      if (s->sch->tasklet[i]) mtl_sch_unregister_tasklet(s->sch->tasklet[i]);
+    if (mt_sch_is_active(s->sch)) ret = sch_free(s->sch);
+    mt_pthread_mutex_destroy(&s->sch->mutex);
+    free(s->impl);
+  }
+  free(s);
+  return ret;
+}
+
+int ut_sch_stats_register_idle(struct ut_sch_stats* s) {
+  struct mtl_tasklet_ops ops = {.name = "ut_idle", .handler = ut_sch_idle_handler};
+
+  if (s->idle && mtl_sch_unregister_tasklet(s->idle) < 0) return -EIO;
+  s->idle = mtl_sch_register_tasklet(s->sch, &ops);
+  return s->idle ? 0 : -ENOMEM;
+}
+
+void ut_sch_stats_set_work_every(struct ut_sch_stats* s, unsigned int work_every) {
+  s->work_every = work_every;
+}
+
+int ut_sch_stats_run(struct ut_sch_stats* s, uint64_t calls) {
+  struct mtl_sch_impl* sch = s->sch;
+
+  s->stop_at = s->calls + calls;
+  rte_atomic32_set(&sch->request_stop, 0);
+  ut_clock_start(0, 0);
+  int ret = -pthread_create(&sch->tid, NULL, sch_tasklet_thread, sch);
+  if (!ret) ret = -pthread_join(sch->tid, NULL);
+  ut_clock_stop();
+  return ret;
+}
+
+void ut_sch_stats_attach(bool on) {
+  ut_sch_stat_semaphore = on;
+}
+
+struct ut_sch_tasklet_stat ut_sch_stats_counters(int slot) {
+  struct mt_sch_tasklet_stat* stat = &sch_tasklet_stats[UT_SCH_STATS_IDX][slot];
+
+  return (struct ut_sch_tasklet_stat){.cnt = stat->cnt,
+                                      .sum_ns = stat->sum_ns,
+                                      .work_cnt = stat->work_cnt,
+                                      .work_sum_ns = stat->work_sum_ns};
+}
+
+struct ut_sch_tasklet_stat ut_sch_stats_dump(struct ut_sch_stats* s) {
+  ut_sch_stat_probe = (struct ut_sch_tasklet_stat){0};
+  sch_stat(s->sch);
+  return ut_sch_stat_probe;
+}
+
+uint64_t ut_sch_stats_measured(struct ut_sch_stats* s) {
+  return s->tasklet->stat_time.cnt;
+}
+
+static uint64_t ut_sch_hist_calls(const uint64_t* hist) {
+  uint64_t calls = 0;
+
+  for (unsigned int b = 0; b < MT_SCH_HIST_NB; b++) calls += hist[b];
+  return calls;
+}
+
+uint64_t ut_sch_stats_hist_calls(struct ut_sch_stats* s, int slot) {
+  return ut_sch_hist_calls(sch_tasklet_hist(s->sch, slot));
+}
+
+uint64_t ut_sch_stats_hist_prev_calls(struct ut_sch_stats* s, int slot) {
+  return ut_sch_hist_calls(sch_tasklet_hist_prev(s->sch, slot));
+}
+
+uint32_t ut_sch_time_sample_period(void) {
+  return MT_SCH_TIME_SAMPLE_PERIOD;
+}
+
+uint32_t ut_sch_time_sample_seed(void) {
+  return MT_SCH_TIME_SAMPLE_SEED;
+}
+
+uint32_t ut_sch_time_sample_gap(uint32_t* state) {
+  return sch_time_sample_gap(state);
+}
+
+unsigned int ut_sch_hist_nb(void) {
+  return MT_SCH_HIST_NB;
+}
+
+unsigned int ut_sch_hist_bucket(uint64_t ns) {
+  return sch_hist_bucket(ns);
+}
+
+uint64_t ut_sch_hist_bucket_lo(unsigned int b) {
+  return sch_hist_bucket_lo(b);
+}
+
+double ut_sch_hist_quantile(const uint64_t* ns, size_t n, unsigned int q) {
+  uint64_t hist[MT_SCH_HIST_NB] = {0};
+  struct mt_stat_u64 stat;
+
+  mt_stat_u64_init(&stat);
+  for (size_t i = 0; i < n; i++) {
+    mt_stat_u64_update(&stat, ns[i]);
+    hist[sch_hist_bucket(ns[i])]++;
+  }
+  return sch_hist_quantile(hist, &stat, q);
 }
