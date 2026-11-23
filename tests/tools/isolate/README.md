@@ -12,6 +12,7 @@ Background on static and dynamic CPU isolation: [doc/isolation.md](../../../doc/
 |---|---|---|
 | `MTL_ISOLATE` | caller | `off` (default) runs the command as is; `try`; `require` |
 | `MTL_ISOLATE_PORTS` | caller | Comma-separated PCI BDFs, the MTL primary port (port P) first |
+| `MTL_ISOLATE_MEM_PORTS` | caller | Comma-separated PCI BDFs whose NUMA nodes join `cpuset.mems` only, no CPUs: RX ports timed by their NIC on another node |
 | `MTL_CPU_ISOLATION` | wrapper, for the command | `exclusive` or `none` |
 
 If the partition is unavailable, `try` prints one `WARNING` with the reason and
@@ -44,7 +45,8 @@ wrapper's. CI (`.github/scripts/gtest.sh`) runs NoCtx with `MTL_ISOLATE=require`
   averaging.
 - **CPUs.** For each distinct NUMA node of the ports: the 4 highest-numbered
   physical cores plus their SMT siblings, never the node's first 2 cores. The
-  partition is the union, and `cpuset.mems` is the ports' nodes. MTL binds each
+  partition is the union, and `cpuset.mems` is the ports' nodes plus those of
+  `MTL_ISOLATE_MEM_PORTS`. MTL binds each
   scheduler to its port's node, so every port node needs CPUs. Setup fails if a
   port's node cannot be resolved or has too few cores.
 - **Port P.** EAL's main lcore is the partition's first CPU, and `mtl_init()`

@@ -86,6 +86,18 @@ TEST_F(St20TxTransmitterBugsTest, HangTriggerRetainsFailedPadForRecovery) {
   EXPECT_EQ(1u, ut_trs_pad_refcnt(ctx_));
 }
 
+TEST_F(St20TxTransmitterBugsTest, HangTriggerOnTheTscPathBurst) {
+  ut_trs_set_hang_detect_thresh_ns(ctx_, 1000);
+  const uint64_t script[] = {5000};
+  ut_trs_set_mock_tsc_script(ctx_, script, 1);
+
+  ut_trs_set_burst_force_fail(ctx_, true);
+
+  EXPECT_EQ(0u, ut_trs_call_burst(ctx_));
+  EXPECT_EQ(5000u, ut_trs_get_last_burst_succ_tsc(ctx_));
+  EXPECT_TRUE(ut_trs_recovery_pending(ctx_));
+}
+
 TEST_F(St20TxTransmitterBugsTest, FreshTimestampAvoidsPrematureHangTrigger) {
   ut_trs_set_hang_detect_thresh_ns(ctx_, 1000);
   ut_trs_set_last_burst_succ_tsc(ctx_, 4950);
@@ -183,6 +195,26 @@ TEST_F(St20TxTransmitterBugsTest, PartialBurstBeforeBoundaryRetriesBeforeNewFram
   ASSERT_EQ(2u, ut_trs_real_send_count(ctx_));
   EXPECT_EQ(0u, ut_trs_sent_pkt_idx(ctx_, 1));
   EXPECT_EQ(0u, ut_trs_inflight_num(ctx_));
+}
+
+/* a burst the NIC took part of counts only the pkts it took, a refused one none */
+TEST_F(St20TxTransmitterBugsTest, ShortBurstCountsOnlyTheSentPkts) {
+  constexpr uint16_t kLen = 1262;
+  ut_trs_set_first_pkt_frame(ctx_, nullptr, kLen);
+  ut_trs_set_inflight_num(ctx_, 4);
+  ut_trs_set_burst_accept_limit(ctx_, 3);
+  ut_trs_set_burst_refuse(ctx_, 2, 1);
+
+  ut_trs_call_rl_tasklet(ctx_);
+  ASSERT_EQ(2u, ut_trs_burst_call_count(ctx_));
+  EXPECT_EQ(1u, ut_trs_inflight_num(ctx_));
+  EXPECT_EQ(3u, ut_trs_port_packets(ctx_));
+  EXPECT_EQ(3u * kLen, ut_trs_port_bytes(ctx_));
+
+  ut_trs_call_rl_tasklet(ctx_);
+  EXPECT_EQ(0u, ut_trs_inflight_num(ctx_));
+  EXPECT_EQ(4u, ut_trs_port_packets(ctx_));
+  EXPECT_EQ(4u * kLen, ut_trs_port_bytes(ctx_));
 }
 
 }  // namespace

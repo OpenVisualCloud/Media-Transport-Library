@@ -7,7 +7,8 @@
  * queue immediately before packet 0 and after the previous frame's tail (TR-10-1
  * section 8.8.2, VSF TP-10-1 13.3b). An armed RL pre-arm queues the SR's shaper time
  * fewer pads so packet 0 keeps its launch; the unarmed warm-up, a whole trs a pad,
- * is left as is and packet 0 goes the SR's shaper time later.
+ * is left as is and packet 0 goes the SR's shaper time later. A late entry's tail burst
+ * carries the SR between its pads and packet 0.
  *
  * Run: ./build_unit/tests/unit/UnitTest --gtest_filter='IpmxSrTrs*'
  */
@@ -131,6 +132,96 @@ TEST_F(IpmxSrTrsTest, RlPreArmQueuesSrBytesFewerPadBytes) {
   uint8_t sr[UT_SR_PKT_MAX];
   int sr_len = ut_sr_last_sr(ctx_, sr);
   EXPECT_NEAR((int)without_sr - (int)with_sr, sr_len, kFineTrim);
+}
+
+/*
+ * RL late entry: too few pads fit before packet 0's target to trim onto it, so the last
+ * pre-arm pads and packet 0 go in one tail burst. The SR must sit inside that burst,
+ * between the pads and packet 0, and every NIC refusal there must keep that order.
+ */
+
+/* a late entry 10 pads ahead of the target, at a plan whose absorb_ns keeps the tail */
+void LateEntry(ut_sr_ctx* ctx) {
+  ut_sr_trs_setup(ctx, 1, kTrs, 100);
+  ASSERT_EQ(ut_sr_trs_arm(ctx, kTrs, 0), 0);
+  ut_sr_trs_set_absorb(ctx, 2 * kTrs);
+  ASSERT_EQ(ut_sr_trs_enqueue(ctx, 0, kRtpTs, kTarget), 0);
+  ut_sr_set_now(ctx, kTarget - 10 * (uint64_t)kTrs);
+  ut_sr_call_rl(ctx); /* dequeue and hold packet 0 */
+}
+
+/* One burst carries pads, SR, packet 0, and the pads end the SR's shaper time early so
+ * packet 0 keeps its launch. */
+TEST_F(IpmxSrTrsTest, RlTailBurstPutsSrBetweenPadsAndPacket0) {
+  ASSERT_NO_FATAL_FAILURE(LateEntry(ctx_));
+  ut_sr_call_rl(ctx_); /* the tail burst */
+
+  int n = ut_sr_wire_count(ctx_);
+  ASSERT_GE(n, 3);
+  EXPECT_EQ(Code(ut_sr_wire_at(ctx_, n - 3)), "D");
+  EXPECT_EQ(Code(ut_sr_wire_at(ctx_, n - 2)), "S");
+  EXPECT_EQ(Code(ut_sr_wire_at(ctx_, n - 1)), "P0");
+  EXPECT_EQ(ut_sr_wire_at(ctx_, n - 3).burst, ut_sr_wire_at(ctx_, n - 1).burst);
+  uint32_t pad_bytes = 0;
+  for (int i = 0; i < n - 2; i++) pad_bytes += ut_sr_wire_at(ctx_, i).len;
+  uint32_t sr_len = ut_sr_wire_at(ctx_, n - 2).len;
+  EXPECT_NEAR((long double)pad_bytes + sr_len, 10 * UT_SR_PAD_SIZE, kFineTrim);
+}
+
+/* A refused SR keeps packet 0 back; it goes on a retry, right behind the SR. */
+TEST_F(IpmxSrTrsTest, RlTailRefusedSrHoldsPacket0UntilSrSent) {
+  ASSERT_NO_FATAL_FAILURE(LateEntry(ctx_));
+  ut_sr_set_refuse(ctx_, UT_SR_WIRE_SR, true);
+  ut_sr_call_rl(ctx_);
+  EXPECT_EQ(Wire(), Codes{});
+
+  ut_sr_set_refuse(ctx_, UT_SR_WIRE_SR, false);
+  ut_sr_call_rl(ctx_);
+  EXPECT_EQ(Wire(), (Codes{"S", "P0"}));
+  struct ut_sr_counts c;
+  ut_sr_counts(ctx_, kPortP, &c);
+  EXPECT_EQ(c.sent, 1u);
+  EXPECT_GE(c.burst_fail, 1u);
+}
+
+/* An SR taken with packet 0 refused is not sent again: packet 0 retries alone. */
+TEST_F(IpmxSrTrsTest, RlTailTakenSrIsNotResentWithRefusedPacket0) {
+  ASSERT_NO_FATAL_FAILURE(LateEntry(ctx_));
+  ut_sr_set_refuse(ctx_, UT_SR_WIRE_PKT, true);
+  ut_sr_call_rl(ctx_);
+  EXPECT_EQ(Wire(), Codes{"S"});
+
+  ut_sr_set_refuse(ctx_, UT_SR_WIRE_PKT, false);
+  ut_sr_call_rl(ctx_);
+  EXPECT_EQ(Wire(), (Codes{"S", "P0"}));
+  struct ut_sr_counts c;
+  ut_sr_counts(ctx_, kPortP, &c);
+  EXPECT_EQ(c.sent, 1u);
+  EXPECT_EQ(c.burst_fail, 0u);
+}
+
+/* After a full pre-arm the SR goes in its own burst ahead of packet 0 and is timed as a
+ * pad: the shaper end moves past it, so the shorter pads and it end where the pads alone
+ * would, as on the tail path, and packet 0's VRX check sees it leave after the SR. */
+TEST_F(IpmxSrTrsTest, RlPreArmSrMovesPadsEndLikeThePadsItReplaces) {
+  ut_sr_ctx* plain = ut_sr_create(kSip, kSsrc, kMediaPort); /* no SR */
+  ASSERT_NE(plain, nullptr);
+  bool sr_first = false, unused = false;
+  PreArmPadBytes(ctx_, &sr_first);
+  PreArmPadBytes(plain, &unused);
+  long double with_sr = ut_sr_trs_pads_end(ctx_, kPortP);
+  long double without_sr = ut_sr_trs_pads_end(plain, kPortP);
+  ut_sr_destroy(plain);
+
+  ASSERT_TRUE(sr_first);
+  int n = ut_sr_wire_count(ctx_);
+  /* not the tail burst: the SR goes alone, packet 0 in the burst after */
+  ASSERT_NE(ut_sr_wire_at(ctx_, n - 2).burst, ut_sr_wire_at(ctx_, n - 1).burst);
+  uint8_t sr[UT_SR_PKT_MAX];
+  long double lead_ns = kTrs * ut_sr_last_sr(ctx_, sr) / UT_SR_PAD_SIZE;
+  long double fine_ns = kTrs * kFineTrim / UT_SR_PAD_SIZE;
+  ASSERT_GT(lead_ns, 2 * fine_ns);
+  EXPECT_NEAR(with_sr, without_sr, fine_ns);
 }
 
 /* the pads an unarmed RL warm-up queues ahead of packet 0 */

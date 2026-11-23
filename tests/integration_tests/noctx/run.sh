@@ -5,7 +5,7 @@
 
 : "${EXIT_ON_FAILURE:=1}"
 # Comma-separated NoCtxTest cases to run under isolate.sh; the others run directly.
-: "${NOCTX_ISOLATE_CASES:=st20p_default_timestamps,st20p_default_timestamps_1080p59_94,st20p_default_timestamps_1080p60,st20p_default_timestamps_480p59_94,st20p_default_timestamps_576p50,st20p_default_timestamps_720p25,st20p_default_timestamps_720p50,st20p_default_timestamps_720p59_94,st20p_default_timestamps_2160p59_94,st20p_user_pacing,st20p_user_pacing_offset_jitter,st20p_exact_user_pacing,st20p_user_pacing_interlaced,st30p_user_pacing,st20p_ipmx_tp_1080p60,st20p_ipmx_tp_2160p60,st20p_ipmx_tp_rgb10_2160p60}"
+: "${NOCTX_ISOLATE_CASES:=st20p_default_timestamps,st20p_default_timestamps_1080p59_94,st20p_default_timestamps_1080p60,st20p_default_timestamps_480p59_94,st20p_default_timestamps_576p50,st20p_default_timestamps_720p25,st20p_default_timestamps_720p50,st20p_default_timestamps_720p59_94,st20p_default_timestamps_2160p59_94,st20p_user_pacing,st20p_user_pacing_offset_jitter,st20p_exact_user_pacing,st20p_user_pacing_interlaced,st30p_user_pacing,st20p_redundant_1080p59_s8_equal_vrx_margin,st20p_rl_staged_overload_is_loud,st20p_ipmx_tp_1080p60,st20p_ipmx_tp_2160p60,st20p_ipmx_tp_rgb10_2160p60}"
 
 script_name=$(basename "${BASH_SOURCE[0]}")
 script_path=$(readlink -qe "${BASH_SOURCE[0]}")
@@ -67,8 +67,9 @@ fi
 test_names=$(echo "$raw_list" | awk '/^  [a-zA-Z]/ {gsub(/^  /, ""); print}')
 
 if [ -z "$test_names" ]; then
-	echo "No NoCtx tests found matching ${GTEST_FILTER}."
-	exit 0
+	# A renamed or removed case must not pass as zero tests.
+	echo "Error: no NoCtx tests found matching ${GTEST_FILTER}."
+	exit 1
 fi
 
 # Use TMP_FOLDER from environment or fallback to /tmp
@@ -97,7 +98,9 @@ while IFS= read -r test_name || [ -n "$test_name" ]; do
 	# another host's NoCtx streams on a shared network out of these receivers.
 	[ -z "${TEST_P_SIP:-}" ] || cmd+=(--p_sip="${TEST_P_SIP}")
 	if [[ ",${NOCTX_ISOLATE_CASES}," == *",${test_name},"* ]]; then
-		cmd=(env MTL_ISOLATE="${MTL_ISOLATE:-try}" MTL_ISOLATE_PORTS="${PORT_LIST}"
+		# CPUs on the TX ports' nodes; the RX ports' nodes only hold memory, as the oracle is their NIC timestamps.
+		cmd=(env MTL_ISOLATE="${MTL_ISOLATE:-try}" MTL_ISOLATE_PORTS="${TEST_PORT_1},${TEST_PORT_3}"
+			MTL_ISOLATE_MEM_PORTS="${TEST_PORT_2},${TEST_PORT_4}"
 			"${mtl_folder}/tests/tools/isolate/isolate.sh" -- "${cmd[@]}")
 	fi
 	if "${cmd[@]}"; then

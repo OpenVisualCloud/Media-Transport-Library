@@ -12,6 +12,8 @@
 #define ipmx_sr_tx_uinit ut_sr_tx_uinit
 #define ipmx_sr_tx_frame_start ut_sr_tx_frame_start
 #define ipmx_sr_tx_send_pending ut_sr_tx_send_pending
+#define ipmx_sr_tx_pending_get ut_sr_tx_pending_get
+#define ipmx_sr_tx_pending_done ut_sr_tx_pending_done
 #define ipmx_sr_tx_rl_lead_ns ut_sr_tx_rl_lead_ns
 #define ipmx_sr_stat_log ut_sr_stat_log
 #define ipmx_sr_stat_take ut_sr_stat_take
@@ -35,7 +37,6 @@
 
 #define UT_SR_WIRE_MAX (512)
 #define UT_SR_HELD_MAX (128)
-#define UT_SR_PAD_SIZE (1262)
 
 struct ut_sr_ctx {
   struct mtl_main_impl impl;
@@ -56,6 +57,7 @@ struct ut_sr_ctx {
   int held_num;
   struct ut_sr_wire wire[UT_SR_WIRE_MAX];
   int wire_num;
+  int burst_num;
   uint8_t last_sr[UT_SR_PKT_MAX];
   uint16_t last_sr_len;
   uint8_t last_port_sr[MTL_SESSION_PORT_MAX][UT_SR_PKT_MAX];
@@ -92,6 +94,7 @@ static uint16_t ut_sr_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx
                  ? MTL_SESSION_PORT_R
                  : MTL_SESSION_PORT_P;
   struct mt_interface* inf = mt_if(&ctx->impl, s->port_maps[port]);
+  int burst = ctx->burst_num++;
 
   for (uint16_t i = 0; i < nb_pkts; i++) {
     struct rte_mbuf* m = tx_pkts[i];
@@ -106,6 +109,7 @@ static uint16_t ut_sr_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx
     memset(w, 0, sizeof(*w));
     w->port = port;
     w->len = m->pkt_len;
+    w->burst = burst;
     w->kind = kind;
     if (w->kind == UT_SR_WIRE_PKT) w->pkt_idx = st_tx_mbuf_get_idx(m);
     w->launch = inf->tx_launch_time_flag && (m->ol_flags & inf->tx_launch_time_flag);
@@ -772,8 +776,21 @@ int ut_sr_trs_arm(ut_sr_ctx* ctx, long double pad_ns, long double credit_ns) {
   plan->bucket_ns = credit_ns;
   plan->pad_size = UT_SR_PAD_SIZE;
   plan->trim_pads = st_tx_video_rl_trim_pads(UT_SR_PAD_SIZE);
+  /* as tv_rl_plan_init() sizes the anchor of a plan */
+  plan->anchor_pads =
+      RTE_MIN(ceill((plan->bucket_ns + ST_TX_VIDEO_RL_TICK_NS + ST_TX_VIDEO_RL_STALL_NS) /
+                    pad_ns),
+              ST_TX_VIDEO_RL_MAX_PADS_PER_BURST);
   plan->armed = true;
   return 0;
+}
+
+void ut_sr_trs_set_absorb(ut_sr_ctx* ctx, long double absorb_ns) {
+  ctx->session.rl_plan[MTL_SESSION_PORT_P].absorb_ns = absorb_ns;
+}
+
+long double ut_sr_trs_pads_end(const ut_sr_ctx* ctx, int s_port) {
+  return ctx->session.trs_rl_pads_end[s_port];
 }
 
 int ut_sr_trs_enqueue(ut_sr_ctx* ctx, uint32_t pkt_idx, uint32_t rtp_ts,

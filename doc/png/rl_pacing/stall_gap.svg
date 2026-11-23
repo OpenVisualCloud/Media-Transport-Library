@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" width="960" height="420">
+<defs><pattern id="or" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#fff1d6"/><line x1="0" y1="0" x2="0" y2="7" stroke="#f5c26b" stroke-width="4"/></pattern><pattern id="gr" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><rect width="7" height="7" fill="#f2f2f2"/><line x1="0" y1="0" x2="0" y2="7" stroke="#aaaaaa" stroke-width="3"/></pattern></defs>
+<rect x="0" y="0" width="960" height="420" fill="#ffffff" stroke="none" stroke-width="1.2"/>
+<text x="20" y="28" font-size="20" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start" font-weight="bold">Only a burst into an idle shaper can be a stall</text>
+<text x="20" y="49" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="start">1080p59.94, not to scale: the same 6 µs CPU delay in burst 1, the anchor, and in burst 2.</text>
+<text x="20" y="123" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start" font-weight="bold">CPU</text>
+<text x="20" y="230" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start" font-weight="bold">NIC queue</text>
+<text x="20" y="246" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="start">pads waiting</text>
+<text x="20" y="329" font-size="13" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start" font-weight="bold">wire</text>
+<text x="150" y="86" font-size="15" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start" font-weight="bold">Burst 1, the anchor: the shaper is idle</text>
+<text x="575" y="86" font-size="15" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start" font-weight="bold">Burst 2: the anchor's pads are still queued</text>
+<rect x="150" y="106" width="140" height="24" fill="#d5e3f5" stroke="#4f7fb5" stroke-width="1.2"/>
+<rect x="164" y="106" width="112" height="24" fill="url(#or)" stroke="#d99a2b" stroke-width="1"/>
+<text x="154" y="100" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start">burst 1 call</text>
+<text x="298" y="122" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#6a4500" text-anchor="start">6 µs delay</text>
+<line x1="150" y1="138" x2="290" y2="138" stroke="#4f7fb5" stroke-width="1.5"/>
+<line x1="150" y1="134" x2="150" y2="142" stroke="#4f7fb5" stroke-width="1.5"/>
+<line x1="290" y1="134" x2="290" y2="142" stroke="#4f7fb5" stroke-width="1.5"/>
+<text x="298" y="143" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="start">its doorbell: somewhere in here</text>
+<line x1="140" y1="290" x2="520" y2="290" stroke="#1f1f1f" stroke-width="1.5"/>
+<path d="M290,290 L290,230 L520,268.3 L520,290 Z" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.5"/>
+<text x="300" y="260" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start">5 pads</text>
+<text x="220.0" y="282" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">empty</text>
+<rect x="150" y="312" width="140" height="26" fill="url(#gr)" stroke="#999999" stroke-width="1"/>
+<text x="220.0" y="329" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="middle">idle</text>
+<rect x="293" y="312" width="227" height="26" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<line x1="302" y1="312" x2="302" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="311" y1="312" x2="311" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="320" y1="312" x2="320" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="329" y1="312" x2="329" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="338" y1="312" x2="338" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="347" y1="312" x2="347" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="356" y1="312" x2="356" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="365" y1="312" x2="365" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="374" y1="312" x2="374" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="383" y1="312" x2="383" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="392" y1="312" x2="392" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="401" y1="312" x2="401" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="410" y1="312" x2="410" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="419" y1="312" x2="419" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="428" y1="312" x2="428" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="437" y1="312" x2="437" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="446" y1="312" x2="446" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="455" y1="312" x2="455" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="464" y1="312" x2="464" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="473" y1="312" x2="473" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="482" y1="312" x2="482" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="491" y1="312" x2="491" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="500" y1="312" x2="500" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="509" y1="312" x2="509" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="518" y1="312" x2="518" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="150" y1="146" x2="150" y2="346" stroke="#555555" stroke-width="1" stroke-dasharray="3 3"/>
+<line x1="290" y1="146" x2="290" y2="346" stroke="#555555" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="150" y="362" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="middle">clock read</text>
+<text x="290" y="362" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="middle">return</text>
+<line x1="150" y1="374" x2="290" y2="374" stroke="#8a5a00" stroke-width="2"/>
+<line x1="150" y1="369" x2="150" y2="379" stroke="#8a5a00" stroke-width="2"/>
+<line x1="290" y1="369" x2="290" y2="379" stroke="#8a5a00" stroke-width="2"/>
+<text x="300" y="379" font-size="15" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#8a5a00" text-anchor="start" font-weight="bold">gap +6.6 µs: a stall</text>
+<text x="150" y="402" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="start">The shaper may have sat idle for up to 6.6 µs.</text>
+<line x1="548" y1="70" x2="548" y2="408" stroke="#cccccc" stroke-width="1"/>
+<rect x="575" y="106" width="140" height="24" fill="#d5e3f5" stroke="#4f7fb5" stroke-width="1.2"/>
+<rect x="589" y="106" width="112" height="24" fill="url(#or)" stroke="#d99a2b" stroke-width="1"/>
+<text x="579" y="100" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start">burst 2 call</text>
+<text x="723" y="122" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#6a4500" text-anchor="start">6 µs delay</text>
+<line x1="575" y1="138" x2="715" y2="138" stroke="#4f7fb5" stroke-width="1.5"/>
+<line x1="575" y1="134" x2="575" y2="142" stroke="#4f7fb5" stroke-width="1.5"/>
+<line x1="715" y1="134" x2="715" y2="142" stroke="#4f7fb5" stroke-width="1.5"/>
+<text x="723" y="143" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="start">its doorbell: somewhere in here</text>
+<line x1="575" y1="290" x2="940" y2="290" stroke="#1f1f1f" stroke-width="1.5"/>
+<path d="M575,290 L575,230 L715,253.3 L715,162 L940,162 L940,290 Z" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.5"/>
+<text x="581" y="276" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start">the anchor's 5 pads</text>
+<text x="725" y="182" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#1f1f1f" text-anchor="start">burst 2 adds 32 pads</text>
+<rect x="575" y="312" width="365" height="26" fill="#d6edd2" stroke="#3a9a2e" stroke-width="1.2"/>
+<line x1="584" y1="312" x2="584" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="593" y1="312" x2="593" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="602" y1="312" x2="602" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="611" y1="312" x2="611" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="620" y1="312" x2="620" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="629" y1="312" x2="629" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="638" y1="312" x2="638" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="647" y1="312" x2="647" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="656" y1="312" x2="656" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="665" y1="312" x2="665" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="674" y1="312" x2="674" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="683" y1="312" x2="683" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="692" y1="312" x2="692" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="701" y1="312" x2="701" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="710" y1="312" x2="710" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="719" y1="312" x2="719" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="728" y1="312" x2="728" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="737" y1="312" x2="737" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="746" y1="312" x2="746" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="755" y1="312" x2="755" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="764" y1="312" x2="764" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="773" y1="312" x2="773" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="782" y1="312" x2="782" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="791" y1="312" x2="791" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="800" y1="312" x2="800" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="809" y1="312" x2="809" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="818" y1="312" x2="818" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="827" y1="312" x2="827" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="836" y1="312" x2="836" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="845" y1="312" x2="845" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="854" y1="312" x2="854" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="863" y1="312" x2="863" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="872" y1="312" x2="872" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="881" y1="312" x2="881" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="890" y1="312" x2="890" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="899" y1="312" x2="899" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="908" y1="312" x2="908" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="917" y1="312" x2="917" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="926" y1="312" x2="926" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<line x1="935" y1="312" x2="935" y2="338" stroke="#3a9a2e" stroke-width="1"/>
+<text x="575" y="379" font-size="15" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#3a9a2e" text-anchor="start" font-weight="bold">gap −12 µs: no stall</text>
+<text x="575" y="402" font-size="12" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" fill="#555555" text-anchor="start">Whenever the doorbell rang, the wire never paused.</text>
+</svg>

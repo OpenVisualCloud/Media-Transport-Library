@@ -13,6 +13,8 @@
 /* a pad burst returning later than this past its plan stalled: a healthy one returns
  * well within it, a timer tick costs 2-10 us */
 #define ST_TX_VIDEO_RL_STALL_NS (2 * NS_PER_US)
+/* the longest such tick measured: the anchor's cover is this and a healthy burst */
+#define ST_TX_VIDEO_RL_TICK_NS (10 * (uint64_t)NS_PER_US)
 #define ST_TX_VIDEO_RL_MAX_PADS_PER_BURST (32)
 /* bytes, ICE_SCHED_DFLT_BURST_SIZE of the out-of-tree ice that RL requires; the 15 KB
  * bucket of an unpatched ice before 2.7.6 would launch packet 0 ~10 pkts early */
@@ -35,9 +37,17 @@ enum st_tx_video_rl_trim {
 #define ST_TX_VIDEO_RL_TOKENS_MAX (257)
 /* ICE_PSM_CLK_367MHZ_IN_HZ, the slowest psm_clk ice reads */
 #define ST_TX_VIDEO_RL_PSM_CLK_MIN (367647059)
-/* The longest token timeslot, bounded by aim, a plan accepts: packet 0 then leaves up to
- * 2 * aim later than on the hold path, and a drain below ~128.5 MB/s holds. */
-#define ST_TX_VIDEO_RL_TIMESLOT_MAX_NS (2 * NS_PER_US)
+/* ice's other ICE_PSM_CLK_*_IN_HZ */
+#define ST_TX_VIDEO_RL_PSM_CLK_390MHZ (390625000)
+#define ST_TX_VIDEO_RL_PSM_CLK_416MHZ (416666667)
+#define ST_TX_VIDEO_RL_PSM_CLK_446MHZ (446428571)
+/* what the NIC and the wire add between the shaper's release and the receiver: 4.4-4.9 us
+ * measured on E810 TX to E830 RX, plus margin */
+#define ST_TX_VIDEO_RL_WIRE_NS (5500)
+/* The latest packet 0 may leave past its target, the TX side's share of the 0..+10 us
+ * launch bound. It covers the timeslot grid's aim and timeslot, a trim cut and a kept
+ * stall or what a late entry's tail leaves short. */
+#define ST_TX_VIDEO_RL_GRID_LATE_MAX_NS (4 * NS_PER_US)
 
 /* the most bytes ice adds per token timeslot on a queue programmed at bps bytes/s */
 static inline long double st_tx_video_rl_tokens(uint64_t bps) {
@@ -45,13 +55,44 @@ static inline long double st_tx_video_rl_tokens(uint64_t bps) {
                  (long double)bps / (ST_TX_VIDEO_RL_PSM_CLK_MIN / 32.0L) + 0.5L);
 }
 
+/* the bytes of the longest timeslot ice_sched_bw_to_rl_profile() programs, on any psm_clk
+ * ice reads, for a queue of bps bytes/s, which iavf or the PMD truncates to kbps */
+static inline uint64_t st_tx_video_rl_timeslot_tokens(uint64_t bps) {
+  static const uint64_t psm_hz[] = {
+      ST_TX_VIDEO_RL_PSM_CLK_MIN, ST_TX_VIDEO_RL_PSM_CLK_390MHZ,
+      ST_TX_VIDEO_RL_PSM_CLK_416MHZ, ST_TX_VIDEO_RL_PSM_CLK_446MHZ};
+  uint64_t bytes = bps / 1000 * 1000;
+  uint64_t most = 0;
+
+  for (unsigned int i = 0; i < RTE_DIM(psm_hz); i++) {
+    for (uint64_t ts_rate = psm_hz[i] / 32; ts_rate; ts_rate /= 2) {
+      uint64_t tokens = (bytes * 10000 / ts_rate + 5000) / 10000;
+      if (tokens > 128) {
+        most = RTE_MAX(most, tokens);
+        break;
+      }
+    }
+  }
+  return most;
+}
+
+/* the vrx_room_ns of a frame started past its budget, counted in start_late: check 1
+ * does not judge it */
+#define ST_TX_VIDEO_RL_ROOM_START_LATE INT32_MIN
+
 /* the RL pre-arm plan of a port, set by tv_rl_plan_init() */
 struct st_tx_video_rl_plan {
   long double pad_ns;    /* shaper time of one NORMAL pad, 0 without a plan */
   long double bucket_ns; /* shaper time of a full bucket plus the timeslot aim */
+  long double absorb_ns; /* the longest stall or tail shortfall kept, <= 0 for none */
   int64_t trim_pads;     /* st_tx_video_rl_trim_pads() of pad_size */
   uint16_t pad_size;     /* bytes of the NORMAL pad */
+  uint16_t anchor_pads;  /* pads of the first burst into an idle shaper */
   bool armed;            /* false: packet 0 is held until its target */
+  /* the shaper time of the NIC's full bucket */
+  long double refill_ns;
+  /* a pkt this plus its vrx_room_ns past its target keeps VRX >= 0; 0: not judged */
+  int64_t vrx_budget_ns;
 };
 
 /* a pre-arm burst of n NORMAL pads, the first coarse of them TRIM_COARSE bytes short and
@@ -108,6 +149,14 @@ static inline long double st_tx_video_rl_burst_ns(const struct st_tx_video_rl_bu
       b->coarse * ST_TX_VIDEO_RL_TRIM_COARSE + b->fine * ST_TX_VIDEO_RL_TRIM_FINE;
 
   return n * drain - cut * drain / pad_size;
+}
+
+/* how late past its target packet 0 starts behind burst b, planned from drained */
+static inline long double st_tx_video_rl_cut_short(const struct st_tx_video_rl_burst* b,
+                                                   long double drain, uint16_t pad_size,
+                                                   long double target,
+                                                   long double drained) {
+  return st_tx_video_rl_burst_ns(b, drain, pad_size) - (target - drained);
 }
 
 #endif

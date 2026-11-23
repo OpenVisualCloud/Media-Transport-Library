@@ -32,10 +32,8 @@ static int video_trs_tasklet_stop(void* priv) {
   return 0;
 }
 
-static uint16_t video_trs_burst_fail(struct mtl_main_impl* impl,
-                                     struct st_tx_video_session_impl* s,
-                                     enum mtl_session_port s_port) {
-  uint64_t cur_tsc = mt_get_tsc(impl);
+static uint16_t video_trs_burst_fail(struct st_tx_video_session_impl* s,
+                                     enum mtl_session_port s_port, uint64_t cur_tsc) {
   uint64_t fail_duration = cur_tsc - s->last_burst_succ_time_tsc[s_port];
 
   if (fail_duration > s->tx_hang_detect_time_thresh) {
@@ -55,14 +53,176 @@ static inline void video_trs_burst_succ(struct mtl_main_impl* impl,
   s->last_burst_succ_time_tsc[s_port] = mt_get_tsc(impl);
 }
 
+/* Counts the tx_bursts of an RL port against the rs batches the wire makes done: the PMD
+ * frees the oldest done batch in a tx_burst, an empty one too, while more than 2 batches
+ * are in use. A batch holds at least rs_thresh / 2 pkts, so one is done at most each
+ * batch time. A call at or after trs_reclaim_tsc goes for that batch; the next is due a
+ * batch time on. A burst passes idle_tsc 0, an idle visit its time: it calls only for a
+ * due batch. */
+static inline void video_trs_rl_reclaim(struct mtl_main_impl* impl,
+                                        struct st_tx_video_session_impl* s,
+                                        enum mtl_session_port s_port, uint64_t idle_tsc) {
+  uint64_t now = idle_tsc ? idle_tsc : s->last_burst_succ_time_tsc[s_port];
+  uint64_t next = s->trs_reclaim_tsc[s_port];
+  if (now < next) return;
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  uint16_t rs = mt_if_tx_reclaim_rs_thresh(impl, port);
+  if (!rs || s->s_type == MT_ST22_HANDLE_TX_VIDEO) return;
+  if (idle_tsc) mt_txq_reclaim(s->queue[s_port]);
+  const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
+  uint64_t batch_ns = (uint64_t)(rs / 2 * (plan->armed ? plan->pad_ns : s->pacing.trs));
+  uint64_t behind = (uint64_t)mt_if_nb_tx_desc(impl, port) / rs * batch_ns;
+  s->trs_reclaim_tsc[s_port] = RTE_MAX(next, now > behind ? now - behind : 0) + batch_ns;
+}
+
+/* an idle visit's reclaim: only a port that reclaims reads the clock for it */
+static inline void video_trs_rl_reclaim_idle(struct mtl_main_impl* impl,
+                                             struct st_tx_video_session_impl* s,
+                                             enum mtl_session_port s_port) {
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  if (mt_if_tx_reclaim_rs_thresh(impl, port) && s->s_type != MT_ST22_HANDLE_TX_VIDEO)
+    video_trs_rl_reclaim(impl, s, s_port, mt_get_tsc(impl));
+}
+
+/* mt_txq_burst() of an RL port: every RL transmitter burst goes through here, so each
+ * counts as a free call (video_trs_rl_reclaim()). It stamps a burst the NIC took and
+ * reports a refused one (video_trs_burst_fail()). One the NIC took short or not at all
+ * found the oldest batch not done, so none is due before its return. */
+static inline uint16_t video_trs_rl_txq_burst(struct mtl_main_impl* impl,
+                                              struct st_tx_video_session_impl* s,
+                                              enum mtl_session_port s_port,
+                                              struct rte_mbuf** tx_pkts,
+                                              uint16_t nb_pkts) {
+  uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
+  uint64_t now;
+  if (tx) {
+    video_trs_burst_succ(impl, s, s_port, tx);
+    video_trs_rl_reclaim(impl, s, s_port, 0);
+    now = s->last_burst_succ_time_tsc[s_port];
+  } else {
+    now = mt_get_tsc(impl);
+    video_trs_burst_fail(s, s_port, now);
+  }
+  if (tx < nb_pkts) s->trs_reclaim_tsc[s_port] = RTE_MAX(s->trs_reclaim_tsc[s_port], now);
+  return tx;
+}
+
+/* Moves trs_rl_pads_end past the tx pads just sent, and an IPMX SR ahead of packet 0.
+ * The shaper starts them at the burst's return less refill_ns, or after the pads before,
+ * and drains them in pad_ns (trs without a plan) per NORMAL pad of their bytes. */
+static inline void video_trs_pads_end(struct st_tx_video_session_impl* s,
+                                      enum mtl_session_port s_port,
+                                      struct rte_mbuf** pads, uint16_t tx) {
+  const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
+  long double pad_ns = plan->armed ? plan->pad_ns : s->pacing.trs;
+  long double start = (long double)s->last_burst_succ_time_tsc[s_port] - plan->refill_ns;
+  uint32_t bytes = 0;
+
+  for (uint16_t i = 0; i < tx; i++) bytes += pads[i]->pkt_len;
+  s->trs_rl_pads_end[s_port] =
+      RTE_MAX(s->trs_rl_pads_end[s_port], start) +
+      pad_ns * bytes / s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+}
+
 static uint16_t video_trs_burst_pad(struct mtl_main_impl* impl,
                                     struct st_tx_video_session_impl* s,
                                     enum mtl_session_port s_port,
                                     struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
-  uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
-  if (!tx) return video_trs_burst_fail(impl, s, s_port);
-  video_trs_burst_succ(impl, s, s_port, tx);
+  uint16_t tx = video_trs_rl_txq_burst(impl, s, s_port, tx_pkts, nb_pkts);
+  if (tx) video_trs_pads_end(s, s_port, tx_pkts, tx);
   return tx;
+}
+
+#ifdef MTL_HAS_IPMX
+/* The SR of packet 0's frame ahead of it on an RL port, timed as a pad. False when the
+ * NIC refused it: packet 0 waits, the SR retries ahead of it. */
+static bool video_trs_rl_sr_burst(struct mtl_main_impl* impl,
+                                  struct st_tx_video_session_impl* s,
+                                  enum mtl_session_port s_port, struct rte_mbuf* pkt0) {
+  if (likely(!ipmx_sr_tx_has_pending(s->ipmx_sr, s_port))) return true;
+  struct rte_mbuf* sr = ipmx_sr_tx_pending_get(s->ipmx_sr, s_port, pkt0);
+  if (!sr) return true;
+  uint16_t tx = video_trs_burst_pad(impl, s, s_port, &sr, 1);
+  ipmx_sr_tx_pending_done(s->ipmx_sr, s_port, tx);
+  return tx;
+}
+#endif
+
+/* What a burst needs of its pkts, read before the NIC owns them: the first pkt's index,
+ * packet 0's frame, and the bytes of all of them */
+struct video_trs_pkts {
+  uint32_t idx;
+  struct st_frame_trans* frame;
+  uint64_t bytes;
+};
+
+/* Reads the pkts of a burst (at most ST_SESSION_MAX_BULK) before the NIC owns them, and
+ * takes an RTCP reference on them. */
+static inline void video_trs_pkts_prepare(struct st_tx_video_session_impl* s,
+                                          enum mtl_session_port s_port,
+                                          struct rte_mbuf** pkts, uint16_t nb_pkts,
+                                          struct video_trs_pkts* p) {
+  p->idx = st_tx_mbuf_get_idx(pkts[0]);
+  p->frame = p->idx ? NULL : st_tx_mbuf_get_priv(pkts[0]);
+  if (!p->idx) {
+    /* the frame before's pkts retried from inflight2 went first, judged as its own */
+    s->trs_pkt0_tsc[s_port] = st_tx_mbuf_get_tsc(pkts[0]);
+    s->trs_vrx_room_ns[s_port] = st_tx_mbuf_get_vrx_room(pkts[0]);
+    s->trs_vrx_late[s_port] = false;
+  }
+  p->bytes = 0;
+  for (uint16_t i = 0; i < nb_pkts; i++) p->bytes += pkts[i]->pkt_len;
+  if (s->rtcp_tx[s_port]) mt_mbuf_refcnt_inc_bulk(pkts, nb_pkts);
+}
+
+/* Flags the frame when the first pkt of a burst may reach the receiver past its drain
+ * slot. It left by the burst's return, unless behind pkts on time; packet 0 also by the
+ * end of the pads ahead of it, a timeslot late. */
+static inline void video_trs_vrx_check(struct st_tx_video_session_impl* s,
+                                       enum mtl_session_port s_port,
+                                       const struct video_trs_pkts* p) {
+  const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
+  if (!plan->vrx_budget_ns) return;
+
+  /* an all-RL builder stamps packet 0 only; its cursor moves a trs a pkt */
+  uint64_t target_tsc = s->trs_pkt0_tsc[s_port] + (uint64_t)(p->idx * s->pacing.trs);
+  int64_t late = (int64_t)(s->last_burst_succ_time_tsc[s_port] - target_tsc);
+  if (!p->idx)
+    late = RTE_MAX(late, (int64_t)(s->trs_rl_pads_end[s_port] + plan->bucket_ns -
+                                   plan->refill_ns - target_tsc));
+  int32_t room = s->trs_vrx_room_ns[s_port];
+  if (room == ST_TX_VIDEO_RL_ROOM_START_LATE) return;
+  /* past the frame's own target and its room, as start_late is past its target */
+  int64_t over = late - room;
+  if (over <= plan->vrx_budget_ns) return;
+  if ((uint64_t)over > s->stat_rl.vrx_late_max_ns) s->stat_rl.vrx_late_max_ns = over;
+  if (s->trs_vrx_late[s_port]) return;
+
+  s->trs_vrx_late[s_port] = true;
+  s->stat_rl.vrx_frames++;
+  if (!p->idx) s->stat_rl.vrx_pkt0++;
+  MT_USDT_ST20_TX_RL_EVENT(s->mgr->idx, s->idx, ST_TX_VIDEO_RL_CAUSE_VRX, over, p->idx);
+}
+
+/* After the NIC took the first tx pkts: RTCP buffers them, packet 0 starts its frame and
+ * the port counts them. */
+static inline void video_trs_pkts_sent(struct mtl_main_impl* impl,
+                                       struct st_tx_video_session_impl* s,
+                                       enum mtl_session_port s_port,
+                                       struct rte_mbuf** pkts, uint16_t nb_pkts,
+                                       uint16_t tx, const struct video_trs_pkts* p) {
+  if (tx) video_trs_vrx_check(s, s_port, p);
+  if (s->rtcp_tx[s_port]) {
+    if (tx) mt_rtcp_tx_buffer_rtp_packets(s->rtcp_tx[s_port], pkts, tx);
+    rte_pktmbuf_free_bulk(pkts, nb_pkts);
+  }
+  if (!tx) return;
+  if (p->frame) st20_frame_tx_start(impl, s, s_port, p->frame);
+  /* the pkts not sent are still the caller's: their bytes come off */
+  uint64_t bytes = p->bytes;
+  for (uint16_t i = tx; i < nb_pkts; i++) bytes -= pkts[i]->pkt_len;
+  s->port_user_stats.common.port[s_port].bytes += bytes;
+  s->port_user_stats.common.port[s_port].packets += tx;
 }
 
 /* for normal pkts, pad should call the video_trs_burst_pad */
@@ -73,13 +233,13 @@ static uint16_t video_trs_burst(struct mtl_main_impl* impl,
 #ifdef MTL_HAS_IPMX
   if (s->ipmx_sr && nb_pkts &&
       !ipmx_sr_tx_before_burst(s->ipmx_sr, s_port, s->queue[s_port], tx_pkts[0]))
-    return video_trs_burst_fail(impl, s, s_port);
+    return video_trs_burst_fail(s, s_port, mt_get_tsc(impl));
 #endif
   if (s->rtcp_tx[s_port]) mt_mbuf_refcnt_inc_bulk(tx_pkts, nb_pkts);
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
   if (!tx) {
     if (s->rtcp_tx[s_port]) rte_pktmbuf_free_bulk(tx_pkts, nb_pkts);
-    return video_trs_burst_fail(impl, s, s_port);
+    return video_trs_burst_fail(s, s_port, mt_get_tsc(impl));
   }
   video_trs_burst_succ(impl, s, s_port, tx);
 
@@ -99,6 +259,31 @@ static uint16_t video_trs_burst(struct mtl_main_impl* impl,
     s->port_user_stats.common.port[s_port].packets++;
   }
 
+  return tx;
+}
+
+/* video_trs_burst() of an RL port, which reads the pkts before the NIC owns them and
+ * keeps the wire end */
+static uint16_t video_trs_rl_burst(struct mtl_main_impl* impl,
+                                   struct st_tx_video_session_impl* s,
+                                   enum mtl_session_port s_port,
+                                   struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
+  struct video_trs_pkts p;
+
+#ifdef MTL_HAS_IPMX
+  if (s->ipmx_sr && nb_pkts && !video_trs_rl_sr_burst(impl, s, s_port, tx_pkts[0]))
+    return 0;
+#endif
+  video_trs_pkts_prepare(s, s_port, tx_pkts, nb_pkts, &p);
+  uint16_t tx = video_trs_rl_txq_burst(impl, s, s_port, tx_pkts, nb_pkts);
+  if (!tx) {
+    video_trs_pkts_sent(impl, s, s_port, tx_pkts, nb_pkts, 0, &p);
+    return 0;
+  }
+  s->trs_wire_tsc[s_port] =
+      RTE_MAX(s->trs_wire_tsc[s_port], s->last_burst_succ_time_tsc[s_port]) +
+      (uint64_t)(tx * s->pacing.trs);
+  video_trs_pkts_sent(impl, s, s_port, tx_pkts, nb_pkts, tx, &p);
   return tx;
 }
 
@@ -172,13 +357,73 @@ static inline void video_trs_rl_pads_ref(struct st_tx_video_session_impl* s,
   if (normal) rte_mbuf_refcnt_update(s->pad[s_port][ST20_PKT_TYPE_NORMAL], normal);
 }
 
-/* Queues NORMAL pads for packet 0 to launch behind. They are timed so that a shaper with
- * the plan's bucket finishes them at the target, within a fine trim; the real bucket is
- * an aim smaller, so the real shaper finishes them one aim later. Returns false when
- * packet 0 must instead be held until its target. */
+/* drops the pads the NIC refused, which wait to retry ahead of packet 0 */
+static inline void video_trs_rl_pads_drop(struct st_tx_video_session_impl* s,
+                                          enum mtl_session_port s_port) {
+  video_trs_rl_pads_ref(s, s_port, 0, 0, (int16_t)-s->trs_pad_inflight_num[s_port]);
+  s->trs_pad_inflight_num[s_port] = 0;
+}
+
+/* Whether an RL port is refused: at IDLE, its last burst found the NIC TX ring full and
+ * packet 0 is still first in its inflight pkts. This follows a pre-arm, or a packet 0
+ * dequeued past its target. Its visit retries the burst, and packet 0 is as late as that
+ * retry. Tail ports keep trs_target_tsc and wait in the release scans instead. */
+static inline bool video_trs_rl_refused(const struct st_tx_video_session_impl* s,
+                                        int s_port) {
+  int ret = s->stat_trs_ret_code[s_port];
+  if (ret != -STI_RLTRS_BURST_INFLIGHT_FAIL && ret != -STI_RLTRS_BURST_PAD_INFLIGHT_FAIL)
+    return false;
+  if (s->pacing_way[s_port] != ST21_TX_PACING_WAY_RL ||
+      s->s_type == MT_ST22_HANDLE_TX_VIDEO ||
+      s->rl_state[s_port] != ST_TX_VIDEO_RL_STATE_IDLE || s->trs_target_tsc[s_port] ||
+      !s->trs_inflight_num[s_port])
+    return false;
+  return !st_tx_mbuf_get_idx(s->trs_inflight[s_port][s->trs_inflight_idx[s_port]]);
+}
+
+/* Notes, after the session in slot sidx ran, which of its RL ports are refused, for the
+ * late entries of the other sessions to read without touching it. */
+static inline void video_trs_rl_note_refused(struct st_tx_video_sessions_mgr* mgr,
+                                             int sidx,
+                                             const struct st_tx_video_session_impl* s) {
+  uint8_t ports = 0;
+
+  for (int p = 0; p < s->ops.num_port; p++) ports |= video_trs_rl_refused(s, p) << p;
+  atomic_store_explicit(&mgr->trs_refused[sidx], ports, memory_order_relaxed);
+}
+
+/* Whether a port of another session of mgr is refused, unless the control plane holds
+ * that session, as its own visit would skip it. */
+static bool video_trs_rl_any_refused(struct st_tx_video_sessions_mgr* mgr, int own) {
+  for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
+    /* a flag read just before a writer clears it costs one hold more: later, never early
+     */
+    if (sidx != own &&
+        atomic_load_explicit(&mgr->trs_refused[sidx], memory_order_relaxed) &&
+        !rte_spinlock_is_locked(&mgr->mutex[sidx]))
+      return true;
+  }
+  return false;
+}
+
+/* whether a pre-arm fits before target_tsc behind the pads of a stalled burst */
+static inline bool video_trs_rl_fits(const struct st_tx_video_session_impl* s,
+                                     enum mtl_session_port s_port, uint64_t target_tsc) {
+  const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
+
+  return ceill((target_tsc - s->trs_rl_pads_end[s_port]) / plan->pad_ns) >=
+         plan->trim_pads;
+}
+
+/* Queues NORMAL pads for packet 0 to launch behind, timed so that a shaper with the
+ * plan's bucket ends them at the target within a fine trim; the real bucket is an aim
+ * smaller, so the real shaper ends them an aim later. Returns false to hold packet 0
+ * until its target, or with *again to start over at a later visit, once the pads of a
+ * burst stalled past absorb_ns have drained. trs_rl_tail: packet 0 goes with the last
+ * burst, sized from trs_rl_drained. */
 static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
-                                 enum mtl_session_port s_port) {
+                                 enum mtl_session_port s_port, bool* again) {
   struct st_tx_video_pacing* pacing = &s->pacing;
   const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
   uint64_t target_tsc = s->trs_target_tsc[s_port];
@@ -191,10 +436,13 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
   struct st_tx_video_rl_burst b;
   int64_t gap;
   long double drained;
+  bool tail = false;
   unsigned int tx;
   int sent = 0;
   bool hold = false;
 
+  s->trs_rl_tail[s_port] = false;
+  *again = false;
   if (!target_tsc) {
     err("%s(%d), target_tsc is zero\n", __func__, s->idx);
     return false;
@@ -208,7 +456,8 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
   /* the lower bound is video_trs_rl_warm_up()'s pkts_needed < 0 */
   if (gap > pacing->warm_pkts * pacing->trs || gap <= 1 - 2 * pacing->trs) {
     dbg("%s(%d), mismatch timing with gap %" PRId64 "\n", __func__, s->idx, gap);
-    s->port_user_stats.stat_trans_troffset_mismatch++;
+    /* a port starting over is late by a stall it counted, as a held one is */
+    if (!s->trs_rl_pads_end[s_port]) s->port_user_stats.stat_trans_troffset_mismatch++;
     return false;
   }
   if (gap <= 0) return false;
@@ -216,16 +465,39 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
   /* when the shaper finishes what is queued: an idle one sends the plan's bucket, credit
    * ns, at once */
   drained = target_tsc - gap - credit;
-  /* a late entry leaves fewer than the trim_pads enough to cut up to a pad: hold */
-  if (ceill((target_tsc - drained) / drain) < trim_pads) {
-    dbg("%s(%d), late entry with gap %" PRId64 ", hold\n", __func__, s->idx, gap);
+  /* the pads of a stalled burst may still be queued, or the bucket not full again */
+  if (drained < s->trs_rl_pads_end[s_port]) {
+    *again = video_trs_rl_fits(s, s_port, target_tsc);
     return false;
+  }
+  /* Late entry: too few pads fit before the target to trim packet 0 onto it. Packet 0
+   * then goes with the last pads in one call, up to a pad late, if that is within
+   * absorb_ns; else it is held. */
+  if (ceill((target_tsc - drained) / drain) < trim_pads) {
+    dbg("%s(%d), late entry with gap %" PRId64 "\n", __func__, s->idx, gap);
+    /* Refused pads, of its other port or of another session, are retried first: one
+     * call more than the hold makes would delay that retry. */
+    if ((s->ops.num_port > 1 && video_trs_rl_refused(s, !s_port)) ||
+        video_trs_rl_any_refused(s->mgr, s->idx))
+      return false;
+    /* with a pad past absorb_ns, only a port late already when the transmitter call
+     * began goes as a tail */
+    if (drain > plan->absorb_ns) {
+      if (ceill((target_tsc - s->mgr->visit_tsc + credit) / drain) >= trim_pads)
+        return false;
+      b = st_tx_video_rl_next_burst(drain, pad_size, trim_pads, target_tsc, drained);
+      if (st_tx_video_rl_cut_short(&b, drain, pad_size, target_tsc, drained) >
+          plan->absorb_ns)
+        return false;
+    }
+    tail = true;
   }
 
   /* Each burst is sized from a fresh tsc. Pads the NIC refuses are retried ahead of
    * packet 0, so counting them as queued now can only make the launch later. */
   while (true) {
     long double start = mt_get_tsc(impl) - credit;
+    bool idle = drained <= start;
     if (drained < start) {
       drained = start;
       if (sent) {
@@ -242,6 +514,19 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
     if (target_tsc <= drained) break;
 
     b = st_tx_video_rl_next_burst(drain, pad_size, trim_pads, target_tsc, drained);
+    if (tail && !hold && b.last) break;
+    /* the last pads cannot cut packet 0 onto its target: a late entry, tail within
+     * absorb_ns, else hold */
+    if (b.last && !hold) {
+      long double cut_short =
+          st_tx_video_rl_cut_short(&b, drain, pad_size, target_tsc, drained);
+      if (cut_short >= drain * ST_TX_VIDEO_RL_TRIM_FINE / pad_size) {
+        hold = cut_short > plan->absorb_ns;
+        tail = !hold;
+        break;
+      }
+    }
+    if (idle && !b.last) b.n = RTE_MIN(b.n, plan->anchor_pads);
     for (unsigned int i = 0; i < b.n; i++) pads[i] = pad;
     video_trs_rl_trim(s, s_port, pads, &b);
     video_trs_rl_pads_ref(s, s_port, (int16_t)b.coarse, (int16_t)b.fine,
@@ -256,22 +541,112 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
     }
     s->trs_pad_inflight_num[s_port] += b.n - tx;
 
-    /* A burst returning ST_TX_VIDEO_RL_STALL_NS past the plan stalled: its doorbell may
-     * have found the shaper idle. Plan on from the return, which never overfills, and
-     * hold packet 0, which behind these pads could leave late or early. */
+    /* A burst returning ST_TX_VIDEO_RL_STALL_NS past the plan stalled: its doorbell
+     * found the shaper idle at a time only its return bounds. Planned on, the pads end
+     * late by up to the gap, never early: within absorb_ns they go on. Past it none
+     * follow, and the pre-arm starts over once these have drained, if it still fits. */
     long double latest = s->last_burst_succ_time_tsc[s_port] - credit;
     if (tx && drained + ST_TX_VIDEO_RL_STALL_NS < latest) {
       s->port_user_stats.stat_trans_recalculate_warmup++;
       dbg("%s(%d), burst stalled after %d pkts\n", __func__, s->idx, sent);
-      drained = latest;
-      hold = true;
+      if (latest - drained > plan->absorb_ns) {
+        video_trs_rl_pads_drop(s, s_port);
+        *again = video_trs_rl_fits(s, s_port, target_tsc);
+        return false;
+      }
     }
     drained += st_tx_video_rl_burst_ns(&b, drain, pad_size);
     sent += (int)b.n;
     if (b.last) break;
   }
 
+  s->trs_rl_tail[s_port] = tail && !hold;
+  s->trs_rl_drained[s_port] = drained;
   return !hold;
+}
+
+/* The last pre-arm burst, sized now from the drain end the pre-arm left, and the
+ * inflight pkts of packet 0 behind it, in one call. Pads that would leave packet 0 past
+ * absorb_ns are not sent: before its target it returns 0 at IDLE, for the caller to hold
+ * it, and after it packet 0 goes alone. An IPMX SR goes between the pads and the pkts.
+ * Returns the pkts sent and sets *pads_tx; refused pads, and a refused SR, retry ahead
+ * of the pkts. */
+static uint16_t video_trs_rl_tail_burst(struct mtl_main_impl* impl,
+                                        struct st_tx_video_session_impl* s,
+                                        enum mtl_session_port s_port, uint64_t target_tsc,
+                                        uint16_t* pads_tx) {
+  const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
+#ifdef MTL_HAS_IPMX
+  struct rte_mbuf* tx_pkts[ST_TX_VIDEO_RL_MAX_PADS_PER_BURST + 1 + ST_SESSION_MAX_BULK];
+  struct rte_mbuf* sr = NULL;
+#else
+  struct rte_mbuf* tx_pkts[ST_TX_VIDEO_RL_MAX_PADS_PER_BURST + ST_SESSION_MAX_BULK];
+#endif
+  struct rte_mbuf** pkts = &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]];
+  uint16_t nb_pkts = s->trs_inflight_num[s_port];
+  struct st_tx_video_rl_burst b = {0};
+  struct video_trs_pkts p;
+
+  s->trs_rl_tail[s_port] = false;
+#ifdef MTL_HAS_IPMX
+  /* the pads end the SR's shaper time early, as video_trs_rl_pre_arm() planned them */
+  if (s->ipmx_sr) target_tsc -= ipmx_sr_tx_rl_lead_ns(s->ipmx_sr, s_port, plan);
+#endif
+  uint64_t now = mt_get_tsc(impl);
+  long double drained = RTE_MAX(s->trs_rl_drained[s_port], now - plan->bucket_ns);
+
+  if (target_tsc > drained) {
+    b = st_tx_video_rl_next_burst(plan->pad_ns, plan->pad_size, plan->trim_pads,
+                                  target_tsc, drained);
+    /* behind pads short of the last burst packet 0 would be early, or past absorb_ns:
+     * hold to the target, or after it go alone */
+    if (!b.last || st_tx_video_rl_cut_short(&b, plan->pad_ns, plan->pad_size, target_tsc,
+                                            drained) > plan->absorb_ns) {
+      if (now < target_tsc) return 0;
+      b = (struct st_tx_video_rl_burst){0};
+    }
+  }
+  for (unsigned int i = 0; i < b.n; i++)
+    tx_pkts[i] = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
+  video_trs_rl_trim(s, s_port, tx_pkts, &b);
+  video_trs_rl_pads_ref(s, s_port, (int16_t)b.coarse, (int16_t)b.fine,
+                        (int16_t)(b.n - b.coarse - b.fine));
+  uint16_t head = b.n;
+#ifdef MTL_HAS_IPMX
+  if (s->ipmx_sr) sr = ipmx_sr_tx_pending_get(s->ipmx_sr, s_port, pkts[0]);
+  if (sr) tx_pkts[head++] = sr;
+#endif
+  for (uint16_t i = 0; i < nb_pkts; i++) tx_pkts[head + i] = pkts[i];
+  video_trs_pkts_prepare(s, s_port, pkts, nb_pkts, &p);
+
+  uint16_t tx = video_trs_rl_txq_burst(impl, s, s_port, tx_pkts, head + nb_pkts);
+#ifdef MTL_HAS_IPMX
+  if (sr) ipmx_sr_tx_pending_done(s->ipmx_sr, s_port, tx > b.n);
+#endif
+  *pads_tx = RTE_MIN(tx, b.n);
+  uint16_t pkts_tx = tx > head ? tx - head : 0;
+  if (*pads_tx < b.coarse + b.fine) {
+    int16_t coarse = (int16_t)(b.coarse - RTE_MIN(b.coarse, *pads_tx));
+    int16_t fine = (int16_t)(b.coarse + b.fine - RTE_MAX(b.coarse, *pads_tx));
+    video_trs_rl_pads_ref(s, s_port, (int16_t)-coarse, (int16_t)-fine,
+                          (int16_t)(coarse + fine));
+  }
+  if (!tx) {
+    /* A full ring took none: drop the pads and hold packet 0 to its target, which costs
+     * no call until then, as the hold. */
+    video_trs_rl_pads_ref(s, s_port, 0, 0, (int16_t)-b.n);
+    s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
+    video_trs_pkts_sent(impl, s, s_port, pkts, nb_pkts, 0, &p);
+    return 0;
+  }
+  s->trs_pad_inflight_num[s_port] += b.n - *pads_tx;
+  video_trs_pads_end(s, s_port, tx_pkts, RTE_MIN(tx, head));
+  /* a stall before the doorbell, as video_trs_rl_pre_arm() counts one */
+  long double latest = s->last_burst_succ_time_tsc[s_port] - plan->bucket_ns;
+  if (*pads_tx && drained + ST_TX_VIDEO_RL_STALL_NS < latest)
+    s->port_user_stats.stat_trans_recalculate_warmup++;
+  video_trs_pkts_sent(impl, s, s_port, pkts, nb_pkts, pkts_tx, &p);
+  return pkts_tx;
 }
 
 static int video_burst_packet(struct mtl_main_impl* impl,
@@ -279,7 +654,7 @@ static int video_burst_packet(struct mtl_main_impl* impl,
                               enum mtl_session_port s_port, struct rte_mbuf** pkts,
                               int bulk, bool use_two) {
   struct st_tx_video_pacing* pacing = &s->pacing;
-  int tx = video_trs_burst(impl, s, s_port, &pkts[0], bulk);
+  int tx = video_trs_rl_burst(impl, s, s_port, &pkts[0], bulk);
   int pkt_idx = st_tx_mbuf_get_idx(pkts[0]);
 
   if (tx < bulk) {
@@ -311,9 +686,8 @@ static int video_burst_packet(struct mtl_main_impl* impl,
 
 static bool video_trs_rl_target_reached(struct mtl_main_impl* impl,
                                         struct st_tx_video_session_impl* s,
-                                        uint64_t target_tsc, int* ret_status,
-                                        int* tasklet_ret) {
-  uint64_t cur_tsc = mt_get_tsc(impl);
+                                        uint64_t cur_tsc, uint64_t target_tsc,
+                                        int* ret_status, int* tasklet_ret) {
   if (cur_tsc >= target_tsc) return true;
 
   uint64_t delta = target_tsc - cur_tsc;
@@ -338,22 +712,26 @@ static inline void video_trs_rl_set_idle(struct st_tx_video_session_impl* s,
 
 /* The state a port goes to once the warm-up window of packet 0 opens. Without a plan it
  * sends the warm-up pads and waits for the target. With one it pre-arms the shaper,
- * which then releases packet 0, unless the pre-arm fails and it waits for the target. */
+ * which then releases packet 0, unless the pre-arm starts over, or fails and it waits. */
 static enum st_tx_video_rl_state video_trs_rl_frame_start(
     struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
-    enum mtl_session_port s_port) {
+    enum mtl_session_port s_port, bool* again) {
+  *again = false;
   if (!s->rl_plan[s_port].armed) {
     video_trs_rl_warm_up(impl, s, s_port);
     return ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
   }
-  if (!video_trs_rl_pre_arm(impl, s, s_port)) return ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
-  s->trs_target_tsc[s_port] = 0;
+  if (!video_trs_rl_pre_arm(impl, s, s_port, again))
+    return *again ? ST_TX_VIDEO_RL_STATE_WAIT_WARMUP : ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
+  /* a packet 0 that goes with the tail keeps its target for the call that sends it */
+  if (!s->trs_rl_tail[s_port]) s->trs_target_tsc[s_port] = 0;
   return ST_TX_VIDEO_RL_STATE_IDLE;
 }
 
 static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
                                  struct st_tx_video_session_impl* s,
-                                 enum mtl_session_port s_port, int* ret_status) {
+                                 enum mtl_session_port s_port, bool second,
+                                 int* ret_status) {
   unsigned int bulk = s->bulk;
   struct rte_ring* ring = s->ring[s_port];
   int idx = s->idx;
@@ -362,9 +740,9 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
 
   /* check if any inflight pkts in transmitter inflight 2 */
   if (s->trs_inflight_num2[s_port] > 0) {
-    tx = video_trs_burst(impl, s, s_port,
-                         &s->trs_inflight2[s_port][s->trs_inflight_idx2[s_port]],
-                         s->trs_inflight_num2[s_port]);
+    tx = video_trs_rl_burst(impl, s, s_port,
+                            &s->trs_inflight2[s_port][s->trs_inflight_idx2[s_port]],
+                            s->trs_inflight_num2[s_port]);
     s->trs_inflight_num2[s_port] -= tx;
     s->trs_inflight_idx2[s_port] += tx;
     if (tx > 0) {
@@ -376,14 +754,39 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     }
   }
 
+  /* Pads refused ahead of an unsent packet 0 count as queued. Once those the NIC took
+   * have drained and the bucket refilled, they would launch it late by that wait: they
+   * are dropped, and a pre-arm they ended starts over. */
+  const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
+  if (s->trs_pad_inflight_num[s_port] && plan->armed && s->trs_inflight_num[s_port] &&
+      !st_tx_mbuf_get_idx(s->trs_inflight[s_port][s->trs_inflight_idx[s_port]]) &&
+      mt_get_tsc(impl) - plan->bucket_ns >= s->trs_rl_pads_end[s_port]) {
+    video_trs_rl_pads_drop(s, s_port);
+    if (s->rl_state[s_port] == ST_TX_VIDEO_RL_STATE_IDLE) {
+      s->port_user_stats.stat_trans_recalculate_warmup++;
+      s->trs_target_tsc[s_port] =
+          st_tx_mbuf_get_tsc(s->trs_inflight[s_port][s->trs_inflight_idx[s_port]]);
+      s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_WAIT_WARMUP;
+    }
+  }
+
   uint64_t target_tsc = s->trs_target_tsc[s_port];
   if (s->rl_state[s_port] == ST_TX_VIDEO_RL_STATE_WAIT_WARMUP) {
     uint64_t warmup_ns = s->pacing.warm_pkts * s->pacing.trs;
     uint64_t warmup_tsc = target_tsc > warmup_ns ? target_tsc - warmup_ns : 0;
     int tasklet_ret;
-    if (!video_trs_rl_target_reached(impl, s, warmup_tsc, ret_status, &tasklet_ret))
+    uint64_t now = mt_get_tsc(impl);
+    if (!video_trs_rl_target_reached(impl, s, now, warmup_tsc, ret_status,
+                                     &tasklet_ret)) {
+      video_trs_rl_reclaim(impl, s, s_port, now);
       return tasklet_ret;
-    s->rl_state[s_port] = video_trs_rl_frame_start(impl, s, s_port);
+    }
+    bool again;
+    s->rl_state[s_port] = video_trs_rl_frame_start(impl, s, s_port, &again);
+    if (again) {
+      video_trs_rl_reclaim_idle(impl, s, s_port);
+      return MTL_TASKLET_HAS_PENDING;
+    }
   }
 
   /* check if any padding inflight pkts in transmitter */
@@ -409,19 +812,46 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
 
   if (s->rl_state[s_port] == ST_TX_VIDEO_RL_STATE_WAIT_TARGET) {
     int tasklet_ret;
-    if (!video_trs_rl_target_reached(impl, s, target_tsc, ret_status, &tasklet_ret))
+    if (!video_trs_rl_target_reached(impl, s, mt_get_tsc(impl), target_tsc, ret_status,
+                                     &tasklet_ret))
       return tasklet_ret;
     video_trs_rl_set_idle(s, s_port);
   }
 
   /* check if any inflight pkts in transmitter */
   if (s->trs_inflight_num[s_port] > 0) {
-    tx = video_trs_burst(impl, s, s_port,
-                         &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]],
-                         s->trs_inflight_num[s_port]);
+    uint16_t pads_tx = 0;
+    bool tail = s->trs_rl_tail[s_port];
+    if (tail) {
+      tx = video_trs_rl_tail_burst(impl, s, s_port, s->trs_target_tsc[s_port], &pads_tx);
+      /* held to its target: report it as the hold, for a scheduler that sleeps */
+      if (!tx && !pads_tx && s->rl_state[s_port] == ST_TX_VIDEO_RL_STATE_IDLE) {
+        int tasklet_ret;
+        s->rl_state[s_port] = ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
+        if (!video_trs_rl_target_reached(impl, s, mt_get_tsc(impl), target_tsc,
+                                         ret_status, &tasklet_ret))
+          return tasklet_ret;
+        /* the target passed since the tail's read: packet 0 goes now, alone */
+        video_trs_rl_set_idle(s, s_port);
+        tail = false;
+      }
+    }
+    if (!tail)
+      tx = video_trs_rl_burst(impl, s, s_port,
+                              &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]],
+                              s->trs_inflight_num[s_port]);
+    /* a target is kept only while packet 0 heads the inflight pkts */
+    if (tx && target_tsc) {
+      uint64_t back = s->last_burst_succ_time_tsc[s_port];
+      s->trs_target_tsc[s_port] = 0;
+      s->trs_wire_tsc[s_port] =
+          RTE_MAX(s->trs_wire_tsc[s_port],
+                  RTE_MAX(target_tsc, back) + (uint64_t)(tx * s->pacing.trs));
+    }
     s->trs_inflight_num[s_port] -= tx;
     s->trs_inflight_idx[s_port] += tx;
-    if (tx > 0) {
+    /* the NIC taking only pads ahead of packet 0 still counts as work */
+    if (tx > 0 || pads_tx > 0) {
       *ret_status = 1;
       return MTL_TASKLET_HAS_PENDING;
     } else {
@@ -434,6 +864,10 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
   struct rte_mbuf* pkts[ST_SESSION_MAX_BULK] = {NULL};
   n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
   if (n == 0) {
+    /* behind the first call's burst, reclaim only for a batch due within a tick of it */
+    if (!second || s->trs_reclaim_tsc[s_port] <=
+                       s->last_burst_succ_time_tsc[s_port] + ST_TX_VIDEO_RL_TICK_NS)
+      video_trs_rl_reclaim_idle(impl, s, s_port);
     *ret_status = -STI_RLTRS_DEQUEUE_FAIL;
     return MTL_TASKLET_ALL_DONE;
   }
@@ -470,6 +904,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
 #endif
     dbg("%s(%d), first pkt, ts cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
         cur_tsc, target_tsc);
+    s->trs_rl_pads_end[s_port] = 0;
     if (likely(cur_tsc < target_tsc || s->trs_inflight_num2[s_port])) {
       unsigned int i;
       /* Keep an already-overdue frame pending. */
@@ -514,14 +949,14 @@ static int video_trs_rl_tasklet(struct mtl_main_impl* impl,
   int pending = MTL_TASKLET_ALL_DONE;
   int ret_status = 0;
 
-  pending += _video_trs_rl_tasklet(impl, s, s_port, &ret_status);
+  pending += _video_trs_rl_tasklet(impl, s, s_port, false, &ret_status);
   /*
    * Try to burst pkts again for the performance, in this way nic tx get double
    * bulk since tx pkt is in critical path
    */
   if (ret_status > 0) {
     ret_status = 0;
-    pending += _video_trs_rl_tasklet(impl, s, s_port, &ret_status);
+    pending += _video_trs_rl_tasklet(impl, s, s_port, true, &ret_status);
   }
   s->stat_trs_ret_code[s_port] = ret_status;
   return pending;
@@ -835,6 +1270,135 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
   return MTL_TASKLET_HAS_PENDING;
 }
 
+/* The target of the packet 0 an RL port holds, or keeps while its pre-arm waits to start
+ * over, 0 if none. st22 keeps main's RL path: its hold, which only its own visit
+ * releases, no catch-up, no reclaim, and no refusal that blocks other ports. */
+static inline uint64_t video_trs_rl_pkt0_tsc(const struct st_tx_video_session_impl* s,
+                                             int s_port) {
+  if (s->pacing_way[s_port] != ST21_TX_PACING_WAY_RL ||
+      s->s_type == MT_ST22_HANDLE_TX_VIDEO)
+    return 0;
+  /* trs_rl_pads_end is 0 from the dequeue of packet 0 to its first pad */
+  if (s->rl_state[s_port] == ST_TX_VIDEO_RL_STATE_WAIT_WARMUP &&
+      !s->trs_rl_pads_end[s_port])
+    return 0;
+  return s->trs_target_tsc[s_port];
+}
+
+static inline uint64_t video_trs_rl_pkt0_first(uint64_t a, uint64_t b) {
+  return a && (!b || a < b) ? a : b;
+}
+
+/* Sends the packets 0 past their target, each port at most once a call. Runs before the
+ * visit of session next_sidx, or after the last visit with mgr->max_idx. */
+static int video_trs_rl_release(struct mtl_main_impl* impl,
+                                struct st_video_transmitter_impl* trs, int next_sidx) {
+  struct st_tx_video_sessions_mgr* mgr = trs->mgr;
+  int pending = MTL_TASKLET_ALL_DONE;
+  uint64_t now, next = 0, blocked_next = 0;
+  bool blocked = false;
+
+  /* the refused port may have gone in its session's visit, just before */
+  if (next_sidx == trs->refused_sidx + 1) {
+    trs->pkt0_tsc = video_trs_rl_pkt0_first(trs->pkt0_tsc, trs->blocked_tsc);
+    trs->blocked_tsc = 0;
+  }
+  if (!trs->pkt0_tsc) return pending;
+  now = mt_get_tsc(impl);
+  if (now < trs->pkt0_tsc) return pending;
+  for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
+    struct st_tx_video_session_impl* s = tx_video_session_dp_get(mgr, sidx);
+    if (!s) {
+      /* a held session keeps the scans' targets for the next call's first scan only */
+      if (rte_spinlock_is_locked(&mgr->mutex[sidx]))
+        trs->locked_tsc = video_trs_rl_pkt0_first(
+            trs->locked_tsc, video_trs_rl_pkt0_first(trs->pkt0_tsc, trs->blocked_tsc));
+      continue;
+    }
+    for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
+      uint64_t target = video_trs_rl_pkt0_tsc(s, s_port);
+      /* Nothing of the ports after a refused one goes ahead of its retry, in its
+       * session's visit; a port the NIC never drains blocks them until hang detection
+       * recovers it, within tx_hang_detect_time_thresh (1 s). */
+      if (target && blocked)
+        blocked_next = video_trs_rl_pkt0_first(blocked_next, target);
+      else if (target > now)
+        next = video_trs_rl_pkt0_first(next, target);
+      else if (target && s->trs_released[s_port] != trs->visit && s->queue[s_port] &&
+               !s->tx_queue_recovery_pending[s_port]) {
+        s->trs_released[s_port] = trs->visit;
+        pending += s->pacing_tasklet_func[s_port](impl, s, s_port);
+        /* the scan's own sends may carry it past the targets of the ports after */
+        now = mt_get_tsc(impl);
+      }
+      if (!blocked && video_trs_rl_refused(s, s_port)) {
+        blocked = true;
+        trs->refused_sidx = sidx;
+      }
+    }
+    video_trs_rl_note_refused(mgr, sidx, s);
+  }
+  trs->pkt0_tsc = next;
+  trs->blocked_tsc = blocked_next;
+  return pending;
+}
+
+/* An RL port mid-frame whose last call sent pkts and whose NIC TX queue holds less than
+ * the scheduler may be away, mt_sch_schedule_ns(). */
+static bool video_trs_rl_short(struct mtl_main_impl* impl,
+                               struct st_tx_video_session_impl* s, int s_port) {
+  if (s->pacing_way[s_port] != ST21_TX_PACING_WAY_RL || s->stat_trs_ret_code[s_port] <= 0)
+    return false;
+  if (s->s_type == MT_ST22_HANDLE_TX_VIDEO ||
+      s->rl_state[s_port] != ST_TX_VIDEO_RL_STATE_IDLE || s->trs_target_tsc[s_port])
+    return false;
+  return s->trs_wire_tsc[s_port] <
+         s->last_burst_succ_time_tsc[s_port] + mt_sch_schedule_ns(impl);
+}
+
+/* Where a held st20 RL packet 0 of the port becomes near: two of its warm-up windows
+ * before its target, as its window opens within one. */
+static inline uint64_t video_trs_rl_near_tsc(const struct st_tx_video_session_impl* s,
+                                             int s_port) {
+  uint64_t target = s->trs_target_tsc[s_port];
+  uint64_t window = (uint64_t)(2 * s->pacing.warm_pkts * s->pacing.trs);
+  return target > window ? target - window : 0;
+}
+
+/* Tops the short ports up a bulk each in turn, so none waits on another's whole
+ * catch-up, until each holds mt_sch_schedule_ns(), its NIC or builder ring stops it, or
+ * a sweep would start past near_tsc, which a packet 0 it dequeues lowers. */
+static int video_trs_rl_catch_up(struct mtl_main_impl* impl,
+                                 struct st_tx_video_sessions_mgr* mgr,
+                                 uint64_t near_tsc) {
+  int pending = MTL_TASKLET_ALL_DONE;
+  bool more = true;
+
+  while (more && mt_get_tsc(impl) <= near_tsc) {
+    bool blocked = false;
+    more = false;
+    for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
+      struct st_tx_video_session_impl* s = tx_video_session_dp_get(mgr, sidx);
+      if (!s) continue;
+      for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
+        /* as in the release scans, skip the ports after a refused one */
+        if (!blocked && s->queue[s_port] && !s->tx_queue_recovery_pending[s_port] &&
+            video_trs_rl_short(impl, s, s_port)) {
+          int ret_status = 0;
+          pending += _video_trs_rl_tasklet(impl, s, s_port, false, &ret_status);
+          s->stat_trs_ret_code[s_port] = ret_status;
+          if (ret_status > 0) more = true;
+          if (s->trs_target_tsc[s_port])
+            near_tsc = RTE_MIN(near_tsc, video_trs_rl_near_tsc(s, s_port));
+        }
+        blocked |= video_trs_rl_refused(s, s_port);
+      }
+      video_trs_rl_note_refused(mgr, sidx, s);
+    }
+  }
+  return pending;
+}
+
 static int video_trs_tasklet_handler(void* priv) {
   struct st_video_transmitter_impl* trs = priv;
   struct mtl_main_impl* impl = trs->parent;
@@ -842,8 +1406,17 @@ static int video_trs_tasklet_handler(void* priv) {
   struct st_tx_video_session_impl* s;
   int sidx, s_port;
   int pending = MTL_TASKLET_ALL_DONE;
+  bool catch_up = false;
+  /* a visited st20 RL packet 0 dequeued is due within two of its warm-up windows from
+   * then: its window opens within one, and its visits must not wait for a catch-up */
+  uint64_t near_tsc = UINT64_MAX;
 
+  trs->visit++;
+  mgr->visit_tsc = mt_get_tsc(impl);
+  trs->pkt0_tsc = video_trs_rl_pkt0_first(trs->pkt0_tsc, trs->locked_tsc);
+  trs->locked_tsc = 0;
   for (sidx = 0; sidx < mgr->max_idx; sidx++) {
+    pending += video_trs_rl_release(impl, trs, sidx);
     s = tx_video_session_dp_get(mgr, sidx);
     if (!s) continue;
 
@@ -855,8 +1428,23 @@ static int video_trs_tasklet_handler(void* priv) {
         continue;
       }
       pending += s->pacing_tasklet_func[s_port](impl, s, s_port);
+      /* st22 keeps main's RL path: no catch-up, near_tsc or scan target */
+      if (s->pacing_way[s_port] != ST21_TX_PACING_WAY_RL ||
+          s->s_type == MT_ST22_HANDLE_TX_VIDEO)
+        continue;
+      catch_up |= video_trs_rl_short(impl, s, s_port);
+      uint64_t target = s->trs_target_tsc[s_port];
+      if (!target) continue;
+      if (s->trs_released[s_port] != trs->visit)
+        trs->pkt0_tsc =
+            video_trs_rl_pkt0_first(trs->pkt0_tsc, video_trs_rl_pkt0_tsc(s, s_port));
+      near_tsc = RTE_MIN(near_tsc, video_trs_rl_near_tsc(s, s_port));
     }
+    video_trs_rl_note_refused(mgr, sidx, s);
   }
+  pending += video_trs_rl_release(impl, trs, mgr->max_idx);
+  if (catch_up) pending += video_trs_rl_catch_up(impl, mgr, near_tsc);
+  /* the scans publish the slot of each session they reach, as the visits do */
   tx_video_session_dp_done(mgr);
 
   return pending;
@@ -897,6 +1485,12 @@ int st_video_transmitter_init(struct mtl_main_impl* impl, struct mtl_sch_impl* s
   trs->parent = impl;
   trs->idx = idx;
   trs->mgr = mgr;
+  /* a scheduler started again keeps no target or call count of its last run */
+  trs->pkt0_tsc = 0;
+  trs->blocked_tsc = 0;
+  trs->locked_tsc = 0;
+  trs->refused_sidx = 0;
+  trs->visit = 0;
 
   memset(&ops, 0x0, sizeof(ops));
   ops.priv = trs;

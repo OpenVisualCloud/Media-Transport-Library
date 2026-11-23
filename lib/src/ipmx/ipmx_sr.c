@@ -228,14 +228,15 @@ void ipmx_sr_tx_frame_start(struct ipmx_sr_tx* sr, enum mtl_session_port s_port,
   }
 }
 
-bool ipmx_sr_tx_send_pending(struct ipmx_sr_tx* sr, enum mtl_session_port s_port,
-                             struct mt_txq_entry* queue, struct rte_mbuf* pkt0) {
+struct rte_mbuf* ipmx_sr_tx_pending_get(struct ipmx_sr_tx* sr,
+                                        enum mtl_session_port s_port,
+                                        struct rte_mbuf* pkt0) {
   struct ipmx_sr_leg* leg = &sr->leg[s_port];
   struct rte_mbuf* pkt = leg->pending;
   struct mt_interface* inf;
 
-  if (st_tx_mbuf_get_idx(pkt0)) return true;
-  if (ipmx_sr_pkt_rtp_ts(pkt0) != leg->last_rtp_ts) return true;
+  if (!pkt || st_tx_mbuf_get_idx(pkt0)) return NULL;
+  if (ipmx_sr_pkt_rtp_ts(pkt0) != leg->last_rtp_ts) return NULL;
 
   inf = mt_if(sr->impl, leg->port);
   if (pkt0->ol_flags & inf->tx_launch_time_flag) {
@@ -243,13 +244,30 @@ bool ipmx_sr_tx_send_pending(struct ipmx_sr_tx* sr, enum mtl_session_port s_port
     *RTE_MBUF_DYNFIELD(pkt, inf->tx_dynfield_offset, uint64_t*) =
         *RTE_MBUF_DYNFIELD(pkt0, inf->tx_dynfield_offset, uint64_t*);
   }
-  if (!mt_txq_burst(queue, &pkt, 1)) {
+  return pkt;
+}
+
+void ipmx_sr_tx_pending_done(struct ipmx_sr_tx* sr, enum mtl_session_port s_port,
+                             bool sent) {
+  struct ipmx_sr_leg* leg = &sr->leg[s_port];
+
+  if (!sent) {
     leg->stat.burst_fail++;
-    return false;
+    return;
   }
   leg->pending = NULL;
   leg->stat.sent++;
-  return true;
+}
+
+bool ipmx_sr_tx_send_pending(struct ipmx_sr_tx* sr, enum mtl_session_port s_port,
+                             struct mt_txq_entry* queue, struct rte_mbuf* pkt0) {
+  struct rte_mbuf* pkt = ipmx_sr_tx_pending_get(sr, s_port, pkt0);
+  bool sent;
+
+  if (!pkt) return true;
+  sent = mt_txq_burst(queue, &pkt, 1);
+  ipmx_sr_tx_pending_done(sr, s_port, sent);
+  return sent;
 }
 
 uint64_t ipmx_sr_tx_rl_lead_ns(const struct ipmx_sr_tx* sr, enum mtl_session_port s_port,

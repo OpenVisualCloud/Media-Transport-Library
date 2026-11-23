@@ -78,12 +78,14 @@ TEST(St20_tx, get_framebuffer_expect_fail) {
   fbcnt = ST20_FB_MAX_COUNT;
   expect_fail_test_get_framebuffer(st20_tx, fbcnt);
 }
+/* RTP-level create takes rtp_pkt_size in [1:1452], so a 1396-byte ST 2022-6 pkt fits */
 TEST(St20_tx, rtp_pkt_size) {
   uint16_t rtp_pkt_size = 0;
   expect_test_rtp_pkt_size(st20_tx, ST20_TYPE_RTP_LEVEL, rtp_pkt_size, false);
-  rtp_pkt_size = MTL_PKT_MAX_RTP_BYTES;
+  /* the video TX limit: the 1494-byte TX frame minus the 42-byte Ethernet/IPv4/UDP hdr */
+  rtp_pkt_size = 1452;
   expect_test_rtp_pkt_size(st20_tx, ST20_TYPE_RTP_LEVEL, rtp_pkt_size, true);
-  rtp_pkt_size = MTL_PKT_MAX_RTP_BYTES + 1;
+  rtp_pkt_size = 1452 + 1;
   expect_test_rtp_pkt_size(st20_tx, ST20_TYPE_RTP_LEVEL, rtp_pkt_size, false);
 }
 

@@ -94,17 +94,28 @@ struct ut_txv_ctx {
    * train_pad_ns per NORMAL pad of train_normal_len bytes, by their bytes */
   long double train_pad_ns;
   uint16_t train_normal_len;
-  bool no_trim_pads; /* ut_txv_init_rl_pacing() leaves s->trim_pad empty */
-  uint32_t rl_width; /* ut_txv_set_rl_format(), 0 for 1920x1080 */
+  long double train_burst_trs; /* the CPU time of one burst call, in trs */
+  bool no_trim_pads;           /* ut_txv_init_rl_pacing() leaves s->trim_pad empty */
+  uint32_t rl_width;           /* ut_txv_set_rl_format(), 0 for 1920x1080 */
   uint32_t rl_height;
   bool rl_interlaced;
   enum st_fps rl_fps;
+  bool rl_layout; /* ut_txv_set_rl_layout() */
+  enum st20_packing rl_packing;
+  enum st20_fmt rl_fmt;
+  uint16_t rl_nb_tx_desc;          /* 0 for 512 */
+  enum ut_txv_pacing_way init_way; /* 0 for RL */
   struct mt_txq_entry rl_queue[MTL_SESSION_PORT_MAX];
   struct mt_tx_queue rl_txq[MTL_SESSION_PORT_MAX];
   bool rl_bps_set[MTL_SESSION_PORT_MAX];
   uint64_t rl_bps[MTL_SESSION_PORT_MAX];
   int trim_pad_tag;
   long double train_drain_end_ns;
+  int visit_slice_lines; /* ut_txv_set_visit_slice_lines(), -1 for frame level */
+  bool stale_stamps;     /* ut_txv_set_stale_stamps() */
+  int migrated_refused;  /* trs_refused[] of the last ut_txv_run_migrate()'s new slot */
+  int64_t r_budget;      /* ut_txv_set_redundant_budget() */
+  uint64_t stale_stamp;
   uint64_t slept_ns;
   /* st20_tx_queue_fatal_error(): each leg's queue [0] and its replacement [1] */
   struct mt_txq_entry recovery_queue[MTL_SESSION_PORT_MAX][2];
@@ -294,6 +305,7 @@ static uint16_t ut_txv_txq_burst_busy(struct mt_txq_entry* entry,
   (void)entry;
   (void)timeout_ms;
 
+  ut_txv_advance(ctx, (uint64_t)ceill(ctx->train_burst_trs * ctx->session.pacing.trs));
   for (uint16_t i = 0; i < nb_pkts; i++) {
     /* the busy burst spins until the shaper frees a descriptor */
     long double full = ctx->train_drain_end_ns - (nb_desc - 1) * ctx->train_pad_ns;
@@ -321,12 +333,13 @@ static void ut_txv_sleep_us(unsigned int us) {
   ut_txv_train_ctx->slept_ns += (uint64_t)us * NS_PER_US;
 }
 
+static int ut_txv_ptp_wait_ret;
 static int ut_txv_ptp_wait_stable(struct mtl_main_impl* impl, enum mtl_port port,
                                   int timeout_ms) {
   (void)impl;
   (void)port;
   (void)timeout_ms;
-  return 0;
+  return ut_txv_ptp_wait_ret;
 }
 
 static int ut_txv_wait_tsc_stable(struct mtl_main_impl* impl) {
@@ -417,7 +430,25 @@ static uint16_t ut_txv_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** t
   }
   return nb_pkts;
 }
+/* the mbufs the transmitter freed since ut_txv_run_be_dummy() began, and its reads of
+ * their index after that */
+static struct rte_mbuf* ut_txv_freed[ST_SESSION_MAX_BULK];
+static unsigned int ut_txv_freed_n, ut_txv_freed_reads;
+static void ut_txv_pktmbuf_free_bulk(struct rte_mbuf** mbufs, unsigned int count) {
+  for (unsigned int i = 0; i < count && ut_txv_freed_n < RTE_DIM(ut_txv_freed); i++)
+    ut_txv_freed[ut_txv_freed_n++] = mbufs[i];
+  rte_pktmbuf_free_bulk(mbufs, count);
+}
+static uint32_t ut_txv_mbuf_get_idx(struct rte_mbuf* mbuf) {
+  for (unsigned int i = 0; i < ut_txv_freed_n; i++)
+    if (ut_txv_freed[i] == mbuf) ut_txv_freed_reads++;
+  return st_tx_mbuf_get_idx(mbuf);
+}
+#define rte_pktmbuf_free_bulk ut_txv_pktmbuf_free_bulk
+#define st_tx_mbuf_get_idx ut_txv_mbuf_get_idx
 #include "st2110/st_video_transmitter.c"
+#undef st_tx_mbuf_get_idx
+#undef rte_pktmbuf_free_bulk
 #undef mt_txq_burst
 #undef mt_get_tsc
 #include "mt_admin.c"
@@ -436,6 +467,8 @@ ut_txv_ctx* ut_txv_create(void) {
   ut_txv_ctx* ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
 
+  ut_txv_ptp_wait_ret = 0;
+  ctx->visit_slice_lines = -1;
   ctx->impl.type = MT_HANDLE_MAIN;
   ctx->impl.tsc_hz = rte_get_tsc_hz();
   ctx->impl.inf[MTL_PORT_P].ptp_get_time_fn = ut_txv_ptp_time_fn;
@@ -452,7 +485,7 @@ ut_txv_ctx* ut_txv_create(void) {
   struct st_tx_video_session_impl* s = &ctx->session;
   s->impl = &ctx->impl;
   s->mgr = &ctx->mgr;
-  s->idx = 0;
+  tv_init(s, 0);
   s->active = true;
   ut_txv_set_frame_time(ctx, NS_PER_MS); /* round number for simple math */
   s->pacing.max_onward_epochs = 3;
@@ -505,6 +538,10 @@ void ut_txv_set_tr_offset(ut_txv_ctx* ctx, long double tr_offset_ns) {
 
 void ut_txv_set_vrx(ut_txv_ctx* ctx, uint32_t vrx) {
   ctx->session.pacing.vrx = vrx;
+}
+
+void ut_txv_set_start_vrx(ut_txv_ctx* ctx, uint16_t start_vrx) {
+  ctx->session.ops.start_vrx = start_vrx;
 }
 
 void ut_txv_set_trs(ut_txv_ctx* ctx, long double trs_ns) {
@@ -690,13 +727,13 @@ out:
   return ret;
 }
 
-static int ut_txv_mark_unstamped(struct rte_mempool* pool) {
+static int ut_txv_mark_stamps(struct rte_mempool* pool, uint64_t stamp) {
   struct rte_mbuf* mbufs[pool->size];
 
   if (rte_pktmbuf_alloc_bulk(pool, mbufs, pool->size) < 0) return -ENOMEM;
   for (unsigned int i = 0; i < pool->size; i++) {
-    st_tx_mbuf_set_tsc(mbufs[i], UT_TXV_NO_STAMP);
-    st_tx_mbuf_set_ptp(mbufs[i], UT_TXV_NO_STAMP);
+    st_tx_mbuf_set_tsc(mbufs[i], stamp);
+    st_tx_mbuf_set_ptp(mbufs[i], stamp);
   }
   rte_pktmbuf_free_bulk(mbufs, pool->size);
   return 0;
@@ -717,7 +754,7 @@ int ut_txv_run_frame_stamps(ut_txv_ctx* ctx, const enum st21_tx_pacing_way* ways
     s->pacing_way[port] = ways[port];
   for (int port = 0; port < num_port; port++) {
     if (ut_txv_tx_leg_init(ctx, port) < 0) goto out;
-    if (ut_txv_mark_unstamped(s->mbuf_mempool_hdr[port]) < 0) goto out;
+    if (ut_txv_mark_stamps(s->mbuf_mempool_hdr[port], UT_TXV_NO_STAMP) < 0) goto out;
   }
   ut_txv_frame_setup(ctx, &frame, frame_data, total_pkts);
   s->st20_frame_size = (size_t)total_pkts * UT_TXV_FRAME_SIZE;
@@ -766,6 +803,45 @@ mtl_iova_t ut_txv_frame_offset_iova(ut_txv_ctx* ctx, mtl_iova_t iova,
     page_table[i].len = UT_TXV_IOVA_PAGE_LEN;
   }
   return tv_frame_get_offset_iova(&ctx->session, &frame, offset);
+}
+
+static int ut_txv_visit_lines_ready(void* priv, uint16_t frame_idx,
+                                    struct st20_tx_slice_meta* meta) {
+  struct ut_txv_ctx* ctx = priv;
+  (void)frame_idx;
+  meta->lines_ready = ctx->visit_slice_lines;
+  return 0;
+}
+
+void ut_txv_set_visit_slice_lines(ut_txv_ctx* ctx, int lines) {
+  ctx->visit_slice_lines = lines;
+}
+
+int64_t ut_txv_run_frame_visit(ut_txv_ctx* ctx, int pkt_idx, int64_t ahead_ns) {
+  return ut_txv_run_frame_visit_cursor(ctx, pkt_idx, ctx->mock_tsc_ns + ahead_ns);
+}
+
+int64_t ut_txv_run_frame_visit_cursor(ut_txv_ctx* ctx, int pkt_idx,
+                                      long double cursor_ns) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st_frame_trans frame = {0};
+  uint8_t frame_data[UT_TXV_FRAME_SIZE] = {0};
+
+  if (ut_txv_tx_path_init(ctx) < 0) return 0;
+  ut_txv_frame_setup(ctx, &frame, frame_data, 2);
+  if (ctx->visit_slice_lines >= 0) {
+    s->ops.type = ST20_TYPE_SLICE_LEVEL;
+    s->ops.query_frame_lines_ready = ut_txv_visit_lines_ready;
+    s->st20_frame_lines_ready = 0;
+  }
+  rte_atomic32_set(&frame.refcnt, 1);
+  s->st20_frame_stat = ST21_TX_STAT_SENDING_PKTS;
+  s->st20_pkt_idx = pkt_idx;
+  s->pacing.tsc_time_cursor = cursor_ns;
+  tvs_tasklet_handler(&ctx->mgr);
+  ut_txv_tx_path_uinit(ctx);
+  s->st20_frames = NULL;
+  return s->lead_min_ns;
 }
 
 /* Queues one app packet for tv_tasklet_rtp() on a one-packet RTP-level frame. */
@@ -1958,6 +2034,124 @@ out:
   return ret;
 }
 
+int ut_txv_run_frame_rl_late_ports(ut_txv_ctx* ctx, uint32_t late_pkt,
+                                   const uint64_t* late_ns) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st_frame_trans frame = {0};
+  uint8_t frame_data[UT_TXV_FRAME_SIZE] = {0};
+  uint64_t flagged = s->stat_rl.vrx_frames;
+  int num_port = ctx->r_budget ? 2 : 1;
+  int ret = -1;
+
+  for (int port = 0; port < num_port; port++)
+    if (ut_txv_tx_leg_init(ctx, port) < 0) goto out;
+  if (ctx->stale_stamps &&
+      ut_txv_mark_stamps(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P], ctx->stale_stamp) < 0)
+    goto out;
+  ut_txv_frame_setup(ctx, &frame, frame_data, (int)late_pkt + 1);
+  s->ops.num_port = num_port;
+  if (ctx->r_budget) {
+    s->pacing_way[MTL_SESSION_PORT_R] = ST21_TX_PACING_WAY_RL;
+    s->rl_plan[MTL_SESSION_PORT_R].vrx_budget_ns = ctx->r_budget;
+  }
+  ctx->app_tfmt = ST10_TIMESTAMP_FMT_TAI;
+  ctx->app_timestamp = 0;
+  s->tx_hang_detect_time_thresh = UINT64_MAX;
+  ctx->burst_packets_count = 0;
+  for (int port = 0; port < num_port; port++) {
+    s->rl_plan[port].armed = false;
+    s->queue[port] = (struct mt_txq_entry*)ctx;
+    st_video_resolve_pacing_tasklet(s, port);
+  }
+  /* each pkt is built when it is due, the late one late: the NIC paces the rest */
+  for (uint32_t i = 0; i <= late_pkt; i++) {
+    tvs_tasklet_handler(&ctx->mgr);
+    for (int port = 0; port < num_port; port++) {
+      if (rte_ring_count(s->ring[port]) != 1) goto out;
+      ctx->mock_tsc_ns = (uint64_t)(s->pacing.tsc_time_frame_start + i * s->pacing.trs) +
+                         (i == late_pkt ? late_ns[port] : 0);
+      ut_txv_active_burst_ctx = ctx;
+      s->pacing_tasklet_func[port](&ctx->impl, s, port);
+      ut_txv_active_burst_ctx = NULL;
+    }
+  }
+  if (ctx->burst_packets_count == (late_pkt + 1) * (uint32_t)num_port)
+    ret = (int)(s->stat_rl.vrx_frames - flagged);
+
+out:
+  ut_txv_active_burst_ctx = NULL;
+  for (unsigned int i = 0; i < ctx->burst_packets_count; i++)
+    rte_pktmbuf_free(ctx->burst_packets[i]);
+  ctx->burst_packets_count = 0;
+  for (int port = 0; port < num_port; port++) {
+    ut_txv_tx_leg_uinit(ctx, port);
+    s->queue[port] = NULL;
+    s->trs_target_tsc[port] = 0;
+    s->trs_inflight_num[port] = 0;
+  }
+  s->st20_frames = NULL;
+  return ret;
+}
+
+int ut_txv_run_frame_rl_late(ut_txv_ctx* ctx, uint32_t late_pkt, uint64_t late_ns) {
+  const uint64_t late[MTL_SESSION_PORT_MAX] = {late_ns, 0};
+
+  return ut_txv_run_frame_rl_late_ports(ctx, late_pkt, late);
+}
+
+void ut_txv_set_stale_stamps(ut_txv_ctx* ctx, uint64_t stamp) {
+  ctx->stale_stamps = true;
+  ctx->stale_stamp = stamp;
+}
+
+int ut_txv_run_be_dummy(ut_txv_ctx* ctx, uint32_t* freed_reads) {
+  static unsigned int test_idx;
+  struct st_tx_video_session_impl* s = &ctx->session;
+  char pool_name[RTE_MEMPOOL_NAMESIZE];
+  char ring_name[RTE_RING_NAMESIZE];
+  struct rte_mbuf* dummy = NULL;
+  int ret = -1;
+
+  snprintf(pool_name, sizeof(pool_name), "ut_txv_be_pool_%u", test_idx);
+  snprintf(ring_name, sizeof(ring_name), "ut_txv_be_ring_%u", test_idx++);
+  s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] =
+      rte_pktmbuf_pool_create(pool_name, 32, 0, sizeof(struct mt_muf_priv_data),
+                              RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
+  s->ring[MTL_SESSION_PORT_P] = ut_ring_create(ring_name, 32);
+  if (!s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] || !s->ring[MTL_SESSION_PORT_P]) goto out;
+  dummy = rte_pktmbuf_alloc(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
+  if (!dummy) goto out;
+  st_tx_mbuf_set_idx(dummy, ST_TX_DUMMY_PKT_IDX);
+  if (rte_ring_sp_enqueue(s->ring[MTL_SESSION_PORT_P], dummy) < 0) goto out;
+  dummy = NULL;
+
+  s->ops.num_port = 1;
+  s->queue[MTL_SESSION_PORT_P] = (struct mt_txq_entry*)ctx;
+  s->pacing_way[MTL_SESSION_PORT_P] = ST21_TX_PACING_WAY_BE;
+  s->tx_hang_detect_time_thresh = UINT64_MAX;
+  ut_txv_active_burst_ctx = ctx;
+  ut_txv_freed_n = 0;
+  ut_txv_freed_reads = 0;
+  st_video_resolve_pacing_tasklet(s, MTL_SESSION_PORT_P);
+  s->pacing_tasklet_func[MTL_SESSION_PORT_P](&ctx->impl, s, MTL_SESSION_PORT_P);
+  *freed_reads = ut_txv_freed_reads;
+  ret = ut_txv_freed_n ? 0 : -1;
+
+out:
+  ut_txv_active_burst_ctx = NULL;
+  ut_txv_freed_n = 0;
+  rte_pktmbuf_free(dummy);
+  if (s->ring[MTL_SESSION_PORT_P]) {
+    ut_ring_drain(s->ring[MTL_SESSION_PORT_P]);
+    rte_ring_free(s->ring[MTL_SESSION_PORT_P]);
+    s->ring[MTL_SESSION_PORT_P] = NULL;
+  }
+  rte_mempool_free(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]);
+  s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] = NULL;
+  s->queue[MTL_SESSION_PORT_P] = NULL;
+  return ret;
+}
+
 int ut_txv_run_launch_time(ut_txv_ctx* ctx, uint64_t target_ptp, uint64_t* launch_time,
                            bool* launch_flag) {
   static unsigned int test_idx;
@@ -2118,16 +2312,24 @@ int ut_txv_init_rl_pacing(ut_txv_ctx* ctx, int num_port, uint16_t user_pad_inter
   uint32_t extra = 0;
 
   if (st_get_fps_timing(ctx->rl_fps, &s->fps_tm) < 0) return -EINVAL;
-  s->ops.fmt = ST20_FMT_YUV_422_10BIT;
+  s->ops.fmt = ctx->rl_layout ? ctx->rl_fmt : ST20_FMT_YUV_422_10BIT;
   s->ops.width = width;
   s->ops.height = height;
   s->ops.fps = ctx->rl_fps;
-  s->ops.packing = ST20_PACKING_GPM;
+  s->ops.packing = ctx->rl_layout ? ctx->rl_packing : ST20_PACKING_GPM;
   s->ops.interlaced = ctx->rl_interlaced;
   s->ops.num_port = num_port;
   s->ops.pad_interval = user_pad_interval;
   if (static_pad) s->ops.flags |= ST20_TX_FLAG_ENABLE_STATIC_PAD_P;
+  s->bulk = RTE_MIN(4, ST_SESSION_MAX_BULK); /* tv_attach()'s */
   s->ops.pacing = wide ? ST21_PACING_WIDE : ST21_PACING_NARROW;
+  if (ctx->rl_layout) {
+    if (st20_get_pgroup(s->ops.fmt, &s->st20_pg) < 0) return -EINVAL;
+    ctx->impl.pkt_udp_suggest_max_size = MTL_PKT_MAX_RTP_BYTES;
+    s->st20_frame_size = (size_t)width * lines * s->st20_pg.size / s->st20_pg.coverage;
+    if (tv_init_pkt(&ctx->impl, s, &s->ops, NULL) < 0) return -EINVAL;
+    goto laid_out;
+  }
   /* tv_init_pkt()'s GPM: 480 pixels a 1200-byte pkt, a field's lines when interlaced */
   s->st20_total_pkts = (int)((width * lines + 479) / 480);
   s->st20_pkt_len = 1200;
@@ -2149,7 +2351,10 @@ int ut_txv_init_rl_pacing(ut_txv_ctx* ctx, int num_port, uint16_t user_pad_inter
   s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size = s->st20_pkt_size;
   s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].number =
       s->st20_total_pkts - extra - tail->number;
-  s->st21_vrx_narrow = 8;
+laid_out:
+  /* tv_attach()'s */
+  s->st21_vrx_narrow =
+      RTE_MAX(8, s->st20_total_pkts / (27000 * ((double)s->fps_tm.den / s->fps_tm.mul)));
   s->st21_vrx_wide = 720;
   /* before the tags below, which the failed tv_init_hw() would free */
   for (int i = 0; i < num_port; i++)
@@ -2161,9 +2366,10 @@ int ut_txv_init_rl_pacing(ut_txv_ctx* ctx, int num_port, uint16_t user_pad_inter
     for (int j = 0; j < ST_TX_VIDEO_RL_TRIM_PAD_MAX && !ctx->no_trim_pads; j++)
       s->trim_pad[i][j] = (struct rte_mbuf*)&ctx->trim_pad_tag;
     if (inf->drv_info.drv_type != MT_DRV_ICE) inf->drv_info.drv_type = MT_DRV_IAVF;
-    inf->nb_tx_desc = 512;
+    inf->nb_tx_desc = ctx->rl_nb_tx_desc ? ctx->rl_nb_tx_desc : 512;
     s->port_maps[i] = (enum mtl_port)i;
-    s->pacing_way[i] = ST21_TX_PACING_WAY_RL;
+    s->pacing_way[i] =
+        ctx->init_way ? (enum st21_tx_pacing_way)ctx->init_way : ST21_TX_PACING_WAY_RL;
     /* a pre-train result keeps tv_train_pacing() off the NIC */
     if (trained_pad_interval) {
       struct mt_pacing_pad_mix mix;
@@ -2264,14 +2470,15 @@ int ut_txv_train_rl_pacing(ut_txv_ctx* ctx, uint16_t nb_tx_desc, long double pad
   return ut_txv_train_rl(ctx, nb_tx_desc, pad_ns);
 }
 
-int ut_txv_init_frame(ut_txv_ctx* ctx, enum st20_packing packing, enum st20_fmt fmt,
-                      uint32_t width, uint32_t height, bool interlaced) {
+static int ut_txv_init_frame_at(ut_txv_ctx* ctx, enum st20_packing packing,
+                                enum st20_fmt fmt, uint32_t width, uint32_t height,
+                                bool interlaced, enum st_fps fps) {
   struct st_tx_video_session_impl* s = &ctx->session;
   struct st20_tx_ops* ops = &s->ops;
   uint32_t lines = interlaced ? height >> 1 : height;
   int ret;
 
-  if (st_get_fps_timing(ST_FPS_P25, &s->fps_tm) < 0) return -EINVAL;
+  if (st_get_fps_timing(fps, &s->fps_tm) < 0) return -EINVAL;
   s->s_type = MT_HANDLE_TX_VIDEO;
   ops->type = ST20_TYPE_FRAME_LEVEL;
   ops->packing = packing;
@@ -2279,7 +2486,7 @@ int ut_txv_init_frame(ut_txv_ctx* ctx, enum st20_packing packing, enum st20_fmt 
   ops->width = width;
   ops->height = height;
   ops->interlaced = interlaced;
-  ops->fps = ST_FPS_P25;
+  ops->fps = fps;
   ops->num_port = 1;
   if (st20_get_pgroup(fmt, &s->st20_pg) < 0) return -EINVAL;
   /* as mtl_init() and tv_attach() set them, a field's lines when interlaced */
@@ -2292,6 +2499,11 @@ int ut_txv_init_frame(ut_txv_ctx* ctx, enum st20_packing packing, enum st20_fmt 
   s->pacing.trs = (long double)s->fps_tm.den * NS_PER_S / s->fps_tm.mul * 1080 / 1125 /
                   s->st20_total_pkts;
   return 0;
+}
+
+int ut_txv_init_frame(ut_txv_ctx* ctx, enum st20_packing packing, enum st20_fmt fmt,
+                      uint32_t width, uint32_t height, bool interlaced) {
+  return ut_txv_init_frame_at(ctx, packing, fmt, width, height, interlaced, ST_FPS_P25);
 }
 
 int ut_txv_mis_sized_pads(ut_txv_ctx* ctx) {
@@ -2318,8 +2530,9 @@ int ut_txv_mis_sized_pads(ut_txv_ctx* ctx) {
 }
 
 int ut_txv_train_rl_gpm_sl(ut_txv_ctx* ctx, enum st20_fmt fmt, uint32_t width,
-                           uint32_t height, long double pad_trs) {
-  int ret = ut_txv_init_frame(ctx, ST20_PACKING_GPM_SL, fmt, width, height, false);
+                           uint32_t height, enum st_fps fps, long double pad_trs) {
+  int ret =
+      ut_txv_init_frame_at(ctx, ST20_PACKING_GPM_SL, fmt, width, height, false, fps);
   if (ret < 0) return ret;
   return ut_txv_train_rl(ctx, 512, ctx->session.pacing.trs * pad_trs);
 }
@@ -2459,9 +2672,25 @@ void ut_txv_set_rl_format(ut_txv_ctx* ctx, uint32_t width, uint32_t height,
   ctx->rl_fps = fps;
 }
 
+void ut_txv_set_rl_layout(ut_txv_ctx* ctx, enum st20_packing packing, enum st20_fmt fmt,
+                          uint16_t nb_tx_desc) {
+  ctx->rl_layout = true;
+  ctx->rl_packing = packing;
+  ctx->rl_fmt = fmt;
+  ctx->rl_nb_tx_desc = nb_tx_desc;
+}
+
 void ut_txv_set_rl_queue_bps(ut_txv_ctx* ctx, int port, uint64_t bps) {
   ctx->rl_bps_set[port] = true;
   ctx->rl_bps[port] = bps;
+}
+
+void ut_txv_set_train_burst_trs(ut_txv_ctx* ctx, long double trs) {
+  ctx->train_burst_trs = trs;
+}
+
+void ut_txv_set_ptp_wait_ret(int ret) {
+  ut_txv_ptp_wait_ret = ret;
 }
 
 void ut_txv_set_ice_pf(ut_txv_ctx* ctx, int port, uint32_t rl_burst_size) {
@@ -2483,6 +2712,55 @@ long double ut_txv_rl_drain(const ut_txv_ctx* ctx, int port) {
 
 long double ut_txv_rl_credit(const ut_txv_ctx* ctx, int port) {
   return ctx->session.rl_plan[port].bucket_ns;
+}
+
+long double ut_txv_rl_absorb(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.rl_plan[port].absorb_ns;
+}
+
+uint16_t ut_txv_rl_anchor_pads(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.rl_plan[port].anchor_pads;
+}
+
+int64_t ut_txv_rl_vrx_budget(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.rl_plan[port].vrx_budget_ns;
+}
+
+long double ut_txv_rl_refill(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.rl_plan[port].refill_ns;
+}
+
+void ut_txv_set_port_pacing(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
+                            int64_t vrx_budget_ns) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+
+  s->ops.num_port = 1;
+  s->pacing_way[MTL_SESSION_PORT_P] = (enum st21_tx_pacing_way)way;
+  s->rl_plan[MTL_SESSION_PORT_P].vrx_budget_ns = vrx_budget_ns;
+}
+
+void ut_txv_set_redundant_budget(ut_txv_ctx* ctx, int64_t vrx_budget_ns) {
+  ctx->r_budget = vrx_budget_ns;
+}
+
+void ut_txv_set_init_pacing_way(ut_txv_ctx* ctx, enum ut_txv_pacing_way way) {
+  ctx->init_way = way;
+}
+
+uint64_t ut_txv_trs_wire_tsc(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.trs_wire_tsc[port];
+}
+
+uint64_t ut_txv_rl_vrx_frames(const ut_txv_ctx* ctx) {
+  return ctx->session.stat_rl.vrx_frames;
+}
+
+uint64_t ut_txv_rl_start_late(const ut_txv_ctx* ctx) {
+  return ctx->session.stat_rl.start_late;
+}
+
+uint32_t ut_txv_pacing_vrx(const ut_txv_ctx* ctx) {
+  return ctx->session.pacing.vrx;
 }
 
 bool ut_txv_rl_armed(const ut_txv_ctx* ctx, int port) {
@@ -2764,34 +3042,140 @@ static struct ut_txv_ctx* ut_txv_stat_ctx;
 static int ut_txv_stat_lines;
 static int ut_txv_stat_locked_lines;
 static char ut_txv_stat_first_line[256];
+static char ut_txv_stat_error_line[512];
+static int ut_txv_stat_errs;
 
 static void ut_txv_stat_log_printer(enum mtl_log_level level, const char* format, ...) {
   va_list args;
 
-  (void)level;
   if (rte_spinlock_is_locked(&ut_txv_stat_ctx->mgr.mutex[0])) ut_txv_stat_locked_lines++;
   if (!ut_txv_stat_lines++) {
     va_start(args, format);
     vsnprintf(ut_txv_stat_first_line, sizeof(ut_txv_stat_first_line), format, args);
     va_end(args);
   }
+  if (level == MTL_LOG_LEVEL_ERR && !ut_txv_stat_errs++) {
+    va_start(args, format);
+    (void)vsnprintf(ut_txv_stat_error_line, sizeof(ut_txv_stat_error_line), format, args);
+    va_end(args);
+  }
 }
 
-int ut_txv_run_sessions_stat(ut_txv_ctx* ctx, int* locked_lines) {
+static void ut_txv_stat_capture(ut_txv_ctx* ctx) {
   ut_txv_stat_ctx = ctx;
   ut_txv_stat_lines = 0;
   ut_txv_stat_locked_lines = 0;
   ut_txv_stat_first_line[0] = '\0';
+  ut_txv_stat_error_line[0] = '\0';
+  ut_txv_stat_errs = 0;
   mtl_set_log_printer(ut_txv_stat_log_printer);
-  tv_sessions_stat(&ctx->mgr);
+}
+
+static void ut_txv_stat_release(void) {
   mtl_set_log_printer(NULL);
   ut_txv_stat_ctx = NULL;
+}
+
+int ut_txv_run_sessions_stat(ut_txv_ctx* ctx, int* locked_lines) {
+  ut_txv_stat_capture(ctx);
+  tv_sessions_stat(&ctx->mgr);
+  ut_txv_stat_release();
   *locked_lines = ut_txv_stat_locked_lines;
   return ut_txv_stat_lines;
 }
 
+int ut_txv_run_detach(ut_txv_ctx* ctx) {
+  ut_txv_stat_capture(ctx);
+  tv_detach(&ctx->mgr, &ctx->session);
+  ut_txv_stat_release();
+  return ut_txv_stat_errs;
+}
+
+void ut_txv_set_trs_released(ut_txv_ctx* ctx, int port, uint64_t visit) {
+  ctx->session.trs_released[port] = visit;
+}
+
+uint64_t ut_txv_trs_released(const ut_txv_ctx* ctx, int port) {
+  return ctx->session.trs_released[port];
+}
+
+void ut_txv_set_slot_refused(ut_txv_ctx* ctx, uint8_t ports) {
+  atomic_store(&ctx->mgr.trs_refused[ctx->session.idx], ports);
+}
+
+int ut_txv_migrated_slot_refused(const ut_txv_ctx* ctx) {
+  return ctx->migrated_refused;
+}
+
+int ut_txv_slot_refused(const ut_txv_ctx* ctx) {
+  return atomic_load((_Atomic uint8_t*)&ctx->mgr.trs_refused[0]);
+}
+
+int ut_txv_run_migrate(ut_txv_ctx* ctx) {
+  struct st_tx_video_sessions_mgr* to = ut_txv_migration_target(ctx);
+  if (!to) return -ENOMEM;
+
+  ut_txv_stat_capture(ctx);
+  ut_txv_migrate(ctx, to);
+  ut_txv_stat_release();
+  ctx->migrated_refused = atomic_load(&to->trs_refused[UT_TXV_MIGRATED_IDX]);
+  ut_txv_migration_undo(ctx, to);
+  return ut_txv_stat_errs;
+}
+
 const char* ut_txv_stat_first_log_line(void) {
   return ut_txv_stat_first_line;
+}
+
+const char* ut_txv_stat_error_log_line(void) {
+  return ut_txv_stat_error_line;
+}
+
+void ut_txv_set_rl_vrx(ut_txv_ctx* ctx, uint64_t frames, uint64_t pkt0,
+                       uint64_t late_ns) {
+  struct st_tx_video_rl_stat* rl = &ctx->session.stat_rl;
+
+  rl->vrx_frames += frames;
+  rl->vrx_pkt0 += pkt0;
+  rl->vrx_late_max_ns = RTE_MAX(rl->vrx_late_max_ns, late_ns);
+}
+
+int ut_txv_stat_err_lines(void) {
+  return ut_txv_stat_errs;
+}
+
+void ut_txv_set_sch_avg_loop_ns(ut_txv_ctx* ctx, uint64_t ns) {
+  mt_sch_instance(&ctx->impl, ctx->mgr.idx)->avg_ns_per_loop = ns;
+}
+
+void ut_txv_set_lead_ns(ut_txv_ctx* ctx, int64_t lead_ns) {
+  ctx->session.lead_min_ns = lead_ns;
+}
+
+int64_t ut_txv_lead_ns(ut_txv_ctx* ctx) {
+  return ctx->session.lead_min_ns;
+}
+
+long double ut_txv_pacing_frame_time(const ut_txv_ctx* ctx) {
+  return ctx->session.pacing.frame_time;
+}
+
+int ut_txv_total_pkts(const ut_txv_ctx* ctx) {
+  return ctx->session.st20_total_pkts;
+}
+
+unsigned int ut_txv_bulk(const ut_txv_ctx* ctx) {
+  return ctx->session.bulk;
+}
+
+void ut_txv_set_sch_allow_sleep(ut_txv_ctx* ctx, bool allow_sleep) {
+  mt_sch_instance(&ctx->impl, ctx->mgr.idx)->allow_sleep = allow_sleep;
+}
+
+void ut_txv_set_mgr_neighbour(ut_txv_ctx* ctx, ut_txv_ctx* other) {
+  rte_spinlock_init(&ctx->mgr.mutex[1]);
+  ctx->mgr.sessions[1] = other ? &other->session : NULL;
+  ctx->mgr.max_idx = other ? 2 : 1;
 }
 
 void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames) {
@@ -2927,6 +3311,16 @@ static void ut_txv_count_recovery_warns(enum mtl_log_level level, const char* fo
                                         ...) {
   (void)format;
   if (level == MTL_LOG_LEVEL_WARNING) ut_txv_recovery_ctx->recovery_warns++;
+}
+
+void ut_txv_set_rl_tail(ut_txv_ctx* ctx, int leg, bool tail, long double drained) {
+  ctx->session.trs_rl_tail[leg] = tail;
+  ctx->session.trs_rl_drained[leg] = drained;
+}
+
+bool ut_txv_rl_tail(const ut_txv_ctx* ctx, int leg, long double* drained) {
+  if (drained) *drained = ctx->session.trs_rl_drained[leg];
+  return ctx->session.trs_rl_tail[leg];
 }
 
 int ut_txv_recover(ut_txv_ctx* ctx, int leg) {
@@ -3673,5 +4067,77 @@ int ut_txv_control_during_own_callback(ut_txv_ctx* ctx, enum ut_txv_control call
   mgr->sessions[1] = NULL;
   mgr->max_idx = 1;
   ut_txv_peer_free(peer);
+  return ret;
+}
+
+int ut_txv_rtp_ops_check(bool st22, uint16_t rtp_pkt_size) {
+  uint8_t dip[MTL_IP_ADDR_LEN] = {239, 0, 0, 1};
+
+  if (st22) {
+    struct st22_tx_ops ops = {.num_port = 1,
+                              .type = ST22_TYPE_RTP_LEVEL,
+                              .rtp_ring_size = 1024,
+                              .rtp_pkt_size = rtp_pkt_size,
+                              .notify_rtp_done = ut_txv_notify_rtp_done,
+                              .payload_type = 114};
+    memcpy(ops.dip_addr[MTL_SESSION_PORT_P], dip, sizeof(dip));
+    return tv_st22_ops_check(&ops);
+  }
+  struct st20_tx_ops ops = {.num_port = 1,
+                            .type = ST20_TYPE_RTP_LEVEL,
+                            .rtp_ring_size = 1024,
+                            .rtp_frame_total_pkts = 1,
+                            .rtp_pkt_size = rtp_pkt_size,
+                            .notify_rtp_done = ut_txv_notify_rtp_done,
+                            .payload_type = 112};
+  memcpy(ops.dip_addr[MTL_SESSION_PORT_P], dip, sizeof(dip));
+  return tv_ops_check(&ops);
+}
+
+int ut_txv_put_mbuf(ut_txv_ctx* ctx, bool st22, uint16_t rtp_pkt_size, uint16_t len,
+                    bool* freed, uint16_t* queued_len) {
+  static unsigned int test_idx;
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st22_tx_video_session_handle_impl st22_handle = {0};
+  struct rte_mbuf *pkt, *queued = NULL;
+  struct rte_mempool* pool;
+  char ring_name[RTE_RING_NAMESIZE];
+  unsigned int avail;
+  int ret = -1;
+
+  *freed = false;
+  *queued_len = 0;
+  if (ut_txv_tx_path_init(ctx) < 0) goto out;
+  snprintf(ring_name, sizeof(ring_name), "ut_txv_put_ring_%u", test_idx++);
+  s->packet_ring = ut_ring_create(ring_name, 32);
+  if (!s->packet_ring) goto out;
+  s->tx_no_chain = true;
+  s->rtp_pkt_max_size = rtp_pkt_size;
+
+  pool = s->mbuf_mempool_hdr[MTL_SESSION_PORT_P];
+  avail = rte_mempool_avail_count(pool);
+  pkt = rte_pktmbuf_alloc(pool);
+  if (!pkt) goto out;
+
+  if (st22) {
+    st22_handle.parent = &ctx->impl;
+    st22_handle.type = MT_ST22_HANDLE_TX_VIDEO;
+    st22_handle.impl = s;
+    ret = st22_tx_put_mbuf(&st22_handle, pkt, len);
+  } else {
+    ctx->handle.parent = &ctx->impl;
+    ctx->handle.type = MT_HANDLE_TX_VIDEO;
+    ctx->handle.impl = s;
+    ret = st20_tx_put_mbuf(&ctx->handle, pkt, len);
+  }
+  *freed = rte_mempool_avail_count(pool) == avail;
+  if (rte_ring_sc_dequeue(s->packet_ring, (void**)&queued) == 0) {
+    *queued_len = queued->data_len;
+    rte_pktmbuf_free(queued);
+  }
+
+out:
+  ut_txv_rtp_teardown(ctx);
+  ut_txv_tx_path_uinit(ctx);
   return ret;
 }

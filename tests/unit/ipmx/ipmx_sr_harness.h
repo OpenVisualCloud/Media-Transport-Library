@@ -25,6 +25,7 @@ typedef struct ut_sr_ctx ut_sr_ctx;
 struct ipmx_video_info;
 
 #define UT_SR_PKT_MAX (320)
+#define UT_SR_PAD_SIZE (1262)  /* bytes of the NORMAL pad and of an armed plan pad */
 #define UT_SR_UDP_HDR_LEN (42) /* Ethernet, IPv4, UDP */
 
 enum ut_sr_wire_kind {
@@ -38,6 +39,7 @@ struct ut_sr_wire {
   int port;
   uint32_t pkt_idx; /* UT_SR_WIRE_PKT */
   uint32_t len;
+  int burst; /* the mock call that took it */
   bool launch;
   uint64_t launch_time;
 };
@@ -191,6 +193,10 @@ void ut_sr_trs_setup(ut_sr_ctx* ctx, unsigned int bulk, long double trs_ns,
 void ut_sr_set_now(ut_sr_ctx* ctx, uint64_t now_ns);
 /* an RL pad plan of pad_ns per NORMAL pad, a credit_ns bucket, with the trim pads */
 int ut_sr_trs_arm(ut_sr_ctx* ctx, long double pad_ns, long double credit_ns);
+/* the longest tail shortfall the armed plan keeps */
+void ut_sr_trs_set_absorb(ut_sr_ctx* ctx, long double absorb_ns);
+/* where the s_port shaper ends the pads, and an SR, queued so far */
+long double ut_sr_trs_pads_end(const ut_sr_ctx* ctx, int s_port);
 /* enqueue a frame packet with its TSC and PTP target and RTP timestamp */
 int ut_sr_trs_enqueue(ut_sr_ctx* ctx, uint32_t pkt_idx, uint32_t rtp_ts, uint64_t target);
 int ut_sr_call_rl(ut_sr_ctx* ctx);

@@ -113,6 +113,22 @@ static inline void ipmx_sr_tx_set_frame_size(struct rte_mbuf* pkt0, uint32_t siz
 
   priv->tx_priv.ipmx_frame_size = size;
 }
+/** Whether s_port holds an SR for its next packet 0. */
+static inline bool ipmx_sr_tx_has_pending(const struct ipmx_sr_tx* sr,
+                                          enum mtl_session_port s_port) {
+  return sr->leg[s_port].pending;
+}
+/**
+ * The pending SR of pkt0's frame, with pkt0's launch time, for a caller that bursts it
+ * right ahead of pkt0; NULL when pkt0 has none. It stays pending until
+ * ipmx_sr_tx_pending_done() reports the queue took it.
+ */
+struct rte_mbuf* ipmx_sr_tx_pending_get(struct ipmx_sr_tx* sr,
+                                        enum mtl_session_port s_port,
+                                        struct rte_mbuf* pkt0);
+/** Whether the queue took the SR of ipmx_sr_tx_pending_get(); it owns it if sent. */
+void ipmx_sr_tx_pending_done(struct ipmx_sr_tx* sr, enum mtl_session_port s_port,
+                             bool sent);
 bool ipmx_sr_tx_send_pending(struct ipmx_sr_tx* sr, enum mtl_session_port s_port,
                              struct mt_txq_entry* queue, struct rte_mbuf* pkt0);
 /**
@@ -124,7 +140,7 @@ static inline bool ipmx_sr_tx_before_burst(struct ipmx_sr_tx* sr,
                                            enum mtl_session_port s_port,
                                            struct mt_txq_entry* queue,
                                            struct rte_mbuf* pkt0) {
-  if (likely(!sr->leg[s_port].pending)) return true;
+  if (likely(!ipmx_sr_tx_has_pending(sr, s_port))) return true;
   return ipmx_sr_tx_send_pending(sr, s_port, queue, pkt0);
 }
 /**
