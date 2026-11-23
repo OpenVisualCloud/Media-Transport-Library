@@ -123,6 +123,9 @@ void ut30p_tx_set_notify_frame_done(ut30p_tx_ctx* ctx,
                                     int (*cb)(void* priv, struct st30_frame* frame),
                                     void* priv);
 
+/** How many warnings tx_st30p_uinit_fbs() logs for the frame states now. */
+int ut30p_tx_uinit_warns(ut30p_tx_ctx* ctx);
+
 #ifdef __cplusplus
 }
 #endif

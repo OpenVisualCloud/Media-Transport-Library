@@ -122,6 +122,9 @@ void ut40p_tx_set_notify_frame_done(ut40p_tx_ctx* ctx,
                                     int (*cb)(void* priv, struct st40_frame_info* frame),
                                     void* priv);
 
+/** How many warnings tx_st40p_uinit_fbs() logs for the frame states now. */
+int ut40p_tx_uinit_warns(ut40p_tx_ctx* ctx);
+
 #ifdef __cplusplus
 }
 #endif

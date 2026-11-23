@@ -1,82 +1,160 @@
-# Windows VM Setup Guide
+# VM guide for Windows: MTL with E810 or E830 VFs
 
-## 1. Host machine setup
+Best practices for MTL in a Windows VM on a Linux KVM host. Tested on
+Proxmox VE 9.2 with Windows 11 Pro guests and E810-C and E830-CC VFs: 1080p59
+VF to VF with rate limit pacing, with no frame loss, and 10 st20p streams of
+2160p29.97 with a format conversion (52 Gb/s TX and 52 Gb/s RX) on two E810
+VFs, with each frame received. VMware ESXi and Hyper-V are not tested.
 
-We use the same CentOS 8 host setup as [vm guide](vm.md). Notice that PTP_KVM is not woking for Windows VM, MTL uses VM system time by default.
+Then build and run MTL in the VM: [build guide](build_WIN.md),
+[run guide](run_WIN.md).
 
-### 1.1. Create Windows VM
+## Host
+
+1. **Use the out-of-tree `ice` driver** of `versions.env`
+   (`script/build_drivers.sh --driver ice`). The in-tree driver of the kernel
+   gives a VF no rate limit and no flow rules. Build it again after each new
+   host kernel. If the host has the in-tree `irdma`, block it: it does not
+   match the out-of-tree driver.
+
+1. **Make the VFs at boot, before the VMs start** (a systemd unit with
+   `Before=pve-guests.service` on Proxmox VE). Two VFs per PF, each with a
+   fixed MAC, trust on and spoof check off:
+
+    ```bash
+    echo 2 > /sys/bus/pci/devices/<pf>/sriov_numvfs
+    ip link set <pf_netdev> vf 0 mac 02:00:00:00:00:01 trust on spoofchk off
+    ip link set <pf_netdev> vf 1 mac 02:00:00:00:00:02 trust on spoofchk off
+    ```
+
+1. **Give each VF a 512-entry RSS LUT** while no VM uses it:
+   `echo 512 > /sys/bus/pci/devices/<vf>/rss_lut_vf_attr` (out-of-tree `ice`
+   only; `script/nicctl.sh create_vf` does it). The VF then has more than 16
+   queue pairs. MTL gives each stream its own queue, so with 16 queues the
+   MTL test takes 2 sets; an E830 VF with the large LUT took 10 sets with no
+   lost frame. Do not write the LUT while the VF resets (just after a bind,
+   or while a VM starts or stops): the write races the reset.
+
+1. **A VF to VF stream needs no cable**: the switch of the adapter carries it.
+   A multicast stream also goes out of the PF port, and the network switch
+   can send it to each of its ports. If two senders use the same multicast
+   group on one network, each receiver gets both streams. Give each sender
+   its own group, or send unicast to the MAC of the RX VF
+   (`--p_tx_dst_mac <MAC>`, or `run_test.ps1 -DstMac <MAC>`): a unicast
+   stream between two VFs of one PF stays in the adapter.
+
+1. **Keep the host off the CPUs of the VM.** Add these kernel arguments for
+   the host CPUs of the vCPUs and their SMT siblings, then restart the host
+   (here the VM has host CPUs 64-95 of NUMA node 2, and their siblings are
+   192-223):
+
+    ```text
+    nohz_full=64-95,216-223 rcu_nocbs=64-95,216-223
+    isolcpus=managed_irq,domain,64-95,216-223 irqaffinity=0-63,96-215,224-255
+    ```
+
+    Also set `kernel.numa_balancing = 0` in a file of `/etc/sysctl.d/`: the
+    scan of NUMA balancing stops the vCPU threads. The siblings 192-215 stay
+    for the QEMU threads (next step), and 216-223, the siblings of the
+    scheduler vCPUs, stay free. Then the host tick stops on these CPUs.
+    Measured with one busy thread on each scheduler CPU of the VM: before,
+    about 1550 stalls/s of 2.6 us or more and up to 111 stalls of 50 us or
+    more in 25 s (the longest 0.9 ms); after, about 550 stalls/s and 0 to 5
+    stalls of 50 us or more.
+
+1. **Pin each vCPU to its own host CPU.** `affinity` of Proxmox VE gives the
+   QEMU process a list of CPUs: the vCPU threads move in it, and they share it
+   with the QEMU threads. A hookscript pins them at each start of the VM. In
+   `/var/lib/vz/snippets/pin-vcpus.sh` (the storage `local` must hold the
+   content type `snippets`):
+
+    ```bash
+    #!/bin/bash
+    # vCPU i to host CPU FIRST+i, each other QEMU thread to EMU.
+    FIRST=64 EMU=192-215
+    [ "$2" = post-start ] || exit 0
+    pid=$(cat "/var/run/qemu-server/$1.pid")
+    sleep 5
+    for c in /proc/"$pid"/task/*/comm; do
+        t=${c%/comm}; t=${t##*/}
+        if [[ $(cat "$c") =~ ^CPU\ ([0-9]+)/KVM$ ]]; then
+            taskset -pc $((FIRST + BASH_REMATCH[1])) "$t"
+        else
+            taskset -pc "$EMU" "$t"
+        fi
+    done >/dev/null
+    ```
+
+    `chmod 755` the file, then `qm set <vmid> --hookscript
+    local:snippets/pin-vcpus.sh --affinity 64-95,192-215`. With libvirt, use
+    `<vcpupin>` and `<emulatorpin>` of `<cputune>`.
+
+## VM
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| Machine | q35, OVMF (UEFI) | PCIe passthrough of the VFs |
+| VFs | PCIe passthrough (`hostpci0: <vf>,pcie=1`) | DPDK drives the VF |
+| CPU type | `host`, with no `hv_stimer` and no `hv_synic`, and `-overcommit cpu-pm=on` (below) | AVX2 and AVX-512; fewer stalls of the scheduler vCPUs |
+| vCPUs | Pinned to host CPUs of the NUMA node of the adapter, which no other VM and no host service uses | The scheduler threads of MTL poll at 100 %. A busy host CPU makes them late. |
+| Memory | Bound to the same NUMA node, ballooning off | Passthrough pins the memory |
+| Secure Boot | Off: EFI variables with no enrolled keys | The drivers are test-signed |
+
+Proxmox VE example, with the adapter on NUMA node 2 and host CPUs 64-79 on that
+node:
 
 ```bash
-# install if not
-sudo yum install virt-install virt-viewer
-
-# install virtio-win
-sudo yum install -y virtio-win
-
-sudo virt-install \
-        --name win_vm0 \
-        --vcpus 8 \
-        --cpu host-passthrough \
-        --ram 8192 \
-        --memballoon none \
-        --clock offset='localtime' \
-        --network default \
-        --disk /path_to_img/vm0.qcow2,size=20,bus=sata \
-        --cdrom /path_to_img/windows_server_2022.iso \
-        --boot cdrom,hd \
-        --hostdev pci_0000_af_01_0 \
-        --hostdev pci_0000_af_01_1 \
-        --graphics vnc,listen=0.0.0.0,port=5901 \
-        --video=qxl
+qm set <vmid> --hostpci0 <vf0>,pcie=1 --hostpci1 <vf1>,pcie=1
+qm set <vmid> --cpu host --cores 16 --numa 1 \
+    --numa0 cpus=0-15,hostnodes=2,memory=32768,policy=bind --affinity 64-79 --balloon 0
+qm set <vmid> --efidisk0 local-lvm:1,efitype=4m,pre-enrolled-keys=0
 ```
 
-The VFs created are passed into VM by specifying `--hostdev pci_0000_xx_xx_x`.
+Suspend BitLocker in the VM before you change the EFI disk.
 
-After running `virt-install` command, the viewer will pop up and you can normally install Windows in the GUI.
-
-### 1.2. Setup remote desktop access
-
-In virt-viewer window, logon to Windows, go to Start->Settings->System->Remote Desktop, set `Enable Remote Desktop` to `On`.
-
-If you set `--network default` above, the VM should use NAT IP address for the network. You can map the VM RDP port to host.
+For a Windows `ostype`, Proxmox VE gives the guest the Hyper-V synthetic timer
+(`hv_stimer`, `hv_synic`). Without them, and with `cpu-pm=on` (the halt of an
+idle vCPU stays in the guest), the scheduler vCPUs stalled less: in a
+10 min test the `recalculate warmup` events fell by about 40 %. A second
+`-cpu` in `args` replaces the one of Proxmox VE (`qm showcmd <vmid>` shows
+it):
 
 ```bash
-# get the assigned IP
-sudo virsh net-dhcp-leases default
-# enable public access
-sudo iptables -I FORWARD -m state -d 192.168.122.0/24 --state NEW,RELATED,ESTABLISHED -j ACCEPT
-# RDP(3389) port forward
-sudo iptables -t nat -I PREROUTING -p tcp --dport <public_port> -j DNAT --to $VM_IP:3389
+qm set <vmid> --args "-cpu host,-cet-ibt,-cet-ss,hv_ipi,hv_relaxed,hv_reset,hv_runtime,hv_spinlocks=0x1fff,hv_time,hv_vapic,hv_vpindex,+kvm_pv_eoi,+kvm_pv_unhalt -overcommit cpu-pm=on"
 ```
 
-On you local Windows PC, use `Remote Desktop Connection` or `Remote Desktop (Store)` to connect to [Host_IP]:<public_port>.
+With `cpu-pm=on` an idle vCPU takes its host CPU at 100 %, so give the VM
+host CPUs that nothing else uses.
 
-## 2. VM setup
+## Measured
 
-### 2.1. Install virtio-win inside VM
+10 st20p TX and 10 st20p RX sessions, 2160p29.97 with a format conversion,
+52 Gb/s TX and 52 Gb/s RX, on two E810 VFs, 10 min each, with the host steps
+above and the VM CPU line without `hv_stimer`/`hv_synic`, with `cpu-pm=on`.
+Each frame arrived in each test, and the logs had no warning and no error.
 
-Attach the iso drive to VM:
+| MTL processes | `recalculate warmup` per 10 min |
+| --- | --- |
+| 1 (2 TX schedulers) | 8813 |
+| 2: TX (1 scheduler) and RX | 3566 |
 
-```bash
-sudo virt-xml win_vm0 --add-device --disk /usr/share/virtio-win/virtio-win.iso,device=cdrom
-```
+The [run guide](run_WIN.md#3-performance) tells how to run TX and RX in two
+processes, why Windows gives the lines that are left, and why no set-up
+removes all of them. With the host steps above, the host stops these CPUs
+much less, but Windows still takes about 530 clock interrupts each second
+on each CPU.
 
-In Windows VM, go to File Explorer->This PC->virtio-win, Click virtio-win-gt-x64.msi to install.
+## Template
 
-After the installation, you can detach the virtio iso and Windows iso from cdrom in virt-manager.
+Make a template when the build, the drivers and `windows_setup.ps1` are done.
+A new VM from it needs only its own VFs, CPU pinning and NUMA node, and a new
+computer name (`Rename-Computer`). NetUIO takes the new VFs by itself.
 
-### 2.2. Build and run MTL
+## Limits
 
-See [Windows build guide](build_WIN.md) and [Windows run guide](run_WIN.md).
-
-When installing netuio driver, use below command for iavf:
-
-```bash
-devcon.exe update netuio.inf "PCI\VEN_8086&DEV_1889"
-```
-
-## Reference link
-
-You can find more detailed settings here:
-
-[Installing and managing Windows virtual machines](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/8/html/configuring_and_managing_virtualization/installing-and-managing-windows-virtual-machines-on-rhel_configuring-and-managing-virtualization)
+- The drivers are test-signed, so this setup is for a lab.
+- After a start of Windows, wait before a long test: the start-up work of
+  Windows stopped all the vCPUs at one time for up to 4 ms in the first
+  minutes, and the tests that started in the first 20 min had 2 stalls of 0.08
+  to 45 ms (see part 3 of the [run guide](run_WIN.md#3-performance)).
+- A VM adds the noise of its host. Measure on bare metal for a product.

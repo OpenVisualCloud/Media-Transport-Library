@@ -1360,7 +1360,9 @@ struct st_frame* st_frame_create_by_malloc(enum st_frame_fmt fmt, uint32_t w, ui
   void* data = data_sz ? mt_zmalloc(data_sz) : NULL;
   if (!data) {
     err("%s, data malloc fail, size %" PRIu64 "\n", __func__, data_sz);
-    st_frame_free(frame);
+    /* not st_frame_free(): GCC 16 of mingw-w64 inlines its rte_free branch and
+     * stops with -Werror=mismatched-dealloc, though this frame never takes it */
+    mt_free(frame);
     return NULL;
   }
   frame->addr[0] = data; /* st_frame_free() frees it */

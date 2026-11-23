@@ -6,12 +6,39 @@
 
 #include "ut_common.h"
 
+#include <rte_lcore.h>
 #include <rte_malloc.h>
 #include <rte_mbuf_dyn.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef WINDOWSENV
+#include <windows.h>
+#else
 #include <sys/mman.h>
 #include <unistd.h>
+#endif
+
+#ifdef WINDOWSENV
+/* rte_lcore_id() reads a thread-local variable of the EAL, and on Windows the
+ * EAL is inside libmtl.dll: DPDK builds no shared library there, so MTL holds
+ * the only copy. mingw-w64 GCC gives a __thread variable native Windows
+ * thread-local storage, and the relocation of such a variable holds an offset
+ * inside one module, so no binary can read the copy of a DLL. This binary keeps
+ * a copy of its own.
+ *
+ * The value is 0, which is the lcore of the main thread: ut_eal_init() starts
+ * the EAL with "-c1". It is safe for a worker thread as well, because every
+ * mempool here has a cache of 0, so rte_mempool_get() and rte_mempool_put()
+ * hold no per lcore cache, and two threads cannot take the same cache. A pool
+ * with a cache would need the real lcore id of each thread. */
+RTE_DEFINE_PER_LCORE(unsigned, _lcore_id) = 0;
+/* rte_errno for the same reason: a harness that compiles mt_main.c in place
+ * reads it, so the binary keeps the copy that its own code writes and reads. */
+RTE_DEFINE_PER_LCORE(int, _rte_errno);
+/* rte_gettid() of the quiescent wait of mt_sch.c, for the same reason. -1, as
+ * in the EAL: the first call of each thread stores the id of that thread. */
+RTE_DEFINE_PER_LCORE(int, _thread_id) = -1;
+#endif
 
 /* ── globals ──────────────────────────────────────────────────────────── */
 
@@ -52,6 +79,28 @@ struct rte_mempool* ut_pool(void) {
 
 /* ── guard page ───────────────────────────────────────────────────────── */
 
+#ifdef WINDOWSENV
+static size_t ut_page_size(void) {
+  SYSTEM_INFO si;
+  GetSystemInfo(&si);
+  return si.dwPageSize;
+}
+
+uint8_t* ut_guarded_copy(const void* bytes, size_t len) {
+  size_t page = ut_page_size();
+  DWORD old_protect;
+  if (len > page) abort();
+  uint8_t* map = VirtualAlloc(NULL, 2 * page, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  if (!map || !VirtualProtect(map + page, page, PAGE_NOACCESS, &old_protect)) abort();
+  uint8_t* copy = map + page - len;
+  if (len) memcpy(copy, bytes, len);
+  return copy;
+}
+
+void ut_guarded_free(uint8_t* copy, size_t len) {
+  VirtualFree(copy + len - ut_page_size(), 0, MEM_RELEASE);
+}
+#else
 uint8_t* ut_guarded_copy(const void* bytes, size_t len) {
   size_t page = (size_t)sysconf(_SC_PAGESIZE);
   if (len > page) abort();
@@ -67,6 +116,7 @@ void ut_guarded_free(uint8_t* copy, size_t len) {
   size_t page = (size_t)sysconf(_SC_PAGESIZE);
   munmap(copy + len - page, 2 * page);
 }
+#endif
 
 /* ── ring factory ─────────────────────────────────────────────────────── */
 

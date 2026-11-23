@@ -86,6 +86,12 @@ int ut_sch_qs_sleeps_offline(int* sleeps, int* online_sleeps);
  * is whether the end of that pass satisfied the wait, checked in the next pass. */
 int ut_sch_qs_pass_end_publishes(bool* published);
 
+/* The last mt_sch_put() of a tasklet-thread scheduler that sch_stop() stopped already, as
+ * after mtl_stop(); *warns is how many warnings it logged, ut_sch_first_warn() the first.
+ * Returns 0 on success. */
+int ut_sch_last_put_after_stop(int* warns);
+const char* ut_sch_first_warn(void);
+
 #ifdef __cplusplus
 }
 #endif
