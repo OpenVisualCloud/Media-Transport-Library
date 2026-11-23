@@ -7,6 +7,9 @@
 #include <math.h>
 
 #include "../datapath/mt_queue.h"
+#ifdef MTL_HAS_IPMX
+#include "../ipmx/ipmx_sr.h"
+#endif
 #include "../mt_log.h"
 #include "../mt_ptp.h"
 #include "../mt_rtcp.h"
@@ -104,9 +107,9 @@ static inline uint16_t video_trs_rl_txq_burst(struct mtl_main_impl* impl,
   return tx;
 }
 
-/* Moves trs_rl_pads_end past the tx pads just sent. The shaper starts them at the burst's
- * return less refill_ns, or after the pads before, and drains them in pad_ns (trs
- * without a plan) per NORMAL pad of their bytes. */
+/* Moves trs_rl_pads_end past the tx pads just sent, and an IPMX SR ahead of packet 0.
+ * The shaper starts them at the burst's return less refill_ns, or after the pads before,
+ * and drains them in pad_ns (trs without a plan) per NORMAL pad of their bytes. */
 static inline void video_trs_pads_end(struct st_tx_video_session_impl* s,
                                       enum mtl_session_port s_port,
                                       struct rte_mbuf** pads, uint16_t tx) {
@@ -129,6 +132,21 @@ static uint16_t video_trs_burst_pad(struct mtl_main_impl* impl,
   if (tx) video_trs_pads_end(s, s_port, tx_pkts, tx);
   return tx;
 }
+
+#ifdef MTL_HAS_IPMX
+/* The SR of packet 0's frame ahead of it on an RL port, timed as a pad. False when the
+ * NIC refused it: packet 0 waits, the SR retries ahead of it. */
+static bool video_trs_rl_sr_burst(struct mtl_main_impl* impl,
+                                  struct st_tx_video_session_impl* s,
+                                  enum mtl_session_port s_port, struct rte_mbuf* pkt0) {
+  if (likely(!ipmx_sr_tx_has_pending(s->ipmx_sr, s_port))) return true;
+  struct rte_mbuf* sr = ipmx_sr_tx_pending_get(s->ipmx_sr, s_port, pkt0);
+  if (!sr) return true;
+  uint16_t tx = video_trs_burst_pad(impl, s, s_port, &sr, 1);
+  ipmx_sr_tx_pending_done(s->ipmx_sr, s_port, tx);
+  return tx;
+}
+#endif
 
 /* What a burst needs of its pkts, read before the NIC owns them: the first pkt's index,
  * packet 0's frame, and the bytes of all of them */
@@ -212,6 +230,11 @@ static uint16_t video_trs_burst(struct mtl_main_impl* impl,
                                 struct st_tx_video_session_impl* s,
                                 enum mtl_session_port s_port, struct rte_mbuf** tx_pkts,
                                 uint16_t nb_pkts) {
+#ifdef MTL_HAS_IPMX
+  if (s->ipmx_sr && nb_pkts &&
+      !ipmx_sr_tx_before_burst(s->ipmx_sr, s_port, s->queue[s_port], tx_pkts[0]))
+    return video_trs_burst_fail(s, s_port, mt_get_tsc(impl));
+#endif
   if (s->rtcp_tx[s_port]) mt_mbuf_refcnt_inc_bulk(tx_pkts, nb_pkts);
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
   if (!tx) {
@@ -247,6 +270,10 @@ static uint16_t video_trs_rl_burst(struct mtl_main_impl* impl,
                                    struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   struct video_trs_pkts p;
 
+#ifdef MTL_HAS_IPMX
+  if (s->ipmx_sr && nb_pkts && !video_trs_rl_sr_burst(impl, s, s_port, tx_pkts[0]))
+    return 0;
+#endif
   video_trs_pkts_prepare(s, s_port, tx_pkts, nb_pkts, &p);
   uint16_t tx = video_trs_rl_txq_burst(impl, s, s_port, tx_pkts, nb_pkts);
   if (!tx) {
@@ -420,6 +447,10 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
     err("%s(%d), target_tsc is zero\n", __func__, s->idx);
     return false;
   }
+#ifdef MTL_HAS_IPMX
+  /* an armed plan ends the pads the SR's shaper time early, packet 0 keeps its launch */
+  if (s->ipmx_sr) target_tsc -= ipmx_sr_tx_rl_lead_ns(s->ipmx_sr, s_port, plan);
+#endif
 
   gap = (int64_t)(target_tsc - mt_get_tsc(impl));
   /* the lower bound is video_trs_rl_warm_up()'s pkts_needed < 0 */
@@ -537,20 +568,30 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
 /* The last pre-arm burst, sized now from the drain end the pre-arm left, and the
  * inflight pkts of packet 0 behind it, in one call. Pads that would leave packet 0 past
  * absorb_ns are not sent: before its target it returns 0 at IDLE, for the caller to hold
- * it, and after it packet 0 goes alone. Returns the pkts sent and sets *pads_tx; refused
- * pads retry ahead of the pkts. */
+ * it, and after it packet 0 goes alone. An IPMX SR goes between the pads and the pkts.
+ * Returns the pkts sent and sets *pads_tx; refused pads, and a refused SR, retry ahead
+ * of the pkts. */
 static uint16_t video_trs_rl_tail_burst(struct mtl_main_impl* impl,
                                         struct st_tx_video_session_impl* s,
                                         enum mtl_session_port s_port, uint64_t target_tsc,
                                         uint16_t* pads_tx) {
   const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
+#ifdef MTL_HAS_IPMX
+  struct rte_mbuf* tx_pkts[ST_TX_VIDEO_RL_MAX_PADS_PER_BURST + 1 + ST_SESSION_MAX_BULK];
+  struct rte_mbuf* sr = NULL;
+#else
   struct rte_mbuf* tx_pkts[ST_TX_VIDEO_RL_MAX_PADS_PER_BURST + ST_SESSION_MAX_BULK];
+#endif
   struct rte_mbuf** pkts = &s->trs_inflight[s_port][s->trs_inflight_idx[s_port]];
   uint16_t nb_pkts = s->trs_inflight_num[s_port];
   struct st_tx_video_rl_burst b = {0};
   struct video_trs_pkts p;
 
   s->trs_rl_tail[s_port] = false;
+#ifdef MTL_HAS_IPMX
+  /* the pads end the SR's shaper time early, as video_trs_rl_pre_arm() planned them */
+  if (s->ipmx_sr) target_tsc -= ipmx_sr_tx_rl_lead_ns(s->ipmx_sr, s_port, plan);
+#endif
   uint64_t now = mt_get_tsc(impl);
   long double drained = RTE_MAX(s->trs_rl_drained[s_port], now - plan->bucket_ns);
 
@@ -570,12 +611,20 @@ static uint16_t video_trs_rl_tail_burst(struct mtl_main_impl* impl,
   video_trs_rl_trim(s, s_port, tx_pkts, &b);
   video_trs_rl_pads_ref(s, s_port, (int16_t)b.coarse, (int16_t)b.fine,
                         (int16_t)(b.n - b.coarse - b.fine));
-  for (uint16_t i = 0; i < nb_pkts; i++) tx_pkts[b.n + i] = pkts[i];
+  uint16_t head = b.n;
+#ifdef MTL_HAS_IPMX
+  if (s->ipmx_sr) sr = ipmx_sr_tx_pending_get(s->ipmx_sr, s_port, pkts[0]);
+  if (sr) tx_pkts[head++] = sr;
+#endif
+  for (uint16_t i = 0; i < nb_pkts; i++) tx_pkts[head + i] = pkts[i];
   video_trs_pkts_prepare(s, s_port, pkts, nb_pkts, &p);
 
-  uint16_t tx = video_trs_rl_txq_burst(impl, s, s_port, tx_pkts, b.n + nb_pkts);
+  uint16_t tx = video_trs_rl_txq_burst(impl, s, s_port, tx_pkts, head + nb_pkts);
+#ifdef MTL_HAS_IPMX
+  if (sr) ipmx_sr_tx_pending_done(s->ipmx_sr, s_port, tx > b.n);
+#endif
   *pads_tx = RTE_MIN(tx, b.n);
-  uint16_t pkts_tx = tx - *pads_tx;
+  uint16_t pkts_tx = tx > head ? tx - head : 0;
   if (*pads_tx < b.coarse + b.fine) {
     int16_t coarse = (int16_t)(b.coarse - RTE_MIN(b.coarse, *pads_tx));
     int16_t fine = (int16_t)(b.coarse + b.fine - RTE_MAX(b.coarse, *pads_tx));
@@ -591,7 +640,7 @@ static uint16_t video_trs_rl_tail_burst(struct mtl_main_impl* impl,
     return 0;
   }
   s->trs_pad_inflight_num[s_port] += b.n - *pads_tx;
-  video_trs_pads_end(s, s_port, tx_pkts, *pads_tx);
+  video_trs_pads_end(s, s_port, tx_pkts, RTE_MIN(tx, head));
   /* a stall before the doorbell, as video_trs_rl_pre_arm() counts one */
   long double latest = s->last_burst_succ_time_tsc[s_port] - plan->bucket_ns;
   if (*pads_tx && drained + ST_TX_VIDEO_RL_STALL_NS < latest)
@@ -849,6 +898,10 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
       video_burst_packet(impl, s, s_port, pkts, valid_bulk, true);
     }
     uint64_t target_tsc = st_tx_mbuf_get_tsc(pkts[valid_bulk]);
+#ifdef MTL_HAS_IPMX
+    if (s->ipmx_sr)
+      ipmx_sr_tx_frame_start(s->ipmx_sr, s_port, pkts[valid_bulk], cur_tsc >= target_tsc);
+#endif
     dbg("%s(%d), first pkt, ts cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
         cur_tsc, target_tsc);
     s->trs_rl_pads_end[s_port] = 0;
@@ -977,6 +1030,11 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
     s->stat_trs_ret_code[s_port] = -STI_TSCTRS_BURST_HAS_DUMMY;
   }
 
+#ifdef MTL_HAS_IPMX
+  if (s->ipmx_sr && valid_bulk && !st_tx_mbuf_get_idx(pkts[0]))
+    ipmx_sr_tx_frame_start(s->ipmx_sr, s_port, pkts[0],
+                           mt_get_tsc(impl) >= st_tx_mbuf_get_tsc(pkts[0]));
+#endif
   if (s->pacing_way[s_port] != ST21_TX_PACING_WAY_BE || pkt_idx == 0) {
     cur_tsc = mt_get_tsc(impl);
     target_tsc = st_tx_mbuf_get_tsc(pkts[0]);
@@ -1070,6 +1128,12 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
   }
 
   if (valid_bulk > 0) {
+#ifdef MTL_HAS_IPMX
+    if (s->ipmx_sr && !st_tx_mbuf_get_idx(pkts[0]))
+      ipmx_sr_tx_frame_start(
+          s->ipmx_sr, s_port, pkts[0],
+          mt_get_ptp_time(impl, MTL_PORT_P) >= st_tx_mbuf_get_ptp(pkts[0]));
+#endif
     for (i = 0; i < (uint64_t)valid_bulk; i++) {
       target_ptp = st_tx_mbuf_get_ptp(pkts[i]);
       /* Put tx timestamp into transmit descriptor */
@@ -1167,6 +1231,10 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
 
   cur_ptp = mt_get_ptp_time(impl, MTL_PORT_P);
   target_ptp = st_tx_mbuf_get_ptp(pkts[0]);
+#ifdef MTL_HAS_IPMX
+  if (s->ipmx_sr && valid_bulk && !st_tx_mbuf_get_idx(pkts[0]))
+    ipmx_sr_tx_frame_start(s->ipmx_sr, s_port, pkts[0], cur_ptp >= target_ptp);
+#endif
   if (cur_ptp < target_ptp) {
     unsigned int i;
     uint64_t delta = target_ptp - cur_ptp;

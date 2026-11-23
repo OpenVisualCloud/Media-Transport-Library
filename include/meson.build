@@ -13,3 +13,7 @@ mtl_experimental_header_files = files('experimental/st20_combined_api.h')
 experimental_header_install_path = meson.project_name() + '/experimental'
 
 install_headers(mtl_experimental_header_files, subdir : experimental_header_install_path)
+
+if get_option('enable_ipmx') == true
+  install_headers(files('ipmx/ipmx_api.h'), subdir : meson.project_name() + '/ipmx')
+endif

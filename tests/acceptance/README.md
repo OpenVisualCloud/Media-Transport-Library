@@ -67,6 +67,44 @@ the wrapper's requirements in
 [tests/tools/isolate/README.md](../tools/isolate/README.md), with the first
 interface as port P, they need passwordless `sudo -n` for the test account.
 
+## IPMX
+
+The `tests/single/ipmx/` cases check IPMX senders with the VSF TR-10 TP-1
+section 13 scripts. They skip unless all of these are in place:
+
+- MTL in `.local_install` built with `-Denable_ipmx=true` (`ipmx=true` in
+  its `mtl.pc`).
+- A clone of the VSF IPMX test scripts (`nmos-testing-ipmx`), named by
+  `ipmx.vsf_path` in `test_config.yaml` (see
+  [configs/examples/test_config.yaml](configs/examples/test_config.yaml), or
+  `gen_config.py --ipmx_vsf_path`). The scripts are not copied into this
+  repository.
+- A Python 3 interpreter for the scripts (`ipmx.vsf_python`, default
+  `python3`; scapy is optional), plus tcpdump, reordercap, editcap and tshark
+  on the host.
+
+The JPEG XS cases (`test_ipmx_st22p.py`) also need:
+
+- The SVT-JPEG-XS MTL plugin, enabled in `.local_install/conf/kahawai.json`,
+  and its `mtl-plugin/` directory as `ipmx.svt_plugin_dir`: the cases load
+  its `ipmx_1080p.json` / `ipmx_2160p.json`, switched to Sublev4bpp for the
+  4 bpp points. The RGB 4:4:4 8-bit (`GBRPLANAR8`) and 10-bit
+  (`GBRPLANAR10LE`, IDs `rgb10_*`) points use the same files.
+- MTL scheduler CPUs that no other thread uses. The SVT encoder and decoder
+  threads float over every CPU of the process; on a scheduler CPU they delay
+  the TX frame start by milliseconds, which fails TR-10-9 section 11.2. Keep
+  them off with a cpuset (`isolcpus`, or a cgroup holding the MTL lcores
+  apart) and name those CPUs in `ipmx.lcores` (RxTxApp `--lcores`).
+  `cpu_isolation="require"` does not help here: it puts the SVT threads into
+  the same small partition.
+
+The capture runs on the kernel netdev of the RX VF's PF, with hardware
+timestamps, so the TX and RX ports must reach each other over the cable (VFs
+of two PFs); the cases skip otherwise. The validators read 2 s of frames
+(TR-10-9 section 11.2), or `ipmx.max_frames` if larger; a 2160p raw case takes
+about 45 minutes. The capture and the SDP of each case stay in
+`/tmp/ipmx_acceptance/<case>/`.
+
 ## Further reading
 
 - [Setup and run](../../doc/acceptance_quickstart.md)

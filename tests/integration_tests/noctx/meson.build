@@ -27,3 +27,6 @@ noctx_sources = files(
     'testcases/queues.cpp',
     'testcases/st20p_vrx_margin_tests.cpp',
 )
+
+subdir('testcases/ipmx')
+noctx_sources += noctx_ipmx_sources

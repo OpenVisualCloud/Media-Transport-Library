@@ -79,6 +79,7 @@ unit_sources = [
   'datapath/mt_queue_harness.c',
   'datapath/mt_queue_test.cpp',
   'fmt/st_fmt_test.cpp',
+  'fmt/st_gbrp8_test.cpp',
   'session/st40_harness.c',
   'session/st40_tx_test_harness.c',
   'session/st40/redundancy_test.cpp',
@@ -248,6 +249,7 @@ unit_sources = [
   'ptp/user_sync_test.cpp',
   'ptp/delta_math_test.cpp',
   'ptp/t3_test.cpp',
+  'ptp/announce_test.cpp',
   'ptp/parse_bounds_test.cpp',
   'main/tsc_calibrate_harness.c',
   'main/tsc_calibrate_test.cpp',
@@ -262,6 +264,33 @@ unit_sources = [
   'dma/mt_dma_auto_test.cpp',
   'main.cpp',
 ]
+
+if get_option('enable_ipmx')
+  unit_cpp_args += ['-DMTL_HAS_IPMX']
+  unit_sources += [
+    'ipmx/ipmx_stub_harness.c',
+    'ipmx/ipmx_disabled_test.cpp',
+    'ipmx/ipmx_tx_validate_test.cpp',
+    'ipmx/ipmx_rx_validate_test.cpp',
+    'ipmx/ipmx_st22_validate_test.cpp',
+    'ipmx/ipmx_st22_jxs_test.cpp',
+    'ipmx/ipmx_pipeline_test.cpp',
+    'ipmx/ipmx_tx_dscp_test.cpp',
+    'ipmx/ipmx_vrx_test.cpp',
+    'ipmx/ipmx_rx_tp_test.cpp',
+    'ipmx/ipmx_sr_harness.c',
+    'ipmx/ipmx_sr_test.cpp',
+    'ipmx/ipmx_sr_trs_test.cpp',
+    'ipmx/ipmx_st22_sr_test.cpp',
+    'ipmx/ipmx_info_test.cpp',
+    'ipmx/ipmx_block_version_test.cpp',
+    'ipmx/ipmx_refclk_test.cpp',
+    'ipmx/ipmx_sr_rx_harness.c',
+    'ipmx/ipmx_sr_rx_test.cpp',
+    'ipmx/ipmx_sdp_test.cpp',
+    'ipmx/ipmx_sdp_jxsv_test.cpp',
+  ]
+endif
 
 executable('UnitTest', unit_sources,
   c_args : unit_c_args,

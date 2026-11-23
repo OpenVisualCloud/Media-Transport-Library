@@ -16,4 +16,7 @@ sources += st20_sources
 
 subdir('noctx')
 sources += noctx_sources
+
+subdir('ipmx')
+sources += ipmx_sources
 test_inc = include_directories('.', 'noctx', 'st20')

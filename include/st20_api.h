@@ -109,6 +109,19 @@ extern "C" {
  * Force the numa of the created session, both CPU and memory.
  */
 #define ST20_TX_FLAG_FORCE_NUMA (MTL_BIT32(11))
+/**
+ * Flag bit in flags of struct st20_tx_ops.
+ * Enable IPMX (VSF TR-10) mode. st20_tx_create() fails (returns NULL) and logs the
+ * reason if the library is built without enable_ipmx, or if the ops break an IPMX rule:
+ * odd or <= 1024 udp_port, ST21_PACING_LINEAR, ST20_TYPE_RTP_LEVEL, interlaced,
+ * ST20_TX_FLAG_ENABLE_RTCP, ST20_FMT_V210 or ST20_FMT_YUV_422_PLANAR10LE.
+ * st20_tx_update_destination() rejects a udp_port that breaks the same port rule.
+ * Each port, so both ST 2022-7 legs, sends an RTCP Sender Report with the IPMX Info
+ * Block to its own destination, udp_port + 1, right before each frame. Its mediaclk is
+ * direct=0, so with ST20_TX_FLAG_USER_TIMESTAMP the timestamps must follow the PTP (TAI)
+ * time the library runs on.
+ */
+#define ST20_TX_FLAG_IPMX (MTL_BIT32(12))
 
 /**
  * Flag bit in flags of struct st22_tx_ops.
@@ -167,6 +180,20 @@ extern "C" {
  * Force the numa of the created session, both CPU and memory.
  */
 #define ST22_TX_FLAG_FORCE_NUMA (MTL_BIT32(8))
+/**
+ * Flag bit in flags of struct st22_tx_ops.
+ * Enable IPMX (VSF TR-10-11) mode. st22_tx_create() fails (returns NULL) and logs the
+ * reason if the library is built without enable_ipmx, or if the ops break an IPMX rule:
+ * odd or <= 1024 udp_port, ST21_PACING_LINEAR, ST22_TYPE_RTP_LEVEL, interlaced,
+ * ST22_TX_FLAG_ENABLE_RTCP, ST22_TX_FLAG_DISABLE_BOXES, or fmt other than
+ * ST20_FMT_RGB_8BIT or ST20_FMT_RGB_10BIT. fmt is the RGB 4:4:4 bit depth of the
+ * codestreams: the boxes, Sender Report and SDP signal it, and a frame whose JPEG XS
+ * header has another one is not sent.
+ * st22_tx_update_destination() rejects a udp_port that breaks the same port rule.
+ * The packets carry DSCP AF42. Each frame also sends an RTCP Sender Report on
+ * udp_port + 1, see ipmx_st22_tx_get_info().
+ */
+#define ST22_TX_FLAG_IPMX (MTL_BIT32(9))
 
 /**
  * Flag bit in flags of struct st20_rx_ops, for non MTL_PMD_DPDK_USER.
@@ -247,6 +274,17 @@ extern "C" {
  * Force to use multi(only two now) threads for the rx packet processing
  */
 #define ST20_RX_FLAG_USE_MULTI_THREADS (MTL_BIT32(23))
+/**
+ * Flag bit in flags of struct st20_rx_ops.
+ * Enable IPMX (VSF TR-10) mode. st20_rx_create() fails (returns NULL) and logs the
+ * reason if the library is built without enable_ipmx, or if the ops break an IPMX rule:
+ * odd or <= 1024 udp_port, ST20_TYPE_RTP_LEVEL, interlaced, ST20_RX_FLAG_ENABLE_RTCP,
+ * ST20_FMT_V210 or ST20_FMT_YUV_422_PLANAR10LE.
+ * st20_rx_update_source() rejects a udp_port that breaks the same port rule.
+ * Each port also receives the RTCP Sender Reports on udp_port + 1, unless
+ * ST20_RX_FLAG_DATA_PATH_ONLY; read them with ipmx_st20_rx_get_sr_info().
+ */
+#define ST20_RX_FLAG_IPMX (MTL_BIT32(24))
 
 /**
  * Flag bit in flags of struct st22_rx_ops, for non MTL_PMD_DPDK_USER.
@@ -279,6 +317,17 @@ extern "C" {
  * Force the numa of the created session, both CPU and memory.
  */
 #define ST22_RX_FLAG_FORCE_NUMA (MTL_BIT32(5))
+/**
+ * Flag bit in flags of struct st22_rx_ops.
+ * Enable IPMX (VSF TR-10-11) mode. st22_rx_create() fails (returns NULL) and logs the
+ * reason if the library is built without enable_ipmx, or if the ops break an IPMX rule:
+ * odd or <= 1024 udp_port, ST22_TYPE_RTP_LEVEL, interlaced, ST22_RX_FLAG_ENABLE_RTCP or
+ * ST22_RX_FLAG_DISABLE_BOXES.
+ * st22_rx_update_source() rejects a udp_port that breaks the same port rule.
+ * Each port also receives the RTCP Sender Reports on udp_port + 1, unless
+ * ST22_RX_FLAG_DATA_PATH_ONLY; read them with ipmx_st22_rx_get_sr_info().
+ */
+#define ST22_RX_FLAG_IPMX (MTL_BIT32(6))
 
 /**
  * Flag bit in flags of struct st22_rx_ops.
@@ -1309,7 +1358,7 @@ struct st22_tx_ops {
   enum st_fps fps;
   /** Mandatory. interlaced or not */
   bool interlaced;
-  /** Mandatory. Session resolution format */
+  /** Mandatory. Session resolution format, see ST22_TX_FLAG_IPMX for the IPMX values */
   enum st20_fmt fmt;
   /** Mandatory. 7 bits payload type define in RFC3550 */
   uint8_t payload_type;

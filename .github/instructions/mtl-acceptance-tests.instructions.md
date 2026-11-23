@@ -106,6 +106,7 @@ sudo grep -E "EAL|hugepage|VF|RxTxApp|RemoteProcess|Traceback|err:" \
 | EAL hugepage / VF binding error in logs | **(setup)** Hugepages exhausted or VFs not on `vfio-pci`. |
 | RxTxApp `Segmentation fault` inside `iavf_tm_node_add` (after `dev_if_init_pacing(0), try rl as drv support TM`) | **(setup)** In-tree ice loaded instead of the out-of-tree ice of `versions.env::ICE_VER`. Re-run setup — the ice stage version-checks and reloads automatically. |
 | RxTxApp `Segmentation fault` anywhere else | **NOT setup.** Capture `gdb -batch -ex 'bt full' .local_install/mtl/bin/RxTxApp /tmp/core.*` (or `coredumpctl gdb RxTxApp`) and report upstream as a real MTL/DPDK bug. Do **not** add a workaround. |
+| KahawaiTest or another DPDK user loses its VFs during the first acceptance run on a host | Expected once: `mtl_engine/dma.py` reloads `vfio_pci` (`modprobe -r`, `disable_denylist=1`), which unbinds every VF, and nicctl then reuses them. `/etc/modprobe.d/vfio-pci-denylist.conf` keeps the setting, so later runs leave the VFs alone. Re-bind the other VFs after the first run. |
 | `Permission denied (publickey)` to `root@127.0.0.1` | **(setup)** Pubkey not in `/root/.ssh/authorized_keys`. |
 
 **(setup)** = re-run `.github/scripts/acceptance_setup.sh setup` — `--base-only` for

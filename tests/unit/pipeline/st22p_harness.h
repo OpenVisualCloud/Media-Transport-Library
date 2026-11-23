@@ -110,6 +110,13 @@ st22p_rx_handle ut22p_handle(ut22p_ctx* ctx);
 void ut22p_force_destroying(ut22p_ctx* ctx);
 
 /**
+ * Run create_transport with ops against a stub transport create, which fails, and
+ * return the st22 ops it was given in *transport. Returns create_transport's -EIO.
+ */
+int ut22p_rx_capture_transport_ops(ut22p_ctx* ctx, struct st22p_rx_ops* ops,
+                                   struct st22_rx_ops* transport);
+
+/**
  * Call st22p_rx_create() on a bare instance with one port, named in
  * ops->port.port[0] by this call. For create paths that fail before any
  * transport or decoder is needed.

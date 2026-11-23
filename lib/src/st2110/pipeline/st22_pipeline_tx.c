@@ -4,6 +4,7 @@
 
 #include "st22_pipeline_tx.h"
 
+#include "../../ipmx/ipmx.h"
 #include "../../mt_handle_guard.h"
 #include "../../mt_log.h"
 
@@ -528,6 +529,13 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
     ops_tx.rtcp = ops->rtcp;
   }
   if (ops->flags & ST22P_TX_FLAG_DISABLE_BULK) ops_tx.flags |= ST22_TX_FLAG_DISABLE_BULK;
+  if (ops->flags & ST22P_TX_FLAG_IPMX) {
+    ops_tx.flags |= ST22_TX_FLAG_IPMX;
+    if (ops->input_fmt == ST_FRAME_FMT_GBRPLANAR8)
+      ops_tx.fmt = ST20_FMT_RGB_8BIT;
+    else
+      ops_tx.fmt = ST20_FMT_RGB_10BIT;
+  }
   if (ops->flags & ST22P_TX_FLAG_FORCE_NUMA) {
     ops_tx.socket_id = ops->socket_id;
     ops_tx.flags |= ST22_TX_FLAG_FORCE_NUMA;
@@ -1012,6 +1020,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
     err("%s(%d), unknow codec %d\n", __func__, idx, ops->codec);
     return NULL;
   }
+  if ((ops->flags & ST22P_TX_FLAG_IPMX) && ipmx_st22p_tx_ops_check(ops)) return NULL;
 
   uint64_t frame_period_ns;
   ret = st_frame_period_ns(ops->fps, &frame_period_ns);

@@ -275,9 +275,11 @@ How MTL uses the E810/E830 rate limiter to pace the packets, and to launch each 
 
 TSN launch-time pacing (`--pacing_way tsn` / `ST21_TX_PACING_WAY_TSN`) offloads packet pacing to the NIC: MTL stamps each packet with a launch time and the NIC releases it once its internal clock (the PHC) reaches that timestamp. This has three requirements, all enforced at session init:
 
-- The NIC must be an Intel® E830 Series Ethernet Adapter. E810 lacks the TxPP launch-time hardware engine, so it never advertises the `RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP` capability.
+- The NIC must advertise the `RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP` capability: an Intel® E830 Series Ethernet Adapter, or an Intel® Ethernet Controller I225/I226 model with TSN support, such as the I226-LM (DPDK `net_igc`). Not every I225/I226 model has it: the I226-V does not support TSN pacing. E810 lacks the TxPP launch-time hardware engine, so it never advertises the capability.
 - The port must be a PF (Physical Function). VFs do not support the hardware timesync feature, so there is no HW PHC to compare the launch time against.
 - The built-in PTP service must be enabled (`--ptp` / `MTL_FLAG_PTP_ENABLE`), and not forced to the TSC source (`MTL_FLAG_PTP_SOURCE_TSC`). The packet launch time is only meaningful if it is expressed in the same, PHC-synced clock domain the NIC compares it against. See [PTP Setup](run.md#71-ptp-setup) for how to enable it.
+
+On I225/I226, MTL sends launch-time traffic on TX queue 0 only, and keeps every other flow off that queue, so one port carries a single TSN video session. The DPDK igc PMD also leaves the NIC in TSN mode after the port stops: a later run on the same port without TSN pacing stalls in TX until the port is reset, for example by binding it to the kernel `igc` driver and back.
 
 ### 4.4. ST2110 RX
 

@@ -13,5 +13,9 @@ if app_has_sdl2
   sources += files('player.c')
 endif
 
+if app_has_ipmx
+  subdir('ipmx')
+endif
+
 subdir('legacy')
 subdir('experimental')

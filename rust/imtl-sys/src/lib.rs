@@ -4,6 +4,11 @@
 
 include!(concat!(env!("OUT_DIR"), "/mtl_bindings.rs"));
 
+#[cfg(feature = "ipmx")]
+mod ipmx;
+#[cfg(feature = "ipmx")]
+pub use ipmx::*;
+
 #[cfg(test)]
 mod tests {
     use super::*;

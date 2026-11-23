@@ -7,6 +7,10 @@ edition = "2021"
 name = "imtl_sys"
 path = "src/lib.rs"
 
+[features]
+# IPMX (VSF TR-10) session flags and ipmx_api.h; needs an MTL built with enable_ipmx.
+ipmx = []
+
 [dependencies]
 
 [build-dependencies]

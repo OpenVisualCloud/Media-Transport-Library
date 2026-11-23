@@ -44,6 +44,7 @@ Contents
    doc/external_frame.md
    doc/gpu.md
    gpu_direct/README.md
+   IPMX Support <doc/IPMX.md>
    doc/isolation.md
    doc/plugin.md
    doc/rtcp.md

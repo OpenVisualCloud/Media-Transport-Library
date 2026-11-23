@@ -4,6 +4,8 @@
 
 #include "rx_st22p_app.h"
 
+#include "app_ipmx_hook.h"
+
 static void app_rx_st22p_consume_frame(struct st_app_rx_st22p_session* s,
                                        struct st_frame* frame) {
   struct st_display* d = s->display;
@@ -167,6 +169,8 @@ static int app_rx_st22p_init(struct st_app_context* ctx,
   ops.flags |= ST22P_RX_FLAG_BLOCK_GET;
   ops.framebuff_cnt = s->framebuff_cnt;
   if (st22p && st22p->enable_rtcp) ops.flags |= ST22P_RX_FLAG_ENABLE_RTCP;
+  s->ipmx = st22p && st22p->ipmx;
+  if (s->ipmx) ops.flags |= ST22P_RX_FLAG_IPMX;
   if (ctx->force_rx_video_numa >= 0) {
     ops.flags |= ST22P_RX_FLAG_FORCE_NUMA;
     ops.socket_id = ctx->force_rx_video_numa;
@@ -177,6 +181,7 @@ static int app_rx_st22p_init(struct st_app_context* ctx,
   if (ops.interlaced) {
     s->height >>= 1;
   }
+  s->num_port = ops.port.num_port;
 
   s->pcapng_max_pkts = ctx->pcapng_max_pkts;
   s->expect_fps = st_frame_rate(ops.fps);
@@ -196,7 +201,7 @@ static int app_rx_st22p_init(struct st_app_context* ctx,
 
   handle = st22p_rx_create(ctx->st, &ops);
   if (!handle) {
-    err("%s(%d), st20_rx_create fail\n", __func__, idx);
+    err("%s(%s), st22p_rx_create fail\n", __func__, name);
     app_rx_st22p_uinit(s);
     return -EIO;
   }
@@ -319,6 +324,7 @@ int st_app_rx_st22p_sessions_result(struct st_app_context* ctx) {
   for (i = 0; i < ctx->rx_st22p_session_cnt; i++) {
     s = &ctx->rx_st22p_sessions[i];
     ret += app_rx_st22p_result(s);
+    app_ipmx_rx_st22p_result(s);
   }
 
   return ret;

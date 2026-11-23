@@ -7,6 +7,10 @@
 #include <math.h>
 
 #include "../datapath/mt_queue.h"
+#include "../ipmx/ipmx.h"
+#ifdef MTL_HAS_IPMX
+#include "../ipmx/ipmx_sr.h"
+#endif
 #include "../mt_handle_guard.h"
 #include "../mt_log.h"
 #include "../mt_rtcp.h"
@@ -1095,7 +1099,7 @@ static int tv_init_st22_next_meta(struct st_tx_video_session_impl* s,
   return 0;
 }
 
-static int tv_init_st22_boxes(struct st_tx_video_session_impl* s) {
+static int tv_init_st22_boxes(struct st_tx_video_session_impl* s, enum st20_fmt fmt) {
   struct st22_tx_video_info* st22_info = s->st22_info;
   struct st22_jpvs* jpvs = &st22_info->st22_boxes.jpvs;
   uint32_t lbox = sizeof(*jpvs);
@@ -1152,6 +1156,9 @@ static int tv_init_st22_boxes(struct st_tx_video_session_impl* s) {
   colr->methdat[5] = 0x01;
   colr->methdat[6] = 0x80;
 
+  if (s->ops.flags & ST20_TX_FLAG_IPMX)
+    return ipmx_jxs_boxes_fill(&st22_info->st22_boxes, fmt, s->ops.width, s->ops.height,
+                               s->ops.fps, s->st22_codestream_size);
   return 0;
 }
 
@@ -1197,7 +1204,7 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
   memset(ipv4, 0x0, sizeof(*ipv4));
   ipv4->version_ihl = (4 << 4) | (sizeof(struct rte_ipv4_hdr) / 4);
   ipv4->time_to_live = 64;
-  ipv4->type_of_service = 0;
+  ipv4->type_of_service = (ops->flags & ST20_TX_FLAG_IPMX) ? IPMX_VIDEO_IPV4_TOS : 0;
   ipv4->packet_id = 0; /* always 0 when DONT_FRAGMENT set */
   ipv4->fragment_offset = MT_IP_DONT_FRAGMENT_FLAG;
   ipv4->next_proto_id = IPPROTO_UDP;
@@ -2844,6 +2851,15 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
         s->stat_build_ret_code = -STI_ST22_APP_GET_FRAME_ERR_SIZE;
         return MTL_TASKLET_ALL_DONE;
       }
+      if ((ops->flags & ST20_TX_FLAG_IPMX) &&
+          ipmx_jxs_frame_check(s->ops_name, idx, &st22_info->st22_boxes,
+                               (uint8_t*)frame->addr + s->st22_box_hdr_length,
+                               codestream_size, ops->width, ops->height,
+                               &s->stat_ipmx_pih_fail) < 0) {
+        tv_notify_frame_done(s, next_frame_idx);
+        s->stat_build_ret_code = -STI_ST22_APP_GET_FRAME_ERR_PIH;
+        return MTL_TASKLET_ALL_DONE;
+      }
 
       s->stat_user_busy_first = true;
       /* all check fine */
@@ -2959,6 +2975,12 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
         return MTL_TASKLET_ALL_DONE;
       }
     }
+#ifdef MTL_HAS_IPMX
+    if (s->ipmx_sr && !s->st20_pkt_idx) {
+      ipmx_sr_tx_set_frame_size(pkts[0], st22_info->cur_frame_size);
+      if (send_r) ipmx_sr_tx_set_frame_size(pkts_r[0], st22_info->cur_frame_size);
+    }
+#endif
 
     for (unsigned int i = 0; i < bulk; i++) {
       if (s->st20_pkt_idx >= st22_info->st22_total_pkts) {
@@ -3641,7 +3663,12 @@ static int tv_init_sw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
       tv_uinit_sw(s);
       return -EIO;
     }
-    tv_init_st22_boxes(s);
+    ret = tv_init_st22_boxes(s, st22_frame_ops->fmt);
+    if (ret < 0) {
+      err("%s(%d), tv_init_st22_boxes fail %d\n", __func__, idx, ret);
+      tv_uinit_sw(s);
+      return ret;
+    }
   }
 
   /* free the pool if any in previous session */
@@ -3811,6 +3838,9 @@ static int tv_uinit(struct st_tx_video_session_impl* s) {
   tv_frames_hold(s);
   st_tx_video_transmitter_state_cleanup(s);
   tv_uinit_hw(s);
+#ifdef MTL_HAS_IPMX
+  ipmx_sr_tx_uinit(s); /* after the queue flush returned its mbufs */
+#endif
   tv_frames_release(s);
   tv_uinit_sw(s);
   return 0;
@@ -3988,6 +4018,17 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     }
   }
 
+#ifdef MTL_HAS_IPMX
+  if (ops->flags & ST20_TX_FLAG_IPMX) {
+    ret = ipmx_sr_tx_init(impl, s);
+    if (ret < 0) {
+      err("%s(%d), ipmx_sr_tx_init fail %d\n", __func__, idx, ret);
+      tv_uinit(s);
+      return ret;
+    }
+  }
+#endif
+
   ret = tv_init_pacing(impl, s);
   if (ret < 0) {
     err("%s(%d), tx_session_init_pacing fail %d\n", __func__, idx, ret);
@@ -4077,6 +4118,11 @@ struct tv_stat_dump {
   struct mt_stat_u64 stat_time;
   uint32_t max_next_frame_us;
   uint32_t max_notify_frame_us;
+#ifdef MTL_HAS_IPMX
+  uint32_t ipmx_pih_fail;
+  bool ipmx_sr_on;
+  struct ipmx_sr_stats ipmx_sr;
+#endif
 };
 
 /* the tasklets skip the session while this holds its lock: copy and reset only, no log */
@@ -4137,6 +4183,12 @@ static void tv_stat_collect(struct st_tx_video_sessions_mgr* mgr,
   d->max_notify_frame_us = s->stat_max_notify_frame_us;
   s->stat_max_next_frame_us = 0;
   s->stat_max_notify_frame_us = 0;
+#ifdef MTL_HAS_IPMX
+  d->ipmx_pih_fail = s->stat_ipmx_pih_fail;
+  s->stat_ipmx_pih_fail = 0;
+  d->ipmx_sr_on = s->ipmx_sr != NULL;
+  if (s->ipmx_sr) ipmx_sr_stat_take(s->ipmx_sr, &d->ipmx_sr);
+#endif
 }
 
 static void tv_stat_log(const struct tv_stat_dump* dump) {
@@ -4283,6 +4335,13 @@ static void tv_stat_log(const struct tv_stat_dump* dump) {
     notice("TX_VIDEO_SESSION(%d,%d): get next frame max %uus, notify done max %uus\n",
            m_idx, idx, dump->max_next_frame_us, dump->max_notify_frame_us);
   }
+#ifdef MTL_HAS_IPMX
+  if (dump->ipmx_pih_fail) {
+    notice("TX_VIDEO_SESSION(%d,%d): ipmx jpeg xs header check dropped frames %u\n",
+           m_idx, idx, dump->ipmx_pih_fail);
+  }
+  if (dump->ipmx_sr_on) ipmx_sr_stat_log(&dump->ipmx_sr, m_idx, idx);
+#endif
 }
 
 /* Frames fall behind once the round averages past the tightest budget or a pkt met the
@@ -4393,6 +4452,11 @@ static int tv_update_dst(struct mtl_main_impl* impl, struct st_tx_video_session_
   int idx = s->idx, num_port = s->ops.num_port;
   struct st20_tx_ops* ops = &s->ops;
 
+  if (ops->flags & ST20_TX_FLAG_IPMX) {
+    ret = ipmx_udp_ports_check(s->ops_name, dst->udp_port, num_port);
+    if (ret < 0) return ret;
+  }
+
   /* update ip and port */
   for (int i = 0; i < num_port; i++) {
     memcpy(ops->dip_addr[i], dst->dip_addr[i], MTL_IP_ADDR_LEN);
@@ -4413,11 +4477,8 @@ static int tv_update_dst(struct mtl_main_impl* impl, struct st_tx_video_session_
   return 0;
 }
 
-/* For the public APIs on s: 0 with its lock held and its slot in *mgr / *idx; -EIO if
- * neither try found s in the slot it read, i.e. migrations raced both. In a callback, on
- * the scheduler's own thread, -EBUSY rather than spin on the lock. */
-static int tv_api_lock(struct st_tx_video_session_impl* s,
-                       struct st_tx_video_sessions_mgr** mgr, int* idx) {
+int st_tx_video_session_api_lock(struct st_tx_video_session_impl* s,
+                                 struct st_tx_video_sessions_mgr** mgr, int* idx) {
   /* a migration moves s before it releases the old slot, so one retry finds it */
   for (int tries = 0; tries < 2; tries++) {
     struct st_tx_video_sessions_mgr* m = s->mgr;
@@ -4447,7 +4508,7 @@ static int tv_mgr_update_dst(struct st_tx_video_session_impl* s,
 
   /* in a callback the ARP lookup of the new destination would stall the scheduler */
   if (mt_sch_on_own_thread(mt_sch_instance(mgr->parent, mgr->idx))) return -EBUSY;
-  int ret = tv_api_lock(s, &mgr, &idx);
+  int ret = st_tx_video_session_api_lock(s, &mgr, &idx);
   if (ret < 0) return ret;
 
   ret = tv_update_dst(mgr->parent, s, dst);
@@ -4732,6 +4793,8 @@ static int tv_ops_check(struct st20_tx_ops* ops) {
     return -EINVAL;
   }
 
+  if (ops->flags & ST20_TX_FLAG_IPMX) return ipmx_tx_ops_check(ops);
+
   return 0;
 }
 
@@ -4841,6 +4904,8 @@ static int tv_st22_ops_check(struct st22_tx_ops* ops) {
     err("%s, invalid payload_type %d\n", __func__, ops->payload_type);
     return -EINVAL;
   }
+
+  if (ops->flags & ST22_TX_FLAG_IPMX) return ipmx_st22_tx_ops_check(ops);
 
   return 0;
 }
@@ -5392,7 +5457,7 @@ int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* 
   struct st_tx_video_sessions_mgr* mgr;
   int idx;
 
-  int ret = tv_api_lock(s, &mgr, &idx);
+  int ret = st_tx_video_session_api_lock(s, &mgr, &idx);
   if (!ret) {
     memcpy(stats, &s->port_user_stats, sizeof(*stats));
     tx_video_session_put(mgr, idx);
@@ -5414,7 +5479,7 @@ int st20_tx_reset_session_stats(st20_tx_handle handle) {
   struct st_tx_video_sessions_mgr* mgr;
   int idx;
 
-  int ret = tv_api_lock(s, &mgr, &idx);
+  int ret = st_tx_video_session_api_lock(s, &mgr, &idx);
   if (!ret) {
     memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
     memset(&s->stat_snapshot, 0, sizeof(s->stat_snapshot));
@@ -5617,6 +5682,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
     st20_ops.rtcp = ops->rtcp;
   }
   if (ops->flags & ST22_TX_FLAG_DISABLE_BULK) st20_ops.flags |= ST20_TX_FLAG_DISABLE_BULK;
+  if (ops->flags & ST22_TX_FLAG_IPMX) st20_ops.flags |= ST20_TX_FLAG_IPMX;
   st20_ops.pacing = ops->pacing;
   if (ST22_TYPE_RTP_LEVEL == ops->type)
     st20_ops.type = ST20_TYPE_RTP_LEVEL;

@@ -82,6 +82,8 @@ pkg.generate(
   libraries : mtl_lib,
   filebase : meson.project_name(),
   subdirs : ['.', meson.project_name()],
+  variables : get_option('enable_ipmx') ? ['ipmx=true'] : [],
+  uninstalled_variables : get_option('enable_ipmx') ? ['ipmx=true'] : [],
   description : 'Media Transport Library'
 )
 

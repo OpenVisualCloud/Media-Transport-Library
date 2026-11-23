@@ -482,6 +482,7 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   if (ops->flags & ST20P_TX_FLAG_RTP_TIMESTAMP_EPOCH)
     ops_tx.flags |= ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH;
   if (ops->flags & ST20P_TX_FLAG_DISABLE_BULK) ops_tx.flags |= ST20_TX_FLAG_DISABLE_BULK;
+  if (ops->flags & ST20P_TX_FLAG_IPMX) ops_tx.flags |= ST20_TX_FLAG_IPMX;
   if (ops->flags & ST20P_TX_FLAG_FORCE_NUMA) {
     ops_tx.socket_id = ops->socket_id;
     ops_tx.flags |= ST20_TX_FLAG_FORCE_NUMA;

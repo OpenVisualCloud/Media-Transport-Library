@@ -473,10 +473,10 @@ is on in `mgr->dp_slot` (a plain store), checks `rte_spinlock_is_locked()` (an a
 and skips the session while it is held; there is no put, and `tx_video_session_dp_done()`
 publishes -1 at the end of the loop. Every control-plane
 access (`tx_video_session_get()`, `_get_timeout()`, `_get_empty()`, and
-`tv_api_lock()` for stats get/reset and `update_destination`) locks, then calls
+`st_tx_video_session_api_lock()` for stats get/reset, `update_destination` and the IPMX SDP getter) locks, then calls
 `mt_sch_quiescent_wait()` on the manager's scheduler (`mt_sch_instance(mgr->parent, mgr->idx)`).
 `st_tx_video_session_migrate()` re-points `s->mgr` / `s->idx` before the old slot is released,
-so `tv_api_lock()` that finds the old slot no longer holding `s` retries once at the new one;
+so `st_tx_video_session_api_lock()` that finds the old slot no longer holding `s` retries once at the new one;
 -EIO only if neither try found `s` where it read it (migrations racing both, e.g. across a
 stall of one admin period):
 - Writer: `t = fetch_add(qs_token) + 1`, a seq_cst fence, then poll until `qs_seen >= t`: `MT_SPIN_POLLS_BEFORE_SLEEP` (1000) `rte_pause()` polls, then 1 µs sleeps, since an unpinned `MTL_FLAG_TASKLET_THREAD` scheduler may need the writer's CPU; `mt_spinlock_lock_timeout()` backs off the same way. Returns at once on the scheduler's own thread
@@ -492,7 +492,7 @@ stall of one admin period):
 - Loading the writer's token, not counting passes, is what makes it sound: the next pass's loads cannot pass that acquire load. Against going online it is the store-buffering pattern: writer stores the lock, fence, loads `qs_seen`; scheduler stores `qs_seen`, fence, loads the lock
 - A get holds the lock until no pass that could have missed it runs, so the tasklets can skip that session for up to about two passes: the rest of the pass in flight, the next one, until the put. Admin CPU-busy does this to every TX video session every 6 s, the stats dump every 10 s
 - Callbacks run on a scheduler thread, mid-pass, and a writer may hold a session lock while it waits for the tasklets to leave that session.
-  Stats get/reset work from any callback: on the session's own scheduler thread `tv_api_lock()` skips the wait, and only trylocks (-EBUSY) when the tasklets are on that very slot, i.e. from the session's own callback, where a holder waits for that callback to return
+  Stats get/reset and `ipmx_st20[p]/st22[p]_tx_get_sdp()` work from any callback: on the session's own scheduler thread `st_tx_video_session_api_lock()` skips the wait, and only trylocks (-EBUSY) when the tasklets are on that very slot, i.e. from the session's own callback, where a holder waits for that callback to return
 - Everything else is not for callbacks: `*_tx_free()` and `st20p/st22p_tx_free()` return -EBUSY on the session's own scheduler thread (the calling tasklet may still use the session, and the pipeline would free a ctx the transport still calls back into); `update_destination` too, as `tv_init_hdr()` may wait for ARP (`arp_timeout_ms`, 60 s by default) and stall the scheduler;
   `*_tx_create()` takes `tx_video_mgr_mutex`, which attach/detach hold across an untimed wait
 - The untimed wait lasts as long as the tasklets are in that one session, as the old lock did: two callbacks on different schedulers that each query the session of the other callback deadlock, as they did under the lock
@@ -600,7 +600,19 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
       Above ~1.47 GB/s even the shortest, encode 0, adds more; 257 B still bounds it up to ~2.95 GB/s, where the bound becomes the tokens of 32 cycles of the slowest psm_clk, 367 MHz.
       A timeslot passes those tokens at the true rate, which drains at least S per `pad_ns`, so this holds whatever the NIC clock (`St20TxRlModelTest.TokensCoverEveryIceTimeslot` checks it against a copy of ice's encode on all four psm_clks).
 - With a plan, `video_trs_rl_pre_arm()` queues pads that a shaper with a `bucket_ns` bucket would finish at the target; the real one, an aim smaller, finishes them at target + aim. Packet 0 follows them to the NIC in the same pass, so the shaper, not the tasklet, sets its launch.
+  With `ST20_TX_FLAG_IPMX` the frame's RTCP Sender Report sits between the pads and packet 0 on the same queue, and the pre-arm target leads by the SR's shaper time (`ipmx_sr_tx_rl_lead_ns()`).
+  `video_trs_rl_tail_burst()` puts the SR in its one burst after the pads, and `video_trs_rl_burst()` bursts it alone through `video_trs_burst_pad()` first (`video_trs_rl_sr_burst()`). Both count its bytes in `trs_rl_pads_end`, and a refused SR stays pending ahead of packet 0.
   Every drain end the pre-arm counts, its idle clamp included, is the shaper's less the aim (`St20TxRlFastClockTest.FluidShaperLaunchesOneAimPastTheTarget`).
+- IPMX Sender Report, its RX and the SDP (`lib/src/ipmx/`). The TX SR is 204 B of RTCP (SR 28 + IPMX Info Block 176, built at create by `lib/src/ipmx/ipmx_info.c`, ts-refclk and block version refreshed per frame, one block shared by both 2022-7 legs) plus the SDES CNAME, about 270 B on the wire.
+  An st22 (JPEG XS) SR has a 188 B Info Block (MIB 0x0003 then 0x0008) and counts each frame from the box + codestream size the st22 builder stamps in packet 0's mbuf priv (`ipmx_frame_size`); st22 uses TSC, never RL (`st_tx_video_session.c:3780`), so the SR is burst right before packet 0 once packet 0's target is reached;
+  the PTP path does the same and with TSN the SR takes packet 0's launch time. The st22 builder releases packet 0 only at its target, so the per-leg SR `late` stat counts every st22 frame (`late == sent`), by design.
+  RX side (`lib/src/ipmx/ipmx_sr_rx.c`): with `ST20_RX_FLAG_IPMX` (st22 maps `ST22_RX_FLAG_IPMX` to it) each port has an rxq on the media flow with UDP port + 1, taken in `rv_init_hw()` and polled by the RX video tasklet; read with `ipmx_st20[p]_rx_get_sr_info()` / `ipmx_st22[p]_rx_get_sr_info()` (seqcount snapshot).
+  The parser takes the session's video MIB type (`struct ipmx_sr_rx.video_mib`): st20 decodes 0x0001, st22 0x0003 plus the JPEG XS 0x0008 into `jxs`; the other types count in `unknown_mib`.
+  It is a CNI ring when the media flow is (`MTL_FLAG_RX_USE_CNI`) or the port has CNI running as a tasklet, else a dedicated NIC queue: the first csq sets the CNI thread sleep to 0 for good, so a ring in CNI thread mode would busy-poll a core.
+  The poll burst must be ≥ 8: iavf/ice AVX2 vector RX floors `nb_pkts` to 8 descriptors, so `rte_eth_rx_burst(…, 4)` on a dedicated queue always returns 0 (`IPMX_SR_RX_BURST` is 32).
+  SDP (`lib/src/ipmx/ipmx_sdp.c`): `ipmx_st20[p]_tx_get_sdp()` (video/raw) and `ipmx_st22[p]_tx_get_sdp()`
+  (video/jxsv: `b=AS` and the T/K/Ppih/Plev fmtp from `jxs` / `jxsv_kbps` in `struct ipmx_sr_tx`, the same copy the MIB 0x0008 is built from)
+  build it from the `ipmx_sr_tx_get_info()` snapshot and the `s_hdr[]` addressing, both read under `st_tx_video_session_api_lock()` (so a higher sess-version never carries older content; -EBUSY from the session's own callback while a writer holds it), and SDP and SR cannot disagree; `ipmx_sdp_build()` is pure (unit-tested without a NIC).
 - The pads cover `(target − now) + bucket_ns`: `ceil()` NORMAL
   pads, the last burst holding the ≤ S/64 + 8 pads that take the surplus as cuts of 64 or 8 bytes
   (cut rounded down). `st_tx_video_rl_next_burst()` in `st_tx_video_rl.h` plans each burst, pure
@@ -772,7 +784,7 @@ Progressive, height ≥ 1080; T = frame time. Interlaced, 720p and SD use their 
   - aim + T past `ST_TX_VIDEO_RL_GRID_LATE_MAX_NS`: SD, 720p25 and 8-bit 1080p25.
 - **Linear.** `ST21_PACING_LINEAR` is declared in `st20_api.h`, but nothing in `lib/src` reads it on TX, so every TX schedule is gapped.
   - Linear has no idle gap, so there is no window for warm-up or pre-arm, and RL alone has no launch time to re-anchor each frame.
-  - It would need closed-loop rate correction on RL, or TSN launch time (§4.3.3 in `doc/design.md`, E830 PF), which stamps every packet.
+  - It would need closed-loop rate correction on RL, or TSN launch time (§4.3.3 in `doc/design.md`, E830 or a TSN-capable I225/I226 such as the I226-LM, PF), which stamps every packet.
 
 ### PTP: The Time Reference
 - MTL implements PTP slave in software (`mt_ptp.c`)
@@ -1357,6 +1369,7 @@ between processes, `run_pf.sh` and the MCP tools 10 s. What each case proves:
 | ST2110-40 ancillary RX | `st40/st40_rx_rtp_fuzz.c` | Ancillary parsing |
 | ST40 helpers | `st40/st40_ancillary_helpers_fuzz.c` | UDW, checksum, parity |
 | RTCP TX | `rtcp/mt_rtcp_tx_parse_fuzz.c` | RTCP NACK parsing |
+| IPMX SR RX | `ipmx/ipmx_sr_parse_fuzz.c` | IPMX Sender Report compound parsing, st20 or st22 by the first input byte; only with `-Denable_ipmx=true`, which `fuzz.sh` (CI) does not set |
 
 Architecture: minimal DPDK EAL (no hugepages, no PCI) → full session context reset per input → call internal handler.
 

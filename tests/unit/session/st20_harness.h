@@ -407,6 +407,34 @@ bool ut20_bitmap_guard_intact(const ut20_test_ctx* ctx);
  * production `rv_detach` runs before its final stat dump. */
 void ut20_session_detach(ut20_test_ctx* ctx);
 
+/* rv_ops_check(): the st20_rx_create() ops validation, 0 or negative errno */
+int ut20_rx_ops_check(struct st20_rx_ops* ops);
+/* rv_st22_ops_check(): the st22_rx_create() ops validation, 0 or negative errno */
+int ut20_rx_st22_ops_check(struct st22_rx_ops* ops);
+
+/* OR flags into the session's ops.flags */
+void ut20_ctx_add_flags(ut20_test_ctx* ctx, uint32_t flags);
+
+/* rv_update_src() with udp_port on every session port. Only for updates the
+ * session rejects up front: an accepted one re-inits the HW this harness lacks.
+ * Plants sentinels in the rxq / rtcp_rx slots the teardown clears; *flow_kept
+ * says whether they survived. A teardown run on them dereferences the sentinel. */
+int ut20_update_src_rejected(ut20_test_ctx* ctx, uint16_t udp_port, bool* flow_kept);
+
+/* the session's UDP destination port, the one its flow listens on */
+uint16_t ut20_dst_port(const ut20_test_ctx* ctx, enum mtl_session_port port);
+
+#ifdef MTL_HAS_IPMX
+/* ipmx_vrx_stat_get() of the session */
+struct ipmx_rx_tp_stat;
+int ut20_ipmx_tp_stat(ut20_test_ctx* ctx, enum mtl_session_port port,
+                      struct ipmx_rx_tp_stat* stat);
+/* rv_tp_init() with IPMX for a stream of pkt_per_frame packets at fps, its IPMX limits */
+struct ipmx_vrx_limit;
+int ut20_ipmx_tp_limit(ut20_test_ctx* ctx, int pkt_per_frame, enum st_fps fps,
+                       struct ipmx_vrx_limit* limit);
+#endif
+
 /* rv_ops_check() / rv_st22_ops_check() on valid two-port RTP-level ops with the IPs of
  * `src`. */
 int ut20_ops_check_source(const struct st_rx_source_info* src);

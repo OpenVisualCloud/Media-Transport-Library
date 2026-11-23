@@ -45,6 +45,8 @@ def gen_test_config(
     no_capture: bool = False,
     capture_pci_device: str = None,
     interface_type: str = None,
+    ipmx_vsf_path: str = None,
+    ipmx_vsf_python: str = None,
 ) -> str:
     pci_devices = [dev.strip() for dev in pci_device.split(",") if dev.strip()]
 
@@ -106,6 +108,12 @@ def gen_test_config(
             "password": ebu_password,
             "proxy": False,
         }
+
+    # The IPMX cases skip without the VSF script clone.
+    if ipmx_vsf_path:
+        test_config["ipmx"] = {"vsf_path": ipmx_vsf_path}
+        if ipmx_vsf_python:
+            test_config["ipmx"]["vsf_python"] = ipmx_vsf_python
 
     return yaml.safe_dump(test_config, sort_keys=False)
 
@@ -290,6 +298,19 @@ def main() -> None:
         ),
     )
 
+    parser.add_argument(
+        "--ipmx_vsf_path",
+        type=str,
+        default=None,
+        help="VSF IPMX test scripts clone; enables the tests/single/ipmx/ cases",
+    )
+    parser.add_argument(
+        "--ipmx_vsf_python",
+        type=str,
+        default=None,
+        help="Interpreter with the VSF script dependencies (default: python3)",
+    )
+
     args = parser.parse_args()
 
     n = len(args.ip_address)
@@ -314,6 +335,8 @@ def main() -> None:
         no_capture=args.no_capture,
         capture_pci_device=args.capture_pci_device,
         interface_type=args.interface_type,
+        ipmx_vsf_path=args.ipmx_vsf_path,
+        ipmx_vsf_python=args.ipmx_vsf_python,
     )
 
     with open("test_config.yaml", "w") as file:

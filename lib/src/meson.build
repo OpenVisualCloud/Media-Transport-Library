@@ -37,3 +37,7 @@ subdir('datapath')
 subdir('dev')
 subdir('st2110')
 
+if get_option('enable_ipmx') == true
+  subdir('ipmx')
+endif
+
