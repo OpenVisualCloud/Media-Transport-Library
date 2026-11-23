@@ -54,8 +54,6 @@ exclude_patterns = [
     ".github/*",
     "CLAUDE.md",
     "**/CLAUDE.md",
-    # Parts that other documents include; not documents of their own.
-    "doc/chunks/*",
 ]
 
 # -- Options for HTML output -------------------------------------------------

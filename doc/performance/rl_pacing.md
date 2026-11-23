@@ -182,7 +182,7 @@ It fires for every frame in N (cause 0, `a0` ns past the target, `a1` the packet
 
 RL pacing works with the defaults of MTL. Three things are always required.
 
-- **The DPDK that MTL builds.** `./script/mtl_build_dpdk.sh` builds and installs the DPDK version of `versions.env`, 26.07, with the patches of MTL ([Build Guide](../getting_started/build.md#2-dpdk-build-and-install)). With an older DPDK an RL port gets a TX queue of 512 descriptors, not 2048, and MTL does not free sent packets between frames, so more pad bursts are stalls.
+- **The DPDK that MTL builds.** `./script/mtl_build_dpdk.sh` builds and installs the DPDK version of `versions.env`, 26.07, with the patches of MTL ([Build Guide](../getting_started/build.md#3-build-and-install-dpdk)). With an older DPDK an RL port gets a TX queue of 512 descriptors, not 2048, and MTL does not free sent packets between frames, so more pad bursts are stalls.
 - **The ice driver with rate-limiter support.** That is version 2.7.6 or later, or an earlier one with the rate-limit patches of MTL ([E800 Series Driver Guide](../getting_started/e800_series_drivers.md)).
 - **Isolated scheduler cores with the timer tick stopped** ([CPU Isolation Guide](isolation.md)). A tick or a preemption inside a pad burst is the usual cause of a stall.
 

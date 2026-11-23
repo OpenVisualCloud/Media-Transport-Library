@@ -1,6 +1,20 @@
 # Run Guide
 
-The DPDK based PMD requires VFIO (IOMMU) and huge pages to run, but it also supports non-root run, making it easy to deploy within Docker/Kubernetes environments.
+This guide sets up the host and runs a sample application. Do the [Build Guide](build.md) first, and for an Intel E810 or E830 NIC also the [E800 Series Driver Guide](e800_series_drivers.md).
+
+Do the sections in order:
+
+1. [Enable the IOMMU](#1-enable-the-iommu), one time.
+2. [Install the NIC driver](#2-install-the-nic-driver), one time.
+3. [Give your user access to VFIO](#3-give-your-user-access-to-vfio), one time.
+4. [Bind the NIC ports to DPDK](#4-bind-the-nic-ports-to-dpdk), after each boot.
+5. [Set up hugepages](#5-set-up-hugepages), after each boot.
+6. [Start the MtlManager](#6-start-the-mtlmanager), after each boot.
+7. [Run the sample application](#7-run-the-sample-application).
+8. [Check the setup with the tests](#8-check-the-setup-with-the-tests).
+
+The DPDK PMD needs VFIO (IOMMU) and hugepages. It can run as a user that is not root, so it also runs in Docker and Kubernetes.
+For an error message, see [Troubleshooting and FAQ](troubleshooting.md#3-run-problems).
 
 ## Network Security
 
@@ -11,25 +25,86 @@ security controls externally and restrict network access using appropriate
 infrastructure, such as trusted media networks, VLANs, firewalls, and
 access-control policies.
 
-## 1. IOMMU Setup
+## 1. Enable the IOMMU
 
-### 1.1. [IOMMU Setup](../chunks/_iommu_setup.md)
+If the IOMMU is already on, go to section 2. To check if IOMMU is enabled, please verify if there are any IOMMU groups listed under the `/sys/kernel/iommu_groups/` directory. If no groups are found, it indicates that IOMMU is not enabled.
 
-```{include} ../chunks/_iommu_setup.md
+```bash
+ls -l /sys/kernel/iommu_groups/
 ```
 
-## 2. Kernel Mode NIC Driver Setup
+### 1.1. Enable the IOMMU (VT-d and VT-x) in the BIOS
 
-For Intel® E810 and E830 Series Ethernet Adapter, refer to [Intel® E800 Series Ethernet Adapters driver guide](e800_series_drivers.md). For other NICs, you may need to follow the steps on the [DPDK site](http://doc.dpdk.org/guides/nics/overview.html).
+The steps to enable IOMMU in your BIOS/UEFI may vary depending on the manufacturer and model of your motherboard. Here are general steps that should guide you:
 
-Intel I226-V setup is covered in [Intel I226-V Runtime Flow](#9-intel-i226-v-runtime-flow).
+1. Restart your computer. During the boot process, you'll need to press a specific key to enter the BIOS/UEFI setup. This key varies depending on your system's manufacturer. It's often one of the function keys (like F2, F10, F12), the ESC key, or the DEL key.
 
-## 3. DPDK PMD Setup
+2. Navigate to the advanced settings. Once you're in the BIOS/UEFI setup menu, look for a section with a name like "Advanced", "Advanced Options", or "Advanced Settings".
+
+3. Look for IOMMU setting. Within the advanced settings, look for an option related to IOMMU. It might be listed under CPU Configuration or Chipset Configuration, depending on your system. For Intel systems, it's typically labeled as "VT-d" (Virtualization Technology for Directed I/O). Once you've located the appropriate option, change the setting to "Enabled".
+
+4. Save your changes and exit. There will typically be an option to "Save & Exit" or "Save Changes and Reset". Select this to save your changes and restart the computer.
+
+### 1.2. Enable the IOMMU in the Kernel
+
+After enabling IOMMU in the BIOS, you need to enable it in your operating system as well.
+
+#### Ubuntu and Debian
+
+Edit `GRUB_CMDLINE_LINUX_DEFAULT` item in `/etc/default/grub` file, append below parameters into `GRUB_CMDLINE_LINUX_DEFAULT` item if it's not there.
+
+```bash
+sudo vim /etc/default/grub
+```
+```text
+intel_iommu=on iommu=pt
+```
+
+then:
+
+```bash
+sudo update-grub
+sudo reboot
+```
+
+#### CentOS Stream and RHEL 9
+
+```bash
+sudo grubby --update-kernel=ALL --args="intel_iommu=on iommu=pt"
+sudo reboot
+```
+
+For non-Intel devices, contact the vendor for how to enable IOMMU.
+
+### 1.3. Check the IOMMU Groups After the Reboot
+
+```bash
+ls -l /sys/kernel/iommu_groups/
+```
+
+If no IOMMU groups are found under the `/sys/kernel/iommu_groups/` directory, it is likely that the previous two steps were not completed as expected. You can use the following two commands to identify which part was missed:
+
+```bash
+# Check if "intel_iommu=on iommu=pt" is included
+cat /proc/cmdline
+# Check if CPU flags have vmx feature
+lscpu | grep vmx
+```
+
+On a host where you cannot turn on the IOMMU, see [Can VFIO Run Without an IOMMU?](troubleshooting.md#45-can-vfio-run-without-an-iommu)
+
+## 2. Install the NIC Driver
+
+| NIC | Guide |
+| --- | --- |
+| Intel® E810, E830 | [E800 Series Driver Guide](e800_series_drivers.md) |
+| Intel® I226-V | [I226-V Guide](i226.md) |
+| Other | The guide of the NIC on the [DPDK site](http://doc.dpdk.org/guides/nics/overview.html) |
+
+## 3. Give Your User Access to VFIO
 
 DPDK utilizes the Linux kernel's VFIO module to enable direct NIC hardware access from user space with the assistance of an IOMMU (Input/Output Memory Management Unit).
 To use DPDK's Poll Mode Drivers (PMDs), NICs must be bound to the `vfio-pci` driver. Before manipulating VFIO devices, it's necessary to configure user permissions and system rules to allow the current user to access VFIO devices.
-
-### 3.1. Allow Current User to Access /dev/vfio/* Devices
 
 This section guides you through creating a dedicated group, granting the appropriate permissions, and setting up udev rules to maintain these settings across system reboots and devices re-creations.
 
@@ -68,18 +143,17 @@ sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
 
-### 3.2. Bind NICs to DPDK PMD
+## 4. Bind the NIC Ports to DPDK
 
-Note: It is important to repeat this operation again after rebooting the system. The steps mentioned should be followed again to ensure that the desired configuration is maintained after a reboot.
+Note: The VFs do not stay after a reboot. Do this section again after each reboot, see [After a Reboot](#9-after-a-reboot).
 
-For the Intel® E800 Series Ethernet Adapters (E810 or E830), which supports Virtual Functions (VFs) based on Single Root I/O Virtualization (SR-IOV), please refer to [Create Intel® E800 series VFs and Bind to DPDK PMD](#321-create-intel-e800-series-vfs-and-bind-to-dpdk-pmd) to learn how to create VFs and bind them to the DPDK Poll Mode Driver (PMD).
+For the Intel® E800 Series Ethernet Adapters (E810 or E830), which supports Virtual Functions (VFs) based on Single Root I/O Virtualization (SR-IOV), please refer to [Create Intel® E800 Series VFs](#41-create-intel-e800-series-vfs-and-bind-them-to-the-dpdk-pmd) to learn how to create VFs and bind them to the DPDK Poll Mode Driver (PMD).
 
 For other Network Interface Cards (NICs), please verify if your NIC is supported by DPDK by referring to the following link: <https://doc.dpdk.org/guides/nics/>. If it is, follow the guide provided there for further instructions.
 
-If your NIC is not supported by DPDK's native Poll Mode Driver (PMD), MTL provides an alternative in the form of kernel socket-based transport support. This enables an MTL application to send and receive UDP packets via the Kernel.
-Please refer to [kernel TX config](../../tests/tools/RxTxApp/script/kernel_socket_json/tx.json) and [kernel RX config](../../tests/tools/RxTxApp/script/kernel_socket_json/rx.json) for how to config the kernel transport in JSON config. However, it's important to note that this is an experimental feature intended solely for trial usage. Consequently, its performance and pacing accuracy may be limited.
+If DPDK has no PMD for your NIC, MTL can send and receive through the kernel instead. This backend is experimental, and its pacing is less accurate. See the [Kernel Socket Guide](../experimental/kernel_socket.md).
 
-#### 3.2.1. Create Intel® E800 series VFs and Bind to DPDK PMD
+### 4.1. Create Intel® E800 Series VFs and Bind Them to the DPDK PMD
 
 Get Device to Bus info mapping:
 
@@ -125,7 +199,7 @@ echo 512 | sudo tee /sys/bus/pci/devices/<VF BDF>/rss_lut_vf_attr
 
 > **Note:** A VF takes the new LUT at its next reset. DPDK resets the VF when it starts, but a kernel driver does so only at its probe.
 
-And please verify that the newly created VFIO device is correctly assigned to the vfio group as specified by your udev rules from section [3.1 Allow current user to access /dev/vfio/* devices](#31-allow-current-user-to-access-devvfio-devices). Use the command:
+And please verify that the newly created VFIO device is correctly assigned to the vfio group as specified by your udev rules from [section 3](#3-give-your-user-access-to-vfio). Use the command:
 ```bash
 ls -lg /dev/vfio/*
 ```
@@ -143,7 +217,7 @@ If the creation of VF BDFs fails, you can check the kernel dmesg log to find pos
 sudo dmesg
 ```
 
-#### 3.2.2. Bind PF to DPDK PMD
+### 4.2. Bind a PF to the DPDK PMD
 
 If your Network Interface Card (NIC) is not from the Intel® E800 Series, but is supported by DPDK, you have the option to directly bind the Physical Function (PF) to the DPDK Poll Mode Driver (PMD) for Bus Device Function (BDF) 0000:32:00.0 using the command provided below.
 
@@ -152,7 +226,7 @@ cd $mtl_source_code
 sudo ./script/mtl_nicctl.sh bind_pmd 0000:32:00.0
 ```
 
-## 4. Setup Hugepage
+## 5. Set Up Hugepages
 
 Note: After rebooting the system, it is essential to configure hugepages again, as the configuration will be lost.
 
@@ -164,25 +238,24 @@ sudo sysctl -w vm.nr_hugepages=2048
 
 The number is dependent on the workloads you wish to execute. Consider increasing the value if memory allocation failures occur during runtime.
 
-## 5. Run the Sample Application
+## 6. Start the MtlManager
 
-> **WARNING:** It is crucial to run the MTL Manager using the Bash command
-> ```bash
-> sudo MtlManager
-> ```
-> before attempting to run more than one MTL process per machine or server.
->
-> Failure to do so will result in improper logical core (lcore) management, as all MTL
-> processes will allocate on the same cores, leading to severe performance degradation
-> and potential system instability.
->
-> For detailed instructions and further information, please refer to the [manager/README.md](../../manager/README.md)
+Start the MtlManager service before you run more than one MTL process on a host. Start it in a second terminal: it runs until you stop it with Ctrl+C.
 
-### 5.1. Prepare Source Files
+```bash
+sudo MtlManager
+```
+
+Without it, all MTL processes take the same CPU cores. This gives a large performance drop and can make the host unstable.
+For the details, see the [MtlManager guide](../../manager/README.md).
+
+## 7. Run the Sample Application
+
+### 7.1. Prepare Source Files
 
 Please note that the input YUV source file for the sample application is in the RFC4175 YUV422BE10 (big-endian 10-bit) pixel group format, which is defined in the ST2110 specification. This project includes a simple tool to convert the format from YUV422 planar 10-bit little-endian format.
 
-#### 5.1.1. Prepare a yuv422p10le File
+#### 7.1.1. Prepare a yuv422p10le File
 
 The following command shows how to decode two frames from the encoder file and convert it from 420 to 422 planar file. Change the 'vframes' value if you want to generate more frames.
 
@@ -192,7 +265,7 @@ ffmpeg -i jellyfish-3-mbps-hd-hevc-10bit.mkv -vframes 2 -c:v rawvideo yuv420p10l
 ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv422p10le yuv422p10le_1080p.yuv
 ```
 
-#### 5.1.2. Convert yuv422p10le to yuv422rfc4175be10
+#### 7.1.2. Convert yuv422p10le to yuv422rfc4175be10
 
 Below is the command to convert yuv422p10le file to yuv422rfc4175be10 pg format(ST2110-20 supported pg format for 422 10bit)
 
@@ -203,7 +276,7 @@ Below is the command to convert yuv422p10le file to yuv422rfc4175be10 pg format(
 The yuv422rfc4175be10 files can be viewed by [YUV Viewer tools](https://github.com/IENT/YUView). Below is the custom layout.
 ![yuview yuv422rfc4175be10 custom layout](../png/yuview_yuv422rfc4175be10_layout.png)
 
-#### 5.1.3. Convert yuv422rfc4175be10 Back to yuv422p10le
+#### 7.1.3. Convert yuv422rfc4175be10 Back to yuv422p10le
 
 Below is the command to convert yuv422rfc4175be10 pg format(ST2110-20 supported pg format for 422 10bit) to yuv422p10le file
 
@@ -211,7 +284,7 @@ Below is the command to convert yuv422rfc4175be10 pg format(ST2110-20 supported 
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422rfc4175be10 -i yuv422rfc4175be10_1080p.yuv -out_pix_fmt yuv422p10le -o out_yuv422p10le_1080p.yuv
 ```
 
-#### 5.1.4. v210 Support
+#### 7.1.4. v210 Support
 
 This tools also support v210 format, use "v210" for the in_pix_fmt/out_pix_fmt args instead.
 
@@ -220,7 +293,7 @@ This tools also support v210 format, use "v210" for the in_pix_fmt/out_pix_fmt a
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt v210 -i v210_1080p.yuv -out_pix_fmt yuv422rfc4175be10 -o out_yuv422rfc4175be10_1080p.yuv
 ```
 
-#### 5.1.5. yuv422 12bit Support
+#### 7.1.5. yuv422 12bit Support
 
 ```bash
 ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv422p12le yuv422p12le_1080p.yuv
@@ -228,7 +301,7 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv42
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422rfc4175be12 -i yuv422rfc4175be12_1080p.yuv -out_pix_fmt yuv422p12le -o out_yuv422p12le_1080p.yuv
 ```
 
-#### 5.1.6. yuv444 10bit Support
+#### 7.1.6. yuv444 10bit Support
 
 ```bash
 ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv444p10le yuv444p10le_1080p.yuv
@@ -236,7 +309,7 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv44
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv444rfc4175be10 -i yuv444rfc4175be10_1080p.yuv -out_pix_fmt yuv444p10le -o out_yuv444p10le_1080p.yuv
 ```
 
-#### 5.1.7. yuv444 12bit Support
+#### 7.1.7. yuv444 12bit Support
 
 ```bash
 ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv444p12le yuv444p12le_1080p.yuv
@@ -244,7 +317,7 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv44
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv444rfc4175be12 -i yuv444rfc4175be12_1080p.yuv -out_pix_fmt yuv444p12le -o out_yuv444p12le_1080p.yuv
 ```
 
-#### 5.1.8. Interlaced Support
+#### 7.1.8. Interlaced Support
 
 ConvApp offers a `frame2field` option to convert a progressive YUV file into an interlaced file. The interlaced YUV file stores the first field followed by the second field, repeating this sequence.
 
@@ -260,7 +333,7 @@ For yuv422rfc4175be10:
 ./build/app/ConvApp --in_pix_fmt yuv422rfc4175be10 --width 1920 --height 1080 --i yuv422rfc4175be10_1080p.yuv --o yuv422rfc4175be10_1080i.yuv --frame2field
 ```
 
-### 5.2. Run RxTxApp with JSON Config
+### 7.2. Run RxTxApp with JSON Config
 
 Before running samples the JSON configuration files must be modified. The "name" tag in "interfaces" must be updated to VF BDF, e.g. 0000:af:01.0. No other changes are required to run samples.
 
@@ -320,13 +393,13 @@ MTL: 2024-04-16 15:39:18, * *    E N D    S T A T E   * *
 
 This project also provides many loop tests (1 port as tx, 1 port as rx) config files. Please refer to [loop config](../../tests/tools/RxTxApp/script/).
 
-If it failed to run the sample, please help to collect the system setup status by `mtl_status_report.sh` and share the log for further analysis.
+If the sample does not run, see [Run Problems](troubleshooting.md#3-run-problems). To report a problem, collect the status of the host with `mtl_status_report.sh` and attach the `.tar` file.
 
 ```bash
 ./script/mtl_status_report.sh
 ```
 
-### 5.3. Available Parameters in RxTxApp
+### 7.3. Available Parameters in RxTxApp
 
 ```text
 --config_file <URL>                  : the json config file path
@@ -387,8 +460,7 @@ packet egresses from the sender.
 --force_numa <id>                    : debug option, force the NIC port numa id instead of reading from PCIE topology
 ```
 
-
-## 6. Tests
+## 8. Check the Setup with the Tests
 
 This project includes many automated test cases based on gtest. Below there is an example command to run. Customize the argument according to your setup.
 
@@ -402,16 +474,28 @@ In case the test requires large huge page settings, please expand it to 8GB.
 sudo sysctl -w vm.nr_hugepages=4096
 ```
 
-## 7. Optional Setup
+## 9. After a Reboot
 
-This section includes some optional guides. If you are not familiar with the details or do not require this information, you can skip this part.
+The VFs, the hugepages and the MtlManager do not stay after a reboot. Do sections 4, 5 and 6 again:
 
-### 7.1. [PTP Setup](../chunks/_ptp_setup.md)
-
-```{include} ../chunks/_ptp_setup.md
+```bash
+# replace "0000:a1:00.0" with the port on your setup
+sudo ./script/mtl_nicctl.sh create_vf 0000:a1:00.0
+# the number of hugepages (2048) depends on the workloads that you run
+sudo sysctl -w vm.nr_hugepages=2048
+sudo MtlManager        # in a second terminal: it runs until you stop it
 ```
 
-### 7.2. Disable Automatic NUMA Balancing
+If the host booted a new kernel, install the NIC driver again before these steps, as section 2 of the [E800 Series Driver Guide](e800_series_drivers.md#2-install-the-driver) shows.
+
+## 10. Optional Setup
+
+You can skip this section if you do not need it.
+
+- **PTP time.** To synchronize the time with a PTP grandmaster, see the [PTP Guide](../features/ptp.md).
+- **Automatic NUMA balancing.** See below.
+
+### 10.1. Disable Automatic NUMA Balancing
 
 On timing-critical hosts, disable automatic NUMA balancing. Its periodic scans run on the busy MTL scheduler threads and can stall them for up to a few hundred microseconds:
 
@@ -423,218 +507,6 @@ echo "kernel.numa_balancing=0" | sudo tee /etc/sysctl.d/99-mtl-numa-balancing.co
 
 MTL moves scheduler threads that run with the default memory policy to `MPOL_LOCAL`, which only shortens those scans. See also the [sysctl tuning list](../experimental/performance_optimizations.md).
 
-## 8. FAQs
+## Troubleshooting
 
-### 8.1. Notes After Reboot
-
-You need to repeat below steps to create Virtual Functions (VF), bind the VF to DPDK PMD, and set up the hugepages configuration again since it's lost after reboot.
-
-```bash
-# replace "0000:a1:00.0" with the port on your setup
-sudo ./script/mtl_nicctl.sh create_vf 0000:a1:00.0
-# setup hugepages, the number(2048) is dependent on the workloads you wish to execute.
-sudo sysctl -w vm.nr_hugepages=2048
-```
-
-And, sometimes after a system reboot, it is possible for the operating system to update to a new kernel version. In such cases, it is important to remember to rebuild the NIC driver to ensure compatibility with the new kernel version.
-
-### 8.2. Notes for non-root Run
-
-When running as a non-root user, there may be some additional resource limits that are imposed by the system.
-
-### 8.2.1. RLIMIT_MEMLOCK
-
-RLIMIT_MEMLOCK (amount of pinned pages the process is allowed to have), if you see the below error at start up, it's likely caused by too small RLIMIT_MEMLOCK settings.
-
-```text
-EAL: Cannot set up DMA remapping, error 12 (Cannot allocate memory)
-EAL: 0000:af:01.0 DMA remapping failed, error 12 (Cannot allocate memory)
-EAL: Requested device 0000:af:01.0 cannot be used
-```
-
-Please increase the value of RLIMIT_MEMLOCK. Below is an example to enable unlimited RLIMIT_MEMLOCK.
-
-Edit `/etc/security/limits.conf` file, append below two lines at the end of the file, change <USER> to the username currently logged in:
-```text
-<USER>    hard   memlock           unlimited
-<USER>    soft   memlock           unlimited
-```
-```bash
-sudo reboot
-```
-
-After reboot, double-check the limit is disabled.
-
-```bash
-ulimit -a | grep "max locked memory"
-```
-```text
-max locked memory       (kbytes, -l) unlimited
-```
-
-### 8.3. BDF Port Not Bound to DPDK PMD Mode
-
-The following error indicates that the port driver is not configured to DPDK PMD mode. Please run mtl_nicctl.sh to configure it:
-
-```text
-ST: st_dev_get_socket, failed to locate 0000:86:20.0
-ST: st_dev_get_socket, please make sure the driver of 0000:86:20.0 is configured to DPDK PMD
-```
-
-### 8.4. Hugepage Not Available
-
-If you encounter the following hugepage error while running, it is likely caused by the absence of 1G or 2M huge pages in the current setup.
-
-```text
-EAL: FATAL: Cannot get hugepage information.
-EAL: Cannot get hugepage information.
-```
-
-This error message usually indicates that the mbuf pool creation has failed due to insufficient huge pages. Please try to allocate more huge pages.
-
-```text
-ST: st_init, mbuf_pool create fail
-```
-
-### 8.5. No Access to VFIO device
-
-If you encounter the following error message, please check section 3.1 to create a group vfio and add the current user to the group:
-
-```text
-EAL: Cannot open /dev/vfio/147: Permission denied
-EAL: Failed to open VFIO group 147
-```
-
-### 8.6. Link Not Connected
-
-The following error indicates that the physical port link is not connected to a network. Please confirm that the cable link is working properly.
-
-```text
-ST: dev_create_port(0), link not connected
-```
-
-### 8.7. Bind BDF Port Back to Kernel Mode
-
-```bash
-sudo ./script/mtl_nicctl.sh bind_kernel 0000:af:00.0
-```
-
-### 8.8. Bind BDF Port to Pure DPDK PF Mode
-
-```bash
-sudo ./script/mtl_nicctl.sh bind_pmd 0000:af:00.0
-```
-
-### 8.9. Create Trusted VFs
-
-To allow privileged usage in use cases that require Trusted Virtual Functions (VFs), you can utilize the following command:
-
-```bash
-sudo ./script/mtl_nicctl.sh create_tvf 0000:af:00.0
-```
-
-If you need to control the Trusted setting on a per-VF basis, you can use the following example command:
-
-```bash
-sudo ip link set enp24s0f0 vf 0 trust on
-```
-
-### 8.10. How to Find the BDF Number for NICs
-
-```bash
-dpdk-devbind.py -s
-```
-
-### 8.11. How to Find the BDF Number Which is Ready for MTL Usage
-
-```bash
-dpdk-devbind.py -s
-```
-
-And check the device which are DPDK-compatible.
-
-```text
-Network devices using DPDK-compatible driver
-============================================
-0000:af:01.0 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
-0000:af:01.1 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
-0000:af:01.2 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
-0000:af:01.3 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
-0000:af:01.4 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
-0000:af:01.5 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
-```
-
-### 8.12. Lower fps if ptp4l&phc2sys is Enabled
-
-You may have noticed a similar epoch drop log, which is likely caused by both NTP and phc2sys adjusting the system. To address this issue, please disable the NTP service.
-
-```text
-MT: DEV(0): Avr rate, tx: 4789 Mb/s, rx: 0 Mb/s, pkts, tx: 4525950, rx: 9
-MT: PTP(0): time 1676254936223518377, 2023-02-13 10:22:16
-MT: CNI(0): eth_rx_cnt 9
-MT: TX_VIDEO_SESSION(0,0:app_tx_video_0): fps 27.499879, frame 275 pkts 4526532:4525984 inflight 279856:279869, cpu busy 75.286346
-MT: TX_VIDEO_SESSION(0,0): dummy pkts 550, burst 550
-MT: TX_VIDEO_SESSION(0,0): mismatch epoch troffset 275
-MT: TX_VIDEO_SESSION(0,0): epoch drop 275
-```
-
-### 8.13. NO-IOMMU Mode for VFIO
-
-The VFIO driver can run without the IOMMU feature. Enable it with the below command to bypass IOMMU. As the name suggests, `enable_unsafe_noiommu_mode` is considered unsafe and should only be used if you understand the risks.
-
-```bash
-sudo bash -c 'echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode'
-```
-
-### 8.14. Fail to load shared libraries
-
-If you get a similar message when running the RxTxApp, it's likely an `ld` library path problem.
-
-```text
-./tests/tools/RxTxApp/build/RxTxApp: error while loading shared libraries: librte_dmadev.so.23: cannot open shared object file: No such file or directory
-```
-
-Try to find the path of this so and append it to `LD_LIBRARY_PATH`.
-
-```bash
-find / -name librte_dmadev.so.23
-# /usr/local/lib64/librte_dmadev.so.23
-```
-
-```bash
-# Note to change the path as the find result
-export LD_LIBRARY_PATH=/usr/local/lib64/
-# Or use ldconfig to update the cache
-sudo ldconfig
-```
-
-### 8.15. Fail to Init lcore
-
-This might happen after commit `4f46e49`, because the lcore_shm structure is [changed](https://github.com/OpenVisualCloud/Media-Transport-Library/commit/4f46e493b79451c7ca564d82e1be56c7916b0722#diff-7ff8a138885ebda032ff57250ff81174b30722cc168a26fe39d9a4ff501d48d0L710).
-It also happens when the structure of the starting process is larger than the one in the system: its size follows `RTE_MAX_LCORE` of the DPDK build, so it happens while a process of a DPDK with a smaller `RTE_MAX_LCORE`, or an MTL 26.09 or earlier, runs.
-Stop the older processes first: MTL 26.09 and earlier must not run together with a later release (see the [lcore Guide](../performance/shm_lcore.md)).
-`mtl_init` replaces a smaller structure that no process uses, such as one left by a killed or crashed process, if it runs as root or as the user that created it.
-
-```text
-MTL: 2026-11-04 12:11:09, Error: sch_lcore_shm_remove_unused, shared memory for lcore of 22532 bytes in use, nattch 1
-MTL: 2026-11-04 12:11:09, Error: sch_init_lcores, lcore init fail -5
-MTL: 2026-11-04 12:11:09, Error: dev_sch_init, sch mgr init fail -5
-MTL: 2026-11-04 12:11:09, Error: mt_dev_create, dev_sch_init fail -5
-MTL: 2026-11-04 12:11:09, Error: mt_main_create, mt_dev_create fail -5
-MTL: 2026-11-04 12:11:09, Error: mtl_init, st main create fail -5
-```
-
-Follow the below steps to clear the old shared memory that `mtl_init` can not remove, once `ipcs -m` shows `nattch` 0 for it:
-
-```bash
-# find the shmid of the old shm
-ipcs -m
-# delete the old shm
-sudo ipcrm -m <shmid>
-```
-
-## 9. [Intel I226-V Runtime Flow](../chunks/_run_i226.md)
-
-```{include} ../chunks/_run_i226.md
-:relative-docs: ../
-```
+For an error message, see [Run Problems](troubleshooting.md#3-run-problems). For a frequent question, such as how to find a BDF or how to bind a port back to the kernel, see [Frequent Questions](troubleshooting.md#4-frequent-questions).

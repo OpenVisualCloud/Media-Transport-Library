@@ -432,7 +432,7 @@ session only check that free pages exist, and fail when there are none.
 
 A VF is bound to `vfio-pci` by root, and the `/dev/vfio/<group>` node the kernel
 creates with it is `0600 root:root` unless the host carries the udev rule from
-[`run.md` section 3.1](../getting_started/run.md#31-allow-current-user-to-access-devvfio-devices).
+[`run.md` section 3](../getting_started/run.md#3-give-your-user-access-to-vfio).
 The acceptance suite reaches the DUT over SSH as an unprivileged account, so on a
 host without that rule every case dies in EAL with
 

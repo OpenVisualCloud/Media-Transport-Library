@@ -243,7 +243,7 @@ When running multiple MTL instances, use the **MTL Manager** service to prevent 
 sudo MtlManager
 ```
 
-Each MTL instance requests a free core from the Manager. See the [Manager Guide](../../manager/README.md) and [Run Guide — §5](../getting_started/run.md#5-run-the-sample-application) for details.
+Each MTL instance requests a free core from the Manager. See the [Manager Guide](../../manager/README.md) and [Run Guide, section 6](../getting_started/run.md#6-start-the-mtlmanager) for details.
 
 ---
 

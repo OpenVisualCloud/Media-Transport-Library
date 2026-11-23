@@ -1,492 +1,124 @@
 # Build Guide
 
-Building the Media Transport Library requires three parts: building the DPDK library, building the Media Transport Library on top of DPDK, and building the sample application.
+This guide builds and installs the Media Transport Library (MTL) on Linux. Do the steps in this order:
 
-Please note that the DPDK dependency remains necessary when utilizing the XDP/kernel socket data path backend. We leverage numerous DPDK APIs, including those for CPU, memory, queues, and mbufs, to construct a highly efficient network processing implementation.
+1. [Get the source code](#1-get-the-source-code).
+2. [Install the build packages](#2-install-the-build-packages).
+3. [Build and install DPDK](#3-build-and-install-dpdk). MTL uses DPDK for the CPU, memory and NIC queues, so DPDK comes first.
+4. [Build and install MTL and the sample applications](#4-build-and-install-mtl-and-the-sample-applications).
+5. [Check the build](#5-check-the-build).
 
-You can do the setup in two ways:
+Then set up the NIC driver and run a sample: see [Next Steps](#next-steps).
 
-* With the setup scripts in the `script/` folder. On Ubuntu, they do sections 1 to 3 for you. See [Quick Start with the Setup Scripts](#quick-start-with-the-setup-scripts).
-* Step by step, with the commands in sections 1 to 3. Use this way on other operating systems, or when you want to control each step.
+Step 2 is different for each distribution: the script of step 2 runs on Ubuntu only. Steps 3 to 5 are the same on Ubuntu, Debian, CentOS Stream, RHEL 9, Rocky Linux and Arch Linux. For Windows, see the [Windows Build Guide](../platforms/build_WIN.md).
 
-## Quick Start with the Setup Scripts
+> **One command for steps 2 to 4.** On Ubuntu, `script/mtl_install.sh` can do steps 2, 3 and 4, and also install the NIC driver. It is an alternative to the steps, not an extra step. See [Steps 2 to 4 in One Command](#steps-2-to-4-in-one-command).
 
-Run the scripts as your own user, from the top of the source tree. They use `sudo` when they install to the system.
-Each script prints its options with `-h`.
+## 1. Get the Source Code
 
 ```bash
-sudo apt-get install -y git         # a fresh Ubuntu may not have it yet
+sudo apt-get install -y git         # a fresh Ubuntu may not have it
 git clone https://github.com/OpenVisualCloud/Media-Transport-Library.git
 cd Media-Transport-Library
-./script/mtl_install_dependencies.sh    # the build packages of section 1.1.1, Ubuntu only
-./script/mtl_build_dpdk.sh              # section 2: download, patch, build and install DPDK
-./build.sh                          # section 3: build and install MTL and the sample apps
-sudo ldconfig                       # section 3: let the loader find the new libraries
+export mtl_source_code=${PWD}
 ```
 
-`mtl_build_dpdk.sh` builds the DPDK version in `versions.env`. It does nothing if that version is already installed. Use `-f` to rebuild it.
+Do all the next steps from this folder. The guides use `$mtl_source_code` for it.
 
-Some setups need more components. Add each component to `mtl_install_dependencies.sh`, which then installs its build packages too:
+## 2. Install the Build Packages
 
-| Component | Packages | Build and install |
-| --- | --- | --- |
-| Intel E810/E830 out-of-tree driver | `./script/mtl_install_dependencies.sh ice` | `./script/mtl_build_drivers.sh --driver ice`, see the [E800 Series Driver Guide](e800_series_drivers.md) |
-| AF_XDP data path (xdp-tools and libbpf) | `./script/mtl_install_dependencies.sh ebpf_xdp` | `./script/mtl_build_ebpf_xdp.sh`, see the [XDP guide](../experimental/xdp.md) |
-| SVT JPEG XS ST 2110-22 plugin | `./script/mtl_install_dependencies.sh jpegxs` | `./script/mtl_build_jpegxs.sh`, see the [Plugin Guide](../features/plugin.md) |
-| ST 2110-22 avcodec plugin | `./script/mtl_install_dependencies.sh avcodec` | `./script/mtl_build_st22_avcodec_plugin.sh`, see the [avcodec plugin guide](../../plugins/st22_avcodec/README.md) |
-| FFmpeg with the MTL devices | `./script/mtl_install_dependencies.sh ffmpeg` | `./script/mtl_build_ffmpeg_plugin.sh`, see the [FFmpeg plugin guide](../../ecosystem/ffmpeg_plugin/README.md) |
-| GStreamer plugins | `./script/mtl_install_dependencies.sh gstreamer` | `./script/mtl_build_gstreamer_plugin.sh`, see the [GStreamer plugin guide](../../ecosystem/gstreamer_plugin/README.md) |
-| Python binding | `./script/mtl_install_dependencies.sh python` | `./script/mtl_build_python.sh`, see the [Python guide](../../python/README.md) |
-| OBS Studio plugin | `./script/mtl_install_dependencies.sh obs` | `./script/mtl_build_obs_plugin.sh`, see the [OBS plugin guide](../../ecosystem/obs_mtl/README.md) |
-
-Install the AF_XDP components before you run `./build.sh`: MTL finds libxdp and libbpf when it is configured, and without them builds no AF_XDP backend.
-Build MTL with `./build.sh` before you build a plugin or the Python binding.
-
-### Install into a predefined directory
-
-This section is optional. It is not the default setup. If you did the steps of
-the [quick start](#quick-start-with-the-setup-scripts) above, MTL and its
-components are already built and installed into the system. You can skip this
-section.
-
-By default, each build script installs what it builds into `/usr/local`, with
-`sudo`. Use this section only when you want to keep the build out of the system.
-Set `MTL_INSTALL_PREFIX` to the directory for MTL, and the scripts install into
-that directory instead. The scripts stay in `script/`. Only the libraries,
-programs and plugins that they build go into the directory.
-
-The other components go into directories beside `MTL_INSTALL_PREFIX`, in the
-same parent directory. The CI uses `MTL_INSTALL_PREFIX=$PWD/.local_install/mtl`,
-which gives these directories:
-
-| Script | Installs into |
-| --- | --- |
-| `build.sh` | `.local_install/mtl` |
-| `script/mtl_build_dpdk.sh` | `.local_install/dpdk` |
-| `script/mtl_build_jpegxs.sh` | `.local_install/jpegxs` |
-| `script/mtl_build_ffmpeg_plugin.sh` | `.local_install/ffmpeg` |
-| `script/mtl_build_gstreamer_plugin.sh` | `.local_install/gstreamer/gstreamer-1.0` |
-| `script/mtl_build_drivers.sh` | `.local_install/ice/<kernel release>/<architecture>`. The script only builds the `.ko` file. It does not install or load the driver, because the kernel cannot load a module from this directory. |
-| `script/mtl_build_st22_avcodec_plugin.sh` | The directory in `MTL_PLUGIN_PREFIX`, not in `MTL_INSTALL_PREFIX`, for example `.local_install/plugins` |
-
-For example, to install DPDK, MTL and the two ST 2110-22 plugins into `.local_install`:
+### Ubuntu
 
 ```bash
-export MTL_INSTALL_PREFIX=$PWD/.local_install/mtl
-./script/mtl_build_dpdk.sh         # into .local_install/dpdk
-./build.sh                     # into .local_install/mtl
-./script/mtl_build_jpegxs.sh       # into .local_install/jpegxs, beside them
-MTL_PLUGIN_PREFIX=$PWD/.local_install/plugins ./script/mtl_build_st22_avcodec_plugin.sh
+./script/mtl_install_dependencies.sh
 ```
 
-This directory needs no root, no `ldconfig` and no `LD_LIBRARY_PATH`. Each program
-and library records the location of the other libraries relative to itself, and
-each `.pc` file points at its own location. So you can move the whole directory,
-and it still runs.
-`.local_install/mtl/bin/mtl_nicctl.sh` is part of it and uses the `dpdk-devbind.py`
-of `.local_install/dpdk`. The plugin registry is `.local_install/conf/kahawai.json`.
-Set `KAHAWAI_CFG_PATH` to it, see [plugin.md](../features/plugin.md). The registry holds absolute
-paths, so it is the one part of the directory that does not move with it.
+The script installs the packages of the Debian section below with `sudo`, and some tools that the other scripts use.
 
-These three scripts do not read `MTL_INSTALL_PREFIX` yet. They always install
-into the system with `sudo`:
+### Debian
 
-| Script | Installs into | Why it cannot use the directory |
-| --- | --- | --- |
-| `script/mtl_build_ebpf_xdp.sh` | `/usr/local`, and it links `libxdp.pc` and `libbpf.pc` into the `pkg-config` directory of the system | `build.sh` finds libxdp and libbpf only in the `pkg-config` search path of the system. |
-| `script/mtl_build_python.sh` | The `site-packages` directory of the system `python3` | The script reads the MTL headers from `/usr/local/include`, so it also needs MTL in the system. |
-| `script/mtl_build_obs_plugin.sh` | The `obs-plugins` directory of the system libobs | The script has no option to select a different directory. |
+The script of the Ubuntu section stops on Debian. Install the packages yourself:
 
-MTL does not need these three scripts. They add only the AF_XDP data path, the
-Python binding and the OBS plugin. If you do not want them in your system, do
-not run them. Without them, `build.sh` builds MTL without the AF_XDP backend.
+```bash
+sudo apt-get update
+sudo apt-get install git gcc make meson ninja-build python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libgmock-dev libssl-dev systemtap-sdt-dev llvm clang gcc-multilib libsdl2-dev libsdl2-ttf-dev patch unzip wget
+```
 
-### Set up the host with one command
+Use the distribution packages of `meson`, `ninja` and `pyelftools`, not `pip`: newer releases block `pip` installs into the system Python (PEP 668), and a `pip install --user meson` breaks `sudo ninja install` (see [Troubleshooting 1.6](troubleshooting.md#16-meson-refuses-the-build-directory)).
+The SDL2 packages give RxTxApp a display. Without them, MTL builds with no display.
 
-`script/mtl_install.sh` runs the scripts above in the correct order. Environment variables select the steps. Each variable is `0` (the default) or `1`. The command below installs the packages, the patched E810/E830 driver, DPDK, and MTL:
+### CentOS Stream, RHEL, Rocky Linux and Arch Linux
+
+Install the packages of your distribution, as [Packages for Other Distributions](build_advanced.md#3-packages-for-other-distributions) shows. Then continue with step 3.
+
+## 3. Build and Install DPDK
+
+```bash
+./script/mtl_build_dpdk.sh
+```
+
+The script downloads the DPDK version in `versions.env`, applies the MTL patches of `patches/dpdk/`, builds DPDK, and installs it into `/usr/local` with `sudo`.
+It does nothing when that version is already installed. Use `-f` to build it again.
+
+To do the same steps by hand, or to change the build options of DPDK, see [Build DPDK by Hand](build_advanced.md#2-build-dpdk-by-hand).
+
+## 4. Build and Install MTL and the Sample Applications
+
+```bash
+./build.sh
+sudo ldconfig
+```
+
+`build.sh` builds and installs the library, the sample applications of `app/`, RxTxApp, the MtlManager service and the sample plugins.
+`sudo ldconfig` lets the runtime linker find the new DPDK and MTL libraries in `/usr/local`.
+Without it, an application fails to start with an error such as `libmtl.so: cannot open shared object file`.
+
+## 5. Check the Build
+
+```bash
+pkg-config --modversion mtl           # the MTL version, for example 26.09.0
+pkg-config --modversion libdpdk       # the DPDK version of versions.env
+ls ./tests/tools/RxTxApp/build/RxTxApp ./build/app/
+```
+
+If `pkg-config` does not find `mtl` or `libdpdk`, or a step fails, see [Build Problems](troubleshooting.md#1-build-problems).
+
+## Steps 2 to 4 in One Command
+
+`script/mtl_install.sh` runs the scripts of steps 2, 3 and 4 in the correct order. Environment variables select what it does: each one is `0` (off, the default) or `1` (on). This command does steps 2 to 4, and also installs the E810/E830 driver:
 
 ```bash
 SETUP_ENVIRONMENT=1 \
   SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=1 \
   SETUP_BUILD_AND_INSTALL_DPDK=1 \
   MTL_BUILD_AND_INSTALL=1 \
-  script/mtl_install.sh
+  ./script/mtl_install.sh
 sudo ldconfig
 ```
 
-Leave out `SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=1` if your setup has no E810/E830 NIC.
-`SETUP_BUILD_AND_INSTALL_DPDK=1` rebuilds DPDK on each run, also when the version is already installed.
-Run `script/mtl_install.sh -h` for the list of all variables, for example `SETUP_BUILD_AND_INSTALL_EBPF_XDP`, `PLUGIN_BUILD_AND_INSTALL_JPEGXS`, or `ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN`.
-
-The scripts do not set up the runtime: hugepages, VFs, and MtlManager. For that, refer to [Running MTL](run.md).
-
-## 1. Prerequisites
-
-### 1.1. Install the build dependency from OS software store
-
-#### 1.1.1. Ubuntu/Debian
+Leave out `SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=1` if your host has no E810 or E830 NIC.
+For a setup that you do again, copy the template of the options, set them, and source it:
 
 ```bash
-sudo apt-get update
-sudo apt-get install git gcc meson ninja-build python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libgmock-dev libssl-dev systemtap-sdt-dev llvm clang flex byacc
+cp script/mtl_install_template.env my_setup.env
+$EDITOR my_setup.env
+source my_setup.env && ./script/mtl_install.sh --dry-run   # show the steps, change nothing
+./script/mtl_install.sh
 ```
 
-Newer Ubuntu and Debian releases enable Python's externally managed environment
-protection (PEP 668), so prefer the distribution packages above instead of
-installing `pyelftools` or `ninja` with `pip`.
+`./script/mtl_install.sh -h` tells each option. The [scripts README](../../script/README.md) tells what each script does.
 
-On Ubuntu, `./script/mtl_install_dependencies.sh` installs these packages from the distribution, and the SDL2 packages below.
-It leaves out `flex` and `byacc`, which only [section 1.2](#12-build-dependency-from-source-code) needs.
+## More Build Options
 
-Install below SDL2 packages if you want the display support for RxTxApp.
+The [Advanced Build Guide](build_advanced.md) holds the options that the steps above do not need:
 
-```bash
-sudo apt-get install libsdl2-dev libsdl2-ttf-dev
-```
-
-#### 1.1.2. CentOS stream
-
-```bash
-sudo yum install -y dnf-plugins-core
-sudo dnf config-manager --set-enabled powertools
-sudo yum install git gcc gcc-c++ meson python3 python3-pip pkg-config json-c-devel libpcap-devel gtest-devel openssl-devel numactl-devel libasan systemtap-sdt-devel clang llvm-devel
-sudo pip3 install pyelftools
-```
-
-Install below SDL2 packages if you want the display support for RxTxApp.
-
-```bash
-sudo yum install SDL2-devel
-```
-
-#### 1.1.3. RHEL 9
-
-```bash
-sudo yum install git gcc gcc-c++ python3 python3-pip pkg-config SDL2-devel openssl-devel numactl-devel libasan systemtap-sdt-devel
-sudo pip3 install meson ninja pyelftools
-```
-
-RHEL 9 doesn't provide `json-c-devel libpcap-devel gtest-devel` package as default, it has to build these three libs from source code, install below dependency and follow section [1.2. Build dependency from source code](#12-build-dependency-from-source-code) to build.
-
-```bash
-sudo yum install cmake flex bison autoconf
-```
-
-#### 1.1.4. Arch Linux
-
-```bash
-sudo pacman -Syu --needed git gcc meson python python-pyelftools pkg-config json-c libpcap gtest openssl numactl
-```
-
-Install below SDL2 packages if you want the display support for RxTxApp.
-
-```bash
-sudo pacman -Syu --needed  sdl2 sdl2_ttf
-```
-
-### 1.2. Build dependency from source code
-
-It's true that not all operating systems, including RHEL 9, come with all the libraries required for every software package. If you're trying to install a software that has dependencies not provided by default by your package manager, you might need to install these dependencies manually. Skip these step if your setup has all dependencies resolved.
-
-Refer to below commands for how to build from code.
-
-#### 1.2.1. json-c
-
-```bash
-git clone https://github.com/json-c/json-c.git -b json-c-0.16
-cd json-c/
-mkdir build
-cd build
-cmake ../
-make
-sudo make install
-cd ../../
-```
-
-#### 1.2.2. libpcap
-
-```bash
-git clone https://github.com/the-tcpdump-group/libpcap.git -b libpcap-1.10.7
-cd libpcap/
-./autogen.sh
-./configure
-make
-sudo make install
-cd ..
-```
-
-#### 1.2.3. gtest
-
-```bash
-git clone https://github.com/google/googletest.git -b v1.13.x
-cd googletest/
-mkdir build
-cd build/
-cmake ../
-make
-sudo make install
-cd ../../
-```
-
-### 1.3. secure_path for root user
-
-The build steps use `sudo ninja install` to install the build to the system. Some operating systems, including CentOS Stream and RHEL 9, do not have `/usr/local/bin/` in the secure_path defaults.
-
-Edit the file `/etc/sudoers`, find `secure_path` and append `/usr/local/bin`
-
-```bash
-Defaults    secure_path = /sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin
-```
-
-Reboot the system to let change take effect.
-
-### 1.4. Clone Media Transport Library code
-
-Download Media Transport Library to top folder Directory
-
-```bash
-git clone https://github.com/OpenVisualCloud/Media-Transport-Library.git
-export mtl_source_code=${PWD}/Media-Transport-Library
-```
-
-## 2. DPDK build and install
-
-`./script/mtl_build_dpdk.sh` does the steps 2.1 to 2.3 in one command. It downloads the DPDK version in `versions.env`, applies the patches, then builds and installs DPDK.
-
-```bash
-cd $mtl_source_code
-./script/mtl_build_dpdk.sh
-```
-
-`mtl_build_dpdk.sh` builds DPDK for the CPU count of the build host, at least the DPDK default of 128 (`max_lcores`, `RTE_MAX_LCORE`): an MTL lcore ID is the CPU ID, so every CPU MTL uses must be below it.
-It uses at most 1024, also for a larger `DPDK_MAX_LCORES`: MTL supports CPU IDs 0-1023.
-For a Docker or CI image that runs on a host with more CPUs than the build machine, set the count of that host:
-
-```bash
-DPDK_MAX_LCORES=512 ./script/mtl_build_dpdk.sh -f
-```
-
-`mtl_build_dpdk.sh` does nothing when the same DPDK version is installed already, so a changed `DPDK_MAX_LCORES` needs `-f`.
-Build MTL again after DPDK.
-
-Each lcore ID costs 8256 bytes of hugepage memory in every MTL mempool, as each one has a per-lcore cache: a mempool takes 1.0 MiB with the DPDK default of 128, 2.0 MiB with 256, 4.0 MiB with 512 and 8.1 MiB with 1024.
-MTL creates a few mempools per port and per session, for example about 160 for 2 redundant ports with 32 TX and 32 RX sessions.
-If the host has more CPUs than `RTE_MAX_LCORE` of the installed DPDK, MTL passes `--remap-lcore-ids`, as releases up to 26.09 did, and logs the `DPDK_MAX_LCORES` to rebuild DPDK with: each process then numbers its CPUs from 0, so MTL processes on different CPUs can claim the same lcore.
-
-### 2.1. Get the DPDK source code
-
-`versions.env` in the Media Transport Library source tree holds the DPDK version to use. Read the file to set `DPDK_VER`, then check out that version.
-
-```bash
-. $mtl_source_code/versions.env
-git clone https://github.com/DPDK/dpdk.git
-cd dpdk
-git checkout v${DPDK_VER}
-git switch -c v${DPDK_VER}
-cd ..
-```
-
-### 2.2. Apply the DPDK patches required to run Media Transport Library
-
-Note: point `$mtl_source_code` to the top source code tree of Media Transport Library.
-
-The patch folder holds one folder per DPDK version. `DPDK_VER` from step 2.1 selects the correct one.
-
-Some patches in the DPDK versions 22.03 to 23.11 are symlinks to a patch of an older version.
-They resolve without an extra step. If your clone is on a file system that cannot hold symlinks,
-Git writes each one as a text file that holds the target path, and `git am` rejects it. To
-convert the files, use the symlink step in the [Build guide for Windows](../platforms/build_WIN.md).
-
-```bash
-cd dpdk
-git am $mtl_source_code/patches/dpdk/${DPDK_VER}/*.patch
-```
-
-### 2.3. Build and install DPDK library
-
-An MTL lcore ID is the CPU ID, so DPDK must be built with `max_lcores` (`RTE_MAX_LCORE`) above the highest CPU ID of the host where MTL runs.
-Use the CPU count of that host, at least the DPDK default of 128 and at most 1024, the most MTL supports; section 2 lists the hugepage memory it costs.
-Build MTL again after DPDK.
-
-```bash
-meson setup build -Dmax_lcores=256 # the CPU count of the host, at least 128
-ninja -C build
-sudo ninja install -C build
-cd ..
-```
-
-Note, please make sure libnuma is installed, confirm it from the log of `meson setup build` command.
-
-```text
-Library numa found: YES
-```
-
-If you see below log from `sudo ninja install -C build`, it seems you're encountering an issue where the ninja command isn't recognized. This problem is likely due to the ninja executable not being in your system's PATH, refer to `### 1.3`
-
-```bash
-sudo: ninja: command not found
-```
-
-## 3. Build Media Transport Library and app
-
-```bash
-cd $mtl_source_code
-./build.sh
-sudo ldconfig
-```
-
-`sudo ldconfig` updates the cache of the runtime linker, so it finds the DPDK and MTL libraries in `/usr/local`. meson 0.62 and later do not run it after an install. Without it, an app fails to start with an error such as `libmtl.so: cannot open shared object file`.
-
-### 3.1. Build flow for Intel I226-V (igc)
-
-Intel I226-V can be used with MTL, but the setup is different from Intel E810-focused
-environments:
-
-* Use the in-tree Linux `igc` driver for normal host networking and PTP validation.
-* Use DPDK `igc` PMD if you plan to run MTL with DPDK backend.
-
-The script skips this step when the `igc` module is already installed. Otherwise, it
-installs the running kernel's module package from the configured OS repository.
-
-### 3.2. I226-V (`igc` PMD) notes from DPDK driver guidance
-
-No extra MTL compile-time flag is required specifically for I226-V. The key updates are in
-runtime setup and validation:
-
-* Ensure your DPDK build includes the `igc` PMD and that `libdpdk` is installed correctly.
-* Use `vfio-pci` binding for DPDK datapath runs (kernel `igc` is still fine for non-DPDK paths).
-* Confirm IOMMU and hugepages are enabled before running MTL with DPDK backend.
-
-Typical post-build checks for I226-V:
-
-```bash
-# verify NIC and active kernel driver
-lspci -nn | grep -i -E "ethernet|intel"
-
-# check DPDK sees the device and driver bindings
-sudo dpdk-devbind.py -s
-
-# verify PMD is present in your DPDK test binary
-dpdk-testpmd --help
-```
-
-## 4. FAQ
-
-### 4.1. PKG_CONFIG_PATH issue
-
-It may get below error caused by PKG_CONFIG_PATH path problem.
-
-```text
-lib/meson.build:10:0: ERROR: Dependency "libdpdk" not found, tried pkgconfig
-```
-
-Try below command to find the pc path and add to the PKG_CONFIG_PATH env.
-
-```bash
-find / -name libdpdk.pc
-export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/:/usr/local/lib/pkgconfig/
-```
-
-### 4.2. Build with clang
-
-Before build, export CC/CXX to clang, see below for example.
-
-```bash
-export CC=clang CXX=clang++
-rm build -rf
-./build.sh
-```
-
-### 4.3. Build portable package
-
-Sometimes, you may need to create a portable package that can be used directly on other nodes. Please note that the default steps in section `### 2.3` utilize the `-march=native` compiler version. This generates native instructions based on local CPU features, some of which may not exist on other devices. In such scenarios, it's necessary to specifically indicate the CPU instructions you want to support.
-
-Below are the steps to generate a DPDK binary capable of AVX2. Set `cpu_instruction_set` to `haswell` during the DPDK meson setup stage.
-
-```bash
-cd dpdk
-rm build -rf
-meson setup build -Dcpu_instruction_set=haswell
-ninja -C build
-sudo ninja install -C build
-cd ..
-```
-
-Next, rebuild the Media Transport Library. MTL will reuse the build flags from DPDK.
-
-```bash
-cd $mtl_source_code
-rm build -rf
-./build.sh
-```
-
-If you want to enable a AVX512 capable build, just set `cpu_instruction_set` to `skylake-avx512`:
-
-```bash
-meson setup build -Dcpu_instruction_set=skylake-avx512
-```
-
-Use the command below to check the cflags (march) used for the DPDK build:
-
-```bash
-pkg-config --cflags libdpdk
-# below output indicate it use haswell arch
--include rte_config.h -march=haswell -msse4 -I/usr/local/include
-```
-
-Use below command to check the detail compiler flags of one `march`:
-
-```bash
-echo | gcc -dM -E - -march=haswell
-```
-
-### 4.4. Older kernel installed on the OS
-
-In case older kernel installed on the OS throws the “Kernel header files not in any of expected locations”
-and causes build errors, you can try to fix it with installation of kernel specific packet `kernel-devel`:
-
-```bash
-# e.g. for CentOS or RHEL
-sudo yum install "kernel-devel-$(uname -r)"
-```
-
-or with:
-```bash
-# e.g. for Ubuntu
-sudo apt-get install linux-headers-$(uname -r)
-```
-
-For older kernel version on Red Hat, the issue is that Red Hat uses vault repos. Older versions are stored in the vaults and the correct repository needs to be enabled to install the targeted version.
-
-[The exemplary location for Rocky Linux](https://dl.rockylinux.org/vault/rocky/)
-
-[The exemplary location for the kernel-devel package for Rocky Linux 9.3](https://dl.rockylinux.org/vault/rocky/9.3/BaseOS/x86_64/os/Packages/k/)
-
-### 4.5. Compiler hardening
-
-The Linux build compiles the MTL meson projects with the hardening options below, and DPDK, libbpf, libxdp, openh264, FFmpeg, the MTL plugin of SVT-JPEG-XS and the Level Zero loader of gpu_direct with the options for C, less the warning options: openh264 and Level Zero are C++, but get no `-D_GLIBCXX_ASSERTIONS`.
-The `meson.build` of each project adds them with `add_project_arguments()` and `add_project_link_arguments()`, and `script/mtl_build_dpdk.sh`, `script/mtl_build_ebpf_xdp.sh`, `script/mtl_build_ffmpeg_plugin.sh`, `script/mtl_build_jpegxs.sh` and `script/mtl_install_dependencies.sh gpu_direct` pass them to the dependencies they build, from `hardening_flags()` in `script/mtl_common.sh`.
-In the dependency builds `hardening_flags()` applies the `_FORTIFY_SOURCE` rule of the meson projects: it adds no level when `CFLAGS` or `CPPFLAGS` set one or a sanitizer (`-fsanitize=`), or when the last `-O` of `CFLAGS`, then `CPPFLAGS`, is `-O0`, as `b_sanitize` and the meson option `optimization` at `0` do for the MTL projects.
-`MTL_HARDENING=0` builds them without the flags, and DPDK and the FFmpeg programs without PIE, for a build that sets its own; the scripts say so in a warning.
-
-| Option | Protection |
-| --- | --- |
-| `-fstack-protector-strong` | Stack buffer overflow canary |
-| `-fstack-clash-protection` | Stack clash |
-| `-fcf-protection=full` | Intel CET shadow stack (SHSTK) and indirect branch tracking (IBT) |
-| `-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3`, or `=2` | Buffer overflow checks in libc calls. Level 3 needs gcc 12 or clang 9 and glibc 2.34, so gcc 11 (Ubuntu 22.04, RHEL 9) gets 2. Not added when `c_args` or `cpp_args` set a level, with the meson option `optimization` at `0` or `plain` (buildtypes `debug`, `plain`), or with `b_sanitize`, which the sanitizers don't support |
-| `-Wformat -Wformat-security -Werror=format-security` | Format string attacks |
-| `-Wimplicit-fallthrough` | A `switch` case that falls through unmarked. Mark an intended one with `__attribute__((fallthrough));`, as clang ignores a `/* fallthrough */` comment. DPDK's headers, which use the comment, are included as system headers |
-| `-D_GLIBCXX_ASSERTIONS` | Bounds and precondition checks in libstdc++, for the C++ programs: MtlManager, KahawaiTest, UnitTest, the gpu_direct gtest and the st22 avcodec and FFmpeg plugin tests |
-| `-Wl,-z,relro -Wl,-z,now` | Full RELRO, a read-only GOT |
-| `-Wl,-z,noexecstack` | Non-executable stack |
-| `b_pie=true`, and meson's `-fPIC` for shared objects | Position independent code for ASLR |
-
-The `-U_FORTIFY_SOURCE` removes the level that Ubuntu gcc sets by itself, so `-Werror` does not stop the build on a redefinition, and the level that the toolchain applies takes its place: 3 with gcc 12 and later and with clang, 2 with gcc 11 (Ubuntu 22.04, RHEL 9, Rocky Linux 9), which cannot apply 3. A level that `c_args` or `cpp_args` already set, also through `CFLAGS` or `CPPFLAGS`, is kept.
-
-The gcc of Rocky Linux and RHEL enables none of the compiler options by default. So the Rocky Linux 9 image build runs `.github/scripts/ci/scan/check-hardening.sh` on what `build.sh` builds there: libmtl, UnitTest, the samples, the sample plugins, MtlManager, KahawaiTest and RxTxApp. It fails on a binary without full RELRO, a non-executable stack, PIE, CET or the stack protector.
-
-The FFmpeg 7.0 assembly is marked SHSTK only, so the build applies `ecosystem/ffmpeg_plugin/7.0/0002-x86-add-Intel-CET-IBT-support.patch`, which makes it IBT-correct and marks it IBT and SHSTK.
+* install into a directory of your choice instead of `/usr/local`;
+* build DPDK by hand, or with a different number of lcores;
+* the packages of CentOS Stream, RHEL 9 and Arch Linux;
+* optional components: the E810/E830 driver, the AF_XDP backend, the plugins, FFmpeg, GStreamer, OBS and the Python binding;
+* build with clang, build a portable package, and the compiler hardening options.
 
 ## Next Steps
-Proceed to [Running MTL](run.md) for further instructions.
+
+1. For an Intel E810 or E830 NIC, check and install its driver: [E800 Series Driver Guide](e800_series_drivers.md). For an Intel I226-V, see the [I226-V Guide](i226.md).
+2. Set up the host and run a sample application: [Run Guide](run.md).

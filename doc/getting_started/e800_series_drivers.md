@@ -6,15 +6,28 @@ The Media Transport Library needs these parts on the host:
 
 | Part | Version | Section |
 | --- | --- | --- |
-| Intel `ice` driver | 2.7.6 or later, as Intel releases it. `ICE_VER` in `versions.env` is the version that we verified. | [1](#1-check-the-driver), [2](#2-install-the-driver) |
-| DDP package | 1.3.35.0 or later | [3](#3-check-the-ddp-package) |
+| Intel `ice` driver | 2.7.6, `ICE_VER` in `versions.env`: the version that we verified | [1](#1-check-the-driver), [2](#2-install-the-driver) |
+| DDP package | 1.3.35.0 or later. The driver installs it. | [3](#3-check-the-ddp-package) |
 | NVM firmware | The latest release | [4](#4-update-the-firmware) |
-
-From version 2.7.6, the driver needs no patches of the Media Transport Library.
 
 The `ice` module that comes with the Linux kernel (the in-tree driver) is not sufficient.
 It gives a VF no rate limiter. The rate-limit pacing of the library then stops the application with a segmentation fault in `iavf_tm_node_add`.
-Intel releases the driver only as source code, so you build it for your kernel. One script does all the steps.
+Intel releases the driver as source code only, so you build it for your kernel.
+
+This guide installs only the verified version. For a driver before 2.7.6, or a DDP package before 1.3.35.0, see [Earlier E800 Drivers and DDP Packages](e800_legacy.md).
+
+## Before You Start
+
+* **Your distribution selects the procedure of section 2.**
+
+  | Distribution | Procedure |
+  | --- | --- |
+  | Ubuntu, Debian | [2.1](#21-ubuntu-and-debian): one script builds and installs the driver. On Debian, install the kernel headers with `apt-get` first. |
+  | RHEL, CentOS Stream, Rocky Linux | [2.2](#22-rhel-centos-stream-and-rocky-linux): build an RPM package from the driver source, and install it. |
+  | Other | [2.3](#23-other-distributions): build and install the driver by hand. |
+
+* **The driver reload removes the VFs** of each E800-series PF. Stop each application that uses a VF of an E800-series PF before you install the driver. After the install, create the VFs again, as [the Run Guide](run.md#4-bind-the-nic-ports-to-dpdk) shows.
+* **A new kernel needs a new build of the driver.** Intel gives no DKMS package, so the driver does not follow a kernel upgrade by itself. Do section 2 again after each kernel upgrade, before you use MTL.
 
 ## 1. Check the Driver
 
@@ -30,18 +43,12 @@ version: 2.7.6
 firmware-version: 4.91 0x800214af 1.3909.0
 ```
 
-The `version` line tells which driver runs:
-
-| `version` | Driver | What to do |
-| --- | --- | --- |
-| `2.7.6` or later | An Intel release | Nothing. Go to [Section 3](#3-check-the-ddp-package). |
-| `Kahawai_<version>` | An earlier release with the patches of the Media Transport Library | The library supports it. To change to the verified version, do [Section 2](#2-install-the-driver). |
-| An earlier version with no `Kahawai_` | An earlier release with no patches | Do [Section 2](#2-install-the-driver). |
-| The kernel release, for example `6.8.0-87-generic` | The in-tree driver of the kernel | Do [Section 2](#2-install-the-driver). |
-
-`modinfo -F version ice` shows the version of the module that the next load uses. An empty line means the in-tree module.
+If the `version` line shows `2.7.6`, go to [section 3](#3-check-the-ddp-package). For each other value, do [section 2](#2-install-the-driver).
+A kernel release, for example `6.8.0-87-generic`, is the in-tree driver.
 
 ## 2. Install the Driver
+
+### 2.1. Ubuntu and Debian
 
 Run the commands from the top of the Media Transport Library source tree.
 
@@ -50,23 +57,67 @@ Run the commands from the top of the Media Transport Library source tree.
 ./script/mtl_build_drivers.sh --driver ice
 ```
 
-`mtl_install_dependencies.sh ice` installs the build tools and the headers of the running kernel. It runs only on Ubuntu.
-On another distribution, install `gcc`, `make`, `tar`, `gzip` and `wget` yourself, and the kernel headers as [Section 5.1](#51-the-kernel-header-files-are-missing) shows.
+`mtl_install_dependencies.sh ice` installs the build tools, the headers and the extra modules of the running kernel. It runs only on Ubuntu. On Debian, use this command in its place:
+
+```bash
+sudo apt-get install gcc make tar gzip wget "linux-headers-$(uname -r)"
+```
+
+The driver does not build for the Debian cloud kernel (`-cloud-amd64`), which has no hwmon support. Use the kernel of `linux-image-amd64`.
+
 `mtl_build_drivers.sh` downloads the driver version in `versions.env`, builds it, installs it with its DDP package, and loads it.
 It does nothing when that version is already installed for the running kernel. Use `--force` to build it again.
 
-The reload of the driver removes the VFs of each E800-series PF:
+Check the driver that runs now:
 
-- Before you run the script, stop each application that uses a VF of an E800-series PF.
-- After the script, create the VFs again, as [the Run Guide](run.md#321-create-intel-e800-series-vfs-and-bind-to-dpdk-pmd) shows.
+```bash
+ethtool -i enp175s0f0 | head -3
+```
 
-Then do [Section 1](#1-check-the-driver) again. The `version` line shows the version in `versions.env`.
+The `version` line must show `2.7.6`. If it does not, see [Driver Problems](troubleshooting.md#2-driver-problems).
 
-> **Note:** A new kernel needs a new build of the driver. Ubuntu can install a new kernel, and boot it at the next reboot. Run `./script/mtl_build_drivers.sh --driver ice` again after each kernel upgrade.
+### 2.2. RHEL, CentOS Stream and Rocky Linux
 
-### 2.1. Install Without the Script
+The driver source makes an RPM package for the running kernel. `$mtl_source_code` is the top of the Media Transport Library source tree.
 
-`$mtl_source_code` is the top of the Media Transport Library source tree.
+1. Install the build tools and the headers of the running kernel:
+
+   ```bash
+   sudo dnf install gcc make tar gzip wget rpm-build kernel-rpm-macros kernel-abi-stablelists elfutils-libelf-devel "kernel-devel-$(uname -r)"
+   ```
+
+2. Download the driver version of `versions.env`, and build the RPM package:
+
+   ```bash
+   . $mtl_source_code/versions.env
+   wget https://downloadmirror.intel.com/${ICE_DMID}/ice-${ICE_VER}.tar.gz
+   rpmbuild -tb ice-${ICE_VER}.tar.gz
+   ```
+
+   The last lines of the `rpmbuild` output give the path of the package, usually `~/rpmbuild/RPMS/x86_64/ice-2.7.6-1.x86_64.rpm`.
+
+3. Install the package, and load the new driver:
+
+   ```bash
+   sudo dnf localinstall ~/rpmbuild/RPMS/x86_64/ice-${ICE_VER}-1.x86_64.rpm
+   sudo rmmod irdma 2>/dev/null
+   sudo rmmod ice
+   sudo modprobe ice
+   ```
+
+4. Check the driver that runs now:
+
+   ```bash
+   ethtool -i enp175s0f0 | head -3
+   ```
+
+   The `version` line must show `2.7.6`.
+
+The package also installs the DDP package of the driver. Intel tests the RPM build on Red Hat distributions only.
+
+### 2.3. Other Distributions
+
+Install `gcc`, `make`, `tar`, `gzip`, `wget` and the headers of the running kernel. Then build and install the driver:
 
 ```bash
 . $mtl_source_code/versions.env
@@ -78,6 +129,7 @@ sudo make install
 sudo rmmod irdma 2>/dev/null
 sudo rmmod ice
 sudo modprobe ice
+ethtool -i enp175s0f0 | head -3   # the version line must show 2.7.6
 ```
 
 `make install` installs the module and the DDP package of the source tree, and refreshes the boot image.
@@ -85,34 +137,9 @@ The source code is also on GitHub, as the tag `v<version>` of [intel/ethernet-li
 
 The Intel download page can show a newer driver version. Use the version in `versions.env`, because that is the version that we verified. We examine new driver versions each quarter.
 
-### 2.2. Driver Versions Before 2.7.6
-
-A driver version before 2.7.6 needs the rate limit patches of the Media Transport Library.
-The [ice_drv patch folder](../../patches/ice_drv/) holds one folder for each supported version.
-
-The script applies the patches of the version that you select:
-
-```bash
-./script/mtl_build_drivers.sh --driver ice --ice-version <version> --ice-download-id <id>
-```
-
-`<id>` is the number in the Intel download URL of that version. Without a correct ID, the script downloads the source code from GitHub.
-
-To apply the patches by hand, do this in the driver source tree before `make`:
-
-```bash
-git init
-git add .
-git commit -m "init version <version>"
-git am $mtl_source_code/patches/ice_drv/<version>/*.patch
-```
-
-A patched driver shows `Kahawai_<version>` as its version.
-
 ## 3. Check the DDP Package
 
-The Media Transport Library needs DDP version 1.3.35.0 or later.
-Section 2 installs the DDP package of the driver together with the module.
+The Media Transport Library needs DDP version 1.3.35.0 or later. Section 2 installs the DDP package of the driver together with the module, so a new install has a sufficient version.
 
 `devlink` shows the DDP version as `fw.app` for the PF BDF that you name. It needs no root.
 Use the BDF that `ethtool -i` shows as `bus-info`. Replace the BDF below with the one in your setup.
@@ -127,7 +154,7 @@ devlink dev info pci/0000:af:00.0 | grep fw.app
         fw.app.bundle_id 0xc0000001
 ```
 
-If the version is lower than 1.3.35.0, do [Section 5.3](#53-the-ddp-package-is-older-than-13350).
+If the version is lower than 1.3.35.0, do [A DDP Package Older Than 1.3.35.0](e800_legacy.md#2-a-ddp-package-older-than-13350).
 
 ## 4. Update the Firmware
 
@@ -149,74 +176,18 @@ Do this one time for each adapter.
    sudo ./nvmupdate64e
    ```
 
-4. Do [Section 1](#1-check-the-driver) again. The `firmware-version` line shows the new version, for example `4.91 0x800214af 1.3909.0` on an E810, or `1.20 0x80017ef4 1.3909.0` on an E830.
-
-## 5. Troubleshooting
-
-### 5.1. The Kernel Header Files Are Missing
-
-If `make` shows this error, the header files of the running kernel are missing:
-
-```text
-*** Kernel header files not in any of the expected locations.
-```
-
-Install them:
-
-```bash
-# for Ubuntu
-sudo apt-get install linux-headers-$(uname -r)
-# for CentOS or RHEL
-sudo yum install kernel-devel-$(uname -r)
-```
-
-### 5.2. The ice Module Is in Use by irdma
-
-If `rmmod ice` shows this error, run `sudo rmmod irdma`, then do the command again:
-
-```text
-rmmod: ERROR: Module ice is in use by: irdma
-```
-
-The Media Transport Library does not use `irdma`, so leave it unloaded.
-If something else on this host needs RDMA, run `sudo modprobe irdma`.
-
-### 5.3. The DDP Package Is Older Than 1.3.35.0
-
-Install the package from the `ddp` folder of the driver source tree. If you do not have the tree, get it as Section 2.1 shows.
-
-1. Disable the VFs of each E800-series PF. `rmmod ice` fails while a device uses the module. Do the command for each PF, for example for both ports of a card. Then unload `irdma`.
+4. Check the firmware version:
 
    ```bash
-   sudo $mtl_source_code/script/mtl_nicctl.sh disable_vf 0000:af:00.0
-   sudo $mtl_source_code/script/mtl_nicctl.sh disable_vf 0000:af:00.1
-   sudo rmmod irdma
+   ethtool -i enp175s0f0 | head -3
    ```
 
-2. From the top of the driver source tree, copy the package and load the driver again. The commands read the name of the package from the `ddp` folder.
+   The `firmware-version` line shows the new version, for example `4.91 0x800214af 1.3909.0` on an E810, or `1.20 0x80017ef4 1.3909.0` on an E830.
 
-   ```bash
-   DDP_PKG=$(ls ddp/ice-*.pkg) && \
-   sudo mkdir -p /lib/firmware/updates/intel/ice/ddp && \
-   sudo cp "${DDP_PKG}" /lib/firmware/updates/intel/ice/ddp/ && \
-   sudo ln -sf "$(basename "${DDP_PKG}")" /lib/firmware/updates/intel/ice/ddp/ice.pkg && \
-   sudo rmmod ice
-   sudo modprobe ice
-   ```
+## Troubleshooting
 
-3. Do [Section 3](#3-check-the-ddp-package) again. If `fw.app` still shows the old version, read `sudo dmesg | tail` for an `ice` message.
-   Also look in `/lib/firmware/updates/intel/ice/ddp` for a device-specific `ice-<serial>.pkg`. It overrides the `ice.pkg` link.
-4. Refresh the boot image of the running kernel. At early boot, `ice` can load the DDP package from the boot image, which still holds the old package. Use one command:
-
-   ```bash
-   # for Ubuntu
-   sudo update-initramfs -u -k "$(uname -r)"
-   # for CentOS or RHEL
-   sudo dracut --force --kver "$(uname -r)"
-   ```
-
-5. Create the VFs again on each PF, as [the Run Guide](run.md#321-create-intel-e800-series-vfs-and-bind-to-dpdk-pmd) shows.
+For a build error, a module that does not unload, or a missing header, see [Driver Problems](troubleshooting.md#2-driver-problems).
 
 ## Next Steps
 
-Go to [the Run Guide](run.md#3-dpdk-pmd-setup) for the next instructions.
+Go to [the Run Guide](run.md) to set up the host and run a sample application.

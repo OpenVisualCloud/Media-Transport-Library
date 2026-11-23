@@ -149,7 +149,7 @@ THREE WAYS TO SELECT THE WORK:
 REQUIRED PACKAGES (Debian/Ubuntu):
 	sudo, when the script does not run as root. SETUP_ENVIRONMENT=1 installs
 	the other packages of each selected component. On another distribution,
-	install the packages of doc/getting_started/build.md section 1 yourself
+	install the packages of doc/getting_started/build_advanced.md section 3 yourself
 	and leave SETUP_ENVIRONMENT at 0.
 
 HOST OPTIONS (before MTL):

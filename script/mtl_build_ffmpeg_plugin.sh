@@ -46,7 +46,7 @@ ENVIRONMENT:
 	FFMPEG_ENABLE_SVT_JPEG_XS	1 is the same as --jpegxs
 	SVT_JPEG_XS_REPO	SVT-JPEG-XS sources (default: script/SVT-JPEG-XS)
 	CFLAGS, LDFLAGS		Flags of the openh264 and FFmpeg builds; the script adds the
-				hardening flags of doc/getting_started/build.md to them
+				hardening flags of doc/getting_started/build_advanced.md to them
 	CPPFLAGS		Preprocessor flags of the FFmpeg build; openh264 reads none
 	MTL_HARDENING		0 builds openh264 and FFmpeg without the hardening flags and
 				PIE (default: 1)
@@ -78,7 +78,7 @@ build_openh264() {
 	fi
 	rm -rf "${source_dir}"
 	unzip -q "${archive}" -d "${script_folder}"
-	# The compiler hardening of doc/getting_started/build.md. The Makefile adds its own flags
+	# The compiler hardening of doc/getting_started/build_advanced.md. The Makefile adds its own flags
 	# to the CFLAGS and LDFLAGS of the environment, and reads no CPPFLAGS.
 	CPPFLAGS='' hardening_flags || exit 1
 	# shellcheck disable=SC2153 # hardening_flags() of mtl_common.sh sets both
@@ -268,7 +268,7 @@ main() {
 	libdirs=("${prefix}/lib" "$(pkg_libdir mtl)" "$(pkg_libdir libdpdk)")
 	[ "${jpegxs}" -eq 0 ] || libdirs+=("$(pkg_libdir SvtJpegxs)")
 	configure_flags+=("--extra-ldflags=-L${prefix}/lib -Wl,--disable-new-dtags")
-	# The compiler hardening of doc/getting_started/build.md, for gcc: configure ignores CC.
+	# The compiler hardening of doc/getting_started/build_advanced.md, for gcc: configure ignores CC.
 	CC=gcc hardening_flags || exit 1
 	configure_flags+=("--extra-cflags=${HARDENING_CFLAGS}" "--extra-ldflags=${HARDENING_LDFLAGS}")
 	[ -z "${HARDENING_CFLAGS}" ] || configure_flags+=(--extra-ldexeflags=-pie)

@@ -114,7 +114,7 @@ For user convenience, the built-in RxTxApp also offers a command-line option `--
 
 An lcore ID is the CPU ID it runs on, in the list, in the logs, in MtlManager and in `LcoreMgr --info`: lcore 130 is CPU 130.
 Processes that list different CPUs never share an lcore.
-The DPDK of `script/mtl_build_dpdk.sh` numbers every CPU of the host (see the build guide, section 2).
+The DPDK of `script/mtl_build_dpdk.sh` numbers every CPU of the host (see [Build DPDK by Hand](getting_started/build_advanced.md#2-build-dpdk-by-hand)).
 If the host has more CPUs than `RTE_MAX_LCORE` of the DPDK, MTL passes `--remap-lcore-ids` and logs a warning: each process then numbers its CPUs from 0, so processes on different CPUs can claim the same lcore; rebuild DPDK with a larger `DPDK_MAX_LCORES`.
 MTL 26.09 and earlier number lcores differently: do not run them on the same host (see the [lcore Guide](performance/shm_lcore.md)).
 
@@ -277,7 +277,7 @@ TSN launch-time pacing (`--pacing_way tsn` / `ST21_TX_PACING_WAY_TSN`) offloads 
 
 - The NIC must be an Intel® E830 Series Ethernet Adapter. E810 lacks the TxPP launch-time hardware engine, so it never advertises the `RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP` capability.
 - The port must be a PF (Physical Function). VFs do not support the hardware timesync feature, so there is no HW PHC to compare the launch time against.
-- The built-in PTP service must be enabled (`--ptp` / `MTL_FLAG_PTP_ENABLE`), and not forced to the TSC source (`MTL_FLAG_PTP_SOURCE_TSC`). The packet launch time is only meaningful if it is expressed in the same, PHC-synced clock domain the NIC compares it against. See [PTP Setup](getting_started/run.md#71-ptp-setup) for how to enable it.
+- The built-in PTP service must be enabled (`--ptp` / `MTL_FLAG_PTP_ENABLE`), and not forced to the TSC source (`MTL_FLAG_PTP_SOURCE_TSC`). The packet launch time is only meaningful if it is expressed in the same, PHC-synced clock domain the NIC compares it against. See [PTP Guide](features/ptp.md) for how to enable it.
 
 ### 4.4. ST2110 RX
 

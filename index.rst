@@ -45,6 +45,11 @@ Getting Started
    doc/getting_started/build.md
    doc/getting_started/e800_series_drivers.md
    doc/getting_started/run.md
+   doc/getting_started/troubleshooting.md
+   doc/getting_started/build_advanced.md
+   doc/getting_started/e800_legacy.md
+   doc/getting_started/i226.md
+   Scripts <script/README.md>
    MTL Manager <manager/README.md>
    doc/design.md
 
@@ -73,6 +78,7 @@ Features
    doc/features/dma.md
    doc/features/external_frame.md
    doc/features/gpu.md
+   doc/features/ptp.md
    gpu_direct/README.md
    doc/features/plugin.md
    doc/features/rtcp.md

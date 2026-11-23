@@ -17,10 +17,14 @@ overview. The help of the script is the reference.
   the host with `sudo`: the "Root" column of the tables tells which.
 - The build scripts install into `/usr/local` by default. Set
   `MTL_INSTALL_PREFIX` to install into a directory of your choice instead, see
-  [Install into a predefined directory](../doc/getting_started/build.md#install-into-a-predefined-directory).
-- The installer and the build scripts are for Ubuntu and Debian. On another
-  distribution, install the packages yourself, see section 1 of the
-  [Build Guide](../doc/getting_started/build.md#1-prerequisites).
+  [Install into a Predefined Directory](../doc/getting_started/build_advanced.md#1-install-into-a-predefined-directory).
+- `mtl_install_dependencies.sh`, and `mtl_install.sh` with
+  `SETUP_ENVIRONMENT=1`, install packages on Ubuntu only. The build scripts
+  run on each distribution that has the packages: Ubuntu 22.04, 24.04 and
+  26.04, Debian 12 and Rocky Linux 9 are tested. On another distribution,
+  install the packages as section 3 of the
+  [Advanced Build Guide](../doc/getting_started/build_advanced.md#3-packages-for-other-distributions)
+  shows.
 - `versions.env` in the top folder holds the version of each component (DPDK,
   ice, FFmpeg, JPEG XS, xdp-tools). The scripts read it. Do not give a version
   on the command-line unless you need a different one.
