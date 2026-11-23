@@ -29,3 +29,6 @@ To enable this feature in the RxTxApp sample application, use the `--ptp` argume
 Note: Currently, the VF (Virtual Function) does not support the hardware timesync feature. Therefore, for VF deployment, the timestamp of the transmitted (TX) and received (RX) packets is read from the CPU TSC (TimeStamp Counter) instead. In this case, it is not possible to obtain a stable delta in the PTP adjustment, and the maximum accuracy achieved will be up to 1us.
 
 Note: For Intel® E810 and E830 Series Ethernet Adapters, the built-in PTP relies on the hardware timesync feature of the primary port (port 0) of the NIC. If the primary port is not opened/used by MTL (for example, only a secondary port is passed to `mtl_init`), `--ptp` will not work on the secondary port.
+
+Note: For Intel® E610 (ixgbe PMD), use the PF and DPDK 26.07.95_mtl_ or later from `script/build_dpdk.sh`.
+Its patch `0016-net-ixgbe-set-IEEE1588-Tx-timestamp-bit-at-runtime` makes the ixgbe PMD latch the TX timestamp of a PTP packet with no `RTE_LIBRTE_IEEE1588` build option. Do not build DPDK with that option: it also turns off the vector RX path of ixgbe and i40e.
