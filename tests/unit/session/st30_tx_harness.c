@@ -681,6 +681,23 @@ int ut_txa30_pipe_teardown(ut_txa30_ctx* ctx) {
   return ret;
 }
 
+void ut_txa30_set_link_down(ut_txa30_ctx* ctx, bool down) {
+  for (int i = 0; i < MTL_PORT_MAX; i++)
+    rte_atomic32_set(&ctx->impl.inf[i].link_down, down);
+}
+
+uint16_t ut_txa30_trs_burst_fail(ut_txa30_ctx* ctx, int port, uint64_t thresh_ns) {
+  ctx->mgr.tx_hang_detect_time_thresh = thresh_ns;
+  ut_txa30_active_ctx = ctx;
+  uint16_t ret = st_audio_trs_burst_fail(&ctx->impl, &ctx->mgr, (enum mtl_port)port);
+  ut_txa30_active_ctx = NULL;
+  return ret;
+}
+
+uint64_t ut_txa30_last_burst_succ_tsc(const ut_txa30_ctx* ctx, int port) {
+  return ctx->mgr.last_burst_succ_time_tsc[port];
+}
+
 uint64_t ut_txa30_pipe_first_alloc_fail(const ut_txa30_ctx* ctx) {
   return ctx->pipe_first_alloc_fail;
 }

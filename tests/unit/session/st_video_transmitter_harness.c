@@ -445,6 +445,15 @@ int ut_trs_spinlock_trylock(rte_spinlock_t* sl) {
   return rte_spinlock_trylock(sl);
 }
 #define rte_spinlock_trylock ut_trs_spinlock_trylock
+static int ut_trs_link_get_calls;
+/* not static: the transmitter makes no link call, so a static mock would be unused */
+int ut_trs_link_get_nowait(uint16_t port_id, struct rte_eth_link* link) {
+  MTL_MAY_UNUSED(port_id);
+  ut_trs_link_get_calls++;
+  memset(link, 0, sizeof(*link));
+  return 0;
+}
+#define rte_eth_link_get_nowait ut_trs_link_get_nowait
 #define st_video_resolve_pacing_tasklet ut_trs_resolve_pacing_tasklet
 #define st_video_transmitter_init ut_trs_transmitter_init
 #define st_video_transmitter_uinit ut_trs_transmitter_uinit
@@ -457,6 +466,7 @@ int ut_trs_spinlock_trylock(rte_spinlock_t* sl) {
 #define rte_mbuf_refcnt_update ut_trs_refcnt_update_mock
 #include "st2110/st_video_transmitter.c"
 #undef rte_mbuf_refcnt_update
+#undef rte_eth_link_get_nowait
 #undef mt_txq_reclaim
 #undef st20_frame_tx_start
 #undef mt_rtcp_tx_buffer_rtp_packets
@@ -1082,6 +1092,23 @@ uint16_t ut_trs_call_burst(ut_trs_ctx* ctx) {
   return tx;
 }
 
+uint16_t ut_trs_call_burst_pkt0(ut_trs_ctx* ctx, uint64_t tsc) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct rte_mbuf* m = rte_pktmbuf_alloc(ut_trs_priv_pool());
+  if (!m) return 0;
+  st_tx_mbuf_set_idx(m, 0);
+  st_tx_mbuf_set_tsc(m, tsc);
+  st_tx_mbuf_set_priv(m, NULL);
+  rte_mbuf_refcnt_update(m, 1); /* the transmitter may free it, the mock NIC keeps none */
+
+  ut_trs_active_ctx = ctx;
+  uint16_t tx = video_trs_burst(&ctx->impl, s, MTL_SESSION_PORT_P, &m, 1);
+  ut_trs_active_ctx = NULL;
+  if (rte_mbuf_refcnt_read(m) > 1) rte_pktmbuf_free(m);
+  rte_pktmbuf_free(m);
+  return tx;
+}
+
 int ut_trs_call_rl_tasklet(ut_trs_ctx* ctx) {
   ut_trs_active_ctx = ctx;
   ut_trs_visit_alone(ctx);
@@ -1322,6 +1349,15 @@ long double ut_trs_stream_max_late_ns(const ut_trs_ctx* ctx) {
 
 long double ut_trs_stream_ahead_ns(const ut_trs_ctx* ctx) {
   return RTE_MAX(ctx->nic_last_done - ctx->last_tsc, 0.0L);
+}
+
+void ut_trs_set_link_down(ut_trs_ctx* ctx, bool down) {
+  for (int i = 0; i < MTL_PORT_MAX; i++)
+    rte_atomic32_set(&ctx->impl.inf[i].link_down, down);
+}
+
+int ut_trs_link_calls(void) {
+  return ut_trs_link_get_calls;
 }
 
 uint32_t ut_trs_stream_nic_desc_used(const ut_trs_ctx* ctx) {

@@ -135,6 +135,51 @@ TEST_F(St20TxZeroCopyReclaimTest, WaitPastTheHangThresholdRecoversTheIdleLeg) {
   EXPECT_FALSE(ut_txv_zc_take_recovery(ctx_, 0));
 }
 
+/* the NIC sends nothing with no link: the leg is not recovered */
+TEST_F(St20TxZeroCopyReclaimTest, WaitPastTheHangThresholdWithTheLinkDownDoesNotRecover) {
+  SetUpFrames(true);
+  ut_txv_zc_set_hang_ns(ctx_, kHangNs);
+  ut_txv_zc_set_nic_refs(ctx_, 0, 1);
+  ut_txv_set_link_down(ctx_, 0, true);
+
+  EXPECT_TRUE(ut_txv_zc_frames_out(ctx_));
+  ReclaimUntil(kStartNs + 3 * kHangNs);
+
+  EXPECT_FALSE(ut_txv_zc_take_recovery(ctx_, 0));
+}
+
+/* the frames wait for the ring of P, which has no link: the idle leg R is not recovered,
+ * as its recovery would flush the ring of P */
+TEST_F(St20TxZeroCopyReclaimTest, WaitWithTheLinkOfTheOtherLegDownDoesNotRecover) {
+  SetUpFrames(true, 2);
+  ut_txv_zc_set_hang_ns(ctx_, kHangNs);
+  ut_txv_zc_set_nic_refs(ctx_, 0, 1);
+  ut_txv_set_link_down(ctx_, 0, true);
+
+  EXPECT_TRUE(ut_txv_zc_frames_out(ctx_));
+  ReclaimUntil(kStartNs + 3 * kHangNs);
+
+  EXPECT_FALSE(ut_txv_zc_take_recovery(ctx_, 0));
+  EXPECT_FALSE(ut_txv_zc_take_recovery(ctx_, 1));
+}
+
+/* the link came back: a leg still idle recovers a hang threshold after the up */
+TEST_F(St20TxZeroCopyReclaimTest, LinkUpWithTheLegStillIdleRecoversAThresholdLater) {
+  SetUpFrames(true);
+  ut_txv_zc_set_hang_ns(ctx_, kHangNs);
+  ut_txv_zc_set_nic_refs(ctx_, 0, 1);
+  ut_txv_set_link_down(ctx_, 0, true);
+  EXPECT_TRUE(ut_txv_zc_frames_out(ctx_));
+  ReclaimUntil(kStartNs + 2 * kHangNs);
+  ut_txv_set_link_down(ctx_, 0, false);
+
+  ReclaimUntil(kStartNs + 3 * kHangNs - ut_txv_reclaim_interval_ns());
+  ASSERT_FALSE(ut_txv_zc_take_recovery(ctx_, 0));
+  ReclaimUntil(kStartNs + 3 * kHangNs + ut_txv_reclaim_interval_ns());
+
+  EXPECT_TRUE(ut_txv_zc_take_recovery(ctx_, 0));
+}
+
 /* the legs idled through the wait before: a new wait counts from its own start */
 TEST_F(St20TxZeroCopyReclaimTest, WaitJustBegunDoesNotRecoverAnIdleLeg) {
   SetUpFrames(true);

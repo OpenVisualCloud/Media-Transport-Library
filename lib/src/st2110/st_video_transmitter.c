@@ -7,6 +7,7 @@
 #include <math.h>
 
 #include "../datapath/mt_queue.h"
+#include "../dev/mt_dev.h"
 #include "../mt_log.h"
 #include "../mt_ptp.h"
 #include "../mt_rtcp.h"
@@ -29,10 +30,16 @@ static int video_trs_tasklet_stop(void* priv) {
   return 0;
 }
 
-static uint16_t video_trs_burst_fail(struct st_tx_video_session_impl* s,
+/* a queue of a port with no link is not hung: the hang time starts at the link up */
+static uint16_t video_trs_burst_fail(struct mtl_main_impl* impl,
+                                     struct st_tx_video_session_impl* s,
                                      enum mtl_session_port s_port, uint64_t cur_tsc) {
-  uint64_t fail_duration = cur_tsc - s->last_burst_succ_time_tsc[s_port];
+  if (mt_dev_link_down(impl, mt_port_logic2phy(s->port_maps, s_port))) {
+    s->last_burst_succ_time_tsc[s_port] = cur_tsc;
+    return 0;
+  }
 
+  uint64_t fail_duration = cur_tsc - s->last_burst_succ_time_tsc[s_port];
   if (fail_duration > s->tx_hang_detect_time_thresh) {
     err("%s(%d,%d), hang duration %" PRIu64 " ms\n", __func__, s->idx, s_port,
         fail_duration / NS_PER_MS);
@@ -98,7 +105,7 @@ static inline uint16_t video_trs_rl_txq_burst(struct mtl_main_impl* impl,
     now = s->last_burst_succ_time_tsc[s_port];
   } else {
     now = mt_get_tsc(impl);
-    video_trs_burst_fail(s, s_port, now);
+    video_trs_burst_fail(impl, s, s_port, now);
   }
   if (tx < nb_pkts) s->trs_reclaim_tsc[s_port] = RTE_MAX(s->trs_reclaim_tsc[s_port], now);
   return tx;
@@ -216,7 +223,7 @@ static uint16_t video_trs_burst(struct mtl_main_impl* impl,
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
   if (!tx) {
     if (s->rtcp_tx[s_port]) rte_pktmbuf_free_bulk(tx_pkts, nb_pkts);
-    return video_trs_burst_fail(s, s_port, mt_get_tsc(impl));
+    return video_trs_burst_fail(impl, s, s_port, mt_get_tsc(impl));
   }
   video_trs_burst_succ(impl, s, s_port, tx);
 
