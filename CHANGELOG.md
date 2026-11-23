@@ -2,6 +2,7 @@
 
 * dev: with `MTL_FLAG_RX_MONO_POOL` (RxTxApp `--mono_pool` or `--rx_mono_pool`) each RX queue polls its own queue; since 22.12 every queue polled queue 0 of DPDK port 0, so the sessions' own queues overflowed and sessions on several schedulers shared one queue
 * pcapng dumps: a dump on a port without NIC RX timestamps warns that its packets carry their RX burst time, no basis for ST 2110-21 timing; RxTxApp `--pcapng_dump` now sets `MTL_FLAG_ENABLE_HW_TIMESTAMP`, as `--rx_timing_parser` does
+* ixgbe (E610): a DPDK port stop keeps the copper PHY powered, so the next start does not restart the autoneg, whose false link up and 4.7 s link down hung the first TX; rebuild DPDK (26.07.94_mtl_)
 * st20/st22 TX: a TX queue that sends nothing after the link is up, as an E610 one that held packets at the link loss, is recovered a hang threshold after the up, so the session sends again; a session survives 3 such dead queues, and its free keeps the frame counts the dead queues still use
 * st20/st22/st30 TX: a port with no link no longer gets its TX queue marked fatal: the hang detectors wait while the link is down, the transmitter drops the packets at their time (stat dump `pkts link down drop`), a video session starts its next frame on a new epoch, and after the link up a video leg starts again at a frame start, once the NIC ring had the time to send what it held
 * DPDK: two 26.07 TX hot path patches: 0013 builds the TX offload word in one store, 0014 passes iavf's IPsec TX callbacks only with `RTE_ETH_TX_OFFLOAD_SECURITY`; rebuild DPDK (26.07.93_mtl_)
