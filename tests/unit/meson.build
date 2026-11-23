@@ -57,6 +57,7 @@ unit_sources = [
   'common/mt_mempool_test.cpp',
   'dev/mt_dev_harness.c',
   'dev/mt_dev_igc_test.cpp',
+  'dev/mt_dev_ixgbe_timesync_test.cpp',
   'dev/mt_dev_link_poll_test.cpp',
   'dev/mt_dev_rx_desc_test.cpp',
   'dev/mt_dev_rx_mono_pool_test.cpp',
