@@ -11,7 +11,7 @@ The full table is in
 
 | Layer | When | Who does it | Examples |
 | --- | --- | --- | --- |
-| Host | Once, and again after each boot | Not CI: the fleet watchdog, or a person with `setup_environment.sh` and `acceptance_setup.sh` | packages, kernel command-line, hugepages, CPU governor, `vfio` access, `net.core.rmem_max`, `/mnt/media`, SSH self-login, `/etc/mtl-ci/runner.env` |
+| Host | Once, and again after each boot | Not CI: the fleet watchdog, or a person with `mtl_install.sh` and `acceptance_setup.sh` | packages, kernel command-line, hugepages, CPU governor, `vfio` access, `net.core.rmem_max`, `/mnt/media`, SSH self-login, `/etc/mtl-ci/runner.env` |
 | Test cycle | Start of each CI job | the `validate-host` action and the `ci:pytest-setup` steps | stop stale processes, restore the builds, load the ICE module under test, bind the DMA devices, the acceptance virtualenv |
 | Test | One test or suite, undone after it | `gtest.sh`, the pytest fixtures | VFs on a PF, PF driver, `/dev/vfio` owner, C-states, cores offline, NoCtx CPU isolation |
 
@@ -362,7 +362,7 @@ process handle, the same way `conftest._reap_ptp_daemons` reaps ptp4l.
 
 ## The DMA channels that host validation serves
 
-`script/dma_setup.sh reset` serves two DMA channels on each NUMA node, on the
+`script/mtl_dma_setup.sh reset` serves two DMA channels on each NUMA node, on the
 test host and on the shadow host. It first unbinds each channel from vfio-pci,
 except a channel that a process holds, so a job starts from the same state.
 Then it binds a channel that has no driver, and it takes a channel from `idxd`.

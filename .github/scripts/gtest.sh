@@ -131,12 +131,12 @@ host_fault() {
 	exit "${HOST_FAULT_EXIT}"
 }
 
-# nicctl.sh asks the same driver the tests do, so it can block the same way, and
+# mtl_nicctl.sh asks the same driver the tests do, so it can block the same way, and
 # a timeout here means the host is faulted rather than empty -- so it is recorded
 # in a sentinel file that the callers check before reporting "no ports found".
 #
 # The listing goes to a file rather than up a pipe. timeout signals its own child
-# and nothing below it, so a nicctl.sh stuck in a sysfs read leaves that read
+# and nothing below it, so an mtl_nicctl.sh stuck in a sysfs read leaves that read
 # holding the pipe open, and a caller reading it would wait out the whole hang it
 # just gave up on.
 nicctl_list() {
@@ -144,7 +144,7 @@ nicctl_list() {
 	shift
 	local retval=0
 	timeout --foreground --signal=SIGTERM --kill-after="${TEST_KILL_GRACE}" \
-		"${HOST_OP_TIMEOUT}" "${mtl_folder}/script/nicctl.sh" list "$@" \
+		"${HOST_OP_TIMEOUT}" "${mtl_folder}/script/mtl_nicctl.sh" list "$@" \
 		>"${destination}" 2>/dev/null || retval=$?
 	if [ "${retval}" -eq 124 ] || [ "${retval}" -eq 137 ]; then
 		touch "${TMP_FOLDER}/.nicctl_timeout"
@@ -163,7 +163,7 @@ not_prepared() {
 	exit 1
 }
 
-# Prints the vfio-pci ports of the first PF in a nicctl.sh listing that has
+# Prints the vfio-pci ports of the first PF in an mtl_nicctl.sh listing that has
 # enough of them.
 #
 # They have to belong to one PF: a transmitter and a receiver on two different
@@ -218,7 +218,7 @@ noctx_ports() {
 
 nicctl_vf() {
 	sudo timeout --foreground --signal=SIGTERM --kill-after="${TEST_KILL_GRACE}" \
-		"${HOST_OP_TIMEOUT}" "${mtl_folder}/script/nicctl.sh" "$@"
+		"${HOST_OP_TIMEOUT}" "${mtl_folder}/script/mtl_nicctl.sh" "$@"
 }
 
 # Removes the VFs that create_vfs made, so the next job finds the host as it was.
@@ -226,7 +226,7 @@ remove_vfs() {
 	local pf
 	for pf in "${created_vf_pfs[@]}"; do
 		echo "Removing the VFs of ${pf}"
-		nicctl_vf disable_vf "${pf}" || echo "✗ nicctl.sh disable_vf ${pf} failed"
+		nicctl_vf disable_vf "${pf}" || echo "✗ mtl_nicctl.sh disable_vf ${pf} failed"
 	done
 	created_vf_pfs=()
 }
@@ -239,7 +239,7 @@ create_vfs() {
 	local listing="${TMP_FOLDER}/up.listing" pfs=() pf="" sibling="" candidate other
 
 	nicctl_list "${listing}" up || true
-	nicctl_wedged && host_fault "nicctl.sh stopped responding while listing NIC ports"
+	nicctl_wedged && host_fault "mtl_nicctl.sh stopped responding while listing NIC ports"
 	mapfile -t pfs < <(awk '$3 == "ice" {print $2}' "${listing}")
 	pf=${pfs[0]:-}
 	for candidate in "${pfs[@]}"; do
@@ -255,11 +255,11 @@ create_vfs() {
 	trap remove_vfs EXIT
 	echo "Creating 6 trusted VFs on ${pf}"
 	created_vf_pfs+=("${pf}")
-	nicctl_vf create_tvf "${pf}" 6 || echo "✗ nicctl.sh create_tvf ${pf} failed"
+	nicctl_vf create_tvf "${pf}" 6 || echo "✗ mtl_nicctl.sh create_tvf ${pf} failed"
 	if [ -n "${sibling}" ]; then
 		echo "Creating 2 trusted VFs on ${sibling} for NoCtx"
 		created_vf_pfs+=("${sibling}")
-		nicctl_vf create_tvf "${sibling}" 2 || echo "✗ nicctl.sh create_tvf ${sibling} failed"
+		nicctl_vf create_tvf "${sibling}" 2 || echo "✗ mtl_nicctl.sh create_tvf ${sibling} failed"
 	fi
 }
 
@@ -270,13 +270,13 @@ discover_ports() {
 	nicctl_list "${listing}" all || true
 	mapfile -t ports < <(ports_of_one_pf "${listing}")
 	if [ "${#ports[@]}" -lt "${MIN_VFIO_PORTS}" ]; then
-		nicctl_wedged && host_fault "nicctl.sh stopped responding while listing NIC ports"
+		nicctl_wedged && host_fault "mtl_nicctl.sh stopped responding while listing NIC ports"
 		create_vfs
 		nicctl_list "${listing}" all || true
 		mapfile -t ports < <(ports_of_one_pf "${listing}")
 	fi
 	if [ "${#ports[@]}" -lt "${MIN_VFIO_PORTS}" ]; then
-		nicctl_wedged && host_fault "nicctl.sh stopped responding while listing NIC ports"
+		nicctl_wedged && host_fault "mtl_nicctl.sh stopped responding while listing NIC ports"
 		cat "${listing}"
 		not_prepared "No PF has the ${MIN_VFIO_PORTS} vfio-pci ports the suite needs."
 	fi
@@ -293,12 +293,12 @@ discover_ports() {
 	export TEST_PORT_1="${ports[0]}" TEST_PORT_2="${ports[1]}"
 	export TEST_PORT_3="${ports[2]}" TEST_PORT_4="${ports[3]}"
 	mapfile -t noctx_port < <(noctx_ports "${listing}" "${ports[@]:0:4}")
-	# VFs that the host kept from an earlier nicctl.sh may have the 64-entry RSS
+	# VFs that the host kept from an earlier mtl_nicctl.sh may have the 64-entry RSS
 	# LUT and 16 queue pairs: fix them on the PF of the suite and, as noctx_port
 	# alternates the two, the PF of noctx_port[1].
 	for physfn in "/sys/bus/pci/devices/${ports[0]}/physfn" "/sys/bus/pci/devices/${noctx_port[1]:-}/physfn"; do
 		[ -e "${physfn}" ] || continue
-		nicctl_vf vf_rss_lut "$(basename "$(readlink -f "${physfn}")")" || echo "✗ nicctl.sh vf_rss_lut failed"
+		nicctl_vf vf_rss_lut "$(basename "$(readlink -f "${physfn}")")" || echo "✗ mtl_nicctl.sh vf_rss_lut failed"
 	done
 	# The library probes the DMA devices on vfio-pci on the NUMA node of the
 	# ports itself. A host with none runs the DMA cases as skipped.
@@ -341,7 +341,7 @@ generate_test_cases() {
 		done
 	done
 	dpdk_case st2110_20p 'St20p*'
-	# More queues than an ice VF gets with its default RSS LUT, see nicctl.sh.
+	# More queues than an ice VF gets with its default RSS LUT, see mtl_nicctl.sh.
 	dpdk_case st2110_20_tx_queue_cnt 'St20_tx.create_queue_cnt' --queue_cnt 24
 	dpdk_case st2110_22_rx 'St22_rx*'
 	dpdk_case st2110_22_tx 'St22_tx*'

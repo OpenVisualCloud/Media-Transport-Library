@@ -319,7 +319,7 @@ jobs:
       - name: Build and run the unit suite
         uses: ./.github/actions/unit-tests
 
-  # The scripts of script/ and setup_environment.sh share one structure.
+  # The scripts of script/ share one structure.
   # test-scripts.sh checks it, and runs the scripts that need no NIC and no root.
   script-tests:
     needs: changes

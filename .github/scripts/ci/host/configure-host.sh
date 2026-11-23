@@ -66,7 +66,7 @@ shadow-credentials)
 shadow-sync)
 	# The tree the SUT validated, and the scripts that validate and activate its
 	# ICE bundle, at the same path: the shadow runs exactly what the SUT runs.
-	# script/common.sh reads versions.env and patches/ice_drv for the ICE version
+	# script/mtl_common.sh reads versions.env and patches/ice_drv for the ICE version
 	# check of validate-ice.sh.
 	remote="${SHADOW_HOST_USER}@${SHADOW_HOST_IP}"
 	# shellcheck disable=SC2029
@@ -94,7 +94,7 @@ shadow-reset-dma)
 	remote="${SHADOW_HOST_USER}@${SHADOW_HOST_IP}"
 	# shellcheck disable=SC2029
 	ssh "${shadow_ssh_options[@]}" "$remote" \
-		"sudo -n bash '${root_dir}/script/dma_setup.sh' reset"
+		"sudo -n bash '${root_dir}/script/mtl_dma_setup.sh' reset"
 	;;
 *)
 	echo "unknown configure-host mode: $1" >&2

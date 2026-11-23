@@ -5,25 +5,26 @@
 
 # Continuous isolation monitoring with spike analysis.
 #
-# Runs isolation_report.sh in a tight loop (default 30s samples),
+# Runs mtl_isolation_report.sh in a tight loop (default 30s samples),
 # logs every iteration with timestamps, and on Ctrl+C prints a
 # spike analysis showing when the worst isolation violations occurred.
 
 set -euo pipefail
 
 script_name="$(basename "${BASH_SOURCE[0]}")"
-script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# The installed bin/mtl_isolation_monitor.sh is a link to share/mtl/script/mtl_isolation_monitor.sh.
+script_folder="$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")"
 # shellcheck disable=SC1091
-. "${script_folder}/common.sh"
+. "${script_folder}/mtl_common.sh"
 
 show_help() {
 	cat <<EOF
 Usage: ${script_name} [OPTIONS] [sample_duration] [cpu_spec...]
 
-Run isolation_report.sh in a loop and keep the report of each sample in a
+Run mtl_isolation_report.sh in a loop and keep the report of each sample in a
 log directory. Press Ctrl+C to stop. The script then prints a spike analysis
 that shows when the worst isolation violations occurred. bpftrace needs root:
-when you are not root, isolation_report.sh runs it with sudo.
+when you are not root, mtl_isolation_report.sh runs it with sudo.
 
 REQUIRED PACKAGES (Debian/Ubuntu):
 	bpftrace python3
@@ -33,7 +34,7 @@ OPTIONS:
 
 ARGUMENTS:
 	sample_duration	Duration of one sample in seconds (default: 30)
-	cpu_spec	CPU cores to monitor, as isolation_report.sh reads them
+	cpu_spec	CPU cores to monitor, as mtl_isolation_report.sh reads them
 			(default: auto-detect from isolcpus)
 
 EXAMPLES:
@@ -187,7 +188,7 @@ parse_report() {
 
 main() {
 	local arg ts ts_file log_file
-	local report_script="${script_folder}/isolation_report.sh"
+	local report_script="${script_folder}/mtl_isolation_report.sh"
 
 	for arg in "$@"; do
 		case "$arg" in

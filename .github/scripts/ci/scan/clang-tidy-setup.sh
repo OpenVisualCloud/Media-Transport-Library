@@ -11,7 +11,7 @@
 set -euo pipefail
 
 # The components add the GStreamer and OBS headers the meson setups below need.
-bash script/install_dependencies.sh gstreamer obs
+bash script/mtl_install_dependencies.sh gstreamer obs
 
 # The .pc files name static libraries that this host does not have.
 dpdk=$PWD/.local_install/dpdk/lib/x86_64-linux-gnu/pkgconfig

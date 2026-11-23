@@ -1,6 +1,7 @@
 # Changelog
 
 * pcapng dumps: a dump on a port without NIC RX timestamps warns that its packets carry their RX burst time, no basis for ST 2110-21 timing; RxTxApp `--pcapng_dump` now sets `MTL_FLAG_ENABLE_HW_TIMESTAMP`, as `--rx_timing_parser` does
+* script: each script name starts with `mtl_` (`mtl_build_dpdk.sh`, `mtl_nicctl.sh`, `mtl_common.sh`); no old name stays. `.github/scripts/setup_environment.sh` is now `script/mtl_install.sh`, with `--dry-run`, an option check and `script/mtl_install_template.env`. `meson install` adds the host tools to `share/mtl/script` and `bin`. See `script/README.md`
 * DPDK: two 26.07 TX hot path patches: 0013 builds the TX offload word in one store, 0014 passes iavf's IPsec TX callbacks only with `RTE_ETH_TX_OFFLOAD_SECURITY`; rebuild DPDK (26.07.93_mtl_)
 * st20 RX timing parser: at a frame rate with a fractional number of 90 kHz ticks per frame (59.94, 23.98, 119.88 fps), every other frame's latency no longer reads half a tick (5.6 µs at 59.94) low, which failed frames whose first packet arrives less than that after their RTP time
 * pcapng dumps (st20/st22/st30 RX, CNI): the filename no longer carries the packet count, which at 100,000 packets or more overflowed `MTL_PCAP_FILE_MAX_LEN` (32) and failed the dump; the count stays in the log

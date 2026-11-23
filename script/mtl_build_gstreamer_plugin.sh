@@ -8,7 +8,7 @@ set -euo pipefail
 script_name="$(basename "${BASH_SOURCE[0]}")"
 script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-. "${script_folder}/common.sh"
+. "${script_folder}/mtl_common.sh"
 
 show_help() {
 	cat <<EOF
@@ -26,7 +26,7 @@ BUILD_TYPE is one of:
 
 REQUIRED PACKAGES (Debian/Ubuntu):
 	gcc meson ninja-build pkg-config libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
-	or ./install_dependencies.sh gstreamer
+	or ./mtl_install_dependencies.sh gstreamer
 	MTL and DPDK development files must already be installed.
 
 OPTIONS:
@@ -123,7 +123,7 @@ main() {
 		fi
 		export PKG_CONFIG_PATH="${mtl_pc%/*}:${dpdk_pc%/*}:${PKG_CONFIG_PATH:-}"
 	fi
-	require_pkg_config "mtl:MTL (build and install it with build.sh)" "libdpdk:DPDK (build_dpdk.sh)" \
+	require_pkg_config "mtl:MTL (build and install it with build.sh)" "libdpdk:DPDK (mtl_build_dpdk.sh)" \
 		gstreamer-1.0:libgstreamer1.0-dev gstreamer-base-1.0:libgstreamer1.0-dev \
 		gstreamer-video-1.0:libgstreamer-plugins-base1.0-dev gstreamer-audio-1.0:libgstreamer-plugins-base1.0-dev || exit 1
 

@@ -6,10 +6,10 @@
 set -euo pipefail
 
 script_name="$(basename "${BASH_SOURCE[0]}")"
-# The installed bin/nicctl.sh is a link to share/mtl/script/nicctl.sh.
+# The installed bin/mtl_nicctl.sh is a link to share/mtl/script/mtl_nicctl.sh.
 script_folder="$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")"
 # shellcheck disable=SC1091
-. "${script_folder}/common.sh"
+. "${script_folder}/mtl_common.sh"
 
 show_help() {
 	cat <<EOF
@@ -20,7 +20,7 @@ VFs, and list the NIC ports. The list commands write the data to stdout and
 need no root. The other commands need root. Status messages go to stderr.
 
 REQUIRED PACKAGES (Debian/Ubuntu):
-	dpdk (dpdk-devbind.py, from script/build_dpdk.sh) pciutils iproute2 kmod
+	dpdk (dpdk-devbind.py, from script/mtl_build_dpdk.sh) pciutils iproute2 kmod
 
 OPTIONS:
 	-h, --help		Show this help message
@@ -45,7 +45,7 @@ Commands:
 ENVIRONMENT:
 	MTL_INSTALL_PREFIX	The MTL prefix: find dpdk-devbind.py in its dpdk
 				sibling first (default: <repo>/.local_install/mtl,
-				or the prefix of an installed nicctl.sh)
+				or the prefix of an installed mtl_nicctl.sh)
 
 EXAMPLES:
 	${script_name} list all
@@ -228,7 +228,7 @@ list_vf() {
 }
 
 # Data on stdout: a table, read by .github/scripts/gtest.sh and
-# script/dma_setup.sh. Do not change the columns.
+# script/mtl_dma_setup.sh. Do not change the columns.
 list() {
 	local filter="${1:-}" id_counter=0 status pci_bdf driver numa_node iommu_group interface_name
 	status=$(devbind_status) || return 1
@@ -272,7 +272,7 @@ vf_count() {
 main() {
 	local cmd="${1:-}" numvfs mtl_prefix local_dpdk_bin
 
-	# The DPDK of build_dpdk.sh sits beside the MTL prefix: use it if it is there.
+	# The DPDK of mtl_build_dpdk.sh sits beside the MTL prefix: use it if it is there.
 	case "$REPO_DIR" in
 	*/share/mtl) mtl_prefix="${REPO_DIR%/share/mtl}" ;;
 	*) mtl_prefix="${REPO_DIR}/.local_install/mtl" ;;

@@ -8,7 +8,7 @@ set -euo pipefail
 script_name="$(basename "${BASH_SOURCE[0]}")"
 script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-. "${script_folder}/common.sh"
+. "${script_folder}/mtl_common.sh"
 
 show_help() {
 	cat <<EOF
@@ -189,7 +189,7 @@ main() {
 	hardening_flags || exit 1
 	hardening_args=("-Dc_args=${CFLAGS:+${CFLAGS} }${CPPFLAGS:+${CPPFLAGS} }${HARDENING_CFLAGS}")
 	[ -z "${HARDENING_CFLAGS}" ] || hardening_args+=(-Db_pie=true)
-	# shellcheck disable=SC2153 # hardening_flags() of common.sh sets it
+	# shellcheck disable=SC2153 # hardening_flags() of mtl_common.sh sets it
 	link_args="${LDFLAGS:+${LDFLAGS} }${CFLAGS:+${CFLAGS} }${CPPFLAGS:+${CPPFLAGS} }${HARDENING_LDFLAGS}"
 	if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 		# A prefix install is self-contained and can be moved: each library

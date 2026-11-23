@@ -67,7 +67,7 @@ Use the I226-V build helper to make sure that the igc driver is installed.
 
 ```bash
 cd $mtl_source_code
-./script/build_drivers.sh --driver igc
+./script/mtl_build_drivers.sh --driver igc
 ```
 
 #### 9.2.2. Prepare VFIO Access

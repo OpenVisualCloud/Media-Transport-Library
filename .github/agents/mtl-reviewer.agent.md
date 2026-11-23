@@ -148,7 +148,7 @@ If a function gains more comment lines than code lines in the diff, that is itse
 
 Do not duplicate its content here; cite the specific rule it violates when you flag something against it.
 
-For a script, workflow, action or `Taskfile.yml` change, [`mtl-scripts.instructions.md`](../instructions/mtl-scripts.instructions.md) auto-loads the same way and is the checklist: `common.sh` structure in `script/`, no help or argument checks in CI, and the layer table — a CI step or test that sets a host setting is a BLOCKER.
+For a script, workflow, action or `Taskfile.yml` change, [`mtl-scripts.instructions.md`](../instructions/mtl-scripts.instructions.md) auto-loads the same way and is the checklist: `mtl_common.sh` structure in `script/`, no help or argument checks in CI, and the layer table — a CI step or test that sets a host setting is a BLOCKER.
 
 ### 3. Correctness
 

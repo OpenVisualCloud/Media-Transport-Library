@@ -42,11 +42,11 @@ COPY . "${MTL_REPO}"
 
 # Build eBPF/XDP using the project build script
 WORKDIR "${MTL_REPO}/script"
-RUN ./build_ebpf_xdp.sh
+RUN ./mtl_build_ebpf_xdp.sh
 
 # Build DPDK using the project build script
 WORKDIR "${MTL_REPO}/script"
-RUN ./build_dpdk.sh -f
+RUN ./mtl_build_dpdk.sh -f
 
 # Run the unit suite, then build MTL. The gcc of Rocky Linux enables no
 # compiler hardening by default, so check what MTL builds, see doc/getting_started/build.md.

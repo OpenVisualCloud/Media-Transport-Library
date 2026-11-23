@@ -8,7 +8,7 @@ set -euo pipefail
 script_name="$(basename "${BASH_SOURCE[0]}")"
 script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-. "${script_folder}/common.sh"
+. "${script_folder}/mtl_common.sh"
 
 show_help() {
 	cat <<EOF

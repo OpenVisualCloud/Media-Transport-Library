@@ -8,7 +8,7 @@ set -euo pipefail
 script_name="$(basename "${BASH_SOURCE[0]}")"
 script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-. "${script_folder}/common.sh"
+. "${script_folder}/mtl_common.sh"
 
 show_help() {
 	cat <<EOF
@@ -29,7 +29,7 @@ With unit, the script only builds and runs the unit tests of
 ecosystem/ffmpeg_plugin/tests, which need neither MTL nor FFmpeg installed.
 
 REQUIRED PACKAGES (Debian/Ubuntu):
-	gcc make nasm patch patchelf pkg-config unzip wget, or ./install_dependencies.sh ffmpeg
+	gcc make nasm patch patchelf pkg-config unzip wget, or ./mtl_install_dependencies.sh ffmpeg
 	MTL and DPDK development files must already be installed.
 
 OPTIONS:
@@ -81,7 +81,7 @@ build_openh264() {
 	# The compiler hardening of doc/getting_started/build.md. The Makefile adds its own flags
 	# to the CFLAGS and LDFLAGS of the environment, and reads no CPPFLAGS.
 	CPPFLAGS='' hardening_flags || exit 1
-	# shellcheck disable=SC2153 # hardening_flags() of common.sh sets both
+	# shellcheck disable=SC2153 # hardening_flags() of mtl_common.sh sets both
 	CFLAGS="${CFLAGS:+${CFLAGS} }${HARDENING_CFLAGS}" LDFLAGS="${LDFLAGS:+${LDFLAGS} }${HARDENING_LDFLAGS}" \
 		make -C "${source_dir}" -j "${jobs}" PREFIX="${prefix}"
 	if prefix_writable "${prefix}"; then
@@ -211,7 +211,7 @@ main() {
 		if [ "${jpegxs}" -eq 1 ]; then
 			jpeg_pc=$(find "${local_base}/jpegxs" -name SvtJpegxs.pc -type f -print -quit 2>/dev/null || true)
 			[ -n "${jpeg_pc}" ] || {
-				log_error "--jpegxs needs SVT-JPEG-XS installed in ${local_base}/jpegxs: run build_jpegxs.sh first"
+				log_error "--jpegxs needs SVT-JPEG-XS installed in ${local_base}/jpegxs: run mtl_build_jpegxs.sh first"
 				exit 1
 			}
 			pc_dirs+=("${jpeg_pc%/*}")
@@ -221,8 +221,8 @@ main() {
 	pc_dirs+=("${prefix}/lib/pkgconfig")
 	export PKG_CONFIG_PATH
 	PKG_CONFIG_PATH="$(printf '%s:' "${pc_dirs[@]}")${PKG_CONFIG_PATH:-}"
-	require_pkg_config "mtl:MTL (build and install it with build.sh)" "libdpdk:DPDK (build_dpdk.sh)" || exit 1
-	[ "${jpegxs}" -eq 0 ] || require_pkg_config "SvtJpegxs:SVT-JPEG-XS (build_jpegxs.sh)" || exit 1
+	require_pkg_config "mtl:MTL (build and install it with build.sh)" "libdpdk:DPDK (mtl_build_dpdk.sh)" || exit 1
+	[ "${jpegxs}" -eq 0 ] || require_pkg_config "SvtJpegxs:SVT-JPEG-XS (mtl_build_jpegxs.sh)" || exit 1
 	if [ "${gpu_direct}" -eq 1 ]; then
 		require_pkg_config "mtl_gpu_direct:MTL GPU direct (gpu_direct/, see doc/features/gpu.md)" || exit 1
 		readelf -d "$(pkg_libdir mtl)/libmtl.so" | grep -q 'NEEDED.*libmtl_gpu_direct' || {

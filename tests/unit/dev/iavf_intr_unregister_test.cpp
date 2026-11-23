@@ -189,7 +189,7 @@ TEST(DpdkIavfPatch, CloseWaitsForInFlightInterruptCallback) {
   std::set<std::string> imports = undefined_dynamic_symbols(iavf);
   ASSERT_FALSE(imports.empty()) << "cannot read the dynamic symbols of " << iavf;
   const char* rebuild =
-      "; rebuild DPDK with patches/dpdk/26.07 (script/build_dpdk.sh), see "
+      "; rebuild DPDK with patches/dpdk/26.07 (script/mtl_build_dpdk.sh), see "
       "patches/dpdk/26.07/0009-net-iavf-fix-interrupt-callback-race-on-close.md";
   EXPECT_TRUE(imports.count("rte_intr_callback_unregister_sync"))
       << iavf << " lacks patch 0009" << rebuild;

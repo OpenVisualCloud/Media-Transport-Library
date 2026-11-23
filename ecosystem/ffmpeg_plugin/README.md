@@ -6,19 +6,19 @@ FFmpeg is an open source project licensed under LGPL and GPL. See <https://www.f
 
 ## 1. Build
 
-`script/build_ffmpeg_plugin.sh` does the whole build: it downloads the FFmpeg
+`script/mtl_build_ffmpeg_plugin.sh` does the whole build: it downloads the FFmpeg
 release in `versions.env`, adds the MTL devices and the patches of this
 directory, builds openh264 when the system has none, and installs into
 `/usr/local`. Run it from the top of the source tree, as your own user, after
 MTL is installed:
 
 ```bash
-./script/install_dependencies.sh ffmpeg   # the build packages, Ubuntu only
-./script/build_ffmpeg_plugin.sh           # add --jpegxs for the SVT-JPEG-XS codecs
-./script/build_ffmpeg_plugin.sh -h        # all options
+./script/mtl_install_dependencies.sh ffmpeg   # the build packages, Ubuntu only
+./script/mtl_build_ffmpeg_plugin.sh           # add --jpegxs for the SVT-JPEG-XS codecs
+./script/mtl_build_ffmpeg_plugin.sh -h        # all options
 ```
 
-With `MTL_INSTALL_PREFIX` set, as `build.sh` and `build_dpdk.sh` take it, FFmpeg
+With `MTL_INSTALL_PREFIX` set, as `build.sh` and `mtl_build_dpdk.sh` take it, FFmpeg
 goes into the `ffmpeg` sibling of that prefix (`.local_install/ffmpeg` beside
 `.local_install/mtl`). The installed `ffmpeg` then records the paths of the MTL,
 DPDK and SVT-JPEG-XS libraries it was built against, so it runs without
@@ -80,7 +80,7 @@ In order to build the FFmpeg in a non-default path, use `--prefix="<path>"` with
 
 ### 1.3. Unit tests
 
-`./script/build_ffmpeg_plugin.sh unit` builds and runs the unit tests in `tests/`.
+`./script/mtl_build_ffmpeg_plugin.sh unit` builds and runs the unit tests in `tests/`.
 MTL and FFmpeg are stubbed, so they need neither installed, nor a NIC or root.
 `FfmpegMtlCommonTest.ConcurrentGetsCreateOneSharedHandle` waits up to one second
 for each of its two threads, so a heavily loaded host can fail it.
@@ -280,7 +280,7 @@ To take advantage of the MTL_GPU_DIRECT feature FFmpeg has to be built with this
 or use
 
 ```bash
-./build_ffmpeg_plugin.sh -g
+./mtl_build_ffmpeg_plugin.sh -g
 ```
 
 Reading a ST 2110-20 10-bit YUV422 stream on 239.168.85.20:20000 with payload_type 96 and

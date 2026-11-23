@@ -36,7 +36,7 @@ COPY . "${MTL_REPO}"
 
 # Build DPDK using the project build script
 WORKDIR "${MTL_REPO}/script"
-RUN ./build_dpdk.sh -f
+RUN ./mtl_build_dpdk.sh -f
 
 # Run the unit suite, then build MTL
 WORKDIR "${MTL_REPO}"

@@ -167,15 +167,15 @@ the `fuzz-tests` job of `cicd-pr-check.yml` does on a PR that changes `lib/`,
 ## Runtime setup (needed for anything beyond unit tests)
 
 ```bash
-sudo ./script/nicctl.sh create_vf 0000:af:00.0   # create + bind VFs to DPDK PMD
+sudo ./script/mtl_nicctl.sh create_vf 0000:af:00.0   # create + bind VFs to DPDK PMD
 sudo sysctl -w vm.nr_hugepages=2048              # lost on reboot
 sudo MtlManager                                  # lcore/queue arbitration daemon
 ```
 
-`script/build_drivers.sh` builds the out-of-tree ICE module required for hardware rate-limit
+`script/mtl_build_drivers.sh` builds the out-of-tree ICE module required for hardware rate-limit
 pacing (`--driver ice` for ICE only): the 2.7.6 that `versions.env` pins as released, an earlier
 version with its `patches/ice_drv/<version>` (it then reports `Kahawai_<version>`). A SEGFAULT in
-`iavf_tm_node_add` means the in-tree ICE driver is loaded. `nicctl.sh create_vf` gives each VF a
+`iavf_tm_node_add` means the in-tree ICE driver is loaded. `mtl_nicctl.sh create_vf` gives each VF a
 512-entry RSS LUT; without it a VF gets at most 16 queue pairs.
 
 ## Architecture essentials
@@ -244,7 +244,7 @@ aren't functionally changing. `./format-coding.sh` then `./build.sh` before prop
 change; add or extend a test at the cheapest tier that can catch the bug.
 
 Scripts follow `.github/instructions/mtl-scripts.instructions.md`. The user scripts in
-`script/` source `script/common.sh`, use its helpers, provide `show_help()` and `main()`, and use
+`script/` source `script/mtl_common.sh`, use its helpers, provide `show_help()` and `main()`, and use
 the standard sourced guard. The CI scripts in `.github/scripts/ci/`, the workflows and the
 `ci:` tasks stay as simple as possible: no help, no argument checks, no fixture variables. Host
 settings (packages, hugepages, governor, IOMMU, NFS) are not CI's job; CI does what each test

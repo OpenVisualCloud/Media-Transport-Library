@@ -8,7 +8,7 @@ set -euo pipefail
 script_name="$(basename "${BASH_SOURCE[0]}")"
 script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-. "${script_folder}/common.sh"
+. "${script_folder}/mtl_common.sh"
 
 show_help() {
 	cat <<EOF
@@ -49,7 +49,7 @@ EOF
 
 check_build_packages() {
 	require_commands cc:gcc meson:meson ninja:ninja-build pkg-config:pkg-config realpath:coreutils python3:python3 || return 1
-	require_pkg_config "mtl:MTL (build and install it with build.sh)" "libdpdk:DPDK (build_dpdk.sh)" \
+	require_pkg_config "mtl:MTL (build and install it with build.sh)" "libdpdk:DPDK (mtl_build_dpdk.sh)" \
 		libavcodec:libavcodec-dev libavutil:libavutil-dev || return 1
 }
 

@@ -13,7 +13,7 @@ from mtl_engine.dma import DSA_DEVICE_ID, setup_host_dma
 logger = logging.getLogger(__name__)
 
 # All nicctl shell calls must be bounded. The kernel sysfs writes done by
-# nicctl.sh (sriov_numvfs, dpdk-devbind unbind) can block forever in
+# mtl_nicctl.sh (sriov_numvfs, dpdk-devbind unbind) can block forever in
 # pci_disable_sriov() / vfio_unregister_group_dev() if any process still
 # holds /dev/vfio/<group> open. The timeouts below convert that infinite
 # wait into a logged warning + escape-hatch (PCI remove/rescan).
@@ -23,9 +23,9 @@ _VFIO_IDLE_TIMEOUT = 20  # how long to wait for VFIO group to be released
 
 
 class Nicctl:
-    """Wrapper of nicctl.sh script from Media-Transport-Library."""
+    """Wrapper of mtl_nicctl.sh script from Media-Transport-Library."""
 
-    tool_name = "nicctl.sh"
+    tool_name = "mtl_nicctl.sh"
 
     def __init__(self, mtl_path: str, host):
         self.host = host
@@ -38,7 +38,7 @@ class Nicctl:
 
     @property
     def _nicctl_path(self) -> str:
-        """Returns the path to the nicctl.sh script."""
+        """Returns the path to the mtl_nicctl.sh script."""
         nicctl_path = getattr(self.host.topology.extra_info, "nicctl_path", None)
         if not nicctl_path:
             return str(self.connection.path(self.mtl_path, "script", self.tool_name))
@@ -85,7 +85,7 @@ class Nicctl:
                 pci_id,
                 num_of_vfs,
             )
-            # VFs made before nicctl.sh set the RSS LUT have 16 queue pairs.
+            # VFs made before mtl_nicctl.sh set the RSS LUT have 16 queue pairs.
             # Not fatal: a VF left at 16 fails only the cases that need more,
             # with "fail to find free tx queue".
             try:
@@ -97,12 +97,12 @@ class Nicctl:
                 )
                 if res.return_code != 0:
                     logger.warning(
-                        "nicctl.sh vf_rss_lut %s failed: %s",
+                        "mtl_nicctl.sh vf_rss_lut %s failed: %s",
                         pci_id,
                         (res.stderr or "").strip(),
                     )
             except RemoteProcessTimeoutExpired as e:
-                logger.warning("nicctl.sh vf_rss_lut %s timed out (%s)", pci_id, e)
+                logger.warning("mtl_nicctl.sh vf_rss_lut %s timed out (%s)", pci_id, e)
             self.grant_vfio_access(existing)
             return existing
         cmd = "create_tvf" if trusted else "create_vf"
@@ -117,7 +117,7 @@ class Nicctl:
         # unavailable)" because the VFIO group/container is not fully
         # initialized yet.
         time.sleep(2)
-        # Use vfio_list (nicctl.sh list) to get clean VF addresses.
+        # Use vfio_list (mtl_nicctl.sh list) to get clean VF addresses.
         # The create_vf output mixes PF and VF PCI addresses in status
         # messages, while list_vf outputs only VF addresses.
         vfs = self.vfio_list(pci_id)
@@ -191,7 +191,7 @@ class Nicctl:
         ``vfio_unregister_group_dev``. We mitigate in three layers:
 
           1. Wait for the IOMMU group to go idle (lsof poll).
-          2. Run ``nicctl.sh disable_vf`` with a hard timeout.
+          2. Run ``mtl_nicctl.sh disable_vf`` with a hard timeout.
           3. If it timed out, fall back to PCI remove/rescan — the
              kernel's documented escape hatch that does not wait on
              refcounts.

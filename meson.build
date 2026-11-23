@@ -85,14 +85,29 @@ pkg.generate(
   description : 'Media Transport Library'
 )
 
-# nicctl.sh, with the common.sh and versions.env it sources, laid out as in the
-# repository. nicctl.sh finds its prefix by the share/mtl it sits in.
+# The host tools of script/: the scripts that need no source tree. Each goes
+# into share/mtl/script with the mtl_common.sh and versions.env that it
+# sources, laid out as in the repository, and gets a link of the same name in
+# bin. mtl_nicctl.sh finds its prefix by the share/mtl it sits in. The build
+# scripts of script/ need the source tree, so they are not installed.
 if not is_windows
   mtl_script_dir = get_option('datadir') / 'mtl'
-  install_data('script/nicctl.sh', install_dir: mtl_script_dir / 'script',
-    install_mode: 'rwxr-xr-x')
-  install_data('script/common.sh', install_dir: mtl_script_dir / 'script')
+  mtl_host_tools = [
+    'mtl_nicctl.sh',
+    'mtl_dma_setup.sh',
+    'mtl_status_report.sh',
+    'mtl_isolation_report.sh',
+    'mtl_isolation_monitor.sh',
+    'mtl_lcore_stat_dump.sh',
+    'mtl_if_filter_delete.sh',
+  ]
+  foreach tool : mtl_host_tools
+    install_data('script' / tool, install_dir: mtl_script_dir / 'script',
+      install_mode: 'rwxr-xr-x')
+    install_symlink(tool, pointing_to: '..' / mtl_script_dir / 'script' / tool,
+      install_dir: get_option('bindir'))
+  endforeach
+  install_data('script/mtl_common.sh', 'script/isolation_expected.env',
+    'script/isolation_allowed.env', install_dir: mtl_script_dir / 'script')
   install_data('versions.env', install_dir: mtl_script_dir)
-  install_symlink('nicctl.sh', pointing_to: '..' / mtl_script_dir / 'script' / 'nicctl.sh',
-    install_dir: get_option('bindir'))
 endif

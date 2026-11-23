@@ -66,8 +66,8 @@ hardware-bound). The full marker set and its authoring rules live in
 | Category | Backend | Build artifact |
 |---|---|---|
 | `st20p`/`st22p`/`st30p`/`st40`/`st40p`/`dma`/`ptp`/`rss_mode`/`rx_timing`/`udp`/`virtio_user`/`xdp`/`kernel_socket` | RxTxApp | `.local_install/mtl/bin/RxTxApp` |
-| `ffmpeg/` | in-repo FFmpeg + MTL muxer | `.local_install/ffmpeg/bin/ffmpeg`, built by `script/build_ffmpeg_plugin.sh` (system ffmpeg unused) |
-| `gstreamer/` | in-repo GStreamer plugin | `.local_install/gstreamer/gstreamer-1.0/libgstmtl_*.so`, built by `script/build_gstreamer_plugin.sh` |
+| `ffmpeg/` | in-repo FFmpeg + MTL muxer | `.local_install/ffmpeg/bin/ffmpeg`, built by `script/mtl_build_ffmpeg_plugin.sh` (system ffmpeg unused) |
+| `gstreamer/` | in-repo GStreamer plugin | `.local_install/gstreamer/gstreamer-1.0/libgstmtl_*.so`, built by `script/mtl_build_gstreamer_plugin.sh` |
 | `performance/` | RxTxApp capacity sweep | RxTxApp; very long |
 
 ## Logs
@@ -91,7 +91,7 @@ sudo grep -E "EAL|hugepage|VF|RxTxApp|RemoteProcess|Traceback|err:" \
 | `is missing N frame(s) of audio within its first 5` (st30p, still PASSED) | Expected: the RX joins a stream in flight, so MTL suppresses its first short frames (`JOIN_FRAMES`/`MAX_JOIN_GAP_FRAMES` in `audio_integrity.py`). A wider gap, or one in a later segment, fails. |
 | `EBU server configuration not found` (test still PASSED) | Data path passed; compliance verdict was skipped. Re-run setup with `--ebu-ip=`/`--ebu-user=`/`--ebu-password=`/`--capture-pci-device=` (ask the user first) so `ebu_server`/`capture_cfg` get populated in `test_config.yaml`. |
 | `netsniff-ng: command not found` | `sudo apt install -y netsniff-ng`. |
-| `build_dpdk.sh: line ...: unzip: command not found` | **(setup)** Fixed: `unzip` now in base apt deps. Re-run setup. |
+| `mtl_build_dpdk.sh: line ...: unzip: command not found` | **(setup)** Fixed: `unzip` now in base apt deps. Re-run setup. |
 | `no element "mtl_st20p_tx"` (gstreamer) | **(setup)** Plugin not built. |
 | `RemoteProcessInvalidState: Process is finished` (ffmpeg) | **(setup)** In-repo ffmpeg/libav not installed. |
 | RxTxApp exit `127` with `error while loading shared libraries: librte_*.so.26` | **(setup)** DPDK is installed but the dynamic linker cache is stale. Re-run setup (it refreshes `ldconfig`) or run `sudo ldconfig`, then confirm `ldd .local_install/mtl/bin/RxTxApp` has no `not found`. |

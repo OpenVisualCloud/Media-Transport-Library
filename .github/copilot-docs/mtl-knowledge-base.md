@@ -1289,7 +1289,7 @@ Not supported: `dev_eal_init()` always passes `--in-memory`, so no DPDK runtime 
 Independent MTL processes (one EAL each, e.g. on separate VFs) coordinate lcore use through MtlManager instead, or without it through the SysV shm table in `mt_sch.c`.
 Both key an lcore by its ID, and the ID is the CPU ID.
 `dev_eal_init()` passes `--remap-lcore-ids` only when the host has more CPUs (`_SC_NPROCESSORS_CONF`) than `RTE_MAX_LCORE`, and warns: with it every process numbers its CPUs 0, 1, 2, ... and claims the same IDs.
-`script/build_dpdk.sh` sets `max_lcores` to the build host's CPU count, at least 128, or `DPDK_MAX_LCORES`, so `RTE_MAX_LCORE` covers every CPU of the build host.
+`script/mtl_build_dpdk.sh` sets `max_lcores` to the build host's CPU count, at least 128, or `DPDK_MAX_LCORES`, so `RTE_MAX_LCORE` covers every CPU of the build host.
 The shm table has `RTE_MAX_LCORE` entries, so its size follows the DPDK build: `shmget()` fails with `EINVAL` in a process whose table is larger than the segment that exists (`doc/getting_started/run.md` §8.15).
 `mtl_init()` then removes the segment if no process is attached, as after a SIGKILL, and creates its own: `sch_init_lcores()` holds the lockfile for it, and `IPC_RMID` needs root or the owner.
 An attached segment fails the init; LcoreMgr (`mtl_lcore_shm_print()`/`mtl_lcore_shm_clean()`, no lock) never removes one.

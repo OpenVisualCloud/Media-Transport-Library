@@ -59,7 +59,7 @@ sudo apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev l
 Or install them with the script, together with the MTL build packages:
 
 ```bash
-./script/install_dependencies.sh ebpf_xdp
+./script/mtl_install_dependencies.sh ebpf_xdp
 ```
 
 CentOS/Red Hat:
@@ -80,7 +80,7 @@ sudo pacman -Syu --needed make m4 clang llvm zlib elfutils libcap-ng
 Build libxdp and libbpf from the xdp-tools repository using the versions pinned in [`Media-Transport-Library/versions.env`](../../versions.env) to ensure consistency.
 
 ```bash
-./script/build_ebpf_xdp.sh
+./script/mtl_build_ebpf_xdp.sh
 ```
 
 ### Verifying the prerequisites
@@ -91,7 +91,7 @@ in every job that later needs DPDK or AF_XDP, so a gap fails in seconds rather
 than as an unrelated `pkg-config` error minutes later.
 
 ```bash
-./script/build_ebpf_xdp.sh --check   # check only, install nothing
+./script/mtl_build_ebpf_xdp.sh --check   # check only, install nothing
 task ebpf:check                      # same thing, via the Taskfile
 ```
 

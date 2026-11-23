@@ -1,50 +1,61 @@
 #!/bin/bash
 
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2022 Intel Corporation
+# Copyright 2024 Intel Corporation
 
 set -euo pipefail
 
 script_name="$(basename "${BASH_SOURCE[0]}")"
 script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-. "${script_folder}/common.sh"
+. "${script_folder}/mtl_common.sh"
 
 show_help() {
 	cat <<EOF
 Usage: ${script_name} [OPTIONS] [BUILD_TYPE]
 
-Build the OBS Studio MTL plugin in ecosystem/obs_mtl/linux-mtl with meson and
-ninja, and install it into the system. The build directory is build/obs_plugin
-in the repository root. Install MTL and the OBS Studio development files
-before you run this script.
+Build the MTL sample applications in app/ with meson and ninja. The build
+directory is build/app in the repository root. Install MTL before you run
+this script.
 
 BUILD_TYPE is one of:
-	debug		Debug build
+	debug		Debug build with AddressSanitizer
+	debugonly	Debug build without AddressSanitizer
+	debugoptimized	Debug build with optimization
 	plain		Build without extra compiler flags
 	release		Release build (default)
 
 REQUIRED PACKAGES (Debian/Ubuntu):
-	gcc meson ninja-build pkg-config libobs-dev
+	gcc meson ninja-build pkg-config libjson-c-dev libpcap-dev
 	MTL (build and install it with build.sh)
 
 OPTIONS:
 	-h, --help	Show this help message
 
+ENVIRONMENT:
+	MTL_BUILD_ENABLE_ASAN	Set to "true" to enable AddressSanitizer.
+				The default build type then is debug.
+
 EXAMPLES:
-	${script_name}		# Release build
-	${script_name} debug	# Debug build
+	${script_name}			# Release build
+	${script_name} debugonly	# Debug build without AddressSanitizer
 EOF
 }
 
 check_build_packages() {
 	require_commands cc:gcc meson:meson ninja:ninja-build pkg-config:pkg-config || return 1
 	require_pkg_config "mtl:MTL (build and install it with build.sh)" \
-		libobs:libobs-dev || return 1
+		json-c:libjson-c-dev libpcap:libpcap-dev || return 1
 }
 
 main() {
-	local opt buildtype=release obs_plugin_build_dir
+	local opt buildtype=release enable_asan=false app_build_dir
+
+	if [ "${MTL_BUILD_ENABLE_ASAN:-}" == "true" ]; then
+		enable_asan=true
+		buildtype=debug # use debug build as default for asan
+		log_info "Enable asan check."
+	fi
 
 	while getopts ":h-:" opt; do
 		case $opt in
@@ -68,7 +79,12 @@ main() {
 
 	case "${1-}" in
 	"") ;;
-	debug) buildtype=debug ;;
+	debug)
+		buildtype=debug
+		enable_asan=true
+		;;
+	debugonly) buildtype=debug ;;
+	debugoptimized) buildtype=debugoptimized ;;
 	plain) buildtype=plain ;;
 	release) buildtype=release ;;
 	*)
@@ -85,12 +101,11 @@ main() {
 
 	check_build_packages || exit 1
 
-	obs_plugin_build_dir="${REPO_DIR}/build/obs_plugin"
-	log_info "Build the OBS plugin: buildtype=${buildtype}"
-	meson setup "${obs_plugin_build_dir}" "${REPO_DIR}/ecosystem/obs_mtl/linux-mtl" -Dbuildtype="$buildtype"
-	ninja -C "${obs_plugin_build_dir}"
-	as_root ninja -C "${obs_plugin_build_dir}" install
-	log_success "OBS plugin installed"
+	app_build_dir="${REPO_DIR}/build/app"
+	log_info "Build the sample applications: buildtype=${buildtype}, asan=${enable_asan}"
+	meson setup "${app_build_dir}" "${REPO_DIR}/app" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
+	ninja -C "${app_build_dir}"
+	log_success "Sample applications built in ${app_build_dir}"
 }
 
 (return 0 2>/dev/null) && sourced=1 || sourced=0

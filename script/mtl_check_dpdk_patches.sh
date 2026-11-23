@@ -13,7 +13,7 @@ set -euo pipefail
 script_name="$(basename "${BASH_SOURCE[0]}")"
 script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-. "${script_folder}/common.sh"
+. "${script_folder}/mtl_common.sh"
 
 show_help() {
 	cat <<EOF
@@ -21,14 +21,14 @@ Usage: ${script_name} [OPTIONS] [ARCHIVE_DIR]
 
 Verify each patches/dpdk/<version>/*.patch applies to its pinned upstream
 tarball with no hunk offset and no fuzz. ARCHIVE_DIR holds the archives, named
-v<version>.zip as script/build_dpdk.sh downloads them. A version with no archive
+v<version>.zip as script/mtl_build_dpdk.sh downloads them. A version with no archive
 in ARCHIVE_DIR is skipped, except the version versions.env pins: the run fails
 unless the pin contributed at least one verified patch, so that a skip can never
 read as a pass. Without ARCHIVE_DIR, the script downloads the archive of the
 pinned version (${DPDK_VER}) to a temporary directory and checks only that
 version. Prints nothing on stdout.
 
-Only that flat series is covered, the same glob build_dpdk.sh applies. The
+Only that flat series is covered, the same glob mtl_build_dpdk.sh applies. The
 windows/ and hdr_split/ subdirectories are applied by other flows and are not
 checked here, so drift in them goes unreported.
 

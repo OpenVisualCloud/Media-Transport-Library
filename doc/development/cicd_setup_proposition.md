@@ -134,7 +134,7 @@ stores hold the artifacts:
 | stage in the diagram      | implementation                                        |
 | ------------------------- | ----------------------------------------------------- |
 | `LINTER` / `WAITS`        | `needs:` of the `build` job on the lint jobs          |
-| `COMPUTES SOURCE SHA-256` | `build` job, `script/hash_sources.sh`                 |
+| `COMPUTES SOURCE SHA-256` | `build` job, `script/mtl_hash_sources.sh`                 |
 | `GITHUB STASH`            | `actions/cache` of `main`, keys `stash-v3-<component>-<checksum>`, and the artifact `mtl-build` of the run |
 | `BUILD`                   | `build` job on the self-hosted `dpdk` runner          |
 
@@ -166,8 +166,8 @@ regression from a test change. Left empty, nothing is overlaid.
 - `branch` takes a branch, a tag or a **full 40-character commit SHA**. A
   shorter SHA is read as a branch or tag name and fails the `build` job.
 - The ref must contain the script rework (#1836) up to `MTL_FLAG_DMA_AUTO`.
-  The current CI and tests call its interfaces: `hash_sources.sh` sources the
-  new `common.sh`, the setup calls the new build scripts, and the tests pass
+  The current CI and tests call its interfaces: `mtl_hash_sources.sh` sources the
+  new `mtl_common.sh`, the setup calls the new build scripts, and the tests pass
   `--dma_auto` to RxTxApp and the plugins. `overlay-tests` refuses an older ref
   in the `build` job, before any hardware runner is taken.
 - The overlay adds and replaces files but deletes none: a file removed under
@@ -176,14 +176,14 @@ regression from a test change. Left empty, nothing is overlaid.
 | Part                                                                 | Comes from      |
 | -------------------------------------------------------------------- | --------------- |
 | Workflow YAML                                                        | workflow commit |
-| `.github/` (actions, CI scripts, `setup_environment.sh`)             | workflow commit |
+| `.github/` (actions, CI scripts, `mtl_install.sh`)             | workflow commit |
 | `Taskfile.yml`                                                       | workflow commit |
 | `tests/acceptance/`                                                  | workflow commit |
-| `script/hash_sources.sh`, `script/hash_sources_*.env`                | workflow commit |
+| `script/mtl_hash_sources.sh`, `script/hash_sources_*.env`                | workflow commit |
 | `lib/`, `include/`, `app/`, `manager/`, `ld_preload/`                | `branch`        |
 | `tests/tools/RxTxApp/`, `tests/tools/gstreamer_tools/`               | `branch`        |
 | `ecosystem/`, `plugins/`, `patches/`, `versions.env`                 | `branch`        |
-| The rest of `script/` (`nicctl.sh`, `build_*.sh`, `common.sh`)       | `branch`        |
+| The rest of `script/` (`mtl_nicctl.sh`, `build_*.sh`, `mtl_common.sh`)       | `branch`        |
 | The first `overlay-tests` pass                                       | `branch`        |
 | The second `overlay-tests` pass                                      | workflow commit |
 
@@ -250,7 +250,7 @@ is that artifact. Gtest and pytest jobs never compile, install, or reload a
 driver.
 
 Host validation prepares each E8xx NIC before a test suite starts.
-`script/dma_setup.sh reset` binds two DMA channels on each NUMA node. Validation
+`script/mtl_dma_setup.sh reset` binds two DMA channels on each NUMA node. Validation
 runs the same script on a configured shadow host.
 
 The detailed artifact contracts and acceptance criteria are maintained in

@@ -23,17 +23,17 @@ sudo apt install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreame
 
 ### 1.2. Automated Build
 
-`script/build_gstreamer_plugin.sh` builds the plugins and installs them into the
+`script/mtl_build_gstreamer_plugin.sh` builds the plugins and installs them into the
 GStreamer plugin directory of `/usr/local`. Run it from the top of the source
 tree, as your own user, after MTL is installed:
 
 ```bash
-./script/install_dependencies.sh gstreamer   # the build packages, Ubuntu only
-./script/build_gstreamer_plugin.sh           # add debug for the test-only properties
-./script/build_gstreamer_plugin.sh -h        # all options
+./script/mtl_install_dependencies.sh gstreamer   # the build packages, Ubuntu only
+./script/mtl_build_gstreamer_plugin.sh           # add debug for the test-only properties
+./script/mtl_build_gstreamer_plugin.sh -h        # all options
 ```
 
-With `MTL_INSTALL_PREFIX` set, as `build.sh` and `build_dpdk.sh` take it, the
+With `MTL_INSTALL_PREFIX` set, as `build.sh` and `mtl_build_dpdk.sh` take it, the
 plugins go into `<prefix parent>/gstreamer/gstreamer-1.0`
 (`.local_install/gstreamer/gstreamer-1.0` beside `.local_install/mtl`); point
 `GST_PLUGIN_PATH` at that directory, as at `/usr/local`'s plugin directory:
@@ -129,7 +129,7 @@ When `enable-dma-offload` is set to `true`, every plugin that supports DMA will 
 `ST20P_RX_FLAG_DMA_OFFLOAD` during session creation (currently `mtl_st20p_rx`). Make sure
 the `dma-dev` port is bound and exported as described in `doc/features/dma.md` before enabling the
 flag. With `dma-auto=true` instead of `dma-dev`, the plugin uses the DMA devices that
-`script/dma_setup.sh bind` binds on the NUMA node of the port.
+`script/mtl_dma_setup.sh bind` binds on the NUMA node of the port.
 
 When `allow-down-ports` is set to `true`, MTL will proceed with initialization even if
 one or both NIC links are down. Any session whose `port` or `port-red` maps to a down

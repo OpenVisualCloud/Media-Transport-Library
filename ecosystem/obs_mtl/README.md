@@ -17,7 +17,7 @@ refer to: <https://obsproject.com/wiki/build-instructions-for-linux>
 Build and install the plugin with the script, from the top of the MTL source tree:
 
 ```bash
-./script/build_obs_plugin.sh
+./script/mtl_build_obs_plugin.sh
 ```
 
 Or build it step by step:

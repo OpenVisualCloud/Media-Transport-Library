@@ -6,9 +6,10 @@
 set -euo pipefail
 
 script_name="$(basename "${BASH_SOURCE[0]}")"
-script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# The installed bin/mtl_lcore_stat_dump.sh is a link to share/mtl/script/mtl_lcore_stat_dump.sh.
+script_folder="$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")"
 # shellcheck disable=SC1091
-. "${script_folder}/common.sh"
+. "${script_folder}/mtl_common.sh"
 
 TRACING_DIR="/sys/kernel/debug/tracing"
 

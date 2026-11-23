@@ -8,14 +8,15 @@
 #   EXPECTED  - MTL/DPDK worker, idle
 #   ALLOWED   - kernel threads that may briefly appear
 #   INTRUDER  - should not be on isolated cores
-# isolation_monitor.sh parses the report on stdout. Keep its lines unchanged.
+# mtl_isolation_monitor.sh parses the report on stdout. Keep its lines unchanged.
 
 set -euo pipefail
 
 script_name="$(basename "${BASH_SOURCE[0]}")"
-script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# The installed bin/mtl_isolation_report.sh is a link to share/mtl/script/mtl_isolation_report.sh.
+script_folder="$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")"
 # shellcheck disable=SC1091
-. "${script_folder}/common.sh"
+. "${script_folder}/mtl_common.sh"
 
 show_help() {
 	cat <<EOF

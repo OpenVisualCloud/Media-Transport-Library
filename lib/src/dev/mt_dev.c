@@ -507,7 +507,7 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
   if (cpus > RTE_MAX_LCORE) {
     warn("%s, %ld CPUs > RTE_MAX_LCORE %d, remap lcore ids: processes can share lcores\n",
          __func__, cpus, RTE_MAX_LCORE);
-    warn("%s, rebuild DPDK with DPDK_MAX_LCORES=%ld ./script/build_dpdk.sh -f\n",
+    warn("%s, rebuild DPDK with DPDK_MAX_LCORES=%ld ./script/mtl_build_dpdk.sh -f\n",
          __func__, cpus);
     argv[argc] = "--remap-lcore-ids";
     argc++;

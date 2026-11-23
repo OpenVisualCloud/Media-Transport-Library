@@ -11,7 +11,7 @@
 version: '3'
 
 vars:
-  EBPF_SCRIPT: '{{.TASKFILE_DIR}}/script/build_ebpf_xdp.sh'
+  EBPF_SCRIPT: '{{.TASKFILE_DIR}}/script/mtl_build_ebpf_xdp.sh'
   CI_SCRIPTS: '{{.TASKFILE_DIR}}/.github/scripts/ci'
   BANDIT_CONFIG: '{{.TASKFILE_DIR}}/.github/code-scan/bandit.config'
   # The install trees that the build job hands to the test jobs of its run.
@@ -49,7 +49,7 @@ tasks:
   ci:hash-dependencies:
     desc: Compute deterministic dependency source hashes
     cmds:
-      - bash {{.TASKFILE_DIR}}/script/hash_sources.sh {{.CLI_ARGS}}
+      - bash {{.TASKFILE_DIR}}/script/mtl_hash_sources.sh {{.CLI_ARGS}}
 
   ci:cache-keys:
     desc: Emit exact dependency cache keys for the current runner

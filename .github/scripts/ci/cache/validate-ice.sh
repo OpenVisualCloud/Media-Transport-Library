@@ -23,6 +23,6 @@ grep -Eq '[[:space:]]ice_vc_cfg_q_bw(\.|$)' <<<"$symbols" ||
 	die "ice.ko is not the out-of-tree build: ice_vc_cfg_q_bw is missing"
 want=$(awk -F= '/^ICE_VER=/ {print $2; exit}' "${root_dir}/versions.env")
 version=$(modinfo -F version "$ko")
-bash -c '. "$1/script/common.sh" && ice_driver_version_ok "$2" "$3"' _ "$root_dir" "$version" "$want" ||
+bash -c '. "$1/script/mtl_common.sh" && ice_driver_version_ok "$2" "$3"' _ "$root_dir" "$version" "$want" ||
 	die "ice.ko is version '${version}', not the build of ICE ${want}"
 echo "ICE bundle: valid (${release})"

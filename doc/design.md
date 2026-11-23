@@ -114,7 +114,7 @@ For user convenience, the built-in RxTxApp also offers a command-line option `--
 
 An lcore ID is the CPU ID it runs on, in the list, in the logs, in MtlManager and in `LcoreMgr --info`: lcore 130 is CPU 130.
 Processes that list different CPUs never share an lcore.
-The DPDK of `script/build_dpdk.sh` numbers every CPU of the host (see the build guide, section 2).
+The DPDK of `script/mtl_build_dpdk.sh` numbers every CPU of the host (see the build guide, section 2).
 If the host has more CPUs than `RTE_MAX_LCORE` of the DPDK, MTL passes `--remap-lcore-ids` and logs a warning: each process then numbers its CPUs from 0, so processes on different CPUs can claim the same lcore; rebuild DPDK with a larger `DPDK_MAX_LCORES`.
 MTL 26.09 and earlier number lcores differently: do not run them on the same host (see the [lcore Guide](performance/shm_lcore.md)).
 

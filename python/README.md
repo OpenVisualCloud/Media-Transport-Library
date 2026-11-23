@@ -36,12 +36,12 @@ sudo make install
 
 ## 2. Build and install MTL python binding layer
 
-`./script/build_python.sh` does the steps 2.1 to 2.3 in one command. On Ubuntu, `./script/install_dependencies.sh python` installs SWIG and the other build packages first.
+`./script/mtl_build_python.sh` does the steps 2.1 to 2.3 in one command. On Ubuntu, `./script/mtl_install_dependencies.sh python` installs SWIG and the other build packages first.
 
 ```bash
 cd $mtl_source_code
-./script/install_dependencies.sh python
-./script/build_python.sh
+./script/mtl_install_dependencies.sh python
+./script/mtl_build_python.sh
 ```
 
 ### 2.1. Create MTL binding layer code based on swig

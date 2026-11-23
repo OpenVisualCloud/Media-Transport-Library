@@ -38,7 +38,7 @@ mh_install_dependencies() {
 				SETUP_BUILD_AND_INSTALL_EBPF_XDP=0 \
 				SETUP_BUILD_AND_INSTALL_GPU_DIRECT=0 \
 				MTL_BUILD_AND_INSTALL=0 \
-				bash .github/scripts/setup_environment.sh
+				bash script/mtl_install.sh
 	)
 }
 
@@ -62,9 +62,9 @@ mh_ice_oot_ko_path() {
 }
 
 # True (rc 0) when driver version $1 is the build MTL makes of ICE version $2.
-# script/common.sh holds the rule; a subshell keeps its globals out of here.
+# script/mtl_common.sh holds the rule; a subshell keeps its globals out of here.
 mh_ice_version_matches() {
-	bash -c '. "$1/script/common.sh" && ice_driver_version_ok "$2" "$3"' _ "$MH_REPO_ROOT" "$1" "$2"
+	bash -c '. "$1/script/mtl_common.sh" && ice_driver_version_ok "$2" "$3"' _ "$MH_REPO_ROOT" "$1" "$2"
 }
 
 # True (rc 0) when the loaded ice driver is the out-of-tree build of the
@@ -109,13 +109,13 @@ mh_ice_driver_status_report() {
 		echo "### Issue"
 		echo "MTL requires the out-of-tree ICE driver of version $want for rate-limit pacing."
 		echo "The in-tree ice does not support the iavf TM virtchnl messages."
-		echo 'Rebuild it with: SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=1 bash .github/scripts/setup_environment.sh'
+		echo 'Rebuild it with: SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=1 bash script/mtl_install.sh'
 	fi
 }
 
 # Build + install the out-of-tree ICE driver, then reload it.
 # NOTE: reloading ice destroys any existing VFs on every PF.
-# MTL_INSTALL_PREFIX is cleared on purpose: with a prefix set, build_drivers.sh
+# MTL_INSTALL_PREFIX is cleared on purpose: with a prefix set, mtl_build_drivers.sh
 # packages the .ko into that tree instead of installing it into this kernel.
 mh_ice_driver_rebuild() {
 	(
@@ -130,7 +130,7 @@ mh_ice_driver_rebuild() {
 				SETUP_BUILD_AND_INSTALL_GPU_DIRECT=0 \
 				MTL_BUILD_AND_INSTALL=0 \
 				FORCE_ICE_REBUILD=1 \
-				bash .github/scripts/setup_environment.sh
+				bash script/mtl_install.sh
 	) || return $?
 	sudo depmod -a
 	sudo rmmod irdma 2>/dev/null

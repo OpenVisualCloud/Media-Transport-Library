@@ -46,13 +46,13 @@ The `version` line tells which driver runs:
 Run the commands from the top of the Media Transport Library source tree.
 
 ```bash
-./script/install_dependencies.sh ice
-./script/build_drivers.sh --driver ice
+./script/mtl_install_dependencies.sh ice
+./script/mtl_build_drivers.sh --driver ice
 ```
 
-`install_dependencies.sh ice` installs the build tools and the headers of the running kernel. It runs only on Ubuntu.
+`mtl_install_dependencies.sh ice` installs the build tools and the headers of the running kernel. It runs only on Ubuntu.
 On another distribution, install `gcc`, `make`, `tar`, `gzip` and `wget` yourself, and the kernel headers as [Section 5.1](#51-the-kernel-header-files-are-missing) shows.
-`build_drivers.sh` downloads the driver version in `versions.env`, builds it, installs it with its DDP package, and loads it.
+`mtl_build_drivers.sh` downloads the driver version in `versions.env`, builds it, installs it with its DDP package, and loads it.
 It does nothing when that version is already installed for the running kernel. Use `--force` to build it again.
 
 The reload of the driver removes the VFs of each E800-series PF:
@@ -62,7 +62,7 @@ The reload of the driver removes the VFs of each E800-series PF:
 
 Then do [Section 1](#1-check-the-driver) again. The `version` line shows the version in `versions.env`.
 
-> **Note:** A new kernel needs a new build of the driver. Ubuntu can install a new kernel, and boot it at the next reboot. Run `./script/build_drivers.sh --driver ice` again after each kernel upgrade.
+> **Note:** A new kernel needs a new build of the driver. Ubuntu can install a new kernel, and boot it at the next reboot. Run `./script/mtl_build_drivers.sh --driver ice` again after each kernel upgrade.
 
 ### 2.1. Install Without the Script
 
@@ -93,7 +93,7 @@ The [ice_drv patch folder](../../patches/ice_drv/) holds one folder for each sup
 The script applies the patches of the version that you select:
 
 ```bash
-./script/build_drivers.sh --driver ice --ice-version <version> --ice-download-id <id>
+./script/mtl_build_drivers.sh --driver ice --ice-version <version> --ice-download-id <id>
 ```
 
 `<id>` is the number in the Intel download URL of that version. Without a correct ID, the script downloads the source code from GitHub.
@@ -188,8 +188,8 @@ Install the package from the `ddp` folder of the driver source tree. If you do n
 1. Disable the VFs of each E800-series PF. `rmmod ice` fails while a device uses the module. Do the command for each PF, for example for both ports of a card. Then unload `irdma`.
 
    ```bash
-   sudo $mtl_source_code/script/nicctl.sh disable_vf 0000:af:00.0
-   sudo $mtl_source_code/script/nicctl.sh disable_vf 0000:af:00.1
+   sudo $mtl_source_code/script/mtl_nicctl.sh disable_vf 0000:af:00.0
+   sudo $mtl_source_code/script/mtl_nicctl.sh disable_vf 0000:af:00.1
    sudo rmmod irdma
    ```
 

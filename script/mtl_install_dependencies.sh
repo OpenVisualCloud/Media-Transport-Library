@@ -8,7 +8,7 @@ set -euo pipefail
 script_name="$(basename "${BASH_SOURCE[0]}")"
 script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-. "${script_folder}/common.sh"
+. "${script_folder}/mtl_common.sh"
 
 show_help() {
 	cat <<EOF
@@ -18,15 +18,15 @@ Install the Ubuntu packages that the MTL build needs, then the packages of each
 COMPONENT. Run it as your own user: it uses sudo to install.
 
 COMPONENT is one of:
-	ice		Linux headers of the running kernel, for build_drivers.sh
-	ebpf_xdp	Build packages of build_ebpf_xdp.sh
+	ice		Linux headers of the running kernel, for mtl_build_drivers.sh
+	ebpf_xdp	Build packages of mtl_build_ebpf_xdp.sh
 	gpu_direct	Level Zero ${ONE_API_GPU_VER}, built from source
 	ffmpeg		FFmpeg plugin build packages
 	jpegxs		JPEG XS plugin build packages
 	avcodec		ST 2110-22 avcodec plugin build packages
 	gstreamer	GStreamer plugin build packages
 	obs		OBS Studio plugin build packages
-	python		Python binding build packages, for build_python.sh
+	python		Python binding build packages, for mtl_build_python.sh
 	rust		Rust binding build packages
 	readpcap	MTL readpcap tool build packages
 
@@ -64,7 +64,7 @@ install_gpu_direct() {
 	# CFLAGS, CXXFLAGS and LDFLAGS that cmake reads otherwise, so they take them in.
 	# cmake reads no CPPFLAGS.
 	CPPFLAGS='' hardening_flags || exit 1
-	# shellcheck disable=SC2153 # hardening_flags() of common.sh sets both
+	# shellcheck disable=SC2153 # hardening_flags() of mtl_common.sh sets both
 	cmake .. -D CMAKE_BUILD_TYPE=Release \
 		"-DCMAKE_C_FLAGS=${CFLAGS:+${CFLAGS} }${HARDENING_CFLAGS}" \
 		"-DCMAKE_CXX_FLAGS=${CXXFLAGS:+${CXXFLAGS} }${HARDENING_CFLAGS}" \

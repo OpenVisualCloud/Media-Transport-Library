@@ -24,7 +24,7 @@ runs:
         SETUP_ENVIRONMENT: 1
         SETUP_BUILD_AND_INSTALL_DPDK: 1
         CICD_BUILD: 1
-      run: sudo -E .github/scripts/setup_environment.sh
+      run: sudo -E script/mtl_install.sh
 
     # The install scripts do not run ldconfig. Without it, EAL cannot dlopen
     # the DPDK drivers in /usr/local and each fuzz target aborts at init.

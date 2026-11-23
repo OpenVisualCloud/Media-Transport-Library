@@ -365,12 +365,12 @@ def setup_acceptance_tests_full(
 
 @mcp.tool()
 def build_ffmpeg_plugin() -> str:
-    """Build FFmpeg with the MTL devices (script/build_ffmpeg_plugin.sh) into .local_install."""
-    build_sh = REPO_ROOT / "script/build_ffmpeg_plugin.sh"
+    """Build FFmpeg with the MTL devices (script/mtl_build_ffmpeg_plugin.sh) into .local_install."""
+    build_sh = REPO_ROOT / "script/mtl_build_ffmpeg_plugin.sh"
     if not build_sh.is_file():
-        return "Error: script/build_ffmpeg_plugin.sh not found"
+        return "Error: script/mtl_build_ffmpeg_plugin.sh not found"
 
-    # Without MTL_INSTALL_PREFIX, setup_environment.sh falls back to
+    # Without MTL_INSTALL_PREFIX, mtl_install.sh falls back to
     # `sudo make install` (system-wide), leaving .local_install/ffmpeg --
     # the binary pytest actually invokes -- stale.
     local_prefix = REPO_ROOT / ".local_install" / "mtl"
@@ -379,7 +379,7 @@ def build_ffmpeg_plugin() -> str:
         "SETUP_ENVIRONMENT=0 SETUP_BUILD_AND_INSTALL_DPDK=0 "
         "SETUP_BUILD_AND_INSTALL_DRIVERS=0 MTL_BUILD_AND_INSTALL=0 "
         f"MTL_INSTALL_PREFIX={local_prefix} "
-        "bash .github/scripts/setup_environment.sh",
+        "bash script/mtl_install.sh",
         timeout=600,
     )
     ffmpeg_ok = (REPO_ROOT / ".local_install/ffmpeg/bin/ffmpeg").is_file()
@@ -389,10 +389,10 @@ def build_ffmpeg_plugin() -> str:
 
 @mcp.tool()
 def build_gstreamer_plugin() -> str:
-    """Build the MTL GStreamer plugins (script/build_gstreamer_plugin.sh) into .local_install."""
-    build_sh = REPO_ROOT / "script/build_gstreamer_plugin.sh"
+    """Build the MTL GStreamer plugins (script/mtl_build_gstreamer_plugin.sh) into .local_install."""
+    build_sh = REPO_ROOT / "script/mtl_build_gstreamer_plugin.sh"
     if not build_sh.is_file():
-        return "Error: script/build_gstreamer_plugin.sh not found"
+        return "Error: script/mtl_build_gstreamer_plugin.sh not found"
 
     # See build_ffmpeg_plugin() above -- same MTL_INSTALL_PREFIX requirement.
     local_prefix = REPO_ROOT / ".local_install" / "mtl"
@@ -401,7 +401,7 @@ def build_gstreamer_plugin() -> str:
         "SETUP_ENVIRONMENT=0 SETUP_BUILD_AND_INSTALL_DPDK=0 "
         "SETUP_BUILD_AND_INSTALL_DRIVERS=0 MTL_BUILD_AND_INSTALL=0 "
         f"MTL_INSTALL_PREFIX={local_prefix} "
-        "bash .github/scripts/setup_environment.sh",
+        "bash script/mtl_install.sh",
         timeout=600,
     )
     return f"## GStreamer Plugin Build\n{_summarize_output('gstreamer_plugin_build', out, rc=rc)}"

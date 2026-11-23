@@ -8,7 +8,7 @@ set -euo pipefail
 script_name="$(basename "${BASH_SOURCE[0]}")"
 script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-. "${script_folder}/common.sh"
+. "${script_folder}/mtl_common.sh"
 
 show_help() {
 	cat <<EOF
@@ -201,7 +201,7 @@ main() {
 	# -Dc_link_args replace the CFLAGS, CPPFLAGS and LDFLAGS meson reads
 	# otherwise, so they take them in, in meson's order.
 	hardening_flags || exit 1
-	# shellcheck disable=SC2153 # hardening_flags() of common.sh sets both
+	# shellcheck disable=SC2153 # hardening_flags() of mtl_common.sh sets both
 	meson setup "${source_dir}/mtl-plugin/build-mtl" "${source_dir}/mtl-plugin" \
 		--buildtype release --prefix "${stage}" \
 		"-Dc_args=${CFLAGS:+${CFLAGS} }${CPPFLAGS:+${CPPFLAGS} }${HARDENING_CFLAGS}" \

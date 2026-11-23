@@ -98,7 +98,7 @@ vd_report_ice_driver() {
 	echo "- Live module path: $(mh_ice_live_path)"
 	if [[ "$status" != "OK" ]]; then
 		echo "- Fix: run 'acceptance_setup.sh setup --base-only' (auto-detects and"
-		echo "       rebuilds if needed) or 'SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=1 bash .github/scripts/setup_environment.sh'"
+		echo "       rebuilds if needed) or 'SETUP_BUILD_AND_INSTALL_DRIVERS_ICE=1 bash script/mtl_install.sh'"
 	fi
 }
 

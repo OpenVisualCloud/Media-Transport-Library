@@ -18,7 +18,7 @@ flatten_reports() {
 
 case "${1:-}" in
 status)
-	script/status_report.sh
+	script/mtl_status_report.sh
 	for status_dir in mtl_system_status_*/; do
 		[[ -d $status_dir ]] && mv "$status_dir" "${STATUS_NAME:?}"
 		break

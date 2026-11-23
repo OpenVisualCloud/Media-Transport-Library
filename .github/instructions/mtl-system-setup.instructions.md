@@ -49,8 +49,8 @@ decision logic and domain knowledge that tool descriptions alone don't convey.
 
 ## Key Facts
 
-- **ICE driver**: The out-of-tree ICE of `versions.env` `ICE_VER` is REQUIRED for RL/TM pacing on VFs. A version before 2.7.6, or one with a `patches/ice_drv/<version>` folder, is patched and `modinfo ice` shows `Kahawai_X.Y.Z`; any other is the Intel release as it is and shows `X.Y.Z` (`ice_driver_version_ok` in `script/common.sh`). The in-tree ice does NOT advertise `VIRTCHNL_VF_OFFLOAD_QOS`.
-- **VF queue pairs**: An ice VF gets no more than 16 queue pairs unless its RSS LUT has 512 entries. `nicctl.sh create_vf` writes `rss_lut_vf_attr`; VFs created another way need it written before the application starts.
+- **ICE driver**: The out-of-tree ICE of `versions.env` `ICE_VER` is REQUIRED for RL/TM pacing on VFs. A version before 2.7.6, or one with a `patches/ice_drv/<version>` folder, is patched and `modinfo ice` shows `Kahawai_X.Y.Z`; any other is the Intel release as it is and shows `X.Y.Z` (`ice_driver_version_ok` in `script/mtl_common.sh`). The in-tree ice does NOT advertise `VIRTCHNL_VF_OFFLOAD_QOS`.
+- **VF queue pairs**: An ice VF gets no more than 16 queue pairs unless its RSS LUT has 512 entries. `mtl_nicctl.sh create_vf` writes `rss_lut_vf_attr`; VFs created another way need it written before the application starts.
 - **DPDK version**: Must match `versions.env` `DPDK_VER`. Patches in `patches/dpdk/<ver>/` are applied during `dpdk_build`.
 - **VFs destroyed on ICE reload**: Always re-create VFs after `ice_driver_rebuild`.
 - **ldconfig**: Always run after installing DPDK or MTL — libraries won't be found otherwise.

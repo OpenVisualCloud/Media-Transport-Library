@@ -6,9 +6,10 @@
 set -euo pipefail
 
 script_name="$(basename "${BASH_SOURCE[0]}")"
-script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# The installed bin/mtl_if_filter_delete.sh is a link to share/mtl/script/mtl_if_filter_delete.sh.
+script_folder="$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")"
 # shellcheck disable=SC1091
-. "${script_folder}/common.sh"
+. "${script_folder}/mtl_common.sh"
 
 show_help() {
 	cat <<EOF

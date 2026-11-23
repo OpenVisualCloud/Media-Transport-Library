@@ -6,9 +6,10 @@
 set -euo pipefail
 
 script_name="$(basename "${BASH_SOURCE[0]}")"
-script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# The installed bin/mtl_dma_setup.sh is a link to share/mtl/script/mtl_dma_setup.sh.
+script_folder="$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")"
 # shellcheck disable=SC1091
-. "${script_folder}/common.sh"
+. "${script_folder}/mtl_common.sh"
 
 # The Intel devices of the DPDK dmadev drivers: drivers/dma/ioat (CBDMA)
 # and drivers/dma/idxd (DSA).
@@ -26,7 +27,7 @@ port, so both commands select the DMA devices by the NUMA node of the port.
 A port is a PCI address (0000:af:00.0, also a VF) or an interface name.
 
 REQUIRED PACKAGES (Debian/Ubuntu):
-	dpdk (dpdk-devbind.py, from script/build_dpdk.sh) kmod
+	dpdk (dpdk-devbind.py, from script/mtl_build_dpdk.sh) kmod
 
 OPTIONS:
 	-h, --help	Show this help message

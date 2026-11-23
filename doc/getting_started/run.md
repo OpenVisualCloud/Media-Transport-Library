@@ -98,7 +98,7 @@ Below is the command to create VF for BDF `0000:af:00.0`  (shown above in exampl
 
 ```bash
 cd $mtl_source_code
-sudo -E ./script/nicctl.sh create_vf 0000:af:00.0
+sudo -E ./script/mtl_nicctl.sh create_vf 0000:af:00.0
 ```
 
 To find the VF BDF (Bus Device Function) information, please check the output below. In this example, the VF BDFs range from 0000:af:01.0 to 0000:af:01.5. Remember these VF BDFs as you will need them when running the sample application.
@@ -117,7 +117,7 @@ Create VFs on PF bdf: 0000:af:00.0 enp175s0f0 succ
 `create_vf` makes 6 VFs. To make a different number, give the count as a last argument.
 The `create_vf`, `create_tvf` and `create_kvf` commands also give each VF a 512-entry RSS LUT.
 A VF with the default 64-entry LUT gets at most 16 queue pairs, so a port has no TX queue for its 16th video session and the session fails with `fail to find free tx queue`.
-For VFs made another way, for example with `sriov_numvfs`, run `sudo ./script/nicctl.sh vf_rss_lut <PF BDF>`, or write the size before the application starts:
+For VFs made another way, for example with `sriov_numvfs`, run `sudo ./script/mtl_nicctl.sh vf_rss_lut <PF BDF>`, or write the size before the application starts:
 
 ```bash
 echo 512 | sudo tee /sys/bus/pci/devices/<VF BDF>/rss_lut_vf_attr
@@ -149,7 +149,7 @@ If your Network Interface Card (NIC) is not from the Intel® E800 Series, but is
 
 ```bash
 cd $mtl_source_code
-sudo ./script/nicctl.sh bind_pmd 0000:32:00.0
+sudo ./script/mtl_nicctl.sh bind_pmd 0000:32:00.0
 ```
 
 ## 4. Setup Hugepage
@@ -320,10 +320,10 @@ MTL: 2024-04-16 15:39:18, * *    E N D    S T A T E   * *
 
 This project also provides many loop tests (1 port as tx, 1 port as rx) config files. Please refer to [loop config](../../tests/tools/RxTxApp/script/).
 
-If it failed to run the sample, please help to collect the system setup status by `status_report.sh` and share the log for further analysis.
+If it failed to run the sample, please help to collect the system setup status by `mtl_status_report.sh` and share the log for further analysis.
 
 ```bash
-./script/status_report.sh
+./script/mtl_status_report.sh
 ```
 
 ### 5.3. Available Parameters in RxTxApp
@@ -431,7 +431,7 @@ You need to repeat below steps to create Virtual Functions (VF), bind the VF to 
 
 ```bash
 # replace "0000:a1:00.0" with the port on your setup
-sudo ./script/nicctl.sh create_vf 0000:a1:00.0
+sudo ./script/mtl_nicctl.sh create_vf 0000:a1:00.0
 # setup hugepages, the number(2048) is dependent on the workloads you wish to execute.
 sudo sysctl -w vm.nr_hugepages=2048
 ```
@@ -474,7 +474,7 @@ max locked memory       (kbytes, -l) unlimited
 
 ### 8.3. BDF Port Not Bound to DPDK PMD Mode
 
-The following error indicates that the port driver is not configured to DPDK PMD mode. Please run nicctl.sh to configure it:
+The following error indicates that the port driver is not configured to DPDK PMD mode. Please run mtl_nicctl.sh to configure it:
 
 ```text
 ST: st_dev_get_socket, failed to locate 0000:86:20.0
@@ -516,13 +516,13 @@ ST: dev_create_port(0), link not connected
 ### 8.7. Bind BDF Port Back to Kernel Mode
 
 ```bash
-sudo ./script/nicctl.sh bind_kernel 0000:af:00.0
+sudo ./script/mtl_nicctl.sh bind_kernel 0000:af:00.0
 ```
 
 ### 8.8. Bind BDF Port to Pure DPDK PF Mode
 
 ```bash
-sudo ./script/nicctl.sh bind_pmd 0000:af:00.0
+sudo ./script/mtl_nicctl.sh bind_pmd 0000:af:00.0
 ```
 
 ### 8.9. Create Trusted VFs
@@ -530,7 +530,7 @@ sudo ./script/nicctl.sh bind_pmd 0000:af:00.0
 To allow privileged usage in use cases that require Trusted Virtual Functions (VFs), you can utilize the following command:
 
 ```bash
-sudo ./script/nicctl.sh create_tvf 0000:af:00.0
+sudo ./script/mtl_nicctl.sh create_tvf 0000:af:00.0
 ```
 
 If you need to control the Trusted setting on a per-VF basis, you can use the following example command:

@@ -30,7 +30,7 @@
 #   SKIP_ICE=0                1 to skip ICE driver check/rebuild
 #
 # Idempotent — safe to re-run; each stage is a thin wrapper around
-# setup_environment.sh, which itself only does work that's missing.
+# mtl_install.sh, which itself only does work that's missing.
 
 set -uo pipefail
 
@@ -85,7 +85,7 @@ else
 		exit 1
 	}
 	if [[ ${#components[@]} -gt 0 ]]; then
-		bash "$repo_root/script/install_dependencies.sh" "${components[@]}" || {
+		bash "$repo_root/script/mtl_install_dependencies.sh" "${components[@]}" || {
 			err "Step 1/6: apt dependencies of ${components[*]} failed (exit $?)"
 			exit 1
 		}
@@ -124,8 +124,8 @@ MTL_INSTALL_PREFIX="$LOCAL_PREFIX" \
 	MTL_BUILD_AND_INSTALL_DEBUG="$mtl_build_debug_flag" \
 	ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN="$INCLUDE_FFMPEG_PLUGIN" \
 	ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN="$INCLUDE_GSTREAMER_PLUGIN" \
-	bash .github/scripts/setup_environment.sh || {
-	err "Step 3/6: setup_environment.sh failed (exit $?)"
+	bash script/mtl_install.sh || {
+	err "Step 3/6: mtl_install.sh failed (exit $?)"
 	exit 1
 }
 

@@ -8,7 +8,7 @@ set -euo pipefail
 script_name="$(basename "${BASH_SOURCE[0]}")"
 script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-. "${script_folder}/common.sh"
+. "${script_folder}/mtl_common.sh"
 
 show_help() {
 	cat <<EOF
@@ -265,7 +265,7 @@ main() {
 
 	# The prefix is what makes the module the deliverable instead of the running
 	# driver: the host that builds a .ko is not always the host that loads it, and CI
-	# caches it per kernel release. Same sibling-directory shape as build_dpdk.sh.
+	# caches it per kernel release. Same sibling-directory shape as mtl_build_dpdk.sh.
 	BUNDLE_DIR=""
 	if [[ -n "${MTL_INSTALL_PREFIX:-}" ]]; then
 		BUNDLE_DIR="$(dirname "${MTL_INSTALL_PREFIX}")/ice/$(uname -r)/$(uname -m)"

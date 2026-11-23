@@ -110,7 +110,7 @@ runs:
     - name: Set up DMA
       if: steps.ice.outputs.required == 'true'
       shell: bash
-      run: sudo -E env -u BASH_XTRACEFD ./script/dma_setup.sh reset
+      run: sudo -E env -u BASH_XTRACEFD ./script/mtl_dma_setup.sh reset
 
     - name: Refuse stray system copies of the install's libraries
       shell: bash

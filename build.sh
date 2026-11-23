@@ -103,7 +103,7 @@ meson_setup() {
 	fi
 }
 
-# The DPDK of build_dpdk.sh sits beside the prefix. Find it before the unit
+# The DPDK of mtl_build_dpdk.sh sits beside the prefix. Find it before the unit
 # build, so that nobody has to export PKG_CONFIG_PATH for a local install.
 if [ -n "${MTL_INSTALL_PREFIX:-}" ]; then
 	_dpdk_pc=$(find "$(dirname "${MTL_INSTALL_PREFIX}")/dpdk" -name libdpdk.pc -print -quit 2>/dev/null || true)
@@ -155,7 +155,7 @@ LIB_LINK_ARGS="${CFLAGS:-} ${LDFLAGS:-}"
 BIN_LINK_ARGS=${LIB_LINK_ARGS}
 CPP_LINK_ARGS="${CXXFLAGS:-} ${LDFLAGS:-}"
 if [ -n "${MTL_INSTALL_PREFIX:-}" ] && [ "${OS:-}" != "Windows_NT" ]; then
-	mtl_libdir="${MTL_INSTALL_PREFIX}/$(bash -c '. script/common.sh && multiarch_libdir')"
+	mtl_libdir="${MTL_INSTALL_PREFIX}/$(bash -c '. script/mtl_common.sh && multiarch_libdir')"
 	# pkg-config writes a space in the path as "\ ".
 	dpdk_libdir=$(pkg-config --variable=libdir libdpdk)
 	dpdk_libdir=${dpdk_libdir//\\ / }
@@ -246,7 +246,7 @@ popd
 # Absolute paths: the tree runs where it was built. Point KAHAWAI_CFG_PATH at it.
 if [ -n "${MTL_INSTALL_PREFIX:-}" ] && [ "${OS:-}" != "Windows_NT" ]; then
 	(
-		. script/common.sh
+		. script/mtl_common.sh
 		local_base=$(dirname "${MTL_INSTALL_PREFIX}")
 		registry="${local_base}/conf/kahawai.json"
 		register_plugin "${registry}" st22_svt_jpegxs \
