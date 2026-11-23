@@ -239,6 +239,8 @@ unsigned int ut_dev_tx_sys_pool_elements(ut_dev_ctx* ctx, uint16_t nb_tx_q,
 /** The mbufs mt_mempool_create_by_ops() gives a pool asked for elements, of no data
  * room. */
 unsigned int ut_dev_mempool_size(ut_dev_ctx* ctx, unsigned int elements);
+/** The rte_lcore_count() mt_dev.c sees, the unit EAL's 1 for 0. */
+void ut_dev_set_lcore_count(ut_dev_ctx* ctx, unsigned int lcore_count);
 
 #ifdef __cplusplus
 }

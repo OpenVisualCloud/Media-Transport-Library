@@ -69,6 +69,7 @@ struct ut_dev_ctx {
   struct rte_mempool* sys_tx_pool;
   int l3_socket;
   uint64_t l3_size;
+  unsigned int lcore_count;
 };
 
 static struct ut_dev_ctx* ut_active_ctx;
@@ -117,6 +118,7 @@ static int ut_rte_tm_hierarchy_commit(uint16_t port_id, int clear_on_fail,
                                       struct rte_tm_error* error);
 static void ut_rte_spinlock_unlock(rte_spinlock_t* sl);
 static uint64_t ut_mt_l3_size(int socket);
+static unsigned int ut_rte_lcore_count(void);
 
 static int ut_dladdr(const void* addr, Dl_info* info);
 /* unused with a DPDK before 25.11: dev_eal_init() calls sysconf() only from 25.11 */
@@ -152,10 +154,12 @@ static const char ut_dev_real_pmd_dir[] = RTE_EAL_PMD_PATH;
 #define rte_eth_tx_done_cleanup ut_eth_tx_done_cleanup
 #define mt_get_tsc ut_dev_tsc
 #define mt_l3_size ut_mt_l3_size
+#define rte_lcore_count ut_rte_lcore_count
 #define MT_DEV_TX_CLEANUP_FREES (ut_dev_tx_cleanup_frees)
 /* The pacing tests cover the iavf queue rate clear, which needs DPDK 26.07.91_mtl_. */
 #define MT_DEV_HAS_IAVF_TM_QOS_CHECK
 #include "dev/mt_dev.c"
+#undef rte_lcore_count
 #undef mt_l3_size
 #undef mt_get_tsc
 #undef rte_eth_tx_done_cleanup
@@ -437,6 +441,15 @@ uint64_t mt_l3_size(int socket);
 
 uint64_t ut_dev_host_l3_size(int socket) {
   return mt_l3_size(socket);
+}
+
+static unsigned int ut_rte_lcore_count(void) {
+  ut_dev_ctx* ctx = ut_active_ctx;
+  return ctx && ctx->lcore_count ? ctx->lcore_count : rte_lcore_count();
+}
+
+void ut_dev_set_lcore_count(ut_dev_ctx* ctx, unsigned int lcore_count) {
+  ctx->lcore_count = lcore_count;
 }
 
 ut_dev_ctx* ut_dev_create_ctx(void) {
@@ -1071,8 +1084,10 @@ int ut_dev_tx_done_cleanup(ut_dev_ctx* ctx, uint16_t queue) {
 
 unsigned int ut_dev_tx_sys_pool_elements(ut_dev_ctx* ctx, uint16_t nb_tx_q,
                                          uint16_t nb_tx_desc, bool mono) {
+  if (ut_eal_init() < 0) return 0;
   struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
 
+  ut_active_ctx = ctx;
   inf->nb_tx_q = nb_tx_q;
   inf->nb_tx_desc = nb_tx_desc;
   inf->tx_deep = nb_tx_desc == MT_DEV_TX_DESC_DEEP;

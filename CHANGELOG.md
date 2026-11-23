@@ -1,5 +1,6 @@
 # Changelog
 
+* sch: one MTL instance runs up to 48 schedulers (`MT_MAX_SCH_NUM`), up from 18, and RxTxApp up to 48 video lcores; with `MTL_FLAG_TX_MONO_POOL` a deep TX port's sys pool counts a cache slack per EAL lcore up to 48 instead of 18, so 6 TX queues of 2048 take 65535 mbufs instead of 32767 on 27 or more lcores
 * dev: an ice/iavf port without a user `nb_rx_desc` sizes its RX ring to the L3: the largest power of 2 from 1024 to 2048 at which the RX mbufs of its NUMA socket's RX queues fit in 3/4 of the L3, or 1024 when less fits, instead of 2048; other drivers, `MTL_FLAG_TASKLET_THREAD`, `MTL_FLAG_SHARED_RX_QUEUE`, a shared RSS mode and an unknown L3 keep 2048
 * iavf: after a VF reset by the PF, which the iavf PMD of DPDK 26.07 recovers by itself, MTL creates its RX flows again, instead of every session of the port no longer receiving and the exit crashing in `iavf_flow_destroy()`
 * dev: with `MTL_FLAG_RX_MONO_POOL` (RxTxApp `--mono_pool` or `--rx_mono_pool`) each RX queue polls its own queue; since 22.12 every queue polled queue 0 of DPDK port 0, so the sessions' own queues overflowed and sessions on several schedulers shared one queue

@@ -134,7 +134,7 @@ NIC receives multicast packet (flow rule steers to session's RX queue)
 | **Lcore** (default) | DPDK lcores, CPU-pinned via `rte_eal_remote_launch()` | Deterministic latency |
 | **Pthread** (`MTL_FLAG_TASKLET_THREAD`) | Regular pthreads, not pinned | Containers, non-dedicated cores |
 
-Max schedulers: `MT_MAX_SCH_NUM = 18` (in `mt_main.h`)
+Max schedulers: `MT_MAX_SCH_NUM = 48` (in `mt_main.h`); at most 64, one bit each in `mt_sch_mask_t` (`RTE_BUILD_BUG_ON` in `mtl_init()`)
 
 Both modes enter `sch_tasklet_func()`, which switches a thread still on `MPOL_DEFAULT` to `MPOL_LOCAL` until the scheduler stops; any other policy is kept:
 - Under `kernel.numa_balancing=1` the `task_numa_work` scan runs as task work on busy threads; without `MPOL_F_MOF` it rewrites no PTEs there and nothing migrates on fault, but the VMA walk still runs
@@ -151,7 +151,7 @@ Both modes enter `sch_tasklet_func()`, which switches a thread still on `MPOL_DE
 ### Quota System
 Sessions assigned to schedulers by weight in "1080p-equivalents":
 1. Search existing schedulers for capacity on right NUMA node
-2. If none found, allocate new scheduler (up to 18)
+2. If none found, allocate new scheduler (up to `MT_MAX_SCH_NUM`)
 3. As sessions freed, quota returned
 
 TX video sessions are placed by quota alone; the round is judged at runtime (`doc/rl_pacing.md`, "Check 2"):
@@ -208,7 +208,7 @@ If `rte_eth_tx_burst()` returns fewer than requested:
 
 | Thread | Purpose | Detail |
 |--------|---------|--------|
-| Scheduler (×18 max) | Tasklet polling | Lcore-pinned or pthread |
+| Scheduler (×48 max) | Tasklet polling | Lcore-pinned or pthread |
 | TSC Calibration (×1) | Measures TSC frequency | Joins before sessions start transmitting (called lazily by `_mt_start()` and pacing init) |
 | Admin (×1) | Watchdog, migration | Periodic alarm-based |
 | Statistics (×1) | Stat dump | Configurable `dump_period_us` |
@@ -365,10 +365,15 @@ The pipeline layer (`st20p_rx_frame_status`) adds richer states on top of this.
     - Pools: every TX session pool (video, audio, anc, fmd: its ring share, see Mempool Architecture), the per-port sys
       TX pool (`nb_tx_desc` + 1024), the shared-queue pool, and
       with `MTL_FLAG_TX_MONO_POOL` main's `nb_tx_q` × 2 × `nb_tx_desc` more mbufs per port,
-      and on a deep port a cache slack for each of `MT_MAX_SCH_NUM` schedulers, as its queues
-      free into the bursting scheduler's cache (`dev_tx_sys_pool_elements()`: 131071 at 17
-      queues of 2048; 32767 at 512); RTCP rings, RTP rings, audio and anc sessions on top of
-      that are not counted, as on main.
+      and on a deep port a mempool cache slack (`MT_MBUF_CACHE_SLACK`, 192) for each EAL lcore
+      (`rte_lcore_count()`, every CPU unless `lcores` is set), at most `MT_MAX_SCH_NUM`, as its
+      queues free into the cache of the scheduler that bursts them (`dev_tx_sys_pool_elements()`,
+      `MtDevTxPoolTest`): 131071 at 17 queues of 2048, 32767 at 512; at 6 queues of 2048 32767 up
+      to 26 lcores and 65535 from 27, where main's 18 slacks give 32767. RTCP rings, RTP rings,
+      audio and anc sessions on top of that are not counted, as on main.
+      - The port's TX queue count is no bound: a scheduler's cache keeps the pool's mbufs after
+        its sessions migrate or end, and a session create on the `mtl_init()` thread, the EAL main
+        lcore, builds its pads from the pool.
     - RTCP: on a deep port the retransmit ring is at least `nb_tx_desc` (`tv_rtcp_buffer_size()`), and the TX video pools count it.
       Its copy pool (`rtcp_tx_pool_n()`) holds what its queue keeps, a descriptor a copy, the 32 copies a retransmit loop makes before it bursts them, and the cache slack: 4095 at 2048, as many retransmits from a whole-ring NACK as a pool a ring larger (`RtcpCopyPoolParityTest`).
       - A PMD that frees an rs batch of 32 before the loop copies its next bulk leaves that bulk spare: one copy under `nb_tx_desc` + the slack runs dry. Off deep ports the pool is main's retransmit ring + `nb_tx_desc`.
