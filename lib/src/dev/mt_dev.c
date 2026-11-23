@@ -1231,6 +1231,29 @@ static bool dev_igc_timesync_required(const struct mt_interface* inf) {
          (mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl));
 }
 
+/* the PF timesync of mt_dev_create(); IGC has its own path in dev_start_eth_port() */
+static bool dev_timesync_wanted(const struct mt_interface* inf) {
+  struct mtl_main_impl* impl = inf->parent;
+
+  return (mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl)) &&
+         inf->drv_info.port_type == MT_PORT_PF && !dev_igc_timesync_required(inf);
+}
+
+/*
+ * ice: enable timesync before rte_eth_dev_start(). ice_timesync_enable()
+ * rejects a post-start call unless RTE_ETH_RX_OFFLOAD_TIMESTAMP is configured,
+ * and ice_dev_start() checks ad->ptp_ena to enable RX descriptor timestamps
+ * and select the scalar RX path. Other PFs enable after start, as DPDK
+ * ptpclient does (ixgbe and igb reset the MAC on start, clearing timesync).
+ */
+static bool dev_timesync_before_start(const struct mt_interface* inf) {
+  return inf->drv_info.drv_type == MT_DRV_ICE;
+}
+
+static void dev_enable_timesync(struct mt_interface* inf) {
+  if (dev_start_timesync(inf) >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
+}
+
 static int dev_start_eth_port(struct mt_interface* inf) {
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
@@ -2311,29 +2334,30 @@ int mt_dev_create(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   int ret;
   struct mt_interface* inf;
-  enum mt_port_type port_type;
   bool allow_port_down;
 
   for (int i = 0; i < num_ports; i++) {
     inf = mt_if(impl, i);
-    port_type = inf->drv_info.port_type;
     allow_port_down = mt_if_allow_port_down(impl, i);
 
-#if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
-    /* DPDK 21.11 supports timesync before rte_eth_dev_start. */
-    /* IGC timesync is deferred until RX queues are configured. */
-    if ((mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl)) &&
-        (port_type == MT_PORT_PF) && !dev_igc_timesync_required(inf)) {
-      ret = dev_start_timesync(inf);
-      if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
-    }
-#endif
+    if (dev_timesync_wanted(inf) && dev_timesync_before_start(inf))
+      dev_enable_timesync(inf);
 
     ret = dev_start_port(inf);
     if (ret < 0) {
       err("%s(%d), dev_start_port fail %d\n", __func__, i, ret);
       goto err_exit;
     }
+
+    /*
+     * Post-start timesync enable for PFs that do not enable before start (and
+     * fallback if a pre-start enable failed). It must stay before the link
+     * check: a port that may stay down and has no link skips every step after
+     * that check, so it would never get timesync. On ixgbe the enable waits up
+     * to 9 s for the link (ixgbe_start_timecounters()).
+     */
+    if (dev_timesync_wanted(inf) && !(inf->feature & MT_IF_FEATURE_TIMESYNC))
+      dev_enable_timesync(inf);
 
     for (int j = 0; j < MT_DEV_LINK_RETRY_COUNT; j++) {
       ret = dev_detect_link(
@@ -2353,14 +2377,6 @@ int mt_dev_create(struct mtl_main_impl* impl) {
       /* register the stats anyway */
       mt_stat_register(impl, dev_inf_stat, inf, "dev_inf");
       continue;
-    }
-
-    /* try to start time sync after rte_eth_dev_start */
-    if ((mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl)) &&
-        (port_type == MT_PORT_PF) && !dev_igc_timesync_required(inf) &&
-        !(inf->feature & MT_IF_FEATURE_TIMESYNC)) {
-      ret = dev_start_timesync(inf);
-      if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
     }
 
     ret = dev_if_init_pacing(inf);
