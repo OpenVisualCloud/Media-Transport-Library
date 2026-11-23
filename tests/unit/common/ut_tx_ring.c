@@ -83,10 +83,13 @@ static bool txr_desc_done(const struct ut_txr_slot* slot, uint64_t now_ns) {
 }
 
 static void txr_free(struct ut_txr* r, struct ut_txr_slot* slot) {
-  if (slot->freed)
+  if (slot->freed) {
     r->double_frees++;
-  else
-    rte_pktmbuf_free_seg(slot->mbuf);
+    return;
+  }
+  /* before the free: an extbuf free callback may look at the ring */
+  slot->freed = true;
+  rte_pktmbuf_free_seg(slot->mbuf);
 }
 
 /* ci_tx_xmit_cleanup() */
@@ -107,9 +110,14 @@ static int txr_cleanup(struct ut_txr* r, uint64_t now_ns) {
   return 0;
 }
 
-/* ci_xmit_pkts() of single and multi segment pkts, no context descriptors */
 uint16_t ut_txr_xmit(struct ut_txr* r, struct rte_mbuf** pkts, uint16_t nb_pkts,
                      uint64_t now_ns) {
+  return ut_txr_xmit_done(r, pkts, nb_pkts, now_ns, NULL);
+}
+
+/* ci_xmit_pkts() of single and multi segment pkts, no context descriptors */
+uint16_t ut_txr_xmit_done(struct ut_txr* r, struct rte_mbuf** pkts, uint16_t nb_pkts,
+                          uint64_t now_ns, uint64_t* done_ns) {
   uint16_t nb_tx;
 
   r->xmits++;
@@ -143,6 +151,7 @@ uint16_t ut_txr_xmit(struct ut_txr* r, struct rte_mbuf** pkts, uint16_t nb_pkts,
       r->descs++;
     }
     r->nb_free -= nb_used;
+    if (done_ns) done_ns[nb_tx] = r->last_done_ns;
     if ((tx_last + 1) / r->rs_thresh != pkt_rs_idx) {
       r->slots[tx_last].rs = true;
       r->rs_last_id[pkt_rs_idx] = tx_last;
@@ -185,6 +194,17 @@ int ut_txr_done_cleanup(struct ut_txr* r, uint32_t free_cnt, uint64_t now_ns) {
   return (int)pkt_cnt;
 }
 
+void ut_txr_resume(struct ut_txr* r, uint64_t drain_ns, uint64_t now_ns) {
+  r->drain_ns = drain_ns;
+  r->last_done_ns = now_ns;
+  for (uint16_t n = 0, i = r->tail; n < r->nb_desc; n++, i = (i + 1) % r->nb_desc) {
+    struct ut_txr_slot* slot = &r->slots[i];
+    if (!slot->written || slot->done_ns != UT_TXR_HUNG) continue;
+    r->last_done_ns += drain_ns;
+    slot->done_ns = r->last_done_ns;
+  }
+}
+
 uint64_t ut_txr_descs(const struct ut_txr* r) {
   return r->descs;
 }
@@ -201,6 +221,17 @@ uint16_t ut_txr_holds(const struct ut_txr* r, const struct rte_mbuf* m) {
   uint16_t holds = 0;
   for (uint16_t i = 0; i < r->nb_desc; i++)
     if (r->slots[i].mbuf == m && !r->slots[i].freed) holds++;
+  return holds;
+}
+
+uint16_t ut_txr_holds_range(const struct ut_txr* r, const void* addr, size_t len) {
+  uint16_t holds = 0;
+  for (uint16_t i = 0; i < r->nb_desc; i++) {
+    const struct rte_mbuf* m = r->slots[i].mbuf;
+    if (!m || r->slots[i].freed) continue;
+    const uint8_t* data = rte_pktmbuf_mtod(m, const uint8_t*);
+    if (data >= (const uint8_t*)addr && data < (const uint8_t*)addr + len) holds++;
+  }
   return holds;
 }
 

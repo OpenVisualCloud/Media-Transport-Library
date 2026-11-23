@@ -907,6 +907,21 @@ TEST_F(St20TxSyncPacingTest, RtpLevelExactUserPacingWithZeroRequiredTaiNeverFlag
   EXPECT_EQ(ut_txv_notify_late_calls(ctx_), 0);
 }
 
+TEST_F(St20TxSyncPacingTest, EpochResyncSurvivesRejectedFarUserTimestamp) {
+  ut_txv_set_user_pacing(ctx_, true);
+  ut_txv_set_cur_epochs(ctx_, 2); /* stale pre-down epoch */
+  ut_txv_set_epoch_resync(ctx_, true);
+  ut_txv_set_mock_ptp_time(ctx_, kCurrentTai);
+  ut_txv_set_mock_tsc_time(ctx_, kCurrentTsc);
+
+  /* non-EXACT user TAI more than 1 s ahead triggers the recursive fallback */
+  ASSERT_EQ(ut_txv_sync_pacing(ctx_, kCurrentTai + 2 * 1000000000ull), 0);
+
+  EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 1u);
+  EXPECT_EQ(ut_txv_cur_epochs(ctx_), kCurrentEpoch + 1);
+  EXPECT_EQ(ut_txv_stat_epoch_drop(ctx_), 0u);
+}
+
 TEST_F(St20TxSyncPacingTest, NegativeTimeToTxClampsToZero) {
   constexpr uint32_t large_vrx_packets = 2 * 1000;
   ut_txv_set_cur_epochs(ctx_, kInitialEpoch); /* steady state -> frame_count becomes 10 */

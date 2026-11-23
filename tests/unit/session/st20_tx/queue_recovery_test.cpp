@@ -120,4 +120,23 @@ TEST_F(St20TxQueueRecoveryTest, RecoveryOfAQueueWithoutARateLooksItUp) {
   EXPECT_EQ(ut_txv_txq_get_bps(ctx_), kRetrainedBps);
 }
 
+/* the dropped pkts leave a seq gap that the RTCP ring of each leg would refuse */
+TEST_F(St20TxQueueRecoveryTest, RecoveryRestartsTheRtcpRingOfEachLeg) {
+  ut_txv_set_rtcp_legs(ctx_);
+
+  ASSERT_EQ(ut_txv_recover(ctx_, kP), 0);
+
+  EXPECT_EQ(ut_txv_rtcp_resets(ctx_, kP), 1);
+  EXPECT_EQ(ut_txv_rtcp_resets(ctx_, kR), 1);
+}
+
+TEST_F(St20TxQueueRecoveryTest, LinkResyncRestartsTheRtcpRingOfEachLeg) {
+  ut_txv_set_rtcp_legs(ctx_);
+
+  ut_txv_link_resync(ctx_);
+
+  EXPECT_EQ(ut_txv_rtcp_resets(ctx_, kP), 1);
+  EXPECT_EQ(ut_txv_rtcp_resets(ctx_, kR), 1);
+}
+
 }  // namespace

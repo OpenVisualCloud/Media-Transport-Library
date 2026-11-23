@@ -20,6 +20,8 @@ ut_trs_ctx* ut_trs_create(void);
 void ut_trs_destroy(ut_trs_ctx* ctx);
 
 void ut_trs_set_trs(ut_trs_ctx* ctx, long double trs_ns);
+/* the TX descriptors of each port */
+void ut_trs_set_nb_tx_desc(ut_trs_ctx* ctx, uint16_t nb_tx_desc);
 /* an in-frame pad each pad_interval pkts */
 void ut_trs_set_pad_interval(ut_trs_ctx* ctx, float pad_interval);
 void ut_trs_set_warm_pkts_cap(ut_trs_ctx* ctx, uint32_t warm_pkts_cap);
@@ -161,6 +163,12 @@ void ut_trs_set_hang_detect_thresh_ns(ut_trs_ctx* ctx, uint64_t thresh_ns);
 void ut_trs_set_link_down(ut_trs_ctx* ctx, bool down);
 /* rte_eth_link_get_nowait() calls of the transmitter since the process start */
 int ut_trs_link_calls(void);
+/* the pkts the transmitter dropped while the link was down */
+int ut_trs_link_down_drops(const ut_trs_ctx* ctx);
+/* the test takes a ref on the pkt of the ring and inflight helpers: a free by the
+ * transmitter then leaves the ctx its own */
+void ut_trs_hold_pkt(ut_trs_ctx* ctx);
+uint16_t ut_trs_pkt_refcnt(const ut_trs_ctx* ctx);
 
 int ut_trs_get_stat_trs_ret_code(const ut_trs_ctx* ctx);
 /* the port P status of its last tasklet call, > 0 when it sent */
@@ -187,6 +195,9 @@ void ut_trs_set_cpu_stalls(ut_trs_ctx* ctx, const uint64_t* at_tsc, const uint64
                            int n);
 /* one visit of the RL tasklet, a transmitter call of its own */
 int ut_trs_call_rl_tasklet(ut_trs_ctx* ctx);
+/* one visit of the launch time (TSN) tasklet, and of the PTP one */
+int ut_trs_call_launch_time_tasklet(ut_trs_ctx* ctx);
+int ut_trs_call_ptp_tasklet(ut_trs_ctx* ctx);
 /* a call carrying pads then pkts takes n of them, 0 all */
 void ut_trs_set_mixed_accept(ut_trs_ctx* ctx, uint16_t n);
 /* such a call stalls ns before its doorbell */
@@ -234,6 +245,23 @@ long double ut_trs_stream_max_late_vs_target_ns(const ut_trs_ctx* ctx);
 void ut_trs_set_stream_build(ut_trs_ctx* ctx, uint32_t pkts);
 /* calls the tasklet every call_ns for duration_ns, the ring kept full */
 void ut_trs_stream(ut_trs_ctx* ctx, uint64_t duration_ns, uint64_t call_ns);
+/* The builder keeps the ring full of frames of frame_pkts pkts, or adds
+ * ut_trs_set_stream_build() a call, packet 0 of frame k stamped first_tsc + k frame_ns
+ * and pkt j a trs each after it; the tasklet runs every call_ns for duration_ns. A later
+ * call goes on with the same frames. */
+void ut_trs_stream_frames(ut_trs_ctx* ctx, uint64_t duration_ns, uint64_t call_ns,
+                          uint32_t frame_pkts, uint64_t frame_ns, uint64_t first_tsc);
+/* The stream NIC queue shapes as a token bucket of bucket_ns at one pkt a trs: an idle
+ * one starts bucket_ns of pkts at once. */
+void ut_trs_set_stream_shaper(ut_trs_ctx* ctx, long double bucket_ns);
+/* From now, the ST 2110-21 network compatibility bucket (6.6.1) takes each stream pkt as
+ * the shaper starts it, and drains one each drain_ns from mock time 0. */
+void ut_trs_set_stream_cinst(ut_trs_ctx* ctx, long double drain_ns);
+uint32_t ut_trs_stream_cinst_max(const ut_trs_ctx* ctx);
+/* the stream pkts the shaper started since ut_trs_set_stream_cinst() */
+uint64_t ut_trs_stream_pkts_left(const ut_trs_ctx* ctx);
+/* the link flag, and the wire: down, what the NIC queue holds never leaves */
+void ut_trs_stream_link(ut_trs_ctx* ctx, bool up);
 /* mt_sch_schedule_ns(), 0 by default */
 /* each burst into the modelled NIC queue takes ns of the tasklet's clock */
 void ut_trs_set_nic_burst_ns(ut_trs_ctx* ctx, uint32_t ns);

@@ -65,6 +65,10 @@ int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs
   return 0;
 }
 
+void mt_rtcp_tx_buffer_reset(struct mt_rtcp_tx* tx) {
+  mt_fifo_mbuf_clean(tx->mbuf_ring);
+}
+
 static int rtcp_tx_retransmit_rtp_packets(struct mt_rtcp_tx* tx, uint16_t seq,
                                           uint16_t bulk) {
   int ret = 0;

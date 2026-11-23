@@ -128,6 +128,8 @@ void mt_rtcp_rx_free(struct mt_rtcp_rx* rx);
 
 int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx* tx, struct rte_mbuf** mbufs,
                                   unsigned int bulk);
+/* gives back each buffered pkt: the next pkt may follow a seq gap */
+void mt_rtcp_tx_buffer_reset(struct mt_rtcp_tx* tx);
 int mt_rtcp_tx_parse_rtcp_packet(struct mt_rtcp_tx* tx, struct mt_rtcp_hdr* rtcp,
                                  size_t len);
 

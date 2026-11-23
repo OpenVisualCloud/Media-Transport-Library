@@ -7,11 +7,11 @@
 #include <math.h>
 
 #include "../datapath/mt_queue.h"
-#include "../dev/mt_dev.h"
 #include "../mt_log.h"
 #include "../mt_ptp.h"
 #include "../mt_rtcp.h"
 #include "st_err.h"
+#include "st_tx_link.h"
 #include "st_tx_video_session.h"
 
 static int video_trs_tasklet_start(void* priv) {
@@ -30,16 +30,73 @@ static int video_trs_tasklet_stop(void* priv) {
   return 0;
 }
 
-/* a queue of a port with no link is not hung: the hang time starts at the link up */
-static uint16_t video_trs_burst_fail(struct mtl_main_impl* impl,
-                                     struct st_tx_video_session_impl* s,
-                                     enum mtl_session_port s_port, uint64_t cur_tsc) {
-  if (mt_dev_link_down(impl, mt_port_logic2phy(s->port_maps, s_port))) {
-    s->last_burst_succ_time_tsc[s_port] = cur_tsc;
-    return 0;
-  }
+/* the ring took nb_tx_desc pkts since the link up: it freed each pkt of the down */
+static void video_trs_link_unpin(struct st_tx_video_session_impl* s,
+                                 enum mtl_session_port s_port, uint16_t tx) {
+  uint8_t pin = 1 << s_port;
 
+  s->trs_link_fence[s_port] -= RTE_MIN(s->trs_link_fence[s_port], tx);
+  if (s->trs_link_fence[s_port]) return;
+  for (uint16_t i = 0; i < s->st20_frames_cnt; i++) {
+    struct st_frame_trans* frame = &s->st20_frames[i];
+    struct rte_mbuf_ext_shared_info* sh = frame->sh_cur;
+
+    if (!(frame->link_pins & pin)) continue;
+    frame->link_pins &= ~pin;
+    if (!rte_mbuf_ext_refcnt_update(sh, -1)) sh->free_cb(frame->addr, sh->fcb_opaque);
+  }
+}
+
+/* True to drop the burst: while the link flag of the port says down, and after the up
+ * until a packet 0 first of a burst, at least the drain of a full NIC ring later. So the
+ * stale pkts leave first, and the leg starts again at a frame start, with its warm-up or
+ * pre-arm. A change restarts the hang time; to down, the builder starts over. */
+static inline bool video_trs_link_down(struct mtl_main_impl* impl,
+                                       struct st_tx_video_session_impl* s,
+                                       enum mtl_session_port s_port,
+                                       struct rte_mbuf* first) {
+  struct st_tx_link* link = &s->tx_link[s_port];
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+
+  if (unlikely(st_tx_link_changed(impl, port, link, __func__, s->idx, s_port))) {
+    uint16_t nb_tx_desc = mt_if_nb_tx_desc(impl, port);
+
+    s->last_burst_succ_time_tsc[s_port] = link->tsc;
+    s->trs_link_fence[s_port] = 0;
+    s->trs_link_resume_tsc[s_port] = 0;
+    if (link->down) {
+      s->tx_link_resync = true;
+    } else {
+      /* a descriptor of the ring leaves within a trs, a pkt or a pad at its rate;
+       * on RL, warm-up pads enter warm_pkts * trs before packet 0 and an armed plan
+       * needs refill_ns after the drain to refill its shaper bucket */
+      uint64_t warm_ns = s->pacing_way[s_port] == ST21_TX_PACING_WAY_RL
+                             ? (uint64_t)(s->pacing.warm_pkts * s->pacing.trs +
+                                          s->rl_plan[s_port].refill_ns)
+                             : 0;
+      s->trs_link_resume_tsc[s_port] =
+          link->tsc + (uint64_t)(nb_tx_desc * s->pacing.trs) + warm_ns;
+      if (s->tx_direct_chain) s->trs_link_fence[s_port] = nb_tx_desc;
+    }
+  }
+  if (unlikely(s->trs_link_resume_tsc[s_port]) && first && !st_tx_mbuf_get_idx(first) &&
+      st_tx_mbuf_get_tsc(first) >= s->trs_link_resume_tsc[s_port])
+    s->trs_link_resume_tsc[s_port] = 0;
+  return link->down || s->trs_link_resume_tsc[s_port];
+}
+
+/* frees the pkts as if the NIC took them, so each later pkt still leaves at its time */
+static uint16_t video_trs_link_down_drop(struct st_tx_video_session_impl* s,
+                                         struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
+  rte_pktmbuf_free_bulk(tx_pkts, nb_pkts);
+  s->stat_pkts_link_down_drop += nb_pkts;
+  return nb_pkts;
+}
+
+static uint16_t video_trs_burst_fail(struct st_tx_video_session_impl* s,
+                                     enum mtl_session_port s_port, uint64_t cur_tsc) {
   uint64_t fail_duration = cur_tsc - s->last_burst_succ_time_tsc[s_port];
+
   if (fail_duration > s->tx_hang_detect_time_thresh) {
     err("%s(%d,%d), hang duration %" PRIu64 " ms\n", __func__, s->idx, s_port,
         fail_duration / NS_PER_MS);
@@ -53,6 +110,7 @@ static uint16_t video_trs_burst_fail(struct mtl_main_impl* impl,
 static inline void video_trs_burst_succ(struct mtl_main_impl* impl,
                                         struct st_tx_video_session_impl* s,
                                         enum mtl_session_port s_port, uint16_t tx) {
+  if (unlikely(s->trs_link_fence[s_port])) video_trs_link_unpin(s, s_port, tx);
   s->stat_pkts_burst += tx;
   s->last_burst_succ_time_tsc[s_port] = mt_get_tsc(impl);
 }
@@ -105,7 +163,7 @@ static inline uint16_t video_trs_rl_txq_burst(struct mtl_main_impl* impl,
     now = s->last_burst_succ_time_tsc[s_port];
   } else {
     now = mt_get_tsc(impl);
-    video_trs_burst_fail(impl, s, s_port, now);
+    video_trs_burst_fail(s, s_port, now);
   }
   if (tx < nb_pkts) s->trs_reclaim_tsc[s_port] = RTE_MAX(s->trs_reclaim_tsc[s_port], now);
   return tx;
@@ -132,6 +190,8 @@ static uint16_t video_trs_burst_pad(struct mtl_main_impl* impl,
                                     struct st_tx_video_session_impl* s,
                                     enum mtl_session_port s_port,
                                     struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
+  if (unlikely(video_trs_link_down(impl, s, s_port, NULL)))
+    return video_trs_link_down_drop(s, tx_pkts, nb_pkts);
   uint16_t tx = video_trs_rl_txq_burst(impl, s, s_port, tx_pkts, nb_pkts);
   if (tx) video_trs_pads_end(s, s_port, tx_pkts, tx);
   return tx;
@@ -206,7 +266,10 @@ static inline void video_trs_pkts_sent(struct mtl_main_impl* impl,
     rte_pktmbuf_free_bulk(pkts, nb_pkts);
   }
   if (!tx) return;
-  if (p->frame) st20_frame_tx_start(impl, s, s_port, p->frame);
+  if (p->frame) {
+    s->trs_frame_started[s_port] = p->frame;
+    st20_frame_tx_start(impl, s, s_port, p->frame);
+  }
   /* the pkts not sent are still the caller's: their bytes come off */
   uint64_t bytes = p->bytes;
   for (uint16_t i = tx; i < nb_pkts; i++) bytes -= pkts[i]->pkt_len;
@@ -219,11 +282,14 @@ static uint16_t video_trs_burst(struct mtl_main_impl* impl,
                                 struct st_tx_video_session_impl* s,
                                 enum mtl_session_port s_port, struct rte_mbuf** tx_pkts,
                                 uint16_t nb_pkts) {
+  if (!nb_pkts) return 0;
+  if (unlikely(video_trs_link_down(impl, s, s_port, tx_pkts[0])))
+    return video_trs_link_down_drop(s, tx_pkts, nb_pkts);
   if (s->rtcp_tx[s_port]) mt_mbuf_refcnt_inc_bulk(tx_pkts, nb_pkts);
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
   if (!tx) {
     if (s->rtcp_tx[s_port]) rte_pktmbuf_free_bulk(tx_pkts, nb_pkts);
-    return video_trs_burst_fail(impl, s, s_port, mt_get_tsc(impl));
+    return video_trs_burst_fail(s, s_port, mt_get_tsc(impl));
   }
   video_trs_burst_succ(impl, s, s_port, tx);
 
@@ -235,6 +301,7 @@ static uint16_t video_trs_burst(struct mtl_main_impl* impl,
   int pkt_idx = st_tx_mbuf_get_idx(tx_pkts[0]);
   if (0 == pkt_idx) {
     struct st_frame_trans* frame = st_tx_mbuf_get_priv(tx_pkts[0]);
+    s->trs_frame_started[s_port] = frame;
     if (frame) st20_frame_tx_start(impl, s, s_port, frame);
   }
 
@@ -254,6 +321,8 @@ static uint16_t video_trs_rl_burst(struct mtl_main_impl* impl,
                                    struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   struct video_trs_pkts p;
 
+  if (unlikely(video_trs_link_down(impl, s, s_port, NULL)))
+    return video_trs_link_down_drop(s, tx_pkts, nb_pkts);
   video_trs_pkts_prepare(s, s_port, tx_pkts, nb_pkts, &p);
   uint16_t tx = video_trs_rl_txq_burst(impl, s, s_port, tx_pkts, nb_pkts);
   if (!tx) {
@@ -558,6 +627,9 @@ static uint16_t video_trs_rl_tail_burst(struct mtl_main_impl* impl,
   struct video_trs_pkts p;
 
   s->trs_rl_tail[s_port] = false;
+  /* no pads: packet 0 and the pkts behind it go as the NIC took them */
+  if (unlikely(video_trs_link_down(impl, s, s_port, NULL)))
+    return video_trs_link_down_drop(s, pkts, nb_pkts);
   uint64_t now = mt_get_tsc(impl);
   long double drained = RTE_MAX(s->trs_rl_drained[s_port], now - plan->bucket_ns);
 
@@ -858,6 +930,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     uint64_t target_tsc = st_tx_mbuf_get_tsc(pkts[valid_bulk]);
     dbg("%s(%d), first pkt, ts cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
         cur_tsc, target_tsc);
+    /* before its pads: this frame start may end the drop after a link up */
+    video_trs_link_down(impl, s, s_port, pkts[valid_bulk]);
     s->trs_rl_pads_end[s_port] = 0;
     if (likely(cur_tsc < target_tsc || s->trs_inflight_num2[s_port])) {
       unsigned int i;

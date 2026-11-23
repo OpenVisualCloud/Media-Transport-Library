@@ -112,6 +112,19 @@ struct ut_trs_ctx {
   uint64_t nic_pkts;
   long double nic_max_late;
   long double nic_max_late_vs_target;
+  /* ut_trs_set_stream_shaper(): a token bucket of nic_bucket_ns, at one pkt a trs */
+  long double nic_bucket_ns;
+  long double nic_full_tsc; /* when the bucket is full again */
+  /* ut_trs_set_stream_cinst(): the ST 2110-21 network compatibility bucket of the stream
+   * pkts, draining one each cinst_drain_ns from mock time 0 */
+  long double cinst_drain_ns;
+  uint64_t cinst_drains;
+  uint32_t cinst, cinst_max;
+  uint64_t stream_pkts_left; /* stream pkts the shaper started */
+  /* ut_trs_stream_frames(): frame_pkts pkts a frame, packet 0 of frame k due at
+   * stream_first_tsc + k frame_ns */
+  uint32_t stream_frame_pkts;
+  uint64_t stream_frame_ns, stream_first_tsc, stream_frame;
   uint64_t stream_target_tsc; /* 0: stream pkts are not stamped */
   uint32_t stream_build;      /* pkts the builder adds a call, 0: fills the ring */
   uint16_t stream_segs;
@@ -220,6 +233,19 @@ static void ut_trs_frame_stall_call(struct ut_trs_ctx* ctx, struct mt_txq_entry*
     ctx->stall_call = ctx->burst_call_count;
 }
 
+/* a stream pkt the shaper started at t enters the CINST bucket */
+static void ut_trs_cinst_add(struct ut_trs_ctx* ctx, long double t) {
+  uint64_t drains = (uint64_t)(t / ctx->cinst_drain_ns);
+
+  if (drains > ctx->cinst_drains) {
+    uint64_t n = drains - ctx->cinst_drains;
+    ctx->cinst = n >= ctx->cinst ? 0 : ctx->cinst - (uint32_t)n;
+    ctx->cinst_drains = drains;
+  }
+  ctx->cinst++;
+  ctx->cinst_max = RTE_MAX(ctx->cinst_max, ctx->cinst);
+}
+
 static uint16_t ut_trs_nic_burst(struct ut_trs_ctx* ctx, struct rte_mbuf** tx_pkts,
                                  uint16_t nb_pkts) {
   ctx->last_tsc += ctx->nic_burst_ns;
@@ -238,6 +264,17 @@ static uint16_t ut_trs_nic_burst(struct ut_trs_ctx* ctx, struct rte_mbuf** tx_pk
     uint16_t segs = m->pool == ctx->stream_pool ? ctx->stream_segs : m->nb_segs;
     if (ctx->nic_used + segs > ctx->nic_desc) break;
     long double done = RTE_MAX(ctx->nic_last_done, now) + trs;
+    if (ctx->nic_bucket_ns) {
+      /* it starts once the bucket holds a pkt: an idle shaper sends the bucket at once */
+      long double start = RTE_MAX(now, ctx->nic_full_tsc - ctx->nic_bucket_ns + trs);
+      start = RTE_MAX(start, ctx->nic_last_done - trs);
+      ctx->nic_full_tsc = RTE_MAX(ctx->nic_full_tsc, start) + trs;
+      done = start + trs;
+      if (m->pool == ctx->stream_pool) {
+        ctx->stream_pkts_left++;
+        if (ctx->cinst_drain_ns) ut_trs_cinst_add(ctx, start);
+      }
+    }
     if (!ctx->nic_pkts) ctx->nic_first_done = done;
     /* the slot of the nic_pkts-th pkt of a stream that never pauses */
     long double late = done - (ctx->nic_first_done + ctx->nic_pkts * trs);
@@ -609,6 +646,10 @@ void ut_trs_destroy(ut_trs_ctx* ctx) {
 
 void ut_trs_set_trs(ut_trs_ctx* ctx, long double trs_ns) {
   ctx->session.pacing.trs = trs_ns;
+}
+
+void ut_trs_set_nb_tx_desc(ut_trs_ctx* ctx, uint16_t nb_tx_desc) {
+  for (int i = 0; i < MTL_PORT_MAX; i++) ctx->impl.inf[i].nb_tx_desc = nb_tx_desc;
 }
 
 void ut_trs_set_pad_interval(ut_trs_ctx* ctx, float pad_interval) {
@@ -1252,6 +1293,89 @@ void ut_trs_stream(ut_trs_ctx* ctx, uint64_t duration_ns, uint64_t call_ns) {
   ut_trs_active_ctx = NULL;
 }
 
+void ut_trs_set_stream_shaper(ut_trs_ctx* ctx, long double bucket_ns) {
+  ctx->nic_bucket_ns = bucket_ns;
+}
+
+void ut_trs_set_stream_cinst(ut_trs_ctx* ctx, long double drain_ns) {
+  ctx->cinst_drain_ns = drain_ns;
+  ctx->cinst = 0;
+  ctx->cinst_max = 0;
+  ctx->cinst_drains = 0;
+  ctx->stream_pkts_left = 0;
+}
+
+uint32_t ut_trs_stream_cinst_max(const ut_trs_ctx* ctx) {
+  return ctx->cinst_max;
+}
+
+uint64_t ut_trs_stream_pkts_left(const ut_trs_ctx* ctx) {
+  return ctx->stream_pkts_left;
+}
+
+void ut_trs_stream_link(ut_trs_ctx* ctx, bool up) {
+  ut_trs_set_link_down(ctx, !up);
+  if (up) return;
+  /* the wire stops: what the queue holds never leaves */
+  ctx->nic_head = ctx->nic_tail;
+  ctx->nic_used = 0;
+  ctx->nic_last_done = ctx->last_tsc;
+  ctx->nic_full_tsc = ctx->last_tsc;
+}
+
+void ut_trs_stream_frames(ut_trs_ctx* ctx, uint64_t duration_ns, uint64_t call_ns,
+                          uint32_t frame_pkts, uint64_t frame_ns, uint64_t first_tsc) {
+  struct rte_ring* ring = ctx->session.ring[MTL_SESSION_PORT_P];
+  uint64_t end = ctx->last_tsc + duration_ns;
+
+  if (ctx->stream_frame_pkts != frame_pkts) {
+    ctx->stream_frame_pkts = frame_pkts;
+    ctx->stream_frame_ns = frame_ns;
+    ctx->stream_first_tsc = first_tsc;
+    ctx->stream_frame = 0;
+    ctx->stream_idx = 0;
+  }
+  ut_trs_active_ctx = ctx;
+  while (ctx->last_tsc < end) {
+    for (uint32_t built = 0;
+         rte_ring_free_count(ring) && (!ctx->stream_build || built < ctx->stream_build);
+         built++) {
+      struct rte_mbuf* m = rte_pktmbuf_alloc(ctx->stream_pool);
+      if (!m) break;
+      uint64_t pkt0 = ctx->stream_first_tsc + ctx->stream_frame * ctx->stream_frame_ns;
+      st_tx_mbuf_set_idx(m, ctx->stream_idx);
+      st_tx_mbuf_set_tsc(m, pkt0 + (uint64_t)(ctx->stream_idx * ctx->session.pacing.trs));
+      if (++ctx->stream_idx == frame_pkts) {
+        ctx->stream_idx = 0;
+        ctx->stream_frame++;
+      }
+      rte_ring_sp_enqueue(ring, m);
+    }
+    ctx->last_tsc += call_ns;
+    ut_trs_visit_alone(ctx);
+    video_trs_rl_tasklet(&ctx->impl, &ctx->session, MTL_SESSION_PORT_P);
+  }
+  ut_trs_active_ctx = NULL;
+}
+
+int ut_trs_call_launch_time_tasklet(ut_trs_ctx* ctx) {
+  struct mt_interface* inf = &ctx->impl.inf[MTL_PORT_P];
+
+  /* the launch time goes to a dynfield of the mbuf, as the PMD registers one */
+  inf->tx_dynfield_offset = offsetof(struct rte_mbuf, dynfield1);
+  ut_trs_active_ctx = ctx;
+  int ret = video_trs_launch_time_tasklet(&ctx->impl, &ctx->session, MTL_SESSION_PORT_P);
+  ut_trs_active_ctx = NULL;
+  return ret;
+}
+
+int ut_trs_call_ptp_tasklet(ut_trs_ctx* ctx) {
+  ut_trs_active_ctx = ctx;
+  int ret = video_trs_ptp_tasklet(&ctx->impl, &ctx->session, MTL_SESSION_PORT_P);
+  ut_trs_active_ctx = NULL;
+  return ret;
+}
+
 void ut_trs_set_nic_burst_ns(ut_trs_ctx* ctx, uint32_t ns) {
   ctx->nic_burst_ns = ns;
 }
@@ -1358,6 +1482,18 @@ void ut_trs_set_link_down(ut_trs_ctx* ctx, bool down) {
 
 int ut_trs_link_calls(void) {
   return ut_trs_link_get_calls;
+}
+
+int ut_trs_link_down_drops(const ut_trs_ctx* ctx) {
+  return ctx->session.stat_pkts_link_down_drop;
+}
+
+void ut_trs_hold_pkt(ut_trs_ctx* ctx) {
+  rte_mbuf_refcnt_update(ctx->inflight_mbuf, 1);
+}
+
+uint16_t ut_trs_pkt_refcnt(const ut_trs_ctx* ctx) {
+  return rte_mbuf_refcnt_read(ctx->inflight_mbuf);
 }
 
 uint32_t ut_trs_stream_nic_desc_used(const ut_trs_ctx* ctx) {

@@ -180,6 +180,19 @@ TEST_F(St20TxZeroCopyReclaimTest, LinkUpWithTheLegStillIdleRecoversAThresholdLat
   EXPECT_TRUE(ut_txv_zc_take_recovery(ctx_, 0));
 }
 
+/* no reclaim frees a frame held over a link resync: only the NIC ring after the up does
+ */
+TEST_F(St20TxZeroCopyReclaimTest, FrameHeldOverALinkResyncDoesNotHoldTheApp) {
+  SetUpFrames(true);
+  ut_txv_zc_set_nic_refs(ctx_, 0, 1);
+  ut_txv_zc_set_link_held(ctx_, 0);
+
+  ut_txv_zc_run(ctx_);
+
+  EXPECT_EQ(ut_txv_zc_reclaim_calls(ctx_), 0);
+  EXPECT_EQ(ut_txv_get_next_frame_calls(ctx_), 1);
+}
+
 /* the legs idled through the wait before: a new wait counts from its own start */
 TEST_F(St20TxZeroCopyReclaimTest, WaitJustBegunDoesNotRecoverAnIdleLeg) {
   SetUpFrames(true);
