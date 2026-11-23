@@ -134,7 +134,7 @@ class St20TxDirectChainTest : public ::testing::Test {
     }
     ut_txv_destroy(ctx_);
   }
-  void Setup(int num_port, bool iavf = true, uint32_t linesize_pad = 0) {
+  void SetUpPipe(int num_port, bool iavf = true, uint32_t linesize_pad = 0) {
     ut_txv_pipe_case c = {};
     c.width = 640;
     c.height = 8;
@@ -169,7 +169,7 @@ class St20TxDirectChainTest : public ::testing::Test {
 };
 
 TEST_F(St20TxDirectChainTest, EveryPayloadButTheLastIsADirectMbufOnTheFrame) {
-  Setup(1);
+  SetUpPipe(1);
   BuildFrame();
 
   for (int i = 0; i < total_pkts_ - 1; i++) {
@@ -181,7 +181,7 @@ TEST_F(St20TxDirectChainTest, EveryPayloadButTheLastIsADirectMbufOnTheFrame) {
 }
 
 TEST_F(St20TxDirectChainTest, TheLastPayloadIsTheFramesExtbuf) {
-  Setup(1);
+  SetUpPipe(1);
   BuildFrame();
 
   ut_txv_payload payload;
@@ -191,7 +191,7 @@ TEST_F(St20TxDirectChainTest, TheLastPayloadIsTheFramesExtbuf) {
 }
 
 TEST_F(St20TxDirectChainTest, TheLastPktAloneHoldsTheFrame) {
-  Setup(1);
+  SetUpPipe(1);
   BuildFrame();
 
   ut_txv_pipe_free_last_built(ctx_, kP);
@@ -203,7 +203,7 @@ TEST_F(St20TxDirectChainTest, TheLastPktAloneHoldsTheFrame) {
 
 /* the queue sent and freed every pkt built while the builder was held up */
 TEST_F(St20TxDirectChainTest, FrameIsNotDoneWhileItsLastPktIsUnbuilt) {
-  Setup(1);
+  SetUpPipe(1);
   int built = ut_txv_pipe_build(ctx_, 1);
   ASSERT_GT(built, 0);
   ASSERT_LT(built, total_pkts_);
@@ -215,7 +215,7 @@ TEST_F(St20TxDirectChainTest, FrameIsNotDoneWhileItsLastPktIsUnbuilt) {
 
 /* a PMD that may free out of order or at burst time, as mlx5 does */
 TEST_F(St20TxDirectChainTest, SessionOnAnotherDriverAttachesEveryPayload) {
-  Setup(1, false);
+  SetUpPipe(1, false);
   BuildFrame();
 
   for (int i = 0; i < total_pkts_; i++) {
@@ -228,7 +228,7 @@ TEST_F(St20TxDirectChainTest, SessionOnAnotherDriverAttachesEveryPayload) {
 
 /* the legs share each payload */
 TEST_F(St20TxDirectChainTest, RedundantFrameIsHeldByTheLastPktOfBothLegs) {
-  Setup(2);
+  SetUpPipe(2);
   BuildFrame();
 
   ut_txv_pipe_free_last_built(ctx_, kP);
@@ -240,7 +240,7 @@ TEST_F(St20TxDirectChainTest, RedundantFrameIsHeldByTheLastPktOfBothLegs) {
 /* a crossing pkt's two runs are a padding apart, so it copies them into one */
 TEST_F(St20TxDirectChainTest, PaddedFrameCopiesOnlyItsLineCrossingPkts) {
   constexpr uint32_t kPad = 64;
-  Setup(1, true, kPad);
+  SetUpPipe(1, true, kPad);
   BuildFrame();
 
   for (int i = 0; i < total_pkts_ - 1; i++) {
@@ -260,7 +260,7 @@ TEST_F(St20TxDirectChainTest, PaddedFrameCopiesOnlyItsLineCrossingPkts) {
 
 /* its line-crossing pkts copy into pkts of the copy pool, the last never crosses */
 TEST_F(St20TxDirectChainTest, PaddedFrameIsHeldByItsLastPktAlone) {
-  Setup(1, true, 64);
+  SetUpPipe(1, true, 64);
   BuildFrame();
 
   ut_txv_pipe_free_last_built(ctx_, kP);
@@ -270,7 +270,7 @@ TEST_F(St20TxDirectChainTest, PaddedFrameIsHeldByItsLastPktAlone) {
 
 /* stop cleans the builder ring, holding the last pkt, before it flushes the queue */
 TEST_F(St20TxDirectChainTest, StopHandsTheFrameBackOnlyOnceTheQueueFlushed) {
-  Setup(1);
+  SetUpPipe(1);
   BuildFrame();
 
   ASSERT_EQ(ut_txv_pipe_stop_last_pkt_unsent(ctx_), 0);
@@ -281,7 +281,7 @@ TEST_F(St20TxDirectChainTest, StopHandsTheFrameBackOnlyOnceTheQueueFlushed) {
 
 /* R's ring, holding the payload's last ref, is cleaned after P's queue flushed */
 TEST_F(St20TxDirectChainTest, RedundantStopHandsTheFrameBackOnlyOnceBothQueuesFlushed) {
-  Setup(2);
+  SetUpPipe(2);
   BuildFrame();
 
   ASSERT_EQ(ut_txv_pipe_stop_last_pkt_unsent(ctx_), 0);
@@ -292,7 +292,7 @@ TEST_F(St20TxDirectChainTest, RedundantStopHandsTheFrameBackOnlyOnceBothQueuesFl
 
 /* R's queue keeps its share of the payloads P's queue gave back */
 TEST_F(St20TxDirectChainTest, RedundantStopKeepsAFrameRsQueueDidNotFlush) {
-  Setup(2);
+  SetUpPipe(2);
   BuildFrame();
   ut_txv_pipe_set_flush_ret(ctx_, kR, -EBUSY);
 
@@ -302,7 +302,7 @@ TEST_F(St20TxDirectChainTest, RedundantStopKeepsAFrameRsQueueDidNotFlush) {
 }
 
 TEST_F(St20TxDirectChainTest, StopKeepsAFrameAQueueDidNotFlush) {
-  Setup(1);
+  SetUpPipe(1);
   BuildFrame();
   ut_txv_pipe_set_flush_ret(ctx_, kP, -EBUSY);
 

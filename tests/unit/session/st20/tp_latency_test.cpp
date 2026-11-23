@@ -15,7 +15,6 @@
 
 namespace {
 constexpr double kFrameNs = 1e9 * 1001 / 60000; /* 59.94 fps */
-constexpr double kTickNs = 1e9 / 90000;
 constexpr double kTicksPerFrame = 1501.5;
 constexpr uint64_t kEvenEpoch = 100000;        /* starts on a tick */
 constexpr uint64_t kOddEpoch = kEvenEpoch + 1; /* starts half a tick into one */
