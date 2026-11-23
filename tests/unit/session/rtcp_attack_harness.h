@@ -48,6 +48,11 @@ void ut_rtk_destroy(ut_rtk_ctx* ctx);
 int ut_rtk_buffer(ut_rtk_ctx* ctx, uint16_t first, unsigned int n);
 
 /* The burst mock accepts at most this many mbufs per call (-1 = all). */
+/* mt_rtcp_tx_buffer_reset(): the ring gives back each pkt it holds */
+void ut_rtk_reset(ut_rtk_ctx* ctx);
+/* the free mbufs of the pool ut_rtk_buffer() builds its pkts from */
+unsigned int ut_rtk_src_avail(ut_rtk_ctx* ctx);
+
 void ut_rtk_set_burst_limit(ut_rtk_ctx* ctx, int limit);
 
 /* Build a NACK with len_field and the FCIs, put its last received byte on the

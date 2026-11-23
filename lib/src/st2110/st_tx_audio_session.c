@@ -2466,6 +2466,11 @@ static int st_tx_audio_sessions_stat(void* priv) {
       }
     }
   }
+  if (mgr->stat_pkts_link_down_drop) {
+    notice("TX_AUDIO_MGR(%d): pkts link down drop %d\n", m_idx,
+           mgr->stat_pkts_link_down_drop);
+    mgr->stat_pkts_link_down_drop = 0;
+  }
   if (mgr->stat_recoverable_error) {
     notice("TX_AUDIO_MGR(%d): recoverable_error %u \n", m_idx,
            mgr->stat_recoverable_error);

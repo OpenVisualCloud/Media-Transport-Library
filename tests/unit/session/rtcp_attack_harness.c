@@ -19,6 +19,7 @@
  * the link cannot pick the other one. Mock the burst and read_front. */
 #undef MTL_HAS_USDT
 #define mt_rtcp_tx_buffer_rtp_packets ut_rtk_tx_buffer_rtp_packets
+#define mt_rtcp_tx_buffer_reset ut_rtk_tx_buffer_reset
 #define mt_rtcp_tx_parse_rtcp_packet ut_rtk_tx_parse_rtcp_packet
 #define mt_rtcp_rx_parse_rtp_packet ut_rtk_rx_parse_rtp_packet
 #define mt_rtcp_rx_send_nack_packet ut_rtk_rx_send_nack_packet
@@ -201,6 +202,14 @@ int ut_rtk_buffer(ut_rtk_ctx* ctx, uint16_t first, unsigned int n) {
     if (ret < 0) return ret;
   }
   return 0;
+}
+
+void ut_rtk_reset(ut_rtk_ctx* ctx) {
+  ut_rtk_tx_buffer_reset(&ctx->tx);
+}
+
+unsigned int ut_rtk_src_avail(ut_rtk_ctx* ctx) {
+  return rte_mempool_avail_count(ctx->src_pool);
 }
 
 void ut_rtk_set_burst_limit(ut_rtk_ctx* ctx, int limit) {

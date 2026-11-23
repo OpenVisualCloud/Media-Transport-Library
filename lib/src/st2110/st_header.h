@@ -135,8 +135,14 @@ struct st_frame_trans {
   rte_atomic32_t refcnt;           /* 0 means it's free */
   void* priv;                      /* private data for lib */
 
-  uint32_t flags;                          /* ST_FT_FLAG_* */
-  struct rte_mbuf_ext_shared_info sh_info; /* for st20 tx ext shared */
+  uint32_t flags; /* ST_FT_FLAG_* */
+  /* st20 tx zero copy: the chain mbufs of the frame count on sh_cur, one of sh_info */
+  struct rte_mbuf_ext_shared_info sh_info[2];
+  struct rte_mbuf_ext_shared_info* sh_cur;
+  /* direct chain, a bit per session port: a count on sh_cur while the NIC ring of a port
+   * that lost its link may hold pkts of the frame that hold no count */
+  uint8_t link_pins;
+  bool link_held;  /* held at a link resync, see tv_link_drain() */
   void* done_addr; /* st20 tx ext: the cleared addr, during notify_frame_done */
 
   void* user_meta; /* the meta data from user */
@@ -176,6 +182,7 @@ struct st_tx_video_pacing {
   int32_t vrx_room_ns;
 
   uint64_t cur_epochs; /* epoch of current frame */
+  bool epoch_resync;   /* cur_epochs is stale, see tv_prev_epoch() */
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
   long double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
@@ -300,6 +307,12 @@ struct st_tx_video_rl_stat {
   uint64_t start_late_max_ns;
 };
 
+/* the TX view of a port link flag; tsc: the time of the last change */
+struct st_tx_link {
+  bool down;
+  uint64_t tsc;
+};
+
 struct st_tx_video_session_impl {
   struct mtl_main_impl* impl;
   struct st_tx_video_sessions_mgr* mgr;
@@ -321,8 +334,10 @@ struct st_tx_video_session_impl {
   bool eth_ipv4_cksum_offload[MTL_SESSION_PORT_MAX];
   unsigned int ring_count;
   struct rte_ring* ring[MTL_SESSION_PORT_MAX];
-  struct rte_ring* packet_ring; /* rtp ring */
-  int user_tai_offset;          /* dynfield of st20_/st22_tx_put_mbuf_tai() tai */
+  struct rte_ring* packet_ring;     /* rtp ring */
+  struct rte_mbuf* rtp_pending_pkt; /* first pkt of the next RTP frame after resync */
+  bool rtp_drop_frame;              /* drop tail pkts of the cut RTP frame after resync */
+  int user_tai_offset;              /* dynfield of st20_/st22_tx_put_mbuf_tai() tai */
   struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
   int idx; /* index for current tx_session */
   uint64_t advice_sleep_us;
@@ -359,7 +374,12 @@ struct st_tx_video_session_impl {
   bool trs_rl_tail[MTL_SESSION_PORT_MAX];
   /* when the shaper finishes the pkts sent so far, one trs each from packet 0's target */
   uint64_t trs_wire_tsc[MTL_SESSION_PORT_MAX];
-  uint64_t trs_released[MTL_SESSION_PORT_MAX]; /* trs->visit of its last release */
+  /* the frame of the last packet 0 the NIC took */
+  struct st_frame_trans* trs_frame_started[MTL_SESSION_PORT_MAX];
+  /* pkts the NIC takes after the link up before it freed all it held at the down */
+  uint32_t trs_link_fence[MTL_SESSION_PORT_MAX];
+  uint64_t trs_link_resume_tsc[MTL_SESSION_PORT_MAX]; /* see video_trs_link_down() */
+  uint64_t trs_released[MTL_SESSION_PORT_MAX];        /* trs->visit of its last release */
   struct rte_mbuf* trs_inflight[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
   unsigned int trs_inflight_num[MTL_SESSION_PORT_MAX];
   unsigned int trs_inflight_idx[MTL_SESSION_PORT_MAX];
@@ -374,6 +394,10 @@ struct st_tx_video_session_impl {
   /* the last burst succ time(tsc) */
   uint64_t last_burst_succ_time_tsc[MTL_SESSION_PORT_MAX];
   bool tx_queue_recovery_pending[MTL_SESSION_PORT_MAX];
+  struct st_tx_link tx_link[MTL_SESSION_PORT_MAX];
+  bool tx_link_resync; /* a port found its link down, the builder starts over */
+  bool tx_link_drain;  /* frames held over a link resync, see tv_link_drain() */
+  uint64_t tx_link_drain_tsc;
   uint64_t tx_hang_detect_time_thresh;
 
   /* frame info */
@@ -426,6 +450,7 @@ struct st_tx_video_session_impl {
   /* internal-only stats (not in public API, reset per period) */
   int stat_pkts_burst;
   int stat_pkts_burst_dummy;
+  int stat_pkts_link_down_drop;
   int stat_trs_ret_code[MTL_SESSION_PORT_MAX];
   int stat_build_ret_code;
   uint64_t stat_last_time;
@@ -927,6 +952,7 @@ struct st_tx_audio_sessions_mgr {
   struct mt_txq_entry* queue[MTL_PORT_MAX];
   /* the last burst succ time(tsc) */
   uint64_t last_burst_succ_time_tsc[MTL_PORT_MAX];
+  struct st_tx_link tx_link[MTL_PORT_MAX];
   uint64_t tx_hang_detect_time_thresh;
 
   struct st_tx_audio_session_impl* sessions[ST_SCH_MAX_TX_AUDIO_SESSIONS];
@@ -938,6 +964,7 @@ struct st_tx_audio_sessions_mgr {
 
   /* status */
   int stat_pkts_burst;
+  int stat_pkts_link_down_drop;
   int stat_trs_ret_code[MTL_PORT_MAX];
   uint32_t stat_unrecoverable_error;
   uint32_t stat_recoverable_error;

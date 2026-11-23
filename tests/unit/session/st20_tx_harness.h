@@ -50,6 +50,7 @@ void ut_txv_destroy(ut_txv_ctx* ctx);
 void ut_txv_set_frame_time(ut_txv_ctx* ctx, uint32_t frame_time_ns);
 void ut_txv_set_max_onward_epochs(ut_txv_ctx* ctx, uint32_t max_onward_epochs);
 void ut_txv_set_cur_epochs(ut_txv_ctx* ctx, uint64_t cur_epochs);
+void ut_txv_set_epoch_resync(ut_txv_ctx* ctx, bool resync);
 void ut_txv_set_tr_offset(ut_txv_ctx* ctx, long double tr_offset_ns);
 void ut_txv_set_vrx(ut_txv_ctx* ctx, uint32_t vrx);
 /* ops.start_vrx, the user's vrx tv_init_pacing() takes */
@@ -170,6 +171,26 @@ struct ut_txv_rtp_sent {
 int ut_txv_run_rtp_pkts(ut_txv_ctx* ctx, bool tx_no_chain,
                         const struct ut_txv_rtp_pkt* pkts, int nb_pkts,
                         struct ut_txv_rtp_sent* sent, struct ut_txv_rtp_sent* sent_r);
+/* An RTP-level session after a link resync and a reclaim period, the link flag of P down
+ * or up: true while its frames still follow the epoch rule of a link drain. */
+bool ut_txv_rtp_link_drain(ut_txv_ctx* ctx, bool down);
+/* An RTP-level session with framebuff_cnt set, as an app sets it, and no frames, through
+ * a link down and up: true while the drain goes on after the up. */
+bool ut_txv_rtp_link_flap(ut_txv_ctx* ctx, uint16_t framebuff_cnt);
+/* An RTP-level session that takes a link resync mid-frame, then receives the rest of
+ * that frame and the start of the next frame. Reports built packets of each frame,
+ * the pkt_idx and TSC stamp of the first built packet after the resync, and whether
+ * every mbuf returned to the pool. */
+struct ut_txv_rtp_resync_result {
+  unsigned int old_frame_pkts;
+  unsigned int new_frame_pkts;
+  uint32_t first_pkt_idx;
+  uint64_t first_pkt_tsc;
+  uint64_t resync_tsc;
+  bool pool_clean;
+};
+int ut_txv_rtp_resync_mid_frame(ut_txv_ctx* ctx, bool tx_no_chain,
+                                struct ut_txv_rtp_resync_result* out);
 /* Drives tv_tasklet_st22()'s frame->tx_st22_meta assignment -- the compressed-
  * video (ST22) mirror of tv_tasklet_frame()'s frame->tv_meta assignment above,
  * so both production call sites are held to the same timestamp/rtp_timestamp
@@ -280,6 +301,8 @@ int ut_txv_control_during_own_callback(ut_txv_ctx* ctx, enum ut_txv_control call
 int ut_txv_zc_setup(ut_txv_ctx* ctx, bool tx_reclaim, int num_port);
 void ut_txv_zc_teardown(ut_txv_ctx* ctx);
 void ut_txv_zc_set_nic_refs(ut_txv_ctx* ctx, int frame, int refs);
+/* the frame is held over a link resync: it waits for the NIC ring, not for a reclaim */
+void ut_txv_zc_set_link_held(ut_txv_ctx* ctx, int frame);
 void ut_txv_zc_nic_sent(ut_txv_ctx* ctx, int frame);
 void ut_txv_zc_set_app(ut_txv_ctx* ctx, int frame, bool busy);
 /* the frame the session built last, whose pkts are still on their way */
@@ -295,6 +318,11 @@ void ut_txv_zc_set_hang_ns(ut_txv_ctx* ctx, uint64_t hang_ns);
 void ut_txv_zc_leg_burst_now(ut_txv_ctx* ctx, int leg);
 /* the link flag of port, as mt_dev_link_poll() sets it */
 void ut_txv_set_link_down(ut_txv_ctx* ctx, int port, bool down);
+/* each leg gets an rtcp_tx whose mt_rtcp_tx_buffer_reset() calls are counted */
+void ut_txv_set_rtcp_legs(ut_txv_ctx* ctx);
+int ut_txv_rtcp_resets(const ut_txv_ctx* ctx, int leg);
+/* tv_link_resync(), the start over of the builder after a port lost its link */
+void ut_txv_link_resync(ut_txv_ctx* ctx);
 /* recovery of leg pending, cleared as the transmitter would on handling it */
 bool ut_txv_zc_take_recovery(ut_txv_ctx* ctx, int leg);
 /* packet 0 target of the frame built last, pacing.tsc_time_frame_start */
@@ -575,6 +603,9 @@ const char* ut_txv_stat_error_log_line(void);
 /* stat_rl as the tasklet leaves it after frames flagged, pkt0 of them at packet 0, the
  * latest late_ns past its target */
 void ut_txv_set_rl_vrx(ut_txv_ctx* ctx, uint64_t frames, uint64_t pkt0, uint64_t late_ns);
+/* one stats dump: the log lines that hold needle */
+int ut_txv_stat_lines_with(ut_txv_ctx* ctx, const char* needle);
+void ut_txv_set_stat_link_down_drops(ut_txv_ctx* ctx, int pkts);
 void ut_txv_set_stat_port_frames(ut_txv_ctx* ctx, uint64_t frames);
 /* sch->allow_sleep of the session's mgr's scheduler */
 void ut_txv_set_sch_allow_sleep(ut_txv_ctx* ctx, bool allow_sleep);
@@ -649,8 +680,9 @@ enum {
 };
 /* A frame-level BPM 4:2:2 10-bit 59.94p session on num_port legs, leg i on port i whose
  * TX queue is a common/ut_tx_ring.h ring of nb_tx_desc[i] (rs 32, the PMD's free_thresh),
- * hung or draining a descriptor a ns. The production builder (tvs_tasklet_handler()) and
- * TSC transmitter run on the mock clock; the app hands the frames over in turn. */
+ * hung or draining a descriptor each wire_ns. The production builder
+ * (tvs_tasklet_handler()) and TSC transmitter run on the mock clock; the app hands the
+ * frames over in turn. */
 struct ut_txv_pipe_case {
   uint32_t width;
   uint32_t height;
@@ -673,6 +705,10 @@ struct ut_txv_pipe_case {
   /* the app set nb_tx_desc: no port is deep; else MT_DEV_TX_DESC_DEEP is */
   bool user_nb_tx_desc;
   bool iavf; /* the ports are iavf VFs, else of the default driver */
+  bool ext;  /* ST20_TX_FLAG_EXT_FRAME: the app gives a buffer of its own a frame */
+  /* the time a ring takes for a descriptor, 1 ns when 0 */
+  uint64_t wire_ns;
+  bool reclaim; /* the session reclaims its zero-copy frames (tv_frames_out()) */
 };
 int ut_txv_pipe_setup(ut_txv_ctx* ctx, const struct ut_txv_pipe_case* c);
 /* the leg's ring completes no descriptor posted from now on */
@@ -681,6 +717,41 @@ void ut_txv_pipe_hang(ut_txv_ctx* ctx, int leg);
 void ut_txv_pipe_run(ut_txv_ctx* ctx, uint64_t duration_ns, uint64_t step_ns);
 /* -EBUSY if a pool still had mbufs out once the rings and inflights were freed */
 int ut_txv_pipe_teardown(ut_txv_ctx* ctx);
+/* The link of leg goes down: its ring completes nothing posted from now on, and the run
+ * goes on past refused bursts. Up: the ring sends what it holds from the mock time at
+ * the wire rate. The link flag follows ut_txv_pipe_set_flag_delay() later. */
+void ut_txv_pipe_set_link(ut_txv_ctx* ctx, int leg, bool up);
+/* from the link change to the flag; 0, the default, for MT_ADMIN_LINK_POLL_US */
+void ut_txv_pipe_set_flag_delay(ut_txv_ctx* ctx, uint64_t ns);
+/* what each leg's ring took from now: the pkts, and the most a pkt left the wire after
+ * its place on the frame grid, its ptp stamp; a pkt of a hung ring is not judged */
+void ut_txv_pipe_mark(ut_txv_ctx* ctx);
+uint64_t ut_txv_pipe_accepted(const ut_txv_ctx* ctx, int leg);
+int64_t ut_txv_pipe_max_late_ns(const ut_txv_ctx* ctx, int leg);
+/* only the last pkt of a frame holds it (tv_tx_direct_chain()) */
+bool ut_txv_pipe_direct_chain(const ut_txv_ctx* ctx);
+/* the frame dones while a ring still held a pkt whose data is in that frame */
+int ut_txv_pipe_done_while_held(const ut_txv_ctx* ctx);
+/* the dones of the frame the builder still builds, and of a frame the app had back */
+int ut_txv_pipe_done_while_built(const ut_txv_ctx* ctx);
+int ut_txv_pipe_done_twice(const ut_txv_ctx* ctx);
+/* frame starts on an epoch not after the one of the frame before, and frame starts whose
+ * packet 0 time was past */
+int ut_txv_pipe_epoch_repeats(const ut_txv_ctx* ctx);
+int ut_txv_pipe_late_starts(const ut_txv_ctx* ctx);
+/* pkts 0 the leg's ring took whose RTP timestamp is not after the one before */
+int ut_txv_pipe_rtp_repeats(const ut_txv_ctx* ctx, int leg);
+/* the app has no frame to give */
+void ut_txv_pipe_set_app_busy(ut_txv_ctx* ctx, bool busy);
+/* ST20_TX_FLAG_USER_PACING: each next frame starts ago_ns before the app gives it; 0 for
+ * no user pacing */
+void ut_txv_pipe_set_app_start_ago(ut_txv_ctx* ctx, uint64_t ago_ns);
+/* runs the pipe step by step until the builder takes its next frame: the mock time
+ * then, and pacing.tsc_time_frame_start, its packet 0 target */
+uint64_t ut_txv_pipe_run_to_next_frame(ut_txv_ctx* ctx, uint64_t step_ns,
+                                       uint64_t* pkt0_tsc);
+/* the descriptors the leg's ring still held when its link came up */
+uint16_t ut_txv_pipe_stale_at_up(const ut_txv_ctx* ctx, int leg);
 /* the run step the app handed over a frame still referenced, a pkt alloc first failed,
  * and a NIC ring first refused a pkt; 0 for none */
 uint64_t ut_txv_pipe_first_frame_busy(const ut_txv_ctx* ctx);
@@ -739,7 +810,7 @@ bool ut_txv_tx_direct_chain(ut_txv_ctx* ctx, const struct ut_txv_direct_chain_ca
 int ut_txv_attach_direct_chain(ut_txv_ctx* ctx, bool mono_pool, bool* direct);
 /* the payload segment of a pkt the pipe session built, against frame 0 */
 struct ut_txv_payload {
-  bool extbuf; /* attached to the frame's sh_info */
+  bool extbuf; /* attached to the frame's sh_cur */
   bool copy;   /* from the copy pool of a padded frame */
   uint64_t addr_off;
   uint64_t iova_off;

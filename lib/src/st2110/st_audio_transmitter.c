@@ -9,6 +9,7 @@
 #include "../mt_log.h"
 #include "st_err.h"
 #include "st_tx_audio_session.h"
+#include "st_tx_link.h"
 
 static int st_audio_trs_tasklet_start(void* priv) {
   struct st_audio_transmitter_impl* trs = priv;
@@ -74,8 +75,17 @@ static uint16_t st_audio_trs_burst(struct mtl_main_impl* impl,
                                    struct st_tx_audio_sessions_mgr* mgr,
                                    enum mtl_port port, struct rte_mbuf* pkt) {
   if (!mgr->queue[port]) return 0;
+  struct st_tx_link* link = &mgr->tx_link[port];
+  if (unlikely(st_tx_link_changed(impl, port, link, __func__, mgr->idx, port)))
+    mgr->last_burst_succ_time_tsc[port] = link->tsc;
+  if (unlikely(link->down)) {
+    rte_pktmbuf_free(pkt);
+    mgr->stat_pkts_link_down_drop++;
+    return 1;
+  }
   uint16_t tx = mt_txq_burst(mgr->queue[port], &pkt, 1);
   if (!tx) return st_audio_trs_burst_fail(impl, mgr, port);
+  mgr->stat_pkts_burst += tx;
   mgr->last_burst_succ_time_tsc[port] = mt_get_tsc(impl);
   return tx;
 }
@@ -102,7 +112,6 @@ static int st_audio_trs_session_tasklet(struct mtl_main_impl* impl,
       mgr->stat_trs_ret_code[port] = -STI_TSCTRS_BURST_INFLIGHT_FAIL;
       return MTL_TASKLET_HAS_PENDING;
     }
-    mgr->stat_pkts_burst += n;
   }
 
   for (int i = 0; i < mgr->max_idx; i++) {
@@ -114,7 +123,6 @@ static int st_audio_trs_session_tasklet(struct mtl_main_impl* impl,
     }
 
     n = st_audio_trs_burst(impl, mgr, port, pkt);
-    mgr->stat_pkts_burst += n;
     if (n < 1) {
       trs->inflight[port] = pkt;
       trs->inflight_cnt[port]++;

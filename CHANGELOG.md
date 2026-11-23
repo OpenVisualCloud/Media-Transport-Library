@@ -2,6 +2,7 @@
 
 * dev: with `MTL_FLAG_RX_MONO_POOL` (RxTxApp `--mono_pool` or `--rx_mono_pool`) each RX queue polls its own queue; since 22.12 every queue polled queue 0 of DPDK port 0, so the sessions' own queues overflowed and sessions on several schedulers shared one queue
 * pcapng dumps: a dump on a port without NIC RX timestamps warns that its packets carry their RX burst time, no basis for ST 2110-21 timing; RxTxApp `--pcapng_dump` now sets `MTL_FLAG_ENABLE_HW_TIMESTAMP`, as `--rx_timing_parser` does
+* st20/st22/st30 TX: a port with no link no longer gets its TX queue marked fatal: the hang detectors wait while the link is down, the transmitter drops the packets at their time (stat dump `pkts link down drop`), a video session starts its next frame on a new epoch, and after the link up a video leg starts again at a frame start, once the NIC ring had the time to send what it held
 * DPDK: two 26.07 TX hot path patches: 0013 builds the TX offload word in one store, 0014 passes iavf's IPsec TX callbacks only with `RTE_ETH_TX_OFFLOAD_SECURITY`; rebuild DPDK (26.07.93_mtl_)
 * st20 RX timing parser: at a frame rate with a fractional number of 90 kHz ticks per frame (59.94, 23.98, 119.88 fps), every other frame's latency no longer reads half a tick (5.6 µs at 59.94) low, which failed frames whose first packet arrives less than that after their RTP time
 * pcapng dumps (st20/st22/st30 RX, CNI): the filename no longer carries the packet count, which at 100,000 packets or more overflowed `MTL_PCAP_FILE_MAX_LEN` (32) and failed the dump; the count stays in the log

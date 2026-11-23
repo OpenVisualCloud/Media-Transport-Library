@@ -54,4 +54,13 @@ TEST_F(St30TxLinkDownTest, LinkUpWithTheQueueStillHungRecoversAThresholdLater) {
   EXPECT_EQ(FailAt(5000 + 2 * kThreshNs), 1);
 }
 
+TEST_F(St30TxLinkDownTest, LinkDownDropDoesNotCountAsTransmittedBurst) {
+  int bursts = -1, drops = -1;
+
+  ASSERT_EQ(ut_txa30_trs_link_down_drop_stats(ctx_, &bursts, &drops), 0);
+
+  EXPECT_EQ(drops, 1);
+  EXPECT_EQ(bursts, 0);
+}
+
 }  // namespace

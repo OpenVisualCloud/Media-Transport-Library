@@ -124,6 +124,9 @@ struct ut_txa30_pipe_case {
   unsigned int chain_pool;
   /* mbufs taken out of each exact pool first, as other lcores' caches keep them */
   unsigned int hold;
+  /* the manager ring of each port, ST_TX_AUDIO_SESSIONS_RING_SIZE when 0; a small one
+   * stands for a ring that many sessions share */
+  unsigned int mgr_ring;
 };
 int ut_txa30_pipe_setup(ut_txa30_ctx* ctx, const struct ut_txa30_pipe_case* c);
 /* the leg's rings complete no descriptor posted from now on */
@@ -146,7 +149,24 @@ void ut_txa30_set_link_down(ut_txa30_ctx* ctx, bool down);
 /* st_audio_trs_burst_fail() of port at the mock tsc. The manager has no queue, so a
  * recovery stops at its start; 1 when it took the recovery. */
 uint16_t ut_txa30_trs_burst_fail(ut_txa30_ctx* ctx, int port, uint64_t thresh_ns);
+/* Runs st_audio_trs_session_tasklet() with one packet while port 0 link is down,
+ * reporting mgr->stat_pkts_burst and mgr->stat_pkts_link_down_drop. */
+int ut_txa30_trs_link_down_drop_stats(ut_txa30_ctx* ctx, int* bursts, int* drops);
 uint64_t ut_txa30_last_burst_succ_tsc(const ut_txa30_ctx* ctx, int port);
+/* tx_hang_detect_time_thresh of the manager, UINT64_MAX in a pipe */
+void ut_txa30_set_hang_ns(ut_txa30_ctx* ctx, uint64_t hang_ns);
+/* The link of leg goes down: its ring completes nothing posted from now on, and the run
+ * goes on past refused bursts. Up: the ring sends what it holds from the mock time, a
+ * descriptor a ns. The link flag follows a poll period, MT_ADMIN_LINK_POLL_US, later. */
+void ut_txa30_pipe_set_link(ut_txa30_ctx* ctx, int leg, bool up);
+/* what each leg's ring took from now: the pkts, and the most a pkt came after its tsc */
+void ut_txa30_pipe_mark(ut_txa30_ctx* ctx);
+uint64_t ut_txa30_pipe_accepted(const ut_txa30_ctx* ctx, int leg);
+int64_t ut_txa30_pipe_max_late_ns(const ut_txa30_ctx* ctx, int leg);
+/* the least time between two pkts the leg's ring took, a burst shows as a small one */
+uint64_t ut_txa30_pipe_min_gap_ns(const ut_txa30_ctx* ctx, int leg);
+/* the descriptors the leg's ring still held when its link came up */
+uint16_t ut_txa30_pipe_stale_at_up(const ut_txa30_ctx* ctx, int leg);
 
 /* Runs tx_audio_session_init_rl() without a port, so it sets only the per-session RL
  * values, then sends one packet through tx_audio_session_rl_tx_pkt() on a queue that
