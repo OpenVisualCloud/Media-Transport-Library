@@ -900,6 +900,30 @@ void ut20_set_port_down(ut20_test_ctx* ctx, enum mtl_session_port port, bool dow
     ctx->impl.inf[phy].status &= ~MT_IF_STAT_PORT_DOWN;
 }
 
+int ut20_start_pcap(ut20_test_ctx* ctx, uint32_t max_pkts, char* name, size_t name_len) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  int ret = rv_start_pcap(s, MTL_SESSION_PORT_P, max_pkts, false, NULL);
+
+  if (!ret) snprintf(name, name_len, "%s", s->pcap[MTL_SESSION_PORT_P].file_name);
+  return ret;
+}
+
+void ut20_stop_pcap(ut20_test_ctx* ctx) {
+  rv_stop_pcap(&ctx->session, MTL_SESSION_PORT_P);
+}
+
+int ut20_ctx_set_fps(ut20_test_ctx* ctx, enum st_fps fps) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  struct st_fps_timing fps_tm;
+  int ret = st_get_fps_timing(fps, &fps_tm);
+
+  if (ret < 0) return ret;
+  s->ops.fps = fps;
+  s->frame_time = (double)NS_PER_S * fps_tm.den / fps_tm.mul;
+  s->frame_time_sampling = (double)fps_tm.sampling_clock_rate * fps_tm.den / fps_tm.mul;
+  return 0;
+}
+
 int ut20_ctx_enable_timing_parser(ut20_test_ctx* ctx, bool interlaced) {
   struct st_rx_video_session_impl* s = &ctx->session;
 

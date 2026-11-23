@@ -780,7 +780,16 @@ int mt_mcast_restore(struct mtl_main_impl* impl, enum mtl_port port) {
 }
 
 int mt_mcast_parse(struct mtl_main_impl* impl, struct mcast_mb_query_v3* query,
-                   enum mtl_port port) {
+                   size_t len, enum mtl_port port) {
+  struct mt_mcast_impl* mcast = get_mcast(impl, port);
+
+  if (!mcast) return 0;
+
+  if (len < sizeof(*query)) {
+    dbg("%s(%d), igmp query too short: %zu\n", __func__, port, len);
+    return -EIO;
+  }
+
   if (query->type != MEMBERSHIP_QUERY) {
     err("%s(%d), invalid type %u, only allow igmp query packet\n", __func__, port,
         query->type);
@@ -795,7 +804,6 @@ int mt_mcast_parse(struct mtl_main_impl* impl, struct mcast_mb_query_v3* query,
     return -EIO;
   }
 
-  struct mt_mcast_impl* mcast = get_mcast(impl, port);
   if (!mcast->has_external_query) {
     info("%s(%d), received igmp query, stop auto-join\n", __func__, port);
     mcast->has_external_query = true;
