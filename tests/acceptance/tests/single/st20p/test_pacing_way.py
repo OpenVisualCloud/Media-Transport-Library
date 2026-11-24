@@ -150,7 +150,12 @@ def test_st20p_pacing_way_auto(
 # PTP and TSN pacing require the hardware PHC exposed by a PF. The ptp mark puts
 # the capture on the same timescale as the RTP timestamps; without it every
 # packet_ts_vs_rtp_ts measure is off by the PTP-to-realtime offset.
+#
+# TX PF on the second function; RX VF and capture on the first, the PHC owner.
+# Binding the owner to DPDK freezes ice's cached PHC time on the other function,
+# which then stamps the capture a multiple of 2^32 ns off.
 @pytest.mark.ptp
+@pytest.mark.sniff_interface_index(0)
 @pytest.mark.parametrize("application", ["rxtxapp"])
 @pytest.mark.parametrize(
     "pacing_way",
@@ -180,7 +185,7 @@ def test_st20p_pacing_way_phc(
     config_params = dict(
         session_type="st20p",
         nic_port_list=setup_interfaces.get_mixed_interfaces_list_single(
-            tx_interface_type="PF", rx_interface_type="VF"
+            tx_interface_type="PF", rx_interface_type="VF", tx_index=1, rx_index=0
         ),
         source_ip=ip_pools.tx[0],
         destination_ip=ip_pools.rx[0],

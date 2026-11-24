@@ -250,9 +250,10 @@ state.
 
 Capture uses a kernel-owned NIC via `netsniff-ng` with hardware RX
 timestamps into nanosecond pcaps, so packet spacing reflects the wire and
-not interrupt delivery. Interface selection priority: explicit
-`sniff_interface` → `sniff_interface_index` → `sniff_pci_device` → topology
-heuristic. Prefer explicit in CI; it documents the wiring.
+not interrupt delivery. Interface selection priority: a test's
+`@pytest.mark.sniff_interface_index(n)` marker → explicit `sniff_interface`
+→ `sniff_interface_index` → `sniff_pci_device` → topology heuristic. Prefer
+explicit in CI; it documents the wiring.
 
 `evaluate()` uploads the pcap to EBU LIST and fails the test when the report
 disagrees with the `CaptureIntent` — ST 2110-21 schedule (narrow or
@@ -307,6 +308,8 @@ selection decide which machine does what.
 append extra interfaces, never insert before the primary pair. Auto-selected
 capture takes the highest-index interface — configure
 `capture_cfg.sniff_interface` explicitly on hosts with more complex layouts.
+`test_st20p_pacing_way_phc` swaps the roles and pins its capture with the
+marker (§5.3), so the PHC-owning first function stays on the kernel driver.
 
 **Dual-host:** the capture host is the one named `client` when present,
 otherwise the first host; auto-selection prefers a kernel PF with no active

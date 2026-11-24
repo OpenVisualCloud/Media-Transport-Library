@@ -377,6 +377,14 @@ def _select_sniff_interface_name(
     return _select_sniff_interface(host, capture_cfg, single_host=single_host).name
 
 
+def _sniff_cfg(request, capture_cfg: dict) -> dict:
+    """Return capture_cfg, or only the test's sniff_interface_index marker if set."""
+    marker = request.node.get_closest_marker("sniff_interface_index")
+    if marker is None:
+        return capture_cfg
+    return {"sniff_interface_index": marker.args[0]}
+
+
 def _select_capture_host(hosts: dict):
     return hosts["client"] if "client" in hosts else list(hosts.values())[0]
 
@@ -575,7 +583,7 @@ def ptp_sync(request, test_config: dict, hosts):
     host = _select_capture_host(hosts)
     is_single_host = len(hosts) == 1
     capture_iface = _select_sniff_interface_name(
-        host, capture_cfg, single_host=is_single_host
+        host, _sniff_cfg(request, capture_cfg), single_host=is_single_host
     )
 
     # A daemon leaked by a previous test/session would steer the PHC against
@@ -809,7 +817,7 @@ def nic_port_list(hosts: dict, mtl_path, test_config, host_dma_devices) -> None:
 
 
 @pytest.fixture(scope="function")
-def setup_interfaces(hosts, test_config, mtl_path):
+def setup_interfaces(request, hosts, test_config, mtl_path):
     host_mtl_paths = {
         h.name: get_host_mtl_path(h, default=mtl_path) for h in hosts.values()
     }
@@ -819,7 +827,7 @@ def setup_interfaces(hosts, test_config, mtl_path):
     if capture_cfg.get("enable"):
         capture_host = _select_capture_host(hosts)
         capture_nic = _select_sniff_interface(
-            capture_host, capture_cfg, single_host=len(hosts) == 1
+            capture_host, _sniff_cfg(request, capture_cfg), single_host=len(hosts) == 1
         )
         capture_pci = str(capture_nic.pci_address.lspci)
         capture_host_name = capture_host.name
@@ -1282,7 +1290,7 @@ def pcap_capture(
                     f"Capture {capture_cfg['packets_number']} packets for {capture_cfg['frames_number']} frames"
                 )
         capture_iface = _select_sniff_interface_name(
-            host, capture_cfg, single_host=is_single_host
+            host, _sniff_cfg(request, capture_cfg), single_host=is_single_host
         )
         capturer = NetsniffRecorder(
             host=host,

@@ -76,7 +76,7 @@ To capture on a specific NIC, set one of:
 - `capture_cfg.sniff_interface_index`: index into `host.network_interfaces`
 - `capture_cfg.sniff_pci_device`: vendor:device ID (e.g., `8086:12d2`)
 
-Priority is `sniff_interface` > `sniff_interface_index` > `sniff_pci_device`.
+Priority is `sniff_interface` > `sniff_interface_index` > `sniff_pci_device`. A test's `@pytest.mark.sniff_interface_index(n)` marker beats all three.
 
 - **ramdisk**: RAM disk configuration for high-performance testing
   - **media.mountpoint**: Mount point for media RAM disk
