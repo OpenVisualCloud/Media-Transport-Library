@@ -531,6 +531,8 @@ run_test_with_retry() {
 		time_taken_by_script
 		exit 1
 	fi
+	# 124: the last attempt ran into the time limit.
+	[ "$RETVAL" -ne 124 ] && [ "$RETVAL" -ne 137 ] || return 124
 	return 1
 }
 
@@ -579,17 +581,26 @@ generate_test_cases
 [ -z "${test_cases[noctx]+set}" ] || noctx_isolation=$(noctx_isolation_probe)
 print_configuration
 
+failed_cases=()
+config_error=""
 for test_name in "${!test_cases[@]}"; do
 	[[ -z ${GTEST_CASES} || $test_name =~ ${GTEST_CASES} ]] || continue
 	echo "$test_name" "${test_cases[$test_name]}"
-	if ! run_test_with_retry "$test_name"; then
-		retval=$?
-		if [ $retval -eq 2 ]; then
-			echo "✗ Test aborted due to configuration errors: $test_name"
-		fi
-		kill_test_processes
-		time_taken_by_script
-		exit 1
+	retval=0
+	run_test_with_retry "$test_name" || retval=$?
+	# With EXIT_ON_FAILURE=0 a failed case must not hide the cases after it. A
+	# configuration error (2) still stops the run, after the summary.
+	if [ $retval -eq 2 ]; then
+		echo "✗ Test aborted due to configuration errors: $test_name"
+		config_error=$test_name
+		break
+	fi
+	[ $retval -eq 0 ] || failed_cases+=("$test_name")
+	# A last attempt that ran into the time limit can be a hung host, where every
+	# further case would wait out its own limit: stop, but with the summary.
+	if [ $retval -eq 124 ]; then
+		echo "✗ Stopping the run: the last attempt of $test_name ran into its time limit"
+		break
 	fi
 done
 
@@ -653,10 +664,17 @@ if [ "$critical_count" -gt 0 ]; then
 	done
 fi
 
+if [ "${#failed_cases[@]}" -gt 0 ]; then
+	echo ""
+	echo "✗ Cases that failed after $MAX_RETRIES attempts:"
+	printf '  - %s\n' "${failed_cases[@]}"
+fi
+[ -z "$config_error" ] || echo "✗ Run stopped by configuration errors in: $config_error"
+
 echo "=========================================="
 
 time_taken_by_script
 
-if [ "$critical_count" -gt 0 ]; then
+if [ "$critical_count" -gt 0 ] || [ "${#failed_cases[@]}" -gt 0 ] || [ -n "$config_error" ]; then
 	exit 1
 fi
