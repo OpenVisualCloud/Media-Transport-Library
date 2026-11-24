@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import time
 import traceback
@@ -24,11 +25,11 @@ from mtl_engine.execute import kill_stale_processes, read_remote_log, run
 from mtl_engine.integrity import calculate_yuv_frame_size
 from mtl_engine.media_files import pformat_to_exact_fps, yuv_files_422rfc10
 from mtl_engine.performance_monitoring import (
-    CpuCoreMonitor,
     companion_window,
+    data_cores,
     display_session_results,
     format_cpus,
-    log_cpu_core_results,
+    log_data_cores,
     monitor_dev_rate,
     monitor_rx_fps,
     monitor_rx_frames_simple,
@@ -62,6 +63,8 @@ SUT_DROP_MARKERS = (
     "framebuff pool empty",
     "busy drop frame",
 )
+# What MTL logs for an RX session that gets no DMA device.
+DMA_REFUSED = "can not request dma dev"
 # MTL's count of the packets its incomplete frames missed, when not zero
 # ("missed" up to v26.01).
 MISSED_PKTS = re.compile(r"(?:unrecovered|missed): [1-9]")
@@ -82,16 +85,19 @@ CRASH_EXIT_CODES = (134, 137, 139, 244, 251)  # SIGABRT, SIGKILL, SIGSEGV, DPDK,
 # redundant sweep split in two above 30 sessions; 99 covers 49 of them, and
 # _single_core_violation() fails the iteration if a split happens anyway.
 SCH_SESSION_QUOTA_SINGLE_CORE = 99
+# The highest quota RxTxApp takes (args.c).
+SCH_SESSION_QUOTA_MAX = 99
 
 # Phase 1 binary search (multi-core) must find the session ceiling of the *NIC*,
 # so it packs thinly enough that no core is the limit -- 12 units, the library's
 # own ST_QUOTA_TX1080P_PER_SCH.  Leaving this to the per-mode quota below let
 # packing density cap the sweep: at quota 18 the +DMA sweep put 36 sessions on
 # 2 schedulers, failed, and settled at 33, while no-DMA spread the same 36 over
-# 3 schedulers at quota 16 and passed.  Phase 2 then re-packs for fewer cores.
-# CLI --sch_quota overrides both phases.
+# 3 schedulers at quota 16 and passed.  Phase 2 then searches the fewest cores
+# that still carry that count.  CLI --sch_quota overrides both phases.
 SCH_SESSION_QUOTA_PHASE1_MC = 12
 
+# A multi-core fixed run (--num_sessions) packs at these per-mode quotas.
 # Multi-core no-DMA: RX ~21/core max, TX ~28/core max (TX has no memcpy).
 SCH_SESSION_QUOTA_MULTI_CORE = 16  # RX no-DMA (~76% of SC max)
 SCH_SESSION_QUOTA_MULTI_CORE_TX = 24  # TX no-DMA
@@ -308,12 +314,7 @@ def _select_mc_quota(
     use_dma: bool,
     redundant: bool,
 ) -> int:
-    """Return the multi-core scheduler quota for the given mode.
-
-    Centralises the per-mode quota selection used both in ``_run_iteration``
-    (for the SUT scheduler) and in the verification phase of
-    ``_run_session_sweep``.
-    """
+    """Return the multi-core scheduler quota of a fixed run in the given mode."""
     if use_dma and redundant:
         return SCH_SESSION_QUOTA_DMA_RX_REDUNDANT
     if use_dma:
@@ -325,6 +326,23 @@ def _select_mc_quota(
     if is_tx:
         return SCH_SESSION_QUOTA_MULTI_CORE_TX
     return SCH_SESSION_QUOTA_MULTI_CORE
+
+
+def _quota_mbs(width: int, height: int, fps: int, ports: int = 1) -> int:
+    """What one 4:2:2 10-bit session charges a scheduler, in Mb/s, as MTL works it
+    out: st20_get_bandwidth_bps() in whole Mb/s, times its ports.  Integer
+    division where MTL's is, so that a quota of _quota_for_sessions() admits what
+    MTL admits: 1080p59 charges 2589, a quota unit, and 2160p59 10357, not 4 units.
+    """
+    rate = Fraction(pformat_to_exact_fps(fps))
+    traffic = width * height * 8 * 5 // 2 * rate.numerator // rate.denominator
+    return int(traffic / (1080 / 1125)) // 10**6 * ports
+
+
+def _quota_for_sessions(per_sch: int, media_config: dict, fps: int, ports: int) -> int:
+    """The scheduler quota that admits *per_sch* sessions of *media_config* each."""
+    charge = _quota_mbs(media_config["width"], media_config["height"], fps, ports)
+    return -(-per_sch * charge // _quota_mbs(1920, 1080, 59))
 
 
 def _is_crash_code(return_code: int) -> bool:
@@ -364,9 +382,9 @@ def _fewest_cores_result(
 ) -> dict | None:
     """Return the passing iteration at *num_sessions* that used the fewest cores.
 
-    Multi-core sweeps run the winning session count twice -- thinly packed in
-    phase 1, then densely in phase 2 -- so report the cheapest placement that
-    actually passed, not the last one attempted.  None if none did.
+    Multi-core sweeps run the winning session count more than once -- thinly
+    packed in phase 1, then denser in phase 2 -- so report the cheapest placement
+    that actually passed, not the last one attempted.  None if none did.
     """
     candidates = [
         it
@@ -672,10 +690,7 @@ def _run_iteration(
         if sut_app_args:
             measured_app.command += f" {sut_app_args}"
 
-        # ── Run measured app with CPU monitoring ──
-        cpu_monitor = CpuCoreMonitor(measured_host, interval=2)
-        cpu_monitor.start(duration=test_time + rl_overhead)
-
+        # ── Run measured app ──
         try:
             result = run(
                 measured_app.command,
@@ -687,10 +702,7 @@ def _run_iteration(
         except Exception as e:
             logger.error(f"Measured process failed: {e}")
             kill_stale_processes(tx_host, rx_host)
-            cpu_monitor.stop()
             return False, 0, f"process timeout: {e}", None, 0
-
-        cores_info = cpu_monitor.stop()
 
         # ── Log the measured app's output ──
         # Unfiltered on purpose: the port drop counters, DEV rate lines and
@@ -775,7 +787,12 @@ def _run_iteration(
                 logger.info(cfg_line)
             logger.info("=" * 70)
         logger.info("=" * 70)
-        log_cpu_core_results(cores_info)
+        cores = data_cores(
+            stdout_lines, fps_details["window"], None if single_core else 0
+        )
+        log_data_cores(cores, fps_details["window"])
+        if success and not cores:
+            logger.warning("No scheduler line in the dumps judged: cores not counted")
 
         display_session_results(
             direction.upper(),
@@ -812,6 +829,9 @@ def _run_iteration(
                 f"{worst:.0f} us past the target, {late} started late"
             )
             success, vetoed = False, not is_tx
+        # A session that gets no DMA device copies on its CPU (rv_init_dma()).
+        if use_dma and (no_dma := sum(DMA_REFUSED in line for line in stdout_lines)):
+            detail += f", {no_dma} sessions without DMA"
         if _has_hugepage_source_fallback(tx_lines):
             # Part of this iteration's TX read its source through mmap() instead
             # of hugepages, so the number would average two memory paths.  Veto
@@ -848,8 +868,7 @@ def _run_iteration(
         ):
             detail += f", {sum(losses)} pkts {NETWORK_LOSS_MARKER}"
         app_config = measured_app.config if hasattr(measured_app, "config") else None
-        cores_used = cores_info.get("cores_used", 0) if cores_info else 0
-        return success, count, detail, app_config, cores_used
+        return success, count, detail, app_config, len(cores)
 
     finally:
         companion_app.stop_process()
@@ -1193,6 +1212,7 @@ def _run_session_sweep(
             phase1_quota = SCH_SESSION_QUOTA_PHASE1_MC
 
         undecided = None  # The count whose every attempt the network decided
+        infra = False
         lo, hi = 1, max_sess
         while lo <= hi:
             mid = (lo + hi) // 2
@@ -1208,37 +1228,59 @@ def _run_session_sweep(
             else:
                 if _is_infra_failure(_last_detail()):
                     logger.error("  ⚠ Infrastructure failure detected — aborting sweep")
+                    infra = True
                     break
                 hi = mid - 1
 
-        # ── Phase 2 (MC only): verification re-run at default quota ──
-        phase2_cores: int | None = None
-        default_quota: int | None = None
-        if max_passing > 0 and not single_core and undecided is None:
-            default_quota = _select_mc_quota(is_tx, use_dma, redundant)
-            logger.info(
-                f"\n  ── Phase 2: re-verify {max_passing} sessions "
-                f"at quota={default_quota} ──"
-            )
-            verified = _run_with_network_retry(
-                max_passing, phase="VERIFY", quota_override=default_quota
-            )
-            if verified:
-                verify_it = iteration_results[-1]
-                phase2_cores = verify_it.get("cores_used", 0)
+        # ── Phase 2 (MC only): the fewest cores that carry max_passing ──
+        # Phase 1 spread the sessions so that no core was the limit; pack the same
+        # sessions onto fewer schedulers, and keep the fewest that still pass.
+        if (
+            max_passing > 0
+            and not single_core
+            and undecided is None
+            and not infra
+            and sch_quota is None
+        ):
+            spread = _fewest_cores_result(iteration_results, max_passing)
+            lo, hi = 1, (spread["cores_used"] if spread else 1) - 1
+            while lo <= hi:
+                cores = (lo + hi) // 2
+                quota = _quota_for_sessions(
+                    math.ceil(max_passing / cores),
+                    media_config,
+                    fps,
+                    2 if redundant else 1,
+                )
+                if quota > SCH_SESSION_QUOTA_MAX:
+                    lo = cores + 1
+                    continue
                 logger.info(
-                    f"  ✓ Verification passed at quota={default_quota} "
-                    f"({phase2_cores} cores)"
+                    f"\n  ── Phase 2: {max_passing} sessions on at most {cores} "
+                    f"cores (quota={quota}) ──"
                 )
-            elif verified is None:
-                logger.warning(
-                    f"  ⚠ Verification at quota={default_quota}: {network_failure}"
+                passed = _run_with_network_retry(
+                    max_passing, phase="CORES", quota_override=quota
                 )
-            else:
-                logger.info(
-                    f"  ✗ Verification FAILED at quota={default_quota} — "
-                    f"{max_passing} sessions not stable"
-                )
+                if passed is None:
+                    logger.warning(
+                        f"  ⚠ {max_passing} sessions at quota {quota}: "
+                        f"{network_failure} — the cores are those of the runs that "
+                        "passed"
+                    )
+                    break
+                if passed:
+                    hi = min(cores, iteration_results[-1]["cores_used"] or cores) - 1
+                elif _is_infra_failure(_last_detail()) or _last_detail().startswith(
+                    "exception:"
+                ):
+                    logger.warning(
+                        f"  ⚠ {max_passing} sessions at quota {quota} not measured — the "
+                        "cores are those of the runs that passed"
+                    )
+                    break
+                else:
+                    lo = cores + 1
 
         # ── Compute best (minimum) cores from sweep ──
         best_cores = 0
@@ -1251,12 +1293,7 @@ def _run_session_sweep(
         # ── Summary ──
         cores_line = ""
         if best_cores:
-            cores_line = f"  CORES: {best_cores} (quota={best_quota_val})"
-            if phase2_cores is not None and phase2_cores != best_cores:
-                cores_line += (
-                    f"  |  default quota={default_quota}: " f"{phase2_cores} cores"
-                )
-            cores_line += "\n"
+            cores_line = f"  CORES: {best_cores} (quota={best_quota_val})\n"
 
         logger.info(
             f"\n{'═' * 70}\n"

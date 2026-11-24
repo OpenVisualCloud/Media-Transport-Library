@@ -1,12 +1,10 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2026 Intel Corporation
 
-"""Performance monitoring utilities for MTL tests — FPS, frames, throughput, CPU."""
+"""Performance monitoring utilities for MTL tests — FPS, frames, throughput, cores."""
 
 import logging
 import re
-import time
-import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -503,118 +501,30 @@ def _log_throughput(label, direction, tp_details, dev_rate, num_sessions):
                 )
 
 
-# ── CPU Core Usage Monitor ──────────────────────────────────────────────
+# ── Scheduler Cores ─────────────────────────────────────────────────────
 
 
-class CpuCoreMonitor:
-    """Background CPU core usage monitor using mpstat.
+def data_cores(log_lines, window, system_sch=None):
+    """The cores the sessions ran on in the stat dumps of *window* → {scheduler: lcore}.
 
-    Tracks cores that reach 100% %usr during the test.
-
-    Usage::
-
-        monitor = CpuCoreMonitor(host, interval=2)
-        monitor.start(duration=120)
-        # … run test …
-        info = monitor.stop()  # {"cores_used": N, "max_cores_simultaneous": M, ...}
+    A scheduler polls its core at 100 % however busy it is, so the cores a run needs
+    are those of the schedulers that carry tasklets, but for scheduler *system_sch*:
+    with dedicated_sys_lcore, scheduler 0 runs MTL's own tasklets only, as CNI's
+    and PTP's.
     """
-
-    def __init__(self, host, interval=2):
-        self.host = host
-        self.interval = interval
-        self._process = None
-        self._log_path = ""
-
-    def start(self, duration=120):
-        """Start background mpstat sampling."""
-        count = max(1, duration // self.interval)
-        self._log_path = f"/tmp/cpu_monitor_{uuid.uuid4().hex[:8]}.log"
-        try:
-            self._process = self.host.connection.start_process(
-                f"mpstat -P ALL {self.interval} {count} > {self._log_path} 2>&1",
-                shell=True,
-            )
-        except Exception as e:
-            logger.warning(f"CpuCoreMonitor: start failed on {self.host.name}: {e}")
-            self._process = None
-
-    def stop(self):
-        """Stop monitoring, parse results, return core usage dict."""
-        empty = {
-            "cores_used": 0,
-            "max_cores_simultaneous": 0,
-            "samples": 0,
-            "core_ids": [],
-        }
-        if not self._process:
-            return empty
-
-        try:
-            if hasattr(self._process, "running") and self._process.running:
-                time.sleep(1)
-                try:
-                    self._process.stop()
-                except Exception:
-                    pass
-                try:
-                    self._process.kill(wait=5)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        try:
-            # Parse mpstat on the remote host to avoid transferring megabytes
-            # of raw output over a slow SSH/proxy connection.  Only send back
-            # the compact summary (one line: "cores_used max_sim samples c1,c2,...").
-            awk_script = (
-                r"""awk '"""
-                r"""$0 ~ /^[[:space:]]*$/ { if (n>0) { samples++; if (n>mx) mx=n; n=0 } next }"""
-                r"""{ off=0; if ($2=="AM"||$2=="PM") off=1 }"""
-                r"""$(2+off)=="CPU" { next }"""
-                r"""$(2+off)+0==$(2+off) && $(2+off)!="all" { """
-                r"""  if ($(3+off)+0 >= 100.0) { all[$(2+off)]=1; n++ } """
-                r"""}"""
-                r"""END { """
-                r"""  if (n>0) { samples++; if (n>mx) mx=n }"""
-                r"""  c=0; ids=""; for (k in all) { c++; ids=ids (ids?",":" ") k }"""
-                r"""  printf "%d %d %d%s\n", c, mx, samples, ids """
-                r"""}' """
-            )
-            r = self.host.connection.execute_command(
-                f"{awk_script} {self._log_path} 2>/dev/null || echo '0 0 0 '",
-                shell=True,
-            )
-            parts = (r.stdout or "0 0 0 ").strip().split(None, 3)
-            cores_used = int(parts[0]) if len(parts) > 0 else 0
-            max_sim = int(parts[1]) if len(parts) > 1 else 0
-            samples = int(parts[2]) if len(parts) > 2 else 0
-            core_ids = (
-                sorted(int(c) for c in parts[3].split(",") if c.strip())
-                if len(parts) > 3 and parts[3].strip()
-                else []
-            )
-            result = {
-                "cores_used": cores_used,
-                "max_cores_simultaneous": max_sim,
-                "samples": samples,
-                "core_ids": core_ids,
-            }
-        except Exception:
-            result = empty
-
-        try:
-            self.host.connection.execute_command(f"rm -f {self._log_path}", shell=True)
-        except Exception:
-            pass
-        return result
+    cores = {}
+    for m in _collect_in_window(
+        log_lines, r"SCH\((\d+):[^)]*\): tasklets (\d+), lcore (\d+)", window
+    ):
+        if int(m.group(2)) and int(m.group(1)) != system_sch:
+            cores[int(m.group(1))] = int(m.group(3))
+    return cores
 
 
-def log_cpu_core_results(info):
-    """Log CPU core usage in parseable format for the HTML report."""
+def log_data_cores(cores, window):
+    """Log :func:`data_cores` in the [CPU_CORES] line the HTML report parses: all
+    the schedulers poll at once, and *window* holds the dumps they were read in."""
     logger.info(
-        f"[CPU_CORES] cores_used={info['cores_used']} "
-        f"max_simultaneous={info['max_cores_simultaneous']} "
-        f"samples={info['samples']} "
-        f"core_ids={','.join(str(c) for c in info['core_ids'])}"
+        f"[CPU_CORES] cores_used={len(cores)} max_simultaneous={len(cores)} "
+        f"samples={len(window)} core_ids={','.join(map(str, sorted(cores.values())))}"
     )
