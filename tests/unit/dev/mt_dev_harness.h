@@ -75,6 +75,20 @@ int ut_dev_config_rss_reta(ut_dev_ctx* ctx, uint16_t nb_rx_q, uint16_t reta_size
 int ut_dev_config_port_nb_rx_desc(ut_dev_ctx* ctx, bool iavf, bool hw_timestamp,
                                   uint16_t nb_rx_desc, uint16_t nb_max);
 
+struct ut_dev_sch_setup {
+  uint64_t flags;         /* mtl_init_params.flags */
+  bool anc_session_first; /* an ancillary session comes and goes first */
+  int tx_video_quota_mbs;
+};
+struct ut_dev_sch_layout {
+  int main_sch;
+  int tx_video_sch;
+};
+/* As mtl_init() with setup: creates the main scheduler, then takes the scheduler a TX
+ * video session gets. No scheduler starts. Returns 0 on success. */
+int ut_dev_sch_layout(const struct ut_dev_sch_setup* setup,
+                      struct ut_dev_sch_layout* layout);
+
 /* EAL argv builder. rte_eal_init() is stubbed out and fails, which keeps dev_eal_init()'s
  * one-shot guard unlatched, so these may be called repeatedly in one process. */
 

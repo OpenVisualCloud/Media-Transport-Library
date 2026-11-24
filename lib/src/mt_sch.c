@@ -525,7 +525,7 @@ static int sch_free_quota(struct mtl_sch_impl* sch, int quota_mbs) {
 
   sch_lock(sch);
   sch->data_quota_mbs_total -= quota_mbs;
-  if (!sch->data_quota_mbs_total) {
+  if (!sch->data_quota_mbs_total && sch->type != MT_SCH_TYPE_SYSTEM) {
     /* no tx/rx video, change to default */
     sch->type = MT_SCH_TYPE_DEFAULT;
   }

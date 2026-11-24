@@ -4,6 +4,7 @@
 
 #define _GNU_SOURCE /* as mt_main.h, before any system header */
 #include <dlfcn.h>
+#include <limits.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -567,6 +568,54 @@ int ut_dev_config_rss_reta(ut_dev_ctx* ctx, uint16_t nb_rx_q, uint16_t reta_size
   inf->dev_info.reta_size = reta_size;
   ut_active_ctx = ctx;
   return dev_config_rss_reta(inf);
+}
+
+int ut_dev_sch_layout(const struct ut_dev_sch_setup* setup,
+                      struct ut_dev_sch_layout* layout) {
+  if (ut_eal_init() < 0) return -EIO;
+  struct mtl_main_impl* impl = calloc(1, sizeof(*impl));
+  if (!impl) return -ENOMEM;
+
+  impl->type = MT_HANDLE_MAIN;
+  /* reads as MtlManager-connected, so mt_sch_mrg_init() skips the host lcore table */
+  impl->instance_fd = INT_MAX;
+  impl->tasklets_nb_per_sch = 16; /* the mtl_init() default */
+  rte_spinlock_init(&impl->stat_mgr.lock);
+  MT_TAILQ_INIT(&impl->stat_mgr.head);
+  impl->user_para.flags = setup->flags;
+  impl->inf[MTL_PORT_P].socket_id = (int)rte_socket_id();
+
+  enum mtl_log_level level = mt_get_log_global_level();
+  mt_set_log_global_level(MTL_LOG_LEVEL_ERR);
+  int ret = dev_sch_init(impl);
+  if (ret < 0) goto out;
+
+  if (setup->anc_session_first) {
+    /* what st40_tx_create() takes and st40_tx_free() returns */
+    struct mtl_sch_impl* anc = mt_sch_get(impl, 0, MT_SCH_TYPE_DEFAULT, MT_SCH_MASK_ALL);
+    if (anc)
+      mt_sch_put(anc, 0);
+    else
+      ret = -EIO;
+  }
+  if (!ret) {
+    /* the request st20_tx_create() makes */
+    struct mtl_sch_impl* sch =
+        mt_sch_get(impl, setup->tx_video_quota_mbs, MT_SCH_TYPE_DEFAULT, MT_SCH_MASK_ALL);
+    if (sch) {
+      layout->main_sch = impl->main_sch->idx;
+      layout->tx_video_sch = sch->idx;
+      mt_sch_put(sch, setup->tx_video_quota_mbs);
+    } else {
+      ret = -EIO;
+    }
+  }
+  mt_sch_put(impl->main_sch, 0);
+  mt_sch_mrg_uinit(impl);
+out:
+  mt_set_log_global_level(level);
+  free(impl);
+  return ret;
 }
 
 int ut_dev_create_ports(ut_dev_ctx* ctx) {
