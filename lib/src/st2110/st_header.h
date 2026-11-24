@@ -365,6 +365,8 @@ struct st_tx_video_session_impl {
   unsigned int trs_inflight_idx[MTL_SESSION_PORT_MAX];
   unsigned int trs_pad_inflight_num[MTL_SESSION_PORT_MAX]; /* inflight padding */
   int trs_inflight_cnt[MTL_SESSION_PORT_MAX];              /* for stats */
+  /* the pad the trs_pad_inflight_num refused copies retry as, each holding a reference */
+  struct rte_mbuf* trs_pad_inflight[MTL_SESSION_PORT_MAX];
   struct rte_mbuf* trs_inflight2[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
   unsigned int trs_inflight_num2[MTL_SESSION_PORT_MAX];
   unsigned int trs_inflight_idx2[MTL_SESSION_PORT_MAX];
@@ -406,6 +408,8 @@ struct st_tx_video_session_impl {
   struct st20_packet_group_info st20_pkt_info[ST20_PKT_TYPE_MAX];
   struct rte_mbuf* pad[MTL_SESSION_PORT_MAX][ST20_PKT_TYPE_MAX];
   struct rte_mbuf* trim_pad[MTL_SESSION_PORT_MAX][ST_TX_VIDEO_RL_TRIM_PAD_MAX];
+  /* the uncut pre-arm pad when longer than the NORMAL pad, else NULL */
+  struct rte_mbuf* pre_arm_pad[MTL_SESSION_PORT_MAX];
 
   /* the cpu resource to handle tx, 0: full, 100: cpu is very busy */
   double cpu_busy_score;

@@ -7,6 +7,7 @@
 
 #include <math.h>
 #include <rte_common.h>
+#include <rte_ether.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -23,8 +24,27 @@
  * the shaper drains a pad that short by its bytes */
 #define ST_TX_VIDEO_RL_TRIM_COARSE (64)
 #define ST_TX_VIDEO_RL_TRIM_FINE (8)
+/* bytes, the shortest pre-arm pad an idle E830/E835 shaper was measured to start on the
+ * plan; from 1274 B down it sends ~2 pads more at once than its bucket */
+#define ST_TX_VIDEO_RL_PAD_MIN (1292)
+/* bytes, the shortest NORMAL pad lengthened to PAD_MIN: an E830 shaper was measured to
+ * drain pads by their bytes from there to 1382 B, and far shorter ones not */
+#define ST_TX_VIDEO_RL_PAD_LIFT_MIN (1214)
 
-/* the trim_pad[] of a port: the NORMAL pad less TRIM_COARSE or TRIM_FINE bytes */
+/* the bytes of the uncut pre-arm pad of a port whose NORMAL pkt is normal bytes */
+static inline uint16_t st_tx_video_rl_pad_size(uint32_t normal) {
+  if (normal < ST_TX_VIDEO_RL_PAD_LIFT_MIN) return (uint16_t)normal;
+  return (uint16_t)RTE_MAX(normal, (uint32_t)ST_TX_VIDEO_RL_PAD_MIN);
+}
+
+/* the shaper time of a pad of to bytes where one of from bytes takes ns: the trained
+ * rates of E810, E830 and E835 fit a charge of each frame's bytes and its FCS */
+static inline long double st_tx_video_rl_pad_ns(long double ns, uint32_t from,
+                                                uint32_t to) {
+  return ns * ((long double)(to + RTE_ETHER_CRC_LEN) / (from + RTE_ETHER_CRC_LEN));
+}
+
+/* the trim_pad[] of a port: the uncut pre-arm pad less TRIM_COARSE or TRIM_FINE bytes */
 enum st_tx_video_rl_trim {
   ST_TX_VIDEO_RL_TRIM_PAD_COARSE = 0,
   ST_TX_VIDEO_RL_TRIM_PAD_FINE,
@@ -82,11 +102,11 @@ static inline uint64_t st_tx_video_rl_timeslot_tokens(uint64_t bps) {
 
 /* the RL pre-arm plan of a port, set by tv_rl_plan_init() */
 struct st_tx_video_rl_plan {
-  long double pad_ns;    /* shaper time of one NORMAL pad, 0 without a plan */
+  long double pad_ns;    /* shaper time of one uncut pre-arm pad, 0 without a plan */
   long double bucket_ns; /* shaper time of a full bucket plus the timeslot aim */
   long double absorb_ns; /* the longest stall or tail shortfall kept, <= 0 for none */
   int64_t trim_pads;     /* st_tx_video_rl_trim_pads() of pad_size */
-  uint16_t pad_size;     /* bytes of the NORMAL pad */
+  uint16_t pad_size;     /* bytes of the uncut pre-arm pad */
   uint16_t anchor_pads;  /* pads of the first burst into an idle shaper */
   bool armed;            /* false: packet 0 is held until its target */
   /* the shaper time of the NIC's full bucket */
@@ -95,7 +115,7 @@ struct st_tx_video_rl_plan {
   int64_t vrx_budget_ns;
 };
 
-/* a pre-arm burst of n NORMAL pads, the first coarse of them TRIM_COARSE bytes short and
+/* a pre-arm burst of n uncut pads, the first coarse of them TRIM_COARSE bytes short and
  * the next fine ones TRIM_FINE bytes short */
 struct st_tx_video_rl_burst {
   unsigned int n;
@@ -113,7 +133,7 @@ static inline int64_t st_tx_video_rl_trim_pads(uint16_t pad_size) {
                  ST_TX_VIDEO_RL_MAX_PADS_PER_BURST);
 }
 
-/* Plans the next pre-arm burst. drain is the shaper time of one NORMAL pad, launch when
+/* Plans the next pre-arm burst. drain is the shaper time of one uncut pad, launch when
  * packet 0 should start and drained when the shaper finishes what is queued, all in ns.
  * While more than trim_pads pads are needed, the burst is up to
  * ST_TX_VIDEO_RL_MAX_PADS_PER_BURST of them, keeping trim_pads for the last one, which

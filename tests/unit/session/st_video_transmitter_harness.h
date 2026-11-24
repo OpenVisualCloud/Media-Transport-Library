@@ -38,6 +38,15 @@ void ut_trs_set_vrx_detect(ut_trs_ctx* ctx, int port, int64_t budget_ns,
 void ut_trs_set_vrx_room(ut_trs_ctx* ctx, int port, int32_t room_ns);
 /* the bucket of the modeled shaper, in ns, when it differs from the plan's credit */
 void ut_trs_set_shaper_bucket(ut_trs_ctx* ctx, int port, long double bucket_ns);
+/* A modeled shaper starting idle on a pad of at most len bytes sends that many pads'
+ * worth more at once than its bucket, as E830/E835 do about 2 for pads of up to 1274 B.
+ */
+void ut_trs_set_shaper_small_pads(ut_trs_ctx* ctx, int port, uint16_t len,
+                                  long double pads);
+/* Port P's NORMAL pkt and pad of normal bytes, and the plan's pre-arm pad of pre_arm
+ * bytes with the trim pads cut from it, as tv_init_hw() builds them; after
+ * ut_trs_set_drain(), whose drain is then that pre-arm pad's. */
+int ut_trs_set_pad_sizes(ut_trs_ctx* ctx, uint16_t normal, uint16_t pre_arm);
 /* The modeled shaper adds its tokens every slot_ns, the last time phase_ns (< slot_ns)
  * before it started the pads from a full bucket: packet 0 then leaves up to a slot before
  * or after the fluid drain end. */
@@ -54,15 +63,17 @@ bool ut_trs_pre_arm_port(ut_trs_ctx* ctx, int port);
 
 /* When the shaper starts the first real packet of the port: the later of when it was
  * queued (without one yet, the last tsc read) and the drain end of the pads accepted
- * ahead of it, drained = max(drained, tsc - bucket_ns) + pad_ns per pad, a token
+ * ahead of it, drained = max(drained, tsc - bucket_ns) + each pad by its bytes, a token
  * bucket bucket_ns deep. It reads the same pad_ns / bucket_ns the plan uses, unless
  * ut_trs_set_shaper_bucket() gave it another bucket, so it checks the plan arithmetic,
  * not those values. */
 long double ut_trs_modeled_launch_tsc(const ut_trs_ctx* ctx, int port);
-/* the shaper time of ST_TX_VIDEO_RL_TRIM_FINE bytes of a NORMAL pad, the trim's step */
+/* the shaper time of ST_TX_VIDEO_RL_TRIM_FINE bytes of a pre-arm pad, the trim's step */
 long double ut_trs_fine_trim_ns(const ut_trs_ctx* ctx, int port);
 /* refcnt of the port P pad ST_TX_VIDEO_RL_TRIM_COARSE (j 0) or _FINE (j 1) bytes short */
 uint16_t ut_trs_trim_pad_refcnt(const ut_trs_ctx* ctx, int j);
+/* refcnt of the port P uncut pre-arm pad, the NORMAL pad's without one */
+uint16_t ut_trs_pre_arm_pad_refcnt(const ut_trs_ctx* ctx);
 uint32_t ut_trs_train_pads(const ut_trs_ctx* ctx, int port);
 void ut_trs_clear_train(ut_trs_ctx* ctx);
 
@@ -123,6 +134,8 @@ uint32_t ut_trs_max_refcnt_updates_before_burst(const ut_trs_ctx* ctx);
 uint32_t ut_trs_real_send_count(const ut_trs_ctx* ctx);
 uint32_t ut_trs_sent_pkt_idx(const ut_trs_ctx* ctx, uint32_t pos);
 uint64_t ut_trs_last_pad_send_tsc(const ut_trs_ctx* ctx);
+/* bytes of the last pad the NIC took */
+uint32_t ut_trs_last_pad_len(const ut_trs_ctx* ctx);
 uint64_t ut_trs_last_real_send_tsc(const ut_trs_ctx* ctx);
 uint16_t ut_trs_pad_refcnt(const ut_trs_ctx* ctx);
 unsigned int ut_trs_pad_inflight_num(const ut_trs_ctx* ctx);

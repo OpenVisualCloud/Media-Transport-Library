@@ -172,6 +172,7 @@ unit_sources = [
   'session/st20_tx/rl_tail_test.cpp',
   'session/st20_tx/rl_vrx_detect_test.cpp',
   'session/st20_tx/rl_model_test.cpp',
+  'session/st20_tx/rl_pad_size_test.cpp',
   'session/st20_tx/tx_queue_stall_test.cpp',
   'session/st20_tx/rl_queue_ahead_test.cpp',
   'session/st20_tx/transmitter_bugs_test.cpp',

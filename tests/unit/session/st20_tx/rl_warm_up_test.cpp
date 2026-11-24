@@ -393,8 +393,11 @@ class St20TxRlFastClockTest : public St20TxRlWarmUpTest {
     bucket_ = 2048 * 1e9L / programmed_bps;
     budget_ = ut_txv_rl_vrx_budget(txv, kPortP);
     refill_ = ut_txv_rl_refill(txv, kPortP);
+    pad_size_ = ut_txv_rl_pad_size(txv, kPortP);
+    trim_pads_ = ut_txv_rl_trim_pads(txv, kPortP);
+    ASSERT_EQ(kPadSize, ut_txv_normal_size(txv));
     ut_txv_destroy(txv);
-    Apply();
+    ASSERT_NO_FATAL_FAILURE(Apply());
   }
 
   /* 2160p59.94 on the queue rate tv_rl_bps() programs, 0.9 us pads */
@@ -414,6 +417,7 @@ class St20TxRlFastClockTest : public St20TxRlWarmUpTest {
     ut_trs_set_warm_pkts_cap(ctx_, warm_pkts_);
     ut_trs_set_drain(ctx_, kPortP, drain_);
     ut_trs_set_credit(ctx_, kPortP, credit_);
+    ASSERT_EQ(0, ut_trs_set_pad_sizes(ctx_, kPadSize, pad_size_));
     ut_trs_set_shaper_bucket(ctx_, kPortP, bucket_);
   }
 
@@ -425,7 +429,7 @@ class St20TxRlFastClockTest : public St20TxRlWarmUpTest {
 
   /* the longest timeslot ice programs at these rates: 257 B at the drain training saw */
   long double Aim() const {
-    return 257 * drain_ / kPadSize;
+    return 257 * drain_ / pad_size_;
   }
 
   /* pre-arms from gap with that credit; held, none, else with a slot, the launch at each
@@ -449,7 +453,7 @@ class St20TxRlFastClockTest : public St20TxRlWarmUpTest {
   /* the gaps from tasklet entry to the target that leave the plan its trim pads, or not,
    * across a pad's phases */
   std::vector<uint64_t> Gaps(bool with_trim_pads) const {
-    const uint64_t edge = (uint64_t)((kTrimPads - 1) * drain_ - credit_);
+    const uint64_t edge = (uint64_t)((trim_pads_ - 1) * drain_ - credit_);
     std::vector<uint64_t> gaps;
     for (uint64_t gap = with_trim_pads ? edge + 1 : 997;
          gap <= (with_trim_pads ? warm_pkts_ * trs_ : edge); gap += 997)
@@ -486,10 +490,12 @@ class St20TxRlFastClockTest : public St20TxRlWarmUpTest {
   long double refill_ = 0;
   int64_t budget_ = 0;
   uint32_t warm_pkts_ = 0;
+  uint16_t pad_size_ = 0;
+  int64_t trim_pads_ = 0;
   std::vector<long double> phases_ = {0};
 };
 
-/* the bucket at the programmed rate holds ~0.7 us more than pad_ns * 2048 / 1262 */
+/* the bucket at the programmed rate holds ~0.7 us more than pad_ns * 2048 / pad_size */
 TEST_F(St20TxRlFastClockTest, FluidShaperLaunchesOneAimPastTheTarget) {
   for (uint64_t gap : Gaps(true)) {
     std::vector<long double> late = Lates(gap, credit_, 0);
@@ -826,7 +832,7 @@ TEST_F(St20TxRlFastClockTest, LateEntryTheSizingReadFindsIsJudgedAsOne) {
 /* Back from the preemption with the rest of the drain at trim_pads - 1 pads or less, the
  * pre-arm holds; a ns earlier the rest takes trim_pads, and the plan still lands. */
 TEST_F(St20TxRlFastClockTest, IdleShaperKeepsThePlanWhileTheTrimPadsFit) {
-  const uint64_t held = (uint64_t)ceill(kTargetTsc + credit_ - (kTrimPads - 1) * drain_);
+  const uint64_t held = (uint64_t)ceill(kTargetTsc + credit_ - (trim_pads_ - 1) * drain_);
 
   long double late = PreemptedAfterTheFirstBurst(held);
   EXPECT_EQ(0, late) << "past target + aim by " << late - Aim();
@@ -834,7 +840,7 @@ TEST_F(St20TxRlFastClockTest, IdleShaperKeepsThePlanWhileTheTrimPadsFit) {
 
   late = PreemptedAfterTheFirstBurst(held - 1);
   ExpectOnPlan(late - Aim(), kPortP, "back at " + std::to_string(held - 1));
-  EXPECT_EQ(Anchor() + kTrimPads, ut_trs_train_pads(ctx_, kPortP));
+  EXPECT_EQ(Anchor() + trim_pads_, ut_trs_train_pads(ctx_, kPortP));
   EXPECT_EQ(1u, ut_trs_stat_recalculate_warmup(ctx_));
 }
 

@@ -41,6 +41,8 @@ class St20TxRlIdleCost : public ::testing::TestWithParam<int> {
       ut_trs_set_warm_pkts_cap(c, ut_txv_pacing_warm_pkts(txv));
       ut_trs_set_drain(c, kPortP, ut_txv_rl_drain(txv, kPortP));
       ut_trs_set_credit(c, kPortP, ut_txv_rl_credit(txv, kPortP));
+      EXPECT_EQ(0, ut_trs_set_pad_sizes(c, ut_txv_normal_size(txv),
+                                        ut_txv_rl_pad_size(txv, kPortP)));
       ut_trs_set_mock_tsc_script(c, &now_, 1);
       ut_trs_set_pmd_done_batches(c, kUtRlRsThresh, 0, 0);
       ctx_.push_back(c);

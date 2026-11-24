@@ -79,7 +79,8 @@ struct Plan {
   int64_t budget = 0;
   uint32_t warm_pkts = 0;
   uint64_t window = 0;
-  uint16_t pad_size = 0;
+  uint16_t normal = 0, pad_size = 0;
+  long double pkt = 0; /* the NORMAL pkt's drain, p the pre-arm pad's */
 };
 
 struct Case {
@@ -124,6 +125,8 @@ class St20TxRlVrxFaults : public ::testing::TestWithParam<Fmt> {
     plan->budget = ut_txv_rl_vrx_budget(txv, kPortP);
     plan->refill = ut_txv_rl_refill(txv, kPortP);
     plan->pad_size = ut_txv_rl_pad_size(txv, kPortP);
+    plan->normal = ut_txv_normal_size(txv);
+    plan->pkt = st_tx_video_rl_pad_ns(plan->p, plan->pad_size, plan->normal);
     plan->trs = ut_txv_pacing_trs(txv);
     plan->warm_pkts = ut_txv_pacing_warm_pkts(txv);
     plan->pad_interval = ut_txv_pad_interval(txv);
@@ -172,6 +175,7 @@ class St20TxRlVrxFaults : public ::testing::TestWithParam<Fmt> {
       ut_trs_set_warm_pkts_cap(ctx[i], q.warm_pkts);
       ut_trs_set_drain(ctx[i], kPortP, q.p);
       ut_trs_set_credit(ctx[i], kPortP, q.credit);
+      EXPECT_EQ(0, ut_trs_set_pad_sizes(ctx[i], q.normal, q.pad_size));
       ut_trs_set_absorb(ctx[i], kPortP, absorb ? q.absorb : 0);
       ut_trs_set_vrx_detect(ctx[i], kPortP, q.budget, q.refill);
       ut_trs_set_shaper_bucket(ctx[i], kPortP, q.bucket);
@@ -258,7 +262,7 @@ class St20TxRlVrxFaults : public ::testing::TestWithParam<Fmt> {
       const Plan& q = plan_;
       const long double launch = ut_trs_modeled_launch_tsc(ctx[i], kPortP);
       EXPECT_GE(launch, kTargetTsc);
-      const int vrx = ut_rl_vrx(launch, q.tpr0, q.trs, q.p, q.pad_interval, kSlots);
+      const int vrx = ut_rl_vrx(launch, q.tpr0, q.trs, q.pkt, q.pad_interval, kSlots);
       const bool flagged = ut_trs_get_rl_stat(ctx[i]).vrx_frames > 0;
       v.worst = std::min(v.worst, vrx);
       v.negative += vrx < 0;
@@ -276,10 +280,10 @@ class St20TxRlVrxFaults : public ::testing::TestWithParam<Fmt> {
     bool tail = false;
     const Verdict v = Frame(c, true, true, &tail), h = Frame(c, false, false);
     const int vrx = v.worst, held = h.worst;
-    /* a launch later by info drains at most ceil(info / p) fewer pkts at any slot */
+    /* a launch later by info drains at most ceil(info / pkt) fewer pkts at any slot */
     const long double info =
         plan_.absorb + (tail ? ST_TX_VIDEO_RL_MAX_PADS_PER_BURST * plan_.p : 0);
-    const int limit = (int)ceill(info / plan_.p);
+    const int limit = (int)ceill(info / plan_.pkt);
     const std::string what =
         std::string(GetParam().name) + " " + cls + " " + std::to_string((double)param) +
         " x" + std::to_string(c.sessions) + " at " + std::to_string((double)phase) +
@@ -423,7 +427,9 @@ class St20TxRlVrxFaults : public ::testing::TestWithParam<Fmt> {
   };
   /* The cases with cells below the hold, and how many: the pre-arm that started over or
    * kept its plan makes pad calls where the hold has none, and a thread stall of F3c or
-   * F4, or a slow burst of F5, lands in one. More cells, or another case, fail. */
+   * F4, or a slow burst of F5, lands in one. More cells, or another case, fail. 2160p59's
+   * 1262 B pkts pre-arm with 1292 B pads and 28 trim pads, a late-entry zone of
+   * trim_pads - 1 pads, 25.5 us, that holds two F3c x8 cells. */
   struct Below {
     const char* name;
     int cells;
@@ -432,8 +438,8 @@ class St20TxRlVrxFaults : public ::testing::TestWithParam<Fmt> {
       {"1080p59 F3c 1000.000000 x1", 1}, {"1080p59 F3c 1000.000000 x8", 7},
       {"1080p59 F3c 500.000000 x1", 1},  {"1080p59 F3c 500.000000 x8", 7},
       {"1080p59 F4 20.000000 x1", 1},    {"1080p59 F4 20.000000 x8", 2},
-      {"2160p59 F3c 100.000000 x8", 1},  {"2160p59 F3c 500.000000 x8", 1},
-      {"2160p59 F3c 50.000000 x8", 1},   {"720p50 F5 8.000000 x8", 3},
+      {"2160p59 F3c 100.000000 x8", 2},  {"2160p59 F3c 500.000000 x8", 2},
+      {"2160p59 F3c 50.000000 x8", 2},   {"720p50 F5 8.000000 x8", 3},
       {"720p59 F5 4.000000 x8", 1},      {"720p59 F5 8.000000 x1", 1},
       {"720p59 F5 8.000000 x8", 1},
   };

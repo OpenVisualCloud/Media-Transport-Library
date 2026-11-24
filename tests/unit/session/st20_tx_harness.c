@@ -2685,6 +2685,10 @@ uint32_t ut_txv_normal_pkts(const ut_txv_ctx* ctx) {
   return ctx->session.st20_pkt_info[ST20_PKT_TYPE_NORMAL].number;
 }
 
+uint16_t ut_txv_normal_size(const ut_txv_ctx* ctx) {
+  return ctx->session.st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+}
+
 float ut_txv_pad_interval(const ut_txv_ctx* ctx) {
   return ctx->session.pacing.pad_interval;
 }
@@ -2772,7 +2776,7 @@ void ut_txv_set_no_trim_pads(ut_txv_ctx* ctx) {
 }
 
 int ut_txv_init_trim_pads(ut_txv_ctx* ctx, enum st21_tx_pacing_way way,
-                          uint32_t normal_size, uint32_t lens[2]) {
+                          uint32_t normal_size, uint32_t lens[3]) {
   struct st_tx_video_session_impl* s = &ctx->session;
   int ret;
 
@@ -2787,6 +2791,11 @@ int ut_txv_init_trim_pads(ut_txv_ctx* ctx, enum st21_tx_pacing_way way,
     rte_pktmbuf_free(pad);
     s->trim_pad[MTL_SESSION_PORT_P][j] = NULL;
   }
+  lens[2] = s->pre_arm_pad[MTL_SESSION_PORT_P]
+                ? s->pre_arm_pad[MTL_SESSION_PORT_P]->pkt_len
+                : 0;
+  rte_pktmbuf_free(s->pre_arm_pad[MTL_SESSION_PORT_P]);
+  s->pre_arm_pad[MTL_SESSION_PORT_P] = NULL;
   return ret;
 }
 

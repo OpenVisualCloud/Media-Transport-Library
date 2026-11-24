@@ -67,7 +67,11 @@ static inline void video_trs_rl_reclaim(struct mtl_main_impl* impl,
   if (!rs || s->s_type == MT_ST22_HANDLE_TX_VIDEO) return;
   if (idle_tsc) mt_txq_reclaim(s->queue[s_port]);
   const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
-  uint64_t batch_ns = (uint64_t)(rs / 2 * (plan->armed ? plan->pad_ns : s->pacing.trs));
+  uint32_t normal = s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+  long double pkt_ns = plan->armed
+                           ? st_tx_video_rl_pad_ns(plan->pad_ns, plan->pad_size, normal)
+                           : s->pacing.trs;
+  uint64_t batch_ns = (uint64_t)(rs / 2 * pkt_ns);
   uint64_t behind = (uint64_t)mt_if_nb_tx_desc(impl, port) / rs * batch_ns;
   s->trs_reclaim_tsc[s_port] = RTE_MAX(next, now > behind ? now - behind : 0) + batch_ns;
 }
@@ -105,20 +109,21 @@ static inline uint16_t video_trs_rl_txq_burst(struct mtl_main_impl* impl,
 }
 
 /* Moves trs_rl_pads_end past the tx pads just sent. The shaper starts them at the burst's
- * return less refill_ns, or after the pads before, and drains them in pad_ns (trs
- * without a plan) per NORMAL pad of their bytes. */
+ * return less refill_ns, or after the pads before, and drains them by their bytes: pad_ns
+ * per pre-arm pad, or trs per NORMAL one without a plan. */
 static inline void video_trs_pads_end(struct st_tx_video_session_impl* s,
                                       enum mtl_session_port s_port,
                                       struct rte_mbuf** pads, uint16_t tx) {
   const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
   long double pad_ns = plan->armed ? plan->pad_ns : s->pacing.trs;
+  uint32_t pad_size =
+      plan->armed ? plan->pad_size : s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
   long double start = (long double)s->last_burst_succ_time_tsc[s_port] - plan->refill_ns;
   uint32_t bytes = 0;
 
   for (uint16_t i = 0; i < tx; i++) bytes += pads[i]->pkt_len;
   s->trs_rl_pads_end[s_port] =
-      RTE_MAX(s->trs_rl_pads_end[s_port], start) +
-      pad_ns * bytes / s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+      RTE_MAX(s->trs_rl_pads_end[s_port], start) + pad_ns * bytes / pad_size;
 }
 
 static uint16_t video_trs_burst_pad(struct mtl_main_impl* impl,
@@ -296,7 +301,10 @@ static void video_trs_rl_warm_up(struct mtl_main_impl* impl,
   while (pkts_needed > 0) {
     rte_mbuf_refcnt_update(pad, 1);
     tx = video_trs_burst_pad(impl, s, s_port, &s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
-    if (tx < 1) s->trs_pad_inflight_num[s_port]++;
+    if (tx < 1) {
+      s->trs_pad_inflight_num[s_port]++;
+      s->trs_pad_inflight[s_port] = pad;
+    }
     sent++;
 
     int64_t remaining = video_trs_rl_pkts_needed(impl, target_tsc, pacing->trs);
@@ -319,21 +327,30 @@ static void video_trs_rl_trim(struct st_tx_video_session_impl* s,
                                                 : ST_TX_VIDEO_RL_TRIM_PAD_FINE];
 }
 
+/* the uncut pad a planned port pre-arms with, never shorter than a pad it sends */
+static inline struct rte_mbuf* video_trs_rl_pad(struct st_tx_video_session_impl* s,
+                                                enum mtl_session_port s_port) {
+  struct rte_mbuf* pad = s->pre_arm_pad[s_port];
+  return pad ? pad : s->pad[s_port][ST20_PKT_TYPE_NORMAL];
+}
+
 /* one update per mbuf, as each same-mbuf atomic ahead of the doorbell delays packet 0 */
 static inline void video_trs_rl_pads_ref(struct st_tx_video_session_impl* s,
                                          enum mtl_session_port s_port, int16_t coarse,
-                                         int16_t fine, int16_t normal) {
+                                         int16_t fine, int16_t uncut) {
   struct rte_mbuf** trim_pad = s->trim_pad[s_port];
 
   if (coarse) rte_mbuf_refcnt_update(trim_pad[ST_TX_VIDEO_RL_TRIM_PAD_COARSE], coarse);
   if (fine) rte_mbuf_refcnt_update(trim_pad[ST_TX_VIDEO_RL_TRIM_PAD_FINE], fine);
-  if (normal) rte_mbuf_refcnt_update(s->pad[s_port][ST20_PKT_TYPE_NORMAL], normal);
+  if (uncut) rte_mbuf_refcnt_update(video_trs_rl_pad(s, s_port), uncut);
 }
 
 /* drops the pads the NIC refused, which wait to retry ahead of packet 0 */
 static inline void video_trs_rl_pads_drop(struct st_tx_video_session_impl* s,
                                           enum mtl_session_port s_port) {
-  video_trs_rl_pads_ref(s, s_port, 0, 0, (int16_t)-s->trs_pad_inflight_num[s_port]);
+  if (s->trs_pad_inflight_num[s_port])
+    rte_mbuf_refcnt_update(s->trs_pad_inflight[s_port],
+                           (int16_t)-s->trs_pad_inflight_num[s_port]);
   s->trs_pad_inflight_num[s_port] = 0;
 }
 
@@ -388,7 +405,7 @@ static inline bool video_trs_rl_fits(const struct st_tx_video_session_impl* s,
          plan->trim_pads;
 }
 
-/* Queues NORMAL pads for packet 0 to launch behind, timed so that a shaper with the
+/* Queues pre-arm pads for packet 0 to launch behind, timed so that a shaper with the
  * plan's bucket ends them at the target within a fine trim; the real bucket is an aim
  * smaller, so the real shaper ends them an aim later. Returns false to hold packet 0
  * until its target, or with *again to start over at a later visit, once the pads of a
@@ -404,7 +421,7 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
   long double credit = plan->bucket_ns;
   uint16_t pad_size = plan->pad_size;
   int64_t trim_pads = plan->trim_pads;
-  struct rte_mbuf* pad = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
+  struct rte_mbuf* pad = video_trs_rl_pad(s, s_port);
   struct rte_mbuf* pads[ST_TX_VIDEO_RL_MAX_PADS_PER_BURST];
   struct st_tx_video_rl_burst b;
   int64_t gap;
@@ -501,7 +518,7 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
     video_trs_rl_pads_ref(s, s_port, (int16_t)b.coarse, (int16_t)b.fine,
                           (int16_t)(b.n - b.coarse - b.fine));
     tx = video_trs_burst_pad(impl, s, s_port, pads, b.n);
-    /* a refused trim pad is retried as a NORMAL one: later, never early */
+    /* a refused trim pad is retried as an uncut one: later, never early */
     if (tx < b.coarse + b.fine) {
       int16_t coarse = (int16_t)(b.coarse - RTE_MIN(b.coarse, tx));
       int16_t fine = (int16_t)(b.coarse + b.fine - RTE_MAX(b.coarse, tx));
@@ -509,6 +526,7 @@ static bool video_trs_rl_pre_arm(struct mtl_main_impl* impl,
                             (int16_t)(coarse + fine));
     }
     s->trs_pad_inflight_num[s_port] += b.n - tx;
+    if (tx < b.n) s->trs_pad_inflight[s_port] = pad;
 
     /* A burst returning ST_TX_VIDEO_RL_STALL_NS past the plan stalled: its doorbell
      * found the shaper idle at a time only its return bounds. Planned on, the pads end
@@ -565,8 +583,8 @@ static uint16_t video_trs_rl_tail_burst(struct mtl_main_impl* impl,
       b = (struct st_tx_video_rl_burst){0};
     }
   }
-  for (unsigned int i = 0; i < b.n; i++)
-    tx_pkts[i] = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
+  struct rte_mbuf* pad = video_trs_rl_pad(s, s_port);
+  for (unsigned int i = 0; i < b.n; i++) tx_pkts[i] = pad;
   video_trs_rl_trim(s, s_port, tx_pkts, &b);
   video_trs_rl_pads_ref(s, s_port, (int16_t)b.coarse, (int16_t)b.fine,
                         (int16_t)(b.n - b.coarse - b.fine));
@@ -591,6 +609,7 @@ static uint16_t video_trs_rl_tail_burst(struct mtl_main_impl* impl,
     return 0;
   }
   s->trs_pad_inflight_num[s_port] += b.n - *pads_tx;
+  if (*pads_tx < b.n) s->trs_pad_inflight[s_port] = pad;
   video_trs_pads_end(s, s_port, tx_pkts, *pads_tx);
   /* a stall before the doorbell, as video_trs_rl_pre_arm() counts one */
   long double latest = s->last_burst_succ_time_tsc[s_port] - plan->bucket_ns;
@@ -627,9 +646,13 @@ static int video_burst_packet(struct mtl_main_impl* impl,
 
   /* check if it need insert padding packet */
   if (fmodf(pkt_idx + 1 + pacing->pad_interval / 2, pacing->pad_interval) < bulk) {
-    rte_mbuf_refcnt_update(s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
-    tx = video_trs_burst_pad(impl, s, s_port, &s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
-    if (tx < 1) s->trs_pad_inflight_num[s_port]++;
+    struct rte_mbuf* pad = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
+    rte_mbuf_refcnt_update(pad, 1);
+    tx = video_trs_burst_pad(impl, s, s_port, &pad, 1);
+    if (tx < 1) {
+      s->trs_pad_inflight_num[s_port]++;
+      s->trs_pad_inflight[s_port] = pad;
+    }
   }
 
   return 0;
@@ -707,7 +730,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
 
   /* Pads refused ahead of an unsent packet 0 count as queued. Once those the NIC took
    * have drained and the bucket refilled, they would launch it late by that wait: they
-   * are dropped, and a pre-arm they ended starts over. */
+   * are dropped, and a pre-arm they ended starts over. This must run before a pre-arm
+   * can refuse pads, so those never join NORMAL ones under one trs_pad_inflight. */
   const struct st_tx_video_rl_plan* plan = &s->rl_plan[s_port];
   if (s->trs_pad_inflight_num[s_port] && plan->armed && s->trs_inflight_num[s_port] &&
       !st_tx_mbuf_get_idx(s->trs_inflight[s_port][s->trs_inflight_idx[s_port]]) &&
@@ -749,7 +773,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
             : 1;
     dbg("%s(%d), inflight padding pkts %d\n", __func__, idx,
         s->trs_pad_inflight_num[s_port]);
-    for (unsigned int i = 0; i < n; i++) pads[i] = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
+    struct rte_mbuf* pad = s->trs_pad_inflight[s_port];
+    for (unsigned int i = 0; i < n; i++) pads[i] = pad;
     tx = video_trs_burst_pad(impl, s, s_port, pads, n);
     s->trs_pad_inflight_num[s_port] -= tx;
     if (tx > 0) {

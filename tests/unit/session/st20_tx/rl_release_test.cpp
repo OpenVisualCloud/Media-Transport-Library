@@ -40,6 +40,8 @@ class St20TxRlRelease : public ::testing::Test {
     absorb_ = ut_txv_rl_absorb(txv, kPortP);
     trs_ = ut_txv_pacing_trs(txv);
     warm_pkts_ = ut_txv_pacing_warm_pkts(txv);
+    normal_ = ut_txv_normal_size(txv);
+    pad_size_ = ut_txv_rl_pad_size(txv, kPortP);
     ut_txv_destroy(txv);
     window_ = (uint64_t)(warm_pkts_ * trs_);
   }
@@ -50,6 +52,7 @@ class St20TxRlRelease : public ::testing::Test {
     ut_trs_set_warm_pkts_cap(ctx, warm_pkts_);
     ut_trs_set_drain(ctx, kPortP, p_);
     ut_trs_set_credit(ctx, kPortP, credit_);
+    EXPECT_EQ(0, ut_trs_set_pad_sizes(ctx, normal_, pad_size_));
     ut_trs_set_absorb(ctx, kPortP, absorb);
     ut_trs_set_mock_tsc_script(ctx, &now_, 1);
     const uint64_t d[2] = {first_ns, 200}, g[2] = {300, 250};
@@ -98,6 +101,7 @@ class St20TxRlRelease : public ::testing::Test {
 
   uint64_t now_ = 0, passed_ = 0, window_ = 0;
   long double p_ = 0, credit_ = 0, absorb_ = 0, trs_ = 0, end_ = 0;
+  uint16_t normal_ = 0, pad_size_ = 0;
   uint32_t warm_pkts_ = 0;
 };
 

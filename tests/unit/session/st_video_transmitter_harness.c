@@ -56,6 +56,7 @@ struct ut_trs_ctx {
   uint32_t real_send_count;
   uint32_t burst_call_count;
   uint64_t last_pad_send_tsc;
+  uint32_t last_pad_len;
   uint64_t last_real_send_tsc;
   uint32_t send_history[UT_TRS_MAX_SEND_HISTORY];
   uint32_t send_history_count;
@@ -63,6 +64,9 @@ struct ut_trs_ctx {
   long double shaper_bucket_ns[MTL_SESSION_PORT_MAX]; /* 0: the plan's bucket_ns */
   long double timeslot_ns[MTL_SESSION_PORT_MAX];      /* 0: a fluid shaper */
   long double timeslot_phase_ns[MTL_SESSION_PORT_MAX];
+  /* ut_trs_set_shaper_small_pads() */
+  uint16_t small_pad_len[MTL_SESSION_PORT_MAX];
+  long double small_pad_pads[MTL_SESSION_PORT_MAX];
   bool burst_force_fail;
   uint16_t burst_accept_limit;
   uint32_t refuse_call, refuse_calls; /* ut_trs_set_burst_refuse() */
@@ -349,19 +353,25 @@ static uint16_t ut_trs_txq_burst(struct ut_trs_ctx* ctx, struct mt_txq_entry* en
     if (m->pool != ut_trs_priv_pool()) { /* pads come from ut_pool() */
       ctx->pad_send_count++;
       ctx->last_pad_send_tsc = ctx->last_tsc;
+      ctx->last_pad_len = m->pkt_len;
       if (!train->closed) {
+        const struct st_tx_video_rl_plan* plan = &ctx->session.rl_plan[port];
+        /* a pad drains by its bytes */
+        long double pad_ns =
+            plan->pad_ns * m->pkt_len /
+            (plan->pad_size ? plan->pad_size
+                            : ctx->session.st20_pkt_info[ST20_PKT_TYPE_NORMAL].size);
         /* an idle shaper refills its bucket: at most bucket_ns ahead of arrival */
-        long double bucket = ctx->shaper_bucket_ns[port]
-                                 ? ctx->shaper_bucket_ns[port]
-                                 : ctx->session.rl_plan[port].bucket_ns;
+        long double bucket =
+            ctx->shaper_bucket_ns[port] ? ctx->shaper_bucket_ns[port] : plan->bucket_ns;
+        if (m->pkt_len <= ctx->small_pad_len[port])
+          bucket += ctx->small_pad_pads[port] * pad_ns;
         long double start = ctx->last_tsc - bucket;
         if (!train->pads || train->drained_tsc < start) {
           train->drained_tsc = start;
           train->full_tsc = ctx->last_tsc;
         }
-        /* a pad drains by its bytes */
-        train->drained_tsc += ctx->session.rl_plan[port].pad_ns * m->pkt_len /
-                              ctx->session.st20_pkt_info[ST20_PKT_TYPE_NORMAL].size;
+        train->drained_tsc += pad_ns;
         train->pads++;
       }
       if (rte_mbuf_refcnt_read(m) > 1) rte_pktmbuf_free(m);
@@ -498,6 +508,8 @@ static void ut_trs_free_trim_pads(struct st_tx_video_session_impl* s) {
       rte_pktmbuf_free(s->trim_pad[i][j]);
       s->trim_pad[i][j] = NULL;
     }
+    rte_pktmbuf_free(s->pre_arm_pad[i]);
+    s->pre_arm_pad[i] = NULL;
   }
 }
 
@@ -659,6 +671,38 @@ void ut_trs_set_shaper_bucket(ut_trs_ctx* ctx, int port, long double bucket_ns) 
   ctx->shaper_bucket_ns[port] = bucket_ns;
 }
 
+void ut_trs_set_shaper_small_pads(ut_trs_ctx* ctx, int port, uint16_t len,
+                                  long double pads) {
+  ctx->small_pad_len[port] = len;
+  ctx->small_pad_pads[port] = pads;
+}
+
+int ut_trs_set_pad_sizes(ut_trs_ctx* ctx, uint16_t normal, uint16_t pre_arm) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st_tx_video_rl_plan* plan = &s->rl_plan[MTL_SESSION_PORT_P];
+  struct rte_mbuf** trim_pad = s->trim_pad[MTL_SESSION_PORT_P];
+
+  rte_pktmbuf_free(ctx->pad_mbuf);
+  ctx->pad_mbuf = ut_trs_pad(normal);
+  s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL] = ctx->pad_mbuf;
+  s->st20_pkt_info[ST20_PKT_TYPE_NORMAL].size = normal;
+  rte_pktmbuf_free(trim_pad[ST_TX_VIDEO_RL_TRIM_PAD_COARSE]);
+  rte_pktmbuf_free(trim_pad[ST_TX_VIDEO_RL_TRIM_PAD_FINE]);
+  rte_pktmbuf_free(s->pre_arm_pad[MTL_SESSION_PORT_P]);
+  trim_pad[ST_TX_VIDEO_RL_TRIM_PAD_COARSE] =
+      ut_trs_pad(pre_arm - ST_TX_VIDEO_RL_TRIM_COARSE);
+  trim_pad[ST_TX_VIDEO_RL_TRIM_PAD_FINE] = ut_trs_pad(pre_arm - ST_TX_VIDEO_RL_TRIM_FINE);
+  s->pre_arm_pad[MTL_SESSION_PORT_P] = pre_arm == normal ? NULL : ut_trs_pad(pre_arm);
+  if (!ctx->pad_mbuf || !trim_pad[ST_TX_VIDEO_RL_TRIM_PAD_COARSE] ||
+      !trim_pad[ST_TX_VIDEO_RL_TRIM_PAD_FINE] ||
+      (pre_arm != normal && !s->pre_arm_pad[MTL_SESSION_PORT_P]))
+    return -ENOMEM;
+  plan->pad_size = pre_arm;
+  plan->trim_pads = st_tx_video_rl_trim_pads(pre_arm);
+  ut_trs_plan_anchor(plan);
+  return 0;
+}
+
 void ut_trs_set_shaper_timeslot(ut_trs_ctx* ctx, int port, long double slot_ns,
                                 long double phase_ns) {
   ctx->timeslot_ns[port] = slot_ns;
@@ -708,11 +752,18 @@ long double ut_trs_modeled_launch_tsc(const ut_trs_ctx* ctx, int port) {
 }
 
 long double ut_trs_fine_trim_ns(const ut_trs_ctx* ctx, int port) {
-  return ctx->session.rl_plan[port].pad_ns * ST_TX_VIDEO_RL_TRIM_FINE / UT_TRS_PAD_SIZE;
+  const struct st_tx_video_rl_plan* plan = &ctx->session.rl_plan[port];
+  return plan->pad_ns * ST_TX_VIDEO_RL_TRIM_FINE /
+         (plan->pad_size ? plan->pad_size : UT_TRS_PAD_SIZE);
 }
 
 uint16_t ut_trs_trim_pad_refcnt(const ut_trs_ctx* ctx, int j) {
   return rte_mbuf_refcnt_read(ctx->session.trim_pad[MTL_SESSION_PORT_P][j]);
+}
+
+uint16_t ut_trs_pre_arm_pad_refcnt(const ut_trs_ctx* ctx) {
+  const struct rte_mbuf* pad = ctx->session.pre_arm_pad[MTL_SESSION_PORT_P];
+  return rte_mbuf_refcnt_read(pad ? pad : ctx->pad_mbuf);
 }
 
 uint32_t ut_trs_train_pads(const ut_trs_ctx* ctx, int port) {
@@ -861,6 +912,10 @@ uint64_t ut_trs_last_pad_send_tsc(const ut_trs_ctx* ctx) {
   return ctx->last_pad_send_tsc;
 }
 
+uint32_t ut_trs_last_pad_len(const ut_trs_ctx* ctx) {
+  return ctx->last_pad_len;
+}
+
 uint64_t ut_trs_last_real_send_tsc(const ut_trs_ctx* ctx) {
   return ctx->last_real_send_tsc;
 }
@@ -936,6 +991,7 @@ void ut_trs_call_recovery_cleanup(ut_trs_ctx* ctx) {
 void ut_trs_set_pad_inflight_num(ut_trs_ctx* ctx, unsigned int n) {
   for (unsigned int i = 0; i < n; i++) rte_mbuf_refcnt_update(ctx->pad_mbuf, 1);
   ctx->session.trs_pad_inflight_num[MTL_SESSION_PORT_P] = n;
+  ctx->session.trs_pad_inflight[MTL_SESSION_PORT_P] = ctx->pad_mbuf;
 }
 
 void ut_trs_set_inflight_num(ut_trs_ctx* ctx, unsigned int n) {
@@ -988,6 +1044,7 @@ bool ut_trs_prepare_cleanup_state(ut_trs_ctx* ctx) {
   s->trs_inflight_idx2[MTL_SESSION_PORT_P] = 0;
   rte_mbuf_refcnt_update(ctx->pad_mbuf, 2);
   s->trs_pad_inflight_num[MTL_SESSION_PORT_P] = 2;
+  s->trs_pad_inflight[MTL_SESSION_PORT_P] = ctx->pad_mbuf;
   s->trs_target_tsc[MTL_SESSION_PORT_P] = 10000;
   s->rl_state[MTL_SESSION_PORT_P] = ST_TX_VIDEO_RL_STATE_WAIT_TARGET;
   return true;
@@ -1065,7 +1122,10 @@ uint16_t ut_trs_call_burst_pad(ut_trs_ctx* ctx) {
   rte_mbuf_refcnt_update(s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL], 1);
   uint16_t tx = video_trs_burst_pad(&ctx->impl, s, MTL_SESSION_PORT_P,
                                     &s->pad[MTL_SESSION_PORT_P][ST20_PKT_TYPE_NORMAL], 1);
-  if (tx < 1) s->trs_pad_inflight_num[MTL_SESSION_PORT_P]++;
+  if (tx < 1) {
+    s->trs_pad_inflight_num[MTL_SESSION_PORT_P]++;
+    s->trs_pad_inflight[MTL_SESSION_PORT_P] = ctx->pad_mbuf;
+  }
   ut_trs_active_ctx = NULL;
   return tx;
 }
