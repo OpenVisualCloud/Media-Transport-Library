@@ -3023,5 +3023,68 @@ int st20_yuv422p16le_to_rfc4175_422be10_avx512(uint16_t* y, uint16_t* b, uint16_
   return 0;
 }
 
+/* begin st20_yuv422p12le_to_rfc4175_422be12_avx512 */
+/* b0-b15 | r0-r15 and y0-y31 to b0, y0, r0, y1, b1, y2, r1, y3, ... */
+static uint16_t p422le_to_be12_permute_tbl_512[2][32] = {
+    {0, 32, 16, 33, 1, 34, 17, 35, 2, 36, 18, 37, 3, 38, 19, 39,
+     4, 40, 20, 41, 5, 42, 21, 43, 6, 44, 22, 45, 7, 46, 23, 47},
+    {8,  48, 24, 49, 9,  50, 25, 51, 10, 52, 26, 53, 11, 54, 27, 55,
+     12, 56, 28, 57, 13, 58, 29, 59, 14, 60, 30, 61, 15, 62, 31, 63},
+};
+
+/* the 24-bit sample pair of each dword in big-endian order, 12 bytes per lane */
+static uint8_t be12_pack_shuffle_tbl_512[16 * 4] = {
+    2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, 0x80, 0x80, 0x80, 0x80,
+    2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, 0x80, 0x80, 0x80, 0x80,
+    2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, 0x80, 0x80, 0x80, 0x80,
+    2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, 0x80, 0x80, 0x80, 0x80,
+};
+
+/* the 12 bytes of each lane to 48 contiguous bytes */
+static uint32_t be12_pack_permute_tbl_512[16] = {
+    0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 3, 7, 11, 15,
+};
+
+int st20_yuv422p12le_to_rfc4175_422be12_avx512(uint16_t* y, uint16_t* b, uint16_t* r,
+                                               struct st20_rfc4175_422_12_pg2_be* pg,
+                                               uint32_t w, uint32_t h) {
+  __m512i permute_mask[2];
+  permute_mask[0] = _mm512_loadu_si512(p422le_to_be12_permute_tbl_512[0]);
+  permute_mask[1] = _mm512_loadu_si512(p422le_to_be12_permute_tbl_512[1]);
+  __m512i shuffle_mask = _mm512_loadu_si512(be12_pack_shuffle_tbl_512);
+  __m512i permute_lanes_mask = _mm512_loadu_si512(be12_pack_permute_tbl_512);
+  __m512i and_mask = _mm512_set1_epi16(0x0fff);
+  __m512i madd_mask = _mm512_set1_epi32(0x00011000); /* (s0 << 12) + s1 */
+  __mmask64 k = 0xFFFFFFFFFFFF;                      /* 8 pg2, 48 bytes */
+  uint32_t pg_cnt = w * h / 2;
+
+  while (pg_cnt >= 16) {
+    __m512i src_y = _mm512_and_si512(_mm512_loadu_si512(y), and_mask);
+    __m512i src_br =
+        _mm512_inserti64x4(_mm512_castsi256_si512(_mm256_loadu_si256((__m256i*)b)),
+                           _mm256_loadu_si256((__m256i*)r), 1);
+    src_br = _mm512_and_si512(src_br, and_mask);
+    y += 32;
+    b += 16;
+    r += 16;
+
+    for (int j = 0; j < 2; j++) {
+      __m512i samples = _mm512_permutex2var_epi16(src_br, permute_mask[j], src_y);
+      __m512i pairs = _mm512_madd_epi16(samples, madd_mask);
+      __m512i bytes = _mm512_shuffle_epi8(pairs, shuffle_mask);
+      bytes = _mm512_permutexvar_epi32(permute_lanes_mask, bytes);
+      _mm512_mask_storeu_epi8(pg, k, bytes);
+      pg += 8;
+    }
+
+    pg_cnt -= 16;
+  }
+
+  /* the pixels short of a batch, through the scalar path */
+  return st20_yuv422p12le_to_rfc4175_422be12_simd(y, b, r, pg, pg_cnt * 2, 1,
+                                                  MTL_SIMD_LEVEL_NONE);
+}
+/* end st20_yuv422p12le_to_rfc4175_422be12_avx512 */
+
 MT_TARGET_CODE_STOP
 #endif

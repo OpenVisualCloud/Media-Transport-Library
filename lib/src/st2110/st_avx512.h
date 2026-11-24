@@ -127,4 +127,8 @@ int st20_yuv422p16le_to_rfc4175_422be10_avx512(uint16_t* y, uint16_t* b, uint16_
                                                struct st20_rfc4175_422_10_pg2_be* pg,
                                                uint32_t w, uint32_t h);
 
+int st20_yuv422p12le_to_rfc4175_422be12_avx512(uint16_t* y, uint16_t* b, uint16_t* r,
+                                               struct st20_rfc4175_422_12_pg2_be* pg,
+                                               uint32_t w, uint32_t h);
+
 #endif

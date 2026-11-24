@@ -4,6 +4,12 @@ add_languages('cpp', required : true)
 
 unit_cpp_args = ['-Wall', '-Werror']
 unit_c_args = ['-Wall', '-Werror']
+# pipeline/st_convert_harness.c compiles the converter dispatch with the SIMD paths of libmtl
+foreach simd : ['-DMTL_HAS_AVX2', '-DMTL_HAS_AVX512', '-DMTL_HAS_AVX512_VBMI2']
+  if mtl_c_args.contains(simd)
+    unit_c_args += simd
+  endif
+endforeach
 # Deliberately no '-Wl,--allow-multiple-definition': harnesses shadow production symbols by
 # #define rename, so a real duplicate must fail the link.
 unit_link_args = []
@@ -208,6 +214,7 @@ unit_sources = [
   'pipeline/st20p_concurrency_stress_test.cpp',
   'pipeline/st_convert_harness.c',
   'pipeline/st20p_nt_convert_test.cpp',
+  'pipeline/st20_convert_simd_test.cpp',
   'pipeline/st30p_harness.c',
   'pipeline/st30p_test.cpp',
   'pipeline/st30p_tx_harness.c',
