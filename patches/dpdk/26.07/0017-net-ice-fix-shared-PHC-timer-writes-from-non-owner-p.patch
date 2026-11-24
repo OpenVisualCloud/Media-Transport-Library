@@ -1,0 +1,140 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Andrzej Wilczynski <andrzej.wilczynski@intel.com>
+Date: Tue, 24 Nov 2026 14:27:32 +0000
+Subject: [PATCH] net/ice: fix shared PHC timer writes from non-owner port
+
+All ports of a device share one PHC source timer. Only the PCI
+function with func_caps.ts_func_info.src_tmr_owned may start, stop or
+initialize it. When that function stays on the kernel ice driver, the
+kernel keeps the timer running for every port, including the ports
+bound to DPDK.
+
+ice_timesync_disable() cleared GLTSYN_ENA.TSYN_ENA and zeroed
+GLTSYN_INCVAL on any port. ice_dev_stop() calls it for every port with
+RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP, so stopping a TxPP port on a
+non-owning PF stopped the PHC of all sibling PFs and the clock under
+the kernel's ptp4l. Only ice_ptp_init_phc() on the owner starts the
+timer again, so the PHC stays stopped for every later process on the
+device until the owner is initialized again.
+
+ice_timesync_enable() also set the shared timer to CLOCK_REALTIME on
+any port, on E830 with a direct GLTSYN_TIME write, which steps the PHC
+under whoever owns it.
+
+Stop the timer in ice_timesync_disable() only on the owner. In
+ice_timesync_enable(), set the time only on the port that starts the
+timer: the owner itself, or the owner port probed in this process. A
+non-owning port leaves a running timer alone. Its timesync enable
+before port start fails when the timer is stopped and its owner is
+not probed in this process, instead of warning and reading 0.
+
+This applies on top of MTL's patch 0007: the no-owner branch and the
+time write through the owner port only exist there. The part for
+upstream DPDK is the owner check in ice_timesync_disable() and the
+time write only on the owner in ice_timesync_enable().
+
+Fixes: 646dcbe6c701 ("net/ice: support IEEE 1588 PTP")
+Fixes: faa310a75f66 ("net/ice: initialize PHC time with current time")
+Fixes: 8d1dae92e9ca ("net/ice: fix PTP clock corruption with Tx packet pacing")
+
+Signed-off-by: Andrzej Wilczynski <andrzej.wilczynski@intel.com>
+---
+ drivers/net/intel/ice/ice_ethdev.c | 48 +++++++++++++++++++-----------
+ 1 file changed, 30 insertions(+), 18 deletions(-)
+
+diff --git a/drivers/net/intel/ice/ice_ethdev.c b/drivers/net/intel/ice/ice_ethdev.c
+index 95bfc9b504..8c8659fbd4 100644
+--- a/drivers/net/intel/ice/ice_ethdev.c
++++ b/drivers/net/intel/ice/ice_ethdev.c
+@@ -7210,6 +7210,7 @@ ice_timesync_enable(struct rte_eth_dev *dev)
+ 	struct ice_hw *hw = ICE_DEV_PRIVATE_TO_HW(dev->data->dev_private);
+ 	struct ice_adapter *ad =
+ 			ICE_DEV_PRIVATE_TO_ADAPTER(dev->data->dev_private);
++	struct ice_hw *init_hw = NULL;
+ 	int ret;
+ 
+ 	if (ad->txpp_ena)
+@@ -7234,6 +7235,7 @@ ice_timesync_enable(struct rte_eth_dev *dev)
+ 				"Failed to write PHC increment time value");
+ 			return -1;
+ 		}
++		init_hw = hw;
+ 	} else {
+ 		/*
+ 		 * This function does not own the shared source timer. Make
+@@ -7248,11 +7250,15 @@ ice_timesync_enable(struct rte_eth_dev *dev)
+ 			ice_timesync_find_src_tmr_owner(dev);
+ 
+ 		if (!owner_dev) {
+-			PMD_DRV_LOG(WARNING,
+-				"PHC source timer owner port for %s is not probed in this process; "
+-				"PHC reads on this port will return 0 unless the owner port is "
+-				"also opened and timesync-enabled",
+-				dev->data->name);
++			uint8_t tmr_idx = hw->func_caps.ts_func_info.tmr_index_assoc;
++
++			if (!(ICE_READ_REG(hw, GLTSYN_ENA(tmr_idx)) & GLTSYN_ENA_TSYN_ENA_M)) {
++				PMD_DRV_LOG(ERR,
++					"PHC source timer of %s is stopped and its owner port is "
++					"not probed in this process",
++					dev->data->name);
++				return -1;
++			}
+ 		} else {
+ 			struct ice_hw *owner_hw =
+ 				ICE_DEV_PRIVATE_TO_HW(owner_dev->data->dev_private);
+@@ -7276,19 +7282,22 @@ ice_timesync_enable(struct rte_eth_dev *dev)
+ 						owner_dev->data->name);
+ 					return -1;
+ 				}
++				init_hw = owner_hw;
+ 			}
+ 		}
+ 	}
+ 
+-	if (!ice_ptp_lock(hw)) {
+-		ice_debug(hw, ICE_DBG_PTP, "Failed to acquire PTP semaphore");
+-		return ICE_ERR_NOT_READY;
+-	}
++	if (init_hw) {
++		if (!ice_ptp_lock(init_hw)) {
++			ice_debug(init_hw, ICE_DBG_PTP, "Failed to acquire PTP semaphore");
++			return ICE_ERR_NOT_READY;
++		}
+ 
+-	ret = ice_ptp_write_init(hw);
+-	ice_ptp_unlock(hw);
+-	if (ret)
+-		PMD_INIT_LOG(ERR, "Failed to set current system time to PHC timer");
++		ret = ice_ptp_write_init(init_hw);
++		ice_ptp_unlock(init_hw);
++		if (ret)
++			PMD_INIT_LOG(ERR, "Failed to set current system time to PHC timer");
++	}
+ 
+ 	ad->ptp_ena = 1;
+ 
+@@ -7504,12 +7513,15 @@ ice_timesync_disable(struct rte_eth_dev *dev)
+ 
+ 	ice_clear_phy_tstamp(hw, lport, 0);
+ 
+-	val = ICE_READ_REG(hw, GLTSYN_ENA(tmr_idx));
+-	val &= ~GLTSYN_ENA_TSYN_ENA_M;
+-	ICE_WRITE_REG(hw, GLTSYN_ENA(tmr_idx), val);
++	/* The source timer is shared by all ports; only its owner may stop it */
++	if (hw->func_caps.ts_func_info.src_tmr_owned) {
++		val = ICE_READ_REG(hw, GLTSYN_ENA(tmr_idx));
++		val &= ~GLTSYN_ENA_TSYN_ENA_M;
++		ICE_WRITE_REG(hw, GLTSYN_ENA(tmr_idx), val);
+ 
+-	ICE_WRITE_REG(hw, GLTSYN_INCVAL_L(tmr_idx), 0);
+-	ICE_WRITE_REG(hw, GLTSYN_INCVAL_H(tmr_idx), 0);
++		ICE_WRITE_REG(hw, GLTSYN_INCVAL_L(tmr_idx), 0);
++		ICE_WRITE_REG(hw, GLTSYN_INCVAL_H(tmr_idx), 0);
++	}
+ 
+ 	ad->ptp_ena = 0;
+ 
+-- 
+2.34.1
+
