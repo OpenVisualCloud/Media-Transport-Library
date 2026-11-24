@@ -417,7 +417,7 @@ def _host_tai_utc_offset(host) -> int:
     """Return the host's current TAI-UTC offset in seconds (0 or e.g. 37).
 
     The transmitters time their RTP timestamps off ``CLOCK_TAI`` (RxTxApp via
-    ``app_platform.h``, FFmpeg via the plugin's ``ptp_get_time_fn``), which the
+    ``app_platform.h``, FFmpeg and GStreamer via ``ptp_get_time_fn``), which the
     kernel derives from ``CLOCK_REALTIME`` plus this offset. Reading the live
     value is what puts the capture PHC on the transmitter's clock, so whatever
     the host reports is the right answer -- including 0, which simply means
