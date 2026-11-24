@@ -30,6 +30,9 @@ VF_PACING_WAYS = [
         id="tsn",
     ),
 ]
+# TSC pacing sends every overdue packet at once after a TX scheduler stall, which
+# breaks ST 2110-21; its LIST-judged rows run in a CPU partition, failing without one.
+TSC_PACING_WAYS = ("tsc", "tsc_narrow")
 
 
 @pytest.mark.parametrize(
@@ -85,6 +88,11 @@ def test_st20p_pacing_way_load(
         transport_format=media_info["format"],
         pixel_format=media_info["file_format"],
         pacing_way=pacing_way,
+        cpu_isolation=(
+            "require"
+            if pacing_way in TSC_PACING_WAYS and pcap_capture.enabled
+            else None
+        ),
         test_time=test_time,
     )
     app = app_factory(application)
@@ -317,6 +325,11 @@ def test_st20p_pacing_way_x_pacing(
         pixel_format=media_info["file_format"],
         pacing_way=pacing_way,
         pacing=pacing,
+        cpu_isolation=(
+            "require"
+            if pacing_way in TSC_PACING_WAYS and pcap_capture.enabled
+            else None
+        ),
         test_time=test_time,
     )
     app = app_factory(application)
