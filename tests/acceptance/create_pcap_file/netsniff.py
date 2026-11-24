@@ -210,9 +210,9 @@ class NetsniffRecorder:
         """
         if not self.netsniff_process or not self.netsniff_process.running:
             connection = self.host.connection
-            self._enable_promisc(connection)
             try:
                 self._drop_after_tap(connection)
+                self._enable_promisc(connection)
                 self.pcap_file = self._build_pcap_path()
                 # netsniff-ng needs privilege for two separate things: it raises
                 # /proc/sys/net/core/{r,w}mem_max, and it opens a PF_PACKET
@@ -262,8 +262,8 @@ class NetsniffRecorder:
                     logger.error(f"netsniff-ng failed to start. Error output:\n{err}")
                     # No pcap was written; clear so teardown skips upload.
                     self.pcap_file = None
-                    self._undo_drop_after_tap()
                     self._restore_promisc()
+                    self._undo_drop_after_tap()
                     return False
                 logger.info(
                     f"netsniff-ng started with PID {self.netsniff_process.pid}."
@@ -272,8 +272,8 @@ class NetsniffRecorder:
             except ConnectionCalledProcessError as e:
                 logger.error(f"Failed to start netsniff-ng: {e}")
                 self.pcap_file = None
-                self._undo_drop_after_tap()
                 self._restore_promisc()
+                self._undo_drop_after_tap()
                 return False
 
     def capture(self, capture_time=None):
@@ -304,6 +304,7 @@ class NetsniffRecorder:
                         self.netsniff_process.wait(timeout=timeout)
                     logger.info("Capture complete.")
                     logger.debug(self.netsniff_process.stdout_text)
+                    self.stop()
                 except RemoteProcessTimeoutExpired:
                     logger.warning(
                         "Capture timed out. Probably not enough packets were sent. "
@@ -320,16 +321,16 @@ class NetsniffRecorder:
         if not self.netsniff_process:
             logger.debug("No netsniff-ng process to stop.")
             # start() may have raised after changing the netdev.
-            self._undo_drop_after_tap()
             self._restore_promisc()
+            self._undo_drop_after_tap()
             return
 
         # Check if process is still running before trying to stop
         if not self.netsniff_process.running:
             logger.debug("netsniff-ng process has already finished.")
             self._reap()
-            self._undo_drop_after_tap()
             self._restore_promisc()
+            self._undo_drop_after_tap()
             return
 
         try:
@@ -346,8 +347,8 @@ class NetsniffRecorder:
             logger.debug("netsniff-ng process stopped gracefully.")
         finally:
             self._reap()
-            self._undo_drop_after_tap()
             self._restore_promisc()
+            self._undo_drop_after_tap()
 
     def _reap(self):
         """Make sure no root ``netsniff-ng`` survives the process handle.
