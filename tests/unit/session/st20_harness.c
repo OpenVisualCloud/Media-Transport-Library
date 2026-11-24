@@ -121,6 +121,8 @@ struct ut20_test_ctx {
   int uframe_refuse_row;
   bool refuse_incomplete;
   bool rv_attached; /* session resources are rv_attach()'s, not the ctx storage */
+  uint32_t wire_seq;
+  int detected_cnt;
 };
 
 #include "session/st20_harness.h"
@@ -726,33 +728,20 @@ void ut20_ctx_enable_st22(ut20_test_ctx* ctx) {
   s->pkt_handler = rv_handle_st22_pkt;
 }
 
-int ut20_ctx_attach_st22(ut20_test_ctx* ctx, bool interlaced, size_t framebuff_max_size) {
+static int ut20_attach(ut20_test_ctx* ctx, struct st20_rx_ops* ops,
+                       struct st22_rx_ops* st22_ops) {
   struct st_rx_video_session_impl* s = &ctx->session;
-  struct st20_rx_ops ops;
-  struct st22_rx_ops st22_ops;
 
   ctx->impl.user_para.num_ports = 1;
   snprintf(ctx->impl.user_para.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "ut20_port0");
   ctx->impl.pkt_udp_suggest_max_size = MTL_PKT_MAX_RTP_BYTES;
 
-  /* the st20 ops st22_rx_create() derives */
-  memset(&ops, 0, sizeof(ops));
-  ops.name = "ut22_test";
-  ops.priv = ctx;
-  ops.num_port = 1;
-  snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut20_port0");
-  ops.type = ST20_TYPE_FRAME_LEVEL;
-  ops.width = 1920;
-  ops.height = 1080;
-  ops.fps = ST_FPS_P59_94;
-  ops.interlaced = interlaced;
-  ops.fmt = ST20_FMT_YUV_422_10BIT;
-  ops.framebuff_cnt = UT20_FRAME_COUNT;
-
-  memset(&st22_ops, 0, sizeof(st22_ops));
-  st22_ops.flags = ST22_RX_FLAG_DISABLE_BOXES;
-  st22_ops.framebuff_max_size = framebuff_max_size;
-  st22_ops.notify_frame_ready = ut20_st22_notify_frame_ready;
+  ops->priv = ctx;
+  ops->num_port = 1;
+  snprintf(ops->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "ut20_port0");
+  ops->type = ST20_TYPE_FRAME_LEVEL;
+  ops->fmt = ST20_FMT_YUV_422_10BIT;
+  ops->framebuff_cnt = UT20_FRAME_COUNT;
 
   /* rv_attach()'s failure paths rte-free these, so none may be harness storage */
   s->st20_frames = NULL;
@@ -761,9 +750,87 @@ int ut20_ctx_attach_st22(ut20_test_ctx* ctx, bool interlaced, size_t framebuff_m
     s->slots[i].slice_info = NULL;
   }
 
-  int ret = rv_attach(&ctx->impl, &ctx->mgr, s, &ops, &st22_ops);
+  int ret = rv_attach(&ctx->impl, &ctx->mgr, s, ops, st22_ops);
   if (ret == 0) ctx->rv_attached = true;
   return ret;
+}
+
+int ut20_ctx_attach_st22(ut20_test_ctx* ctx, bool interlaced, size_t framebuff_max_size) {
+  struct st20_rx_ops ops;
+  struct st22_rx_ops st22_ops;
+
+  /* the st20 ops st22_rx_create() derives */
+  memset(&ops, 0, sizeof(ops));
+  ops.name = "ut22_test";
+  ops.width = 1920;
+  ops.height = 1080;
+  ops.fps = ST_FPS_P59_94;
+  ops.interlaced = interlaced;
+
+  memset(&st22_ops, 0, sizeof(st22_ops));
+  st22_ops.flags = ST22_RX_FLAG_DISABLE_BOXES;
+  st22_ops.framebuff_max_size = framebuff_max_size;
+  st22_ops.notify_frame_ready = ut20_st22_notify_frame_ready;
+
+  return ut20_attach(ctx, &ops, &st22_ops);
+}
+
+static int ut20_notify_detected(void* priv, const struct st20_detect_meta* meta,
+                                struct st20_detect_reply* reply) {
+  ut20_test_ctx* ctx = priv;
+  (void)meta;
+  (void)reply;
+  ctx->detected_cnt++;
+  return 0;
+}
+
+int ut20_ctx_attach_st20(ut20_test_ctx* ctx, uint32_t flags) {
+  struct st20_rx_ops ops;
+
+  memset(&ops, 0, sizeof(ops));
+  ops.name = "ut20_attach";
+  ops.flags = flags;
+  ops.width = 640;
+  ops.height = 480;
+  ops.fps = ST_FPS_P59_94;
+  ops.notify_frame_ready = ut20_notify_frame_ready;
+  ops.notify_detected = ut20_notify_detected;
+
+  ctx->last_tp_compliant = ST_RX_TP_COMPLIANT_MAX;
+  return ut20_attach(ctx, &ops, NULL);
+}
+
+int ut20_feed_attached_frame(ut20_test_ctx* ctx, uint32_t ts, int lost_line) {
+  struct st_rx_video_session_impl* s = &ctx->session;
+  size_t hdr_offset =
+      sizeof(struct st_rfc4175_video_hdr) - sizeof(struct st20_rfc4175_rtp_hdr);
+
+  for (uint32_t line = 0; line < s->ops.height; line++) {
+    uint32_t seq = ctx->wire_seq++;
+    if ((int)line == lost_line) continue;
+    struct rte_mbuf* m =
+        make_video_mbuf(seq, ts, (uint16_t)line, 0, (uint16_t)s->st20_bytes_in_line);
+    if (!m) return -1;
+    struct st20_rfc4175_rtp_hdr* rtp =
+        rte_pktmbuf_mtod_offset(m, struct st20_rfc4175_rtp_hdr*, hdr_offset);
+    rtp->base.marker = (line == s->ops.height - 1);
+    struct rte_mbuf* mbufs[1] = {m};
+    rv_handle_mbuf(&s->priv[MTL_SESSION_PORT_P], mbufs, 1);
+    rte_pktmbuf_free(m);
+  }
+  return 0;
+}
+
+void ut20_skip_wire_seq(ut20_test_ctx* ctx, uint32_t n) {
+  ctx->wire_seq += n;
+}
+
+int ut20_detected_cnt(const ut20_test_ctx* ctx) {
+  return ctx->detected_cnt;
+}
+
+int ut20_detect_pkt_per_frame(const ut20_test_ctx* ctx) {
+  return ctx->session.detector.pkt_per_frame;
 }
 
 /* Build one RFC 9134 codestream packet. `payload`/`payload_length` are the

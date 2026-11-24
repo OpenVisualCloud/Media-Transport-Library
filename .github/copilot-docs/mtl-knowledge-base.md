@@ -920,14 +920,14 @@ Actual sequence in `rv_attach()`:
 
 Tasklet is per-manager (not per-session), registered in `st_rx_video_sessions_sch_init`.
 
-Alternative path: `rv_detector_init()` instead of `rv_init_sw()` when auto-detect mode enabled.
+Alternative path: `rv_detector_init()` instead of `rv_init_sw()` for a frame/slice session (not ST 2110-22) with auto-detect or the timing parser on. The parser needs the sender's pkts per frame, which the detector takes from the RTP seq of three markers, so with it detection waits for two equal counts.
 
 ### RX Packet Handlers (set by `rv_init_pkt_handler`)
 - `rv_handle_frame_pkt` — frame/slice mode (the default for `st20_is_frame_type`)
 - `rv_handle_rtp_pkt` — RTP passthrough (`ST20_TYPE_RTP_LEVEL`), enqueues to `rtps_ring`
 - `rv_handle_hdr_split_pkt` — header-split mode, payload lives in `mbuf->next`
 - `rv_handle_st22_pkt` — compressed video
-- `rv_handle_detect_pkt` — auto-detection mode
+- `rv_handle_detect_pkt` — format detection (auto-detect or timing parser)
 - `rv_handle_detect_err` — detection error handler
 
 ### TX Destroy Order (Load-Bearing)
