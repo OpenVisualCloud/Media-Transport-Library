@@ -565,6 +565,22 @@ int ut20_feed_frame_pkt_seq(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq, uint3
   return ut20_feed_pkt(ctx, seq, ts, ln, lo, ll, port);
 }
 
+int ut20_feed_retransmit_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq, uint32_t ts,
+                             enum mtl_session_port port) {
+  uint16_t ln, lo, ll;
+  pkt_idx_to_line(pkt_idx, &ln, &lo, &ll);
+  struct rte_mbuf* m = make_video_mbuf(seq, ts, ln, lo, ll);
+  if (!m) return -1;
+  size_t hdr_offset =
+      sizeof(struct st_rfc4175_video_hdr) - sizeof(struct st20_rfc4175_rtp_hdr);
+  struct st20_rfc4175_rtp_hdr* rtp =
+      rte_pktmbuf_mtod_offset(m, struct st20_rfc4175_rtp_hdr*, hdr_offset);
+  rtp->row_length = htons(ll | ST20_RETRANSMIT);
+  int rc = rv_handle_frame_pkt(&ctx->session, m, port, true);
+  rte_pktmbuf_free(m);
+  return rc;
+}
+
 void ut20_feed_full_frame(ut20_test_ctx* ctx, uint32_t ts, enum mtl_session_port port) {
   const int n = (int)ctx->session.ops.height;
   for (int i = 0; i < n; i++) {

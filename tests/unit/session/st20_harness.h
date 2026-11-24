@@ -90,6 +90,9 @@ int ut20_feed_frame_pkt_stale_hw_ts(ut20_test_ctx* ctx, int pkt_idx, uint32_t ts
  * threshold tests). */
 int ut20_feed_frame_pkt_seq(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq, uint32_t ts,
                             enum mtl_session_port port);
+/* ut20_feed_frame_pkt_seq() with ST20_RETRANSMIT set, as on an RTCP retransmit. */
+int ut20_feed_retransmit_pkt(ut20_test_ctx* ctx, int pkt_idx, uint32_t seq, uint32_t ts,
+                             enum mtl_session_port port);
 
 /* Feed every packet of one full frame on `port`, in pkt_idx order. */
 void ut20_feed_full_frame(ut20_test_ctx* ctx, uint32_t ts, enum mtl_session_port port);

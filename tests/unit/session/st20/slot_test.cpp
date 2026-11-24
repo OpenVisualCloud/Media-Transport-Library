@@ -6,7 +6,8 @@
  * incomplete-frame and frame-completion accounting.
  *
  * Build: meson setup build_unit -Denable_unit_tests=true && ninja -C build_unit
- * Run:   ./build_unit/tests/unit/UnitTest --gtest_filter='St20RxSlotTest.*'
+ * Run:   ./build_unit/tests/unit/UnitTest \
+ *          --gtest_filter='St20RxSlotTest.*:*ClockStepTest.*'
  */
 
 #include <gtest/gtest.h>
@@ -56,11 +57,9 @@ TEST_F(St20RxSlotTest, OldTimestampAfterSlotReuse) {
   EXPECT_EQ(received(), recv_before) << "Old-timestamp packet should be rejected";
 }
 
-/* Redundancy error threshold bypass for video. ST20 has two threshold paths:
- *  (a) rv_slot_by_tmstamp: old ts rejected when all slots are newer
- *  (b) frame-gone: exist_ts && !slot->frame → redundant_error_cnt++
- * Path (b) increments the counter. After both ports exceed threshold=20,
- * path (a) lets the old-timestamp packet allocate a new slot. */
+/* Redundancy error threshold bypass for video: rv_slot_by_tmstamp drops a ts
+ * older than every slot and counts it per port; once every port reaches
+ * threshold=20, the old-timestamp packet allocates a new slot. */
 TEST_F(St20RxSlotTest, ThresholdBypassVideo) {
   /* Fill both slots with completed frames */
   feed_full(5000, MTL_SESSION_PORT_P);
@@ -69,16 +68,15 @@ TEST_F(St20RxSlotTest, ThresholdBypassVideo) {
 
   uint64_t recv_before = received();
 
-  /* Send 21 old-timestamp packets for completed-frame timestamps.
-   * These hit path (b): exist_ts && !slot->frame, incrementing
-   * redundant_error_cnt on each port. */
-  for (int i = 0; i < 21; i++) {
-    feed_seq(0, 50000 + i, 5000, MTL_SESSION_PORT_P);
-    feed_seq(0, 60000 + i, 5000, MTL_SESSION_PORT_R);
+  /* 19 old-timestamp packets on P and 20 on R: P is still below threshold. */
+  for (int i = 0; i < 19; i++) {
+    feed_seq(0, 50000 + i, 1000, MTL_SESSION_PORT_P);
+    feed_seq(0, 60000 + i, 1000, MTL_SESSION_PORT_R);
   }
+  feed_seq(0, 60019, 1000, MTL_SESSION_PORT_R);
+  EXPECT_EQ(received(), recv_before);
 
-  /* Now send a truly old timestamp that hits path (a) in rv_slot_by_tmstamp.
-   * With threshold exceeded, it should be accepted (new slot allocated). */
+  /* P's 20th brings every port to the threshold, so it is accepted (new slot). */
   feed_seq(0, 90000, 1000, MTL_SESSION_PORT_P);
 
   EXPECT_GT(received(), recv_before)
@@ -176,4 +174,203 @@ TEST_F(St20RxSlotTest, SlotTimestampWrapAroundAdvance) {
   EXPECT_EQ(received() - recv_before, 2u)
       << "wrapped timestamp must allocate a new slot, not be dropped as past";
   EXPECT_EQ(frames_received() - frames_before, 1) << "the wrapped frame must complete";
+}
+
+/* A sender clock stepping back 37 s (TAI to UTC), in 90 kHz RTP ticks at 30 fps. */
+static constexpr uint32_t kFrameTicks = 3000;
+static constexpr uint32_t kNowTs = 0x40000000;
+static constexpr uint32_t kSteppedTs = kNowTs - 37u * 90000u;
+static constexpr int kSteppedFrames = 30;
+/* A port drops 19 past pkts and resyncs on the 20th, inside stepped frame 9, so
+ * frames 10..29 complete. */
+static constexpr int kResyncedFrames = 20;
+
+class St20RxClockStepTest : public St20RxBaseTest {
+ protected:
+  /* RTP seq keeps counting across the step, and both ports carry the same seq. */
+  void feed_pkt(int frame_no, int pkt_idx, uint32_t ts, enum mtl_session_port port) {
+    feed_seq(pkt_idx, static_cast<uint32_t>(frame_no * pkts_per_frame() + pkt_idx), ts,
+             port);
+  }
+  void feed_frame(int frame_no, uint32_t ts, enum mtl_session_port port) {
+    for (int i = 0; i < pkts_per_frame(); i++) feed_pkt(frame_no, i, ts, port);
+  }
+  /* Both legs interleaved per pkt, as equal-delay 2022-7 paths deliver them. */
+  void feed_redundant_frame(int frame_no, uint32_t ts) {
+    for (int i = 0; i < pkts_per_frame(); i++) {
+      feed_pkt(frame_no, i, ts, MTL_SESSION_PORT_P);
+      feed_pkt(frame_no, i, ts, MTL_SESSION_PORT_R);
+    }
+  }
+  static uint32_t now_ts(int frame_no) {
+    return kNowTs + static_cast<uint32_t>(frame_no) * kFrameTicks;
+  }
+  static uint32_t stepped_ts(int frame_no) {
+    return kSteppedTs + static_cast<uint32_t>(frame_no) * kFrameTicks;
+  }
+};
+
+class St20RxSinglePortClockStepTest : public St20RxClockStepTest {
+ protected:
+  int num_port() const override {
+    return 1;
+  }
+};
+
+TEST_F(St20RxSinglePortClockStepTest, SteppedBackSenderResyncs) {
+  feed_frame(0, now_ts(0), MTL_SESSION_PORT_P);
+  feed_frame(1, now_ts(1), MTL_SESSION_PORT_P);
+  ASSERT_EQ(frames_received(), 2);
+
+  for (int k = 0; k < kSteppedFrames; k++)
+    feed_frame(2 + k, stepped_ts(k), MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(frames_received(), 2 + kResyncedFrames);
+}
+
+class St20RxSinglePortDmaClockStepTest : public St20RxSinglePortClockStepTest {
+ protected:
+  int pkts_per_frame() const override {
+    return 4;
+  }
+  void SetUp() override {
+    St20RxSinglePortClockStepTest::SetUp();
+    ut20_ctx_enable_dma(ctx_);
+  }
+};
+
+/* A resync the busy DMA engine refuses waits for another 20 old pkts, rather
+ * than being retried, and warned about, on every one of them. */
+TEST_F(St20RxSinglePortDmaClockStepTest, DmaBusyResyncWaitsForThreshold) {
+  feed_frame(0, now_ts(0), MTL_SESSION_PORT_P);
+  ut20_dma_set_stalled(ctx_, true);
+
+  for (int k = 0; k < 10; k++) feed_frame(1 + k, stepped_ts(k), MTL_SESSION_PORT_P);
+
+  /* the 20th and the 40th of the 40 old pkts */
+  EXPECT_EQ(ut20_dma_busy_drops(ctx_), 2);
+}
+
+/* R lags 3 frames, past both slots, while P is current: R must never pull the
+ * session back onto its own timeline. */
+TEST_F(St20RxClockStepTest, LaggingRedundantPortDoesNotResync) {
+  const int lag = 3;
+  for (int f = 0; f < kSteppedFrames + lag; f++) {
+    feed_frame(f, now_ts(f), MTL_SESSION_PORT_P);
+    if (f >= lag) feed_frame(f - lag, now_ts(f - lag), MTL_SESSION_PORT_R);
+  }
+
+  EXPECT_EQ(frames_received(), kSteppedFrames + lag);
+  EXPECT_EQ(no_slot(), static_cast<uint64_t>(kSteppedFrames * pkts_per_frame()));
+}
+
+/* Enough pkts per frame for a slot without a frame buffer to see 20 of them. */
+class St20RxWideClockStepTest : public St20RxClockStepTest {
+ protected:
+  int pkts_per_frame() const override {
+    return 32;
+  }
+};
+
+/* P starves of frame buffers while R lags past the slot window: P's pkts that
+ * find no buffer must not let R pull the session onto R's timeline. */
+TEST_F(St20RxWideClockStepTest, LaggingPortDoesNotResyncWhileLeaderStarves) {
+  const int lag = 3;
+  for (int f = 0; f < 12; f++) {
+    if (f == 5) ut20_set_hold_frames(ctx_, true);
+    if (f == 8) ut20_set_hold_frames(ctx_, false);
+    feed_frame(f, now_ts(f), MTL_SESSION_PORT_P);
+    if (f >= lag) feed_frame(f - lag, now_ts(f - lag), MTL_SESSION_PORT_R);
+  }
+
+  /* the 2 buffers go to held frames 5 and 6, so only frame 7 is lost */
+  EXPECT_EQ(frames_received(), 11);
+}
+
+/* RTCP retransmits are expected to be old: a run of them for a frame both slots
+ * have moved past must not resync onto it and evict the two open frames. */
+TEST_F(St20RxWideClockStepTest, LateRetransmitsDoNotResync) {
+  const int lost = 20;
+  auto feed_both = [this](int frame_no, int pkt_idx) {
+    feed_pkt(frame_no, pkt_idx, now_ts(frame_no), MTL_SESSION_PORT_P);
+    feed_pkt(frame_no, pkt_idx, now_ts(frame_no), MTL_SESSION_PORT_R);
+  };
+  for (int i = lost; i < pkts_per_frame(); i++) feed_both(0, i);
+  feed_both(1, 0);
+  feed_both(2, 0);
+  for (int i = 0; i < lost; i++) {
+    for (auto port : {MTL_SESSION_PORT_P, MTL_SESSION_PORT_R})
+      ut20_feed_retransmit_pkt(ctx_, i, static_cast<uint32_t>(i), now_ts(0), port);
+  }
+  for (int f = 1; f <= 2; f++)
+    for (int i = 1; i < pkts_per_frame(); i++) feed_both(f, i);
+
+  EXPECT_EQ(frames_received(), 2);
+}
+
+class St20RxSinglePortWideClockStepTest : public St20RxWideClockStepTest {
+ protected:
+  int num_port() const override {
+    return 1;
+  }
+};
+
+/* Old pkts interleaved with a frame that keeps landing pkts are not consecutive. */
+TEST_F(St20RxSinglePortWideClockStepTest, InterleavedOldPktsDoNotResync) {
+  feed_frame(0, now_ts(0), MTL_SESSION_PORT_P);
+  for (int i = 0; i < pkts_per_frame(); i++) {
+    feed_pkt(1, i, now_ts(1), MTL_SESSION_PORT_P);
+    feed_pkt(1, i, stepped_ts(1), MTL_SESSION_PORT_P);
+  }
+
+  EXPECT_EQ(frames_received(), 2);
+}
+
+/* A duplicate of a finished frame is a current pkt, so it must not count as old. */
+TEST_F(St20RxSinglePortWideClockStepTest, DuplicateOfFinishedFrameDoesNotCount) {
+  feed_frame(0, now_ts(0), MTL_SESSION_PORT_P);
+  feed_pkt(0, 0, now_ts(0), MTL_SESSION_PORT_P);
+  feed_frame(1, stepped_ts(0), MTL_SESSION_PORT_P);
+
+  EXPECT_EQ(no_slot(), 19u);
+}
+
+TEST_F(St20RxClockStepTest, BothPortsSteppedBackResync) {
+  feed_redundant_frame(0, now_ts(0));
+  feed_redundant_frame(1, now_ts(1));
+  ASSERT_EQ(frames_received(), 2);
+
+  for (int k = 0; k < kSteppedFrames; k++) feed_redundant_frame(2 + k, stepped_ts(k));
+
+  EXPECT_EQ(frames_received(), 2 + kResyncedFrames);
+}
+
+class St22RxSinglePortClockStepTest : public St20RxClockStepTest {
+ protected:
+  static constexpr uint16_t kPayload = 1000;
+
+  int num_port() const override {
+    return 1;
+  }
+  void SetUp() override {
+    St20RxClockStepTest::SetUp();
+    ASSERT_EQ(ut20_ctx_attach_st22(ctx_, false, 4096), 0);
+  }
+  void feed_st22_frame(int frame_no, uint32_t ts) {
+    uint8_t payload[kPayload] = {0};
+    for (int i = 0; i < pkts_per_frame(); i++)
+      ut20_feed_st22_pkt(ctx_, static_cast<uint32_t>(frame_no * pkts_per_frame() + i), ts,
+                         static_cast<uint32_t>(i), i == pkts_per_frame() - 1, payload,
+                         sizeof(payload), MTL_SESSION_PORT_P);
+  }
+};
+
+TEST_F(St22RxSinglePortClockStepTest, SteppedBackSenderResyncs) {
+  feed_st22_frame(0, now_ts(0));
+  feed_st22_frame(1, now_ts(1));
+  ASSERT_EQ(ut20_st22_frames_ready(ctx_), 2u);
+
+  for (int k = 0; k < kSteppedFrames; k++) feed_st22_frame(2 + k, stepped_ts(k));
+
+  EXPECT_EQ(ut20_st22_frames_ready(ctx_), static_cast<uint64_t>(2 + kResyncedFrames));
 }

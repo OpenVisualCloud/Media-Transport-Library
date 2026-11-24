@@ -1024,7 +1024,13 @@ Note: `ST21_TX_STAT_WAIT_PKTS` exists in enum but is dead code (never assigned/c
 ### Slot Assignment (`rv_slot_by_tmstamp`)
 ```text
 1. SCAN: Check active slots — if tmstamp matches, return it
-2. STALE: If T < active slot's tmstamp → drop packet (old frame)
+2. STALE: If T is older than every slot → drop packet (old frame), counted on the arriving
+   port. rv_handle_frame_pkt passes ST20_RETRANSMIT, so an old RTCP retransmit is dropped
+   uncounted there; the ST22 and header-split handlers pass false, so theirs count.
+   Once every port has ST_SESSION_REDUNDANT_ERROR_THRESHOLD (20) consecutive counted
+   drops, that packet goes on to step 3 and opens a slot (resync after a sender clock
+   step). Any packet not dropped here, that one included, zeroes its port's count, so a
+   DMA-busy refusal restarts it.
 3. DMA GUARD: If the session has copies pending (!mt_dma_empty(), lender nb_borrowed > 0)
    → rv_dma_flush(): copies go to the engine once per tasklet pass, so a burst holding
    frame N's tail and N+1's head gets here with N's copies unsubmitted. Submit them and

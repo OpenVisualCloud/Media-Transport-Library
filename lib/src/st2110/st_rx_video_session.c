@@ -1199,7 +1199,8 @@ static bool rv_dma_flush(struct st_rx_video_session_impl* s, uint32_t tmstamp);
 
 static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
     struct st_rx_video_session_impl* s, struct rte_mbuf* mbuf,
-    enum mtl_session_port s_port, uint32_t tmstamp, void* hdr_split_pd, bool* exist_ts) {
+    enum mtl_session_port s_port, uint32_t tmstamp, bool retransmit, void* hdr_split_pd,
+    bool* exist_ts) {
   int i, slot_idx;
   struct st_rx_video_slot_impl* slot;
 
@@ -1208,6 +1209,7 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
 
     if (tmstamp == slot->tmstamp) {
       *exist_ts = true;
+      s->redundant_error_cnt[s_port] = 0;
       return slot;
     }
   }
@@ -1224,6 +1226,10 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
   }
 
   if (timestamp_is_in_the_past) {
+    if (retransmit) return NULL; /* an old retransmit is expected, not a clock step */
+    /* saturates: a port lagging past the slot window would overflow the int here */
+    if (s->redundant_error_cnt[s_port] < ST_SESSION_REDUNDANT_ERROR_THRESHOLD)
+      s->redundant_error_cnt[s_port]++;
     for (int i = 0; i < s->ops.num_port; i++) {
       if (s->redundant_error_cnt[i] < ST_SESSION_REDUNDANT_ERROR_THRESHOLD) {
         dbg("%s(%d): tmstamp %u is in the past, drop it\n", __func__, s->idx, tmstamp);
@@ -1231,10 +1237,10 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
       }
     }
 
-    /* should never happen */
     warn("%s(%d), redundant error threshold reached, accept packet tmstamp %d\n",
          __func__, s->idx, tmstamp);
   }
+  s->redundant_error_cnt[s_port] = 0;
 
   dbg("%s(%d): new tmstamp %u\n", __func__, s->idx, tmstamp);
 
@@ -1701,7 +1707,8 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     payload += sizeof(*extra_rtp);
   }
   uint16_t line1_length = ntohs(rtp->row_length); /* 1200 for 1080p */
-  if (line1_length & ST20_RETRANSMIT) {
+  bool retransmit = line1_length & ST20_RETRANSMIT;
+  if (retransmit) {
     line1_length &= ~ST20_RETRANSMIT;
     s->port_user_stats.stat_pkts_retransmit++;
   }
@@ -1746,15 +1753,13 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   /* find the target slot by tmstamp */
   bool exist_ts = false;
   struct st_rx_video_slot_impl* slot =
-      rv_slot_by_tmstamp(s, mbuf, s_port, tmstamp, NULL, &exist_ts);
+      rv_slot_by_tmstamp(s, mbuf, s_port, tmstamp, retransmit, NULL, &exist_ts);
   /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
   if (exist_ts && !slot->frame) {
     s->port_user_stats.common.stat_pkts_redundant++;
     slot->pkts_recv_per_port[s_port]++;
-    s->redundant_error_cnt[s_port]++;
     return 0;
   }
-  s->redundant_error_cnt[s_port] = 0;
 
   if ((!slot || !slot->frame) && !exist_ts) {
     s->port_user_stats.stat_pkts_no_slot++;
@@ -2222,15 +2227,13 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   /* find the target slot by tmstamp */
   bool exist_ts = false;
   struct st_rx_video_slot_impl* slot =
-      rv_slot_by_tmstamp(s, mbuf, s_port, tmstamp, NULL, &exist_ts);
+      rv_slot_by_tmstamp(s, mbuf, s_port, tmstamp, false, NULL, &exist_ts);
   /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
   if (exist_ts && !slot->frame) {
     s->port_user_stats.common.stat_pkts_redundant++;
     slot->pkts_recv_per_port[s_port]++;
-    s->redundant_error_cnt[s_port]++;
     return 0;
   }
-  s->redundant_error_cnt[s_port] = 0;
 
   if ((!slot || !slot->frame) && !exist_ts) {
     s->port_user_stats.stat_pkts_no_slot++;
@@ -2419,15 +2422,13 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   /* find the target slot by tmstamp */
   bool exist_ts = false;
   struct st_rx_video_slot_impl* slot =
-      rv_slot_by_tmstamp(s, mbuf, s_port, tmstamp, payload, &exist_ts);
+      rv_slot_by_tmstamp(s, mbuf, s_port, tmstamp, false, payload, &exist_ts);
   /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
   if (exist_ts && !slot->frame) {
     s->port_user_stats.common.stat_pkts_redundant++;
-    s->redundant_error_cnt[s_port]++;
     slot->pkts_recv_per_port[s_port]++;
     return 0;
   }
-  s->redundant_error_cnt[s_port] = 0;
 
   if ((!slot || !slot->frame) && !exist_ts) {
     s->port_user_stats.stat_pkts_no_slot++;
