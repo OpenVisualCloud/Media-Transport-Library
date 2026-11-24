@@ -5012,9 +5012,10 @@ static void tv_stat_log(const struct tv_stat_dump* dump) {
 }
 
 /* Frames fall behind once the round averages past the tightest budget or a pkt met the
- * wire unbuilt (lead_ns < 0); round_ns 0 judges the lead only. */
+ * wire unbuilt (lead_ns < 0); round_ns 0 judges the lead only. With epochs dropped and
+ * the round in budget, a frame the app gave late started late. */
 static void tv_behind_err(int m_idx, uint64_t round_ns, long double round_ns_max,
-                          int64_t lead_ns) {
+                          int64_t lead_ns, uint64_t epoch_drop) {
   char round[64] = "", lead[32] = "";
 
   if (round_ns > round_ns_max)
@@ -5022,10 +5023,18 @@ static void tv_behind_err(int m_idx, uint64_t round_ns, long double round_ns_max
                    (double)round_ns / NS_PER_US, round_ns_max / NS_PER_US);
   if (lead_ns < 0)
     (void)snprintf(lead, sizeof(lead), " lead %.1fus,", (double)lead_ns / NS_PER_US);
-  if (round[0] || lead[0])
+  if (!round[0] && lead[0] && epoch_drop)
+    err("TX_VIDEO_SESSION(%d):%s frames fall behind: the app gave a frame late, epoch "
+        "drop %" PRIu64 "\n",
+        m_idx, lead, epoch_drop);
+  else if (round[0] || lead[0])
     err("TX_VIDEO_SESSION(%d):%s%s frames fall behind: move sessions off this "
         "scheduler\n",
         m_idx, round, lead);
+}
+
+static uint64_t tv_stat_epoch_drop(const struct tv_stat_dump* dump) {
+  return dump->us.common.stat_epoch_drop - dump->snap.common.stat_epoch_drop;
 }
 
 static int tv_detach(struct st_tx_video_sessions_mgr* mgr,
@@ -5034,7 +5043,7 @@ static int tv_detach(struct st_tx_video_sessions_mgr* mgr,
 
   tv_stat_collect(mgr, s, &dump);
   tv_stat_log(&dump);
-  tv_behind_err(mgr->idx, 0, INFINITY, dump.lead_ns);
+  tv_behind_err(mgr->idx, 0, INFINITY, dump.lead_ns, tv_stat_epoch_drop(&dump));
   atomic_store_explicit(&mgr->trs_refused[s->idx], 0, memory_order_relaxed);
   tv_uinit(s);
   return 0;
@@ -5270,6 +5279,8 @@ static int tv_sessions_stat(void* priv) {
   struct rte_mempool* idle[ST_TX_VIDEO_PARKED_MEMPOOLS];
   long double round_ns_max = INFINITY;
   int64_t lead_ns = INT64_MAX;
+  uint64_t epoch_drop = 0;
+  bool lead_without_drop = false;
 
   for (int j = 0; j < mgr->max_idx; j++) {
     s = tx_video_session_get_timeout(mgr, j, ST_TX_VIDEO_STAT_TIMEOUT_US);
@@ -5282,11 +5293,18 @@ static int tv_sessions_stat(void* priv) {
     tv_stat_log(&dump);
     round_ns_max = RTE_MIN(round_ns_max, dump.round_ns_max);
     lead_ns = RTE_MIN(lead_ns, dump.lead_ns);
+    uint64_t s_drop = tv_stat_epoch_drop(&dump);
+    if (dump.lead_ns < 0) {
+      if (s_drop)
+        epoch_drop += s_drop;
+      else
+        lead_without_drop = true;
+    }
   }
 
   /* a sleeping scheduler's loop avg holds its sleeps */
   tv_behind_err(mgr->idx, sch->allow_sleep ? 0 : mt_sch_avg_ns_loop(sch), round_ns_max,
-                lead_ns);
+                lead_ns, lead_without_drop ? 0 : epoch_drop);
 
   return 0;
 }
@@ -5332,7 +5350,7 @@ int st_tx_video_sessions_sch_uinit(struct mtl_main_impl* impl, struct mtl_sch_im
 int st_tx_video_session_migrate(struct st_tx_video_sessions_mgr* mgr,
                                 struct st_tx_video_session_impl* s, int idx) {
   /* the lead it measured on the scheduler it leaves */
-  tv_behind_err(s->mgr->idx, 0, INFINITY, s->lead_min_ns);
+  tv_behind_err(s->mgr->idx, 0, INFINITY, s->lead_min_ns, 0);
   /* under both slots' locks: the new scheduler's late entries wait for its retry too */
   uint8_t refused =
       atomic_exchange_explicit(&s->mgr->trs_refused[s->idx], 0, memory_order_relaxed);

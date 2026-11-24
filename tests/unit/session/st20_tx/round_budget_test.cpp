@@ -205,6 +205,50 @@ TEST(St20TxLead, ATscPacedSessionBehindErrs) {
   ut_txv_destroy(ctx);
 }
 
+/* a frame the app gave after its epoch starts late, and its first pkts meet the wire
+ * unbuilt: the line names the late frame, not the scheduler */
+TEST(St20TxLead, ALeadBelowZeroWithEpochsDroppedNamesTheLateAppFrame) {
+  ASSERT_EQ(0, ut_txv_init());
+  ut_txv_ctx* ctx = ut_txv_create();
+  ASSERT_NE(nullptr, ctx);
+  ut_txv_set_lead_ns(ctx, -7600);
+  ut_txv_add_epoch_drop(ctx, 8);
+  int locked_lines = 0;
+  ut_txv_run_sessions_stat(ctx, &locked_lines);
+  EXPECT_EQ(1, ut_txv_stat_err_lines());
+  EXPECT_NE(nullptr,
+            std::strstr(ut_txv_stat_error_log_line(), "the app gave a frame late"))
+      << ut_txv_stat_error_log_line();
+  EXPECT_EQ(nullptr, std::strstr(ut_txv_stat_error_log_line(), "scheduler"))
+      << ut_txv_stat_error_log_line();
+  ut_txv_destroy(ctx);
+}
+
+/* a session with lead < 0 and no epoch drops of its own must still report the scheduler
+ * even when a sibling session on the same scheduler dropped epochs */
+TEST(St20TxLead, ALeadBelowZeroWithoutDropsStillNamesTheSchedulerBesideADroppingSession) {
+  ASSERT_EQ(0, ut_txv_init());
+  ut_txv_ctx* starved = ut_txv_create();
+  ut_txv_ctx* late_app = ut_txv_create();
+  ASSERT_NE(nullptr, starved);
+  ASSERT_NE(nullptr, late_app);
+  ut_txv_set_mgr_neighbour(starved, late_app);
+  ut_txv_set_lead_ns(starved, -500);
+  ut_txv_set_lead_ns(late_app, 0);
+  ut_txv_add_epoch_drop(late_app, 8);
+  int locked_lines = 0;
+  ut_txv_run_sessions_stat(starved, &locked_lines);
+  EXPECT_EQ(1, ut_txv_stat_err_lines());
+  EXPECT_NE(nullptr, std::strstr(ut_txv_stat_error_log_line(), "scheduler"))
+      << ut_txv_stat_error_log_line();
+  EXPECT_EQ(nullptr,
+            std::strstr(ut_txv_stat_error_log_line(), "the app gave a frame late"))
+      << ut_txv_stat_error_log_line();
+  ut_txv_set_mgr_neighbour(starved, nullptr);
+  ut_txv_destroy(late_app);
+  ut_txv_destroy(starved);
+}
+
 /* a frame tv_sync_pacing() timed past the TSC range has its cursor saturated to
  * UINT64_MAX: its next pkt is not due, so no lead below 0 */
 TEST(St20TxLead, ASaturatedCursorMeasuresNoLeadBelowZero) {
