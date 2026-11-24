@@ -38,6 +38,7 @@ from mtl_engine.performance_monitoring import (
     monitor_tx_throughput,
     parse_cpus,
     sent_at_rate,
+    tx_vrx,
 )
 from mtl_engine.rxtxapp import RxTxApp
 
@@ -733,12 +734,13 @@ def _run_iteration(
             success, count, fps_details = monitor_tx_fps(
                 stdout_lines, paced_fps, num_sessions, max_drop_pct=MAX_DROP_PCT
             )
+            vrx_window = fps_details["window"]
         else:
-            sent = sent_at_rate(
-                monitor_tx_fps(
-                    companion_lines, paced_fps, num_sessions, max_drop_pct=MAX_DROP_PCT
-                )[2]
-            )
+            sender = monitor_tx_fps(
+                companion_lines, paced_fps, num_sessions, max_drop_pct=MAX_DROP_PCT
+            )[2]
+            vrx_window = sender["window"]
+            sent = sent_at_rate(sender)
             success, count, fps_details = monitor_rx_fps(
                 stdout_lines,
                 paced_fps,
@@ -794,6 +796,15 @@ def _run_iteration(
             detail += (
                 f", {len(fps_details['sender_ramp_sessions'])} kept up with a "
                 "ramping sender"
+            )
+        # Informational until a capture shows whether these frames break VRX on the
+        # wire: the check is MTL's estimate.
+        frames, late, flagged, worst = tx_vrx(tx_lines, vrx_window)
+        if frames or late:
+            detail += (
+                f", {'' if is_tx else 'sender '}VRX may break: {frames} frames"
+                f"{' over 2 ports' if redundant else ''} in {flagged} sessions, up to "
+                f"{worst:.0f} us past the target, {late} started late"
             )
         vetoed = False
         if _has_hugepage_source_fallback(tx_lines):
