@@ -13,7 +13,7 @@ The full table is in
 | --- | --- | --- | --- |
 | Host | Once, and again after each boot | Not CI: the fleet watchdog, or a person with `setup_environment.sh` and `acceptance_setup.sh` | packages, kernel command-line, hugepages, CPU governor, `vfio` access, `net.core.rmem_max`, `/mnt/media`, SSH self-login, `/etc/mtl-ci/runner.env` |
 | Test cycle | Start of each CI job | the `validate-host` action and the `ci:pytest-setup` steps | stop stale processes, restore the builds, load the ICE module under test, bind the DMA devices, the acceptance virtualenv |
-| Test | One test or suite, undone after it | `gtest.sh`, the pytest fixtures | VFs on a PF, PF driver, `/dev/vfio` owner, C-states, cores offline, NoCtx CPU isolation |
+| Test | One test or suite, undone after it | `gtest.sh`, the pytest fixtures | VFs on a PF, PF driver, `/dev/vfio` owner, C-states, NoCtx CPU isolation |
 
 A CI job never installs packages and never changes a host setting. A missing
 host setting fails the job, and the host owner fixes the host. A host that

@@ -9,12 +9,12 @@ import json
 import logging
 import math
 import re
+import shlex
 import time
 import traceback
 from fractions import Fraction
 
 import pytest
-from common.host_setup import optimize_cpu_cores_for_turbo, restore_cpu_cores
 from common.nicctl import ensure_vfio_bound, reset_vfio_bindings
 from conftest import get_host_mtl_path, is_host_sut
 from mfd_common_libs.log_levels import TEST_PASS
@@ -41,7 +41,7 @@ from mtl_engine.performance_monitoring import (
     sent_at_rate,
     tx_vrx,
 )
-from mtl_engine.rxtxapp import RxTxApp
+from mtl_engine.rxtxapp import RxTxApp, config_file
 
 logger = logging.getLogger(__name__)
 
@@ -281,14 +281,16 @@ def _apply_side_kwargs(
         kwargs["nic_port"] = vf
 
 
-def _get_isolcpus(host, port: str) -> str | None:
-    """Return the isolated CPUs of *port*'s NUMA node on *host*, one per core.
+def _cpu_layout(host, port: str) -> tuple[str | None, str | None]:
+    """Return the CPUs of *port*'s NUMA node on *host* for (schedulers, application).
 
-    E.g. "4-20" of isolated "4-20,68-84,132-148,196-212" for a port on node 0, or
-    None if that node has none. Only the first hardware thread of each core is
-    kept, so no two schedulers share a core; the CPUs of other nodes would only
-    add idle EAL threads there, and keep their cores online in
-    optimize_cpu_cores_for_turbo().
+    The schedulers get the node's isolated CPUs, one per core, e.g. "4-20" of
+    isolated "4-20,68-84" for a port on node 0, so that no two share a core.  The
+    application's own threads, RxTxApp's frame threads and MTL's helper threads,
+    get the node's other CPUs except the second threads of the scheduler cores:
+    left to every CPU, the kernel also ran them on those, and on other nodes.
+    They are not isolated, so the kernel balances the threads over them.  Either
+    is None if there is none.
     """
     try:
         result = host.connection.execute_command(
@@ -298,15 +300,114 @@ def _get_isolcpus(host, port: str) -> str | None:
             shell=True,
         )
         isolated, node, *siblings = (result.stdout or "").split("\n")
-        cores = {min(parse_cpus(line)) for line in siblings if line.strip()}
-        value = format_cpus(set(parse_cpus(isolated)) & set(parse_cpus(node)) & cores)
+        cores = [parse_cpus(line) for line in siblings if line.strip()]
+        isolated, node = set(parse_cpus(isolated)), set(parse_cpus(node))
+        schedulers = isolated & node & {min(core) for core in cores}
+        shared = {cpu for core in cores if min(core) in schedulers for cpu in core}
+        lcores = format_cpus(schedulers)
+        # Without isolated schedulers EAL takes its lcores from the same mask.
+        app_cpus = format_cpus(node - isolated - shared) if schedulers else ""
         logger.info(
-            f"Host {host.name}: isolated CPUs of {port}'s node: {value or None}"
+            f"Host {host.name}: CPUs of {port}'s node: schedulers {lcores or None}, "
+            f"application {app_cpus or None}"
         )
-        return value or None
+        return lcores or None, app_cpus or None
     except Exception as e:
-        logger.warning(f"Host {host.name}: could not read isolcpus: {e}")
-    return None
+        logger.warning(f"Host {host.name}: could not read the CPU layout: {e}")
+    return None, None
+
+
+# Moves each thread of the app $2 of config file $1 that may run on more than one
+# CPU onto CPUs $3, every 2 s, until the app exits or $4 s pass.  A taskset in front
+# of the command would not hold: mtl_init() binds the main thread to its NUMA node
+# (numa_bind()), and the threads it starts after inherit that.  EAL's threads, each
+# on one CPU, stay.  It prints each thread it moves, and after each look how many
+# were on $3, how many on one CPU each, how many it could not move, the CPU time of
+# those on $3 in clock ticks (hz), and the time in us.
+PIN_SCRIPT = r"""
+cfg=$1 exe=$2 cpus=$3 end=$((SECONDS + $4)) start=$((SECONDS + 60)) p=
+echo "hz $(getconf CLK_TCK)"
+while [ -z "$p" ] && ((SECONDS < start)); do
+  for p in $(pgrep -f -- "$cfg") ""; do
+    [[ $p && $(readlink "/proc/$p/exe") == */"$exe" ]] && break
+  done
+  [ -n "$p" ] || sleep 0.2
+done
+while [ -n "$p" ] && kill -0 "$p" 2>/dev/null && ((SECONDS < end)); do
+  on=0 one=0 off=0 ticks=0
+  for t in /proc/$p/task/*; do
+    m=
+    while read -r k v; do [ "$k" != Cpus_allowed_list: ] || m=$v; done 2>/dev/null <"$t/status"
+    case $m in
+    "") continue ;;
+    "$cpus") ;;
+    *[,-]*)
+      if ! taskset -pc "$cpus" "${t##*/}" >/dev/null 2>&1; then
+        off=$((off + 1))
+        continue
+      fi
+      name=? && read -r name 2>/dev/null <"$t/comm"
+      echo "moved ${t##*/} $name from $m" ;;
+    *) one=$((one + 1)) && continue ;;
+    esac
+    on=$((on + 1))
+    read -r st 2>/dev/null <"$t/stat" && set -- ${st##*) } && ticks=$((ticks + ${12} + ${13}))
+  done
+  echo "threads $on $one $off $ticks ${EPOCHREALTIME/./}"
+  sleep 2
+done
+"""
+# A share of the app CPUs past which they may hold the app back.
+APP_CPU_BUSY = 0.8
+
+
+def _pin_app_threads(host, app, cpus: str | None, seconds: int, role: str) -> str:
+    """Keep the threads of RxTxApp *app* on *cpus*, for at most *seconds*, with
+    PIN_SCRIPT, which runs on *cpus* too; return the log it writes, or ""."""
+    if not cpus:
+        return ""
+    log = f"/tmp/mtl_perf_pin_{role}.log"
+    script = (
+        f"rm -f {log}; taskset -c {cpus} bash -c {shlex.quote(PIN_SCRIPT)} pin "
+        f"{config_file(app.command)} {app.get_executable_name()} {cpus} {seconds} "
+        f"> {log} 2>&1 &"
+    )
+    host.connection.execute_command(
+        f"sudo -n bash -c {shlex.quote(script)}", shell=True, expected_return_codes=None
+    )
+    return log
+
+
+def _app_threads(host, log: str, cpus: str) -> tuple[bool, float]:
+    """Log what the PIN_SCRIPT of *log* did on *host*: whether it moved every thread
+    it had to, and the most of *cpus* that they kept busy between two looks."""
+    out = host.connection.execute_command(
+        f"sudo -n cat {log}", shell=True, expected_return_codes=None
+    ).stdout
+    lines = (out or "").splitlines()
+    looks = [tuple(map(int, x.split()[1:])) for x in lines if x.startswith("threads ")]
+    if not looks:
+        logger.warning(f"[APP_CPUS] {host.name}: RxTxApp's threads not pinned: {out!r}")
+        return False, 0.0
+    hz = next((int(x.split()[1]) for x in lines if x.startswith("hz ")), 100)
+    on, one, off, _, _ = max(looks, key=lambda look: sum(look[:3]))
+    moved = len({x.split()[1] for x in lines if x.startswith("moved ")})
+    # Between two looks with the same threads, as one that exits takes its time along.
+    busy = max(
+        (
+            (b[3] - a[3]) / hz / ((b[4] - a[4]) / 1e6)
+            for a, b in zip(looks, looks[1:])
+            if a[0] == b[0] and b[4] > a[4]
+        ),
+        default=0.0,
+    )
+    n = len(parse_cpus(cpus))
+    logger.info(
+        f"[APP_CPUS] {host.name}: {moved} threads of RxTxApp moved to CPUs {cpus}; "
+        f"at the look with the most threads, {on} on those, {one} on one CPU each, "
+        f"{off} not moved; they kept up to {busy:.1f} of the {n} CPUs busy"
+    )
+    return on > 0 and not off, busy / n
 
 
 def _select_mc_quota(
@@ -507,9 +608,9 @@ def _run_iteration(
             )
 
     # Pin DPDK lcores to isolated CPUs (shields from OS timer ticks/RCU).
-    isolcpus = _get_isolcpus(measured_host, tx_vf if is_tx else rx_vf)
-    if isolcpus:
-        sut_extra_kwargs["lcores"] = isolcpus
+    lcores, app_cpus = _cpu_layout(measured_host, tx_vf if is_tx else rx_vf)
+    if lcores:
+        sut_extra_kwargs["lcores"] = lcores
 
     # ── Companion scheduler settings ──
     # The companion just needs to keep up — it is not the measured side.
@@ -522,9 +623,11 @@ def _run_iteration(
     # every iteration of the sweep.
     companion_extra_kwargs["disable_migrate"] = True
 
-    companion_isolcpus = _get_isolcpus(companion_host, rx_vf if is_tx else tx_vf)
-    if companion_isolcpus:
-        companion_extra_kwargs["lcores"] = companion_isolcpus
+    companion_lcores, companion_app_cpus = _cpu_layout(
+        companion_host, rx_vf if is_tx else tx_vf
+    )
+    if companion_lcores:
+        companion_extra_kwargs["lcores"] = companion_lcores
 
     redundant_kwargs = {}
     if redundant:
@@ -611,6 +714,13 @@ def _run_iteration(
     rx_vfs = [rx_vf] + ([rx_vf_r] if redundant else [])
     balance = None if is_tx else _wire_balance(tx_host, tx_vfs, rx_host, rx_vfs)
 
+    companion_pin = _pin_app_threads(
+        companion_host,
+        companion_app,
+        companion_app_cpus,
+        companion_kwargs["test_time"] + 60,
+        companion_dir,
+    )
     companion_process = companion_host.connection.start_process(
         f"mkdir -p $(dirname {companion_log}) && "
         f"{companion_app.command} > {companion_log} 2>&1",
@@ -691,6 +801,13 @@ def _run_iteration(
             measured_app.command += f" {sut_app_args}"
 
         # ── Run measured app ──
+        measured_pin = _pin_app_threads(
+            measured_host,
+            measured_app,
+            app_cpus,
+            test_time + 60 + rl_overhead,
+            direction,
+        )
         try:
             result = run(
                 measured_app.command,
@@ -703,6 +820,11 @@ def _run_iteration(
             logger.error(f"Measured process failed: {e}")
             kill_stale_processes(tx_host, rx_host)
             return False, 0, f"process timeout: {e}", None, 0
+        pinned, app_load = True, 0.0
+        if measured_pin:
+            pinned, app_load = _app_threads(measured_host, measured_pin, app_cpus)
+        if companion_pin:
+            _app_threads(companion_host, companion_pin, companion_app_cpus)
 
         # ── Log the measured app's output ──
         # Unfiltered on purpose: the port drop counters, DEV rate lines and
@@ -809,6 +931,10 @@ def _run_iteration(
         )
 
         detail = f"{count}/{num_sessions} sessions at {paced_fps:.2f} fps"
+        if not pinned:
+            detail += ", app threads not pinned"
+        elif app_load > APP_CPU_BUSY:
+            detail += f", app CPUs {app_load:.0%} busy"
         if fps_details["sender_ramp_sessions"]:
             detail += (
                 f", {len(fps_details['sender_ramp_sessions'])} kept up with a "
@@ -1008,16 +1134,6 @@ def _run_session_sweep(
     reset_vfio_bindings(rx_host, rx_host.name, presweep_rx_vfs)
     time.sleep(5)
 
-    # ── Turbo boost optimization for TX single-core tests ──
-    # On high-core-count servers, offline unused cores on the SUT so the
-    # active cores reach higher turbo bins (e.g. 3800 MHz vs 3600 MHz).
-    # Only safe for TX (no DPDK flow/queue issues from offlining).
-    original_online_cpus: str | None = None
-    measured_host = tx_host if is_tx else rx_host
-    if is_tx and single_core:
-        isolcpus = _get_isolcpus(measured_host, tx_vf)
-        original_online_cpus = optimize_cpu_cores_for_turbo(measured_host, isolcpus)
-
     def _is_infra_failure(detail: str) -> bool:
         """Return True if the failure is infrastructure-related (not capacity).
 
@@ -1184,8 +1300,6 @@ def _run_session_sweep(
         logger.info(f"{'═' * 70}\n")
 
         if not passed:
-            if original_online_cpus:
-                restore_cpu_cores(measured_host, original_online_cpus)
             pytest.fail(
                 f"Fixed run FAILED: {num_sessions} sessions for "
                 f"{mode_tag}{direction.upper()} "
@@ -1193,9 +1307,6 @@ def _run_session_sweep(
                 f"@ {fps}fps / {resolution}"
                 + (f": {network_failure}" if passed is None else "")
             )
-
-        if original_online_cpus:
-            restore_cpu_cores(measured_host, original_online_cpus)
 
         logger.log(
             TEST_PASS,
@@ -1308,8 +1419,6 @@ def _run_session_sweep(
         logger.info(f"{'═' * 70}\n")
 
         if undecided is not None:
-            if original_online_cpus:
-                restore_cpu_cores(measured_host, original_online_cpus)
             pytest.fail(
                 f"Sweep FAILED at {undecided} sessions for "
                 f"{mode_tag}{direction.upper()} "
@@ -1318,17 +1427,12 @@ def _run_session_sweep(
             )
 
         if max_passing == 0:
-            if original_online_cpus:
-                restore_cpu_cores(measured_host, original_online_cpus)
             pytest.fail(
                 f"Sweep FAILED: no sessions passed for "
                 f"{mode_tag}{direction.upper()} "
                 f"{'SC' if single_core else 'MC'}{dma_label} "
                 f"@ {fps}fps / {resolution}"
             )
-
-        if original_online_cpus:
-            restore_cpu_cores(measured_host, original_online_cpus)
 
         logger.log(
             TEST_PASS,
