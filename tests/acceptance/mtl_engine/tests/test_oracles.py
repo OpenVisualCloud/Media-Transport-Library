@@ -57,6 +57,77 @@ def test_rx_timing_requires_every_result_to_be_narrow():
         app.assert_rx_timing_compliance(expected_sessions=3)
 
 
+def test_rx_timing_without_narrow_still_needs_every_result():
+    """Skipping the narrow verdict keeps the check that every session reported."""
+    app = _rxtxapp({})
+    app.last_output = "rv_tp_stat(0,0), COMPLIANT NARROW 0 WIDE 4 FAILED 0"
+
+    app.assert_rx_timing_compliance(expected_sessions=1, require_narrow=False)
+    with pytest.raises(AssertionError, match=r"2 were expected"):
+        app.assert_rx_timing_compliance(expected_sessions=2, require_narrow=False)
+
+
+def test_rx_timing_counts_frame_level_legacy_video_only():
+    """The parser runs on a frame-level RX video session, never an RTP-level one."""
+    app = _rxtxapp(
+        {
+            "rx_sessions": [
+                {
+                    "interface": [1],
+                    "video": [{"replicas": 1, "type": "frame"}],
+                },
+                {
+                    "interface": [1],
+                    "video": [{"replicas": 1, "type": "rtp"}],
+                },
+            ],
+        }
+    )
+
+    assert app._expected_rx_timing_results() == 1
+
+
+def test_rx_first_packet_times_keep_a_period_with_no_frame():
+    """A no-frame period prints FPT -1; it must reach the test, not vanish."""
+    app = _rxtxapp({})
+    app.last_output = "\n".join(
+        [
+            "rv_tp_stat(0), FPT AVG 625693.06 MIN 619520 MAX 630528 DIFF 11008!",
+            "rv_tp_stat(0), FPT AVG -1.00 MIN 0 MAX 0 DIFF 0!",
+        ]
+    )
+
+    assert app.rx_first_packet_times_ns() == [625693.06, -1.0]
+
+
+def test_tx_user_timestamp_errors_sum_the_periods_and_need_a_stat_dump():
+    """Per-period rises add up; no stat dump at all is -1, not a silent 0."""
+    app = _rxtxapp({})
+    app.last_output = "app_tx_video_result(0), OK"
+    assert app.count_tx_user_timestamp_errors() == -1
+
+    app.last_output = "TX_VIDEO_SESSION(0,0): throughput 2.6 Mb/s"
+    assert app.count_tx_user_timestamp_errors() == 0
+
+    app.last_output = "\n".join(
+        [
+            "TX_VIDEO_SESSION(0,0): error user timestamp 3",
+            "TX_VIDEO_SESSION(0,0): error user timestamp 2",
+        ]
+    )
+    assert app.count_tx_user_timestamp_errors() == 5
+
+
+def test_tx_user_pacing_applied_reads_the_rxtxapp_line():
+    """Only RxTxApp's "user_pacing on" line counts, its "ignored" warning does not."""
+    app = _rxtxapp({})
+    app.last_output = "app_tx_video_init(0), user_pacing is rtp level only, ignored"
+    assert not app.tx_user_pacing_applied()
+
+    app.last_output = "app_tx_video_init(0), user_pacing on, exact 1"
+    assert app.tx_user_pacing_applied()
+
+
 def test_rejected_needs_both_a_failed_run_and_the_mtl_error():
     app = _rxtxapp({})
     marker = "invalid fmd_dit"

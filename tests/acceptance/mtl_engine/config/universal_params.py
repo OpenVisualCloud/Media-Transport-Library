@@ -48,6 +48,7 @@ UNIVERSAL_PARAMS = {
     "fastmetadata_data_item_type": 1234567,  # 22-bit Data Item Type
     "fastmetadata_k_bit": 0,  # Data Item K-bit
     "type_mode": "frame",  # Session type mode: "rtp" or "frame"
+    "rx_type_mode": None,  # RX legacy video type; None = same as type_mode
     # Streaming parameters
     "payload_type": 112,  # RTP payload type
     "session_type": "st20p",  # Session type (st20p, st22p, st30p, video, audio, etc.)
@@ -60,6 +61,7 @@ UNIVERSAL_PARAMS = {
     "pacing": "gap",  # Pacing mode (gap, auto, etc.)
     "packing": "BPM",  # Packing mode
     "user_pacing": False,  # TX user pacing (app supplies per-frame timestamps)
+    "exact_user_pacing": False,  # TX first packet at the timestamp; implies user_pacing
     "drop_when_late": False,  # Drop TX frames that miss their pacing window
     "user_time_offset": None,  # User-pacing clock offset in ns (negative = past)
     "device": "AUTO",  # Device selection
@@ -101,6 +103,7 @@ UNIVERSAL_PARAMS = {
     "rx_mix_lcore": False,  # Allow TX/RX video on same core
     "runtime_session": False,  # Start instance before creating sessions
     "rx_timing_parser": False,  # Enable timing check for video RX streams
+    "rx_timing_narrow": True,  # With rx_timing_parser, require narrow compliance
     "auto_stop": False,  # Auto stop after input file ends
     # Uncapped, one RX recording grows until it fills the ramdisk (4K p119 writes
     # 2.5 GB/s). RxTxApp stops on a frame boundary here and keeps receiving, so the

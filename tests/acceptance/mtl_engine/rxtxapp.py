@@ -920,8 +920,18 @@ class RxTxApp(Application):
                 }
                 if is_tx:
                     session["video_url"] = p("video_url")
+                    # RTP level only: RxTxApp sends each frame's first packet
+                    # with st20_tx_put_mbuf_tai(). exact implies user_pacing in
+                    # RxTxApp's JSON parser, so emit only one key.
+                    if p("exact_user_pacing", False):
+                        session["exact_user_pacing"] = True
+                    elif p("user_pacing", False):
+                        session["user_pacing"] = True
                 else:
                     session["display"] = p("display")
+                    # the RX timing parser needs a frame-level RX session
+                    if p("rx_type_mode"):
+                        session["type"] = p("rx_type_mode")
                 return session
 
             if session_type == "audio":
@@ -1107,7 +1117,10 @@ class RxTxApp(Application):
             if not self.params.get("rx_timing_parser"):
                 return
             try:
-                self.assert_rx_timing_compliance(self._expected_rx_timing_results())
+                self.assert_rx_timing_compliance(
+                    self._expected_rx_timing_results(),
+                    require_narrow=self.params.get("rx_timing_narrow", True),
+                )
             except AssertionError as error:
                 _fail(str(error))
 
@@ -1252,8 +1265,16 @@ class RxTxApp(Application):
         return sum(
             int(session.get("replicas", 1)) * max(1, len(group.get("interface") or []))
             for group in (self.config or {}).get("rx_sessions") or []
-            for session in group.get("st20p") or []
+            for kind in ("st20p", "video")
+            for session in group.get(kind) or []
+            # the parser does not run on an RTP-level RX session
+            if session.get("type") != "rtp"
         )
+
+    def tx_user_pacing_applied(self) -> bool:
+        """RxTxApp logs ``app_tx_video_init(N), user_pacing on`` when the legacy
+        video session took the flags, and a warning when it ignored them."""
+        return "user_pacing on, exact" in (self.last_output or "")
 
     def rx_recording_cap(self) -> int:
         """Return the byte limit RxTxApp stops this recording at, 0 if unbounded.
