@@ -222,6 +222,22 @@ TEST_F(StFrameRateToStFps, RateOutsideEveryWindowIsRejected) {
   EXPECT_EQ(g_warn_cnt, 0);
 }
 
+/* a 90 kHz tick's own ns, round(k * 1e9 / 90000), is its own ceil, also where that
+ * rounds up (k % 9 = 5..8); 1 ns past it, the next tick's */
+TEST(StTaiCeilToMediaClk, ATickIsItsOwnCeil) {
+  constexpr uint32_t kRate = 90000;
+  constexpr uint64_t kNsPerS = 1000000000;
+
+  for (uint64_t k = 1000000; k < 1000018; k++) {
+    SCOPED_TRACE(k);
+    const uint64_t tick_ns = st_muldiv_u64_round_closest(k, kNsPerS, kRate);
+    const uint64_t next_ns = st_muldiv_u64_round_closest(k + 1, kNsPerS, kRate);
+    EXPECT_EQ(st_tai_ceil_to_media_clk_ns(tick_ns, kRate), tick_ns);
+    EXPECT_EQ(st_tai_ceil_to_media_clk_ns(tick_ns - 1, kRate), tick_ns);
+    EXPECT_EQ(st_tai_ceil_to_media_clk_ns(tick_ns + 1, kRate), next_ns);
+  }
+}
+
 /* The pacer sends one packet per st30_get_packet_time() and the RTP clock advances by
  * st30_get_sample_num() per packet, so the two must agree with the sampling rate. */
 TEST(St30PacketTime, CarriesExactlyTheSamplesOfOnePacket) {

@@ -467,8 +467,8 @@ uint32_t ut_txv_pacing_vrx(const ut_txv_ctx* ctx);
 bool ut_txv_rl_armed(const ut_txv_ctx* ctx, int port);
 uint16_t ut_txv_rl_pad_size(const ut_txv_ctx* ctx, int port);
 int64_t ut_txv_rl_trim_pads(const ut_txv_ctx* ctx, int port);
-/* Drives st_tai_round_to_media_clk_ns() -- the same media-clock snap
- * tv_sync_pacing() applies to the scheduled instant, so tests can express an
+/* Drives st_tai_round_to_media_clk_ns() -- the snap tv_sync_pacing() applies to the
+ * scheduled instant unless a TSC_NARROW pre-fill spans a tick, so tests can express an
  * expectation as the raw ST 2110-21 sum instead of a pre-rounded constant. */
 uint64_t ut_txv_round_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate);
 

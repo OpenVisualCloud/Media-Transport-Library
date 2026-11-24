@@ -983,6 +983,14 @@ uint64_t st_tai_round_to_media_clk_ns(uint64_t tai_ns, uint32_t sampling_rate) {
   return st_muldiv_u64_round_closest(tick, NS_PER_S, sampling_rate);
 }
 
+uint64_t st_tai_ceil_to_media_clk_ns(uint64_t tai_ns, uint32_t sampling_rate) {
+  uint64_t ns = st_tai_round_to_media_clk_ns(tai_ns, sampling_rate);
+  if (ns >= tai_ns) return ns;
+
+  /* the nearest tick is before tai_ns, so the next one is less than a tick past it */
+  return st_tai_round_to_media_clk_ns(ns + NS_PER_S / sampling_rate, sampling_rate);
+}
+
 uint64_t st10_media_clk_to_tai(uint64_t anchor_tai_ns, uint32_t media_ts,
                                uint32_t sampling_rate) {
   if (!sampling_rate) {

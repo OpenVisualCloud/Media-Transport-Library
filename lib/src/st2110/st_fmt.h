@@ -49,6 +49,8 @@ int st22_rtp_bandwidth_bps(uint32_t total_pkts, uint16_t pkt_size, enum st_fps f
 int st22_frame_bandwidth_bps(size_t frame_size, enum st_fps fps, uint64_t* bps);
 
 uint64_t st_tai_round_to_media_clk_ns(uint64_t tai_ns, uint32_t sampling_rate);
+/* the first media clock tick at or after tai_ns, in ns; wraps within a tick of 2^64 */
+uint64_t st_tai_ceil_to_media_clk_ns(uint64_t tai_ns, uint32_t sampling_rate);
 
 /* Rounds value*multiplier/divisor to the nearest integer; exact ties round down. */
 uint64_t st_muldiv_u64_round_closest(uint64_t value, uint64_t multiplier,
