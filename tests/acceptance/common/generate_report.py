@@ -95,6 +95,8 @@ RE_FIXED_RESULT = re.compile(
     r" @ (\d+)fps / (\d+p)"
 )
 RE_STEP = re.compile(r"(\d+) sessions\s+(✓|✗)\s+(.+)")
+# _run_one()'s line after each run that passed, below that run's own blocks
+RE_PASSED_RUN = re.compile(r"✓ (\d+) sessions PASSED(?:\s+cores=(\d+))?")
 RE_CPU_CORES = re.compile(
     r"\[CPU_CORES\] cores_used=(\d+)\s+max_simultaneous=\d+\s+"
     r"samples=\d+\s+core_ids=([\d,]+)"
@@ -163,6 +165,7 @@ def _parse_log_file(log_path: str, dir_name: str = ""):
     tests: list[SweepTest] = []
     host_assign = cmd = cores = core_ids = ""
     m_tx = m_rx = c_tx = c_rx = 0.0
+    passed_runs: dict[tuple[int, int], tuple] = {}  # (sessions, cores) → its values
     in_m = in_c = collecting_sweep = in_config = False
     steps: list[tuple[int, bool, str]] = []
     config_lines: list[str] = []
@@ -231,6 +234,7 @@ def _parse_log_file(log_path: str, dir_name: str = ""):
                 host_assign = RE_LOG_PREFIX.sub("", line).strip()
                 cmd = cores = core_ids = ""
                 m_tx = m_rx = c_tx = c_rx = 0.0
+                passed_runs = {}
                 in_m = in_c = collecting_sweep = in_config = False
                 steps, config_lines, rxtxapp_config = [], [], {}
                 continue
@@ -292,6 +296,19 @@ def _parse_log_file(log_path: str, dir_name: str = ""):
                         c_rx = v
                     in_m = in_c = False
 
+            mp = RE_PASSED_RUN.search(line)
+            if mp:
+                passed_runs[(int(mp.group(1)), int(mp.group(2) or 0))] = (
+                    cmd,
+                    cores,
+                    core_ids,
+                    m_tx,
+                    m_rx,
+                    c_tx,
+                    c_rx,
+                )
+                continue
+
             # ── Sweep summary block ──
             if "SWEEP SUMMARY:" in line:
                 collecting_sweep = True
@@ -344,6 +361,18 @@ def _parse_log_file(log_path: str, dir_name: str = ""):
                     mode = mf.group(4)
                     fps_val = int(mf.group(5))
                     res_val = mf.group(6)
+                # The values of the run the result names, not of the last run: a
+                # sweep ends on the count above the result, which failed.
+                run = passed_runs.get((n_sessions, int(sweep_cores or 0))) or next(
+                    (
+                        v
+                        for (n, _), v in reversed(passed_runs.items())
+                        if n == n_sessions
+                    ),
+                    None,
+                )
+                if run:
+                    cmd, cores, core_ids, m_tx, m_rx, c_tx, c_rx = run
                 st = SweepTest(
                     max_sessions=n_sessions,
                     tested_side=side,
