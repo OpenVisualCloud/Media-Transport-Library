@@ -10,6 +10,7 @@ import logging
 import math
 import re
 import shlex
+import signal
 import time
 import traceback
 from fractions import Fraction
@@ -41,7 +42,16 @@ from mtl_engine.performance_monitoring import (
     sent_at_rate,
     tx_vrx,
 )
-from mtl_engine.rxtxapp import RxTxApp, config_file
+from mtl_engine.rxtxapp import RxTxApp, config_file, multicast_groups, stream_groups
+from mtl_engine.wire_compliance import (
+    CAPTURE_PPS,
+    CAPTURE_WALL_S,
+    PHC_WAIT_S,
+    WireCapture,
+    frame_packets,
+    sh,
+    summary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -546,6 +556,8 @@ def _run_iteration(
     test_time: int,
     sch_session_quota: int | None = None,
     sut_app_args: str | None = None,
+    multicast: int = 0,
+    runner=run,
 ) -> tuple[bool, int, str, dict | None, int]:
     """Run one iteration: start companion, run measured app, validate FPS.
 
@@ -554,6 +566,9 @@ def _run_iteration(
             session quota for this iteration (used by core-minimization
             phase to test different quotas).
         sut_app_args: Extra RxTxApp arguments for the measured app.
+        multicast: If set, both apps send or receive multicast, this many
+            sessions to a group (rxtxapp.multicast_groups()).
+        runner: Runs the measured app as execute.run() does, by default with it.
 
     Returns:
         (passed, successful_count, detail_string, config_dict, cores_used).
@@ -682,6 +697,8 @@ def _run_iteration(
         )
 
     companion_app.create_command(**companion_kwargs)
+    if multicast:
+        multicast_groups(companion_app.config, companion_dir, multicast)
     companion_app.prepare_execution(build=build_companion, host=companion_host)
 
     # For RX tests, set companion TX's destination MAC to the RX VF's MAC
@@ -796,6 +813,8 @@ def _run_iteration(
             measured_kwargs["dma_dev"] = dma_device
 
         measured_app.create_command(**measured_kwargs)
+        if multicast:
+            multicast_groups(measured_app.config, direction, multicast)
         measured_app.prepare_execution(build=build_measured, host=measured_host)
         if sut_app_args:
             measured_app.command += f" {sut_app_args}"
@@ -809,7 +828,7 @@ def _run_iteration(
             direction,
         )
         try:
-            result = run(
+            result = runner(
                 measured_app.command,
                 cwd=build_measured,
                 timeout=test_time + 60 + rl_overhead,
@@ -1000,6 +1019,105 @@ def _run_iteration(
         companion_app.stop_process()
 
 
+def _spare_cpus(host, port: str) -> str | None:
+    """The CPUs of *host* that are neither isolated nor on *port*'s NUMA node."""
+    try:
+        out = host.connection.execute_command(
+            f"n=$(cat /sys/bus/pci/devices/{port}/numa_node); [ $n -ge 0 ] || n=0; "
+            "cat /sys/devices/system/cpu/online /sys/devices/system/cpu/isolated "
+            "/sys/devices/system/node/node$n/cpulist",
+            shell=True,
+        ).stdout
+        online, isolated, node = (out or "").split("\n")[:3]
+        spare = set(parse_cpus(online)) - set(parse_cpus(isolated))
+        return format_cpus(spare - set(parse_cpus(node))) or None
+    except Exception as e:
+        logger.warning(f"Host {host.name}: could not read its CPUs: {e}")
+    return None
+
+
+def _compliance_pass(
+    iter_kwargs: dict, sessions: int, quota: int | None, ebu: dict
+) -> str:
+    """EBU LIST's ST 2110-21 verdict on each stream of the TX at *sessions*, as one line.
+
+    A run of its own, after the sweep's result, so that it cannot change one: the
+    streams go multicast, as many to a group as a capture takes, and the PF of the
+    TX's port 1, which sends nothing in a non-redundant run, captures a group at a
+    time while the sessions are steady.  *quota* is that of the result's run.
+    """
+    tx_host, media = iter_kwargs["tx_host"], iter_kwargs["media_config"]
+    if not getattr(tx_host, "vfs_r", None):
+        return "not judged: the TX host has no port 1 to capture on"
+    pps = frame_packets(media["width"], media["height"]) * float(
+        Fraction(pformat_to_exact_fps(iter_kwargs["fps"]))
+    )
+    per_group = int(CAPTURE_PPS // pps)
+    if not per_group:
+        return f"not judged: a stream sends {pps:.0f} packets/s, a capture takes {CAPTURE_PPS}"
+    groups = math.ceil(sessions / per_group)
+    pf = sh(tx_host, f"ls /sys/bus/pci/devices/{tx_host.vfs_r[0]}/physfn/net").strip()
+    capture = WireCapture(
+        tx_host,
+        pf,
+        "/tmp/mtl_perf_compliance",
+        _spare_cpus(tx_host, iter_kwargs["tx_vf"]),
+    )
+    # The TX starts its sessions over rl_overhead, 3 s each, then settles; its
+    # test_time counts from its start, so that it outlasts the captures however fast
+    # it started, and it is stopped once they are done.
+    settle = sessions * 3 + 30
+    test_time = PHC_WAIT_S + settle + groups * CAPTURE_WALL_S + 30
+
+    def runner(command, cwd, timeout, testcmd, host):
+        config = json.loads(
+            host.connection.execute_command(
+                f"cat {config_file(command)}", shell=True
+            ).stdout
+        )
+        process = run(command, cwd=cwd, testcmd=testcmd, host=host, background=True)
+        try:
+            locked = capture.start()  # phc2sys locks while the TX starts
+            if locked:
+                time.sleep(settle)
+            for address, streams in stream_groups(config):
+                if not locked:
+                    capture.note(address, streams, "phc2sys did not lock")
+                elif not getattr(process, "running", True):
+                    capture.note(address, streams, "the TX exited before its capture")
+                else:
+                    capture.capture(address, streams, pps)
+        finally:
+            capture.stop()
+            try:
+                process.kill(wait=None, with_signal=signal.SIGINT)
+            except Exception as e:  # mfd raises while the TX exits, or once it did
+                logger.debug(f"SIGINT to the TX: {e}")
+            process.wait(timeout=timeout)
+        return process
+
+    logger.info(f"\n  ── Compliance: {sessions} sessions in {groups} groups ──")
+    passed, detail = False, "it did not start"
+    try:
+        passed, _, detail, _, _ = _run_iteration(
+            **{**iter_kwargs, "test_time": test_time},
+            num_sessions=sessions,
+            sch_session_quota=quota,
+            multicast=per_group,
+            runner=runner,
+        )
+    finally:
+        verdicts = capture.judge(iter_kwargs["build_tx"], ebu)
+        kill_stale_processes(iter_kwargs["tx_host"], iter_kwargs["rx_host"])
+    for stream, verdict in sorted(verdicts.items()):
+        logger.info(f"    {stream}: {verdict}")
+    detail = (detail.splitlines() or [""])[0]  # a companion's exit carries its log
+    if not verdicts:
+        return f"not judged: no capture ran, the TX run: {detail}"
+    line = summary(verdicts, capture.problems)
+    return line if passed else f"{line}; the TX run failed: {detail}"
+
+
 def _run_session_sweep(
     direction: str,
     redundant: bool,
@@ -1014,6 +1132,7 @@ def _run_session_sweep(
     num_sessions: int | None = None,
     sch_quota: int | None = None,
     sut_app_args: str | None = None,
+    compliance: dict | None = None,
 ) -> None:
     """Auto-sweep session count using binary search to find max passing.
 
@@ -1026,6 +1145,9 @@ def _run_session_sweep(
     fewer cores (sessions packed into fewer schedulers).  Single-core runs
     ignore it: they always use SCH_SESSION_QUOTA_SINGLE_CORE, which has to
     stay high enough that the run cannot spill onto a second scheduler.
+
+    With *compliance*, test_config's ebu_server, a TX sweep also has EBU LIST judge
+    each stream at its maximum, after the sweep (_compliance_pass).
     """
     media_config, media_file_path = media_file
     resolution = f"{media_config['height']}p"
@@ -1143,6 +1265,47 @@ def _run_session_sweep(
         infra_markers = ("open fail", "process timeout")
         return any(m in detail for m in infra_markers)
 
+    def _recover(prev: dict) -> None:
+        """Clean up after the run *prev*, so that the next run starts clean."""
+        # Always kill leftover processes first
+        kill_stale_processes(tx_host, rx_host)
+        time.sleep(2)
+
+        # Build VF lists (shared by both paths)
+        tx_vfs = [tx_vf] + ([tx_vf_r] if tx_vf_r else [])
+        rx_vfs = [rx_vf] + ([rx_vf_r] if rx_vf_r else [])
+        if dma_device:
+            # DMA only on RX SUT (TX+DMA tests are skipped)
+            rx_vfs.extend(dma_device.split(","))
+
+        if _is_crash(prev["detail"]):
+            # Full unbind/FLR/rebind after a DPDK crash + hugepage cleanup
+            logger.info("  VFIO cleanup (previous iteration crashed)…")
+            reset_vfio_bindings(tx_host, tx_host.name, tx_vfs)
+            reset_vfio_bindings(rx_host, rx_host.name, rx_vfs)
+            logger.info(f"  Waiting {CRASH_RECOVERY_WAIT}s for NIC link recovery…")
+            time.sleep(CRASH_RECOVERY_WAIT)
+        else:
+            # Light check: companion SIGKILL may leave VFs unbound
+            rebound = ensure_vfio_bound(
+                tx_host,
+                tx_host.name,
+                tx_vfs,
+            )
+            rebound |= ensure_vfio_bound(
+                rx_host,
+                rx_host.name,
+                rx_vfs,
+            )
+            if rebound:
+                logger.info(
+                    "  VFs rebound after previous run, "
+                    "waiting 10s for link recovery…"
+                )
+                time.sleep(10)
+            else:
+                time.sleep(3)
+
     def _run_one(
         n: int,
         phase: str,
@@ -1159,46 +1322,8 @@ def _run_session_sweep(
         logger.info(f"{'━' * 70}")
 
         # ── Inter-iteration cleanup ──
-        prev = iteration_results[-1] if iteration_results else None
-        if prev is not None:
-            # Always kill leftover processes first
-            kill_stale_processes(tx_host, rx_host)
-            time.sleep(2)
-
-            # Build VF lists (shared by both paths)
-            tx_vfs = [tx_vf] + ([tx_vf_r] if tx_vf_r else [])
-            rx_vfs = [rx_vf] + ([rx_vf_r] if rx_vf_r else [])
-            if dma_device:
-                # DMA only on RX SUT (TX+DMA tests are skipped)
-                rx_vfs.extend(dma_device.split(","))
-
-            if _is_crash(prev["detail"]):
-                # Full unbind/FLR/rebind after a DPDK crash + hugepage cleanup
-                logger.info("  VFIO cleanup (previous iteration crashed)…")
-                reset_vfio_bindings(tx_host, tx_host.name, tx_vfs)
-                reset_vfio_bindings(rx_host, rx_host.name, rx_vfs)
-                logger.info(f"  Waiting {CRASH_RECOVERY_WAIT}s for NIC link recovery…")
-                time.sleep(CRASH_RECOVERY_WAIT)
-            else:
-                # Light check: companion SIGKILL may leave VFs unbound
-                rebound = ensure_vfio_bound(
-                    tx_host,
-                    tx_host.name,
-                    tx_vfs,
-                )
-                rebound |= ensure_vfio_bound(
-                    rx_host,
-                    rx_host.name,
-                    rx_vfs,
-                )
-                if rebound:
-                    logger.info(
-                        "  VFs rebound after previous run, "
-                        "waiting 10s for link recovery…"
-                    )
-                    time.sleep(10)
-                else:
-                    time.sleep(3)
+        if iteration_results:
+            _recover(iteration_results[-1])
         else:
             # First iteration — small grace period
             time.sleep(2)
@@ -1443,6 +1568,21 @@ def _run_session_sweep(
             f"@ {fps}fps / {resolution}",
         )
 
+        # After the result line, which a pass that fails or is cancelled keeps.
+        if compliance is not None and is_tx and not redundant:
+            verdict = "not judged: test_config has no ebu_server"
+            if compliance:
+                try:
+                    _recover(iteration_results[-1])
+                    verdict = _compliance_pass(
+                        iter_kwargs, max_passing, best_quota_val, compliance
+                    )
+                except Exception as e:
+                    verdict = f"not judged: {type(e).__name__}: {e}"
+            logger.info(
+                f"Compliance (EBU LIST, ST 2110-21) of {max_passing} sessions: {verdict}"
+            )
+
 
 # ── Common parametrize decorators (shared across all 4 test functions) ──
 
@@ -1494,6 +1634,7 @@ def test_tx(
     num_sessions,
     sch_quota,
     sut_app_args,
+    perf_compliance,
 ) -> None:
     """TX performance: auto-sweep sessions from start upward until failure."""
     _run_session_sweep(
@@ -1510,6 +1651,7 @@ def test_tx(
         num_sessions=num_sessions,
         sch_quota=sch_quota,
         sut_app_args=sut_app_args,
+        compliance=test_config.get("ebu_server", {}) if perf_compliance else None,
     )
 
 

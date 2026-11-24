@@ -37,6 +37,11 @@ on:
         required: false
         type: string
         default: '120'
+      compliance:
+        description: After each TX sweep, have EBU LIST judge the ST 2110-21 compliance of its streams (about 8 min a case)
+        required: false
+        type: boolean
+        default: true
   schedule:
     - cron: '0 22 * * *'
 
@@ -138,6 +143,7 @@ jobs:
           SHADOW_IP: ${{ steps.validate.outputs.shadow_host_ip }}
           SHADOW_USER: ${{ steps.validate.outputs.shadow_host_user }}
           TEST_TIME: ${{ inputs.test_time || '120' }}
+          COMPLIANCE: ${{ github.event_name == 'schedule' || inputs.compliance }}
         run: task ci:pytest-setup -- config-perf
       - name: Verify the perf media assets
         # A case whose source is absent skips, so without this a host that lost
@@ -155,6 +161,7 @@ jobs:
           NUM_SESSIONS: ${{ inputs.num_sessions }}
           SCH_QUOTA: ${{ inputs.sch_quota }}
           SUT_APP_ARGS: ${{ inputs.sut_app_args }}
+          COMPLIANCE: ${{ github.event_name == 'schedule' || inputs.compliance }}
         run: task ci:pytest-run -- performance
       - name: Generate performance report
         if: always()

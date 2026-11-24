@@ -24,6 +24,9 @@ performance)
 	# Joined with '=': the value starts with '--', which pytest would otherwise
 	# read as an option of its own.
 	[[ -n ${SUT_APP_ARGS:-} ]] && args+=("--sut_app_args=$SUT_APP_ARGS")
+	# A long traceback prints the test's arguments, test_config and the EBU LIST
+	# password in it among them, into a public log.
+	[[ ${COMPLIANCE:-} != true ]] || args+=(--perf_compliance --tb=short)
 	;;
 nightly)
 	args=("./tests/single/${TEST_PATH:?TEST_PATH is required}" -m nightly)

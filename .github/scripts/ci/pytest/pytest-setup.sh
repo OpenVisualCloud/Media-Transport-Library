@@ -195,6 +195,12 @@ config-single)
 	;;
 config-perf)
 	load_runner_env
+	# The compliance pass uploads its own captures; --no_capture keeps pcap_capture off.
+	ebu=()
+	[[ ${COMPLIANCE:-} != true ]] ||
+		ebu=(--ebu_ip "${EBU_IP:?EBU_IP is required for the compliance pass}"
+			--ebu_user "${EBU_USER:?EBU_USER is required for the compliance pass}"
+			--ebu_password "${EBU_PASSWORD:?EBU_PASSWORD is required for the compliance pass}")
 	cd "${acceptance_dir}/configs"
 	"${venv_python}" gen_config.py \
 		--session_id "${SESSION_ID:?SESSION_ID is required}" \
@@ -203,7 +209,7 @@ config-perf)
 		--ip_address "${SHADOW_IP:?SHADOW_IP is required}" "${SUT_IP:?SUT_IP is required}" \
 		--username "${SHADOW_USER:?SHADOW_USER is required}" \
 		--key_path "${key}" \
-		--test_time "${TEST_TIME:-120}" --no_capture
+		--test_time "${TEST_TIME:-120}" --no_capture "${ebu[@]}"
 	;;
 tag)
 	printf 'MTL_GITHUB_WORKFLOW=%s\n' "${WORKFLOW_TAG:?WORKFLOW_TAG is required}" >>"${GITHUB_ENV:?GITHUB_ENV is required}"

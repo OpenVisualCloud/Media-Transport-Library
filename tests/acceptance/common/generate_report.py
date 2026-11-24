@@ -64,6 +64,7 @@ class SweepTest:
     command: str = ""
     cores_used: int = 0
     core_ids: str = ""
+    compliance: str = ""  # EBU LIST's verdict on the streams at the maximum, if run
     measured_dev_tx: float = 0.0
     measured_dev_rx: float = 0.0
     companion_dev_tx: float = 0.0
@@ -95,6 +96,7 @@ RE_FIXED_RESULT = re.compile(
     r" @ (\d+)fps / (\d+p)"
 )
 RE_STEP = re.compile(r"(\d+) sessions\s+(✓|✗)\s+(.+)")
+RE_COMPLIANCE = re.compile(r"Compliance \(EBU LIST, ST 2110-21\) of \d+ sessions: (.+)")
 # _run_one()'s line after each run that passed, below that run's own blocks
 RE_PASSED_RUN = re.compile(r"✓ (\d+) sessions PASSED(?:\s+cores=(\d+))?")
 RE_CPU_CORES = re.compile(
@@ -295,6 +297,13 @@ def _parse_log_file(log_path: str, dir_name: str = ""):
                     else:
                         c_rx = v
                     in_m = in_c = False
+
+            # The compliance pass runs after the result line of its test.
+            mcl = RE_COMPLIANCE.search(line)
+            if mcl:
+                if tests:
+                    tests[-1].compliance = mcl.group(1).strip()
+                continue
 
             mp = RE_PASSED_RUN.search(line)
             if mp:
@@ -1023,6 +1032,8 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
             # MC runs MTL's own tasklets on an lcore of their own (dedicated_sys_lcore).
             f"{'<br>and the system lcore' if t.mode == 'MC' else ''}</div>"
         )
+        if t.compliance:
+            p.append(f"<div><b>ST 2110-21 (EBU LIST)</b><br>{_esc(t.compliance)}</div>")
         if t.redundant:
             nflows = t.max_sessions * 2
             p.append(
