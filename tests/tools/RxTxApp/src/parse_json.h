@@ -217,6 +217,10 @@ typedef struct st_json_video_session {
   bool display;
   bool enable_rtcp;
 
+  /* tx only items */
+  bool user_pacing;
+  bool exact_user_pacing;
+
   /* rx only items */
   enum user_pg_fmt user_pg_format;
   bool measure_latency;

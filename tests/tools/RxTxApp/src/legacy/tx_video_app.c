@@ -504,6 +504,41 @@ static int app_tx_video_build_rtp_packet(struct st_app_tx_video_session* s,
   return 0;
 }
 
+/* TAI for the next frame under ST20_TX_FLAG_USER_PACING: its epoch, or with
+ * ST20_TX_FLAG_EXACT_USER_PACING the exact send time of its first packet. Advances
+ * user_pacing_epoch by one, so call it once per frame. */
+static uint64_t app_tx_video_user_pacing_tai(struct st_app_tx_video_session* s) {
+  long double frame_time = (long double)NS_PER_S / s->expect_fps;
+  uint64_t now = mtl_ptp_read_time(s->st);
+  /* EXACT sends half a frame after the epoch, far from the default start (TR_offset
+   * after the epoch), so the RX FPT plainly shows the TAI was honoured. The lead the
+   * lib needs (tv_pacing_required_tai() refuses an EXACT TAI less than the warm-up,
+   * warm_pkts * trs, ahead of now) comes from the anchor below, not from this. */
+  long double offset = s->exact_user_pacing ? frame_time / 2 : 0;
+  uint64_t tai = (uint64_t)(s->user_pacing_epoch * frame_time + offset);
+
+  /* Anchor two epochs ahead, which leaves at least one frame time to build the frame.
+   * Re-anchor the same way when the TAI leaves the range the lib accepts: in the past
+   * once the app is late, or near 1 s ahead once PTP time stepped back. The lib holds
+   * the EXACT TAI itself to 1 s, and without EXACT the frame start, TR_offset after
+   * the TAI; stopping one frame time short of 1 s leaves room for TR_offset in both
+   * modes. While the app keeps up, the TAI and PTP time both move on one frame time
+   * per call, so the lead stays where the anchor put it. */
+  if (!s->user_pacing_epoch || tai < now || tai - now > NS_PER_S - frame_time) {
+    if (s->user_pacing_epoch)
+      warn("%s(%d), tai %" PRIu64 " out of range of now %" PRIu64 ", re-anchor\n",
+           __func__, s->idx, tai, now);
+    s->user_pacing_epoch = (uint64_t)(now / frame_time) + 2;
+    /* ST 2110-21 grid for interlaced: even epochs carry first fields. Fixed only
+     * here; after that each field adds one epoch and flips st20_second_field. */
+    if (s->interlaced && (s->user_pacing_epoch & 0x1) != s->st20_second_field)
+      s->user_pacing_epoch++;
+    tai = (uint64_t)(s->user_pacing_epoch * frame_time + offset);
+  }
+  s->user_pacing_epoch++;
+  return tai;
+}
+
 static void* app_tx_video_rtp_thread(void* arg) {
   struct st_app_tx_video_session* s = arg;
   int idx = s->idx;
@@ -512,6 +547,13 @@ static void* app_tx_video_rtp_thread(void* arg) {
   uint16_t mbuf_len = 0;
 
   app_tx_video_thread_bind(s);
+
+  /* This thread starts before mtl_start(). A TAI taken that early can be in the past
+   * when the lib reads frame 0, and the lib would refuse it, so wait for the device. */
+  struct mtl_var_info var;
+  while (s->user_pacing && !s->st20_app_thread_stop &&
+         (mtl_get_var_info(s->st, &var) < 0 || !var.dev_started))
+    st_usleep(1000);
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st20_app_thread_stop) {
@@ -531,10 +573,18 @@ static void* app_tx_video_rtp_thread(void* arg) {
       }
     }
 
+    /* The lib reads the TAI only from packet 0 of a frame. Take it before the build,
+     * because the build flips st20_second_field at the end of a field. */
+    uint64_t tai =
+        (s->user_pacing && s->st20_pkt_idx == 0) ? app_tx_video_user_pacing_tai(s) : 0;
+
     /* build the rtp pkt */
     app_tx_video_build_rtp_packet(s, (struct st20_rfc4175_rtp_hdr*)usrptr, &mbuf_len);
 
-    st20_tx_put_mbuf(s->handle, mbuf, mbuf_len);
+    if (tai)
+      st20_tx_put_mbuf_tai(s->handle, mbuf, mbuf_len, tai);
+    else
+      st20_tx_put_mbuf(s->handle, mbuf, mbuf_len);
 
     app_tx_video_check_lcore(s, true);
   }
@@ -854,6 +904,21 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
     else
       ops.rtp_ring_size = 1024;
     app_tx_video_init_rtp(s, &ops);
+  }
+
+  if (video && video->user_pacing) {
+    /* Only the generated RTP stream tracks frame boundaries (st20_pkt_idx), which it
+     * needs to put the TAI on each frame's first packet; a pcap replay does not. */
+    if (ops.type == ST20_TYPE_RTP_LEVEL && !s->st20_pcap_input) {
+      s->user_pacing = true;
+      s->exact_user_pacing = video->exact_user_pacing;
+      ops.flags |= ST20_TX_FLAG_USER_PACING;
+      if (s->exact_user_pacing) ops.flags |= ST20_TX_FLAG_EXACT_USER_PACING;
+      /* the acceptance oracle tx_user_pacing_applied() matches this text, keep it */
+      info("%s(%d), user_pacing on, exact %d\n", __func__, idx, s->exact_user_pacing);
+    } else {
+      warn("%s(%d), user_pacing is rtp level only, ignored\n", __func__, idx);
+    }
   }
 
   handle = st20_tx_create(ctx->st, &ops);

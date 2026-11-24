@@ -130,6 +130,11 @@ Items in each element of the "video" array
 
 ​ **display (bool):** `true, false` display video frames with SDL, only works with YUV 422 10bit and 8bit stream
 
+​ **user_pacing (bool):** `true, false` send each frame at a TAI the app picks with `st20_tx_put_mbuf_tai()`, (optional). The frames go on consecutive epochs, anchored two epochs ahead of the PTP time once the device has started, and again whenever the next TAI is in the past or within one frame time of 1 s ahead.
+Only for RTP level with a generated source: `"type": "rtp"`, or any type once `--tx_video_rtp_ring_size` forces RTP level; ignored with a warning for frame and slice level and for a `.pcap` `video_url`. Interlaced fields keep the ST 2110-21 parity, first fields on even epochs.
+
+​ **exact_user_pacing (bool):** `true, false` like `user_pacing`, which it implies, but the first packet of each frame is sent exactly at its TAI, set half a frame period after the epoch, (optional).
+
 #### audio (array of audio sessions)
 
 Items in each element of the "audio" array
