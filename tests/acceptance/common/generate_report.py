@@ -746,7 +746,8 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                     "after its worst stat dumps (10 %, at least one) are dropped; or, as "
                     "a receiver, "
                     "end at that bar and get ≥ 99 % of what a sender ramping up to it "
-                    "sent.",
+                    "sent. The frames MTL flags against VRX (“VRX may break” in a step) "
+                    "are shown, not judged: the check is an estimate.",
                 ),
                 (
                     "Measurement Window",

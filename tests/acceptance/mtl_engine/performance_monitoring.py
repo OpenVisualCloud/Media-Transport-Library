@@ -369,6 +369,37 @@ def monitor_dev_rate(log_lines, window):
     return {"tx_rate_history": tx_hist, "rx_rate_history": rx_hist}
 
 
+# ── VRX ─────────────────────────────────────────────────────────────────
+
+
+# tv_stat_log() in lib/src/st2110/st_tx_video_session.c
+_VRX_RE = (
+    r"TX_VIDEO_SESSION\((\d+),(\d+)\): (\d+) frames may break VRX >= 0, a pkt up to "
+    r"([\d.]+)us past its target.*?; (\d+) frames started up to [\d.]+us late"
+)
+
+
+def tx_vrx(log_lines, window):
+    """What MTL flags against the VRX model in the stat dumps of *window* → (frames
+    that may break it, frames started late, sessions with such frames, worst µs
+    past the target).
+
+    MTL estimates it from the CPU side, on RL-paced ports only, and counts a frame
+    once per port (st_header.h); a frame started late counts once and is not judged.
+    So 0 is not known to be clean: a library without the check, a port that logs
+    "VRX not judged" and an empty window all give 0.
+    """
+    frames = late = 0
+    sessions, worst = set(), 0.0
+    for m in _collect_in_window(log_lines, _VRX_RE, window):
+        if int(m.group(3)):
+            sessions.add(m.group(1, 2))
+        frames += int(m.group(3))
+        worst = max(worst, float(m.group(4)))
+        late += int(m.group(5))
+    return frames, late, len(sessions), worst
+
+
 # ── Result Display ──────────────────────────────────────────────────────
 
 
