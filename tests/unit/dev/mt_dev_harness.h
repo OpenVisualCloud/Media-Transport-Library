@@ -79,13 +79,19 @@ struct ut_dev_sch_setup {
   uint64_t flags;         /* mtl_init_params.flags */
   bool anc_session_first; /* an ancillary session comes and goes first */
   int tx_video_quota_mbs;
+  int num_ports; /* each with rss_sch_nb RSS dispatch schedulers */
+  enum mtl_rss_mode rss_mode[MTL_PORT_MAX];
+  uint16_t rss_sch_nb;
 };
 struct ut_dev_sch_layout {
   int main_sch;
   int tx_video_sch;
+  int srss_tasklets;
+  int srss_on_tx_video_sch; /* shared-RSS tasklets on the TX video session's scheduler */
 };
-/* As mtl_init() with setup: creates the main scheduler, then takes the scheduler a TX
- * video session gets. No scheduler starts. Returns 0 on success. */
+/* As mtl_init() with setup: creates the main scheduler and the shared-RSS tasklets, then
+ * takes the scheduler a TX video session gets. No scheduler starts. Returns 0 on
+ * success. */
 int ut_dev_sch_layout(const struct ut_dev_sch_setup* setup,
                       struct ut_dev_sch_layout* layout);
 

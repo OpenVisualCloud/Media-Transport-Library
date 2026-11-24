@@ -148,6 +148,7 @@ ena_rss_hash_set(): Setting RSS hash fields is not supported. Using default valu
 The ENA HW does not support RSS hash fields modification, the app will require known src port and dst port for the stream.
 
 To workaround this limitation, the library uses shared rss mode on ENA by default which will receive and handle packets in one thread.
+That thread keeps its lcore free of media sessions, so the first audio or video session needs one more lcore.
 
 ### 7.4. The max single video stream supported is 4k 30fps / 1080p 120fps (WA fixed)
 

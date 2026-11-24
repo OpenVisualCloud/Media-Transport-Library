@@ -202,6 +202,7 @@ Shared Mode: allows multiple sessions to utilize the same RX queue. Each session
 The RX queue shared mode is enabled by `MTL_FLAG_SHARED_RX_QUEUE` flag. Please refer to [code](../lib/src/datapath/mt_shared_queue.c) for details.
 
 RSS mode: Not all NICs support Flow Director. For those that don't, we employs Receive Side Scaling (RSS) to enable the efficient distribution of network receive processing across multiple queues. This is based on a hash calculated from fields in packet headers, such as source and destination IP addresses, and port numbers.
+The RSS dispatch runs on system schedulers, the main one included, and so closes max(1, `rss_sch_nb`) lcores to audio and video sessions, for the largest `rss_sch_nb` of any port, capped at its RX queue count.
 Please refer to [code](../lib/src/datapath/mt_shared_rss.c) for details.
 
 #### 4.2.3. Queues resource allocated

@@ -14,6 +14,7 @@
 #undef MTL_HAS_USDT
 #include "common/ut_common.h"
 #include "common/ut_tx_ring.h"
+#include "datapath/mt_shared_rss.h"
 #include "dev/mt_dev_harness.h"
 #include "mt_main.h"
 
@@ -584,13 +585,22 @@ int ut_dev_sch_layout(const struct ut_dev_sch_setup* setup,
   MT_TAILQ_INIT(&impl->stat_mgr.head);
   impl->user_para.flags = setup->flags;
   impl->inf[MTL_PORT_P].socket_id = (int)rte_socket_id();
+  impl->user_para.num_ports = setup->num_ports;
+  for (int i = 0; i < setup->num_ports; i++) {
+    struct mt_interface* inf = mt_if(impl, i);
+    inf->socket_id = (int)rte_socket_id();
+    inf->rss_mode = setup->rss_mode[i];
+    inf->nb_rx_q = RTE_MAX(setup->rss_sch_nb, 1);
+    impl->user_para.rss_sch_nb[i] = setup->rss_sch_nb;
+  }
 
   enum mtl_log_level level = mt_get_log_global_level();
   mt_set_log_global_level(MTL_LOG_LEVEL_ERR);
   int ret = dev_sch_init(impl);
   if (ret < 0) goto out;
 
-  if (setup->anc_session_first) {
+  ret = mt_srss_init(impl);
+  if (!ret && setup->anc_session_first) {
     /* what st40_tx_create() takes and st40_tx_free() returns */
     struct mtl_sch_impl* anc = mt_sch_get(impl, 0, MT_SCH_TYPE_DEFAULT, MT_SCH_MASK_ALL);
     if (anc)
@@ -605,11 +615,20 @@ int ut_dev_sch_layout(const struct ut_dev_sch_setup* setup,
     if (sch) {
       layout->main_sch = impl->main_sch->idx;
       layout->tx_video_sch = sch->idx;
+      layout->srss_tasklets = 0;
+      layout->srss_on_tx_video_sch = 0;
+      for (int i = 0; i < setup->num_ports; i++) {
+        for (int s = 0; impl->srss[i] && s < impl->srss[i]->schs_cnt; s++) {
+          layout->srss_tasklets++;
+          if (impl->srss[i]->schs[s].sch == sch) layout->srss_on_tx_video_sch++;
+        }
+      }
       mt_sch_put(sch, setup->tx_video_quota_mbs);
     } else {
       ret = -EIO;
     }
   }
+  mt_srss_uinit(impl);
   mt_sch_put(impl->main_sch, 0);
   mt_sch_mrg_uinit(impl);
 out:

@@ -160,6 +160,9 @@ TX video sessions are placed by quota alone; the round is judged at runtime (`do
 
 **If adding a new session type**: define its quota correctly or schedulers get overloaded.
 
+**System schedulers**: quota-bearing sessions (video, audio) never land on a `MT_SCH_TYPE_SYSTEM` scheduler, and returning quota never makes one default again.
+The main scheduler is one under `MTL_FLAG_DEDICATED_SYS_LCORE` or when any port uses shared RSS, and so are the extra `rss_sch_nb` dispatch schedulers; zero-quota requests (the shared RSS tasklets, st40/st41 sessions, an audio quota that rounds to 0) still fit there.
+
 ### Sleep/Wake Design
 - Each tasklet declares `advice_sleep_us`
 - Scheduler takes minimum across all tasklets
@@ -214,7 +217,7 @@ If `rte_eth_tx_burst()` returns fewer than requested:
 | Statistics (×1) | Stat dump | Configurable `dump_period_us` |
 | CNI (×1) | ARP/PTP/DHCP/IGMP | Tasklet or thread mode (`MTL_FLAG_CNI_THREAD`) |
 | Socket TX/RX (×4 each) | Kernel socket backend | Only with `kernel:` backend |
-| SRSS (×1) | Shared RSS polling | Only for NICs without flow director |
+| SRSS (×1 per shared RSS port) | Shared RSS dispatch every 1 ms while its schedulers are stopped | A tasklet on a system scheduler once they start; ports with `rss_mode` set, by default on NICs without flow director (ixgbe, ENA) |
 
 ---
 

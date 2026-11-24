@@ -477,7 +477,7 @@ int mt_srss_init(struct mtl_main_impl* impl) {
       q_idx = q_end;
 
       struct mtl_sch_impl* sch =
-          mt_sch_get(impl, srss_sch->quota_mps, MT_SCH_TYPE_DEFAULT, sch_mask);
+          mt_sch_get(impl, srss_sch->quota_mps, MT_SCH_TYPE_SYSTEM, sch_mask);
       if (!sch) {
         err("%s(%d), get sch fail on %d\n", __func__, port, s_idx);
         mt_srss_uinit(impl);

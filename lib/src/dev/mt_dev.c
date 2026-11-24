@@ -2235,6 +2235,9 @@ static int dev_sch_init(struct mtl_main_impl* impl) {
   /* create system sch */
   enum mt_sch_type type =
       mt_user_dedicated_sys_lcore(impl) ? MT_SCH_TYPE_SYSTEM : MT_SCH_TYPE_DEFAULT;
+  /* every shared rss port runs its first rx dispatch tasklet here, no room for media */
+  for (int i = 0; i < mt_num_ports(impl); i++)
+    if (mt_has_srss(impl, i)) type = MT_SCH_TYPE_SYSTEM;
   impl->main_sch = mt_sch_get(impl, 0, type, MT_SCH_MASK_ALL);
   if (!impl->main_sch) {
     err("%s, get sch fail\n", __func__);
