@@ -106,6 +106,11 @@ def add_interfaces(
     return config
 
 
+def config_file(command: str) -> str:
+    """The config file of an RxTxApp *command* of prepare_execution()."""
+    return re.search(r"--config_file\s+(\S+)", command)[1]
+
+
 def check_tx_output(
     config: dict,
     output: list,
