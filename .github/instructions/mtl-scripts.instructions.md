@@ -120,7 +120,6 @@ another layer.
 | A PF on `vfio-pci` for a PF test, or on its kernel driver for a kernel socket test | Test | pytest fixtures, `script/nicctl.sh` |
 | Owner of the `/dev/vfio` nodes for the test account | Test | `Nicctl.grant_vfio_access` |
 | C-state limit (`/dev/cpu_dma_latency`), for a test that needs it | Test | the fixture of that test (no test needs it yet) |
-| Cores offline, for the turbo of a performance test | Test | `optimize_cpu_cores_for_turbo`, `restore_cpu_cores` |
 | CPU isolation for NoCtx | Test | `tests/tools/isolate/isolate.sh` |
 | MtlManager, `ptp4l`/`phc2sys`, interface addresses, packet capture | Test | pytest fixtures |
 
