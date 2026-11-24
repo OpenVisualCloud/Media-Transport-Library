@@ -20,6 +20,7 @@ Architecture: [doc/acceptance-design.md](../../doc/acceptance-design.md) §2, §
 | `rxtxapp_config.py` | Empty JSON config templates | Logic (it is data) |
 | `media_files.py` | Asset registry + `parse_fps_to_pformat` | File I/O |
 | `pcap_compliance.py` | `CaptureIntent`, `ComplianceSession`, `NO_COMPLIANCE`, mismatch detectors | Netsniff process control (that is `create_pcap_file/netsniff.py`) |
+| `wire_compliance.py` | The perf sweep's EBU LIST pass: phc2sys, tcpdump captures of multicast groups, LIST verdicts | RxTxApp's JSON config (that is `rxtxapp.py`'s `multicast_groups()`) |
 | `integrity.py` | Frame/sample comparison + size math | Test policy about *when* to run it |
 | `execute.py` | `run()`, `log_fail()`, stale-process cleanup | Anything app-specific |
 | `csv_report.py`, `stash.py` | Result recording | Pass/fail decisions |

@@ -37,6 +37,11 @@ on:
         required: false
         type: string
         default: '120'
+      compliance:
+        description: After each non-redundant sweep, have EBU LIST judge the ST 2110-21 compliance of the streams sent at its maximum (about 7 min a case)
+        required: false
+        type: boolean
+        default: true
   schedule:
     - cron: '0 22 * * *'
 
@@ -95,6 +100,8 @@ jobs:
     needs: build
     runs-on: [self-hosted, perf, sut]
     timeout-minutes: 720
+    env:
+      COMPLIANCE: ${{ github.event_name == 'schedule' || inputs.compliance }}
     steps:
       - name: Harden-Runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3

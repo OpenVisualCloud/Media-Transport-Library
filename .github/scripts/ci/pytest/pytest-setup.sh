@@ -19,6 +19,9 @@ load_runner_env() {
 		# shellcheck source=/dev/null
 		source "${runner_env}"
 		set +a
+		# EBU_PASSWORD comes from the runner, not from a GitHub secret, so GitHub does
+		# not mask it in the job log by itself.
+		[[ -z ${GITHUB_ACTIONS:-} || -z ${EBU_PASSWORD:-} ]] || echo "::add-mask::${EBU_PASSWORD}"
 	else
 		echo "No runner configuration at ${runner_env}, using defaults"
 	fi
@@ -195,6 +198,15 @@ config-single)
 	;;
 config-perf)
 	load_runner_env
+	# The compliance pass uploads its own captures; --no_capture keeps pcap_capture off.
+	ebu=()
+	if [[ ${COMPLIANCE:-} == true ]]; then
+		# gen_config.py reads the password from the environment, which other users
+		# cannot read, unlike a command line.
+		: "${EBU_PASSWORD:?EBU_PASSWORD is required for the compliance pass}"
+		ebu=(--ebu_ip "${EBU_IP:?EBU_IP is required for the compliance pass}"
+			--ebu_user "${EBU_USER:?EBU_USER is required for the compliance pass}")
+	fi
 	cd "${acceptance_dir}/configs"
 	"${venv_python}" gen_config.py \
 		--session_id "${SESSION_ID:?SESSION_ID is required}" \
@@ -203,7 +215,7 @@ config-perf)
 		--ip_address "${SHADOW_IP:?SHADOW_IP is required}" "${SUT_IP:?SUT_IP is required}" \
 		--username "${SHADOW_USER:?SHADOW_USER is required}" \
 		--key_path "${key}" \
-		--test_time "${TEST_TIME:-120}" --no_capture
+		--test_time "${TEST_TIME:-120}" --no_capture "${ebu[@]}"
 	;;
 tag)
 	printf 'MTL_GITHUB_WORKFLOW=%s\n' "${WORKFLOW_TAG:?WORKFLOW_TAG is required}" >>"${GITHUB_ENV:?GITHUB_ENV is required}"
