@@ -313,9 +313,31 @@ int mtl_parse_rx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
   return 0;
 }
 
+static bool mtl_dev_args_have_port(const struct StDevArgs* devArgs, const char* port) {
+  for (int i = 0; i < MTL_PORT_MAX; i++) {
+    if (devArgs->port[i] && !strcmp(devArgs->port[i], port)) return true;
+  }
+  return false;
+}
+
 int mtl_parse_tx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
                       const StTxSessionPortArgs* args, struct st_tx_port* port) {
+  static const char* const port_options[MTL_SESSION_PORT_MAX] = {"p_tx_port",
+                                                                 "r_tx_port"};
   int dev_port_idx = 0;
+
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    if (args->port[i] && !mtl_dev_args_have_port(devArgs, args->port[i])) {
+      err(ctx, "%s, %s %s is not a p_port, r_port or p2_port..p7_port\n", __func__,
+          port_options[i], args->port[i]);
+      return AVERROR(EINVAL);
+    }
+  }
+  if (args->port[MTL_SESSION_PORT_P] && args->dip[MTL_SESSION_PORT_R] &&
+      !args->port[MTL_SESSION_PORT_R]) {
+    err(ctx, "%s, p_tx_port with r_tx_ip needs r_tx_port\n", __func__);
+    return AVERROR(EINVAL);
+  }
 
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     const char* dev_port = mtl_next_dev_port(devArgs, &dev_port_idx);
