@@ -624,6 +624,8 @@ int ut_txv_stat_err_lines(void);
 void ut_txv_set_sch_avg_loop_ns(ut_txv_ctx* ctx, uint64_t ns);
 /* the shortest lead the session's builder measured since the stats took it */
 void ut_txv_set_lead_ns(ut_txv_ctx* ctx, int64_t lead_ns);
+/* epochs the session dropped as its app gave a frame late */
+void ut_txv_add_epoch_drop(ut_txv_ctx* ctx, uint64_t epochs);
 int64_t ut_txv_lead_ns(ut_txv_ctx* ctx);
 long double ut_txv_pacing_frame_time(const ut_txv_ctx* ctx);
 int ut_txv_total_pkts(const ut_txv_ctx* ctx);

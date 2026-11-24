@@ -3696,6 +3696,10 @@ void ut_txv_set_lead_ns(ut_txv_ctx* ctx, int64_t lead_ns) {
   ctx->session.lead_min_ns = lead_ns;
 }
 
+void ut_txv_add_epoch_drop(ut_txv_ctx* ctx, uint64_t epochs) {
+  ctx->session.port_user_stats.common.stat_epoch_drop += epochs;
+}
+
 int64_t ut_txv_lead_ns(ut_txv_ctx* ctx) {
   return ctx->session.lead_min_ns;
 }
