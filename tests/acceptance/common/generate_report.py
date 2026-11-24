@@ -990,7 +990,9 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
         p.append('<div class="ig">')
         p.append(f"<div><b>Host Assignment</b><br>{_esc(t.host_assignment)}</div>")
         p.append(
-            f"<div><b>Cores Used</b><br>{t.cores_used} (ids: {_esc(t.core_ids)})</div>"
+            f"<div><b>Cores Used</b><br>{t.cores_used} (ids: {_esc(t.core_ids)})"
+            # MC runs MTL's own tasklets on an lcore of their own (dedicated_sys_lcore).
+            f"{'<br>and the system lcore' if t.mode == 'MC' else ''}</div>"
         )
         if t.redundant:
             nflows = t.max_sessions * 2
