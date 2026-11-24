@@ -451,10 +451,7 @@ class ComplianceSession:
         disagrees with the configured MTL values (all always checked, no
         opt-out marker, since a mismatch means the stream isn't actually
         using the requested wire format). Narrow (or narrow linear) is the
-        expected default for MTL; a "wide" verdict most often means the
-        capture PF and the primary/TX PF are not properly PTP-synchronized
-        (sync the system clock to the capturing NIC's PHC via phc2sys before
-        capture).
+        expected default for MTL.
 
         Sampling and colour depth are not checked: EBU LIST 2.2 does not
         detect them and reports YCbCr-4:2:2 10-bit for every video stream
@@ -611,13 +608,11 @@ class ComplianceSession:
             msg = (
                 f"PCAP compliance check failed: {len(wide_streams)} video "
                 "stream(s) are only ST 2110-21 'wide' compliant (not "
-                "narrow/narrow_linear). This usually means the capture PF "
-                "and the primary/TX PF are not properly PTP-synchronized -- "
-                "sync the system clock to the capturing NIC's PHC (phc2sys) "
-                'before capture. If pacing="wide" wasn\'t configured for '
+                'narrow/narrow_linear). If pacing="wide" wasn\'t configured for '
                 "this test but wide compliance is still expected/acceptable, "
                 "mark it with @pytest.mark.allow_wide_compliance."
             )
+            logger.info(f"Compliance report: {report}")
             self._fail(msg, fail_on_error)
 
         packing_mismatch = _packing_mismatch_streams(report, intent.packing)

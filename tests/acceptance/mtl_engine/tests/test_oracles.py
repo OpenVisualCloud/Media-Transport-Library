@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2026 Intel Corporation
 
+import logging
+
 import pytest
 import requests
 from compliance import compliance_client
@@ -8,7 +10,7 @@ from compliance.compliance_client import PcapComplianceClient
 from create_pcap_file.netsniff import NetsniffRecorder
 from mtl_engine.application_base import Application
 from mtl_engine.integrity_session import NO_INTEGRITY
-from mtl_engine.pcap_compliance import CaptureIntent
+from mtl_engine.pcap_compliance import CaptureIntent, ComplianceSession
 from mtl_engine.rxtxapp import RxTxApp
 
 
@@ -213,6 +215,16 @@ def test_ebu_report_states_are_distinct():
     assert unavailable is None
     assert non_compliant is False
     assert compliant is True
+
+
+def test_wide_only_compliance_failure_logs_the_report(caplog):
+    session = ComplianceSession(None, {}, "/mtl", "node")
+    stream = {"media_type": "video", "global_video_analysis": {"compliance": "wide"}}
+    report = {"analyzed": True, "not_compliant_streams": 0, "streams": [stream]}
+    intent = CaptureIntent(dst_ips=("239.1.0.1",), capture_time=1)
+    with caplog.at_level(logging.INFO), pytest.raises(AssertionError, match="'wide'"):
+        session._apply_checks(report, intent, allow_wide=False, fail_on_error=False)
+    assert f"Compliance report: {report}" in caplog.messages
 
 
 def test_finalize_reports_both_ebu_and_mtl_failures():
