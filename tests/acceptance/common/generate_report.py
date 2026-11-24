@@ -64,6 +64,13 @@ class SweepTest:
     command: str = ""
     cores_used: int = 0
     core_ids: str = ""
+    compliance: str = ""  # EBU LIST's verdict on the streams at the maximum, if run
+    # Its captures in LIST's UI: [(group, narrow, streams, url)], and the streams that
+    # are not narrow: [(stream, what LIST found, url)]
+    compliance_links: list = field(default_factory=list)
+    compliance_failed: list = field(default_factory=list)
+    # LIST's reports of the groups that failed, saved with the logs: [(group, path)]
+    compliance_saved: list = field(default_factory=list)
     measured_dev_tx: float = 0.0
     measured_dev_rx: float = 0.0
     companion_dev_tx: float = 0.0
@@ -95,6 +102,10 @@ RE_FIXED_RESULT = re.compile(
     r" @ (\d+)fps / (\d+p)"
 )
 RE_STEP = re.compile(r"(\d+) sessions\s+(✓|✗)\s+(.+)")
+RE_COMPLIANCE = re.compile(r"Compliance \(EBU LIST, ST 2110-21\) of \d+ sessions: (.+)")
+RE_LIST_CAPTURE = re.compile(r"LIST capture (\S+): (\d+)/(\d+) narrow (https?://\S+)")
+RE_LIST_STREAM = re.compile(r"LIST stream (\S+): (.+) (https?://\S+)\s*$")
+RE_LIST_SAVED = re.compile(r"LIST report (\S+): saved as (\S+)")
 # _run_one()'s line after each run that passed, below that run's own blocks
 RE_PASSED_RUN = re.compile(r"✓ (\d+) sessions PASSED(?:\s+cores=(\d+))?")
 RE_CPU_CORES = re.compile(
@@ -295,6 +306,29 @@ def _parse_log_file(log_path: str, dir_name: str = ""):
                     else:
                         c_rx = v
                     in_m = in_c = False
+
+            # The compliance pass runs after the result line of its test.
+            mcl = RE_COMPLIANCE.search(line)
+            if mcl:
+                if tests:
+                    tests[-1].compliance = mcl.group(1).strip()
+                continue
+            mcl = RE_LIST_CAPTURE.search(line)
+            if mcl:
+                if tests:
+                    g, k, n, url = mcl.groups()
+                    tests[-1].compliance_links.append((g, int(k), int(n), url))
+                continue
+            mcl = RE_LIST_STREAM.search(line)
+            if mcl:
+                if tests:
+                    tests[-1].compliance_failed.append(mcl.groups())
+                continue
+            mcl = RE_LIST_SAVED.search(line)
+            if mcl:
+                if tests:
+                    tests[-1].compliance_saved.append(mcl.groups())
+                continue
 
             mp = RE_PASSED_RUN.search(line)
             if mp:
@@ -687,6 +721,45 @@ def _esc(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def _attr(s: str) -> str:
+    """*s* escaped for an HTML attribute in double quotes."""
+    return _esc(s).replace('"', "&quot;")
+
+
+def _anchor(t) -> str:
+    """The id of sweep test *t*'s card in Sweep Details."""
+    return "sweep-" + re.sub(r"[^a-z0-9]+", "-", t.key.lower()).strip("-")
+
+
+# The head of a compliance line of wire_compliance.summary(): narrow streams / all.
+RE_NARROW = re.compile(r"(\d+)/(\d+) streams narrow")
+
+
+def _compliance_cell(compliance: str, anchor: str = "") -> str:
+    """The summary table's cell for an EBU LIST line: the streams LIST judged narrow
+    out of all, with the whole line as a tooltip.  It links to *anchor*, the test's
+    card, which links to the captures in LIST."""
+    if not compliance:
+        return (
+            '<td class="n" title="EBU LIST judges the non-redundant sweeps '
+            'only">\u2014</td>'
+        )
+    tip = _attr(compliance)
+    m = RE_NARROW.match(compliance)
+    if not m:  # "not judged: ..."
+        return f'<td class="n" title="{tip}">not judged</td>'
+    all_narrow = m[1] == m[2] and "not judged" not in compliance
+    color = "#1a7f37" if all_narrow else "#cf222e"
+    mark = "" if all_narrow and ";" not in compliance else " \u26a0"
+    text = f"{m[1]}/{m[2]}{mark}"
+    if anchor:
+        text = f'<a href="#{anchor}" style="color:inherit">{text}</a>'
+    return (
+        f'<td class="n" title="{tip}" style="color:{color};font-weight:600">'
+        f"{text}</td>"
+    )
+
+
 def _tput(mbps: float) -> str:
     if mbps <= 0:
         return "—"
@@ -934,7 +1007,11 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                 "over both primary and redundant NIC ports).<br>"
                 "<b>Throughput (per port)</b> = average rate on a single NIC interface. "
                 "<b>NIC Total</b> = aggregate throughput across both ports "
-                "(2\u00d7 per-port, since each port carries all sessions).</p>"
+                "(2\u00d7 per-port, since each port carries all sessions).<br>"
+                "<b>ST 2110-21</b> = the streams that EBU LIST judged narrow, out of the "
+                "streams it captured at the maximum, 1 s each; for RX, the streams "
+                "its sender sent (non-redundant cases only; \u26a0 = a problem, shown "
+                "on hover).</p>"
             )
         else:
             p.append(
@@ -943,7 +1020,11 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                 "\u2139\ufe0f <b>Network Streams</b> = UDP streams on the wire "
                 "(1\u00d7 per session for non-redundant mode).<br>"
                 "<b>Throughput (per port)</b> = measured rate on the single NIC port used. "
-                "<b>NIC Total</b> = same value (only 1 port active in non-redundant mode).</p>"
+                "<b>NIC Total</b> = same value (only 1 port active in non-redundant mode).<br>"
+                "<b>ST 2110-21</b> = the streams that EBU LIST judged narrow, out of the "
+                "streams it captured at the maximum, 1 s each; for RX, the streams "
+                "its sender sent (non-redundant cases only; \u26a0 = a problem, shown "
+                "on hover).</p>"
             )
         for fps in sorted({t.fps for t in group}):
             fps_group = [t for t in group if t.fps == fps]
@@ -953,7 +1034,8 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                     '<table class="mx"><thead><tr>'
                     "<th>Tested Side</th><th>Resolution</th>"
                     "<th>Sessions</th><th>Network Streams</th><th>Cores</th>"
-                    "<th>Throughput (per port)</th><th>NIC Total</th><th>Run</th>"
+                    "<th>Throughput (per port)</th><th>NIC Total</th>"
+                    "<th>ST 2110-21</th><th>Run</th>"
                     "</tr></thead><tbody>"
                 )
             else:
@@ -961,7 +1043,8 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                     '<table class="mx"><thead><tr>'
                     "<th>Tested Side</th><th>Resolution</th>"
                     "<th>Max Sessions</th><th>Network Streams</th><th>Cores</th>"
-                    "<th>Throughput (per port)</th><th>NIC Total</th><th>Run</th>"
+                    "<th>Throughput (per port)</th><th>NIC Total</th>"
+                    "<th>ST 2110-21</th><th>Run</th>"
                     "</tr></thead><tbody>"
                 )
             for t in fps_group:
@@ -978,6 +1061,7 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                         f'<td class="n">{t.cores_used}</td>'
                         f"<td>{_tput(meas)}</td>"
                         f"<td><b>{_tput(nic_total)}</b></td>"
+                        f"{_compliance_cell(t.compliance, _anchor(t))}"
                         f"<td>{t.log_dir}</td></tr>"
                     )
                 else:
@@ -988,6 +1072,7 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                         f'<td class="n">{t.cores_used}</td>'
                         f"<td>{_tput(meas)}</td>"
                         f"<td><b>{_tput(meas)}</b></td>"
+                        f"{_compliance_cell(t.compliance, _anchor(t))}"
                         f"<td>{t.log_dir}</td></tr>"
                     )
             p.append("</tbody></table>")
@@ -1006,13 +1091,13 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
         if t.redundant:
             nflows = t.max_sessions * 2
             p.append(
-                f"<details><summary>{_esc(t.key)} — "
+                f'<details id="{_anchor(t)}"><summary>{_esc(t.key)} — '
                 f"<b>{t.max_sessions} sessions ({nflows} network streams)"
                 f"</b></summary>" + '<div class="db">'
             )
         else:
             p.append(
-                f"<details><summary>{_esc(t.key)} — "
+                f'<details id="{_anchor(t)}"><summary>{_esc(t.key)} — '
                 f"<b>{t.max_sessions} sessions ({t.max_sessions} network streams)"
                 f'</b></summary><div class="db">'
             )
@@ -1023,6 +1108,31 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
             # MC runs MTL's own tasklets on an lcore of their own (dedicated_sys_lcore).
             f"{'<br>and the system lcore' if t.mode == 'MC' else ''}</div>"
         )
+        if t.compliance:
+            links = "".join(
+                f'<br><a href="{_attr(url)}" target="_blank">{_esc(g)}</a>: '
+                f"{k}/{n} narrow"
+                for g, k, n, url in t.compliance_links
+            )
+            links += "".join(
+                f'<br>Not narrow: <a href="{_attr(url)}" target="_blank">'
+                f"{_esc(stream)}</a> ({_esc(what)})"
+                for stream, what, url in t.compliance_failed
+            )
+            if links:
+                links = "<br><i>In EBU LIST, for a few days:</i>" + links
+            if t.compliance_saved:
+                links += (
+                    "<br><i>LIST's reports of the failing groups, in perf-logs.tar.gz:"
+                    "</i>"
+                    + "".join(
+                        f"<br><code>compliance/{_esc(os.path.basename(path))}</code>"
+                        for _, path in t.compliance_saved
+                    )
+                )
+            p.append(
+                f"<div><b>ST 2110-21 (EBU LIST)</b><br>{_esc(t.compliance)}{links}</div>"
+            )
         if t.redundant:
             nflows = t.max_sessions * 2
             p.append(

@@ -8,8 +8,10 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import re
 import shlex
+import signal
 import time
 import traceback
 from fractions import Fraction
@@ -19,12 +21,18 @@ from common.nicctl import ensure_vfio_bound, reset_vfio_bindings
 from conftest import get_host_mtl_path, is_host_sut
 from mfd_common_libs.log_levels import TEST_PASS
 from mtl_engine import ip_pools
-from mtl_engine.const import RXTXAPP_PATH
+from mtl_engine.const import PERF_LOG_FOLDER, RXTXAPP_PATH
 from mtl_engine.dma import setup_host_dma_all
-from mtl_engine.execute import kill_stale_processes, read_remote_log, run
+from mtl_engine.execute import (
+    MTL_APP_NAMES,
+    kill_stale_processes,
+    read_remote_log,
+    run,
+)
 from mtl_engine.integrity import calculate_yuv_frame_size
 from mtl_engine.media_files import pformat_to_exact_fps, yuv_files_422rfc10
 from mtl_engine.performance_monitoring import (
+    FPS_MIN_STEADY_SAMPLES,
     companion_window,
     data_cores,
     display_session_results,
@@ -41,11 +49,28 @@ from mtl_engine.performance_monitoring import (
     sent_at_rate,
     tx_vrx,
 )
-from mtl_engine.rxtxapp import RxTxApp, config_file
+from mtl_engine.rxtxapp import RxTxApp, config_file, multicast_groups, stream_groups
+from mtl_engine.wire_compliance import (
+    CAPTURE_PPS,
+    CAPTURE_WALL_S,
+    PHC_WAIT_S,
+    EbuServer,
+    WireCapture,
+    compliant,
+    frame_packets,
+    sh,
+    summary,
+)
 
 logger = logging.getLogger(__name__)
 
+# RxTxApp's process names, before and after DPDK renames its main thread.
+RXTXAPP_COMMS = "|".join(n for n in MTL_APP_NAMES if n.startswith("RxTxApp"))
+
 MAX_DROP_PCT = 0.10  # Trimmed mean: drop worst 10% of FPS samples per session
+
+# MTL's stat dump period (MT_STAT_INTERVAL_S_DEFAULT).
+STAT_DUMP_S = 10
 
 # An RX failure the network explains alone (see _run_iteration) says nothing
 # about the SUT: on a shared switch, other runners' traffic fills the SUT's port
@@ -571,6 +596,8 @@ def _run_iteration(
     test_time: int,
     sch_session_quota: int | None = None,
     sut_app_args: str | None = None,
+    multicast: int = 0,
+    runner=run,
 ) -> tuple[bool, int, str, dict | None, dict]:
     """Run one iteration: start companion, run measured app, validate FPS.
 
@@ -579,6 +606,9 @@ def _run_iteration(
             session quota for this iteration (used by core-minimization
             phase to test different quotas).
         sut_app_args: Extra RxTxApp arguments for the measured app.
+        multicast: If set, both apps send or receive multicast, this many
+            sessions to a group (rxtxapp.multicast_groups()).
+        runner: Runs the measured app as execute.run() does, by default with it.
 
     Returns:
         (passed, successful_count, detail_string, config_dict, cores), *cores*
@@ -708,6 +738,8 @@ def _run_iteration(
         )
 
     companion_app.create_command(**companion_kwargs)
+    if multicast:
+        multicast_groups(companion_app.config, companion_dir, multicast)
     companion_app.prepare_execution(build=build_companion, host=companion_host)
 
     # For RX tests, set companion TX's destination MAC to the RX VF's MAC
@@ -822,6 +854,8 @@ def _run_iteration(
             measured_kwargs["dma_dev"] = dma_device
 
         measured_app.create_command(**measured_kwargs)
+        if multicast:
+            multicast_groups(measured_app.config, direction, multicast)
         measured_app.prepare_execution(build=build_measured, host=measured_host)
         if sut_app_args:
             measured_app.command += f" {sut_app_args}"
@@ -835,7 +869,7 @@ def _run_iteration(
             direction,
         )
         try:
-            result = run(
+            result = runner(
                 measured_app.command,
                 cwd=build_measured,
                 timeout=test_time + 60 + rl_overhead,
@@ -1024,6 +1058,159 @@ def _run_iteration(
         companion_app.stop_process()
 
 
+def _spare_cpus(host, port: str) -> str | None:
+    """The CPUs of *host* that are neither isolated nor on *port*'s NUMA node."""
+    try:
+        out = host.connection.execute_command(
+            f"n=$(cat /sys/bus/pci/devices/{port}/numa_node); [ $n -ge 0 ] || n=0; "
+            "cat /sys/devices/system/cpu/online /sys/devices/system/cpu/isolated "
+            "/sys/devices/system/node/node$n/cpulist",
+            shell=True,
+        ).stdout
+        online, isolated, node = (out or "").split("\n")[:3]
+        spare = set(parse_cpus(online)) - set(parse_cpus(isolated))
+        return format_cpus(spare - set(parse_cpus(node))) or None
+    except Exception as e:
+        logger.warning(f"Host {host.name}: could not read its CPUs: {e}")
+    return None
+
+
+def _compliance_pass(
+    iter_kwargs: dict, sessions: int, quota: int | None, ebu: EbuServer
+) -> str:
+    """EBU LIST's ST 2110-21 verdict on each stream that the TX sends at *sessions*, as
+    one line.
+
+    In a TX sweep that TX is the measured app.  In an RX sweep it is the companion
+    that feeds the measured RX, so the verdict is on the streams that the RX got.
+    The pass is a run of its own, after the sweep's result, so that it cannot change
+    one.  The streams go multicast, as many to a group as a capture takes.  The PF
+    of the TX host's port 1, which sends nothing in a non-redundant run, captures a
+    group at a time while the sessions are steady.  *quota* is that of the result's
+    run.
+    """
+    is_tx = iter_kwargs["direction"] == "tx"
+    tx_host, rx_host = iter_kwargs["tx_host"], iter_kwargs["rx_host"]
+    peer = (rx_host, "RX") if is_tx else (tx_host, "TX")  # the companion app
+    media = iter_kwargs["media_config"]
+    if not getattr(tx_host, "vfs_r", None):
+        return "not judged: the TX host has no port 1 to capture on"
+    fps = float(Fraction(pformat_to_exact_fps(iter_kwargs["fps"])))
+    pps = frame_packets(media["width"], media["height"]) * fps
+    per_group = int(CAPTURE_PPS // pps)
+    if not per_group:
+        return f"not judged: a stream sends {pps:.0f} packets/s, a capture takes {CAPTURE_PPS}"
+    groups = math.ceil(sessions / per_group)
+    pf = sh(tx_host, f"ls /sys/bus/pci/devices/{tx_host.vfs_r[0]}/physfn/net").strip()
+    mode = "sc" if iter_kwargs["single_core"] else "mc"
+    dma = "_dma" if iter_kwargs["use_dma"] else ""
+    capture = WireCapture(
+        tx_host,
+        pf,
+        "/tmp/mtl_perf_compliance",
+        _spare_cpus(tx_host, iter_kwargs["tx_vf"]),
+        f"perf_{iter_kwargs['direction']}_{mode}{dma}_{media['height']}p"
+        f"{iter_kwargs['fps']}_{sessions}s",
+    )
+    # The TX starts its sessions over rl_overhead, 3 s each, and then settles.  The
+    # run then needs FPS_MIN_STEADY_SAMPLES stat dumps of steady traffic for its FPS
+    # check, besides the first and the last, which it drops (_steady_window()).  Its
+    # test_time is long enough for those and for all the captures, however fast it
+    # starts.  It is stopped once both are done.
+    settle = sessions * 3 + 30
+    steady = (FPS_MIN_STEADY_SAMPLES + 3) * STAT_DUMP_S
+    test_time = PHC_WAIT_S + settle + max(groups * CAPTURE_WALL_S, steady) + 30
+
+    def runner(command, cwd, timeout, testcmd, host):
+        config = json.loads(
+            host.connection.execute_command(
+                f"cat {config_file(command)}", shell=True
+            ).stdout
+        )
+        if not is_tx:  # the RX joined the groups and ports that its sender sends
+            config = {
+                "tx_sessions": [{**e, "dip": e["ip"]} for e in config["rx_sessions"]]
+            }
+        process = run(command, cwd=cwd, testcmd=testcmd, host=host, background=True)
+        try:
+            why = capture.start(timeout)  # phc2sys locks while the TX starts
+            if not why:
+                time.sleep(settle)
+                why = capture.flooding()
+                capture.begin()
+            held_until = time.monotonic() + steady
+            for address, streams in stream_groups(config):
+                if not why and not getattr(process, "running", True):
+                    why = f"the {'TX' if is_tx else 'RX'} exited before the capture"
+                # The companion must run too.  Without the RX, no port has joined the
+                # other groups, and the switch may flood them to every port.  Without
+                # the TX, there is nothing to capture.
+                if not why and not sh(
+                    peer[0], f"pgrep -x '{RXTXAPP_COMMS}'", check=False
+                ):
+                    why = f"the companion {peer[1]} exited before the capture"
+                if why:
+                    capture.note(address, streams, why)
+                else:
+                    capture.capture(address, streams, pps, fps)
+            if not why:  # the FPS check of the run has its steady dumps then
+                time.sleep(max(0.0, held_until - time.monotonic()))
+        finally:
+            try:
+                capture.stop()
+            finally:  # the TX stops even if phc2sys could not be stopped
+                try:
+                    process.kill(wait=None, with_signal=signal.SIGINT)
+                except Exception as e:  # mfd raises while the TX exits, or once it did
+                    logger.debug(f"SIGINT to the TX: {e}")
+                process.wait(timeout=timeout)
+        return process
+
+    logger.info(f"\n  ── Compliance: {sessions} sessions in {groups} groups ──")
+    passed, detail = False, "it did not start"
+    try:
+        passed, _, detail, _, _ = _run_iteration(
+            **{**iter_kwargs, "test_time": test_time},
+            num_sessions=sessions,
+            sch_session_quota=quota,
+            multicast=per_group,
+            runner=runner,
+        )
+    finally:
+        try:
+            # The LIST reports of failing groups go to the artifacts with the logs.
+            keep = os.path.join(
+                os.environ.get("MTL_LOG_FOLDER", PERF_LOG_FOLDER),
+                "latest",
+                "compliance",
+            )
+            verdicts = capture.judge(iter_kwargs["build_tx"], ebu, keep)
+        finally:
+            kill_stale_processes(tx_host, rx_host)
+    for stream, verdict in sorted(verdicts.items()):
+        logger.info(f"    {stream}: {verdict}")
+    # The captures and the streams that are not narrow, with their pages in LIST's
+    # UI, for the report (generate_report.py).
+    for address, link in capture.links.items():
+        streams = [s for s in capture.pcaps[address][0] if "why" not in verdicts[s]]
+        narrow = sum(compliant(verdicts[s]) for s in streams)
+        logger.info(f"LIST capture {address}: {narrow}/{len(streams)} narrow {link}")
+        if capture.saved.get(address):
+            logger.info(f"LIST report {address}: saved as {capture.saved[address]}")
+        for s in streams:
+            if not compliant(verdicts[s]) and verdicts[s]["link"]:
+                failed = ", ".join(verdicts[s]["failed"]) or "none"
+                logger.info(
+                    f"LIST stream {s}: {verdicts[s]['class']}, failed {failed} "
+                    f"{verdicts[s]['link']}"
+                )
+    detail = (detail.splitlines() or [""])[0]  # a companion's exit carries its log
+    if not verdicts:
+        return f"not judged: no capture ran, the TX run: {detail}"
+    line = summary(verdicts, capture.problems)
+    return line if passed else f"{line}; the run failed: {detail}"
+
+
 def _run_session_sweep(
     direction: str,
     redundant: bool,
@@ -1038,6 +1225,7 @@ def _run_session_sweep(
     num_sessions: int | None = None,
     sch_quota: int | None = None,
     sut_app_args: str | None = None,
+    compliance: EbuServer | None = None,
 ) -> None:
     """Auto-sweep session count using binary search to find max passing.
 
@@ -1050,6 +1238,10 @@ def _run_session_sweep(
     fewer cores (sessions packed into fewer schedulers).  Single-core runs
     ignore it: they always use SCH_SESSION_QUOTA_SINGLE_CORE, which has to
     stay high enough that the run cannot spill onto a second scheduler.
+
+    With *compliance*, test_config's ebu_server, a non-redundant sweep also has EBU
+    LIST judge each stream that its TX sends at the maximum, after its result
+    (_compliance_pass).  In an RX sweep that TX is the companion.
     """
     media_config, media_file_path = media_file
     resolution = f"{media_config['height']}p"
@@ -1192,6 +1384,47 @@ def _run_session_sweep(
             or "sender VRX may break" in detail
         )
 
+    def _recover(prev: dict) -> None:
+        """Clean up after the run *prev*, so that the next run starts clean."""
+        # Always kill leftover processes first
+        kill_stale_processes(tx_host, rx_host)
+        time.sleep(2)
+
+        # Build VF lists (shared by both paths)
+        tx_vfs = [tx_vf] + ([tx_vf_r] if tx_vf_r else [])
+        rx_vfs = [rx_vf] + ([rx_vf_r] if rx_vf_r else [])
+        if dma_device:
+            # DMA only on RX SUT (TX+DMA tests are skipped)
+            rx_vfs.extend(dma_device.split(","))
+
+        if _is_crash(prev["detail"]):
+            # Full unbind/FLR/rebind after a DPDK crash + hugepage cleanup
+            logger.info("  VFIO cleanup (previous iteration crashed)…")
+            reset_vfio_bindings(tx_host, tx_host.name, tx_vfs)
+            reset_vfio_bindings(rx_host, rx_host.name, rx_vfs)
+            logger.info(f"  Waiting {CRASH_RECOVERY_WAIT}s for NIC link recovery…")
+            time.sleep(CRASH_RECOVERY_WAIT)
+        else:
+            # Light check: companion SIGKILL may leave VFs unbound
+            rebound = ensure_vfio_bound(
+                tx_host,
+                tx_host.name,
+                tx_vfs,
+            )
+            rebound |= ensure_vfio_bound(
+                rx_host,
+                rx_host.name,
+                rx_vfs,
+            )
+            if rebound:
+                logger.info(
+                    "  VFs rebound after previous run, "
+                    "waiting 10s for link recovery…"
+                )
+                time.sleep(10)
+            else:
+                time.sleep(3)
+
     def _run_one(
         n: int,
         phase: str,
@@ -1208,46 +1441,8 @@ def _run_session_sweep(
         logger.info(f"{'━' * 70}")
 
         # ── Inter-iteration cleanup ──
-        prev = iteration_results[-1] if iteration_results else None
-        if prev is not None:
-            # Always kill leftover processes first
-            kill_stale_processes(tx_host, rx_host)
-            time.sleep(2)
-
-            # Build VF lists (shared by both paths)
-            tx_vfs = [tx_vf] + ([tx_vf_r] if tx_vf_r else [])
-            rx_vfs = [rx_vf] + ([rx_vf_r] if rx_vf_r else [])
-            if dma_device:
-                # DMA only on RX SUT (TX+DMA tests are skipped)
-                rx_vfs.extend(dma_device.split(","))
-
-            if _is_crash(prev["detail"]):
-                # Full unbind/FLR/rebind after a DPDK crash + hugepage cleanup
-                logger.info("  VFIO cleanup (previous iteration crashed)…")
-                reset_vfio_bindings(tx_host, tx_host.name, tx_vfs)
-                reset_vfio_bindings(rx_host, rx_host.name, rx_vfs)
-                logger.info(f"  Waiting {CRASH_RECOVERY_WAIT}s for NIC link recovery…")
-                time.sleep(CRASH_RECOVERY_WAIT)
-            else:
-                # Light check: companion SIGKILL may leave VFs unbound
-                rebound = ensure_vfio_bound(
-                    tx_host,
-                    tx_host.name,
-                    tx_vfs,
-                )
-                rebound |= ensure_vfio_bound(
-                    rx_host,
-                    rx_host.name,
-                    rx_vfs,
-                )
-                if rebound:
-                    logger.info(
-                        "  VFs rebound after previous run, "
-                        "waiting 10s for link recovery…"
-                    )
-                    time.sleep(10)
-                else:
-                    time.sleep(3)
+        if iteration_results:
+            _recover(iteration_results[-1])
         else:
             # First iteration — small grace period
             time.sleep(2)
@@ -1499,6 +1694,25 @@ def _run_session_sweep(
             f"@ {fps}fps / {resolution}",
         )
 
+        # Logged after the result line, so that a pass that fails or is cancelled
+        # cannot lose the result.
+        if compliance is not None and not redundant:
+            verdict = "not judged: test_config has no ebu_server"
+            if compliance:
+                try:
+                    _recover(iteration_results[-1])
+                    verdict = _compliance_pass(
+                        iter_kwargs, max_passing, best_quota_val, compliance
+                    )
+                except Exception as e:
+                    verdict = f"not judged: {type(e).__name__}: {e}"
+            # Clean: every stream judged and narrow, and no problem after a ";".
+            clean = re.fullmatch(r"(\d+)/\1 streams narrow[^;]*", verdict)
+            logger.log(
+                logging.INFO if clean else logging.WARNING,
+                f"Compliance (EBU LIST, ST 2110-21) of {max_passing} sessions: {verdict}",
+            )
+
 
 # ── Common parametrize decorators (shared across all 4 test functions) ──
 
@@ -1550,6 +1764,7 @@ def test_tx(
     num_sessions,
     sch_quota,
     sut_app_args,
+    perf_compliance,
 ) -> None:
     """TX performance: auto-sweep sessions from start upward until failure."""
     _run_session_sweep(
@@ -1566,6 +1781,9 @@ def test_tx(
         num_sessions=num_sessions,
         sch_quota=sch_quota,
         sut_app_args=sut_app_args,
+        compliance=(
+            EbuServer.of(test_config.get("ebu_server")) if perf_compliance else None
+        ),
     )
 
 
@@ -1584,6 +1802,7 @@ def test_rx(
     num_sessions,
     sch_quota,
     sut_app_args,
+    perf_compliance,
 ) -> None:
     """RX performance: auto-sweep sessions from start upward until failure."""
     _run_session_sweep(
@@ -1600,6 +1819,9 @@ def test_rx(
         num_sessions=num_sessions,
         sch_quota=sch_quota,
         sut_app_args=sut_app_args,
+        compliance=(
+            EbuServer.of(test_config.get("ebu_server")) if perf_compliance else None
+        ),
     )
 
 

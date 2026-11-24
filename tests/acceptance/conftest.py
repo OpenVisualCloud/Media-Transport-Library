@@ -853,6 +853,13 @@ def sch_quota(request) -> int | None:
 
 
 @pytest.fixture(scope="session")
+def perf_compliance(request) -> bool:
+    """Return whether --perf_compliance asks a non-redundant sweep for EBU LIST's
+    verdict."""
+    return request.config.getoption("--perf_compliance")
+
+
+@pytest.fixture(scope="session")
 def sut_app_args(request) -> str | None:
     """Return the --sut_app_args value, shell-quoted per token, or None."""
     return request.config.getoption("--sut_app_args", default=None)
@@ -1119,6 +1126,13 @@ def pytest_addoption(parser):
         help="Override the scheduler session quota (sessions per scheduler). "
         "Lower quota = more cores; higher quota = fewer cores. "
         "Use 60 for minimal cores. Example: --sch_quota 60",
+    )
+    parser.addoption(
+        "--perf_compliance",
+        action="store_true",
+        help="After a non-redundant performance sweep, have EBU LIST "
+        "(test_config's ebu_server) judge the ST 2110-21 compliance of each stream "
+        "that its TX sends at the maximum; in an RX sweep, that TX is the companion.",
     )
     parser.addoption(
         "--sut_app_args",
