@@ -593,14 +593,16 @@ Transmission time is unchanged.
 
 The ST**_TX_FLAG_USER_PACING flag allows applications to control when each frame is sent. MTL reads a TAI timestamp from st**_tx_frame_meta and holds the frame until that time; only ST10_TIMESTAMP_FMT_TAI is honored, other formats fall back to the default epoch-based pacing.
 Video and ancillary sessions round the timestamp to the nearest frame epoch and pace from there; with ST20_TX_FLAG_EXACT_USER_PACING / ST40_TX_FLAG_EXACT_USER_PACING the first packet of the frame leaves exactly at the given time instead.
+A video timestamp whose start would be more than 1 s ahead falls back to the default pacing, and a video frame on the default pacing after an EXACT one starts no earlier than one frame time after it.
+Video frames on the default pacing after a user-paced one held up to 1 s ahead keep following it rather than resync to the current time.
 
 An RTP-level video session (ST20_TYPE_RTP_LEVEL, ST22_TYPE_RTP_LEVEL) has no frame meta: the TAI travels with the packet that starts the frame, `st20_tx_put_mbuf_tai()` / `st22_tx_put_mbuf_tai()`, and the tai of every other packet is ignored.
 The TAI is an argument of its own, so it stays independent of ST20_TX_FLAG_USER_TIMESTAMP, which keeps the RTP timestamp the application wrote.
 A frame starts where the RTP timestamp changes: a first frame with RTP timestamp 0xFFFFFFFF, or a frame with the same RTP timestamp as the one before, is not seen as a new frame and its TAI is not read.
 The range checks are those of a frame-level timestamp.
-Without EXACT the frame goes on the nearest epoch, and an epoch in the past or more than 1 s ahead is only counted in `stat_error_user_timestamp`: a past one goes out at once, a far one is held.
+Without EXACT the frame goes on the nearest epoch, and an epoch in the past is only counted in `stat_error_user_timestamp` and goes out at once; a start more than 1 s ahead, which the transmitter does not wait for, falls back to the default pacing and is counted the same way.
 With ST20_TX_FLAG_EXACT_USER_PACING the first packet leaves at the TAI, and a TAI in the past, more than 1 s ahead or inside the warm-up lead falls back to the default pacing and is counted the same way.
-Unlike frame level, where a frame with no timestamp silently gets the default pacing, a first packet with no TAI (`st20_tx_put_mbuf()`, or a tai of 0) is counted in `stat_error_user_timestamp` with or without EXACT and logged once per session, then falls back to the default pacing.
+Unlike frame level, where a frame with no timestamp silently gets the default pacing, a first packet with no TAI (`st20_tx_put_mbuf()`, or a tai of 0) is counted in `stat_error_user_timestamp` with or without EXACT, which the session's stat dump reports, then falls back to the default pacing.
 
 ### 6.12. SIMD for color space convert
 

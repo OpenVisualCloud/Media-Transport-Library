@@ -802,6 +802,15 @@ Frame transmission aligned to PTP epoch boundaries. For 59.94fps: frame period �
   usable timestamp, and ST22 at RTP level (`s_type == MT_ST22_HANDLE_TX_VIDEO &&
   !s->st22_info`). Do **not** add 6.3.3's `T_LINE/2` — it reaches the RTP timestamp and
   breaks ST 2110-10 7.6.1.
+- USER_PACING range: `tv_sync_pacing()` refuses a non-EXACT start more than 1 s ahead (after
+  parity bump and snap, the only place the real start is known), as the transmitters do not
+  wait over 1 s; `calc_frame_count_since_epoch()` judges only a past epoch without EXACT.
+  After an EXACT frame, `pacing->exact_start_tai` steps the next default-paced epoch so it
+  starts at least one frame time later. `pacing->user_start_tai`, the start of the last
+  user-paced frame, blocks the out-of-onward-range resync while it is ahead by at most 1 s:
+  the packet ring is FIFO, so a resynced frame would leave after it, unpaced, RTP timestamp
+  ~1 s back. A PTP step back that leaves it more than 1 s ahead lets the resync fire again;
+  a smaller one keeps the frames behind it.
 - RTP-level USER_PACING: the TAI of `st20_tx_put_mbuf_tai()` / `st22_tx_put_mbuf_tai()`
   rides on the app mbuf in the `mtl_tx_video_user_tai` dynfield (`tv_init_packet_ring()`
   registers it), not on the session —

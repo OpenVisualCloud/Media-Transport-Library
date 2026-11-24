@@ -47,7 +47,8 @@ extern "C" {
  * Flag bit in flags of struct st20_tx_ops.
  * User control the frame transmission time by passing a timestamp in
  * st20_tx_frame_meta.timestamp, lib will wait until timestamp is reached for each frame.
- * The time of sending is aligned with virtual receiver read schedule.
+ * The time of sending is aligned with virtual receiver read schedule. A timestamp whose
+ * start would be more than 1s ahead falls back to the default pacing.
  * Only ST10_TIMESTAMP_FMT_TAI is honored; ST10_TIMESTAMP_FMT_MEDIA_CLK is not
  * supported for pacing and falls back to the default epoch-based pacing. Distinct
  * from ST20_TX_FLAG_USER_TIMESTAMP, which honors both formats for the reported rtp
@@ -89,7 +90,8 @@ extern "C" {
  * Flag bit in flags of struct st20_tx_ops.
  * It changes how ST20_TX_FLAG_USER_PACING works. if enabled, it does not align the
  * transmission time to the virtual receiver read schedule. The first
- * packet of the frame will be sent exactly at the time specified by the user.
+ * packet of the frame will be sent exactly at the time specified by the user, and a
+ * frame on the default pacing after it starts no earlier than one frame time later.
  * For ST20_TYPE_RTP_LEVEL that time is the tai of st20_tx_put_mbuf_tai().
  */
 #define ST20_TX_FLAG_EXACT_USER_PACING (MTL_BIT32(8))
@@ -134,6 +136,7 @@ extern "C" {
  * supported for pacing and falls back to the default epoch-based pacing. Distinct
  * from ST22_TX_FLAG_USER_TIMESTAMP, which honors both formats for the reported rtp
  * timestamp. For ST22_TYPE_RTP_LEVEL the timestamp comes from st22_tx_put_mbuf_tai().
+ * A timestamp whose start would be more than 1s ahead falls back to the default pacing.
  */
 #define ST22_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
@@ -1977,13 +1980,12 @@ int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len);
  * ST20_TX_FLAG_EXACT_USER_PACING sends the first packet of the frame at tai; a tai in
  * the past, more than 1s ahead or closer than the warm-up lead then falls back to the
  * default pacing. Otherwise the frame goes on the epoch nearest to tai, even if that
- * epoch is past or more than 1s ahead, one epoch later if an interlaced field needs
- * the other parity. These range checks are those of st20_tx_frame_meta.timestamp:
- * stat_error_user_timestamp counts the tai out of range with EXACT, the epoch in the
- * past or more than 1s ahead without it. Unlike frame level, a first packet with no tai
- * is counted too, with or without EXACT, and logged once per session; it falls back to
- * the default pacing.
- * st20_tx_put_mbuf() is this call with tai 0.
+ * epoch is past, one epoch later if an interlaced field needs the other parity; a start
+ * more than 1s ahead falls back to the default pacing. These range checks are those of
+ * st20_tx_frame_meta.timestamp: stat_error_user_timestamp counts the tai out of range
+ * with EXACT, the epoch in the past or the start more than 1s ahead without it. Unlike
+ * frame level, a first packet with no tai is counted too, with or without EXACT, and
+ * falls back to the default pacing. st20_tx_put_mbuf() is this call with tai 0.
  *
  * @param handle
  *   The handle to the tx st2110-20(video) session.

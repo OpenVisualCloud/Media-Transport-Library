@@ -183,6 +183,14 @@ struct st_tx_video_pacing {
   /* ptp time may onward */
   uint32_t max_onward_epochs;
   uint64_t tsc_time_frame_start; /* start tsc time for frame start */
+  /* in ns, start of the last frame if it was EXACT-paced with a TAI, else 0: the next
+   * default-paced frame keeps one frame time after it, so the two do not overlap */
+  uint64_t exact_start_tai;
+  /* in ns, start of the last user-paced frame (exact or not); cleared by the first
+   * default-paced frame built after PTP time reaches it. While it is ahead, the
+   * onward-range resync must not schedule later frames before it, as the FIFO ring
+   * sends them after it anyway */
+  uint64_t user_start_tai;
 };
 
 enum st_tx_video_rl_state {
@@ -315,7 +323,6 @@ struct st_tx_video_session_impl {
   struct rte_ring* ring[MTL_SESSION_PORT_MAX];
   struct rte_ring* packet_ring; /* rtp ring */
   int user_tai_offset;          /* dynfield of st20_/st22_tx_put_mbuf_tai() tai */
-  bool user_tai_missing_logged;
   struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
   int idx; /* index for current tx_session */
   uint64_t advice_sleep_us;
