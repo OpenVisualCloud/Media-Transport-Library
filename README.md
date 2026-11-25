@@ -24,6 +24,11 @@ The Media Transport Library(MTL) is a software based solution designed for high-
 
 The Media Transport Library solves the strict timing challenges of transporting ST2110 compliant media streams using a software library and through IP networks. Instead of specialized hardware, this library leverages existing  commonly available CPU platforms with conventional NICs that incorporate rate limiting to meet the strict timing challenges in the SMPTE ST 2110 standard.
 
+The demo below shows SMPTE ST 2022-7 seamless redundancy with the [MTL with MXL](ecosystem/MTL_with_MXL/README.md) bridge. MTL receives an ST 2110-20 stream over a primary and a redundant path on Intel E835 NICs, merges the two copies and hands the frames to the Media eXchange Layer (MXL) over RDMA.
+While one path is cut or loses packets, or both paths drop different packets, the merged output keeps playing.
+
+![ST 2022-7 seamless redundancy demo: the merged output keeps playing while the primary or the redundant path is cut or drops packets](doc/png/mtl-st2022-7-redundancy-demo.gif)
+
 If you find value in our project, please consider giving it a star. Your support helps us grow and reach more people in the open-source community. Every star counts and is greatly appreciated.
 
 ### 1.1. Features

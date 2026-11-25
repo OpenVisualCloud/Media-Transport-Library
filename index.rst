@@ -15,6 +15,17 @@ Media Transport Library
    :alt: Media Transport Library: send and receive live video, audio and ancillary data over IP networks, in software, on standard Intel Xeon servers and Ethernet NICs
    :align: center
 
+The demo below shows SMPTE ST 2022-7 seamless redundancy with the
+:doc:`MTL with MXL <ecosystem/MTL_with_MXL/README>` bridge. MTL receives an
+ST 2110-20 stream over a primary and a redundant path on Intel E835 NICs,
+merges the two copies and hands the frames to the Media eXchange Layer (MXL)
+over RDMA. While one path is cut or loses packets, or both paths drop
+different packets, the merged output keeps playing.
+
+.. image:: doc/png/mtl-st2022-7-redundancy-demo.gif
+   :alt: ST 2022-7 seamless redundancy demo: the merged output keeps playing while the primary or the redundant path is cut or drops packets
+   :align: center
+
 .. toctree::
    :maxdepth: 1
 
