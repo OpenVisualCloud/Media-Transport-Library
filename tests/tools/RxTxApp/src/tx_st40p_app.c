@@ -138,12 +138,10 @@ static void* app_tx_st40p_frame_thread(void* arg) {
     app_tx_st40p_fill_payload(s, frame_info);
 
     if (s->user_time && s->frame_time > 0) {
-      bool restart_base_time = !s->local_tai_base_time;
-      frame_info->timestamp = st_app_user_time(s->ctx, s->user_time, s->frame_num,
-                                               s->frame_time, restart_base_time);
+      frame_info->timestamp = st_app_user_time(s->ctx, s->user_time, &s->user_time_epoch,
+                                               s->frame_num, s->frame_time);
       frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
       s->frame_num++;
-      s->local_tai_base_time = s->user_time->base_tai_time;
     }
 
     if (st40p_tx_put_frame(handle, frame_info) < 0) {
@@ -218,7 +216,7 @@ static int app_tx_st40p_init(struct st_app_context* ctx, st_json_st40p_session_t
   s->fb_send = 0;
   s->fb_send_done = 0;
   s->frame_num = 0;
-  s->local_tai_base_time = 0;
+  s->user_time_epoch = 0;
   s->user_time = NULL;
   s->st40p_source_begin = NULL;
   s->st40p_source_end = NULL;

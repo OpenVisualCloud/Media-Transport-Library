@@ -94,12 +94,10 @@ static void* app_tx_st20p_frame_thread(void* arg) {
     }
 
     if (s->user_time) {
-      bool restart_base_time = !s->local_tai_base_time;
-      frame->timestamp = st_app_user_time(s->ctx, s->user_time, s->frame_num, frame_time,
-                                          restart_base_time);
+      frame->timestamp = st_app_user_time(s->ctx, s->user_time, &s->user_time_epoch,
+                                          s->frame_num, frame_time);
       frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
       s->frame_num++;
-      s->local_tai_base_time = s->user_time->base_tai_time;
     }
 
     st20p_tx_put_frame(handle, frame);
@@ -323,7 +321,7 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
     /* use global user time */
     s->user_time = &ctx->user_time;
     s->frame_num = 0;
-    s->local_tai_base_time = 0;
+    s->user_time_epoch = 0;
   }
 
   if (st20p && st20p->exact_user_pacing) {
