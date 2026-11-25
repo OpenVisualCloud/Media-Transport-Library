@@ -546,6 +546,18 @@ TEST(Misc, get_numa_id) {
   EXPECT_LT(ret, 0);
 }
 
+static bool test_port_is_vf(const char* port) {
+#ifdef WINDOWSENV
+  (void)port;
+  return false;
+#else
+  if (!port || !port[0]) return false;
+  char path[256];
+  snprintf(path, sizeof(path), "/sys/bus/pci/devices/%s/physfn", port);
+  return access(path, F_OK) == 0;
+#endif
+}
+
 static int run_all_test(int /*argc*/, char** /*argv*/, struct st_tests_context* ctx) {
   bool link_flap_wa = false;
   int ret;
@@ -555,7 +567,8 @@ static int run_all_test(int /*argc*/, char** /*argv*/, struct st_tests_context* 
     ctx->para.pmd[i] = mtl_pmd_by_port_name(ctx->para.port[i]);
     if (ctx->para.pmd[i] != MTL_PMD_DPDK_USER) {
       ctx->para.flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
-    } else {
+    } else if (!test_port_is_vf(ctx->para.port[i])) {
+      /* Only physical functions flap the physical switch port on DPDK close. */
       link_flap_wa = true;
     }
   }
@@ -682,13 +695,13 @@ GTEST_API_ int main(int argc, char** argv) {
 int tx_next_frame(void* priv, uint16_t* next_frame_idx) {
   auto ctx = (tests_context*)priv;
 
-  if (!ctx->handle) return -EIO; /* not ready */
+  if (!__atomic_load_n(&ctx->handle, __ATOMIC_ACQUIRE)) return -EIO; /* not ready */
 
   *next_frame_idx = ctx->fb_idx;
   dbg("%s, next_frame_idx %d\n", __func__, *next_frame_idx);
   ctx->fb_idx++;
   if (ctx->fb_idx >= ctx->fb_cnt) ctx->fb_idx = 0;
-  ctx->fb_send++;
+  __atomic_fetch_add(&ctx->fb_send, 1, __ATOMIC_RELAXED);
   if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
   return 0;
 }
@@ -717,7 +730,7 @@ void sha_frame_check(void* args) {
         test_sha_dump("rx_error_sha", result);
         ctx->sha_fail_cnt++;
       }
-      ctx->check_sha_frame_cnt++;
+      __atomic_fetch_add(&ctx->check_sha_frame_cnt, 1, __ATOMIC_RELAXED);
       st_test_free(frame);
     }
   }
@@ -757,7 +770,7 @@ int test_ctx_notify_event(void* priv, enum st_event event, void* args) {
   (void)args;
   if (event == ST_EVENT_VSYNC) {
     tests_context* s = (tests_context*)priv;
-    s->vsync_cnt++;
+    __atomic_fetch_add(&s->vsync_cnt, 1, __ATOMIC_RELAXED);
     if (!s->first_vsync_time) s->first_vsync_time = st_test_get_monotonic_time();
 #ifdef DEBUG
     struct st10_vsync_meta* meta = (struct st10_vsync_meta*)args;

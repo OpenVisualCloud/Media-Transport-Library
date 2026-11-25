@@ -312,7 +312,7 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
       ops.udp_port[MTL_SESSION_PORT_R]++;                   \
       expect_cnt++;                                         \
       A##_assert_cnt(expect_cnt);                           \
-      st_usleep(100 * 1000);                                \
+      st_usleep(5 * 1000);                                  \
     }                                                       \
     info("%s, max session cnt %d\n", __func__, expect_cnt); \
     act = expect_cnt;                                       \
@@ -321,7 +321,7 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
       EXPECT_GE(ret, 0);                                    \
       expect_cnt--;                                         \
       A##_assert_cnt(expect_cnt);                           \
-      st_usleep(100 * 1000);                                \
+      st_usleep(5 * 1000);                                  \
     }                                                       \
                                                             \
     A##_assert_cnt(0);                                      \
@@ -367,14 +367,14 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
         A##_assert_cnt(expect_cnt);                \
       }                                            \
                                                    \
-      st_usleep(100 * 1000);                       \
+      st_usleep(5 * 1000);                         \
       for (int j = 0; j < step; j++) {             \
         ret = A##_free(handle[j]);                 \
         ASSERT_TRUE(ret >= 0);                     \
         expect_cnt--;                              \
         A##_assert_cnt(expect_cnt);                \
       }                                            \
-      st_usleep(100 * 1000);                       \
+      st_usleep(5 * 1000);                         \
     }                                              \
                                                    \
     for (int i = 0; i < base; i++) {               \
