@@ -67,6 +67,7 @@
 #include <pthread.h>
 #include <unistd.h>
 
+#include "gst_mtl_pts_tai.h"
 #include "gst_mtl_st30p_tx.h"
 
 GST_DEBUG_CATEGORY_STATIC(gst_mtl_st30p_tx_debug);
@@ -234,6 +235,8 @@ static void gst_mtl_st30p_tx_init(Gst_Mtl_St30p_Tx* sink) {
   GstElement* element = GST_ELEMENT(sink);
   GstPad* sinkpad;
 
+  gst_mtl_common_pts_pacing_init(&sink->pts_pacing);
+
   sinkpad = gst_element_get_static_pad(element, "sink");
   if (!sinkpad) {
     GST_ERROR_OBJECT(sink, "Failed to get sink pad from child element");
@@ -360,6 +363,8 @@ static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps*
     }
   }
   ops_tx.channel = info->channels;
+  sink->bpf = info->bpf;
+  sink->rate = info->rate;
 
   if (!gst_mtl_common_gst_to_st_sampling(info->rate, &ops_tx.sampling)) {
     GST_ERROR("Failed to parse sampling rate");
@@ -478,6 +483,10 @@ static gboolean gst_mtl_st30p_tx_sink_event(GstPad* pad, GstObject* parent,
       sink->session_capabilites_set = TRUE;
       ret = gst_pad_event_default(pad, parent, event);
       break;
+    case GST_EVENT_SEGMENT:
+      gst_event_copy_segment(event, &sink->pts_pacing.segment);
+      ret = gst_pad_event_default(pad, parent, event);
+      break;
     case GST_EVENT_EOS:
       gst_mtl_st30p_tx_cur_frame_flush(sink);
       ret = gst_pad_event_default(pad, parent, event);
@@ -489,6 +498,12 @@ static gboolean gst_mtl_st30p_tx_sink_event(GstPad* pad, GstObject* parent,
   }
 
   return ret;
+}
+
+static void gst_mtl_st30p_tx_stamp(Gst_Mtl_St30p_Tx* sink, struct st30_frame* frame) {
+  if (!sink->use_pts_for_pacing) return;
+  frame->timestamp = sink->cur_frame_tai;
+  frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
 }
 
 static struct st30_frame* mtl_st30p_fetch_frame(Gst_Mtl_St30p_Tx* sink) {
@@ -514,6 +529,8 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
   gint bytes_to_write;
   void* cur_addr_frame;
   void* cur_addr_buf;
+  gsize mem_offset = 0;
+  uint64_t buf_tai = 0;
 
   if (sink->async_session_create) {
     pthread_mutex_lock(&sink->session_mutex);
@@ -531,6 +548,11 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
     GST_ERROR("Tx handle not initialized");
     return GST_FLOW_ERROR;
   }
+
+  if (sink->use_pts_for_pacing)
+    buf_tai = gst_mtl_common_pts_to_tai(GST_ELEMENT(sink), sink->mtl_lib_handle,
+                                        &sink->pts_pacing, GST_BUFFER_PTS(buf),
+                                        sink->pts_for_pacing_offset);
 
   for (int i = 0; i < buffer_n; i++) {
     gst_buffer_memory = gst_buffer_peek_memory(buf, i);
@@ -553,6 +575,12 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
         return GST_FLOW_FLUSHING;
       }
 
+      if (!sink->cur_frame) {
+        gsize frame_offset = mem_offset + map_info.size - bytes_to_write;
+        sink->cur_frame_tai = buf_tai ? buf_tai + gst_mtl_audio_bytes_to_ns(
+                                                      frame_offset, sink->bpf, sink->rate)
+                                      : 0;
+      }
       frame = mtl_st30p_fetch_frame(sink);
       if (!frame) {
         GST_ERROR("Failed to get frame");
@@ -569,17 +597,13 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
       } else {
         memcpy(cur_addr_frame, cur_addr_buf, sink->cur_frame_available_size);
 
-        // By default, timestamping is handled by MTL.
-        if (sink->use_pts_for_pacing) {
-          frame->timestamp = GST_BUFFER_PTS(buf) += sink->pts_for_pacing_offset;
-          frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
-        }
-
+        gst_mtl_st30p_tx_stamp(sink, frame);
         st30p_tx_put_frame(sink->tx_handle, frame);
         sink->cur_frame = NULL;
         bytes_to_write -= sink->cur_frame_available_size;
       }
     }
+    mem_offset += map_info.size;
     gst_memory_unmap(gst_buffer_memory, &map_info);
   }
 
@@ -607,6 +631,7 @@ static void gst_mtl_st30p_tx_finalize(GObject* object) {
 
 static gboolean gst_mtl_st30p_tx_cur_frame_flush(Gst_Mtl_St30p_Tx* sink) {
   if (sink->cur_frame) {
+    gst_mtl_st30p_tx_stamp(sink, sink->cur_frame);
     if (st30p_tx_put_frame(sink->tx_handle, sink->cur_frame)) {
       GST_ERROR("Failed to put frame");
       return FALSE;

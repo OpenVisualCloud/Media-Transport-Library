@@ -99,6 +99,7 @@ struct _Gst_Mtl_St40p_Tx {
   gboolean interlaced;
   gboolean use_pts_for_pacing;
   guint pts_for_pacing_offset;
+  GstMtlPtsPacing pts_pacing;
   gboolean split_anc_by_pkt;
   GstMtlSt40pTxInputFormat input_format;
   guint max_combined_udw_size;

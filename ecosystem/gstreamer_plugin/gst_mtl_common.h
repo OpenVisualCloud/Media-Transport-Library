@@ -74,6 +74,14 @@ typedef struct GeneralArgs {
   gboolean dma_auto;
 } GeneralArgs;
 
+/* PTS to TAI state of one TX element, used by its streaming thread only */
+typedef struct GstMtlPtsPacing {
+  GstSegment segment;
+  GstClockTime base_time;
+  gint64 clock_to_tai;
+  gboolean no_tai_logged;
+} GstMtlPtsPacing;
+
 typedef struct SessionPortArgs {
   gchar session_ip_string[2][MTL_PORT_MAX_LEN];
   gchar port[2][MTL_PORT_MAX_LEN];
@@ -117,4 +125,10 @@ mtl_handle gst_mtl_common_init_handle(GeneralArgs* generalArgs,
                                       gboolean force_to_initialize_new_instance);
 
 gint gst_mtl_common_deinit_handle(mtl_handle* handle);
+
+void gst_mtl_common_pts_pacing_init(GstMtlPtsPacing* pacing);
+/* TAI of the buffer time pts + pacing_offset, 0 (MTL paces the frame) with no clock */
+uint64_t gst_mtl_common_pts_to_tai(GstElement* element, mtl_handle mtl,
+                                   GstMtlPtsPacing* pacing, GstClockTime pts,
+                                   guint pacing_offset);
 #endif /* __GST_MTL_COMMON_H__ */

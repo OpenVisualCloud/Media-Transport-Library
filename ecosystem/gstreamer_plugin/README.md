@@ -175,15 +175,27 @@ For selected plugins
 - SMPTE ST 2110-30 transmission plugin mtl_st30p_tx
 - SMPTE ST 2110-40 transmission plugin mtl_st40p_tx
 
-There is a feature called user-controlled pacing that allows you to control the
-pacing of packet transmission using the Presentation timestamp (PTS) of the buffer.
-As long as the PTS fits within the pacing window, packets will be sent at the exact
-time specified by the PTS.
+There is a feature called user-controlled pacing. It sends each frame at the time
+that the presentation timestamp (PTS) of its buffer gives. The plugin changes the
+PTS to a PTP (TAI) time, and does not change the buffer:
 
-This feature requires:
-- MTL time synchronized with the system clock. If you are using onboard PTP,
-you must also synchronize the system's physical clock using `phc2sys`.
-- GStreamer buffers to provide a 64-bit timestamp (TUI) since epoch (PTP time).
+1. The segment of the stream changes the PTS to running time.
+2. The base time of the element changes the running time to pipeline clock time.
+3. The plugin adds the difference between the MTL PTP time and the pipeline clock.
+   It measures the difference once, at the first buffer after each change of the
+   base time (each start of PLAYING), so the frame times keep the clock cadence.
+4. The plugin adds `pts-pacing-offset`.
+
+`mtl_st30p_tx` gives each frame the time of its first sample: the PTS of the
+buffer plus the duration of the samples before that frame in the buffer.
+
+When the element has no clock, is not in PLAYING, or the buffer has no valid PTS,
+MTL paces the frame and the plugin logs one warning.
+
+This feature requires a pipeline clock that runs at the rate of PTP time. If you
+use onboard PTP, synchronize the system clock to the PTP clock with `phc2sys`.
+If you do not, the frame times move away from PTP time by the rate error of the
+clock.
 
 The following message informs you about the amount of frames that had incorrectly
 defined timestamps by the user (this error message should be 0).
@@ -192,9 +204,11 @@ defined timestamps by the user (this error message should be 0).
  TX_VIDEO_SESSION(0,0): error user timestamp 250
 ```
 
-When using this feature, you can specify an offset for the packets. The offset
-should be large enough to account for any delays between placing the frame in
-the framebuffer and the actual transmission of packets onto the wire.
+The offset must be larger than the time from the PTS of the buffer to the start
+of transmission: the latency of the pipeline and the time that MTL needs to
+prepare the frame. A live source sends each buffer after its PTS, so the default
+offset of 0 is too small for it. MTL counts a frame with a time in the past
+in `error user timestamp` and sends it as soon as it can.
 
 ## 3. SMPTE ST 2110-20 Rawvideo plugins
 

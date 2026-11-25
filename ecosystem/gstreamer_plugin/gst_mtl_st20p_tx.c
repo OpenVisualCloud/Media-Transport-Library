@@ -252,6 +252,8 @@ static void gst_mtl_st20p_tx_init(Gst_Mtl_St20p_Tx* sink) {
   GstElement* element = GST_ELEMENT(sink);
   GstPad* sinkpad;
 
+  gst_mtl_common_pts_pacing_init(&sink->pts_pacing);
+
   sinkpad = gst_element_get_static_pad(element, "sink");
   if (!sinkpad) {
     GST_ERROR_OBJECT(sink, "Failed to get sink pad from child element");
@@ -471,6 +473,10 @@ static gboolean gst_mtl_st20p_tx_sink_event(GstPad* pad, GstObject* parent,
       sink->session_capabilites_set = TRUE;
       ret = gst_pad_event_default(pad, parent, event);
       break;
+    case GST_EVENT_SEGMENT:
+      gst_event_copy_segment(event, &sink->pts_pacing.segment);
+      ret = gst_pad_event_default(pad, parent, event);
+      break;
     case GST_EVENT_EOS:
       ret = gst_pad_event_default(pad, parent, event);
       gst_element_post_message(GST_ELEMENT(sink), gst_message_new_eos(GST_OBJECT(sink)));
@@ -597,6 +603,13 @@ static int gst_mtl_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
   return 0;
 }
 
+static uint64_t gst_mtl_st20p_tx_buf_tai(Gst_Mtl_St20p_Tx* sink, GstBuffer* buf) {
+  if (!sink->use_pts_for_pacing) return 0;
+  return gst_mtl_common_pts_to_tai(GST_ELEMENT(sink), sink->mtl_lib_handle,
+                                   &sink->pts_pacing, GST_BUFFER_PTS(buf),
+                                   sink->pts_for_pacing_offset);
+}
+
 static GstFlowReturn gst_mtl_st20p_tx_zero_copy(Gst_Mtl_St20p_Tx* sink, GstBuffer* buf) {
   GstSt20pTxExternalDataChild* child;
   GstSt20pTxExternalDataParent* parent;
@@ -604,6 +617,7 @@ static GstFlowReturn gst_mtl_st20p_tx_zero_copy(Gst_Mtl_St20p_Tx* sink, GstBuffe
   struct st_ext_frame ext_frame;
   GstVideoMeta* video_meta = NULL;
   gint buffer_n = gst_buffer_n_memory(buf);
+  uint64_t tai = gst_mtl_st20p_tx_buf_tai(sink, buf);
 
   parent = malloc(sizeof(GstSt20pTxExternalDataParent));
   if (!parent) {
@@ -646,9 +660,8 @@ static GstFlowReturn gst_mtl_st20p_tx_zero_copy(Gst_Mtl_St20p_Tx* sink, GstBuffe
       return GST_FLOW_ERROR;
     }
 
-    // By default, timestamping is handled by MTL.
     if (sink->use_pts_for_pacing) {
-      frame->timestamp = GST_BUFFER_PTS(buf) += sink->pts_for_pacing_offset;
+      frame->timestamp = tai;
       frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
     }
 
@@ -692,6 +705,7 @@ static GstFlowReturn gst_mtl_st20p_tx_mem_copy(Gst_Mtl_St20p_Tx* sink, GstBuffer
   gint frame_size = sink->frame_size;
   GstMemory* gst_buffer_memory;
   GstMapInfo map_info;
+  uint64_t tai = gst_mtl_st20p_tx_buf_tai(sink, buf);
 
   for (int i = 0; i < buffer_n; i++) {
     gst_buffer_memory = gst_buffer_peek_memory(buf, i);
@@ -714,9 +728,8 @@ static GstFlowReturn gst_mtl_st20p_tx_mem_copy(Gst_Mtl_St20p_Tx* sink, GstBuffer
       return GST_FLOW_ERROR;
     }
 
-    // By default, timestamping is handled by MTL.
     if (sink->use_pts_for_pacing) {
-      frame->timestamp = GST_BUFFER_PTS(buf) += sink->pts_for_pacing_offset;
+      frame->timestamp = tai;
       frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
     }
 

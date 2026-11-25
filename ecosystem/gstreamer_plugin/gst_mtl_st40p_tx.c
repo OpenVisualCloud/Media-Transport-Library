@@ -179,6 +179,16 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
     Gst_Mtl_St40p_Tx* sink, GstMapInfo map_info, gint bytes_left_to_process,
     struct gst_st40_rfc8331_meta rfc8331_meta, guint anc_count, GstBuffer* buf);
 
+static void gst_mtl_st40p_tx_stamp(Gst_Mtl_St40p_Tx* sink,
+                                   struct st40_frame_info* frame_info, GstBuffer* buf) {
+  frame_info->timestamp = 0;
+  if (!sink->use_pts_for_pacing) return;
+  frame_info->timestamp = gst_mtl_common_pts_to_tai(
+      GST_ELEMENT(sink), sink->mtl_lib_handle, &sink->pts_pacing, GST_BUFFER_PTS(buf),
+      sink->pts_for_pacing_offset);
+  frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
+}
+
 #include "gst_mtl_st40p_tx_test.h"
 
 static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
@@ -314,6 +324,7 @@ static void gst_mtl_st40p_tx_init(Gst_Mtl_St40p_Tx* sink) {
   sink->input_format = GST_MTL_ST40P_TX_INPUT_FORMAT_RAW_UDW;
   sink->interlaced = FALSE;
   sink->split_anc_by_pkt = FALSE;
+  gst_mtl_common_pts_pacing_init(&sink->pts_pacing);
   gst_mtl_st40p_tx_test_init(sink);
 
   sinkpad = gst_element_get_static_pad(element, "sink");
@@ -542,6 +553,7 @@ static gboolean gst_mtl_st40p_tx_sink_event(GstPad* pad, GstObject* parent,
         GST_ERROR("Tx handle not initialized");
         return FALSE;
       }
+      gst_event_copy_segment(event, &sink->pts_pacing.segment);
       ret = gst_pad_event_default(pad, parent, event);
       break;
     case GST_EVENT_EOS:
@@ -716,12 +728,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
     /* Get checksum and promptly ignore it */
     udw = st40_get_udw((data_count + 3), payload_cursor);
 
-    if (sink->use_pts_for_pacing) {
-      frame_info->timestamp = GST_BUFFER_PTS(buf) + sink->pts_for_pacing_offset;
-      frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
-    } else {
-      frame_info->timestamp = 0;
-    }
+    gst_mtl_st40p_tx_stamp(sink, frame_info, buf);
 
     /* word align */
     if (bytes_left_to_process > 0)
@@ -853,12 +860,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_simple_block(Gst_Mtl_St40p_Tx* 
 
   frame_info->meta_num = anc_idx;
 
-  if (sink->use_pts_for_pacing) {
-    frame_info->timestamp = GST_BUFFER_PTS(buf) + sink->pts_for_pacing_offset;
-    frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
-  } else {
-    frame_info->timestamp = 0;
-  }
+  gst_mtl_st40p_tx_stamp(sink, frame_info, buf);
 
   if (st40p_tx_put_frame(sink->tx_handle, frame_info)) {
     GST_ERROR("Failed to enqueue simplified RFC8331 frame");
@@ -914,12 +916,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_memory_block(Gst_Mtl_St40p_Tx* sink,
     gst_mtl_st40p_tx_fill_meta(frame_info, frame_info->udw_buff_addr,
                                bytes_left_to_process_cur, sink->did, sink->sdid);
 
-    if (sink->use_pts_for_pacing) {
-      frame_info->timestamp = GST_BUFFER_PTS(buf) + sink->pts_for_pacing_offset;
-      frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
-    } else {
-      frame_info->timestamp = 0;
-    }
+    gst_mtl_st40p_tx_stamp(sink, frame_info, buf);
 
     if (st40p_tx_put_frame(sink->tx_handle, frame_info)) {
       GST_ERROR("Failed to put frame");
