@@ -367,16 +367,18 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   }
   s->handle = handle;
   s->st20p_frame_size = st20p_tx_frame_size(handle);
-  /* An exact time is the time of the first packet, while ST 2110-21:2022 6.2 (p6) puts
-   * the first packet (TPR0) at the epoch + TRoffset. Without it, the sender starts one
-   * TRoffset early and a narrow receiver buffer fills by TRoffset / TRS packets. */
+  /* An exact time is the time of the first packet, while ST 2110-21:2022 6.2 (p6)
+   * reads the virtual receiver buffer from the epoch + TRoffset. Start where MTL
+   * starts a frame it paces itself: vrx_pkts packets of TRS before that, so the
+   * buffer keeps its VRX headroom. At the epoch the buffer filled by TRoffset / TRS
+   * packets; at the epoch + TRoffset the NIC latency left it some packets short. */
   if (ops.flags & ST20P_TX_FLAG_EXACT_USER_PACING) {
     double tro = 0, trs = 0;
     uint32_t vrx = 0;
     if (!st20p_tx_get_pacing_params(handle, &tro, &trs, &vrx))
-      s->exact_tro_ns = (int64_t)(tro + 0.5);
-    info("%s(%d), exact user pacing, troffset %" PRId64 " ns\n", __func__, idx,
-         s->exact_tro_ns);
+      s->exact_tro_ns = (int64_t)(tro - vrx * trs + 0.5);
+    info("%s(%d), exact user pacing, troffset %.0f ns, vrx %u, start %" PRId64 " ns\n",
+         __func__, idx, tro, vrx, s->exact_tro_ns);
   }
 
   ret = app_tx_st20p_open_source(s);
