@@ -587,6 +587,17 @@ guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port,
   return mtl_port_idx;
 }
 
+/* The PTP time of ST 2110 is TAI (ST 2110-10, SMPTE ST 2059). Without the onboard PTP,
+ * MTL reads CLOCK_REALTIME, which is UTC: each stream was 37 s off TAI and off the
+ * epoch grid. The FFmpeg plugin and RxTxApp give MTL CLOCK_TAI the same way. */
+static uint64_t gst_mtl_common_get_tai_time(void* priv) {
+  struct timespec ts;
+
+  (void)priv;
+  if (clock_gettime(CLOCK_TAI, &ts) < 0) return 0;
+  return (uint64_t)ts.tv_sec * NS_PER_S + ts.tv_nsec;
+}
+
 gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init_params,
                                                 GeneralArgs* general_args) {
   gint mtl_port_idx = MTL_PORT_P;
@@ -608,6 +619,8 @@ gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init
   if (general_args->enable_onboard_ptp) {
     mtl_init_params->flags |= MTL_FLAG_PTP_ENABLE;
     GST_INFO("Using MTL library's onboard PTP");
+  } else {
+    mtl_init_params->ptp_get_time_fn = gst_mtl_common_get_tai_time;
   }
 
   while (mtl_port_idx <= MTL_PORT_R && strlen(general_args->port[mtl_port_idx]) != 0) {
