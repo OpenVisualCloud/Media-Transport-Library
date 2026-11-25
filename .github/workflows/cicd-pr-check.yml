@@ -216,13 +216,10 @@ jobs:
           VALIDATE_RUST_2021: true
           VALIDATE_RUST_CLIPPY: true
 
-  # Commit-message style -- the one check that is neither a file linter nor part
-  # of the super-linter allow-list, because gitlint reads a commit message and no
-  # whole-tree file scan has one. It runs the exact commit-msg hook from
-  # .pre-commit-config.yaml (same pinned gitlint, same .github/linters/.gitlint
-  # rules) against every commit the pull request adds, so this job cannot enforce
-  # anything the local git hook does not. This stays orchestration-only: the
-  # rules are in the config, never here.
+  # Commit history and message checks -- not a file linter and not part of the
+  # super-linter allow-list, because it inspects commits rather than tracked
+  # files. Rejects merge commits by git ancestry, then runs commit-check-action
+  # against .github/cchk.toml over every commit in the pull request.
   #
   # The build job does not need it: a message-style miss fails the pull
   # request, it does not skip a DPDK compile.
@@ -252,25 +249,24 @@ jobs:
         with:
           repo-token: ${{ github.token }}
 
+      - name: Reject merge commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: task ci:check-no-merge-commits
+
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
 
-      - name: Cache pre-commit environments
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Check pull-request commits
+        uses: commit-check/commit-check-action@b42dca628bf1212c292cfb18a13dcf9bef2ce6e2 # v2.25.0
         with:
-          path: ${{ env.PRE_COMMIT_HOME }}
-          key: pre-commit-commit-msg-${{ hashFiles('.pre-commit-config.yaml') }}
-
-      - name: Install pre-commit
-        run: python -m pip install --require-hashes --only-binary ':all:' -r .github/linters/requirements.txt
-
-      - name: Lint pull-request commit messages
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: task ci:lint-commit-messages
+          message: true
+          branch: false
+          author-email: true
+          job-summary: true
 
   # ── Build the cached artifacts the bare-metal jobs restore ──
   # After lint, so that a change that fails lint does not take the build host.
