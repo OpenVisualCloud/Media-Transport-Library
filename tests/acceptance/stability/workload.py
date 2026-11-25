@@ -167,9 +167,13 @@ def st20p_session(
         d["st20p_url"] = url
         if s.user_pacing:
             d["user_pacing"] = True
-            d["user_timestamp"] = True
             if exact:
+                # The pacing time of an exact frame is its first packet, not its
+                # sampling instant: the RTP time comes from the epoch
+                # (--timestamp_epoch), not from the user time.
                 d["exact_user_pacing"] = True
+            else:
+                d["user_timestamp"] = True
     else:
         d["output_format"] = pixel_format
         d["measure_latency"] = True
@@ -644,7 +648,8 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
             name="rxtxapp-mix",
             kind="rxtxapp",
             ports=[tx_ports[0]],
-            argv=rxtxapp_argv(host, "mix.json", duration_s, lc.get("rxtxapp-mix", "")),
+            argv=rxtxapp_argv(host, "mix.json", duration_s, lc.get("rxtxapp-mix", ""))
+            + ["--timestamp_epoch"],
             files={
                 "mix.json": mix.dumps(),
                 "kahawai.json": host.kahawai_json(st22=True),

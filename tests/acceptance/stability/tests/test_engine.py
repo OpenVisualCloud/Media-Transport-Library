@@ -71,8 +71,14 @@ def test_each_mix_session_has_a_receiver_and_user_pacing_where_planned():
     rx_groups = sorted(g["ip"][0] for g in rx["rx_sessions"])
     assert tx_groups == rx_groups
     st20p = [g["st20p"][0] for g in mix["tx_sessions"] if "st20p" in g]
-    assert all(s["user_pacing"] and s["user_timestamp"] for s in st20p)
+    assert all(s["user_pacing"] for s in st20p)
+    # an exact frame takes its RTP time from the epoch, the others from the user time
+    assert all(
+        bool(s.get("exact_user_pacing")) != bool(s.get("user_timestamp")) for s in st20p
+    )
     assert any(s.get("exact_user_pacing") for s in st20p)
+    mix_w = next(w for w in plan.workers if w.name == "rxtxapp-mix")
+    assert "--timestamp_epoch" in mix_w.argv
     inputs = {s["input_format"] for s in st20p}
     assert {"YUV422PLANAR10LE", "V210", "YUV422RFC4175PG2BE10"} <= inputs
     assert {s["fps"] for s in st20p} == {"p59", "p50"}
