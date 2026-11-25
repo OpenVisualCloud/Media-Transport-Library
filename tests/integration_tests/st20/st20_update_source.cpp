@@ -21,8 +21,8 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
   ASSERT_TRUE(tx_sessions >= 1);
   bool tx_update_dst = (tx_sessions == 1);
 
-  /* return if level small than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   int rx_sessions = 1;
   // 1501/1502 for one frame, max two frames.

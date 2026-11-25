@@ -40,11 +40,12 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
   struct st20_tx_ops ops_tx;
   struct st20_rx_ops ops_rx;
 
-  /* return if level small than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
-  if (ctx->iova == MTL_IOVA_MODE_PA)
-    GTEST_SKIP() << "ext_frame unsupported under IOVA PA";
+  if (ctx->iova == MTL_IOVA_MODE_PA) {
+    GTEST_SKIP() << "External buffer test requires IOVA VA mode";
+  }
 
   if (ctx->para.num_ports < 2) {
     info(

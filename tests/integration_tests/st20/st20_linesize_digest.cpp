@@ -20,13 +20,12 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
   struct st20_tx_ops ops_tx;
   struct st20_rx_ops ops_rx;
 
-  /* return if level small than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   if (ext) {
     if (ctx->iova == MTL_IOVA_MODE_PA) {
-      info("%s, skip ext test as it's PA iova mode\n", __func__);
-      return;
+      GTEST_SKIP() << "External buffer test requires IOVA VA mode";
     }
   }
 

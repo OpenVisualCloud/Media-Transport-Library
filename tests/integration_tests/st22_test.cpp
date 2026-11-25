@@ -404,8 +404,8 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
     throw std::runtime_error("Dual port not enabled");
   }
 
-  /* return if level lower than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   std::vector<tests_context*> test_ctx_tx;
   std::vector<tests_context*> test_ctx_rx;
@@ -615,8 +615,8 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
     throw std::runtime_error("Dual port not enabled");
   }
 
-  /* return if level lower than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   int rx_sessions = 1;
 
@@ -1037,8 +1037,7 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
   }
 
   if (!mtl_pmd_is_dpdk_based(m_handle, MTL_PORT_R)) {
-    info("%s, MTL_PORT_R is not a DPDK based PMD, skip this case\n", __func__);
-    return;
+    GTEST_SKIP() << "MTL_PORT_R is not a DPDK-based PMD";
   }
 
   std::vector<tests_context*> test_ctx_tx;
@@ -1265,8 +1264,8 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
   struct st22_tx_ops ops_tx;
   struct st22_rx_ops ops_rx;
 
-  /* return if level small than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   if (ctx->para.num_ports < 2) {
     info(
@@ -1490,8 +1489,8 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
   struct st22_tx_ops ops_tx;
   struct st22_rx_ops ops_rx;
 
-  /* return if level small than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   if (ctx->para.num_ports < 2) {
     info(
@@ -1728,7 +1727,7 @@ static void st22_tx_rtp_user_pacing_test(enum st_test_level level) {
   constexpr int kRunS = 4;                /* ~120 frames at every 2nd epoch */
   constexpr size_t kMinFrames = 60;
 
-  if (level < ctx->level) return;
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
   if (ctx->para.num_ports < 2) {
     info("%s, dual port should be enabled, one for tx and one for rx\n", __func__);
     throw std::runtime_error("Dual port not enabled");

@@ -13,8 +13,8 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
   struct st20_tx_ops ops_tx;
   struct st20_rx_ops ops_rx;
 
-  /* return if level small than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   if (ctx->para.num_ports < 2) {
     info(

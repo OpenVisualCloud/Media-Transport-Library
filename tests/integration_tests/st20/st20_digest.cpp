@@ -17,8 +17,8 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
   struct st20_tx_ops ops_tx;
   struct st20_rx_ops ops_rx;
 
-  /* return if level small than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   if (ctx->para.num_ports < 2) {
     info(
@@ -714,12 +714,11 @@ TEST(St20_rx, digest_slice_4320p) {
   int height[1] = {1080 * 4};
   bool interlaced[1] = {false};
   enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
-  if (st_test_dma_available(st_test_ctx())) {
-    st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt,
-                        false, ST_TEST_LEVEL_ALL, 1);
-  } else {
-    info("%s, skip as no dma available\n", __func__);
+  if (!st_test_dma_available(st_test_ctx())) {
+    GTEST_SKIP() << "DMA device is not available";
   }
+  st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt, false,
+                      ST_TEST_LEVEL_ALL, 1);
 }
 
 TEST(St20_rx, digest_ooo_slice_4320p) {
@@ -731,12 +730,11 @@ TEST(St20_rx, digest_ooo_slice_4320p) {
   int height[1] = {1080 * 4};
   bool interlaced[1] = {false};
   enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
-  if (st_test_dma_available(st_test_ctx())) {
-    st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt,
-                        false, ST_TEST_LEVEL_MANDATORY, 1, true);
-  } else {
-    info("%s, skip as no dma available\n", __func__);
+  if (!st_test_dma_available(st_test_ctx())) {
+    GTEST_SKIP() << "DMA device is not available";
   }
+  st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt, false,
+                      ST_TEST_LEVEL_MANDATORY, 1, true);
 }
 
 TEST(St20_rx, digest_hdr_split) {
@@ -748,12 +746,11 @@ TEST(St20_rx, digest_hdr_split) {
   int height[1] = {1080 * 1};
   bool interlaced[1] = {false};
   enum st20_fmt fmt[1] = {ST20_FMT_YUV_422_10BIT};
-  if (st_test_ctx()->hdr_split) {
-    st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt,
-                        false, ST_TEST_LEVEL_MANDATORY, 1, false, true);
-  } else {
-    info("%s, skip as no dma available\n", __func__);
+  if (!st_test_ctx()->hdr_split) {
+    GTEST_SKIP() << "Header split is not enabled";
   }
+  st20_rx_digest_test(type, rx_type, packing, fps, width, height, interlaced, fmt, false,
+                      ST_TEST_LEVEL_MANDATORY, 1, false, true);
 }
 
 TEST(St20_rx, digest_rtcp_s1) {

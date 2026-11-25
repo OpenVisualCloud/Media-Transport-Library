@@ -19,7 +19,9 @@ static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int widt
     throw std::runtime_error("Dual port not enabled");
   }
 
-  if (!mtl_pmd_is_dpdk_based(m_handle, MTL_PORT_R)) GTEST_SKIP() << "requires DPDK PMD";
+  if (!mtl_pmd_is_dpdk_based(m_handle, MTL_PORT_R)) {
+    GTEST_SKIP() << "MTL_PORT_R is not a DPDK-based PMD";
+  }
 
   std::vector<tests_context*> test_ctx_tx;
   std::vector<tests_context*> test_ctx_rx;

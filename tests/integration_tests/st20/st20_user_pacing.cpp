@@ -17,8 +17,8 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
   struct st20_tx_ops ops_tx;
   struct st20_rx_ops ops_rx;
 
-  /* return if level small than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   if (ctx->para.num_ports < 2) {
     info(
@@ -241,7 +241,7 @@ static void st20_tx_rtp_exact_user_pacing_test(int restarts, enum st_test_level 
   constexpr int kRunS = 3; /* ~180 frames a run at 59.94 fps */
   std::vector<int64_t> run_offsets;
 
-  if (level < ctx->level) return;
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
   if (ctx->para.num_ports < 2) {
     info("%s, dual port should be enabled, one for tx and one for rx\n", __func__);
     throw std::runtime_error("Dual port not enabled");

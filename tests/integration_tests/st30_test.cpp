@@ -340,8 +340,8 @@ static void st30_tx_fps_test(enum st30_type type[], enum st30_sampling sample[],
   std::vector<double> framerate;
   std::vector<std::thread> rtp_thread;
 
-  /* return if level small than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   test_ctx.resize(sessions);
   handle.resize(sessions);
@@ -429,8 +429,8 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     throw std::runtime_error("Dual port not enabled");
   }
 
-  /* return if level small than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   std::vector<tests_context*> test_ctx_tx;
   std::vector<tests_context*> test_ctx_rx;
@@ -638,7 +638,10 @@ TEST(St30_tx, frame_48k_mono_s1) {
   enum st30_ptime pt[1] = {ST30_PTIME_1MS};
   uint16_t c[1] = {1};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, pt, c, &f[i], ST_TEST_LEVEL_ALL);
+  for (int i = 0; i < 3; i++) {
+    st30_tx_fps_test(type, s, pt, c, &f[i], ST_TEST_LEVEL_ALL);
+    if (IsSkipped()) return;
+  }
 }
 TEST(St30_tx, rtp_96k_mono_s1) {
   enum st30_type type[1] = {ST30_TYPE_RTP_LEVEL};
@@ -646,7 +649,10 @@ TEST(St30_tx, rtp_96k_mono_s1) {
   enum st30_ptime pt[1] = {ST30_PTIME_1MS};
   uint16_t c[1] = {1};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, pt, c, &f[i], ST_TEST_LEVEL_ALL);
+  for (int i = 0; i < 3; i++) {
+    st30_tx_fps_test(type, s, pt, c, &f[i], ST_TEST_LEVEL_ALL);
+    if (IsSkipped()) return;
+  }
 }
 TEST(St30_tx, frame_48k_stereo_s1) {
   enum st30_type type[1] = {ST30_TYPE_FRAME_LEVEL};
@@ -654,7 +660,10 @@ TEST(St30_tx, frame_48k_stereo_s1) {
   enum st30_ptime pt[1] = {ST30_PTIME_1MS};
   uint16_t c[1] = {2};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, pt, c, &f[i], ST_TEST_LEVEL_ALL);
+  for (int i = 0; i < 3; i++) {
+    st30_tx_fps_test(type, s, pt, c, &f[i], ST_TEST_LEVEL_ALL);
+    if (IsSkipped()) return;
+  }
 }
 TEST(St30_tx, frame_48k_stereo_125us_s1) {
   enum st30_type type[1] = {ST30_TYPE_FRAME_LEVEL};
@@ -662,7 +671,10 @@ TEST(St30_tx, frame_48k_stereo_125us_s1) {
   enum st30_ptime pt[1] = {ST30_PTIME_125US};
   uint16_t c[1] = {2};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, pt, c, &f[i], ST_TEST_LEVEL_ALL);
+  for (int i = 0; i < 3; i++) {
+    st30_tx_fps_test(type, s, pt, c, &f[i], ST_TEST_LEVEL_ALL);
+    if (IsSkipped()) return;
+  }
 }
 TEST(St30_tx, rtp_48k_stereo_125us_s1) {
   enum st30_type type[1] = {ST30_TYPE_RTP_LEVEL};
@@ -670,7 +682,10 @@ TEST(St30_tx, rtp_48k_stereo_125us_s1) {
   enum st30_ptime pt[1] = {ST30_PTIME_125US};
   uint16_t c[1] = {2};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, pt, c, &f[i], ST_TEST_LEVEL_ALL);
+  for (int i = 0; i < 3; i++) {
+    st30_tx_fps_test(type, s, pt, c, &f[i], ST_TEST_LEVEL_ALL);
+    if (IsSkipped()) return;
+  }
 }
 TEST(St30_tx, rtp_96k_stereo_s1) {
   enum st30_type type[1] = {ST30_TYPE_RTP_LEVEL};
@@ -678,7 +693,10 @@ TEST(St30_tx, rtp_96k_stereo_s1) {
   enum st30_ptime pt[1] = {ST30_PTIME_1MS};
   uint16_t c[1] = {2};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, pt, c, &f[i], ST_TEST_LEVEL_ALL);
+  for (int i = 0; i < 3; i++) {
+    st30_tx_fps_test(type, s, pt, c, &f[i], ST_TEST_LEVEL_ALL);
+    if (IsSkipped()) return;
+  }
 }
 TEST(St30_tx, frame_48k_sgrp_s1) {
   enum st30_type type[1] = {ST30_TYPE_FRAME_LEVEL};
@@ -686,7 +704,10 @@ TEST(St30_tx, frame_48k_sgrp_s1) {
   enum st30_ptime pt[1] = {ST30_PTIME_1MS};
   uint16_t c[1] = {4};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, pt, c, &f[i], ST_TEST_LEVEL_ALL);
+  for (int i = 0; i < 3; i++) {
+    st30_tx_fps_test(type, s, pt, c, &f[i], ST_TEST_LEVEL_ALL);
+    if (IsSkipped()) return;
+  }
 }
 TEST(St30_tx, frame_96k_sgrp_s1) {
   enum st30_type type[1] = {ST30_TYPE_FRAME_LEVEL};
@@ -694,7 +715,10 @@ TEST(St30_tx, frame_96k_sgrp_s1) {
   enum st30_ptime pt[1] = {ST30_PTIME_1MS};
   uint16_t c[1] = {4};
   enum st30_fmt f[3] = {ST30_FMT_PCM8, ST30_FMT_PCM16, ST30_FMT_PCM24};
-  for (int i = 0; i < 3; i++) st30_tx_fps_test(type, s, pt, c, &f[i], ST_TEST_LEVEL_ALL);
+  for (int i = 0; i < 3; i++) {
+    st30_tx_fps_test(type, s, pt, c, &f[i], ST_TEST_LEVEL_ALL);
+    if (IsSkipped()) return;
+  }
 }
 TEST(St30_tx, mix_96k_stereo_s3) {
   enum st30_type type[3] = {ST30_TYPE_RTP_LEVEL, ST30_TYPE_FRAME_LEVEL,
@@ -832,8 +856,8 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions,
         __func__);
     throw std::runtime_error("Dual port not enabled");
   }
-  /* return if level lower than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   ASSERT_TRUE(tx_sessions >= 1);
   bool tx_update_dst = (tx_sessions == 1);
@@ -1141,8 +1165,8 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
         __func__);
     throw std::runtime_error("Dual port not enabled");
   }
-  /* return if level lower than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   std::vector<tests_context*> test_ctx_tx;
   std::vector<tests_context*> test_ctx_rx;
@@ -1329,8 +1353,8 @@ static void st30_create_after_start_test(enum st30_type type[],
         __func__);
     throw std::runtime_error("Dual port not enabled");
   }
-  /* return if level lower than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   std::vector<tests_context*> test_ctx_tx;
   std::vector<tests_context*> test_ctx_rx;

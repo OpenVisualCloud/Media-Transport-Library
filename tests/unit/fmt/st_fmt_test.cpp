@@ -182,9 +182,10 @@ TEST_F(StFrameRateToStFps, ConformantRatesAreSilent) {
   }
 }
 
-/* The snapped return values themselves are asserted by St_Fps* in the integration suite
- * and are deliberately unchanged; what is pinned here is that snapping is no longer
- * silent, which is all a GStreamer or FFmpeg caller ever sees. */
+/* The snapped return values themselves are asserted by Main/fps_* in
+ * st_fmt_api_test.cpp and are deliberately unchanged; what is pinned here is
+ * that snapping is no longer silent, which is all a GStreamer or FFmpeg caller
+ * ever sees. */
 TEST_F(StFrameRateToStFps, OffListRatesWarnAndStillSnap) {
   const struct {
     double framerate;

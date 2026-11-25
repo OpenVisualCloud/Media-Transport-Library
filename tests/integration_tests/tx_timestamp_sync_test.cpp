@@ -180,7 +180,7 @@ void tx_timestamp_sync_test(enum st_test_level level) {
   auto m_handle = ctx->handle;
   int ret;
 
-  if (level < ctx->level) return;
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   if (ctx->para.num_ports < 2) {
     info(

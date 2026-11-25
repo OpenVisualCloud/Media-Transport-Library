@@ -807,8 +807,8 @@ static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[],
   std::vector<double> framerate;
   std::vector<std::thread> rtp_thread;
 
-  /* return if level small than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   test_ctx.resize(sessions);
   handle.resize(sessions);
@@ -889,8 +889,8 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
   struct st40_tx_ops ops_tx;
   struct st40_rx_ops ops_rx;
 
-  /* return if level small than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   if (ctx->para.num_ports < 2) {
     info(
@@ -1254,8 +1254,8 @@ static void st40_fmd_oversize_test(enum st_test_level level) {
   const size_t frame_size[2] = {1437, 1436};
   int ret;
 
-  /* return if level small than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   if (ctx->para.num_ports < 2) {
     info(
@@ -1380,8 +1380,8 @@ static void st40_fmd_annex_a_test(enum st_test_level level) {
   fmd_annex_a annex_a;
   int ret;
 
-  /* return if level small than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   if (ctx->para.num_ports < 2) {
     info(
@@ -1481,8 +1481,8 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
         __func__);
     throw std::runtime_error("Dual port not enabled");
   }
-  /* return if level lower than global */
-  if (level < ctx->level) return;
+  /* skip if level is below global */
+  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
 
   ASSERT_TRUE(tx_sessions >= 1);
   bool tx_update_dst = (tx_sessions == 1);
