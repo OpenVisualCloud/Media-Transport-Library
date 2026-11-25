@@ -38,6 +38,8 @@ VIDEO = {
         24,
         ["-pix_fmt", "yuv422p10le", "-c:v", "v210", "-f", "rawvideo"],
     ),
+    # RGB for FFmpeg: its swscale (the external converter) makes 4:2:2 10 bit.
+    "1080p.rgb24": (1920, 1080, 24, ["-pix_fmt", "rgb24", "-f", "rawvideo"]),
     "2160p.rfc4175": (
         3840,
         2160,
