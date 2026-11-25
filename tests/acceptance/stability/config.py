@@ -199,9 +199,7 @@ def load(path: str) -> HostConfig:
     host.tx_ports = list(ports.get("tx", []))
     host.rx_ports = list(ports.get("rx", []))
     host.mtl_path = os.path.expanduser(host.mtl_path or os.getcwd())
-    host.rxtxapp = host.path(
-        host.rxtxapp or os.path.join(host.build_dir, "tests/tools/RxTxApp/RxTxApp")
-    )
+    host.rxtxapp = host.path(host.rxtxapp or "tests/tools/RxTxApp/build/RxTxApp")
     if host.mtl_manager:
         host.mtl_manager = host.path(host.mtl_manager)
     host.plugins = {k: host.path(v) for k, v in (host.plugins or {}).items()}
@@ -314,9 +312,7 @@ def auto_host(
     host = HostConfig(
         mtl_path=mtl_path, tx_ports=list(tx_ports), rx_ports=list(rx_ports)
     )
-    host.rxtxapp = host.path(
-        os.path.join(host.build_dir, "tests/tools/RxTxApp/RxTxApp")
-    )
+    host.rxtxapp = host.path("tests/tools/RxTxApp/build/RxTxApp")
     ffmpeg = os.path.join(install, "bin", "ffmpeg")
     host.ffmpeg = ffmpeg if os.path.isfile(ffmpeg) else (shutil.which("ffmpeg") or "")
     host.gst_launch = shutil.which("gst-launch-1.0") or ""
