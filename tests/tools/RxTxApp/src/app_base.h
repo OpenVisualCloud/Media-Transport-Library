@@ -54,7 +54,10 @@
 
 #define ST_APP_DEFAULT_FB_CNT (3)
 
-#define ST_APP_USER_CLOCK_DEFAULT_OFFSET (10 * NS_PER_MS) /* 10ms */
+/* No offset by default: st_app_user_time_calc() already starts each session two
+ * epochs ahead of now, on its own grid. An offset that is not a whole number of
+ * frame periods puts the RTP time off the grid while MTL starts the frame on it. */
+#define ST_APP_USER_CLOCK_DEFAULT_OFFSET (0)
 
 #define ST_APP_EXPECT_NEAR(val, expect, delta) \
   ((val > (expect - delta)) && (val < (expect + delta)))
