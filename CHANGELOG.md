@@ -1,5 +1,6 @@
 # Changelog
 
+* dev: on an SNC host, where the L3 spans more CPUs than the NUMA node, the node counts its CPUs' share of that L3 for the RX ring default and the 11-a-scheduler RX packing, half on SNC2; an L3 that holds only part of the node's CPUs, as an AMD CCD's, still counts as unknown
 * st20 RX: a frame-level session without a DMA dev packs 11 per scheduler instead of 8 when each of its ports is an ice/iavf port with dedicated RX queues and cpus (no `MTL_FLAG_SHARED_RX_QUEUE`, shared RSS or `MTL_FLAG_TASKLET_THREAD`) on a known L3 and has an RX ring, default or user, of at most 1024; other sessions keep 8
 * sch: one MTL instance runs up to 48 schedulers (`MT_MAX_SCH_NUM`), up from 18, and RxTxApp up to 48 video lcores; with `MTL_FLAG_TX_MONO_POOL` a deep TX port's sys pool counts a cache slack per EAL lcore up to 48 instead of 18, so 6 TX queues of 2048 take 65535 mbufs instead of 32767 on 27 or more lcores
 * dev: an ice/iavf port without a user `nb_rx_desc` sizes its RX ring to the L3: the largest power of 2 from 1024 to 2048 at which the RX mbufs of its NUMA socket's RX queues fit in 3/4 of the L3, or 1024 when less fits, instead of 2048; other drivers, `MTL_FLAG_TASKLET_THREAD`, `MTL_FLAG_SHARED_RX_QUEUE`, a shared RSS mode and an unknown L3 keep 2048

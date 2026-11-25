@@ -93,8 +93,10 @@ int ut_dev_init_mono_rx_queues(ut_dev_ctx* ctx, uint16_t nb_rx_q, uint16_t port_
 uint16_t ut_dev_rx_desc_by_l3(uint64_t l3_size, uint32_t nb_rx_q, uint32_t elem_size);
 /** The L3 size mt_l3_size() reports for socket; every other socket reports 0. */
 void ut_dev_set_l3_size(ut_dev_ctx* ctx, int socket, uint64_t l3_size);
-/** The real mt_l3_size() of this host. */
+/** The real mt_l3_size() of this host, and its cpulist scaling helper. */
 uint64_t ut_dev_host_l3_size(int socket);
+uint64_t ut_dev_l3_node_share(uint64_t l3_bytes, const char* node_cpus,
+                              const char* l3_cpus);
 /** Puts port on socket with mtl_init_params.rx_queues_cnt[port] queues. */
 void ut_dev_set_rx_port(ut_dev_ctx* ctx, enum mtl_port port, int socket,
                         uint16_t rx_queues_cnt);

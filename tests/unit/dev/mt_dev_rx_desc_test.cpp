@@ -75,7 +75,10 @@ TEST_P(MtDevRxDescL3Test, RingIsDeepestPow2WhoseMbufsFitL3ShareFrom1024To2048) {
 INSTANTIATE_TEST_SUITE_P(
     Cases, MtDevRxDescL3Test,
     testing::Values(RxDescL3Case{"Xeon6767P1080pOn4Ports", 336ull << 20, 164, 1024},
+                    RxDescL3Case{"Xeon6767PSnc21080pOn2Ports", 168ull << 20, 82, 1024},
+                    RxDescL3Case{"Xeon6767PSnc21080pOn1Port", 168ull << 20, 38, 1024},
                     RxDescL3Case{"Xeon6767P2160pOn4Ports", 336ull << 20, 56, 2048},
+                    RxDescL3Case{"Xeon6767PSnc22160pOn2Ports", 168ull << 20, 28, 2048},
                     RxDescL3Case{"Xeon8480Plus1080pOn2Ports", 105ull << 20, 82, 1024},
                     RxDescL3Case{"PluginDefaultOn2PortsOf105MiB", 105ull << 20, 34, 1024},
                     RxDescL3Case{"PluginDefaultOn2PortsOf60MiB", 60ull << 20, 34, 1024},
@@ -92,16 +95,53 @@ static std::string ReadSysfsLine(const std::string& path) {
   return line;
 }
 
-/* the L3 counts only if shared by exactly the node's cpus */
-TEST(MtL3SizeTest, Node0IsItsFirstCpuIndex3SizeIfItSharesThatL3ElseZero) {
+/* the L3 counts if it covers all of the node's cpus, scaled by the node's share */
+TEST(MtL3SizeTest, Node0MatchesSysfsShareOfItsFirstCpuIndex3ElseZero) {
   std::string node_cpus = ReadSysfsLine("/sys/devices/system/node/node0/cpulist");
   std::string index3 = "/sys/devices/system/cpu/cpu" +
                        std::to_string(std::atoi(node_cpus.c_str())) + "/cache/index3/";
-  uint64_t expected = 0;
-  if (!node_cpus.empty() && node_cpus == ReadSysfsLine(index3 + "shared_cpu_list"))
-    expected = std::strtoull(ReadSysfsLine(index3 + "size").c_str(), nullptr, 10) << 10;
+  uint64_t l3_bytes = std::strtoull(ReadSysfsLine(index3 + "size").c_str(), nullptr, 10)
+                      << 10;
+  uint64_t expected = ut_dev_l3_node_share(
+      l3_bytes, node_cpus.c_str(), ReadSysfsLine(index3 + "shared_cpu_list").c_str());
   EXPECT_EQ(ut_dev_host_l3_size(0), expected) << node_cpus;
 }
+
+struct L3ShareCase {
+  const char* name;
+  uint64_t l3_bytes;
+  const char* node_cpus;
+  const char* l3_cpus;
+  uint64_t expected;
+};
+
+class MtL3NodeShareTest : public testing::TestWithParam<L3ShareCase> {};
+
+TEST_P(MtL3NodeShareTest, ScalesSncSubsetAndRejectsPartialOrInvalidLists) {
+  const L3ShareCase& c = GetParam();
+  EXPECT_EQ(ut_dev_l3_node_share(c.l3_bytes, c.node_cpus, c.l3_cpus), c.expected);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Topologies, MtL3NodeShareTest,
+    testing::Values(L3ShareCase{"Xeon8480PlusNonSnc", 105ull << 20, "0-55,112-167\n",
+                                "0-55,112-167\n", 105ull << 20},
+                    L3ShareCase{"Xeon6767PSnc2Node2", 336ull << 20, "64-95,192-223\n",
+                                "64-127,192-255\n", 168ull << 20},
+                    L3ShareCase{"XeonAsymmetricSnc3", 330ull << 20, "0-14,44-58\n",
+                                "0-43,44-87\n", (330ull << 20) * 30 / 88},
+                    L3ShareCase{"XeonSnc4", 105ull << 20, "14-27,70-83", "0-55,56-111",
+                                (105ull << 20) / 4},
+                    L3ShareCase{"AmdEpycMultiCcdNps1", 32ull << 20, "0-95,96-191\n",
+                                "0-7,96-103\n", 0},
+                    L3ShareCase{"AmdEpycMultiCcdNps4", 32ull << 20, "0-23,96-119\n",
+                                "0-7,96-103\n", 0},
+                    L3ShareCase{"DisjointNodes", 105ull << 20, "56-111\n", "0-55\n", 0},
+                    L3ShareCase{"EmptyCxlNode", 105ull << 20, "\n", "0-55\n", 0},
+                    L3ShareCase{"ReversedRange", 105ull << 20, "10-5\n", "0-55\n", 0},
+                    L3ShareCase{"TrailingComma", 105ull << 20, "0-7,\n", "0-55\n", 0},
+                    L3ShareCase{"CpuPastMax", 105ull << 20, "4096\n", "0-4096\n", 0}),
+    [](const testing::TestParamInfo<L3ShareCase>& info) { return info.param.name; });
 
 struct RxElemCase {
   const char* driver;
@@ -264,7 +304,7 @@ TEST_F(MtDevRxDescDefaultL3Test, AnAfPacketPortTakesTheOthersOutOfTheL3Fit) {
   EXPECT_EQ(ut_dev_config_port_rx_l3_fit(ctx_, "net_ice", 512), 0);
 }
 
-/* no node-wide L3 (Windows, no sysfs, an AMD CCD's or an SNC socket's L3) */
+/* no L3 that holds the node's cpus (Windows, no sysfs, an AMD CCD's L3) */
 TEST_F(MtDevRxDescDefaultL3Test, AnUnknownL3DoesNotFitTheL3) {
   ut_dev_set_l3_size(ctx_, 0, 0);
   EXPECT_EQ(ut_dev_config_port_rx_l3_fit(ctx_, "net_ice", 512), 0);

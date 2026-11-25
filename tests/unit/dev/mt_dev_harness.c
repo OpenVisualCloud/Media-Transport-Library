@@ -443,6 +443,11 @@ uint64_t ut_dev_host_l3_size(int socket) {
   return mt_l3_size(socket);
 }
 
+uint64_t ut_dev_l3_node_share(uint64_t l3_bytes, const char* node_cpus,
+                              const char* l3_cpus) {
+  return mt_l3_node_share(l3_bytes, node_cpus, l3_cpus);
+}
+
 static unsigned int ut_rte_lcore_count(void) {
   ut_dev_ctx* ctx = ut_active_ctx;
   return ctx && ctx->lcore_count ? ctx->lcore_count : rte_lcore_count();

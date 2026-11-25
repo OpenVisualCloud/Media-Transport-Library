@@ -1203,6 +1203,59 @@ int mt_sysfs_write_uint32(const char* path, uint32_t value) {
   return ret;
 }
 
+#define MT_CPULIST_MAX (4096)
+#define MT_CPULIST_WORDS (MT_CPULIST_MAX / 64)
+
+static bool util_parse_cpulist(const char* list, uint64_t bits[MT_CPULIST_WORDS]) {
+  memset(bits, 0, sizeof(uint64_t) * MT_CPULIST_WORDS);
+  if (!list) return false;
+  const char* p = list;
+  bool any = false;
+
+  while (*p && *p != '\n' && *p != '\r') {
+    if (*p < '0' || *p > '9') return false;
+    char* end = NULL;
+    unsigned long lo = strtoul(p, &end, 10);
+    if (end == p || lo >= MT_CPULIST_MAX) return false;
+    unsigned long hi = lo;
+    p = end;
+    if (*p == '-') {
+      p++;
+      if (*p < '0' || *p > '9') return false;
+      hi = strtoul(p, &end, 10);
+      if (end == p || hi < lo || hi >= MT_CPULIST_MAX) return false;
+      p = end;
+    }
+    for (unsigned long c = lo; c <= hi; c++) bits[c >> 6] |= 1ULL << (c & 63);
+    any = true;
+    if (*p == ',') {
+      p++;
+      if (!*p || *p == '\n' || *p == '\r') return false;
+    } else if (*p && *p != '\n' && *p != '\r') {
+      return false;
+    }
+  }
+  return any;
+}
+
+/* an AMD CCD's L3 covers part of a node (rejected); an Intel SNC node's L3 spans the
+ * socket, of which the SNC cluster owns its cpu fraction */
+uint64_t mt_l3_node_share(uint64_t l3_bytes, const char* node_cpus, const char* l3_cpus) {
+  uint64_t node_bits[MT_CPULIST_WORDS];
+  uint64_t l3_bits[MT_CPULIST_WORDS];
+  uint32_t node_cnt = 0, l3_cnt = 0;
+
+  if (!l3_bytes || l3_bytes > UINT64_MAX / MT_CPULIST_MAX) return 0;
+  if (!util_parse_cpulist(node_cpus, node_bits) || !util_parse_cpulist(l3_cpus, l3_bits))
+    return 0;
+  for (int i = 0; i < MT_CPULIST_WORDS; i++) {
+    if (node_bits[i] & ~l3_bits[i]) return 0;
+    node_cnt += rte_popcount64(node_bits[i]);
+    l3_cnt += rte_popcount64(l3_bits[i]);
+  }
+  return l3_cnt ? (l3_bytes * node_cnt / l3_cnt) : 0;
+}
+
 #ifndef WINDOWSENV
 static int util_sysfs_read(const char* dir, const char* attr, char* buf, int len) {
   char path[128];
@@ -1222,6 +1275,7 @@ uint64_t mt_l3_size(int socket) {
 #else
   char dir[96];
   char node_cpus[4096]; /* a sysfs file is at most a page */
+  char l3_cpus[4096];
   char buf[4096];
   int cpu, level;
   uint64_t size;
@@ -1236,14 +1290,11 @@ uint64_t mt_l3_size(int socket) {
     if (sscanf(buf, "%d", &level) != 1 || level != 3) continue;
     if (util_sysfs_read(dir, "type", buf, sizeof(buf)) < 0 || strncmp(buf, "Unified", 7))
       continue;
-    /* an AMD CCD's L3 covers part of a node, an Intel SNC node's spans the socket */
-    if (util_sysfs_read(dir, "shared_cpu_list", buf, sizeof(buf)) < 0 ||
-        strcmp(buf, node_cpus))
-      return 0;
+    if (util_sysfs_read(dir, "shared_cpu_list", l3_cpus, sizeof(l3_cpus)) < 0) return 0;
     if (util_sysfs_read(dir, "size", buf, sizeof(buf)) < 0 ||
         sscanf(buf, "%" SCNu64 "K", &size) != 1)
       return 0;
-    return size << 10;
+    return mt_l3_node_share(size << 10, node_cpus, l3_cpus);
   }
 #endif
 }

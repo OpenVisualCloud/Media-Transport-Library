@@ -1090,7 +1090,7 @@ static uint16_t dev_rx_desc_by_l3(uint64_t l3_size, uint32_t nb_rx_q,
                  (uint32_t)MT_DEV_RX_DESC_MIN);
 }
 
-/* measured only on ice/iavf with dedicated rx queues and cpus and an L3 of the node's */
+/* measured only on ice/iavf, dedicated rx queues and cpus, and a known node L3 share */
 static bool dev_rx_l3_fit(struct mt_interface* inf) {
   struct mtl_main_impl* impl = inf->parent;
   enum mt_driver_type drv = inf->drv_info.drv_type;

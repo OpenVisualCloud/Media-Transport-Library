@@ -155,12 +155,12 @@ Sessions assigned to schedulers by weight in "1080p-equivalents":
 3. As sessions freed, quota returned
 
 Without a user `data_quota_mbs_per_sch`, a scheduler holds `ST_QUOTA_TX1080P_PER_SCH` (12) 1080p59 TX sessions' bandwidth (`dev_sch_init()`), and ST20 RX is scaled by `ST_QUOTA_TX1080P_PER_SCH` / its own constant (`st_header.h`):
-a scheduler packs 12 RX with DMA or RTP and 8 RX without DMA, but 11 frame-level RX without DMA when every port of the session fits its RX ring to the L3 (`mt_if_rx_l3_fit()`, set in `dev_config_port()`: ice/iavf with dedicated RX queues and cpus, on a known L3 that is the NUMA node's)
+a scheduler packs 12 RX with DMA or RTP and 8 RX without DMA, but 11 frame-level RX without DMA when every port of the session fits its RX ring to the L3 (`mt_if_rx_l3_fit()`, set in `dev_config_port()`: ice/iavf with dedicated RX queues and cpus, on a known L3 that holds the NUMA node's cpus (an SNC node counts its share))
 and its ring (`mt_if_nb_rx_desc()`, the deeper of a 2022-7 session's two) has at most `ST_QUOTA_RX1080P_NO_DMA_FRAME_DESC_MAX` (1024) descriptors (`rv_quota_mbs_wo_dma()`, `St20RxQuotaTest`, `MtDevRxDescDefaultL3Test`).
 That is the L3 default of those ports or a user `nb_rx_desc` up to 1024 on them. Other drivers, `MTL_FLAG_TASKLET_THREAD`, a shared RX queue (an AF_PACKET port included) or RSS and an unknown L3 keep 8 at any ring, as do a deeper ring and the 1056 of the iavf HW timestamp workaround.
 KahawaiTest `St20_rx.no_dma_*_sessions_per_sch` checks the packing on NICs; its frame case runs only with `--nb_rx_desc`, which CI does not pass, so by hand.
 Measured on a Xeon 6 6767P (336 MiB L3) with 4 × 100G E830 VFs, 144 × 1080p59.94 at 375 Gb/s on 14 RX cores, 11 a core (RX Video Frame Copy Is Cache-Bound): 512 is clean with stock, NT and per-packet conversion; 1024 is clean with stock (`yuv422p10le` and `v210`) and per-packet, and marginal with NT (2,406 pkts lost in 1 of 3 runs).
-11 a core is measured on that host only; the Xeon 8480+ runs packed 9 a core.
+11 a core at 375 Gb/s is measured on that host only. At one port it was also clean on a Xeon 8480+ (33 × 1080p59.94 to `yuv422p10le`, 1024 ring) and on an SNC2 node of a Xeon 6 6767P (36 sessions).
 2048 collapses at 11 a core on 14 cores (20–33 fps), so deeper rings keep 8. On 512, 12 cores were also clean at 12 a core with stock and at 13 with NT, while per-packet at 13 a core lost 36,322 / 281 pkts.
 With a user `data_quota_mbs_per_sch` an ST20 RX session charges its bandwidth times its ports, with or without DMA.
 
@@ -907,8 +907,10 @@ Every other port keeps `MT_DEV_RX_DESC` 2048 (`MtDevRxDescDefaultL3Test`):
   every port before any is configured (`dev_force_shared_rxq()`).
 - An unknown L3: `mt_l3_size()` reads the unified level-3 `cache/indexK` in sysfs of the
   first cpu of the port's NUMA node. It returns 0 on Windows, without sysfs, or when that L3's
-  `shared_cpu_list` is not exactly the node's `cpulist`: an AMD CCD's L3 covers part of a node,
-  and an Intel SNC node's spans the whole socket.
+  `shared_cpu_list` does not hold all of the node's `cpulist`: an AMD CCD's L3 covers part of a
+  node. An Intel SNC node's L3 spans the whole socket, so the node counts its cpus' share of it
+  (`mt_l3_node_share()`): 168 MiB of a Xeon 6 6767P's 336 MiB on SNC2. SNC3 and SNC4 shares are
+  not measured.
 
 The inputs:
 - Budget: `MT_DEV_RX_L3_PERCENT` (75) of the L3, a margin: the measured cases below only bound
