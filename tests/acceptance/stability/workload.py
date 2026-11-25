@@ -684,7 +684,7 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
             "-t", str(duration_s),
             "-vf", "format=yuv422p10le",
             "-f", "mtl_st20p", *ffmpeg_common(host, tx_ports[1], tx_ip),
-            "-p_tx_ip", f20.dip, "-udp_port", str(f20.port), "-payload_type", "112",
+            "-p_tx_ip", f20.dip, "-udp_port", str(f20.port),
         ]  # fmt: skip
         sends = [f20.sid]
         if host.st22_codec and host.ffmpeg_jpegxs:
@@ -706,7 +706,7 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
             tx_argv += [
                 "-vf", "format=yuv422p10le", "-c:v", "libsvtjpegxs", "-bpp", "3",
                 "-f", "mtl_st22", *ffmpeg_common(host, tx_ports[1], tx_ip),
-                "-p_tx_ip", f22.dip, "-udp_port", str(f22.port), "-payload_type", "114",
+                "-p_tx_ip", f22.dip, "-udp_port", str(f22.port),
             ]  # fmt: skip
             sends.append(f22.sid)
         workers.append(
@@ -723,8 +723,8 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
         rx_argv = [
             host.ffmpeg, "-hide_banner", "-loglevel", "info", "-stats_period", "10",
             "-f", "mtl_st20p", *ffmpeg_common(host, rx_ports[-1], rx_ip),
-            "-p_rx_ip", f20.dip, "-udp_port", str(f20.port), "-payload_type", "112",
-            "-video_size", "1920x1080", "-fps", "59.94", "-pix_fmt", "yuv422p10le",
+            "-p_rx_ip", f20.dip, "-udp_port", str(f20.port),
+            "-video_size", "1920x1080", "-fps", "60000/1001", "-pix_fmt", "yuv422p10le",
             "-t", str(duration_s),
             "-vf", "format=rgb24", "-f", "framemd5", "-y", "ffmpeg-rx-st20p.md5",
         ]  # fmt: skip

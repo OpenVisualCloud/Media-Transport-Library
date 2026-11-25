@@ -11,8 +11,10 @@ names a file of ``KEY=VALUE`` lines, read as text (``EBU_PASSWORD=...``).
 from __future__ import annotations
 
 import dataclasses
+import glob
 import json
 import os
+import re
 import shutil
 from typing import Optional
 
@@ -70,12 +72,16 @@ class EbuConfig:
     def password(self) -> str:
         if not self.password_file:
             return ""
-        return read_kv_file(self.password_file).get("EBU_PASSWORD", "")
+        kv = read_kv_file(self.password_file)
+        return kv.get("EBU_PASSWORD") or kv.get("EBU_LIST_PASSWORD", "")
 
 
 @dataclasses.dataclass
 class CaptureConfig:
     interface: str = ""  # a kernel netdev with hardware RX timestamps
+    # Or a command that captures for the engine, e.g. on a VM host that owns the
+    # PHC: "mtl-capture {group} {port} {seconds} {out}". It prints "dropped=<n>".
+    command: str = ""
     dir: str = "/var/tmp/mtl-stability/pcap"
     video_frames: int = 6  # frames of one video capture
     audio_seconds: float = 2.0
@@ -116,6 +122,10 @@ class HostConfig:
     capture: CaptureConfig = dataclasses.field(default_factory=CaptureConfig)
     ebu: EbuConfig = dataclasses.field(default_factory=EbuConfig)
     scan_interval_s: float = 10.0
+    bind_ports: bool = True  # script/nicctl.sh bind_pmd on each port first
+    # A port may be a MAC address. A VF on vfio-pci has no netdev, so the
+    # engine keeps each MAC -> PCI address it reads in this file.
+    mac_table: str = "/var/tmp/mtl-stability/vf-macs"
     max_error_lines: int = 200
 
     # -- derived -----------------------------------------------------------
@@ -169,6 +179,8 @@ class HostConfig:
                 problems.append(f"plugin {name}: no file {so}")
         if self.cpus.fence and not (self.cpus.app and self.cpus.lcores):
             problems.append("cpus: app and lcores are necessary for the fence")
+        if self.capture.command and not shutil.which(self.capture.command.split()[0]):
+            problems.append(f"capture: no command {self.capture.command.split()[0]}")
         if self.capture.interface and not os.path.isdir(
             f"/sys/class/net/{self.capture.interface}"
         ):
@@ -176,6 +188,52 @@ class HostConfig:
         if self.ebu.ip and not self.ebu.password():
             problems.append(f"ebu: no EBU_PASSWORD in {self.ebu.password_file}")
         return problems
+
+
+MAC_RE = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$", re.I)
+
+
+def _live_macs() -> dict[str, str]:
+    """MAC -> PCI address of each netdev that is a PCI function."""
+    out = {}
+    for n in glob.glob("/sys/class/net/*"):
+        dev = os.path.join(n, "device")
+        if not os.path.exists(dev):
+            continue
+        bdf = os.path.basename(os.path.realpath(dev))
+        if re.match(r"^[0-9a-f]{4}:", bdf):
+            out[_read_text(os.path.join(n, "address")).lower()] = bdf
+    return out
+
+
+def _read_text(path: str) -> str:
+    try:
+        with open(path, encoding="ascii") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def resolve_port(port: str, table: str) -> str:
+    """A PCI address as it is; a MAC address -> the PCI address of its function."""
+    if not MAC_RE.match(port):
+        return port
+    known = {}
+    if table and os.path.exists(table):
+        for line in open(table, encoding="ascii"):
+            parts = line.split()
+            if len(parts) == 2:
+                known[parts[0].lower()] = parts[1]
+    live = _live_macs()
+    if any(known.get(m) != b for m, b in live.items()) and table:
+        known.update(live)
+        os.makedirs(os.path.dirname(table), exist_ok=True)
+        with open(table, "w", encoding="ascii") as f:
+            f.writelines(f"{m} {b}\n" for m, b in sorted(known.items()))
+    bdf = live.get(port.lower()) or known.get(port.lower())
+    if not bdf:
+        raise ValueError(f"port {port}: no PCI function has this MAC (see {table})")
+    return bdf
 
 
 def _sub(cls, data: Optional[dict]):
@@ -196,8 +254,8 @@ def load(path: str) -> HostConfig:
     ports = data.pop("ports", {}) or {}
     host = _sub(HostConfig, data)
     host.cpus, host.capture, host.ebu = cpus, capture, ebu
-    host.tx_ports = list(ports.get("tx", []))
-    host.rx_ports = list(ports.get("rx", []))
+    host.tx_ports = [resolve_port(p, host.mac_table) for p in ports.get("tx", [])]
+    host.rx_ports = [resolve_port(p, host.mac_table) for p in ports.get("rx", [])]
     host.mtl_path = os.path.expanduser(host.mtl_path or os.getcwd())
     host.rxtxapp = host.path(host.rxtxapp or "tests/tools/RxTxApp/build/RxTxApp")
     if host.mtl_manager:

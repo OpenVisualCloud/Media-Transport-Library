@@ -41,6 +41,7 @@ RESTORE = "/run/mtl-stability-fence.json"
 # EAL worker lcore that MTL launches a scheduler on.
 LCORE_THREAD_PREFIXES = ("mtl_sch", "dpdk-worker", "lcore-worker", "rte-worker")
 IDLE_MAX_LATENCY_US = 10
+EAL_MAIN_CPU = 0  # mtl_init_params.main_lcore when the app does not set it
 
 
 def _read(path: str) -> str:
@@ -97,7 +98,9 @@ class Fence:
         for s in SLICES:
             if not os.path.isdir(f"/sys/fs/cgroup/{s}"):
                 continue
-            self._save(f"slice:{s}", True)
+            # systemd drops AllowedCPUs on revert but leaves the cgroup file
+            # as it is, so the file itself is what restore() puts back.
+            self._save(f"slice:{s}", _read(f"/sys/fs/cgroup/{s}/cpuset.cpus"))
             r = subprocess.run(
                 ["systemctl", "set-property", "--runtime", s, f"AllowedCPUs={house}"],
                 capture_output=True,
@@ -166,7 +169,7 @@ class Fence:
             _write(f"{CG}/{sub}/cgroup.type", "threaded")
         mems = _read("/sys/fs/cgroup/cpuset.mems.effective") or "0"
         _write(f"{CG}/cpuset.mems", mems)
-        _write(f"{CG}/cpuset.cpus", cpu_text(self.app + self.lc))
+        _write(f"{CG}/cpuset.cpus", cpu_text(self.app + self.lc + [EAL_MAIN_CPU]))
         _write(f"{CG}/lc/cpuset.cpus", cpu_text(self.lc))
         _write(f"{CG}/app/cpuset.cpus", cpu_text(self.app))
         for c in (CG, f"{CG}/lc", f"{CG}/app"):
@@ -174,10 +177,18 @@ class Fence:
 
     # -- workers -------------------------------------------------------------
 
-    def enter(self) -> None:
-        """preexec_fn of a worker: into <CG>, on the app and the lcore CPUs."""
+    def enter(self, eal_main: bool = False) -> None:
+        """preexec_fn of a worker: into <CG>, on the app and the lcore CPUs.
+
+        With ``--lcores``, MTL gives EAL ``-l <main_lcore>,<lcores>`` and
+        main_lcore is 0 when the app does not set it, so EAL pins its main
+        thread to CPU 0 (*eal_main*). move_threads() then puts that thread
+        on the app CPUs.
+        """
         _write(f"{CG}/cgroup.procs", str(os.getpid()))
-        os.sched_setaffinity(0, set(self.app + self.lc))
+        os.sched_setaffinity(
+            0, set(self.app + self.lc + ([EAL_MAIN_CPU] if eal_main else []))
+        )
 
     def move_threads(self, pids: Iterable[int]) -> tuple[int, int]:
         """Each MTL scheduler thread to lc, each other thread to app."""
@@ -190,14 +201,34 @@ class Fence:
                 want = "lc" if comm.startswith(LCORE_THREAD_PREFIXES) else "app"
                 if cg.endswith(f"/mtl-stability/{want}"):
                     continue
-                if _write(f"{CG}/{want}/cgroup.threads", tid):
-                    if want == "lc":
-                        n_lc += 1
-                    else:
-                        n_app += 1
+                try:
+                    pinned = os.sched_getaffinity(int(tid))
+                except OSError:
+                    continue  # the thread ended
+                if not _write(f"{CG}/{want}/cgroup.threads", tid):
+                    continue
+                if want == "lc":
+                    n_lc += 1
+                    # The move resets the mask to the whole cpuset: pin the
+                    # scheduler to its lcore again, as EAL did.
+                    if pinned <= set(self.lc):
+                        try:
+                            os.sched_setaffinity(int(tid), pinned)
+                        except OSError as e:
+                            logger.warning(
+                                "re-pin %s (%s) to %s: %s", tid, comm, pinned, e
+                            )
+                else:
+                    n_app += 1
         return n_lc, n_app
 
     def isolate(self) -> str:
+        # Linux 6.7 and later: a partition needs its CPUs in cpuset.cpus.exclusive
+        # of each level, the parent first.
+        lc = cpu_text(self.lc)
+        if os.path.exists(f"{CG}/cpuset.cpus.exclusive"):
+            _write(f"{CG}/cpuset.cpus.exclusive", lc)
+            _write(f"{CG}/lc/cpuset.cpus.exclusive", lc)
         _write(f"{CG}/lc/cpuset.cpus.partition", "isolated")
         return _read(f"{CG}/lc/cpuset.cpus.partition")
 
@@ -206,15 +237,21 @@ class Fence:
         lc = set(self.lc)
         out = []
         r = subprocess.run(
-            ["ps", "-eLo", "pid,tid,psr,comm", "--no-headers"],
+            ["ps", "-eLo", "pid,tid,psr,stat,comm", "--no-headers"],
             capture_output=True,
             text=True,
         )
         for line in r.stdout.splitlines():
-            parts = line.split(None, 3)
-            if len(parts) < 4 or not parts[2].isdigit() or int(parts[2]) not in lc:
+            parts = line.split(None, 4)
+            # A sleeping task shows the CPU it ran on last: only a running one counts.
+            if (
+                len(parts) < 5
+                or not parts[2].isdigit()
+                or int(parts[2]) not in lc
+                or "R" not in parts[3]
+            ):
                 continue
-            comm = parts[3]
+            comm = parts[4]
             if comm.startswith(
                 (
                     "kworker",
@@ -259,10 +296,14 @@ def restore() -> list[str]:
         if key.startswith("slice:"):
             s = key.split(":", 1)[1]
             subprocess.run(["systemctl", "revert", s], capture_output=True)
-            subprocess.run(
-                ["systemctl", "set-property", "--runtime", s, "AllowedCPUs="],
-                capture_output=True,
-            )
+            path = f"/sys/fs/cgroup/{s}/cpuset.cpus"
+            # An empty value (inherit) gives ENOSPC while the slice has tasks:
+            # then each online CPU is the same set.
+            if not (isinstance(value, str) and value and _write(path, value)):
+                if not _write(path, "") and not _write(
+                    path, _read("/sys/devices/system/cpu/online")
+                ):
+                    notes.append(f"{s}: cpuset.cpus not restored")
         elif key.startswith("file:"):
             _write(key.split(":", 1)[1], value)
     for d, old in (saved.get("irqs") or {}).items():

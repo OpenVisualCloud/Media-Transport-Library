@@ -23,7 +23,9 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import math
 import os
+import re
 import socket
 import struct
 import subprocess
@@ -44,6 +46,7 @@ from .workload import FPS, Stream
 
 logger = logging.getLogger(__name__)
 
+CMD_MAX_S = 30  # mtl-capture takes at most 30 s
 TC_PREF = 2111  # not 2110: the acceptance suite sweeps that one
 JOIN_SETTLE_S = 1.5  # IGMP report -> switch -> port
 EBU_AUDIO_ENCODING = {"PCM16": "L16", "PCM24": "L24"}
@@ -249,7 +252,9 @@ class Rotation:
         self.i = 0
         self.kept_failed = 0
         self.client: Optional[PcapComplianceClient] = None
-        self.enabled = bool(self.dev and host.ebu.ip and self.streams)
+        self.enabled = bool(
+            (self.dev or host.capture.command) and host.ebu.ip and self.streams
+        )
 
     def _client(self) -> PcapComplianceClient:
         if self.client is None:
@@ -271,6 +276,8 @@ class Rotation:
         n = self._packets(s)
         stamp = time.strftime("%Y%m%d-%H%M%S")
         pcap = os.path.join(self.pcap_dir, f"{s.sid}__{stamp}.pcap")
+        if self.host.capture.command:
+            return self._capture_command(s, n, pcap)
         join = Join(s.dip, self.dev)
         try:
             drop_after_tap(self.dev, s.dip)
@@ -298,6 +305,35 @@ class Rotation:
         finally:
             undo_drop(self.dev)
             join.close()
+
+    def _capture_command(
+        self, s: Stream, n: int, pcap: str
+    ) -> tuple[str, int, int, str]:
+        """A capture by another host (a VM host that owns the PHC), in seconds."""
+        seconds = min(
+            CMD_MAX_S, max(1, math.ceil(n / max(1.0, s.packets_per_second())))
+        )
+        cmd = self.host.capture.command.format(
+            group=s.dip, port=s.port, seconds=seconds, out=pcap
+        )
+        try:
+            r = subprocess.run(
+                cmd.split(),
+                capture_output=True,
+                text=True,
+                timeout=seconds + 120,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return pcap, n, 0, f"{cmd}: no answer in {seconds + 120} s"
+        out = r.stdout + r.stderr
+        counts = {
+            k: int(v) for k, v in re.findall(r"\b(packets|dropped|ifdrop)=(\d+)", out)
+        }
+        drops = counts.get("dropped", 0) + counts.get("ifdrop", 0)
+        if not os.path.exists(pcap) or (r.returncode and not drops):
+            return pcap, n, drops, f"{cmd}: status {r.returncode}: {out.strip()[-300:]}"
+        return pcap, counts.get("packets", n), drops, ""
 
     def analyze(self, s: Stream, pcap: str) -> dict:
         client = self._client()

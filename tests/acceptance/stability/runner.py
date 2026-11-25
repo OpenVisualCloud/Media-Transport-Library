@@ -89,6 +89,13 @@ class Run:
                 "run as root: the fence, vfio, tc and netsniff-ng need it"
             )
         os.makedirs(self.dir, exist_ok=True)
+        if self.host.ld_library_path:
+            old = os.environ.get("LD_LIBRARY_PATH", "")
+            os.environ["LD_LIBRARY_PATH"] = ":".join(
+                x for x in (self.host.ld_library_path, old) if x
+            )
+        if self.host.bind_ports:
+            self._bind_ports()
         made = media.prepare(self.host)
         if made:
             self.notes.append(f"media made: {', '.join(made)}")
@@ -106,12 +113,25 @@ class Run:
             ) as f:
                 f.write(" ".join(w.argv) + "\n")
 
+    def _bind_ports(self) -> None:
+        nicctl = self.host.path("script/nicctl.sh")
+        for bdf in dict.fromkeys(self.host.tx_ports + self.host.rx_ports):
+            if (
+                os.path.basename(os.path.realpath(f"/sys/bus/pci/devices/{bdf}/driver"))
+                == "vfio-pci"
+            ):
+                continue
+            r = subprocess.run(
+                [nicctl, "bind_pmd", bdf], capture_output=True, text=True, check=False
+            )
+            if r.returncode:
+                raise RuntimeError(
+                    f"nicctl.sh bind_pmd {bdf}: {(r.stderr or r.stdout).strip()[-300:]}"
+                )
+            self.notes.append(f"bound {bdf} to vfio-pci")
+
     def _env(self, w: Worker) -> dict:
         env = dict(os.environ)
-        if self.host.ld_library_path:
-            env["LD_LIBRARY_PATH"] = (
-                self.host.ld_library_path + ":" + env.get("LD_LIBRARY_PATH", "")
-            )
         env.update(w.env)
         return env
 
@@ -150,7 +170,7 @@ class Run:
         def pre():
             os.setsid()
             if fence:
-                fence.enter()
+                fence.enter(eal_main=bool(w.lcores))
 
         p = subprocess.Popen(
             w.argv,

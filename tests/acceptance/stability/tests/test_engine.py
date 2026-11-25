@@ -285,3 +285,20 @@ def test_audio_description_for_ebu_list():
         "number_channels": 2,
         "packet_time": "0.125000",
     }
+
+
+def test_a_port_by_mac_comes_from_the_table_when_the_vf_has_no_netdev(tmp_path):
+    table = tmp_path / "vf-macs"
+    table.write_text("02:00:15:00:00:05 0000:03:00.0\n")
+    assert config.resolve_port("02:00:15:00:00:05", str(table)) == "0000:03:00.0"
+    assert config.resolve_port("0000:09:00.0", str(table)) == "0000:09:00.0"
+    with pytest.raises(ValueError):
+        config.resolve_port("02:00:15:00:00:99", str(table))
+
+
+def test_password_from_either_key(tmp_path):
+    f = tmp_path / "ebu.env"
+    f.write_text("EBU_LIST_USERNAME=stability\nEBU_LIST_PASSWORD=pw1\n")
+    assert config.EbuConfig(password_file=str(f)).password() == "pw1"
+    f.write_text("EBU_PASSWORD=pw2\n")
+    assert config.EbuConfig(password_file=str(f)).password() == "pw2"
