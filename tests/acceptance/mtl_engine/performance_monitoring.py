@@ -385,7 +385,7 @@ def tx_vrx(log_lines, window):
     past the target).
 
     MTL estimates it from the CPU side, on RL-paced ports only, and counts a frame
-    once per port (st_header.h); a frame started late counts once and is not judged.
+    once per port (st_header.h); a frame started late counts once, as late only.
     So 0 is not known to be clean: a library without the check, a port that logs
     "VRX not judged" and an empty window all give 0.
     """
