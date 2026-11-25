@@ -18,30 +18,70 @@
 #include <vector>
 
 #include "../log.h"
+#include "../test_harness.hpp"
 #include "../tests.hpp"
 
-#define ST20_TRAIN_TIME_S (1)
 #define ST20_TEST_PAYLOAD_TYPE (112)
 #define DUMP_INCOMPLITE_SLICE (0)
 
-struct St20SessionConfig {
-  enum st20_type type;
-  enum st20_packing packing;
-  enum st_fps fps;
-  int width;
-  int height;
-  bool interlaced;
-  enum st20_fmt fmt;
-};
+/*
+ * Steady-state FPS measurement window parameters:
+ * - kSt20WarmupFrames=12 (~200-400 ms) lets RL pacing training, TSC fallback,
+ *   and multi-session startup bursts settle completely before snapshotting t0.
+ * - kSt20MinRateFrames=35 over kSt20MinRateWindowMs=1500 gives <=2.9% edge
+ *   quantization error at 25 fps and <=1.1% at 59.94 fps (vs +/-10% tolerance).
+ */
+constexpr int kSt20WarmupFrames = 12;
+constexpr int kSt20MinRateFrames = 35;
+constexpr int kSt20MinRateWindowMs = 1500;
+constexpr int kSt20WarmupTimeoutMs = 10000;
+constexpr int kSt20WindowTimeoutMs = 8000;
+
+/* Functional/digest wait targets when check_fps is false (~0.4-0.8 s). */
+constexpr int kSt20MinRxFrames = 12;
+constexpr int kSt20MinSliceRxFrames = 25;
+constexpr int kSt20MinShaFrames = 4;
+constexpr int kSt20EventTimeoutMs = 8000;
+
+inline void st20_set_handle(tests_context* c, void* h) {
+  __atomic_store_n(&c->handle, h, __ATOMIC_RELEASE);
+}
+
+inline void* st20_get_handle(const tests_context* c) {
+  return __atomic_load_n(&c->handle, __ATOMIC_ACQUIRE);
+}
 
 uint16_t udp_port_for_idx(int idx, bool hdr_split = false, int base = 10000);
-std::vector<St20SessionConfig> build_sessions(int sessions, enum st20_type type[],
-                                              enum st20_packing packing[],
-                                              enum st_fps fps[], int width[],
-                                              int height[], bool interlaced[],
-                                              enum st20_fmt fmt[]);
 tests_context* init_test_ctx(struct st_tests_context* global_ctx, int idx,
                              uint16_t fb_cnt, bool check_sha = false);
+bool st20_alloc_ext_frames(mtl_handle m_handle, tests_context* tctx, size_t frame_size);
+bool st20_alloc_dma_ext_frames(mtl_handle m_handle, tests_context* tctx, size_t fb_size);
+
+inline mtl_test::RateWindowResult st20_wait_rx_window(
+    const std::vector<tests_context*>& rx_ctx, bool check_fps, bool check_sha,
+    int min_rx_frames = kSt20MinRxFrames) {
+  mtl_test::RateWindowResult res;
+  if (check_fps) {
+    res = mtl_test::measure_rate_window(rx_ctx, mtl_test::rx_frames, kSt20WarmupFrames,
+                                        kSt20MinRateFrames, kSt20MinRateWindowMs,
+                                        kSt20WarmupTimeoutMs, kSt20WindowTimeoutMs);
+    if (check_sha) {
+      res.complete =
+          res.complete && mtl_test::wait_for_all(rx_ctx, mtl_test::sha_checked_frames,
+                                                 kSt20MinShaFrames, kSt20EventTimeoutMs);
+    }
+  } else {
+    res.rate.assign(rx_ctx.size(), 0.0);
+    res.warmed_up = mtl_test::wait_for_all(rx_ctx, mtl_test::rx_frames, min_rx_frames,
+                                           kSt20WarmupTimeoutMs);
+    res.complete =
+        res.warmed_up &&
+        (!check_sha || mtl_test::wait_for_all(rx_ctx, mtl_test::sha_checked_frames,
+                                              kSt20MinShaFrames, kSt20EventTimeoutMs));
+  }
+  return res;
+}
+
 void tx_feed_packet(void* args);
 int tx_video_build_rtp_packet(tests_context* s, struct st20_rfc4175_rtp_hdr* rtp,
                               uint16_t* pkt_len);
@@ -77,23 +117,11 @@ void init_single_port_tx(struct st20_tx_ops& ops, tests_context* tctx, const cha
 void init_single_port_rx(struct st20_rx_ops& ops, tests_context* tctx, const char* name,
                          uint16_t udp_port);
 void st20_rx_drain_bufq_put_framebuff(tests_context* ctx);
+void st20_rx_drain_bufq_free(tests_context* ctx);
 /* rtp_pkt_size: BPM only, size the session and its largest pkt to it; 0 for the
  * default 1260-byte payload */
 void rtp_tx_specific_init(struct st20_tx_ops* ops, tests_context* test_ctx,
                           uint16_t rtp_pkt_size = 0);
-
-struct MtlStopGuard {
-  mtl_handle handle;
-  bool started;
-
-  explicit MtlStopGuard(mtl_handle h) : handle(h), started(false) {
-  }
-  ~MtlStopGuard() {
-    if (started && handle) {
-      mtl_stop(handle);
-    }
-  }
-};
 
 class St20DeinitGuard {
  public:

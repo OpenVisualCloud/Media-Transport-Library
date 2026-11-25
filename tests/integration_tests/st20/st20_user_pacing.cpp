@@ -8,43 +8,31 @@
 
 #include "st20_common.h"
 
-static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fmt[],
-                                     bool user_pacing[], bool user_timestamp[],
-                                     enum st_test_level level, int sessions = 1) {
+namespace {
+
+struct St20UserPacingStream {
+  int width;
+  int height;
+  enum st20_fmt fmt;
+  bool user_pacing;
+  bool user_timestamp;
+};
+
+void st20_tx_user_pacing_test(const std::vector<St20UserPacingStream>& streams,
+                              enum st_test_level level) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
-  int ret;
-  struct st20_tx_ops ops_tx;
-  struct st20_rx_ops ops_rx;
+  const int sessions = static_cast<int>(streams.size());
 
-  /* skip if level is below global */
-  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
+  MTL_TEST_REQUIRE_LEVEL(ctx, level);
+  MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
-  if (ctx->para.num_ports < 2) {
-    info(
-        "%s, dual port should be enabled for tx test, one for tx and one for "
-        "rx\n",
-        __func__);
-    throw std::runtime_error("Dual port not enabled");
-  }
-
-  std::vector<tests_context*> test_ctx_tx;
-  std::vector<tests_context*> test_ctx_rx;
-  std::vector<st20_tx_handle> tx_handle;
-  std::vector<st20_rx_handle> rx_handle;
-  std::vector<double> expect_framerate;
-  std::vector<double> rx_framerate;
-  std::vector<double> tx_framerate;
-  std::vector<std::thread> sha_thread_rx;
-
-  test_ctx_tx.resize(sessions);
-  test_ctx_rx.resize(sessions);
-  tx_handle.resize(sessions);
-  rx_handle.resize(sessions);
-  expect_framerate.resize(sessions);
-  rx_framerate.resize(sessions);
-  tx_framerate.resize(sessions);
-  sha_thread_rx.resize(sessions);
+  std::vector<tests_context*> test_ctx_tx(sessions);
+  std::vector<tests_context*> test_ctx_rx(sessions);
+  std::vector<st20_tx_handle> tx_handle(sessions);
+  std::vector<st20_rx_handle> rx_handle(sessions);
+  std::vector<double> expect_framerate(sessions);
+  std::vector<std::thread> sha_thread_rx(sessions);
 
   St20DeinitGuard guard(m_handle, test_ctx_tx, test_ctx_rx, tx_handle, rx_handle, nullptr,
                         &sha_thread_rx);
@@ -53,31 +41,30 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
   enum st_fps fps = ST_FPS_P59_94;
 
   for (int i = 0; i < sessions; i++) {
-    if (user_pacing[i])
-      expect_framerate[i] = st_frame_rate(fps) / 2;
-    else
-      expect_framerate[i] = st_frame_rate(fps);
+    const auto& st = streams[i];
+    expect_framerate[i] = st.user_pacing ? (st_frame_rate(fps) / 2) : st_frame_rate(fps);
     test_ctx_tx[i] = init_test_ctx(ctx, i, TEST_SHA_HIST_NUM, true);
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
-    test_ctx_tx[i]->user_pacing = user_pacing[i];
-    test_ctx_tx[i]->user_timestamp = user_timestamp[i];
+    test_ctx_tx[i]->user_pacing = st.user_pacing;
+    test_ctx_tx[i]->user_timestamp = st.user_timestamp;
     test_ctx_tx[i]->frame_time = (double)NS_PER_S / st_frame_rate(fps);
 
+    struct st20_tx_ops ops_tx;
     init_single_port_tx(ops_tx, test_ctx_tx[i], "st20_timestamp_test",
                         udp_port_for_idx(i));
     ops_tx.packing = ST20_PACKING_BPM;
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
-    ops_tx.width = width[i];
-    ops_tx.height = height[i];
+    ops_tx.width = st.width;
+    ops_tx.height = st.height;
     ops_tx.interlaced = false;
     ops_tx.fps = fps;
-    ops_tx.fmt = fmt[i];
+    ops_tx.fmt = st.fmt;
     ops_tx.payload_type = ST20_TEST_PAYLOAD_TYPE;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     ops_tx.get_next_frame = tx_next_video_frame_timestamp;
     ops_tx.notify_frame_done = tx_notify_timestamp_frame_done;
-    if (user_pacing[i]) ops_tx.flags |= ST20_TX_FLAG_USER_PACING;
-    if (user_timestamp[i]) ops_tx.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
+    if (st.user_pacing) ops_tx.flags |= ST20_TX_FLAG_USER_PACING;
+    if (st.user_timestamp) ops_tx.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
 
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
@@ -89,31 +76,31 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
     test_ctx_tx[i]->frame_size = frame_size;
     test_ctx_tx[i]->height = ops_tx.height;
     test_ctx_tx[i]->stride = ops_tx.width / st20_pg.coverage * st20_pg.size;
-    uint8_t* fb;
     for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
-      fb = (uint8_t*)st20_tx_get_framebuffer(tx_handle[i], frame);
+      uint8_t* fb = (uint8_t*)st20_tx_get_framebuffer(tx_handle[i], frame);
       ASSERT_TRUE(fb != NULL);
       st_test_rand_data(fb, frame_size, frame);
       unsigned char* result = test_ctx_tx[i]->shas[frame];
       SHA256((unsigned char*)fb, frame_size, result);
       test_sha_dump("st20_rx", result);
     }
-    test_ctx_tx[i]->handle = tx_handle[i];
   }
 
   for (int i = 0; i < sessions; i++) {
+    const auto& st = streams[i];
     test_ctx_rx[i] = init_test_ctx(ctx, i, 3, true);
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
-    test_ctx_rx[i]->user_pacing = user_pacing[i];
-    test_ctx_rx[i]->user_timestamp = user_timestamp[i];
+    test_ctx_rx[i]->user_pacing = st.user_pacing;
+    test_ctx_rx[i]->user_timestamp = st.user_timestamp;
 
+    struct st20_rx_ops ops_rx;
     init_single_port_rx(ops_rx, test_ctx_rx[i], "st20_timestamp_test",
                         udp_port_for_idx(i));
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
-    ops_rx.width = width[i];
-    ops_rx.height = height[i];
+    ops_rx.width = st.width;
+    ops_rx.height = st.height;
     ops_rx.fps = fps;
-    ops_rx.fmt = fmt[i];
+    ops_rx.fmt = st.fmt;
     ops_rx.payload_type = ST20_TEST_PAYLOAD_TYPE;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
     ops_rx.notify_frame_ready = st20_digest_rx_frame_ready;
@@ -127,28 +114,35 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
     st20_get_pgroup(ops_rx.fmt, &test_ctx_rx[i]->st20_pg);
     memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
            TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
-    test_ctx_rx[i]->handle = rx_handle[i];
-
+    st20_set_handle(test_ctx_rx[i], rx_handle[i]);
     test_ctx_rx[i]->stop = false;
     sha_thread_rx[i] = std::thread(st20_digest_rx_frame_check, test_ctx_rx[i]);
   }
 
-  ret = mtl_start(m_handle);
-  EXPECT_GE(ret, 0);
-  guard.set_started(ret >= 0);
-  sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
-  sleep(10 * 1);
-
+  /* Publish TX handles only after every RX session is ready. */
   for (int i = 0; i < sessions; i++) {
-    uint64_t cur_time_ns = st_test_get_monotonic_time();
-    double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
-    rx_framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
-    time_sec = (double)(cur_time_ns - test_ctx_tx[i]->start_time) / NS_PER_S;
-    tx_framerate[i] = test_ctx_tx[i]->fb_send / time_sec;
+    st20_set_handle(test_ctx_tx[i], tx_handle[i]);
   }
 
-  /* freeze counters before assertions */
-  guard.stop();
+  int ret = mtl_start(m_handle);
+  EXPECT_GE(ret, 0);
+  guard.set_started(ret >= 0);
+
+  /*
+   * Measure TX and RX FPS over one >=1000 ms steady-state window:
+   * warmup=3 absorbs RL pacing training, >=25 frames (~30 at half-rate 29.97 fps)
+   * keeps edge error <=3.3% vs +/-10% tolerance.
+   */
+  auto res = mtl_test::measure_pipeline_window(
+      test_ctx_tx, test_ctx_rx, kSt20WarmupFrames, kSt20MinRateFrames,
+      kSt20MinRateWindowMs, kSt20WarmupTimeoutMs, kSt20WindowTimeoutMs);
+  EXPECT_TRUE(res.warmed_up);
+  EXPECT_TRUE(res.complete);
+  EXPECT_TRUE(mtl_test::wait_for_all(test_ctx_rx, mtl_test::sha_checked_frames,
+                                     kSt20MinShaFrames, kSt20EventTimeoutMs));
+
+  guard.release_sessions();
+
   for (int i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
@@ -156,27 +150,15 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
     EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
 
     info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
-         rx_framerate[i]);
-    info("%s, session %d fb_send %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
-         tx_framerate[i]);
+         res.rx_fps[i]);
+    info("%s, session %d fb_send %d framerate %f\n", __func__, i, test_ctx_tx[i]->fb_send,
+         res.tx_fps[i]);
 
-    EXPECT_NEAR(tx_framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
-    EXPECT_NEAR(rx_framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
+    EXPECT_NEAR(res.tx_fps[i], expect_framerate[i], expect_framerate[i] * 0.1);
+    EXPECT_NEAR(res.rx_fps[i], expect_framerate[i], expect_framerate[i] * 0.1);
   }
 }
 
-TEST(St20_tx, tx_user_pacing) {
-  int width[3] = {1280, 1920, 1280};
-  int height[3] = {720, 1080, 720};
-  enum st20_fmt fmt[3] = {ST20_FMT_YUV_422_10BIT, ST20_FMT_YUV_422_10BIT,
-                          ST20_FMT_YUV_422_10BIT};
-  bool user_pacing[3] = {false, true, true};
-  bool user_timestamp[3] = {true, false, true};
-  st20_tx_user_pacing_test(width, height, fmt, user_pacing, user_timestamp,
-                           ST_TEST_LEVEL_MANDATORY, 3);
-}
-
-namespace {
 /* first-packet arrival minus target TAI of each complete frame, one session */
 struct RtpExactPacingRx {
   std::mutex mtx;
@@ -191,14 +173,15 @@ uint64_t rtp_exact_target_tai(tests_context* s, uint32_t rtp_ts) {
 
 void tx_feed_packet_tai(void* args) {
   auto ctx = (tests_context*)args;
+  auto handle = (st20_tx_handle)st20_get_handle(ctx);
   void* usrptr = nullptr;
   uint16_t mbuf_len = 0;
   std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
   while (!ctx->stop) {
-    void* mbuf = st20_tx_get_mbuf((st20_tx_handle)ctx->handle, &usrptr);
+    void* mbuf = st20_tx_get_mbuf(handle, &usrptr);
     if (!mbuf) {
       lck.lock();
-      mbuf = st20_tx_get_mbuf((st20_tx_handle)ctx->handle, &usrptr);
+      mbuf = st20_tx_get_mbuf(handle, &usrptr);
       if (!mbuf) {
         if (!ctx->stop) ctx->cv.wait(lck);
         lck.unlock();
@@ -208,29 +191,32 @@ void tx_feed_packet_tai(void* args) {
     }
     uint64_t tai = ctx->pkt_idx ? 0 : rtp_exact_target_tai(ctx, ctx->rtp_tmstamp);
     tx_video_build_rtp_packet(ctx, (struct st20_rfc4175_rtp_hdr*)usrptr, &mbuf_len);
-    st20_tx_put_mbuf_tai((st20_tx_handle)ctx->handle, mbuf, mbuf_len, tai);
+    st20_tx_put_mbuf_tai(handle, mbuf, mbuf_len, tai);
   }
 }
 
 int rx_exact_pacing_frame_ready(void* priv, void* frame,
                                 struct st20_rx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
-  if (!ctx->handle) return -EIO;
+  auto handle = (st20_rx_handle)st20_get_handle(ctx);
+  if (!handle) return -EIO;
   if (st_is_frame_complete(meta->status)) {
     int64_t delta = (int64_t)(meta->timestamp_first_pkt -
                               rtp_exact_target_tai(ctx, meta->rtp_timestamp));
-    std::lock_guard<std::mutex> lck(rtp_exact_pacing_rx.mtx);
-    rtp_exact_pacing_rx.deltas.push_back(delta);
+    {
+      std::lock_guard<std::mutex> lck(rtp_exact_pacing_rx.mtx);
+      rtp_exact_pacing_rx.deltas.push_back(delta);
+    }
+    __atomic_fetch_add(&ctx->fb_rec, 1, __ATOMIC_RELEASE);
   }
-  st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
+  st20_rx_put_framebuff(handle, frame);
   return 0;
 }
-}  // namespace
 
 /* An RTP-level session with EXACT_USER_PACING sends each frame at the TAI of
  * st20_tx_put_mbuf_tai(): across session restarts, the RX-measured first-packet arrival
  * keeps the same offset from that target, whatever the epoch grid. */
-static void st20_tx_rtp_exact_user_pacing_test(int restarts, enum st_test_level level) {
+void st20_tx_rtp_exact_user_pacing_test(int restarts, enum st_test_level level) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   enum st_fps fps = ST_FPS_P59_94;
@@ -238,18 +224,15 @@ static void st20_tx_rtp_exact_user_pacing_test(int restarts, enum st_test_level 
   constexpr uint64_t kTargetLeadNs = 300 * NS_PER_MS + 333 * 1000;
   constexpr int64_t kMaxSpreadNs = 10'000;
   constexpr int64_t kMaxOffsetNs = 100'000;
-  constexpr int kRunS = 3; /* ~180 frames a run at 59.94 fps */
+  /* > 1 s of frames (~64 frames at 59.94 fps = ~1.07 s + 0.3 s target lead). */
+  const int target_frames = static_cast<int>(st_frame_rate(fps)) + 5;
   std::vector<int64_t> run_offsets;
 
-  if (level < ctx->level) GTEST_SKIP() << "Test level is below the requested level";
-  if (ctx->para.num_ports < 2) {
-    info("%s, dual port should be enabled, one for tx and one for rx\n", __func__);
-    throw std::runtime_error("Dual port not enabled");
-  }
+  MTL_TEST_REQUIRE_LEVEL(ctx, level);
+  MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
-  MtlStopGuard mtl_guard(m_handle);
-  ASSERT_GE(mtl_start(m_handle), 0);
-  mtl_guard.started = true;
+  mtl_test::ScopedMtlStart mtl_guard(m_handle);
+  ASSERT_GE(mtl_guard.start(), 0);
 
   for (int r = 0; r < restarts; r++) {
     std::vector<tests_context*> test_ctx_tx(1);
@@ -305,15 +288,16 @@ static void st20_tx_rtp_exact_user_pacing_test(int restarts, enum st_test_level 
       c->frame_time = (double)NS_PER_S / st_frame_rate(fps);
     }
     test_ctx_tx[0]->rtp_tmstamp = 1;
-    test_ctx_rx[0]->handle = rx_handle[0];
-    test_ctx_tx[0]->handle = tx_handle[0];
+    st20_set_handle(test_ctx_rx[0], rx_handle[0]);
+    st20_set_handle(test_ctx_tx[0], tx_handle[0]);
     test_ctx_tx[0]->stop = false;
     rtp_thread_tx[0] = std::thread(tx_feed_packet_tai, test_ctx_tx[0]);
 
-    sleep(kRunS);
+    EXPECT_TRUE(mtl_test::wait_for_all(test_ctx_rx, mtl_test::rx_frames, target_frames,
+                                       kSt20WarmupTimeoutMs));
     struct st20_tx_user_stats stats;
     ASSERT_EQ(st20_tx_get_session_stats(tx_handle[0], &stats), 0);
-    guard.stop();
+    guard.release_sessions();
     /* a frame that fell back to the default pacing would skew the offsets */
     EXPECT_EQ(stats.common.stat_error_user_timestamp, 0u);
 
@@ -337,6 +321,18 @@ static void st20_tx_rtp_exact_user_pacing_test(int restarts, enum st_test_level 
 
   auto minmax = std::minmax_element(run_offsets.begin(), run_offsets.end());
   EXPECT_LE(*minmax.second - *minmax.first, kMaxSpreadNs);
+}
+
+}  // namespace
+
+TEST(St20_tx, tx_user_pacing) {
+  st20_tx_user_pacing_test(
+      {
+          {1280, 720, ST20_FMT_YUV_422_10BIT, false, true},
+          {1920, 1080, ST20_FMT_YUV_422_10BIT, true, false},
+          {1280, 720, ST20_FMT_YUV_422_10BIT, true, true},
+      },
+      ST_TEST_LEVEL_MANDATORY);
 }
 
 TEST(St20_tx, rtp_exact_user_pacing_repeatable) {

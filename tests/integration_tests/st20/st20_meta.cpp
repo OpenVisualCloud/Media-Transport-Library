@@ -4,8 +4,16 @@
 
 #include "st20_common.h"
 
-static int st20_tx_meta_build_rtp(tests_context* s, struct st20_rfc4175_rtp_hdr* rtp,
-                                  uint16_t* pkt_len) {
+namespace {
+
+struct St20MetaStream {
+  enum st_fps fps;
+  int width;
+  int height;
+};
+
+int st20_tx_meta_build_rtp(tests_context* s, struct st20_rfc4175_rtp_hdr* rtp,
+                           uint16_t* pkt_len) {
   struct st20_rfc4175_extra_rtp_hdr* e_rtp = NULL;
   int offset;
   int frame_size = s->frame_size;
@@ -64,7 +72,7 @@ static int st20_tx_meta_build_rtp(tests_context* s, struct st20_rfc4175_rtp_hdr*
 
   /* build incomplete frame */
   if (s->pkt_idx >= s->total_pkts_in_frame) marker = true;
-  if (s->fb_send % 2) {
+  if (__atomic_load_n(&s->fb_send, __ATOMIC_RELAXED) % 2) {
     if (s->pkt_idx >= (s->total_pkts_in_frame / 2)) marker = true;
   }
   if (marker) {
@@ -73,25 +81,26 @@ static int st20_tx_meta_build_rtp(tests_context* s, struct st20_rfc4175_rtp_hdr*
 
     s->pkt_idx = 0;
     s->rtp_tmstamp++;
-    s->fb_send++;
+    __atomic_fetch_add(&s->fb_send, 1, __ATOMIC_RELAXED);
   }
 
   return 0;
 }
 
-static void st20_rx_meta_feed_packet(void* args) {
+void st20_rx_meta_feed_packet(void* args) {
   auto ctx = (tests_context*)args;
+  auto handle = (st20_tx_handle)st20_get_handle(ctx);
   void* mbuf;
   void* usrptr = NULL;
   uint16_t mbuf_len = 0;
   std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
   while (!ctx->stop) {
     /* get available buffer*/
-    mbuf = st20_tx_get_mbuf((st20_tx_handle)ctx->handle, &usrptr);
+    mbuf = st20_tx_get_mbuf(handle, &usrptr);
     if (!mbuf) {
       lck.lock();
       /* try again */
-      mbuf = st20_tx_get_mbuf((st20_tx_handle)ctx->handle, &usrptr);
+      mbuf = st20_tx_get_mbuf(handle, &usrptr);
       if (mbuf) {
         lck.unlock();
       } else {
@@ -104,18 +113,18 @@ static void st20_rx_meta_feed_packet(void* args) {
     /* build the rtp pkt */
     st20_tx_meta_build_rtp(ctx, (struct st20_rfc4175_rtp_hdr*)usrptr, &mbuf_len);
 
-    st20_tx_put_mbuf((st20_tx_handle)ctx->handle, mbuf, mbuf_len);
+    st20_tx_put_mbuf(handle, mbuf, mbuf_len);
   }
 }
 
-static int st20_rx_meta_frame_ready(void* priv, void* frame,
-                                    struct st20_rx_frame_meta* meta) {
+int st20_rx_meta_frame_ready(void* priv, void* frame, struct st20_rx_frame_meta* meta) {
   auto ctx = (tests_context*)priv;
   auto expect_meta = (struct st20_rx_frame_meta*)ctx->priv;
 
-  if (!ctx->handle) return -EIO;
+  auto handle = (st20_rx_handle)st20_get_handle(ctx);
+  if (!handle) return -EIO;
 
-  ctx->fb_rec++;
+  __atomic_fetch_add(&ctx->fb_rec, 1, __ATOMIC_RELAXED);
   if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
   if (expect_meta->width != meta->width) ctx->rx_meta_fail_cnt++;
   if (expect_meta->height != meta->height) ctx->rx_meta_fail_cnt++;
@@ -129,57 +138,42 @@ static int st20_rx_meta_frame_ready(void* priv, void* frame,
   } else {
     if (meta->frame_total_size != meta->frame_recv_size) ctx->rx_meta_fail_cnt++;
   }
-  st20_rx_put_framebuff((st20_rx_handle)ctx->handle, frame);
+  st20_rx_put_framebuff(handle, frame);
 
   return 0;
 }
 
-static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
-                              enum st20_fmt fmt, int sessions = 1) {
+void st20_rx_meta_test(const std::vector<St20MetaStream>& streams, enum st20_fmt fmt) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
-  int ret;
-  struct st20_tx_ops ops_tx;
-  struct st20_rx_ops ops_rx;
-  if (ctx->para.num_ports < 2) {
-    info(
-        "%s, dual port should be enabled for tx test, one for tx and one for "
-        "rx\n",
-        __func__);
-    throw std::runtime_error("Dual port not enabled");
-  }
+  const int sessions = static_cast<int>(streams.size());
 
-  std::vector<tests_context*> test_ctx_tx;
-  std::vector<tests_context*> test_ctx_rx;
-  std::vector<st20_tx_handle> tx_handle;
-  std::vector<st20_rx_handle> rx_handle;
-  std::vector<double> expect_framerate;
-  std::vector<double> framerate;
-  std::vector<std::thread> rtp_thread_tx;
+  MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
-  test_ctx_tx.resize(sessions);
-  test_ctx_rx.resize(sessions);
-  tx_handle.resize(sessions);
-  rx_handle.resize(sessions);
-  expect_framerate.resize(sessions);
-  framerate.resize(sessions);
-  rtp_thread_tx.resize(sessions);
+  std::vector<tests_context*> test_ctx_tx(sessions);
+  std::vector<tests_context*> test_ctx_rx(sessions);
+  std::vector<st20_tx_handle> tx_handle(sessions);
+  std::vector<st20_rx_handle> rx_handle(sessions);
+  std::vector<double> expect_framerate(sessions);
+  std::vector<std::thread> rtp_thread_tx(sessions);
 
   St20DeinitGuard guard(m_handle, test_ctx_tx, test_ctx_rx, tx_handle, rx_handle,
                         &rtp_thread_tx, nullptr);
 
   for (int i = 0; i < sessions; i++) {
-    expect_framerate[i] = st_frame_rate(fps[i]);
+    const auto& st = streams[i];
+    expect_framerate[i] = st_frame_rate(st.fps);
     test_ctx_tx[i] = init_test_ctx(ctx, i, 3);
     ASSERT_TRUE(test_ctx_tx[i] != NULL);
 
+    struct st20_tx_ops ops_tx;
     init_single_port_tx(ops_tx, test_ctx_tx[i], "st20_meta_test", udp_port_for_idx(i));
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = ST20_PACKING_BPM;
     ops_tx.type = ST20_TYPE_RTP_LEVEL;
-    ops_tx.width = width[i];
-    ops_tx.height = height[i];
-    ops_tx.fps = fps[i];
+    ops_tx.width = st.width;
+    ops_tx.height = st.height;
+    ops_tx.fps = st.fps;
     ops_tx.fmt = fmt;
     ops_tx.payload_type = ST20_TEST_PAYLOAD_TYPE;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
@@ -187,20 +181,22 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
     rtp_tx_specific_init(&ops_tx, test_ctx_tx[i]);
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
-    test_ctx_tx[i]->handle = tx_handle[i];
+    st20_set_handle(test_ctx_tx[i], tx_handle[i]);
     test_ctx_tx[i]->stop = false;
     rtp_thread_tx[i] = std::thread(st20_rx_meta_feed_packet, test_ctx_tx[i]);
   }
 
   for (int i = 0; i < sessions; i++) {
+    const auto& st = streams[i];
     test_ctx_rx[i] = init_test_ctx(ctx, i, 3);
     ASSERT_TRUE(test_ctx_rx[i] != NULL);
 
+    struct st20_rx_ops ops_rx;
     init_single_port_rx(ops_rx, test_ctx_rx[i], "st20_meta_test", udp_port_for_idx(i));
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
-    ops_rx.width = width[i];
-    ops_rx.height = height[i];
-    ops_rx.fps = fps[i];
+    ops_rx.width = st.width;
+    ops_rx.height = st.height;
+    ops_rx.fps = st.fps;
     ops_rx.fmt = fmt;
     ops_rx.payload_type = ST20_TEST_PAYLOAD_TYPE;
     ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
@@ -222,24 +218,22 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
     meta->fps = ops_rx.fps;
     meta->fmt = ops_rx.fmt;
     test_ctx_rx[i]->priv = meta;
-
-    test_ctx_rx[i]->handle = rx_handle[i];
+    st20_set_handle(test_ctx_rx[i], rx_handle[i]);
   }
 
-  ret = mtl_start(m_handle);
+  int ret = mtl_start(m_handle);
   EXPECT_GE(ret, 0);
   guard.set_started(ret >= 0);
-  sleep(ST20_TRAIN_TIME_S * sessions); /* time for train_pacing */
-  sleep(10);
 
-  for (int i = 0; i < sessions; i++) {
-    uint64_t cur_time_ns = st_test_get_monotonic_time();
-    double time_sec = (double)(cur_time_ns - test_ctx_rx[i]->start_time) / NS_PER_S;
-    framerate[i] = test_ctx_rx[i]->fb_rec / time_sec;
-  }
+  /*
+   * Measure steady-state RX FPS over >=1000 ms (~60 frames at 59.94 fps):
+   * <=1.7% FPS edge error and >=63 total frames for the 50% incomplete ratio.
+   */
+  auto res = st20_wait_rx_window(test_ctx_rx, true, false);
+  EXPECT_TRUE(res.warmed_up);
+  EXPECT_TRUE(res.complete);
+  guard.release_sessions();
 
-  /* freeze counters before assertions */
-  guard.stop();
   for (int i = 0; i < sessions; i++) {
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     float expect_incomplete_frame_cnt = (float)test_ctx_rx[i]->fb_rec / 2;
@@ -248,14 +242,13 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
     EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     EXPECT_EQ(test_ctx_rx[i]->rx_meta_fail_cnt, 0);
     info("%s, session %d fb_rec %d fb_incomplete %d framerate %f\n", __func__, i,
-         test_ctx_rx[i]->fb_rec, test_ctx_rx[i]->incomplete_frame_cnt, framerate[i]);
-    EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
+         test_ctx_rx[i]->fb_rec, test_ctx_rx[i]->incomplete_frame_cnt, res.rate[i]);
+    EXPECT_NEAR(res.rate[i], expect_framerate[i], expect_framerate[i] * 0.1);
   }
 }
 
+}  // namespace
+
 TEST(St20_rx, frame_meta_1080p_fps59_94_s1) {
-  enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920};
-  int height[1] = {1080};
-  st20_rx_meta_test(fps, width, height, ST20_FMT_YUV_422_10BIT);
+  st20_rx_meta_test({{ST_FPS_P59_94, 1920, 1080}}, ST20_FMT_YUV_422_10BIT);
 }

@@ -26,27 +26,22 @@ TEST(St20_tx, create_queue_cnt) {
   /* the port holds queue_cnt session queues plus the system queue */
   const int want = ctx->para.tx_queues_cnt[MTL_PORT_P];
   auto sch_cnt = st_test_sch_cnt(ctx);
-  auto test_ctx = new tests_context();
+  auto test_ctx = mtl_test::make_context(ctx, 0, 2);
   ASSERT_TRUE(test_ctx != nullptr);
-  test_ctx->idx = 0;
-  test_ctx->ctx = ctx;
-  test_ctx->fb_cnt = 2;
-  test_ctx->fb_idx = 0;
   struct st20_tx_ops ops;
-  st20_tx_ops_init(test_ctx, &ops);
+  st20_tx_ops_init(test_ctx.get(), &ops);
 
-  std::vector<st20_tx_handle> handles;
+  std::vector<mtl_test::ScopedHandle<st20_tx_handle, st20_tx_free>> handles;
   for (int i = 0; i < want; i++) {
     st20_tx_handle h = st20_tx_create(ctx->handle, &ops);
     if (!h) break;
-    handles.push_back(h);
+    handles.emplace_back(h);
     ops.udp_port[MTL_SESSION_PORT_P]++;
     ops.udp_port[MTL_SESSION_PORT_R]++;
   }
   const int created = static_cast<int>(handles.size());
-  for (auto h : handles) EXPECT_GE(st20_tx_free(h), 0);
+  handles.clear();
   EXPECT_EQ(sch_cnt, st_test_sch_cnt(ctx));
-  delete test_ctx;
 
   EXPECT_EQ(created, want) << "a port with fewer tx queues than --queue_cnt is the "
                               "usual cause, see the MTL log";
