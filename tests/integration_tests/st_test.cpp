@@ -2,109 +2,143 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
+#include <vector>
+
 #include "log.h"
-#include "tests.hpp"
+#include "test_harness.hpp"
 
 int st_test_sch_cnt(struct st_tests_context* ctx) {
-  mtl_handle handle = ctx->handle;
   struct mtl_var_info var;
-  int ret;
-
-  ret = mtl_get_var_info(handle, &var);
+  int ret = mtl_get_var_info(ctx->handle, &var);
   if (ret < 0) return ret;
-
   return var.sch_cnt;
 }
 
 bool st_test_dma_available(struct st_tests_context* ctx) {
-  mtl_handle handle = ctx->handle;
-  struct mtl_var_info var;
-  struct mtl_fix_info fix;
-  int ret;
-
   if (ctx->iova == MTL_IOVA_MODE_PA) {
     info("%s, DMA not full supported under IOVA PA mode\n", __func__);
     return false;
   }
 
-  ret = mtl_get_var_info(handle, &var);
-  if (ret < 0) return ret;
+  struct mtl_var_info var;
+  if (mtl_get_var_info(ctx->handle, &var) < 0) return false;
 
-  ret = mtl_get_fix_info(handle, &fix);
-  if (ret < 0) return ret;
+  struct mtl_fix_info fix;
+  if (mtl_get_fix_info(ctx->handle, &fix) < 0) return false;
 
-  if (var.dma_dev_cnt < fix.dma_dev_cnt_max)
-    return true;
-  else
-    return false;
+  return var.dma_dev_cnt < fix.dma_dev_cnt_max;
 }
 
-static void init_expect_fail_test(void) {
-  struct st_tests_context* ctx = st_test_ctx();
-  mtl_handle handle;
-  struct mtl_init_params para;
+namespace {
 
-  memset(&para, 0, sizeof(para));
-  handle = mtl_init(&para);
-  EXPECT_TRUE(handle == NULL);
+/* Move-only RAII guard for an lcore acquired via mtl_get_lcore(). */
+class ScopedLcore {
+ public:
+  ScopedLcore(mtl_handle h, unsigned int lcore)
+      : handle_(h), lcore_(lcore), owned_(true) {
+  }
+  ~ScopedLcore() {
+    if (owned_) {
+      EXPECT_GE(release(), 0);
+    }
+  }
+  ScopedLcore(const ScopedLcore&) = delete;
+  ScopedLcore& operator=(const ScopedLcore&) = delete;
+  ScopedLcore(ScopedLcore&& other) noexcept
+      : handle_(other.handle_), lcore_(other.lcore_), owned_(other.owned_) {
+    other.owned_ = false;
+  }
+  ScopedLcore& operator=(ScopedLcore&& other) noexcept {
+    if (this != &other) {
+      if (owned_) {
+        EXPECT_GE(release(), 0);
+      }
+      handle_ = other.handle_;
+      lcore_ = other.lcore_;
+      owned_ = other.owned_;
+      other.owned_ = false;
+    }
+    return *this;
+  }
 
+  int release() {
+    if (!owned_) return 0;
+    owned_ = false;
+    return mtl_put_lcore(handle_, lcore_);
+  }
+
+ private:
+  mtl_handle handle_ = nullptr;
+  unsigned int lcore_ = 0;
+  bool owned_ = false;
+};
+
+int test_lcore_cnt(struct st_tests_context* ctx) {
+  struct mtl_var_info var;
+  int ret = mtl_get_var_info(ctx->handle, &var);
+  if (ret < 0) return ret;
+  return var.lcore_cnt;
+}
+
+bool test_dev_started(struct st_tests_context* ctx) {
+  struct mtl_var_info var;
+  if (mtl_get_var_info(ctx->handle, &var) < 0) return false;
+  return var.dev_started;
+}
+
+void start_stop_test(int repeat) {
+  mtl_handle handle = st_test_ctx()->handle;
+  mtl_test::ScopedMtlStart guard(handle);
+  for (int i = 0; i < repeat; i++) {
+    EXPECT_GE(guard.start(), 0);
+    EXPECT_GE(guard.stop(), 0);
+  }
+}
+
+void test_lcore_one(struct st_tests_context* ctx) {
+  mtl_handle handle = ctx->handle;
+  const int base_cnt = test_lcore_cnt(ctx);
+  unsigned int lcore = 0;
+
+  ASSERT_GE(mtl_get_lcore(handle, &lcore), 0);
+  ScopedLcore guard(handle, lcore);
+  EXPECT_EQ(test_lcore_cnt(ctx), base_cnt + 1);
+  EXPECT_GE(guard.release(), 0);
+  EXPECT_EQ(test_lcore_cnt(ctx), base_cnt);
+}
+
+}  // namespace
+
+TEST(Main, init_expect_fail) {
+  auto* ctx = st_test_ctx();
+  struct mtl_init_params para = {};
+
+  /* Empty params must fail. */
+  EXPECT_EQ(mtl_init(&para), nullptr);
+
+  /* Missing port name and IP must fail. */
   para.num_ports = 1;
-  handle = mtl_init(&para);
-  EXPECT_TRUE(handle == NULL);
+  EXPECT_EQ(mtl_init(&para), nullptr);
 
   memcpy(mtl_p_sip_addr(&para), ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
-  handle = mtl_init(&para);
-  EXPECT_TRUE(handle == NULL);
+  EXPECT_EQ(mtl_init(&para), nullptr);
 
+  /* Invalid PCI BDF must fail. */
   snprintf(para.port[MTL_PORT_P], sizeof(para.port[MTL_PORT_P]), "0000:55:00.0");
-  handle = mtl_init(&para);
-  EXPECT_TRUE(handle == NULL);
+  EXPECT_EQ(mtl_init(&para), nullptr);
 
   memcpy(mtl_r_sip_addr(&para), ctx->para.sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
 
-  /* test with 0 num_ports */
-  para.num_ports = 0;
-  handle = mtl_init(&para);
-  EXPECT_TRUE(handle == NULL);
-
-  /* test with crazy big num_ports */
-  para.num_ports = 100;
-  handle = mtl_init(&para);
-  EXPECT_TRUE(handle == NULL);
-
-  /* test with negative big num_ports */
-  para.num_ports = -1;
-  handle = mtl_init(&para);
-  EXPECT_TRUE(handle == NULL);
-}
-
-TEST(Main, init_expect_fail) {
-  init_expect_fail_test();
-}
-
-static void reinit_expect_fail_test(void) {
-  struct st_tests_context* ctx = st_test_ctx();
-  mtl_handle handle;
-
-  handle = mtl_init(&ctx->para);
-  EXPECT_TRUE(handle == NULL);
+  /* Invalid num_ports values must fail. */
+  for (int invalid_ports : {0, 100, -1}) {
+    para.num_ports = invalid_ports;
+    EXPECT_EQ(mtl_init(&para), nullptr);
+  }
 }
 
 TEST(Main, re_init_fail) {
-  reinit_expect_fail_test();
-}
-
-static void start_stop_test(int repeat) {
-  struct st_tests_context* ctx = st_test_ctx();
-  mtl_handle handle = ctx->handle;
-  int ret;
-
-  for (int i = 0; i < repeat; i++) {
-    ret = mtl_start(handle);
-    EXPECT_GE(ret, 0);
-    ret = mtl_stop(handle);
-    EXPECT_GE(ret, 0);
-  }
+  auto* ctx = st_test_ctx();
+  EXPECT_EQ(mtl_init(&ctx->para), nullptr);
 }
 
 TEST(Main, start_stop_single) {
@@ -115,143 +149,69 @@ TEST(Main, start_stop_multi) {
   start_stop_test(5);
 }
 
-static void start_expect_fail_test(void) {
-  struct st_tests_context* ctx = st_test_ctx();
-  mtl_handle handle = ctx->handle;
-  int ret;
-
-  ret = mtl_start(handle);
-  EXPECT_GE(ret, 0);
-  ret = mtl_start(handle);
-  EXPECT_GE(ret, 0);
-  ret = mtl_stop(handle);
-  EXPECT_GE(ret, 0);
-}
-
 TEST(Main, start_expect_fail) {
-  start_expect_fail_test();
-}
-
-static void stop_expect_fail_test(void) {
-  struct st_tests_context* ctx = st_test_ctx();
-  mtl_handle handle = ctx->handle;
-  int ret;
-
-  ret = mtl_stop(handle);
-  EXPECT_GE(ret, 0);
-
-  ret = mtl_start(handle);
-  EXPECT_GE(ret, 0);
-  ret = mtl_stop(handle);
-  EXPECT_GE(ret, 0);
-
-  ret = mtl_stop(handle);
-  EXPECT_GE(ret, 0);
+  mtl_handle handle = st_test_ctx()->handle;
+  mtl_test::ScopedMtlStart guard(handle);
+  EXPECT_GE(guard.start(), 0);
+  EXPECT_GE(mtl_start(handle), 0);
+  EXPECT_GE(guard.stop(), 0);
 }
 
 TEST(Main, stop_expect_fail) {
-  stop_expect_fail_test();
+  mtl_handle handle = st_test_ctx()->handle;
+  mtl_test::ScopedMtlStart guard(handle);
+  EXPECT_GE(mtl_stop(handle), 0);
+  EXPECT_GE(guard.start(), 0);
+  EXPECT_GE(guard.stop(), 0);
+  EXPECT_GE(mtl_stop(handle), 0);
 }
 
 TEST(Main, get_fix) {
-  struct st_tests_context* ctx = st_test_ctx();
-  mtl_handle handle = ctx->handle;
-  struct mtl_fix_info fix;
-  int ret;
-
-  ret = mtl_get_fix_info(handle, &fix);
-  EXPECT_GE(ret, 0);
+  struct mtl_fix_info fix = {};
+  EXPECT_GE(mtl_get_fix_info(st_test_ctx()->handle, &fix), 0);
   info("dma dev count %u\n", fix.dma_dev_cnt_max);
   info("init_flags 0x%" PRIx64 "\n", fix.init_flags);
 }
 
 TEST(Main, get_var) {
-  struct st_tests_context* ctx = st_test_ctx();
-  mtl_handle handle = ctx->handle;
-  struct mtl_var_info var;
-  int ret;
-
-  ret = mtl_get_var_info(handle, &var);
-  EXPECT_GE(ret, 0);
-}
-
-static int test_lcore_cnt(struct st_tests_context* ctx) {
-  mtl_handle handle = ctx->handle;
-  struct mtl_var_info var;
-  int ret;
-
-  ret = mtl_get_var_info(handle, &var);
-  if (ret < 0) return ret;
-
-  return var.lcore_cnt;
-}
-
-static void test_lcore_one(struct st_tests_context* ctx) {
-  mtl_handle handle = ctx->handle;
-  int base_cnt = test_lcore_cnt(ctx);
-  int ret;
-  unsigned int lcore;
-
-  ret = mtl_get_lcore(handle, &lcore);
-  ASSERT_TRUE(ret >= 0);
-  EXPECT_EQ(test_lcore_cnt(ctx), base_cnt + 1);
-  ret = mtl_put_lcore(handle, lcore);
-  EXPECT_GE(ret, 0);
-  EXPECT_EQ(test_lcore_cnt(ctx), base_cnt);
+  struct mtl_var_info var = {};
+  EXPECT_GE(mtl_get_var_info(st_test_ctx()->handle, &var), 0);
 }
 
 TEST(Main, lcore) {
-  struct st_tests_context* ctx = st_test_ctx();
-
-  test_lcore_one(ctx);
+  test_lcore_one(st_test_ctx());
 }
 
 TEST(Main, lcore_max) {
-  struct st_tests_context* ctx = st_test_ctx();
+  auto* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  int base_cnt = test_lcore_cnt(ctx), max = 100;
-  int ret, i;
-  unsigned int lcore[100];
+  const int base_cnt = test_lcore_cnt(ctx);
+  constexpr int kMaxLcores = 100;
 
-  for (i = 0; i < max; i++) {
-    ret = mtl_get_lcore(handle, &lcore[i]);
-    if (ret < 0) break;
+  std::vector<ScopedLcore> lcores;
+  lcores.reserve(kMaxLcores);
+  for (int i = 0; i < kMaxLcores; i++) {
+    unsigned int lcore = 0;
+    if (mtl_get_lcore(handle, &lcore) < 0) break;
+    lcores.emplace_back(handle, lcore);
   }
-  EXPECT_EQ(test_lcore_cnt(ctx), base_cnt + i);
-  max = i;
-  for (i = 0; i < max; i++) mtl_put_lcore(handle, lcore[i]);
+  EXPECT_EQ(test_lcore_cnt(ctx), base_cnt + static_cast<int>(lcores.size()));
+  lcores.clear();
   EXPECT_EQ(test_lcore_cnt(ctx), base_cnt);
 
   test_lcore_one(ctx);
 }
 
 TEST(Main, lcore_expect_fail) {
-  struct st_tests_context* ctx = st_test_ctx();
-  mtl_handle handle = ctx->handle;
-
-  int ret = mtl_put_lcore(handle, 10000);
-  ASSERT_LT(ret, 0);
+  auto* ctx = st_test_ctx();
+  ASSERT_LT(mtl_put_lcore(ctx->handle, 10000), 0);
   test_lcore_one(ctx);
 }
 
-static bool test_dev_started(struct st_tests_context* ctx) {
-  mtl_handle handle = ctx->handle;
-  struct mtl_var_info var;
-  int ret;
-
-  ret = mtl_get_var_info(handle, &var);
-  if (ret < 0) return false;
-
-  return var.dev_started;
-}
-
 TEST(Main, dev_started) {
-  struct st_tests_context* ctx = st_test_ctx();
-  mtl_handle handle = ctx->handle;
-
-  int ret = mtl_start(handle);
-  EXPECT_GE(ret, 0);
+  auto* ctx = st_test_ctx();
+  mtl_test::ScopedMtlStart guard(ctx->handle);
+  EXPECT_GE(guard.start(), 0);
   EXPECT_TRUE(test_dev_started(ctx));
-  ret = mtl_stop(handle);
-  EXPECT_GE(ret, 0);
+  EXPECT_GE(guard.stop(), 0);
 }

@@ -2,161 +2,228 @@
  * Copyright(c) 2025 Intel Corporation
  */
 
+#include <algorithm>
+#include <functional>
 #include <thread>
+#include <vector>
 
 #include "log.h"
+#include "test_harness.hpp"
 #include "tests.hpp"
 
 /* st40_pipeline_api.h is not included by tests.hpp, pull it in for st40p + is_late */
 #include <mtl/st40_pipeline_api.h>
 
 #define ABORT_TEST_UDP_PORT (40000)
+#define EPOCH_DROP_TEST_UDP_PORT (40100)
+#define ST40P_TEST_PAYLOAD_TYPE (113)
+
+namespace {
+
+using ScopedSt40pTx = mtl_test::ScopedHandle<st40p_tx_handle, st40p_tx_free>;
+using ScopedSt40pRx = mtl_test::ScopedHandle<st40p_rx_handle, st40p_rx_free>;
+
+struct ScopedWorker {
+  tests_context* ctx = nullptr;
+  std::thread th;
+  std::function<void()> wake_fn;
+
+  ScopedWorker() = default;
+  ScopedWorker(tests_context* c, std::thread t, std::function<void()> wake = nullptr)
+      : ctx(c), th(std::move(t)), wake_fn(std::move(wake)) {
+  }
+  ~ScopedWorker() {
+    stop();
+  }
+  ScopedWorker(const ScopedWorker&) = delete;
+  ScopedWorker& operator=(const ScopedWorker&) = delete;
+
+  void stop() {
+    mtl_test::stop_worker(ctx, th, wake_fn);
+    ctx = nullptr;
+  }
+};
+
+struct st40p_tx_ops make_st40p_tx_ops(struct st_tests_context* ctx,
+                                      tests_context* test_ctx, const char* name,
+                                      uint16_t udp_port, bool redundant = false,
+                                      bool mcast_single_port = false,
+                                      uint32_t extra_flags = 0) {
+  struct st40p_tx_ops ops;
+  memset(&ops, 0, sizeof(ops));
+  ops.name = name;
+  ops.priv = test_ctx;
+  if (mcast_single_port) {
+    ops.port.num_port = 1;
+    memcpy(ops.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    snprintf(ops.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+             ctx->para.port[MTL_PORT_P]);
+    ops.port.udp_port[MTL_SESSION_PORT_P] = udp_port;
+    ops.port.payload_type = ST40P_TEST_PAYLOAD_TYPE;
+  } else {
+    mtl_test::fill_tx_port(ops.port, ctx, udp_port, ST40P_TEST_PAYLOAD_TYPE, 0,
+                           redundant);
+  }
+  ops.fps = ST_FPS_P59_94;
+  ops.interlaced = false;
+  ops.framebuff_cnt = test_ctx->fb_cnt;
+  ops.max_udw_buff_size = 1024;
+  ops.flags = ST40P_TX_FLAG_BLOCK_GET | extra_flags;
+  return ops;
+}
+
+struct st40p_rx_ops make_st40p_rx_ops(struct st_tests_context* ctx,
+                                      tests_context* test_ctx, const char* name,
+                                      uint16_t udp_port, bool redundant = false) {
+  struct st40p_rx_ops ops;
+  memset(&ops, 0, sizeof(ops));
+  ops.name = name;
+  ops.priv = test_ctx;
+  mtl_test::fill_rx_port(ops.port, ctx, udp_port, ST40P_TEST_PAYLOAD_TYPE, 0, redundant);
+  ops.interlaced = false;
+  ops.framebuff_cnt = test_ctx->fb_cnt;
+  ops.max_udw_buff_size = 1024;
+  ops.rtp_ring_size = 1024;
+  ops.flags = ST40P_RX_FLAG_BLOCK_GET;
+  return ops;
+}
+
+void st40p_tx_worker(tests_context* s, bool user_pacing) {
+  auto handle = (st40p_tx_handle)s->handle;
+  auto st = s->ctx->handle;
+  while (!s->stop) {
+    auto frame_info = st40p_tx_get_frame(handle);
+    if (!frame_info) continue;
+    /* fill minimal ANC metadata */
+    frame_info->meta_num = 0;
+    frame_info->udw_buffer_fill = 0;
+    if (user_pacing) {
+      frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
+      frame_info->timestamp = mtl_ptp_read_time(st) + 20 * 1000 * 1000; /* +20ms */
+    }
+    st40p_tx_put_frame(handle, frame_info);
+    __atomic_fetch_add(&s->fb_send, 1, __ATOMIC_RELAXED);
+  }
+}
+
+void st40p_rx_worker(tests_context* s) {
+  auto handle = (st40p_rx_handle)s->handle;
+  while (!s->stop) {
+    auto frame_info = st40p_rx_get_frame(handle);
+    if (!frame_info) continue;
+    st40p_rx_put_frame(handle, frame_info);
+    __atomic_fetch_add(&s->fb_rec, 1, __ATOMIC_RELAXED);
+  }
+}
+
+void st40p_tx_epoch_drop_test(bool user_pacing) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto st = ctx->handle;
+
+  auto test_ctx = mtl_test::make_context(ctx, 0, 3);
+  ASSERT_TRUE(test_ctx != nullptr);
+
+  uint32_t extra_flags =
+      user_pacing ? (ST40P_TX_FLAG_USER_PACING | ST40P_TX_FLAG_USER_TIMESTAMP) : 0;
+  auto ops_tx = make_st40p_tx_ops(ctx, test_ctx.get(), "st40p_epoch_drop_test",
+                                  EPOCH_DROP_TEST_UDP_PORT, false, true, extra_flags);
+
+  /* Declare handle before ScopedMtlStart so RAII stops worker -> mtl_stop -> free,
+   * while still creating the session after mtl_start (the path under test). */
+  ScopedSt40pTx tx_handle;
+  mtl_test::ScopedMtlStart mtl_run(st);
+  EXPECT_GE(mtl_run.start(), 0);
+
+  tx_handle.reset(st40p_tx_create(st, &ops_tx));
+  ASSERT_TRUE(tx_handle);
+  EXPECT_EQ(st40p_tx_set_block_timeout(tx_handle.get(), NS_PER_S), 0);
+
+  test_ctx->handle = tx_handle.get();
+  test_ctx->stop = false;
+  ScopedWorker tx_worker(test_ctx.get(),
+                         std::thread(st40p_tx_worker, test_ctx.get(), user_pacing),
+                         [&]() { st40p_tx_wake_block(tx_handle.get()); });
+
+  /* Wait for >= 25 paced frames (~0.42-0.50 s at 50-59.94 fps vs legacy sleep(5))
+   * to confirm post-start creation incurs zero epoch drops. */
+  std::vector<tests_context*> tx_ctxs = {test_ctx.get()};
+  EXPECT_TRUE(mtl_test::wait_for_all(tx_ctxs, mtl_test::tx_frames, 25, 6000));
+
+  tx_worker.stop();
+  EXPECT_GE(mtl_run.stop(), 0);
+
+  struct st40_tx_user_stats stats;
+  EXPECT_GE(st40p_tx_get_session_stats(tx_handle.get(), &stats), 0);
+  EXPECT_GT(mtl_test::tx_frames(test_ctx.get()), 0);
+  info("%s, user_pacing %d, fb_send %d, epoch_drop %" PRIu64 ", epoch_mismatch %" PRIu64
+       "\n",
+       __func__, user_pacing, mtl_test::tx_frames(test_ctx.get()),
+       stats.common.stat_epoch_drop, stats.common.stat_epoch_mismatch);
+  EXPECT_EQ(stats.common.stat_epoch_drop, 0u);
+}
+
+} /* namespace */
 
 TEST(St40p, tx_put_frame_abort) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto st = ctx->handle;
-  int ret;
-  struct st40p_tx_ops ops_tx;
 
-  auto test_ctx = new tests_context();
-  ASSERT_TRUE(test_ctx != NULL);
-  test_ctx->idx = 0;
-  test_ctx->ctx = ctx;
-  test_ctx->fb_cnt = 3;
+  auto test_ctx = mtl_test::make_context(ctx, 0, 3);
+  ASSERT_TRUE(test_ctx != nullptr);
 
-  memset(&ops_tx, 0, sizeof(ops_tx));
-  ops_tx.name = "st40p_abort_test";
-  ops_tx.priv = test_ctx;
-  ops_tx.port.num_port = 1;
-  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-         MTL_IP_ADDR_LEN);
-  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_P]);
-  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ABORT_TEST_UDP_PORT + 12;
-  ops_tx.port.payload_type = 113;
-  ops_tx.fps = ST_FPS_P59_94;
-  ops_tx.interlaced = false;
-  ops_tx.framebuff_cnt = test_ctx->fb_cnt;
-  ops_tx.max_udw_buff_size = 1024;
-  ops_tx.flags |= ST40P_TX_FLAG_BLOCK_GET;
+  auto ops_tx = make_st40p_tx_ops(ctx, test_ctx.get(), "st40p_abort_test",
+                                  ABORT_TEST_UDP_PORT + 12, false, true);
+  ScopedSt40pTx tx_handle(st40p_tx_create(st, &ops_tx));
+  ASSERT_TRUE(tx_handle);
+  EXPECT_EQ(st40p_tx_set_block_timeout(tx_handle.get(), NS_PER_S), 0);
 
-  auto tx_handle = st40p_tx_create(st, &ops_tx);
-  ASSERT_TRUE(tx_handle != NULL);
-  ret = st40p_tx_set_block_timeout(tx_handle, NS_PER_S);
-  EXPECT_EQ(ret, 0);
-
-  struct st40_frame_info* frame_info = st40p_tx_get_frame(tx_handle);
+  struct st40_frame_info* frame_info = st40p_tx_get_frame(tx_handle.get());
   ASSERT_TRUE(frame_info != NULL);
-  ret = st40p_tx_put_frame_abort(tx_handle, frame_info);
-  EXPECT_GE(ret, 0);
-
-  ret = st40p_tx_free(tx_handle);
-  EXPECT_GE(ret, 0);
-  delete test_ctx;
+  EXPECT_GE(st40p_tx_put_frame_abort(tx_handle.get(), frame_info), 0);
 }
 
 TEST(St40p, rx_put_frame_abort) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto st = ctx->handle;
-  int ret;
-  struct st40p_tx_ops ops_tx;
-  struct st40p_rx_ops ops_rx;
 
-  if (ctx->para.num_ports < 2) GTEST_SKIP() << "requires 2 ports";
+  MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
-  /* create TX to feed data */
-  auto test_ctx_tx = new tests_context();
-  ASSERT_TRUE(test_ctx_tx != NULL);
-  test_ctx_tx->idx = 0;
-  test_ctx_tx->ctx = ctx;
-  test_ctx_tx->fb_cnt = 3;
+  auto tx_ctx = mtl_test::make_context(ctx, 0, 3);
+  auto rx_ctx = mtl_test::make_context(ctx, 0, 3);
+  ASSERT_TRUE(tx_ctx != nullptr);
+  ASSERT_TRUE(rx_ctx != nullptr);
 
-  memset(&ops_tx, 0, sizeof(ops_tx));
-  ops_tx.name = "st40p_abort_tx";
-  ops_tx.priv = test_ctx_tx;
-  ops_tx.port.num_port = 1;
-  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
-         MTL_IP_ADDR_LEN);
-  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_P]);
-  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ABORT_TEST_UDP_PORT + 14;
-  ops_tx.port.payload_type = 113;
-  ops_tx.fps = ST_FPS_P59_94;
-  ops_tx.interlaced = false;
-  ops_tx.framebuff_cnt = test_ctx_tx->fb_cnt;
-  ops_tx.max_udw_buff_size = 1024;
-  ops_tx.flags |= ST40P_TX_FLAG_BLOCK_GET;
+  auto ops_tx =
+      make_st40p_tx_ops(ctx, tx_ctx.get(), "st40p_abort_tx", ABORT_TEST_UDP_PORT + 14);
+  ScopedSt40pTx tx_handle(st40p_tx_create(st, &ops_tx));
+  ASSERT_TRUE(tx_handle);
+  tx_ctx->handle = tx_handle.get();
 
-  auto tx_handle = st40p_tx_create(st, &ops_tx);
-  ASSERT_TRUE(tx_handle != NULL);
+  auto ops_rx =
+      make_st40p_rx_ops(ctx, rx_ctx.get(), "st40p_abort_rx", ABORT_TEST_UDP_PORT + 14);
+  ScopedSt40pRx rx_handle(st40p_rx_create(st, &ops_rx));
+  ASSERT_TRUE(rx_handle);
+  EXPECT_EQ(st40p_rx_set_block_timeout(rx_handle.get(), NS_PER_S), 0);
 
-  test_ctx_tx->handle = tx_handle;
-  test_ctx_tx->stop = false;
-  auto tx_thread = std::thread(
-      [](tests_context* s) {
-        auto handle = (st40p_tx_handle)s->handle;
-        while (!s->stop) {
-          auto frame_info = st40p_tx_get_frame(handle);
-          if (!frame_info) continue;
-          /* fill minimal ANC metadata */
-          frame_info->meta_num = 0;
-          frame_info->udw_buffer_fill = 0;
-          st40p_tx_put_frame(handle, frame_info);
-          s->fb_send++;
-        }
-      },
-      test_ctx_tx);
+  mtl_test::ScopedMtlStart mtl_run(st);
+  ScopedWorker tx_worker(tx_ctx.get(), std::thread(st40p_tx_worker, tx_ctx.get(), false),
+                         [&]() { st40p_tx_wake_block(tx_handle.get()); });
 
-  /* create RX */
-  auto test_ctx_rx = new tests_context();
-  ASSERT_TRUE(test_ctx_rx != NULL);
-  test_ctx_rx->idx = 0;
-  test_ctx_rx->ctx = ctx;
-  test_ctx_rx->fb_cnt = 3;
+  EXPECT_GE(mtl_run.start(), 0);
+  /* Wait for TX to pace >= 15 frames (~0.25 s at 59.94 fps vs legacy sleep(2))
+   * before blocking on st40p_rx_get_frame. */
+  std::vector<tests_context*> tx_ctxs = {tx_ctx.get()};
+  EXPECT_TRUE(mtl_test::wait_for_all(tx_ctxs, mtl_test::tx_frames, 15, 5000));
 
-  memset(&ops_rx, 0, sizeof(ops_rx));
-  ops_rx.name = "st40p_abort_rx";
-  ops_rx.priv = test_ctx_rx;
-  ops_rx.port.num_port = 1;
-  memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
-         MTL_IP_ADDR_LEN);
-  snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_R]);
-  ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ABORT_TEST_UDP_PORT + 14;
-  ops_rx.port.payload_type = 113;
-  ops_rx.interlaced = false;
-  ops_rx.framebuff_cnt = test_ctx_rx->fb_cnt;
-  ops_rx.max_udw_buff_size = 1024;
-  ops_rx.rtp_ring_size = 1024;
-  ops_rx.flags |= ST40P_RX_FLAG_BLOCK_GET;
-
-  auto rx_handle = st40p_rx_create(st, &ops_rx);
-  ASSERT_TRUE(rx_handle != NULL);
-  ret = st40p_rx_set_block_timeout(rx_handle, NS_PER_S);
-  EXPECT_EQ(ret, 0);
-
-  ret = mtl_start(st);
-  EXPECT_GE(ret, 0);
-  sleep(2);
-
-  struct st40_frame_info* frame_info = st40p_rx_get_frame(rx_handle);
+  struct st40_frame_info* frame_info = st40p_rx_get_frame(rx_handle.get());
   EXPECT_TRUE(frame_info != NULL);
   if (frame_info) {
-    ret = st40p_rx_put_frame_abort(rx_handle, frame_info);
-    EXPECT_GE(ret, 0);
+    EXPECT_GE(st40p_rx_put_frame_abort(rx_handle.get(), frame_info), 0);
   }
 
-  test_ctx_tx->stop = true;
-  st40p_tx_wake_block(tx_handle);
-  tx_thread.join();
-
-  ret = st40p_tx_free(tx_handle);
-  EXPECT_GE(ret, 0);
-  ret = st40p_rx_free(rx_handle);
-  EXPECT_GE(ret, 0);
-
-  delete test_ctx_tx;
-  delete test_ctx_rx;
+  tx_worker.stop();
+  EXPECT_GE(mtl_run.stop(), 0);
 }
 
 TEST(St40p, frame_is_late) {
@@ -189,135 +256,59 @@ TEST(St40p, frame_is_late) {
 TEST(St40p, redundant_stats) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto st = ctx->handle;
-  int ret;
 
-  if (ctx->para.num_ports < 4) GTEST_SKIP() << "requires 4 ports for redundant test";
+  MTL_TEST_REQUIRE_PORTS(ctx, 4);
 
-  struct st40p_tx_ops ops_tx;
-  struct st40p_rx_ops ops_rx;
-  int udp_port = ABORT_TEST_UDP_PORT + 100;
+  uint16_t udp_port = ABORT_TEST_UDP_PORT + 100;
+  auto tx_ctx = mtl_test::make_context(ctx, 0, 3);
+  auto rx_ctx = mtl_test::make_context(ctx, 0, 3);
+  ASSERT_TRUE(tx_ctx != nullptr);
+  ASSERT_TRUE(rx_ctx != nullptr);
 
-  /* TX context */
-  auto test_ctx_tx = new tests_context();
-  ASSERT_TRUE(test_ctx_tx != NULL);
-  test_ctx_tx->idx = 0;
-  test_ctx_tx->ctx = ctx;
-  test_ctx_tx->fb_cnt = 3;
+  auto ops_tx = make_st40p_tx_ops(ctx, tx_ctx.get(), "st40p_redundant_tx", udp_port,
+                                  /*redundant=*/true);
+  ScopedSt40pTx tx_handle(st40p_tx_create(st, &ops_tx));
+  ASSERT_TRUE(tx_handle);
+  EXPECT_EQ(st40p_tx_set_block_timeout(tx_handle.get(), NS_PER_S), 0);
+  tx_ctx->handle = tx_handle.get();
 
-  memset(&ops_tx, 0, sizeof(ops_tx));
-  ops_tx.name = "st40p_redundant_tx";
-  ops_tx.priv = test_ctx_tx;
-  ops_tx.port.num_port = 2;
-  /* primary TX port */
-  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-         MTL_IP_ADDR_LEN);
-  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_P]);
-  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = udp_port;
-  /* redundant TX port */
-  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
-         MTL_IP_ADDR_LEN);
-  snprintf(ops_tx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_R]);
-  ops_tx.port.udp_port[MTL_SESSION_PORT_R] = udp_port;
-  ops_tx.port.payload_type = 113;
-  ops_tx.fps = ST_FPS_P59_94;
-  ops_tx.interlaced = false;
-  ops_tx.framebuff_cnt = test_ctx_tx->fb_cnt;
-  ops_tx.max_udw_buff_size = 1024;
-  ops_tx.flags |= ST40P_TX_FLAG_BLOCK_GET;
+  auto ops_rx = make_st40p_rx_ops(ctx, rx_ctx.get(), "st40p_redundant_rx", udp_port,
+                                  /*redundant=*/true);
+  ScopedSt40pRx rx_handle(st40p_rx_create(st, &ops_rx));
+  ASSERT_TRUE(rx_handle);
+  EXPECT_EQ(st40p_rx_set_block_timeout(rx_handle.get(), NS_PER_S), 0);
+  rx_ctx->handle = rx_handle.get();
 
-  auto tx_handle = st40p_tx_create(st, &ops_tx);
-  ASSERT_TRUE(tx_handle != NULL);
-  ret = st40p_tx_set_block_timeout(tx_handle, NS_PER_S);
-  EXPECT_EQ(ret, 0);
+  mtl_test::ScopedMtlStart mtl_run(st);
+  ScopedWorker tx_worker(tx_ctx.get(), std::thread(st40p_tx_worker, tx_ctx.get(), false),
+                         [&]() { st40p_tx_wake_block(tx_handle.get()); });
+  ScopedWorker rx_worker(rx_ctx.get(), std::thread(st40p_rx_worker, rx_ctx.get()),
+                         [&]() { st40p_rx_wake_block(rx_handle.get()); });
 
-  test_ctx_tx->handle = tx_handle;
-  test_ctx_tx->stop = false;
-  auto tx_thread = std::thread(
-      [](tests_context* s) {
-        auto handle = (st40p_tx_handle)s->handle;
-        while (!s->stop) {
-          auto fi = st40p_tx_get_frame(handle);
-          if (!fi) continue;
-          fi->meta_num = 0;
-          fi->udw_buffer_fill = 0;
-          st40p_tx_put_frame(handle, fi);
-          s->fb_send++;
-        }
+  EXPECT_GE(mtl_run.start(), 0);
+  /* Wait until both redundant RX legs carry traffic, then receive >= 50 frames
+   * (~0.83 s at 59.94 fps vs legacy sleep(10)) so a ~100 ms startup skew on
+   * leg R cannot drop rx_min_bytes / rx_max_bytes below 80%. */
+  EXPECT_TRUE(mtl_test::wait_until(
+      [&]() {
+        struct st40_rx_user_stats st_rx;
+        if (st40p_rx_get_session_stats(rx_handle.get(), &st_rx) < 0) return false;
+        return st_rx.common.port[MTL_SESSION_PORT_P].bytes > 0 &&
+               st_rx.common.port[MTL_SESSION_PORT_R].bytes > 0;
       },
-      test_ctx_tx);
+      6000));
+  int rx_base = mtl_test::rx_frames(rx_ctx.get());
+  EXPECT_TRUE(mtl_test::wait_until(
+      [&]() { return mtl_test::rx_frames(rx_ctx.get()) - rx_base >= 50; }, 6000));
 
-  /* RX context */
-  auto test_ctx_rx = new tests_context();
-  ASSERT_TRUE(test_ctx_rx != NULL);
-  test_ctx_rx->idx = 0;
-  test_ctx_rx->ctx = ctx;
-  test_ctx_rx->fb_cnt = 3;
+  tx_worker.stop();
+  rx_worker.stop();
+  EXPECT_GE(mtl_run.stop(), 0);
 
-  memset(&ops_rx, 0, sizeof(ops_rx));
-  ops_rx.name = "st40p_redundant_rx";
-  ops_rx.priv = test_ctx_rx;
-  ops_rx.port.num_port = 2;
-  /* primary RX port */
-  memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-         MTL_IP_ADDR_LEN);
-  snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_2]);
-  ops_rx.port.udp_port[MTL_SESSION_PORT_P] = udp_port;
-  /* redundant RX port */
-  memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
-         MTL_IP_ADDR_LEN);
-  snprintf(ops_rx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_3]);
-  ops_rx.port.udp_port[MTL_SESSION_PORT_R] = udp_port;
-  ops_rx.port.payload_type = 113;
-  ops_rx.interlaced = false;
-  ops_rx.framebuff_cnt = test_ctx_rx->fb_cnt;
-  ops_rx.max_udw_buff_size = 1024;
-  ops_rx.rtp_ring_size = 1024;
-  ops_rx.flags |= ST40P_RX_FLAG_BLOCK_GET;
-
-  auto rx_handle = st40p_rx_create(st, &ops_rx);
-  ASSERT_TRUE(rx_handle != NULL);
-  ret = st40p_rx_set_block_timeout(rx_handle, NS_PER_S);
-  EXPECT_EQ(ret, 0);
-
-  test_ctx_rx->handle = rx_handle;
-  test_ctx_rx->stop = false;
-  auto rx_thread = std::thread(
-      [](tests_context* s) {
-        auto handle = (st40p_rx_handle)s->handle;
-        while (!s->stop) {
-          auto fi = st40p_rx_get_frame(handle);
-          if (!fi) continue;
-          st40p_rx_put_frame(handle, fi);
-          s->fb_rec++;
-        }
-      },
-      test_ctx_rx);
-
-  ret = mtl_start(st);
-  EXPECT_GE(ret, 0);
-  sleep(10);
-
-  /* stop threads */
-  test_ctx_tx->stop = true;
-  st40p_tx_wake_block(tx_handle);
-  tx_thread.join();
-
-  test_ctx_rx->stop = true;
-  st40p_rx_wake_block(rx_handle);
-  rx_thread.join();
-
-  /* query stats */
   struct st40_tx_user_stats tx_stats;
-  ret = st40p_tx_get_session_stats(tx_handle, &tx_stats);
-  EXPECT_GE(ret, 0);
-
+  EXPECT_GE(st40p_tx_get_session_stats(tx_handle.get(), &tx_stats), 0);
   struct st40_rx_user_stats rx_stats;
-  ret = st40p_rx_get_session_stats(rx_handle, &rx_stats);
-  EXPECT_GE(ret, 0);
+  EXPECT_GE(st40p_rx_get_session_stats(rx_handle.get(), &rx_stats), 0);
 
   /* verify TX frames on both ports */
   uint64_t tx_frames_p = tx_stats.common.port[MTL_SESSION_PORT_P].frames;
@@ -344,101 +335,10 @@ TEST(St40p, redundant_stats) {
        rx_bytes_r);
 
   /* verify RX received frames */
-  EXPECT_GT(test_ctx_rx->fb_rec, 0) << "Must have received frames";
-  info("%s, TX sent %d, RX received %d frames\n", __func__, test_ctx_tx->fb_send,
-       test_ctx_rx->fb_rec);
-
-  ret = st40p_tx_free(tx_handle);
-  EXPECT_GE(ret, 0);
-  ret = st40p_rx_free(rx_handle);
-  EXPECT_GE(ret, 0);
-
-  delete test_ctx_tx;
-  delete test_ctx_rx;
-}
-
-#define EPOCH_DROP_TEST_UDP_PORT (40100)
-
-static void st40p_tx_epoch_drop_test(bool user_pacing) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
-  auto st = ctx->handle;
-  int ret;
-  struct st40p_tx_ops ops_tx;
-
-  auto test_ctx = new tests_context();
-  ASSERT_TRUE(test_ctx != NULL);
-  test_ctx->idx = 0;
-  test_ctx->ctx = ctx;
-  test_ctx->fb_cnt = 3;
-
-  memset(&ops_tx, 0, sizeof(ops_tx));
-  ops_tx.name = "st40p_epoch_drop_test";
-  ops_tx.priv = test_ctx;
-  ops_tx.port.num_port = 1;
-  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-         MTL_IP_ADDR_LEN);
-  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_P]);
-  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = EPOCH_DROP_TEST_UDP_PORT;
-  ops_tx.port.payload_type = 113;
-  ops_tx.fps = ST_FPS_P59_94;
-  ops_tx.interlaced = false;
-  ops_tx.framebuff_cnt = test_ctx->fb_cnt;
-  ops_tx.max_udw_buff_size = 1024;
-  ops_tx.flags |= ST40P_TX_FLAG_BLOCK_GET;
-  if (user_pacing) {
-    ops_tx.flags |= ST40P_TX_FLAG_USER_PACING;
-    ops_tx.flags |= ST40P_TX_FLAG_USER_TIMESTAMP;
-  }
-
-  /* create after start, the path that reported bogus drops */
-  ret = mtl_start(st);
-  EXPECT_GE(ret, 0);
-  auto tx_handle = st40p_tx_create(st, &ops_tx);
-  ASSERT_TRUE(tx_handle != NULL);
-  ret = st40p_tx_set_block_timeout(tx_handle, NS_PER_S);
-  EXPECT_EQ(ret, 0);
-
-  test_ctx->handle = tx_handle;
-  test_ctx->stop = false;
-
-  auto tx_thread = std::thread(
-      [user_pacing](tests_context* s) {
-        auto handle = (st40p_tx_handle)s->handle;
-        auto st = s->ctx->handle;
-        while (!s->stop) {
-          auto frame_info = st40p_tx_get_frame(handle);
-          if (!frame_info) continue;
-          frame_info->meta_num = 0;
-          frame_info->udw_buffer_fill = 0;
-          if (user_pacing) {
-            frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
-            frame_info->timestamp = mtl_ptp_read_time(st) + 20 * 1000 * 1000; /* +20ms */
-          }
-          st40p_tx_put_frame(handle, frame_info);
-          s->fb_send++;
-        }
-      },
-      test_ctx);
-  sleep(5);
-
-  test_ctx->stop = true;
-  st40p_tx_wake_block(tx_handle);
-  tx_thread.join();
-
-  struct st40_tx_user_stats stats;
-  ret = st40p_tx_get_session_stats(tx_handle, &stats);
-  EXPECT_GE(ret, 0);
-  EXPECT_GT(test_ctx->fb_send, 0);
-  info("%s, user_pacing %d, fb_send %d, epoch_drop %" PRIu64 ", epoch_mismatch %" PRIu64
-       "\n",
-       __func__, user_pacing, test_ctx->fb_send, stats.common.stat_epoch_drop,
-       stats.common.stat_epoch_mismatch);
-  EXPECT_EQ(stats.common.stat_epoch_drop, 0);
-
-  ret = st40p_tx_free(tx_handle);
-  EXPECT_GE(ret, 0);
-  delete test_ctx;
+  int rx_rec = mtl_test::rx_frames(rx_ctx.get());
+  EXPECT_GT(rx_rec, 0) << "Must have received frames";
+  info("%s, TX sent %d, RX received %d frames\n", __func__,
+       mtl_test::tx_frames(tx_ctx.get()), rx_rec);
 }
 
 TEST(St40p, tx_no_epoch_drop) {
