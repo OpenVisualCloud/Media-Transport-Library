@@ -273,6 +273,7 @@ unit_sources = [
   'dma/mt_dma_auto_harness.c',
   'dma/mt_dma_auto_test.cpp',
   'rxtxapp/user_time_test.cpp',
+  'gstreamer/pts_tai_test.cpp',
   'main.cpp',
 ]
 
