@@ -831,6 +831,7 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
     pacing->warm_pkts = 0; /* no need warmup for wide */
     info("%s[%02d], wide pacing\n", __func__, idx);
   }
+  st_tx_video_pacing_sync(pacing);
   tv_rl_plan_init(impl, s);
   info("%s[%02d], trs %Lf trOffset %Lf vrx %u warm_pkts %u frame time %Lfms fps %f\n",
        __func__, idx, pacing->trs, pacing->tr_offset, pacing->vrx, pacing->warm_pkts,
@@ -1008,6 +1009,7 @@ static int tv_sync_pacing_st22(struct mtl_main_impl* impl,
   struct st_tx_video_pacing* pacing = &s->pacing;
   /* reset trs */
   pacing->trs = pacing->frame_time * pacing->reactive / pkts_in_frame;
+  st_tx_video_pacing_sync(pacing);
   dbg("%s(%d), trs %Lf\n", __func__, s->idx, pacing->trs);
   return tv_sync_pacing(impl, s, required_tai, second_field);
 }
@@ -2164,7 +2166,7 @@ static bool tv_reclaim_poll(struct st_tx_video_session_impl* s, uint64_t now) {
  * transmitters send a target past 1 s at once. */
 static uint64_t tv_next_frame_open_tsc(struct st_tx_video_session_impl* s, uint64_t now) {
   uint64_t target = s->pacing.tsc_time_frame_start;
-  uint64_t warm_ns = (uint64_t)(s->pacing.warm_pkts * s->pacing.trs);
+  uint64_t warm_ns = st_tx_video_pacing_warmup_ns(&s->pacing);
 
   if (now < target && target - now > NS_PER_S) return 0;
   return target > warm_ns ? target - warm_ns : 0;

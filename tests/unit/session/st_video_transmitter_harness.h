@@ -22,6 +22,8 @@ void ut_trs_destroy(ut_trs_ctx* ctx);
 void ut_trs_set_trs(ut_trs_ctx* ctx, long double trs_ns);
 /* an in-frame pad each pad_interval pkts */
 void ut_trs_set_pad_interval(ut_trs_ctx* ctx, float pad_interval);
+/* video_trs_rl_pad_due(): whether the pkt at pkt_idx of a bulk of bulk takes a pad */
+bool ut_trs_pad_due(int pkt_idx, float pad_interval, int bulk);
 void ut_trs_set_warm_pkts_cap(ut_trs_ctx* ctx, uint32_t warm_pkts_cap);
 void ut_trs_set_target_tsc(ut_trs_ctx* ctx, uint64_t target_tsc);
 void ut_trs_set_target_tsc_port(ut_trs_ctx* ctx, int port, uint64_t target_tsc);

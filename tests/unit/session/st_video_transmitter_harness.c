@@ -612,6 +612,7 @@ static void ut_trs_reclaim_batch_reset(struct ut_trs_ctx* ctx) {
 
 void ut_trs_set_trs(ut_trs_ctx* ctx, long double trs_ns) {
   ctx->session.pacing.trs = trs_ns;
+  st_tx_video_pacing_sync(&ctx->session.pacing);
   ut_trs_reclaim_batch_reset(ctx);
 }
 
@@ -619,8 +620,13 @@ void ut_trs_set_pad_interval(ut_trs_ctx* ctx, float pad_interval) {
   ctx->session.pacing.pad_interval = pad_interval;
 }
 
+bool ut_trs_pad_due(int pkt_idx, float pad_interval, int bulk) {
+  return video_trs_rl_pad_due(pkt_idx, pad_interval, bulk);
+}
+
 void ut_trs_set_warm_pkts_cap(ut_trs_ctx* ctx, uint32_t warm_pkts_cap) {
   ctx->session.pacing.warm_pkts = warm_pkts_cap;
+  st_tx_video_pacing_sync(&ctx->session.pacing);
 }
 
 void ut_trs_set_target_tsc(ut_trs_ctx* ctx, uint64_t target_tsc) {
@@ -1208,6 +1214,7 @@ int ut_trs_setup_stream(ut_trs_ctx* ctx, long double trs_ns, uint16_t nic_desc,
 
   s->bulk = ST_SESSION_MAX_BULK;
   s->pacing.trs = trs_ns;
+  st_tx_video_pacing_sync(&s->pacing);
   ut_trs_reclaim_batch_reset(ctx);
   /* no in-frame pads, < 1 % of the wire */
   s->pacing.pad_interval = 1e9f;

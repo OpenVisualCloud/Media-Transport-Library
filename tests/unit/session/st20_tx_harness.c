@@ -576,10 +576,12 @@ void ut_txv_set_start_vrx(ut_txv_ctx* ctx, uint16_t start_vrx) {
 
 void ut_txv_set_trs(ut_txv_ctx* ctx, long double trs_ns) {
   ctx->session.pacing.trs = trs_ns;
+  st_tx_video_pacing_sync(&ctx->session.pacing);
 }
 
 void ut_txv_set_warm_pkts(ut_txv_ctx* ctx, uint32_t warm_pkts) {
   ctx->session.pacing.warm_pkts = warm_pkts;
+  st_tx_video_pacing_sync(&ctx->session.pacing);
 }
 
 void ut_txv_set_interlaced(ut_txv_ctx* ctx, bool enable) {
@@ -2038,6 +2040,7 @@ int ut_txv_run_transmitter_boundary(ut_txv_ctx* ctx, enum ut_txv_pacing_way way,
   s->pacing_way[MTL_SESSION_PORT_P] = (enum st21_tx_pacing_way)way;
   s->pacing.warm_pkts = 0;
   s->pacing.trs = NS_PER_US;
+  st_tx_video_pacing_sync(&s->pacing);
   s->last_burst_succ_time_tsc[MTL_SESSION_PORT_P] = now;
   s->tx_hang_detect_time_thresh = UINT64_MAX;
   ctx->mock_tsc_ns = now;
@@ -2509,6 +2512,7 @@ int ut_txv_train_rl_pacing(ut_txv_ctx* ctx, uint16_t nb_tx_desc, long double pad
   extra->size = normal->size + sizeof(struct st20_rfc4175_extra_rtp_hdr);
   s->pacing.trs = (long double)s->fps_tm.den * NS_PER_S / s->fps_tm.mul * 1080 / 1125 /
                   s->st20_total_pkts;
+  st_tx_video_pacing_sync(&s->pacing);
   return ut_txv_train_rl(ctx, nb_tx_desc, pad_ns);
 }
 
@@ -2540,6 +2544,7 @@ static int ut_txv_init_frame_at(ut_txv_ctx* ctx, enum st20_packing packing,
   if (ret < 0) return ret;
   s->pacing.trs = (long double)s->fps_tm.den * NS_PER_S / s->fps_tm.mul * 1080 / 1125 /
                   s->st20_total_pkts;
+  st_tx_video_pacing_sync(&s->pacing);
   return 0;
 }
 
@@ -4107,4 +4112,16 @@ int ut_txv_recovery_set_last_pkt_unsent(ut_txv_ctx* ctx) {
 
 int ut_txv_done_at_flush(const ut_txv_ctx* ctx, int leg) {
   return ctx->flush_seen[leg] ? ctx->done_at_flush[leg] : -1;
+}
+
+void ut_txv_check_cached_pacing(long double trs, uint32_t warm_pkts, uint64_t* out_warm,
+                                uint64_t* out_near, uint64_t out_tx[5]) {
+  struct st_tx_video_pacing p;
+  memset(&p, 0, sizeof(p));
+  p.trs = trs;
+  p.warm_pkts = warm_pkts;
+  st_tx_video_pacing_sync(&p);
+  *out_warm = st_tx_video_pacing_warmup_ns(&p);
+  *out_near = st_tx_video_pacing_near_lead_ns(&p);
+  for (uint16_t tx = 0; tx <= 4; tx++) out_tx[tx] = st_tx_video_pacing_tx_trs(&p, tx);
 }

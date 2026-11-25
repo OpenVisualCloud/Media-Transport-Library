@@ -745,6 +745,10 @@ int ut_txv_recovery_set_last_pkt_unsent(ut_txv_ctx* ctx);
 /* notify_frame_done calls when the leg's first mt_txq_flush() or mt_txq_recovery_flush()
  * started, -1 for none */
 int ut_txv_done_at_flush(const ut_txv_ctx* ctx, int leg);
+/* st_tx_video_pacing_sync() on trs and warm_pkts: the cached warm-up, near-lead and
+ * tx * trs (tx 0..ST_SESSION_MAX_BULK) ns */
+void ut_txv_check_cached_pacing(long double trs, uint32_t warm_pkts, uint64_t* out_warm,
+                                uint64_t* out_near, uint64_t out_tx[5]);
 
 #ifdef __cplusplus
 }
