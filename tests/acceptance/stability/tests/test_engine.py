@@ -302,3 +302,12 @@ def test_password_from_either_key(tmp_path):
     assert config.EbuConfig(password_file=str(f)).password() == "pw1"
     f.write_text("EBU_PASSWORD=pw2\n")
     assert config.EbuConfig(password_file=str(f)).password() == "pw2"
+
+
+def test_user_time_resyncs_are_counted(tmp_path):
+    s, _ = _scanner(
+        tmp_path,
+        "app_tx_st20p_uinit(0), user time resync 1\napp_tx_st30p_uinit(2), user time resync 7\n",
+    )
+    assert s.summary()["resyncs"] == {"w/app_tx_st20p(0)": 1, "w/app_tx_st30p(2)": 7}
+    assert not s.counts

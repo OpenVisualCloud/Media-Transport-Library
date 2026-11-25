@@ -117,6 +117,9 @@ class HostConfig:
     pacing_way: str = ""  # "", rl, tsc, tsn, ...
     ptp: bool = False
     user_time_offset_ns: int = 0
+    video_sha_check: bool = (
+        True  # RxTxApp --video_sha_check: SHA-256 of each st20p frame
+    )
     lcore_slices: dict = dataclasses.field(default_factory=dict)
     cpus: CpuConfig = dataclasses.field(default_factory=CpuConfig)
     capture: CaptureConfig = dataclasses.field(default_factory=CaptureConfig)

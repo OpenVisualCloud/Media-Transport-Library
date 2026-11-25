@@ -36,7 +36,7 @@ from . import media
 from .config import HostConfig, cpu_list
 from .ebu import Rotation
 from .fence import Fence, restore
-from .logscan import LogScanner
+from .logscan import RESYNC_EXPECTED, LogScanner
 from .report import write_reports
 from .workload import Plan, Worker
 
@@ -375,6 +375,11 @@ class Run:
         for key, n in logs["error_counts"].items():
             if key.rsplit("/", 1)[1] in FAIL_CLASSES:
                 reasons.append(f"{key}: {n} lines")
+        late = {k: n for k, n in logs["resyncs"].items() if n > RESYNC_EXPECTED}
+        if late:
+            reasons.append(
+                f"user pacing fell behind real time (resyncs above {RESYNC_EXPECTED}): {late}"
+            )
         if logs["anomalies"]:
             reasons.append(
                 f"{len(logs['anomalies'])} fps drops below {int(100 * 0.98)} % of the median"

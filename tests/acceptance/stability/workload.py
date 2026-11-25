@@ -290,8 +290,9 @@ def rxtxapp_argv(host: HostConfig, cfg_name: str, duration_s: int, lcores: str) 
         "info",
         "--tasklet_time",
         "--rx_separate_lcore",
-        "--video_sha_check",
     ]
+    if host.video_sha_check:
+        argv += ["--video_sha_check"]
     if host.pacing_way:
         argv += ["--pacing_way", host.pacing_way]
     if host.ptp:

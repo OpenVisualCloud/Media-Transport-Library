@@ -27,6 +27,9 @@ FPS_RE = re.compile(
 RESULT_RE = re.compile(
     r"\b(app_(?:tx|rx)_[a-z0-9]+_result)\(([^)]*)\)[,:]?\s*(OK|FAILED|FAIL)", re.I
 )
+RESYNC_RE = re.compile(r"\b(app_tx_[a-z0-9]+)_uinit\((\d+)\), user time resync (\d+)")
+# One resync at start is normal: RxTxApp stamps its first frames before mtl_start.
+RESYNC_EXPECTED = 1
 COUNTER_RE = re.compile(
     r"\b((?:TX|RX)_[A-Z0-9_]+?)\(([^)]*)\):\s*([a-z][a-z _-]+?)\s+(?:pkts\s+)?(\d+)\b"
 )
@@ -108,6 +111,7 @@ class LogScanner:
         self.results: dict = {}  # (worker, label) -> OK | FAILED
         self.counters: dict = {}  # (worker, label, name) -> last value
         self.anomalies: list = []  # (t, worker, text)
+        self.resyncs: dict = {}  # (worker, session) -> count
 
     def _classify(self, line: str):
         if BENIGN.search(line):
@@ -150,6 +154,10 @@ class LogScanner:
                     self.anomalies.append(
                         (now, w, f"{key[1]} fps {fps:.3f}, median {med:.3f}")
                     )
+            return
+        m = RESYNC_RE.search(line)
+        if m:
+            self.resyncs[(w, f"{m.group(1)}({m.group(2)})")] = int(m.group(3))
             return
         m = RESULT_RE.search(line)
         if m:
@@ -196,6 +204,7 @@ class LogScanner:
                 f"{w}/{label}/{name}": v
                 for (w, label, name), v in sorted(self.counters.items())
             },
+            "resyncs": {f"{w}/{k}": n for (w, k), n in sorted(self.resyncs.items())},
             "results": {
                 f"{w}/{label}": r for (w, label), r in sorted(self.results.items())
             },
