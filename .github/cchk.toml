@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2026 Intel Corporation
+
+[commit]
+conventional_commits = true
+allow_commit_types = [
+  "Feat",
+  "Add",
+  "Fix",
+  "Refactor",
+  "Docs",
+  "Test",
+  "Perf",
+  "Build",
+  "Ci",
+  "Style",
+]
+subject_capitalized = true
+subject_imperative = true
+subject_max_length = 72
+subject_min_length = 10
+allow_merge_commits = false
+allow_revert_commits = true
+allow_empty_commits = false
+allow_fixup_commits = false
+allow_wip_commits = false
+require_signed_off_by = true

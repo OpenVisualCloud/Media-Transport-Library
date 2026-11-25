@@ -257,19 +257,16 @@ tasks:
           exit 1
         fi
 
-  ci:lint-commit-messages:
-    desc: Run the pinned commit-message hook for every commit added by a pull request
+  ci:check-no-merge-commits:
+    desc: Reject merge commits in a pull request range so history stays linear
     cmds:
       - |
-        commits=$(git rev-list "${BASE_SHA:?}..${HEAD_SHA:?}")
-        rc=0
-        for sha in $commits; do
-          echo "=== $(git log -1 --format='%h %s' "$sha") ==="
-          git log -1 --format=%B "$sha" >"$RUNNER_TEMP/commit-msg"
-          pre-commit run --hook-stage commit-msg \
-            --commit-msg-filename "$RUNNER_TEMP/commit-msg" gitlint || rc=1
-        done
-        exit "$rc"
+        merges=$(git rev-list --merges "${BASE_SHA:?}..${HEAD_SHA:-HEAD}")
+        if [ -n "$merges" ]; then
+          echo "::error::Merge commits are not allowed; rebase onto the target branch:"
+          git log --no-walk --format='  %h %s' $merges
+          exit 1
+        fi
 
   ci:msys-install-npcap:
     desc: Download the npcap SDK and install its x64 libraries into MSYS2
