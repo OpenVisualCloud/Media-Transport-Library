@@ -862,9 +862,49 @@ bool filter_includes_no_ctx_tests(const std::string& filter) {
   return false;
 }
 
+static void print_cases_json(void) {
+  const auto* ut = testing::UnitTest::GetInstance();
+  printf("[\n");
+  bool first = true;
+  for (int i = 0; i < ut->total_test_suite_count(); ++i) {
+    const auto* ts = ut->GetTestSuite(i);
+    std::string suite = ts->name();
+    for (int j = 0; j < ts->total_test_count(); ++j) {
+      const auto* ti = ts->GetTestInfo(j);
+      std::string name = ti->name();
+      std::string full = suite + "." + name;
+      bool own = (suite == "NoCtxTest");
+      bool is_pf = own && name.find("_pf_") != std::string::npos;
+      bool is_red = name.find("redundant") != std::string::npos;
+      bool needs_iso = own && (name.find("default_timestamps") != std::string::npos ||
+                               name.find("user_pacing") != std::string::npos ||
+                               name.find("vrx_margin") != std::string::npos ||
+                               name.find("rl_staged_overload") != std::string::npos);
+      const char* topo =
+          is_pf ? "pf_pair" : (own ? "cross_pf_quad" : (is_red ? "vf_quad" : "vf_pair"));
+      if (!first) printf(",\n");
+      first = false;
+      printf(
+          "  {\"case\":\"%s\",\"suite\":\"%s\",\"instance\":\"%s\","
+          "\"topology\":\"%s\",\"isolated\":%s}",
+          full.c_str(), suite.c_str(), own ? "own" : "shared", topo,
+          needs_iso ? "true" : "false");
+    }
+  }
+  printf("\n]\n");
+}
+
 GTEST_API_ int main(int argc, char** argv) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   int ret = 1;
+
+  for (int i = 1; i < argc; ++i) {
+    if (strcmp(argv[i], "--list-json") == 0) {
+      testing::InitGoogleTest(&argc, argv);
+      print_cases_json();
+      return 0;
+    }
+  }
 
   ctx = (struct st_tests_context*)st_test_zmalloc(sizeof(*ctx));
   if (!ctx) {

@@ -109,12 +109,12 @@ jobs:
         id: build
         uses: ./.github/actions/build-artifacts
 
-  # ── gtest on each NIC ──
+  # ── gtest on each NIC, sharded by profiles.yaml groups ──
   run-gtest:
     needs: build
     if: ${{ inputs.gtest }}
     concurrency:
-      group: gtest-${{ github.workflow }}-${{ github.ref }}-${{ matrix.nic }}
+      group: gtest-${{ github.workflow }}-${{ github.ref }}-${{ matrix.nic }}-${{ matrix.group || 'custom' }}
       cancel-in-progress: true
     strategy:
       matrix:
@@ -122,9 +122,11 @@ jobs:
           - e810
           - e830
           - e835
+        group: >-
+          ${{ fromJSON(inputs.gtest_cases != '' && '[""]' || '["pr_core", "core_misc", "pacing_dma", "noctx"]') }}
       fail-fast: false
     runs-on: ${{ matrix.nic }}
-    timeout-minutes: 300
+    timeout-minutes: 180
     steps:
       - name: 'preparation: Harden Runner'
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -165,6 +167,7 @@ jobs:
         with:
           nic: ${{ matrix.nic }}
           nightly: 'true'
+          gtest_group: ${{ matrix.group }}
           gtest_cases: ${{ inputs.gtest_cases }}
 
   # ── pytest on each NIC and each directory of tests/single ──
@@ -237,6 +240,7 @@ jobs:
 
       - name: 'execution: Run the nightly tests of ${{ env.SUITE }}'
         env:
+          MTL_NIC_LABEL: ${{ matrix.nic }}
           TEST_PATH: ${{ matrix.suite.dir }}
           PYTEST_SHARD: ${{ matrix.suite.shard && format('{0}/{1}', matrix.suite.shard, matrix.suite.shards) }}
           PYTEST_FILTER: ${{ inputs.pytest_filter }}
@@ -247,7 +251,9 @@ jobs:
         uses: ./.github/actions/pytest-collect
         with:
           report_name: nightly-test-report-${{ matrix.nic }}-${{ env.SUITE }}
-          report_path: ./tests/acceptance/report.html
+          report_path: |
+            ./tests/acceptance/results.jsonl
+            ./tests/acceptance/report.html
           status_name: system-info-${{ matrix.nic }}-${{ env.SUITE }}
 
   aggregate-python-reports:

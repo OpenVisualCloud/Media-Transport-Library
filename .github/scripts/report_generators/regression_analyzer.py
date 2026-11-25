@@ -9,11 +9,17 @@ _REASON_VARIABLE = re.compile(r"0x[0-9a-fA-F]+|[0-9a-fA-F]{8,}|\d+")
 
 
 def _build_test_index(pytest_data, gtest_data):
-    """Build a dict mapping (platform, nic, category, test_name) -> (result, log)."""
+    """Build a dict mapping (platform, nic, category, profile, test_name) -> (result, log)."""
     index = {}
     for suite_data in [*pytest_data, *gtest_data]:
         for tc in suite_data.get("test_cases", []):
-            key = (tc["platform"], tc["nic"], tc["category"], tc["test_name"])
+            key = (
+                tc["platform"],
+                tc["nic"],
+                tc["category"],
+                tc.get("profile", ""),
+                tc["test_name"],
+            )
             index[key] = (tc["result"], tc.get("log", ""))
     return index
 
@@ -42,12 +48,13 @@ def analyze_regressions(current_pytest, current_gtest, baseline_pytest, baseline
     lost_coverage = []
 
     for key, (cur_result, cur_log) in current.items():
-        platform, nic, category, test_name = key
+        platform, nic, category, profile, test_name = key
+        display_name = f"[{profile}] {test_name}" if profile else test_name
         entry = {
             "platform": platform,
             "nic": nic,
             "category": category,
-            "test_name": test_name,
+            "test_name": display_name,
         }
 
         if key in baseline:

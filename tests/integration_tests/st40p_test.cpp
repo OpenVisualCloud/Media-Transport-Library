@@ -46,13 +46,9 @@ TEST(St40p, tx_put_frame_abort) {
   EXPECT_EQ(ret, 0);
 
   struct st40_frame_info* frame_info = st40p_tx_get_frame(tx_handle);
-  if (frame_info) {
-    ret = st40p_tx_put_frame_abort(tx_handle, frame_info);
-    EXPECT_GE(ret, 0);
-    info("%s, st40p_tx_put_frame_abort succeeded\n", __func__);
-  } else {
-    info("%s, no frame available for st40p TX abort test\n", __func__);
-  }
+  ASSERT_TRUE(frame_info != NULL);
+  ret = st40p_tx_put_frame_abort(tx_handle, frame_info);
+  EXPECT_GE(ret, 0);
 
   ret = st40p_tx_free(tx_handle);
   EXPECT_GE(ret, 0);
@@ -66,10 +62,7 @@ TEST(St40p, rx_put_frame_abort) {
   struct st40p_tx_ops ops_tx;
   struct st40p_rx_ops ops_rx;
 
-  if (ctx->para.num_ports < 2) {
-    info("%s, dual port should be enabled\n", __func__);
-    return;
-  }
+  if (ctx->para.num_ports < 2) GTEST_SKIP() << "requires 2 ports";
 
   /* create TX to feed data */
   auto test_ctx_tx = new tests_context();
@@ -147,12 +140,10 @@ TEST(St40p, rx_put_frame_abort) {
   sleep(2);
 
   struct st40_frame_info* frame_info = st40p_rx_get_frame(rx_handle);
+  EXPECT_TRUE(frame_info != NULL);
   if (frame_info) {
     ret = st40p_rx_put_frame_abort(rx_handle, frame_info);
     EXPECT_GE(ret, 0);
-    info("%s, st40p_rx_put_frame_abort succeeded\n", __func__);
-  } else {
-    info("%s, no rx frame available for st40p abort test\n", __func__);
   }
 
   test_ctx_tx->stop = true;
@@ -200,10 +191,7 @@ TEST(St40p, redundant_stats) {
   auto st = ctx->handle;
   int ret;
 
-  if (ctx->para.num_ports < 4) {
-    info("%s, need 4 ports for redundant test, skipping\n", __func__);
-    return;
-  }
+  if (ctx->para.num_ports < 4) GTEST_SKIP() << "requires 4 ports for redundant test";
 
   struct st40p_tx_ops ops_tx;
   struct st40p_rx_ops ops_rx;

@@ -772,18 +772,13 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
   if (para->level < ctx->level) return;
 
   if (para->tx_ext || para->rx_ext) {
-    if (ctx->iova == MTL_IOVA_MODE_PA) {
-      info("%s, skip ext_buf test as it's PA iova mode\n", __func__);
-      return;
-    }
+    if (ctx->iova == MTL_IOVA_MODE_PA)
+      GTEST_SKIP() << "ext_buf unsupported under IOVA PA";
   }
 
   if (para->pkt_convert) {
     enum mtl_pmd_type pmd = ctx->para.pmd[MTL_PORT_R];
-    if (MTL_PMD_DPDK_USER != pmd) {
-      info("%s, skip as pmd %d is not dpdk user\n", __func__, pmd);
-      return;
-    }
+    if (MTL_PMD_DPDK_USER != pmd) GTEST_SKIP() << "requires DPDK user PMD";
   }
 
   std::vector<tests_context*> test_ctx_tx;
@@ -1752,10 +1747,7 @@ TEST(St20p, tx_ext_frame_manual_release_two_phase) {
   auto st = ctx->handle;
   int ret;
 
-  if (ctx->iova == MTL_IOVA_MODE_PA) {
-    info("%s, skip ext_buf test as it's PA iova mode\n", __func__);
-    return;
-  }
+  if (ctx->iova == MTL_IOVA_MODE_PA) GTEST_SKIP() << "ext_buf unsupported under IOVA PA";
 
   const int fb_cnt = 3;
   const int width = 1920, height = 1080;
@@ -1929,10 +1921,7 @@ TEST(St20p, rx_put_frame_abort) {
   struct st20p_tx_ops ops_tx;
   struct st20p_rx_ops ops_rx;
 
-  if (ctx->para.num_ports < 2) {
-    info("%s, dual port should be enabled\n", __func__);
-    return;
-  }
+  if (ctx->para.num_ports < 2) GTEST_SKIP() << "requires 2 ports";
 
   /* create TX to feed data */
   auto test_ctx_tx = new tests_context();
@@ -2073,10 +2062,7 @@ TEST(St20p, redundant_stats) {
   auto st = ctx->handle;
   int ret;
 
-  if (ctx->para.num_ports < 4) {
-    info("%s, need 4 ports for redundant test, skipping\n", __func__);
-    return;
-  }
+  if (ctx->para.num_ports < 4) GTEST_SKIP() << "requires 4 ports for redundant test";
 
   struct st20p_tx_ops ops_tx;
   struct st20p_rx_ops ops_rx;

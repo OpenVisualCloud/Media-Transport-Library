@@ -20,28 +20,20 @@ enforce this.
 
 | Runner | Selects | Ports | Pause |
 |---|---|---|---|
-| `run.sh` | `NoCtxTest.${NOCTX_FILTER}*`, excluding `*_pf_*` | `TEST_PORT_1..4`, all required | 20 s |
-| `run_pf.sh` | `NoCtxTest.${NOCTX_FILTER}*_pf_*` | `TEST_PF_PORT_1..2`, PFs bound to `vfio-pci` | 10 s |
+| `tests/integration_tests/runner/gtest_runner.py --profile '^noctx$'` | `NoCtxTest.*`, excluding `*_pf_*` | 4 VF ports (`--tvf-pf` or `--ports`) | `--noctx-sleep` (default 0 s) |
+| `tests/integration_tests/runner/gtest_runner.py --profile '^noctx_pf$'` | `NoCtxTest.*_pf_*` | 2 PF ports (`--bind-pvf` or `--pf-ports`) | `--noctx-sleep` (default 0 s) |
 | MCP `run_noctx_tests` / `run_noctx_pf_tests` (`mtl-system-setup`) | `gtest_filter` / the `_pf_` cases; no `isolate.sh`, so `st30p_user_pacing`, `st20p_rl_*` and the VRX margin case FAIL | 4 ports / 2 PFs, auto-discovered if not given | `cooldown_seconds`, default 10 s |
 
 ```bash
-sudo -E tests/integration_tests/noctx/run.sh                      # every non-PF case
-sudo -E NOCTX_FILTER=st20p_ tests/integration_tests/noctx/run.sh  # NoCtxTest.st20p_*
-sudo -E tests/integration_tests/noctx/run_pf.sh                   # _pf_ cases only
+python3 tests/integration_tests/runner/gtest_runner.py --profile '^noctx$' --tvf-pf 0000:4b:00.0
+python3 tests/integration_tests/runner/gtest_runner.py --profile '^noctx$' --filter 'NoCtxTest.st20p_*'
+python3 tests/integration_tests/runner/gtest_runner.py --profile '^noctx_pf$' --bind-pvf 0000:31:00.0,0000:31:00.1
 ```
 
-The runners read the port variables from the environment or from `noctx.env`
-next to the scripts (untracked, sourced but not exported). They list the cases
-with `--gtest_list_tests`, run each `KahawaiTest --auto_start_stop
---no_ctx_tests` and write `${TMP_FOLDER:-/tmp}/noctx_<n>.xml`
-(`noctx_pf_<n>.xml` for `run_pf.sh`). `run.sh` wraps only the cases in
-`NOCTX_ISOLATE_CASES` (comma-separated, default: the strict tests listed
-under [Requirements](#requirements-and-skipfail-policy) and `st20p_rl_staged_overload_is_loud`) in `tests/tools/isolate/isolate.sh`; the others, and every `run_pf.sh` case, run directly.
-`EXIT_ON_FAILURE=0` continues past a failure and exits 1 at the end if any
-case failed; `TEST_P_SIP` is passed as `--p_sip`, and the multicast groups follow
-it (`gtest.sh` sets a per-host subnet); `BUILD_PATH` overrides the binary, which defaults to
-`.local_install/mtl/bin/KahawaiTest` if `.local_install` exists, else
-`build/tests/KahawaiTest`. One case by hand:
+`gtest_runner.py` enumerates cases with `--gtest_list_tests`, runs each
+`KahawaiTest --auto_start_stop --no_ctx_tests` in its own process, wraps the
+strict timing cases (`NOCTX_ISOLATE`) in `tests/tools/isolate/isolate.sh`, and
+writes JUnit XML plus structured `results.jsonl`. One case by hand:
 
 ```bash
 sudo ./build/tests/KahawaiTest --auto_start_stop --no_ctx_tests \

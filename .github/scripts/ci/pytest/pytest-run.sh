@@ -26,7 +26,9 @@ performance)
 	[[ -n ${SUT_APP_ARGS:-} ]] && args+=("--sut_app_args=$SUT_APP_ARGS")
 	;;
 nightly)
-	args=("./tests/single/${TEST_PATH:?TEST_PATH is required}" -m nightly)
+	args=("./tests/single/${TEST_PATH:?TEST_PATH is required}" -m nightly -p pytest_jsonl_plugin)
+	export MTL_PYTEST_JSONL="$PWD/results.jsonl"
+	export PYTHONPATH="${root_dir}/.github/scripts/report_generators${PYTHONPATH:+:${PYTHONPATH}}"
 	[[ -n ${PYTEST_FILTER:-} ]] && args+=(-k "$PYTEST_FILTER")
 	[[ -n ${PYTEST_SHARD:-} ]] && args+=(--shard "$PYTEST_SHARD")
 	;;

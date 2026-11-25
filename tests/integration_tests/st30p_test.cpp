@@ -588,10 +588,7 @@ TEST(St30p, rx_put_frame_abort) {
   struct st30p_tx_ops ops_tx;
   struct st30p_rx_ops ops_rx;
 
-  if (ctx->para.num_ports < 2) {
-    info("%s, dual port should be enabled\n", __func__);
-    return;
-  }
+  if (ctx->para.num_ports < 2) GTEST_SKIP() << "requires 2 ports";
 
   /* create TX to feed data */
   auto test_ctx_tx = new tests_context();
@@ -725,10 +722,7 @@ TEST(St30p, redundant_stats) {
   auto st = ctx->handle;
   int ret;
 
-  if (ctx->para.num_ports < 4) {
-    info("%s, need 4 ports for redundant test, skipping\n", __func__);
-    return;
-  }
+  if (ctx->para.num_ports < 4) GTEST_SKIP() << "requires 4 ports for redundant test";
 
   struct st30p_tx_ops ops_tx;
   struct st30p_rx_ops ops_rx;

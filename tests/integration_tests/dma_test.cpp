@@ -61,7 +61,7 @@ static void test_dma_create_max(struct st_tests_context* ctx) {
 TEST(Dma, create) {
   struct st_tests_context* ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx)) return;
+  if (!st_test_dma_available(ctx)) GTEST_SKIP() << "DMA device not available";
 
   test_dma_create_one(ctx);
 }
@@ -69,7 +69,7 @@ TEST(Dma, create) {
 TEST(Dma, create_max) {
   struct st_tests_context* ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx)) return;
+  if (!st_test_dma_available(ctx)) GTEST_SKIP() << "DMA device not available";
 
   test_dma_create_max(ctx);
 }
@@ -77,7 +77,7 @@ TEST(Dma, create_max) {
 TEST(Dma, create_multi) {
   struct st_tests_context* ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx)) return;
+  if (!st_test_dma_available(ctx)) GTEST_SKIP() << "DMA device not available";
 
   for (int i = 0; i < 10; i++) test_dma_create_one(ctx);
 }
@@ -117,16 +117,10 @@ static int test_dma_vfio_cnt(int numa) {
 TEST(Dma, auto_each_port) {
   struct st_tests_context* ctx = st_test_ctx();
 
-  if (!(ctx->para.flags & MTL_FLAG_DMA_AUTO)) {
-    info("%s, skip as no --dma_auto\n", __func__);
-    return;
-  }
+  if (!(ctx->para.flags & MTL_FLAG_DMA_AUTO)) GTEST_SKIP() << "requires --dma_auto";
   /* Not st_test_dma_available: it is false when the probe found no device,
    * which is the fault this case looks for. */
-  if (ctx->iova == MTL_IOVA_MODE_PA) {
-    info("%s, skip as DMA is not supported under IOVA PA mode\n", __func__);
-    return;
-  }
+  if (ctx->iova == MTL_IOVA_MODE_PA) GTEST_SKIP() << "DMA unsupported under IOVA PA";
 
   for (int i = 0; i < ctx->para.num_ports; i++) {
     enum mtl_port port = (enum mtl_port)i;
@@ -266,7 +260,7 @@ static void test_dma_copy_fill_async(struct st_tests_context* ctx, bool fill) {
 TEST(Dma, copy) {
   struct st_tests_context* ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx)) return;
+  if (!st_test_dma_available(ctx)) GTEST_SKIP() << "DMA device not available";
 
   test_dma_copy(ctx, 0, 1024);
   test_dma_copy(ctx, 128, 1024 * 4);
@@ -275,7 +269,7 @@ TEST(Dma, copy) {
 TEST(Dma, copy_odd) {
   struct st_tests_context* ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx)) return;
+  if (!st_test_dma_available(ctx)) GTEST_SKIP() << "DMA device not available";
 
   test_dma_copy(ctx, 33, 1024);
   test_dma_copy(ctx, 33, 1024 - 33);
@@ -284,7 +278,7 @@ TEST(Dma, copy_odd) {
 TEST(Dma, copy_sanity) {
   struct st_tests_context* ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx)) return;
+  if (!st_test_dma_available(ctx)) GTEST_SKIP() << "DMA device not available";
 
   test_dma_copy_sanity(ctx);
 }
@@ -292,7 +286,7 @@ TEST(Dma, copy_sanity) {
 TEST(Dma, copy_async) {
   struct st_tests_context* ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx)) return;
+  if (!st_test_dma_available(ctx)) GTEST_SKIP() << "DMA device not available";
 
   test_dma_copy_fill_async(ctx, false);
 }
@@ -364,7 +358,7 @@ static void test_dma_fill_sanity(struct st_tests_context* ctx) {
 TEST(Dma, fill) {
   struct st_tests_context* ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx)) return;
+  if (!st_test_dma_available(ctx)) GTEST_SKIP() << "DMA device not available";
 
   test_dma_fill(ctx, 0, 1024, 0xa5);
   test_dma_fill(ctx, 128, 1024 * 4, 0x5a);
@@ -373,7 +367,7 @@ TEST(Dma, fill) {
 TEST(Dma, fill_odd) {
   struct st_tests_context* ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx)) return;
+  if (!st_test_dma_available(ctx)) GTEST_SKIP() << "DMA device not available";
 
   test_dma_fill(ctx, 33, 1024, 0x5a);
   test_dma_fill(ctx, 33, 1024 - 33, 0xa5);
@@ -382,7 +376,7 @@ TEST(Dma, fill_odd) {
 TEST(Dma, fill_sanity) {
   struct st_tests_context* ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx)) return;
+  if (!st_test_dma_available(ctx)) GTEST_SKIP() << "DMA device not available";
 
   test_dma_fill_sanity(ctx);
 }
@@ -390,7 +384,7 @@ TEST(Dma, fill_sanity) {
 TEST(Dma, fill_async) {
   struct st_tests_context* ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx)) return;
+  if (!st_test_dma_available(ctx)) GTEST_SKIP() << "DMA device not available";
 
   test_dma_copy_fill_async(ctx, true);
 }
@@ -423,10 +417,7 @@ TEST(Dma, map) {
   struct st_tests_context* ctx = st_test_ctx();
   auto st = ctx->handle;
 
-  if (ctx->iova == MTL_IOVA_MODE_PA) {
-    info("%s, skip as it's IOVA PA mode\n", __func__);
-    return;
-  }
+  if (ctx->iova == MTL_IOVA_MODE_PA) GTEST_SKIP() << "unsupported under IOVA PA";
 
   test_dma_map(ctx, 64 * mtl_page_size(st));
   test_dma_map(ctx, 512 * mtl_page_size(st));
@@ -471,10 +462,7 @@ TEST(Dma, map_continues) {
   struct st_tests_context* ctx = st_test_ctx();
   auto st = ctx->handle;
 
-  if (ctx->iova == MTL_IOVA_MODE_PA) {
-    info("%s, skip as it's IOVA PA mode\n", __func__);
-    return;
-  }
+  if (ctx->iova == MTL_IOVA_MODE_PA) GTEST_SKIP() << "unsupported under IOVA PA";
 
   test_dma_map_continues(ctx, 64 * mtl_page_size(st), 10);
 }
@@ -515,10 +503,7 @@ TEST(Dma, map_remap) {
   struct st_tests_context* ctx = st_test_ctx();
   auto st = ctx->handle;
 
-  if (ctx->iova == MTL_IOVA_MODE_PA) {
-    info("%s, skip as it's IOVA PA mode\n", __func__);
-    return;
-  }
+  if (ctx->iova == MTL_IOVA_MODE_PA) GTEST_SKIP() << "unsupported under IOVA PA";
 
   test_dma_remap(ctx, 64 * mtl_page_size(st));
 }
@@ -569,7 +554,7 @@ TEST(Dma, map_copy) {
   struct st_tests_context* ctx = st_test_ctx();
   auto st = ctx->handle;
 
-  if (!st_test_dma_available(ctx)) return;
+  if (!st_test_dma_available(ctx)) GTEST_SKIP() << "DMA device not available";
 
   mtl_udma_handle dma = mtl_udma_create(st, 128, MTL_PORT_P);
   ASSERT_TRUE(dma != NULL);
@@ -594,10 +579,7 @@ static void test_dma_mem_alloc_free(struct st_tests_context* ctx, size_t size) {
 TEST(Dma, mem_alloc_free) {
   struct st_tests_context* ctx = st_test_ctx();
 
-  if (ctx->iova == MTL_IOVA_MODE_PA) {
-    info("%s, skip as it's IOVA PA mode\n", __func__);
-    return;
-  }
+  if (ctx->iova == MTL_IOVA_MODE_PA) GTEST_SKIP() << "unsupported under IOVA PA";
 
   test_dma_mem_alloc_free(ctx, 111);
   test_dma_mem_alloc_free(ctx, 2222);

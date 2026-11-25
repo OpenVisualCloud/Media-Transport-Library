@@ -12,36 +12,47 @@ from report_generators.html_generator import generate_html_report
 from report_generators.parsers import (
     parse_gtest_log,
     parse_pytest_html,
+    parse_pytest_jsonl,
     parse_system_info,
 )
 from report_generators.regression_analyzer import analyze_regressions
 
 
 def collect_pytest_reports(pytest_dir):
-    """Collect and parse all pytest HTML reports."""
+    """Collect and parse pytest results.jsonl (preferred) or legacy HTML reports."""
     pytest_data = []
-    pytest_reports = list(Path(pytest_dir).glob("*.html"))
+    pdir = Path(pytest_dir)
+    jsonl_files = sorted(pdir.glob("*.jsonl"))
+    seen_stems = {p.stem for p in jsonl_files}
+    html_files = [p for p in sorted(pdir.glob("*.html")) if p.stem not in seen_stems]
+    pytest_reports = jsonl_files + html_files
 
     if not pytest_reports:
-        print(f"Warning: No pytest HTML reports found in {pytest_dir}")
+        print(f"Warning: No pytest reports found in {pytest_dir}")
         return pytest_data
 
     print(f"Found {len(pytest_reports)} pytest reports")
-    for html_file in pytest_reports:
+    for report_file in pytest_reports:
         try:
-            stats = parse_pytest_html(html_file)
+            stats = (
+                parse_pytest_jsonl(report_file)
+                if report_file.suffix == ".jsonl"
+                else parse_pytest_html(report_file)
+            )
             pytest_data.append(stats)
         except Exception as e:
-            print(f"Error parsing {html_file}: {e}")
+            print(f"Error parsing {report_file}: {e}")
 
     print(f"Parsed {len(pytest_data)} pytest reports")
     return pytest_data
 
 
 def collect_gtest_reports(gtest_dir):
-    """Collect and parse all gtest log files."""
+    """Collect and parse all gtest JSONL or legacy log files."""
     gtest_data = []
-    gtest_logs = list(Path(gtest_dir).glob("*.log"))
+    gtest_logs = sorted(Path(gtest_dir).glob("*.jsonl")) + sorted(
+        Path(gtest_dir).glob("*.log")
+    )
 
     if not gtest_logs:
         print(f"Warning: No gtest log files found in {gtest_dir}")

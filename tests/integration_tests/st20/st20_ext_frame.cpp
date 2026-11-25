@@ -43,10 +43,8 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
   /* return if level small than global */
   if (level < ctx->level) return;
 
-  if (ctx->iova == MTL_IOVA_MODE_PA) {
-    info("%s, skip as it's PA iova mode\n", __func__);
-    return;
-  }
+  if (ctx->iova == MTL_IOVA_MODE_PA)
+    GTEST_SKIP() << "ext_frame unsupported under IOVA PA";
 
   if (ctx->para.num_ports < 2) {
     info(

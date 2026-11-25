@@ -24,10 +24,8 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
   if (level < ctx->level) return;
 
   if (ext_buf) {
-    if (ctx->iova == MTL_IOVA_MODE_PA) {
-      info("%s, skip ext_buf test as it's PA iova mode\n", __func__);
-      return;
-    }
+    if (ctx->iova == MTL_IOVA_MODE_PA)
+      GTEST_SKIP() << "ext_buf unsupported under IOVA PA";
   }
 
   std::vector<tests_context*> test_ctx_tx;
@@ -185,10 +183,8 @@ static void st20_tx_fps_test(enum st20_type type[], enum st_fps fps[], int width
   if (level < ctx->level) return;
 
   if (ext_buf) {
-    if (ctx->iova == MTL_IOVA_MODE_PA) {
-      info("%s, skip ext_buf test as it's PA iova mode\n", __func__);
-      return;
-    }
+    if (ctx->iova == MTL_IOVA_MODE_PA)
+      GTEST_SKIP() << "ext_buf unsupported under IOVA PA";
   }
 
   test_ctx.resize(sessions);

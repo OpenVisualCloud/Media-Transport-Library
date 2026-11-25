@@ -825,10 +825,8 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
   if (para->level < ctx->level) return;
 
   if (para->tx_ext || para->rx_ext) {
-    if (ctx->iova == MTL_IOVA_MODE_PA) {
-      info("%s, skip ext_buf test as it's PA iova mode\n", __func__);
-      return;
-    }
+    if (ctx->iova == MTL_IOVA_MODE_PA)
+      GTEST_SKIP() << "ext_buf unsupported under IOVA PA";
   }
 
   std::vector<tests_context*> test_ctx_tx;
@@ -1451,10 +1449,7 @@ TEST(St22p, rx_put_frame_abort) {
   struct st22p_tx_ops ops_tx;
   struct st22p_rx_ops ops_rx;
 
-  if (ctx->para.num_ports < 2) {
-    info("%s, dual port should be enabled\n", __func__);
-    return;
-  }
+  if (ctx->para.num_ports < 2) GTEST_SKIP() << "requires 2 ports";
 
   /* create TX to feed data */
   auto test_ctx_tx = new tests_context();
