@@ -797,8 +797,11 @@ def _run_iteration(
                 f", {len(fps_details['sender_ramp_sessions'])} kept up with a "
                 "ramping sender"
             )
-        # Informational until a capture shows whether these frames break VRX on the
-        # wire: the check is MTL's estimate.
+        # ST 2110-21 §6.6.2: a sender emits each packet by its read schedule, and
+        # MTL flags each frame that may not have.  Such a run is no capacity: a TX
+        # run fails, and an RX run, whose sender sent outside the model, measures no
+        # receiver and is vetoed.
+        vetoed = False
         frames, late, flagged, worst = tx_vrx(tx_lines, vrx_window)
         if frames or late:
             detail += (
@@ -806,7 +809,7 @@ def _run_iteration(
                 f"{' over 2 ports' if redundant else ''} in {flagged} sessions, up to "
                 f"{worst:.0f} us past the target, {late} started late"
             )
-        vetoed = False
+            success, vetoed = False, not is_tx
         if _has_hugepage_source_fallback(tx_lines):
             # Part of this iteration's TX read its source through mmap() instead
             # of hugepages, so the number would average two memory paths.  Veto
