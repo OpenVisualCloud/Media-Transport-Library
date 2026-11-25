@@ -51,6 +51,11 @@ class Stream:
     channels: int = 0
     ebu: bool = True  # False: EBU LIST cannot judge it (ST 2110-41)
     note: str = ""
+    sip: str = ""  # the source address, for the SDP of a ST 2110-22 stream
+    # The expectations of this stream that differ from the default, each with
+    # its reason in the note and in the report: no hidden exception.
+    allow_wide: bool = False  # "wide" ST 2110-21 compliance passes
+    not_judged: list = dataclasses.field(default_factory=list)  # EBU LIST analyses
 
     def packets_per_second(self) -> float:
         if self.media == "video" and not self.compressed:
@@ -361,12 +366,14 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
 
     # --- RxTxApp mix: TX -------------------------------------------------
     g = addr.groups()
-    mix = RxTxAppConfig(tx_ports[0], addr.iface_ip())
+    mix_ip = addr.iface_ip()
+    mix = RxTxAppConfig(tx_ports[0], mix_ip)
     rx = RxTxAppConfig(rx_ports[0], addr.iface_ip())
     ext = RxTxAppConfig(rx_ports[1 % len(rx_ports)], addr.iface_ip())
     mix_sends: list[str] = []
 
     def add(stream: Stream) -> Stream:
+        stream.sip = mix_ip
         streams.append(stream)
         mix_sends.append(stream.sid)
         return stream
@@ -391,18 +398,23 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
             )
         )
 
-    s = vid("st20p-2160p59-int", "st20p", 3840, 2160, "p59", note="internal converter")
+    # 4K from RFC 4175: the converter runs in the TX thread of the app, and a 4K
+    # conversion each 16.7 ms is more than one vCPU of VM 140 does in time
+    # ("build timeout frames"). The converters run on the 1080p and 720p streams.
+    s = vid(
+        "st20p-2160p59-derive", "st20p", 3840, 2160, "p59", note="derive (no converter)"
+    )
     mix.tx(
         "st20p",
         s.dip,
         st20p_session(
             s,
             True,
-            pixel_format="YUV422PLANAR10LE",
-            url=_media(host, "2160p.yuv422p10le"),
+            pixel_format="YUV422RFC4175PG2BE10",
+            url=_media(host, "2160p.rfc4175"),
         ),
     )
-    rx.rx("st20p", s.dip, st20p_session(s, False, pixel_format="YUV422PLANAR10LE"))
+    rx.rx("st20p", s.dip, st20p_session(s, False, pixel_format="YUV422RFC4175PG2BE10"))
 
     s = vid("st20p-1080p59-int", "st20p", 1920, 1080, "p59", note="internal converter")
     mix.tx(
@@ -489,6 +501,10 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
     rx.rx("video", s.dip, video_session(s, False, mode="frame"))
 
     s = vid("st20-1080p59-rtp", "st20", 1920, 1080, "p59", note="RTP API, user pacing")
+    s.allow_wide = True
+    s.note += (
+        "; wide is accepted: RxTxApp builds each RTP packet, MTL paces the packets"
+    )
     mix.tx(
         "video",
         s.dip,
@@ -497,6 +513,11 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
     rx.rx("video", s.dip, video_session(s, False, mode="frame"))
 
     s = vid("st20-720p50-slice", "st20", 1280, 720, "p50", up=False, note="slice API")
+    s.not_judged = ["packet_ts_vs_rtp_ts", "2110_21_vrx", "2110_21_cinst"]
+    s.note += (
+        "; timing not judged: RxTxApp copies the first slice only when MTL asks for"
+        " lines (legacy/tx_video_app.c, usleep(1) polling), so the frame starts late"
+    )
     mix.tx(
         "video",
         s.dip,

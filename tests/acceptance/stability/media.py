@@ -38,6 +38,12 @@ VIDEO = {
         24,
         ["-pix_fmt", "yuv422p10le", "-c:v", "v210", "-f", "rawvideo"],
     ),
+    "2160p.rfc4175": (
+        3840,
+        2160,
+        8,
+        ["-pix_fmt", "yuv422p10le", "-c:v", "bitpacked", "-f", "rawvideo"],
+    ),
     "1080p.rfc4175": (
         1920,
         1080,

@@ -68,6 +68,7 @@ class EbuConfig:
     password_file: str = ""
     allow_wide: bool = False  # TSC pacing in a VM is often only "wide"
     keep_failed_pcaps: int = 20
+    keep_failed_mb: int = 2000  # and at most this much: a 1 s UHD capture is ~1.3 GB
 
     def password(self) -> str:
         if not self.password_file:

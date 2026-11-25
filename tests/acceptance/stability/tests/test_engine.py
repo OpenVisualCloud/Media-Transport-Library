@@ -338,3 +338,50 @@ def test_yaml_ints_become_cpu_lists(tmp_path):
     h = config.load(str(cfg))
     assert h.lcore_slices == {"rxtxapp-extconv": "20"}
     assert h.cpus.housekeeping == "0"
+
+
+def test_not_judged_analyses_and_allow_wide_are_per_stream():
+    s = workload.Stream(
+        **{**VIDEO.__dict__, "not_judged": ["packet_ts_vs_rtp_ts", "2110_21_vrx"]}
+    )
+    r = _report("not_compliant")
+    r["streams"][0]["analyses"]["packet_ts_vs_rtp_ts"] = {"result": "not_compliant"}
+    r["streams"][0]["analyses"]["2110_21_vrx"] = {"result": "not_compliant"}
+    r["not_compliant_streams"] = 1
+    verdict, reasons, metrics = ebu.judge(s, r, allow_wide=False)
+    assert verdict == "pass", reasons
+    assert sorted(metrics["not_judged"]) == [
+        "2110_21_vrx=not_compliant",
+        "packet_ts_vs_rtp_ts=not_compliant",
+    ]
+    w = workload.Stream(**{**VIDEO.__dict__, "allow_wide": True})
+    assert ebu.judge(w, _report("wide"), allow_wide=False)[0] == "pass-wide"
+
+
+def test_jxsv_sdp_has_the_mandatory_lines():
+    s = workload.Stream(
+        "x",
+        "video",
+        "st22p",
+        "w",
+        "239.30.1.10",
+        20020,
+        width=1920,
+        height=1080,
+        fps="p59",
+        compressed=True,
+        sip="192.168.30.11",
+    )
+    sdp = ebu.sdp_jxsv(s)
+    for want in (
+        "m=video 20020 RTP/AVP 114",
+        "c=IN IP4 239.30.1.10/64",
+        "a=rtpmap:114 jxsv/90000",
+        "width=1920",
+        "height=1080",
+        "TP=2110TPNL",
+        "b=AS:",
+        "a=framerate:59.94",
+        "exactframerate=60000/1001",
+    ):
+        assert want in sdp

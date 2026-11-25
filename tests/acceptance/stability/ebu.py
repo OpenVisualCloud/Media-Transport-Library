@@ -144,11 +144,13 @@ def media_specific_audio(s: Stream) -> Optional[dict]:
     }
 
 
-def _analysis_failures(stream: dict) -> list[str]:
+def _analysis_failures(stream: dict, skip=()) -> list[str]:
     """The name of each EBU LIST analysis of a stream that is not compliant."""
     out = []
     analyses = stream.get("analyses") or {}
     for name, a in analyses.items():
+        if name in skip:
+            continue
         result = a.get("result") if isinstance(a, dict) else a
         if result not in (None, "compliant", "not_relevant", "disabled"):
             out.append(f"{name}={result}")
@@ -197,6 +199,41 @@ def _metrics(stream: dict) -> dict:
     return m
 
 
+SDP_REANALYSIS_TIMEOUT_S = 30
+
+
+def sdp_jxsv(s: Stream) -> str:
+    """The SDP of a JPEG XS stream: RFC 9134, and ST 2110-22:2022 7.2 Table 1 (p5:
+    width, height, TP), 7.3 (p5: b=AS, the average IP bit rate) and 7.4 (p6: the
+    frame rate). b=AS is an estimate at 3 bits per pixel (the codestream size of
+    the MTL JPEG XS plugin at "speed"); EBU LIST only needs it present."""
+    rate = {"p59": "60000/1001", "p50": "50", "p29": "30000/1001", "p25": "25"}.get(
+        s.fps, "60000/1001"
+    )
+    fps = FPS.get(s.fps, 60000 / 1001)
+    kbps = math.ceil(s.width * s.height * 3 * fps * 1.04 / 1000)  # + 4 % IP/UDP/RTP
+    src = s.sip or "0.0.0.0"
+    return "\r\n".join(
+        [
+            "v=0",
+            f"o=- 1 1 IN IP4 {src}",
+            f"s=MTL stability {s.sid}",
+            "t=0 0",
+            f"m=video {s.port} RTP/AVP 114",
+            f"c=IN IP4 {s.dip}/64",
+            f"b=AS:{kbps}",
+            f"a=framerate:{fps:.2f}",
+            f"a=source-filter: incl IN IP4 {s.dip} {src}",
+            "a=rtpmap:114 jxsv/90000",
+            f"a=fmtp:114 packetmode=0;sampling=YCbCr-4:2:2;depth=10;width={s.width};"
+            f"height={s.height};exactframerate={rate};colorimetry=BT709;TCS=SDR;"
+            "SSN=ST2110-22:2022;TP=2110TPNL",
+            "a=mediaclk:direct=0",
+            "",
+        ]
+    )
+
+
 def judge(s: Stream, report: dict, allow_wide: bool) -> tuple[str, list[str], dict]:
     reason = no_verdict_reason(report)
     if reason:
@@ -208,6 +245,7 @@ def judge(s: Stream, report: dict, allow_wide: bool) -> tuple[str, list[str], di
         if (x.get("network_information") or {}).get("destination_address") == s.dip
     ] or streams
     reasons: list[str] = []
+    skipped: list[str] = []
     metrics = _metrics(mine[0]) if mine else {}
     if len(mine) != 1:
         reasons.append(f"EBU LIST found {len(mine)} streams to {s.dip}, not 1")
@@ -219,7 +257,8 @@ def judge(s: Stream, report: dict, allow_wide: bool) -> tuple[str, list[str], di
         mt = x.get("media_type")
         if expected_media and mt != expected_media:
             reasons.append(f"media_type {mt}, expected {expected_media}")
-        reasons += _analysis_failures(x)
+        reasons += _analysis_failures(x, s.not_judged)
+        skipped += [n for n in _analysis_failures(x) if n.split("=")[0] in s.not_judged]
         if x.get("state") not in (None, "analyzed"):
             reasons.append(f"state {x.get('state')}")
     if s.media == "video" and not s.compressed:
@@ -229,13 +268,16 @@ def judge(s: Stream, report: dict, allow_wide: bool) -> tuple[str, list[str], di
             reasons.append(f"rate is not {s.fps}")
         if _packing_mismatch_streams(sub, s.packing):
             reasons.append(f"packing is not {s.packing}")
-    wide = bool(s.media == "video" and _wide_video_streams(sub))
+    timing_judged = "2110_21_vrx" not in s.not_judged
+    wide = bool(s.media == "video" and timing_judged and _wide_video_streams(sub))
     nc = report.get("not_compliant_streams") or 0
-    if nc and not reasons:
+    if nc and not reasons and not skipped:
         reasons.append(f"not_compliant_streams={nc}")
+    if skipped:
+        metrics["not_judged"] = skipped
     if reasons:
         return "fail", reasons, metrics
-    if wide and not allow_wide:
+    if wide and not (allow_wide or s.allow_wide):
         return "fail", ["ST 2110-21 compliance is only wide (expected narrow)"], metrics
     return ("pass-wide" if wide else "pass"), [], metrics
 
@@ -251,6 +293,7 @@ class Rotation:
         os.makedirs(self.pcap_dir, exist_ok=True)
         self.i = 0
         self.kept_failed = 0
+        self.kept_bytes = 0
         self.client: Optional[PcapComplianceClient] = None
         self.enabled = bool(
             (self.dev or host.capture.command) and host.ebu.ip and self.streams
@@ -351,7 +394,33 @@ class Rotation:
         ms = media_specific_audio(s) if s.media == "audio" else None
         if report and ms:
             report = client.reanalyze_audio(report, ms)
+        if report and s.compressed:
+            report = self._reanalyze_with_sdp(client, s, report)
         return report or {}
+
+    def _reanalyze_with_sdp(self, client, s: Stream, previous: dict) -> dict:
+        """EBU LIST reads a ST 2110-22 stream only with its SDP: the GUI sends it so."""
+        url = f"http://{client.ebu_ip}/api/pcap/{client.pcap_id}"
+        headers = {"Authorization": f"Bearer {client.token}"}
+        r = client.session.patch(
+            url,
+            headers=headers,
+            json={"sdps": [sdp_jxsv(s)], "transport_type": "RTP"},
+            proxies=client.proxies,
+            timeout=60,
+        )
+        r.raise_for_status()
+        report = client.download_report()
+        for _ in range(SDP_REANALYSIS_TIMEOUT_S):
+            if (
+                report
+                and report.get("streams")
+                and report["streams"][0].get("media_type") != "unknown"
+            ):
+                break
+            time.sleep(1)
+            report = client.download_report()
+        return report or previous
 
     def next(self) -> Optional[Verdict]:
         if not self.enabled:
@@ -394,9 +463,15 @@ class Rotation:
             except Exception as e:
                 logger.debug("delete pcap: %s", e)
             self.client.pcap_id = None
-        keep = failed and self.kept_failed < self.host.ebu.keep_failed_pcaps
+        size = os.path.getsize(v.pcap) if v.pcap and os.path.exists(v.pcap) else 0
+        keep = (
+            failed
+            and self.kept_failed < self.host.ebu.keep_failed_pcaps
+            and self.kept_bytes + size <= self.host.ebu.keep_failed_mb * 2**20
+        )
         if keep:
             self.kept_failed += 1
+            self.kept_bytes += size
         elif os.path.exists(v.pcap):
             os.unlink(v.pcap)
             v.pcap = ""
