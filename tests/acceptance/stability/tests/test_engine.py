@@ -311,3 +311,30 @@ def test_user_time_resyncs_are_counted(tmp_path):
     )
     assert s.summary()["resyncs"] == {"w/app_tx_st20p(0)": 1, "w/app_tx_st30p(2)": 7}
     assert not s.counts
+
+
+def test_the_integrity_worker_takes_the_4th_ports_and_only_it_checks_sha():
+    h = _host()
+    h.tx_ports.append("0000:09:00.0")
+    h.rx_ports.append("0000:0a:00.0")
+    plan = workload.build_plan(h, "smoke", 60)
+    names = [w.name for w in plan.workers]
+    assert "rxtxapp-integrity" in names
+    for w in plan.workers:
+        assert ("--video_sha_check" in w.argv) == (w.name == "rxtxapp-integrity")
+    integ = next(w for w in plan.workers if w.name == "rxtxapp-integrity")
+    assert integ.ports == ["0000:09:00.0", "0000:0a:00.0"]
+    cfg = json.loads(integ.files["integrity.json"])
+    assert len(cfg["tx_sessions"]) == len(cfg["rx_sessions"]) == 3
+    assert all(not s.ebu for s in plan.streams if s.worker == "rxtxapp-integrity")
+
+
+def test_yaml_ints_become_cpu_lists(tmp_path):
+    cfg = tmp_path / "s.yaml"
+    cfg.write_text(
+        "mtl_path: /mtl\nports: {tx: ['0000:01:00.0'], rx: ['0000:02:00.0']}\n"
+        "cpus: {housekeeping: 0, app: 1-3, lcores: 4-7}\nlcore_slices: {rxtxapp-extconv: 20}\n"
+    )
+    h = config.load(str(cfg))
+    assert h.lcore_slices == {"rxtxapp-extconv": "20"}
+    assert h.cpus.housekeeping == "0"

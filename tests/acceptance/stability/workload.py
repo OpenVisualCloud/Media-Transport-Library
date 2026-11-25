@@ -279,7 +279,9 @@ def anc_session(s: Stream, tx: bool, *, url: str = "", fmd: bool = False) -> dic
 # ---------------------------------------------------------------------------
 
 
-def rxtxapp_argv(host: HostConfig, cfg_name: str, duration_s: int, lcores: str) -> list:
+def rxtxapp_argv(
+    host: HostConfig, cfg_name: str, duration_s: int, lcores: str, sha: bool = False
+) -> list:
     argv = [
         host.rxtxapp,
         "--config_file",
@@ -291,7 +293,7 @@ def rxtxapp_argv(host: HostConfig, cfg_name: str, duration_s: int, lcores: str) 
         "--tasklet_time",
         "--rx_separate_lcore",
     ]
-    if host.video_sha_check:
+    if sha:
         argv += ["--video_sha_check"]
     if host.pacing_way:
         argv += ["--pacing_way", host.pacing_way]
@@ -659,6 +661,81 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
         )
     )
 
+    # --- RxTxApp integrity: SHA-256 of each frame, TX -> switch -> RX ------
+    if host.integrity and len(tx_ports) > 3:
+        g = addr.groups()
+        icfg = RxTxAppConfig(tx_ports[3], addr.iface_ip())
+        icfg.cfg["interfaces"].append(
+            {"name": rx_ports[3 % len(rx_ports)], "ip": addr.iface_ip()}
+        )
+        isends = []
+        for sid, w, h, fmt, url in (
+            (
+                "integrity-st20p-1080p59",
+                1920,
+                1080,
+                "YUV422PLANAR10LE",
+                "1080p.yuv422p10le",
+            ),
+            (
+                "integrity-st20p-1080p59-derive",
+                1920,
+                1080,
+                "YUV422RFC4175PG2BE10",
+                "1080p.rfc4175",
+            ),
+            (
+                "integrity-st20p-720p59",
+                1280,
+                720,
+                "YUV422PLANAR10LE",
+                "720p.yuv422p10le",
+            ),
+        ):
+            dip, port = next(g)
+            s = Stream(
+                sid=sid, media="video", api="st20p", worker="rxtxapp-integrity", dip=dip,
+                port=port, user_pacing=True, width=w, height=h, fps="p59", packing="BPM",
+                transport_format="YUV_422_10bit", ebu=False,
+                note="SHA-256 of each frame in a user-meta packet: no EBU LIST verdict",
+            )  # fmt: skip
+            streams.append(s)
+            isends.append(s.sid)
+            icfg.tx(
+                "st20p",
+                s.dip,
+                st20p_session(s, True, pixel_format=fmt, url=_media(host, url)),
+            )
+            icfg.cfg["rx_sessions"].append(
+                {
+                    "ip": [s.dip],
+                    "interface": [1],
+                    "st20p": [st20p_session(s, False, pixel_format=fmt)],
+                }
+            )
+        workers.append(
+            Worker(
+                name="rxtxapp-integrity",
+                kind="rxtxapp",
+                ports=[tx_ports[3], rx_ports[3 % len(rx_ports)]],
+                argv=rxtxapp_argv(
+                    host,
+                    "integrity.json",
+                    duration_s,
+                    lc.get("rxtxapp-integrity", ""),
+                    sha=True,
+                ),
+                files={
+                    "integrity.json": icfg.dumps(),
+                    "kahawai.json": host.kahawai_json(),
+                },
+                lcores=lc.get("rxtxapp-integrity", ""),
+                sends=isends,
+                receives=list(isends),
+                note="SHA-256 of each frame from TX to RX (--video_sha_check)",
+            )
+        )
+
     # --- FFmpeg: swscale (external converter) -> MTL ----------------------
     if host.ffmpeg and len(tx_ports) > 1:
         g = addr.groups()
@@ -807,7 +884,7 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
 def profile_smoke(host: HostConfig, duration_s: int) -> Plan:
     """The RxTxApp part of ``full`` only: a quick check of the host and the tools."""
     plan = profile_full(host, duration_s)
-    keep = {"rxtxapp-mix", "rxtxapp-rx", "rxtxapp-extconv"}
+    keep = {"rxtxapp-mix", "rxtxapp-rx", "rxtxapp-extconv", "rxtxapp-integrity"}
     plan.workers = [w for w in plan.workers if w.name in keep]
     plan.streams = [s for s in plan.streams if s.worker in keep]
     plan.profile = "smoke"

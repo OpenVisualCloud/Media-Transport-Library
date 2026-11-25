@@ -12,6 +12,7 @@ also run it by hand on a lab host or a VM.
 | `rxtxapp-mix` | RxTxApp | Sends each session type of MTL from one process. |
 | `rxtxapp-rx` | RxTxApp | Receives each session of `rxtxapp-mix`. Uses the internal converters. |
 | `rxtxapp-extconv` | RxTxApp | Receives the 1080p59 streams again through the converter plugin `color_convert_sample`. |
+| `rxtxapp-integrity` | RxTxApp | Sends and receives three st20p streams with a SHA-256 check of each frame. |
 | `ffmpeg-tx` | FFmpeg | Converts an RGB test source with swscale and sends st20p. With `libsvtjpegxs`, it also encodes JPEG XS and sends it as st22. |
 | `ffmpeg-rx` | FFmpeg | Receives the st20p stream of `ffmpeg-tx`, converts it with swscale and writes a `framemd5` file. |
 | `gst-tx` | GStreamer | Sends st20p and st30p with `use-pts-for-pacing`. |
@@ -40,8 +41,12 @@ The sessions of `rxtxapp-mix`:
 Each TX session has its own multicast group (`239.30.<worker>.<n>`). Thus, a
 capture filter on the destination address holds exactly one stream.
 
-RxTxApp runs with `--video_sha_check`: TX puts the SHA-256 of each frame in the
-frame, and RX compares it.
+`rxtxapp-integrity` (with a 4th TX and RX port) sends three st20p streams with
+`--video_sha_check` and receives them in the same process. TX sends the SHA-256
+of each frame in a user-meta packet, and RX compares it with the frame. That
+packet has the RTP sequence number 0, and EBU LIST then reports `rtp_sequence`
+and "general" packing for the stream. Thus these streams get no EBU LIST
+verdict, and no other worker uses `--video_sha_check`.
 
 ## How the run is judged
 

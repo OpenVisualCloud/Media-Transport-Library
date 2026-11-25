@@ -117,9 +117,10 @@ class HostConfig:
     pacing_way: str = ""  # "", rl, tsc, tsn, ...
     ptp: bool = False
     user_time_offset_ns: int = 0
-    video_sha_check: bool = (
-        True  # RxTxApp --video_sha_check: SHA-256 of each st20p frame
-    )
+    # The rxtxapp-integrity worker checks the SHA-256 of each frame. Its user-meta
+    # packet (sequence number 0) is not ST 2110 conform, so its streams get no
+    # EBU LIST verdict; false leaves the worker out.
+    integrity: bool = True
     lcore_slices: dict = dataclasses.field(default_factory=dict)
     cpus: CpuConfig = dataclasses.field(default_factory=CpuConfig)
     capture: CaptureConfig = dataclasses.field(default_factory=CaptureConfig)
@@ -273,6 +274,10 @@ def load(path: str) -> HostConfig:
             kv = read_kv_file(host.ebu.password_file)
             host.ebu.ip = host.ebu.ip or kv.get("EBU_IP", "")
             host.ebu.user = host.ebu.user or kv.get("EBU_USER", "")
+    # YAML reads "rxtxapp-extconv: 20" as an int, and a CPU list key alike.
+    host.lcore_slices = {k: str(v) for k, v in (host.lcore_slices or {}).items()}
+    for f in ("housekeeping", "app", "lcores"):
+        setattr(host.cpus, f, str(getattr(host.cpus, f)))
     if not host.lcore_slices and host.cpus.lcores:
         host.lcore_slices = default_lcore_slices(cpu_list(host.cpus.lcores))
     return host
@@ -287,15 +292,18 @@ def default_lcore_slices(lcores: list[int]) -> dict[str, str]:
     n = len(lcores)
     if n < 4:
         return {}
-    tx_n = max(2, n // 2)
-    rx_n = max(1, (n - tx_n) * 2 // 3)
-    ext_n = max(1, n - tx_n - rx_n - 2)
+    # The rest (2 or more) is for FFmpeg and GStreamer.
+    tx_n = max(2, n * 3 // 10)
+    rx_n = max(1, n // 5)
+    ext_n = 1
+    int_n = max(1, n // 5)
     it = iter(lcores)
     slices = {}
     for name, k in (
         ("rxtxapp-mix", tx_n),
         ("rxtxapp-rx", rx_n),
         ("rxtxapp-extconv", ext_n),
+        ("rxtxapp-integrity", int_n),
     ):
         slices[name] = cpu_text([next(it) for _ in range(k)])
     return slices
