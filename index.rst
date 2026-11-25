@@ -11,6 +11,10 @@
 Media Transport Library
 ======================================================
 
+.. image:: doc/png/mtl-banner.svg
+   :alt: Media Transport Library: send and receive live video, audio and ancillary data over IP networks, in software, on standard Intel Xeon servers and Ethernet NICs
+   :align: center
+
 .. toctree::
    :maxdepth: 1
 
