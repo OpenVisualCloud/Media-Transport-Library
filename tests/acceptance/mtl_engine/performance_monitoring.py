@@ -18,7 +18,8 @@ FPS_MIN_STEADY_SAMPLES = 4  # Refuse to judge a run on fewer stat dumps than thi
 
 # Shared timestamp regex (compiled once)
 _TS_RE = re.compile(r"MTL:\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}),?")
-# What stat_dump() prints around each dump (lib/src/mt_stat.c).
+# The banners that stat_dump() prints at the start and the end of each stat dump
+# (lib/src/mt_stat.c).
 DUMP_START = "M T    D E V   S T A T E"
 DUMP_END = "E N D    S T A T E"
 
@@ -45,16 +46,17 @@ def format_cpus(cpus) -> str:
 
 
 def _walk_dumps(log_lines):
-    """Yield (dump, line) for each line of a stat dump, *dump* being the stamp of its
-    banner.
+    """Yield (dump, line) for each line inside a stat dump.
 
-    A line's own stamp does not name its dump, as one dump can span two seconds, and
-    the stats a session prints once more as it is freed lie outside any dump.
+    *dump* is the timestamp of the dump's start banner.  The line's own timestamp is
+    not used, because one dump can take more than one second to print.  Lines
+    outside the banners are skipped, for example the last stats that a session
+    prints when it is freed.
     """
     dump = None
     for line in log_lines:
         if DUMP_START in line:
-            # A banner without the stamp (another log prefix) names no dump.
+            # A banner without a timestamp (another log format) starts no dump.
             ts = _TS_RE.search(line)
             dump = ts.group(1) if ts else None
         elif DUMP_END in line:
@@ -141,10 +143,13 @@ def _monitor_fps_generic(
     short transient NIC/system events that briefly drop all sessions
     to zero without indicating a real capacity problem.
 
-    *sent* is :func:`sent_at_rate` of a receiver's sender.  A receiver gets no
-    more than its sender sent, so a session below the bar passes if its sender
-    ramped up to the bar and the receiver kept up with it: ended its window at the
-    bar too, and averaged at least the tolerance of what was sent.
+    *sent* is what :func:`sent_at_rate` returns for the receiver's sender.  A
+    receiver cannot get more frames than its sender sends.  So a receiver session
+    below the bar still passes when all of these are true:
+
+    - its sender ramped up to the bar;
+    - the receiver session is at the bar in the last dump of its window;
+    - its average is at least *fps_tolerance_pct* of the sender's average.
     """
     min_required = expected_fps * fps_tolerance_pct
     dumps = _fps_dumps(log_lines, session_pattern)
@@ -198,11 +203,12 @@ def _monitor_fps_generic(
 
 
 def sent_at_rate(details):
-    """The sessions a sender ramped up to the bar → {sid: mean fps}.
+    """The sender sessions that ramped up to the bar → {sid: mean fps}.
 
-    Such a session ends its window at the bar and never falls below the tolerance of
-    its previous dump.  A sender that a full link or a full core holds back does not
-    get there, and one that stalls on the way is no ramp.
+    A session ramped up when its last dump is at the bar, and no dump is more than
+    1 % below the dump before it.  A sender that a full link or a busy core holds
+    back never gets to the bar.  A sender that slows down on the way fails the
+    second condition.
     """
     bar = details["min_required_fps"]
     return {
@@ -259,12 +265,13 @@ def monitor_rx_fps(
 def companion_window(log_lines, direction):
     """The stat dumps of steady traffic in a companion's log → list of dumps.
 
-    An RX companion is read with its sessions alive after its sender stopped, so drop
-    the last dumps in which no session is live, which a teardown slower than a dump
-    period leaves.  The dump its sender stopped in is then the last, which
-    _steady_window() drops.  A full census is the most sessions a dump names: a
-    session whose stat lock stays busy past its timeout misses a dump, and in some
-    runs every dump misses one.
+    An RX companion's log is read after its sender stopped, so its last dumps can
+    show no live session.  Those dumps are removed first.  The dump in which the
+    sender stopped is then the last one, and _steady_window() removes it.
+
+    _steady_window() needs the number of sessions to expect in each dump.  That is
+    the most sessions that any dump shows, not the number configured: a session
+    whose stat lock is busy misses a dump, and in some runs every dump misses one.
     """
     dumps = _fps_dumps(log_lines, _TX_FPS_RE if direction == "tx" else _RX_FPS_RE)
     order = list(dumps)
@@ -320,9 +327,9 @@ def monitor_rx_frames_simple(log_lines, num_sessions=0):
 def _collect_in_window(log_lines, data_pattern, window):
     """Yield regex matches for data lines of the stat dumps in *window*.
 
-    A stat line reports the period since the previous dump, so only the dumps of
-    steady traffic count: the dumps a session is created or freed in read a partial
-    period, and a receiver's dumps after its sender stopped read zero.
+    Each stat line covers the time since the previous dump.  So only the dumps of
+    steady traffic are used.  A dump in which a session starts or stops covers only
+    part of that time, and a receiver's dumps after its sender stopped show zero.
     """
     compiled = re.compile(data_pattern)
     window = set(window)
@@ -372,7 +379,7 @@ def monitor_dev_rate(log_lines, window):
 # ── VRX ─────────────────────────────────────────────────────────────────
 
 
-# tv_stat_log() in lib/src/st2110/st_tx_video_session.c
+# The VRX line of tv_stat_log() (lib/src/st2110/st_tx_video_session.c).
 _VRX_RE = (
     r"TX_VIDEO_SESSION\((\d+),(\d+)\): (\d+) frames may break VRX >= 0, a pkt up to "
     r"([\d.]+)us past its target.*?; (\d+) frames started up to [\d.]+us late"
@@ -380,14 +387,15 @@ _VRX_RE = (
 
 
 def tx_vrx(log_lines, window):
-    """What MTL flags against the VRX model in the stat dumps of *window* → (frames
-    that may break it, frames started late, sessions with such frames, worst µs
-    past the target).
+    """Count what MTL flags against the ST 2110-21 VRX model in the dumps of *window*.
 
-    MTL estimates it from the CPU side, on RL-paced ports only, and counts a frame
-    once per port (st_header.h); a frame started late counts once, as late only.
-    So 0 is not known to be clean: a library without the check, a port that logs
-    "VRX not judged" and an empty window all give 0.
+    Returns (frames that may break VRX, frames that started late, sessions with
+    flagged frames, the worst µs past the target).
+
+    MTL estimates this from the CPU side, and only on ports with RL pacing.  It
+    counts a frame once per port (st_header.h), and a frame that started late only
+    as late.  A result of 0 does not prove that the stream is clean: an MTL without
+    the check, a port that logs "VRX not judged" and an empty window all give 0.
     """
     frames = late = 0
     sessions, worst = set(), 0.0
@@ -439,9 +447,9 @@ def display_session_results(
     ramp = fps_details.get("sender_ramp_sessions")
     if ramp:
         logger.info(
-            f"  Below the bar, but at it by the end and at {fps_tolerance_pct:.0%} of "
-            f"a sender that ramped up to it: {len(ramp)} sessions "
-            f"(S{', S'.join(map(str, ramp))})"
+            f"  Passed as receivers of a sender that ramped up to the bar (at the "
+            f"bar by the end, and at least {fps_tolerance_pct:.0%} of what was sent): "
+            f"{len(ramp)} sessions (S{', S'.join(map(str, ramp))})"
         )
     logger.info("=" * 80)
 
@@ -481,7 +489,8 @@ def _log_throughput(label, direction, tp_details, dev_rate, num_sessions):
     if dev_rate:
         for key, name in [("tx_rate_history", "TX"), ("rx_rate_history", "RX")]:
             vals = dev_rate.get(key, [])
-            # Also without samples: generate_report.py would keep an earlier rate.
+            # Log a rate of 0 when there are no samples.  Otherwise
+            # generate_report.py shows the rate of an earlier run.
             avg = sum(vals) / len(vals) if vals else 0.0
             logger.info(f"    DEV {name}: {avg:.2f} Mb/s ({len(vals)} samples)")
     if tp_details:

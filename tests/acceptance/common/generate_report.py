@@ -741,18 +741,19 @@ def _generate_html(tests, per_host, hosts, run_rows=()) -> str:
                 ("Frame Size (uncompressed)", "5,184,000 bytes (4.94 MB) per frame"),
                 (
                     "Pass Criteria",
-                    "Every session must sustain average FPS ≥ 99 % of target "
-                    "(≥ 59.34 fps for 59.94 fps target) over the measurement window, "
-                    "after its worst stat dumps (10 %, at least one) are dropped; or, as "
-                    "a receiver, "
-                    "end at that bar and get ≥ 99 % of what a sender ramping up to it "
-                    "sent. A TX run fails, and an RX run is vetoed, when MTL flags a "
-                    "frame of its sender against VRX (“VRX may break” in a step; "
-                    "ST 2110-21 §6.6.2).",
+                    "A run passes when every session averages at least 99 % of the "
+                    "frame rate: 59.34 fps at 59.94 fps. The worst 10 % of a session's "
+                    "stat dumps (at least one) are left out of its average. A run does "
+                    "not pass when MTL flags any frame of the sender against the "
+                    "ST 2110-21 VRX model (“VRX may break” in a step). An RX session "
+                    "below 59.34 fps still passes when its sender was ramping up: it "
+                    "must reach 59.34 fps by the end and get at least 99 % of what was "
+                    "sent.",
                 ),
                 (
                     "Measurement Window",
-                    "The 10 s stat dumps of steady traffic, without session start or stop",
+                    "The 10 s stat dumps of steady traffic. The dumps in which "
+                    "sessions start or stop are left out.",
                 ),
             ],
         )
