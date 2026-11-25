@@ -539,6 +539,8 @@ struct st_app_tx_st20p_session {
   uint64_t frame_num;
   struct st_user_time_state user_time_state;
   struct st_user_time* user_time;
+  /* exact user pacing: TRoffset in ns, added to each user time */
+  int64_t exact_tro_ns;
 
   char st20p_source_url[ST_APP_URL_MAX_LEN];
   uint8_t* st20p_source_begin;

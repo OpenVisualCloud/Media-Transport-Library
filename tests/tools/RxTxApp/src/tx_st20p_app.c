@@ -96,6 +96,7 @@ static void* app_tx_st20p_frame_thread(void* arg) {
     if (s->user_time) {
       frame->timestamp = st_app_user_time(s->ctx, s->user_time, &s->user_time_state,
                                           s->frame_num, frame_time);
+      if (frame->timestamp) frame->timestamp += s->exact_tro_ns;
       frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
       s->frame_num++;
     }
@@ -366,6 +367,17 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   }
   s->handle = handle;
   s->st20p_frame_size = st20p_tx_frame_size(handle);
+  /* An exact time is the time of the first packet, while ST 2110-21:2022 6.2 (p6) puts
+   * the first packet (TPR0) at the epoch + TRoffset. Without it, the sender starts one
+   * TRoffset early and a narrow receiver buffer fills by TRoffset / TRS packets. */
+  if (ops.flags & ST20P_TX_FLAG_EXACT_USER_PACING) {
+    double tro = 0, trs = 0;
+    uint32_t vrx = 0;
+    if (!st20p_tx_get_pacing_params(handle, &tro, &trs, &vrx))
+      s->exact_tro_ns = (int64_t)(tro + 0.5);
+    info("%s(%d), exact user pacing, troffset %" PRId64 " ns\n", __func__, idx,
+         s->exact_tro_ns);
+  }
 
   ret = app_tx_st20p_open_source(s);
   if (ret < 0) {
