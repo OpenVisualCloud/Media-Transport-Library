@@ -7,7 +7,9 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <cerrno>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <stdexcept>
@@ -75,6 +77,14 @@ void NoCtxTest::SetUp() {
   ctx->para.rx_queues_cnt[MTL_PORT_R] = 16;
   ResetFakePtpClock();
   defaultTestDuration = 20;
+  if (const char* env_dur = std::getenv("NOCTX_TEST_DURATION"); env_dur && *env_dur) {
+    char* end = nullptr;
+    errno = 0;
+    long parsed = std::strtol(env_dur, &end, 10);
+    if (errno == 0 && end != env_dur && *end == '\0' && parsed >= 1 && parsed <= 3600) {
+      defaultTestDuration = static_cast<uint>(parsed);
+    }
+  }
 }
 
 void NoCtxTest::TearDown() {

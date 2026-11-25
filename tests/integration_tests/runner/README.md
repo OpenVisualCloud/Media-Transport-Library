@@ -20,6 +20,6 @@ python3 tests/integration_tests/runner/gtest_runner.py \
 python3 tests/integration_tests/runner/gtest_runner.py \
   --profile '^noctx_pf$' --bind-pvf 0000:31:00.0,0000:31:00.1
 
-# Offline tests
-python3 -m pytest -q -p no:cacheprovider tests/integration_tests/runner/test_gtest_runner.py
+# Offline self-test harness (runner + nightly workflow contracts)
+python3 -m pytest -q -p no:cacheprovider tests/integration_tests/runner/
 ```

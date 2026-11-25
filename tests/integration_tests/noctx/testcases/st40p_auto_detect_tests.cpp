@@ -67,7 +67,9 @@ TEST_F(NoCtxTest, st40p_rx_auto_detect_interlace) {
   handler->startSession();
   mtl_start(ctx->handle);
 
-  sleepUntilFailure();
+  /* 2 s at 60 fields/s delivers ~120 fields, enough to verify interlaced F-bit detection.
+   */
+  sleepUntilFailure(2);
 
   handler->stopSession();
 

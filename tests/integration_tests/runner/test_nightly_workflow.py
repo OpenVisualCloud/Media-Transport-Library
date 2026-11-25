@@ -12,13 +12,16 @@ Tests the full nightly pipeline locally in seconds without bare-metal NICs:
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
+import re
 import stat
-import subprocess
+import subprocess  # nosec B404 # runs offline workflow shims and report scripts via argv lists
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 RUNNER_DIR = Path(__file__).resolve().parent
@@ -141,6 +144,122 @@ def test_nightly_yaml_and_profiles_contract() -> None:
     assert (
         "results.jsonl" in reports_text
     ), "reports.sh flatten helpers must handle results.jsonl"
+
+    # Guard against malformed GTest negative filter syntax such as "A*:-*B*".
+    for tier in ("pr", "nightly"):
+        for run in pdata["runs"][tier]:
+            flt = str(run.get("filter", ""))
+            assert ":-" not in flt, (
+                f"profiles.yaml run '{run['name']}' has invalid GTest filter '{flt}' "
+                "(use '-' directly without preceding ':')"
+            )
+
+
+def _gtest_filter_matches(case: str, flt: str) -> bool:
+    if not flt:
+        return True
+    pos, neg = (flt.split("-", 1) + [""])[:2]
+    pos_pats = [p for p in pos.split(":") if p]
+    neg_pats = [p for p in neg.split(":") if p]
+    if pos_pats and not any(fnmatch.fnmatchcase(case, p) for p in pos_pats):
+        return False
+    if neg_pats and any(fnmatch.fnmatchcase(case, p) for p in neg_pats):
+        return False
+    return True
+
+
+def test_nightly_pytest_matrix_covers_all_nightly_suites() -> None:
+    """Every single-host acceptance dir with pytest.mark.nightly must run in nightly.yml."""
+    nightly_doc = yaml.safe_load(NIGHTLY_YML.read_text(encoding="utf-8"))
+    suite_expr = nightly_doc["jobs"]["run-pytest"]["strategy"]["matrix"]["suite"]
+    m = re.search(r"\|\|\s*'(\[.*\])'", suite_expr, re.S)
+    assert m, f"Could not extract suite JSON array from nightly.yml: {suite_expr}"
+    entries = json.loads(m.group(1))
+
+    seen_keys: set[tuple[str, int | None]] = set()
+    for e in entries:
+        key = (e["dir"], e.get("shard"))
+        assert (
+            key not in seen_keys
+        ), f"Duplicate nightly.yml run-pytest matrix entry: {e}"
+        seen_keys.add(key)
+
+    matrix_dirs = {e["dir"] for e in entries}
+    shards_by_dir: dict[str, list[tuple[int, int]]] = {}
+    for e in entries:
+        if "shard" in e or "shards" in e:
+            shards_by_dir.setdefault(e["dir"], []).append((e["shard"], e["shards"]))
+    for d, pairs in shards_by_dir.items():
+        totals = {tot for _, tot in pairs}
+        assert len(totals) == 1, f"Inconsistent shard totals for '{d}': {pairs}"
+        total = next(iter(totals))
+        assert sorted(s for s, _ in pairs) == list(
+            range(1, total + 1)
+        ), f"Incomplete shard set for '{d}': {pairs}"
+
+    single_dir = REPO_ROOT / "tests/acceptance/tests/single"
+    discovered_nightly: set[str] = set()
+    for d in sorted(
+        p for p in single_dir.iterdir() if p.is_dir() and not p.name.startswith("_")
+    ):
+        for py in d.rglob("*.py"):
+            if py.name == "__init__.py":
+                continue
+            txt = py.read_text(encoding="utf-8", errors="ignore")
+            if re.search(r"\bpytest\.mark\.nightly\b", txt):
+                discovered_nightly.add(d.name)
+                break
+
+    missing = discovered_nightly - matrix_dirs
+    extra = matrix_dirs - discovered_nightly
+    assert (
+        not missing
+    ), f"nightly.yml run-pytest missing nightly suites: {sorted(missing)}"
+    assert (
+        not extra
+    ), f"nightly.yml run-pytest lists dirs without nightly tests: {sorted(extra)}"
+
+
+def test_profiles_yaml_covers_all_kahawai_cases_when_built() -> None:
+    """When KahawaiTest is built, every compiled case must match at least one profile."""
+    candidates = (
+        REPO_ROOT / ".local_install/mtl/bin/KahawaiTest",
+        REPO_ROOT / "build/tests/KahawaiTest",
+    )
+    binary = next((p for p in candidates if p.is_file()), None)
+    if binary is None:
+        pytest.skip("KahawaiTest binary not built")
+    cases = json.loads(
+        subprocess.check_output([str(binary), "--list-json"], text=True, timeout=30)
+    )
+    pdata = yaml.safe_load(PROFILES_YAML.read_text(encoding="utf-8"))
+    pdefs = pdata.get("profiles") or {}
+
+    filters_by_instance: dict[str, list[tuple[str, str]]] = {"shared": [], "own": []}
+    for tier in ("pr", "nightly"):
+        for run in pdata["runs"][tier]:
+            pd = pdefs.get(run.get("profile", "default")) or {}
+            inst = "own" if pd.get("instance") == "own" else "shared"
+            filters_by_instance[inst].append(
+                (str(run["name"]), str(run.get("filter", "")))
+            )
+
+    for inst, named_filters in filters_by_instance.items():
+        inst_cases = [c["case"] for c in cases if c.get("instance", "shared") == inst]
+        for run_name, flt in named_filters:
+            matched = [c for c in inst_cases if _gtest_filter_matches(c, flt)]
+            assert matched, (
+                f"profiles.yaml run '{run_name}' (instance={inst}) filter '{flt}' "
+                "matched zero compiled KahawaiTest cases"
+            )
+        uncovered = sorted(
+            c
+            for c in inst_cases
+            if not any(_gtest_filter_matches(c, flt) for _, flt in named_filters)
+        )
+        assert (
+            not uncovered
+        ), f"KahawaiTest ({inst}) cases not covered by profiles.yaml: {uncovered}"
 
 
 def test_nightly_gtest_sharded_via_shim(tmp_path: Path) -> None:

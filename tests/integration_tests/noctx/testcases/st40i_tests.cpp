@@ -168,7 +168,7 @@ static int send_rtp_burst(const st_tests_context* ctx, uint16_t port,
 
 /* st40i_smoke
  * Config: kInterlaced TX and RX, TX kFps = 50 fields/s; no strategy.
- * Expect: after 20 s and stop: txFrames() > 0, rxFrames() > 0, equal.
+ * Expect: after 2 s (~100 fields) and stop: txFrames() > 0, rxFrames() > 0, equal.
  */
 TEST_F(NoCtxTest, st40i_smoke) {
   initDefaultContext();
@@ -191,7 +191,7 @@ TEST_F(NoCtxTest, st40i_smoke) {
   handler->startSession();
   mtl_start(ctx->handle);
 
-  sleepUntilFailure();
+  sleepUntilFailure(2);
 
   handler->stopSession();
 

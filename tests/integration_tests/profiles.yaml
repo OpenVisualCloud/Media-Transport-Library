@@ -28,6 +28,8 @@ topologies:
 
 profiles:
   default: {}
+  level_all:
+    extra_args: [--level, all]
   queue_cnt_24:
     extra_args: [--queue_cnt, "24"]
   dma_va:
@@ -62,6 +64,8 @@ profiles:
     instance: own
     env:
       NOCTX_REQUIRE_STRICT: "1"
+      NOCTX_STABILITY_SECONDS: "60"
+      NOCTX_TEST_DURATION: "10"
       MTL_ISOLATE: require
   noctx_pf:
     instance: own
@@ -70,8 +74,7 @@ runs:
   pr:
     - {name: st2110_20_rx_shard0, profile: default, topology: vf_pair, filter: "St20_rx*", dma_auto: true, env: {GTEST_TOTAL_SHARDS: "2", GTEST_SHARD_INDEX: "0"}}
     - {name: st2110_20_rx_shard1, profile: default, topology: vf_pair, filter: "St20_rx*", dma_auto: true, env: {GTEST_TOTAL_SHARDS: "2", GTEST_SHARD_INDEX: "1"}}
-    - {name: st2110_20_tx_shard0, profile: default, topology: vf_pair, filter: "St20_tx*", dma_auto: true, env: {GTEST_TOTAL_SHARDS: "2", GTEST_SHARD_INDEX: "0"}}
-    - {name: st2110_20_tx_shard1, profile: default, topology: vf_pair, filter: "St20_tx*", dma_auto: true, env: {GTEST_TOTAL_SHARDS: "2", GTEST_SHARD_INDEX: "1"}}
+    - {name: st2110_20_tx, profile: default, topology: vf_pair, filter: "St20_tx*", dma_auto: true}
     - {name: st2110_20p, profile: default, topology: vf_pair, filter: "St20p*", dma_auto: true}
     - {name: st2110_20_tx_queue_cnt, profile: queue_cnt_24, topology: vf_pair, filter: "St20_tx.create_queue_cnt", dma_auto: true}
     - {name: st2110_22_rx, profile: default, topology: vf_pair, filter: "St22_rx*", dma_auto: true}
@@ -85,12 +88,13 @@ runs:
     - {name: Sch, profile: default, topology: vf_pair, filter: "Sch*", dma_auto: true}
     - {name: Cvt, profile: default, topology: vf_pair, filter: "Cvt*", dma_auto: true}
     - {name: st20s, profile: default, topology: vf_pair, filter: "St20s*", dma_auto: true}
+    - {name: tx_timestamp_sync, profile: level_all, topology: vf_pair, filter: "TxUserTimestampSync*", dma_auto: true}
     - {name: Dma_va, profile: dma_va, topology: vf_pair, filter: "Dma*", dma_auto: true}
     - {name: Dma_pa, profile: dma_pa, topology: vf_pair, filter: "Dma*", dma_auto: true}
     - {name: digest_1080p_timeout_interval, profile: digest_tsc_pa, topology: vf_pair, filter: "*digest_1080p_timeout_interval*", dma_auto: true}
-    - {name: st20p_auto_pacing_pa, profile: auto_pacing_pa, topology: vf_pair, filter: "Main*:St20p*:-*ext*", dma_auto: true}
-    - {name: st20p_auto_pacing_va, profile: auto_pacing_va, topology: vf_pair, filter: "Main*:St20p*:-*ext*", dma_auto: true}
-    - {name: st20p_tsc_pacing, profile: tsc_pacing, topology: vf_pair, filter: "Main*:St20p*:-*ext*", dma_auto: true}
+    - {name: st20p_auto_pacing_pa, profile: auto_pacing_pa, topology: vf_pair, filter: "St20p.digest*:St20p.transport_*:St20p.frame_is_late:St20p.tx_*no_epoch_drop-St20p.*ext*", dma_auto: true}
+    - {name: st20p_auto_pacing_va, profile: auto_pacing_va, topology: vf_pair, filter: "St20p.digest*:St20p.transport_*:St20p.frame_is_late:St20p.tx_*no_epoch_drop-St20p.*ext*", dma_auto: true}
+    - {name: st20p_tsc_pacing, profile: tsc_pacing, topology: vf_pair, filter: "St20p.digest*:St20p.transport_*:St20p.frame_is_late:St20p.tx_*no_epoch_drop-St20p.*ext*", dma_auto: true}
     - {name: redundant_stats, profile: default, topology: vf_quad, filter: "St20p.redundant*:St30p.redundant*:St40p.redundant*"}
     - {name: st20p_kernel_loopback, profile: kernel_lo, topology: kernel_lo, filter: "St20p*", needs_root: false}
     - {name: noctx, profile: noctx, topology: cross_pf_quad, filter: "NoCtxTest.*-NoCtxTest.*_pf_*"}
@@ -100,8 +104,7 @@ groups:
   pr_core:
     - st2110_20_rx_shard0
     - st2110_20_rx_shard1
-    - st2110_20_tx_shard0
-    - st2110_20_tx_shard1
+    - st2110_20_tx
     - st2110_20p
     - st2110_20_tx_queue_cnt
     - st2110_22_rx
@@ -113,13 +116,14 @@ groups:
     - Misc
     - Main
     - Sch
-    - Cvt
     - st20s
+    - tx_timestamp_sync
     - redundant_stats
     - st20p_kernel_loopback
   pacing_dma:
     - Dma_va
     - Dma_pa
+    - Cvt
     - digest_1080p_timeout_interval
     - st20p_auto_pacing_pa
     - st20p_auto_pacing_va

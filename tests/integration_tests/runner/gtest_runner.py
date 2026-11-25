@@ -12,14 +12,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import random
 import re
+import secrets
 import signal
 import socket
-import subprocess
+import subprocess  # nosec B404 # runs KahawaiTest and nic_setup.sh via argv lists, no shell
 import sys
 import time
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosec B405 # parses local JUnit XML produced by KahawaiTest
 from pathlib import Path
 from typing import Any
 
@@ -32,11 +32,11 @@ REPO_ROOT = RUNNER_DIR.parent.parent.parent
 DEFAULT_PROFILES = RUNNER_DIR.parent / "profiles.yaml"
 
 CONFIG_ERRORS = (
-    "EAL: Cannot use IOVA as",
-    "libmtl.so: cannot open shared object file:",
-    "EAL: Cannot set up DMA remapping, error 12",
-    "Cannot bind to driver vfio-pci",
-    "invalid ip 0.0.0.0",
+    re.compile(r"EAL: Cannot use IOVA as"),
+    re.compile(r"libmtl\.so: cannot open shared object file:"),
+    re.compile(r"EAL: Cannot set up DMA remapping, error 12"),
+    re.compile(r"Cannot bind to driver vfio-pci"),
+    re.compile(r"mt_user_params_check\(\d+\), invalid ip"),
 )
 NIC_IDS = {
     "0x1592": "E810",
@@ -186,7 +186,11 @@ def parse_xml(
     if not xml_path.is_file():
         return []
     out = []
-    for tc in ET.parse(xml_path).getroot().iter("testcase"):
+    for tc in (
+        ET.parse(xml_path)  # nosec B314 # parses local JUnit XML written by KahawaiTest
+        .getroot()
+        .iter("testcase")
+    ):
         cls, name = tc.attrib.get("classname", ""), tc.attrib.get("name", "")
         full = f"{cls}.{name}" if cls else name
         fail = tc.find("failure")
@@ -270,9 +274,9 @@ def _sudo(needs_root: bool, no_sudo: bool, extra_env: dict[str, str]) -> list[st
 
 
 def _check_config(label: str, out: str) -> None:
-    for err in CONFIG_ERRORS:
-        if err in out:
-            raise HostFault(f"Config error in {label}: {err}")
+    for pat in CONFIG_ERRORS:
+        if pat.search(out):
+            raise HostFault(f"Config error in {label}: {pat.pattern}")
 
 
 def _mk(
@@ -320,8 +324,9 @@ def _run_case(
         rc, out = run_cmd(cmd, {**os.environ, **env_map}, log, timeout_s, a.quiet)
         if iso:
             subprocess.run(sweep, capture_output=True, check=False)
-        _check_config(case, out)
         parsed = parse_xml(xml, ctx, att)
+        if rc != 0:
+            _check_config(case, out)
         cur = (
             parsed[0]
             if parsed
@@ -366,7 +371,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     add("--pf-ports", help="Already-bound PF port BDFs for noctx_pf")
     add("--out-dir", default=f"/tmp/mtl_gtest_{os.getpid()}")
     add("--log-file", help="Optional combined log file path for CI compatibility")
-    add("--p-sip", default=f"192.168.{random.randint(0, 255)}.1")
+    add("--p-sip", default=f"192.168.{secrets.randbelow(256)}.1")
     add("--retries", type=int, default=2)
     add("--retry-delay", type=int, default=5)
     add("--timeout", type=int, default=1800)
@@ -595,8 +600,9 @@ def main(argv: list[str] | None = None) -> int:
                     a.timeout,
                     a.quiet,
                 )
-                _check_config(name, out)
                 parsed = parse_xml(xml, ctx, 1)
+                if rc != 0 and not parsed:
+                    _check_config(name, out)
                 if not parsed and rc != 0:
                     record(
                         _mk(
@@ -608,6 +614,11 @@ def main(argv: list[str] | None = None) -> int:
                         )
                     )
                     any_fail = True
+                retry_env = {
+                    k: v
+                    for k, v in penv.items()
+                    if k not in ("GTEST_TOTAL_SHARDS", "GTEST_SHARD_INDEX")
+                }
                 for r in parsed:
                     final = (
                         _run_case(
@@ -616,7 +627,7 @@ def main(argv: list[str] | None = None) -> int:
                             base,
                             r["case"],
                             root,
-                            {},
+                            retry_env,
                             a.timeout,
                             2,
                             out_dir,

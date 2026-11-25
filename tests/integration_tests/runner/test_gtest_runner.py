@@ -8,7 +8,7 @@ import importlib.util
 import json
 import os
 import stat
-import subprocess
+import subprocess  # nosec B404 # runs nic_setup.sh in offline test via argv list
 import sys
 from pathlib import Path
 
@@ -122,10 +122,14 @@ def test_load_profiles_yaml() -> None:
     by_name = {r["name"]: r for r in runs}
     assert len(runs) == 26
     assert by_name["st2110_20_rx_shard0"]["env"]["GTEST_TOTAL_SHARDS"] == "2"
+    assert by_name["st2110_20_tx"]["filter"] == "St20_tx*"
+    assert by_name["tx_timestamp_sync"]["extra_args"] == ["--level", "all"]
     assert "--multi_src_port" in by_name["st20p_auto_pacing_pa"]["extra_args"]
     assert by_name["st20p_kernel_loopback"]["needs_root"] is False
     assert by_name["noctx"]["mode"] == "noctx"
     assert by_name["noctx"]["env"]["MTL_ISOLATE"] == "require"
+    assert by_name["noctx"]["env"]["NOCTX_STABILITY_SECONDS"] == "60"
+    assert by_name["noctx"]["env"]["NOCTX_TEST_DURATION"] == "10"
     assert by_name["noctx_pf"]["topology"] == "pf_pair"
 
 
@@ -226,4 +230,164 @@ def test_runner_host_fault_and_direct_2port_pvf(
             "--bind-pvf=0000:31:00.0,0000:31:00.1",
         )
         == 0
+    )
+
+
+def test_runner_ignores_expect_fail_invalid_ip_log(tmp_path: Path) -> None:
+    pci, hp = _fake_sysfs(tmp_path)
+    ok_bin = _exec(
+        tmp_path / "KahawaiTestOk",
+        """#!/usr/bin/env python3
+import sys, xml.etree.ElementTree as ET
+xml = next((a.split("xml:", 1)[1] for a in sys.argv[1:] if a.startswith("--gtest_output=xml:")), "")
+print("MTL: Error: tv_ops_check(1), invalid ip 0.0.0.0")
+root = ET.Element("testsuites")
+ts = ET.SubElement(root, "testsuite", name="St20p")
+ET.SubElement(ts, "testcase", classname="St20p", name="tx_create_expect_fail", time="0.01")
+if xml:
+    ET.ElementTree(root).write(xml, encoding="utf-8", xml_declaration=True)
+sys.exit(0)
+""",
+    )
+    assert (
+        _run(
+            ok_bin,
+            tmp_path / "o_ok",
+            pci,
+            hp,
+            "--profile=^st2110_20p$",
+            "--ports=0000:4b:01.0,0000:4b:01.1",
+        )
+        == 0
+    )
+    bad_bin = _exec(
+        tmp_path / "KahawaiTestBad",
+        """#!/usr/bin/env python3
+import sys
+print("MTL: Error: mt_user_params_check(0), invalid ip 0.0.0.0")
+sys.exit(1)
+""",
+    )
+    assert (
+        _run(
+            bad_bin,
+            tmp_path / "o_bad",
+            pci,
+            hp,
+            "--profile=^st2110_20p$",
+            "--ports=0000:4b:01.0,0000:4b:01.1",
+        )
+        == gr.HOST_FAULT_EXIT
+    )
+
+
+def test_runner_noctx_host_fault_detected_with_failing_xml(tmp_path: Path) -> None:
+    pci, hp = _fake_sysfs(tmp_path)
+    noctx_bad = _exec(
+        tmp_path / "KahawaiTestNoCtxBad",
+        """#!/usr/bin/env python3
+import sys, xml.etree.ElementTree as ET
+xml = next((a.split("xml:", 1)[1] for a in sys.argv[1:] if a.startswith("--gtest_output=xml:")), "")
+if "--gtest_list_tests" in sys.argv:
+    print("NoCtxTest.")
+    print("  init_32_queues")
+    sys.exit(0)
+if "--list-json" in sys.argv:
+    print("[]")
+    sys.exit(0)
+print("EAL: Cannot set up DMA remapping, error 12")
+root = ET.Element("testsuites")
+ts = ET.SubElement(root, "testsuite", name="NoCtxTest")
+tc = ET.SubElement(ts, "testcase", classname="NoCtxTest", name="init_32_queues", time="0.01")
+ET.SubElement(tc, "failure", message="mtl_init failed").text = "mtl_init failed"
+if xml:
+    ET.ElementTree(root).write(xml, encoding="utf-8", xml_declaration=True)
+sys.exit(1)
+""",
+    )
+    assert (
+        _run(
+            noctx_bad,
+            tmp_path / "o_noctx_bad",
+            pci,
+            hp,
+            f"--repo-root={tmp_path}",
+            "--profile=^noctx$",
+            "--ports=0000:4b:01.0,0000:4b:01.1,0000:4b:01.2,0000:4b:01.3",
+            "--retry-delay=0",
+        )
+        == gr.HOST_FAULT_EXIT
+    )
+
+
+def test_runner_shared_retry_strips_shard_env_and_keeps_profile_env(
+    tmp_path: Path,
+) -> None:
+    pci, hp = _fake_sysfs(tmp_path)
+    profiles = tmp_path / "profiles.yaml"
+    profiles.write_text(
+        """profiles:
+  custom:
+    env:
+      CUSTOM_FLAG: "keep_me"
+runs:
+  pr:
+    - name: sharded_case
+      profile: custom
+      topology: vf_pair
+      filter: "St20_rx*"
+      env:
+        GTEST_TOTAL_SHARDS: "2"
+        GTEST_SHARD_INDEX: "0"
+groups:
+  g: [sharded_case]
+""",
+        encoding="utf-8",
+    )
+    seen = tmp_path / "seen.jsonl"
+    bin_p = _exec(
+        tmp_path / "KahawaiTestShardRetry",
+        f"""#!/usr/bin/env python3
+import json, os, sys, xml.etree.ElementTree as ET
+from pathlib import Path
+flt = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--gtest_filter=")), "")
+xml = next((a.split("xml:", 1)[1] for a in sys.argv[1:] if a.startswith("--gtest_output=xml:")), "")
+with Path("{seen}").open("a", encoding="utf-8") as fh:
+    fh.write(json.dumps({{
+        "flt": flt,
+        "custom": os.environ.get("CUSTOM_FLAG"),
+        "shards": os.environ.get("GTEST_TOTAL_SHARDS"),
+        "idx": os.environ.get("GTEST_SHARD_INDEX"),
+    }}) + "\\n")
+root = ET.Element("testsuites")
+ts = ET.SubElement(root, "testsuite", name="St20_rx")
+tc = ET.SubElement(ts, "testcase", classname="St20_rx", name="flaky_one", time="0.01")
+fail = (flt == "St20_rx*")
+if fail:
+    ET.SubElement(tc, "failure", message="transient").text = "transient"
+if xml:
+    ET.ElementTree(root).write(xml, encoding="utf-8", xml_declaration=True)
+sys.exit(1 if fail else 0)
+""",
+    )
+    out = tmp_path / "out"
+    rc = _run(
+        bin_p,
+        out,
+        pci,
+        hp,
+        f"--profiles={profiles}",
+        "--tier=pr",
+        "--ports=0000:4b:01.0,0000:4b:01.1",
+        "--retry-delay=0",
+    )
+    assert rc == 0
+    calls = [json.loads(ln) for ln in seen.read_text(encoding="utf-8").splitlines()]
+    assert len(calls) == 2
+    assert calls[0]["shards"] == "2" and calls[0]["custom"] == "keep_me"
+    assert (
+        calls[1]["flt"] == "St20_rx.flaky_one"
+        and calls[1]["custom"] == "keep_me"
+        and calls[1]["shards"] is None
+        and calls[1]["idx"] is None
     )

@@ -12,7 +12,8 @@ name: nightly
 run-name: >-
   ${{ (inputs.branch == '' && inputs.gtest && inputs.pytest && inputs.fuzz &&
   inputs.unit && inputs.code_scan && inputs.gtest_cases == '' &&
-  inputs.pytest_dir == '' && inputs.pytest_filter == '') &&
+  inputs.pytest_dir == '' && inputs.pytest_filter == '' &&
+  inputs.pytest_test_time == '') &&
   format('nightly {0}', github.ref_name) ||
   format('nightly {0} (custom inputs)', inputs.branch || github.ref_name) }}
 
@@ -28,7 +29,7 @@ on:
         type: boolean
         default: true
       gtest_cases:
-        description: 'Regex of the gtest.sh case names to run, for example ^Dma (empty = all)'
+        description: 'Regex of profiles.yaml run names to run, for example ^Dma (empty = all)'
         required: false
         type: string
       pytest:
@@ -41,6 +42,10 @@ on:
         type: string
       pytest_filter:
         description: 'pytest -k expression for each directory (empty = all nightly tests)'
+        required: false
+        type: string
+      pytest_test_time:
+        description: 'Override seconds of traffic per pytest case (empty = suite default)'
         required: false
         type: string
       fuzz:
@@ -174,6 +179,9 @@ jobs:
   run-pytest:
     needs: build
     if: ${{ inputs.pytest }}
+    concurrency:
+      group: pytest-${{ github.workflow }}-${{ github.ref }}-${{ matrix.nic }}-${{ matrix.suite.dir }}-${{ matrix.suite.shard || 'all' }}
+      cancel-in-progress: true
     strategy:
       matrix:
         nic:
@@ -182,16 +190,18 @@ jobs:
           - e835
         # st20p takes about 6 h on one runner, so 4 shards spread it over the
         # runners of the NIC. A dispatch with pytest_dir runs only that one
-        # directory.
+        # directory. Every directory under tests/acceptance/tests/single/ with
+        # pytest.mark.nightly must appear here (enforced by test_nightly_workflow.py).
         suite: >-
           ${{ fromJSON(inputs.pytest_dir && format('[{{"dir": {0}}}]', toJSON(inputs.pytest_dir)) || '[
-          {"dir": "cross_app"}, {"dir": "st40p"}, {"dir": "gstreamer"},
-          {"dir": "kernel_socket"}, {"dir": "rss_mode"}, {"dir": "rx_timing"},
+          {"dir": "backends"}, {"dir": "cross_app"}, {"dir": "dma"},
+          {"dir": "gstreamer"}, {"dir": "kernel_socket"}, {"dir": "rss_mode"},
+          {"dir": "rx_timing"}, {"dir": "st20"},
           {"dir": "st20p", "shard": 1, "shards": 4},
           {"dir": "st20p", "shard": 2, "shards": 4},
           {"dir": "st20p", "shard": 3, "shards": 4},
           {"dir": "st20p", "shard": 4, "shards": 4},
-          {"dir": "st22p"}, {"dir": "st30p"}, {"dir": "xdp"}]') }}
+          {"dir": "st22p"}, {"dir": "st30p"}, {"dir": "st40p"}, {"dir": "xdp"}]') }}
       fail-fast: false
     runs-on: ${{ matrix.nic }}
     timeout-minutes: 720
@@ -231,12 +241,14 @@ jobs:
       - name: 'preparation: Validate host and download artifacts'
         uses: ./.github/actions/validate-host
         with:
+          nic: ${{ matrix.nic }}
           build_outputs: ${{ toJSON(needs.build.outputs) }}
 
       - name: 'preparation: Set up the acceptance suite'
         uses: ./.github/actions/pytest-setup
         with:
           nic: ${{ matrix.nic }}
+          test_time: ${{ inputs.pytest_test_time }}
 
       - name: 'execution: Run the nightly tests of ${{ env.SUITE }}'
         env:

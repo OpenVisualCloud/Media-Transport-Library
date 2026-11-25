@@ -47,7 +47,8 @@ class NoCtxTest : public ::testing::Test {
   static void StartFakePtpClock();
   static void ResetFakePtpClock();
 
-  /* Sleeps sleepDuration s (0: defaultTestDuration, 20 s), up to the first failure. */
+  /* Sleeps sleepDuration s (0: defaultTestDuration, 20 s or NOCTX_TEST_DURATION),
+   * up to the first failure. */
   void sleepUntilFailure(int sleepDuration = 0);
   /* Default ops TX TEST_PORT_1 -> RX TEST_PORT_2, then configure(), then the sessions,
    * then the strategy, so a user-pacing plan starts after session setup. */
