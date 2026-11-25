@@ -459,7 +459,7 @@ struct st_app_tx_st40p_session {
   double expect_fps;
   double frame_time;
   uint64_t frame_num;
-  uint64_t user_time_epoch;
+  struct st_user_time_state user_time_state;
   struct st_user_time* user_time;
 
   size_t udw_payload_limit;
@@ -534,7 +534,7 @@ struct st_app_tx_st20p_session {
   bool sha_check;
   /* for now used only with user pacing to keep track of the frame timestamps */
   uint64_t frame_num;
-  uint64_t user_time_epoch;
+  struct st_user_time_state user_time_state;
   struct st_user_time* user_time;
 
   char st20p_source_url[ST_APP_URL_MAX_LEN];
@@ -607,7 +607,7 @@ struct st_app_tx_st30p_session {
   /* for now used only with user pacing to keep track of the frame timestamps */
   uint64_t frame_num;
   uint64_t packet_time;
-  uint64_t user_time_epoch;
+  struct st_user_time_state user_time_state;
   struct st_user_time* user_time;
 
   char st30p_source_url[ST_APP_URL_MAX_LEN];
@@ -826,6 +826,7 @@ int st_set_mtl_log_file(struct st_app_context* ctx, const char* file);
 void st_sha_dump(const char* tag, const unsigned char* sha);
 
 uint64_t st_app_user_time(void* ctx, const struct st_user_time* user_time,
-                          uint64_t* epoch, uint64_t frame_num, double frame_time);
+                          struct st_user_time_state* state, uint64_t frame_num,
+                          double frame_time);
 
 #endif

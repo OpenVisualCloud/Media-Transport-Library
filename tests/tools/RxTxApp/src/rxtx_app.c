@@ -643,21 +643,18 @@ int main(int argc, char** argv) {
  * Otherwise, returns the calculated time.
  */
 uint64_t st_app_user_time(void* ctx, const struct st_user_time* user_time,
-                          uint64_t* epoch, uint64_t frame_num, double frame_time) {
-  uint64_t now = 0;
-
+                          struct st_user_time_state* state, uint64_t frame_num,
+                          double frame_time) {
   if (!user_time) return 0;
 
-  if (!*epoch) {
-    now = app_ptp_from_tai_time(ctx);
-    if (!now) {
-      err("%s, get tai time fail\n", __func__);
-      return 0;
-    }
+  uint64_t now = app_ptp_from_tai_time(ctx);
+  if (!now) {
+    err("%s, get tai time fail\n", __func__);
+    return 0;
   }
-  uint64_t tai = st_app_user_time_calc(user_time, epoch, now, frame_num, frame_time);
+  uint64_t tai = st_app_user_time_calc(user_time, state, now, frame_num, frame_time);
   if (!frame_num)
-    info("%s, first epoch %" PRIu64 ", tai %" PRIu64 "\n", __func__, *epoch, tai);
+    info("%s, first epoch %" PRIu64 ", tai %" PRIu64 "\n", __func__, state->epoch, tai);
   return tai;
 }
 

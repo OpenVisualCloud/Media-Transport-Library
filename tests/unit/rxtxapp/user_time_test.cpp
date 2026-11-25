@@ -30,7 +30,7 @@ long double grid_error_ns(uint64_t tai, uint32_t mul, uint32_t den) {
 
 TEST(RxTxAppUserTime, SessionStaysOnItsGridWhenAnotherStartsLater) {
   struct st_user_time user_time = {};
-  uint64_t video = 0, audio = 0;
+  struct st_user_time_state video = {}, audio = {};
 
   uint64_t video0 = st_app_user_time_calc(&user_time, &video, kNow, 0, kFrameTimeP59);
   uint64_t audio0 =
@@ -45,7 +45,7 @@ TEST(RxTxAppUserTime, SessionStaysOnItsGridWhenAnotherStartsLater) {
 
 TEST(RxTxAppUserTime, LaterSessionDoesNotMoveEarlierOne) {
   struct st_user_time user_time = {};
-  uint64_t video = 0, other = 0;
+  struct st_user_time_state video = {}, other = {};
   uint64_t elapsed = (uint64_t)(100 * kFrameTimeP59);
 
   uint64_t video0 = st_app_user_time_calc(&user_time, &video, kNow, 0, kFrameTimeP59);
@@ -58,7 +58,7 @@ TEST(RxTxAppUserTime, LaterSessionDoesNotMoveEarlierOne) {
 
 TEST(RxTxAppUserTime, FirstFrameLeadsNowByOneToTwoFrameTimes) {
   struct st_user_time user_time = {};
-  uint64_t session = 0;
+  struct st_user_time_state session = {};
 
   uint64_t tai0 = st_app_user_time_calc(&user_time, &session, kNow, 0, kFrameTimeP59);
 
@@ -68,7 +68,7 @@ TEST(RxTxAppUserTime, FirstFrameLeadsNowByOneToTwoFrameTimes) {
 
 TEST(RxTxAppUserTime, NegativeOffsetPutsFramesInThePast) {
   struct st_user_time on_time = {}, late = {};
-  uint64_t on_time_session = 0, late_session = 0;
+  struct st_user_time_state on_time_session = {}, late_session = {};
   late.user_time_offset = -2000000000LL;
 
   uint64_t on_time0 =
@@ -81,7 +81,7 @@ TEST(RxTxAppUserTime, NegativeOffsetPutsFramesInThePast) {
 
 TEST(RxTxAppUserTime, PositiveOffsetDelaysFrames) {
   struct st_user_time on_time = {}, delayed = {};
-  uint64_t on_time_session = 0, delayed_session = 0;
+  struct st_user_time_state on_time_session = {}, delayed_session = {};
   delayed.user_time_offset = 10000000;
 
   uint64_t on_time0 =
@@ -94,13 +94,13 @@ TEST(RxTxAppUserTime, PositiveOffsetDelaysFrames) {
 
 TEST(RxTxAppUserTime, FrameTimesDoNotDriftOverTenHours) {
   struct st_user_time user_time = {};
-  uint64_t session = 0;
+  struct st_user_time_state session = {};
   uint64_t frames = 10ULL * 3600 * 60000 / 1001;
   uint64_t exact_ns = (uint64_t)((__int128)frames * 1001 * 1000000000 / 60000);
 
   uint64_t tai0 = st_app_user_time_calc(&user_time, &session, kNow, 0, kFrameTimeP59);
   uint64_t tai_n =
-      st_app_user_time_calc(&user_time, &session, kNow, frames, kFrameTimeP59);
+      st_app_user_time_calc(&user_time, &session, kNow + exact_ns, frames, kFrameTimeP59);
 
   EXPECT_NEAR((double)(tai_n - tai0), (double)exact_ns, 2.0);
   EXPECT_LT(fabsl(grid_error_ns(tai_n, 60000, 1001)), kGridToleranceNs);
