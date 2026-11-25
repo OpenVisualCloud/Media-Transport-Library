@@ -78,6 +78,14 @@ _AF_XDP_COPY_MARKERS = (
     "user special to copy mode only",
     "xsk create with zero copy fail",
 )
+# any libmtl TX video stat line: tells whether the stat dump was printed at all
+_TX_VIDEO_STAT_RE = re.compile(r"TX_VIDEO_SESSION\(\d+,\d+\):")
+# libmtl's per-period rise of stat_error_user_timestamp, printed only when it rose
+_TX_USER_TIMESTAMP_ERR_RE = re.compile(
+    r"TX_VIDEO_SESSION\(\d+,\d+\): error user timestamp (\d+)"
+)
+# libmtl's RX timing parser: first packet time of a frame after its epoch.
+_RX_TIMING_FPT_RE = re.compile(r"rv_tp_stat\((\d+)\),\s*FPT AVG (-?[\d.]+)")
 _RX_TIMING_RE = re.compile(
     r"rv_tp_stat\((\d+),(\d+)\),\s*COMPLIANT NARROW (\d+) WIDE (\d+) FAILED (\d+)"
 )
@@ -432,6 +440,44 @@ class Application(ABC):
                 total += int(m.group(1))
         return total if seen else -1
 
+    def count_tx_user_timestamp_errors(self) -> int:
+        """TX video ``stat_error_user_timestamp`` total of the last run.
+
+        libmtl prints ``TX_VIDEO_SESSION(m,s): error user timestamp N`` with
+        the rise N of one stat period, and only when it rose, so the run total
+        is the sum and no line means 0. The stat dump is notice level, so a
+        run that printed no ``TX_VIDEO_SESSION`` stat line at all (``log_level``
+        warning or above) returns -1: it cannot tell.
+        """
+        output = self.last_output or ""
+        if not _TX_VIDEO_STAT_RE.search(output):
+            return -1
+        return sum(int(m.group(1)) for m in _TX_USER_TIMESTAMP_ERR_RE.finditer(output))
+
+    def rx_first_packet_times_ns(self) -> list[float]:
+        """Per stat period FPT averages of the MTL RX timing parser, in ns.
+
+        FPT is the time from a frame's epoch to its first packet at RX, as
+        ``rv_tp_stat(s), FPT AVG x`` reports it. A period with no frame
+        reports -1. Session indices are dropped, so several RX sessions
+        interleave. The FPT lines are info level: they need
+        ``rx_timing_parser`` and ``log_level`` info or lower.
+        """
+        return [
+            float(m.group(2))
+            for m in _RX_TIMING_FPT_RE.finditer(self.last_output or "")
+        ]
+
+    def tx_user_pacing_applied(self) -> bool:
+        """Whether the app put the TX user pacing flags on its session.
+
+        Each adapter that supports ``user_pacing`` says how it reports this;
+        the library does not log the flags.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} cannot report whether user pacing was applied"
+        )
+
     def _session_pacing_ways(self) -> list[str]:
         """Return final per-session pacing ways in attach order."""
         return [
@@ -587,9 +633,13 @@ class Application(ABC):
         )
 
     def assert_rx_timing_compliance(
-        self, expected_sessions: int = 1
+        self, expected_sessions: int = 1, require_narrow: bool = True
     ) -> dict[tuple[int, int], dict[str, int]]:
-        """Assert every reported ST20 RX timing interval is narrow compliant."""
+        """Assert every expected ST20 RX session reported RX timing results.
+
+        With ``require_narrow`` (the default), every reported interval must
+        also be narrow compliant.
+        """
         totals: dict[tuple[int, int], dict[str, int]] = {}
         for match in _RX_TIMING_RE.finditer(self.last_output or ""):
             key = (int(match.group(1)), int(match.group(2)))
@@ -606,6 +656,8 @@ class Application(ABC):
             f"rx_timing_parser reported {len(totals)} video session(s), but "
             f"{expected_sessions} were expected: {totals}"
         )
+        if not require_narrow:
+            return totals
         non_narrow = {
             session: counts
             for session, counts in totals.items()

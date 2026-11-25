@@ -185,6 +185,7 @@ unit_sources = [
   'session/st20_tx/update_destination_test.cpp',
   'session/st20_tx/session_lock_test.cpp',
   'session/st20_tx/rtp_pkt_size_test.cpp',
+  'session/st20_tx/rtp_user_pacing_test.cpp',
   'session/multi_essence_sync_test.cpp',
   'session/rx_redundant_ip_test.cpp',
   'session/rtcp_tx_harness.c',

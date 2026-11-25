@@ -849,6 +849,8 @@ static int tv_reset_pacing_epoch(struct mtl_main_impl* impl,
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   struct st_tx_video_pacing* pacing = &s->pacing;
   pacing->cur_epochs = st_tai_to_epoch(ptp_time, s->fps_tm.mul, s->fps_tm.den);
+  pacing->exact_start_tai = 0;
+  pacing->user_start_tai = 0;
   return 0;
 }
 
@@ -880,8 +882,11 @@ static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_i
     if (s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) {
       validate_user_timestamp(s, required_tai, cur_tai, NS_PER_S);
     } else {
-      validate_user_timestamp(s, frame_count, frame_count_tai,
-                              NS_PER_S / s->pacing.frame_time);
+      /* Without EXACT only an epoch already in the past is counted here. Whether a
+       * start is too far ahead depends on the interlace parity bump and the 90 kHz
+       * rounding tv_sync_pacing() applies later, so tv_sync_pacing() checks 1 s. */
+      if (frame_count < frame_count_tai)
+        s->port_user_stats.common.stat_error_user_timestamp++;
     }
     /* frame_count 0 collides with the "unset" sentinel used elsewhere; fall back to
      * real time rather than honor a rounded-to-zero required_tai */
@@ -891,11 +896,22 @@ static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_i
 
   if (s->pacing.cur_epochs == UINT64_MAX) return frame_count_tai;
   next_free_frame_slot = s->pacing.cur_epochs + 1;
+  /* a user start PTP time has reached holds nothing back any more; clearing it also
+   * keeps user_start_tai - cur_tai below from wrapping */
+  if (s->pacing.user_start_tai <= cur_tai) s->pacing.user_start_tai = 0;
 
   if (frame_count_tai <= next_free_frame_slot) {
     /* There is time buffer until the next available frame time window */
     uint64_t onward = next_free_frame_slot - frame_count_tai;
-    if (onward > s->pacing.max_onward_epochs) {
+    /* A user-paced start up to 1 s ahead can put the next free slot past the onward
+     * range. Resyncing to now would schedule this frame about 1 s before the held
+     * frame, yet the FIFO ring still sends it after that frame: unpaced, with its RTP
+     * timestamp going back. So keep following the held frame. A PTP step back that
+     * leaves the held start more than 1 s ahead still resyncs. A late frame (the
+     * branch below) always resyncs, as nothing is held then. */
+    bool user_start_held =
+        s->pacing.user_start_tai && s->pacing.user_start_tai - cur_tai <= NS_PER_S;
+    if (onward > s->pacing.max_onward_epochs && !user_start_held) {
       /* current time is out of onward range, resync to real time instead of
        * advancing by one epoch forever */
       dbg("%s(%d), onward range exceeded, next_free_frame_slot %" PRIu64
@@ -905,6 +921,18 @@ static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_i
       frame_count = frame_count_tai;
     } else {
       frame_count = next_free_frame_slot;
+      /* An EXACT frame sets cur_epochs to the epoch nearest its TAI. When that TAI is
+       * more than TR_offset but less than half a frame past epoch N, the default start
+       * of N + 1 comes less than one frame time after it, while the EXACT frame is
+       * still on the wire. If this frame's start, after the 90 kHz rounding, is that
+       * close, move it one epoch later; one epoch is enough, as an epoch is one frame
+       * time (one field when interlaced). */
+      if (s->pacing.exact_start_tai) {
+        uint64_t start = transmission_start_time(s, frame_count);
+        if (tv_start_snaps(s))
+          start = st_tai_round_to_media_clk_ns(start, s->fps_tm.sampling_clock_rate);
+        if (start < s->pacing.exact_start_tai + s->pacing.frame_time) frame_count++;
+      }
     }
 
   } else {
@@ -940,6 +968,7 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   struct st_tx_video_pacing* pacing = &s->pacing;
   uint64_t cur_tai = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t cur_tsc = mt_get_tsc(impl);
+  uint64_t prev_epochs = pacing->cur_epochs;
   uint64_t start_time_tai;
   uint64_t time_to_tx_ns;
 
@@ -971,6 +1000,25 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
     pacing->vrx_room_ns = pacing->snap_loss_ns - (int32_t)(snapped - start_time_tai);
     start_time_tai = snapped;
   }
+  /* The transmitter does not wait more than 1 s for a target and would send the whole
+   * frame unpaced at once, so a non-EXACT start more than 1 s ahead is refused like an
+   * out-of-range EXACT TAI and counted. It is judged on the final start, after the
+   * parity bump and the 90 kHz rounding. calc_frame_count_since_epoch() replaced
+   * cur_epochs with the user's epoch, so put the previous one back; the frame then
+   * gets the default pacing from the previous frame on. The inner call has
+   * required_tai 0 and cannot take this branch: at most one recursion. */
+  if (required_tai && !exact_user_pacing && start_time_tai > cur_tai &&
+      start_time_tai - cur_tai > NS_PER_S) {
+    dbg("%s(%d), start %" PRIu64 " more than 1s ahead of %" PRIu64 "\n", __func__, s->idx,
+        start_time_tai, cur_tai);
+    s->port_user_stats.common.stat_error_user_timestamp++;
+    pacing->cur_epochs = prev_epochs;
+    return tv_sync_pacing(impl, s, 0, second_field);
+  }
+  /* see calc_frame_count_since_epoch(): exact_start_tai guards the next frame only,
+   * user_start_tai stays until PTP time reaches it */
+  pacing->exact_start_tai = exact_user_pacing ? required_tai : 0;
+  if (required_tai) pacing->user_start_tai = start_time_tai;
   if (start_time_tai < cur_tai) {
     time_to_tx_ns = 0;
     uint64_t late = cur_tai - start_time_tai;
@@ -1648,6 +1696,23 @@ static inline void tv_lead_visit(struct mtl_main_impl* impl,
   if (lead_ns < s->lead_min_ns) s->lead_min_ns = lead_ns;
 }
 
+static uint64_t tv_pacing_required_tai(struct st_tx_video_session_impl* s,
+                                       enum st10_timestamp_fmt tfmt, uint64_t timestamp);
+
+static uint64_t tv_rtp_required_tai(struct st_tx_video_session_impl* s,
+                                    struct rte_mbuf* app_pkt) {
+  if (!(s->ops.flags & ST20_TX_FLAG_USER_PACING)) return 0;
+
+  uint64_t tai = *RTE_MBUF_DYNFIELD(app_pkt, s->user_tai_offset, uint64_t*);
+  if (!tai) {
+    /* builder tasklet: no warn here, the stat dump reports the count */
+    s->port_user_stats.common.stat_error_user_timestamp++;
+    dbg("%s(%d), USER_PACING frame has no TAI, use default pacing\n", __func__, s->idx);
+    return 0;
+  }
+  return tv_pacing_required_tai(s, ST10_TIMESTAMP_FMT_TAI, tai);
+}
+
 static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
                         struct rte_mbuf* pkt) {
   struct mt_udp_hdr* hdr;
@@ -1690,7 +1755,7 @@ static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_i
         s->port_user_stats.stat_interlace_first_field++;
       }
     }
-    tv_sync_pacing(impl, s, 0, second_field);
+    tv_sync_pacing(impl, s, tv_rtp_required_tai(s, pkt), second_field);
     if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
       s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
     } else {
@@ -1764,7 +1829,7 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
         s->port_user_stats.stat_interlace_first_field++;
       }
     }
-    tv_sync_pacing(impl, s, 0, second_field);
+    tv_sync_pacing(impl, s, tv_rtp_required_tai(s, pkt_chain), second_field);
     if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
       s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
     } else {
@@ -3501,6 +3566,21 @@ static int tv_init_packet_ring(struct st_tx_video_sessions_mgr* mgr,
   struct rte_ring* ring;
   unsigned int flags, count = s->ops.rtp_ring_size;
   int mgr_idx = mgr->idx, idx = s->idx;
+
+  if (s->ops.flags & ST20_TX_FLAG_USER_PACING) {
+    static const struct rte_mbuf_dynfield user_tai_desc = {
+        .name = "mtl_tx_video_user_tai",
+        .size = sizeof(uint64_t),
+        .align = __alignof__(uint64_t),
+    };
+    int offset = rte_mbuf_dynfield_register(&user_tai_desc);
+    if (offset < 0) {
+      err("%s(%d,%d), user tai dynfield register fail %d\n", __func__, mgr_idx, idx,
+          rte_errno);
+      return -rte_errno;
+    }
+    s->user_tai_offset = offset;
+  }
 
   snprintf(ring_name, 32, "%sM%dS%d_PKT", ST_TX_VIDEO_PREFIX, mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
@@ -5297,6 +5377,10 @@ out:
 }
 
 int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len) {
+  return st20_tx_put_mbuf_tai(handle, mbuf, len, 0);
+}
+
+int st20_tx_put_mbuf_tai(st20_tx_handle handle, void* mbuf, uint16_t len, uint64_t tai) {
   struct st_tx_video_session_handle_impl* s_impl = handle;
   struct rte_mbuf* pkt = (struct rte_mbuf*)mbuf;
   struct st_tx_video_session_impl* s;
@@ -5334,6 +5418,8 @@ int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len) {
 
   if (s->tx_no_chain) len += sizeof(struct mt_udp_hdr);
 
+  if (s->ops.flags & ST20_TX_FLAG_USER_PACING)
+    *RTE_MBUF_DYNFIELD(pkt, s->user_tai_offset, uint64_t*) = tai;
   pkt->data_len = pkt->pkt_len = len;
   ret = rte_ring_sp_enqueue(packet_ring, (void*)pkt);
   if (ret < 0) {
@@ -5779,6 +5865,10 @@ out:
 }
 
 int st22_tx_put_mbuf(st22_tx_handle handle, void* mbuf, uint16_t len) {
+  return st22_tx_put_mbuf_tai(handle, mbuf, len, 0);
+}
+
+int st22_tx_put_mbuf_tai(st22_tx_handle handle, void* mbuf, uint16_t len, uint64_t tai) {
   struct st22_tx_video_session_handle_impl* s_impl = handle;
   struct rte_mbuf* pkt = (struct rte_mbuf*)mbuf;
   struct st_tx_video_session_impl* s;
@@ -5816,6 +5906,8 @@ int st22_tx_put_mbuf(st22_tx_handle handle, void* mbuf, uint16_t len) {
 
   if (s->tx_no_chain) len += sizeof(struct mt_udp_hdr);
 
+  if (s->ops.flags & ST20_TX_FLAG_USER_PACING)
+    *RTE_MBUF_DYNFIELD(pkt, s->user_tai_offset, uint64_t*) = tai;
   pkt->data_len = pkt->pkt_len = len;
   ret = rte_ring_sp_enqueue(packet_ring, (void*)pkt);
   if (ret < 0) {

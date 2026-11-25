@@ -31,6 +31,7 @@ constexpr uint64_t kOnwardRecoveryTai = 6 * kFramePeriodNs;
 constexpr uint64_t kSecondOnwardRecoveryTai = 8 * kFramePeriodNs;
 constexpr uint64_t kLateTai = 13 * kFramePeriodNs;
 constexpr uint64_t kHalfFrameTargetTai = kCurrentTai + kFramePeriodNs / 2;
+/* 1 s ahead, the far-start limit tv_sync_pacing() applies */
 constexpr uint64_t kFutureBoundaryTai = kCurrentTai + kNanosecondsPerSecond;
 constexpr uint64_t kBeyondFutureBoundaryTai = kFutureBoundaryTai + kFramePeriodNs;
 constexpr uint64_t kLateTargetTai = 100 * kFramePeriodNs;
@@ -171,17 +172,16 @@ TEST_F(St20TxEpochTest, RequiredTaiInThePastFlagsStat) {
   EXPECT_EQ(ut_txv_notify_late_calls(ctx_), 0);
 }
 
-TEST_F(St20TxEpochTest, RequiredTaiTooFarFutureFlagsStat) {
-  ut_txv_set_cur_epochs(ctx_,
-                        kInitialEpoch); /* current frame count = 10, limit = +1000 */
+/* Without EXACT, calc_frame_count_since_epoch() counts only a past TAI. Whether a far
+ * one is too far depends on the start tv_sync_pacing() derives from the epoch, so
+ * tv_sync_pacing() checks it (see pacing_test.cpp). */
+TEST_F(St20TxEpochTest, RequiredTaiTooFarFutureKeepsItsNearestEpoch) {
+  ut_txv_set_cur_epochs(ctx_, kInitialEpoch);
   uint64_t required_tai = kBeyondFutureBoundaryTai;
   uint64_t frame_count =
       ut_txv_calc_frame_count_since_epoch(ctx_, kCurrentTai, required_tai);
   EXPECT_EQ(frame_count, required_tai / kFramePeriodNs);
-  EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 1u);
-  EXPECT_EQ(ut_txv_stat_epoch_onward(ctx_), 0u);
-  EXPECT_EQ(ut_txv_stat_epoch_drop(ctx_), 0u);
-  EXPECT_EQ(ut_txv_notify_late_calls(ctx_), 0);
+  ExpectNoStatsOrLateCallback();
 }
 
 TEST_F(St20TxEpochTest, AppTargetDoesNotReportStaleOnwardState) {
@@ -200,14 +200,8 @@ TEST_F(St20TxEpochTest, RequiredTaiExactlyAtInThePastBoundaryDoesNotFlag) {
   EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 0u);
 }
 
-TEST_F(St20TxEpochTest, RequiredTaiExactlyAtFutureBoundaryDoesNotFlag) {
-  ut_txv_set_cur_epochs(ctx_,
-                        kInitialEpoch); /* current frame count = 10, limit = +1000 */
-  ut_txv_calc_frame_count_since_epoch(
-      ctx_, kCurrentTai, kFutureBoundaryTai); /* required frame count == 1010 */
-  EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 0u);
-}
-
+/* calc_frame_count_since_epoch() counts the past TAI; the far one is left to
+ * tv_sync_pacing() (see pacing_test.cpp) */
 TEST_F(St20TxEpochTest, RepeatedInvalidTimestampsAccumulateWithoutEpochRecovery) {
   ut_txv_set_cur_epochs(ctx_, kInitialEpoch);
   EXPECT_EQ(ut_txv_calc_frame_count_since_epoch(ctx_, kCurrentTai, kPastTai),
@@ -216,7 +210,7 @@ TEST_F(St20TxEpochTest, RepeatedInvalidTimestampsAccumulateWithoutEpochRecovery)
       ut_txv_calc_frame_count_since_epoch(ctx_, kCurrentTai, kBeyondFutureBoundaryTai),
       kBeyondFutureBoundaryTai / kFramePeriodNs);
 
-  EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 2u);
+  EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 1u);
   EXPECT_EQ(ut_txv_stat_epoch_onward(ctx_), 0u);
   EXPECT_EQ(ut_txv_stat_epoch_drop(ctx_), 0u);
   EXPECT_EQ(ut_txv_notify_late_calls(ctx_), 0);

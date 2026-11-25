@@ -106,6 +106,8 @@ sudo grep -E "EAL|hugepage|VF|RxTxApp|RemoteProcess|Traceback|err:" \
 | EAL hugepage / VF binding error in logs | **(setup)** Hugepages exhausted or VFs not on `vfio-pci`. |
 | RxTxApp `Segmentation fault` inside `iavf_tm_node_add` (after `dev_if_init_pacing(0), try rl as drv support TM`) | **(setup)** In-tree ice loaded instead of the out-of-tree ice of `versions.env::ICE_VER`. Re-run setup — the ice stage version-checks and reloads automatically. |
 | RxTxApp `Segmentation fault` anywhere else | **NOT setup.** Capture `gdb -batch -ex 'bt full' .local_install/mtl/bin/RxTxApp /tmp/core.*` (or `coredumpctl gdb RxTxApp`) and report upstream as a real MTL/DPDK bug. Do **not** add a workaround. |
+| RX timing parser `FPT AVG` several ms above the expected start on every case, drifting between runs | **NOT setup.** `get_interfaces_list_single("VF")` spreads the VFs over the PFs, so RX reads FPT on the other PF's clock. A case that checks absolute FPT takes both VFs on one PF: `get_interfaces_list_single("2VFxPF", count=2)`. |
+| `rv_tp_init(0), can not get total packets number` (legacy `video` RX with `rx_timing_parser`) | The RX timing parser does not run on an RTP-level RX session. Keep TX RTP and set `rx_type_mode="frame"`. |
 | `Permission denied (publickey)` to `root@127.0.0.1` | **(setup)** Pubkey not in `/root/.ssh/authorized_keys`. |
 
 **(setup)** = re-run `.github/scripts/acceptance_setup.sh setup` — `--base-only` for

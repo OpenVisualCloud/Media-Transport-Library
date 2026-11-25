@@ -387,7 +387,8 @@ enum st22p_tx_flag {
    * Only ST10_TIMESTAMP_FMT_TAI is honored; ST10_TIMESTAMP_FMT_MEDIA_CLK is not
    * supported for pacing and falls back to the default epoch-based pacing. Distinct
    * from ST22P_TX_FLAG_USER_TIMESTAMP, which honors both formats for the reported
-   * rtp timestamp.
+   * rtp timestamp. A timestamp whose start would be more than 1s ahead falls back to
+   * the default pacing.
    */
   ST22P_TX_FLAG_USER_PACING = (MTL_BIT32(3)),
   /**
@@ -458,7 +459,8 @@ enum st20p_tx_flag {
    * Only ST10_TIMESTAMP_FMT_TAI is honored; ST10_TIMESTAMP_FMT_MEDIA_CLK is not
    * supported for pacing and falls back to the default epoch-based pacing. Distinct
    * from ST20P_TX_FLAG_USER_TIMESTAMP, which honors both formats for the reported
-   * rtp timestamp.
+   * rtp timestamp. A timestamp whose start would be more than 1s ahead falls back to
+   * the default pacing.
    */
   ST20P_TX_FLAG_USER_PACING = (MTL_BIT32(3)),
   /**
@@ -499,7 +501,8 @@ enum st20p_tx_flag {
   /**
    * It changes how ST20_TX_FLAG_USER_PACING works. if enabled, it does not align the
    * transmission time to the virtual receiver read schedule. The
-   * first packet of the frame will be sent exactly at the time specified by the user.
+   * first packet of the frame will be sent exactly at the time specified by the user, and
+   * a frame on the default pacing after it starts no earlier than one frame time later.
    */
   ST20P_TX_FLAG_EXACT_USER_PACING = (MTL_BIT32(8)),
   /**

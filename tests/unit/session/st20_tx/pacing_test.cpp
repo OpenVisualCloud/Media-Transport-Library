@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2026 Intel Corporation
  *
- * Pins two things in st_tx_video_session.c:
+ * Pins three things in st_tx_video_session.c:
  *  1. The cursor-derivation math in `tv_sync_pacing()`: normal tsc/ptp cursor
  *     derivation, the ST20_TX_FLAG_EXACT_USER_PACING bypass, and the negative
  *     time_to_tx_ns clamp.
@@ -14,6 +14,10 @@
  *     instant must track whichever basis actually produced
  *     frame->rtp_timestamp, not unconditionally `pacing->ptp_time_cursor`, or
  *     the two fields would silently disagree.
+ *  3. User pacing range rules: `tv_sync_pacing()` refuses a non-EXACT start more
+ *     than 1 s ahead (counted in stat_error_user_timestamp, default pacing used),
+ *     and `calc_frame_count_since_epoch()` skips the onward-range resync while a
+ *     user start up to 1 s ahead is held, but not after a PTP step back.
  *
  * Build: meson setup build_unit -Denable_unit_tests=true && ninja -C build_unit
  * Run:   ./build_unit/tests/unit/UnitTest --gtest_filter='St20TxSyncPacingTest.*'
@@ -693,7 +697,8 @@ TEST_F(St20TxSyncPacingTest, ExactTimestampNearUint64MaxSaturatesTscTarget) {
   EXPECT_EQ(ut_txv_stat_epoch_onward(ctx_), 0u);
 }
 
-TEST_F(St20TxSyncPacingTest, AlignedTimestampNearUint64MaxDoesNotSendImmediately) {
+/* a non-EXACT start more than 1 s ahead falls back to default pacing, saturated or not */
+TEST_F(St20TxSyncPacingTest, AlignedTimestampNearUint64MaxFallsBackToDefaultPacing) {
   ut_txv_set_user_pacing(ctx_, true);
   ut_txv_set_cur_epochs(ctx_, kInitialEpoch);
   ut_txv_set_mock_ptp_time(ctx_, kCurrentTai);
@@ -701,7 +706,8 @@ TEST_F(St20TxSyncPacingTest, AlignedTimestampNearUint64MaxDoesNotSendImmediately
 
   ASSERT_EQ(ut_txv_sync_pacing(ctx_, UINT64_MAX), 0);
 
-  EXPECT_GT(ut_txv_tsc_time_cursor(ctx_), kCurrentTsc);
+  EXPECT_EQ(ut_txv_cur_epochs(ctx_), kCurrentEpoch);
+  EXPECT_EQ(ut_txv_tsc_time_cursor(ctx_), kCurrentTsc);
   EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 1u);
   EXPECT_EQ(ut_txv_stat_epoch_drop(ctx_), 0u);
   EXPECT_EQ(ut_txv_stat_epoch_onward(ctx_), 0u);
@@ -722,7 +728,8 @@ TEST_F(St20TxSyncPacingTest, ExactTimestampAtInt64MaxRemainsInFuture) {
   EXPECT_EQ(ut_txv_stat_epoch_onward(ctx_), 0u);
 }
 
-TEST_F(St20TxSyncPacingTest, AlignedTimestampAtInt64MaxRemainsInFuture) {
+/* INT64_MAX, a start far past 1 s, falls back to default pacing too */
+TEST_F(St20TxSyncPacingTest, AlignedTimestampAtInt64MaxFallsBackToDefaultPacing) {
   ut_txv_set_user_pacing(ctx_, true);
   ut_txv_set_cur_epochs(ctx_, kInitialEpoch);
   ut_txv_set_mock_ptp_time(ctx_, kCurrentTai);
@@ -730,10 +737,94 @@ TEST_F(St20TxSyncPacingTest, AlignedTimestampAtInt64MaxRemainsInFuture) {
 
   ASSERT_EQ(ut_txv_sync_pacing(ctx_, INT64_MAX), 0);
 
-  EXPECT_GT(ut_txv_tsc_time_cursor(ctx_), kCurrentTsc);
+  EXPECT_EQ(ut_txv_cur_epochs(ctx_), kCurrentEpoch);
+  EXPECT_EQ(ut_txv_tsc_time_cursor(ctx_), kCurrentTsc);
   EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 1u);
   EXPECT_EQ(ut_txv_stat_epoch_drop(ctx_), 0u);
   EXPECT_EQ(ut_txv_stat_epoch_onward(ctx_), 0u);
+}
+
+/* without EXACT the 1 s limit is on the start: an epoch starting exactly 1 s ahead is
+ * kept (here the start is the epoch itself, SetUp leaves tr_offset and vrx at 0) */
+TEST_F(St20TxSyncPacingTest, AlignedStartAtOneSecondIsKept) {
+  ut_txv_set_user_pacing(ctx_, true);
+  ut_txv_set_cur_epochs(ctx_, kInitialEpoch);
+  ut_txv_set_mock_ptp_time(ctx_, kCurrentTai);
+  ut_txv_set_mock_tsc_time(ctx_, kCurrentTsc);
+
+  ASSERT_EQ(ut_txv_sync_pacing(ctx_, kCurrentTai + kNanosecondsPerSecond), 0);
+
+  EXPECT_EQ(ut_txv_ptp_time_cursor(ctx_), kCurrentTai + kNanosecondsPerSecond);
+  EXPECT_EQ(ut_txv_tsc_time_cursor(ctx_), kCurrentTsc + kNanosecondsPerSecond);
+  ExpectNoPacingStats();
+}
+
+/* the epoch after it starts past 1 s, which the transmitter would not wait for, so it
+ * falls back to default pacing on the current epoch and is counted */
+TEST_F(St20TxSyncPacingTest, AlignedStartOneEpochBeyondOneSecondFallsBack) {
+  ut_txv_set_user_pacing(ctx_, true);
+  ut_txv_set_cur_epochs(ctx_, kInitialEpoch);
+  ut_txv_set_mock_ptp_time(ctx_, kCurrentTai);
+  ut_txv_set_mock_tsc_time(ctx_, kCurrentTsc);
+
+  ASSERT_EQ(
+      ut_txv_sync_pacing(ctx_, kCurrentTai + kNanosecondsPerSecond + kFramePeriodNs), 0);
+
+  EXPECT_EQ(ut_txv_cur_epochs(ctx_), kCurrentEpoch);
+  EXPECT_EQ(ut_txv_ptp_time_cursor(ctx_), kCurrentTai);
+  EXPECT_EQ(ut_txv_tsc_time_cursor(ctx_), kCurrentTsc);
+  EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 1u);
+}
+
+/* A held user start does not block the onward-range resync after a PTP step back: the
+ * start is then more than 1 s ahead of the new time, so the epoch resyncs to it. */
+TEST_F(St20TxSyncPacingTest, PtpStepBackPastAHeldUserStartStillResyncs) {
+  constexpr uint64_t kBaseTai = 5 * kNanosecondsPerSecond;
+  constexpr uint64_t kBaseEpoch = kBaseTai / kFramePeriodNs;
+  constexpr uint64_t kSteppedBackTai = kBaseTai - 2 * kNanosecondsPerSecond;
+  constexpr uint64_t kSteppedBackEpoch = kSteppedBackTai / kFramePeriodNs;
+  ut_txv_set_user_pacing(ctx_, true);
+  ut_txv_set_cur_epochs(ctx_, kBaseEpoch - 1);
+  ut_txv_set_mock_ptp_time(ctx_, kBaseTai);
+  ut_txv_set_mock_tsc_time(ctx_, kCurrentTsc);
+  ASSERT_EQ(ut_txv_sync_pacing(ctx_, kBaseTai + 5 * kFramePeriodNs), 0);
+  ASSERT_EQ(ut_txv_cur_epochs(ctx_), kBaseEpoch + 5);
+
+  ut_txv_set_mock_ptp_time(ctx_, kSteppedBackTai);
+  ASSERT_EQ(ut_txv_sync_pacing(ctx_, 0), 0);
+
+  EXPECT_EQ(ut_txv_cur_epochs(ctx_), kSteppedBackEpoch);
+  EXPECT_EQ(ut_txv_stat_epoch_onward(ctx_), kBaseEpoch + 6 - kSteppedBackEpoch);
+}
+
+/* A PTP step back smaller than the lead of a held user start keeps the frames behind it,
+ * with no resync. Once PTP time reaches the start it no longer holds, so a later step
+ * back out of the onward range resyncs as usual. */
+TEST_F(St20TxSyncPacingTest, PtpStepBackInsideAHeldUserStartKeepsTheFramesBehindIt) {
+  constexpr uint64_t kBaseTai = 5 * kNanosecondsPerSecond;
+  constexpr uint64_t kBaseEpoch = kBaseTai / kFramePeriodNs;
+  constexpr uint64_t kSteppedBackTai = kBaseTai - 100 * kFramePeriodNs;
+  constexpr uint64_t kSteppedBackEpoch = kSteppedBackTai / kFramePeriodNs;
+  ut_txv_set_user_pacing(ctx_, true);
+  ut_txv_set_cur_epochs(ctx_, kBaseEpoch - 1);
+  ut_txv_set_mock_ptp_time(ctx_, kBaseTai);
+  ut_txv_set_mock_tsc_time(ctx_, kCurrentTsc);
+  ASSERT_EQ(ut_txv_sync_pacing(ctx_, kBaseTai + 5 * kFramePeriodNs), 0);
+  ASSERT_EQ(ut_txv_cur_epochs(ctx_), kBaseEpoch + 5);
+
+  ut_txv_set_mock_ptp_time(ctx_, kSteppedBackTai);
+  ASSERT_EQ(ut_txv_sync_pacing(ctx_, 0), 0);
+  EXPECT_EQ(ut_txv_cur_epochs(ctx_), kBaseEpoch + 6);
+  EXPECT_EQ(ut_txv_stat_epoch_onward(ctx_), 0u);
+
+  ut_txv_set_mock_ptp_time(ctx_, kBaseTai + 6 * kFramePeriodNs);
+  ASSERT_EQ(ut_txv_sync_pacing(ctx_, 0), 0);
+  EXPECT_EQ(ut_txv_cur_epochs(ctx_), kBaseEpoch + 7);
+
+  ut_txv_set_mock_ptp_time(ctx_, kSteppedBackTai);
+  ASSERT_EQ(ut_txv_sync_pacing(ctx_, 0), 0);
+  EXPECT_EQ(ut_txv_cur_epochs(ctx_), kSteppedBackEpoch);
+  EXPECT_EQ(ut_txv_stat_epoch_onward(ctx_), kBaseEpoch + 8 - kSteppedBackEpoch);
 }
 
 TEST_F(St20TxSyncPacingTest, ExactUserPacingWithZeroRequiredTaiShouldBeFlagged) {
@@ -905,6 +996,26 @@ TEST_F(St20TxSyncPacingTest, ExactTargetBeyondOneSecondFallsBackBeforePacketBuil
 
   ASSERT_EQ(ut_txv_run_frame_tasklet(ctx_, ST10_TIMESTAMP_FMT_TAI,
                                      kCurrentTai + kNanosecondsPerSecond + 1, &packet_tsc,
+                                     &packet_ptp),
+            0);
+  EXPECT_EQ(packet_tsc, kCurrentTsc);
+  EXPECT_EQ(packet_ptp, kCurrentTai);
+  EXPECT_EQ(ut_txv_notify_frame_done_timestamp(ctx_), kCurrentTai);
+  EXPECT_EQ(ut_txv_notify_frame_done_epoch(ctx_), kCurrentEpoch);
+  EXPECT_EQ(ut_txv_stat_error_user_timestamp(ctx_), 1u);
+}
+
+/* frame level shares the rule: without EXACT a timestamp whose start is more than 1 s
+ * ahead falls back to default pacing too */
+TEST_F(St20TxSyncPacingTest, NonExactTargetBeyondOneSecondFallsBackBeforePacketBuild) {
+  uint64_t packet_tsc = 0;
+  uint64_t packet_ptp = 0;
+  ut_txv_set_user_pacing(ctx_, true);
+  ut_txv_set_mock_ptp_time(ctx_, kCurrentTai);
+  ut_txv_set_mock_tsc_time(ctx_, kCurrentTsc);
+
+  ASSERT_EQ(ut_txv_run_frame_tasklet(ctx_, ST10_TIMESTAMP_FMT_TAI,
+                                     kCurrentTai + 2 * kNanosecondsPerSecond, &packet_tsc,
                                      &packet_ptp),
             0);
   EXPECT_EQ(packet_tsc, kCurrentTsc);

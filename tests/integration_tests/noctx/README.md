@@ -141,9 +141,11 @@ values with `st20p_tx_get_pacing_params()` rather than hardcoding them. At
 - **Pacing modes.** Default: the current epoch (ST40: the epoch itself; ST30:
   the next packet-time grid point).
   `USER_PACING`: the **nearest epoch** to `t_user` (ties to the later one),
-  plus `TR_offset − VRX·trs` for ST20; a past or >1 s ahead request is still
-  used and counts `stat_error_user_timestamp`; ST30 sends packet 0 of each
-  buffer at `t_user`. `EXACT_USER_PACING` (ST20, ST40): packet 0 at `t_user`
+  plus `TR_offset − VRX·trs` for ST20; a past request is still used and
+  counts `stat_error_user_timestamp`, and so is a >1 s ahead one except for
+  ST20/ST22, where a start more than 1 s ahead falls back to default pacing
+  and counts it; ST30 sends packet 0 of each buffer at
+  `t_user`. `EXACT_USER_PACING` (ST20, ST40): packet 0 at `t_user`
   itself; an invalid request (zero, `MEDIA_CLK`, past, >1 s ahead, or for ST20
   closer than the warm-up) falls back to default pacing and counts
   `stat_error_user_timestamp`.

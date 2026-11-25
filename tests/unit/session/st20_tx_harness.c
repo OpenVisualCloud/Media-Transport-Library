@@ -658,7 +658,7 @@ uint64_t ut_txv_pacing_required_tai(ut_txv_ctx* ctx, enum st10_timestamp_fmt tfm
 
 /* Header mempool and TX ring on a session port, as tv_mempool_init()/tv_init_hw() would.
  * Shared by every driver below that lets the production builders run. */
-static int ut_txv_tx_leg_init(struct ut_txv_ctx* ctx, int port) {
+static int ut_txv_tx_leg_init(struct ut_txv_ctx* ctx, int port, unsigned int cache_size) {
   static unsigned int path_idx;
   struct st_tx_video_session_impl* s = &ctx->session;
   char pool_name[RTE_MEMPOOL_NAMESIZE];
@@ -667,7 +667,7 @@ static int ut_txv_tx_leg_init(struct ut_txv_ctx* ctx, int port) {
   snprintf(pool_name, sizeof(pool_name), "ut_txv_pool_%u", path_idx);
   snprintf(ring_name, sizeof(ring_name), "ut_txv_ring_%u", path_idx++);
   s->mbuf_mempool_hdr[port] =
-      rte_pktmbuf_pool_create(pool_name, 32, 0, sizeof(struct mt_muf_priv_data),
+      rte_pktmbuf_pool_create(pool_name, 32, cache_size, sizeof(struct mt_muf_priv_data),
                               RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
   s->ring[port] = ut_ring_create(ring_name, 32);
   if (!s->mbuf_mempool_hdr[port] || !s->ring[port]) return -1;
@@ -687,7 +687,7 @@ static void ut_txv_tx_leg_uinit(struct ut_txv_ctx* ctx, int port) {
 }
 
 static int ut_txv_tx_path_init(struct ut_txv_ctx* ctx) {
-  return ut_txv_tx_leg_init(ctx, MTL_SESSION_PORT_P);
+  return ut_txv_tx_leg_init(ctx, MTL_SESSION_PORT_P, 0);
 }
 
 static void ut_txv_tx_path_uinit(struct ut_txv_ctx* ctx) {
@@ -781,7 +781,7 @@ int ut_txv_run_frame_stamps(ut_txv_ctx* ctx, const enum st21_tx_pacing_way* ways
   for (int port = 0; port < MTL_SESSION_PORT_MAX; port++)
     s->pacing_way[port] = ways[port];
   for (int port = 0; port < num_port; port++) {
-    if (ut_txv_tx_leg_init(ctx, port) < 0) goto out;
+    if (ut_txv_tx_leg_init(ctx, port, 0) < 0) goto out;
     if (ut_txv_mark_stamps(s->mbuf_mempool_hdr[port], UT_TXV_NO_STAMP) < 0) goto out;
   }
   ut_txv_frame_setup(ctx, &frame, frame_data, total_pkts);
@@ -948,6 +948,105 @@ out:
   rte_pktmbuf_free(built_pkt);
   ut_txv_rtp_teardown(ctx);
   ut_txv_tx_path_uinit(ctx);
+  return ret;
+}
+
+static int ut_txv_rtp_put(struct ut_txv_ctx* ctx, const struct ut_txv_rtp_pkt* in) {
+  struct st_tx_video_session_impl* s = &ctx->session;
+  struct st22_tx_video_session_handle_impl st22_handle = {
+      .parent = &ctx->impl, .type = MT_ST22_HANDLE_TX_VIDEO, .impl = s};
+  bool st22 = s->s_type == MT_ST22_HANDLE_TX_VIDEO;
+  struct st20_rfc4175_rtp_hdr* rtp;
+  uint16_t len = sizeof(*rtp);
+  void* pkt;
+
+  pkt = st22 ? st22_tx_get_mbuf(&st22_handle, (void**)&rtp)
+             : st20_tx_get_mbuf(&ctx->handle, (void**)&rtp);
+  if (!pkt) return -ENOMEM;
+  memset(rtp, 0, len);
+  rtp->base.tmstamp = htonl(in->rtp_ts);
+  if (st22) {
+    if (in->tai) return st22_tx_put_mbuf_tai(&st22_handle, pkt, len, in->tai);
+    return st22_tx_put_mbuf(&st22_handle, pkt, len);
+  }
+  if (in->tai) return st20_tx_put_mbuf_tai(&ctx->handle, pkt, len, in->tai);
+  return st20_tx_put_mbuf(&ctx->handle, pkt, len);
+}
+
+static uint32_t ut_txv_rtp_sent_ts(struct st_tx_video_session_impl* s,
+                                   struct rte_mbuf* pkt) {
+  struct st_rfc3550_rtp_hdr* rtp =
+      s->tx_no_chain ? rte_pktmbuf_mtod_offset(pkt, struct st_rfc3550_rtp_hdr*,
+                                               sizeof(struct mt_udp_hdr))
+                     : rte_pktmbuf_mtod(pkt->next, struct st_rfc3550_rtp_hdr*);
+  return ntohl(rtp->tmstamp);
+}
+
+static int ut_txv_rtp_collect(struct st_tx_video_session_impl* s, int port,
+                              struct ut_txv_rtp_sent* sent) {
+  int built = 0;
+
+  for (struct rte_mbuf* pkt; rte_ring_sc_dequeue(s->ring[port], (void**)&pkt) == 0;
+       built++) {
+    sent[built].ptp = st_tx_mbuf_get_ptp(pkt);
+    sent[built].tsc = st_tx_mbuf_get_tsc(pkt);
+    sent[built].rtp_ts = ut_txv_rtp_sent_ts(s, pkt);
+    rte_pktmbuf_free(pkt);
+  }
+  return built;
+}
+
+int ut_txv_run_rtp_pkts(ut_txv_ctx* ctx, bool tx_no_chain,
+                        const struct ut_txv_rtp_pkt* pkts, int nb_pkts,
+                        struct ut_txv_rtp_sent* sent, struct ut_txv_rtp_sent* sent_r) {
+  static unsigned int pool_idx;
+  struct st_tx_video_session_impl* s = &ctx->session;
+  int num_port = sent_r ? 2 : 1;
+  char pool_name[RTE_MEMPOOL_NAMESIZE];
+  int ret = -1;
+
+  if (nb_pkts > UT_TXV_RTP_PKTS_MAX) return -EINVAL;
+  /* cached like production's, as a bulk of 1 has tv_tasklet_rtp() allocate 0 mbufs,
+   * which an uncached pool fails */
+  for (int port = 0; port < num_port; port++)
+    if (ut_txv_tx_leg_init(ctx, port, 8) < 0) goto out;
+  if (!tx_no_chain) {
+    snprintf(pool_name, sizeof(pool_name), "ut_txv_rtp_chain_%u", pool_idx++);
+    s->mbuf_mempool_chain = rte_pktmbuf_pool_create(
+        pool_name, 32, 8, 0, RTE_MBUF_DEFAULT_BUF_SIZE, (int)rte_socket_id());
+    if (!s->mbuf_mempool_chain) goto out;
+  }
+  ctx->handle.parent = &ctx->impl;
+  ctx->handle.type = MT_HANDLE_TX_VIDEO;
+  ctx->handle.impl = s;
+  s->socket_id = (int)rte_socket_id();
+  s->tx_no_chain = tx_no_chain;
+  s->bulk = 1; /* one pkt a call, so the eof dummy padding never runs with a TAI */
+  s->ops.num_port = num_port;
+  s->ops.type = ST20_TYPE_RTP_LEVEL;
+  s->ops.notify_rtp_done = ut_txv_notify_rtp_done;
+  s->ops.rtp_ring_size = 2 * UT_TXV_RTP_PKTS_MAX; /* a power of 2 that holds them all */
+  s->rtp_pkt_max_size = sizeof(struct st20_rfc4175_rtp_hdr);
+  s->st20_total_pkts = UT_TXV_RTP_PKTS_MAX;
+  s->st20_pkt_idx = 0;
+  if (tv_init_packet_ring(&ctx->mgr, s) < 0) goto out;
+
+  for (int i = 0; i < nb_pkts; i++)
+    if (ut_txv_rtp_put(ctx, &pkts[i]) < 0) goto out;
+  for (int i = 0; i < nb_pkts; i++) {
+    tvs_tasklet_handler(&ctx->mgr);
+    if (rte_ring_count(s->ring[MTL_SESSION_PORT_P]) != (unsigned int)i + 1) break;
+    sent[i].epoch = s->pacing.cur_epochs;
+    if (sent_r) sent_r[i].epoch = s->pacing.cur_epochs;
+  }
+  ret = ut_txv_rtp_collect(s, MTL_SESSION_PORT_P, sent);
+  if (sent_r && ut_txv_rtp_collect(s, MTL_SESSION_PORT_R, sent_r) != ret) ret = -EIO;
+
+out:
+  ut_txv_rtp_teardown(ctx);
+  for (int port = 0; port < num_port; port++) ut_txv_tx_leg_uinit(ctx, port);
+  rte_mempool_free(s->mbuf_mempool_chain);
+  s->mbuf_mempool_chain = NULL;
   return ret;
 }
 
@@ -2072,7 +2171,7 @@ int ut_txv_run_frame_rl_late_ports(ut_txv_ctx* ctx, uint32_t late_pkt,
   int ret = -1;
 
   for (int port = 0; port < num_port; port++)
-    if (ut_txv_tx_leg_init(ctx, port) < 0) goto out;
+    if (ut_txv_tx_leg_init(ctx, port, 0) < 0) goto out;
   if (ctx->stale_stamps &&
       ut_txv_mark_stamps(s->mbuf_mempool_hdr[MTL_SESSION_PORT_P], ctx->stale_stamp) < 0)
     goto out;

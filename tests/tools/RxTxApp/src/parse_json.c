@@ -763,6 +763,13 @@ static int st_json_parse_tx_video(int idx, json_object* video_obj,
   video->enable_rtcp =
       json_object_get_boolean(st_json_object_object_get(video_obj, "enable_rtcp"));
 
+  video->user_pacing =
+      json_object_get_boolean(st_json_object_object_get(video_obj, "user_pacing"));
+  video->exact_user_pacing =
+      json_object_get_boolean(st_json_object_object_get(video_obj, "exact_user_pacing"));
+  /* exact_user_pacing is a mode of user_pacing, so it turns user_pacing on */
+  if (video->exact_user_pacing) video->user_pacing = true;
+
   return ST_JSON_SUCCESS;
 }
 

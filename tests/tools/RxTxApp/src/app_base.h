@@ -166,6 +166,9 @@ struct st_app_tx_video_session {
   uint32_t st20_seq_id; /* seq id in current frame */
   uint32_t st20_rtp_tmstamp;
   uint8_t payload_type;
+  bool user_pacing;
+  bool exact_user_pacing;
+  uint64_t user_pacing_epoch; /* epoch index of the next frame, 0 until anchored */
 
   double expect_fps;
   uint64_t stat_frame_first_tx_time;
