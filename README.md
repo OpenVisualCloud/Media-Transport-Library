@@ -1,5 +1,7 @@
 # Media Transport Library
 
+![Media Transport Library: send and receive live video, audio and ancillary data over IP networks, in software, on standard Intel Xeon servers and Ethernet NICs](doc/png/mtl-banner.svg)
+
 > [!TIP]
 > [Full Documentation](https://openvisualcloud.github.io/Media-Transport-Library/) for [Media Transport Library](https://openvisualcloud.github.io/Media-Transport-Library/).
 

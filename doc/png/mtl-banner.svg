@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="640" viewBox="0 0 1600 640" role="img" aria-labelledby="t">
+<title id="t">Media Transport Library: send and receive live video, audio and ancillary data over IP networks, in software, on standard Intel Xeon servers and Ethernet NICs</title>
+<g font-family="'Intel Clear', 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif">
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#061A30"/><stop offset="1" stop-color="#0B3D6B"/></linearGradient><radialGradient id="glow" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#00C7FD" stop-opacity="0.28"/><stop offset="1" stop-color="#00C7FD" stop-opacity="0"/></radialGradient><pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#FFFFFF" fill-opacity="0.07"/></pattern><filter id="shadow" x="-20%" y="-20%" width="140%" height="160%"><feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000814" flood-opacity="0.45"/></filter><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#00C7FD"/></marker></defs>
+<rect width="1600" height="640" fill="url(#bg)"/>
+<rect width="1600" height="640" fill="url(#dots)"/>
+<rect x="0" y="0" width="1600" height="6" fill="#00C7FD"/>
+<text x="800.0" y="74.0" font-size="15" fill="#00C7FD" text-anchor="middle" font-weight="700" letter-spacing="3">OPEN SOURCE  ·  SMPTE ST 2110  ·  MEDIA OVER IP</text>
+<text x="800.0" y="140.0" font-size="64" fill="#FFFFFF" text-anchor="middle" font-weight="700">Media Transport Library</text>
+<text x="800.0" y="186.0" font-size="24" fill="#C9DCEE" text-anchor="middle">Send and receive live video, audio and ancillary data over IP networks,</text>
+<text x="800.0" y="218.0" font-size="24" fill="#C9DCEE" text-anchor="middle">in software, on standard Intel® Xeon® servers and Ethernet NICs</text>
+<rect x="70.0" y="262.0" width="270.0" height="200.0" rx="16" fill="#0E355C" stroke="#2C5F90" stroke-width="1.5" filter="url(#shadow)"/>
+<text x="205.0" y="294.0" font-size="18" fill="#FFFFFF" text-anchor="middle" font-weight="700">Your application</text>
+<rect x="88.0" y="314.0" width="112.0" height="58.0" rx="10" fill="#13426F" />
+<rect x="100.0" y="331.0" width="24.0" height="24.0" rx="6" fill="#0068B5" />
+<path d="M109.0,337 L118.0,343 L109.0,349 z" fill="#FFF"/>
+<text x="132.0" y="349.0" font-size="14" fill="#FFFFFF" text-anchor="start" font-weight="700">Video</text>
+<rect x="210.0" y="314.0" width="112.0" height="58.0" rx="10" fill="#13426F" />
+<rect x="222.0" y="331.0" width="24.0" height="24.0" rx="6" fill="#0068B5" />
+<rect x="227.0" y="339.0" width="2.4" height="8" rx="1" fill="#FFF"/>
+<rect x="231.0" y="336.0" width="2.4" height="14" rx="1" fill="#FFF"/>
+<rect x="235.0" y="338.0" width="2.4" height="10" rx="1" fill="#FFF"/>
+<rect x="239.0" y="335.0" width="2.4" height="16" rx="1" fill="#FFF"/>
+<text x="254.0" y="349.0" font-size="14" fill="#FFFFFF" text-anchor="start" font-weight="700">Audio</text>
+<rect x="88.0" y="384.0" width="112.0" height="58.0" rx="10" fill="#13426F" />
+<rect x="100.0" y="401.0" width="24.0" height="24.0" rx="6" fill="#0068B5" />
+<text x="112.0" y="418.0" font-size="11" fill="#FFFFFF" text-anchor="middle" font-weight="700">CC</text>
+<text x="132.0" y="419.0" font-size="14" fill="#FFFFFF" text-anchor="start" font-weight="700">Ancillary</text>
+<rect x="210.0" y="384.0" width="112.0" height="58.0" rx="10" fill="#13426F" />
+<rect x="222.0" y="401.0" width="24.0" height="24.0" rx="6" fill="#0068B5" />
+<text x="234.0" y="418.0" font-size="12" fill="#FFFFFF" text-anchor="middle" font-weight="700">{ }</text>
+<text x="254.0" y="419.0" font-size="14" fill="#FFFFFF" text-anchor="start" font-weight="700">Metadata</text>
+<ellipse cx="635.0" cy="362.0" rx="280.5" ry="170.0" fill="url(#glow)"/>
+<rect x="470.0" y="252.0" width="330.0" height="220.0" rx="18" fill="#0068B5" stroke="#5FB6F2" stroke-width="2" filter="url(#shadow)"/>
+<text x="635.0" y="308.0" font-size="46" fill="#FFFFFF" text-anchor="middle" font-weight="700">MTL</text>
+<text x="635.0" y="340.0" font-size="16" fill="#E3F1FB" text-anchor="middle">Software media transport stack</text>
+<rect x="510.8" y="360.0" width="26.0" height="26.0" rx="5" fill="#004A86" stroke="#9ED3F7" stroke-width="1.5" />
+<line x1="516.78125" y1="355" x2="516.78125" y2="360" stroke="#9ED3F7" stroke-width="1.6"/>
+<line x1="516.78125" y1="386" x2="516.78125" y2="391" stroke="#9ED3F7" stroke-width="1.6"/>
+<line x1="505.78125" y1="366" x2="510.78125" y2="366" stroke="#9ED3F7" stroke-width="1.6"/>
+<line x1="536.78125" y1="366" x2="541.78125" y2="366" stroke="#9ED3F7" stroke-width="1.6"/>
+<line x1="523.78125" y1="355" x2="523.78125" y2="360" stroke="#9ED3F7" stroke-width="1.6"/>
+<line x1="523.78125" y1="386" x2="523.78125" y2="391" stroke="#9ED3F7" stroke-width="1.6"/>
+<line x1="505.78125" y1="373" x2="510.78125" y2="373" stroke="#9ED3F7" stroke-width="1.6"/>
+<line x1="536.78125" y1="373" x2="541.78125" y2="373" stroke="#9ED3F7" stroke-width="1.6"/>
+<line x1="530.78125" y1="355" x2="530.78125" y2="360" stroke="#9ED3F7" stroke-width="1.6"/>
+<line x1="530.78125" y1="386" x2="530.78125" y2="391" stroke="#9ED3F7" stroke-width="1.6"/>
+<line x1="505.78125" y1="380" x2="510.78125" y2="380" stroke="#9ED3F7" stroke-width="1.6"/>
+<line x1="536.78125" y1="380" x2="541.78125" y2="380" stroke="#9ED3F7" stroke-width="1.6"/>
+<text x="551.8" y="379.0" font-size="16" fill="#FFFFFF" text-anchor="start" font-weight="700">runs on Intel® Xeon® CPUs</text>
+<rect x="490.0" y="408.0" width="91.3" height="34.0" rx="17" fill="#004A86" />
+<text x="535.7" y="430.0" font-size="14.5" fill="#FFFFFF" text-anchor="middle" font-weight="700">Pacing</text>
+<rect x="589.3" y="408.0" width="91.3" height="34.0" rx="17" fill="#004A86" />
+<text x="635.0" y="430.0" font-size="14.5" fill="#FFFFFF" text-anchor="middle" font-weight="700">PTP</text>
+<rect x="688.7" y="408.0" width="91.3" height="34.0" rx="17" fill="#004A86" />
+<text x="734.3" y="430.0" font-size="14.5" fill="#FFFFFF" text-anchor="middle" font-weight="700">ST 2022-7</text>
+<rect x="930.0" y="262.0" width="270.0" height="200.0" rx="16" fill="#0E355C" stroke="#2C5F90" stroke-width="1.5" filter="url(#shadow)"/>
+<rect x="1009.0" y="292.0" width="112.0" height="56.0" rx="6" fill="#13426F" stroke="#5FB6F2" stroke-width="1.5" />
+<rect x="1021.0" y="348" width="6" height="9" fill="#F2B84B"/>
+<rect x="1031.0" y="348" width="6" height="9" fill="#F2B84B"/>
+<rect x="1041.0" y="348" width="6" height="9" fill="#F2B84B"/>
+<rect x="1051.0" y="348" width="6" height="9" fill="#F2B84B"/>
+<rect x="1061.0" y="348" width="6" height="9" fill="#F2B84B"/>
+<rect x="1071.0" y="348" width="6" height="9" fill="#F2B84B"/>
+<rect x="1081.0" y="348" width="6" height="9" fill="#F2B84B"/>
+<rect x="1091.0" y="348" width="6" height="9" fill="#F2B84B"/>
+<rect x="1101.0" y="348" width="6" height="9" fill="#F2B84B"/>
+<rect x="1079.0" y="306.0" width="12.0" height="28.0" rx="2" fill="#0B2E4F" stroke="#9ED3F7" stroke-width="1.2" />
+<rect x="1097.0" y="306.0" width="12.0" height="28.0" rx="2" fill="#0B2E4F" stroke="#9ED3F7" stroke-width="1.2" />
+<rect x="1021.0" y="308.0" width="42.0" height="24.0" rx="4" fill="#0068B5" />
+<text x="1065.0" y="390.0" font-size="18" fill="#FFFFFF" text-anchor="middle" font-weight="700">Standard Ethernet NIC</text>
+<text x="1065.0" y="416.0" font-size="14.5" fill="#C9DCEE" text-anchor="middle">Narrow pacing on Intel® Ethernet</text>
+<text x="1065.0" y="437.0" font-size="14.5" fill="#C9DCEE" text-anchor="middle" font-weight="700">E810 · E830 · E835</text>
+<rect x="1330.0" y="262.0" width="200.0" height="200.0" rx="16" fill="#0E355C" stroke="#2C5F90" stroke-width="1.5" filter="url(#shadow)"/>
+<line x1="1430" y1="306" x2="1386" y2="354" stroke="#5FB6F2" stroke-width="2"/>
+<line x1="1430" y1="306" x2="1474" y2="354" stroke="#5FB6F2" stroke-width="2"/>
+<line x1="1386" y1="354" x2="1430" y2="382" stroke="#5FB6F2" stroke-width="2"/>
+<line x1="1474" y1="354" x2="1430" y2="382" stroke="#5FB6F2" stroke-width="2"/>
+<line x1="1386" y1="354" x2="1474" y2="354" stroke="#5FB6F2" stroke-width="2"/>
+<circle cx="1430" cy="306" r="9" fill="#00C7FD" stroke="#0E355C" stroke-width="3"/>
+<circle cx="1386" cy="354" r="9" fill="#00C7FD" stroke="#0E355C" stroke-width="3"/>
+<circle cx="1474" cy="354" r="9" fill="#00C7FD" stroke="#0E355C" stroke-width="3"/>
+<circle cx="1430" cy="382" r="9" fill="#00C7FD" stroke="#0E355C" stroke-width="3"/>
+<text x="1430.0" y="424.0" font-size="18" fill="#FFFFFF" text-anchor="middle" font-weight="700">ST 2110 IP network</text>
+<text x="1430.0" y="446.0" font-size="14.5" fill="#C9DCEE" text-anchor="middle">multicast · unicast</text>
+<line x1="346" y1="362.0" x2="464" y2="362.0" stroke="#00C7FD" stroke-width="3" marker-start="url(#ah)" marker-end="url(#ah)"/>
+<text x="405.0" y="348.0" font-size="14" fill="#8FB0CF" text-anchor="middle">frames</text>
+<line x1="806" y1="362.0" x2="924" y2="362.0" stroke="#00C7FD" stroke-width="3" marker-start="url(#ah)" marker-end="url(#ah)"/>
+<text x="865.0" y="348.0" font-size="14" fill="#8FB0CF" text-anchor="middle">paced packets</text>
+<line x1="1206" y1="362.0" x2="1324" y2="362.0" stroke="#00C7FD" stroke-width="3" marker-start="url(#ah)" marker-end="url(#ah)"/>
+<text x="1265.0" y="348.0" font-size="14" fill="#8FB0CF" text-anchor="middle">streams</text>
+<rect x="98.9" y="520.0" width="253.7" height="38.0" rx="19" fill="#0F3A63" stroke="#2F6CA3" stroke-width="1.2" />
+<text x="225.7" y="545.0" font-size="15" fill="#E3F1FB" text-anchor="middle" font-weight="700">ST 2110-20 · -22 · -30 · -40 · -41</text>
+<rect x="364.5" y="520.0" width="195.2" height="38.0" rx="19" fill="#0F3A63" stroke="#2F6CA3" stroke-width="1.2" />
+<text x="462.1" y="545.0" font-size="15" fill="#E3F1FB" text-anchor="middle" font-weight="700">ST 2022-7 redundancy</text>
+<rect x="571.8" y="520.0" width="121.0" height="38.0" rx="19" fill="#0F3A63" stroke="#2F6CA3" stroke-width="1.2" />
+<text x="632.2" y="545.0" font-size="15" fill="#E3F1FB" text-anchor="middle" font-weight="700">Built-in PTP</text>
+<rect x="704.7" y="520.0" width="259.4" height="38.0" rx="19" fill="#0F3A63" stroke="#2F6CA3" stroke-width="1.2" />
+<text x="834.4" y="545.0" font-size="15" fill="#E3F1FB" text-anchor="middle" font-weight="700">DPDK · AF_XDP · kernel socket</text>
+<rect x="976.1" y="520.0" width="282.8" height="38.0" rx="19" fill="#0F3A63" stroke="#2F6CA3" stroke-width="1.2" />
+<text x="1117.5" y="545.0" font-size="15" fill="#E3F1FB" text-anchor="middle" font-weight="700">Bare metal · VM · container · cloud</text>
+<rect x="1270.9" y="520.0" width="230.2" height="38.0" rx="19" fill="#0F3A63" stroke="#2F6CA3" stroke-width="1.2" />
+<text x="1386.0" y="545.0" font-size="15" fill="#E3F1FB" text-anchor="middle" font-weight="700">FFmpeg · GStreamer · OBS</text>
+<text x="800.0" y="600.0" font-size="16" fill="#8FB0CF" text-anchor="middle" font-weight="700">github.com/OpenVisualCloud/Media-Transport-Library</text>
+</g>
+</svg>
