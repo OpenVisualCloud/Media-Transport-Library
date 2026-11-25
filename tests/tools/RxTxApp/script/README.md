@@ -79,8 +79,8 @@ Edit the setup.sh as the setup and also the JSON files, then run:
 
 ```bash
 export PATH=$PATH:/usr/local/bin/
-../../script/nicctl.sh bind_pmd 0000:af:00.0
-../../script/nicctl.sh bind_pmd 0000:af:00.1
+../../script/mtl_nicctl.sh bind_pmd 0000:af:00.0
+../../script/mtl_nicctl.sh bind_pmd 0000:af:00.1
 ```
 
 ### 5.2. Run the test with loop JSON

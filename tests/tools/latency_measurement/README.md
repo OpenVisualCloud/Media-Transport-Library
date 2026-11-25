@@ -45,7 +45,7 @@ flowchart LR
 
 ## Build and install steps
 
-> It is assumed that Media Transport Library is installed on the Tx and Rx host machines according to [Build Guide](build.md).
+> It is assumed that Media Transport Library is installed on the Tx and Rx host machines according to [Build Guide](../../../doc/getting_started/build.md).
 
 If FFmpeg Plugin was installed earlier, remove its directory before proceeding with the following.
 

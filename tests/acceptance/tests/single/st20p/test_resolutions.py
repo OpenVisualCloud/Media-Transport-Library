@@ -33,7 +33,7 @@ _FFMPEG_SKIP = pytest.mark.skip(
         for k, v in yuv_files_422rfc10.items()
         for app in ("rxtxapp", "ffmpeg")
     ]
-    # rfc4175 is not a mtl_st20p_tx input format, so GStreamer sends the
+    # rfc4175 is not an mtl_st20p_tx input format, so GStreamer sends the
     # planar 720p/1080p/4K Penguin clips instead.
     + [
         pytest.param("gstreamer", v, id=f"{k}-|application = gstreamer|")

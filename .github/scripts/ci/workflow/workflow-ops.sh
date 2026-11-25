@@ -14,7 +14,7 @@ overlay-tests)
 		echo "::error::${MTL_SOURCE} is too old for the overlay: it has no MTL_FLAG_DMA_AUTO" >&2
 		exit 1
 	}
-	git checkout "$TEST_SHA" -- tests/acceptance/ .github/ Taskfile.yml script/hash_sources.sh 'script/hash_sources_*.env'
+	git checkout "$TEST_SHA" -- tests/acceptance/ .github/ Taskfile.yml script/mtl_hash_sources.sh 'script/hash_sources_*.env'
 	;;
 check-built-sources)
 	field() {
@@ -56,7 +56,7 @@ coverity-dependencies)
 	sudo rm -rf /var/lib/apt/lists/*
 	;;
 coverity-dpdk)
-	cd script && ./build_dpdk.sh
+	cd script && ./mtl_build_dpdk.sh
 	;;
 *)
 	echo "Usage: $0 {overlay-tests|check-built-sources|commit|docs-dependencies|coverity-dependencies|coverity-dpdk}" >&2

@@ -236,7 +236,7 @@ DPDK-based ST 2110 media pipelines.
 ### MTL USDT Tracing (8 tools)
 
 Live tracing of
-[MTL USDT probes](https://github.com/OpenVisualCloud/Media-Transport-Library/blob/main/doc/usdt.md)
+[MTL USDT probes](https://github.com/OpenVisualCloud/Media-Transport-Library/blob/main/doc/debugging/usdt.md)
 via `bpftrace`. Requires `bpftrace` and root. MTL embeds 82 USDT probes
 across 11 providers.
 

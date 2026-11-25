@@ -1,0 +1,318 @@
+#!/bin/bash
+
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2025 Intel Corporation
+
+# The check names the package to install for everything it finds missing,
+# because these dependencies are invisible until something far away breaks:
+# libdpdk.pc requires libelf, so a host without libelf-dev fails inside a
+# pkg-config call minutes into a build with no hint of the cause. That is also
+# why the build scope exists: a host that builds MTL but never xdp-tools should
+# be held to the former's dependencies, not the latter's.
+
+set -euo pipefail
+
+script_name="$(basename "${BASH_SOURCE[0]}")"
+script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+. "${script_folder}/mtl_common.sh"
+
+show_help() {
+	cat <<EOF
+Usage: ${script_name} [OPTIONS]
+
+Build and install xdp-tools ${XDP_TOOLS_VER} and libbpf ${EBPF_VER}, the versions
+in versions.env, into /usr/local. Without an option, the script checks the host
+first, then builds and installs. The check names the package for each missing
+item.
+
+REQUIRED PACKAGES (Debian/Ubuntu):
+	gcc make pkg-config python3-pyelftools libelf-dev zlib1g-dev
+	libcap-ng-dev libpcap-dev m4 clang llvm wget unzip
+
+OPTIONS:
+	--check [all|build]	Check the host only, install nothing.
+				all (default): everything xdp-tools and MTL need.
+				build: only what the MTL build needs.
+	-h, --help		Show this help message
+
+ENVIRONMENT:
+	CC, CFLAGS, CPPFLAGS, LDFLAGS
+				The compiler and flags of the xdp-tools and libbpf build; the
+				script adds the hardening flags of doc/getting_started/build_advanced.md to them
+	MTL_HARDENING		0 builds xdp-tools and libbpf without the hardening flags
+				(default: 1)
+
+EXAMPLES:
+	${script_name}			# Check the host, then build and install
+	${script_name} --check		# Check the host only
+	${script_name} --check build	# Check only what the MTL build needs
+EOF
+}
+
+have_header() { echo "#include <$1>" | cc -E - >/dev/null 2>&1; }
+
+# Everything needed to build and to run MTL's eBPF/XDP paths, and separately the
+# subset of it that building MTL itself consumes. Collected rather than reported
+# one at a time, so a bare host is fixed with a single apt line.
+#
+# The two sets are not the same, and treating them as one stopped the fleet. The
+# build job builds DPDK, MTL, the plugins, FFmpeg and GStreamer; it never builds
+# xdp-tools. It gates on this script because libdpdk.pc names libelf and zlib in
+# Requires.private, so a host missing either fails inside a pkg-config call
+# minutes into the build with nothing pointing at the cause. When cap-ng.h
+# joined the list for xdp-tools' sake, every build on every host that had not
+# been reprovisioned failed on a header nothing it builds includes. So the
+# caller says which set it needs.
+check() {
+	local scope=${1:-all} missing=() item config
+	config="/boot/config-$(uname -r)"
+
+	# have_header() runs the compiler, so without it every header looks missing.
+	command_exists cc || missing+=("cc: apt install gcc")
+
+	# The build scope: what consuming DPDK requires of the host, whatever else
+	# that host is for.
+	for item in libelf.h:libelf-dev zlib.h:zlib1g-dev; do
+		have_header "${item%%:*}" ||
+			missing+=("${item%%:*}: apt install ${item#*:} -- libdpdk.pc requires it")
+	done
+	command_exists make || missing+=("make: apt install make")
+	# DPDK's buildtools/meson.build asks python3 for the elftools module and stops
+	# `meson setup` with "python3 is missing modules: elftools". Checked here
+	# because the stop comes after the job has downloaded and patched DPDK, and
+	# the message names neither a package nor the host.
+	python3 -c 'import elftools' 2>/dev/null ||
+		missing+=("python3 elftools: apt install python3-pyelftools -- DPDK meson requires it")
+
+	if [ "${scope}" != build ]; then
+		# xdp-tools' own prerequisites: it links libcap-ng to drop capabilities,
+		# needs libpcap for xdpdump -- its configure calls that one "required" and
+		# stops -- compiles its BPF objects with clang and strips them with llvm,
+		# and is fetched as an archive by the install path below.
+		have_header cap-ng.h || missing+=("cap-ng.h: apt install libcap-ng-dev")
+		have_header pcap/pcap.h || missing+=("pcap/pcap.h: apt install libpcap-dev")
+		for item in m4:m4 clang:clang llvm-strip:llvm wget:wget unzip:unzip pkg-config:pkg-config; do
+			command_exists "${item%%:*}" || missing+=("${item%%:*}: apt install ${item#*:}")
+		done
+
+		# No package supplies these; the running kernel has them or it does not.
+		# Skipped where the config is unreadable, as in a container.
+		if [ -r "${config}" ]; then
+			for item in CONFIG_BPF_SYSCALL CONFIG_XDP_SOCKETS CONFIG_BPF_JIT; do
+				grep -q "^${item}=y" "${config}" ||
+					missing+=("${item}: kernel $(uname -r) cannot serve AF_XDP, boot one built with it")
+			done
+		fi
+	fi
+
+	local what="eBPF/XDP"
+	[ "${scope}" = build ] && what="MTL build"
+
+	if [ "${#missing[@]}" -ne 0 ]; then
+		log_error "${what} prerequisites missing on $(uname -n):"
+		for item in "${missing[@]}"; do
+			log_error "  ${item}"
+		done
+		exit 1
+	fi
+	log_success "${what} prerequisites present"
+}
+
+# Where this host's pkg-config says it looks, one directory per line. Only for
+# reporting: see pkgconfig_searches() for why it is not the truth.
+pkgconfig_dirs() {
+	pkg-config --variable pc_path pkg-config 2>/dev/null | tr ':' '\n'
+}
+
+# Whether this host's pkg-config reads a .pc file placed in ${1}/pkgconfig,
+# answered by placing one and asking.
+#
+# Asked rather than derived, because `pkg-config --variable pc_path pkg-config`
+# is a string in a .pc file the distribution ships and it can be wrong: on
+# Rocky 9 it names /usr/lib64/pkgconfig and /usr/share/pkgconfig only, while
+# pkgconf's compiled-in default also searches /usr/local/lib64/pkgconfig. A
+# probe cannot be out of date, and it costs one file per candidate.
+pkgconfig_searches() {
+	local dir="${1}/pkgconfig" probe=mtl-pkgconfig-probe rc=0
+	as_root mkdir -p "${dir}"
+	printf 'Name: %s\nDescription: probe\nVersion: 0\n' "${probe}" |
+		as_root tee "${dir}/${probe}.pc" >/dev/null
+	pkg-config --exists "${probe}" || rc=$?
+	as_root rm -f "${dir}/${probe}.pc"
+	return "${rc}"
+}
+
+# The library directory to install into, under ${1}: the first candidate this
+# host's pkg-config reads.
+#
+# xdp-tools and libbpf both default LIBDIR to ${PREFIX}/lib64. Debian's
+# pkg-config does not search that, and the multiarch directory it does search
+# does not exist on RHEL, so neither upstream default is portable. Getting it
+# wrong is silent, which is what made it worth solving here: `make install`
+# succeeds, pkg-config then reports the library absent, and MTL configures
+# itself without AF_XDP -- on a host, or in an image whose whole purpose is the
+# AF_XDP datapath.
+install_libdir() {
+	local prefix=$1 candidate arch
+	arch=$(cc -dumpmachine 2>/dev/null || true)
+	for candidate in ${arch:+"${prefix}/lib/${arch}"} "${prefix}/lib64" "${prefix}/lib"; do
+		if pkgconfig_searches "${candidate}"; then
+			printf '%s' "${candidate}"
+			return
+		fi
+	done
+	# Nothing under the prefix is read at all: install to the conventional
+	# directory rather than one the package manager owns, and let
+	# publish_pkgconfig() make it visible.
+	printf '%s/lib' "${prefix}"
+}
+
+# Link the .pc files installed under ${1} into a directory pkg-config does
+# search, for a host that searches none under the install prefix.
+#
+# The alternative is PKG_CONFIG_PATH, and it would have to be set by every
+# consumer: DPDK's meson, MTL's meson, and every pkg-config call in a job or a
+# shell. A non-login shell reads no profile, so there is nowhere to set it once.
+# A .pc file records its own libdir, so it answers correctly from wherever it is
+# read, and linking rather than copying keeps one file to look at when the
+# version in play is not the one that was pinned.
+publish_pkgconfig() {
+	local libdir=$1 target name
+	target=$(pkgconfig_dirs | grep -m1 '^/usr/lib' || true)
+	if [ -z "${target}" ]; then
+		log_error "pkg-config searches no directory under /usr: $(pkgconfig_dirs | tr '\n' ' ')"
+		exit 1
+	fi
+
+	log_info "Publishing into ${target}, the search path of this host's pkg-config"
+	as_root mkdir -p "${target}"
+	for name in libxdp.pc libbpf.pc; do
+		if [ -e "${target}/${name}" ] && [ ! -L "${target}/${name}" ]; then
+			log_error "${target}/${name} is a real file, so a package owns it"
+			log_error "remove that package before installing these from source"
+			exit 1
+		fi
+		as_root ln -sf "${libdir}/pkgconfig/${name}" "${target}/${name}"
+	done
+}
+
+build_and_install() {
+	local archive_name="archive.zip"
+	local repo_dir="${script_folder}/xdp-tools"
+
+	pushd "${script_folder}" >/dev/null || exit 1
+
+	if [ -d "${repo_dir}" ]; then
+		log_error "source directory exists already, remove it first: rm -rf ${repo_dir}"
+		exit 1
+	fi
+
+	log_info "Downloading xdp-tools ${XDP_TOOLS_VER} and libbpf ${EBPF_VER}"
+	wget -O "${archive_name}" "$XDP_REPO_URL"
+	mkdir -p "${repo_dir}"
+	unzip "${archive_name}" -d "${repo_dir}"
+	mv "${repo_dir}"/xdp-tools-*/* "${repo_dir}"
+
+	rm "${archive_name}"
+	wget -O "${archive_name}" "$EBPF_REPO_URL"
+	unzip "${archive_name}" -d "${repo_dir}"/lib/libbpf
+	mv "${repo_dir}"/lib/libbpf/libbpf*/* "${repo_dir}"/lib/libbpf
+
+	local prefix=/usr/local libdir
+	libdir=$(install_libdir "${prefix}")
+	log_info "Installing into ${libdir}"
+
+	# The compiler hardening of doc/getting_started/build_advanced.md. A CFLAGS replaces the -O2 -g of
+	# xdp-tools and the -g -O2 -Werror -Wall of libbpf, which xdp-tools builds
+	# itself when the host has none, so they come first, in both makes.
+	# Without the flags, both makes run with the caller's environment only.
+	hardening_flags || exit 1
+	local -a flags=()
+	# shellcheck disable=SC2153 # hardening_flags() of mtl_common.sh sets both
+	[ -z "${HARDENING_CFLAGS}" ] ||
+		flags=("CFLAGS=-O2 -g -Werror -Wall ${CFLAGS:-} ${HARDENING_CFLAGS}" "LDFLAGS=${LDFLAGS:+${LDFLAGS} }${HARDENING_LDFLAGS}")
+	pushd "${repo_dir}" >/dev/null || exit 1
+	./configure
+	env "${flags[@]}" make PREFIX="${prefix}" LIBDIR="${libdir}"
+	as_root make install PREFIX="${prefix}" LIBDIR="${libdir}"
+	pushd lib/libbpf/src >/dev/null || exit 1
+	env "${flags[@]}" make
+	as_root make install PREFIX="${prefix}" LIBDIR="${libdir}"
+	popd >/dev/null
+	popd >/dev/null
+	# The libxdp install copies the libraries with "cp -p", which keeps the
+	# build user as the owner.
+	as_root chown -h 0:0 "${libdir}"/libxdp.so* "${libdir}/libxdp.a"
+
+	# The runtime linker's default search path is as distribution-specific as
+	# pkg-config's, and a library it cannot find fails at load time rather than
+	# at link time. Naming the directory is idempotent and cheap. The caller
+	# runs ldconfig: this script only installs.
+	printf '%s\n' "${libdir}" | as_root tee /etc/ld.so.conf.d/mtl-xdp.conf >/dev/null
+
+	# Only where the install landed outside the search path, which is the case
+	# install_libdir() cannot solve on its own.
+	pkg-config --exists libxdp 2>/dev/null || publish_pkgconfig "${libdir}"
+
+	log_info "Removing downloaded XDP sources"
+	rm -rf "${repo_dir}"
+	rm -f "${script_folder}/${archive_name}"
+	popd >/dev/null
+
+	# Assert the install delivered the pinned versions: a distro libxdp.pc
+	# earlier on PKG_CONFIG_PATH otherwise wins, silently.
+	local item got
+	for item in "libxdp:${XDP_TOOLS_VER}" "libbpf:${EBPF_VER}"; do
+		got="$(pkg-config --modversion "${item%%:*}" 2>/dev/null || true)"
+		[ "${got}" = "${item#*:}" ] || {
+			log_error "${item%%:*} is ${got:-absent} after install, want ${item#*:}"
+			log_error "pkg-config searches: $(pkgconfig_dirs | tr '\n' ' ')"
+			log_error ".pc files installed: $(find "${prefix}" -name '*.pc' 2>/dev/null | tr '\n' ' ')"
+			exit 1
+		}
+	done
+	log_success "xdp-tools ${XDP_TOOLS_VER} and libbpf ${EBPF_VER} installed"
+}
+
+main() {
+	local scope
+
+	case "${1:-}" in
+	-h | --help)
+		show_help
+		exit 0
+		;;
+	--check)
+		scope="${2:-all}"
+		case "${scope}" in
+		all | build) ;;
+		*)
+			log_error "Unknown check scope '${scope}', want 'all' or 'build'"
+			show_help
+			exit 1
+			;;
+		esac
+		[ "$#" -le 2 ] || {
+			log_error "Unexpected argument: $3"
+			show_help
+			exit 1
+		}
+		check "${scope}"
+		;;
+	"")
+		check
+		build_and_install
+		;;
+	*)
+		log_error "Unknown option: $1"
+		show_help
+		exit 1
+		;;
+	esac
+}
+
+(return 0 2>/dev/null) && sourced=1 || sourced=0
+if [ "${sourced}" -eq 0 ]; then
+	main "$@"
+fi

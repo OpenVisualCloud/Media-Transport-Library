@@ -19,7 +19,7 @@ Use `meson` to build the project
 
 ## Build MTL GPU-Direct Library
 
-To Build MTL with GPU Direct Library please refer to [doc file](../doc/gpu.md).
+To Build MTL with GPU Direct Library please refer to [doc file](../doc/features/gpu.md).
 
 ## Unit tests
 

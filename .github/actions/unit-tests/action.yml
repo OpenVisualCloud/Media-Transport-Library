@@ -8,7 +8,7 @@ description: >-
 runs:
   using: composite
   steps:
-    # Nothing installs MTL here; setup_environment.sh takes the dirname of
+    # Nothing installs MTL here; mtl_install.sh takes the dirname of
     # MTL_INSTALL_PREFIX to place DPDK under a workspace-local path.
     - name: Install build dependencies and DPDK
       shell: bash
@@ -17,7 +17,7 @@ runs:
         CICD_BUILD: '1'
         SETUP_BUILD_AND_INSTALL_DPDK: '1'
         MTL_INSTALL_PREFIX: ${{ github.workspace }}/.local_install/mtl
-      run: bash .github/scripts/setup_environment.sh
+      run: bash script/mtl_install.sh
 
     - name: Build and run the unit suite
       shell: bash
@@ -29,4 +29,4 @@ runs:
       shell: bash
       env:
         MTL_INSTALL_PREFIX: ${{ github.workspace }}/.local_install/mtl
-      run: script/build_ffmpeg_plugin.sh unit
+      run: script/mtl_build_ffmpeg_plugin.sh unit

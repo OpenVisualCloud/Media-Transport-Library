@@ -98,10 +98,10 @@ def test_dma_auto_st20p(
 @pytest.mark.smoke
 @pytest.mark.nightly
 def test_dma_setup_get(hosts, mtl_path, host_dma_devices):
-    """dma_setup.sh get prints DMA devices on vfio-pci on the NUMA node of the port."""
+    """mtl_dma_setup.sh get prints DMA devices on vfio-pci on the NUMA node of the port."""
     host = next(iter(hosts.values()))
     port = _skip_without_dma_on_port_node(host)
-    devices = _run(host, f"{mtl_path}/script/dma_setup.sh get {port}").split(",")
+    devices = _run(host, f"{mtl_path}/script/mtl_dma_setup.sh get {port}").split(",")
 
     assert host.dma_device.split(",")[0] in devices
     for dev in devices:

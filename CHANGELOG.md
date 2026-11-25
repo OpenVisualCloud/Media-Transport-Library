@@ -1,10 +1,12 @@
 # Changelog
 
 * pcapng dumps: a dump on a port without NIC RX timestamps warns that its packets carry their RX burst time, no basis for ST 2110-21 timing; RxTxApp `--pcapng_dump` now sets `MTL_FLAG_ENABLE_HW_TIMESTAMP`, as `--rx_timing_parser` does
+* script: each script name starts with `mtl_` (`mtl_build_dpdk.sh`, `mtl_nicctl.sh`, `mtl_common.sh`); no old name stays. `.github/scripts/setup_environment.sh` is now `script/mtl_install.sh`, with `--dry-run`, an option check and `script/mtl_install_template.env`. `meson install` adds the host tools to `share/mtl/script` and `bin`. See `script/README.md`
 * DPDK: two 26.07 TX hot path patches: 0013 builds the TX offload word in one store, 0014 passes iavf's IPsec TX callbacks only with `RTE_ETH_TX_OFFLOAD_SECURITY`; rebuild DPDK (26.07.93_mtl_)
 * st20 RX timing parser: at a frame rate with a fractional number of 90 kHz ticks per frame (59.94, 23.98, 119.88 fps), every other frame's latency no longer reads half a tick (5.6 µs at 59.94) low, which failed frames whose first packet arrives less than that after their RTP time
 * pcapng dumps (st20/st22/st30 RX, CNI): the filename no longer carries the packet count, which at 100,000 packets or more overflowed `MTL_PCAP_FILE_MAX_LEN` (32) and failed the dump; the count stays in the log
 * st20/st22 TX: the video tasklets no longer take the session spinlock; on a session's own scheduler, `*_tx_free()` and `*_tx_update_destination()` (st20, st22, st20p, st22p) return `-EBUSY` instead of deadlocking, as do the stats APIs from the session's own callbacks
+* Documentation: sort `doc/` into topic folders; `doc/README.md` is the start page, and a link to an old `doc/<name>.md` path must change. The Build, E800 driver and Run guides give only the steps of a new install; the other parts go to `build_advanced.md`, `e800_legacy.md`, `troubleshooting.md`, `i226.md` and `features/ptp.md`
 * ice: default to driver version 2.7.6, built as released with no MTL patches; versions before 2.7.6 keep their `patches/ice_drv` series
 * nicctl.sh: give each VF of an ice PF a 512-entry RSS LUT, so that it can have more than 16 queue pairs; `vf_rss_lut` does so for existing VFs
 * dev: warn when a port gets fewer queues than it asks for
@@ -90,14 +92,14 @@
 * rx/timing_parser: add support to export the timing_parser to app, see `app/sample/rx_st20p_timing_parser_sample.c` for usage.
 * st40: add interlaced support.
 * cvt: add st20_rfc4175_422be10_to_yuv422p8 with avx512
-* backend: add XDP based backend, see doc/xdp.md.
+* backend: add XDP based backend, see doc/experimental/xdp.md.
 * manager: add a daemon server for privileged control management, see manager/README.md.
 * backend/xdp: add UDP port filter XDP program for splitting data path traffic.
 * ice: update driver to 1.13.7
 * rx/timing_parser: add timing_parser for audio, see `ST30_RX_FLAG_TIMING_PARSER_STAT` and `ST30_RX_FLAG_TIMING_PARSER_META`
 * tools/ebpf: add lcore_monitor to monitor the lcore status for debug usage
 * tools/ebpf: add udp_monitor to sniff all UDP streaming on the network
-* usdt: add eBPF based User Statically-Defined Tracing (USDT) probes support, see `doc/usdt.md`
+* usdt: add eBPF based User Statically-Defined Tracing (USDT) probes support, see `doc/debugging/usdt.md`
 * multicast: add MTL_FLAG_NO_MULTICAST option
 * st30p: add get/put support for audio, detail see `include/st30_pipeline_api.h`
 * ffmpeg: add audio plugin support
@@ -108,7 +110,7 @@
 * DPDK: upgrade DPDK version to 23.07.
 * virtio_user: add virtio_user support for exception path, deprecate kni.
 * st22p/tx: add external frame support, see ST22P_TX_FLAG_EXT_FRAME.
-* backend: add kernel socket based backend, see doc/kernel_socket.md.
+* backend: add kernel socket based backend, see doc/experimental/kernel_socket.md.
 * DPDK pmd: add AF_PACKET PMD support, see doc/experimental/af_packet.md.
 * st22p/rx: add external frame support, see ST22P_RX_FLAG_EXT_FRAME.
 * ptp: add user callback for ptp sync message. See ptp_sync_notify in struct mtl_init_params.
@@ -193,7 +195,7 @@
 * build: add AddressSanitizer(aka ASan) support, see asan.md
 * fps: add full fps support, see README.md.
 * plugin: implement OBS Studio source plugin, support UYVY/NV12/I420 formats.
-* ext frame: add external frame support, see doc/external_frame.md.
+* ext frame: add external frame support, see doc/features/external_frame.md.
 * build: rename package name to mtl, also API naming prefix to mtl_xxx.
 * st20p: add YUV_422_12bit YUV_444_10bit YUV_444_12bit RGB_10bit RGB_12bit support.
 * plugin: add ffmpeg support with MTL package, see plugins/ffmpeg_plugin/.

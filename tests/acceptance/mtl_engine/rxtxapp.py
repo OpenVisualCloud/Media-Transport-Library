@@ -536,7 +536,7 @@ class RxTxApp(Application):
 
         # Build command line
         # No sudo: RxTxApp runs as the SSH account, which may be unprivileged
-        # (doc/ci_runner_setup.md). add_timeout adds sudo for cpu_isolation.
+        # (doc/development/ci_runner_setup.md). add_timeout adds sudo for cpu_isolation.
         cmd_parts = [
             self.get_executable_path(),
             "--config_file",

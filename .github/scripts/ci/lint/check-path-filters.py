@@ -54,7 +54,6 @@ for name, patterns in filters.items():
             faults.append(f"{name}: '{pattern}' matches no tracked file")
 
 scripts = {path for path in tracked if re.fullmatch(r"script/[^/]+\.sh", path)}
-scripts.add(".github/scripts/setup_environment.sh")
 for path in sorted(scripts - set(filters.get("scripts", []))):
     faults.append(f"scripts: no '{path}'")
 

@@ -82,7 +82,7 @@ jobs:
       # The GStreamer plugins as release, the one build of them with -Werror:
       # the other jobs build them as debug.
       - name: Build Release
-        run: sudo -E .github/scripts/setup_environment.sh
+        run: sudo -E script/mtl_install.sh
         env:
           ECOSYSTEM_BUILD_GSTREAMER_PLUGIN_RELEASE: 1
 
@@ -94,7 +94,7 @@ jobs:
       # Against the MTL and FFmpeg that Build Release installed. sudo: that step
       # made script/build, the parent of their build directory, as root.
       - name: Run the st22 avcodec plugin tests
-        run: sudo -E script/build_st22_avcodec_plugin.sh unit
+        run: sudo -E script/mtl_build_st22_avcodec_plugin.sh unit
 
       - name: Build the Rust no_std example
         run: task ci:rust-no-std
@@ -118,16 +118,16 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # No separate prerequisite step: build_ebpf_xdp.sh checks the host before
+      # No separate prerequisite step: mtl_build_ebpf_xdp.sh checks the host before
       # it builds, and asserts the pinned xdp-tools and libbpf versions after
       # installing them.
       - name: ebpf-xdp build
-        run: sudo -E .github/scripts/setup_environment.sh
+        run: sudo -E script/mtl_install.sh
         env:
           SETUP_BUILD_AND_INSTALL_EBPF_XDP: 1
           TOOLS_BUILD_AND_INSTALL_MTL_MONITORS: 1
 
-      # build_ebpf_xdp.sh names the libxdp directory in /etc/ld.so.conf.d, and
+      # mtl_build_ebpf_xdp.sh names the libxdp directory in /etc/ld.so.conf.d, and
       # does not run ldconfig, so the workflow does.
       - name: Update the runtime linker cache
         run: sudo ldconfig
@@ -146,7 +146,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Debug and fuzz build
-        run: sudo -E .github/scripts/setup_environment.sh
+        run: sudo -E script/mtl_install.sh
         env:
           MTL_BUILD_AND_INSTALL: 1
           MTL_BUILD_AND_INSTALL_FUZZ: 1

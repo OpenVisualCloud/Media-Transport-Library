@@ -6,7 +6,7 @@ obs source plugin for Media Transport Library
 
 ### build Media Transport Library library
 
-refer to: [build guide](../../doc/build.md)
+refer to: [build guide](../../doc/getting_started/build.md)
 
 ### build & install obs-studio
 
@@ -17,7 +17,7 @@ refer to: <https://obsproject.com/wiki/build-instructions-for-linux>
 Build and install the plugin with the script, from the top of the MTL source tree:
 
 ```bash
-./script/build_obs_plugin.sh
+./script/mtl_build_obs_plugin.sh
 ```
 
 Or build it step by step:

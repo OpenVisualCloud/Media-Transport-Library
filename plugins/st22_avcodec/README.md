@@ -21,14 +21,14 @@ Follow the guide in ffmpeg site.
 ## 2. Build and install
 
 ```bash
-./script/build_st22_avcodec_plugin.sh
+./script/mtl_build_st22_avcodec_plugin.sh
 ```
 
 The tests in `tests/` compile the plugin against the same installed MTL and
 FFmpeg and run its encoder, with no NIC:
 
 ```bash
-./script/build_st22_avcodec_plugin.sh unit
+./script/mtl_build_st22_avcodec_plugin.sh unit
 ```
 
 ## 3. Test

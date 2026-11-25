@@ -11,7 +11,7 @@ script_name=$(basename "${BASH_SOURCE[0]}")
 script_path=$(readlink -qe "${BASH_SOURCE[0]}")
 script_folder=${script_path/$script_name/}
 # shellcheck disable=SC1091
-. "${script_folder}/../../../script/common.sh"
+. "${script_folder}/../../../script/mtl_common.sh"
 cd "${script_folder}" || exit 1
 
 mtl_folder="${script_folder}/../../.."

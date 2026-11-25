@@ -6,7 +6,7 @@ applyTo: "tests/acceptance/conftest.py,tests/acceptance/configs/**,tests/accepta
 
 # Editing the validation harness
 
-Architecture: [doc/acceptance-design.md](../../doc/acceptance-design.md) §4, §6, §7, §8.
+Architecture: [doc/development/acceptance-design.md](../../doc/development/acceptance-design.md) §4, §6, §7, §8.
 `mfd` = the Intel `mfd-*` test library family that abstracts host access.
 
 ## The mfd contract — this is what makes tests remote-proof
@@ -86,7 +86,7 @@ in the same change:
 2. `configs/gen_config.py`;
 3. `configs/examples/`;
 4. `configs/README.md`;
-5. [doc/acceptance-design.md](../../doc/acceptance-design.md) §4.1 if the key
+5. [doc/development/acceptance-design.md](../../doc/development/acceptance-design.md) §4.1 if the key
    is architecturally significant.
 
 ## Capture and compliance split

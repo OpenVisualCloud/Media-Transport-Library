@@ -154,7 +154,7 @@ Sessions assigned to schedulers by weight in "1080p-equivalents":
 2. If none found, allocate new scheduler (up to 18)
 3. As sessions freed, quota returned
 
-TX video sessions are placed by quota alone; the round is judged at runtime (`doc/rl_pacing.md`, "Check 2"):
+TX video sessions are placed by quota alone; the round is judged at runtime (`doc/performance/rl_pacing.md`, "Check 2"):
 - `lead_min_ns` (`tv_lead_visit()`) is plain `int64_t`, every access under the session lock; the stats dump takes and resets it.
 - The stats dump `err()`s `frames fall behind` once a period per scheduler iff a lead went below 0 or the round averaged past the tightest budget (`St20TxRoundLoads.ALoadErrsIffItFallsBehind`, `St20TxRoundBudget`). A sleeping scheduler's round is not judged, its leads are.
 
@@ -675,7 +675,7 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
     - A port waiting to start over keeps its target in the release scans (`video_trs_rl_pkt0_tsc()`), so past its target it leaves as a held one, and as one it counts no `stat_trans_troffset_mismatch` on top of its stall (`St20TxRlAnchor.StartingOverPastTheTargetLeavesInTheReleaseScan`).
     - Its waiting visits call `video_trs_rl_reclaim()` as the visits before the window do, so the anchor of the pre-arm that starts over carries no batch free ahead of its doorbell (`WaitingToStartOverFreesTheDueBatch`).
     - A queue recovery drops a late entry's pending tail (`trs_rl_tail`, `tv_transmitter_port_state_init()`).
-  - VRX detector (no silent non-compliance, `doc/rl_pacing.md`, "Check 1"): `plan->vrx_budget_ns` is how far past its own target a pkt may leave and still reach the receiver by its drain slot; 0 judges nothing. At create a port warns once if its vrx leaves no budget, or, armed, no stall limit (`St20TxRlVrxDetectBudgetBelowZero`).
+  - VRX detector (no silent non-compliance, `doc/performance/rl_pacing.md`, "Check 1"): `plan->vrx_budget_ns` is how far past its own target a pkt may leave and still reach the receiver by its drain slot; 0 judges nothing. At create a port warns once if its vrx leaves no budget, or, armed, no stall limit (`St20TxRlVrxDetectBudgetBelowZero`).
     - The drain slot is `vrx` trs after the target (ST 2110-21 6.6.2); EBU LIST reads VRX 0 for one trs more.
     - The budget is that slot less the worst 90 kHz snap, the sawtooth and `ST_TX_VIDEO_RL_WIRE_NS`, the 5.5 µs the NIC and the wire add past the shaper (E810 TX to E830 RX).
     - `absorb_ns` is the smaller of the 4 µs share less aim, T and a fine trim, and this budget less two aims and a fine trim: check 1 takes packet 0 that late behind a kept stall, so one at the limit is not flagged (`St20TxRlAnchor.AStallAtTheLimitIsKeptUnflaggedAndPastItIsNotKept`).
@@ -705,11 +705,11 @@ At target − `warm_pkts`·`trs` the RL transmitter warms the NIC shaper with pa
   A burst stalled past `absorb_ns` drops its refused rest at once (`StalledAnchorPartlyRefusedDropsItsRest`).
   A pre-arm whose every pad was refused has `trs_rl_pads_end` 0, so past its target by two `trs` it counts a `stat_trans_troffset_mismatch`, which one that queued pads does not.
 - Without a plan, `video_trs_rl_warm_up()` queues `ceil((target − now) / trs)` single-pad bursts and `ST_TX_VIDEO_RL_STATE_WAIT_TARGET` holds packet 0 until the TSC reaches target, so a late tasklet launches it late. A planned port whose target is more than `warm_pkts`·`trs` away holds too, without pads. Target already past: no pads, packet 0 goes at once.
-- `video_trs_tasklet_handler()` runs the release scan before each session's visit and after the last (`video_trs_rl_release()`, `doc/rl_pacing.md`, "The release scans"): a held packet 0 leaves at the first scan past its target, not a round later (`St20TxRlRelease`), and a port at most once a handler call (`trs_released`).
+- `video_trs_tasklet_handler()` runs the release scan before each session's visit and after the last (`video_trs_rl_release()`, `doc/performance/rl_pacing.md`, "The release scans"): a held packet 0 leaves at the first scan past its target, not a round later (`St20TxRlRelease`), and a port at most once a handler call (`trs_released`).
   The scan reads the clock again after each release, so a target its own sends pass leaves in it if its port comes after the releaser in scan order (`St20TxRlReleaseScan`).
   Behind a port whose pads the ring refused (`video_trs_rl_refused()`), the scans and the catch-up serve no later port, so a release can wait up to a round, bounded by hang detection (`tx_hang_detect_ms`, 1 s by default) (`F7RefusedRingWindow`).
   A late entry found at the window entry holds while its other port or another session waits on refused pads (`St20TxRlRelease.LateEntryHoldsBehindARefusalOfTheCallBefore`, `LateEntryHoldsBehindItsOtherPortsRefusal`); one the sizing read finds is not checked. A tail call the ring refuses whole drops its pads and holds packet 0 to its target.
-- The mid-frame catch-up (`video_trs_rl_catch_up()`, `doc/rl_pacing.md`, "Catch-up") is skipped while a visited RL packet 0 is due within 2 of its warm-up windows (`St20TxRlQueueAhead`).
+- The mid-frame catch-up (`video_trs_rl_catch_up()`, `doc/performance/rl_pacing.md`, "Catch-up") is skipped while a visited RL packet 0 is due within 2 of its warm-up windows (`St20TxRlQueueAhead`).
 - `tv_init_pacing()` sets `warm_pkts` to 80% of `pkts_in_tr_offset`, capped at 128, or 8 at height ≤ 576; 0 without RL, for wide pacing and for ST22.
 - `stat_trans_troffset_mismatch`: target about two `trs` or more past, or more than `warm_pkts` pads (`warm_pkts`·`trs` with a plan) needed; no pads are sent.
 
@@ -761,7 +761,7 @@ Progressive, height ≥ 1080; T = frame time. Interlaced, 720p and SD use their 
 
   All runs were compliant narrow, with 0 VRX failures. A 4× longer train moved packet 0 by less than one pad, so shaper drift over the train is not what limits `warm_pkts`.
 - **Concurrent sessions.** Each planned session's packet 0 is set by its own queue's shaper, as long as the scheduler loop reaches its pre-arm inside the window. Every other tasklet on that scheduler adds its pass time. A pre-arm pass costs the anchor and ⌈(n − anchor)/32⌉ more `tx_burst` calls: one more than ⌈n/32⌉ where the plan had no short burst (720p: 3 calls for 2).
-- **Non-isolated cores.** The tolerances above are the whole margin. A preemption, softirq or SMT sibling on a shared core can exceed them, so this is best effort (`doc/isolation.md`, `tests/tools/isolate/isolate.sh`). A larger `nb_tx_desc` raises only the frame-body row, unless the cap is ring-derived.
+- **Non-isolated cores.** The tolerances above are the whole margin. A preemption, softirq or SMT sibling on a shared core can exceed them, so this is best effort (`doc/performance/isolation.md`, `tests/tools/isolate/isolate.sh`). A larger `nb_tx_desc` raises only the frame-body row, unless the cap is ring-derived.
 - **No plan, so the #1622 behavior.** `tv_rl_plan_init()` warns once a port at session create. This happens with:
   - a user `ops.pad_interval` or the static pad table;
   - a DPDK ice PF without the `rl_burst_size` devarg, or with one that cannot refill in the idle gap before the window;
@@ -1289,8 +1289,8 @@ Not supported: `dev_eal_init()` always passes `--in-memory`, so no DPDK runtime 
 Independent MTL processes (one EAL each, e.g. on separate VFs) coordinate lcore use through MtlManager instead, or without it through the SysV shm table in `mt_sch.c`.
 Both key an lcore by its ID, and the ID is the CPU ID.
 `dev_eal_init()` passes `--remap-lcore-ids` only when the host has more CPUs (`_SC_NPROCESSORS_CONF`) than `RTE_MAX_LCORE`, and warns: with it every process numbers its CPUs 0, 1, 2, ... and claims the same IDs.
-`script/build_dpdk.sh` sets `max_lcores` to the build host's CPU count, at least 128, or `DPDK_MAX_LCORES`, so `RTE_MAX_LCORE` covers every CPU of the build host.
-The shm table has `RTE_MAX_LCORE` entries, so its size follows the DPDK build: `shmget()` fails with `EINVAL` in a process whose table is larger than the segment that exists (`doc/run.md` §8.15).
+`script/mtl_build_dpdk.sh` sets `max_lcores` to the build host's CPU count, at least 128, or `DPDK_MAX_LCORES`, so `RTE_MAX_LCORE` covers every CPU of the build host.
+The shm table has `RTE_MAX_LCORE` entries, so its size follows the DPDK build: `shmget()` fails with `EINVAL` in a process whose table is larger than the segment that exists (`doc/getting_started/troubleshooting.md` §3.7).
 `mtl_init()` then removes the segment if no process is attached, as after a SIGKILL, and creates its own: `sch_init_lcores()` holds the lockfile for it, and `IPC_RMID` needs root or the owner.
 An attached segment fails the init; LcoreMgr (`mtl_lcore_shm_print()`/`mtl_lcore_shm_clean()`, no lock) never removes one.
 MTL 26.01-26.09 keep remapped IDs in a 128-entry table: a newer process with a larger table fails to start while one runs, but an older process started later attaches to the larger one without noticing, so the versions must not run together (also not with an older MtlManager, which refuses IDs >= 128).

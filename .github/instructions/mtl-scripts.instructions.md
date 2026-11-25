@@ -14,8 +14,8 @@ mix them.
 A person runs these scripts by hand, so each one explains itself.
 
 - Start with `#!/bin/bash`, the SPDX line, and `set -euo pipefail`.
-- Set `script_name` and `script_folder`, then source `common.sh`.
-- Use the `common.sh` helpers. Do not write a local copy of one:
+- Set `script_name` and `script_folder`, then source `mtl_common.sh`.
+- Use the `mtl_common.sh` helpers. Do not write a local copy of one:
   - `log_info`, `log_success`, `log_warning`, `log_error` for each message.
     No `echo ... >&2`.
   - `as_root` for each privileged command, `require_root` when the whole
@@ -44,8 +44,8 @@ A person runs these scripts by hand, so each one explains itself.
   `REPO_DIR`.
 
 `.github/scripts/ci/lint/test-scripts.sh` enforces this structure for each
-`script/*.sh` and for `.github/scripts/setup_environment.sh`. Copy the
-structure of `script/dma_setup.sh` or `script/nicctl.sh` for a new script.
+`script/*.sh` and for `script/mtl_install.sh`. Copy the
+structure of `script/mtl_dma_setup.sh` or `script/mtl_nicctl.sh` for a new script.
 
 ## CI scripts: `.github/scripts/ci/`, workflows, actions, `ci:` tasks
 
@@ -65,8 +65,8 @@ Only CI runs these. They must be as simple as possible.
   runs the same command. A few lines of shell stay in the task; more go in a
   script in `.github/scripts/ci/<family>/` that the task calls. Do not add a
   script that only wraps one command.
-- A CI step that needs a user script calls it (`script/dma_setup.sh reset`,
-  `script/nicctl.sh`). Do not copy its logic into CI.
+- A CI step that needs a user script calls it (`script/mtl_dma_setup.sh reset`,
+  `script/mtl_nicctl.sh`). Do not copy its logic into CI.
 - When you fix a CI script, change only what is broken. Removing code is
   better than adding code.
 
@@ -74,9 +74,9 @@ Only CI runs these. They must be as simple as possible.
 
 - `gtest.sh` is the test harness that CI runs. The CI rules apply to it, and
   it changes only what one test needs (the table below).
-- `setup_environment.sh`, `acceptance_setup.sh`, `acceptance_setup_base.sh`
+- `mtl_install.sh`, `acceptance_setup.sh`, `acceptance_setup_base.sh`
   and `setup_acceptance.sh` set up a host for a person. They are host-layer
-  tools, and CI does not call them to change a runner. `setup_environment.sh`
+  tools, and CI does not call them to change a runner. `mtl_install.sh`
   follows the user script rules; `ci:build-dependencies` calls it only to
   build the cached dependencies, with the host settings off.
 - `lib/` holds the helpers of the acceptance setup scripts and of the
@@ -89,13 +89,13 @@ another layer.
 
 | Layer | When | Who does it |
 | --- | --- | --- |
-| **Host** | Once, and again after each boot | Not CI. On the fleet: the runner watchdog. By hand: `.github/scripts/setup_environment.sh`, `.github/scripts/acceptance_setup.sh`, the `mtl-system-setup` MCP server. |
+| **Host** | Once, and again after each boot | Not CI. On the fleet: the runner watchdog. By hand: `script/mtl_install.sh`, `.github/scripts/acceptance_setup.sh`, the `mtl-system-setup` MCP server. |
 | **Test cycle** | At the start of each CI job, before the first test | CI: the `validate-host` action, and the `ci:` tasks that each test job runs before its tests. |
 | **Test** | Before one test or suite, undone after it | The test harness: `.github/scripts/gtest.sh`, the pytest fixtures, `tests/integration_tests/noctx/run.sh`. |
 
 | Setting | Layer | Where |
 | --- | --- | --- |
-| Packages, build tools, `python3-venv` | Host | watchdog, `setup_environment.sh`, `script/install_dependencies.sh` |
+| Packages, build tools, `python3-venv` | Host | watchdog, `mtl_install.sh`, `script/mtl_install_dependencies.sh` |
 | Kernel release and headers | Host | watchdog |
 | Kernel command line: `intel_iommu=on iommu=pt`, hugepage size | Host | watchdog, GRUB |
 | CPU isolation on the command-line (`isolcpus`, `nohz_full`, `rcu_nocbs`), when a host needs it | Host | GRUB |
@@ -112,12 +112,12 @@ another layer.
 | Stop the processes and release the CPUs that an earlier job left | Test cycle | `task cleanup` |
 | Restore and check the DPDK, MTL, plugin and ICE builds of this commit | Test cycle | `validate-host` |
 | Unload the ICE driver, load the ICE module under test (this removes all VFs) | Test cycle | `ci:activate-ice` |
-| Bind the DMA devices to `vfio-pci`, because the DPDK under test can change | Test cycle | `script/dma_setup.sh reset` |
+| Bind the DMA devices to `vfio-pci`, because the DPDK under test can change | Test cycle | `script/mtl_dma_setup.sh reset` |
 | Job environment: `PATH`, `PKG_CONFIG_PATH`, `GST_PLUGIN_PATH`, `KAHAWAI_CFG_PATH` | Test cycle | `ci:configure-host -- environment` |
 | Acceptance virtualenv cache, free disk space, generated test configuration | Test cycle | `ci:pytest-setup` steps of the test job |
 | Same tree, ICE module and DMA binding on the shadow host | Test cycle | `ci:configure-host -- shadow-*` |
-| Number of VFs on a PF, their bind to `vfio-pci`, and their 512-entry RSS LUT | Test | `gtest.sh` `create_vfs`, `Nicctl.create_vfs` (`nicctl.sh vf_rss_lut` for VFs they reuse) |
-| A PF on `vfio-pci` for a PF test, or on its kernel driver for a kernel socket test | Test | pytest fixtures, `script/nicctl.sh` |
+| Number of VFs on a PF, their bind to `vfio-pci`, and their 512-entry RSS LUT | Test | `gtest.sh` `create_vfs`, `Nicctl.create_vfs` (`mtl_nicctl.sh vf_rss_lut` for VFs they reuse) |
+| A PF on `vfio-pci` for a PF test, or on its kernel driver for a kernel socket test | Test | pytest fixtures, `script/mtl_nicctl.sh` |
 | Owner of the `/dev/vfio` nodes for the test account | Test | `Nicctl.grant_vfio_access` |
 | C-state limit (`/dev/cpu_dma_latency`), for a test that needs it | Test | the fixture of that test (no test needs it yet) |
 | Cores offline, for the turbo of a performance test | Test | `optimize_cpu_cores_for_turbo`, `restore_cpu_cores` |

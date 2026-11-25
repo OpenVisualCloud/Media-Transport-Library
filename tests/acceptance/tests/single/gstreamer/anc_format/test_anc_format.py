@@ -57,7 +57,7 @@ def _skip_without_tx_test_hooks(host, mtl_path, libmtl=True) -> None:
     checks = {
         "the mtl_st40p_tx plugin has no tx-test-mode": (
             f'grep -qaF tx-test-mode "{plugin}"',
-            "a debug build of the GStreamer plugin (build_gstreamer_plugin.sh debug)",
+            "a debug build of the GStreamer plugin (mtl_build_gstreamer_plugin.sh debug)",
         ),
     }
     if libmtl:

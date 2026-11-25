@@ -6,8 +6,8 @@
 SCRIPT_DIR="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]}")")"
 REPOSITORY_DIR="$(readlink -f "${SCRIPT_DIR}/../..")"
 
-# shellcheck source="script/common.sh"
-. "${REPOSITORY_DIR}/script/common.sh"
+# shellcheck source="script/mtl_common.sh"
+. "${REPOSITORY_DIR}/script/mtl_common.sh"
 
 ST_PORT_TX="${ST_PORT_TX:-'0000:af:01.1'}"
 ST_PORT_RX="${ST_PORT_RX:-'0000:af:01.0'}"

@@ -46,7 +46,7 @@ from mtl_setup_common import install_dependencies as _install_dependencies_impl
 # Paths
 # ---------------------------------------------------------------------------
 SCRIPT_DIR = Path(__file__).resolve().parent
-NICCTL = REPO_ROOT / "script" / "nicctl.sh"
+NICCTL = REPO_ROOT / "script" / "mtl_nicctl.sh"
 
 mcp = FastMCP(
     "mtl-system-setup",
@@ -423,7 +423,7 @@ def nic_list() -> str:
     List all network devices with driver, NUMA, IOMMU group, and interface name.
     Shows both PFs and any existing VFs.
     """
-    # Use nicctl.sh list if available
+    # Use mtl_nicctl.sh list if available
     if NICCTL.is_file():
         out = _run_output(f"sudo bash {NICCTL} list all", timeout=15)
         if out:
@@ -790,7 +790,7 @@ def dpdk_build() -> str:
         "SETUP_BUILD_AND_INSTALL_EBPF_XDP=0 "
         "SETUP_BUILD_AND_INSTALL_GPU_DIRECT=0 "
         "MTL_BUILD_AND_INSTALL=0 "
-        "bash .github/scripts/setup_environment.sh",
+        "bash script/mtl_install.sh",
         timeout=600,
     )
     # Ensure libraries are in ldcache — without this, builds linking DPDK will fail
@@ -1035,7 +1035,7 @@ def build_ebpf_xdp() -> str:
         "SETUP_BUILD_AND_INSTALL_EBPF_XDP=1 "
         "SETUP_BUILD_AND_INSTALL_GPU_DIRECT=0 "
         "MTL_BUILD_AND_INSTALL=0 "
-        "bash .github/scripts/setup_environment.sh",
+        "bash script/mtl_install.sh",
         timeout=300,
     )
     return f"## eBPF/XDP Build\n{_summarize_output('ebpf_xdp_build', out, rc=rc)}"
@@ -1074,13 +1074,13 @@ def dmesg_tail(lines: int = 50, filter_str: str = "") -> str:
 @mcp.tool()
 def status_report() -> str:
     """
-    Run MTL's built-in status_report.sh for full system diagnostics.
+    Run MTL's built-in mtl_status_report.sh for full system diagnostics.
 
     Collects NIC, driver, hugepages, IOMMU, and DPDK info in one report.
     """
-    script = REPO_ROOT / "script" / "status_report.sh"
+    script = REPO_ROOT / "script" / "mtl_status_report.sh"
     if not script.is_file():
-        return "Error: script/status_report.sh not found"
+        return "Error: script/mtl_status_report.sh not found"
 
     out = _run_output(f"bash {script}", timeout=30)
     return f"## MTL Status Report\n```\n{out}\n```"

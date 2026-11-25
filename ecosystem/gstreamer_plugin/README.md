@@ -19,21 +19,21 @@ sudo apt update
 sudo apt install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-tools gstreamer1.0-libav libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
 ```
 
-> For MTL installation instructions please refer to  [Build Documentation](../../doc/build.md).
+> For MTL installation instructions please refer to  [Build Documentation](../../doc/getting_started/build.md).
 
 ### 1.2. Automated Build
 
-`script/build_gstreamer_plugin.sh` builds the plugins and installs them into the
+`script/mtl_build_gstreamer_plugin.sh` builds the plugins and installs them into the
 GStreamer plugin directory of `/usr/local`. Run it from the top of the source
 tree, as your own user, after MTL is installed:
 
 ```bash
-./script/install_dependencies.sh gstreamer   # the build packages, Ubuntu only
-./script/build_gstreamer_plugin.sh           # add debug for the test-only properties
-./script/build_gstreamer_plugin.sh -h        # all options
+./script/mtl_install_dependencies.sh gstreamer   # the build packages, Ubuntu only
+./script/mtl_build_gstreamer_plugin.sh           # add debug for the test-only properties
+./script/mtl_build_gstreamer_plugin.sh -h        # all options
 ```
 
-With `MTL_INSTALL_PREFIX` set, as `build.sh` and `build_dpdk.sh` take it, the
+With `MTL_INSTALL_PREFIX` set, as `build.sh` and `mtl_build_dpdk.sh` take it, the
 plugins go into `<prefix parent>/gstreamer/gstreamer-1.0`
 (`.local_install/gstreamer/gstreamer-1.0` beside `.local_install/mtl`); point
 `GST_PLUGIN_PATH` at that directory, as at `/usr/local`'s plugin directory:
@@ -118,7 +118,7 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 | tx-queues     | uint   | Number of TX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
 | rx-queues     | uint   | Number of RX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
 | enable-dma-offload | boolean | Request DMA offload for sessions that support it.                                                | TRUE/FALSE               |
-| dma-dev       | string | DPDK port bound for DMA engines, exported as described in `doc/dma.md`. `enable-dma-offload=true` needs this or `dma-auto`. | N/A                      |
+| dma-dev       | string | DPDK port bound for DMA engines, exported as described in `doc/features/dma.md`. `enable-dma-offload=true` needs this or `dma-auto`. | N/A                      |
 | dma-auto      | boolean | Use each Intel DMA device on vfio-pci on the NUMA node of the ports, without `dma-dev`. Sets `MTL_FLAG_DMA_AUTO`. | TRUE/FALSE               |
 | allow-down-ports | boolean | Allow MTL to initialize even if port links are down. Sets `MTL_FLAG_ALLOW_DOWN_PORTS` which enables `MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION` on every configured port. Sessions still require at least one functioning port to operate. | TRUE/FALSE |
 | payload-type  | uint   | SMPTE ST 2110 payload type.                                                                       | 0 to G_MAXUINT           |
@@ -127,9 +127,9 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 
 When `enable-dma-offload` is set to `true`, every plugin that supports DMA will request
 `ST20P_RX_FLAG_DMA_OFFLOAD` during session creation (currently `mtl_st20p_rx`). Make sure
-the `dma-dev` port is bound and exported as described in `doc/dma.md` before enabling the
+the `dma-dev` port is bound and exported as described in `doc/features/dma.md` before enabling the
 flag. With `dma-auto=true` instead of `dma-dev`, the plugin uses the DMA devices that
-`script/dma_setup.sh bind` binds on the NUMA node of the port.
+`script/mtl_dma_setup.sh bind` binds on the NUMA node of the port.
 
 When `allow-down-ports` is set to `true`, MTL will proceed with initialization even if
 one or both NIC links are down. Any session whose `port` or `port-red` maps to a down
@@ -257,7 +257,7 @@ To ensure the correct size of the buffer, we will use the `rawvideoparse` elemen
 The rest of rawvideo metadata will be passed via pad capabilities of the buffer.
 ```bash
 # If you don't know how to find VFIO PCI address of your device
-# refer to Media-Transport-Library/doc/run.md
+# refer to Media-Transport-Library/doc/getting_started/run.md
 export VFIO_PORT_T="pci_address_of_the_device"
 
 # video pipeline y210 FHD 60fps on port 20000
@@ -310,7 +310,7 @@ To run the `mtl_st20p_rx` plugin, use the following command to specify the input
 
 ```bash
 # If you don't know how to find the VFIO PCI address of your device
-# refer to Media-Transport-Library/doc/run.md
+# refer to Media-Transport-Library/doc/getting_started/run.md
 export VFIO_PORT_R="pci_address_of_the_device"
 
 # Run the receiver pipeline y210 FHD 60fps on port 20000
@@ -352,7 +352,7 @@ Instead of using input video we opted for build-in GStreamer audio files generat
 
 ```bash
 # If you don't know how to find the VFIO PCI address of your device
-# refer to Media-Transport-Library/doc/run.md
+# refer to Media-Transport-Library/doc/getting_started/run.md
 export VFIO_PORT_T="pci_address_of_the_device"
 
 # Audio pipeline with 48kHz sample rate on port 30000
@@ -400,7 +400,7 @@ To run the `mtl_st30p_rx` audio plugin use the command below:
 
 ```bash
 # If you don't know how to find the VFIO PCI address of your device
-# refer to Media-Transport-Library/doc/run.md
+# refer to Media-Transport-Library/doc/getting_started/run.md
 export VFIO_PORT_R="pci_address_of_the_device"
 
 # Set the output path
@@ -470,7 +470,7 @@ To run the `mtl_st40p_tx` plugin, use the following command:
 
 ```bash
 # If you don't know how to find the VFIO PCI address of your device
-# refer to Media-Transport-Library/doc/run.md
+# refer to Media-Transport-Library/doc/getting_started/run.md
 export VFIO_PORT_T="pci_address_of_the_device"
 
 # Ancillary data pipeline on port 40000
@@ -533,7 +533,7 @@ To run the `mtl_st40p_rx` plugin, use the following command:
 
 ```bash
 # If you don't know how to find the VFIO PCI address of your device
-# refer to Media-Transport-Library/doc/run.md
+# refer to Media-Transport-Library/doc/getting_started/run.md
 export VFIO_PORT_R="pci_address_of_the_device"
 
 # Set the output path

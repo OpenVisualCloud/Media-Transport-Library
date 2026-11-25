@@ -7,7 +7,7 @@ Shared implementation helpers for the MTL MCP servers.
 Both `mtl_mcp_server.py` (system-wide host setup, driver management, gtest)
 and `mtl_acceptance_mcp_server.py` (tests/acceptance/ pytest environment,
 built on the separate `.local_install` tree) shell out to the same
-`.github/scripts/setup_environment.sh` and need the same output-summarization
+`script/mtl_install.sh` and need the same output-summarization
 behavior. Splitting the servers by MCP tool namespace (so each agent's
 tool-schema footprint only covers what it actually calls) would otherwise
 require duplicating this logic — instead both servers import it from here.
@@ -111,7 +111,7 @@ _XTRACE_RE = re.compile(r"^\s*\+")
 
 
 def _strip_xtrace(text: str) -> str:
-    """Drop `set -x` trace lines (e.g. from setup_environment.sh's `set -xe`).
+    """Drop `set -x` trace lines (e.g. from mtl_install.sh's `set -xe`).
 
     Scripts that trace every command emit ~5 noise lines per real line of
     output (`+ var=...`, `+ '[' 0 = 0 ']'`, `+ continue`, ...). A positional
@@ -173,7 +173,7 @@ def _load_versions() -> dict[str, str]:
 
 # ---------------------------------------------------------------------------
 # Shared business logic — called as plain functions by BOTH MCP servers, so
-# neither duplicates the underlying setup_environment.sh invocation. Each
+# neither duplicates the underlying mtl_install.sh invocation. Each
 # server's own @mcp.tool() (if it exposes one of these directly) is a thin
 # wrapper that just calls the matching function below.
 #

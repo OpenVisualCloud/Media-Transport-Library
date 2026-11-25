@@ -33,15 +33,17 @@ check_static() {
 	local file="$1" name line out rc=0
 	name=$(basename "$file")
 
+	[[ "${name}" == mtl_*.sh ]] || fail "$file" "the name does not start with mtl_"
+
 	[ "$(head -n 1 "$file")" = "#!/bin/bash" ] || fail "$file" "the first line is not #!/bin/bash"
 	grep -q '^# SPDX-License-Identifier: BSD-3-Clause$' "$file" || fail "$file" "no SPDX line"
 	grep -qx 'set -euo pipefail' "$file" || fail "$file" "no 'set -euo pipefail' line"
 	grep -qx 'script_name="$(basename "${BASH_SOURCE\[0\]}")"' "$file" || fail "$file" "no script_name line"
-	# An installed script reached through a link (nicctl.sh) resolves it first.
+	# An installed script reached through a link (mtl_nicctl.sh) resolves it first.
 	grep -qx -e 'script_folder="$(cd -- "$(dirname -- "${BASH_SOURCE\[0\]}")" \&\& pwd)"' \
 		-e 'script_folder="$(dirname -- "$(readlink -f -- "${BASH_SOURCE\[0\]}")")"' "$file" ||
 		fail "$file" "no script_folder line"
-	grep -qE '^\. "\$\{(script|root)_folder\}/(script/)?common\.sh"$' "$file" || fail "$file" "does not source common.sh"
+	grep -qE '^\. "\$\{script_folder\}/mtl_common\.sh"$' "$file" || fail "$file" "does not source mtl_common.sh"
 	grep -q '^show_help() {$' "$file" || fail "$file" "no show_help()"
 	grep -q '^main() {$' "$file" || fail "$file" "no main()"
 	grep -qx '(return 0 2>/dev/null) && sourced=1 || sourced=0' "$file" || fail "$file" "no sourced guard"
@@ -57,7 +59,7 @@ check_static() {
 		fail "$file" "line ${line}: message to stderr, use log_*"
 	done < <(code_lines "$file" | grep -E '^[0-9]+:\s*(echo|printf)\b.*>&2')
 	while IFS=: read -r line _; do
-		fail "$file" "line ${line}: local copy of a common.sh helper"
+		fail "$file" "line ${line}: local copy of a helper of mtl_common.sh"
 	done < <(grep -nE '^(function\s+)?(run_as_root|as_root|log_info|log_error|log_warning|command_exists)\s*\(\)' "$file")
 
 	out=$(bash "$file" -h 2>/dev/null) || rc=$?
@@ -76,22 +78,45 @@ while read -r file; do
 	echo "--- ${file}"
 	check_static "$file"
 done < <(
-	find script -maxdepth 1 -type f -name '*.sh' ! -name common.sh | sort
-	echo .github/scripts/setup_environment.sh
+	find script -maxdepth 1 -type f -name '*.sh' ! -name mtl_common.sh | sort
 )
 
 out=$(mktemp -d)
-bash script/hash_sources.sh -o "${out}/root"
-(cd /tmp && bash "${root_dir}/script/hash_sources.sh" -o "${out}/tmp")
-grep -q '=' "${out}/root" || fail script/hash_sources.sh "-o writes no key=value line"
-cmp -s "${out}/root" "${out}/tmp" || fail script/hash_sources.sh "the hashes change with the current directory"
+bash script/mtl_hash_sources.sh -o "${out}/root"
+(cd /tmp && bash "${root_dir}/script/mtl_hash_sources.sh" -o "${out}/tmp")
+grep -q '=' "${out}/root" || fail script/mtl_hash_sources.sh "-o writes no key=value line"
+cmp -s "${out}/root" "${out}/tmp" || fail script/mtl_hash_sources.sh "the hashes change with the current directory"
 # The cache key computed before a build must equal the hash after it writes untracked files.
 mkdir -p tests/tools/RxTxApp/build_hash_test
 echo untracked >tests/tools/RxTxApp/build_hash_test/output.o
-bash script/hash_sources.sh -o "${out}/build"
+bash script/mtl_hash_sources.sh -o "${out}/build"
 rm -rf tests/tools/RxTxApp/build_hash_test
-cmp -s "${out}/root" "${out}/build" || fail script/hash_sources.sh "an untracked build output changes the hashes"
+cmp -s "${out}/root" "${out}/build" || fail script/mtl_hash_sources.sh "an untracked build output changes the hashes"
 rm -rf "${out:?}"
+
+# The template of mtl_install.sh names each option once, and only the options;
+# a dry run of it passes, and a misspelled option stops the script.
+# shellcheck disable=SC2016
+test_install_template() {
+	local template=script/mtl_install_template.env want have out
+	want=$(bash -c '. script/mtl_install.sh && printf "%s\n" "${setup_flags[@]%%|*}" MTL_INSTALL_PREFIX' | sort)
+	have=$(sed -n 's/^export \([A-Z_]*\)=.*/\1/p' "${template}" | sort)
+	[ "${want}" = "${have}" ] ||
+		fail "${template}" "the options differ from mtl_install.sh: $(diff <(echo "${want}") <(echo "${have}") | grep '^[<>]' | tr '\n' ' ')"
+	out=$(env -i PATH="${PATH}" bash -c '. "$1" && bash script/mtl_install.sh --dry-run' _ "${template}" 2>&1) ||
+		fail "${template}" "a dry run of the template fails: ${out:0:200}"
+	if env -i PATH="${PATH}" SETUP_BUILD_AND_INSTALL_DPKD=1 bash script/mtl_install.sh --dry-run >/dev/null 2>&1; then
+		fail script/mtl_install.sh "a misspelled option does not stop the script"
+	fi
+	if env -i PATH="${PATH}" MTL_BUILD_AND_INSTALL=1 MTL_INSTALL_PREFIX="/tmp/a b/mtl" bash script/mtl_install.sh --dry-run >/dev/null 2>&1; then
+		fail script/mtl_install.sh "an install prefix with a space does not stop the script"
+	fi
+	if env -i PATH="${PATH}" MTL_BUILD_AND_INSTALL=yes bash script/mtl_install.sh --dry-run >/dev/null 2>&1; then
+		fail script/mtl_install.sh "a value other than 0 or 1 does not stop the script"
+	fi
+}
+
+test_install_template
 
 test_jpegxs_helpers() {
 	local work config source_dir
@@ -100,10 +125,10 @@ test_jpegxs_helpers() {
 	source_dir="${work}/source"
 	cp kahawai.json "${config}"
 	chmod 0644 "${config}"
-	bash -c '. script/common.sh; register_plugin "$1" st22_svt_jpegxs "$2" >/dev/null' \
+	bash -c '. script/mtl_common.sh; register_plugin "$1" st22_svt_jpegxs "$2" >/dev/null' \
 		_ "${config}" /opt/jpegxs/lib/libst_plugin_st22_svt_jpeg_xs.so ||
-		fail script/common.sh "cannot update the plugin registry"
-	python3 - "${config}" <<'PY' || fail script/common.sh "plugin registry update is incorrect"
+		fail script/mtl_common.sh "cannot update the plugin registry"
+	python3 - "${config}" <<'PY' || fail script/mtl_common.sh "plugin registry update is incorrect"
 import json
 import sys
 
@@ -111,12 +136,12 @@ plugins = [item for item in json.load(open(sys.argv[1]))["plugins"] if item["nam
 assert sum(item["enabled"] for item in plugins) == 1
 assert next(item for item in plugins if item["enabled"])["path"] == "/opt/jpegxs/lib/libst_plugin_st22_svt_jpeg_xs.so"
 PY
-	[ "$(stat -c '%a' "${config}")" = 644 ] || fail script/common.sh "plugin registry mode changed"
+	[ "$(stat -c '%a' "${config}")" = 644 ] || fail script/mtl_common.sh "plugin registry mode changed"
 	# build.sh creates the registry of a local install.
-	bash -c '. script/common.sh; register_plugin "$1" st22_sample "$2" >/dev/null' \
+	bash -c '. script/mtl_common.sh; register_plugin "$1" st22_sample "$2" >/dev/null' \
 		_ "${work}/conf/kahawai.json" /opt/mtl/lib/libst_plugin_st22_sample.so ||
-		fail script/common.sh "cannot create the plugin registry"
-	python3 - "${work}/conf/kahawai.json" <<'PY' || fail script/common.sh "created plugin registry is incorrect"
+		fail script/mtl_common.sh "cannot create the plugin registry"
+	python3 - "${work}/conf/kahawai.json" <<'PY' || fail script/mtl_common.sh "created plugin registry is incorrect"
 import json
 import sys
 
@@ -127,28 +152,28 @@ PY
 
 	mkdir "${source_dir}"
 	touch "${source_dir}/sentinel"
-	if bash script/build_jpegxs.sh --source-dir "${source_dir}" >"${work}/source.log" 2>&1; then
-		fail script/build_jpegxs.sh "accepted a source directory without CMakeLists.txt"
+	if bash script/mtl_build_jpegxs.sh --source-dir "${source_dir}" >"${work}/source.log" 2>&1; then
+		fail script/mtl_build_jpegxs.sh "accepted a source directory without CMakeLists.txt"
 	fi
 	grep -q 'Source directory does not contain CMakeLists.txt' "${work}/source.log" ||
-		fail script/build_jpegxs.sh "did not validate the explicit source directory"
-	[ -f "${source_dir}/sentinel" ] || fail script/build_jpegxs.sh "deleted the explicit source directory"
+		fail script/mtl_build_jpegxs.sh "did not validate the explicit source directory"
+	[ -f "${source_dir}/sentinel" ] || fail script/mtl_build_jpegxs.sh "deleted the explicit source directory"
 	rm -rf "${work:?}"
 }
 
 test_jpegxs_helpers
 
-# The ICE version rule that build_drivers.sh, mtl_host_common.sh and
+# The ICE version rule that mtl_build_drivers.sh, mtl_host_common.sh and
 # validate-ice.sh share: "<driver version> <ICE version> <accepted: yes or no>".
 test_ice_version_rule() {
 	local driver ver want got refusal
 	while read -r driver ver want; do
 		got=no
-		if bash -c '. script/common.sh; ice_driver_version_ok "$1" "$2"' _ "${driver}" "${ver}"; then
+		if bash -c '. script/mtl_common.sh; ice_driver_version_ok "$1" "$2"' _ "${driver}" "${ver}"; then
 			got=yes
 		fi
 		[ "${got}" = "${want}" ] ||
-			fail script/common.sh "ice_driver_version_ok '${driver}' '${ver}' is ${got}, not ${want}"
+			fail script/mtl_common.sh "ice_driver_version_ok '${driver}' '${ver}' is ${got}, not ${want}"
 	done <<'CASES'
 2.7.6 2.7.6 yes
 Kahawai_2.7.6 2.7.6 no
@@ -161,17 +186,17 @@ Kahawai_2.6.8 2.6.8 yes
 2.6.8 2.6.8 no
 CASES
 	# The message, not any failure: a host without kernel headers fails as well.
-	refusal=$(bash script/build_drivers.sh --driver ice --build-only --ice-version 2.6.8 2>&1 || true)
+	refusal=$(bash script/mtl_build_drivers.sh --driver ice --build-only --ice-version 2.6.8 2>&1 || true)
 	grep -q 'No ICE patches for version 2.6.8' <<<"${refusal}" ||
-		fail script/build_drivers.sh "did not refuse ICE 2.6.8, which is before 2.7.6 and has no patch folder"
+		fail script/mtl_build_drivers.sh "did not refuse ICE 2.6.8, which is before 2.7.6 and has no patch folder"
 }
 
 test_ice_version_rule
 
-# Prints the flags that hardening_flags of common.sh sets for CC $1, CFLAGS $2,
+# Prints the flags that hardening_flags of mtl_common.sh sets for CC $1, CFLAGS $2,
 # CPPFLAGS $3 and MTL_HARDENING $4 (default: 1, whatever the caller exports).
 dependency_flags() {
-	CC=$1 CFLAGS=$2 CPPFLAGS=$3 MTL_HARDENING=${4-1} bash -c '. script/common.sh && hardening_flags && echo "${HARDENING_CFLAGS}|${HARDENING_LDFLAGS}"' 2>&1
+	CC=$1 CFLAGS=$2 CPPFLAGS=$3 MTL_HARDENING=${4-1} bash -c '. script/mtl_common.sh && hardening_flags && echo "${HARDENING_CFLAGS}|${HARDENING_LDFLAGS}"' 2>&1
 }
 
 # The stand-in compiler takes each flag and applies level 3, or 2 with -DMTL_GCC11.
@@ -184,35 +209,35 @@ test_dependency_hardening_flags() {
 	chmod +x "${work}/cc"
 	out=$(dependency_flags "${work}/cc -m64" "" "") || true
 	[ "${out}" = "${compile} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3|${link}" ] ||
-		fail script/common.sh "hardening_flags with a CC of two words: ${out}"
+		fail script/mtl_common.sh "hardening_flags with a CC of two words: ${out}"
 	out=$(dependency_flags "${work}/cc" "-DMTL_GCC11" "") || true
 	[ "${out}" = "${compile} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2|${link}" ] ||
-		fail script/common.sh "hardening_flags takes level 3 where the compiler applies 2: ${out}"
+		fail script/mtl_common.sh "hardening_flags takes level 3 where the compiler applies 2: ${out}"
 	out=$(dependency_flags "${work}/cc" "-O2 -D_FORTIFY_SOURCE=2" "") || true
-	[ "${out}" = "${compile}|${link}" ] || fail script/common.sh "hardening_flags adds a level to the one of CFLAGS: ${out}"
+	[ "${out}" = "${compile}|${link}" ] || fail script/mtl_common.sh "hardening_flags adds a level to the one of CFLAGS: ${out}"
 	out=$(dependency_flags "${work}/cc" "-O2" "-Wp,-D_FORTIFY_SOURCE=3") || true
-	[ "${out}" = "${compile}|${link}" ] || fail script/common.sh "hardening_flags adds a level to the one of CPPFLAGS: ${out}"
+	[ "${out}" = "${compile}|${link}" ] || fail script/mtl_common.sh "hardening_flags adds a level to the one of CPPFLAGS: ${out}"
 	out=$(dependency_flags "${work}/cc" "-O2 -g -O0" "") || true
-	[ "${out}" = "${compile}|${link}" ] || fail script/common.sh "hardening_flags adds a level to an -O0 build: ${out}"
+	[ "${out}" = "${compile}|${link}" ] || fail script/mtl_common.sh "hardening_flags adds a level to an -O0 build: ${out}"
 	out=$(dependency_flags "${work}/cc" "-O1 -fsanitize=address" "") || true
-	[ "${out}" = "${compile}|${link}" ] || fail script/common.sh "hardening_flags adds a level to a sanitizer build: ${out}"
+	[ "${out}" = "${compile}|${link}" ] || fail script/mtl_common.sh "hardening_flags adds a level to a sanitizer build: ${out}"
 	out=$(dependency_flags "${work}/cc" "-O0" "-Os") || true
 	[ "${out}" = "${compile} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3|${link}" ] ||
-		fail script/common.sh "hardening_flags takes no -O of CPPFLAGS after CFLAGS: ${out}"
+		fail script/mtl_common.sh "hardening_flags takes no -O of CPPFLAGS after CFLAGS: ${out}"
 	if dependency_flags "${work}/missing" "" "" >/dev/null; then
-		fail script/common.sh "hardening_flags passes without a compiler"
+		fail script/mtl_common.sh "hardening_flags passes without a compiler"
 	fi
 	out=$(dependency_flags "${work}/cc" "" "" 0) || true
 	if [ "${out##*$'\n'}" != "|" ] || [[ ${out} != *"MTL_HARDENING=0: the dependency is built without the hardening flags"* ]]; then
-		fail script/common.sh "hardening_flags sets flags, or doesn't warn, with MTL_HARDENING=0: ${out}"
+		fail script/mtl_common.sh "hardening_flags sets flags, or doesn't warn, with MTL_HARDENING=0: ${out}"
 	fi
 	for value in 1 ""; do
 		out=$(dependency_flags "${work}/cc" "" "" "${value}") || true
 		[ "${out}" = "${compile} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3|${link}" ] ||
-			fail script/common.sh "hardening_flags with MTL_HARDENING='${value}': ${out}"
+			fail script/mtl_common.sh "hardening_flags with MTL_HARDENING='${value}': ${out}"
 	done
 	if dependency_flags "${work}/cc" "" "" 2 >/dev/null; then
-		fail script/common.sh "hardening_flags takes MTL_HARDENING=2"
+		fail script/mtl_common.sh "hardening_flags takes MTL_HARDENING=2"
 	fi
 	rm -rf "${work:?}"
 	# A real compiler gets the highest level that it applies.
@@ -221,14 +246,14 @@ test_dependency_hardening_flags() {
 		max=$("${cc}" -O2 -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -include string.h -dM -E -x c /dev/null |
 			sed -n 's/^#define __USE_FORTIFY_LEVEL //p')
 		out=$(dependency_flags "${cc}" "" "") || true
-		[[ ${out} == *" -D_FORTIFY_SOURCE=${max}|"* ]] || fail script/common.sh "hardening_flags gives ${cc} another level than ${max}: ${out}"
+		[[ ${out} == *" -D_FORTIFY_SOURCE=${max}|"* ]] || fail script/mtl_common.sh "hardening_flags gives ${cc} another level than ${max}: ${out}"
 	done
 }
 
 test_dependency_hardening_flags
 
-bash script/check_dpdk_patches.sh || fail script/check_dpdk_patches.sh "the DPDK patches do not apply clean"
-bash script/build_ebpf_xdp.sh --check build || echo "build_ebpf_xdp.sh --check build: the host does not have each package"
+bash script/mtl_check_dpdk_patches.sh || fail script/mtl_check_dpdk_patches.sh "the DPDK patches do not apply clean"
+bash script/mtl_build_ebpf_xdp.sh --check build || echo "mtl_build_ebpf_xdp.sh --check build: the host does not have each package"
 
 if [ "$failures" -ne 0 ]; then
 	echo "${failures} fault(s)." >&2

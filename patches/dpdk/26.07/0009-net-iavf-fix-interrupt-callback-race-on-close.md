@@ -61,7 +61,7 @@ In `tests/unit/dev/iavf_intr_unregister_test.cpp`:
 - `EalIntrCallback.UnregisterSyncWaitsForRunningCallback` checks that `rte_intr_callback_unregister_sync()` returns only after the callback has returned, and removes the source.
 - `DpdkIavfPatch.CloseWaitsForInFlightInterruptCallback` checks that the loaded iavf PMD imports `rte_intr_callback_unregister_sync` and not `rte_intr_callback_unregister`.
 
-The two `EalIntrCallback` tests document the EAL behaviour the bug rests on and pass on any DPDK. `DpdkIavfPatch` is the one that fails on a DPDK built without 0009; rebuild with `script/build_dpdk.sh`, which applies `patches/dpdk/26.07/*.patch`.
+The two `EalIntrCallback` tests document the EAL behaviour the bug rests on and pass on any DPDK. `DpdkIavfPatch` is the one that fails on a DPDK built without 0009; rebuild with `script/mtl_build_dpdk.sh`, which applies `patches/dpdk/26.07/*.patch`.
 
 ### Standalone DPDK reproducer
 

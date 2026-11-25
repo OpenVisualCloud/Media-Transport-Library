@@ -45,7 +45,7 @@ MAX_DROP_PCT = 0.10  # Trimmed mean: drop worst 10% of FPS samples per session
 
 # An RX failure the network explains alone (see _run_iteration) says nothing
 # about the SUT: on a shared switch, other runners' traffic fills the SUT's port
-# (doc/ci_runner_setup.md).  It is re-run, and a case whose every attempt the
+# (doc/development/ci_runner_setup.md).  It is re-run, and a case whose every attempt the
 # network decided fails as such instead of reporting a count.
 NETWORK_LOSS_ATTEMPTS = 3
 NETWORK_LOSS_WAIT = 60  # Seconds between attempts

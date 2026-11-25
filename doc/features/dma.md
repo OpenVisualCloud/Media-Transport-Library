@@ -1,0 +1,229 @@
+# DMA Setup for Video RX Offload
+
+## 1. Overview
+
+The Media Transport Library features DMA support to enhance RX video session density by offloading memory copy operations from the CPU, thereby reducing CPU usage.
+
+## 2. DMA driver bind to PMD(vfio-pci) mode
+
+> On Windows, install the NetUIO driver for the DMA devices too. See [Install drivers](../platforms/run_WIN.md#install-drivers).
+
+### 2.1. Locate the available DMA port
+
+```bash
+dpdk-devbind.py -s | grep CBDMA
+```
+
+For DSA in SPR, please search by idxd
+
+```bash
+dpdk-devbind.py -s | grep idxd
+```
+
+Please review the output below to locate the Virtual Function's Bus/Device/Function (BDF) information, such as '0000:80:04.0' for socket 1 or '0000:00:04.0' for socket 0, as illustrated in the example.
+
+```text
+0000:00:04.0 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
+0000:00:04.1 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
+0000:00:04.2 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
+0000:00:04.3 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
+0000:00:04.4 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
+0000:00:04.5 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
+0000:00:04.6 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
+0000:00:04.7 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
+0000:80:04.0 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
+0000:80:04.1 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
+0000:80:04.2 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
+0000:80:04.3 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
+0000:80:04.4 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
+0000:80:04.5 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
+0000:80:04.6 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
+0000:80:04.7 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
+```
+
+### 2.2. Bind ports to PMD(vfio-pci)
+
+The example below demonstrates binding the devices '0000:80:04.0', '0000:80:04.1', and '0000:80:04.2' to Poll Mode Driver (PMD) using the vfio-pci module.
+
+```bash
+dpdk-devbind.py -b vfio-pci 0000:80:04.0
+dpdk-devbind.py -b vfio-pci 0000:80:04.1
+dpdk-devbind.py -b vfio-pci 0000:80:04.2
+```
+
+### 2.3. Set up DMA for local tests
+
+`script/mtl_dma_setup.sh` does the steps of 2.1, 2.2, and 2.4 for each Intel DMA
+device that DPDK supports: CBDMA (`ioat` driver) and DSA (`idxd` driver). A port
+is a PCI address or an interface name. MTL uses a DMA device only on the NUMA
+node of the port (see 3.4), so the script selects the DMA devices by the NUMA
+node of the port.
+
+Bind two DMA devices on the NUMA node of the port to `vfio-pci`:
+
+```bash
+sudo ./script/mtl_dma_setup.sh bind 0000:af:00.0
+```
+
+Set `DMA_CHANNELS` to change the number of devices. Without a port, the script
+binds the devices on each NUMA node. If DSA needs it, the script loads
+`vfio-pci` with `disable_denylist=1`.
+
+To start again from a known state, `reset` unbinds each DMA device on the
+NUMA node from `vfio-pci`, and then binds as `bind` does. A device that a
+process holds stays on `vfio-pci`. Host validation runs `reset` on the test
+host and on the shadow host before each job:
+
+```bash
+sudo ./script/mtl_dma_setup.sh reset
+```
+
+Print the DMA devices on `vfio-pci` for a port, in the format of `--dma_dev`:
+
+```bash
+./script/mtl_dma_setup.sh get 0000:af:01.0
+0000:80:04.0,0000:80:04.1
+```
+
+### 2.4. Intel DSA and the vfio-pci denylist
+
+A DSA device (`8086:0b25`, SPR and later) is on `vfio-pci`'s built-in denylist, so
+the bind above fails with `Cannot bind to driver vfio-pci: [Errno 22]` and `dmesg`
+reads `exists in vfio-pci device denylist, driver probing disallowed`. The module
+parameter that turns the denylist off is read-only once the module is loaded, so
+it has to be given at load time:
+
+```bash
+sudo modprobe -r vfio-pci
+sudo modprobe vfio-pci disable_denylist=1
+cat /sys/module/vfio_pci/parameters/disable_denylist   # Y
+```
+
+Reloading is a runtime operation — nothing holds `vfio_pci` open unless a device
+is in use by a running application — so this does not need a reboot. To make it
+survive one:
+
+```bash
+echo 'options vfio-pci disable_denylist=1' | sudo tee /etc/modprobe.d/vfio-pci.conf
+```
+
+A device that comes up on the kernel's `idxd` driver does not have to be released
+by hand: `dpdk-devbind.py -b vfio-pci <bdf>` unbinds it from `idxd` and binds it
+here in one step.
+
+One DSA device is enough for several sessions. It exposes one dmadev per work
+queue — 16 of them on EMR, `0000:00:01.0-q0` through `-q15` — and MTL enumerates
+every dmadev that was probed (`RTE_DMA_FOREACH_DEV` in `mt_dma.c`) rather than
+looking for a name, so a host with a single device still offloads and `--dma_dev`
+takes one BDF as happily as four:
+
+```text
+MT: mt_dma_init(0), dma dev id 0 name 0000:00:01.0-q0 capa 0x500000041 numa 0 desc 64:4096
+MT: mt_dma_init(1), dma dev id 1 name 0000:00:01.0-q1 capa 0x500000041 numa 0 desc 64:4096
+```
+
+The other way to use DSA — leaving it on `idxd` and configuring work queues with
+`accel-config` — is not usable here: those dmadevs are named `wq<X>.<Y>`, the
+device argument has to be prefixed with `dpdk_`, and DPDK does not support
+multi-process for them. MTL and the gtest suite run a transmitter and a receiver
+as two processes, so the vfio-pci mode above is the only one that applies.
+
+## 3. Pass the DMA configuration to lib
+
+### 3.1. DMA configuration in RxTxApp
+
+When utilizing the built-in application, simply use the `--dma_dev` argument to specify the DMA setup configuration. The following example demonstrates how to pass three DMA ports to the application:
+
+```bash
+--dma_dev 0000:80:04.0,0000:80:04.1,0000:80:04.2
+```
+
+With `--dma_auto` instead of `--dma_dev`, MTL finds the DMA devices itself. It
+uses each Intel CBDMA or DSA device on `vfio-pci` on the NUMA node of a port. A
+device that another process holds is skipped, so the second process gets the
+devices that are free. MTL registers 32 DMA queues at most, and a DSA device
+gives up to 16 of them. When the ports are on more than one NUMA node, each
+node gets the same share of the 32 queues.
+
+```bash
+--dma_auto
+```
+
+The FFmpeg plugin has `-dma_auto 1` and the GStreamer plugin has
+`dma-auto=true` for the same function.
+
+### 3.2. DMA configuration in API
+
+If you're directly interfacing with the API, the initial step involves incorporating DMA information into the `struct mtl_init_params` before making the `mtl_init` call. Subsequently, the initialization routine will attempt to parse and initialize the DMA device, and if the DMA is prepared, it will be added to the DMA list.
+
+```c
+  /**
+   * Optional. Dma(CBDMA or DSA) device can be used in the MTL.
+   * DMA can be used to offload the CPU for copy the payload for video rx sessions.
+   * See more from ST20_RX_FLAG_DMA_OFFLOAD in st20_api.h.
+   * PCIE BDF path like 0000:80:04.0.
+   */
+  char dma_dev_port[MTL_DMA_DEV_MAX][MTL_PORT_MAX_LEN];
+  /** Optional. The element number in the dma_dev_port array, leave to zero if no DMA */
+  uint8_t num_dma_dev_port;
+```
+
+Or set `MTL_FLAG_DMA_AUTO` in `flags` and leave `dma_dev_port` empty: MTL then
+finds the DMA devices on the NUMA node of the ports, as `--dma_auto` does.
+
+To enable DMA offloading, set the `ST20_RX_FLAG_DMA_OFFLOAD` flag in the `st20_rx_create` function, or `ST20P_RX_FLAG_DMA_OFFLOAD` when operating in pipeline mode. During the creation of the RX session, the system will attempt to locate a DMA device.
+However, be aware that this process may fail if a suitable DMA device is not available, due to various reasons. For detailed information in case of failure, please consult the logs.
+
+### 3.3. DMA logs
+
+The logs below indicate that the PCI driver for the DMA device has been loaded successfully.
+
+```text
+EAL: Probe PCI driver: dmadev_ioat (8086:b00) device: 0000:80:04.0 (socket 1)
+IOAT: ioat_dmadev_probe(): Init 0000:80:04.0 on NUMA node 1
+```
+
+Below log shows the `0000:80:04.0` is registered into MTL.
+
+```text
+MT: mt_dma_init(0), dma dev id 0 name 0000:80:04.0 capa 0x500000041 numa 1 desc 32:4096
+```
+
+Below log shows the RX session is correctly attached to a DMA device.
+
+```text
+MT: mt_dma_request_dev(0), dma created with max share 16 nb_desc 128
+MT: rv_init_dma(0), succ, dma 0 lender id 0
+```
+
+Below logs display the DMA usage information.
+
+```text
+ST: RX_VIDEO_SESSION(1,0): pkts 2589325 by dma copy, dma busy 0.000000, flush timeouts 0
+ST: DMA(0), s 2589313 c 2589313 e 0 avg q 1
+```
+
+### 3.4. DMA socket
+
+In a multi-socket system, each socket possesses its own DMA device, similar to NICs. Cross-socket traffic incurs significant latency; therefore, during MTL RX sessions, the system will attempt to utilize a DMA only if it resides on the same socket as the NICs.
+
+### 3.5. DMA per core
+
+To maximize the utilization of DMA resources, the MTL architecture is designed to use the same DMA device for all sessions running within the same core. Sharing the DMA device is safe in this context because the sessions within a single core share CPU resources, eliminating the need for spin locks.
+
+## 4. Public DMA API for application usage
+
+Besides using the internal DMA capabilities for RX video offload, applications can also leverage DMA through the public API.
+To learn how to utilize DMA in your application, refer to the sample code in [dma_sample.c](../../app/sample/dma/dma_sample.c).
+
+The major DMA APIs listed below:
+
+```c
+mtl_udma_create
+mtl_udma_free
+mtl_udma_copy
+mtl_udma_submit
+mtl_udma_completed
+```
+
+You can use the function `mtl_hp_virt2iova` when memory is allocated via `mtl_hp_malloc`, or use `mtl_dma_map` if memory is allocated using the standard malloc to obtain the IOVA (Input/Output Virtual Address) necessary for DMA operations with hardware.

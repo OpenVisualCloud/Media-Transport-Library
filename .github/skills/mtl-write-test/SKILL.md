@@ -43,7 +43,7 @@ Trap: a library bug whose easiest reproducer is RxTxApp still belongs in a **gte
 ## 4. Tier-specific rules
 
 ### Unit
-- AddressSanitizer is preloaded on every run (`LD_PRELOAD=libasan.so.<major>` — current major in [tests/unit/README.md](tests/unit/README.md)). Any leak fails the suite.
+- AddressSanitizer is preloaded on every run (`LD_PRELOAD=libasan.so.<major>` — current major in [tests/unit/README.md](../../../tests/unit/README.md)). Any leak fails the suite.
 - Drain shared state in `TearDown()` — the harness exposes a process-global ring; entries left in it cause "passes alone, fails in suite".
 - Synthetic packets only. If you need a real capture, you are in the wrong tier.
 - EAL init is idempotent but global: first `ut*_init()` configures DPDK with `--no-huge --no-pci --vdev=net_null0`; later calls cannot reconfigure it.
@@ -64,16 +64,16 @@ Trap: a library bug whose easiest reproducer is RxTxApp still belongs in a **gte
 
 ## 5. The authoring loop
 
-1. **Pick a neighbour test in the same directory** — closest to your behavior first, else the most recently modified file. Avoid `DISABLED_` cases and any file noticeably older than its siblings. **Copy its conventions, including its marker set** — markers gate CI selection ([tests/acceptance/pytest.ini](tests/acceptance/pytest.ini)) and an unmarked or wrongly-marked pytest runs in no job.
+1. **Pick a neighbour test in the same directory** — closest to your behavior first, else the most recently modified file. Avoid `DISABLED_` cases and any file noticeably older than its siblings. **Copy its conventions, including its marker set** — markers gate CI selection ([tests/acceptance/pytest.ini](../../../tests/acceptance/pytest.ini)) and an unmarked or wrongly-marked pytest runs in no job.
 2. **Modify assertions only** until the test encodes your one requirement.
 3. **Register in the build** for gtest tiers (add to the relevant `*_sources` list in the nearest `meson.build`). pytest needs no registration.
-4. **Build:** `./build.sh` for integration binaries; `./build.sh unit` for the unit suite (builds `build_unit/` and runs `UnitTest`). See [`/mtl-build`](.github/skills/mtl-build/SKILL.md).
+4. **Build:** `./build.sh` for integration binaries; `./build.sh unit` for the unit suite (builds `build_unit/` and runs `UnitTest`). See [`/mtl-build`](../../../.github/skills/mtl-build/SKILL.md).
 5. **Run** with the binary / pytest invocation from the tier's auto-loaded instructions.
 6. **Confirm** the test fails before the fix (regression) or passes deterministically across 3+ consecutive runs (new coverage).
 
 ## Related
 
-- Run an existing test → [.github/instructions/mtl-gtest.instructions.md](.github/instructions/mtl-gtest.instructions.md) (gtest) or [.github/instructions/mtl-acceptance-tests.instructions.md](.github/instructions/mtl-acceptance-tests.instructions.md) (pytest).
-- Build / format → [`/mtl-build`](.github/skills/mtl-build/SKILL.md).
+- Run an existing test → [.github/instructions/mtl-gtest.instructions.md](../../../.github/instructions/mtl-gtest.instructions.md) (gtest) or [.github/instructions/mtl-acceptance-tests.instructions.md](../../../.github/instructions/mtl-acceptance-tests.instructions.md) (pytest).
+- Build / format → [`/mtl-build`](../../../.github/skills/mtl-build/SKILL.md).
 - Host setup → MTL System Admin agent (gtest) or `.github/scripts/acceptance_setup.sh`/`mtl-acceptance-setup` MCP tools directly (pytest, no dedicated agent).
 - TDD discipline + implementation → MTL Developer (TDD) agent (this skill is loaded by Gate 2 of its six-gate loop). Adversarial review → MTL Reviewer agent.
