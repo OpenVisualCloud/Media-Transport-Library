@@ -224,6 +224,9 @@ class Run:
         scanner = LogScanner(
             [w.name for w in self.plan.workers], self._log, self.host.max_error_lines
         )
+        # The scan starts here; the workers start some seconds later and stop at
+        # the duration from their start: stop judging fps 10 s before that.
+        scanner.end_s = self.plan.duration_s - 10
         rotation = Rotation(self.host, self.plan.streams, self.dir)
         if not rotation.enabled:
             self.notes.append(

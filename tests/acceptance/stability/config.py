@@ -118,6 +118,10 @@ class HostConfig:
     pacing_way: str = ""  # "", rl, tsc, tsn, ...
     ptp: bool = False
     user_time_offset_ns: int = 0
+    # 1080p59 sessions per MTL scheduler (RxTxApp --sch_session_quota); 0: the MTL
+    # default. The default fits a bare-metal core: on a VM vCPU it put each TX video
+    # session of the mix on one scheduler, whose packet build then took 2-3.7 ms.
+    sch_session_quota: int = 0
     # The rxtxapp-integrity worker checks the SHA-256 of each frame. Its user-meta
     # packet (sequence number 0) is not ST 2110 conform, so its streams get no
     # EBU LIST verdict; false leaves the worker out.

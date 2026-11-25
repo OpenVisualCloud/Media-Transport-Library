@@ -300,6 +300,8 @@ def rxtxapp_argv(
     ]
     if sha:
         argv += ["--video_sha_check"]
+    if host.sch_session_quota:
+        argv += ["--sch_session_quota", str(host.sch_session_quota)]
     if host.pacing_way:
         argv += ["--pacing_way", host.pacing_way]
     if host.ptp:

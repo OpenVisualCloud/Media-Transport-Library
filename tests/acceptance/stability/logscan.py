@@ -101,6 +101,7 @@ class LogScanner:
         self.partial = {w: "" for w in workers}
         self.start = time.time()
         self.max_lines = max_lines
+        self.end_s = float("inf")  # the runner sets the planned end, in s from start
         self.tracks: dict = collections.defaultdict(
             SessionTrack
         )  # (worker, label) -> track
@@ -148,7 +149,9 @@ class LogScanner:
             fps = float(m.group(3))
             track = self.tracks[key]
             track.samples.append((now - self.start, fps))
-            if now - self.start > WARMUP_S and len(track.samples) > 3:
+            # After the planned end the sessions stop: their last dump is no stall.
+            in_run = WARMUP_S < now - self.start < self.end_s
+            if in_run and len(track.samples) > 3:
                 med = track.median()
                 if med > 0 and fps < med * STALL_RATIO:
                     self.anomalies.append(
