@@ -793,16 +793,19 @@ function install_packages() {
 # Exports FFMPEG_DIR and FFMPEG_VER
 function lib_setup_ffmpeg_dir_and_version() {
 	FFMPEG_VER="${1:-${FFMPEG_VER:-${FFMPEG_VERSION:-}}}"
+	FFMPEG_9_1_DIR="${FFMPEG_9_1_DIR:-ffmpeg-9-1}"
 	FFMPEG_7_0_DIR="${FFMPEG_7_0_DIR:-ffmpeg-7-0}"
 	FFMPEG_6_1_DIR="${FFMPEG_6_1_DIR:-ffmpeg-6-1}"
 
-	if [[ "${FFMPEG_VER}" == "7.0" ]]; then
+	if [[ "${FFMPEG_VER}" == "9.1" ]]; then
+		FFMPEG_SUB_DIR="${FFMPEG_9_1_DIR}"
+	elif [[ "${FFMPEG_VER}" == "7.0" ]]; then
 		FFMPEG_SUB_DIR="${FFMPEG_7_0_DIR}"
 	elif [[ "${FFMPEG_VER}" == "6.1" ]]; then
 		FFMPEG_SUB_DIR="${FFMPEG_6_1_DIR}"
 	else
 		log_error "Unsupported version of FFmpeg == '${FFMPEG_VER}'."
-		log_error "Try again, choose one of '7.0', '6.1'."
+		log_error "Try again, choose one of '9.1', '7.0', '6.1'."
 		exit 2
 	fi
 	export FFMPEG_VER

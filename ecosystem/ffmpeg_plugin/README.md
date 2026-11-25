@@ -74,7 +74,7 @@ sudo make install
 sudo ldconfig
 ```
 
-> Note: For FFmpeg version 4.4 or 6.1, export `FFMPEG_VERSION=4.4` or 6.1.
+> Note: The default FFmpeg version is 9.1 (set in `versions.env`). For FFmpeg version 4.4, 6.1 or 7.0, export `FFMPEG_VERSION=4.4`, 6.1 or 7.0.
 
 In order to build the FFmpeg in a non-default path, use `--prefix="<path>"` within the `./configure` command to point to an empty installation folder.
 
