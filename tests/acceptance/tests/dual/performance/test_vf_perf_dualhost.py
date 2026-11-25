@@ -756,8 +756,8 @@ def _run_iteration(
         rx_frames = monitor_rx_frames_simple(rx_lines, num_sessions)
         m_tp_fn = monitor_tx_throughput if is_tx else monitor_rx_throughput
         c_tp_fn = monitor_rx_throughput if is_tx else monitor_tx_throughput
-        # Rates of steady traffic only: the measured app's over the dumps its FPS
-        # verdict judged, the companion's over its own steady dumps.
+        # The rates come from steady traffic only: for the measured app, the same
+        # dumps as its FPS verdict; for the companion, its own steady dumps.
         m_window = fps_details["window"]
         c_window = companion_window(companion_lines, companion_dir)
         m_throughput = m_tp_fn(stdout_lines, m_window)
@@ -797,10 +797,12 @@ def _run_iteration(
                 f", {len(fps_details['sender_ramp_sessions'])} kept up with a "
                 "ramping sender"
             )
-        # ST 2110-21 §6.6.2: a sender emits each packet by its read schedule, and
-        # MTL flags each frame that may not have.  Such a run is no capacity: a TX
-        # run fails, and an RX run, whose sender sent outside the model, measures no
-        # receiver and is vetoed.
+        # MTL flags a frame when one of its packets may have left the sender later
+        # than ST 2110-21 allows (the VRX model, section 6.6.2).  A run with a
+        # flagged frame is not a valid result:
+        # - a TX run fails;
+        # - an RX run is vetoed: its sender, not the receiver, broke the model, so
+        #   the run says nothing about the receiver.
         vetoed = False
         frames, late, flagged, worst = tx_vrx(tx_lines, vrx_window)
         if frames or late:
@@ -828,11 +830,13 @@ def _run_iteration(
                 # that died is not a capacity result at any session count, and
                 # passing it here would feed the sweep false headroom.
                 success, vetoed = False, True
-        # A failure the network explains alone: every leg lost packets and the
-        # SUT's frames missed some (2022-7 recovers what only one leg lost), the
-        # companion ramped every session up to the bar (a full link, which holds
-        # it below, is the sweep's ceiling, not a fault), the SUT logged no drop
-        # at its NIC or frame buffers, and nothing above vetoed the run.
+        # The network alone caused the failure when all of these are true:
+        # - every leg lost packets, and the SUT's frames missed some (ST 2022-7
+        #   recovers a packet that only one leg lost);
+        # - the companion ramped every session up to the bar (a full link keeps it
+        #   below: that is the sweep's ceiling, not a network fault);
+        # - the SUT logged no drop at its NIC or in its frame buffers;
+        # - nothing above vetoed the run.
         if (
             losses
             and not success
