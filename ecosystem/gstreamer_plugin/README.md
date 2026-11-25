@@ -257,7 +257,7 @@ To ensure the correct size of the buffer, we will use the `rawvideoparse` elemen
 The rest of rawvideo metadata will be passed via pad capabilities of the buffer.
 ```bash
 # If you don't know how to find VFIO PCI address of your device
-# refer to Media-Transport-Library/doc/run.md
+# refer to Media-Transport-Library/doc/getting_started/run.md
 export VFIO_PORT_T="pci_address_of_the_device"
 
 # video pipeline y210 FHD 60fps on port 20000
@@ -310,7 +310,7 @@ To run the `mtl_st20p_rx` plugin, use the following command to specify the input
 
 ```bash
 # If you don't know how to find the VFIO PCI address of your device
-# refer to Media-Transport-Library/doc/run.md
+# refer to Media-Transport-Library/doc/getting_started/run.md
 export VFIO_PORT_R="pci_address_of_the_device"
 
 # Run the receiver pipeline y210 FHD 60fps on port 20000
@@ -352,7 +352,7 @@ Instead of using input video we opted for build-in GStreamer audio files generat
 
 ```bash
 # If you don't know how to find the VFIO PCI address of your device
-# refer to Media-Transport-Library/doc/run.md
+# refer to Media-Transport-Library/doc/getting_started/run.md
 export VFIO_PORT_T="pci_address_of_the_device"
 
 # Audio pipeline with 48kHz sample rate on port 30000
@@ -400,7 +400,7 @@ To run the `mtl_st30p_rx` audio plugin use the command below:
 
 ```bash
 # If you don't know how to find the VFIO PCI address of your device
-# refer to Media-Transport-Library/doc/run.md
+# refer to Media-Transport-Library/doc/getting_started/run.md
 export VFIO_PORT_R="pci_address_of_the_device"
 
 # Set the output path
@@ -470,7 +470,7 @@ To run the `mtl_st40p_tx` plugin, use the following command:
 
 ```bash
 # If you don't know how to find the VFIO PCI address of your device
-# refer to Media-Transport-Library/doc/run.md
+# refer to Media-Transport-Library/doc/getting_started/run.md
 export VFIO_PORT_T="pci_address_of_the_device"
 
 # Ancillary data pipeline on port 40000
@@ -533,7 +533,7 @@ To run the `mtl_st40p_rx` plugin, use the following command:
 
 ```bash
 # If you don't know how to find the VFIO PCI address of your device
-# refer to Media-Transport-Library/doc/run.md
+# refer to Media-Transport-Library/doc/getting_started/run.md
 export VFIO_PORT_R="pci_address_of_the_device"
 
 # Set the output path

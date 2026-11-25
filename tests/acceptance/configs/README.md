@@ -8,7 +8,7 @@ This directory contains configuration files for the Media Transport Library vali
 
 ## Configuration Files
 
-### [`test_config.yaml`](test_config.yaml)
+### [`test_config.yaml`](examples/test_config.yaml)
 
 **File Location**: `tests/acceptance/configs/test_config.yaml`
 
@@ -84,7 +84,7 @@ Priority is `sniff_interface` > `sniff_interface_index` > `sniff_pci_device`.
   - **pcap.mountpoint**: Mount point for packet capture RAM disk
   - **pcap.size_gib**: Size of packet capture RAM disk in GiB
 
-### [`topology_config.yaml`](topology_config.yaml)
+### [`topology_config.yaml`](examples/topology_config.yaml)
 
 **File Location**: `tests/acceptance/configs/topology_config.yaml`
 
