@@ -1,0 +1,169 @@
+name: stability
+
+# A long, mixed MTL workload on one host: every session type, the pipeline and
+# the frame/RTP APIs with user pacing, the internal and an external converter,
+# RxTxApp, FFmpeg and GStreamer at the same time, on fenced CPUs. While it
+# runs, EBU LIST judges one stream after the other. The engine and its rules
+# are in tests/acceptance/stability/README.md.
+#
+# The host gives its ports, CPU sets and capture NIC in
+# /etc/mtl-ci/stability.yaml (example: tests/acceptance/stability/
+# stability.yaml.example), and its EBU LIST login in /etc/mtl-ci/runner.env.
+# Without the yaml file, the case makes 6 VFs on the test NIC and takes the
+# CPU sets from its NUMA node.
+#
+# No schedule yet: no runner has the label "stability". Add one when a host
+# has it, at a time when no nightly runs on that host.
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: MTL branch to build and test (defaults to workflow branch)
+        required: false
+        type: string
+      profile:
+        description: Workload profile
+        required: false
+        type: choice
+        options: [full, smoke]
+        default: full
+      duration:
+        description: 'Run time: 90s, 15m, 8h'
+        required: false
+        type: string
+        default: 8h
+      nic:
+        description: NIC of the test (for the 6 VFs when the host has no stability.yaml)
+        required: false
+        type: string
+        default: e810
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: dpdk
+    timeout-minutes: 60
+    outputs:
+      mtl_commit: ${{ steps.build.outputs.mtl_commit }}
+      mtl_hash: ${{ steps.build.outputs.mtl_hash }}
+      jpegxs_hash: ${{ steps.build.outputs.jpegxs_hash }}
+      ice_hash: ${{ steps.build.outputs.ice_hash }}
+      ffmpeg_hash: ${{ steps.build.outputs.ffmpeg_hash }}
+      gstreamer_hash: ${{ steps.build.outputs.gstreamer_hash }}
+      plugins_hash: ${{ steps.build.outputs.plugins_hash }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+
+      - name: Checkout MTL
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@497c4107ae027a4f9d6da088d027639df40064e3
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: ${{ inputs.branch && '0' || '1' }}
+
+      - name: Install Task
+        if: inputs.branch != ''
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+
+      # Twice, as in performance.yml: the ref's own overlay-tests may be older
+      # than the workflow commit's.
+      - name: Overlay CI and tests from the workflow commit
+        if: inputs.branch != ''
+        env:
+          MTL_SOURCE: ${{ inputs.branch }}
+          TEST_SHA: ${{ github.sha }}
+          TEST_REF: ${{ github.ref_name }}
+        run: task ci:workflow -- overlay-tests && task ci:workflow -- overlay-tests
+
+      - name: Build the artifacts
+        id: build
+        uses: ./.github/actions/build-artifacts
+
+  run-stability:
+    needs: build
+    runs-on: [self-hosted, stability]
+    # The run time plus the setup, the stop of the workers and the report.
+    timeout-minutes: 1500
+    steps:
+      - name: Harden-Runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: audit
+      - name: Set current date
+        run: echo "CURRENT_DATE=$(date '+%y%m%d-%H%M%S')" >> "$GITHUB_ENV"
+      - name: 'preparation: Clean workspace and checkout MTL'
+        uses: OpenVisualCloud/Media-Transport-Library/.github/actions/checkout-clean@497c4107ae027a4f9d6da088d027639df40064e3
+        with:
+          ref: ${{ needs.build.outputs.mtl_commit }}
+          fetch-depth: '0'
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+      - name: Overlay test framework from workflow branch
+        if: inputs.branch != ''
+        env:
+          MTL_SOURCE: ${{ inputs.branch }}
+          TEST_SHA: ${{ github.sha }}
+          TEST_REF: ${{ github.ref_name }}
+        run: task ci:workflow -- overlay-tests && task ci:workflow -- overlay-tests
+      - name: 'preparation: Validate host and download artifacts'
+        id: validate
+        uses: ./.github/actions/validate-host
+        with:
+          build_outputs: ${{ toJSON(needs.build.outputs) }}
+      - name: Ensure the acceptance virtualenv
+        run: task ci:pytest-setup -- ensure
+      - name: Set session ID
+        env:
+          RUNNER_NAME: ${{ runner.name }}
+        run: task ci:pytest-setup -- session
+      - name: Set PCI device
+        env:
+          NIC: ${{ inputs.nic || 'e810' }}
+        run: task ci:pytest-setup -- pci
+      - name: Generate pytest configuration files
+        env:
+          SESSION_ID: ${{ env.SESSION_ID }}
+          PCI_DEVICE: ${{ env.PCI_DEVICE }}
+          INTERFACE_TYPE: ${{ env.INTERFACE_TYPE }}
+        run: task ci:pytest-setup -- config-single
+      - name: Run the stability workload
+        env:
+          STABILITY_PROFILE: ${{ inputs.profile || 'full' }}
+          STABILITY_DURATION: ${{ inputs.duration || '8h' }}
+        run: task ci:pytest-run -- stability
+      - name: Pack the run
+        if: always()
+        run: |
+          cd tests/acceptance/logs
+          if [ -d stability ]; then
+            tar -czf "${GITHUB_WORKSPACE}/stability-run.tar.gz" --exclude='*.pcap' stability
+          fi
+          for r in stability/*/report.md; do
+            [ -f "$r" ] && cat "$r" >> "$GITHUB_STEP_SUMMARY"
+          done
+      - name: Upload the reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: "stability-${{ runner.name }}-${{ env.CURRENT_DATE }}"
+          path: |
+            ./tests/acceptance/report.html
+            ./stability-run.tar.gz
+            ./tests/acceptance/logs/stability/*/report.html
+            ./tests/acceptance/logs/stability/*/pcap/*.pcap
+      - name: Remove the CPU fence of a killed run
+        if: always()
+        run: |
+          . .github/scripts/lib/mtl_acceptance_venv.sh
+          cd tests/acceptance
+          if ! sudo -n "${venv_python}" -m stability unfence; then
+            echo "::warning::the CPU fence of the run could not be removed"
+          fi
+      - name: Clean up
+        if: always()
+        run: task cleanup
