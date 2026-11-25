@@ -391,3 +391,17 @@ def test_jxsv_sdp_has_the_mandatory_lines():
         "exactframerate=60000/1001",
     ):
         assert want in sdp
+
+
+def test_no_two_workers_share_a_port():
+    h = _host()
+    h.tx_ports.append("0000:09:00.0")
+    h.rx_ports.append("0000:0a:00.0")
+    plan = workload.build_plan(h, "full", 600)
+    seen = {}
+    for w in plan.workers:
+        for p in w.ports:
+            assert seen.setdefault(p, w.name) == w.name, (p, seen[p], w.name)
+    assert {"rxtxapp-integrity", "ffmpeg-rx", "gst-tx"} <= {
+        w.name for w in plan.workers
+    }

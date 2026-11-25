@@ -830,7 +830,7 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
         )
         rx_argv = [
             host.ffmpeg, "-hide_banner", "-loglevel", "info", "-stats_period", "10",
-            "-f", "mtl_st20p", *ffmpeg_common(host, rx_ports[-1], rx_ip),
+            "-f", "mtl_st20p", *ffmpeg_common(host, rx_ports[2 % len(rx_ports)], rx_ip),
             "-p_rx_ip", f20.dip, "-udp_port", str(f20.port),
             "-video_size", "1920x1080", "-fps", "60000/1001", "-pix_fmt", "yuv422p10le",
             "-t", str(duration_s),
@@ -840,7 +840,7 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
             Worker(
                 name="ffmpeg-rx",
                 kind="ffmpeg",
-                ports=[rx_ports[-1]],
+                ports=[rx_ports[2 % len(rx_ports)]],
                 argv=rx_argv,
                 receives=[f20.sid],
                 note="RX into swscale (external converter) and framemd5",
@@ -931,6 +931,14 @@ def build_plan(
     host: HostConfig, profile: str, duration_s: int, only: Optional[list] = None
 ) -> Plan:
     plan = PROFILES[profile](host, duration_s)
+    owners: dict = {}
+    for w in plan.workers:
+        for port in w.ports:
+            if port in owners and owners[port] != w.name:
+                raise ValueError(
+                    f"port {port}: both {owners[port]} and {w.name}; give the host more ports"
+                )
+            owners[port] = w.name
     if only:
         plan.workers = [w for w in plan.workers if w.name in only]
         names = {w.name for w in plan.workers}
