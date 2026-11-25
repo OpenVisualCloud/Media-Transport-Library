@@ -90,6 +90,8 @@ jobs:
       - name: Install Task
         if: inputs.branch != ''
         uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
 
       # Before the first local action: GitHub loads it from this checkout, and
       # the ref may have none, or an older one. Twice: the ref's own
@@ -138,6 +140,8 @@ jobs:
       - name: 'preparation: Install Task'
         if: inputs.branch != ''
         uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
 
       # Twice: the branch's own overlay-tests may be older than the workflow
       # commit's. The first run checks out the workflow commit's copy, the
@@ -207,6 +211,8 @@ jobs:
       - name: 'preparation: Install Task'
         if: inputs.branch != ''
         uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
 
       # Twice: the branch's own overlay-tests may be older than the workflow
       # commit's. The first run checks out the workflow commit's copy, the
@@ -261,6 +267,8 @@ jobs:
 
       - name: Install Task
         uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
 
       - name: Download python report artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -312,6 +320,8 @@ jobs:
 
       - name: Install Task
         uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
 
       - name: Find the baseline runs
         id: baseline
@@ -475,6 +485,8 @@ jobs:
       - name: Install Task
         if: inputs.branch != ''
         uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
 
       # Before the first local action: GitHub loads it from this checkout, and
       # the ref may have none, or an older one. Twice: the ref's own
@@ -511,6 +523,8 @@ jobs:
       - name: Install Task
         if: inputs.branch != ''
         uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
 
       # Before the first local action: GitHub loads it from this checkout, and
       # the ref may have none, or an older one. Twice: the ref's own
