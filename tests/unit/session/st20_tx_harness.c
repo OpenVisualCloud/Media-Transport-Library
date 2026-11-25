@@ -2078,10 +2078,12 @@ int ut_txv_run_frame_rl_late_ports(ut_txv_ctx* ctx, uint32_t late_pkt,
                                    const uint64_t* late_ns) {
   struct st_tx_video_session_impl* s = &ctx->session;
   struct st_frame_trans frame = {0};
-  uint8_t frame_data[UT_TXV_FRAME_SIZE] = {0};
+  uint8_t* frame_data = calloc((size_t)late_pkt + 1, UT_TXV_FRAME_SIZE);
   uint64_t flagged = s->stat_rl.vrx_frames;
   int num_port = ctx->r_budget ? 2 : 1;
   int ret = -1;
+
+  if (!frame_data) return -ENOMEM;
 
   for (int port = 0; port < num_port; port++)
     if (ut_txv_tx_leg_init(ctx, port) < 0) goto out;
@@ -2130,6 +2132,7 @@ out:
     s->trs_inflight_num[port] = 0;
   }
   s->st20_frames = NULL;
+  free(frame_data);
   return ret;
 }
 
