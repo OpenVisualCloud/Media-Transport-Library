@@ -793,6 +793,8 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
     raw_rx->user_meta = sc.user_meta;
     raw_rx->block_get = sc.block_get;
     raw_rx->rx_timing_parser = sc.rx_timing_parser;
+    struct st20p_rx_ops ops_rx;
+    st20p_rx_ops_init(raw_rx, &ops_rx);
     raw_rx->frame_size =
         st_frame_size(spec.rx_fmt, spec.width, spec.height, sc.interlace);
     memcpy(raw_rx->shas, tx_ctxs[i]->shas, TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
@@ -805,8 +807,6 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
       info("%s, session %zu ext_fb %p\n", __func__, i, raw_rx->ext_frames.data());
     }
 
-    struct st20p_rx_ops ops_rx;
-    st20p_rx_ops_init(raw_rx, &ops_rx);
     mtl_test::fill_rx_port(ops_rx.port, ctx,
                            ST20P_TEST_UDP_PORT + static_cast<uint16_t>(i * 2), pt,
                            sc.ssrc);
