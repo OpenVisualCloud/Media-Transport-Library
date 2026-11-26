@@ -463,3 +463,34 @@ def test_each_stream_of_the_full_plan_has_a_receiver():
     groups = {g["ip"][0] for g in rx["rx_sessions"]}
     for sid in ("gst-st20p-1080p59", "gst-st30p-pcm24-48k", "ffmpeg-st22p-1080p59"):
         assert plan.stream(sid).dip in groups
+
+
+def test_audio_and_anc_move_to_the_aux_worker_with_a_5th_tx_port():
+    h = _host()
+    h.tx_ports += ["0000:09:00.0", "0000:0b:00.0"]
+    h.rx_ports.append("0000:0a:00.0")
+    plan = workload.build_plan(h, "full", 600)
+    aux = next(w for w in plan.workers if w.name == "rxtxapp-aux")
+    assert aux.ports == ["0000:0b:00.0"]
+    moved = {s.sid for s in plan.streams if s.worker == "rxtxapp-aux"}
+    assert moved == {
+        s.sid
+        for s in plan.streams
+        if s.media in ("audio", "anc", "fmd")
+        and s.worker in ("rxtxapp-aux", "rxtxapp-mix")
+    }
+    assert moved and set(aux.sends) == moved
+    mix = json.loads(
+        next(w for w in plan.workers if w.name == "rxtxapp-mix").files["mix.json"]
+    )
+    kinds = {k for g in mix["tx_sessions"] for k in g if k not in ("dip", "interface")}
+    assert not kinds & {"st30p", "audio", "st40p", "ancillary"}
+    rx = next(w for w in plan.workers if w.name == "rxtxapp-rx")
+    assert moved <= set(rx.receives)
+    # with 4 TX ports nothing moves
+    h4 = _host()
+    h4.tx_ports.append("0000:09:00.0")
+    h4.rx_ports.append("0000:0a:00.0")
+    assert "rxtxapp-aux" not in {
+        w.name for w in workload.build_plan(h4, "full", 600).workers
+    }

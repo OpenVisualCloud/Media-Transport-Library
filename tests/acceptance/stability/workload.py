@@ -512,9 +512,9 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
     rx.rx("video", s.dip, video_session(s, False, mode="frame"))
 
     s = vid("st20-1080p59-rtp", "st20", 1920, 1080, "p59", note="RTP API, user pacing")
-    s.not_judged = ["2110_21_vrx", "2110_21_cinst"]
+    s.not_judged = ["2110_21_vrx", "2110_21_cinst", "packet_ts_vs_rtp_ts"]
     s.note += (
-        "; VRX and Cinst not judged: RxTxApp builds each RTP packet in its own thread on"
+        "; VRX, Cinst and packet - RTP not judged: RxTxApp builds each RTP packet in its own thread on"
         " the shared app CPUs, and a late wake of that thread (up to 374 us on VM 140)"
         " delays the packets; MTL paces what it gets (open item)"
     )
@@ -567,18 +567,34 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
         )
         rx.rx("st22p", s.dip, st22p_session(s, False, pixel_format="YUV422PLANAR10LE"))
 
+    # Audio, ANC and ST 2110-41 in their own RxTxApp on a 5th TX port: their quota
+    # is 0, so MTL puts them on sch_0 beside the video, and on VM 140 that sch_0 had
+    # tasklet runs of 4-8 ms (st30p 96 kHz: a 2.4 ms packet gap; st22p: 2.1 ms late).
+    aux_name = "rxtxapp-aux" if len(tx_ports) > 4 else "rxtxapp-mix"
+    aux_ip = addr.iface_ip() if len(tx_ports) > 4 else mix_ip
+    aux = RxTxAppConfig(tx_ports[4], aux_ip) if len(tx_ports) > 4 else mix
+    aux_sends: list[str] = []
+
+    def add_aux(stream: Stream) -> Stream:
+        if aux is mix:
+            return add(stream)
+        stream.sip = aux_ip
+        streams.append(stream)
+        aux_sends.append(stream.sid)
+        return stream
+
     for sid, api, fmt, rate, ptime, ch, up in (
         ("st30p-pcm24-48k-1ms", "st30p", "PCM24", "48kHz", "1", 2, True),
         ("st30p-pcm24-96k-0.125", "st30p", "PCM24", "96kHz", "0.125", 2, True),
         ("st30-pcm16-48k-8ch", "st30", "PCM16", "48kHz", "1", 8, False),
     ):
         dip, port = next(g)
-        s = add(
+        s = add_aux(
             Stream(
                 sid=sid,
                 media="audio",
                 api=api,
-                worker="rxtxapp-mix",
+                worker=aux_name,
                 dip=dip,
                 port=port,
                 user_pacing=up,
@@ -590,51 +606,51 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
         )
         url = _media(host, f"audio-{fmt.lower()}-{rate}-{ch}ch.raw")
         if api == "st30p":
-            mix.tx("st30p", s.dip, st30p_session(s, True, url=url))
+            aux.tx("st30p", s.dip, st30p_session(s, True, url=url))
             rx.rx("st30p", s.dip, st30p_session(s, False))
         else:
-            mix.tx("audio", s.dip, audio_session(s, True, url=url))
+            aux.tx("audio", s.dip, audio_session(s, True, url=url))
             rx.rx("audio", s.dip, audio_session(s, False))
 
     dip, port = next(g)
-    s = add(
+    s = add_aux(
         Stream(
             sid="st40p-p59",
             media="anc",
             api="st40p",
-            worker="rxtxapp-mix",
+            worker=aux_name,
             dip=dip,
             port=port,
             user_pacing=True,
             fps="p59",
         )
     )
-    mix.tx("st40p", s.dip, st40p_session(s, True, url=_media(host, "anc.txt")))
+    aux.tx("st40p", s.dip, st40p_session(s, True, url=_media(host, "anc.txt")))
     rx.rx("st40p", s.dip, st40p_session(s, False))
 
     dip, port = next(g)
-    s = add(
+    s = add_aux(
         Stream(
             sid="st40-p59",
             media="anc",
             api="st40",
-            worker="rxtxapp-mix",
+            worker=aux_name,
             dip=dip,
             port=port,
             user_pacing=True,
             fps="p59",
         )
     )
-    mix.tx("ancillary", s.dip, anc_session(s, True, url=_media(host, "anc.txt")))
+    aux.tx("ancillary", s.dip, anc_session(s, True, url=_media(host, "anc.txt")))
     rx.rx("ancillary", s.dip, anc_session(s, False))
 
     dip, port = next(g)
-    s = add(
+    s = add_aux(
         Stream(
             sid="st41-p59",
             media="fmd",
             api="st41",
-            worker="rxtxapp-mix",
+            worker=aux_name,
             dip=dip,
             port=port,
             fps="p59",
@@ -642,7 +658,7 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
             note="EBU LIST does not read ST 2110-41",
         )
     )
-    mix.tx(
+    aux.tx(
         "ancillary", s.dip, anc_session(s, True, url=_media(host, "anc.txt"), fmd=True)
     )
     rx.rx(
@@ -668,6 +684,21 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
             note="TX of every session type, pipeline and frame/RTP API, user pacing",
         )
     )
+    if aux is not mix:
+        workers.append(
+            Worker(
+                name="rxtxapp-aux",
+                kind="rxtxapp",
+                ports=[tx_ports[4]],
+                argv=rxtxapp_argv(
+                    host, "aux.json", duration_s, lc.get("rxtxapp-aux", "")
+                ),
+                files={"aux.json": aux.dumps(), "kahawai.json": host.kahawai_json()},
+                lcores=lc.get("rxtxapp-aux", ""),
+                sends=list(aux_sends),
+                note="TX of the audio, ANC and ST 2110-41 sessions, user pacing",
+            )
+        )
     rx_worker = Worker(
         name="rxtxapp-rx",
         kind="rxtxapp",
@@ -675,7 +706,7 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
         argv=rxtxapp_argv(host, "rx.json", duration_s, lc.get("rxtxapp-rx", "")),
         files={"rx.json": rx.dumps(), "kahawai.json": host.kahawai_json(st22=True)},
         lcores=lc.get("rxtxapp-rx", ""),
-        receives=list(mix_sends),
+        receives=list(mix_sends) + list(aux_sends),
         note="RX of each mix session, internal converters, and of each stream no other worker receives",
     )
     workers.append(rx_worker)
@@ -956,7 +987,13 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
 def profile_smoke(host: HostConfig, duration_s: int) -> Plan:
     """The RxTxApp part of ``full`` only: a quick check of the host and the tools."""
     plan = profile_full(host, duration_s)
-    keep = {"rxtxapp-mix", "rxtxapp-rx", "rxtxapp-extconv", "rxtxapp-integrity"}
+    keep = {
+        "rxtxapp-mix",
+        "rxtxapp-aux",
+        "rxtxapp-rx",
+        "rxtxapp-extconv",
+        "rxtxapp-integrity",
+    }
     plan.workers = [w for w in plan.workers if w.name in keep]
     plan.streams = [s for s in plan.streams if s.worker in keep]
     plan.profile = "smoke"
