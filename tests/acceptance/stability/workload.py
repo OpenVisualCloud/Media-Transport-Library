@@ -289,7 +289,12 @@ def anc_session(s: Stream, tx: bool, *, url: str = "", fmd: bool = False) -> dic
 
 
 def rxtxapp_argv(
-    host: HostConfig, cfg_name: str, duration_s: int, lcores: str, sha: bool = False
+    host: HostConfig,
+    cfg_name: str,
+    duration_s: int,
+    lcores: str,
+    sha: bool = False,
+    quota: bool = False,
 ) -> list:
     argv = [
         host.rxtxapp,
@@ -304,7 +309,7 @@ def rxtxapp_argv(
     ]
     if sha:
         argv += ["--video_sha_check"]
-    if host.sch_session_quota:
+    if quota and host.sch_session_quota:
         argv += ["--sch_session_quota", str(host.sch_session_quota)]
     if host.pacing_way:
         argv += ["--pacing_way", host.pacing_way]
@@ -650,7 +655,9 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
             name="rxtxapp-mix",
             kind="rxtxapp",
             ports=[tx_ports[0]],
-            argv=rxtxapp_argv(host, "mix.json", duration_s, lc.get("rxtxapp-mix", ""))
+            argv=rxtxapp_argv(
+                host, "mix.json", duration_s, lc.get("rxtxapp-mix", ""), quota=True
+            )
             + ["--timestamp_epoch"],
             files={
                 "mix.json": mix.dumps(),
@@ -830,6 +837,7 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
         workers.append(
             Worker(
                 name="ffmpeg-tx",
+                lcores=lc.get("ffmpeg-tx", ""),
                 kind="ffmpeg",
                 ports=[tx_ports[1]],
                 argv=tx_argv,
@@ -850,6 +858,7 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
         workers.append(
             Worker(
                 name="ffmpeg-rx",
+                lcores=lc.get("ffmpeg-rx", ""),
                 kind="ffmpeg",
                 ports=[rx_ports[2 % len(rx_ports)]],
                 argv=rx_argv,
@@ -907,6 +916,7 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
         workers.append(
             Worker(
                 name="gst-tx",
+                lcores=lc.get("gst-tx", ""),
                 kind="gstreamer",
                 ports=[tx_ports[2]],
                 argv=[host.gst_launch, "-e", *pipeline.split()],

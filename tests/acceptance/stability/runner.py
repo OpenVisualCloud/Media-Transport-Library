@@ -170,7 +170,10 @@ class Run:
         def pre():
             os.setsid()
             if fence:
-                fence.enter(eal_main=bool(w.lcores))
+                if w.kind == "rxtxapp":
+                    fence.enter(eal_main=bool(w.lcores))
+                else:
+                    fence.enter(mask=w.lcores)
 
         p = subprocess.Popen(
             w.argv,

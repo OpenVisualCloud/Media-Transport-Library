@@ -177,7 +177,7 @@ class Fence:
 
     # -- workers -------------------------------------------------------------
 
-    def enter(self, eal_main: bool = False) -> None:
+    def enter(self, eal_main: bool = False, mask: str = "") -> None:
         """preexec_fn of a worker: into <CG>, on the app and the lcore CPUs.
 
         With ``--lcores``, MTL gives EAL ``-l <main_lcore>,<lcores>`` and
@@ -186,6 +186,11 @@ class Fence:
         on the app CPUs.
         """
         _write(f"{CG}/cgroup.procs", str(os.getpid()))
+        if mask:
+            # A worker that takes no lcore list (FFmpeg, GStreamer): MTL takes the
+            # lowest free CPUs of the mask, so the mask is the CPUs it may take.
+            os.sched_setaffinity(0, set(cpu_list(mask)))
+            return
         os.sched_setaffinity(
             0, set(self.app + self.lc + ([EAL_MAIN_CPU] if eal_main else []))
         )
