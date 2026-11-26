@@ -74,3 +74,11 @@ TEST_F(MtFlowRetryTest, FreeExhaustsRetriesButStillReturnsZero) {
   EXPECT_EQ(ut_flow_destroy_calls(ctx_), 5);
   EXPECT_TRUE(ut_flow_last_free_flow_cleared(ctx_));
 }
+
+// A response that cannot be allocated fails the create before any flow, not
+// a NULL dereference. The harness hands out 8 responses.
+TEST_F(MtFlowRetryTest, CreateFailsWhenTheResponseAllocFails) {
+  for (int i = 0; i < 8; i++) ASSERT_GE(ut_flow_create(ctx_, 20000 + 2 * i), 0);
+  EXPECT_EQ(ut_flow_create(ctx_, 20016), -1);
+  EXPECT_EQ(ut_flow_create_calls(ctx_), 8);
+}

@@ -245,6 +245,10 @@ static struct mt_rx_flow_rsp* rx_flow_create(struct mt_interface* inf, uint16_t 
   }
 
   struct mt_rx_flow_rsp* rsp = mt_rte_zmalloc_socket(sizeof(*rsp), inf->socket_id);
+  if (!rsp) {
+    err("%s(%d), rsp malloc fail for queue %u\n", __func__, port, q);
+    return NULL;
+  }
   rsp->flow_id = -1;
   rsp->queue_id = q;
   rsp->dst_port = flow->dst_port;
