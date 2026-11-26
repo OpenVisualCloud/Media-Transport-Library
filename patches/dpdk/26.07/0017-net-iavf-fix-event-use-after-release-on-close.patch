@@ -1,0 +1,169 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dawid Wesierski <dawid.wesierski@intel.com>
+Date: Thu, 26 Nov 2026 12:58:10 +0000
+Subject: [PATCH] net/iavf: fix event use after release on close
+
+One iavf-event thread handles the PF events of all iavf ports of the
+process. It took the whole pending list under the lock and then
+handled each element without the lock: it reads
+pos->dev->data->dev_private and calls rte_eth_dev_callback_process().
+
+Nothing removes the elements of a port that closes, and close does not
+wait for the element in hand. rte_eth_dev_close() calls
+iavf_dev_close() and then rte_eth_dev_release_port(), which sets
+dev->data to NULL. iavf_dev_event_handler_fini() stops the thread only
+when the last port goes, at bus remove. So an event of the closing
+port, such as the link change or the reset event that the PF sends
+while the VF closes, is handled after the release:
+
+  dpdk-iavf-event[25997]: segfault at 60 ip ... error 4 in
+  librte_net_iavf.so.26.2
+
+Make the thread take one element at a time, and record the port of the
+element in hand under the lock. At the end of iavf_dev_close(), when no
+interrupt, alarm or watchdog can post an event of the port, remove the
+pending events of the port and wait until the thread does not hold an
+event of it. The wait polls every 1 ms under the existing mutex, as
+iavf_wait_for_msg() does: the pthread shim of Windows has no condition
+variable, and close is not a fast path.
+
+The event thread closes a port itself, through iavf_handle_hw_reset()
+or an application callback that resets the port. It skips the wait,
+because the element in hand is its own. The pending events of the port
+that it drops describe the port before the reset.
+
+Fixes: cb5c1b91f76f ("net/iavf: add thread for event callbacks")
+Cc: stable@dpdk.org
+
+Signed-off-by: Dawid Wesierski <dawid.wesierski@intel.com>
+---
+ drivers/net/intel/iavf/iavf.h        |  1 +
+ drivers/net/intel/iavf/iavf_ethdev.c |  2 +
+ drivers/net/intel/iavf/iavf_vchnl.c  | 58 +++++++++++++++++++++-------
+ 3 files changed, 47 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/net/intel/iavf/iavf.h b/drivers/net/intel/iavf/iavf.h
+index 293adaf6c9..a522a51e05 100644
+--- a/drivers/net/intel/iavf/iavf.h
++++ b/drivers/net/intel/iavf/iavf.h
+@@ -452,6 +452,7 @@ int iavf_get_vf_resource(struct iavf_adapter *adapter);
+ void iavf_dev_event_post(struct rte_eth_dev *dev,
+ 		enum rte_eth_event_type event,
+ 		void *param, size_t param_alloc_size);
++void iavf_dev_event_discard(struct rte_eth_dev *dev);
+ void iavf_dev_event_handler_fini(void);
+ int iavf_dev_event_handler_init(void);
+ void iavf_handle_virtchnl_msg(struct rte_eth_dev *dev);
+diff --git a/drivers/net/intel/iavf/iavf_ethdev.c b/drivers/net/intel/iavf/iavf_ethdev.c
+index 8b8e371435..3bc7dcac7c 100644
+--- a/drivers/net/intel/iavf/iavf_ethdev.c
++++ b/drivers/net/intel/iavf/iavf_ethdev.c
+@@ -3280,6 +3280,8 @@ iavf_dev_close(struct rte_eth_dev *dev)
+ 	/* disable watchdog */
+ 	iavf_dev_watchdog_disable(adapter);
+ 
++	iavf_dev_event_discard(dev);
++
+ 	return ret;
+ }
+ 
+diff --git a/drivers/net/intel/iavf/iavf_vchnl.c b/drivers/net/intel/iavf/iavf_vchnl.c
+index f8fffa7802..3f509acbb7 100644
+--- a/drivers/net/intel/iavf/iavf_vchnl.c
++++ b/drivers/net/intel/iavf/iavf_vchnl.c
+@@ -46,6 +46,7 @@ struct iavf_event_handler {
+ 	int fd[2];
+ 	pthread_mutex_t lock;
+ 	TAILQ_HEAD(event_list, iavf_event_element) pending;
++	struct rte_eth_dev *handling_dev; /* dev of the element in hand, under lock */
+ };
+ 
+ static struct iavf_event_handler event_handler = {
+@@ -63,7 +64,7 @@ static uint32_t
+ iavf_dev_event_handle(void *param __rte_unused)
+ {
+ 	struct iavf_event_handler *handler = &event_handler;
+-	TAILQ_HEAD(event_list, iavf_event_element) pending;
++	struct iavf_event_element *pos;
+ 
+ 	while (true) {
+ 		char unused[MAX_EVENT_PENDING];
+@@ -71,26 +72,24 @@ iavf_dev_event_handle(void *param __rte_unused)
+ 		if (nr <= 0)
+ 			break;
+ 
+-		TAILQ_INIT(&pending);
+ 		pthread_mutex_lock(&handler->lock);
+-		TAILQ_CONCAT(&pending, &handler->pending, next);
+-		pthread_mutex_unlock(&handler->lock);
+-
+-		struct iavf_event_element *pos, *save_next;
+-		TAILQ_FOREACH_SAFE(pos, &pending, next, save_next) {
+-			TAILQ_REMOVE(&pending, pos, next);
++		while ((pos = TAILQ_FIRST(&handler->pending)) != NULL) {
++			TAILQ_REMOVE(&handler->pending, pos, next);
++			handler->handling_dev = pos->dev;
++			pthread_mutex_unlock(&handler->lock);
+ 
+ 			struct iavf_adapter *adapter = pos->dev->data->dev_private;
+ 			if (pos->event == RTE_ETH_EVENT_INTR_RESET &&
+-			    adapter->devargs.auto_reset) {
++			    adapter->devargs.auto_reset)
+ 				iavf_handle_hw_reset(pos->dev, false);
+-				rte_free(pos);
+-				continue;
+-			}
+-
+-			rte_eth_dev_callback_process(pos->dev, pos->event, pos->param);
++			else
++				rte_eth_dev_callback_process(pos->dev, pos->event, pos->param);
+ 			rte_free(pos);
++
++			pthread_mutex_lock(&handler->lock);
++			handler->handling_dev = NULL;
+ 		}
++		pthread_mutex_unlock(&handler->lock);
+ 	}
+ 
+ 	return 0;
+@@ -124,6 +123,37 @@ iavf_dev_event_post(struct rte_eth_dev *dev,
+ 	RTE_SET_USED(nw);
+ }
+ 
++/*
++ * Drop the pending events of a port that closes, and wait until the event
++ * thread has handled the one it holds, since the port can be released next.
++ * The event thread itself can close the port (a reset): it does not wait.
++ */
++void
++iavf_dev_event_discard(struct rte_eth_dev *dev)
++{
++	struct iavf_event_handler *handler = &event_handler;
++	struct iavf_event_element *pos, *save_next;
++	bool on_event_thread;
++
++	if (rte_atomic_load_explicit(&handler->ndev, rte_memory_order_relaxed) == 0)
++		return;
++
++	on_event_thread = rte_thread_equal(rte_thread_self(), handler->tid);
++	pthread_mutex_lock(&handler->lock);
++	TAILQ_FOREACH_SAFE(pos, &handler->pending, next, save_next) {
++		if (pos->dev == dev) {
++			TAILQ_REMOVE(&handler->pending, pos, next);
++			rte_free(pos);
++		}
++	}
++	while (!on_event_thread && handler->handling_dev == dev) {
++		pthread_mutex_unlock(&handler->lock);
++		rte_delay_us_sleep(1000);
++		pthread_mutex_lock(&handler->lock);
++	}
++	pthread_mutex_unlock(&handler->lock);
++}
++
+ int
+ iavf_dev_event_handler_init(void)
+ {
+-- 
+2.43.0
+
