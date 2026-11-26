@@ -67,7 +67,7 @@ TEST_F(NoCtxTest, st40p_user_pacing) {
 
   StartFakePtpClock();
   handler->startSession();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   expectPacingQueryResult(strategy);
 
@@ -110,7 +110,7 @@ TEST_F(NoCtxTest, st40p_user_pacing_59fps) {
 
   StartFakePtpClock();
   handler->startSession();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   expectPacingQueryResult(strategy);
 
@@ -155,7 +155,7 @@ TEST_F(NoCtxTest, st40p_user_pacing_offset_jitter) {
 
   StartFakePtpClock();
   handler->startSession();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   expectPacingQueryResult(strategy);
 
@@ -207,7 +207,7 @@ TEST_F(NoCtxTest, st40p_exact_user_pacing) {
 
   StartFakePtpClock();
   handler->startSession();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   expectPacingQueryResult(strategy);
 

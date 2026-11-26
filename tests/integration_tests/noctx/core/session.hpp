@@ -15,6 +15,10 @@
 class Session {
  public:
   void addThread(std::function<void(std::atomic<bool>&)> func, bool isRx);
+  void setTxWakeCallback(std::function<void()> wakeFn);
+  void setRxWakeCallback(std::function<void()> wakeFn);
+  void clearTxWakeCallback();
+  void clearRxWakeCallback();
   bool isRunning() const;
   void stop();
   ~Session();
@@ -23,4 +27,8 @@ class Session {
   std::vector<std::thread> threads_;
   std::atomic<bool> stopFlagRx{false};
   std::atomic<bool> stopFlagTx{false};
+  bool hasTx_{false};
+  bool hasRx_{false};
+  std::function<void()> wakeTx_;
+  std::function<void()> wakeRx_;
 };

@@ -71,10 +71,10 @@ void NoCtxTest::SetUp() {
   ctx->para.flags |= MTL_FLAG_RANDOM_SRC_PORT;
   if (!ctx->user_log_level) ctx->para.log_level = MTL_LOG_LEVEL_INFO;
   ctx->para.priv = ctx;
-  ctx->para.tx_queues_cnt[MTL_PORT_P] = 16;
-  ctx->para.tx_queues_cnt[MTL_PORT_R] = 16;
-  ctx->para.rx_queues_cnt[MTL_PORT_P] = 16;
-  ctx->para.rx_queues_cnt[MTL_PORT_R] = 16;
+  for (int i = 0; i < MTL_PORT_MAX; i++) {
+    ctx->para.tx_queues_cnt[i] = 16;
+    ctx->para.rx_queues_cnt[i] = 16;
+  }
   ResetFakePtpClock();
   defaultTestDuration = 20;
   if (const char* env_dur = std::getenv("NOCTX_TEST_DURATION"); env_dur && *env_dur) {
@@ -88,6 +88,20 @@ void NoCtxTest::SetUp() {
 }
 
 void NoCtxTest::TearDown() {
+  for (auto& h : st40pHandlers) {
+    if (h) h->stopSession();
+  }
+  for (auto& h : st30pHandlers) {
+    if (h) h->stopSession();
+  }
+  for (auto& h : st20pHandlers) {
+    if (h) h->stopSession();
+  }
+
+  if (ctx && ctx->handle) {
+    mtl_stop(ctx->handle);
+  }
+
   st40pHandlers.clear();
   st30pHandlers.clear();
   st20pHandlers.clear();

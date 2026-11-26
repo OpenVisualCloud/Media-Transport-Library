@@ -21,15 +21,20 @@ class PipelineHandlerBase : public Handlers {
   using RxCreateFn = RxHandle (*)(mtl_handle, RxOps*);
   using TxFreeFn = int (*)(TxHandle);
   using RxFreeFn = int (*)(RxHandle);
+  using TxWakeFn = int (*)(TxHandle);
+  using RxWakeFn = int (*)(RxHandle);
 
   PipelineHandlerBase(st_tests_context* ctx, FrameTestStrategy* frameTestStrategy,
                       TxCreateFn txCreate, RxCreateFn rxCreate, TxFreeFn txFree,
-                      RxFreeFn rxFree)
+                      RxFreeFn rxFree, TxWakeFn txWake = nullptr,
+                      RxWakeFn rxWake = nullptr)
       : Handlers(ctx, frameTestStrategy),
         txCreateFn_(txCreate),
         rxCreateFn_(rxCreate),
         txFreeFn_(txFree),
-        rxFreeFn_(rxFree) {
+        rxFreeFn_(rxFree),
+        txWakeFn_(txWake),
+        rxWakeFn_(rxWake) {
   }
 
   virtual ~PipelineHandlerBase() {
@@ -74,6 +79,9 @@ class PipelineHandlerBase : public Handlers {
     TxHandle handle = txCreateFn_(ctx->handle, &ops);
     EXPECT_TRUE(handle != nullptr);
     sessionsHandleTx = handle;
+    if (handle && txWakeFn_) {
+      session.setTxWakeCallback([fn = txWakeFn_, handle]() { (void)fn(handle); });
+    }
   }
 
   void createSessionRx() {
@@ -84,6 +92,9 @@ class PipelineHandlerBase : public Handlers {
     RxHandle handle = rxCreateFn_(ctx->handle, &ops);
     EXPECT_TRUE(handle != nullptr);
     sessionsHandleRx = handle;
+    if (handle && rxWakeFn_) {
+      session.setRxWakeCallback([fn = rxWakeFn_, handle]() { (void)fn(handle); });
+    }
   }
 
   void startSession() {
@@ -116,6 +127,7 @@ class PipelineHandlerBase : public Handlers {
   }
 
   void releaseTxHandle() {
+    session.clearTxWakeCallback();
     if (sessionsHandleTx) {
       txFreeFn_(sessionsHandleTx);
       sessionsHandleTx = nullptr;
@@ -123,6 +135,7 @@ class PipelineHandlerBase : public Handlers {
   }
 
   void releaseRxHandle() {
+    session.clearRxWakeCallback();
     if (sessionsHandleRx) {
       rxFreeFn_(sessionsHandleRx);
       sessionsHandleRx = nullptr;
@@ -147,6 +160,8 @@ class PipelineHandlerBase : public Handlers {
   RxCreateFn rxCreateFn_;
   TxFreeFn txFreeFn_;
   RxFreeFn rxFreeFn_;
+  TxWakeFn txWakeFn_;
+  RxWakeFn rxWakeFn_;
 
   std::atomic<uint32_t> txFrameCount_{0};
   std::atomic<uint32_t> rxFrameCount_{0};

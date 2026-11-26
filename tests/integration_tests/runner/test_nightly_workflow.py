@@ -93,7 +93,14 @@ if "--gtest_list_tests" in sys.argv:
     print("NoCtxTest.")
     print("  st20p_pf_tsn" if "_pf_" in flt and "-NoCtxTest.*_pf_*" not in flt else "  st20p_user_pacing")
     sys.exit(0)
-cases = ["St20p.same_case"] if "St20p" in flt else [flt if "." in flt else "Misc.ok"]
+if "St20p" in flt:
+    cases = ["St20p.same_case"]
+elif "Dma" in flt:
+    cases = ["Dma.ok"]
+elif "." in flt and "*" not in flt and ":" not in flt:
+    cases = [flt]
+else:
+    cases = ["Misc.ok"]
 root = ET.Element("testsuites")
 ts = ET.SubElement(root, "testsuite", name="s")
 fail = False
@@ -146,13 +153,32 @@ def test_nightly_yaml_and_profiles_contract() -> None:
     ), "reports.sh flatten helpers must handle results.jsonl"
 
     # Guard against malformed GTest negative filter syntax such as "A*:-*B*".
-    for tier in ("pr", "nightly"):
-        for run in pdata["runs"][tier]:
-            flt = str(run.get("filter", ""))
-            assert ":-" not in flt, (
-                f"profiles.yaml run '{run['name']}' has invalid GTest filter '{flt}' "
-                "(use '-' directly without preceding ':')"
-            )
+    run_entries = [r for tier in ("pr", "nightly") for r in pdata["runs"][tier]]
+    for run in run_entries:
+        flt = str(run.get("filter", ""))
+        assert ":-" not in flt, (
+            f"profiles.yaml run '{run['name']}' has invalid GTest filter '{flt}' "
+            "(use '-' directly without preceding ':')"
+        )
+
+    profiles = pdata.get("profiles") or {}
+    topologies = pdata.get("topologies") or {}
+    used_profiles = {str(r.get("profile", "default")) for r in run_entries}
+    used_topologies = {str(r["topology"]) for r in run_entries}
+    assert len(profiles) == 9, f"Expected 9 profiles, got {sorted(profiles)}"
+    assert (
+        set(profiles) == used_profiles
+    ), f"Unused profiles in profiles.yaml: {sorted(set(profiles) - used_profiles)}"
+    assert len(topologies) == 5, f"Expected 5 topologies, got {sorted(topologies)}"
+    assert (
+        set(topologies) == used_topologies
+    ), f"Unused topologies in profiles.yaml: {sorted(set(topologies) - used_topologies)}"
+
+    dma_auto_runs = {r["name"] for r in run_entries if r.get("dma_auto")}
+    assert dma_auto_runs == {
+        "st2110_20",
+        "dma_cvt_va",
+    }, f"Unexpected dma_auto runs in profiles.yaml: {sorted(dma_auto_runs)}"
 
 
 def _gtest_filter_matches(case: str, flt: str) -> bool:
@@ -163,16 +189,14 @@ def _gtest_filter_matches(case: str, flt: str) -> bool:
     neg_pats = [p for p in neg.split(":") if p]
     if pos_pats and not any(fnmatch.fnmatchcase(case, p) for p in pos_pats):
         return False
-    if neg_pats and any(fnmatch.fnmatchcase(case, p) for p in neg_pats):
-        return False
-    return True
+    return not (neg_pats and any(fnmatch.fnmatchcase(case, p) for p in neg_pats))
 
 
 def test_nightly_pytest_matrix_covers_all_nightly_suites() -> None:
     """Every single-host acceptance dir with pytest.mark.nightly must run in nightly.yml."""
     nightly_doc = yaml.safe_load(NIGHTLY_YML.read_text(encoding="utf-8"))
     suite_expr = nightly_doc["jobs"]["run-pytest"]["strategy"]["matrix"]["suite"]
-    m = re.search(r"\|\|\s*'(\[.*\])'", suite_expr, re.S)
+    m = re.search(r"\|\|\s*'(\[.*\])'", suite_expr, re.DOTALL)
     assert m, f"Could not extract suite JSON array from nightly.yml: {suite_expr}"
     entries = json.loads(m.group(1))
 
@@ -252,6 +276,13 @@ def test_profiles_yaml_covers_all_kahawai_cases_when_built() -> None:
                 f"profiles.yaml run '{run_name}' (instance={inst}) filter '{flt}' "
                 "matched zero compiled KahawaiTest cases"
             )
+            pos_part, neg_part = (flt.split("-", 1) + [""])[:2]
+            for clause in (p for p in pos_part.split(":") if p):
+                clause_flt = f"{clause}-{neg_part}" if neg_part else clause
+                assert any(_gtest_filter_matches(c, clause_flt) for c in inst_cases), (
+                    f"profiles.yaml run '{run_name}' (instance={inst}) has dead positive "
+                    f"filter clause '{clause}' matching zero compiled KahawaiTest cases"
+                )
         uncovered = sorted(
             c
             for c in inst_cases
@@ -312,6 +343,7 @@ def test_nightly_gtest_sharded_via_shim(tmp_path: Path) -> None:
         if line.strip()
     ]
     profiles_seen = {r["profile"] for r in recs}
+    assert "dma_cvt_va" in profiles_seen
     assert "st20p_auto_pacing_pa" in profiles_seen
     assert "st20p_tsc_pacing" in profiles_seen
 

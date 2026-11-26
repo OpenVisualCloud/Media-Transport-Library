@@ -62,7 +62,7 @@ static void runDefaultTimestamps(NoCtxTest* test, st_tests_context* ctx, enum st
   auto* frameTestStrategy = static_cast<St20pDefaultPacingOracle*>(bundle.strategy);
 
   bundle.handler->startSession();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   test->sleepUntilFailure();
   bundle.handler->stopSession();
@@ -179,7 +179,7 @@ TEST_F(NoCtxTest, st20p_user_pacing) {
   auto* frameTestStrategy = static_cast<St20pUserPacingOracle*>(bundle.strategy);
 
   bundle.handler->startSession();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   ASSERT_EQ(frameTestStrategy->getPacingParameters(), 0);
   EXPECT_GT(frameTestStrategy->pacing_tr_offset_ns, 0.0);
@@ -227,7 +227,7 @@ TEST_F(NoCtxTest, st20p_user_pacing_offset_jitter) {
   auto* strategy = static_cast<St20pUserPacingOracle*>(bundle.strategy);
 
   bundle.handler->startSession();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   ASSERT_EQ(strategy->getPacingParameters(), 0);
   EXPECT_GT(strategy->pacing_tr_offset_ns, 0.0);
@@ -295,7 +295,7 @@ TEST_F(NoCtxTest, st20p_exact_user_pacing) {
     EXPECT_EQ(pacing_status, -ENOTSUP) << "Unexpected pacing query result";
   }
 
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   sleepUntilFailure();
 

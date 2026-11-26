@@ -32,7 +32,6 @@
 
 #include "core/test_fixture.hpp"
 #include "handlers/st20p_handler.hpp"
-#include "strategies/st20p_strategies.hpp"
 
 namespace {
 
@@ -68,8 +67,7 @@ TEST_F(NoCtxTest, st20p_tx_multithread_stability) {
 
   auto bundle = createSt20pHandlerBundle(
       /*createTx=*/true, /*createRx=*/false,
-      [](St20pHandler* h) { return new St20pDefaultPacingOracle(h); },
-      [kFrameCnt](St20pHandler* h) {
+      /*strategyFactory=*/nullptr, [kFrameCnt](St20pHandler* h) {
         h->sessionsOpsTx.framebuff_cnt = (uint16_t)kFrameCnt;
       });
 
@@ -100,7 +98,7 @@ TEST_F(NoCtxTest, st20p_tx_multithread_stability) {
   std::atomic<uint64_t> produced{0};
 
   StartFakePtpClock();
-  ASSERT_GE(mtl_start(ctx->handle), 0);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   auto producer = [&](int id) {
     while (!stop.load(std::memory_order_relaxed)) {
@@ -111,6 +109,8 @@ TEST_F(NoCtxTest, st20p_tx_multithread_stability) {
       }
       if (!f->addr[0]) {
         bad_frame.store(true);
+        f->data_size = frameSize;
+        if (st20p_tx_put_frame(tx, f) < 0) api_error.store(true);
         continue;
       }
       auto it = addr2idx.find(f->addr[0]);

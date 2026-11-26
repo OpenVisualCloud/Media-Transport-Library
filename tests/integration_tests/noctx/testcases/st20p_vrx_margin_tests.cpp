@@ -1046,6 +1046,17 @@ RlRun runRlMix(
   /* Following through mtl_init() keeps the first read's lag to 10 ms of drift. */
   ptp.follow();
   RlLogTap tap;
+  bool mtl_started = false;
+  struct StopMtlGuard {
+    st_tests_context* c;
+    bool& started;
+    ~StopMtlGuard() {
+      if (started && c && c->handle) {
+        mtl_stop(c->handle);
+        started = false;
+      }
+    }
+  } stop_mtl_guard{ctx, mtl_started};
 
   if (mix.one_quota)
     ctx->para.data_quota_mbs_per_sch =
@@ -1114,7 +1125,11 @@ RlRun runRlMix(
     return run;
   }
 
-  EXPECT_EQ(mtl_start(ctx->handle), 0);
+  if (mtl_start(ctx->handle) != 0) {
+    ADD_FAILURE() << "mtl_start failed";
+    return run;
+  }
+  mtl_started = true;
   for (const RlCreated& c : run.tx) {
     if (c.handler->sessionsHandleRx) c.handler->startSessionRx();
     c.handler->startSessionTx();
@@ -1165,6 +1180,8 @@ RlRun runRlMix(
   for (const RlCreated& c : run.tx)
     stops.emplace_back([h = c.handler] { h->stopSession(); });
   for (auto& t : stops) t.join();
+  mtl_stop(ctx->handle);
+  mtl_started = false;
   ptp.stop();
   expectRlWire(mix, run, tap, ptp, ctx);
   return run;

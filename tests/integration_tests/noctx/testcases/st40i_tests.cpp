@@ -2,15 +2,16 @@
 /* Copyright(c) 2025 Intel Corporation */
 
 #include <arpa/inet.h>
-#include <sys/socket.h>
 #include <unistd.h>
 
 #include <chrono>
+#include <cstring>
 #include <thread>
 #include <vector>
 
 #include "core/test_fixture.hpp"
 #include "handlers/st40p_handler.hpp"
+#include "test_harness.hpp"
 
 namespace {
 
@@ -93,12 +94,11 @@ namespace {
 
 static void build_split_rtp_packet(std::vector<uint8_t>& out, uint16_t seq, uint32_t ts,
                                    bool marker, const std::vector<uint8_t>& payload) {
-  out.clear();
-  out.resize(sizeof(st40_rfc8331_rtp_hdr) + sizeof(st40_rfc8331_payload_hdr) - 4 +
-             ((3 + payload.size() + 1) * 10 + 7) / 8);
+  const uint32_t payload_bytes =
+      st40_rfc8331_payload_bytes(static_cast<uint16_t>(payload.size()));
+  out.assign(sizeof(st40_rfc8331_rtp_hdr) + payload_bytes, 0);
 
   auto* rtp = reinterpret_cast<st40_rfc8331_rtp_hdr*>(out.data());
-  memset(rtp, 0, sizeof(*rtp));
   rtp->base.version = 2;
   rtp->base.payload_type = 113;
   rtp->base.seq_number = htons(seq);
@@ -106,9 +106,10 @@ static void build_split_rtp_packet(std::vector<uint8_t>& out, uint16_t seq, uint
   rtp->base.tmstamp = htonl(ts);
   rtp->base.marker = marker ? 1 : 0;
   rtp->first_hdr_chunk.anc_count = 1;
+  rtp->length = htons(payload_bytes);
+  st40_rfc8331_rtp_hdr_bswap(rtp);
 
   auto* ph = reinterpret_cast<st40_rfc8331_payload_hdr*>(rtp + 1);
-  memset(ph, 0, sizeof(*ph));
   ph->first_hdr_chunk.c = 0;
   ph->first_hdr_chunk.line_number = 1;
   ph->first_hdr_chunk.horizontal_offset = 0;
@@ -117,6 +118,9 @@ static void build_split_rtp_packet(std::vector<uint8_t>& out, uint16_t seq, uint
   ph->second_hdr_chunk.did = st40_add_parity_bits(0x45);
   ph->second_hdr_chunk.sdid = st40_add_parity_bits(0x01);
   ph->second_hdr_chunk.data_count = st40_add_parity_bits(payload.size());
+  /* Swap the payload header to wire order before packing UDW bits and checksum so the
+   * 32-bit swap does not scramble the upper bits of UDW[0] or invalidate the checksum. */
+  st40_rfc8331_payload_hdr_bswap(ph);
 
   uint8_t* udw_dst = reinterpret_cast<uint8_t*>(&ph->second_hdr_chunk);
   for (size_t i = 0; i < payload.size(); i++) {
@@ -124,36 +128,46 @@ static void build_split_rtp_packet(std::vector<uint8_t>& out, uint16_t seq, uint
   }
   uint16_t checksum = st40_calc_checksum(3 + payload.size(), udw_dst);
   st40_set_udw(static_cast<int>(payload.size() + 3), checksum, udw_dst);
-
-  uint32_t payload_bytes =
-      st40_rfc8331_payload_bytes(static_cast<uint16_t>(payload.size()));
-
-  rtp->length = htons(payload_bytes);
-  st40_rfc8331_rtp_hdr_bswap(rtp);
-  st40_rfc8331_payload_hdr_bswap(ph);
-  out.resize(sizeof(st40_rfc8331_rtp_hdr) + payload_bytes);
 }
 
-static int send_rtp_burst(const st_tests_context* ctx, uint16_t port,
-                          const std::vector<std::vector<uint8_t>>& pkts) {
-  int sock = ::socket(AF_INET, SOCK_DGRAM, 0);
-  if (sock < 0) return -errno;
+static int send_rtp_burst_dpdk(const st_tests_context* ctx, uint16_t port,
+                               uint8_t payload_type,
+                               const std::vector<std::vector<uint8_t>>& pkts) {
+  struct st40_tx_ops tx_ops = {};
+  tx_ops.name = "st40i_seq_gap_tx";
+  tx_ops.num_port = 1;
+  memcpy(tx_ops.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  snprintf(tx_ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           ctx->para.port[MTL_PORT_P]);
+  tx_ops.udp_port[MTL_SESSION_PORT_P] = port;
+  tx_ops.type = ST40_TYPE_RTP_LEVEL;
+  tx_ops.fps = ST_FPS_P60;
+  tx_ops.payload_type = payload_type;
+  tx_ops.rtp_ring_size = 16;
+  tx_ops.notify_rtp_done = [](void*) { return 0; };
 
-  sockaddr_in addr{};
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(port);
-  memcpy(&addr.sin_addr, ctx->mcast_ip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+  mtl_test::ScopedHandle<st40_tx_handle, st40_tx_free> tx(
+      st40_tx_create(ctx->handle, &tx_ops));
+  if (!tx) return -EIO;
 
   for (const auto& pkt : pkts) {
-    ssize_t n = ::sendto(sock, pkt.data(), pkt.size(), 0,
-                         reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
-    if (n < 0) {
-      ::close(sock);
-      return -errno;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    void* usrptr = nullptr;
+    void* mbuf = nullptr;
+    const bool got = mtl_test::wait_until(
+        [&]() {
+          mbuf = st40_tx_get_mbuf(tx.get(), &usrptr);
+          return mbuf != nullptr;
+        },
+        1000, 1);
+    if (!got || !mbuf || !usrptr) return -ETIMEDOUT;
+    memcpy(usrptr, pkt.data(), pkt.size());
+    int ret = st40_tx_put_mbuf(tx.get(), mbuf, static_cast<uint16_t>(pkt.size()));
+    if (ret < 0) return ret;
   }
-  ::close(sock);
+
+  /* Give the TX tasklet time to pace out both RTP packets before freeing TX. */
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
   return 0;
 }
 
@@ -162,8 +176,8 @@ static int send_rtp_burst(const st_tests_context* ctx, uint16_t port,
 /* Common to every test here: initDefaultContext(); one session TX TEST_PORT_1 -> RX
  * TEST_PORT_2, 60p, 4 buffers, TX and RX BLOCK_GET (fillSt40pOps()), default pacing;
  * StartFakePtpClock() before the sessions start. Every TX and RX frame also passes the
- * St40pHandler thread checks. No SKIP or FAIL rule, except that
- * st40i_split_seq_gap_reports_loss SKIPs when no frame arrives.
+ * St40pHandler thread checks. No SKIP rule; st40i_split_seq_gap_reports_loss asserts
+ * that the sequence-gap frame arrives.
  */
 
 /* st40i_smoke
@@ -189,7 +203,7 @@ TEST_F(NoCtxTest, st40i_smoke) {
 
   StartFakePtpClock();
   handler->startSession();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   sleepUntilFailure(2);
 
@@ -223,7 +237,7 @@ TEST_F(NoCtxTest, st40i_split_flag_accepts_and_propagates) {
 
   StartFakePtpClock();
   bundle.handler->startSession();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   sleepUntilFailure(1);
 
@@ -260,7 +274,7 @@ TEST_F(NoCtxTest, st40i_split_multi_packet_roundtrip) {
 
   StartFakePtpClock();
   bundle.handler->startSession();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   sleepUntilFailure(1);
 
@@ -297,7 +311,7 @@ TEST_F(NoCtxTest, st40i_split_loopback) {
 
   StartFakePtpClock();
   bundle.handler->startSession();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   sleepUntilFailure(1);
 
@@ -309,13 +323,17 @@ TEST_F(NoCtxTest, st40i_split_loopback) {
 
 /* st40i_split_seq_gap_reports_loss
  * Config: RX only, progressive, UDP udp_port, payload type kPayloadType, BLOCK_GET.
- * Plan:   the RX session thread runs; the test sends two RTP packets of one frame
- *         (seq 100 and 102, marker on the second) from a kernel UDP socket to the P
- *         mcast address, then reads a frame itself for up to 1 s.
- * Expect: 1. seq_discont, seq_lost >= 1, rtp_marker, meta_num == 2
- *         SKIP if no frame arrives within 1 s.
+ * Plan:   no background RX thread; send two RTP packets of one frame (seq 100 and 102,
+ *         marker on the second) over a DPDK st40_tx RTP-level session on port P, then
+ *         read the assembled frame directly on the test thread.
+ * Expect: 1. frame received, seq_discont, seq_lost >= 1, rtp_marker, meta_num == 2
  */
 TEST_F(NoCtxTest, st40i_split_seq_gap_reports_loss) {
+  /* Force the no-chain RTP-level TX path so the library transmits the pre-swapped
+   * RFC 8331 RTP header as-is on both chain-capable and no-chain NICs instead of
+   * swapping first_hdr_chunk a second time in tx_ancillary_session_build_packet_chain().
+   */
+  ctx->para.flags |= MTL_FLAG_TX_NO_CHAIN;
   initDefaultContext();
 
   constexpr uint16_t udp_port = 33000;
@@ -323,8 +341,7 @@ TEST_F(NoCtxTest, st40i_split_seq_gap_reports_loss) {
 
   auto bundle = createSt40pHandlerBundle(
       /*createTx=*/false, /*createRx=*/true,
-      /*strategyFactory=*/[](St40pHandler*) { return new SplitAncRoundTripOracle({4}); },
-      [](St40pHandler* handler) {
+      /*strategyFactory=*/nullptr, [](St40pHandler* handler) {
         handler->sessionsOpsRx.interlaced = false;
         handler->sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_P] = udp_port;
         handler->sessionsOpsRx.port.payload_type = kPayloadType;
@@ -332,10 +349,11 @@ TEST_F(NoCtxTest, st40i_split_seq_gap_reports_loss) {
       });
 
   ASSERT_NE(bundle.handler, nullptr);
+  ASSERT_EQ(st40p_rx_set_block_timeout(bundle.handler->sessionsHandleRx, 500 * NS_PER_MS),
+            0);
 
   StartFakePtpClock();
-  bundle.handler->startSessionRx();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   std::vector<uint8_t> pkt1;
   std::vector<uint8_t> pkt2;
@@ -344,20 +362,17 @@ TEST_F(NoCtxTest, st40i_split_seq_gap_reports_loss) {
   build_split_rtp_packet(pkt2, /*seq=*/102, /*ts=*/1234, /*marker=*/true,
                          {0x11, 0x22, 0x33, 0x44});
 
-  ASSERT_EQ(0, send_rtp_burst(ctx, udp_port, {pkt1, pkt2})) << "send_rtp_burst failed";
+  ASSERT_EQ(0, send_rtp_burst_dpdk(ctx, udp_port, kPayloadType, {pkt1, pkt2}))
+      << "send_rtp_burst_dpdk failed";
 
   struct st40_frame_info* frame_info = nullptr;
-  auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+  auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
   while (std::chrono::steady_clock::now() < deadline) {
     frame_info = st40p_rx_get_frame(bundle.handler->sessionsHandleRx);
     if (frame_info) break;
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
-  if (!frame_info) {
-    GTEST_SKIP() << "RX frame not received (packet may have arrived on different port)";
-    return;
-  }
+  ASSERT_NE(frame_info, nullptr) << "RX frame with sequence gap was not received";
   EXPECT_TRUE(frame_info->seq_discont);
   EXPECT_GE(frame_info->seq_lost, 1u);
   EXPECT_TRUE(frame_info->rtp_marker);

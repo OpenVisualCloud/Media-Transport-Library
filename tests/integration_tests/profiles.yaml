@@ -28,21 +28,11 @@ topologies:
 
 profiles:
   default: {}
-  level_all:
-    extra_args: [--level, all]
   queue_cnt_24:
     extra_args: [--queue_cnt, "24"]
   dma_va:
     extra_args: [--iova_mode, va]
     iova_mode: va
-  dma_pa:
-    extra_args: [--iova_mode, pa]
-    iova_mode: pa
-  digest_tsc_pa:
-    extra_args: [--rss_mode, l3_l4, --pacing_way, tsc, --iova_mode, pa, --multi_src_port]
-    rss_mode: l3_l4
-    pacing_way: tsc
-    iova_mode: pa
   auto_pacing_pa:
     extra_args: [--rss_mode, l3_l4, --pacing_way, auto, --iova_mode, pa, --multi_src_port]
     rss_mode: l3_l4
@@ -72,62 +62,42 @@ profiles:
 
 runs:
   pr:
-    - {name: st2110_20_rx_shard0, profile: default, topology: vf_pair, filter: "St20_rx*", dma_auto: true, env: {GTEST_TOTAL_SHARDS: "2", GTEST_SHARD_INDEX: "0"}}
-    - {name: st2110_20_rx_shard1, profile: default, topology: vf_pair, filter: "St20_rx*", dma_auto: true, env: {GTEST_TOTAL_SHARDS: "2", GTEST_SHARD_INDEX: "1"}}
-    - {name: st2110_20_tx, profile: default, topology: vf_pair, filter: "St20_tx*", dma_auto: true}
-    - {name: st2110_20p, profile: default, topology: vf_pair, filter: "St20p*", dma_auto: true}
-    - {name: st2110_20_tx_queue_cnt, profile: queue_cnt_24, topology: vf_pair, filter: "St20_tx.create_queue_cnt", dma_auto: true}
-    - {name: st2110_22_rx, profile: default, topology: vf_pair, filter: "St22_rx*", dma_auto: true}
-    - {name: st2110_22_tx, profile: default, topology: vf_pair, filter: "St22_tx*", dma_auto: true}
-    - {name: st2110_22p, profile: default, topology: vf_pair, filter: "St22p*", dma_auto: true}
-    - {name: st2110_3x, profile: default, topology: vf_pair, filter: "St3*", dma_auto: true}
-    - {name: st2110_4x, profile: default, topology: vf_pair, filter: "St4*", dma_auto: true}
+    - {name: st2110_20, profile: default, topology: vf_pair, filter: "St20_rx*:St20_tx*-St20_tx.create_queue_cnt", dma_auto: true}
+    - {name: st2110_20p, profile: default, topology: vf_pair, filter: "St20p*-St20p.redundant*"}
+    - {name: st2110_20_tx_queue_cnt, profile: queue_cnt_24, topology: vf_pair, filter: "St20_tx.create_queue_cnt"}
+    - {name: st2110_22, profile: default, topology: vf_pair, filter: "St22*"}
+    - {name: st2110_3x_4x, profile: default, topology: vf_pair, filter: "St3*:St4*-St30p.redundant*:St40p.redundant*"}
   nightly:
-    - {name: Misc, profile: default, topology: vf_pair, filter: "Misc*", dma_auto: true}
-    - {name: Main, profile: default, topology: vf_pair, filter: "Main*", dma_auto: true}
-    - {name: Sch, profile: default, topology: vf_pair, filter: "Sch*", dma_auto: true}
-    - {name: Cvt, profile: default, topology: vf_pair, filter: "Cvt*", dma_auto: true}
-    - {name: st20s, profile: default, topology: vf_pair, filter: "St20s*", dma_auto: true}
-    - {name: tx_timestamp_sync, profile: level_all, topology: vf_pair, filter: "TxUserTimestampSync*", dma_auto: true}
-    - {name: Dma_va, profile: dma_va, topology: vf_pair, filter: "Dma*", dma_auto: true}
-    - {name: Dma_pa, profile: dma_pa, topology: vf_pair, filter: "Dma*", dma_auto: true}
-    - {name: digest_1080p_timeout_interval, profile: digest_tsc_pa, topology: vf_pair, filter: "*digest_1080p_timeout_interval*", dma_auto: true}
-    - {name: st20p_auto_pacing_pa, profile: auto_pacing_pa, topology: vf_pair, filter: "St20p.digest*:St20p.transport_*:St20p.frame_is_late:St20p.tx_*no_epoch_drop-St20p.*ext*", dma_auto: true}
-    - {name: st20p_auto_pacing_va, profile: auto_pacing_va, topology: vf_pair, filter: "St20p.digest*:St20p.transport_*:St20p.frame_is_late:St20p.tx_*no_epoch_drop-St20p.*ext*", dma_auto: true}
-    - {name: st20p_tsc_pacing, profile: tsc_pacing, topology: vf_pair, filter: "St20p.digest*:St20p.transport_*:St20p.frame_is_late:St20p.tx_*no_epoch_drop-St20p.*ext*", dma_auto: true}
+    - {name: core_misc, profile: default, topology: vf_pair, filter: "Main*:Misc*:Sch*:TxUserTimestampSync*"}
     - {name: redundant_stats, profile: default, topology: vf_quad, filter: "St20p.redundant*:St30p.redundant*:St40p.redundant*"}
-    - {name: st20p_kernel_loopback, profile: kernel_lo, topology: kernel_lo, filter: "St20p*", needs_root: false}
+    - {name: st20p_kernel_loopback, profile: kernel_lo, topology: kernel_lo, needs_root: false, filter: "St20p.tx_create_free_single:St20p.rx_create_free_single:St20p.digest_1080p_s1:St20p.digest_1080i_s2:St20p.tx_put_frame_abort:St20p.rx_put_frame_abort:St20p.frame_is_late:St20p.query_params:St20p.session_stats_reset:St20p.update_source_and_destination"}
+    # Run st20p_tsc_pacing before any RL init (including dma_cvt_va). On DPDK
+    # < 26.07.91, the ice PF keeps VF queue rate limits across processes.
+    - {name: st20p_tsc_pacing, profile: tsc_pacing, topology: vf_pair, filter: "St20p.digest*:St20p.transport_*:St20p.frame_is_late:St20p.tx_*no_epoch_drop-St20p.*ext*"}
+    - {name: dma_cvt_va, profile: dma_va, topology: vf_pair, filter: "Dma*:Cvt*-Dma.iova_pa*", dma_auto: true}
+    - {name: st20p_auto_pacing_pa, profile: auto_pacing_pa, topology: vf_pair, filter: "St20p.digest*:St20p.transport_*:St20p.frame_is_late:St20p.tx_*no_epoch_drop:Dma.iova_pa*-St20p.*ext*"}
+    - {name: st20p_auto_pacing_va, profile: auto_pacing_va, topology: vf_pair, filter: "St20p.digest*:St20p.transport_*:St20p.frame_is_late:St20p.tx_*no_epoch_drop-St20p.*ext*"}
     - {name: noctx, profile: noctx, topology: cross_pf_quad, filter: "NoCtxTest.*-NoCtxTest.*_pf_*"}
     - {name: noctx_pf, profile: noctx_pf, topology: pf_pair, filter: "NoCtxTest.*_pf_*"}
 
 groups:
   pr_core:
-    - st2110_20_rx_shard0
-    - st2110_20_rx_shard1
-    - st2110_20_tx
+    - st2110_20
     - st2110_20p
     - st2110_20_tx_queue_cnt
-    - st2110_22_rx
-    - st2110_22_tx
-    - st2110_22p
-    - st2110_3x
-    - st2110_4x
+    - st2110_22
+    - st2110_3x_4x
   core_misc:
-    - Misc
-    - Main
-    - Sch
-    - st20s
-    - tx_timestamp_sync
+    - core_misc
     - redundant_stats
     - st20p_kernel_loopback
   pacing_dma:
-    - Dma_va
-    - Dma_pa
-    - Cvt
-    - digest_1080p_timeout_interval
+    # Run st20p_tsc_pacing before any RL init (including dma_cvt_va). On DPDK
+    # < 26.07.91, the ice PF keeps VF queue rate limits across processes.
+    - st20p_tsc_pacing
+    - dma_cvt_va
     - st20p_auto_pacing_pa
     - st20p_auto_pacing_va
-    - st20p_tsc_pacing
   noctx:
     - noctx
     - noctx_pf

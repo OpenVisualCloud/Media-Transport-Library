@@ -4,6 +4,7 @@
 
 #include "st30p_handler.hpp"
 
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
@@ -12,7 +13,7 @@
 St30pHandler::St30pHandler(st_tests_context* ctx, st30p_tx_ops ops_tx,
                            st30p_rx_ops ops_rx, uint msPerFramebuffer)
     : PipelineHandlerBase(ctx, nullptr, st30p_tx_create, st30p_rx_create, st30p_tx_free,
-                          st30p_rx_free),
+                          st30p_rx_free, st30p_tx_wake_block, st30p_rx_wake_block),
       nsFramebuffTime(0),
       msPerFramebuffer(msPerFramebuffer) {
   if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
@@ -59,7 +60,6 @@ void St30pHandler::fillSt30pOps(uint transmissionPort, uint framebufferQueueSize
   memcpy(sessionsOpsRx.port.ip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
          MTL_IP_ADDR_LEN);
 
-  sessionsOpsTx.port.num_port = 1;
   snprintf(sessionsOpsRx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_R]);
 
@@ -117,19 +117,23 @@ void St30pHandler::st30pTxDefaultFunction(std::atomic<bool>& stopFlag) {
   while (!stopFlag) {
     frame = st30p_tx_get_frame(handle);
     if (!frame) {
+      std::this_thread::sleep_for(std::chrono::microseconds(100));
       continue;
     }
 
-    ASSERT_EQ(frame->buffer_size, sessionsOpsTx.framebuff_size);
-    ASSERT_EQ(frame->data_size, sessionsOpsTx.framebuff_size);
-    ASSERT_EQ(frame->fmt, sessionsOpsTx.fmt);
-    ASSERT_EQ(frame->channel, sessionsOpsTx.channel);
-    ASSERT_EQ(frame->ptime, sessionsOpsTx.ptime);
-    ASSERT_EQ(frame->sampling, sessionsOpsTx.sampling);
+    EXPECT_NE(frame->addr, nullptr);
+    EXPECT_EQ(frame->buffer_size, sessionsOpsTx.framebuff_size);
+    EXPECT_EQ(frame->data_size, sessionsOpsTx.framebuff_size);
+    EXPECT_EQ(frame->fmt, sessionsOpsTx.fmt);
+    EXPECT_EQ(frame->channel, sessionsOpsTx.channel);
+    EXPECT_EQ(frame->ptime, sessionsOpsTx.ptime);
+    EXPECT_EQ(frame->sampling, sessionsOpsTx.sampling);
 
-    applyTxModifier(frame, frame->data_size);
+    if (frame->addr) {
+      applyTxModifier(frame, frame->data_size);
+    }
 
-    int ret = st30p_tx_put_frame((st30p_tx_handle)handle, frame);
+    int ret = st30p_tx_put_frame(handle, frame);
     EXPECT_GE(ret, 0);
     if (ret >= 0) {
       recordTxFrame();
@@ -143,21 +147,25 @@ void St30pHandler::st30pRxDefaultFunction(std::atomic<bool>& stopFlag) {
   ASSERT_TRUE(handle != nullptr);
 
   while (!stopFlag) {
-    frame = st30p_rx_get_frame((st30p_rx_handle)handle);
+    frame = st30p_rx_get_frame(handle);
     if (!frame) {
+      std::this_thread::sleep_for(std::chrono::microseconds(100));
       continue;
     }
 
-    ASSERT_EQ(frame->buffer_size, sessionsOpsRx.framebuff_size);
-    ASSERT_EQ(frame->data_size, sessionsOpsRx.framebuff_size);
-    ASSERT_EQ(frame->fmt, sessionsOpsRx.fmt);
-    ASSERT_EQ(frame->channel, sessionsOpsRx.channel);
-    ASSERT_EQ(frame->ptime, sessionsOpsRx.ptime);
-    ASSERT_EQ(frame->sampling, sessionsOpsRx.sampling);
+    EXPECT_NE(frame->addr, nullptr);
+    EXPECT_EQ(frame->buffer_size, sessionsOpsRx.framebuff_size);
+    EXPECT_EQ(frame->data_size, sessionsOpsRx.framebuff_size);
+    EXPECT_EQ(frame->fmt, sessionsOpsRx.fmt);
+    EXPECT_EQ(frame->channel, sessionsOpsRx.channel);
+    EXPECT_EQ(frame->ptime, sessionsOpsRx.ptime);
+    EXPECT_EQ(frame->sampling, sessionsOpsRx.sampling);
 
-    applyRxModifier(frame, frame->data_size);
+    if (frame->addr) {
+      applyRxModifier(frame, frame->data_size);
+    }
 
-    int ret = st30p_rx_put_frame((st30p_rx_handle)handle, frame);
+    int ret = st30p_rx_put_frame(handle, frame);
     EXPECT_GE(ret, 0);
     if (ret >= 0) {
       recordRxFrame();

@@ -72,7 +72,7 @@ void RunEpochOnwardRecoveryCase(NoCtxTest* self, struct st_tests_context* ctx,
       self->createSt20pHandlerBundle(/*createTx=*/true, /*createRx=*/true, nullptr);
 
   bundle.handler->startSession();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   /* let the session settle and transmit for a while against the inflated clock */
   std::this_thread::sleep_for(std::chrono::seconds(6));
@@ -226,7 +226,7 @@ TEST_F(NoCtxTest, st20p_tx_packets_are_spread_over_frame_pf_tsn_pacing) {
   ASSERT_NE(bundle.handler, nullptr);
 
   bundle.handler->startSessionTx();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   double tr_offset_ns = 0, trs_ns = 0;
   uint32_t vrx_pkts = 0;

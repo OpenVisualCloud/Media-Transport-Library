@@ -54,6 +54,7 @@ class HostFault(RuntimeError):
 
 def load_profiles(yaml_path: Path = DEFAULT_PROFILES) -> list[dict[str, Any]]:
     data = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+    tdefs = data.get("topologies") or {}
     pdefs = data.get("profiles") or {}
     group_of = {
         name: str(grp)
@@ -61,18 +62,33 @@ def load_profiles(yaml_path: Path = DEFAULT_PROFILES) -> list[dict[str, Any]]:
         for name in (members or [])
     }
     runs: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
     for tier, items in (data.get("runs") or {}).items():
         for r in items or []:
-            pd = pdefs.get(r.get("profile", "default")) or {}
+            name = str(r["name"])
+            if name in seen_names:
+                raise ValueError(f"Duplicate run name '{name}' in {yaml_path}")
+            seen_names.add(name)
+            prof_name = str(r.get("profile", "default"))
+            if prof_name not in pdefs:
+                raise ValueError(
+                    f"Run '{name}' references unknown profile '{prof_name}'"
+                )
+            topo_name = str(r.get("topology", ""))
+            if topo_name not in tdefs:
+                raise ValueError(
+                    f"Run '{name}' references unknown topology '{topo_name}'"
+                )
+            pd = pdefs[prof_name] or {}
             env = {str(k): str(v) for k, v in (pd.get("env") or {}).items()}
             env.update({str(k): str(v) for k, v in (r.get("env") or {}).items()})
             runs.append(
                 {
-                    "name": str(r["name"]),
+                    "name": name,
                     "tier": str(tier),
-                    "group": group_of.get(str(r["name"]), ""),
+                    "group": group_of.get(name, ""),
                     "mode": "noctx" if pd.get("instance") == "own" else "shared",
-                    "topology": str(r["topology"]),
+                    "topology": topo_name,
                     "filter": str(r["filter"]),
                     "extra_args": [str(x) for x in (pd.get("extra_args") or [])],
                     "env": env,
@@ -417,9 +433,52 @@ def _setup_ports(
         nics = scan_nics(Path(a.sysfs_pci))
 
     topos = {p["topology"] for p in selected}
-    need_vf = (
-        4 if topos & {"vf_quad", "cross_pf_quad"} else (2 if "vf_pair" in topos else 0)
-    )
+    need_vf = 4 if "vf_quad" in topos else (2 if "vf_pair" in topos else 0)
+
+    pf_vfs: dict[str, list[str]] = {}
+    for n in nics:
+        if n["drv"] == "vfio-pci" and n["pf"]:
+            pf_vfs.setdefault(n["pf"], []).append(n["bdf"])
+    for vfs in pf_vfs.values():
+        vfs.sort()
+
+    noctx_ports: list[str] = []
+    if (
+        "cross_pf_quad" in topos
+        and not a.ports
+        and not created_vfs
+        and len(pf_ports) < 4
+    ):
+        ready_pfs = [pf for pf, vfs in sorted(pf_vfs.items()) if len(vfs) >= 2]
+        if len(ready_pfs) < 2:
+            up = [
+                n["bdf"]
+                for n in nics
+                if not n["pf"]
+                and n["drv"] == "ice"
+                and n["state"] == "up"
+                and n["bdf"] not in ready_pfs
+            ]
+            created_any = False
+            for pf in up:
+                if len(ready_pfs) >= 2:
+                    break
+                cnt = a.tvf_count if not created_vfs else 2
+                created_pfs.append(pf)
+                new_vfs = nic_shell(
+                    nic_setup, ["create-tvf", pf, str(cnt)], a.dry_run
+                ) or [f"{pf.rsplit('.', 1)[0]}.{i}" for i in range(1, cnt + 1)]
+                if not created_vfs:
+                    created_vfs = new_vfs
+                pf_vfs[pf] = sorted(new_vfs)
+                ready_pfs.append(pf)
+                created_any = True
+            if created_any:
+                nics = scan_nics(Path(a.sysfs_pci))
+        if len(ready_pfs) >= 2:
+            p0, p1 = pf_vfs[ready_pfs[0]], pf_vfs[ready_pfs[1]]
+            noctx_ports = [p0[0], p1[0], p0[1], p1[1]]
+
     vf_ports: list[str] = []
     if a.ports:
         vf_ports = parse_bdfs(a.ports)
@@ -448,20 +507,50 @@ def _setup_ports(
                 ) or [
                     f"{up[0].rsplit('.', 1)[0]}.{i}" for i in range(1, a.tvf_count + 1)
                 ]
+                created_vfs = vf_ports
                 nics = scan_nics(Path(a.sysfs_pci))
         if len(vf_ports) < need_vf and not a.dry_run:
             raise HostFault(
                 f"Need {need_vf} vfio-pci ports, found {len(vf_ports)}; pass --tvf-pf, --bind-pvf, or --ports"
             )
 
-    noctx_ports = (
-        [created_vfs[0], created_sib[0], created_vfs[1], created_sib[1]]
-        if created_vfs and len(created_sib) >= 2
-        else list(vf_ports[:4])
-    )
-    if vf_ports and not created_vfs and not pvf_req and not a.dry_run:
+    if not noctx_ports:
+        if created_vfs and len(created_sib) >= 2:
+            noctx_ports = [
+                created_vfs[0],
+                created_sib[0],
+                created_vfs[1],
+                created_sib[1],
+            ]
+        elif len(vf_ports) >= 4:
+            noctx_ports = list(vf_ports[:4])
+        elif len(pf_ports) >= 4:
+            noctx_ports = list(pf_ports[:4])
+        else:
+            noctx_ports = list(vf_ports[:4])
+
+    if a.dry_run:
+        if len(vf_ports) < need_vf:
+            placeholders = [f"0000:00:00.{i}" for i in range(1, max(need_vf, 4) + 1)]
+            vf_ports = list(dict.fromkeys([*vf_ports, *placeholders]))[:need_vf]
+        if "cross_pf_quad" in topos and len(noctx_ports) < 4:
+            noctx_placeholders = [
+                "0000:00:00.1",
+                "0000:00:01.1",
+                "0000:00:00.2",
+                "0000:00:01.2",
+            ]
+            noctx_ports = list(dict.fromkeys([*noctx_ports, *noctx_placeholders]))[:4]
+
+    reused_ports = list(dict.fromkeys([*vf_ports, *noctx_ports]))
+    if reused_ports and not pvf_req and not a.dry_run:
+        created_set = set(created_pfs)
         pfs_used = list(
-            dict.fromkeys(n["pf"] for n in nics if n["bdf"] in vf_ports[:2] and n["pf"])
+            dict.fromkeys(
+                n["pf"]
+                for n in nics
+                if n["bdf"] in reused_ports and n["pf"] and n["pf"] not in created_set
+            )
         )
         if pfs_used:
             nic_shell(nic_setup, ["vf-rss-lut", *pfs_used], False)
@@ -474,7 +563,12 @@ def _setup_ports(
         if hp_free == 0:
             raise HostFault("No free 2 MB or 1 GB hugepages on this host")
 
-    return vf_ports, noctx_ports, pf_ports, detect_nic(nics, vf_ports or pf_ports)
+    return (
+        vf_ports,
+        noctx_ports,
+        pf_ports,
+        detect_nic(nics, vf_ports or noctx_ports or pf_ports),
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -634,20 +728,34 @@ def main(argv: list[str] | None = None) -> int:
                 ports = pf_ports[:2] if topo == "pf_pair" else noctx_ports[:4]
                 need = 2 if topo == "pf_pair" else 4
                 if len(ports) < need:
-                    if name == "noctx_pf":
+                    if topo == "pf_pair":
                         print(f"\n==> [{name}] skipped (pass --bind-pvf or --pf-ports)")
                         record(_mk(ctx, f"{name}.*", 0, "skipped", "no PF ports"))
                         done_profiles.add(name)
                         continue
                     raise HostFault(f"{name} needs {need} ports, got {len(ports)}")
-                cases = list_cases(binary, eff_flt)
-                meta_map = list_case_metadata(binary)
                 base = [
                     str(binary),
                     "--auto_start_stop",
                     f"--p_sip={a.p_sip}",
                     f"--port_list={','.join(ports)}",
                 ]
+                if a.dry_run and not binary.is_file():
+                    dcmd = [
+                        *_sudo(root, a.no_sudo, penv),
+                        *base,
+                        f"--gtest_filter={eff_flt}",
+                    ]
+                    print(f"\n==> [{name}] per-process on {','.join(ports)}")
+                    print(f"[dry-run] {' '.join(dcmd)}")
+                    done_profiles.add(name)
+                    continue
+                cases = list_cases(binary, eff_flt)
+                meta_map = list_case_metadata(binary)
+                if cases and not meta_map:
+                    raise HostFault(
+                        f"{name}: --list-json returned empty metadata for {len(cases)} cases"
+                    )
                 print(
                     f"\n==> [{name}] {len(cases)} per-process cases on {','.join(ports)}"
                 )

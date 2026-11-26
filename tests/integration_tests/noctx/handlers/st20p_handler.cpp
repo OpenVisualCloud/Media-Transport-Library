@@ -15,7 +15,7 @@
 St20pHandler::St20pHandler(st_tests_context* ctx, st20p_tx_ops ops_tx,
                            st20p_rx_ops ops_rx)
     : PipelineHandlerBase(ctx, nullptr, st20p_tx_create, st20p_rx_create, st20p_tx_free,
-                          st20p_rx_free) {
+                          st20p_rx_free, st20p_tx_wake_block, st20p_rx_wake_block) {
   if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
     fillSt20Ops();
   } else {
@@ -82,10 +82,10 @@ void St20pHandler::st20TxDefaultFunction(std::atomic<bool>& stopFlag) {
   ASSERT_TRUE(handle != nullptr);
   uint32_t width = sessionsOpsTx.width;
   uint32_t height = sessionsOpsTx.height;
-  enum st20_fmt fmt = (enum st20_fmt)sessionsOpsTx.input_fmt;
+  const enum st_frame_fmt fmt = sessionsOpsTx.input_fmt;
   bool interlaced = sessionsOpsTx.interlaced;
 
-  uint frameSize = st_frame_size((enum st_frame_fmt)fmt, width, height, interlaced);
+  uint frameSize = st_frame_size(fmt, width, height, interlaced);
 
   while (!stopFlag) {
     frame = st20p_tx_get_frame(handle);
@@ -94,12 +94,14 @@ void St20pHandler::st20TxDefaultFunction(std::atomic<bool>& stopFlag) {
       continue;
     }
 
-    ASSERT_NE(frame->addr[0], nullptr);
-    ASSERT_EQ(frame->fmt, (enum st_frame_fmt)fmt);
-    ASSERT_EQ(frame->width, width);
-    ASSERT_EQ(frame->height, height);
+    EXPECT_NE(frame->addr[0], nullptr);
+    EXPECT_EQ(frame->fmt, fmt);
+    EXPECT_EQ(frame->width, width);
+    EXPECT_EQ(frame->height, height);
 
-    applyTxModifier(frame->addr, frameSize);
+    if (frame->addr[0]) {
+      applyTxModifier(frame, frameSize);
+    }
 
     frame->data_size = frameSize;
     int ret = st20p_tx_put_frame(handle, frame);
@@ -128,13 +130,15 @@ void St20pHandler::st20RxDefaultFunction(std::atomic<bool>& stopFlag) {
       continue;
     }
 
-    ASSERT_NE(frame->addr[0], nullptr);
-    ASSERT_EQ(frame->fmt, (enum st_frame_fmt)fmt);
-    ASSERT_EQ(frame->width, width);
-    ASSERT_EQ(frame->height, height);
-    ASSERT_GE(frame->data_size, frameSize);
+    EXPECT_NE(frame->addr[0], nullptr);
+    EXPECT_EQ(frame->fmt, fmt);
+    EXPECT_EQ(frame->width, width);
+    EXPECT_EQ(frame->height, height);
+    EXPECT_GE(frame->data_size, frameSize);
 
-    applyRxModifier(frame->addr, frame->data_size);
+    if (frame->addr[0]) {
+      applyRxModifier(frame, frame->data_size);
+    }
 
     int ret = st20p_rx_put_frame(handle, frame);
     EXPECT_GE(ret, 0);

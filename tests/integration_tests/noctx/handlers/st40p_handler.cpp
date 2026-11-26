@@ -17,7 +17,7 @@ constexpr uint16_t kMaxAncUdwPerFrame = 255;
 St40pHandler::St40pHandler(st_tests_context* ctx, st40p_tx_ops ops_tx,
                            st40p_rx_ops ops_rx)
     : PipelineHandlerBase(ctx, nullptr, st40p_tx_create, st40p_rx_create, st40p_tx_free,
-                          st40p_rx_free) {
+                          st40p_rx_free, st40p_tx_wake_block, st40p_rx_wake_block) {
   if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
     fillSt40pOps();
   } else {
@@ -83,10 +83,16 @@ void St40pHandler::st40pTxDefaultFunction(std::atomic<bool>& stopFlag) {
       continue;
     }
 
-    uint32_t frame_idx = txFrames();
-    populateFrame(frame_info, frame_idx);
+    EXPECT_NE(frame_info->meta, nullptr);
+    EXPECT_NE(frame_info->udw_buff_addr, nullptr);
+    EXPECT_GT(frame_info->udw_buffer_size, 0u);
 
-    applyTxModifier(frame_info, frame_info->udw_buffer_fill);
+    if (frame_info->meta && frame_info->udw_buff_addr &&
+        frame_info->udw_buffer_size > 0u) {
+      uint32_t frame_idx = txFrames();
+      populateFrame(frame_info, frame_idx);
+      applyTxModifier(frame_info, frame_info->udw_buffer_fill);
+    }
 
     int ret = st40p_tx_put_frame(handle, frame_info);
     EXPECT_GE(ret, 0);
@@ -107,12 +113,14 @@ void St40pHandler::st40pRxDefaultFunction(std::atomic<bool>& stopFlag) {
       continue;
     }
 
-    ASSERT_TRUE(frame_info->meta != nullptr);
-    ASSERT_GT(frame_info->meta_num, 0u);
-    ASSERT_TRUE(frame_info->udw_buff_addr != nullptr);
-    ASSERT_GT(frame_info->udw_buffer_fill, 0u);
+    EXPECT_NE(frame_info->meta, nullptr);
+    EXPECT_GT(frame_info->meta_num, 0u);
+    EXPECT_NE(frame_info->udw_buff_addr, nullptr);
+    EXPECT_GT(frame_info->udw_buffer_fill, 0u);
 
-    applyRxModifier(frame_info, frame_info->udw_buffer_fill);
+    if (frame_info->meta && frame_info->udw_buff_addr) {
+      applyRxModifier(frame_info, frame_info->udw_buffer_fill);
+    }
 
     int ret = st40p_rx_put_frame(handle, frame_info);
     EXPECT_GE(ret, 0);
@@ -133,12 +141,14 @@ void St40pHandler::startSessionRx() {
 }
 
 void St40pHandler::populateFrame(struct st40_frame_info* frame_info, uint32_t frame_idx) {
-  ASSERT_TRUE(frame_info != nullptr);
-  ASSERT_TRUE(frame_info->meta != nullptr);
-  ASSERT_TRUE(frame_info->udw_buff_addr != nullptr);
+  EXPECT_NE(frame_info, nullptr);
+  if (!frame_info) return;
+  EXPECT_NE(frame_info->meta, nullptr);
+  EXPECT_NE(frame_info->udw_buff_addr, nullptr);
 
   size_t capacity = frame_info->udw_buffer_size;
-  ASSERT_GT(capacity, 0u);
+  EXPECT_GT(capacity, 0u);
+  if (!frame_info->meta || !frame_info->udw_buff_addr || capacity == 0u) return;
   uint32_t payload_bytes =
       static_cast<uint32_t>(std::min<size_t>(capacity, kMaxAncUdwPerFrame));
 

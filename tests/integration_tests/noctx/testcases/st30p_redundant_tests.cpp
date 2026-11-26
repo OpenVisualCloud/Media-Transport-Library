@@ -7,6 +7,9 @@
  * See README.md, "Test catalogue".
  */
 
+#include <chrono>
+#include <thread>
+
 #include "core/constants.hpp"
 #include "core/test_fixture.hpp"
 #include "handlers/st30p_handler.hpp"
@@ -22,7 +25,7 @@ constexpr int kPrimaryTxPort = 2;
 constexpr int kRedundantTxPort = 3;
 
 /* Common to both tests:
- * Config:    4 ports, else std::runtime_error; initDefaultContext(). PCM16 48 kHz
+ * Config:    4 ports, else requireStrictTopology(); initDefaultContext(). PCM16 48 kHz
  *            stereo, 1 ms packets, 10 ms buffers (B), 3 TX buffers.
  *            RX kRxPortP + kRxPortR (P and R), kRxFramebuffCnt = 100 buffers;
  *            primary TX kPrimaryTxPort -> P mcast; redundant TX kRedundantTxPort
@@ -43,7 +46,8 @@ constexpr int kRedundantTxPort = 3;
  * TODO: the tests fail with ST31_PTIME_80US */
 TEST_F(NoCtxTest, st30p_redundant_latency) {
   if (ctx->para.num_ports < 4) {
-    throw std::runtime_error("st30p_redundant_latency test ctx needs at least 4 ports");
+    requireStrictTopology("st30p_redundant_latency needs at least 4 ports");
+    return;
   }
 
   initDefaultContext();
@@ -113,17 +117,20 @@ TEST_F(NoCtxTest, st30p_redundant_latency) {
   ASSERT_TRUE(waitForSession(latencyBundle.handler->session));
 
   StartFakePtpClock();  // reset ptp time to 0
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
   sleepUntilFailure(20);
 
   latencyBundle.handler->session.stop();
   primaryBundle.handler->session.stop();
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
   rxBundle.handler->session.stop();
 
-  st30_rx_user_stats stats;
-  st30p_rx_get_session_stats(rxBundle.handler->sessionsHandleRx, &stats);
-  st30_tx_user_stats statsTxPrimary;
-  st30p_tx_get_session_stats(primaryBundle.handler->sessionsHandleTx, &statsTxPrimary);
+  st30_rx_user_stats stats = {};
+  ASSERT_EQ(st30p_rx_get_session_stats(rxBundle.handler->sessionsHandleRx, &stats), 0);
+  st30_tx_user_stats statsTxPrimary = {};
+  ASSERT_EQ(st30p_tx_get_session_stats(primaryBundle.handler->sessionsHandleTx,
+                                       &statsTxPrimary),
+            0);
 
   uint64_t packetsSend = statsTxPrimary.common.port[0].packets;
   uint64_t packetsRecievedPort0 = stats.common.port[0].packets;
@@ -155,7 +162,8 @@ TEST_F(NoCtxTest, st30p_redundant_latency) {
  * TODO: the tests fail with ST31_PTIME_80US */
 TEST_F(NoCtxTest, st30p_redundant_latency2) {
   if (ctx->para.num_ports < 4) {
-    throw std::runtime_error("st30p_redundant_latency test ctx needs at least 4 ports");
+    requireStrictTopology("st30p_redundant_latency2 needs at least 4 ports");
+    return;
   }
 
   initDefaultContext();
@@ -225,19 +233,22 @@ TEST_F(NoCtxTest, st30p_redundant_latency2) {
   ASSERT_TRUE(waitForSession(latencyBundle.handler->session));
 
   StartFakePtpClock();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   sleepUntilFailure(10);
   primaryBundle.handler->session.stop();
   sleepUntilFailure(10);
 
   latencyBundle.handler->session.stop();
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
   rxBundle.handler->session.stop();
 
-  st30_rx_user_stats stats;
-  st30p_rx_get_session_stats(rxBundle.handler->sessionsHandleRx, &stats);
-  st30_tx_user_stats statsTxRedundant;
-  st30p_tx_get_session_stats(latencyBundle.handler->sessionsHandleTx, &statsTxRedundant);
+  st30_rx_user_stats stats = {};
+  ASSERT_EQ(st30p_rx_get_session_stats(rxBundle.handler->sessionsHandleRx, &stats), 0);
+  st30_tx_user_stats statsTxRedundant = {};
+  ASSERT_EQ(st30p_tx_get_session_stats(latencyBundle.handler->sessionsHandleTx,
+                                       &statsTxRedundant),
+            0);
 
   uint64_t packetsSend = statsTxRedundant.common.port[0].packets;
   uint64_t packetsRecievedPort0 = stats.common.port[0].packets;

@@ -69,7 +69,7 @@ TEST_F(NoCtxTest, st20p_user_pacing_interlaced) {
   auto* frameTestStrategy = static_cast<St20pUserPacingOracle*>(bundle.strategy);
 
   bundle.handler->startSession();
-  mtl_start(ctx->handle);
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
 
   ASSERT_EQ(frameTestStrategy->getPacingParameters(), 0);
   EXPECT_GT(frameTestStrategy->pacing_tr_offset_ns, 0.0);
