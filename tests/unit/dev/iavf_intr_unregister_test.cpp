@@ -178,8 +178,9 @@ TEST_F(EalIntrCallback, UnregisterSyncWaitsForRunningCallback) {
 class DpdkIavfPatch : public ::testing::Test {
  protected:
   void SetUp() override {
-    if (RTE_VERSION < RTE_VERSION_NUM(26, 7, 0, 0) || !strstr(rte_version(), "_mtl_"))
-      GTEST_SKIP() << rte_version() << " is not an MTL-patched DPDK 26.07 or later";
+    if (RTE_VERSION < RTE_VERSION_NUM(26, 7, 0, 0) ||
+        RTE_VERSION >= RTE_VERSION_NUM(26, 8, 0, 0) || !strstr(rte_version(), "_mtl_"))
+      GTEST_SKIP() << rte_version() << " is not an MTL-patched DPDK 26.07";
     ASSERT_EQ(ut_eal_init(), 0);
 
     dl_iterate_phdr(find_iavf, &iavf_);
@@ -209,7 +210,7 @@ TEST_F(DpdkIavfPatch, CloseWaitsForInFlightInterruptCallback) {
       << iavf_ << " still unregisters an interrupt callback without waiting for it" << md;
 }
 
-/* Only the event-thread check of iavf_dev_event_discard() imports them in iavf. */
+/* Only the event-thread check of the 0017 event wait imports them in iavf. */
 TEST_F(DpdkIavfPatch, CloseWaitsForInFlightEventOfThePort) {
   const std::string md = rebuild("0017-net-iavf-fix-event-use-after-release-on-close.md");
   EXPECT_TRUE(imports_.count("rte_thread_self") && imports_.count("rte_thread_equal"))
