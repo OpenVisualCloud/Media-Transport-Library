@@ -190,7 +190,9 @@ that the presentation timestamp (PTS) of its buffer gives. Set
      clock. It measures the difference at the first buffer after each change of
      the base time (each start of PLAYING), and again each second. It keeps a
      change of less than 100 us, so the frame times keep the clock cadence. It
-     applies a larger change as a step of the PTP time and logs a warning.
+     applies a larger change as a step of the PTP time and logs a warning. It
+     ignores a measure whose two clock reads are more than 50 us apart, or that
+     got no PTP time, and measures again at the next buffer.
   4. The plugin adds `pts-pacing-offset`.
 - `pts-is-tai=true`: the PTS is already a TAI time in nanoseconds, as the MTL RX
   plugins and the `timeinserter` test element give it. The plugin sends the
@@ -209,18 +211,24 @@ for the buffer:
 
 - the buffer has no valid PTS, or its PTS is outside the segment;
 - with `pts-is-tai=false`: the element has no clock or is not in PLAYING, or the
-  onboard PTP (`enable-ptp=true`) is not locked yet.
+  onboard PTP (`enable-ptp=true`) is not locked yet: it locks after 5 syncs in a
+  row with a correction of less than 30 us.
 
-With `pts-is-tai=false`, the pipeline clock must run at the rate of the PTP time:
+With `pts-is-tai=false`, the frame times follow the pipeline clock (by default
+the monotonic system clock) between two steps:
 
-- With the onboard PTP, synchronize the system clock to the PTP clock with
-  `phc2sys`.
-- Without the onboard PTP, MTL reads `CLOCK_TAI`. `CLOCK_TAI` is TAI only when the
-  kernel has the TAI offset (37 s): `chrony`, `ptp4l` or `phc2sys` sets it. If the
-  offset is not set, `CLOCK_TAI` is equal to UTC.
+- With the onboard PTP, MTL keeps the PTP time on the DPDK port. Nothing
+  synchronizes the system clock to it: the plugins do not set
+  `MTL_FLAG_PHC2SYS_ENABLE`, and an external `phc2sys` has no `/dev/ptpN` for a
+  DPDK port.
+- Without the onboard PTP, MTL reads `CLOCK_TAI`. Keep the system clock
+  synchronized, with `chrony`, or with `ptp4l` and `phc2sys` on a kernel NIC.
+  `CLOCK_TAI` is TAI only when the kernel has the TAI offset (37 s), which these
+  tools set. If the offset is not set, `CLOCK_TAI` is equal to UTC.
 
-If the clock rate is not correct, the frame times move away from the PTP time
-until the next step.
+So the frame times move away from the PTP time by the rate difference of the two
+clocks, and the plugin puts them back with a step each time the difference is
+more than 100 us.
 
 The following message informs you about the amount of frames that had incorrectly
 defined timestamps by the user (this error message should be 0).
@@ -229,10 +237,17 @@ defined timestamps by the user (this error message should be 0).
  TX_VIDEO_SESSION(0,0): error user timestamp 250
 ```
 
-MTL sends each frame at the epoch nearest to its time. An epoch `T` is one frame
-time of video and ancillary data, and one packet time (`tx-ptime`) of audio. So a
-frame is late when its time is more than `T / 2` after its epoch, and the margin
-for a late buffer is `pts-pacing-offset - T / 2`. Set the offset larger than the time from the PTS
+The deadline of a frame depends on the media:
+
+- Video and ancillary data: MTL rounds the time of the frame to the nearest
+  epoch, one frame time `T`, and starts the frame at that epoch. Video starts at
+  the epoch plus `TROFFSET` (ST 2110-21:2022 §6.4). This start is the deadline.
+  The epoch can be up to `T / 2` before the time of the frame, so the margin for
+  a late buffer is `pts-pacing-offset - T / 2`, plus `TROFFSET` for video.
+- Audio: MTL sends the frame at its time. The deadline is that time, and the
+  margin is `pts-pacing-offset`.
+
+Set the offset larger than the time from the PTS
 of the buffer to the start of transmission: the latency of the pipeline and the
 time that MTL needs to prepare the frame. A live source sends each buffer after
 its PTS, so the default offset of 0 is too small for it. Use the same offset on

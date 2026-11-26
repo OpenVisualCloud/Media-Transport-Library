@@ -15,10 +15,11 @@ constexpr uint64_t kTaiNow = 1795636655000000000ULL;
 constexpr uint64_t kClockNow = 3600 * kNsPerS;
 constexpr uint64_t kBaseTime = kClockNow - 2 * kNsPerS;
 constexpr int64_t kOffset = (int64_t)(kTaiNow - kClockNow);
+constexpr uint64_t kNarrowNs = 2000;
 
 struct gst_mtl_tai_sync synced() {
   struct gst_mtl_tai_sync sync = {};
-  gst_mtl_tai_sync_update(&sync, kBaseTime, kClockNow, kOffset);
+  gst_mtl_tai_sync_update(&sync, kBaseTime, kClockNow, kOffset, kNarrowNs);
   return sync;
 }
 
@@ -47,7 +48,8 @@ TEST(GstMtlPtsTai, RunningTimeGetsTheTaiOfThePipelineClock) {
   struct gst_mtl_tai_sync ahead = {};
   uint64_t clock_ahead = kTaiNow + 37 * kNsPerS;
   gst_mtl_tai_sync_update(&ahead, clock_ahead - kNsPerS, clock_ahead,
-                          gst_mtl_clock_to_tai(clock_ahead, kTaiNow, clock_ahead));
+                          gst_mtl_clock_to_tai(clock_ahead, kTaiNow, clock_ahead),
+                          kNarrowNs);
 
   EXPECT_EQ(gst_mtl_buffer_tai(&sync, false, 0, 2 * kNsPerS, 0), kTaiNow);
   EXPECT_EQ(gst_mtl_buffer_tai(&sync, false, 0, 0, 1080), kTaiNow - 2 * kNsPerS + 1080);
@@ -80,8 +82,9 @@ TEST(GstMtlPtsTai, NewBaseTimeTakesTheNewMeasureAsFirst) {
   uint64_t resumed = kClockNow + 5 * kNsPerS;
 
   EXPECT_TRUE(gst_mtl_tai_sync_due(&sync, resumed, resumed));
-  EXPECT_EQ(gst_mtl_tai_sync_update(&sync, resumed, resumed, kOffset + 37 * kNsPerS),
-            GST_MTL_TAI_FIRST);
+  EXPECT_EQ(
+      gst_mtl_tai_sync_update(&sync, resumed, resumed, kOffset + 37 * kNsPerS, kNarrowNs),
+      GST_MTL_TAI_FIRST);
   EXPECT_EQ(sync.clock_to_tai, kOffset + 37 * (int64_t)kNsPerS);
 }
 
@@ -89,9 +92,10 @@ TEST(GstMtlPtsTai, SmallChangeKeepsTheOffsetAndTheCadence) {
   struct gst_mtl_tai_sync sync = synced();
   uint64_t later = kClockNow + kNsPerS;
 
-  EXPECT_EQ(gst_mtl_tai_sync_update(&sync, kBaseTime, later, kOffset + 50000),
+  EXPECT_EQ(gst_mtl_tai_sync_update(&sync, kBaseTime, later, kOffset + 50000, kNarrowNs),
             GST_MTL_TAI_KEPT);
-  EXPECT_EQ(gst_mtl_tai_sync_update(&sync, kBaseTime, later + kNsPerS, kOffset - 50000),
+  EXPECT_EQ(gst_mtl_tai_sync_update(&sync, kBaseTime, later + kNsPerS, kOffset - 50000,
+                                    kNarrowNs),
             GST_MTL_TAI_KEPT);
   EXPECT_EQ(sync.clock_to_tai, kOffset);
   EXPECT_FALSE(gst_mtl_tai_sync_due(&sync, kBaseTime, later + kNsPerS + 1));
@@ -101,16 +105,49 @@ TEST(GstMtlPtsTai, StepOfTheTaiSourceIsApplied) {
   struct gst_mtl_tai_sync sync = synced();
   int64_t stepped = kOffset + 37 * (int64_t)kNsPerS;
 
-  EXPECT_EQ(gst_mtl_tai_sync_update(&sync, kBaseTime, kClockNow + kNsPerS, stepped),
-            GST_MTL_TAI_STEP);
+  EXPECT_EQ(
+      gst_mtl_tai_sync_update(&sync, kBaseTime, kClockNow + kNsPerS, stepped, kNarrowNs),
+      GST_MTL_TAI_STEP);
   EXPECT_EQ(sync.clock_to_tai, stepped);
 }
 
-TEST(GstMtlPtsTai, PtpIsLockedOnlyUnder30Us) {
-  EXPECT_TRUE(gst_mtl_ptp_locked(29999));
-  EXPECT_TRUE(gst_mtl_ptp_locked(-29999));
-  EXPECT_FALSE(gst_mtl_ptp_locked(30000));
-  EXPECT_FALSE(gst_mtl_ptp_locked(-5 * (int64_t)kNsPerS));
+TEST(GstMtlPtsTai, NoGoodTaiReadKeepsTheOffsetAndRetries) {
+  struct gst_mtl_tai_sync sync = synced();
+  uint64_t later = kClockNow + kNsPerS;
+
+  EXPECT_EQ(gst_mtl_tai_sync_update(&sync, kBaseTime, later, 0, GST_MTL_TIME_NONE),
+            GST_MTL_TAI_REJECTED);
+  EXPECT_EQ(sync.clock_to_tai, kOffset);
+  EXPECT_TRUE(gst_mtl_tai_sync_due(&sync, kBaseTime, later));
+}
+
+TEST(GstMtlPtsTai, WideBracketIsRejected) {
+  struct gst_mtl_tai_sync sync = synced();
+  struct gst_mtl_tai_sync first = {};
+  int64_t stepped = kOffset + 37 * (int64_t)kNsPerS;
+  uint64_t later = kClockNow + kNsPerS;
+
+  EXPECT_EQ(gst_mtl_tai_sync_update(&sync, kBaseTime, later, kOffset + 150000,
+                                    GST_MTL_TAI_STEP_NS / 2 + 1),
+            GST_MTL_TAI_REJECTED);
+  EXPECT_EQ(sync.clock_to_tai, kOffset);
+  EXPECT_EQ(
+      gst_mtl_tai_sync_update(&sync, kBaseTime, later, stepped, GST_MTL_TAI_STEP_NS / 2),
+      GST_MTL_TAI_STEP);
+  EXPECT_EQ(gst_mtl_tai_sync_update(&first, kBaseTime, kClockNow, kOffset,
+                                    GST_MTL_TAI_STEP_NS / 2 + 1),
+            GST_MTL_TAI_REJECTED);
+  EXPECT_EQ(gst_mtl_buffer_tai(&first, false, 0, kNsPerS, 0), 0u);
+}
+
+TEST(GstMtlPtsTai, PtpLocksAfterFiveSyncsInARowUnder30Us) {
+  struct gst_mtl_ptp_lock lock = {};
+
+  for (int i = 0; i < 4; i++) EXPECT_FALSE(gst_mtl_ptp_lock_update(&lock, 29999));
+  EXPECT_FALSE(gst_mtl_ptp_lock_update(&lock, 30000));
+  for (int i = 0; i < 4; i++) EXPECT_FALSE(gst_mtl_ptp_lock_update(&lock, -29999));
+  EXPECT_TRUE(gst_mtl_ptp_lock_update(&lock, 0));
+  EXPECT_TRUE(gst_mtl_ptp_lock_update(&lock, -5 * (int64_t)kNsPerS));
 }
 
 TEST(GstMtlAudioFramer, FrameSpanningTwoBuffersKeepsItsFirstSampleTime) {

@@ -433,8 +433,7 @@ static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps*
     return FALSE;
   }
 
-  sink->frame_size = st30p_tx_frame_size(sink->tx_handle);
-  sink->framer.frame_size = sink->frame_size;
+  sink->framer.frame_size = st30p_tx_frame_size(sink->tx_handle);
 
   if (sink->async_session_create) {
     pthread_mutex_lock(&sink->session_mutex);
@@ -635,15 +634,22 @@ static void gst_mtl_st30p_tx_finalize(GObject* object) {
 }
 
 static gboolean gst_mtl_st30p_tx_cur_frame_flush(Gst_Mtl_St30p_Tx* sink) {
-  if (sink->cur_frame) {
-    gst_mtl_st30p_tx_stamp(sink, sink->cur_frame);
-    if (st30p_tx_put_frame(sink->tx_handle, sink->cur_frame)) {
-      GST_ERROR("Failed to put frame");
-      return FALSE;
-    }
+  if (!sink->cur_frame) return TRUE;
+
+  /* a frame with no samples since a flush holds only dropped ones */
+  if (!sink->framer.fill) {
+    st30p_tx_put_frame_abort(sink->tx_handle, sink->cur_frame);
     sink->cur_frame = NULL;
-    gst_mtl_audio_framer_reset(&sink->framer);
+    return TRUE;
   }
+
+  gst_mtl_st30p_tx_stamp(sink, sink->cur_frame);
+  if (st30p_tx_put_frame(sink->tx_handle, sink->cur_frame)) {
+    GST_ERROR("Failed to put frame");
+    return FALSE;
+  }
+  sink->cur_frame = NULL;
+  gst_mtl_audio_framer_reset(&sink->framer);
   return TRUE;
 }
 

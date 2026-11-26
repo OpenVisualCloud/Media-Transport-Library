@@ -76,7 +76,7 @@ typedef struct GeneralArgs {
   gboolean dma_auto;
 } GeneralArgs;
 
-/* PTS to TAI state of one TX element, used by its streaming thread only */
+/* PTS to TAI state of one TX element; the streaming thread owns all but pts_is_tai */
 typedef struct GstMtlPtsPacing {
   gboolean pts_is_tai;
   GstSegment segment;

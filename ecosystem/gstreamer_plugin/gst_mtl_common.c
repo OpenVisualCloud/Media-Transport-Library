@@ -588,11 +588,12 @@ guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port,
 
 /* 0 until the onboard PTP locks; the TX plugins pace by PTS only after it */
 static gint tai_ready;
+static struct gst_mtl_ptp_lock ptp_lock;
 
 static void gst_mtl_common_ptp_sync_notify(void* priv,
                                            struct mtl_ptp_sync_notify_meta* meta) {
   (void)priv;
-  if (gst_mtl_ptp_locked(meta->delta)) g_atomic_int_set(&tai_ready, 1);
+  if (gst_mtl_ptp_lock_update(&ptp_lock, meta->delta)) g_atomic_int_set(&tai_ready, 1);
 }
 
 /* ST 2110-10 PTP time is TAI; without the onboard PTP MTL would read UTC */
@@ -625,6 +626,7 @@ gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init
   if (general_args->enable_onboard_ptp) {
     mtl_init_params->flags |= MTL_FLAG_PTP_ENABLE;
     mtl_init_params->ptp_sync_notify = gst_mtl_common_ptp_sync_notify;
+    memset(&ptp_lock, 0, sizeof(ptp_lock));
     g_atomic_int_set(&tai_ready, 0);
     GST_INFO("Using MTL library's onboard PTP");
   } else {
@@ -816,10 +818,10 @@ void gst_mtl_common_pts_pacing_init(GstMtlPtsPacing* pacing) {
   pacing->no_tai_logged = FALSE;
 }
 
-/* the narrowest of a few brackets; the TAI read is raw, as the cached one has no lock */
-static int64_t gst_mtl_common_measure_clock_to_tai(GstClock* clock, mtl_handle mtl) {
+/* returns the narrowest bracket; raw TAI read, as mtl_ptp_read_time() caches unlocked */
+static GstClockTime gst_mtl_common_measure_clock_to_tai(GstClock* clock, mtl_handle mtl,
+                                                        int64_t* clock_to_tai) {
   GstClockTime best = GST_CLOCK_TIME_NONE;
-  int64_t clock_to_tai = 0;
 
   for (int i = 0; i < GST_MTL_TAI_BRACKET_TRIES && best > GST_MTL_TAI_BRACKET_NS; i++) {
     GstClockTime before = gst_clock_get_time(clock);
@@ -828,18 +830,18 @@ static int64_t gst_mtl_common_measure_clock_to_tai(GstClock* clock, mtl_handle m
 
     if (tai && after - before < best) {
       best = after - before;
-      clock_to_tai = gst_mtl_clock_to_tai(before, tai, after);
+      *clock_to_tai = gst_mtl_clock_to_tai(before, tai, after);
     }
   }
-  return clock_to_tai;
+  return best;
 }
 
 static gboolean gst_mtl_common_tai_sync(GstElement* element, mtl_handle mtl,
                                         GstMtlPtsPacing* pacing) {
   struct gst_mtl_tai_sync* sync = &pacing->sync;
   GstClock* clock = NULL;
-  GstClockTime base_time, now;
-  int64_t measured;
+  GstClockTime base_time, now, bracket;
+  int64_t measured = 0;
 
   if (!g_atomic_int_get(&tai_ready)) return FALSE;
 
@@ -852,8 +854,8 @@ static gboolean gst_mtl_common_tai_sync(GstElement* element, mtl_handle mtl,
 
   now = gst_clock_get_time(clock);
   if (gst_mtl_tai_sync_due(sync, base_time, now)) {
-    measured = gst_mtl_common_measure_clock_to_tai(clock, mtl);
-    switch (gst_mtl_tai_sync_update(sync, base_time, now, measured)) {
+    bracket = gst_mtl_common_measure_clock_to_tai(clock, mtl, &measured);
+    switch (gst_mtl_tai_sync_update(sync, base_time, now, measured, bracket)) {
       case GST_MTL_TAI_FIRST:
         GST_INFO_OBJECT(element, "Clock to TAI offset %" G_GINT64_FORMAT " ns",
                         sync->clock_to_tai);
@@ -864,6 +866,10 @@ static gboolean gst_mtl_common_tai_sync(GstElement* element, mtl_handle mtl,
                            "TAI stepped, clock to TAI offset %" G_GINT64_FORMAT " ns",
                            sync->clock_to_tai);
         pacing->no_tai_logged = FALSE;
+        break;
+      case GST_MTL_TAI_REJECTED:
+        GST_DEBUG_OBJECT(element, "No TAI bracket under %" G_GINT64_FORMAT " ns, retry",
+                         (gint64)(GST_MTL_TAI_STEP_NS / 2));
         break;
       default:
         break;

@@ -15,7 +15,8 @@
 #define GST_MTL_TAI_STEP_NS 100000LL
 #define GST_MTL_TAI_BRACKET_TRIES 5
 #define GST_MTL_TAI_BRACKET_NS 10000ULL
-/* the PTP delta under which MTL takes a sync result as expected (mt_ptp.c) */
+/* the onboard PTP is locked after this many syncs in a row under GST_MTL_PTP_LOCK_NS */
+#define GST_MTL_PTP_LOCK_SYNCS 5
 #define GST_MTL_PTP_LOCK_NS 30000LL
 
 /* clock_to_tai is TAI minus pipeline clock time, valid for one base time */
@@ -30,6 +31,12 @@ enum gst_mtl_tai_update {
   GST_MTL_TAI_KEPT,
   GST_MTL_TAI_FIRST,
   GST_MTL_TAI_STEP,
+  GST_MTL_TAI_REJECTED,
+};
+
+struct gst_mtl_ptp_lock {
+  uint32_t good_syncs;
+  bool locked;
 };
 
 /* cuts audio buffers into frames of frame_size bytes; a TAI of 0 is MTL pacing */
@@ -49,8 +56,13 @@ static inline int64_t gst_mtl_clock_to_tai(uint64_t clock_before, uint64_t tai,
   return (int64_t)(tai - (clock_before + (clock_after - clock_before) / 2));
 }
 
-static inline bool gst_mtl_ptp_locked(int64_t delta) {
-  return llabs(delta) < GST_MTL_PTP_LOCK_NS;
+/* stays locked once locked: the re-measure follows a later step */
+static inline bool gst_mtl_ptp_lock_update(struct gst_mtl_ptp_lock* l, int64_t delta) {
+  if (!l->locked) {
+    l->good_syncs = llabs(delta) < GST_MTL_PTP_LOCK_NS ? l->good_syncs + 1 : 0;
+    l->locked = l->good_syncs >= GST_MTL_PTP_LOCK_SYNCS;
+  }
+  return l->locked;
 }
 
 static inline bool gst_mtl_tai_sync_due(const struct gst_mtl_tai_sync* s,
@@ -59,12 +71,15 @@ static inline bool gst_mtl_tai_sync_due(const struct gst_mtl_tai_sync* s,
          clock_now - s->measured_at >= GST_MTL_TAI_RESYNC_NS;
 }
 
-/* a change under GST_MTL_TAI_STEP_NS is noise: keep the offset, so the cadence stays */
+/* keep a change under GST_MTL_TAI_STEP_NS; a bracket over half of it changes nothing */
 static inline enum gst_mtl_tai_update gst_mtl_tai_sync_update(struct gst_mtl_tai_sync* s,
                                                               uint64_t base_time,
                                                               uint64_t clock_now,
-                                                              int64_t measured) {
+                                                              int64_t measured,
+                                                              uint64_t bracket_ns) {
   enum gst_mtl_tai_update update = GST_MTL_TAI_KEPT;
+
+  if (bracket_ns > GST_MTL_TAI_STEP_NS / 2) return GST_MTL_TAI_REJECTED;
 
   if (!s->valid || base_time != s->base_time)
     update = GST_MTL_TAI_FIRST;
