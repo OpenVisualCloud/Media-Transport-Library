@@ -61,7 +61,9 @@ def rtp_ns(ts: int, t: int) -> float:
     return (ts + k * 2**32) * 10**9 / MEDIA_CLOCK
 
 
-def analyze(path: str, fps: str = "p59", video: bool = True) -> dict:
+def analyze(
+    path: str, fps: str = "p59", video: bool = True, extended: bool = True
+) -> dict:
     T = float(FRAME_TIME_NS[fps])
     frames, cur, breaks = [], [], []
     prev = None
@@ -70,8 +72,9 @@ def analyze(path: str, fps: str = "p59", video: bool = True) -> dict:
         n += 1
         if video and length < SMALL_PACKET:
             continue
-        full = (ext << 16) | seq if video else seq
-        mod = 2**32 if video else 2**16
+        # The extended sequence number is in the RFC 4175 header (ST 2110-20) only.
+        full = (ext << 16) | seq if extended else seq
+        mod = 2**32 if extended else 2**16
         if prev is not None and full != (prev + 1) % mod:
             breaks.append({"at_pkt": n, "missing": (full - prev - 1) % mod})
         prev = full
@@ -119,9 +122,12 @@ def main(argv=None) -> int:
     ap.add_argument(
         "--audio", action="store_true", help="no extended sequence number, no frames"
     )
+    ap.add_argument(
+        "--st22", action="store_true", help="ST 2110-22: the RTP sequence number only"
+    )
     a = ap.parse_args(argv)
     for p in a.pcap:
-        r = analyze(p, a.fps, video=not a.audio)
+        r = analyze(p, a.fps, video=not a.audio, extended=not (a.audio or a.st22))
         print(p)
         for k, v in r.items():
             print(f"  {k}: {v}")

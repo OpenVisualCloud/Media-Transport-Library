@@ -864,7 +864,9 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
             )
             rx_worker.receives.append(f22.sid)
             tx_argv += [
-                "-vf", "format=yuv422p10le", "-c:v", "libsvtjpegxs", "-bpp", "3",
+                # The worker starts on a 2-CPU mask (its MTL lcores), so the encoder
+                # would size its thread pool to 2 and miss frame times under load.
+                "-vf", "format=yuv422p10le", "-c:v", "libsvtjpegxs", "-bpp", "3", "-threads", "6",
                 *ffmpeg_common(host, tx_ports[1], tx_ip),
                 "-p_tx_ip", f22.dip, "-udp_port", str(f22.port), "-payload_type", "114",
                 "-f", "mtl_st22", "-",
@@ -887,6 +889,8 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
             *ffmpeg_common(host, rx_ports[2 % len(rx_ports)], rx_ip),
             "-p_rx_ip", f20.dip, "-udp_port", str(f20.port), "-payload_type", "112",
             "-fps", "59.94", "-pix_fmt", "yuv422p10le", "-video_size", "1920x1080",
+            # The default frame wait is short: the RX starts before ffmpeg-tx sends.
+            "-timeout_s", "60",
             "-f", "mtl_st20p", "-i", "k",
             "-t", str(duration_s),
             "-vf", "format=rgb24", "-f", "framemd5", "-y", "ffmpeg-rx-st20p.md5",
