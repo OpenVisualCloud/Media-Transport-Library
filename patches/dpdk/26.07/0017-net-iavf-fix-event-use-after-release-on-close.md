@@ -223,14 +223,14 @@ run patched 20
 sudo dmesg | grep -c 'dpdk-iavf-event.*segfault'
 ```
 
-Expected (from the code, to be measured):
+Results. The first two rows were measured on 2026-11-26 on one E830 VF (ice 2.7.6 PF) of a Proxmox VM, with `UP_MS=300 AFTER_MS=200`. The last two rows are not measured:
 
 | Build | Widening | Result |
 | --- | --- | --- |
-| stock (0001-0014) | `AT_CLOSE` + `DELAY_US=20000` | 20 of 20 `exit 139`; each run adds one `dpdk-iavf-event[...]: segfault at 60 ... in librte_net_iavf.so` line to the kernel log |
-| patched (0001-0017) | `AT_CLOSE` + `DELAY_US=20000` | 20 of 20 `exit 0` and `clean exit`; a close takes up to 20 ms longer while it waits for the event in hand |
-| stock | `DELAY_US=200000`, no `AT_CLOSE`, `UP_MS=0` | a crash only when the PF sends an event of a port in the 200 ms before its close; the rate depends on the PF |
-| patched | the same | 0 crashes |
+| stock (0001-0014) | `AT_CLOSE` + `DELAY_US=20000` | measured: 20 of 20 `exit 139`; 20 `dpdk-iavf-event[...]: segfault at 60 ... in librte_net_iavf.so.26.2` lines in the kernel log |
+| patched (0001-0017) | `AT_CLOSE` + `DELAY_US=20000` | measured: 20 of 20 `exit 0` and `clean exit`; no kernel line |
+| stock | `DELAY_US=200000`, no `AT_CLOSE`, `UP_MS=0` | not measured: a crash only when the PF sends an event of a port in the 200 ms before its close; the rate depends on the PF |
+| patched | the same | not measured: 0 crashes expected |
 
 With `IAVF_DBG_EVENT_AT_CLOSE=1` and no delay, the stock build also crashes, but only when the thread is slower than the release.
 
