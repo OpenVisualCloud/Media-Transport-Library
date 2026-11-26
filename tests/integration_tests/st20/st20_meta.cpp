@@ -19,6 +19,12 @@ int st20_rx_meta_frame_ready(void* priv, void* frame, struct st20_rx_frame_meta*
   if (expect_meta->height != meta->height) ctx->rx_meta_fail_cnt++;
   if (expect_meta->fps != meta->fps) ctx->rx_meta_fail_cnt++;
   if (expect_meta->fmt != meta->fmt) ctx->rx_meta_fail_cnt++;
+  if (meta->tfmt != ST10_TIMESTAMP_FMT_MEDIA_CLK) ctx->rx_meta_fail_cnt++;
+  if (meta->frame_total_size != ctx->frame_size) ctx->rx_meta_fail_cnt++;
+  if (meta->rtp_timestamp != meta->timestamp) ctx->rx_meta_fail_cnt++;
+  if (meta->pkts_total == 0) ctx->rx_meta_fail_cnt++;
+  if (meta->pkts_recv[MTL_SESSION_PORT_P] != meta->pkts_total) ctx->rx_meta_fail_cnt++;
+  if (meta->timestamp_last_pkt < meta->timestamp_first_pkt) ctx->rx_meta_fail_cnt++;
   if (expect_meta->timestamp == meta->timestamp) ctx->rx_meta_fail_cnt++;
   expect_meta->timestamp = meta->timestamp;
   if (!st_is_frame_complete(meta->status)) {

@@ -570,6 +570,24 @@ void St20pDefaultPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_s
     ASSERT_EQ(st20p_tx_get_pacing_params(st20pParent->sessionsHandleTx, &trOffsetNs,
                                          &trsNs, &vrxPkts),
               0);
+    const auto& tx_ops = st20pParent->sessionsOpsTx;
+    const double frame_time_ns = static_cast<double>(NS_PER_S) *
+                                 static_cast<double>(rate.den) /
+                                 static_cast<double>(rate.mul);
+    double expected_tr_offset_ns = tx_ops.height >= 1080u
+                                       ? frame_time_ns * (43.0 / 1125.0)
+                                       : frame_time_ns * (28.0 / 750.0);
+    if (tx_ops.interlaced) {
+      if (tx_ops.height == 480u)
+        expected_tr_offset_ns = frame_time_ns * (20.0 / 525.0) * 2.0;
+      else if (tx_ops.height == 576u)
+        expected_tr_offset_ns = frame_time_ns * (26.0 / 625.0) * 2.0;
+      else
+        expected_tr_offset_ns = frame_time_ns * (22.0 / 1125.0) * 2.0;
+    }
+    EXPECT_NEAR(trOffsetNs, expected_tr_offset_ns, expected_tr_offset_ns * 0.05)
+        << "trOffsetNs=" << trOffsetNs
+        << " differs from ST 2110-21 narrow TR_OFFSET=" << expected_tr_offset_ns;
     const uint64_t rtp_ns = st10_media_clk_to_tai(
         mtl_ptp_read_time(st20pParent->ctx->handle), f->rtp_timestamp, VIDEO_CLOCK_HZ);
     const long double start = rtp_ns - (trOffsetNs - vrxPkts * (long double)trsNs);

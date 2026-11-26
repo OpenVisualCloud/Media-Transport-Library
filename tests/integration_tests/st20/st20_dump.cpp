@@ -4,6 +4,7 @@
 
 #include <sys/stat.h>
 
+#include "../harness/pcapng.hpp"
 #include "st20_common.h"
 
 namespace {
@@ -51,6 +52,7 @@ void st20_rx_dump_test(const std::vector<St20StreamSpec>& streams) {
       struct stat st_buf = {};
       EXPECT_EQ(stat(meta.file_name[MTL_SESSION_PORT_P], &st_buf), 0);
       EXPECT_GT(st_buf.st_size, 0);
+      mtl_test::verify_pcapng_file(meta.file_name[MTL_SESSION_PORT_P], kMaxDumpPackets);
     }
   }
 

@@ -162,13 +162,14 @@ TEST_F(NoCtxTest, st20p_tx_multithread_stability) {
 
   struct st20_tx_user_stats stats;
   memset(&stats, 0, sizeof(stats));
-  if (st20p_tx_get_session_stats(tx, &stats) == 0) {
-    EXPECT_LE(stats.common.stat_frames_sent, produced.load())
-        << "transport reported more sent than produced (duplicate transmit)";
-    fprintf(stderr,
-            "st20p_tx_multithread_stability: produced %llu, sent %llu, dropped %llu\n",
-            (unsigned long long)produced.load(),
-            (unsigned long long)stats.common.stat_frames_sent,
-            (unsigned long long)stats.common.stat_frames_dropped);
-  }
+  ASSERT_EQ(st20p_tx_get_session_stats(tx, &stats), 0);
+  EXPECT_GT(stats.common.stat_frames_sent, static_cast<uint64_t>(kSeconds) * 15u)
+      << "transport sent too few frames for a " << kSeconds << "s 25fps run";
+  EXPECT_LE(stats.common.stat_frames_sent, produced.load())
+      << "transport reported more sent than produced (duplicate transmit)";
+  fprintf(stderr,
+          "st20p_tx_multithread_stability: produced %llu, sent %llu, dropped %llu\n",
+          (unsigned long long)produced.load(),
+          (unsigned long long)stats.common.stat_frames_sent,
+          (unsigned long long)stats.common.stat_frames_dropped);
 }

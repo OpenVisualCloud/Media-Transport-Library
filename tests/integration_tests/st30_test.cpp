@@ -190,6 +190,8 @@ static int st30_rx_meta_frame_ready(void* priv, void* frame,
   if (expect_meta->sampling != meta->sampling || expect_meta->channel != meta->channel ||
       expect_meta->fmt != meta->fmt || meta->status != ST_FRAME_STATUS_COMPLETE ||
       meta->frame_recv_size != ctx->frame_size ||
+      meta->tfmt != ST10_TIMESTAMP_FMT_MEDIA_CLK ||
+      meta->rtp_timestamp != meta->timestamp || meta->timestamp_first_pkt == 0 ||
       (prev_rec > 0 && expect_meta->timestamp == meta->timestamp)) {
     __atomic_fetch_add(&ctx->rx_meta_fail_cnt, 1, __ATOMIC_RELAXED);
   }
@@ -203,9 +205,16 @@ struct St30TpState {
   tests_context* ctx = nullptr;
   std::atomic<st30_rx_handle> rx_handle{nullptr};
   std::atomic<int> cb_cnt{0};
+  std::atomic<int> steady_cnt{0};
   std::atomic<int> bad_port_cnt{0};
   std::atomic<int> null_tp_cnt{0};
   std::atomic<int> zero_pkts_cnt{0};
+  std::atomic<int> pkts_range_fail_cnt{0};
+  std::atomic<int> ipt_avg_fail_cnt{0};
+  std::atomic<int> ipt_order_fail_cnt{0};
+  std::atomic<int> dpvr_order_fail_cnt{0};
+  std::atomic<int> tsdf_fail_cnt{0};
+  std::atomic<int> non_compliant_cnt{0};
 };
 
 static int st30_rx_tp_frame_ready(void* priv, void* frame,
@@ -223,14 +232,106 @@ static int st30_rx_tp_notify(void* priv, enum mtl_session_port port,
                              struct st30_rx_tp_meta* tp) {
   auto* state = static_cast<St30TpState*>(priv);
   if (!state) return -EIO;
+  const int report_num = state->cb_cnt.fetch_add(1, std::memory_order_relaxed) + 1;
   if (port != MTL_SESSION_PORT_P)
     state->bad_port_cnt.fetch_add(1, std::memory_order_relaxed);
-  if (!tp)
+  if (!tp) {
     state->null_tp_cnt.fetch_add(1, std::memory_order_relaxed);
-  else if (tp->pkts_cnt == 0)
-    state->zero_pkts_cnt.fetch_add(1, std::memory_order_relaxed);
-  state->cb_cnt.fetch_add(1, std::memory_order_relaxed);
+    return 0;
+  }
+  if (tp->pkts_cnt == 0) state->zero_pkts_cnt.fetch_add(1, std::memory_order_relaxed);
+  /* Skip report #1 due to pre-existing ra_tp_init ipt_min == 0 quirk. */
+  if (report_num >= 2) {
+    state->steady_cnt.fetch_add(1, std::memory_order_relaxed);
+    if (tp->pkts_cnt < 150u || tp->pkts_cnt > 250u)
+      state->pkts_range_fail_cnt.fetch_add(1, std::memory_order_relaxed);
+    if (tp->ipt_avg < 800000.0f || tp->ipt_avg > 1200000.0f)
+      state->ipt_avg_fail_cnt.fetch_add(1, std::memory_order_relaxed);
+    if (tp->ipt_max < tp->ipt_min)
+      state->ipt_order_fail_cnt.fetch_add(1, std::memory_order_relaxed);
+    if (tp->dpvr_max < tp->dpvr_min)
+      state->dpvr_order_fail_cnt.fetch_add(1, std::memory_order_relaxed);
+    if (tp->tsdf < 0) state->tsdf_fail_cnt.fetch_add(1, std::memory_order_relaxed);
+    if (tp->compliant == ST_RX_TP_COMPLIANT_FAILED)
+      state->non_compliant_cnt.fetch_add(1, std::memory_order_relaxed);
+  }
   return 0;
+}
+
+struct St30SwitchState {
+  tests_context* ctx = nullptr;
+  std::atomic<st30_rx_handle> rx_handle{nullptr};
+  size_t frame_size = 0;
+  std::atomic<int> rx_from_tx[2]{};
+  std::atomic<int> rx_from_other{0};
+
+  void reset() {
+    rx_from_tx[0].store(0, std::memory_order_relaxed);
+    rx_from_tx[1].store(0, std::memory_order_relaxed);
+    rx_from_other.store(0, std::memory_order_relaxed);
+  }
+};
+
+static constexpr uint8_t kSt30SwitchPattern[2] = {0xA0, 0xB1};
+
+static int st30_switch_rx_frame_ready(void* priv, void* frame,
+                                      struct st30_rx_frame_meta* /*meta*/) {
+  auto* state = static_cast<St30SwitchState*>(priv);
+  if (!state) return -EIO;
+  auto handle = state->rx_handle.load(std::memory_order_acquire);
+  if (!handle) return -EIO;
+  const auto* bytes = static_cast<const uint8_t*>(frame);
+  if (state->frame_size > 0) {
+    bool match0 = true;
+    bool match1 = true;
+    for (size_t i = 0; i < state->frame_size && (match0 || match1); i++) {
+      if (bytes[i] != kSt30SwitchPattern[0]) match0 = false;
+      if (bytes[i] != kSt30SwitchPattern[1]) match1 = false;
+    }
+    if (match0)
+      state->rx_from_tx[0].fetch_add(1, std::memory_order_relaxed);
+    else if (match1)
+      state->rx_from_tx[1].fetch_add(1, std::memory_order_relaxed);
+    else
+      state->rx_from_other.fetch_add(1, std::memory_order_relaxed);
+  }
+  put_st30_rx_framebuff(handle, frame);
+  __atomic_fetch_add(&state->ctx->fb_rec, 1, __ATOMIC_RELAXED);
+  return 0;
+}
+
+static void st30_switch_rx_get_packet(St30SwitchState* state) {
+  auto* ctx = state->ctx;
+  auto handle = state->rx_handle.load(std::memory_order_acquire);
+  void* usrptr = nullptr;
+  uint16_t mbuf_len = 0;
+  std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
+  while (!ctx->stop) {
+    void* mbuf = st30_rx_get_mbuf(handle, &usrptr, &mbuf_len);
+    if (!mbuf) {
+      lck.lock();
+      mbuf = st30_rx_get_mbuf(handle, &usrptr, &mbuf_len);
+      if (mbuf) {
+        lck.unlock();
+      } else {
+        if (!ctx->stop) ctx->cv.wait(lck);
+        lck.unlock();
+        continue;
+      }
+    }
+    if (static_cast<size_t>(mbuf_len) >= sizeof(struct st_rfc3550_rtp_hdr)) {
+      const auto* rtp = static_cast<const struct st_rfc3550_rtp_hdr*>(usrptr);
+      const uint32_t ssrc = ntohl(rtp->ssrc);
+      if (ssrc == 0x66666666u)
+        state->rx_from_tx[0].fetch_add(1, std::memory_order_relaxed);
+      else if (ssrc == 0x66666667u)
+        state->rx_from_tx[1].fetch_add(1, std::memory_order_relaxed);
+      else
+        state->rx_from_other.fetch_add(1, std::memory_order_relaxed);
+    }
+    __atomic_fetch_add(&ctx->fb_rec, 1, __ATOMIC_RELAXED);
+    st30_rx_put_mbuf(handle, mbuf);
+  }
 }
 
 namespace {
@@ -247,7 +348,93 @@ struct St30RxOptions {
   bool check_sha = false;
   bool check_meta = false;
   bool user_timestamp = false;
+  bool check_zero_loss = false;
 };
+
+int expected_st30_wire_pkt_size(const St30SessionSpec& spec) {
+  int sample_bytes = 0;
+  switch (spec.fmt) {
+    case ST30_FMT_PCM8:
+      sample_bytes = 1;
+      break;
+    case ST30_FMT_PCM16:
+      sample_bytes = 2;
+      break;
+    case ST30_FMT_PCM24:
+      sample_bytes = 3;
+      break;
+    case ST31_FMT_AM824:
+      sample_bytes = 4;
+      break;
+    default:
+      return -1;
+  }
+  int samples_per_ch = 0;
+  if (spec.sampling == ST30_SAMPLING_48K) {
+    switch (spec.ptime) {
+      case ST30_PTIME_1MS:
+        samples_per_ch = 48;
+        break;
+      case ST30_PTIME_125US:
+        samples_per_ch = 6;
+        break;
+      case ST30_PTIME_250US:
+        samples_per_ch = 12;
+        break;
+      case ST30_PTIME_333US:
+        samples_per_ch = 16;
+        break;
+      case ST30_PTIME_4MS:
+        samples_per_ch = 192;
+        break;
+      case ST31_PTIME_80US:
+        samples_per_ch = 4;
+        break;
+      default:
+        return -1;
+    }
+  } else if (spec.sampling == ST30_SAMPLING_96K) {
+    switch (spec.ptime) {
+      case ST30_PTIME_1MS:
+        samples_per_ch = 96;
+        break;
+      case ST30_PTIME_125US:
+        samples_per_ch = 12;
+        break;
+      case ST30_PTIME_250US:
+        samples_per_ch = 24;
+        break;
+      case ST30_PTIME_333US:
+        samples_per_ch = 32;
+        break;
+      case ST30_PTIME_4MS:
+        samples_per_ch = 384;
+        break;
+      case ST31_PTIME_80US:
+        samples_per_ch = 8;
+        break;
+      default:
+        return -1;
+    }
+  } else if (spec.sampling == ST31_SAMPLING_44K) {
+    switch (spec.ptime) {
+      case ST31_PTIME_1_09MS:
+        samples_per_ch = 48;
+        break;
+      case ST31_PTIME_0_14MS:
+        samples_per_ch = 6;
+        break;
+      case ST31_PTIME_0_09MS:
+        samples_per_ch = 4;
+        break;
+      default:
+        return -1;
+    }
+  } else {
+    return -1;
+  }
+  return samples_per_ch * static_cast<int>(spec.channel) * sample_bytes;
+}
 
 using ScopedSt30Tx = mtl_test::ScopedHandle<st30_tx_handle, st30_tx_free>;
 using ScopedSt30Rx = mtl_test::ScopedHandle<st30_rx_handle, st30_rx_free>;
@@ -462,6 +649,10 @@ static void st30_tx_fps_test(const std::vector<St30SessionSpec>& specs) {
     }
   }
 
+  struct mtl_port_status port_before;
+  memset(&port_before, 0, sizeof(port_before));
+  EXPECT_EQ(mtl_get_port_stats(m_handle, MTL_PORT_P, &port_before), 0);
+
   EXPECT_GE(mtl_guard.start(), 0);
   auto rate_res =
       mtl_test::measure_rate_window(raw_tx, mtl_test::tx_frames, kSt30RateWarmupFrames,
@@ -472,9 +663,19 @@ static void st30_tx_fps_test(const std::vector<St30SessionSpec>& specs) {
   for (auto& w : tx_workers) w.stop();
   EXPECT_GE(mtl_guard.stop(), 0);
 
+  struct mtl_port_status port_after;
+  memset(&port_after, 0, sizeof(port_after));
+  EXPECT_EQ(mtl_get_port_stats(m_handle, MTL_PORT_P, &port_after), 0);
+  EXPECT_GT(port_after.tx_packets, port_before.tx_packets + 100u);
+  EXPECT_GT(port_after.tx_bytes, port_before.tx_bytes + 10000u);
+
   for (size_t i = 0; i < sessions; i++) {
     const int fb_send = mtl_test::tx_frames(raw_tx[i]);
     EXPECT_GT(fb_send, 0);
+    struct st30_tx_user_stats tx_stats;
+    memset(&tx_stats, 0, sizeof(tx_stats));
+    EXPECT_EQ(st30_tx_get_session_stats(tx_handles[i].get(), &tx_stats), 0);
+    EXPECT_GT(tx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
     info("%s, session %zu fb_send %d framerate %f\n", __func__, i, fb_send,
          rate_res.rate[i]);
     EXPECT_NEAR(rate_res.rate[i], expect_framerate[i], expect_framerate[i] * 0.1);
@@ -509,6 +710,9 @@ static void st30_rx_fps_test(const std::vector<St30SessionSpec>& specs,
 
     struct st30_tx_ops ops_tx;
     st30_tx_ops_init(raw_tx[i], &ops_tx, spec, /*loopback=*/true, udp_port, ssrc);
+    const int expect_pkt_sz = expected_st30_wire_pkt_size(spec);
+    ASSERT_GT(expect_pkt_sz, 0);
+    EXPECT_EQ(ops_tx.framebuff_size, static_cast<uint32_t>(expect_pkt_sz));
     if (opts.user_timestamp) {
       ops_tx.get_next_frame = tx_audio_next_frame_timestamp;
       ops_tx.flags |= ST30_TX_FLAG_USER_PACING;
@@ -601,12 +805,18 @@ static void st30_rx_fps_test(const std::vector<St30SessionSpec>& specs,
   for (size_t i = 0; i < sessions; i++) {
     const int fb_rec = mtl_test::rx_frames(raw_rx[i]);
     EXPECT_GT(fb_rec, 0);
-    EXPECT_LE(mtl_test::relaxed_load(&raw_rx[i]->sha_fail_cnt), 2);
+    EXPECT_EQ(mtl_test::relaxed_load(&raw_rx[i]->sha_fail_cnt), 0);
     if (opts.check_sha) {
       EXPECT_GT(mtl_test::sha_checked_frames(raw_rx[i]), 0);
     }
     if (opts.check_meta) {
-      EXPECT_LE(mtl_test::relaxed_load(&raw_rx[i]->rx_meta_fail_cnt), 2);
+      EXPECT_EQ(mtl_test::relaxed_load(&raw_rx[i]->rx_meta_fail_cnt), 0);
+    }
+    if (opts.check_zero_loss) {
+      struct st30_rx_user_stats rx_stats;
+      memset(&rx_stats, 0, sizeof(rx_stats));
+      EXPECT_EQ(st30_rx_get_session_stats(rx_handles[i].get(), &rx_stats), 0);
+      EXPECT_EQ(rx_stats.common.stat_lost_packets, 0u);
     }
     info("%s, session %zu fb_rec %d framerate %f\n", __func__, i, fb_rec,
          rate_res.rate[i]);
@@ -622,14 +832,23 @@ TEST(St30_tx, mix_48k_96_mix) {
   });
 }
 TEST(St30_rx, digest_mix) {
+  EXPECT_EQ(st30_get_packet_size(ST30_FMT_PCM16, ST30_PTIME_1MS, ST30_SAMPLING_48K, 2),
+            192);
+  EXPECT_EQ(st30_get_packet_size(ST30_FMT_PCM24, ST30_PTIME_1MS, ST30_SAMPLING_48K, 2),
+            288);
   st30_rx_fps_test(
       {
           {ST30_TYPE_RTP_LEVEL, ST30_SAMPLING_96K, ST30_PTIME_1MS, 1, ST30_FMT_PCM16},
           {ST30_TYPE_FRAME_LEVEL, ST30_SAMPLING_48K, ST30_PTIME_1MS, 4, ST30_FMT_PCM8},
       },
-      {/*check_sha=*/true});
+      {/*check_sha=*/true, /*check_meta=*/false, /*user_timestamp=*/false,
+       /*check_zero_loss=*/true});
 }
 TEST(St30_rx, digest_st31_mix) {
+  EXPECT_EQ(st30_get_packet_size(ST31_FMT_AM824, ST30_PTIME_1MS, ST30_SAMPLING_96K, 2),
+            768);
+  EXPECT_EQ(st30_get_packet_size(ST31_FMT_AM824, ST30_PTIME_1MS, ST30_SAMPLING_48K, 2),
+            384);
   st30_rx_fps_test(
       {
           {ST30_TYPE_FRAME_LEVEL, ST30_SAMPLING_96K, ST30_PTIME_1MS, 2, ST31_FMT_AM824},
@@ -637,7 +856,8 @@ TEST(St30_rx, digest_st31_mix) {
           {ST30_TYPE_RTP_LEVEL, ST30_SAMPLING_96K, ST30_PTIME_1MS, 2, ST31_FMT_AM824},
           {ST30_TYPE_RTP_LEVEL, ST30_SAMPLING_48K, ST30_PTIME_1MS, 2, ST31_FMT_AM824},
       },
-      {/*check_sha=*/true});
+      {/*check_sha=*/true, /*check_meta=*/false, /*user_timestamp=*/false,
+       /*check_zero_loss=*/true});
 }
 TEST(St30_rx, frame_digest_stereo_ptime_mix_s5) {
   st30_rx_fps_test(
@@ -688,6 +908,8 @@ static void st30_update_src_and_dst_test(enum st30_type type) {
   std::vector<mtl_test::ScopedContext> tx_ctxs;
   std::vector<tests_context*> raw_tx;
   auto rx_ctx = mtl_test::make_context(ctx, 0, 3);
+  St30SwitchState switch_state;
+  switch_state.ctx = rx_ctx.get();
   std::vector<ScopedSt30Tx> tx_handles;
   ScopedSt30Rx rx_handle;
   mtl_test::ScopedMtlStart mtl_guard(m_handle);
@@ -700,7 +922,8 @@ static void st30_update_src_and_dst_test(enum st30_type type) {
 
     struct st30_tx_ops ops_tx;
     st30_tx_ops_init(raw_tx[i], &ops_tx, spec, /*loopback=*/true,
-                     ST30_TEST_UDP_PORT + static_cast<uint16_t>(i * 2));
+                     ST30_TEST_UDP_PORT + static_cast<uint16_t>(i * 2),
+                     0x66666666u + static_cast<uint32_t>(i));
     if (i == 1) {
       memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
              MTL_IP_ADDR_LEN);
@@ -711,6 +934,13 @@ static void st30_update_src_and_dst_test(enum st30_type type) {
 
     ScopedSt30Tx handle(st30_tx_create(m_handle, &ops_tx));
     ASSERT_TRUE(static_cast<bool>(handle));
+    if (type == ST30_TYPE_FRAME_LEVEL) {
+      for (uint16_t fb_i = 0; fb_i < ops_tx.framebuff_cnt; fb_i++) {
+        void* fb = st30_tx_get_framebuffer(handle.get(), fb_i);
+        ASSERT_NE(fb, nullptr);
+        memset(fb, kSt30SwitchPattern[i], ops_tx.framebuff_size);
+      }
+    }
     __atomic_store_n(&raw_tx[i]->handle, handle.get(), __ATOMIC_RELEASE);
     tx_handles.push_back(std::move(handle));
     if (type == ST30_TYPE_RTP_LEVEL) {
@@ -724,27 +954,38 @@ static void st30_update_src_and_dst_test(enum st30_type type) {
     memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_2],
            MTL_IP_ADDR_LEN);
   }
+  switch_state.frame_size = ops_rx.framebuff_size;
+  if (type == ST30_TYPE_FRAME_LEVEL) {
+    ops_rx.priv = &switch_state;
+    ops_rx.notify_frame_ready = st30_switch_rx_frame_ready;
+  }
   rx_handle.reset(st30_rx_create(m_handle, &ops_rx));
   ASSERT_TRUE(static_cast<bool>(rx_handle));
   __atomic_store_n(&rx_ctx->handle, rx_handle.get(), __ATOMIC_RELEASE);
+  switch_state.rx_handle.store(rx_handle.get(), std::memory_order_release);
   if (type == ST30_TYPE_RTP_LEVEL) {
-    rx_worker =
-        mtl_test::ScopedWorker(rx_ctx.get(), std::thread(rx_get_packet, rx_ctx.get()));
+    rx_worker = mtl_test::ScopedWorker(
+        rx_ctx.get(), std::thread(st30_switch_rx_get_packet, &switch_state));
   }
 
   EXPECT_GE(mtl_guard.start(), 0);
   std::vector<tests_context*> raw_rx{rx_ctx.get()};
   EXPECT_TRUE(mtl_test::wait_for_all(raw_rx, mtl_test::rx_frames, kSt30PhaseTargetFrames,
                                      kSt30PhaseTimeoutMs));
+  EXPECT_GT(switch_state.rx_from_tx[0].load(std::memory_order_relaxed), 5) << "initial";
+  EXPECT_EQ(switch_state.rx_from_tx[1].load(std::memory_order_relaxed), 0) << "initial";
+  EXPECT_EQ(switch_state.rx_from_other.load(std::memory_order_relaxed), 0) << "initial";
 
-  auto verify_switched = [&](const char* label, const uint8_t* src_ip,
-                             uint16_t udp_port) {
+  auto verify_switched = [&](const char* label, const uint8_t* src_ip, uint16_t udp_port,
+                             int expected_tx_idx) {
     struct st_rx_source_info src;
     memset(&src, 0, sizeof(src));
     src.udp_port[MTL_SESSION_PORT_P] = udp_port;
     memcpy(src.ip_addr[MTL_SESSION_PORT_P], src_ip, MTL_IP_ADDR_LEN);
     EXPECT_GE(st30_rx_update_source(rx_handle.get(), &src), 0);
 
+    st_usleep(150 * 1000);
+    switch_state.reset();
     const int base = mtl_test::rx_frames(rx_ctx.get());
     auto delta = [base](const tests_context* c) { return mtl_test::rx_frames(c) - base; };
     auto rate_res =
@@ -754,12 +995,19 @@ static void st30_update_src_and_dst_test(enum st30_type type) {
     EXPECT_TRUE(rate_res.complete) << label;
     EXPECT_GT(mtl_test::rx_frames(rx_ctx.get()), base);
     EXPECT_NEAR(rate_res.rate[0], expect_framerate, expect_framerate * 0.1) << label;
+    EXPECT_GT(switch_state.rx_from_tx[expected_tx_idx].load(std::memory_order_relaxed),
+              10)
+        << label;
+    EXPECT_EQ(
+        switch_state.rx_from_tx[1 - expected_tx_idx].load(std::memory_order_relaxed), 0)
+        << label;
+    EXPECT_EQ(switch_state.rx_from_other.load(std::memory_order_relaxed), 0) << label;
   };
 
   /* Phase 1: RX switches source to separate TX1 multicast stream. */
   __atomic_store_n(&raw_tx[1]->seq_id, 0, __ATOMIC_RELAXED);
-  verify_switched("rx_src_mcast1", ctx->mcast_ip_addr[MTL_PORT_P],
-                  ST30_TEST_UDP_PORT + 2);
+  verify_switched("rx_src_mcast1", ctx->mcast_ip_addr[MTL_PORT_P], ST30_TEST_UDP_PORT + 2,
+                  /*expected_tx_idx=*/1);
 
   /* Phase 2: TX0 updates destination to mcast R and RX follows. */
   __atomic_store_n(&raw_tx[0]->seq_id, 0, __ATOMIC_RELAXED);
@@ -769,8 +1017,8 @@ static void st30_update_src_and_dst_test(enum st30_type type) {
   memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
          MTL_IP_ADDR_LEN);
   EXPECT_GE(st30_tx_update_destination(tx_handles[0].get(), &dst), 0);
-  verify_switched("tx_dst_mcast2", ctx->mcast_ip_addr[MTL_PORT_R],
-                  ST30_TEST_UDP_PORT + 4);
+  verify_switched("tx_dst_mcast2", ctx->mcast_ip_addr[MTL_PORT_R], ST30_TEST_UDP_PORT + 4,
+                  /*expected_tx_idx=*/0);
 
   /* Phase 3: TX0 and RX return to initial unicast (or mcast port 2). */
   __atomic_store_n(&raw_tx[0]->seq_id, rand(), __ATOMIC_RELAXED);
@@ -782,7 +1030,7 @@ static void st30_update_src_and_dst_test(enum st30_type type) {
   EXPECT_GE(st30_tx_update_destination(tx_handles[0].get(), &dst), 0);
   const uint8_t* back_ip =
       ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_P];
-  verify_switched("back_to_init", back_ip, ST30_TEST_UDP_PORT);
+  verify_switched("back_to_init", back_ip, ST30_TEST_UDP_PORT, /*expected_tx_idx=*/0);
 
   rx_worker.stop();
   for (auto& w : tx_workers) w.stop();
@@ -984,15 +1232,23 @@ TEST(St30_rx, timing_parser_meta) {
   tp_state.rx_handle.store(rx_handle.get(), std::memory_order_release);
 
   EXPECT_GE(mtl_guard.start(), 0);
-  /* Timing parser reports every 200ms; wait for >= 2 reports (~400ms). */
+  /* Timing parser reports every 200ms; wait for >= 3 reports (~600ms) for steady state.
+   */
   EXPECT_TRUE(mtl_test::wait_until(
-      [&]() { return tp_state.cb_cnt.load(std::memory_order_relaxed) >= 2; },
+      [&]() { return tp_state.cb_cnt.load(std::memory_order_relaxed) >= 3; },
       kSt30PhaseTimeoutMs));
   EXPECT_GE(mtl_guard.stop(), 0);
 
-  EXPECT_GE(tp_state.cb_cnt.load(std::memory_order_relaxed), 2);
+  EXPECT_GE(tp_state.cb_cnt.load(std::memory_order_relaxed), 3);
+  EXPECT_GE(tp_state.steady_cnt.load(std::memory_order_relaxed), 2);
   EXPECT_EQ(tp_state.bad_port_cnt.load(std::memory_order_relaxed), 0);
   EXPECT_EQ(tp_state.null_tp_cnt.load(std::memory_order_relaxed), 0);
   EXPECT_EQ(tp_state.zero_pkts_cnt.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tp_state.pkts_range_fail_cnt.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tp_state.ipt_avg_fail_cnt.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tp_state.ipt_order_fail_cnt.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tp_state.dpvr_order_fail_cnt.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tp_state.tsdf_fail_cnt.load(std::memory_order_relaxed), 0);
+  EXPECT_EQ(tp_state.non_compliant_cnt.load(std::memory_order_relaxed), 0);
   EXPECT_GT(mtl_test::rx_frames(rx_ctx.get()), 0);
 }

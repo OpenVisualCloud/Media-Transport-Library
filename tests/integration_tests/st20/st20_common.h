@@ -42,6 +42,30 @@ constexpr int kSt20MinSliceRxFrames = 25;
 constexpr int kSt20MinShaFrames = 4;
 constexpr int kSt20EventTimeoutMs = 8000;
 constexpr int kSt20SlicesPerFrame = 32;
+constexpr uint32_t kSt20RtpSsrcBase = 0x20000000u;
+
+struct St20ExtFrameStats {
+  bool dynamic_ext;
+  int ext_addr_mismatch_cnt;
+  int dynamic_query_cnt;
+  int dynamic_opaque_null_cnt;
+};
+
+struct St20RxSliceExpectMeta {
+  struct st20_rx_slice_meta meta;
+  bool slice_mode;
+  bool interlaced;
+  bool has_prev_field;
+  bool cur_second_field;
+  uint64_t cur_timestamp;
+  bool check_detect;
+  int detect_width;
+  int detect_height;
+  enum st_fps detect_fps;
+  enum st20_packing detect_packing;
+  bool detect_interlaced;
+  int detect_fail_cnt;
+};
 
 struct St20StreamSpec {
   enum st20_type tx_type = ST20_TYPE_FRAME_LEVEL;
@@ -130,6 +154,9 @@ int tx_video_build_ooo_mapping(tests_context* s);
 
 int rx_rtp_ready(void* args);
 void rx_get_packet(void* args);
+void rx_get_packet_ex(
+    tests_context* ctx,
+    std::function<void(const struct st20_rfc4175_rtp_hdr*)> on_pkt = nullptr);
 int st20_rx_frame_ready(void* priv, void* frame, struct st20_rx_frame_meta* meta);
 
 void st20_tx_ops_init(tests_context* st20, struct st20_tx_ops* ops);

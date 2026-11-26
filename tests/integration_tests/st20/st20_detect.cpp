@@ -17,16 +17,28 @@ int st20_rx_detected(void* priv, const struct st20_detect_meta* meta,
   auto ctx = (tests_context*)priv;
   if (!st20_get_handle(ctx)) return -EIO; /* not ready */
 
-  auto* s_meta = (struct st20_rx_slice_meta*)ctx->priv;
+  auto* expect = static_cast<St20RxSliceExpectMeta*>(ctx->priv);
+  if (expect && expect->check_detect) {
+    if (meta->width != expect->detect_width || meta->height != expect->detect_height ||
+        meta->fps != expect->detect_fps || meta->packing != expect->detect_packing ||
+        meta->interlaced != expect->detect_interlaced) {
+      err("%s(%d), detect mismatch got (%dx%d fps=%d packing=%d interlaced=%d) "
+          "expect (%dx%d fps=%d packing=%d interlaced=%d)\n",
+          __func__, ctx->idx, meta->width, meta->height, meta->fps, meta->packing,
+          meta->interlaced, expect->detect_width, expect->detect_height,
+          expect->detect_fps, expect->detect_packing, expect->detect_interlaced);
+      __atomic_fetch_add(&expect->detect_fail_cnt, 1, __ATOMIC_RELAXED);
+    }
+  }
   int slice_lines = meta->height / kSt20SlicesPerFrame;
   __atomic_store_n(&ctx->lines_per_slice, slice_lines, __ATOMIC_RELEASE);
-  if (s_meta) reply->slice_lines = slice_lines;
+  if (expect && expect->slice_mode) reply->slice_lines = slice_lines;
   if (ctx->uframe_size != 0) {
     /* uframe fmt: yuv422 10bit planar */
     ctx->uframe_size = (size_t)meta->width * meta->height * 2 * sizeof(uint16_t);
     if (meta->interlaced) ctx->uframe_size >>= 1;
     reply->uframe_size = ctx->uframe_size;
-    if (s_meta) s_meta->uframe_total_size = ctx->uframe_size;
+    if (expect && expect->slice_mode) expect->meta.uframe_total_size = ctx->uframe_size;
   }
   return 0;
 }
@@ -92,6 +104,19 @@ void st20_rx_detect_test(const St20DetectScenario& s) {
     }
     st20_init_rx_slice_meta(test_ctx_rx[i], ops_rx, st, test_ctx_tx[i]->frame_size, 0);
     if (::testing::Test::HasFatalFailure()) return;
+    auto* expect = static_cast<St20RxSliceExpectMeta*>(test_ctx_rx[i]->priv);
+    if (!expect) {
+      expect = (struct St20RxSliceExpectMeta*)st_test_zmalloc(
+          sizeof(struct St20RxSliceExpectMeta));
+      ASSERT_TRUE(expect != NULL);
+      test_ctx_rx[i]->priv = expect;
+    }
+    expect->check_detect = true;
+    expect->detect_width = st.width;
+    expect->detect_height = st.height;
+    expect->detect_fps = st.fps;
+    expect->detect_packing = st.packing;
+    expect->detect_interlaced = st.interlaced;
 
     rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
@@ -135,6 +160,9 @@ void st20_rx_detect_test(const St20DetectScenario& s) {
       EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2 * 2);
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
     EXPECT_EQ(mtl_test::relaxed_load(&test_ctx_rx[i]->rx_field_fail_cnt), 0);
+    auto* expect = static_cast<St20RxSliceExpectMeta*>(test_ctx_rx[i]->priv);
+    ASSERT_NE(expect, nullptr);
+    EXPECT_EQ(mtl_test::relaxed_load(&expect->detect_fail_cnt), 0);
     if (st.rx_type == ST20_TYPE_FRAME_LEVEL)
       EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     else

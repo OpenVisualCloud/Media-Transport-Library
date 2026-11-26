@@ -33,6 +33,13 @@ struct CvtCase {
   bool has_vbmi2;
 };
 
+bool has_nonzero(const uint8_t* buf, size_t len) {
+  for (size_t i = 0; i < len; i++) {
+    if (buf[i] != 0) return true;
+  }
+  return false;
+}
+
 void fill_masked_u16(uint16_t* dst, size_t count, uint16_t mask) {
   st_test_rand_data(reinterpret_cast<uint8_t*>(dst), count * sizeof(uint16_t), 0);
   for (size_t i = 0; i < count; i++) dst[i] &= mask;
@@ -51,15 +58,18 @@ void run_packed_dma(mtl_handle st, mtl_udma_handle dma, int w, int h,
     fill_masked_u16(static_cast<uint16_t*>(src.data()), src_sz / sizeof(uint16_t), mask);
   else
     st_test_rand_data(src.bytes(), src_sz, 0);
+  std::vector<uint8_t> expected(src.bytes(), src.bytes() + src_sz);
 
   auto* s = static_cast<SrcT*>(src.data());
   auto* d = reinterpret_cast<DstT*>(mid.data());
   int ret = (lvl == MTL_SIMD_LEVEL_MAX) ? dma_fn(dma, s, src.iova(), d, w, h)
                                         : simd_fn(dma, s, src.iova(), d, w, h, lvl);
-  EXPECT_EQ(0, ret);
-  EXPECT_EQ(0,
+  ASSERT_EQ(0, ret);
+  EXPECT_TRUE(has_nonzero(mid.data(), dst_sz));
+  ASSERT_EQ(0,
             inv_fn(d, reinterpret_cast<SrcT*>(back.data()), w, h, MTL_SIMD_LEVEL_NONE));
-  EXPECT_EQ(0, memcmp(src.bytes(), back.data(), src_sz));
+  EXPECT_EQ(0, memcmp(expected.data(), back.data(), src_sz));
+  EXPECT_EQ(0, memcmp(expected.data(), src.bytes(), src_sz));
 }
 
 template <typename PgT, typename DmaFn, typename SimdFn, typename InvFn>
@@ -74,14 +84,18 @@ void run_planar_dma(mtl_handle st, mtl_udma_handle dma, int w, int h,
   std::vector<uint16_t> pl(px * 2, 0);
 
   st_test_rand_data(pg.bytes(), pg_sz, 0);
+  std::vector<uint8_t> expected(pg.bytes(), pg.bytes() + pg_sz);
   auto* s = static_cast<PgT*>(pg.data());
   uint16_t *y = pl.data(), *b = y + px, *r = y + px * 3 / 2;
   int ret = (lvl == MTL_SIMD_LEVEL_MAX) ? dma_fn(dma, s, pg.iova(), y, b, r, w, h)
                                         : simd_fn(dma, s, pg.iova(), y, b, r, w, h, lvl);
-  EXPECT_EQ(0, ret);
-  EXPECT_EQ(
+  ASSERT_EQ(0, ret);
+  EXPECT_TRUE(has_nonzero(reinterpret_cast<const uint8_t*>(pl.data()),
+                          pl.size() * sizeof(uint16_t)));
+  ASSERT_EQ(
       0, inv_fn(y, b, r, reinterpret_cast<PgT*>(back.data()), w, h, MTL_SIMD_LEVEL_NONE));
-  EXPECT_EQ(0, memcmp(pg.bytes(), back.data(), pg_sz));
+  EXPECT_EQ(0, memcmp(expected.data(), back.data(), pg_sz));
+  EXPECT_EQ(0, memcmp(expected.data(), pg.bytes(), pg_sz));
 }
 
 void cvt_yuv422p10le_to_422be10(mtl_handle st, mtl_udma_handle dma, int w, int h,
@@ -96,6 +110,7 @@ void cvt_yuv422p10le_to_422be10(mtl_handle st, mtl_udma_handle dma, int w, int h
 
   auto* y = static_cast<uint16_t*>(p10.data());
   fill_masked_u16(y, px * 2, 0x3ff);
+  std::vector<uint8_t> expected(p10.bytes(), p10.bytes() + pl_sz);
   auto* dst = reinterpret_cast<Pg10Be*>(pg.data());
   const mtl_iova_t bi = p10.iova() + static_cast<mtl_iova_t>(px * 2);
   const mtl_iova_t ri = p10.iova() + static_cast<mtl_iova_t>(px * 3);
@@ -104,11 +119,13 @@ void cvt_yuv422p10le_to_422be10(mtl_handle st, mtl_udma_handle dma, int w, int h
                                                           y + px * 3 / 2, ri, dst, w, h)
                 : st20_yuv422p10le_to_rfc4175_422be10_simd_dma(
                       dma, y, p10.iova(), y + px, bi, y + px * 3 / 2, ri, dst, w, h, lvl);
-  EXPECT_EQ(0, ret);
-  EXPECT_EQ(0, st20_rfc4175_422be10_to_yuv422p10le_simd(
+  ASSERT_EQ(0, ret);
+  EXPECT_TRUE(has_nonzero(pg.data(), pg_sz));
+  ASSERT_EQ(0, st20_rfc4175_422be10_to_yuv422p10le_simd(
                    dst, p10_2.data(), p10_2.data() + px, p10_2.data() + px * 3 / 2, w, h,
                    MTL_SIMD_LEVEL_NONE));
-  EXPECT_EQ(0, memcmp(y, p10_2.data(), pl_sz));
+  EXPECT_EQ(0, memcmp(expected.data(), p10_2.data(), pl_sz));
+  EXPECT_EQ(0, memcmp(expected.data(), p10.bytes(), pl_sz));
 }
 
 void cvt_422be10_to_422le8(mtl_handle st, mtl_udma_handle dma, int w, int h,
@@ -139,7 +156,8 @@ void cvt_422be10_to_422le8(mtl_handle st, mtl_udma_handle dma, int w, int h,
                 ? st20_rfc4175_422be10_to_422le8_dma(dma, src, pg_10.iova(), dst, w, h)
                 : st20_rfc4175_422be10_to_422le8_simd_dma(dma, src, pg_10.iova(), dst, w,
                                                           h, lvl);
-  EXPECT_EQ(0, ret);
+  ASSERT_EQ(0, ret);
+  EXPECT_TRUE(has_nonzero(pg_8_2.data(), sz_8));
   EXPECT_EQ(0, memcmp(pg_8.data(), pg_8_2.data(), sz_8));
 }
 
@@ -154,18 +172,26 @@ void cvt_422be10_to_v210(mtl_handle st, mtl_udma_handle dma, int w, int h,
   std::vector<uint8_t> pg_be_2(pg_sz, 0), pg_le(pg_sz, 0), v210(v210_sz, 0);
 
   st_test_rand_data(pg_be.bytes(), pg_sz, 0);
+  std::vector<uint8_t> expected(pg_be.bytes(), pg_be.bytes() + pg_sz);
   auto* s = static_cast<Pg10Be*>(pg_be.data());
   int ret =
       (lvl == MTL_SIMD_LEVEL_MAX)
           ? st20_rfc4175_422be10_to_v210_dma(dma, s, pg_be.iova(), v210.data(), w, h)
           : st20_rfc4175_422be10_to_v210_simd_dma(dma, s, pg_be.iova(), v210.data(), w, h,
                                                   lvl);
-  EXPECT_EQ(ret != 0, fail);
-  EXPECT_EQ(st20_v210_to_rfc4175_422le10(v210.data(), pg_le.data(), w, h) != 0, fail);
-  st20_rfc4175_422le10_to_422be10_simd(reinterpret_cast<Pg10Le*>(pg_le.data()),
-                                       reinterpret_cast<Pg10Be*>(pg_be_2.data()), w, h,
-                                       MTL_SIMD_LEVEL_NONE);
-  EXPECT_EQ(memcmp(pg_be.bytes(), pg_be_2.data(), pg_sz) != 0, fail);
+  if (fail) {
+    EXPECT_LT(ret, 0);
+    EXPECT_LT(st20_v210_to_rfc4175_422le10(v210.data(), pg_le.data(), w, h), 0);
+    return;
+  }
+  ASSERT_EQ(0, ret);
+  EXPECT_TRUE(has_nonzero(v210.data(), v210_sz));
+  ASSERT_EQ(0, st20_v210_to_rfc4175_422le10(v210.data(), pg_le.data(), w, h));
+  ASSERT_EQ(0, st20_rfc4175_422le10_to_422be10_simd(
+                   reinterpret_cast<Pg10Le*>(pg_le.data()),
+                   reinterpret_cast<Pg10Be*>(pg_be_2.data()), w, h, MTL_SIMD_LEVEL_NONE));
+  EXPECT_EQ(0, memcmp(expected.data(), pg_be_2.data(), pg_sz));
+  EXPECT_EQ(0, memcmp(expected.data(), pg_be.bytes(), pg_sz));
 }
 
 void cvt_v210_to_422be10(mtl_handle st, mtl_udma_handle dma, int w, int h,
@@ -179,18 +205,23 @@ void cvt_v210_to_422be10(mtl_handle st, mtl_udma_handle dma, int w, int h,
   std::vector<uint8_t> pg_be(pg_sz, 0), pg_be_2(pg_sz, 0);
 
   st_test_rand_data(pg_be.data(), pg_sz, 0);
-  EXPECT_EQ(
-      st20_rfc4175_422be10_to_v210_simd(reinterpret_cast<Pg10Be*>(pg_be.data()),
-                                        v210.bytes(), w, h, MTL_SIMD_LEVEL_NONE) != 0,
-      fail);
+  int fwd_ret = st20_rfc4175_422be10_to_v210_simd(
+      reinterpret_cast<Pg10Be*>(pg_be.data()), v210.bytes(), w, h, MTL_SIMD_LEVEL_NONE);
   auto* dst = reinterpret_cast<Pg10Be*>(pg_be_2.data());
   int ret =
       (lvl == MTL_SIMD_LEVEL_MAX)
           ? st20_v210_to_rfc4175_422be10_dma(dma, v210.bytes(), v210.iova(), dst, w, h)
           : st20_v210_to_rfc4175_422be10_simd_dma(dma, v210.bytes(), v210.iova(), dst, w,
                                                   h, lvl);
-  EXPECT_EQ(ret != 0, fail);
-  EXPECT_EQ(memcmp(pg_be.data(), pg_be_2.data(), pg_sz) != 0, fail);
+  if (fail) {
+    EXPECT_LT(fwd_ret, 0);
+    EXPECT_LT(ret, 0);
+    return;
+  }
+  ASSERT_EQ(0, fwd_ret);
+  ASSERT_EQ(0, ret);
+  EXPECT_TRUE(has_nonzero(pg_be_2.data(), pg_sz));
+  EXPECT_EQ(0, memcmp(pg_be.data(), pg_be_2.data(), pg_sz));
 }
 
 #define PACKED_CVT(name, S, D, snum, sden, dnum, dden, mask, fwd, inv, vbmi)          \

@@ -136,16 +136,19 @@ void run_dma_op_once(mtl_udma_handle dma, mtl_test::ScopedHpBuf& dst,
   const uint8_t sentinel = fill ? static_cast<uint8_t>(pattern ^ 0x55u) : 0xEEu;
   memset(dst.data(), sentinel, dst.size());
 
+  const uint32_t op_len = len - off;
+  std::vector<uint8_t> expected;
   int ret;
   if (fill) {
-    ret = mtl_udma_fill_u8(dma, dst.iova() + off, pattern, len - off);
+    ret = mtl_udma_fill_u8(dma, dst.iova() + off, pattern, op_len);
   } else {
     uint8_t* src_bytes = src.bytes();
     for (size_t i = 0; i < src.size(); i++) {
       /* Odd values in [0x01, 0x7F] never equal zero or the 0xEE sentinel. */
       src_bytes[i] = static_cast<uint8_t>((((i + off + pattern) * 2u) + 1u) & 0x7Fu);
     }
-    ret = mtl_udma_copy(dma, dst.iova() + off, src.iova() + off, len - off);
+    expected.assign(src_bytes + off, src_bytes + len);
+    ret = mtl_udma_copy(dma, dst.iova() + off, src.iova() + off, op_len);
   }
   ASSERT_GE(ret, 0);
   ASSERT_TRUE(mtl_test::udma_submit_and_wait(dma, 1));
@@ -153,9 +156,12 @@ void run_dma_op_once(mtl_udma_handle dma, mtl_test::ScopedHpBuf& dst,
   expect_bytes_eq(dst.bytes(), off, sentinel,
                   fill ? "fill leading canary" : "copy leading canary");
   if (fill) {
-    expect_bytes_eq(dst.bytes() + off, len - off, pattern, "fill payload");
+    expect_bytes_eq(dst.bytes() + off, op_len, pattern, "fill payload");
   } else {
-    EXPECT_EQ(memcmp(src.bytes() + off, dst.bytes() + off, len - off), 0);
+    EXPECT_EQ(memcmp(dst.bytes() + off, expected.data(), op_len), 0)
+        << "DMA copy destination mismatch";
+    EXPECT_EQ(memcmp(src.bytes() + off, expected.data(), op_len), 0)
+        << "DMA copy source modified";
   }
   expect_bytes_eq(dst.bytes() + len, dst.size() - len, sentinel,
                   fill ? "fill trailing canary" : "copy trailing canary");
@@ -213,6 +219,8 @@ void test_dma_copy_fill_async(struct st_tests_context* ctx, bool fill) {
   ASSERT_TRUE(fb_src);
   ASSERT_NE(fb_src.iova(), MTL_BAD_IOVA);
 
+  memset(fb_dst.data(), fill ? static_cast<uint8_t>(pattern ^ 0x55u) : 0xEEu,
+         static_cast<size_t>(fb_size));
   if (fill)
     memset(fb_src.data(), pattern, static_cast<size_t>(fb_size));
   else
@@ -260,6 +268,12 @@ void test_dma_copy_fill_async(struct st_tests_context* ctx, bool fill) {
   EXPECT_TRUE(hit_enospc);
   SHA256(fb_dst.bytes(), static_cast<size_t>(fb_size), fb_dst_sha);
   EXPECT_EQ(memcmp(fb_dst_sha, fb_src_sha, SHA256_DIGEST_LENGTH), 0);
+  if (!fill) {
+    unsigned char fb_src_post_sha[SHA256_DIGEST_LENGTH];
+    SHA256(fb_src.bytes(), static_cast<size_t>(fb_size), fb_src_post_sha);
+    EXPECT_EQ(memcmp(fb_src_post_sha, fb_src_sha, SHA256_DIGEST_LENGTH), 0)
+        << "DMA async copy source buffer was modified";
+  }
 }
 
 void assert_dma_mem_valid(const mtl_test::ScopedDmaMem& m, size_t pg_sz = 0) {
@@ -486,6 +500,8 @@ TEST(Dma, map_copy) {
   ASSERT_TRUE(dst);
   ASSERT_TRUE(src);
   st_test_rand_data(src.data(), copy_size, 0);
+  memset(dst.data(), 0xEE, copy_size);
+  std::vector<uint8_t> expected(src.data(), src.data() + copy_size);
 
   mtl_test::ScopedDmaMap src_map(st, src.data(), copy_size);
   mtl_test::ScopedDmaMap dst_map(st, dst.data(), copy_size);
@@ -497,7 +513,10 @@ TEST(Dma, map_copy) {
             0);
   ASSERT_TRUE(mtl_test::udma_submit_and_wait(dma.get(), 1));
 
-  EXPECT_EQ(memcmp(src.data(), dst.data(), copy_size), 0);
+  EXPECT_EQ(memcmp(dst.data(), expected.data(), copy_size), 0)
+      << "DMA map copy destination mismatch";
+  EXPECT_EQ(memcmp(src.data(), expected.data(), copy_size), 0)
+      << "DMA map copy source modified";
   EXPECT_GE(src_map.unmap(), 0);
   EXPECT_GE(dst_map.unmap(), 0);
 }
@@ -512,8 +531,21 @@ TEST(Dma, mem_alloc_free) {
   for (size_t sz : {111u, 2222u, 33333u, 444444u}) {
     mtl_test::ScopedDmaMem dma_mem(st, sz);
     ASSERT_NO_FATAL_FAILURE(assert_dma_mem_valid(dma_mem, pg_sz));
+    auto* bytes = static_cast<uint8_t*>(dma_mem.addr());
+    expect_bytes_eq(bytes, sz, 0u, "dma_mem zero-init");
+    bytes[0] = 0x5Au;
+    bytes[sz - 1] = 0xA5u;
+    EXPECT_EQ(bytes[0], 0x5Au);
+    EXPECT_EQ(bytes[sz - 1], 0xA5u);
   }
   EXPECT_EQ(mtl_test::ScopedDmaMem(st, 0).get(), nullptr);
+
+  /* Loop past MT_MAP_MAX_ITEMS (256) to catch no-op mtl_dma_mem_free leaks. */
+  for (int i = 0; i < 300; i++) {
+    mtl_test::ScopedDmaMem dma_mem(st, pg_sz);
+    ASSERT_TRUE(dma_mem) << "dma_mem alloc failed at iteration " << i;
+    ASSERT_NO_FATAL_FAILURE(assert_dma_mem_valid(dma_mem, pg_sz));
+  }
 }
 
 TEST(Dma, mem_alloc_copy) {
@@ -532,12 +564,15 @@ TEST(Dma, mem_alloc_copy) {
     auto* src_bytes = static_cast<uint8_t*>(src.addr());
     auto* dst_bytes = static_cast<uint8_t*>(dst.addr());
     st_test_rand_data(src_bytes, copy_size, 0);
-    memset(dst_bytes, 0, copy_size);
+    memset(dst_bytes, 0xEE, copy_size);
+    std::vector<uint8_t> expected(src_bytes, src_bytes + copy_size);
 
     ASSERT_GE(mtl_udma_copy(dma.get(), dst.iova(), src.iova(), copy_size), 0);
     ASSERT_TRUE(mtl_test::udma_submit_and_wait(dma.get(), 1));
-    EXPECT_EQ(memcmp(src_bytes, dst_bytes, copy_size), 0)
-        << "DMA mem copy mismatch for size " << copy_size;
+    EXPECT_EQ(memcmp(dst_bytes, expected.data(), copy_size), 0)
+        << "DMA mem copy destination mismatch for size " << copy_size;
+    EXPECT_EQ(memcmp(src_bytes, expected.data(), copy_size), 0)
+        << "DMA mem copy source modified for size " << copy_size;
   }
 }
 
@@ -560,12 +595,35 @@ TEST(Dma, hp_virt2iova_and_page_size) {
   auto* ctx = st_test_ctx();
   mtl_handle st = ctx->handle;
 
+  const size_t pg = mtl_page_size(st);
+  EXPECT_GT(pg, 0u);
+#ifndef WINDOWSENV
+  EXPECT_EQ(pg, static_cast<size_t>(sysconf(_SC_PAGESIZE)));
+#endif
+
   constexpr size_t kAllocSize = 4096;
+  /* Poison a hugepage block, free it, then verify mtl_hp_zmalloc zeroes memory. */
+  {
+    mtl_test::ScopedHpBuf poisoned(st, kAllocSize, MTL_PORT_P, false);
+    ASSERT_TRUE(poisoned);
+    memset(poisoned.data(), 0xA5, kAllocSize);
+  }
+
   mtl_test::ScopedHpBuf hp_zero(st, kAllocSize, MTL_PORT_P, true);
   ASSERT_TRUE(hp_zero);
-  EXPECT_NE(hp_zero.iova(), MTL_BAD_IOVA);
-  EXPECT_EQ(mtl_hp_virt2iova(st, hp_zero.data()), hp_zero.iova());
   expect_bytes_eq(hp_zero.bytes(), kAllocSize, 0u, "hp_zmalloc zero-init");
+
+  const mtl_iova_t iova = mtl_hp_virt2iova(st, hp_zero.data());
+  EXPECT_NE(iova, static_cast<mtl_iova_t>(0));
+  EXPECT_NE(iova, MTL_BAD_IOVA);
+
+  /* Second distinct hugepage allocation must produce a distinct valid IOVA. */
+  mtl_test::ScopedHpBuf hp_second(st, kAllocSize, MTL_PORT_P, false);
+  ASSERT_TRUE(hp_second);
+  const mtl_iova_t iova2 = mtl_hp_virt2iova(st, hp_second.data());
+  EXPECT_NE(iova2, static_cast<mtl_iova_t>(0));
+  EXPECT_NE(iova2, MTL_BAD_IOVA);
+  EXPECT_NE(iova2, iova);
 
   /* Only NULL is safe as an invalid pointer to rte_malloc_virt2iova. */
   EXPECT_EQ(mtl_hp_virt2iova(st, nullptr), MTL_BAD_IOVA);

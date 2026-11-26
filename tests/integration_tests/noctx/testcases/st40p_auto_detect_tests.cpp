@@ -5,7 +5,7 @@
 
 namespace {
 
-/* Records whether any RX frame reported interlaced; the test asserts on it. */
+/* Records whether RX auto-detect observed interlaced F bits and both field polarities. */
 class St40pInterlaceFlagRecorder : public FrameTestStrategy {
  public:
   St40pInterlaceFlagRecorder() : FrameTestStrategy(nullptr, false, true) {
@@ -17,12 +17,16 @@ class St40pInterlaceFlagRecorder : public FrameTestStrategy {
 
     if (info->interlaced) {
       saw_interlaced = true;
-      second_field_sampled = true;
+      if (info->second_field)
+        saw_second_field = true;
+      else
+        saw_first_field = true;
     }
   }
 
   bool saw_interlaced = false;
-  bool second_field_sampled = false;
+  bool saw_first_field = false;
+  bool saw_second_field = false;
 };
 
 }  // namespace
@@ -66,6 +70,6 @@ TEST_F(NoCtxTest, st40p_rx_auto_detect_interlace) {
   ASSERT_GT(handler->rxFrames(), 0u) << "No frames received";
   EXPECT_EQ(handler->txFrames(), handler->rxFrames()) << "TX/RX frame count mismatch";
   EXPECT_TRUE(strategy->saw_interlaced) << "Auto-detect did not see interlaced F bits";
-  EXPECT_TRUE(strategy->second_field_sampled)
-      << "Auto-detect did not surface field cadence metadata";
+  EXPECT_TRUE(strategy->saw_first_field) << "Auto-detect did not see first field";
+  EXPECT_TRUE(strategy->saw_second_field) << "Auto-detect did not see second field";
 }

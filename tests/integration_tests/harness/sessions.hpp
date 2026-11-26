@@ -309,6 +309,11 @@ class ScopedSch {
     }
   }
 
+  mtl_sch_handle release() {
+    started_ = false;
+    return std::exchange(handle_, nullptr);
+  }
+
  private:
   mtl_sch_handle handle_ = nullptr;
   bool started_ = false;
@@ -405,7 +410,12 @@ inline void expect_redundant_port_stats(const TxStats& tx_stats, const RxStats& 
     expect_within_20pct(tx_stats.common.port[MTL_SESSION_PORT_P].packets,
                         tx_stats.common.port[MTL_SESSION_PORT_R].packets,
                         "TX port packets");
+    expect_within_20pct(tx_stats.common.port[MTL_SESSION_PORT_P].bytes,
+                        tx_stats.common.port[MTL_SESSION_PORT_R].bytes, "TX port bytes");
   }
+  expect_within_20pct(rx_stats.common.port[MTL_SESSION_PORT_P].packets,
+                      rx_stats.common.port[MTL_SESSION_PORT_R].packets,
+                      "RX port packets");
   expect_within_20pct(rx_stats.common.port[MTL_SESSION_PORT_P].bytes,
                       rx_stats.common.port[MTL_SESSION_PORT_R].bytes, "RX port bytes");
 }

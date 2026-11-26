@@ -106,6 +106,9 @@ void st20_tx_fps_test(const std::vector<St20StreamSpec>& streams) {
   for (int i = 0; i < sessions; i++) {
     const double expect_fps = st_frame_rate(streams[i].fps);
     EXPECT_GT(test_ctx[i]->fb_send, 0);
+    if (streams[i].tx_type != ST20_TYPE_RTP_LEVEL) {
+      EXPECT_GT(mtl_test::tx_done_frames(test_ctx[i]), 0);
+    }
     EXPECT_LE(test_ctx[i]->tx_tmstamp_delta_fail_cnt, 1);
     info("%s, session %d fb_send %d framerate %f\n", __func__, i, test_ctx[i]->fb_send,
          res.rate[i]);

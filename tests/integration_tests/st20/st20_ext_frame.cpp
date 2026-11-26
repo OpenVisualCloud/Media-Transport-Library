@@ -37,6 +37,9 @@ int rx_query_ext_frame(void* priv, st20_ext_frame* ext_frame,
       dbg("%s(%d), set ext frame %d(%p) to use\n", __func__, ctx->idx, i,
           ext_frame->buf_addr);
       ctx->ext_idx = (i + 1) % cnt;
+      if (auto* ext_stats = static_cast<St20ExtFrameStats*>(ctx->priv)) {
+        __atomic_fetch_add(&ext_stats->dynamic_query_cnt, 1, __ATOMIC_RELAXED);
+      }
       return 0;
     }
   }
@@ -98,6 +101,9 @@ void st20_tx_ext_frame_rx_digest_test(const St20ExtFrameScenario& s) {
     ops_rx.notify_frame_ready =
         st.interlaced ? st20_digest_rx_field_ready : st20_digest_rx_frame_ready;
     if (s.dynamic) {
+      auto* ext_stats = static_cast<St20ExtFrameStats*>(test_ctx_rx[i]->priv);
+      ASSERT_NE(ext_stats, nullptr);
+      ext_stats->dynamic_ext = true;
       ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
       ops_rx.query_ext_frame = rx_query_ext_frame;
     } else {
@@ -135,6 +141,14 @@ void st20_tx_ext_frame_rx_digest_test(const St20ExtFrameScenario& s) {
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
     EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     EXPECT_EQ(mtl_test::relaxed_load(&test_ctx_rx[i]->rx_field_fail_cnt), 0);
+    auto* ext_stats = static_cast<St20ExtFrameStats*>(test_ctx_rx[i]->priv);
+    ASSERT_NE(ext_stats, nullptr);
+    EXPECT_EQ(mtl_test::relaxed_load(&ext_stats->ext_addr_mismatch_cnt), 0);
+    if (s.dynamic) {
+      EXPECT_GE(mtl_test::relaxed_load(&ext_stats->dynamic_query_cnt),
+                test_ctx_rx[i]->fb_rec);
+      EXPECT_EQ(mtl_test::relaxed_load(&ext_stats->dynamic_opaque_null_cnt), 0);
+    }
     info("%s, session %d fb_rec %d framerate %f fb_send %d\n", __func__, i,
          test_ctx_rx[i]->fb_rec, res.rate[i], test_ctx_tx[i]->fb_send);
     if (s.check_fps) {

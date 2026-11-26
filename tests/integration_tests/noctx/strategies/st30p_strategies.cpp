@@ -40,7 +40,22 @@ void St30pDefaultPacingOracle::rxTestFrameModifier(void* frame, size_t /*frame_s
   uint64_t sampling = st30_get_sample_rate(st30pParent->sessionsOpsRx.sampling);
   uint64_t framebuffTime = st10_tai_to_media_clk(st30pParent->nsFramebuffTime, sampling);
 
-  if (idx_rx == 0) expectFirstFrameOnPacketGrid(f, st30pParent);
+  if (idx_rx == 0) {
+    expectFirstFrameOnPacketGrid(f, st30pParent);
+  } else {
+    constexpr int64_t kSt30pDefaultEarlyMaxNs = 100 * NS_PER_US;
+    constexpr int64_t kSt30pDefaultLateMaxNs = 300 * NS_PER_US;
+    const uint64_t rtp_ns = st10_media_clk_to_tai(f->receive_timestamp, f->timestamp,
+                                                  static_cast<uint32_t>(sampling));
+    const int64_t arrival_offset_ns =
+        static_cast<int64_t>(f->receive_timestamp) - static_cast<int64_t>(rtp_ns);
+    EXPECT_GE(arrival_offset_ns, -kSt30pDefaultEarlyMaxNs)
+        << " idx_rx: " << idx_rx << " arrival_offset_ns: " << arrival_offset_ns
+        << " receive_timestamp: " << f->receive_timestamp << " rtp_ns: " << rtp_ns;
+    EXPECT_LE(arrival_offset_ns, kSt30pDefaultLateMaxNs)
+        << " idx_rx: " << idx_rx << " arrival_offset_ns: " << arrival_offset_ns
+        << " receive_timestamp: " << f->receive_timestamp << " rtp_ns: " << rtp_ns;
+  }
   if (lastTimestamp != 0) {
     uint64_t diff = f->timestamp - lastTimestamp;
     EXPECT_TRUE(diff == framebuffTime) << " idx_rx: " << idx_rx << " diff: " << diff;

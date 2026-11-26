@@ -21,8 +21,18 @@ namespace {
  */
 class SplitAncRoundTripOracle : public FrameTestStrategy {
  public:
-  explicit SplitAncRoundTripOracle(std::vector<uint16_t> anc_sizes)
-      : FrameTestStrategy(nullptr, true, true), anc_sizes_(std::move(anc_sizes)) {
+  explicit SplitAncRoundTripOracle(std::vector<uint16_t> anc_sizes,
+                                   bool interlaced = false)
+      : FrameTestStrategy(nullptr, true, true),
+        anc_sizes_(std::move(anc_sizes)),
+        interlaced_(interlaced) {
+  }
+
+  bool sawFirstField() const {
+    return saw_first_field_;
+  }
+  bool sawSecondField() const {
+    return saw_second_field_;
   }
 
   void txTestFrameModifier(void* frame, size_t /*frame_size*/) override {
@@ -65,6 +75,13 @@ class SplitAncRoundTripOracle : public FrameTestStrategy {
     EXPECT_FALSE(info->seq_discont);
     EXPECT_EQ(info->seq_lost, 0u);
     EXPECT_EQ(info->pkts_total, anc_sizes_.size());
+    if (interlaced_) {
+      EXPECT_TRUE(info->interlaced);
+      if (info->second_field)
+        saw_second_field_ = true;
+      else
+        saw_first_field_ = true;
+    }
 
     uint32_t offset = 0;
     for (size_t i = 0; i < anc_sizes_.size(); i++) {
@@ -82,6 +99,28 @@ class SplitAncRoundTripOracle : public FrameTestStrategy {
 
  private:
   std::vector<uint16_t> anc_sizes_;
+  bool interlaced_ = false;
+  bool saw_first_field_ = false;
+  bool saw_second_field_ = false;
+};
+
+class InterlacedFieldOracle : public FrameTestStrategy {
+ public:
+  InterlacedFieldOracle() : FrameTestStrategy(nullptr, false, true) {
+  }
+
+  void rxTestFrameModifier(void* frame, size_t /*frame_size*/) override {
+    auto* info = static_cast<st40_frame_info*>(frame);
+    ASSERT_NE(info, nullptr);
+    EXPECT_TRUE(info->interlaced);
+    if (info->second_field)
+      saw_second_field = true;
+    else
+      saw_first_field = true;
+  }
+
+  bool saw_first_field = false;
+  bool saw_second_field = false;
 };
 
 void runSplitAncCase(NoCtxTest* test, st_tests_context* ctx,
@@ -92,7 +131,9 @@ void runSplitAncCase(NoCtxTest* test, st_tests_context* ctx,
 
   auto bundle = test->createSt40pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
-      [anc_sizes](St40pHandler*) { return new SplitAncRoundTripOracle(anc_sizes); },
+      [anc_sizes, interlaced](St40pHandler*) {
+        return new SplitAncRoundTripOracle(anc_sizes, interlaced);
+      },
       [interlaced, fps](St40pHandler* handler) {
         handler->sessionsOpsTx.flags |= ST40P_TX_FLAG_SPLIT_ANC_BY_PKT;
         handler->sessionsOpsTx.interlaced = interlaced;
@@ -111,6 +152,11 @@ void runSplitAncCase(NoCtxTest* test, st_tests_context* ctx,
     EXPECT_GT(bundle.handler->txFrames(), 0u);
   }
   EXPECT_GT(bundle.handler->rxFrames(), 0u);
+  if (interlaced) {
+    auto* oracle = static_cast<SplitAncRoundTripOracle*>(bundle.strategy);
+    EXPECT_TRUE(oracle->sawFirstField()) << "interlaced split RX never saw first field";
+    EXPECT_TRUE(oracle->sawSecondField()) << "interlaced split RX never saw second field";
+  }
 }
 
 void build_split_rtp_packet(std::vector<uint8_t>& out, uint16_t seq, uint32_t ts,
@@ -213,7 +259,8 @@ TEST_F(NoCtxTest, st40i_smoke) {
 
   auto bundle = createSt40pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
-      /*strategyFactory=*/nullptr, [](St40pHandler* handler) {
+      [](St40pHandler*) { return new InterlacedFieldOracle(); },
+      [](St40pHandler* handler) {
         handler->sessionsOpsTx.interlaced = kInterlaced;
         handler->sessionsOpsRx.interlaced = kInterlaced;
         handler->sessionsOpsTx.fps = kFps;
@@ -234,11 +281,14 @@ TEST_F(NoCtxTest, st40i_smoke) {
   ASSERT_GT(handler->rxFrames(), 0u) << "st40i_smoke received no frames";
   EXPECT_EQ(handler->txFrames(), handler->rxFrames())
       << "st40i_smoke TX/RX frame count mismatch";
+  auto* oracle = static_cast<InterlacedFieldOracle*>(bundle.strategy);
+  EXPECT_TRUE(oracle->saw_first_field) << "st40i_smoke never saw first field";
+  EXPECT_TRUE(oracle->saw_second_field) << "st40i_smoke never saw second field";
 }
 
-/* st40i_split_flag_accepts_and_propagates: progressive, one 1-byte ANC per frame. */
+/* st40i_split_flag_accepts_and_propagates: progressive, two 1-byte ANCs per frame. */
 TEST_F(NoCtxTest, st40i_split_flag_accepts_and_propagates) {
-  runSplitAncCase(this, ctx, {1}, /*interlaced=*/false, ST_FPS_P60);
+  runSplitAncCase(this, ctx, {1, 1}, /*interlaced=*/false, ST_FPS_P60);
 }
 
 /* st40i_split_multi_packet_roundtrip: progressive, 8/6/4-byte ANCs per frame. */
@@ -303,8 +353,9 @@ TEST_F(NoCtxTest, st40i_split_seq_gap_reports_loss) {
   }
 
   ASSERT_NE(frame_info, nullptr) << "RX frame with sequence gap was not received";
+  EXPECT_EQ(frame_info->status, ST_FRAME_STATUS_CORRUPTED);
   EXPECT_TRUE(frame_info->seq_discont);
-  EXPECT_GE(frame_info->seq_lost, 1u);
+  EXPECT_EQ(frame_info->seq_lost, 1u);
   EXPECT_TRUE(frame_info->rtp_marker);
   EXPECT_EQ(frame_info->meta_num, 2u);
 

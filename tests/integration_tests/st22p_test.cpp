@@ -8,12 +8,16 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <memory>
+#include <mutex>
+#include <set>
 #include <thread>
 #include <utility>
 #include <vector>
 
 #include "harness/mock_plugin.hpp"
+#include "harness/pcapng.hpp"
 #include "log.h"
 #include "test_harness.hpp"
 
@@ -39,6 +43,16 @@ struct UnlinkGuard {
 /* Extended test context owning atomic, dynamically sized external frame slots. */
 struct St22pContext : public tests_context {
   mtl_test::ScopedExtFrames ext_frames;
+  /* Optional secondary TX SHA table for source-switch verification. */
+  bool check_dual_sha = false;
+  uint8_t alt_shas[ST22_TEST_SHA_HIST_NUM][SHA256_DIGEST_LENGTH] = {};
+  std::atomic<int> matched_tx0{0};
+  std::atomic<int> matched_tx1{0};
+  /* Optional interlaced field metadata tracking. */
+  bool expect_interlaced = false;
+  std::atomic<int> first_field_cnt{0};
+  std::atomic<int> second_field_cnt{0};
+  std::atomic<int> interlace_meta_fail_cnt{0};
 };
 
 struct St22pContextDeleter {
@@ -140,6 +154,24 @@ struct St22pDigestScenario {
   bool derive = false;
 };
 
+constexpr uint32_t kSt22SizeTagMagic = 0x53543232U;
+
+struct St22RandSizeTracker {
+  std::mutex mtx;
+  int checked_frames = 0;
+  int mismatch_cnt = 0;
+  std::set<size_t> distinct_sizes_below_buf;
+
+  void reset() {
+    std::lock_guard<std::mutex> lk(mtx);
+    checked_frames = 0;
+    mismatch_cnt = 0;
+    distinct_sizes_below_buf.clear();
+  }
+};
+
+St22RandSizeTracker g_rand_size_tracker;
+
 struct St22EncoderTraits {
   using SessionHandle = st22p_encode_session;
   using PrivHandle = st22_encode_priv;
@@ -175,6 +207,25 @@ struct St22EncoderTraits {
     return st22_encoder_put_frame(s, f, result);
   }
 
+  static void poison_failed_frame(const CreateReq& req, FrameMeta* f) {
+    if (!f || !f->dst || !f->dst->addr[0]) return;
+    /* Keep size > ST22_ENCODE_MIN_FRAME_SZ so ignoring result < 0 sends poisoned bytes.
+     */
+    constexpr size_t kMinValidCodestreamSz =
+        5 * static_cast<size_t>(MTL_PKT_MAX_RTP_BYTES) + 64;
+    size_t sz = req.max_codestream_size;
+    if (sz > kMinValidCodestreamSz) sz = kMinValidCodestreamSz;
+    if (sz > f->dst->buffer_size) sz = f->dst->buffer_size;
+    f->dst->data_size = sz;
+    auto* base = static_cast<uint8_t*>(f->dst->addr[0]);
+    const size_t head = sz < 64 ? sz : 64;
+    memset(base, 0xDE, head);
+    constexpr size_t kShaLen = static_cast<size_t>(SHA256_DIGEST_LENGTH);
+    if (sz >= kShaLen) {
+      memset(base + sz - kShaLen, 0xDE, kShaLen);
+    }
+  }
+
   static int process_frame(const CreateReq& req, FrameMeta* f, int sleep_time_us,
                            int rand_ratio, int& frame_cnt) {
     size_t codestream_size = req.max_codestream_size;
@@ -195,6 +246,14 @@ struct St22EncoderTraits {
           100 - static_cast<int>(next_prng_u64() % static_cast<uint64_t>(rand_ratio));
       codestream_size = codestream_size * static_cast<size_t>(ratio) / 100;
     }
+    constexpr size_t kShaLen = static_cast<size_t>(SHA256_DIGEST_LENGTH);
+    if (codestream_size >= kShaLen + 2 * sizeof(uint32_t)) {
+      auto* tag = static_cast<uint8_t*>(f->dst->addr[0]) + kShaLen;
+      const uint32_t magic = kSt22SizeTagMagic;
+      const uint32_t encoded_sz = static_cast<uint32_t>(codestream_size);
+      memcpy(tag, &magic, sizeof(magic));
+      memcpy(tag + sizeof(magic), &encoded_sz, sizeof(encoded_sz));
+    }
     f->dst->data_size = codestream_size;
     frame_cnt++;
     return 0;
@@ -206,6 +265,9 @@ struct St22DecoderTraits {
   using PrivHandle = st22_decode_priv;
   using CreateReq = struct st22_decoder_create_req;
   using FrameMeta = struct st22_decode_frame_meta;
+  /* Use a coprime interval vs encoder so failed TX frames never phase-lock
+   * with RX decoder failures and silently cancel out. */
+  static constexpr int kFailIntervalDelta = 1;
 
   static bool use_block_get(struct st_tests_context* ctx) {
     return ctx->decoder_use_block_get;
@@ -236,12 +298,32 @@ struct St22DecoderTraits {
   }
 
   static int process_frame(const CreateReq& req, FrameMeta* f, int sleep_time_us,
-                           int /*rand_ratio*/, int& frame_cnt) {
+                           int rand_ratio, int& frame_cnt) {
     if (f->src->width != req.width || f->dst->width != req.width ||
         f->src->height != req.height || f->dst->height != req.height ||
         f->src->fmt != req.input_fmt || f->dst->fmt != req.output_fmt ||
         f->src->data_size > f->src->buffer_size) {
       return -EIO;
+    }
+
+    if (rand_ratio > 0) {
+      constexpr size_t kShaLen = static_cast<size_t>(SHA256_DIGEST_LENGTH);
+      uint32_t magic = 0;
+      uint32_t expected_sz = 0;
+      if (f->src->data_size >= kShaLen + 2 * sizeof(uint32_t)) {
+        const auto* tag = static_cast<const uint8_t*>(f->src->addr[0]) + kShaLen;
+        memcpy(&magic, tag, sizeof(magic));
+        memcpy(&expected_sz, tag + sizeof(magic), sizeof(expected_sz));
+      }
+      std::lock_guard<std::mutex> lk(g_rand_size_tracker.mtx);
+      g_rand_size_tracker.checked_frames++;
+      if (magic != kSt22SizeTagMagic ||
+          f->src->data_size != static_cast<size_t>(expected_sz)) {
+        g_rand_size_tracker.mismatch_cnt++;
+      }
+      if (f->src->data_size < f->src->buffer_size) {
+        g_rand_size_tracker.distinct_sizes_below_buf.insert(f->src->data_size);
+      }
     }
 
     /* copy sha to the end of decode frame */
@@ -322,12 +404,13 @@ void verify_codec_plugin_reg(mtl_handle st, Dev dev, CreateFn noop_create,
   EXPECT_EQ(reg_fn(st, &dev), nullptr);
 
   dev.free_session = noop_free;
-  ScopedDev handle(reg_fn(st, &dev));
-  ASSERT_TRUE(static_cast<bool>(handle));
-  handle.reset();
-
-  handle.reset(reg_fn(st, &dev));
-  ASSERT_TRUE(static_cast<bool>(handle));
+  /* Exceed the 8-slot plugin table so a no-op unregister fails cleanly. */
+  constexpr int kRegUnregCycles = 10;
+  for (int i = 0; i < kRegUnregCycles; ++i) {
+    ScopedDev handle(reg_fn(st, &dev));
+    ASSERT_TRUE(static_cast<bool>(handle)) << "plugin register failed on cycle " << i;
+    handle.reset();
+  }
 }
 
 TEST(St22p, codec_plugin_register_unregister) {
@@ -531,8 +614,13 @@ TEST(St22p, tx_query_params) {
   ASSERT_TRUE(static_cast<bool>(handle));
 
   EXPECT_EQ(st22p_tx_frame_size(handle.get()), test_ctx->frame_size);
+  void* addrs[kFbCnt] = {};
   for (uint16_t idx = 0; idx < kFbCnt; idx++) {
-    EXPECT_NE(st22p_tx_get_fb_addr(handle.get(), idx), nullptr);
+    addrs[idx] = st22p_tx_get_fb_addr(handle.get(), idx);
+    EXPECT_NE(addrs[idx], nullptr);
+    for (uint16_t prev = 0; prev < idx; prev++) {
+      EXPECT_NE(addrs[idx], addrs[prev]);
+    }
   }
   EXPECT_EQ(st22p_tx_get_fb_addr(handle.get(), kFbCnt), nullptr);
   EXPECT_EQ(st22p_tx_get_fb_addr(handle.get(), kFbCnt * 2), nullptr);
@@ -548,8 +636,13 @@ TEST(St22p, rx_query_params) {
   ASSERT_TRUE(static_cast<bool>(handle));
 
   EXPECT_EQ(st22p_rx_frame_size(handle.get()), test_ctx->frame_size);
+  void* addrs[kFbCnt] = {};
   for (uint16_t idx = 0; idx < kFbCnt; idx++) {
-    EXPECT_NE(st22p_rx_get_fb_addr(handle.get(), idx), nullptr);
+    addrs[idx] = st22p_rx_get_fb_addr(handle.get(), idx);
+    EXPECT_NE(addrs[idx], nullptr);
+    for (uint16_t prev = 0; prev < idx; prev++) {
+      EXPECT_NE(addrs[idx], addrs[prev]);
+    }
   }
   EXPECT_EQ(st22p_rx_get_fb_addr(handle.get(), kFbCnt), nullptr);
   EXPECT_EQ(st22p_rx_get_fb_addr(handle.get(), kFbCnt * 2), nullptr);
@@ -565,20 +658,17 @@ static struct st_frame* st22p_get_frame_or_wait(St22pContext* s, GetFn&& get_fn)
   return frame;
 }
 
-static void populate_st22p_tx_sha(St22pContext* ctx, st22p_tx_handle handle, bool tx_ext,
-                                  const St22pContext* copy_sha_from = nullptr) {
+static void populate_st22p_tx_sha(St22pContext* ctx, st22p_tx_handle handle,
+                                  bool tx_ext) {
   const size_t frame_size = ctx->frame_size;
   for (int frame = 0; frame < ST22_TEST_SHA_HIST_NUM; frame++) {
     uint8_t* fb = tx_ext ? (ctx->ext_frames.data() + frame * frame_size)
                          : (uint8_t*)st22p_tx_get_fb_addr(handle, frame);
     ASSERT_NE(fb, nullptr);
-    st_test_rand_data(fb, frame_size, frame);
-    if (copy_sha_from) {
-      memcpy(ctx->shas[frame], copy_sha_from->shas[frame], SHA256_DIGEST_LENGTH);
-    } else {
-      SHA256((unsigned char*)fb, frame_size, ctx->shas[frame]);
-      test_sha_dump("st22p_tx", ctx->shas[frame]);
-    }
+    st_test_rand_data(fb, frame_size,
+                      static_cast<uint8_t>(ctx->idx * ST22_TEST_SHA_HIST_NUM + frame));
+    SHA256((unsigned char*)fb, frame_size, ctx->shas[frame]);
+    test_sha_dump("st22p_tx", ctx->shas[frame]);
     memcpy(fb + frame_size - SHA256_DIGEST_LENGTH, ctx->shas[frame],
            SHA256_DIGEST_LENGTH);
   }
@@ -665,13 +755,36 @@ static void test_st22p_rx_frame_thread(St22pContext* s) {
       s->pre_timestamp = (uint32_t)frame->timestamp;
     }
 
+    if (s->expect_interlaced) {
+      if (!frame->interlaced) {
+        s->interlace_meta_fail_cnt.fetch_add(1, std::memory_order_relaxed);
+      } else if (frame->second_field) {
+        s->second_field_cnt.fetch_add(1, std::memory_order_relaxed);
+      } else {
+        s->first_field_cnt.fetch_add(1, std::memory_order_relaxed);
+      }
+    }
+
     unsigned char* sha =
         (unsigned char*)frame->addr[0] + frame->data_size - SHA256_DIGEST_LENGTH;
-    int i = 0;
-    for (i = 0; i < ST22_TEST_SHA_HIST_NUM; i++) {
-      if (!memcmp(sha, s->shas[i], SHA256_DIGEST_LENGTH)) break;
+    bool matched = false;
+    for (int i = 0; i < ST22_TEST_SHA_HIST_NUM; i++) {
+      if (!memcmp(sha, s->shas[i], SHA256_DIGEST_LENGTH)) {
+        s->matched_tx0.fetch_add(1, std::memory_order_relaxed);
+        matched = true;
+        break;
+      }
     }
-    if (i >= ST22_TEST_SHA_HIST_NUM) {
+    if (!matched && s->check_dual_sha) {
+      for (int i = 0; i < ST22_TEST_SHA_HIST_NUM; i++) {
+        if (!memcmp(sha, s->alt_shas[i], SHA256_DIGEST_LENGTH)) {
+          s->matched_tx1.fetch_add(1, std::memory_order_relaxed);
+          matched = true;
+          break;
+        }
+      }
+    }
+    if (!matched) {
       test_sha_dump("st22p_rx_error_sha", sha);
       atomic_inc(&s->sha_fail_cnt);
     }
@@ -695,6 +808,7 @@ static void st22p_rx_digest_test(const St22pDigestScenario& sc) {
   mtl_test::ScopedPluginFaults plugin_cfg(ctx, sc.fail_interval, sc.timeout_interval,
                                           sc.timeout_ms, sc.rand_ratio,
                                           sc.codec_block_get);
+  if (sc.rand_ratio > 0) g_rand_size_tracker.reset();
 
   const size_t sessions = sc.streams.size();
   std::vector<St22pTxSession> tx;
@@ -744,7 +858,7 @@ static void st22p_rx_digest_test(const St22pDigestScenario& sc) {
     if (sc.tx_ext) ops_tx.flags |= ST22P_TX_FLAG_EXT_FRAME;
     if (sc.rtcp) {
       ops_tx.flags |= ST22P_TX_FLAG_ENABLE_RTCP;
-      ops_tx.rtcp.buffer_size = 512;
+      ops_tx.rtcp.buffer_size = 1024;
     }
 
     if (sc.derive) {
@@ -798,6 +912,7 @@ static void st22p_rx_digest_test(const St22pDigestScenario& sc) {
     s.ctx->fmt = stream.fmt;
     s.ctx->user_timestamp = sc.user_timestamp;
     s.ctx->block_get = sc.block_get;
+    s.ctx->expect_interlaced = sc.interlace;
     memcpy(s.ctx->shas, tx[i].ctx->shas, ST22_TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
 
     if (sc.rx_ext) {
@@ -829,7 +944,7 @@ static void st22p_rx_digest_test(const St22pDigestScenario& sc) {
       ops_rx.rtcp.nack_interval_us = 100;
       ops_rx.rtcp.seq_skip_window = 0;
       ops_rx.rtcp.burst_loss_max = 4;
-      ops_rx.rtcp.sim_loss_rate = 0.0001;
+      ops_rx.rtcp.sim_loss_rate = 0.002f;
     }
 
     if (sc.derive) {
@@ -896,10 +1011,22 @@ static void st22p_rx_digest_test(const St22pDigestScenario& sc) {
     EXPECT_GT(rx_fb_rec, 0);
     EXPECT_EQ(mtl_test::relaxed_load(&rx[i].ctx->incomplete_frame_cnt), 0);
     EXPECT_EQ(mtl_test::relaxed_load(&rx[i].ctx->sha_fail_cnt), 0);
+    if (sc.interlace) {
+      EXPECT_EQ(rx[i].ctx->interlace_meta_fail_cnt.load(std::memory_order_relaxed), 0);
+      EXPECT_GT(rx[i].ctx->first_field_cnt.load(std::memory_order_relaxed), 0);
+      EXPECT_GT(rx[i].ctx->second_field_cnt.load(std::memory_order_relaxed), 0);
+    }
     if (sc.check_fps) {
       const double tol = (sc.fail_interval || sc.timeout_interval) ? 0.5 : 0.1;
       EXPECT_NEAR(win.rx_fps[i], expect_framerate_rx[i], expect_framerate_rx[i] * tol);
     }
+  }
+  if (sc.rand_ratio > 0) {
+    std::lock_guard<std::mutex> lk(g_rand_size_tracker.mtx);
+    EXPECT_GT(g_rand_size_tracker.checked_frames, 0);
+    EXPECT_EQ(g_rand_size_tracker.mismatch_cnt, 0);
+    EXPECT_GE(g_rand_size_tracker.distinct_sizes_below_buf.size(),
+              static_cast<size_t>(2));
   }
 }
 
@@ -962,7 +1089,7 @@ TEST(St22p, digest_st22_s2_rtcp) {
       {ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE, ST22_CODEC_JPEGXS, 10},
       {ST_FPS_P50, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE, ST22_CODEC_JPEGXS, 16},
   };
-  sc.check_fps = false;
+  sc.check_fps = true;
   sc.rtcp = true;
   st22p_rx_digest_test(sc);
 }
@@ -1056,8 +1183,7 @@ struct St22pLoopback {
       }
 
       if (opts.populate_sha) {
-        populate_st22p_tx_sha(s.ctx.get(), s.handle.get(), false,
-                              i == 0 ? nullptr : tx[0].ctx.get());
+        populate_st22p_tx_sha(s.ctx.get(), s.handle.get(), false);
         if (::testing::Test::HasFatalFailure()) return;
       }
       set_handle(s.ctx.get(), s.handle.get());
@@ -1073,6 +1199,18 @@ struct St22pLoopback {
     r.ctx->block_get = opts.block_get;
     if (opts.populate_sha) {
       memcpy(r.ctx->shas, tx[0].ctx->shas, ST22_TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
+      if (opts.tx_sessions > 1) {
+        for (int f0 = 0; f0 < ST22_TEST_SHA_HIST_NUM; ++f0) {
+          for (int f1 = 0; f1 < ST22_TEST_SHA_HIST_NUM; ++f1) {
+            ASSERT_NE(
+                memcmp(tx[0].ctx->shas[f0], tx[1].ctx->shas[f1], SHA256_DIGEST_LENGTH), 0)
+                << "tx[0] and tx[1] SHA tables must be distinct";
+          }
+        }
+        memcpy(r.ctx->alt_shas, tx[1].ctx->shas,
+               ST22_TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
+        r.ctx->check_dual_sha = true;
+      }
     }
 
     struct st22p_rx_ops ops_rx;
@@ -1160,9 +1298,14 @@ static void st22p_update_src_dst_test(bool tx_update_dst) {
   auto rx_ctxs = collect_ctxs(lb.rx);
   EXPECT_TRUE(
       mtl_test::wait_for_all(rx_ctxs, mtl_test::rx_frames, kSt22pRateWarmupFrames, 6000));
+  if (!tx_update_dst) {
+    EXPECT_GT(lb.rx[0].ctx->matched_tx0.load(std::memory_order_relaxed), 0);
+    EXPECT_EQ(lb.rx[0].ctx->matched_tx1.load(std::memory_order_relaxed), 0);
+  }
 
   auto verify_switch = [&](const char* label, const uint8_t* tx_dst_ip,
-                           const uint8_t* rx_src_ip, uint16_t udp_port) {
+                           const uint8_t* rx_src_ip, uint16_t udp_port,
+                           int target_tx_idx) {
     if (tx_update_dst) {
       struct st_tx_dest_info dst = {};
       dst.udp_port[MTL_SESSION_PORT_P] = udp_port;
@@ -1174,6 +1317,11 @@ static void st22p_update_src_dst_test(bool tx_update_dst) {
     src.udp_port[MTL_SESSION_PORT_P] = udp_port;
     memcpy(src.ip_addr[MTL_SESSION_PORT_P], rx_src_ip, MTL_IP_ADDR_LEN);
     EXPECT_GE(st22p_rx_update_source(lb.rx[0].handle.get(), &src), 0);
+
+    /* Allow in-flight frames from the old source to drain before counting. */
+    st_usleep(150 * 1000);
+    lb.rx[0].ctx->matched_tx0.store(0, std::memory_order_relaxed);
+    lb.rx[0].ctx->matched_tx1.store(0, std::memory_order_relaxed);
 
     const int base_rec = mtl_test::rx_frames(lb.rx[0].ctx.get());
     auto delta_rec = [&](const tests_context* c) {
@@ -1188,15 +1336,29 @@ static void st22p_update_src_dst_test(bool tx_update_dst) {
     EXPECT_GT(fb_rec, 0);
     info("%s, %s fb_rec %d framerate %f\n", __func__, label, fb_rec, rate_res.rate[0]);
     EXPECT_NEAR(rate_res.rate[0], expect_fps, expect_fps * 0.1);
+
+    const int m0 = lb.rx[0].ctx->matched_tx0.load(std::memory_order_relaxed);
+    const int m1 = lb.rx[0].ctx->matched_tx1.load(std::memory_order_relaxed);
+    if (!tx_update_dst) {
+      if (target_tx_idx == 1) {
+        EXPECT_GT(m1, 5) << label << " did not receive frames from tx[1]";
+        EXPECT_EQ(m0, 0) << label << " still received frames from stale tx[0]";
+      } else {
+        EXPECT_GT(m0, 5) << label << " did not receive frames from tx[0]";
+        EXPECT_EQ(m1, 0) << label << " still received frames from stale tx[1]";
+      }
+    } else {
+      EXPECT_GT(m0, 5) << label << " did not receive frames from tx[0]";
+    }
   };
 
   verify_switch("mcast 1", ctx->mcast_ip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-                ST22P_TEST_UDP_PORT + 2);
+                ST22P_TEST_UDP_PORT + 2, tx_update_dst ? 0 : 1);
   const uint8_t* tx0_dst_ip =
       ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_R];
   const uint8_t* rx0_src_ip =
       ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_P];
-  verify_switch("unicast 0", tx0_dst_ip, rx0_src_ip, ST22P_TEST_UDP_PORT);
+  verify_switch("unicast 0", tx0_dst_ip, rx0_src_ip, ST22P_TEST_UDP_PORT, 0);
 
   lb.stop_all();
   EXPECT_EQ(mtl_test::relaxed_load(&lb.rx[0].ctx->incomplete_frame_cnt), 0);
@@ -1238,6 +1400,7 @@ TEST(St22p, rx_pcapng_dump) {
     struct stat st_buf = {};
     EXPECT_EQ(stat(meta.file_name[MTL_SESSION_PORT_P], &st_buf), 0);
     EXPECT_GT(st_buf.st_size, 0);
+    mtl_test::verify_pcapng_file(meta.file_name[MTL_SESSION_PORT_P], kMaxDumpPackets);
   }
 
   lb.stop_all();
@@ -1395,12 +1558,24 @@ TEST(St22p, tx_drop_when_late) {
         << "on-time frame " << i << " never completed";
   }
 
-  EXPECT_TRUE(put_one_and_drain(mtl_ptp_read_time(st) - NS_PER_S))
-      << "stale frame never left the pipeline";
+  /* Exceed kFbCnt stale frames so leaking DROPPED slots exhausts the pool. */
+  constexpr int kStaleCnt = kFbCnt + 2;
+  for (int i = 0; i < kStaleCnt; i++) {
+    int late_before = dctx.late_calls.load();
+    EXPECT_TRUE(put_one_and_drain(mtl_ptp_read_time(st) - NS_PER_S))
+        << "stale frame " << i << " never left the pipeline";
+    EXPECT_TRUE(mtl_test::wait_until(
+        [&]() { return dctx.late_calls.load() > late_before; }, 3000, 1))
+        << "stale frame " << i << " never triggered notify_frame_late";
+  }
 
-  EXPECT_EQ(dctx.dropped_done_calls.load() - base_dropped, 1);
-  EXPECT_EQ(dctx.complete_done_calls.load() - base_complete, kOnTimeCnt);
-  EXPECT_EQ(dctx.late_calls.load() - base_late, 1);
+  /* Confirm an on-time frame still succeeds after > kFbCnt drops. */
+  EXPECT_TRUE(put_one_and_drain(mtl_ptp_read_time(st) + frame_period_ns * 4))
+      << "post-drop on-time frame never completed";
+
+  EXPECT_EQ(dctx.dropped_done_calls.load() - base_dropped, kStaleCnt);
+  EXPECT_EQ(dctx.complete_done_calls.load() - base_complete, kOnTimeCnt + 1);
+  EXPECT_EQ(dctx.late_calls.load() - base_late, kStaleCnt);
 
   EXPECT_GE(mtl_guard.stop(), 0);
 }

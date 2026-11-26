@@ -72,33 +72,47 @@ void RunEpochOnwardRecoveryCase(NoCtxTest* self, struct st_tests_context* ctx,
   /* let the session settle and transmit for a while against the inflated clock */
   std::this_thread::sleep_for(std::chrono::seconds(6));
 
+  struct st20_tx_user_stats stats = {};
+  ASSERT_EQ(st20p_tx_get_session_stats(bundle.handler->sessionsHandleTx, &stats), 0);
+  const uint64_t onward_before_step = stats.common.stat_epoch_onward;
+  uint64_t last_onward = onward_before_step;
+
   /* simulate the PTP servo correcting the clock back to the true grandmaster time */
   g_epoch_recovery_future_offset_ns.store(0, std::memory_order_release);
 
-  struct st20_tx_user_stats stats = {};
-  uint64_t last_onward = 0;
   bool recovered = false;
 
-  /* a correct fix resyncs on the first frame after the step, so the delta
-   * should hit 0 by the poll right after the one that observes the resync */
-  for (int i = 0; i < 3; i++) {
+  /* a correct fix resyncs on the first frame after the step, so stat_epoch_onward
+   * increments at least once and its delta hits 0 on the next poll */
+  for (int i = 0; i < 4; i++) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
     ASSERT_EQ(st20p_tx_get_session_stats(bundle.handler->sessionsHandleTx, &stats), 0);
     uint64_t delta = stats.common.stat_epoch_onward - last_onward;
     last_onward = stats.common.stat_epoch_onward;
-    if (delta == 0) {
+    if (last_onward > onward_before_step && delta == 0) {
       recovered = true;
       break;
     }
   }
 
+  const uint64_t sent_after_recovery = stats.common.stat_frames_sent;
+  const uint64_t rx_after_recovery = bundle.handler->rxFrames();
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+  ASSERT_EQ(st20p_tx_get_session_stats(bundle.handler->sessionsHandleTx, &stats), 0);
+
   bundle.handler->stopSession();
 
+  EXPECT_GT(last_onward, onward_before_step)
+      << "simulated backward PTP step did not trigger stat_epoch_onward";
   EXPECT_TRUE(recovered)
       << "stat_epoch_onward kept incrementing after the simulated PTP correction "
          "(cumulative value "
       << last_onward
       << ") -- TX pacing never recovered from an epoch initialized ahead of real time";
+  EXPECT_GT(stats.common.stat_frames_sent, sent_after_recovery)
+      << "TX stat_frames_sent did not advance after PTP epoch recovery";
+  EXPECT_GT(bundle.handler->rxFrames(), rx_after_recovery)
+      << "RX frames did not advance after PTP epoch recovery";
 }
 
 /* Waits for the first complete RX frame with a generous bound, since real PF

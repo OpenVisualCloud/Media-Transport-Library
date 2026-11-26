@@ -497,6 +497,82 @@ static int rx_rtp_ready(void* priv) {
   return 0;
 }
 
+struct St40FieldState {
+  tests_context* ctx = nullptr;
+  std::atomic<int> first_field_cnt{0};
+  std::atomic<int> second_field_cnt{0};
+  std::atomic<int> bad_f_cnt{0};
+};
+
+static int rx_rtp_ready_interlaced(void* priv) {
+  auto* st = static_cast<St40FieldState*>(priv);
+  if (!st || !st->ctx) return -EIO;
+  auto* ctx = st->ctx;
+  auto handle = (st40_rx_handle)__atomic_load_n(&ctx->handle, __ATOMIC_ACQUIRE);
+  if (!handle) return -EIO;
+
+  void* useptr = nullptr;
+  uint16_t len = 0;
+  while (true) {
+    void* mbuf = st40_rx_get_mbuf(handle, &useptr, &len);
+    if (!mbuf) break;
+    if (static_cast<size_t>(len) >= sizeof(struct st40_rfc8331_rtp_hdr)) {
+      const auto* hdr = static_cast<const struct st40_rfc8331_rtp_hdr*>(useptr);
+      const uint8_t f = hdr->first_hdr_chunk.f;
+      if (f == 0x2)
+        st->first_field_cnt.fetch_add(1, std::memory_order_relaxed);
+      else if (f == 0x3)
+        st->second_field_cnt.fetch_add(1, std::memory_order_relaxed);
+      else
+        st->bad_f_cnt.fetch_add(1, std::memory_order_relaxed);
+    }
+    st40_rx_put_mbuf(handle, mbuf);
+    __atomic_fetch_add(&ctx->fb_rec, 1, __ATOMIC_RELAXED);
+  }
+
+  if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
+  return 0;
+}
+
+struct St40RxSsrcTracker {
+  tests_context* ctx = nullptr;
+  std::atomic<int> ssrc_cnt[4]{};
+  std::atomic<int> other_cnt{0};
+
+  void reset() {
+    for (auto& c : ssrc_cnt) c.store(0, std::memory_order_relaxed);
+    other_cnt.store(0, std::memory_order_relaxed);
+  }
+};
+
+static int rx_rtp_ready_ssrc(void* priv) {
+  auto* tr = static_cast<St40RxSsrcTracker*>(priv);
+  if (!tr || !tr->ctx) return -EIO;
+  auto* ctx = tr->ctx;
+  auto handle = (st40_rx_handle)__atomic_load_n(&ctx->handle, __ATOMIC_ACQUIRE);
+  if (!handle) return -EIO;
+
+  void* useptr = nullptr;
+  uint16_t len = 0;
+  while (true) {
+    void* mbuf = st40_rx_get_mbuf(handle, &useptr, &len);
+    if (!mbuf) break;
+    if (static_cast<size_t>(len) >= sizeof(struct st40_rfc8331_rtp_hdr)) {
+      const auto* rtp = static_cast<const struct st40_rfc8331_rtp_hdr*>(useptr);
+      const uint32_t ssrc = ntohl(rtp->base.ssrc);
+      if (ssrc >= 0x88888888u && ssrc < 0x88888888u + 4u)
+        tr->ssrc_cnt[ssrc - 0x88888888u].fetch_add(1, std::memory_order_relaxed);
+      else
+        tr->other_cnt.fetch_add(1, std::memory_order_relaxed);
+    }
+    st40_rx_put_mbuf(handle, mbuf);
+    __atomic_fetch_add(&ctx->fb_rec, 1, __ATOMIC_RELAXED);
+  }
+
+  if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
+  return 0;
+}
+
 static void st40_rx_ops_init(tests_context* st40, struct st40_rx_ops* ops) {
   auto ctx = st40->ctx;
 
@@ -801,6 +877,7 @@ static void st40_rx_fps_test(const St40RxScenario& s) {
 
   std::vector<mtl_test::ScopedContext> tx_ctxs, rx_ctxs;
   std::vector<tests_context*> raw_tx, raw_rx;
+  std::vector<std::unique_ptr<St40FieldState>> field_states(sessions);
   std::vector<ScopedSt40Tx> tx_handles;
   std::vector<ScopedSt40Rx> rx_handles;
   std::vector<double> expect_framerate(sessions);
@@ -864,6 +941,11 @@ static void st40_rx_fps_test(const St40RxScenario& s) {
     if (spec.fmd) {
       raw_rx[i]->frame_size = raw_tx[i]->frame_size;
       raw_rx[i]->frame_time = NS_PER_S / st_frame_rate(spec.fps);
+    } else if (s.interlaced && !s.check_sha) {
+      field_states[i] = std::make_unique<St40FieldState>();
+      field_states[i]->ctx = raw_rx[i];
+      ops_rx.priv = field_states[i].get();
+      ops_rx.notify_rtp_ready = rx_rtp_ready_interlaced;
     }
 
     rx_handles.emplace_back(st40_rx_create(m_handle, &ops_rx));
@@ -913,6 +995,11 @@ static void st40_rx_fps_test(const St40RxScenario& s) {
     }
     if (s.check_sha) {
       EXPECT_GT(mtl_test::sha_checked_frames(raw_rx[i]), 0);
+    }
+    if (field_states[i]) {
+      EXPECT_GT(field_states[i]->first_field_cnt.load(std::memory_order_relaxed), 0);
+      EXPECT_GT(field_states[i]->second_field_cnt.load(std::memory_order_relaxed), 0);
+      EXPECT_EQ(field_states[i]->bad_f_cnt.load(std::memory_order_relaxed), 0);
     }
   }
 }
@@ -1136,10 +1223,15 @@ static void st40_verify_rx_switch_phase(const std::vector<ScopedSt40Rx>& rx_hand
                                         const std::vector<tests_context*>& raw_rx,
                                         const std::vector<double>& expect_framerate,
                                         struct st_rx_source_info& src,
+                                        St40RxSsrcTracker* tracker, int expected_src_idx,
                                         const char* label) {
   std::vector<int> baselines(raw_rx.size(), 0);
   for (size_t i = 0; i < rx_handles.size(); i++) {
     EXPECT_GE(st40_rx_update_source(rx_handles[i].get(), &src), 0);
+  }
+  st_usleep(150 * 1000);
+  tracker->reset();
+  for (size_t i = 0; i < rx_handles.size(); i++) {
     baselines[i] = mtl_test::rx_frames(raw_rx[i]);
   }
   auto delta_rx = [&](tests_context* c) {
@@ -1160,6 +1252,14 @@ static void st40_verify_rx_switch_phase(const std::vector<ScopedSt40Rx>& rx_hand
          label);
     EXPECT_NEAR(win.rate[i], expect_framerate[i], expect_framerate[i] * 0.1);
   }
+  EXPECT_GT(tracker->ssrc_cnt[expected_src_idx].load(std::memory_order_relaxed), 5)
+      << label;
+  for (int k = 0; k < 4; k++) {
+    if (k == expected_src_idx) continue;
+    EXPECT_EQ(tracker->ssrc_cnt[k].load(std::memory_order_relaxed), 0)
+        << label << " unexpected packets from source " << k;
+  }
+  EXPECT_EQ(tracker->other_cnt.load(std::memory_order_relaxed), 0) << label;
 }
 
 static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
@@ -1173,6 +1273,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
 
   std::vector<mtl_test::ScopedContext> tx_ctxs, rx_ctxs;
   std::vector<tests_context*> raw_tx, raw_rx;
+  St40RxSsrcTracker ssrc_tracker;
   std::vector<ScopedSt40Tx> tx_handles;
   std::vector<ScopedSt40Rx> rx_handles;
   std::vector<double> expect_framerate(rx_sessions, st_frame_rate(ST_FPS_P59_94));
@@ -1215,6 +1316,9 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
     if (ctx->mcast_only)
       memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_2],
              MTL_IP_ADDR_LEN);
+    ssrc_tracker.ctx = raw_rx[i];
+    ops_rx.priv = &ssrc_tracker;
+    ops_rx.notify_rtp_ready = rx_rtp_ready_ssrc;
 
     rx_handles.emplace_back(st40_rx_create(m_handle, &ops_rx));
     ASSERT_TRUE(rx_handles[i]);
@@ -1224,6 +1328,12 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
   EXPECT_GE(mtl_run.start(), 0);
   /* Wait for >= 20 initial frames (~0.33 s at 59.94 fps) before switching. */
   EXPECT_TRUE(mtl_test::wait_for_all(raw_rx, mtl_test::rx_frames, 20, 6000));
+  EXPECT_GT(ssrc_tracker.ssrc_cnt[0].load(std::memory_order_relaxed), 5) << "initial";
+  for (int k = 1; k < 4; k++) {
+    EXPECT_EQ(ssrc_tracker.ssrc_cnt[k].load(std::memory_order_relaxed), 0)
+        << "initial unexpected source " << k;
+  }
+  EXPECT_EQ(ssrc_tracker.other_cnt.load(std::memory_order_relaxed), 0) << "initial";
 
   /* Phase 1: switch to mcast port p (tx_session:1) */
   struct st_rx_source_info src;
@@ -1242,7 +1352,8 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
   } else {
     __atomic_store_n(&raw_tx[1]->seq_id, 0, __ATOMIC_RELAXED);
   }
-  st40_verify_rx_switch_phase(rx_handles, raw_rx, expect_framerate, src, "mcast 1");
+  st40_verify_rx_switch_phase(rx_handles, raw_rx, expect_framerate, src, &ssrc_tracker,
+                              tx_update_dst ? 0 : 1, "mcast 1");
 
   /* Phase 2: switch to mcast port r (tx_session:2) */
   if (tx_sessions > 2) {
@@ -1251,7 +1362,8 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
     memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     __atomic_store_n(&raw_tx[2]->seq_id, rand(), __ATOMIC_RELAXED);
-    st40_verify_rx_switch_phase(rx_handles, raw_rx, expect_framerate, src, "mcast 2");
+    st40_verify_rx_switch_phase(rx_handles, raw_rx, expect_framerate, src, &ssrc_tracker,
+                                2, "mcast 2");
   }
 
   /* Phase 3: switch to unicast (tx_session:0) */
@@ -1272,7 +1384,8 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
         MTL_IP_ADDR_LEN);
     EXPECT_GE(st40_tx_update_destination(tx_handles[0].get(), &dst), 0);
   }
-  st40_verify_rx_switch_phase(rx_handles, raw_rx, expect_framerate, src, "unicast 0");
+  st40_verify_rx_switch_phase(rx_handles, raw_rx, expect_framerate, src, &ssrc_tracker, 0,
+                              "unicast 0");
 
   for (auto& w : tx_workers) w.stop();
   EXPECT_GE(mtl_run.stop(), 0);
@@ -1371,7 +1484,8 @@ int rx_anc_frame_ready(void* priv, void* frame, struct st40_rx_frame_meta* meta)
                  meta->meta_num == 1 && meta->udw_buffer_fill == st->expected_udw_size &&
                  meta->meta[0].did == 0x43 && meta->meta[0].sdid == 0x02 &&
                  meta->meta[0].udw_size == st->expected_udw_size &&
-                 meta->status == ST_FRAME_STATUS_COMPLETE;
+                 meta->status == ST_FRAME_STATUS_COMPLETE && meta->rtp_marker &&
+                 meta->pkts_total == 1u;
   if (!meta_ok) __atomic_fetch_add(&ctx->rx_meta_fail_cnt, 1, __ATOMIC_RELAXED);
 
   {
@@ -1529,6 +1643,7 @@ TEST(St40_rx, session_stats_reset) {
   EXPECT_GT(tx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
   EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
   EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
+  EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
 
   EXPECT_GE(st40_tx_reset_session_stats(tx_handle.get()), 0);
   EXPECT_GE(st40_rx_reset_session_stats(rx_handle.get()), 0);

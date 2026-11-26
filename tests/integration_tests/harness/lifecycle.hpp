@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstdint>
+#include <set>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -29,6 +30,13 @@ struct has_rtp_frame_total_pkts : std::false_type {};
 template <typename Ops>
 struct has_rtp_frame_total_pkts<
     Ops, std::void_t<decltype(std::declval<Ops&>().rtp_frame_total_pkts)>>
+    : std::true_type {};
+
+template <typename Ops, typename = void>
+struct has_rtp_pkt_size : std::false_type {};
+
+template <typename Ops>
+struct has_rtp_pkt_size<Ops, std::void_t<decltype(std::declval<Ops&>().rtp_pkt_size)>>
     : std::true_type {};
 
 template <typename Ops>
@@ -76,9 +84,13 @@ inline void verify_framebuffer_access(OpsInitFn&& ops_init, GetFbFn&& get_fb,
                             EXPECT_EQ(get_fb(h.get(), static_cast<uint16_t>(fb_nb * 2)),
                                       nullptr);
                           } else {
+                            std::set<const void*> ptrs;
                             for (uint16_t idx = 0; idx < fb_nb; idx++) {
-                              EXPECT_NE(get_fb(h.get(), idx), nullptr);
+                              const void* fb = get_fb(h.get(), idx);
+                              EXPECT_NE(fb, nullptr);
+                              if (fb) ptrs.insert(fb);
                             }
+                            EXPECT_EQ(ptrs.size(), static_cast<size_t>(fb_nb));
                           }
                         });
 }
@@ -96,6 +108,7 @@ inline void verify_create_free(OpsInitFn&& ops_init, AssertCntFn&& assert_cnt, i
   detail::with_session_ops<Ops>(
       std::forward<OpsInitFn>(ops_init), 2, false,
       [&](struct st_tests_context* ctx, Ops& ops) {
+        const int base_sch = st_test_sch_cnt(ctx);
         int expect_cnt = 0;
         auto create_batch = [&](int n) {
           std::vector<ScopedHandle<Handle, FreeFn>> batch;
@@ -126,6 +139,7 @@ inline void verify_create_free(OpsInitFn&& ops_init, AssertCntFn&& assert_cnt, i
           assert_cnt(--expect_cnt);
         }
         assert_cnt(0);
+        EXPECT_EQ(st_test_sch_cnt(ctx), base_sch);
       });
 }
 
@@ -151,25 +165,35 @@ inline void verify_create_free_max(OpsInitFn&& ops_init, AssertCntFn&& assert_cn
         }
 
         info("%s, max session cnt %d\n", __func__, expect_cnt);
-        EXPECT_GT(expect_cnt, 0);
+        EXPECT_GE(expect_cnt, 2);
         for (auto& h : handles) {
           h.reset();
           assert_cnt(--expect_cnt);
         }
         assert_cnt(0);
         EXPECT_EQ(sch_cnt, st_test_sch_cnt(ctx));
+
+        /* Prove session and queue resources were reclaimed after max teardown. */
+        {
+          ScopedHandle<Handle, FreeFn> reclaimed(CreateFn(ctx->handle, &ops));
+          EXPECT_TRUE(static_cast<bool>(reclaimed));
+          if (reclaimed) assert_cnt(1);
+        }
+        assert_cnt(0);
+        EXPECT_EQ(sch_cnt, st_test_sch_cnt(ctx));
       });
 }
 
-/* Verify invalid num_port values (0, 100, -1, and 2 on single-port hosts) fail. */
+/* Verify invalid num_port values (0, 3, 100, -1, and 2 on single-port hosts) fail. */
 template <typename Ops, typename Handle, Handle (*CreateFn)(mtl_handle, Ops*),
           int (*FreeFn)(Handle), typename OpsInitFn>
 inline void verify_invalid_ports(OpsInitFn&& ops_init) {
   detail::with_session_ops<Ops>(
       std::forward<OpsInitFn>(ops_init), 2, false,
       [&](struct st_tests_context* ctx, Ops& ops) {
-        for (int8_t bad_ports : {static_cast<int8_t>(0), static_cast<int8_t>(100),
-                                 static_cast<int8_t>(-1)}) {
+        for (int8_t bad_ports :
+             {static_cast<int8_t>(0), static_cast<int8_t>(MTL_SESSION_PORT_MAX + 1),
+              static_cast<int8_t>(100), static_cast<int8_t>(-1)}) {
           detail::set_num_port(ops, bad_ports);
           ScopedHandle<Handle, FreeFn> h(CreateFn(ctx->handle, &ops));
           EXPECT_FALSE(static_cast<bool>(h));
@@ -194,7 +218,7 @@ inline void verify_invalid_fb_cnt(OpsInitFn&& ops_init, uint16_t fb_nb) {
       });
 }
 
-/* Verify every in-range framebuffer index returns a non-null pointer. */
+/* Verify every in-range framebuffer index returns a distinct non-null pointer. */
 template <typename Ops, typename Handle, Handle (*CreateFn)(mtl_handle, Ops*),
           int (*FreeFn)(Handle), typename GetFbFn, typename OpsInitFn>
 inline void verify_get_framebuffer(OpsInitFn&& ops_init, GetFbFn&& get_fb,
@@ -212,13 +236,25 @@ inline void verify_get_framebuffer_oob(OpsInitFn&& ops_init, GetFbFn&& get_fb,
       std::forward<OpsInitFn>(ops_init), std::forward<GetFbFn>(get_fb), fb_nb, true);
 }
 
-/* Verify invalid rtp_ring_size values fail for sessions without ops.type mutation. */
+/* Verify invalid rtp_ring_size values fail after asserting a valid positive control. */
 template <typename Ops, typename Handle, Handle (*CreateFn)(mtl_handle, Ops*),
           int (*FreeFn)(Handle), typename OpsInitFn>
 inline void verify_rtp_ring_invalid(OpsInitFn&& ops_init, uint16_t ring_sz) {
   detail::with_session_ops<Ops>(
       std::forward<OpsInitFn>(ops_init), 0, true,
       [&](struct st_tests_context* ctx, Ops& ops) {
+        if constexpr (detail::has_rtp_frame_total_pkts<Ops>::value) {
+          if (ops.rtp_frame_total_pkts == 0) ops.rtp_frame_total_pkts = 1024;
+        }
+        if constexpr (detail::has_rtp_pkt_size<Ops>::value) {
+          if (ops.rtp_pkt_size == 0) ops.rtp_pkt_size = 1260;
+        }
+        /* Positive control: valid power-of-two rtp_ring_size must succeed. */
+        ops.rtp_ring_size = 128;
+        {
+          ScopedHandle<Handle, FreeFn> ok(CreateFn(ctx->handle, &ops));
+          ASSERT_TRUE(static_cast<bool>(ok));
+        }
         ops.rtp_ring_size = ring_sz;
         ScopedHandle<Handle, FreeFn> h(CreateFn(ctx->handle, &ops));
         EXPECT_FALSE(static_cast<bool>(h));

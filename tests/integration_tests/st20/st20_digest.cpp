@@ -89,7 +89,7 @@ void st20_rx_digest_test(const St20DigestScenario& s) {
       ops_rx.rtcp.seq_bitmap_size = 32;
       ops_rx.rtcp.seq_skip_window = 10;
       ops_rx.rtcp.burst_loss_max = 32;
-      ops_rx.rtcp.sim_loss_rate = 0.0001;
+      ops_rx.rtcp.sim_loss_rate = 0.001f;
     }
     st20_init_rx_slice_meta(test_ctx_rx[i], ops_rx, st, test_ctx_tx[i]->frame_size);
     if (::testing::Test::HasFatalFailure()) return;
@@ -128,6 +128,13 @@ void st20_rx_digest_test(const St20DigestScenario& s) {
   EXPECT_TRUE(res.warmed_up);
   EXPECT_TRUE(res.complete);
 
+  std::vector<struct st20_rx_user_stats> rx_stats(sessions);
+  if (s.enable_rtcp) {
+    for (int i = 0; i < sessions; i++) {
+      ASSERT_GE(st20_rx_get_session_stats(rx_handle[i], &rx_stats[i]), 0);
+    }
+  }
+
   /* Auto-start makes mtl_stop() a no-op. Release sessions to freeze the counters. */
   st20_stop_tx_ready(test_ctx_tx);
   guard.release_sessions();
@@ -144,6 +151,11 @@ void st20_rx_digest_test(const St20DigestScenario& s) {
         test_ctx_rx[i]->fb_rec, test_ctx_rx[i]->incomplete_frame_cnt);
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_GT(test_ctx_rx[i]->check_sha_frame_cnt, 0);
+    if (s.enable_rtcp) {
+      EXPECT_GT(rx_stats[i].stat_pkts_simulate_loss, 0u);
+      EXPECT_GT(rx_stats[i].stat_pkts_retransmit, 0u);
+      EXPECT_LT(rx_stats[i].stat_frames_incomplete, 8u);
+    }
     if (st.rx_type == ST20_TYPE_SLICE_LEVEL)
       EXPECT_LT(test_ctx_rx[i]->incomplete_frame_cnt, 2 * 8);
     else

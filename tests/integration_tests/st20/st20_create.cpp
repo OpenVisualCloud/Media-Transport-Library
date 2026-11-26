@@ -43,11 +43,18 @@ TEST(St20_tx, create_queue_cnt) {
     ops.udp_port[MTL_SESSION_PORT_R]++;
   }
   const int created = static_cast<int>(handles.size());
-  handles.clear();
-  EXPECT_EQ(sch_cnt, st_test_sch_cnt(ctx));
-
   EXPECT_EQ(created, want) << "a port with fewer tx queues than --queue_cnt is the "
                               "usual cause, see the MTL log";
+  if (created == want) {
+    ScopedSt20Tx overflow(st20_tx_create(ctx->handle, &ops));
+    EXPECT_FALSE(static_cast<bool>(overflow));
+  }
+  handles.clear();
+  st20_tx_assert_cnt(0);
+  EXPECT_EQ(sch_cnt, st_test_sch_cnt(ctx));
+
+  ScopedSt20Tx reused(st20_tx_create(ctx->handle, &ops));
+  EXPECT_TRUE(static_cast<bool>(reused));
 }
 TEST(St20_tx, create_expect_fail) {
   mtl_test::verify_invalid_ports<struct st20_tx_ops, st20_tx_handle, st20_tx_create,
@@ -60,11 +67,26 @@ TEST(St20_tx, create_expect_fail_fb_cnt) {
                                   st20_tx_free>(st20_tx_ops_init, ST20_FB_MAX_COUNT + 1);
 }
 TEST(St20_tx, create_expect_fail_ring_sz) {
+  auto rtp_ops_init = [](tests_context* c, struct st20_tx_ops* ops) {
+    st20_tx_ops_init(c, ops);
+    ops->type = ST20_TYPE_RTP_LEVEL;
+    ops->rtp_frame_total_pkts = 1024;
+    ops->rtp_pkt_size = 1260;
+  };
+  {
+    auto* ctx = st_test_ctx();
+    auto test_ctx = mtl_test::make_context(ctx, 0, 0);
+    struct st20_tx_ops ops;
+    rtp_ops_init(test_ctx.get(), &ops);
+    ops.num_port = 1;
+    ops.rtp_ring_size = 128;
+    ScopedSt20Tx valid(st20_tx_create(ctx->handle, &ops));
+    ASSERT_TRUE(static_cast<bool>(valid));
+  }
   mtl_test::verify_rtp_ring_invalid<struct st20_tx_ops, st20_tx_handle, st20_tx_create,
-                                    st20_tx_free>(st20_tx_ops_init, ST20_TYPE_RTP_LEVEL,
-                                                  0);
+                                    st20_tx_free>(rtp_ops_init, ST20_TYPE_RTP_LEVEL, 0);
   mtl_test::verify_rtp_ring_invalid<struct st20_tx_ops, st20_tx_handle, st20_tx_create,
-                                    st20_tx_free>(st20_tx_ops_init, ST20_TYPE_RTP_LEVEL,
+                                    st20_tx_free>(rtp_ops_init, ST20_TYPE_RTP_LEVEL,
                                                   128 + 1);
 }
 TEST(St20_tx, get_framebuffer) {
@@ -108,7 +130,9 @@ TEST(St20_tx, query_params) {
   ScopedSt20Tx handle(st20_tx_create(ctx->handle, &ops));
   ASSERT_TRUE(static_cast<bool>(handle));
 
-  EXPECT_GE(st20_tx_get_sch_idx(handle.get()), 0);
+  const int sch_idx = st20_tx_get_sch_idx(handle.get());
+  EXPECT_GE(sch_idx, 0);
+  EXPECT_LT(sch_idx, st_test_sch_cnt(ctx));
   EXPECT_EQ(st20_tx_get_framebuffer_size(handle.get()),
             st20_frame_size(ops.fmt, ops.width, ops.height));
   EXPECT_EQ(st20_tx_get_framebuffer_count(handle.get()), fb_cnt);
@@ -118,10 +142,17 @@ TEST(St20_tx, query_params) {
   uint32_t vrx_pkts = 0;
   EXPECT_EQ(st20_tx_get_pacing_params(handle.get(), &tr_offset_ns, &trs_ns, &vrx_pkts),
             0);
-  EXPECT_GT(tr_offset_ns, 0.0);
-  EXPECT_GT(trs_ns, 0.0);
-  EXPECT_GT(vrx_pkts, 0u);
+  EXPECT_GT(tr_offset_ns, trs_ns);
+  EXPECT_GE(tr_offset_ns, 500e3);
+  EXPECT_LE(tr_offset_ns, 800e3);
+  EXPECT_GE(trs_ns, 1e3);
+  EXPECT_LE(trs_ns, 15e3);
+  EXPECT_GE(vrx_pkts, 4u);
+  EXPECT_LE(vrx_pkts, 16u);
+  const double expected_tr_offset_ns = tr_offset_ns;
+  tr_offset_ns = -1.0;
   EXPECT_EQ(st20_tx_get_pacing_params(handle.get(), &tr_offset_ns, nullptr, nullptr), 0);
+  EXPECT_DOUBLE_EQ(tr_offset_ns, expected_tr_offset_ns);
   EXPECT_LT(st20_tx_get_pacing_params(nullptr, &tr_offset_ns, &trs_ns, &vrx_pkts), 0);
 }
 
@@ -142,6 +173,8 @@ TEST(St20_rx, create_expect_fail) {
 TEST(St20_rx, create_expect_fail_fb_cnt) {
   mtl_test::verify_invalid_fb_cnt<struct st20_rx_ops, st20_rx_handle, st20_rx_create,
                                   st20_rx_free>(st20_rx_ops_init, 0);
+  mtl_test::verify_invalid_fb_cnt<struct st20_rx_ops, st20_rx_handle, st20_rx_create,
+                                  st20_rx_free>(st20_rx_ops_init, 1);
   mtl_test::verify_invalid_fb_cnt<struct st20_rx_ops, st20_rx_handle, st20_rx_create,
                                   st20_rx_free>(st20_rx_ops_init, ST20_FB_MAX_COUNT + 1);
 }
@@ -165,7 +198,9 @@ TEST(St20_rx, query_params) {
   ScopedSt20Rx handle(st20_rx_create(ctx->handle, &ops));
   ASSERT_TRUE(static_cast<bool>(handle));
 
-  EXPECT_GE(st20_rx_get_sch_idx(handle.get()), 0);
+  const int sch_idx = st20_rx_get_sch_idx(handle.get());
+  EXPECT_GE(sch_idx, 0);
+  EXPECT_LT(sch_idx, st_test_sch_cnt(ctx));
   EXPECT_EQ(st20_rx_get_framebuffer_size(handle.get()),
             st20_frame_size(ops.fmt, ops.width, ops.height));
   EXPECT_EQ(st20_rx_get_framebuffer_count(handle.get()), fb_cnt);
@@ -224,10 +259,14 @@ TEST(St20_rx, session_stats_reset) {
 
   ASSERT_GE(st20_rx_get_session_stats(rx_handle.get(), &rx_stats), 0);
   EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
+  EXPECT_GT(rx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
+  EXPECT_GT(rx_stats.common.stat_pkts_received, 0u);
   EXPECT_GT(rx_stats.stat_bytes_received, 0u);
   EXPECT_GE(st20_rx_reset_session_stats(rx_handle.get()), 0);
   ASSERT_GE(st20_rx_get_session_stats(rx_handle.get(), &rx_stats), 0);
   EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
+  EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].packets, 0u);
+  EXPECT_EQ(rx_stats.common.stat_pkts_received, 0u);
   EXPECT_EQ(rx_stats.stat_bytes_received, 0u);
 
   EXPECT_LT(st20_tx_get_session_stats(nullptr, &tx_stats), 0);
@@ -271,13 +310,18 @@ TEST(St20_rx, timing_parser_critical) {
 
   struct st20_rx_tp_pass pass = {};
   EXPECT_EQ(st20_rx_timing_parser_critical(rx_handle.get(), &pass), 0);
-  EXPECT_GT(pass.cinst_max_narrow, 0);
+  EXPECT_GE(pass.cinst_max_narrow, 4);
+  EXPECT_GE(pass.cinst_max_wide, 16);
   EXPECT_GE(pass.cinst_max_wide, pass.cinst_max_narrow);
-  EXPECT_GT(pass.vrx_max_narrow, 0);
+  EXPECT_GE(pass.vrx_max_narrow, 8);
+  EXPECT_GE(pass.vrx_max_wide, 720);
   EXPECT_GE(pass.vrx_max_wide, pass.vrx_max_narrow);
-  EXPECT_GT(pass.tr_offset, 0);
+  EXPECT_GE(pass.tr_offset, 500000);
+  EXPECT_LE(pass.tr_offset, 750000);
   EXPECT_GT(pass.latency_max, 0);
-  EXPECT_GE(pass.rtp_ts_delta_max, pass.rtp_ts_delta_min);
+  EXPECT_EQ(pass.rtp_ts_delta_min, 1501);
+  EXPECT_EQ(pass.rtp_ts_delta_max, 1502);
+  EXPECT_GT(pass.rtp_offset_max, 0);
 
   tx_ctx->ready.store(false, std::memory_order_release);
   EXPECT_GE(mtl_run.stop(), 0);

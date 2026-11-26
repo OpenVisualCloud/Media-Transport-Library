@@ -9,14 +9,40 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <type_traits>
 
 #include "log.h"
 #include "tests.hpp"
 
 namespace mtl_test {
+
+namespace detail {
+
+template <typename T, typename = void>
+struct HasPoisonFailedFrame : std::false_type {};
+
+template <typename T>
+struct HasPoisonFailedFrame<T, std::void_t<decltype(T::poison_failed_frame(
+                                   std::declval<const typename T::CreateReq&>(),
+                                   std::declval<typename T::FrameMeta*>()))>>
+    : std::true_type {};
+
+template <typename T, typename = void>
+struct FailIntervalDelta {
+  static constexpr int value = 0;
+};
+
+template <typename T>
+struct FailIntervalDelta<T, std::void_t<decltype(T::kFailIntervalDelta)>> {
+  static constexpr int value = T::kFailIntervalDelta;
+};
+
+}  // namespace detail
 
 /*
  * Unified worker-thread mock plugin pool for ST 20 converter, ST 22 encoder,
@@ -101,7 +127,10 @@ class MockPluginPool {
       s->block_get = Traits::use_block_get(ctx);
       Traits::on_create_req(ctx, req, s->sleep_time_us);
       s->req = *req;
-      s->fail_interval = ctx->plugin_fail_interval;
+      s->fail_interval =
+          ctx->plugin_fail_interval > 0
+              ? ctx->plugin_fail_interval + detail::FailIntervalDelta<Traits>::value
+              : 0;
       s->timeout_interval = ctx->plugin_timeout_interval;
       s->timeout_ms = ctx->plugin_timeout_ms;
       s->rand_ratio = ctx->plugin_rand_ratio;
@@ -145,6 +174,27 @@ class MockPluginPool {
   }
 
  private:
+  static void poison_frame(const typename Traits::CreateReq& req,
+                           typename Traits::FrameMeta* frame) {
+    if constexpr (detail::HasPoisonFailedFrame<Traits>::value) {
+      Traits::poison_failed_frame(req, frame);
+    } else {
+      (void)req;
+      if (!frame || !frame->dst || !frame->dst->addr[0]) return;
+      auto* dst = frame->dst;
+      size_t sz = dst->data_size;
+      if (sz == 0 || sz > dst->buffer_size) sz = dst->buffer_size;
+      if (sz == 0) return;
+      auto* base = static_cast<uint8_t*>(dst->addr[0]);
+      const size_t head = sz < 64 ? sz : 64;
+      std::memset(base, 0xDE, head);
+      constexpr size_t kShaLen = static_cast<size_t>(SHA256_DIGEST_LENGTH);
+      if (sz >= kShaLen) {
+        std::memset(base + sz - kShaLen, 0xDE, kShaLen);
+      }
+    }
+  }
+
   static void run_worker(Session* s) {
     if (s->block_get) Traits::set_block_timeout(s->session_p, NS_PER_S);
 
@@ -161,16 +211,31 @@ class MockPluginPool {
         continue;
       }
 
-      int result = Traits::process_frame(s->req, frame, s->sleep_time_us, s->rand_ratio,
-                                         s->frame_cnt);
-      if (result == 0) {
-        if (s->fail_interval > 0 && !(s->frame_cnt % s->fail_interval)) {
-          result = -EIO;
-        } else if (s->timeout_interval > 0 && s->timeout_ms > 0 &&
-                   !(s->frame_cnt % s->timeout_interval)) {
+      const bool inject_fail =
+          (s->fail_interval > 0) && (((s->frame_cnt + 1) % s->fail_interval) == 0);
+      int result = 0;
+      if (inject_fail) {
+        s->frame_cnt++;
+        poison_frame(s->req, frame);
+        if (s->sleep_time_us > 0) {
           std::unique_lock<std::mutex> lk(s->wake_mtx);
-          s->wake_cv.wait_for(lk, std::chrono::milliseconds(s->timeout_ms),
+          s->wake_cv.wait_for(lk, std::chrono::microseconds(s->sleep_time_us),
                               [s]() { return s->stop.load(std::memory_order_acquire); });
+        }
+        result = -EIO;
+      } else {
+        result = Traits::process_frame(s->req, frame, s->sleep_time_us, s->rand_ratio,
+                                       s->frame_cnt);
+        if (result == 0) {
+          if (s->timeout_interval > 0 && s->timeout_ms > 0 &&
+              !(s->frame_cnt % s->timeout_interval)) {
+            std::unique_lock<std::mutex> lk(s->wake_mtx);
+            s->wake_cv.wait_for(lk, std::chrono::milliseconds(s->timeout_ms), [s]() {
+              return s->stop.load(std::memory_order_acquire);
+            });
+          }
+        } else {
+          poison_frame(s->req, frame);
         }
       }
       Traits::put_frame(s->session_p, frame, result);

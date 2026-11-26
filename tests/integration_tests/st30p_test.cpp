@@ -465,6 +465,7 @@ static void st30p_rx_digest_test(const std::vector<St30pStreamSpec>& specs,
 
   for (size_t i = 0; i < sessions; i++) {
     EXPECT_GT(mtl_test::tx_frames(raw_tx[i]), 0);
+    EXPECT_GT(mtl_test::tx_done_frames(raw_tx[i]), 0);
     EXPECT_EQ(mtl_test::relaxed_load(&raw_tx[i]->incomplete_frame_cnt), 0);
     EXPECT_GT(mtl_test::rx_frames(raw_rx[i]), 0);
     EXPECT_LE(mtl_test::relaxed_load(&raw_rx[i]->incomplete_frame_cnt), 4);
@@ -505,26 +506,51 @@ TEST(St30p, put_frame_abort) {
   auto ctx = st_test_ctx();
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
+  constexpr uint64_t kFbCnt = 3;
   St30pLoopback lb(ctx);
   ASSERT_NO_FATAL_FAILURE(lb.create(ctx, ST30P_TEST_UDP_PORT, "st30p_abort",
                                     /*redundant=*/false, /*rx_extra_flags=*/0,
                                     /*start_tx_worker=*/false,
                                     /*start_rx_worker=*/false));
 
-  /* TX put_frame_abort before starting TX worker. */
-  struct st30_frame* tx_frame = st30p_tx_get_frame(lb.tx.get());
-  ASSERT_NE(tx_frame, nullptr);
-  EXPECT_GE(st30p_tx_put_frame_abort(lb.tx.get(), tx_frame), 0);
+  /* Acquire and abort kFbCnt TX frames before starting MTL; double-abort must fail. */
+  for (uint64_t i = 0; i < kFbCnt; i++) {
+    struct st30_frame* tx_frame = st30p_tx_get_frame(lb.tx.get());
+    ASSERT_NE(tx_frame, nullptr) << "TX get_frame failed at iteration " << i;
+    EXPECT_EQ(st30p_tx_put_frame_abort(lb.tx.get(), tx_frame), 0);
+    EXPECT_LT(st30p_tx_put_frame_abort(lb.tx.get(), tx_frame), 0);
+  }
 
-  /* RX put_frame_abort on live loopback stream. */
+  struct st30_tx_user_stats tx_stats;
+  struct st30_rx_user_stats rx_stats;
+  memset(&tx_stats, 0, sizeof(tx_stats));
+  memset(&rx_stats, 0, sizeof(rx_stats));
+  EXPECT_EQ(st30p_tx_get_session_stats(lb.tx.get(), &tx_stats), 0);
+  EXPECT_EQ(tx_stats.common.stat_frames_dropped, kFbCnt);
+
+  /* Start MTL briefly without calling st30p_tx_put_frame; aborted frames must not send.
+   */
+  EXPECT_GE(lb.mtl.start(), 0);
+  st_usleep(150 * 1000);
+  EXPECT_GE(lb.mtl.stop(), 0);
+
+  EXPECT_EQ(st30p_tx_get_session_stats(lb.tx.get(), &tx_stats), 0);
+  EXPECT_EQ(st30p_rx_get_session_stats(lb.rx.get(), &rx_stats), 0);
+  EXPECT_EQ(tx_stats.common.stat_frames_sent, 0u);
+  EXPECT_EQ(rx_stats.common.stat_frames_received, 0u);
+
+  /* Stream normal frames from TX to RX, then acquire and abort kFbCnt * 2 RX frames. */
   lb.start_tx();
   EXPECT_GE(lb.mtl.start(), 0);
   EXPECT_TRUE(mtl_test::wait_until(
       [&]() { return mtl_test::tx_frames(lb.tx_ctx.get()) >= 5; }, 2000));
 
-  struct st30_frame* rx_frame = st30p_rx_get_frame(lb.rx.get());
-  ASSERT_NE(rx_frame, nullptr);
-  EXPECT_GE(st30p_rx_put_frame_abort(lb.rx.get(), rx_frame), 0);
+  for (uint64_t i = 0; i < kFbCnt * 2; i++) {
+    struct st30_frame* rx_frame = st30p_rx_get_frame(lb.rx.get());
+    ASSERT_NE(rx_frame, nullptr) << "RX get_frame failed at iteration " << i;
+    EXPECT_EQ(st30p_rx_put_frame_abort(lb.rx.get(), rx_frame), 0);
+    EXPECT_LT(st30p_rx_put_frame_abort(lb.rx.get(), rx_frame), 0);
+  }
 
   lb.stop_all();
 }
@@ -589,17 +615,68 @@ TEST(St30p, rx_simulate_pkt_loss) {
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
   St30pLoopback lb(ctx);
-  ASSERT_NO_FATAL_FAILURE(lb.create(
-      ctx, ST30P_TEST_UDP_PORT + 200, "st30p_sim_loss", /*redundant=*/false,
-      ST30P_RX_FLAG_SIMULATE_PKT_LOSS | ST30P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME));
+  ASSERT_NO_FATAL_FAILURE(
+      lb.create(ctx, ST30P_TEST_UDP_PORT + 200, "st30p_sim_loss", /*redundant=*/false,
+                ST30P_RX_FLAG_SIMULATE_PKT_LOSS | ST30P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME,
+                /*start_tx_worker=*/false, /*start_rx_worker=*/false));
+
+  /* Fill all TX framebuffers with non-zero byte 0x5A so zeroed missing-packet gaps stand
+   * out cleanly on corrupted RX frames. */
+  const size_t frame_size = st30p_tx_frame_size(lb.tx.get());
+  for (uint16_t i = 0; i < static_cast<uint16_t>(lb.tx_ctx->fb_cnt); i++) {
+    void* fb = st30p_tx_get_fb_addr(lb.tx.get(), i);
+    ASSERT_NE(fb, nullptr);
+    memset(fb, 0x5A, frame_size);
+  }
+  const int pkt_len_i =
+      st30_get_packet_size(lb.rx_ctx->audio_fmt, lb.rx_ctx->audio_ptime,
+                           lb.rx_ctx->audio_sampling, lb.rx_ctx->audio_channel);
+  ASSERT_GT(pkt_len_i, 0);
+  const size_t pkt_len = static_cast<size_t>(pkt_len_i);
+
+  std::atomic<int> zero_gap_frames{0};
+  lb.start_tx();
+  lb.rx_worker = mtl_test::ScopedWorker(
+      lb.rx_ctx.get(),
+      std::thread(
+          [pkt_len, &zero_gap_frames](tests_context* s) {
+            auto handle = static_cast<st30p_rx_handle>(
+                __atomic_load_n(&s->handle, __ATOMIC_ACQUIRE));
+            while (!s->stop) {
+              struct st30_frame* frame = st30p_rx_get_frame(handle);
+              if (!frame) continue;
+              if (frame->status == ST_FRAME_STATUS_CORRUPTED && frame->addr) {
+                const auto* bytes = static_cast<const uint8_t*>(frame->addr);
+                for (size_t off = 0; off + pkt_len <= frame->data_size; off += pkt_len) {
+                  bool all_zero = true;
+                  for (size_t b = 0; b < pkt_len; b++) {
+                    if (bytes[off + b] != 0) {
+                      all_zero = false;
+                      break;
+                    }
+                  }
+                  if (all_zero) {
+                    zero_gap_frames.fetch_add(1, std::memory_order_relaxed);
+                    break;
+                  }
+                }
+              }
+              st30p_rx_put_frame(handle, frame);
+              __atomic_fetch_add(&s->fb_rec, 1, __ATOMIC_RELAXED);
+            }
+          },
+          lb.rx_ctx.get()),
+      [h = lb.rx.get()]() { st30p_rx_wake_block(h); });
 
   EXPECT_GE(lb.mtl.start(), 0);
   EXPECT_TRUE(mtl_test::wait_until(
       [&]() {
         if (mtl_test::rx_frames(lb.rx_ctx.get()) < 20) return false;
+        if (zero_gap_frames.load(std::memory_order_relaxed) == 0) return false;
         struct st30_rx_user_stats stats;
         return st30p_rx_get_session_stats(lb.rx.get(), &stats) >= 0 &&
-               stats.common.stat_frames_corrupted > 0;
+               stats.common.stat_frames_corrupted > 0 &&
+               stats.stat_frames_incomplete > 0 && stats.common.stat_lost_packets > 0;
       },
       kSt30pPhaseTimeoutMs));
   lb.stop_all();
@@ -608,6 +685,9 @@ TEST(St30p, rx_simulate_pkt_loss) {
   EXPECT_GE(st30p_rx_get_session_stats(lb.rx.get(), &rx_stats), 0);
   EXPECT_GT(mtl_test::rx_frames(lb.rx_ctx.get()), 0);
   EXPECT_GT(rx_stats.common.stat_frames_corrupted, 0u);
+  EXPECT_GT(rx_stats.stat_frames_incomplete, 0u);
+  EXPECT_GT(rx_stats.common.stat_lost_packets, 0u);
+  EXPECT_GT(zero_gap_frames.load(std::memory_order_relaxed), 0);
 }
 
 static void st30p_tx_epoch_drop_test(bool user_pacing) {
@@ -631,19 +711,23 @@ static void st30p_tx_epoch_drop_test(bool user_pacing) {
   EXPECT_EQ(st30p_tx_set_block_timeout(tx_handle.get(), NS_PER_S), 0);
   __atomic_store_n(&tx_ctx->handle, tx_handle.get(), __ATOMIC_RELEASE);
 
+  const uint64_t base_tai = mtl_ptp_read_time(st) + 50ULL * NS_PER_MS;
+  const uint64_t t_start = st_test_get_monotonic_time();
+
   mtl_test::ScopedWorker tx_worker(
       tx_ctx.get(),
       std::thread(
-          [user_pacing](tests_context* s) {
+          [user_pacing, base_tai](tests_context* s) {
             auto handle = static_cast<st30p_tx_handle>(
                 __atomic_load_n(&s->handle, __ATOMIC_ACQUIRE));
-            auto mtl = s->ctx->handle;
+            uint64_t seq = 0;
             while (!s->stop) {
               auto frame = st30p_tx_get_frame(handle);
               if (!frame) continue;
               if (user_pacing) {
                 frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
-                frame->timestamp = mtl_ptp_read_time(mtl) + 20 * 1000 * 1000;
+                frame->timestamp = base_tai + seq * 25ULL * NS_PER_MS;
+                seq++;
               }
               st30p_tx_put_frame(handle, frame);
               __atomic_fetch_add(&s->fb_send, 1, __ATOMIC_RELAXED);
@@ -652,9 +736,20 @@ static void st30p_tx_epoch_drop_test(bool user_pacing) {
           tx_ctx.get()),
       [h = tx_handle.get()]() { st30p_tx_wake_block(h); });
 
-  EXPECT_TRUE(mtl_test::wait_until(
-      [&]() { return mtl_test::tx_frames(tx_ctx.get()) >= kSt30pPhaseTargetFrames; },
-      kSt30pPhaseTimeoutMs));
+  if (user_pacing) {
+    EXPECT_TRUE(mtl_test::wait_until(
+        [&]() {
+          struct st30_tx_user_stats st_now;
+          return st30p_tx_get_session_stats(tx_handle.get(), &st_now) >= 0 &&
+                 st_now.common.stat_frames_sent >= 15u;
+        },
+        kSt30pPhaseTimeoutMs));
+  } else {
+    EXPECT_TRUE(mtl_test::wait_until(
+        [&]() { return mtl_test::tx_frames(tx_ctx.get()) >= kSt30pPhaseTargetFrames; },
+        kSt30pPhaseTimeoutMs));
+  }
+  const uint64_t elapsed_ms = (st_test_get_monotonic_time() - t_start) / NS_PER_MS;
   tx_worker.stop();
   EXPECT_GE(mtl_guard.stop(), 0);
 
@@ -662,6 +757,12 @@ static void st30p_tx_epoch_drop_test(bool user_pacing) {
   EXPECT_GE(st30p_tx_get_session_stats(tx_handle.get(), &stats), 0);
   EXPECT_GT(mtl_test::tx_frames(tx_ctx.get()), 0);
   EXPECT_EQ(stats.common.stat_epoch_drop, 0u);
+  if (user_pacing) {
+    EXPECT_GE(stats.common.stat_frames_sent, 15u);
+    EXPECT_EQ(stats.common.stat_error_user_timestamp, 0u);
+    EXPECT_GE(elapsed_ms, 300u)
+        << "15 user-paced frames at 25ms spacing should take >= 300ms";
+  }
 }
 
 TEST(St30p, tx_no_epoch_drop) {

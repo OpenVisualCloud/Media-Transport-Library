@@ -5,6 +5,8 @@
 #ifndef WINDOWSENV
 #include <pthread.h>
 #include <sched.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 #endif
 
@@ -81,17 +83,24 @@ void test_lcore_one(struct st_tests_context* ctx) {
 
 void hp_malloc_test(struct st_tests_context* ctx, size_t size, enum mtl_port port,
                     bool zero, bool expect_succ) {
+  if (zero && expect_succ) {
+    /* Dirty a same-sized allocation first so zmalloc proves it actually zeroes memory. */
+    mtl_test::ScopedHpBuf dirty(ctx->handle, size, port, false);
+    ASSERT_TRUE(static_cast<bool>(dirty));
+    memset(dirty.data(), 0x5A, size);
+    dirty.reset();
+  }
   mtl_test::ScopedHpBuf buf(ctx->handle, size, port, zero);
   EXPECT_EQ(static_cast<bool>(buf), expect_succ);
   if (buf) {
     if (mtl_pmd_is_dpdk_based(ctx->handle, port)) {
+      EXPECT_NE(buf.iova(), static_cast<mtl_iova_t>(0));
       EXPECT_NE(buf.iova(), MTL_BAD_IOVA);
     }
     if (zero) {
       std::vector<uint8_t> zeros(size, 0);
       EXPECT_EQ(0, memcmp(buf.data(), zeros.data(), size));
     }
-    /* Dirty the allocation before freeing so a subsequent zmalloc verifies zeroing. */
     memset(buf.data(), 0x5A, size);
   }
 }
@@ -102,9 +111,32 @@ void hp_malloc_tests(struct st_tests_context* ctx, enum mtl_port port, bool zero
   }
 }
 
+int port_stats_tx_next_frame(void* priv, uint16_t* next_frame_idx,
+                             struct st30_tx_frame_meta* /*meta*/) {
+  return tx_next_frame(priv, next_frame_idx);
+}
+
+int port_stats_rx_frame_ready(void* priv, void* frame,
+                              struct st30_rx_frame_meta* /*meta*/) {
+  auto* c = static_cast<tests_context*>(priv);
+  auto h = static_cast<st30_rx_handle>(__atomic_load_n(&c->handle, __ATOMIC_ACQUIRE));
+  if (!h) return -EIO;
+  (void)st30_rx_put_framebuff(h, frame);
+  __atomic_fetch_add(&c->fb_rec, 1, __ATOMIC_RELAXED);
+  return 0;
+}
+
 std::atomic<int> g_log_prefix_calls{0};
 std::atomic<int> g_log_printer_calls{0};
 std::atomic<bool> g_log_printer_saw_prefix{false};
+std::atomic<bool> g_log_printer_saw_sleep_info{false};
+
+void reset_log_probe() {
+  g_log_prefix_calls.store(0, std::memory_order_relaxed);
+  g_log_printer_calls.store(0, std::memory_order_relaxed);
+  g_log_printer_saw_prefix.store(false, std::memory_order_relaxed);
+  g_log_printer_saw_sleep_info.store(false, std::memory_order_relaxed);
+}
 
 void test_log_prefix_formatter(char* buf, size_t buf_sz) {
   g_log_prefix_calls.fetch_add(1, std::memory_order_relaxed);
@@ -112,7 +144,6 @@ void test_log_prefix_formatter(char* buf, size_t buf_sz) {
 }
 
 void test_log_printer(enum mtl_log_level level, const char* format, ...) {
-  MTL_MAY_UNUSED(level);
   g_log_printer_calls.fetch_add(1, std::memory_order_relaxed);
   char msg[512];
   va_list args;
@@ -121,6 +152,9 @@ void test_log_printer(enum mtl_log_level level, const char* format, ...) {
   va_end(args);
   if (strstr(msg, "TEST_PFX:") != nullptr) {
     g_log_printer_saw_prefix.store(true, std::memory_order_release);
+  }
+  if (level == MTL_LOG_LEVEL_INFO && strstr(msg, "mtl_sch_set_sleep_us") != nullptr) {
+    g_log_printer_saw_sleep_info.store(true, std::memory_order_release);
   }
 }
 
@@ -231,12 +265,41 @@ TEST(Main, get_fix) {
 TEST(Main, get_var) {
   auto* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
+  const bool auto_start = (ctx->para.flags & MTL_FLAG_DEV_AUTO_START_STOP) != 0;
   struct mtl_fix_info fix = {};
-  struct mtl_var_info var = {};
+  struct mtl_var_info var;
   ASSERT_EQ(mtl_get_fix_info(handle, &fix), 0);
+
+  memset(&var, 0xFF, sizeof(var));
   ASSERT_EQ(mtl_get_var_info(handle, &var), 0);
   EXPECT_LE(var.dma_dev_cnt, fix.dma_dev_cnt_max);
-  EXPECT_EQ(var.dev_started, (ctx->para.flags & MTL_FLAG_DEV_AUTO_START_STOP) != 0);
+  EXPECT_EQ(var.dev_started, auto_start);
+  const uint8_t base_lcore_cnt = var.lcore_cnt;
+
+  {
+    mtl_test::ScopedMtlStart start_guard(handle);
+    ASSERT_GE(start_guard.start(), 0);
+    memset(&var, 0xFF, sizeof(var));
+    ASSERT_EQ(mtl_get_var_info(handle, &var), 0);
+    EXPECT_TRUE(var.dev_started);
+
+    ASSERT_GE(start_guard.stop(), 0);
+    memset(&var, 0xFF, sizeof(var));
+    ASSERT_EQ(mtl_get_var_info(handle, &var), 0);
+    EXPECT_EQ(var.dev_started, auto_start);
+  }
+
+  unsigned int lcore = 0;
+  ASSERT_GE(mtl_get_lcore(handle, &lcore), 0);
+  mtl_test::ScopedLcore lcore_guard(handle, lcore);
+  memset(&var, 0xFF, sizeof(var));
+  ASSERT_EQ(mtl_get_var_info(handle, &var), 0);
+  EXPECT_EQ(var.lcore_cnt, base_lcore_cnt + 1);
+
+  EXPECT_EQ(lcore_guard.reset(), 0);
+  memset(&var, 0xFF, sizeof(var));
+  ASSERT_EQ(mtl_get_var_info(handle, &var), 0);
+  EXPECT_EQ(var.lcore_cnt, base_lcore_cnt);
 }
 
 TEST(Main, lcore) {
@@ -246,10 +309,14 @@ TEST(Main, lcore) {
 TEST(Main, bind_to_lcore) {
   auto* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  unsigned int lcore = 0;
+  unsigned int lcore1 = 0;
+  unsigned int lcore2 = 0;
 
-  ASSERT_GE(mtl_get_lcore(handle, &lcore), 0);
-  mtl_test::ScopedLcore guard(handle, lcore);
+  ASSERT_GE(mtl_get_lcore(handle, &lcore1), 0);
+  mtl_test::ScopedLcore guard1(handle, lcore1);
+  ASSERT_GE(mtl_get_lcore(handle, &lcore2), 0);
+  mtl_test::ScopedLcore guard2(handle, lcore2);
+  EXPECT_NE(lcore1, lcore2);
 
   std::atomic<bool> done{false};
   std::thread worker([&done]() {
@@ -262,13 +329,25 @@ TEST(Main, bind_to_lcore) {
     done.store(true, std::memory_order_release);
   });
 
-  EXPECT_EQ(mtl_bind_to_lcore(handle, tid, lcore), 0);
+  EXPECT_EQ(mtl_bind_to_lcore(handle, tid, lcore1), 0);
 #ifndef WINDOWSENV
-  cpu_set_t cpuset;
-  CPU_ZERO(&cpuset);
-  ASSERT_EQ(pthread_getaffinity_np(tid, sizeof(cpuset), &cpuset), 0);
-  EXPECT_EQ(CPU_COUNT(&cpuset), 1);
+  cpu_set_t set1;
+  CPU_ZERO(&set1);
+  ASSERT_EQ(pthread_getaffinity_np(tid, sizeof(set1), &set1), 0);
+  EXPECT_EQ(CPU_COUNT(&set1), 1);
+  EXPECT_TRUE(CPU_ISSET(static_cast<int>(lcore1), &set1));
 #endif
+
+  EXPECT_EQ(mtl_bind_to_lcore(handle, tid, lcore2), 0);
+#ifndef WINDOWSENV
+  cpu_set_t set2;
+  CPU_ZERO(&set2);
+  ASSERT_EQ(pthread_getaffinity_np(tid, sizeof(set2), &set2), 0);
+  EXPECT_EQ(CPU_COUNT(&set2), 1);
+  EXPECT_TRUE(CPU_ISSET(static_cast<int>(lcore2), &set2));
+  EXPECT_FALSE(CPU_EQUAL(&set1, &set2));
+#endif
+
   EXPECT_LT(mtl_bind_to_lcore(handle, tid, 10000), 0);
 }
 
@@ -319,15 +398,113 @@ TEST(Main, dev_started) {
 TEST(Main, port_stats_and_reset) {
   auto* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
-  struct mtl_port_status stats = {};
+  struct mtl_port_status stats;
 
-  for (int port = 0; port < ctx->para.num_ports; port++) {
+  /* Run a brief self-contained ST30 loopback session so port TX/RX counters are non-zero
+   * before testing mtl_reset_port_stats(). */
+  const int pkt_size =
+      st30_get_packet_size(ST30_FMT_PCM16, ST30_PTIME_1MS, ST30_SAMPLING_48K, 2);
+  ASSERT_GT(pkt_size, 0);
+
+  auto tx_ctx = mtl_test::make_context(ctx, 0, 3);
+  auto rx_ctx = mtl_test::make_context(ctx, 0, 3);
+  ASSERT_TRUE(tx_ctx != nullptr);
+  ASSERT_TRUE(rx_ctx != nullptr);
+
+  constexpr uint16_t kPortStatsUdpPort = 20500;
+  constexpr uint8_t kPortStatsPt = 111;
+  struct st30_tx_ops tx_ops = {};
+  tx_ops.name = "port_stats_tx";
+  tx_ops.priv = tx_ctx.get();
+  if (ctx->para.num_ports >= 2) {
+    mtl_test::fill_raw_tx_port(tx_ops, ctx, kPortStatsUdpPort, kPortStatsPt);
+  } else {
+    tx_ops.num_port = 1;
+    memcpy(tx_ops.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    snprintf(tx_ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+             ctx->para.port[MTL_PORT_P]);
+    tx_ops.udp_port[MTL_SESSION_PORT_P] = kPortStatsUdpPort;
+    tx_ops.payload_type = kPortStatsPt;
+  }
+  tx_ops.type = ST30_TYPE_FRAME_LEVEL;
+  tx_ops.fmt = ST30_FMT_PCM16;
+  tx_ops.channel = 2;
+  tx_ops.sampling = ST30_SAMPLING_48K;
+  tx_ops.ptime = ST30_PTIME_1MS;
+  tx_ops.framebuff_cnt = static_cast<uint16_t>(tx_ctx->fb_cnt);
+  tx_ops.framebuff_size = static_cast<uint32_t>(pkt_size);
+  tx_ops.pacing_way = ctx->tx_audio_pacing_way;
+  tx_ops.get_next_frame = port_stats_tx_next_frame;
+
+  mtl_test::ScopedHandle<st30_tx_handle, st30_tx_free> tx(
+      st30_tx_create(handle, &tx_ops));
+  ASSERT_TRUE(static_cast<bool>(tx));
+  __atomic_store_n(&tx_ctx->handle, tx.get(), __ATOMIC_RELEASE);
+
+  mtl_test::ScopedHandle<st30_rx_handle, st30_rx_free> rx;
+  if (ctx->para.num_ports >= 2) {
+    struct st30_rx_ops rx_ops = {};
+    rx_ops.name = "port_stats_rx";
+    rx_ops.priv = rx_ctx.get();
+    mtl_test::fill_raw_rx_port(rx_ops, ctx, kPortStatsUdpPort, kPortStatsPt);
+    rx_ops.type = ST30_TYPE_FRAME_LEVEL;
+    rx_ops.fmt = ST30_FMT_PCM16;
+    rx_ops.channel = 2;
+    rx_ops.sampling = ST30_SAMPLING_48K;
+    rx_ops.ptime = ST30_PTIME_1MS;
+    rx_ops.framebuff_cnt = static_cast<uint16_t>(rx_ctx->fb_cnt);
+    rx_ops.framebuff_size = static_cast<uint32_t>(pkt_size);
+    rx_ops.notify_frame_ready = port_stats_rx_frame_ready;
+    rx.reset(st30_rx_create(handle, &rx_ops));
+    ASSERT_TRUE(static_cast<bool>(rx));
+    __atomic_store_n(&rx_ctx->handle, rx.get(), __ATOMIC_RELEASE);
+  }
+
+  {
+    mtl_test::ScopedMtlStart mtl_guard(handle);
+    ASSERT_GE(mtl_guard.start(), 0);
+    EXPECT_TRUE(mtl_test::wait_until(
+        [&]() {
+          return mtl_test::tx_frames(tx_ctx.get()) >= 30 &&
+                 (!rx || mtl_test::rx_frames(rx_ctx.get()) >= 15);
+        },
+        3000, 5));
+    EXPECT_GE(mtl_guard.stop(), 0);
+  }
+  rx.reset();
+  tx.reset();
+
+  memset(&stats, 0xFF, sizeof(stats));
+  ASSERT_EQ(mtl_get_port_stats(handle, MTL_PORT_P, &stats), 0);
+  EXPECT_GT(stats.tx_packets, 0u);
+  EXPECT_GT(stats.tx_bytes, 0u);
+
+  if (ctx->para.num_ports >= 2) {
+    memset(&stats, 0xFF, sizeof(stats));
+    ASSERT_EQ(mtl_get_port_stats(handle, MTL_PORT_R, &stats), 0);
+    EXPECT_GT(stats.rx_packets, 0u);
+    EXPECT_GT(stats.rx_bytes, 0u);
+  }
+
+  EXPECT_EQ(mtl_reset_port_stats(handle, MTL_PORT_P), 0);
+  memset(&stats, 0xFF, sizeof(stats));
+  ASSERT_EQ(mtl_get_port_stats(handle, MTL_PORT_P, &stats), 0);
+  EXPECT_EQ(stats.tx_packets, 0u);
+  EXPECT_EQ(stats.tx_bytes, 0u);
+
+  for (int port = 1; port < ctx->para.num_ports; port++) {
     auto p = static_cast<enum mtl_port>(port);
-    EXPECT_EQ(mtl_get_port_stats(handle, p, &stats), 0);
     EXPECT_EQ(mtl_reset_port_stats(handle, p), 0);
+    memset(&stats, 0xFF, sizeof(stats));
     EXPECT_EQ(mtl_get_port_stats(handle, p, &stats), 0);
   }
 
+  if (ctx->para.num_ports < MTL_PORT_MAX) {
+    auto oob = static_cast<enum mtl_port>(ctx->para.num_ports);
+    EXPECT_LT(mtl_get_port_stats(handle, oob, &stats), 0);
+    EXPECT_LT(mtl_reset_port_stats(handle, oob), 0);
+  }
   EXPECT_LT(mtl_get_port_stats(handle, static_cast<enum mtl_port>(MTL_PORT_MAX), &stats),
             0);
   EXPECT_LT(mtl_reset_port_stats(handle, static_cast<enum mtl_port>(MTL_PORT_MAX)), 0);
@@ -339,14 +516,23 @@ TEST(Main, mode_and_port_info_queries) {
 
   EXPECT_EQ(mtl_rss_mode_get(nullptr), MTL_RSS_MODE_MAX);
   EXPECT_EQ(mtl_iova_mode_get(nullptr), MTL_IOVA_MODE_MAX);
-  EXPECT_EQ(mtl_iova_mode_get(handle), ctx->iova);
-  EXPECT_EQ(mtl_rss_mode_get(handle), ctx->rss_mode);
+  const enum mtl_rss_mode rss = mtl_rss_mode_get(handle);
+  EXPECT_LT(rss, MTL_RSS_MODE_MAX);
+  if (ctx->para.pmd[MTL_PORT_P] == MTL_PMD_DPDK_USER ||
+      ctx->para.rss_mode != MTL_RSS_MODE_NONE) {
+    EXPECT_EQ(rss, ctx->para.rss_mode);
+  }
+  const enum mtl_iova_mode iova = mtl_iova_mode_get(handle);
+  EXPECT_TRUE(iova == MTL_IOVA_MODE_VA || iova == MTL_IOVA_MODE_PA);
 
   for (int port = 0; port < ctx->para.num_ports; port++) {
     auto p = static_cast<enum mtl_port>(port);
-    uint8_t ip[MTL_IP_ADDR_LEN] = {};
-    uint8_t netmask[MTL_IP_ADDR_LEN] = {};
-    uint8_t gateway[MTL_IP_ADDR_LEN] = {};
+    uint8_t ip[MTL_IP_ADDR_LEN];
+    uint8_t netmask[MTL_IP_ADDR_LEN];
+    uint8_t gateway[MTL_IP_ADDR_LEN];
+    memset(ip, 0xFF, sizeof(ip));
+    memset(netmask, 0xFF, sizeof(netmask));
+    memset(gateway, 0xFF, sizeof(gateway));
     EXPECT_EQ(mtl_port_ip_info(handle, p, ip, netmask, gateway), 0);
     if (!ctx->dhcp) {
       EXPECT_EQ(memcmp(ip, ctx->para.sip_addr[port], MTL_IP_ADDR_LEN), 0);
@@ -357,7 +543,8 @@ TEST(Main, mode_and_port_info_queries) {
     EXPECT_EQ(mtl_pmd_is_dpdk_based(handle, p), expected_dpdk);
   }
 
-  uint8_t ip[MTL_IP_ADDR_LEN] = {};
+  uint8_t ip[MTL_IP_ADDR_LEN];
+  memset(ip, 0xFF, sizeof(ip));
   /* Optional output pointers may be null independently. */
   EXPECT_EQ(mtl_port_ip_info(handle, MTL_PORT_P, ip, nullptr, nullptr), 0);
   EXPECT_EQ(mtl_port_ip_info(handle, MTL_PORT_P, nullptr, nullptr, nullptr), 0);
@@ -375,9 +562,31 @@ TEST(Main, get_numa_id) {
   auto* ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
 
-  EXPECT_GE(mtl_get_numa_id(handle, MTL_PORT_P), 0);
-  if (ctx->para.num_ports > 1) {
-    EXPECT_GE(mtl_get_numa_id(handle, MTL_PORT_R), 0);
+  for (int port = 0; port < ctx->para.num_ports; port++) {
+    auto p = static_cast<enum mtl_port>(port);
+    const int numa = mtl_get_numa_id(handle, p);
+    EXPECT_GE(numa, 0);
+#ifndef WINDOWSENV
+    if (ctx->para.pmd[port] == MTL_PMD_DPDK_USER &&
+        !(ctx->para.port_params[port].flags & MTL_PORT_FLAG_FORCE_NUMA)) {
+      char path[128];
+      snprintf(path, sizeof(path), "/sys/bus/pci/devices/%s/numa_node",
+               ctx->para.port[port]);
+      FILE* fp = fopen(path, "r");
+      if (fp) {
+        int sys_numa = -1;
+        if (fscanf(fp, "%d", &sys_numa) == 1) {
+          if (sys_numa < 0) sys_numa = 0;
+          EXPECT_EQ(numa, sys_numa);
+        }
+        fclose(fp);
+      }
+    }
+#endif
+  }
+  if (ctx->para.num_ports < MTL_PORT_MAX) {
+    EXPECT_LT(mtl_get_numa_id(handle, static_cast<enum mtl_port>(ctx->para.num_ports)),
+              0);
   }
   EXPECT_LT(mtl_get_numa_id(handle, static_cast<enum mtl_port>(MTL_PORT_MAX)), 0);
 }
@@ -398,6 +607,10 @@ TEST(Misc, hp_malloc_expect_fail) {
   auto* ctx = st_test_ctx();
   hp_malloc_test(ctx, 0, MTL_PORT_P, false, false);
   if (ctx->para.num_ports > 1) hp_malloc_test(ctx, 0, MTL_PORT_R, false, false);
+  if (ctx->para.num_ports < MTL_PORT_MAX) {
+    hp_malloc_test(ctx, 1024, static_cast<enum mtl_port>(ctx->para.num_ports), false,
+                   false);
+  }
   hp_malloc_test(ctx, 1024, static_cast<enum mtl_port>(MTL_PORT_MAX), false, false);
   EXPECT_EQ(mtl_hp_virt2iova(ctx->handle, nullptr), MTL_BAD_IOVA);
 }
@@ -406,6 +619,10 @@ TEST(Misc, hp_zmalloc_expect_fail) {
   auto* ctx = st_test_ctx();
   hp_malloc_test(ctx, 0, MTL_PORT_P, true, false);
   if (ctx->para.num_ports > 1) hp_malloc_test(ctx, 0, MTL_PORT_R, true, false);
+  if (ctx->para.num_ports < MTL_PORT_MAX) {
+    hp_malloc_test(ctx, 1024, static_cast<enum mtl_port>(ctx->para.num_ports), true,
+                   false);
+  }
   hp_malloc_test(ctx, 1024, static_cast<enum mtl_port>(MTL_PORT_MAX), true, false);
 }
 
@@ -425,24 +642,49 @@ TEST(Misc, ptp) {
   mtl_handle handle = ctx->handle;
   const bool user_ptp = (ctx->para.ptp_get_time_fn != nullptr);
 
-  /* Uncached raw read exercises the PTP source directly. */
+  /* Wait > 10 ms to guarantee a fresh sync before testing the 10 ms TSC cache hit. */
+  st_usleep(12 * 1000);
+  const uint64_t cb_before_sync = __atomic_load_n(&ctx->ptp_time, __ATOMIC_ACQUIRE);
+  uint64_t prev = mtl_ptp_read_time(handle);
+  const uint64_t cb_after_sync = __atomic_load_n(&ctx->ptp_time, __ATOMIC_ACQUIRE);
+  EXPECT_GT(prev, 0u);
   if (user_ptp) {
-    const uint64_t cb_before = __atomic_load_n(&ctx->ptp_time, __ATOMIC_ACQUIRE);
+    EXPECT_GT(cb_after_sync, cb_before_sync);
+  }
+
+  /* Within the 10 ms cache window (2 ms sleep), mtl_ptp_read_time() must hit the TSC
+   * cache without invoking the user PTP callback while advancing >= 1 ms. */
+  st_usleep(2 * 1000);
+  const uint64_t cached = mtl_ptp_read_time(handle);
+  const uint64_t cb_after_2ms = __atomic_load_n(&ctx->ptp_time, __ATOMIC_ACQUIRE);
+  EXPECT_GT(cached, prev);
+  EXPECT_GE(cached - prev, static_cast<uint64_t>(NS_PER_MS));
+  if (user_ptp) {
+    EXPECT_EQ(cb_after_2ms, cb_after_sync);
+    const uint64_t real_time = st_test_get_realtime_ns();
+    const uint64_t diff =
+        (cached > real_time) ? (cached - real_time) : (real_time - cached);
+    EXPECT_LT(diff, static_cast<uint64_t>(5) * NS_PER_MS);
+  }
+  prev = cached;
+
+  /* Uncached raw read must bypass the active 10 ms cache and invoke the callback. */
+  if (user_ptp) {
+    const uint64_t cb_before_raw = __atomic_load_n(&ctx->ptp_time, __ATOMIC_ACQUIRE);
+    st_usleep(100);
     const uint64_t ptp_raw = mtl_ptp_read_time_raw(handle);
-    const uint64_t cb_after = __atomic_load_n(&ctx->ptp_time, __ATOMIC_ACQUIRE);
+    const uint64_t cb_after_raw = __atomic_load_n(&ctx->ptp_time, __ATOMIC_ACQUIRE);
     EXPECT_GT(ptp_raw, 0u);
-    EXPECT_GT(cb_after, 0u);
-    EXPECT_GE(ptp_raw, cb_before);
-    EXPECT_LE(ptp_raw, cb_after);
+    EXPECT_GT(cb_after_raw, cb_before_raw);
+    EXPECT_GE(ptp_raw, cb_before_raw);
+    EXPECT_LE(ptp_raw, cb_after_raw);
   } else {
     const uint64_t ptp_raw = mtl_ptp_read_time_raw(handle);
     EXPECT_GT(ptp_raw, 0u);
   }
 
-  /* Cached reads must stay strictly monotonic over 5 x 2 ms polls. */
-  uint64_t prev = mtl_ptp_read_time(handle);
-  EXPECT_GT(prev, 0u);
-  for (int i = 0; i < 5; i++) {
+  /* Cached reads must stay strictly monotonic over repeated 2 ms polls. */
+  for (int i = 0; i < 4; i++) {
     st_usleep(2 * 1000);
     const uint64_t cur = mtl_ptp_read_time(handle);
     EXPECT_GT(cur, prev);
@@ -475,8 +717,19 @@ TEST(Misc, log_level) {
 
   EXPECT_GE(mtl_set_log_level(handle, MTL_LOG_LEVEL_INFO), 0);
   EXPECT_EQ(mtl_get_log_level(handle), MTL_LOG_LEVEL_INFO);
+  ASSERT_EQ(mtl_set_log_printer(test_log_printer), 0);
+
+  reset_log_probe();
+  EXPECT_EQ(mtl_sch_set_sleep_us(handle, 0), 0);
+  EXPECT_GT(g_log_printer_calls.load(std::memory_order_acquire), 0);
+  EXPECT_TRUE(g_log_printer_saw_sleep_info.load(std::memory_order_acquire));
+
   EXPECT_GE(mtl_set_log_level(handle, MTL_LOG_LEVEL_ERR), 0);
   EXPECT_EQ(mtl_get_log_level(handle), MTL_LOG_LEVEL_ERR);
+  reset_log_probe();
+  EXPECT_EQ(mtl_sch_set_sleep_us(handle, 0), 0);
+  EXPECT_EQ(g_log_printer_calls.load(std::memory_order_acquire), 0);
+
   EXPECT_LT(mtl_set_log_level(handle, MTL_LOG_LEVEL_MAX), 0);
   EXPECT_EQ(mtl_get_log_level(handle), MTL_LOG_LEVEL_ERR);
   EXPECT_GE(mtl_set_log_level(handle, guard.orig()), 0);
@@ -487,21 +740,29 @@ TEST(Misc, log_callbacks_and_stream) {
   mtl_handle handle = st_test_ctx()->handle;
   ScopedLogHooks guard(handle);
 
-  g_log_prefix_calls.store(0, std::memory_order_relaxed);
-  g_log_printer_calls.store(0, std::memory_order_relaxed);
-  g_log_printer_saw_prefix.store(false, std::memory_order_relaxed);
-
   /* Phase 1: custom prefix formatter + custom printer. */
   ASSERT_EQ(mtl_set_log_level(handle, MTL_LOG_LEVEL_INFO), 0);
   ASSERT_EQ(mtl_set_log_prefix_formatter(test_log_prefix_formatter), 0);
   ASSERT_EQ(mtl_set_log_printer(test_log_printer), 0);
+  reset_log_probe();
   EXPECT_EQ(mtl_sch_set_sleep_us(handle, 0), 0);
 
   EXPECT_GT(g_log_prefix_calls.load(std::memory_order_acquire), 0);
   EXPECT_GT(g_log_printer_calls.load(std::memory_order_acquire), 0);
   EXPECT_TRUE(g_log_printer_saw_prefix.load(std::memory_order_acquire));
+  EXPECT_TRUE(g_log_printer_saw_sleep_info.load(std::memory_order_acquire));
+
+  /* Phase 1b: resetting prefix formatter to null stops emitting TEST_PFX:. */
+  ASSERT_EQ(mtl_set_log_prefix_formatter(nullptr), 0);
+  reset_log_probe();
+  EXPECT_EQ(mtl_sch_set_sleep_us(handle, 0), 0);
+  EXPECT_EQ(g_log_prefix_calls.load(std::memory_order_acquire), 0);
+  EXPECT_GT(g_log_printer_calls.load(std::memory_order_acquire), 0);
+  EXPECT_FALSE(g_log_printer_saw_prefix.load(std::memory_order_acquire));
+  EXPECT_TRUE(g_log_printer_saw_sleep_info.load(std::memory_order_acquire));
 
   /* Phase 2: default RTE_LOG path redirected via mtl_openlog_stream. */
+  ASSERT_EQ(mtl_set_log_prefix_formatter(test_log_prefix_formatter), 0);
   ASSERT_EQ(mtl_set_log_printer(nullptr), 0);
   FILE* log_fp = tmpfile();
   ASSERT_NE(log_fp, nullptr);
@@ -517,6 +778,7 @@ TEST(Misc, log_callbacks_and_stream) {
   const size_t nread = fread(buf.data(), 1, buf.size(), log_fp);
   EXPECT_EQ(nread, buf.size());
   EXPECT_NE(buf.find("TEST_PFX:"), std::string::npos);
+  EXPECT_NE(buf.find("mtl_sch_set_sleep_us"), std::string::npos);
 }
 
 TEST(Misc, thread_setname) {
@@ -553,7 +815,18 @@ TEST(Misc, thread_setname) {
 }
 
 TEST(Misc, manager_probe) {
-  const bool first = mtl_is_manager_alive();
-  const bool second = mtl_is_manager_alive();
-  EXPECT_EQ(first, second);
+#ifndef WINDOWSENV
+  constexpr const char* kManagerSockPath = "/var/run/imtl/mtl_manager.sock";
+  const int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  ASSERT_GE(sock, 0);
+  struct sockaddr_un addr = {};
+  addr.sun_family = AF_UNIX;
+  snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", kManagerSockPath);
+  const bool expected_alive =
+      (connect(sock, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) == 0);
+  close(sock);
+  EXPECT_EQ(mtl_is_manager_alive(), expected_alive);
+#else
+  EXPECT_FALSE(mtl_is_manager_alive());
+#endif
 }

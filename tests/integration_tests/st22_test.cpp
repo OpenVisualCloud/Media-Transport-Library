@@ -5,13 +5,16 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <cinttypes>
+#include <cstring>
 #include <functional>
 #include <mutex>
 #include <thread>
 #include <utility>
 #include <vector>
 
+#include "harness/pcapng.hpp"
 #include "log.h"
 #include "test_harness.hpp"
 
@@ -263,11 +266,26 @@ TEST(St22_tx, create_expect_fail) {
                                  st22_tx_free>(st22_tx_ops_init);
 }
 TEST(St22_tx, create_expect_fail_ring_sz) {
+  auto rtp_ops_init = [](tests_context* c, struct st22_tx_ops* ops) {
+    st22_tx_ops_init(c, ops);
+    ops->type = ST22_TYPE_RTP_LEVEL;
+    ops->rtp_frame_total_pkts = 1024;
+    ops->rtp_pkt_size = 1260;
+  };
+  {
+    auto* ctx = st_test_ctx();
+    auto test_ctx = mtl_test::make_context(ctx, 0, 0);
+    struct st22_tx_ops ops;
+    rtp_ops_init(test_ctx.get(), &ops);
+    ops.num_port = 1;
+    ops.rtp_ring_size = 128;
+    ScopedSt22Tx valid_handle(st22_tx_create(ctx->handle, &ops));
+    ASSERT_TRUE(static_cast<bool>(valid_handle));
+  }
   mtl_test::verify_rtp_ring_invalid<struct st22_tx_ops, st22_tx_handle, st22_tx_create,
-                                    st22_tx_free>(st22_tx_ops_init, ST22_TYPE_RTP_LEVEL,
-                                                  0);
+                                    st22_tx_free>(rtp_ops_init, ST22_TYPE_RTP_LEVEL, 0);
   mtl_test::verify_rtp_ring_invalid<struct st22_tx_ops, st22_tx_handle, st22_tx_create,
-                                    st22_tx_free>(st22_tx_ops_init, ST22_TYPE_RTP_LEVEL,
+                                    st22_tx_free>(rtp_ops_init, ST22_TYPE_RTP_LEVEL,
                                                   128 + 1);
 }
 /* RTP-level create takes rtp_pkt_size in [1:1452], so a 1396-byte ST 2022-6 pkt fits */
@@ -300,8 +318,13 @@ TEST(St22_tx, query_params) {
   ScopedSt22Tx handle(st22_tx_create(ctx->handle, &ops));
   ASSERT_TRUE(static_cast<bool>(handle));
 
+  void* addrs[kFbCnt] = {};
   for (uint16_t idx = 0; idx < kFbCnt; idx++) {
-    EXPECT_NE(st22_tx_get_fb_addr(handle.get(), idx), nullptr);
+    addrs[idx] = st22_tx_get_fb_addr(handle.get(), idx);
+    EXPECT_NE(addrs[idx], nullptr);
+    for (uint16_t prev = 0; prev < idx; prev++) {
+      EXPECT_NE(addrs[idx], addrs[prev]);
+    }
   }
   EXPECT_EQ(st22_tx_get_fb_addr(handle.get(), kFbCnt), nullptr);
   EXPECT_EQ(st22_tx_get_fb_addr(handle.get(), kFbCnt * 2), nullptr);
@@ -379,8 +402,13 @@ TEST(St22_rx, query_params) {
   ScopedSt22Rx handle(st22_rx_create(ctx->handle, &ops));
   ASSERT_TRUE(static_cast<bool>(handle));
 
+  void* addrs[kFbCnt] = {};
   for (uint16_t idx = 0; idx < kFbCnt; idx++) {
-    EXPECT_NE(st22_rx_get_fb_addr(handle.get(), idx), nullptr);
+    addrs[idx] = st22_rx_get_fb_addr(handle.get(), idx);
+    EXPECT_NE(addrs[idx], nullptr);
+    for (uint16_t prev = 0; prev < idx; prev++) {
+      EXPECT_NE(addrs[idx], addrs[prev]);
+    }
   }
   EXPECT_EQ(st22_rx_get_fb_addr(handle.get(), kFbCnt), nullptr);
   EXPECT_EQ(st22_rx_get_fb_addr(handle.get(), kFbCnt * 2), nullptr);
@@ -460,6 +488,12 @@ static void st22_rx_get_packet(
       }
       lck.unlock();
     }
+    if (mbuf_len <= sizeof(struct st22_rfc9134_rtp_hdr)) {
+      atomic_inc(&ctx->incomplete_frame_cnt);
+      st22_rx_put_mbuf(handle, mbuf);
+      continue;
+    }
+    atomic_inc(&ctx->packet_rec);
     auto* hdr = (struct st22_rfc9134_rtp_hdr*)usrptr;
     bool newframe = false;
     uint32_t tmstamp = ntohl(hdr->base.tmstamp);
@@ -580,15 +614,81 @@ TEST(St22_rx, fps_1080p_s2) {
   for (auto& w : workers) w.stop();
   EXPECT_GE(mtl_guard.stop(), 0);
   assert_rx_rates(rx, specs, rate_res);
+  for (size_t i = 0; i < specs.size(); i++) {
+    EXPECT_EQ(mtl_test::relaxed_load(&rx[i].ctx->incomplete_frame_cnt), 0);
+  }
+  EXPECT_GT(mtl_test::relaxed_load(&rx[1].ctx->packet_rec), 0);
 }
+
+namespace {
+
+struct St22SigTracker {
+  static constexpr int kMaxSources = 4;
+  static constexpr size_t kSigLen = 8;
+  std::atomic<int> matched[kMaxSources];
+  std::atomic<int> unknown;
+
+  St22SigTracker() {
+    reset();
+  }
+
+  void reset() {
+    for (int i = 0; i < kMaxSources; ++i) {
+      matched[i].store(0, std::memory_order_relaxed);
+    }
+    unknown.store(0, std::memory_order_relaxed);
+  }
+
+  void inspect(const void* frame, size_t len) {
+    if (!frame || len < kSigLen) {
+      unknown.fetch_add(1, std::memory_order_relaxed);
+      return;
+    }
+    const auto* bytes = static_cast<const uint8_t*>(frame);
+    const uint8_t tag = bytes[0];
+    if (tag < 0xA0 || tag >= static_cast<uint8_t>(0xA0 + kMaxSources)) {
+      unknown.fetch_add(1, std::memory_order_relaxed);
+      return;
+    }
+    for (size_t k = 1; k < kSigLen; ++k) {
+      if (bytes[k] != tag) {
+        unknown.fetch_add(1, std::memory_order_relaxed);
+        return;
+      }
+    }
+    matched[tag - 0xA0].fetch_add(1, std::memory_order_relaxed);
+  }
+};
+
+struct St22SigRxPriv {
+  tests_context* ctx = nullptr;
+  St22SigTracker* tracker = nullptr;
+};
+
+int st22_sig_rx_frame_ready(void* priv, void* frame, struct st22_rx_frame_meta* meta) {
+  auto* p = static_cast<St22SigRxPriv*>(priv);
+  tests_context* ctx = p->ctx;
+  void* h = get_handle(ctx);
+  if (!h) return -EIO;
+  if (p->tracker) p->tracker->inspect(frame, meta->frame_total_size);
+  atomic_inc(&ctx->fb_rec);
+  st22_rx_put_framebuff(static_cast<st22_rx_handle>(h), frame);
+  return 0;
+}
+
+}  // namespace
 
 static void st22_rx_update_src_test(int tx_sessions, bool tx_update_dst = false) {
   auto ctx = st_test_ctx();
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
+  ASSERT_LE(tx_sessions, St22SigTracker::kMaxSources);
 
   const St22SessionSpec spec{ST22_TYPE_FRAME_LEVEL, ST_FPS_P59_94, 1920, 1080, 1280, 520};
   const double expect_fps = st_frame_rate(spec.fps);
 
+  /* Declare tracker before sessions/mtl_guard so callbacks never outlive it. */
+  St22SigTracker tracker;
+  St22SigRxPriv sig_rx_priv{};
   std::vector<St22TxSession> tx;
   std::vector<St22RxSession> rx;
   St22LoopbackConfig cfg;
@@ -599,7 +699,20 @@ static void st22_rx_update_src_test(int tx_sessions, bool tx_update_dst = false)
                                           : ctx->para.sip_addr[MTL_PORT_R];
     memcpy(ops->dip_addr[MTL_SESSION_PORT_P], ip, MTL_IP_ADDR_LEN);
   };
-  cfg.on_rx_ops = [ctx](size_t, tests_context*, struct st22_rx_ops* ops) {
+  cfg.on_tx_created = [&cfg](size_t i, St22TxSession& s) {
+    const uint8_t tag = static_cast<uint8_t>(0xA0 + i);
+    for (uint16_t f = 0; f < cfg.fb_cnt; ++f) {
+      auto* fb = static_cast<uint8_t*>(st22_tx_get_fb_addr(s.handle.get(), f));
+      ASSERT_NE(fb, nullptr);
+      memset(fb, tag, St22SigTracker::kSigLen);
+    }
+  };
+  cfg.on_rx_ops = [ctx, &tracker, &sig_rx_priv](size_t, tests_context* rx_ctx,
+                                                struct st22_rx_ops* ops) {
+    sig_rx_priv.ctx = rx_ctx;
+    sig_rx_priv.tracker = &tracker;
+    ops->priv = &sig_rx_priv;
+    ops->notify_frame_ready = st22_sig_rx_frame_ready;
     if (ctx->mcast_only) {
       memcpy(ops->ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_2],
              MTL_IP_ADDR_LEN);
@@ -615,9 +728,13 @@ static void st22_rx_update_src_test(int tx_sessions, bool tx_update_dst = false)
 
   EXPECT_TRUE(
       mtl_test::wait_for_all(rx_ctxs, mtl_test::rx_frames, kSt22RateWarmupFrames, 6000));
+  EXPECT_GT(tracker.matched[0].load(std::memory_order_relaxed), 0);
+  for (int s_idx = 1; s_idx < tx_sessions; ++s_idx) {
+    EXPECT_EQ(tracker.matched[s_idx].load(std::memory_order_relaxed), 0);
+  }
 
   auto verify_switch = [&](const char* label, const uint8_t* tx_dst_ip,
-                           const uint8_t* rx_src_ip, uint16_t udp_port) {
+                           const uint8_t* rx_src_ip, uint16_t udp_port, int target_idx) {
     if (tx_update_dst) {
       struct st_tx_dest_info dst = {};
       dst.udp_port[MTL_SESSION_PORT_P] = udp_port;
@@ -629,6 +746,10 @@ static void st22_rx_update_src_test(int tx_sessions, bool tx_update_dst = false)
     src.udp_port[MTL_SESSION_PORT_P] = udp_port;
     memcpy(src.ip_addr[MTL_SESSION_PORT_P], rx_src_ip, MTL_IP_ADDR_LEN);
     EXPECT_GE(st22_rx_update_source(rx[0].handle.get(), &src), 0);
+
+    /* Allow in-flight frames from the previous source to drain before counting. */
+    st_usleep(150 * 1000);
+    tracker.reset();
 
     const int base_rec = mtl_test::rx_frames(rx[0].ctx.get());
     auto delta_rec = [base_rec](const tests_context* c) {
@@ -643,19 +764,29 @@ static void st22_rx_update_src_test(int tx_sessions, bool tx_update_dst = false)
     EXPECT_GT(fb_rec, 0);
     info("%s, %s fb_rec %d framerate %f\n", __func__, label, fb_rec, rate_res.rate[0]);
     EXPECT_NEAR(rate_res.rate[0], expect_fps, expect_fps * 0.1);
+
+    EXPECT_GT(tracker.matched[target_idx].load(std::memory_order_relaxed), 5)
+        << label << " did not receive frames from source " << target_idx;
+    for (int s_idx = 0; s_idx < tx_sessions; ++s_idx) {
+      if (s_idx == target_idx) continue;
+      EXPECT_EQ(tracker.matched[s_idx].load(std::memory_order_relaxed), 0)
+          << label << " still received frames from stale source " << s_idx;
+    }
+    EXPECT_EQ(tracker.unknown.load(std::memory_order_relaxed), 0)
+        << label << " received frames with unexpected signature";
   };
 
   verify_switch("mcast 1", ctx->mcast_ip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-                ST22_TEST_LOOPBACK_UDP_PORT + 2);
+                ST22_TEST_LOOPBACK_UDP_PORT + 2, tx_update_dst ? 0 : 1);
   if (tx_sessions > 2) {
     verify_switch("mcast 2", ctx->mcast_ip_addr[MTL_PORT_R],
-                  ctx->mcast_ip_addr[MTL_PORT_R], ST22_TEST_LOOPBACK_UDP_PORT + 4);
+                  ctx->mcast_ip_addr[MTL_PORT_R], ST22_TEST_LOOPBACK_UDP_PORT + 4, 2);
   }
   const uint8_t* tx0_dst_ip =
       ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_R];
   const uint8_t* rx0_src_ip =
       ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_P];
-  verify_switch("unicast 0", tx0_dst_ip, rx0_src_ip, ST22_TEST_LOOPBACK_UDP_PORT);
+  verify_switch("unicast 0", tx0_dst_ip, rx0_src_ip, ST22_TEST_LOOPBACK_UDP_PORT, 0);
 
   EXPECT_GE(mtl_guard.stop(), 0);
 }
@@ -727,6 +858,7 @@ TEST(St22_rx, pcap_dump) {
     struct stat st_buf = {};
     EXPECT_EQ(stat(meta.file_name[MTL_SESSION_PORT_P], &st_buf), 0);
     EXPECT_GT(st_buf.st_size, 0);
+    mtl_test::verify_pcapng_file(meta.file_name[MTL_SESSION_PORT_P], kMaxDumpPackets);
   }
 
   EXPECT_GE(mtl_guard.stop(), 0);
@@ -806,7 +938,7 @@ static void st22_rx_digest_test(const std::vector<St22SessionSpec>& specs,
   cfg.on_tx_ops = [enable_rtcp](size_t, tests_context*, struct st22_tx_ops* ops) {
     if (enable_rtcp) {
       ops->flags |= ST22_TX_FLAG_ENABLE_RTCP;
-      ops->rtcp.buffer_size = 512;
+      ops->rtcp.buffer_size = 1024;
     }
   };
   cfg.on_tx_created = [](size_t, St22TxSession& s) {
@@ -828,7 +960,7 @@ static void st22_rx_digest_test(const std::vector<St22SessionSpec>& specs,
       ops->rtcp.nack_interval_us = 100;
       ops->rtcp.seq_skip_window = 0;
       ops->rtcp.burst_loss_max = 4;
-      ops->rtcp.sim_loss_rate = 0.0001;
+      ops->rtcp.sim_loss_rate = 0.002f;
     }
   };
   cfg.on_rx_created = [&workers](size_t, St22RxSession& s) {
@@ -1010,6 +1142,8 @@ TEST(St22_tx, rtp_user_pacing_nearest_epoch) {
     }
   }
   info("%s, frames %zu misses %zu\n", __func__, arrivals.size(), misses);
+  EXPECT_GT(mtl_test::relaxed_load(&rx[0].ctx->packet_rec), 0);
+  EXPECT_EQ(mtl_test::relaxed_load(&rx[0].ctx->incomplete_frame_cnt), 0);
   EXPECT_GE(arrivals.size(), kMinFrames);
   EXPECT_LE(misses, arrivals.size() / 100);
 }

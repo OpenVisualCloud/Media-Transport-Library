@@ -100,6 +100,11 @@ void st20_linesize_digest_test(const St20LinesizeScenario& s) {
     EXPECT_EQ(test_ctx_rx[i]->incomplete_slice_cnt, 0);
     EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
     EXPECT_EQ(mtl_test::relaxed_load(&test_ctx_rx[i]->rx_field_fail_cnt), 0);
+    if (s.ext) {
+      auto* ext_stats = static_cast<St20ExtFrameStats*>(test_ctx_rx[i]->priv);
+      ASSERT_NE(ext_stats, nullptr);
+      EXPECT_EQ(mtl_test::relaxed_load(&ext_stats->ext_addr_mismatch_cnt), 0);
+    }
     info("%s, session %d fb_rec %d framerate %f fb_send %d\n", __func__, i,
          test_ctx_rx[i]->fb_rec, res.rate[i], test_ctx_tx[i]->fb_send);
     if (s.check_fps) {

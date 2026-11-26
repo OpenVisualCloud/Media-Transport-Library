@@ -46,6 +46,10 @@ bool st20_alloc_ext_frames(mtl_handle m_handle, tests_context* tctx, size_t fram
     tctx->ext_frames[j].buf_iova = tctx->ext_fb_iova + j * frame_size;
     tctx->ext_frames[j].buf_len = frame_size;
   }
+  if (!tctx->priv) {
+    tctx->priv = st_test_zmalloc(sizeof(struct St20ExtFrameStats));
+    if (!tctx->priv) return false;
+  }
   return true;
 }
 
@@ -61,6 +65,10 @@ bool st20_alloc_dma_ext_frames(mtl_handle m_handle, tests_context* tctx, size_t 
     tctx->ext_frames[j].buf_addr = (uint8_t*)mtl_dma_mem_addr(dma_mem) + j * fb_size;
     tctx->ext_frames[j].buf_iova = mtl_dma_mem_iova(dma_mem) + j * fb_size;
     tctx->ext_frames[j].buf_len = fb_size;
+  }
+  if (!tctx->priv) {
+    tctx->priv = st_test_zmalloc(sizeof(struct St20ExtFrameStats));
+    if (!tctx->priv) return false;
   }
   return true;
 }
@@ -141,7 +149,18 @@ int tx_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
   if (!st20_get_handle(ctx)) return -EIO; /* not ready */
 
   if (!ctx->ptp_time_first_frame) {
-    ctx->ptp_time_first_frame = mtl_ptp_read_time(ctx->ctx->handle);
+    uint64_t now = mtl_ptp_read_time(ctx->ctx->handle);
+    if (ctx->user_pacing && ctx->frame_time > 0.0) {
+      /* Anchor 3 epochs ahead and +5 ms off the epoch grid so user pacing never starts
+       * in the past and USER_TIMESTAMP produces a distinct RTP timestamp vs pacing. */
+      uint64_t epoch_idx =
+          static_cast<uint64_t>(static_cast<double>(now) / ctx->frame_time) + 3;
+      ctx->ptp_time_first_frame =
+          static_cast<uint64_t>(static_cast<double>(epoch_idx) * ctx->frame_time) +
+          5 * NS_PER_MS;
+    } else {
+      ctx->ptp_time_first_frame = now;
+    }
   }
 
   *next_frame_idx = ctx->fb_idx;
@@ -149,7 +168,8 @@ int tx_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
 
   if (ctx->user_pacing) {
     meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-    meta->timestamp = ctx->ptp_time_first_frame + ctx->frame_time * fb_send * 2;
+    meta->timestamp =
+        ctx->ptp_time_first_frame + static_cast<uint64_t>(ctx->frame_time * fb_send * 2);
   } else if (ctx->user_timestamp) {
     meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
     meta->timestamp = fb_send;
@@ -266,17 +286,17 @@ int tx_notify_frame_done_check_tmstamp(void* priv, uint16_t /*frame_idx*/,
 
   if (!st20_get_handle(ctx)) return -EIO; /* not ready */
 
-  if (meta->tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
-    if (ctx->rtp_tmstamp == 0)
-      ctx->rtp_tmstamp = meta->timestamp;
-    else {
-      int delta = meta->timestamp - ctx->rtp_tmstamp;
-      if (tmstamp_delta_to_fps(delta) != meta->fps) {
-        dbg("fail delta: %d\n", delta);
-        ctx->tx_tmstamp_delta_fail_cnt++;
-      }
-      ctx->rtp_tmstamp = meta->timestamp;
+  int done = __atomic_fetch_add(&ctx->fb_send_done, 1, __ATOMIC_RELAXED);
+  if (done == 0) {
+    ctx->rtp_tmstamp = meta->rtp_timestamp;
+  } else {
+    int delta =
+        static_cast<int>(static_cast<int32_t>(meta->rtp_timestamp - ctx->rtp_tmstamp));
+    if (tmstamp_delta_to_fps(delta) != meta->fps) {
+      dbg("fail delta: %d\n", delta);
+      ctx->tx_tmstamp_delta_fail_cnt++;
     }
+    ctx->rtp_tmstamp = meta->rtp_timestamp;
   }
 
   return 0;
@@ -373,6 +393,7 @@ int tx_video_build_rtp_packet(tests_context* s, struct st20_rfc4175_rtp_hdr* rtp
   rtp->base.version = 2;
   rtp->base.marker = 0;
   rtp->base.payload_type = ST20_TEST_PAYLOAD_TYPE;
+  rtp->base.ssrc = htonl(kSt20RtpSsrcBase + static_cast<uint32_t>(s->idx));
   rtp->row_number = htons(row_number);
   rtp->row_offset = htons(row_offset);
   rtp->base.tmstamp = htonl(s->rtp_tmstamp);
@@ -495,8 +516,8 @@ void rx_handle_rtp(tests_context* s, struct st20_rfc4175_rtp_hdr* hdr, bool newf
   }
 }
 
-void rx_get_packet(void* args) {
-  auto ctx = (tests_context*)args;
+void rx_get_packet_ex(tests_context* ctx,
+                      std::function<void(const struct st20_rfc4175_rtp_hdr*)> on_pkt) {
   auto handle = (st20_rx_handle)st20_get_handle(ctx);
   void* mbuf;
   void* usrptr = NULL;
@@ -517,6 +538,7 @@ void rx_get_packet(void* args) {
       }
     }
     hdr = (struct st20_rfc4175_rtp_hdr*)usrptr;
+    if (on_pkt) on_pkt(hdr);
     uint32_t tmstamp = ntohl(hdr->base.tmstamp);
     bool newframe = false;
     ctx->packet_rec++;
@@ -532,6 +554,10 @@ void rx_get_packet(void* args) {
     }
     st20_rx_put_mbuf(handle, mbuf);
   }
+}
+
+void rx_get_packet(void* args) {
+  rx_get_packet_ex((tests_context*)args);
 }
 
 int st20_rx_frame_ready(void* priv, void* frame, struct st20_rx_frame_meta* meta) {
@@ -861,17 +887,19 @@ void st20_init_rx_slice_meta(tests_context* rctx, struct st20_rx_ops& ops_rx,
   ops_rx.notify_slice_ready = st20_digest_rx_slice_ready;
   if (st.rx_type != ST20_TYPE_SLICE_LEVEL) return;
 
-  auto* meta =
-      (struct st20_rx_slice_meta*)st_test_zmalloc(sizeof(struct st20_rx_slice_meta));
-  ASSERT_TRUE(meta != NULL);
-  meta->width = st.width;
-  meta->height = st.height;
-  meta->fps = st.fps;
-  meta->fmt = st.fmt;
-  meta->frame_total_size = frame_size;
-  meta->uframe_total_size = uframe_size;
-  meta->second_field = false;
-  rctx->priv = meta;
+  auto* expect = (struct St20RxSliceExpectMeta*)st_test_zmalloc(
+      sizeof(struct St20RxSliceExpectMeta));
+  ASSERT_TRUE(expect != NULL);
+  expect->slice_mode = true;
+  expect->interlaced = st.interlaced;
+  expect->meta.width = st.width;
+  expect->meta.height = st.height;
+  expect->meta.fps = st.fps;
+  expect->meta.fmt = st.fmt;
+  expect->meta.frame_total_size = frame_size;
+  expect->meta.uframe_total_size = uframe_size;
+  expect->meta.second_field = false;
+  rctx->priv = expect;
   ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
 }
 
@@ -1151,6 +1179,27 @@ static int st20_digest_rx_ready_common(void* priv, void* frame,
     if (opaque) st20_release_rx_ext_frame(ctx, frame, opaque);
   };
 
+  if (ctx->ext_frames) {
+    bool found = false;
+    for (int j = 0; j < ctx->fb_cnt; j++) {
+      if (ctx->ext_frames[j].buf_addr == frame) {
+        found = true;
+        break;
+      }
+    }
+    auto* ext_stats = static_cast<St20ExtFrameStats*>(ctx->priv);
+    if (!found) {
+      if (ext_stats) {
+        __atomic_fetch_add(&ext_stats->ext_addr_mismatch_cnt, 1, __ATOMIC_RELAXED);
+      } else {
+        ctx->rx_meta_fail_cnt++;
+      }
+    }
+    if (ext_stats && ext_stats->dynamic_ext && !opaque) {
+      __atomic_fetch_add(&ext_stats->dynamic_opaque_null_cnt, 1, __ATOMIC_RELAXED);
+    }
+  }
+
   ctx->slice_recv_timestamp = 0;
   ctx->slice_recv_lines = 0;
 
@@ -1214,20 +1263,52 @@ int st20_digest_rx_field_ready(void* priv, void* frame, struct st20_rx_frame_met
   return st20_digest_rx_ready_common(priv, frame, meta, true);
 }
 
-int st20_digest_rx_slice_ready(void* priv, void* /*frame*/,
-                               struct st20_rx_slice_meta* meta) {
+int st20_digest_rx_slice_ready(void* priv, void* frame, struct st20_rx_slice_meta* meta) {
   auto ctx = (tests_context*)priv;
 
   if (!st20_get_handle(ctx)) return -EIO;
   ctx->slice_cnt++;
 
-  struct st20_rx_slice_meta* expect_meta = (struct st20_rx_slice_meta*)ctx->priv;
+  if (!frame || meta->frame_recv_lines == 0) {
+    ctx->incomplete_slice_cnt++;
+  }
+
+  auto* expect = static_cast<St20RxSliceExpectMeta*>(ctx->priv);
+  if (!expect) return -EIO;
+  struct st20_rx_slice_meta* expect_meta = &expect->meta;
   if (expect_meta->width != meta->width) ctx->incomplete_slice_cnt++;
   if (expect_meta->height != meta->height) ctx->incomplete_slice_cnt++;
   if (expect_meta->fps != meta->fps) ctx->incomplete_slice_cnt++;
   if (expect_meta->fmt != meta->fmt) ctx->incomplete_slice_cnt++;
   if (expect_meta->frame_total_size != meta->frame_total_size) {
     ctx->incomplete_slice_cnt++;
+  }
+
+  if (expect->interlaced) {
+    if (!expect->has_prev_field) {
+      expect->has_prev_field = true;
+      expect->cur_second_field = meta->second_field;
+      expect->cur_timestamp = meta->timestamp;
+    } else if (meta->timestamp == expect->cur_timestamp) {
+      if (meta->second_field != expect->cur_second_field) {
+        ctx->incomplete_slice_cnt++;
+        __atomic_fetch_add(&ctx->rx_field_fail_cnt, 1, __ATOMIC_RELAXED);
+      }
+    } else {
+      uint32_t ts_delta = static_cast<uint32_t>(meta->timestamp - expect->cur_timestamp);
+      uint32_t max_single_field_delta =
+          static_cast<uint32_t>(90000.0 / st_frame_rate(meta->fps) * 1.5);
+      if (ts_delta <= max_single_field_delta &&
+          meta->second_field == expect->cur_second_field) {
+        ctx->incomplete_slice_cnt++;
+        __atomic_fetch_add(&ctx->rx_field_fail_cnt, 1, __ATOMIC_RELAXED);
+      }
+      expect->cur_second_field = meta->second_field;
+      expect->cur_timestamp = meta->timestamp;
+    }
+  } else if (meta->second_field) {
+    ctx->incomplete_slice_cnt++;
+    __atomic_fetch_add(&ctx->rx_field_fail_cnt, 1, __ATOMIC_RELAXED);
   }
 
   struct st20_pgroup st20_pg;
