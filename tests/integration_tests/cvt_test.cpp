@@ -2398,6 +2398,29 @@ TEST(Cvt, rfc4175_422be12_to_yuv422p12le_avx512_dma) {
   mtl_udma_free(dma);
 }
 
+TEST(Cvt, rfc4175_422be12_to_yuv422p12le_avx512_vbmi_dma) {
+  struct st_tests_context* ctx = st_test_ctx();
+  mtl_handle handle = ctx->handle;
+  mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
+  if (!dma) return;
+
+  test_cvt_rfc4175_422be12_to_yuv422p12le_dma(
+      dma, 1920, 1080, MTL_SIMD_LEVEL_AVX512_VBMI2, MTL_SIMD_LEVEL_AVX512_VBMI2);
+  test_cvt_rfc4175_422be12_to_yuv422p12le_dma(dma, 722, 111, MTL_SIMD_LEVEL_AVX512_VBMI2,
+                                              MTL_SIMD_LEVEL_AVX512_VBMI2);
+  test_cvt_rfc4175_422be12_to_yuv422p12le_dma(dma, 722, 111, MTL_SIMD_LEVEL_NONE,
+                                              MTL_SIMD_LEVEL_AVX512_VBMI2);
+  test_cvt_rfc4175_422be12_to_yuv422p12le_dma(dma, 722, 111, MTL_SIMD_LEVEL_AVX512_VBMI2,
+                                              MTL_SIMD_LEVEL_NONE);
+  int w = 2; /* each pg has two pixels */
+  for (int h = 640; h < (640 + 64); h++) {
+    test_cvt_rfc4175_422be12_to_yuv422p12le_dma(dma, w, h, MTL_SIMD_LEVEL_AVX512_VBMI2,
+                                                MTL_SIMD_LEVEL_AVX512_VBMI2);
+  }
+
+  mtl_udma_free(dma);
+}
+
 static void test_cvt_yuv422p12le_to_rfc4175_422be12(int w, int h,
                                                     enum mtl_simd_level cvt_level,
                                                     enum mtl_simd_level back_level) {

@@ -2440,6 +2440,17 @@ int st20_rfc4175_422be12_to_yuv422p12le_simd_dma(mtl_udma_handle udma,
   MTL_MAY_UNUSED(pg_be_iova);
   MTL_MAY_UNUSED(level);
 
+#ifdef MTL_HAS_AVX512_VBMI2
+  if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
+      (cpu_level >= MTL_SIMD_LEVEL_AVX512_VBMI2)) {
+    dbg("%s, avx512_vbmi ways\n", __func__);
+    ret = st20_rfc4175_422be12_to_yuv422p12le_avx512_vbmi_dma(udma, pg_be, pg_be_iova, y,
+                                                              b, r, w, h);
+    if (ret == 0) return 0;
+    dbg("%s, avx512_vbmi ways failed\n", __func__);
+  }
+#endif
+
 #ifdef MTL_HAS_AVX512
   if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
     dbg("%s, avx512 ways\n", __func__);
