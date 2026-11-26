@@ -69,7 +69,9 @@ def test_each_mix_session_has_a_receiver_and_user_pacing_where_planned():
     )
     tx_groups = sorted(g["dip"][0] for g in mix["tx_sessions"])
     rx_groups = sorted(g["ip"][0] for g in rx["rx_sessions"])
-    assert tx_groups == rx_groups
+    assert set(tx_groups) <= set(
+        rx_groups
+    )  # rx also takes the streams no other worker receives
     st20p = [g["st20p"][0] for g in mix["tx_sessions"] if "st20p" in g]
     assert all(s["user_pacing"] for s in st20p)
     # an exact frame takes its RTP time from the epoch, the others from the user time
@@ -446,3 +448,18 @@ def test_pcaptool_reports_grid_offset_breaks_and_rtp(tmp_path):
     assert r["first_breaks"][0]["missing"] == 3
     assert abs(r["first_minus_epoch_us"]["median"] - 620) < 1
     assert abs(r["pkt_minus_rtp_us"]["median"] - 620) < 15  # 90 kHz rounding
+
+
+def test_each_stream_of_the_full_plan_has_a_receiver():
+    h = _host()
+    h.tx_ports.append("0000:09:00.0")
+    h.rx_ports.append("0000:0a:00.0")
+    plan = workload.build_plan(h, "full", 600)
+    received = {sid for w in plan.workers for sid in w.receives}
+    assert {s.sid for s in plan.streams} <= received
+    rx = json.loads(
+        next(w for w in plan.workers if w.name == "rxtxapp-rx").files["rx.json"]
+    )
+    groups = {g["ip"][0] for g in rx["rx_sessions"]}
+    for sid in ("gst-st20p-1080p59", "gst-st30p-pcm24-48k", "ffmpeg-st22p-1080p59"):
+        assert plan.stream(sid).dip in groups

@@ -668,18 +668,17 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
             note="TX of every session type, pipeline and frame/RTP API, user pacing",
         )
     )
-    workers.append(
-        Worker(
-            name="rxtxapp-rx",
-            kind="rxtxapp",
-            ports=[rx_ports[0]],
-            argv=rxtxapp_argv(host, "rx.json", duration_s, lc.get("rxtxapp-rx", "")),
-            files={"rx.json": rx.dumps(), "kahawai.json": host.kahawai_json(st22=True)},
-            lcores=lc.get("rxtxapp-rx", ""),
-            receives=list(mix_sends),
-            note="RX of each mix session, internal converters",
-        )
+    rx_worker = Worker(
+        name="rxtxapp-rx",
+        kind="rxtxapp",
+        ports=[rx_ports[0]],
+        argv=rxtxapp_argv(host, "rx.json", duration_s, lc.get("rxtxapp-rx", "")),
+        files={"rx.json": rx.dumps(), "kahawai.json": host.kahawai_json(st22=True)},
+        lcores=lc.get("rxtxapp-rx", ""),
+        receives=list(mix_sends),
+        note="RX of each mix session, internal converters, and of each stream no other worker receives",
     )
+    workers.append(rx_worker)
     workers.append(
         Worker(
             name="rxtxapp-extconv",
@@ -827,6 +826,12 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
                 note="FFmpeg libsvtjpegxs encoder, MTL st22 codestream",
             )
             streams.append(f22)
+            rx.rx(
+                "st22p",
+                f22.dip,
+                st22p_session(f22, False, pixel_format="YUV422PLANAR10LE"),
+            )
+            rx_worker.receives.append(f22.sid)
             tx_argv += [
                 "-vf", "format=yuv422p10le", "-c:v", "libsvtjpegxs", "-bpp", "3",
                 *ffmpeg_common(host, tx_ports[1], tx_ip),
@@ -903,6 +908,11 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
             note="GStreamer, user pacing",
         )
         streams += [g20, g30]
+        rx.rx(
+            "st20p", g20.dip, st20p_session(g20, False, pixel_format="YUV422PLANAR10LE")
+        )
+        rx.rx("st30p", g30.dip, st30p_session(g30, False))
+        rx_worker.receives += [g20.sid, g30.sid]
         common = f"dev-port={tx_ports[2]} dev-ip={ip}"
         pipeline = (
             "videotestsrc is-live=true pattern=ball "
@@ -933,6 +943,10 @@ def profile_full(host: HostConfig, duration_s: int) -> Plan:
             )
         )
 
+    # Each stream has a receiver on the RX side: a group that no RX port joins is
+    # flooded by the switch, and the NIC gives it to the PF of the capture port
+    # (156 kpps into the host kernel of VM 140, and capture loss).
+    rx_worker.files["rx.json"] = rx.dumps()
     return Plan(profile="full", duration_s=duration_s, workers=workers, streams=streams)
 
 
