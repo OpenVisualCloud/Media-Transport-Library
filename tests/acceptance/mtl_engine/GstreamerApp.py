@@ -460,9 +460,6 @@ def setup_gstreamer_st40p_tx_pipeline(
         ]
     )
 
-    if tx_user_pacing:
-        pipeline_command.append("pts-is-tai=true")
-
     if tx_split_anc_by_pkt:
         pipeline_command.append("split-anc-by-pkt=true")
 

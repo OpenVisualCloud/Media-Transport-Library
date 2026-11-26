@@ -121,6 +121,7 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 | dma-dev       | string | DPDK port bound for DMA engines, exported as described in `doc/dma.md`. `enable-dma-offload=true` needs this or `dma-auto`. | N/A                      |
 | dma-auto      | boolean | Use each Intel DMA device on vfio-pci on the NUMA node of the ports, without `dma-dev`. Sets `MTL_FLAG_DMA_AUTO`. | TRUE/FALSE               |
 | allow-down-ports | boolean | Allow MTL to initialize even if port links are down. Sets `MTL_FLAG_ALLOW_DOWN_PORTS` which enables `MTL_PORT_FLAG_ALLOW_DOWN_INITIALIZATION` on every configured port. Sessions still require at least one functioning port to operate. | TRUE/FALSE |
+| clock-tai     | boolean | Without `enable-ptp`, MTL reads the PTP time from `CLOCK_TAI`, not from `CLOCK_REALTIME`. ST 2110-10 PTP time is TAI. Default FALSE. | TRUE/FALSE |
 | payload-type  | uint   | SMPTE ST 2110 payload type.                                                                       | 0 to G_MAXUINT           |
 | port          | string | Session DPDK device port. If not specified it will be taken from the dev-port argument.           | N/A                      |
 | port-red      | string | Redundant session DPDK device port if left open taken from dev-port-red argument if specified.    | N/A                      |
@@ -181,7 +182,11 @@ that the presentation timestamp (PTS) of its buffer gives. Set
 
 `pts-is-tai` tells the plugin what the PTS is:
 
-- `pts-is-tai=false` (default): the PTS is GStreamer time, as a source such as
+- `pts-is-tai=true` (default): the PTS is already a TAI time in nanoseconds, as
+  the MTL RX plugins and the `timeinserter` test element give it. The plugin
+  sends the PTS plus `pts-pacing-offset`. This is the behavior of the plugins
+  before the property.
+- `pts-is-tai=false`: the PTS is GStreamer time, as a source such as
   `videotestsrc` or `audiotestsrc` gives it. The plugin changes it to a PTP (TAI)
   time:
   1. The segment of the stream changes the PTS to running time.
@@ -194,12 +199,6 @@ that the presentation timestamp (PTS) of its buffer gives. Set
      ignores a measure whose two clock reads are more than 50 us apart, or that
      got no PTP time, and measures again at the next buffer.
   4. The plugin adds `pts-pacing-offset`.
-- `pts-is-tai=true`: the PTS is already a TAI time in nanoseconds, as the MTL RX
-  plugins and the `timeinserter` test element give it. The plugin sends the
-  PTS plus `pts-pacing-offset`.
-
-> **Note:** Before this property, the plugins always used the PTS as a TAI time.
-> A pipeline that puts a TAI time into the PTS must now set `pts-is-tai=true`.
 
 `mtl_st30p_tx` gives each frame the time of its first sample: the time of the
 buffer plus the duration of the samples before that frame. A frame that is not
@@ -221,10 +220,13 @@ the monotonic system clock) between two steps:
   synchronizes the system clock to it: the plugins do not set
   `MTL_FLAG_PHC2SYS_ENABLE`, and an external `phc2sys` has no `/dev/ptpN` for a
   DPDK port.
-- Without the onboard PTP, MTL reads `CLOCK_TAI`. Keep the system clock
-  synchronized, with `chrony`, or with `ptp4l` and `phc2sys` on a kernel NIC.
-  `CLOCK_TAI` is TAI only when the kernel has the TAI offset (37 s), which these
-  tools set. If the offset is not set, `CLOCK_TAI` is equal to UTC.
+- Without the onboard PTP, MTL reads `CLOCK_REALTIME`, which is UTC, or
+  `CLOCK_TAI` with `clock-tai=true`. Keep the system clock synchronized, with
+  `chrony`, or with `ptp4l` and `phc2sys` on a kernel NIC. ST 2110-10 PTP time
+  is TAI, so a receiver that compares the RTP time with its PTP time needs
+  `clock-tai=true`. `CLOCK_TAI` is TAI only when the kernel has the TAI offset
+  (37 s), which these tools set. If the offset is not set, `CLOCK_TAI` is equal
+  to UTC.
 
 So the frame times move away from the PTP time by the rate difference of the two
 clocks, and the plugin puts them back with a step each time the difference is
@@ -293,7 +295,7 @@ To be fixed in the future.
 | async-session-create | boolean  | Improve initialization time by creating a session in a separate thread. All buffers that arrive before the session is ready will be dropped | TRUE/FALSE              | FALSE         |
 | use-pts-for-pacing   | boolean  | [User controlled timestamping offset](#233-pts-controlled-pacing) | 0 to G_MAXUINT | 0          |
 | pts-pacing-offset    | uint     | [User controlled timestamping offset](#233-pts-controlled-pacing) | 0 to G_MAXUINT | 0          |
-| pts-is-tai           | boolean  | [The PTS is a TAI time](#233-pts-controlled-pacing) | TRUE/FALSE | FALSE      |
+| pts-is-tai           | boolean  | [The PTS is a TAI time](#233-pts-controlled-pacing) | TRUE/FALSE | TRUE       |
 
 #### 3.1.2. Preparing Input Video
 
@@ -404,7 +406,7 @@ The `mtl_st30p_tx` plugin supports the following pad capabilities:
 | async-session-create | boolean | Improve initialization time by creating a session in a separate thread. All buffers that arrive before the session is ready will be dropped | TRUE/FALSE              | FALSE         |
 | use-pts-for-pacing   | boolean | [User controlled timestamping offset](#233-pts-controlled-pacing) | 0 to G_MAXUINT | 0          |
 | pts-pacing-offset    | uint    | [User controlled timestamping offset](#233-pts-controlled-pacing) | 0 to G_MAXUINT | 0          |
-| pts-is-tai           | boolean | [The PTS is a TAI time](#233-pts-controlled-pacing) | TRUE/FALSE | FALSE      |
+| pts-is-tai           | boolean | [The PTS is a TAI time](#233-pts-controlled-pacing) | TRUE/FALSE | TRUE       |
 
 #### 4.1.2. Example GStreamer Pipeline for Transmission with s16BE format
 
@@ -496,7 +498,7 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 | tx-split-anc-by-pkt   | boolean  | Emit at most one ANC block per RTP packet; marker on final packet of field. | TRUE/FALSE | FALSE         |
 | use-pts-for-pacing    | gboolean | [User controlled timestamping offset](#233-pts-controlled-pacing)  | TRUE/FALSE       | FALSE         |
 | pts-pacing-offset     | uint     | [User controlled timestamping offset](#233-pts-controlled-pacing)  | 0 to G_MAXUINT   | 0             |
-| pts-is-tai            | gboolean | [The PTS is a TAI time](#233-pts-controlled-pacing)                | TRUE/FALSE       | FALSE         |
+| pts-is-tai            | gboolean | [The PTS is a TAI time](#233-pts-controlled-pacing)                | TRUE/FALSE       | TRUE          |
 | input-format          | enum     | Encoding of incoming ANC buffers (`raw-udw`, `rfc8331-packed`, `rfc8331`) | enum            | `raw-udw`     |
 | parse-8331-meta       | gboolean | **Deprecated.** Shortcut for `input-format=rfc8331-packed`.         | TRUE/FALSE       | FALSE         |
 | max-combined-udw-size | uint     | Maximum combined size of all user data words to send in one buffer | 0 to (20 * 255)  | 20 * 255      |

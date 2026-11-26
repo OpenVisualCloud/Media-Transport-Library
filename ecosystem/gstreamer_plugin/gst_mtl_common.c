@@ -310,6 +310,13 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
                            "Probe each Intel DMA device on vfio-pci on the NUMA node of "
                            "the ports, without dma-dev. Sets MTL_FLAG_DMA_AUTO.",
                            FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_GENERAL_CLOCK_TAI,
+      g_param_spec_boolean("clock-tai", "Read the PTP time from CLOCK_TAI",
+                           "Without enable-ptp, MTL reads the PTP time from CLOCK_TAI, "
+                           "not from CLOCK_REALTIME. ST 2110-10 PTP time is TAI.",
+                           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
@@ -382,6 +389,9 @@ void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
     case PROP_GENERAL_DEV_ARGS_DMA_AUTO:
       general_args->dma_auto = g_value_get_boolean(value);
       break;
+    case PROP_GENERAL_CLOCK_TAI:
+      general_args->clock_tai = g_value_get_boolean(value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
@@ -449,6 +459,9 @@ void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
       break;
     case PROP_GENERAL_DEV_ARGS_DMA_AUTO:
       g_value_set_boolean(value, general_args->dma_auto);
+      break;
+    case PROP_GENERAL_CLOCK_TAI:
+      g_value_set_boolean(value, general_args->clock_tai);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -596,7 +609,7 @@ static void gst_mtl_common_ptp_sync_notify(void* priv,
   if (gst_mtl_ptp_lock_update(&ptp_lock, meta->delta)) g_atomic_int_set(&tai_ready, 1);
 }
 
-/* ST 2110-10 PTP time is TAI; without the onboard PTP MTL would read UTC */
+/* ST 2110-10 PTP time is TAI; without it MTL reads CLOCK_REALTIME, which is UTC */
 static uint64_t gst_mtl_common_get_tai_time(void* priv) {
   struct timespec ts;
 
@@ -630,7 +643,8 @@ gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init
     g_atomic_int_set(&tai_ready, 0);
     GST_INFO("Using MTL library's onboard PTP");
   } else {
-    mtl_init_params->ptp_get_time_fn = gst_mtl_common_get_tai_time;
+    if (general_args->clock_tai)
+      mtl_init_params->ptp_get_time_fn = gst_mtl_common_get_tai_time;
     g_atomic_int_set(&tai_ready, 1);
   }
 
@@ -813,6 +827,7 @@ gint gst_mtl_common_deinit_handle(mtl_handle* handle) {
 }
 
 void gst_mtl_common_pts_pacing_init(GstMtlPtsPacing* pacing) {
+  pacing->pts_is_tai = TRUE;
   gst_segment_init(&pacing->segment, GST_FORMAT_TIME);
   memset(&pacing->sync, 0, sizeof(pacing->sync));
   pacing->no_tai_logged = FALSE;

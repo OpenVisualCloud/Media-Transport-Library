@@ -54,6 +54,7 @@ enum {
   PROP_GENERAL_ENABLE_DMA_OFFLOAD,
   PROP_GENERAL_DEV_ARGS_ALLOW_DOWN,
   PROP_GENERAL_DEV_ARGS_DMA_AUTO,
+  PROP_GENERAL_CLOCK_TAI,
   PROP_GENERAL_MAX
 };
 
@@ -74,6 +75,7 @@ typedef struct GeneralArgs {
   gboolean enable_dma_offload;
   gboolean allow_down_ports;
   gboolean dma_auto;
+  gboolean clock_tai;
 } GeneralArgs;
 
 /* PTS to TAI state of one TX element; the streaming thread owns all but pts_is_tai */

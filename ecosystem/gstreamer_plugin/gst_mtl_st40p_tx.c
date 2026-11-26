@@ -273,9 +273,10 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
   g_object_class_install_property(
       gobject_class, PROP_ST40P_TX_PTS_IS_TAI,
       g_param_spec_boolean("pts-is-tai", "PTS is TAI",
-                           "The buffer PTS is a TAI time in nanoseconds, not running "
-                           "time. Only with use-pts-for-pacing.",
-                           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+                           "The buffer PTS is a TAI time in nanoseconds. Set FALSE to "
+                           "read the PTS as running time and change it to TAI. Only "
+                           "with use-pts-for-pacing.",
+                           TRUE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST40P_TX_PARSE_8331_META,
