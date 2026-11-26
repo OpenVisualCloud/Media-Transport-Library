@@ -52,24 +52,24 @@ void resetClock() {
 } /* namespace */
 
 void NoCtxTest::SetUp() {
-  ctx = new st_tests_context;
-  if (!ctx) {
-    throw std::runtime_error("NoCtxTest::SetUp no ctx");
+  const auto* base = st_test_ctx();
+  if (!base) {
+    throw std::runtime_error("NoCtxTest::SetUp: base test context is not initialized");
   }
-
-  memcpy(ctx, st_test_ctx(), sizeof(*ctx));
-
-  if (ctx->handle) {
+  if (base->handle) {
     throw std::runtime_error(
-        "NoCtxTest::SetUp: ctx->handle is already initialized!\n"
-        "This likely means the global context was not properly reset between tests.\n"
-        "To run NOCTX tests, please use the '--no_ctx' option to ensure a clean "
-        "context.");
+        "NoCtxTest::SetUp: shared MTL handle is already active; NoCtxTest cases must "
+        "run in their own process (remove --single_process or let KahawaiTest dispatch "
+        "automatically).");
   }
 
-  ctx->level = ST_TEST_LEVEL_MANDATORY;
+  ctx = new st_tests_context;
+  memcpy(ctx, base, sizeof(*ctx));
+  ctx->handle = nullptr;
+
+  if (!ctx->user_level) ctx->level = ST_TEST_LEVEL_MANDATORY;
   ctx->para.flags |= MTL_FLAG_RANDOM_SRC_PORT;
-  ctx->para.log_level = MTL_LOG_LEVEL_INFO;
+  if (!ctx->user_log_level) ctx->para.log_level = MTL_LOG_LEVEL_INFO;
   ctx->para.priv = ctx;
   ctx->para.tx_queues_cnt[MTL_PORT_P] = 16;
   ctx->para.tx_queues_cnt[MTL_PORT_R] = 16;
@@ -96,7 +96,7 @@ void NoCtxTest::TearDown() {
   if (ctx) {
     if (ctx->handle) {
       mtl_uninit(ctx->handle);
-      ctx->handle = (mtl_handle)0x1;
+      ctx->handle = nullptr;
     }
 
     delete ctx;
@@ -286,7 +286,7 @@ void NoCtxTest::initDefaultContext(PtpTimeFn ptpTimeFn) {
   }
 
   ctx->para.ptp_get_time_fn = ptpTimeFn;
-  ctx->para.log_level = MTL_LOG_LEVEL_INFO;
+  if (!ctx->user_log_level) ctx->para.log_level = MTL_LOG_LEVEL_INFO;
   ctx->para.flags &= ~MTL_FLAG_DEV_AUTO_START_STOP;
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr);

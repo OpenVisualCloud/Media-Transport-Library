@@ -59,7 +59,7 @@ std::string exclusivePartitionError() {
  */
 TEST_F(NoCtxTest, st30p_default_timestamps) {
   ctx->para.ptp_get_time_fn = NoCtxTest::FakePtpClockNow;
-  ctx->para.log_level = MTL_LOG_LEVEL_INFO;
+  if (!ctx->user_log_level) ctx->para.log_level = MTL_LOG_LEVEL_INFO;
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr);
 

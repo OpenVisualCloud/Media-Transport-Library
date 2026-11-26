@@ -136,15 +136,8 @@ def detect_nic(nics: list[dict[str, str]], ports: list[str]) -> str:
     return os.environ.get("MTL_NIC_LABEL", "unknown")
 
 
-def list_cases(
-    binary: Path, flt: str, *, no_ctx: bool, port_list: str = "kernel:lo"
-) -> list[str]:
-    extra = (
-        ["--no_ctx_tests", f"--port_list={port_list}"]
-        if no_ctx
-        else ["--p_port=kernel:lo", "--r_port=kernel:lo"]
-    )
-    cmd = [str(binary), "--gtest_list_tests", f"--gtest_filter={flt}", *extra]
+def list_cases(binary: Path, flt: str) -> list[str]:
+    cmd = [str(binary), "--gtest_list_tests", f"--gtest_filter={flt}"]
     res = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
     if res.returncode != 0:
         raise RuntimeError(
@@ -511,9 +504,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if a.list_tests:
         for p in selected:
-            n = len(
-                list_cases(binary, a.filter or p["filter"], no_ctx=p["mode"] == "noctx")
-            )
+            n = len(list_cases(binary, a.filter or p["filter"]))
             print(f"{p['name']} ({p['tier']}, {p['topology']}): {n} cases")
         return 0
 
@@ -649,14 +640,11 @@ def main(argv: list[str] | None = None) -> int:
                         done_profiles.add(name)
                         continue
                     raise HostFault(f"{name} needs {need} ports, got {len(ports)}")
-                cases = list_cases(
-                    binary, eff_flt, no_ctx=True, port_list=",".join(ports)
-                )
+                cases = list_cases(binary, eff_flt)
                 meta_map = list_case_metadata(binary)
                 base = [
                     str(binary),
                     "--auto_start_stop",
-                    "--no_ctx_tests",
                     f"--p_sip={a.p_sip}",
                     f"--port_list={','.join(ports)}",
                 ]

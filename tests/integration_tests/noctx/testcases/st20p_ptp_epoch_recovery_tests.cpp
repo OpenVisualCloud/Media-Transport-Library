@@ -54,7 +54,7 @@ void RunEpochOnwardRecoveryCase(NoCtxTest* self, struct st_tests_context* ctx,
 
   ctx->para.pacing = pacing_way;
   ctx->para.ptp_get_time_fn = EpochRecoveryPtpClockNow;
-  ctx->para.log_level = MTL_LOG_LEVEL_INFO;
+  if (!ctx->user_log_level) ctx->para.log_level = MTL_LOG_LEVEL_INFO;
   ctx->para.flags &= ~MTL_FLAG_DEV_AUTO_START_STOP;
   /* TSN launch-time pacing compares against the phc, which only the
    * built-in ptp service (fed by ptp_get_time_fn above) disciplines. */

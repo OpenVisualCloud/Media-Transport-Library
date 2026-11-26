@@ -1181,14 +1181,13 @@ def run_gtest(
     if level and level not in ("all", "mandatory"):
         return "Error: level must be 'all' or 'mandatory'"
 
-    # NoCtxTest cases require one KahawaiTest process per test (DPDK EAL
-    # cannot be re-initialised within a single process) plus the --no_ctx /
-    # --no_ctx_tests flags this tool doesn't pass. Running them here would
-    # just fail/hang, so refuse up front and point at the right tool.
+    # NoCtxTest cases need their own topology/port list and per-case isolation
+    # (handled by run_noctx_tests / run_noctx_pf_tests). Refuse here and point
+    # at the dedicated tool.
     if _is_noctx_filter(gtest_filter):
         return (
-            "Error: NoCtxTest cases cannot be run via run_gtest (each needs its "
-            "own KahawaiTest process). Use run_noctx_tests instead."
+            "Error: NoCtxTest cases should be run via run_noctx_tests or "
+            "run_noctx_pf_tests (with 4 VF ports or 2 PF ports)."
         )
 
     # Build command as list for safe execution
@@ -1302,8 +1301,6 @@ def _run_noctx_suite(
         [
             str(binary),
             "--gtest_list_tests",
-            "--no_ctx",
-            f"--port_list={port_list}",
             f"--gtest_filter={list_filter}",
         ],
         timeout=60,
@@ -1346,7 +1343,6 @@ def _run_noctx_suite(
                 "--auto_start_stop",
                 f"--port_list={port_list}",
                 f"--gtest_filter={full}",
-                "--no_ctx_tests",
             ],
             timeout=timeout_seconds,
             env=_test_runtime_env(),

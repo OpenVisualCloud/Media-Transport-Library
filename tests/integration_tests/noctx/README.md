@@ -12,11 +12,13 @@ test, see `.github/skills/mtl-write-test/SKILL.md`.
 
 ## Running
 
-With `--no_ctx_tests`, `tests.cpp` skips the global `mtl_init()`, and each case
-sets its own flags and calls `mtl_init()` itself. DPDK EAL cannot be initialised
-twice in one process, so **run one case per process**: a filter that matches two
-NoCtx cases fails the second with `eal not support re-init`. The runners
-enforce this.
+`KahawaiTest` detects `NoCtxTest.*` cases automatically from `--gtest_filter` —
+no `--no_ctx_tests` flag is needed (accepted as a deprecated no-op alias).
+When a single `NoCtxTest` case is selected, `KahawaiTest` skips global
+`mtl_init()` and runs that case directly. Because DPDK EAL cannot initialize
+twice in one process, selecting multiple `NoCtxTest` cases or mixing shared and
+`NoCtxTest` suites automatically spawns one clean child process per phase and
+merges JUnit XML output when `--gtest_output=xml:...` is set.
 
 | Runner | Selects | Ports | Pause |
 |---|---|---|---|
@@ -30,13 +32,12 @@ python3 tests/integration_tests/runner/gtest_runner.py --profile '^noctx$' --fil
 python3 tests/integration_tests/runner/gtest_runner.py --profile '^noctx_pf$' --bind-pvf 0000:31:00.0,0000:31:00.1
 ```
 
-`gtest_runner.py` enumerates cases with `--gtest_list_tests`, runs each
-`KahawaiTest --auto_start_stop --no_ctx_tests` in its own process, wraps the
-strict timing cases (`NOCTX_ISOLATE`) in `tests/tools/isolate/isolate.sh`, and
-writes JUnit XML plus structured `results.jsonl`. One case by hand:
+`gtest_runner.py` enumerates cases with `--gtest_list_tests`, wraps strict
+timing cases in `tests/tools/isolate/isolate.sh`, and writes JUnit XML plus
+structured `results.jsonl`. One case or multiple cases by hand:
 
 ```bash
-sudo ./build/tests/KahawaiTest --auto_start_stop --no_ctx_tests \
+sudo ./build/tests/KahawaiTest --auto_start_stop \
   --port_list=0000:xx:xx.x,0000:yy:yy.y --gtest_filter=NoCtxTest.st20p_user_pacing
 ```
 

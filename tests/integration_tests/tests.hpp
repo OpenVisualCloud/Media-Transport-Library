@@ -123,7 +123,9 @@ struct st_tests_context {
   int plugin_timeout_interval;
   int plugin_timeout_ms;
   int plugin_rand_ratio;
-  bool noctx_tests;
+  bool user_log_level;
+  bool user_level;
+  bool single_process;
 };
 
 struct st_tests_context* st_test_ctx(void);

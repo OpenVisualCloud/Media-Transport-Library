@@ -10,7 +10,11 @@
 #endif
 #include <arpa/inet.h>
 
+#include <string>
+#include <vector>
+
 #include "log.h"
+#include "test_runtime.hpp"
 
 enum test_args_cmd {
   TEST_ARG_UNKNOWN = 0,
@@ -53,7 +57,8 @@ enum test_args_cmd {
   TEST_ARG_MCAST_ONLY,
   TEST_ARG_ALLOW_ACROSS_NUMA_CORE,
   TEST_ARG_AUDIO_TX_PACING,
-  TEST_ARG_NOCTX_TESTS
+  TEST_ARG_NOCTX_TESTS,
+  TEST_ARG_SINGLE_PROCESS
 };
 
 static struct option test_args_options[] = {
@@ -61,6 +66,7 @@ static struct option test_args_options[] = {
     {"r_port", required_argument, 0, TEST_ARG_R_PORT},
     {"p_sip", required_argument, 0, TEST_ARG_P_SIP},
     {"port_list", required_argument, 0, TEST_ARG_PORT_LIST},
+    {"ports", required_argument, 0, TEST_ARG_PORT_LIST},
 
     {"lcores", required_argument, 0, TEST_ARG_LCORES},
     {"log_level", required_argument, 0, TEST_ARG_LOG_LEVEL},
@@ -95,6 +101,8 @@ static struct option test_args_options[] = {
     {"allow_across_numa_core", no_argument, 0, TEST_ARG_ALLOW_ACROSS_NUMA_CORE},
     {"audio_tx_pacing", required_argument, 0, TEST_ARG_AUDIO_TX_PACING},
     {"no_ctx_tests", no_argument, 0, TEST_ARG_NOCTX_TESTS},
+    {"no_ctx", no_argument, 0, TEST_ARG_NOCTX_TESTS},
+    {"single_process", no_argument, 0, TEST_ARG_SINGLE_PROCESS},
 
     {0, 0, 0, 0}};
 
@@ -125,10 +133,12 @@ void test_parse_port_list(struct mtl_init_params* p, const char* in_list) {
   char list[MTL_PORT_MAX * MTL_PORT_MAX_LEN] = {0};
   snprintf(list, sizeof(list) - 1, "%s", in_list);
 
-  err("%s, port list %s\n", __func__, list);
+  dbg("%s, port list %s\n", __func__, list);
+  memset(p->port, 0, sizeof(p->port));
+  p->num_ports = 0;
   char* next_port = strtok(list, ",");
   while (next_port && (p->num_ports < MTL_PORT_MAX)) {
-    err("next_port: %s\n", next_port);
+    dbg("next_port: %s\n", next_port);
     snprintf(p->port[p->num_ports], MTL_PORT_MAX_LEN - 1, "%s", next_port);
     p->num_ports++;
     next_port = strtok(NULL, ",");
@@ -148,11 +158,11 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
     switch (cmd) {
       case TEST_ARG_P_PORT:
         snprintf(p->port[MTL_PORT_P], sizeof(p->port[MTL_PORT_P]), "%s", optarg);
-        p->num_ports++;
+        if (p->num_ports < MTL_PORT_P + 1) p->num_ports = MTL_PORT_P + 1;
         break;
       case TEST_ARG_R_PORT:
         snprintf(p->port[MTL_PORT_R], sizeof(p->port[MTL_PORT_R]), "%s", optarg);
-        p->num_ports++;
+        if (p->num_ports < MTL_PORT_R + 1) p->num_ports = MTL_PORT_R + 1;
         break;
       case TEST_ARG_P_SIP:
         inet_pton(AF_INET, optarg, mtl_p_sip_addr(p));
@@ -177,18 +187,24 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         p->flags |= MTL_FLAG_DMA_AUTO;
         break;
       case TEST_ARG_LOG_LEVEL:
-        if (!strcmp(optarg, "debug"))
+        if (!strcmp(optarg, "debug")) {
           p->log_level = MTL_LOG_LEVEL_DEBUG;
-        else if (!strcmp(optarg, "info"))
+          ctx->user_log_level = true;
+        } else if (!strcmp(optarg, "info")) {
           p->log_level = MTL_LOG_LEVEL_INFO;
-        else if (!strcmp(optarg, "notice"))
+          ctx->user_log_level = true;
+        } else if (!strcmp(optarg, "notice")) {
           p->log_level = MTL_LOG_LEVEL_NOTICE;
-        else if (!strcmp(optarg, "warning"))
+          ctx->user_log_level = true;
+        } else if (!strcmp(optarg, "warning")) {
           p->log_level = MTL_LOG_LEVEL_WARNING;
-        else if (!strcmp(optarg, "error"))
+          ctx->user_log_level = true;
+        } else if (!strcmp(optarg, "error")) {
           p->log_level = MTL_LOG_LEVEL_ERR;
-        else
+          ctx->user_log_level = true;
+        } else {
           err("%s, unknow log level %s\n", __func__, optarg);
+        }
         break;
       case TEST_ARG_CNI_THREAD:
         p->flags |= MTL_FLAG_CNI_THREAD;
@@ -225,12 +241,15 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         p->nb_rx_desc = atoi(optarg);
         break;
       case TEST_ARG_LEVEL:
-        if (!strcmp(optarg, "all"))
+        if (!strcmp(optarg, "all")) {
           ctx->level = ST_TEST_LEVEL_ALL;
-        else if (!strcmp(optarg, "mandatory"))
+          ctx->user_level = true;
+        } else if (!strcmp(optarg, "mandatory")) {
           ctx->level = ST_TEST_LEVEL_MANDATORY;
-        else
+          ctx->user_level = true;
+        } else {
           err("%s, unknow log level %s\n", __func__, optarg);
+        }
         break;
       case TEST_ARG_AUTO_START_STOP:
         p->flags |= MTL_FLAG_DEV_AUTO_START_STOP;
@@ -320,7 +339,12 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
           err("%s, unknow audio tx pacing %s\n", __func__, optarg);
         break;
       case TEST_ARG_NOCTX_TESTS:
-        ctx->noctx_tests = true;
+        /* Deprecated no-op: KahawaiTest selects shared vs own-ctx mode automatically. */
+        dbg("%s, --no_ctx_tests is deprecated; mode is selected automatically\n",
+            __func__);
+        break;
+      case TEST_ARG_SINGLE_PROCESS:
+        ctx->single_process = true;
         break;
       default:
         break;
@@ -349,7 +373,8 @@ static void test_random_ip(struct st_tests_context* ctx) {
      network, so p_ip[0] + i collides with the primary address as soon as the
      two happen to be equal, and mt_user_params_check rejects the run with
      "same ip ... for port 1 and 0". */
-  for (int i = MTL_PORT_R; p->port[i][0] != '\0'; i++) {
+  for (int i = MTL_PORT_R; i < p->num_ports && i < MTL_PORT_MAX && p->port[i][0] != '\0';
+       i++) {
     p->sip_addr[i][0] = p_ip[0];
     p->sip_addr[i][1] = p_ip[1];
     p->sip_addr[i][2] = p_ip[2];
@@ -546,149 +571,69 @@ TEST(Misc, get_numa_id) {
   EXPECT_LT(ret, 0);
 }
 
-static bool test_port_is_vf(const char* port) {
-#ifdef WINDOWSENV
-  (void)port;
-  return false;
-#else
-  if (!port || !port[0]) return false;
-  char path[256];
-  snprintf(path, sizeof(path), "/sys/bus/pci/devices/%s/physfn", port);
-  return access(path, F_OK) == 0;
-#endif
-}
-
-static int run_all_test(int /*argc*/, char** /*argv*/, struct st_tests_context* ctx) {
-  bool link_flap_wa = false;
-  int ret;
-
-  /* parse af xdp pmd info */
-  for (int i = 0; i < ctx->para.num_ports; i++) {
-    ctx->para.pmd[i] = mtl_pmd_by_port_name(ctx->para.port[i]);
-    if (ctx->para.pmd[i] != MTL_PMD_DPDK_USER) {
-      ctx->para.flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
-    } else if (!test_port_is_vf(ctx->para.port[i])) {
-      /* Only physical functions flap the physical switch port on DPDK close. */
-      link_flap_wa = true;
-    }
-  }
-  if (ctx->hdr_split) {
-    ctx->para.nb_rx_hdr_split_queues = 1;
-  }
-
-  if (!ctx->noctx_tests) {
-    ctx->handle = mtl_init(&ctx->para);
-    if (!ctx->handle) {
-      err("%s, mtl_init fail\n", __func__);
-      return -EIO;
-    }
-  }
-
-  for (int i = 0; i < ctx->para.num_ports; i++) {
-    mtl_port_ip_info(ctx->handle, (enum mtl_port)i, ctx->para.sip_addr[i],
-                     ctx->para.netmask[i], ctx->para.gateway[i]);
-    uint8_t* ip = ctx->para.sip_addr[i];
-    info("%s, if ip %u.%u.%u.%u for port %s\n", __func__, ip[0], ip[1], ip[2], ip[3],
-         ctx->para.port[i]);
-  }
-
-  if (ctx->para.num_ports > 1) {
-    if (0 == strcmp(ctx->para.port[MTL_PORT_P], ctx->para.port[MTL_PORT_R])) {
-      /* for test with --p_port kernel:lo --r_port kernel:lo */
-      ctx->same_dual_port = true;
-    }
-  }
-
-  ctx->iova = mtl_iova_mode_get(ctx->handle);
-  ctx->rss_mode = mtl_rss_mode_get(ctx->handle);
-
-  st_test_st22_plugin_register(ctx);
-  st_test_convert_plugin_register(ctx);
-
-  uint64_t start_time_ns = st_test_get_monotonic_time();
-
-  ret = RUN_ALL_TESTS();
-
-  uint64_t end_time_ns = st_test_get_monotonic_time();
-  int time_s = (end_time_ns - start_time_ns) / NS_PER_S;
-  int time_least = 10;
-
-  if (!ctx->noctx_tests && link_flap_wa && (time_s < time_least)) {
-    /* wa for linkFlapErrDisabled in the hub */
-    info("%s, sleep %ds before disable the port\n", __func__, time_least - time_s);
-    sleep(time_least - time_s);
-  }
-
-  st_test_st22_plugin_unregister(ctx);
-  st_test_convert_plugin_unregister(ctx);
-  test_ctx_uinit(ctx);
-
-  return ret;
-}
-
-bool filter_includes_no_ctx_tests(const std::string& filter) {
-  if (filter == "*" || filter.empty()) return true;
-  if (filter.rfind("NOCTX") != std::string::npos) return true;
-  return false;
-}
-
-static void print_cases_json(void) {
-  const auto* ut = testing::UnitTest::GetInstance();
-  printf("[\n");
-  bool first = true;
-  for (int i = 0; i < ut->total_test_suite_count(); ++i) {
-    const auto* ts = ut->GetTestSuite(i);
-    std::string suite = ts->name();
-    for (int j = 0; j < ts->total_test_count(); ++j) {
-      const auto* ti = ts->GetTestInfo(j);
-      std::string name = ti->name();
-      std::string full = suite + "." + name;
-      bool own = (suite == "NoCtxTest");
-      bool is_pf = own && name.find("_pf_") != std::string::npos;
-      bool is_red = name.find("redundant") != std::string::npos;
-      bool needs_iso = own && (name.find("default_timestamps") != std::string::npos ||
-                               name.find("user_pacing") != std::string::npos ||
-                               name.find("vrx_margin") != std::string::npos ||
-                               name.find("rl_staged_overload") != std::string::npos);
-      const char* topo =
-          is_pf ? "pf_pair" : (own ? "cross_pf_quad" : (is_red ? "vf_quad" : "vf_pair"));
-      if (!first) printf(",\n");
-      first = false;
-      printf(
-          "  {\"case\":\"%s\",\"suite\":\"%s\",\"instance\":\"%s\","
-          "\"topology\":\"%s\",\"isolated\":%s}",
-          full.c_str(), suite.c_str(), own ? "own" : "shared", topo,
-          needs_iso ? "true" : "false");
-    }
-  }
-  printf("\n]\n");
+static void print_usage(const char* prog) {
+  printf(
+      "\nMTL Integration Test Options (%s):\n"
+      "  --p_port <bdf|kernel:lo>   Primary port (default TX / port 0)\n"
+      "  --r_port <bdf|kernel:lo>   Secondary port (default RX / port 1)\n"
+      "  --port_list <p0,p1,...>    Comma-separated port list (alias: --ports)\n"
+      "  --p_sip <ip>               Primary port source IPv4 address\n"
+      "  --auto_start_stop          Enable MTL_FLAG_DEV_AUTO_START_STOP\n"
+      "  --dma_auto                 Auto-probe DMA devices per port NUMA node\n"
+      "  --level <mandatory|all>    Select test level (default: mandatory)\n"
+      "  --log_level <level>        debug|info|notice|warning|error\n"
+      "  --list-json                Print JSON metadata for all tests and exit\n"
+      "  --help                     Show GoogleTest and KahawaiTest options\n"
+      "\nMode selection is automatic: shared suites share one mtl_init(); NoCtxTest\n"
+      "cases run in their own clean process (multi-case and mixed filters dispatch\n"
+      "automatically).\n",
+      prog ? prog : "KahawaiTest");
 }
 
 GTEST_API_ int main(int argc, char** argv) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
-  int ret = 1;
+  std::vector<std::string> orig_argv;
+  orig_argv.reserve(static_cast<size_t>(argc));
+  for (int i = 0; i < argc; ++i) {
+    orig_argv.emplace_back(argv[i]);
+  }
 
+  bool help_requested = false;
   for (int i = 1; i < argc; ++i) {
     if (strcmp(argv[i], "--list-json") == 0) {
       testing::InitGoogleTest(&argc, argv);
-      print_cases_json();
+      mtl_test::print_cases_json();
       return 0;
+    }
+    if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0 ||
+        strcmp(argv[i], "-?") == 0 || strcmp(argv[i], "--gtest_help") == 0) {
+      help_requested = true;
     }
   }
 
-  ctx = (struct st_tests_context*)st_test_zmalloc(sizeof(*ctx));
-  if (!ctx) {
-    err("%s, ctx alloc fail\n", __func__);
-    return -ENOMEM;
+  testing::InitGoogleTest(&argc, argv);
+  if (help_requested) {
+    print_usage(argc > 0 ? argv[0] : "KahawaiTest");
+    return 0;
+  }
+  if (testing::GTEST_FLAG(list_tests)) {
+    return RUN_ALL_TESTS();
   }
 
-  testing::InitGoogleTest(&argc, argv);
+  auto* ctx = static_cast<struct st_tests_context*>(
+      st_test_zmalloc(sizeof(struct st_tests_context)));
+  if (!ctx) {
+    err("%s, ctx alloc fail\n", __func__);
+    return 1;
+  }
+
   test_ctx_init(ctx);
   test_parse_args(ctx, &ctx->para, argc, argv);
   test_random_ip(ctx);
   g_test_ctx = ctx;
-  ret = run_all_test(argc, argv, ctx);
 
+  const int ret = mtl_test::run_unified_tests(ctx, orig_argv);
+  g_test_ctx = nullptr;
+  test_ctx_uinit(ctx);
   return ret;
 }
 

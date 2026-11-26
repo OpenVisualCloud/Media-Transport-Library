@@ -27,7 +27,7 @@ TEST_F(NoCtxTest, init_32_queues) {
   ctx->para.rx_queues_cnt[MTL_PORT_R] = 32;
 
   ctx->para.ptp_get_time_fn = NoCtxTest::FakePtpClockNow;
-  ctx->para.log_level = MTL_LOG_LEVEL_INFO;
+  if (!ctx->user_log_level) ctx->para.log_level = MTL_LOG_LEVEL_INFO;
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr) << "mtl_init failed with 32 queues";
 
@@ -46,7 +46,7 @@ TEST_F(NoCtxTest, init_64_queues) {
   ctx->para.rx_queues_cnt[MTL_PORT_R] = 64;
 
   ctx->para.ptp_get_time_fn = NoCtxTest::FakePtpClockNow;
-  ctx->para.log_level = MTL_LOG_LEVEL_INFO;
+  if (!ctx->user_log_level) ctx->para.log_level = MTL_LOG_LEVEL_INFO;
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr) << "mtl_init failed with 64 queues";
 
@@ -65,7 +65,7 @@ TEST_F(NoCtxTest, init_128_queues) {
   ctx->para.rx_queues_cnt[MTL_PORT_R] = 128;
 
   ctx->para.ptp_get_time_fn = NoCtxTest::FakePtpClockNow;
-  ctx->para.log_level = MTL_LOG_LEVEL_INFO;
+  if (!ctx->user_log_level) ctx->para.log_level = MTL_LOG_LEVEL_INFO;
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr) << "mtl_init failed with 128 queues";
 
@@ -84,7 +84,7 @@ TEST_F(NoCtxTest, init_asymmetric_queues_tx_heavy) {
   ctx->para.rx_queues_cnt[MTL_PORT_R] = 32;
 
   ctx->para.ptp_get_time_fn = NoCtxTest::FakePtpClockNow;
-  ctx->para.log_level = MTL_LOG_LEVEL_INFO;
+  if (!ctx->user_log_level) ctx->para.log_level = MTL_LOG_LEVEL_INFO;
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr)
       << "mtl_init failed with asymmetric queues (64tx/32rx)";
@@ -104,7 +104,7 @@ TEST_F(NoCtxTest, init_asymmetric_queues_rx_heavy) {
   ctx->para.rx_queues_cnt[MTL_PORT_R] = 64;
 
   ctx->para.ptp_get_time_fn = NoCtxTest::FakePtpClockNow;
-  ctx->para.log_level = MTL_LOG_LEVEL_INFO;
+  if (!ctx->user_log_level) ctx->para.log_level = MTL_LOG_LEVEL_INFO;
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr)
       << "mtl_init failed with asymmetric queues (32tx/64rx)";
@@ -130,7 +130,7 @@ TEST_F(NoCtxTest, uninit_rx_only_64_queues_is_fast) {
   ctx->para.pacing = ST21_TX_PACING_WAY_AUTO;
 
   ctx->para.ptp_get_time_fn = NoCtxTest::FakePtpClockNow;
-  ctx->para.log_level = MTL_LOG_LEVEL_INFO;
+  if (!ctx->user_log_level) ctx->para.log_level = MTL_LOG_LEVEL_INFO;
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr) << "mtl_init failed with 64 rx-only queues";
 

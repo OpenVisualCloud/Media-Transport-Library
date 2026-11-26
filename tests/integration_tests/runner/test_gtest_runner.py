@@ -391,3 +391,93 @@ sys.exit(1 if fail else 0)
         and calls[1]["shards"] is None
         and calls[1]["idx"] is None
     )
+
+
+def test_real_kahawai_unified_cli_discovery_without_ports(tmp_path: Path) -> None:
+    """Compiled KahawaiTest lists tests and handles empty filters with zero port flags."""
+    repo_root = RUNNER_DIR.parent.parent.parent
+    candidates = (
+        repo_root / ".local_install/mtl/bin/KahawaiTest",
+        repo_root / "build/tests/KahawaiTest",
+    )
+    binary = next((p for p in candidates if p.is_file()), None)
+    if binary is None:
+        pytest.skip("KahawaiTest binary not built")
+
+    all_cases = gr.list_cases(binary, "*")
+    assert any(c.startswith("St20p.") for c in all_cases)
+    assert any(c.startswith("NoCtxTest.") for c in all_cases)
+
+    noctx_cases = gr.list_cases(binary, "NoCtxTest.*")
+    assert noctx_cases and all(c.startswith("NoCtxTest.") for c in noctx_cases)
+
+    xml_out = tmp_path / "empty.xml"
+    empty = subprocess.run(
+        [
+            str(binary),
+            "--gtest_filter=NoSuchSuite.*",
+            f"--gtest_output=xml:{xml_out}",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert empty.returncode == 0, empty.stdout + empty.stderr
+    assert xml_out.is_file()
+
+    # --help and -h must print usage once and exit 0 without running mtl_init or forking.
+    for help_flag in ("--help", "-h"):
+        hp = subprocess.run(
+            [str(binary), help_flag],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        assert hp.returncode == 0, hp.stdout + hp.stderr
+        assert hp.stdout.count("MTL Integration Test Options") == 1
+        if help_flag == "--help":
+            assert (
+                hp.stdout.count(
+                    "This program contains tests written using Google Test."
+                )
+                == 1
+            )
+
+    # Empty and colon-only filters match 0 tests, matching GoogleTest semantics.
+    for empty_flt in ("", ":"):
+        res = subprocess.run(
+            [str(binary), f"--gtest_filter={empty_flt}"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        assert res.returncode == 0, res.stdout + res.stderr
+        assert "0 tests" in res.stdout
+
+    # Invalid shard env vars must fail loudly instead of silently running unsharded.
+    bad_shard = subprocess.run(
+        [str(binary), "--gtest_filter=Misc.*"],
+        env={**os.environ, "GTEST_TOTAL_SHARDS": "2", "GTEST_SHARD_INDEX": "5"},
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    assert bad_shard.returncode != 0
+
+    # Unsupported JSON output in multi-phase mode must fail loudly, not silently drop.
+    bad_json = subprocess.run(
+        [
+            str(binary),
+            "--gtest_filter=Misc.ptp:NoCtxTest.st40i_smoke",
+            f"--gtest_output=json:{tmp_path / 'out.json'}",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    assert bad_json.returncode != 0
