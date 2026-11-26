@@ -220,3 +220,122 @@ TEST_F(St40Rfc8331CodecTest, PayloadHdrBswapRoundTrip) {
   EXPECT_EQ(hdr.swapped_first_hdr_chunk, orig_first);
   EXPECT_EQ(hdr.swapped_second_hdr_chunk, orig_second);
 }
+
+TEST_F(St40Rfc8331CodecTest, ParityBitsExhaustive0To255) {
+  for (uint16_t b = 0; b <= 0xFFu; b++) {
+    const uint16_t word = st40_add_parity_bits(b);
+    const uint16_t bit8 = static_cast<uint16_t>(__builtin_popcount(b) & 1);
+    const uint16_t bit9 = static_cast<uint16_t>(bit8 ^ 1u);
+
+    EXPECT_EQ(word & 0xFFu, b) << "b=" << b;
+    EXPECT_EQ(word & 0xFC00u, 0u) << "b=" << b;
+    EXPECT_EQ((word >> 8) & 1u, bit8) << "b=" << b;
+    EXPECT_EQ((word >> 9) & 1u, bit9) << "b=" << b;
+    EXPECT_EQ(st40_add_parity_bits(static_cast<uint16_t>(b | 0xFF00u)), word)
+        << "upper input bits not masked for b=" << b;
+
+    EXPECT_TRUE(st40_check_parity_bits(word)) << "b=" << b;
+
+    for (int k = 0; k < 10; k++) {
+      EXPECT_FALSE(st40_check_parity_bits(static_cast<uint16_t>(word ^ (1u << k))))
+          << "b=" << b << " bit=" << k;
+    }
+    EXPECT_FALSE(st40_check_parity_bits(static_cast<uint16_t>(word ^ 0x300u)))
+        << "dual-parity flip b=" << b;
+    EXPECT_FALSE(st40_check_parity_bits(static_cast<uint16_t>(word | 0x400u)))
+        << "out-of-range bit b=" << b;
+  }
+}
+
+TEST_F(St40Rfc8331CodecTest, UdwPackUnpackAllBitAlignments) {
+  uint16_t expected[16] = {
+      0x000u,
+      0x3FFu,
+      0x155u,
+      0x2AAu,
+      0x200u,
+      0x100u,
+      0x001u,
+      st40_add_parity_bits(0x61),
+      st40_add_parity_bits(0x02),
+      st40_add_parity_bits(0x00),
+      st40_add_parity_bits(0xFF),
+      st40_add_parity_bits(0x5A),
+      st40_add_parity_bits(0xA5),
+      st40_add_parity_bits(0x80),
+      st40_add_parity_bits(0x7F),
+      st40_add_parity_bits(0x43),
+  };
+
+  uint8_t buf[32] = {};
+  for (uint32_t i = 0; i < 16; i++) {
+    st40_set_udw(i, expected[i], buf);
+  }
+  for (uint32_t i = 0; i < 16; i++) {
+    EXPECT_EQ(st40_get_udw(i, buf), expected[i]) << "initial idx=" << i;
+  }
+
+  /* Overwrite one word at each alignment phase (bit offsets 0, 2, 4, 6) and
+   * verify all 15 neighbors stay intact. */
+  for (uint32_t target = 4; target <= 7; target++) {
+    expected[target] = static_cast<uint16_t>(expected[target] ^ 0x3FFu);
+    st40_set_udw(target, expected[target], buf);
+    for (uint32_t i = 0; i < 16; i++) {
+      EXPECT_EQ(st40_get_udw(i, buf), expected[i])
+          << "after overwrite target=" << target << " idx=" << i;
+    }
+  }
+}
+
+TEST_F(St40Rfc8331CodecTest, CalcChecksumDirect) {
+  auto ref_checksum = [](uint32_t sum) -> uint16_t {
+    const uint16_t low9 = static_cast<uint16_t>(sum & 0x1FFu);
+    return static_cast<uint16_t>(((~(low9 << 1)) & 0x200u) | low9);
+  };
+
+  /* Zero words yields sum=0 -> bit 8 is 0, so bit 9 is 1 (0x200). */
+  uint8_t zero_buf[4] = {};
+  EXPECT_EQ(st40_calc_checksum(0, zero_buf), 0x200u);
+
+  /* Known 3-word header: DID=0x43, SDID=0x02, DC=0x00 with parity bits. */
+  uint8_t hdr_buf[8] = {};
+  const uint16_t hdr_words[3] = {
+      st40_add_parity_bits(0x43),
+      st40_add_parity_bits(0x02),
+      st40_add_parity_bits(0x00),
+  };
+  uint32_t hdr_sum = 0;
+  for (uint32_t i = 0; i < 3; i++) {
+    st40_set_udw(i, hdr_words[i], hdr_buf);
+    hdr_sum += hdr_words[i];
+  }
+  EXPECT_EQ(st40_calc_checksum(3, hdr_buf), ref_checksum(hdr_sum));
+
+  /* Both bit-8 polarities: bit 8 == 0 sets bit 9, bit 8 == 1 clears bit 9. */
+  uint8_t pol_buf[4] = {};
+  st40_set_udw(0, 0x0FFu, pol_buf);
+  EXPECT_EQ(st40_calc_checksum(1, pol_buf), 0x2FFu);
+  st40_set_udw(0, 0x100u, pol_buf);
+  EXPECT_EQ(st40_calc_checksum(1, pol_buf), 0x100u);
+
+  /* 9-bit overflow wrap: 5 * 0x1FF = 0x9FB -> low 9 bits = 0x1FB, bit 9 = 0. */
+  uint8_t wrap_buf[16] = {};
+  for (uint32_t i = 0; i < 5; i++) {
+    st40_set_udw(i, 0x1FFu, wrap_buf);
+  }
+  EXPECT_EQ(st40_calc_checksum(5, wrap_buf), 0x1FBu);
+
+  /* Cross-check against wire checksum emitted by st40_rfc8331_encode_packet. */
+  auto in = make_meta(0x43, 0x02, 10, 0, 1, 1, 8);
+  auto udw = make_udw(8, 0x10);
+  std::vector<uint8_t> pkt_buf(kBufRoom, 0);
+  uint32_t written = 0;
+  ASSERT_EQ(
+      st40_rfc8331_encode_packet(pkt_buf.data(), kBufRoom, &in, udw.data(), &written), 0);
+  const auto* ph =
+      reinterpret_cast<const struct st40_rfc8331_payload_hdr*>(pkt_buf.data());
+  const uint8_t* udw_base = reinterpret_cast<const uint8_t*>(&ph->second_hdr_chunk);
+  const uint16_t wire_cs = st40_get_udw(11, udw_base);
+  const uint16_t calc_cs = st40_calc_checksum(11, udw_base);
+  EXPECT_EQ(calc_cs, wire_cs);
+}

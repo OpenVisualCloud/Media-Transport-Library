@@ -23,6 +23,7 @@
 
 extern "C" {
 #include <mtl_api.h>
+#include <st30_api.h>
 
 #include "st2110/st_fmt.h"
 }
@@ -267,5 +268,157 @@ TEST(StFrameCreateByMalloc, EveryFormatWithASizeKeepsItsBufferInPlaneZero) {
     EXPECT_NE(frame->addr[0], nullptr) << "fmt " << fmt;
     EXPECT_EQ(frame->buffer_size, size) << "fmt " << fmt;
     EXPECT_EQ(st_frame_free(frame), 0) << "fmt " << fmt;
+  }
+}
+
+TEST(St30FormatHelpers, SampleSizeValidAndInvalid) {
+  const struct {
+    enum st30_fmt fmt;
+    int expected;
+  } valid_cases[] = {
+      {ST30_FMT_PCM8, 1},
+      {ST30_FMT_PCM16, 2},
+      {ST30_FMT_PCM24, 3},
+      {ST31_FMT_AM824, 4},
+  };
+
+  for (const auto& c : valid_cases) {
+    EXPECT_EQ(st30_get_sample_size(c.fmt), c.expected) << "fmt " << c.fmt;
+  }
+
+  EXPECT_EQ(st30_get_sample_size(ST30_FMT_MAX), -EINVAL);
+  EXPECT_EQ(st30_get_sample_size(static_cast<enum st30_fmt>(-1)), -EINVAL);
+}
+
+TEST(St30FormatHelpers, PacketSizeMatrixAndInvalid) {
+  const struct {
+    enum st30_fmt fmt;
+    int sample_bytes;
+  } fmts[] = {
+      {ST30_FMT_PCM8, 1},
+      {ST30_FMT_PCM16, 2},
+      {ST30_FMT_PCM24, 3},
+      {ST31_FMT_AM824, 4},
+  };
+  const struct {
+    enum st30_sampling sampling;
+    enum st30_ptime ptime;
+    int samples;
+  } rates[] = {
+      {ST30_SAMPLING_48K, ST30_PTIME_1MS, 48},
+      {ST30_SAMPLING_48K, ST30_PTIME_125US, 6},
+      {ST30_SAMPLING_48K, ST30_PTIME_250US, 12},
+      {ST30_SAMPLING_48K, ST30_PTIME_333US, 16},
+      {ST30_SAMPLING_48K, ST30_PTIME_4MS, 192},
+      {ST30_SAMPLING_48K, ST31_PTIME_80US, 4},
+      {ST30_SAMPLING_96K, ST30_PTIME_1MS, 96},
+      {ST30_SAMPLING_96K, ST30_PTIME_125US, 12},
+      {ST30_SAMPLING_96K, ST30_PTIME_250US, 24},
+      {ST30_SAMPLING_96K, ST30_PTIME_333US, 32},
+      {ST30_SAMPLING_96K, ST30_PTIME_4MS, 384},
+      {ST30_SAMPLING_96K, ST31_PTIME_80US, 8},
+      {ST31_SAMPLING_44K, ST31_PTIME_1_09MS, 48},
+      {ST31_SAMPLING_44K, ST31_PTIME_0_14MS, 6},
+      {ST31_SAMPLING_44K, ST31_PTIME_0_09MS, 4},
+  };
+  const uint16_t channels[] = {1, 2, 4, 8};
+
+  for (const auto& f : fmts) {
+    for (const auto& r : rates) {
+      for (uint16_t ch : channels) {
+        EXPECT_EQ(st30_get_packet_size(f.fmt, r.ptime, r.sampling, ch),
+                  f.sample_bytes * r.samples * ch)
+            << "fmt " << f.fmt << " ptime " << r.ptime << " sampling " << r.sampling
+            << " ch " << ch;
+      }
+    }
+  }
+
+  /* Invalid format, ptime, sampling, mismatched ptime/sampling, and zero channels. */
+  EXPECT_EQ(st30_get_packet_size(ST30_FMT_MAX, ST30_PTIME_1MS, ST30_SAMPLING_48K, 2),
+            -EINVAL);
+  EXPECT_EQ(st30_get_packet_size(static_cast<enum st30_fmt>(-1), ST30_PTIME_1MS,
+                                 ST30_SAMPLING_48K, 2),
+            -EINVAL);
+  EXPECT_EQ(st30_get_packet_size(ST30_FMT_PCM24, ST30_PTIME_MAX, ST30_SAMPLING_48K, 2),
+            -EINVAL);
+  EXPECT_EQ(st30_get_packet_size(ST30_FMT_PCM24, static_cast<enum st30_ptime>(-1),
+                                 ST30_SAMPLING_48K, 2),
+            -EINVAL);
+  EXPECT_EQ(st30_get_packet_size(ST30_FMT_PCM24, ST30_PTIME_1MS, ST30_SAMPLING_MAX, 2),
+            -EINVAL);
+  EXPECT_EQ(st30_get_packet_size(ST30_FMT_PCM24, ST30_PTIME_1MS,
+                                 static_cast<enum st30_sampling>(-1), 2),
+            -EINVAL);
+  EXPECT_EQ(st30_get_packet_size(ST30_FMT_PCM24, ST30_PTIME_1MS, ST31_SAMPLING_44K, 2),
+            -EINVAL);
+  EXPECT_EQ(st30_get_packet_size(ST30_FMT_PCM24, ST31_PTIME_1_09MS, ST30_SAMPLING_48K, 2),
+            -EINVAL);
+  EXPECT_EQ(st30_get_packet_size(ST30_FMT_PCM24, ST30_PTIME_1MS, ST30_SAMPLING_48K, 0),
+            -EINVAL);
+}
+
+TEST(St30FormatHelpers, SampleNumRateAndPacketTimeInvalid) {
+  EXPECT_EQ(st30_get_sample_num(ST30_PTIME_MAX, ST30_SAMPLING_48K), -EINVAL);
+  EXPECT_EQ(st30_get_sample_num(static_cast<enum st30_ptime>(-1), ST30_SAMPLING_48K),
+            -EINVAL);
+  EXPECT_EQ(st30_get_sample_num(ST30_PTIME_MAX, ST30_SAMPLING_96K), -EINVAL);
+  EXPECT_EQ(st30_get_sample_num(ST30_PTIME_MAX, ST31_SAMPLING_44K), -EINVAL);
+  EXPECT_EQ(st30_get_sample_num(ST30_PTIME_1MS, ST30_SAMPLING_MAX), -EINVAL);
+  EXPECT_EQ(st30_get_sample_num(ST30_PTIME_1MS, static_cast<enum st30_sampling>(-1)),
+            -EINVAL);
+
+  /* Mismatched 44.1 kHz vs 48/96 kHz ptime and sampling pairs. */
+  EXPECT_EQ(st30_get_sample_num(ST31_PTIME_1_09MS, ST30_SAMPLING_48K), -EINVAL);
+  EXPECT_EQ(st30_get_sample_num(ST31_PTIME_0_14MS, ST30_SAMPLING_48K), -EINVAL);
+  EXPECT_EQ(st30_get_sample_num(ST31_PTIME_0_09MS, ST30_SAMPLING_96K), -EINVAL);
+  EXPECT_EQ(st30_get_sample_num(ST30_PTIME_1MS, ST31_SAMPLING_44K), -EINVAL);
+  EXPECT_EQ(st30_get_sample_num(ST30_PTIME_125US, ST31_SAMPLING_44K), -EINVAL);
+  EXPECT_EQ(st30_get_sample_num(ST31_PTIME_80US, ST31_SAMPLING_44K), -EINVAL);
+
+  EXPECT_EQ(st30_get_sample_rate(ST30_SAMPLING_MAX), -EINVAL);
+  EXPECT_EQ(st30_get_sample_rate(static_cast<enum st30_sampling>(-1)), -EINVAL);
+
+  EXPECT_DOUBLE_EQ(st30_get_packet_time(ST30_PTIME_MAX), static_cast<double>(-EINVAL));
+  EXPECT_DOUBLE_EQ(st30_get_packet_time(static_cast<enum st30_ptime>(-1)),
+                   static_cast<double>(-EINVAL));
+}
+
+TEST(St30FormatHelpers, CalculateFramebuffSizeValidMatrix) {
+  const struct {
+    enum st30_fmt fmt;
+    enum st30_ptime ptime;
+    enum st30_sampling sampling;
+    uint16_t channel;
+    uint64_t desired_frame_time_ns;
+    int expected_size;
+    double expected_fps;
+  } cases[] = {
+      /* 10 ms at 1 ms/48k/PCM24/2ch: 10 pkts * 288 B = 2880 B, 100.0 fps */
+      {ST30_FMT_PCM24, ST30_PTIME_1MS, ST30_SAMPLING_48K, 2, 10000000ull, 2880, 100.0},
+      /* 10 ms at 125 us/48k/PCM16/4ch: 80 pkts * 48 B = 3840 B, 100.0 fps */
+      {ST30_FMT_PCM16, ST30_PTIME_125US, ST30_SAMPLING_48K, 4, 10000000ull, 3840, 100.0},
+      /* 10 ms at 1.09 ms/44.1k/AM824/2ch: floor(9.1875) = 9 pkts * 384 B = 3456 B */
+      {ST31_FMT_AM824, ST31_PTIME_1_09MS, ST31_SAMPLING_44K, 2, 10000000ull, 3456,
+       44100.0 / (48 * 9)},
+      /* desired_frame_time_ns < pkt_time clamps to 1 pkt: 500 us at 1 ms -> 192 B */
+      {ST30_FMT_PCM16, ST30_PTIME_1MS, ST30_SAMPLING_48K, 2, 500000ull, 192, 1000.0},
+      /* exact 1-pkt frame: 4 ms at 4 ms/96k/PCM16/2ch -> 1536 B, 250.0 fps */
+      {ST30_FMT_PCM16, ST30_PTIME_4MS, ST30_SAMPLING_96K, 2, 4000000ull, 1536, 250.0},
+  };
+
+  for (const auto& c : cases) {
+    double fps = 0.0;
+    const int size_with_fps = st30_calculate_framebuff_size(
+        c.fmt, c.ptime, c.sampling, c.channel, c.desired_frame_time_ns, &fps);
+    EXPECT_EQ(size_with_fps, c.expected_size)
+        << "fmt " << c.fmt << " ptime " << c.ptime << " sampling " << c.sampling;
+    EXPECT_NEAR(fps, c.expected_fps, 1e-6)
+        << "fmt " << c.fmt << " ptime " << c.ptime << " sampling " << c.sampling;
+
+    const int size_null_fps = st30_calculate_framebuff_size(
+        c.fmt, c.ptime, c.sampling, c.channel, c.desired_frame_time_ns, nullptr);
+    EXPECT_EQ(size_null_fps, c.expected_size)
+        << "nullptr fps mismatch for fmt " << c.fmt << " ptime " << c.ptime;
   }
 }
