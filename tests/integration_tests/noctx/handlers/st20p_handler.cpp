@@ -4,70 +4,27 @@
 
 #include "st20p_handler.hpp"
 
-#include <unistd.h>
-
 #include <chrono>
-#include <cstdio>
-#include <cstring>
-#include <stdexcept>
 #include <thread>
 
-St20pHandler::St20pHandler(st_tests_context* ctx, st20p_tx_ops ops_tx,
-                           st20p_rx_ops ops_rx)
+St20pHandler::St20pHandler(st_tests_context* ctx)
     : PipelineHandlerBase(ctx, nullptr, st20p_tx_create, st20p_rx_create, st20p_tx_free,
                           st20p_rx_free, st20p_tx_wake_block, st20p_rx_wake_block) {
-  if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
-    fillSt20Ops();
-  } else {
-    sessionsOpsTx = ops_tx;
-    sessionsOpsRx = ops_rx;
-  }
+  fillSt20Ops();
 }
-
-St20pHandler::~St20pHandler() = default;
 
 void St20pHandler::fillSt20Ops(uint transmissionPort, uint framebufferQueueSize,
                                enum st20_fmt fmt, uint width, uint height,
-                               uint payloadType, enum st_fps fps, bool interlaced,
-                               enum st20_packing /*packing*/) {
-  memset(&sessionsOpsTx, 0, sizeof(sessionsOpsTx));
-  sessionsOpsTx.name = "st20p_noctx_test_tx";
-  sessionsOpsTx.priv = ctx;
-  memcpy(sessionsOpsTx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-         MTL_IP_ADDR_LEN);
-  memcpy(sessionsOpsTx.port.dip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
-         MTL_IP_ADDR_LEN);
-  /* Don't enable Redundant by default */
-  sessionsOpsTx.port.num_port = 1;
-  snprintf(sessionsOpsTx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_P]);
-
-  sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_P] = transmissionPort;
-  sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_R] = transmissionPort + 1;
-  sessionsOpsTx.port.payload_type = payloadType;
+                               uint payloadType, enum st_fps fps, bool interlaced) {
+  initDefaultPorts("st20p_noctx_test_tx", "st20p_noctx_test_rx", transmissionPort,
+                   payloadType);
   sessionsOpsTx.width = width;
   sessionsOpsTx.height = height;
   sessionsOpsTx.fps = fps;
   sessionsOpsTx.input_fmt = (enum st_frame_fmt)fmt;
   sessionsOpsTx.interlaced = interlaced;
   sessionsOpsTx.framebuff_cnt = framebufferQueueSize;
-  sessionsOpsTx.notify_frame_done = nullptr;
 
-  memset(&sessionsOpsRx, 0, sizeof(sessionsOpsRx));
-  sessionsOpsRx.name = "st20p_noctx_test_rx";
-  sessionsOpsRx.priv = ctx;
-  sessionsOpsRx.port.num_port = 1;
-  memcpy(sessionsOpsRx.port.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-         MTL_IP_ADDR_LEN);
-  memcpy(sessionsOpsRx.port.ip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
-         MTL_IP_ADDR_LEN);
-
-  snprintf(sessionsOpsRx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_R]);
-
-  sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_P] = transmissionPort;
-  sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_R] = transmissionPort + 1;
-  sessionsOpsRx.port.payload_type = payloadType;
   sessionsOpsRx.width = width;
   sessionsOpsRx.height = height;
   sessionsOpsRx.fps = fps;

@@ -4,28 +4,19 @@
 #include "st40p_strategies.hpp"
 
 #include <gtest/gtest.h>
-#include <mtl/st_api.h>
 
-#include <cerrno>
 #include <cmath>
-#include <cstdlib>
 #include <stdexcept>
 #include <utility>
 
 #include "core/constants.hpp"
 #include "handlers/st40p_handler.hpp"
-#include "tests.hpp"
 
 St40pUserPacingOracle::St40pUserPacingOracle(St40pHandler* parentHandler,
                                              std::vector<double> offsetMultipliers)
     : FrameTestStrategy(parentHandler, true, true),
       timestampOffsetMultipliers(std::move(offsetMultipliers)) {
   initializeTiming(parentHandler);
-}
-
-int St40pUserPacingOracle::getPacingParameters() {
-  /* ST40 pipeline lacks a public pacing query; keep defaults for now. */
-  return -ENOTSUP;
 }
 
 void St40pUserPacingOracle::txTestFrameModifier(void* frame, size_t /*frame_size*/) {

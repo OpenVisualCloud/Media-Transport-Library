@@ -31,7 +31,6 @@
 #include <vector>
 
 #include "core/test_fixture.hpp"
-#include "handlers/st20p_handler.hpp"
 
 namespace {
 
@@ -172,6 +171,4 @@ TEST_F(NoCtxTest, st20p_tx_multithread_stability) {
             (unsigned long long)stats.common.stat_frames_sent,
             (unsigned long long)stats.common.stat_frames_dropped);
   }
-
-  handler->stopSession();
 }

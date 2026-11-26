@@ -5,6 +5,8 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdio>
+#include <cstring>
 #include <functional>
 #include <utility>
 
@@ -67,8 +69,8 @@ class PipelineHandlerBase : public Handlers {
                        int rxPortIdx = SESSION_SKIP_PORT,
                        int txPortRedundantIdx = SESSION_SKIP_PORT,
                        int rxPortRedundantIdx = SESSION_SKIP_PORT) {
-    setSessionPortsTx(&(this->sessionsOpsTx.port), txPortIdx, txPortRedundantIdx);
-    setSessionPortsRx(&(this->sessionsOpsRx.port), rxPortIdx, rxPortRedundantIdx);
+    setSessionPortsImpl(&(this->sessionsOpsTx.port), txPortIdx, txPortRedundantIdx);
+    setSessionPortsImpl(&(this->sessionsOpsRx.port), rxPortIdx, rxPortRedundantIdx);
   }
 
   void createSessionTx() {
@@ -106,12 +108,43 @@ class PipelineHandlerBase : public Handlers {
   virtual void startSessionRx() = 0;
 
  protected:
+  void initDefaultPorts(const char* txName, const char* rxName, uint transmissionPort,
+                        uint payloadType) {
+    std::memset(&sessionsOpsTx, 0, sizeof(sessionsOpsTx));
+    sessionsOpsTx.name = txName;
+    sessionsOpsTx.priv = ctx;
+    sessionsOpsTx.port.num_port = 1;
+    std::memcpy(sessionsOpsTx.port.dip_addr[MTL_SESSION_PORT_P],
+                ctx->mcast_ip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+    std::memcpy(sessionsOpsTx.port.dip_addr[MTL_SESSION_PORT_R],
+                ctx->mcast_ip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
+    snprintf(sessionsOpsTx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+             ctx->para.port[MTL_PORT_P]);
+    sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_P] = transmissionPort;
+    sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_R] = transmissionPort + 1;
+    sessionsOpsTx.port.payload_type = payloadType;
+
+    std::memset(&sessionsOpsRx, 0, sizeof(sessionsOpsRx));
+    sessionsOpsRx.name = rxName;
+    sessionsOpsRx.priv = ctx;
+    sessionsOpsRx.port.num_port = 1;
+    std::memcpy(sessionsOpsRx.port.ip_addr[MTL_SESSION_PORT_P],
+                ctx->mcast_ip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+    std::memcpy(sessionsOpsRx.port.ip_addr[MTL_SESSION_PORT_R],
+                ctx->mcast_ip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
+    snprintf(sessionsOpsRx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+             ctx->para.port[MTL_PORT_R]);
+    sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_P] = transmissionPort;
+    sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_R] = transmissionPort + 1;
+    sessionsOpsRx.port.payload_type = payloadType;
+  }
+
   void startTxThread(std::function<void(std::atomic<bool>&)> threadFn) {
-    Handlers::startSession({std::move(threadFn)}, /*isRx=*/false);
+    session.addThread(std::move(threadFn), /*isRx=*/false);
   }
 
   void startRxThread(std::function<void(std::atomic<bool>&)> threadFn) {
-    Handlers::startSession({std::move(threadFn)}, /*isRx=*/true);
+    session.addThread(std::move(threadFn), /*isRx=*/true);
   }
 
   void applyTxModifier(void* frame, size_t size_bytes) {
@@ -127,7 +160,7 @@ class PipelineHandlerBase : public Handlers {
   }
 
   void releaseTxHandle() {
-    session.clearTxWakeCallback();
+    session.setTxWakeCallback(nullptr);
     if (sessionsHandleTx) {
       txFreeFn_(sessionsHandleTx);
       sessionsHandleTx = nullptr;
@@ -135,7 +168,7 @@ class PipelineHandlerBase : public Handlers {
   }
 
   void releaseRxHandle() {
-    session.clearRxWakeCallback();
+    session.setRxWakeCallback(nullptr);
     if (sessionsHandleRx) {
       rxFreeFn_(sessionsHandleRx);
       sessionsHandleRx = nullptr;
@@ -148,11 +181,6 @@ class PipelineHandlerBase : public Handlers {
 
   void recordRxFrame() {
     rxFrameCount_.fetch_add(1, std::memory_order_relaxed);
-  }
-
-  void resetFrameCounters() {
-    txFrameCount_.store(0, std::memory_order_relaxed);
-    rxFrameCount_.store(0, std::memory_order_relaxed);
   }
 
  private:

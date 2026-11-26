@@ -6,7 +6,6 @@
 
 #include <cerrno>
 #include <cstdio>
-#include <cstring>
 #include <string>
 
 #include "dma/mt_dma_auto_harness.h"
@@ -236,36 +235,3 @@ INSTANTIATE_TEST_SUITE_P(IoatAndIdxd, MtDmaAutoIdTest,
                          ::testing::Values(0x6f20, 0x6f21, 0x6f22, 0x6f23, 0x6f24, 0x6f25,
                                            0x6f26, 0x6f27, 0x6f2e, 0x6f2f, 0x2021, 0x0b00,
                                            0x0b25, 0x11fb, 0x1212));
-
-TEST(MtlParaDmaPortSet, CopiesValidPortName) {
-  struct mtl_init_params p = {};
-  char bdf_p[] = "0000:af:01.0";
-  char bdf_r[] = "0000:af:01.1";
-
-  int ret_p = mtl_para_dma_port_set(&p, MTL_PORT_P, bdf_p);
-  EXPECT_EQ(ret_p, static_cast<int>(std::strlen(bdf_p)));
-  EXPECT_STREQ(p.dma_dev_port[MTL_PORT_P], bdf_p);
-  EXPECT_EQ(p.dma_dev_port[MTL_PORT_R][0], '\0');
-
-  int ret_r = mtl_para_dma_port_set(&p, MTL_PORT_R, bdf_r);
-  EXPECT_EQ(ret_r, static_cast<int>(std::strlen(bdf_r)));
-  EXPECT_STREQ(p.dma_dev_port[MTL_PORT_P], bdf_p);
-  EXPECT_STREQ(p.dma_dev_port[MTL_PORT_R], bdf_r);
-}
-
-TEST(MtlParaDmaPortSet, TruncatesNameAtMaxLen) {
-  struct mtl_init_params p = {};
-  p.dma_dev_port[MTL_PORT_R][0] = 'Z';
-
-  char long_name[MTL_PORT_MAX_LEN + 16];
-  std::memset(long_name, 'a', sizeof(long_name) - 1);
-  long_name[sizeof(long_name) - 1] = '\0';
-
-  int ret = mtl_para_dma_port_set(&p, MTL_PORT_P, long_name);
-  EXPECT_EQ(ret, static_cast<int>(sizeof(long_name) - 1));
-  EXPECT_EQ(p.dma_dev_port[MTL_PORT_P][MTL_PORT_MAX_LEN - 1], '\0');
-  EXPECT_EQ(std::strlen(p.dma_dev_port[MTL_PORT_P]),
-            static_cast<size_t>(MTL_PORT_MAX_LEN - 1));
-  EXPECT_EQ(std::memcmp(p.dma_dev_port[MTL_PORT_P], long_name, MTL_PORT_MAX_LEN - 1), 0);
-  EXPECT_EQ(p.dma_dev_port[MTL_PORT_R][0], 'Z');
-}

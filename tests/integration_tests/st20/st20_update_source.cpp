@@ -49,22 +49,23 @@ void verify_switch_phase(const std::vector<tests_context*>& test_ctx_rx,
 }
 
 void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = st_test_ctx();
   auto m_handle = ctx->handle;
 
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
-  ASSERT_TRUE(tx_sessions >= 1);
+  ASSERT_GE(tx_sessions, 1);
 
   const bool tx_update_dst = (tx_sessions == 1);
   const int rx_sessions = 1;
   /* 1501/1502 for one frame, max two frames. */
   constexpr int kMaxRtpDelta = 3003;
+  const St20StreamSpec st{type, type, ST20_PACKING_BPM, ST_FPS_P59_94, 1920, 1080};
 
   std::vector<tests_context*> test_ctx_tx(tx_sessions);
   std::vector<tests_context*> test_ctx_rx(rx_sessions);
   std::vector<st20_tx_handle> tx_handle(tx_sessions);
   std::vector<st20_rx_handle> rx_handle(rx_sessions);
-  std::vector<double> expect_framerate(rx_sessions, st_frame_rate(ST_FPS_P59_94));
+  std::vector<double> expect_framerate(rx_sessions, st_frame_rate(st.fps));
   std::vector<std::thread> rtp_thread_tx(tx_sessions);
   std::vector<std::thread> rtp_thread_rx(rx_sessions);
 
@@ -73,11 +74,9 @@ void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
 
   for (int i = 0; i < tx_sessions; i++) {
     test_ctx_tx[i] = init_test_ctx(ctx, i, 3);
-    ASSERT_TRUE(test_ctx_tx[i] != NULL);
-    test_ctx_tx[i]->stop = false;
-
     struct st20_tx_ops ops_tx;
-    init_single_port_tx(ops_tx, test_ctx_tx[i], "st20_test", udp_port_for_idx(i));
+    st20_fill_loopback_tx_ops(ops_tx, test_ctx_tx[i], st, "st20_test",
+                              udp_port_for_idx(i));
     if (2 == i)
       memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
              MTL_IP_ADDR_LEN);
@@ -90,17 +89,6 @@ void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
     else
       memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
              MTL_IP_ADDR_LEN);
-    ops_tx.type = type;
-    ops_tx.width = 1920;
-    ops_tx.height = 1080;
-    ops_tx.fps = ST_FPS_P59_94;
-    ops_tx.fmt = ST20_FMT_YUV_422_10BIT;
-    ops_tx.payload_type = ST20_TEST_PAYLOAD_TYPE;
-    ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
-    ops_tx.get_next_frame = tx_next_video_frame;
-    if (type == ST20_TYPE_RTP_LEVEL) {
-      rtp_tx_specific_init(&ops_tx, test_ctx_tx[i]);
-    }
 
     tx_handle[i] = st20_tx_create(m_handle, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
@@ -112,26 +100,12 @@ void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
 
   for (int i = 0; i < rx_sessions; i++) {
     test_ctx_rx[i] = init_test_ctx(ctx, i, 3);
-    ASSERT_TRUE(test_ctx_rx[i] != NULL);
-    test_ctx_rx[i]->stop = false;
-
     struct st20_rx_ops ops_rx;
-    init_single_port_rx(ops_rx, test_ctx_rx[i], "st20_test", udp_port_for_idx(i));
+    st20_fill_loopback_rx_ops(ops_rx, test_ctx_rx[i], st, "st20_test",
+                              udp_port_for_idx(i));
     if (ctx->mcast_only)
       memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_2],
              MTL_IP_ADDR_LEN);
-    else
-      memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
-             MTL_IP_ADDR_LEN);
-    ops_rx.type = type;
-    ops_rx.width = 1920;
-    ops_rx.height = 1080;
-    ops_rx.fps = ST_FPS_P59_94;
-    ops_rx.fmt = ST20_FMT_YUV_422_10BIT;
-    ops_rx.payload_type = ST20_TEST_PAYLOAD_TYPE;
-    ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
-    ops_rx.notify_frame_ready = st20_rx_frame_ready;
-    ops_rx.notify_rtp_ready = rx_rtp_ready;
     ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
     rx_handle[i] = st20_rx_create(m_handle, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
@@ -147,64 +121,40 @@ void st20_rx_update_src_test(enum st20_type type, int tx_sessions) {
   EXPECT_GE(ret, 0);
   guard.set_started(ret >= 0);
 
-  /* Wait until all TX sessions finish pacing startup and RX receives initial frames. */
   EXPECT_TRUE(
       mtl_test::wait_for_all(test_ctx_tx, mtl_test::tx_frames, 5, kSt20WarmupTimeoutMs));
   EXPECT_TRUE(
       mtl_test::wait_for_all(test_ctx_rx, mtl_test::rx_frames, 5, kSt20WarmupTimeoutMs));
 
-  struct st_rx_source_info src;
-  /* switch to mcast port p(tx_session:1) */
-  memset(&src, 0, sizeof(src));
-  src.udp_port[MTL_SESSION_PORT_P] = udp_port_for_idx(1);
-  memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-         MTL_IP_ADDR_LEN);
-  if (tx_update_dst) {
-    __atomic_store_n(&test_ctx_tx[0]->seq_id, 0, __ATOMIC_RELAXED); /* reset seq id */
-    struct st_tx_dest_info dst;
-    memset(&dst, 0, sizeof(dst));
-    dst.udp_port[MTL_SESSION_PORT_P] = udp_port_for_idx(1);
-    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
-    EXPECT_GE(st20_tx_update_destination(tx_handle[0], &dst), 0);
-  } else {
-    __atomic_store_n(&test_ctx_tx[1]->seq_id, 0, __ATOMIC_RELAXED); /* reset seq id */
-  }
-  verify_switch_phase(test_ctx_rx, rx_handle, expect_framerate, src, type, kMaxRtpDelta,
-                      "mcast 1");
-
-  if (tx_sessions > 2) {
-    /* switch to mcast port r(tx_session:2) */
-    memset(&src, 0, sizeof(src));
-    src.udp_port[MTL_SESSION_PORT_P] = udp_port_for_idx(2);
-    memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
-           MTL_IP_ADDR_LEN);
-    __atomic_store_n(&test_ctx_tx[2]->seq_id, rand(),
-                     __ATOMIC_RELAXED); /* random seq id */
+  auto switch_and_verify = [&](int idx, const uint8_t* tx_ip, const uint8_t* rx_ip,
+                               int new_seq, const char* label) {
+    struct st_rx_source_info src = {};
+    src.udp_port[MTL_SESSION_PORT_P] = udp_port_for_idx(idx);
+    memcpy(src.ip_addr[MTL_SESSION_PORT_P], rx_ip, MTL_IP_ADDR_LEN);
+    if (tx_update_dst) {
+      __atomic_store_n(&test_ctx_tx[0]->seq_id, new_seq, __ATOMIC_RELAXED);
+      struct st_tx_dest_info dst = {};
+      dst.udp_port[MTL_SESSION_PORT_P] = udp_port_for_idx(idx);
+      memcpy(dst.dip_addr[MTL_SESSION_PORT_P], tx_ip, MTL_IP_ADDR_LEN);
+      EXPECT_GE(st20_tx_update_destination(tx_handle[0], &dst), 0);
+    } else {
+      __atomic_store_n(&test_ctx_tx[idx]->seq_id, new_seq, __ATOMIC_RELAXED);
+    }
     verify_switch_phase(test_ctx_rx, rx_handle, expect_framerate, src, type, kMaxRtpDelta,
-                        "mcast 2");
-  }
+                        label);
+  };
 
-  /* switch to unicast(tx_session:0) */
-  memset(&src, 0, sizeof(src));
-  src.udp_port[MTL_SESSION_PORT_P] = udp_port_for_idx(0);
-  memcpy(
-      src.ip_addr[MTL_SESSION_PORT_P],
-      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_P],
-      MTL_IP_ADDR_LEN);
-  __atomic_store_n(&test_ctx_tx[0]->seq_id, rand(), __ATOMIC_RELAXED); /* random seq id */
-  if (tx_update_dst) {
-    struct st_tx_dest_info dst;
-    memset(&dst, 0, sizeof(dst));
-    dst.udp_port[MTL_SESSION_PORT_P] = udp_port_for_idx(0);
-    memcpy(
-        dst.dip_addr[MTL_SESSION_PORT_P],
-        ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_R],
-        MTL_IP_ADDR_LEN);
-    EXPECT_GE(st20_tx_update_destination(tx_handle[0], &dst), 0);
+  switch_and_verify(1, ctx->mcast_ip_addr[MTL_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P], 0,
+                    "mcast 1");
+  if (tx_sessions > 2) {
+    switch_and_verify(2, ctx->mcast_ip_addr[MTL_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
+                      rand(), "mcast 2");
   }
-  verify_switch_phase(test_ctx_rx, rx_handle, expect_framerate, src, type, kMaxRtpDelta,
-                      "unicast 0");
+  switch_and_verify(
+      0,
+      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_R],
+      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_P],
+      rand(), "unicast 0");
 
   guard.release_sessions();
 }

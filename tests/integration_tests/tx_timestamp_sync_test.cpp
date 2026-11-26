@@ -10,7 +10,6 @@
 
 #include "log.h"
 #include "test_harness.hpp"
-#include "tests.hpp"
 
 #define TX_SYNC_FB_CNT (3)
 /* ST_FPS_P50 period, exact in ns so no rational rounding is involved */
@@ -98,7 +97,7 @@ uint64_t tx_sync_read_beat(TxSyncBeat* beat) {
 
 int tx_sync_video_next_frame(void* priv, uint16_t* next_frame_idx,
                              struct st20_tx_frame_meta* meta) {
-  auto* p = (TxSyncPriv*)priv;
+  auto* p = static_cast<TxSyncPriv*>(priv);
   uint64_t tai = tx_sync_publish_beat(p->beat);
   *next_frame_idx = p->sess->claim_frame_idx(tai);
   meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
@@ -108,7 +107,7 @@ int tx_sync_video_next_frame(void* priv, uint16_t* next_frame_idx,
 
 template <typename Meta>
 int tx_sync_follower_next_frame(void* priv, uint16_t* next_frame_idx, Meta* meta) {
-  auto* p = (TxSyncPriv*)priv;
+  auto* p = static_cast<TxSyncPriv*>(priv);
   uint64_t tai = tx_sync_read_beat(p->beat);
   *next_frame_idx = p->sess->claim_frame_idx(tai);
   meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
@@ -118,7 +117,7 @@ int tx_sync_follower_next_frame(void* priv, uint16_t* next_frame_idx, Meta* meta
 
 template <typename Meta>
 int tx_sync_notify_done(void* priv, uint16_t frame_idx, Meta* meta) {
-  auto* p = (TxSyncPriv*)priv;
+  auto* p = static_cast<TxSyncPriv*>(priv);
   p->sess->complete_frame(frame_idx, meta->timestamp, meta->rtp_timestamp);
   return 0;
 }
@@ -159,9 +158,11 @@ int tx_sync_count_matching_beats(const std::vector<TxSyncRecord>& a,
   return matched;
 }
 
-void tx_timestamp_sync_test() {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
-  auto m_handle = ctx->handle;
+} /* namespace */
+
+TEST(TxUserTimestampSync, st20_st30_st40_stay_in_sync) {
+  auto* ctx = st_test_ctx();
+  mtl_handle m_handle = ctx->handle;
 
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
@@ -214,7 +215,7 @@ void tx_timestamp_sync_test() {
   int st30_pkt_size =
       st30_get_packet_size(ops30.fmt, ops30.ptime, ops30.sampling, ops30.channel);
   ASSERT_GT(st30_pkt_size, 0);
-  ops30.framebuff_size = (uint32_t)st30_pkt_size;
+  ops30.framebuff_size = static_cast<uint32_t>(st30_pkt_size);
   ops30.get_next_frame = tx_sync_follower_next_frame<struct st30_tx_frame_meta>;
   ops30.notify_frame_done = tx_sync_notify_done<struct st30_tx_frame_meta>;
   ops30.flags |= ST30_TX_FLAG_USER_TIMESTAMP;
@@ -241,8 +242,8 @@ void tx_timestamp_sync_test() {
   ASSERT_TRUE(h40);
 
   for (int i = 0; i < TX_SYNC_FB_CNT; i++) {
-    auto* dst = (struct st40_frame*)st40_tx_get_framebuffer(h40.get(), i);
-    ASSERT_TRUE(dst != NULL);
+    auto* dst = static_cast<struct st40_frame*>(st40_tx_get_framebuffer(h40.get(), i));
+    ASSERT_NE(dst, nullptr);
     dst->meta_num = 0;
     dst->data_size = 0;
     dst->data = &anc_frame_bufs[i];
@@ -263,16 +264,14 @@ void tx_timestamp_sync_test() {
       6000));
 
   EXPECT_GE(mtl_run.stop(), 0);
-  h40.reset();
-  h30.reset();
-  h20.reset();
 
   std::vector<TxSyncRecord> video_records = video_sess.records();
   std::vector<TxSyncRecord> audio_records = audio_sess.records();
   std::vector<TxSyncRecord> anc_records = anc_sess.records();
 
   tx_sync_check_self_consistent(video_records, TX_SYNC_VIDEO_ANC_SAMPLING_RATE);
-  tx_sync_check_self_consistent(audio_records, (uint32_t)audio_sampling_rate);
+  tx_sync_check_self_consistent(audio_records,
+                                static_cast<uint32_t>(audio_sampling_rate));
   tx_sync_check_self_consistent(anc_records, TX_SYNC_VIDEO_ANC_SAMPLING_RATE);
 
   /* record[0] is excluded from the match by tx_sync_count_matching_beats, so
@@ -284,11 +283,5 @@ void tx_timestamp_sync_test() {
   /* Video and ancillary each publish/read the beat independently roughly once
    * per 20 ms. Requiring 90% to match rules out a broken sync mechanism that
    * only agrees by coincidence, while tolerating a rare skipped beat. */
-  EXPECT_GE(matched_beats, (int)(comparable_beats * 9 / 10));
-}
-
-} /* namespace */
-
-TEST(TxUserTimestampSync, st20_st30_st40_stay_in_sync) {
-  tx_timestamp_sync_test();
+  EXPECT_GE(matched_beats, static_cast<int>(comparable_beats * 9 / 10));
 }

@@ -24,7 +24,6 @@ merges JUnit XML output when `--gtest_output=xml:...` is set.
 |---|---|---|---|
 | `tests/integration_tests/runner/gtest_runner.py --profile '^noctx$'` | `NoCtxTest.*`, excluding `*_pf_*` | 4 VF ports (`--tvf-pf` or `--ports`) | `--noctx-sleep` (default 0 s) |
 | `tests/integration_tests/runner/gtest_runner.py --profile '^noctx_pf$'` | `NoCtxTest.*_pf_*` | 2 PF ports (`--bind-pvf` or `--pf-ports`) | `--noctx-sleep` (default 0 s) |
-| MCP `run_noctx_tests` / `run_noctx_pf_tests` (`mtl-system-setup`) | `gtest_filter` / the `_pf_` cases; no `isolate.sh`, so `st30p_user_pacing`, `st20p_rl_*` and the VRX margin case FAIL | 4 ports / 2 PFs, auto-discovered if not given | `cooldown_seconds`, default 10 s |
 
 ```bash
 python3 tests/integration_tests/runner/gtest_runner.py --profile '^noctx$' --tvf-pf 0000:4b:00.0
@@ -45,7 +44,8 @@ Code layout: `core/` holds the `NoCtxTest` fixture, the fake PTP clock and the
 `FrameTestStrategy` base; `handlers/` creates the TX/RX pipeline sessions and
 runs the frame threads; `strategies/` holds the per-frame hooks
 (`txTestFrameModifier()` stamps a TX frame, `rxTestFrameModifier()` is the RX
-oracle, reporting through `EXPECT_*`); `testcases/` holds the `TEST_F` cases.
+oracle, reporting through `EXPECT_*`); `testcases/` holds the `TEST_F` cases
+(each file documents its own config, plan and oracles).
 
 ## Requirements and SKIP/FAIL policy
 
@@ -55,12 +55,12 @@ redundant tests map sessions to ports by index.
 | Tests | Requirement | If missing |
 |---|---|---|
 | Strict: `st20p_default_timestamps*`, `st20p_user_pacing`, `st20p_user_pacing_offset_jitter`, `st20p_exact_user_pacing`, `st20p_user_pacing_interlaced`, `st30p_user_pacing`, and the next row | TX, RX on **different physical ports**; RX-port **PHC** read to ±1 µs; NIC RX timestamp on frame 0 | SKIP (topology), FAIL with `NOCTX_REQUIRE_STRICT=1`. SW RX time after frame 0: FAIL |
-| `st20p_redundant_1080p59_s8_equal_vrx_margin` | 4 ports; strict topology on `TEST_PORT_1` -> `_2` (leg P) and `_3` -> `_4` (leg R); RX ports on one PHC; NIC RX timestamps ([oracle](#equal-vrx-margin-oracle)); ≥ 50 Gb/s links (e.g. 100 GbE E810/E830): the TX PF link carries 16 streams, ~42.5 Gb/s, so a 25 GbE pair fails | < 4 ports: FAIL. Topology: as the strict row. A software RX time: FAIL |
+| `st20p_redundant_1080p59_s8_equal_vrx_margin` | 4 ports; strict topology on `TEST_PORT_1` -> `_2` (leg P) and `_3` -> `_4` (leg R); RX ports on one PHC; NIC RX timestamps (`st20p_vrx_margin_tests.cpp`); ≥ 50 Gb/s links (e.g. 100 GbE E810/E830): the TX PF link carries 16 streams, ~42.5 Gb/s, so a 25 GbE pair fails | < 4 ports: FAIL. Topology: as the strict row. A software RX time: FAIL |
 | `st20p_rl_*` | As the strict row, a TX link that carries the load (the staged cell sizes its load to it), and an exclusive CPU partition | Topology: as the strict row. No partition, a slow link, a software RX time, lost packets or a late TX app: FAIL `RL_INVALID` |
 | `st30p_user_pacing` | An exclusive CPU partition: its own cgroup's `cpuset.cpus.partition` reads `isolated`. Checked after the strict topology, which may SKIP or FAIL the case first | FAIL, never SKIP |
-| `st20p_redundant_latency_drops_even_odd`, `st30p_redundant_latency*` | 4 ports | The case errors (`std::runtime_error`) |
+| `st20p_redundant_latency_drops_even_odd`, `st30p_redundant_latency*` | 4 ports | SKIP, FAIL with `NOCTX_REQUIRE_STRICT=1` |
 | `st20p_redundant_latency_drops_even_odd` | `MTL_SIMULATE_PACKET_DROPS` build (`./build.sh debug` / `debugonly`) | SKIP |
-| `*_pf_*` (TSN launch-time pacing) | E830 PF ports (`run_pf.sh`); the device ID is not checked | Fails or hangs elsewhere |
+| `*_pf_*` (TSN launch-time pacing) | E830 PF ports (`gtest_runner.py --profile '^noctx_pf$'`); the device ID is not checked | Fails or hangs elsewhere |
 
 `strictPacingTopologyError()` resolves both BDFs to their PF through sysfs
 `physfn`. The RX PF must stay bound to its kernel driver so that
@@ -69,15 +69,6 @@ redundant tests map sessions to ports by index.
 VFs of one PF are switched inside the NIC and get no RX timestamp, so on a host
 with two cabled ports interleave the VFs: `TEST_PORT_1=<PF0 VF0>`,
 `TEST_PORT_2=<PF1 VF0>`, `TEST_PORT_3=<PF0 VF1>`, `TEST_PORT_4=<PF1 VF1>`.
-
-**CI.** When no PF has four VFs on vfio-pci, `.github/scripts/gtest.sh` creates six on a PF
-with link up and two on its sibling port, and removes them at exit. For the NoCtx run,
-`.github/scripts/gtest.sh` interleaves them as above, for example
-`15:01.0,15:11.0,15:01.1,15:11.1` on an E830 with PFs `15:00.0` and `15:00.1`.
-Without VFs on the other port it passes the four VFs of one PF that the other
-suites use. It sets `NOCTX_REQUIRE_STRICT=1`, so there the strict tests fail
-instead of skipping, and `MTL_ISOLATE=require`, so the cases `run.sh` wraps
-(`NOCTX_ISOLATE_CASES`) also fail without an exclusive CPU partition.
 
 **Policy.** A SKIP means the host cannot measure wire timing, never that pacing
 passed; the message gives the reason. No NoCtx test skips because of CPU
@@ -89,19 +80,10 @@ fail their timing checks.
 context, as NIC RX timestamps are the pacing oracle. It also clears
 `MTL_FLAG_CNI_TASKLET` and sets `MTL_FLAG_RX_SEPARATE_VIDEO_LCORE`: the TX
 tasklet launches each frame in software, so the CNI and RX video tasklets stay
-off its scheduler.
-
-## CPU isolation
-
-`run.sh` runs each case in `NOCTX_ISOLATE_CASES` under
-`tests/tools/isolate/isolate.sh` with `MTL_ISOLATE=try` (override it from the
-environment), `MTL_ISOLATE_PORTS` = the TX ports `TEST_PORT_1,3` and
-`MTL_ISOLATE_MEM_PORTS` = the RX ports `TEST_PORT_2,4`: the partition's CPUs are on
-the TX nodes, and an RX port on another node (E810 TX, E830 RX) adds only its
-memory, as `initStrictPacingContext()` lets RX lcores cross NUMA
-(`MTL_FLAG_ALLOW_ACROSS_NUMA_CORE`). The default cases are the strict tests and
-`st20p_rl_staged_overload_is_loud`. The wrapper, its requirements and limits:
-[tests/tools/isolate/README.md](../../tools/isolate/README.md).
+off its scheduler. `gtest_runner.py` wraps isolated cases in
+[tests/tools/isolate/isolate.sh](../../tools/isolate/README.md) with
+`MTL_ISOLATE=require` in CI (`profiles.yaml`), giving CPUs on the TX ports' NUMA
+nodes (`initStrictPacingContext()` sets `MTL_FLAG_ALLOW_ACROSS_NUMA_CORE` for RX).
 
 ## Timing model
 
@@ -360,7 +342,7 @@ legs, so it needs an exclusive partition.
 | Elapsed error jumps by ~2^32 ns (≈4.29 s), or "NIC RX timestamp moved backwards" | The iavf vector RX path dropped a descriptor timestamp and corrupted the 32→64-bit extension. Check the `nb_rx_desc` workaround in `dev_config_port()` is active (KB §7) |
 | `TX_VIDEO_SESSION(...): transmitter mismatch troffset N` next to a late frame | The tasklet stalled over the RL warm-up window, so no pads were sent (`stat_trans_troffset_mismatch`). Look for a busy or shared lcore |
 | `st30p_user_pacing` fails on a single late buffer | Kernel housekeeping or preemption of the TSC-paced audio scheduler. Check the case ran in an exclusive partition, and the work listed under [CPU isolation limits](../../tools/isolate/README.md#limits) that needs boot parameters |
-| `st30p_user_pacing ... needs an exclusive CPU partition` | Not run under `tests/tools/isolate/isolate.sh` with an exclusive partition (check `NOCTX_ISOLATE_CASES`); see the wrapper's `WARNING` |
+| `st30p_user_pacing ... needs an exclusive CPU partition` | Not run under `tests/tools/isolate/isolate.sh` with an exclusive partition (use `gtest_runner.py --profile '^noctx$'`); see the wrapper's `WARNING` |
 | `st30p_redundant_latency*` RX buffers short of TX; message shows `stat_slot_get_frame_fail` | Back-pressure: the RX consumer did not return buffers and the session refused packets |
 | Error of about `T` from some frame on | A frame was lost or a slot skipped, so `idx_rx` no longer matches the TX index. Check `stat_epoch_drop` and RX loss |
 | `frames timed with software RX times` | The RX port delivers no NIC RX timestamps and the parser used software times (`MTL_FLAG_ENABLE_HW_TIMESTAMP` is dropped silently when the port lacks the offload) |

@@ -6,7 +6,6 @@
 #include <atomic>
 #include <functional>
 #include <memory>
-#include <new>
 #include <thread>
 #include <vector>
 
@@ -27,37 +26,6 @@ namespace {
 
 using ScopedSt40Tx = mtl_test::ScopedHandle<st40_tx_handle, st40_tx_free>;
 using ScopedSt40Rx = mtl_test::ScopedHandle<st40_rx_handle, st40_rx_free>;
-
-/* Frees all frame_buf slots (including fb_cnt == 3) and drains buf_q before delete. */
-struct St40ContextDeleter {
-  void operator()(tests_context* c) const {
-    if (!c) return;
-    for (int i = 0; i < TEST_MAX_SHA_HIST_NUM; i++) {
-      if (c->frame_buf[i]) {
-        st_test_free(c->frame_buf[i]);
-        c->frame_buf[i] = nullptr;
-      }
-    }
-    while (!c->buf_q.empty()) {
-      st_test_free(c->buf_q.front());
-      c->buf_q.pop();
-    }
-    tests_context_unit(c);
-    delete c;
-  }
-};
-using ScopedSt40Ctx = std::unique_ptr<tests_context, St40ContextDeleter>;
-
-ScopedSt40Ctx make_st40_ctx(struct st_tests_context* global_ctx, int idx = 0,
-                            uint16_t fb_cnt = 3, bool check_sha = false) {
-  ScopedSt40Ctx c(new tests_context());
-  c->ctx = global_ctx;
-  c->idx = idx;
-  c->fb_cnt = fb_cnt;
-  c->fb_idx = 0;
-  c->check_sha = check_sha;
-  return c;
-}
 
 struct St40SessionSpec {
   enum st40_type type = ST40_TYPE_FRAME_LEVEL;
@@ -589,27 +557,23 @@ static void st40_tx_ops_init(tests_context* st40, struct st40_tx_ops* ops) {
 /* Single-port loopback TX ops: sends on MTL_PORT_P toward MTL_PORT_R (or mcast). */
 static void st40_tx_loopback_ops_init(tests_context* st40, struct st40_tx_ops* ops,
                                       enum st40_type type, enum st_fps fps,
-                                      uint16_t udp_port) {
-  auto ctx = st40->ctx;
-
+                                      uint16_t udp_port, bool fmd = false) {
   st40_tx_ops_init(st40, ops);
-  ops->num_port = 1;
-  memcpy(
-      ops->dip_addr[MTL_SESSION_PORT_P],
-      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_P] : ctx->para.sip_addr[MTL_PORT_R],
-      MTL_IP_ADDR_LEN);
-  snprintf(ops->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_P]);
-  ops->udp_port[MTL_SESSION_PORT_P] = udp_port;
+  mtl_test::fill_raw_tx_port(*ops, st40->ctx, udp_port, ST40_TEST_PAYLOAD_TYPE);
   ops->type = type;
   ops->fps = fps;
+  if (fmd) {
+    ops->flags |= ST40_TX_FLAG_FAST_METADATA;
+    ops->fmd_dit = ST40_TEST_FMD_DIT;
+    ops->fmd_k_bit = ST40_TEST_FMD_K_BIT;
+    ops->payload_type = (type == ST40_TYPE_RTP_LEVEL) ? ST40_TEST_FMD_PAYLOAD_TYPE : 0;
+  }
 }
 
 /* Single-port loopback RX ops: receives on MTL_PORT_R from MTL_PORT_P (or mcast). */
 static void st40_rx_loopback_ops_init(tests_context* st40, struct st40_rx_ops* ops,
-                                      uint16_t udp_port) {
+                                      uint16_t udp_port, bool fmd = false) {
   auto ctx = st40->ctx;
-
   st40_rx_ops_init(st40, ops);
   ops->num_port = 1;
   memcpy(
@@ -619,6 +583,10 @@ static void st40_rx_loopback_ops_init(tests_context* st40, struct st40_rx_ops* o
   snprintf(ops->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_R]);
   ops->udp_port[MTL_SESSION_PORT_P] = udp_port;
+  if (fmd) {
+    ops->flags |= ST40_RX_FLAG_FAST_METADATA;
+    ops->payload_type = ST40_TEST_FMD_PAYLOAD_TYPE;
+  }
 }
 
 static void st40_tx_assert_cnt(int expect_s40_tx_cnt) {
@@ -670,16 +638,6 @@ static void st40_fmd_expect_stats(tests_context* rx, st40_tx_handle tx_handle,
             rx_stats.common.stat_lost_packets + rx_stats.stat_pkts_enqueue_fail);
 }
 
-TEST(St40_tx, create_free_single) {
-  mtl_test::verify_create_free<struct st40_tx_ops, st40_tx_handle, st40_tx_create,
-                               st40_tx_free>(st40_tx_ops_init, st40_tx_assert_cnt, 0, 1,
-                                             1);
-}
-TEST(St40_tx, create_free_multi) {
-  mtl_test::verify_create_free<struct st40_tx_ops, st40_tx_handle, st40_tx_create,
-                               st40_tx_free>(st40_tx_ops_init, st40_tx_assert_cnt, 0, 1,
-                                             6);
-}
 TEST(St40_tx, create_free_mix) {
   mtl_test::verify_create_free<struct st40_tx_ops, st40_tx_handle, st40_tx_create,
                                st40_tx_free>(st40_tx_ops_init, st40_tx_assert_cnt, 2, 3,
@@ -719,16 +677,6 @@ TEST(St40_tx, get_framebuffer_expect_fail) {
                                                      st40_tx_get_framebuffer, 1000);
 }
 
-TEST(St40_rx, create_free_single) {
-  mtl_test::verify_create_free<struct st40_rx_ops, st40_rx_handle, st40_rx_create,
-                               st40_rx_free>(st40_rx_ops_init, st40_rx_assert_cnt, 0, 1,
-                                             1);
-}
-TEST(St40_rx, create_free_multi) {
-  mtl_test::verify_create_free<struct st40_rx_ops, st40_rx_handle, st40_rx_create,
-                               st40_rx_free>(st40_rx_ops_init, st40_rx_assert_cnt, 0, 1,
-                                             6);
-}
 TEST(St40_rx, create_free_mix) {
   mtl_test::verify_create_free<struct st40_rx_ops, st40_rx_handle, st40_rx_create,
                                st40_rx_free>(st40_rx_ops_init, st40_rx_assert_cnt, 2, 3,
@@ -750,21 +698,10 @@ TEST(St40_rx, create_expect_fail_ring_sz) {
                                     st40_rx_free>(st40_rx_ops_init, 128 + 1);
 }
 
-TEST(St40_tx, fmd_create_free_single) {
-  mtl_test::verify_create_free<struct st40_tx_ops, st40_tx_handle, st40_tx_create,
-                               st40_tx_free>(st40_fmd_tx_ops_init, st40_tx_assert_cnt, 0,
-                                             1, 1);
-}
 TEST(St40_tx, fmd_create_free_multi) {
   mtl_test::verify_create_free<struct st40_tx_ops, st40_tx_handle, st40_tx_create,
                                st40_tx_free>(st40_fmd_tx_ops_init, st40_tx_assert_cnt, 0,
                                              4, 1);
-}
-
-TEST(St40_rx, fmd_create_free_single) {
-  mtl_test::verify_create_free<struct st40_rx_ops, st40_rx_handle, st40_rx_create,
-                               st40_rx_free>(st40_fmd_rx_ops_init, st40_rx_assert_cnt, 0,
-                                             1, 1);
 }
 TEST(St40_rx, fmd_create_free_multi) {
   mtl_test::verify_create_free<struct st40_rx_ops, st40_rx_handle, st40_rx_create,
@@ -807,24 +744,20 @@ static void st40_tx_frame_init(tests_context* st40, st40_tx_handle handle,
 }
 
 static void st40_tx_fps_test(const std::vector<St40SessionSpec>& specs) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = st_test_ctx();
   auto m_handle = ctx->handle;
   const int sessions = static_cast<int>(specs.size());
 
-  std::vector<ScopedSt40Ctx> tx_ctxs;
+  std::vector<mtl_test::ScopedContext> tx_ctxs;
   std::vector<tests_context*> raw_tx;
   std::vector<ScopedSt40Tx> tx_handles;
   std::vector<double> expect_framerate(sessions);
-  tx_ctxs.reserve(sessions);
-  raw_tx.reserve(sessions);
-  tx_handles.reserve(sessions);
-
   mtl_test::ScopedMtlStart mtl_run(m_handle);
   std::vector<mtl_test::ScopedWorker> tx_workers;
 
   for (int i = 0; i < sessions; i++) {
     expect_framerate[i] = st_frame_rate(specs[i].fps);
-    tx_ctxs.push_back(make_st40_ctx(ctx, i, 3));
+    tx_ctxs.push_back(mtl_test::make_context(ctx, i, 3));
     raw_tx.push_back(tx_ctxs.back().get());
 
     struct st40_tx_ops ops;
@@ -839,18 +772,13 @@ static void st40_tx_fps_test(const std::vector<St40SessionSpec>& specs) {
     __atomic_store_n(&raw_tx[i]->handle, tx_handles[i].get(), __ATOMIC_RELEASE);
 
     if (specs[i].type == ST40_TYPE_RTP_LEVEL) {
-      raw_tx[i]->stop = false;
       tx_workers.emplace_back(raw_tx[i], std::thread(tx_feed_packet, raw_tx[i]));
     }
   }
 
   EXPECT_GE(mtl_run.start(), 0);
-  /* 1.0 s window with >= 25 frames after 3-frame warmup: <= 1/25 (4%) edge
-   * error at 29.97 fps and <= 1/59 (1.7%) at 59.94 fps vs +/-10% tolerance. */
-  auto win = mtl_test::measure_rate_window(raw_tx, mtl_test::tx_frames,
-                                           /*warmup_frames=*/3,
-                                           /*min_delta_frames=*/25,
-                                           /*min_window_ms=*/1000);
+  /* 1.0 s window, >= 25 frames after 3-frame warmup: <= 4% edge error vs +/-10%. */
+  auto win = mtl_test::measure_rate_window(raw_tx, mtl_test::tx_frames, 3, 25, 1000);
   EXPECT_TRUE(win.warmed_up);
   EXPECT_TRUE(win.complete);
 
@@ -866,41 +794,31 @@ static void st40_tx_fps_test(const std::vector<St40SessionSpec>& specs) {
 }
 
 static void st40_rx_fps_test(const St40RxScenario& s) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = st_test_ctx();
   auto m_handle = ctx->handle;
   const int sessions = static_cast<int>(s.sessions.size());
-
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
-  /* Declare contexts -> handles -> ScopedMtlStart -> workers so RAII tears down
-   * in strict reverse order even on early ASSERT failure. */
-  std::vector<ScopedSt40Ctx> tx_ctxs, rx_ctxs;
+  std::vector<mtl_test::ScopedContext> tx_ctxs, rx_ctxs;
   std::vector<tests_context*> raw_tx, raw_rx;
   std::vector<ScopedSt40Tx> tx_handles;
   std::vector<ScopedSt40Rx> rx_handles;
   std::vector<double> expect_framerate(sessions);
-  tx_ctxs.reserve(sessions);
-  rx_ctxs.reserve(sessions);
-  raw_tx.reserve(sessions);
-  raw_rx.reserve(sessions);
-  tx_handles.reserve(sessions);
-  rx_handles.reserve(sessions);
-
   mtl_test::ScopedMtlStart mtl_run(m_handle);
   std::vector<mtl_test::ScopedWorker> tx_workers, sha_workers;
 
   for (int i = 0; i < sessions; i++) {
     const auto& spec = s.sessions[i];
-    expect_framerate[i] = st_frame_rate(spec.fps);
-    if (s.user_timestamp) expect_framerate[i] /= 2;
+    expect_framerate[i] = st_frame_rate(spec.fps) / (s.user_timestamp ? 2.0 : 1.0);
 
-    tx_ctxs.push_back(make_st40_ctx(ctx, i, TEST_SHA_HIST_NUM, s.check_sha));
+    tx_ctxs.push_back(mtl_test::make_context(ctx, i, TEST_SHA_HIST_NUM, s.check_sha));
     raw_tx.push_back(tx_ctxs.back().get());
     raw_tx[i]->st40_empty_frame = s.empty_frame;
     raw_tx[i]->st40_fmd = spec.fmd;
 
     struct st40_tx_ops ops_tx;
-    st40_tx_loopback_ops_init(raw_tx[i], &ops_tx, spec.type, spec.fps, 30000 + i * 2);
+    st40_tx_loopback_ops_init(raw_tx[i], &ops_tx, spec.type, spec.fps,
+                              static_cast<uint16_t>(30000 + i * 2), spec.fmd);
     ops_tx.interlaced = s.interlaced;
     ops_tx.ssrc = i ? i + 0x88888888 : 0;
     if (s.user_timestamp) {
@@ -908,12 +826,7 @@ static void st40_rx_fps_test(const St40RxScenario& s) {
       ops_tx.flags |= ST40_TX_FLAG_USER_PACING;
     }
     if (s.dedicate_tx_queue) ops_tx.flags |= ST40_TX_FLAG_DEDICATE_QUEUE;
-    if (spec.fmd) {
-      ops_tx.flags |= ST40_TX_FLAG_FAST_METADATA;
-      ops_tx.fmd_dit = ST40_TEST_FMD_DIT;
-      ops_tx.fmd_k_bit = ST40_TEST_FMD_K_BIT;
-      ops_tx.payload_type = 0; /* frame level: RX filters on the lib default */
-    }
+    if (spec.fmd) ops_tx.payload_type = 0; /* RX filters on lib default for FMD */
 
     tx_handles.emplace_back(st40_tx_create(m_handle, &ops_tx));
     ASSERT_TRUE(tx_handles[i]);
@@ -926,32 +839,29 @@ static void st40_rx_fps_test(const St40RxScenario& s) {
         st_test_rand_data(fb, raw_tx[i]->frame_size, frame);
         /* RFC 8331 RX reads F from item[1] >> 6 and drops 0b01 */
         if (spec.fmd && raw_tx[i]->frame_size > 1) fb[1] = 0x40 | (fb[1] & 0x3f);
-        unsigned char* result = raw_tx[i]->shas[frame];
-        SHA256((unsigned char*)fb, raw_tx[i]->frame_size, result);
-        test_sha_dump("st40_rx", result);
+        SHA256(fb, raw_tx[i]->frame_size, raw_tx[i]->shas[frame]);
+        test_sha_dump("st40_rx", raw_tx[i]->shas[frame]);
       }
     }
 
     __atomic_store_n(&raw_tx[i]->handle, tx_handles[i].get(), __ATOMIC_RELEASE);
     if (spec.type == ST40_TYPE_RTP_LEVEL) {
-      raw_tx[i]->stop = false;
       tx_workers.emplace_back(raw_tx[i], std::thread(tx_feed_packet, raw_tx[i]));
     }
   }
 
   for (int i = 0; i < sessions; i++) {
     const auto& spec = s.sessions[i];
-    rx_ctxs.push_back(make_st40_ctx(ctx, i, 3, s.check_sha));
+    rx_ctxs.push_back(mtl_test::make_context(ctx, i, 3, s.check_sha));
     raw_rx.push_back(rx_ctxs.back().get());
     raw_rx[i]->st40_fmd = spec.fmd;
 
     struct st40_rx_ops ops_rx;
-    st40_rx_loopback_ops_init(raw_rx[i], &ops_rx, 30000 + i * 2);
+    st40_rx_loopback_ops_init(raw_rx[i], &ops_rx, static_cast<uint16_t>(30000 + i * 2),
+                              spec.fmd);
     ops_rx.interlaced = s.interlaced;
     ops_rx.ssrc = i ? i + 0x88888888 : 0;
     if (spec.fmd) {
-      ops_rx.flags |= ST40_RX_FLAG_FAST_METADATA;
-      ops_rx.payload_type = ST40_TEST_FMD_PAYLOAD_TYPE;
       raw_rx[i]->frame_size = raw_tx[i]->frame_size;
       raw_rx[i]->frame_time = NS_PER_S / st_frame_rate(spec.fps);
     }
@@ -975,13 +885,8 @@ static void st40_rx_fps_test(const St40RxScenario& s) {
   }
 
   EXPECT_GE(mtl_run.start(), 0);
-  /* 1.0 s window with >= 25 frames after 3-frame warmup: <= 1/25 (4%) edge
-   * error at 23.98-29.97 fps and <= 1/59 (1.7%) at 59.94 fps vs +/-10%
-   * tolerance (~8-10x faster than legacy sleep(10)). */
-  auto win = mtl_test::measure_rate_window(raw_rx, mtl_test::rx_frames,
-                                           /*warmup_frames=*/3,
-                                           /*min_delta_frames=*/25,
-                                           /*min_window_ms=*/1000);
+  /* 1.0 s window, >= 25 frames after 3-frame warmup: <= 4% edge error vs +/-10%. */
+  auto win = mtl_test::measure_rate_window(raw_rx, mtl_test::rx_frames, 3, 25, 1000);
   EXPECT_TRUE(win.warmed_up);
   EXPECT_TRUE(win.complete);
 
@@ -1012,9 +917,6 @@ static void st40_rx_fps_test(const St40RxScenario& s) {
   }
 }
 
-TEST(St40_tx, frame_fps59_94_s1) {
-  st40_tx_fps_test({{ST40_TYPE_FRAME_LEVEL, ST_FPS_P59_94}});
-}
 TEST(St40_tx, mix_fps50_fps29_97) {
   st40_tx_fps_test({
       {ST40_TYPE_FRAME_LEVEL, ST_FPS_P50},
@@ -1083,33 +985,28 @@ static int tx_fmd_frame_done(void* priv, uint16_t frame_idx,
   return 0;
 }
 
-static void st40_fmd_oversize_test() {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+TEST(St40_tx, fmd_frame_oversize_aborted) {
+  auto ctx = st_test_ctx();
   auto m_handle = ctx->handle;
-  /* frame 0 is one byte over the largest item one packet carries, frame 1 is that */
-  const size_t frame_size[2] = {1437, 1436};
-
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
-  auto tx = make_st40_ctx(ctx, 0, 2);
-  auto rx = make_st40_ctx(ctx, 0, 3, /*check_sha=*/true);
-  ASSERT_TRUE(tx != nullptr);
-  ASSERT_TRUE(rx != nullptr);
+  /* frame 0 is one byte over the largest item one packet carries, frame 1 is that */
+  const size_t frame_size[2] = {1437, 1436};
+  std::atomic<int> frame_done[2]{};
 
-  auto frame_done = (std::atomic<int>*)st_test_zmalloc(2 * sizeof(std::atomic<int>));
-  ASSERT_TRUE(frame_done != nullptr);
-  new (&frame_done[0]) std::atomic<int>(0);
-  new (&frame_done[1]) std::atomic<int>(0);
-  tx->priv = frame_done; /* freed by tests_context_unit() via ScopedSt40Ctx */
+  auto tx = mtl_test::make_context(ctx, 0, 2);
+  auto rx = mtl_test::make_context(ctx, 0, 3, /*check_sha=*/true);
+  struct PrivClear {
+    tests_context* c;
+    ~PrivClear() {
+      if (c) c->priv = nullptr;
+    }
+  } clear_tx_priv{tx.get()};
+  tx->priv = frame_done;
 
   struct st40_tx_ops ops_tx;
-  st40_fmd_tx_ops_init(tx.get(), &ops_tx);
-  ops_tx.num_port = 1;
-  memcpy(
-      ops_tx.dip_addr[MTL_SESSION_PORT_P],
-      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_P] : ctx->para.sip_addr[MTL_PORT_R],
-      MTL_IP_ADDR_LEN);
-  ops_tx.payload_type = 0;
+  st40_tx_loopback_ops_init(tx.get(), &ops_tx, ST40_TYPE_FRAME_LEVEL, ST_FPS_P59_94,
+                            30000, /*fmd=*/true);
   ops_tx.notify_frame_done = tx_fmd_frame_done;
 
   ScopedSt40Tx tx_handle(st40_tx_create(m_handle, &ops_tx));
@@ -1133,15 +1030,7 @@ static void st40_fmd_oversize_test() {
   SHA256(tx->frame_buf[1], frame_size[1], rx->shas[0]);
 
   struct st40_rx_ops ops_rx;
-  st40_fmd_rx_ops_init(rx.get(), &ops_rx);
-  ops_rx.num_port = 1;
-  memcpy(
-      ops_rx.ip_addr[MTL_SESSION_PORT_P],
-      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_P] : ctx->para.sip_addr[MTL_PORT_P],
-      MTL_IP_ADDR_LEN);
-  (void)snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-                 ctx->para.port[MTL_PORT_R]);
-
+  st40_rx_loopback_ops_init(rx.get(), &ops_rx, 30000, /*fmd=*/true);
   ScopedSt40Rx rx_handle(st40_rx_create(m_handle, &ops_rx));
   ASSERT_TRUE(rx_handle);
   __atomic_store_n(&rx->handle, rx_handle.get(), __ATOMIC_RELEASE);
@@ -1150,9 +1039,7 @@ static void st40_fmd_oversize_test() {
   mtl_test::ScopedWorker sha_worker(rx.get(), std::thread(sha_frame_check, rx.get()));
 
   EXPECT_GE(mtl_run.start(), 0);
-  /* Wait for RX to join (3 valid frames ~0.10 s) then observe 25 valid frames
-   * (50 total epochs, every other frame oversize -> ~0.83 s at 59.94 fps vs
-   * legacy sleep(1) + sleep(5)). */
+  /* Wait for RX join (3 frames ~0.10 s) then observe 25 valid frames (~0.83 s). */
   EXPECT_TRUE(
       mtl_test::wait_until([&]() { return mtl_test::rx_frames(rx.get()) >= 3; }, 6000));
   int sent_base = frame_done[1].load(std::memory_order_relaxed);
@@ -1169,11 +1056,8 @@ static void st40_fmd_oversize_test() {
   EXPECT_GE(mtl_run.stop(), 0);
   int aborted = frame_done[0].load(std::memory_order_relaxed);
   int done = frame_done[1].load(std::memory_order_relaxed);
-
   sha_worker.stop();
 
-  info("%s, aborted %d done %d, %d sent %d received\n", __func__, aborted, done, sent,
-       received);
   EXPECT_GT(aborted, 0);
   EXPECT_NEAR(aborted, done, 1);
   EXPECT_GT(sent, 0);
@@ -1184,10 +1068,6 @@ static void st40_fmd_oversize_test() {
   st40_fmd_expect_stats(rx.get(), tx_handle.get(), rx_handle.get(), stop_time);
 }
 
-TEST(St40_tx, fmd_frame_oversize_aborted) {
-  st40_fmd_oversize_test();
-}
-
 /* §5.1: at the lowest frame rate, empty frames still keep a packet every 42 ms */
 TEST(St40_rx, fmd_frame_empty_keepalive_fps23_98) {
   St40RxScenario s;
@@ -1195,32 +1075,23 @@ TEST(St40_rx, fmd_frame_empty_keepalive_fps23_98) {
   st40_rx_fps_test(s);
 }
 
-static void st40_fmd_annex_a_test() {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+/* Annex A over RTP level: multi-item, multi-DIT and zero-item packets */
+TEST(St40_rx, fmd_rtp_annex_a_segments_digest) {
+  auto ctx = st_test_ctx();
   auto m_handle = ctx->handle;
-  fmd_annex_a annex_a;
-
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
+  fmd_annex_a annex_a;
   fmd_annex_a_init(&annex_a);
 
-  auto tx = make_st40_ctx(ctx, 0, 2);
-  auto rx = make_st40_ctx(ctx, 0, 3);
-  ASSERT_TRUE(tx != nullptr);
-  ASSERT_TRUE(rx != nullptr);
-
+  auto tx = mtl_test::make_context(ctx, 0, 2);
+  auto rx = mtl_test::make_context(ctx, 0, 3);
   tx->st40_fmd = true;
   tx->st40_annex_a = &annex_a;
-  struct st40_tx_ops ops_tx;
-  st40_fmd_tx_ops_init(tx.get(), &ops_tx);
-  ops_tx.type = ST40_TYPE_RTP_LEVEL;
-  ops_tx.num_port = 1;
-  memcpy(
-      ops_tx.dip_addr[MTL_SESSION_PORT_P],
-      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_P] : ctx->para.sip_addr[MTL_PORT_R],
-      MTL_IP_ADDR_LEN);
-  ops_tx.payload_type = ST40_TEST_FMD_PAYLOAD_TYPE;
 
+  struct st40_tx_ops ops_tx;
+  st40_tx_loopback_ops_init(tx.get(), &ops_tx, ST40_TYPE_RTP_LEVEL, ST_FPS_P59_94, 30000,
+                            /*fmd=*/true);
   ScopedSt40Tx tx_handle(st40_tx_create(m_handle, &ops_tx));
   ASSERT_TRUE(tx_handle);
   __atomic_store_n(&tx->handle, tx_handle.get(), __ATOMIC_RELEASE);
@@ -1229,15 +1100,7 @@ static void st40_fmd_annex_a_test() {
   rx->st40_annex_a = &annex_a;
   rx->frame_time = NS_PER_S / st_frame_rate(ops_tx.fps);
   struct st40_rx_ops ops_rx;
-  st40_fmd_rx_ops_init(rx.get(), &ops_rx);
-  ops_rx.num_port = 1;
-  memcpy(
-      ops_rx.ip_addr[MTL_SESSION_PORT_P],
-      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_P] : ctx->para.sip_addr[MTL_PORT_P],
-      MTL_IP_ADDR_LEN);
-  (void)snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-                 ctx->para.port[MTL_PORT_R]);
-
+  st40_rx_loopback_ops_init(rx.get(), &ops_rx, 30000, /*fmd=*/true);
   ScopedSt40Rx rx_handle(st40_rx_create(m_handle, &ops_rx));
   ASSERT_TRUE(rx_handle);
   __atomic_store_n(&rx->handle, rx_handle.get(), __ATOMIC_RELEASE);
@@ -1246,8 +1109,7 @@ static void st40_fmd_annex_a_test() {
   mtl_test::ScopedWorker feed_worker(tx.get(), std::thread(tx_feed_packet, tx.get()));
 
   EXPECT_GE(mtl_run.start(), 0);
-  /* 15 complete 2-frame cycles (~0.50 s at 59.94 fps vs legacy sleep(5)):
-   * verifies both segmented objects, multi-item packets, and zero-item packets. */
+  /* 15 complete 2-frame cycles (~0.50 s at 59.94 fps) verifies both segmented objects. */
   EXPECT_TRUE(mtl_test::wait_until(
       [&]() {
         return annex_a.rx_done[0].load(std::memory_order_relaxed) >= 15 &&
@@ -1261,9 +1123,6 @@ static void st40_fmd_annex_a_test() {
   feed_worker.stop();
   EXPECT_GE(mtl_run.stop(), 0);
 
-  info("%s, objects %d %d, %d multi-item and %d zero-item pkts\n", __func__,
-       annex_a.rx_done[0].load(), annex_a.rx_done[1].load(),
-       annex_a.rx_multi_item_pkts.load(), annex_a.rx_zero_item_pkts.load());
   EXPECT_EQ(mtl_test::relaxed_load(&rx->rx_meta_fail_cnt), 0);
   EXPECT_EQ(mtl_test::relaxed_load(&rx->sha_fail_cnt), 0);
   EXPECT_GT(annex_a.rx_done[0].load(), 0);
@@ -1271,11 +1130,6 @@ static void st40_fmd_annex_a_test() {
   EXPECT_GT(annex_a.rx_multi_item_pkts.load(), 0);
   EXPECT_GT(annex_a.rx_zero_item_pkts.load(), 0);
   st40_fmd_expect_stats(rx.get(), tx_handle.get(), rx_handle.get(), stop_time);
-}
-
-/* Annex A over RTP level: multi-item, multi-DIT and zero-item packets */
-TEST(St40_rx, fmd_rtp_annex_a_segments_digest) {
-  st40_fmd_annex_a_test();
 }
 
 static void st40_verify_rx_switch_phase(const std::vector<ScopedSt40Rx>& rx_handles,
@@ -1309,36 +1163,29 @@ static void st40_verify_rx_switch_phase(const std::vector<ScopedSt40Rx>& rx_hand
 }
 
 static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = st_test_ctx();
   auto m_handle = ctx->handle;
-
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
   ASSERT_GE(tx_sessions, 1);
 
   const bool tx_update_dst = (tx_sessions == 1);
   const int rx_sessions = 1;
 
-  std::vector<ScopedSt40Ctx> tx_ctxs, rx_ctxs;
+  std::vector<mtl_test::ScopedContext> tx_ctxs, rx_ctxs;
   std::vector<tests_context*> raw_tx, raw_rx;
   std::vector<ScopedSt40Tx> tx_handles;
   std::vector<ScopedSt40Rx> rx_handles;
   std::vector<double> expect_framerate(rx_sessions, st_frame_rate(ST_FPS_P59_94));
-  tx_ctxs.reserve(tx_sessions);
-  rx_ctxs.reserve(rx_sessions);
-  raw_tx.reserve(tx_sessions);
-  raw_rx.reserve(rx_sessions);
-  tx_handles.reserve(tx_sessions);
-  rx_handles.reserve(rx_sessions);
-
   mtl_test::ScopedMtlStart mtl_run(m_handle);
   std::vector<mtl_test::ScopedWorker> tx_workers;
 
   for (int i = 0; i < tx_sessions; i++) {
-    tx_ctxs.push_back(make_st40_ctx(ctx, i, 3));
+    tx_ctxs.push_back(mtl_test::make_context(ctx, i, 3));
     raw_tx.push_back(tx_ctxs.back().get());
 
     struct st40_tx_ops ops_tx;
-    st40_tx_loopback_ops_init(raw_tx[i], &ops_tx, type, ST_FPS_P59_94, 30000 + i * 2);
+    st40_tx_loopback_ops_init(raw_tx[i], &ops_tx, type, ST_FPS_P59_94,
+                              static_cast<uint16_t>(30000 + i * 2));
     if (2 == i)
       memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
              MTL_IP_ADDR_LEN);
@@ -1348,33 +1195,25 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
     else if (ctx->mcast_only)
       memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_2],
              MTL_IP_ADDR_LEN);
-    else
-      memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
-             MTL_IP_ADDR_LEN);
 
     tx_handles.emplace_back(st40_tx_create(m_handle, &ops_tx));
     ASSERT_TRUE(tx_handles[i]);
-
     st40_tx_frame_init(raw_tx[i], tx_handles[i].get(), type);
     __atomic_store_n(&raw_tx[i]->handle, tx_handles[i].get(), __ATOMIC_RELEASE);
 
     if (type == ST40_TYPE_RTP_LEVEL) {
-      raw_tx[i]->stop = false;
       tx_workers.emplace_back(raw_tx[i], std::thread(tx_feed_packet, raw_tx[i]));
     }
   }
 
   for (int i = 0; i < rx_sessions; i++) {
-    rx_ctxs.push_back(make_st40_ctx(ctx, i, 3));
+    rx_ctxs.push_back(mtl_test::make_context(ctx, i, 3));
     raw_rx.push_back(rx_ctxs.back().get());
 
     struct st40_rx_ops ops_rx;
-    st40_rx_loopback_ops_init(raw_rx[i], &ops_rx, 30000 + i * 2);
+    st40_rx_loopback_ops_init(raw_rx[i], &ops_rx, static_cast<uint16_t>(30000 + i * 2));
     if (ctx->mcast_only)
       memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_2],
-             MTL_IP_ADDR_LEN);
-    else
-      memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
              MTL_IP_ADDR_LEN);
 
     rx_handles.emplace_back(st40_rx_create(m_handle, &ops_rx));
@@ -1383,8 +1222,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
   }
 
   EXPECT_GE(mtl_run.start(), 0);
-  /* Wait for initial stream to deliver >= 20 frames (~0.33 s at 59.94 fps vs
-   * legacy sleep(10)) before switching sources/destinations. */
+  /* Wait for >= 20 initial frames (~0.33 s at 59.94 fps) before switching. */
   EXPECT_TRUE(mtl_test::wait_for_all(raw_rx, mtl_test::rx_frames, 20, 6000));
 
   /* Phase 1: switch to mcast port p (tx_session:1) */
@@ -1394,7 +1232,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
   memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   if (tx_update_dst) {
-    __atomic_store_n(&raw_tx[0]->seq_id, 0, __ATOMIC_RELAXED); /* reset seq id */
+    __atomic_store_n(&raw_tx[0]->seq_id, 0, __ATOMIC_RELAXED);
     struct st_tx_dest_info dst;
     memset(&dst, 0, sizeof(dst));
     dst.udp_port[MTL_SESSION_PORT_P] = 30000 + 2;
@@ -1402,7 +1240,7 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
            MTL_IP_ADDR_LEN);
     EXPECT_GE(st40_tx_update_destination(tx_handles[0].get(), &dst), 0);
   } else {
-    __atomic_store_n(&raw_tx[1]->seq_id, 0, __ATOMIC_RELAXED); /* reset seq id */
+    __atomic_store_n(&raw_tx[1]->seq_id, 0, __ATOMIC_RELAXED);
   }
   st40_verify_rx_switch_phase(rx_handles, raw_rx, expect_framerate, src, "mcast 1");
 
@@ -1412,22 +1250,22 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions) {
     src.udp_port[MTL_SESSION_PORT_P] = 30000 + 4;
     memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    __atomic_store_n(&raw_tx[2]->seq_id, rand(), __ATOMIC_RELAXED); /* random seq id */
+    __atomic_store_n(&raw_tx[2]->seq_id, rand(), __ATOMIC_RELAXED);
     st40_verify_rx_switch_phase(rx_handles, raw_rx, expect_framerate, src, "mcast 2");
   }
 
   /* Phase 3: switch to unicast (tx_session:0) */
   memset(&src, 0, sizeof(src));
-  src.udp_port[MTL_SESSION_PORT_P] = 30000 + 0;
+  src.udp_port[MTL_SESSION_PORT_P] = 30000;
   memcpy(
       src.ip_addr[MTL_SESSION_PORT_P],
       ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_P],
       MTL_IP_ADDR_LEN);
-  __atomic_store_n(&raw_tx[0]->seq_id, rand(), __ATOMIC_RELAXED); /* random seq id */
+  __atomic_store_n(&raw_tx[0]->seq_id, rand(), __ATOMIC_RELAXED);
   if (tx_update_dst) {
     struct st_tx_dest_info dst;
     memset(&dst, 0, sizeof(dst));
-    dst.udp_port[MTL_SESSION_PORT_P] = 30000 + 0;
+    dst.udp_port[MTL_SESSION_PORT_P] = 30000;
     memcpy(
         dst.dip_addr[MTL_SESSION_PORT_P],
         ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_2] : ctx->para.sip_addr[MTL_PORT_R],
@@ -1447,90 +1285,69 @@ TEST(St40_tx, update_dest_rtp) {
   st40_rx_update_src_test(ST40_TYPE_RTP_LEVEL, 1);
 }
 
-static void st40_after_start_test(const std::vector<St40SessionSpec>& specs, int repeat) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+TEST(St40_rx, after_start_mix_s2_r2) {
+  auto ctx = st_test_ctx();
   auto m_handle = ctx->handle;
-  const int sessions = static_cast<int>(specs.size());
-
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
+
+  const std::vector<St40SessionSpec> specs = {
+      {ST40_TYPE_RTP_LEVEL, ST_FPS_P50},
+      {ST40_TYPE_FRAME_LEVEL, ST_FPS_P59_94},
+  };
+  const int sessions = static_cast<int>(specs.size());
 
   mtl_test::ScopedMtlStart mtl_run(m_handle);
   EXPECT_GE(mtl_run.start(), 0);
 
-  for (int r = 0; r < repeat; r++) {
-    std::vector<ScopedSt40Ctx> tx_ctxs, rx_ctxs;
+  for (int r = 0; r < 2; r++) {
+    std::vector<mtl_test::ScopedContext> tx_ctxs, rx_ctxs;
     std::vector<tests_context*> raw_tx, raw_rx;
     std::vector<ScopedSt40Tx> tx_handles;
     std::vector<ScopedSt40Rx> rx_handles;
-    std::vector<double> expect_framerate(sessions);
     std::vector<mtl_test::ScopedWorker> tx_workers;
-    tx_ctxs.reserve(sessions);
-    rx_ctxs.reserve(sessions);
-    raw_tx.reserve(sessions);
-    raw_rx.reserve(sessions);
-    tx_handles.reserve(sessions);
-    rx_handles.reserve(sessions);
 
     for (int i = 0; i < sessions; i++) {
-      expect_framerate[i] = st_frame_rate(specs[i].fps);
-      tx_ctxs.push_back(make_st40_ctx(ctx, i, 3));
+      tx_ctxs.push_back(mtl_test::make_context(ctx, i, 3));
       raw_tx.push_back(tx_ctxs.back().get());
 
       struct st40_tx_ops ops_tx;
       st40_tx_loopback_ops_init(raw_tx[i], &ops_tx, specs[i].type, specs[i].fps,
-                                30000 + i * 2);
+                                static_cast<uint16_t>(30000 + i * 2));
       tx_handles.emplace_back(st40_tx_create(m_handle, &ops_tx));
       ASSERT_TRUE(tx_handles[i]);
-
       st40_tx_frame_init(raw_tx[i], tx_handles[i].get(), specs[i].type);
       __atomic_store_n(&raw_tx[i]->handle, tx_handles[i].get(), __ATOMIC_RELEASE);
 
       if (specs[i].type == ST40_TYPE_RTP_LEVEL) {
-        raw_tx[i]->stop = false;
         tx_workers.emplace_back(raw_tx[i], std::thread(tx_feed_packet, raw_tx[i]));
       }
     }
 
     for (int i = 0; i < sessions; i++) {
-      rx_ctxs.push_back(make_st40_ctx(ctx, i, 3));
+      rx_ctxs.push_back(mtl_test::make_context(ctx, i, 3));
       raw_rx.push_back(rx_ctxs.back().get());
 
       struct st40_rx_ops ops_rx;
-      st40_rx_loopback_ops_init(raw_rx[i], &ops_rx, 30000 + i * 2);
+      st40_rx_loopback_ops_init(raw_rx[i], &ops_rx, static_cast<uint16_t>(30000 + i * 2));
       rx_handles.emplace_back(st40_rx_create(m_handle, &ops_rx));
       ASSERT_TRUE(rx_handles[i]);
       __atomic_store_n(&raw_rx[i]->handle, rx_handles[i].get(), __ATOMIC_RELEASE);
     }
 
-    /* 1.0 s window with >= 25 frames after 3-frame warmup (~1.05 s/repeat vs
-     * legacy sleep(10)); <= 2% edge error at 50-59.94 fps vs +/-10% tolerance. */
-    auto win = mtl_test::measure_rate_window(raw_rx, mtl_test::rx_frames,
-                                             /*warmup_frames=*/3,
-                                             /*min_delta_frames=*/25,
-                                             /*min_window_ms=*/1000);
+    /* 1.0 s window, >= 25 frames after 3-frame warmup: <= 2% edge error vs +/-10%. */
+    auto win = mtl_test::measure_rate_window(raw_rx, mtl_test::rx_frames, 3, 25, 1000);
     EXPECT_TRUE(win.warmed_up);
     EXPECT_TRUE(win.complete);
-
     for (auto& w : tx_workers) w.stop();
 
     for (int i = 0; i < sessions; i++) {
-      int rec = mtl_test::rx_frames(raw_rx[i]);
-      EXPECT_GT(rec, 0);
-      info("%s, session %d fb_rec %d framerate %f\n", __func__, i, rec, win.rate[i]);
-      EXPECT_NEAR(win.rate[i], expect_framerate[i], expect_framerate[i] * 0.1);
+      const double expect_fps = st_frame_rate(specs[i].fps);
+      EXPECT_GT(mtl_test::rx_frames(raw_rx[i]), 0);
+      EXPECT_NEAR(win.rate[i], expect_fps, expect_fps * 0.1);
     }
   }
 
   EXPECT_GE(mtl_run.stop(), 0);
-}
-
-TEST(St40_rx, after_start_mix_s2_r2) {
-  st40_after_start_test(
-      {
-          {ST40_TYPE_RTP_LEVEL, ST_FPS_P50},
-          {ST40_TYPE_FRAME_LEVEL, ST_FPS_P59_94},
-      },
-      /*repeat=*/2);
 }
 
 namespace {
@@ -1548,18 +1365,14 @@ int rx_anc_frame_ready(void* priv, void* frame, struct st40_rx_frame_meta* meta)
   auto* st = static_cast<St40RxFrameLevelState*>(priv);
   auto* ctx = st ? st->ctx : nullptr;
   st40_rx_handle handle = st ? st->rx_handle.load(std::memory_order_acquire) : nullptr;
-  if (!ctx || !handle || ctx->stop.load(std::memory_order_relaxed)) {
-    return -EBUSY;
-  }
+  if (!ctx || !handle || ctx->stop.load(std::memory_order_relaxed)) return -EBUSY;
 
   bool meta_ok = frame != nullptr && meta != nullptr && meta->meta != nullptr &&
                  meta->meta_num == 1 && meta->udw_buffer_fill == st->expected_udw_size &&
                  meta->meta[0].did == 0x43 && meta->meta[0].sdid == 0x02 &&
                  meta->meta[0].udw_size == st->expected_udw_size &&
                  meta->status == ST_FRAME_STATUS_COMPLETE;
-  if (!meta_ok) {
-    __atomic_fetch_add(&ctx->rx_meta_fail_cnt, 1, __ATOMIC_RELAXED);
-  }
+  if (!meta_ok) __atomic_fetch_add(&ctx->rx_meta_fail_cnt, 1, __ATOMIC_RELAXED);
 
   {
     std::lock_guard<std::mutex> lck(ctx->mtx);
@@ -1593,17 +1406,14 @@ void st40_rx_frame_level_consumer(St40RxFrameLevelState* st) {
         break;
       }
     }
-    if (!matched) {
-      __atomic_fetch_add(&ctx->sha_fail_cnt, 1, __ATOMIC_RELAXED);
-    }
+    if (!matched) __atomic_fetch_add(&ctx->sha_fail_cnt, 1, __ATOMIC_RELAXED);
     __atomic_fetch_add(&ctx->check_sha_frame_cnt, 1, __ATOMIC_RELAXED);
 
     st40_rx_handle handle = st->rx_handle.load(std::memory_order_acquire);
-    if (handle && st40_rx_put_framebuff(handle, frame) == 0) {
+    if (handle && st40_rx_put_framebuff(handle, frame) == 0)
       st->put_ok.fetch_add(1, std::memory_order_relaxed);
-    } else {
+    else
       st->put_fail.fetch_add(1, std::memory_order_relaxed);
-    }
   }
 }
 
@@ -1612,18 +1422,15 @@ void st40_rx_frame_level_consumer(St40RxFrameLevelState* st) {
 /* End-to-end ST40_TYPE_FRAME_LEVEL RX test covering notify_frame_ready, UDW
  * payload digest verification, and st40_rx_put_framebuff slot release. */
 TEST(St40_rx, frame_level_put_framebuff) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = st_test_ctx();
   auto m_handle = ctx->handle;
-
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
   constexpr uint16_t kUdpPort = 30400;
   constexpr size_t kUdwSize = 240;
 
-  auto tx = make_st40_ctx(ctx, 0, TEST_SHA_HIST_NUM, /*check_sha=*/true);
-  auto rx = make_st40_ctx(ctx, 0, 4, /*check_sha=*/true);
-  ASSERT_TRUE(tx != nullptr);
-  ASSERT_TRUE(rx != nullptr);
+  auto tx = mtl_test::make_context(ctx, 0, TEST_SHA_HIST_NUM, /*check_sha=*/true);
+  auto rx = mtl_test::make_context(ctx, 0, 4, /*check_sha=*/true);
 
   St40RxFrameLevelState state;
   state.ctx = rx.get();
@@ -1657,8 +1464,7 @@ TEST(St40_rx, frame_level_put_framebuff) {
   __atomic_store_n(&rx->handle, rx_handle.get(), __ATOMIC_RELEASE);
   state.rx_handle.store(rx_handle.get(), std::memory_order_release);
 
-  /* Destruction order: mtl_run.stop() -> consumer.stop() (drains queue via
-   * st40_rx_put_framebuff) -> rx_handle -> tx_handle -> state -> rx -> tx. */
+  /* Destruction order: mtl_run.stop() -> consumer.stop() -> handles -> state -> ctxs. */
   mtl_test::ScopedWorker consumer(rx.get(),
                                   std::thread(st40_rx_frame_level_consumer, &state));
   mtl_test::ScopedMtlStart mtl_run(m_handle);
@@ -1680,24 +1486,19 @@ TEST(St40_rx, frame_level_put_framebuff) {
   EXPECT_EQ(mtl_test::relaxed_load(&rx->sha_fail_cnt), 0);
   EXPECT_GE(mtl_test::sha_checked_frames(rx.get()), 20);
 
-  /* Invalid pointers must fail cleanly without corrupting the pool. */
   uint8_t bogus = 0;
   EXPECT_LT(st40_rx_put_framebuff(rx_handle.get(), nullptr), 0);
   EXPECT_LT(st40_rx_put_framebuff(rx_handle.get(), &bogus), 0);
 }
 
-/* Verify st40 TX and RX session stats accumulate under traffic and reset cleanly. */
 TEST(St40_rx, session_stats_reset) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = st_test_ctx();
   auto m_handle = ctx->handle;
-
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
   constexpr uint16_t kUdpPort = 30410;
-  auto tx = make_st40_ctx(ctx, 0, 3);
-  auto rx = make_st40_ctx(ctx, 0, 3);
-  ASSERT_TRUE(tx != nullptr);
-  ASSERT_TRUE(rx != nullptr);
+  auto tx = mtl_test::make_context(ctx, 0, 3);
+  auto rx = mtl_test::make_context(ctx, 0, 3);
 
   struct st40_tx_ops ops_tx;
   st40_tx_loopback_ops_init(tx.get(), &ops_tx, ST40_TYPE_FRAME_LEVEL, ST_FPS_P59_94,
@@ -1715,7 +1516,6 @@ TEST(St40_rx, session_stats_reset) {
 
   mtl_test::ScopedMtlStart mtl_run(m_handle);
   EXPECT_GE(mtl_run.start(), 0);
-  /* 15 frames at 59.94 fps (~0.25 s) is sufficient to populate TX and RX stats. */
   EXPECT_TRUE(
       mtl_test::wait_until([&]() { return mtl_test::rx_frames(rx.get()) >= 15; }, 6000));
   EXPECT_GE(mtl_run.stop(), 0);
@@ -1742,7 +1542,6 @@ TEST(St40_rx, session_stats_reset) {
   EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].bytes, 0u);
   EXPECT_EQ(rx_stats.common.port[MTL_SESSION_PORT_P].frames, 0u);
 
-  /* Invalid argument handling. */
   EXPECT_LT(st40_tx_get_session_stats(nullptr, &tx_stats), 0);
   EXPECT_LT(st40_tx_get_session_stats(tx_handle.get(), nullptr), 0);
   EXPECT_LT(st40_tx_reset_session_stats(nullptr), 0);

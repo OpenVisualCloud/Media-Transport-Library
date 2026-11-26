@@ -8,9 +8,7 @@
 #include <thread>
 #include <vector>
 
-#include "core/constants.hpp"
 #include "core/test_fixture.hpp"
-#include "handlers/st20p_handler.hpp"
 
 namespace {
 
@@ -53,17 +51,14 @@ void RunEpochOnwardRecoveryCase(NoCtxTest* self, struct st_tests_context* ctx,
   g_epoch_recovery_future_offset_ns.store(kFutureOffsetNs, std::memory_order_release);
 
   ctx->para.pacing = pacing_way;
-  ctx->para.ptp_get_time_fn = EpochRecoveryPtpClockNow;
-  if (!ctx->user_log_level) ctx->para.log_level = MTL_LOG_LEVEL_INFO;
-  ctx->para.flags &= ~MTL_FLAG_DEV_AUTO_START_STOP;
   /* TSN launch-time pacing compares against the phc, which only the
    * built-in ptp service (fed by ptp_get_time_fn above) disciplines. */
   if (pacing_way == ST21_TX_PACING_WAY_TSN) ctx->para.flags |= MTL_FLAG_PTP_ENABLE;
   /* Shorten the periodic "M T DEV STATE" stat dump (default 10s) so the run
    * below comfortably covers several dumps without needing a long sleep. */
   ctx->para.dump_period_s = 2;
-  ctx->handle = mtl_init(&ctx->para);
-  ASSERT_TRUE(ctx->handle != nullptr);
+  self->initDefaultContext(EpochRecoveryPtpClockNow);
+  if (::testing::Test::HasFatalFailure()) return;
 
   /* No frame-content/timestamp strategy: St20pDefaultPacingOracle assumes a
    * steady real-time-correlated clock, which this test deliberately violates
@@ -174,11 +169,12 @@ int CollectPacingSpanRatios(NoCtxTest::St20pHandlerBundle& bundle, double trs_ns
  * Plan:      run 6 s against the clock 3 s ahead, then step it back to real time.
  * Expect:    1. every TX stats query == 0
  *            2. stat_epoch_onward stops growing within three 1 s polls
- * Skip/Fail: _pf_tsn needs E830 PF ports (run_pf.sh); fails or hangs elsewhere.
+ * Skip/Fail: _pf_tsn needs E830 PF ports (gtest_runner.py --profile '^noctx_pf$');
+ *            fails or hangs elsewhere.
  *
  * TSN pacing (launch-time offload) is only advertised by PF drivers; this
  * test requires the noctx port pair to be bound as PF, not VF. The "_pf_"
- * infix lets run.sh/run_pf.sh select/exclude it with a plain gtest_filter
+ * infix lets gtest_runner.py select/exclude it with a plain gtest_filter
  * wildcard instead of parsing the test source.
  *
  * TSN launch-time-pacing offload has only been validated on Intel E830 (PCI
@@ -205,7 +201,8 @@ TEST_F(NoCtxTest, st20p_tx_epoch_onward_recovers_after_ptp_step_tsc_pacing) {
  *            2. >= kMinUsableFrames (15) frames with timing-parser coverage
  *            3. >= 80 % of span ratios (ipt_avg / trs) in [0.5, 1.5]
  *            4. median span ratio in [0.7, 1.3]
- * Skip/Fail: E830 PF ports (run_pf.sh); fails or hangs elsewhere.
+ * Skip/Fail: E830 PF ports (gtest_runner.py --profile '^noctx_pf$'); fails or hangs
+ *            elsewhere.
  *
  * Smoke-test: does TSN launch-time pacing actually spread packets across the
  * frame interval on the wire, instead of merely completing session setup?

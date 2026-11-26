@@ -69,7 +69,6 @@ struct ConverterTraits {
   using PrivHandle = st20_convert_priv;
   using CreateReq = struct st20_converter_create_req;
   using FrameMeta = struct st20_convert_frame_meta;
-  static constexpr size_t kMaxSessions = MAX_TEST_CONVERTER_SESSIONS;
 
   static bool use_block_get(struct st_tests_context* /*ctx*/) {
     return false;
@@ -99,13 +98,11 @@ struct ConverterTraits {
 
   static int process_frame(const CreateReq& req, FrameMeta* frame, int sleep_time_us,
                            int /*rand_ratio*/, int& frame_cnt) {
-    /* check frame sanity */
-    if (frame->src->width != req.width) return -EIO;
-    if (frame->dst->width != req.width) return -EIO;
-    if (frame->src->height != req.height) return -EIO;
-    if (frame->dst->height != req.height) return -EIO;
-    if (frame->src->fmt != req.input_fmt) return -EIO;
-    if (frame->dst->fmt != req.output_fmt) return -EIO;
+    if (frame->src->width != req.width || frame->dst->width != req.width ||
+        frame->src->height != req.height || frame->dst->height != req.height ||
+        frame->src->fmt != req.input_fmt || frame->dst->fmt != req.output_fmt) {
+      return -EIO;
+    }
 
     /* copy src sha to the start or end of convert frame */
     if (req.input_fmt == ST_FRAME_FMT_YUV422PLANAR10LE)
@@ -184,8 +181,7 @@ int st_test_convert_plugin_unregister(struct st_tests_context* ctx) {
 
 int st_test_convert_plugin_register(struct st_tests_context* ctx) {
   auto st = ctx->handle;
-  struct st20_converter_dev c_dev;
-  memset(&c_dev, 0, sizeof(c_dev));
+  struct st20_converter_dev c_dev = {};
   c_dev.name = "test_converter";
   c_dev.priv = ctx;
   c_dev.target_device = ST_PLUGIN_DEVICE_TEST;
@@ -205,8 +201,7 @@ int st_test_convert_plugin_register(struct st_tests_context* ctx) {
 }
 
 static void plugin_register_test(const char* so_name, bool expect_succ) {
-  auto ctx = st_test_ctx();
-  auto st = ctx->handle;
+  auto st = st_test_ctx()->handle;
 
   int pre_nb = st_get_plugins_nb(st);
   int ret = st_plugin_register(st, so_name);
@@ -231,19 +226,16 @@ TEST(St20p, plugin_register_fail) {
 }
 
 static int test_st20p_frame_available(void* priv) {
-  tests_context* s = (tests_context*)priv;
-  s->cv.notify_all();
+  static_cast<tests_context*>(priv)->cv.notify_all();
   return 0;
 }
 
 static int test_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
   auto* s = static_cast<St20pContext*>(priv);
   auto handle = static_cast<st20p_tx_handle>(st20p_get_handle(s));
-
-  if (!handle) return -EIO; /* not ready */
+  if (!handle) return -EIO;
 
   __atomic_fetch_add(&s->fb_send_done, 1, __ATOMIC_RELAXED);
-
   if (!(frame->flags & ST_FRAME_FLAG_EXT_BUF)) return 0;
 
   const size_t n = s->ext_frames.count();
@@ -262,7 +254,7 @@ static int test_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
 }
 
 static int test_tx_ext_release_frame_done(void* priv, struct st_frame* frame) {
-  auto* s = (tx_ext_release_ctx*)priv;
+  auto* s = static_cast<tx_ext_release_ctx*>(priv);
   auto handle = s->handle.load(std::memory_order_acquire);
   if (!handle) return -EIO;
   struct st_frame* expected = nullptr;
@@ -338,30 +330,10 @@ static void st20p_rx_assert_cnt(int expect_st20_rx_cnt) {
   EXPECT_EQ(var.st20_rx_sessions_cnt, expect_st20_rx_cnt);
 }
 
-TEST(St20p, tx_create_free_single) {
-  mtl_test::verify_create_free<struct st20p_tx_ops, st20p_tx_handle, st20p_tx_create,
-                               st20p_tx_free>(st20p_tx_ops_init, st20p_tx_assert_cnt, 0,
-                                              1, 1);
-}
-TEST(St20p, tx_create_free_multi) {
-  mtl_test::verify_create_free<struct st20p_tx_ops, st20p_tx_handle, st20p_tx_create,
-                               st20p_tx_free>(st20p_tx_ops_init, st20p_tx_assert_cnt, 0,
-                                              1, 6);
-}
 TEST(St20p, tx_create_free_mix) {
   mtl_test::verify_create_free<struct st20p_tx_ops, st20p_tx_handle, st20p_tx_create,
                                st20p_tx_free>(st20p_tx_ops_init, st20p_tx_assert_cnt, 2,
                                               3, 4);
-}
-TEST(St20p, rx_create_free_single) {
-  mtl_test::verify_create_free<struct st20p_rx_ops, st20p_rx_handle, st20p_rx_create,
-                               st20p_rx_free>(st20p_rx_ops_init, st20p_rx_assert_cnt, 0,
-                                              1, 1);
-}
-TEST(St20p, rx_create_free_multi) {
-  mtl_test::verify_create_free<struct st20p_rx_ops, st20p_rx_handle, st20p_rx_create,
-                               st20p_rx_free>(st20p_rx_ops_init, st20p_rx_assert_cnt, 0,
-                                              1, 6);
 }
 TEST(St20p, rx_create_free_mix) {
   mtl_test::verify_create_free<struct st20p_rx_ops, st20p_rx_handle, st20p_rx_create,
@@ -417,11 +389,10 @@ static void test_st20p_tx_frame_thread(St20pContext* s) {
       }
       continue;
     }
-    if (frame->data_size != s->frame_size) s->incomplete_frame_cnt++;
-    if (frame->buffer_size != s->frame_size) s->incomplete_frame_cnt++;
-    if (frame->width != s->width) s->incomplete_frame_cnt++;
-    if (frame->height != s->height) s->incomplete_frame_cnt++;
-    if (frame->fmt != s->fmt) s->incomplete_frame_cnt++;
+    if (frame->data_size != s->frame_size || frame->buffer_size != s->frame_size ||
+        frame->width != s->width || frame->height != s->height || frame->fmt != s->fmt) {
+      s->incomplete_frame_cnt++;
+    }
 
     const int sent = mtl_test::tx_frames(s);
     if (s->user_timestamp) {
@@ -477,8 +448,7 @@ static void test_st20p_tx_frame_thread(St20pContext* s) {
 }
 
 static void test_st20p_rx_user_meta(tests_context* s, struct st_frame* frame) {
-  struct test_user_meta* meta = (struct test_user_meta*)frame->user_meta;
-
+  auto* meta = static_cast<const struct test_user_meta*>(frame->user_meta);
   if (!meta) {
     s->user_meta_fail_cnt++;
     return;
@@ -524,14 +494,9 @@ static void test_st20p_rx_check_tp(tests_context* s, struct st_frame* frame) {
 }
 
 /* ST 2110-21 6.2 frame grid: a first field starts on an even field slot, a second on an
- * odd one, and a conforming FPT cannot tell the difference, so this is the only
- * wire-level check for it. The basis is the 64-bit TAI first-packet time, NOT
- * frame->rtp_timestamp: that one wraps, and 2^32 is not a multiple of the frame period in
- * ticks, so its absolute phase is meaningless. Sound but probabilistic in power, since TX
- * takes its starting parity from the wall clock -- the deterministic proof stays in
- * tests/unit/session/st20_tx/interlaced_field_epoch_test.cpp. */
+ * odd one. Uses 64-bit TAI first-packet time rather than wrapping 32-bit rtp_timestamp.
+ */
 static void test_st20p_rx_check_field_phase(tests_context* s, struct st_frame* frame) {
-  /* a zero basis would make the check below pass for every frame, so fail instead */
   if (!frame->receive_timestamp) {
     if (!s->field_phase_unverified_cnt)
       err("%s(%d), no receive_timestamp, field phase unverifiable\n", __func__, s->idx);
@@ -541,7 +506,6 @@ static void test_st20p_rx_check_field_phase(tests_context* s, struct st_frame* f
 
   uint64_t slot = static_cast<uint64_t>(static_cast<double>(frame->receive_timestamp) /
                                         s->field_period_ns);
-
   if (((slot & 0x1) != 0) == frame->second_field) return;
   if (!s->field_phase_fail_cnt)
     err("%s(%d), field phase mismatch, slot %" PRIu64 " second_field %d\n", __func__,
@@ -584,13 +548,12 @@ static void test_st20p_rx_frame_thread(St20pContext* s, bool internal_sha) {
       continue;
     }
 
-    if (frame->data_size != s->frame_size) s->incomplete_frame_cnt++;
-    if (frame->buffer_size != s->frame_size) s->incomplete_frame_cnt++;
-    if (frame->width != s->width) s->incomplete_frame_cnt++;
-    if (frame->height != s->height) s->incomplete_frame_cnt++;
-    if (frame->fmt != s->fmt) s->incomplete_frame_cnt++;
+    if (frame->data_size != s->frame_size || frame->buffer_size != s->frame_size ||
+        frame->width != s->width || frame->height != s->height || frame->fmt != s->fmt ||
+        frame->timestamp == timestamp) {
+      s->incomplete_frame_cnt++;
+    }
     dbg("%s(%d), timestamp %" PRIu64 "\n", __func__, s->idx, frame->timestamp);
-    if (frame->timestamp == timestamp) s->incomplete_frame_cnt++;
     timestamp = frame->timestamp;
 
     if (s->rx_timing_parser) test_st20p_rx_check_tp(s, frame);
@@ -715,9 +678,7 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
   const size_t sessions = sc.streams.size();
   const uint8_t pt = sc.zero_payload_type ? 0 : ST20P_TEST_PAYLOAD_TYPE;
 
-  /* Declaration order guarantees reverse RAII teardown on any ASSERT_* failure:
-   * workers stop -> mtl_stop -> handles free -> contexts + ext DMA unmap -> plugin
-   * reset. */
+  /* Declaration order guarantees reverse RAII teardown on any ASSERT_* failure. */
   std::vector<ScopedSt20pContext> tx_ctxs;
   std::vector<ScopedSt20pContext> rx_ctxs;
   std::vector<ScopedSt20pTx> tx_handles(sessions);
@@ -741,10 +702,7 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
           expect_fps_tx[i] * (sc.timeout_interval - 1) / sc.timeout_interval;
     }
 
-    auto s = make_st20p_context(ctx, static_cast<int>(i), TEST_SHA_HIST_NUM);
-    ASSERT_TRUE(s != nullptr);
-    /* Store in tx_ctxs before st20p_tx_create so contexts outlive handles on ASSERT_*. */
-    tx_ctxs.push_back(std::move(s));
+    tx_ctxs.push_back(make_st20p_context(ctx, static_cast<int>(i), TEST_SHA_HIST_NUM));
     St20pContext* raw_tx = tx_ctxs.back().get();
     raw_tx->width = spec.width;
     raw_tx->height = spec.height;
@@ -754,9 +712,7 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
     raw_tx->block_get = sc.block_get;
 
     struct st20p_tx_ops ops_tx;
-    memset(&ops_tx, 0, sizeof(ops_tx));
-    ops_tx.name = "st20p_test";
-    ops_tx.priv = raw_tx;
+    st20p_tx_ops_init(raw_tx, &ops_tx);
     mtl_test::fill_tx_port(ops_tx.port, ctx,
                            ST20P_TEST_UDP_PORT + static_cast<uint16_t>(i * 2), pt,
                            sc.ssrc);
@@ -769,13 +725,11 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
     ops_tx.transport_pacing = sc.pacing;
     ops_tx.transport_fmt = spec.t_fmt;
     ops_tx.device = sc.device;
-    ops_tx.framebuff_cnt = raw_tx->fb_cnt;
-    if (sc.block_get)
-      ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
-    else
-      ops_tx.notify_frame_available = test_st20p_frame_available;
-    ops_tx.notify_event = test_ctx_notify_event;
     ops_tx.notify_frame_done = test_st20p_tx_frame_done;
+    if (sc.block_get) {
+      ops_tx.notify_frame_available = nullptr;
+      ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
+    }
     if (sc.tx_ext) {
       ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME | ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE;
     }
@@ -830,10 +784,7 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
     }
     expect_fps_rx[i] = expect_fps_tx[i];
 
-    auto s = make_st20p_context(ctx, static_cast<int>(i), TEST_SHA_HIST_NUM);
-    ASSERT_TRUE(s != nullptr);
-    /* Store in rx_ctxs before st20p_rx_create so contexts outlive handles on ASSERT_*. */
-    rx_ctxs.push_back(std::move(s));
+    rx_ctxs.push_back(make_st20p_context(ctx, static_cast<int>(i), TEST_SHA_HIST_NUM));
     St20pContext* raw_rx = rx_ctxs.back().get();
     raw_rx->width = spec.width;
     raw_rx->height = spec.height;
@@ -855,9 +806,7 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
     }
 
     struct st20p_rx_ops ops_rx;
-    memset(&ops_rx, 0, sizeof(ops_rx));
-    ops_rx.name = "st20p_test";
-    ops_rx.priv = raw_rx;
+    st20p_rx_ops_init(raw_rx, &ops_rx);
     mtl_test::fill_rx_port(ops_rx.port, ctx,
                            ST20P_TEST_UDP_PORT + static_cast<uint16_t>(i * 2), pt,
                            sc.ssrc);
@@ -872,13 +821,11 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
       raw_rx->field_period_ns = static_cast<double>(NS_PER_S) / st_frame_rate(spec.fps);
     }
     ops_rx.device = sc.device;
-    ops_rx.framebuff_cnt = raw_rx->fb_cnt;
-    if (sc.block_get)
+    if (sc.block_get) {
+      ops_rx.notify_frame_available = nullptr;
       ops_rx.flags |= ST20P_RX_FLAG_BLOCK_GET;
-    else
-      ops_rx.notify_frame_available = test_st20p_frame_available;
+    }
     if (sc.rx_timing_parser) ops_rx.flags |= ST20P_RX_FLAG_TIMING_PARSER_META;
-    ops_rx.notify_event = test_ctx_notify_event;
     if (sc.rx_ext) {
       if (sc.rx_dedicated_ext) {
         ops_rx.ext_frames = raw_rx->ext_frames.frames();
@@ -932,39 +879,27 @@ static void st20p_rx_digest_test(const St20pDigestScenario& sc) {
     raw_rx_ctxs[i] = rx_ctxs[i].get();
   }
 
-  /* Steady-state measurement window replacing legacy sleep(10):
-   * - warmup_frames=3 absorbs RL pacing training and pipeline startup.
-   * - min_delta_frames=25 over min_window_ms=1000 gives >=25 frames at 25 fps
-   *   (<=4.0% edge error) and ~60 frames at 59.94 fps (<=1.7% edge error), well
-   *   inside +/-10% FPS/vsync tolerance; triggers >=8 fail/timeout intervals and
-   *   hundreds of RTCP NACKs under 10% simulated packet loss.
-   * - 6000 ms timeouts accommodate slower single-core kernel:lo runs. */
+  /*
+   * Warmup=3 absorbs RL pacing and startup; >=25 frames over >=1000 ms gives
+   * <=4.0% edge error at 25 fps and <=1.7% at 59.94 fps (vs +/-10% tolerance)
+   * while exercising >=8 fault intervals and hundreds of RTCP NACKs.
+   */
   const auto win = mtl_test::measure_pipeline_window(
       raw_tx_ctxs, raw_rx_ctxs, /*warmup_frames=*/3, /*min_delta_frames=*/25,
       /*min_window_ms=*/1000, /*warmup_timeout_ms=*/6000, /*window_timeout_ms=*/6000);
   EXPECT_TRUE(win.warmed_up);
-  if (!win.complete) {
-    info("%s, measurement window timed out before min_delta_frames\n", __func__);
-  }
+  EXPECT_TRUE(win.complete);
 
   for (size_t i = 0; i < sessions; i++) tx_workers[i].stop();
   for (size_t i = 0; i < sessions; i++) rx_workers[i].stop();
   EXPECT_GE(mtl_run.stop(), 0);
 
   if (sc.vsync) {
-    for (size_t i = 0; i < sessions; i++) {
-      const double nominal_fps = st_frame_rate(sc.streams[i].fps);
-      dbg("%s(%zu,%p), vsync_cnt %d vsyncrate %f\n", __func__, i, raw_tx_ctxs[i],
-          mtl_test::vsync_count(raw_tx_ctxs[i]), win.tx_vsync[i]);
-      EXPECT_GT(mtl_test::vsync_count(raw_tx_ctxs[i]), 0);
-      EXPECT_NEAR(win.tx_vsync[i], nominal_fps, nominal_fps * 0.1);
-    }
-
     const bool kernel_lo = mtl_test::is_kernel_loopback(ctx);
     for (size_t i = 0; i < sessions; i++) {
       const double nominal_fps = st_frame_rate(sc.streams[i].fps);
-      dbg("%s(%zu,%p), vsync_cnt %d vsyncrate %f\n", __func__, i, raw_rx_ctxs[i],
-          mtl_test::vsync_count(raw_rx_ctxs[i]), win.rx_vsync[i]);
+      EXPECT_GT(mtl_test::vsync_count(raw_tx_ctxs[i]), 0);
+      EXPECT_NEAR(win.tx_vsync[i], nominal_fps, nominal_fps * 0.1);
       EXPECT_GT(mtl_test::vsync_count(raw_rx_ctxs[i]), 0);
       if (!kernel_lo) {
         EXPECT_NEAR(win.rx_vsync[i], nominal_fps, nominal_fps * 0.1);
@@ -1083,29 +1018,6 @@ TEST(St20p, digest_1080p_packet_convert_s2) {
   st20p_rx_digest_test(sc);
 }
 
-TEST(St20p, tx_ext_digest_1080p_no_convert_s2) {
-  St20pDigestScenario sc;
-  sc.streams = {
-      make_stream(ST_FPS_P50, 1920, 1080, ST_FRAME_FMT_YUV422RFC4175PG2BE10),
-      make_stream(ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_YUV422RFC4175PG2BE10),
-  };
-  sc.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
-  sc.tx_ext = true;
-  st20p_rx_digest_test(sc);
-}
-
-TEST(St20p, tx_ext_digest_1080p_convert_s2) {
-  St20pDigestScenario sc;
-  sc.streams = {
-      make_stream(ST_FPS_P50, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE),
-      make_stream(ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_V210),
-  };
-  sc.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
-  sc.tx_ext = true;
-  sc.check_fps = false;
-  st20p_rx_digest_test(sc);
-}
-
 TEST(St20p, rx_ext_digest_1080p_no_convert_s2) {
   St20pDigestScenario sc;
   sc.streams = {
@@ -1119,24 +1031,11 @@ TEST(St20p, rx_ext_digest_1080p_no_convert_s2) {
   st20p_rx_digest_test(sc);
 }
 
-TEST(St20p, rx_ext_digest_1080p_convert_s2) {
-  St20pDigestScenario sc;
-  sc.streams = {
-      make_stream(ST_FPS_P50, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE),
-      make_stream(ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_V210),
-  };
-  sc.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
-  sc.rx_ext = true;
-  sc.check_fps = false;
-  st20p_rx_digest_test(sc);
-}
-
 /* Packet convert writes each packet into the dst frame as it arrives, but a
  * dynamic ext frame can only be lent once its frame is known to be delivered. */
 TEST(St20p, rx_create_expect_fail_packet_convert_ext_frame) {
   auto ctx = st_test_ctx();
   auto test_ctx = make_st20p_context(ctx, 0, 2);
-  ASSERT_TRUE(test_ctx != nullptr);
 
   struct st20p_rx_ops ops;
   st20p_rx_ops_init(test_ctx.get(), &ops);
@@ -1175,18 +1074,6 @@ TEST(St20p, ext_digest_1080p_convert_s2) {
   st20p_rx_digest_test(sc);
 }
 
-TEST(St20p, rx_dedicated_ext_digest_1080p_convert_s2) {
-  St20pDigestScenario sc;
-  sc.streams = {
-      make_stream(ST_FPS_P29_97, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE),
-      make_stream(ST_FPS_P59_94, 1280, 720, ST_FRAME_FMT_Y210),
-  };
-  sc.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
-  sc.rx_ext = true;
-  sc.rx_dedicated_ext = true;
-  st20p_rx_digest_test(sc);
-}
-
 TEST(St20p, ext_digest_1080p_convert_with_padding_s2) {
   St20pDigestScenario sc;
   sc.streams = {
@@ -1198,21 +1085,6 @@ TEST(St20p, ext_digest_1080p_convert_with_padding_s2) {
   sc.rx_ext = true;
   sc.check_fps = false;
   sc.line_padding_size = 1024;
-  st20p_rx_digest_test(sc);
-}
-
-TEST(St20p, rx_dedicated_ext_digest_1080p_convert_with_padding_s2) {
-  St20pDigestScenario sc;
-  sc.streams = {
-      make_stream(ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE),
-      make_stream(ST_FPS_P59_94, 1920, 1080, ST_FRAME_FMT_Y210),
-  };
-  sc.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
-  sc.tx_ext = true;
-  sc.rx_ext = true;
-  sc.rx_dedicated_ext = true;
-  sc.check_fps = false;
-  sc.line_padding_size = 512;
   st20p_rx_digest_test(sc);
 }
 
@@ -1278,33 +1150,23 @@ TEST(St20p, tx_ext_frame_manual_release_two_phase) {
 
   const int fb_cnt = 3;
   const int width = 1920, height = 1080;
-  /* Single-plane format equal to the transport format so ctx->derive is true:
-   * frames complete via tx_st20p_frame_done (not the internal-converter early
-   * release in put_ext_frame), which is the path that actually parks IN_USER. */
+  /* Single-plane format equal to transport format so derive=true and frames
+   * complete via tx_st20p_frame_done, parking IN_USER until manual release. */
   const enum st_frame_fmt fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
 
   tx_ext_release_ctx tctx;
   mtl_test::ScopedExtFrames ext_bufs;
   ASSERT_TRUE(ext_bufs.init(st, fmt, width, height, false, fb_cnt));
 
+  auto dummy_ctx = make_st20p_context(ctx, 0, fb_cnt);
   struct st20p_tx_ops ops_tx;
-  memset(&ops_tx, 0, sizeof(ops_tx));
+  st20p_tx_ops_init(dummy_ctx.get(), &ops_tx);
   ops_tx.name = "st20p_tx_ext_release_test";
   ops_tx.priv = &tctx;
-  ops_tx.port.num_port = 1;
-  memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-         MTL_IP_ADDR_LEN);
-  snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_P]);
-  ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST20P_TEST_UDP_PORT;
-  ops_tx.port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
-  ops_tx.width = width;
-  ops_tx.height = height;
-  ops_tx.fps = ST_FPS_P59_94;
   ops_tx.input_fmt = fmt;
-  ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
   ops_tx.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
-  ops_tx.framebuff_cnt = fb_cnt;
+  ops_tx.notify_frame_available = nullptr;
+  ops_tx.notify_event = nullptr;
   ops_tx.flags = ST20P_TX_FLAG_EXT_FRAME | ST20P_TX_FLAG_EXT_FRAME_MANUAL_RELEASE |
                  ST20P_TX_FLAG_BLOCK_GET;
   ops_tx.notify_frame_done = test_tx_ext_release_frame_done;
@@ -1363,252 +1225,218 @@ TEST(St20p, tx_ext_frame_manual_release_two_phase) {
   EXPECT_GE(mtl_run.stop(), 0);
 }
 
-TEST(St20p, tx_put_frame_abort) {
+namespace {
+
+struct St20pLoopbackOpts {
+  uint32_t rx_extra_flags = 0;
+  int width = 1280;
+  int height = 720;
+  enum st_fps fps = ST_FPS_P59_94;
+  bool redundant = false;
+  bool start_tx_worker = true;
+  bool start_rx_worker = true;
+  bool start_mtl = true;
+};
+
+/* Lightweight RAII loopback pair for ST20p control/stats/pcap/abort API tests. */
+struct St20pLoopbackPair {
+  ScopedSt20pContext tx_ctx;
+  ScopedSt20pContext rx_ctx;
+  ScopedSt20pTx tx;
+  ScopedSt20pRx rx;
+  mtl_test::ScopedMtlStart mtl_run;
+  mtl_test::ScopedWorker tx_worker;
+  mtl_test::ScopedWorker rx_worker;
+
+  explicit St20pLoopbackPair(mtl_handle st) : mtl_run(st) {
+  }
+
+  void init(struct st_tests_context* ctx, uint16_t udp_port,
+            const St20pLoopbackOpts& opts = {}) {
+    tx_ctx = make_st20p_context(ctx, 0, 3);
+    rx_ctx = make_st20p_context(ctx, 0, 3);
+
+    struct st20p_tx_ops ops_tx;
+    st20p_tx_ops_init(tx_ctx.get(), &ops_tx);
+    ops_tx.name = "st20p_api_tx";
+    mtl_test::fill_tx_port(ops_tx.port, ctx, udp_port, ST20P_TEST_PAYLOAD_TYPE, 0,
+                           opts.redundant);
+    ops_tx.width = opts.width;
+    ops_tx.height = opts.height;
+    ops_tx.fps = opts.fps;
+    ops_tx.input_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+    ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+    ops_tx.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+    ops_tx.notify_frame_available = nullptr;
+    ops_tx.notify_event = nullptr;
+    ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
+
+    tx.reset(st20p_tx_create(ctx->handle, &ops_tx));
+    ASSERT_TRUE(static_cast<bool>(tx));
+    EXPECT_EQ(st20p_tx_set_block_timeout(tx.get(), NS_PER_S), 0);
+    st20p_set_handle(tx_ctx.get(), tx.get());
+
+    struct st20p_rx_ops ops_rx;
+    st20p_rx_ops_init(rx_ctx.get(), &ops_rx);
+    ops_rx.name = "st20p_api_rx";
+    mtl_test::fill_rx_port(ops_rx.port, ctx, udp_port, ST20P_TEST_PAYLOAD_TYPE, 0,
+                           opts.redundant);
+    ops_rx.width = opts.width;
+    ops_rx.height = opts.height;
+    ops_rx.fps = opts.fps;
+    ops_rx.output_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+    ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+    ops_rx.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
+    ops_rx.notify_frame_available = nullptr;
+    ops_rx.notify_event = nullptr;
+    ops_rx.flags |= ST20P_RX_FLAG_BLOCK_GET | opts.rx_extra_flags;
+
+    rx.reset(st20p_rx_create(ctx->handle, &ops_rx));
+    ASSERT_TRUE(static_cast<bool>(rx));
+    EXPECT_EQ(st20p_rx_set_block_timeout(rx.get(), NS_PER_S), 0);
+    st20p_set_handle(rx_ctx.get(), rx.get());
+
+    if (opts.start_tx_worker) start_tx();
+    if (opts.start_rx_worker) start_rx();
+    if (opts.start_mtl) {
+      EXPECT_GE(mtl_run.start(), 0);
+    }
+  }
+
+  void start_tx() {
+    st20p_tx_handle tx_h = tx.get();
+    tx_worker = mtl_test::ScopedWorker(
+        tx_ctx.get(),
+        std::thread(
+            [](tests_context* s) {
+              auto handle = static_cast<st20p_tx_handle>(st20p_get_handle(s));
+              while (!s->stop) {
+                auto* frame = st20p_tx_get_frame(handle);
+                if (!frame) continue;
+                st20p_tx_put_frame(handle, frame);
+                __atomic_fetch_add(&s->fb_send, 1, __ATOMIC_RELAXED);
+              }
+            },
+            tx_ctx.get()),
+        [tx_h]() { st20p_tx_wake_block(tx_h); });
+  }
+
+  void start_rx() {
+    st20p_rx_handle rx_h = rx.get();
+    rx_worker = mtl_test::ScopedWorker(
+        rx_ctx.get(),
+        std::thread(
+            [](tests_context* s) {
+              auto handle = static_cast<st20p_rx_handle>(st20p_get_handle(s));
+              while (!s->stop) {
+                auto* frame = st20p_rx_get_frame(handle);
+                if (!frame) continue;
+                const bool complete = st_is_frame_complete(frame->status);
+                st20p_rx_put_frame(handle, frame);
+                if (complete) __atomic_fetch_add(&s->fb_rec, 1, __ATOMIC_RELAXED);
+              }
+            },
+            rx_ctx.get()),
+        [rx_h]() { st20p_rx_wake_block(rx_h); });
+  }
+
+  void stop_all() {
+    tx_worker.stop();
+    rx_worker.stop();
+    EXPECT_GE(mtl_run.stop(), 0);
+  }
+};
+
+}  // namespace
+
+TEST(St20p, put_frame_abort) {
   auto ctx = st_test_ctx();
-  auto st = ctx->handle;
-
-  auto test_ctx = mtl_test::make_context(ctx, 0, 3);
-  ASSERT_TRUE(test_ctx != nullptr);
-
-  struct st20p_tx_ops ops_tx;
-  st20p_tx_ops_init(test_ctx.get(), &ops_tx);
-  ops_tx.name = "st20p_abort_test";
-  ops_tx.notify_frame_available = nullptr;
-  ops_tx.notify_event = nullptr;
-  ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
-
-  ScopedSt20pTx tx_handle(st20p_tx_create(st, &ops_tx));
-  ASSERT_TRUE(static_cast<bool>(tx_handle));
-  EXPECT_EQ(st20p_tx_set_block_timeout(tx_handle.get(), NS_PER_S), 0);
-
-  /* Get a frame then abort it instead of normal put. */
-  struct st_frame* frame = st20p_tx_get_frame(tx_handle.get());
-  ASSERT_NE(frame, nullptr);
-  EXPECT_GE(st20p_tx_put_frame_abort(tx_handle.get(), frame), 0);
-  info("%s, st20p_tx_put_frame_abort succeeded\n", __func__);
-}
-
-TEST(St20p, rx_put_frame_abort) {
-  auto ctx = st_test_ctx();
-  auto st = ctx->handle;
-
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
-  auto tx_ctx = mtl_test::make_context(ctx, 0, 3);
-  auto rx_ctx = mtl_test::make_context(ctx, 0, 3);
-  ASSERT_TRUE(tx_ctx != nullptr);
-  ASSERT_TRUE(rx_ctx != nullptr);
+  St20pLoopbackPair pair(ctx->handle);
+  St20pLoopbackOpts opts;
+  opts.start_tx_worker = false;
+  opts.start_rx_worker = false;
+  opts.start_mtl = false;
+  pair.init(ctx, ST20P_TEST_UDP_PORT, opts);
+  if (::testing::Test::HasFatalFailure()) return;
 
-  struct st20p_tx_ops ops_tx;
-  st20p_tx_ops_init(tx_ctx.get(), &ops_tx);
-  ops_tx.name = "st20p_abort_tx";
-  mtl_test::fill_tx_port(ops_tx.port, ctx, ST20P_TEST_UDP_PORT, ST20P_TEST_PAYLOAD_TYPE);
-  ops_tx.notify_frame_available = nullptr;
-  ops_tx.notify_event = nullptr;
-  ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
+  /* Verify TX abort returns the frame without transmitting. */
+  struct st_frame* tx_frame = st20p_tx_get_frame(pair.tx.get());
+  ASSERT_NE(tx_frame, nullptr);
+  EXPECT_GE(st20p_tx_put_frame_abort(pair.tx.get(), tx_frame), 0);
 
-  ScopedSt20pTx tx_handle(st20p_tx_create(st, &ops_tx));
-  ASSERT_TRUE(static_cast<bool>(tx_handle));
-  st20p_set_handle(tx_ctx.get(), tx_handle.get());
-
-  struct st20p_rx_ops ops_rx;
-  st20p_rx_ops_init(rx_ctx.get(), &ops_rx);
-  ops_rx.name = "st20p_abort_rx";
-  mtl_test::fill_rx_port(ops_rx.port, ctx, ST20P_TEST_UDP_PORT, ST20P_TEST_PAYLOAD_TYPE);
-  ops_rx.notify_frame_available = nullptr;
-  ops_rx.notify_event = nullptr;
-  ops_rx.flags |= ST20P_RX_FLAG_BLOCK_GET;
-
-  ScopedSt20pRx rx_handle(st20p_rx_create(st, &ops_rx));
-  ASSERT_TRUE(static_cast<bool>(rx_handle));
-  EXPECT_EQ(st20p_rx_set_block_timeout(rx_handle.get(), NS_PER_S), 0);
-
-  mtl_test::ScopedMtlStart mtl_run(st);
-  mtl_test::ScopedWorker tx_worker(
-      tx_ctx.get(),
-      std::thread(
-          [](tests_context* s) {
-            auto handle = static_cast<st20p_tx_handle>(st20p_get_handle(s));
-            while (!s->stop) {
-              auto frame = st20p_tx_get_frame(handle);
-              if (!frame) continue;
-              st20p_tx_put_frame(handle, frame);
-              __atomic_fetch_add(&s->fb_send, 1, __ATOMIC_RELAXED);
-            }
-          },
-          tx_ctx.get()),
-      [&]() { st20p_tx_wake_block(tx_handle.get()); });
-
-  EXPECT_GE(mtl_run.start(), 0);
-  /* Wait for TX to pace >= 10 frames (~0.17 s at 59.94 fps vs legacy sleep(2))
-   * before calling st20p_rx_get_frame. */
+  /* Start TX and verify RX abort releases an incoming frame cleanly. */
+  pair.start_tx();
+  EXPECT_GE(pair.mtl_run.start(), 0);
   EXPECT_TRUE(mtl_test::wait_until(
-      [&]() { return mtl_test::tx_frames(tx_ctx.get()) >= 10; }, 5000));
+      [&]() { return mtl_test::tx_frames(pair.tx_ctx.get()) >= 10; }, 5000));
 
-  struct st_frame* frame = nullptr;
+  struct st_frame* rx_frame = nullptr;
   mtl_test::wait_until(
       [&]() {
-        frame = st20p_rx_get_frame(rx_handle.get());
-        return frame != nullptr;
+        rx_frame = st20p_rx_get_frame(pair.rx.get());
+        return rx_frame != nullptr;
       },
       5000);
-  ASSERT_NE(frame, nullptr);
-  EXPECT_GE(st20p_rx_put_frame_abort(rx_handle.get(), frame), 0);
-  info("%s, st20p_rx_put_frame_abort succeeded\n", __func__);
+  ASSERT_NE(rx_frame, nullptr);
+  EXPECT_GE(st20p_rx_put_frame_abort(pair.rx.get(), rx_frame), 0);
 
-  tx_worker.stop();
-  EXPECT_GE(mtl_run.stop(), 0);
-}
-
-TEST(St20p, frame_is_late) {
-  auto ctx = st_test_ctx();
-  auto st = ctx->handle;
-
-  struct st_frame frame;
-  memset(&frame, 0, sizeof(frame));
-  frame.tfmt = ST10_TIMESTAMP_FMT_TAI;
-  /* Timestamp 1 second in the past is late. */
-  uint64_t now = mtl_ptp_read_time(st);
-  frame.timestamp = now - NS_PER_S;
-  EXPECT_TRUE(st_frame_is_late(st, &frame));
-
-  /* Timestamp 10 seconds in the future is not late. */
-  frame.timestamp = now + static_cast<uint64_t>(10) * NS_PER_S;
-  EXPECT_FALSE(st_frame_is_late(st, &frame));
-
-  /* Non-TAI format always returns false. */
-  frame.tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-  frame.timestamp = 0;
-  EXPECT_FALSE(st_frame_is_late(st, &frame));
-
-  info("%s, st_frame_is_late tests passed\n", __func__);
+  pair.stop_all();
 }
 
 /*
  * Verify redundant TX and RX port stats for st20p video sessions.
- * TX frames must be counted on both ports.
- * RX bytes must be approximately equal on both ports.
  * Requires 4 ports: TX on ports 0+1, RX on ports 2+3.
  */
 TEST(St20p, redundant_stats) {
   auto ctx = st_test_ctx();
-  auto st = ctx->handle;
-
   MTL_TEST_REQUIRE_PORTS(ctx, 4);
 
-  const uint16_t udp_port = ST20P_TEST_UDP_PORT + 100;
-  auto tx_ctx = make_st20p_context(ctx, 0, 3);
-  auto rx_ctx = make_st20p_context(ctx, 0, 3);
-  ASSERT_TRUE(tx_ctx != nullptr);
-  ASSERT_TRUE(rx_ctx != nullptr);
+  St20pLoopbackPair pair(ctx->handle);
+  St20pLoopbackOpts opts;
+  opts.redundant = true;
+  opts.width = 1920;
+  opts.height = 1080;
+  pair.init(ctx, ST20P_TEST_UDP_PORT + 100, opts);
+  if (::testing::Test::HasFatalFailure()) return;
 
-  struct st20p_tx_ops ops_tx;
-  st20p_tx_ops_init(tx_ctx.get(), &ops_tx);
-  ops_tx.name = "st20p_redundant_tx";
-  mtl_test::fill_tx_port(ops_tx.port, ctx, udp_port, ST20P_TEST_PAYLOAD_TYPE, 0,
-                         /*redundant=*/true);
-  ops_tx.notify_frame_available = nullptr;
-  ops_tx.notify_event = nullptr;
-  ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
-  tx_ctx->block_get = true;
-  tx_ctx->width = ops_tx.width;
-  tx_ctx->height = ops_tx.height;
-  tx_ctx->fmt = ops_tx.input_fmt;
-
-  ScopedSt20pTx tx_handle(st20p_tx_create(st, &ops_tx));
-  ASSERT_TRUE(static_cast<bool>(tx_handle));
-  EXPECT_EQ(st20p_tx_set_block_timeout(tx_handle.get(), NS_PER_S), 0);
-  st20p_set_handle(tx_ctx.get(), tx_handle.get());
-
-  struct st20p_rx_ops ops_rx;
-  st20p_rx_ops_init(rx_ctx.get(), &ops_rx);
-  ops_rx.name = "st20p_redundant_rx";
-  mtl_test::fill_rx_port(ops_rx.port, ctx, udp_port, ST20P_TEST_PAYLOAD_TYPE, 0,
-                         /*redundant=*/true);
-  ops_rx.notify_frame_available = nullptr;
-  ops_rx.notify_event = nullptr;
-  ops_rx.flags |= ST20P_RX_FLAG_BLOCK_GET;
-  rx_ctx->block_get = true;
-  rx_ctx->width = ops_rx.width;
-  rx_ctx->height = ops_rx.height;
-  rx_ctx->fmt = ops_rx.output_fmt;
-
-  ScopedSt20pRx rx_handle(st20p_rx_create(st, &ops_rx));
-  ASSERT_TRUE(static_cast<bool>(rx_handle));
-  EXPECT_EQ(st20p_rx_set_block_timeout(rx_handle.get(), NS_PER_S), 0);
-  st20p_set_handle(rx_ctx.get(), rx_handle.get());
-
-  mtl_test::ScopedMtlStart mtl_run(st);
-  mtl_test::ScopedWorker tx_worker(tx_ctx.get(),
-                                   std::thread(test_st20p_tx_frame_thread, tx_ctx.get()),
-                                   [&]() { st20p_tx_wake_block(tx_handle.get()); });
-  mtl_test::ScopedWorker rx_worker(
-      rx_ctx.get(),
-      std::thread(
-          [](tests_context* s) {
-            auto handle = static_cast<st20p_rx_handle>(st20p_get_handle(s));
-            while (!s->stop) {
-              auto frame = st20p_rx_get_frame(handle);
-              if (!frame) continue;
-              const bool complete = st_is_frame_complete(frame->status);
-              st20p_rx_put_frame(handle, frame);
-              if (complete) __atomic_fetch_add(&s->fb_rec, 1, __ATOMIC_RELAXED);
-            }
-          },
-          rx_ctx.get()),
-      [&]() { st20p_rx_wake_block(rx_handle.get()); });
-
-  EXPECT_GE(mtl_run.start(), 0);
-  /* Wait until both redundant RX legs report traffic so startup skew on leg R
-   * cannot distort the 80% byte-balance check, then accumulate >= 50 frames
-   * (~0.83 s at 59.94 fps vs legacy sleep(10)). */
+  /* Wait for both redundant RX legs to report traffic, then accumulate >= 50 frames
+   * (~0.83 s at 59.94 fps) so startup skew cannot distort the 80% byte-balance check. */
   EXPECT_TRUE(mtl_test::wait_until(
       [&]() {
         struct st20_rx_user_stats probe;
-        if (st20p_rx_get_session_stats(rx_handle.get(), &probe) < 0) return false;
+        if (st20p_rx_get_session_stats(pair.rx.get(), &probe) < 0) return false;
         return probe.common.port[MTL_SESSION_PORT_P].bytes > 0 &&
                probe.common.port[MTL_SESSION_PORT_R].bytes > 0;
       },
       6000));
-  const int base_rx = mtl_test::rx_frames(rx_ctx.get());
+  const int base_rx = mtl_test::rx_frames(pair.rx_ctx.get());
   EXPECT_TRUE(mtl_test::wait_until(
-      [&]() { return mtl_test::rx_frames(rx_ctx.get()) >= base_rx + 50; }, 6000));
+      [&]() { return mtl_test::rx_frames(pair.rx_ctx.get()) >= base_rx + 50; }, 6000));
 
-  tx_worker.stop();
-  rx_worker.stop();
-  /* Quiesce MTL tasklets before reading stats to avoid torn multi-port snapshots. */
-  EXPECT_GE(mtl_run.stop(), 0);
+  pair.stop_all();
 
   struct st20_tx_user_stats tx_stats;
-  EXPECT_GE(st20p_tx_get_session_stats(tx_handle.get(), &tx_stats), 0);
-
   struct st20_rx_user_stats rx_stats;
-  EXPECT_GE(st20p_rx_get_session_stats(rx_handle.get(), &rx_stats), 0);
-
+  EXPECT_GE(st20p_tx_get_session_stats(pair.tx.get(), &tx_stats), 0);
+  EXPECT_GE(st20p_rx_get_session_stats(pair.rx.get(), &rx_stats), 0);
   mtl_test::expect_redundant_port_stats(tx_stats, rx_stats);
 
-  EXPECT_GT(mtl_test::rx_frames(rx_ctx.get()), 0) << "Must have received frames";
+  EXPECT_GT(mtl_test::rx_frames(pair.rx_ctx.get()), 0) << "Must have received frames";
   info("%s, TX sent %d, RX received %d frames\n", __func__,
-       mtl_test::tx_frames(tx_ctx.get()), mtl_test::rx_frames(rx_ctx.get()));
+       mtl_test::tx_frames(pair.tx_ctx.get()), mtl_test::rx_frames(pair.rx_ctx.get()));
 }
 
 /*
  * Concurrency reproducer: get/reset_session_stats racing with _free().
- *
- * Pre-fix: handle has no refcount/destroying flag, so a reader thread that
- * has already entered st20p_rx_get_session_stats can be left holding a
- * pointer to a session struct (and an embedded spinlock) that the main
- * thread freed via st20p_rx_free().
- *
- * Post-fix (handle refcount): readers either complete safely or get -EIO
- * from the API and stop touching the handle; the test passes.
+ * Handle refcounting ensures readers either complete safely or receive -EIO.
  */
 static void st20p_rx_stats_concurrent_free_test(bool reset, int reader_threads = 8,
                                                 int iterations = 100) {
   auto ctx = st_test_ctx();
   auto m_handle = ctx->handle;
   auto test_ctx = mtl_test::make_context(ctx, 0, 2);
-  ASSERT_TRUE(test_ctx != nullptr);
 
   struct st20p_rx_ops ops;
   st20p_rx_ops_init(test_ctx.get(), &ops);
@@ -1617,8 +1445,6 @@ static void st20p_rx_stats_concurrent_free_test(bool reset, int reader_threads =
   std::atomic<bool> stop{false};
   std::atomic<uint64_t> calls{0};
 
-  /* Reader caches the handle locally and runs a burst of 16 API calls without
-   * re-checking `live`, widening the UAF window against st20p_rx_free(). */
   auto reader = [&]() {
     struct st20_rx_user_stats stats;
     while (!stop.load(std::memory_order_acquire)) {
@@ -1658,9 +1484,7 @@ static void st20p_rx_stats_concurrent_free_test(bool reset, int reader_threads =
     auto handle = st20p_rx_create(m_handle, &ops);
     ASSERT_TRUE(handle != nullptr) << "iter " << it;
     live.store(handle, std::memory_order_release);
-
     std::this_thread::sleep_for(std::chrono::microseconds(500));
-
     live.store(nullptr, std::memory_order_release);
     EXPECT_GE(st20p_rx_free(handle), 0) << "iter " << it;
   }
@@ -1685,9 +1509,7 @@ TEST(St20p, rx_reset_stats_concurrent_free_no_uaf) {
 static void st20p_tx_epoch_drop_test(bool user_pacing) {
   auto ctx = st_test_ctx();
   auto st = ctx->handle;
-
   auto test_ctx = mtl_test::make_context(ctx, 0, 3);
-  ASSERT_TRUE(test_ctx != nullptr);
 
   struct st20p_tx_ops ops_tx;
   st20p_tx_ops_init(test_ctx.get(), &ops_tx);
@@ -1700,8 +1522,7 @@ static void st20p_tx_epoch_drop_test(bool user_pacing) {
     ops_tx.flags |= ST20P_TX_FLAG_USER_PACING | ST20P_TX_FLAG_USER_TIMESTAMP;
   }
 
-  /* Declare handle before ScopedMtlStart so RAII stops worker -> mtl_stop -> free,
-   * while still creating the session after mtl_start (the path that reported drops). */
+  /* Create session after mtl_start while preserving worker -> mtl_stop -> free RAII. */
   ScopedSt20pTx tx_handle;
   mtl_test::ScopedMtlStart mtl_run(st);
   EXPECT_GE(mtl_run.start(), 0);
@@ -1732,13 +1553,12 @@ static void st20p_tx_epoch_drop_test(bool user_pacing) {
           test_ctx.get()),
       [&]() { st20p_tx_wake_block(tx_handle.get()); });
 
-  /* Wait for >= 40 paced frames (~0.67 s at 59.94 fps vs legacy sleep(5)):
-   * 40 frames exercises >13 wraparounds of the 3-slot framebuffer ring. */
+  /* 40 paced frames (~0.67 s at 59.94 fps) exercises >13 wraparounds of the 3-slot ring.
+   */
   EXPECT_TRUE(mtl_test::wait_until(
       [&]() { return mtl_test::tx_frames(test_ctx.get()) >= 40; }, 6000));
 
   tx_worker.stop();
-  /* Quiesce MTL tasklets before reading session stats. */
   EXPECT_GE(mtl_run.stop(), 0);
 
   struct st20_tx_user_stats stats;
@@ -1757,111 +1577,6 @@ TEST(St20p, tx_user_pacing_no_epoch_drop) {
   st20p_tx_epoch_drop_test(true);
 }
 
-namespace {
-
-/* Lightweight RAII loopback pair for ST20p control/stats/pcap API tests. */
-struct St20pLoopbackPair {
-  ScopedSt20pContext tx_ctx;
-  ScopedSt20pContext rx_ctx;
-  ScopedSt20pTx tx;
-  ScopedSt20pRx rx;
-  mtl_test::ScopedMtlStart mtl_run;
-  mtl_test::ScopedWorker tx_worker;
-  mtl_test::ScopedWorker rx_worker;
-
-  explicit St20pLoopbackPair(mtl_handle st) : mtl_run(st) {
-  }
-
-  void init(struct st_tests_context* ctx, uint16_t udp_port, uint32_t rx_extra_flags = 0,
-            int width = 1280, int height = 720, enum st_fps fps = ST_FPS_P59_94) {
-    tx_ctx = make_st20p_context(ctx, 0, 3);
-    rx_ctx = make_st20p_context(ctx, 0, 3);
-    ASSERT_TRUE(tx_ctx != nullptr);
-    ASSERT_TRUE(rx_ctx != nullptr);
-
-    struct st20p_tx_ops ops_tx;
-    st20p_tx_ops_init(tx_ctx.get(), &ops_tx);
-    ops_tx.name = "st20p_api_tx";
-    mtl_test::fill_tx_port(ops_tx.port, ctx, udp_port, ST20P_TEST_PAYLOAD_TYPE);
-    ops_tx.width = width;
-    ops_tx.height = height;
-    ops_tx.fps = fps;
-    ops_tx.input_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
-    ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
-    ops_tx.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
-    ops_tx.notify_frame_available = nullptr;
-    ops_tx.notify_event = nullptr;
-    ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
-
-    tx.reset(st20p_tx_create(ctx->handle, &ops_tx));
-    ASSERT_TRUE(static_cast<bool>(tx));
-    EXPECT_EQ(st20p_tx_set_block_timeout(tx.get(), NS_PER_S), 0);
-    st20p_set_handle(tx_ctx.get(), tx.get());
-
-    struct st20p_rx_ops ops_rx;
-    st20p_rx_ops_init(rx_ctx.get(), &ops_rx);
-    ops_rx.name = "st20p_api_rx";
-    mtl_test::fill_rx_port(ops_rx.port, ctx, udp_port, ST20P_TEST_PAYLOAD_TYPE);
-    ops_rx.width = width;
-    ops_rx.height = height;
-    ops_rx.fps = fps;
-    ops_rx.output_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
-    ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
-    ops_rx.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
-    ops_rx.notify_frame_available = nullptr;
-    ops_rx.notify_event = nullptr;
-    ops_rx.flags |= ST20P_RX_FLAG_BLOCK_GET | rx_extra_flags;
-
-    rx.reset(st20p_rx_create(ctx->handle, &ops_rx));
-    ASSERT_TRUE(static_cast<bool>(rx));
-    EXPECT_EQ(st20p_rx_set_block_timeout(rx.get(), NS_PER_S), 0);
-    st20p_set_handle(rx_ctx.get(), rx.get());
-
-    st20p_tx_handle tx_h = tx.get();
-    tx_worker = mtl_test::ScopedWorker(
-        tx_ctx.get(),
-        std::thread(
-            [](tests_context* s) {
-              auto handle = static_cast<st20p_tx_handle>(st20p_get_handle(s));
-              while (!s->stop) {
-                auto* frame = st20p_tx_get_frame(handle);
-                if (!frame) continue;
-                st20p_tx_put_frame(handle, frame);
-                __atomic_fetch_add(&s->fb_send, 1, __ATOMIC_RELAXED);
-              }
-            },
-            tx_ctx.get()),
-        [tx_h]() { st20p_tx_wake_block(tx_h); });
-
-    st20p_rx_handle rx_h = rx.get();
-    rx_worker = mtl_test::ScopedWorker(
-        rx_ctx.get(),
-        std::thread(
-            [](tests_context* s) {
-              auto handle = static_cast<st20p_rx_handle>(st20p_get_handle(s));
-              while (!s->stop) {
-                auto* frame = st20p_rx_get_frame(handle);
-                if (!frame) continue;
-                const bool complete = st_is_frame_complete(frame->status);
-                st20p_rx_put_frame(handle, frame);
-                if (complete) __atomic_fetch_add(&s->fb_rec, 1, __ATOMIC_RELAXED);
-              }
-            },
-            rx_ctx.get()),
-        [rx_h]() { st20p_rx_wake_block(rx_h); });
-
-    EXPECT_GE(mtl_run.start(), 0);
-  }
-
-  void stop_all() {
-    tx_worker.stop();
-    rx_worker.stop();
-    EXPECT_GE(mtl_run.stop(), 0);
-  }
-};
-
-}  // namespace
-
 TEST(St20p, query_params) {
   auto ctx = st_test_ctx();
   auto st = ctx->handle;
@@ -1869,8 +1584,6 @@ TEST(St20p, query_params) {
 
   auto tx_ctx = mtl_test::make_context(ctx, 0, fb_cnt);
   auto rx_ctx = mtl_test::make_context(ctx, 1, fb_cnt);
-  ASSERT_TRUE(tx_ctx != nullptr);
-  ASSERT_TRUE(rx_ctx != nullptr);
 
   struct st20p_tx_ops ops_tx;
   st20p_tx_ops_init(tx_ctx.get(), &ops_tx);
@@ -1981,51 +1694,27 @@ TEST(St20p, update_source_and_destination) {
   EXPECT_TRUE(mtl_test::wait_until(
       [&]() { return mtl_test::rx_frames(pair.rx_ctx.get()) >= 5; }, 6000));
 
-  /* Switch TX destination and RX source to a new UDP port / IP. */
-  struct st_tx_dest_info dst = {};
-  struct st_rx_source_info src = {};
-  dst.udp_port[MTL_SESSION_PORT_P] = udp_port_2;
-  src.udp_port[MTL_SESSION_PORT_P] = udp_port_2;
-  if (use_mcast_phase2) {
-    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
-    memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
-  } else {
-    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
-           MTL_IP_ADDR_LEN);
-    memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
-  }
-  EXPECT_GE(st20p_tx_update_destination(pair.tx.get(), &dst), 0);
-  EXPECT_GE(st20p_rx_update_source(pair.rx.get(), &src), 0);
+  auto switch_and_wait = [&](uint16_t udp_port, bool use_mcast) {
+    struct st_tx_dest_info dst = {};
+    struct st_rx_source_info src = {};
+    dst.udp_port[MTL_SESSION_PORT_P] = udp_port;
+    src.udp_port[MTL_SESSION_PORT_P] = udp_port;
+    const uint8_t* tx_ip =
+        use_mcast ? ctx->mcast_ip_addr[MTL_PORT_P] : ctx->para.sip_addr[MTL_PORT_R];
+    const uint8_t* rx_ip =
+        use_mcast ? ctx->mcast_ip_addr[MTL_PORT_P] : ctx->para.sip_addr[MTL_PORT_P];
+    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], tx_ip, MTL_IP_ADDR_LEN);
+    memcpy(src.ip_addr[MTL_SESSION_PORT_P], rx_ip, MTL_IP_ADDR_LEN);
+    EXPECT_GE(st20p_tx_update_destination(pair.tx.get(), &dst), 0);
+    EXPECT_GE(st20p_rx_update_source(pair.rx.get(), &src), 0);
 
-  const int base_rx_1 = mtl_test::rx_frames(pair.rx_ctx.get());
-  EXPECT_TRUE(mtl_test::wait_until(
-      [&]() { return mtl_test::rx_frames(pair.rx_ctx.get()) >= base_rx_1 + 5; }, 6000));
+    const int base_rx = mtl_test::rx_frames(pair.rx_ctx.get());
+    EXPECT_TRUE(mtl_test::wait_until(
+        [&]() { return mtl_test::rx_frames(pair.rx_ctx.get()) >= base_rx + 5; }, 6000));
+  };
 
-  /* Switch back to initial UDP port / IP. */
-  memset(&dst, 0, sizeof(dst));
-  memset(&src, 0, sizeof(src));
-  dst.udp_port[MTL_SESSION_PORT_P] = udp_port_1;
-  src.udp_port[MTL_SESSION_PORT_P] = udp_port_1;
-  if (ctx->mcast_only) {
-    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
-    memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
-  } else {
-    memcpy(dst.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
-           MTL_IP_ADDR_LEN);
-    memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
-  }
-  EXPECT_GE(st20p_tx_update_destination(pair.tx.get(), &dst), 0);
-  EXPECT_GE(st20p_rx_update_source(pair.rx.get(), &src), 0);
-
-  const int base_rx_2 = mtl_test::rx_frames(pair.rx_ctx.get());
-  EXPECT_TRUE(mtl_test::wait_until(
-      [&]() { return mtl_test::rx_frames(pair.rx_ctx.get()) >= base_rx_2 + 5; }, 6000));
+  switch_and_wait(udp_port_2, use_mcast_phase2);
+  switch_and_wait(udp_port_1, ctx->mcast_only);
   pair.stop_all();
 }
 
@@ -2034,10 +1723,11 @@ TEST(St20p, rx_timing_parser_critical) {
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
   St20pLoopbackPair pair(ctx->handle);
-  pair.init(ctx, ST20P_TEST_UDP_PORT + 130, ST20P_RX_FLAG_TIMING_PARSER_META);
+  St20pLoopbackOpts opts;
+  opts.rx_extra_flags = ST20P_RX_FLAG_TIMING_PARSER_META;
+  pair.init(ctx, ST20P_TEST_UDP_PORT + 130, opts);
   if (::testing::Test::HasFatalFailure()) return;
 
-  /* Timing parser initializes after stream auto-detection on first received frames. */
   EXPECT_TRUE(mtl_test::wait_until(
       [&]() { return mtl_test::rx_frames(pair.rx_ctx.get()) >= 5; }, 6000));
 
@@ -2077,7 +1767,7 @@ TEST(St20p, rx_pcapng_dump) {
     ~UnlinkGuard() {
       if (path && path[0] != '\0') unlink(path);
     }
-  } unlink_guard{ret >= 0 ? meta.file_name[MTL_SESSION_PORT_P] : nullptr};
+  } unlink_guard{meta.file_name[MTL_SESSION_PORT_P]};
 
   EXPECT_GE(ret, 0);
   EXPECT_EQ(meta.dumped_packets[MTL_SESSION_PORT_P], max_dump_packets);

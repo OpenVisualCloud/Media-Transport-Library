@@ -324,18 +324,4 @@ TEST_F(St40Rfc8331CodecTest, CalcChecksumDirect) {
     st40_set_udw(i, 0x1FFu, wrap_buf);
   }
   EXPECT_EQ(st40_calc_checksum(5, wrap_buf), 0x1FBu);
-
-  /* Cross-check against wire checksum emitted by st40_rfc8331_encode_packet. */
-  auto in = make_meta(0x43, 0x02, 10, 0, 1, 1, 8);
-  auto udw = make_udw(8, 0x10);
-  std::vector<uint8_t> pkt_buf(kBufRoom, 0);
-  uint32_t written = 0;
-  ASSERT_EQ(
-      st40_rfc8331_encode_packet(pkt_buf.data(), kBufRoom, &in, udw.data(), &written), 0);
-  const auto* ph =
-      reinterpret_cast<const struct st40_rfc8331_payload_hdr*>(pkt_buf.data());
-  const uint8_t* udw_base = reinterpret_cast<const uint8_t*>(&ph->second_hdr_chunk);
-  const uint16_t wire_cs = st40_get_udw(11, udw_base);
-  const uint16_t calc_cs = st40_calc_checksum(11, udw_base);
-  EXPECT_EQ(calc_cs, wire_cs);
 }

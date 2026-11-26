@@ -34,7 +34,7 @@ class ScopedMtlStart {
 
   int start() {
     if (!handle_) return -EINVAL;
-    int ret = mtl_start(handle_);
+    const int ret = mtl_start(handle_);
     if (ret >= 0) started_ = true;
     return ret;
   }
@@ -62,14 +62,12 @@ class ScopedHandle {
   }
   ScopedHandle(const ScopedHandle&) = delete;
   ScopedHandle& operator=(const ScopedHandle&) = delete;
-  ScopedHandle(ScopedHandle&& other) noexcept : handle_(other.handle_) {
-    other.handle_ = nullptr;
+  ScopedHandle(ScopedHandle&& o) noexcept : handle_(std::exchange(o.handle_, nullptr)) {
   }
-  ScopedHandle& operator=(ScopedHandle&& other) noexcept {
-    if (this != &other) {
+  ScopedHandle& operator=(ScopedHandle&& o) noexcept {
+    if (this != &o) {
       reset();
-      handle_ = other.handle_;
-      other.handle_ = nullptr;
+      handle_ = std::exchange(o.handle_, nullptr);
     }
     return *this;
   }
@@ -83,17 +81,13 @@ class ScopedHandle {
 
   void reset(Handle h = nullptr) {
     if (handle_ == h) return;
-    Handle old = std::exchange(handle_, h);
-    if (old) {
-      int ret = FreeFn(old);
-      EXPECT_GE(ret, 0);
+    if (Handle old = std::exchange(handle_, h)) {
+      EXPECT_GE(FreeFn(old), 0);
     }
   }
 
   Handle release() {
-    Handle h = handle_;
-    handle_ = nullptr;
-    return h;
+    return std::exchange(handle_, nullptr);
   }
 
  private:
@@ -121,18 +115,6 @@ inline ScopedContext make_context(struct st_tests_context* global_ctx, int idx =
   return c;
 }
 
-/* Stop a worker thread cleanly via tests_context::stop + cv + optional wake fn. */
-inline void stop_worker(tests_context* c, std::thread& th,
-                        std::function<void()> wake_fn = nullptr) {
-  if (c) c->stop = true;
-  if (wake_fn) wake_fn();
-  if (c) {
-    std::lock_guard<std::mutex> lck(c->mtx);
-    c->cv.notify_all();
-  }
-  if (th.joinable()) th.join();
-}
-
 /* Move-only RAII wrapper that stops, wakes, and joins a worker thread on exit. */
 class ScopedWorker {
  public:
@@ -146,17 +128,17 @@ class ScopedWorker {
   }
   ScopedWorker(const ScopedWorker&) = delete;
   ScopedWorker& operator=(const ScopedWorker&) = delete;
-  ScopedWorker(ScopedWorker&& other) noexcept
-      : ctx_(std::exchange(other.ctx_, nullptr)),
-        th_(std::move(other.th_)),
-        wake_fn_(std::exchange(other.wake_fn_, nullptr)) {
+  ScopedWorker(ScopedWorker&& o) noexcept
+      : ctx_(std::exchange(o.ctx_, nullptr)),
+        th_(std::move(o.th_)),
+        wake_fn_(std::exchange(o.wake_fn_, nullptr)) {
   }
-  ScopedWorker& operator=(ScopedWorker&& other) noexcept {
-    if (this != &other) {
+  ScopedWorker& operator=(ScopedWorker&& o) noexcept {
+    if (this != &o) {
       stop();
-      ctx_ = std::exchange(other.ctx_, nullptr);
-      th_ = std::move(other.th_);
-      wake_fn_ = std::exchange(other.wake_fn_, nullptr);
+      ctx_ = std::exchange(o.ctx_, nullptr);
+      th_ = std::move(o.th_);
+      wake_fn_ = std::exchange(o.wake_fn_, nullptr);
     }
     return *this;
   }
@@ -164,9 +146,13 @@ class ScopedWorker {
   void stop() {
     tests_context* ctx = std::exchange(ctx_, nullptr);
     std::function<void()> wake_fn = std::exchange(wake_fn_, nullptr);
-    if (ctx || wake_fn || th_.joinable()) {
-      stop_worker(ctx, th_, std::move(wake_fn));
+    if (ctx) ctx->stop = true;
+    if (wake_fn) wake_fn();
+    if (ctx) {
+      std::lock_guard<std::mutex> lck(ctx->mtx);
+      ctx->cv.notify_all();
     }
+    if (th_.joinable()) th_.join();
   }
 
  private:
@@ -183,24 +169,22 @@ class ScopedPluginFaults {
                      bool use_block_get = false)
       : ctx_(ctx) {
     if (!ctx_) return;
-    prev_fail_interval_ = ctx_->plugin_fail_interval;
-    prev_timeout_interval_ = ctx_->plugin_timeout_interval;
-    prev_timeout_ms_ = ctx_->plugin_timeout_ms;
-    prev_rand_ratio_ = ctx_->plugin_rand_ratio;
-    prev_encoder_use_block_get_ = ctx_->encoder_use_block_get;
-    prev_decoder_use_block_get_ = ctx_->decoder_use_block_get;
-    st_test_jxs_fail_interval(ctx_, fail_interval);
-    st_test_jxs_timeout_interval(ctx_, timeout_interval);
-    st_test_jxs_timeout_ms(ctx_, timeout_ms);
-    st_test_jxs_rand_ratio(ctx_, rand_ratio);
-    st_test_jxs_use_block_get(ctx_, use_block_get);
+    prev_fail_interval_ = std::exchange(ctx_->plugin_fail_interval, fail_interval);
+    prev_timeout_interval_ =
+        std::exchange(ctx_->plugin_timeout_interval, timeout_interval);
+    prev_timeout_ms_ = std::exchange(ctx_->plugin_timeout_ms, timeout_ms);
+    prev_rand_ratio_ = std::exchange(ctx_->plugin_rand_ratio, rand_ratio);
+    prev_encoder_use_block_get_ =
+        std::exchange(ctx_->encoder_use_block_get, use_block_get);
+    prev_decoder_use_block_get_ =
+        std::exchange(ctx_->decoder_use_block_get, use_block_get);
   }
   ~ScopedPluginFaults() {
     if (!ctx_) return;
-    st_test_jxs_fail_interval(ctx_, prev_fail_interval_);
-    st_test_jxs_timeout_interval(ctx_, prev_timeout_interval_);
-    st_test_jxs_timeout_ms(ctx_, prev_timeout_ms_);
-    st_test_jxs_rand_ratio(ctx_, prev_rand_ratio_);
+    ctx_->plugin_fail_interval = prev_fail_interval_;
+    ctx_->plugin_timeout_interval = prev_timeout_interval_;
+    ctx_->plugin_timeout_ms = prev_timeout_ms_;
+    ctx_->plugin_rand_ratio = prev_rand_ratio_;
     ctx_->encoder_use_block_get = prev_encoder_use_block_get_;
     ctx_->decoder_use_block_get = prev_decoder_use_block_get_;
   }
@@ -231,23 +215,19 @@ class ScopedLcore {
   }
   ScopedLcore(const ScopedLcore&) = delete;
   ScopedLcore& operator=(const ScopedLcore&) = delete;
-  ScopedLcore(ScopedLcore&& other) noexcept
-      : handle_(other.handle_), lcore_(other.lcore_), owned_(other.owned_) {
-    other.handle_ = nullptr;
-    other.lcore_ = 0;
-    other.owned_ = false;
+  ScopedLcore(ScopedLcore&& o) noexcept
+      : handle_(std::exchange(o.handle_, nullptr)),
+        lcore_(std::exchange(o.lcore_, 0)),
+        owned_(std::exchange(o.owned_, false)) {
   }
-  ScopedLcore& operator=(ScopedLcore&& other) noexcept {
-    if (this != &other) {
+  ScopedLcore& operator=(ScopedLcore&& o) noexcept {
+    if (this != &o) {
       if (owned_) {
         EXPECT_GE(reset(), 0);
       }
-      handle_ = other.handle_;
-      lcore_ = other.lcore_;
-      owned_ = other.owned_;
-      other.handle_ = nullptr;
-      other.lcore_ = 0;
-      other.owned_ = false;
+      handle_ = std::exchange(o.handle_, nullptr);
+      lcore_ = std::exchange(o.lcore_, 0);
+      owned_ = std::exchange(o.owned_, false);
     }
     return *this;
   }
@@ -287,18 +267,15 @@ class ScopedSch {
   }
   ScopedSch(const ScopedSch&) = delete;
   ScopedSch& operator=(const ScopedSch&) = delete;
-  ScopedSch(ScopedSch&& other) noexcept
-      : handle_(other.handle_), started_(other.started_) {
-    other.handle_ = nullptr;
-    other.started_ = false;
+  ScopedSch(ScopedSch&& o) noexcept
+      : handle_(std::exchange(o.handle_, nullptr)),
+        started_(std::exchange(o.started_, false)) {
   }
-  ScopedSch& operator=(ScopedSch&& other) noexcept {
-    if (this != &other) {
+  ScopedSch& operator=(ScopedSch&& o) noexcept {
+    if (this != &o) {
       reset();
-      handle_ = other.handle_;
-      started_ = other.started_;
-      other.handle_ = nullptr;
-      other.started_ = false;
+      handle_ = std::exchange(o.handle_, nullptr);
+      started_ = std::exchange(o.started_, false);
     }
     return *this;
   }
@@ -312,7 +289,7 @@ class ScopedSch {
 
   int start() {
     if (!handle_) return -EINVAL;
-    int ret = mtl_sch_start(handle_);
+    const int ret = mtl_sch_start(handle_);
     if (ret >= 0) started_ = true;
     return ret;
   }
@@ -327,10 +304,8 @@ class ScopedSch {
     if (started_ && handle_) {
       EXPECT_GE(stop(), 0);
     }
-    if (handle_) {
-      int ret = mtl_sch_free(handle_);
-      EXPECT_GE(ret, 0);
-      handle_ = nullptr;
+    if (mtl_sch_handle old = std::exchange(handle_, nullptr)) {
+      EXPECT_GE(mtl_sch_free(old), 0);
     }
   }
 
@@ -345,13 +320,9 @@ inline void fill_raw_tx_port(TxOps& ops, const struct st_tests_context* ctx,
                              uint16_t udp_port, uint8_t pt, uint32_t ssrc = 0,
                              bool redundant = false) {
   ops.num_port = redundant ? 2 : 1;
-  if (redundant || ctx->mcast_only) {
-    memcpy(ops.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
-  } else {
-    memcpy(ops.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
-           MTL_IP_ADDR_LEN);
-  }
+  const uint8_t* dip = (redundant || ctx->mcast_only) ? ctx->mcast_ip_addr[MTL_PORT_P]
+                                                      : ctx->para.sip_addr[MTL_PORT_R];
+  memcpy(ops.dip_addr[MTL_SESSION_PORT_P], dip, MTL_IP_ADDR_LEN);
   snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_P]);
   ops.udp_port[MTL_SESSION_PORT_P] = udp_port;
@@ -372,35 +343,38 @@ inline void fill_tx_port(struct st_tx_port& p, struct st_tests_context* ctx,
   fill_raw_tx_port(p, ctx, udp_port, pt, ssrc, redundant);
 }
 
+template <typename RxOps>
+inline void fill_raw_rx_port(RxOps& ops, const struct st_tests_context* ctx,
+                             uint16_t udp_port, uint8_t pt, uint32_t ssrc = 0,
+                             bool redundant = false) {
+  ops.num_port = redundant ? 2 : 1;
+  if (redundant) {
+    memcpy(ops.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
+    snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+             ctx->para.port[MTL_PORT_2]);
+    ops.udp_port[MTL_SESSION_PORT_P] = udp_port;
+    memcpy(ops.ip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    snprintf(ops.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+             ctx->para.port[MTL_PORT_3]);
+    ops.udp_port[MTL_SESSION_PORT_R] = udp_port;
+  } else {
+    const uint8_t* src_ip =
+        ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_P] : ctx->para.sip_addr[MTL_PORT_P];
+    memcpy(ops.ip_addr[MTL_SESSION_PORT_P], src_ip, MTL_IP_ADDR_LEN);
+    snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+             ctx->para.port[MTL_PORT_R]);
+    ops.udp_port[MTL_SESSION_PORT_P] = udp_port;
+  }
+  ops.payload_type = pt;
+  ops.ssrc = ssrc;
+}
+
 inline void fill_rx_port(struct st_rx_port& p, struct st_tests_context* ctx,
                          uint16_t udp_port, uint8_t pt, uint32_t ssrc = 0,
                          bool redundant = false) {
-  p.num_port = redundant ? 2 : 1;
-  if (redundant) {
-    memcpy(p.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
-    snprintf(p.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-             ctx->para.port[MTL_PORT_2]);
-    p.udp_port[MTL_SESSION_PORT_P] = udp_port;
-    memcpy(p.ip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
-           MTL_IP_ADDR_LEN);
-    snprintf(p.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
-             ctx->para.port[MTL_PORT_3]);
-    p.udp_port[MTL_SESSION_PORT_R] = udp_port;
-  } else {
-    if (ctx->mcast_only) {
-      memcpy(p.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-             MTL_IP_ADDR_LEN);
-    } else {
-      memcpy(p.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
-             MTL_IP_ADDR_LEN);
-    }
-    snprintf(p.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-             ctx->para.port[MTL_PORT_R]);
-    p.udp_port[MTL_SESSION_PORT_P] = udp_port;
-  }
-  p.payload_type = pt;
-  p.ssrc = ssrc;
+  fill_raw_rx_port(p, ctx, udp_port, pt, ssrc, redundant);
 }
 
 inline bool is_kernel_loopback(const struct st_tests_context* ctx) {
@@ -420,27 +394,20 @@ inline void expect_redundant_port_stats(const TxStats& tx_stats, const RxStats& 
       << "TX port frames must match (port0=" << tx_frames_p << " port1=" << tx_frames_r
       << ")";
 
-  if (check_tx_packets) {
-    const uint64_t tx_pkts_p = tx_stats.common.port[MTL_SESSION_PORT_P].packets;
-    const uint64_t tx_pkts_r = tx_stats.common.port[MTL_SESSION_PORT_R].packets;
-    EXPECT_GT(tx_pkts_p, static_cast<uint64_t>(0)) << "TX port 0 packets must be > 0";
-    EXPECT_GT(tx_pkts_r, static_cast<uint64_t>(0)) << "TX port 1 packets must be > 0";
-    const uint64_t tx_max_pkts = std::max(tx_pkts_p, tx_pkts_r);
-    const uint64_t tx_min_pkts = std::min(tx_pkts_p, tx_pkts_r);
-    EXPECT_GE(tx_min_pkts * 10, tx_max_pkts * 8)
-        << "TX port packets differ by more than 20% (port0=" << tx_pkts_p
-        << " port1=" << tx_pkts_r << ")";
-  }
+  auto expect_within_20pct = [](uint64_t a, uint64_t b, const char* what) {
+    EXPECT_GT(a, static_cast<uint64_t>(0)) << what << " port 0 must be > 0";
+    EXPECT_GT(b, static_cast<uint64_t>(0)) << what << " port 1 must be > 0";
+    EXPECT_GE(std::min(a, b) * 10, std::max(a, b) * 8)
+        << what << " differ by more than 20% (port0=" << a << " port1=" << b << ")";
+  };
 
-  const uint64_t rx_bytes_p = rx_stats.common.port[MTL_SESSION_PORT_P].bytes;
-  const uint64_t rx_bytes_r = rx_stats.common.port[MTL_SESSION_PORT_R].bytes;
-  EXPECT_GT(rx_bytes_p, static_cast<uint64_t>(0)) << "RX port 0 bytes must be > 0";
-  EXPECT_GT(rx_bytes_r, static_cast<uint64_t>(0)) << "RX port 1 bytes must be > 0";
-  const uint64_t rx_max_bytes = std::max(rx_bytes_p, rx_bytes_r);
-  const uint64_t rx_min_bytes = std::min(rx_bytes_p, rx_bytes_r);
-  EXPECT_GE(rx_min_bytes * 10, rx_max_bytes * 8)
-      << "RX port bytes differ by more than 20% (port0=" << rx_bytes_p
-      << " port1=" << rx_bytes_r << ")";
+  if (check_tx_packets) {
+    expect_within_20pct(tx_stats.common.port[MTL_SESSION_PORT_P].packets,
+                        tx_stats.common.port[MTL_SESSION_PORT_R].packets,
+                        "TX port packets");
+  }
+  expect_within_20pct(rx_stats.common.port[MTL_SESSION_PORT_P].bytes,
+                      rx_stats.common.port[MTL_SESSION_PORT_R].bytes, "RX port bytes");
 }
 
 }  // namespace mtl_test

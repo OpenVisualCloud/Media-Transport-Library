@@ -11,9 +11,7 @@
 #include <fstream>
 #include <string>
 
-#include "core/constants.hpp"
 #include "core/test_fixture.hpp"
-#include "handlers/st30p_handler.hpp"
 #include "strategies/st30p_strategies.hpp"
 
 static_assert(kSt30pRxToleranceNs == int64_t{40} * NS_PER_US, "comments quote +40 us");
@@ -38,7 +36,7 @@ std::string exclusivePartitionError() {
          "partition: cgroup " +
          path + ", partition '" + partition +
          "', MTL_CPU_ISOLATION=" + (isolation ? isolation : "unset") +
-         "; run via tests/integration_tests/noctx/run.sh "
+         "; run via tests/integration_tests/runner/gtest_runner.py --profile '^noctx$' "
          "(tests/tools/isolate/isolate.sh) on a host that allows it; see "
          "tests/tools/isolate/README.md";
 }
@@ -66,8 +64,6 @@ TEST_F(NoCtxTest, st30p_default_timestamps) {
       [](St30pHandler* handler) { return new St30pDefaultPacingOracle(handler); });
   auto* handler = bundle.handler;
   auto* strategy = static_cast<St30pDefaultPacingOracle*>(bundle.strategy);
-  ASSERT_NE(handler, nullptr);
-  ASSERT_NE(strategy, nullptr);
 
   handler->startSession();
   ASSERT_EQ(mtl_start(ctx->handle), 0);
@@ -112,8 +108,6 @@ TEST_F(NoCtxTest, st30p_user_pacing) {
       [](St30pHandler* handler) { handler->sessionsOpsTx.flags |= kTxFlags; });
   auto* handler = bundle.handler;
   auto* strategy = static_cast<St30pUserPacingOracle*>(bundle.strategy);
-  ASSERT_NE(handler, nullptr);
-  ASSERT_NE(strategy, nullptr);
 
   strategy->initializeTiming(handler);
   sleep(1);

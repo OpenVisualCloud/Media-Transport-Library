@@ -21,12 +21,11 @@ using ScopedUdma = ScopedHandle<mtl_udma_handle, mtl_udma_free>;
 /* Submit queued uDMA operations and wait for expected completions with a deadline. */
 inline bool udma_submit_and_wait(mtl_udma_handle dma, uint16_t expected,
                                  int timeout_ms = 5000) {
-  if (!dma) return false;
-  if (mtl_udma_submit(dma) < 0) return false;
+  if (!dma || mtl_udma_submit(dma) < 0) return false;
   uint16_t done = 0;
-  const int clamped_timeout_ms = timeout_ms > 0 ? timeout_ms : 0;
-  const uint64_t deadline = st_test_get_monotonic_time() +
-                            static_cast<uint64_t>(clamped_timeout_ms) * NS_PER_MS;
+  const uint64_t deadline =
+      st_test_get_monotonic_time() +
+      static_cast<uint64_t>(timeout_ms > 0 ? timeout_ms : 0) * NS_PER_MS;
   while (done < expected) {
     done += mtl_udma_completed(dma, static_cast<uint16_t>(expected - done));
     if (done >= expected) return true;
@@ -56,24 +55,19 @@ class ScopedHpBuf {
   }
   ScopedHpBuf(const ScopedHpBuf&) = delete;
   ScopedHpBuf& operator=(const ScopedHpBuf&) = delete;
-  ScopedHpBuf(ScopedHpBuf&& other) noexcept
-      : st_(other.st_), size_(other.size_), ptr_(other.ptr_), iova_(other.iova_) {
-    other.st_ = nullptr;
-    other.size_ = 0;
-    other.ptr_ = nullptr;
-    other.iova_ = MTL_BAD_IOVA;
+  ScopedHpBuf(ScopedHpBuf&& o) noexcept
+      : st_(std::exchange(o.st_, nullptr)),
+        size_(std::exchange(o.size_, 0)),
+        ptr_(std::exchange(o.ptr_, nullptr)),
+        iova_(std::exchange(o.iova_, MTL_BAD_IOVA)) {
   }
-  ScopedHpBuf& operator=(ScopedHpBuf&& other) noexcept {
-    if (this != &other) {
+  ScopedHpBuf& operator=(ScopedHpBuf&& o) noexcept {
+    if (this != &o) {
       reset();
-      st_ = other.st_;
-      size_ = other.size_;
-      ptr_ = other.ptr_;
-      iova_ = other.iova_;
-      other.st_ = nullptr;
-      other.size_ = 0;
-      other.ptr_ = nullptr;
-      other.iova_ = MTL_BAD_IOVA;
+      st_ = std::exchange(o.st_, nullptr);
+      size_ = std::exchange(o.size_, 0);
+      ptr_ = std::exchange(o.ptr_, nullptr);
+      iova_ = std::exchange(o.iova_, MTL_BAD_IOVA);
     }
     return *this;
   }
@@ -113,16 +107,27 @@ class ScopedHpBuf {
 class PageAlignedBuf {
  public:
   PageAlignedBuf() = default;
-  PageAlignedBuf(size_t usable_size, size_t pg_sz) {
+  PageAlignedBuf(size_t usable_size, size_t pg_sz, bool zero = false) {
     if (pg_sz == 0 || (pg_sz & (pg_sz - 1)) != 0 ||
         pg_sz > (std::numeric_limits<size_t>::max() - usable_size) / 3) {
       return;
     }
-    raw_.reset(static_cast<uint8_t*>(malloc(usable_size + 3 * pg_sz)));
+    const size_t alloc_sz = usable_size + 3 * pg_sz;
+    raw_.reset(static_cast<uint8_t*>(zero ? calloc(1, alloc_sz) : malloc(alloc_sz)));
     if (raw_) {
       aligned_ = reinterpret_cast<uint8_t*>(
           MTL_ALIGN(reinterpret_cast<uint64_t>(raw_.get()) + pg_sz, pg_sz));
     }
+  }
+  PageAlignedBuf(PageAlignedBuf&& o) noexcept
+      : raw_(std::move(o.raw_)), aligned_(std::exchange(o.aligned_, nullptr)) {
+  }
+  PageAlignedBuf& operator=(PageAlignedBuf&& o) noexcept {
+    if (this != &o) {
+      raw_ = std::move(o.raw_);
+      aligned_ = std::exchange(o.aligned_, nullptr);
+    }
+    return *this;
   }
 
   uint8_t* data() const {
@@ -154,26 +159,21 @@ class ScopedDmaMap {
   }
   ScopedDmaMap(const ScopedDmaMap&) = delete;
   ScopedDmaMap& operator=(const ScopedDmaMap&) = delete;
-  ScopedDmaMap(ScopedDmaMap&& other) noexcept
-      : st_(other.st_), vaddr_(other.vaddr_), size_(other.size_), iova_(other.iova_) {
-    other.st_ = nullptr;
-    other.vaddr_ = nullptr;
-    other.size_ = 0;
-    other.iova_ = MTL_BAD_IOVA;
+  ScopedDmaMap(ScopedDmaMap&& o) noexcept
+      : st_(std::exchange(o.st_, nullptr)),
+        vaddr_(std::exchange(o.vaddr_, nullptr)),
+        size_(std::exchange(o.size_, 0)),
+        iova_(std::exchange(o.iova_, MTL_BAD_IOVA)) {
   }
-  ScopedDmaMap& operator=(ScopedDmaMap&& other) noexcept {
-    if (this != &other) {
+  ScopedDmaMap& operator=(ScopedDmaMap&& o) noexcept {
+    if (this != &o) {
       if (valid()) {
         EXPECT_GE(unmap(), 0);
       }
-      st_ = other.st_;
-      vaddr_ = other.vaddr_;
-      size_ = other.size_;
-      iova_ = other.iova_;
-      other.st_ = nullptr;
-      other.vaddr_ = nullptr;
-      other.size_ = 0;
-      other.iova_ = MTL_BAD_IOVA;
+      st_ = std::exchange(o.st_, nullptr);
+      vaddr_ = std::exchange(o.vaddr_, nullptr);
+      size_ = std::exchange(o.size_, 0);
+      iova_ = std::exchange(o.iova_, MTL_BAD_IOVA);
     }
     return *this;
   }
@@ -190,8 +190,7 @@ class ScopedDmaMap {
       iova_ = MTL_BAD_IOVA;
       return 0;
     }
-    mtl_iova_t iova = iova_;
-    iova_ = MTL_BAD_IOVA;
+    const mtl_iova_t iova = std::exchange(iova_, MTL_BAD_IOVA);
     return mtl_dma_unmap(st_, vaddr_, iova, size_);
   }
 
@@ -214,17 +213,14 @@ class ScopedDmaMem {
   }
   ScopedDmaMem(const ScopedDmaMem&) = delete;
   ScopedDmaMem& operator=(const ScopedDmaMem&) = delete;
-  ScopedDmaMem(ScopedDmaMem&& other) noexcept : st_(other.st_), handle_(other.handle_) {
-    other.st_ = nullptr;
-    other.handle_ = nullptr;
+  ScopedDmaMem(ScopedDmaMem&& o) noexcept
+      : st_(std::exchange(o.st_, nullptr)), handle_(std::exchange(o.handle_, nullptr)) {
   }
-  ScopedDmaMem& operator=(ScopedDmaMem&& other) noexcept {
-    if (this != &other) {
+  ScopedDmaMem& operator=(ScopedDmaMem&& o) noexcept {
+    if (this != &o) {
       reset();
-      st_ = other.st_;
-      handle_ = other.handle_;
-      other.st_ = nullptr;
-      other.handle_ = nullptr;
+      st_ = std::exchange(o.st_, nullptr);
+      handle_ = std::exchange(o.handle_, nullptr);
     }
     return *this;
   }
@@ -260,44 +256,18 @@ class ScopedDmaMem {
 class ScopedExtFrames {
  public:
   ScopedExtFrames() = default;
-  ~ScopedExtFrames() {
-    reset();
-  }
+  ~ScopedExtFrames() = default;
   ScopedExtFrames(const ScopedExtFrames&) = delete;
   ScopedExtFrames& operator=(const ScopedExtFrames&) = delete;
-  ScopedExtFrames(ScopedExtFrames&& other) noexcept
-      : st_(other.st_),
-        raw_(other.raw_),
-        aligned_(other.aligned_),
-        iova_(other.iova_),
-        map_sz_(other.map_sz_),
-        frame_size_(other.frame_size_),
-        frames_(std::move(other.frames_)),
-        in_use_(std::move(other.in_use_)) {
-    other.st_ = nullptr;
-    other.raw_ = nullptr;
-    other.aligned_ = nullptr;
-    other.iova_ = MTL_BAD_IOVA;
-    other.map_sz_ = 0;
-    other.frame_size_ = 0;
-  }
-  ScopedExtFrames& operator=(ScopedExtFrames&& other) noexcept {
-    if (this != &other) {
+  ScopedExtFrames(ScopedExtFrames&&) noexcept = default;
+  ScopedExtFrames& operator=(ScopedExtFrames&& o) noexcept {
+    if (this != &o) {
       reset();
-      st_ = other.st_;
-      raw_ = other.raw_;
-      aligned_ = other.aligned_;
-      iova_ = other.iova_;
-      map_sz_ = other.map_sz_;
-      frame_size_ = other.frame_size_;
-      frames_ = std::move(other.frames_);
-      in_use_ = std::move(other.in_use_);
-      other.st_ = nullptr;
-      other.raw_ = nullptr;
-      other.aligned_ = nullptr;
-      other.iova_ = MTL_BAD_IOVA;
-      other.map_sz_ = 0;
-      other.frame_size_ = 0;
+      buf_ = std::move(o.buf_);
+      dma_map_ = std::move(o.dma_map_);
+      frame_size_ = std::exchange(o.frame_size_, 0);
+      frames_ = std::move(o.frames_);
+      in_use_ = std::move(o.in_use_);
     }
     return *this;
   }
@@ -309,21 +279,32 @@ class ScopedExtFrames {
     if (!st || width <= 0 || height <= 0 || fb_cnt <= 0) return false;
     if (interlaced && height < 2) return false;
     const uint8_t planes = st_frame_fmt_planes(fmt);
-    if (planes == 0) return false;
     const size_t base_fsize = st_frame_size(fmt, width, height, interlaced);
-    if (base_fsize == 0) return false;
-    const size_t plane_height = static_cast<size_t>(interlaced ? height / 2 : height);
-    const size_t fsize = base_fsize + line_padding_size * plane_height * planes;
-    if (!alloc_backing(st, fsize, fb_cnt)) return false;
+    const size_t pg_sz = mtl_page_size(st);
+    if (planes == 0 || base_fsize == 0 || pg_sz == 0) return false;
 
+    const size_t plane_height = static_cast<size_t>(interlaced ? height / 2 : height);
+    frame_size_ = base_fsize + line_padding_size * plane_height * planes;
+    const size_t map_sz =
+        mtl_size_page_align(frame_size_ * static_cast<size_t>(fb_cnt), pg_sz);
+    buf_ = PageAlignedBuf(map_sz, pg_sz, true);
+    dma_map_ = buf_ ? ScopedDmaMap(st, buf_.data(), map_sz) : ScopedDmaMap{};
+    if (!dma_map_.valid()) {
+      reset();
+      return false;
+    }
+
+    frames_.assign(static_cast<size_t>(fb_cnt), {});
+    in_use_.reset(new std::atomic<bool>[static_cast<size_t>(fb_cnt)]);
     for (int j = 0; j < fb_cnt; j++) {
+      in_use_[static_cast<size_t>(j)].store(false, std::memory_order_relaxed);
       auto& ef = frames_[static_cast<size_t>(j)];
       for (uint8_t plane = 0; plane < planes; plane++) {
         ef.linesize[plane] =
             st_frame_least_linesize(fmt, width, plane) + line_padding_size;
         if (plane == 0) {
-          ef.addr[plane] = aligned_ + static_cast<size_t>(j) * frame_size_;
-          ef.iova[plane] = iova_ + static_cast<size_t>(j) * frame_size_;
+          ef.addr[plane] = buf_.data() + static_cast<size_t>(j) * frame_size_;
+          ef.iova[plane] = dma_map_.iova() + static_cast<size_t>(j) * frame_size_;
         } else {
           ef.addr[plane] = static_cast<uint8_t*>(ef.addr[plane - 1]) +
                            ef.linesize[plane - 1] * plane_height;
@@ -336,39 +317,16 @@ class ScopedExtFrames {
     return true;
   }
 
-  /* Allocate single-plane byte-addressed external frames (for ST 22p codestream). */
-  bool init_bytes(mtl_handle st, size_t frame_size, int fb_cnt) {
-    reset();
-    if (!st || fb_cnt <= 0 || frame_size == 0) return false;
-    if (!alloc_backing(st, frame_size, fb_cnt)) return false;
-
-    for (int j = 0; j < fb_cnt; j++) {
-      auto& ef = frames_[static_cast<size_t>(j)];
-      ef.addr[0] = aligned_ + static_cast<size_t>(j) * frame_size_;
-      ef.iova[0] = iova_ + static_cast<size_t>(j) * frame_size_;
-      ef.size = frame_size_;
-      ef.opaque = nullptr;
-    }
-    return true;
-  }
-
   void reset() {
-    if (st_ && aligned_ && iova_ != MTL_BAD_IOVA) {
-      EXPECT_GE(mtl_dma_unmap(st_, aligned_, iova_, map_sz_), 0);
-    }
-    if (raw_) st_test_free(raw_);
-    st_ = nullptr;
-    raw_ = nullptr;
-    aligned_ = nullptr;
-    iova_ = MTL_BAD_IOVA;
-    map_sz_ = 0;
+    dma_map_ = {};
+    buf_ = {};
     frame_size_ = 0;
     frames_.clear();
     in_use_.reset();
   }
 
   uint8_t* data() const {
-    return aligned_;
+    return buf_.data();
   }
   size_t frame_size() const {
     return frame_size_;
@@ -395,39 +353,9 @@ class ScopedExtFrames {
   }
 
  private:
-  bool alloc_backing(mtl_handle st, size_t fsize, int fb_cnt) {
-    if (!st || fsize == 0 || fb_cnt <= 0) return false;
-    const size_t pg_sz = mtl_page_size(st);
-    if (pg_sz == 0) return false;
-    st_ = st;
-    frame_size_ = fsize;
-    const size_t total_sz = frame_size_ * static_cast<size_t>(fb_cnt);
-    map_sz_ = mtl_size_page_align(total_sz, pg_sz);
-    raw_ = st_test_zmalloc(map_sz_ + pg_sz);
-    if (!raw_) {
-      reset();
-      return false;
-    }
-    aligned_ =
-        reinterpret_cast<uint8_t*>(MTL_ALIGN(reinterpret_cast<uint64_t>(raw_), pg_sz));
-    iova_ = mtl_dma_map(st, aligned_, map_sz_);
-    if (iova_ == MTL_BAD_IOVA) {
-      reset();
-      return false;
-    }
-    frames_.assign(static_cast<size_t>(fb_cnt), {});
-    in_use_.reset(new std::atomic<bool>[static_cast<size_t>(fb_cnt)]);
-    for (int j = 0; j < fb_cnt; j++) {
-      in_use_[static_cast<size_t>(j)].store(false, std::memory_order_relaxed);
-    }
-    return true;
-  }
-
-  mtl_handle st_ = nullptr;
-  void* raw_ = nullptr;
-  uint8_t* aligned_ = nullptr;
-  mtl_iova_t iova_ = MTL_BAD_IOVA;
-  size_t map_sz_ = 0;
+  /* Member order ensures dma_map_ unmaps before buf_ frees on destruction. */
+  PageAlignedBuf buf_;
+  ScopedDmaMap dma_map_;
   size_t frame_size_ = 0;
   std::vector<struct st_ext_frame> frames_;
   std::unique_ptr<std::atomic<bool>[]> in_use_;

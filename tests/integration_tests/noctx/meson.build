@@ -4,7 +4,6 @@
 noctx_sources = files(
     'core/session.cpp',
     'core/handler_base.cpp',
-    'core/strategy.cpp',
     'core/test_fixture.cpp',
     'handlers/st20p_handler.cpp',
     'handlers/st30p_handler.cpp',

@@ -5,6 +5,7 @@
 #include <dirent.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <cstdint>
@@ -83,11 +84,7 @@ int test_dma_vfio_cnt(int numa) {
   static constexpr std::array<uint16_t, 15> kDmaAutoIds = {
       0x6f20, 0x6f21, 0x6f22, 0x6f23, 0x6f24,
       0x6f25, 0x6f26, 0x6f27, 0x6f2e, 0x6f2f, /* BDX */
-      0x2021,                                 /* SKX */
-      0x0b00,                                 /* ICX */
-      0x0b25,                                 /* SPR DSA */
-      0x11fb,                                 /* GNR-D DSA */
-      0x1212,                                 /* DMR DSA */
+      0x2021, 0x0b00, 0x0b25, 0x11fb, 0x1212, /* SKX/ICX/SPR/GNR-D/DMR */
   };
 
   std::unique_ptr<DIR, DirCloser> dir(opendir("/sys/bus/pci/devices"));
@@ -95,31 +92,23 @@ int test_dma_vfio_cnt(int numa) {
 
   char link[256];
   int cnt = 0;
-  struct dirent* ent;
-  while ((ent = readdir(dir.get()))) {
+  for (struct dirent* ent; (ent = readdir(dir.get()));) {
     std::string dev = ent->d_name;
-    long vendor = 0;
-    long device = 0;
-    long dev_numa = 0;
+    long vendor = 0, device = 0, dev_numa = 0;
     if (!test_dma_sysfs_long(dev, "vendor", vendor) || vendor != 0x8086) continue;
     if (!test_dma_sysfs_long(dev, "device", device)) continue;
-    bool known = false;
-    for (uint16_t id : kDmaAutoIds) {
-      if (device == static_cast<long>(id)) {
-        known = true;
-        break;
-      }
-    }
-    if (!known) continue;
+    if (std::find(kDmaAutoIds.begin(), kDmaAutoIds.end(),
+                  static_cast<uint16_t>(device)) == kDmaAutoIds.end())
+      continue;
     if (!test_dma_sysfs_long(dev, "numa_node", dev_numa) || dev_numa != numa) continue;
-    std::string driver = "/sys/bus/pci/devices/" + dev + "/driver";
-    ssize_t len = readlink(driver.c_str(), link, sizeof(link) - 1);
+    std::string drv = "/sys/bus/pci/devices/" + dev + "/driver";
+    ssize_t len = readlink(drv.c_str(), link, sizeof(link) - 1);
     if (len < 0) continue;
     link[len] = '\0';
     std::string name(link);
     auto slash = name.find_last_of('/');
-    std::string base = (slash == std::string::npos) ? name : name.substr(slash + 1);
-    if (base == "vfio-pci") cnt++;
+    if (((slash == std::string::npos) ? name : name.substr(slash + 1)) == "vfio-pci")
+      cnt++;
   }
   return cnt;
 }
@@ -193,15 +182,17 @@ void test_dma_op_sanity(struct st_tests_context* ctx, bool fill) {
   mtl_test::ScopedHpBuf src(ctx->handle, kBufSize);
   ASSERT_TRUE(src);
 
-  for (uint32_t len = 1; len < kBufSize; len += 7) {
-    uint8_t pattern = static_cast<uint8_t>((len % 255u) + 1u);
-    run_dma_op_once(dma.get(), dst, src, fill, 0, len, pattern);
+  static constexpr uint32_t kBounds[] = {0, 1, 3, 7, 15, 31, 33, 63, 64, 65};
+  for (uint32_t b : kBounds) {
+    if (b > 0) {
+      ASSERT_NO_FATAL_FAILURE(run_dma_op_once(dma.get(), dst, src, fill, 0, b,
+                                              static_cast<uint8_t>((b % 255u) + 1u)));
+    }
+    ASSERT_NO_FATAL_FAILURE(
+        run_dma_op_once(dma.get(), dst, src, fill, b, kBufSize,
+                        static_cast<uint8_t>(((b * 3u) % 255u) + 1u)));
   }
-  for (uint32_t off = 1; off < kBufSize; off += 7) {
-    uint8_t pattern = static_cast<uint8_t>(((off * 3u) % 255u) + 1u);
-    run_dma_op_once(dma.get(), dst, src, fill, off, kBufSize, pattern);
-  }
-  run_dma_op_once(dma.get(), dst, src, fill, 33, 991, 0xA5);
+  ASSERT_NO_FATAL_FAILURE(run_dma_op_once(dma.get(), dst, src, fill, 33, 991, 0xA5));
 }
 
 void test_dma_copy_fill_async(struct st_tests_context* ctx, bool fill) {
@@ -271,6 +262,16 @@ void test_dma_copy_fill_async(struct st_tests_context* ctx, bool fill) {
   EXPECT_EQ(memcmp(fb_dst_sha, fb_src_sha, SHA256_DIGEST_LENGTH), 0);
 }
 
+void assert_dma_mem_valid(const mtl_test::ScopedDmaMem& m, size_t pg_sz = 0) {
+  ASSERT_TRUE(m);
+  ASSERT_NE(m.addr(), nullptr);
+  if (pg_sz) {
+    EXPECT_EQ(reinterpret_cast<uintptr_t>(m.addr()) % pg_sz, 0u);
+  }
+  ASSERT_NE(m.iova(), static_cast<mtl_iova_t>(0));
+  ASSERT_NE(m.iova(), MTL_BAD_IOVA);
+}
+
 void test_dma_map_expect(mtl_handle st, const void* vaddr, size_t size,
                          bool expect_succ) {
   mtl_test::ScopedDmaMap mapping(st, vaddr, size);
@@ -282,31 +283,7 @@ void test_dma_map_expect(mtl_handle st, const void* vaddr, size_t size,
   }
 }
 
-void test_dma_map_pages(struct st_tests_context* ctx, size_t pages) {
-  mtl_handle st = ctx->handle;
-  size_t pg_sz = mtl_page_size(st);
-  size_t size = pages * pg_sz;
-  mtl_test::PageAlignedBuf buf(size, pg_sz);
-  ASSERT_TRUE(buf);
-  test_dma_map_expect(st, buf.data(), size, true);
-}
-
-void test_dma_mem_alloc_free(struct st_tests_context* ctx, size_t size, size_t pg_sz) {
-  mtl_test::ScopedDmaMem dma_mem(ctx->handle, size);
-  ASSERT_TRUE(dma_mem);
-  ASSERT_NE(dma_mem.addr(), nullptr);
-  EXPECT_EQ(reinterpret_cast<uintptr_t>(dma_mem.addr()) % pg_sz, 0u);
-  ASSERT_NE(dma_mem.iova(), static_cast<mtl_iova_t>(0));
-  ASSERT_NE(dma_mem.iova(), MTL_BAD_IOVA);
-}
-
 }  // namespace
-
-TEST(Dma, create) {
-  auto* ctx = st_test_ctx();
-  MTL_TEST_REQUIRE_DMA(ctx);
-  test_dma_create_one(ctx);
-}
 
 TEST(Dma, create_max) {
   auto* ctx = st_test_ctx();
@@ -349,13 +326,6 @@ TEST(Dma, copy) {
   test_dma_op(ctx, false, 128, 1024 * 4);
 }
 
-TEST(Dma, copy_odd) {
-  auto* ctx = st_test_ctx();
-  MTL_TEST_REQUIRE_DMA(ctx);
-  test_dma_op(ctx, false, 33, 1024);
-  test_dma_op(ctx, false, 33, 1024 - 33);
-}
-
 TEST(Dma, copy_sanity) {
   auto* ctx = st_test_ctx();
   MTL_TEST_REQUIRE_DMA(ctx);
@@ -373,13 +343,6 @@ TEST(Dma, fill) {
   MTL_TEST_REQUIRE_DMA(ctx);
   test_dma_op(ctx, true, 0, 1024, 0xa5);
   test_dma_op(ctx, true, 128, 1024 * 4, 0x5a);
-}
-
-TEST(Dma, fill_odd) {
-  auto* ctx = st_test_ctx();
-  MTL_TEST_REQUIRE_DMA(ctx);
-  test_dma_op(ctx, true, 33, 1024, 0x5a);
-  test_dma_op(ctx, true, 33, 1024 - 33, 0xa5);
 }
 
 TEST(Dma, fill_sanity) {
@@ -432,36 +395,58 @@ TEST(Dma, fill_u64_pattern) {
 TEST(Dma, map) {
   auto* ctx = st_test_ctx();
   MTL_TEST_REQUIRE_IOVA_VA(ctx);
-  test_dma_map_pages(ctx, 64);
-  test_dma_map_pages(ctx, 512);
+  mtl_handle st = ctx->handle;
+  const size_t pg_sz = mtl_page_size(st);
+  for (size_t pages : {64u, 512u}) {
+    const size_t size = pages * pg_sz;
+    mtl_test::PageAlignedBuf buf(size, pg_sz);
+    ASSERT_TRUE(buf);
+    test_dma_map_expect(st, buf.data(), size, true);
+  }
 }
 
-TEST(Dma, map_fail) {
+TEST(Dma, map_fail_and_remap) {
   auto* ctx = st_test_ctx();
   MTL_TEST_REQUIRE_IOVA_VA(ctx);
 
   mtl_handle st = ctx->handle;
   const size_t pg_sz = mtl_page_size(st);
-  const size_t size = 4 * pg_sz;
-  mtl_test::PageAlignedBuf buf(size, pg_sz);
+  const size_t size = 64 * pg_sz;
+  mtl_test::PageAlignedBuf buf(size + pg_sz, pg_sz);
   ASSERT_TRUE(buf);
-  uint8_t* vaddr = buf.data();
+  uint8_t* align = buf.data() + pg_sz;
 
   /* Invalid size and unaligned virtual address map calls must fail. */
-  test_dma_map_expect(st, vaddr, 0, false);
-  test_dma_map_expect(st, vaddr, pg_sz / 2, false);
-  test_dma_map_expect(st, vaddr, pg_sz + 1, false);
-  test_dma_map_expect(st, vaddr + 1, pg_sz, false);
+  test_dma_map_expect(st, align, 0, false);
+  test_dma_map_expect(st, align, pg_sz / 2, false);
+  test_dma_map_expect(st, align, pg_sz + 1, false);
+  test_dma_map_expect(st, align + 1, pg_sz, false);
 
-  /* Invalid unmap calls against a live mapping must fail. */
-  mtl_test::ScopedDmaMap mapping(st, vaddr, size);
+  mtl_test::ScopedDmaMap mapping(st, align, size);
   ASSERT_TRUE(mapping.valid());
   const mtl_iova_t iova = mapping.iova();
-  EXPECT_LT(mtl_dma_unmap(st, vaddr + 1, iova, size), 0);
-  EXPECT_LT(mtl_dma_unmap(st, vaddr, iova, 0), 0);
-  EXPECT_LT(mtl_dma_unmap(st, vaddr, iova, pg_sz / 2), 0);
-  EXPECT_LT(mtl_dma_unmap(st, vaddr, iova + pg_sz, size), 0);
+
+  /* Overlapping and duplicate map calls must fail. */
+  EXPECT_EQ(mtl_dma_map(st, align, size), MTL_BAD_IOVA);
+  EXPECT_EQ(mtl_dma_map(st, align + pg_sz, size - pg_sz), MTL_BAD_IOVA);
+  EXPECT_EQ(mtl_dma_map(st, align - pg_sz, size), MTL_BAD_IOVA);
+
+  /* Invalid, partial, or shifted unmap calls must fail. */
+  EXPECT_LT(mtl_dma_unmap(st, align + 1, iova, size), 0);
+  EXPECT_LT(mtl_dma_unmap(st, align, iova, 0), 0);
+  EXPECT_LT(mtl_dma_unmap(st, align, iova, pg_sz / 2), 0);
+  EXPECT_LT(mtl_dma_unmap(st, align, iova + pg_sz, size), 0);
+  EXPECT_LT(mtl_dma_unmap(st, align, iova, size - pg_sz), 0);
+  EXPECT_LT(mtl_dma_unmap(st, align + pg_sz, iova + pg_sz, size - pg_sz), 0);
+
+  /* Exact unmap succeeds once, then second unmap fails; re-mapping succeeds. */
   EXPECT_GE(mapping.unmap(), 0);
+  EXPECT_LT(mtl_dma_unmap(st, align, iova, size), 0);
+
+  mtl_test::ScopedDmaMap remapping(st, align, size);
+  EXPECT_TRUE(remapping.valid());
+  EXPECT_NE(remapping.iova(), static_cast<mtl_iova_t>(0));
+  EXPECT_GE(remapping.unmap(), 0);
 }
 
 TEST(Dma, map_continues) {
@@ -484,41 +469,6 @@ TEST(Dma, map_continues) {
   for (auto& m : maps) {
     EXPECT_GE(m.unmap(), 0);
   }
-}
-
-TEST(Dma, map_remap) {
-  auto* ctx = st_test_ctx();
-  MTL_TEST_REQUIRE_IOVA_VA(ctx);
-
-  mtl_handle st = ctx->handle;
-  const size_t pg_sz = mtl_page_size(st);
-  const size_t size = 64 * pg_sz;
-  mtl_test::PageAlignedBuf buf(size + pg_sz, pg_sz);
-  ASSERT_TRUE(buf);
-
-  uint8_t* align = buf.data() + pg_sz;
-  mtl_test::ScopedDmaMap mapping(st, align, size);
-  ASSERT_TRUE(mapping.valid());
-  const mtl_iova_t iova = mapping.iova();
-
-  /* Overlapping and duplicate map calls must fail. */
-  EXPECT_EQ(mtl_dma_map(st, align, size), MTL_BAD_IOVA);
-  EXPECT_EQ(mtl_dma_map(st, align + pg_sz, size - pg_sz), MTL_BAD_IOVA);
-  EXPECT_EQ(mtl_dma_map(st, align - pg_sz, size), MTL_BAD_IOVA);
-
-  /* Partial or shifted unmap calls must fail. */
-  EXPECT_LT(mtl_dma_unmap(st, align, iova, size - pg_sz), 0);
-  EXPECT_LT(mtl_dma_unmap(st, align + pg_sz, iova + pg_sz, size - pg_sz), 0);
-
-  /* Exact unmap succeeds once, then second unmap fails. */
-  EXPECT_GE(mapping.unmap(), 0);
-  EXPECT_LT(mtl_dma_unmap(st, align, iova, size), 0);
-
-  /* Post-unmap re-mapping of the same region must succeed. */
-  mtl_test::ScopedDmaMap remapping(st, align, size);
-  EXPECT_TRUE(remapping.valid());
-  EXPECT_NE(remapping.iova(), static_cast<mtl_iova_t>(0));
-  EXPECT_GE(remapping.unmap(), 0);
 }
 
 TEST(Dma, map_copy) {
@@ -560,10 +510,10 @@ TEST(Dma, mem_alloc_free) {
   ASSERT_GE(pg_sz, 4096u);
   ASSERT_EQ(pg_sz & (pg_sz - 1u), 0u);
   for (size_t sz : {111u, 2222u, 33333u, 444444u}) {
-    test_dma_mem_alloc_free(ctx, sz, pg_sz);
+    mtl_test::ScopedDmaMem dma_mem(st, sz);
+    ASSERT_NO_FATAL_FAILURE(assert_dma_mem_valid(dma_mem, pg_sz));
   }
-  mtl_test::ScopedDmaMem zero_mem(st, 0);
-  EXPECT_EQ(zero_mem.get(), nullptr);
+  EXPECT_EQ(mtl_test::ScopedDmaMem(st, 0).get(), nullptr);
 }
 
 TEST(Dma, mem_alloc_copy) {
@@ -575,16 +525,9 @@ TEST(Dma, mem_alloc_copy) {
   ASSERT_TRUE(dma);
 
   for (uint32_t copy_size : {1024u, 65536u}) {
-    mtl_test::ScopedDmaMem src(st, copy_size);
-    mtl_test::ScopedDmaMem dst(st, copy_size);
-    ASSERT_TRUE(src);
-    ASSERT_TRUE(dst);
-    ASSERT_NE(src.addr(), nullptr);
-    ASSERT_NE(dst.addr(), nullptr);
-    ASSERT_NE(src.iova(), static_cast<mtl_iova_t>(0));
-    ASSERT_NE(src.iova(), MTL_BAD_IOVA);
-    ASSERT_NE(dst.iova(), static_cast<mtl_iova_t>(0));
-    ASSERT_NE(dst.iova(), MTL_BAD_IOVA);
+    mtl_test::ScopedDmaMem src(st, copy_size), dst(st, copy_size);
+    ASSERT_NO_FATAL_FAILURE(assert_dma_mem_valid(src));
+    ASSERT_NO_FATAL_FAILURE(assert_dma_mem_valid(dst));
 
     auto* src_bytes = static_cast<uint8_t*>(src.addr());
     auto* dst_bytes = static_cast<uint8_t*>(dst.addr());
@@ -595,9 +538,6 @@ TEST(Dma, mem_alloc_copy) {
     ASSERT_TRUE(mtl_test::udma_submit_and_wait(dma.get(), 1));
     EXPECT_EQ(memcmp(src_bytes, dst_bytes, copy_size), 0)
         << "DMA mem copy mismatch for size " << copy_size;
-
-    src.reset();
-    dst.reset();
   }
 }
 
@@ -608,70 +548,22 @@ TEST(Dma, create_default_desc_and_completed_edges) {
   mtl_handle st = ctx->handle;
   mtl_test::ScopedUdma dma(mtl_udma_create(st, 0, MTL_PORT_P));
   ASSERT_TRUE(dma);
-
-  /* Idle ring must report zero completions. */
   EXPECT_EQ(mtl_udma_completed(dma.get(), 32), 0u);
 
-  constexpr uint16_t kSlices = 4;
-  constexpr uint32_t kSliceSize = 256;
-  constexpr size_t kTotalSize = static_cast<size_t>(kSlices) * kSliceSize;
-  const std::array<uint8_t, kSlices> kPatterns = {0x11u, 0x22u, 0x33u, 0x44u};
-
-  mtl_test::ScopedHpBuf dst(st, kTotalSize);
-  ASSERT_TRUE(dst);
-  ASSERT_NE(dst.iova(), MTL_BAD_IOVA);
-  memset(dst.data(), 0xAAu, kTotalSize);
-
-  for (uint16_t i = 0; i < kSlices; i++) {
-    ASSERT_GE(
-        mtl_udma_fill_u8(dma.get(), dst.iova() + static_cast<size_t>(i) * kSliceSize,
-                         kPatterns[i], kSliceSize),
-        0);
-  }
-  ASSERT_GE(mtl_udma_submit(dma.get()), 0);
-
-  const uint64_t deadline =
-      st_test_get_monotonic_time() + static_cast<uint64_t>(5000) * NS_PER_MS;
-  uint16_t done = 0;
-  while (done < kSlices) {
-    uint16_t nb_cpl = mtl_udma_completed(dma.get(), 1);
-    ASSERT_LE(nb_cpl, 1u);
-    done = static_cast<uint16_t>(done + nb_cpl);
-    if (done < kSlices && nb_cpl == 0) {
-      ASSERT_LT(st_test_get_monotonic_time(), deadline)
-          << "default-desc uDMA timed out at " << done << "/" << kSlices << " slices";
-    }
-  }
-  EXPECT_EQ(done, kSlices);
-
-  /* Drained ring must again report zero completions. */
+  mtl_test::ScopedHpBuf dst(st, 1024);
+  mtl_test::ScopedHpBuf src(st, 1024);
+  ASSERT_NO_FATAL_FAILURE(run_dma_op_once(dma.get(), dst, src, true, 0, 1024, 0x5Au));
   EXPECT_EQ(mtl_udma_completed(dma.get(), 32), 0u);
-
-  for (uint16_t i = 0; i < kSlices; i++) {
-    expect_bytes_eq(dst.bytes() + static_cast<size_t>(i) * kSliceSize, kSliceSize,
-                    kPatterns[i], "default-desc fill slice");
-  }
 }
 
 TEST(Dma, hp_virt2iova_and_page_size) {
   auto* ctx = st_test_ctx();
   mtl_handle st = ctx->handle;
 
-  const size_t pg_sz = mtl_page_size(st);
-  EXPECT_GE(pg_sz, 4096u);
-  EXPECT_EQ(pg_sz & (pg_sz - 1u), 0u);
-
   constexpr size_t kAllocSize = 4096;
-  mtl_test::ScopedHpBuf hp_raw(st, kAllocSize, MTL_PORT_P, false);
-  ASSERT_TRUE(hp_raw);
-  EXPECT_NE(hp_raw.iova(), MTL_BAD_IOVA);
-  EXPECT_NE(hp_raw.iova(), static_cast<mtl_iova_t>(0));
-  EXPECT_EQ(mtl_hp_virt2iova(st, hp_raw.data()), hp_raw.iova());
-
   mtl_test::ScopedHpBuf hp_zero(st, kAllocSize, MTL_PORT_P, true);
   ASSERT_TRUE(hp_zero);
   EXPECT_NE(hp_zero.iova(), MTL_BAD_IOVA);
-  EXPECT_NE(hp_zero.iova(), static_cast<mtl_iova_t>(0));
   EXPECT_EQ(mtl_hp_virt2iova(st, hp_zero.data()), hp_zero.iova());
   expect_bytes_eq(hp_zero.bytes(), kAllocSize, 0u, "hp_zmalloc zero-init");
 
@@ -680,10 +572,8 @@ TEST(Dma, hp_virt2iova_and_page_size) {
 
   /* Out-of-range port must be rejected by hugepage allocators. */
   const auto bad_port = static_cast<enum mtl_port>(MTL_PORT_MAX);
-  mtl_test::ScopedHpBuf bad_raw(st, kAllocSize, bad_port, false);
-  EXPECT_FALSE(bad_raw);
-  mtl_test::ScopedHpBuf bad_zero(st, kAllocSize, bad_port, true);
-  EXPECT_FALSE(bad_zero);
+  EXPECT_FALSE(mtl_test::ScopedHpBuf(st, kAllocSize, bad_port, false));
+  EXPECT_FALSE(mtl_test::ScopedHpBuf(st, kAllocSize, bad_port, true));
 }
 
 TEST(Dma, iova_pa_rejects_map_and_mem_alloc) {

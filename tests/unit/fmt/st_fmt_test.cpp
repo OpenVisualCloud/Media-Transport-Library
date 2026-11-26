@@ -24,7 +24,25 @@
 extern "C" {
 #include <mtl_api.h>
 #include <st30_api.h>
+}
 
+namespace {
+
+uint64_t g_mock_ptp_now_ns = 0;
+
+uint64_t ut_mock_ptp_read_time_raw(mtl_handle /*mt*/) {
+  return g_mock_ptp_now_ns;
+}
+
+}  // namespace
+
+/* Redirect mtl_ptp_read_time_raw() inside static inline st_frame_is_late() before
+ * st_fmt.h pulls in st_pipeline_api.h. */
+#define mtl_ptp_read_time_raw ut_mock_ptp_read_time_raw
+#include <st_pipeline_api.h>
+#undef mtl_ptp_read_time_raw
+
+extern "C" {
 #include "st2110/st_fmt.h"
 }
 
@@ -183,7 +201,7 @@ TEST_F(StFrameRateToStFps, ConformantRatesAreSilent) {
   }
 }
 
-/* The snapped return values themselves are asserted by Main/fps_* in
+/* The snapped return values themselves are asserted by Main.frame_rate_to_st_fps in
  * st_fmt_api_test.cpp and are deliberately unchanged; what is pinned here is
  * that snapping is no longer silent, which is all a GStreamer or FFmpeg caller
  * ever sees. */
@@ -335,53 +353,53 @@ TEST(St30FormatHelpers, PacketSizeMatrixAndInvalid) {
   }
 
   /* Invalid format, ptime, sampling, mismatched ptime/sampling, and zero channels. */
-  EXPECT_EQ(st30_get_packet_size(ST30_FMT_MAX, ST30_PTIME_1MS, ST30_SAMPLING_48K, 2),
-            -EINVAL);
-  EXPECT_EQ(st30_get_packet_size(static_cast<enum st30_fmt>(-1), ST30_PTIME_1MS,
-                                 ST30_SAMPLING_48K, 2),
-            -EINVAL);
-  EXPECT_EQ(st30_get_packet_size(ST30_FMT_PCM24, ST30_PTIME_MAX, ST30_SAMPLING_48K, 2),
-            -EINVAL);
-  EXPECT_EQ(st30_get_packet_size(ST30_FMT_PCM24, static_cast<enum st30_ptime>(-1),
-                                 ST30_SAMPLING_48K, 2),
-            -EINVAL);
-  EXPECT_EQ(st30_get_packet_size(ST30_FMT_PCM24, ST30_PTIME_1MS, ST30_SAMPLING_MAX, 2),
-            -EINVAL);
-  EXPECT_EQ(st30_get_packet_size(ST30_FMT_PCM24, ST30_PTIME_1MS,
-                                 static_cast<enum st30_sampling>(-1), 2),
-            -EINVAL);
-  EXPECT_EQ(st30_get_packet_size(ST30_FMT_PCM24, ST30_PTIME_1MS, ST31_SAMPLING_44K, 2),
-            -EINVAL);
-  EXPECT_EQ(st30_get_packet_size(ST30_FMT_PCM24, ST31_PTIME_1_09MS, ST30_SAMPLING_48K, 2),
-            -EINVAL);
-  EXPECT_EQ(st30_get_packet_size(ST30_FMT_PCM24, ST30_PTIME_1MS, ST30_SAMPLING_48K, 0),
-            -EINVAL);
+  const struct {
+    enum st30_fmt fmt;
+    enum st30_ptime ptime;
+    enum st30_sampling sampling;
+    uint16_t channel;
+  } invalid_pkt[] = {
+      {ST30_FMT_MAX, ST30_PTIME_1MS, ST30_SAMPLING_48K, 2},
+      {static_cast<enum st30_fmt>(-1), ST30_PTIME_1MS, ST30_SAMPLING_48K, 2},
+      {ST30_FMT_PCM24, ST30_PTIME_MAX, ST30_SAMPLING_48K, 2},
+      {ST30_FMT_PCM24, ST30_PTIME_1MS, ST30_SAMPLING_MAX, 2},
+      {ST30_FMT_PCM24, ST30_PTIME_1MS, ST31_SAMPLING_44K, 2},
+      {ST30_FMT_PCM24, ST30_PTIME_1MS, ST30_SAMPLING_48K, 0},
+  };
+  for (const auto& c : invalid_pkt) {
+    EXPECT_EQ(st30_get_packet_size(c.fmt, c.ptime, c.sampling, c.channel), -EINVAL);
+  }
 }
 
 TEST(St30FormatHelpers, SampleNumRateAndPacketTimeInvalid) {
-  EXPECT_EQ(st30_get_sample_num(ST30_PTIME_MAX, ST30_SAMPLING_48K), -EINVAL);
-  EXPECT_EQ(st30_get_sample_num(static_cast<enum st30_ptime>(-1), ST30_SAMPLING_48K),
-            -EINVAL);
-  EXPECT_EQ(st30_get_sample_num(ST30_PTIME_MAX, ST30_SAMPLING_96K), -EINVAL);
-  EXPECT_EQ(st30_get_sample_num(ST30_PTIME_MAX, ST31_SAMPLING_44K), -EINVAL);
-  EXPECT_EQ(st30_get_sample_num(ST30_PTIME_1MS, ST30_SAMPLING_MAX), -EINVAL);
-  EXPECT_EQ(st30_get_sample_num(ST30_PTIME_1MS, static_cast<enum st30_sampling>(-1)),
-            -EINVAL);
+  const struct {
+    enum st30_ptime ptime;
+    enum st30_sampling sampling;
+  } bad_pairs[] = {
+      {ST30_PTIME_MAX, ST30_SAMPLING_48K},
+      {static_cast<enum st30_ptime>(-1), ST30_SAMPLING_48K},
+      {ST30_PTIME_MAX, ST30_SAMPLING_96K},
+      {ST30_PTIME_MAX, ST31_SAMPLING_44K},
+      {ST30_PTIME_1MS, ST30_SAMPLING_MAX},
+      {ST30_PTIME_1MS, static_cast<enum st30_sampling>(-1)},
+      /* Mismatched 44.1 kHz vs 48/96 kHz ptime and sampling pairs. */
+      {ST31_PTIME_1_09MS, ST30_SAMPLING_48K},
+      {ST31_PTIME_0_14MS, ST30_SAMPLING_48K},
+      {ST31_PTIME_0_09MS, ST30_SAMPLING_96K},
+      {ST30_PTIME_1MS, ST31_SAMPLING_44K},
+      {ST30_PTIME_125US, ST31_SAMPLING_44K},
+      {ST31_PTIME_80US, ST31_SAMPLING_44K},
+  };
+  for (const auto& c : bad_pairs) {
+    EXPECT_EQ(st30_get_sample_num(c.ptime, c.sampling), -EINVAL);
+  }
 
-  /* Mismatched 44.1 kHz vs 48/96 kHz ptime and sampling pairs. */
-  EXPECT_EQ(st30_get_sample_num(ST31_PTIME_1_09MS, ST30_SAMPLING_48K), -EINVAL);
-  EXPECT_EQ(st30_get_sample_num(ST31_PTIME_0_14MS, ST30_SAMPLING_48K), -EINVAL);
-  EXPECT_EQ(st30_get_sample_num(ST31_PTIME_0_09MS, ST30_SAMPLING_96K), -EINVAL);
-  EXPECT_EQ(st30_get_sample_num(ST30_PTIME_1MS, ST31_SAMPLING_44K), -EINVAL);
-  EXPECT_EQ(st30_get_sample_num(ST30_PTIME_125US, ST31_SAMPLING_44K), -EINVAL);
-  EXPECT_EQ(st30_get_sample_num(ST31_PTIME_80US, ST31_SAMPLING_44K), -EINVAL);
-
-  EXPECT_EQ(st30_get_sample_rate(ST30_SAMPLING_MAX), -EINVAL);
-  EXPECT_EQ(st30_get_sample_rate(static_cast<enum st30_sampling>(-1)), -EINVAL);
-
-  EXPECT_DOUBLE_EQ(st30_get_packet_time(ST30_PTIME_MAX), static_cast<double>(-EINVAL));
-  EXPECT_DOUBLE_EQ(st30_get_packet_time(static_cast<enum st30_ptime>(-1)),
-                   static_cast<double>(-EINVAL));
+  for (enum st30_sampling s : {ST30_SAMPLING_MAX, static_cast<enum st30_sampling>(-1)}) {
+    EXPECT_EQ(st30_get_sample_rate(s), -EINVAL);
+  }
+  for (enum st30_ptime p : {ST30_PTIME_MAX, static_cast<enum st30_ptime>(-1)}) {
+    EXPECT_DOUBLE_EQ(st30_get_packet_time(p), static_cast<double>(-EINVAL));
+  }
 }
 
 TEST(St30FormatHelpers, CalculateFramebuffSizeValidMatrix) {
@@ -421,4 +439,24 @@ TEST(St30FormatHelpers, CalculateFramebuffSizeValidMatrix) {
     EXPECT_EQ(size_null_fps, c.expected_size)
         << "nullptr fps mismatch for fmt " << c.fmt << " ptime " << c.ptime;
   }
+}
+
+TEST(StFrameIsLate, BasicComparisons) {
+  g_mock_ptp_now_ns = 1700000000ULL * kNsPerS;
+  struct st_frame frame = {};
+  frame.tfmt = ST10_TIMESTAMP_FMT_TAI;
+
+  frame.timestamp = g_mock_ptp_now_ns - kNsPerS;
+  EXPECT_TRUE(st_frame_is_late(nullptr, &frame));
+  frame.timestamp = g_mock_ptp_now_ns - 1;
+  EXPECT_TRUE(st_frame_is_late(nullptr, &frame));
+
+  frame.timestamp = g_mock_ptp_now_ns;
+  EXPECT_FALSE(st_frame_is_late(nullptr, &frame));
+  frame.timestamp = g_mock_ptp_now_ns + 10 * kNsPerS;
+  EXPECT_FALSE(st_frame_is_late(nullptr, &frame));
+
+  frame.tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+  frame.timestamp = 0;
+  EXPECT_FALSE(st_frame_is_late(nullptr, &frame));
 }

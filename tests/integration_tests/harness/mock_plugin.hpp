@@ -5,6 +5,7 @@
 #pragma once
 
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -29,7 +30,6 @@ namespace mtl_test {
  *   using PrivHandle    = ...;  // e.g. st20_convert_priv
  *   using CreateReq     = ...;  // e.g. struct st20_converter_create_req
  *   using FrameMeta     = ...;  // e.g. struct st20_convert_frame_meta
- *   static constexpr size_t kMaxSessions = 8;
  *   static bool use_block_get(struct st_tests_context* ctx);
  *   static void on_create_req(struct st_tests_context* ctx, CreateReq* req,
  *                             int& sleep_time_us);
@@ -40,7 +40,7 @@ namespace mtl_test {
  *   static int process_frame(const CreateReq& req, FrameMeta* f, int sleep_time_us,
  *                            int rand_ratio, int& frame_cnt);
  */
-template <typename Traits>
+template <typename Traits, size_t kMaxSessions = 8>
 class MockPluginPool {
  public:
   struct Session {
@@ -91,7 +91,7 @@ class MockPluginPool {
     auto& pool = instance();
     std::lock_guard<std::mutex> lock(pool.slots_mtx_);
 
-    for (size_t i = 0; i < Traits::kMaxSessions; i++) {
+    for (size_t i = 0; i < kMaxSessions; i++) {
       if (pool.slots_[i]) continue;
 
       auto s = std::make_unique<Session>();
@@ -128,7 +128,7 @@ class MockPluginPool {
 
     auto& pool = instance();
     std::lock_guard<std::mutex> lock(pool.slots_mtx_);
-    if (s->idx >= 0 && static_cast<size_t>(s->idx) < Traits::kMaxSessions &&
+    if (s->idx >= 0 && static_cast<size_t>(s->idx) < kMaxSessions &&
         pool.slots_[static_cast<size_t>(s->idx)].get() == s) {
       pool.slots_[static_cast<size_t>(s->idx)].reset();
     }
@@ -179,7 +179,7 @@ class MockPluginPool {
   }
 
   std::mutex slots_mtx_;
-  std::unique_ptr<Session> slots_[Traits::kMaxSessions];
+  std::unique_ptr<Session> slots_[kMaxSessions];
 };
 
 }  // namespace mtl_test

@@ -21,17 +21,12 @@
 #define ST22_TEST_SHA_HIST_NUM (3)
 #define TEST_MAX_SHA_HIST_NUM (3)
 
-#define MAX_TEST_ENCODER_SESSIONS (8)
-#define MAX_TEST_DECODER_SESSIONS (8)
-#define MAX_TEST_CONVERTER_SESSIONS (8)
-
 struct st_tests_context {
   struct mtl_init_params para;
   mtl_handle handle;
   uint8_t mcast_ip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
   uint64_t ptp_time;
   bool user_p_sip;
-  enum st_test_level level;
   bool hdr_split;
   bool dhcp;
   bool mcast_only;
@@ -51,37 +46,10 @@ struct st_tests_context {
   int plugin_timeout_ms;
   int plugin_rand_ratio;
   bool user_log_level;
-  bool user_level;
   bool single_process;
 };
 
 struct st_tests_context* st_test_ctx(void);
-
-static inline int st_test_num_port(struct st_tests_context* ctx) {
-  return ctx->para.num_ports;
-}
-
-static inline void st_test_jxs_fail_interval(struct st_tests_context* ctx, int interval) {
-  ctx->plugin_fail_interval = interval;
-}
-
-static inline void st_test_jxs_timeout_interval(struct st_tests_context* ctx,
-                                                int interval) {
-  ctx->plugin_timeout_interval = interval;
-}
-
-static inline void st_test_jxs_timeout_ms(struct st_tests_context* ctx, int ms) {
-  ctx->plugin_timeout_ms = ms;
-}
-
-static inline void st_test_jxs_rand_ratio(struct st_tests_context* ctx, int rand_ratio) {
-  ctx->plugin_rand_ratio = rand_ratio;
-}
-
-static inline void st_test_jxs_use_block_get(struct st_tests_context* ctx, bool block) {
-  ctx->decoder_use_block_get = block;
-  ctx->encoder_use_block_get = block;
-}
 
 int st_test_sch_cnt(struct st_tests_context* ctx);
 
@@ -177,7 +145,6 @@ class tests_context {
   mtl_iova_t ext_fb_iova = 0;
   size_t ext_fb_iova_map_sz = 0;
   struct st20_ext_frame* ext_frames = nullptr;
-  struct st_ext_frame* p_ext_frames = nullptr;
   int ext_idx = 0;
   bool ext_fb_in_use[3] = {false}; /* assume 3 framebuffer */
   mtl_dma_mem_handle dma_mem = NULL;

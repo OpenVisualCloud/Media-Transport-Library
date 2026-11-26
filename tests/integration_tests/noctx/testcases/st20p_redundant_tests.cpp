@@ -3,11 +3,11 @@
  */
 
 #include <chrono>
+#include <cstring>
 #include <thread>
 
 #include "core/constants.hpp"
 #include "core/test_fixture.hpp"
-#include "handlers/st20p_handler.hpp"
 #include "strategies/st20p_strategies.hpp"
 
 /* Indexes into --port_list. */
@@ -78,15 +78,12 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
   constexpr uint32_t kTxFlags = ST20P_TX_FLAG_USER_PACING | ST20P_TX_FLAG_USER_TIMESTAMP;
 
   auto rxBundle = createSt20pHandlerBundle(
-      /*createTx=*/false, /*createRx=*/true,
-      [](St20pHandler* handler) { return new St20pRedundantStreamPlan(0, handler); },
-      [](St20pHandler* handler) {
+      /*createTx=*/false, /*createRx=*/true, nullptr, [](St20pHandler* handler) {
         handler->sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_P] = kUdpPortP;
         handler->sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_R] = kUdpPortR;
         handler->setSessionPorts(SESSION_SKIP_PORT, kRxPortP, SESSION_SKIP_PORT,
                                  kRxPortR);
       });
-  auto* rxStrategy = static_cast<St20pRedundantStreamPlan*>(rxBundle.strategy);
 
   auto primaryBundle = createSt20pHandlerBundle(
       /*createTx=*/true, /*createRx=*/false,
@@ -119,20 +116,16 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
     - primaryBundle sends the primary stream (no modifications)
     - latencyBundle sends the redundant stream delayed by testedLatencyMs
 
-    [primaryBundle]:          Tx ---> Rx [latencyBundle]
-    [latencyBundle]:          Tx ---> Rx [latencyBundle]
+    [primaryBundle]:          Tx ---> Rx [rxBundle]
+    [latencyBundle]:          Tx ---> Rx [rxBundle]
   */
 
   rxBundle.handler->startSessionRx();
-  ASSERT_TRUE(waitForSession(rxBundle.handler->session));
   primaryBundle.handler->startSessionTx();
-  ASSERT_TRUE(waitForSession(primaryBundle.handler->session));
   latencyBundle.handler->startSessionTx();
-  ASSERT_TRUE(waitForSession(latencyBundle.handler->session));
   StartFakePtpClock(); /* reset ptp time to 0 */
   ASSERT_EQ(mtl_start(ctx->handle), 0);
 
-  ASSERT_TRUE(waitForSession(latencyBundle.handler->session));
   sleepUntilFailure(testDurationS);
 
   /* Grab stats before stopping — captures steady-state counters before
@@ -146,7 +139,7 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
   rxBundle.handler->session.stop();
 
   uint64_t framesSend = primaryStrategy->idx_tx;
-  uint64_t framesRecieved = rxStrategy->idx_rx;
+  uint64_t framesRecieved = rxBundle.handler->rxFrames();
 
   ASSERT_NEAR(framesSend, framesRecieved, framesSend / 100)
       << "Comparison against primary stream";

@@ -11,7 +11,6 @@
 #include <thread>
 
 #include "core/test_fixture.hpp"
-#include "handlers/st20p_handler.hpp"
 
 namespace {
 
@@ -35,12 +34,6 @@ constexpr uint64_t kBusyWindowMinIterations = 64;
 constexpr uint64_t kIdleWindowMaxIterations =
     (kIdleWindowEndNs - kIdleWindowStartNs) / (200 * NS_PER_US);
 
-uint64_t monotonicNs() {
-  struct timespec spec;
-  clock_gettime(CLOCK_MONOTONIC_RAW, &spec);
-  return (uint64_t)spec.tv_sec * NS_PER_S + spec.tv_nsec;
-}
-
 /* Written from the scheduler thread, read by the test thread. */
 struct TaskletSleepState {
   std::atomic<bool> running{false};
@@ -55,7 +48,7 @@ struct TaskletSleepState {
 
 int busyNextFrame(void* priv, uint16_t* next_frame_idx, struct st20_tx_frame_meta* meta) {
   auto* st = static_cast<TaskletSleepState*>(priv);
-  const uint64_t now = monotonicNs();
+  const uint64_t now = monotonicRawNs();
   const int frame = st->frames_started.load(std::memory_order_relaxed);
 
   if (!st->running.load(std::memory_order_acquire) || frame >= kFrames) return -EBUSY;
@@ -90,7 +83,7 @@ int idleNextFrame(void* priv, uint16_t* next_frame_idx, struct st20_tx_frame_met
   if (!started) return -EBUSY;
   const int frame = started - 1;
   const uint64_t since =
-      monotonicNs() - st->start_ns[frame].load(std::memory_order_relaxed);
+      monotonicRawNs() - st->start_ns[frame].load(std::memory_order_relaxed);
   if (since <= kBusyWindowNs)
     st->busy_iterations[frame].fetch_add(1, std::memory_order_relaxed);
   else if (since >= kIdleWindowStartNs && since <= kIdleWindowEndNs)
@@ -175,7 +168,7 @@ TEST_F(NoCtxTest, st20_tx_tasklet_sleep_idle_peer) {
   rxBundle.handler->startSessionRx();
   StartFakePtpClock();
   ASSERT_EQ(mtl_start(ctx->handle), 0);
-  st.next_start_ns.store(monotonicNs() + NS_PER_S);
+  st.next_start_ns.store(monotonicRawNs() + NS_PER_S);
   st.running.store(true, std::memory_order_release);
 
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);

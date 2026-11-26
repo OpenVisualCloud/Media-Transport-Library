@@ -21,8 +21,6 @@ struct SchDigestScenario {
 };
 
 struct TaskletTestCtx {
-  int sch_idx = 0;
-  int tasklet_idx = 0;
   std::atomic<bool> start{false};
   std::atomic<int> job{0};
 };
@@ -43,58 +41,6 @@ int test_tasklet_handler(void* priv) {
   auto* ctx = static_cast<TaskletTestCtx*>(priv);
   ctx->job.fetch_add(1, std::memory_order_release);
   return 0;
-}
-
-class ScopedSchSleepUs {
- public:
-  explicit ScopedSchSleepUs(mtl_handle mt) : mt_(mt) {
-  }
-  ~ScopedSchSleepUs() {
-    if (mt_) mtl_sch_set_sleep_us(mt_, 0);
-  }
-  ScopedSchSleepUs(const ScopedSchSleepUs&) = delete;
-  ScopedSchSleepUs& operator=(const ScopedSchSleepUs&) = delete;
-
- private:
-  mtl_handle mt_ = nullptr;
-};
-
-void sch_create_test(mtl_handle mt) {
-  struct mtl_sch_ops sch_ops = {};
-  sch_ops.name = "sch";
-  sch_ops.nb_tasklets = 16;
-
-  mtl_test::ScopedSch sch(mtl_sch_create(mt, &sch_ops));
-  ASSERT_TRUE(sch);
-  ASSERT_GE(sch.start(), 0);
-  /* Allow scheduler thread to enter its run loop before stop. */
-  mtl_sleep_us(1000);
-  EXPECT_GE(sch.stop(), 0);
-  sch.reset();
-}
-
-void sch_create_max_test(mtl_handle mt, int max) {
-  struct mtl_sch_ops sch_ops = {};
-  sch_ops.name = "sch";
-  sch_ops.nb_tasklets = 16;
-
-  std::vector<mtl_test::ScopedSch> schs;
-  schs.reserve(static_cast<size_t>(max));
-  for (int i = 0; i < max; i++) {
-    mtl_test::ScopedSch sch(mtl_sch_create(mt, &sch_ops));
-    if (!sch) break;
-    if (sch.start() < 0) break;
-    schs.push_back(std::move(sch));
-  }
-
-  info("%s, cnt: %zu\n", __func__, schs.size());
-  EXPECT_GT(schs.size(), 0u);
-  mtl_sleep_us(2000);
-
-  for (auto& sch : schs) {
-    EXPECT_GE(sch.stop(), 0);
-    sch.reset();
-  }
 }
 
 void sch_tasklet_digest_test(mtl_handle mt, const SchDigestScenario& para) {
@@ -122,11 +68,9 @@ void sch_tasklet_digest_test(mtl_handle mt, const SchDigestScenario& para) {
   schs.reserve(static_cast<size_t>(para.sch_cnt));
   tasklets.reserve(total_tasklets);
 
-  auto register_tasklets = [&](int sch_idx, mtl_sch_handle sch) {
+  auto register_tasklets = [&](mtl_sch_handle sch) {
     for (int j = 0; j < para.tasklets; j++) {
       auto ctx = std::make_unique<TaskletTestCtx>();
-      ctx->sch_idx = sch_idx;
-      ctx->tasklet_idx = j;
       ops.priv = ctx.get();
       mtl_test::ScopedTasklet t(mtl_sch_register_tasklet(sch, &ops));
       ASSERT_TRUE(t);
@@ -139,11 +83,11 @@ void sch_tasklet_digest_test(mtl_handle mt, const SchDigestScenario& para) {
     schs.emplace_back(mtl_sch_create(mt, &sch_ops));
     ASSERT_TRUE(schs.back());
     if (!para.runtime) {
-      ASSERT_NO_FATAL_FAILURE(register_tasklets(i, schs.back().get()));
+      ASSERT_NO_FATAL_FAILURE(register_tasklets(schs.back().get()));
     }
     ASSERT_GE(schs.back().start(), 0);
     if (para.runtime) {
-      ASSERT_NO_FATAL_FAILURE(register_tasklets(i, schs.back().get()));
+      ASSERT_NO_FATAL_FAILURE(register_tasklets(schs.back().get()));
     }
   }
 
@@ -196,11 +140,39 @@ void sch_tasklet_digest_test(mtl_handle mt, const SchDigestScenario& para) {
 }  // namespace
 
 TEST(Sch, create_single) {
-  sch_create_test(st_test_ctx()->handle);
+  struct mtl_sch_ops sch_ops = {};
+  sch_ops.name = "sch";
+  sch_ops.nb_tasklets = 16;
+
+  mtl_test::ScopedSch sch(mtl_sch_create(st_test_ctx()->handle, &sch_ops));
+  ASSERT_TRUE(sch);
+  ASSERT_GE(sch.start(), 0);
+  /* Allow scheduler thread to enter its run loop before stop. */
+  mtl_sleep_us(1000);
+  EXPECT_GE(sch.stop(), 0);
 }
 
 TEST(Sch, create_max) {
-  sch_create_max_test(st_test_ctx()->handle, 10);
+  mtl_handle mt = st_test_ctx()->handle;
+  constexpr int kMaxSch = 10;
+  struct mtl_sch_ops sch_ops = {};
+  sch_ops.name = "sch";
+  sch_ops.nb_tasklets = 16;
+
+  std::vector<mtl_test::ScopedSch> schs;
+  schs.reserve(kMaxSch);
+  for (int i = 0; i < kMaxSch; i++) {
+    mtl_test::ScopedSch sch(mtl_sch_create(mt, &sch_ops));
+    if (!sch || sch.start() < 0) break;
+    schs.push_back(std::move(sch));
+  }
+
+  info("%s, cnt: %zu\n", __func__, schs.size());
+  EXPECT_GT(schs.size(), 0u);
+  mtl_sleep_us(2000);
+  for (auto& sch : schs) {
+    EXPECT_GE(sch.stop(), 0);
+  }
 }
 
 TEST(Sch, tasklet_single) {
@@ -252,7 +224,6 @@ TEST(Sch, create_invalid_and_defaults) {
   EXPECT_LT(mtl_sch_enable_sleep(mt, -1, true), 0);
   EXPECT_LT(mtl_sch_enable_sleep(mt, 10000, false), 0);
 
-  ScopedSchSleepUs sleep_guard(mt);
   EXPECT_EQ(mtl_sch_set_sleep_us(mt, 1000), 0);
   EXPECT_EQ(mtl_sch_set_sleep_us(mt, 0), 0);
 }

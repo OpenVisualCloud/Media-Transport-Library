@@ -17,9 +17,7 @@
  * See README.md, "Test catalogue".
  */
 
-#include "core/constants.hpp"
 #include "core/test_fixture.hpp"
-#include "handlers/st20p_handler.hpp"
 #include "strategies/st20p_strategies.hpp"
 
 static_assert(kNoCtxPacingEarlyMaxNs == 0, "comments quote 0 us early");

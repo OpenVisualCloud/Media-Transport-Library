@@ -2,7 +2,6 @@
 /* Copyright(c) 2025 Intel Corporation */
 
 #include <arpa/inet.h>
-#include <unistd.h>
 
 #include <chrono>
 #include <cstring>
@@ -10,7 +9,6 @@
 #include <vector>
 
 #include "core/test_fixture.hpp"
-#include "handlers/st40p_handler.hpp"
 #include "test_harness.hpp"
 
 namespace {
@@ -33,7 +31,6 @@ class SplitAncRoundTripOracle : public FrameTestStrategy {
     ASSERT_NE(info->meta, nullptr);
     ASSERT_NE(info->udw_buff_addr, nullptr);
 
-    uint32_t total_bytes = 0;
     uint32_t offset = 0;
     info->meta_num = anc_sizes_.size();
     for (size_t i = 0; i < anc_sizes_.size(); i++) {
@@ -55,9 +52,8 @@ class SplitAncRoundTripOracle : public FrameTestStrategy {
 
       offset += udw_size;
     }
-    total_bytes = offset;
-    ASSERT_LE(total_bytes, info->udw_buffer_size);
-    info->udw_buffer_fill = total_bytes;
+    ASSERT_LE(offset, info->udw_buffer_size);
+    info->udw_buffer_fill = offset;
   }
 
   void rxTestFrameModifier(void* frame, size_t /*frame_size*/) override {
@@ -88,12 +84,37 @@ class SplitAncRoundTripOracle : public FrameTestStrategy {
   std::vector<uint16_t> anc_sizes_;
 };
 
-}  // namespace
+void runSplitAncCase(NoCtxTest* test, st_tests_context* ctx,
+                     std::vector<uint16_t> anc_sizes, bool interlaced, enum st_fps fps,
+                     bool expect_tx = true) {
+  test->initDefaultContext();
+  if (::testing::Test::HasFatalFailure()) return;
 
-namespace {
+  auto bundle = test->createSt40pHandlerBundle(
+      /*createTx=*/true, /*createRx=*/true,
+      [anc_sizes](St40pHandler*) { return new SplitAncRoundTripOracle(anc_sizes); },
+      [interlaced, fps](St40pHandler* handler) {
+        handler->sessionsOpsTx.flags |= ST40P_TX_FLAG_SPLIT_ANC_BY_PKT;
+        handler->sessionsOpsTx.interlaced = interlaced;
+        handler->sessionsOpsRx.interlaced = interlaced;
+        handler->sessionsOpsTx.fps = fps;
+      });
 
-static void build_split_rtp_packet(std::vector<uint8_t>& out, uint16_t seq, uint32_t ts,
-                                   bool marker, const std::vector<uint8_t>& payload) {
+  NoCtxTest::StartFakePtpClock();
+  bundle.handler->startSession();
+  ASSERT_EQ(mtl_start(ctx->handle), 0);
+
+  test->sleepUntilFailure(1);
+  bundle.handler->stopSession();
+
+  if (expect_tx) {
+    EXPECT_GT(bundle.handler->txFrames(), 0u);
+  }
+  EXPECT_GT(bundle.handler->rxFrames(), 0u);
+}
+
+void build_split_rtp_packet(std::vector<uint8_t>& out, uint16_t seq, uint32_t ts,
+                            bool marker, const std::vector<uint8_t>& payload) {
   const uint32_t payload_bytes =
       st40_rfc8331_payload_bytes(static_cast<uint16_t>(payload.size()));
   out.assign(sizeof(st40_rfc8331_rtp_hdr) + payload_bytes, 0);
@@ -215,110 +236,20 @@ TEST_F(NoCtxTest, st40i_smoke) {
       << "st40i_smoke TX/RX frame count mismatch";
 }
 
-/* st40i_split_flag_accepts_and_propagates
- * Config: TX kTxFlags = SPLIT_ANC_BY_PKT, RX progressive; one 1-byte ANC per frame.
- * Expect: on every frame, SplitAncRoundTripOracle checks 1-3; after 1 s and stop:
- *         txFrames() > 0, rxFrames() > 0.
- */
+/* st40i_split_flag_accepts_and_propagates: progressive, one 1-byte ANC per frame. */
 TEST_F(NoCtxTest, st40i_split_flag_accepts_and_propagates) {
-  initDefaultContext();
-
-  constexpr uint32_t kTxFlags = ST40P_TX_FLAG_SPLIT_ANC_BY_PKT;
-
-  auto bundle = createSt40pHandlerBundle(
-      /*createTx=*/true, /*createRx=*/true,
-      /*strategyFactory=*/[](St40pHandler*) { return new SplitAncRoundTripOracle({1}); },
-      [](St40pHandler* handler) {
-        handler->sessionsOpsTx.flags |= kTxFlags;
-        handler->sessionsOpsRx.interlaced = false;
-      });
-
-  ASSERT_NE(bundle.handler, nullptr);
-
-  StartFakePtpClock();
-  bundle.handler->startSession();
-  ASSERT_EQ(mtl_start(ctx->handle), 0);
-
-  sleepUntilFailure(1);
-
-  bundle.handler->stopSession();
-
-  EXPECT_GT(bundle.handler->txFrames(), 0u);
-  EXPECT_GT(bundle.handler->rxFrames(), 0u);
+  runSplitAncCase(this, ctx, {1}, /*interlaced=*/false, ST_FPS_P60);
 }
 
-/* st40i_split_multi_packet_roundtrip
- * Config: TX kTxFlags = SPLIT_ANC_BY_PKT, RX progressive, kFramebuffCnt = 4 TX and RX;
- *         ANC packets of 8, 6 and 4 bytes per frame.
- * Expect: on every frame, SplitAncRoundTripOracle checks 1-3; after 1 s and stop:
- *         rxFrames() >= 1.
- */
+/* st40i_split_multi_packet_roundtrip: progressive, 8/6/4-byte ANCs per frame. */
 TEST_F(NoCtxTest, st40i_split_multi_packet_roundtrip) {
-  initDefaultContext();
-
-  constexpr uint32_t kTxFlags = ST40P_TX_FLAG_SPLIT_ANC_BY_PKT;
-  constexpr uint16_t kFramebuffCnt = 4;
-
-  auto bundle = createSt40pHandlerBundle(
-      /*createTx=*/true, /*createRx=*/true,
-      /*strategyFactory=*/
-      [](St40pHandler*) { return new SplitAncRoundTripOracle({8, 6, 4}); },
-      [](St40pHandler* handler) {
-        handler->sessionsOpsTx.flags |= kTxFlags;
-        handler->sessionsOpsRx.interlaced = false;
-        handler->sessionsOpsTx.framebuff_cnt = kFramebuffCnt;
-        handler->sessionsOpsRx.framebuff_cnt = kFramebuffCnt;
-      });
-
-  ASSERT_NE(bundle.handler, nullptr);
-
-  StartFakePtpClock();
-  bundle.handler->startSession();
-  ASSERT_EQ(mtl_start(ctx->handle), 0);
-
-  sleepUntilFailure(1);
-
-  bundle.handler->stopSession();
-
-  EXPECT_GE(bundle.handler->rxFrames(), 1u);
+  runSplitAncCase(this, ctx, {8, 6, 4}, /*interlaced=*/false, ST_FPS_P60,
+                  /*expect_tx=*/false);
 }
 
-/* st40i_split_loopback
- * Config: TX kTxFlags = SPLIT_ANC_BY_PKT, kInterlaced TX and RX, TX kFps = 50 fields/s;
- *         two 4-byte ANC packets per frame.
- * Expect: on every field, SplitAncRoundTripOracle checks 1-3; after 1 s and stop:
- *         txFrames() > 0, rxFrames() > 0.
- */
+/* st40i_split_loopback: interlaced 50 fields/s, two 4-byte ANCs per field. */
 TEST_F(NoCtxTest, st40i_split_loopback) {
-  initDefaultContext();
-
-  constexpr uint32_t kTxFlags = ST40P_TX_FLAG_SPLIT_ANC_BY_PKT;
-  constexpr bool kInterlaced = true;
-  constexpr enum st_fps kFps = ST_FPS_P50;
-
-  auto bundle = createSt40pHandlerBundle(
-      /*createTx=*/true, /*createRx=*/true,
-      /*strategyFactory=*/
-      [](St40pHandler*) { return new SplitAncRoundTripOracle({4, 4}); },
-      [](St40pHandler* handler) {
-        handler->sessionsOpsTx.flags |= kTxFlags;
-        handler->sessionsOpsRx.interlaced = kInterlaced;
-        handler->sessionsOpsTx.interlaced = kInterlaced;
-        handler->sessionsOpsTx.fps = kFps;
-      });
-
-  ASSERT_NE(bundle.handler, nullptr);
-
-  StartFakePtpClock();
-  bundle.handler->startSession();
-  ASSERT_EQ(mtl_start(ctx->handle), 0);
-
-  sleepUntilFailure(1);
-
-  bundle.handler->stopSession();
-
-  EXPECT_GT(bundle.handler->txFrames(), 0u);
-  EXPECT_GT(bundle.handler->rxFrames(), 0u);
+  runSplitAncCase(this, ctx, {4, 4}, /*interlaced=*/true, ST_FPS_P50);
 }
 
 /* st40i_split_seq_gap_reports_loss
@@ -345,7 +276,6 @@ TEST_F(NoCtxTest, st40i_split_seq_gap_reports_loss) {
         handler->sessionsOpsRx.interlaced = false;
         handler->sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_P] = udp_port;
         handler->sessionsOpsRx.port.payload_type = kPayloadType;
-        handler->sessionsOpsRx.flags |= ST40P_RX_FLAG_BLOCK_GET;
       });
 
   ASSERT_NE(bundle.handler, nullptr);

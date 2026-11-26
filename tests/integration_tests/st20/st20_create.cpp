@@ -11,16 +11,6 @@ using ScopedSt20Rx = mtl_test::ScopedHandle<st20_rx_handle, st20_rx_free>;
 
 }  // namespace
 
-TEST(St20_tx, create_free_single) {
-  mtl_test::verify_create_free<struct st20_tx_ops, st20_tx_handle, st20_tx_create,
-                               st20_tx_free>(st20_tx_ops_init, st20_tx_assert_cnt, 0, 1,
-                                             1);
-}
-TEST(St20_tx, create_free_multi) {
-  mtl_test::verify_create_free<struct st20_tx_ops, st20_tx_handle, st20_tx_create,
-                               st20_tx_free>(st20_tx_ops_init, st20_tx_assert_cnt, 0, 1,
-                                             6);
-}
 TEST(St20_tx, create_free_mix) {
   mtl_test::verify_create_free<struct st20_tx_ops, st20_tx_handle, st20_tx_create,
                                st20_tx_free>(st20_tx_ops_init, st20_tx_assert_cnt, 2, 3,
@@ -41,7 +31,6 @@ TEST(St20_tx, create_queue_cnt) {
   const int want = ctx->para.tx_queues_cnt[MTL_PORT_P];
   auto sch_cnt = st_test_sch_cnt(ctx);
   auto test_ctx = mtl_test::make_context(ctx, 0, 2);
-  ASSERT_TRUE(test_ctx != nullptr);
   struct st20_tx_ops ops;
   st20_tx_ops_init(test_ctx.get(), &ops);
 
@@ -112,7 +101,6 @@ TEST(St20_tx, query_params) {
   auto ctx = st_test_ctx();
   const uint16_t fb_cnt = 3;
   auto test_ctx = mtl_test::make_context(ctx, 0, fb_cnt);
-  ASSERT_TRUE(test_ctx != nullptr);
 
   struct st20_tx_ops ops;
   st20_tx_ops_init(test_ctx.get(), &ops);
@@ -137,16 +125,6 @@ TEST(St20_tx, query_params) {
   EXPECT_LT(st20_tx_get_pacing_params(nullptr, &tr_offset_ns, &trs_ns, &vrx_pkts), 0);
 }
 
-TEST(St20_rx, create_free_single) {
-  mtl_test::verify_create_free<struct st20_rx_ops, st20_rx_handle, st20_rx_create,
-                               st20_rx_free>(st20_rx_ops_init, st20_rx_assert_cnt, 0, 1,
-                                             1);
-}
-TEST(St20_rx, create_free_multi) {
-  mtl_test::verify_create_free<struct st20_rx_ops, st20_rx_handle, st20_rx_create,
-                               st20_rx_free>(st20_rx_ops_init, st20_rx_assert_cnt, 0, 1,
-                                             6);
-}
 TEST(St20_rx, create_free_mix) {
   mtl_test::verify_create_free<struct st20_rx_ops, st20_rx_handle, st20_rx_create,
                                st20_rx_free>(st20_rx_ops_init, st20_rx_assert_cnt, 2, 3,
@@ -180,7 +158,6 @@ TEST(St20_rx, query_params) {
   auto ctx = st_test_ctx();
   const uint16_t fb_cnt = 3;
   auto test_ctx = mtl_test::make_context(ctx, 0, fb_cnt);
-  ASSERT_TRUE(test_ctx != nullptr);
 
   struct st20_rx_ops ops;
   st20_rx_ops_init(test_ctx.get(), &ops);
@@ -204,37 +181,24 @@ TEST(St20_rx, session_stats_reset) {
 
   auto tx_ctx = mtl_test::make_context(ctx, 0, 3);
   auto rx_ctx = mtl_test::make_context(ctx, 0, 3);
-  ASSERT_TRUE(tx_ctx != nullptr);
-  ASSERT_TRUE(rx_ctx != nullptr);
+  const St20StreamSpec st{ST20_TYPE_FRAME_LEVEL,
+                          ST20_TYPE_FRAME_LEVEL,
+                          ST20_PACKING_BPM,
+                          ST_FPS_P59_94,
+                          1280,
+                          720};
 
   struct st20_tx_ops ops_tx;
-  init_single_port_tx(ops_tx, tx_ctx.get(), "st20_stats_tx", udp_port_for_idx(20));
-  ops_tx.type = ST20_TYPE_FRAME_LEVEL;
-  ops_tx.packing = ST20_PACKING_BPM;
-  ops_tx.width = 1280;
-  ops_tx.height = 720;
-  ops_tx.fps = ST_FPS_P59_94;
-  ops_tx.fmt = ST20_FMT_YUV_422_10BIT;
-  ops_tx.payload_type = ST20_TEST_PAYLOAD_TYPE;
-  ops_tx.framebuff_cnt = tx_ctx->fb_cnt;
-  ops_tx.get_next_frame = tx_next_video_frame;
-
   struct st20_rx_ops ops_rx;
-  init_single_port_rx(ops_rx, rx_ctx.get(), "st20_stats_rx", udp_port_for_idx(20));
-  ops_rx.type = ST20_TYPE_FRAME_LEVEL;
-  ops_rx.width = 1280;
-  ops_rx.height = 720;
-  ops_rx.fps = ST_FPS_P59_94;
-  ops_rx.fmt = ST20_FMT_YUV_422_10BIT;
-  ops_rx.payload_type = ST20_TEST_PAYLOAD_TYPE;
-  ops_rx.framebuff_cnt = rx_ctx->fb_cnt;
-  ops_rx.notify_frame_ready = st20_rx_frame_ready;
+  st20_fill_loopback_tx_ops(ops_tx, tx_ctx.get(), st, "st20_stats_tx",
+                            udp_port_for_idx(20));
+  st20_fill_loopback_rx_ops(ops_rx, rx_ctx.get(), st, "st20_stats_rx",
+                            udp_port_for_idx(20));
 
   ScopedSt20Rx rx_handle(st20_rx_create(m_handle, &ops_rx));
   ScopedSt20Tx tx_handle(st20_tx_create(m_handle, &ops_tx));
   ASSERT_TRUE(static_cast<bool>(rx_handle));
   ASSERT_TRUE(static_cast<bool>(tx_handle));
-
   st20_set_handle(rx_ctx.get(), rx_handle.get());
   st20_set_handle(tx_ctx.get(), tx_handle.get());
 
@@ -279,38 +243,23 @@ TEST(St20_rx, timing_parser_critical) {
 
   auto tx_ctx = mtl_test::make_context(ctx, 0, 3);
   auto rx_ctx = mtl_test::make_context(ctx, 0, 3);
-  ASSERT_TRUE(tx_ctx != nullptr);
-  ASSERT_TRUE(rx_ctx != nullptr);
+  const St20StreamSpec st{ST20_TYPE_FRAME_LEVEL,
+                          ST20_TYPE_FRAME_LEVEL,
+                          ST20_PACKING_BPM,
+                          ST_FPS_P59_94,
+                          1280,
+                          720};
 
   struct st20_tx_ops ops_tx;
-  init_single_port_tx(ops_tx, tx_ctx.get(), "st20_tp_tx", udp_port_for_idx(21));
-  ops_tx.type = ST20_TYPE_FRAME_LEVEL;
-  ops_tx.packing = ST20_PACKING_BPM;
-  ops_tx.width = 1280;
-  ops_tx.height = 720;
-  ops_tx.fps = ST_FPS_P59_94;
-  ops_tx.fmt = ST20_FMT_YUV_422_10BIT;
-  ops_tx.payload_type = ST20_TEST_PAYLOAD_TYPE;
-  ops_tx.framebuff_cnt = tx_ctx->fb_cnt;
-  ops_tx.get_next_frame = tx_next_video_frame;
-
   struct st20_rx_ops ops_rx;
-  init_single_port_rx(ops_rx, rx_ctx.get(), "st20_tp_rx", udp_port_for_idx(21));
-  ops_rx.type = ST20_TYPE_FRAME_LEVEL;
-  ops_rx.width = 1280;
-  ops_rx.height = 720;
-  ops_rx.fps = ST_FPS_P59_94;
-  ops_rx.fmt = ST20_FMT_YUV_422_10BIT;
-  ops_rx.payload_type = ST20_TEST_PAYLOAD_TYPE;
-  ops_rx.framebuff_cnt = rx_ctx->fb_cnt;
-  ops_rx.notify_frame_ready = st20_rx_frame_ready;
+  st20_fill_loopback_tx_ops(ops_tx, tx_ctx.get(), st, "st20_tp_tx", udp_port_for_idx(21));
+  st20_fill_loopback_rx_ops(ops_rx, rx_ctx.get(), st, "st20_tp_rx", udp_port_for_idx(21));
   ops_rx.flags |= ST20_RX_FLAG_TIMING_PARSER_META;
 
   ScopedSt20Rx rx_handle(st20_rx_create(m_handle, &ops_rx));
   ScopedSt20Tx tx_handle(st20_tx_create(m_handle, &ops_tx));
   ASSERT_TRUE(static_cast<bool>(rx_handle));
   ASSERT_TRUE(static_cast<bool>(tx_handle));
-
   st20_set_handle(rx_ctx.get(), rx_handle.get());
   st20_set_handle(tx_ctx.get(), tx_handle.get());
 

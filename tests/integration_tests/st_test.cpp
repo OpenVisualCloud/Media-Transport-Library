@@ -79,25 +79,6 @@ void test_lcore_one(struct st_tests_context* ctx) {
   EXPECT_EQ(test_lcore_cnt(ctx), base_cnt);
 }
 
-uint64_t read_wall_clock_ns() {
-  struct timespec spec;
-#ifndef WINDOWSENV
-  clock_gettime(CLOCK_REALTIME, &spec);
-  return (static_cast<uint64_t>(spec.tv_sec) * NS_PER_S) + spec.tv_nsec;
-#else
-  unsigned __int64 t;
-  union {
-    unsigned __int64 u64;
-    FILETIME ft;
-  } ct;
-  GetSystemTimePreciseAsFileTime(&ct.ft);
-  t = ct.u64 - INT64_C(116444736000000000);
-  spec.tv_sec = t / 10000000;
-  spec.tv_nsec = ((int)(t % 10000000)) * 100;
-  return (static_cast<uint64_t>(spec.tv_sec) * NS_PER_S) + spec.tv_nsec;
-#endif
-}
-
 void hp_malloc_test(struct st_tests_context* ctx, size_t size, enum mtl_port port,
                     bool zero, bool expect_succ) {
   mtl_test::ScopedHpBuf buf(ctx->handle, size, port, zero);
@@ -120,26 +101,6 @@ void hp_malloc_tests(struct st_tests_context* ctx, enum mtl_port port, bool zero
     hp_malloc_test(ctx, sz, port, zero, true);
   }
 }
-
-class ScopedLogLevel {
- public:
-  explicit ScopedLogLevel(mtl_handle handle)
-      : handle_(handle), orig_(mtl_get_log_level(handle)) {
-  }
-  ~ScopedLogLevel() {
-    if (handle_) mtl_set_log_level(handle_, orig_);
-  }
-  ScopedLogLevel(const ScopedLogLevel&) = delete;
-  ScopedLogLevel& operator=(const ScopedLogLevel&) = delete;
-
-  enum mtl_log_level orig() const {
-    return orig_;
-  }
-
- private:
-  mtl_handle handle_ = nullptr;
-  enum mtl_log_level orig_ = MTL_LOG_LEVEL_INFO;
-};
 
 std::atomic<int> g_log_prefix_calls{0};
 std::atomic<int> g_log_printer_calls{0};
@@ -180,6 +141,10 @@ class ScopedLogHooks {
   }
   ScopedLogHooks(const ScopedLogHooks&) = delete;
   ScopedLogHooks& operator=(const ScopedLogHooks&) = delete;
+
+  enum mtl_log_level orig() const {
+    return orig_level_;
+  }
 
   void set_stream(FILE* fp) {
     log_fp_ = fp;
@@ -419,36 +384,28 @@ TEST(Main, get_numa_id) {
 
 TEST(Misc, hp_malloc) {
   auto* ctx = st_test_ctx();
-  int num_port = st_test_num_port(ctx);
-
   hp_malloc_tests(ctx, MTL_PORT_P, false);
-  if (num_port > 1) hp_malloc_tests(ctx, MTL_PORT_R, false);
+  if (ctx->para.num_ports > 1) hp_malloc_tests(ctx, MTL_PORT_R, false);
 }
 
 TEST(Misc, hp_zmalloc) {
   auto* ctx = st_test_ctx();
-  int num_port = st_test_num_port(ctx);
-
   hp_malloc_tests(ctx, MTL_PORT_P, true);
-  if (num_port > 1) hp_malloc_tests(ctx, MTL_PORT_R, true);
+  if (ctx->para.num_ports > 1) hp_malloc_tests(ctx, MTL_PORT_R, true);
 }
 
 TEST(Misc, hp_malloc_expect_fail) {
   auto* ctx = st_test_ctx();
-  int num_port = st_test_num_port(ctx);
-
   hp_malloc_test(ctx, 0, MTL_PORT_P, false, false);
-  if (num_port > 1) hp_malloc_test(ctx, 0, MTL_PORT_R, false, false);
+  if (ctx->para.num_ports > 1) hp_malloc_test(ctx, 0, MTL_PORT_R, false, false);
   hp_malloc_test(ctx, 1024, static_cast<enum mtl_port>(MTL_PORT_MAX), false, false);
   EXPECT_EQ(mtl_hp_virt2iova(ctx->handle, nullptr), MTL_BAD_IOVA);
 }
 
 TEST(Misc, hp_zmalloc_expect_fail) {
   auto* ctx = st_test_ctx();
-  int num_port = st_test_num_port(ctx);
-
   hp_malloc_test(ctx, 0, MTL_PORT_P, true, false);
-  if (num_port > 1) hp_malloc_test(ctx, 0, MTL_PORT_R, true, false);
+  if (ctx->para.num_ports > 1) hp_malloc_test(ctx, 0, MTL_PORT_R, true, false);
   hp_malloc_test(ctx, 1024, static_cast<enum mtl_port>(MTL_PORT_MAX), true, false);
 }
 
@@ -490,7 +447,7 @@ TEST(Misc, ptp) {
     const uint64_t cur = mtl_ptp_read_time(handle);
     EXPECT_GT(cur, prev);
     if (user_ptp) {
-      const uint64_t real_time = read_wall_clock_ns();
+      const uint64_t real_time = st_test_get_realtime_ns();
       const uint64_t diff = (cur > real_time) ? (cur - real_time) : (real_time - cur);
       EXPECT_LT(diff, static_cast<uint64_t>(5) * NS_PER_MS);
     }
@@ -505,7 +462,7 @@ TEST(Misc, ptp) {
   EXPECT_GT(refreshed, prev);
   if (user_ptp) {
     EXPECT_GT(cb_after_refresh, cb_before_refresh);
-    const uint64_t real_time = read_wall_clock_ns();
+    const uint64_t real_time = st_test_get_realtime_ns();
     const uint64_t diff =
         (refreshed > real_time) ? (refreshed - real_time) : (real_time - refreshed);
     EXPECT_LT(diff, static_cast<uint64_t>(5) * NS_PER_MS);
@@ -514,7 +471,7 @@ TEST(Misc, ptp) {
 
 TEST(Misc, log_level) {
   mtl_handle handle = st_test_ctx()->handle;
-  ScopedLogLevel guard(handle);
+  ScopedLogHooks guard(handle);
 
   EXPECT_GE(mtl_set_log_level(handle, MTL_LOG_LEVEL_INFO), 0);
   EXPECT_EQ(mtl_get_log_level(handle), MTL_LOG_LEVEL_INFO);

@@ -3,7 +3,7 @@
 
 sources = files('tests.cpp', 'test_runtime.cpp', 'st_test.cpp', 'st22_test.cpp', 'st30_test.cpp',
                 'st40_test.cpp', 'dma_test.cpp', 'cvt_test.cpp', 'st22p_test.cpp',
-                'st20p_test.cpp', 'test_util.cpp', 'sch_test.cpp', 'st30p_test.cpp',
+                'st20p_test.cpp', 'sch_test.cpp', 'st30p_test.cpp',
                 'st40p_test.cpp', 'tx_timestamp_sync_test.cpp')
 
 if get_option('buildtype') != 'release'
@@ -16,4 +16,4 @@ sources += st20_sources
 
 subdir('noctx')
 sources += noctx_sources
-test_inc = include_directories('.', 'harness', 'noctx', 'st20')
+test_inc = include_directories('.', 'noctx', 'st20')

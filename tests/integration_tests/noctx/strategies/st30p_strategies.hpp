@@ -45,7 +45,8 @@ class St30pDefaultPacingOracle : public FrameTestStrategy {
  */
 class St30pUserPacingOracle : public St30pDefaultPacingOracle {
  public:
-  explicit St30pUserPacingOracle(St30pHandler* parentHandler = nullptr);
+  explicit St30pUserPacingOracle(St30pHandler* parentHandler = nullptr,
+                                 bool enableRx = true);
   void initializeTiming(St30pHandler* handler);
   void txTestFrameModifier(void* frame, size_t frame_size) override;
   void rxTestFrameModifier(void* frame, size_t frame_size) override;
@@ -63,12 +64,4 @@ class St30pUserPacingOracle : public St30pDefaultPacingOracle {
   uint64_t startingTime = 0;
   bool timingInitialized = false;
   RxPhcClock rxPhc;
-};
-
-/* TX plan only: the St30pUserPacingOracle plan. RX counts buffers in idx_rx and checks
- * nothing. */
-class St30pRedundantStreamPlan : public St30pUserPacingOracle {
- public:
-  explicit St30pRedundantStreamPlan(St30pHandler* parentHandler = nullptr);
-  void rxTestFrameModifier(void* frame, size_t frame_size) override;
 };

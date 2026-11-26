@@ -9,7 +9,7 @@
 #include <st_api.h>
 
 #include <cstdint>
-#include <cstring>
+#include <vector>
 
 TEST(Misc, version) {
   const char* version_display = mtl_version();
@@ -18,33 +18,24 @@ TEST(Misc, version) {
   uint32_t version_no =
       MTL_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR, MTL_VERSION_LAST);
   EXPECT_EQ((uint32_t)MTL_VERSION, version_no);
-}
 
-TEST(Misc, version_compare) {
-  auto version_next =
-      MTL_VERSION_NUM(MTL_VERSION_MAJOR + 1, MTL_VERSION_MINOR, MTL_VERSION_LAST);
-  EXPECT_LT(MTL_VERSION, version_next);
-  version_next =
-      MTL_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR + 1, MTL_VERSION_LAST);
-  EXPECT_LT(MTL_VERSION, version_next);
-  version_next =
-      MTL_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR, MTL_VERSION_LAST + 1);
-  EXPECT_LT(MTL_VERSION, version_next);
+  EXPECT_LT(MTL_VERSION,
+            MTL_VERSION_NUM(MTL_VERSION_MAJOR + 1, MTL_VERSION_MINOR, MTL_VERSION_LAST));
+  EXPECT_LT(MTL_VERSION,
+            MTL_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR + 1, MTL_VERSION_LAST));
+  EXPECT_LT(MTL_VERSION,
+            MTL_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR, MTL_VERSION_LAST + 1));
 }
 
 static void mtl_memcpy_test(size_t size) {
   ASSERT_GT(size, 0u);
-  char* src = new char[size];
-  char* dst = new char[size];
+  std::vector<uint8_t> src(size);
+  std::vector<uint8_t> dst(size, 0);
 
-  for (size_t i = 0; i < size; i++) src[i] = (char)i;
-  memset(dst, 0, size);
+  for (size_t i = 0; i < size; i++) src[i] = static_cast<uint8_t>(i);
 
-  mtl_memcpy(dst, src, size);
-  EXPECT_EQ(0, memcmp(src, dst, size));
-
-  delete[] src;
-  delete[] dst;
+  mtl_memcpy(dst.data(), src.data(), size);
+  EXPECT_EQ(src, dst);
 }
 
 TEST(Misc, memcpy) {
@@ -129,8 +120,6 @@ void ExpectCadence(const cadence_case& tc) {
     const uint32_t current = st10_tai_to_media_clk(tai_ns, tc.sampling_rate);
 
     const uint32_t diff = current - prev;
-    EXPECT_GE(diff, diff_floor) << "iteration=" << i << " diff=" << diff;
-    EXPECT_LE(diff, diff_ceil) << "iteration=" << i << " diff=" << diff;
     EXPECT_TRUE(diff == diff_floor || diff == diff_ceil)
         << "iteration=" << i << " diff=" << diff << " allowed {" << diff_floor << ", "
         << diff_ceil << "}";

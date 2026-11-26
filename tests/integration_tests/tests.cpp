@@ -4,11 +4,8 @@
 
 #include "tests.hpp"
 
-#include <getopt.h>
-#ifndef WINDOWSENV
-#include <numa.h>
-#endif
 #include <arpa/inet.h>
+#include <getopt.h>
 
 #include <string>
 #include <vector>
@@ -37,7 +34,6 @@ enum test_args_cmd {
   TEST_ARG_MIGRATE_DISABLE,
   TEST_ARG_NB_TX_DESC,
   TEST_ARG_NB_RX_DESC,
-  TEST_ARG_LEVEL,
   TEST_ARG_AUTO_START_STOP,
   TEST_ARG_AF_XDP_ZC_DISABLE,
   TEST_ARG_QUEUE_CNT,
@@ -54,7 +50,6 @@ enum test_args_cmd {
   TEST_ARG_MCAST_ONLY,
   TEST_ARG_ALLOW_ACROSS_NUMA_CORE,
   TEST_ARG_AUDIO_TX_PACING,
-  TEST_ARG_NOCTX_TESTS,
   TEST_ARG_SINGLE_PROCESS
 };
 
@@ -63,11 +58,9 @@ static struct option test_args_options[] = {
     {"r_port", required_argument, 0, TEST_ARG_R_PORT},
     {"p_sip", required_argument, 0, TEST_ARG_P_SIP},
     {"port_list", required_argument, 0, TEST_ARG_PORT_LIST},
-    {"ports", required_argument, 0, TEST_ARG_PORT_LIST},
 
     {"lcores", required_argument, 0, TEST_ARG_LCORES},
     {"log_level", required_argument, 0, TEST_ARG_LOG_LEVEL},
-    {"level", required_argument, 0, TEST_ARG_LEVEL},
     {"sch_session_quota", required_argument, 0, TEST_ARG_SCH_SESSION_QUOTA},
     {"dma_dev", required_argument, 0, TEST_ARG_DMA_DEV},
     {"dma_auto", no_argument, nullptr, TEST_ARG_DMA_AUTO},
@@ -97,8 +90,6 @@ static struct option test_args_options[] = {
     {"mcast_only", no_argument, 0, TEST_ARG_MCAST_ONLY},
     {"allow_across_numa_core", no_argument, 0, TEST_ARG_ALLOW_ACROSS_NUMA_CORE},
     {"audio_tx_pacing", required_argument, 0, TEST_ARG_AUDIO_TX_PACING},
-    {"no_ctx_tests", no_argument, 0, TEST_ARG_NOCTX_TESTS},
-    {"no_ctx", no_argument, 0, TEST_ARG_NOCTX_TESTS},
     {"single_process", no_argument, 0, TEST_ARG_SINGLE_PROCESS},
 
     {0, 0, 0, 0}};
@@ -125,7 +116,7 @@ static int test_args_dma_dev(struct mtl_init_params* p, const char* in_dev) {
   return 0;
 }
 
-void test_parse_port_list(struct mtl_init_params* p, const char* in_list) {
+static void test_parse_port_list(struct mtl_init_params* p, const char* in_list) {
   if (!in_list) return;
   char list[MTL_PORT_MAX * MTL_PORT_MAX_LEN] = {0};
   snprintf(list, sizeof(list) - 1, "%s", in_list);
@@ -237,17 +228,6 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
       case TEST_ARG_NB_RX_DESC:
         p->nb_rx_desc = atoi(optarg);
         break;
-      case TEST_ARG_LEVEL:
-        if (!strcmp(optarg, "all")) {
-          ctx->level = ST_TEST_LEVEL_ALL;
-          ctx->user_level = true;
-        } else if (!strcmp(optarg, "mandatory")) {
-          ctx->level = ST_TEST_LEVEL_MANDATORY;
-          ctx->user_level = true;
-        } else {
-          err("%s, unknow log level %s\n", __func__, optarg);
-        }
-        break;
       case TEST_ARG_AUTO_START_STOP:
         p->flags |= MTL_FLAG_DEV_AUTO_START_STOP;
         break;
@@ -335,11 +315,6 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         else
           err("%s, unknow audio tx pacing %s\n", __func__, optarg);
         break;
-      case TEST_ARG_NOCTX_TESTS:
-        /* Deprecated no-op: KahawaiTest selects shared vs own-ctx mode automatically. */
-        dbg("%s, --no_ctx_tests is deprecated; mode is selected automatically\n",
-            __func__);
-        break;
       case TEST_ARG_SINGLE_PROCESS:
         ctx->single_process = true;
         break;
@@ -403,24 +378,8 @@ static void test_random_ip(struct st_tests_context* ctx) {
 }
 
 static uint64_t test_ptp_from_real_time(void* priv) {
-  auto ctx = (struct st_tests_context*)priv;
-  struct timespec spec;
-  uint64_t now;
-#ifndef WINDOWSENV
-  clock_gettime(CLOCK_REALTIME, &spec);
-  now = ((uint64_t)spec.tv_sec * NS_PER_S) + spec.tv_nsec;
-#else
-  unsigned __int64 t;
-  union {
-    unsigned __int64 u64;
-    FILETIME ft;
-  } ct;
-  GetSystemTimePreciseAsFileTime(&ct.ft);
-  t = ct.u64 - INT64_C(116444736000000000);
-  spec.tv_sec = t / 10000000;
-  spec.tv_nsec = ((int)(t % 10000000)) * 100;
-  now = ((uint64_t)spec.tv_sec * NS_PER_S) + spec.tv_nsec;
-#endif
+  auto* ctx = static_cast<struct st_tests_context*>(priv);
+  const uint64_t now = st_test_get_realtime_ns();
   __atomic_store_n(&ctx->ptp_time, now, __ATOMIC_RELEASE);
   return now;
 }
@@ -428,7 +387,6 @@ static uint64_t test_ptp_from_real_time(void* priv) {
 static void test_ctx_init(struct st_tests_context* ctx) {
   struct mtl_init_params* p = &ctx->para;
 
-  ctx->level = ST_TEST_LEVEL_MANDATORY;
   memset(p, 0x0, sizeof(*p));
   p->flags = MTL_FLAG_BIND_NUMA; /* default bind to numa */
   p->flags |= MTL_FLAG_RANDOM_SRC_PORT;
@@ -458,13 +416,11 @@ static void print_usage(const char* prog) {
       "\nMTL Integration Test Options (%s):\n"
       "  --p_port <bdf|kernel:lo>   Primary port (default TX / port 0)\n"
       "  --r_port <bdf|kernel:lo>   Secondary port (default RX / port 1)\n"
-      "  --port_list <p0,p1,...>    Comma-separated port list (alias: --ports)\n"
+      "  --port_list <p0,p1,...>    Comma-separated port list\n"
       "  --p_sip <ip>               Primary port source IPv4 address\n"
       "  --auto_start_stop          Enable MTL_FLAG_DEV_AUTO_START_STOP\n"
       "  --dma_auto                 Auto-probe DMA devices per port NUMA node\n"
-      "  --level <mandatory|all>    Select test level (default: mandatory)\n"
       "  --log_level <level>        debug|info|notice|warning|error\n"
-      "  --list-json                Print JSON metadata for all tests and exit\n"
       "  --help                     Show GoogleTest and KahawaiTest options\n"
       "\nMode selection is automatic: shared suites share one mtl_init(); NoCtxTest\n"
       "cases run in their own clean process (multi-case and mixed filters dispatch\n"
@@ -504,11 +460,6 @@ GTEST_API_ int main(int argc, char** argv) {
 
   bool help_requested = false;
   for (int i = 1; i < norm_argc; ++i) {
-    if (strcmp(norm_argv[i], "--list-json") == 0) {
-      testing::InitGoogleTest(&norm_argc, norm_argv.data());
-      mtl_test::print_cases_json();
-      return 0;
-    }
     if (strcmp(norm_argv[i], "--help") == 0 || strcmp(norm_argv[i], "-h") == 0 ||
         strcmp(norm_argv[i], "-?") == 0 || strcmp(norm_argv[i], "--gtest_help") == 0) {
       help_requested = true;
@@ -592,6 +543,10 @@ int tests_context_unit(tests_context* ctx) {
   for (int frame = 0; frame < TEST_MAX_SHA_HIST_NUM; frame++) {
     if (ctx->frame_buf[frame]) st_test_free(ctx->frame_buf[frame]);
     ctx->frame_buf[frame] = NULL;
+  }
+  while (!ctx->buf_q.empty()) {
+    st_test_free(ctx->buf_q.front());
+    ctx->buf_q.pop();
   }
   if (ctx->ooo_mapping) {
     st_test_free(ctx->ooo_mapping);

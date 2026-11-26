@@ -17,9 +17,6 @@ class Session {
   void addThread(std::function<void(std::atomic<bool>&)> func, bool isRx);
   void setTxWakeCallback(std::function<void()> wakeFn);
   void setRxWakeCallback(std::function<void()> wakeFn);
-  void clearTxWakeCallback();
-  void clearRxWakeCallback();
-  bool isRunning() const;
   void stop();
   ~Session();
 

@@ -4,8 +4,8 @@
 
 #pragma once
 
-#include <functional>
-#include <vector>
+#include <cstdio>
+#include <stdexcept>
 
 #include "session.hpp"
 #include "strategy.hpp"
@@ -15,14 +15,30 @@ class Handlers {
  public:
   explicit Handlers(st_tests_context* ctx,
                     FrameTestStrategy* frameTestStrategy = nullptr);
-  virtual ~Handlers();
+  virtual ~Handlers() = default;
 
-  void startSession(std::vector<std::function<void(std::atomic<bool>&)>> threadFunctions,
-                    bool isRx);
   void stopSession();
 
-  void setSessionPortsRx(struct st_rx_port* port, int rxPortIdx, int rxPortRedundantIdx);
-  void setSessionPortsTx(struct st_tx_port* port, int txPortIdx, int txPortRedundantIdx);
+  template <typename PortT>
+  void setSessionPortsImpl(PortT* port, int portIdx, int redundantIdx) {
+    if (!ctx) {
+      throw std::runtime_error("setSessionPorts: ctx is null");
+    }
+    if (portIdx >= static_cast<int>(ctx->para.num_ports) ||
+        redundantIdx >= static_cast<int>(ctx->para.num_ports)) {
+      throw std::runtime_error("setSessionPorts: port index out of range");
+    }
+    if (portIdx >= 0) {
+      snprintf(port->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+               ctx->para.port[portIdx]);
+      port->num_port = 1;
+      if (redundantIdx >= 0) {
+        snprintf(port->port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+                 ctx->para.port[redundantIdx]);
+        port->num_port = 2;
+      }
+    }
+  }
 
   Session session;
   st_tests_context* ctx;

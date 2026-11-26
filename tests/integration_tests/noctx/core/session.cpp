@@ -30,28 +30,6 @@ void Session::setRxWakeCallback(std::function<void()> wakeFn) {
   wakeRx_ = std::move(wakeFn);
 }
 
-void Session::clearTxWakeCallback() {
-  wakeTx_ = nullptr;
-}
-
-void Session::clearRxWakeCallback() {
-  wakeRx_ = nullptr;
-}
-
-bool Session::isRunning() const {
-  if (threads_.empty()) {
-    return false;
-  }
-
-  for (const auto& thread : threads_) {
-    if (!thread.joinable()) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 void Session::stop() {
   /* Never started or already stopped: skip drain and join. */
   if (threads_.empty()) return;
