@@ -2,6 +2,8 @@
  * Copyright(c) 2023 Intel Corporation
  */
 
+#pragma once
+
 #include <openssl/sha.h>
 #include <unistd.h>
 
@@ -13,8 +15,6 @@
 #include <queue>
 
 #include "test_platform.h"
-
-#pragma once
 
 #define TEST_DATA_FIXED_PATTER (0)
 
@@ -94,10 +94,6 @@ static inline void st_test_rand_v210(uint8_t* p, size_t sz, uint8_t base) {
   }
 }
 
-int st_test_check_patter(uint8_t* p, size_t sz, uint8_t base);
-
 int st_test_cmp(uint8_t* s1, uint8_t* s2, size_t sz);
-
-int st_test_cmp_u16(uint16_t* s1, uint16_t* s2, size_t sz);
 
 void test_sha_dump(const char* tag, unsigned char* sha);

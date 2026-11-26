@@ -13,71 +13,6 @@
 
 namespace {
 
-using ScopedTasklet =
-    mtl_test::ScopedHandle<mtl_tasklet_handle, mtl_sch_unregister_tasklet>;
-
-/* Move-only RAII guard for mtl_sch_handle: stops (if started) and frees on exit. */
-class ScopedSch {
- public:
-  ScopedSch() = default;
-  explicit ScopedSch(mtl_sch_handle h) : handle_(h) {
-  }
-  ~ScopedSch() {
-    reset();
-  }
-  ScopedSch(const ScopedSch&) = delete;
-  ScopedSch& operator=(const ScopedSch&) = delete;
-  ScopedSch(ScopedSch&& other) noexcept
-      : handle_(other.handle_), started_(other.started_) {
-    other.handle_ = nullptr;
-    other.started_ = false;
-  }
-  ScopedSch& operator=(ScopedSch&& other) noexcept {
-    if (this != &other) {
-      reset();
-      handle_ = other.handle_;
-      started_ = other.started_;
-      other.handle_ = nullptr;
-      other.started_ = false;
-    }
-    return *this;
-  }
-
-  mtl_sch_handle get() const {
-    return handle_;
-  }
-  explicit operator bool() const {
-    return handle_ != nullptr;
-  }
-
-  int start() {
-    int ret = mtl_sch_start(handle_);
-    if (ret >= 0) started_ = true;
-    return ret;
-  }
-
-  int stop() {
-    if (!started_ || !handle_) return 0;
-    started_ = false;
-    return mtl_sch_stop(handle_);
-  }
-
-  void reset() {
-    if (started_ && handle_) {
-      EXPECT_GE(stop(), 0);
-    }
-    if (handle_) {
-      int ret = mtl_sch_free(handle_);
-      EXPECT_GE(ret, 0);
-      handle_ = nullptr;
-    }
-  }
-
- private:
-  mtl_sch_handle handle_ = nullptr;
-  bool started_ = false;
-};
-
 struct SchDigestScenario {
   int sch_cnt = 1;
   int tasklets = 1;
@@ -110,14 +45,28 @@ int test_tasklet_handler(void* priv) {
   return 0;
 }
 
+class ScopedSchSleepUs {
+ public:
+  explicit ScopedSchSleepUs(mtl_handle mt) : mt_(mt) {
+  }
+  ~ScopedSchSleepUs() {
+    if (mt_) mtl_sch_set_sleep_us(mt_, 0);
+  }
+  ScopedSchSleepUs(const ScopedSchSleepUs&) = delete;
+  ScopedSchSleepUs& operator=(const ScopedSchSleepUs&) = delete;
+
+ private:
+  mtl_handle mt_ = nullptr;
+};
+
 void sch_create_test(mtl_handle mt) {
   struct mtl_sch_ops sch_ops = {};
   sch_ops.name = "sch";
   sch_ops.nb_tasklets = 16;
 
-  ScopedSch sch(mtl_sch_create(mt, &sch_ops));
+  mtl_test::ScopedSch sch(mtl_sch_create(mt, &sch_ops));
   ASSERT_TRUE(sch);
-  EXPECT_GE(sch.start(), 0);
+  ASSERT_GE(sch.start(), 0);
   /* Allow scheduler thread to enter its run loop before stop. */
   mtl_sleep_us(1000);
   EXPECT_GE(sch.stop(), 0);
@@ -129,10 +78,10 @@ void sch_create_max_test(mtl_handle mt, int max) {
   sch_ops.name = "sch";
   sch_ops.nb_tasklets = 16;
 
-  std::vector<ScopedSch> schs;
+  std::vector<mtl_test::ScopedSch> schs;
   schs.reserve(static_cast<size_t>(max));
   for (int i = 0; i < max; i++) {
-    ScopedSch sch(mtl_sch_create(mt, &sch_ops));
+    mtl_test::ScopedSch sch(mtl_sch_create(mt, &sch_ops));
     if (!sch) break;
     if (sch.start() < 0) break;
     schs.push_back(std::move(sch));
@@ -165,8 +114,8 @@ void sch_tasklet_digest_test(mtl_handle mt, const SchDigestScenario& para) {
    * then tasklet_ctxs delete (after no scheduler thread can touch priv).
    */
   std::vector<std::unique_ptr<TaskletTestCtx>> tasklet_ctxs;
-  std::vector<ScopedSch> schs;
-  std::vector<ScopedTasklet> tasklets;
+  std::vector<mtl_test::ScopedSch> schs;
+  std::vector<mtl_test::ScopedTasklet> tasklets;
   const size_t total_tasklets =
       static_cast<size_t>(para.sch_cnt) * static_cast<size_t>(para.tasklets);
   tasklet_ctxs.reserve(total_tasklets);
@@ -179,7 +128,7 @@ void sch_tasklet_digest_test(mtl_handle mt, const SchDigestScenario& para) {
       ctx->sch_idx = sch_idx;
       ctx->tasklet_idx = j;
       ops.priv = ctx.get();
-      ScopedTasklet t(mtl_sch_register_tasklet(sch, &ops));
+      mtl_test::ScopedTasklet t(mtl_sch_register_tasklet(sch, &ops));
       ASSERT_TRUE(t);
       tasklet_ctxs.push_back(std::move(ctx));
       tasklets.push_back(std::move(t));
@@ -192,7 +141,7 @@ void sch_tasklet_digest_test(mtl_handle mt, const SchDigestScenario& para) {
     if (!para.runtime) {
       ASSERT_NO_FATAL_FAILURE(register_tasklets(i, schs.back().get()));
     }
-    EXPECT_GE(schs.back().start(), 0);
+    ASSERT_GE(schs.back().start(), 0);
     if (para.runtime) {
       ASSERT_NO_FATAL_FAILURE(register_tasklets(i, schs.back().get()));
     }
@@ -273,4 +222,132 @@ TEST(Sch, tasklet_runtime) {
   para.tasklets = 4;
   para.runtime = true;
   sch_tasklet_digest_test(st_test_ctx()->handle, para);
+}
+
+TEST(Sch, create_invalid_and_defaults) {
+  mtl_handle mt = st_test_ctx()->handle;
+
+  EXPECT_EQ(mtl_sch_create(mt, nullptr), nullptr);
+
+  /* Default ops (null name, 0 nb_tasklets) must succeed and allow lifecycle edges. */
+  struct mtl_sch_ops ops = {};
+  mtl_test::ScopedSch sch(mtl_sch_create(mt, &ops));
+  ASSERT_TRUE(sch);
+  EXPECT_EQ(mtl_sch_stop(sch.get()), 0);
+  ASSERT_GE(sch.start(), 0);
+  EXPECT_LT(mtl_sch_start(sch.get()), 0);
+  EXPECT_EQ(sch.stop(), 0);
+  EXPECT_EQ(mtl_sch_stop(sch.get()), 0);
+  sch.reset();
+
+  /* Freeing a running scheduler directly via mtl_sch_free() must auto-stop cleanly. */
+  using ScopedRawSch = mtl_test::ScopedHandle<mtl_sch_handle, mtl_sch_free>;
+  {
+    ScopedRawSch running_sch(mtl_sch_create(mt, &ops));
+    ASSERT_TRUE(running_sch);
+    ASSERT_EQ(mtl_sch_start(running_sch.get()), 0);
+  }
+
+  /* Invalid scheduler indices must be rejected. */
+  EXPECT_LT(mtl_sch_enable_sleep(mt, -1, true), 0);
+  EXPECT_LT(mtl_sch_enable_sleep(mt, 10000, false), 0);
+
+  ScopedSchSleepUs sleep_guard(mt);
+  EXPECT_EQ(mtl_sch_set_sleep_us(mt, 1000), 0);
+  EXPECT_EQ(mtl_sch_set_sleep_us(mt, 0), 0);
+}
+
+TEST(Sch, tasklet_limits_and_lifecycle) {
+  mtl_handle mt = st_test_ctx()->handle;
+
+  /* Declare contexts before scheduler and tasklet handles for safe RAII teardown. */
+  TaskletTestCtx ctx0;
+  TaskletTestCtx ctx1;
+  TaskletTestCtx ctx2;
+
+  struct mtl_sch_ops sch_ops = {};
+  sch_ops.name = "sch_limits";
+  sch_ops.nb_tasklets = 2;
+
+  mtl_test::ScopedSch sch(mtl_sch_create(mt, &sch_ops));
+  ASSERT_TRUE(sch);
+
+  /* Tasklet 0 uses start/stop/handler; tasklet 1 omits optional start/stop callbacks. */
+  struct mtl_tasklet_ops ops0 = {};
+  ops0.name = "t_full";
+  ops0.priv = &ctx0;
+  ops0.start = test_tasklet_start;
+  ops0.stop = test_tasklet_stop;
+  ops0.handler = test_tasklet_handler;
+
+  struct mtl_tasklet_ops ops1 = {};
+  ops1.name = "t_handler_only";
+  ops1.priv = &ctx1;
+  ops1.handler = test_tasklet_handler;
+
+  mtl_test::ScopedTasklet t0(mtl_sch_register_tasklet(sch.get(), &ops0));
+  ASSERT_TRUE(t0);
+  mtl_test::ScopedTasklet t1(mtl_sch_register_tasklet(sch.get(), &ops1));
+  ASSERT_TRUE(t1);
+
+  /* Exceeding nb_tasklets = 2 must fail cleanly. */
+  struct mtl_tasklet_ops ops_extra = ops0;
+  ops_extra.name = "t_overflow";
+  ops_extra.priv = &ctx2;
+  EXPECT_EQ(mtl_sch_register_tasklet(sch.get(), &ops_extra), nullptr);
+
+  /* Static pre-start unregister frees a slot for re-registration. */
+  t1.reset();
+  t1.reset(mtl_sch_register_tasklet(sch.get(), &ops1));
+  ASSERT_TRUE(t1);
+  EXPECT_EQ(mtl_sch_register_tasklet(sch.get(), &ops_extra), nullptr);
+
+  /* Start scheduler and verify both tasklets execute. */
+  ASSERT_GE(sch.start(), 0);
+  EXPECT_TRUE(mtl_test::wait_until(
+      [&]() {
+        return ctx0.start.load(std::memory_order_acquire) &&
+               ctx0.job.load(std::memory_order_acquire) > 0 &&
+               ctx1.job.load(std::memory_order_acquire) > 0;
+      },
+      2000, 2));
+  EXPECT_EQ(mtl_sch_register_tasklet(sch.get(), &ops_extra), nullptr);
+
+  /* Runtime unregister invokes stop callback and frees a slot for re-registration. */
+  t0.reset();
+  EXPECT_FALSE(ctx0.start.load(std::memory_order_acquire));
+
+  struct mtl_tasklet_ops ops2 = {};
+  ops2.name = "t_runtime_re";
+  ops2.priv = &ctx2;
+  ops2.start = test_tasklet_start;
+  ops2.stop = test_tasklet_stop;
+  ops2.handler = test_tasklet_handler;
+
+  mtl_test::ScopedTasklet t2(mtl_sch_register_tasklet(sch.get(), &ops2));
+  ASSERT_TRUE(t2);
+  EXPECT_TRUE(mtl_test::wait_until(
+      [&]() {
+        return ctx2.start.load(std::memory_order_acquire) &&
+               ctx2.job.load(std::memory_order_acquire) > 0;
+      },
+      2000, 2));
+
+  /* Stop/restart cycle invokes stop then start on surviving tasklets and resumes work. */
+  ASSERT_EQ(sch.stop(), 0);
+  EXPECT_FALSE(ctx2.start.load(std::memory_order_acquire));
+  const int jobs1_before = ctx1.job.load(std::memory_order_acquire);
+  const int jobs2_before = ctx2.job.load(std::memory_order_acquire);
+
+  ASSERT_GE(sch.start(), 0);
+  EXPECT_TRUE(mtl_test::wait_until(
+      [&]() {
+        return ctx2.start.load(std::memory_order_acquire) &&
+               ctx1.job.load(std::memory_order_acquire) > jobs1_before &&
+               ctx2.job.load(std::memory_order_acquire) > jobs2_before;
+      },
+      2000, 2));
+
+  ASSERT_EQ(sch.stop(), 0);
+  EXPECT_FALSE(ctx2.start.load(std::memory_order_acquire));
 }

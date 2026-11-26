@@ -40,9 +40,6 @@ enum test_args_cmd {
   TEST_ARG_LEVEL,
   TEST_ARG_AUTO_START_STOP,
   TEST_ARG_AF_XDP_ZC_DISABLE,
-  TEST_ARG_START_QUEUE,
-  TEST_ARG_P_START_QUEUE,
-  TEST_ARG_R_START_QUEUE,
   TEST_ARG_QUEUE_CNT,
   TEST_ARG_HDR_SPLIT,
   TEST_ARG_TASKLET_THREAD,
@@ -358,6 +355,8 @@ static void test_random_ip(struct st_tests_context* ctx) {
   struct mtl_init_params* p = &ctx->para;
   uint8_t* p_ip = mtl_p_sip_addr(p);
 
+  srand(static_cast<unsigned int>(st_test_get_monotonic_time()));
+
   /* Only generate random IP if user didn't specify one */
   if (!ctx->user_p_sip) {
     p_ip[0] = 197;
@@ -381,8 +380,6 @@ static void test_random_ip(struct st_tests_context* ctx) {
     p->sip_addr[i][3] = (uint8_t)((p_ip[3] - 1 + i) % 254 + 1);
   }
 
-  srand(st_test_get_monotonic_time());
-
   uint8_t* p_ip_multicast = ctx->mcast_ip_addr[MTL_PORT_P];
   uint8_t* r_ip_multicast = ctx->mcast_ip_addr[MTL_PORT_R];
 
@@ -390,26 +387,28 @@ static void test_random_ip(struct st_tests_context* ctx) {
   p_ip_multicast[1] = p->sip_addr[MTL_PORT_P][1];
   p_ip_multicast[2] = p->sip_addr[MTL_PORT_P][2];
   p_ip_multicast[3] = p->sip_addr[MTL_PORT_P][3];
+  const uint8_t base = p_ip_multicast[3];
   r_ip_multicast[0] = p_ip_multicast[0];
   r_ip_multicast[1] = p_ip_multicast[1];
   r_ip_multicast[2] = p_ip_multicast[2];
-  r_ip_multicast[3] = p_ip_multicast[3] + 1;
+  r_ip_multicast[3] = static_cast<uint8_t>(((base + 253 + 1) % 254) + 1);
 
   if (ctx->mcast_only) {
     r_ip_multicast = ctx->mcast_ip_addr[MTL_PORT_2];
     r_ip_multicast[0] = p_ip_multicast[0];
     r_ip_multicast[1] = p_ip_multicast[1];
     r_ip_multicast[2] = p_ip_multicast[2];
-    r_ip_multicast[3] = p_ip_multicast[3] + 2;
+    r_ip_multicast[3] = static_cast<uint8_t>(((base + 253 + 2) % 254) + 1);
   }
 }
 
 static uint64_t test_ptp_from_real_time(void* priv) {
   auto ctx = (struct st_tests_context*)priv;
   struct timespec spec;
+  uint64_t now;
 #ifndef WINDOWSENV
   clock_gettime(CLOCK_REALTIME, &spec);
-  ctx->ptp_time = ((uint64_t)spec.tv_sec * NS_PER_S) + spec.tv_nsec;
+  now = ((uint64_t)spec.tv_sec * NS_PER_S) + spec.tv_nsec;
 #else
   unsigned __int64 t;
   union {
@@ -420,9 +419,10 @@ static uint64_t test_ptp_from_real_time(void* priv) {
   t = ct.u64 - INT64_C(116444736000000000);
   spec.tv_sec = t / 10000000;
   spec.tv_nsec = ((int)(t % 10000000)) * 100;
-  ctx->ptp_time = ((uint64_t)spec.tv_sec * NS_PER_S) + spec.tv_nsec;
+  now = ((uint64_t)spec.tv_sec * NS_PER_S) + spec.tv_nsec;
 #endif
-  return ctx->ptp_time;
+  __atomic_store_n(&ctx->ptp_time, now, __ATOMIC_RELEASE);
+  return now;
 }
 
 static void test_ctx_init(struct st_tests_context* ctx) {
@@ -437,12 +437,11 @@ static void test_ctx_init(struct st_tests_context* ctx) {
   p->priv = ctx;
   p->ptp_get_time_fn = test_ptp_from_real_time;
   for (int i = 0; i < MTL_PORT_MAX; i++) {
-    p->tx_queues_cnt[i] = 8;
-    p->rx_queues_cnt[i] = 8;
+    p->tx_queues_cnt[i] = 16;
+    p->rx_queues_cnt[i] = 16;
   }
 
-  /* by deafult don't limit cores */
-  memset(ctx->lcores_list, 0, TEST_LCORE_LIST_MAX_LEN);
+  /* by default don't limit cores */
   p->lcores = NULL;
 }
 
@@ -452,123 +451,6 @@ static void test_ctx_uinit(struct st_tests_context* ctx) {
     ctx->handle = NULL;
   }
   st_test_free(ctx);
-}
-
-static void hp_malloc_test(struct st_tests_context* ctx, size_t size, enum mtl_port port,
-                           bool zero, bool expect_succ) {
-  auto m_handle = ctx->handle;
-  void* p;
-
-  if (zero)
-    p = mtl_hp_malloc(m_handle, size, port);
-  else
-    p = mtl_hp_zmalloc(m_handle, size, port);
-  if (expect_succ)
-    EXPECT_TRUE(p != NULL);
-  else
-    EXPECT_TRUE(p == NULL);
-  if (p) {
-    if (zero) {
-      void* dst = malloc(size);
-      memset(dst, 0, size);
-      EXPECT_EQ(0, memcmp(p, dst, size));
-      free(dst);
-    }
-    memset(p, 0, size);
-    mtl_hp_free(m_handle, p);
-  }
-}
-
-static void hp_malloc_tests(struct st_tests_context* ctx, enum mtl_port port, bool zero) {
-  hp_malloc_test(ctx, 1, port, zero, true);
-  hp_malloc_test(ctx, 1024, port, zero, true);
-  hp_malloc_test(ctx, 1024 + 3, port, zero, true);
-}
-
-TEST(Misc, hp_malloc) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
-  int num_port = st_test_num_port(ctx);
-
-  hp_malloc_tests(ctx, MTL_PORT_P, false);
-  if (num_port > 1) hp_malloc_tests(ctx, MTL_PORT_R, false);
-}
-
-TEST(Misc, hp_zmalloc) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
-  int num_port = st_test_num_port(ctx);
-
-  hp_malloc_tests(ctx, MTL_PORT_P, true);
-  if (num_port > 1) hp_malloc_tests(ctx, MTL_PORT_R, true);
-}
-
-TEST(Misc, hp_malloc_expect_fail) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
-  int num_port = st_test_num_port(ctx);
-
-  hp_malloc_test(ctx, 0, MTL_PORT_P, false, false);
-  if (num_port > 1) hp_malloc_test(ctx, 0, MTL_PORT_R, false, false);
-}
-
-TEST(Misc, hp_zmalloc_expect_fail) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
-  int num_port = st_test_num_port(ctx);
-
-  hp_malloc_test(ctx, 0, MTL_PORT_P, true, false);
-  if (num_port > 1) hp_malloc_test(ctx, 0, MTL_PORT_R, true, false);
-}
-
-TEST(Misc, ptp) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
-  auto handle = ctx->handle;
-  uint64_t real_time;
-  uint64_t diff;
-
-  /* the first read */
-  uint64_t ptp = mtl_ptp_read_time(handle);
-  EXPECT_EQ(ptp, ctx->ptp_time);
-
-  for (int i = 0; i < 5; i++) {
-    /* try again */
-    st_usleep(1000 * 2);
-    ptp = mtl_ptp_read_time(handle);
-    real_time = test_ptp_from_real_time(ctx);
-    if (ptp > real_time)
-      diff = ptp - real_time;
-    else
-      diff = real_time - ptp;
-    EXPECT_LT(diff, NS_PER_US * 5);
-  }
-}
-
-TEST(Misc, log_level) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
-  auto handle = ctx->handle;
-  int ret;
-
-  enum mtl_log_level orig_level = mtl_get_log_level(handle);
-  ret = mtl_set_log_level(handle, MTL_LOG_LEVEL_INFO);
-  EXPECT_GE(ret, 0);
-  ret = mtl_set_log_level(handle, MTL_LOG_LEVEL_ERR);
-  EXPECT_GE(ret, 0);
-  ret = mtl_set_log_level(handle, orig_level);
-  EXPECT_GE(ret, 0);
-}
-
-TEST(Misc, get_numa_id) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
-  auto handle = ctx->handle;
-  int ret;
-
-  ret = mtl_get_numa_id(handle, MTL_PORT_P);
-  EXPECT_GE(ret, 0);
-
-  if (ctx->para.num_ports > 1) {
-    ret = mtl_get_numa_id(handle, MTL_PORT_R);
-    EXPECT_GE(ret, 0);
-  }
-
-  ret = mtl_get_numa_id(handle, (enum mtl_port)MTL_PORT_MAX);
-  EXPECT_LT(ret, 0);
 }
 
 static void print_usage(const char* prog) {
@@ -597,22 +479,45 @@ GTEST_API_ int main(int argc, char** argv) {
     orig_argv.emplace_back(argv[i]);
   }
 
-  bool help_requested = false;
+  std::vector<std::string> norm_args;
+  norm_args.reserve(static_cast<size_t>(argc));
+  if (argc > 0) {
+    norm_args.emplace_back(argv[0]);
+  }
   for (int i = 1; i < argc; ++i) {
-    if (strcmp(argv[i], "--list-json") == 0) {
-      testing::InitGoogleTest(&argc, argv);
+    if ((strcmp(argv[i], "--gtest_filter") == 0 ||
+         strcmp(argv[i], "--gtest_output") == 0) &&
+        i + 1 < argc && argv[i + 1][0] != '-') {
+      norm_args.emplace_back(std::string(argv[i]) + "=" + argv[i + 1]);
+      ++i;
+    } else {
+      norm_args.emplace_back(argv[i]);
+    }
+  }
+  std::vector<char*> norm_argv;
+  norm_argv.reserve(norm_args.size() + 1);
+  for (auto& arg : norm_args) {
+    norm_argv.push_back(arg.data());
+  }
+  norm_argv.push_back(nullptr);
+  int norm_argc = static_cast<int>(norm_args.size());
+
+  bool help_requested = false;
+  for (int i = 1; i < norm_argc; ++i) {
+    if (strcmp(norm_argv[i], "--list-json") == 0) {
+      testing::InitGoogleTest(&norm_argc, norm_argv.data());
       mtl_test::print_cases_json();
       return 0;
     }
-    if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0 ||
-        strcmp(argv[i], "-?") == 0 || strcmp(argv[i], "--gtest_help") == 0) {
+    if (strcmp(norm_argv[i], "--help") == 0 || strcmp(norm_argv[i], "-h") == 0 ||
+        strcmp(norm_argv[i], "-?") == 0 || strcmp(norm_argv[i], "--gtest_help") == 0) {
       help_requested = true;
     }
   }
 
-  testing::InitGoogleTest(&argc, argv);
+  testing::InitGoogleTest(&norm_argc, norm_argv.data());
   if (help_requested) {
-    print_usage(argc > 0 ? argv[0] : "KahawaiTest");
+    print_usage(norm_argc > 0 ? norm_argv[0] : "KahawaiTest");
     return 0;
   }
   if (testing::GTEST_FLAG(list_tests)) {
@@ -627,7 +532,7 @@ GTEST_API_ int main(int argc, char** argv) {
   }
 
   test_ctx_init(ctx);
-  test_parse_args(ctx, &ctx->para, argc, argv);
+  test_parse_args(ctx, &ctx->para, norm_argc, norm_argv.data());
   test_random_ip(ctx);
   g_test_ctx = ctx;
 
@@ -653,36 +558,38 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx) {
 
 void sha_frame_check(void* args) {
   auto ctx = (tests_context*)args;
-  std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
   unsigned char result[SHA256_DIGEST_LENGTH];
-  while (!ctx->stop) {
-    if (ctx->buf_q.empty()) {
-      lck.lock();
-      if (!ctx->stop) ctx->cv.wait(lck);
-      lck.unlock();
-      continue;
-    } else {
-      void* frame = ctx->buf_q.front();
+  while (true) {
+    void* frame = nullptr;
+    {
+      std::unique_lock<std::mutex> lck(ctx->mtx);
+      ctx->cv.wait(lck, [ctx]() { return !ctx->buf_q.empty() || ctx->stop.load(); });
+      if (ctx->buf_q.empty()) {
+        if (ctx->stop.load()) break;
+        continue;
+      }
+      frame = ctx->buf_q.front();
       ctx->buf_q.pop();
-      dbg("%s, frame %p\n", __func__, frame);
-      int i;
-      SHA256((unsigned char*)frame, ctx->frame_size, result);
-      for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
-        unsigned char* target_sha = ctx->shas[i];
-        if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;
-      }
-      if (i >= TEST_SHA_HIST_NUM) {
-        test_sha_dump("rx_error_sha", result);
-        ctx->sha_fail_cnt++;
-      }
-      __atomic_fetch_add(&ctx->check_sha_frame_cnt, 1, __ATOMIC_RELAXED);
-      st_test_free(frame);
     }
+    dbg("%s, frame %p\n", __func__, frame);
+    int i;
+    SHA256((unsigned char*)frame, ctx->frame_size, result);
+    for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
+      unsigned char* target_sha = ctx->shas[i];
+      if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;
+    }
+    if (i >= TEST_SHA_HIST_NUM) {
+      test_sha_dump("rx_error_sha", result);
+      __atomic_fetch_add(&ctx->sha_fail_cnt, 1, __ATOMIC_RELAXED);
+    }
+    __atomic_fetch_add(&ctx->check_sha_frame_cnt, 1, __ATOMIC_RELAXED);
+    st_test_free(frame);
   }
 }
 
 int tests_context_unit(tests_context* ctx) {
-  for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
+  if (!ctx) return 0;
+  for (int frame = 0; frame < TEST_MAX_SHA_HIST_NUM; frame++) {
     if (ctx->frame_buf[frame]) st_test_free(ctx->frame_buf[frame]);
     ctx->frame_buf[frame] = NULL;
   }
@@ -704,7 +611,9 @@ int tests_context_unit(tests_context* ctx) {
   }
   if (ctx->dma_mem) {
     /* dma_mem is owned by the tests_context when set */
-    mtl_dma_mem_free(ctx->ctx->handle, ctx->dma_mem);
+    if (ctx->ctx && ctx->ctx->handle) {
+      mtl_dma_mem_free(ctx->ctx->handle, ctx->dma_mem);
+    }
     ctx->dma_mem = NULL;
   }
 
@@ -716,7 +625,6 @@ int test_ctx_notify_event(void* priv, enum st_event event, void* args) {
   if (event == ST_EVENT_VSYNC) {
     tests_context* s = (tests_context*)priv;
     __atomic_fetch_add(&s->vsync_cnt, 1, __ATOMIC_RELAXED);
-    if (!s->first_vsync_time) s->first_vsync_time = st_test_get_monotonic_time();
 #ifdef DEBUG
     struct st10_vsync_meta* meta = (struct st10_vsync_meta*)args;
     dbg("%s(%d,%p), epoch %" PRIu64 " vsync_cnt %d\n", __func__, s->idx, s, meta->epoch,

@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <cstring>
 #include <mutex>
 #include <vector>
 
@@ -124,30 +123,11 @@ int tx_sync_notify_done(void* priv, uint16_t frame_idx, Meta* meta) {
   return 0;
 }
 
-template <typename TxOps>
-void fill_single_tx_ops_port(TxOps& ops, const struct st_tests_context* ctx,
-                             const char* name, void* priv, uint16_t udp_port,
-                             uint8_t payload_type) {
-  memset(&ops, 0, sizeof(ops));
-  ops.name = name;
-  ops.priv = priv;
-  ops.num_port = 1;
-  memcpy(
-      ops.dip_addr[MTL_SESSION_PORT_P],
-      ctx->mcast_only ? ctx->mcast_ip_addr[MTL_PORT_P] : ctx->para.sip_addr[MTL_PORT_R],
-      MTL_IP_ADDR_LEN);
-  snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_P]);
-  ops.udp_port[MTL_SESSION_PORT_P] = udp_port;
-  ops.payload_type = payload_type;
-  ops.framebuff_cnt = TX_SYNC_FB_CNT;
-}
-
 /* Every USER_TIMESTAMP session must report back the exact TAI it was asked
  * for, and an rtp_timestamp matching the same public conversion apps use. */
 void tx_sync_check_self_consistent(const std::vector<TxSyncRecord>& records,
                                    uint32_t sampling_rate) {
-  ASSERT_GT(records.size(), 0u);
+  ASSERT_GT(records.size(), 1u);
   /* skip the first record: a follower session can still observe the beat's
    * zero/start_tai fallback before video publishes its first beat */
   for (size_t i = 1; i < records.size(); i++) {
@@ -179,11 +159,10 @@ int tx_sync_count_matching_beats(const std::vector<TxSyncRecord>& a,
   return matched;
 }
 
-void tx_timestamp_sync_test(enum st_test_level level) {
+void tx_timestamp_sync_test() {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
 
-  MTL_TEST_REQUIRE_LEVEL(ctx, level);
   MTL_TEST_REQUIRE_PORTS(ctx, 2);
 
   /* Declare session state and empty ANC buffers before handles and ScopedMtlStart
@@ -200,9 +179,12 @@ void tx_timestamp_sync_test(enum st_test_level level) {
   /* empty ANC frames: content is irrelevant to the timestamp sync under test */
   std::array<uint8_t, TX_SYNC_FB_CNT> anc_frame_bufs{};
 
-  struct st20_tx_ops ops20;
-  fill_single_tx_ops_port(ops20, ctx, "tx_timestamp_sync_st20", &video_priv,
-                          TX_SYNC_ST20_UDP_PORT, TX_SYNC_ST20_PAYLOAD_TYPE);
+  struct st20_tx_ops ops20 = {};
+  ops20.name = "tx_timestamp_sync_st20";
+  ops20.priv = &video_priv;
+  ops20.framebuff_cnt = TX_SYNC_FB_CNT;
+  mtl_test::fill_raw_tx_port(ops20, ctx, TX_SYNC_ST20_UDP_PORT,
+                             TX_SYNC_ST20_PAYLOAD_TYPE);
   ops20.packing = ST20_PACKING_BPM;
   ops20.type = ST20_TYPE_FRAME_LEVEL;
   ops20.width = 1280;
@@ -216,9 +198,12 @@ void tx_timestamp_sync_test(enum st_test_level level) {
   ScopedSt20Tx h20(st20_tx_create(m_handle, &ops20));
   ASSERT_TRUE(h20);
 
-  struct st30_tx_ops ops30;
-  fill_single_tx_ops_port(ops30, ctx, "tx_timestamp_sync_st30", &audio_priv,
-                          TX_SYNC_ST30_UDP_PORT, TX_SYNC_ST30_PAYLOAD_TYPE);
+  struct st30_tx_ops ops30 = {};
+  ops30.name = "tx_timestamp_sync_st30";
+  ops30.priv = &audio_priv;
+  ops30.framebuff_cnt = TX_SYNC_FB_CNT;
+  mtl_test::fill_raw_tx_port(ops30, ctx, TX_SYNC_ST30_UDP_PORT,
+                             TX_SYNC_ST30_PAYLOAD_TYPE);
   ops30.type = ST30_TYPE_FRAME_LEVEL;
   ops30.fmt = ST30_FMT_PCM16;
   ops30.channel = 2;
@@ -240,9 +225,12 @@ void tx_timestamp_sync_test(enum st_test_level level) {
   int audio_sampling_rate = st30_get_sample_rate(ops30.sampling);
   ASSERT_GT(audio_sampling_rate, 0);
 
-  struct st40_tx_ops ops40;
-  fill_single_tx_ops_port(ops40, ctx, "tx_timestamp_sync_st40", &anc_priv,
-                          TX_SYNC_ST40_UDP_PORT, TX_SYNC_ST40_PAYLOAD_TYPE);
+  struct st40_tx_ops ops40 = {};
+  ops40.name = "tx_timestamp_sync_st40";
+  ops40.priv = &anc_priv;
+  ops40.framebuff_cnt = TX_SYNC_FB_CNT;
+  mtl_test::fill_raw_tx_port(ops40, ctx, TX_SYNC_ST40_UDP_PORT,
+                             TX_SYNC_ST40_PAYLOAD_TYPE);
   ops40.type = ST40_TYPE_FRAME_LEVEL;
   ops40.fps = ST_FPS_P50;
   ops40.get_next_frame = tx_sync_follower_next_frame<struct st40_tx_frame_meta>;
@@ -261,7 +249,7 @@ void tx_timestamp_sync_test(enum st_test_level level) {
   }
 
   mtl_test::ScopedMtlStart mtl_run(m_handle);
-  EXPECT_GE(mtl_run.start(), 0);
+  ASSERT_GE(mtl_run.start(), 0);
 
   /* Wait for >= 50 completed records on all 3 sessions: 50 beats at 50 fps
    * takes ~1.0 s vs legacy sleep(5), giving 49 comparable beats (up to 5
@@ -302,5 +290,5 @@ void tx_timestamp_sync_test(enum st_test_level level) {
 } /* namespace */
 
 TEST(TxUserTimestampSync, st20_st30_st40_stay_in_sync) {
-  tx_timestamp_sync_test(ST_TEST_LEVEL_ALL);
+  tx_timestamp_sync_test();
 }

@@ -171,8 +171,21 @@ int run_shared_phase(struct st_tests_context* ctx) {
   ctx->iova = mtl_iova_mode_get(ctx->handle);
   ctx->rss_mode = mtl_rss_mode_get(ctx->handle);
 
-  st_test_st22_plugin_register(ctx);
-  st_test_convert_plugin_register(ctx);
+  if (st_test_st22_plugin_register(ctx) < 0) {
+    err("%s, st22 plugin register fail\n", __func__);
+    st_test_st22_plugin_unregister(ctx);
+    mtl_uninit(ctx->handle);
+    ctx->handle = nullptr;
+    return 1;
+  }
+  if (st_test_convert_plugin_register(ctx) < 0 || !ctx->converter_dev_handle) {
+    err("%s, convert plugin register fail\n", __func__);
+    st_test_convert_plugin_unregister(ctx);
+    st_test_st22_plugin_unregister(ctx);
+    mtl_uninit(ctx->handle);
+    ctx->handle = nullptr;
+    return 1;
+  }
 
   const uint64_t start_time_ns = st_test_get_monotonic_time();
   const int ret = RUN_ALL_TESTS();
@@ -463,9 +476,14 @@ int spawn_child_phase(const std::vector<std::string>& orig_argv,
 
   for (size_t i = 1; i < orig_argv.size(); ++i) {
     const std::string& a = orig_argv[i];
+    if (a == "--gtest_output" || a == "--gtest_filter") {
+      if (i + 1 < orig_argv.size() && orig_argv[i + 1].rfind("-", 0) != 0) {
+        ++i;
+      }
+      continue;
+    }
     if (a.rfind("--gtest_filter=", 0) == 0 || a.rfind("--gtest_output=", 0) == 0 ||
-        a == "--gtest_output" || a == "--single_process" || a == "--no_ctx_tests" ||
-        a == "--no_ctx") {
+        a == "--single_process" || a == "--no_ctx_tests" || a == "--no_ctx") {
       continue;
     }
     args.push_back(a);
@@ -495,6 +513,7 @@ int spawn_child_phase(const std::vector<std::string>& orig_argv,
     unsetenv("GTEST_SHARD_INDEX");
     unsetenv("GTEST_SHARD_STATUS_FILE");
     unsetenv("GTEST_OUTPUT");
+    unsetenv("GTEST_FILTER");
     execv("/proc/self/exe", c_argv.data());
     if (!orig_argv.empty()) execvp(orig_argv[0].c_str(), c_argv.data());
     _exit(127);
@@ -697,10 +716,12 @@ void print_cases_json() {
       const bool is_pf = own && name.find("_pf_") != std::string::npos;
       const bool is_red = name.find("redundant") != std::string::npos;
       const bool needs_iso =
-          own && (name.find("default_timestamps") != std::string::npos ||
-                  name.find("user_pacing") != std::string::npos ||
-                  name.find("vrx_margin") != std::string::npos ||
-                  name.find("rl_staged_overload") != std::string::npos);
+          own &&
+          (name.find("st20p_default_timestamps") != std::string::npos ||
+           name.find("st20p_user_pacing") != std::string::npos ||
+           name.find("st20p_exact_user_pacing") != std::string::npos ||
+           name == "st30p_user_pacing" || name.find("vrx_margin") != std::string::npos ||
+           name.find("rl_staged_overload") != std::string::npos);
       const char* topo =
           is_pf ? "pf_pair" : (own ? "cross_pf_quad" : (is_red ? "vf_quad" : "vf_pair"));
       if (!first) printf(",\n");

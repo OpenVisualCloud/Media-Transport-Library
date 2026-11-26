@@ -5,14 +5,11 @@
 #pragma once
 
 #include <cstdint>
-#include <cstdio>
-#include <cstring>
-#include <functional>
-#include <memory>
-#include <thread>
-#include <utility>
 #include <vector>
 
+#include "harness/lifecycle.hpp"
+#include "harness/memory.hpp"
+#include "harness/sessions.hpp"
 #include "tests.hpp"
 
 /*
@@ -20,8 +17,8 @@
  *
  * Replaces blind sleep(10) / sleep(5) / sleep(ST20_TRAIN_TIME_S * sessions)
  * loops with event-driven frame/packet waits and bounded FPS measurement
- * windows, and provides RAII handle/session/context cleanup so assertions
- * never leak DPDK mempools or queues into later test cases.
+ * windows, and re-exports the RAII session, memory, and lifecycle utilities
+ * from tests/integration_tests/harness/.
  */
 namespace mtl_test {
 
@@ -155,7 +152,9 @@ inline RateWindowResult measure_rate_window(const std::vector<CtxPtr>& ctxs,
     start_cnt[i] = ctxs[i] ? get_cnt(ctxs[i]) : 0;
   }
 
-  const uint64_t min_end_ns = t0 + static_cast<uint64_t>(min_window_ms) * NS_PER_MS;
+  const int clamped_min_window_ms = min_window_ms > 0 ? min_window_ms : 0;
+  const uint64_t min_end_ns =
+      t0 + static_cast<uint64_t>(clamped_min_window_ms) * NS_PER_MS;
   res.complete = wait_until(
       [&]() {
         if (st_test_get_monotonic_time() < min_end_ns) return false;
@@ -227,7 +226,9 @@ inline DualRateWindowResult measure_pipeline_window(
     rv0[i] = vsync_count(rx_ctxs[i]);
   }
 
-  const uint64_t min_end_ns = t0 + static_cast<uint64_t>(min_window_ms) * NS_PER_MS;
+  const int clamped_min_window_ms = min_window_ms > 0 ? min_window_ms : 0;
+  const uint64_t min_end_ns =
+      t0 + static_cast<uint64_t>(clamped_min_window_ms) * NS_PER_MS;
   res.complete = wait_until(
       [&]() {
         if (st_test_get_monotonic_time() < min_end_ns) return false;
@@ -254,180 +255,6 @@ inline DualRateWindowResult measure_pipeline_window(
     }
   }
   return res;
-}
-
-/* RAII guard for mtl_start / mtl_stop. */
-class ScopedMtlStart {
- public:
-  explicit ScopedMtlStart(mtl_handle h) : handle_(h) {
-  }
-  ~ScopedMtlStart() {
-    stop();
-  }
-  ScopedMtlStart(const ScopedMtlStart&) = delete;
-  ScopedMtlStart& operator=(const ScopedMtlStart&) = delete;
-
-  int start() {
-    int ret = mtl_start(handle_);
-    if (ret >= 0) started_ = true;
-    return ret;
-  }
-
-  int stop() {
-    if (!started_ || !handle_) return 0;
-    started_ = false;
-    return mtl_stop(handle_);
-  }
-
- private:
-  mtl_handle handle_ = nullptr;
-  bool started_ = false;
-};
-
-/* Move-only RAII wrapper for any MTL session/DMA handle. */
-template <typename Handle, int (*FreeFn)(Handle)>
-class ScopedHandle {
- public:
-  ScopedHandle() = default;
-  explicit ScopedHandle(Handle h) : handle_(h) {
-  }
-  ~ScopedHandle() {
-    reset();
-  }
-  ScopedHandle(const ScopedHandle&) = delete;
-  ScopedHandle& operator=(const ScopedHandle&) = delete;
-  ScopedHandle(ScopedHandle&& other) noexcept : handle_(other.handle_) {
-    other.handle_ = nullptr;
-  }
-  ScopedHandle& operator=(ScopedHandle&& other) noexcept {
-    if (this != &other) {
-      reset();
-      handle_ = other.handle_;
-      other.handle_ = nullptr;
-    }
-    return *this;
-  }
-
-  Handle get() const {
-    return handle_;
-  }
-  explicit operator bool() const {
-    return handle_ != nullptr;
-  }
-
-  void reset(Handle h = nullptr) {
-    if (handle_) {
-      int ret = FreeFn(handle_);
-      EXPECT_GE(ret, 0);
-    }
-    handle_ = h;
-  }
-
-  Handle release() {
-    Handle h = handle_;
-    handle_ = nullptr;
-    return h;
-  }
-
- private:
-  Handle handle_ = nullptr;
-};
-
-/* Deleter for tests_context that runs tests_context_unit() before delete. */
-struct ContextDeleter {
-  void operator()(tests_context* c) const {
-    if (!c) return;
-    tests_context_unit(c);
-    delete c;
-  }
-};
-using ScopedContext = std::unique_ptr<tests_context, ContextDeleter>;
-
-inline ScopedContext make_context(struct st_tests_context* global_ctx, int idx = 0,
-                                  uint16_t fb_cnt = 3, bool check_sha = false) {
-  ScopedContext c(new tests_context());
-  c->ctx = global_ctx;
-  c->idx = idx;
-  c->fb_cnt = fb_cnt;
-  c->fb_idx = 0;
-  c->check_sha = check_sha;
-  return c;
-}
-
-/* Stop a worker thread cleanly via tests_context::stop + cv + optional wake fn. */
-inline void stop_worker(tests_context* c, std::thread& th,
-                        std::function<void()> wake_fn = nullptr) {
-  if (c) {
-    c->stop = true;
-    if (wake_fn) wake_fn();
-    {
-      std::lock_guard<std::mutex> lck(c->mtx);
-      c->cv.notify_all();
-    }
-  }
-  if (th.joinable()) th.join();
-}
-
-/* Standard pipeline port fill helpers (eliminates copy-pasted IP/port setup). */
-inline void fill_tx_port(struct st_tx_port& p, struct st_tests_context* ctx,
-                         uint16_t udp_port, uint8_t pt, uint32_t ssrc = 0,
-                         bool redundant = false) {
-  p.num_port = redundant ? 2 : 1;
-  if (redundant || ctx->mcast_only) {
-    memcpy(p.dip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
-  } else {
-    memcpy(p.dip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_R],
-           MTL_IP_ADDR_LEN);
-  }
-  snprintf(p.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ctx->para.port[MTL_PORT_P]);
-  p.udp_port[MTL_SESSION_PORT_P] = udp_port;
-  if (redundant) {
-    memcpy(p.dip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
-           MTL_IP_ADDR_LEN);
-    snprintf(p.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
-             ctx->para.port[MTL_PORT_R]);
-    p.udp_port[MTL_SESSION_PORT_R] = udp_port;
-  }
-  p.payload_type = pt;
-  p.ssrc = ssrc;
-}
-
-inline void fill_rx_port(struct st_rx_port& p, struct st_tests_context* ctx,
-                         uint16_t udp_port, uint8_t pt, uint32_t ssrc = 0,
-                         bool redundant = false) {
-  p.num_port = redundant ? 2 : 1;
-  if (redundant) {
-    memcpy(p.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
-    snprintf(p.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-             ctx->para.port[MTL_PORT_2]);
-    p.udp_port[MTL_SESSION_PORT_P] = udp_port;
-    memcpy(p.ip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
-           MTL_IP_ADDR_LEN);
-    snprintf(p.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
-             ctx->para.port[MTL_PORT_3]);
-    p.udp_port[MTL_SESSION_PORT_R] = udp_port;
-  } else {
-    if (ctx->mcast_only) {
-      memcpy(p.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
-             MTL_IP_ADDR_LEN);
-    } else {
-      memcpy(p.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
-             MTL_IP_ADDR_LEN);
-    }
-    snprintf(p.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-             ctx->para.port[MTL_PORT_R]);
-    p.udp_port[MTL_SESSION_PORT_P] = udp_port;
-  }
-  p.payload_type = pt;
-  p.ssrc = ssrc;
-}
-
-inline bool is_kernel_loopback(const struct st_tests_context* ctx) {
-  return (strcmp(ctx->para.port[MTL_PORT_P], "kernel:lo") == 0) ||
-         (strcmp(ctx->para.port[MTL_PORT_R], "kernel:lo") == 0);
 }
 
 }  // namespace mtl_test
