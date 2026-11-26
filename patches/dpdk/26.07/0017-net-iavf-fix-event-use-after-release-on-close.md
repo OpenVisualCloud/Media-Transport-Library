@@ -2,7 +2,7 @@
 
 One `iavf-event` thread handles the PF events of all iavf ports of the process. `iavf_dev_close()` does not remove the events of its port from that thread, and does not wait for the event that the thread handles. `rte_eth_dev_close()` releases the port right after `iavf_dev_close()` returns, so the thread can handle an event of a released port.
 
-The patch makes the thread handle one event at a time and record its port. At the end of `iavf_dev_close()`, the new `iavf_dev_event_discard()` removes the pending events of the port and waits until the thread does not hold an event of the port.
+The patch makes the thread handle one event at a time and record its port. At the start of `iavf_dev_close()`, the new `iavf_dev_event_wait()` waits until the thread does not hold an event of the port. At the end, the new `iavf_dev_event_discard()` removes the pending events of the port and waits again.
 
 ## What breaks
 
@@ -30,26 +30,31 @@ The window is between the last event post of the port and the release. The threa
 ## The fix
 
 - The thread takes one event at a time from `handler->pending`, under the lock, and writes its port to `handler->handling_dev`. It clears the field under the lock after the event.
-- `iavf_dev_event_discard(dev)` runs at the end of `iavf_dev_close()`, after the interrupt callback, the alarm and the watchdog are stopped, so nothing posts an event of the port after it. It removes and frees each pending event of the port, then waits while `handling_dev == dev`.
-- The wait polls every 1 ms under the existing mutex, as `iavf_wait_for_msg()` does. A condition variable would wake at once, but the pthread shim of DPDK on Windows (`lib/eal/windows/include/pthread.h`) has no `pthread_cond_t`, and iavf builds on Windows. Close is a slow path: 1 ms is small against the virtchnl commands of close.
-- The event thread closes a port itself: `iavf_handle_hw_reset()` (auto-reset), or an application callback that calls `rte_eth_dev_reset()`. Then the event in hand is its own, so `iavf_dev_event_discard()` compares `rte_thread_self()` with `handler->tid` and skips the wait. It still drops the pending events of the port, which describe the port before the reset.
-- With `handler->ndev == 0` there is no thread, and the mutex can be destroyed, so the function returns. That is the case for a close after an `iavf_dev_reset()` whose `iavf_dev_init()` failed.
+- `iavf_dev_event_wait(dev)` runs at the start of `iavf_dev_close()` and waits while `handling_dev == dev`. An auto-reset of the port in hand (`iavf_handle_hw_reset()` that saw `dev_started == 1` before the application stopped the port) runs reset, uninit, close and init on the event thread, and arms the interrupt, the alarm and the watchdog again.
+  Without the wait it does that while the application closes the port, and the port is released with a live watchdog on a freed adapter.
+- `iavf_dev_event_discard(dev)` runs at the end of `iavf_dev_close()`, after the interrupt callback, the alarm and the watchdog are stopped. It removes and frees each pending event of the port, then waits while `handling_dev == dev`.
+- The wait polls every 1 ms and releases the mutex during the sleep, as `iavf_wait_for_msg()` polls every 1 ms. A condition variable would wake at once, but the pthread shim of DPDK on Windows (`lib/eal/windows/include/pthread.h`) has no `pthread_cond_t`, and iavf builds on Windows. Close is a slow path: 1 ms is small against the virtchnl commands of close.
+- The event thread closes a port itself: `iavf_handle_hw_reset()` (auto-reset), or an application callback that calls `rte_eth_dev_reset()`. Then the event in hand is its own, so the wait compares `rte_thread_self()` with `handler->tid` and returns at once. It still drops the pending events of the port, which describe the port before the reset.
+- With `handler->ndev == 0` there is no thread, and the mutex can be destroyed, so the function returns. That is the case for a close after an `iavf_dev_reset()` of the last port when `iavf_dev_event_handler_init()` itself failed. If a later step of `iavf_dev_init()` fails, `ndev` stays above 0, because `iavf_dev_event_handler_init()` adds to it first and the init failure leak keeps it.
 
 ### Paths that the patch must not break
 
-- **Auto-reset** (`in_reset_recovery`): the event thread runs `iavf_handle_hw_reset()` → `iavf_dev_reset()` → `iavf_dev_uninit()` → `iavf_dev_close()`. The discard runs on the event thread, so it does not wait. `iavf_dev_uninit()` still skips `iavf_dev_event_handler_fini()`, and `iavf_dev_init()` still skips `iavf_dev_event_handler_init()`, so `ndev` does not change.
+- **Auto-reset** (`in_reset_recovery`): the event thread runs `iavf_handle_hw_reset()` → `iavf_dev_reset()` → `iavf_dev_uninit()` → `iavf_dev_close()`. The wait and the discard run on the event thread, so they do not wait. `iavf_dev_uninit()` still skips `iavf_dev_event_handler_fini()`, and `iavf_dev_init()` still skips `iavf_dev_event_handler_init()`, so `ndev` does not change.
 - **Init error path**: `iavf_dev_init()` does not call `iavf_dev_close()` on an error, so the discard does not run there and the path does not change.
-- **fini**: `iavf_dev_event_handler_fini()` does not change. It runs after `iavf_dev_close()`, so the last port is discarded before the thread is cancelled. The thread holds the mutex only for list operations, which have no cancellation point.
-- **A close on another thread** now waits for the event callback of its port to return. An application LSC or reset callback that waits for the thread that closes the port deadlocks. `rte_intr_callback_unregister_sync()` (patch 0009) has the same contract.
+- **fini**: `iavf_dev_event_handler_fini()` does not change. It runs after `iavf_dev_close()`, so the last port is discarded before the thread is cancelled. The thread holds the mutex only for list operations, which have no cancellation point on Linux. On Windows, `pthread_cancel()` is `TerminateThread()`, as before the patch.
+- **A close or reset on another thread** now waits for the LSC or reset callback of its port to return. An application callback that waits for the thread that closes or resets the port deadlocks; before the patch, that thread used the port after its release. `rte_intr_callback_unregister_sync()` (patch 0009) has the same contract. The patch message states this rule.
 
 ### What the patch does not cover
 
 - The init error path releases the port with no close. An event that the polled virtchnl read posted during `iavf_init_vf()` can stay pending there. The upstream fix "net/iavf: fix event handler leak on init failure" changes these error paths; a discard there belongs on top of it.
+- An auto-reset that the event thread takes after the wait at the start of close, and before close stops the port, still runs during close. The port must be started for it (`dev_started == 1`), and `rte_eth_dev_close()` refuses a started port, so it needs a port that the reset in hand started again, and a new reset event in the few microseconds before close stops that port.
+  A stop on another thread is also not serialized with an auto-reset in hand. Both are older than this patch; the patch makes the first window smaller.
 - An application reset from an event callback of the last iavf port runs `iavf_dev_event_handler_fini()` on the event thread, which cancels and joins itself. That fault is older than this patch and not changed by it.
 
 ## Why MTL carries the patch
 
-Each MTL app closes its iavf ports in `mtl_uninit()` and runs `rte_eal_cleanup()` after it. The crash comes after the work is done, but it kills the process with SIGSEGV, so a test or a pipeline that checks the exit status fails. The event thread and its list are private to iavf, so MTL cannot drain them. A delay between close and `rte_eal_cleanup()` does not help: the release is in `rte_eth_dev_close()`.
+Each MTL app closes its iavf ports in `mtl_uninit()` and runs `rte_eal_cleanup()` after it. The crash comes after the work is done, but it kills the process with SIGSEGV, so a test or a pipeline that checks the exit status fails. The event thread and its list are private to iavf, so MTL cannot drain them.
+A delay between close and `rte_eal_cleanup()` does not help: the release is in `rte_eth_dev_close()`.
 
 **Drop when** the DPDK release MTL pins ships the fix.
 
@@ -59,8 +64,9 @@ Each MTL app closes its iavf ports in `mtl_uninit()` and runs `rte_eal_cleanup()
 - The series applies to a clean v26.07 with `git am --3way` and with `patch -p1` (as `script/build_dpdk.sh` does), and the iavf driver builds with `-Dwerror=true`. `devtools/checkpatches.sh` and `devtools/check-git-log.sh` pass.
 - Seen in the field: an FFmpeg MTL RX process on an E830 VF (ice 2.7.6 PF) ended with `dpdk-iavf-event: segfault at 60 ... in librte_net_iavf.so.26.2` after `dev_close_port(0), succ`, in a 10-minute stability run.
 - Hardware, 2026-11-26, E830 VF on a Proxmox VM, 20 open/close runs each with the recipe below (`IAVF_DBG_EVENT_AT_CLOSE=1 IAVF_DBG_EVENT_DELAY_US=20000`): the series without 0017 ended 20 of 20 runs with SIGSEGV (exit 139) and the same kernel line; with 0017, 20 of 20 exit 0 with `clean exit`.
+  That 0017 is the first revision, with the discard at the end of close only; the revision with the wait at the start of close is not measured yet.
 
-## Reproduce without a NIC
+## Unit fingerprint
 
 No unit test can show the fault: the event functions are `static` or hidden in `librte_net_iavf.so`, and the event thread starts only when an iavf port probes.
 
@@ -69,7 +75,8 @@ No unit test can show the fault: the event functions are `static` or hidden in `
 ./build_unit/tests/unit/UnitTest --gtest_filter='DpdkIavfPatch.*'
 ```
 
-`DpdkIavfPatch.CloseWaitsForInFlightEventOfThePort` in `tests/unit/dev/iavf_intr_unregister_test.cpp` checks that the loaded iavf PMD imports `rte_thread_self` and `rte_thread_equal`. In the iavf PMD of 26.07 only the event thread check of `iavf_dev_event_discard()` uses them. It fails on a DPDK built without 0017; rebuild with `script/build_dpdk.sh`.
+`DpdkIavfPatch.CloseWaitsForInFlightEventOfThePort` in `tests/unit/dev/iavf_intr_unregister_test.cpp` checks that the loaded iavf PMD imports `rte_thread_self` and `rte_thread_equal`. In the iavf PMD of 26.07 only the event thread check of the 0017 wait uses them. The fixture skips on a DPDK other than 26.07, so the check goes with the 26.07 patch set.
+It fails on a DPDK built without 0017; rebuild with `script/build_dpdk.sh`.
 
 ## Reproduce on hardware
 
@@ -80,7 +87,7 @@ Use iavf VFs on an ice PF, for example the E830 VFs of VM 140. Make two DPDK pre
 This script (`iavf_event_debug.sh`), for a debug build only, applies to both source trees. It adds two switches:
 
 - `IAVF_DBG_EVENT_DELAY_US`: the event thread sleeps after it takes an event and before it reads the port, so a release falls into the window.
-- `IAVF_DBG_EVENT_AT_CLOSE`: `iavf_dev_close()` posts one LSC event of its port at its end, before the discard of 0017. It replaces the PF event, which comes at a random time.
+- `IAVF_DBG_EVENT_AT_CLOSE`: `iavf_dev_close()` posts one LSC event of its port at `out:`, after the wait and before the discard of 0017. It replaces the PF event, which comes at a random time.
 
 ```sh
 #!/bin/sh
@@ -228,7 +235,7 @@ Results. The first two rows were measured on 2026-11-26 on one E830 VF (ice 2.7.
 | Build | Widening | Result |
 | --- | --- | --- |
 | stock (0001-0014) | `AT_CLOSE` + `DELAY_US=20000` | measured: 20 of 20 `exit 139`; 20 `dpdk-iavf-event[...]: segfault at 60 ... in librte_net_iavf.so.26.2` lines in the kernel log |
-| patched (0001-0017) | `AT_CLOSE` + `DELAY_US=20000` | measured: 20 of 20 `exit 0` and `clean exit`; no kernel line |
+| patched (0001-0017) | `AT_CLOSE` + `DELAY_US=20000` | measured on the first revision of 0017 (no wait at the start of close): 20 of 20 `exit 0` and `clean exit`; no kernel line |
 | stock | `DELAY_US=200000`, no `AT_CLOSE`, `UP_MS=0` | not measured: a crash only when the PF sends an event of a port in the 200 ms before its close; the rate depends on the PF |
 | patched | the same | not measured: 0 crashes expected |
 
