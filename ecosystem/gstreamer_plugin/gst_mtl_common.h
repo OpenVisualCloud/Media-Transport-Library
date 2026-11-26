@@ -16,6 +16,8 @@
 #include <mtl/st40_pipeline_api.h>
 #include <mtl/st_pipeline_api.h>
 
+#include "gst_mtl_pts_tai.h"
+
 #define PAYLOAD_TYPE_AUDIO (111)
 #define PAYLOAD_TYPE_VIDEO (112)
 #define PAYLOAD_TYPE_ANCILLARY (113)
@@ -76,9 +78,9 @@ typedef struct GeneralArgs {
 
 /* PTS to TAI state of one TX element, used by its streaming thread only */
 typedef struct GstMtlPtsPacing {
+  gboolean pts_is_tai;
   GstSegment segment;
-  GstClockTime base_time;
-  gint64 clock_to_tai;
+  struct gst_mtl_tai_sync sync;
   gboolean no_tai_logged;
 } GstMtlPtsPacing;
 
@@ -127,7 +129,7 @@ mtl_handle gst_mtl_common_init_handle(GeneralArgs* generalArgs,
 gint gst_mtl_common_deinit_handle(mtl_handle* handle);
 
 void gst_mtl_common_pts_pacing_init(GstMtlPtsPacing* pacing);
-/* TAI of the buffer time pts + pacing_offset, 0 (MTL paces the frame) with no clock */
+/* TAI of a buffer with PTS pts, plus pacing_offset; 0 when MTL must pace it */
 uint64_t gst_mtl_common_pts_to_tai(GstElement* element, mtl_handle mtl,
                                    GstMtlPtsPacing* pacing, GstClockTime pts,
                                    guint pacing_offset);

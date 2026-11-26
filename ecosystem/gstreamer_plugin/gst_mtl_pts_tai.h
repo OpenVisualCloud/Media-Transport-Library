@@ -5,7 +5,43 @@
 #ifndef __GST_MTL_PTS_TAI_H__
 #define __GST_MTL_PTS_TAI_H__
 
+#include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
+
+#define GST_MTL_TIME_NONE UINT64_MAX
+#define GST_MTL_TAI_RESYNC_NS 1000000000ULL
+/* a larger change of the clock to TAI offset is a step of the TAI source */
+#define GST_MTL_TAI_STEP_NS 100000LL
+#define GST_MTL_TAI_BRACKET_TRIES 5
+#define GST_MTL_TAI_BRACKET_NS 10000ULL
+/* the PTP delta under which MTL takes a sync result as expected (mt_ptp.c) */
+#define GST_MTL_PTP_LOCK_NS 30000LL
+
+/* clock_to_tai is TAI minus pipeline clock time, valid for one base time */
+struct gst_mtl_tai_sync {
+  bool valid;
+  uint64_t base_time;
+  uint64_t measured_at;
+  int64_t clock_to_tai;
+};
+
+enum gst_mtl_tai_update {
+  GST_MTL_TAI_KEPT,
+  GST_MTL_TAI_FIRST,
+  GST_MTL_TAI_STEP,
+};
+
+/* cuts audio buffers into frames of frame_size bytes; a TAI of 0 is MTL pacing */
+struct gst_mtl_audio_framer {
+  uint32_t frame_size;
+  uint32_t bpf;
+  uint32_t rate;
+  uint64_t buf_tai;
+  uint64_t buf_pos;
+  uint32_t fill;
+  uint64_t frame_tai;
+};
 
 /* TAI minus pipeline clock time, from one TAI read between two clock reads */
 static inline int64_t gst_mtl_clock_to_tai(uint64_t clock_before, uint64_t tai,
@@ -13,18 +49,76 @@ static inline int64_t gst_mtl_clock_to_tai(uint64_t clock_before, uint64_t tai,
   return (int64_t)(tai - (clock_before + (clock_after - clock_before) / 2));
 }
 
-/* running_time + base_time is the pipeline clock time of the buffer */
-static inline uint64_t gst_mtl_running_time_to_tai(uint64_t running_time,
-                                                   uint64_t base_time,
-                                                   int64_t clock_to_tai,
-                                                   uint32_t pacing_offset) {
-  return running_time + base_time + (uint64_t)clock_to_tai + pacing_offset;
+static inline bool gst_mtl_ptp_locked(int64_t delta) {
+  return llabs(delta) < GST_MTL_PTP_LOCK_NS;
 }
 
-/* duration of the whole sample frames in bytes of interleaved audio */
+static inline bool gst_mtl_tai_sync_due(const struct gst_mtl_tai_sync* s,
+                                        uint64_t base_time, uint64_t clock_now) {
+  return !s->valid || base_time != s->base_time ||
+         clock_now - s->measured_at >= GST_MTL_TAI_RESYNC_NS;
+}
+
+/* a change under GST_MTL_TAI_STEP_NS is noise: keep the offset, so the cadence stays */
+static inline enum gst_mtl_tai_update gst_mtl_tai_sync_update(struct gst_mtl_tai_sync* s,
+                                                              uint64_t base_time,
+                                                              uint64_t clock_now,
+                                                              int64_t measured) {
+  enum gst_mtl_tai_update update = GST_MTL_TAI_KEPT;
+
+  if (!s->valid || base_time != s->base_time)
+    update = GST_MTL_TAI_FIRST;
+  else if (llabs(measured - s->clock_to_tai) > GST_MTL_TAI_STEP_NS)
+    update = GST_MTL_TAI_STEP;
+
+  if (update != GST_MTL_TAI_KEPT) s->clock_to_tai = measured;
+  s->base_time = base_time;
+  s->measured_at = clock_now;
+  s->valid = true;
+  return update;
+}
+
+/* sync is NULL while the pipeline clock time is not known */
+static inline uint64_t gst_mtl_buffer_tai(const struct gst_mtl_tai_sync* sync,
+                                          bool pts_is_tai, uint64_t pts,
+                                          uint64_t running_time, uint32_t pacing_offset) {
+  if (pts_is_tai) return pts == GST_MTL_TIME_NONE ? 0 : pts + pacing_offset;
+  if (!sync || !sync->valid || running_time == GST_MTL_TIME_NONE) return 0;
+  return running_time + sync->base_time + (uint64_t)sync->clock_to_tai + pacing_offset;
+}
+
 static inline uint64_t gst_mtl_audio_bytes_to_ns(uint64_t bytes, uint32_t bpf,
                                                  uint32_t rate) {
   return bytes / bpf * 1000000000ULL / rate;
+}
+
+/* the samples of an open frame run on into this buffer: restamp it from here */
+static inline void gst_mtl_audio_framer_buffer(struct gst_mtl_audio_framer* f,
+                                               uint64_t buf_tai) {
+  uint64_t held = gst_mtl_audio_bytes_to_ns(f->fill, f->bpf, f->rate);
+
+  f->buf_tai = buf_tai;
+  f->buf_pos = 0;
+  if (f->fill) f->frame_tai = buf_tai > held ? buf_tai - held : 0;
+}
+
+/* returns the bytes of the next len bytes of the buffer that go into the open frame */
+static inline uint32_t gst_mtl_audio_framer_take(struct gst_mtl_audio_framer* f,
+                                                 uint64_t len) {
+  uint32_t room = f->frame_size - f->fill;
+  uint32_t take = len < room ? (uint32_t)len : room;
+
+  if (!f->fill)
+    f->frame_tai =
+        f->buf_tai ? f->buf_tai + gst_mtl_audio_bytes_to_ns(f->buf_pos, f->bpf, f->rate)
+                   : 0;
+  f->fill += take;
+  f->buf_pos += take;
+  return take;
+}
+
+static inline void gst_mtl_audio_framer_reset(struct gst_mtl_audio_framer* f) {
+  f->fill = 0;
 }
 
 #endif /* __GST_MTL_PTS_TAI_H__ */

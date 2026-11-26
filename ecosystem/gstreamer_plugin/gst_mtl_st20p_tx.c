@@ -95,6 +95,7 @@ enum {
   PROP_ST20P_TX_ASYNC_SESSION_CREATE,
   PROP_ST20P_TX_USE_PTS_FOR_PACING,
   PROP_ST20P_TX_PTS_PACING_OFFSET,
+  PROP_ST20P_TX_PTS_IS_TAI,
   PROP_MAX
 };
 
@@ -214,7 +215,14 @@ static void gst_mtl_st20p_tx_class_init(Gst_Mtl_St20p_TxClass* klass) {
                         "Presentation Timestamp (PTS) "
                         "for precise packet pacing. This allows fine-tuning of the "
                         "transmission timing when using PTS-based pacing.",
-                        0, G_MAXUINT, 1080, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+                        0, G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST20P_TX_PTS_IS_TAI,
+      g_param_spec_boolean("pts-is-tai", "PTS is TAI",
+                           "The buffer PTS is a TAI time in nanoseconds, not running "
+                           "time. Only with use-pts-for-pacing.",
+                           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink) {
@@ -291,6 +299,9 @@ static void gst_mtl_st20p_tx_set_property(GObject* object, guint prop_id,
     case PROP_ST20P_TX_PTS_PACING_OFFSET:
       self->pts_for_pacing_offset = g_value_get_uint(value);
       break;
+    case PROP_ST20P_TX_PTS_IS_TAI:
+      self->pts_pacing.pts_is_tai = g_value_get_boolean(value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
@@ -323,6 +334,8 @@ static void gst_mtl_st20p_tx_get_property(GObject* object, guint prop_id, GValue
     case PROP_ST20P_TX_PTS_PACING_OFFSET:
       g_value_set_uint(value, sink->pts_for_pacing_offset);
       break;
+    case PROP_ST20P_TX_PTS_IS_TAI:
+      g_value_set_boolean(value, sink->pts_pacing.pts_is_tai);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -603,11 +616,13 @@ static int gst_mtl_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
   return 0;
 }
 
-static uint64_t gst_mtl_st20p_tx_buf_tai(Gst_Mtl_St20p_Tx* sink, GstBuffer* buf) {
-  if (!sink->use_pts_for_pacing) return 0;
-  return gst_mtl_common_pts_to_tai(GST_ELEMENT(sink), sink->mtl_lib_handle,
-                                   &sink->pts_pacing, GST_BUFFER_PTS(buf),
-                                   sink->pts_for_pacing_offset);
+static void gst_mtl_st20p_tx_stamp(Gst_Mtl_St20p_Tx* sink, struct st_frame* frame,
+                                   GstBuffer* buf) {
+  if (!sink->use_pts_for_pacing) return;
+  frame->timestamp = gst_mtl_common_pts_to_tai(GST_ELEMENT(sink), sink->mtl_lib_handle,
+                                               &sink->pts_pacing, GST_BUFFER_PTS(buf),
+                                               sink->pts_for_pacing_offset);
+  frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
 }
 
 static GstFlowReturn gst_mtl_st20p_tx_zero_copy(Gst_Mtl_St20p_Tx* sink, GstBuffer* buf) {
@@ -617,7 +632,6 @@ static GstFlowReturn gst_mtl_st20p_tx_zero_copy(Gst_Mtl_St20p_Tx* sink, GstBuffe
   struct st_ext_frame ext_frame;
   GstVideoMeta* video_meta = NULL;
   gint buffer_n = gst_buffer_n_memory(buf);
-  uint64_t tai = gst_mtl_st20p_tx_buf_tai(sink, buf);
 
   parent = malloc(sizeof(GstSt20pTxExternalDataParent));
   if (!parent) {
@@ -660,10 +674,7 @@ static GstFlowReturn gst_mtl_st20p_tx_zero_copy(Gst_Mtl_St20p_Tx* sink, GstBuffe
       return GST_FLOW_ERROR;
     }
 
-    if (sink->use_pts_for_pacing) {
-      frame->timestamp = tai;
-      frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
-    }
+    gst_mtl_st20p_tx_stamp(sink, frame, buf);
 
     video_meta = gst_buffer_get_video_meta(buf);
     if (video_meta) {
@@ -705,7 +716,6 @@ static GstFlowReturn gst_mtl_st20p_tx_mem_copy(Gst_Mtl_St20p_Tx* sink, GstBuffer
   gint frame_size = sink->frame_size;
   GstMemory* gst_buffer_memory;
   GstMapInfo map_info;
-  uint64_t tai = gst_mtl_st20p_tx_buf_tai(sink, buf);
 
   for (int i = 0; i < buffer_n; i++) {
     gst_buffer_memory = gst_buffer_peek_memory(buf, i);
@@ -728,10 +738,7 @@ static GstFlowReturn gst_mtl_st20p_tx_mem_copy(Gst_Mtl_St20p_Tx* sink, GstBuffer
       return GST_FLOW_ERROR;
     }
 
-    if (sink->use_pts_for_pacing) {
-      frame->timestamp = tai;
-      frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
-    }
+    gst_mtl_st20p_tx_stamp(sink, frame, buf);
 
     memcpy(frame->addr[0], map_info.data, buffer_size);
     gst_memory_unmap(gst_buffer_memory, &map_info);

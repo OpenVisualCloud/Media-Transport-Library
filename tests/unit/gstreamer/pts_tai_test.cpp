@@ -14,26 +14,27 @@ constexpr uint64_t kTaiNow = 1795636655000000000ULL;
 /* a monotonic pipeline clock one hour after boot, PLAYING for two seconds */
 constexpr uint64_t kClockNow = 3600 * kNsPerS;
 constexpr uint64_t kBaseTime = kClockNow - 2 * kNsPerS;
-constexpr uint64_t kFrameNsP59 = 16683333;
+constexpr int64_t kOffset = (int64_t)(kTaiNow - kClockNow);
 
-int64_t clock_to_tai_now() {
-  return gst_mtl_clock_to_tai(kClockNow, kTaiNow, kClockNow);
+struct gst_mtl_tai_sync synced() {
+  struct gst_mtl_tai_sync sync = {};
+  gst_mtl_tai_sync_update(&sync, kBaseTime, kClockNow, kOffset);
+  return sync;
 }
+
+/* 48 kHz stereo 16 bit: 4 bytes per sample frame, a 1920 byte frame is 10 ms */
+struct gst_mtl_audio_framer framer() {
+  struct gst_mtl_audio_framer f = {};
+  f.frame_size = 1920;
+  f.bpf = 4;
+  f.rate = 48000;
+  return f;
+}
+
+constexpr uint64_t kNs1000Bytes = 5208333; /* 250 samples */
+constexpr uint64_t kNs920Bytes = 4791666;  /* 230 samples */
 
 }  // namespace
-
-TEST(GstMtlPtsTai, BufferDueNowGetsTaiNow) {
-  uint64_t tai = gst_mtl_running_time_to_tai(kClockNow - kBaseTime, kBaseTime,
-                                             clock_to_tai_now(), 0);
-
-  EXPECT_EQ(tai, kTaiNow);
-}
-
-TEST(GstMtlPtsTai, FirstBufferIsNotDecadesEarly) {
-  uint64_t tai = gst_mtl_running_time_to_tai(0, kBaseTime, clock_to_tai_now(), 1080);
-
-  EXPECT_EQ(tai, kTaiNow - 2 * kNsPerS + 1080);
-}
 
 TEST(GstMtlPtsTai, OffsetComesFromTheMidpointOfTheClockReads) {
   int64_t offset = gst_mtl_clock_to_tai(kClockNow, kTaiNow, kClockNow + 2000);
@@ -41,36 +42,136 @@ TEST(GstMtlPtsTai, OffsetComesFromTheMidpointOfTheClockReads) {
   EXPECT_EQ(offset, (int64_t)(kTaiNow - (kClockNow + 1000)));
 }
 
-TEST(GstMtlPtsTai, PacingOffsetDelaysTheStamp) {
-  uint64_t on_time =
-      gst_mtl_running_time_to_tai(kNsPerS, kBaseTime, clock_to_tai_now(), 0);
-  uint64_t delayed =
-      gst_mtl_running_time_to_tai(kNsPerS, kBaseTime, clock_to_tai_now(), 33366666);
+TEST(GstMtlPtsTai, RunningTimeGetsTheTaiOfThePipelineClock) {
+  struct gst_mtl_tai_sync sync = synced();
+  struct gst_mtl_tai_sync ahead = {};
+  uint64_t clock_ahead = kTaiNow + 37 * kNsPerS;
+  gst_mtl_tai_sync_update(&ahead, clock_ahead - kNsPerS, clock_ahead,
+                          gst_mtl_clock_to_tai(clock_ahead, kTaiNow, clock_ahead));
 
-  EXPECT_EQ(delayed - on_time, 33366666u);
+  EXPECT_EQ(gst_mtl_buffer_tai(&sync, false, 0, 2 * kNsPerS, 0), kTaiNow);
+  EXPECT_EQ(gst_mtl_buffer_tai(&sync, false, 0, 0, 1080), kTaiNow - 2 * kNsPerS + 1080);
+  EXPECT_EQ(gst_mtl_buffer_tai(&ahead, false, 0, kNsPerS, 0), kTaiNow);
 }
 
-TEST(GstMtlPtsTai, StampsKeepThePtsCadence) {
-  int64_t offset = clock_to_tai_now();
-  uint64_t tai0 = gst_mtl_running_time_to_tai(kNsPerS, kBaseTime, offset, 1080);
-  uint64_t tai1 =
-      gst_mtl_running_time_to_tai(kNsPerS + kFrameNsP59, kBaseTime, offset, 1080);
+TEST(GstMtlPtsTai, RunningTimeWithNoClockOrOutsideTheSegmentGivesMtlPacing) {
+  struct gst_mtl_tai_sync sync = synced();
 
-  EXPECT_EQ(tai1 - tai0, kFrameNsP59);
+  EXPECT_EQ(gst_mtl_buffer_tai(NULL, false, kNsPerS, kNsPerS, 1080), 0u);
+  EXPECT_EQ(gst_mtl_buffer_tai(&sync, false, kNsPerS, GST_MTL_TIME_NONE, 1080), 0u);
 }
 
-TEST(GstMtlPtsTai, PipelineClockAheadOfTaiConverts) {
-  uint64_t clock_now = kTaiNow + 37 * kNsPerS;
-  uint64_t base_time = clock_now - kNsPerS;
-  int64_t offset = gst_mtl_clock_to_tai(clock_now, kTaiNow, clock_now);
-
-  EXPECT_LT(offset, 0);
-  EXPECT_EQ(gst_mtl_running_time_to_tai(kNsPerS, base_time, offset, 0), kTaiNow);
+TEST(GstMtlPtsTai, PtsIsTaiSendsThePtsWithNoClock) {
+  EXPECT_EQ(gst_mtl_buffer_tai(NULL, true, kTaiNow, GST_MTL_TIME_NONE, 1080),
+            kTaiNow + 1080);
+  EXPECT_EQ(gst_mtl_buffer_tai(NULL, true, GST_MTL_TIME_NONE, GST_MTL_TIME_NONE, 1080),
+            0u);
 }
 
-TEST(GstMtlPtsTai, AudioFrameStartsAtItsFirstSample) {
-  /* 48 kHz, stereo, 16 bit: 4 bytes per sample frame */
-  EXPECT_EQ(gst_mtl_audio_bytes_to_ns(1920, 4, 48000), 10000000u);
-  EXPECT_EQ(gst_mtl_audio_bytes_to_ns(1764, 4, 44100), 10000000u);
-  EXPECT_EQ(gst_mtl_audio_bytes_to_ns(4, 4, 44100), 22675u);
+TEST(GstMtlPtsTai, OffsetIsMeasuredAgainEachSecond) {
+  struct gst_mtl_tai_sync sync = synced();
+
+  EXPECT_FALSE(gst_mtl_tai_sync_due(&sync, kBaseTime, kClockNow + kNsPerS - 1));
+  EXPECT_TRUE(gst_mtl_tai_sync_due(&sync, kBaseTime, kClockNow + kNsPerS));
+}
+
+TEST(GstMtlPtsTai, NewBaseTimeTakesTheNewMeasureAsFirst) {
+  struct gst_mtl_tai_sync sync = synced();
+  uint64_t resumed = kClockNow + 5 * kNsPerS;
+
+  EXPECT_TRUE(gst_mtl_tai_sync_due(&sync, resumed, resumed));
+  EXPECT_EQ(gst_mtl_tai_sync_update(&sync, resumed, resumed, kOffset + 37 * kNsPerS),
+            GST_MTL_TAI_FIRST);
+  EXPECT_EQ(sync.clock_to_tai, kOffset + 37 * (int64_t)kNsPerS);
+}
+
+TEST(GstMtlPtsTai, SmallChangeKeepsTheOffsetAndTheCadence) {
+  struct gst_mtl_tai_sync sync = synced();
+  uint64_t later = kClockNow + kNsPerS;
+
+  EXPECT_EQ(gst_mtl_tai_sync_update(&sync, kBaseTime, later, kOffset + 50000),
+            GST_MTL_TAI_KEPT);
+  EXPECT_EQ(gst_mtl_tai_sync_update(&sync, kBaseTime, later + kNsPerS, kOffset - 50000),
+            GST_MTL_TAI_KEPT);
+  EXPECT_EQ(sync.clock_to_tai, kOffset);
+  EXPECT_FALSE(gst_mtl_tai_sync_due(&sync, kBaseTime, later + kNsPerS + 1));
+}
+
+TEST(GstMtlPtsTai, StepOfTheTaiSourceIsApplied) {
+  struct gst_mtl_tai_sync sync = synced();
+  int64_t stepped = kOffset + 37 * (int64_t)kNsPerS;
+
+  EXPECT_EQ(gst_mtl_tai_sync_update(&sync, kBaseTime, kClockNow + kNsPerS, stepped),
+            GST_MTL_TAI_STEP);
+  EXPECT_EQ(sync.clock_to_tai, stepped);
+}
+
+TEST(GstMtlPtsTai, PtpIsLockedOnlyUnder30Us) {
+  EXPECT_TRUE(gst_mtl_ptp_locked(29999));
+  EXPECT_TRUE(gst_mtl_ptp_locked(-29999));
+  EXPECT_FALSE(gst_mtl_ptp_locked(30000));
+  EXPECT_FALSE(gst_mtl_ptp_locked(-5 * (int64_t)kNsPerS));
+}
+
+TEST(GstMtlAudioFramer, FrameSpanningTwoBuffersKeepsItsFirstSampleTime) {
+  struct gst_mtl_audio_framer f = framer();
+
+  gst_mtl_audio_framer_buffer(&f, kTaiNow);
+  EXPECT_EQ(gst_mtl_audio_framer_take(&f, 1000), 1000u);
+  gst_mtl_audio_framer_buffer(&f, kTaiNow + kNs1000Bytes);
+  EXPECT_EQ(gst_mtl_audio_framer_take(&f, 2000), 920u);
+
+  EXPECT_EQ(f.fill, f.frame_size);
+  EXPECT_EQ(f.frame_tai, kTaiNow);
+  gst_mtl_audio_framer_reset(&f);
+  gst_mtl_audio_framer_take(&f, 1080);
+  EXPECT_EQ(f.frame_tai, kTaiNow + kNs1000Bytes + kNs920Bytes);
+}
+
+TEST(GstMtlAudioFramer, FrameStartingInTheSecondMemoryCountsTheFirst) {
+  struct gst_mtl_audio_framer f = framer();
+
+  gst_mtl_audio_framer_buffer(&f, kTaiNow);
+  gst_mtl_audio_framer_take(&f, 1000);
+  EXPECT_EQ(gst_mtl_audio_framer_take(&f, 1000), 920u);
+  gst_mtl_audio_framer_reset(&f);
+  gst_mtl_audio_framer_take(&f, 80);
+
+  /* the 80 byte frame that EOS sends */
+  EXPECT_EQ(f.fill, 80u);
+  EXPECT_EQ(f.frame_tai, kTaiNow + 10000000);
+}
+
+TEST(GstMtlAudioFramer, PartFrameTakesItsTimeFromTheBufferAfterAPause) {
+  struct gst_mtl_audio_framer f = framer();
+  uint64_t resumed = kTaiNow + 5 * kNsPerS + kNs1000Bytes;
+
+  gst_mtl_audio_framer_buffer(&f, kTaiNow);
+  gst_mtl_audio_framer_take(&f, 1000);
+  gst_mtl_audio_framer_buffer(&f, resumed);
+
+  EXPECT_EQ(f.frame_tai, resumed - kNs1000Bytes);
+}
+
+TEST(GstMtlAudioFramer, FlushDropsThePartFrame) {
+  struct gst_mtl_audio_framer f = framer();
+  uint64_t after_seek = kTaiNow + 60 * kNsPerS;
+
+  gst_mtl_audio_framer_buffer(&f, kTaiNow);
+  gst_mtl_audio_framer_take(&f, 1000);
+  gst_mtl_audio_framer_reset(&f);
+  gst_mtl_audio_framer_buffer(&f, after_seek);
+
+  EXPECT_EQ(gst_mtl_audio_framer_take(&f, 1920), 1920u);
+  EXPECT_EQ(f.frame_tai, after_seek);
+}
+
+TEST(GstMtlAudioFramer, BufferWithNoTaiGivesMtlPacing) {
+  struct gst_mtl_audio_framer f = framer();
+
+  gst_mtl_audio_framer_buffer(&f, kTaiNow);
+  gst_mtl_audio_framer_take(&f, 1000);
+  gst_mtl_audio_framer_buffer(&f, 0);
+
+  EXPECT_EQ(f.frame_tai, 0u);
 }

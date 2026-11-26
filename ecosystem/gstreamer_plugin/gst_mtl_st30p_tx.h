@@ -70,10 +70,7 @@ struct _Gst_Mtl_St30p_Tx {
    * expected size.
    */
   struct st30_frame* cur_frame;
-  guint cur_frame_available_size;
-  uint64_t cur_frame_tai;
-  guint bpf;
-  guint rate;
+  struct gst_mtl_audio_framer framer;
 
   /* arguments */
   guint retry_frame;

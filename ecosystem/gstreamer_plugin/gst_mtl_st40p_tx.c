@@ -118,6 +118,7 @@ enum {
   PROP_ST40P_TX_INTERLACED,
   PROP_ST40P_TX_USE_PTS_FOR_PACING,
   PROP_ST40P_TX_PTS_PACING_OFFSET,
+  PROP_ST40P_TX_PTS_IS_TAI,
   PROP_ST40P_TX_PARSE_8331_META,
   PROP_ST40P_TX_MAX_UDW_SIZE,
   PROP_ST40P_TX_INPUT_FORMAT,
@@ -267,7 +268,14 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
                         "Presentation Timestamp (PTS) "
                         "for precise packet pacing. This allows fine-tuning of the "
                         "transmission timing when using PTS-based pacing.",
-                        0, G_MAXUINT, 1080, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+                        0, G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_PTS_IS_TAI,
+      g_param_spec_boolean("pts-is-tai", "PTS is TAI",
+                           "The buffer PTS is a TAI time in nanoseconds, not running "
+                           "time. Only with use-pts-for-pacing.",
+                           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST40P_TX_PARSE_8331_META,
@@ -374,6 +382,9 @@ static void gst_mtl_st40p_tx_set_property(GObject* object, guint prop_id,
     case PROP_ST40P_TX_PTS_PACING_OFFSET:
       self->pts_for_pacing_offset = g_value_get_uint(value);
       break;
+    case PROP_ST40P_TX_PTS_IS_TAI:
+      self->pts_pacing.pts_is_tai = g_value_get_boolean(value);
+      break;
     case PROP_ST40P_TX_PARSE_8331_META:
       if (g_value_get_boolean(value)) {
         self->input_format = GST_MTL_ST40P_TX_INPUT_FORMAT_RFC8331_PACKED;
@@ -428,6 +439,9 @@ static void gst_mtl_st40p_tx_get_property(GObject* object, guint prop_id, GValue
       break;
     case PROP_ST40P_TX_PTS_PACING_OFFSET:
       g_value_set_uint(value, sink->pts_for_pacing_offset);
+      break;
+    case PROP_ST40P_TX_PTS_IS_TAI:
+      g_value_set_boolean(value, sink->pts_pacing.pts_is_tai);
       break;
     case PROP_ST40P_TX_PARSE_8331_META:
       g_value_set_boolean(
@@ -728,13 +742,12 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
     /* Get checksum and promptly ignore it */
     udw = st40_get_udw((data_count + 3), payload_cursor);
 
-    gst_mtl_st40p_tx_stamp(sink, frame_info, buf);
-
     /* word align */
     if (bytes_left_to_process > 0)
       bytes_left_to_process -= bytes_left_to_process % RFC_8331_WORD_BYTE_SIZE;
   }
 
+  gst_mtl_st40p_tx_stamp(sink, frame_info, buf);
   if (st40p_tx_put_frame(sink->tx_handle, frame_info)) {
     GST_ERROR("Failed to put frame");
     return GST_FLOW_ERROR;

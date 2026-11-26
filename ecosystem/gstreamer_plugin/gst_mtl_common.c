@@ -7,7 +7,6 @@
 #endif
 
 #include "gst_mtl_common.h"
-#include "gst_mtl_pts_tai.h"
 
 /* Shared handle for the MTL library used across plugins in the pipeline */
 struct gst_common_handle {
@@ -587,9 +586,16 @@ guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port,
   return mtl_port_idx;
 }
 
-/* The PTP time of ST 2110 is TAI (ST 2110-10, SMPTE ST 2059). Without the onboard PTP,
- * MTL reads CLOCK_REALTIME, which is UTC: each stream was 37 s off TAI and off the
- * epoch grid. The FFmpeg plugin and RxTxApp give MTL CLOCK_TAI the same way. */
+/* 0 until the onboard PTP locks; the TX plugins pace by PTS only after it */
+static gint tai_ready;
+
+static void gst_mtl_common_ptp_sync_notify(void* priv,
+                                           struct mtl_ptp_sync_notify_meta* meta) {
+  (void)priv;
+  if (gst_mtl_ptp_locked(meta->delta)) g_atomic_int_set(&tai_ready, 1);
+}
+
+/* ST 2110-10 PTP time is TAI; without the onboard PTP MTL would read UTC */
 static uint64_t gst_mtl_common_get_tai_time(void* priv) {
   struct timespec ts;
 
@@ -618,9 +624,12 @@ gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init
 
   if (general_args->enable_onboard_ptp) {
     mtl_init_params->flags |= MTL_FLAG_PTP_ENABLE;
+    mtl_init_params->ptp_sync_notify = gst_mtl_common_ptp_sync_notify;
+    g_atomic_int_set(&tai_ready, 0);
     GST_INFO("Using MTL library's onboard PTP");
   } else {
     mtl_init_params->ptp_get_time_fn = gst_mtl_common_get_tai_time;
+    g_atomic_int_set(&tai_ready, 1);
   }
 
   while (mtl_port_idx <= MTL_PORT_R && strlen(general_args->port[mtl_port_idx]) != 0) {
@@ -803,48 +812,84 @@ gint gst_mtl_common_deinit_handle(mtl_handle* handle) {
 
 void gst_mtl_common_pts_pacing_init(GstMtlPtsPacing* pacing) {
   gst_segment_init(&pacing->segment, GST_FORMAT_TIME);
-  pacing->base_time = GST_CLOCK_TIME_NONE;
-  pacing->clock_to_tai = 0;
+  memset(&pacing->sync, 0, sizeof(pacing->sync));
   pacing->no_tai_logged = FALSE;
+}
+
+/* the narrowest of a few brackets; the TAI read is raw, as the cached one has no lock */
+static int64_t gst_mtl_common_measure_clock_to_tai(GstClock* clock, mtl_handle mtl) {
+  GstClockTime best = GST_CLOCK_TIME_NONE;
+  int64_t clock_to_tai = 0;
+
+  for (int i = 0; i < GST_MTL_TAI_BRACKET_TRIES && best > GST_MTL_TAI_BRACKET_NS; i++) {
+    GstClockTime before = gst_clock_get_time(clock);
+    uint64_t tai = mtl_ptp_read_time_raw(mtl);
+    GstClockTime after = gst_clock_get_time(clock);
+
+    if (tai && after - before < best) {
+      best = after - before;
+      clock_to_tai = gst_mtl_clock_to_tai(before, tai, after);
+    }
+  }
+  return clock_to_tai;
+}
+
+static gboolean gst_mtl_common_tai_sync(GstElement* element, mtl_handle mtl,
+                                        GstMtlPtsPacing* pacing) {
+  struct gst_mtl_tai_sync* sync = &pacing->sync;
+  GstClock* clock = NULL;
+  GstClockTime base_time, now;
+  int64_t measured;
+
+  if (!g_atomic_int_get(&tai_ready)) return FALSE;
+
+  GST_OBJECT_LOCK(element);
+  if (GST_STATE(element) == GST_STATE_PLAYING && GST_ELEMENT_CLOCK(element))
+    clock = gst_object_ref(GST_ELEMENT_CLOCK(element));
+  base_time = GST_ELEMENT_CAST(element)->base_time;
+  GST_OBJECT_UNLOCK(element);
+  if (!clock) return FALSE;
+
+  now = gst_clock_get_time(clock);
+  if (gst_mtl_tai_sync_due(sync, base_time, now)) {
+    measured = gst_mtl_common_measure_clock_to_tai(clock, mtl);
+    switch (gst_mtl_tai_sync_update(sync, base_time, now, measured)) {
+      case GST_MTL_TAI_FIRST:
+        GST_INFO_OBJECT(element, "Clock to TAI offset %" G_GINT64_FORMAT " ns",
+                        sync->clock_to_tai);
+        pacing->no_tai_logged = FALSE;
+        break;
+      case GST_MTL_TAI_STEP:
+        GST_WARNING_OBJECT(element,
+                           "TAI stepped, clock to TAI offset %" G_GINT64_FORMAT " ns",
+                           sync->clock_to_tai);
+        pacing->no_tai_logged = FALSE;
+        break;
+      default:
+        break;
+    }
+  }
+  gst_object_unref(clock);
+  return TRUE;
 }
 
 uint64_t gst_mtl_common_pts_to_tai(GstElement* element, mtl_handle mtl,
                                    GstMtlPtsPacing* pacing, GstClockTime pts,
                                    guint pacing_offset) {
   GstClockTime running_time = GST_CLOCK_TIME_NONE;
-  GstClockTime base_time = gst_element_get_base_time(element);
-  GstClock* clock = gst_element_get_clock(element);
-  GstState state;
+  const struct gst_mtl_tai_sync* sync = NULL;
+  uint64_t tai;
 
-  GST_OBJECT_LOCK(element);
-  state = GST_STATE(element);
-  GST_OBJECT_UNLOCK(element);
-
-  if (pacing->segment.format == GST_FORMAT_TIME)
-    running_time = gst_segment_to_running_time(&pacing->segment, GST_FORMAT_TIME, pts);
-
-  if (!clock || state != GST_STATE_PLAYING || !GST_CLOCK_TIME_IS_VALID(running_time)) {
-    if (!pacing->no_tai_logged) {
-      GST_WARNING_OBJECT(element, "No clock or no running time, MTL paces the buffer");
-      pacing->no_tai_logged = TRUE;
-    }
-    if (clock) gst_object_unref(clock);
-    return 0;
+  if (!pacing->pts_is_tai) {
+    if (pacing->segment.format == GST_FORMAT_TIME)
+      running_time = gst_segment_to_running_time(&pacing->segment, GST_FORMAT_TIME, pts);
+    if (gst_mtl_common_tai_sync(element, mtl, pacing)) sync = &pacing->sync;
   }
 
-  /* measured once per base time: a later measure would step the stamps */
-  if (base_time != pacing->base_time) {
-    GstClockTime before = gst_clock_get_time(clock);
-    uint64_t tai = mtl_ptp_read_time(mtl);
-    GstClockTime after = gst_clock_get_time(clock);
-
-    pacing->clock_to_tai = gst_mtl_clock_to_tai(before, tai, after);
-    pacing->base_time = base_time;
-    GST_INFO_OBJECT(element, "Clock to TAI offset %" G_GINT64_FORMAT " ns",
-                    pacing->clock_to_tai);
+  tai = gst_mtl_buffer_tai(sync, pacing->pts_is_tai, pts, running_time, pacing_offset);
+  if (!tai && !pacing->no_tai_logged) {
+    GST_WARNING_OBJECT(element, "No TAI for the buffer yet, MTL paces it");
+    pacing->no_tai_logged = TRUE;
   }
-  gst_object_unref(clock);
-
-  return gst_mtl_running_time_to_tai(running_time, base_time, pacing->clock_to_tai,
-                                     pacing_offset);
+  return tai;
 }

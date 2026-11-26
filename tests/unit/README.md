@@ -168,6 +168,7 @@ under `session/`, with per-feature files inside:
 - `session/st40/` — ST 2110-40 (ancillary)
 - `pipeline/`     — pipeline layer (frame assembly above the session filter)
 - `rxtxapp/`      — pure arithmetic of the RxTxApp test tool, from its headers
+- `gstreamer/`    — PTS to TAI arithmetic of the GStreamer TX plugins, from `gst_mtl_pts_tai.h`
 
 The shared per-media gtest fixture lives in `<media>/<media>_rx_test_base.h`;
 each per-feature file derives a thin subclass so `--gtest_filter` selects only
