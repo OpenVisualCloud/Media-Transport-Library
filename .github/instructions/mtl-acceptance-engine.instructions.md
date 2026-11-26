@@ -23,6 +23,7 @@ Architecture: [doc/acceptance-design.md](../../doc/acceptance-design.md) §2, §
 | `integrity.py` | Frame/sample comparison + size math | Test policy about *when* to run it |
 | `execute.py` | `run()`, `log_fail()`, stale-process cleanup | Anything app-specific |
 | `csv_report.py`, `stash.py` | Result recording | Pass/fail decisions |
+| `perf_compare.py` | perf-compare: each build's slot on a host (CPUs, memory node, CAT, DSA), its instances and their collectors, the libmtl records those collectors take, its own EBU LIST pass, the scoring and `perf_compare.html` | Building or editing RxTxApp's JSON config (`rxtxapp.py`), anything another case uses |
 
 ## The adapter contract
 

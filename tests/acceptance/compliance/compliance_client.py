@@ -9,6 +9,11 @@ logger = logging.getLogger(__name__)
 # How long to wait for LIST to analyze an uploaded PCAP.
 REPORT_WAIT_S = 60
 
+# How long to wait for LIST to analyse a PCAP again with an SDP: it re-ingests every
+# stream. A shared LIST took 14 s for 26 ST 2110-22 streams of a second, and once
+# more than 60 s for as many.
+SDP_ANALYSIS_WAIT_S = 180
+
 # How many seconds a re-analysis gets to publish a report distinct from the one
 # it replaces. Measured at 3 ms on an idle EBU LIST 2.2.2; the margin is for a
 # loaded one, and the wait ends as soon as the new report appears.
@@ -17,6 +22,7 @@ REANALYSIS_TIMEOUT = 10
 # How many seconds EBU LIST gets to re-analyse one stream and answer the PUT
 # that asked for it. Measured at 0.4 s for a 4 s audio capture. The answer can
 # also never come: LIST 2.2.2 only logs an exception its audio analysis raises.
+# The PATCH of an SDP gets as long, though LIST answers it before it analyses.
 STREAM_REANALYSIS_TIMEOUT = 60
 
 
@@ -244,6 +250,47 @@ class PcapComplianceClient:
         # No poll, unlike reanalyze(): pi-list's api/pcap.js answers this PUT
         # only after pcapSingleStreamIngest has stored the re-analysis.
         return self.download_report() if misread else report
+
+    def reanalyze_with_sdp(self, sdp):
+        """Re-analyse the PCAP with *sdp*, which names the media type of its streams.
+
+        EBU LIST detects no ST 2110-22 stream by itself and marks it needs_info; it
+        analyses one that an SDP names, as video/jxsv. LIST deletes the streams and
+        analyses the PCAP again, so this waits until it lists them again, none still
+        ready or under analysis, for SDP_ANALYSIS_WAIT_S at most.
+
+        Returns the fresh report, or False when LIST took longer.
+        """
+        url = f"http://{self.ebu_ip}/api/pcap/{self.pcap_id}"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        response = self.session.patch(
+            url,
+            headers=headers,
+            json={"sdps": [sdp]},
+            verify=False,
+            proxies=self.proxies,
+            timeout=STREAM_REANALYSIS_TIMEOUT,
+        )
+        response.raise_for_status()
+        deadline = time.monotonic() + SDP_ANALYSIS_WAIT_S
+        while time.monotonic() < deadline:
+            try:
+                response = self.session.get(
+                    f"{url}/streams/",
+                    headers=headers,
+                    verify=False,
+                    proxies=self.proxies,
+                    timeout=max(1, min(10, deadline - time.monotonic())),
+                )
+                response.raise_for_status()
+                states = [s.get("state") for s in response.json()]
+                if states and not {"ready", "on_going_analysis"} & set(states):
+                    return self.download_report()
+            except (requests.ConnectionError, requests.Timeout) as e:
+                logger.warning("EBU LIST stream poll failed: %s", e)
+            time.sleep(1)
+        logger.error("EBU LIST did not analyse the PCAP with its SDP in time")
+        return False
 
     def check_compliance(self, report):
         """

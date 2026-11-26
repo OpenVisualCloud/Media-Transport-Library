@@ -65,9 +65,10 @@ resolve_nic() {
 	echo "${id} ${datapath}"
 }
 
-# Expands a BDF or vendor:device to one entry per port, capped at two for ST2022-7.
+# Expands a BDF or vendor:device to one entry per port, capped at $2, two for
+# ST2022-7 by default; perf-compare asks for four, both ports of two cards.
 perf_card_ports() {
-	local declared=$1 dev=$1 ports=0
+	local declared=$1 max=${2:-2} dev=$1 ports=0 list i
 	if [[ ${declared} == *,* ]]; then
 		echo "${declared}"
 		return 0
@@ -80,8 +81,9 @@ perf_card_ports() {
 		return 1
 	fi
 	echo "Resolved perf card ${dev} (${ports} ports)" >&2
-	((ports < 2)) || dev+=",${dev}"
-	echo "${dev}"
+	list=${dev}
+	for ((i = 1; i < ports && i < max; i++)); do list+=",${dev}"; done
+	echo "${list}"
 }
 
 requirements_sha() { sha256sum "${acceptance_dir}/requirements.txt" | cut -d' ' -f1; }
@@ -170,7 +172,7 @@ pci)
 pci-env)
 	load_runner_env
 	# A separate assignment so set -e stops on a card the host does not have.
-	pci_device=$(perf_card_ports "${PCI_DEVICE:-${PERF_PCI_DEVICE:-8086:12d2}}")
+	pci_device=$(perf_card_ports "${PCI_DEVICE:-${PERF_PCI_DEVICE:-8086:12d2}}" "${PERF_PORTS:-2}")
 	printf 'PCI_DEVICE=%s\n' "${pci_device}" >>"${GITHUB_ENV:?GITHUB_ENV is required}"
 	;;
 config-single)
@@ -195,6 +197,10 @@ config-single)
 	;;
 config-perf)
 	load_runner_env
+	# Only perf-compare's compliance pass uploads to EBU LIST; gen_config.py reads
+	# EBU_PASSWORD.
+	ebu=()
+	[[ ${COMPLIANCE:-} != true || -z ${EBU_IP:-} ]] || ebu=(--ebu_ip "${EBU_IP}" --ebu_user "${EBU_USER:-}")
 	cd "${acceptance_dir}/configs"
 	"${venv_python}" gen_config.py \
 		--session_id "${SESSION_ID:?SESSION_ID is required}" \
@@ -203,7 +209,7 @@ config-perf)
 		--ip_address "${SHADOW_IP:?SHADOW_IP is required}" "${SUT_IP:?SUT_IP is required}" \
 		--username "${SHADOW_USER:?SHADOW_USER is required}" \
 		--key_path "${key}" \
-		--test_time "${TEST_TIME:-120}" --no_capture
+		--test_time "${TEST_TIME:-120}" --no_capture "${ebu[@]}"
 	;;
 tag)
 	printf 'MTL_GITHUB_WORKFLOW=%s\n' "${WORKFLOW_TAG:?WORKFLOW_TAG is required}" >>"${GITHUB_ENV:?GITHUB_ENV is required}"

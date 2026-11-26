@@ -110,6 +110,7 @@ another layer.
 | TAI offset, PTP, EBU LIST server | Host | watchdog |
 | DSA or CBDMA enabled | Host | BIOS |
 | Stop the processes and release the CPUs that an earlier job left | Test cycle | `task cleanup` |
+| perf-compare's `mtl-perf-*` units, its L3 CAT groups and the default group's saved schemata, its build trees beside the workspace; the resctrl mount it makes stays | Test | the case's teardown, `ci:perf-compare -- clean` on both hosts; after a killed run, `task cleanup` sweeps this host's units and groups, and the next perf-compare `sync` the companion's |
 | Restore and check the DPDK, MTL, plugin and ICE builds of this commit | Test cycle | `validate-host` |
 | Unload the ICE driver, load the ICE module under test (this removes all VFs) | Test cycle | `ci:activate-ice` |
 | Bind the DMA devices to `vfio-pci`, because the DPDK under test can change | Test cycle | `script/dma_setup.sh reset` |
