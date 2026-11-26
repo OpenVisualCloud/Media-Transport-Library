@@ -25,7 +25,8 @@ the fast metadata mode (`session/st40_tx_harness.c`), the kernel-socket TX send 
 loopback (`datapath/mt_dp_socket_harness.c`), RX queue selection without a
 flow (`datapath/mt_queue_harness.c`), the DMA map table
 (`dma/mt_map_harness.c`), the `MTL_FLAG_DMA_AUTO` probe over a fake PCI device
-tree (`dma/mt_dma_auto_harness.c`), port stats locking (`dev/mt_dev_harness.c`),
+tree (`dma/mt_dma_auto_harness.c`), the le10-to-be10 DMA converter's CPU fallback
+(`dma/st_cvt_dma_harness.c`), port stats locking (`dev/mt_dev_harness.c`),
 the MtlManager IPC send (`main/mt_instance_harness.c`) and the CNI RX dispatch of
 control frames (`cni/mt_cni_harness.c`).
 

@@ -1367,7 +1367,7 @@ int st20_rfc4175_422le10_to_422be10_avx512_vbmi_dma(
         le_caches);
     if (le_caches) mt_rte_free(le_caches);
     if (ctx) mt_cvt_dma_ctx_uinit(ctx);
-    return st20_rfc4175_422be10_to_422le10_avx512_vbmi(pg_be, pg_le, w, h);
+    return st20_rfc4175_422le10_to_422be10_vbmi(pg_le, pg_be, w, h);
   }
   rte_iova_t le_caches_iova = rte_malloc_virt2iova(le_caches);
 
