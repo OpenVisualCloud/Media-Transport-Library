@@ -405,3 +405,44 @@ def test_no_two_workers_share_a_port():
     assert {"rxtxapp-integrity", "ffmpeg-rx", "gst-tx"} <= {
         w.name for w in plan.workers
     }
+
+
+def _pcap(path, pkts):
+    """A nanosecond pcap of RFC 4175 packets: (t ns, seq32, rtp ts, marker)."""
+    import struct as st
+
+    with open(path, "wb") as f:
+        f.write(st.pack("<IHHiIII", 0xA1B23C4D, 2, 4, 0, 0, 65535, 1))
+        for t, seq, ts, m in pkts:
+            eth = b"\x01\x00\x5e\x1e\x01\x02" + b"\x02" * 6 + b"\x08\x00"
+            ip = bytes([0x45]) + b"\x00" * 19
+            udp = b"\x00" * 8
+            rtp = bytes([0x80, (0x80 if m else 0) | 112]) + st.pack(
+                ">HII", seq & 0xFFFF, ts, 0x1234
+            )
+            pay = st.pack(">H", seq >> 16) + b"\x00" * 1260
+            d = eth + ip + udp + rtp + pay
+            f.write(st.pack("<IIII", t // 10**9, t % 10**9, len(d), len(d)) + d)
+
+
+def test_pcaptool_reports_grid_offset_breaks_and_rtp(tmp_path):
+    from stability import pcaptool
+
+    T = 10**9 * 1001 // 60000  # ~16683333 ns
+    epoch0 = 107629997467 * 10**9 * 1001 // 60000
+    pkts, seq = [], 70000
+    for fr in range(4):
+        start = epoch0 + fr * T + 620_000  # 620 us after each epoch
+        rtp = (epoch0 + fr * T) * 90000 // 10**9 % 2**32
+        for i in range(10):
+            if fr == 2 and i == 5:
+                seq += 3  # three packets missing
+            pkts.append((start + i * 4000, seq, rtp, i == 9))
+            seq += 1
+    p = tmp_path / "s.pcap"
+    _pcap(p, pkts)
+    r = pcaptool.analyze(str(p), "p59")
+    assert r["frames"] == 3 and r["seq_breaks"] == 1
+    assert r["first_breaks"][0]["missing"] == 3
+    assert abs(r["first_minus_epoch_us"]["median"] - 620) < 1
+    assert abs(r["pkt_minus_rtp_us"]["median"] - 620) < 15  # 90 kHz rounding
