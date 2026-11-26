@@ -167,8 +167,14 @@ under `session/`, with per-feature files inside:
 - `session/st30/` — ST 2110-30 (audio)
 - `session/st40/` — ST 2110-40 (ancillary)
 - `pipeline/`     — pipeline layer (frame assembly above the session filter)
-- `rxtxapp/`      — pure arithmetic of the RxTxApp test tool, from its headers
-- `gstreamer/`    — PTS to TAI arithmetic of the GStreamer TX plugins, from `gst_mtl_pts_tai.h`
+
+This suite tests the library only (`lib/`, `include/`). A unit test of other
+code goes into the gtest suite beside that code:
+
+- `ecosystem/ffmpeg_plugin/tests/`: `script/build_ffmpeg_plugin.sh unit`
+- `ecosystem/gstreamer_plugin/tests/`: `script/build_gstreamer_plugin.sh unit`
+- `tests/tools/RxTxApp/tests/`: `meson setup build/rxtxapp_unit tests/tools/RxTxApp/tests`,
+  then `ninja -C build/rxtxapp_unit` and `build/rxtxapp_unit/RxTxAppUnitTest`
 
 The shared per-media gtest fixture lives in `<media>/<media>_rx_test_base.h`;
 each per-feature file derives a thin subclass so `--gtest_filter` selects only

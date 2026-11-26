@@ -1,7 +1,8 @@
 name: Unit Tests
 description: >-
-  Build DPDK into the workspace, then build and run the unit suite and the
-  unit tests of the FFmpeg plugin. The unit
+  Build DPDK into the workspace, then build and run the unit suite of the
+  library and the unit tests of the FFmpeg plugin, the GStreamer plugins and
+  RxTxApp. The unit
   tier needs no NIC and no root; it still needs the DPDK headers and libraries
   to compile.
 
@@ -30,3 +31,14 @@ runs:
       env:
         MTL_INSTALL_PREFIX: ${{ github.workspace }}/.local_install/mtl
       run: script/build_ffmpeg_plugin.sh unit
+
+    - name: Build and run the GStreamer plugin unit tests
+      shell: bash
+      run: script/build_gstreamer_plugin.sh unit
+
+    - name: Build and run the RxTxApp unit tests
+      shell: bash
+      run: |
+        meson setup build/rxtxapp_unit tests/tools/RxTxApp/tests
+        ninja -C build/rxtxapp_unit
+        build/rxtxapp_unit/RxTxAppUnitTest

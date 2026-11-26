@@ -72,6 +72,12 @@ If you prefer to build the GStreamer plugins manually, follow these steps:
 
 By following these steps, you can manually build the GStreamer plugins.
 
+### 1.4. Unit tests
+
+`./script/build_gstreamer_plugin.sh unit` builds and runs the unit tests in `tests/`.
+They test header code only, so they need neither MTL nor GStreamer installed,
+nor a NIC or root.
+
 ## 2. Running the pipeline
 
 ### 2.1. Prerequisites

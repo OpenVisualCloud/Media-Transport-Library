@@ -5,7 +5,7 @@
 #include <gtest/gtest.h>
 #include <stdint.h>
 
-#include "../../../ecosystem/gstreamer_plugin/gst_mtl_pts_tai.h"
+#include "../gst_mtl_pts_tai.h"
 
 namespace {
 

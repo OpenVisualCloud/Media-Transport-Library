@@ -6,7 +6,7 @@
 #include <math.h>
 #include <stdint.h>
 
-#include "../../tools/RxTxApp/src/app_user_time.h"
+#include "../src/app_user_time.h"
 
 namespace {
 
